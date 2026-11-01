@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Format 是响应体的字节表示。
@@ -82,4 +84,15 @@ func parseMediaRange(s string) (string, float64, bool) {
 		q = parsed
 	}
 	return mt, q, true
+}
+
+const formatCtxKey = "codec.format"
+
+// SetFormat 把协商结果写入 ctx；handler 不得覆盖。
+func SetFormat(c *gin.Context, f Format) { c.Set(formatCtxKey, f) }
+
+func formatFromContext(c *gin.Context) (Format, bool) {
+	f, ok := c.Get(formatCtxKey)
+	v, ok := f.(Format)
+	return v, ok
 }
