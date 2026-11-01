@@ -1,4 +1,4 @@
-module user
+module authloft
 
 go 1.26.1
 
