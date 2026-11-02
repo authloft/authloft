@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package api.sso;
+
+import "google/protobuf/struct.proto";
+
+// Go 包名沿用 api.common 的写法（server/proto/api/common/error.proto）：
+// 目录 api/sso 对应包名 api.sso（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/sso;api";
+
+// Envelope 是完成登录的五个接口共用的统一响应信封
+// （docs/接口文档.md §1.3，行 103-146；接口清单见行 105）。
+// 字段名与 §1.3 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1723）。
+// 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156-157 的 captcha
+// 四个可选嵌套字段按任务范围暂不定义，后续按 §12.8 只增字段。
+message Envelope {
+  // 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3 行 109）。
+  string login_token = 1;
+  // 唯一业务态，取值是 §1.6 行 205-238 的封闭集合；跨版本可新增，故用 string 承载（§12.9 行 1726）。
+  string status = 2;
+  // status=next 时的下一步渲染信息（§1.3 行 111-119）。
+  NextStep next_step = 3;
+  // status=mfa_required 时的二次因子选择器（§1.3 行 120-129）。
+  Mfa mfa = 4;
+  // status=binding_required 时的三方绑定信息（§1.3 行 130-133）。
+  Binding binding = 5;
+  // 仅失败态出现，字段均可省略（§1.3 行 134）；与 api.common.Error 不是同一类型，不得混用。
+  SsoError error = 6;
+  // status=success 时的会话 ID（§1.3 行 135）。
+  string session_id = 7;
+  // status=success 且无 Cookie 场景（小程序）返回（§1.3 行 136）。
+  string session_token = 8;
+  // status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 137、§2.9）。
+  string sync_cookie_url = 9;
+  // status=success 时的最终跳转地址（§1.3 行 138）。
+  string redirect_to = 10;
+  // 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 139、§12.9 行 1724、§1.12 行 318）。
+  int64 user_id = 11;
+}
+
+// NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 111-119）。
+message NextStep {
+  // 渲染形态，取值是 §1.4 行 168-177 的封闭集合（form/challenge/redirect/external/qrcode/poll）；用 string 承载（§12.9 行 1726）。
+  string kind = 1;
+  // 当前认证方式，取值与步骤序列见 §1.10 行 278-289。
+  string method = 2;
+  // 下一步的提交地址（§1.3 行 114）。
+  string endpoint = 3;
+  // 需要渲染的输入字段，类型取值见 §1.11 行 293-311（§1.3 行 115）。
+  repeated Field fields = 4;
+  // 重发冷却（秒）；JSON 为十进制字符串（§1.3 行 116、§1.12 行 318）。
+  int64 retry_after = 5;
+  // 当前挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 117、§1.12 行 318）。
+  int64 expires_in = 6;
+  // WebAuthn 挑战时为 PublicKeyCredentialRequestOptions，即任意 JSON 对象（§1.3 行 118）。
+  google.protobuf.Struct challenge_data = 7;
+}
+
+// Field 是渲染侧输入字段描述（§1.3 行 115、§1.11 行 293-311、§2.2 注入快照行 359-368）。
+message Field {
+  // 字段名，与请求体字段一致（§1.3 行 115）。
+  string name = 1;
+  // 展示文案（§1.3 行 115）。
+  string label = 2;
+  // 渲染类型，取值是 §1.11 行 297-310 的封闭集合；用 string 承载（§12.9 行 1726）。
+  string type = 3;
+  // 是否必填（§2.2 行 360-362 fields[].required）。
+  bool required = 4;
+  // 输入长度（如验证码位数）；JSON 为十进制字符串（§1.3 行 115、§1.12 行 318）。
+  int64 length = 5;
+  // 最大校验失败次数；JSON 为十进制字符串（§1.3 行 115、§1.12 行 318）。
+  int64 max_attempts = 6;
+}
+
+// Mfa 是 status=mfa_required 时的二次因子选择器（§1.3 行 120-129）。
+message Mfa {
+  // 本次 MFA 挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 121、§1.12 行 318）。
+  int64 expires_in = 1;
+  // 可选二次因子列表（§1.3 行 122）。
+  repeated MfaMethod methods = 2;
+}
+
+// MfaMethod 是单个可选的二次因子（§1.3 行 123-127；步骤序列来源见 §1.10 行 274-289）。
+message MfaMethod {
+  // 认证方式，步骤序列见 §1.10 行 278-289。
+  string method = 1;
+  // 该方式的渲染步骤序列，取值是 §1.4 行 168-177 的 kind 封闭集合（§1.10 行 276）。
+  repeated string steps = 2;
+  // form 步骤需要渲染的字段（§1.3 行 123、127）。
+  repeated Field fields = 3;
+  // 已掩码的目标（手机号 / 邮箱）（§1.3 行 124-125）。
+  string masked_target = 4;
+  // challenge 步骤需要用户填写的字段（§1.3 行 124-125）。
+  repeated Field challenge_fields = 5;
+  // 该方式的提示文案（§1.3 行 126）。
+  string hint = 6;
+}
+
+// Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 130-133）。
+message Binding {
+  // 提供方标识（§1.3 行 131）。
+  string provider_key = 1;
+  // 提供方展示名（§1.3 行 131）。
+  string display_name = 2;
+  // 是否允许免密建号，由 Provider 的 enable_signup 映射（§1.3 行 130-131）。
+  bool allow_signup = 3;
+  // 三方昵称（§1.3 行 132）。
+  string nickname = 4;
+  // 三方头像地址（§1.3 行 132）。
+  string avatar_url = 5;
+}
+
+// SsoError 是统一信封内层的失败展示信息（§1.3 行 134、字段说明行 148-152）；
+// 只承载展示信息，业务分支只看 status（§1.3 行 146）。
+// 与 api.common.Error（§1.5）不是同一类型，不得混用；字段均可省略（行 134），故用 optional。
+message SsoError {
+  // 服务端下发的兜底文案，可省略（§1.3 行 150）。
+  optional string message = 1;
+  // 冷却 / 解封剩余秒数，可省略；JSON 为十进制字符串（§1.3 行 151、§1.12 行 318）。
+  optional int64 retry_after = 2;
+  // 验证码剩余尝试次数，可省略；JSON 为十进制字符串（§1.3 行 152、§1.12 行 318）。
+  optional int64 attempts_left = 3;
+}
