@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package api.sso;
+
+import "google/protobuf/struct.proto";
+
+// Go 包名沿用 api.common / api.sso envelope 的写法：
+// 目录 api/sso 对应包名 api.sso（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/sso;api";
+
+// LoginDefaultRequest 是 `POST /api/sso/login/default` 的请求体
+// （docs/接口文档.md §2.2，行 390-401）。
+// 字段名与 §2.2 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1723）。
+// 响应复用本包 Envelope（§1.3 行 103-146），故不定义 LoginDefaultResponse。
+message LoginDefaultRequest {
+  // 首次不带；后续必须带（内存变量回传）（§2.2 行 396）。
+  string login_token = 1;
+  // 无 login_token 时必须带。取值：password｜otp_sms｜otp_email｜webauthn｜totp｜recovery_code
+  // （§2.2 行 397）；跨版本可新增，用 string 承载（§12.9 行 1726）。
+  string method = 2;
+  // 取值 challenge｜verify（注册 / 重置端点另有 set_password，见 §2.3 / §2.4）（§2.2 行 398）；
+  // 同为跨版本可新增的取值，用 string 承载（§12.9 行 1726）。
+  string step = 3;
+  // 各因子字段，见 §2.6 对照表（行 514-527）（§2.2 行 399）。
+  LoginPayload payload = 4;
+  // OIDC 授权上下文，取自 `__AUTHLOFT_INIT__.oidc`（§8 行 1388、§4.2 行 1052），仅在首次请求
+  // （尚无 login_token）时回传，服务端据此写入 login_token.oidc（§2.2 行 401）。
+  // 内容是 /auth/authorize 的 OIDC 原始参数按原样透传、前端不解析其内部字段，
+  // 故与 Envelope.next_step.challenge_data 同口径用 google.protobuf.Struct，不逐字段建模。
+  google.protobuf.Struct oidc = 5;
+}
+
+// LoginPayload 是 §2.6 各因子 `payload` 对照表（行 516-525）的因子字段合集：
+// 单次请求只按 method / step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1723）。
+// thirdparty 不在本表内，按 §2.7 走独立端点，不进 payload。
+// webauthn/challenge 的 payload 为 `{}`（行 522），即本消息各字段全零值。
+message LoginPayload {
+  // password / verify：登录名（§2.6 行 518）。
+  string username = 1;
+  // password / verify：密码（§2.6 行 518）。
+  string password = 2;
+  // 人机校验提交，结构见 CaptchaPayload（§2.5 行 475-484）；
+  // 密码登录失败≥阈值后必填（行 518）、otp challenge 步必填（行 519-520），其余场景可省（行 518 的 captcha?）。
+  CaptchaPayload captcha = 3;
+  // otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 519）；MFA 场景不传（行 520）。
+  string phone = 4;
+  // otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 519）；MFA 场景不传（行 520）。
+  string email = 5;
+  // otp_*/verify 的 6 位验证码（§2.6 行 521）、totp/verify 的 TOTP 码（行 524）、
+  // recovery_code/verify 的 `xxxx-xxxx` 恢复码（行 525）。
+  string code = 6;
+  // webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6 行 523），为任意 JSON 对象。
+  google.protobuf.Struct credential = 7;
+}
+
+// CaptchaPayload 是人机校验的统一提交格式（§2.5 行 475-484，第三方与自绘两类 Provider 共用）。
+// 字段名与该 JSON 示例逐字一致（§12.9 行 1723）。
+message CaptchaPayload {
+  // 两类都必须带，取自当前 captcha 对象的 provider_key；降级时为 builtin_image（§2.5 行 479、行 490）。
+  string provider_key = 1;
+  // 第三方 Provider：厂商 token（§2.5 行 480）。
+  string token = 2;
+  // 自绘图形码：图形码 id（§2.5 行 481）。
+  string id = 3;
+  // 自绘图形码：用户输入（§2.5 行 482）。
+  string answer = 4;
+}
