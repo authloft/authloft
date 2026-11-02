@@ -12,9 +12,22 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// maxBodyBytes 是请求体解码上限（docs/后端架构.md §3.14 行 487 要求 http.MaxBytesReader）。
-// 文档未给具体数值，且 codec 是叶子包、不能读 config；暂定 1 MiB，后续由 config 注入时再调整。
-const maxBodyBytes int64 = 1 << 20
+// defaultMaxBodyBytes 是未注入 SetMaxBodyBytes 时的回落上限：1 MiB（1048576 字节）。
+const defaultMaxBodyBytes int64 = 1 << 20
+
+// maxBodyBytes 是请求体解码上限（docs/后端架构.md §3.14 行 487 要求 http.MaxBytesReader），
+// 上限由装配层（main / 依赖注入处）在服务启动阶段经 SetMaxBodyBytes 注入（§3.14 行 492）；
+// codec 是叶子包、不 import config，未注入时回落 defaultMaxBodyBytes。
+var maxBodyBytes int64 = defaultMaxBodyBytes
+
+// SetMaxBodyBytes 设置请求体解码上限（§3.14 行 492）：须在服务启动、接受请求前由装配层调用。
+// n <= 0 时不生效（保持当前值），避免误传把上限关成 0 而拒掉所有请求。
+func SetMaxBodyBytes(n int64) {
+	if n <= 0 {
+		return
+	}
+	maxBodyBytes = n
+}
 
 // 请求解码的三类可区分错误；调用方用 WriteBindError 统一转成 §1.5 错误体。
 var (

@@ -13,7 +13,7 @@ import (
 	ssoapi "authloft/gen/go/api/sso"
 )
 
-func newBindContext(contentType string, body []byte) *gin.Context {
+func newBindContextRec(contentType string, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -21,6 +21,11 @@ func newBindContext(contentType string, body []byte) *gin.Context {
 	if contentType != "" {
 		c.Request.Header.Set("Content-Type", contentType)
 	}
+	return c, rec
+}
+
+func newBindContext(contentType string, body []byte) *gin.Context {
+	c, _ := newBindContextRec(contentType, body)
 	return c
 }
 
@@ -118,6 +123,79 @@ func TestBindRejectsOversizedBody(t *testing.T) {
 	}
 	if maxErr.Limit != maxBodyBytes {
 		t.Errorf("MaxBytesError limit = %d, want %d", maxErr.Limit, maxBodyBytes)
+	}
+}
+
+// exactBody 构造总长 n 字节且合法的 JSON body（login_token 填充到恰好 n 字节）。
+func exactBody(n int) []byte {
+	prefix, suffix := []byte(`{"login_token":"`), []byte(`"}`)
+	body := make([]byte, 0, n)
+	body = append(body, prefix...)
+	body = append(body, bytes.Repeat([]byte("a"), n-len(prefix)-len(suffix))...)
+	body = append(body, suffix...)
+	return body
+}
+
+// ① 未注入时回落默认 1 MiB（§3.14 行 492）：恰好 1 MiB 成功、超 1 字节失败。
+func TestBindDefaultMaxBodyBytes(t *testing.T) {
+	if maxBodyBytes != defaultMaxBodyBytes {
+		t.Fatalf("maxBodyBytes = %d, want default %d（未注入 SetMaxBodyBytes）", maxBodyBytes, defaultMaxBodyBytes)
+	}
+
+	c := newBindContext(mediaJSON, exactBody(int(defaultMaxBodyBytes)))
+	if err := Bind(c, &ssoapi.LoginDefaultRequest{}); err != nil {
+		t.Errorf("Bind(恰好 %d 字节) error: %v", defaultMaxBodyBytes, err)
+	}
+
+	c = newBindContext(mediaJSON, bytes.Repeat([]byte("a"), int(defaultMaxBodyBytes)+1))
+	err := Bind(c, &ssoapi.LoginDefaultRequest{})
+	if !errors.Is(err, ErrDecode) {
+		t.Fatalf("error = %v, want ErrDecode", err)
+	}
+	var maxErr *http.MaxBytesError
+	if !errors.As(err, &maxErr) || maxErr.Limit != defaultMaxBodyBytes {
+		t.Errorf("MaxBytesError limit = %v, want %d", maxErr, defaultMaxBodyBytes)
+	}
+}
+
+// ② SetMaxBodyBytes 注入后立即生效（§3.14 行 492）；n <= 0 不生效，防止上限被关成 0。
+func TestSetMaxBodyBytes(t *testing.T) {
+	t.Cleanup(func() { SetMaxBodyBytes(defaultMaxBodyBytes) })
+
+	SetMaxBodyBytes(64)
+	SetMaxBodyBytes(0)  // 非正值必须被忽略
+	SetMaxBodyBytes(-1) // 同上
+
+	c := newBindContext(mediaJSON, exactBody(64))
+	if err := Bind(c, &ssoapi.LoginDefaultRequest{}); err != nil {
+		t.Errorf("Bind(恰好 64 字节) error: %v", err)
+	}
+
+	c = newBindContext(mediaJSON, bytes.Repeat([]byte("a"), 65))
+	err := Bind(c, &ssoapi.LoginDefaultRequest{})
+	var maxErr *http.MaxBytesError
+	if !errors.Is(err, ErrDecode) || !errors.As(err, &maxErr) || maxErr.Limit != 64 {
+		t.Errorf("error = %v, want ErrDecode with MaxBytesError{Limit: 64}", err)
+	}
+}
+
+// ③ 超限经 WriteBindError 落成 400 bad_request（§1.5 行 199 封闭集合，不新增 413）。
+func TestBindOversizedBodyWritesBadRequest(t *testing.T) {
+	SetMaxBodyBytes(64)
+	t.Cleanup(func() { SetMaxBodyBytes(defaultMaxBodyBytes) })
+
+	c, rec := newBindContextRec(mediaJSON, bytes.Repeat([]byte("a"), 65))
+	err := Bind(c, &ssoapi.LoginDefaultRequest{})
+	if !errors.Is(err, ErrDecode) {
+		t.Fatalf("Bind error = %v, want ErrDecode", err)
+	}
+	WriteBindError(c, err)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if got := decodeErrorMap(t, rec.Body.Bytes())["code"]; got != CodeBadRequest {
+		t.Errorf("code = %v, want %q", got, CodeBadRequest)
 	}
 }
 
