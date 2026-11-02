@@ -1,0 +1,101 @@
+# CI：后端构建/测试 → 前端类型检查/测试/构建 → 生成物零 diff 门禁 → buf breaking 门禁
+# 依据：docs/后端架构.md §1.6 行 115-120（生成链与 CI 门禁）、§21.4 行 1830（protobuf 门禁）
+# 说明：buf breaking 的 against 基准为 master，与本仓库默认分支一致。
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: backend / frontend / gen-gate
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0：buf breaking 需从 .git 读取分支引用
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Backend build
+        run: go build ./...
+        working-directory: server
+
+      - name: Backend vet
+        run: go vet ./...
+        working-directory: server
+
+      - name: Backend test
+        run: go test -count=1 ./...
+        working-directory: server
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      # web/package.json engines 要求 node ^22.18.0 || >=24.3.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Frontend install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Frontend typecheck
+        run: pnpm exec tsc --noEmit
+        working-directory: web
+
+      - name: Frontend test
+        run: pnpm exec rs test
+        working-directory: web
+
+      - name: Frontend build
+        run: pnpm build
+        working-directory: web
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          buf-version: 1.75.0
+
+      # protoc-gen-go 固定为生成入库时的版本（server/gen/go 产物头注释），
+      # 保证 buf generate 产物与仓库零 diff（docs/后端架构.md 行 119）
+      - name: Install protoc-gen-go
+        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+
+      # PR 事件 checkout 的是 refs/pull/N/merge，需补 master 引用供 buf breaking 比对；
+      # push 事件 HEAD 就在 master，无需此步
+      - name: Fetch master ref (PR only)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin master:refs/heads/master
+
+      - name: Regenerate from proto
+        run: buf generate
+        working-directory: server
+
+      - name: Generated code zero-diff gate
+        run: git diff --exit-code -- server/gen web/src/gen
+
+      # 必须在 server/ 下运行：buf.yaml 的 check 插件用相对 cwd 路径 ./tools/bufcheck；
+      # against 的 .git 相对 cwd 解析（仓库根），subdir=server 显式指向 git 树中的模块根。
+      # push 事件下 master 即 HEAD（自比较恒过，门禁实际作用于 PR 事件）
+      - name: Buf breaking gate
+        run: buf breaking --against '../.git#branch=master,subdir=server'
+        working-directory: server
