@@ -12,7 +12,9 @@ import (
 //   - 全局链（挂载顺序即执行顺序）：recover 最外层最先挂（兜住全链 panic，
 //     §3.3 行 309）→ requestid（链路 ID 先于一切错误出口，保证 403 / 415 /
 //     500 错误体也携带 request_id）→ logger（访问日志在 requestid 之后，
-//     取到 request_id）；
+//     取到 request_id）→ metrics（最内层，defer 累加保证 panic 请求也计数）；
+//   - /metrics 运维端点挂全局 engine、不进 /api 组——不受 origin /
+//     contenttype / negotiate 约束，不走 codec（§3.3 行 309）；
 //   - /api 组挂 origin + contenttype + negotiate（页面路由 /assets ** 不受影响）。
 //
 // 返回 /api 组供业务域 handler 挂载路由——当前尚无业务路由，生产 router 不注册任何
@@ -31,7 +33,9 @@ func newRouter(rootOrigin string, refererAllowlist []string) (*gin.Engine, *gin.
 		middleware.Recover(),
 		middleware.RequestID(),
 		middleware.Logger(),
+		middleware.Metrics(),
 	)
+	r.GET("/metrics", middleware.Handler())
 
 	api := r.Group("/api")
 	api.Use(
