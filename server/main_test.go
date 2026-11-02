@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -45,7 +47,7 @@ func emptyConfigRouter() (*gin.Engine, *gin.RouterGroup) {
 }
 
 // 装配链路（§18 行 1665：origin + contenttype → negotiate → handler）：
-// requestid 全局 → /api 组 origin → contenttype → negotiate。
+// recover → requestid → logger 全局 → /api 组 origin → contenttype → negotiate。
 func TestNewRouterMiddlewareChain(t *testing.T) {
 	r, apiGroup := configuredRouter()
 	apiGroup.POST("/x", func(c *gin.Context) {
@@ -128,6 +130,79 @@ func TestNewRouterExemptGroups(t *testing.T) {
 		"Origin": "https://evil.example.com", "Content-Type": "text/plain",
 	}); rec.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("rpc text/plain: status = %d, want %d (rpc 不免 contenttype)", rec.Code, http.StatusUnsupportedMediaType)
+	}
+}
+
+// 装配链 panic 兜底：recover 挂全局最外层，/api 组上的 panic 路由整链下返回
+// 500 统一错误体 internal_error 且 request_id 非空（docs/后端架构.md §3.3 行 309、
+// §3.14 行 486；docs/接口文档.md §1.5 行 195-203）。
+func TestNewRouterRecoverPanicRoute(t *testing.T) {
+	r, apiGroup := configuredRouter()
+	apiGroup.POST("/panic", func(c *gin.Context) { panic("assembled boom") })
+
+	headers := map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json"}
+	rec := doRequest(r, http.MethodPost, "/api/panic", headers)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("panic route: status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	var errBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
+	}
+	if got := errBody["code"]; got != codec.CodeInternalError {
+		t.Errorf("code = %v, want %q", got, codec.CodeInternalError)
+	}
+	if got, _ := errBody["request_id"].(string); got == "" {
+		t.Errorf("request_id is empty, want non-empty")
+	}
+}
+
+// accessLogCap 捕获 slog 默认 logger 输出的属性表（装配层访问日志断言用；
+// middleware 包的 slogCapture 不跨包复用，此处做最小实现）。
+type accessLogCap struct {
+	attrs []map[string]string
+}
+
+func (h *accessLogCap) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *accessLogCap) Handle(_ context.Context, r slog.Record) error {
+	m := make(map[string]string, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		m[a.Key] = a.Value.String()
+		return true
+	})
+	h.attrs = append(h.attrs, m)
+	return nil
+}
+
+func (h *accessLogCap) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *accessLogCap) WithGroup(string) slog.Handler      { return h }
+
+// 装配链访问日志：logger 挂全局且在 requestid 之后 → 正常请求输出含非空
+// request_id 与最终 status 的访问日志（docs/后端架构.md §3.3 行 309）。
+func TestNewRouterAccessLog(t *testing.T) {
+	lc := &accessLogCap{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(lc))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	r, apiGroup := configuredRouter()
+	apiGroup.POST("/ok", ok)
+
+	headers := map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json"}
+	if rec := doRequest(r, http.MethodPost, "/api/ok", headers); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	if len(lc.attrs) == 0 {
+		t.Fatalf("no access log captured; logger 须挂全局")
+	}
+	last := lc.attrs[len(lc.attrs)-1]
+	if last["request_id"] == "" {
+		t.Errorf("access log request_id is empty, want non-empty (logger 须挂载在 requestid 之后)")
+	}
+	if last["status"] != "200" {
+		t.Errorf("access log status = %q, want \"200\"", last["status"])
 	}
 }
 
