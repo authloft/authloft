@@ -1,0 +1,39 @@
+# Authloft 统一用户中心 · YAML 启动配置示例（docs/后端架构.md §3.2）
+#
+# 用法：复制为 configs/config.yaml 后按部署环境修改。config.yaml 含真实密钥，
+# 不入库（.gitignore 已忽略）；部署时提供，或首次运行自动生成。
+#
+# 整份配置只在启动时读取一次，运行期不可变（不监听文件变更、无刷新接口），
+# 改任何一项必须重启；需要热更新的项（开关、阈值、Cookie 名与 TTL、队列参数）
+# 走 settings（接口文档 §5.6），不进本文件。
+#
+# 环境变量优先于文件值：AUTHLOFT_<SECTION>_<FIELD>（大写下划线），
+# 如 AUTHLOFT_DB_DSN、AUTHLOFT_REDIS_ADDR、AUTHLOFT_SERVER_LISTEN、
+# AUTHLOFT_SIGN_KEY_SESSION_KID 等，全字段同模式支持。
+
+server:
+  listen: ":8080"                 # HTTP 监听，":port" 形态
+  read_timeout: 30s
+  write_timeout: 30s
+db:
+  dsn: "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local"
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""                    # 无密码可留空
+  db: 0
+  pool_size: 50
+authloft:
+  root: "https://authloft.example.com"  # al_root：只填主域名，用于拼回调 / 多域名同步地址
+  rp_id: "authloft.example.com"         # WebAuthn RP ID
+sign_key:                          # 各类令牌 / 载荷独立密钥（§1.4）；AES-256-GCM 对称
+                                  # 单密钥（§3.2 约定 4）：base64(std)，解码后恰 32 字节
+  session:      { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # session token
+  login:        { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # login token
+  ticket:       { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # ticket（含 al:ticket 存储值，§11.4）
+  cookie:       { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # al_login_state（§11.6.1）
+  sync_payload: { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # 多域名同步载荷（§11.2）
+argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
+log: { level: info, format: json } # level: debug|info|warn|error；format: json|text
