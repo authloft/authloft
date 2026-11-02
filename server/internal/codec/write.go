@@ -1,13 +1,14 @@
 package codec
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	api "authloft/gen/go/api/common"
 )
 
 var marshalJSON = protojson.MarshalOptions{
@@ -19,12 +20,12 @@ var marshalJSON = protojson.MarshalOptions{
 // internalErrorMessage 是编码失败兜底的固定文案，不透出内部错误细节。
 const internalErrorMessage = "internal error"
 
-// fallbackError 是编码失败兜底体，字段口径见 docs/接口文档.md §1.5。
-type fallbackError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"request_id"`
-}
+// 兜底编码再次失败时（如 request_id 含非法 UTF-8）写死的最小 api.Error 字节，
+// 保证响应完整、不递归调用 Write；字段号见 server/proto/api/common/error.proto。
+const (
+	fallbackProtoBody = "\x0a\x0einternal_error" // 字段 1（code）= "internal_error"
+	fallbackJSONBody  = `{"code":"internal_error","message":"","request_id":""}`
+)
 
 // Write 是全站唯一的响应出口：先完整编码，成功后再写状态码、响应头与响应体。
 func Write(c *gin.Context, status int, msg proto.Message) {
@@ -45,16 +46,9 @@ func Write(c *gin.Context, status int, msg proto.Message) {
 		body, err = marshalJSON.Marshal(msg)
 	}
 	if err != nil {
-		// 编码失败兜底：docs/后端架构.md §3.14 行 484 要求直接 500 + internal_error，禁止半截输出。
-		// 该兜底体后续由 codec/error.go（api.Error 生成后）接管。
-		h.Set("Content-Type", "application/json; charset=utf-8")
-		errBody, _ := json.Marshal(fallbackError{
-			Code:      "internal_error",
-			Message:   internalErrorMessage,
-			RequestID: "", // 待 middleware/requestid 接入后取链路 ID。
-		})
-		c.Status(http.StatusInternalServerError)
-		_, _ = c.Writer.Write(errBody)
+		// 编码失败兜底：docs/后端架构.md §3.14 行 486 要求直接 500 + internal_error，禁止半截输出；
+		// 兜底体同样按协商格式编码（docs/接口文档.md §1.5 行 195、§1.1.1 行 87）。
+		writeFallback(c, format)
 		return
 	}
 
@@ -66,5 +60,41 @@ func Write(c *gin.Context, status int, msg proto.Message) {
 	}
 
 	c.Status(status)
+	_, _ = c.Writer.Write(body)
+}
+
+// writeFallback 写编码失败的兜底响应：由 codec 构造 api.Error 并按协商格式编码
+// （docs/接口文档.md §1.5 行 195）。不递归调用 Write；兜底编码再次失败时
+// 写死最小 api.Error 字节，保证不半截输出。
+func writeFallback(c *gin.Context, format Format) {
+	errMsg := &api.Error{
+		Code:      CodeInternalError,
+		Message:   internalErrorMessage,
+		RequestId: requestID(c), // middleware/requestid 未接入时为空串，不伪造值
+	}
+
+	var body []byte
+	var err error
+	if format == FormatProto {
+		body, err = proto.Marshal(errMsg)
+	} else {
+		body, err = marshalJSON.Marshal(errMsg)
+	}
+	if err != nil {
+		if format == FormatProto {
+			body = []byte(fallbackProtoBody)
+		} else {
+			body = []byte(fallbackJSONBody)
+		}
+	}
+
+	h := c.Writer.Header()
+	if format == FormatProto {
+		h.Set("Content-Type", mediaProto)
+		h.Set("Content-Length", strconv.Itoa(len(body)))
+	} else {
+		h.Set("Content-Type", "application/json; charset=utf-8")
+	}
+	c.Status(http.StatusInternalServerError)
 	_, _ = c.Writer.Write(body)
 }

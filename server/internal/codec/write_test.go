@@ -12,6 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	api "authloft/gen/go/api/common"
 )
 
 func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {
@@ -119,10 +121,49 @@ func TestWriteWithoutFormatFallsBackToJSON(t *testing.T) {
 	}
 }
 
-func TestWriteMarshalErrorReturns500WithInternalError(t *testing.T) {
+func TestWriteMarshalErrorFallbackProto(t *testing.T) {
 	c, rec := newTestContext()
 	SetFormat(c, FormatProto)
 	// proto3 string 含非法 UTF-8，proto.Marshal 编码失败。
+	Write(c, http.StatusOK, wrapperspb.String("\xff"))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Accept" {
+		t.Errorf("Vary = %q, want %q", got, "Accept")
+	}
+	if got := rec.Header().Get("Content-Length"); got != strconv.Itoa(rec.Body.Len()) {
+		t.Errorf("Content-Length = %q, body length %d", got, rec.Body.Len())
+	}
+
+	var decoded api.Error
+	if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
+	}
+	if decoded.GetCode() != "internal_error" {
+		t.Errorf("code = %q, want internal_error", decoded.GetCode())
+	}
+	if decoded.GetMessage() != "internal error" {
+		t.Errorf("message = %q, want %q", decoded.GetMessage(), "internal error")
+	}
+	if decoded.GetRequestId() != "" {
+		t.Errorf("request_id = %q, want empty when requestid middleware absent", decoded.GetRequestId())
+	}
+
+	raw := rec.Body.String()
+	if strings.Contains(raw, "\xff") || strings.Contains(raw, "invalid UTF-8") {
+		t.Errorf("body = %q, must not expose internal error details", raw)
+	}
+}
+
+func TestWriteMarshalErrorFallbackJSON(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatJSON)
+	// protojson 同样拒绝含非法 UTF-8 的 string 字段，编码失败。
 	Write(c, http.StatusOK, wrapperspb.String("\xff"))
 
 	if rec.Code != http.StatusInternalServerError {
@@ -142,15 +183,74 @@ func TestWriteMarshalErrorReturns500WithInternalError(t *testing.T) {
 	if got := body["code"]; got != "internal_error" {
 		t.Errorf("code = %v, want internal_error", got)
 	}
-	if _, ok := body["message"]; !ok {
-		t.Errorf("body = %s, want message field", rec.Body.String())
+	if got, ok := body["message"]; !ok || got != "internal error" {
+		t.Errorf("message = %v, want internal error", got)
 	}
-	if _, ok := body["request_id"]; !ok {
-		t.Errorf("body = %s, want request_id field", rec.Body.String())
+	if got, ok := body["request_id"]; !ok || got != "" {
+		t.Errorf("request_id = %v, want empty string when requestid middleware absent", got)
 	}
 
 	raw := rec.Body.String()
 	if strings.Contains(raw, "\xff") || strings.Contains(raw, "invalid UTF-8") {
 		t.Errorf("body = %q, must not expose internal error details", raw)
 	}
+}
+
+func TestWriteMarshalErrorFallbackWithRequestID(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatProto)
+	c.Set(RequestIDKey, "req-123")
+	Write(c, http.StatusOK, wrapperspb.String("\xff"))
+
+	var decoded api.Error
+	if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
+	}
+	if decoded.GetRequestId() != "req-123" {
+		t.Errorf("request_id = %q, want req-123", decoded.GetRequestId())
+	}
+}
+
+func TestWriteMarshalErrorFallbackHardcodedWhenFallbackEncodeFails(t *testing.T) {
+	// request_id 含非法 UTF-8 → 兜底体二次编码失败 → 写死最小 api.Error 字节，不递归调用 Write。
+	t.Run("proto", func(t *testing.T) {
+		c, rec := newTestContext()
+		SetFormat(c, FormatProto)
+		c.Set(RequestIDKey, "\xff")
+		Write(c, http.StatusOK, wrapperspb.String("\xff"))
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+			t.Errorf("Content-Type = %q", got)
+		}
+		var decoded api.Error
+		if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+			t.Fatalf("unmarshal hardcoded fallback body %q: %v", rec.Body.String(), err)
+		}
+		if decoded.GetCode() != "internal_error" {
+			t.Errorf("code = %q, want internal_error", decoded.GetCode())
+		}
+	})
+	t.Run("json", func(t *testing.T) {
+		c, rec := newTestContext()
+		SetFormat(c, FormatJSON)
+		c.Set(RequestIDKey, "\xff")
+		Write(c, http.StatusOK, wrapperspb.String("\xff"))
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+			t.Errorf("Content-Type = %q", got)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("unmarshal hardcoded fallback body %q: %v", rec.Body.String(), err)
+		}
+		if got := body["code"]; got != "internal_error" {
+			t.Errorf("code = %v, want internal_error", got)
+		}
+	})
 }
