@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package api.common;
+
+// 生成的 Go 包名必须是 api：错误体类型在 Go 侧引用为 api.Error
+// （docs/后端架构.md §1.6「错误体 api.Error」、§3 dto「结构与 gen/go/api 一致」）。
+option go_package = "authloft/gen/go/api/common;api";
+
+// Error 是一切非 200 响应的固定错误体（docs/接口文档.md §1.5），
+// 与成功响应走同一出口、同一编码协商（§1.1.1）。
+//
+// 字段约定（docs/接口文档.md §12.9）：
+//   - snake_case、编号从 1 起连续、只增字段不改字段号（§12.8）
+//   - 全部为 string；JSON 视图字段恒存在（未设置时补 ""），故不使用 optional
+//   - 语义见 docs/接口文档.md §1.5：
+//     code       机器可读短码（封闭集合：bad_request/unauthorized/forbidden/
+//                not_found/unsupported_media_type/internal_error）
+//     message    可选展示文案，可为空串；前端优先按 HTTP 码取 i18n
+//     request_id 链路 ID，用于排障，前端不展示
+message Error {
+  string code = 1;
+  string message = 2;
+  string request_id = 3;
+}

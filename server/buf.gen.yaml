@@ -1,0 +1,7 @@
+# 生成链：buf generate（docs/后端架构.md §1.6）→ server/gen/go/**（提交进仓库，禁止手改）
+version: v2
+plugins:
+  # Go 产物：server/gen/go/api/**（docs/后端架构.md §1.6 行 117）
+  - local: protoc-gen-go
+    out: gen/go
+    opt: paths=source_relative

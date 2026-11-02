@@ -1,0 +1,19 @@
+version: v2
+modules:
+  # .proto 源根目录：包名 api.<域> 对应目录 api/<域>/（docs/后端架构.md §2）
+  - path: proto
+lint:
+  use:
+    - STANDARD
+    # 自定义规则：拦截 .proto 中的 32 位整型字段（docs/后端架构.md §1.6 行 89
+    # 「buf lint 加自定义规则拦 int32/uint32/fixed32」；docs/接口文档.md §12.9
+    # 「整型一律 int64」）。实现见 tools/bufcheck。
+    - PLUGIN_FIELD_NO_32BIT_INT
+  except:
+    # 接口文档.md §12.9 规定包名为 api.<域>（如 api.common），不带版本后缀；
+    # 该规则与本项目包名约定冲突，按文档优先豁免。
+    - PACKAGE_VERSION_SUFFIX
+plugins:
+  # 自定义 check 插件（官方插件机制，buf.build/go/bufplugin SDK）。
+  # 插件是独立 Go module（tools/bufcheck/go.mod），不污染 server 主模块依赖。
+  - plugin: [go, -C, ./tools/bufcheck, run, .]
