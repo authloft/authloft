@@ -5,7 +5,9 @@ import { create, fromBinary, toBinary, toJson } from '@bufbuild/protobuf';
 import { afterEach, describe, expect, rs, test } from 'rstack/test';
 import { ErrorSchema } from '../../gen/proto/api/common/error_pb';
 import { EnvelopeSchema } from '../../gen/proto/api/sso/envelope_pb';
-import { ApiError, type Endpoint, request } from './http';
+import { request } from './http';
+import { ApiError } from './errors';
+import type { Endpoint } from './endpoints';
 
 type EnvelopeEndpoint = Endpoint<
   typeof EnvelopeSchema,

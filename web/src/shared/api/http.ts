@@ -11,50 +11,15 @@ import {
   ErrorSchema,
   type Error as ApiErrorBody,
 } from '../../gen/proto/api/common/error_pb';
+import { ApiError } from './errors';
+import type { ApiFormat, Endpoint } from './endpoints';
 
-/** 响应 / 请求编码，见 docs/接口文档.md §1.1.1。 */
-export type ApiFormat = 'json' | 'binary';
-
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-/**
- * 端点描述（后续 endpoints.ts 的契约前置）：format 是每端点显式声明的常量，
- * 不做运行时探测（docs/前端架构.md §3.1）。
- */
-export interface Endpoint<
-  Req extends DescMessage = DescMessage,
-  Res extends DescMessage = DescMessage,
-> {
-  readonly path: string;
-  readonly method: HttpMethod;
-  readonly req: Req;
-  readonly res: Res;
-  readonly format: ApiFormat;
-}
-
-export interface ApiErrorInit {
-  httpStatus: number;
-  code: string;
-  message: string;
-  requestId: string;
-}
-
-/** 非 2xx 响应与契约错误的统一错误体（docs/接口文档.md §1.5）。 */
-export class ApiError extends Error {
-  readonly httpStatus: number;
-
-  readonly code: string;
-
-  readonly requestId: string;
-
-  constructor(init: ApiErrorInit) {
-    super(init.message);
-    this.name = 'ApiError';
-    this.httpStatus = init.httpStatus;
-    this.code = init.code;
-    this.requestId = init.requestId;
-  }
-}
+// ApiError 与端点描述类型（ApiFormat / HttpMethod / Endpoint / ApiErrorInit）
+// 已分别迁入 errors.ts / endpoints.ts；此处 re-export 保持
+// 既有 import 路径兼容。
+export { ApiError };
+export type { ApiErrorInit } from './errors';
+export type { ApiFormat, Endpoint, HttpMethod } from './endpoints';
 
 export interface RequestOptions {
   signal?: AbortSignal;

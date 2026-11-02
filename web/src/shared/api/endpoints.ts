@@ -1,0 +1,246 @@
+/**
+ * 端点表（docs/前端架构.md §3.1 行 268、§9 行 642）：
+ * 每条端点 `{ path, method, req, res, format }`，`format` 是每端点显式声明的常量，
+ * 不做运行时探测；改一条即可让该端点走 Protobuf。消息 schema 一律取自
+ * `web/src/gen/proto` 生成产物，禁止手写镜像结构（§9 第 15 条）。
+ *
+ * 入表口径：请求与响应消息均有生成产物的端点才入表；
+ * 请求 / 响应产物缺失的端点待后续补齐。
+ */
+
+import type { DescMessage } from '@bufbuild/protobuf';
+import { EnvelopeSchema } from '../../gen/proto/api/sso/envelope_pb';
+import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/login_pb';
+import { RegisterRequestSchema } from '../../gen/proto/api/sso/register_pb';
+import { ResetRequestSchema } from '../../gen/proto/api/sso/reset_pb';
+import { LoginOauthRequestSchema } from '../../gen/proto/api/sso/oauth_pb';
+import {
+  QrcodeRequestSchema,
+  QrcodeResponseSchema,
+} from '../../gen/proto/api/sso/ticket_pb';
+import {
+  AvatarCommitRequestSchema,
+  AvatarPresignRequestSchema,
+  AvatarPresignResponseSchema,
+  AvatarResponseSchema,
+  OkResponseSchema,
+  UpdateProfileRequestSchema,
+} from '../../gen/proto/api/account/profile_pb';
+import {
+  EmailBindRequestSchema,
+  PhoneBindRequestSchema,
+} from '../../gen/proto/api/account/security_pb';
+import {
+  TotpChallengeResponseSchema,
+  TotpRequestSchema,
+  TotpVerifyResponseSchema,
+} from '../../gen/proto/api/account/mfa_pb';
+import {
+  WebauthnChallengeResponseSchema,
+  WebauthnRegisterRequestSchema,
+} from '../../gen/proto/api/account/webauthn_pb';
+
+/** 响应 / 请求编码，见 docs/接口文档.md §1.1.1。 */
+export type ApiFormat = 'json' | 'binary';
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/**
+ * 端点描述（自 http.ts 迁入）：`format` 是每端点显式声明的常量，
+ * 不做运行时探测（docs/前端架构.md §3.1 行 268）。
+ */
+export interface Endpoint<
+  Req extends DescMessage = DescMessage,
+  Res extends DescMessage = DescMessage,
+> {
+  readonly path: string;
+  readonly method: HttpMethod;
+  readonly req: Req;
+  readonly res: Res;
+  readonly format: ApiFormat;
+}
+
+// ---------------------------------------------------------------------------
+// /api/sso/**
+// ---------------------------------------------------------------------------
+
+/** POST /api/sso/login/default —— 统一提交端点，flow=login（docs/接口文档.md §2.2），响应为统一信封（§1.3）。 */
+export const ssoLoginDefault: Endpoint<
+  typeof LoginDefaultRequestSchema,
+  typeof EnvelopeSchema
+> = {
+  path: '/api/sso/login/default',
+  method: 'POST',
+  req: LoginDefaultRequestSchema,
+  res: EnvelopeSchema,
+  format: 'json',
+};
+
+/** POST /api/sso/register —— 注册，flow=register（docs/接口文档.md §2.3），响应复用统一信封。 */
+export const ssoRegister: Endpoint<
+  typeof RegisterRequestSchema,
+  typeof EnvelopeSchema
+> = {
+  path: '/api/sso/register',
+  method: 'POST',
+  req: RegisterRequestSchema,
+  res: EnvelopeSchema,
+  format: 'json',
+};
+
+/** POST /api/sso/reset-password —— 重置密码，flow=reset（docs/接口文档.md §2.4），响应复用统一信封。 */
+export const ssoResetPassword: Endpoint<
+  typeof ResetRequestSchema,
+  typeof EnvelopeSchema
+> = {
+  path: '/api/sso/reset-password',
+  method: 'POST',
+  req: ResetRequestSchema,
+  res: EnvelopeSchema,
+  format: 'json',
+};
+
+/**
+ * POST /api/sso/login/oauth —— 三方登录统一入口（docs/接口文档.md §2.7.4）。
+ * 本工程（浏览器，不带 ticket_id）场景响应为统一信封；带 ticket_id 的小程序写入
+ * 与 stage=scanned 应答为 TicketStatus / TicketStatusResponse，由宿主端消费，不入本表。
+ */
+export const ssoLoginOauth: Endpoint<
+  typeof LoginOauthRequestSchema,
+  typeof EnvelopeSchema
+> = {
+  path: '/api/sso/login/oauth',
+  method: 'POST',
+  req: LoginOauthRequestSchema,
+  res: EnvelopeSchema,
+  format: 'json',
+};
+
+/** POST /api/sso/qrcode —— 拉取小程序码（docs/接口文档.md §2.8），登录与绑定共用，靠 scene 区分。 */
+export const ssoQrcode: Endpoint<
+  typeof QrcodeRequestSchema,
+  typeof QrcodeResponseSchema
+> = {
+  path: '/api/sso/qrcode',
+  method: 'POST',
+  req: QrcodeRequestSchema,
+  res: QrcodeResponseSchema,
+  format: 'json',
+};
+
+// ---------------------------------------------------------------------------
+// /api/account/**（docs/接口文档.md §3，鉴权 al_session）
+// ---------------------------------------------------------------------------
+
+/** POST /api/account/profile —— 修改资料（docs/接口文档.md §3.2 行 794），成功返回 {ok:true}。 */
+export const accountUpdateProfile: Endpoint<
+  typeof UpdateProfileRequestSchema,
+  typeof OkResponseSchema
+> = {
+  path: '/api/account/profile',
+  method: 'POST',
+  req: UpdateProfileRequestSchema,
+  res: OkResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/avatar/presign —— direct 模式取预签名（docs/接口文档.md §3.2 行 796、§10.8）。 */
+export const accountAvatarPresign: Endpoint<
+  typeof AvatarPresignRequestSchema,
+  typeof AvatarPresignResponseSchema
+> = {
+  path: '/api/account/avatar/presign',
+  method: 'POST',
+  req: AvatarPresignRequestSchema,
+  res: AvatarPresignResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/avatar/commit —— direct 模式确认上传（docs/接口文档.md §3.2 行 797），返回 {url}。 */
+export const accountAvatarCommit: Endpoint<
+  typeof AvatarCommitRequestSchema,
+  typeof AvatarResponseSchema
+> = {
+  path: '/api/account/avatar/commit',
+  method: 'POST',
+  req: AvatarCommitRequestSchema,
+  res: AvatarResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/phone/bind —— 手机号绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功返回 {ok:true}。 */
+export const accountPhoneBind: Endpoint<
+  typeof PhoneBindRequestSchema,
+  typeof OkResponseSchema
+> = {
+  path: '/api/account/phone/bind',
+  method: 'POST',
+  req: PhoneBindRequestSchema,
+  res: OkResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/email/bind —— 邮箱绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功返回 {ok:true}。 */
+export const accountEmailBind: Endpoint<
+  typeof EmailBindRequestSchema,
+  typeof OkResponseSchema
+> = {
+  path: '/api/account/email/bind',
+  method: 'POST',
+  req: EmailBindRequestSchema,
+  res: OkResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/mfa/totp（step=challenge）—— 取 TOTP 绑定密钥与二维码内容（docs/接口文档.md §3.5 行 879）。 */
+export const accountMfaTotpChallenge: Endpoint<
+  typeof TotpRequestSchema,
+  typeof TotpChallengeResponseSchema
+> = {
+  path: '/api/account/mfa/totp',
+  method: 'POST',
+  req: TotpRequestSchema,
+  res: TotpChallengeResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/mfa/totp（step=verify）—— 验证一次后生效并下发恢复码（docs/接口文档.md §3.5 行 880）。 */
+export const accountMfaTotpVerify: Endpoint<
+  typeof TotpRequestSchema,
+  typeof TotpVerifyResponseSchema
+> = {
+  path: '/api/account/mfa/totp',
+  method: 'POST',
+  req: TotpRequestSchema,
+  res: TotpVerifyResponseSchema,
+  format: 'json',
+};
+
+/** POST /api/account/webauthn（step=challenge）—— 取注册挑战（docs/接口文档.md §3.6 行 889、894-901），要求 resident key。 */
+export const accountWebauthnChallenge: Endpoint<
+  typeof WebauthnRegisterRequestSchema,
+  typeof WebauthnChallengeResponseSchema
+> = {
+  path: '/api/account/webauthn',
+  method: 'POST',
+  req: WebauthnRegisterRequestSchema,
+  res: WebauthnChallengeResponseSchema,
+  format: 'json',
+};
+
+/** 全部端点条目汇总（键为条目名），供遍历与测试使用。 */
+export const endpoints = {
+  ssoLoginDefault,
+  ssoRegister,
+  ssoResetPassword,
+  ssoLoginOauth,
+  ssoQrcode,
+  accountUpdateProfile,
+  accountAvatarPresign,
+  accountAvatarCommit,
+  accountPhoneBind,
+  accountEmailBind,
+  accountMfaTotpChallenge,
+  accountMfaTotpVerify,
+  accountWebauthnChallenge,
+} as const;
