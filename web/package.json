@@ -14,11 +14,13 @@
     "node": "^22.18.0 || >=24.3.0"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
     "@modern-js/runtime": "3.11.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.16.0",
     "@modern-js/app-tools": "3.11.0",
     "@modern-js/tsconfig": "3.11.0",
     "typescript": "~5.7.3",
