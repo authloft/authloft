@@ -5,20 +5,22 @@
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { CaptchaPayload } from "./login_pb";
+import { file_api_sso_login } from "./login_pb";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/sso/envelope.proto.
  */
 export const file_api_sso_envelope: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL2VudmVsb3BlLnByb3RvEgdhcGkuc3NvIp8CCghFbnZlbG9wZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJAoJbmV4dF9zdGVwGAMgASgLMhEuYXBpLnNzby5OZXh0U3RlcBIZCgNtZmEYBCABKAsyDC5hcGkuc3NvLk1mYRIhCgdiaW5kaW5nGAUgASgLMhAuYXBpLnNzby5CaW5kaW5nEiAKBWVycm9yGAYgASgLMhEuYXBpLnNzby5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAcgASgJEhUKDXNlc3Npb25fdG9rZW4YCCABKAkSFwoPc3luY19jb29raWVfdXJsGAkgASgJEhMKC3JlZGlyZWN0X3RvGAogASgJEg8KB3VzZXJfaWQYCyABKAMitAEKCE5leHRTdGVwEgwKBGtpbmQYASABKAkSDgoGbWV0aG9kGAIgASgJEhAKCGVuZHBvaW50GAMgASgJEh4KBmZpZWxkcxgEIAMoCzIOLmFwaS5zc28uRmllbGQSEwoLcmV0cnlfYWZ0ZXIYBSABKAMSEgoKZXhwaXJlc19pbhgGIAEoAxIvCg5jaGFsbGVuZ2VfZGF0YRgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiagoFRmllbGQSDAoEbmFtZRgBIAEoCRINCgVsYWJlbBgCIAEoCRIMCgR0eXBlGAMgASgJEhAKCHJlcXVpcmVkGAQgASgIEg4KBmxlbmd0aBgFIAEoAxIUCgxtYXhfYXR0ZW1wdHMYBiABKAMiPgoDTWZhEhIKCmV4cGlyZXNfaW4YASABKAMSIwoHbWV0aG9kcxgCIAMoCzISLmFwaS5zc28uTWZhTWV0aG9kIpkBCglNZmFNZXRob2QSDgoGbWV0aG9kGAEgASgJEg0KBXN0ZXBzGAIgAygJEh4KBmZpZWxkcxgDIAMoCzIOLmFwaS5zc28uRmllbGQSFQoNbWFza2VkX3RhcmdldBgEIAEoCRIoChBjaGFsbGVuZ2VfZmllbGRzGAUgAygLMg4uYXBpLnNzby5GaWVsZBIMCgRoaW50GAYgASgJInEKB0JpbmRpbmcSFAoMcHJvdmlkZXJfa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIUCgxhbGxvd19zaWdudXAYAyABKAgSEAoIbmlja25hbWUYBCABKAkSEgoKYXZhdGFyX3VybBgFIAEoCSKEAQoIU3NvRXJyb3ISFAoHbWVzc2FnZRgBIAEoCUgAiAEBEhgKC3JldHJ5X2FmdGVyGAIgASgDSAGIAQESGgoNYXR0ZW1wdHNfbGVmdBgDIAEoA0gCiAEBQgoKCF9tZXNzYWdlQg4KDF9yZXRyeV9hZnRlckIQCg5fYXR0ZW1wdHNfbGVmdEIdWhthdXRobG9mdC9nZW4vZ28vYXBpL3NzbzthcGliBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL2VudmVsb3BlLnByb3RvEgdhcGkuc3NvIrUDCghFbnZlbG9wZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJAoJbmV4dF9zdGVwGAMgASgLMhEuYXBpLnNzby5OZXh0U3RlcBIZCgNtZmEYBCABKAsyDC5hcGkuc3NvLk1mYRIhCgdiaW5kaW5nGAUgASgLMhAuYXBpLnNzby5CaW5kaW5nEiAKBWVycm9yGAYgASgLMhEuYXBpLnNzby5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAcgASgJEhUKDXNlc3Npb25fdG9rZW4YCCABKAkSFwoPc3luY19jb29raWVfdXJsGAkgASgJEhMKC3JlZGlyZWN0X3RvGAogASgJEg8KB3VzZXJfaWQYCyABKAMSJQoGdGlja2V0GAwgASgLMhUuYXBpLnNzby5UaWNrZXRTdGF0dXMSIAoFbG9naW4YDSABKAsyES5hcGkuc3NvLkVudmVsb3BlEiEKBGJpbmQYDiABKAsyEy5hcGkuc3NvLkJpbmRSZXN1bHQSKAoHY2FwdGNoYRgPIAEoCzIXLmFwaS5zc28uQ2FwdGNoYVBheWxvYWQitAEKCE5leHRTdGVwEgwKBGtpbmQYASABKAkSDgoGbWV0aG9kGAIgASgJEhAKCGVuZHBvaW50GAMgASgJEh4KBmZpZWxkcxgEIAMoCzIOLmFwaS5zc28uRmllbGQSEwoLcmV0cnlfYWZ0ZXIYBSABKAMSEgoKZXhwaXJlc19pbhgGIAEoAxIvCg5jaGFsbGVuZ2VfZGF0YRgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiagoFRmllbGQSDAoEbmFtZRgBIAEoCRINCgVsYWJlbBgCIAEoCRIMCgR0eXBlGAMgASgJEhAKCHJlcXVpcmVkGAQgASgIEg4KBmxlbmd0aBgFIAEoAxIUCgxtYXhfYXR0ZW1wdHMYBiABKAMiPgoDTWZhEhIKCmV4cGlyZXNfaW4YASABKAMSIwoHbWV0aG9kcxgCIAMoCzISLmFwaS5zc28uTWZhTWV0aG9kIpkBCglNZmFNZXRob2QSDgoGbWV0aG9kGAEgASgJEg0KBXN0ZXBzGAIgAygJEh4KBmZpZWxkcxgDIAMoCzIOLmFwaS5zc28uRmllbGQSFQoNbWFza2VkX3RhcmdldBgEIAEoCRIoChBjaGFsbGVuZ2VfZmllbGRzGAUgAygLMg4uYXBpLnNzby5GaWVsZBIMCgRoaW50GAYgASgJInEKB0JpbmRpbmcSFAoMcHJvdmlkZXJfa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIUCgxhbGxvd19zaWdudXAYAyABKAgSEAoIbmlja25hbWUYBCABKAkSEgoKYXZhdGFyX3VybBgFIAEoCSKEAQoIU3NvRXJyb3ISFAoHbWVzc2FnZRgBIAEoCUgAiAEBEhgKC3JldHJ5X2FmdGVyGAIgASgDSAGIAQESGgoNYXR0ZW1wdHNfbGVmdBgDIAEoA0gCiAEBQgoKCF9tZXNzYWdlQg4KDF9yZXRyeV9hZnRlckIQCg5fYXR0ZW1wdHNfbGVmdCIxCgxUaWNrZXRTdGF0dXMSDgoGc3RhdHVzGAEgASgJEhEKCXRpY2tldF9pZBgCIAEoCSJECgpCaW5kUmVzdWx0EgoKAm9rGAEgASgIEhQKDHByb3ZpZGVyX2tleRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAlCHVobYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc287YXBpYgZwcm90bzM", [file_google_protobuf_struct, file_api_sso_login]);
 
 /**
  * Envelope 是完成登录的五个接口共用的统一响应信封
  * （docs/接口文档.md §1.3，行 103-146；接口清单见行 105）。
  * 字段名与 §1.3 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1723）。
- * 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156-157 的 captcha
- * 四个可选嵌套字段按任务范围暂不定义，后续按 §12.8 只增字段。
+ * 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156 的 captcha
+ * 四个可选嵌套字段已按 §12.8 只增字段追加，既有字段与编号不变。
  *
  * @generated from message api.sso.Envelope
  */
@@ -99,6 +101,34 @@ export type Envelope = Message<"api.sso.Envelope"> & {
    * @generated from field: int64 user_id = 11;
    */
   userId: bigint;
+
+  /**
+   * 可选。仅两条扫码轮询接口出现，结构为 {status, ticket_id}（§1.3 行 140、153）。
+   *
+   * @generated from field: api.sso.TicketStatus ticket = 12;
+   */
+  ticket?: TicketStatus | undefined;
+
+  /**
+   * 可选。仅 GET /api/sso/login/ticket（scene=login）结果就绪时出现，值为本节同一信封（§1.3 行 141、154）。
+   *
+   * @generated from field: api.sso.Envelope login = 13;
+   */
+  login?: Envelope | undefined;
+
+  /**
+   * 可选。仅 GET /api/account/thirdparty/ticket 绑定完成时出现（§1.3 行 142、155）。
+   *
+   * @generated from field: api.sso.BindResult bind = 14;
+   */
+  bind?: BindResult | undefined;
+
+  /**
+   * 可选。仅 status=captcha_required / captcha_invalid 出现，结构见 §2.5（§1.3 行 156）。
+   *
+   * @generated from field: api.sso.CaptchaPayload captcha = 15;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**
@@ -396,4 +426,70 @@ export type SsoError = Message<"api.sso.SsoError"> & {
  */
 export const SsoErrorSchema: GenMessage<SsoError> = /*@__PURE__*/
   messageDesc(file_api_sso_envelope, 6);
+
+/**
+ * TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
+ * 用于 Envelope.ticket、扫码轮询响应的顶层 ticket 与带 ticket_id 的写入应答
+ * （§1.3 行 140、153；§2.7.4 行 610、619、624-626；§2.8 行 692-704）。
+ *
+ * @generated from message api.sso.TicketStatus
+ */
+export type TicketStatus = Message<"api.sso.TicketStatus"> & {
+  /**
+   * 票据状态，取值 pending｜scanned｜success｜expired｜failed（§2.8 行 692、696-704）；
+   * 跨版本可能新增，用 string 承载（§12.9 行 1726）。
+   *
+   * @generated from field: string status = 1;
+   */
+  status: string;
+
+  /**
+   * 拉码时下发的 ticket_id（§1.3 行 153、§2.8 行 696-704）。
+   *
+   * @generated from field: string ticket_id = 2;
+   */
+  ticketId: string;
+};
+
+/**
+ * Describes the message api.sso.TicketStatus.
+ * Use `create(TicketStatusSchema)` to create a new message.
+ */
+export const TicketStatusSchema: GenMessage<TicketStatus> = /*@__PURE__*/
+  messageDesc(file_api_sso_envelope, 7);
+
+/**
+ * BindResult 是扫码绑定完成应答（§1.3 行 142、155；§3.7.1 B）。
+ *
+ * @generated from message api.sso.BindResult
+ */
+export type BindResult = Message<"api.sso.BindResult"> & {
+  /**
+   * 绑定成功标记（§1.3 行 142）。
+   *
+   * @generated from field: bool ok = 1;
+   */
+  ok: boolean;
+
+  /**
+   * 扫码类 Provider 标识（§1.3 行 142）。
+   *
+   * @generated from field: string provider_key = 2;
+   */
+  providerKey: string;
+
+  /**
+   * Provider 展示名（§1.3 行 142）。
+   *
+   * @generated from field: string display_name = 3;
+   */
+  displayName: string;
+};
+
+/**
+ * Describes the message api.sso.BindResult.
+ * Use `create(BindResultSchema)` to create a new message.
+ */
+export const BindResultSchema: GenMessage<BindResult> = /*@__PURE__*/
+  messageDesc(file_api_sso_envelope, 8);
 

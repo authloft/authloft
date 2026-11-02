@@ -3,6 +3,9 @@ syntax = "proto3";
 package api.sso;
 
 import "google/protobuf/struct.proto";
+// 复用同包人机校验统一提交格式（docs/接口文档.md §2.5 行 475-484）：
+// CaptchaPayload 定义在 login.proto，本文件只引用不复制（§12.9 行 1722 单一结构源）。
+import "api/sso/login.proto";
 
 // Go 包名沿用 api.common 的写法（server/proto/api/common/error.proto）：
 // 目录 api/sso 对应包名 api.sso（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
@@ -11,8 +14,8 @@ option go_package = "authloft/gen/go/api/sso;api";
 // Envelope 是完成登录的五个接口共用的统一响应信封
 // （docs/接口文档.md §1.3，行 103-146；接口清单见行 105）。
 // 字段名与 §1.3 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1723）。
-// 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156-157 的 captcha
-// 四个可选嵌套字段按任务范围暂不定义，后续按 §12.8 只增字段。
+// 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156 的 captcha
+// 四个可选嵌套字段已按 §12.8 只增字段追加，既有字段与编号不变。
 message Envelope {
   // 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3 行 109）。
   string login_token = 1;
@@ -36,6 +39,14 @@ message Envelope {
   string redirect_to = 10;
   // 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 139、§12.9 行 1724、§1.12 行 318）。
   int64 user_id = 11;
+  // 可选。仅两条扫码轮询接口出现，结构为 {status, ticket_id}（§1.3 行 140、153）。
+  TicketStatus ticket = 12;
+  // 可选。仅 GET /api/sso/login/ticket（scene=login）结果就绪时出现，值为本节同一信封（§1.3 行 141、154）。
+  Envelope login = 13;
+  // 可选。仅 GET /api/account/thirdparty/ticket 绑定完成时出现（§1.3 行 142、155）。
+  BindResult bind = 14;
+  // 可选。仅 status=captcha_required / captcha_invalid 出现，结构见 §2.5（§1.3 行 156）。
+  CaptchaPayload captcha = 15;
 }
 
 // NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 111-119）。
@@ -120,4 +131,25 @@ message SsoError {
   optional int64 retry_after = 2;
   // 验证码剩余尝试次数，可省略；JSON 为十进制字符串（§1.3 行 152、§1.12 行 318）。
   optional int64 attempts_left = 3;
+}
+
+// TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
+// 用于 Envelope.ticket、扫码轮询响应的顶层 ticket 与带 ticket_id 的写入应答
+// （§1.3 行 140、153；§2.7.4 行 610、619、624-626；§2.8 行 692-704）。
+message TicketStatus {
+  // 票据状态，取值 pending｜scanned｜success｜expired｜failed（§2.8 行 692、696-704）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1726）。
+  string status = 1;
+  // 拉码时下发的 ticket_id（§1.3 行 153、§2.8 行 696-704）。
+  string ticket_id = 2;
+}
+
+// BindResult 是扫码绑定完成应答（§1.3 行 142、155；§3.7.1 B）。
+message BindResult {
+  // 绑定成功标记（§1.3 行 142）。
+  bool ok = 1;
+  // 扫码类 Provider 标识（§1.3 行 142）。
+  string provider_key = 2;
+  // Provider 展示名（§1.3 行 142）。
+  string display_name = 3;
 }

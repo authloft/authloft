@@ -25,8 +25,8 @@ const (
 // Envelope 是完成登录的五个接口共用的统一响应信封
 // （docs/接口文档.md §1.3，行 103-146；接口清单见行 105）。
 // 字段名与 §1.3 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1723）。
-// 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156-157 的 captcha
-// 四个可选嵌套字段按任务范围暂不定义，后续按 §12.8 只增字段。
+// 范围：§1.3 行 140-142 的 ticket/login/bind 与行 156 的 captcha
+// 四个可选嵌套字段已按 §12.8 只增字段追加，既有字段与编号不变。
 type Envelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3 行 109）。
@@ -50,7 +50,15 @@ type Envelope struct {
 	// status=success 时的最终跳转地址（§1.3 行 138）。
 	RedirectTo string `protobuf:"bytes,10,opt,name=redirect_to,json=redirectTo,proto3" json:"redirect_to,omitempty"`
 	// 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 139、§12.9 行 1724、§1.12 行 318）。
-	UserId        int64 `protobuf:"varint,11,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	UserId int64 `protobuf:"varint,11,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// 可选。仅两条扫码轮询接口出现，结构为 {status, ticket_id}（§1.3 行 140、153）。
+	Ticket *TicketStatus `protobuf:"bytes,12,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// 可选。仅 GET /api/sso/login/ticket（scene=login）结果就绪时出现，值为本节同一信封（§1.3 行 141、154）。
+	Login *Envelope `protobuf:"bytes,13,opt,name=login,proto3" json:"login,omitempty"`
+	// 可选。仅 GET /api/account/thirdparty/ticket 绑定完成时出现（§1.3 行 142、155）。
+	Bind *BindResult `protobuf:"bytes,14,opt,name=bind,proto3" json:"bind,omitempty"`
+	// 可选。仅 status=captcha_required / captcha_invalid 出现，结构见 §2.5（§1.3 行 156）。
+	Captcha       *CaptchaPayload `protobuf:"bytes,15,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -160,6 +168,34 @@ func (x *Envelope) GetUserId() int64 {
 		return x.UserId
 	}
 	return 0
+}
+
+func (x *Envelope) GetTicket() *TicketStatus {
+	if x != nil {
+		return x.Ticket
+	}
+	return nil
+}
+
+func (x *Envelope) GetLogin() *Envelope {
+	if x != nil {
+		return x.Login
+	}
+	return nil
+}
+
+func (x *Envelope) GetBind() *BindResult {
+	if x != nil {
+		return x.Bind
+	}
+	return nil
+}
+
+func (x *Envelope) GetCaptcha() *CaptchaPayload {
+	if x != nil {
+		return x.Captcha
+	}
+	return nil
 }
 
 // NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 111-119）。
@@ -647,11 +683,133 @@ func (x *SsoError) GetAttemptsLeft() int64 {
 	return 0
 }
 
+// TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
+// 用于 Envelope.ticket、扫码轮询响应的顶层 ticket 与带 ticket_id 的写入应答
+// （§1.3 行 140、153；§2.7.4 行 610、619、624-626；§2.8 行 692-704）。
+type TicketStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 票据状态，取值 pending｜scanned｜success｜expired｜failed（§2.8 行 692、696-704）；
+	// 跨版本可能新增，用 string 承载（§12.9 行 1726）。
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// 拉码时下发的 ticket_id（§1.3 行 153、§2.8 行 696-704）。
+	TicketId      string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TicketStatus) Reset() {
+	*x = TicketStatus{}
+	mi := &file_api_sso_envelope_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TicketStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TicketStatus) ProtoMessage() {}
+
+func (x *TicketStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_api_sso_envelope_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TicketStatus.ProtoReflect.Descriptor instead.
+func (*TicketStatus) Descriptor() ([]byte, []int) {
+	return file_api_sso_envelope_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TicketStatus) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *TicketStatus) GetTicketId() string {
+	if x != nil {
+		return x.TicketId
+	}
+	return ""
+}
+
+// BindResult 是扫码绑定完成应答（§1.3 行 142、155；§3.7.1 B）。
+type BindResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 绑定成功标记（§1.3 行 142）。
+	Ok bool `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// 扫码类 Provider 标识（§1.3 行 142）。
+	ProviderKey string `protobuf:"bytes,2,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
+	// Provider 展示名（§1.3 行 142）。
+	DisplayName   string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindResult) Reset() {
+	*x = BindResult{}
+	mi := &file_api_sso_envelope_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindResult) ProtoMessage() {}
+
+func (x *BindResult) ProtoReflect() protoreflect.Message {
+	mi := &file_api_sso_envelope_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindResult.ProtoReflect.Descriptor instead.
+func (*BindResult) Descriptor() ([]byte, []int) {
+	return file_api_sso_envelope_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *BindResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *BindResult) GetProviderKey() string {
+	if x != nil {
+		return x.ProviderKey
+	}
+	return ""
+}
+
+func (x *BindResult) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
 var File_api_sso_envelope_proto protoreflect.FileDescriptor
 
 const file_api_sso_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/sso/envelope.proto\x12\aapi.sso\x1a\x1cgoogle/protobuf/struct.proto\"\x8e\x03\n" +
+	"\x16api/sso/envelope.proto\x12\aapi.sso\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13api/sso/login.proto\"\xc2\x04\n" +
 	"\bEnvelope\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
@@ -667,7 +825,11 @@ const file_api_sso_envelope_proto_rawDesc = "" +
 	"\vredirect_to\x18\n" +
 	" \x01(\tR\n" +
 	"redirectTo\x12\x17\n" +
-	"\auser_id\x18\v \x01(\x03R\x06userId\"\xfa\x01\n" +
+	"\auser_id\x18\v \x01(\x03R\x06userId\x12-\n" +
+	"\x06ticket\x18\f \x01(\v2\x15.api.sso.TicketStatusR\x06ticket\x12'\n" +
+	"\x05login\x18\r \x01(\v2\x11.api.sso.EnvelopeR\x05login\x12'\n" +
+	"\x04bind\x18\x0e \x01(\v2\x13.api.sso.BindResultR\x04bind\x121\n" +
+	"\acaptcha\x18\x0f \x01(\v2\x17.api.sso.CaptchaPayloadR\acaptcha\"\xfa\x01\n" +
 	"\bNextStep\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1a\n" +
@@ -711,7 +873,15 @@ const file_api_sso_envelope_proto_rawDesc = "" +
 	"\n" +
 	"\b_messageB\x0e\n" +
 	"\f_retry_afterB\x10\n" +
-	"\x0e_attempts_leftB\x1dZ\x1bauthloft/gen/go/api/sso;apib\x06proto3"
+	"\x0e_attempts_left\"C\n" +
+	"\fTicketStatus\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1b\n" +
+	"\tticket_id\x18\x02 \x01(\tR\bticketId\"b\n" +
+	"\n" +
+	"BindResult\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12!\n" +
+	"\fprovider_key\x18\x02 \x01(\tR\vproviderKey\x12!\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayNameB\x1dZ\x1bauthloft/gen/go/api/sso;apib\x06proto3"
 
 var (
 	file_api_sso_envelope_proto_rawDescOnce sync.Once
@@ -725,7 +895,7 @@ func file_api_sso_envelope_proto_rawDescGZIP() []byte {
 	return file_api_sso_envelope_proto_rawDescData
 }
 
-var file_api_sso_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_api_sso_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_api_sso_envelope_proto_goTypes = []any{
 	(*Envelope)(nil),        // 0: api.sso.Envelope
 	(*NextStep)(nil),        // 1: api.sso.NextStep
@@ -734,23 +904,30 @@ var file_api_sso_envelope_proto_goTypes = []any{
 	(*MfaMethod)(nil),       // 4: api.sso.MfaMethod
 	(*Binding)(nil),         // 5: api.sso.Binding
 	(*SsoError)(nil),        // 6: api.sso.SsoError
-	(*structpb.Struct)(nil), // 7: google.protobuf.Struct
+	(*TicketStatus)(nil),    // 7: api.sso.TicketStatus
+	(*BindResult)(nil),      // 8: api.sso.BindResult
+	(*CaptchaPayload)(nil),  // 9: api.sso.CaptchaPayload
+	(*structpb.Struct)(nil), // 10: google.protobuf.Struct
 }
 var file_api_sso_envelope_proto_depIdxs = []int32{
-	1, // 0: api.sso.Envelope.next_step:type_name -> api.sso.NextStep
-	3, // 1: api.sso.Envelope.mfa:type_name -> api.sso.Mfa
-	5, // 2: api.sso.Envelope.binding:type_name -> api.sso.Binding
-	6, // 3: api.sso.Envelope.error:type_name -> api.sso.SsoError
-	2, // 4: api.sso.NextStep.fields:type_name -> api.sso.Field
-	7, // 5: api.sso.NextStep.challenge_data:type_name -> google.protobuf.Struct
-	4, // 6: api.sso.Mfa.methods:type_name -> api.sso.MfaMethod
-	2, // 7: api.sso.MfaMethod.fields:type_name -> api.sso.Field
-	2, // 8: api.sso.MfaMethod.challenge_fields:type_name -> api.sso.Field
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	1,  // 0: api.sso.Envelope.next_step:type_name -> api.sso.NextStep
+	3,  // 1: api.sso.Envelope.mfa:type_name -> api.sso.Mfa
+	5,  // 2: api.sso.Envelope.binding:type_name -> api.sso.Binding
+	6,  // 3: api.sso.Envelope.error:type_name -> api.sso.SsoError
+	7,  // 4: api.sso.Envelope.ticket:type_name -> api.sso.TicketStatus
+	0,  // 5: api.sso.Envelope.login:type_name -> api.sso.Envelope
+	8,  // 6: api.sso.Envelope.bind:type_name -> api.sso.BindResult
+	9,  // 7: api.sso.Envelope.captcha:type_name -> api.sso.CaptchaPayload
+	2,  // 8: api.sso.NextStep.fields:type_name -> api.sso.Field
+	10, // 9: api.sso.NextStep.challenge_data:type_name -> google.protobuf.Struct
+	4,  // 10: api.sso.Mfa.methods:type_name -> api.sso.MfaMethod
+	2,  // 11: api.sso.MfaMethod.fields:type_name -> api.sso.Field
+	2,  // 12: api.sso.MfaMethod.challenge_fields:type_name -> api.sso.Field
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_api_sso_envelope_proto_init() }
@@ -758,6 +935,7 @@ func file_api_sso_envelope_proto_init() {
 	if File_api_sso_envelope_proto != nil {
 		return
 	}
+	file_api_sso_login_proto_init()
 	file_api_sso_envelope_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -765,7 +943,7 @@ func file_api_sso_envelope_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_sso_envelope_proto_rawDesc), len(file_api_sso_envelope_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
