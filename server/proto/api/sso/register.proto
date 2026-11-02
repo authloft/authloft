@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package api.sso;
+
+import "google/protobuf/struct.proto";
+// 复用人机校验统一提交格式（docs/接口文档.md §2.5 行 475-484，两类 Provider 单一定义）：
+// CaptchaPayload 定义在同包的 login.proto，本文件只引用不复制（§12.9 行 1722 单一结构源）。
+import "api/sso/login.proto";
+
+// Go 包名沿用 api.common / api.sso envelope 的写法：
+// 目录 api/sso 对应包名 api.sso（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/sso;api";
+
+// RegisterRequest 是 `POST /api/sso/register` 的请求体
+// （docs/接口文档.md §2.3，行 416-433）。
+// 顶层字段与 §2.2 同构（行 418「与 2.2 同构，仅 flow=register」），字段名与 §2.2
+// 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1723）。
+// 响应复用本包 Envelope（§1.3 行 105 的共用清单含 /api/sso/register），故不定义 RegisterResponse。
+message RegisterRequest {
+  // 首次不带；后续必须带（内存变量回传）（§2.2 行 396，随「与 2.2 同构」引入，§2.3 行 418）。
+  string login_token = 1;
+  // 无 login_token 时必须带（§2.2 行 397，随同构引入，§2.3 行 418）；
+  // 跨版本可新增，用 string 承载（§12.9 行 1726）。
+  string method = 2;
+  // 取值 challenge｜verify｜set_password（§2.3 行 422-424；§2.2 行 398 已预留 set_password）；
+  // 同为跨版本可新增的取值，用 string 承载（§12.9 行 1726）。
+  string step = 3;
+  // 注册各 step 的字段，见 RegisterPayload（§2.3 行 422-426）。
+  RegisterPayload payload = 4;
+  // OIDC 授权上下文（§2.2 行 401，随同构引入，§2.3 行 418）：仅首次请求（尚无 login_token）
+  // 时回传；前端不解析其内部字段，与 Envelope.next_step.challenge_data 同口径用
+  // google.protobuf.Struct，不逐字段建模。
+  google.protobuf.Struct oidc = 5;
+}
+
+// RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 420-426）：
+// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1723）。
+// 字段集合当前与 LoginPayload（login.proto，§2.6 行 516-525）恰好相同，但口径来源不同
+// （本消息以 §2.3 为准），故在本文件各建：按 §12.8 / §12.9 只增不改，
+// 注册后续若需新增字段直接在本文件加号，不动已验收的 login.proto。
+message RegisterPayload {
+  // challenge 步：目标邮箱（§2.3 行 422），受 allow_signup_email 控制；与 phone 二选一。
+  string email = 1;
+  // challenge 步：目标手机号（§2.3 行 422），受 allow_signup_phone 控制；与 email 二选一。
+  string phone = 2;
+  // 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 475-484）：提交格式在 §2.5 单一定义、
+  // 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 422
+  // 「必须 captcha」）；用户名+密码直通入口从 set_password 直达（无 challenge / verify），
+  // 该步同样必填（§2.3 行 426）。
+  CaptchaPayload captcha = 3;
+  // verify 步：register 用途的验证码（§2.3 行 423）。
+  string code = 4;
+  // set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 424 唯一定义处），设置后不可改。
+  string username = 5;
+  // set_password 步：密码，须满足密码策略（§2.3 行 424、§5.6）。
+  string password = 6;
+}
