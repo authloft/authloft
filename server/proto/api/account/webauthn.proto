@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package api.account;
+
+import "google/protobuf/struct.proto";
+
+// Go 包名沿用 api.common / api.sso 的写法：
+// 目录 api/account 对应包名 api.account（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/account;api";
+
+// WebauthnCredential 是 GET /api/account/webauthn 列表项（§3.6 行 888）。
+message WebauthnCredential {
+  // 凭据记录主键，对应 user_credential_webauthn.id（《后端架构》§4 行 599）；路径 /webauthn/{id} 使用（§3.6 行 891-892）。
+  int64 id = 1;
+  // 凭据展示名（§3.6 行 888）。
+  string label = 2;
+  // 创建时间，Unix 秒（§3.6 行 888）。
+  int64 created_at = 3;
+  // 最近使用时间，Unix 秒（§3.6 行 888）。
+  int64 last_used_at = 4;
+  // 传输方式列表，如 internal｜hybrid（§3.6 行 888）。
+  repeated string transports = 5;
+  // 认证器 AAGUID（§3.6 行 888）。
+  string aaguid = 6;
+}
+
+// WebauthnListResponse 是 GET /api/account/webauthn 的响应（§3.6 行 888）。
+message WebauthnListResponse {
+  repeated WebauthnCredential items = 1;
+}
+
+// WebauthnRegisterRequest 是 POST /api/account/webauthn 的请求（§3.6 行 889-890）：
+// step=challenge 要求 resident key / 可发现凭据；step=verify 提交 {token, credential, label}。
+message WebauthnRegisterRequest {
+  // 取值 challenge｜verify（§3.6 行 889-890）；跨版本可新增，用 string 承载（§12.9 行 1726）。
+  string step = 1;
+  // verify：challenge 下发的独立原子 token（§3.6 行 890、行 898-904）。
+  string token = 2;
+  // verify：@simplewebauthn 断言对象原样提交，为任意 JSON 对象（§3.6 行 890）。
+  google.protobuf.Struct credential = 3;
+  // verify：凭据展示名（§3.6 行 890）。
+  string label = 4;
+}
+
+// WebauthnChallengeResponse 是 POST /api/account/webauthn（step=challenge）的响应（§3.6 行 894-901）。
+message WebauthnChallengeResponse {
+  // 一次性 token；复用 login_token 结构签发，但不可用于登录流程（§3.6 行 898、行 904）。
+  string token = 1;
+  // PublicKeyCredentialCreationOptions，任意 JSON 对象（§3.6 行 899）；
+  // 暂按 google.protobuf.Struct 实现，类型口径待架构师确认。
+  google.protobuf.Struct challenge_data = 2;
+  // 当前挑战有效期（秒），默认 120（§3.6 行 900、行 904）。
+  int64 expires_in = 3;
+}
+
+// WebauthnRenameRequest 是 POST /api/account/webauthn/{id} 的请求（§3.6 行 891）。
+// step=verify 注册成功、重命名与 DELETE /api/account/webauthn/{id} 的文档均未定义响应体，
+// 故不定义对应 Response。
+message WebauthnRenameRequest {
+  // 新展示名（§3.6 行 891）。
+  string label = 1;
+}
