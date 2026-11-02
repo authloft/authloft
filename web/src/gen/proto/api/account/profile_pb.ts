@@ -5,13 +5,15 @@
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { CaptchaConfig } from "../common/captcha_pb";
+import { file_api_common_captcha } from "../common/captcha_pb";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/account/profile.proto.
  */
 export const file_api_account_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvYWNjb3VudC9wcm9maWxlLnByb3RvEgthcGkuYWNjb3VudCJ5CgtVc2VyUHJvZmlsZRIOCgZnZW5kZXIYASABKAMSEAoIYmlydGhkYXkYAiABKAkSDgoGbG9jYWxlGAMgASgJEhAKCHRpbWV6b25lGAQgASgJEiYKBWV4dHJhGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCLCAgoPUHJvZmlsZVJlc3BvbnNlEgoKAmlkGAEgASgDEhAKCHVzZXJuYW1lGAIgASgJEhAKCG5pY2tuYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSDQoFcGhvbmUYBSABKAkSFgoOcGhvbmVfdmVyaWZpZWQYBiABKAMSDQoFZW1haWwYByABKAkSFgoOZW1haWxfdmVyaWZpZWQYCCABKAMSDgoGc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIpCgdwcm9maWxlGA8gASgLMhguYXBpLmFjY291bnQuVXNlclByb2ZpbGUiZwoUVXBkYXRlUHJvZmlsZVJlcXVlc3QSEAoIbmlja25hbWUYASABKAkSEgoKYXZhdGFyX3VybBgCIAEoCRIpCgdwcm9maWxlGAMgASgLMhguYXBpLmFjY291bnQuVXNlclByb2ZpbGUiGAoKT2tSZXNwb25zZRIKCgJvaxgBIAEoCCJLChJBdmF0YXJVcGxvYWRDb25maWcSDAoEbW9kZRgBIAEoCRIQCghtYXhfc2l6ZRgCIAEoAxIVCg1hbGxvd2VkX3R5cGVzGAMgAygJIkEKD01mYVBvbGljeU1ldGhvZBIOCgZmYWN0b3IYASABKAkSDwoHZW5hYmxlZBgCIAEoCBINCgVib3VuZBgDIAEoCCJ6CglNZmFQb2xpY3kSDwoHZW5hYmxlZBgBIAEoCBIQCghyZXF1aXJlZBgCIAEoCBIbChN0cnVzdGVkX2RldmljZV9kYXlzGAMgASgDEi0KB21ldGhvZHMYBCADKAsyHC5hcGkuYWNjb3VudC5NZmFQb2xpY3lNZXRob2QiRQoNQ2FwdGNoYUNvbmZpZxIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEdHlwZRgCIAEoCRIQCghzaXRlX2tleRgDIAEoCSK+AQoVQWNjb3VudENvbmZpZ1Jlc3BvbnNlEjYKDWF2YXRhcl91cGxvYWQYASABKAsyHy5hcGkuYWNjb3VudC5BdmF0YXJVcGxvYWRDb25maWcSKgoKbWZhX3BvbGljeRgCIAEoCzIWLmFwaS5hY2NvdW50Lk1mYVBvbGljeRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLmFjY291bnQuQ2FwdGNoYUNvbmZpZxIUCgxoYXNfcGFzc3dvcmQYBCABKAgiHQoOQXZhdGFyUmVzcG9uc2USCwoDdXJsGAEgASgJIkwKFEF2YXRhclByZXNpZ25SZXF1ZXN0EhAKCGZpbGVuYW1lGAEgASgJEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRIMCgRzaXplGAMgASgDIr4BChVBdmF0YXJQcmVzaWduUmVzcG9uc2USCwoDa2V5GAEgASgJEhIKCnVwbG9hZF91cmwYAiABKAkSQAoHaGVhZGVycxgDIAMoCzIvLmFwaS5hY2NvdW50LkF2YXRhclByZXNpZ25SZXNwb25zZS5IZWFkZXJzRW50cnkSEgoKZXhwaXJlc19pbhgEIAEoAxouCgxIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIiChNBdmF0YXJDb21taXRSZXF1ZXN0EgsKA2tleRgBIAEoCUIhWh9hdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQ7YXBpYgZwcm90bzM", [file_google_protobuf_struct]);
+  fileDesc("ChlhcGkvYWNjb3VudC9wcm9maWxlLnByb3RvEgthcGkuYWNjb3VudCJ5CgtVc2VyUHJvZmlsZRIOCgZnZW5kZXIYASABKAMSEAoIYmlydGhkYXkYAiABKAkSDgoGbG9jYWxlGAMgASgJEhAKCHRpbWV6b25lGAQgASgJEiYKBWV4dHJhGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCLCAgoPUHJvZmlsZVJlc3BvbnNlEgoKAmlkGAEgASgDEhAKCHVzZXJuYW1lGAIgASgJEhAKCG5pY2tuYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSDQoFcGhvbmUYBSABKAkSFgoOcGhvbmVfdmVyaWZpZWQYBiABKAMSDQoFZW1haWwYByABKAkSFgoOZW1haWxfdmVyaWZpZWQYCCABKAMSDgoGc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIpCgdwcm9maWxlGA8gASgLMhguYXBpLmFjY291bnQuVXNlclByb2ZpbGUiZwoUVXBkYXRlUHJvZmlsZVJlcXVlc3QSEAoIbmlja25hbWUYASABKAkSEgoKYXZhdGFyX3VybBgCIAEoCRIpCgdwcm9maWxlGAMgASgLMhguYXBpLmFjY291bnQuVXNlclByb2ZpbGUiGAoKT2tSZXNwb25zZRIKCgJvaxgBIAEoCCJLChJBdmF0YXJVcGxvYWRDb25maWcSDAoEbW9kZRgBIAEoCRIQCghtYXhfc2l6ZRgCIAEoAxIVCg1hbGxvd2VkX3R5cGVzGAMgAygJIkEKD01mYVBvbGljeU1ldGhvZBIOCgZmYWN0b3IYASABKAkSDwoHZW5hYmxlZBgCIAEoCBINCgVib3VuZBgDIAEoCCJ6CglNZmFQb2xpY3kSDwoHZW5hYmxlZBgBIAEoCBIQCghyZXF1aXJlZBgCIAEoCBIbChN0cnVzdGVkX2RldmljZV9kYXlzGAMgASgDEi0KB21ldGhvZHMYBCADKAsyHC5hcGkuYWNjb3VudC5NZmFQb2xpY3lNZXRob2QivQEKFUFjY291bnRDb25maWdSZXNwb25zZRI2Cg1hdmF0YXJfdXBsb2FkGAEgASgLMh8uYXBpLmFjY291bnQuQXZhdGFyVXBsb2FkQ29uZmlnEioKCm1mYV9wb2xpY3kYAiABKAsyFi5hcGkuYWNjb3VudC5NZmFQb2xpY3kSKgoHY2FwdGNoYRgDIAEoCzIZLmFwaS5jb21tb24uQ2FwdGNoYUNvbmZpZxIUCgxoYXNfcGFzc3dvcmQYBCABKAgiHQoOQXZhdGFyUmVzcG9uc2USCwoDdXJsGAEgASgJIkwKFEF2YXRhclByZXNpZ25SZXF1ZXN0EhAKCGZpbGVuYW1lGAEgASgJEhQKDGNvbnRlbnRfdHlwZRgCIAEoCRIMCgRzaXplGAMgASgDIr4BChVBdmF0YXJQcmVzaWduUmVzcG9uc2USCwoDa2V5GAEgASgJEhIKCnVwbG9hZF91cmwYAiABKAkSQAoHaGVhZGVycxgDIAMoCzIvLmFwaS5hY2NvdW50LkF2YXRhclByZXNpZ25SZXNwb25zZS5IZWFkZXJzRW50cnkSEgoKZXhwaXJlc19pbhgEIAEoAxouCgxIZWFkZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIiChNBdmF0YXJDb21taXRSZXF1ZXN0EgsKA2tleRgBIAEoCUIhWh9hdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQ7YXBpYgZwcm90bzM", [file_google_protobuf_struct, file_api_common_captcha]);
 
 /**
  * UserProfile 是 §3.1 行 767-771 的嵌套 profile 结构（对应 user_profile 表）：
@@ -360,44 +362,6 @@ export const MfaPolicySchema: GenMessage<MfaPolicy> = /*@__PURE__*/
   messageDesc(file_api_account_profile, 6);
 
 /**
- * CaptchaConfig 是 §2.5 行 452-462 的 captcha 配置对象：注入快照、GET /api/account/config
- * 与 captcha_required / captcha_invalid 响应三处同结构同字段名。
- * 它是公开配置视图（不含凭证），与提交格式 api.sso.CaptchaPayload（§2.5 行 475-484）字段不同，
- * 故不能复用 CaptchaPayload；captcha 提交格式仍跨包引用 api.sso.CaptchaPayload，不复制。
- *
- * @generated from message api.account.CaptchaConfig
- */
-export type CaptchaConfig = Message<"api.account.CaptchaConfig"> & {
-  /**
-   * 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5 行 460）。
-   *
-   * @generated from field: string provider_key = 1;
-   */
-  providerKey: string;
-
-  /**
-   * 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5 行 461）。
-   *
-   * @generated from field: string type = 2;
-   */
-  type: string;
-
-  /**
-   * 第三方站点 key；type=image 时为空串（§2.5 行 462）。
-   *
-   * @generated from field: string site_key = 3;
-   */
-  siteKey: string;
-};
-
-/**
- * Describes the message api.account.CaptchaConfig.
- * Use `create(CaptchaConfigSchema)` to create a new message.
- */
-export const CaptchaConfigSchema: GenMessage<CaptchaConfig> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 7);
-
-/**
  * AccountConfigResponse 是 GET /api/account/config 的响应（§3.2 行 792、§10.8 行 1544）。
  *
  * @generated from message api.account.AccountConfigResponse
@@ -418,9 +382,10 @@ export type AccountConfigResponse = Message<"api.account.AccountConfigResponse">
   mfaPolicy?: MfaPolicy | undefined;
 
   /**
-   * account entry 的 captcha 配置读取处（§3.2 行 792、§2.5 行 452-462）。
+   * account entry 的 captcha 配置读取处（§3.2 行 792、§2.5 行 452-462）；
+   * 跨包引用 api.common.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
    *
-   * @generated from field: api.account.CaptchaConfig captcha = 3;
+   * @generated from field: api.common.CaptchaConfig captcha = 3;
    */
   captcha?: CaptchaConfig | undefined;
 
@@ -437,7 +402,7 @@ export type AccountConfigResponse = Message<"api.account.AccountConfigResponse">
  * Use `create(AccountConfigResponseSchema)` to create a new message.
  */
 export const AccountConfigResponseSchema: GenMessage<AccountConfigResponse> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 8);
+  messageDesc(file_api_account_profile, 7);
 
 /**
  * AvatarResponse 是 POST /api/account/avatar（proxy 模式）与 POST /api/account/avatar/commit
@@ -459,7 +424,7 @@ export type AvatarResponse = Message<"api.account.AvatarResponse"> & {
  * Use `create(AvatarResponseSchema)` to create a new message.
  */
 export const AvatarResponseSchema: GenMessage<AvatarResponse> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 9);
+  messageDesc(file_api_account_profile, 8);
 
 /**
  * AvatarPresignRequest 是 POST /api/account/avatar/presign 的请求（§3.2 行 796、§10.8 行 1547）。
@@ -494,7 +459,7 @@ export type AvatarPresignRequest = Message<"api.account.AvatarPresignRequest"> &
  * Use `create(AvatarPresignRequestSchema)` to create a new message.
  */
 export const AvatarPresignRequestSchema: GenMessage<AvatarPresignRequest> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 10);
+  messageDesc(file_api_account_profile, 9);
 
 /**
  * AvatarPresignResponse 是 POST /api/account/avatar/presign 的响应（§3.2 行 796、§10.8 行 1547）：
@@ -537,7 +502,7 @@ export type AvatarPresignResponse = Message<"api.account.AvatarPresignResponse">
  * Use `create(AvatarPresignResponseSchema)` to create a new message.
  */
 export const AvatarPresignResponseSchema: GenMessage<AvatarPresignResponse> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 11);
+  messageDesc(file_api_account_profile, 10);
 
 /**
  * AvatarCommitRequest 是 POST /api/account/avatar/commit 的请求（§3.2 行 797、§10.8 行 1549）：
@@ -559,5 +524,5 @@ export type AvatarCommitRequest = Message<"api.account.AvatarCommitRequest"> & {
  * Use `create(AvatarCommitRequestSchema)` to create a new message.
  */
 export const AvatarCommitRequestSchema: GenMessage<AvatarCommitRequest> = /*@__PURE__*/
-  messageDesc(file_api_account_profile, 12);
+  messageDesc(file_api_account_profile, 11);
 

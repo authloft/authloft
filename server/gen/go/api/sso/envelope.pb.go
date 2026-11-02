@@ -7,6 +7,7 @@
 package api
 
 import (
+	common "authloft/gen/go/api/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -57,8 +58,10 @@ type Envelope struct {
 	Login *Envelope `protobuf:"bytes,13,opt,name=login,proto3" json:"login,omitempty"`
 	// 可选。仅 GET /api/account/thirdparty/ticket 绑定完成时出现（§1.3 行 142、155）。
 	Bind *BindResult `protobuf:"bytes,14,opt,name=bind,proto3" json:"bind,omitempty"`
-	// 可选。仅 status=captcha_required / captcha_invalid 出现，结构见 §2.5（§1.3 行 156）。
-	Captcha       *CaptchaPayload `protobuf:"bytes,15,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 452-462 的
+	// captcha 配置对象（§1.3 行 156），与注入快照 / GET /api/account/config 三处同结构（§2.9 行 492）；
+	// 跨包引用 api.common.CaptchaConfig（配置视图单一结构源），字段编号 15 不变（§12.8）。
+	Captcha       *common.CaptchaConfig `protobuf:"bytes,15,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -191,7 +194,7 @@ func (x *Envelope) GetBind() *BindResult {
 	return nil
 }
 
-func (x *Envelope) GetCaptcha() *CaptchaPayload {
+func (x *Envelope) GetCaptcha() *common.CaptchaConfig {
 	if x != nil {
 		return x.Captcha
 	}
@@ -809,7 +812,7 @@ var File_api_sso_envelope_proto protoreflect.FileDescriptor
 
 const file_api_sso_envelope_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/sso/envelope.proto\x12\aapi.sso\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13api/sso/login.proto\"\xc2\x04\n" +
+	"\x16api/sso/envelope.proto\x12\aapi.sso\x1a\x1cgoogle/protobuf/struct.proto\x1a\x18api/common/captcha.proto\"\xc4\x04\n" +
 	"\bEnvelope\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
@@ -828,8 +831,8 @@ const file_api_sso_envelope_proto_rawDesc = "" +
 	"\auser_id\x18\v \x01(\x03R\x06userId\x12-\n" +
 	"\x06ticket\x18\f \x01(\v2\x15.api.sso.TicketStatusR\x06ticket\x12'\n" +
 	"\x05login\x18\r \x01(\v2\x11.api.sso.EnvelopeR\x05login\x12'\n" +
-	"\x04bind\x18\x0e \x01(\v2\x13.api.sso.BindResultR\x04bind\x121\n" +
-	"\acaptcha\x18\x0f \x01(\v2\x17.api.sso.CaptchaPayloadR\acaptcha\"\xfa\x01\n" +
+	"\x04bind\x18\x0e \x01(\v2\x13.api.sso.BindResultR\x04bind\x123\n" +
+	"\acaptcha\x18\x0f \x01(\v2\x19.api.common.CaptchaConfigR\acaptcha\"\xfa\x01\n" +
 	"\bNextStep\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1a\n" +
@@ -897,17 +900,17 @@ func file_api_sso_envelope_proto_rawDescGZIP() []byte {
 
 var file_api_sso_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_api_sso_envelope_proto_goTypes = []any{
-	(*Envelope)(nil),        // 0: api.sso.Envelope
-	(*NextStep)(nil),        // 1: api.sso.NextStep
-	(*Field)(nil),           // 2: api.sso.Field
-	(*Mfa)(nil),             // 3: api.sso.Mfa
-	(*MfaMethod)(nil),       // 4: api.sso.MfaMethod
-	(*Binding)(nil),         // 5: api.sso.Binding
-	(*SsoError)(nil),        // 6: api.sso.SsoError
-	(*TicketStatus)(nil),    // 7: api.sso.TicketStatus
-	(*BindResult)(nil),      // 8: api.sso.BindResult
-	(*CaptchaPayload)(nil),  // 9: api.sso.CaptchaPayload
-	(*structpb.Struct)(nil), // 10: google.protobuf.Struct
+	(*Envelope)(nil),             // 0: api.sso.Envelope
+	(*NextStep)(nil),             // 1: api.sso.NextStep
+	(*Field)(nil),                // 2: api.sso.Field
+	(*Mfa)(nil),                  // 3: api.sso.Mfa
+	(*MfaMethod)(nil),            // 4: api.sso.MfaMethod
+	(*Binding)(nil),              // 5: api.sso.Binding
+	(*SsoError)(nil),             // 6: api.sso.SsoError
+	(*TicketStatus)(nil),         // 7: api.sso.TicketStatus
+	(*BindResult)(nil),           // 8: api.sso.BindResult
+	(*common.CaptchaConfig)(nil), // 9: api.common.CaptchaConfig
+	(*structpb.Struct)(nil),      // 10: google.protobuf.Struct
 }
 var file_api_sso_envelope_proto_depIdxs = []int32{
 	1,  // 0: api.sso.Envelope.next_step:type_name -> api.sso.NextStep
@@ -917,7 +920,7 @@ var file_api_sso_envelope_proto_depIdxs = []int32{
 	7,  // 4: api.sso.Envelope.ticket:type_name -> api.sso.TicketStatus
 	0,  // 5: api.sso.Envelope.login:type_name -> api.sso.Envelope
 	8,  // 6: api.sso.Envelope.bind:type_name -> api.sso.BindResult
-	9,  // 7: api.sso.Envelope.captcha:type_name -> api.sso.CaptchaPayload
+	9,  // 7: api.sso.Envelope.captcha:type_name -> api.common.CaptchaConfig
 	2,  // 8: api.sso.NextStep.fields:type_name -> api.sso.Field
 	10, // 9: api.sso.NextStep.challenge_data:type_name -> google.protobuf.Struct
 	4,  // 10: api.sso.Mfa.methods:type_name -> api.sso.MfaMethod
@@ -935,7 +938,6 @@ func file_api_sso_envelope_proto_init() {
 	if File_api_sso_envelope_proto != nil {
 		return
 	}
-	file_api_sso_login_proto_init()
 	file_api_sso_envelope_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

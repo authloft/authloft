@@ -3,9 +3,10 @@ syntax = "proto3";
 package api.sso;
 
 import "google/protobuf/struct.proto";
-// 复用同包人机校验统一提交格式（docs/接口文档.md §2.5 行 475-484）：
-// CaptchaPayload 定义在 login.proto，本文件只引用不复制（§12.9 行 1722 单一结构源）。
-import "api/sso/login.proto";
+// 顶层 captcha 是 §2.5 行 452-462 的配置对象（docs/接口文档.md §1.3 行 156「结构见 §2.5」）：
+// 定义上移到 api.common（全仓单一结构源，§12.9 行 1722），本文件只引用不复制；
+// common 是叶子包，不 import sso / account，无循环依赖。
+import "api/common/captcha.proto";
 
 // Go 包名沿用 api.common 的写法（server/proto/api/common/error.proto）：
 // 目录 api/sso 对应包名 api.sso（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
@@ -45,8 +46,10 @@ message Envelope {
   Envelope login = 13;
   // 可选。仅 GET /api/account/thirdparty/ticket 绑定完成时出现（§1.3 行 142、155）。
   BindResult bind = 14;
-  // 可选。仅 status=captcha_required / captcha_invalid 出现，结构见 §2.5（§1.3 行 156）。
-  CaptchaPayload captcha = 15;
+  // 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 452-462 的
+  // captcha 配置对象（§1.3 行 156），与注入快照 / GET /api/account/config 三处同结构（§2.9 行 492）；
+  // 跨包引用 api.common.CaptchaConfig（配置视图单一结构源），字段编号 15 不变（§12.8）。
+  api.common.CaptchaConfig captcha = 15;
 }
 
 // NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 111-119）。
