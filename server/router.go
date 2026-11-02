@@ -23,10 +23,12 @@ import (
 // 用 gin.New() 而非 gin.Default()：脚手架的 Logger / Recovery 与 §3.3 行 309 的
 // logger.go / recover.go 职责重复，此处挂自建版本。
 //
-// TODO(config)：项目尚无 config 系统，rootOrigin（{al_root}，接口文档 §1.1 行 54）
-// 与小程序 appid Referer 白名单由 main 以空值装配——空值下 origin 中间件对非免检
+// rootOrigin（{al_root}，接口文档 §1.1 行 54）与小程序 appid Referer 白名单由
+// bootstrap.go 从 *config.Config 构造注入（§3.2 约定 1，传具体值而非 *Config——
+// router 不依赖 config 包，保持装配层单一职责）；空值下 origin 中间件对非免检
 // 写请求保守 403（见 origin.go）。codec.SetMaxBodyBytes 不调用，回落默认 1 MiB
-//（docs/后端架构.md §3.14 行 492 已约定）。
+//（docs/后端架构.md §3.14 行 492；§3.2 无 max_body_bytes 字段，
+// 见 bootstrap.go 的 TODO(schema)）。
 func newRouter(rootOrigin string, refererAllowlist []string) (*gin.Engine, *gin.RouterGroup) {
 	r := gin.New()
 	r.Use(

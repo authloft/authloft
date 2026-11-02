@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	api "authloft/gen/go/api/common"
 	"authloft/internal/codec"
+	"authloft/internal/config"
 )
 
 const (
@@ -217,5 +219,62 @@ func TestNewRouterEmptyConfigConservative(t *testing.T) {
 	}
 	if rec := doRequest(r, http.MethodPost, "/api/oidc/z", map[string]string{"Origin": "https://evil.example.com", "Content-Type": "application/x-www-form-urlencoded"}); rec.Code != http.StatusOK {
 		t.Errorf("empty config exempt group: status = %d, want %d (免检组不受配置影响)", rec.Code, http.StatusOK)
+	}
+}
+
+// bootstrapConfig 构造自造 *config.Config（§3.2 约定 1 / §20：测试传自造实例，
+// 只填装配链实际读取的字段——Authloft.Root 与 Server 三项）。
+func bootstrapConfig() *config.Config {
+	return &config.Config{
+		Server: config.ServerConfig{
+			Listen:       ":18080",
+			ReadTimeout:  config.Duration{Duration: 5 * time.Second},
+			WriteTimeout: config.Duration{Duration: 7 * time.Second},
+		},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+	}
+}
+
+// bootstrap 装配注入（§3.2 约定 1）：buildRouter 从自造 *config.Config
+// 取 authloft.root 注入 origin——同源请求过、跨站 403，证明注入的是配置值而非
+// 空配置（空配置下同源也 403）；/metrics 端点装配后可用。
+func TestBootstrapInjectsRootOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := bootstrapConfig()
+	r, apiGroup := buildRouter(cfg)
+	apiGroup.POST("/x", ok)
+
+	sameOrigin := map[string]string{"Origin": cfg.Authloft.Root, "Content-Type": "application/json"}
+	if rec := doRequest(r, http.MethodPost, "/api/x", sameOrigin); rec.Code != http.StatusOK {
+		t.Errorf("same-origin from config: status = %d, want %d (rootOrigin 未注入则同源恒 403)", rec.Code, http.StatusOK)
+	}
+	crossOrigin := map[string]string{"Origin": "https://evil.example.com", "Content-Type": "application/json"}
+	if rec := doRequest(r, http.MethodPost, "/api/x", crossOrigin); rec.Code != http.StatusForbidden {
+		t.Errorf("cross-origin: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	if rec := doRequest(r, http.MethodGet, "/metrics", nil); rec.Code != http.StatusOK {
+		t.Errorf("metrics endpoint: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// http.Server 装配参数：listen / read_timeout / write_timeout 取自
+// 自造 *config.Config 的 server 段（§3.2 行 260-262），handler 为注入的 router。
+func TestBootstrapHTTPServerConfig(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := bootstrapConfig()
+	router, _ := buildRouter(cfg)
+	srv := newHTTPServer(cfg, router)
+
+	if srv.Addr != cfg.Server.Listen {
+		t.Errorf("Addr = %q, want %q", srv.Addr, cfg.Server.Listen)
+	}
+	if srv.ReadTimeout != 5*time.Second {
+		t.Errorf("ReadTimeout = %v, want 5s", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 7*time.Second {
+		t.Errorf("WriteTimeout = %v, want 7s", srv.WriteTimeout)
+	}
+	if srv.Handler == nil {
+		t.Error("Handler is nil, want router")
 	}
 }
