@@ -2,8 +2,11 @@ package config
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +23,7 @@ const exampleKeyPlaceholder = "<base64-32B，首次运行自动生成>"
 
 // testValidYAML 是全字段齐全的合法配置模板；"<KEY>" 占位在加载前替换为 testKeyB64。
 const testValidYAML = `
-server: { listen: ":8080", read_timeout: 30s, write_timeout: 30s }
+server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
 db:
   dsn: "authloft:pass@tcp(10.0.0.2:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local"
   max_open_conns: 50
@@ -113,8 +116,13 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"listen bare port", func(c *Config) { c.Server.Listen = "8080" }, "server.listen"},
 		{"listen port overflow", func(c *Config) { c.Server.Listen = ":70000" }, "server.listen"},
 		{"listen port non numeric", func(c *Config) { c.Server.Listen = ":http" }, "server.listen"},
-		{"read_timeout zero", func(c *Config) { c.Server.ReadTimeout = Duration{} }, "server.read_timeout"},
-		{"write_timeout negative", func(c *Config) { c.Server.WriteTimeout = Duration{-time.Second} }, "server.write_timeout"},
+		{"min_tls_version bogus", func(c *Config) { c.Server.MinTLSVersion = "1.1" }, "server.min_tls_version"},
+		{"cert without key", func(c *Config) { c.Server.CertFile = "cert.pem" }, "server.cert_file"},
+		{"key without cert", func(c *Config) { c.Server.KeyFile = "key.pem" }, "server.cert_file"},
+		{"cert not readable", func(c *Config) {
+			c.Server.CertFile = "no-such-cert.pem"
+			c.Server.KeyFile = "no-such-key.pem"
+		}, "server.cert_file"},
 
 		{"dsn empty", func(c *Config) { c.DB.DSN = "" }, "db.dsn"},
 		{"dsn no at", func(c *Config) { c.DB.DSN = "tcp(1.2.3.4:3306)/db" }, "db.dsn"},
@@ -201,5 +209,93 @@ func TestExampleFileMatchesSchema(t *testing.T) {
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("example must be a valid config after keys filled: %v", err)
+	}
+}
+
+// TestValidateCertPairReadable cert/key 成对且可读时通过（§3.2 约定 5 的
+// 正面路径：单边 / 不可读 fail-fast 的反向用例）。
+func TestValidateCertPairReadable(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, []byte("cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c := validTestConfig(t)
+	c.Server.CertFile = certPath
+	c.Server.KeyFile = keyPath
+	c.Server.MinTLSVersion = "1.3"
+	if err := c.Validate(); err != nil {
+		t.Errorf("readable pairwise cert/key with valid min must pass, got %v", err)
+	}
+
+	// 目录不可用（路径可 open 但 IsDir）。
+	c.Server.CertFile = dir
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "server.cert_file") {
+		t.Errorf("directory as cert_file must fail, got %v", err)
+	}
+}
+
+// TestConfigureHTTPServerListenModes 监听口径映射（§3.1 行 244-245，
+// 生产 bootstrap 与 setup 共用）：
+//   - 未配 cert+key：Protocols = HTTP/1.1 + H2C、TLSConfig nil（min 不生效）；
+//   - 已配：Protocols = HTTP/1.1 + H2(TLS)、TLSConfig.MinVersion 按
+//     min_tls_version（"1.2"/"1.3"/空）；非法取值 fail-fast。
+func TestConfigureHTTPServerListenModes(t *testing.T) {
+	newSrv := func(sc ServerConfig) *http.Server {
+		srv := &http.Server{}
+		if err := sc.ConfigureHTTPServer(srv); err != nil {
+			t.Fatalf("ConfigureHTTPServer: %v", err)
+		}
+		return srv
+	}
+
+	// h2c：min_tls_version 非法取值也应在 Validate 拦（本函数不重复校验、
+	// 不生效即不报错——映射层只看 cert/key）。
+	srv := newSrv(ServerConfig{Listen: ":8080", MinTLSVersion: "1.3"})
+	if srv.Addr != ":8080" {
+		t.Errorf("Addr = %q, want :8080", srv.Addr)
+	}
+	if !srv.Protocols.HTTP1() || !srv.Protocols.UnencryptedHTTP2() || srv.Protocols.HTTP2() {
+		t.Errorf("h2c: Protocols = HTTP1:%v UH2:%v H2:%v, want true/true/false", srv.Protocols.HTTP1(), srv.Protocols.UnencryptedHTTP2(), srv.Protocols.HTTP2())
+	}
+	if srv.TLSConfig != nil {
+		t.Errorf("h2c: TLSConfig = %+v, want nil (min_tls_version 不生效)", srv.TLSConfig)
+	}
+
+	// TLS + min 1.3。
+	srv = newSrv(ServerConfig{Listen: ":8443", MinTLSVersion: "1.3", CertFile: "c.pem", KeyFile: "k.pem"})
+	if !srv.Protocols.HTTP1() || !srv.Protocols.HTTP2() || srv.Protocols.UnencryptedHTTP2() {
+		t.Errorf("tls: Protocols = HTTP1:%v H2:%v UH2:%v, want true/true/false", srv.Protocols.HTTP1(), srv.Protocols.HTTP2(), srv.Protocols.UnencryptedHTTP2())
+	}
+	if srv.TLSConfig == nil || srv.TLSConfig.MinVersion != tls.VersionTLS13 {
+		t.Errorf("tls 1.3: TLSConfig.MinVersion = %v, want VersionTLS13", srv.TLSConfig)
+	}
+
+	// TLS + min 1.2。
+	srv = newSrv(ServerConfig{Listen: ":8443", MinTLSVersion: "1.2", CertFile: "c.pem", KeyFile: "k.pem"})
+	if srv.TLSConfig == nil || srv.TLSConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("tls 1.2: TLSConfig.MinVersion = %v, want VersionTLS12", srv.TLSConfig)
+	}
+
+	// TLS + min 空：标准库默认（TLSConfig nil）。
+	srv = newSrv(ServerConfig{Listen: ":8443", CertFile: "c.pem", KeyFile: "k.pem"})
+	if srv.TLSConfig != nil {
+		t.Errorf("tls default min: TLSConfig = %+v, want nil", srv.TLSConfig)
+	}
+
+	// 单边 cert：不启用 TLS（h2c 形态——Validate 会另行拦）。
+	srv = newSrv(ServerConfig{Listen: ":8080", CertFile: "c.pem"})
+	if !srv.Protocols.UnencryptedHTTP2() || srv.Protocols.HTTP2() {
+		t.Errorf("single-side cert: Protocols must stay h2c (pairing enforced by Validate), got %s", srv.Protocols)
+	}
+
+	// 非法 min + TLS：fail-fast。
+	if err := (ServerConfig{MinTLSVersion: "bogus", CertFile: "c.pem", KeyFile: "k.pem"}).ConfigureHTTPServer(&http.Server{}); err == nil {
+		t.Error("bogus min_tls_version with TLS must fail-fast")
 	}
 }

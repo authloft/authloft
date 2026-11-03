@@ -29,6 +29,7 @@ import (
 	commonv1 "authloft/gen/go/api/common/v1"
 	setupv1 "authloft/gen/go/api/setup/v1"
 	"authloft/gen/go/api/setup/v1/setupv1connect"
+	"authloft/internal/config"
 	authloftconnect "authloft/internal/connect"
 )
 
@@ -319,8 +320,8 @@ func TestSetupParamErrors(t *testing.T) {
 			t.Errorf("%s: status = %d, want %d (body %s)", tc.name, rec.Code, tc.wantStatus, rec.Body.String())
 			continue
 		}
-		// requestid 在 gin 全局链上，NoRoute 桥接的 Connect 响应同样回写
-		// X-Request-Id（所有响应统一走响应头）。
+		// requestid 对 Connect 域等效（http 版在 mux 前缀链上）：
+		// Connect 响应同样回写 X-Request-Id（所有响应统一走响应头）。
 		if rec.Header().Get("X-Request-Id") == "" {
 			t.Errorf("%s: X-Request-Id empty, want non-empty (requestid must be on chain)", tc.name)
 		}
@@ -348,7 +349,7 @@ func TestSetupParamErrors(t *testing.T) {
 // 用 32 字节确定密钥）。
 func uploadConfigYAML(dsn, redisAddr string) string {
 	var b strings.Builder
-	b.WriteString("server: { listen: \":8080\", read_timeout: 30s, write_timeout: 30s }\n")
+	b.WriteString("server: { listen: \":8080\" }\n")
 	b.WriteString(fmt.Sprintf("db:\n  dsn: %q\n  max_open_conns: 50\n  max_idle_conns: 10\n  conn_max_lifetime: 1h\n", dsn))
 	b.WriteString(fmt.Sprintf("redis: { addr: %q, password: \"\", db: 0, pool_size: 50 }\n", redisAddr))
 	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\" }\n")
@@ -377,7 +378,7 @@ func TestUploadConfigInvalidMatrix(t *testing.T) {
 		{"not yaml", "!!!not yaml at all: ["},
 		{"missing sign_key", func() string {
 			text := `
-server: { listen: ":8080", read_timeout: 30s, write_timeout: 30s }
+server: { listen: ":8080" }
 db:
   dsn: "authloft:pass@tcp(127.0.0.1:3306)/authloft"
   max_open_conns: 50
@@ -685,6 +686,46 @@ func TestRequestExitIdempotent(t *testing.T) {
 	case <-s.Exposed():
 	default:
 		t.Fatal("exit channel must be closed after requestExit")
+	}
+}
+
+// TestSetupHTTPServerFromEnv setup 模式监听装配（§3.15：只读 server 段
+// env，默认值 + env 覆盖；监听 / TLS 模式与生产同口径）：
+//   - 无 env：Addr 默认 ":8080"、h2c 形态 Protocols；
+//   - AUTHLOFT_SERVER_LISTEN 覆盖 Addr；
+//   - 非法 server env（bare-port listen）→ fail-fast。
+func TestSetupHTTPServerFromEnv(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	srv, err := s.newHTTPServerFrom(config.ServerConfig{Listen: ":8080"})
+	if err != nil {
+		t.Fatalf("newHTTPServerFrom: %v", err)
+	}
+	if srv.Addr != ":8080" {
+		t.Errorf("Addr = %q, want :8080", srv.Addr)
+	}
+	if !srv.Protocols.HTTP1() || !srv.Protocols.UnencryptedHTTP2() || srv.Protocols.HTTP2() {
+		t.Errorf("h2c: Protocols = HTTP1:%v UH2:%v H2:%v, want true/true/false", srv.Protocols.HTTP1(), srv.Protocols.UnencryptedHTTP2(), srv.Protocols.HTTP2())
+	}
+
+	t.Setenv("AUTHLOFT_SERVER_LISTEN", ":19099")
+	sc, err := config.DefaultServerConfig()
+	if err != nil {
+		t.Fatalf("DefaultServerConfig with env: %v", err)
+	}
+	srv, err = s.newHTTPServerFrom(sc)
+	if err != nil {
+		t.Fatalf("newHTTPServerFrom (env): %v", err)
+	}
+	if srv.Addr != ":19099" {
+		t.Errorf("Addr = %q, want :19099 from AUTHLOFT_SERVER_LISTEN", srv.Addr)
+	}
+
+	// 非法 server env → DefaultServerConfig fail-fast（Run 同源消费，
+	// 启动期 fail-fast 由它保证）。
+	t.Setenv("AUTHLOFT_SERVER_LISTEN", "19099")
+	if _, err := config.DefaultServerConfig(); err == nil {
+		t.Error("bare-port listen must fail-fast")
 	}
 }
 

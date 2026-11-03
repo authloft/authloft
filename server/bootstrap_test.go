@@ -8,8 +8,19 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/pem"
 	"fmt"
+	"io"
+	"math/big"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -286,4 +297,270 @@ func TestAssembleRealChain(t *testing.T) {
 		t.Fatalf("复跑 assemble 不幂等: %v", err)
 	}
 	t.Cleanup(func() { closeDeps(deps2) })
+}
+
+// —— 以下为监听口径测试（§3.1 行 244-245：Go 1.26 标准库原生
+// http.Server.Protocols，三模式）与 http.Server 装配断言 ——
+
+// h2cPreface HTTP/2 客户端连接前言（RFC 7540 连接前言的 magic 部分；
+// 服务端在读到前言后即回首个 SETTINGS 帧，据此验证明文 h2c / TLS h2
+// 通路真实建立——客户端直接发 PRI * HTTP/2.0 前置知识请求）。
+const h2cPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+// h2FrameTypeSettings HTTP/2 帧类型：SETTINGS（RFC 7540 §6.5）——服务端
+// 收到前言后首个下行帧。
+const h2FrameTypeSettings = 0x04
+
+// genSelfSignedCert 测试内生成自签证书（ecdsa P-256，SAN 含 127.0.0.1），
+// 落 t.TempDir——证书仅测试内生成、不进仓库。
+func genSelfSignedCert(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{"localhost"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("x509 cert: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath
+}
+
+// serveAndReadH2Settings 在 ln 上运行 srv（h2c 用 Serve、TLS 用 ServeTLS
+// ——certFile/keyFile 为证书路径），客户端发 HTTP/2 连接前言后读服务端
+// 首个下行帧，断言为 SETTINGS——三模式监听测试的共同实证（帧头 9 字节：
+// 长度 3 + 类型 1 + 标志 1 + 流 ID 4，RFC 7540 §4.1）。tlsConf 为 nil 即
+// 明文 h2c 前置知识模式。
+func serveAndReadH2Settings(t *testing.T, srv *http.Server, ln net.Listener, tlsConf *tls.Config, certFile, keyFile string) {
+	t.Helper()
+	go func() {
+		if tlsConf != nil {
+			_ = srv.ServeTLS(ln, certFile, keyFile)
+		} else {
+			_ = srv.Serve(ln)
+		}
+	}()
+
+	dialAddr := ln.Addr().String()
+	var conn net.Conn
+	var err error
+	if tlsConf != nil {
+		dialer := &tls.Dialer{Config: tlsConf, NetDialer: &net.Dialer{Timeout: 2 * time.Second}}
+		conn, err = dialer.DialContext(context.Background(), "tcp", dialAddr)
+	} else {
+		conn, err = net.DialTimeout("tcp", dialAddr, 2*time.Second)
+	}
+	if err != nil {
+		t.Fatalf("dial %s: %v", dialAddr, err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write([]byte(h2cPreface)); err != nil {
+		t.Fatalf("write h2 preface: %v", err)
+	}
+	var hdr [9]byte
+	if _, err := io.ReadFull(conn, hdr[:]); err != nil {
+		t.Fatalf("read first server frame header: %v", err)
+	}
+	if hdr[3] != h2FrameTypeSettings {
+		t.Errorf("first server frame type = 0x%02x, want 0x%02x (SETTINGS)", hdr[3], h2FrameTypeSettings)
+	}
+}
+
+// TestListenModeH2CPriorKnowledge 三模式之一（§3.1 行 244）：未配 cert+key
+// → 明文 HTTP/1.1 + H2C——客户端直接发 `PRI * HTTP/2.0` 前置知识请求能通
+//（服务端回 SETTINGS 帧）。
+func TestListenModeH2CPriorKnowledge(t *testing.T) {
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Listen: ":0"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+	}
+	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err != nil {
+		t.Fatalf("newHTTPServer: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	serveAndReadH2Settings(t, srv, ln, nil, "", "")
+}
+
+// TestListenModeTLSALPNH2 三模式之二（§3.1 行 244）：已配 cert+key →
+// HTTP/1.1(TLS) + H2(TLS)——TLS ALPN 协商到 h2 且 H2 通路能通（前置知识
+// 前言到达后服务端回 SETTINGS 帧；协商协议为 h2 直接实证）。
+func TestListenModeTLSALPNH2(t *testing.T) {
+	certPath, keyPath := genSelfSignedCert(t)
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Listen:        ":0",
+			MinTLSVersion: "1.3",
+			CertFile:      certPath,
+			KeyFile:       keyPath,
+		},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+	}
+	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err != nil {
+		t.Fatalf("newHTTPServer: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	tlsConf := &tls.Config{NextProtos: []string{"h2"}, InsecureSkipVerify: true}
+	serveAndReadH2Settings(t, srv, ln, tlsConf, certPath, keyPath)
+
+	// ALPN 协商结果为 h2 的直接实证：独立握手读 ConnectionState。
+	conn, err := tls.Dial("tcp", ln.Addr().String(), tlsConf)
+	if err != nil {
+		t.Fatalf("tls dial: %v", err)
+	}
+	defer conn.Close()
+	if got := conn.ConnectionState().NegotiatedProtocol; got != "h2" {
+		t.Errorf("ALPN negotiated = %q, want h2", got)
+	}
+}
+
+// TestListenModeTLSMinVersionRejectsOld 三模式之三（§3.1 行 244、§3.2
+// 约定 5）：min_tls_version="1.2" 时 TLS1.0 / TLS1.1 握手失败；TLS1.2
+// 在下限之上握手成功。
+func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
+	certPath, keyPath := genSelfSignedCert(t)
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Listen:        ":0",
+			MinTLSVersion: "1.2",
+			CertFile:      certPath,
+			KeyFile:       keyPath,
+		},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+	}
+	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err != nil {
+		t.Fatalf("newHTTPServer: %v", err)
+	}
+	if srv.TLSConfig == nil || srv.TLSConfig.MinVersion != tls.VersionTLS12 {
+		t.Fatalf("TLSConfig.MinVersion = %v, want tls.VersionTLS12", srv.TLSConfig)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() { _ = srv.ServeTLS(ln, certPath, keyPath) }()
+
+	for _, maxVer := range []uint16{tls.VersionTLS10, tls.VersionTLS11} {
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", ln.Addr().String(), &tls.Config{
+			MaxVersion:        maxVer,
+			InsecureSkipVerify: true,
+		})
+		if err == nil {
+			conn.Close()
+			t.Errorf("TLS max version %d handshake must fail under min_tls_version 1.2", maxVer)
+		}
+	}
+	// TLS1.2 在下限之上：握手成功。
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", ln.Addr().String(), &tls.Config{
+		MaxVersion:        tls.VersionTLS12,
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		t.Errorf("TLS 1.2 handshake should succeed, got %v", err)
+	} else {
+		conn.Close()
+	}
+}
+
+// TestNewHTTPServerTLSProtocols http.Server 装配的 TLS 形态（§3.1 行 245）：
+// 已配 cert+key → Protocols 为 HTTP/1.1 + H2(TLS)（SetHTTP1 + SetHTTP2，
+// 不含 UnencryptedHTTP2）；min_tls_version "1.3" → TLSConfig.MinVersion =
+// VersionTLS13、"1.2" → VersionTLS12、空 → TLSConfig nil（标准库默认）；
+// 非法取值 fail-fast（正常路径在 config.Validate 已拦，防自造实例绕过）。
+func TestNewHTTPServerTLSProtocols(t *testing.T) {
+	certPath, keyPath := genSelfSignedCert(t)
+	baseCfg := func() *config.Config {
+		return &config.Config{
+			Server: config.ServerConfig{
+				Listen:   ":0",
+				CertFile: certPath,
+				KeyFile:  keyPath,
+			},
+			Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+		}
+	}
+
+	cfg := baseCfg()
+	cfg.Server.MinTLSVersion = "1.3"
+	srv, err := newHTTPServer(cfg, http.NotFoundHandler())
+	if err != nil {
+		t.Fatalf("newHTTPServer: %v", err)
+	}
+	if !srv.Protocols.HTTP1() || !srv.Protocols.HTTP2() || srv.Protocols.UnencryptedHTTP2() {
+		t.Errorf("tls mode: Protocols = HTTP1:%v HTTP2:%v UH2:%v, want true/true/false", srv.Protocols.HTTP1(), srv.Protocols.HTTP2(), srv.Protocols.UnencryptedHTTP2())
+	}
+	if srv.TLSConfig == nil || srv.TLSConfig.MinVersion != tls.VersionTLS13 {
+		t.Errorf("TLSConfig.MinVersion = %v, want tls.VersionTLS13", srv.TLSConfig)
+	}
+
+	cfg = baseCfg()
+	cfg.Server.MinTLSVersion = "1.2"
+	srv, err = newHTTPServer(cfg, http.NotFoundHandler())
+	if err != nil {
+		t.Fatalf("newHTTPServer (1.2): %v", err)
+	}
+	if srv.TLSConfig == nil || srv.TLSConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("TLSConfig.MinVersion = %v, want tls.VersionTLS12", srv.TLSConfig)
+	}
+
+	// min 为空 → 标准库默认（不设 TLSConfig）。
+	cfg = baseCfg()
+	srv, err = newHTTPServer(cfg, http.NotFoundHandler())
+	if err != nil {
+		t.Fatalf("newHTTPServer (default min): %v", err)
+	}
+	if srv.TLSConfig != nil {
+		t.Errorf("TLSConfig = %+v, want nil for empty min_tls_version", srv.TLSConfig)
+	}
+
+	// 非法取值 → fail-fast（配 cert+key 使映射真正走到非法分支）。
+	cfg = baseCfg()
+	cfg.Server.MinTLSVersion = "bogus"
+	if _, err := newHTTPServer(cfg, http.NotFoundHandler()); err == nil {
+		t.Error("bogus min_tls_version must fail-fast")
+	}
 }

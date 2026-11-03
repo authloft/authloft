@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -62,9 +63,10 @@ func parseAndValidate(data []byte) (*Config, error) {
 func DefaultConfig() (*Config, error) {
 	c := Config{
 		Server: ServerConfig{
-			Listen:       ":8080",
-			ReadTimeout:  Duration{30 * time.Second},
-			WriteTimeout: Duration{30 * time.Second},
+			Listen:        ":8080",
+			MinTLSVersion: "",
+			CertFile:      "",
+			KeyFile:       "",
 		},
 		DB: DBConfig{
 			DSN:             "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local",
@@ -141,16 +143,23 @@ func setInt(set func(*Config, int)) func(*Config, string) error {
 	}
 }
 
+// serverEnvBindings server 段的 env 覆盖（既定全字段显式表的 server 部分，
+// §3.2 约定 5：AUTHLOFT_SERVER_LISTEN / MIN_TLS_VERSION / CERT_FILE /
+// KEY_FILE 四条）。独立成表供 DefaultServerConfig（setup 模式只读 server 段，
+// §3.15）与全量 envBindings 共用，避免两处维护。
+var serverEnvBindings = []envBinding{
+	{"AUTHLOFT_SERVER_LISTEN", func(c *Config, v string) error { c.Server.Listen = v; return nil }},
+	{"AUTHLOFT_SERVER_MIN_TLS_VERSION", func(c *Config, v string) error { c.Server.MinTLSVersion = v; return nil }},
+	{"AUTHLOFT_SERVER_CERT_FILE", func(c *Config, v string) error { c.Server.CertFile = v; return nil }},
+	{"AUTHLOFT_SERVER_KEY_FILE", func(c *Config, v string) error { c.Server.KeyFile = v; return nil }},
+}
+
 // envBindings 环境变量覆盖表：AUTHLOFT_<SECTION>_<FIELD>（大写下划线），由文档
 // 明写的 AUTHLOFT_DB_DSN、AUTHLOFT_REDIS_ADDR（§3.2 职责表）按同模式推导为
 // 全字段口径（含 sign_key 十字段与 AUTHLOFT_AUTHLOFT_* 双前缀）。显式表而非反射：
 // 无运行时魔法、逐条可测。未知 AUTHLOFT_* 变量忽略；空值视为未设置跳过
 // （CI 常见空变量）；已设且非空的值非法（整数 / 时长解析失败）即 fail-fast。
-var envBindings = []envBinding{
-	{"AUTHLOFT_SERVER_LISTEN", func(c *Config, v string) error { c.Server.Listen = v; return nil }},
-	{"AUTHLOFT_SERVER_READ_TIMEOUT", setDuration(func(c *Config, d Duration) { c.Server.ReadTimeout = d })},
-	{"AUTHLOFT_SERVER_WRITE_TIMEOUT", setDuration(func(c *Config, d Duration) { c.Server.WriteTimeout = d })},
-
+var envBindings = slices.Concat(serverEnvBindings, []envBinding{
 	{"AUTHLOFT_DB_DSN", func(c *Config, v string) error { c.DB.DSN = v; return nil }},
 	{"AUTHLOFT_DB_MAX_OPEN_CONNS", setInt(func(c *Config, n int) { c.DB.MaxOpenConns = n })},
 	{"AUTHLOFT_DB_MAX_IDLE_CONNS", setInt(func(c *Config, n int) { c.DB.MaxIdleConns = n })},
@@ -182,12 +191,16 @@ var envBindings = []envBinding{
 
 	{"AUTHLOFT_LOG_LEVEL", func(c *Config, v string) error { c.Log.Level = v; return nil }},
 	{"AUTHLOFT_LOG_FORMAT", func(c *Config, v string) error { c.Log.Format = v; return nil }},
-}
+})
 
-// applyEnvOverrides 按表应用环境变量覆盖（环境变量优先于文件值）。
+// applyEnvOverrides 按全字段表应用环境变量覆盖（环境变量优先于文件值）。
 // 错误只报 env 变量名与原因，不回显值——密钥类 env（SIGN_KEY_*_KEY）也不进日志。
-func applyEnvOverrides(c *Config) error {
-	for _, b := range envBindings {
+func applyEnvOverrides(c *Config) error { return applyEnv(c, envBindings) }
+
+// applyEnv 按 bindings 逐条应用环境变量覆盖（applyEnvOverrides 的参数化
+// 内核，DefaultServerConfig 复用 server 段子表）。
+func applyEnv(c *Config, bindings []envBinding) error {
+	for _, b := range bindings {
 		v, ok := os.LookupEnv(b.key)
 		if !ok || v == "" {
 			continue
@@ -197,4 +210,20 @@ func applyEnvOverrides(c *Config) error {
 		}
 	}
 	return nil
+}
+
+// DefaultServerConfig setup 模式的 server 段取值（§3.1 行 247 / §3.15：
+// 无 config.yaml 可加载，取值 = §3.2 默认值 + env 覆盖，只读 server 段
+// ——AUTHLOFT_SERVER_LISTEN / MIN_TLS_VERSION / CERT_FILE / KEY_FILE，
+// 其他段一概不读）。listen 默认 ":8080"，TLS 字段默认空；非法 env 值 /
+// 单边 cert / 不可读路径 fail-fast（§3.2 约定 5 同口径）。
+func DefaultServerConfig() (ServerConfig, error) {
+	c := Config{Server: ServerConfig{Listen: ":8080"}}
+	if err := applyEnv(&c, serverEnvBindings); err != nil {
+		return ServerConfig{}, err
+	}
+	if errs := c.Server.validate(); len(errs) > 0 {
+		return ServerConfig{}, fmt.Errorf("config: invalid: %w", errors.Join(errs...))
+	}
+	return c.Server, nil
 }

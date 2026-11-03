@@ -6,6 +6,12 @@
 // 启动分支（§3.1 行 253）：configs/config.yaml 不存在 → setup 模式
 //——不加载 config、不初始化 DB / Redis、不起业务链路，只启动 internal/setup
 //（§3.15）；存在 → 正常装配（保持既有结构）。
+//
+// 顶层分流与监听（§3.1 行 241-247）：标准库 http.ServeMux
+// 顶层——Connect handler 按路径前缀挂 mux（requestid / origin 等效链），
+// 其余全部交给 gin；监听由 server 段 TLS 配置决定（Go 1.26 标准库原生
+// http.Server.Protocols：未配 cert+key → HTTP/1.1 + H2C；已配 → TLS 双协议
+// + min_tls_version），不引 x/net。
 
 package main
 
@@ -23,6 +29,7 @@ import (
 	"authloft/internal/cache"
 	"authloft/internal/config"
 	"authloft/internal/connect"
+	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/repo"
 	"authloft/internal/setup"
@@ -102,8 +109,18 @@ func serve(cfg *config.Config) error {
 	// 1 MiB（§1.6 行 86，经 connect.NewServer 注入）；若需可配置须先改
 	// §3.2 文档。
 
-	router, _ := buildRouter(cfg)
-	return newHTTPServer(cfg, router).ListenAndServe()
+	handler, _ := buildRouter(cfg)
+	srv, err := newHTTPServer(cfg, handler)
+	if err != nil {
+		return err
+	}
+	// 监听模式由 server 段 TLS 配置决定（§3.1 行 244）：已配 cert+key →
+	// 同端口 HTTP/1.1(TLS) + H2(TLS)（ListenAndServeTLS，证书路径经
+	// Validate 已校验可读）；未配 → 明文 HTTP/1.1 + H2C。
+	if cfg.Server.TLSEnabled() {
+		return srv.ListenAndServeTLS(cfg.Server.CertFile, cfg.Server.KeyFile)
+	}
+	return srv.ListenAndServe()
 }
 
 // setupMode 判定首次启动（§3.1 行 253 / §3.15）：configs/config.yaml
@@ -113,26 +130,54 @@ func setupMode(configPath string) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
-// buildRouter 从 *config.Config 构造生产路由（§3.2 约定 1：构造注入，
-// 测试可传自造实例，§20）。rootOrigin 取 authloft.root（{al_root}，
-// 接口文档 §1.1 行 76）。connect mux 同步构造并经 gin.NoRoute 接管
-// /api.<域>.v1.* 路径（§3.14 行 472）——暂无 service 可挂，session/admin/rpc HMAC 拦截器随域 handler 注册时注入。
-// setup 路由不在本链注册——仅 setup 模式的独立 engine 挂载（§3.15），
-// 正常模式下 /setup 与 /api/setup/** 一律 404（§13）。
-func buildRouter(cfg *config.Config) (*gin.Engine, *gin.RouterGroup) {
+// buildRouter 从 *config.Config 构造生产顶层 handler（§3.2 约定 1：构造注入，
+// 测试可传自造实例，§20）。rootOrigin 取 authloft.root（{al_root}，接口文档
+// §1.1 行 76）；当前无 service 可挂，session/admin/
+// rpc HMAC 拦截器随域 handler 注册时注入。setup 路由不在本链注册——仅
+// setup 模式的独立链路（§3.15），正常模式下 /setup 与 /api.setup/** 一律
+// 404（§13）。
+func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
+	return buildHandler(cfg, connect.NewServer(defaultReadMaxBytes))
+}
+
+// buildHandler 顶层分流组装（§3.1 行 243：标准库 http.ServeMux）：
+//   - Connect 各路由按路径前缀挂 mux——前缀链 = http 版 requestid（X-Request-Id
+//     全响应回写）→ http 版 origin（跨站 403）→ handler；中间件两版与 gin 版
+//     共用同一实现（middleware/httpmw.go，Connect 域等效）。
+//     logger / metrics 的 Connect 域等效未挂（取舍：观察类中间件强绑 gin
+//     全局链，需 http 版重写，本次聚焦安全与链路 ID 等效；接入日志可另行补）；
+//   - 其余全部 mux.Handle("/", ginEngine)：页面 / 静态 / OIDC / gateway /
+//     未注册路径（含未注册的 connect 形态路径）→ gin 原生 404 兜底
+//     （不再经 gin.NoRoute 桥，404 残留缺陷结构性消除）；
+//   - 该分流链上禁挂 gzip / body-capture 类中间件（§3.1 行 246，破坏
+//     h2c / 流式语义）。
+func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.RouterGroup) {
 	// TODO(appid)：servicewechat appid Referer 白名单配置来源未定
 	//（待定）；空表下小程序 Referer 校验恒不过，
 	// 由 origin 中间件保守 403（既定口径）。
-	return newRouter(cfg.Authloft.Root, []string{}, connect.NewServer(defaultReadMaxBytes))
+	refererAllowlist := []string{}
+	ginEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", ginEngine)
+	for _, rt := range csrv.Routes() {
+		mux.Handle(rt.Prefix, middleware.HTTPRequestID(
+			middleware.HTTPOrigin(cfg.Authloft.Root, refererAllowlist, rt.Handler),
+		))
+	}
+	return mux, apiGroup
 }
 
-// newHTTPServer 从 *config.Config 构造 http.Server：监听地址与读写超时
-// 均取自 server 段（§3.2 行 260-262）。
-func newHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {
-	return &http.Server{
-		Addr:         cfg.Server.Listen,
-		ReadTimeout:  cfg.Server.ReadTimeout.Duration,
-		WriteTimeout: cfg.Server.WriteTimeout.Duration,
-		Handler:      handler,
+// newHTTPServer 从 *config.Config 构造 http.Server：监听地址与协议
+// （Protocols / TLSConfig，Go 1.26 标准库原生 http.Server.Protocols——
+// h2c 或 TLS 双模式，§3.1 行 244-245）取自 server 段，经
+// ServerConfig.ConfigureHTTPServer 映射（与 setup 同口径，§3.15）；
+// min_tls_version 非法取值在此 fail-fast（正常路径已在 config.Validate
+// 拦截，防测试自造实例绕过）。
+func newHTTPServer(cfg *config.Config, handler http.Handler) (*http.Server, error) {
+	srv := &http.Server{Handler: handler}
+	if err := cfg.Server.ConfigureHTTPServer(srv); err != nil {
+		return nil, err
 	}
+	return srv, nil
 }

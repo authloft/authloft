@@ -13,8 +13,9 @@
 
 server:
   listen: ":8080"                 # HTTP 监听，":port" 形态
-  read_timeout: 30s
-  write_timeout: 30s
+  min_tls_version: ""             # 最低 TLS 版本："1.2" / "1.3"，空 = 标准库默认；未同时配置 cert_file + key_file 时不生效
+  cert_file: ""                   # TLS 证书 PEM 路径，与 key_file 成对配置
+  key_file: ""                    # TLS 私钥 PEM 路径，与 cert_file 成对配置
 db:
   dsn: "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local"
   max_open_conns: 50

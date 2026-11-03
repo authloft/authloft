@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // writeConfigFile 把 YAML 文本写进临时目录，返回路径。
@@ -25,7 +24,7 @@ func writeConfigFile(t *testing.T, data string) string {
 // missingScenarioYAML 合法配置但 sign_key 只写了 session——其余四场景缺失，
 // 用于验证「文件已存在但缺项 → fail-fast，不自动补写」（§3.2 约定 4）。
 const missingScenarioYAML = `
-server: { listen: ":8080", read_timeout: 30s, write_timeout: 30s }
+server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
 db:
   dsn: "authloft:pass@tcp(127.0.0.1:3306)/authloft"
   max_open_conns: 50
@@ -110,7 +109,7 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	envKey := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xC3}, 32))
 	t.Setenv("AUTHLOFT_DB_DSN", "env:secret@tcp(db-env:3306)/authloft")
 	t.Setenv("AUTHLOFT_REDIS_ADDR", "redis-env:6379")
-	t.Setenv("AUTHLOFT_SERVER_READ_TIMEOUT", "45s")
+	t.Setenv("AUTHLOFT_SERVER_MIN_TLS_VERSION", "1.3")
 	t.Setenv("AUTHLOFT_REDIS_DB", "7")
 	t.Setenv("AUTHLOFT_SIGN_KEY_SESSION_KID", "2")
 	t.Setenv("AUTHLOFT_SIGN_KEY_TICKET_KEY", envKey)
@@ -125,8 +124,8 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	if cfg.Redis.Addr != "redis-env:6379" {
 		t.Errorf("redis addr = %q, want env value", cfg.Redis.Addr)
 	}
-	if cfg.Server.ReadTimeout.Duration != 45*time.Second {
-		t.Errorf("read_timeout = %v, want 45s from env", cfg.Server.ReadTimeout)
+	if cfg.Server.MinTLSVersion != "1.3" {
+		t.Errorf("min_tls_version = %q, want \"1.3\" from env", cfg.Server.MinTLSVersion)
 	}
 	if cfg.Redis.DB != 7 {
 		t.Errorf("redis db = %d, want 7 from env", cfg.Redis.DB)
@@ -152,9 +151,9 @@ func TestLoadEnvInvalidValueFails(t *testing.T) {
 // TestLoadEnvInvalidDurationFails env 时长非法 → fail-fast。
 func TestLoadEnvInvalidDurationFails(t *testing.T) {
 	path := writeConfigFile(t, filledTestYAML())
-	t.Setenv("AUTHLOFT_SERVER_READ_TIMEOUT", "soon")
+	t.Setenv("AUTHLOFT_DB_CONN_MAX_LIFETIME", "soon")
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "AUTHLOFT_SERVER_READ_TIMEOUT") {
+	if err == nil || !strings.Contains(err.Error(), "AUTHLOFT_DB_CONN_MAX_LIFETIME") {
 		t.Errorf("want fail-fast on invalid env duration, got %v", err)
 	}
 }
@@ -171,7 +170,7 @@ func TestLoadIgnoresUnknownAuthloftEnv(t *testing.T) {
 // TestLoadMissingSectionFails 文件存在但 db 段缺失 → fail-fast（零值被 Validate 拦截）。
 func TestLoadMissingSectionFails(t *testing.T) {
 	noDB := `
-server: { listen: ":8080", read_timeout: 30s, write_timeout: 30s }
+server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
 redis: { addr: "127.0.0.1:6379", password: "", db: 0, pool_size: 50 }
 authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
 sign_key:
@@ -223,14 +222,90 @@ func TestLoadInvalidDSNFails(t *testing.T) {
 	}
 }
 
-// TestLoadBareNumberDurationFails 时长写裸数字（30 而非 30s）→ 解析期 fail-fast。
+// TestLoadBareNumberDurationFails 时长写裸数字（30 而非 30h）→ 解析期 fail-fast。
 func TestLoadBareNumberDurationFails(t *testing.T) {
-	bad := strings.Replace(filledTestYAML(), "read_timeout: 30s", "read_timeout: 30", 1)
+	bad := strings.Replace(filledTestYAML(), "conn_max_lifetime: 1h", "conn_max_lifetime: 30", 1)
 	path := writeConfigFile(t, bad)
 	_, err := Load(path)
 	if err == nil {
 		t.Error("want fail-fast on bare-number duration, got nil")
 	}
+}
+
+// TestDefaultServerConfig setup 模式的 server 段取值（§3.1 行 247 / §3.15：
+// 默认值 + env 覆盖、只读 server 段）：
+//   - 无 env：listen 默认 ":8080"、TLS 字段空；
+//   - 四条 server env 覆盖生效；
+//   - 其他段 env（db 等）一概不读；
+//   - 非法 listen / 非法 min_tls_version / 单边 cert → fail-fast。
+func TestDefaultServerConfig(t *testing.T) {
+	sc, err := DefaultServerConfig()
+	if err != nil {
+		t.Fatalf("defaults: %v", err)
+	}
+	if sc.Listen != ":8080" {
+		t.Errorf("default listen = %q, want :8080", sc.Listen)
+	}
+	if sc.MinTLSVersion != "" || sc.CertFile != "" || sc.KeyFile != "" {
+		t.Errorf("default TLS fields = %q/%q/%q, want all empty", sc.MinTLSVersion, sc.CertFile, sc.KeyFile)
+	}
+
+	t.Run("env overrides server section", func(t *testing.T) {
+		// cert/key 成对且可读才能过校验（§3.2 约定 5）：用临时文件。
+		dir := t.TempDir()
+		certPath := filepath.Join(dir, "cert.pem")
+		keyPath := filepath.Join(dir, "key.pem")
+		if err := os.WriteFile(certPath, []byte("cert"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("AUTHLOFT_SERVER_LISTEN", ":19099")
+		t.Setenv("AUTHLOFT_SERVER_MIN_TLS_VERSION", "1.3")
+		t.Setenv("AUTHLOFT_SERVER_CERT_FILE", certPath)
+		t.Setenv("AUTHLOFT_SERVER_KEY_FILE", keyPath)
+		sc, err := DefaultServerConfig()
+		if err != nil {
+			t.Fatalf("env overrides: %v", err)
+		}
+		if sc.Listen != ":19099" || sc.MinTLSVersion != "1.3" || sc.CertFile != certPath || sc.KeyFile != keyPath {
+			t.Errorf("server env not applied: %+v", sc)
+		}
+	})
+
+	t.Run("ignores other section env", func(t *testing.T) {
+		t.Setenv("AUTHLOFT_DB_DSN", "env:secret@tcp(db:3306)/authloft")
+		t.Setenv("AUTHLOFT_REDIS_ADDR", "redis-env:6379")
+		sc, err := DefaultServerConfig()
+		if err != nil {
+			t.Fatalf("other env must be ignored, got %v", err)
+		}
+		if sc.Listen != ":8080" {
+			t.Errorf("server value polluted by other env: %+v", sc)
+		}
+	})
+
+	t.Run("invalid listen fails fast", func(t *testing.T) {
+		t.Setenv("AUTHLOFT_SERVER_LISTEN", "19099")
+		if _, err := DefaultServerConfig(); err == nil || !strings.Contains(err.Error(), "server.listen") {
+			t.Errorf("want fail-fast on bare-port listen, got %v", err)
+		}
+	})
+
+	t.Run("invalid min_tls_version fails fast", func(t *testing.T) {
+		t.Setenv("AUTHLOFT_SERVER_MIN_TLS_VERSION", "1.1")
+		if _, err := DefaultServerConfig(); err == nil || !strings.Contains(err.Error(), "server.min_tls_version") {
+			t.Errorf("want fail-fast on bogus min_tls_version, got %v", err)
+		}
+	})
+
+	t.Run("single-side cert fails fast", func(t *testing.T) {
+		t.Setenv("AUTHLOFT_SERVER_CERT_FILE", "cert.pem")
+		if _, err := DefaultServerConfig(); err == nil || !strings.Contains(err.Error(), "server.cert_file") {
+			t.Errorf("want fail-fast on single-side cert, got %v", err)
+		}
+	})
 }
 
 // TestLoadReadErrorFails 读错误（如路径是目录）原样失败，不得误判为首启语义

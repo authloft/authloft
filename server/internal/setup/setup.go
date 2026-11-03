@@ -30,16 +30,17 @@ import (
 
 	setupv1 "authloft/gen/go/api/setup/v1"
 	"authloft/gen/go/api/setup/v1/setupv1connect"
+	"authloft/internal/config"
 	authloftconnect "authloft/internal/connect"
 	"authloft/internal/middleware"
 )
 
-// listen 与超时：setup 模式不加载 config，监听地址文档未规定（缺口待定），
-// 取 §3.2 默认值 :8080 与 30s 读写超时（与 config.yaml.example 同源）。
+// 监听（§3.1 行 247 / §3.15）：setup 模式同样读 server 段
+// 环境变量（AUTHLOFT_SERVER_LISTEN / MIN_TLS_VERSION / CERT_FILE /
+// KEY_FILE），只读 server 段、其他段不读；无 config.yaml 可加载，server 段
+// 取值 = §3.2 默认值（listen :8080）+ env 覆盖（config.DefaultServerConfig）；
+// 监听 / TLS 模式与生产同口径（config.ConfigureHTTPServer）。
 const (
-	setupListen       = ":8080"
-	setupReadTimeout  = 30 * time.Second
-	setupWriteTimeout = 30 * time.Second
 	// shutdownGrace 响应写出后优雅关闭的等待上限（在途响应 flush 完毕
 	// 即返回，restart 语义不靠拉长该值）。
 	shutdownGrace = 3 * time.Second
@@ -117,24 +118,30 @@ func setupParamError(message string) error {
 
 // Server 安装模式 HTTP 服务：/setup 页面 gin 路由 + SetupService connect
 // handler（实现 setupv1connect.SetupServiceHandler，安装流程本体接 paths.go）。
+// handler 为顶层分流入口（§3.1 行 243：http.ServeMux——SetupService 前缀
+// 挂 connect 链，其余全部交给 gin engine）。
 type Server struct {
 	configPath string
 	router     *gin.Engine
+	handler    http.Handler
 	exitOnce   sync.Once
 	exited     chan struct{}
 }
 
 // NewServer 构造 setup server 并注册全部路由（仅 setup 模式使用）。
-// 中间件链：recover 最外层 → requestid（所有响应回写 X-Request-Id 头，
-//）；不挂 origin——安装期无 rootOrigin 可配（首次部署可能经 IP
+// gin engine 链：recover 最外层 → requestid（页面响应回写 X-Request-Id 头）；
+// 不挂 origin——安装期无 rootOrigin 可配（首次部署可能经 IP
 // 访问），§13 响应恒为 Connect JSON。
 //
 // SetupService 经 internal/connect 装配（§3.14 行 480、行 489「setup 模式下
 // 仅注册 SetupService」）：connect.NewServer 注入请求体上限，HandlerOptions
-// 固定补错误包装 interceptor 于最内层；本域无 session / admin / rpc HMAC
-// 域拦截器（安装期不初始化 DB / Redis 业务链路）。connect mux 经 gin.NoRoute
-// 兜底接管 /api.setup.v1.SetupService/<Method>（生产 router.go 同款桥接，
-// §3.3 行 296；非 Connect 形态路径维持空体 404）。
+// 固定补 WithRecover + 错误包装 interceptor；本域无 session / admin / rpc
+// HMAC 域拦截器（安装期不初始化 DB / Redis 业务链路）。顶层分流
+//（§3.1 行 243）：Connect 前缀链挂 http 版 requestid（Connect 域等效——
+// 不经 gin 全局链，middleware/httpmw.go；origin 同 gin 侧不挂）；其余
+// 全部 mux.Handle("/", ginEngine)——未注册路径 gin 原生 404 兜底
+// （不再经 gin.NoRoute 桥，connect 成功响应直接由
+// 生成 handler 写出，无预置状态码）。
 func NewServer(configPath string) *Server {
 	s := &Server{
 		configPath: configPath,
@@ -143,47 +150,50 @@ func NewServer(configPath string) *Server {
 	r := gin.New()
 	r.Use(middleware.Recover(), middleware.RequestID())
 	r.GET("/setup", s.handleSetupPage)
+	s.router = r
 
 	csrv := authloftconnect.NewServer(maxSetupBody)
 	mount, handler := setupv1connect.NewSetupServiceHandler(s, csrv.HandlerOptions()...)
 	csrv.Register(mount, handler)
-	r.NoRoute(func(c *gin.Context) {
-		// gin 的 serveError 在进 NoRoute 链前已把 writermem.status 置 404
-		//（gin@v1.12.0 gin.go serveError 行 764-765）；而 connect-go 的
-		// unary 成功路径只写 body、不调 WriteHeader（依赖 net/http 隐式
-		// 200，connect@v1.21.1 protocol_connect.go connectUnaryMarshaler.
-		// write），经 gin 写出时会落成残留的 404 状态码——先把已存状态
-		// 复位 200，状态码交还 connect mux 自行表达（错误路径 connect 显式
-		// WriteHeader 覆盖、未注册路径仍 404）。
-		c.Writer.WriteHeader(http.StatusOK)
-		csrv.ServeHTTP(c.Writer, c.Request)
-		// gin 的 serveError（gin v1.12.0 gin.go）对「只写了状态码、未写
-		// body」的响应会追加默认 "404 page not found" body——非 connect
-		// 路径的空体 404 在此强制落盘（WriteHeaderNow 为 no-op 当 mux
-		// 已写出 body）。
-		c.Writer.WriteHeaderNow()
-	})
-	s.router = r
+
+	mux := http.NewServeMux()
+	mux.Handle("/", r)
+	for _, rt := range csrv.Routes() {
+		mux.Handle(rt.Prefix, middleware.HTTPRequestID(rt.Handler))
+	}
+	s.handler = mux
 	return s
 }
 
-// Router 返回已注册路由的 engine（测试用；正常模式不挂载本 engine）。
-func (s *Server) Router() *gin.Engine { return s.router }
+// Router 返回顶层分流 handler（setup_db_test 经它发请求；页面与未注册
+// 路径走 gin、Connect 请求走 mux 前缀链，§3.1 行 243）。
+func (s *Server) Router() http.Handler { return s.handler }
 
-// Run 阻塞运行 setup server。安装成功（requestExit）→ 优雅关闭（等在途
-// 响应写出）后返回 nil，run() 随之返回 nil、进程 exit 0（§13.4）；
-// 监听失败返回错误（fail-fast）。
+// Run 阻塞运行 setup server。监听取 server 段 env（§3.15：默认值 + env
+// 覆盖，只读 server 段——config.DefaultServerConfig；非法 env / 单边 cert /
+// 不可读路径在此 fail-fast）；监听 / TLS 模式与生产同口径（§3.1 行 244：
+// 未配 cert+key → HTTP/1.1 + H2C；已配 → TLS 双协议 + min_tls_version）。
+// 安装成功（requestExit）→ 优雅关闭（等在途响应写出）后返回 nil，run()
+// 随之返回 nil、进程 exit 0（§13.4）；监听失败返回错误（fail-fast）。
 func (s *Server) Run() error {
-	srv := &http.Server{
-		Addr:         setupListen,
-		Handler:      s.router,
-		ReadTimeout:  setupReadTimeout,
-		WriteTimeout: setupWriteTimeout,
+	sc, err := config.DefaultServerConfig()
+	if err != nil {
+		return err
+	}
+	srv, err := s.newHTTPServerFrom(sc)
+	if err != nil {
+		return err
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+		var serveErr error
+		if sc.TLSEnabled() {
+			serveErr = srv.ListenAndServeTLS(sc.CertFile, sc.KeyFile)
+		} else {
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
 			return
 		}
 		errCh <- nil
@@ -200,6 +210,17 @@ func (s *Server) Run() error {
 		slog.Info("setup: installation finished, exiting for restart (exit 0)")
 		return nil
 	}
+}
+
+// newHTTPServerFrom 从 server 段构造 http.Server：监听地址与协议
+//（Protocols / TLSConfig）经 config.ServerConfig.ConfigureHTTPServer 映射
+//（与生产 bootstrap.newHTTPServer 同口径，§3.15）。
+func (s *Server) newHTTPServerFrom(sc config.ServerConfig) (*http.Server, error) {
+	srv := &http.Server{Handler: s.handler}
+	if err := sc.ConfigureHTTPServer(srv); err != nil {
+		return nil, err
+	}
+	return srv, nil
 }
 
 // requestExit 触发安装成功后的退出（幂等；由成功响应写完的 handler 调用）。

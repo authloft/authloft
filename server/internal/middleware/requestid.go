@@ -28,13 +28,24 @@ const XRequestIDHeader = "X-Request-Id"
 // 须先于一切错误出口挂载（§3.3 行 296 全局链序：recover → requestid → …）。
 func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var b [16]byte
-		if _, err := rand.Read(b[:]); err == nil {
-			c.Set(RequestIDKey, hex.EncodeToString(b[:]))
+		id := newRequestID()
+		if id != "" {
+			c.Set(RequestIDKey, id)
 		}
 		// rand.Read 失败（Go 1.24+ 实际不可达）时 ctx 与响应头均为空串，
 		// 不伪造值（§3.3 行 294）。
-		c.Header(XRequestIDHeader, c.GetString(RequestIDKey))
+		c.Header(XRequestIDHeader, id)
 		c.Next()
 	}
+}
+
+// newRequestID 生成链路 ID：crypto/rand 16 字节 hex（128-bit、32 字符）；
+// rand.Read 失败返回空串（不伪造值，§3.3 行 294）。gin 版（RequestID）
+// 与 http 版（HTTPRequestID，httpmw.go）共用本实现——禁止复制生成逻辑。
+func newRequestID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b[:])
 }

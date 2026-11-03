@@ -6,11 +6,13 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -54,11 +56,33 @@ type Config struct {
 	Log      LogConfig      `yaml:"log"`
 }
 
-// ServerConfig HTTP 监听与服务超时。
+// ServerConfig HTTP 监听与 TLS（docs/后端架构.md §3.2 行 254-258）。
 type ServerConfig struct {
-	Listen       string   `yaml:"listen"`
-	ReadTimeout  Duration `yaml:"read_timeout"`
-	WriteTimeout Duration `yaml:"write_timeout"`
+	Listen        string `yaml:"listen"`
+	MinTLSVersion string `yaml:"min_tls_version"`
+	CertFile      string `yaml:"cert_file"`
+	KeyFile       string `yaml:"key_file"`
+}
+
+// TLSEnabled 判定是否启用 TLS 监听（§3.2 约定 5：cert_file + key_file
+// 成对配置即启用；两者未同时配置 → 不启用 TLS，min_tls_version 不生效）。
+func (s ServerConfig) TLSEnabled() bool { return s.CertFile != "" && s.KeyFile != "" }
+
+// TLSMinVersion 把 min_tls_version 字符串映射为 crypto/tls 版本常量
+// （§3.2 约定 5："1.2" → tls.VersionTLS12、"1.3" → tls.VersionTLS13、
+// 空串 / 未配置 → 0（标准库默认，不设最低版本）；非法取值返回 error
+// ——正常启动路径已在 Validate 拦截，此处兜底供装配层 fail-fast）。
+func (s ServerConfig) TLSMinVersion() (uint16, error) {
+	switch s.MinTLSVersion {
+	case "":
+		return 0, nil
+	case "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf(`server.min_tls_version: want "1.2"|"1.3"|""`)
+	}
 }
 
 // DBConfig MariaDB 连接参数（GORM）。
@@ -140,13 +164,41 @@ func (s ServerConfig) validate() []error {
 			errs = append(errs, errors.New(`server.listen: port must be numeric 1-65535`))
 		}
 	}
-	if s.ReadTimeout.Duration <= 0 {
-		errs = append(errs, errors.New("server.read_timeout: must be > 0"))
+	// min_tls_version 取值合法性恒校验（§3.2 约定 5：「非法取值启动
+	// fail-fast」独立于是否启用 TLS——生效性才受 cert/key 配置影响）。
+	if _, err := s.TLSMinVersion(); err != nil {
+		errs = append(errs, err)
 	}
-	if s.WriteTimeout.Duration <= 0 {
-		errs = append(errs, errors.New("server.write_timeout: must be > 0"))
+	// cert_file / key_file 必须成对配置且路径可读；单边配置 / 不可读
+	// fail-fast（§3.2 约定 5）。
+	if (s.CertFile == "") != (s.KeyFile == "") {
+		errs = append(errs, errors.New("server.cert_file/server.key_file: must be configured pairwise"))
+	} else if s.TLSEnabled() {
+		errs = append(errs, checkReadable(s.CertFile, "server.cert_file")...)
+		errs = append(errs, checkReadable(s.KeyFile, "server.key_file")...)
 	}
 	return errs
+}
+
+// checkReadable 校验启动期文件路径可读（目录不可用）。错误只含字段路径
+// 与系统原因——证书 / 私钥内容不回显（§3.2 约定 3 的 fail-fast 出口口径）。
+func checkReadable(path, field string) []error {
+	f, err := os.Open(path)
+	if err != nil {
+		return []error{fmt.Errorf("%s: not readable: %w", field, err)}
+	}
+	fi, statErr := f.Stat()
+	closeErr := f.Close()
+	if statErr != nil {
+		return []error{fmt.Errorf("%s: not readable: %w", field, statErr)}
+	}
+	if closeErr != nil {
+		return []error{fmt.Errorf("%s: not readable: %w", field, closeErr)}
+	}
+	if fi.IsDir() {
+		return []error{fmt.Errorf("%s: is a directory", field)}
+	}
+	return nil
 }
 
 func (d DBConfig) validate() []error {
