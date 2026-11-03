@@ -1,35 +1,37 @@
+/**
+ * transport 单例 + 生成的 service client 构造 + multipart 上传（docs/前端架构.md §3.1）。
+ *
+ * - Connect 协议：POST <al_root>/<package>.<Service>/<Method>（接口文档 §12.9）；标准
+ *   protojson——lowerCamelCase、省略零值、int64 十进制字符串（接口文档 §1.1），
+ *   不注自定义 codec；业务代码对缺失字段按零值兜底（§9 第 18 条）。
+ * - 错误归一（§3.1「transport 与错误归一」）：非 2xx 由 connect-es 抛 ConnectError →
+ *   findDetails(api.common.v1.ErrorInfo) 解出 {domain, code, message, retryAfter,
+ *   attemptsLeft} → 抛 ApiError；无（有效）detail 时按 Connect 标准码兜底（接口文档
+ *   §1.5 行 226），未知码不透出 message 细节。登录流程域 200 的流程
+ *   status 分支走业务层（reducer），不在 transport 拦截。
+ * - multipart（REST 豁免端点，不用 transport）仍走 postForm：XHR 进度 + 同口径错误归一。
+ */
+import {
+  Code,
+  ConnectError,
+  createClient,
+  type Transport,
+} from '@connectrpc/connect';
+import { createConnectTransport } from '@connectrpc/connect-web';
 import {
   fromBinary,
   fromJson,
-  toBinary,
-  toJson,
   type DescMessage,
   type JsonValue,
   type MessageShape,
 } from '@bufbuild/protobuf';
-import { ApiError } from './errors';
-import type { ApiFormat, Endpoint } from './endpoints';
-
-// sso 域 Connect 化：旧统一错误信封 ErrorEnvelope / SuccessEnvelope
-//（gen/proto/api/common/response_pb.ts）已删除——非 200 错误体为 Connect 标准体 +
-// api.common.v1.ErrorInfo detail（接口文档 §1.5 行 197-211），http 层的 Connect
-// 错误体归一化另行重写；此处保留最小结构类型维持既有归一逻辑的可编译性，
-// 后端不再产出 status:"error" 形状，解不出即走 fallbackCode 兜底（§1.5 行 226）。
-interface ErrorEnvelope {
-  error?: { code?: string; message?: string; requestId?: string };
-}
-
-// ApiError 与端点描述类型（ApiFormat / HttpMethod / Endpoint / ApiErrorInit）
-// 已分别迁入 errors.ts / endpoints.ts；此处 re-export 保持
-// 既有 import 路径兼容。
-export { ApiError };
-export type { ApiErrorInit } from './errors';
-export type { ApiFormat, Endpoint, HttpMethod } from './endpoints';
-
-export interface RequestOptions {
-  signal?: AbortSignal;
-  timeoutMs?: number;
-}
+import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
+import { SsoService } from '../../gen/proto/api/sso/v1/sso_pb';
+import { AccountService } from '../../gen/proto/api/account/v1/account_pb';
+import { AdminService } from '../../gen/proto/api/admin/v1/admin_pb';
+import { RpcService } from '../../gen/proto/api/rpc/v1/rpc_pb';
+import { SetupService } from '../../gen/proto/api/setup/v1/setup_pb';
+import { ApiError, isKnownCode } from './errors';
 
 export interface UploadProgress {
   loaded: number;
@@ -44,82 +46,189 @@ export interface PostFormOptions<Res extends DescMessage = DescMessage> {
   timeoutMs?: number;
 }
 
-/** 默认超时，调用方可按端点覆盖。 */
+/** transport 默认超时；单次调用可用 CallOptions.timeoutMs 覆盖。 */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
-const CONTENT_TYPE_MISMATCH = 'content_type_mismatch';
+// ---------------------------------------------------------------------------
+// baseUrl（al_root 注入变量）与 credentials
+// ---------------------------------------------------------------------------
+
+/** __AUTHLOFT_INIT__ 的最小形状（接口文档 §8 白名单中的 al_root）。 */
+interface RawInit {
+  al_root?: unknown;
+}
 
 /**
- * 按端点的 format 序列化请求、反序列化响应。
- * 非 2xx 与 2xx JSON 响应体内 `status:"error"`（§1.0 业务失败）一律归一化为 ApiError；
- * Content-Type 与所选编码不符时直接抛 ApiError。
- * 登录流程域（/api/sso/**）顶层 status 是流程态（next / failed 等，§1.3），
- * 非 "error" 不在本层拦截，交业务层（reducer）分支（docs/前端架构.md §3.1）。
+ * al_root 取法（与 setup/bootstrap.ts 同款归一；shared 层禁止 import entry——§9 第 13 条，
+ * 故内联）：string 校验 → 去尾斜杠；缺省回落当前站点源；非浏览器环境（单测 node）为空串。
  */
-export async function request<
-  Req extends DescMessage,
-  Res extends DescMessage,
->(
-  endpoint: Endpoint<Req, Res>,
-  body?: MessageShape<Req>,
-  options: RequestOptions = {},
-): Promise<MessageShape<Res>> {
-  const { format } = endpoint;
-  const headers: Record<string, string> = {
-    Accept: acceptFor(format),
-  };
-
-  let payload: string | Uint8Array | undefined;
-  if (body !== undefined) {
-    headers['Content-Type'] = contentTypeFor(format);
-    payload =
-      format === 'json'
-        ? JSON.stringify(
-            // protobuf-es v2 中 emitDefaultValues 对应 alwaysEmitImplicit。
-            toJson(endpoint.req, body, {
-              alwaysEmitImplicit: true,
-              useProtoFieldName: true,
-            }),
-          )
-        : toBinary(endpoint.req, body);
+function resolveBaseUrl(): string {
+  const raw = (globalThis as { __AUTHLOFT_INIT__?: RawInit }).__AUTHLOFT_INIT__;
+  const alRoot =
+    typeof raw?.al_root === 'string' ? raw.al_root.trim().replace(/\/+$/, '') : '';
+  if (alRoot !== '') {
+    return alRoot;
   }
-
-  const response = await fetchWithTimeout(
-    endpoint.path,
-    {
-      method: endpoint.method,
-      headers,
-      body: payload,
-    },
-    options,
-  );
-
-  if (!response.ok) {
-    throw await readApiError(response, format);
-  }
-
-  assertContentType(response, format);
-
-  if (format === 'json') {
-    const text = await response.text();
-    const parsed = JSON.parse(text) as JsonValue;
-    // §1.0 行 57：业务失败（HTTP 200）同为统一错误信封，error.code 为 §1.6 业务词（开放非六元）。
-    const businessError = businessErrorFromJson(parsed, response.status);
-    if (businessError) {
-      throw businessError;
-    }
-    return fromJson(endpoint.res, parsed);
-  }
-  // TODO：binary 分支的 2xx 直接按端点消息解码（旧 SuccessEnvelope / ErrorEnvelope
-  // 两步解码已随信封删除，§1.0/§1.5）；Connect 错误体归一化随 transport 重写落地。
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  return fromBinary(endpoint.res, bytes);
+  return typeof location !== 'undefined' ? location.origin : '';
 }
+
+/** credentials: 'include'（跨域携带会话 Cookie）；connect-web v2 无 credentials 选项，经注入 fetch 绑定。 */
+const fetchWithCredentials: typeof globalThis.fetch = (input, init) =>
+  globalThis.fetch(input, { ...init, credentials: 'include' });
+
+// ---------------------------------------------------------------------------
+// Connect Code → 字符串 / HTTP 状态（ApiError 归一取值；§1.5 行 184-193 同源）
+// ---------------------------------------------------------------------------
+
+/** Connect Code → snake_case 字符串（Connect 协议规范词表；§1.5 表取其中 8 个入 CODE_TABLE）。 */
+const CODE_STRING: Readonly<Record<Code, string>> = {
+  [Code.Canceled]: 'canceled',
+  [Code.Unknown]: 'unknown',
+  [Code.InvalidArgument]: 'invalid_argument',
+  [Code.DeadlineExceeded]: 'deadline_exceeded',
+  [Code.NotFound]: 'not_found',
+  [Code.AlreadyExists]: 'already_exists',
+  [Code.PermissionDenied]: 'permission_denied',
+  [Code.ResourceExhausted]: 'resource_exhausted',
+  [Code.FailedPrecondition]: 'failed_precondition',
+  [Code.Aborted]: 'aborted',
+  [Code.OutOfRange]: 'out_of_range',
+  [Code.Unimplemented]: 'unimplemented',
+  [Code.Internal]: 'internal',
+  [Code.Unavailable]: 'unavailable',
+  [Code.DataLoss]: 'data_loss',
+  [Code.Unauthenticated]: 'unauthenticated',
+};
+
+/** Connect Code → HTTP 状态（Connect 协议规范映射，与 §1.5 行 184-193 的标准码 → HTTP 列一致）。 */
+const CODE_HTTP_STATUS: Readonly<Record<Code, number>> = {
+  [Code.Canceled]: 499,
+  [Code.Unknown]: 500,
+  [Code.InvalidArgument]: 400,
+  [Code.DeadlineExceeded]: 504,
+  [Code.NotFound]: 404,
+  [Code.AlreadyExists]: 409,
+  [Code.PermissionDenied]: 403,
+  [Code.ResourceExhausted]: 429,
+  [Code.FailedPrecondition]: 400,
+  [Code.Aborted]: 409,
+  [Code.OutOfRange]: 400,
+  [Code.Unimplemented]: 501,
+  [Code.Internal]: 500,
+  [Code.Unavailable]: 503,
+  [Code.DataLoss]: 500,
+  [Code.Unauthenticated]: 401,
+};
+
+// ---------------------------------------------------------------------------
+// 错误归一：ConnectError → ApiError（§3.1）
+// ---------------------------------------------------------------------------
+
+/** §1.5 行 223：request_id 不在错误体内，统一走 X-Request-Id 响应头（ConnectError.metadata 汇集 headers + trailers）。 */
+function requestIdFrom(metadata: Headers): string {
+  return metadata.get('x-request-id') ?? '';
+}
+
+/**
+ * ConnectError → ApiError（§3.1「transport 与错误归一」）：
+ * findDetails 解 api.common.v1.ErrorInfo（§1.5 行 199-221）——业务码取 ErrorInfo.code、
+ * 展示兜底取 ErrorInfo.message（行 202 / 219：i18n 优先，其次本字段）、retryAfter /
+ * attemptsLeft 透传；无（有效）detail 按 Connect 标准码兜底（行 226），其 message 仅在
+ * 标准码属于 CODE_TABLE 封闭集时透出（行 202「其次本字段」），未知码不透出。
+ */
+function toApiError(error: unknown): unknown {
+  if (!(error instanceof ConnectError)) {
+    return error;
+  }
+  const [info] = error.findDetails(ErrorInfoSchema);
+  if (info !== undefined && info.code !== '') {
+    return new ApiError({
+      httpStatus: CODE_HTTP_STATUS[error.code],
+      code: info.code,
+      message: info.message,
+      requestId: requestIdFrom(error.metadata),
+      retryAfter: info.retryAfter,
+      attemptsLeft: info.attemptsLeft,
+    });
+  }
+  const standardCode = CODE_STRING[error.code];
+  return new ApiError({
+    httpStatus: CODE_HTTP_STATUS[error.code],
+    code: standardCode,
+    message: isKnownCode(standardCode) ? error.rawMessage : '',
+    requestId: requestIdFrom(error.metadata),
+  });
+}
+
+/**
+ * transport 外层错误归一（§3.1）：所有经 transport 的失败统一 ConnectError → ApiError。
+ * 不用 interceptor 实现——connect-es 的 runUnaryCall 会把 interceptor 抛出的错误
+ * 重新包成 ConnectError（abort 处理器强制 ConnectError.from），归一会被覆盖；
+ * 包在 transport 之外则处于该机制下游，超时（deadline_exceeded）与外部中断
+ * （canceled）的 ConnectError 也一并归一。
+ * 本工程 5 个 service 的方法全部 unary（§12.9）；stream 透传不归一，若后续引入
+ * 流式方法需在其消息迭代层扩展归一。
+ */
+function withErrorNormalization(base: Transport): Transport {
+  return {
+    unary: async (...args) => {
+      try {
+        return await base.unary(...args);
+      } catch (error) {
+        throw toApiError(error);
+      }
+    },
+    stream: (...args) => base.stream(...args),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// transport 工厂 + 单例 + service client（§3.1：transport 与 client 只在本文件构造）
+// ---------------------------------------------------------------------------
+
+export interface AuthloftTransportOptions {
+  /** 缺省取注入变量 al_root（接口文档 §8）→ location.origin。 */
+  baseUrl?: string;
+  /** Connect 二进制编码（application/proto）；缺省 JSON（标准 protojson）。 */
+  useBinaryFormat?: boolean;
+  /** 默认超时；单次调用 CallOptions.timeoutMs 覆盖。 */
+  defaultTimeoutMs?: number;
+}
+
+/** 构造 Connect transport：标准 protojson（不注自定义 codec）、错误归一、credentials include、默认超时。 */
+export function createAuthloftTransport(
+  options: AuthloftTransportOptions = {},
+): Transport {
+  return withErrorNormalization(
+    createConnectTransport({
+      baseUrl: options.baseUrl ?? resolveBaseUrl(),
+      useBinaryFormat: options.useBinaryFormat ?? false,
+      defaultTimeoutMs: options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+      fetch: fetchWithCredentials,
+    }),
+  );
+}
+
+/** transport 单例（§3.1 / §9 第 5、16 条：所有发往本系统的请求经此构造）。 */
+export const transport: Transport = createAuthloftTransport();
+
+/** service client（api.{sso,account,admin,rpc,setup}.v1，接口文档 §0 / §12.9）：薄封装，业务经 client.<method>(req, options?) 调用。 */
+export const ssoClient = createClient(SsoService, transport);
+export const accountClient = createClient(AccountService, transport);
+export const adminClient = createClient(AdminService, transport);
+export const rpcClient = createClient(RpcService, transport);
+export const setupClient = createClient(SetupService, transport);
+
+// ---------------------------------------------------------------------------
+// multipart 上传（REST 豁免端点，不用 transport；§3.1 / §9 第 5 条）
+// ---------------------------------------------------------------------------
 
 /**
  * multipart 上传：Content-Type 不手动设置（浏览器自动带 boundary），
  * onUploadProgress 经 XHR 的 upload 事件提供。
  * 提供 options.res 时返回解码后的生成消息，否则返回解析后的 JSON。
+ * 非 200 按 Connect 错误体归一（§1.5 行 197-211）：details 的 ErrorInfo 优先，
+ * 解不出错误体时按 HTTP 状态映射 Connect 标准码兜底（行 184-193）。
  */
 export function postForm<Res extends DescMessage>(
   url: string,
@@ -174,17 +283,18 @@ export function postForm(
       fail(new DOMException('The operation timed out', 'AbortError'));
     };
     xhr.onerror = () => {
+      // 网络不可达按 §1.5 行 193 unavailable（服务不可用）归一；不透出细节。
       fail(
         new ApiError({
           httpStatus: 0,
-          code: 'internal_error',
-          message: 'network error',
+          code: 'unavailable',
+          message: '',
           requestId: '',
         }),
       );
     };
     xhr.onload = () => {
-      let parsed: JsonValue;
+      let parsed: JsonValue | undefined;
       try {
         parsed = JSON.parse(xhr.responseText) as JsonValue;
       } catch (error) {
@@ -192,26 +302,16 @@ export function postForm(
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        // §1.0 行 57：multipart 端点（/api/account/**）2xx 业务失败同为统一错误信封。
-        const businessError = businessErrorFromJson(parsed, xhr.status);
-        if (businessError) {
-          fail(businessError);
-          return;
-        }
+        // §1.0：成功响应即消息本身，无业务失败信封；流程态分支归业务层。
         finish();
-        resolve(
-          options.res
-            ? fromJson(options.res, parsed)
-            : parsed,
-        );
+        resolve(options.res ? fromJson(options.res, parsed) : parsed);
         return;
       }
-      // §1.5 行 214：非 200 响应体固定为统一错误信封（error.{code,message,request_id} 嵌套）。
       fail(
-        toApiError(
-          decodeErrorEnvelopeJson(parsed),
+        connectBodyToApiError(
+          parsed,
           xhr.status,
-          xhr.statusText,
+          xhr.getResponseHeader('x-request-id') ?? '',
         ),
       );
     };
@@ -220,155 +320,105 @@ export function postForm(
   });
 }
 
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit,
-  options: RequestOptions,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const external = options.signal;
-  const onAbort = () => controller.abort();
-
-  if (external) {
-    if (external.aborted) {
-      controller.abort();
-    } else {
-      external.addEventListener('abort', onAbort, { once: true });
-    }
-  }
-
-  try {
-    return await fetch(input, {
-      ...init,
-      credentials: 'include',
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-    external?.removeEventListener('abort', onAbort);
-  }
+/** Connect 错误体 JSON 的最小形状（§1.5 行 199-211）。 */
+interface ConnectErrorBody {
+  readonly code?: unknown;
+  readonly message?: unknown;
+  readonly details?: unknown;
 }
 
-function acceptFor(format: ApiFormat): string {
-  return format === 'json' ? 'application/json' : 'application/octet-stream';
-}
-
-function contentTypeFor(format: ApiFormat): string {
-  return format === 'json' ? 'application/json' : 'application/octet-stream';
-}
-
-function assertContentType(response: Response, format: ApiFormat): void {
-  const expected = contentTypeFor(format);
-  const actual = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (!actual.includes(expected)) {
-    throw new ApiError({
-      httpStatus: response.status,
-      code: CONTENT_TYPE_MISMATCH,
-      message: `expected ${expected} but got ${actual || '(empty)'}`,
-      requestId: response.headers.get('x-request-id') ?? '',
-    });
-  }
-}
-
-/** §1.0 行 57-58 / §1.5 行 214：统一错误信封 {"status":"error","error":{code,message,request_id}} 的形状判别。 */
-function isErrorEnvelopeShaped(parsed: JsonValue): boolean {
-  return (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    !Array.isArray(parsed) &&
-    (parsed as { status?: unknown }).status === 'error'
-  );
-}
-
-/** 从 JSON 原文解旧错误信封（信封消息删除后改为结构判别）；非信封或结构不符返回 undefined。 */
-function decodeErrorEnvelopeJson(
-  parsed: JsonValue,
-): ErrorEnvelope | undefined {
-  if (!isErrorEnvelopeShaped(parsed)) {
-    return undefined;
-  }
-  const { error } = parsed as { error?: unknown };
-  if (typeof error !== 'object' || error === null) {
-    return undefined;
-  }
-  const record = error as Record<string, unknown>;
-  const requestId =
-    typeof record.request_id === 'string'
-      ? record.request_id
-      : typeof record.requestId === 'string'
-        ? record.requestId
-        : undefined;
-  return {
-    error: {
-      code: typeof record.code === 'string' ? record.code : undefined,
-      message: typeof record.message === 'string' ? record.message : undefined,
-      requestId,
-    },
-  };
-}
-
-/** 2xx JSON 响应体内识别 §1.0 业务失败信封 → ApiError；非信封（含 sso 流程态）返回 undefined。 */
-function businessErrorFromJson(
-  parsed: JsonValue,
+/**
+ * XHR 路径的 Connect 错误体 → ApiError（不经过 connect-es，手动同口径归一）：
+ * details 的 api.common.v1.ErrorInfo 优先（§1.5 行 203-209）；无有效 detail 时
+ * code 取错误体顶层 code（缺省按 HTTP 状态映射，行 184-193），message 仅在
+ * code 属于 CODE_TABLE 封闭集时透出（行 202），未知码不透出。
+ */
+function connectBodyToApiError(
+  parsed: JsonValue | undefined,
   httpStatus: number,
-): ApiError | undefined {
-  if (!isErrorEnvelopeShaped(parsed)) {
-    return undefined;
-  }
-  return toApiError(decodeErrorEnvelopeJson(parsed), httpStatus, '');
-}
-
-/** 信封 → ApiError；信封缺失 / 字段缺失时按 HTTP 状态兜底（§1.5 行 218 六元）。 */
-function toApiError(
-  envelope: ErrorEnvelope | undefined,
-  httpStatus: number,
-  fallbackMessage: string,
+  requestId: string,
 ): ApiError {
-  return new ApiError({
-    httpStatus,
-    code: envelope?.error?.code || fallbackCode(httpStatus),
-    message: envelope?.error?.message || fallbackMessage,
-    requestId: envelope?.error?.requestId || '',
-  });
-}
-
-/** 非 2xx 响应体按协商编码解旧错误信封；解不出走六元兜底。
- * 旧 binary 信封分支已随 ErrorEnvelope 删除（Connect 错误体归一化另行处理），
- * binary 非 200 一律走 fallbackCode 兜底。 */
-async function readApiError(
-  response: Response,
-  format: ApiFormat,
-): Promise<ApiError> {
-  let envelope: ErrorEnvelope | undefined;
-  try {
-    if (format === 'json') {
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      envelope = decodeErrorEnvelopeJson(
-        JSON.parse(new TextDecoder().decode(bytes)) as JsonValue,
-      );
-    }
-  } catch {
-    envelope = undefined;
+  let body: ConnectErrorBody | undefined;
+  if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
+    body = { code: record.code, message: record.message, details: record.details };
   }
-
-  return toApiError(envelope, response.status, response.statusText);
+  const info = body !== undefined ? errorInfoFromBody(body) : undefined;
+  if (info !== undefined && info.code !== '') {
+    return new ApiError({
+      httpStatus,
+      code: info.code,
+      message: info.message,
+      requestId,
+      retryAfter: info.retryAfter,
+      attemptsLeft: info.attemptsLeft,
+    });
+  }
+  const code =
+    typeof body?.code === 'string' && body.code !== ''
+      ? body.code
+      : httpFallbackCode(httpStatus);
+  const message =
+    typeof body?.message === 'string' && isKnownCode(code) ? body.message : '';
+  return new ApiError({ httpStatus, code, message, requestId });
 }
 
-function fallbackCode(status: number): string {
+/**
+ * 从 Connect 错误体 details 解 api.common.v1.ErrorInfo（§1.5 行 203-209：
+ * type 匹配、value 为 base64 的 Protobuf 字节，消费方以 value 解码为准；
+ * 解码失败视同无 detail）。
+ */
+function errorInfoFromBody(body: ConnectErrorBody): ReturnType<
+  typeof fromBinary<typeof ErrorInfoSchema>
+> | undefined {
+  if (!Array.isArray(body.details)) {
+    return undefined;
+  }
+  for (const detail of body.details) {
+    if (typeof detail !== 'object' || detail === null) {
+      continue;
+    }
+    const { type, value } = detail as { type?: unknown; value?: unknown };
+    if (type !== 'api.common.v1.ErrorInfo' || typeof value !== 'string') {
+      continue;
+    }
+    try {
+      return fromBinary(ErrorInfoSchema, base64ToBytes(value));
+    } catch {
+      // §1.5 行 207：以 value 解码为准，解不出视同无 detail。
+    }
+  }
+  return undefined;
+}
+
+/** base64 → Protobuf 字节（details.value 的解码）。 */
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/** HTTP 状态 → Connect 标准码（§1.5 行 184-193 反查；未列状态归 internal）。 */
+function httpFallbackCode(status: number): string {
   switch (status) {
     case 400:
-      return 'bad_request';
+      return 'invalid_argument';
     case 401:
-      return 'unauthorized';
+      return 'unauthenticated';
     case 403:
-      return 'forbidden';
+      return 'permission_denied';
     case 404:
       return 'not_found';
-    case 415:
-      return 'unsupported_media_type';
+    case 409:
+      return 'already_exists';
+    case 429:
+      return 'resource_exhausted';
+    case 503:
+      return 'unavailable';
     default:
-      return 'internal_error';
+      return 'internal';
   }
 }

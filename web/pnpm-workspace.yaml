@@ -4,3 +4,5 @@ allowBuilds:
   '@swc/core': true
   # core-js 的 postinstall 仅为提示信息，不执行
   core-js: false
+  # msw 的 postinstall 仅打印 banner
+  msw: true

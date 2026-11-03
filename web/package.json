@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",
+    "@connectrpc/connect": "^2.3.0",
+    "@connectrpc/connect-web": "^2.3.0",
     "@modern-js/runtime": "3.11.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.0"
@@ -23,10 +25,11 @@
     "@bufbuild/protoc-gen-es": "^2.16.0",
     "@modern-js/app-tools": "3.11.0",
     "@modern-js/tsconfig": "3.11.0",
-    "typescript": "~5.7.3",
     "@types/node": "^20",
-    "rstack": "0.8.2",
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6"
+    "@types/react-dom": "^19.1.6",
+    "msw": "^2.15.0",
+    "rstack": "0.8.2",
+    "typescript": "~5.7.3"
   }
 }
