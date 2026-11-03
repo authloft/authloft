@@ -20,36 +20,63 @@ import (
 	"authloft/internal/config"
 )
 
-// TestMain 共享测试库错峰（`go test ./internal/setup/... ./internal/migrate/...`
-// 两个包的测试二进制并行执行、共用同一测试实例）：DSN 存在时先等库「安静」
-//（表空且无其他连接，连续多次确认）再进 m.Run()——等 migrate 侧二进制自然
-// 结束，从根上避免双方 dropAllTables 互删对方的表。migrate 包无需配合：
-// 其用例间隙（毫秒级、库空且无连接）远短于确认窗口。
+// testDBLockName 测试库互斥锁名（与 settings / repo / migrate / main 的
+// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
+// TestMain 注释。
+const testDBLockName = "uc_test_db_slot"
+
+// TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
+// settings 包 store_test.go 的 TestMain 注释）。取代旧的 waitQuietDB
+// 错峰轮询（五包统一接锁）：旧口径查 processlist「无其他连接」，
+// 而兄弟二进制阻塞在 GET_LOCK 的等待连接常驻 processlist，计入会互相
+// 卡到超时（settings 包实测）；持锁串行后错峰不再必要，等表空仅作
+// 防御性兜底。
 func TestMain(m *testing.M) {
-	if dsn := os.Getenv("UC_TEST_MYSQL_DSN"); dsn != "" {
-		waitQuietDB(dsn)
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	if dsn == "" {
+		os.Exit(m.Run())
 	}
-	os.Exit(m.Run())
+	db := acquireTestDB(dsn)
+	code := m.Run()
+	if db != nil {
+		_ = db.Close() // 关连接即释放 GET_LOCK
+	}
+	os.Exit(code)
 }
 
-// waitQuietDB 等待共享测试库空闲：SHOW TABLES 为空 且 processlist 中无
-// 其他 test 库连接（排除自身），连续 quietConfirmations 次、间隔
-// quietInterval 满足才放行；总上限 quietTimeout 防御性兜底。
-func waitQuietDB(dsn string) {
+// acquireTestDB 获取测试库互斥槽：单连接 *sql.DB——GET_LOCK 与安静探测
+// 共用同一物理连接（连接一多探测口径就乱）。
+func acquireTestDB(dsn string) *sql.DB {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	var got int
+	if err := db.QueryRow("SELECT GET_LOCK(?, ?)", testDBLockName, 300).Scan(&got); err != nil || got != 1 {
+		_ = db.Close()
+		return nil
+	}
+	waitQuietOnConn(db)
+	return db
+}
+
+// waitQuietOnConn 在持锁连接上等库安静：库内无表（有表 = 有未按预期
+// 清理的残留），连续 quietConfirmations 次、间隔 quietInterval 才放行；
+// 总上限 quietTimeout 防御性兜底（超时放行，宁可试跑不挂死）。不看
+// 连接数：兄弟二进制阻塞在 GET_LOCK 的等待连接无表、无害，若计入会
+// 互相卡到超时（实测）。
+func waitQuietOnConn(db *sql.DB) {
 	const (
 		quietConfirmations = 3
 		quietInterval      = 500 * time.Millisecond
 		quietTimeout       = 90 * time.Second
 	)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return // 连接失败留给具体用例报告
-	}
-	defer db.Close()
 	deadline := time.Now().Add(quietTimeout)
 	streak := 0
 	for time.Now().Before(deadline) {
-		if dbQuiet(db) {
+		if connQuiet(db) {
 			streak++
 			if streak >= quietConfirmations {
 				return
@@ -61,22 +88,13 @@ func waitQuietDB(dsn string) {
 	}
 }
 
-// dbQuiet 单次探测：库内无表且无其他会话连接。
-func dbQuiet(db *sql.DB) bool {
+// connQuiet 单次探测：库内无表。
+func connQuiet(db *sql.DB) bool {
 	var tables int
 	if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables); err != nil {
 		return false
 	}
-	if tables > 0 {
-		return false
-	}
-	var others int
-	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM information_schema.processlist WHERE db = DATABASE() AND id <> CONNECTION_ID()",
-	).Scan(&others); err != nil {
-		return false
-	}
-	return others == 0
+	return tables == 0
 }
 
 // envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例

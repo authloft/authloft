@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // wantTables §4 全部 11 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
@@ -22,6 +23,79 @@ var wantTables = []string{
 	"oidc_refresh_token",
 	"event_log",
 	"settings",
+}
+
+// testDBLockName 测试库互斥锁名（与 settings / repo / setup / main 的
+// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
+// TestMain 注释。
+const testDBLockName = "uc_test_db_slot"
+
+// TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
+// settings 包 store_test.go 的 TestMain 注释；五包统一接锁）。
+func TestMain(m *testing.M) {
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	if dsn == "" {
+		os.Exit(m.Run())
+	}
+	db := acquireTestDB(dsn)
+	code := m.Run()
+	if db != nil {
+		_ = db.Close() // 关连接即释放 GET_LOCK
+	}
+	os.Exit(code)
+}
+
+// acquireTestDB 获取测试库互斥槽：单连接 *sql.DB——GET_LOCK 与安静探测
+// 共用同一物理连接（连接一多探测口径就乱）。
+func acquireTestDB(dsn string) *sql.DB {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	var got int
+	if err := db.QueryRow("SELECT GET_LOCK(?, ?)", testDBLockName, 300).Scan(&got); err != nil || got != 1 {
+		_ = db.Close()
+		return nil
+	}
+	waitQuietOnConn(db)
+	return db
+}
+
+// waitQuietOnConn 在持锁连接上等库安静：库内无表（有表 = 有未按预期
+// 清理的残留），连续 quietConfirmations 次、间隔 quietInterval 才放行；
+// 总上限 quietTimeout 防御性兜底（超时放行，宁可试跑不挂死）。不看
+// 连接数：兄弟二进制阻塞在 GET_LOCK 的等待连接无表、无害，若计入会
+// 互相卡到超时（实测）。
+func waitQuietOnConn(db *sql.DB) {
+	const (
+		quietConfirmations = 3
+		quietInterval      = 500 * time.Millisecond
+		quietTimeout       = 90 * time.Second
+	)
+	deadline := time.Now().Add(quietTimeout)
+	streak := 0
+	for time.Now().Before(deadline) {
+		if connQuiet(db) {
+			streak++
+			if streak >= quietConfirmations {
+				return
+			}
+		} else {
+			streak = 0
+		}
+		time.Sleep(quietInterval)
+	}
+}
+
+// connQuiet 单次探测：库内无表。
+func connQuiet(db *sql.DB) bool {
+	var tables int
+	if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables); err != nil {
+		return false
+	}
+	return tables == 0
 }
 
 // envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例
