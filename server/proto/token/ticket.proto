@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package token;
+
+import "google/protobuf/struct.proto";
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1245-1247），用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1 行 1641）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6 行 89），§11.6 整型本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// TicketPayload 是扫码票据 ticket 的加密前载荷（docs/后端架构.md §11.6.4 行 1322-1336）。
+// ticket 加密串本身即状态载体：过期由服务端解 ticket 判断，无需存储（行 1334）；
+// 授权结果写 al:ticket:{ticket_id}，TTL 与 exp 对齐（行 1336）。
+// 字段名 / 编号 / 类型与行 1325-1331 的 protobuf 定义逐字一致。
+message TicketPayload {
+  // 全链路统一名：响应字段 / Redis 键 / 轮询回传；控制在 24 字符以内（行 1326、1335）。
+  string ticket_id = 1;
+  // 扫码类 Provider 标识（行 1327）。
+  string provider_key = 2;
+  // login（默认）| bind，决定小程序端写什么、PC 端走哪条轮询（接口文档 §3.7.1）（行 1328）。
+  string scene = 3;
+  // 签发时间，Unix 秒（行 1329）。
+  int64 iat = 4;
+  // 过期时间，Unix 秒；默认 600s（行 1330）。
+  int64 exp = 5;
+}
+
+// TicketResult 是 `al:ticket:{ticket_id}` 的存储值（docs/后端架构.md §11.6.5 行 1338-1369）。
+// 按 protojson（§1.6 行 86 MarshalOptions）序列化为 JSON 后整值加密（复用 §11.6.1
+// 封装、purpose=ticket）写入 Redis，Redis 内不留明文；读取方 GETDEL 后解密。
+// 字段名与行 1342-1363 的 JSON 结构一致；JSON 未给编号，按出现顺序从 1 起连续
+// （编号约定沿用接口文档 §12.9 行 1723 先例）。
+message TicketResult {
+  // 结构版本，读取方遇未知版本按失败处理（行 1344）。
+  int64 v = 1;
+  // login | bind，取自 TicketPayload.scene，不由客户端指定（行 1345）。
+  string scene = 2;
+  // scanned | success | failed，映射到轮询的 ticket.status（接口文档 §1.6）（行 1346）。
+  string status = 3;
+  // Provider 标识（行 1347）。
+  string provider_key = 4;
+  // 写入通道，当前仅 qrcode（行 1348）。
+  string channel = 5;
+  // 写入时间，Unix 秒（行 1349）。
+  int64 created_at = 6;
+  // 过期时间，Unix 秒；与 ticket.exp 一致（行 1350）。
+  int64 expires_at = 7;
+  // false = 就绪待消费；消费方 GETDEL 原子取走即视为已消费，无需二次写（行 1351、1368）。
+  bool consumed = 8;
+  // 仅 scene=login 时填充（行 1352）。
+  LoginResult login_result = 9;
+  // login（binding_required=true 时）与 bind 场景共用的三方身份（行 1356-1362）。
+  ThirdpartyIdentity thirdparty_identity = 10;
+}
+
+// LoginResult 是轮询方「建会话或签 login_token」的最小输入
+// （§11.6.5 行 1352-1355、1369：TicketResult 除 thirdparty_identity 外
+// 不含任何凭证 / 令牌，不回传登录流程信封本身）。
+message LoginResult {
+  // 命中的本地账号；未绑定为 0（行 1353）。
+  int64 uid = 1;
+  // true 时轮询方用 thirdparty_identity 签发 login_token 并返回 binding_required
+  // 信封（行 1354）。
+  bool binding_required = 2;
+}
+
+// ThirdpartyIdentity 是 TicketResult 内的三方身份（§11.6.5 行 1356-1362）；
+// 消息名取自 JSON 字段 thirdparty_identity，与 §11.6.2 的 ThirdParty
+// （不含 raw）是两个结构。绑定场景原始资料落 user_thirdparty_bind.extra（行 1361）。
+message ThirdpartyIdentity {
+  // 三方 open_id（行 1357）。
+  string open_id = 1;
+  // 三方 union_id；无则空串（行 1358）。
+  string union_id = 2;
+  // 三方昵称（行 1359）。
+  string nickname = 3;
+  // 三方头像（行 1360）。
+  string avatar_url = 4;
+  // 第三方原始资料，任意 JSON（行 1361）；按仓库先例（oidc/credential）
+  // 用 google.protobuf.Struct 承载，不逐字段建模。
+  google.protobuf.Struct raw = 5;
+}

@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1245-1247）：由服务端签发、
+// 服务端解析，前端只当不透明串透传，故不进 api 报文包名，用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1 行 1641 `package provider;`）。
+// 生成到 gen/go/token/，Go 包名 token。本目录（proto/token/**）豁免 32 位整型
+// lint（§1.6 行 89），但 §11.6 载荷整型本就定义 int64，一律沿用 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// LoginTokenPayload 是 login_token 的加密前载荷——登录过程态
+// （docs/后端架构.md §11.6.2 行 1270-1304）。加密后经响应体下发、前端存内存变量、
+// 后续在请求体顶层回传（接口文档 §1.8）；令牌共用封装见 §11.6.1（行 1249-1268）。
+// 字段名 / 编号 / 类型与行 1275-1287 的 protobuf 定义逐字一致。
+message LoginTokenPayload {
+  // 会话标识，用于绑定验证码 / 日志关联（行 1276）。
+  string tid = 1;
+  // login|register|reset（行 1277）。
+  string flow = 2;
+  // 当前因子（行 1278）。
+  string factor = 3;
+  // 已通过因子（行 1279）。
+  repeated string passed = 4;
+  // pending user_id，0 = 主因子未通过（行 1280）。
+  int64 uid = 5;
+  // 进行中的挑战；nil = 无进行中的挑战（行 1281）。
+  Challenge ch = 6;
+  // 精简三方身份（不含 Raw——三方原始资料落 user_thirdparty_bind.extra，行 1302）；
+  // nil = 非三方流程（行 1282）。
+  ThirdParty tp = 7;
+  // /auth/authorize 的原始参数，登录成功后生成授权码的唯一来源（行 1303）；
+  // nil = 非 OIDC 流程（行 1283）。
+  Oidc oidc = 8;
+  // 认证方法（行 1284）。
+  repeated string amr = 9;
+  // 签发时间，Unix 秒（行 1285）。
+  int64 iat = 10;
+  // 过期时间，Unix 秒；固定 10 分钟（行 1286）。
+  int64 exp = 11;
+}
+
+// Challenge 是 login_token 内进行中的一次挑战（§11.6.2 行 1289）。
+message Challenge {
+  // 目的，枚举 login / register / reset / mfa（行 1299）；bind / webauthn
+  // 保留于本枚举命名空间（行 1300）但不属于 login_token 的合法取值，
+  // login 校验时见到即拒绝。
+  string purpose = 1;
+  // 挑战目标（行 1289）。
+  string target = 2;
+  // 一次性随机数（行 1289）。
+  string nonce = 3;
+}
+
+// ThirdParty 是 login_token 内携带的精简三方身份（§11.6.2 行 1290、1302）：
+// 只存精简三方身份、去掉 Raw，三方原始资料落 user_thirdparty_bind.extra；
+// 每次三方成功都覆盖 tp，保证「仅最后一次可绑定」。
+message ThirdParty {
+  // Provider 标识（行 1290）。
+  string provider_key = 1;
+  // 三方 open_id（行 1290）。
+  string open_id = 2;
+  // 三方 union_id（行 1290）。
+  string union_id = 3;
+  // 三方昵称（行 1290）。
+  string nickname = 4;
+  // 三方头像（行 1290）。
+  string avatar_url = 5;
+}
+
+// Oidc 是 /auth/authorize 原始参数的快照（§11.6.2 行 1292-1294）。
+message Oidc {
+  // OIDC client_id（行 1292）。
+  string client_id = 1;
+  // OIDC redirect_uri（行 1292）。
+  string redirect_uri = 2;
+  // OIDC scope（行 1292）。
+  string scope = 3;
+  // OIDC nonce（行 1292）。
+  string nonce = 4;
+  // PKCE code_challenge（行 1293）。
+  string code_challenge = 5;
+  // PKCE code_challenge_method（行 1293）。
+  string code_challenge_method = 6;
+  // OIDC state（行 1294）。
+  string state = 7;
+}

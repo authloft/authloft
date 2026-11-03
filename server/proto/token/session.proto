@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1245-1247），用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1 行 1641）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6 行 89），§11.6 整型本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// SessionTokenPayload 是 session_token / al_session 的加密前载荷——会话令牌
+// （docs/后端架构.md §11.6.3 行 1306-1320）。浏览器写 Cookie al_session
+// （接口文档 §1.9）；小程序 / 宿主环境由响应体下发、用 Header X-Authloft-Token
+// 回传（接口文档 §1.2）。字段名 / 编号 / 类型与行 1309-1316 的 protobuf 定义逐字一致。
+message SessionTokenPayload {
+  // UID（行 1310）。
+  int64 id = 1;
+  // 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效；改密 / 重置 /
+  // 管理员禁用递增（登出不递增）；递增到 > 30000 回绕为 1、不回到 0（行 1311、1319）。
+  int64 epoch = 2;
+  // 认证方法，如 ["pwd","otp"]（行 1312）。
+  repeated string amr = 3;
+  // Session ID（行 1313）。
+  string sid = 4;
+  // 签发时间，Unix 秒（行 1314）。
+  int64 iat = 5;
+  // 过期时间，Unix 秒（行 1315）。
+  int64 exp = 6;
+}
