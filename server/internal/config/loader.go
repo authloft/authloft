@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -14,24 +13,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ErrNotExist 配置文件不存在（§3.1 启动分支判据 / §3.15 setup 模式）：
+// Load 不再自动生成写回（已移除首启路径——sign_key 只在安装流程 §3.15
+// 中生成），bootstrap 用 errors.Is 判定后转 setup 模式。链到 fs.ErrNotExist
+//（包内 ReadFile 的原始判定语义保持可判）。
+var ErrNotExist = fmt.Errorf("config: file does not exist: %w", fs.ErrNotExist)
+
 // Load 读取 YAML 启动配置（docs/后端架构.md §3.2 职责表）：
 //
 //  1. 文件存在：解析 → 应用环境变量覆盖（环境变量优先）→ Validate；
 //     任一步失败即返回 error，fail-fast，不提供运行期兜底默认值；
-//  2. 文件不存在（唯一例外，§3.2 约定 4）：生成全部 sign_key（五场景
-//     AES-256-GCM 对称单密钥：crypto/rand 32 字节 → std base64，kid=1），
-//     连同默认值结构写回 YAML 后正常启动；
+//  2. 文件不存在：返回包装 ErrNotExist 的错误（§3.15 安装决策：缺文件即
+//     首次启动，由 bootstrap 转 setup 模式，不在此生成）；
 //  3. 其他读错误（权限等）原样返回。
 //
-// 日志只记录事件与路径，绝不输出密钥值（§3.2 约定 3）；错误信息亦不回显
-// 密钥——env / Validate 的报错只含字段路径与原因。
+// 错误信息不回显密钥——env / Validate 的报错只含字段路径与原因（§3.2 约定 3）。
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
 		return parseAndValidate(data)
 	case errors.Is(err, fs.ErrNotExist):
-		return firstRun(path)
+		return nil, fmt.Errorf("config: %s: %w", path, ErrNotExist)
 	default:
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
 	}
@@ -52,35 +55,11 @@ func parseAndValidate(data []byte) (*Config, error) {
 	return &c, nil
 }
 
-// firstRun 配置文件不存在且首次运行：生成 sign_key + 默认值结构写回 YAML 后正常
-// 启动。写回发生在 env 覆盖之前——env 是进程级注入不落盘，文件保持纯默认值，
-// 下次无 env 启动仍可用。
-func firstRun(path string) (*Config, error) {
-	c, err := defaultConfig()
-	if err != nil {
-		return nil, fmt.Errorf("config: generate sign keys: %w", err)
-	}
-	out, err := yaml.Marshal(c)
-	if err != nil {
-		return nil, fmt.Errorf("config: marshal default yaml: %w", err)
-	}
-	// 0600：文件含对称密钥，仅属主可读。
-	if err := os.WriteFile(path, out, 0o600); err != nil {
-		return nil, fmt.Errorf("config: write %s: %w", path, err)
-	}
-	slog.Info("config: file missing, generated default config with fresh sign keys", "path", path)
-	if err := applyEnvOverrides(c); err != nil {
-		return nil, err
-	}
-	if err := c.Validate(); err != nil {
-		return nil, fmt.Errorf("config: invalid: %w", err)
-	}
-	return c, nil
-}
-
-// defaultConfig 构造全量默认值结构（与 configs/config.yaml.example 同源），
-// sign_key 五场景现场生成，互不复用。
-func defaultConfig() (*Config, error) {
+// DefaultConfig 构造全量默认值结构（与 configs/config.yaml.example 同源），
+// sign_key 五场景现场随机生成（crypto/rand 32 字节 → std base64，kid=1，
+// 互不复用）。供安装流程消费（§3.15 writer.go：全新安装生成完整 config；
+// §3.2 约定 4——密钥只在安装流程中生成，loader 不再自动生成写回）。
+func DefaultConfig() (*Config, error) {
 	c := Config{
 		Server: ServerConfig{
 			Listen:       ":8080",

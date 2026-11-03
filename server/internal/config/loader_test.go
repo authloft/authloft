@@ -3,7 +3,8 @@ package config
 import (
 	"bytes"
 	"encoding/base64"
-	"log/slog"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,85 +39,67 @@ argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
 log: { level: info, format: json }
 `
 
-// TestLoadFirstRunGeneratesAndWritesBackSignKeys 唯一例外路径（§3.2 约定 4）：
-// 配置文件不存在 → 自动生成 5 场景密钥写回 YAML 后正常启动；写回的文件可再次
-// 加载且密钥一致（不是每次 Load 重新生成）。
-func TestLoadFirstRunGeneratesAndWritesBackSignKeys(t *testing.T) {
+// TestLoadMissingFileReturnsErrNotExist 文件不存在（已移除首启自动生成
+// 路径后的新语义，§3.15 安装决策）：返回可被 errors.Is 判定的 ErrNotExist
+//（供 bootstrap 转 setup 模式），且不创建文件、不生成任何内容。
+func TestLoadMissingFileReturnsErrNotExist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("first run: %v", err)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("missing file must fail, got nil")
 	}
-
-	cfgReloaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("reload written-back file: %v", err)
+	if !errors.Is(err, ErrNotExist) {
+		t.Fatalf("want ErrNotExist, got %v", err)
 	}
-	if cfgReloaded.SignKey != cfg.SignKey {
-		t.Fatal("reloading regenerated sign keys; written-back file must be reused")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("ErrNotExist must chain fs.ErrNotExist, got %v", err)
 	}
-
-	scenarios := []struct {
-		name string
-		km   KeyMaterial
-	}{
-		{"session", cfg.SignKey.Session},
-		{"login", cfg.SignKey.Login},
-		{"ticket", cfg.SignKey.Ticket},
-		{"cookie", cfg.SignKey.Cookie},
-		{"sync_payload", cfg.SignKey.SyncPayload},
-	}
-	seen := make(map[string]bool, len(scenarios))
-	for _, sc := range scenarios {
-		raw, err := base64.StdEncoding.DecodeString(sc.km.Key)
-		if err != nil {
-			t.Errorf("%s key: invalid base64: %v", sc.name, err)
-			continue
-		}
-		if len(raw) != 32 {
-			t.Errorf("%s key: decodes to %d bytes, want 32", sc.name, len(raw))
-		}
-		if sc.km.Kid != 1 {
-			t.Errorf("%s kid = %d, want 1", sc.name, sc.km.Kid)
-		}
-		if seen[sc.km.Key] {
-			t.Errorf("duplicated %s key; five scenarios must be independent keys", sc.name)
-		}
-		seen[sc.km.Key] = true
-	}
-
-	if cfg.Server.Listen != ":8080" || cfg.Log.Level != "info" || cfg.Log.Format != "json" ||
-		cfg.Argon2.Time != 3 || cfg.Argon2.KeyLen != 32 || cfg.Redis.PoolSize != 50 {
-		t.Errorf("first run returned non-default config: server=%+v log=%+v argon2=%+v redis=%+v",
-			cfg.Server, cfg.Log, cfg.Argon2, cfg.Redis)
-	}
-	if cfg.Server.ReadTimeout.Duration != 30*time.Second || cfg.DB.ConnMaxLifetime.Duration != time.Hour {
-		t.Errorf("first run returned non-default durations: read=%v lifetime=%v",
-			cfg.Server.ReadTimeout, cfg.DB.ConnMaxLifetime)
+	if _, statErr := os.Stat(path); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("Load must not create the file, stat = %v", statErr)
 	}
 }
 
-// TestLoadFirstRunEnvOverridesWithoutPersisting env 覆盖生效但不写回文件：
-// 首启写回的是纯默认值结构，env 是进程级注入。
-func TestLoadFirstRunEnvOverridesWithoutPersisting(t *testing.T) {
-	t.Setenv("AUTHLOFT_SERVER_LISTEN", ":9999")
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	cfg, err := Load(path)
+// TestDefaultConfigValidAndKeysIndependent DefaultConfig（安装流程的默认值
+// 来源，§3.15 writer.go）：整体通过 Validate；sign_key 五场景独立、解码 32
+// 字节、kid=1；两次调用生成不同密钥（每次现场随机）。
+func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
+	cfg, err := DefaultConfig()
 	if err != nil {
-		t.Fatalf("first run: %v", err)
+		t.Fatalf("default config: %v", err)
 	}
-	if cfg.Server.Listen != ":9999" {
-		t.Errorf("listen = %q, want :9999 from env", cfg.Server.Listen)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config must pass Validate: %v", err)
 	}
-	data, err := os.ReadFile(path)
+	seen := make(map[string]bool, 5)
+	for name, km := range map[string]KeyMaterial{
+		"session":     cfg.SignKey.Session,
+		"login":       cfg.SignKey.Login,
+		"ticket":      cfg.SignKey.Ticket,
+		"cookie":      cfg.SignKey.Cookie,
+		"sync_payload": cfg.SignKey.SyncPayload,
+	} {
+		raw, err := base64.StdEncoding.DecodeString(km.Key)
+		if err != nil {
+			t.Errorf("%s key: invalid base64: %v", name, err)
+			continue
+		}
+		if len(raw) != 32 {
+			t.Errorf("%s key: decodes to %d bytes, want 32", name, len(raw))
+		}
+		if km.Kid != 1 {
+			t.Errorf("%s kid = %d, want 1", name, km.Kid)
+		}
+		if seen[km.Key] {
+			t.Errorf("duplicated %s key; five scenarios must be independent keys", name)
+		}
+		seen[km.Key] = true
+	}
+	other, err := DefaultConfig()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("second default config: %v", err)
 	}
-	if !strings.Contains(string(data), ":8080") {
-		t.Error("written-back file must keep default listen value")
-	}
-	if strings.Contains(string(data), "9999") {
-		t.Error("env value must not be persisted to file")
+	if other.SignKey.Session.Key == cfg.SignKey.Session.Key {
+		t.Error("two DefaultConfig calls must generate independent keys")
 	}
 }
 
@@ -250,40 +233,15 @@ func TestLoadBareNumberDurationFails(t *testing.T) {
 	}
 }
 
-// TestLoadReadErrorFails 读错误（如路径是目录）原样失败，不得误判为首启去生成文件。
+// TestLoadReadErrorFails 读错误（如路径是目录）原样失败，不得误判为首启语义
+//（返回的错误不得链到 ErrNotExist——目录不是「文件不存在」）。
 func TestLoadReadErrorFails(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Load(dir); err == nil {
-		t.Fatal("reading a directory must fail, not trigger first-run generation")
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("reading a directory must fail")
 	}
-}
-
-// TestSignKeysNeverLogged 密钥不出日志（§3.2 约定 3）：捕获首启 slog 输出，
-// 断言生成了日志行但其中不含任何 sign_key 值；错误路径不回显密钥。
-func TestSignKeysNeverLogged(t *testing.T) {
-	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	defer slog.SetDefault(prev)
-
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("first run: %v", err)
-	}
-	logged := buf.String()
-	if !strings.Contains(logged, "generated default config") {
-		t.Fatalf("expected first-run log line, got %q", logged)
-	}
-	for name, km := range map[string]KeyMaterial{
-		"session":      cfg.SignKey.Session,
-		"login":        cfg.SignKey.Login,
-		"ticket":       cfg.SignKey.Ticket,
-		"cookie":       cfg.SignKey.Cookie,
-		"sync_payload": cfg.SignKey.SyncPayload,
-	} {
-		if strings.Contains(logged, km.Key) {
-			t.Errorf("sign key %q leaked into log output", name)
-		}
+	if errors.Is(err, ErrNotExist) {
+		t.Errorf("directory read error must not chain ErrNotExist, got %v", err)
 	}
 }

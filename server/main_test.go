@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -56,21 +58,31 @@ func TestNewRouterMiddlewareChain(t *testing.T) {
 		codec.Write(c, http.StatusOK, &api.Error{Code: "payload"})
 	})
 
-	// 无 Origin 无 Referer → 403；错误体 code=forbidden 且 request_id 非空
-	//（requestid 挂全局、先于 origin，保证中间件层错误也带链路 ID）。
+	// 无 Origin 无 Referer → 403；错误体 status=error 且 error.code=forbidden
+	//（§1.0 行 57 嵌套信封）、request_id 非空（requestid 挂全局、
+	// 先于 origin，保证中间件层错误也带链路 ID）。
 	rec := doRequest(r, http.MethodPost, "/api/x", nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("no origin: status = %d, want %d (body %s)", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
-	var errBody map[string]any
+	var errBody struct {
+		Status string `json:"status"`
+		Error  struct {
+			Code      string `json:"code"`
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
-	if got := errBody["code"]; got != codec.CodeForbidden {
-		t.Errorf("code = %v, want %q", got, codec.CodeForbidden)
+	if errBody.Status != "error" {
+		t.Errorf("status = %q, want error", errBody.Status)
 	}
-	if got, _ := errBody["request_id"].(string); got == "" {
-		t.Errorf("request_id is empty, want non-empty (requestid 须先于 origin 挂载)")
+	if errBody.Error.Code != codec.CodeForbidden {
+		t.Errorf("error.code = %q, want %q", errBody.Error.Code, codec.CodeForbidden)
+	}
+	if errBody.Error.RequestID == "" {
+		t.Errorf("error.request_id is empty, want non-empty (requestid 须先于 origin 挂载)")
 	}
 
 	// 跨站 Origin → 403。
@@ -147,15 +159,21 @@ func TestNewRouterRecoverPanicRoute(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("panic route: status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	var errBody map[string]any
+	var errBody struct {
+		Status string `json:"status"`
+		Error  struct {
+			Code      string `json:"code"`
+			RequestID string `json:"request_id"`
+		} `json:"error"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
-	if got := errBody["code"]; got != codec.CodeInternalError {
-		t.Errorf("code = %v, want %q", got, codec.CodeInternalError)
+	if errBody.Error.Code != codec.CodeInternalError {
+		t.Errorf("error.code = %q, want %q", errBody.Error.Code, codec.CodeInternalError)
 	}
-	if got, _ := errBody["request_id"].(string); got == "" {
-		t.Errorf("request_id is empty, want non-empty")
+	if errBody.Error.RequestID == "" {
+		t.Errorf("error.request_id is empty, want non-empty")
 	}
 }
 
@@ -276,5 +294,46 @@ func TestBootstrapHTTPServerConfig(t *testing.T) {
 	}
 	if srv.Handler == nil {
 		t.Error("Handler is nil, want router")
+	}
+}
+
+// bootstrap 启动分支（§3.1 行 253 / §3.15）：正常模式（config 存在）
+// 下生产路由不注册任何 setup 路由——/setup 页面与 /api/setup/** 一律 404
+//（接口文档 §13：本域仅 setup 模式可达）。
+func TestBootstrapSetupRoutesNotFoundInNormalMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r, _ := buildRouter(bootstrapConfig())
+
+	for _, target := range []string{
+		"/setup",
+		"/api/setup/status",
+		"/api/setup/config",
+		"/api/setup/install",
+	} {
+		if rec := doRequest(r, http.MethodGet, target, nil); rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s in normal mode: status = %d, want %d", target, rec.Code, http.StatusNotFound)
+		}
+	}
+	if rec := doRequest(r, http.MethodPost, "/api/setup/install", map[string]string{"Content-Type": "application/json"}); rec.Code != http.StatusNotFound {
+		t.Errorf("POST /api/setup/install in normal mode: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// setupMode 判定（§3.1 行 253）：config.yaml 不存在 → true（首次启动转
+// setup）；文件存在 → false；目录视为存在（非「不存在」语义）。
+func TestSetupModeDetection(t *testing.T) {
+	dir := t.TempDir()
+
+	missing := filepath.Join(dir, "config.yaml")
+	if !setupMode(missing) {
+		t.Error("missing config.yaml must be detected as setup mode")
+	}
+
+	existing := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(existing, []byte("server: { listen: \":8080\" }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if setupMode(existing) {
+		t.Error("existing config.yaml must not be setup mode")
 	}
 }

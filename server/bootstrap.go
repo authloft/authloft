@@ -2,23 +2,35 @@
 // config → DB → Redis → 密钥 → provider/factor 注册表 → settings 预热
 // → 队列 worker → cron → router。当前仅 config 与 router 两步落地，
 // 其余步骤占位注释，随对应模块卡逐张接入。
+//
+// 启动分支（§3.1 行 253）：configs/config.yaml 不存在 → setup 模式
+//——不加载 config、不初始化 DB / Redis、不起业务链路，只启动 internal/setup
+//（§3.15）；存在 → 正常装配（保持既有结构）。
 
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
 	"authloft/internal/config"
+	"authloft/internal/setup"
 )
 
 // run 装配并阻塞运行 HTTP 服务（§3.1 行 248）。装配与运行错误原样上抛，
-// 由 main 转 exit 非 0（fail-fast）。
+// 由 main 转 exit 非 0（fail-fast）；setup 模式下安装完成的退出走 Run 的
+// nil 返回（exit 0，由部署环境拉起，§13.4）。
 func run(configPath string) error {
+	if setupMode(configPath) {
+		return setup.NewServer(configPath).Run()
+	}
 	// 步骤 1 config：启动期一次读取 + env 覆盖 + Validate，任一失败即
-	// fail-fast（§3.2 行 289；文件不存在且首次运行时自动生成 sign_key
-	// 写回，见 §3.2 约定 4）。
+	// fail-fast（§3.2 行 289）。sign_key 只在安装流程生成（§3.15），
+	// 文件存在但缺项 / 非法一律 fail-fast，不自动补写（§3.2 约定 4）。
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -42,9 +54,17 @@ func run(configPath string) error {
 	return newHTTPServer(cfg, router).ListenAndServe()
 }
 
+// setupMode 判定首次启动（§3.1 行 253 / §3.15）：configs/config.yaml
+// 不存在即 setup 模式。纯文件存在性判定，不含其他启发式。
+func setupMode(configPath string) bool {
+	_, err := os.Stat(configPath)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
 // buildRouter 从 *config.Config 构造生产路由（§3.2 约定 1：构造注入，
 // 测试可传自造实例，§20）。rootOrigin 取 authloft.root（{al_root}，
-// 接口文档 §1.1 行 54）。
+// 接口文档 §1.1 行 54）。setup 路由不在本链注册——仅 setup 模式的独立
+// engine 挂载（§3.15），正常模式下 /setup 与 /api/setup/** 一律 404（§13）。
 func buildRouter(cfg *config.Config) (*gin.Engine, *gin.RouterGroup) {
 	// TODO(appid)：servicewechat appid Referer 白名单配置来源未定
 	//（待定）；空表下小程序 Referer 校验恒不过，

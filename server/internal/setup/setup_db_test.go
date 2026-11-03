@@ -1,0 +1,473 @@
+// setup 包 DB 集成测试（env-skip）：UC_TEST_MYSQL_DSN 指向专用测试库时
+// 真实跑两条安装路径的端到端用例（迁移触发、管理员 ID=1 幂等创建、判据
+// 组合、失败重试），Redis 侧用本地假 RESP 服务（§13 语义只要求连通性）。
+// 与 migrate_test 相同模式：用例开始前清空全部表、结束后清理并自证
+// 零残留；连接串只经环境变量注入，代码不含主机 / 凭证信息。
+package setup
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"authloft/internal/config"
+)
+
+// TestMain 共享测试库错峰（`go test ./internal/setup/... ./internal/migrate/...`
+// 两个包的测试二进制并行执行、共用同一测试实例）：DSN 存在时先等库「安静」
+//（表空且无其他连接，连续多次确认）再进 m.Run()——等 migrate 侧二进制自然
+// 结束，从根上避免双方 dropAllTables 互删对方的表。migrate 包无需配合：
+// 其用例间隙（毫秒级、库空且无连接）远短于确认窗口。
+func TestMain(m *testing.M) {
+	if dsn := os.Getenv("UC_TEST_MYSQL_DSN"); dsn != "" {
+		waitQuietDB(dsn)
+	}
+	os.Exit(m.Run())
+}
+
+// waitQuietDB 等待共享测试库空闲：SHOW TABLES 为空 且 processlist 中无
+// 其他 test 库连接（排除自身），连续 quietConfirmations 次、间隔
+// quietInterval 满足才放行；总上限 quietTimeout 防御性兜底。
+func waitQuietDB(dsn string) {
+	const (
+		quietConfirmations = 3
+		quietInterval      = 500 * time.Millisecond
+		quietTimeout       = 90 * time.Second
+	)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return // 连接失败留给具体用例报告
+	}
+	defer db.Close()
+	deadline := time.Now().Add(quietTimeout)
+	streak := 0
+	for time.Now().Before(deadline) {
+		if dbQuiet(db) {
+			streak++
+			if streak >= quietConfirmations {
+				return
+			}
+		} else {
+			streak = 0
+		}
+		time.Sleep(quietInterval)
+	}
+}
+
+// dbQuiet 单次探测：库内无表且无其他会话连接。
+func dbQuiet(db *sql.DB) bool {
+	var tables int
+	if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables); err != nil {
+		return false
+	}
+	if tables > 0 {
+		return false
+	}
+	var others int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.processlist WHERE db = DATABASE() AND id <> CONNECTION_ID()",
+	).Scan(&others); err != nil {
+		return false
+	}
+	return others == 0
+}
+
+// envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例
+//（skip-on-no-env，与 migrate_test 同口径）。
+func envDSN(t *testing.T) string {
+	t.Helper()
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过 setup 集成用例")
+	}
+	return dsn
+}
+
+// newSetupTestDB 为单个用例准备独立环境（连接 DSN 所指测试库，开始前清空
+// 全部表），结束后 t.Cleanup 清空并自证零残留；同时返回临时 configPath。
+func newSetupTestDB(t *testing.T) (dsn string, configPath string) {
+	t.Helper()
+	dsn = envDSN(t)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("打开连接失败: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("连接 MariaDB 测试实例失败: %v", err)
+	}
+	if err := dropAllTablesForSetup(db); err != nil {
+		t.Fatalf("用例开始清空测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dropAllTablesForSetup(db); err != nil {
+			t.Errorf("用例结束清理测试库失败: %v", err)
+		}
+		if err := assertNoTablesForSetup(db); err != nil {
+			t.Errorf("清理自证失败: %v", err)
+		}
+		db.Close()
+	})
+	return dsn, filepath.Join(t.TempDir(), "config.yaml")
+}
+
+// dropAllTablesForSetup / assertNoTablesForSetup 与 migrate_test 同实现
+//（跨包私有不共享，此处保持同口径副本）。
+func dropAllTablesForSetup(db *sql.DB) error {
+	rows, err := db.Query("SHOW TABLES")
+	if err != nil {
+		return err
+	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if len(tables) == 0 {
+		return nil
+	}
+	if _, err := db.Exec("SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+		return err
+	}
+	quoted := make([]string, len(tables))
+	for i, tbl := range tables {
+		quoted[i] = "`" + strings.ReplaceAll(tbl, "`", "``") + "`"
+	}
+	if _, err := db.Exec("DROP TABLE " + strings.Join(quoted, ", ")); err != nil {
+		return err
+	}
+	_, err = db.Exec("SET FOREIGN_KEY_CHECKS = 1")
+	return err
+}
+
+func assertNoTablesForSetup(db *sql.DB) error {
+	rows, err := db.Query("SHOW TABLES")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var left []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		left = append(left, name)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		return fmt.Errorf("残留表: %v", left)
+	}
+	return nil
+}
+
+// openSetupTestDB 直连测试库（断言用）。
+func openSetupTestDB(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// postInstallJSON 向 setup server 发 POST /api/setup/install（带安装页
+// Host，供 root / rp_id 推导）。
+func postInstallJSON(s *Server, body map[string]any) *httptest.ResponseRecorder {
+	payload, _ := json.Marshal(body)
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/install", strings.NewReader(string(payload)))
+	req.Host = "install.example.com:8080"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	return rec
+}
+
+// postConfigJSON 向 setup server 发 POST /api/setup/config。
+func postConfigJSON(s *Server, configText string) *httptest.ResponseRecorder {
+	payload, _ := json.Marshal(map[string]string{"config": configText})
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/config", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	return rec
+}
+
+// waitExit 等待退出信号（带超时），返回是否已触发。
+func waitExit(s *Server) bool {
+	select {
+	case <-s.Exposed():
+		return true
+	case <-time.After(3 * time.Second):
+		return false
+	}
+}
+
+// adminRow 查询管理员行（user 表 id=1 的 username；不存在返回 false）。
+func adminRow(t *testing.T, db *sql.DB) (username string, exists bool) {
+	t.Helper()
+	err := db.QueryRow("SELECT username FROM user WHERE id = 1").Scan(&username)
+	if err == sql.ErrNoRows {
+		return "", false
+	}
+	if err != nil {
+		t.Fatalf("query admin: %v", err)
+	}
+	return username, true
+}
+
+// adminCredentialSecret 查询管理员 password 凭证（不存在返回空）。
+func adminCredentialSecret(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var secret string
+	err := db.QueryRow(
+		"SELECT secret FROM user_credential WHERE user_id = 1 AND kind = 'password'",
+	).Scan(&secret)
+	if err == sql.ErrNoRows {
+		return ""
+	}
+	if err != nil {
+		t.Fatalf("query admin credential: %v", err)
+	}
+	return secret
+}
+
+// TestInstallFreshEndToEnd 路径 B 端到端（§13.3）：空库 + 假 Redis →
+// 200 restarting:true + 退出触发 + config 原子写入（可被 config.Load 加载）
+// + 管理员 ID=1 创建 + argon2id 凭证行 + root/rp_id 按请求 Host 推导。
+func TestInstallFreshEndToEnd(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+	s := NewServer(configPath)
+
+	rec := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "admin",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"status":"success","restarting":true}` {
+		t.Errorf("body = %q, want restarting envelope", got)
+	}
+	if !waitExit(s) {
+		t.Error("successful install must trigger exit (restart)")
+	}
+
+	// config 已写入且可加载（下次进程按正常模式启动）。
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("written config must load: %v", err)
+	}
+	if cfg.DB.DSN != dsn || cfg.Redis.Addr != redisAddr {
+		t.Errorf("config db/redis = %q / %q, want install inputs", cfg.DB.DSN, cfg.Redis.Addr)
+	}
+	if cfg.Authloft.Root != "https://install.example.com:8080" {
+		t.Errorf("root = %q, want https://+request Host", cfg.Authloft.Root)
+	}
+	if cfg.Authloft.RpID != "install.example.com" {
+		t.Errorf("rp_id = %q, want Host without port", cfg.Authloft.RpID)
+	}
+
+	// 管理员与凭证。
+	db := openSetupTestDB(t, dsn)
+	if username, ok := adminRow(t, db); !ok || username != "admin" {
+		t.Errorf("admin row = (%q, %v), want (\"admin\", true)", username, ok)
+	}
+	secret := adminCredentialSecret(t, db)
+	if !strings.HasPrefix(secret, "$argon2id$") {
+		t.Errorf("credential secret not argon2id PHC: %q", secret)
+	}
+}
+
+// TestInstallIdempotentRetry 幂等与失败重试（§3.15：setup 状态不落盘，
+// 进程中断后重跑安装按同一路径继续）：第一次成功后再跑一次（模拟重启后
+// 又进 setup）→ 管理员已存在则跳过（不重复建、不覆盖）；失败（Redis 不通）
+// 不退出，修正后可重试成功。
+func TestInstallIdempotentRetry(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+	s := NewServer(configPath)
+
+	first := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "admin",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first install: HTTP %d (body %s)", first.Code, first.Body.String())
+	}
+
+	// 第二次（换用户名）：管理员已存在 → 跳过插入，既有行不变。
+	//（密码不含新用户名子串，避免 pwd_disallow_username 拦截——那不是本用例目标。）
+	second := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "other",
+		"admin_password": "SecondStr0ng9",
+	})
+	if second.Code != http.StatusOK {
+		t.Fatalf("second install: HTTP %d (body %s)", second.Code, second.Body.String())
+	}
+	db := openSetupTestDB(t, dsn)
+	if username, ok := adminRow(t, db); !ok || username != "admin" {
+		t.Errorf("admin must stay (\"admin\", true) after idempotent retry, got (%q, %v)", username, ok)
+	}
+	var users int
+	if err := db.QueryRow("SELECT COUNT(*) FROM user WHERE id = 1").Scan(&users); err != nil || users != 1 {
+		t.Errorf("admin rows = %d (err %v), want exactly 1", users, err)
+	}
+
+	// 失败重试：坏 Redis → redis_unreachable 且不触发退出。
+	s2 := NewServer(configPath)
+	rec := postInstallJSON(s2, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     "127.0.0.1:1",
+		"admin_username": "admin",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if _, code := decodeErrorEnvelope(t, rec); code != CodeRedisUnreachable {
+		t.Errorf("bad redis retry: code = %s, want %s", code, CodeRedisUnreachable)
+	}
+	if waitExit(s2) {
+		t.Error("failed retry must not trigger exit")
+	}
+}
+
+// TestUploadConfigEndToEnd 路径 A 端到端（§13.2）：已安装库（迁移最新 +
+// 管理员存在）上传合法 config → 迁移幂等秒过 + 管理员检查通过 → 200
+// restarting + 上传原文原子写入。
+func TestUploadConfigEndToEnd(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+	s := NewServer(configPath)
+
+	// 准备：路径 B 先完成安装（复用其建库 + 建管理员）。
+	prep := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "admin",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if prep.Code != http.StatusOK {
+		t.Fatalf("prepare install: HTTP %d (body %s)", prep.Code, prep.Body.String())
+	}
+
+	// 路径 A：上传合法 config（指向同一测试库 + 假 Redis）。
+	s2 := NewServer(configPath)
+	uploaded := uploadConfigYAML(dsn, redisAddr)
+	rec := postConfigJSON(s2, uploaded)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"status":"success","restarting":true}` {
+		t.Errorf("body = %q, want restarting envelope", got)
+	}
+	if !waitExit(s2) {
+		t.Error("successful upload must trigger exit (restart)")
+	}
+	// 原文写入（保真——上传什么写什么）。
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read written config: %v", err)
+	}
+	if string(data) != uploaded {
+		t.Error("uploaded config must be written verbatim")
+	}
+}
+
+// TestUploadConfigAdminMissing 路径 A 步骤 ④：版本已最新但管理员缺失 →
+// admin_missing（提示改走全新安装）。
+func TestUploadConfigAdminMissing(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+
+	// 先完整安装再删掉管理员行，模拟「迁移最新 + 管理员缺失」。
+	s := NewServer(configPath)
+	prep := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "admin",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if prep.Code != http.StatusOK {
+		t.Fatalf("prepare install: HTTP %d", prep.Code)
+	}
+	db := openSetupTestDB(t, dsn)
+	if _, err := db.Exec("DELETE FROM user WHERE id = 1"); err != nil {
+		t.Fatalf("delete admin: %v", err)
+	}
+
+	s2 := NewServer(configPath)
+	rec := postConfigJSON(s2, uploadConfigYAML(dsn, redisAddr))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	status, code := decodeErrorEnvelope(t, rec)
+	if status != "error" || code != CodeAdminMissing {
+		t.Fatalf("envelope = (%s, %s), want (error, %s)", status, code, CodeAdminMissing)
+	}
+	if waitExit(s2) {
+		t.Error("admin_missing must not trigger exit")
+	}
+}
+
+// TestInstallDomainErrorsWithRealDB 路径 B 域错误（真实 DB 下校验步骤）：
+// 用户名不合规 → username_invalid；密码弱 → password_weak（校验在 ③，
+// 连通与迁移之后）。失败均不写 config、不退出。
+func TestInstallDomainErrorsWithRealDB(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+	s := NewServer(configPath)
+
+	rec := postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "bad!",
+		"admin_password": "Str0ngPassw0rd",
+	})
+	if _, code := decodeErrorEnvelope(t, rec); code != CodeUsernameInvalid {
+		t.Errorf("username invalid: code = %s, want %s (rec %s)", code, CodeUsernameInvalid, rec.Body.String())
+	}
+
+	rec = postInstallJSON(s, map[string]any{
+		"db_dsn":         dsn,
+		"redis_addr":     redisAddr,
+		"admin_username": "admin",
+		"admin_password": "weakpass",
+	})
+	if _, code := decodeErrorEnvelope(t, rec); code != CodePasswordWeak {
+		t.Errorf("weak password: code = %s, want %s (rec %s)", code, CodePasswordWeak, rec.Body.String())
+	}
+
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Errorf("failed installs must not write config, stat err = %v", err)
+	}
+	if waitExit(s) {
+		t.Error("domain failures must not trigger exit")
+	}
+}
