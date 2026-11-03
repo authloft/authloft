@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS user (
   email_verified TINYINT(1)   NOT NULL DEFAULT 0,
   nickname       VARCHAR(128) NOT NULL DEFAULT '',
   avatar_url     VARCHAR(512) NOT NULL DEFAULT '',
-  status         TINYINT      NOT NULL DEFAULT 1 COMMENT '1正常 0禁用',
+  user_status    TINYINT      NOT NULL DEFAULT 1 COMMENT '1正常 0禁用；列名避开 API 信封保留字 status（接口文档 §1.0）',
   mfa_required   TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '系统强制该用户启用两步验证',
   epoch          SMALLINT     NOT NULL DEFAULT 0 COMMENT '安全版本号，改密/重置/管理员禁用时递增；递增结果 > 30000 时回绕为 1（跳过 0，由后端逻辑控制，不由DB控制）',
   last_login_at  DATETIME,
