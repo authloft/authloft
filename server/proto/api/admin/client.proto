@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package api.admin;
+
+// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// 目录 api/admin 对应包名 api.admin（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/admin;api";
+
+// 客户端仅支持后台手动创建（§5.5 行 1262，需求 §4.4.4 / §4.4.5）；
+// OIDC 客户端不设授权类型字段：本期固定支持 authorization_code 与 refresh_token（§5.5 行 1264）。
+
+// SsoClient 是 GET /api/admin/clients/sso 的列表项，也是两条 CRUD 报文的字段基线：
+// 字段 client_id、client_secret、name、redirect_uris[]（支持 *）取自 §5.5 行 1258 逐字，
+// id / created_at / updated_at 为《后端架构》§4.4 行 726-736 的行投影（§5.5 未列出，
+// 列表与详情按行透出）。sso_client.is_enabled 无对应端点行为，不在报文中出现。
+message SsoClient {
+  // 数据库自增 ID，…/{id} 系端点的路径参数（§5.5 行 1258、《后端架构》§4.4 行 727）。
+  int64 id = 1;
+  // 客户端标识，全局唯一（§5.5 行 1258、《后端架构》§4.4 行 728）。
+  string client_id = 2;
+  // 客户端密钥（§5.5 行 1258、《后端架构》§4.4 行 729）。
+  string client_secret = 3;
+  // 展示名（§5.5 行 1258、《后端架构》§4.4 行 730）。
+  string name = 4;
+  // 回调白名单，支持 * 通配、整段匹配（§5.5 行 1258、§12.3 行 1723-1727）。
+  repeated string redirect_uris = 5;
+  // 创建时间，Unix 秒（《后端架构》§4.4 行 733）。
+  int64 created_at = 6;
+  // 更新时间，Unix 秒（《后端架构》§4.4 行 734）。
+  int64 updated_at = 7;
+}
+
+// SsoClientListRequest 是 GET /api/admin/clients/sso 的查询串（§5.5 行 1257）；
+// 所有列表支持 §1.7 分页（§5 行 1152）。查询参数缺省即服务端默认分页，一律 optional。
+message SsoClientListRequest {
+  // 页码，从 1 开始（§1.7 行 273）。
+  optional int64 page = 1;
+  // 每页条数，默认 20、上限 100（§1.7 行 273）。
+  optional int64 page_size = 2;
+  // 排序字段，取值由前端限定（§1.7 行 273）。
+  optional string sort = 3;
+  // 排序方向 asc/desc（§1.7 行 273）。
+  optional string order = 4;
+}
+
+// SsoClientListResponse 是 GET /api/admin/clients/sso 的响应（§5.5 行 1257、§1.7 行 274）。
+message SsoClientListResponse {
+  // 当前页数据（§1.7 行 274）。
+  repeated SsoClient items = 1;
+  // 总条数（§1.7 行 274）。
+  int64 total = 2;
+  // 页码（§1.7 行 274）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 274）。
+  int64 page_size = 4;
+}
+
+// SsoClientSaveRequest 是 POST /api/admin/clients/sso（§5.5 行 1257 新建）与
+// PUT /api/admin/clients/sso/{id}（行 1258 编辑）共用的请求体，字段同 §5.5 行 1258；
+// id 由服务端分配，不进请求体。成功返回 OkResponse。
+message SsoClientSaveRequest {
+  // 客户端标识（§5.5 行 1258）。
+  string client_id = 1;
+  // 客户端密钥（§5.5 行 1258）。
+  string client_secret = 2;
+  // 展示名（§5.5 行 1258）。
+  string name = 3;
+  // 回调白名单，支持 * 通配（§5.5 行 1258）。
+  repeated string redirect_uris = 4;
+}
+
+// DELETE /api/admin/clients/sso/{id}（§5.5 行 1258）无请求体，不定义 Request；
+// 成功返回 OkResponse。
+
+// OidcClient 是 GET /api/admin/clients/oidc 的列表项：在 SSO 字段基线上额外增加
+// scopes[]、access_token_ttl、refresh_token_ttl（§5.5 行 1260「额外」逐字），
+// id / created_at / updated_at 为《后端架构》§4.5 行 742-755 的行投影。
+message OidcClient {
+  // 数据库自增 ID，…/{id} 系端点的路径参数（§5.5 行 1260、《后端架构》§4.5 行 743）。
+  int64 id = 1;
+  // 客户端标识，全局唯一（§5.5 行 1260、《后端架构》§4.5 行 744）。
+  string client_id = 2;
+  // 客户端密钥（§5.5 行 1260、《后端架构》§4.5 行 745）。
+  string client_secret = 3;
+  // 展示名（§5.5 行 1260、《后端架构》§4.5 行 746）。
+  string name = 4;
+  // 回调白名单，支持 * 通配、整段匹配（§5.5 行 1260、§12.3 行 1723-1727）。
+  repeated string redirect_uris = 5;
+  // 授权范围（§5.5 行 1260）；库内逗号分隔存储，报文按数组承载（§12.9 行 1748 与 §5.5 逐字一致）。
+  repeated string scopes = 6;
+  // 访问令牌有效期（秒），默认 3600（§5.5 行 1260、《后端架构》§4.5 行 749）。
+  int64 access_token_ttl = 7;
+  // 刷新令牌有效期（秒），默认 2592000（§5.5 行 1260、《后端架构》§4.5 行 750）。
+  int64 refresh_token_ttl = 8;
+  // 创建时间，Unix 秒（《后端架构》§4.5 行 753）。
+  int64 created_at = 9;
+  // 更新时间，Unix 秒（《后端架构》§4.5 行 754）。
+  int64 updated_at = 10;
+}
+
+// OidcClientListRequest 是 GET /api/admin/clients/oidc 的查询串（§5.5 行 1259）；
+// 所有列表支持 §1.7 分页（§5 行 1152）。
+message OidcClientListRequest {
+  // 页码，从 1 开始（§1.7 行 273）。
+  optional int64 page = 1;
+  // 每页条数，默认 20、上限 100（§1.7 行 273）。
+  optional int64 page_size = 2;
+  // 排序字段，取值由前端限定（§1.7 行 273）。
+  optional string sort = 3;
+  // 排序方向 asc/desc（§1.7 行 273）。
+  optional string order = 4;
+}
+
+// OidcClientListResponse 是 GET /api/admin/clients/oidc 的响应（§5.5 行 1259、§1.7 行 274）。
+message OidcClientListResponse {
+  // 当前页数据（§1.7 行 274）。
+  repeated OidcClient items = 1;
+  // 总条数（§1.7 行 274）。
+  int64 total = 2;
+  // 页码（§1.7 行 274）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 274）。
+  int64 page_size = 4;
+}
+
+// OidcClientSaveRequest 是 POST /api/admin/clients/oidc（§5.5 行 1259 新建）与
+// PUT /api/admin/clients/oidc/{id}（行 1260 编辑）共用的请求体，字段同 §5.5 行 1260；
+// id 由服务端分配，不进请求体。成功返回 OkResponse。
+message OidcClientSaveRequest {
+  // 客户端标识（§5.5 行 1260）。
+  string client_id = 1;
+  // 客户端密钥（§5.5 行 1260）。
+  string client_secret = 2;
+  // 展示名（§5.5 行 1260）。
+  string name = 3;
+  // 回调白名单，支持 * 通配（§5.5 行 1260）。
+  repeated string redirect_uris = 4;
+  // 授权范围（§5.5 行 1260）。
+  repeated string scopes = 5;
+  // 访问令牌有效期（秒）（§5.5 行 1260）。
+  int64 access_token_ttl = 6;
+  // 刷新令牌有效期（秒）（§5.5 行 1260）。
+  int64 refresh_token_ttl = 7;
+}
+
+// DELETE /api/admin/clients/oidc/{id}（§5.5 行 1260）无请求体，不定义 Request；
+// 成功返回 OkResponse。

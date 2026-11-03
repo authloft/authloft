@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package api.admin;
+
+// EventItem.detail 用 google.protobuf.Struct 承载 msgpack 透传字段的 JSON 视图
+// （§12.0 行 1627 event_log.detail，先例：user_profile.extra 同口径）。
+import "google/protobuf/struct.proto";
+
+// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// 目录 api/admin 对应包名 api.admin（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/admin;api";
+
+// EventItem 是事件条目（《后端架构》§4.6 行 781-798 event_log 行投影）：
+// 管理后台统一事件视图（§5.6 行 1271）与用户登录记录（§5.4 行 1251）共用同一模型——
+// 管理员与本人两种视图共用一张表（《后端架构》§16 行 1701）。
+message EventItem {
+  // 事件 ID（《后端架构》§4.6 行 782）。
+  int64 id = 1;
+  // 事件类型 login_success|change_password|…（《后端架构》§4.6 行 783）；
+  // 前端预设视图「登录记录」「敏感操作」即按 event 筛选（§5.6 行 1271）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1752）。
+  string event = 2;
+  // 操作者类型 user|admin|system（《后端架构》§4.6 行 784）。
+  string actor_type = 3;
+  // 操作者 ID：user=该用户 uid、admin=操作管理员 uid、system=0（《后端架构》§4.6 行 785）。
+  int64 actor_id = 4;
+  // 被操作对象 ID；自身操作时与 actor_id 相同（《后端架构》§4.6 行 786）。
+  int64 user_id = 5;
+  // OIDC 客户端，登录类事件填充（《后端架构》§4.6 行 787）。
+  string client_id = 6;
+  // 登录类事件：通过的认证方法，如 pwd,otp,mfa（《后端架构》§4.6 行 788）。
+  string amr = 7;
+  // 来源 IP（《后端架构》§4.6 行 789）。
+  string ip = 8;
+  // User-Agent（《后端架构》§4.6 行 790）。
+  string ua = 9;
+  // 操作目标，如 provider_key（《后端架构》§4.6 行 791）。
+  string target = 10;
+  // 附加信息，msgpack 透传、以 JSON 对象透出（§12.0 行 1627、《后端架构》§4.6 行 792）。
+  google.protobuf.Struct detail = 11;
+  // 发生时间，Unix 秒（《后端架构》§4.6 行 793）。
+  int64 created_at = 12;
+}
+
+// EventListRequest 是 GET /api/admin/events 的查询串（§5.6 行 1271：
+// ?event=&actor_type=&actor_id=&user_id=&from=&to=&page=）；所有列表支持 §1.7 分页（§5 行 1152）。
+// 查询参数缺省即不过滤，一律 optional。
+message EventListRequest {
+  // 按事件类型过滤（§5.6 行 1271）。
+  optional string event = 1;
+  // 按操作者类型过滤 user|admin|system（§5.6 行 1271）。
+  optional string actor_type = 2;
+  // 按操作者 ID 过滤（§5.6 行 1271）。
+  optional int64 actor_id = 3;
+  // 按被操作对象 ID 过滤（§5.6 行 1271）。
+  optional int64 user_id = 4;
+  // 起始时间，Unix 秒（§5.6 行 1271；§12.9 行 1750 时间口径）。
+  optional int64 from = 5;
+  // 结束时间，Unix 秒（§5.6 行 1271；§12.9 行 1750 时间口径）。
+  optional int64 to = 6;
+  // 页码，从 1 开始（§1.7 行 273）。
+  optional int64 page = 7;
+  // 每页条数，默认 20、上限 100（§1.7 行 273）。
+  optional int64 page_size = 8;
+  // 排序字段，取值由前端限定（§1.7 行 273）。
+  optional string sort = 9;
+  // 排序方向 asc/desc（§1.7 行 273）。
+  optional string order = 10;
+}
+
+// EventListResponse 是 GET /api/admin/events 的响应（§5.6 行 1271「统一事件视图」、§1.7 行 274）。
+message EventListResponse {
+  // 当前页数据（§1.7 行 274）。
+  repeated EventItem items = 1;
+  // 总条数（§1.7 行 274）。
+  int64 total = 2;
+  // 页码（§1.7 行 274）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 274）。
+  int64 page_size = 4;
+}
