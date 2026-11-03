@@ -22,7 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ProfileResponse 是 RpcService/GetUserProfile 的响应（§7 行 1384）：
+// ProfileResponse 是 UserService/GetUserProfile 的响应（§7 行 1387）：
 // §3.1 行 773-795 的 Authloft 用户信息结构；本域响应遵循 §1.0 成功响应即消息
 // 本身（§7 行 1380，Connect 化后无 status:"success" 信封——旧信封形态已随 codec 删除）。
 // 不跨包引用 api.account.v1.ProfileResponse：两者同构（AdminUser 与本消息
@@ -205,7 +205,7 @@ func (x *ProfileResponse) GetProfile() *v1.UserProfile {
 	return nil
 }
 
-// GetUserProfileRequest 是 RpcService/GetUserProfile 的请求（§7 行 1384 `{uid}`）。
+// GetUserProfileRequest 是 UserService/GetUserProfile 的请求（§7 行 1387 `{uid}`）。
 // Connect 化把原 REST 路径参数 {uid} 转为请求字段（Connect 无路径参数）。
 type GetUserProfileRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -252,7 +252,7 @@ func (x *GetUserProfileRequest) GetUid() int64 {
 	return 0
 }
 
-// UpdateUserProfileRequest 是 RpcService/UpdateUserProfile 的请求（§7 行 1385
+// UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1388
 // `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
 // 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 820：nickname /
 // avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）；嵌套 profile
@@ -329,7 +329,7 @@ func (x *UpdateUserProfileRequest) GetProfile() *v1.UserProfile {
 	return nil
 }
 
-// OkResponse 是 RpcService/UpdateUserProfile 的空应答：§7 行 1385 仅约束入参，
+// OkResponse 是 UserService/UpdateUserProfile 的空应答：§7 行 1388 仅约束入参，
 // 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
 // （§1.0 行 57「成功响应即 RPC 响应消息」；先例 api/account/v1/profile.proto 的
 // 空 OkResponse，共用响应依赖 buf RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE

@@ -116,11 +116,11 @@ func TestOriginRefererAllowlist(t *testing.T) {
 func TestOriginExemptGroups(t *testing.T) {
 	r := newTestRouter(Origin(testRootOrigin, []string{testAppID}))
 	r.POST("/api/x", okHandler)
-	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api/oidcfoo", "/api/rpc/x", "/api.rpc.v1.RpcService/GetUserProfile"} {
+	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api/oidcfoo", "/api/rpc/x", "/api.rpc.v1.UserService/GetUserProfile"} {
 		r.POST(p, okHandler)
 	}
 
-	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api.rpc.v1.RpcService/GetUserProfile"} {
+	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api.rpc.v1.UserService/GetUserProfile"} {
 		rec := doRequest(r, http.MethodPost, p, map[string]string{"Origin": "https://evil.example.com"})
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: exempt group status = %d, want %d", p, rec.Code, http.StatusOK)

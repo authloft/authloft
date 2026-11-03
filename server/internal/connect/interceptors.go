@@ -188,6 +188,32 @@ type NonceStorer interface {
 // 真源 sso_client 表；装配点归后续 handler / bootstrap。
 type SecretLookup func(ctx context.Context, clientID string) (string, bool)
 
+// rpcWriteMethodPrefixes 写接口方法名前缀集合（docs/接口文档.md §7 行 1366
+//「命名决定校验」长期口径；后端 §22 第 23 条）：方法名以 Update / Delete /
+// Set / Create / Revoke 任一前缀开头 = 写接口（nonce 去重），其余方法名 =
+// 读接口（不去重）。该判据适用于本域全部现有与未来方法；新增写接口若不
+// 属于上述前缀语义，必须显式申请扩展本集合（走契约变更评审），不得静默
+// 使用读接口命名绕过 nonce 去重。集中定义以便将来显式扩展。
+var rpcWriteMethodPrefixes = []string{"Update", "Delete", "Set", "Create", "Revoke"}
+
+// isRPCWriteProcedure 按 Connect procedure（形如 /api.rpc.v1.UserService/
+// UpdateUserProfile，即 req.Spec().Procedure，§7 行 1378）判定写接口：取
+// 末段方法名（package.Service 段不参与判定），前缀命中 rpcWriteMethodPrefixes
+// 即写。procedure 为空串（拦截链外直调、无 Spec）时方法名亦为空，不命中
+// 任何前缀 → 读路径。
+func isRPCWriteProcedure(procedure string) bool {
+	method := procedure
+	if i := strings.LastIndex(procedure, "/"); i >= 0 {
+		method = procedure[i+1:]
+	}
+	for _, prefix := range rpcWriteMethodPrefixes {
+		if strings.HasPrefix(method, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // rawBodyKey 原始请求体的 ctx 注入键（私有类型，包外无法伪造同型键）。
 type rawBodyKey struct{}
 
@@ -227,25 +253,28 @@ func ClientIDFromContext(ctx context.Context) (string, bool) {
 }
 
 // NewRPCHMACInterceptor 返回 rpc 域 HMAC 鉴权拦截器（docs/接口文档.md §7、
-// 本处不挂载；校验顺序硬约束：nonce 去重 → 签名，session 步
-// 归端点自身，§7 行 1380）：
+// 断言迁移 + 读写分流，不挂载；校验顺序硬约束：写接口
+// nonce 去重 → 签名，读接口仅签名，session 步归端点自身，§7 行 1383）：
 //
-//  1. 三头齐全（X-Client-ID / X-Nonce-ID / X-Signature，缺任一 →
+//  1. 三头齐全（X-Client-ID / X-Nonce-ID / X-Signature，读写接口都要求；缺任一 →
 //     permission_denied，HTTP 403）；
-//  2. nonce 去重（30s 窗口重放 → 403；必须先于签名校验——签名错的请求同样
-//     消耗 nonce）；
+//  2. 写接口（方法名 Update / Delete / Set / Create / Revoke 前缀，isRPCWriteProcedure
+//     按 §7 行 1366「命名决定校验」分流）nonce 去重（30s 窗口重放 → 403；
+//     必须先于签名校验——签名错的请求同样消耗 nonce）；读接口跳过去重，
+//     nonce 仅作为下方签名项（§7 行 1381/1383）；
 //  3. client 未注册 → 403（与签名错误同响应，不区分以防探测）；
 //  4. 签名：HMAC-SHA256(key=client_secret, msg 五项以 ":" 连接整体入串
 //     "client_id:nonce:path:body:client_secret"，§7 行
-//     1371/1377）。path 段取 req.Spec().Procedure——即 Connect RPC 路径
-//     （§7 行 1376，如 /api.rpc.v1.RpcService/GetUserProfile），connect-go
+//     1374/1381）。path 段取 req.Spec().Procedure——即 Connect RPC 路径
+//     （§7 行 1378，如 /api.rpc.v1.UserService/GetUserProfile），connect-go
 //     将其同时用作 handler 挂载路径，天然不含 query；body 段取 ctx 中的
 //     原始请求体字节（见 CaptureRawBody，空 body 即空串）；签名 hex 解码
 //     后 hmac.Equal 恒时比较（十六进制大小写不敏感）。
 //
 // 通过后 client_id 注入 ctx（ClientIDFromContext）放行。取舍：
-// nonce 存储故障 → internal fail-closed（无法判定重放不得放行）；原始体
-// 捕获缺失（装配层漏挂 CaptureRawBody）→ internal fail-closed。
+// nonce 存储故障 → internal fail-closed（无法判定重放不得放行；仅写接口
+// 会触达存储，读接口不去重故无此分支）；原始体捕获缺失（装配层漏挂
+// CaptureRawBody）→ internal fail-closed。
 func NewRPCHMACInterceptor(nonces NonceStorer, lookup SecretLookup) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -255,12 +284,16 @@ func NewRPCHMACInterceptor(nonces NonceStorer, lookup SecretLookup) connect.Unar
 			if clientID == "" || nonce == "" || signature == "" {
 				return nil, connect.NewError(connect.CodePermissionDenied, errMissingRPCCredentials)
 			}
-			first, err := nonces.Store(ctx, clientID, nonce)
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInternal, errInternal)
-			}
-			if !first {
-				return nil, connect.NewError(connect.CodePermissionDenied, errNonceReplay)
+			// 写接口（§7 行 1383 校验顺序）：nonce 去重先于签名（签名错的请求
+			// 同样消耗 nonce）；读接口跳过去重，nonce 仅参与下方签名串。
+			if isRPCWriteProcedure(req.Spec().Procedure) {
+				first, err := nonces.Store(ctx, clientID, nonce)
+				if err != nil {
+					return nil, connect.NewError(connect.CodeInternal, errInternal)
+				}
+				if !first {
+					return nil, connect.NewError(connect.CodePermissionDenied, errNonceReplay)
+				}
 			}
 			secret, ok := lookup(ctx, clientID)
 			if !ok {

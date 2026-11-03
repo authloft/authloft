@@ -29,7 +29,8 @@ import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
 import { SsoService } from '../../gen/proto/api/sso/v1/sso_pb';
 import { AccountService } from '../../gen/proto/api/account/v1/account_pb';
 import { AdminService } from '../../gen/proto/api/admin/v1/admin_pb';
-import { RpcService } from '../../gen/proto/api/rpc/v1/rpc_pb';
+import { UserService } from '../../gen/proto/api/rpc/v1/user_pb';
+import { TokenService } from '../../gen/proto/api/rpc/v1/token_pb';
 import { SetupService } from '../../gen/proto/api/setup/v1/setup_pb';
 import { ApiError, isKnownCode } from './errors';
 
@@ -216,7 +217,8 @@ export const transport: Transport = createAuthloftTransport();
 export const ssoClient = createClient(SsoService, transport);
 export const accountClient = createClient(AccountService, transport);
 export const adminClient = createClient(AdminService, transport);
-export const rpcClient = createClient(RpcService, transport);
+export const userClient = createClient(UserService, transport);
+export const tokenClient = createClient(TokenService, transport);
 export const setupClient = createClient(SetupService, transport);
 
 // ---------------------------------------------------------------------------

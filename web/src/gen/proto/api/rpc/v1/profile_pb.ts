@@ -15,7 +15,7 @@ export const file_api_rpc_v1_profile: GenFile = /*@__PURE__*/
   fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyJ7ChhVcGRhdGVVc2VyUHJvZmlsZVJlcXVlc3QSCwoDdWlkGAEgASgDEhAKCG5pY2tuYW1lGAIgASgJEhIKCmF2YXRhcl91cmwYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIgwKCk9rUmVzcG9uc2VCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw", [file_api_account_v1_profile]);
 
 /**
- * ProfileResponse 是 RpcService/GetUserProfile 的响应（§7 行 1384）：
+ * ProfileResponse 是 UserService/GetUserProfile 的响应（§7 行 1387）：
  * §3.1 行 773-795 的 Authloft 用户信息结构；本域响应遵循 §1.0 成功响应即消息
  * 本身（§7 行 1380，Connect 化后无 status:"success" 信封——旧信封形态已随 codec 删除）。
  * 不跨包引用 api.account.v1.ProfileResponse：两者同构（AdminUser 与本消息
@@ -145,7 +145,7 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
   messageDesc(file_api_rpc_v1_profile, 0);
 
 /**
- * GetUserProfileRequest 是 RpcService/GetUserProfile 的请求（§7 行 1384 `{uid}`）。
+ * GetUserProfileRequest 是 UserService/GetUserProfile 的请求（§7 行 1387 `{uid}`）。
  * Connect 化把原 REST 路径参数 {uid} 转为请求字段（Connect 无路径参数）。
  *
  * @generated from message api.rpc.v1.GetUserProfileRequest
@@ -167,7 +167,7 @@ export const GetUserProfileRequestSchema: GenMessage<GetUserProfileRequest> = /*
   messageDesc(file_api_rpc_v1_profile, 1);
 
 /**
- * UpdateUserProfileRequest 是 RpcService/UpdateUserProfile 的请求（§7 行 1385
+ * UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1388
  * `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
  * 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 820：nickname /
  * avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）；嵌套 profile
@@ -213,7 +213,7 @@ export const UpdateUserProfileRequestSchema: GenMessage<UpdateUserProfileRequest
   messageDesc(file_api_rpc_v1_profile, 2);
 
 /**
- * OkResponse 是 RpcService/UpdateUserProfile 的空应答：§7 行 1385 仅约束入参，
+ * OkResponse 是 UserService/UpdateUserProfile 的空应答：§7 行 1388 仅约束入参，
  * 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
  * （§1.0 行 57「成功响应即 RPC 响应消息」；先例 api/account/v1/profile.proto 的
  * 空 OkResponse，共用响应依赖 buf RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE

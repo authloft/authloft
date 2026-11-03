@@ -112,7 +112,7 @@ func TestNewRouterExemptGroups(t *testing.T) {
 	}
 	// rpc 域 Connect 路径：origin 免检放行（未注册 → 顶层 "/" → gin 原生 404
 	// 纯文本，非 403 即证明免检链路）。
-	rec := doRequest(h, http.MethodPost, "/api.rpc.v1.RpcService/GetUserProfile", map[string]string{
+	rec := doRequest(h, http.MethodPost, "/api.rpc.v1.UserService/GetUserProfile", map[string]string{
 		"Origin": "https://evil.example.com", "Content-Type": "application/json",
 	})
 	if rec.Code != http.StatusNotFound {
@@ -277,7 +277,7 @@ func TestConnectDomainMiddlewareEquivalent(t *testing.T) {
 	csrv.Register("/api.sso.v1.SsoService/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	csrv.RegisterRPC("/api.rpc.v1.RpcService/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	csrv.RegisterRPC("/api.rpc.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	h, _ := buildHandler(&config.Config{
@@ -309,7 +309,7 @@ func TestConnectDomainMiddlewareEquivalent(t *testing.T) {
 
 	// rpc 域免检前缀（RegisterRPC 装配形态）：跨站 Origin 放行到达 handler
 	//（§1.1 行 79 例外）。
-	if rec := doRequest(h, http.MethodPost, "/api.rpc.v1.RpcService/GetUserProfile", map[string]string{"Origin": "https://evil.example.com"}); rec.Code != http.StatusOK {
+	if rec := doRequest(h, http.MethodPost, "/api.rpc.v1.UserService/GetUserProfile", map[string]string{"Origin": "https://evil.example.com"}); rec.Code != http.StatusOK {
 		t.Errorf("rpc exempt: status = %d, want %d (免检组放行)", rec.Code, http.StatusOK)
 	}
 }

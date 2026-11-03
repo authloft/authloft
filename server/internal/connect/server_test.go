@@ -80,7 +80,7 @@ func TestRegisterPreservesOrderAndPrefixes(t *testing.T) {
 func TestRegisterRPCWrapsCaptureRawBody(t *testing.T) {
 	s := newTestServer()
 	var rawFromCtx, rawFromBody []byte
-	s.RegisterRPC("/api.rpc.v1.RpcService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s.RegisterRPC("/api.rpc.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rawFromCtx, _ = r.Context().Value(rawBodyKey{}).([]byte)
 		rawFromBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
@@ -91,7 +91,7 @@ func TestRegisterRPCWrapsCaptureRawBody(t *testing.T) {
 		t.Fatalf("Routes() length = %d, want 1", len(routes))
 	}
 	payload := []byte(`{"text":"hello"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api.rpc.v1.RpcService/GetUserProfile", bytes.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPost, "/api.rpc.v1.UserService/GetUserProfile", bytes.NewReader(payload))
 	rec := httptest.NewRecorder()
 	routes[0].Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

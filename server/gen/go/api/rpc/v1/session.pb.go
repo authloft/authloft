@@ -21,9 +21,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// DecodeSessionRequest 是 RpcService/DecodeSession 的请求（§7 行 1386「传入
-// Session Token（请求体字段 `session_token`）进行解码」）。字段名已由接口文档
-// 转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
+// DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7 行 1389「传入
+// Session Token（请求体字段 `session_token`）进行解码」）。字段名已由
+// 文档转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
 type DecodeSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 待解码的会话令牌（§7 行 1386）。
@@ -69,7 +69,7 @@ func (x *DecodeSessionRequest) GetSessionToken() string {
 	return ""
 }
 
-// SessionResponse 是 RpcService/DecodeSession 的响应（§7 行 1386「返回
+// SessionResponse 是 TokenService/DecodeSession 的响应（§7 行 1389「返回
 // SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
 // 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
 // 内部载荷与接口报文不得混用（§12.9 行 1745），故在 api.rpc.v1 定义报文视图消息；

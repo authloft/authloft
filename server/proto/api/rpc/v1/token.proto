@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package api.rpc.v1;
+
+// 接口文档 §12.9 行 1750：rpc 域例外——同包 api.rpc.v1 内拆
+// 两个 service（UserService 资料读写 / TokenService 会话解码，§7 行 1362-1364），
+// 取代原单一 service 定义。方法的 input/output 消息定义在同包
+// session.proto，编号零漂移（拆分不变更任何消息）。
+import "api/rpc/v1/session.proto";
+
+// 包名 api.rpc.v1（docs/接口文档.md §12.9 行 1747）；Go 产物
+// authloft/gen/go/api/rpc/v1（rpcv1），connect 产物（protoc-gen-connect-go）
+// 随本 service 定义生成（buf.gen.yaml）。
+option go_package = "authloft/gen/go/api/rpc/v1;rpcv1";
+
+// TokenService 是 rpc 域的会话解码 service（docs/接口文档.md §7 行 1362/1364）。
+// Connect 路径 = /api.rpc.v1.TokenService/<Method>（签名串 path 段取值，§7 行 1378）；
+// 方法清单与 §7 逐一对应：
+//   DecodeSession       §7 行 1389（读接口：Decode 非写前缀，不去重）
+// 鉴权（读接口仅五项签名，nonce 参与签名但不去重；校验顺序 §7 行 1383）
+// 为 Connect interceptor（后端 §3.14 interceptors.go 按「命名决定校验」分流，
+// §7 行 1366），装配必须经 internal/connect 的 RegisterRPC（强制包
+// CaptureRawBody——§7 行 1379 body 段取原始请求体字节，漏挂 fail-closed）；
+// session 步归端点自身（§7 行 1383）。本实现只定契约，业务 handler 留待后续实现。
+service TokenService {
+  // 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7 行 1389）。
+  rpc DecodeSession(DecodeSessionRequest) returns (SessionResponse);
+}

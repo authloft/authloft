@@ -93,7 +93,7 @@ func TestHTTPOriginConnectDomainEquivalent(t *testing.T) {
 	}
 
 	// rpc 域免检前缀：跨站 Origin 也放行（§1.1 行 79 例外）。
-	if rec := do(http.MethodPost, "/api.rpc.v1.RpcService/GetUserProfile", map[string]string{"Origin": "https://evil.example.com"}); rec.Code != http.StatusOK {
+	if rec := do(http.MethodPost, "/api.rpc.v1.UserService/GetUserProfile", map[string]string{"Origin": "https://evil.example.com"}); rec.Code != http.StatusOK {
 		t.Errorf("rpc exempt: status = %d, want %d (免检组放行)", rec.Code, http.StatusOK)
 	}
 
