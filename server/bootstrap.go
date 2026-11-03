@@ -1,7 +1,7 @@
-// bootstrap.go 按 docs/后端架构.md §3.1 行 248 的固定顺序装配启动链：
-// config → DB → Redis → 密钥 → provider/factor 注册表 → settings 预热
-// → 队列 worker → cron → router。当前仅 config 与 router 两步落地，
-// 其余步骤占位注释，随对应模块卡逐张接入。
+// bootstrap.go 按 docs/后端架构.md §3.1 行 253 的固定顺序装配启动链：
+// config → DB → 迁移检查（migrate up，幂等）→ Redis → 密钥 → provider/factor
+// 注册表 → settings 预热 → 队列 worker → cron → router。已落地 config /
+// DB / migrate / Redis 四步，密钥及其后步骤占位注释，随对应模块卡逐张接入。
 //
 // 启动分支（§3.1 行 253）：configs/config.yaml 不存在 → setup 模式
 //——不加载 config、不初始化 DB / Redis、不起业务链路，只启动 internal/setup
@@ -10,14 +10,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 
+	"authloft/internal/cache"
 	"authloft/internal/config"
+	"authloft/internal/migrate"
+	"authloft/internal/repo"
 	"authloft/internal/setup"
 )
 
@@ -35,16 +41,57 @@ func run(configPath string) error {
 	if err != nil {
 		return err
 	}
+	return serve(cfg)
+}
 
-	// TODO(§3.1 行 248 步骤 2)：DB——GORM 按 cfg.DB 打开 MariaDB 连接池。
-	// TODO(§3.1 行 248 步骤 3)：Redis——按 cfg.Redis 建连接池。
-	// TODO(§3.1 行 248 步骤 4)：密钥预热——cfg.SignKey 五场景 AES-256-GCM
+// assembled 正常模式装配产物：DB / Redis 句柄。密钥、注册表、settings、
+// worker、cron 落地后逐步补充字段（§3.1 行 253 步骤 5-9）。
+type assembled struct {
+	db  *gorm.DB
+	rdb *redis.Client
+}
+
+// assemble 正常模式装配步骤 2-4（§3.1 行 253）：DB → 迁移检查（migrate up，
+// 幂等——版本已最新时只读版本表秒过，§3.16 行 553-555：连上 DB 之后、
+// settings 预热之前）→ Redis。任一步失败原样上抛（serve 转 fail-fast）。
+func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
+	db, err := repo.Open(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate.Up(ctx, cfg.DB.DSN); err != nil {
+		return nil, err
+	}
+	rdb, err := cache.NewClient(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &assembled{db: db, rdb: rdb}, nil
+}
+
+// serve 正常模式装配链（§3.1 行 253）：config（run 已加载）→ DB → migrate
+// up → Redis → 密钥 → provider/factor 注册表 → settings 预热 → 队列
+// worker → cron → router → http.Server。装配产物由本函数持有到进程退出，
+// 优雅关闭（app.Run / Shutdown，§3.1 行 250）落地后接管释放。
+func serve(cfg *config.Config) error {
+	deps, err := assemble(context.Background(), cfg)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if sqlDB, err := deps.db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+		_ = deps.rdb.Close()
+	}()
+
+	// TODO(§3.1 行 253 步骤 5)：密钥预热——cfg.SignKey 五场景 AES-256-GCM
 	//   密钥解码就绪（§3.2 约定 4）。
-	// TODO(§3.1 行 248 步骤 5)：provider/factor 注册表——统一 `_ import`
+	// TODO(§3.1 行 253 步骤 6)：provider/factor 注册表——统一 `_ import`
 	//   触发自注册。
-	// TODO(§3.1 行 248 步骤 6)：settings 预热——运行期可变项载入（接口
+	// TODO(§3.1 行 253 步骤 7)：settings 预热——运行期可变项载入（接口
 	//   文档 §5.6，不进 config）。
-	// TODO(§3.1 行 248 步骤 7)：队列 worker 与 cron 启动。
+	// TODO(§3.1 行 253 步骤 8)：队列 worker 与 cron 启动。
 
 	// TODO(schema)：§3.2 无 max_body_bytes 字段，当前回落 codec 默认 1 MiB
 	//（未调用 SetMaxBodyBytes 即回落默认，§3.14 行 492）；若需可配置
