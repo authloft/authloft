@@ -1,6 +1,6 @@
 # CI：后端构建/测试 → 前端类型检查/测试/构建 → 生成物零 diff 门禁 → buf breaking 门禁
 # 依据：docs/后端架构.md §1.6 行 115-120（生成链与 CI 门禁）、§21.4 行 1830（protobuf 门禁）
-# 说明：buf breaking 的 against 基准为 master，与本仓库默认分支一致。
+# 说明：buf breaking 的 against 基准为 tag pre-connect（9e69c21，proto Connect 化落地后的稳定点），与 master 默认分支解耦。
 
 name: CI
 
@@ -17,7 +17,7 @@ jobs:
     name: backend / frontend / gen-gate
     runs-on: ubuntu-latest
     steps:
-      # fetch-depth: 0：buf breaking 需从 .git 读取分支引用
+      # fetch-depth: 0：buf breaking 需从 .git 读取 tag 引用（pre-connect）
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -80,12 +80,6 @@ jobs:
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
 
-      # PR 事件 checkout 的是 refs/pull/N/merge，需补 master 引用供 buf breaking 比对；
-      # push 事件 HEAD 就在 master，无需此步
-      - name: Fetch master ref (PR only)
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags origin master:refs/heads/master
-
       - name: Regenerate from proto
         run: buf generate
         working-directory: server
@@ -95,7 +89,7 @@ jobs:
 
       # 必须在 server/ 下运行：buf.yaml 的 check 插件用相对 cwd 路径 ./tools/bufcheck；
       # against 的 .git 相对 cwd 解析（仓库根），subdir=server 显式指向 git 树中的模块根。
-      # push 事件下 master 即 HEAD（自比较恒过，门禁实际作用于 PR 事件）
+      # push/PR 事件均与固定 tag 基线（pre-connect）比对，master 前进不豁免
       - name: Buf breaking gate
-        run: buf breaking --against '../.git#branch=master,subdir=server'
+        run: buf breaking --against '../.git#tag=pre-connect,subdir=server'
         working-directory: server
