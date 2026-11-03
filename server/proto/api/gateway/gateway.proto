@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package api.gateway;
+
+// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// 目录 api/gateway 对应包名 api.gateway（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/gateway;api";
+
+// 本域唯一端点 `ANY /api/gateway/decode`（docs/接口文档.md §6 行 1346-1357）
+// 无 proto 报文消息，本文件仅注册 api.gateway 包（§12.9 行 1746 目录结构含 gateway/）：
+// - 请求：session_token 取自 `X-Authloft-Token` Header 或 Cookie（行 1348），无请求体；
+// - 响应：状态码恒 200，以响应头返回 SessionTokenPayload 所有字段
+//   （X-Session-Status / X-Session-ID / X-Session-Epoch / X-Session-AMR 等，行 1348-1357，
+//   数组类字段以逗号分隔拼接为单个响应头），无响应体——§1.0 豁免清单明示
+//   「网关 decode：纯响应头，无响应体」（行 65），/api/gateway/** 恒 JSON（§1.1.1 行 104）。
+// 鉴权为 Header `X-Gateway-Token`（后台可配多个，行 1344），实现要点见《后端架构》§17 行 1717；
+// 响应头名集合由 handler 实现，不在 proto 层建模。后续本域如新增带报文端点，在此目录落位。

@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package api.oidc;
+
+// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// 目录 api/oidc 对应包名 api.oidc（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/oidc;api";
+
+// TokenRequest 是 `POST /api/oidc/token` 的请求参数集
+// （docs/接口文档.md §4.3，行 1091-1096）。
+// 传输形态为 application/x-www-form-urlencoded（OIDC 标准，全站唯一例外，行 1089）；
+// /api/oidc/** 恒 JSON、不参与 §1.1.1 的 Protobuf body 协商（行 104），
+// 本消息作为 Go 结构体的单一结构源（§12.9 行 1747「只从 .proto 生成」）。
+// 两种 grant_type（行 1093-1094）按取值使用其中一部分字段，全字段并集建模。
+message TokenRequest {
+  // 授权类型：authorization_code｜refresh_token（行 1093-1094）；固定支持这两种、
+  // 全部客户端一致（行 1096），其他取值返回 error=unsupported_grant_type；
+  // 封闭集合用 string 承载（§12.9 行 1752）。
+  string grant_type = 1;
+  // authorization_code：一次性授权码（§4.2 行 1079，TTL 120 秒，GETDEL 消费）。
+  string code = 2;
+  // authorization_code：回调地址，须与签发授权码时一致（《后端架构》§14.2 行 1589）。
+  string redirect_uri = 3;
+  // 两种 grant_type 均必带（行 1093-1094）。
+  string client_id = 4;
+  // 两种 grant_type 均必带（行 1093-1094；或 PKCE 场景 §4.1 行 1050）。
+  string client_secret = 5;
+  // authorization_code + PKCE：校验码（§4.2 行 1064，仅 S256）。
+  string code_verifier = 6;
+  // refresh_token：待刷新令牌（行 1094）。
+  string refresh_token = 7;
+}
+
+// TokenResponse 是 `POST /api/oidc/token` 的响应（行 1093：两种 grant_type 响应同构）。
+// OIDC 标准端点按 OAuth2/OIDC RFC 格式平铺、豁免 §1.0 统一信封（§1.0 行 64），
+// 顶层无 status 字段，本消息即完整响应体；字段名与行 1093 示例逐字一致（§12.9 行 1748）。
+message TokenResponse {
+  // 访问令牌，JWT RS256、含 epoch（§4.7 行 1131）。
+  string access_token = 1;
+  // 恒为 "Bearer"（行 1093）。
+  string token_type = 2;
+  // 有效期（秒），默认 3600（行 1093、§4.7 行 1130-1131）；整型一律 int64（§12.9 行 1750）。
+  int64 expires_in = 3;
+  // 刷新令牌，opaque、sha256 落库（§4.7 行 1132）；Refresh Token 轮换可选（行 1094）。
+  string refresh_token = 4;
+  // 身份令牌，JWT RS256，含 iss/sub/aud/exp/iat/nonce/amr/epoch（§4.7 行 1130）。
+  string id_token = 5;
+  // 实际授权的 scope，空格分隔（行 1093）。
+  string scope = 6;
+}
+
+// RevokeRequest 是 `POST /api/oidc/revoke` 的请求（§4.4 行 1100：
+// {token, token_type_hint:"refresh_token"}）。RFC 7009 标准端点、豁免 §1.0 信封
+//（§1.0 行 64）；成功为 HTTP 200 空响应体（行 1100），无响应消息可建；
+// 仅影响该令牌、不影响 SSO 会话（行 1100）。
+message RevokeRequest {
+  // 待吊销令牌（行 1100）。
+  string token = 1;
+  // 令牌类型提示，取值 refresh_token（行 1100）。
+  string token_type_hint = 2;
+}
+
+// 端点取舍（§4.1 行 1045-1053）：服务发现（/.well-known/openid-configuration）与
+// 公钥集（/.well-known/jwks.json）的报文结构未在 §4 定义（按 OIDC discovery 与
+// RFC 7517 标准格式，无逐字段契约），authorize 为 GET 302 跳转 / HTML 渲染端点
+//（行 1049、§4.2 两条路径均无 JSON 报文），均不建消息；authorize 的 OIDC 原始参数
+// 在登录链路中已由 api.sso.LoginDefaultRequest.oidc（google.protobuf.Struct，不逐字段
+// 建模）承载，见 api/sso/login.proto。

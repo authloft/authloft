@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package api.oidc;
+
+// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// 目录 api/oidc 对应包名 api.oidc（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
+option go_package = "authloft/gen/go/api/oidc;api";
+
+// UserinfoResponse 是 `GET /api/oidc/userinfo` 的响应（§4.5 行 1102-1118）：
+// OIDC 标准 Claims，按 RFC 格式平铺、豁免 §1.0 统一信封（§1.0 行 64），
+// 顶层无 status 字段，本消息即完整响应体。
+// 字段名与行 1106-1113 的 Claims 表及行 1115-1118 JSON 示例逐字一致（§12.9 行 1748）；
+// Claim 语义在 §4.5 唯一定义，取值来源映射见《后端架构》§14.4 行 1609-1616。
+message UserinfoResponse {
+  // 用户 ID（user.id，行 1108）；整型一律 int64，JSON 输出十进制字符串，
+  // 与示例 "10086" 一致（§12.9 行 1750、§1.12）。
+  int64 sub = 1;
+  // 昵称（user.nickname，行 1109）。
+  string name = 2;
+  // 邮箱（user.email，行 1110）；默认掩码，仅当 Access Token 的 scope 含
+  // email_plain 时明文（行 1120），掩码矩阵见 §3.1 行 804、807-809。
+  string email = 3;
+  // 邮箱验证状态，取库内 email_verified 标志（行 1110）；JSON 为 true/false（行 1116），
+  // 不受掩码影响（行 1120）。
+  bool email_verified = 4;
+  // 手机号（user.phone，行 1111）；默认掩码，仅当 scope 含 phone_plain 时明文（行 1120），
+  // 掩码矩阵见 §3.1 行 804、807-809。
+  string phone_number = 5;
+  // 手机号验证状态，取库内 phone_verified 标志（行 1111）；JSON 为 true/false（行 1117），
+  // 不受掩码影响（行 1120）。
+  bool phone_number_verified = 6;
+  // 头像 URL（user.avatar_url，行 1112）。
+  string picture = 7;
+  // 登录链路中实际通过的认证方法数组（行 1113），如 ["pwd","otp"]（行 1117）。
+  repeated string amr = 8;
+}
+
+// `GET /api/oidc/get_user_info`（§4.6 行 1122-1124，Authloft 格式）按 §1.0 统一信封
+// 返回 §3.1 的 Authloft 用户信息字段：成功平铺 + status:"success" 由 codec 注入
+//（数据消息顶层禁用 status 字段）。其字段集合与
+// `GET /api/rpc/account/{uid}/profile` 逐字相同（§3.1 行 771「共用同一字段集合」、
+// 《后端架构》§14.4 行 1618「共用同一结构」），按「同一结构只定义一次」口径
+//（既定口径，先例 api/sso/login.proto 行 14「响应复用、不另建消息」），
+// 跨包复用 api.rpc.ProfileResponse（api/rpc/profile.proto），本包不重复定义；
+// 掩码口径差异（get_user_info 默认掩码、scope 含 phone_plain / email_plain 才明文，
+// §3.1 行 803；rpc 明文，行 805）由服务端取值决定，不构成结构差异。
