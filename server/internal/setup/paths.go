@@ -25,6 +25,7 @@ import (
 
 	"authloft/internal/config"
 	"authloft/internal/migrate"
+	"authloft/internal/security"
 )
 
 // §13 域内错误码（接口文档 §13 域码清单；业务码开放，
@@ -290,57 +291,14 @@ func validateUsername(username string) error {
 var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 
 // validatePassword 管理员密码策略（接口文档 §5.6 默认值——setup 模式无
-// settings，按默认策略：长度 8-64、三类字符齐全、不含用户名、不命中弱口令
-// 表、无空白；固定规则：>64 拒绝、与用户名相同拒绝）。违规 → password_weak。
-// 完整策略实现落地在 security/policy.go（后续卡），此处为安装期最小实现。
+// settings，按默认策略）。违规 → password_weak。完整实现：security/policy.go
+//（security/policy.go 取代本处安装期过渡副本），错误信息风格保持不变。
 func validatePassword(username, password string) error {
-	weak := func(reason string) error {
-		return bizErr(CodePasswordWeak, "admin password does not meet the policy: "+reason, nil)
+	violations := security.ValidatePassword(security.DefaultPasswordPolicy(), username, "", password)
+	if len(violations) == 0 {
+		return nil
 	}
-	if len(password) < 8 {
-		return weak("minimum length is 8")
-	}
-	if len(password) > 64 {
-		return weak("length exceeds the hard limit of 64")
-	}
-	var hasUpper, hasLower, hasDigit bool
-	for _, r := range password {
-		switch {
-		case r >= 'A' && r <= 'Z':
-			hasUpper = true
-		case r >= 'a' && r <= 'z':
-			hasLower = true
-		case r >= '0' && r <= '9':
-			hasDigit = true
-		}
-	}
-	if !hasUpper || !hasLower || !hasDigit {
-		return weak("must contain uppercase, lowercase and digit")
-	}
-	if password == username {
-		return weak("must not equal the username")
-	}
-	if username != "" && strings.Contains(password, username) {
-		return weak("must not contain the username")
-	}
-	for _, r := range password {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			return weak("must not contain whitespace")
-		}
-	}
-	if commonPasswords[password] {
-		return weak("too common")
-	}
-	return nil
-}
-
-// commonPasswords 最小弱口令表（pwd_disallow_common 默认 true 的安装期
-// 过渡实现；完整字典随 security/policy.go 落地）。
-var commonPasswords = map[string]bool{
-	"password1": true, "password12": true, "passwd123": true,
-	"123456789": true, "12345678a": true, "qwerty123": true,
-	"admin1234": true, "admin12345": true, "letmein123": true,
-	"iloveyou123": true, "welcome123": true, "abc123456": true,
+	return bizErr(CodePasswordWeak, "admin password does not meet the policy: "+violations[0].Reason, nil)
 }
 
 // hashPasswordArgon2id 生成 PHC 格式 argon2id 哈希串（§4.2：user_credential
