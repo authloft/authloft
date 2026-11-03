@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"authloft/internal/codec"
 )
 
 // gatewayTokenHeader 网关调用凭据 Header（docs/接口文档.md §6 行 1344：
@@ -15,14 +13,17 @@ import (
 const gatewayTokenHeader = "X-Gateway-Token"
 
 // Gateway 网关 Token 校验中间件（docs/接口文档.md §6 行 1342-1344、
-// docs/后端架构.md §3.3 行 313，仅挂 /api/gateway/**）：
-// X-Gateway-Token 头不在令牌列表 → 403 forbidden（§1.5 行 209「网关
-// Token 无效」）；在列表 → 放行。
+// docs/后端架构.md §3.3 行 293，仅挂 /api/gateway/**）：
+// X-Gateway-Token 头不在令牌列表 → 403（§1.5 行 188「网关 Token 无效」）；
+// 在列表 → 放行。
 //
-// 令牌列表经 tokens 函数每请求读取（settings 键 gateway_tokens 快照，
-// 可多个、热更新对后续请求生效；middleware 不 import settings，叶子件
-// 口径同 session.go）。tokens 为 nil（未装配）时保守拒绝——与 origin.go
-// 的「缺配置默认拒绝」口径一致，空列表本就无一可通过。
+// 403 出口为豁免端点原生形态——gateway decode 纯响应头、无响应体
+// （§1.0 行 66），故 AbortWithStatus 空体；X-Request-Id
+// 响应头由 requestid 中间件写入。令牌列表经 tokens 函数每请求读取
+// （settings 键 gateway_tokens 快照，可多个、热更新对后续请求生效；
+// middleware 不 import settings，叶子件口径同 origin.go）。tokens 为
+// nil（未装配）时保守拒绝——与 origin.go 的「缺配置默认拒绝」口径一致，
+// 空列表本就无一可通过。
 func Gateway(tokens func() []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tok := strings.TrimSpace(c.GetHeader(gatewayTokenHeader))
@@ -30,8 +31,7 @@ func Gateway(tokens func() []string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		codec.WriteError(c, http.StatusForbidden, codec.CodeForbidden, "invalid gateway token")
-		c.Abort()
+		c.AbortWithStatus(http.StatusForbidden)
 	}
 }
 

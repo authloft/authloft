@@ -28,7 +28,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"authloft/internal/codec"
 	"authloft/internal/middleware"
 )
 
@@ -41,10 +40,51 @@ const (
 	// shutdownGrace 响应写出后优雅关闭的等待上限（在途响应 flush 完毕
 	// 即返回，restart 语义不靠拉长该值）。
 	shutdownGrace = 3 * time.Second
-	// maxSetupBody 请求体上限（与 codec 默认 1 MiB 一致；上传 config 全文
-	// 与安装表单均远小于此）。
+	// maxSetupBody 请求体上限（与 connect 域默认 1 MiB 一致，docs/后端架构.md
+	// §1.6 行 86；上传 config 全文与安装表单均远小于此）。
 	maxSetupBody = 1 << 20
 )
+
+// 框架层错误码（setup 域原生 JSON 过渡形态的取值，原 codec 常量原值接管；
+// setup 域 Connect 化后改走 connect.NewError，届时废弃）。
+const (
+	setupCodeBadRequest           = "bad_request"
+	setupCodeUnsupportedMediaType = "unsupported_media_type"
+	setupCodeInternalError        = "internal_error"
+)
+
+// setupErrorObj / setupErrorBody 原生 JSON 错误信封（编译救活的最小改造：
+// 形态为旧信封 JSON 的字节级保留、编码不再经 codec；键序同旧 protojson
+// 字段号序。错误体暂保留 request_id 字段以维持 setup entry 前端零改动，
+// 后续统一按 §1.5 行 223 移除——request_id 届时只走 X-Request-Id 响应头）。
+type setupErrorObj struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+type setupErrorBody struct {
+	Status string        `json:"status"`
+	Error  setupErrorObj `json:"error"`
+}
+
+// writeSetupError 直写原生 JSON 错误体（不依赖 codec）：HTTP status 由调用方
+// 给定（框架错误非 200；PathError 业务失败经 writePathError 恒 200，§13）。
+func writeSetupError(c *gin.Context, status int, code, message string) {
+	body, err := json.Marshal(setupErrorBody{
+		Status: "error",
+		Error: setupErrorObj{
+			Code:      code,
+			Message:   message,
+			RequestID: c.GetString(middleware.RequestIDKey),
+		},
+	})
+	if err != nil { // 全字符串字段的 Marshal，实际不可达
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Data(status, "application/json; charset=utf-8", body)
+}
 
 // Server 安装模式 HTTP 服务。
 type Server struct {
@@ -55,9 +95,9 @@ type Server struct {
 }
 
 // NewServer 构造 setup server 并注册全部路由（仅 setup 模式使用）。
-// 中间件链：recover 最外层 → requestid（保证 §1.5 错误信封携带 request_id）；
-// 不挂 origin / contenttype / negotiate——安装期无 rootOrigin 可配（首次
-// 部署可能经 IP 访问），§13 响应恒为 JSON。
+// 中间件链：recover 最外层 → requestid（所有响应回写 X-Request-Id 头，
+// 过渡期错误信封亦携带 request_id）；不挂 origin——安装期无 rootOrigin
+// 可配（首次部署可能经 IP 访问），§13 响应恒为 JSON。
 func NewServer(configPath string) *Server {
 	s := &Server{
 		configPath: configPath,
@@ -147,7 +187,7 @@ func (s *Server) handleConfig(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(req.Config) == "" {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "config is required")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "config is required")
 		return
 	}
 	if err := UploadConfig(c.Request.Context(), s.configPath, req.Config); err != nil {
@@ -165,15 +205,15 @@ func (s *Server) handleInstall(c *gin.Context) {
 		return
 	}
 	if req.DBDSN == "" || req.RedisAddr == "" || req.AdminUsername == "" || req.AdminPassword == "" {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "db_dsn, redis_addr, admin_username and admin_password are required")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "db_dsn, redis_addr, admin_username and admin_password are required")
 		return
 	}
 	if req.RedisDB < 0 {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "redis_db must be >= 0")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "redis_db must be >= 0")
 		return
 	}
 	if c.Request.Host == "" {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "missing Host header")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "missing Host header")
 		return
 	}
 	in := InstallInput{
@@ -195,15 +235,16 @@ func (s *Server) handleInstall(c *gin.Context) {
 	s.requestExit()
 }
 
-// writePathError 把安装路径错误写成信封：*PathError（§13 域码）→ HTTP 200 +
-// status:"error" 业务信封（codec.WriteBizError）；其余（写盘失败等服务端
-// 故障）→ 500 internal_error（§1.5 框架码）。日志侧经 redact 脱敏；
+// writePathError 把安装路径错误写成原生 JSON 信封：*PathError（§13 域码）→
+// HTTP 200 + status:"error" 业务信封（writeSetupError，不经 codec，
+// Connect 化时改 connect.NewError + ErrorInfo detail）；其余（写盘失败
+// 等服务端故障）→ 500 internal_error（§1.5 框架码）。日志侧经 redact 脱敏；
 // Err 为 nil 的纯业务失败（如 admin_missing）只记 code。
 func writePathError(c *gin.Context, err error) {
 	var pe *PathError
 	if !errors.As(err, &pe) {
 		slog.Error("setup: unexpected failure", "err", redact(err.Error()))
-		codec.WriteError(c, http.StatusInternalServerError, codec.CodeInternalError, "internal error")
+		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
 		return
 	}
 	if pe.Err != nil {
@@ -211,7 +252,7 @@ func writePathError(c *gin.Context, err error) {
 	} else {
 		slog.Error("setup: step failed", "code", pe.Code)
 	}
-	codec.WriteBizError(c, pe.Code, pe.Message)
+	writeSetupError(c, http.StatusOK, pe.Code, pe.Message)
 }
 
 // writeRestarting 成功响应（§13.2 / §13.3）：{"status":"success","restarting":true}。
@@ -231,20 +272,20 @@ func writeSetupJSON(c *gin.Context, status int, body string) {
 func bindSetupJSON(c *gin.Context, req any) bool {
 	ct := c.GetHeader("Content-Type")
 	if mediaType, _, err := mime.ParseMediaType(ct); err != nil || mediaType != "application/json" {
-		codec.WriteError(c, http.StatusUnsupportedMediaType, codec.CodeUnsupportedMediaType, "unsupported media type")
+		writeSetupError(c, http.StatusUnsupportedMediaType, setupCodeUnsupportedMediaType, "unsupported media type")
 		return false
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxSetupBody))
 	if err != nil {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "invalid request body")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "invalid request body")
 		return false
 	}
 	if len(body) == 0 {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "empty request body")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "empty request body")
 		return false
 	}
 	if err := json.Unmarshal(body, req); err != nil {
-		codec.WriteError(c, http.StatusBadRequest, codec.CodeBadRequest, "invalid request body")
+		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "invalid request body")
 		return false
 	}
 	return true
@@ -276,7 +317,7 @@ func (s *Server) handleSetupPage(c *gin.Context) {
 	nonce, err := genNonce()
 	if err != nil {
 		slog.Error("setup: gen nonce", "err", err)
-		codec.WriteError(c, http.StatusInternalServerError, codec.CodeInternalError, "internal error")
+		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
 		return
 	}
 	init, err := json.Marshal(map[string]string{
@@ -284,7 +325,7 @@ func (s *Server) handleSetupPage(c *gin.Context) {
 		"static_base": "/assets",
 	})
 	if err != nil {
-		codec.WriteError(c, http.StatusInternalServerError, codec.CodeInternalError, "internal error")
+		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
 		return
 	}
 	c.Header("Cache-Control", "no-store")

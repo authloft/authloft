@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"authloft/internal/codec"
 )
 
 const (
@@ -16,13 +14,12 @@ const (
 	testAppID      = "wx1234567890abcdef"
 )
 
-// okHandler 标记请求到达业务 handler（origin / contenttype 测试共用）。
+// okHandler 标记请求到达业务 handler（middleware 各链路测试共用）。
 func okHandler(c *gin.Context) {
 	c.String(http.StatusOK, "ok")
 }
 
-// doRequest 发起带自定义头的请求（origin / contenttype 测试共用；Content-Type
-// 仅作为头设置，不读 body——中间件只判头，见 contenttype.go）。
+// doRequest 发起带自定义头的请求（middleware 各链路测试共用）。
 func doRequest(r *gin.Engine, method, target string, headers map[string]string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, nil)
 	for k, v := range headers {
@@ -33,26 +30,15 @@ func doRequest(r *gin.Engine, method, target string, headers map[string]string) 
 	return rec
 }
 
-// decodeErrorBody 解出 §1.5 错误信封的顶层 JSON 对象（origin / contenttype 的
-// 403 / 415 都走 codec.WriteError，协商中间件未执行时按 write.go 回落 JSON）。
-func decodeErrorBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+// decodeJSONBody 解出响应体的顶层 JSON 对象（403 出口为 Connect 错误
+// 形态 {"code","message"}，接口文档 §1.5 行 184-211）。
+func decodeJSONBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
 	return body
-}
-
-// errorObject 取出信封内层 error 对象（§1.0 行 57：{"status":"error","error":{…}}；
-// middleware 包内各错误体断言共用）。
-func errorObject(t *testing.T, body map[string]any) map[string]any {
-	t.Helper()
-	obj, ok := body["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("envelope missing \"error\" object: %v", body)
-	}
-	return obj
 }
 
 // ① 同源通过（§21 行 1785）；scheme / host 大小写不敏感。
@@ -68,8 +54,8 @@ func TestOriginSameOriginPasses(t *testing.T) {
 	}
 }
 
-// ② 跨站 403，错误体走 codec.WriteError：code=forbidden（§1.5 行 199）、
-// 协商中间件未执行 → 回落 JSON（write.go 行 32-35）。
+// ② 跨站 403，错误体为 Connect 形态 JSON：code=permission_denied
+//（§1.5 行 188 Origin 跨站 → permission_denied/403，无 ErrorInfo detail）。
 func TestOriginCrossOriginRejected(t *testing.T) {
 	r := newTestRouter(Origin(testRootOrigin, []string{testAppID}))
 	r.POST("/api/x", okHandler)
@@ -85,27 +71,24 @@ func TestOriginCrossOriginRejected(t *testing.T) {
 			t.Errorf("Origin %q: status = %d, want %d", origin, rec.Code, http.StatusForbidden)
 			continue
 		}
-		if got := rec.Header().Get("Content-Type"); got != contentTypeJSON {
-			t.Errorf("Origin %q: Content-Type = %q, want %q (negotiate 前回落 JSON)", origin, got, contentTypeJSON)
+		if got := rec.Header().Get("Content-Type"); got != "application/json" {
+			t.Errorf("Origin %q: Content-Type = %q, want application/json (Connect 错误形态)", origin, got)
 		}
-		body := decodeErrorBody(t, rec)
-		if got := body["status"]; got != codec.StatusError {
-			t.Errorf("Origin %q: status = %v, want %q (信封形状)", origin, got, codec.StatusError)
-		}
-		if got := errorObject(t, body)["code"]; got != codec.CodeForbidden {
-			t.Errorf("Origin %q: error code = %v, want %q", origin, got, codec.CodeForbidden)
+		body := decodeJSONBody(t, rec)
+		if got := body["code"]; got != "permission_denied" {
+			t.Errorf("Origin %q: error code = %v, want permission_denied (§1.5 行 188)", origin, got)
 		}
 	}
 }
 
 // ③ 无 Origin 时走 Referer 白名单（§21 行 1785）：servicewechat.com/{appid} 命中白名单通过；
-// appid 不在白名单、host 不符（含子域）、无 Referer 一律 403（接口文档 §1.1 行 58）。
+// appid 不在白名单、host 不符（含子域）、无 Referer 一律 403（接口文档 §1.1 行 80）。
 func TestOriginRefererAllowlist(t *testing.T) {
 	r := newTestRouter(Origin(testRootOrigin, []string{testAppID}))
 	r.POST("/api/x", okHandler)
 
 	cases := []struct {
-		name   string
+		name    string
 		referer string
 		want    int
 	}{
@@ -127,24 +110,29 @@ func TestOriginRefererAllowlist(t *testing.T) {
 	}
 }
 
-// ④ 免检组 /api/oidc/**、/api/rpc/**、/api/gateway/** 跨站也通过（§3.3 行 302）；
-// 前缀判定带 `/` 边界：/api/oidcfoo 不属于免检组。
+// ④ 免检组（§3.3 行 289、§1.1 行 79 例外）：/api/oidc/**（REST 原路径）、
+// rpc 域 Connect 路径 /api.rpc.v1.**、/api/gateway/** 跨站也通过；
+// 前缀判定带边界：/api/oidcfoo 与旧 rpc 路径 /api/rpc/** 不再免检。
 func TestOriginExemptGroups(t *testing.T) {
 	r := newTestRouter(Origin(testRootOrigin, []string{testAppID}))
 	r.POST("/api/x", okHandler)
-	for _, p := range []string{"/api/oidc/x", "/api/rpc/x", "/api/gateway/x", "/api/oidcfoo"} {
+	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api/oidcfoo", "/api/rpc/x", "/api.rpc.v1.RpcService/GetUserProfile"} {
 		r.POST(p, okHandler)
 	}
 
-	for _, p := range []string{"/api/oidc/x", "/api/rpc/x", "/api/gateway/x"} {
+	for _, p := range []string{"/api/oidc/x", "/api/gateway/x", "/api.rpc.v1.RpcService/GetUserProfile"} {
 		rec := doRequest(r, http.MethodPost, p, map[string]string{"Origin": "https://evil.example.com"})
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: exempt group status = %d, want %d", p, rec.Code, http.StatusOK)
 		}
 	}
-	rec := doRequest(r, http.MethodPost, "/api/oidcfoo", map[string]string{"Origin": "https://evil.example.com"})
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("/api/oidcfoo: status = %d, want %d (前缀不含 / 边界外)", rec.Code, http.StatusForbidden)
+	// 非免检：前缀不含 / 边界（/api/oidcfoo）与 rpc 域旧路径（/api/rpc/**，
+	// Connect 化后免检面迁移至 /api.rpc.v1.**）→ 403。
+	for _, p := range []string{"/api/oidcfoo", "/api/rpc/x"} {
+		rec := doRequest(r, http.MethodPost, p, map[string]string{"Origin": "https://evil.example.com"})
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s: status = %d, want %d (不在免检组)", p, rec.Code, http.StatusForbidden)
+		}
 	}
 }
 

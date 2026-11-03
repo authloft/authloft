@@ -10,10 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"google.golang.org/protobuf/proto"
-
-	api "authloft/gen/go/api/common"
-	"authloft/internal/codec"
 )
 
 // slogCapture 收集经 slog 默认 logger 输出的记录（recover / logger 测试共用）。
@@ -29,7 +25,8 @@ func (h *slogCapture) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (h *slogCapture) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *slogCapture) WithGroup(string) slog.Handler      { return h }
+
+func (h *slogCapture) WithGroup(string) slog.Handler { return h }
 
 // attrs 返回第一条 message 匹配的记录的属性表；无匹配返回 nil。
 func (h *slogCapture) attrs(msg string) map[string]string {
@@ -90,10 +87,10 @@ func serveBody(r *gin.Engine, method, target, body string, headers map[string]st
 	return rec
 }
 
-// ① panic 路由 → 500 + 统一 JSON 错误体：code=internal_error、message 固定
-// 文案、request_id 非空（requestid 在 recover 内层、handler 之前已写入 ctx），
-// panic 值不透出到响应体。
-func TestRecoverWritesUnifiedErrorBody(t *testing.T) {
+// ① panic 路由 → 500 原生最小空体（codec 信封出口已删，panic 兜底
+// 不再构造错误体；panic 值不透出），X-Request-Id 响应头由 requestid
+// 中间件写入头表、失败响应仍携带。
+func TestRecoverWritesBare500WithRequestIDHeader(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID())
 	r.GET("/boom", func(c *gin.Context) { panic("boom") })
 
@@ -101,59 +98,19 @@ func TestRecoverWritesUnifiedErrorBody(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	body := decodeErrorBody(t, rec)
-	if got := body["status"]; got != codec.StatusError {
-		t.Errorf("status = %v, want %q (信封形状)", got, codec.StatusError)
-	}
-	errObj := errorObject(t, body)
-	if got := errObj["code"]; got != codec.CodeInternalError {
-		t.Errorf("error.code = %v, want %q", got, codec.CodeInternalError)
-	}
-	if got := errObj["message"]; got != "internal error" {
-		t.Errorf("error.message = %v, want %q (不透出 panic 内容)", got, "internal error")
-	}
-	if got, _ := errObj["request_id"].(string); got == "" {
-		t.Errorf("error.request_id is empty, want non-empty")
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty (原生最小 500 空体，不透出 panic 内容)", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "boom") {
 		t.Errorf("error body leaks panic value: %s", rec.Body.String())
 	}
-}
-
-// ② Protobuf 协商下 panic → 错误体按 proto 编码，proto.Unmarshal 解出
-// api.ErrorEnvelope{status:"error"} 且内层 code=internal_error
-// （错误体编码随协商，接口文档 §1.5 行 195）。
-func TestRecoverProtobufNegotiatedErrorBody(t *testing.T) {
-	r := newTestRouter(Recover(), RequestID(), NegotiateFormat())
-	r.GET("/boom", func(c *gin.Context) { panic("boom") })
-
-	rec := serveBody(r, http.MethodGet, "/boom", "", map[string]string{"Accept": contentTypeProto})
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-	if got := rec.Header().Get("Content-Type"); got != contentTypeProto {
-		t.Fatalf("Content-Type = %q, want %q", got, contentTypeProto)
-	}
-	var envelope api.ErrorEnvelope
-	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("proto.Unmarshal error body %x: %v", rec.Body.Bytes(), err)
-	}
-	if envelope.Status != codec.StatusError {
-		t.Errorf("status = %q, want %q (信封形状)", envelope.Status, codec.StatusError)
-	}
-	if envelope.Error == nil {
-		t.Fatalf("envelope.Error is nil, want inner error object")
-	}
-	if envelope.Error.Code != codec.CodeInternalError {
-		t.Errorf("code = %q, want %q", envelope.Error.Code, codec.CodeInternalError)
-	}
-	if envelope.Error.RequestId == "" {
-		t.Errorf("request_id is empty, want non-empty")
+	if got := rec.Header().Get(XRequestIDHeader); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty (panic 响应亦回写)")
 	}
 }
 
-// ③ 已写过部分响应后 panic → 不再二次写：响应字节不被追加错误体
-// （§3.14 行 486 禁止半截输出），已写出的状态码不被覆盖。
+// ② 已写过部分响应后 panic → 不再二次写：响应字节不被追加错误体
+// （§3.14「禁止半截输出」），已写出的状态码不被覆盖。
 func TestRecoverPartialResponseNotAppended(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID())
 	r.GET("/partial", func(c *gin.Context) {
@@ -170,7 +127,7 @@ func TestRecoverPartialResponseNotAppended(t *testing.T) {
 	}
 }
 
-// ④ panic 值与堆栈进日志（slog 捕获验证），并携带 request_id 与请求定位字段。
+// ③ panic 值与堆栈进日志（slog 捕获验证），并携带 request_id 与请求定位字段。
 func TestRecoverLogsPanicAndStack(t *testing.T) {
 	logCap := captureSlog(t)
 	r := newTestRouter(Recover(), RequestID())
@@ -193,7 +150,7 @@ func TestRecoverLogsPanicAndStack(t *testing.T) {
 	}
 }
 
-// ⑤ 链中段中间件 panic → 后续中间件与 handler 不执行、恰一次 500 错误体。
+// ④ 链中段中间件 panic → 后续中间件与 handler 不执行、恰一次 500 空体。
 // gin 的 Next 是共享 index 的 for 循环（gin v1.12.0 context.go:188-196）：
 // panic 点非链尾时 unwind 回 engine 侧循环会从 index+1 继续执行剩余链段，
 // 缺 c.Abort() 时标记中间件 B 与 handler 照跑，500 之后再写响应即半截混合输出。
@@ -215,20 +172,10 @@ func TestRecoverMidChainPanicAbortsChain(t *testing.T) {
 		t.Errorf("panic 之后 handler 仍被执行（缺 c.Abort() 截断链）")
 	}
 	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
 	}
-	// 恰一次错误体：B/handler 均未执行（无第二次写入），且 body 是单个合法
-	// JSON 对象（追加第二段会让 json.Unmarshal 失败）。
-	body := decodeErrorBody(t, rec)
-	if got := body["status"]; got != codec.StatusError {
-		t.Errorf("status = %v, want %q (信封形状)", got, codec.StatusError)
-	}
-	errObj := errorObject(t, body)
-	if got := errObj["code"]; got != codec.CodeInternalError {
-		t.Errorf("error.code = %v, want %q", got, codec.CodeInternalError)
-	}
-	if got := errObj["message"]; got != "internal error" {
-		t.Errorf("error.message = %v, want %q", got, "internal error")
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty (原生 500 空体)", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "mid-chain-boom") {
 		t.Errorf("error body leaks panic value: %s", rec.Body.String())

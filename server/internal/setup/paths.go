@@ -28,8 +28,9 @@ import (
 	"authloft/internal/security"
 )
 
-// §13 域内错误码（接口文档 §13 域码清单；业务码开放，
-// 经 codec.WriteBizError 输出 HTTP 200 + status:"error" 信封）。
+// §13 域内错误码（接口文档 §13 域码清单；业务码开放，经 setup.go 的
+// writeSetupError 输出 HTTP 200 + status:"error" 原生 JSON 信封——
+// 不经 codec；Connect 化后改 connect.NewError + ErrorInfo detail）。
 const (
 	CodeConfigInvalid    = "config_invalid"
 	CodeDBUnreachable    = "db_unreachable"

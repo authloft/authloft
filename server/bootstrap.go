@@ -22,10 +22,15 @@ import (
 
 	"authloft/internal/cache"
 	"authloft/internal/config"
+	"authloft/internal/connect"
 	"authloft/internal/migrate"
 	"authloft/internal/repo"
 	"authloft/internal/setup"
 )
+
+// defaultReadMaxBytes Connect 域请求体上限默认值（docs/后端架构.md §1.6
+// 行 86、§3.14 行 478：由装配层经 connect.NewServer 注入，包自身不读 config）。
+const defaultReadMaxBytes = 1 << 20
 
 // run 装配并阻塞运行 HTTP 服务（§3.1 行 248）。装配与运行错误原样上抛，
 // 由 main 转 exit 非 0（fail-fast）；setup 模式下安装完成的退出走 Run 的
@@ -93,9 +98,9 @@ func serve(cfg *config.Config) error {
 	//   文档 §5.6，不进 config）。
 	// TODO(§3.1 行 253 步骤 8)：队列 worker 与 cron 启动。
 
-	// TODO(schema)：§3.2 无 max_body_bytes 字段，当前回落 codec 默认 1 MiB
-	//（未调用 SetMaxBodyBytes 即回落默认，§3.14 行 492）；若需可配置
-	// 须先改 §3.2 文档。
+	// TODO(schema)：§3.2 无 max_body_bytes 字段，当前回落 connect 域默认
+	// 1 MiB（§1.6 行 86，经 connect.NewServer 注入）；若需可配置须先改
+	// §3.2 文档。
 
 	router, _ := buildRouter(cfg)
 	return newHTTPServer(cfg, router).ListenAndServe()
@@ -110,13 +115,15 @@ func setupMode(configPath string) bool {
 
 // buildRouter 从 *config.Config 构造生产路由（§3.2 约定 1：构造注入，
 // 测试可传自造实例，§20）。rootOrigin 取 authloft.root（{al_root}，
-// 接口文档 §1.1 行 54）。setup 路由不在本链注册——仅 setup 模式的独立
-// engine 挂载（§3.15），正常模式下 /setup 与 /api/setup/** 一律 404（§13）。
+// 接口文档 §1.1 行 76）。connect mux 同步构造并经 gin.NoRoute 接管
+// /api.<域>.v1.* 路径（§3.14 行 472）——暂无 service 可挂，session/admin/rpc HMAC 拦截器随域 handler 注册时注入。
+// setup 路由不在本链注册——仅 setup 模式的独立 engine 挂载（§3.15），
+// 正常模式下 /setup 与 /api/setup/** 一律 404（§13）。
 func buildRouter(cfg *config.Config) (*gin.Engine, *gin.RouterGroup) {
 	// TODO(appid)：servicewechat appid Referer 白名单配置来源未定
 	//（待定）；空表下小程序 Referer 校验恒不过，
 	// 由 origin 中间件保守 403（既定口径）。
-	return newRouter(cfg.Authloft.Root, []string{})
+	return newRouter(cfg.Authloft.Root, []string{}, connect.NewServer(defaultReadMaxBytes))
 }
 
 // newHTTPServer 从 *config.Config 构造 http.Server：监听地址与读写超时

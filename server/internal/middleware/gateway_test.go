@@ -1,12 +1,11 @@
 // Gateway 中间件单测（docs/接口文档.md §6 行 1342-1344、docs/后端架构.md
-// §21.2）：有效 token 放行、无效 / 缺头 403 forbidden、tokens 函数快照热生效。
+// §3.3 行 293）：有效 token 放行、无效 / 缺头 403（豁免端点原生形态：
+// 纯响应头无响应体，§1.0 行 66）、tokens 函数快照热生效。
 package middleware
 
 import (
 	"net/http"
 	"testing"
-
-	"authloft/internal/codec"
 )
 
 // ① X-Gateway-Token 在令牌列表 → 放行。
@@ -20,7 +19,8 @@ func TestGatewayValidTokenPasses(t *testing.T) {
 	}
 }
 
-// ② X-Gateway-Token 不在列表 → 403 forbidden（§1.5 行 209「网关 Token 无效」）。
+// ② X-Gateway-Token 不在列表 → 403，且响应体为空（gateway 豁免形态：
+// 纯响应头、无响应体，接口文档 §1.0 行 66 / §6 行 1347-1358）。
 func TestGatewayInvalidTokenReturns403(t *testing.T) {
 	r := newTestRouter(Gateway(func() []string { return []string{"tok-a"} }))
 	r.GET("/api/gateway/decode", okHandler)
@@ -29,9 +29,8 @@ func TestGatewayInvalidTokenReturns403(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
-	errObj := errorObject(t, decodeErrorBody(t, rec))
-	if got := errObj["code"]; got != codec.CodeForbidden {
-		t.Errorf("error.code = %v, want %q", got, codec.CodeForbidden)
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty (gateway 纯响应头、无响应体)", rec.Body.String())
 	}
 }
 

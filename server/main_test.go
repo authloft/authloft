@@ -8,14 +8,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	api "authloft/gen/go/api/common"
-	"authloft/internal/codec"
 	"authloft/internal/config"
+	"authloft/internal/connect"
 )
 
 const (
@@ -42,47 +42,40 @@ func doRequest(r *gin.Engine, method, target string, headers map[string]string) 
 
 func configuredRouter() (*gin.Engine, *gin.RouterGroup) {
 	gin.SetMode(gin.TestMode)
-	return newRouter(assembledRootOrigin, []string{assembledAppID})
+	return newRouter(assembledRootOrigin, []string{assembledAppID}, connect.NewServer(1<<20))
 }
 
 func emptyConfigRouter() (*gin.Engine, *gin.RouterGroup) {
 	gin.SetMode(gin.TestMode)
-	return newRouter("", nil)
+	return newRouter("", nil, connect.NewServer(1<<20))
 }
 
-// 装配链路（§18 行 1665：origin + contenttype → negotiate → handler）：
-// recover → requestid → logger 全局 → /api 组 origin → contenttype → negotiate。
+// 装配链路（docs/后端架构.md §18 行 1726：origin → connect handler →
+// connect interceptor → handler）：recover → requestid → logger → metrics →
+// origin 全局链；contenttype / negotiate 中间件已随 Connect 改造删除
+//（Content-Type 校验由 Connect 框架与 OIDC 各自承担）。
 func TestNewRouterMiddlewareChain(t *testing.T) {
 	r, apiGroup := configuredRouter()
-	apiGroup.POST("/x", func(c *gin.Context) {
-		codec.Write(c, http.StatusOK, &api.Error{Code: "payload"})
-	})
+	apiGroup.POST("/x", ok)
 
-	// 无 Origin 无 Referer → 403；错误体 status=error 且 error.code=forbidden
-	//（§1.0 行 57 嵌套信封）、request_id 非空（requestid 挂全局、
-	// 先于 origin，保证中间件层错误也带链路 ID）。
+	// 无 Origin 无 Referer → 403 Connect 错误形态（code=permission_denied，
+	// §1.5 行 188）；X-Request-Id 响应头非空（requestid 挂全局、先于 origin）。
 	rec := doRequest(r, http.MethodPost, "/api/x", nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("no origin: status = %d, want %d (body %s)", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 	var errBody struct {
-		Status string `json:"status"`
-		Error  struct {
-			Code      string `json:"code"`
-			RequestID string `json:"request_id"`
-		} `json:"error"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
-	if errBody.Status != "error" {
-		t.Errorf("status = %q, want error", errBody.Status)
+	if errBody.Code != "permission_denied" {
+		t.Errorf("error.code = %q, want permission_denied (§1.5 行 188)", errBody.Code)
 	}
-	if errBody.Error.Code != codec.CodeForbidden {
-		t.Errorf("error.code = %q, want %q", errBody.Error.Code, codec.CodeForbidden)
-	}
-	if errBody.Error.RequestID == "" {
-		t.Errorf("error.request_id is empty, want non-empty (requestid 须先于 origin 挂载)")
+	if got := rec.Header().Get("X-Request-Id"); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty (requestid 须先于 origin 挂载)")
 	}
 
 	// 跨站 Origin → 403。
@@ -90,66 +83,81 @@ func TestNewRouterMiddlewareChain(t *testing.T) {
 		t.Errorf("cross-origin: status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 
-	// 同源 + text/plain → origin 过、contenttype 拦：415。
-	ctHeaders := map[string]string{"Origin": assembledRootOrigin, "Content-Type": "text/plain"}
-	if rec := doRequest(r, http.MethodPost, "/api/x", ctHeaders); rec.Code != http.StatusUnsupportedMediaType {
-		t.Errorf("text/plain: status = %d, want %d", rec.Code, http.StatusUnsupportedMediaType)
-	}
-
-	// 同源 + json → 到达 handler（正向链）。
+	// 同源（Content-Type 不再由中间件校验）→ 到达 handler（正向链）。
 	jsonHeaders := map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json"}
 	if rec := doRequest(r, http.MethodPost, "/api/x", jsonHeaders); rec.Code != http.StatusOK {
-		t.Errorf("json same-origin: status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	// negotiate 在链上且位于 origin / contenttype 之后：同源 + json + Accept proto
-	// → handler 的 codec.Write 输出 octet-stream。
-	protoHeaders := map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json", "Accept": "application/octet-stream"}
-	rec = doRequest(r, http.MethodPost, "/api/x", protoHeaders)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("proto accept: status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
-		t.Errorf("Content-Type = %q, want application/octet-stream (negotiate 须在链上)", got)
-	}
-
-	// 跨站 403 时协商尚未执行（origin 在 negotiate 前）→ 错误体回落 JSON。
-	rec = doRequest(r, http.MethodPost, "/api/x", map[string]string{"Origin": "https://evil.example.com", "Accept": "application/octet-stream"})
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("cross-origin with proto accept: status = %d, want %d", rec.Code, http.StatusForbidden)
-	}
-	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want application/json; charset=utf-8 (链序：origin 先于 negotiate)", got)
+		t.Errorf("same-origin: status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
-// 免检组整链：/api/oidc/** 对 origin 与 contenttype 双免检（x-www-form-urlencoded
-// 到达 handler）；/api/rpc/** 只免 origin、不免 contenttype（JSON 通过）。
+// 免检组整链（§1.1 行 79 例外、§3.3 行 289）：/api/oidc/**（x-www-form-urlencoded
+// 到达 handler）与 rpc 域 Connect 路径 /api.rpc.v1.**（跨站放行后进 connect
+// 兜底、未注册返回 Connect 404——非 403 即证明 origin 放行且 mux 接管）。
 func TestNewRouterExemptGroups(t *testing.T) {
 	r, apiGroup := configuredRouter()
 	apiGroup.POST("/oidc/y", ok)
-	apiGroup.POST("/rpc/y", ok)
 
 	if rec := doRequest(r, http.MethodPost, "/api/oidc/y", map[string]string{
 		"Origin": "https://evil.example.com", "Content-Type": "application/x-www-form-urlencoded",
 	}); rec.Code != http.StatusOK {
 		t.Errorf("oidc exempt: status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if rec := doRequest(r, http.MethodPost, "/api/rpc/y", map[string]string{
+	// rpc 域 Connect 新路径：origin 免检放行 → gin 未匹配 → connect mux 接管
+	// → 未注册 service 返回 Connect 错误形态 404（尚未有域 handler）。
+	rec := doRequest(r, http.MethodPost, "/api.rpc.v1.RpcService/GetUserProfile", map[string]string{
 		"Origin": "https://evil.example.com", "Content-Type": "application/json",
-	}); rec.Code != http.StatusOK {
-		t.Errorf("rpc exempt: status = %d, want %d", rec.Code, http.StatusOK)
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("rpc connect path: status = %d, want %d (免检放行后应由 connect 兜底接管)", rec.Code, http.StatusNotFound)
 	}
-	if rec := doRequest(r, http.MethodPost, "/api/rpc/y", map[string]string{
-		"Origin": "https://evil.example.com", "Content-Type": "text/plain",
-	}); rec.Code != http.StatusUnsupportedMediaType {
-		t.Errorf("rpc text/plain: status = %d, want %d (rpc 不免 contenttype)", rec.Code, http.StatusUnsupportedMediaType)
+	if !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
+		t.Errorf("rpc connect path body %q missing not_found connect code", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Request-Id"); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty")
+	}
+}
+
+// connect 兜底接管（§3.3 行 296、§3.14 行 472）：未注册的 connect 形态路径
+// 经 gin.NoRoute 进 connect mux → Connect 错误 JSON 404 + X-Request-Id 头；
+// 非 connect 形态的未知路径保持原生 404 空体（不产生 Connect 错误体）。
+func TestNewRouterConnectFallbackAndXRequestID(t *testing.T) {
+	r, _ := configuredRouter()
+
+	// 未注册 connect 路径（跨站 Origin 被 origin 层拦截 → 403；同源放行后
+	// 由 mux 兜底 → 404）：取同源请求验证兜底链。
+	rec := doRequest(r, http.MethodPost, "/api.sso.v1.SsoService/LoginDefault", map[string]string{
+		"Origin": assembledRootOrigin, "Content-Type": "application/json",
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unregistered connect path: status = %d, want %d (body %s)", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json (Connect 错误形态)", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
+		t.Errorf("connect fallback body %q missing not_found code", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Request-Id"); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty (404 亦回写)")
+	}
+
+	// 未知非 connect 路径 → 原生 404 空体 + X-Request-Id 头。
+	rec = doRequest(r, http.MethodGet, "/nope", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown path: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("unknown path body = %q, want empty (非 connect 路径原生 404)", rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Request-Id"); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty (404 亦回写)")
 	}
 }
 
 // 装配链 panic 兜底：recover 挂全局最外层，/api 组上的 panic 路由整链下返回
-// 500 统一错误体 internal_error 且 request_id 非空（docs/后端架构.md §3.3 行 309、
-// §3.14 行 486；docs/接口文档.md §1.5 行 195-203）。
+// 500 原生空体（codec 信封出口已删），X-Request-Id 响应头
+// 仍非空（requestid 先于一切错误出口）。
 func TestNewRouterRecoverPanicRoute(t *testing.T) {
 	r, apiGroup := configuredRouter()
 	apiGroup.POST("/panic", func(c *gin.Context) { panic("assembled boom") })
@@ -159,21 +167,14 @@ func TestNewRouterRecoverPanicRoute(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("panic route: status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
-	var errBody struct {
-		Status string `json:"status"`
-		Error  struct {
-			Code      string `json:"code"`
-			RequestID string `json:"request_id"`
-		} `json:"error"`
+	if rec.Body.Len() != 0 {
+		t.Errorf("panic route body = %q, want empty (原生最小 500)", rec.Body.String())
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
-		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
+	if strings.Contains(rec.Body.String(), "assembled boom") {
+		t.Errorf("panic route body leaks panic value: %s", rec.Body.String())
 	}
-	if errBody.Error.Code != codec.CodeInternalError {
-		t.Errorf("error.code = %q, want %q", errBody.Error.Code, codec.CodeInternalError)
-	}
-	if errBody.Error.RequestID == "" {
-		t.Errorf("error.request_id is empty, want non-empty")
+	if got := rec.Header().Get("X-Request-Id"); got == "" {
+		t.Errorf("X-Request-Id is empty, want non-empty (panic 响应亦回写)")
 	}
 }
 
@@ -299,7 +300,8 @@ func TestBootstrapHTTPServerConfig(t *testing.T) {
 
 // bootstrap 启动分支（§3.1 行 253 / §3.15）：正常模式（config 存在）
 // 下生产路由不注册任何 setup 路由——/setup 页面与 /api/setup/** 一律 404
-//（接口文档 §13：本域仅 setup 模式可达）。
+//（接口文档 §13：本域仅 setup 模式可达）。POST 系带同源 Origin：origin 已挂
+// 全局链（§3.3 行 296），缺 Origin 的写请求在路由匹配前即被 403。
 func TestBootstrapSetupRoutesNotFoundInNormalMode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r, _ := buildRouter(bootstrapConfig())
@@ -314,8 +316,16 @@ func TestBootstrapSetupRoutesNotFoundInNormalMode(t *testing.T) {
 			t.Errorf("GET %s in normal mode: status = %d, want %d", target, rec.Code, http.StatusNotFound)
 		}
 	}
-	if rec := doRequest(r, http.MethodPost, "/api/setup/install", map[string]string{"Content-Type": "application/json"}); rec.Code != http.StatusNotFound {
+	if rec := doRequest(r, http.MethodPost, "/api/setup/install", map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json"}); rec.Code != http.StatusNotFound {
 		t.Errorf("POST /api/setup/install in normal mode: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	// connect 形态的 setup 路径同域兜底：未注册 → Connect 404。
+	rec := doRequest(r, http.MethodPost, "/api.setup.v1.SetupService/Install", map[string]string{"Origin": assembledRootOrigin, "Content-Type": "application/json"})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("POST /api.setup.v1.SetupService/Install in normal mode: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
+		t.Errorf("connect setup path body %q missing not_found code", rec.Body.String())
 	}
 }
 
