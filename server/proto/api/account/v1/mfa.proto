@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package api.account.v1;
+
+// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/account/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/account/v1（accountv1）。
+option go_package = "authloft/gen/go/api/account/v1;accountv1";
+
+// GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
+message GetMfaRequest {}
+
+// MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5 行 890-896）；
+// 不同 factor 只填各自相关字段，零值表示该因子不适用 / 未绑定。
+message MfaFactor {
+  // 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
+  //（§3.5 行 891-895）。
+  string factor = 1;
+  // 是否已绑定（§3.5 行 891-895）。
+  bool bound = 2;
+  // 绑定时间，Unix 秒；totp 示例（§3.5 行 891）。
+  int64 bound_at = 3;
+  // 最近使用时间，Unix 秒（§3.5 行 891-894）。
+  int64 last_used_at = 4;
+  // otp_sms / otp_email 的掩码目标（§3.5 行 892-893）。
+  string target = 5;
+  // webauthn 凭据数量（§3.5 行 894）。
+  int64 credentials = 6;
+  // recovery_code 剩余数量（§3.5 行 895）。
+  int64 remaining = 7;
+}
+
+// MfaResponse 是 AccountService/GetMfa 的响应（§3.5 行 887-898）：只出绑定明细；
+// 摘要（开关 / 策略强制 / trusted_device_days / 因子 enabled 与 bound）走 §3.2 mfa_policy，
+// 不在此重复（行 885）。
+message MfaResponse {
+  // 各因子的绑定明细（§3.5 行 890-895）。
+  repeated MfaFactor factors = 1;
+  // 恢复码签发时间，Unix 秒；未签发为 0（§3.5 行 897）。
+  int64 recovery_issued_at = 2;
+}
+
+// SetMfaRequest 是 AccountService/SetMfa 的请求（§3.5 行 904）：
+// 勾选启用一项或多项；空数组 = 关闭（受 §3.2 mfa_policy.required 约束）。
+// 成功为空响应（OkResponse），不定义 SetMfaResponse。
+// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 UpdateMfaRequest）。
+message SetMfaRequest {
+  // 要启用的二次因子集合（§3.5 行 904）。
+  repeated string methods = 1;
+}
+
+// BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5 行 905-906）：
+// step=challenge 时为空串，step=verify 时带 secret 与 code。
+// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 TotpRequest）。
+message BindTotpRequest {
+  // 取值 challenge｜verify（§3.5 行 905-906）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string step = 1;
+  // verify：challenge 下发的密钥（§3.5 行 906）。
+  string secret = 2;
+  // verify：TOTP 码（§3.5 行 906）。
+  string code = 3;
+}
+
+// BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5 行 905-906）：
+// 两 step 共用一个 rpc，challenge 填 {secret, otpauthUrl, qrcodeContent}、
+// verify 填 {recoveryCodes}（验证一次后生效，同一响应下发 10 个恢复码，一次性展示）；
+// 未用到的字段为零值，protojson 省略零值（§12.9 行 1752）后 JSON 形状与两行示例逐字一致。
+// 消息名随方法名（§12.9 行 1747 响应 XxxResponse；pre-connect 时代按旧 URL 拆
+// TotpChallengeResponse / TotpVerifyResponse 两消息，Connect 化时合并更名）。
+message BindTotpResponse {
+  // TOTP 密钥（challenge，§3.5 行 905）。
+  string secret = 1;
+  // otpauth:// 地址（challenge，§3.5 行 905）。
+  string otpauth_url = 2;
+  // 二维码内容，前端绘制（challenge，§3.5 行 905）。
+  string qrcode_content = 3;
+  // 10 个恢复码（verify），与 GetRecoveryCodes 同格式（§3.5 行 906）。
+  repeated string recovery_codes = 4;
+}
+
+// GetRecoveryCodesRequest 是 AccountService/GetRecoveryCodes 的请求（§3.5 行 907 入参「—」）。
+message GetRecoveryCodesRequest {}
+
+// RecoveryCodesResponse 是 AccountService/GetRecoveryCodes（§3.5 行 907）与
+// AccountService/RegenerateRecoveryCodes（行 908，与 GetRecoveryCodes 同格式、
+// 一次性下发新码）的共用响应。
+message RecoveryCodesResponse {
+  // 恢复码列表，格式 xxxx-xxxx（§3.5 行 907、行 908）。
+  repeated string codes = 1;
+  // 签发时间，Unix 秒（§3.5 行 907、行 908）。
+  int64 created_at = 2;
+}
+
+// RegenerateRecoveryCodesRequest 是 AccountService/RegenerateRecoveryCodes 的请求
+//（§3.5 行 908）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
+message RegenerateRecoveryCodesRequest {
+  // 取值 regenerate（§3.5 行 908）。
+  string action = 1;
+}

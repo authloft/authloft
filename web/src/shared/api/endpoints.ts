@@ -12,6 +12,10 @@ import type { DescMessage } from '@bufbuild/protobuf';
 // sso 域 Connect 化：sso 生成物迁 gen/proto/api/sso/v1，信封消息更名
 // LoginFlowResponse（接口文档 §1.3 行 104）、请求消息名随方法名（§12.9 行 1747）；
 // 本表为编译通过做最小符号随迁，端点表整体 Connect client 化后续再改。
+// account 域 Connect 化：account 生成物迁 gen/proto/api/account/v1，
+// 请求消息名随方法名（BindTotpRequest 等）、两 step 合并响应 BindTotpResponse /
+// RegisterWebauthnResponse、OkResponse 空响应化（§1.0 行 57 成功响应即消息本身）；
+// 同样为编译通过做最小符号随迁。
 import { LoginFlowResponseSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/v1/login_pb';
 import { RegisterRequestSchema } from '../../gen/proto/api/sso/v1/register_pb';
@@ -22,26 +26,25 @@ import {
   CreateQrcodeResponseSchema,
 } from '../../gen/proto/api/sso/v1/ticket_pb';
 import {
-  AvatarCommitRequestSchema,
-  AvatarPresignRequestSchema,
-  AvatarPresignResponseSchema,
   AvatarResponseSchema,
+  CommitAvatarRequestSchema,
   OkResponseSchema,
+  PresignAvatarRequestSchema,
+  AvatarPresignResponseSchema,
   UpdateProfileRequestSchema,
-} from '../../gen/proto/api/account/profile_pb';
+} from '../../gen/proto/api/account/v1/profile_pb';
 import {
-  EmailBindRequestSchema,
-  PhoneBindRequestSchema,
-} from '../../gen/proto/api/account/security_pb';
+  BindEmailRequestSchema,
+  BindPhoneRequestSchema,
+} from '../../gen/proto/api/account/v1/security_pb';
 import {
-  TotpChallengeResponseSchema,
-  TotpRequestSchema,
-  TotpVerifyResponseSchema,
-} from '../../gen/proto/api/account/mfa_pb';
+  BindTotpRequestSchema,
+  BindTotpResponseSchema,
+} from '../../gen/proto/api/account/v1/mfa_pb';
 import {
-  WebauthnChallengeResponseSchema,
-  WebauthnRegisterRequestSchema,
-} from '../../gen/proto/api/account/webauthn_pb';
+  RegisterWebauthnRequestSchema,
+  RegisterWebauthnResponseSchema,
+} from '../../gen/proto/api/account/v1/webauthn_pb';
 
 /** 响应 / 请求编码，见 docs/接口文档.md §1.1.1。 */
 export type ApiFormat = 'json' | 'binary';
@@ -135,7 +138,7 @@ export const ssoQrcode: Endpoint<
 // /api/account/**（docs/接口文档.md §3，鉴权 al_session）
 // ---------------------------------------------------------------------------
 
-/** POST /api/account/profile —— 修改资料（docs/接口文档.md §3.2 行 794），成功返回 {ok:true}。 */
+/** POST /api/account/profile —— 修改资料（docs/接口文档.md §3.2 行 820），成功为空响应。 */
 export const accountUpdateProfile: Endpoint<
   typeof UpdateProfileRequestSchema,
   typeof OkResponseSchema
@@ -147,87 +150,87 @@ export const accountUpdateProfile: Endpoint<
   format: 'json',
 };
 
-/** POST /api/account/avatar/presign —— direct 模式取预签名（docs/接口文档.md §3.2 行 796、§10.8）。 */
+/** POST /api/account/avatar/presign —— direct 模式取预签名（docs/接口文档.md §3.2 行 822、§10.8）。 */
 export const accountAvatarPresign: Endpoint<
-  typeof AvatarPresignRequestSchema,
+  typeof PresignAvatarRequestSchema,
   typeof AvatarPresignResponseSchema
 > = {
   path: '/api/account/avatar/presign',
   method: 'POST',
-  req: AvatarPresignRequestSchema,
+  req: PresignAvatarRequestSchema,
   res: AvatarPresignResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/avatar/commit —— direct 模式确认上传（docs/接口文档.md §3.2 行 797），返回 {url}。 */
+/** POST /api/account/avatar/commit —— direct 模式确认上传（docs/接口文档.md §3.2 行 823），返回 {url}。 */
 export const accountAvatarCommit: Endpoint<
-  typeof AvatarCommitRequestSchema,
+  typeof CommitAvatarRequestSchema,
   typeof AvatarResponseSchema
 > = {
   path: '/api/account/avatar/commit',
   method: 'POST',
-  req: AvatarCommitRequestSchema,
+  req: CommitAvatarRequestSchema,
   res: AvatarResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/phone/bind —— 手机号绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功返回 {ok:true}。 */
+/** POST /api/account/phone/bind —— 手机号绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功为空响应。 */
 export const accountPhoneBind: Endpoint<
-  typeof PhoneBindRequestSchema,
+  typeof BindPhoneRequestSchema,
   typeof OkResponseSchema
 > = {
   path: '/api/account/phone/bind',
   method: 'POST',
-  req: PhoneBindRequestSchema,
+  req: BindPhoneRequestSchema,
   res: OkResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/email/bind —— 邮箱绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功返回 {ok:true}。 */
+/** POST /api/account/email/bind —— 邮箱绑定 / 换绑两步（docs/接口文档.md §3.4），由 step 区分，成功为空响应。 */
 export const accountEmailBind: Endpoint<
-  typeof EmailBindRequestSchema,
+  typeof BindEmailRequestSchema,
   typeof OkResponseSchema
 > = {
   path: '/api/account/email/bind',
   method: 'POST',
-  req: EmailBindRequestSchema,
+  req: BindEmailRequestSchema,
   res: OkResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/mfa/totp（step=challenge）—— 取 TOTP 绑定密钥与二维码内容（docs/接口文档.md §3.5 行 879）。 */
+/** POST /api/account/mfa/totp（step=challenge）—— 取 TOTP 绑定密钥与二维码内容（docs/接口文档.md §3.5 行 905）。 */
 export const accountMfaTotpChallenge: Endpoint<
-  typeof TotpRequestSchema,
-  typeof TotpChallengeResponseSchema
+  typeof BindTotpRequestSchema,
+  typeof BindTotpResponseSchema
 > = {
   path: '/api/account/mfa/totp',
   method: 'POST',
-  req: TotpRequestSchema,
-  res: TotpChallengeResponseSchema,
+  req: BindTotpRequestSchema,
+  res: BindTotpResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/mfa/totp（step=verify）—— 验证一次后生效并下发恢复码（docs/接口文档.md §3.5 行 880）。 */
+/** POST /api/account/mfa/totp（step=verify）—— 验证一次后生效并下发恢复码（docs/接口文档.md §3.5 行 906）。 */
 export const accountMfaTotpVerify: Endpoint<
-  typeof TotpRequestSchema,
-  typeof TotpVerifyResponseSchema
+  typeof BindTotpRequestSchema,
+  typeof BindTotpResponseSchema
 > = {
   path: '/api/account/mfa/totp',
   method: 'POST',
-  req: TotpRequestSchema,
-  res: TotpVerifyResponseSchema,
+  req: BindTotpRequestSchema,
+  res: BindTotpResponseSchema,
   format: 'json',
 };
 
-/** POST /api/account/webauthn（step=challenge）—— 取注册挑战（docs/接口文档.md §3.6 行 889、894-901），要求 resident key。 */
+/** POST /api/account/webauthn（step=challenge）—— 取注册挑战（docs/接口文档.md §3.6 行 915、920-928），要求 resident key。 */
 export const accountWebauthnChallenge: Endpoint<
-  typeof WebauthnRegisterRequestSchema,
-  typeof WebauthnChallengeResponseSchema
+  typeof RegisterWebauthnRequestSchema,
+  typeof RegisterWebauthnResponseSchema
 > = {
   path: '/api/account/webauthn',
   method: 'POST',
-  req: WebauthnRegisterRequestSchema,
-  res: WebauthnChallengeResponseSchema,
+  req: RegisterWebauthnRequestSchema,
+  res: RegisterWebauthnResponseSchema,
   format: 'json',
 };
 

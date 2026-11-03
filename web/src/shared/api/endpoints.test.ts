@@ -4,6 +4,9 @@
 import { describe, expect, test } from 'rstack/test';
 // sso 域 Connect 化：sso 生成物迁 gen/proto/api/sso/v1，信封消息更名
 // LoginFlowResponse（接口文档 §1.3 行 104）、请求消息名随方法名（§12.9 行 1747）。
+// account 域 Connect 化：account 生成物迁 gen/proto/api/account/v1，
+// 请求消息名随方法名、两 step 合并响应 BindTotpResponse / RegisterWebauthnResponse，
+// 符号随迁同 endpoints.ts（编译救活最小改动，端点表后续再改）。
 import { LoginFlowResponseSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/v1/login_pb';
 import { RegisterRequestSchema } from '../../gen/proto/api/sso/v1/register_pb';
@@ -14,26 +17,25 @@ import {
   CreateQrcodeResponseSchema,
 } from '../../gen/proto/api/sso/v1/ticket_pb';
 import {
-  AvatarCommitRequestSchema,
-  AvatarPresignRequestSchema,
-  AvatarPresignResponseSchema,
   AvatarResponseSchema,
+  CommitAvatarRequestSchema,
   OkResponseSchema,
+  PresignAvatarRequestSchema,
+  AvatarPresignResponseSchema,
   UpdateProfileRequestSchema,
-} from '../../gen/proto/api/account/profile_pb';
+} from '../../gen/proto/api/account/v1/profile_pb';
 import {
-  EmailBindRequestSchema,
-  PhoneBindRequestSchema,
-} from '../../gen/proto/api/account/security_pb';
+  BindEmailRequestSchema,
+  BindPhoneRequestSchema,
+} from '../../gen/proto/api/account/v1/security_pb';
 import {
-  TotpChallengeResponseSchema,
-  TotpRequestSchema,
-  TotpVerifyResponseSchema,
-} from '../../gen/proto/api/account/mfa_pb';
+  BindTotpRequestSchema,
+  BindTotpResponseSchema,
+} from '../../gen/proto/api/account/v1/mfa_pb';
 import {
-  WebauthnChallengeResponseSchema,
-  WebauthnRegisterRequestSchema,
-} from '../../gen/proto/api/account/webauthn_pb';
+  RegisterWebauthnRequestSchema,
+  RegisterWebauthnResponseSchema,
+} from '../../gen/proto/api/account/v1/webauthn_pb';
 import { endpoints } from './endpoints';
 
 /** 期望表：path 逐条对照 docs/接口文档.md §2 / §3。 */
@@ -85,19 +87,19 @@ describe('shared/api/endpoints', () => {
     expect(endpoints.ssoQrcode.res).toBe(CreateQrcodeResponseSchema);
     expect(endpoints.accountUpdateProfile.req).toBe(UpdateProfileRequestSchema);
     expect(endpoints.accountUpdateProfile.res).toBe(OkResponseSchema);
-    expect(endpoints.accountAvatarPresign.req).toBe(AvatarPresignRequestSchema);
+    expect(endpoints.accountAvatarPresign.req).toBe(PresignAvatarRequestSchema);
     expect(endpoints.accountAvatarPresign.res).toBe(AvatarPresignResponseSchema);
-    expect(endpoints.accountAvatarCommit.req).toBe(AvatarCommitRequestSchema);
+    expect(endpoints.accountAvatarCommit.req).toBe(CommitAvatarRequestSchema);
     expect(endpoints.accountAvatarCommit.res).toBe(AvatarResponseSchema);
-    expect(endpoints.accountPhoneBind.req).toBe(PhoneBindRequestSchema);
+    expect(endpoints.accountPhoneBind.req).toBe(BindPhoneRequestSchema);
     expect(endpoints.accountPhoneBind.res).toBe(OkResponseSchema);
-    expect(endpoints.accountEmailBind.req).toBe(EmailBindRequestSchema);
+    expect(endpoints.accountEmailBind.req).toBe(BindEmailRequestSchema);
     expect(endpoints.accountEmailBind.res).toBe(OkResponseSchema);
-    expect(endpoints.accountMfaTotpChallenge.req).toBe(TotpRequestSchema);
-    expect(endpoints.accountMfaTotpChallenge.res).toBe(TotpChallengeResponseSchema);
-    expect(endpoints.accountMfaTotpVerify.req).toBe(TotpRequestSchema);
-    expect(endpoints.accountMfaTotpVerify.res).toBe(TotpVerifyResponseSchema);
-    expect(endpoints.accountWebauthnChallenge.req).toBe(WebauthnRegisterRequestSchema);
-    expect(endpoints.accountWebauthnChallenge.res).toBe(WebauthnChallengeResponseSchema);
+    expect(endpoints.accountMfaTotpChallenge.req).toBe(BindTotpRequestSchema);
+    expect(endpoints.accountMfaTotpChallenge.res).toBe(BindTotpResponseSchema);
+    expect(endpoints.accountMfaTotpVerify.req).toBe(BindTotpRequestSchema);
+    expect(endpoints.accountMfaTotpVerify.res).toBe(BindTotpResponseSchema);
+    expect(endpoints.accountWebauthnChallenge.req).toBe(RegisterWebauthnRequestSchema);
+    expect(endpoints.accountWebauthnChallenge.res).toBe(RegisterWebauthnResponseSchema);
   });
 });

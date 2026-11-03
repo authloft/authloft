@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package api.admin.v1;
+
+import "google/protobuf/struct.proto";
+// AdminService 的方法 input/output 消息定义在同包各消息文件中，本文件只定义 service
+//（docs/接口文档.md §12.9 行 1747「每域一个 service，名为 <域>Service」）；
+// 方法清单 = 接口文档 §5 全部端点（行 1140-1341）。
+import "api/admin/v1/provider.proto";
+import "api/admin/v1/schema.proto";
+import "api/admin/v1/user.proto";
+import "api/admin/v1/client.proto";
+import "api/admin/v1/settings.proto";
+import "api/admin/v1/events.proto";
+import "api/admin/v1/tools.proto";
+
+// 包名 api.admin.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/admin/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
+// Go 产物：authloft/gen/go/api/admin/v1（包名 adminv1）。
+option go_package = "authloft/gen/go/api/admin/v1;adminv1";
+
+// GetMeRequest 是 AdminService/GetMe 的请求（§5.1 行 1159，无入参）。
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+message GetMeRequest {}
+
+// MeResponse 是 AdminService/GetMe 的响应（§5.1 行 1159）：
+// 前端获取管理员信息的唯一来源——/admin/** 空壳页不注入 admin 字段（§5 行 1147）。
+// 字段名与 §5.1 行 1159 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
+// 编号从 1 起连续（§12.9 行 1749）。
+message MeResponse {
+  // 管理员固定为安装时创建的 user.id = 1 账号（§5 行 1144、§13）。
+  int64 id = 1;
+  // 登录名（§5.1 行 1159）。
+  string username = 2;
+  // 昵称（§5.1 行 1159）。
+  string nickname = 3;
+  // 头像地址（§5.1 行 1159）。
+  string avatar_url = 4;
+  // 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护），
+  // 不会走到这里（§5.1 行 1159、§5 行 1146）。
+  bool is_admin = 5;
+}
+
+// OkResponse 是 admin 域文档未定义出参的写方法共用空应答
+//（provider 删除/开关/排序/测试，用户状态切换/重置密码/解绑/解锁，客户端写，SetSettings）：
+// 空消息，protojson 输出 {}（§1.0 行 57 成功响应即消息本身，无 status 信封字段）；
+// 旧版 codec WriteSuccess 注入顶层 status 已随 codec 删除一并作废，
+// 消息本身无字段可加（信封顶层 status 为保留字）。
+// 多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE 豁免（沿用既有豁免）。
+message OkResponse {}
+
+// AdminService 是 admin 域的 Connect service（docs/接口文档.md §5，行 1140-1341）。
+// Connect 路径 = /api.admin.v1.AdminService/<Method>；方法清单与 §5 各节逐一对应：
+//   —— §5.1 管理员自身（行 1155-1159）——
+//   GetMe                 §5.1 行 1159
+//   —— §5.2 提供方（行 1161-1176）——
+//   ListProviders          §5.2 行 1165    CreateProvider      §5.2 行 1166
+//   GetProvider            §5.2 行 1167    UpdateProvider      §5.2 行 1168
+//   DeleteProvider         §5.2 行 1169    SetProviderEnabled  §5.2 行 1170
+//   SortProviders          §5.2 行 1171    GetProviderTypes    §5.2 行 1172
+//   GetProviderSchema      §5.2 行 1173    TestProvider        §5.2 行 1174
+//   —— §5.4 用户管理（行 1242-1252）——
+//   ListUsers              §5.4 行 1246    GetUser              §5.4 行 1247
+//   UpdateUserStatus       §5.4 行 1248    ResetUserPassword    §5.4 行 1249
+//   UnbindUserThirdparty   §5.4 行 1250    UnlockUser           §5.4 行 1251
+//   GetUserEvents          §5.4 行 1252
+//   —— §5.5 客户端管理（行 1254-1265）——
+//   ListSsoClients         §5.5 行 1258    CreateSsoClient      §5.5 行 1258
+//   GetSsoClient           §5.5 行 1259    UpdateSsoClient      §5.5 行 1259
+//   DeleteSsoClient        §5.5 行 1259    ListOidcClients      §5.5 行 1260
+//   CreateOidcClient       §5.5 行 1260    GetOidcClient        §5.5 行 1261
+//   UpdateOidcClient       §5.5 行 1261    DeleteOidcClient      §5.5 行 1261
+//   —— §5.6 系统配置、日志与工具（行 1267-1339）——
+//   GetSettings            §5.6 行 1271    SetSettings           §5.6 行 1271
+//   ListEvents             §5.6 行 1272    DecodeToken           §5.6 行 1273
+//   GetStatus              §5.6 行 1274
+// 空响应方法共用同包 OkResponse（buf RPC_RESPONSE_STANDARD_NAME /
+// RPC_REQUEST_RESPONSE_UNIQUE 豁免，沿用既有豁免）。
+service AdminService {
+  // 当前管理员信息，前端唯一来源（§5.1 行 1159）。
+  rpc GetMe(GetMeRequest) returns (MeResponse);
+  // 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2 行 1165）。
+  rpc ListProviders(ListProvidersRequest) returns (ProviderListResponse);
+  // 新建：请求体为 §5.3 行 1180 的动态键集合（提交体即 {"<key>": <value>}），
+  // 固定消息无法建模，不包装 Request（既定口径）。
+  rpc CreateProvider(google.protobuf.Struct) returns (OkResponse);
+  // 详情：返回明文凭证（§5.2 行 1167）。
+  rpc GetProvider(GetProviderRequest) returns (AdminProvider);
+  // 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2 行 1168）。
+  rpc UpdateProvider(google.protobuf.Struct) returns (OkResponse);
+  // 删除（§5.2 行 1169）。
+  rpc DeleteProvider(DeleteProviderRequest) returns (OkResponse);
+  // 行内开关（§5.2 行 1170）。
+  rpc SetProviderEnabled(SetProviderEnabledRequest) returns (OkResponse);
+  // 拖拽排序（§5.2 行 1171）。
+  rpc SortProviders(SortProvidersRequest) returns (OkResponse);
+  // Provider type 下拉数据源，来自注册表 metas（§5.2 行 1172）。
+  rpc GetProviderTypes(GetProviderTypesRequest) returns (ProviderTypesResponse);
+  // 动态表单 schema（§5.2 行 1173、§5.3）。
+  rpc GetProviderSchema(GetProviderSchemaRequest) returns (SchemaResponse);
+  // 短信 / 邮件 Provider 的「发送测试」（§5.2 行 1174）。
+  rpc TestProvider(TestProviderRequest) returns (OkResponse);
+  // 用户列表（§5.4 行 1246）。
+  rpc ListUsers(ListUsersRequest) returns (UserListResponse);
+  // 用户详情：凭证概览、绑定、MFA 状态（§5.4 行 1247）。
+  rpc GetUser(GetUserRequest) returns (UserDetailResponse);
+  // 禁用 / 启用（§5.4 行 1248，字段名与 §3.1 视图一致）。
+  rpc UpdateUserStatus(UpdateUserStatusRequest) returns (OkResponse);
+  // 管理员重置密码（§5.4 行 1249）。
+  rpc ResetUserPassword(ResetUserPasswordRequest) returns (OkResponse);
+  // 解绑第三方（§5.4 行 1250）。
+  rpc UnbindUserThirdparty(UnbindUserThirdpartyRequest) returns (OkResponse);
+  // 解除登录限制（§5.4 行 1251）。
+  rpc UnlockUser(UnlockUserRequest) returns (OkResponse);
+  // 该用户登录记录（§5.4 行 1252）。
+  rpc GetUserEvents(GetUserEventsRequest) returns (UserEventsResponse);
+  // SSO 客户端列表（§5.5 行 1258）。
+  rpc ListSsoClients(ListSsoClientsRequest) returns (SsoClientListResponse);
+  // SSO 客户端新建，仅后台手动创建（§5.5 行 1258）。
+  rpc CreateSsoClient(CreateSsoClientRequest) returns (OkResponse);
+  // SSO 客户端详情（§5.5 行 1259）。
+  rpc GetSsoClient(GetSsoClientRequest) returns (SsoClient);
+  // SSO 客户端编辑（§5.5 行 1259）。
+  rpc UpdateSsoClient(UpdateSsoClientRequest) returns (OkResponse);
+  // SSO 客户端删除（§5.5 行 1259）。
+  rpc DeleteSsoClient(DeleteSsoClientRequest) returns (OkResponse);
+  // OIDC 客户端列表（§5.5 行 1260）。
+  rpc ListOidcClients(ListOidcClientsRequest) returns (OidcClientListResponse);
+  // OIDC 客户端新建（§5.5 行 1260）。
+  rpc CreateOidcClient(CreateOidcClientRequest) returns (OkResponse);
+  // OIDC 客户端详情（§5.5 行 1261）。
+  rpc GetOidcClient(GetOidcClientRequest) returns (OidcClient);
+  // OIDC 客户端编辑（§5.5 行 1261）。
+  rpc UpdateOidcClient(UpdateOidcClientRequest) returns (OkResponse);
+  // OIDC 客户端删除（§5.5 行 1261）。
+  rpc DeleteOidcClient(DeleteOidcClientRequest) returns (OkResponse);
+  // 全部系统配置（§5.6 行 1271）。
+  rpc GetSettings(GetSettingsRequest) returns (SettingsResponse);
+  // 全量提交系统配置（§5.6 行 1271）。
+  rpc SetSettings(SetSettingsRequest) returns (OkResponse);
+  // 统一事件视图（§5.6 行 1272）。
+  rpc ListEvents(ListEventsRequest) returns (EventListResponse);
+  // 令牌解码，排障用（§5.6 行 1273）。
+  rpc DecodeToken(DecodeTokenRequest) returns (DecodeResponse);
+  // 监控：队列长度 / dropped / flush 耗时（§5.6 行 1274）。
+  rpc GetStatus(GetStatusRequest) returns (StatusResponse);
+}

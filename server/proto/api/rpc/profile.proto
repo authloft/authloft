@@ -3,8 +3,10 @@ syntax = "proto3";
 package api.rpc;
 
 // profile 嵌套结构复用 account 域既有消息（§3.1 / §3.2 同源，「同一结构只定义一次」，
-// 既定口径）；跨包引用先例见 api/admin/user.proto 行 7 引用 api/account/mfa.proto。
-import "api/account/profile.proto";
+// 既定口径）；跨包引用先例见 api/admin/v1/user.proto 引用 api/account/v1/mfa.proto。
+// account 域已升包名 api.account.v1，本文件 import 与符号最小机械随迁，
+// 不改消息结构。
+import "api/account/v1/profile.proto";
 
 // Go 包名沿用 api.common / api.sso / api.account 的写法：
 // 目录 api/rpc 对应包名 api.rpc（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
@@ -52,16 +54,15 @@ message ProfileResponse {
   // 更新时间，Unix 秒（§3.1 行 789）。
   int64 updated_at = 14;
   // user_profile 表结构（§3.1 行 790-794）；跨包引用 account 域既有消息
-  //（api/account/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
-  api.account.UserProfile profile = 15;
+  //（api/account/v1/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
+  api.account.v1.UserProfile profile = 15;
 }
 
 // `POST /api/rpc/account/{uid}/profile`（§7 行 1384「入参同 §3.2 的
-// POST /api/account/profile」）复用 api.account.UpdateProfileRequest
-//（api/account/profile.proto，§3.2 行 817），不重复定义。
+// POST /api/account/profile」）复用 api.account.v1.UpdateProfileRequest
+//（api/account/v1/profile.proto，§3.2），不重复定义。
 
 // OkResponse 是 `POST /api/rpc/account/{uid}/profile` 的空应答：§7 行 1384 仅约束入参，
-// 出参沿用同端点 §3.2 行 817 的口径「无数据字段（仅 status）」——经 codec WriteSuccess
-// 输出 {"status":"success"}（无数据字段的写端点成功即纯信封；先例
-// api/admin/admin.proto 的空 OkResponse；数据消息顶层禁用 status）。
+// 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
+//（§1.0 行 57；先例 api/admin/v1/admin.proto 的空 OkResponse）。
 message OkResponse {}

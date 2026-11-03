@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package api.account.v1;
+
+// AccountService 的方法 input/output 消息定义在同包各消息文件中，本文件只定义 service
+//（docs/接口文档.md §12.9 行 1747「每域一个 service，名为 <域>Service」）；
+// 方法清单 = 接口文档 §3 全部端点（行 767-1040）。
+import "api/account/v1/profile.proto";
+import "api/account/v1/security.proto";
+import "api/account/v1/mfa.proto";
+import "api/account/v1/webauthn.proto";
+import "api/account/v1/thirdparty.proto";
+// GetThirdpartyTicket 的响应复用登录流程信封（§1.3 行 152-154 把 ticket / bind 字段的
+// 出现场景明列为 AccountService/GetThirdpartyTicket；§3.7.1 B 行 1015-1026 的响应形状
+// 即其子集），跨包引用 api.sso.v1.LoginFlowResponse（§12.9 行 1748 单一结构源）。
+import "api/sso/v1/envelope.proto";
+
+// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」）；
+// Go 产物 authloft/gen/go/api/account/v1（accountv1），
+// connect 产物（protoc-gen-connect-go）随 service 定义生成。
+option go_package = "authloft/gen/go/api/account/v1;accountv1";
+
+// AccountService 是 account 域的 Connect service（docs/接口文档.md §3，行 767-1040）。
+// Connect 路径 = /api.account.v1.AccountService/<Method>；方法清单与 §3 各节逐一对应：
+//   GetConfig                  §3.2 行 818    GetProfile               §3.2 行 819
+//   UpdateProfile              §3.2 行 820    PresignAvatar            §3.2 行 822
+//   CommitAvatar               §3.2 行 823    ChangePassword           §3.3 行 855
+//   BindPhone                  §3.4 行 870    BindEmail                §3.4 行 872
+//   GetMfa                     §3.5 行 903    SetMfa                   §3.5 行 904
+//   BindTotp                   §3.5 行 905    GetRecoveryCodes         §3.5 行 907
+//   RegenerateRecoveryCodes    §3.5 行 908    GetWebauthnCredentials   §3.6 行 914
+//   RegisterWebauthn           §3.6 行 915    RenameWebauthnCredential  §3.6 行 917
+//   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
+//   UnbindThirdparty           §3.7 行 937    ThirdpartyOauth          §3.7.1 A 行 938
+//   GetThirdpartyTicket        §3.7 行 939    GetEvents                §3.7 行 1038
+// 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0 行 64），不入本 service。
+// 空响应方法共用同包 OkResponse（空消息，§1.0 行 57 成功响应即消息本身），
+// 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
+// 与共用响应口径冲突，按「文档优先」在 buf.yaml except 豁免）。
+service AccountService {
+  // 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2 行 818）。
+  rpc GetConfig(GetConfigRequest) returns (AccountConfigResponse);
+  // §3.1 统一用户信息结构（§3.2 行 819）。
+  rpc GetProfile(GetProfileRequest) returns (ProfileResponse);
+  // 修改资料，成功为空响应（§3.2 行 820）。
+  rpc UpdateProfile(UpdateProfileRequest) returns (OkResponse);
+  // direct 模式取预签名（§3.2 行 822）。
+  rpc PresignAvatar(PresignAvatarRequest) returns (AvatarPresignResponse);
+  // direct 模式确认上传，仅记录不回读（§3.2 行 823）。
+  rpc CommitAvatar(CommitAvatarRequest) returns (AvatarResponse);
+  // 改密，成功为空响应并递增 epoch（§3.3 行 855-862）。
+  rpc ChangePassword(ChangePasswordRequest) returns (OkResponse);
+  // 手机号绑定 / 换绑两步，由 step 区分（§3.4 行 870-871），成功为空响应。
+  rpc BindPhone(BindPhoneRequest) returns (OkResponse);
+  // 邮箱绑定 / 换绑两步，由 step 区分（§3.4 行 872-873），成功为空响应。
+  rpc BindEmail(BindEmailRequest) returns (OkResponse);
+  // MFA 绑定明细（§3.5 行 903）。
+  rpc GetMfa(GetMfaRequest) returns (MfaResponse);
+  // 勾选启用因子集合，成功为空响应（§3.5 行 904）。
+  rpc SetMfa(SetMfaRequest) returns (OkResponse);
+  // TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
+  rpc BindTotp(BindTotpRequest) returns (BindTotpResponse);
+  // 恢复码一次性展示（§3.5 行 907）。
+  rpc GetRecoveryCodes(GetRecoveryCodesRequest) returns (RecoveryCodesResponse);
+  // 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
+  rpc RegenerateRecoveryCodes(RegenerateRecoveryCodesRequest) returns (RecoveryCodesResponse);
+  // 已绑定凭据列表（§3.6 行 914）。
+  rpc GetWebauthnCredentials(GetWebauthnCredentialsRequest) returns (WebauthnListResponse);
+  // 注册两步，由 step 区分；challenge 要求 resident key（§3.6 行 915-916）。
+  rpc RegisterWebauthn(RegisterWebauthnRequest) returns (RegisterWebauthnResponse);
+  // 凭据重命名，成功为空响应（§3.6 行 917）。
+  rpc RenameWebauthnCredential(RenameWebauthnCredentialRequest) returns (OkResponse);
+  // 凭据删除，成功为空响应（§3.6 行 918）。
+  rpc DeleteWebauthnCredential(DeleteWebauthnCredentialRequest) returns (OkResponse);
+  // 已绑定与可绑定的第三方列表（§3.7 行 936）。
+  rpc GetThirdpartyBindings(GetThirdpartyBindingsRequest) returns (ThirdpartyBindingsResponse);
+  // 解绑，成功为空响应（§3.7 行 937）。
+  rpc UnbindThirdparty(UnbindThirdpartyRequest) returns (OkResponse);
+  // channel=redirect 的绑定回调落地（§3.7 行 938、§3.7.1 A 行 971-977）。
+  rpc ThirdpartyOauth(ThirdpartyOauthRequest) returns (ThirdpartyOauthResponse);
+  // channel=qrcode 的绑定长轮询（§3.7 行 939、§3.7.1 B 行 1008-1026），
+  // 响应复用登录流程信封（§1.3 行 152-154）。
+  rpc GetThirdpartyTicket(GetThirdpartyTicketRequest) returns (api.sso.v1.LoginFlowResponse);
+  // 本人登录记录（仅成功记录，§3.7 行 1038）。
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+}

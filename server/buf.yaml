@@ -21,6 +21,16 @@ lint:
     # 请求侧命名规则（RPC_REQUEST_STANDARD_NAME）不豁免。
     - RPC_RESPONSE_STANDARD_NAME
     - RPC_REQUEST_RESPONSE_UNIQUE
+  # AdminService/CreateProvider、UpdateProvider 的请求体是 §5.3 行 1180
+  # 「提交体即 {"<key>": <value>}」的动态键集合（key = provider 表列名或 Ext 字段名，
+  # 随 type 演进），以 google.protobuf.Struct 平铺承载、不包装 Request；
+  # RPC_REQUEST_STANDARD_NAME（请求消息名须为方法名 + Request）与平铺定稿结构性冲突
+  #（WKT Struct 无法更名，固定消息无法建模开放键集），按「文档优先于代码」仅对
+  # 该 service 定义文件豁免本条（既有 scoped except 先例；
+  # 其余文件与 rpc/setup 域的请求命名仍受该规则约束）。
+  ignore_only:
+    RPC_REQUEST_STANDARD_NAME:
+      - proto/api/admin/v1/admin.proto
 plugins:
   # 自定义 check 插件（官方插件机制，buf.build/go/bufplugin SDK）。
   # 插件是独立 Go module（tools/bufcheck/go.mod），不污染 server 主模块依赖。

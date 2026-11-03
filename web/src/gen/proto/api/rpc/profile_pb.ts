@@ -4,15 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { UserProfile } from "../account/profile_pb";
-import { file_api_account_profile } from "../account/profile_pb";
+import type { UserProfile } from "../account/v1/profile_pb";
+import { file_api_account_v1_profile } from "../account/v1/profile_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/rpc/profile.proto.
  */
 export const file_api_rpc_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChVhcGkvcnBjL3Byb2ZpbGUucHJvdG8SB2FwaS5ycGMixwIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIpCgdwcm9maWxlGA8gASgLMhguYXBpLmFjY291bnQuVXNlclByb2ZpbGUiDAoKT2tSZXNwb25zZUIdWhthdXRobG9mdC9nZW4vZ28vYXBpL3JwYzthcGliBnByb3RvMw", [file_api_account_profile]);
+  fileDesc("ChVhcGkvcnBjL3Byb2ZpbGUucHJvdG8SB2FwaS5ycGMiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiDAoKT2tSZXNwb25zZUIdWhthdXRobG9mdC9nZW4vZ28vYXBpL3JwYzthcGliBnByb3RvMw", [file_api_account_v1_profile]);
 
 /**
  * ProfileResponse 是 `GET /api/rpc/account/{uid}/profile` 的响应（§7 行 1383）：
@@ -131,9 +131,9 @@ export type ProfileResponse = Message<"api.rpc.ProfileResponse"> & {
 
   /**
    * user_profile 表结构（§3.1 行 790-794）；跨包引用 account 域既有消息
-   * （api/account/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
+   * （api/account/v1/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
    *
-   * @generated from field: api.account.UserProfile profile = 15;
+   * @generated from field: api.account.v1.UserProfile profile = 15;
    */
   profile?: UserProfile | undefined;
 };
@@ -147,9 +147,8 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
 
 /**
  * OkResponse 是 `POST /api/rpc/account/{uid}/profile` 的空应答：§7 行 1384 仅约束入参，
- * 出参沿用同端点 §3.2 行 817 的口径「无数据字段（仅 status）」——经 codec WriteSuccess
- * 输出 {"status":"success"}（无数据字段的写端点成功即纯信封；先例
- * api/admin/admin.proto 的空 OkResponse；数据消息顶层禁用 status）。
+ * 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
+ * （§1.0 行 57；先例 api/admin/v1/admin.proto 的空 OkResponse）。
  *
  * @generated from message api.rpc.OkResponse
  */

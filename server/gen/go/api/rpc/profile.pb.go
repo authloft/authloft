@@ -7,7 +7,7 @@
 package api
 
 import (
-	account "authloft/gen/go/api/account"
+	v1 "authloft/gen/go/api/account/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -65,8 +65,8 @@ type ProfileResponse struct {
 	// 更新时间，Unix 秒（§3.1 行 789）。
 	UpdatedAt int64 `protobuf:"varint,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// user_profile 表结构（§3.1 行 790-794）；跨包引用 account 域既有消息
-	// （api/account/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
-	Profile       *account.UserProfile `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
+	// （api/account/v1/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
+	Profile       *v1.UserProfile `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -199,7 +199,7 @@ func (x *ProfileResponse) GetUpdatedAt() int64 {
 	return 0
 }
 
-func (x *ProfileResponse) GetProfile() *account.UserProfile {
+func (x *ProfileResponse) GetProfile() *v1.UserProfile {
 	if x != nil {
 		return x.Profile
 	}
@@ -207,9 +207,8 @@ func (x *ProfileResponse) GetProfile() *account.UserProfile {
 }
 
 // OkResponse 是 `POST /api/rpc/account/{uid}/profile` 的空应答：§7 行 1384 仅约束入参，
-// 出参沿用同端点 §3.2 行 817 的口径「无数据字段（仅 status）」——经 codec WriteSuccess
-// 输出 {"status":"success"}（无数据字段的写端点成功即纯信封；先例
-// api/admin/admin.proto 的空 OkResponse；数据消息顶层禁用 status）。
+// 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
+// （§1.0 行 57；先例 api/admin/v1/admin.proto 的空 OkResponse）。
 type OkResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -250,7 +249,7 @@ var File_api_rpc_profile_proto protoreflect.FileDescriptor
 
 const file_api_rpc_profile_proto_rawDesc = "" +
 	"\n" +
-	"\x15api/rpc/profile.proto\x12\aapi.rpc\x1a\x19api/account/profile.proto\"\xe2\x03\n" +
+	"\x15api/rpc/profile.proto\x12\aapi.rpc\x1a\x1capi/account/v1/profile.proto\"\xe5\x03\n" +
 	"\x0fProfileResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
@@ -270,8 +269,8 @@ const file_api_rpc_profile_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\r \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\x122\n" +
-	"\aprofile\x18\x0f \x01(\v2\x18.api.account.UserProfileR\aprofile\"\f\n" +
+	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\x125\n" +
+	"\aprofile\x18\x0f \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\f\n" +
 	"\n" +
 	"OkResponseB\x1dZ\x1bauthloft/gen/go/api/rpc;apib\x06proto3"
 
@@ -289,12 +288,12 @@ func file_api_rpc_profile_proto_rawDescGZIP() []byte {
 
 var file_api_rpc_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_api_rpc_profile_proto_goTypes = []any{
-	(*ProfileResponse)(nil),     // 0: api.rpc.ProfileResponse
-	(*OkResponse)(nil),          // 1: api.rpc.OkResponse
-	(*account.UserProfile)(nil), // 2: api.account.UserProfile
+	(*ProfileResponse)(nil), // 0: api.rpc.ProfileResponse
+	(*OkResponse)(nil),      // 1: api.rpc.OkResponse
+	(*v1.UserProfile)(nil),  // 2: api.account.v1.UserProfile
 }
 var file_api_rpc_profile_proto_depIdxs = []int32{
-	2, // 0: api.rpc.ProfileResponse.profile:type_name -> api.account.UserProfile
+	2, // 0: api.rpc.ProfileResponse.profile:type_name -> api.account.v1.UserProfile
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

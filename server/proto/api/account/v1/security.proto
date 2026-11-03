@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package api.account.v1;
+
+// 成功应答复用同域 profile.proto 的 OkResponse（§3.3 行 862、§3.4 行 870-873），
+// 由 handler 返回，无需在本文件声明字段，故不 import —— 避免 buf lint 的 unused import。
+// 人机校验提交格式 CaptchaPayload 在 api.sso.v1 login 单一定义（§2.5 行 499-510）；
+// 本文件只跨包引用、不复制同构消息（§12.9 行 1748 单一结构源）。
+import "api/sso/v1/login.proto";
+
+// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/account/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/account/v1（accountv1）。
+option go_package = "authloft/gen/go/api/account/v1;accountv1";
+
+// ChangePasswordRequest 是 AccountService/ChangePassword 的请求（§3.3 行 855-860）。
+// 成功为空响应（行 862），不定义 ChangePasswordResponse。
+message ChangePasswordRequest {
+  // 已设置密码时必填（§3.3 行 859）。
+  string current_password = 1;
+  // 须满足密码策略（§3.3 行 860、§5.6）；不满足返回 password_weak（行 862）。
+  string new_password = 2;
+}
+
+// PhoneBindPayload 是 AccountService/BindPhone 的 payload 字段（§3.4 行 870-871）：
+// challenge 用 {phone, captcha}，verify 用 {phone, code}，同一端点按 step 取用其中一部分。
+message PhoneBindPayload {
+  // 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 870-871、行 880）。
+  string phone = 1;
+  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 870）。
+  api.sso.v1.CaptchaPayload captcha = 2;
+  // verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
+  string code = 3;
+}
+
+// BindPhoneRequest 是 AccountService/BindPhone 的请求（§3.4 行 870-871）：
+// 两步同端点，由 step 区分；成功为空响应（OkResponse）。
+// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 PhoneBindRequest）。
+message BindPhoneRequest {
+  // 取值 challenge｜verify（§3.4 行 870-871）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string step = 1;
+  // 该步骤用到的字段（§3.4 行 870-871）。
+  PhoneBindPayload payload = 2;
+}
+
+// EmailBindPayload 是 AccountService/BindEmail 的 payload 字段（§3.4 行 872-873）。
+message EmailBindPayload {
+  // 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 872-873、行 880）。
+  string email = 1;
+  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 872）。
+  api.sso.v1.CaptchaPayload captcha = 2;
+  // verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
+  string code = 3;
+}
+
+// BindEmailRequest 是 AccountService/BindEmail 的请求（§3.4 行 872-873）：
+// 两步同端点，由 step 区分；成功为空响应（OkResponse）。消息名随方法名（§12.9 行 1747）。
+message BindEmailRequest {
+  // 取值 challenge｜verify（§3.4 行 872-873）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string step = 1;
+  // 该步骤用到的字段（§3.4 行 872-873）。
+  EmailBindPayload payload = 2;
+}

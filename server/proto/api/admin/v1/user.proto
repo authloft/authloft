@@ -1,0 +1,217 @@
+syntax = "proto3";
+
+package api.admin.v1;
+
+// 用户详情的 MFA 绑定明细跨包引用 §3.5 的既有视图（§12.9 行 1748「同一结构只定义一次」，
+// 先例：api/sso/v1/envelope.proto 引用 api/common/v1/captcha.proto）；
+// account 域已升包名 api.account.v1，import 与符号随迁。
+import "api/account/v1/mfa.proto";
+// 用户登录记录条目引用本域 events.proto 的 EventItem（§5.4 行 1252、§5.6 行 1272）。
+import "api/admin/v1/events.proto";
+
+// 包名 api.admin.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/admin/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/admin/v1（adminv1）。
+option go_package = "authloft/gen/go/api/admin/v1;adminv1";
+
+// AdminUser 是管理端的用户视图（§5.4 行 1246）：字段集为 user 表列投影
+//（《后端架构》§4.2），与 §3.1 行 775-798 统一用户信息结构的非嵌套字段同名同义，
+// 不含 user_profile 嵌套（§5.4 未要求）。
+// 用户状态字段一律 user_status（§5.4 行 1246-1248）。
+// 不跨包引用 api.account.v1.ProfileResponse：两者结构虽已同名同义（account 域
+// status=9 已改名 user_status），但 admin 视图为独立投影、允许与自助视图
+// 独立演进；如需切换为复用，另行定夺。
+message AdminUser {
+  // 用户 ID（§3.1 行 779）。
+  int64 id = 1;
+  // 登录名（§3.1 行 780）。
+  string username = 2;
+  // 昵称（§3.1 行 781）。
+  string nickname = 3;
+  // 头像地址（§3.1 行 782）。
+  string avatar_url = 4;
+  // 手机号（《后端架构》§4.2）。
+  string phone = 5;
+  // 邮箱（《后端架构》§4.2）。
+  string email = 6;
+  // 手机号是否已验证，JSON 为 1/0（§3.1 行 784）。
+  int64 phone_verified = 7;
+  // 邮箱是否已验证，JSON 为 1/0（§3.1 行 786）。
+  int64 email_verified = 8;
+  // 账号状态：1 正常 0 禁用（§5.4 行 1248 {id, userStatus: 0 或 1}）。
+  int64 user_status = 9;
+  // 系统强制启用两步验证（§3.1 行 788）。
+  int64 mfa_required = 10;
+  // 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1 行 789、《后端架构》§4.2）。
+  int64 epoch = 11;
+  // 最后登录时间，Unix 秒（§3.1 行 790）。
+  int64 last_login_at = 12;
+  // 创建时间，Unix 秒（§3.1 行 791）。
+  int64 created_at = 13;
+  // 更新时间，Unix 秒（§3.1 行 792）。
+  int64 updated_at = 14;
+}
+
+// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4 行 1246：
+// 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5 行 1153）。
+// 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional。
+// 消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名 UserListRequest，
+// Connect 化时更名）。
+message ListUsersRequest {
+  // 搜索词（§5.4 行 1246）。
+  optional string q = 1;
+  // 按账号状态过滤：1 正常 0 禁用（§5.4 行 1246）。
+  optional int64 user_status = 2;
+  // 页码，从 1 开始（§1.7 行 277）。
+  optional int64 page = 3;
+  // 每页条数，默认 20、上限 100（§1.7 行 277）。
+  optional int64 page_size = 4;
+  // 排序字段，取值由前端限定（§1.7 行 277）。
+  optional string sort = 5;
+  // 排序方向 asc/desc（§1.7 行 277）。
+  optional string order = 6;
+}
+
+// UserListResponse 是 AdminService/ListUsers 的响应（§5.4 行 1246、§1.7 行 278）。
+// 响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+message UserListResponse {
+  // 当前页数据（§1.7 行 278）。
+  repeated AdminUser items = 1;
+  // 总条数（§1.7 行 278）。
+  int64 total = 2;
+  // 页码（§1.7 行 278）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 278）。
+  int64 page_size = 4;
+}
+
+// GetUserRequest 是 AdminService/GetUser 的请求（§5.4 行 1247：{id} 详情）。
+// pre-connect 时代 id 在 REST 路径 /users/{id} 中，Connect 化后路径参数进请求消息
+//（§1.7 行 277 同口径）。
+message GetUserRequest {
+  // 目标用户 ID（§5.4 行 1247）。
+  int64 id = 1;
+}
+
+// UserCredentialSummary 是用户详情的凭证概览条目（§5.4 行 1247「含凭证概览」）：
+// user_credential 行的管理端投影（《后端架构》§4.3），secret 永不透出。
+message UserCredentialSummary {
+  // 凭证 ID（《后端架构》§4.3）。
+  int64 id = 1;
+  // 凭证类型 password|totp|webauthn|recovery_code（《后端架构》§4.3）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+  string kind = 2;
+  // 用户自定义名称（《后端架构》§4.3）。
+  string label = 3;
+  // 是否启用（《后端架构》§4.3）。
+  bool is_enabled = 4;
+  // 最近使用时间，Unix 秒（《后端架构》§4.3）。
+  int64 last_used_at = 5;
+  // 创建时间，Unix 秒（《后端架构》§4.3）。
+  int64 created_at = 6;
+}
+
+// UserThirdpartyBinding 是用户详情的第三方绑定条目（§5.4 行 1247「绑定」、行 1250）：
+// user_thirdparty_bind 行的投影（《后端架构》§4.3）；
+// extra 为 msgpack 原始资料、仅排查用，不透出（§12.1）。
+message UserThirdpartyBinding {
+  // 绑定 ID（《后端架构》§4.3）。
+  int64 id = 1;
+  // 第三方渠道标识，引用 provider.provider_key（《后端架构》§4.3）。
+  string provider_key = 2;
+  // 第三方 OpenID（《后端架构》§4.3）。
+  string open_id = 3;
+  // Union ID（《后端架构》§4.3）。
+  string union_id = 4;
+  // 三方昵称（《后端架构》§4.3）。
+  string nickname = 5;
+  // 三方头像（《后端架构》§4.3）。
+  string avatar_url = 6;
+  // 绑定时间，Unix 秒（《后端架构》§4.3）。
+  int64 created_at = 7;
+}
+
+// UserDetailResponse 是 AdminService/GetUser 的响应（§5.4 行 1247
+//「详情（含凭证概览、绑定、MFA 状态）」）。
+message UserDetailResponse {
+  // 用户基础视图（user 表列投影）。
+  AdminUser user = 1;
+  // 凭证概览，secret 不透出（§5.4 行 1247）。
+  repeated UserCredentialSummary credentials = 2;
+  // 已绑定的第三方身份（§5.4 行 1247、行 1250）。
+  repeated UserThirdpartyBinding bindings = 3;
+  // MFA 绑定明细，跨包引用 §3.5 行 887-898 的既有视图，不复制同构消息（§12.9 行 1748）。
+  api.account.v1.MfaResponse mfa = 4;
+}
+
+// UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4 行 1248：
+// {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
+// pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留），
+// Connect 化后 id 进请求消息，字段顺序同 §5.4 行 1248 示例；
+// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+message UpdateUserStatusRequest {
+  // 目标用户 ID（§5.4 行 1248）。
+  int64 id = 1;
+  // 目标状态：1 启用 0 禁用（§5.4 行 1248）。
+  int64 user_status = 2;
+}
+
+// ResetUserPasswordRequest 是 AdminService/ResetUserPassword 的请求
+//（§5.4 行 1249：{id, password} 管理员重置）。须满足 §5.6 密码策略；
+// id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
+// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+message ResetUserPasswordRequest {
+  // 目标用户 ID（§5.4 行 1249）。
+  int64 id = 1;
+  // 新密码，按 §5.6 密码策略校验（§5.4 行 1249）。
+  string password = 2;
+}
+
+// UnbindUserThirdpartyRequest 是 AdminService/UnbindUserThirdparty 的请求
+//（§5.4 行 1250：{id, providerKey} 解绑第三方）。pre-connect 时代两个参数都在
+// REST 路径 /users/{id}/thirdparty/{provider_key} 中，Connect 化后进请求消息。
+// 成功返回 OkResponse。
+message UnbindUserThirdpartyRequest {
+  // 目标用户 ID（§5.4 行 1250）。
+  int64 id = 1;
+  // 要解绑的第三方渠道标识（§5.4 行 1250）。
+  string provider_key = 2;
+}
+
+// UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4 行 1251：{id} 解除登录限制）：
+// 清 al:pwf / al:pwban 的 uid 维度键，并按该用户当前手机号 / 邮箱重算
+// IP + 账号 维度的键一并清除（后端 §8.1）。成功返回 OkResponse。
+message UnlockUserRequest {
+  // 目标用户 ID（§5.4 行 1251）。
+  int64 id = 1;
+}
+
+// GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4 行 1252：
+// {id} + 分页，该用户登录记录）；记录范围为登录相关事件，事件类型不在查询参数中重复。
+// id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
+// 消息名随方法名（§12.9 行 1747）。
+message GetUserEventsRequest {
+  // 目标用户 ID（§5.4 行 1252）。
+  optional int64 id = 1;
+  // 页码，从 1 开始（§1.7 行 277）。
+  optional int64 page = 2;
+  // 每页条数，默认 20、上限 100（§1.7 行 277）。
+  optional int64 page_size = 3;
+  // 排序字段，取值由前端限定（§1.7 行 277）。
+  optional string sort = 4;
+  // 排序方向 asc/desc（§1.7 行 277）。
+  optional string order = 5;
+}
+
+// UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4 行 1252、§1.7 行 278）；
+// 条目复用本域 events.proto 的 EventItem（§5.6 行 1272 同一事件模型，
+// 管理员与本人两种视图共用一张表）。响应名沿用资源式命名（buf 豁免同上）。
+message UserEventsResponse {
+  // 当前页数据（§1.7 行 278）。
+  repeated EventItem items = 1;
+  // 总条数（§1.7 行 278）。
+  int64 total = 2;
+  // 页码（§1.7 行 278）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 278）。
+  int64 page_size = 4;
+}

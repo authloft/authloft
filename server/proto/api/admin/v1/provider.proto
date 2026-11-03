@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package api.admin.v1;
+
+// AdminProvider.ext 用 google.protobuf.Struct 承载 provider.Ext 的明文透出（§12.9 行 1753）。
+import "google/protobuf/struct.proto";
+
+// 包名 api.admin.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/admin/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/admin/v1（adminv1）。
+option go_package = "authloft/gen/go/api/admin/v1;adminv1";
+
+// AdminService/CreateProvider（§5.2 行 1166）与 UpdateProvider（行 1168）
+// 不定义包装 Request：请求体是 §5.3 行 1180「提交体即 { "<key>": <value> }」的动态键集合，
+// key 恒为 provider 表列名或 provider.Ext 字段名（§5.3 行 1228-1236），随 type 演进、
+// 新增渠道零前端改动（行 1182）——固定消息无法建模，包装字段又会破坏平铺提交体，
+// service 定义直接以 google.protobuf.Struct 作请求消息（与 oidc/credential
+// 用 Struct 同口径）。
+
+// Provider 是 AdminService/ListProviders 的列表项（§5.2 行 1165）：
+// 列表列「显示名 / provider_key / 类别 / 类型 / 状态 / 策略标签 / 排序」。
+// 「状态」即 provider.is_enabled（§5.3 行 1216 同键），「策略标签」即登录 / 注册 /
+// 自动绑定三个策略开关（《后端架构》§4.1）；开关类字段按 §12.9 行 1749 用 bool 承载。
+message Provider {
+  // 全局唯一标识，创建后不可改（§5.3 行 1189）。
+  string provider_key = 1;
+  // 展示名（§5.2 行 1165、《后端架构》§4.1）。
+  string display_name = 2;
+  // 类别，取值 oauth|captcha|sms|email|storage|notify|union（《后端架构》§4.1）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+  string category = 3;
+  // 类型，取值来自注册表 metas（§5.2 行 1172、《后端架构》§15.3）。
+  string type = 4;
+  // 「状态」列：是否启用（§5.2 行 1169、§5.3 行 1216）。
+  bool is_enabled = 5;
+  // 策略标签：允许用于登录（《后端架构》§4.1）。
+  bool enable_signin = 6;
+  // 策略标签：允许该渠道建号（《后端架构》§4.1）。
+  bool enable_signup = 7;
+  // 策略标签：按联系方式自动绑定（《后端架构》§4.1）。
+  bool auto_bind = 8;
+  // 排序（《后端架构》§4.1）；整型一律 int64（§12.9 行 1751）。
+  int64 sort_order = 9;
+}
+
+// ListProvidersRequest 是 AdminService/ListProviders 的请求（§5.2 行 1165：
+// 筛选入参 {category, type, isEnabled}）；所有列表支持 §1.7 分页（§5 行 1153）。
+// 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional
+// 以区分「未传」与零值。消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名
+// ProviderListRequest，Connect 化时更名）。
+message ListProvidersRequest {
+  // 按类别过滤（§5.2 行 1165）。
+  optional string category = 1;
+  // 按类型过滤（§5.2 行 1165）。
+  optional string type = 2;
+  // 按启用状态过滤（§5.2 行 1165）。
+  optional bool is_enabled = 3;
+  // 页码，从 1 开始（§1.7 行 277）。
+  optional int64 page = 4;
+  // 每页条数，默认 20、上限 100（§1.7 行 277）。
+  optional int64 page_size = 5;
+  // 排序字段，取值由前端限定（§1.7 行 277）。
+  optional string sort = 6;
+  // 排序方向 asc/desc（§1.7 行 277）。
+  optional string order = 7;
+}
+
+// ProviderListResponse 是 AdminService/ListProviders 的响应（§5.2 行 1165、§1.7 行 278：
+// {items, total, page, pageSize}）。
+// 响应名不随方法名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+message ProviderListResponse {
+  // 当前页数据（§1.7 行 278）。
+  repeated Provider items = 1;
+  // 总条数（§1.7 行 278）。
+  int64 total = 2;
+  // 页码（§1.7 行 278）。
+  int64 page = 3;
+  // 每页条数（§1.7 行 278）。
+  int64 page_size = 4;
+}
+
+// GetProviderRequest 是 AdminService/GetProvider 的请求（§5.2 行 1167：
+// {providerKey} 详情，返回明文凭证）。pre-connect 时代 provider_key 在 REST 路径中，
+// Connect 化后路径参数进请求消息（§1.7 行 277 同口径）。
+message GetProviderRequest {
+  // 目标 Provider（§5.2 行 1167）。
+  string provider_key = 1;
+}
+
+// AdminProvider 是 AdminService/GetProvider 的响应（§5.2 行 1167「返回明文凭证，
+// 需管理员会话」），即 §12.9 行 1753 所指的 AdminProvider 管理视图：
+// 全站唯一明文凭证出口——注入快照与前台接口永不返回 ext 中任何凭证字段（§12.1）。
+// provider 表列是封闭集，typed 透出；ext 是开放扩展（§12.1「凭证 / 端点 / 存储配置 /
+// 厂商长尾全部进此结构」），按既定口径用 google.protobuf.Struct 明文透出。
+message AdminProvider {
+  // 全局唯一标识（§5.3 行 1189）。
+  string provider_key = 1;
+  // 联合登录归属 Provider，仅列 category=union 的取值（§5.3 行 1194、《后端架构》§4.1）。
+  string union_provider = 2;
+  // 展示名（《后端架构》§4.1）。
+  string display_name = 3;
+  // 类别（《后端架构》§4.1）。
+  string category = 4;
+  // 类型（《后端架构》§4.1）。
+  string type = 5;
+  // 允许用于登录（《后端架构》§4.1）。
+  bool enable_signin = 6;
+  // 允许该渠道建号（《后端架构》§4.1）。
+  bool enable_signup = 7;
+  // 按联系方式自动绑定（《后端架构》§4.1）。
+  bool auto_bind = 8;
+  // 自动绑定字段，auto_bind 开启时生效（《后端架构》§4.1）。
+  string auto_bind_fields = 9;
+  // 是否启用（《后端架构》§4.1）。
+  bool is_enabled = 10;
+  // 展示分组 social|enterprise|dev|other（§5.3 行 1212）。
+  string ui_group = 11;
+  // 排序（《后端架构》§4.1）。
+  int64 sort_order = 12;
+  // 图标 URL，绝对地址（§5.3 行 1210）。
+  string icon_url = 13;
+  // 备注（§5.3 行 1214）。
+  string remark = 14;
+  // provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3 行 1180）。
+  google.protobuf.Struct ext = 15;
+  // 创建时间，Unix 秒（《后端架构》§4.1）。
+  int64 created_at = 16;
+  // 更新时间，Unix 秒（《后端架构》§4.1）。
+  int64 updated_at = 17;
+}
+
+// DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2 行 1169：
+// {providerKey} 删除）。成功返回 OkResponse。
+message DeleteProviderRequest {
+  // 目标 Provider（§5.2 行 1169）。
+  string provider_key = 1;
+}
+
+// SetProviderEnabledRequest 是 AdminService/SetProviderEnabled 的请求
+//（§5.2 行 1170：{providerKey, isEnabled} 行内开关）。pre-connect 时代 provider_key
+// 在 REST 路径中，Connect 化后路径参数进请求消息；字段顺序同 §5.2 行 1170 示例；
+// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+message SetProviderEnabledRequest {
+  // 目标 Provider（§5.2 行 1170）。
+  string provider_key = 1;
+  // 行内开关目标态（§5.2 行 1170）。
+  bool is_enabled = 2;
+}
+
+// ProviderSortItem 是拖拽排序的单个条目（§5.2 行 1171：{items:[{providerKey, sortOrder}]}）。
+message ProviderSortItem {
+  // 要排序的 Provider（§5.2 行 1171）。
+  string provider_key = 1;
+  // 目标排序值（§5.2 行 1171）。
+  int64 sort_order = 2;
+}
+
+// SortProvidersRequest 是 AdminService/SortProviders 的请求（§5.2 行 1171）。
+// 成功返回 OkResponse。消息名随方法名（§12.9 行 1747）。
+message SortProvidersRequest {
+  // 拖拽排序后的条目集合（§5.2 行 1171）。
+  repeated ProviderSortItem items = 1;
+}
+
+// TestProviderRequest 是 AdminService/TestProvider 的请求（§5.2 行 1174：
+// {providerKey}，短信 / 邮件 Provider 的「发送测试」）。
+// §5.2 未定义请求体：发送测试必须有接收目标（《后端架构》§15.2 Sender.Send(to,…) 的
+// 首参），故按最小必填报文定义 target（待 handler 验证）；
+// provider_key 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
+// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+message TestProviderRequest {
+  // 目标 Provider（§5.2 行 1174）。
+  string provider_key = 1;
+  // 测试接收目标：短信 Provider 为手机号、邮件 Provider 为邮箱（《后端架构》§15.2）。
+  string target = 2;
+}

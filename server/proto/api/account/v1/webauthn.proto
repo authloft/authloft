@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package api.account.v1;
+
+import "google/protobuf/struct.proto";
+
+// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/account/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/account/v1（accountv1）。
+option go_package = "authloft/gen/go/api/account/v1;accountv1";
+
+// GetWebauthnCredentialsRequest 是 AccountService/GetWebauthnCredentials 的请求
+//（§3.6 行 914，无入参）。
+message GetWebauthnCredentialsRequest {}
+
+// WebauthnCredential 是 AccountService/GetWebauthnCredentials 的列表项（§3.6 行 914）。
+message WebauthnCredential {
+  // 凭据记录主键，对应 user_credential_webauthn.id（《后端架构》§4 行 599）；
+  // RenameWebauthnCredential / DeleteWebauthnCredential 的目标 id（§3.6 行 917-918）。
+  int64 id = 1;
+  // 凭据展示名（§3.6 行 914）。
+  string label = 2;
+  // 创建时间，Unix 秒（§3.6 行 914）。
+  int64 created_at = 3;
+  // 最近使用时间，Unix 秒（§3.6 行 914）。
+  int64 last_used_at = 4;
+  // 传输方式列表，如 internal｜hybrid（§3.6 行 914）。
+  repeated string transports = 5;
+  // 认证器 AAGUID（§3.6 行 914）。
+  string aaguid = 6;
+}
+
+// WebauthnListResponse 是 AccountService/GetWebauthnCredentials 的响应（§3.6 行 914）。
+message WebauthnListResponse {
+  repeated WebauthnCredential items = 1;
+}
+
+// RegisterWebauthnRequest 是 AccountService/RegisterWebauthn 的请求（§3.6 行 915-916）：
+// step=challenge 要求 resident key / 可发现凭据；step=verify 提交 {token, credential, label}。
+// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 WebauthnRegisterRequest）。
+message RegisterWebauthnRequest {
+  // 取值 challenge｜verify（§3.6 行 915-916）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string step = 1;
+  // verify：challenge 下发的独立原子 token（§3.6 行 916、行 924、行 930）。
+  string token = 2;
+  // verify：断言对象原样提交，为任意 JSON 对象（§3.6 行 916）。
+  google.protobuf.Struct credential = 3;
+  // verify：凭据展示名（§3.6 行 916）。
+  string label = 4;
+}
+
+// RegisterWebauthnResponse 是 AccountService/RegisterWebauthn 的响应：
+// 两 step 共用一个 rpc，challenge 填 {token, challengeData, expiresIn}（§3.6 行 920-928）、
+// verify 注册成功为空响应（行 916）——返回零值消息，protojson 省略零值（§12.9 行 1752）
+// 后 JSON 输出 {}，与「空响应」口径一致。消息名随方法名（§12.9 行 1747 响应 XxxResponse；
+// pre-connect 时代按旧 URL 命名 WebauthnChallengeResponse，Connect 化时更名）。
+message RegisterWebauthnResponse {
+  // 一次性 token；复用 login_token 结构签发，但不可用于登录流程（§3.6 行 924、行 930）。
+  string token = 1;
+  // PublicKeyCredentialCreationOptions，任意 JSON 对象（§3.6 行 925）；
+  // 暂按 google.protobuf.Struct 实现，类型口径待定。
+  google.protobuf.Struct challenge_data = 2;
+  // 当前挑战有效期（秒），默认 120（§3.6 行 926、行 930）。
+  int64 expires_in = 3;
+}
+
+// RenameWebauthnCredentialRequest 是 AccountService/RenameWebauthnCredential 的请求
+//（§3.6 行 917：{id, label} 重命名）。pre-connect 时代 id 在 REST 路径 /webauthn/{id} 中，
+// Connect 化后路径参数进请求消息（§1.7 行 277 同口径）；消息名随方法名（§12.9 行 1747）；
+// 成功为空响应（OkResponse）。
+message RenameWebauthnCredentialRequest {
+  // 目标凭据 ID（§3.6 行 917）。
+  int64 id = 1;
+  // 新展示名（§3.6 行 917）。
+  string label = 2;
+}
+
+// DeleteWebauthnCredentialRequest 是 AccountService/DeleteWebauthnCredential 的请求
+//（§3.6 行 918：{id} 删除）。成功为空响应（OkResponse）。
+message DeleteWebauthnCredentialRequest {
+  // 目标凭据 ID（§3.6 行 918）。
+  int64 id = 1;
+}
