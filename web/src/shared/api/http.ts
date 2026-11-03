@@ -8,9 +8,9 @@ import {
   type MessageShape,
 } from '@bufbuild/protobuf';
 import {
-  ErrorSchema,
-  type Error as ApiErrorBody,
-} from '../../gen/proto/api/common/error_pb';
+  ErrorEnvelopeSchema,
+  type ErrorEnvelope,
+} from '../../gen/proto/api/common/response_pb';
 import { ApiError } from './errors';
 import type { ApiFormat, Endpoint } from './endpoints';
 
@@ -46,7 +46,10 @@ const CONTENT_TYPE_MISMATCH = 'content_type_mismatch';
 
 /**
  * 按端点的 format 序列化请求、反序列化响应。
- * 非 2xx 一律归一化为 ApiError；Content-Type 与所选编码不符时直接抛 ApiError。
+ * 非 2xx 与 2xx JSON 响应体内 `status:"error"`（§1.0 业务失败）一律归一化为 ApiError；
+ * Content-Type 与所选编码不符时直接抛 ApiError。
+ * 登录流程域（/api/sso/**）顶层 status 是流程态（next / failed 等，§1.3），
+ * 非 "error" 不在本层拦截，交业务层（reducer）分支（docs/前端架构.md §3.1）。
  */
 export async function request<
   Req extends DescMessage,
@@ -94,8 +97,17 @@ export async function request<
 
   if (format === 'json') {
     const text = await response.text();
-    return fromJson(endpoint.res, JSON.parse(text) as JsonValue);
+    const parsed = JSON.parse(text) as JsonValue;
+    // §1.0 行 57：业务失败（HTTP 200）同为统一错误信封，error.code 为 §1.6 业务词（开放非六元）。
+    const businessError = businessErrorFromJson(parsed, response.status);
+    if (businessError) {
+      throw businessError;
+    }
+    return fromJson(endpoint.res, parsed);
   }
+  // TODO(protobuf 信封)：binary 分支的 2xx 应按 SuccessEnvelope / ErrorEnvelope 两步解码
+  // （gen/proto/api/common/response_pb.ts）。endpoints.ts 尚无 binary 端点接入该信封，
+  // 且数据消息与信封在 wire 上字段重叠、无法可靠探测，故保持直接解码，待 handler 接入时改造。
   const bytes = new Uint8Array(await response.arrayBuffer());
   return fromBinary(endpoint.res, bytes);
 }
@@ -176,6 +188,12 @@ export function postForm(
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
+        // §1.0 行 57：multipart 端点（/api/account/**）2xx 业务失败同为统一错误信封。
+        const businessError = businessErrorFromJson(parsed, xhr.status);
+        if (businessError) {
+          fail(businessError);
+          return;
+        }
         finish();
         resolve(
           options.res
@@ -184,23 +202,13 @@ export function postForm(
         );
         return;
       }
-      const errorBody = parsed as Record<string, unknown>;
+      // §1.5 行 214：非 200 响应体固定为统一错误信封（error.{code,message,request_id} 嵌套）。
       fail(
-        new ApiError({
-          httpStatus: xhr.status,
-          code:
-            typeof errorBody.code === 'string' && errorBody.code
-              ? errorBody.code
-              : fallbackCode(xhr.status),
-          message:
-            typeof errorBody.message === 'string' && errorBody.message
-              ? errorBody.message
-              : xhr.statusText,
-          requestId:
-            typeof errorBody.request_id === 'string'
-              ? errorBody.request_id
-              : '',
-        }),
+        toApiError(
+          decodeErrorEnvelopeJson(parsed),
+          xhr.status,
+          xhr.statusText,
+        ),
       );
     };
 
@@ -260,27 +268,74 @@ function assertContentType(response: Response, format: ApiFormat): void {
   }
 }
 
+/** §1.0 行 57-58 / §1.5 行 214：统一错误信封 {"status":"error","error":{code,message,request_id}} 的形状判别。 */
+function isErrorEnvelopeShaped(parsed: JsonValue): boolean {
+  return (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    (parsed as { status?: unknown }).status === 'error'
+  );
+}
+
+/** 从 JSON 原文解 ErrorEnvelope；非信封或结构不符返回 undefined。 */
+function decodeErrorEnvelopeJson(
+  parsed: JsonValue,
+): ErrorEnvelope | undefined {
+  if (!isErrorEnvelopeShaped(parsed)) {
+    return undefined;
+  }
+  try {
+    return fromJson(ErrorEnvelopeSchema, parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+/** 2xx JSON 响应体内识别 §1.0 业务失败信封 → ApiError；非信封（含 sso 流程态）返回 undefined。 */
+function businessErrorFromJson(
+  parsed: JsonValue,
+  httpStatus: number,
+): ApiError | undefined {
+  if (!isErrorEnvelopeShaped(parsed)) {
+    return undefined;
+  }
+  return toApiError(decodeErrorEnvelopeJson(parsed), httpStatus, '');
+}
+
+/** 信封 → ApiError；信封缺失 / 字段缺失时按 HTTP 状态兜底（§1.5 行 218 六元）。 */
+function toApiError(
+  envelope: ErrorEnvelope | undefined,
+  httpStatus: number,
+  fallbackMessage: string,
+): ApiError {
+  return new ApiError({
+    httpStatus,
+    code: envelope?.error?.code || fallbackCode(httpStatus),
+    message: envelope?.error?.message || fallbackMessage,
+    requestId: envelope?.error?.requestId || '',
+  });
+}
+
+/** 非 2xx 响应体按协商编码解统一错误信封（§1.5 行 214）；解不出走六元兜底。 */
 async function readApiError(
   response: Response,
   format: ApiFormat,
 ): Promise<ApiError> {
-  let decoded: ApiErrorBody | undefined;
+  let envelope: ErrorEnvelope | undefined;
   try {
     const bytes = new Uint8Array(await response.arrayBuffer());
-    decoded =
+    envelope =
       format === 'json'
-        ? fromJson(ErrorSchema, JSON.parse(new TextDecoder().decode(bytes)) as JsonValue)
-        : fromBinary(ErrorSchema, bytes);
+        ? decodeErrorEnvelopeJson(
+            JSON.parse(new TextDecoder().decode(bytes)) as JsonValue,
+          )
+        : fromBinary(ErrorEnvelopeSchema, bytes);
   } catch {
-    decoded = undefined;
+    envelope = undefined;
   }
 
-  return new ApiError({
-    httpStatus: response.status,
-    code: decoded?.code || fallbackCode(response.status),
-    message: decoded?.message || response.statusText,
-    requestId: decoded?.requestId || '',
-  });
+  return toApiError(envelope, response.status, response.statusText);
 }
 
 function fallbackCode(status: number): string {

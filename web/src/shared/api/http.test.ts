@@ -3,9 +3,9 @@ import { create, fromBinary, toBinary, toJson } from '@bufbuild/protobuf';
 // 本卡禁止改 tsconfig，故仅在测试文件放宽该 import 的类型解析。
 // @ts-ignore
 import { afterEach, describe, expect, rs, test } from 'rstack/test';
-import { ErrorSchema } from '../../gen/proto/api/common/error_pb';
+import { ErrorEnvelopeSchema } from '../../gen/proto/api/common/response_pb';
 import { EnvelopeSchema } from '../../gen/proto/api/sso/envelope_pb';
-import { request } from './http';
+import { postForm, request } from './http';
 import { ApiError } from './errors';
 import type { Endpoint } from './endpoints';
 
@@ -26,10 +26,20 @@ const sample = create(EnvelopeSchema, {
   },
 });
 
-const errorBody = create(ErrorSchema, {
-  code: 'unauthorized',
-  message: 'no session',
-  requestId: 'req-1',
+/** §1.0 错误信封样例（非 200 框架拒绝）：{"status":"error","error":{code,message,request_id}}。 */
+const errorEnvelope = create(ErrorEnvelopeSchema, {
+  status: 'error',
+  error: { code: 'unauthorized', message: 'no session', requestId: 'req-1' },
+});
+
+/** §1.0 业务失败信封样例（HTTP 200）：error.code 为 §1.6 业务词（开放非六元）。 */
+const businessErrorEnvelope = create(ErrorEnvelopeSchema, {
+  status: 'error',
+  error: {
+    code: 'password_weak',
+    message: '密码强度不足',
+    requestId: 'req-biz-1',
+  },
 });
 
 function envelopeEndpoint(format: 'json' | 'binary'): EnvelopeEndpoint {
@@ -73,6 +83,72 @@ function binaryEnvelopeResponse(): Response {
   });
 }
 
+/** 2xx + 指定顶层 status 的 sso 流程态响应（§1.3）：http 层不得拦截。 */
+function jsonFlowStatusResponse(status: string): Response {
+  const json = toJson(EnvelopeSchema, sample, {
+    alwaysEmitImplicit: true,
+    useProtoFieldName: true,
+  }) as Record<string, unknown>;
+  return new Response(JSON.stringify({ ...json, status }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/** 2xx / 非 2xx 的统一错误信封响应（§1.0 / §1.5，error 嵌套 + snake_case）。 */
+function jsonErrorEnvelopeResponse(
+  envelope: typeof errorEnvelope,
+  status: number,
+): Response {
+  const raw = toJson(ErrorEnvelopeSchema, envelope, {
+    alwaysEmitImplicit: true,
+    useProtoFieldName: true,
+  });
+  return new Response(JSON.stringify(raw), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/** 极简 XHR 桩：send 同步回放 nextResponse，只覆盖 postForm 的 onload 路径。 */
+class FakeXhr {
+  static nextResponse: { status: number; body: string } | null = null;
+
+  static respondWith(status: number, body: string): void {
+    FakeXhr.nextResponse = { status, body };
+  }
+
+  onabort: (() => void) | null = null;
+  ontimeout: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onload: (() => void) | null = null;
+  upload: { onprogress: ((event: unknown) => void) | null } = {
+    onprogress: null,
+  };
+  withCredentials = false;
+  timeout = 0;
+  status = 0;
+  statusText = '';
+  responseText = '';
+
+  abort(): void {
+    this.onabort?.();
+  }
+
+  open(_method: string, _url: string): void {}
+
+  send(_formData: FormData): void {
+    const response = FakeXhr.nextResponse;
+    if (!response) {
+      this.onerror?.();
+      return;
+    }
+    this.status = response.status;
+    this.responseText = response.body;
+    this.onload?.();
+  }
+}
+
 function hangingResponse(init: RequestInit): Promise<Response> {
   return new Promise((_resolve, reject) => {
     const signal = init.signal;
@@ -100,6 +176,7 @@ async function getRejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 afterEach(() => {
+  FakeXhr.nextResponse = null;
   rs.unstubAllGlobals();
 });
 
@@ -193,34 +270,31 @@ describe('shared/api/http', () => {
     expect(binaryError).toBeInstanceOf(ApiError);
   });
 
-  test('非 2xx（json）解出 ApiError 的 code / requestId', async () => {
-    const rawError = toJson(ErrorSchema, errorBody, {
+  test('非 2xx（json）按统一错误信封解出 ApiError 的 code / requestId', async () => {
+    stubFetch(() => jsonErrorEnvelopeResponse(errorEnvelope, 401));
+
+    const rawError = toJson(ErrorEnvelopeSchema, errorEnvelope, {
       alwaysEmitImplicit: true,
       useProtoFieldName: true,
-    });
-    expect(rawError).toHaveProperty('request_id', 'req-1');
-    expect(rawError).not.toHaveProperty('requestId');
-
-    stubFetch(
-      () =>
-        new Response(JSON.stringify(rawError), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        }),
-    );
+    }) as unknown as {
+      error?: { code?: string; message?: string; request_id?: string };
+    };
+    expect(rawError.error?.request_id).toBe('req-1');
+    expect(rawError.error).not.toHaveProperty('requestId');
 
     const error = await getRejection(request(envelopeEndpoint('json'), sample));
     expect(error).toBeInstanceOf(ApiError);
     const apiError = error as ApiError;
     expect(apiError.httpStatus).toBe(401);
     expect(apiError.code).toBe('unauthorized');
+    expect(apiError.message).toBe('no session');
     expect(apiError.requestId).toBe('req-1');
   });
 
-  test('非 2xx（binary）解出 ApiError 的 code / requestId', async () => {
+  test('非 2xx（binary）按统一错误信封解出 ApiError 的 code / requestId', async () => {
     stubFetch(
       () =>
-        new Response(toBinary(ErrorSchema, errorBody), {
+        new Response(toBinary(ErrorEnvelopeSchema, errorEnvelope), {
           status: 401,
           headers: { 'content-type': 'application/octet-stream' },
         }),
@@ -228,6 +302,76 @@ describe('shared/api/http', () => {
 
     const error = await getRejection(
       request(envelopeEndpoint('binary'), sample),
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    const apiError = error as ApiError;
+    expect(apiError.httpStatus).toBe(401);
+    expect(apiError.code).toBe('unauthorized');
+    expect(apiError.requestId).toBe('req-1');
+  });
+
+  test('HTTP 200 内 status:"error"（json）归一 ApiError：业务码 / requestId / message 透传（§1.0 行 57）', async () => {
+    stubFetch(() => jsonErrorEnvelopeResponse(businessErrorEnvelope, 200));
+
+    const error = await getRejection(request(envelopeEndpoint('json'), sample));
+    expect(error).toBeInstanceOf(ApiError);
+    const apiError = error as ApiError;
+    expect(apiError.httpStatus).toBe(200);
+    expect(apiError.code).toBe('password_weak');
+    expect(apiError.message).toBe('密码强度不足');
+    expect(apiError.requestId).toBe('req-biz-1');
+  });
+
+  test('HTTP 200 流程态（next / failed）不在 http 层拦截，正常解码返回（§1.3 行 129）', async () => {
+    for (const status of ['next', 'failed', 'mfa_required']) {
+      rs.unstubAllGlobals();
+      stubFetch(() => jsonFlowStatusResponse(status));
+
+      const result = await request(envelopeEndpoint('json'), sample);
+      expect(result.status).toBe(status);
+      expect(result.loginToken).toBe('tok-1');
+    }
+  });
+
+  test('postForm：2xx 内 status:"error" 归一 ApiError（业务码 / requestId 透传）', async () => {
+    FakeXhr.respondWith(
+      200,
+      JSON.stringify({
+        status: 'error',
+        error: {
+          code: 'file_type_not_allowed',
+          message: '类型不合规',
+          request_id: 'req-f-1',
+        },
+      }),
+    );
+    rs.stubGlobal('XMLHttpRequest', FakeXhr);
+
+    const error = await getRejection(
+      postForm('/api/account/avatar', new FormData()),
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    const apiError = error as ApiError;
+    expect(apiError.httpStatus).toBe(200);
+    expect(apiError.code).toBe('file_type_not_allowed');
+    expect(apiError.message).toBe('类型不合规');
+    expect(apiError.requestId).toBe('req-f-1');
+  });
+
+  test('postForm：非 2xx 按统一错误信封解出 ApiError 的 code / requestId', async () => {
+    FakeXhr.respondWith(
+      401,
+      JSON.stringify(
+        toJson(ErrorEnvelopeSchema, errorEnvelope, {
+          alwaysEmitImplicit: true,
+          useProtoFieldName: true,
+        }),
+      ),
+    );
+    rs.stubGlobal('XMLHttpRequest', FakeXhr);
+
+    const error = await getRejection(
+      postForm('/api/account/avatar', new FormData()),
     );
     expect(error).toBeInstanceOf(ApiError);
     const apiError = error as ApiError;
