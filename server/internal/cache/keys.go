@@ -21,3 +21,13 @@ const epochKeyPrefix = "al:pwdep:"
 func EpochKey(uid int64) string {
 	return epochKeyPrefix + strconv.FormatInt(uid, 10)
 }
+
+// rpcNonceKeyPrefix RPC nonce 去重键前缀（§5.1 行 861：al:rpc:nonce:{client_id}:{sha256(nonce)}）。
+const rpcNonceKeyPrefix = "al:rpc:nonce:"
+
+// RPCNonceKey 返回 RPC nonce 去重键（§5.1 行 861，String、TTL 30s、SET NX）。
+// nonceHash 为 sha256(nonce) 的小写十六进制（哈希在 nonce.go 的 NonceStore 内完成，
+// 本文件保持纯字符串拼接、不引 crypto 依赖）。
+func RPCNonceKey(clientID, nonceHash string) string {
+	return rpcNonceKeyPrefix + clientID + ":" + nonceHash
+}
