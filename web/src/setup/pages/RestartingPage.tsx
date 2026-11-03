@@ -2,7 +2,7 @@
  * 重启中页（docs/前端架构.md §6b / 接口文档 §13.4）：两条安装路径
  * （上传配置 / 全新安装）成功后共用本页——同一文案 + 同一轮询。
  * 轮询口径：**2s 间隔 / 120s 超时 /
- * status 404 视为完成**（重启后正常模式下 /api/setup/** 不注册 → 404 即完成）。
+ * GetStatus 404 视为完成**（重启后正常模式下 setup 路由不注册 → 404 即完成）。
  */
 import { useEffect, useState } from 'react';
 import { fetchSetupStatus, type SetupStatusResult } from '../api';
@@ -27,7 +27,7 @@ export type RestartPollResult =
   | 'cancelled';
 
 export interface RestartPollOptions {
-  /** 探测 /api/setup/status（§13.1）并分类；实现不得 reject。 */
+  /** 探测 SetupService/GetStatus（§13.1）并分类；实现不得 reject。 */
   check: () => Promise<SetupStatusResult>;
   intervalMs?: number;
   timeoutMs?: number;

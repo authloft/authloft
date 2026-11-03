@@ -6,11 +6,8 @@
  * 编辑框，此外不渲染、不日志输出配置内容。
  */
 import { useState, type ChangeEvent } from 'react';
-import {
-  requestUploadConfig,
-  setupMessage,
-  SetupError,
-} from '../api';
+import { requestUploadConfig, setupMessage } from '../api';
+import { ApiError } from '../../shared/api/errors';
 
 interface UploadConfigPageProps {
   onRestarting: () => void;
@@ -37,12 +34,12 @@ export default function UploadConfigPage({
       await requestUploadConfig(configText);
       onRestarting();
     } catch (error) {
-      if (error instanceof SetupError) {
+      if (error instanceof ApiError) {
         setErrorText(setupMessage(error.code));
         // §13.2 ④：版本已最新但管理员缺失 → 改走全新安装。
         setAdminMissing(error.code === 'admin_missing');
       } else {
-        setErrorText(setupMessage('internal_error'));
+        setErrorText(setupMessage('internal'));
       }
     } finally {
       setSubmitting(false);

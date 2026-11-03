@@ -5,7 +5,8 @@
  * 按 §13 映射到字段；成功（restarting:true）进入重启流程。
  */
 import { useState, type FormEvent } from 'react';
-import { requestInstall, setupMessage, SetupError } from '../api';
+import { requestInstall, setupMessage } from '../api';
+import { ApiError } from '../../shared/api/errors';
 
 interface InstallPageProps {
   onRestarting: () => void;
@@ -88,7 +89,7 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
       // §13.3 ⑤：成功响应 restarting:true，进入与上传配置一致的重启流程。
       onRestarting();
     } catch (error) {
-      if (error instanceof SetupError) {
+      if (error instanceof ApiError) {
         const message = setupMessage(error.code);
         const field = FIELD_BY_CODE[error.code];
         if (field) {
@@ -97,7 +98,7 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
           setFormError(message);
         }
       } else {
-        setFormError(setupMessage('internal_error'));
+        setFormError(setupMessage('internal'));
       }
     } finally {
       setSubmitting(false);
