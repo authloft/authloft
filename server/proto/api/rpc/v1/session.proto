@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package api.rpc.v1;
+
+// 包名 api.rpc.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/rpc/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
+// Go 产物：authloft/gen/go/api/rpc/v1（包名 rpcv1）。
+option go_package = "authloft/gen/go/api/rpc/v1;rpcv1";
+
+// DecodeSessionRequest 是 RpcService/DecodeSession 的请求（§7 行 1386「传入
+// Session Token（请求体字段 `session_token`）进行解码」）。字段名已由接口文档
+// 转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
+message DecodeSessionRequest {
+  // 待解码的会话令牌（§7 行 1386）。
+  string session_token = 1;
+}
+
+// SessionResponse 是 RpcService/DecodeSession 的响应（§7 行 1386「返回
+// SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
+// 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
+// 内部载荷与接口报文不得混用（§12.9 行 1745），故在 api.rpc.v1 定义报文视图消息；
+// 字段名与 §11.6.3 逐字一致（§12.9 行 1749），整型一律 int64（行 1751）。
+message SessionResponse {
+  // 用户 ID（《后端架构》§11.6.3 行 1310）。
+  int64 id = 1;
+  // 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效（§11.6.3 行 1311、1319）。
+  int64 epoch = 2;
+  // 认证方法数组，如 ["pwd","otp"]（§11.6.3 行 1312）。
+  repeated string amr = 3;
+  // 会话 ID（§11.6.3 行 1313）。
+  string sid = 4;
+  // 签发时间，Unix 秒（§11.6.3 行 1314）。
+  int64 iat = 5;
+  // 过期时间，Unix 秒（§11.6.3 行 1315）。
+  int64 exp = 6;
+}

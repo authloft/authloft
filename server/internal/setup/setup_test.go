@@ -22,7 +22,14 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/protobuf/proto"
+
+	commonv1 "authloft/gen/go/api/common/v1"
+	setupv1 "authloft/gen/go/api/setup/v1"
+	"authloft/gen/go/api/setup/v1/setupv1connect"
+	authloftconnect "authloft/internal/connect"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -43,9 +50,11 @@ func newTestServer(t *testing.T) (*Server, string) {
 	return NewServer(path), path
 }
 
-// doSetup 对 server router 发请求并返回 recorder。
-func doSetup(r *gin.Engine, method, target, contentType, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
+// doConnectJSON 对 server router 发一条 Connect unary JSON 请求（协议形态：
+// POST + Content-Type application/json，body 为请求消息的 protojson；成功
+// 响应即消息本身、业务失败为 Connect 错误体，接口文档 §1.0 / §1.5）。
+func doConnectJSON(r http.Handler, procedure, contentType, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -54,21 +63,39 @@ func doSetup(r *gin.Engine, method, target, contentType, body string) *httptest.
 	return rec
 }
 
-// decodeErrorEnvelope 解析 §1.0 错误信封。
-func decodeErrorEnvelope(t *testing.T, rec *httptest.ResponseRecorder) (status string, code string) {
+// decodeConnectError 解析 Connect 错误体（接口文档 §1.5 行 197-211）：
+// 返回标准码与首枚 ErrorInfo detail（type=api.common.v1.ErrorInfo，
+// value 为其 proto 字节的 base64）。
+func decodeConnectError(t *testing.T, rec *httptest.ResponseRecorder) (string, *commonv1.ErrorInfo) {
 	t.Helper()
-	var env struct {
-		Status string `json:"status"`
-		Error  struct {
-			Code      string `json:"code"`
-			Message   string `json:"message"`
-			RequestID string `json:"request_id"`
-		} `json:"error"`
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Details []struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"details"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
-		t.Fatalf("unmarshal error envelope %q: %v", rec.Body.String(), err)
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal connect error body %q: %v", rec.Body.String(), err)
 	}
-	return env.Status, env.Error.Code
+	for _, d := range body.Details {
+		if d.Type != "api.common.v1.ErrorInfo" {
+			continue
+		}
+		// connect-go 的 detail value 为 RawStdEncoding 的 base64（无填充，
+		// connect@v1.21.1 protocol_connect.go 行 1202）。
+		raw, err := base64.RawStdEncoding.DecodeString(d.Value)
+		if err != nil {
+			t.Fatalf("decode ErrorInfo value base64: %v", err)
+		}
+		info := &commonv1.ErrorInfo{}
+		if err := proto.Unmarshal(raw, info); err != nil {
+			t.Fatalf("unmarshal ErrorInfo detail: %v", err)
+		}
+		return body.Code, info
+	}
+	return body.Code, nil
 }
 
 // fakeRedis 在 127.0.0.1 随机端口起一个最小 RESP 服务（够 AUTH / SELECT /
@@ -156,19 +183,47 @@ func readRESPCommand(r *bufio.Reader) ([]string, error) {
 	return args, nil
 }
 
-// TestSetupStatusEndpoint GET /api/setup/status（§13.1）：200 +
-// {"status":"success","mode":"setup"}。
+// TestSetupStatusEndpoint SetupService/GetStatus（§13.1）：Connect unary
+// 请求 200 + {"mode":"setup"}——成功响应即消息本身（§1.0），与 §13.1 定稿
+// 响应逐字一致（无 status:"success" 信封）。
 func TestSetupStatusEndpoint(t *testing.T) {
 	s, _ := newTestServer(t)
-	rec := doSetup(s.Router(), http.MethodGet, "/api/setup/status", "", "")
+	rec := doConnectJSON(s.Router(), "/api.setup.v1.SetupService/GetStatus", "application/json", "{}")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if got := strings.TrimSpace(rec.Body.String()); got != `{"status":"success","mode":"setup"}` {
-		t.Errorf("body = %q, want status/mode envelope", got)
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"mode":"setup"}` {
+		t.Errorf("body = %q, want {\"mode\":\"setup\"}", got)
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
-		t.Errorf("Content-Type = %q, want application/json; charset=utf-8", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+}
+
+// TestSetupConnectClientInterop 用生成的 connect client 走完整栈（connect-go
+// 默认 Connect 协议）验证装配：GetStatus 正常往返；缺必填字段的 Install 归一为
+// *connect.Error（标准码）且 ErrorInfo detail 可读（authloftconnect.ErrorInfoOf，
+// 与前端 §1.5 行 226 消费路径同款）。
+func TestSetupConnectClientInterop(t *testing.T) {
+	s, _ := newTestServer(t)
+	srv := httptest.NewServer(s.Router())
+	defer srv.Close()
+	client := setupv1connect.NewSetupServiceClient(srv.Client(), srv.URL)
+
+	resp, err := client.GetStatus(context.Background(), connect.NewRequest(&setupv1.GetStatusRequest{}))
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if resp.Msg.Mode != "setup" {
+		t.Errorf("mode = %q, want setup", resp.Msg.Mode)
+	}
+
+	_, err = client.Install(context.Background(), connect.NewRequest(&setupv1.InstallRequest{}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("Install empty: code = %v, want invalid_argument (err %v)", connect.CodeOf(err), err)
+	}
+	if info, ok := authloftconnect.ErrorInfoOf(err); !ok || info.Domain != setupDomain || info.Code != codeInvalidRequest {
+		t.Fatalf("Install empty: ErrorInfo = %+v, want setup/invalid_request", info)
 	}
 }
 
@@ -227,49 +282,64 @@ func TestSetupPageShell(t *testing.T) {
 	}
 }
 
-// TestSetupParamErrors 参数类错误走 §1.5：Content-Type 非 JSON → 415；
-// 空体 / 非法 JSON → 400；缺必填字段 → 400。错误体带 request_id
-//（requestid 中间件在链上）。
+// TestSetupParamErrors 参数类错误（§13 行 1761「参数类错误仍走 §1.5」）：
+// Content-Type 不被 Connect 支持编码 → 框架直写 415（无错误体语义差异，
+// §1.5 行 195）；空体 / 非法 JSON → 框架 invalid_argument 400（协议级错误
+// 无 ErrorInfo detail，§1.5 行 224）；必填字段缺失（proto3 零值不可判，
+// handler 侧校验）→ invalid_argument 400 + ErrorInfo{domain=setup,
+// code=invalid_request}（§1.6 行 245）。request_id 不在错误体内，走
+// X-Request-Id 响应头（§1.5 行 223）。
 func TestSetupParamErrors(t *testing.T) {
 	s, _ := newTestServer(t)
 	r := s.Router()
 
 	cases := []struct {
-		name        string
-		target      string
-		contentType string
-		body        string
-		wantStatus  int
-		wantCode    string
+		name       string
+		procedure  string
+		contentTyp string
+		body       string
+		wantStatus int
+		wantCode   string // Connect 标准码（§1.5）；空 = 框架直写状态码
+		wantInfo   string // ErrorInfo.code；空 = 无 detail（协议级）
 	}{
-		{"text/plain config", "/api/setup/config", "text/plain", "x", http.StatusUnsupportedMediaType, "unsupported_media_type"},
-		{"no content-type config", "/api/setup/config", "", "x", http.StatusUnsupportedMediaType, "unsupported_media_type"},
-		{"empty body config", "/api/setup/config", "application/json", "", http.StatusBadRequest, "bad_request"},
-		{"invalid json config", "/api/setup/config", "application/json", "{", http.StatusBadRequest, "bad_request"},
-		{"missing config field", "/api/setup/config", "application/json", `{}`, http.StatusBadRequest, "bad_request"},
-		{"text/plain install", "/api/setup/install", "text/plain", "x", http.StatusUnsupportedMediaType, "unsupported_media_type"},
-		{"empty body install", "/api/setup/install", "application/json", "", http.StatusBadRequest, "bad_request"},
-		{"invalid json install", "/api/setup/install", "application/json", "not json", http.StatusBadRequest, "bad_request"},
-		{"missing required install", "/api/setup/install", "application/json", `{"db_dsn":"x"}`, http.StatusBadRequest, "bad_request"},
+		{"text/plain config", "/api.setup.v1.SetupService/UploadConfig", "text/plain", "x", http.StatusUnsupportedMediaType, "", ""},
+		{"no content-type config", "/api.setup.v1.SetupService/UploadConfig", "", "x", http.StatusUnsupportedMediaType, "", ""},
+		{"empty body config", "/api.setup.v1.SetupService/UploadConfig", "application/json", "", http.StatusBadRequest, "invalid_argument", ""},
+		{"invalid json config", "/api.setup.v1.SetupService/UploadConfig", "application/json", "{", http.StatusBadRequest, "invalid_argument", ""},
+		{"missing config field", "/api.setup.v1.SetupService/UploadConfig", "application/json", `{}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
+		{"text/plain install", "/api.setup.v1.SetupService/Install", "text/plain", "x", http.StatusUnsupportedMediaType, "", ""},
+		{"empty body install", "/api.setup.v1.SetupService/Install", "application/json", "", http.StatusBadRequest, "invalid_argument", ""},
+		{"invalid json install", "/api.setup.v1.SetupService/Install", "application/json", "not json", http.StatusBadRequest, "invalid_argument", ""},
+		{"missing required install", "/api.setup.v1.SetupService/Install", "application/json", `{"dbDsn":"x"}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
+		{"negative redis db", "/api.setup.v1.SetupService/Install", "application/json", `{"dbDsn":"x","redisAddr":"y","adminUsername":"admin01","adminPassword":"Str0ngPassw0rd","redisDb":-1}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
 	}
 	for _, tc := range cases {
-		rec := doSetup(r, http.MethodPost, tc.target, tc.contentType, tc.body)
+		rec := doConnectJSON(r, tc.procedure, tc.contentTyp, tc.body)
 		if rec.Code != tc.wantStatus {
 			t.Errorf("%s: status = %d, want %d (body %s)", tc.name, rec.Code, tc.wantStatus, rec.Body.String())
 			continue
 		}
-		status, code := decodeErrorEnvelope(t, rec)
-		if status != "error" || code != tc.wantCode {
-			t.Errorf("%s: envelope = (%s, %s), want (error, %s)", tc.name, status, code, tc.wantCode)
+		// requestid 在 gin 全局链上，NoRoute 桥接的 Connect 响应同样回写
+		// X-Request-Id（所有响应统一走响应头）。
+		if rec.Header().Get("X-Request-Id") == "" {
+			t.Errorf("%s: X-Request-Id empty, want non-empty (requestid must be on chain)", tc.name)
 		}
-		var env struct {
-			Error struct {
-				RequestID string `json:"request_id"`
-			} `json:"error"`
+		if tc.wantCode == "" {
+			continue // 框架 415：无错误体语义（§1.5 行 195），只断言状态码
 		}
-		_ = json.Unmarshal(rec.Body.Bytes(), &env)
-		if env.Error.RequestID == "" {
-			t.Errorf("%s: request_id empty, want non-empty (requestid must be on chain)", tc.name)
+		code, info := decodeConnectError(t, rec)
+		if code != tc.wantCode {
+			t.Errorf("%s: connect code = %q, want %q (body %s)", tc.name, code, tc.wantCode, rec.Body.String())
+		}
+		switch {
+		case tc.wantInfo == "":
+			if info != nil {
+				t.Errorf("%s: unexpected ErrorInfo %+v for protocol-level error", tc.name, info)
+			}
+		default:
+			if info == nil || info.Domain != setupDomain || info.Code != tc.wantInfo {
+				t.Errorf("%s: ErrorInfo = %+v, want domain=%s code=%s", tc.name, info, setupDomain, tc.wantInfo)
+			}
 		}
 	}
 }
@@ -292,8 +362,9 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 }
 
 // TestUploadConfigInvalidMatrix 路径 A 步骤 ① 失败矩阵（§13.2）：非法
-// YAML / 缺 sign_key / 缺 db 段 → config_invalid（HTTP 200 业务信封）；
-// 响应 message 不回显密钥内容。
+// YAML / 缺 sign_key / 缺 db 段 → Connect 错误体（标准码 invalid_argument +
+// ErrorInfo{domain=setup, code=config_invalid}，HTTP 400，§13 行 1761）；
+// 响应 message 为固定安全文案，不回显密钥内容。
 func TestUploadConfigInvalidMatrix(t *testing.T) {
 	s, configPath := newTestServer(t)
 	r := s.Router()
@@ -331,14 +402,14 @@ log: { level: info, format: json }
 	}
 	for _, tc := range cases {
 		payload, _ := json.Marshal(map[string]string{"config": tc.body})
-		rec := doSetup(r, http.MethodPost, "/api/setup/config", "application/json", string(payload))
-		if rec.Code != http.StatusOK {
-			t.Errorf("%s: HTTP status = %d, want 200 (biz envelope)", tc.name, rec.Code)
+		rec := doConnectJSON(r, "/api.setup.v1.SetupService/UploadConfig", "application/json", string(payload))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: HTTP status = %d, want 400 (connect error body %s)", tc.name, rec.Code, rec.Body.String())
 			continue
 		}
-		status, code := decodeErrorEnvelope(t, rec)
-		if status != "error" || code != CodeConfigInvalid {
-			t.Errorf("%s: envelope = (%s, %s), want (error, %s)", tc.name, status, code, CodeConfigInvalid)
+		code, info := decodeConnectError(t, rec)
+		if code != "invalid_argument" || info == nil || info.Domain != setupDomain || info.Code != CodeConfigInvalid {
+			t.Errorf("%s: connect=(%q, %+v), want invalid_argument + setup/%s", tc.name, code, info, CodeConfigInvalid)
 		}
 		if strings.Contains(rec.Body.String(), key) {
 			t.Errorf("%s: response leaks sign key material", tc.name)
@@ -355,24 +426,25 @@ log: { level: info, format: json }
 	}
 }
 
-// TestFreshInstallDBUnreachable 路径 B 步骤 ①：DB 不可达 → db_unreachable
-//（HTTP 200 业务信封）。
+// TestFreshInstallDBUnreachable 路径 B 步骤 ①：DB 不可达 → Connect 错误体
+//（标准码 unavailable + ErrorInfo{domain=setup, code=db_unreachable}，
+// HTTP 503，§1.5 行 193 映射）。
 func TestFreshInstallDBUnreachable(t *testing.T) {
 	s, configPath := newTestServer(t)
 	redisAddr := fakeRedis(t, "")
 	payload, _ := json.Marshal(map[string]any{
-		"db_dsn":         "test:x@tcp(127.0.0.1:1)/test",
-		"redis_addr":     redisAddr,
-		"admin_username": "admin01",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         "test:x@tcp(127.0.0.1:1)/test",
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin01",
+		"adminPassword": "Str0ngPassw0rd",
 	})
-	rec := doSetup(s.Router(), http.MethodPost, "/api/setup/install", "application/json", string(payload))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	rec := doConnectJSON(s.Router(), "/api.setup.v1.SetupService/Install", "application/json", string(payload))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HTTP status = %d, want 503 (body %s)", rec.Code, rec.Body.String())
 	}
-	status, code := decodeErrorEnvelope(t, rec)
-	if status != "error" || code != CodeDBUnreachable {
-		t.Fatalf("envelope = (%s, %s), want (error, %s)", status, code, CodeDBUnreachable)
+	code, info := decodeConnectError(t, rec)
+	if code != "unavailable" || info == nil || info.Domain != setupDomain || info.Code != CodeDBUnreachable {
+		t.Fatalf("connect=(%q, %+v), want unavailable + setup/%s (body %s)", code, info, CodeDBUnreachable, rec.Body.String())
 	}
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
 		t.Errorf("failed install must not write config, stat err = %v", err)

@@ -192,11 +192,11 @@ func openSetupTestDB(t *testing.T, dsn string) *sql.DB {
 	return db
 }
 
-// postInstallJSON 向 setup server 发 POST /api/setup/install（带安装页
-// Host，供 root / rp_id 推导）。
+// postInstallJSON 向 setup server 发 SetupService/Install 的 Connect unary
+// JSON 请求（带安装页 Host，供 root / rp_id 推导；§13.3）。
 func postInstallJSON(s *Server, body map[string]any) *httptest.ResponseRecorder {
 	payload, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, "/api/setup/install", strings.NewReader(string(payload)))
+	req := httptest.NewRequest(http.MethodPost, "/api.setup.v1.SetupService/Install", strings.NewReader(string(payload)))
 	req.Host = "install.example.com:8080"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -204,10 +204,12 @@ func postInstallJSON(s *Server, body map[string]any) *httptest.ResponseRecorder 
 	return rec
 }
 
-// postConfigJSON 向 setup server 发 POST /api/setup/config。
+// postConfigJSON 向 setup server 发 SetupService/UploadConfig 的 Connect
+// unary JSON 请求（§13.2）。
 func postConfigJSON(s *Server, configText string) *httptest.ResponseRecorder {
 	payload, _ := json.Marshal(map[string]string{"config": configText})
-	req := httptest.NewRequest(http.MethodPost, "/api/setup/config", strings.NewReader(string(payload)))
+	req := httptest.NewRequest(http.MethodPost, "/api.setup.v1.SetupService/UploadConfig", strings.NewReader(string(payload)))
+	req.Host = "install.example.com:8080"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
@@ -254,24 +256,25 @@ func adminCredentialSecret(t *testing.T, db *sql.DB) string {
 }
 
 // TestInstallFreshEndToEnd 路径 B 端到端（§13.3）：空库 + 假 Redis →
-// 200 restarting:true + 退出触发 + config 原子写入（可被 config.Load 加载）
-// + 管理员 ID=1 创建 + argon2id 凭证行 + root/rp_id 按请求 Host 推导。
+// 200 {"restarting":true}（成功响应即消息本身，§1.0）+ 退出触发 + config
+// 原子写入（可被 config.Load 加载）+ 管理员 ID=1 创建 + argon2id 凭证行 +
+// root/rp_id 按请求 Host 推导。
 func TestInstallFreshEndToEnd(t *testing.T) {
 	dsn, configPath := newSetupTestDB(t)
 	redisAddr := fakeRedis(t, "")
 	s := NewServer(configPath)
 
 	rec := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "admin",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	if got := strings.TrimSpace(rec.Body.String()); got != `{"status":"success","restarting":true}` {
-		t.Errorf("body = %q, want restarting envelope", got)
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"restarting":true}` {
+		t.Errorf("body = %q, want {\"restarting\":true}", got)
 	}
 	if !waitExit(s) {
 		t.Error("successful install must trigger exit (restart)")
@@ -313,10 +316,10 @@ func TestInstallIdempotentRetry(t *testing.T) {
 	s := NewServer(configPath)
 
 	first := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "admin",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
 	})
 	if first.Code != http.StatusOK {
 		t.Fatalf("first install: HTTP %d (body %s)", first.Code, first.Body.String())
@@ -325,10 +328,10 @@ func TestInstallIdempotentRetry(t *testing.T) {
 	// 第二次（换用户名）：管理员已存在 → 跳过插入，既有行不变。
 	//（密码不含新用户名子串，避免 pwd_disallow_username 拦截——那不是本用例目标。）
 	second := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "other",
-		"admin_password": "SecondStr0ng9",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "other",
+		"adminPassword": "SecondStr0ng9",
 	})
 	if second.Code != http.StatusOK {
 		t.Fatalf("second install: HTTP %d (body %s)", second.Code, second.Body.String())
@@ -342,16 +345,18 @@ func TestInstallIdempotentRetry(t *testing.T) {
 		t.Errorf("admin rows = %d (err %v), want exactly 1", users, err)
 	}
 
-	// 失败重试：坏 Redis → redis_unreachable 且不触发退出。
+	// 失败重试：坏 Redis → redis_unreachable（Connect 错误体，unavailable +
+	// ErrorInfo）且不触发退出。
 	s2 := NewServer(configPath)
 	rec := postInstallJSON(s2, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     "127.0.0.1:1",
-		"admin_username": "admin",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     "127.0.0.1:1",
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
 	})
-	if _, code := decodeErrorEnvelope(t, rec); code != CodeRedisUnreachable {
-		t.Errorf("bad redis retry: code = %s, want %s", code, CodeRedisUnreachable)
+	code, info := decodeConnectError(t, rec)
+	if code != "unavailable" || info == nil || info.Code != CodeRedisUnreachable {
+		t.Errorf("bad redis retry: connect=(%q, %+v), want unavailable + %s", code, info, CodeRedisUnreachable)
 	}
 	if waitExit(s2) {
 		t.Error("failed retry must not trigger exit")
@@ -360,7 +365,7 @@ func TestInstallIdempotentRetry(t *testing.T) {
 
 // TestUploadConfigEndToEnd 路径 A 端到端（§13.2）：已安装库（迁移最新 +
 // 管理员存在）上传合法 config → 迁移幂等秒过 + 管理员检查通过 → 200
-// restarting + 上传原文原子写入。
+// {"restarting":true} + 上传原文原子写入。
 func TestUploadConfigEndToEnd(t *testing.T) {
 	dsn, configPath := newSetupTestDB(t)
 	redisAddr := fakeRedis(t, "")
@@ -368,10 +373,10 @@ func TestUploadConfigEndToEnd(t *testing.T) {
 
 	// 准备：路径 B 先完成安装（复用其建库 + 建管理员）。
 	prep := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "admin",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
 	})
 	if prep.Code != http.StatusOK {
 		t.Fatalf("prepare install: HTTP %d (body %s)", prep.Code, prep.Body.String())
@@ -384,8 +389,8 @@ func TestUploadConfigEndToEnd(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	if got := strings.TrimSpace(rec.Body.String()); got != `{"status":"success","restarting":true}` {
-		t.Errorf("body = %q, want restarting envelope", got)
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"restarting":true}` {
+		t.Errorf("body = %q, want {\"restarting\":true}", got)
 	}
 	if !waitExit(s2) {
 		t.Error("successful upload must trigger exit (restart)")
@@ -401,7 +406,8 @@ func TestUploadConfigEndToEnd(t *testing.T) {
 }
 
 // TestUploadConfigAdminMissing 路径 A 步骤 ④：版本已最新但管理员缺失 →
-// admin_missing（提示改走全新安装）。
+// admin_missing（Connect 错误体：failed_precondition + ErrorInfo，
+// HTTP 400，§13.2 行 1773——提示改走全新安装）。
 func TestUploadConfigAdminMissing(t *testing.T) {
 	dsn, configPath := newSetupTestDB(t)
 	redisAddr := fakeRedis(t, "")
@@ -409,10 +415,10 @@ func TestUploadConfigAdminMissing(t *testing.T) {
 	// 先完整安装再删掉管理员行，模拟「迁移最新 + 管理员缺失」。
 	s := NewServer(configPath)
 	prep := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "admin",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
 	})
 	if prep.Code != http.StatusOK {
 		t.Fatalf("prepare install: HTTP %d", prep.Code)
@@ -424,12 +430,12 @@ func TestUploadConfigAdminMissing(t *testing.T) {
 
 	s2 := NewServer(configPath)
 	rec := postConfigJSON(s2, uploadConfigYAML(dsn, redisAddr))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("HTTP status = %d, want 400 (body %s)", rec.Code, rec.Body.String())
 	}
-	status, code := decodeErrorEnvelope(t, rec)
-	if status != "error" || code != CodeAdminMissing {
-		t.Fatalf("envelope = (%s, %s), want (error, %s)", status, code, CodeAdminMissing)
+	code, info := decodeConnectError(t, rec)
+	if code != "failed_precondition" || info == nil || info.Domain != setupDomain || info.Code != CodeAdminMissing {
+		t.Fatalf("connect=(%q, %+v), want failed_precondition + setup/%s", code, info, CodeAdminMissing)
 	}
 	if waitExit(s2) {
 		t.Error("admin_missing must not trigger exit")
@@ -438,30 +444,31 @@ func TestUploadConfigAdminMissing(t *testing.T) {
 
 // TestInstallDomainErrorsWithRealDB 路径 B 域错误（真实 DB 下校验步骤）：
 // 用户名不合规 → username_invalid；密码弱 → password_weak（校验在 ③，
-// 连通与迁移之后）。失败均不写 config、不退出。
+// 连通与迁移之后）。失败均走 Connect 错误体（invalid_argument 400 +
+// ErrorInfo），不写 config、不退出。
 func TestInstallDomainErrorsWithRealDB(t *testing.T) {
 	dsn, configPath := newSetupTestDB(t)
 	redisAddr := fakeRedis(t, "")
 	s := NewServer(configPath)
 
 	rec := postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "bad!",
-		"admin_password": "Str0ngPassw0rd",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "bad!",
+		"adminPassword": "Str0ngPassw0rd",
 	})
-	if _, code := decodeErrorEnvelope(t, rec); code != CodeUsernameInvalid {
-		t.Errorf("username invalid: code = %s, want %s (rec %s)", code, CodeUsernameInvalid, rec.Body.String())
+	if code, info := decodeConnectError(t, rec); code != "invalid_argument" || info == nil || info.Code != CodeUsernameInvalid {
+		t.Errorf("username invalid: connect=(%q, %+v), want invalid_argument + %s (rec %s)", code, info, CodeUsernameInvalid, rec.Body.String())
 	}
 
 	rec = postInstallJSON(s, map[string]any{
-		"db_dsn":         dsn,
-		"redis_addr":     redisAddr,
-		"admin_username": "admin",
-		"admin_password": "weakpass",
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "weakpass",
 	})
-	if _, code := decodeErrorEnvelope(t, rec); code != CodePasswordWeak {
-		t.Errorf("weak password: code = %s, want %s (rec %s)", code, CodePasswordWeak, rec.Body.String())
+	if code, info := decodeConnectError(t, rec); code != "invalid_argument" || info == nil || info.Code != CodePasswordWeak {
+		t.Errorf("weak password: connect=(%q, %+v), want invalid_argument + %s (rec %s)", code, info, CodePasswordWeak, rec.Body.String())
 	}
 
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {

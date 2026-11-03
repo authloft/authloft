@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        (unknown)
-// source: api/rpc/session.proto
+// source: api/rpc/v1/session.proto
 
-package api
+package rpcv1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -21,33 +21,32 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// SessionRequest 是 `POST /api/rpc/session` 的请求（§7 行 1385「传入 Session Token
-// 进行解码」）。文档未显式给出请求体字段名，本消息按全仓统一术语 session_token 落名
-// （§1.2 行 120 session_token 的取值与回传、《后端架构》§11.6.3 行 1306 标题
-// 「session_token / al_session」）；该命名待定。
-type SessionRequest struct {
+// DecodeSessionRequest 是 RpcService/DecodeSession 的请求（§7 行 1386「传入
+// Session Token（请求体字段 `session_token`）进行解码」）。字段名已由接口文档
+// 转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
+type DecodeSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 待解码的会话令牌（§7 行 1385）。
+	// 待解码的会话令牌（§7 行 1386）。
 	SessionToken  string `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SessionRequest) Reset() {
-	*x = SessionRequest{}
-	mi := &file_api_rpc_session_proto_msgTypes[0]
+func (x *DecodeSessionRequest) Reset() {
+	*x = DecodeSessionRequest{}
+	mi := &file_api_rpc_v1_session_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SessionRequest) String() string {
+func (x *DecodeSessionRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SessionRequest) ProtoMessage() {}
+func (*DecodeSessionRequest) ProtoMessage() {}
 
-func (x *SessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_rpc_session_proto_msgTypes[0]
+func (x *DecodeSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_rpc_v1_session_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -58,23 +57,23 @@ func (x *SessionRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SessionRequest.ProtoReflect.Descriptor instead.
-func (*SessionRequest) Descriptor() ([]byte, []int) {
-	return file_api_rpc_session_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use DecodeSessionRequest.ProtoReflect.Descriptor instead.
+func (*DecodeSessionRequest) Descriptor() ([]byte, []int) {
+	return file_api_rpc_v1_session_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *SessionRequest) GetSessionToken() string {
+func (x *DecodeSessionRequest) GetSessionToken() string {
 	if x != nil {
 		return x.SessionToken
 	}
 	return ""
 }
 
-// SessionResponse 是 `POST /api/rpc/session` 的响应（§7 行 1385「返回
+// SessionResponse 是 RpcService/DecodeSession 的响应（§7 行 1386「返回
 // SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
-// 按 §1.0 统一信封平铺（§7 行 1379；status:"success" 由 codec 注入）。
-// 内部载荷与接口报文不得混用（§12.9 行 1744），故在 api.rpc 定义报文视图消息；
-// 字段名与 §11.6.3 逐字一致（§12.9 行 1748），整型一律 int64（行 1750）。
+// 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
+// 内部载荷与接口报文不得混用（§12.9 行 1745），故在 api.rpc.v1 定义报文视图消息；
+// 字段名与 §11.6.3 逐字一致（§12.9 行 1749），整型一律 int64（行 1751）。
 type SessionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 用户 ID（《后端架构》§11.6.3 行 1310）。
@@ -95,7 +94,7 @@ type SessionResponse struct {
 
 func (x *SessionResponse) Reset() {
 	*x = SessionResponse{}
-	mi := &file_api_rpc_session_proto_msgTypes[1]
+	mi := &file_api_rpc_v1_session_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -107,7 +106,7 @@ func (x *SessionResponse) String() string {
 func (*SessionResponse) ProtoMessage() {}
 
 func (x *SessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_rpc_session_proto_msgTypes[1]
+	mi := &file_api_rpc_v1_session_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -120,7 +119,7 @@ func (x *SessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionResponse.ProtoReflect.Descriptor instead.
 func (*SessionResponse) Descriptor() ([]byte, []int) {
-	return file_api_rpc_session_proto_rawDescGZIP(), []int{1}
+	return file_api_rpc_v1_session_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SessionResponse) GetId() int64 {
@@ -165,12 +164,13 @@ func (x *SessionResponse) GetExp() int64 {
 	return 0
 }
 
-var File_api_rpc_session_proto protoreflect.FileDescriptor
+var File_api_rpc_v1_session_proto protoreflect.FileDescriptor
 
-const file_api_rpc_session_proto_rawDesc = "" +
+const file_api_rpc_v1_session_proto_rawDesc = "" +
 	"\n" +
-	"\x15api/rpc/session.proto\x12\aapi.rpc\"5\n" +
-	"\x0eSessionRequest\x12#\n" +
+	"\x18api/rpc/v1/session.proto\x12\n" +
+	"api.rpc.v1\";\n" +
+	"\x14DecodeSessionRequest\x12#\n" +
 	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\"\x7f\n" +
 	"\x0fSessionResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
@@ -178,26 +178,26 @@ const file_api_rpc_session_proto_rawDesc = "" +
 	"\x03amr\x18\x03 \x03(\tR\x03amr\x12\x10\n" +
 	"\x03sid\x18\x04 \x01(\tR\x03sid\x12\x10\n" +
 	"\x03iat\x18\x05 \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\x06 \x01(\x03R\x03expB\x1dZ\x1bauthloft/gen/go/api/rpc;apib\x06proto3"
+	"\x03exp\x18\x06 \x01(\x03R\x03expB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
 var (
-	file_api_rpc_session_proto_rawDescOnce sync.Once
-	file_api_rpc_session_proto_rawDescData []byte
+	file_api_rpc_v1_session_proto_rawDescOnce sync.Once
+	file_api_rpc_v1_session_proto_rawDescData []byte
 )
 
-func file_api_rpc_session_proto_rawDescGZIP() []byte {
-	file_api_rpc_session_proto_rawDescOnce.Do(func() {
-		file_api_rpc_session_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_rpc_session_proto_rawDesc), len(file_api_rpc_session_proto_rawDesc)))
+func file_api_rpc_v1_session_proto_rawDescGZIP() []byte {
+	file_api_rpc_v1_session_proto_rawDescOnce.Do(func() {
+		file_api_rpc_v1_session_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_rpc_v1_session_proto_rawDesc), len(file_api_rpc_v1_session_proto_rawDesc)))
 	})
-	return file_api_rpc_session_proto_rawDescData
+	return file_api_rpc_v1_session_proto_rawDescData
 }
 
-var file_api_rpc_session_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_api_rpc_session_proto_goTypes = []any{
-	(*SessionRequest)(nil),  // 0: api.rpc.SessionRequest
-	(*SessionResponse)(nil), // 1: api.rpc.SessionResponse
+var file_api_rpc_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_rpc_v1_session_proto_goTypes = []any{
+	(*DecodeSessionRequest)(nil), // 0: api.rpc.v1.DecodeSessionRequest
+	(*SessionResponse)(nil),      // 1: api.rpc.v1.SessionResponse
 }
-var file_api_rpc_session_proto_depIdxs = []int32{
+var file_api_rpc_v1_session_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
 	0, // [0:0] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -205,26 +205,26 @@ var file_api_rpc_session_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_api_rpc_session_proto_init() }
-func file_api_rpc_session_proto_init() {
-	if File_api_rpc_session_proto != nil {
+func init() { file_api_rpc_v1_session_proto_init() }
+func file_api_rpc_v1_session_proto_init() {
+	if File_api_rpc_v1_session_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_rpc_session_proto_rawDesc), len(file_api_rpc_session_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_rpc_v1_session_proto_rawDesc), len(file_api_rpc_v1_session_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_api_rpc_session_proto_goTypes,
-		DependencyIndexes: file_api_rpc_session_proto_depIdxs,
-		MessageInfos:      file_api_rpc_session_proto_msgTypes,
+		GoTypes:           file_api_rpc_v1_session_proto_goTypes,
+		DependencyIndexes: file_api_rpc_v1_session_proto_depIdxs,
+		MessageInfos:      file_api_rpc_v1_session_proto_msgTypes,
 	}.Build()
-	File_api_rpc_session_proto = out.File
-	file_api_rpc_session_proto_goTypes = nil
-	file_api_rpc_session_proto_depIdxs = nil
+	File_api_rpc_v1_session_proto = out.File
+	file_api_rpc_v1_session_proto_goTypes = nil
+	file_api_rpc_v1_session_proto_depIdxs = nil
 }

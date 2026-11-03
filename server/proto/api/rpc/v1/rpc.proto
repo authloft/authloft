@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package api.rpc.v1;
+
+// RpcService 的方法 input/output 消息定义在同包 profile.proto / session.proto，
+// 本文件只定义 service（docs/接口文档.md §12.9 行 1747「每域一个 service，名为
+// <域>Service」）；方法清单 = 接口文档 §7 全部端点（行 1362-1388）。
+import "api/rpc/v1/profile.proto";
+import "api/rpc/v1/session.proto";
+
+// 包名 api.rpc.v1（docs/接口文档.md §12.9 行 1747）；Go 产物
+// authloft/gen/go/api/rpc/v1（rpcv1），connect 产物（protoc-gen-connect-go）
+// 随本 service 定义生成（buf.gen.yaml）。
+option go_package = "authloft/gen/go/api/rpc/v1;rpcv1";
+
+// RpcService 是 rpc 域的 Connect service（docs/接口文档.md §7，行 1362-1388）。
+// Connect 路径 = /api.rpc.v1.RpcService/<Method>（签名串 path 段取值，§7 行 1376）；
+// 方法清单与 §7 逐一对应：
+//   GetUserProfile      §7 行 1384
+//   UpdateUserProfile   §7 行 1385
+//   DecodeSession       §7 行 1386
+// 鉴权（nonce 去重 → HMAC 签名，校验顺序 §7 行 1380）为 Connect interceptor
+//（后端 §3.14 interceptors.go），装配必须经 internal/connect 的 RegisterRPC
+//（强制包 CaptureRawBody——§7 行 1377 body 段取原始请求体字节，漏挂 fail-closed）；
+// session 步归端点自身（§7 行 1380）。本文件只定契约，业务 handler 实现另行完成。
+service RpcService {
+  // 读用户资料，响应为 §3.1 的 Authloft 结构（§7 行 1384）。
+  rpc GetUserProfile(GetUserProfileRequest) returns (ProfileResponse);
+  // 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1385）。
+  rpc UpdateUserProfile(UpdateUserProfileRequest) returns (OkResponse);
+  // 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7 行 1386）。
+  rpc DecodeSession(DecodeSessionRequest) returns (SessionResponse);
+}

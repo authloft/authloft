@@ -3,10 +3,11 @@
 //
 // 仅 setup 模式（configs/config.yaml 不存在，bootstrap 判定）下存活：
 // 不加载 config、不初始化 DB / Redis、不挂业务链路；HTTP 侧只暴露 /setup
-// 空壳页与 /api/setup/**（status / config / install）。config 写入并重启
-// 后永久退出（正常模式下这些路由不注册，请求 404）。
+// 空壳页与 SetupService connect handler（/api/setup/** REST 三条路由
+// 删除，Connect 路径 /api.setup.v1.SetupService/<Method>，§13 行 1759）。
+// config 写入并重启后永久退出（正常模式下不注册，请求一律 404）。
 //
-// 重启机制（§3.15 安装决策）：两条路径成功（响应 restarting:true 已完整
+// 重启机制（§3.15 安装决策）：两条路径成功（restarting:true 响应已完整
 // 写出）后进程正常退出（exit 0），由 supervisor / Docker restart policy
 // 拉起，不做 self-exec。
 package setup
@@ -18,20 +19,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/gin-gonic/gin"
 
+	setupv1 "authloft/gen/go/api/setup/v1"
+	"authloft/gen/go/api/setup/v1/setupv1connect"
+	authloftconnect "authloft/internal/connect"
 	"authloft/internal/middleware"
 )
 
-// listen 与超时：setup 模式不加载 config，监听地址文档未规定（缺口已报），
+// listen 与超时：setup 模式不加载 config，监听地址文档未规定（缺口待定），
 // 取 §3.2 默认值 :8080 与 30s 读写超时（与 config.yaml.example 同源）。
 const (
 	setupListen       = ":8080"
@@ -40,53 +43,80 @@ const (
 	// shutdownGrace 响应写出后优雅关闭的等待上限（在途响应 flush 完毕
 	// 即返回，restart 语义不靠拉长该值）。
 	shutdownGrace = 3 * time.Second
-	// maxSetupBody 请求体上限（与 connect 域默认 1 MiB 一致，docs/后端架构.md
-	// §1.6 行 86；上传 config 全文与安装表单均远小于此）。
+	// maxSetupBody Connect 请求体上限（与生产装配默认一致，docs/后端架构.md
+	// §1.6 行 86；经 connect.NewServer → WithReadMaxBytes 注入，上传 config
+	// 全文与安装表单均远小于此）。
 	maxSetupBody = 1 << 20
 )
 
-// 框架层错误码（setup 域原生 JSON 过渡形态的取值，原 codec 常量原值接管；
-// setup 域 Connect 化后改走 connect.NewError，届时废弃）。
-const (
-	setupCodeBadRequest           = "bad_request"
-	setupCodeUnsupportedMediaType = "unsupported_media_type"
-	setupCodeInternalError        = "internal_error"
-)
+// setupDomain ErrorInfo.domain 取值（接口文档 §1.5 行 217 封闭集）。
+const setupDomain = "setup"
 
-// setupErrorObj / setupErrorBody 原生 JSON 错误信封（编译救活的最小改造：
-// 形态为旧信封 JSON 的字节级保留、编码不再经 codec；键序同旧 protojson
-// 字段号序。错误体暂保留 request_id 字段以维持 setup entry 前端零改动，
-// 后续统一按 §1.5 行 223 移除——request_id 届时只走 X-Request-Id 响应头）。
-type setupErrorObj struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"request_id"`
-}
+// codeInvalidRequest 参数缺失 / 格式错误的 ErrorInfo.code（接口文档 §1.6
+// 行 245「参数缺失 / 格式错误」；呈现位置二：非登录域作 ErrorInfo.code，
+// §1.6 行 267）。
+const codeInvalidRequest = "invalid_request"
 
-type setupErrorBody struct {
-	Status string        `json:"status"`
-	Error  setupErrorObj `json:"error"`
-}
-
-// writeSetupError 直写原生 JSON 错误体（不依赖 codec）：HTTP status 由调用方
-// 给定（框架错误非 200；PathError 业务失败经 writePathError 恒 200，§13）。
-func writeSetupError(c *gin.Context, status int, code, message string) {
-	body, err := json.Marshal(setupErrorBody{
-		Status: "error",
-		Error: setupErrorObj{
-			Code:      code,
-			Message:   message,
-			RequestID: c.GetString(middleware.RequestIDKey),
-		},
-	})
-	if err != nil { // 全字符串字段的 Marshal，实际不可达
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+// setupCodeFor 把 §13 域内错误码映射为 Connect 标准码（§1.5 行 184-193
+// 映射表口径；域码语义不变，由 ErrorInfo.code 承载，§13 行 1761）：
+//   - 用户输入不合规（config_invalid / username_invalid / password_weak）→
+//     invalid_argument（HTTP 400，§1.5 行 186「字段缺失 / 类型不符」）；
+//   - 外部依赖不可达（db_unreachable / redis_unreachable）→ unavailable
+//     （HTTP 503，§1.5 行 193）；
+//   - 迁移失败（migration_failed）→ internal（HTTP 500，服务端自身故障，
+//     细节只进日志）；
+//   - 状态前置不满足（admin_missing——版本已最新但管理员缺失，提示改走
+//     全新安装）→ failed_precondition（HTTP 400）；
+//   - 其余 / 未知 → internal 兜底（不透出细节，§1.5 行 192）。
+func setupCodeFor(code string) connect.Code {
+	switch code {
+	case CodeConfigInvalid, CodeUsernameInvalid, CodePasswordWeak:
+		return connect.CodeInvalidArgument
+	case CodeDBUnreachable, CodeRedisUnreachable:
+		return connect.CodeUnavailable
+	case CodeAdminMissing:
+		return connect.CodeFailedPrecondition
+	case CodeMigrationFailed:
+		return connect.CodeInternal
+	default:
+		return connect.CodeInternal
 	}
-	c.Data(status, "application/json; charset=utf-8", body)
 }
 
-// Server 安装模式 HTTP 服务。
+// setupFail 把安装路径错误转为 Connect 错误体出口（取代原
+// writePathError 直写原生 JSON）：*PathError（§13 域码）→
+// connect.NewError(标准码) + ErrorInfo detail（domain=setup、code=域码、
+// message=固定安全文案，§1.5 行 197-224）；其余（写盘失败等服务端故障）
+// 记日志后原样返回——错误包装 interceptor（internal/connect，最内层）
+// 把非 connect.Error 的错误包成 internal 并消毒线上文本，不透出内部细节
+//（§3.14 行 481）。日志侧经 redact 脱敏；Err 为 nil 的纯业务失败（如
+// admin_missing）只记 code。
+func setupFail(err error) error {
+	var pe *PathError
+	if !errors.As(err, &pe) {
+		slog.Error("setup: unexpected failure", "err", redact(err.Error()))
+		return err
+	}
+	if pe.Err != nil {
+		slog.Error("setup: step failed", "code", pe.Code, "err", redact(pe.Err.Error()))
+	} else {
+		slog.Error("setup: step failed", "code", pe.Code)
+	}
+	cerr := connect.NewError(setupCodeFor(pe.Code), errors.New(pe.Message))
+	return authloftconnect.WithErrorInfo(cerr, authloftconnect.NewErrorInfo(setupDomain, pe.Code, pe.Message))
+}
+
+// setupParamError 参数缺失 / 格式错误（§13 行 1761「参数类错误仍走 §1.5」；
+// §1.5 行 186 invalid_argument 场景含「字段缺失」——proto3 无法区分未设置与
+// 零值，必填校验在 handler 侧）：标准码 invalid_argument（HTTP 400）+
+// ErrorInfo{domain=setup, code=invalid_request}。
+func setupParamError(message string) error {
+	cerr := connect.NewError(connect.CodeInvalidArgument, errors.New(message))
+	return authloftconnect.WithErrorInfo(cerr, authloftconnect.NewErrorInfo(setupDomain, codeInvalidRequest, message))
+}
+
+// Server 安装模式 HTTP 服务：/setup 页面 gin 路由 + SetupService connect
+// handler（实现 setupv1connect.SetupServiceHandler，安装流程本体接 paths.go）。
 type Server struct {
 	configPath string
 	router     *gin.Engine
@@ -96,8 +126,15 @@ type Server struct {
 
 // NewServer 构造 setup server 并注册全部路由（仅 setup 模式使用）。
 // 中间件链：recover 最外层 → requestid（所有响应回写 X-Request-Id 头，
-// 过渡期错误信封亦携带 request_id）；不挂 origin——安装期无 rootOrigin
-// 可配（首次部署可能经 IP 访问），§13 响应恒为 JSON。
+//）；不挂 origin——安装期无 rootOrigin 可配（首次部署可能经 IP
+// 访问），§13 响应恒为 Connect JSON。
+//
+// SetupService 经 internal/connect 装配（§3.14 行 480、行 489「setup 模式下
+// 仅注册 SetupService」）：connect.NewServer 注入请求体上限，HandlerOptions
+// 固定补错误包装 interceptor 于最内层；本域无 session / admin / rpc HMAC
+// 域拦截器（安装期不初始化 DB / Redis 业务链路）。connect mux 经 gin.NoRoute
+// 兜底接管 /api.setup.v1.SetupService/<Method>（生产 router.go 同款桥接，
+// §3.3 行 296；非 Connect 形态路径维持空体 404）。
 func NewServer(configPath string) *Server {
 	s := &Server{
 		configPath: configPath,
@@ -106,10 +143,26 @@ func NewServer(configPath string) *Server {
 	r := gin.New()
 	r.Use(middleware.Recover(), middleware.RequestID())
 	r.GET("/setup", s.handleSetupPage)
-	api := r.Group("/api/setup")
-	api.GET("/status", s.handleStatus)
-	api.POST("/config", s.handleConfig)
-	api.POST("/install", s.handleInstall)
+
+	csrv := authloftconnect.NewServer(maxSetupBody)
+	mount, handler := setupv1connect.NewSetupServiceHandler(s, csrv.HandlerOptions()...)
+	csrv.Register(mount, handler)
+	r.NoRoute(func(c *gin.Context) {
+		// gin 的 serveError 在进 NoRoute 链前已把 writermem.status 置 404
+		//（gin@v1.12.0 gin.go serveError 行 764-765）；而 connect-go 的
+		// unary 成功路径只写 body、不调 WriteHeader（依赖 net/http 隐式
+		// 200，connect@v1.21.1 protocol_connect.go connectUnaryMarshaler.
+		// write），经 gin 写出时会落成残留的 404 状态码——先把已存状态
+		// 复位 200，状态码交还 connect mux 自行表达（错误路径 connect 显式
+		// WriteHeader 覆盖、未注册路径仍 404）。
+		c.Writer.WriteHeader(http.StatusOK)
+		csrv.ServeHTTP(c.Writer, c.Request)
+		// gin 的 serveError（gin v1.12.0 gin.go）对「只写了状态码、未写
+		// body」的响应会追加默认 "404 page not found" body——非 connect
+		// 路径的空体 404 在此强制落盘（WriteHeaderNow 为 no-op 当 mux
+		// 已写出 body）。
+		c.Writer.WriteHeaderNow()
+	})
 	s.router = r
 	return s
 }
@@ -157,138 +210,62 @@ func (s *Server) requestExit() {
 // Exposed 返回退出信号 channel（测试断言安装成功触发退出用）。
 func (s *Server) Exposed() <-chan struct{} { return s.exited }
 
-// configRequest POST /api/setup/config 请求体（接口文档 §13.2）。
-type configRequest struct {
-	Config string `json:"config"`
+// GetStatus 是 SetupService/GetStatus（§13.1 行 1763）：模式判定 + 前端重启
+// 轮询锚点（正常返回即处于 setup 模式；连接被拒 / 404 = 已处于正常模式，
+// §13.4）。本 handler 存活即处于 setup 模式，响应恒 {"mode":"setup"}。
+func (s *Server) GetStatus(_ context.Context, _ *connect.Request[setupv1.GetStatusRequest]) (*connect.Response[setupv1.GetStatusResponse], error) {
+	return connect.NewResponse(&setupv1.GetStatusResponse{Mode: "setup"}), nil
 }
 
-// installRequest POST /api/setup/install 请求体（接口文档 §13.3）。
-type installRequest struct {
-	DBDSN         string `json:"db_dsn"`
-	RedisAddr     string `json:"redis_addr"`
-	RedisPassword string `json:"redis_password"`
-	RedisDB       int    `json:"redis_db"`
-	Root          string `json:"root"`
-	RpID          string `json:"rp_id"`
-	AdminUsername string `json:"admin_username"`
-	AdminPassword string `json:"admin_password"`
-}
-
-// handleStatus GET /api/setup/status（§13.1）：模式判定 + 前端重启轮询锚点
-//（连接被拒 / 404 = 已处于正常模式）。
-func (s *Server) handleStatus(c *gin.Context) {
-	writeSetupJSON(c, http.StatusOK, `{"status":"success","mode":"setup"}`)
-}
-
-// handleConfig POST /api/setup/config：路径 A 上传已有 config（§13.2）。
-func (s *Server) handleConfig(c *gin.Context) {
-	var req configRequest
-	if !bindSetupJSON(c, &req) {
-		return
+// UploadConfig 是 SetupService/UploadConfig（§13.2 行 1767）：路径 A 上传
+// 已有 config，执行体接 paths.go 的 UploadConfig（双路径状态机不动）。
+// 成功先触发退出（exit 0 由部署环境拉起）再返回 restarting:true——响应
+// 由 connect-go 在 handler 返回后写出，Run 的优雅关闭（shutdownGrace 3s）
+// 等在途响应写出后才退出（§13.4 行 1791）。
+func (s *Server) UploadConfig(ctx context.Context, req *connect.Request[setupv1.UploadConfigRequest]) (*connect.Response[setupv1.RestartingResponse], error) {
+	if strings.TrimSpace(req.Msg.Config) == "" {
+		return nil, setupParamError("config is required")
 	}
-	if strings.TrimSpace(req.Config) == "" {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "config is required")
-		return
+	if err := UploadConfig(ctx, s.configPath, req.Msg.Config); err != nil {
+		return nil, setupFail(err)
 	}
-	if err := UploadConfig(c.Request.Context(), s.configPath, req.Config); err != nil {
-		writePathError(c, err)
-		return
-	}
-	writeRestarting(c)
 	s.requestExit()
+	return connect.NewResponse(&setupv1.RestartingResponse{Restarting: true}), nil
 }
 
-// handleInstall POST /api/setup/install：路径 B 全新安装（§13.3）。
-func (s *Server) handleInstall(c *gin.Context) {
-	var req installRequest
-	if !bindSetupJSON(c, &req) {
-		return
+// Install 是 SetupService/Install（§13.3 行 1775）：路径 B 全新安装，执行体
+// 接 paths.go 的 FreshInstall（双路径状态机不动）。root / rp_id 缺省推导取
+// 当前请求 Host——connect-go handler 在分发前把 r.Host 注入 request.Header
+//（connect@v1.21.1 handler.go 行 317-318 setHeaderCanonical(request.Header,
+// "Host", request.Host)），AnyRequest.Header() 原样暴露，无需自造 ctx 注入。
+func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.InstallRequest]) (*connect.Response[setupv1.RestartingResponse], error) {
+	msg := req.Msg
+	if msg.DbDsn == "" || msg.RedisAddr == "" || msg.AdminUsername == "" || msg.AdminPassword == "" {
+		return nil, setupParamError("db_dsn, redis_addr, admin_username and admin_password are required")
 	}
-	if req.DBDSN == "" || req.RedisAddr == "" || req.AdminUsername == "" || req.AdminPassword == "" {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "db_dsn, redis_addr, admin_username and admin_password are required")
-		return
+	if msg.RedisDb < 0 {
+		return nil, setupParamError("redis_db must be >= 0")
 	}
-	if req.RedisDB < 0 {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "redis_db must be >= 0")
-		return
-	}
-	if c.Request.Host == "" {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "missing Host header")
-		return
+	host := req.Header().Get("Host")
+	if host == "" {
+		return nil, setupParamError("missing Host header")
 	}
 	in := InstallInput{
-		DBDSN:         req.DBDSN,
-		RedisAddr:     req.RedisAddr,
-		RedisPassword: req.RedisPassword,
-		RedisDB:       req.RedisDB,
-		Root:          req.Root,
-		RpID:          req.RpID,
-		AdminUsername: req.AdminUsername,
-		AdminPassword: req.AdminPassword,
-		Host:          c.Request.Host,
+		DBDSN:         msg.DbDsn,
+		RedisAddr:     msg.RedisAddr,
+		RedisPassword: msg.RedisPassword,
+		RedisDB:       int(msg.RedisDb),
+		Root:          msg.Root,
+		RpID:          msg.RpId,
+		AdminUsername: msg.AdminUsername,
+		AdminPassword: msg.AdminPassword,
+		Host:          host,
 	}
-	if err := FreshInstall(c.Request.Context(), s.configPath, in); err != nil {
-		writePathError(c, err)
-		return
+	if err := FreshInstall(ctx, s.configPath, in); err != nil {
+		return nil, setupFail(err)
 	}
-	writeRestarting(c)
 	s.requestExit()
-}
-
-// writePathError 把安装路径错误写成原生 JSON 信封：*PathError（§13 域码）→
-// HTTP 200 + status:"error" 业务信封（writeSetupError，不经 codec，
-// Connect 化时改 connect.NewError + ErrorInfo detail）；其余（写盘失败
-// 等服务端故障）→ 500 internal_error（§1.5 框架码）。日志侧经 redact 脱敏；
-// Err 为 nil 的纯业务失败（如 admin_missing）只记 code。
-func writePathError(c *gin.Context, err error) {
-	var pe *PathError
-	if !errors.As(err, &pe) {
-		slog.Error("setup: unexpected failure", "err", redact(err.Error()))
-		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
-		return
-	}
-	if pe.Err != nil {
-		slog.Error("setup: step failed", "code", pe.Code, "err", redact(pe.Err.Error()))
-	} else {
-		slog.Error("setup: step failed", "code", pe.Code)
-	}
-	writeSetupError(c, http.StatusOK, pe.Code, pe.Message)
-}
-
-// writeRestarting 成功响应（§13.2 / §13.3）：{"status":"success","restarting":true}。
-func writeRestarting(c *gin.Context) {
-	writeSetupJSON(c, http.StatusOK, `{"status":"success","restarting":true}`)
-}
-
-// writeSetupJSON 写 setup 域的固定 JSON 响应（域内无 proto 消息——
-// server/proto 未定义 setup 域，body 为固定常量，与 §1.0 信封字节一致）。
-func writeSetupJSON(c *gin.Context, status int, body string) {
-	c.Header("Content-Type", "application/json; charset=utf-8")
-	c.String(status, body)
-}
-
-// bindSetupJSON 解码 JSON 请求体（§1.5 参数类错误）：Content-Type 非
-// application/json → 415；空体 / 非法 JSON → 400。返回是否可继续。
-func bindSetupJSON(c *gin.Context, req any) bool {
-	ct := c.GetHeader("Content-Type")
-	if mediaType, _, err := mime.ParseMediaType(ct); err != nil || mediaType != "application/json" {
-		writeSetupError(c, http.StatusUnsupportedMediaType, setupCodeUnsupportedMediaType, "unsupported media type")
-		return false
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxSetupBody))
-	if err != nil {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "invalid request body")
-		return false
-	}
-	if len(body) == 0 {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "empty request body")
-		return false
-	}
-	if err := json.Unmarshal(body, req); err != nil {
-		writeSetupError(c, http.StatusBadRequest, setupCodeBadRequest, "invalid request body")
-		return false
-	}
-	return true
+	return connect.NewResponse(&setupv1.RestartingResponse{Restarting: true}), nil
 }
 
 // setupPageTmpl /setup 安装页 SPA 空壳（接口文档 §8 行 1398 / 1401-1403）：
@@ -313,19 +290,22 @@ const setupPageTmpl = `<!DOCTYPE html>
 
 // handleSetupPage GET /setup：渲染安装页空壳。setup 模式无 config，al_root
 // 缺省取当前请求 Host（§3.15），static_base 取默认 /assets（§8 行 1410）。
+// 页面路由是 §1.5 行 225 的豁免端点（错误形态按 HTTP 语义）：构造失败直接
+// 空体 500，不套 Connect 错误体。
 func (s *Server) handleSetupPage(c *gin.Context) {
 	nonce, err := genNonce()
 	if err != nil {
 		slog.Error("setup: gen nonce", "err", err)
-		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	init, err := json.Marshal(map[string]string{
 		"al_root":     "https://" + c.Request.Host,
 		"static_base": "/assets",
 	})
-	if err != nil {
-		writeSetupError(c, http.StatusInternalServerError, setupCodeInternalError, "internal error")
+	if err != nil { // map[string]string 的 Marshal，实际不可达
+		slog.Error("setup: marshal init", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	c.Header("Cache-Control", "no-store")

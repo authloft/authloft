@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package api.setup.v1;
+
+// 包名 api.setup.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/setup/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
+// Go 产物：authloft/gen/go/api/setup/v1（包名 setupv1）；connect 侧产物由
+// protoc-gen-connect-go 按本文件 service 定义生成（buf.gen.yaml）。
+option go_package = "authloft/gen/go/api/setup/v1;setupv1";
+
+// GetStatusRequest 是 SetupService/GetStatus 的请求（§13.1 无入参）。
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747
+// 请求 XxxRequest；先例 api/account/v1/profile.proto 的 GetConfigRequest）。
+message GetStatusRequest {}
+
+// GetStatusResponse 是 SetupService/GetStatus 的响应（§13.1 行 1765）：
+// `{"mode":"setup"}`——正常返回即处于 setup 模式；**连接被拒 / 404 = 已处于
+// 正常模式**（该语义同时用于安装完成后的重启轮询，§13.4）。
+message GetStatusResponse {
+  // 固定 "setup"（§13.1）。
+  string mode = 1;
+}
+
+// UploadConfigRequest 是 SetupService/UploadConfig 的请求（§13.2 行 1769-1771）。
+message UploadConfigRequest {
+  // `config.yaml` 全文（字符串，必填，§13.2 行 1771）。
+  string config = 1;
+}
+
+// RestartingResponse 是 UploadConfig / Install 共用的成功响应（§13.2 行 1773、
+// §13.3 行 1787「成功响应 {"restarting":true}」）；两方法共用同一响应依赖
+// buf 的 RPC_REQUEST_RESPONSE_UNIQUE 豁免（buf.yaml except，沿用既有豁免）。
+message RestartingResponse {
+  // 固定 true（§13.4 行 1791：两条路径成功后进程退出 exit 0，由部署环境拉起）。
+  bool restarting = 1;
+}
+
+// InstallRequest 是 SetupService/Install 的请求（§13.3 行 1777-1785）。
+message InstallRequest {
+  // 数据库连接串，必填（§13.3 行 1779）。
+  string db_dsn = 1;
+  // Redis 地址，必填（§13.3 行 1780）。
+  string redis_addr = 2;
+  // Redis 密码，默认空（§13.3 行 1781）。
+  string redis_password = 3;
+  // Redis 库号，默认 0（§13.3 行 1781；整型一律 int64，§12.9 行 1751）。
+  int64 redis_db = 4;
+  // 主域名；缺省自动读取当前请求 Host（§13.3 行 1782）。
+  string root = 5;
+  // WebAuthn RP ID；缺省取当前请求 Host 去掉端口（IP / 内网同样适用），
+  // 可显式覆盖（§13.3 行 1783）。
+  string rp_id = 6;
+  // 管理员用户名，必填（规则同 §2.3，§13.3 行 1784）。
+  string admin_username = 7;
+  // 管理员密码，必填（策略同 §5.6，§13.3 行 1785；§13.5：不回显、不入日志）。
+  string admin_password = 8;
+}
+
+// SetupService 是 setup 域的 Connect service（docs/接口文档.md §13，行 1759-1802）。
+// Connect 路径 = /api.setup.v1.SetupService/<Method>；方法清单与 §13 逐一对应：
+//   GetStatus      §13.1 行 1763
+//   UploadConfig   §13.2 行 1767
+//   Install        §13.3 行 1775
+// 仅 setup 模式注册（§13 行 1761：正常模式下路由不注册，请求一律 404）；
+// 成功响应即消息本身（§1.0），业务失败为 Connect 错误体 + ErrorInfo detail
+//（§13 行 1761 域码：config_invalid / db_unreachable / redis_unreachable /
+// migration_failed / admin_missing / username_invalid 与 §1.6 既有值 password_weak）。
+service SetupService {
+  // 模式判定 + 前端重启轮询锚点（§13.1）。
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  // 路径 A：上传已有 config（§13.2）。
+  rpc UploadConfig(UploadConfigRequest) returns (RestartingResponse);
+  // 路径 B：全新安装（§13.3）。
+  rpc Install(InstallRequest) returns (RestartingResponse);
+}
