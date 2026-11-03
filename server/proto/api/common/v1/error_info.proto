@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+// 位于 v1/ 子目录：buf STANDARD 的 PACKAGE_SAME_DIRECTORY 规则要求文件
+// 目录与包名 api.common.v1 逐段一致。同目录旧文件 error.proto/captcha.proto
+// 仍是旧包名 api.common（pre-connect 基线），本次不迁移、两包名暂时并存。
+package api.common.v1;
+
+// Go 产物：authloft/gen/go/api/common/v1（包名 commonv1）。connect 侧
+// （protoc-gen-connect-go）约定：本消息无 service，不产出 connect 代码；
+// 后续带 service 的 v1 包将生成到同目录 <包名>connect 子包。
+option go_package = "authloft/gen/go/api/common/v1;commonv1";
+
+// ErrorInfo 是 Connect 错误体 details 中承载业务细分码的消息
+// （docs/接口文档.md §1.5 行 199-221、§12.9 行 1750）。
+// 字段约定（docs/接口文档.md §12.9 行 1749）：
+//   - snake_case、编号从 1 起连续、只增字段不改字段号（§12.8）
+//   - 整型一律 int64（§1.12；retry_after / attempts_left 可选，零值省略）
+//   - request_id 不在错误体内（§1.5 行 223：统一走 X-Request-Id 响应头），
+//     故不定义该字段
+message ErrorInfo {
+  // 业务域：sso / account / admin / rpc / setup（§1.5 行 217）。
+  string domain = 1;
+  // 业务细分码，封闭集合即 §1.6 词汇表（§1.5 行 218）。
+  string code = 2;
+  // 可选兜底文案（i18n 之后的最终展示，§1.5 行 219）。
+  string message = 3;
+  // 可选：冷却 / 封禁剩余秒数，驱动倒计时（§1.5 行 220）。
+  int64 retry_after = 4;
+  // 可选：剩余尝试次数（§1.5 行 221）。
+  int64 attempts_left = 5;
+}

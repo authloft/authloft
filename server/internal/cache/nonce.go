@@ -1,7 +1,8 @@
 // nonce 去重（docs/后端架构.md §5.1 行 861 + §17 行 1718）：RPC 请求的
 // X-Nonce-ID 以 SET NX EX 30s 写入 al:rpc:nonce:{client_id}:{sha256(nonce)}，
 // 抢占失败即 30s 窗口内重放。nonce 去重必须先于签名校验（§3.3 行 314），
-// 顺序由调用方（middleware/rpc.go）负责。Redis 客户端经构造注入（叶子件，
+// 顺序由调用方（internal/connect 的 rpc HMAC 拦截器）负责。
+// Redis 客户端经构造注入（叶子件，
 // 不 import config / repo，同 epoch.go 口径）。
 package cache
 

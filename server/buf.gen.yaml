@@ -5,6 +5,13 @@ plugins:
   - local: protoc-gen-go
     out: gen/go
     opt: paths=source_relative
+  # Connect 产物：server/gen/go/api/**/<包名>connect/*_connect.go（docs/后端架构.md
+  # §1.6 行 100）。生成器二进制经 `go install connectrpc.com/connect/cmd/
+  # protoc-gen-connect-go@v1.21.1` 装到 PATH（与 connect-go 同版本锁 v1.21.1）；
+  # 无 service 定义的 .proto 不产出任何文件（插件语义）。
+  - local: protoc-gen-connect-go
+    out: gen/go
+    opt: paths=source_relative
   # TS 产物：web/src/gen/proto/**（docs/后端架构.md §1.6 行 117、docs/前端架构.md §2 行 120）。
   # 生成器二进制固定取自 web/node_modules，不依赖全局安装（docs/后端架构.md §1.6 行 118）。
   - local: [node, ../web/node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es]
