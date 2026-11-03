@@ -1,9 +1,10 @@
 // bootstrap 正常模式装配链测试（§3.1 行 253）：装配顺序断言
 //（config → DB → migrate → Redis，用错误传播逐段证明）+ env-skip 真连
-// 用例（DB 连通、migrate up 幂等、Redis PING）。清理与错峰口径沿用
-// migrate_test / setup_db_test：用例开始清空全部表、结束后
-// 清空并自证零残留；连接串只经环境变量注入（UC_TEST_MYSQL_DSN /
-// UC_TEST_REDIS_ADDR），代码不含主机 / 凭证信息。
+// 用例（DB 连通、migrate up 幂等、Redis PING）。清理口径沿用
+// 既有 DB 测试（migrate_test / setup_db_test）：用例开始清空全部表、结束后
+// 清空并自证零残留；跨二进制串行用 GET_LOCK 命名锁；
+// 连接串只经环境变量注入（UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR），
+// 代码不含主机 / 凭证信息。
 package main
 
 import (
@@ -18,16 +19,21 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"authloft/internal/config"
+	"authloft/internal/connect"
 )
 
 // wantTables §4 全部 11 张表（§3.16 首版迁移范围），与 migrate_test 一致。
@@ -45,38 +51,67 @@ var wantTables = []string{
 	"settings",
 }
 
-// TestMain 共享测试库错峰（与 setup_db_test 同模式）：DSN 存在时先等
-// 库「安静」（表空且无其他连接，连续多次确认）再进 m.Run()——避免与同时在
-// 跑的 migrate / setup 测试二进制互删对方的表（本包真连用例会 migrate up +
-// dropAllTables）。
+// testDBLockName 测试库互斥锁名（与 settings / repo / migrate / setup 的
+// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
+// TestMain 注释。
+const testDBLockName = "uc_test_db_slot"
+
+// TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
+// settings 包 store_test.go 的 TestMain 注释）。取代旧的 waitQuietDB
+// 错峰轮询（五包统一接锁）：旧口径查 processlist「无其他连接」，
+// 而兄弟二进制阻塞在 GET_LOCK 的等待连接常驻 processlist，计入会互相
+// 卡到超时（settings 包实测）；持锁串行后错峰不再必要，等表空仅作
+// 防御性兜底（本包真连用例会 migrate up + dropAllTables）。
 func TestMain(m *testing.M) {
-	if dsn := os.Getenv("UC_TEST_MYSQL_DSN"); dsn != "" {
-		waitQuietDB(dsn)
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	if dsn == "" {
+		os.Exit(m.Run())
 	}
-	os.Exit(m.Run())
+	db := acquireTestDB(dsn)
+	code := m.Run()
+	if db != nil {
+		_ = db.Close() // 关连接即释放 GET_LOCK
+	}
+	os.Exit(code)
 }
 
-// waitQuietDB / dbQuiet / dropAllTables / assertNoTables 与 migrate_test /
-// setup_db_test 同实现（跨包私有不共享，保持同口径副本）。
+// acquireTestDB / waitQuietOnConn / connQuiet / dropAllTables /
+// assertNoTables 与 settings / repo 测试同实现（跨包私有不共享，
+// 保持同口径副本）。
 
-// waitQuietDB 等待共享测试库空闲：SHOW TABLES 为空 且 processlist 中无
-// 其他 test 库连接（排除自身），连续 quietConfirmations 次、间隔
-// quietInterval 满足才放行；总上限 quietTimeout 防御性兜底。
-func waitQuietDB(dsn string) {
+// acquireTestDB 获取测试库互斥槽：单连接 *sql.DB——GET_LOCK 与安静探测
+// 共用同一物理连接（连接一多探测口径就乱）。
+func acquireTestDB(dsn string) *sql.DB {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	var got int
+	if err := db.QueryRow("SELECT GET_LOCK(?, ?)", testDBLockName, 300).Scan(&got); err != nil || got != 1 {
+		_ = db.Close()
+		return nil
+	}
+	waitQuietOnConn(db)
+	return db
+}
+
+// waitQuietOnConn 在持锁连接上等库安静：库内无表（有表 = 有未按预期
+// 清理的残留），连续 quietConfirmations 次、间隔 quietInterval 才放行；
+// 总上限 quietTimeout 防御性兜底（超时放行，宁可试跑不挂死）。不看
+// 连接数：兄弟二进制阻塞在 GET_LOCK 的等待连接无表、无害，若计入会
+// 互相卡到超时（实测）。
+func waitQuietOnConn(db *sql.DB) {
 	const (
 		quietConfirmations = 3
 		quietInterval      = 500 * time.Millisecond
 		quietTimeout       = 90 * time.Second
 	)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return // 连接失败留给具体用例报告
-	}
-	defer db.Close()
 	deadline := time.Now().Add(quietTimeout)
 	streak := 0
 	for time.Now().Before(deadline) {
-		if dbQuiet(db) {
+		if connQuiet(db) {
 			streak++
 			if streak >= quietConfirmations {
 				return
@@ -88,22 +123,13 @@ func waitQuietDB(dsn string) {
 	}
 }
 
-// dbQuiet 单次探测：库内无表且无其他会话连接。
-func dbQuiet(db *sql.DB) bool {
+// connQuiet 单次探测：库内无表。
+func connQuiet(db *sql.DB) bool {
 	var tables int
 	if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables); err != nil {
 		return false
 	}
-	if tables > 0 {
-		return false
-	}
-	var others int
-	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM information_schema.processlist WHERE db = DATABASE() AND id <> CONNECTION_ID()",
-	).Scan(&others); err != nil {
-		return false
-	}
-	return others == 0
+	return tables == 0
 }
 
 // dropAllTables 删除测试库中全部表（含 goose_db_version），实现用例间
@@ -503,6 +529,148 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 		t.Errorf("TLS 1.2 handshake should succeed, got %v", err)
 	} else {
 		conn.Close()
+	}
+}
+
+// —— Connect 前缀链全等效（requestid → logger → metrics → origin，
+// §3.3 行 304）——Connect 域流量计入 /metrics 与访问日志的装配层实证 ——
+
+// connectTestHandler 构造带已注册 Connect service 的顶层分流 handler
+//（与生产 buildHandler 同链：mux 前缀 requestid → logger → metrics →
+// origin → handler）。
+func connectTestHandler(t *testing.T, csrv *connect.Server) http.Handler {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	h, _ := buildHandler(&config.Config{
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+	}, csrv)
+	return h
+}
+
+// metricsRequestsTotal 从 /metrics 文本读 requests_total。/metrics 挂 gin
+// 全局链（读取请求自身也被 gin 版 Metrics 计数），读数是 handler 执行时的
+// 快照、不含本次读请求自身——增量断言须把上一次读请求算进去。
+func metricsRequestsTotal(t *testing.T, h http.Handler) int {
+	t.Helper()
+	rec := doRequest(h, http.MethodGet, "/metrics", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if v, ok := strings.CutPrefix(line, "requests_total "); ok {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil {
+				t.Fatalf("parse requests_total %q: %v", v, err)
+			}
+			return n
+		}
+	}
+	t.Fatalf("/metrics body missing requests_total: %q", rec.Body.String())
+	return 0
+}
+
+// TestConnectDomainMetricsAndAccessLog Connect 域流量计入 /metrics 与访问
+// 日志（ServeMux 分流后 Connect 请求不经 gin 全局链，但前缀链
+// HTTPMetrics 与 gin 版 Metrics 共用同一组包级原子变量——读 /metrics 文本
+// 断言 Connect 请求（origin 403 拒绝与 200 放行均计）真实计入；访问日志由
+// HTTPLogger 输出（与 gin 版共用 logAccess），含 request_id / method /
+// path / status 且 request_id 与响应头一致。
+func TestConnectDomainMetricsAndAccessLog(t *testing.T) {
+	lc := &accessLogCap{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(lc))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	csrv := connect.NewServer(1 << 20)
+	csrv.Register("/api.test.v1.TService/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	h := connectTestHandler(t, csrv)
+
+	// 基线读数（本读请求完成后再 +1，不进自身读数快照）。
+	base := metricsRequestsTotal(t, h)
+
+	// 无 Origin 写请求 → 前缀链 origin 403（metrics 照计数、logger 记 403）。
+	rec403 := doRequest(h, http.MethodPost, "/api.test.v1.TService/Do", nil)
+	if rec403.Code != http.StatusForbidden {
+		t.Fatalf("no origin: status = %d, want %d (body %s)", rec403.Code, http.StatusForbidden, rec403.Body.String())
+	}
+	if rec403.Header().Get("X-Request-Id") == "" {
+		t.Error("X-Request-Id is empty on 403, want non-empty (requestid 等效)")
+	}
+
+	// 同源 → 200 ×2（HTTPMetrics 每请求 +1）。
+	var lastID string
+	for i := 0; i < 2; i++ {
+		rec := doRequest(h, http.MethodPost, "/api.test.v1.TService/Do", map[string]string{
+			"Origin": assembledRootOrigin, "Content-Type": "application/json",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("connect success %d: status = %d, want %d", i, rec.Code, http.StatusOK)
+		}
+		lastID = rec.Header().Get("X-Request-Id")
+	}
+	if lastID == "" {
+		t.Fatal("X-Request-Id is empty on connect success")
+	}
+
+	// /metrics 增量 = 3 次 Connect 请求（403 也计）+ 1 次基线读自身完成。
+	after := metricsRequestsTotal(t, h)
+	if after-base != 4 {
+		t.Errorf("requests_total delta = %d, want 4 (3 次 connect 请求 + 1 次基线读自身；base=%d after=%d)", after-base, base, after)
+	}
+
+	// 访问日志：403 与 200 各有 Connect 访问记录，request_id/method/status 正确。
+	var got403, got200WithID bool
+	for _, attrs := range lc.attrs {
+		if attrs["path"] != "/api.test.v1.TService/Do" {
+			continue
+		}
+		switch attrs["status"] {
+		case "403":
+			got403 = true
+			if attrs["request_id"] == "" {
+				t.Error("403 access log request_id is empty, want non-empty")
+			}
+			if attrs["method"] != http.MethodPost {
+				t.Errorf("403 access log method = %q, want POST", attrs["method"])
+			}
+		case "200":
+			if attrs["request_id"] == lastID {
+				got200WithID = true
+			}
+		}
+	}
+	if !got403 {
+		t.Errorf("no access record with status 403 for connect request: %v", lc.attrs)
+	}
+	if !got200WithID {
+		t.Errorf("no access record with status 200 and request_id %q: %v", lastID, lc.attrs)
+	}
+}
+
+// TestConnectDomainPanicRequestCounted panic 的 Connect 请求也计数
+//（HTTPMetrics defer 累加，§3.3 行 302）：生产路径 panic 由 connect-go
+// WithRecover 在 handler 内归一为正常返回（defer 照常执行）；本用例注册
+// 裸 handler 模拟 panic 穿过前缀链 unwind（http.Server 连接级恢复），
+// defer 同样计数。
+func TestConnectDomainPanicRequestCounted(t *testing.T) {
+	csrv := connect.NewServer(1 << 20)
+	csrv.Register("/api.boom.v1.Boom/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		panic("connect boom")
+	}))
+	h := connectTestHandler(t, csrv)
+
+	base := metricsRequestsTotal(t, h)
+	func() {
+		defer func() { _ = recover() }() // 模拟连接级恢复：panic 已穿过前缀链 HTTPMetrics 的 defer
+		doRequest(h, http.MethodPost, "/api.boom.v1.Boom/Do", map[string]string{
+			"Origin": assembledRootOrigin, "Content-Type": "application/json",
+		})
+	}()
+	after := metricsRequestsTotal(t, h)
+	if after-base != 2 { // 1 次 panic 请求 + 1 次基线读自身完成
+		t.Errorf("requests_total delta = %d, want 2 (panic 请求也计数；base=%d after=%d)", after-base, base, after)
 	}
 }
 

@@ -11,7 +11,9 @@ import (
 
 // 零第三方依赖的 HTTP 指标（docs/后端架构.md §3.3 行 309）：
 // 热路径仅 sync/atomic 原子计数，禁 mutex、禁每请求 map 写、禁热路径
-// 字符串分配；包级变量、进程生命周期单调递增。
+// 字符串分配；包级变量、进程生命周期单调递增。gin 版 Metrics 与 http 版
+// HTTPMetrics（httpmw.go）共用本组包级变量——Connect 域流量同样计入
+// /metrics（零复制口径），不另立计数器与指标键。
 var (
 	requestsTotal      atomic.Uint64 // 累计完成请求数（含 panic 请求）
 	durationNanosTotal atomic.Uint64 // 累计处理耗时（纳秒）

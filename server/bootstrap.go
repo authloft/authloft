@@ -8,10 +8,10 @@
 //（§3.15）；存在 → 正常装配（保持既有结构）。
 //
 // 顶层分流与监听（§3.1 行 241-247）：标准库 http.ServeMux
-// 顶层——Connect handler 按路径前缀挂 mux（requestid / origin 等效链），
-// 其余全部交给 gin；监听由 server 段 TLS 配置决定（Go 1.26 标准库原生
-// http.Server.Protocols：未配 cert+key → HTTP/1.1 + H2C；已配 → TLS 双协议
-// + min_tls_version），不引 x/net。
+// 顶层——Connect handler 按路径前缀挂 mux（requestid / logger / metrics /
+// origin 等效链），其余全部交给 gin；监听由 server 段
+// TLS 配置决定（Go 1.26 标准库原生 http.Server.Protocols：未配 cert+key
+// → HTTP/1.1 + H2C；已配 → TLS 双协议 + min_tls_version），不引 x/net。
 
 package main
 
@@ -141,11 +141,13 @@ func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
 }
 
 // buildHandler 顶层分流组装（§3.1 行 243：标准库 http.ServeMux）：
-//   - Connect 各路由按路径前缀挂 mux——前缀链 = http 版 requestid（X-Request-Id
-//     全响应回写）→ http 版 origin（跨站 403）→ handler；中间件两版与 gin 版
-//     共用同一实现（middleware/httpmw.go，Connect 域等效）。
-//     logger / metrics 的 Connect 域等效未挂（取舍：观察类中间件强绑 gin
-//     全局链，需 http 版重写，本次聚焦安全与链路 ID 等效；接入日志可另行补）；
+//   - Connect 各路由按路径前缀挂 mux——前缀链与 gin 全局链等效（§3.3
+//     行 304 挂载顺序，recover 由 connect-go WithRecover 在 handler 内
+//     等效、不进本链）：http 版 requestid（X-Request-Id 全响应回写）→
+//     logger（访问日志）→ metrics（defer 累加，Connect 域流量同样计入
+//     /metrics）→ origin（跨站 403）→ handler；中间件两版与 gin 版共用
+//     同一实现（middleware/httpmw.go——requestid/origin 共用纯函数、
+//     logger 共用 logAccess、metrics 共用同一组包级原子变量）；
 //   - 其余全部 mux.Handle("/", ginEngine)：页面 / 静态 / OIDC / gateway /
 //     未注册路径（含未注册的 connect 形态路径）→ gin 原生 404 兜底
 //     （不再经 gin.NoRoute 桥，404 残留缺陷结构性消除）；
@@ -162,7 +164,11 @@ func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.
 	mux.Handle("/", ginEngine)
 	for _, rt := range csrv.Routes() {
 		mux.Handle(rt.Prefix, middleware.HTTPRequestID(
-			middleware.HTTPOrigin(cfg.Authloft.Root, refererAllowlist, rt.Handler),
+			middleware.HTTPLogger(
+				middleware.HTTPMetrics(
+					middleware.HTTPOrigin(cfg.Authloft.Root, refererAllowlist, rt.Handler),
+				),
+			),
 		))
 	}
 	return mux, apiGroup

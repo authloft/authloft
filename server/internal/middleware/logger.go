@@ -25,12 +25,20 @@ func Logger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		slog.Info("access",
-			"request_id", c.GetString(RequestIDKey),
-			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
-			"status", c.Writer.Status(),
-			"latency", time.Since(start),
-		)
+		logAccess(c.GetString(RequestIDKey), c.Request.Method, c.Request.URL.Path, c.Writer.Status(), time.Since(start))
 	}
+}
+
+// logAccess 输出一条访问日志——gin 版 Logger 与 http 版 HTTPLogger
+//（httpmw.go）共用的唯一字段口径：request_id / method / path / status /
+// latency 五字段经 slog 单条结构化输出，不打印 body、query、头等任何
+// 请求内容（敏感信息约束见上）。禁止在任一侧另立字段口径。
+func logAccess(requestID, method, path string, status int, latency time.Duration) {
+	slog.Info("access",
+		"request_id", requestID,
+		"method", method,
+		"path", path,
+		"status", status,
+		"latency", latency,
+	)
 }
