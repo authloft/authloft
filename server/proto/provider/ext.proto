@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package provider;
+
+// 本包是存储模型（docs/接口文档.md §12 前言行 1604-1606：前端管理后台按字段
+// 渲染 / 构造 / 校验的结构，契约在接口文档 §12，双端不得各自手写）。裸包名
+// provider 不带 .v1 版本后缀，系存储模型惯例（与 token 包同构；§12.1 行 1642
+// `package provider;`）。生成到 gen/go/provider/，Go 包名 provider。
+// 存储模型豁免 32 位整型 lint（bufcheck 仅拦 proto/api/**）：port / presign_ttl
+// 的 int32 系 §12.1 行 1659/1679 文档定稿，照文档逐字沿用。
+option go_package = "authloft/gen/go/provider;provider";
+
+// Ext 是外部服务扩展字段（docs/接口文档.md §12.1 行 1636-1690），对应
+// provider.ext 列（VARBINARY，§12.0 行 1627：结构固定走 Protobuf）。跨类型共有
+// 属性作真实列（用于筛选、排序、索引），凭证 / 端点 / 存储配置 / 厂商长尾全部
+// 进此结构。敏感字段不做二次加密，访问控制靠接口边界（行 1696：前台接口与
+// __AUTHLOFT_INIT__.methods 永不返回 ext 中任何凭证字段，仅 /api/admin/providers/**
+// 可返回明文且必须校验管理员会话 uid==1）。字段名 / 编号 / 类型 / 注释与
+// 行 1644-1690 的 protobuf 定义逐字一致。
+message Ext {
+  // ---- 凭证 ----
+  string client_id       = 1;
+  string client_secret   = 2;   // 明文存于 ext 内
+  string app_id          = 3;   // 微信/支付宝/小程序
+  string cert            = 4;   // 证书 / 公钥，如支付宝公钥
+  string scopes          = 5;
+  map<string, string> user_mapping = 6;  // 三方字段 → Authloft 字段，值为 JSONata 表达式
+
+  // ---- 端点 ----
+  string provider_url           = 10;  // OIDC issuer / 服务地址
+  string custom_auth_url        = 11;
+  string custom_token_url       = 12;
+  string custom_user_info_url   = 13;
+  string host                   = 14;
+  int32  port                   = 15;
+  bool   disable_ssl            = 16;  // 内网自签场景
+  string intranet_endpoint      = 17;  // 服务端回源优先使用
+
+  // ---- 存储（category=storage 生效）----
+  string bucket        = 20;
+  string region_id     = 21;
+  string path_prefix   = 22;
+  string domain        = 23;  // 自定义 CDN 域名
+  string endpoint      = 24;  // S3 endpoint
+  bool   path_style    = 25;  // S3 path-style addressing
+  bool   public_read   = 26;
+
+  // ---- 小程序码（category=oauth, type=wechat_mp_scan 生效）----
+  bool   qrcode_auto_delete = 30;  // 登录成功后是否删除码图，删除走延迟队列
+  string storage_provider   = 31;  // 存储 Provider Key
+  string storage_path       = 32;  // 存储路径模板，JSONata 表达式
+
+  // ---- 上传模式（category=storage 生效）----
+  string upload_mode   = 35;  // proxy=经 Authloft 中转（默认）| direct=前端预签名直传
+  int32  presign_ttl   = 36;  // 直传预签名 URL 有效期（秒），默认 300
+  int64  max_size      = 37;  // 单文件上限（字节），默认 2MB
+  string allowed_types = 38;  // 允许的 MIME 白名单，逗号分隔，如 image/png,image/jpeg
+
+  // ---- 消息（category=sms/email 生效）----
+  string from          = 40;  // 邮件发件人 / 短信签名
+  string sign_name     = 41;
+  string template_code = 42;  // 国内短信模板 ID
+
+  // ---- 长尾 ----
+  map<string, string> metadata = 50;  // 支付宝 sign_type、飞书 app_ticket、S3 acl/storage_class ...
+}

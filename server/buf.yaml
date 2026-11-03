@@ -31,6 +31,15 @@ lint:
   ignore_only:
     RPC_REQUEST_STANDARD_NAME:
       - proto/api/admin/v1/admin.proto
+    # 存储模型：接口文档 §12.1/§12.2 定稿的 ext port/presign_ttl、
+    # meta totp_digits/totp_period 为 int32 字段；后端架构 §1.6 行 89 的拦截
+    # 针对接口层整型口径（接口文档 §12.9「整型一律 int64」），存储模型按
+    # 「文档优先于代码」豁免（沿用既有豁免先例）。
+    # 仅 scope 存储模型三目录，proto/api/** 仍受本规则约束。
+    PLUGIN_FIELD_NO_32BIT_INT:
+      - proto/provider
+      - proto/credential
+      - proto/client
 plugins:
   # 自定义 check 插件（官方插件机制，buf.build/go/bufplugin SDK）。
   # 插件是独立 Go module（tools/bufcheck/go.mod），不污染 server 主模块依赖。

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package client;
+
+// 本包是存储模型（docs/接口文档.md §12 前言行 1606：client.RedirectUris 前端
+// 管理后台按字段构造 / 校验，契约在接口文档 §12.3，双端不得各自手写）。裸包名
+// client 不带 .v1 版本后缀，系存储模型惯例（与 token 包同构）。生成到
+// gen/go/client/，Go 包名 client。
+option go_package = "authloft/gen/go/client;client";
+
+// ClientRedirectUris 是客户端回调白名单（docs/接口文档.md §12.3 行 1720-1728），
+// 对应 oidc_client.redirect_uris 列（VARBINARY，§12.0 行 1627：结构固定走
+// Protobuf；SSO 客户端同源）。字段名 / 编号 / 类型 / 注释与行 1725-1727 的
+// protobuf 定义逐字一致。
+message ClientRedirectUris {
+  repeated string uris = 1;   // 支持 * 通配，整段匹配
+}
