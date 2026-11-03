@@ -61,7 +61,8 @@ func TestNegotiateFormatOIDCWhitelistAlwaysJSON(t *testing.T) {
 }
 
 // ⑥ 闭环：requestid + negotiate 两中间件 + WriteError，
-// Protobuf 协商下 proto.Unmarshal 解出 api.Error 且 request_id 非空。
+// Protobuf 协商下 proto.Unmarshal 解出 api.ErrorEnvelope（status:"error" 包裹
+// 内层 api.Error）且 request_id 非空。
 func TestRequestIDAndNegotiateProtoErrorIntegration(t *testing.T) {
 	r := newTestRouter(RequestID(), NegotiateFormat())
 	r.GET("/boom", func(c *gin.Context) {
@@ -75,14 +76,20 @@ func TestRequestIDAndNegotiateProtoErrorIntegration(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != contentTypeProto {
 		t.Fatalf("Content-Type = %q, want %q", got, contentTypeProto)
 	}
-	var errBody api.Error
-	if err := proto.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
-		t.Fatalf("unmarshal api.Error: %v", err)
+	var envelope api.ErrorEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal api.ErrorEnvelope: %v", err)
 	}
-	if errBody.GetCode() != codec.CodeBadRequest {
-		t.Errorf("code = %q, want %q", errBody.GetCode(), codec.CodeBadRequest)
+	if envelope.GetStatus() != codec.StatusError {
+		t.Errorf("status = %q, want %q (信封形状)", envelope.GetStatus(), codec.StatusError)
 	}
-	if errBody.GetRequestId() == "" {
+	if envelope.GetError() == nil {
+		t.Fatalf("envelope.Error is nil, want inner error object")
+	}
+	if envelope.GetError().GetCode() != codec.CodeBadRequest {
+		t.Errorf("error.code = %q, want %q", envelope.GetError().GetCode(), codec.CodeBadRequest)
+	}
+	if envelope.GetError().GetRequestId() == "" {
 		t.Errorf("api.Error.request_id is empty, want non-empty")
 	}
 }

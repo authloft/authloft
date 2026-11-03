@@ -53,7 +53,10 @@ func TestContentTypeTextPlainRejected(t *testing.T) {
 			continue
 		}
 		body := decodeErrorBody(t, rec)
-		if got := body["code"]; got != codec.CodeUnsupportedMediaType {
+		if got := body["status"]; got != codec.StatusError {
+			t.Errorf("Content-Type %q: status = %v, want %q (信封形状)", ct, got, codec.StatusError)
+		}
+		if got := errorObject(t, body)["code"]; got != codec.CodeUnsupportedMediaType {
 			t.Errorf("Content-Type %q: error code = %v, want %q", ct, got, codec.CodeUnsupportedMediaType)
 		}
 	}

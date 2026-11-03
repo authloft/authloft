@@ -194,8 +194,8 @@ func TestBindOversizedBodyWritesBadRequest(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
-	if got := decodeErrorMap(t, rec.Body.Bytes())["code"]; got != CodeBadRequest {
-		t.Errorf("code = %v, want %q", got, CodeBadRequest)
+	if got := errorObject(t, decodeErrorMap(t, rec.Body.Bytes()))["code"]; got != CodeBadRequest {
+		t.Errorf("error.code = %v, want %q", got, CodeBadRequest)
 	}
 }
 

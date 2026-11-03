@@ -22,6 +22,16 @@ func decodeErrorMap(t *testing.T, body []byte) map[string]any {
 	return got
 }
 
+// errorObject 取出信封内层 error 对象（§1.0 行 57：{"status":"error","error":{…}}）。
+func errorObject(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	obj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("envelope missing \"error\" object: %v", body)
+	}
+	return obj
+}
+
 func TestWriteErrorJSON(t *testing.T) {
 	c, rec := newTestContext()
 	SetFormat(c, FormatJSON)
@@ -39,14 +49,21 @@ func TestWriteErrorJSON(t *testing.T) {
 	}
 
 	body := decodeErrorMap(t, rec.Body.Bytes())
-	if got := body["code"]; got != CodeBadRequest {
-		t.Errorf("code = %v, want %q", got, CodeBadRequest)
+	if got := body["status"]; got != StatusError {
+		t.Errorf("status = %v, want %q", got, StatusError)
 	}
-	if got := body["message"]; got != "invalid request body" {
-		t.Errorf("message = %v, want %q", got, "invalid request body")
+	if _, exists := body["code"]; exists {
+		t.Errorf("body has top-level code %v, want code only inside error object (§1.0 envelope)", body["code"])
 	}
-	if got := body["request_id"]; got != "req-json" {
-		t.Errorf("request_id = %v, want %q", got, "req-json")
+	errObj := errorObject(t, body)
+	if got := errObj["code"]; got != CodeBadRequest {
+		t.Errorf("error.code = %v, want %q", got, CodeBadRequest)
+	}
+	if got := errObj["message"]; got != "invalid request body" {
+		t.Errorf("error.message = %v, want %q", got, "invalid request body")
+	}
+	if got := errObj["request_id"]; got != "req-json" {
+		t.Errorf("error.request_id = %v, want %q", got, "req-json")
 	}
 
 	raw := rec.Body.String()
@@ -61,8 +78,11 @@ func TestWriteErrorJSONRequestIDDefaultsToEmpty(t *testing.T) {
 	WriteError(c, http.StatusUnauthorized, CodeUnauthorized, "")
 
 	body := decodeErrorMap(t, rec.Body.Bytes())
-	if got, ok := body["request_id"]; !ok || got != "" {
-		t.Errorf("request_id = %v (present=%v), want present empty string", got, ok)
+	if got := body["status"]; got != StatusError {
+		t.Errorf("status = %v, want %q", got, StatusError)
+	}
+	if got, ok := errorObject(t, body)["request_id"]; !ok || got != "" {
+		t.Errorf("error.request_id = %v (present=%v), want present empty string", got, ok)
 	}
 }
 
@@ -85,10 +105,14 @@ func TestWriteErrorProto(t *testing.T) {
 		t.Errorf("Content-Length = %q, body length %d", got, rec.Body.Len())
 	}
 
-	var errBody api.Error
-	if err := proto.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
-		t.Fatalf("unmarshal api.Error: %v", err)
+	var envelope api.ErrorEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal api.ErrorEnvelope: %v", err)
 	}
+	if envelope.GetStatus() != StatusError {
+		t.Errorf("status = %q, want %q", envelope.GetStatus(), StatusError)
+	}
+	errBody := envelope.GetError()
 	if errBody.GetCode() != CodeNotFound {
 		t.Errorf("code = %q, want %q", errBody.GetCode(), CodeNotFound)
 	}
@@ -118,8 +142,12 @@ func TestWriteErrorCodeStatusMatrix(t *testing.T) {
 			if rec.Code != tt.status {
 				t.Errorf("status = %d, want %d", rec.Code, tt.status)
 			}
-			if got := decodeErrorMap(t, rec.Body.Bytes())["code"]; got != tt.code {
-				t.Errorf("code = %v, want %q", got, tt.code)
+			body := decodeErrorMap(t, rec.Body.Bytes())
+			if got := body["status"]; got != StatusError {
+				t.Errorf("status word = %v, want %q (envelope shape)", got, StatusError)
+			}
+			if got := errorObject(t, body)["code"]; got != tt.code {
+				t.Errorf("error.code = %v, want %q", got, tt.code)
 			}
 		})
 	}
@@ -175,11 +203,15 @@ func TestWriteBindErrorMapping(t *testing.T) {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}
 			body := decodeErrorMap(t, rec.Body.Bytes())
-			if got := body["code"]; got != tt.wantCode {
-				t.Errorf("code = %v, want %q", got, tt.wantCode)
+			if got := body["status"]; got != StatusError {
+				t.Errorf("status = %v, want %q (envelope shape)", got, StatusError)
 			}
-			if got := body["request_id"]; got != "req-bind" {
-				t.Errorf("request_id = %v, want %q", got, "req-bind")
+			errObj := errorObject(t, body)
+			if got := errObj["code"]; got != tt.wantCode {
+				t.Errorf("error.code = %v, want %q", got, tt.wantCode)
+			}
+			if got := errObj["request_id"]; got != "req-bind" {
+				t.Errorf("error.request_id = %v, want %q", got, "req-bind")
 			}
 			if raw := rec.Body.String(); strings.Contains(raw, "boom") || strings.Contains(raw, "secret token") {
 				t.Errorf("body = %s, must not expose internal decode error", raw)
@@ -197,14 +229,71 @@ func TestWriteBindErrorProto(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
-	var errBody api.Error
-	if err := proto.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
-		t.Fatalf("unmarshal api.Error: %v", err)
+	var envelope api.ErrorEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal api.ErrorEnvelope: %v", err)
 	}
-	if errBody.GetCode() != CodeBadRequest {
-		t.Errorf("code = %q, want %q", errBody.GetCode(), CodeBadRequest)
+	if envelope.GetStatus() != StatusError {
+		t.Errorf("status = %q, want %q (envelope shape)", envelope.GetStatus(), StatusError)
 	}
-	if errBody.GetRequestId() != "req-bind-proto" {
-		t.Errorf("request_id = %q, want %q", errBody.GetRequestId(), "req-bind-proto")
+	if envelope.GetError().GetCode() != CodeBadRequest {
+		t.Errorf("error.code = %q, want %q", envelope.GetError().GetCode(), CodeBadRequest)
+	}
+	if envelope.GetError().GetRequestId() != "req-bind-proto" {
+		t.Errorf("error.request_id = %q, want %q", envelope.GetError().GetRequestId(), "req-bind-proto")
+	}
+}
+
+// WriteBizError 是业务失败出口（§1.0 行 57）：HTTP 200 + status:"error" 信封，
+// error.code 取 §1.6 词汇或域内定义值——不做 §1.5 封闭集校验；request_id 同样注入。
+func TestWriteBizErrorJSON(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatJSON)
+	c.Set(RequestIDKey, "req-biz")
+	WriteBizError(c, "password_weak", "password too weak")
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d（业务失败一律 200，§1.5 行 202）", rec.Code, http.StatusOK)
+	}
+	body := decodeErrorMap(t, rec.Body.Bytes())
+	if got := body["status"]; got != StatusError {
+		t.Errorf("status = %v, want %q", got, StatusError)
+	}
+	errObj := errorObject(t, body)
+	if got := errObj["code"]; got != "password_weak" {
+		t.Errorf("error.code = %v, want %q（§1.6 词汇，不校验 §1.5 封闭集）", got, "password_weak")
+	}
+	if got := errObj["message"]; got != "password too weak" {
+		t.Errorf("error.message = %v, want %q", got, "password too weak")
+	}
+	if got := errObj["request_id"]; got != "req-biz" {
+		t.Errorf("error.request_id = %v, want %q", got, "req-biz")
+	}
+}
+
+func TestWriteBizErrorProto(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatProto)
+	c.Set(RequestIDKey, "req-biz-proto")
+	WriteBizError(c, "config_invalid", "")
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != mediaProto {
+		t.Errorf("Content-Type = %q, want %q", got, mediaProto)
+	}
+	var envelope api.ErrorEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal api.ErrorEnvelope: %v", err)
+	}
+	if envelope.GetStatus() != StatusError {
+		t.Errorf("status = %q, want %q", envelope.GetStatus(), StatusError)
+	}
+	if envelope.GetError().GetCode() != "config_invalid" {
+		t.Errorf("error.code = %q, want config_invalid（§13 域内定义值）", envelope.GetError().GetCode())
+	}
+	if envelope.GetError().GetRequestId() != "req-biz-proto" {
+		t.Errorf("error.request_id = %q, want %q", envelope.GetError().GetRequestId(), "req-biz-proto")
 	}
 }

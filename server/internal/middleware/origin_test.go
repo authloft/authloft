@@ -33,8 +33,8 @@ func doRequest(r *gin.Engine, method, target string, headers map[string]string) 
 	return rec
 }
 
-// decodeErrorBody 解出 §1.5 错误体（origin / contenttype 的 403 / 415 都走 codec.WriteError，
-// 协商中间件未执行时按 write.go 回落 JSON）。
+// decodeErrorBody 解出 §1.5 错误信封的顶层 JSON 对象（origin / contenttype 的
+// 403 / 415 都走 codec.WriteError，协商中间件未执行时按 write.go 回落 JSON）。
 func decodeErrorBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var body map[string]any
@@ -42,6 +42,17 @@ func decodeErrorBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]an
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
 	return body
+}
+
+// errorObject 取出信封内层 error 对象（§1.0 行 57：{"status":"error","error":{…}}；
+// middleware 包内各错误体断言共用）。
+func errorObject(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	obj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("envelope missing \"error\" object: %v", body)
+	}
+	return obj
 }
 
 // ① 同源通过（§21 行 1785）；scheme / host 大小写不敏感。
@@ -78,7 +89,10 @@ func TestOriginCrossOriginRejected(t *testing.T) {
 			t.Errorf("Origin %q: Content-Type = %q, want %q (negotiate 前回落 JSON)", origin, got, contentTypeJSON)
 		}
 		body := decodeErrorBody(t, rec)
-		if got := body["code"]; got != codec.CodeForbidden {
+		if got := body["status"]; got != codec.StatusError {
+			t.Errorf("Origin %q: status = %v, want %q (信封形状)", origin, got, codec.StatusError)
+		}
+		if got := errorObject(t, body)["code"]; got != codec.CodeForbidden {
 			t.Errorf("Origin %q: error code = %v, want %q", origin, got, codec.CodeForbidden)
 		}
 	}

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package api.common;
+
+// 嵌套的 error 对象定义在 error.proto，同 package 跨文件引用也须显式 import
+// （先例：api/sso/envelope.proto 行 9 引用 api/common/captcha.proto）。
+import "api/common/error.proto";
+
+// 生成的 Go 包名必须是 api：信封类型在 Go 侧引用为 api.ErrorEnvelope /
+// api.SuccessEnvelope（同 error.proto 的约定，docs/后端架构.md §1.6）。
+option go_package = "authloft/gen/go/api/common;api";
+
+// ErrorEnvelope 是统一错误信封的外层（docs/接口文档.md §1.0 行 57-58、§1.5 行 214）：
+// {"status":"error","error":{code,message,request_id}}。
+// 业务失败（HTTP 200）与框架拒绝（非 200）共用本信封，差别只在 HTTP 状态码与
+// error.code 取值域：业务失败取 §1.6 对应取值（如 password_weak）或域内定义值
+// （如 §13 的 config_invalid）；框架拒绝取 §1.5 六元封闭集。
+message ErrorEnvelope {
+  // 恒为 "error"；JSON 视图字段恒存在，不使用 optional（§12.9 口径）。
+  string status = 1;
+  // 嵌套错误对象；code/message/request_id 语义见 error.proto 的 Error。
+  api.common.Error error = 2;
+}
+
+// SuccessEnvelope 供成功响应的 Protobuf 分支使用（docs/接口文档.md §1.0 行 56：
+// 成功 = {"status":"success", …数据字段平铺}）。JSON 分支由 codec 在 protojson
+// 输出的数据消息上直接注入顶层 status 字段实现平铺，不经过本消息；Protobuf
+// 无法把任意数据消息的字段平铺进另一个消息（Any 的 protojson 会带 @type 字段、
+// Struct 会把 int64 变 double，均破坏 §1.0/§1.12 口径），故 data 承载数据消息
+// 的序列化字节，客户端按端点契约两步解码（先解本信封、status=="success" 后
+// 再解 data）。两种编码语义等价（§1.1.1 行 105）：status 封闭集合同源，数据完整可解。
+message SuccessEnvelope {
+  // 恒为 "success"。
+  string status = 1;
+  // 数据消息的 Protobuf 序列化字节；JSON 分支不使用本字段。
+  bytes data = 2;
+}

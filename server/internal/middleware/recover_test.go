@@ -102,14 +102,18 @@ func TestRecoverWritesUnifiedErrorBody(t *testing.T) {
 		t.Fatalf("status = %d, want %d (body %s)", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
 	body := decodeErrorBody(t, rec)
-	if got := body["code"]; got != codec.CodeInternalError {
-		t.Errorf("code = %v, want %q", got, codec.CodeInternalError)
+	if got := body["status"]; got != codec.StatusError {
+		t.Errorf("status = %v, want %q (信封形状)", got, codec.StatusError)
 	}
-	if got := body["message"]; got != "internal error" {
-		t.Errorf("message = %v, want %q (不透出 panic 内容)", got, "internal error")
+	errObj := errorObject(t, body)
+	if got := errObj["code"]; got != codec.CodeInternalError {
+		t.Errorf("error.code = %v, want %q", got, codec.CodeInternalError)
 	}
-	if got, _ := body["request_id"].(string); got == "" {
-		t.Errorf("request_id is empty, want non-empty")
+	if got := errObj["message"]; got != "internal error" {
+		t.Errorf("error.message = %v, want %q (不透出 panic 内容)", got, "internal error")
+	}
+	if got, _ := errObj["request_id"].(string); got == "" {
+		t.Errorf("error.request_id is empty, want non-empty")
 	}
 	if strings.Contains(rec.Body.String(), "boom") {
 		t.Errorf("error body leaks panic value: %s", rec.Body.String())
@@ -117,7 +121,8 @@ func TestRecoverWritesUnifiedErrorBody(t *testing.T) {
 }
 
 // ② Protobuf 协商下 panic → 错误体按 proto 编码，proto.Unmarshal 解出
-// api.Error{code: internal_error}（错误体编码随协商，接口文档 §1.5 行 195）。
+// api.ErrorEnvelope{status:"error"} 且内层 code=internal_error
+// （错误体编码随协商，接口文档 §1.5 行 195）。
 func TestRecoverProtobufNegotiatedErrorBody(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID(), NegotiateFormat())
 	r.GET("/boom", func(c *gin.Context) { panic("boom") })
@@ -129,14 +134,20 @@ func TestRecoverProtobufNegotiatedErrorBody(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != contentTypeProto {
 		t.Fatalf("Content-Type = %q, want %q", got, contentTypeProto)
 	}
-	var errMsg api.Error
-	if err := proto.Unmarshal(rec.Body.Bytes(), &errMsg); err != nil {
+	var envelope api.ErrorEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("proto.Unmarshal error body %x: %v", rec.Body.Bytes(), err)
 	}
-	if errMsg.Code != codec.CodeInternalError {
-		t.Errorf("code = %q, want %q", errMsg.Code, codec.CodeInternalError)
+	if envelope.Status != codec.StatusError {
+		t.Errorf("status = %q, want %q (信封形状)", envelope.Status, codec.StatusError)
 	}
-	if errMsg.RequestId == "" {
+	if envelope.Error == nil {
+		t.Fatalf("envelope.Error is nil, want inner error object")
+	}
+	if envelope.Error.Code != codec.CodeInternalError {
+		t.Errorf("code = %q, want %q", envelope.Error.Code, codec.CodeInternalError)
+	}
+	if envelope.Error.RequestId == "" {
 		t.Errorf("request_id is empty, want non-empty")
 	}
 }
@@ -209,11 +220,15 @@ func TestRecoverMidChainPanicAbortsChain(t *testing.T) {
 	// 恰一次错误体：B/handler 均未执行（无第二次写入），且 body 是单个合法
 	// JSON 对象（追加第二段会让 json.Unmarshal 失败）。
 	body := decodeErrorBody(t, rec)
-	if got := body["code"]; got != codec.CodeInternalError {
-		t.Errorf("code = %v, want %q", got, codec.CodeInternalError)
+	if got := body["status"]; got != codec.StatusError {
+		t.Errorf("status = %v, want %q (信封形状)", got, codec.StatusError)
 	}
-	if got := body["message"]; got != "internal error" {
-		t.Errorf("message = %v, want %q", got, "internal error")
+	errObj := errorObject(t, body)
+	if got := errObj["code"]; got != codec.CodeInternalError {
+		t.Errorf("error.code = %v, want %q", got, codec.CodeInternalError)
+	}
+	if got := errObj["message"]; got != "internal error" {
+		t.Errorf("error.message = %v, want %q", got, "internal error")
 	}
 	if strings.Contains(rec.Body.String(), "mid-chain-boom") {
 		t.Errorf("error body leaks panic value: %s", rec.Body.String())

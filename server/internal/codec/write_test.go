@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	api "authloft/gen/go/api/common"
@@ -140,18 +142,21 @@ func TestWriteMarshalErrorFallbackProto(t *testing.T) {
 		t.Errorf("Content-Length = %q, body length %d", got, rec.Body.Len())
 	}
 
-	var decoded api.Error
+	var decoded api.ErrorEnvelope
 	if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
 		t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
 	}
-	if decoded.GetCode() != "internal_error" {
-		t.Errorf("code = %q, want internal_error", decoded.GetCode())
+	if decoded.GetStatus() != "error" {
+		t.Errorf("status = %q, want error (envelope shape)", decoded.GetStatus())
 	}
-	if decoded.GetMessage() != "internal error" {
-		t.Errorf("message = %q, want %q", decoded.GetMessage(), "internal error")
+	if decoded.GetError().GetCode() != "internal_error" {
+		t.Errorf("code = %q, want internal_error", decoded.GetError().GetCode())
 	}
-	if decoded.GetRequestId() != "" {
-		t.Errorf("request_id = %q, want empty when requestid middleware absent", decoded.GetRequestId())
+	if decoded.GetError().GetMessage() != "internal error" {
+		t.Errorf("message = %q, want %q", decoded.GetError().GetMessage(), "internal error")
+	}
+	if decoded.GetError().GetRequestId() != "" {
+		t.Errorf("request_id = %q, want empty when requestid middleware absent", decoded.GetError().GetRequestId())
 	}
 
 	raw := rec.Body.String()
@@ -180,14 +185,21 @@ func TestWriteMarshalErrorFallbackJSON(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
 	}
-	if got := body["code"]; got != "internal_error" {
-		t.Errorf("code = %v, want internal_error", got)
+	if got := body["status"]; got != "error" {
+		t.Errorf("status = %v, want error (envelope shape)", got)
 	}
-	if got, ok := body["message"]; !ok || got != "internal error" {
-		t.Errorf("message = %v, want internal error", got)
+	errObj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("fallback body missing error object: %v", body)
 	}
-	if got, ok := body["request_id"]; !ok || got != "" {
-		t.Errorf("request_id = %v, want empty string when requestid middleware absent", got)
+	if got := errObj["code"]; got != "internal_error" {
+		t.Errorf("error.code = %v, want internal_error", got)
+	}
+	if got, ok := errObj["message"]; !ok || got != "internal error" {
+		t.Errorf("error.message = %v, want internal error", got)
+	}
+	if got, ok := errObj["request_id"]; !ok || got != "" {
+		t.Errorf("error.request_id = %v, want empty string when requestid middleware absent", got)
 	}
 
 	raw := rec.Body.String()
@@ -202,17 +214,17 @@ func TestWriteMarshalErrorFallbackWithRequestID(t *testing.T) {
 	c.Set(RequestIDKey, "req-123")
 	Write(c, http.StatusOK, wrapperspb.String("\xff"))
 
-	var decoded api.Error
+	var decoded api.ErrorEnvelope
 	if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
 		t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
 	}
-	if decoded.GetRequestId() != "req-123" {
-		t.Errorf("request_id = %q, want req-123", decoded.GetRequestId())
+	if decoded.GetError().GetRequestId() != "req-123" {
+		t.Errorf("error.request_id = %q, want req-123", decoded.GetError().GetRequestId())
 	}
 }
 
 func TestWriteMarshalErrorFallbackHardcodedWhenFallbackEncodeFails(t *testing.T) {
-	// request_id 含非法 UTF-8 → 兜底体二次编码失败 → 写死最小 api.Error 字节，不递归调用 Write。
+	// request_id 含非法 UTF-8 → 兜底体二次编码失败 → 写死最小 ErrorEnvelope 字节，不递归调用 Write。
 	t.Run("proto", func(t *testing.T) {
 		c, rec := newTestContext()
 		SetFormat(c, FormatProto)
@@ -225,12 +237,15 @@ func TestWriteMarshalErrorFallbackHardcodedWhenFallbackEncodeFails(t *testing.T)
 		if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
 			t.Errorf("Content-Type = %q", got)
 		}
-		var decoded api.Error
+		var decoded api.ErrorEnvelope
 		if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
 			t.Fatalf("unmarshal hardcoded fallback body %q: %v", rec.Body.String(), err)
 		}
-		if decoded.GetCode() != "internal_error" {
-			t.Errorf("code = %q, want internal_error", decoded.GetCode())
+		if decoded.GetStatus() != "error" {
+			t.Errorf("status = %q, want error (envelope shape)", decoded.GetStatus())
+		}
+		if decoded.GetError().GetCode() != "internal_error" {
+			t.Errorf("error.code = %q, want internal_error", decoded.GetError().GetCode())
 		}
 	})
 	t.Run("json", func(t *testing.T) {
@@ -249,8 +264,146 @@ func TestWriteMarshalErrorFallbackHardcodedWhenFallbackEncodeFails(t *testing.T)
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatalf("unmarshal hardcoded fallback body %q: %v", rec.Body.String(), err)
 		}
-		if got := body["code"]; got != "internal_error" {
-			t.Errorf("code = %v, want internal_error", got)
+		if got := body["status"]; got != "error" {
+			t.Errorf("status = %v, want error (envelope shape)", got)
+		}
+		errObj, ok := body["error"].(map[string]any)
+		if !ok {
+			t.Fatalf("hardcoded fallback body missing error object: %v", body)
+		}
+		if got := errObj["code"]; got != "internal_error" {
+			t.Errorf("error.code = %v, want internal_error", got)
+		}
+	})
+}
+
+// WriteSuccess 的 JSON 分支（§1.0 行 56）：HTTP 200 + {"status":"success", …数据平铺}，
+// status 与数据字段同层、不设 data 包裹。
+func TestWriteSuccessJSONFlattensDataFields(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatJSON)
+	WriteSuccess(c, &descriptorpb.FileDescriptorProto{PublicDependency: []int32{1}})
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Accept" {
+		t.Errorf("Vary = %q, want %q", got, "Accept")
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal body %q: %v", rec.Body.String(), err)
+	}
+	if got := body["status"]; got != "success" {
+		t.Errorf("status = %v, want success", got)
+	}
+	if got := body["public_dependency"]; !reflect.DeepEqual(got, []any{float64(1)}) {
+		t.Errorf("public_dependency = %v, want data field flattened to top level", got)
+	}
+	if _, exists := body["data"]; exists {
+		t.Errorf("body has data wrapper %v, want no data wrapper (§1.0 行 56)", body["data"])
+	}
+}
+
+// 数据消息 protojson 输出空对象（emptypb.Empty 无字段）→ 输出 {"status":"success"}，
+// 不产生悬挂逗号。
+func TestWriteSuccessJSONEmptyDataMessage(t *testing.T) {
+	c, rec := newTestContext()
+	SetFormat(c, FormatJSON)
+	WriteSuccess(c, &emptypb.Empty{})
+
+	if got := rec.Body.String(); got != `{"status":"success"}` {
+		t.Errorf("body = %s, want {\"status\":\"success\"}", got)
+	}
+}
+
+// 未挂协商中间件 → WriteSuccess 同样回落 JSON（与 Write 同口径）。
+func TestWriteSuccessWithoutFormatFallsBackToJSON(t *testing.T) {
+	c, rec := newTestContext()
+	WriteSuccess(c, &emptypb.Empty{})
+
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := rec.Body.String(); got != `{"status":"success"}` {
+		t.Errorf("body = %s", got)
+	}
+}
+
+// Protobuf 分支：SuccessEnvelope{status, data}，data 为数据消息序列化字节，
+// 两步解码（先信封、再数据）后与原消息等价（取舍说明见 response.proto）。
+func TestWriteSuccessProtoEnvelope(t *testing.T) {
+	msg := &descriptorpb.FileDescriptorProto{PublicDependency: []int32{1, 2}}
+	c, rec := newTestContext()
+	SetFormat(c, FormatProto)
+	WriteSuccess(c, msg)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q", got)
+	}
+	if got := rec.Header().Get("Content-Length"); got != strconv.Itoa(rec.Body.Len()) {
+		t.Errorf("Content-Length = %q, body length %d", got, rec.Body.Len())
+	}
+
+	var envelope api.SuccessEnvelope
+	if err := proto.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("unmarshal SuccessEnvelope: %v", err)
+	}
+	if envelope.GetStatus() != "success" {
+		t.Errorf("status = %q, want success", envelope.GetStatus())
+	}
+	var decoded descriptorpb.FileDescriptorProto
+	if err := proto.Unmarshal(envelope.GetData(), &decoded); err != nil {
+		t.Fatalf("unmarshal nested data: %v", err)
+	}
+	if !proto.Equal(&decoded, msg) {
+		t.Errorf("nested data = %v, want round-trip equal", &decoded)
+	}
+}
+
+// 编码失败（数据消息含非法 UTF-8）→ 500 + internal_error 信封兜底，
+// 不出半截输出（§3.14 行 494）。
+func TestWriteSuccessMarshalErrorFallback(t *testing.T) {
+	t.Run("json", func(t *testing.T) {
+		c, rec := newTestContext()
+		SetFormat(c, FormatJSON)
+		WriteSuccess(c, wrapperspb.String("\xff"))
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
+		}
+		if got := body["status"]; got != "error" {
+			t.Errorf("status = %v, want error (fallback envelope)", got)
+		}
+	})
+	t.Run("proto", func(t *testing.T) {
+		c, rec := newTestContext()
+		SetFormat(c, FormatProto)
+		WriteSuccess(c, wrapperspb.String("\xff"))
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+		var decoded api.ErrorEnvelope
+		if err := proto.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+			t.Fatalf("unmarshal fallback body %q: %v", rec.Body.String(), err)
+		}
+		if decoded.GetStatus() != "error" {
+			t.Errorf("status = %q, want error (fallback envelope)", decoded.GetStatus())
+		}
+		if decoded.GetError().GetCode() != "internal_error" {
+			t.Errorf("error.code = %q, want internal_error", decoded.GetError().GetCode())
 		}
 	})
 }

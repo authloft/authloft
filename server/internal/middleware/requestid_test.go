@@ -94,10 +94,17 @@ func TestRequestIDFeedsWriteError(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal error body %q: %v", rec.Body.String(), err)
 	}
-	if got := body["code"]; got != codec.CodeBadRequest {
-		t.Errorf("code = %v, want %q", got, codec.CodeBadRequest)
+	if got := body["status"]; got != codec.StatusError {
+		t.Errorf("status = %v, want %q (信封形状)", got, codec.StatusError)
 	}
-	got, _ := body["request_id"].(string)
+	errObj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("envelope missing \"error\" object: %v", body)
+	}
+	if got := errObj["code"]; got != codec.CodeBadRequest {
+		t.Errorf("error.code = %v, want %q", got, codec.CodeBadRequest)
+	}
+	got, _ := errObj["request_id"].(string)
 	if got == "" {
 		t.Errorf("error body request_id is empty, want non-empty")
 	}
