@@ -2,15 +2,17 @@
 // 不调整 tsconfig，仅在测试文件放宽该 import 的类型解析。
 // @ts-ignore
 import { describe, expect, test } from 'rstack/test';
-import { EnvelopeSchema } from '../../gen/proto/api/sso/envelope_pb';
-import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/login_pb';
-import { RegisterRequestSchema } from '../../gen/proto/api/sso/register_pb';
-import { ResetRequestSchema } from '../../gen/proto/api/sso/reset_pb';
-import { LoginOauthRequestSchema } from '../../gen/proto/api/sso/oauth_pb';
+// sso 域 Connect 化：sso 生成物迁 gen/proto/api/sso/v1，信封消息更名
+// LoginFlowResponse（接口文档 §1.3 行 104）、请求消息名随方法名（§12.9 行 1747）。
+import { LoginFlowResponseSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/v1/login_pb';
+import { RegisterRequestSchema } from '../../gen/proto/api/sso/v1/register_pb';
+import { ResetPasswordRequestSchema } from '../../gen/proto/api/sso/v1/reset_pb';
+import { LoginOauthRequestSchema } from '../../gen/proto/api/sso/v1/oauth_pb';
 import {
-  QrcodeRequestSchema,
-  QrcodeResponseSchema,
-} from '../../gen/proto/api/sso/ticket_pb';
+  CreateQrcodeRequestSchema,
+  CreateQrcodeResponseSchema,
+} from '../../gen/proto/api/sso/v1/ticket_pb';
 import {
   AvatarCommitRequestSchema,
   AvatarPresignRequestSchema,
@@ -72,15 +74,15 @@ describe('shared/api/endpoints', () => {
 
   test('req / res 均为生成产物 schema 引用（无手写镜像，§9 第 15 条）', () => {
     expect(endpoints.ssoLoginDefault.req).toBe(LoginDefaultRequestSchema);
-    expect(endpoints.ssoLoginDefault.res).toBe(EnvelopeSchema);
+    expect(endpoints.ssoLoginDefault.res).toBe(LoginFlowResponseSchema);
     expect(endpoints.ssoRegister.req).toBe(RegisterRequestSchema);
-    expect(endpoints.ssoRegister.res).toBe(EnvelopeSchema);
-    expect(endpoints.ssoResetPassword.req).toBe(ResetRequestSchema);
-    expect(endpoints.ssoResetPassword.res).toBe(EnvelopeSchema);
+    expect(endpoints.ssoRegister.res).toBe(LoginFlowResponseSchema);
+    expect(endpoints.ssoResetPassword.req).toBe(ResetPasswordRequestSchema);
+    expect(endpoints.ssoResetPassword.res).toBe(LoginFlowResponseSchema);
     expect(endpoints.ssoLoginOauth.req).toBe(LoginOauthRequestSchema);
-    expect(endpoints.ssoLoginOauth.res).toBe(EnvelopeSchema);
-    expect(endpoints.ssoQrcode.req).toBe(QrcodeRequestSchema);
-    expect(endpoints.ssoQrcode.res).toBe(QrcodeResponseSchema);
+    expect(endpoints.ssoLoginOauth.res).toBe(LoginFlowResponseSchema);
+    expect(endpoints.ssoQrcode.req).toBe(CreateQrcodeRequestSchema);
+    expect(endpoints.ssoQrcode.res).toBe(CreateQrcodeResponseSchema);
     expect(endpoints.accountUpdateProfile.req).toBe(UpdateProfileRequestSchema);
     expect(endpoints.accountUpdateProfile.res).toBe(OkResponseSchema);
     expect(endpoints.accountAvatarPresign.req).toBe(AvatarPresignRequestSchema);

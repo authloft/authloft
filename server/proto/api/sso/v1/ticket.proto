@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package api.sso.v1;
+
+// 报文之间只引用不复制（§12.9 行 1748 单一结构源）：
+// CaptchaPayload 定义在 login.proto，本文件引用；LoginFlowResponse / TicketStatus
+// 定义在 envelope.proto，仅由 sso.proto 的 service 定义引用，本文件不直接使用，不 import
+//（避免 buf lint 的 unused import）。
+import "api/sso/v1/login.proto";
+
+// 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747）；Go 产物 authloft/gen/go/api/sso/v1（ssov1）。
+option go_package = "authloft/gen/go/api/sso/v1;ssov1";
+
+// CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
+// （docs/接口文档.md §2.8，行 687-708）；登录与绑定共用，靠 scene 区分（行 685、689）。
+// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
+// QrcodeRequest，Connect 化时更名）。
+// 字段名与行 693-702 的 JSON 示例 / 字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+message CreateQrcodeRequest {
+  // 扫码类 Provider（§2.8 行 700）。
+  string provider_key = 1;
+  // login（默认）｜bind（需 al_session，否则 401）（§2.8 行 701；§1.5 行 187）；
+  // 跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string scene = 2;
+  // 每次拉码都要新的，结构见 §2.5（§2.8 行 702、§2.5 行 499-510）。
+  CaptchaPayload captcha = 3;
+}
+
+// CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8 行 694-695）。
+message CreateQrcodeResponse {
+  // 服务端加密的 TicketPayload，客户端不可篡改（§2.8 行 694、704、706）。
+  string ticket = 1;
+  // 拉码时下发的票据标识，全链路统一用这一个名字（§2.8 行 695、707）。
+  string ticket_id = 2;
+  // 小程序码图片地址（§2.8 行 695）。
+  string qrcode_url = 3;
+  // 票据有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.8 行 695、§12.9 行 1751）。
+  int64 expires_in = 4;
+}
+
+// GetLoginTicketRequest 是 SsoService/GetLoginTicket 的请求消息
+// （docs/接口文档.md §2.8，行 709-733；查询 / 长轮询 / 完成登录）。
+// 字段名与行 711-714 的字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+message GetLoginTicketRequest {
+  // 拉码时下发的加密票据（§2.8 行 713）。
+  string ticket = 1;
+  // 长轮询最长等待秒数，上限 15（本上限全文档唯一定义处，§2.8 行 714）；
+  // 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
+  int64 poll = 2;
+}
+
+// GetLoginTicket 的响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含
+// GetLoginTicket（完成登录时））：顶层 status 表达本次轮询结论（pending / scanned /
+// expired / success / 失败类，与 ticket.status 同步语义），结果就绪（success）时
+// login 字段为同一消息、业务失败时 error 字段承载展示信息（§2.8 行 716、718-729）。
+// 零值字段 protojson 省略后，JSON 形状与 §2.8 行 718-729 的示例逐字一致
+// （旧 LoginTicketResponse 四字段为其子集，并入本消息，不另建 GetLoginTicketResponse）。
+
+// ConfirmLoginTicketRequest 是 SsoService/ConfirmLoginTicket 的请求消息
+// （docs/接口文档.md §2.8，行 735-748）：已登录一端写入授权结果。
+// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
+// LoginTicketRequest，Connect 化时更名）。
+// 字段名与行 739-742 的字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+message ConfirmLoginTicketRequest {
+  // 拉码时下发的 ticket_id（§2.8 行 741）。
+  string ticket_id = 1;
+  // 当前已登录设备的 session_token（§1.2）；缺省时取 Cookie al_session，
+  // 两者同时存在时以请求体为准且必须与 Cookie 属同一 uid，否则 invalid_request（§2.8 行 742）。
+  string session = 2;
+}
+
+// ConfirmLoginTicket 的响应为 TicketStatus：写入成功回显 {status:"success", ticket_id}，
+// 与 §2.7.4 行 634 带 ticket_id 的写入应答同构（同为「写 ticket」场景）；
+// 鉴权缺失 / 失效走 HTTP 401 Connect 错误体（§2.8 行 744、§1.5 行 187）。

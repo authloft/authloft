@@ -7,7 +7,7 @@
 package api
 
 import (
-	common "authloft/gen/go/api/common"
+	v1 "authloft/gen/go/api/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -607,8 +607,8 @@ type AccountConfigResponse struct {
 	// 两步验证摘要（§3.2 行 792、行 801-821）。
 	MfaPolicy *MfaPolicy `protobuf:"bytes,2,opt,name=mfa_policy,json=mfaPolicy,proto3" json:"mfa_policy,omitempty"`
 	// account entry 的 captcha 配置读取处（§3.2 行 792、§2.5 行 452-462）；
-	// 跨包引用 api.common.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
-	Captcha *common.CaptchaConfig `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
+	Captcha *v1.CaptchaConfig `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2 行 792）。
 	HasPassword   bool `protobuf:"varint,4,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -659,7 +659,7 @@ func (x *AccountConfigResponse) GetMfaPolicy() *MfaPolicy {
 	return nil
 }
 
-func (x *AccountConfigResponse) GetCaptcha() *common.CaptchaConfig {
+func (x *AccountConfigResponse) GetCaptcha() *v1.CaptchaConfig {
 	if x != nil {
 		return x.Captcha
 	}
@@ -909,7 +909,7 @@ var File_api_account_profile_proto protoreflect.FileDescriptor
 
 const file_api_account_profile_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/account/profile.proto\x12\vapi.account\x1a\x1cgoogle/protobuf/struct.proto\x1a\x18api/common/captcha.proto\"\xa4\x01\n" +
+	"\x19api/account/profile.proto\x12\vapi.account\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\xa4\x01\n" +
 	"\vUserProfile\x12\x16\n" +
 	"\x06gender\x18\x01 \x01(\x03R\x06gender\x12\x1a\n" +
 	"\bbirthday\x18\x02 \x01(\tR\bbirthday\x12\x16\n" +
@@ -956,12 +956,12 @@ const file_api_account_profile_proto_rawDesc = "" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\brequired\x18\x02 \x01(\bR\brequired\x12.\n" +
 	"\x13trusted_device_days\x18\x03 \x01(\x03R\x11trustedDeviceDays\x126\n" +
-	"\amethods\x18\x04 \x03(\v2\x1c.api.account.MfaPolicyMethodR\amethods\"\xec\x01\n" +
+	"\amethods\x18\x04 \x03(\v2\x1c.api.account.MfaPolicyMethodR\amethods\"\xef\x01\n" +
 	"\x15AccountConfigResponse\x12D\n" +
 	"\ravatar_upload\x18\x01 \x01(\v2\x1f.api.account.AvatarUploadConfigR\favatarUpload\x125\n" +
 	"\n" +
-	"mfa_policy\x18\x02 \x01(\v2\x16.api.account.MfaPolicyR\tmfaPolicy\x123\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x19.api.common.CaptchaConfigR\acaptcha\x12!\n" +
+	"mfa_policy\x18\x02 \x01(\v2\x16.api.account.MfaPolicyR\tmfaPolicy\x126\n" +
+	"\acaptcha\x18\x03 \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptcha\x12!\n" +
 	"\fhas_password\x18\x04 \x01(\bR\vhasPassword\"\"\n" +
 	"\x0eAvatarResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\"i\n" +
@@ -1010,7 +1010,7 @@ var file_api_account_profile_proto_goTypes = []any{
 	(*AvatarCommitRequest)(nil),   // 11: api.account.AvatarCommitRequest
 	nil,                           // 12: api.account.AvatarPresignResponse.HeadersEntry
 	(*structpb.Struct)(nil),       // 13: google.protobuf.Struct
-	(*common.CaptchaConfig)(nil),  // 14: api.common.CaptchaConfig
+	(*v1.CaptchaConfig)(nil),      // 14: api.common.v1.CaptchaConfig
 }
 var file_api_account_profile_proto_depIdxs = []int32{
 	13, // 0: api.account.UserProfile.extra:type_name -> google.protobuf.Struct
@@ -1019,7 +1019,7 @@ var file_api_account_profile_proto_depIdxs = []int32{
 	5,  // 3: api.account.MfaPolicy.methods:type_name -> api.account.MfaPolicyMethod
 	4,  // 4: api.account.AccountConfigResponse.avatar_upload:type_name -> api.account.AvatarUploadConfig
 	6,  // 5: api.account.AccountConfigResponse.mfa_policy:type_name -> api.account.MfaPolicy
-	14, // 6: api.account.AccountConfigResponse.captcha:type_name -> api.common.CaptchaConfig
+	14, // 6: api.account.AccountConfigResponse.captcha:type_name -> api.common.v1.CaptchaConfig
 	12, // 7: api.account.AvatarPresignResponse.headers:type_name -> api.account.AvatarPresignResponse.HeadersEntry
 	8,  // [8:8] is the sub-list for method output_type
 	8,  // [8:8] is the sub-list for method input_type

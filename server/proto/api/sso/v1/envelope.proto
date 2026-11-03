@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package api.sso.v1;
+
+import "google/protobuf/struct.proto";
+// 顶层 captcha 是 §2.5 行 478-486 的配置对象（docs/接口文档.md §1.3 行 155「结构见 §2.5」）：
+// 定义在 api.common.v1（全仓单一结构源，§12.9 行 1748），本文件只引用不复制；
+// common.v1 是叶子包，不 import sso / account，无循环依赖。
+import "api/common/v1/captcha.proto";
+
+// 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 目录 api/sso/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
+// Go 产物：authloft/gen/go/api/sso/v1（包名 ssov1）；connect 侧产物由
+// protoc-gen-connect-go 按本包 service 定义生成（buf.gen.yaml，sso.proto）。
+option go_package = "authloft/gen/go/api/sso/v1;ssov1";
+
+// LoginFlowResponse 是登录流程响应（docs/接口文档.md §1.3，行 102-155）：
+// SsoService/LoginDefault、Register、ResetPassword、LoginOauth、GetLoginTicket
+// （完成登录时）共用同一响应消息（行 104）。登录流程的业务态（流程态，含失败态）
+// 一律 HTTP 200，由顶层 status 单独表达（§1.5 行 182）；无 success/error 二元信封
+// （§1.0 已废），非 success 即失败，error 只承载展示信息，动作见 §1.6（行 145）。
+// 字段名与 §1.3 行 106-142 JSON 示例的 camelCase 线上表示逐字对应（proto 一律
+// snake_case，§12.9 行 1749），编号从 1 起连续（行 1749）；
+// 既有字段与编号不变（§12.8 只增不改）。
+message LoginFlowResponse {
+  // 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3 行 108）。
+  string login_token = 1;
+  // 唯一业务态，取值即 §1.6 行 230-261 的封闭集合（33 词）与行 263 的轮询三态
+  // （pending / scanned / expired）；跨版本可新增，故用 string 承载（§12.9 行 1754）。
+  string status = 2;
+  // status=next 时的下一步渲染信息（§1.3 行 110-118）。
+  NextStep next_step = 3;
+  // status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
+  Mfa mfa = 4;
+  // status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
+  Binding binding = 5;
+  // 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
+  // 业务分支只看 status（行 145）；非 200 走 Connect 错误体 + ErrorInfo（§1.5 行 197-211），
+  // 与本字段无涉。
+  SsoError error = 6;
+  // status=success 时的会话 ID（§1.3 行 134）。
+  string session_id = 7;
+  // status=success 且无 Cookie 场景（小程序）返回（§1.3 行 135）。
+  string session_token = 8;
+  // status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 136、§2.9）。
+  string sync_cookie_url = 9;
+  // status=success 时的最终跳转地址（§1.3 行 137）。
+  string redirect_to = 10;
+  // 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 138、§12.9 行 1751、§1.12）。
+  int64 user_id = 11;
+  // 可选。仅两条扫码轮询 RPC（SsoService/GetLoginTicket、AccountService/GetThirdpartyTicket）
+  // 出现，结构为 {status, ticket_id}（§1.3 行 139、152）。
+  TicketStatus ticket = 12;
+  // 可选。仅 SsoService/GetLoginTicket（scene=login）结果就绪（status=success）时出现，
+  // 值为本节同一消息（§1.3 行 140、153）。
+  LoginFlowResponse login = 13;
+  // 可选。仅 AccountService/GetThirdpartyTicket 绑定完成时出现
+  // （{provider_key, display_name}，§1.3 行 141、154、§3.7.1 B）。
+  BindResult bind = 14;
+  // 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 478-486 的
+  // captcha 配置对象（§1.3 行 155），与注入快照 / AccountService GetConfig 三处
+  // 同结构同字段名（§2.5 行 476）；跨包引用 api.common.v1.CaptchaConfig
+  // （配置视图单一结构源），字段编号 15 不变（§12.8）。
+  api.common.v1.CaptchaConfig captcha = 15;
+}
+
+// NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 110-118）。
+message NextStep {
+  // 渲染形态，取值是 §1.4 行 157-179 的封闭集合（form/challenge/redirect/external/qrcode/poll，
+  // §1.3 行 111）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string kind = 1;
+  // 当前认证方式，取值与步骤序列见 §1.10 行 298-316。
+  string method = 2;
+  // 下一步的提交地址（§1.3 行 113）。
+  string endpoint = 3;
+  // 需要渲染的输入字段，类型取值见 §1.11 行 317-335（§1.3 行 114）。
+  repeated Field fields = 4;
+  // 重发冷却（秒）；JSON 为十进制字符串（§1.3 行 115、§1.12）。
+  int64 retry_after = 5;
+  // 当前挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 116、§1.12）。
+  int64 expires_in = 6;
+  // WebAuthn 挑战时为 PublicKeyCredentialRequestOptions，即任意 JSON 对象（§1.3 行 117）。
+  google.protobuf.Struct challenge_data = 7;
+}
+
+// Field 是渲染侧输入字段描述（§1.3 行 114、§1.11 行 317-335、§2.2 注入快照行 382-396）。
+message Field {
+  // 字段名，与请求体字段一致（§1.3 行 114）。
+  string name = 1;
+  // 展示文案（§1.3 行 114）。
+  string label = 2;
+  // 渲染类型，取值是 §1.11 行 317-335 的封闭集合；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string type = 3;
+  // 是否必填（§2.2 行 384-386 fields[].required）。
+  bool required = 4;
+  // 输入长度（如验证码位数）；JSON 为十进制字符串（§1.3 行 114、§1.12）。
+  int64 length = 5;
+  // 最大校验失败次数；JSON 为十进制字符串（§1.3 行 114、§1.12）。
+  int64 max_attempts = 6;
+}
+
+// Mfa 是 status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
+message Mfa {
+  // 本次 MFA 挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 120、§1.12）。
+  int64 expires_in = 1;
+  // 可选二次因子列表（§1.3 行 121）。
+  repeated MfaMethod methods = 2;
+}
+
+// MfaMethod 是单个可选的二次因子（§1.3 行 122-127；步骤序列来源见 §1.10 行 298-316）。
+message MfaMethod {
+  // 认证方式，步骤序列见 §1.10 行 298-316。
+  string method = 1;
+  // 该方式的渲染步骤序列，取值是 §1.4 行 157-179 的 kind 封闭集合（§1.10 行 298）。
+  repeated string steps = 2;
+  // form 步骤需要渲染的字段（§1.3 行 122、126）。
+  repeated Field fields = 3;
+  // 已掩码的目标（手机号 / 邮箱）（§1.3 行 123-125）。
+  string masked_target = 4;
+  // challenge 步骤需要用户填写的字段（§1.3 行 123-125）。
+  repeated Field challenge_fields = 5;
+  // 该方式的提示文案（§1.3 行 125）。
+  string hint = 6;
+}
+
+// Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。
+message Binding {
+  // 提供方标识（§1.3 行 130）。
+  string provider_key = 1;
+  // 提供方展示名（§1.3 行 130）。
+  string display_name = 2;
+  // 是否允许免密建号，由 Provider 的 enable_signup 映射（§1.3 行 129-130、§2.7.5 行 664）。
+  bool allow_signup = 3;
+  // 三方昵称（§1.3 行 131）。
+  string nickname = 4;
+  // 三方头像地址（§1.3 行 131）。
+  string avatar_url = 5;
+}
+
+// SsoError 是登录流程响应内层的失败展示信息（§1.3 行 133、字段说明行 147-151）；
+// 只承载展示信息，业务分支只看 status（行 145）。登录流程域的失败态走 HTTP 200 +
+// 本字段（§1.6 行 267），与 Connect 错误体（§1.5）分属两处，不得混用；
+// 字段均可省略（行 147-151），故用 optional。
+message SsoError {
+  // 服务端下发的兜底文案，可省略（§1.3 行 149）。
+  optional string message = 1;
+  // 冷却 / 解封剩余秒数，可省略；JSON 为十进制字符串（§1.3 行 150、§1.12）。
+  optional int64 retry_after = 2;
+  // 验证码剩余尝试次数，可省略；JSON 为十进制字符串（§1.3 行 151、§1.12）。
+  optional int64 attempts_left = 3;
+}
+
+// TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
+// 用于 LoginFlowResponse.ticket、ConfirmLoginTicket 的响应与带 ticket_id 的写入应答
+// （§1.3 行 139、152；§2.7.4 行 634、643-651；§2.8 行 716-729）。
+message TicketStatus {
+  // 票据状态，取值 pending｜scanned｜success｜expired｜failed（§1.6 行 263、§2.8 行 716）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+  string status = 1;
+  // 拉码时下发的 ticket_id（§1.3 行 152、§2.8 行 695-707）。
+  string ticket_id = 2;
+}
+
+// BindResult 是扫码绑定完成应答（§1.3 行 141、154；§3.7.1 B）。
+message BindResult {
+  // 绑定成功标记（§1.3 行 141）。
+  bool ok = 1;
+  // 扫码类 Provider 标识（§1.3 行 141）。
+  string provider_key = 2;
+  // Provider 展示名（§1.3 行 141）。
+  string display_name = 3;
+}

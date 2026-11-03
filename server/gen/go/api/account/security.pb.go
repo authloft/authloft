@@ -7,7 +7,7 @@
 package api
 
 import (
-	sso "authloft/gen/go/api/sso"
+	v1 "authloft/gen/go/api/sso/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -84,8 +84,8 @@ type PhoneBindPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 845、行 855）。
 	Phone string `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
-	// 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
-	Captcha *sso.CaptchaPayload `protobuf:"bytes,2,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
+	Captcha *v1.CaptchaPayload `protobuf:"bytes,2,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// verify：purpose=bind 的验证码（§3.4 行 845、行 854）。
 	Code          string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -129,7 +129,7 @@ func (x *PhoneBindPayload) GetPhone() string {
 	return ""
 }
 
-func (x *PhoneBindPayload) GetCaptcha() *sso.CaptchaPayload {
+func (x *PhoneBindPayload) GetCaptcha() *v1.CaptchaPayload {
 	if x != nil {
 		return x.Captcha
 	}
@@ -204,8 +204,8 @@ type EmailBindPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 847、行 855）。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	// 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
-	Captcha *sso.CaptchaPayload `protobuf:"bytes,2,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
+	Captcha *v1.CaptchaPayload `protobuf:"bytes,2,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// verify：purpose=bind 的验证码（§3.4 行 847、行 854）。
 	Code          string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -249,7 +249,7 @@ func (x *EmailBindPayload) GetEmail() string {
 	return ""
 }
 
-func (x *EmailBindPayload) GetCaptcha() *sso.CaptchaPayload {
+func (x *EmailBindPayload) GetCaptcha() *v1.CaptchaPayload {
 	if x != nil {
 		return x.Captcha
 	}
@@ -323,20 +323,20 @@ var File_api_account_security_proto protoreflect.FileDescriptor
 
 const file_api_account_security_proto_rawDesc = "" +
 	"\n" +
-	"\x1aapi/account/security.proto\x12\vapi.account\x1a\x13api/sso/login.proto\"e\n" +
+	"\x1aapi/account/security.proto\x12\vapi.account\x1a\x16api/sso/v1/login.proto\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
-	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"o\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"r\n" +
 	"\x10PhoneBindPayload\x12\x14\n" +
-	"\x05phone\x18\x01 \x01(\tR\x05phone\x121\n" +
-	"\acaptcha\x18\x02 \x01(\v2\x17.api.sso.CaptchaPayloadR\acaptcha\x12\x12\n" +
+	"\x05phone\x18\x01 \x01(\tR\x05phone\x124\n" +
+	"\acaptcha\x18\x02 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x12\n" +
 	"\x04code\x18\x03 \x01(\tR\x04code\"_\n" +
 	"\x10PhoneBindRequest\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x127\n" +
-	"\apayload\x18\x02 \x01(\v2\x1d.api.account.PhoneBindPayloadR\apayload\"o\n" +
+	"\apayload\x18\x02 \x01(\v2\x1d.api.account.PhoneBindPayloadR\apayload\"r\n" +
 	"\x10EmailBindPayload\x12\x14\n" +
-	"\x05email\x18\x01 \x01(\tR\x05email\x121\n" +
-	"\acaptcha\x18\x02 \x01(\v2\x17.api.sso.CaptchaPayloadR\acaptcha\x12\x12\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x124\n" +
+	"\acaptcha\x18\x02 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x12\n" +
 	"\x04code\x18\x03 \x01(\tR\x04code\"_\n" +
 	"\x10EmailBindRequest\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x127\n" +
@@ -361,12 +361,12 @@ var file_api_account_security_proto_goTypes = []any{
 	(*PhoneBindRequest)(nil),      // 2: api.account.PhoneBindRequest
 	(*EmailBindPayload)(nil),      // 3: api.account.EmailBindPayload
 	(*EmailBindRequest)(nil),      // 4: api.account.EmailBindRequest
-	(*sso.CaptchaPayload)(nil),    // 5: api.sso.CaptchaPayload
+	(*v1.CaptchaPayload)(nil),     // 5: api.sso.v1.CaptchaPayload
 }
 var file_api_account_security_proto_depIdxs = []int32{
-	5, // 0: api.account.PhoneBindPayload.captcha:type_name -> api.sso.CaptchaPayload
+	5, // 0: api.account.PhoneBindPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
 	1, // 1: api.account.PhoneBindRequest.payload:type_name -> api.account.PhoneBindPayload
-	5, // 2: api.account.EmailBindPayload.captcha:type_name -> api.sso.CaptchaPayload
+	5, // 2: api.account.EmailBindPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
 	3, // 3: api.account.EmailBindRequest.payload:type_name -> api.account.EmailBindPayload
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// 位于 v1/ 子目录：buf STANDARD 的 PACKAGE_DIRECTORY_MATCH 规则要求文件
+// 目录与包名 api.common.v1 逐段一致（先例：同目录 error_info.proto）。
+package api.common.v1;
+
+// Go 产物：authloft/gen/go/api/common/v1（包名 commonv1）。本消息无 service，
+// 不产出 connect 代码（protoc-gen-connect-go 插件语义）。
+option go_package = "authloft/gen/go/api/common/v1;commonv1";
+
+// CaptchaConfig 是 §2.5 行 478-486 的 captcha 配置对象：注入快照、
+// AccountService/GetConfig 的 captcha、触发 captcha 的响应顶层 captcha
+// 三处同结构同字段名（§2.5 行 476）。
+// 它是公开配置视图（不含凭证），与提交格式 api.sso.v1.CaptchaPayload（§2.5 行 499-510）
+// 字段不同，故不能复用 CaptchaPayload；放 api.common.v1 作全仓单一结构源
+//（§12.9 行 1748），captcha 提交格式仍由 api.sso.v1.CaptchaPayload 承载，不复制。
+// 本包是叶子包：不 import sso / account 等业务包，防止 import 环。
+message CaptchaConfig {
+  // 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5 行 484、514）。
+  string provider_key = 1;
+  // 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5 行 485）；image = 内置自绘图形码（含降级态）。
+  string type = 2;
+  // 第三方站点 key；type=image 时为空串（§2.5 行 486）。
+  string site_key = 3;
+}

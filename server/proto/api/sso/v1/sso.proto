@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package api.sso.v1;
+
+// SsoService 的方法 input/output 消息定义在同包各消息文件中，本文件只定义 service
+//（docs/接口文档.md §12.9 行 1747「每域一个 service，名为 <域>Service」）。
+import "api/sso/v1/envelope.proto";
+import "api/sso/v1/login.proto";
+import "api/sso/v1/register.proto";
+import "api/sso/v1/reset.proto";
+import "api/sso/v1/oauth.proto";
+import "api/sso/v1/ticket.proto";
+
+// 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747）；Go 产物 authloft/gen/go/api/sso/v1（ssov1），
+// connect 产物（protoc-gen-connect-go）随 service 定义生成。
+option go_package = "authloft/gen/go/api/sso/v1;ssov1";
+
+// SsoService 是 sso 域的 Connect service（docs/接口文档.md §2，行 356-765）。
+// Connect 路径 = /api.sso.v1.SsoService/<Method>；方法清单与 §2 各节逐一对应：
+//   LoginDefault        §2.2 行 414    Register            §2.3 行 440
+//   ResetPassword       §2.4 行 458    CreateCaptchaImage  §2.5 行 490
+//   Authorize           §2.7.2 行 579  LoginOauth           §2.7.4 行 616
+//   CreateQrcode        §2.8 行 687    GetLoginTicket      §2.8 行 709
+//   ConfirmLoginTicket  §2.8 行 735
+// 登录流程方法（LoginDefault / Register / ResetPassword / LoginOauth / GetLoginTicket）
+// 的响应共用 LoginFlowResponse（§1.3 行 104），故无 XxxResponse 命名
+//（buf 的 RPC_RESPONSE_STANDARD_NAME 规则与 §1.3 行 104 共用信封口径冲突，
+// 按「文档优先」在 buf.yaml except 豁免该规则）。
+service SsoService {
+  // 统一提交端点，flow=login，除 thirdparty 外（§2.2 行 414-436）。
+  rpc LoginDefault(LoginDefaultRequest) returns (LoginFlowResponse);
+  // 注册，flow=register（§2.3 行 440-454）。
+  rpc Register(RegisterRequest) returns (LoginFlowResponse);
+  // 重置密码，flow=reset（§2.4 行 458-470）。
+  rpc ResetPassword(ResetPasswordRequest) returns (LoginFlowResponse);
+  // 新建自绘图形码，直接返回图（§2.5 行 490-497）。
+  rpc CreateCaptchaImage(CreateCaptchaImageRequest) returns (CreateCaptchaImageResponse);
+  // 取第三方授权 URL，RPC 非 302（§2.7.2 行 579-599）。
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  // 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4 行 616-651）。
+  rpc LoginOauth(LoginOauthRequest) returns (LoginFlowResponse);
+  // 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8 行 687-708）。
+  rpc CreateQrcode(CreateQrcodeRequest) returns (CreateQrcodeResponse);
+  // 查询 / 长轮询 / 完成登录（§2.8 行 709-733）。
+  rpc GetLoginTicket(GetLoginTicketRequest) returns (LoginFlowResponse);
+  // 已登录一端写入授权结果（§2.8 行 735-748）。
+  rpc ConfirmLoginTicket(ConfirmLoginTicketRequest) returns (TicketStatus);
+}

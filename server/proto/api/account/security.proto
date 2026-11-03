@@ -4,9 +4,10 @@ package api.account;
 
 // 成功应答复用同域 profile.proto 的 OkResponse（§3.2 行 794、§3.4 行 842-847、§10.9 行 1556），
 // 由 handler 返回，无需在本文件声明字段，故不 import —— 避免 buf lint 的 unused import。
-// 人机校验提交格式 CaptchaPayload 在 api.sso.login 单一定义（§2.5 行 475-484）；
-// 本文件只跨包引用、不复制同构消息（§12.9 行 1722 单一结构源）。
-import "api/sso/login.proto";
+// 人机校验提交格式 CaptchaPayload 在 api.sso.v1 login 单一定义（§2.5）；
+// 本文件只跨包引用、不复制同构消息（§12.9 行 1748 单一结构源）。
+// （包名升级：api.sso → api.sso.v1，import 与符号随迁，account 域 Connect 化另行处理。）
+import "api/sso/v1/login.proto";
 
 // Go 包名沿用 api.common / api.sso 的写法：
 // 目录 api/account 对应包名 api.account（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
@@ -26,8 +27,8 @@ message ChangePasswordRequest {
 message PhoneBindPayload {
   // 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 845、行 855）。
   string phone = 1;
-  // 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
-  api.sso.CaptchaPayload captcha = 2;
+  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
+  api.sso.v1.CaptchaPayload captcha = 2;
   // verify：purpose=bind 的验证码（§3.4 行 845、行 854）。
   string code = 3;
 }
@@ -45,8 +46,8 @@ message PhoneBindRequest {
 message EmailBindPayload {
   // 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 847、行 855）。
   string email = 1;
-  // 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
-  api.sso.CaptchaPayload captcha = 2;
+  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
+  api.sso.v1.CaptchaPayload captcha = 2;
   // verify：purpose=bind 的验证码（§3.4 行 847、行 854）。
   string code = 3;
 }

@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        (unknown)
-// source: api/sso/register.proto
+// source: api/sso/v1/register.proto
 
-package api
+package ssov1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -22,25 +22,25 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// RegisterRequest 是 `POST /api/sso/register` 的请求体
-// （docs/接口文档.md §2.3，行 416-433）。
-// 顶层字段与 §2.2 同构（行 418「与 2.2 同构，仅 flow=register」），字段名与 §2.2
-// 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1723）。
-// 响应复用本包 Envelope（§1.3 行 105 的共用清单含 /api/sso/register），故不定义 RegisterResponse。
+// RegisterRequest 是 SsoService/Register 的请求消息
+// （docs/接口文档.md §2.3，行 440-454）。
+// 顶层字段与 §2.2 同构（行 442「与 2.2 同构，仅 flow=register」），字段名与 §2.2
+// 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
+// 响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含 Register），故不定义 RegisterResponse。
 type RegisterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 首次不带；后续必须带（内存变量回传）（§2.2 行 396，随「与 2.2 同构」引入，§2.3 行 418）。
+	// 首次不带；后续必须带（内存变量回传）（§2.2 行 420，随「与 2.2 同构」引入，§2.3 行 442）。
 	LoginToken string `protobuf:"bytes,1,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
-	// 无 login_token 时必须带（§2.2 行 397，随同构引入，§2.3 行 418）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1726）。
+	// 无 login_token 时必须带（§2.2 行 421，随同构引入，§2.3 行 442）；
+	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// 取值 challenge｜verify｜set_password（§2.3 行 422-424；§2.2 行 398 已预留 set_password）；
-	// 同为跨版本可新增的取值，用 string 承载（§12.9 行 1726）。
+	// 取值 challenge｜verify｜set_password（§2.3 行 444-450；§2.2 行 422 已预留 set_password）；
+	// 同为跨版本可新增的取值，用 string 承载（§12.9 行 1754）。
 	Step string `protobuf:"bytes,3,opt,name=step,proto3" json:"step,omitempty"`
-	// 注册各 step 的字段，见 RegisterPayload（§2.3 行 422-426）。
+	// 注册各 step 的字段，见 RegisterPayload（§2.3 行 444-450）。
 	Payload *RegisterPayload `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
-	// OIDC 授权上下文（§2.2 行 401，随同构引入，§2.3 行 418）：仅首次请求（尚无 login_token）
-	// 时回传；前端不解析其内部字段，与 Envelope.next_step.challenge_data 同口径用
+	// OIDC 授权上下文（§2.2 行 425，随同构引入，§2.3 行 442）：仅首次请求（尚无 login_token）
+	// 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
 	Oidc          *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -49,7 +49,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_api_sso_register_proto_msgTypes[0]
+	mi := &file_api_sso_v1_register_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -61,7 +61,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_register_proto_msgTypes[0]
+	mi := &file_api_sso_v1_register_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -74,7 +74,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_api_sso_register_proto_rawDescGZIP(), []int{0}
+	return file_api_sso_v1_register_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RegisterRequest) GetLoginToken() string {
@@ -112,27 +112,28 @@ func (x *RegisterRequest) GetOidc() *structpb.Struct {
 	return nil
 }
 
-// RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 420-426）：
-// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1723）。
-// 字段集合当前与 LoginPayload（login.proto，§2.6 行 516-525）恰好相同，但口径来源不同
+// RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 444-450）：
+// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
+// 字段集合当前与 LoginPayload（login.proto，§2.6 行 540-549）部分重合，但口径来源不同
 // （本消息以 §2.3 为准），故在本文件各建：按 §12.8 / §12.9 只增不改，
 // 注册后续若需新增字段直接在本文件加号，不动已验收的 login.proto。
 type RegisterPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// challenge 步：目标邮箱（§2.3 行 422），受 allow_signup_email 控制；与 phone 二选一。
+	// challenge 步：目标邮箱（§2.3 行 446），受 allow_signup_email 控制；与 phone 二选一。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	// challenge 步：目标手机号（§2.3 行 422），受 allow_signup_phone 控制；与 email 二选一。
+	// challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
-	// 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 475-484）：提交格式在 §2.5 单一定义、
-	// 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 422
+	// 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
+	// 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 446
 	// 「必须 captcha」）；用户名+密码直通入口从 set_password 直达（无 challenge / verify），
-	// 该步同样必填（§2.3 行 426）。
+	// 该步同样必填（§2.3 行 450）。
 	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
-	// verify 步：register 用途的验证码（§2.3 行 423）。
+	// verify 步：register 用途的验证码（§2.3 行 447）。
 	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
-	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 424 唯一定义处），设置后不可改。
+	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
 	Username string `protobuf:"bytes,5,opt,name=username,proto3" json:"username,omitempty"`
-	// set_password 步：密码，须满足密码策略（§2.3 行 424、§5.6）。
+	// set_password 步：密码，须满足密码策略（§2.3 行 448、§5.6）；
+	// 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5 行 666-671）。
 	Password      string `protobuf:"bytes,6,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -140,7 +141,7 @@ type RegisterPayload struct {
 
 func (x *RegisterPayload) Reset() {
 	*x = RegisterPayload{}
-	mi := &file_api_sso_register_proto_msgTypes[1]
+	mi := &file_api_sso_v1_register_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +153,7 @@ func (x *RegisterPayload) String() string {
 func (*RegisterPayload) ProtoMessage() {}
 
 func (x *RegisterPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_register_proto_msgTypes[1]
+	mi := &file_api_sso_v1_register_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +166,7 @@ func (x *RegisterPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterPayload.ProtoReflect.Descriptor instead.
 func (*RegisterPayload) Descriptor() ([]byte, []int) {
-	return file_api_sso_register_proto_rawDescGZIP(), []int{1}
+	return file_api_sso_v1_register_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterPayload) GetEmail() string {
@@ -210,49 +211,50 @@ func (x *RegisterPayload) GetPassword() string {
 	return ""
 }
 
-var File_api_sso_register_proto protoreflect.FileDescriptor
+var File_api_sso_v1_register_proto protoreflect.FileDescriptor
 
-const file_api_sso_register_proto_rawDesc = "" +
+const file_api_sso_v1_register_proto_rawDesc = "" +
 	"\n" +
-	"\x16api/sso/register.proto\x12\aapi.sso\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13api/sso/login.proto\"\xbf\x01\n" +
+	"\x19api/sso/v1/register.proto\x12\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xc2\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
-	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
-	"\apayload\x18\x04 \x01(\v2\x18.api.sso.RegisterPayloadR\apayload\x12+\n" +
-	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"\xbc\x01\n" +
+	"\x04step\x18\x03 \x01(\tR\x04step\x125\n" +
+	"\apayload\x18\x04 \x01(\v2\x1b.api.sso.v1.RegisterPayloadR\apayload\x12+\n" +
+	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"\xbf\x01\n" +
 	"\x0fRegisterPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
-	"\x05phone\x18\x02 \x01(\tR\x05phone\x121\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x17.api.sso.CaptchaPayloadR\acaptcha\x12\x12\n" +
+	"\x05phone\x18\x02 \x01(\tR\x05phone\x124\n" +
+	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x12\n" +
 	"\x04code\x18\x04 \x01(\tR\x04code\x12\x1a\n" +
 	"\busername\x18\x05 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x06 \x01(\tR\bpasswordB\x1dZ\x1bauthloft/gen/go/api/sso;apib\x06proto3"
+	"\bpassword\x18\x06 \x01(\tR\bpasswordB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
-	file_api_sso_register_proto_rawDescOnce sync.Once
-	file_api_sso_register_proto_rawDescData []byte
+	file_api_sso_v1_register_proto_rawDescOnce sync.Once
+	file_api_sso_v1_register_proto_rawDescData []byte
 )
 
-func file_api_sso_register_proto_rawDescGZIP() []byte {
-	file_api_sso_register_proto_rawDescOnce.Do(func() {
-		file_api_sso_register_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_sso_register_proto_rawDesc), len(file_api_sso_register_proto_rawDesc)))
+func file_api_sso_v1_register_proto_rawDescGZIP() []byte {
+	file_api_sso_v1_register_proto_rawDescOnce.Do(func() {
+		file_api_sso_v1_register_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_sso_v1_register_proto_rawDesc), len(file_api_sso_v1_register_proto_rawDesc)))
 	})
-	return file_api_sso_register_proto_rawDescData
+	return file_api_sso_v1_register_proto_rawDescData
 }
 
-var file_api_sso_register_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_api_sso_register_proto_goTypes = []any{
-	(*RegisterRequest)(nil), // 0: api.sso.RegisterRequest
-	(*RegisterPayload)(nil), // 1: api.sso.RegisterPayload
+var file_api_sso_v1_register_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_sso_v1_register_proto_goTypes = []any{
+	(*RegisterRequest)(nil), // 0: api.sso.v1.RegisterRequest
+	(*RegisterPayload)(nil), // 1: api.sso.v1.RegisterPayload
 	(*structpb.Struct)(nil), // 2: google.protobuf.Struct
-	(*CaptchaPayload)(nil),  // 3: api.sso.CaptchaPayload
+	(*CaptchaPayload)(nil),  // 3: api.sso.v1.CaptchaPayload
 }
-var file_api_sso_register_proto_depIdxs = []int32{
-	1, // 0: api.sso.RegisterRequest.payload:type_name -> api.sso.RegisterPayload
-	2, // 1: api.sso.RegisterRequest.oidc:type_name -> google.protobuf.Struct
-	3, // 2: api.sso.RegisterPayload.captcha:type_name -> api.sso.CaptchaPayload
+var file_api_sso_v1_register_proto_depIdxs = []int32{
+	1, // 0: api.sso.v1.RegisterRequest.payload:type_name -> api.sso.v1.RegisterPayload
+	2, // 1: api.sso.v1.RegisterRequest.oidc:type_name -> google.protobuf.Struct
+	3, // 2: api.sso.v1.RegisterPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -260,27 +262,27 @@ var file_api_sso_register_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_api_sso_register_proto_init() }
-func file_api_sso_register_proto_init() {
-	if File_api_sso_register_proto != nil {
+func init() { file_api_sso_v1_register_proto_init() }
+func file_api_sso_v1_register_proto_init() {
+	if File_api_sso_v1_register_proto != nil {
 		return
 	}
-	file_api_sso_login_proto_init()
+	file_api_sso_v1_login_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_sso_register_proto_rawDesc), len(file_api_sso_register_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_sso_v1_register_proto_rawDesc), len(file_api_sso_v1_register_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_api_sso_register_proto_goTypes,
-		DependencyIndexes: file_api_sso_register_proto_depIdxs,
-		MessageInfos:      file_api_sso_register_proto_msgTypes,
+		GoTypes:           file_api_sso_v1_register_proto_goTypes,
+		DependencyIndexes: file_api_sso_v1_register_proto_depIdxs,
+		MessageInfos:      file_api_sso_v1_register_proto_msgTypes,
 	}.Build()
-	File_api_sso_register_proto = out.File
-	file_api_sso_register_proto_goTypes = nil
-	file_api_sso_register_proto_depIdxs = nil
+	File_api_sso_v1_register_proto = out.File
+	file_api_sso_v1_register_proto_goTypes = nil
+	file_api_sso_v1_register_proto_depIdxs = nil
 }

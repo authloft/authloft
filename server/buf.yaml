@@ -13,6 +13,14 @@ lint:
     # 接口文档.md §12.9 规定包名为 api.<域>（如 api.common），不带版本后缀；
     # 该规则与本项目包名约定冲突，按文档优先豁免。
     - PACKAGE_VERSION_SUFFIX
+    # 接口文档.md §1.3 行 104 定稿：SsoService 登录流程五方法
+    # （LoginDefault/Register/ResetPassword/LoginOauth/GetLoginTicket）共用同一响应消息
+    # LoginFlowResponse，§2.7.4/§2.8 的写入应答亦复用既有消息，响应名不随方法名
+    # （§12.9 行 1747「请求 XxxRequest、响应 XxxResponse」）、亦不每方法独建，
+    # 两条响应侧规则与文档冲突，按「文档优先于代码」豁免；
+    # 请求侧命名规则（RPC_REQUEST_STANDARD_NAME）不豁免。
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
 plugins:
   # 自定义 check 插件（官方插件机制，buf.build/go/bufplugin SDK）。
   # 插件是独立 Go module（tools/bufcheck/go.mod），不污染 server 主模块依赖。

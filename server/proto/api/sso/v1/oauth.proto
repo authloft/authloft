@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package api.sso.v1;
+
+import "google/protobuf/struct.proto";
+
+// 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747）；Go 产物 authloft/gen/go/api/sso/v1（ssov1）。
+option go_package = "authloft/gen/go/api/sso/v1;ssov1";
+
+// AuthorizeRequest 是 SsoService/Authorize 的请求消息
+// （docs/接口文档.md §2.7.2，行 579-599）。
+// 该接口是 RPC（非 302），query 参数进请求消息；client_id、scope、nonce、
+// code_challenge、code_challenge_method 等 OIDC 上下文由前端落 localStorage，
+// 不带进接口（行 584），故不建模。
+message AuthorizeRequest {
+  // 必填，providerKey（§2.7.2 行 582）。
+  string provider = 1;
+  // 非必填：login（默认）｜bind（已登录用户从安全中心发起绑定，需 al_session，
+  // 否则 401 unauthenticated）（§2.7.2 行 583；§1.5 行 187）；
+  // 跨版本可新增，用 string 承载（§12.9 行 1754）。
+  string scene = 2;
+}
+
+// AuthorizeResponse 是 SsoService/Authorize 的响应
+// （docs/接口文档.md §2.7.2，行 586）。
+// 该接口是普通 RPC（非 302），响应只有 authorize_url 一个字段（行 586）。
+message AuthorizeResponse {
+  // 带前缀 state 的三方授权 URL，由前端 location.replace 跳转（§2.7.2 行 586、588）。
+  string authorize_url = 1;
+}
+
+// LoginOauthRequest 是 SsoService/LoginOauth 的请求消息
+// （docs/接口文档.md §2.7.4，行 616-651；小程序扫码提交同端点）。
+// 字段名与 §2.7.4 字段表（行 620-628）逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
+// 响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含 LoginOauth），故不定义
+// LoginOauthResponse：浏览器 / 小程序（无 ticket_id）场景为登录流程响应；
+// stage=scanned 应答 { "status": "scanned" } 与带 ticket_id 写入应答（行 634、643-651）
+// 同由 LoginFlowResponse 的 status / ticket 字段承载（零值省略后 JSON 形状与该行示例一致）。
+message LoginOauthRequest {
+  // 必填（§2.7.4 行 622）。
+  string provider_key = 1;
+  // 第三方授权码 / wx.login() 的 code；stage=complete（默认）时必填，stage=scanned 时不带（§2.7.4 行 623）。
+  string code = 2;
+  // redirect 通道必填，与 al_login_state Cookie 比对（必须是 l 前缀）；stage=scanned 时不带
+  // （§2.7.4 行 624、594）。
+  string state = 3;
+  // complete（默认）｜scanned（仅上报已扫码，写 ticket.status=scanned 空结果）（§2.7.4 行 625）；
+  // 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+  string stage = 4;
+  // 扫码场景：结果写入该 ticket；stage=scanned 时必填（§2.7.4 行 626）。
+  string ticket_id = 5;
+  // 小程序 api 通道 / 绑定中间态时回传（§2.7.4 行 627）。
+  string login_token = 6;
+  // OIDC 上下文，取自跳转前落 localStorage 的 __AUTHLOFT_INIT__.oidc（§2.7.2 行 599、§2.7.4 行 628）；
+  // 前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
+  // google.protobuf.Struct，不逐字段建模。
+  google.protobuf.Struct oidc = 7;
+}

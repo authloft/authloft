@@ -4,15 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { CaptchaPayload } from "../sso/login_pb";
-import { file_api_sso_login } from "../sso/login_pb";
+import type { CaptchaPayload } from "../sso/v1/login_pb";
+import { file_api_sso_v1_login } from "../sso/v1/login_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/account/security.proto.
  */
 export const file_api_account_security: GenFile = /*@__PURE__*/
-  fileDesc("ChphcGkvYWNjb3VudC9zZWN1cml0eS5wcm90bxILYXBpLmFjY291bnQiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIlkKEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSKAoHY2FwdGNoYRgCIAEoCzIXLmFwaS5zc28uQ2FwdGNoYVBheWxvYWQSDAoEY29kZRgDIAEoCSJQChBQaG9uZUJpbmRSZXF1ZXN0EgwKBHN0ZXAYASABKAkSLgoHcGF5bG9hZBgCIAEoCzIdLmFwaS5hY2NvdW50LlBob25lQmluZFBheWxvYWQiWQoQRW1haWxCaW5kUGF5bG9hZBINCgVlbWFpbBgBIAEoCRIoCgdjYXB0Y2hhGAIgASgLMhcuYXBpLnNzby5DYXB0Y2hhUGF5bG9hZBIMCgRjb2RlGAMgASgJIlAKEEVtYWlsQmluZFJlcXVlc3QSDAoEc3RlcBgBIAEoCRIuCgdwYXlsb2FkGAIgASgLMh0uYXBpLmFjY291bnQuRW1haWxCaW5kUGF5bG9hZEIhWh9hdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQ7YXBpYgZwcm90bzM", [file_api_sso_login]);
+  fileDesc("ChphcGkvYWNjb3VudC9zZWN1cml0eS5wcm90bxILYXBpLmFjY291bnQiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIlwKEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSKwoHY2FwdGNoYRgCIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQSDAoEY29kZRgDIAEoCSJQChBQaG9uZUJpbmRSZXF1ZXN0EgwKBHN0ZXAYASABKAkSLgoHcGF5bG9hZBgCIAEoCzIdLmFwaS5hY2NvdW50LlBob25lQmluZFBheWxvYWQiXAoQRW1haWxCaW5kUGF5bG9hZBINCgVlbWFpbBgBIAEoCRIrCgdjYXB0Y2hhGAIgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIMCgRjb2RlGAMgASgJIlAKEEVtYWlsQmluZFJlcXVlc3QSDAoEc3RlcBgBIAEoCRIuCgdwYXlsb2FkGAIgASgLMh0uYXBpLmFjY291bnQuRW1haWxCaW5kUGF5bG9hZEIhWh9hdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQ7YXBpYgZwcm90bzM", [file_api_sso_v1_login]);
 
 /**
  * ChangePasswordRequest 是 POST /api/account/password 的请求（§3.3 行 829-836）。
@@ -58,9 +58,9 @@ export type PhoneBindPayload = Message<"api.account.PhoneBindPayload"> & {
   phone: string;
 
   /**
-   * 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
+   * 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 844、§2.5 行 506）。
    *
-   * @generated from field: api.sso.CaptchaPayload captcha = 2;
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 2;
    */
   captcha?: CaptchaPayload | undefined;
 
@@ -122,9 +122,9 @@ export type EmailBindPayload = Message<"api.account.EmailBindPayload"> & {
   email: string;
 
   /**
-   * 人机校验提交，跨包引用 api.sso.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
+   * 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 475-484）；challenge 必填（§3.4 行 846、§2.5 行 506）。
    *
-   * @generated from field: api.sso.CaptchaPayload captcha = 2;
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 2;
    */
   captcha?: CaptchaPayload | undefined;
 

@@ -7,12 +7,17 @@ import {
   type JsonValue,
   type MessageShape,
 } from '@bufbuild/protobuf';
-import {
-  ErrorEnvelopeSchema,
-  type ErrorEnvelope,
-} from '../../gen/proto/api/common/response_pb';
 import { ApiError } from './errors';
 import type { ApiFormat, Endpoint } from './endpoints';
+
+// sso 域 Connect 化：旧统一错误信封 ErrorEnvelope / SuccessEnvelope
+//（gen/proto/api/common/response_pb.ts）已删除——非 200 错误体为 Connect 标准体 +
+// api.common.v1.ErrorInfo detail（接口文档 §1.5 行 197-211），http 层的 Connect
+// 错误体归一化另行重写；此处保留最小结构类型维持既有归一逻辑的可编译性，
+// 后端不再产出 status:"error" 形状，解不出即走 fallbackCode 兜底（§1.5 行 226）。
+interface ErrorEnvelope {
+  error?: { code?: string; message?: string; requestId?: string };
+}
 
 // ApiError 与端点描述类型（ApiFormat / HttpMethod / Endpoint / ApiErrorInit）
 // 已分别迁入 errors.ts / endpoints.ts；此处 re-export 保持
@@ -105,9 +110,8 @@ export async function request<
     }
     return fromJson(endpoint.res, parsed);
   }
-  // TODO(protobuf 信封)：binary 分支的 2xx 应按 SuccessEnvelope / ErrorEnvelope 两步解码
-  // （gen/proto/api/common/response_pb.ts）。endpoints.ts 尚无 binary 端点接入该信封，
-  // 且数据消息与信封在 wire 上字段重叠、无法可靠探测，故保持直接解码，待 handler 接入时改造。
+  // TODO：binary 分支的 2xx 直接按端点消息解码（旧 SuccessEnvelope / ErrorEnvelope
+  // 两步解码已随信封删除，§1.0/§1.5）；Connect 错误体归一化随 transport 重写落地。
   const bytes = new Uint8Array(await response.arrayBuffer());
   return fromBinary(endpoint.res, bytes);
 }
@@ -278,18 +282,31 @@ function isErrorEnvelopeShaped(parsed: JsonValue): boolean {
   );
 }
 
-/** 从 JSON 原文解 ErrorEnvelope；非信封或结构不符返回 undefined。 */
+/** 从 JSON 原文解旧错误信封（信封消息删除后改为结构判别）；非信封或结构不符返回 undefined。 */
 function decodeErrorEnvelopeJson(
   parsed: JsonValue,
 ): ErrorEnvelope | undefined {
   if (!isErrorEnvelopeShaped(parsed)) {
     return undefined;
   }
-  try {
-    return fromJson(ErrorEnvelopeSchema, parsed);
-  } catch {
+  const { error } = parsed as { error?: unknown };
+  if (typeof error !== 'object' || error === null) {
     return undefined;
   }
+  const record = error as Record<string, unknown>;
+  const requestId =
+    typeof record.request_id === 'string'
+      ? record.request_id
+      : typeof record.requestId === 'string'
+        ? record.requestId
+        : undefined;
+  return {
+    error: {
+      code: typeof record.code === 'string' ? record.code : undefined,
+      message: typeof record.message === 'string' ? record.message : undefined,
+      requestId,
+    },
+  };
 }
 
 /** 2xx JSON 响应体内识别 §1.0 业务失败信封 → ApiError；非信封（含 sso 流程态）返回 undefined。 */
@@ -317,20 +334,21 @@ function toApiError(
   });
 }
 
-/** 非 2xx 响应体按协商编码解统一错误信封（§1.5 行 214）；解不出走六元兜底。 */
+/** 非 2xx 响应体按协商编码解旧错误信封；解不出走六元兜底。
+ * 旧 binary 信封分支已随 ErrorEnvelope 删除（Connect 错误体归一化另行处理），
+ * binary 非 200 一律走 fallbackCode 兜底。 */
 async function readApiError(
   response: Response,
   format: ApiFormat,
 ): Promise<ApiError> {
   let envelope: ErrorEnvelope | undefined;
   try {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    envelope =
-      format === 'json'
-        ? decodeErrorEnvelopeJson(
-            JSON.parse(new TextDecoder().decode(bytes)) as JsonValue,
-          )
-        : fromBinary(ErrorEnvelopeSchema, bytes);
+    if (format === 'json') {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      envelope = decodeErrorEnvelopeJson(
+        JSON.parse(new TextDecoder().decode(bytes)) as JsonValue,
+      );
+    }
   } catch {
     envelope = undefined;
   }

@@ -3,9 +3,10 @@ syntax = "proto3";
 package api.account;
 
 import "google/protobuf/struct.proto";
-// captcha 配置对象上移 api.common（全仓单一结构源，§12.9 行 1722），本文件只引用不复制；
-// common 是叶子包，不 import sso / account，无循环依赖。
-import "api/common/captcha.proto";
+// captcha 配置对象上移 api.common.v1（全仓单一结构源，§12.9 行 1748），本文件只引用不复制；
+// common.v1 是叶子包，不 import sso / account，无循环依赖。
+// （包名升级：api.common → api.common.v1，import 与符号随迁，account 域 Connect 化另行处理。）
+import "api/common/v1/captcha.proto";
 
 // Go 包名沿用 api.common / api.sso 的写法：
 // 目录 api/account 对应包名 api.account（docs/接口文档.md §12.9 行 1721「按域分目录、包名为 api.<域>」）。
@@ -125,8 +126,8 @@ message AccountConfigResponse {
   // 两步验证摘要（§3.2 行 792、行 801-821）。
   MfaPolicy mfa_policy = 2;
   // account entry 的 captcha 配置读取处（§3.2 行 792、§2.5 行 452-462）；
-  // 跨包引用 api.common.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
-  api.common.CaptchaConfig captcha = 3;
+  // 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
+  api.common.v1.CaptchaConfig captcha = 3;
   // 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2 行 792）。
   bool has_password = 4;
 }

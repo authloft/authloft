@@ -9,15 +9,18 @@
  */
 
 import type { DescMessage } from '@bufbuild/protobuf';
-import { EnvelopeSchema } from '../../gen/proto/api/sso/envelope_pb';
-import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/login_pb';
-import { RegisterRequestSchema } from '../../gen/proto/api/sso/register_pb';
-import { ResetRequestSchema } from '../../gen/proto/api/sso/reset_pb';
-import { LoginOauthRequestSchema } from '../../gen/proto/api/sso/oauth_pb';
+// sso 域 Connect 化：sso 生成物迁 gen/proto/api/sso/v1，信封消息更名
+// LoginFlowResponse（接口文档 §1.3 行 104）、请求消息名随方法名（§12.9 行 1747）；
+// 本表为编译通过做最小符号随迁，端点表整体 Connect client 化后续再改。
+import { LoginFlowResponseSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/v1/login_pb';
+import { RegisterRequestSchema } from '../../gen/proto/api/sso/v1/register_pb';
+import { ResetPasswordRequestSchema } from '../../gen/proto/api/sso/v1/reset_pb';
+import { LoginOauthRequestSchema } from '../../gen/proto/api/sso/v1/oauth_pb';
 import {
-  QrcodeRequestSchema,
-  QrcodeResponseSchema,
-} from '../../gen/proto/api/sso/ticket_pb';
+  CreateQrcodeRequestSchema,
+  CreateQrcodeResponseSchema,
+} from '../../gen/proto/api/sso/v1/ticket_pb';
 import {
   AvatarCommitRequestSchema,
   AvatarPresignRequestSchema,
@@ -67,36 +70,36 @@ export interface Endpoint<
 /** POST /api/sso/login/default —— 统一提交端点，flow=login（docs/接口文档.md §2.2），响应为统一信封（§1.3）。 */
 export const ssoLoginDefault: Endpoint<
   typeof LoginDefaultRequestSchema,
-  typeof EnvelopeSchema
+  typeof LoginFlowResponseSchema
 > = {
   path: '/api/sso/login/default',
   method: 'POST',
   req: LoginDefaultRequestSchema,
-  res: EnvelopeSchema,
+  res: LoginFlowResponseSchema,
   format: 'json',
 };
 
 /** POST /api/sso/register —— 注册，flow=register（docs/接口文档.md §2.3），响应复用统一信封。 */
 export const ssoRegister: Endpoint<
   typeof RegisterRequestSchema,
-  typeof EnvelopeSchema
+  typeof LoginFlowResponseSchema
 > = {
   path: '/api/sso/register',
   method: 'POST',
   req: RegisterRequestSchema,
-  res: EnvelopeSchema,
+  res: LoginFlowResponseSchema,
   format: 'json',
 };
 
 /** POST /api/sso/reset-password —— 重置密码，flow=reset（docs/接口文档.md §2.4），响应复用统一信封。 */
 export const ssoResetPassword: Endpoint<
-  typeof ResetRequestSchema,
-  typeof EnvelopeSchema
+  typeof ResetPasswordRequestSchema,
+  typeof LoginFlowResponseSchema
 > = {
   path: '/api/sso/reset-password',
   method: 'POST',
-  req: ResetRequestSchema,
-  res: EnvelopeSchema,
+  req: ResetPasswordRequestSchema,
+  res: LoginFlowResponseSchema,
   format: 'json',
 };
 
@@ -107,24 +110,24 @@ export const ssoResetPassword: Endpoint<
  */
 export const ssoLoginOauth: Endpoint<
   typeof LoginOauthRequestSchema,
-  typeof EnvelopeSchema
+  typeof LoginFlowResponseSchema
 > = {
   path: '/api/sso/login/oauth',
   method: 'POST',
   req: LoginOauthRequestSchema,
-  res: EnvelopeSchema,
+  res: LoginFlowResponseSchema,
   format: 'json',
 };
 
 /** POST /api/sso/qrcode —— 拉取小程序码（docs/接口文档.md §2.8），登录与绑定共用，靠 scene 区分。 */
 export const ssoQrcode: Endpoint<
-  typeof QrcodeRequestSchema,
-  typeof QrcodeResponseSchema
+  typeof CreateQrcodeRequestSchema,
+  typeof CreateQrcodeResponseSchema
 > = {
   path: '/api/sso/qrcode',
   method: 'POST',
-  req: QrcodeRequestSchema,
-  res: QrcodeResponseSchema,
+  req: CreateQrcodeRequestSchema,
+  res: CreateQrcodeResponseSchema,
   format: 'json',
 };
 
