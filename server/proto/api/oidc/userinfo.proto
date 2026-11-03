@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package api.oidc;
 
-// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// Go 包名沿用 api.common.v1 / api.sso.v1 / api.account.v1 的写法：
 // 目录 api/oidc 对应包名 api.oidc（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
 option go_package = "authloft/gen/go/api/oidc;api";
 
@@ -40,7 +40,7 @@ message UserinfoResponse {
 //（数据消息顶层禁用 status 字段）。其字段集合与
 // `GET /api/rpc/account/{uid}/profile` 逐字相同（§3.1 行 771「共用同一字段集合」、
 // 《后端架构》§14.4 行 1618「共用同一结构」），按「同一结构只定义一次」口径
-//（既定口径，先例 api/sso/login.proto 行 14「响应复用、不另建消息」），
-// 跨包复用 api.rpc.ProfileResponse（api/rpc/profile.proto），本包不重复定义；
+//（既定口径，先例 api/sso/v1/login.proto 行 14「响应复用、不另建消息」），
+// 跨包复用 api.rpc.v1.ProfileResponse（api/rpc/v1/profile.proto），本包不重复定义；
 // 掩码口径差异（get_user_info 默认掩码、scope 含 phone_plain / email_plain 才明文，
 // §3.1 行 803；rpc 明文，行 805）由服务端取值决定，不构成结构差异。

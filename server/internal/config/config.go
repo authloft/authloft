@@ -22,7 +22,7 @@ import (
 
 // Duration 是 time.Duration 的 YAML 包装类型：yaml.v3 不直接把 "30s" 这类
 // Go 时长字面量解析成 time.Duration，统一经本类型的 UnmarshalYAML 走
-// time.ParseDuration 转换；写回 YAML（首次运行自动生成）时输出
+// time.ParseDuration 转换；写回 YAML 时输出
 // time.Duration.String() 形式（如 "30s"、"1h0m0s"），人类可读且可再解析。
 type Duration struct{ time.Duration }
 

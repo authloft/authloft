@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package api.oidc;
 
-// Go 包名沿用 api.common / api.sso / api.account 的写法：
+// Go 包名沿用 api.common.v1 / api.sso.v1 / api.account.v1 的写法：
 // 目录 api/oidc 对应包名 api.oidc（docs/接口文档.md §12.9 行 1746「按域分目录、包名为 api.<域>」）。
 option go_package = "authloft/gen/go/api/oidc;api";
 
@@ -64,5 +64,5 @@ message RevokeRequest {
 // 公钥集（/.well-known/jwks.json）的报文结构未在 §4 定义（按 OIDC discovery 与
 // RFC 7517 标准格式，无逐字段契约），authorize 为 GET 302 跳转 / HTML 渲染端点
 //（行 1049、§4.2 两条路径均无 JSON 报文），均不建消息；authorize 的 OIDC 原始参数
-// 在登录链路中已由 api.sso.LoginDefaultRequest.oidc（google.protobuf.Struct，不逐字段
-// 建模）承载，见 api/sso/login.proto。
+// 在登录链路中已由 api.sso.v1.LoginDefaultRequest.oidc（google.protobuf.Struct，不逐字段
+// 建模）承载，见 api/sso/v1/login.proto。

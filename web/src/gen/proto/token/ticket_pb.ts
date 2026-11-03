@@ -70,7 +70,7 @@ export const TicketPayloadSchema: GenMessage<TicketPayload> = /*@__PURE__*/
  * 按 protojson（§1.6 行 86 MarshalOptions）序列化为 JSON 后整值加密（复用 §11.6.1
  * 封装、purpose=ticket）写入 Redis，Redis 内不留明文；读取方 GETDEL 后解密。
  * 字段名与行 1342-1363 的 JSON 结构一致；JSON 未给编号，按出现顺序从 1 起连续
- * （编号约定沿用接口文档 §12.9 行 1723 先例）。
+ * （编号约定沿用接口文档 §12.9 行 1749 先例）。
  *
  * @generated from message token.TicketResult
  */
