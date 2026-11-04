@@ -115,6 +115,23 @@ func OIDCCodeKey(code string) string {
 	return oidcCodeKeyPrefix + code
 }
 
+// providerRowKeyPrefix Provider 整行缓存键前缀（§5.1 行 847：al:prov:v:{key}）。
+const providerRowKeyPrefix = "al:prov:v:"
+
+// ProviderRowKey 返回 Provider 整行缓存键（§5.1 行 847，String、TTL 600s、
+// 值为整行序列化字节）。
+func ProviderRowKey(providerKey string) string {
+	return providerRowKeyPrefix + providerKey
+}
+
+// ProviderVersionKey 返回 Provider 缓存版本号键（§5.1 行 848，String、无 TTL、
+// 后台写 Provider 时 INCR）。
+func ProviderVersionKey() string { return "al:prov:ver" }
+
+// ProviderChgKey 返回 Provider 变更通知频道（§5.1 行 849：al:prov:chg）。
+// PUBLISH 侧（admin 写入路径）与 Subscribe 侧（各实例 watcher）共用本函数。
+func ProviderChgKey() string { return "al:prov:chg" }
+
 // dayStamp 返回服务器本地日期 yyyymmdd（§5.1 行 837-838 键名的日期段）。
 func dayStamp(t time.Time) string {
 	return t.Format("20060102")
