@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"authloft/gen/go/token"
@@ -18,10 +19,11 @@ const syncStepBudget = 30 * time.Second
 // syncCookiePath 各根域接收端路径（§3.2 行 251、§11.2 行 1189：GET /sso/sync_cookie）。
 const syncCookiePath = "/sso/sync_cookie"
 
-// expandSyncTarget 把 sso_domains 的裸域名 host[:port]（不含 scheme 与 path）
-// 展开为接收端地址（§3.2 行 251、§11.2 行 1181-1186）。
-func expandSyncTarget(domain string) string {
-	return "https://" + domain + syncCookiePath
+// expandSyncTarget 把 sso_domains 的完整 URL 前缀（含 scheme/host/可选 path，
+// 末尾不带 "/"）展开为接收端地址（§3.2 行 251、§11.2 行 1181-1186）；
+// 防御尾斜杠，避免产生 "//sso"。
+func expandSyncTarget(prefix string) string {
+	return strings.TrimRight(prefix, "/") + syncCookiePath
 }
 
 // SyncCookieURLBuilder 多域名同步 URL 适配器：拼首跳 URL 与加密载荷。
@@ -38,7 +40,7 @@ func NewSyncCookieURLBuilder(codec *security.Codec) *SyncCookieURLBuilder {
 }
 
 // Build 生成多域名同步首跳 URL（§11.2 行 1183-1187）：
-// 地址数组 = sso_domains 顺序（每个裸域名展开为 https://{domain}/sso/sync_cookie）
+// 地址数组 = sso_domains 顺序（每个完整 URL 前缀展开为 {prefix}/sso/sync_cookie）
 // + 末尾 finalURL；首跳取数组第一个且不写进载荷（避免自跳循环），remaining 为
 // 展开后的 domains[1:]（不含首跳、不含 finalURL），exp = 签发时刻 + 30s × 地址总数。
 // domains 为空时返回空串（不发起同步）。
@@ -50,10 +52,10 @@ func (b *SyncCookieURLBuilder) Build(_ context.Context, cookieName, cookieValue,
 	// 地址总数 = 首跳 + remaining 个数 + finalURL（§11.2 行 1196）。
 	total := len(domains) + 1
 
-	// 裸域名 host[:port] 一律展开为接收端完整 URL；首跳不写进载荷（§11.2 行 1184）。
+	// 完整 URL 前缀一律展开为接收端完整 URL；首跳不写进载荷（§11.2 行 1184）。
 	targets := make([]string, len(domains))
-	for i, domain := range domains {
-		targets[i] = expandSyncTarget(domain)
+	for i, prefix := range domains {
+		targets[i] = expandSyncTarget(prefix)
 	}
 
 	now := time.Now

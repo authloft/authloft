@@ -58,8 +58,13 @@ func TestSyncCookieBuildPayload(t *testing.T) {
 	b := NewSyncCookieURLBuilder(codec)
 	b.Now = syncFixedNow
 
-	// sso_domains 为裸域名 host[:port]（§3.2 行 251），实现方负责展开。
-	domains := []string{"a.example", "b.example", "c.example"}
+	// sso_domains 为完整 URL 前缀（§3.2 行 251），实现方追加 /sso/sync_cookie；
+	// 覆盖带 path、无 path、尾斜杠三种形态。
+	domains := []string{
+		"https://a.example/prefix",
+		"https://b.example",
+		"https://c.example/",
+	}
 	const finalURL = "https://final.example/done"
 
 	raw, err := b.Build(context.Background(), "al_session", "session-value", "604800", domains, finalURL)
@@ -68,7 +73,7 @@ func TestSyncCookieBuildPayload(t *testing.T) {
 	}
 
 	wantTargets := []string{
-		"https://a.example/sso/sync_cookie",
+		"https://a.example/prefix/sso/sync_cookie",
 		"https://b.example/sso/sync_cookie",
 		"https://c.example/sso/sync_cookie",
 	}
@@ -118,13 +123,13 @@ func TestSyncCookieBuildSingleDomain(t *testing.T) {
 	b.Now = syncFixedNow
 
 	const finalURL = "https://final.example"
-	raw, err := b.Build(context.Background(), "al_session", "v", "0", []string{"a.example"}, finalURL)
+	raw, err := b.Build(context.Background(), "al_session", "v", "0", []string{"https://a.example/prefix"}, finalURL)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 
 	first, payload := splitSyncURL(t, raw)
-	if want := "https://a.example/sso/sync_cookie"; first != want {
+	if want := "https://a.example/prefix/sso/sync_cookie"; first != want {
 		t.Errorf("first hop = %q, want %q", first, want)
 	}
 	p, err := security.Open[token.SyncCookiePayload](codec, security.PurposeSyncPayload, payload)
@@ -156,7 +161,7 @@ func TestSyncCookieCrossPurposeOpenFails(t *testing.T) {
 
 func mustBuild(t *testing.T, b *SyncCookieURLBuilder) string {
 	t.Helper()
-	raw, err := b.Build(context.Background(), "al_session", "v", "604800", []string{"a.example"}, "https://final.example")
+	raw, err := b.Build(context.Background(), "al_session", "v", "604800", []string{"https://a.example"}, "https://final.example")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
