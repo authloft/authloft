@@ -1,0 +1,559 @@
+package admin
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	connectrpc "connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
+
+	adminv1 "authloft/gen/go/api/admin/v1"
+	"authloft/gen/go/api/admin/v1/adminv1connect"
+	commonv1 "authloft/gen/go/api/common/v1"
+	providerpb "authloft/gen/go/provider"
+	"authloft/gen/go/token"
+	internalconnect "authloft/internal/connect"
+	"authloft/internal/provider"
+	"authloft/internal/repo"
+	"authloft/internal/repo/model"
+	"authloft/internal/security"
+	"authloft/internal/session"
+	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
+	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
+	_ "authloft/internal/provider/email/smtp"
+	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/sms/aliyun_sms"
+)
+
+// fakeEpochReader 隔离型 epoch 读取（口径同 handler/account/account_test.go）。
+type fakeEpochReader struct{ values map[int64]int64 }
+
+func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
+	return f.values[uid], nil
+}
+
+// fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union 查询固定
+// 返回一行，其余返回 rows/total），key 透传到闭包；全部查询入参留档断言。
+type fakeProviders struct {
+	rows     []model.Provider
+	total    int64
+	listErr  error
+	keyRow   *model.Provider
+	keyErr   error
+	queries  []repo.ProviderListQuery
+	gotKeys  []string
+	unionRow model.Provider
+}
+
+func (f *fakeProviders) FindByKey(_ context.Context, providerKey string) (*model.Provider, error) {
+	f.gotKeys = append(f.gotKeys, providerKey)
+	return f.keyRow, f.keyErr
+}
+
+func (f *fakeProviders) ListProviders(_ context.Context, q repo.ProviderListQuery) ([]model.Provider, int64, error) {
+	f.queries = append(f.queries, q)
+	if q.Category != nil && *q.Category == "union" {
+		return []model.Provider{f.unionRow}, 1, nil
+	}
+	return f.rows, f.total, f.listErr
+}
+
+// newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
+// 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
+// 助手与 http.Handler（口径同 handler/account/account_test.go）。
+func newAdminHandler(t *testing.T, providers ProviderReader) (*session.Tokens, *fakeEpochReader, http.Handler) {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(0x20 + i)
+	}
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: key})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	tokens := session.NewTokens(security.NewCodec(ks))
+	epochs := &fakeEpochReader{values: map[int64]int64{}}
+	_, h := adminv1connect.NewAdminServiceHandler(
+		New(providers),
+		connectrpc.WithInterceptors(
+			internalconnect.NewSessionInterceptor(
+				session.NewVerifier(tokens, epochs),
+				session.NewRenewer(tokens, time.Hour),
+				session.NewCookie("al_session", "", time.Hour),
+				nil,
+			),
+			internalconnect.NewAdminInterceptor(),
+		),
+	)
+	return tokens, epochs, h
+}
+
+// adminCookie 签发指定 uid（epoch=3）的有效会话 Cookie。
+func adminCookie(t *testing.T, tokens *session.Tokens, epochs *fakeEpochReader, uid int64) string {
+	t.Helper()
+	p := &token.SessionTokenPayload{
+		Id:    uid,
+		Epoch: 3,
+		Amr:   []string{"pwd"},
+		Sid:   "sid-admin",
+		Iat:   time.Now().Add(-time.Minute).Unix(),
+		Exp:   time.Now().Add(time.Hour).Unix(),
+	}
+	epochs.values[uid] = p.Epoch
+	tok, err := tokens.Sign(p)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	return "al_session=" + tok
+}
+
+// wantRow GetProvider / List 用例的 provider 行（§5.2 列表列 + 详情列全覆盖）。
+func wantRow(t *testing.T) *model.Provider {
+	t.Helper()
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{
+		ClientId:     "wx-123",
+		ClientSecret: "secret-456",
+		AppId:        "app-789",
+	})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	return &model.Provider{
+		ID: 7, ProviderKey: "wechat_official", UnionProvider: "wechat_union",
+		DisplayName: "微信扫码", Category: "oauth", Type: "wechat_mp",
+		EnableSignin: 1, EnableSignup: 0, AutoBind: 1, AutoBindFields: "email,phone",
+		IsEnabled: 1, UiGroup: "social", SortOrder: 30,
+		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
+		Ext:       ext,
+		CreatedAt: time.Unix(1761700000, 0).UTC(), UpdatedAt: time.Unix(1761800000, 0).UTC(),
+	}
+}
+
+// doRPC 打一次带 JSON body 的 admin RPC（cookie 可空），返回响应与原文。
+func doRPC(t *testing.T, h http.Handler, target, body, cookie string) (*http.Response, string) {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	req, err := http.NewRequest(http.MethodPost, srv.URL+target, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", target, err)
+	}
+	raw := readBody(t, resp.Body)
+	return resp, raw
+}
+
+func readBody(t *testing.T, r io.Reader) string {
+	t.Helper()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(b)
+}
+
+// decodeErrorCode 从 Connect 错误体解出顶层 code（§1.5 行 197-211）。
+func decodeErrorCode(t *testing.T, raw string) string {
+	t.Helper()
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	return body.Code
+}
+
+// decodeErrorInfo 从 Connect 错误体 details 解出 ErrorInfo（base64 value →
+// proto 解码，§1.5 行 203-210），断言 domain / code 在 §1.6 封闭集合内。
+func decodeErrorInfo(t *testing.T, raw string) *commonv1.ErrorInfo {
+	t.Helper()
+	var body struct {
+		Code    string `json:"code"`
+		Details []struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if len(body.Details) != 1 {
+		t.Fatalf("details 数量 = %d, want 1 (body %s)", len(body.Details), raw)
+	}
+	if body.Details[0].Type != "api.common.v1.ErrorInfo" {
+		t.Fatalf("details[0].type = %q, want api.common.v1.ErrorInfo", body.Details[0].Type)
+	}
+	buf, err := base64.RawStdEncoding.DecodeString(body.Details[0].Value)
+	if err != nil {
+		t.Fatalf("decode detail value: %v", err)
+	}
+	info := &commonv1.ErrorInfo{}
+	if err := proto.Unmarshal(buf, info); err != nil {
+		t.Fatalf("unmarshal ErrorInfo: %v", err)
+	}
+	return info
+}
+
+// schemaOf 打 GetProviderSchema（管理员会话）并解出 200 响应。
+func schemaOf(t *testing.T, h http.Handler, providerType, cookie string) *adminv1.SchemaResponse {
+	t.Helper()
+	resp, raw := doRPC(t, h,
+		adminv1connect.AdminServiceGetProviderSchemaProcedure,
+		`{"type":"`+providerType+`"}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetProviderSchema(%q): status = %d, want 200 (body %s)", providerType, resp.StatusCode, raw)
+	}
+	var got adminv1.SchemaResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode schema response %q: %v", raw, err)
+	}
+	return &got
+}
+
+// TestListProvidersAdminSession 管理员会话（uid=1）列表：200；§5.2 行 1168
+// 列表列逐项；筛选 / 分页入参按 §1.7 透传（归一后回显）；响应无任何 ext
+// 凭证字段（明文仅在 GetProvider，§12.1 行 1719）。
+func TestListProvidersAdminSession(t *testing.T) {
+	fakes := &fakeProviders{
+		rows:     []model.Provider{*wantRow(t)},
+		total:    5,
+		unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"},
+	}
+	tokens, epochs, h := newAdminHandler(t, fakes)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure,
+		`{"category":"oauth"}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.ProviderListResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetTotal() != 5 || got.GetPage() != 1 || got.GetPageSize() != 20 {
+		t.Errorf("分页 = (total=%d page=%d size=%d), want (5, 1, 20)（缺省归一回显）", got.GetTotal(), got.GetPage(), got.GetPageSize())
+	}
+	if len(got.GetItems()) != 1 {
+		t.Fatalf("items = %d, want 1", len(got.GetItems()))
+	}
+	item := got.GetItems()[0]
+	if item.GetProviderKey() != "wechat_official" || item.GetDisplayName() != "微信扫码" ||
+		item.GetCategory() != "oauth" || item.GetType() != "wechat_mp" {
+		t.Errorf("列表列 = %+v", item)
+	}
+	if !item.GetIsEnabled() || !item.GetEnableSignin() || item.GetEnableSignup() || !item.GetAutoBind() {
+		t.Errorf("状态 / 策略标签 = (enabled=%v signin=%v signup=%v bind=%v)", item.GetIsEnabled(), item.GetEnableSignin(), item.GetEnableSignup(), item.GetAutoBind())
+	}
+	if item.GetSortOrder() != 30 {
+		t.Errorf("sortOrder = %d, want 30", item.GetSortOrder())
+	}
+	// 列表响应不含 ext 任何字段（proto 列表消息即无 ext；wire 上也不得出现）。
+	if strings.Contains(raw, "ext") || strings.Contains(raw, "secret-456") {
+		t.Errorf("列表响应出现 ext / 凭证内容（明文仅在 GetProvider）: %s", raw)
+	}
+	// 筛选与分页透传。
+	if len(fakes.queries) != 1 {
+		t.Fatalf("list 查询次数 = %d, want 1", len(fakes.queries))
+	}
+	q := fakes.queries[0]
+	if q.Category == nil || *q.Category != "oauth" || q.Type != nil || q.IsEnabled != nil {
+		t.Errorf("筛选透传 = %+v（category=oauth，其余 nil）", q)
+	}
+	if q.Page != 1 || q.PageSize != 20 {
+		t.Errorf("分页透传 = (%d, %d), want (1, 20)", q.Page, q.PageSize)
+	}
+
+	// optional is_enabled=false 与显式分页同样透传（0 = 禁用过滤，指针区分未传）。
+	resp, raw = doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure,
+		`{"isEnabled":false,"page":2,"pageSize":50}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("第二次 list status = %d (body %s)", resp.StatusCode, raw)
+	}
+	q = fakes.queries[1]
+	if q.IsEnabled == nil || *q.IsEnabled != 0 {
+		t.Errorf("isEnabled 透传 = %v, want *0（false 过滤）", q.IsEnabled)
+	}
+	if q.Page != 2 || q.PageSize != 50 {
+		t.Errorf("显式分页透传 = (%d, %d), want (2, 50)", q.Page, q.PageSize)
+	}
+}
+
+// TestGetProviderAdminSession 管理员会话详情：200；§5.2 行 1170 全列 + ext
+// Struct 明文（全站唯一明文出口，键 = Ext 字段名 snake_case）。
+func TestGetProviderAdminSession(t *testing.T) {
+	fakes := &fakeProviders{keyRow: wantRow(t)}
+	tokens, epochs, h := newAdminHandler(t, fakes)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderProcedure,
+		`{"providerKey":"wechat_official"}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.AdminProvider
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetProviderKey() != "wechat_official" || got.GetUnionProvider() != "wechat_union" ||
+		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "oauth" || got.GetType() != "wechat_mp" {
+		t.Errorf("详情基础列 = %+v", &got)
+	}
+	if got.GetAutoBindFields() != "email,phone" || got.GetUiGroup() != "social" ||
+		got.GetIconUrl() != "https://cdn.example.com/wechat.png" || got.GetRemark() != "生产渠道" {
+		t.Errorf("详情展示列 = %+v", &got)
+	}
+	if got.GetCreatedAt() != 1761700000 || got.GetUpdatedAt() != 1761800000 {
+		t.Errorf("timestamps = (%d, %d)", got.GetCreatedAt(), got.GetUpdatedAt())
+	}
+	// ext 明文逐项（§5.2 行 1170：返回明文凭证，需管理员会话）。
+	ext := got.GetExt().GetFields()
+	if v := ext["client_id"].GetStringValue(); v != "wx-123" {
+		t.Errorf("ext.client_id = %q, want wx-123（明文）", v)
+	}
+	if v := ext["client_secret"].GetStringValue(); v != "secret-456" {
+		t.Errorf("ext.client_secret = %q, want secret-456（明文，不脱敏）", v)
+	}
+	if v := ext["app_id"].GetStringValue(); v != "app-789" {
+		t.Errorf("ext.app_id = %q, want app-789（键 = Ext 字段名）", v)
+	}
+	if len(fakes.gotKeys) != 1 || fakes.gotKeys[0] != "wechat_official" {
+		t.Errorf("FindByKey 入参 = %v", fakes.gotKeys)
+	}
+}
+
+// TestGetProviderNotFound 详情目标不存在 → 404 not_found（§1.5 行 189
+// 管理后台单资源）。
+func TestGetProviderNotFound(t *testing.T) {
+	fakes := &fakeProviders{keyErr: fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)}
+	tokens, epochs, h := newAdminHandler(t, fakes)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderProcedure,
+		`{"providerKey":"missing"}`, cookie)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", resp.StatusCode, raw)
+	}
+	if code := decodeErrorCode(t, raw); code != "not_found" {
+		t.Errorf("code = %q, want not_found (body %s)", code, raw)
+	}
+}
+
+// TestGetProviderSchemaSenderMeta 消息域 schema（smtp）与注册表 meta 逐项
+// 一致（§15.3：/schema 唯一数据源）：category=email 由 meta 决定；Ext 字段
+// 逐项等于 LookupSenderMeta；基线字段同在；union options 来自 union 查询。
+func TestGetProviderSchemaSenderMeta(t *testing.T) {
+	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"}}
+	tokens, epochs, h := newAdminHandler(t, fakes)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	got := schemaOf(t, h, "smtp", cookie)
+	meta, ok := provider.LookupSenderMeta("smtp")
+	if !ok {
+		t.Fatal("LookupSenderMeta(smtp) 未注册（_ import 缺失）")
+	}
+	if got.GetCategory() != meta.Category || got.GetCategory() != "email" {
+		t.Errorf("category = %q, want email（注册表 meta 决定）", got.GetCategory())
+	}
+	byKey := map[string]*adminv1.SchemaField{}
+	for _, f := range got.GetFields() {
+		byKey[f.GetKey()] = f
+	}
+	for _, mf := range meta.Fields {
+		f, ok := byKey[mf.Key]
+		if !ok {
+			t.Fatalf("schema 缺少 meta 声明字段 %q", mf.Key)
+		}
+		if f.GetLabel() != mf.Label || f.GetType() != mf.Type || f.GetSection() != mf.Section ||
+			f.GetRequired() != mf.Required || f.GetAdvanced() != mf.Advanced || f.GetHelp() != mf.Help {
+			t.Errorf("%s 与注册表 meta 不一致: schema=%+v meta=%+v", mf.Key, f, mf)
+		}
+		if mf.Default == "" && f.GetDefault() != nil {
+			t.Errorf("%s default = %+v, want nil（meta 未声明默认值）", mf.Key, f.GetDefault())
+		}
+	}
+	if v := byKey["port"].GetDefault().GetNumberValue(); v != 587 {
+		t.Errorf("port default = %v, want 587", v)
+	}
+	// 基线表列字段仍在。
+	for _, key := range []string{"provider_key", "display_name", "category", "union_provider",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+		if _, ok := byKey[key]; !ok {
+			t.Errorf("schema 缺少表列基线字段 %q", key)
+		}
+	}
+	// union_provider options 来自 union 类查询（§5.3 行 1197）。
+	if len(fakes.queries) != 1 || fakes.queries[0].Category == nil || *fakes.queries[0].Category != "union" {
+		t.Fatalf("union 查询入参 = %+v, want category=union", fakes.queries)
+	}
+	if opts := byKey["union_provider"].GetOptions(); len(opts) != 1 || opts[0] != "union_a" {
+		t.Errorf("union_provider options = %v, want [union_a]", opts)
+	}
+}
+
+// TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
+// 由 oauth 注册表 Lookup 决定；最小 meta 无字段级声明（registry.go 注释
+// 「字段级 schema 随 admin 实现扩展」）→ Ext 部分仅含表列基线 13 项，不硬编码。
+func TestGetProviderSchemaOauthMeta(t *testing.T) {
+	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
+	tokens, epochs, h := newAdminHandler(t, fakes)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	got := schemaOf(t, h, "wechat_mp", cookie)
+	meta, ok := provider.Lookup("wechat_mp")
+	if !ok {
+		t.Fatal("Lookup(wechat_mp) 未注册（_ import 缺失）")
+	}
+	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
+		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
+	}
+	if len(got.GetFields()) != 13 {
+		t.Errorf("字段数 = %d, want 13（oauth meta 无 Ext 字段声明，仅表列基线）", len(got.GetFields()))
+	}
+	var catField, unionField *adminv1.SchemaField
+	for _, f := range got.GetFields() {
+		switch f.GetKey() {
+		case "category":
+			catField = f
+		case "union_provider":
+			unionField = f
+		}
+	}
+	if catField == nil || len(catField.GetOptions()) != 1 || catField.GetOptions()[0] != "oauth" {
+		t.Errorf("category options = %v, want [oauth]", catField.GetOptions())
+	}
+	if unionField == nil || len(unionField.GetOptions()) != 1 || unionField.GetOptions()[0] != "union_b" {
+		t.Errorf("union_provider options = %v, want [union_b]", unionField.GetOptions())
+	}
+}
+
+// TestGetProviderSchemaUnknownType 未注册 / 空 type → §1.6 封闭集合内
+// invalid_request（Connect 标准码 invalid_argument，ErrorInfo domain=admin）。
+func TestGetProviderSchemaUnknownType(t *testing.T) {
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	for _, body := range []string{`{"type":"no_such_type"}`, `{"type":""}`} {
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderSchemaProcedure, body, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400 (body %s)", body, resp.StatusCode, raw)
+		}
+		if code := decodeErrorCode(t, raw); code != "invalid_argument" {
+			t.Errorf("body %s: code = %q, want invalid_argument (body %s)", body, code, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("body %s: ErrorInfo = (domain=%q code=%q), want (admin, invalid_request)（§1.6 封闭集合）", body, info.GetDomain(), info.GetCode())
+		}
+	}
+}
+
+// TestListProvidersWithoutSession 无会话：session 拦截器放行匿名（既定语义），
+// admin 拦截器拦下 → 401 unauthenticated（§5 行 1145，与 account 域
+// handler 自判 401 的路径不同——admin 域在拦截器层）。
+func TestListProvidersWithoutSession(t *testing.T) {
+	_, _, h := newAdminHandler(t, &fakeProviders{})
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure, `{}`, "")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (body %s)", resp.StatusCode, raw)
+	}
+	if code := decodeErrorCode(t, raw); code != "unauthenticated" {
+		t.Errorf("code = %q, want unauthenticated (body %s)", code, raw)
+	}
+}
+
+// TestNonAdminReturns404 会话有效但 uid≠1 → 404 not_found，文案与普通 404
+// 一致（掩护管理面存在，§1.5 行 189 / wrapper_test 口径）。
+func TestNonAdminReturns404(t *testing.T) {
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	cookie := adminCookie(t, tokens, epochs, 42)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure, `{}`, cookie)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", resp.StatusCode, raw)
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if body.Code != "not_found" {
+		t.Errorf("code = %q, want not_found", body.Code)
+	}
+	if body.Message != "not found" {
+		t.Errorf("message = %q, want %q（不透露路径存在）", body.Message, "not found")
+	}
+}
+
+// TestStubsUnimplemented 其余全部 admin 方法（管理员自身 / Provider 写路径与
+// 下拉 / 用户 / 客户端 / settings / 工具，共 30 个）一律返回生成基类的
+// unimplemented（桩 + TODO(后续 admin 实现)，见包注释清单）。
+func TestStubsUnimplemented(t *testing.T) {
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	cookie := adminCookie(t, tokens, epochs, 1)
+	cases := []string{
+		adminv1connect.AdminServiceGetMeProcedure,
+		adminv1connect.AdminServiceCreateProviderProcedure,
+		adminv1connect.AdminServiceUpdateProviderProcedure,
+		adminv1connect.AdminServiceDeleteProviderProcedure,
+		adminv1connect.AdminServiceSetProviderEnabledProcedure,
+		adminv1connect.AdminServiceSortProvidersProcedure,
+		adminv1connect.AdminServiceGetProviderTypesProcedure,
+		adminv1connect.AdminServiceTestProviderProcedure,
+		adminv1connect.AdminServiceListUsersProcedure,
+		adminv1connect.AdminServiceGetUserProcedure,
+		adminv1connect.AdminServiceUpdateUserStatusProcedure,
+		adminv1connect.AdminServiceResetUserPasswordProcedure,
+		adminv1connect.AdminServiceUnbindUserThirdpartyProcedure,
+		adminv1connect.AdminServiceUnlockUserProcedure,
+		adminv1connect.AdminServiceGetUserEventsProcedure,
+		adminv1connect.AdminServiceListSsoClientsProcedure,
+		adminv1connect.AdminServiceCreateSsoClientProcedure,
+		adminv1connect.AdminServiceGetSsoClientProcedure,
+		adminv1connect.AdminServiceUpdateSsoClientProcedure,
+		adminv1connect.AdminServiceDeleteSsoClientProcedure,
+		adminv1connect.AdminServiceListOidcClientsProcedure,
+		adminv1connect.AdminServiceCreateOidcClientProcedure,
+		adminv1connect.AdminServiceGetOidcClientProcedure,
+		adminv1connect.AdminServiceUpdateOidcClientProcedure,
+		adminv1connect.AdminServiceDeleteOidcClientProcedure,
+		adminv1connect.AdminServiceGetSettingsProcedure,
+		adminv1connect.AdminServiceSetSettingsProcedure,
+		adminv1connect.AdminServiceListEventsProcedure,
+		adminv1connect.AdminServiceDecodeTokenProcedure,
+		adminv1connect.AdminServiceGetStatusProcedure,
+	}
+	for _, procedure := range cases {
+		req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", cookie)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if code := decodeErrorCode(t, rec.Body.String()); code != "unimplemented" {
+			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, code, rec.Body.String())
+		}
+	}
+}

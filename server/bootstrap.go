@@ -39,6 +39,7 @@ import (
 	connectrpc "connectrpc.com/connect"
 
 	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
+	adminv1connect "authloft/gen/go/api/admin/v1/adminv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
@@ -52,6 +53,7 @@ import (
 	"authloft/internal/factor/totp"
 	"authloft/internal/factor/webauthn"
 	accounthandler "authloft/internal/handler/account"
+	adminhandler "authloft/internal/handler/admin"
 	oidchandler "authloft/internal/handler/oidc"
 	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
@@ -677,6 +679,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 	if deps != nil {
 		registerSSO(cfg, csrv, deps)
 		registerAccount(cfg, csrv, deps)
+		registerAdmin(cfg, csrv, deps)
 		// OIDC REST 端点（§4.1）：注册在 gin 链（/.well-known/** 与 /api/oidc/**
 		// 按绝对路径），不经 Connect、不套 §1.0 信封（§1.0 豁免清单）；
 		// origin 对 /api/oidc/** 免检（接口文档 §1.1 行 79 例外），GET 端点
@@ -743,6 +746,21 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 	path, h := accountv1connect.NewAccountServiceHandler(
 		accounthandler.New(repo.NewUserRepo(deps.db)),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
+	)
+	csrv.Register(path, h)
+}
+
+// registerAdmin 注册 AdminService Connect handler：session 拦截器
+// 在外（注入会话身份），connect.NewAdminInterceptor 在内（uid==1 判定，接口
+// 文档 §5 行 1145-1146：无会话 401 / 非管理员 404 掩护），错误包装由
+// connect.Server.HandlerOptions 统一补最内层。本实现仅落地 Provider 族读路径
+// （ListProviders / GetProvider / GetProviderSchema——详情为全站唯一明文凭证
+// 出口，访问日志不打印 body），其余方法由生成的
+// UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
+func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	path, h := adminv1connect.NewAdminServiceHandler(
+		adminhandler.New(repo.NewProviderRepo(deps.db)),
+		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)
 	csrv.Register(path, h)
 }

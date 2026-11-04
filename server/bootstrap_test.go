@@ -793,6 +793,71 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 	}
 }
 
+// TestAssembleAdminRoutesWired：AdminService Connect handler 经
+// buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerAdmin）——admin 前缀
+// 已注册且 handler 非 nil 的装配断言；无会话请求穿透 origin 前缀链 + session
+// 拦截器后被 admin 拦截器拦下 → 401 unauthenticated（§5 行 1145：401 由 admin
+// 拦截器判定，与 account 域 handler 自判不同——桩方法匿名同样先 401）；sso /
+// account 两域零回归仍在。
+func TestAssembleAdminRoutesWired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	deps := buildWiredDeps(t, cfg)
+	csrv := connect.NewServer(defaultReadMaxBytes)
+	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
+
+	// 装配断言：admin 域前缀已注册且 handler 非 nil；sso / account 零回归。
+	var hasAdmin, hasAccount, hasSSO bool
+	for _, rt := range csrv.Routes() {
+		switch rt.Prefix {
+		case "/api.admin.v1.AdminService/":
+			hasAdmin = rt.Handler != nil
+		case "/api.account.v1.AccountService/":
+			hasAccount = true
+		case "/api.sso.v1.SsoService/":
+			hasSSO = true
+		}
+	}
+	if !hasAdmin {
+		t.Fatal("AdminService 路由未注册或 handler 为 nil（registerAdmin 未挂载）")
+	}
+	if !hasAccount {
+		t.Error("AccountService 路由丢失（registerAccount 零回归）")
+	}
+	if !hasSSO {
+		t.Error("SsoService 路由丢失（registerSSO 零回归）")
+	}
+
+	// doPostJSON 打带空 JSON 对象 body 的同源 Connect 请求（口径同 account 用例）。
+	doPostJSON := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader("{}"))
+		req.Header.Set("Origin", assembledRootOrigin)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// 无会话 ListProviders → 401 unauthenticated（路由可达：非 404 / 403，
+	// admin 拦截器判定）。
+	rec := doPostJSON("/api.admin.v1.AdminService/ListProviders")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("ListProviders without session: status = %d, want %d (body %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["code"]; got != "unauthenticated" {
+		t.Errorf("ListProviders code = %v, want unauthenticated (body %s)", got, rec.Body.String())
+	}
+
+	// GetSettings（桩）匿名同样先被 admin 拦截器 401（拦截链先于 handler 桩）。
+	rec = doPostJSON("/api.admin.v1.AdminService/GetSettings")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("GetSettings without session: status = %d, want %d (body %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["code"]; got != "unauthenticated" {
+		t.Errorf("GetSettings code = %v, want unauthenticated (body %s)", got, rec.Body.String())
+	}
+}
+
 // TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配
 // provider 链 / 共享单例 / OIDC JWT 全部产物非 nil；Referer 白名单按 provider
 // 数据判定（命中 200 / 未命中 403 两向）；OIDC discovery / jwks / token /
