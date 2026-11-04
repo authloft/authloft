@@ -25,6 +25,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,6 +35,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
 	"authloft/internal/config"
@@ -44,6 +46,7 @@ import (
 	"authloft/internal/factor/recovery"
 	"authloft/internal/factor/totp"
 	"authloft/internal/factor/webauthn"
+	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
@@ -426,7 +429,7 @@ func serve(cfg *config.Config) error {
 	//   （internal/provider 子包尚未落地）；factor 注册表已在 assemble 内构造。
 	// TODO(cron)：定时清理任务包尚未落地（§3.12 行 457），随 cron 卡接入。
 
-	handler, _ := buildRouter(cfg)
+	handler, _ := buildRouterWithSSO(cfg, deps)
 	srv, err := newHTTPServer(cfg, handler)
 	if err != nil {
 		deps.close(context.Background())
@@ -481,12 +484,19 @@ func setupMode(configPath string) bool {
 
 // buildRouter 从 *config.Config 构造生产顶层 handler（§3.2 约定 1：构造注入，
 // 测试可传自造实例，§20）。rootOrigin 取 authloft.root（{al_root}，接口文档
-// §1.1 行 76）；当前无 service 可挂，session/admin/
-// rpc HMAC 拦截器随域 handler 注册时注入。setup 路由不在本链注册——仅
-// setup 模式的独立链路（§3.15），正常模式下 /setup 与 /api.setup/** 一律
-// 404（§13）。
+// §1.1 行 76）；无 deps 时仅组链（测试口径），正常模式走 buildRouterWithSSO
+// 注册域 handler（sso 域挂 session 拦截器，admin / rpc HMAC 拦截器随各自域
+// handler 注册注入）。setup 路由不在本链注册——仅 setup 模式的独立链路
+//（§3.15），正常模式下 /setup 与 /api.setup/** 一律 404（§13）。
 func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
 	return buildHandler(cfg, connect.NewServer(defaultReadMaxBytes))
+}
+
+// buildRouterWithSSO 正常模式装配入口：与 buildRouter 同链，额外注入
+// 登录单引擎并把 SsoService Connect handler 挂入顶层 ServeMux 前缀（§3.1
+// 行 243）。保留 buildRouter 无依赖形态供测试自造 handler。
+func buildRouterWithSSO(cfg *config.Config, deps *assembled) (http.Handler, *gin.RouterGroup) {
+	return buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
 }
 
 // buildHandler 顶层分流组装（§3.1 行 243：标准库 http.ServeMux）：
@@ -502,7 +512,15 @@ func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
 //     （不再经 gin.NoRoute 桥，404 残留缺陷结构性消除）；
 //   - 该分流链上禁挂 gzip / body-capture 类中间件（§3.1 行 246，破坏
 //     h2c / 流式语义）。
+//
+// deps 为空时仅做无域 handler 的链路组装（测试口径）；非空时注册已装配的
+// SsoService handler。
 func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.RouterGroup) {
+	return buildHandlerWithSSO(cfg, csrv, nil)
+}
+
+// buildHandlerWithSSO 在 buildHandler 基础上挂已装配的域 handler。
+func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) (http.Handler, *gin.RouterGroup) {
 	// TODO(appid)：Referer 白名单口径已定（docs/后端架构.md §13.0）= 已启用
 	// mp provider 的 Ext.app_id 集合，由装配层注入 provider 查询函数并随
 	// provider 变更热更新；internal/provider 尚未落地，接线归 provider
@@ -510,6 +528,10 @@ func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.
 	// 保守 403（既定口径）。
 	refererAllowlist := []string{}
 	ginEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
+
+	if deps != nil {
+		registerSSO(cfg, csrv, deps)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", ginEngine)
@@ -523,6 +545,61 @@ func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.
 		))
 	}
 	return mux, apiGroup
+}
+
+// ssoSessionTTL session_ttl 键缺失 / 非法时的回落值（接口文档 §1.9、§5.6：
+// 默认 7 天）。
+const ssoSessionTTL int64 = 604800
+
+// registerSSO 注册 SsoService Connect handler：挂 session 拦截器
+// （§3.14 行 473；LoginDefault 免鉴权，未登录请求由拦截器放行匿名），
+// 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
+func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	tokens := session.NewTokens(deps.codecs.Session)
+	users := repo.NewUserRepo(deps.db)
+	epochs := cache.NewEpochStore(deps.rdb, func(ctx context.Context, uid int64) (int64, error) {
+		u, err := users.FindByID(ctx, uid)
+		if err != nil {
+			return 0, err
+		}
+		return int64(u.Epoch), nil
+	})
+	ttl := ssoSessionTTLRaw(deps.settings)
+	cookieName := func() string {
+		v, _ := deps.settings.GetString(settings.KeyCookieName)
+		return v
+	}
+	sessionInterceptor := connect.NewSessionInterceptor(
+		session.NewVerifier(tokens, epochs),
+		session.NewRenewer(tokens, ttl),
+		session.NewCookie(cookieName(), rootHost(cfg.Authloft.Root), ttl),
+		cookieName,
+	)
+	path, h := ssov1connect.NewSsoServiceHandler(
+		ssohandler.New(deps.engine),
+		csrv.HandlerOptions(sessionInterceptor)...,
+	)
+	csrv.Register(path, h)
+}
+
+// ssoSessionTTLRaw 读取 session_ttl（接口文档 §1.9 / §5.6）。
+func ssoSessionTTLRaw(st *settings.Store) time.Duration {
+	if st != nil {
+		if v, ok := st.GetInt64(settings.KeySessionTtl); ok && v > 0 {
+			return time.Duration(v) * time.Second
+		}
+	}
+	return time.Duration(ssoSessionTTL) * time.Second
+}
+
+// rootHost 从 authloft.root（{al_root}，完整 URL）取根域，供会话 Cookie 的
+// Domain 属性（§11.1 行 1165）。非法 / 空值回落空串（Cookie 按主机名限定）。
+func rootHost(root string) string {
+	u, err := url.Parse(root)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // newHTTPServer 从 *config.Config 构造 http.Server：监听地址与协议
