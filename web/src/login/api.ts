@@ -1,9 +1,10 @@
 /**
  * SsoService client 方法封装（docs/前端架构.md §4.1 行 377；docs/接口文档.md §2）：
  * LoginDefault（§2.2）、Register（§2.3）、ResetPassword（§2.4）、Authorize（§2.7.2）、
- * LoginOauth（§2.7.4）、CreateQrcode（§2.8）、CreateCaptchaImage（§2.5）、
- * GetLoginTicket（§2.8 轮询）。ConfirmLoginTicket 由宿主 / 第三方客户端调用，
- * 本工程不实现（接口文档 §2.8 行 749）。
+ * LoginOauth（§2.7.4）、CreateQrcode（§2.8）、GetLoginTicket（§2.8 轮询）。
+ * ConfirmLoginTicket 由宿主 / 第三方客户端调用，本工程不实现（接口文档 §2.8 行
+ * 749）；CreateCaptchaImage 已归口 shared/api/sso.ts（跨 entry 共用，
+ * 本实现删除本模块同名函数）。
  *
  * login_token 传递（接口文档 §1.8 / §1.3 行 145 唯一定义；前端架构 §4.1
  * 行 397-403 五条不可打折）：
@@ -22,10 +23,7 @@ import type { JsonObject, Message } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';
 import { getInit, type OidcContext } from '../shared/types/init';
 import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
-import type {
-  CreateCaptchaImageResponse,
-  LoginDefaultRequest,
-} from '../gen/proto/api/sso/v1/login_pb';
+import type { LoginDefaultRequest } from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
 import type {
@@ -175,11 +173,6 @@ export async function loginOauth(
 // ---------------------------------------------------------------------------
 // 其余方法（响应非信封，无 loginToken 注入 / 后处理）
 // ---------------------------------------------------------------------------
-
-/** SsoService/CreateCaptchaImage（§2.5 行 490）：新建自绘图形码（无请求参数）。 */
-export async function createCaptchaImage(): Promise<CreateCaptchaImageResponse> {
-  return ssoClient.createCaptchaImage({});
-}
 
 /** SsoService/Authorize（§2.7.2 行 580）：取第三方授权 URL（RPC 非 302）；跳转由调用方 location.replace。 */
 export async function authorize(

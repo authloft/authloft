@@ -1,0 +1,680 @@
+// tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
+//（tsconfig 现代化后移除）。
+// @ts-ignore
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import * as React from 'react';
+// 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
+// renderToStaticMarkup（沿 CaptchaWidget.test.ts / components.test.ts 边界惯例），
+// 交互 / 副作用生命周期在纯逻辑层覆盖（runSubmit / executeEffects /
+// groupProviders 等容器层纯函数 + msw 拦截 api 层）。
+import { renderToStaticMarkup } from 'react-dom/server';
+import { setupServer } from 'msw/node';
+import { http, HttpResponse } from 'msw';
+import { create } from '@bufbuild/protobuf';
+import { clearLoginToken, getLoginToken } from './loginTokenStore';
+import { flowReducer } from './flow/reducer';
+import { INITIAL_FLOW_STATE, type FlowState } from './flow/machine';
+import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
+import { PasswordForm } from './factors/PasswordForm';
+import { lookupFactor } from './factors/registry';
+import { groupProviders, MethodTabs } from './MethodTabs';
+import {
+  CaptchaConfigSchema,
+} from '../gen/proto/api/common/v1/captcha_pb';
+import {
+  FieldSchema,
+  LoginFlowResponseSchema,
+  type LoginFlowResponse,
+} from '../gen/proto/api/sso/v1/envelope_pb';
+import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
+import type {
+  MethodsSnapshot,
+  SnapshotProvider,
+} from '../shared/types/init';
+
+const { createElement } = React;
+
+/**
+ * al_root 在 transport（http.ts）模块求值时读取，故 ./LoginContainer（拉起
+ * ./api → shared/api/http 链）经 beforeAll 动态 import（沿 api.test.ts 模式）；
+ * BASE 与既有测试文件取同值防跨文件竞争。本实现链路不依赖 oidc 快照（注入逻辑
+ * 已在 api.test.ts 覆盖），不设 oidc。
+ */
+const BASE = 'https://uc.test';
+(globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = {
+  al_root: `${BASE}/`,
+};
+
+const LOGIN_DEFAULT = `${BASE}/api.sso.v1.SsoService/LoginDefault`;
+
+const server = setupServer();
+
+let container: typeof import('./LoginContainer');
+let apiMod: typeof import('./api');
+
+beforeAll(async () => {
+  server.listen({ onUnhandledRequest: 'error' });
+  container = await import('./LoginContainer');
+  apiMod = await import('./api');
+});
+
+beforeEach(() => {
+  // rstest 对 .tsx 走 classic JSX runtime：渲染前 stub 全局 React（仅测试进程）。
+  rs.stubGlobal('React', React);
+});
+
+afterEach(() => {
+  server.resetHandlers();
+  rs.unstubAllGlobals();
+  clearLoginToken(); // loginTokenStore 模块级变量跨用例复位
+});
+
+afterAll(() => {
+  server.close();
+  (globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = undefined;
+});
+
+// ---------------------------------------------------------------------------
+// 测试数据（§2.1 注入结构示例形状）
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT: MethodsSnapshot = {
+  methods: [
+    {
+      method: 'password',
+      usage: ['primary'],
+      steps: ['form'],
+      fields: [
+        { name: 'username', label: '用户名/邮箱/手机号', type: 'text', required: true },
+        { name: 'password', label: '密码', type: 'password', required: true },
+        { name: 'captcha', label: '人机校验', type: 'captcha', required: false },
+      ],
+    },
+    {
+      method: 'webauthn',
+      usage: ['primary', 'secondary'],
+      steps: ['challenge', 'form'],
+      capability: 'window.PublicKeyCredential',
+    },
+    { method: 'otp_sms', usage: ['primary', 'secondary'], steps: ['challenge', 'form'] },
+    { method: 'totp', usage: ['secondary'], steps: ['form'], codeLength: '6' },
+    {
+      method: 'thirdparty',
+      usage: ['primary'],
+      providers: [
+        { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', icon: 'https://ex.test/qq.png', uiGroup: 'social', sortOrder: '10' },
+        { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', uiGroup: 'social', sortOrder: '20' },
+        { providerKey: 'wxmp', displayName: '微信', type: 'wechat_mp', channel: 'api', uiGroup: 'social', sortOrder: '30' },
+        { providerKey: 'ent', displayName: '企业SSO', type: 'cas', channel: 'redirect', uiGroup: 'enterprise', sortOrder: '5' },
+      ],
+    },
+  ],
+};
+
+function stateWith(init: Partial<FlowState>): FlowState {
+  return { ...INITIAL_FLOW_STATE, ...init };
+}
+
+function envelope(init: Record<string, unknown>): LoginFlowResponse {
+  return create(LoginFlowResponseSchema, init);
+}
+
+function renderView(state: FlowState, notice?: string): string {
+  return renderToStaticMarkup(
+    createElement(container.LoginFlowView, {
+      snapshot: SNAPSHOT,
+      state,
+      notice,
+      onSelect: () => {},
+      onSubmit: () => {},
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 容器层纯函数
+// ---------------------------------------------------------------------------
+
+describe('firstStepFor（kind→step 映射；§1.10）', () => {
+  test('form → verify（login 域；set_password 属注册 / 重置，§2.2 行 422）', () => {
+    expect(container.firstStepFor(['form'])).toBe('verify');
+  });
+
+  test('challenge → challenge（otp_* / webauthn 首步，§1.10）', () => {
+    expect(container.firstStepFor(['challenge', 'form'])).toBe('challenge');
+  });
+
+  test('空 / 未知 kind 兜底 verify（§9 第 18 条零值兜底）', () => {
+    expect(container.firstStepFor([])).toBe('verify');
+    expect(container.firstStepFor(['poll'])).toBe('verify');
+  });
+});
+
+describe('snapshotFieldToField / toPayloadInit（§2.1 快照 → 渲染 / 请求模型）', () => {
+  test('快照字段 → 生成物 Field：int64 十进制字符串 → bigint，非法兜底 0', () => {
+    const field = container.snapshotFieldToField({
+      name: 'code',
+      type: 'otp',
+      required: true,
+      length: '6',
+      maxAttempts: '5',
+    });
+    expect(field.name).toBe('code');
+    expect(field.required).toBe(true);
+    expect(field.length).toBe(BigInt(6));
+    expect(field.maxAttempts).toBe(BigInt(5));
+
+    const minimal = container.snapshotFieldToField({ name: 'x', type: 'text' });
+    expect(minimal.required).toBe(false);
+    expect(minimal.length).toBe(BigInt(0));
+    expect(container.snapshotFieldToField({ name: 'x', type: 'text', length: 'abc' }).length).toBe(BigInt(0));
+  });
+
+  test('表单值 → payload：白名单 string 字段、captcha 与白名单外排除（§1.3 行 114 / §2.6）', () => {
+    const fields = [
+      create(FieldSchema, { name: 'username', label: 'u', type: 'text', required: true }),
+      create(FieldSchema, { name: 'password', label: 'p', type: 'password', required: true }),
+      create(FieldSchema, { name: 'captcha', label: 'c', type: 'captcha' }),
+      create(FieldSchema, { name: 'evil', label: 'e', type: 'text' }),
+    ];
+    expect(
+      container.toPayloadInit({ username: 'alice', password: 'pw', evil: 'x' }, fields),
+    ).toEqual({ username: 'alice', password: 'pw' });
+    // 未填字段按零值兜底（§9 第 18 条）。
+    expect(container.toPayloadInit({}, fields)).toEqual({ username: '', password: '' });
+  });
+});
+
+describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
+  test('syncCookieUrl 非空优先（后端拼好的首跳完整 URL，§1.3 行 136）', () => {
+    expect(
+      container.terminalUrl(
+        envelope({ syncCookieUrl: 'https://sync.test/first', redirectTo: 'https://app.test/home' }),
+      ),
+    ).toBe('https://sync.test/first');
+  });
+
+  test('syncCookieUrl 省略 → redirectTo；双空 → 不跳转', () => {
+    expect(container.terminalUrl(envelope({ redirectTo: 'https://app.test/home' }))).toBe('https://app.test/home');
+    expect(container.terminalUrl(envelope({}))).toBe('');
+  });
+
+  test('complete → 跳转回调（双空目标不调用）；restart → 回第一步回调', () => {
+    const redirects: string[] = [];
+    const restarts: string[] = [];
+    const handlers = {
+      complete: (url: string) => redirects.push(url),
+      restart: (status: string) => restarts.push(status),
+    };
+    container.executeEffects(
+      [{ type: 'complete', envelope: envelope({ syncCookieUrl: 'https://sync.test/first' }) }],
+      handlers,
+    );
+    container.executeEffects(
+      [{ type: 'complete', envelope: envelope({}) }],
+      handlers,
+    );
+    container.executeEffects([{ type: 'restart', status: 'token_expired' }], handlers);
+    expect(redirects).toEqual(['https://sync.test/first']);
+    expect(restarts).toEqual(['token_expired']);
+  });
+});
+
+describe('isErrorStatus（§4.1 行 395：非 success 即失败，轮询进行中除外）', () => {
+  test('流程 / 轮询 / captcha 中间态不作失败处理', () => {
+    for (const status of [
+      'idle', 'next', 'mfa_required', 'binding_required', 'success',
+      'captcha_required', 'captcha_invalid', 'pending', 'scanned', 'expired',
+    ] as const) {
+      expect(container.isErrorStatus(status)).toBe(false);
+    }
+  });
+
+  test('失败态渲染 ErrorBanner（failed / locked / invalid_credentials…）', () => {
+    for (const status of ['failed', 'locked', 'invalid_credentials', 'too_many_requests'] as const) {
+      expect(container.isErrorStatus(status)).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// factors/registry（§4.3）
+// ---------------------------------------------------------------------------
+
+describe('lookupFactor（§4.3 行 434：映射表三态）', () => {
+  test('password → PasswordForm；totp → null（通用 FormStep 语义）；其余缺映射 → undefined', () => {
+    expect(lookupFactor('password')).toBe(PasswordForm);
+    expect(lookupFactor('totp')).toBeNull();
+    expect(lookupFactor('otp_sms')).toBeUndefined();
+    expect(lookupFactor('webauthn')).toBeUndefined();
+    expect(lookupFactor('recovery_code')).toBeUndefined();
+    expect(lookupFactor('thirdparty')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MethodTabs（§4.1 行 384；需求 §4.1.6 capability 自动隐藏）
+// ---------------------------------------------------------------------------
+
+describe('groupProviders（§2.7.1：uiGroup 分组 + sortOrder 排序 + channel=api 过滤）', () => {
+  const providers: SnapshotProvider[] = [
+    { providerKey: 'wxmp', displayName: '微信', type: 'wechat_mp', channel: 'api', uiGroup: 'social', sortOrder: '30' },
+    { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', uiGroup: 'social', sortOrder: '10' },
+    { providerKey: 'ent', displayName: '企业SSO', type: 'cas', channel: 'redirect', uiGroup: 'enterprise', sortOrder: '5' },
+    { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', uiGroup: 'social', sortOrder: '20' },
+  ];
+
+  test('api 渠道过滤 + 组内 sortOrder 升序 + uiGroup 分组（组序按排序后首元素）', () => {
+    const groups = groupProviders(providers);
+    expect([...groups.keys()]).toEqual(['enterprise', 'social']);
+    expect(groups.get('enterprise')?.map((p) => p.providerKey)).toEqual(['ent']);
+    expect(groups.get('social')?.map((p) => p.providerKey)).toEqual(['qq', 'scan']);
+  });
+
+  test('sortOrder 缺失 / 非法兜底 0（§1.12 / §9 第 18 条）', () => {
+    const groups = groupProviders([
+      { providerKey: 'b', type: 't', channel: 'redirect', sortOrder: '10' },
+      { providerKey: 'a', type: 't', channel: 'redirect' },
+      { providerKey: 'c', type: 't', channel: 'redirect', sortOrder: 'abc' },
+    ]);
+    expect(groups.get('')?.map((p) => p.providerKey)).toEqual(['a', 'c', 'b']);
+  });
+
+  test('空列表 → 空分组', () => {
+    expect(groupProviders([]).size).toBe(0);
+  });
+});
+
+describe('MethodTabs 静态渲染', () => {
+  function renderTabs(methods = SNAPSHOT.methods, current = ''): string {
+    return renderToStaticMarkup(
+      createElement(MethodTabs, { methods, current, onSelect: () => {} }),
+    );
+  }
+
+  test('主因子 tab（数组序 = 后端 sort_order 排序结果）+ 因子名取 i18n 字典', () => {
+    const markup = renderTabs();
+    expect(markup).toContain('密码登录');
+    expect(markup).toContain('短信验证码');
+  });
+
+  test('usage 不含 primary 的方式不展示（§2.1：login 页只展示主因子方式）', () => {
+    expect(renderTabs()).not.toContain('动态口令');
+  });
+
+  test('capability 不满足自动隐藏（需求 §4.1.6；node 无 window.PublicKeyCredential）', () => {
+    expect(renderTabs()).not.toContain('通行密钥');
+  });
+
+  test('capability 满足时展示（stub window.PublicKeyCredential）', () => {
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    expect(renderTabs()).toContain('通行密钥');
+  });
+
+  test('图标墙：channel=api 不渲染、uiGroup 分组、组内 sortOrder 排序、icon 渲染', () => {
+    const markup = renderTabs();
+    expect(markup).not.toContain('微信</span>'); // wechat_mp（channel=api）不渲染
+    expect(markup.indexOf('data-group="enterprise"')).toBeLessThan(
+      markup.indexOf('data-group="social"'),
+    );
+    expect(markup.indexOf('QQ')).toBeLessThan(markup.indexOf('微信扫码')); // 组内 10 < 20
+    expect(markup).toContain('src="https://ex.test/qq.png"');
+  });
+
+  test('空列表 → 空状态提示（§8.2 行 582）', () => {
+    expect(renderTabs([])).toContain('暂无可用登录方式');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PasswordForm 静态渲染（CapsLock 交互为浏览器事件，node 边界外）
+// ---------------------------------------------------------------------------
+
+describe('PasswordForm 静态渲染（§4.3 行 435）', () => {
+  const fields = [
+    create(FieldSchema, { name: 'username', label: '用户名/邮箱/手机号', type: 'text', required: true }),
+    create(FieldSchema, { name: 'password', label: '密码', type: 'password', required: true }),
+  ];
+
+  function renderForm(props?: { loading?: boolean; disabled?: boolean }): string {
+    return renderToStaticMarkup(
+      createElement(PasswordForm, {
+        fields,
+        loading: props?.loading ?? false,
+        disabled: props?.disabled ?? false,
+        onSubmit: () => {},
+      }),
+    );
+  }
+
+  test('字段驱动渲染（§2.1 下发为准）：label + 密码框 + 提交按钮', () => {
+    const markup = renderForm();
+    expect(markup).toContain('<form');
+    expect(markup).toContain('用户名/邮箱/手机号');
+    expect(markup).toContain('type="password"');
+    expect(markup).toContain('登录');
+  });
+
+  test('CapsLock 默认关闭不提示；loading / disabled 禁用提交（§3.2）', () => {
+    expect(renderForm()).not.toContain('Caps Lock');
+    expect(renderForm({ loading: true })).toContain('disabled=""');
+    expect(renderForm({ disabled: true })).toContain('disabled=""');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runSubmit 编排全链（msw 拦截 api 层；§2.2 / §1.6 / §2.5）
+// ---------------------------------------------------------------------------
+
+describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重交 → success 终点）', () => {
+  test('首次提交（无 captcha）→ captcha_required：权威 captcha 对象落信封 + loginToken 覆盖', async () => {
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({
+          status: 'captcha_required',
+          loginToken: 'tok-1',
+          captcha: { providerKey: 'builtin_image', type: 'image' },
+        }),
+      ),
+    );
+
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'verify' });
+
+    const first = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      () => undefined, // 首次无 captcha 凭据（§3.5：未完成 → undefined 不带）
+      apiMod.loginDefault,
+    );
+    expect(first.failed).toBe(false);
+    state = first.events.reduce(flowReducer, state);
+
+    // §1.6 行 240：按响应顶层 captcha 渲染并重提（权威来源，§2.5 行 518）。
+    expect(state.status).toBe('captcha_required');
+    expect(state.envelope?.captcha?.providerKey).toBe('builtin_image');
+    expect(state.envelope?.captcha?.type).toBe('image');
+    expect(selectShowCaptcha(state)).toBe(true);
+    expect(getLoginToken()).toBe('tok-1'); // §1.3 行 145：无条件覆盖
+  });
+
+  test('带 captcha 三元组重交 → success：请求体含 §2.5 提交格式 + 终点跳 syncCookieUrl', async () => {
+    // 前置：先到 captcha_required（loginToken = tok-1）。
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({
+          status: 'captcha_required',
+          loginToken: 'tok-1',
+          captcha: { providerKey: 'builtin_image', type: 'image' },
+        }),
+      ),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    state = (
+      await container.runSubmit(
+        state,
+        { username: 'alice', password: 'pw' },
+        () => undefined,
+        apiMod.loginDefault,
+      )
+    ).events.reduce(flowReducer, state);
+    expect(state.status).toBe('captcha_required');
+
+    // 重交：断言请求体 + success 终点。
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'success',
+          syncCookieUrl: 'https://sync.test/first',
+          redirectTo: 'https://app.test/home',
+        });
+      }),
+    );
+    const second = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      () =>
+        create(CaptchaPayloadSchema, {
+          providerKey: 'builtin_image',
+          id: 'b7f3',
+          answer: '123',
+        }),
+      apiMod.loginDefault,
+    );
+    expect(second.failed).toBe(false);
+    state = second.events.reduce(flowReducer, state);
+    expect(state.status).toBe('success');
+
+    // 请求体：loginToken 顶层注入（§1.8）+ payload.captcha 自绘三元组（§2.5 行 503-506，token 零值省略）。
+    expect(JSON.parse(raw)).toEqual({
+      loginToken: 'tok-1',
+      method: 'password',
+      step: 'verify',
+      payload: {
+        username: 'alice',
+        password: 'pw',
+        captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+      },
+    });
+
+    // 终点（§4.1 行 383）：complete 副作用 → syncCookieUrl 优先（首跳完整 URL）。
+    const redirects: string[] = [];
+    const restarts: string[] = [];
+    container.executeEffects(state.effects, {
+      complete: (url) => redirects.push(url),
+      restart: (status) => restarts.push(status),
+    });
+    expect(redirects).toEqual(['https://sync.test/first']);
+    expect(restarts).toEqual([]);
+    expect(getLoginToken()).toBe(''); // §1.3 行 145：success 清空（五条之 3）
+  });
+
+  test('locked 失败态：不可重试禁用提交 + 信封 error 展示字段（§1.6 行 244）', async () => {
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({
+          status: 'locked',
+          error: { message: '暂时锁定', retryAfter: '21600' },
+        }),
+      ),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    const result = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('locked');
+    expect(container.isErrorStatus(state.status)).toBe(true);
+    expect(selectSubmitDisabled(state)).toBe(true); // §1.6「可重试 = 否」
+    expect(state.envelope?.error?.retryAfter).toBe(BigInt(21600));
+    expect(state.envelope?.error?.message).toBe('暂时锁定');
+  });
+
+  test('restart 类（token_expired）：副标记回第一步（§1.6 行 251）', async () => {
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({ status: 'token_expired' }),
+      ),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    const result = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    state = result.events.reduce(flowReducer, state);
+    const restarts: string[] = [];
+    container.executeEffects(state.effects, {
+      complete: () => {
+        restarts.push('should-not-complete');
+      },
+      restart: (status) => restarts.push(status),
+    });
+    expect(restarts).toEqual(['token_expired']);
+  });
+
+  test('传输层失败（非 200）→ 回第一步 + failed 兜底（§1.6 行 272，不暴露细节）', async () => {
+    server.use(
+      http.post(LOGIN_DEFAULT, () => new HttpResponse(null, { status: 500 })),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    const result = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(true);
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('idle'); // reset → 回到第一步
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LoginFlowView 状态分支静态渲染（§4.1 行 386-395 状态机图）
+// ---------------------------------------------------------------------------
+
+describe('LoginFlowView 状态分支静态渲染', () => {
+  test('idle 未选方式：MethodTabs + 引导提示', () => {
+    const markup = renderView(INITIAL_FLOW_STATE);
+    expect(markup).toContain('密码登录');
+    expect(markup).toContain('请选择登录方式');
+    expect(markup).not.toContain('<form'); // 未选方式不渲染因子表单
+  });
+
+  test('选中 password：因子表单渲染（字段驱动，§2.1）', () => {
+    const markup = renderView(stateWith({ method: 'password', step: 'verify' }));
+    expect(markup).toContain('<form');
+    expect(markup).toContain('用户名/邮箱/手机号');
+    expect(markup).toContain('登录');
+  });
+
+  test('captcha_required：表单保留原地 + 原地插入 CaptchaWidget（§4.1 行 391）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        step: 'verify',
+        status: 'captcha_required',
+        envelope: envelope({
+          status: 'captcha_required',
+          captcha: create(CaptchaConfigSchema, {
+            providerKey: 'builtin_image',
+            type: 'image',
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('<form'); // 不刷新页面、表单保留
+    expect(markup).toContain('<div></div>'); // CaptchaWidget 容器（type=image）
+    expect(markup).not.toContain('role="alert"'); // captcha_required 非失败态
+  });
+
+  test('mfa_required：原地占位（不跳页，§4.1 行 407）+ 状态标注', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'mfa_required',
+        envelope: envelope({ status: 'mfa_required' }),
+      }),
+    );
+    expect(markup).toContain('多因子登录即将支持');
+    expect(markup).toContain('需要进行二次验证'); // t('errors.status.mfa_required')
+  });
+
+  test('binding_required / next / 轮询态：占位（对应组件归后续实现）', () => {
+    expect(
+      renderView(stateWith({ status: 'binding_required', envelope: envelope({ status: 'binding_required' }) })),
+    ).toContain('账号绑定流程即将支持');
+    expect(
+      renderView(stateWith({ status: 'next', envelope: envelope({ status: 'next' }) })),
+    ).toContain('该步骤类型即将支持');
+    expect(
+      renderView(stateWith({ status: 'pending', envelope: envelope({ status: 'pending' }) })),
+    ).toContain('扫码流程即将支持');
+  });
+
+  test('locked 失败态：ErrorBanner（i18n 文案 + 信封兜底字段，§1.6）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'locked',
+        envelope: envelope({
+          status: 'locked',
+          error: { message: '暂时锁定', retryAfter: '21600' },
+        }),
+      }),
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('密码登录已被暂时锁定'); // t('errors.status.locked')
+    expect(markup).toContain('disabled=""'); // selectSubmitDisabled → 提交禁用
+  });
+
+  test('restart 提示（notice）：errors.status.* 文案（§4.1 行 403）', () => {
+    const markup = renderView(
+      stateWith({ method: 'password' }),
+      'errors.status.token_expired',
+    );
+    expect(markup).toContain('登录已超时，请重新登录');
+  });
+
+  test('缺映射（otp_sms）→ 兜底错误态，不静默回退（§4.3 行 434）', () => {
+    const markup = renderView(stateWith({ method: 'otp_sms', step: 'challenge' }));
+    expect(markup).toContain('请刷新重试');
+    expect(markup).not.toContain('<form');
+  });
+
+  test('totp（显式 null）→ 通用表单占位（§1.2 行 48：无专属组件）', () => {
+    const markup = renderView(stateWith({ method: 'totp', step: 'verify' }));
+    expect(markup).toContain('该方式由通用表单渲染，即将支持');
+  });
+
+  test('success：跳转中文案（终点由 complete 副作用执行）', () => {
+    const markup = renderView(
+      stateWith({
+        status: 'success',
+        envelope: envelope({ status: 'success', redirectTo: 'https://app.test/home' }),
+      }),
+    );
+    expect(markup).toContain('登录成功，正在跳转');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LoginContainer 容器壳（静态 smoke：编排壳组合渲染不炸）
+// ---------------------------------------------------------------------------
+
+describe('LoginContainer 静态 smoke', () => {
+  test('挂载渲染 = MethodTabs + 引导提示（effects 不执行，renderToStaticMarkup 语义）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(container.LoginContainer, { snapshot: SNAPSHOT }),
+    );
+    expect(markup).toContain('密码登录');
+    expect(markup).toContain('请选择登录方式');
+  });
+});

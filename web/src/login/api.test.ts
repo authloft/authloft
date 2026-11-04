@@ -24,7 +24,6 @@ const LOGIN_DEFAULT = `${SSO}/LoginDefault`;
 const REGISTER = `${SSO}/Register`;
 const RESET_PASSWORD = `${SSO}/ResetPassword`;
 const LOGIN_OAUTH = `${SSO}/LoginOauth`;
-const CAPTCHA_IMAGE = `${SSO}/CreateCaptchaImage`;
 const AUTHORIZE = `${SSO}/Authorize`;
 const QRCODE = `${SSO}/CreateQrcode`;
 const LOGIN_TICKET = `${SSO}/GetLoginTicket`;
@@ -251,21 +250,6 @@ describe('loginOauth（§2.7.4）：oidc 取自 al_oidc_ctx（§2.7.2 行 599-60
 });
 
 describe('非信封方法（直通薄封装，无 loginToken 注入）', () => {
-  test('createCaptchaImage（§2.5 行 490）：无请求参数，响应直传', async () => {
-    let body = '';
-    server.use(
-      http.post(CAPTCHA_IMAGE, async ({ request }) => {
-        body = await request.text();
-        return HttpResponse.json({ id: 'b7f3', imageBase64: 'iVBOR', expiresIn: '300' });
-      }),
-    );
-    const response = await mod.createCaptchaImage();
-    expect(body).toBe('{}');
-    expect(response.id).toBe('b7f3');
-    expect(response.expiresIn).toBe(BigInt(300)); // int64 → bigint（§1.12）
-    expect(getLoginToken()).toBe('');
-  });
-
   test('authorize（§2.7.2）：请求体直传，响应 authorizeUrl', async () => {
     let raw = '';
     server.use(
