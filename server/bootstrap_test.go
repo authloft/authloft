@@ -858,6 +858,142 @@ func TestAssembleAdminRoutesWired(t *testing.T) {
 	}
 }
 
+// TestAssembleGatewayRoutesWired：网关域 ANY /api/gateway/decode 经
+// buildHandlerWithSSO 注册到 gin 链（registerGateway：/api 组 /gateway 子组 +
+// Gateway 中间件）——buildWiredDeps 的 settings 为 NewStore(nil, nil)（种子
+// 全量默认值，§5.6 行 1338 gateway_tokens 默认 []）→ 缺 / 任意 X-Gateway-Token
+// 均 403 空 body（middleware 保守拒绝 + 豁免端点原生形态，§1.5 行 188；403≠404
+// 即证明路由与中间件已挂载）；GET / POST 均 403（ANY 语义）；X-Request-Id 由
+// gin 全局链 requestid 回写（§1.1）。sso / account / admin 前缀零回归。
+func TestAssembleGatewayRoutesWired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	deps := buildWiredDeps(t, cfg)
+	csrv := connect.NewServer(defaultReadMaxBytes)
+	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
+
+	// 零回归：sso / account / admin 前缀仍在。
+	var hasSSO, hasAccount, hasAdmin bool
+	for _, rt := range csrv.Routes() {
+		switch rt.Prefix {
+		case "/api.sso.v1.SsoService/":
+			hasSSO = true
+		case "/api.account.v1.AccountService/":
+			hasAccount = true
+		case "/api.admin.v1.AdminService/":
+			hasAdmin = true
+		}
+	}
+	if !hasSSO || !hasAccount || !hasAdmin {
+		t.Fatalf("sso/account/admin 前缀零回归失败: sso=%v account=%v admin=%v", hasSSO, hasAccount, hasAdmin)
+	}
+
+	// 默认 gateway_tokens=[]：任意 / 缺 X-Gateway-Token 均 403 空 body。
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		rec := doRequest(h, method, "/api/gateway/decode", map[string]string{"X-Gateway-Token": "whatever"})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s decode: status = %d, want %d (body %s)", method, rec.Code, http.StatusForbidden, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("%s decode: body = %q, want empty (403 空体)", method, rec.Body.String())
+		}
+		if got := rec.Header().Get("X-Request-Id"); got == "" {
+			t.Errorf("%s decode: X-Request-Id is empty, want non-empty (gin 全局链回写)", method)
+		}
+	}
+	if rec := doRequest(h, http.MethodGet, "/api/gateway/decode", nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("no gateway token: status = %d, want %d (缺凭据同无效)", rec.Code, http.StatusForbidden)
+	}
+}
+
+// TestAssembleGatewaySettingsHotReload（env-skip 真连）：assemble 全链
+//（settings 预热 + watcher）后 deps.settings 即 registerGateway 的
+// gateway_tokens 动态源——默认 [] 拒绝；Store.Set 增配 tok-a 即对后续请求
+// 放行（200 + X-Session-Status: invalid，会话令牌缺省恒 200）；换配 tok-b 后
+// tok-a 失效 / tok-b 放行（每请求经 settings 快照读取，热更只对后续请求
+// 生效，§5.6 行 1342）。清理口径同 TestAssembleRealChain。
+func TestAssembleGatewaySettingsHotReload(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	addr := os.Getenv("UC_TEST_REDIS_ADDR")
+	if dsn == "" || addr == "" {
+		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过网关令牌热更真连用例")
+	}
+	ctx := context.Background()
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("打开连接失败: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("连接 MariaDB 测试实例失败: %v", err)
+	}
+	if err := dropAllTables(db); err != nil {
+		t.Fatalf("用例开始清空测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dropAllTables(db); err != nil {
+			t.Errorf("用例结束清理测试库失败: %v", err)
+		}
+		if err := assertNoTables(db); err != nil {
+			t.Errorf("清理自证失败: %v", err)
+		}
+		db.Close()
+	})
+
+	cfg := assembleConfig(t, dsn, addr)
+	deps, err := assemble(ctx, cfg)
+	if err != nil {
+		t.Fatalf("装配链失败: %v", err)
+	}
+	t.Cleanup(func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		deps.close(shutCtx)
+	})
+	h, _ := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
+
+	decode := func(gatewayToken string) *httptest.ResponseRecorder {
+		headers := map[string]string{}
+		if gatewayToken != "" {
+			headers["X-Gateway-Token"] = gatewayToken
+		}
+		return doRequest(h, http.MethodGet, "/api/gateway/decode", headers)
+	}
+
+	// 预热默认 gateway_tokens=[] → 任意令牌 403。
+	if rec := decode("tok-a"); rec.Code != http.StatusForbidden {
+		t.Fatalf("默认空表: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	// 增配 tok-a → 后续请求放行（200 + invalid；无会话令牌），未配的 tok-b 仍 403。
+	if err := deps.settings.Set(ctx, settings.KeyGatewayTokens, []string{"tok-a"}, 0); err != nil {
+		t.Fatalf("settings.Set tok-a: %v", err)
+	}
+	rec := decode("tok-a")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("增配后 tok-a: status = %d, want %d (放行)", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("X-Session-Status"); got != "invalid" {
+		t.Errorf("X-Session-Status = %q, want invalid (无会话令牌恒 200)", got)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty (纯响应头)", rec.Body.String())
+	}
+	if rec := decode("tok-b"); rec.Code != http.StatusForbidden {
+		t.Errorf("未配置的 tok-b: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	// 换配 tok-b → tok-a 失效 / tok-b 放行（热更对后续请求生效）。
+	if err := deps.settings.Set(ctx, settings.KeyGatewayTokens, []string{"tok-b"}, 0); err != nil {
+		t.Fatalf("settings.Set tok-b: %v", err)
+	}
+	if rec := decode("tok-a"); rec.Code != http.StatusForbidden {
+		t.Errorf("换配后 tok-a: status = %d, want %d (旧令牌失效)", rec.Code, http.StatusForbidden)
+	}
+	if rec := decode("tok-b"); rec.Code != http.StatusOK {
+		t.Errorf("换配后 tok-b: status = %d, want %d (新令牌放行)", rec.Code, http.StatusOK)
+	}
+}
+
 // TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配
 // provider 链 / 共享单例 / OIDC JWT 全部产物非 nil；Referer 白名单按 provider
 // 数据判定（命中 200 / 未命中 403 两向）；OIDC discovery / jwks / token /

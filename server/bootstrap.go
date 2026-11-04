@@ -54,6 +54,7 @@ import (
 	"authloft/internal/factor/webauthn"
 	accounthandler "authloft/internal/handler/account"
 	adminhandler "authloft/internal/handler/admin"
+	gatewayhandler "authloft/internal/handler/gateway"
 	oidchandler "authloft/internal/handler/oidc"
 	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
@@ -685,6 +686,9 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 		// origin 对 /api/oidc/** 免检（接口文档 §1.1 行 79 例外），GET 端点
 		// 为安全方法不受校验。
 		registerOIDC(ginEngine, deps)
+		// 网关 decode（§6）：挂 /api 组的 /gateway 子组 + Gateway 中间件
+		//（REST 豁免域）。
+		registerGateway(apiGroup, deps)
 	}
 
 	mux := http.NewServeMux()
@@ -797,6 +801,42 @@ func registerOIDC(r gin.IRouter, deps *assembled) {
 			Epoch:    deps.epochStore,
 		},
 	})
+}
+
+// registerGateway 注册网关域唯一端点 `ANY /api/gateway/decode`（接口文档 §6、
+// 后端架构 §17 行 1768 / §3.3 行 314）：/api 组（REST 豁免
+// 端点组，router.go）上挂 /gateway 子组，Gateway 中间件先于 handler
+//（X-Gateway-Token 无效 403 空体归中间件，§1.5 行 188）；decode 恒 200
+// 纯响应头无响应体（§1.0 行 66）。tokens 动态源 = settings 键
+// gateway_tokens 每请求快照读取（§5.6 行 1338，默认 []，热更对后续请求
+// 生效——口径同 Referer 白名单动态源）；Verifier 复用 assemble
+// 共享单例（sessionTokens / epochStore，§11.1 四步不新造第二套）；Cookie
+// 名口径同 session 拦截器（settings 键 cookie_name 每请求读取，缺失回落
+// al_session 由 handler 兜底）。
+func registerGateway(api gin.IRouter, deps *assembled) {
+	gw := api.Group("/gateway")
+	gw.Use(middleware.Gateway(gatewayTokensSource(deps.settings)))
+	gatewayhandler.Register(gw, gatewayhandler.Deps{
+		Verify: session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		CookieName: func() string {
+			v, _ := deps.settings.GetString(settings.KeyCookieName)
+			return v
+		},
+	})
+}
+
+// gatewayTokensSource gateway_tokens 动态源：每请求经 settings 快照读取
+// （§5.6 行 1338，Store 写方立即生效 / 跨实例经 watcher 热更生效）。
+// settings 为 nil（未装配）时返回 nil func——middleware.Gateway 按
+// 「缺配置保守拒绝」口径处理（gateway.go 行 25-26）。
+func gatewayTokensSource(st *settings.Store) func() []string {
+	if st == nil {
+		return nil
+	}
+	return func() []string {
+		v, _ := st.GetStringSlice(settings.KeyGatewayTokens)
+		return v
+	}
 }
 
 // ssoSessionTTLRaw 读取 session_ttl（接口文档 §1.9 / §5.6）。
