@@ -28,6 +28,28 @@ func TestKeysCodeSpace(t *testing.T) {
 	}
 }
 
+// TestKeysTicketOIDC 扫码票据 / OIDC 授权码键名格式（键名唯一出处 keys.go，
+// §5.1 行 842-843）。
+func TestKeysTicketOIDC(t *testing.T) {
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"TicketKey", TicketKey("c7Kx9"), "al:ticket:c7Kx9"},
+		{"TicketKey-冒号不转义", TicketKey("a:b"), "al:ticket:a:b"},
+		{"TicketKey-空串", TicketKey(""), "al:ticket:"},
+		{"OIDCCodeKey", OIDCCodeKey("abc123"), "al:oidc:code:abc123"},
+		{"OIDCCodeKey-冒号不转义", OIDCCodeKey("a:b"), "al:oidc:code:a:b"},
+		{"OIDCCodeKey-空串", OIDCCodeKey(""), "al:oidc:code:"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Fatalf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+}
+
 // TestKeysDayStamp 日期段格式 yyyymmdd（§5.1 行 837-838）。
 func TestKeysDayStamp(t *testing.T) {
 	cases := []struct {

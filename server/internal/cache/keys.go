@@ -96,6 +96,25 @@ func PwBanKey(userRef string) string {
 	return pwBanKeyPrefix + userRef
 }
 
+// ticketKeyPrefix 扫码结果键前缀（§5.1 行 842：al:ticket:{ticket_id}）。
+const ticketKeyPrefix = "al:ticket:"
+
+// TicketKey 返回扫码结果键（§5.1 行 842，String、TTL 与 ticket.exp 对齐、
+// 值为整值加密后的 TicketResult）。ticket_id 与 TicketPayload.ticket_id
+// 全链路同一值（§11.6.4 行 1313）。
+func TicketKey(ticketID string) string {
+	return ticketKeyPrefix + ticketID
+}
+
+// oidcCodeKeyPrefix OIDC 授权码键前缀（§5.1 行 843：al:oidc:code:{code}）。
+const oidcCodeKeyPrefix = "al:oidc:code:"
+
+// OIDCCodeKey 返回 OIDC 授权码键（§5.1 行 843，String、TTL 120s、GETDEL
+// 一次性；接口文档 §4.7 行 1134）。
+func OIDCCodeKey(code string) string {
+	return oidcCodeKeyPrefix + code
+}
+
 // dayStamp 返回服务器本地日期 yyyymmdd（§5.1 行 837-838 键名的日期段）。
 func dayStamp(t time.Time) string {
 	return t.Format("20060102")
