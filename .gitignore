@@ -3,3 +3,4 @@
 server/configs/config.yaml
 ENV.md
 .workbuddy
+*.exe
