@@ -36,6 +36,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
+	connectrpc "connectrpc.com/connect"
+
+	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
@@ -47,6 +50,7 @@ import (
 	"authloft/internal/factor/recovery"
 	"authloft/internal/factor/totp"
 	"authloft/internal/factor/webauthn"
+	accounthandler "authloft/internal/handler/account"
 	oidchandler "authloft/internal/handler/oidc"
 	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
@@ -597,6 +601,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 
 	if deps != nil {
 		registerSSO(cfg, csrv, deps)
+		registerAccount(cfg, csrv, deps)
 		// OIDC REST 端点（§4.1）：注册在 gin 链（/.well-known/** 与 /api/oidc/**
 		// 按绝对路径），不经 Connect、不套 §1.0 信封（§1.0 豁免清单）；
 		// origin 对 /api/oidc/** 免检（接口文档 §1.1 行 79 例外），GET 端点
@@ -624,27 +629,45 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 // 默认 7 天）。
 const ssoSessionTTL int64 = 604800
 
-// registerSSO 注册 SsoService Connect handler：挂 session 拦截器
-// （§3.14 行 473；LoginDefault 免鉴权，未登录请求由拦截器放行匿名），
-// 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
-// 会话 Tokens / EpochStore
-// 复用 assemble 构造的共享单例（与 buildEngine 同源），消除原先在此重复
-// 构造的装配冗余（session.NewTokens + NewEpochStore 各一份）。
-func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+// newDomainSessionInterceptor 构造域级 session 拦截器（§3.14 行 494）：
+// 会话 Tokens / EpochStore 复用 assemble 构造的共享单例（与 buildEngine
+// 同源）。sso 域（LoginDefault 免鉴权、匿名放行）与
+// account 域（§1.2 行 96：全接口需 al_session，无会话由 handler 判定 401）
+// 共用同一构造，不再各写一份。
+func newDomainSessionInterceptor(cfg *config.Config, deps *assembled) connectrpc.UnaryInterceptorFunc {
 	ttl := ssoSessionTTLRaw(deps.settings)
 	cookieName := func() string {
 		v, _ := deps.settings.GetString(settings.KeyCookieName)
 		return v
 	}
-	sessionInterceptor := connect.NewSessionInterceptor(
+	return connect.NewSessionInterceptor(
 		session.NewVerifier(deps.sessionTokens, deps.epochStore),
 		session.NewRenewer(deps.sessionTokens, ttl),
 		session.NewCookie(cookieName(), rootHost(cfg.Authloft.Root), ttl),
 		cookieName,
 	)
+}
+
+// registerSSO 注册 SsoService Connect handler：挂 session 拦截器
+// （§3.14 行 473；LoginDefault 免鉴权，未登录请求由拦截器放行匿名），
+// 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
+func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
 		ssohandler.New(deps.engine),
-		csrv.HandlerOptions(sessionInterceptor)...,
+		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
+	)
+	csrv.Register(path, h)
+}
+
+// registerAccount 注册 AccountService Connect handler：挂同一
+// session 拦截器（§1.2 行 96：/api.account.v1.AccountService/** 全接口需
+// 用户会话，无 LoginDefault 式豁免——无有效会话请求由 handler 返回
+// unauthenticated）。本卡仅实现 GetProfile，其余方法（含 GetConfig 桩）
+// 由生成的 UnimplementedAccountServiceHandler 返回 unimplemented。
+func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	path, h := accountv1connect.NewAccountServiceHandler(
+		accounthandler.New(repo.NewUserRepo(deps.db)),
+		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
 }

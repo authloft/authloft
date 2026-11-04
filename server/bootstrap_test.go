@@ -729,6 +729,63 @@ func TestOIDCRoutesWired(t *testing.T) {
 	}
 }
 
+// TestAssembleAccountRoutesWired：AccountService Connect handler 经
+// buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerAccount）——路由
+// 前缀已注册（handler 非 nil 的装配等效断言）；无会话 GetProfile 穿透
+// origin 前缀链 + session 拦截器抵达 handler，返回 401 unauthenticated
+//（§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
+// UpdateProfile 为生成 Unimplemented 桩。
+func TestAssembleAccountRoutesWired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	deps := buildWiredDeps(t, cfg)
+	csrv := connect.NewServer(defaultReadMaxBytes)
+	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
+
+	// 装配断言：account 域前缀已注册（sso 域零回归仍在）。
+	var hasAccount, hasSSO bool
+	for _, rt := range csrv.Routes() {
+		if rt.Prefix == "/api.account.v1.AccountService/" {
+			hasAccount = true
+		}
+		if rt.Prefix == "/api.sso.v1.SsoService/" {
+			hasSSO = true
+		}
+	}
+	if !hasAccount {
+		t.Fatal("AccountService 路由未注册（registerAccount 未挂载）")
+	}
+	if !hasSSO {
+		t.Error("SsoService 路由丢失（registerSSO 零回归）")
+	}
+
+	// doPostJSON 打带空 JSON 对象 body 的同源 Connect 请求（doRequest 不带
+	// body，connect-go 对 zero-length JSON 请求体报 invalid_argument）。
+	doPostJSON := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader("{}"))
+		req.Header.Set("Origin", assembledRootOrigin)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// 无会话 GetProfile → 401 unauthenticated（路由可达：非 404 / 403）。
+	rec := doPostJSON("/api.account.v1.AccountService/GetProfile")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("GetProfile without session: status = %d, want %d (body %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["code"]; got != "unauthenticated" {
+		t.Errorf("GetProfile code = %v, want unauthenticated (body %s)", got, rec.Body.String())
+	}
+
+	// UpdateProfile（本卡桩）→ unimplemented。
+	rec = doPostJSON("/api.account.v1.AccountService/UpdateProfile")
+	if got := decodeOIDCJSON(t, rec)["code"]; got != "unimplemented" {
+		t.Errorf("UpdateProfile code = %v, want unimplemented (body %s)", got, rec.Body.String())
+	}
+}
+
 // TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配
 // provider 链 / 共享单例 / OIDC JWT 全部产物非 nil；Referer 白名单按 provider
 // 数据判定（命中 200 / 未命中 403 两向）；OIDC discovery / jwks / token /
