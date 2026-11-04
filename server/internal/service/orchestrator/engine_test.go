@@ -589,7 +589,7 @@ func TestEngineStartStatusSkipsToken(t *testing.T) {
 		usages: []factor.Usage{factor.UsagePrimary},
 		steps:  []factor.StepKind{factor.StepChallenge, factor.StepForm},
 		start: func(*factor.FactorContext) (*factor.StepResult, error) {
-			return &factor.StepResult{Status: "user_not_found"}, nil
+			return &factor.StepResult{Status: "too_many_requests", RetryAfter: 60}, nil
 		},
 	}
 	e := deps.engine(testState(t, at))
@@ -598,14 +598,55 @@ func TestEngineStartStatusSkipsToken(t *testing.T) {
 		Method: "otp_email", Step: "challenge", Captcha: captchaSubmission(),
 		Payload: &factor.Payload{Email: "missing@example.com"},
 	})
-	if resp.Status != "user_not_found" {
-		t.Fatalf("status = %q, want user_not_found", resp.Status)
+	if resp.Status != "too_many_requests" {
+		t.Fatalf("status = %q, want too_many_requests", resp.Status)
 	}
 	if resp.LoginToken != "" {
 		t.Fatalf("status terminal must not issue login_token, got %q", resp.LoginToken)
 	}
 	if resp.NextStep != nil {
 		t.Fatalf("status terminal must not carry next_step")
+	}
+	// 重试建议回填信封 error.retryAfter（接口文档 §1.6 行 242）。
+	if resp.Error == nil || resp.Error.RetryAfter == nil || *resp.Error.RetryAfter != 60 {
+		t.Fatalf("error = %+v, want retryAfter 60", resp.Error)
+	}
+}
+
+// TestEngineFirstChallengeExposesTidFlow 首步 challenge 在因子 Start 前就必须
+// 拿到已生成的 tid 与选定 flow（否则主因子验证码无法按 §10.1 行 1121 绑定写码）。
+func TestEngineFirstChallengeExposesTidFlow(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	deps := newTestDeps(t, at)
+	var seen *token.LoginTokenPayload
+	deps.registry.factors[factor.FactorOTPEmail] = &fakeFactor{
+		kind:   factor.FactorOTPEmail,
+		usages: []factor.Usage{factor.UsagePrimary},
+		steps:  []factor.StepKind{factor.StepChallenge, factor.StepForm},
+		start: func(fctx *factor.FactorContext) (*factor.StepResult, error) {
+			seen = fctx.Login
+			return &factor.StepResult{Kind: factor.StepForm, Method: factor.FactorOTPEmail}, nil
+		},
+	}
+	state := testState(t, at)
+	e := deps.engine(state)
+
+	resp := e.Submit(context.Background(), "login", Request{
+		Method: "otp_email", Step: "challenge", Captcha: captchaSubmission(),
+		Payload: &factor.Payload{Email: "alice@example.com"},
+	})
+	if resp.Status != StatusNext || resp.LoginToken == "" {
+		t.Fatalf("resp = %+v, want next with login_token", resp)
+	}
+	if seen == nil || seen.GetTid() == "" || seen.GetFlow() != "login" {
+		t.Fatalf("factor Login = %+v, want tid/flow available before Start", seen)
+	}
+	issued, err := state.Parse(resp.LoginToken)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if issued.GetTid() != seen.GetTid() {
+		t.Fatalf("issued tid = %q, factor tid = %q, want same", issued.GetTid(), seen.GetTid())
 	}
 }
 

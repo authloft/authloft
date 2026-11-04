@@ -300,19 +300,23 @@ func TestCodeVerifySuccess(t *testing.T) {
 
 	mustSend(t, ctx, store, target, purpose, "tid-1", token+"-ip", "123456")
 	res, err := store.Verify(ctx, target, purpose, "tid-1", "123456")
-	if err != nil || res != VerifyOK {
+	if err != nil || res.Result != VerifyOK {
 		t.Fatalf("Verify = (%v, %v), want (VerifyOK, nil)", res, err)
+	}
+	if res.AttemptsLeft != 0 {
+		t.Fatalf("成功后剩余次数 = %d, want 0", res.AttemptsLeft)
 	}
 	if n, err := rdb.Exists(ctx, CodeKey(target, purpose)).Result(); err != nil || n != 0 {
 		t.Fatalf("消费后 exists = (%d, %v), want (0, nil)", n, err)
 	}
 	// 再次校验同一码应视为无码。
-	if res, err := store.Verify(ctx, target, purpose, "tid-1", "123456"); err != nil || res != VerifyMissing {
+	if res, err := store.Verify(ctx, target, purpose, "tid-1", "123456"); err != nil || res.Result != VerifyMissing {
 		t.Fatalf("二次 Verify = (%v, %v), want (VerifyMissing, nil)", res, err)
 	}
 }
 
-// TestCodeVerifyWrongRetains 校验 ②：错码 tries+1 且键保留（tries < 5）。
+// TestCodeVerifyWrongRetains 校验 ②：错码 tries+1 且键保留（tries < 5），
+// 同时返回剩余尝试次数（接口文档 §2.6 行 553）。
 func TestCodeVerifyWrongRetains(t *testing.T) {
 	ctx, rdb, token := codeTestRDB(t)
 	store := NewCodeStore(rdb, CodeOptions{})
@@ -322,8 +326,11 @@ func TestCodeVerifyWrongRetains(t *testing.T) {
 	mustSend(t, ctx, store, target, purpose, "tid-1", token+"-ip", "123456")
 	for want := 1; want <= 2; want++ {
 		res, err := store.Verify(ctx, target, purpose, "tid-1", "000000")
-		if err != nil || res != VerifyMismatch {
+		if err != nil || res.Result != VerifyMismatch {
 			t.Fatalf("错码 Verify #%d = (%v, %v), want (VerifyMismatch, nil)", want, res, err)
+		}
+		if res.AttemptsLeft != int64(5-want) {
+			t.Fatalf("错码 Verify #%d 剩余次数 = %d, want %d", want, res.AttemptsLeft, 5-want)
 		}
 		v := readStoredCode(t, ctx, rdb, CodeKey(target, purpose))
 		if v.Tries != want {
@@ -332,7 +339,7 @@ func TestCodeVerifyWrongRetains(t *testing.T) {
 	}
 }
 
-// TestCodeVerifyExhausted 校验 ③：第 5 次错码后键被删（作废，上限 5）。
+// TestCodeVerifyExhausted 校验 ③：剩余次数逐次递减，第 5 次错码后键被删（作废）。
 func TestCodeVerifyExhausted(t *testing.T) {
 	ctx, rdb, token := codeTestRDB(t)
 	store := NewCodeStore(rdb, CodeOptions{})
@@ -342,16 +349,22 @@ func TestCodeVerifyExhausted(t *testing.T) {
 	mustSend(t, ctx, store, target, purpose, "tid-1", token+"-ip", "123456")
 	for i := 1; i <= 4; i++ {
 		res, err := store.Verify(ctx, target, purpose, "tid-1", "000000")
-		if err != nil || res != VerifyMismatch {
+		if err != nil || res.Result != VerifyMismatch {
 			t.Fatalf("第 %d 次错码 = (%v, %v), want (VerifyMismatch, nil)", i, res, err)
+		}
+		if res.AttemptsLeft != int64(5-i) {
+			t.Fatalf("第 %d 次错码剩余次数 = %d, want %d", i, res.AttemptsLeft, 5-i)
 		}
 		if n, err := rdb.Exists(ctx, CodeKey(target, purpose)).Result(); err != nil || n != 1 {
 			t.Fatalf("第 %d 次错码后 exists = (%d, %v), want (1, nil)", i, n, err)
 		}
 	}
 	res, err := store.Verify(ctx, target, purpose, "tid-1", "000000")
-	if err != nil || res != VerifyExhausted {
+	if err != nil || res.Result != VerifyExhausted {
 		t.Fatalf("第 5 次错码 = (%v, %v), want (VerifyExhausted, nil)", res, err)
+	}
+	if res.AttemptsLeft != 0 {
+		t.Fatalf("作废后剩余次数 = %d, want 0", res.AttemptsLeft)
 	}
 	if n, err := rdb.Exists(ctx, CodeKey(target, purpose)).Result(); err != nil || n != 0 {
 		t.Fatalf("第 5 次错码后 exists = (%d, %v), want (0, nil)", n, err)
@@ -367,14 +380,17 @@ func TestCodeVerifyOwnerMismatch(t *testing.T) {
 
 	mustSend(t, ctx, store, target, purpose, "tid-A", token+"-ip", "123456")
 	res, err := store.Verify(ctx, target, purpose, "uid-B", "123456")
-	if err != nil || res != VerifyMismatch {
+	if err != nil || res.Result != VerifyMismatch {
 		t.Fatalf("owner 不匹配 Verify = (%v, %v), want (VerifyMismatch, nil)", res, err)
+	}
+	if res.AttemptsLeft != 4 {
+		t.Fatalf("owner 不匹配剩余次数 = %d, want 4", res.AttemptsLeft)
 	}
 	if v := readStoredCode(t, ctx, rdb, CodeKey(target, purpose)); v.Tries != 1 {
 		t.Fatalf("owner 不匹配后 tries = %d, want 1（键保留）", v.Tries)
 	}
 	// 正确 owner 仍可消费（此前仅 1 次失败）。
-	if res, err := store.Verify(ctx, target, purpose, "tid-A", "123456"); err != nil || res != VerifyOK {
+	if res, err := store.Verify(ctx, target, purpose, "tid-A", "123456"); err != nil || res.Result != VerifyOK {
 		t.Fatalf("正确 owner Verify = (%v, %v), want (VerifyOK, nil)", res, err)
 	}
 }
@@ -389,7 +405,7 @@ func TestCodeVerifyConcurrent(t *testing.T) {
 	mustSend(t, ctx, store, target, purpose, "tid-1", token+"-ip", "888888")
 
 	const n = 100
-	results := make([]VerifyResult, n)
+	results := make([]CodeVerifyResult, n)
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
@@ -406,7 +422,7 @@ func TestCodeVerifyConcurrent(t *testing.T) {
 		if errs[i] != nil {
 			t.Fatalf("并发 Verify #%d err = %v", i, errs[i])
 		}
-		switch results[i] {
+		switch results[i].Result {
 		case VerifyOK:
 			ok++
 		case VerifyMissing:
@@ -417,5 +433,42 @@ func TestCodeVerifyConcurrent(t *testing.T) {
 	}
 	if ok != 1 || missing != n-1 || other != 0 {
 		t.Fatalf("并发结果 ok=%d missing=%d other=%d, want ok=1 missing=%d other=0", ok, missing, other, n-1)
+	}
+}
+
+// TestCodeVerifyNoTTLKey 校验 ⑥：al:code 键缺失 TTL（PTTL<=0）时不得回写
+// 永久键，必须作废删除；再次校验仍为 VerifyMissing（§3.10 行 418-419、§5.1 行 835）。
+func TestCodeVerifyNoTTLKey(t *testing.T) {
+	ctx, rdb, token := codeTestRDB(t)
+	store := NewCodeStore(rdb, CodeOptions{})
+	target := token + "-vntl"
+	purpose := "login"
+	key := CodeKey(target, purpose)
+
+	raw, err := json.Marshal(storedCode{Code: "123456", Owner: "tid-1", Tries: 0, SentAt: time.Now().Unix()})
+	if err != nil {
+		t.Fatalf("marshal stored code: %v", err)
+	}
+	// 直接 SET 且不带过期时间，模拟遗留的无 TTL 键。
+	if err := rdb.Set(ctx, key, raw, 0).Err(); err != nil {
+		t.Fatalf("set no-ttl key: %v", err)
+	}
+	if pttl, err := rdb.PTTL(ctx, key).Result(); err != nil || pttl != -1 {
+		t.Fatalf("PTTL = (%v, %v), want (-1, nil) 无 TTL", pttl, err)
+	}
+
+	res, err := store.Verify(ctx, target, purpose, "tid-1", "000000")
+	if err != nil || res.Result != VerifyMissing {
+		t.Fatalf("无 TTL 键 Verify = (%v, %v), want (VerifyMissing, nil)", res, err)
+	}
+	if n, err := rdb.Exists(ctx, key).Result(); err != nil || n != 0 {
+		t.Fatalf("无 TTL 键校验后 exists = (%d, %v), want (0, nil)", n, err)
+	}
+	// 正确码也不可用：键已作废且不得重建。
+	if res, err := store.Verify(ctx, target, purpose, "tid-1", "123456"); err != nil || res.Result != VerifyMissing {
+		t.Fatalf("作废后 Verify = (%v, %v), want (VerifyMissing, nil)", res, err)
+	}
+	if n, err := rdb.Exists(ctx, key).Result(); err != nil || n != 0 {
+		t.Fatalf("再次校验后 exists = (%d, %v), want (0, nil)（不得重建无 TTL 键）", n, err)
 	}
 }

@@ -133,15 +133,15 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	fctx := &factor.FactorContext{
 		Context:         ctx,
 		LoginToken:      req.LoginToken,
+		// loadPayload 首步也会生成 tid / 选定 flow，Start 之前即可用
+		// （主因子 challenge 需以 owner=tid、purpose=flow 写码，§10.1 行 1121）。
+		Login:           p,
 		Payload:         req.Payload,
 		Captcha:         req.Captcha,
 		CaptchaVerifier: e.repo.CaptchaVerifier,
 		Limiter:         e.repo.Limiter,
 		Users:           e.repo.Users,
 		Credentials:     e.repo.Credentials,
-	}
-	if req.LoginToken != "" {
-		fctx.Login = p
 	}
 
 	if req.Step == "challenge" {
@@ -247,9 +247,15 @@ func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.L
 	if err != nil {
 		return failed()
 	}
-	// 因子可直接以 status 终止（如 user_not_found），此时不签发 login_token。
+	// 因子可直接以 status 终止（如 user_not_found / too_many_requests），
+	// 此时不签发 login_token；重试建议回填信封 error.retryAfter（§1.6 行 242）。
 	if step != nil && step.Status != "" {
-		return &ssov1.LoginFlowResponse{Status: step.Status}
+		resp := &ssov1.LoginFlowResponse{Status: step.Status}
+		if step.RetryAfter > 0 {
+			v := step.RetryAfter
+			resp.Error = &ssov1.SsoError{RetryAfter: &v}
+		}
+		return resp
 	}
 	nonce, err := security.RandomString(challengeNonce)
 	if err != nil {

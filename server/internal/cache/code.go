@@ -177,22 +177,41 @@ const (
 	VerifyMissing VerifyResult = -1
 )
 
+// CodeVerifyResult 校验结论与剩余尝试次数（接口文档 §2.6 行 553：
+// invalid_code 必须携带剩余次数）。AttemptsLeft 仅在错码且键保留时有效，
+// 成功 / 作废 / 无码均为 0。
+type CodeVerifyResult struct {
+	Result       VerifyResult
+	AttemptsLeft int64
+}
+
 // Verify 校验验证码：Lua 原子 GETDEL（§10.1 行 1112、1126），比对 code
 // 与 owner；错码 tries+1 仅在 tries < MaxAttempts 时回写（保留原 TTL），
-// 第 MaxAttempts 次错码删除键；正确码消费后键必删。
-func (s *CodeStore) Verify(ctx context.Context, target, purpose, owner, code string) (VerifyResult, error) {
-	n, err := s.rdb.Eval(ctx, verifyCodeScript,
+// 第 MaxAttempts 次错码删除键；正确码消费后键必删。Lua 同时返回剩余次数。
+func (s *CodeStore) Verify(ctx context.Context, target, purpose, owner, code string) (CodeVerifyResult, error) {
+	raw, err := s.rdb.Eval(ctx, verifyCodeScript,
 		[]string{CodeKey(target, purpose)},
 		code, owner, int64(s.opts.MaxAttempts),
-	).Int64()
+	).Slice()
 	if err != nil {
-		return VerifyMissing, fmt.Errorf("cache: verify code eval: %w", err)
+		return CodeVerifyResult{Result: VerifyMissing}, fmt.Errorf("cache: verify code eval: %w", err)
+	}
+	if len(raw) != 2 {
+		return CodeVerifyResult{Result: VerifyMissing}, fmt.Errorf("cache: verify code eval: unexpected reply length %d", len(raw))
+	}
+	n, ok := raw[0].(int64)
+	if !ok {
+		return CodeVerifyResult{Result: VerifyMissing}, fmt.Errorf("cache: verify code eval: unexpected result %v", raw[0])
+	}
+	left, ok := raw[1].(int64)
+	if !ok {
+		return CodeVerifyResult{Result: VerifyMissing}, fmt.Errorf("cache: verify code eval: unexpected attempts %v", raw[1])
 	}
 	switch VerifyResult(n) {
 	case VerifyOK, VerifyMismatch, VerifyExhausted, VerifyMissing:
-		return VerifyResult(n), nil
+		return CodeVerifyResult{Result: VerifyResult(n), AttemptsLeft: left}, nil
 	default:
-		return VerifyMissing, fmt.Errorf("cache: verify code eval: unexpected result %d", n)
+		return CodeVerifyResult{Result: VerifyMissing}, fmt.Errorf("cache: verify code eval: unexpected result %d", n)
 	}
 }
 

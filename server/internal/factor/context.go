@@ -59,7 +59,9 @@ type FactorContext struct {
 	Context context.Context
 	// LoginToken 本次请求回传的原始 login_token；首次请求为空。
 	LoginToken string
-	// Login 解析后的 login_token 状态；首次请求为 nil。
+	// Login 本次请求的 login_token 状态；engine 在 Start 之前即由
+	// loadPayload 构建（首步也含已生成的 tid 与选定 flow），故因子在
+	// challenge 阶段即可用；仅未接入引擎的调用方可能为 nil。
 	Login *token.LoginTokenPayload
 	// Payload 本次请求的因子字段。
 	Payload *Payload
