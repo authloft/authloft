@@ -87,7 +87,9 @@ type SessionResponse struct {
 	// 签发时间，Unix 秒（§11.6.3 行 1314）。
 	Iat int64 `protobuf:"varint,5,opt,name=iat,proto3" json:"iat,omitempty"`
 	// 过期时间，Unix 秒（§11.6.3 行 1315）。
-	Exp           int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
+	Exp int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
+	// 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
+	RenewedToken  string `protobuf:"bytes,7,opt,name=renewed_token,json=renewedToken,proto3" json:"renewed_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,6 +166,13 @@ func (x *SessionResponse) GetExp() int64 {
 	return 0
 }
 
+func (x *SessionResponse) GetRenewedToken() string {
+	if x != nil {
+		return x.RenewedToken
+	}
+	return ""
+}
+
 var File_api_rpc_v1_session_proto protoreflect.FileDescriptor
 
 const file_api_rpc_v1_session_proto_rawDesc = "" +
@@ -171,14 +180,15 @@ const file_api_rpc_v1_session_proto_rawDesc = "" +
 	"\x18api/rpc/v1/session.proto\x12\n" +
 	"api.rpc.v1\";\n" +
 	"\x14DecodeSessionRequest\x12#\n" +
-	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\"\x7f\n" +
+	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\"\xa4\x01\n" +
 	"\x0fSessionResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x03R\x05epoch\x12\x10\n" +
 	"\x03amr\x18\x03 \x03(\tR\x03amr\x12\x10\n" +
 	"\x03sid\x18\x04 \x01(\tR\x03sid\x12\x10\n" +
 	"\x03iat\x18\x05 \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\x06 \x01(\x03R\x03expB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
+	"\x03exp\x18\x06 \x01(\x03R\x03exp\x12#\n" +
+	"\rrenewed_token\x18\a \x01(\tR\frenewedTokenB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
 var (
 	file_api_rpc_v1_session_proto_rawDescOnce sync.Once

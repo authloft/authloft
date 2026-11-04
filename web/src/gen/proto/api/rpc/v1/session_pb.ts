@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/rpc/v1/session.proto.
  */
 export const file_api_rpc_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvcnBjL3YxL3Nlc3Npb24ucHJvdG8SCmFwaS5ycGMudjEiLQoURGVjb2RlU2Vzc2lvblJlcXVlc3QSFQoNc2Vzc2lvbl90b2tlbhgBIAEoCSJgCg9TZXNzaW9uUmVzcG9uc2USCgoCaWQYASABKAMSDQoFZXBvY2gYAiABKAMSCwoDYW1yGAMgAygJEgsKA3NpZBgEIAEoCRILCgNpYXQYBSABKAMSCwoDZXhwGAYgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvcnBjL3YxO3JwY3YxYgZwcm90bzM");
+  fileDesc("ChhhcGkvcnBjL3YxL3Nlc3Npb24ucHJvdG8SCmFwaS5ycGMudjEiLQoURGVjb2RlU2Vzc2lvblJlcXVlc3QSFQoNc2Vzc2lvbl90b2tlbhgBIAEoCSJ3Cg9TZXNzaW9uUmVzcG9uc2USCgoCaWQYASABKAMSDQoFZXBvY2gYAiABKAMSCwoDYW1yGAMgAygJEgsKA3NpZBgEIAEoCRILCgNpYXQYBSABKAMSCwoDZXhwGAYgASgDEhUKDXJlbmV3ZWRfdG9rZW4YByABKAlCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw");
 
 /**
  * DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7 行 1389「传入
@@ -86,6 +86,13 @@ export type SessionResponse = Message<"api.rpc.v1.SessionResponse"> & {
    * @generated from field: int64 exp = 6;
    */
   exp: bigint;
+
+  /**
+   * 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
+   *
+   * @generated from field: string renewed_token = 7;
+   */
+  renewedToken: string;
 };
 
 /**

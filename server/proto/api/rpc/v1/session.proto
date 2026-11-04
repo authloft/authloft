@@ -33,4 +33,6 @@ message SessionResponse {
   int64 iat = 5;
   // 过期时间，Unix 秒（§11.6.3 行 1315）。
   int64 exp = 6;
+  // 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
+  string renewed_token = 7;
 }
