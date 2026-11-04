@@ -71,6 +71,31 @@ func IPDayKey(ip, ymd string) string {
 	return ipDayKeyPrefix + ip + ":" + ymd
 }
 
+// captchaKeyPrefix 自绘图形码键前缀（§5.1 行 841：al:cap:{id}）。
+const captchaKeyPrefix = "al:cap:"
+
+// CaptchaKey 返回自绘图形码键（§5.1 行 841，String、TTL 300s、生成 1 次）。
+func CaptchaKey(id string) string {
+	return captchaKeyPrefix + id
+}
+
+// pwFailKeyPrefix 密码失败计数键前缀（§5.1 行 839：al:pwf:{user_ref}:{yyyymmdd}）。
+const pwFailKeyPrefix = "al:pwf:"
+
+// PwFailKey 返回密码失败计数键（§5.1 行 839，String、当天 24:00 过期、
+// INCR）。ymd 为服务器本地日期 yyyymmdd（见 dayStamp）。
+func PwFailKey(userRef, ymd string) string {
+	return pwFailKeyPrefix + userRef + ":" + ymd
+}
+
+// pwBanKeyPrefix 密码登录封禁键前缀（§5.1 行 840：al:pwban:{user_ref}）。
+const pwBanKeyPrefix = "al:pwban:"
+
+// PwBanKey 返回密码登录封禁键（§5.1 行 840，String、默认 6h、SET NX EX）。
+func PwBanKey(userRef string) string {
+	return pwBanKeyPrefix + userRef
+}
+
 // dayStamp 返回服务器本地日期 yyyymmdd（§5.1 行 837-838 键名的日期段）。
 func dayStamp(t time.Time) string {
 	return t.Format("20060102")
