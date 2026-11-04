@@ -11,6 +11,13 @@ export default defineConfig({
         entry: './src/setup/entry.tsx',
         disableMount: true,
       },
+      // 登录 entry（docs/前端架构.md §2 行 119 / §4.1）：Go 空壳引用
+      // /assets/login/entry.js（接口文档 §8 行 1428 固定 URL 契约）。
+      // 同 setup 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      login: {
+        entry: './src/login/entry.tsx',
+        disableMount: true,
+      },
     },
   },
   output: {
