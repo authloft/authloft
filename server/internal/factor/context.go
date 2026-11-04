@@ -91,6 +91,9 @@ type StepResult struct {
 	RetryAfter    int64
 	ExpiresIn     int64
 	ChallengeData *structpb.Struct
+	// Status 非空表示 Start 未产出下一步，直接以该 status 结束信封
+	// （如 user_not_found，且不签发 login_token）。
+	Status string
 }
 
 // VerifyResult 因子 Verify 的原始产出：Passed 表示本次校验是否通过；
