@@ -46,6 +46,7 @@ import (
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
 	"authloft/internal/factor"
+	factorotp "authloft/internal/factor/otp"
 	factorpassword "authloft/internal/factor/password"
 	"authloft/internal/factor/recovery"
 	"authloft/internal/factor/totp"
@@ -56,10 +57,14 @@ import (
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
+	core "authloft/internal/otp"
 	"authloft/internal/provider"
 	// §3.1 行 237：注册表导入在此处统一 `_ import` 触发自注册——
-	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）。
+	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）；
+	// smtp / aliyun_sms 向消息域注册表登记 Sender（§15.2 / §15.3）。
+	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/sms/aliyun_sms"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -98,7 +103,7 @@ const shutdownTimeout = 10 * time.Second
 // assembled 正常模式装配产物（§3.1 行 237 启动链）：DB / Redis / 五把密钥编解码
 // / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink / 登录单引擎 /
 // provider 加载链与 Referer 白名单来源 / OIDC JWT 与共享单例。cron 仍为 TODO
-//（§3.12，随 cron 卡接入）。
+// （§3.12，随 cron 卡接入）。
 type assembled struct {
 	db       *gorm.DB
 	rdb      *redis.Client
@@ -246,8 +251,10 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 ) (*orchestrator.Engine, *orchestrator.Terminal, *factor.Registry, error) {
 	// sessionTokens / epochStore / codeIssuer 由 assemble 构造为共享
 	// 单例（registerSSO 与 OIDC 端点复用同一实例，不再各自构造第二份）。
+	// otp 因子的发送桥还需 providerLoader（settings 键 → Loader →
+	// NewSender，§15.3 行 1735）。
 	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil ||
-		deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil {
+		deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil || deps.providerLoader == nil {
 		return nil, nil, nil, errors.New("bootstrap: engine deps not fully assembled")
 	}
 
@@ -287,6 +294,37 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err := registry.Register(factor.FactorRecovery, recovery.New()); err != nil {
 		return nil, nil, nil, err
 	}
+	// OTP 发送（§8.2 行 1051 / §15.2）：otp_sms / otp_email 共用因子实现，验证码
+	// 参数按 settings 快照注入（§5.6 行 1303-1311，热更新口径同 password 先例
+	// ——启动期快照）；发送桥 = settings 键 → Loader → NewSender → asyncqueue
+	// 异步投递（provider/sender.go）。IPResolver 尚未落地（暂不并入），
+	// 传 nil 走 §8.2 的 "unknown" 兜底，与 password 因子 nil 先例一致。
+	otpCfg, codeOpts := otpParamsFromSettings(deps.settings)
+	otpSvc := core.NewService(cache.NewCodeStore(deps.rdb, codeOpts), otpCfg)
+	smsSender, err := provider.NewCodeBridge(deps.settings, deps.providerLoader, deps.queue,
+		settings.KeySmsProviderKey, provider.CategorySMS)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	emailSender, err := provider.NewCodeBridge(deps.settings, deps.providerLoader, deps.queue,
+		settings.KeyEmailProviderKey, provider.CategoryEmail)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	otpSMS, err := factorotp.New(factor.FactorOTPSMS, otpSvc, smsSender, nil, otpCfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	otpEmail, err := factorotp.New(factor.FactorOTPEmail, otpSvc, emailSender, nil, otpCfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.Register(factor.FactorOTPSMS, otpSMS); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.Register(factor.FactorOTPEmail, otpEmail); err != nil {
+		return nil, nil, nil, err
+	}
 	if err := registry.AssertComplete(); err != nil {
 		return nil, nil, nil, err
 	}
@@ -318,6 +356,39 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		},
 	})
 	return engine, terminal, registry, nil
+}
+
+// otpParamsFromSettings 验证码五参数启动期快照（接口文档 §5.6 行 1303-1311
+// 为键名与默认值的唯一定义处）。core.Config 供因子 Judge 与表单渲染，
+// cache.CodeOptions 供 cache.CodeStore 限流判定；零值各自回落默认（两处
+// 默认值同源 §10.3，一致）。
+func otpParamsFromSettings(st *settings.Store) (core.Config, cache.CodeOptions) {
+	var cfg core.Config
+	if st == nil {
+		return cfg, cache.CodeOptions{}
+	}
+	if v, ok := st.GetInt64(settings.KeyOtpTtl); ok && v > 0 {
+		cfg.TTL = time.Duration(v) * time.Second
+	}
+	if v, ok := st.GetInt64(settings.KeyOtpResendInterval); ok && v > 0 {
+		cfg.Cooldown = time.Duration(v) * time.Second
+	}
+	if v, ok := st.GetInt64(settings.KeyOtpMaxAttempts); ok && v > 0 {
+		cfg.MaxAttempts = int(v)
+	}
+	if v, ok := st.GetInt64(settings.KeyOtpDailyLimitTarget); ok && v > 0 {
+		cfg.TargetDailyLimit = int(v)
+	}
+	if v, ok := st.GetInt64(settings.KeyOtpDailyLimitIP); ok && v > 0 {
+		cfg.IPDailyLimit = int(v)
+	}
+	return cfg, cache.CodeOptions{
+		TTL:              cfg.TTL,
+		Cooldown:         cfg.Cooldown,
+		TargetDailyLimit: cfg.TargetDailyLimit,
+		IPDailyLimit:     cfg.IPDailyLimit,
+		MaxAttempts:      cfg.MaxAttempts,
+	}
 }
 
 // assemble 正常模式装配步骤 2-8（§3.1 行 237）：DB → 迁移检查（migrate up，
@@ -381,6 +452,9 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.queue = asyncqueue.New(combinedExecutor{
 		&eventLogExecutor{logs: repo.NewEventLogRepo(db), users: users},
 		webauthn.NewSignCountExecutor(webauthnRepo),
+		// otp_sms / otp_email 的消息投递（SendJob，§15.2 行 1726），
+		// 只消费 SendJob 任务，其余任务类型原样忽略。
+		provider.SendExecutor{},
 	}, asyncqueue.DefaultOptions())
 	deps.sink = service.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
 
@@ -399,8 +473,9 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
 
 	// 步骤 6（factor 半步）：factor 注册表（password / webauthn / totp /
-	// recovery，§3.8）+ Terminal + 单引擎（§7）。pendingKinds 内的 otp /
-	// thirdparty / device 尚无装配依赖，由 registry.AssertComplete 显式排除。
+	// recovery / otp_sms / otp_email，§3.8）+ Terminal + 单引擎（§7）。
+	// pendingKinds 内的 thirdparty / device 尚无装配依赖，由
+	// registry.AssertComplete 显式排除。
 	engine, _, _, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())

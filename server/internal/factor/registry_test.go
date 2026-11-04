@@ -56,10 +56,9 @@ func TestRegistryRegisterGet(t *testing.T) {
 }
 
 func TestRegistryAssertComplete(t *testing.T) {
-	// pendingKinds 必须恰为 4 条显式清单（§3.8 行 390 口径）。
+	// pendingKinds 必须恰为 2 条显式清单（§3.8 行 390；otp_sms /
+	// otp_email 已随 §15.2 Sender 基建落地并装配，从 pending 移除）。
 	wantPending := map[FactorKind]bool{
-		FactorOTPSMS:     true,
-		FactorOTPEmail:   true,
 		FactorThirdParty: true,
 		FactorDevice:     true,
 	}

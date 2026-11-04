@@ -13,6 +13,7 @@ import (
 
 	"authloft/internal/factor"
 	core "authloft/internal/otp"
+	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 )
 
@@ -21,12 +22,13 @@ const purposeMFA = "mfa"
 
 // 登录流程域 status（接口文档 §1.6 行 228-273 封闭集合子集）。
 const (
-	StatusInvalidRequest  = "invalid_request"
-	StatusUserNotFound    = "user_not_found"
-	StatusInvalidCode     = "invalid_code"
-	StatusCodeExpired     = "code_expired"
-	StatusTooManyAttempts = "too_many_attempts"
-	StatusStepInvalid     = "step_invalid"
+	StatusInvalidRequest   = "invalid_request"
+	StatusUserNotFound     = "user_not_found"
+	StatusInvalidCode      = "invalid_code"
+	StatusCodeExpired      = "code_expired"
+	StatusTooManyAttempts  = "too_many_attempts"
+	StatusStepInvalid      = "step_invalid"
+	StatusProviderDisabled = "provider_disabled" // 行 259：提供方未启用（消息渠道未配置）
 )
 
 // Sender 投递通道（短信 / 邮件），装配方按厂商注入；本包不直接调第三方 SDK。
@@ -125,8 +127,15 @@ func (f *Factor) Start(ctx *factor.FactorContext) (*factor.StepResult, error) {
 	if f.sender == nil {
 		return nil, fmt.Errorf("otp: sender not configured")
 	}
-	// §8.2：发送失败不回滚已写的码，允许 60s 后重发；错误交由编排层置 failed。
+	// §8.2 行 1051：发送失败不回滚已写的码，允许 60s 后重发。渠道未配置
+	//（settings 键空 / 实例缺失或未启用 / 类型不符，§15.2/§15.3）映射封闭
+	// 集合 provider_disabled（§1.6 行 259，提供方未启用）；其余错误（瞬时
+	// 故障）交由编排层按未知异常置 failed。厂商侧投递失败发生在异步队列
+	// 内（§15.2 行 1726），不影响本步返回。
 	if err := f.sender.SendCode(ctx.Context, target, code); err != nil {
+		if errors.Is(err, provider.ErrChannelNotConfigured) {
+			return &factor.StepResult{Status: StatusProviderDisabled}, nil
+		}
 		return nil, err
 	}
 

@@ -19,10 +19,9 @@ var (
 
 // pendingKinds 尚无可用装配依赖、暂不参与启动期完整性断言的 kind 显式清单
 // （后端架构 §3.8 行 390 口径）：依赖落地即从此处移除，清空后恢复
-// 全量断言。allKinds 本身保持不变。
+// 全量断言。allKinds 本身保持不变。otp_sms / otp_email 已随 §15.2
+// 消息 Sender 基建装配，从清单移除；剩 thirdparty / device 两条。
 var pendingKinds = []FactorKind{
-	FactorOTPSMS,     // TODO(§3.8): SMS Sender（§15 provider）未落地
-	FactorOTPEmail,   // TODO(§3.8): email Sender（§15 provider）未落地
 	FactorThirdParty, // TODO(§3.8): provider 适配器未落地
 	FactorDevice,     // TODO(§3.8): 登录设备内部因子未落地
 }

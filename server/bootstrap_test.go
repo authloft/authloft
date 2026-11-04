@@ -48,6 +48,7 @@ import (
 	"authloft/internal/eventlog"
 	"authloft/internal/factor"
 	"authloft/internal/oidc"
+	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/service"
@@ -463,8 +464,9 @@ type noopExecutor struct{}
 func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
 
 // TestAssembleEngineAndTerminal 用 Fake 配置装配 factor 注册表 / Terminal /
-// Engine（不连 DB / Redis）：断言 4 个已实现 kind 可解析、pending 4 条不参与
-// 完整性断言、Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
+// Engine（不连 DB / Redis）：断言 6 个已实现 kind（含 otp_sms /
+// otp_email）可解析、pending 2 条（thirdparty / device）不参与完整性断言、
+// Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
 func TestAssembleEngineAndTerminal(t *testing.T) {
 	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
 	if err != nil {
@@ -488,10 +490,12 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		queue:    q,
 		sink:     service.NewLoginEventWriter(eventlog.NewWriter(q)),
 		// 共享单例由调用方构造注入（不连外部服务，rdb / repo 传
-		// nil 与生产 assemble 注入真源同构）。
-		sessionTokens: session.NewTokens(codecs.Session),
-		epochStore:    cache.NewEpochStore(nil, nil),
-		codeIssuer:    oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
+		// nil 与生产 assemble 注入真源同构）；otp 发送桥还需要
+		// providerLoader（settings 键 → Loader → NewSender）。
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		sessionTokens:  session.NewTokens(codecs.Session),
+		epochStore:     cache.NewEpochStore(nil, nil),
+		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
 	cfg := &config.Config{
 		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
@@ -513,13 +517,15 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 	}
 	for _, kind := range []factor.FactorKind{
 		factor.FactorPassword, factor.FactorWebAuthn, factor.FactorTOTP, factor.FactorRecovery,
+		factor.FactorOTPSMS, factor.FactorOTPEmail,
 	} {
 		if _, err := registry.Get(kind); err != nil {
 			t.Fatalf("Get(%s): %v", kind, err)
 		}
 	}
+	// pendingKinds 剩 thirdparty / device 两条（otp 两条已解锁）。
 	for _, kind := range []factor.FactorKind{
-		factor.FactorOTPSMS, factor.FactorOTPEmail, factor.FactorThirdParty, factor.FactorDevice,
+		factor.FactorThirdParty, factor.FactorDevice,
 	} {
 		if _, err := registry.Get(kind); !errors.Is(err, factor.ErrKindNotRegistered) {
 			t.Fatalf("Get(%s) err = %v, want ErrKindNotRegistered (pending kind)", kind, err)
@@ -656,13 +662,14 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 		_ = q.Close(ctx)
 	})
 	deps := &assembled{
-		codecs:        codecs,
-		settings:      settings.NewStore(nil, nil),
-		queue:         q,
-		sink:          service.NewLoginEventWriter(eventlog.NewWriter(q)),
-		sessionTokens: session.NewTokens(codecs.Session),
-		epochStore:    cache.NewEpochStore(nil, nil),
-		codeIssuer:    oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
+		codecs:         codecs,
+		settings:       settings.NewStore(nil, nil),
+		queue:          q,
+		sink:           service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		sessionTokens:  session.NewTokens(codecs.Session),
+		epochStore:     cache.NewEpochStore(nil, nil),
+		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
 	engine, _, _, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
 	if err != nil {
@@ -733,7 +740,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 // buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerAccount）——路由
 // 前缀已注册（handler 非 nil 的装配等效断言）；无会话 GetProfile 穿透
 // origin 前缀链 + session 拦截器抵达 handler，返回 401 unauthenticated
-//（§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
+// （§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
 // UpdateProfile 为生成 Unimplemented 桩。
 func TestAssembleAccountRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
