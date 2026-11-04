@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -57,10 +58,66 @@ func Origin(rootOrigin string, refererAllowlist []string) gin.HandlerFunc {
 
 // requestOriginAllowed 判定写请求的跨站防护：带 Origin 走同源判断，无 Origin 走 Referer 白名单。
 func requestOriginAllowed(r *http.Request, rootOrigin string, refererAllowlist []string) bool {
+	return requestOriginAllowedFunc(r, rootOrigin, func(context.Context) []string { return refererAllowlist })
+}
+
+// AllowlistFunc Referer 白名单动态来源（docs/后端架构.md §13.0 行 1570：
+// 由装配层注入 provider 查询函数并随 provider 变更热更新，不是启动期
+// 一次性快照）。每次无 Origin 写请求的 Referer 判定时现场求值（带请求
+// ctx，供查询超时 / 取消传播）；返回 nil / 空切片 = 空表（恒 false，
+// fail-closed——§13.0「Referer 校验按失败处理」+ 本文件既有空表口径）。
+type AllowlistFunc func(ctx context.Context) []string
+
+// OriginFunc gin 版 Origin/CSRF 中间件的动态白名单形态（§13.0）：
+// 校验语义与 Origin 完全一致（同源判断、servicewechat.com/{appid} 口径、
+// 免检组、写方法限制均不变），仅 Referer 白名单改为每请求现场查询——
+// 白名单随 provider 数据变更即时生效（60s 缓存与版本失效由注入的来源
+// 自治，internal/provider.Whitelist）。allowlist 为 nil 时等效空表
+// （无 Origin 写请求恒 403，保守拒绝）。既有静态 Origin / HTTPOrigin
+// 保留原签名兼容存量调用方（httpmw.go 等）。
+func OriginFunc(rootOrigin string, allowlist AllowlistFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !isWriteMethod(c.Request.Method) || isOriginExemptPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+		if requestOriginAllowedFunc(c.Request, rootOrigin, allowlist) {
+			c.Next()
+			return
+		}
+		// 403 出口与静态版同体（originRejectedBody）：被本层拦截的主要是
+		// Connect 域请求；X-Request-Id 头由 requestid 中间件已写入头表。
+		c.Data(http.StatusForbidden, "application/json", []byte(originRejectedBody))
+		c.Abort()
+	}
+}
+
+// HTTPOriginFunc http 版 Origin/CSRF 中间件的动态白名单形态：
+// Connect 前缀链专用（§3.1 行 243 mux.Handle 前缀），与 HTTPOrigin 的
+// 静态形态等效、与 gin 版 OriginFunc 共用同一判定核心；放在 origin.go
+// 以保持 httpmw.go（静态形态、已验收）不动。
+func HTTPOriginFunc(rootOrigin string, allowlist AllowlistFunc, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isWriteMethod(r.Method) || isOriginExemptPath(r.URL.Path) || requestOriginAllowedFunc(r, rootOrigin, allowlist) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(originRejectedBody))
+	})
+}
+
+// requestOriginAllowedFunc 动态源判定核心：带 Origin 走同源判断（不查白
+// 名单，同源即过）；无 Origin 时现场求值白名单再走 Referer 判定。
+func requestOriginAllowedFunc(r *http.Request, rootOrigin string, allowlist AllowlistFunc) bool {
 	if origin := r.Header.Get("Origin"); origin != "" {
 		return sameOrigin(origin, rootOrigin)
 	}
-	return refererAllowed(r.Header.Get("Referer"), refererAllowlist)
+	if allowlist == nil {
+		return false
+	}
+	return refererAllowed(r.Header.Get("Referer"), allowlist(r.Context()))
 }
 
 // isWriteMethod 判定是否写方法：GET/HEAD/OPTIONS 属安全方法，不做 Origin 校验

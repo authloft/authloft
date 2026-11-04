@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,10 +47,15 @@ import (
 	"authloft/internal/factor/recovery"
 	"authloft/internal/factor/totp"
 	"authloft/internal/factor/webauthn"
+	oidchandler "authloft/internal/handler/oidc"
 	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
+	"authloft/internal/provider"
+	// §3.1 行 237：注册表导入在此处统一 `_ import` 触发自注册——
+	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）。
+	_ "authloft/internal/provider/oauth/wechat_mp"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -86,8 +92,9 @@ func run(configPath string) error {
 const shutdownTimeout = 10 * time.Second
 
 // assembled 正常模式装配产物（§3.1 行 237 启动链）：DB / Redis / 五把密钥编解码
-// / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink / 登录单引擎。
-// provider 注册表与 cron 待对应包落地后补字段（§3.1 步骤 6 与 cron 仍为 TODO）。
+// / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink / 登录单引擎 /
+// provider 加载链与 Referer 白名单来源 / OIDC JWT 与共享单例。cron 仍为 TODO
+//（§3.12，随 cron 卡接入）。
 type assembled struct {
 	db       *gorm.DB
 	rdb      *redis.Client
@@ -97,6 +104,24 @@ type assembled struct {
 	queue    *asyncqueue.Queue
 	sink     *service.LoginEventWriter
 	engine   *orchestrator.Engine
+
+	// provider 链（§3.9 / §15.3 / §13.0）：Loader 供后续 thirdparty
+	// 登录卡按 provider_key 取实例；Whitelist 是 origin 中间件 Referer 白
+	// 名单的唯一动态来源（已启用 wechat_mp / wechat_mp_scan 的 app_id 集合）。
+	providerLoader    *provider.Loader
+	providerWhitelist *provider.Whitelist
+
+	// 会话 / 令牌共享单例（消除 registerSSO 与 buildEngine
+	// 的重复构造）：sessionTokens 供 sso 会话拦截器与 Terminal SessionWriter
+	// 共用；epochStore 供会话校验与 OIDC 令牌 epoch 校验共用；codeIssuer 供
+	// Terminal（sso 登录终点）与 OIDC token 端点共用同一授权码签发者。
+	sessionTokens *session.Tokens
+	epochStore    *cache.EpochStore
+	codeIssuer    *oidc.CodeIssuer
+
+	// oidcJWT OIDC RS256 签发密钥集（§3.2 约定 6 / §14.3：启动期一次性解析
+	// config.oidc.jwt_keys，首项签发、全列表发 JWKS；iss = authloft.root）。
+	oidcJWT *oidc.JWT
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -215,7 +240,10 @@ func (r mfaCredentialReader) ListWebauthn(ctx context.Context, userID int64) ([]
 func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	creds *repo.CredentialRepo, webauthnRepo *repo.WebauthnRepo,
 ) (*orchestrator.Engine, *orchestrator.Terminal, *factor.Registry, error) {
-	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil {
+	// sessionTokens / epochStore / codeIssuer 由 assemble 构造为共享
+	// 单例（registerSSO 与 OIDC 端点复用同一实例，不再各自构造第二份）。
+	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil ||
+		deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil {
 		return nil, nil, nil, errors.New("bootstrap: engine deps not fully assembled")
 	}
 
@@ -259,19 +287,13 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		return nil, nil, nil, err
 	}
 
-	epochs := cache.NewEpochStore(deps.rdb, func(ctx context.Context, uid int64) (int64, error) {
-		u, err := users.FindByID(ctx, uid)
-		if err != nil {
-			return 0, err
-		}
-		return int64(u.Epoch), nil
-	})
-	sessions := service.NewSessionWriter(session.NewTokens(deps.codecs.Session), epochs, deps.settings)
-	// 授权码为服务端短时一次性存储值，与 ticket 同属票据族、复用
-	// sign_key.ticket；purpose 作为 AAD 保证跨场景隔离（§11.6.1）。
+	// 会话 / epoch / 授权码共享单例（assemble 构造，消除冗余）：
+	// Terminal 的 SessionWriter 与 sso 会话拦截器、OIDC token 端点各自复用，
+	// 不再构造第二份 EpochStore / Tokens / CodeIssuer。
+	sessions := service.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
 	terminal := orchestrator.NewTerminal(
 		sessions,
-		oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket),
+		deps.codeIssuer,
 		deps.sink,
 		service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
 		deps.settings,
@@ -323,6 +345,16 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		return nil, err
 	}
 
+	// 步骤 6（provider 半步，§3.1 行 237、§3.9 / §15.3 / §13.0）：
+	// provider 加载链 = repo 行源 + Redis 整行缓存（版本失效）→ Loader
+	//（本地 LRU + singleflight，TTL 60s）→ Whitelist（已启用 wechat_mp /
+	// wechat_mp_scan 的 Ext.app_id 集合，供 origin Referer 白名单热更新）。
+	// Loader 挂入 assembled，供后续 thirdparty 登录卡按 provider_key 取实例。
+	// NewLoader 对 nil src panic（程序错误，等同 fail-fast）；rdb 此处必非 nil。
+	deps.providerLoader = provider.NewLoader(
+		repo.NewProviderRepo(db), cache.NewProviderCache(rdb), provider.LoaderOptions{})
+	deps.providerWhitelist = provider.NewWhitelist(deps.providerLoader)
+
 	// 步骤 7：settings 全量预热（缺失键补齐，fail-fast）→ watcher 订阅热更新。
 	store := settings.NewStore(repo.NewSettingsRepo(db), rdb)
 	if err := store.Preload(ctx); err != nil {
@@ -348,15 +380,37 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	}, asyncqueue.DefaultOptions())
 	deps.sink = service.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
 
-	// 步骤 6：factor 注册表（password / webauthn / totp / recovery，§3.8）
-	// + Terminal + 单引擎（§7）。pendingKinds 内的 otp / thirdparty / device
-	// 尚无装配依赖，由 registry.AssertComplete 显式排除。
+	// 会话 / 令牌共享单例：sessionTokens / epochStore /
+	// codeIssuer 各只构造一份，buildEngine（Terminal / SessionWriter）、
+	// registerSSO（会话拦截器）与 OIDC token 端点复用同一实例——授权码
+	// 复用 sign_key.ticket（票据族，purpose AAD 隔离，§11.6.1）。
+	deps.sessionTokens = session.NewTokens(deps.codecs.Session)
+	deps.epochStore = cache.NewEpochStore(deps.rdb, func(ctx context.Context, uid int64) (int64, error) {
+		u, err := users.FindByID(ctx, uid)
+		if err != nil {
+			return 0, err
+		}
+		return int64(u.Epoch), nil
+	})
+	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
+
+	// 步骤 6（factor 半步）：factor 注册表（password / webauthn / totp /
+	// recovery，§3.8）+ Terminal + 单引擎（§7）。pendingKinds 内的 otp /
+	// thirdparty / device 尚无装配依赖，由 registry.AssertComplete 显式排除。
 	engine, _, _, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())
 		return nil, err
 	}
 	deps.engine = engine
+
+	// 步骤 6（OIDC 半步，§14.3 行 1647）：启动期一次性解析 config.oidc.jwt_keys
+	//（首项签发、全列表发 JWKS），iss = authloft.root 去尾 /（§14.1 行 1626）；
+	// 非法 / 缺失 fail-fast（§3.2 约定 6），不生成临时密钥、不回退对称算法。
+	if deps.oidcJWT, err = oidc.NewJWT(cfg.OIDC.JWTKeys, strings.TrimSuffix(cfg.Authloft.Root, "/")); err != nil {
+		deps.close(context.Background())
+		return nil, fmt.Errorf("bootstrap: oidc jwt keys: %w", err)
+	}
 
 	return deps, nil
 }
@@ -425,8 +479,8 @@ func serve(cfg *config.Config) error {
 		return err
 	}
 
-	// TODO(§3.1 行 237 步骤 6)：provider 注册表——统一 `_ import` 触发自注册
-	//   （internal/provider 子包尚未落地）；factor 注册表已在 assemble 内构造。
+	// provider 注册表已由 assemble 构造、适配器自注册经顶部 `_ import`
+	// 触发（§3.1 行 237）；factor 注册表在 assemble 内构造。
 	// TODO(cron)：定时清理任务包尚未落地（§3.12 行 457），随 cron 卡接入。
 
 	handler, _ := buildRouterWithSSO(cfg, deps)
@@ -519,18 +573,35 @@ func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.
 	return buildHandlerWithSSO(cfg, csrv, nil)
 }
 
-// buildHandlerWithSSO 在 buildHandler 基础上挂已装配的域 handler。
+// buildHandlerWithSSO 在 buildHandler 基础上挂已装配的域 handler，同步接入
+// provider 白名单动态来源与 OIDC REST 路由。
 func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) (http.Handler, *gin.RouterGroup) {
-	// TODO(appid)：Referer 白名单口径已定（docs/后端架构.md §13.0）= 已启用
-	// mp provider 的 Ext.app_id 集合，由装配层注入 provider 查询函数并随
-	// provider 变更热更新；internal/provider 尚未落地，接线归 provider
-	// 实现，本次不接线。空表下小程序 Referer 校验恒不过，由 origin 中间件
-	// 保守 403（既定口径）。
-	refererAllowlist := []string{}
+	// Referer 白名单动态来源（§13.0 行 1570）：
+	// 已启用 wechat_mp / wechat_mp_scan provider 的 Ext.app_id 集合，由
+	// Whitelist 查询并随 provider 变更热更新（60s 缓存 + al:prov:ver 版本
+	// 失效）。查询失败归一为 nil = 空表 → 保守 403（§13.0 行 1569
+	//「Referer 校验按失败处理」+ origin.go 空表恒 false 口径）；Whitelist
+	// 内部已有「版本读取失败且有未过期缓存则降级用旧值」的一级降级。
+	// deps == nil（测试口径）→ 来源为 nil，等效空表。
+	var refererAllowlist middleware.AllowlistFunc
+	if deps != nil && deps.providerWhitelist != nil {
+		refererAllowlist = func(ctx context.Context) []string {
+			ids, err := deps.providerWhitelist.AppIDs(ctx)
+			if err != nil {
+				return nil
+			}
+			return ids
+		}
+	}
 	ginEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
 
 	if deps != nil {
 		registerSSO(cfg, csrv, deps)
+		// OIDC REST 端点（§4.1）：注册在 gin 链（/.well-known/** 与 /api/oidc/**
+		// 按绝对路径），不经 Connect、不套 §1.0 信封（§1.0 豁免清单）；
+		// origin 对 /api/oidc/** 免检（接口文档 §1.1 行 79 例外），GET 端点
+		// 为安全方法不受校验。
+		registerOIDC(ginEngine, deps)
 	}
 
 	mux := http.NewServeMux()
@@ -539,7 +610,9 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 		mux.Handle(rt.Prefix, middleware.HTTPRequestID(
 			middleware.HTTPLogger(
 				middleware.HTTPMetrics(
-					middleware.HTTPOrigin(cfg.Authloft.Root, refererAllowlist, rt.Handler),
+					// Connect 前缀链 origin 用动态白名单形态（与 gin 版同一
+					// 判定核心；静态 HTTPOrigin 保留兼容存量调用方）。
+					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, rt.Handler),
 				),
 			),
 		))
@@ -554,24 +627,18 @@ const ssoSessionTTL int64 = 604800
 // registerSSO 注册 SsoService Connect handler：挂 session 拦截器
 // （§3.14 行 473；LoginDefault 免鉴权，未登录请求由拦截器放行匿名），
 // 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
+// 会话 Tokens / EpochStore
+// 复用 assemble 构造的共享单例（与 buildEngine 同源），消除原先在此重复
+// 构造的装配冗余（session.NewTokens + NewEpochStore 各一份）。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
-	tokens := session.NewTokens(deps.codecs.Session)
-	users := repo.NewUserRepo(deps.db)
-	epochs := cache.NewEpochStore(deps.rdb, func(ctx context.Context, uid int64) (int64, error) {
-		u, err := users.FindByID(ctx, uid)
-		if err != nil {
-			return 0, err
-		}
-		return int64(u.Epoch), nil
-	})
 	ttl := ssoSessionTTLRaw(deps.settings)
 	cookieName := func() string {
 		v, _ := deps.settings.GetString(settings.KeyCookieName)
 		return v
 	}
 	sessionInterceptor := connect.NewSessionInterceptor(
-		session.NewVerifier(tokens, epochs),
-		session.NewRenewer(tokens, ttl),
+		session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		session.NewRenewer(deps.sessionTokens, ttl),
 		session.NewCookie(cookieName(), rootHost(cfg.Authloft.Root), ttl),
 		cookieName,
 	)
@@ -580,6 +647,40 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 		csrv.HandlerOptions(sessionInterceptor)...,
 	)
 	csrv.Register(path, h)
+}
+
+// registerOIDC 注册 OIDC REST 端点到 gin 链（接口文档 §4.1 行
+// 1049-1057）：token / revoke / userinfo / get_user_info + discovery / JWKS，
+// 不经 Connect、不套 §1.0 信封（§1.0 行 65 豁免）。五件套全部由装配产物
+// 注入——JWT 复用 assemble 构造的 RS256 密钥集（iss = authloft.root）、
+// Codes 复用 Terminal 同一 CodeIssuer（§14.2 行 1639「两条路径共用同一
+// 注入的 OIDCCodeIssuer，不得各写一份」）、Epoch 复用会话校验同一 epoch
+// 源，均不构造第二份；Clients / Tokens / Users / Profiles 为 repo 无状态
+// wrapper，按端点就近构造。
+func registerOIDC(r gin.IRouter, deps *assembled) {
+	clients := repo.NewClientRepo(deps.db)
+	refreshTokens := repo.NewOidcTokenRepo(deps.db)
+	users := repo.NewUserRepo(deps.db)
+	oidchandler.Register(r, oidchandler.Deps{
+		JWT: deps.oidcJWT,
+		Tokens: &oidc.TokenService{
+			JWT:     deps.oidcJWT,
+			Clients: clients,
+			Codes:   deps.codeIssuer,
+			Tokens:  refreshTokens,
+			Epoch:   deps.epochStore,
+		},
+		Revoker: &oidc.Revoker{
+			Clients: clients,
+			Tokens:  refreshTokens,
+		},
+		UserInfo: &oidc.UserInfoService{
+			JWT:      deps.oidcJWT,
+			Users:    users,
+			Profiles: users,
+			Epoch:    deps.epochStore,
+		},
+	})
 }
 
 // ssoSessionTTLRaw 读取 session_ttl（接口文档 §1.9 / §5.6）。

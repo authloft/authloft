@@ -30,18 +30,20 @@ import (
 // 用 gin.New() 而非 gin.Default()：脚手架的 Logger / Recovery 与 §3.3 行 294 的
 // logger.go / recover.go 职责重复，此处挂自建版本。
 //
-// rootOrigin（{al_root}，接口文档 §1.1 行 76）与小程序 appid Referer 白名单由
-// bootstrap.go 从 *config.Config 构造注入（§3.2 约定 1，传具体值而非 *Config——
-// router 不依赖 config 包，保持装配层单一职责）；空值下 origin 中间件对非免检
-// 写请求保守 403（见 origin.go）。
-func newRouter(rootOrigin string, refererAllowlist []string) (*gin.Engine, *gin.RouterGroup) {
+// rootOrigin（{al_root}，接口文档 §1.1 行 76）由 bootstrap.go 从 *config.Config
+// 注入（§3.2 约定 1，传具体值而非 *Config——router 不依赖 config 包，保持装配
+// 层单一职责）；小程序 appid Referer 白名单为动态来源（middleware.AllowlistFunc，
+// 见 §13.0 行 1570）：装配层注入 provider 查询函数并随 provider 变更热更新，
+// 不再是启动期静态快照——来源为 nil（测试口径）或查询失败（归一为 nil）时，
+// origin 中间件对非免检无 Origin 写请求保守 403（见 origin.go）。
+func newRouter(rootOrigin string, refererAllowlist middleware.AllowlistFunc) (*gin.Engine, *gin.RouterGroup) {
 	r := gin.New()
 	r.Use(
 		middleware.Recover(),
 		middleware.RequestID(),
 		middleware.Logger(),
 		middleware.Metrics(),
-		middleware.Origin(rootOrigin, refererAllowlist),
+		middleware.OriginFunc(rootOrigin, refererAllowlist),
 	)
 	r.GET("/metrics", middleware.Handler())
 	return r, r.Group("/api")

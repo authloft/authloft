@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -162,5 +163,116 @@ func TestOriginSafeMethodsSkip(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: status = %d, want %d (安全方法不校验 Origin)", method, rec.Code, http.StatusOK)
 		}
+	}
+}
+
+// ⑦ 动态白名单热更新（§13.0 行 1570「随 provider 变更热更新，不是
+// 启动期一次性快照」）：白名单来源每请求现场求值——同一引擎上 provider 数据
+// 变更后，新请求按新表判定（403 → 200 → 403 双向），无需重启。
+func TestOriginFuncAllowlistHotReload(t *testing.T) {
+	var allowlist []string // 模拟 provider 数据的当前快照（fake Whitelist 源）
+	r := newTestRouter(OriginFunc(testRootOrigin, func(context.Context) []string { return allowlist }))
+	r.POST("/api/x", okHandler)
+	referer := "https://servicewechat.com/" + testAppID + "/1/page-frame.html"
+
+	// 初始白名单为空 → 403（保守拒绝，同静态空表口径）。
+	if rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{"Referer": referer}); rec.Code != http.StatusForbidden {
+		t.Errorf("empty allowlist: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	// provider 启用（appid 进白名单）→ 同一引擎新请求 200。
+	allowlist = []string{testAppID}
+	if rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{"Referer": referer}); rec.Code != http.StatusOK {
+		t.Errorf("allowlisted appid: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	// provider 禁用 / 删除（appid 出白名单）→ 新请求回落 403。
+	allowlist = nil
+	if rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{"Referer": referer}); rec.Code != http.StatusForbidden {
+		t.Errorf("allowlist emptied: status = %d, want %d (热更新双向)", rec.Code, http.StatusForbidden)
+	}
+	// 动态形态下同源判断不受白名单影响：带 Origin 同源照常 200（allowlist 仍为空）。
+	if rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{"Origin": testRootOrigin}); rec.Code != http.StatusOK {
+		t.Errorf("same origin with empty allowlist: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// ⑧ 动态白名单查询失败 fail-closed（§13.0 行 1569「Referer 校验按失败
+// 处理，不回落」）：来源返回 nil（装配层闭包把 Whitelist.AppIDs 错误归一
+// 为 nil）→ 空表恒 false → 403；且每个无 Origin 写请求都真实触发查询
+// （不做启动期快照缓存）。
+func TestOriginFuncAllowlistQueryFailureFailsClosed(t *testing.T) {
+	var calls int
+	r := newTestRouter(OriginFunc(testRootOrigin, func(context.Context) []string {
+		calls++
+		return nil // 模拟查询失败 → 装配层归一为空表
+	}))
+	r.POST("/api/x", okHandler)
+
+	for i := 0; i < 2; i++ {
+		rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{
+			"Referer": "https://servicewechat.com/" + testAppID + "/x",
+		})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("query failure %d: status = %d, want %d (fail-closed)", i, rec.Code, http.StatusForbidden)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("allowlist queried %d times for 2 requests, want 2 (每请求现场求值)", calls)
+	}
+}
+
+// ⑨ AllowlistFunc 为 nil 时等效空表（deps 未装配 provider 链的测试口径）：
+// 无 Origin 写请求恒 403，其余语义不变。
+func TestOriginFuncNilSourceConservative(t *testing.T) {
+	r := newTestRouter(OriginFunc(testRootOrigin, nil))
+	r.POST("/api/x", okHandler)
+	if rec := doRequest(r, http.MethodPost, "/api/x", map[string]string{
+		"Referer": "https://servicewechat.com/" + testAppID + "/x",
+	}); rec.Code != http.StatusForbidden {
+		t.Errorf("nil allowlist func: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+// ⑩ http 版动态白名单（Connect 前缀链）：HTTPOriginFunc 与 gin 版
+// OriginFunc 判定等效——热更新 403 → 200、查询失败 403、免检组照旧放行、
+// X-Request-Id 头由调用方前缀链回写。
+func TestHTTPOriginFuncDynamicAllowlist(t *testing.T) {
+	var allowlist []string
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := HTTPOriginFunc(testRootOrigin, func(context.Context) []string { return allowlist }, next)
+	do := func(target string, headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, target, nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	referer := "https://servicewechat.com/" + testAppID + "/1/page-frame.html"
+
+	if rec := do("/api.sso.v1.SsoService/LoginDefault", map[string]string{"Referer": referer}); rec.Code != http.StatusForbidden {
+		t.Errorf("empty allowlist: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	allowlist = []string{testAppID}
+	if rec := do("/api.sso.v1.SsoService/LoginDefault", map[string]string{"Referer": referer}); rec.Code != http.StatusOK {
+		t.Errorf("allowlisted appid: status = %d, want %d (热更新生效)", rec.Code, http.StatusOK)
+	}
+	// 查询失败（来源归一 nil）→ 403。
+	allowlist = nil
+	if rec := do("/api.sso.v1.SsoService/LoginDefault", map[string]string{"Referer": referer}); rec.Code != http.StatusForbidden {
+		t.Errorf("allowlist emptied: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	// 403 出口与静态 HTTPOrigin 同体（Connect 错误 JSON）。
+	rec := do("/api.sso.v1.SsoService/LoginDefault", map[string]string{"Origin": "https://evil.example.com"})
+	if rec.Code != http.StatusForbidden || rec.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("cross-origin: status = %d content-type = %q, want 403 application/json", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if got := decodeJSONBody(t, rec)["code"]; got != "permission_denied" {
+		t.Errorf("error code = %v, want permission_denied", got)
+	}
+	// 免检组（OIDC REST）不受白名单 / 跨站限制。
+	allowlist = nil
+	if rec := do("/api/oidc/token", map[string]string{"Origin": "https://evil.example.com"}); rec.Code != http.StatusOK {
+		t.Errorf("exempt /api/oidc/token: status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

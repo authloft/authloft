@@ -18,6 +18,7 @@ import (
 	"crypto/x509/pkix"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -26,6 +27,8 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,13 +40,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/asyncqueue"
+	"authloft/internal/cache"
 	"authloft/internal/config"
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
 	"authloft/internal/factor"
+	"authloft/internal/oidc"
 	"authloft/internal/repo"
+	"authloft/internal/repo/model"
 	"authloft/internal/service"
+	"authloft/internal/session"
 	"authloft/internal/settings"
 )
 
@@ -479,6 +487,11 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		settings: settings.NewStore(nil, nil),
 		queue:    q,
 		sink:     service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		// 共享单例由调用方构造注入（不连外部服务，rdb / repo 传
+		// nil 与生产 assemble 注入真源同构）。
+		sessionTokens: session.NewTokens(codecs.Session),
+		epochStore:    cache.NewEpochStore(nil, nil),
+		codeIssuer:    oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
 	cfg := &config.Config{
 		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
@@ -602,6 +615,273 @@ func TestAssembleRealChain(t *testing.T) {
 		t.Fatalf("复跑 assemble 不幂等: %v", err)
 	}
 	t.Cleanup(func() { closeDeps(deps2) })
+}
+
+// doPostForm 发 application/x-www-form-urlencoded POST（OIDC 端点唯一
+// Content-Type 例外，接口文档 §4.3），装配测试用。
+func doPostForm(h http.Handler, target string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// decodeOIDCJSON 解出 OIDC 端点响应体顶层 JSON（原生格式，无 §1.0 信封）。
+func decodeOIDCJSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal oidc body %q: %v", rec.Body.String(), err)
+	}
+	return body
+}
+
+// buildWiredDeps 构造不连库的完整装配产物（接线测试共用）：
+// 共享单例（sessionTokens / epochStore / codeIssuer）+ RS256 JWT + 登录
+// 单引擎，db 留 nil——测试只打不碰库的端点路径（discovery / JWKS /
+// 空表单 400 / 空 client_id 401，均在查库前返回）。
+func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
+	t.Helper()
+	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
+	if err != nil {
+		t.Fatalf("buildCodecs: %v", err)
+	}
+	q := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
+		Capacity: 8, Workers: 1, BatchSize: 8, FlushInterval: time.Hour,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = q.Close(ctx)
+	})
+	deps := &assembled{
+		codecs:        codecs,
+		settings:      settings.NewStore(nil, nil),
+		queue:         q,
+		sink:          service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		sessionTokens: session.NewTokens(codecs.Session),
+		epochStore:    cache.NewEpochStore(nil, nil),
+		codeIssuer:    oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
+	}
+	engine, _, _, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
+	if err != nil {
+		t.Fatalf("buildEngine: %v", err)
+	}
+	deps.engine = engine
+	// iss = authloft.root（§14.1 行 1626 与 discovery 逐字相同）。
+	deps.oidcJWT, err = oidc.NewJWT([]config.OIDCKey{{Kid: "1", PrivateKeyPEM: testOIDCKeyPEM()}}, cfg.Authloft.Root)
+	if err != nil {
+		t.Fatalf("oidc.NewJWT: %v", err)
+	}
+	return deps
+}
+
+// TestOIDCRoutesWired：OIDC REST 端点经 buildHandlerWithSSO 注册
+// 到 gin 链、不经 Connect、不套 §1.0 信封——discovery / JWKS 200 原生 JSON、
+// token 空表单 400 RFC 错误体、revoke 空 client_id 401；X-Request-Id 由 gin
+// 链 requestid 统一回写（§1.1）。
+func TestOIDCRoutesWired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	deps := buildWiredDeps(t, cfg)
+	h, _ := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
+
+	// discovery：200，issuer 与 JWT iss 逐字相同（§14.1）。
+	rec := doRequest(h, http.MethodGet, "/.well-known/openid-configuration", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("discovery: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["issuer"]; got != assembledRootOrigin {
+		t.Errorf("discovery issuer = %v, want %q", got, assembledRootOrigin)
+	}
+
+	// JWKS：200，发布列表内密钥公钥（kid "1"、RS256，§14.1 行 1627）。
+	rec = doRequest(h, http.MethodGet, "/.well-known/jwks.json", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("jwks: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"RS256"`) || !strings.Contains(rec.Body.String(), `"1"`) {
+		t.Errorf("jwks body missing RS256 / kid: %s", rec.Body.String())
+	}
+
+	// token：空表单 → 400，RFC 6749 错误体 error=invalid_request（grant_type
+	// 缺失，不碰库即返回）。
+	rec = doPostForm(h, "/api/oidc/token", url.Values{})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("token empty form: status = %d, want 400 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["error"]; got != "invalid_request" {
+		t.Errorf("token error = %v, want invalid_request (RFC 错误体)", got)
+	}
+	if rec.Header().Get("X-Request-Id") == "" {
+		t.Error("token 400 response missing X-Request-Id (gin 链 requestid)")
+	}
+
+	// revoke：client_id 缺失 → 401 invalid_client（RFC 7009 回落 RFC 6749
+	// §5.2，revoker.go 行 42 在查库前返回）。
+	rec = doPostForm(h, "/api/oidc/revoke", url.Values{"token": {"x"}})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("revoke empty client: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["error"]; got != "invalid_client" {
+		t.Errorf("revoke error = %v, want invalid_client", got)
+	}
+}
+
+// TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配
+// provider 链 / 共享单例 / OIDC JWT 全部产物非 nil；Referer 白名单按 provider
+// 数据判定（命中 200 / 未命中 403 两向）；OIDC discovery / jwks / token /
+// revoke（真 client 认证 → 200 空 body，RFC 7009）全链可达；sso Connect
+// 路由（registerSSO 复用共享单例后）照常挂载。用例开始清空全部表、结束后
+// 清空并自证零残留（沿用 TestAssembleRealChain 口径），Redis provider 键
+// 随用例清理。
+func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	addr := os.Getenv("UC_TEST_REDIS_ADDR")
+	if dsn == "" || addr == "" {
+		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过装配真连用例")
+	}
+	ctx := context.Background()
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("打开连接失败: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("连接 MariaDB 测试实例失败: %v", err)
+	}
+	if err := dropAllTables(db); err != nil {
+		t.Fatalf("用例开始清空测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dropAllTables(db); err != nil {
+			t.Errorf("用例结束清理测试库失败: %v", err)
+		}
+		if err := assertNoTables(db); err != nil {
+			t.Errorf("清理自证失败: %v", err)
+		}
+		db.Close()
+	})
+
+	cfg := assembleConfig(t, dsn, addr)
+	deps, err := assemble(ctx, cfg)
+	if err != nil {
+		t.Fatalf("装配链失败: %v", err)
+	}
+	closeDeps := func(d *assembled) {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		d.close(shutCtx)
+	}
+	t.Cleanup(func() { closeDeps(deps) })
+
+	// 装配产物断言：provider 链 + 共享单例 + OIDC JWT。
+	if deps.providerLoader == nil || deps.providerWhitelist == nil {
+		t.Fatal("provider Loader / Whitelist 未装配")
+	}
+	if deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil {
+		t.Fatal("sessionTokens / epochStore / codeIssuer 共享单例未装配")
+	}
+	if deps.oidcJWT == nil {
+		t.Fatal("oidcJWT 未装配")
+	}
+	if got := deps.oidcJWT.Issuer(); got != assembledRootOrigin {
+		t.Errorf("oidcJWT issuer = %q, want %q (iss = authloft.root, §14.1)", got, assembledRootOrigin)
+	}
+
+	// 插入已启用 wechat_mp provider（Ext.app_id 进 Referer 白名单），
+	// bump 版本号使白名单首查即读最新数据（§13.0 / §15.3 版本失效）。
+	const wiredAppID = "wxwired0000000001"
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{AppId: wiredAppID})
+	if err != nil {
+		t.Fatalf("marshal ext: %v", err)
+	}
+	now := time.Now()
+	if err := deps.db.Create(&model.Provider{
+		ProviderKey: "wx_test_mp", DisplayName: "Test MP", Category: "oauth",
+		Type: "wechat_mp", IsEnabled: 1, Ext: ext, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("insert provider: %v", err)
+	}
+	if _, err := cache.NewProviderCache(deps.rdb).BumpVersion(ctx); err != nil {
+		t.Fatalf("bump provider version: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = deps.rdb.Del(ctx, cache.ProviderVersionKey(), cache.ProviderRowKey("wx_test_mp")).Err()
+	})
+
+	h, apiGroup := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
+	apiGroup.POST("/probe", ok)
+
+	// Referer 白名单两向：命中已启用 provider 的 appid → 200；未知 appid → 403。
+	rec := doRequest(h, http.MethodPost, "/api/probe", map[string]string{
+		"Referer": "https://servicewechat.com/" + wiredAppID + "/1/page-frame.html",
+	})
+	if rec.Code != http.StatusOK {
+		t.Errorf("referer with wired appid: status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	rec = doRequest(h, http.MethodPost, "/api/probe", map[string]string{
+		"Referer": "https://servicewechat.com/wxunknown00000000/x",
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("referer with unknown appid: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	// OIDC 全链：discovery issuer 逐字 = authloft.root。
+	rec = doRequest(h, http.MethodGet, "/.well-known/openid-configuration", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("discovery: status = %d, want 200", rec.Code)
+	}
+	if got := decodeOIDCJSON(t, rec)["issuer"]; got != assembledRootOrigin {
+		t.Errorf("discovery issuer = %v, want %q", got, assembledRootOrigin)
+	}
+	// token 空表单 → 400 RFC 错误体。
+	rec = doPostForm(h, "/api/oidc/token", url.Values{})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("token empty form: status = %d, want 400", rec.Code)
+	}
+	if got := decodeOIDCJSON(t, rec)["error"]; got != "invalid_request" {
+		t.Errorf("token error = %v, want invalid_request", got)
+	}
+
+	// revoke：插入真 oidc_client 后正确 client 认证 → 200 空 body（成功 /
+	// 未知 / 已吊销统一 200，RFC 7009 §4.4）；错 secret → 401 invalid_client。
+	const (
+		oidcClientID     = "cid_wired_test"
+		oidcClientSecret = "secret-wired-test"
+	)
+	if err := deps.db.Create(&model.OidcClient{
+		ClientID: oidcClientID, ClientSecret: oidcClientSecret, IsEnabled: 1,
+		RedirectURIs: []byte("[]"), Scopes: "openid profile email",
+		AccessTokenTTL: 3600, RefreshTokenTTL: 2592000, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("insert oidc_client: %v", err)
+	}
+	rec = doPostForm(h, "/api/oidc/revoke", url.Values{
+		"token": {"unknown-token"}, "client_id": {oidcClientID}, "client_secret": {oidcClientSecret},
+	})
+	if rec.Code != http.StatusOK {
+		t.Errorf("revoke valid client: status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("revoke body = %q, want empty (RFC 7009 不得自造信封)", rec.Body.String())
+	}
+	rec = doPostForm(h, "/api/oidc/revoke", url.Values{
+		"token": {"x"}, "client_id": {oidcClientID}, "client_secret": {"wrong"},
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("revoke wrong secret: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	// sso Connect 路由零回归（registerSSO 复用共享单例后仍正常挂载）：同源
+	// 请求穿过 origin 前缀链与 session 拦截器抵达 sso handler——空 body 的
+	// 合法 Connect 请求得到非 404 / 非 403 的 Connect 响应（业务错误体）。
+	rec = doRequest(h, http.MethodPost, "/api.sso.v1.SsoService/LoginDefault", map[string]string{
+		"Origin": assembledRootOrigin, "Content-Type": "application/json",
+	})
+	if rec.Code == http.StatusNotFound || rec.Code == http.StatusForbidden {
+		t.Errorf("sso LoginDefault: status = %d, want non-404/403 (路由可达, body %s)", rec.Code, rec.Body.String())
+	}
 }
 
 // —— 以下为监听口径测试（§3.1 行 244-245：Go 1.26 标准库原生
