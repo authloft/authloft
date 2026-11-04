@@ -262,7 +262,7 @@ func installAdmin(ctx context.Context, dsn, username, password string) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO user (id, username, status, created_at, updated_at) VALUES (1, ?, 1, NOW(), NOW())",
+		"INSERT INTO user (id, username, user_status, created_at, updated_at) VALUES (1, ?, 1, NOW(), NOW())",
 		username,
 	); err != nil {
 		return bizErr(CodeDBUnreachable, "cannot create admin user", err)

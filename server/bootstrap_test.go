@@ -12,6 +12,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -29,6 +30,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -223,8 +225,13 @@ func requireAllTables(t *testing.T, db *sql.DB) {
 }
 
 // assembleConfig 构造真连用例的自造 *config.Config（§3.2 约定 1 / §20）：
-// assemble 只读 DB / Redis 两段，其余字段零值即可。
-func assembleConfig(dsn, redisAddr string) *config.Config {
+// assemble 链消费 DB / Redis / sign_key 五键 / authloft（buildEngine 里
+// webauthn 的 RPID 与 RPOrigins）；oidc.jwt_keys 按 §3.2 约定 6（安装期
+// 写入后 Validate 必填）一并填齐，接线后夹具无需再改。测试内生成密钥，
+// fail-fast 校验是既定口径——修夹具不放宽校验。server / argon2 / log
+// 链不消费，零值即可。
+func assembleConfig(t *testing.T, dsn, redisAddr string) *config.Config {
+	t.Helper()
 	return &config.Config{
 		DB: config.DBConfig{
 			DSN:             dsn,
@@ -232,9 +239,45 @@ func assembleConfig(dsn, redisAddr string) *config.Config {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: config.Duration{Duration: time.Minute},
 		},
-		Redis: config.RedisConfig{Addr: redisAddr, DB: 0, PoolSize: 10},
+		Redis:    config.RedisConfig{Addr: redisAddr, DB: 0, PoolSize: 10},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
+		SignKey:  testSignKeyConfig(t),
+		OIDC: config.OIDCConfig{
+			JWTKeys: []config.OIDCKey{{Kid: "1", PrivateKeyPEM: testOIDCKeyPEM()}},
+		},
 	}
 }
+
+// testOIDCKeyPEM 返回一次现场生成并缓存的合法 OIDC 签名私钥
+// （std base64(PKCS#8 RSA 2048 PEM)，§3.2 约定 6：与对称 sign_key 严格
+// 分离）。与 internal/config 包 config_test.go 的 testOIDCKey 同口径
+// （跨包私有不共享，保持同口径副本）；测试内生成，私钥字面量不落仓库。
+func testOIDCKeyPEM() string {
+	testOIDCKeyOnce.Do(func() {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			testOIDCKeyErr = err
+			return
+		}
+		der, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			testOIDCKeyErr = err
+			return
+		}
+		testOIDCKeyVal = base64.StdEncoding.EncodeToString(
+			pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	})
+	if testOIDCKeyErr != nil {
+		panic(testOIDCKeyErr) // 夹具初始化失败即快速失败
+	}
+	return testOIDCKeyVal
+}
+
+var (
+	testOIDCKeyOnce sync.Once
+	testOIDCKeyVal  string
+	testOIDCKeyErr  error
+)
 
 // TestRunFailsFastOnInvalidConfig：装配顺序第一步是 config——config 非法
 // （listen 缺失）时 run 返回 "config:" 前缀错误，未落到 DB / migrate /
@@ -255,7 +298,7 @@ func TestRunFailsFastOnInvalidConfig(t *testing.T) {
 // DB 不可达（保留端口 + 短超时）时 assemble 停在 DB 步骤（"db:" 前缀错误），
 // 绝不产生 migrate（migration_failed）或 Redis（redis:）的错误。
 func TestAssembleOrderDBBeforeMigrateRedis(t *testing.T) {
-	cfg := assembleConfig("test:123456@tcp(127.0.0.1:1)/test?timeout=500ms", "127.0.0.1:1")
+	cfg := assembleConfig(t, "test:123456@tcp(127.0.0.1:1)/test?timeout=500ms", "127.0.0.1:1")
 	_, err := assemble(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "db:") {
 		t.Fatalf("assemble err = %v, want \"db:\" prefixed error", err)
@@ -508,7 +551,7 @@ func TestAssembleRealChain(t *testing.T) {
 		db.Close()
 	})
 
-	cfg := assembleConfig(dsn, addr)
+	cfg := assembleConfig(t, dsn, addr)
 	deps, err := assemble(ctx, cfg)
 	if err != nil {
 		t.Fatalf("装配链失败: %v", err)

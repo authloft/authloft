@@ -496,3 +496,34 @@ func TestInstallDomainErrorsWithRealDB(t *testing.T) {
 		t.Error("domain failures must not trigger exit")
 	}
 }
+
+// TestInstallAdminUserStatusColumn 列名回归：管理员创建路径真实
+// 落库（端到端、非 mock，FreshInstall → installAdmin → INSERT INTO user），
+// 断言 user 行存在且 user_status=1。DDL 列名为 user_status
+// （000001_init.sql 行 50：避开 API 信封保留字 status，接口文档 §1.0）；
+// installAdmin 曾遗留旧列名 status 触发 Error 1054（Unknown column），
+// 本用例钉住列名契约。
+func TestInstallAdminUserStatusColumn(t *testing.T) {
+	dsn, configPath := newSetupTestDB(t)
+	redisAddr := fakeRedis(t, "")
+	s := NewServer(configPath)
+
+	rec := postInstallJSON(s, map[string]any{
+		"dbDsn":         dsn,
+		"redisAddr":     redisAddr,
+		"adminUsername": "admin",
+		"adminPassword": "Str0ngPassw0rd",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+
+	db := openSetupTestDB(t, dsn)
+	var userStatus int
+	if err := db.QueryRow("SELECT user_status FROM user WHERE id = 1").Scan(&userStatus); err != nil {
+		t.Fatalf("query admin user_status: %v", err)
+	}
+	if userStatus != 1 {
+		t.Errorf("admin user_status = %d, want 1 (正常)", userStatus)
+	}
+}
