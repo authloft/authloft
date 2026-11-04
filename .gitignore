@@ -2,3 +2,4 @@
 # 部署时提供，或首次运行由 loader 自动生成写回（入库的只有 config.yaml.example）。
 server/configs/config.yaml
 ENV.md
+.workbuddy
