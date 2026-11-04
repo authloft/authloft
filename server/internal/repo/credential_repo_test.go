@@ -111,11 +111,11 @@ func TestCredentialRepoKindRows(t *testing.T) {
 		t.Fatalf("Create totp 失败: %v", err)
 	}
 
-	hashes := make([]string, 10)
-	for i := range hashes {
-		hashes[i] = fmt.Sprintf("recovery-hash-%02d", i)
+	codes := make([]string, 10)
+	for i := range codes {
+		codes[i] = fmt.Sprintf("abcd%04d", i)
 	}
-	rcMeta, err := MarshalCredentialMeta(&credential.CredentialMeta{RecoveryHashes: hashes})
+	rcMeta, err := MarshalCredentialMeta(&credential.CredentialMeta{RecoveryCodes: codes})
 	if err != nil {
 		t.Fatalf("Marshal recovery meta 失败: %v", err)
 	}
@@ -150,11 +150,11 @@ func TestCredentialRepoKindRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unmarshal totp meta 失败: %v", err)
 	}
-	if totpGot.TotpDigits != 6 || totpGot.TotpPeriod != 30 || len(totpGot.RecoveryHashes) != 0 {
+	if totpGot.TotpDigits != 6 || totpGot.TotpPeriod != 30 || len(totpGot.RecoveryCodes) != 0 {
 		t.Errorf("totp meta round-trip 不一致: %+v", totpGot)
 	}
 
-	// recovery_code 行读回：10 个恢复码哈希 round-trip（行 684）。
+	// recovery_code 行读回：10 个恢复码明文 round-trip（行 684、接口文档 §12.2）。
 	gotRc, err := rp.FindByUserAndKind(ctx, uid, "recovery_code")
 	if err != nil {
 		t.Fatalf("FindByUserAndKind(recovery_code) 失败: %v", err)
@@ -163,8 +163,8 @@ func TestCredentialRepoKindRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unmarshal recovery meta 失败: %v", err)
 	}
-	if !slices.Equal(rcGot.RecoveryHashes, hashes) {
-		t.Errorf("recovery_hashes round-trip 不一致: %v", rcGot.RecoveryHashes)
+	if !slices.Equal(rcGot.RecoveryCodes, codes) {
+		t.Errorf("recovery_codes round-trip 不一致: %v", rcGot.RecoveryCodes)
 	}
 
 	// 未命中：该 user 无 webauthn kind 行。

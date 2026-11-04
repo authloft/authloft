@@ -34,7 +34,7 @@ type CredentialMeta struct {
 	BackupEligible  bool     `protobuf:"varint,4,opt,name=backup_eligible,json=backupEligible,proto3" json:"backup_eligible,omitempty"`
 	BackupState     bool     `protobuf:"varint,5,opt,name=backup_state,json=backupState,proto3" json:"backup_state,omitempty"`
 	// kind=recovery_code
-	RecoveryHashes []string `protobuf:"bytes,10,rep,name=recovery_hashes,json=recoveryHashes,proto3" json:"recovery_hashes,omitempty"` // 10 个恢复码的哈希
+	RecoveryCodes []string `protobuf:"bytes,10,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"` // 10 个恢复码明文（8 位 Crockford Base32 小写，展示形如 xxxx-xxxx）
 	// kind=totp
 	TotpDigits    int32 `protobuf:"varint,20,opt,name=totp_digits,json=totpDigits,proto3" json:"totp_digits,omitempty"` // 默认 6
 	TotpPeriod    int32 `protobuf:"varint,21,opt,name=totp_period,json=totpPeriod,proto3" json:"totp_period,omitempty"` // 默认 30
@@ -107,9 +107,9 @@ func (x *CredentialMeta) GetBackupState() bool {
 	return false
 }
 
-func (x *CredentialMeta) GetRecoveryHashes() []string {
+func (x *CredentialMeta) GetRecoveryCodes() []string {
 	if x != nil {
-		return x.RecoveryHashes
+		return x.RecoveryCodes
 	}
 	return nil
 }
@@ -133,7 +133,7 @@ var File_credential_meta_proto protoreflect.FileDescriptor
 const file_credential_meta_proto_rawDesc = "" +
 	"\n" +
 	"\x15credential/meta.proto\x12\n" +
-	"credential\"\xaa\x02\n" +
+	"credential\"\xa8\x02\n" +
 	"\x0eCredentialMeta\x12\x1e\n" +
 	"\n" +
 	"transports\x18\x01 \x03(\tR\n" +
@@ -141,9 +141,9 @@ const file_credential_meta_proto_rawDesc = "" +
 	"\x10attestation_type\x18\x02 \x01(\tR\x0fattestationType\x12\x16\n" +
 	"\x06aaguid\x18\x03 \x01(\tR\x06aaguid\x12'\n" +
 	"\x0fbackup_eligible\x18\x04 \x01(\bR\x0ebackupEligible\x12!\n" +
-	"\fbackup_state\x18\x05 \x01(\bR\vbackupState\x12'\n" +
-	"\x0frecovery_hashes\x18\n" +
-	" \x03(\tR\x0erecoveryHashes\x12\x1f\n" +
+	"\fbackup_state\x18\x05 \x01(\bR\vbackupState\x12%\n" +
+	"\x0erecovery_codes\x18\n" +
+	" \x03(\tR\rrecoveryCodes\x12\x1f\n" +
 	"\vtotp_digits\x18\x14 \x01(\x05R\n" +
 	"totpDigits\x12\x1f\n" +
 	"\vtotp_period\x18\x15 \x01(\x05R\n" +
