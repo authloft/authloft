@@ -16,6 +16,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -31,9 +32,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
+	"authloft/internal/asyncqueue"
 	"authloft/internal/config"
 	"authloft/internal/connect"
+	"authloft/internal/settings"
 )
 
 // wantTables §4 全部 11 张表（§3.16 首版迁移范围），与 migrate_test 一致。
@@ -228,7 +232,7 @@ func assembleConfig(dsn, redisAddr string) *config.Config {
 }
 
 // TestRunFailsFastOnInvalidConfig：装配顺序第一步是 config——config 非法
-//（listen 缺失）时 run 返回 "config:" 前缀错误，未落到 DB / migrate /
+// （listen 缺失）时 run 返回 "config:" 前缀错误，未落到 DB / migrate /
 // Redis 任何后续步骤。
 func TestRunFailsFastOnInvalidConfig(t *testing.T) {
 	dir := t.TempDir()
@@ -256,10 +260,156 @@ func TestAssembleOrderDBBeforeMigrateRedis(t *testing.T) {
 	}
 }
 
+// testSignKeyConfig 生成五把互不相同的随机 AES-256 密钥（std base64，kid=1），
+// 仅供不连外部服务的装配单测（§1.4：五场景密钥必须独立）。
+func testSignKeyConfig(t *testing.T) config.SignKeyConfig {
+	t.Helper()
+	next := func() config.KeyMaterial {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			t.Fatalf("generate key: %v", err)
+		}
+		return config.KeyMaterial{Key: base64.StdEncoding.EncodeToString(buf), Kid: 1}
+	}
+	return config.SignKeyConfig{
+		Session:     next(),
+		Login:       next(),
+		Ticket:      next(),
+		Cookie:      next(),
+		SyncPayload: next(),
+	}
+}
+
+// TestCodecsBuildFiveIndependent：五把 sign_key 逐把构造 codec，五个字段均
+// 非 nil 且各自独立（不共用 KeyStore / Codec，§1.4 / §11.6.1）。
+func TestCodecsBuildFiveIndependent(t *testing.T) {
+	c, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
+	if err != nil {
+		t.Fatalf("buildCodecs: %v", err)
+	}
+	if c == nil {
+		t.Fatal("buildCodecs returned nil codecs")
+	}
+	if c.Session == nil || c.Login == nil || c.Ticket == nil || c.Cookie == nil || c.SyncPayload == nil {
+		t.Fatalf("codecs has nil fields: %+v", c)
+	}
+	if c.Session == c.Login || c.Session == c.Ticket || c.Session == c.Cookie || c.Session == c.SyncPayload ||
+		c.Login == c.Ticket || c.Login == c.Cookie || c.Login == c.SyncPayload ||
+		c.Ticket == c.Cookie || c.Ticket == c.SyncPayload || c.Cookie == c.SyncPayload {
+		t.Error("five scenarios must use independent Codec instances, got duplicates")
+	}
+}
+
+// TestCodecsBuildRejectsInvalidMaterial：base64 非法 / kid 越界 / 解码后长度
+// 非 32 字节一律 fail-fast（装配层保留错误上抛，§3.2 约定 4）；并逐把验证
+// 五场景密钥独立校验——任一场景非法都失败且错误定位到该字段名（§1.4 /
+// §11.6.1）。
+func TestCodecsBuildRejectsInvalidMaterial(t *testing.T) {
+	shortKey := base64.StdEncoding.EncodeToString(make([]byte, 16))
+	cases := []struct {
+		name string
+		mut  func(*config.SignKeyConfig)
+	}{
+		{"invalid base64", func(s *config.SignKeyConfig) { s.Session.Key = "not-base64!!!" }},
+		{"kid zero", func(s *config.SignKeyConfig) { s.Session.Kid = 0 }},
+		{"kid overflow", func(s *config.SignKeyConfig) { s.Session.Kid = 256 }},
+		{"key too short", func(s *config.SignKeyConfig) { s.Session.Key = shortKey }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sk := testSignKeyConfig(t)
+			tc.mut(&sk)
+			if _, err := buildCodecs(&config.Config{SignKey: sk}); err == nil {
+				t.Fatalf("%s: buildCodecs must fail", tc.name)
+			}
+		})
+	}
+
+	// 逐把独立：同一非法形态施加到任意一把都必须 fail-fast，且错误定位到
+	// 该场景字段名（§1.4：五场景密钥独立，泄露一枚不殃及其余）。
+	perScenario := []struct {
+		field string
+		mut   func(*config.SignKeyConfig)
+	}{
+		{"sign_key.session", func(s *config.SignKeyConfig) { s.Session.Key = shortKey }},
+		{"sign_key.login", func(s *config.SignKeyConfig) { s.Login.Key = shortKey }},
+		{"sign_key.ticket", func(s *config.SignKeyConfig) { s.Ticket.Key = shortKey }},
+		{"sign_key.cookie", func(s *config.SignKeyConfig) { s.Cookie.Key = shortKey }},
+		{"sign_key.sync_payload", func(s *config.SignKeyConfig) { s.SyncPayload.Key = shortKey }},
+	}
+	for _, sc := range perScenario {
+		t.Run("per-scenario/"+sc.field, func(t *testing.T) {
+			sk := testSignKeyConfig(t)
+			sc.mut(&sk)
+			_, err := buildCodecs(&config.Config{SignKey: sk})
+			if err == nil {
+				t.Fatalf("%s: buildCodecs must fail", sc.field)
+			}
+			if !strings.Contains(err.Error(), sc.field) {
+				t.Errorf("%s: error = %q, want field name in message", sc.field, err)
+			}
+		})
+	}
+}
+
+// TestBootstrapCloseOrderNoPanic：优雅关闭顺序（stopBackground 停 watcher /
+// 队列 → closeInfra 关 DB / Redis）在部分装配产物为 nil 时也必须安全、
+// 可重复调用；队列走"先 drain 后停 worker"（§5.2）。不启动真实监听、
+// 不连真实外部服务（watcher 未 Start、rdb 懒连接仅释放句柄）。
+func TestBootstrapCloseOrderNoPanic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 全空 assembled：nil 安全。
+	(&assembled{}).close(ctx)
+
+	// 仅队列：Close 会 flush 剩余任务并停 worker，不 panic。
+	q := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
+		Capacity:      8,
+		Workers:       1,
+		BatchSize:     8,
+		FlushInterval: time.Hour,
+	})
+	deps := &assembled{queue: q}
+	deps.close(ctx)
+	if deps.queue != nil {
+		t.Error("close must release queue reference")
+	}
+	// 重复关闭同样安全（幂等）。
+	deps.close(ctx)
+
+	// watcher（未 Start：Close 因未建立订阅直接幂等返回，不连 Redis）+
+	// 队列 + Redis 客户端共存：close 第一段 stopBackground 释放 watcher /
+	// 队列引用，第二段 closeInfra 释放 DB / Redis 引用——完整复现 serve
+	// 的优雅关闭两段顺序（先停后台，再关基础设施）。
+	w := settings.NewWatcher(nil, nil)
+	q2 := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
+		Capacity:      8,
+		Workers:       1,
+		BatchSize:     8,
+		FlushInterval: time.Hour,
+	})
+	deps2 := &assembled{watcher: w, queue: q2, rdb: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})}
+	deps2.close(ctx)
+	if deps2.watcher != nil || deps2.queue != nil {
+		t.Error("stopBackground must release watcher and queue references before closeInfra")
+	}
+	if deps2.rdb != nil {
+		t.Error("closeInfra must release redis reference after background stops")
+	}
+	// 完整产物重复关闭同样安全（watcher.Close / Queue.Close 幂等）。
+	deps2.close(ctx)
+}
+
+// noopExecutor 忽略批次，仅供关闭顺序测试。
+type noopExecutor struct{}
+
+func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
+
 // TestAssembleRealChain（env-skip）：真连装配链 config→DB→migrate up→Redis
-//——assemble 成功后 DB ping 通、§4 全部 11 张表存在（migrate 步骤真实
-// 执行）、Redis PING 通；复跑 assemble 幂等（版本已最新时 migrate up 秒过
-// 不报错，§3.16）。测后清空全表并自证零残留。
+// →密钥→settings 预热 + watcher→队列 + sink——assemble 成功后 DB ping 通、
+// §4 全部 11 张表存在（migrate 步骤真实执行）、Redis PING 通；复跑 assemble
+// 幂等（版本已最新时 migrate up 秒过不报错，§3.16）。测后清空全表并自证零残留。
 func TestAssembleRealChain(t *testing.T) {
 	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
@@ -294,10 +444,9 @@ func TestAssembleRealChain(t *testing.T) {
 		t.Fatalf("装配链失败: %v", err)
 	}
 	closeDeps := func(d *assembled) {
-		if sqlDB, err := d.db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-		_ = d.rdb.Close()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		d.close(shutCtx)
 	}
 	// t.Cleanup LIFO：连接先于清表释放，避免 dropAllTables 时残留占用。
 	t.Cleanup(func() { closeDeps(deps) })
@@ -315,6 +464,23 @@ func TestAssembleRealChain(t *testing.T) {
 	// 步骤 4 Redis：装配产物 PING 通。
 	if err := deps.rdb.Ping(ctx).Err(); err != nil {
 		t.Fatalf("redis ping: %v", err)
+	}
+	// 步骤 5-8：五把密钥 / settings 快照与 watcher / 队列 / sink 均已装配。
+	if deps.codecs == nil || deps.codecs.Session == nil || deps.codecs.Login == nil ||
+		deps.codecs.Ticket == nil || deps.codecs.Cookie == nil || deps.codecs.SyncPayload == nil {
+		t.Fatalf("五把密钥 codec 未装配完整: %+v", deps.codecs)
+	}
+	if deps.settings == nil {
+		t.Error("settings.Store 未装配")
+	}
+	if deps.watcher == nil {
+		t.Error("settings.Watcher 未启动")
+	}
+	if deps.queue == nil {
+		t.Error("asyncqueue.Queue 未装配")
+	}
+	if deps.sink == nil {
+		t.Error("service.LoginEventWriter 未装配")
 	}
 
 	// 幂等：复跑整条 assemble（migrate up 版本已最新时秒过，§3.16）。
@@ -420,7 +586,7 @@ func serveAndReadH2Settings(t *testing.T, srv *http.Server, ln net.Listener, tls
 
 // TestListenModeH2CPriorKnowledge 三模式之一（§3.1 行 244）：未配 cert+key
 // → 明文 HTTP/1.1 + H2C——客户端直接发 `PRI * HTTP/2.0` 前置知识请求能通
-//（服务端回 SETTINGS 帧）。
+// （服务端回 SETTINGS 帧）。
 func TestListenModeH2CPriorKnowledge(t *testing.T) {
 	cfg := &config.Config{
 		Server:   config.ServerConfig{Listen: ":0"},
@@ -512,7 +678,7 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 
 	for _, maxVer := range []uint16{tls.VersionTLS10, tls.VersionTLS11} {
 		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", ln.Addr().String(), &tls.Config{
-			MaxVersion:        maxVer,
+			MaxVersion:         maxVer,
 			InsecureSkipVerify: true,
 		})
 		if err == nil {
@@ -522,7 +688,7 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 	}
 	// TLS1.2 在下限之上：握手成功。
 	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", ln.Addr().String(), &tls.Config{
-		MaxVersion:        tls.VersionTLS12,
+		MaxVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
@@ -536,7 +702,7 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 // §3.3 行 304）——Connect 域流量计入 /metrics 与访问日志的装配层实证 ——
 
 // connectTestHandler 构造带已注册 Connect service 的顶层分流 handler
-//（与生产 buildHandler 同链：mux 前缀 requestid → logger → metrics →
+// （与生产 buildHandler 同链：mux 前缀 requestid → logger → metrics →
 // origin → handler）。
 func connectTestHandler(t *testing.T, csrv *connect.Server) http.Handler {
 	t.Helper()
@@ -650,7 +816,7 @@ func TestConnectDomainMetricsAndAccessLog(t *testing.T) {
 }
 
 // TestConnectDomainPanicRequestCounted panic 的 Connect 请求也计数
-//（HTTPMetrics defer 累加，§3.3 行 302）：生产路径 panic 由 connect-go
+// （HTTPMetrics defer 累加，§3.3 行 302）：生产路径 panic 由 connect-go
 // WithRecover 在 handler 内归一为正常返回（defer 照常执行）；本用例注册
 // 裸 handler 模拟 panic 穿过前缀链 unwind（http.Server 连接级恢复），
 // defer 同样计数。
