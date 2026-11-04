@@ -69,23 +69,6 @@ func (r *BindRepo) ListByUserID(ctx context.Context, userID int64) ([]model.User
 	return rows, nil
 }
 
-// FindByUnionID 按 (provider_key, union_id) 取绑定行列表
-//（idx_provider_unionid，§12.7 Union 归并的查询原语；归并逻辑在
-// service/thirdparty.go，§3.9 行 406）。索引非唯一：同 provider 下不同
-// open_id 可有相同 union_id，故返回列表。union_id 为空串的调用属
-// service 层输入错误（会命中所有无 union_id 的行），repo 不防御。
-func (r *BindRepo) FindByUnionID(ctx context.Context, providerKey, unionID string) ([]model.UserThirdpartyBind, error) {
-	var rows []model.UserThirdpartyBind
-	err := r.db.WithContext(ctx).
-		Where("provider_key = ? AND union_id = ?", providerKey, unionID).
-		Order("id ASC").
-		Find(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("bind repo: find by union id: %w", err)
-	}
-	return rows, nil
-}
-
 // Create 插入绑定行；命中 uk_provider_openid（open_id 已绑他人）返回
 // ErrBindDuplicate（errors.Is 可判别），其余错误原样包装。
 func (r *BindRepo) Create(ctx context.Context, b *model.UserThirdpartyBind) error {

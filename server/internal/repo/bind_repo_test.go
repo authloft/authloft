@@ -20,8 +20,8 @@ import (
 )
 
 // TestBindRepoCreateAndFind（env-skip）：Create → FindByProviderOpenID
-// 命中与字段一致（extra 字节透传不解析）→ 默认值（union_id/nickname/
-// avatar 空串、extra NULL）→ 未命中 → ListByUserID 按用户隔离。
+// 命中与字段一致（extra 字节透传不解析）→ 默认值（nickname/avatar 空串、
+// extra NULL）→ 未命中 → ListByUserID 按用户隔离。
 func TestBindRepoCreateAndFind(t *testing.T) {
 	_, br := providerTestSetup(t)
 	ctx := context.Background()
@@ -31,7 +31,6 @@ func TestBindRepoCreateAndFind(t *testing.T) {
 		UserID:      7,
 		ProviderKey: "qq",
 		OpenID:      "openid_qq_1",
-		UnionID:     "union_tencent_1",
 		Nickname:    "QQ 昵称",
 		AvatarURL:   "https://q.cn/a.png",
 		Extra:       extra,
@@ -50,7 +49,7 @@ func TestBindRepoCreateAndFind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindByProviderOpenID 失败: %v", err)
 	}
-	if got.ID != b.ID || got.UserID != 7 || got.UnionID != "union_tencent_1" ||
+	if got.ID != b.ID || got.UserID != 7 ||
 		got.Nickname != "QQ 昵称" || got.AvatarURL != "https://q.cn/a.png" {
 		t.Errorf("FindByProviderOpenID 字段不一致: %+v", got)
 	}
@@ -58,7 +57,7 @@ func TestBindRepoCreateAndFind(t *testing.T) {
 		t.Errorf("extra 应字节透传不解析: %v, want %v", got.Extra, extra)
 	}
 
-	// 最小字段 Create：union_id / nickname / avatar 默认空串、extra NULL。
+	// 最小字段 Create：nickname / avatar 默认空串、extra NULL。
 	b2 := &model.UserThirdpartyBind{UserID: 7, ProviderKey: "wechat", OpenID: "openid_wx_1"}
 	if err := br.Create(ctx, b2); err != nil {
 		t.Fatalf("最小字段 Create 失败: %v", err)
@@ -67,7 +66,7 @@ func TestBindRepoCreateAndFind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindByProviderOpenID 二次失败: %v", err)
 	}
-	if got2.UnionID != "" || got2.Nickname != "" || got2.AvatarURL != "" {
+	if got2.Nickname != "" || got2.AvatarURL != "" {
 		t.Errorf("默认值应为空串: %+v", got2)
 	}
 	if got2.Extra != nil && len(got2.Extra) != 0 {
@@ -181,57 +180,67 @@ func TestBindRepoUnbind(t *testing.T) {
 	}
 }
 
-// TestBindRepoFindByUnionID（env-skip）：idx_provider_unionid 查询——
-// §12.7 场景（union provider 行 + 实际 provider 行同 union_id）各自
-// 命中；同 provider 下多行同 union_id 全量返回（索引非唯一）；不匹配
-// 行与空 union_id 行不泄漏。
-func TestBindRepoFindByUnionID(t *testing.T) {
+// TestBindRepoUnionRowByProviderOpenID（env-skip）：§12.7 Union 归并最终口径——
+// Union 行以 (Union Provider 的 provider_key, open_id=unionid) 唯一存储，可被
+// FindByProviderOpenID 命中；普通 Provider 行只按渠道 openid 命中（不存 unionid）；
+// 同 unionid 的不同普通 Provider 归并到同一 Union 行（uk_provider_openid 保证
+// 同一 unionid 全局只归并到一个账号）。
+func TestBindRepoUnionRowByProviderOpenID(t *testing.T) {
 	_, br := providerTestSetup(t)
 	ctx := context.Background()
 
-	// §12.7 例：wechat_union（虚拟 Union Provider，open_id 即 unionid）
-	// 与 wechat_mp_1 的绑定行同记 union_wx；另有一行 union_id 为空。
-	seed := []model.UserThirdpartyBind{
-		{UserID: 9, ProviderKey: "wechat_mp_1", OpenID: "openid_mp_1", UnionID: "union_wx", Nickname: "mp1"},
-		{UserID: 9, ProviderKey: "wechat_union", OpenID: "union_wx", UnionID: "union_wx"},
-		{UserID: 10, ProviderKey: "wechat_mp_2", OpenID: "openid_mp_2", UnionID: "union_wx", Nickname: "mp2"},
-		{UserID: 10, ProviderKey: "qq", OpenID: "openid_qq", UnionID: "", Nickname: "qq"},
-	}
-	for i := range seed {
-		if err := br.Create(ctx, &seed[i]); err != nil {
-			t.Fatalf("Create %+v 失败: %v", seed[i], err)
+	const (
+		unionProviderKey = "wechat_union" // category=union 的虚拟 Union Provider
+		unionID          = "union_wx_001" // unionid 值，作为 Union 行的 open_id
+	)
+
+	// 普通 Provider 行：只存渠道 openid（不存 unionid）。
+	mp1 := &model.UserThirdpartyBind{UserID: 9, ProviderKey: "wechat_mp_1", OpenID: "openid_mp_1", Nickname: "mp1"}
+	mp2 := &model.UserThirdpartyBind{UserID: 9, ProviderKey: "wechat_mp_2", OpenID: "openid_mp_2", Nickname: "mp2"}
+	// Union 行：provider_key = Union Provider，open_id = unionid。
+	unionRow := &model.UserThirdpartyBind{UserID: 9, ProviderKey: unionProviderKey, OpenID: unionID}
+	for _, b := range []*model.UserThirdpartyBind{mp1, mp2, unionRow} {
+		if err := br.Create(ctx, b); err != nil {
+			t.Fatalf("Create %+v 失败: %v", b, err)
 		}
 	}
 
-	// 按 wechat_mp_1 + union_wx：只命中自己那行（union 行的 provider_key
-	// 是 wechat_union，不属于 wechat_mp_1 的结果）。
-	rows, err := br.FindByUnionID(ctx, "wechat_mp_1", "union_wx")
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("wechat_mp_1+union_wx = %d 行 err=%v; want 1/nil", len(rows), err)
+	// a) Union 行按 (Union Provider key, open_id=unionid) 可被 FindByProviderOpenID 命中。
+	gotUnion, err := br.FindByProviderOpenID(ctx, unionProviderKey, unionID)
+	if err != nil {
+		t.Fatalf("Union 行应可被 FindByProviderOpenID 命中: %v", err)
 	}
-	if rows[0].OpenID != "openid_mp_1" || rows[0].UserID != 9 {
-		t.Errorf("命中行不符: %+v", rows[0])
-	}
-
-	// Union 归并查询（wechat_union + union_wx，open_id 即 unionid）：命中
-	// union provider 行（§12.7「两边均可登录」的数据来源）。
-	rows, err = br.FindByUnionID(ctx, "wechat_union", "union_wx")
-	if err != nil || len(rows) != 1 || rows[0].OpenID != "union_wx" || rows[0].UserID != 9 {
-		t.Errorf("wechat_union+union_wx = %+v err=%v; want open_id=union_wx uid=9", rows, err)
+	if gotUnion.ID != unionRow.ID || gotUnion.UserID != 9 || gotUnion.OpenID != unionID {
+		t.Errorf("Union 行字段不符: %+v", gotUnion)
 	}
 
-	// 同 provider 下多行同 union_id（追加 wechat_mp_1 第二个 open_id）。
+	// b) 普通 Provider 行只按渠道 openid 命中，不按 unionid 命中。
+	gotMp1, err := br.FindByProviderOpenID(ctx, "wechat_mp_1", "openid_mp_1")
+	if err != nil {
+		t.Fatalf("普通 Provider 行应按渠道 openid 命中: %v", err)
+	}
+	if gotMp1.ID != mp1.ID || gotMp1.UserID != 9 {
+		t.Errorf("普通行字段不符: %+v", gotMp1)
+	}
+	// 用 unionid 当 open_id 查普通 provider 应查无此行（普通行不存 unionid）。
+	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_1", unionID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("普通行不应按 unionid 命中（不存 unionid）, got %v", err)
+	}
+
+	// c) 同 unionid 不同普通 provider 归并到同一 Union 行：两个普通行与 Union
+	//    行都属用户 9；为另一用户再写同 unionid 的 Union 行会被 uk_provider_openid
+	//    拒绝（同一 unionid 全局只归并到一个账号）。
 	if err := br.Create(ctx, &model.UserThirdpartyBind{
-		UserID: 11, ProviderKey: "wechat_mp_1", OpenID: "openid_mp_1b", UnionID: "union_wx",
-	}); err != nil {
-		t.Fatalf("追加绑定失败: %v", err)
+		UserID: 10, ProviderKey: unionProviderKey, OpenID: unionID,
+	}); !errors.Is(err, ErrBindDuplicate) {
+		t.Errorf("同 unionid 的 Union 行应被 uk_provider_openid 判为 ErrBindDuplicate, got %v", err)
 	}
-	if rows, err = br.FindByUnionID(ctx, "wechat_mp_1", "union_wx"); err != nil || len(rows) != 2 {
-		t.Errorf("wechat_mp_1+union_wx = %d 行 err=%v; want 2（索引非唯一）", len(rows), err)
+	gotUnion, err = br.FindByProviderOpenID(ctx, unionProviderKey, unionID)
+	if err != nil || gotUnion.UserID != 9 {
+		t.Errorf("Union 行应仍归并到用户 9: %+v, %v", gotUnion, err)
 	}
-
-	// 空结果。
-	if rows, err = br.FindByUnionID(ctx, "wechat_mp_1", "union_other"); err != nil || len(rows) != 0 {
-		t.Errorf("无匹配应空列表: %d 行 err=%v", len(rows), err)
+	rows, err := br.ListByUserID(ctx, 9)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("用户 9 绑定列表 = %d 行 err=%v; want 3/nil", len(rows), err)
 	}
 }

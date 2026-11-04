@@ -95,19 +95,19 @@ CREATE TABLE IF NOT EXISTS user_credential_webauthn (
   KEY idx_user_kind (user_id, kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Union 归并不设独立列 / 独立索引：由额外一行 Union Provider（category=union）
+-- 绑定记录承担，该行 open_id 即 unionid 值（§4.3 / §12.7）。
 CREATE TABLE IF NOT EXISTS user_thirdparty_bind (
   id         BIGINT PRIMARY KEY AUTO_INCREMENT,
   user_id    BIGINT       NOT NULL,
   provider_key VARCHAR(64) NOT NULL COMMENT '引用 provider.provider_key，不存渠道类型',
   open_id    VARCHAR(128) NOT NULL,
-  union_id   VARCHAR(128) NOT NULL DEFAULT '',
   nickname   VARCHAR(128) NOT NULL DEFAULT '',
   avatar_url VARCHAR(512) NOT NULL DEFAULT '',
   extra      MEDIUMBLOB   COMMENT 'msgpack 序列化的第三方原始资料（仅排查用）',
   created_at DATETIME     NOT NULL,
   UNIQUE KEY uk_provider_openid (provider_key, open_id),
-  KEY idx_user (user_id),
-  KEY idx_provider_unionid (provider_key, union_id)
+  KEY idx_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS sso_client (
