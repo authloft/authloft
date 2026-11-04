@@ -4,7 +4,10 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"authloft/gen/go/token"
 )
 
 // testKey 生成 32B 填充测试密钥。
@@ -45,12 +48,12 @@ func openString(t *testing.T, c *Codec, purpose, tok string) (string, error) {
 	return msg.GetValue(), nil
 }
 
-// TestSealOpenAllPurposes 七个 purpose 各自往返（§11.6.1 封闭集合）。
+// TestSealOpenAllPurposes 八个 purpose 各自往返（§11.6.1 封闭集合）。
 func TestSealOpenAllPurposes(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
 	for _, purpose := range []string{
 		PurposeSession, PurposeLogin, PurposeTicket, PurposeBind,
-		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload,
+		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		tok := sealOK(t, c, purpose, "payload-"+purpose)
 		got, err := openString(t, c, purpose, tok)
@@ -59,6 +62,43 @@ func TestSealOpenAllPurposes(t *testing.T) {
 		}
 		if want := "payload-" + purpose; got != want {
 			t.Fatalf("Open(%s) = %q, want %q", purpose, got, want)
+		}
+	}
+}
+
+// TestOidcCodePayloadRoundTrip OidcCodePayload 全字段 Seal→Open 往返一致，
+// 且跨 purpose 解同一令牌失败（§11.6.6、接口文档 §4.2）。
+func TestOidcCodePayloadRoundTrip(t *testing.T) {
+	c := newTestCodec(t, 1, 1, testKey(0xA1))
+	want := &token.OidcCodePayload{
+		ClientId:            "client-1",
+		RedirectUri:         "https://app.example/callback",
+		Uid:                 42,
+		Scope:               "openid profile email",
+		Nonce:               "n-0S6_WzA2Mj",
+		CodeChallenge:       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+		CodeChallengeMethod: "S256",
+		Amr:                 []string{"pwd", "otp"},
+		AuthTime:            1700000000,
+		Iat:                 1700000001,
+		Exp:                 1700000121,
+	}
+	tok, err := c.Seal(PurposeOidcCode, want)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	got, err := Open[token.OidcCodePayload](c, PurposeOidcCode, tok)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !proto.Equal(want, got) {
+		t.Fatalf("round trip mismatch:\n got %v\nwant %v", got, want)
+	}
+	for _, purpose := range []string{
+		PurposeSession, PurposeLogin, PurposeTicket, PurposeSyncPayload,
+	} {
+		if _, err := Open[token.OidcCodePayload](c, purpose, tok); err == nil {
+			t.Fatalf("cross purpose %q must fail", purpose)
 		}
 	}
 }
@@ -90,7 +130,7 @@ func TestOpenCrossPurpose(t *testing.T) {
 	tok := sealOK(t, c, PurposeLogin, "state")
 	for _, purpose := range []string{
 		PurposeSession, PurposeTicket, PurposeBind,
-		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload,
+		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		if _, err := openString(t, c, purpose, tok); err == nil {
 			t.Fatalf("cross purpose %q must fail", purpose)

@@ -3,7 +3,7 @@
 // 不 import config、不读任何存储。
 package security
 
-// AAD purpose 常量（后端架构 §11.6.1，取值封闭为本文件七个常量）。
+// AAD purpose 常量（后端架构 §11.6.1，取值封闭为本文件八个常量）。
 // purpose 是存储加密的 AAD 前缀，与载荷内的 challenge.purpose
 //（login/register/reset/mfa 业务枚举）是两套概念、互不约束。
 // 跨 purpose 解令牌由 token.go 的 AAD 构造天然拒绝（token_test.go 验证）。
@@ -22,6 +22,8 @@ const (
 	PurposeCookie = "cookie"
 	// PurposeSyncPayload 多域名同步载荷（§11.2）。
 	PurposeSyncPayload = "sync_payload"
+	// PurposeOidcCode OIDC 授权码值（§11.6.6，接口文档 §4.2）。
+	PurposeOidcCode = "oidc_code"
 )
 
 // purposes 封闭集合：Seal/Open 均拒绝表外值，防调用方自造 purpose
@@ -34,6 +36,7 @@ var purposes = map[string]bool{
 	PurposeWebAuthn:    true,
 	PurposeCookie:      true,
 	PurposeSyncPayload: true,
+	PurposeOidcCode:    true,
 }
 
 // validPurpose purpose 是否属于 §11.6.1 封闭集合。

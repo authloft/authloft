@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1233-1235），用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1 行 1641）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6 行 89），§11.6 整型本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// OidcCodePayload 是 OIDC 授权码 al:oidc:code:{code} 的加密前载荷
+// （docs/后端架构.md §11.6.6 行 1359-1377、接口文档 §4.2 行 1080）。
+// 复用 §11.6.1 封装（AAD purpose=oidc_code）；对客户端是不透明串。
+// 字段名 / 编号 / 类型与行 1364-1376 的 protobuf 定义逐字一致。
+message OidcCodePayload {
+  // 签发该码的客户端 ID（行 1365）。
+  string client_id = 1;
+  // 授权请求原始 redirect_uri（行 1366）。
+  string redirect_uri = 2;
+  // 授权通过的用户 ID（行 1367）。
+  int64 uid = 3;
+  // 生效 scope，缺省 openid profile email（行 1368）。
+  string scope = 4;
+  // 授权请求原始 nonce，写入 ID Token（行 1369）。
+  string nonce = 5;
+  // PKCE code_challenge，未启用时为空串（行 1370）。
+  string code_challenge = 6;
+  // PKCE code_challenge_method，仅 S256，未启用时为空串（行 1371）。
+  string code_challenge_method = 7;
+  // 授权时实际通过的认证方法（行 1372）。
+  repeated string amr = 8;
+  // 认证完成时间，Unix 秒（行 1373）。
+  int64 auth_time = 9;
+  // 授权码签发时间，Unix 秒（行 1374）。
+  int64 iat = 10;
+  // 过期时间 = iat + 120s，与 Redis TTL 一致（行 1375）。
+  int64 exp = 11;
+}
