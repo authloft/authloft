@@ -303,6 +303,51 @@ func TestUserRepoUpdateLastLogin(t *testing.T) {
 	}
 }
 
+// TestUserRepoUpdateProfileColumns（env-skip）：§3.2 UpdateProfile 可选字段
+// 部分更新的 user 表侧——两列齐写、nil 列不写（未传不覆盖）、同值幂等
+// 不误报、不存在用户可判别。
+func TestUserRepoUpdateProfileColumns(t *testing.T) {
+	rp, _ := userTestSetup(t)
+	ctx := context.Background()
+
+	u := &model.User{Username: "profile_user", Nickname: "旧昵称", AvatarURL: "https://cdn.example.com/old.jpg"}
+	if err := rp.Create(ctx, u); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+
+	// 两列齐写。
+	nick, avatar := "新昵称", "https://cdn.example.com/new.jpg"
+	if err := rp.UpdateProfileColumns(ctx, u.ID, &nick, &avatar); err != nil {
+		t.Fatalf("UpdateProfileColumns 失败: %v", err)
+	}
+	got, err := rp.FindByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("FindByID 失败: %v", err)
+	}
+	if got.Nickname != nick || got.AvatarURL != avatar {
+		t.Errorf("资料列 = (%q, %q), want (%q, %q)", got.Nickname, got.AvatarURL, nick, avatar)
+	}
+
+	// 只传 nickname（avatarURL = nil = 未传不覆盖）。
+	nick2 := "又新昵称"
+	if err := rp.UpdateProfileColumns(ctx, u.ID, &nick2, nil); err != nil {
+		t.Fatalf("UpdateProfileColumns 单列失败: %v", err)
+	}
+	if got, err = rp.FindByID(ctx, u.ID); err != nil || got.Nickname != nick2 || got.AvatarURL != avatar {
+		t.Errorf("单列更新 = (%q, %q), want (%q, %q)（nil 列不覆盖）", got.Nickname, got.AvatarURL, nick2, avatar)
+	}
+
+	// 同值二次更新：changed-rows 语义下 RowsAffected=0，但行存在，
+	// 不应误报 ErrRecordNotFound。
+	if err := rp.UpdateProfileColumns(ctx, u.ID, &nick2, nil); err != nil {
+		t.Fatalf("同值二次更新应幂等成功: %v", err)
+	}
+
+	if err := rp.UpdateProfileColumns(ctx, 404, &nick2, nil); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)
+	}
+}
+
 // TestUserRepoListUsers（env-skip）：user_status 过滤 + §1.7 分页参数
 //（page 1 起、pageSize 默认 20 上限 100）、id 降序全序稳定。
 func TestUserRepoListUsers(t *testing.T) {

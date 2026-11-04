@@ -157,12 +157,51 @@ func (r *UserRepo) UpdateLastLogin(ctx context.Context, id int64, at time.Time) 
 	return nil
 }
 
+// UpdateProfileColumns 列级更新 user 表资料列 nickname / avatar_url
+//（接口文档 §3.2 UpdateProfile：可选字段部分更新——用户名 / 手机号 /
+// 邮箱不可改、未传字段不覆盖，§3.10 行 428 表-文件对应归 user_repo）。
+// nil = 该列未传、不写入；updated_at 一并刷新。用户不存在返回包装的
+// gorm.ErrRecordNotFound。MySQL 驱动默认 changed-rows 语义：同值 UPDATE
+// RowsAffected=0 与行不存在不可区分，故 rows=0 时补 SELECT 存在性判定
+//——行仍在则视为幂等成功，查无此行才报 ErrRecordNotFound（口径同
+// UpdateLastLogin）。
+func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error {
+	cols := map[string]any{"updated_at": time.Now()}
+	if nickname != nil {
+		cols["nickname"] = *nickname
+	}
+	if avatarURL != nil {
+		cols["avatar_url"] = *avatarURL
+	}
+	res := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Updates(cols)
+	if res.Error != nil {
+		return fmt.Errorf("user repo: update profile columns: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.User{}).
+			Select("COUNT(*)").
+			Where("id = ?", id).
+			Scan(&exists).Error; err != nil {
+			return fmt.Errorf("user repo: update profile columns: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user repo: update profile columns: %w", gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
+}
+
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
 // ListUsers 筛选入参 {q, userStatus}——q 模糊搜索的搜索字段与规则文档
-// 未定义，归后续 service 卡）；分页按 §1.7（page 从 1 开始、pageSize
+// 未定义，归后续 service 实现）；分页按 §1.7（page 从 1 开始、pageSize
 // 默认 20、上限 100）。sort / order 取值由前端限定（§1.7 后端不做白名
 // 单强制校验），repo 固定 ORDER BY id DESC 保证分页全序稳定，任意列
-// 排序归 service / handler 卡。
+// 排序归 service / handler 实现。
 type UserListQuery struct {
 	UserStatus *int8
 	Page       int

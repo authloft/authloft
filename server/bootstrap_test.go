@@ -858,6 +858,79 @@ func TestAssembleAdminRoutesWired(t *testing.T) {
 	}
 }
 
+// TestAssembleRPCRoutesWired：rpc 域两个 Connect handler（UserService /
+// TokenService）经 buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerRPC
+// → csrv.RegisterRPC，强制包 CaptureRawBody）。缺三头拒绝用例走「读
+// GetUserProfile + 写 UpdateUserProfile + DecodeSession 三 procedure × 缺任一
+// 头」表驱动：拦截器三头检查先于 nonce 去重 / client 查询 / 签名（§7 行
+// 1383），不触达 buildWiredDeps 的 nil db / nil rdb——403 permission_denied
+// 即证明路由 + HMAC 拦截器已挂载（403≠404）；rpc 域 origin 免检（§1.1 行
+// 79 例外），请求不带 Origin。sso / account / admin 前缀零回归。
+func TestAssembleRPCRoutesWired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	deps := buildWiredDeps(t, cfg)
+	csrv := connect.NewServer(defaultReadMaxBytes)
+	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
+
+	// 装配断言：rpc 域两前缀已注册且 handler 非 nil；sso / account / admin 零回归。
+	gotPrefix := map[string]bool{}
+	for _, rt := range csrv.Routes() {
+		gotPrefix[rt.Prefix] = rt.Handler != nil
+	}
+	for _, prefix := range []string{
+		"/api.rpc.v1.UserService/",
+		"/api.rpc.v1.TokenService/",
+		"/api.sso.v1.SsoService/",
+		"/api.account.v1.AccountService/",
+		"/api.admin.v1.AdminService/",
+	} {
+		if !gotPrefix[prefix] {
+			t.Errorf("路由 %s 未注册或 handler 为 nil（registerRPC / 零回归断言失败）", prefix)
+		}
+	}
+
+	// 缺三头拒绝（读 / 写 / DecodeSession 三 procedure × 缺任一头）：JSON 空对象
+	// body（connect-go 先解码再进拦截链），不带 Origin（rpc 域免检）。
+	doPostJSONNoOrigin := func(target string, headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	full := map[string]string{
+		"X-Client-ID": "web-1",
+		"X-Nonce-ID":  "n-1",
+		"X-Signature": "deadbeef",
+	}
+	for _, procedure := range []string{
+		"/api.rpc.v1.UserService/GetUserProfile",
+		"/api.rpc.v1.UserService/UpdateUserProfile",
+		"/api.rpc.v1.TokenService/DecodeSession",
+	} {
+		for missing := range full {
+			headers := map[string]string{}
+			for k, v := range full {
+				if k != missing {
+					headers[k] = v
+				}
+			}
+			rec := doPostJSONNoOrigin(procedure, headers)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("%s missing %s: status = %d, want %d (body %s)", procedure, missing, rec.Code, http.StatusForbidden, rec.Body.String())
+				continue
+			}
+			if got := decodeOIDCJSON(t, rec)["code"]; got != "permission_denied" {
+				t.Errorf("%s missing %s: code = %v, want permission_denied (body %s)", procedure, missing, got, rec.Body.String())
+			}
+		}
+	}
+}
+
 // TestAssembleGatewayRoutesWired：网关域 ANY /api/gateway/decode 经
 // buildHandlerWithSSO 注册到 gin 链（registerGateway：/api 组 /gateway 子组 +
 // Gateway 中间件）——buildWiredDeps 的 settings 为 NewStore(nil, nil)（种子

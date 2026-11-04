@@ -40,6 +40,7 @@ import (
 
 	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
 	adminv1connect "authloft/gen/go/api/admin/v1/adminv1connect"
+	rpcv1connect "authloft/gen/go/api/rpc/v1/rpcv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
@@ -56,6 +57,7 @@ import (
 	adminhandler "authloft/internal/handler/admin"
 	gatewayhandler "authloft/internal/handler/gateway"
 	oidchandler "authloft/internal/handler/oidc"
+	rpchandler "authloft/internal/handler/rpc"
 	ssohandler "authloft/internal/handler/sso"
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
@@ -681,6 +683,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 		registerSSO(cfg, csrv, deps)
 		registerAccount(cfg, csrv, deps)
 		registerAdmin(cfg, csrv, deps)
+		registerRPC(cfg, csrv, deps)
 		// OIDC REST 端点（§4.1）：注册在 gin 链（/.well-known/** 与 /api/oidc/**
 		// 按绝对路径），不经 Connect、不套 §1.0 信封（§1.0 豁免清单）；
 		// origin 对 /api/oidc/** 免检（接口文档 §1.1 行 79 例外），GET 端点
@@ -767,6 +770,46 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)
 	csrv.Register(path, h)
+}
+
+// registerRPC 注册 rpc 域两个 Connect handler（接口文档 §7 行
+// 1366-1393）：鉴权 = rpc HMAC 拦截器（三头齐全 → 写接口 nonce 去重 →
+// client 查询 → 五项签名，§7 行 1383 校验顺序；session 步归端点自身，
+// 不挂 session 拦截器）。两个 service 一律经 csrv.RegisterRPC 注册——强制
+// 包 CaptureRawBody（拦截器读 ctx 原始请求体字节，漏挂按 internal
+// fail-closed，connect/server.go 行 91 口径）。Verifier / Renewer 复用
+// assemble 共享单例（sessionTokens / epochStore，口径不新造第二套）；
+// TTL 与会话拦截器同源（settings 键 session_ttl，缺失回落 7 天）。
+func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	// SecretLookup（§7 行 1376：X-Client-ID → sso_client.client_secret）：
+	// 未命中 / 已禁用（is_enabled=0）/ 查询失败统一 ok=false——与签名错误
+	// 同响应 403，不区分以防探测（拦截器既有口径，interceptors.go 行
+	// 298-301）；禁用判定对齐 oidc findClient 先例（oidc/token.go 行
+	// 243-254）。SecretLookup 签名无错误通道，查询故障只能并入未注册口径。
+	clients := repo.NewClientRepo(deps.db)
+	lookup := func(ctx context.Context, clientID string) (string, bool) {
+		c, err := clients.FindSsoClientByClientID(ctx, clientID)
+		if err != nil || c == nil || c.IsEnabled == 0 {
+			return "", false
+		}
+		return c.ClientSecret, true
+	}
+	hmac := connect.NewRPCHMACInterceptor(cache.NewNonceStore(deps.rdb), lookup)
+
+	path, h := rpcv1connect.NewUserServiceHandler(
+		rpchandler.NewUserHandler(repo.NewUserRepo(deps.db)),
+		csrv.HandlerOptions(hmac)...,
+	)
+	csrv.RegisterRPC(path, h)
+
+	path, h = rpcv1connect.NewTokenServiceHandler(
+		rpchandler.NewTokenHandler(
+			session.NewVerifier(deps.sessionTokens, deps.epochStore),
+			session.NewRenewer(deps.sessionTokens, ssoSessionTTLRaw(deps.settings)),
+		),
+		csrv.HandlerOptions(hmac)...,
+	)
+	csrv.RegisterRPC(path, h)
 }
 
 // registerOIDC 注册 OIDC REST 端点到 gin 链（接口文档 §4.1 行
