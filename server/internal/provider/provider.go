@@ -408,6 +408,20 @@ func (g *flightGroup) do(key string, fn func() (any, error)) (any, error) {
 	g.calls[key] = c
 	g.mu.Unlock()
 
+	// fn panic 时也必须完成清理（wg.Done + 删表）并给等待者留下错误，
+	// 然后重抛 panic（对齐 golang.org/x/sync/singleflight 的行为语义）；
+	// 否则 calls 项残留会让同 key 的后续请求永久阻塞。
+	defer func() {
+		if r := recover(); r != nil {
+			c.err = fmt.Errorf("provider: singleflight panic: %v", r)
+			g.mu.Lock()
+			delete(g.calls, key)
+			g.mu.Unlock()
+			c.wg.Done()
+			panic(r)
+		}
+	}()
+
 	c.val, c.err = fn()
 
 	g.mu.Lock()

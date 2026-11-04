@@ -430,6 +430,81 @@ func TestRegistryNilFactory(t *testing.T) {
 	}
 }
 
+// TestFlightGroupPanicThenRetry fn panic 时 do 必须重抛、且清理 calls 项
+// 与 WaitGroup（否则同 key 的后续请求会在残留项上永久阻塞），重试同 key
+// 应拿到新结果。
+func TestFlightGroupPanicThenRetry(t *testing.T) {
+	g := &flightGroup{}
+
+	// 第一次调用 fn panic：重抛的 panic 在此捕获，不能打死测试进程。
+	func() {
+		defer func() {
+			if r := recover(); r != "boom" {
+				t.Fatalf("do 应重抛 panic, recover = %v", r)
+			}
+		}()
+		g.do("k", func() (any, error) { panic("boom") })
+	}()
+
+	// 若 panic 路径未删表，此请求会永久等待；带超时兜底断言。
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		v, err := g.do("k", func() (any, error) { return "ok", nil })
+		if err != nil || v != "ok" {
+			t.Errorf("panic 后同 key 重试 = (%v, %v), want (\"ok\", nil)", v, err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("panic 后同 key 请求被永久阻塞：calls 项未清理")
+	}
+}
+
+// TestFlightGroupPanicReleasesWaiters leader 的 fn panic 时，正在等待同
+// key 的 follower 应被放行并拿到错误，而非永久阻塞。
+func TestFlightGroupPanicReleasesWaiters(t *testing.T) {
+	g := &flightGroup{}
+	release := make(chan struct{})
+	started := make(chan struct{})
+
+	leaderDone := make(chan any, 1)
+	go func() {
+		defer func() { leaderDone <- recover() }()
+		g.do("k", func() (any, error) {
+			close(started)
+			<-release
+			panic("boom")
+		})
+	}()
+	<-started
+
+	followerDone := make(chan struct{})
+	go func() {
+		defer close(followerDone)
+		v, err := g.do("k", func() (any, error) { return "new", nil })
+		// leader 清理放行 → (nil, panic 错误)；若 follower 迟到成为
+		// 新一轮 leader 则拿到 ("new", nil)。两者均合法，关键是
+		// 不能阻塞，也不能拿到 (nil, nil)。
+		if err == nil && v != "new" {
+			t.Errorf("follower = (%v, %v)", v, err)
+		}
+	}()
+	// 给 follower 时间进入 wg.Wait（此刻 leader 尚未返回，calls 项必在）。
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+
+	select {
+	case <-followerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("leader panic 后 follower 被永久阻塞")
+	}
+	if r := <-leaderDone; r != "boom" {
+		t.Fatalf("leader 应重抛 panic, got %v", r)
+	}
+}
+
 // ChannelAPIAdapter 仅用于注册表测试的最小适配器。
 type ChannelAPIAdapter struct{}
 

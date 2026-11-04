@@ -217,6 +217,7 @@ func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid 
 		}
 		refresh = raw
 		now := s.now()
+		// Scopes 落库为空格分隔（RFC 6749 / 接口文档 §4.3）。
 		if err := s.Tokens.Create(ctx, &model.OidcRefreshToken{
 			TokenHash: hashToken(raw),
 			ClientID:  client.ClientID,
@@ -288,8 +289,8 @@ func secondsOrDefault(v int32, def time.Duration) time.Duration {
 	return time.Duration(v) * time.Second
 }
 
-// normalizeScope 刷新令牌行以逗号分隔存储（§4.5 scopes 列），响应统一空格
-// 分隔（§4.3）。
+// normalizeScope 刷新令牌行以空格分隔存储（RFC 6749 / 接口文档 §4.3）；
+// 逗号 → 空格替换仅兜底历史逗号口径数据，空格口径下行为不变。
 func normalizeScope(s string) string {
 	if s == "" {
 		return defaultScope
