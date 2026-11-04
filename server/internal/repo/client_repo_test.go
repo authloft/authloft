@@ -81,21 +81,26 @@ func clientTestUris() *client.ClientRedirectUris {
 // Marshal 与 Parse 互逆（proto.Equal 逐字段）；nil / 空输入边界；坏字节
 // 解析报错。
 func TestClientRepoRedirectUrisRoundTrip(t *testing.T) {
-	// nil → nil。
+	// nil → 非 nil 零长字节（redirect_uris NOT NULL，不能写 NULL）→ Parse
+	// 回非 nil 空消息。
 	data, err := MarshalClientRedirectUris(nil)
-	if err != nil || data != nil {
-		t.Fatalf("Marshal(nil) = %v, %v; want nil, nil", data, err)
+	if err != nil || data == nil || len(data) != 0 {
+		t.Fatalf("Marshal(nil) = %v(len %d), %v; want 非 nil 零长字节, nil", data, len(data), err)
+	}
+	got, err := ParseClientRedirectUris(data)
+	if err != nil || got == nil || len(got.Uris) != 0 {
+		t.Fatalf("Parse(Marshal(nil)) = %v, %v; want 非 nil 空消息, nil", got, err)
 	}
 
-	// 空消息 → 零长度字节 → 解析回非 nil 空消息。
+	// 空消息 → 零长字节（非 nil）→ 解析回非 nil 空消息。
 	data, err = MarshalClientRedirectUris(&client.ClientRedirectUris{})
 	if err != nil {
 		t.Fatalf("Marshal(空消息) 失败: %v", err)
 	}
-	if len(data) != 0 {
-		t.Errorf("空消息序列化应为零长度, got %d bytes", len(data))
+	if data == nil || len(data) != 0 {
+		t.Errorf("空消息序列化应为非 nil 零长字节, got %v(len %d)", data, len(data))
 	}
-	got, err := ParseClientRedirectUris(nil)
+	got, err = ParseClientRedirectUris(nil)
 	if err != nil || got == nil || len(got.Uris) != 0 {
 		t.Fatalf("Parse(nil) = %v, %v; want 非 nil 空消息, nil", got, err)
 	}
@@ -238,6 +243,27 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	}
 	if err := rp.DeleteSsoClient(ctx, c.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("重复 Delete 应 ErrRecordNotFound, got %v", err)
+	}
+
+	// redirect_uris 列 NOT NULL：nil 入参编码为非 nil 零长字节，可直接
+	// Create 落库（证明不触发 MySQL 1048）；读回 Parse 为空消息。
+	emptyData, err := MarshalClientRedirectUris(nil)
+	if err != nil {
+		t.Fatalf("MarshalClientRedirectUris(nil) 失败: %v", err)
+	}
+	empty := &model.SsoClient{
+		ClientID: "sso_empty_uris", ClientSecret: strings.Repeat("e", 64), RedirectURIs: emptyData,
+	}
+	if err := rp.CreateSsoClient(ctx, empty); err != nil {
+		t.Fatalf("redirect_uris 空值 Create 应成功（NOT NULL 不得写 NULL）, got %v", err)
+	}
+	gotEmpty, err := rp.FindSsoClientByClientID(ctx, "sso_empty_uris")
+	if err != nil {
+		t.Fatalf("空 redirect_uris 行 Find 失败: %v", err)
+	}
+	emptyParsed, err := ParseClientRedirectUris(gotEmpty.RedirectURIs)
+	if err != nil || len(emptyParsed.Uris) != 0 {
+		t.Errorf("空 redirect_uris 读回 = %v, %v; want 空消息, nil", emptyParsed, err)
 	}
 }
 

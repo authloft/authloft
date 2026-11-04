@@ -245,15 +245,20 @@ func (r *ClientRepo) DeleteOidcClient(ctx context.Context, id int64) error {
 
 // MarshalClientRedirectUris 将 client.RedirectUris（接口文档 §12.3 行
 // 1723-1730）序列化为 redirect_uris 列字节（§12.0 行 1627：结构固定走
-// Protobuf）。nil 输入返回 nil；protocol 编码错误原样包装。校验（通配符
-// 合法性、条目上限）归 service，repo 只做唯一编解码出口。
+// Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
+// VARBINARY NOT NULL（§4.4 行 718 / §4.5 行 734），返回 nil 会被 GORM 写成
+// NULL 触发 MySQL 1048。protocol 编码错误原样包装。校验（通配符合法性、
+// 条目上限）归 service，repo 只做唯一编解码出口。
 func MarshalClientRedirectUris(uris *client.ClientRedirectUris) ([]byte, error) {
 	if uris == nil {
-		return nil, nil
+		uris = &client.ClientRedirectUris{}
 	}
 	data, err := proto.Marshal(uris)
 	if err != nil {
 		return nil, fmt.Errorf("client repo: marshal redirect uris: %w", err)
+	}
+	if data == nil {
+		data = []byte{}
 	}
 	return data, nil
 }

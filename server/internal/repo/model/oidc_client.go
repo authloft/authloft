@@ -22,7 +22,7 @@ type OidcClient struct {
 	ClientID        string    `gorm:"column:client_id;size:64;not null"`                              // 唯一对外标识（uk_client_id）
 	ClientSecret    string    `gorm:"column:client_secret;size:64;not null"`                          // 密钥；生成策略归 service
 	Name            string    `gorm:"column:name;size:128;not null;default:''"`                       // 展示名
-	RedirectURIs    []byte    `gorm:"column:redirect_uris;not null"`                                  // client.RedirectUris 序列化后
+	RedirectURIs    []byte    `gorm:"column:redirect_uris;type:varbinary(2048);not null"`             // client.RedirectUris 序列化后
 	Scopes          string    `gorm:"column:scopes;size:512;not null;default:'openid,profile,email'"` // 逗号分隔 scope 列表
 	AccessTokenTTL  int32     `gorm:"column:access_token_ttl;not null;default:3600"`                  // 秒
 	RefreshTokenTTL int32     `gorm:"column:refresh_token_ttl;not null;default:2592000"`              // 秒

@@ -17,11 +17,11 @@ import "time"
 // is_enabled=0，禁用入口走列级 UPDATE（Update）。
 type SsoClient struct {
 	ID           int64     `gorm:"column:id;primaryKey;autoIncrement"`
-	ClientID     string    `gorm:"column:client_id;size:64;not null"`        // 唯一对外标识（uk_client_id）
-	ClientSecret string    `gorm:"column:client_secret;size:64;not null"`    // 密钥；生成策略归 service
-	Name         string    `gorm:"column:name;size:128;not null;default:''"` // 展示名
-	RedirectURIs []byte    `gorm:"column:redirect_uris;not null"`            // client.RedirectUris 序列化后
-	IsEnabled    int8      `gorm:"column:is_enabled;not null;default:1"`     // 启用态
+	ClientID     string    `gorm:"column:client_id;size:64;not null"`                  // 唯一对外标识（uk_client_id）
+	ClientSecret string    `gorm:"column:client_secret;size:64;not null"`              // 密钥；生成策略归 service
+	Name         string    `gorm:"column:name;size:128;not null;default:''"`           // 展示名
+	RedirectURIs []byte    `gorm:"column:redirect_uris;type:varbinary(2048);not null"` // client.RedirectUris 序列化后
+	IsEnabled    int8      `gorm:"column:is_enabled;not null;default:1"`               // 启用态
 	CreatedAt    time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
 }
