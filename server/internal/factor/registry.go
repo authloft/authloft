@@ -17,8 +17,28 @@ var (
 	ErrRegistryIncomplete    = errors.New("factor: registry incomplete")
 )
 
+// pendingKinds 尚无可用装配依赖、暂不参与启动期完整性断言的 kind 显式清单
+// （后端架构 §3.8 行 390 口径）：依赖落地即从此处移除，清空后恢复
+// 全量断言。allKinds 本身保持不变。
+var pendingKinds = []FactorKind{
+	FactorOTPSMS,     // TODO(§3.8): SMS Sender（§15 provider）未落地
+	FactorOTPEmail,   // TODO(§3.8): email Sender（§15 provider）未落地
+	FactorThirdParty, // TODO(§3.8): provider 适配器未落地
+	FactorDevice,     // TODO(§3.8): 登录设备内部因子未落地
+}
+
+// isPending 判定 kind 是否属于 pendingKinds。
+func isPending(kind FactorKind) bool {
+	for _, p := range pendingKinds {
+		if p == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Registry 因子注册表（后端架构 §3.8 行 387）：Register / Get，
-// AssertComplete 仅在启动期调用，断言每个 kind 都有实现。
+// AssertComplete 仅在启动期调用，断言 allKinds − pendingKinds 都有实现。
 type Registry struct {
 	mu      sync.RWMutex
 	factors map[FactorKind]Factor
@@ -67,13 +87,17 @@ func (r *Registry) Get(kind FactorKind) (Factor, error) {
 	return f, nil
 }
 
-// AssertComplete 启动期断言注册完整性：每个合法 kind 都必须有实现。
+// AssertComplete 启动期断言注册完整性：除 pendingKinds 外每个合法 kind
+// 都必须有实现（§3.8 行 390）。
 func (r *Registry) AssertComplete() error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var missing []string
 	for _, kind := range allKinds {
+		if isPending(kind) {
+			continue
+		}
 		if _, ok := r.factors[kind]; !ok {
 			missing = append(missing, string(kind))
 		}

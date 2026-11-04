@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -37,6 +38,10 @@ import (
 	"authloft/internal/asyncqueue"
 	"authloft/internal/config"
 	"authloft/internal/connect"
+	"authloft/internal/eventlog"
+	"authloft/internal/factor"
+	"authloft/internal/repo"
+	"authloft/internal/service"
 	"authloft/internal/settings"
 )
 
@@ -405,6 +410,71 @@ func TestBootstrapCloseOrderNoPanic(t *testing.T) {
 type noopExecutor struct{}
 
 func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
+
+// TestAssembleEngineAndTerminal 用 Fake 配置装配 factor 注册表 / Terminal /
+// Engine（不连 DB / Redis）：断言 4 个已实现 kind 可解析、pending 4 条不参与
+// 完整性断言、Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
+func TestAssembleEngineAndTerminal(t *testing.T) {
+	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
+	if err != nil {
+		t.Fatalf("buildCodecs: %v", err)
+	}
+	q := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
+		Capacity:      8,
+		Workers:       1,
+		BatchSize:     8,
+		FlushInterval: time.Hour,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = q.Close(ctx)
+	})
+
+	deps := &assembled{
+		codecs:   codecs,
+		settings: settings.NewStore(nil, nil),
+		queue:    q,
+		sink:     service.NewLoginEventWriter(eventlog.NewWriter(q)),
+	}
+	cfg := &config.Config{
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
+	}
+	users := repo.NewUserRepo(nil)
+	creds := repo.NewCredentialRepo(nil)
+	webauthnRepo := repo.NewWebauthnRepo(nil)
+
+	engine, terminal, registry, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
+	if err != nil {
+		t.Fatalf("buildEngine: %v", err)
+	}
+	if engine == nil || terminal == nil || registry == nil {
+		t.Fatal("buildEngine must return non-nil engine / terminal / registry")
+	}
+
+	if err := registry.AssertComplete(); err != nil {
+		t.Fatalf("AssertComplete: %v", err)
+	}
+	for _, kind := range []factor.FactorKind{
+		factor.FactorPassword, factor.FactorWebAuthn, factor.FactorTOTP, factor.FactorRecovery,
+	} {
+		if _, err := registry.Get(kind); err != nil {
+			t.Fatalf("Get(%s): %v", kind, err)
+		}
+	}
+	for _, kind := range []factor.FactorKind{
+		factor.FactorOTPSMS, factor.FactorOTPEmail, factor.FactorThirdParty, factor.FactorDevice,
+	} {
+		if _, err := registry.Get(kind); !errors.Is(err, factor.ErrKindNotRegistered) {
+			t.Fatalf("Get(%s) err = %v, want ErrKindNotRegistered (pending kind)", kind, err)
+		}
+	}
+
+	if terminal.Sessions == nil || terminal.OIDC == nil || terminal.Events == nil ||
+		terminal.Sync == nil || terminal.Settings == nil {
+		t.Fatalf("terminal 五注入存在 nil: %+v", terminal)
+	}
+}
 
 // TestAssembleRealChain（env-skip）：真连装配链 config→DB→migrate up→Redis
 // →密钥→settings 预热 + watcher→队列 + sink——assemble 成功后 DB ping 通、

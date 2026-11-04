@@ -2,7 +2,8 @@
 // config → DB → 迁移检查（migrate up，幂等）→ Redis → 密钥 → provider/factor
 // 注册表 → settings 预热 → 队列 worker → cron → router。已落地 config /
 // DB / migrate / Redis 四步，并接入五把密钥、settings 预热 + watcher、
-// 队列 + 事件日志 sink 与优雅关闭；provider/factor 注册表与 cron 仍为 TODO。
+// 队列 + 事件日志 sink 与优雅关闭；factor 注册表、Terminal 与登录单引擎
+// 已接入；provider 注册表与 cron 仍为 TODO。
 //
 // 启动分支（§3.1 行 253）：configs/config.yaml 不存在 → setup 模式
 //——不加载 config、不初始化 DB / Redis、不起业务链路，只启动 internal/setup
@@ -38,12 +39,20 @@ import (
 	"authloft/internal/config"
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
+	"authloft/internal/factor"
+	factorpassword "authloft/internal/factor/password"
+	"authloft/internal/factor/recovery"
+	"authloft/internal/factor/totp"
+	"authloft/internal/factor/webauthn"
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
+	"authloft/internal/oidc"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service"
+	"authloft/internal/service/orchestrator"
+	"authloft/internal/session"
 	"authloft/internal/settings"
 	"authloft/internal/setup"
 )
@@ -74,8 +83,8 @@ func run(configPath string) error {
 const shutdownTimeout = 10 * time.Second
 
 // assembled 正常模式装配产物（§3.1 行 237 启动链）：DB / Redis / 五把密钥编解码
-// / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink。provider 注册表
-// 与 cron 待对应包落地后补字段（§3.1 步骤 6 与 cron 仍为 TODO）。
+// / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink / 登录单引擎。
+// provider 注册表与 cron 待对应包落地后补字段（§3.1 步骤 6 与 cron 仍为 TODO）。
 type assembled struct {
 	db       *gorm.DB
 	rdb      *redis.Client
@@ -84,6 +93,7 @@ type assembled struct {
 	watcher  *settings.Watcher
 	queue    *asyncqueue.Queue
 	sink     *service.LoginEventWriter
+	engine   *orchestrator.Engine
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -170,10 +180,122 @@ func (e *eventLogExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task)
 	}
 }
 
+// combinedExecutor 把同一批任务分发给多个执行器：每个执行器只消费自己
+// 认识的任务类型（event_log / last_login 与 webauthn sign_count 互不干扰），
+// 满足 asyncqueue 单执行器构造口径（§5.2 行 872、§8.3 行 1049）。
+type combinedExecutor []asyncqueue.Executor
+
+func (c combinedExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task) {
+	for _, exec := range c {
+		exec.Execute(ctx, tasks)
+	}
+}
+
+// mfaCredentialReader 组合 credential / webauthn 两个 repo，满足编排层
+// MFACredentialReader（mfa.go 行 21-24）；不修改 repo 公共接口。
+type mfaCredentialReader struct {
+	creds    *repo.CredentialRepo
+	webauthn *repo.WebauthnRepo
+}
+
+func (r mfaCredentialReader) FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error) {
+	return r.creds.FindByUserAndKind(ctx, userID, kind)
+}
+
+func (r mfaCredentialReader) ListWebauthn(ctx context.Context, userID int64) ([]model.UserCredentialWebauthn, error) {
+	return r.webauthn.ListByUser(ctx, userID)
+}
+
+// buildEngine 构造因子注册表（§3.8）、登录终点 Terminal（§7.3）与单引擎
+// Engine（§7.2-§7.4），供 assemble 注入。返回 terminal / registry 便于装配单测
+// 直接核对注入完整性，不进入 assembled 字段。
+func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
+	creds *repo.CredentialRepo, webauthnRepo *repo.WebauthnRepo,
+) (*orchestrator.Engine, *orchestrator.Terminal, *factor.Registry, error) {
+	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil {
+		return nil, nil, nil, errors.New("bootstrap: engine deps not fully assembled")
+	}
+
+	pwOpts := factorpassword.DefaultOptions()
+	if v, ok := deps.settings.GetInt64(settings.KeyPwdFailCapture); ok && v > 0 {
+		pwOpts.Capture = v
+	}
+	if v, ok := deps.settings.GetInt64(settings.KeyPwdFailBan); ok && v > 0 {
+		pwOpts.Ban = v
+	}
+	if v, ok := deps.settings.GetInt64(settings.KeyPwdBanTtl); ok && v > 0 {
+		pwOpts.BanTTL = time.Duration(v) * time.Second
+	}
+	fails := cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{BanTTL: pwOpts.BanTTL})
+
+	registry := factor.NewRegistry()
+	// TODO(§8.1)：ResetQueue / IPResolver 实现归后续卡（暂不并入），
+	// password.New 对二者 nil 安全（跳过清零 / user_ref 回退 "unknown"）。
+	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, nil, pwOpts)); err != nil {
+		return nil, nil, nil, err
+	}
+	// 注册令牌复用 login 域密钥（§1.4 五把密钥未单列 webauthn；purpose
+	// 作为 AAD 保证跨场景隔离，§11.6.1）。
+	wa, err := webauthn.New(deps.codecs.Login, webauthnRepo, deps.queue, webauthn.Options{
+		RPID:      cfg.Authloft.RpID,
+		RPOrigins: []string{cfg.Authloft.Root},
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.Register(factor.FactorWebAuthn, wa); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.Register(factor.FactorTOTP, totp.New()); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.Register(factor.FactorRecovery, recovery.New()); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := registry.AssertComplete(); err != nil {
+		return nil, nil, nil, err
+	}
+
+	epochs := cache.NewEpochStore(deps.rdb, func(ctx context.Context, uid int64) (int64, error) {
+		u, err := users.FindByID(ctx, uid)
+		if err != nil {
+			return 0, err
+		}
+		return int64(u.Epoch), nil
+	})
+	sessions := service.NewSessionWriter(session.NewTokens(deps.codecs.Session), epochs, deps.settings)
+	// 授权码为服务端短时一次性存储值，与 ticket 同属票据族、复用
+	// sign_key.ticket；purpose 作为 AAD 保证跨场景隔离（§11.6.1）。
+	terminal := orchestrator.NewTerminal(
+		sessions,
+		oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket),
+		deps.sink,
+		service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		deps.settings,
+	)
+
+	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
+		State:      orchestrator.NewState(deps.codecs.Login),
+		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: deps.settings},
+		// TODO(§9)：captcha Gate 依赖 ProviderCatalog / Verifier，尚未落地；
+		// engine.go:209 对 nil Gate 安全（跳过人机校验）。
+		Gate:     nil,
+		MFA:      orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings),
+		Terminal: terminal,
+		Failures: fails,
+		Factor: orchestrator.FactorDeps{
+			Users:       users,
+			Credentials: creds,
+		},
+	})
+	return engine, terminal, registry, nil
+}
+
 // assemble 正常模式装配步骤 2-8（§3.1 行 237）：DB → 迁移检查（migrate up，
 // 幂等——版本已最新时只读版本表秒过，§3.16 行 553-555：连上 DB 之后、
 // settings 预热之前）→ Redis → 五把密钥 → settings 预热 + watcher → 队列
-// worker 与事件日志 sink。provider/factor 注册表（步骤 6）与 cron 仍为 TODO。
+// worker 与事件日志 sink → factor 注册表 + Terminal + 登录单引擎。
+// provider 注册表（步骤 6）与 cron 仍为 TODO。
 // 任一步失败都先释放已建资源再原样上抛（serve 转 fail-fast）。
 func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	db, err := repo.Open(cfg)
@@ -212,12 +334,26 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.settings = store
 	deps.watcher = watcher
 
-	// 步骤 8：延迟写入队列（§5.2）与登录事件 sink（§4.6）。
-	deps.queue = asyncqueue.New(&eventLogExecutor{
-		logs:  repo.NewEventLogRepo(db),
-		users: repo.NewUserRepo(db),
+	// 步骤 8：延迟写入队列（§5.2）与登录事件 sink（§4.6）。队列执行器同时
+	// 消费 event_log / last_login 与 webauthn sign_count（合并且取最大值）。
+	users := repo.NewUserRepo(db)
+	creds := repo.NewCredentialRepo(db)
+	webauthnRepo := repo.NewWebauthnRepo(db)
+	deps.queue = asyncqueue.New(combinedExecutor{
+		&eventLogExecutor{logs: repo.NewEventLogRepo(db), users: users},
+		webauthn.NewSignCountExecutor(webauthnRepo),
 	}, asyncqueue.DefaultOptions())
 	deps.sink = service.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
+
+	// 步骤 6：factor 注册表（password / webauthn / totp / recovery，§3.8）
+	// + Terminal + 单引擎（§7）。pendingKinds 内的 otp / thirdparty / device
+	// 尚无装配依赖，由 registry.AssertComplete 显式排除。
+	engine, _, _, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
+	if err != nil {
+		deps.close(context.Background())
+		return nil, err
+	}
+	deps.engine = engine
 
 	return deps, nil
 }
@@ -286,8 +422,8 @@ func serve(cfg *config.Config) error {
 		return err
 	}
 
-	// TODO(§3.1 行 237 步骤 6)：provider/factor 注册表——统一 `_ import`
-	//   触发自注册（internal/provider / factor 子包尚未落地）。
+	// TODO(§3.1 行 237 步骤 6)：provider 注册表——统一 `_ import` 触发自注册
+	//   （internal/provider 子包尚未落地）；factor 注册表已在 assemble 内构造。
 	// TODO(cron)：定时清理任务包尚未落地（§3.12 行 457），随 cron 卡接入。
 
 	handler, _ := buildRouter(cfg)
