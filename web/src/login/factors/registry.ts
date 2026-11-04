@@ -1,16 +1,20 @@
 /**
  * 因子组件映射表（docs/前端架构.md §4.3 行 434）：method → 组件。
  *
- * - totp 显式映射为 null：它由通用 FormStep（§4.2 steps/，本实现未建）渲染、
+ * - totp 显式映射为 null：它由通用 FormStep（§4.2 steps/）渲染、
  *   不设专属组件（§1.2 行 48「totp 不设专属组件，由通用 FormStep +
  *   CodeInput 渲染」）——null 是「通用表单渲染」的语义标记，不是缺映射；
- * - 缺映射（lookupFactor 返回 undefined，如本实现未交付的 otp_sms / otp_email /
- *   webauthn / recovery_code / thirdparty）走兜底错误态，**不许无映射静默
- *   回退**（§4.3 行 434）；新增因子只改本表一行（§4.3 行 434）。
+ * - otp_sms / otp_email → OTPForm（双段组件，扩展 props 由容器按 step 派生，
+ *   OTPForm.isOtpForm 判定）；recovery_code → RecoveryCodeForm；
+ * - 缺映射（lookupFactor 返回 undefined，如未交付的 webauthn /
+ *   thirdparty）走兜底错误态，**不许无映射静默回退**（§4.3 行 434）；
+ *   新增因子只改本表一行（§4.3 行 434）。
  */
 import type { ComponentType } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { OTPForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
+import { RecoveryCodeForm } from './RecoveryCodeForm';
 
 /** 因子组件契约：容器以统一 props 驱动各因子表单（fields 以后端下发为准，§2.1）。 */
 export interface FactorProps {
@@ -31,11 +35,14 @@ export type FactorComponent = ComponentType<FactorProps>;
 export const FACTOR_REGISTRY: Readonly<Record<string, FactorComponent | null>> = {
   password: PasswordForm,
   totp: null,
+  otp_sms: OTPForm,
+  otp_email: OTPForm,
+  recovery_code: RecoveryCodeForm,
 };
 
 /**
  * 查表：三态返回——组件（渲染专属因子表单）｜null（totp 语义：通用 FormStep
- * 渲染，本实现未建时由视图占位）｜undefined（缺映射 → 兜底错误态）。
+ * 渲染，由 steps/FormStep 落地）｜undefined（缺映射 → 兜底错误态）。
  */
 export function lookupFactor(method: string): FactorComponent | null | undefined {
   return Object.prototype.hasOwnProperty.call(FACTOR_REGISTRY, method)

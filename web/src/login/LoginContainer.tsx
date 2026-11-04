@@ -3,8 +3,17 @@
  * flow/{machine,reducer,selectors} 与 api.ts——发起请求、处理响应、驱动子组件、
  * 处理终点。
  *
- * - mfa_required **原地渲染**（不跳页、不新开流程，§4.1 行 407）：因子选择器
- *   UI 归后续因子实现，本实现在该分支渲染占位说明 + 状态标注；
+ * - mfa_required **原地渲染**（不跳页、不新开流程，§4.1 行 407）：mfa.methods
+ *   选择器（因子名取 factors.* 字典）+ 选中方式的因子组件（select_method
+ *   清信封，方式列表由容器本地镜像保持）；webauthn 等未交付因子走缺映射兜底；
+ * - status=next 按 next_step.kind 接 steps/StepDispatcher 分派（§4.2 行 423）：
+ *   form → form 段（专属因子 verify 段（OTPForm，含重发倒计时 / 错误计数）
+ *   或 FormStep——totp 显式 null 的渲染落点）；challenge / redirect / qrcode /
+ *   poll 未实现、external 宿主承载（§9 第 10 条）→ 兜底「请刷新重试」；
+ * - OTP 链路（§1.10 行 306-307 challenge→form）：challenge 提交后响应
+ *   next_step.kind=form 时 advance 推进请求侧 step 到 verify（runSubmit 内）；
+ *   verify 段重发 = 容器以 step=challenge 重走（onResend，主因子场景带原目标、
+ *   MFA 场景空 payload，§2.6 行 544-545）；
  * - 终点（§4.1 行 383）：syncCookieUrl 是后端拼好的多域名同步首跳完整 URL
  *   （§1.3 行 136、§2.9）→ location.replace 它（跳转链由各域页面接力，最终回
  *   redirectTo）；省略时直接 replace(redirectTo)——移动端用 replace 防回退
@@ -26,6 +35,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type ReactNode,
   type Ref,
 } from 'react';
 import { create } from '@bufbuild/protobuf';
@@ -33,6 +43,7 @@ import {
   FieldSchema,
   type Field,
   type LoginFlowResponse,
+  type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { resolveFlowStatus } from '../shared/api/errors';
@@ -44,7 +55,10 @@ import type {
   SnapshotField,
 } from '../shared/types/init';
 import { loginDefault, type LoginDefaultInput } from './api';
+import { OTPForm, isOtpForm } from './factors/OTPForm';
 import { lookupFactor } from './factors/registry';
+import { FormStep } from './steps/FormStep';
+import { StepDispatcher } from './steps/StepDispatcher';
 import { MethodTabs, SELECT_HINT } from './MethodTabs';
 import {
   flowReducer,
@@ -133,6 +147,57 @@ export function toPayloadInit(
 }
 
 /**
+ * 提交白名单字段源（抽为可导出纯函数；容器 submit / resend 的
+ * toPayloadInit 输入）：
+ * - mfa 场景（信封方式条目，§1.3 行 121-127）：challenge 步取 challengeFields、
+ *   verify 步取 fields；verify 步 fields 为空且 OTP 系时补 code 白名单——
+ *   后端 mfa.go 对 otp 系 mfa 条目不填 fields，而 otp verify
+ *   的 payload 恒 {code}（§2.6 行 546），不补则提交必丢 code；
+ * - 主因子（注入快照，§2.1 行 390-394）：challenge 步取 challengeFields、
+ *   form 步取 fields；OTP 系 verify 步快照无 form 步字段（code 字段由响应
+ *   nextStep.fields 下发，§1.3 行 114；失败态信封无 next_step）同款补 code
+ *   白名单描述，codeLength 取快照（§2.1 行 391，缺失兜底 0，§9 第 18 条）。
+ */
+export function fieldsFor(
+  method: string,
+  step: string,
+  snapshot: MethodsSnapshot,
+  mfaMethods: readonly MfaMethod[] | undefined,
+): readonly Field[] {
+  const snapshotEntry = snapshot.methods.find((m) => m.method === method);
+  const otp = isOtpForm(lookupFactor(method));
+  /** OTP 系 verify 步的 code 白名单描述（§2.6 行 546 payload 恒 {code}）。 */
+  const otpCodeField = (): Field[] => [
+    create(FieldSchema, {
+      name: 'code',
+      type: 'otp',
+      length: parseCount(snapshotEntry?.codeLength),
+    }),
+  ];
+
+  const mfaEntry = mfaMethods?.find((m) => m.method === method);
+  if (mfaEntry !== undefined) {
+    if (step === 'challenge') {
+      return mfaEntry.challengeFields;
+    }
+    return mfaEntry.fields.length > 0
+      ? mfaEntry.fields
+      : otp
+        ? otpCodeField()
+        : [];
+  }
+
+  const fields = (
+    (step === 'challenge' ? snapshotEntry?.challengeFields : snapshotEntry?.fields) ??
+    []
+  ).map(snapshotFieldToField);
+  if (fields.length > 0) {
+    return fields;
+  }
+  return otp ? otpCodeField() : fields;
+}
+
+/**
  * 终点 URL（§4.1 行 383）：syncCookieUrl 非空 → 它（后端拼好的首跳完整 URL，
  * §1.3 行 136）；否则 redirectTo；两者皆空 → ''（无跳转目标，不 replace）。
  */
@@ -190,7 +255,17 @@ export async function runSubmit(
       step: state.step,
       payload: payloadWithCaptcha,
     });
-    return { events: [{ type: 'response', envelope }], failed: false };
+    const events: FlowEvent[] = [{ type: 'response', envelope }];
+    if (
+      state.step === 'challenge' &&
+      envelope.status === 'next' &&
+      envelope.nextStep?.kind === 'form'
+    ) {
+      // §1.10 行 306-307 OTP 系 kind 序列 challenge→form：form 步对应请求侧
+      // verify（kind→step 映射），advance 推进下一次提交的 step。
+      events.push({ type: 'advance', step: 'verify' });
+    }
+    return { events, failed: false };
   } catch {
     return { events: [{ type: 'reset' }], failed: true };
   }
@@ -220,11 +295,10 @@ export function isErrorStatus(status: MachineStatus): boolean {
 // ---------------------------------------------------------------------------
 
 /** 占位文案（i18n 无键，字面量声明见文件头）。 */
-const MFA_PLACEHOLDER = '多因子登录即将支持';
 const BINDING_PLACEHOLDER = '账号绑定流程即将支持';
-const NEXT_STEP_PLACEHOLDER = '该步骤类型即将支持';
 const POLL_PLACEHOLDER = '扫码流程即将支持';
-const GENERIC_FORM_PLACEHOLDER = '该方式由通用表单渲染，即将支持';
+/** mfa 选择器引导（§1.3 行 121 mfa.methods；i18n 无键，字面量声明见文件头）。 */
+const MFA_SELECT_HINT = '请选择二次验证方式';
 /** 缺映射兜底（§4.3 行 434：不许无映射静默回退；与 StepDispatcher 兜底同款文案，§4.2 行 423）。 */
 const MISSING_FACTOR_TEXT = '请刷新重试';
 /** success 渲染（跳转由 complete 副作用执行）。 */
@@ -238,8 +312,52 @@ export interface LoginFlowViewProps {
   /** restart / 传输失败的一次性提示（i18nKey；选择新方式时清空）。 */
   notice?: string;
   onSelect: (method: string) => void;
+  /** mfa 方式选择（§1.3 行 121 mfa.methods；容器推导首步后 dispatch select_method）。 */
+  onSelectMfa?: (method: string, firstStep: string) => void;
   onSubmit: (values: Readonly<Record<string, string>>) => void;
+  /** OTP verify 段重发（容器以 step=challenge 重走，§1.10 challenge→form 序列）。 */
+  onResend?: () => void;
+  /** OTP verify 段已输码（容器持值，实例随状态分支重建不丢）。 */
+  otpCode?: string;
+  /** OTP verify 段输码变化上抛（与 otpCode 成对注入）。 */
+  onOtpCodeChange?: (value: string) => void;
   captchaRef?: Ref<CaptchaWidgetHandle>;
+  /** mfa 场景方式列表（select_method 清信封后由容器本地保持，§4.1 行 407 就地渲染）。 */
+  mfaMethods?: readonly MfaMethod[];
+}
+
+/**
+ * mfa 方式选择器（§4.1 行 407：mfa.methods 原地渲染、不跳页；§1.3 行 121-127）：
+ * 按钮即因子（factors.* 字典），点击上抛 method + 首步（容器 kind→step 映射后
+ * dispatch select_method，与主因子方式切换同款语义）。
+ */
+function MfaSelector({
+  methods,
+  current,
+  onSelect,
+}: {
+  methods: readonly MfaMethod[];
+  current: string;
+  onSelect?: (method: string, firstStep: string) => void;
+}) {
+  return (
+    <nav>
+      <ul style={mfaListStyle}>
+        {methods.map((m) => (
+          <li key={m.method}>
+            <button
+              type="button"
+              style={m.method === current ? activeMfaTabStyle : mfaTabStyle}
+              aria-current={m.method === current ? 'true' : undefined}
+              onClick={() => onSelect?.(m.method, firstStepFor(m.steps))}
+            >
+              {t(`factors.${m.method}`)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
 }
 
 /** 状态分支渲染（§4.1 行 386-395 状态机图的视图落地）。 */
@@ -248,8 +366,13 @@ export function LoginFlowView({
   state,
   notice,
   onSelect,
+  onSelectMfa,
   onSubmit,
+  onResend,
+  otpCode,
+  onOtpCodeChange,
   captchaRef,
+  mfaMethods,
 }: LoginFlowViewProps) {
   // 扫码轮询态（本容器不发起轮询；QRCodeStep / PollStep 归后续实现）。
   if (
@@ -262,15 +385,6 @@ export function LoginFlowView({
   if (state.status === 'success') {
     return <p role="status">{REDIRECTING_TEXT}</p>;
   }
-  // mfa_required 原地占位（§4.1 行 407：不跳页；选择器 UI 归后续因子实现）。
-  if (state.status === 'mfa_required') {
-    return (
-      <div>
-        <p role="status">{t('errors.status.mfa_required')}</p>
-        <p>{MFA_PLACEHOLDER}</p>
-      </div>
-    );
-  }
   // binding_required 占位（绑定选择页归后续实现，§4.4）。
   if (state.status === 'binding_required') {
     return (
@@ -280,12 +394,142 @@ export function LoginFlowView({
       </div>
     );
   }
-  // status=next → next_step 分派（steps/ 归后续实现，本实现占位）。
-  if (state.status === 'next') {
+
+  const error = state.envelope?.error;
+  // OTP 系扩展 props（§4.3 行 436）：重发倒计时取 nextStep.retryAfter（next 态）
+  // / error.retryAfter（失败态，§1.3 行 115/150）；错误计数取 error.attemptsLeft（行 151）。
+  const otpRetryAfter =
+    state.envelope?.nextStep?.retryAfter ?? error?.retryAfter;
+  const resolution = isErrorStatus(state.status)
+    ? resolveFlowStatus(state.status)
+    : undefined;
+
+  /**
+   * 因子渲染三态（§4.3 行 434）：undefined → 缺映射兜底（webauthn / thirdparty
+   * 归后续实现，不静默回退）；null → 通用 FormStep（totp 显式 null 的语义落地）；
+   * 组件 → 专属因子表单（OTP 系注入扩展 props，verify 段重发倒计时 / 错误计数）。
+   */
+  const renderFactorNode = (
+    method: string,
+    fields: readonly Field[],
+    maskedTarget?: string,
+  ): ReactNode => {
+    const factor = lookupFactor(method);
+    const factorProps = {
+      fields,
+      loading: state.loading,
+      disabled: selectSubmitDisabled(state),
+      onSubmit,
+    };
+    if (factor === undefined) {
+      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+    }
+    if (factor === null) {
+      return <FormStep {...factorProps} />;
+    }
+    if (isOtpForm(factor)) {
+      return (
+        <OTPForm
+          {...factorProps}
+          step={state.step}
+          retryAfter={otpRetryAfter}
+          attemptsLeft={error?.attemptsLeft}
+          maskedTarget={maskedTarget}
+          onResend={onResend}
+          code={otpCode}
+          onCodeChange={onOtpCodeChange}
+        />
+      );
+    }
+    // JSX 组件变量须大写开头（小写会被解析为字符串标签）。
+    const Factor = factor;
+    return <Factor {...factorProps} />;
+  };
+
+  // mfa 场景（§4.1 行 407：原地渲染选择器 + 因子组件，不跳页、不新开流程）：
+  // mfa_required 刚到达时读信封 mfa.methods；选择方式后（select_method 清信封）
+  // 读容器本地镜像 mfaMethods。
+  const mfaList =
+    state.status === 'mfa_required'
+      ? (state.envelope?.mfa?.methods ?? [])
+      : (mfaMethods ?? []);
+  if (state.status === 'mfa_required' || (mfaMethods?.length ?? 0) > 0) {
+    if (mfaList.length === 0) {
+      // 零值兜底（§9 第 18 条）：mfa_required 无可用方式（防御，后端必附）。
+      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+    }
+    const mfaEntry = mfaList.find((m) => m.method === state.method);
     return (
       <div>
-        <p role="status">{t('errors.status.next')}</p>
-        <p>{NEXT_STEP_PLACEHOLDER}</p>
+        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+        <MfaSelector
+          methods={mfaList}
+          current={state.method}
+          onSelect={onSelectMfa}
+        />
+        {state.status === 'next' && state.envelope?.nextStep !== undefined ? (
+          // OTP 系 mfa challenge 后的 next（kind=form）：StepDispatcher 分派 verify 段。
+          <StepDispatcher
+            nextStep={state.envelope.nextStep}
+            form={renderFactorNode(
+              state.envelope.nextStep.method !== ''
+                ? state.envelope.nextStep.method
+                : state.method,
+              state.envelope.nextStep.fields,
+            )}
+          />
+        ) : mfaEntry === undefined ? (
+          // 未选择二次方式（刚进入 mfa_required，state.method 还是主因子）。
+          <p role="status">{MFA_SELECT_HINT}</p>
+        ) : (
+          renderFactorNode(mfaEntry.method, mfaEntry.fields, mfaEntry.maskedTarget)
+        )}
+        {selectShowCaptcha(state) &&
+          state.envelope?.captcha !== undefined && (
+            <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
+          )}
+        {resolution !== undefined && (
+          <ErrorBanner
+            i18nKey={resolution.i18nKey}
+            fallbackMessage={error?.message}
+            retryAfter={error?.retryAfter}
+            attemptsLeft={error?.attemptsLeft}
+            retryable={resolution.retryable}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // status=next → next_step.kind 分派（§4.2：form → form 段；其余 kind 兜底）。
+  if (state.status === 'next') {
+    const next = state.envelope?.nextStep;
+    if (next === undefined) {
+      // 零值兜底（§9 第 18 条）：status=next 必有 next_step（防御，§1.3 行 110）。
+      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+    }
+    // nextStep.method 零值兜底：空串保持当前方式（与 reducer response 语义一致）。
+    const nextMethod = next.method !== '' ? next.method : state.method;
+    return (
+      <div>
+        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+        <StepDispatcher
+          nextStep={next}
+          form={renderFactorNode(nextMethod, next.fields)}
+        />
+        {selectShowCaptcha(state) &&
+          state.envelope?.captcha !== undefined && (
+            <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
+          )}
+        {resolution !== undefined && (
+          <ErrorBanner
+            i18nKey={resolution.i18nKey}
+            fallbackMessage={error?.message}
+            retryAfter={error?.retryAfter}
+            attemptsLeft={error?.attemptsLeft}
+            retryable={resolution.retryable}
+          />
+        )}
       </div>
     );
   }
@@ -296,14 +540,10 @@ export function LoginFlowView({
     state.method === ''
       ? undefined
       : snapshot.methods.find((m) => m.method === state.method);
-  const fields = (entry?.fields ?? []).map(snapshotFieldToField);
-  const factor = state.method === '' ? undefined : lookupFactor(state.method);
-  // JSX 组件变量须大写开头（小写会被解析为字符串标签）。
-  const Factor = factor;
-  const resolution = isErrorStatus(state.status)
-    ? resolveFlowStatus(state.status)
-    : undefined;
-  const error = state.envelope?.error;
+  // challenge 步渲染目标输入（§2.1 行 390-394 challengeFields）；form 步取 fields。
+  const fields = (
+    (state.step === 'challenge' ? entry?.challengeFields : entry?.fields) ?? []
+  ).map(snapshotFieldToField);
 
   return (
     <div>
@@ -315,17 +555,8 @@ export function LoginFlowView({
       />
       {state.method === '' ? (
         <p role="status">{SELECT_HINT}</p>
-      ) : Factor === undefined ? (
-        <p role="alert">{MISSING_FACTOR_TEXT}</p>
-      ) : Factor === null ? (
-        <p role="status">{GENERIC_FORM_PLACEHOLDER}</p>
       ) : (
-        <Factor
-          fields={fields}
-          loading={state.loading}
-          disabled={selectSubmitDisabled(state)}
-          onSubmit={onSubmit}
-        />
+        renderFactorNode(state.method, fields)
       )}
       {selectShowCaptcha(state) &&
         state.envelope?.captcha !== undefined && (
@@ -344,6 +575,25 @@ export function LoginFlowView({
   );
 }
 
+const mfaListStyle = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '0.5rem',
+  listStyle: 'none',
+  margin: 0,
+  padding: 0,
+} as const;
+
+const mfaTabStyle = {
+  padding: '0.375rem 0.875rem',
+} as const;
+
+const activeMfaTabStyle = {
+  ...mfaTabStyle,
+  fontWeight: 700,
+  textDecoration: 'underline',
+} as const;
+
 // ---------------------------------------------------------------------------
 // 容器（编排壳：dispatch / effects 落地 / 终点跳转）
 // ---------------------------------------------------------------------------
@@ -357,15 +607,33 @@ export function LoginContainer({ snapshot }: LoginContainerProps) {
   const [state, dispatch] = useReducer(flowReducer, INITIAL_FLOW_STATE);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
+  // mfa_required 信封到达时镜像；restart / complete / 传输失败时清空退出 mfa 场景。
+  const [mfaMethods, setMfaMethods] = useState<
+    readonly MfaMethod[] | undefined
+  >(undefined);
+  // challenge 段表单值（重发时原目标重用，§4.3 行 436 重发倒计时）：OTPForm
+  // 实例随状态分支（表单区 ↔ StepDispatcher form 段）重建，值上提容器。
+  const [challengeValues, setChallengeValues] = useState<
+    Readonly<Record<string, string>>
+  >({});
+  // OTP verify 段已输码（同 challengeValues 模式）：invalid_code 等
+  // 可重试失败态（§1.6 行 247）在 StepDispatcher next 槽位 ↔ 直渲染位间切换
+  // 会重建 OTPForm 实例，本地 state 丢已输码——容器持值受控注入。
+  const [otpCode, setOtpCode] = useState('');
 
   const submit = async (values: Readonly<Record<string, string>>) => {
     // request_started 先于请求同步派发（loading 立即反映 UI）。
     dispatch({ type: 'request_started', step: state.step });
-    const fields = (snapshot.methods.find((m) => m.method === state.method)
-      ?.fields ?? []).map(snapshotFieldToField);
+    if (state.step === 'challenge') {
+      setChallengeValues(values);
+    }
     const { events, failed } = await runSubmit(
       state,
-      toPayloadInit(values, fields),
+      toPayloadInit(
+        values,
+        fieldsFor(state.method, state.step, snapshot, mfaMethods),
+      ),
       () =>
         selectShowCaptcha(state) ? captchaRef.current?.getToken() : undefined,
       loginDefault,
@@ -375,17 +643,52 @@ export function LoginContainer({ snapshot }: LoginContainerProps) {
     }
     if (failed) {
       // 传输层失败：回到第一步（reset 已派发）+ failed 兜底提示（§1.6 行 272）。
+      setMfaMethods(undefined);
       setNotice('errors.status.failed');
     }
   };
+
+  // OTP verify 段重发（§1.10 行 306-307 challenge→form 序列重走）：以
+  // step=challenge 重发——主因子场景带原目标（§2.6 行 544）、MFA 场景空
+  // payload（行 545，目标取 uid 绑定资料）；每次 challenge 均过 captcha 拦截
+  // （§2.2 编排规则 4），返回 captcha_required 时由表单区 CaptchaWidget 接力。
+  const resend = async () => {
+    dispatch({ type: 'request_started', step: 'challenge' });
+    const { events, failed } = await runSubmit(
+      { ...state, step: 'challenge' },
+      toPayloadInit(
+        challengeValues,
+        fieldsFor(state.method, 'challenge', snapshot, mfaMethods),
+      ),
+      () =>
+        selectShowCaptcha(state) ? captchaRef.current?.getToken() : undefined,
+      loginDefault,
+    );
+    for (const event of events) {
+      dispatch(event);
+    }
+    if (failed) {
+      setMfaMethods(undefined);
+      setNotice('errors.status.failed');
+    }
+  };
+
+  // mfa_required 信封到达 → 本地镜像（§4.1 行 407：select_method 清信封后仍可渲染）。
+  useEffect(() => {
+    if (state.status === 'mfa_required' && state.envelope?.mfa !== undefined) {
+      setMfaMethods(state.envelope.mfa.methods);
+    }
+  }, [state.status, state.envelope]);
 
   // 副作用落地（reducer 标记 → 容器执行；effects 每次迁移重置，不重复执行）。
   useEffect(() => {
     executeEffects(state.effects, {
       complete: (url) => {
+        setMfaMethods(undefined);
         location.replace(url);
       },
       restart: (status) => {
+        setMfaMethods(undefined);
         dispatch({ type: 'reset' });
         setNotice(resolveFlowStatus(status).i18nKey);
       },
@@ -411,14 +714,26 @@ export function LoginContainer({ snapshot }: LoginContainerProps) {
     setNotice(undefined);
   };
 
+  // mfa 方式选择：与主因子切换同款 select_method（reducer「含 mfa 方式切换」
+  // 语义）；mfa 场景方式列表在本地镜像中、不查注入快照。
+  const onSelectMfa = (method: string, firstStep: string) => {
+    dispatch({ type: 'select_method', method, firstStep });
+    setNotice(undefined);
+  };
+
   return (
     <LoginFlowView
       snapshot={snapshot}
       state={state}
       notice={notice}
       onSelect={onSelect}
+      onSelectMfa={onSelectMfa}
       onSubmit={submit}
+      onResend={resend}
+      otpCode={otpCode}
+      onOtpCodeChange={setOtpCode}
       captchaRef={captchaRef}
+      mfaMethods={mfaMethods}
     />
   );
 }

@@ -15,7 +15,9 @@ import { clearLoginToken, getLoginToken } from './loginTokenStore';
 import { flowReducer } from './flow/reducer';
 import { INITIAL_FLOW_STATE, type FlowState } from './flow/machine';
 import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
+import { OTPForm } from './factors/OTPForm';
 import { PasswordForm } from './factors/PasswordForm';
+import { RecoveryCodeForm } from './factors/RecoveryCodeForm';
 import { lookupFactor } from './factors/registry';
 import { groupProviders, MethodTabs } from './MethodTabs';
 import {
@@ -24,7 +26,11 @@ import {
 import {
   FieldSchema,
   LoginFlowResponseSchema,
+  MfaMethodSchema,
+  MfaSchema,
+  NextStepSchema,
   type LoginFlowResponse,
+  type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import type {
@@ -96,7 +102,15 @@ const SNAPSHOT: MethodsSnapshot = {
       steps: ['challenge', 'form'],
       capability: 'window.PublicKeyCredential',
     },
-    { method: 'otp_sms', usage: ['primary', 'secondary'], steps: ['challenge', 'form'] },
+    {
+      method: 'otp_sms',
+      usage: ['primary', 'secondary'],
+      steps: ['challenge', 'form'],
+      challengeFields: [{ name: 'phone', label: '手机号', type: 'phone', required: true }],
+      codeLength: '6',
+      resendAfter: '60',
+      expiresIn: '300',
+    },
     { method: 'totp', usage: ['secondary'], steps: ['form'], codeLength: '6' },
     {
       method: 'thirdparty',
@@ -185,6 +199,64 @@ describe('snapshotFieldToField / toPayloadInit（§2.1 快照 → 渲染 / 请�
   });
 });
 
+describe('fieldsFor（纯函数：提交白名单字段源；§1.3 行 121-127 / §2.6 行 546）', () => {
+  const MFA_METHODS: MfaMethod[] = [
+    // 后端 mfa.go 对 otp 系 mfa 条目不填 fields / challengeFields。
+    create(MfaMethodSchema, {
+      method: 'otp_sms',
+      steps: ['challenge', 'form'],
+      maskedTarget: '138****8000',
+    }),
+    create(MfaMethodSchema, {
+      method: 'recovery_code',
+      steps: ['form'],
+      fields: [create(FieldSchema, { name: 'code', label: '恢复码', type: 'text', required: true })],
+    }),
+  ];
+
+  test('mfa otp_sms verify：mfaEntry.fields 空 + OTP 系 → 补 code 白名单 → 提交 payload {code}', () => {
+    const fields = container.fieldsFor('otp_sms', 'verify', SNAPSHOT, MFA_METHODS);
+    expect(fields.map((f) => f.name)).toEqual(['code']);
+    expect(fields[0].length).toBe(BigInt(6)); // codeLength 取快照（§2.1 行 391）
+    // 容器 submit 链路：fieldsFor 结果 → toPayloadInit → 请求 payload（§2.6 行 546）。
+    expect(container.toPayloadInit({ code: '123456' }, fields)).toEqual({ code: '123456' });
+  });
+
+  test('mfa otp_sms challenge：challengeFields 空（MFA 不传目标，§2.6 行 545）→ payload {}', () => {
+    const fields = container.fieldsFor('otp_sms', 'challenge', SNAPSHOT, MFA_METHODS);
+    expect(fields).toEqual([]);
+    expect(container.toPayloadInit({}, fields)).toEqual({});
+  });
+
+  test('mfa recovery_code verify：下发 fields 非空 → 优先用下发字段，不补白名单', () => {
+    const fields = container.fieldsFor('recovery_code', 'verify', SNAPSHOT, MFA_METHODS);
+    expect(fields.map((f) => f.name)).toEqual(['code']);
+    expect(fields[0].type).toBe('text'); // 恢复码下发字段，非 otp 补位
+  });
+
+  test('主因子 otp_sms verify：快照无 form 步字段 → 补 code（既有语义回归）；challenge → challengeFields', () => {
+    expect(
+      container.fieldsFor('otp_sms', 'verify', SNAPSHOT, undefined).map((f) => f.name),
+    ).toEqual(['code']);
+    expect(
+      container.fieldsFor('otp_sms', 'challenge', SNAPSHOT, undefined).map((f) => f.name),
+    ).toEqual(['phone']);
+  });
+
+  test('主因子 password：快照 fields 原样（含 captcha，由 toPayloadInit 按类型排除）', () => {
+    expect(
+      container.fieldsFor('password', 'verify', SNAPSHOT, undefined).map((f) => f.name),
+    ).toEqual(['username', 'password', 'captcha']);
+  });
+
+  test('mfa 方式不在镜像中（未选方式防御）→ 回落主因子分支', () => {
+    // mfaMethods 有 otp_sms、无 totp：totp 走主因子分支——快照无 fields 且
+    // 非 OTPForm（isOtpForm false），不补位、返回空。
+    const fields = container.fieldsFor('totp', 'verify', SNAPSHOT, MFA_METHODS);
+    expect(fields).toEqual([]); // totp 非 OTPForm（isOtpForm false），不补位
+  });
+});
+
 describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
   test('syncCookieUrl 非空优先（后端拼好的首跳完整 URL，§1.3 行 136）', () => {
     expect(
@@ -245,9 +317,9 @@ describe('lookupFactor（§4.3 行 434：映射表三态）', () => {
   test('password → PasswordForm；totp → null（通用 FormStep 语义）；其余缺映射 → undefined', () => {
     expect(lookupFactor('password')).toBe(PasswordForm);
     expect(lookupFactor('totp')).toBeNull();
-    expect(lookupFactor('otp_sms')).toBeUndefined();
+    expect(lookupFactor('otp_sms')).toBe(OTPForm);
     expect(lookupFactor('webauthn')).toBeUndefined();
-    expect(lookupFactor('recovery_code')).toBeUndefined();
+    expect(lookupFactor('recovery_code')).toBe(RecoveryCodeForm);
     expect(lookupFactor('thirdparty')).toBeUndefined();
   });
 });
@@ -554,6 +626,84 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     state = result.events.reduce(flowReducer, state);
     expect(state.status).toBe('idle'); // reset → 回到第一步
   });
+
+  test('OTP challenge → next(kind=form)：advance 推进 step 到 verify（§1.10 行 306-307）', async () => {
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'next',
+          loginToken: 'tok-2',
+          nextStep: {
+            kind: 'form',
+            method: 'otp_sms',
+            fields: [{ name: 'code', label: '验证码', type: 'otp', length: '6' }],
+            retryAfter: '60',
+          },
+        });
+      }),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'otp_sms',
+      firstStep: 'challenge',
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'challenge' });
+    const result = await container.runSubmit(
+      state,
+      { phone: '13800000000' },
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(false);
+    // 请求体：challenge 步 payload 带 phone（§2.6 行 544）；loginToken 空为
+    // 零值、protojson 省略（§1.1），故不出现。
+    expect(JSON.parse(raw)).toEqual({
+      method: 'otp_sms',
+      step: 'challenge',
+      payload: { phone: '13800000000' },
+    });
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('next');
+    expect(state.step).toBe('verify'); // advance 推进（form 步 → 请求侧 verify）
+    expect(state.envelope?.nextStep?.kind).toBe('form');
+    expect(state.envelope?.nextStep?.retryAfter).toBe(BigInt(60)); // 重发冷却（bigint）
+  });
+
+  test('mfa recovery_code verify 提交：payload {code}（§2.6 行 550）→ success 终点', async () => {
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'success',
+          loginToken: 'tok-3',
+          redirectTo: 'https://app.test/home',
+        });
+      }),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'recovery_code',
+      firstStep: 'verify', // mfa 场景：form 步首步 → 请求侧 verify
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'verify' });
+    const result = await container.runSubmit(
+      state,
+      { code: 'abcd-1234' },
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(false);
+    expect(JSON.parse(raw)).toEqual({
+      method: 'recovery_code',
+      step: 'verify',
+      payload: { code: 'abcd-1234' }, // xxxx-xxxx 原样提交（不做格式化）
+    });
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('success'); // 二次因子过 → 终点
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -595,25 +745,39 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).not.toContain('role="alert"'); // captcha_required 非失败态
   });
 
-  test('mfa_required：原地占位（不跳页，§4.1 行 407）+ 状态标注', () => {
+  test('mfa_required：原地渲染选择器（不跳页，§4.1 行 407）+ 未选择引导 + 因子名字典', () => {
     const markup = renderView(
       stateWith({
         method: 'password',
         status: 'mfa_required',
-        envelope: envelope({ status: 'mfa_required' }),
+        envelope: envelope({
+          status: 'mfa_required',
+          mfa: create(MfaSchema, {
+            methods: [
+              create(MfaMethodSchema, {
+                method: 'totp',
+                steps: ['form'],
+                fields: [create(FieldSchema, { name: 'code', label: '动态口令', type: 'totp', required: true, length: BigInt(6) })],
+              }),
+              create(MfaMethodSchema, { method: 'otp_sms', steps: ['challenge', 'form'], maskedTarget: '138****8000' }),
+              create(MfaMethodSchema, { method: 'recovery_code', steps: ['form'], fields: [create(FieldSchema, { name: 'code', label: '恢复码', type: 'text', required: true })] }),
+            ],
+          }),
+        }),
       }),
     );
-    expect(markup).toContain('多因子登录即将支持');
-    expect(markup).toContain('需要进行二次验证'); // t('errors.status.mfa_required')
+    expect(markup).toContain('请选择二次验证方式');
+    expect(markup).toContain('动态口令'); // t('factors.totp')
+    expect(markup).toContain('短信验证码'); // t('factors.otp_sms')
+    expect(markup).toContain('恢复码'); // t('factors.recovery_code')
+    // 未选择二次方式：只渲染选择器，不渲染因子表单。
+    expect(markup).not.toContain('<form');
   });
 
-  test('binding_required / next / 轮询态：占位（对应组件归后续实现）', () => {
+  test('binding_required / 轮询态：占位（对应组件归后续实现）', () => {
     expect(
       renderView(stateWith({ status: 'binding_required', envelope: envelope({ status: 'binding_required' }) })),
     ).toContain('账号绑定流程即将支持');
-    expect(
-      renderView(stateWith({ status: 'next', envelope: envelope({ status: 'next' }) })),
-    ).toContain('该步骤类型即将支持');
     expect(
       renderView(stateWith({ status: 'pending', envelope: envelope({ status: 'pending' }) })),
     ).toContain('扫码流程即将支持');
@@ -643,15 +807,16 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).toContain('登录已超时，请重新登录');
   });
 
-  test('缺映射（otp_sms）→ 兜底错误态，不静默回退（§4.3 行 434）', () => {
-    const markup = renderView(stateWith({ method: 'otp_sms', step: 'challenge' }));
+  test('缺映射（webauthn，WebAuthnButton 归后续实现）→ 兜底错误态，不静默回退（§4.3 行 434）', () => {
+    const markup = renderView(stateWith({ method: 'webauthn', step: 'challenge' }));
     expect(markup).toContain('请刷新重试');
     expect(markup).not.toContain('<form');
   });
 
-  test('totp（显式 null）→ 通用表单占位（§1.2 行 48：无专属组件）', () => {
+  test('totp（显式 null）→ FormStep 通用渲染（§4.3 行 434 语义落地）', () => {
     const markup = renderView(stateWith({ method: 'totp', step: 'verify' }));
-    expect(markup).toContain('该方式由通用表单渲染，即将支持');
+    expect(markup).toContain('<form');
+    expect(markup).toContain('登录'); // FormStep 提交按钮（快照 totp 无 fields → 空表单）
   });
 
   test('success：跳转中文案（终点由 complete 副作用执行）', () => {
@@ -662,6 +827,145 @@ describe('LoginFlowView 状态分支静态渲染', () => {
       }),
     );
     expect(markup).toContain('登录成功，正在跳转');
+  });
+
+  test('status=next + kind=form → StepDispatcher 分派 FormStep（§4.2 行 423-424）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'totp',
+        step: 'verify',
+        status: 'next',
+        envelope: envelope({
+          status: 'next',
+          nextStep: create(NextStepSchema, {
+            kind: 'form',
+            method: 'totp',
+            fields: [create(FieldSchema, { name: 'code', label: '动态口令', type: 'totp', required: true, length: BigInt(6) })],
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('<form');
+    expect(markup).toContain('动态口令');
+  });
+
+  test('status=next + 未实现 kind（qrcode）/ external 宿主承载 → 兜底「请刷新重试」', () => {
+    for (const kind of ['qrcode', 'external', 'redirect', 'poll', 'challenge']) {
+      const markup = renderView(
+        stateWith({
+          method: 'otp_sms',
+          step: 'challenge',
+          status: 'next',
+          envelope: envelope({
+            status: 'next',
+            nextStep: create(NextStepSchema, { kind, method: 'otp_sms' }),
+          }),
+        }),
+      );
+      expect(markup).toContain('请刷新重试');
+      expect(markup).not.toContain('<form');
+    }
+  });
+
+  test('status=next + kind=form（otp_sms）→ OTPForm verify 段：CodeInput + 重发倒计时（§4.3 行 436）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'otp_sms',
+        step: 'verify',
+        status: 'next',
+        envelope: envelope({
+          status: 'next',
+          nextStep: create(NextStepSchema, {
+            kind: 'form',
+            method: 'otp_sms',
+            fields: [create(FieldSchema, { name: 'code', label: '验证码', type: 'otp', required: true, length: BigInt(6) })],
+            retryAfter: BigInt(60),
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('autoComplete="one-time-code"');
+    expect(markup).toContain('60 秒后可重发');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mfa 场景视图（选择器切换渲染；§4.1 行 407 原地、不跳页）
+// ---------------------------------------------------------------------------
+
+describe('LoginFlowView mfa 场景渲染（信封 mfa / 本地镜像 mfaMethods）', () => {
+  const MFA_METHODS: MfaMethod[] = [
+    create(MfaMethodSchema, {
+      method: 'totp',
+      steps: ['form'],
+      fields: [create(FieldSchema, { name: 'code', label: '动态口令', type: 'totp', required: true, length: BigInt(6) })],
+    }),
+    create(MfaMethodSchema, { method: 'otp_sms', steps: ['challenge', 'form'], maskedTarget: '138****8000' }),
+    create(MfaMethodSchema, {
+      method: 'recovery_code',
+      steps: ['form'],
+      fields: [create(FieldSchema, { name: 'code', label: '恢复码', type: 'text', required: true })],
+    }),
+  ];
+
+  function renderMfa(state: FlowState, otpCode?: string): string {
+    return renderToStaticMarkup(
+      createElement(container.LoginFlowView, {
+        snapshot: SNAPSHOT,
+        state,
+        onSelect: () => {},
+        onSelectMfa: () => {},
+        onSubmit: () => {},
+        onResend: () => {},
+        otpCode,
+        onOtpCodeChange: () => {},
+        mfaMethods: MFA_METHODS,
+      }),
+    );
+  }
+
+  test('选择 totp 后（select_method 清信封 → 本地镜像驱动）：选择器高亮 + FormStep 渲染下发字段', () => {
+    // 模拟 select_method('totp', firstStep='verify') 之后的 idle 态（§4.1 行 407 不跳页）。
+    const markup = renderMfa(stateWith({ method: 'totp', step: 'verify' }));
+    expect(markup).toContain('动态口令');
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain('<form');
+    // mfa 场景不渲染主因子方式列表（MethodTabs 归主流程第一步）。
+    expect(markup).not.toContain('请选择登录方式');
+  });
+
+  test('选择器切换：选中 otp_sms → OTPForm challenge 段展示掩码目标（§2.6 行 545 不传目标）', () => {
+    const markup = renderMfa(stateWith({ method: 'otp_sms', step: 'challenge' }));
+    expect(markup).toContain('138****8000');
+    expect(markup).toContain('发送验证码');
+    expect(markup).not.toContain('type="tel"');
+  });
+
+  test('选中 recovery_code → RecoveryCodeForm 渲染下发恢复码字段', () => {
+    const markup = renderMfa(stateWith({ method: 'recovery_code', step: 'verify' }));
+    expect(markup).toContain('恢复码');
+    expect(markup).toContain('登录');
+  });
+
+  test('mfa 场景失败态（invalid_code）：选择器 + OTPForm verify 段保留原地重试（§1.6 可重试）', () => {
+    const markup = renderMfa(
+      stateWith({
+        method: 'otp_sms',
+        step: 'verify',
+        status: 'invalid_code',
+        envelope: envelope({
+          status: 'invalid_code',
+          error: { message: '验证码错误', attemptsLeft: '3' },
+        }),
+      }),
+      // 容器持值注入——失败态（next 槽位↔直渲染位切换）实例重建
+      // 后已输码仍在视图（§1.6 行 247 原地重试不清输入）。
+      '123456',
+    );
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain('还可尝试 3 次'); // error.attemptsLeft（§1.3 行 151）
+    expect(markup).toContain('role="alert"'); // ErrorBanner（可重试失败态）
+    expect(markup).toContain('value="1"'); // CodeInput 首格回填（容器持值）
   });
 });
 
