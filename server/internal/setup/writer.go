@@ -1,6 +1,7 @@
 // writer.go config 生成与原子写入（docs/后端架构.md §3.15 职责表）：
 // 写临时文件 → rename 覆盖，权限 0600；全新安装随机生成全部 sign_key
-//（config.DefaultConfig 单一默认值来源）。密钥与密码不出现在日志与响应。
+// （config.DefaultConfig 单一默认值来源）与 oidc.jwt_keys（RSA 2048 位
+// PKCS#8，kid="1"）。密钥与密码不出现在日志与响应。
 package setup
 
 import (
@@ -30,8 +31,8 @@ type InstallInput struct {
 }
 
 // BuildInstallConfig 生成全新安装的完整 config（§3.15 路径 B 步骤 ④）：
-// 用户所填项 + 随机生成的全部 sign_key + 其余项默认值（config.DefaultConfig，
-// 与 config.yaml.example 同源）。
+// 用户所填项 + 随机生成的全部 sign_key / oidc.jwt_keys + 其余项默认值
+// （config.DefaultConfig，与 config.yaml.example 同源）。
 func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c, err := config.DefaultConfig()
 	if err != nil {

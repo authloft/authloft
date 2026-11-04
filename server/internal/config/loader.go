@@ -2,7 +2,10 @@ package config
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -17,7 +20,7 @@ import (
 // ErrNotExist 配置文件不存在（§3.1 启动分支判据 / §3.15 setup 模式）：
 // Load 不再自动生成写回（已移除首启路径——sign_key 只在安装流程 §3.15
 // 中生成），bootstrap 用 errors.Is 判定后转 setup 模式。链到 fs.ErrNotExist
-//（包内 ReadFile 的原始判定语义保持可判）。
+// （包内 ReadFile 的原始判定语义保持可判）。
 var ErrNotExist = fmt.Errorf("config: file does not exist: %w", fs.ErrNotExist)
 
 // Load 读取 YAML 启动配置（docs/后端架构.md §3.2 职责表）：
@@ -58,8 +61,9 @@ func parseAndValidate(data []byte) (*Config, error) {
 
 // DefaultConfig 构造全量默认值结构（与 configs/config.yaml.example 同源），
 // sign_key 五场景现场随机生成（crypto/rand 32 字节 → std base64，kid=1，
-// 互不复用）。供安装流程消费（§3.15 writer.go：全新安装生成完整 config；
-// §3.2 约定 4——密钥只在安装流程中生成，loader 不再自动生成写回）。
+// 互不复用），oidc.jwt_keys 现场生成一把 RSA 2048（PKCS#8 PEM → std base64，
+// kid="1"）。供安装流程消费（§3.15 writer.go：全新安装生成完整 config；
+// §3.2 约定 4 / 约定 6——密钥只在安装流程中生成，loader 不再自动生成写回）。
 func DefaultConfig() (*Config, error) {
 	c := Config{
 		Server: ServerConfig{
@@ -100,6 +104,11 @@ func DefaultConfig() (*Config, error) {
 		}
 		*km = k
 	}
+	oidcKey, err := generateOIDCKey()
+	if err != nil {
+		return nil, err
+	}
+	c.OIDC.JWTKeys = []OIDCKey{oidcKey}
 	return &c, nil
 }
 
@@ -111,6 +120,25 @@ func generateKeyMaterial() (KeyMaterial, error) {
 		return KeyMaterial{}, fmt.Errorf("crypto/rand: %w", err)
 	}
 	return KeyMaterial{Key: base64.StdEncoding.EncodeToString(buf), Kid: 1}, nil
+}
+
+// generateOIDCKey 生成一把 OIDC RS256 签名密钥（§3.2 约定 6 / §3.15）：
+// RSA 2048 → PKCS#8 → PEM → std base64，kid 固定 "1"（每套安装一把）。
+// 私钥只落盘到 config，调用方不得打印（§3.2 约定 3）。
+func generateOIDCKey() (OIDCKey, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return OIDCKey{}, fmt.Errorf("config: generate OIDC RSA key: %w", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return OIDCKey{}, fmt.Errorf("config: marshal OIDC PKCS#8 key: %w", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	if pemBytes == nil {
+		return OIDCKey{}, errors.New("config: encode OIDC PEM")
+	}
+	return OIDCKey{Kid: "1", PrivateKeyPEM: base64.StdEncoding.EncodeToString(pemBytes)}, nil
 }
 
 // envBinding 一条环境变量 → 字段的绑定。

@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -345,8 +346,26 @@ func TestSetupParamErrors(t *testing.T) {
 	}
 }
 
+// oidcTestKeyB64 返回合法 OIDC 私钥（base64(PKCS#8 RSA 2048 PEM)）：
+// 从 config.DefaultConfig 的单套安装生成结果取用，进程内只生成一次。
+var (
+	oidcTestKeyOnce sync.Once
+	oidcTestKey     string
+)
+
+func oidcTestKeyB64() string {
+	oidcTestKeyOnce.Do(func() {
+		cfg, err := config.DefaultConfig()
+		if err != nil {
+			panic(err)
+		}
+		oidcTestKey = cfg.OIDC.JWTKeys[0].PrivateKeyPEM
+	})
+	return oidcTestKey
+}
+
 // uploadConfigYAML 生成一份可通过 Validate 的 config 文本（sign_key 五场景
-// 用 32 字节确定密钥）。
+// 用 32 字节确定密钥；oidc.jwt_keys 用一套合法 RSA 私钥）。
 func uploadConfigYAML(dsn, redisAddr string) string {
 	var b strings.Builder
 	b.WriteString("server: { listen: \":8080\" }\n")
@@ -359,6 +378,8 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 	}
 	b.WriteString("argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }\n")
 	b.WriteString("log: { level: info, format: json }\n")
+	b.WriteString("oidc:\n  jwt_keys:\n")
+	fmt.Fprintf(&b, "    - kid: \"1\"\n      private_key_pem: %q\n", oidcTestKeyB64())
 	return b.String()
 }
 
@@ -400,6 +421,15 @@ log: { level: info, format: json }
 			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			return regexp.MustCompile(`(?s)db:.*?conn_max_lifetime: 1h\n`).ReplaceAllString(text, "")
 		}()},
+		{"missing oidc section", func() string {
+			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			// oidc 段在末尾：截掉即「缺 oidc.jwt_keys」。
+			return text[:strings.Index(text, "oidc:\n")]
+		}()},
+		{"invalid oidc key", func() string {
+			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			return strings.Replace(text, oidcTestKeyB64(), "!!!not-base64!!!", 1)
+		}()},
 	}
 	for _, tc := range cases {
 		payload, _ := json.Marshal(map[string]string{"config": tc.body})
@@ -428,7 +458,7 @@ log: { level: info, format: json }
 }
 
 // TestFreshInstallDBUnreachable 路径 B 步骤 ①：DB 不可达 → Connect 错误体
-//（标准码 unavailable + ErrorInfo{domain=setup, code=db_unreachable}，
+// （标准码 unavailable + ErrorInfo{domain=setup, code=db_unreachable}，
 // HTTP 503，§1.5 行 193 映射）。
 func TestFreshInstallDBUnreachable(t *testing.T) {
 	s, configPath := newTestServer(t)
@@ -641,6 +671,9 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	}
 	if err := c.Validate(); err != nil {
 		t.Errorf("generated config must pass Validate: %v", err)
+	}
+	if len(c.OIDC.JWTKeys) != 1 || c.OIDC.JWTKeys[0].Kid != "1" || c.OIDC.JWTKeys[0].PrivateKeyPEM == "" {
+		t.Errorf("fresh install must generate exactly one oidc.jwt_keys with kid \"1\": %+v", c.OIDC.JWTKeys)
 	}
 
 	in.Root = "https://sso.corp.example.com"

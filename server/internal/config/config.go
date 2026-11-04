@@ -6,8 +6,11 @@
 package config
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -52,6 +55,7 @@ type Config struct {
 	Redis    RedisConfig    `yaml:"redis"`
 	Authloft AuthloftConfig `yaml:"authloft"`
 	SignKey  SignKeyConfig  `yaml:"sign_key"`
+	OIDC     OIDCConfig     `yaml:"oidc"`
 	Argon2   Argon2Config   `yaml:"argon2"`
 	Log      LogConfig      `yaml:"log"`
 }
@@ -123,6 +127,20 @@ type SignKeyConfig struct {
 	SyncPayload KeyMaterial `yaml:"sync_payload"` // 多域名同步载荷（§11.2）
 }
 
+// OIDCConfig OIDC RS256 签名密钥集（§3.2 约定 6 / §14.3）：与顶层 sign_key
+// （AES-256-GCM 对称单密钥）严格分离，两者不得互用。列表首项为当前签发密钥。
+type OIDCConfig struct {
+	JWTKeys []OIDCKey `yaml:"jwt_keys"`
+}
+
+// OIDCKey 单把 OIDC 签名密钥：kid 非空且列表内唯一；private_key_pem 为
+// base64 编码的 PKCS#8 RSA 私钥 PEM（2048/3072/4096 位）。oidc 段不参与
+// AUTHLOFT_<SECTION>_<FIELD> env 注入（§3.2 约定 6：私钥不经 env 传递）。
+type OIDCKey struct {
+	Kid           string `yaml:"kid"`
+	PrivateKeyPEM string `yaml:"private_key_pem"`
+}
+
 // Argon2Config argon2id 密码哈希参数。
 type Argon2Config struct {
 	Time    int `yaml:"time"`
@@ -147,6 +165,7 @@ func (c *Config) Validate() error {
 	errs = append(errs, c.Redis.validate()...)
 	errs = append(errs, c.Authloft.validate()...)
 	errs = append(errs, c.SignKey.validate()...)
+	errs = append(errs, c.OIDC.validate()...)
 	errs = append(errs, c.Argon2.validate()...)
 	errs = append(errs, c.Log.validate()...)
 	return errors.Join(errs...)
@@ -303,6 +322,64 @@ func (k KeyMaterial) validate(field string) []error {
 		errs = append(errs, errors.New(field+".kid: must be > 0"))
 	}
 	return errs
+}
+
+// validate OIDC 密钥集（§3.2 约定 6）：列表非空、kid 非空且列表内唯一、
+// 每把 private_key_pem 为 base64(PKCS#8 RSA 私钥 PEM) 且位数为
+// 2048/3072/4096。任一失败即不可启动（fail-fast）——不回退对称 sign_key、
+// 不自动补写。
+func (o OIDCConfig) validate() []error {
+	if len(o.JWTKeys) == 0 {
+		return []error{errors.New("oidc.jwt_keys: required (non-empty list)")}
+	}
+	var errs []error
+	seen := make(map[string]struct{}, len(o.JWTKeys))
+	for i, k := range o.JWTKeys {
+		field := fmt.Sprintf("oidc.jwt_keys[%d]", i)
+		switch {
+		case k.Kid == "":
+			errs = append(errs, errors.New(field+".kid: required"))
+		default:
+			if _, dup := seen[k.Kid]; dup {
+				errs = append(errs, errors.New(field+".kid: duplicate (must be unique within oidc.jwt_keys)"))
+			} else {
+				seen[k.Kid] = struct{}{}
+			}
+		}
+		errs = append(errs, validateOIDCPrivateKey(k.PrivateKeyPEM, field+".private_key_pem")...)
+	}
+	return errs
+}
+
+// validateOIDCPrivateKey 校验一把 OIDC 签名私钥：base64 解码 → PEM 解码 →
+// ParsePKCS8PrivateKey → 断言 *rsa.PrivateKey → 位数 2048/3072/4096。
+// 错误只报字段路径与原因，不回显密钥内容（§3.2 约定 3）。
+func validateOIDCPrivateKey(encoded, field string) []error {
+	if encoded == "" {
+		return []error{errors.New(field + ": required")}
+	}
+	der, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return []error{errors.New(field + ": want std base64")}
+	}
+	block, _ := pem.Decode(der)
+	if block == nil || block.Type != "PRIVATE KEY" {
+		return []error{errors.New(field + `: want PEM block "PRIVATE KEY" (PKCS#8)`)}
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return []error{errors.New(field + ": want PKCS#8 RSA private key")}
+	}
+	rsaKey, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return []error{errors.New(field + ": must be an RSA private key")}
+	}
+	switch rsaKey.N.BitLen() {
+	case 2048, 3072, 4096:
+		return nil
+	default:
+		return []error{fmt.Errorf("%s: RSA key size must be 2048/3072/4096 bits, got %d", field, rsaKey.N.BitLen())}
+	}
 }
 
 func (a Argon2Config) validate() []error {

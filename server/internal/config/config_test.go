@@ -2,12 +2,19 @@ package config
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,7 +28,8 @@ var testKeyB64 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xA5}, 32
 // example 同步测试靠它把占位符替换成真密钥后整份加载，验证示例与 Config schema 同步。
 const exampleKeyPlaceholder = "<base64-32B，首次运行自动生成>"
 
-// testValidYAML 是全字段齐全的合法配置模板；"<KEY>" 占位在加载前替换为 testKeyB64。
+// testValidYAML 是全字段齐全的合法配置模板；"<KEY>" 占位在加载前替换为
+// testKeyB64，"<RSA_KEY>" 替换为 testOIDCKey（合法 OIDC 私钥）。
 const testValidYAML = `
 server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
 db:
@@ -37,13 +45,89 @@ sign_key:
   ticket:       { key: "<KEY>", kid: 1 }
   cookie:       { key: "<KEY>", kid: 1 }
   sync_payload: { key: "<KEY>", kid: 1 }
+oidc:
+  jwt_keys:
+    - kid: "1"
+      private_key_pem: "<RSA_KEY>"
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
 log: { level: info, format: json }
 `
 
+// testOIDCKey 返回一次现场生成并缓存的合法 OIDC 私钥
+// （base64(PKCS#8 RSA 2048 PEM)），避免每个子用例重复生成 RSA 密钥。
+func testOIDCKey() string {
+	testOIDCKeyOnce.Do(func() {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			testOIDCKeyErr = err
+			return
+		}
+		testOIDCKeyVal, testOIDCKeyErr = encodeOIDCKey(k)
+	})
+	if testOIDCKeyErr != nil {
+		panic(testOIDCKeyErr)
+	}
+	return testOIDCKeyVal
+}
+
+var (
+	testOIDCKeyOnce sync.Once
+	testOIDCKeyVal  string
+	testOIDCKeyErr  error
+)
+
+// encodeOIDCKey 把任意私钥编码为 base64(PKCS#8 PEM)（测试夹具）。
+func encodeOIDCKey(key any) (string, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), nil
+}
+
+// testECDSAKey 返回非 RSA 的 PKCS#8 私钥（base64 PEM），供「非 RSA」用例。
+func testECDSAKey(t *testing.T) string {
+	t.Helper()
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ecdsa key: %v", err)
+	}
+	s, err := encodeOIDCKey(k)
+	if err != nil {
+		t.Fatalf("encode ecdsa key: %v", err)
+	}
+	return s
+}
+
+// testRSAKeyBits 返回指定位数的 PKCS#8 RSA 私钥（base64 PEM），供「位数不足」用例。
+func testRSAKeyBits(t *testing.T, bits int) string {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		t.Fatalf("generate rsa-%d key: %v", bits, err)
+	}
+	s, err := encodeOIDCKey(k)
+	if err != nil {
+		t.Fatalf("encode rsa key: %v", err)
+	}
+	return s
+}
+
+// testPKCS1Key 返回 PKCS#1（"RSA PRIVATE KEY"）PEM 的 base64，供「非 PKCS#8」用例。
+func testPKCS1Key(t *testing.T) string {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)})
+	return base64.StdEncoding.EncodeToString(pemBytes)
+}
+
 // filledTestYAML 返回密钥已填充的合法 YAML 文本（loader 测试用）。
 func filledTestYAML() string {
-	return strings.ReplaceAll(testValidYAML, "<KEY>", testKeyB64)
+	s := strings.ReplaceAll(testValidYAML, "<RSA_KEY>", testOIDCKey())
+	return strings.ReplaceAll(s, "<KEY>", testKeyB64)
 }
 
 // validTestConfig 加载一份合法 Config（Validate 必过），供表驱动测试 mutate。
@@ -107,6 +191,9 @@ func TestValidateAcceptsFullConfig(t *testing.T) {
 }
 
 func TestValidateRejectsInvalidFields(t *testing.T) {
+	ecKey := testECDSAKey(t)
+	smallKey := testRSAKeyBits(t, 1024)
+	pkcs1Key := testPKCS1Key(t)
 	cases := []struct {
 		name    string
 		mutate  func(*Config)
@@ -148,6 +235,19 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"key wrong length", func(c *Config) { c.SignKey.Ticket.Key = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31)) }, "sign_key.ticket.key"},
 		{"kid zero", func(c *Config) { c.SignKey.Cookie.Kid = 0 }, "sign_key.cookie.kid"},
 		{"kid negative", func(c *Config) { c.SignKey.SyncPayload.Kid = -1 }, "sign_key.sync_payload.kid"},
+
+		{"oidc keys missing", func(c *Config) { c.OIDC.JWTKeys = nil }, "oidc.jwt_keys"},
+		{"oidc keys empty", func(c *Config) { c.OIDC.JWTKeys = []OIDCKey{} }, "oidc.jwt_keys"},
+		{"oidc kid empty", func(c *Config) { c.OIDC.JWTKeys[0].Kid = "" }, "oidc.jwt_keys[0].kid"},
+		{"oidc kid duplicate", func(c *Config) { c.OIDC.JWTKeys = append(c.OIDC.JWTKeys, c.OIDC.JWTKeys[0]) }, "oidc.jwt_keys[1].kid"},
+		{"oidc key empty", func(c *Config) { c.OIDC.JWTKeys[0].PrivateKeyPEM = "" }, "oidc.jwt_keys[0].private_key_pem"},
+		{"oidc key not base64", func(c *Config) { c.OIDC.JWTKeys[0].PrivateKeyPEM = "!!!not-base64!!!" }, "oidc.jwt_keys[0].private_key_pem"},
+		{"oidc key not PEM", func(c *Config) {
+			c.OIDC.JWTKeys[0].PrivateKeyPEM = base64.StdEncoding.EncodeToString([]byte("not a pem"))
+		}, "oidc.jwt_keys[0].private_key_pem"},
+		{"oidc key not PKCS8", func(c *Config) { c.OIDC.JWTKeys[0].PrivateKeyPEM = pkcs1Key }, "oidc.jwt_keys[0].private_key_pem"},
+		{"oidc key not RSA", func(c *Config) { c.OIDC.JWTKeys[0].PrivateKeyPEM = ecKey }, "oidc.jwt_keys[0].private_key_pem"},
+		{"oidc key too small", func(c *Config) { c.OIDC.JWTKeys[0].PrivateKeyPEM = smallKey }, "oidc.jwt_keys[0].private_key_pem"},
 
 		{"argon2 time zero", func(c *Config) { c.Argon2.Time = 0 }, "argon2.time"},
 		{"argon2 memory zero", func(c *Config) { c.Argon2.Memory = 0 }, "argon2.memory"},
