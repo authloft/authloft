@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1245-1247），用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1 行 1641）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6 行 89），§11.2 的 exp 本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// SyncCookiePayload 是多域名会话同步载荷——跳转链状态（docs/后端架构.md
+// §11.2 行 1199-1206）。前端不解析，服务端加密后拼进跳转 URL 的 query；
+// 字段名 / 编号 / 类型与行 1200-1205 的 protobuf 定义逐字一致。
+message SyncCookiePayload {
+  // 会话 Cookie 名称（行 1200）。
+  string cookie_name = 1;
+  // 会话 Cookie 值；登出场景为空串（行 1201）。
+  string cookie_value = 2;
+  // 会话 Cookie 有效期；登出场景为 "0"；接收端原样透传给 Set-Cookie，
+  // 不解析数值（行 1202）。
+  string cookie_ttl = 3;
+  // 剩余未跳转的同步地址，不含本次首跳（行 1203）。
+  repeated string remaining = 4;
+  // 最终跳转地址，不带载荷、不会再被本端点处理（行 1204）。
+  string final_url = 5;
+  // 载荷过期时间，Unix 秒（行 1205）。
+  int64 exp = 6;
+}
