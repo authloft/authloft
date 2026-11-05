@@ -10,6 +10,7 @@
 import { useCountdown } from '../hooks/useCountdown';
 import { toCount } from '../utils/int';
 import { hasKey, t } from '../i18n';
+import styles from './ErrorBanner.module.less';
 
 /**
  * 文案解析：i18nKey 可译 → 字典文案；否则用服务端兜底 message；两者皆无 →
@@ -65,20 +66,22 @@ export function ErrorBanner({
   const attempts = attemptsCount(attemptsLeft);
 
   return (
-    <div role="alert" style={bannerStyle}>
-      <p style={textStyle}>{errorText(i18nKey, fallbackMessage)}</p>
+    <div role="alert" className={styles.banner}>
+      <p className={styles.text}>{errorText(i18nKey, fallbackMessage)}</p>
       {attempts > 0 && (
-        <p style={textStyle}>
+        <p className={styles.text}>
           {t('common.remainingAttempts', { count: attempts })}
         </p>
       )}
       {counting && (
-        <p style={textStyle}>{t('common.remainingSeconds', { seconds })}</p>
+        <p className={styles.text}>
+          {t('common.remainingSeconds', { seconds })}
+        </p>
       )}
       {retryable && onRetry && (
         <button
           type="button"
-          style={buttonStyle}
+          className={styles.button}
           onClick={onRetry}
           disabled={counting}
         >
@@ -88,17 +91,3 @@ export function ErrorBanner({
     </div>
   );
 }
-
-const bannerStyle = {
-  padding: '0.75rem 1rem',
-  border: '1px solid',
-  borderRadius: '0.25rem',
-} as const;
-
-const textStyle = {
-  margin: 0,
-} as const;
-
-const buttonStyle = {
-  marginTop: '0.5rem',
-};

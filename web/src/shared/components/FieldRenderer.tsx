@@ -13,6 +13,7 @@ import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { toCount } from '../utils/int';
 import { t } from '../i18n';
 import { CodeInput, DEFAULT_CODE_LENGTH } from './CodeInput';
+import styles from './FieldRenderer.module.less';
 
 /** §1.11 的 12 种 type + 未知兜底 → 渲染控件形态。 */
 export type ControlKind =
@@ -127,7 +128,7 @@ function FieldControl({
   const emit = (v: string) => onChange(field.name, v);
   const input = (type: string, extra: Record<string, unknown> = {}) => (
     <input
-      style={inputStyle}
+      className={styles.input}
       name={field.name}
       type={type}
       value={value}
@@ -165,7 +166,7 @@ function FieldControl({
     case 'checkbox':
       control = (
         <input
-          style={checkboxStyle}
+          className={styles.checkbox}
           name={field.name}
           type="checkbox"
           checked={value === 'true'}
@@ -178,7 +179,7 @@ function FieldControl({
       // 字段（wire 上无此字段，见 envelope.proto），故仅渲染占位项，不自造选项。
       control = (
         <select
-          style={inputStyle}
+          className={styles.input}
           name={field.name}
           value={value}
           onChange={(e) => emit(e.target.value)}
@@ -193,7 +194,7 @@ function FieldControl({
           {input(revealed ? 'text' : 'password', { autoComplete: 'off' })}
           <button
             type="button"
-            style={inlineButtonStyle}
+            className={styles.inlineButton}
             onClick={() => setRevealed((v) => !v)}
           >
             {revealed ? t('common.hide') : t('common.reveal')}
@@ -204,7 +205,7 @@ function FieldControl({
     case 'json':
       control = (
         <textarea
-          style={textareaStyle}
+          className={styles.textarea}
           name={field.name}
           rows={6}
           spellCheck={false}
@@ -219,8 +220,8 @@ function FieldControl({
   }
 
   return (
-    <div style={fieldStyle}>
-      <label style={labelStyle}>
+    <div className={styles.field}>
+      <label className={styles.label}>
         {field.label}
         {field.required ? ' *' : ''}
       </label>
@@ -228,33 +229,3 @@ function FieldControl({
     </div>
   );
 }
-
-const fieldStyle = {
-  marginBottom: '1rem',
-};
-
-const labelStyle = {
-  display: 'block',
-  marginBottom: '0.25rem',
-};
-
-const inputStyle = {
-  padding: '0.5rem 0.625rem',
-  font: 'inherit',
-} as const;
-
-const checkboxStyle = {
-  width: '1.125rem',
-  height: '1.125rem',
-};
-
-const textareaStyle = {
-  padding: '0.5rem 0.625rem',
-  font: 'inherit',
-  fontFamily: 'monospace',
-  width: '100%',
-} as const;
-
-const inlineButtonStyle = {
-  marginLeft: '0.5rem',
-};

@@ -1,0 +1,33 @@
+// 通用字段渲染器样式（docs/前端架构.md §1.7；内联清零：FieldRenderer
+// 12 type 控件只做结构级布局——label/控件排列，不逐 type 视觉发挥）。
+@import (reference) '../styles/tokens.less';
+
+.field {
+  margin-bottom: @spacing-lg;
+}
+
+.label {
+  display: block;
+  margin-bottom: @spacing-xs;
+}
+
+.input {
+  padding: @spacing-sm 0.625rem;
+  font: inherit;
+}
+
+.checkbox {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.textarea {
+  padding: @spacing-sm 0.625rem;
+  font: inherit;
+  font-family: monospace;
+  width: 100%;
+}
+
+.inlineButton {
+  margin-left: @spacing-sm;
+}

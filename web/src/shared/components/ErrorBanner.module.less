@@ -1,0 +1,17 @@
+// 错误横幅样式（docs/前端架构.md §1.7；内联清零：ErrorBanner 布局迁入）。
+@import (reference) '../styles/tokens.less';
+
+.banner {
+  padding: @spacing-md @spacing-lg;
+  border: @border-width solid @color-danger;
+  border-radius: @radius-sm;
+}
+
+.text {
+  margin: 0;
+  color: @color-danger;
+}
+
+.button {
+  margin-top: @spacing-sm;
+}
