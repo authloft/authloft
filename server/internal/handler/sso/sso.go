@@ -1,9 +1,10 @@
 // Package sso 实现 api.sso.v1.SsoService 的 Connect handler（docs/后端架构.md
 // §3.4 行 316）：handler 只做请求绑定与组装，登录流程编排全部在
 // orchestrator，图形码生成委托 internal/captcha。已落地 LoginDefault、
-// Register、ResetPassword、CreateCaptchaImage（接口文档 §2.2-§2.5）与
-// Authorize、LoginOauth（§2.7），其余 3 个扫码方法由生成的
-// UnimplementedSsoServiceHandler 返回 unimplemented（暂不实装）。
+// Register、ResetPassword、CreateCaptchaImage（接口文档 §2.2-§2.5）、
+// Authorize、LoginOauth（§2.7）与扫码三桩 CreateQrcode /
+// GetLoginTicket / ConfirmLoginTicket（§2.8——编排全部在
+// service.QRCode）。
 package sso
 
 import (
@@ -37,24 +38,28 @@ type Engine interface {
 }
 
 // Handler SsoService 服务实现。内嵌生成的 unimplemented 基类，未实现方法
-// 统一返回 Connect CodeUnimplemented（本实现未覆盖的 3 个扫码方法）。
+// 统一返回 Connect CodeUnimplemented。
 type Handler struct {
 	ssov1connect.UnimplementedSsoServiceHandler
 	engine  Engine
 	images  *captcha.ImageCaptcha
 	cookies *session.Cookie
-	// thirdparty 三方登录通道 service（oauth.go）；nil（测试 / 未
-	// 装配）时 Authorize / LoginOauth 返回 unimplemented。
+	// thirdparty 三方登录通道 service（oauth.go）；nil（测试 / 未装配）时
+	// Authorize / LoginOauth 返回 unimplemented。
 	thirdparty Thirdparty
+	// qrcode 扫码三桩 service；nil（测试 / 未装配）时三个扫码
+	// 方法返回 unimplemented。
+	qrcode Qrcode
 }
 
 // New 构造 SsoService handler。images 为自绘图形码实现
 // （CreateCaptchaImage 用，装配层注入 captcha.NewImageCaptcha）；cookies 为
 // 会话 Cookie 属性构造器（登录终点建会话后经 Set-Cookie 下发
 // al_session，复用 session 包同一构造器）；thirdparty 为三方登录通道
-// service（oauth.go）；测试 / 未装配时均传 nil（不下发 / unimplemented）。
-func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, thirdparty Thirdparty) *Handler {
-	return &Handler{engine: engine, images: images, cookies: cookies, thirdparty: thirdparty}
+// service（oauth.go）；qrcode 为扫码三桩 service；测试 / 未装配时
+// 均传 nil（不下发 / unimplemented）。
+func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, thirdparty Thirdparty, qrcode Qrcode) *Handler {
+	return &Handler{engine: engine, images: images, cookies: cookies, thirdparty: thirdparty, qrcode: qrcode}
 }
 
 // withSessionTokenSink 注入登录终点的 session_token 写点：引擎仅
@@ -194,6 +199,101 @@ func mapThirdpartyError(err error) error {
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for signin"))
+	default:
+		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+	}
+}
+
+// —— 扫码三桩（接口文档 §2.8）——
+// 请求绑定与信封 / TicketStatus 应答归本层，编排全部在 service.QRCode；
+// 业务失败走可判别哨兵错误 → Connect 错误体 + ErrorInfo（CreateQrcode 是
+// 普通 RPC；GetLoginTicket 的轮询结论走 HTTP 200 信封域，§1.3 / §1.6）。
+
+// Qrcode 扫码三桩 service 窄接口（§20 依赖注入）：生产注入 *service.QRCode，
+// 测试可传 fake；nil 时三个方法返回 unimplemented。
+type Qrcode interface {
+	CreateQrcode(ctx context.Context, in service.CreateQrcodeInput) (*service.CreateQrcodeOutput, error)
+	GetLoginTicket(ctx context.Context, in service.GetLoginTicketInput) *service.GetLoginTicketOutput
+	ConfirmLoginTicket(ctx context.Context, in service.ConfirmLoginTicketInput) (*ssov1.TicketStatus, error)
+}
+
+// errQrcodeNotConfigured 未装配扫码 service（测试桩）。
+var errQrcodeNotConfigured = errors.New("qrcode service not configured")
+
+// CreateQrcode 拉取小程序码（接口文档 §2.8 行 702-719）：captcha 必检、
+// 登录与绑定共用靠 scene 区分；响应 {ticket, ticketId, qrcodeUrl,
+// expiresIn}。业务失败 → Connect 错误体 + ErrorInfo。
+func (h *Handler) CreateQrcode(ctx context.Context, req *connect.Request[ssov1.CreateQrcodeRequest]) (*connect.Response[ssov1.CreateQrcodeResponse], error) {
+	if h.qrcode == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+	}
+	out, err := h.qrcode.CreateQrcode(ctx, dto.CreateQrcode(req.Msg))
+	if err != nil {
+		return nil, mapQrcodeError(err)
+	}
+	return connect.NewResponse(&ssov1.CreateQrcodeResponse{
+		Ticket:    out.Ticket,
+		TicketId:  out.TicketID,
+		QrcodeUrl: out.QrcodeURL,
+		ExpiresIn: out.ExpiresIn,
+	}), nil
+}
+
+// GetLoginTicket 查询 / 长轮询 / 完成登录（接口文档 §2.8 行 724-748）：
+// 轮询结论走 HTTP 200 信封（顶层 status + ticket + 成功时 login 字段，
+// §1.3 行 139-140）；命中建会话后的 session_token 经会话 Cookie 构造器
+// Set-Cookie: al_session 下发（PC 浏览器轮询方，与 LoginOauth redirect
+// 通道同一写出出口与属性）。
+func (h *Handler) GetLoginTicket(ctx context.Context, req *connect.Request[ssov1.GetLoginTicketRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
+	if h.qrcode == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+	}
+	out := h.qrcode.GetLoginTicket(ctx, dto.GetLoginTicket(req.Msg))
+	if out.SessionToken != "" && h.cookies != nil {
+		internalconnect.AddSessionCookie(ctx, h.cookies.Set(out.SessionToken, session.RequestSignalFromContext(ctx)))
+	}
+	return connect.NewResponse(out.Envelope), nil
+}
+
+// ConfirmLoginTicket 已登录一端写入授权结果（接口文档 §2.8 行 750-759）：
+// body session 与 Cookie al_session 并存以 body 为准（uid 一致性校验在
+// service）；Cookie 侧 uid 经 session 拦截器解出注入 ctx（无有效 Cookie
+// 会话为 0，service 判定）。响应回显 {status, ticket_id}。
+func (h *Handler) ConfirmLoginTicket(ctx context.Context, req *connect.Request[ssov1.ConfirmLoginTicketRequest]) (*connect.Response[ssov1.TicketStatus], error) {
+	if h.qrcode == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+	}
+	uid, _ := session.UIDFromContext(ctx)
+	st, err := h.qrcode.ConfirmLoginTicket(ctx, dto.ConfirmLoginTicket(req.Msg, uid))
+	if err != nil {
+		return nil, mapQrcodeError(err)
+	}
+	return connect.NewResponse(st), nil
+}
+
+// mapQrcodeError 扫码域哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行
+// 197-210；code 取 §1.6 封闭集——captcha_required / captcha_invalid 均为
+// 成员）。
+func mapQrcodeError(err error) error {
+	switch {
+	case errors.Is(err, service.ErrQrcodeUnauthenticated):
+		return connect.NewError(connect.CodeUnauthenticated, err)
+	case errors.Is(err, service.ErrQrcodeCaptchaRequired):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "captcha_required", "captcha required for qrcode"))
+	case errors.Is(err, service.ErrQrcodeCaptchaInvalid):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "captcha_invalid", "captcha invalid or used"))
+	case errors.Is(err, service.ErrQrcodeInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "invalid_request", "invalid qrcode request"))
+	case errors.Is(err, service.ErrQrcodeProviderDisabled):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for qrcode"))
 	default:
 		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
 	}

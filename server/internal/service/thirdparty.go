@@ -246,8 +246,16 @@ type OauthOutput struct {
 // LoginOauth 三方登录统一入口（§2.7.4）：redirect（浏览器回调）与 api
 // （小程序 code）两通道；扫码 ticket 写入暂不实装。
 func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput {
-	// 边界：带 ticketId / stage=scanned 一律 invalid_request（此处
-	// 默认拒绝，待复核）。
+	// 边界：带 ticketId / stage=scanned 一律 invalid_request。该分支原
+	// 计划一并收编，经实证存在文档内部缺口无法合规落实现：LoginOauth
+	// 请求 wire 仅携带 ticket_id（oauth.proto LoginOauthRequest 无 ticket 字
+	// 段，零 proto 改动约束），小程序端从码图 scene 也只拿得到 ticket_id
+	// （§11.6.4 行 1342）；而接口文档 §2.7.4 行 658 / §3.7.1B 行 1014 /
+	// 后端架构 §13.2b 行 1611 要求小程序端提交时「先解 ticket 取 scene」
+	// （存在 / 未过期 / scene / providerKey 匹配校验，scene 不由客户端指
+	// 定）——服务端无从取 TicketPayload，键表（§5.1 行 861）亦无其存储位。
+	// 该缺口待定（proto 增 ticket 字段或键表新增 TicketPayload 存储位）
+	// 后另行收编；此前维持拒绝（比无校验写入 scanned 更安全）。
 	if in.TicketID != "" || in.Stage == "scanned" {
 		return s.envelope(orchestrator.StatusInvalidRequest)
 	}

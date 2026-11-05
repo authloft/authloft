@@ -74,3 +74,13 @@ type AuthAdapter interface {
 	Exchange(ctx context.Context, in ExchangeInput) (*Token, error)
 	FetchUser(ctx context.Context, t *Token) (*ExternalIdentity, error)
 }
+
+// QRCodeSupporter 拉码渠道（channel=qrcode）的可选接口（§12.1 行 1431
+// 可选接口口径，随扫码实现补齐）：封装 GetwxacodeUnlimit（§13.2 行
+// 1593）。scene 为微信码图 scene 字段，承载 ticket_id（长度上限 32，本侧
+// 签发恒 ≤24，§11.6.4）；返回微信下发的图片二进制（PNG / JPEG 均可能，
+// 有损压缩归 internal/qrcode）。SDK 类型不透出本接口（§13.0 行 1578：
+// 唯一可引用 SDK 的包是 wechat_mp* 适配器内部）。
+type QRCodeSupporter interface {
+	FetchQrcode(ctx context.Context, scene string) ([]byte, error)
+}

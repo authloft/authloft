@@ -71,7 +71,7 @@ func TestAuthorizeConnect(t *testing.T) {
 			HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 		},
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -129,7 +129,7 @@ func TestAuthorizeErrorMapping(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tp := &fakeThirdparty{authorizeErr: tc.err}
-			_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp))
+			_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceAuthorizeProcedure,
 				strings.NewReader(`{"provider":"qq"}`))
@@ -162,7 +162,7 @@ func TestAuthorizeErrorMapping(t *testing.T) {
 // code 断言（decode details 的 debug 视图）。
 func TestAuthorizeProviderDisabledErrorInfo(t *testing.T) {
 	tp := &fakeThirdparty{authorizeErr: service.ErrThirdpartyProviderDisabled}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceAuthorizeProcedure,
 		strings.NewReader(`{"provider":"off"}`))
@@ -198,7 +198,7 @@ func TestLoginOauthConnect(t *testing.T) {
 				HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 			},
 		}}
-		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp))
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 		srv := httptest.NewServer(handler)
 		defer srv.Close()
 
@@ -245,7 +245,7 @@ func TestLoginOauthConnect(t *testing.T) {
 			SessionToken: "stok-1",
 		}}
 		_, handler := ssov1connect.NewSsoServiceHandler(
-			New(&fakeEngine{}, nil, sessionCookieForTest(), tp))
+			New(&fakeEngine{}, nil, sessionCookieForTest(), tp, nil))
 		srv := httptest.NewServer(handler)
 		defer srv.Close()
 
@@ -276,7 +276,7 @@ func TestLoginOauthConnect(t *testing.T) {
 		tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
 			Envelope: &ssov1.LoginFlowResponse{Status: "success", SessionToken: "stok-2"},
 		}}
-		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, sessionCookieForTest(), tp))
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, sessionCookieForTest(), tp, nil))
 		srv := httptest.NewServer(handler)
 		defer srv.Close()
 
@@ -308,7 +308,7 @@ func TestLoginOauthSessionCookieHTTPSAutoInferred(t *testing.T) {
 	cookies := session.NewCookie("al_session", "", 7*24*time.Hour,
 		session.WithHTTPSMode(func() string { return settings.HTTPSDeploymentAuto }))
 	_, handler := ssov1connect.NewSsoServiceHandler(
-		New(&fakeEngine{}, nil, cookies, tp),
+		New(&fakeEngine{}, nil, cookies, tp, nil),
 		connect.WithInterceptors(connect.UnaryInterceptorFunc(
 			func(next connect.UnaryFunc) connect.UnaryFunc {
 				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -346,7 +346,7 @@ func TestLoginOauthSessionCookieHTTPSAutoInferred(t *testing.T) {
 // TestThirdpartyNotConfigured 未装配三方 service：Authorize / LoginOauth
 // 返回 unimplemented（半装配口径，同 images nil 先例）。
 func TestThirdpartyNotConfigured(t *testing.T) {
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil))
 	for _, procedure := range []string{
 		ssov1connect.SsoServiceAuthorizeProcedure,
 		ssov1connect.SsoServiceLoginOauthProcedure,
@@ -371,7 +371,7 @@ func TestThirdpartyNotConfigured(t *testing.T) {
 // TestLoginOauthErrorInternal service 未知错误 → Connect internal（§1.5）。
 func TestLoginOauthErrorInternal(t *testing.T) {
 	tp := &fakeThirdparty{authorizeErr: errors.New("boom")}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceAuthorizeProcedure,
 		strings.NewReader(`{"provider":"qq"}`))

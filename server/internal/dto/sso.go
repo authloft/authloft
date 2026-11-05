@@ -8,6 +8,7 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
+	internalcaptcha "authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
@@ -113,6 +114,61 @@ func LoginOauth(req *ssov1.LoginOauthRequest) service.OauthInput {
 		TicketID:    req.GetTicketId(),
 		LoginToken:  req.GetLoginToken(),
 		OIDC:        oidc(req.GetOidc()),
+	}
+}
+
+// CreateQrcode 把 SsoService/CreateQrcode 请求消息转换为扫码 service 入参
+// （docs/接口文档.md §2.8 行 707-717）：provider_key / scene 直映；captcha
+// 转 captcha.Submission（§2.5 统一提交格式，与引擎侧 CaptchaPayload 字段
+// 同名）。UID 由 handler 从会话 ctx 取（bind 场景），dto 不读 HTTP 层。
+func CreateQrcode(req *ssov1.CreateQrcodeRequest) service.CreateQrcodeInput {
+	if req == nil {
+		return service.CreateQrcodeInput{}
+	}
+	return service.CreateQrcodeInput{
+		ProviderKey: req.GetProviderKey(),
+		Scene:       req.GetScene(),
+		Captcha:     captchaSubmission(req.GetCaptcha()),
+	}
+}
+
+// GetLoginTicket 把 SsoService/GetLoginTicket 请求消息转换为扫码 service
+// 入参（docs/接口文档.md §2.8 行 724-729）：ticket / poll 直映。
+func GetLoginTicket(req *ssov1.GetLoginTicketRequest) service.GetLoginTicketInput {
+	if req == nil {
+		return service.GetLoginTicketInput{}
+	}
+	return service.GetLoginTicketInput{
+		Ticket: req.GetTicket(),
+		Poll:   req.GetPoll(),
+	}
+}
+
+// ConfirmLoginTicket 把 SsoService/ConfirmLoginTicket 请求消息转换为扫码
+// service 入参（docs/接口文档.md §2.8 行 750-757）：ticket_id / session 直映；
+// sessionUID 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。
+func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) service.ConfirmLoginTicketInput {
+	if req == nil {
+		return service.ConfirmLoginTicketInput{}
+	}
+	return service.ConfirmLoginTicketInput{
+		TicketID:   req.GetTicketId(),
+		Session:    req.GetSession(),
+		SessionUID: sessionUID,
+	}
+}
+
+// captchaSubmission CaptchaPayload → captcha.Submission（§2.5 行 478-486
+// 统一提交格式；与引擎侧 captcha() 同名字段直映，两套消费方各自的窄类型）。
+func captchaSubmission(c *ssov1.CaptchaPayload) *internalcaptcha.Submission {
+	if c == nil {
+		return nil
+	}
+	return &internalcaptcha.Submission{
+		ProviderKey: c.GetProviderKey(),
+		Token:       c.GetToken(),
+		ID:          c.GetId(),
+		Answer:      c.GetAnswer(),
 	}
 }
 

@@ -10,6 +10,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/medivhzhan/weapp/v3 v3.8.4
 	github.com/pressly/goose/v3 v3.24.0
+	// gnata：JSONata 求值统一库（2026-11-05 定稿；后端架构
+	// §1.5/§3.12——唯一依赖点 internal/jsonata 封装层，不自研求值器；
+	// 文档写 RecoLabs，库 go.mod 声明小写 recolabs，按库声明引入）。
+	github.com/recolabs/gnata v0.6.2
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	golang.org/x/crypto v0.57.0
@@ -55,6 +59,9 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect

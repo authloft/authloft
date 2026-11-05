@@ -66,12 +66,17 @@ import (
 	core "authloft/internal/otp"
 	"authloft/internal/pages"
 	"authloft/internal/provider"
-	// §3.1 行 237：注册表导入在此处统一 `_ import` 触发自注册——
+	// §3.1 行 237：注册表导入在此处统一触发 init() 自注册——
 	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）；
 	// smtp / aliyun_sms 向消息域注册表登记 Sender（§15.2 / §15.3）。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	// wechat_mp_scan 具名导入：init() 自注册（第二处渠道注册），
+	// 装配期另需 SetAccessTokenCache 注入共享 access_token 缓存（§3.4 行
+	// 469 cache/wxacode，Redis 就绪后调用）。
+	wechatmpscan "authloft/internal/provider/oauth/wechat_mp_scan"
+	"authloft/internal/qrcode"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -81,6 +86,7 @@ import (
 	"authloft/internal/session"
 	"authloft/internal/settings"
 	"authloft/internal/setup"
+	"authloft/internal/storage"
 )
 
 // defaultReadMaxBytes Connect 域请求体上限默认值（docs/后端架构.md §1.6
@@ -160,6 +166,12 @@ type assembled struct {
 	// 内构造（复用 Terminal / MFA / State 共享 codec），registerSSO 注入
 	// SsoService handler；SetPass.Thirdparty（免密建号）复用同一实例。
 	thirdparty *service.Thirdparty
+
+	// qrcode 扫码三桩 service（§3.9 / §13.2 / §2.8）：buildEngine 内
+	// 构造（复用 State / Terminal / provider Loader / captcha Gate），经
+	// cache.TicketStore 读写 al:ticket（sealer = protojson 整值加密，
+	// §11.6.5），registerSSO 注入 SsoService handler。
+	qrcode *service.QRCode
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -438,6 +450,26 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		HTTPSMode:   ssoHTTPSMode(deps),
 	})
 
+	// 扫码三桩 service（§13.2 / §2.8）：State / Terminal 复用引擎同一
+	// 实例（同一 login 密钥与终点链路）；al:ticket 读写走 cache.TicketStore
+	// （sealer = protojson 整值加密 + purpose=ticket，§11.6.5）；storage 解析
+	// 走 internal/storage Resolver（§15.1）；码图自动删除投递复用延迟队列
+	//（执行器挂 combinedExecutor，§13.3）；Confirm 会话校验复用共享单例
+	// sessionTokens / epochStore（与 sso 拦截器同源）。挂入 assembled 供
+	// registerSSO 注入 handler。
+	deps.qrcode = service.NewQRCode(service.QRCodeDeps{
+		Loader:      deps.providerLoader,
+		NewAdapter:  provider.NewAdapter,
+		Gate:        deps.gate,
+		TicketCodec: deps.codecs.Ticket,
+		Tickets:     cache.NewTicketStore(deps.rdb, service.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{}),
+		Storage:     storage.NewResolver(deps.providerLoader),
+		Queue:       deps.queue,
+		Sessions:    session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		State:       loginState,
+		Terminal:    terminal,
+	})
+
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
 		State:      loginState,
 		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: deps.settings},
@@ -594,7 +626,9 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.imageCaptcha = captcha.NewImageCaptcha(captchaStore)
 
 	// 步骤 8：延迟写入队列（§5.2）与登录事件 sink（§4.6）。队列执行器同时
-	// 消费 event_log / last_login 与 webauthn sign_count（合并且取最大值）。
+	// 消费 event_log / last_login 与 webauthn sign_count（合并且取最大值）；
+	// 增码图自动删除执行器（§13.3：消费 qrcode.DeleteTask，失败只
+	// WARN，不影响登录）。
 	users := repo.NewUserRepo(db)
 	creds := repo.NewCredentialRepo(db)
 	webauthnRepo := repo.NewWebauthnRepo(db)
@@ -604,8 +638,15 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		// otp_sms / otp_email 的消息投递（SendJob，§15.2 行 1726），
 		// 只消费 SendJob 任务，其余任务类型原样忽略。
 		provider.SendExecutor{},
+		// 码图自动删除（DeleteTask，§13.3）。
+		qrcode.NewDeleteExecutor(storage.NewResolver(deps.providerLoader)),
 	}, asyncqueue.DefaultOptions())
 	deps.sink = service.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
+
+	// 微信服务端 access_token 跨实例共享缓存
+	// （cache/wxacode，键 al:wxacode:*）注入 wechat_mp_scan 适配器——
+	// Redis 就绪后、接受请求前一次完成；适配器按请求构造，读当前注入值。
+	wechatmpscan.SetAccessTokenCache(cache.NewWxacodeStore(rdb))
 
 	// 会话 / 令牌共享单例：sessionTokens / epochStore /
 	// codeIssuer 各只构造一份，buildEngine（Terminal / SessionWriter）、
@@ -918,7 +959,10 @@ func newSessionCookie(cfg *config.Config, deps *assembled) *session.Cookie {
 // al_login_state 的 Set-Cookie 与浏览器终点 al_session 共用 CallInfo 写头。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
-		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty),
+		// 注入扫码三桩 service（CreateQrcode / GetLoginTicket /
+		// ConfirmLoginTicket，§2.8）：GetLoginTicket 命中建会话后的
+		// al_session 与登录终点同一写出出口。
+		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
