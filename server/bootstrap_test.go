@@ -538,6 +538,74 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 	}
 }
 
+// TestBuildEngineWebauthnDegraded D6 / §8.3 行 1069 启动期初始化失败降级：
+// rp_id 为 IP（合法 config 形态——config.Validate 只查非空，管理员手工改
+// config 的场景）导致 webauthn.New 库 RPID 校验失败时，buildEngine **不报
+// 错**（程序不退出、其余功能可用）：webauthn 不注册进注册表（Get 返回
+// ErrKindNotRegistered——登录方式列表与 MFA 开放集合随之不含 webauthn，
+// dispatch 对未注册 kind 返回 method_disabled），其余五因子正常注册，
+// AssertComplete 仅以降级清单显式放行 webauthn 时通过。
+func TestBuildEngineWebauthnDegraded(t *testing.T) {
+	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
+	if err != nil {
+		t.Fatalf("buildCodecs: %v", err)
+	}
+	q := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
+		Capacity:      8,
+		Workers:       1,
+		BatchSize:     8,
+		FlushInterval: time.Hour,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = q.Close(ctx)
+	})
+
+	deps := &assembled{
+		codecs:         codecs,
+		settings:       settings.NewStore(nil, nil),
+		queue:          q,
+		sink:           service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		sessionTokens:  session.NewTokens(codecs.Session),
+		epochStore:     cache.NewEpochStore(nil, nil),
+		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
+	}
+	// rp_id 为 IP：go-webauthn 库校验拒绝（must be a domain and not an IP）。
+	cfg := &config.Config{
+		Authloft: config.AuthloftConfig{Root: "https://192.168.10.2:8080", RpID: "192.168.10.2"},
+	}
+
+	engine, terminal, registry, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
+	if err != nil {
+		t.Fatalf("buildEngine must degrade instead of failing (D6): %v", err)
+	}
+	if engine == nil || terminal == nil || registry == nil {
+		t.Fatal("buildEngine must return non-nil engine / terminal / registry")
+	}
+
+	// webauthn 因子未注册（禁用），其余五因子正常。
+	if _, err := registry.Get(factor.FactorWebAuthn); !errors.Is(err, factor.ErrKindNotRegistered) {
+		t.Fatalf("Get(webauthn) err = %v, want ErrKindNotRegistered (degraded)", err)
+	}
+	for _, kind := range []factor.FactorKind{
+		factor.FactorPassword, factor.FactorTOTP, factor.FactorRecovery,
+		factor.FactorOTPSMS, factor.FactorOTPEmail,
+	} {
+		if _, err := registry.Get(kind); err != nil {
+			t.Errorf("Get(%s): %v (degradation must not affect other factors)", kind, err)
+		}
+	}
+	// 完整性断言：无参（全量）仍报缺失 webauthn，仅降级清单放行时通过。
+	if err := registry.AssertComplete(); !errors.Is(err, factor.ErrRegistryIncomplete) {
+		t.Fatalf("AssertComplete() err = %v, want ErrRegistryIncomplete (webauthn truly missing)", err)
+	}
+	if err := registry.AssertComplete(factor.FactorWebAuthn); err != nil {
+		t.Fatalf("AssertComplete(webauthn) err = %v, want nil (degraded kind excluded)", err)
+	}
+}
+
 // TestAssembleRealChain（env-skip）：真连装配链 config→DB→migrate up→Redis
 // →密钥→settings 预热 + watcher→队列 + sink——assemble 成功后 DB ping 通、
 // §4 全部 11 张表存在（migrate 步骤真实执行）、Redis PING 通；复跑 assemble

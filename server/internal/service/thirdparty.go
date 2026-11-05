@@ -91,7 +91,7 @@ type ThirdpartyLoader interface {
 }
 
 // ThirdpartyBindStore 绑定行读写窄接口：*repo.BindRepo 天然满足
-//（FindByProviderOpenID + CreateWithUnion 同事务创建方向，§12.7 行 1548）。
+// （FindByProviderOpenID + CreateWithUnion 同事务创建方向，§12.7 行 1548）。
 type ThirdpartyBindStore interface {
 	FindByProviderOpenID(ctx context.Context, providerKey, openID string) (*model.UserThirdpartyBind, error)
 	CreateWithUnion(ctx context.Context, b *model.UserThirdpartyBind, unionProviderKey, unionID string) error
@@ -155,7 +155,7 @@ type AuthorizeInput struct {
 }
 
 // AuthorizeOutput Authorize 产物；Cookie 为需下发的 al_login_state
-//（nil = 无动作）。
+// （nil = 无动作）。
 type AuthorizeOutput struct {
 	AuthorizeURL string
 	Cookie       *http.Cookie
@@ -244,7 +244,7 @@ type OauthOutput struct {
 }
 
 // LoginOauth 三方登录统一入口（§2.7.4）：redirect（浏览器回调）与 api
-//（小程序 code）两通道；扫码 ticket 写入暂不实装。
+// （小程序 code）两通道；扫码 ticket 写入暂不实装。
 func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput {
 	// 边界：带 ticketId / stage=scanned 一律 invalid_request（此处
 	// 默认拒绝，待复核）。
@@ -336,12 +336,12 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	}
 
 	payload := &token.LoginTokenPayload{
-		Tid:     s.newTID(),
-		Flow:    "login",
-		Uid:     uid,
-		Passed:  []string{amrThirdParty},
-		Amr:     []string{amrThirdParty},
-		Oidc:    in.OIDC,
+		Tid:    s.newTID(),
+		Flow:   "login",
+		Uid:    uid,
+		Passed: []string{amrThirdParty},
+		Amr:    []string{amrThirdParty},
+		Oidc:   in.OIDC,
 	}
 
 	// 未绑定（uid=0）→ 绑定中间态（§12.5 行 1501）：重签 login_token 精简
@@ -373,6 +373,16 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	if s.deps.MFA != nil {
 		mfa, required, err := s.deps.MFA.Build(ctx, uid)
 		if err != nil {
+			// 窗口期 fail-closed（§8.3 行 1069）：
+			// webauthn 唯一可用因子因启动降级不可用 → 拒绝登录（与引擎
+			// 路径同一 status / 文案），绝不静默放行直通终点。
+			if errors.Is(err, orchestrator.ErrWebauthnDegraded) {
+				msg := orchestrator.WebauthnDegradedMessage
+				return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+					Status: orchestrator.StatusMethodDisabled,
+					Error:  &ssov1.SsoError{Message: &msg},
+				}})
+			}
 			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 		}
 		if required {
@@ -416,7 +426,7 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 // encodeExtra 三方原始资料 → extra 列 msgpack 字节（§4.3 行 708
 // 「仅排查用、不参与任何业务判定」；先例 dto/rpc.go EncodeRPCProfileExtra
 // 同款 msgpack.Marshal(map)）：raw 为空 / 编码失败 / 超 1 MiB 返回 nil
-//（整条丢弃降级，绑定主链路不受影响）。
+// （整条丢弃降级，绑定主链路不受影响）。
 func encodeExtra(raw map[string]any) []byte {
 	if len(raw) == 0 {
 		return nil
@@ -441,7 +451,7 @@ const (
 // §12.5 行 1508）：普通行 (provider_key, openid) → provider 关联 Union 行
 // (union_provider, unionid) → auto_bind=1 按 auto_bind_fields 匹配 email /
 // phone。返回 (uid, matched, out)：out 非 nil 表示直接以该信封终止
-//（auto_bind 写入失败的 target_taken）；matched=true 时调用方完成登录前
+// （auto_bind 写入失败的 target_taken）；matched=true 时调用方完成登录前
 // 需写入绑定行。
 func (s *Thirdparty) resolveBind(ctx context.Context, p *provider.Provider, identity *provider.ExternalIdentity) (int64, bool, *OauthOutput) {
 	row, err := s.deps.Binds.FindByProviderOpenID(ctx, p.Key, identity.OpenID)

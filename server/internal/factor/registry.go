@@ -86,15 +86,16 @@ func (r *Registry) Get(kind FactorKind) (Factor, error) {
 	return f, nil
 }
 
-// AssertComplete 启动期断言注册完整性：除 pendingKinds 外每个合法 kind
-// 都必须有实现（§3.8 行 390）。
-func (r *Registry) AssertComplete() error {
+// AssertComplete 启动期断言注册完整性：除 pendingKinds 与显式排除清单
+// （degraded：启动期初始化失败被降级禁用的因子，§8.3 行 1069 webauthn
+// 先例——不注册即不参与断言）外，每个合法 kind 都必须有实现（§3.8 行 390）。
+func (r *Registry) AssertComplete(degraded ...FactorKind) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var missing []string
 	for _, kind := range allKinds {
-		if isPending(kind) {
+		if isPending(kind) || containsKind(degraded, kind) {
 			continue
 		}
 		if _, ok := r.factors[kind]; !ok {
@@ -106,4 +107,14 @@ func (r *Registry) AssertComplete() error {
 	}
 	sort.Strings(missing)
 	return fmt.Errorf("%w: missing %s", ErrRegistryIncomplete, strings.Join(missing, ", "))
+}
+
+// containsKind 线性包含判定（清单长度为个位数，不值得建 map）。
+func containsKind(list []FactorKind, kind FactorKind) bool {
+	for _, k := range list {
+		if k == kind {
+			return true
+		}
+	}
+	return false
 }

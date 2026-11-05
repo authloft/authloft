@@ -291,7 +291,7 @@ func TestSetupPageShell(t *testing.T) {
 // TestSetupPageRootScheme 壳 al_root 的 scheme 按推导链
 // 逐请求推导——复用唯一判定点 session.ResolveHTTPS（setup 模式无 settings
 // 键，https_deployment 三态恒缺省 auto）：X-Forwarded-Proto 逗号首值
-//（头优先于直连 TLS，忽略大小写）→ 请求自身 TLS → 兜底明文 http。
+// （头优先于直连 TLS，忽略大小写）→ 请求自身 TLS → 兜底明文 http。
 // 修复前硬编码 https://，明文 HTTP 部署下前端把 GetStatus 连接失败误判为
 // "已进正常模式"直接跳登录页（§13.4 轮询判据失效）。
 func TestSetupPageRootScheme(t *testing.T) {
@@ -505,9 +505,9 @@ log: { level: info, format: json }
 	}
 }
 
-// TestFreshInstallDBUnreachable 路径 B 步骤 ①：DB 不可达 → Connect 错误体
+// TestFreshInstallDBUnreachable 路径 B 步骤 ②：DB 不可达 → Connect 错误体
 // （标准码 unavailable + ErrorInfo{domain=setup, code=db_unreachable}，
-// HTTP 503，§1.5 行 193 映射）。
+// HTTP 503，§1.5 行 193 映射）。root 合法（步骤 ①通过后到达连接性检查）。
 func TestFreshInstallDBUnreachable(t *testing.T) {
 	s, configPath := newTestServer(t)
 	redisAddr := fakeRedis(t, "")
@@ -516,6 +516,7 @@ func TestFreshInstallDBUnreachable(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin01",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://sso.example.com",
 	})
 	rec := doConnectJSON(s.Router(), "/api.setup.v1.SetupService/Install", "application/json", string(payload))
 	if rec.Code != http.StatusServiceUnavailable {
@@ -695,24 +696,25 @@ func TestWriteConfigFileAtomic(t *testing.T) {
 	}
 }
 
-// TestBuildInstallConfigDefaults root / rp_id 推导（§3.15 实现要点）：
-// 缺省 root = https://+Host、rp_id = Host 去端口；显式填写优先；随机密钥。
+// TestBuildInstallConfigDefaults root 必填 / rp_id 推导（§13.3 行 1906-1907，
+// D6 后口径）：rp_id 缺省取 root 的 host（去 scheme 与端口）；显式填写优先；
+// 随机密钥。字段合法性校验归 validateInstallInput（见其矩阵测试）。
 func TestBuildInstallConfigDefaults(t *testing.T) {
 	in := InstallInput{
 		DBDSN:         "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local",
 		RedisAddr:     "127.0.0.1:6379",
 		AdminUsername: "admin",
-		Host:          "192.168.10.2:8080",
+		Root:          "https://sso.corp.example.com:8443",
 	}
 	c, err := BuildInstallConfig(in)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if c.Authloft.Root != "https://192.168.10.2:8080" {
-		t.Errorf("root = %q, want https://+Host", c.Authloft.Root)
+	if c.Authloft.Root != in.Root {
+		t.Errorf("root = %q, want input root verbatim", c.Authloft.Root)
 	}
-	if c.Authloft.RpID != "192.168.10.2" {
-		t.Errorf("rp_id = %q, want Host without port", c.Authloft.RpID)
+	if c.Authloft.RpID != "sso.corp.example.com" {
+		t.Errorf("rp_id = %q, want root host without port", c.Authloft.RpID)
 	}
 	if c.DB.DSN != in.DBDSN || c.Redis.Addr != in.RedisAddr {
 		t.Error("user-provided db/redis must be carried into config")
@@ -724,7 +726,6 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 		t.Errorf("fresh install must generate exactly one oidc.jwt_keys with kid \"1\": %+v", c.OIDC.JWTKeys)
 	}
 
-	in.Root = "https://sso.corp.example.com"
 	in.RpID = "corp.example.com"
 	c2, err := BuildInstallConfig(in)
 	if err != nil {
@@ -734,12 +735,109 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 		t.Errorf("explicit root/rp_id must win: %q / %q", c2.Authloft.Root, c2.Authloft.RpID)
 	}
 
-	// 无端口 Host：rp_id 原样。
-	in.Root, in.RpID = "", ""
-	in.Host = "sso.internal"
-	c3, _ := BuildInstallConfig(in)
-	if c3.Authloft.RpID != "sso.internal" {
-		t.Errorf("rp_id (no port host) = %q, want original", c3.Authloft.RpID)
+	// localhost root：rp_id 推导同为 localhost（§13.3 允许）。
+	in.Root, in.RpID = "http://localhost:8080", ""
+	c3, err := BuildInstallConfig(in)
+	if err != nil {
+		t.Fatalf("build localhost: %v", err)
+	}
+	if c3.Authloft.RpID != "localhost" {
+		t.Errorf("rp_id (localhost root) = %q, want localhost", c3.Authloft.RpID)
+	}
+}
+
+// TestValidateInstallInputMatrix 路径 B 步骤 ①字段校验矩阵（§13.3 行 1906-
+// 1907 / 1911）：root 必填、完整 http(s) URL、host
+// 域名 / localhost（拒绝 IP）；rpId 显式填写须为域名字符串（允许
+// localhost），缺省取 root 的 host。域名判定与启动期 webauthn 库同口径
+// （webauthn.ValidRPID），保证安装期接受集合 ⊆ 启动期库接受集合。
+func TestValidateInstallInputMatrix(t *testing.T) {
+	base := func(root, rpID string) InstallInput {
+		return InstallInput{
+			DBDSN:         "authloft:pass@tcp(127.0.0.1:3306)/authloft",
+			RedisAddr:     "127.0.0.1:6379",
+			AdminUsername: "admin",
+			AdminPassword: "Str0ngPassw0rd",
+			Root:          root,
+			RpID:          rpID,
+		}
+	}
+	cases := []struct {
+		name    string
+		in      InstallInput
+		wantErr bool
+	}{
+		// root 分支。
+		{"root missing", base("", ""), true},
+		{"root not url", base("sso.example.com", ""), true},
+		{"root other scheme", base("ftp://sso.example.com", ""), true},
+		{"root no host", base("https://", ""), true},
+		{"root host is ipv4", base("https://192.168.10.2", ""), true},
+		{"root host is ipv4 with port", base("http://10.0.0.1:8080", ""), true},
+		{"root host is ipv6", base("http://[::1]:8080", ""), true},
+		{"root single label not localhost", base("https://intranet", ""), true},
+		{"root domain ok", base("https://sso.example.com", ""), false},
+		{"root domain with port ok", base("https://sso.corp.example.com:8443", ""), false},
+		{"root http ok", base("http://sso.example.com", ""), false},
+		{"root localhost ok", base("http://localhost:3000", ""), false},
+		{"root localhost no port ok", base("https://localhost", ""), false},
+		// rpId 分支（root 合法为前提）。
+		{"rp_id explicit ipv4", base("https://sso.example.com", "192.168.10.2"), true},
+		{"rp_id explicit with scheme", base("https://sso.example.com", "https://sso.example.com"), true},
+		{"rp_id explicit with port", base("https://sso.example.com", "corp.example.com:8443"), true},
+		{"rp_id explicit single label", base("https://sso.example.com", "corp"), true},
+		{"rp_id explicit domain ok", base("https://sso.example.com", "corp.example.com"), false},
+		{"rp_id explicit localhost ok", base("https://sso.example.com", "localhost"), false},
+	}
+	for _, tc := range cases {
+		err := validateInstallInput(tc.in)
+		if tc.wantErr {
+			var pe *PathError
+			if !errors.As(err, &pe) || pe.Code != CodeConfigInvalid {
+				t.Errorf("%s: err = %v, want PathError %s", tc.name, err, CodeConfigInvalid)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: unexpected err = %v", tc.name, err)
+		}
+	}
+}
+
+// TestInstallRootFieldValidationHandler Install 域信封（§13.3 行 1911 步骤 ①）：
+// root 缺失 / host 为 IP → invalid_argument 400 + ErrorInfo{domain=setup,
+// code=config_invalid}，不写 config、不退出（校验先于连接性检查，无需 DB）。
+func TestInstallRootFieldValidationHandler(t *testing.T) {
+	s, configPath := newTestServer(t)
+
+	for name, root := range map[string]string{
+		"root missing":    "",
+		"root host is ip": "https://192.168.10.2:8080",
+	} {
+		payload, _ := json.Marshal(map[string]any{
+			"dbDsn":         "test:x@tcp(127.0.0.1:1)/test",
+			"redisAddr":     "127.0.0.1:1",
+			"adminUsername": "admin",
+			"adminPassword": "Str0ngPassw0rd",
+			"root":          root,
+		})
+		rec := doConnectJSON(s.Router(), "/api.setup.v1.SetupService/Install", "application/json", string(payload))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: HTTP status = %d, want 400 (body %s)", name, rec.Code, rec.Body.String())
+			continue
+		}
+		code, info := decodeConnectError(t, rec)
+		if code != "invalid_argument" || info == nil || info.Domain != setupDomain || info.Code != CodeConfigInvalid {
+			t.Errorf("%s: connect=(%q, %+v), want invalid_argument + setup/%s", name, code, info, CodeConfigInvalid)
+		}
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Errorf("failed installs must not write config, stat err = %v", err)
+	}
+	select {
+	case <-s.Exposed():
+		t.Error("field validation failure must not trigger exit")
+	default:
 	}
 }
 

@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
@@ -37,9 +38,9 @@ const stepSetPassword = "set_password"
 // stepKinds 登录流程接受的 step 值（§2.2；set_password 见 §1.4 行 165、
 // §2.3 行 444-450、§2.4 行 462-466，渲染 kind=form）。
 var stepKinds = map[string]factor.StepKind{
-	"challenge":       factor.StepChallenge,
-	"verify":          factor.StepForm,
-	stepSetPassword:   factor.StepForm,
+	"challenge":     factor.StepChallenge,
+	"verify":        factor.StepForm,
+	stepSetPassword: factor.StepForm,
 }
 
 // Resolve 校验并返回分派结果；第二个返回值为非空时表示业务失败 status。
@@ -58,6 +59,12 @@ func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTok
 			return nil, StatusInvalidRequest
 		}
 		if errors.Is(err, factor.ErrKindNotRegistered) {
+			// 窗口期逐次日志：webauthn 降级
+			// 未注册被拒的每次请求都要能看出原因；其余 kind（pendingKinds
+			// 等既有未实现项）维持现状不打日志。
+			if kind == factor.FactorWebAuthn {
+				slog.Warn("orchestrator: webauthn method rejected (factor not registered, degraded window)", "flow", flow)
+			}
 			return nil, StatusMethodDisabled
 		}
 		return nil, StatusFailed
@@ -126,7 +133,7 @@ func setPasswordAccepts(flow string, kind factor.FactorKind, p *token.LoginToken
 // 二次因子阶段不看 login_methods，改用 mfa_methods（recovery_code 随 totp 生效）。
 // tp 免密建号（login_token.tp 非空 + flow=login）跳过
 // allow_signup_password——三方建号开关唯一归 provider enable_signup
-//（§2.7.5 行 673 / §12.5 行 1504），allow_registration（整体开关）仍
+// （§2.7.5 行 673 / §12.5 行 1504），allow_registration（整体开关）仍
 // fail-closed 生效。
 func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s SettingsReader, p *token.LoginTokenPayload) string {
 	if usage == factor.UsageSecondary {

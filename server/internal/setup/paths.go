@@ -30,7 +30,7 @@ import (
 
 // §13 域内错误码（接口文档 §13 域码清单；业务码开放，Connect 化后由
 // setup.go 的 setupFail 映射为 connect.NewError + ErrorInfo detail 承载
-//——域码语义不变，标准码映射见 setupCodeFor）。
+// ——域码语义不变，标准码映射见 setupCodeFor）。
 const (
 	CodeConfigInvalid    = "config_invalid"
 	CodeDBUnreachable    = "db_unreachable"
@@ -46,7 +46,7 @@ const stepTimeout = 3 * time.Second
 
 // PathError 安装路径步骤失败：Code 进信封 error.code，Message 为固定安全
 // 文案（不透出底层细节），Err 为底层原因——只进服务端日志且经 redact 脱敏
-//（§3.15：不打印 DSN 密码段、admin_password、密钥明文）。
+// （§3.15：不打印 DSN 密码段、admin_password、密钥明文）。
 type PathError struct {
 	Code    string
 	Message string
@@ -96,12 +96,17 @@ func UploadConfig(ctx context.Context, configPath, text string) error {
 	return nil
 }
 
-// FreshInstall 路径 B：全新安装（§3.15 / 接口文档 §13.3）。
-// ① 连接性检查 ② 迁移 ③ 插入管理员（固定 ID=1，已存在则跳过（幂等）；
-// 用户名 / 密码校验在此步）④ 生成完整 config（所填项 + 随机密钥 + 默认值）
-// 原子写入。成功后由调用方触发重启。
+// FreshInstall 路径 B：全新安装（§3.15 / 接口文档 §13.3 行 1911）。
+// ① 字段校验（root 必填且 host 为域名 / localhost，rpId 缺省取 root 的
+// host 后同为域名校验——缺失 / IP / 非法 →
+// config_invalid）② 连接性检查 ③ 迁移 ④ 插入管理员（固定 ID=1，已存在
+// 则跳过（幂等）；用户名 / 密码校验在此步）⑤ 生成完整 config（所填项 +
+// 随机密钥 + 默认值）原子写入。成功后由调用方触发重启。
 func FreshInstall(ctx context.Context, configPath string, in InstallInput) error {
 	slog.Info("setup: path B (fresh install) start")
+	if err := validateInstallInput(in); err != nil {
+		return err
+	}
 	if err := checkDB(ctx, in.DBDSN); err != nil {
 		return err
 	}
@@ -130,7 +135,7 @@ func FreshInstall(ctx context.Context, configPath string, in InstallInput) error
 }
 
 // parseUploadedConfig 路径 A 步骤 ①：上传 config 全文 → 解析 → Validate
-//（§3.15：复用 internal/config 的结构与 Validate()，不自建一套；env 是
+// （§3.15：复用 internal/config 的结构与 Validate()，不自建一套；env 是
 // 进程级注入，不参与上传内容的校验）。任一失败 → config_invalid。
 func parseUploadedConfig(text string) (*config.Config, error) {
 	var c config.Config
@@ -293,7 +298,7 @@ var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 
 // validatePassword 管理员密码策略（接口文档 §5.6 默认值——setup 模式无
 // settings，按默认策略）。违规 → password_weak。完整实现：security/policy.go
-//（security/policy.go 取代本处安装期过渡副本），错误信息风格保持不变。
+// （security/policy.go 取代本处安装期过渡副本），错误信息风格保持不变。
 func validatePassword(username, password string) error {
 	violations := security.ValidatePassword(security.DefaultPasswordPolicy(), username, "", password)
 	if len(violations) == 0 {
@@ -304,7 +309,7 @@ func validatePassword(username, password string) error {
 
 // hashPasswordArgon2id 生成 PHC 格式 argon2id 哈希串（§4.2：user_credential
 // password 行 secret = argon2id 串，含参数与盐）。参数取 §3.2 argon2 默认值
-//（安装时 config 尚未生成）：t=3 m=65536 p=4 keylen=32。
+// （安装时 config 尚未生成）：t=3 m=65536 p=4 keylen=32。
 func hashPasswordArgon2id(password string) (string, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {

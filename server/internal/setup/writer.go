@@ -6,18 +6,22 @@ package setup
 
 import (
 	"fmt"
-	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"authloft/internal/config"
+	"authloft/internal/factor/webauthn"
 )
 
 // InstallInput 全新安装（路径 B）的用户所填项（接口文档 §13.3）。
-// Host 为当前请求 Host，用于 root / rp_id 缺省推导（§3.15 实现要点：
-// root 缺省取当前请求 Host；rp_id 缺省取 Host 去掉端口，显式填写优先）。
+// Root 必填（完整 URL，host 须为域名或 localhost，拒绝 IP——安装
+// 不得靠自动推导的 IP 蒙混过关）；RpID 缺省取 Root 的 host
+// （去 scheme 与端口），显式填写优先（域名字符串，允许 localhost），
+// 不再自动读取请求 Host。
 type InstallInput struct {
 	DBDSN         string
 	RedisAddr     string
@@ -27,12 +31,37 @@ type InstallInput struct {
 	RpID          string
 	AdminUsername string
 	AdminPassword string
-	Host          string
+}
+
+// validateInstallInput 路径 B 步骤 ①字段校验（接口文档 §13.3 行 1911 执行
+// 顺序①，位于连接性检查之前）：root 必填且为完整 http(s) URL、host 部分
+// 为域名或 localhost（拒绝 IP——IP 作 WebAuthn RP ID 会被库校验拒绝）；
+// rpId 显式填写必须为域名字符串（允许 localhost），缺省取 root 的 host。
+// 域名判定复用 webauthn.ValidRPID（与启动期库校验同一口径：安装期接受的
+// rp_id 集合 ⊆ 启动期库接受集合，从源头避免装完即降级）。任一不过 →
+// config_invalid。
+func validateInstallInput(in InstallInput) error {
+	u, err := url.Parse(strings.TrimSpace(in.Root))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return bizErr(CodeConfigInvalid, "root is required and must be a full http(s) URL", nil)
+	}
+	if !webauthn.ValidRPID(u.Hostname()) {
+		return bizErr(CodeConfigInvalid, "root host must be a domain or localhost, not an IP address", nil)
+	}
+	rpID := strings.TrimSpace(in.RpID)
+	if rpID == "" {
+		rpID = u.Hostname() // 缺省取 root 的 host（去 scheme 与端口）
+	}
+	if !webauthn.ValidRPID(rpID) {
+		return bizErr(CodeConfigInvalid, "rp_id must be a domain string or localhost", nil)
+	}
+	return nil
 }
 
 // BuildInstallConfig 生成全新安装的完整 config（§3.15 路径 B 步骤 ④）：
 // 用户所填项 + 随机生成的全部 sign_key / oidc.jwt_keys + 其余项默认值
-// （config.DefaultConfig，与 config.yaml.example 同源）。
+// （config.DefaultConfig，与 config.yaml.example 同源）。root 必填、
+// rp_id 缺省取 root 的 host（步骤 ①已校验，见 validateInstallInput）。
 func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c, err := config.DefaultConfig()
 	if err != nil {
@@ -42,15 +71,11 @@ func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c.Redis.Addr = in.RedisAddr
 	c.Redis.Password = in.RedisPassword
 	c.Redis.DB = in.RedisDB
-	if in.Root != "" {
-		c.Authloft.Root = in.Root
-	} else {
-		c.Authloft.Root = "https://" + in.Host
-	}
+	c.Authloft.Root = in.Root
 	if in.RpID != "" {
 		c.Authloft.RpID = in.RpID
-	} else {
-		c.Authloft.RpID = hostWithoutPort(in.Host)
+	} else if u, err := url.Parse(in.Root); err == nil {
+		c.Authloft.RpID = u.Hostname()
 	}
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("setup: generated config invalid: %w", err)
@@ -92,13 +117,4 @@ func marshalConfig(c *config.Config) ([]byte, error) {
 		return nil, fmt.Errorf("setup: marshal config: %w", err)
 	}
 	return out, nil
-}
-
-// hostWithoutPort 取 Host 去掉端口（§3.15：IP / 内网同样适用）；
-// 无端口 / 解析失败时原样返回。
-func hostWithoutPort(host string) string {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		return h
-	}
-	return host
 }

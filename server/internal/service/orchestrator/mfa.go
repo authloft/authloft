@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -15,6 +16,18 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
+
+// ErrWebauthnDegraded MFA fail-closed 哨兵（§8.3 行
+// 1069 窗口期 fail-closed）：mfa_required 用户的唯一可用二次因子为
+// webauthn 且因启动降级被剔除时，Build 返回本错误；引擎与三方登录路径
+// 据此拒绝登录（status=method_disabled + WebauthnDegradedMessage），绝不
+// 静默放行（required=false 直通终点）/ 自动跳过 MFA / 改用更弱因子顶替。
+var ErrWebauthnDegraded = errors.New("orchestrator: webauthn unavailable (degraded), user's only usable MFA factor lost")
+
+// WebauthnDegradedMessage fail-closed 的流程态 error.message 明示文案
+// （§1.6 行 272「特殊情况可使用 error.message，文案不考虑 i18n」；引擎与
+// 三方登录两条路径共用同一句）。
+const WebauthnDegradedMessage = "通行密钥暂不可用，请联系管理员"
 
 // MFACredentialReader 只暴露 mfa 需要的两种读法：按 kind 取凭据、
 // 列出该用户的通行密钥。实现方负责把 repo 错误原样返回。
@@ -28,6 +41,12 @@ type MFABuilder struct {
 	Users       factor.UserRepo
 	Credentials MFACredentialReader
 	Settings    SettingsReader
+	// Factors 因子注册表窄接口（FactorLookup，与 pages 的 FactorSource
+	// 同构，*factor.Registry 天然满足）：Build 的 webauthn case 先查注册
+	// 表——启动降级未注册时（§8.3 行 1069「MFA 开放集合随之不含
+	// webauthn」）不再注入 methods，用户不致「选了才遭
+	// dispatch 拒绝」。nil = 不过滤（既有装配与单测行为，保持零回归）。
+	Factors FactorLookup
 }
 
 // NewMFABuilder 注入依赖。
@@ -58,6 +77,7 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 
 	allowed := mfaAllowed(b.Settings)
 	var methods []*ssov1.MfaMethod
+	degradedLost := false // webauthn 因降级被剔除且该用户已绑定（唯一可用因子候选）
 	for _, method := range mfaOrder {
 		if !allowed[method] {
 			continue
@@ -98,6 +118,28 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 				})
 			}
 		case "webauthn":
+			// 启动降级联动（§8.3 行 1069）：webauthn 初始化失败被
+			// 禁用后不注册进注册表，MFA 开放集合随之不含 webauthn——未注册
+			// （含未知 kind）跳过不注入 methods。已绑定用户被剔除后若再无
+			// 可用因子，Build 尾部按 fail-closed 哨兵上抛
+			//（绝不静默放行）；未绑定用户与窗口无关，仅跳过。
+			// 其余错误按 Build 既有口径原样上抛；Factors 为 nil 时不过滤
+			//（既有装配与单测行为）。
+			if b.Factors != nil {
+				if _, err := b.Factors.Get(factor.FactorWebAuthn); err != nil {
+					if errors.Is(err, factor.ErrKindNotRegistered) || errors.Is(err, factor.ErrUnknownKind) {
+						bound, bErr := b.hasWebauthnCredential(ctx, uid)
+						if bErr != nil {
+							return nil, false, bErr
+						}
+						if bound {
+							degradedLost = true
+						}
+						continue
+					}
+					return nil, false, err
+				}
+			}
 			if b.Credentials != nil {
 				list, err := b.Credentials.ListWebauthn(ctx, uid)
 				if err != nil {
@@ -114,12 +156,35 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 	}
 
 	if len(methods) == 0 {
+		// fail-closed（§8.3 行 1069 窗口期）：已绑定
+		// webauthn 的用户因降级失去唯一可用二次因子 → 绝不 required=false
+		// 静默放行（主因子直通终点 = 自动跳过 MFA），返回哨兵错误交调用方
+		// 拒绝登录；每次拒绝逐次 WARN（能看出原因是 webauthn 不可用）。
+		// 与窗口无关的既有 required=false 语义不变（未绑定任何因子 /
+		// mfa_enabled=false 等）。
+		if degradedLost {
+			slog.Warn("orchestrator: mfa fail-closed, webauthn unavailable (degraded window) and user's only usable factor lost", "uid", uid)
+			return nil, false, ErrWebauthnDegraded
+		}
 		return nil, false, nil
 	}
 	return &ssov1.Mfa{
 		ExpiresIn: intSetting(b.Settings, settings.KeyOtpTtl, 300),
 		Methods:   methods,
 	}, true, nil
+}
+
+// hasWebauthnCredential 用户是否已绑定 webauthn 凭据（降级剔除后是否
+// 失去可用因子的判定输入）；读取错误按 Build 既有口径上抛。
+func (b *MFABuilder) hasWebauthnCredential(ctx context.Context, uid int64) (bool, error) {
+	if b.Credentials == nil {
+		return false, nil
+	}
+	list, err := b.Credentials.ListWebauthn(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	return len(list) > 0, nil
 }
 
 func (b *MFABuilder) hasCredential(ctx context.Context, uid int64, kind string) (bool, error) {

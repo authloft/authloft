@@ -4,7 +4,7 @@
 // api 通道信封 session_token / binding_required（allowSignup 两态 + tp 载荷
 // 形态 §12.5 行 1499）/ auto_bind 命中与关闭 / Union 归并 / MFA 信封与
 // amr=thirdparty / ticketId 与 stage=scanned 拒绝；追加：user_disabled
-//（普通行 / Union / auto_bind）/ auto_bind extra 落 Raw / 非成功终态删
+// （普通行 / Union / auto_bind）/ auto_bind extra 落 Raw / 非成功终态删
 // al_login_state。全部走 fake，不连 DB / Redis；wechat_mp 渠道
 // code2session 的 httptest 拦截已由 provider/oauth/wechat_mp 包内测试
 // 覆盖，此处 api 通道以 fake adapter 验证 service 编排语义。
@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
+	"authloft/internal/factor"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -116,7 +117,8 @@ func (u *tpUsers) FindByPhone(_ context.Context, phone string) (*model.User, err
 
 // tpCreds orchestrator.MFACredentialReader 的 fake：按 kind 返回 totp 行。
 type tpCreds struct {
-	totp bool
+	totp     bool
+	webauthn bool
 }
 
 func (c *tpCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*model.UserCredential, error) {
@@ -126,7 +128,10 @@ func (c *tpCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*m
 	return nil, gorm.ErrRecordNotFound
 }
 
-func (c *tpCreds) ListWebauthn(context.Context, int64) ([]model.UserCredentialWebauthn, error) {
+func (c *tpCreds) ListWebauthn(_ context.Context, _ int64) ([]model.UserCredentialWebauthn, error) {
+	if c.webauthn {
+		return []model.UserCredentialWebauthn{{UserID: 9}}, nil
+	}
 	return nil, nil
 }
 
@@ -147,9 +152,9 @@ type tpSettings struct {
 	slices map[string][]string
 }
 
-func (s *tpSettings) GetString(string) (string, bool)      { return "", false }
-func (s *tpSettings) GetInt64(string) (int64, bool)        { return 0, false }
-func (s *tpSettings) GetBool(k string) (bool, bool)        { v, ok := s.bools[k]; return v, ok }
+func (s *tpSettings) GetString(string) (string, bool) { return "", false }
+func (s *tpSettings) GetInt64(string) (int64, bool)   { return 0, false }
+func (s *tpSettings) GetBool(k string) (bool, bool)   { v, ok := s.bools[k]; return v, ok }
 func (s *tpSettings) GetStringSlice(k string) ([]string, bool) {
 	v, ok := s.slices[k]
 	return v, ok
@@ -157,11 +162,11 @@ func (s *tpSettings) GetStringSlice(k string) ([]string, bool) {
 
 // tpAdapter 渠道适配器 fake：channel / 授权 URL / 三方身份可控。
 type tpAdapter struct {
-	channel    provider.ThirdPartyChannel
-	authURL    string
-	identity   *provider.ExternalIdentity
+	channel     provider.ThirdPartyChannel
+	authURL     string
+	identity    *provider.ExternalIdentity
 	exchangeErr error
-	lastCtx    *provider.AuthContext
+	lastCtx     *provider.AuthContext
 }
 
 func (a *tpAdapter) Channel() provider.ThirdPartyChannel { return a.channel }
@@ -246,15 +251,15 @@ func newTPEnv(t *testing.T) *tpEnv {
 	env.settings = st
 	terminal := orchestrator.NewTerminal(env.sessions, nil, nil, nil, nil)
 	env.svc = NewThirdparty(ThirdpartyDeps{
-		Loader:  env.loader,
-		Binds:   env.binds,
-		Users:   env.users,
-		NewAdapter: func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
-		State:   env.state,
-		MFA:     orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
-		Terminal: terminal,
+		Loader:      env.loader,
+		Binds:       env.binds,
+		Users:       env.users,
+		NewAdapter:  func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
+		State:       env.state,
+		MFA:         orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
+		Terminal:    terminal,
 		CookieCodec: cookieCodec,
-		HTTPSMode: env.httpsMode,
+		HTTPSMode:   env.httpsMode,
 	})
 	// cookie codec 的时钟跟随 env.now（过期用例推进）。
 	env.svc.now = func() time.Time { return env.now }
@@ -741,6 +746,47 @@ func TestLoginOauthAutoBind(t *testing.T) {
 	})
 }
 
+// tpDegradedRegistry 最小因子注册表 fake（orchestrator.FactorLookup）：
+// webauthn 恒未注册（启动降级窗口形态），其余 kind 一并未注册（Build 只
+// 查 webauthn，语义不受影响）。
+type tpDegradedRegistry struct{}
+
+func (tpDegradedRegistry) Get(factor.FactorKind) (factor.Factor, error) {
+	return nil, factor.ErrKindNotRegistered
+}
+
+// TestLoginOauthWebauthnDegradedFailClosed 三方登录路径的窗口期
+// fail-closed（§8.3 行 1069）：auto_bind 命中的
+// mfa_required 用户唯一可用因子为 webauthn、注册表因启动降级未注册 →
+// 不进终点（绝不 required=false 静默放行直通 success），信封
+// status=method_disabled + error.message 明示"通行密钥暂不可用"（与引擎
+// 路径同一 status / 文案）。
+func TestLoginOauthWebauthnDegradedFailClosed(t *testing.T) {
+	ctx := context.Background()
+	e := newTPEnv(t)
+	e.addProvider("qq", func(r *model.Provider) { r.AutoBind = 1 })
+	e.adapter.identity.Email = "exist@example.com"
+	e.users.byEmail["exist@example.com"] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
+	e.users.byID[9] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
+	// 已绑 webauthn（唯一可用因子）+ 降级注册表（webauthn 未注册）。
+	mfa := orchestrator.NewMFABuilder(e.users, &tpCreds{webauthn: true}, e.settings)
+	mfa.Factors = tpDegradedRegistry{}
+	e.svc.deps.MFA = mfa
+
+	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
+	if out.Envelope.GetStatus() != orchestrator.StatusMethodDisabled {
+		t.Fatalf("status = %q, want method_disabled (fail-closed), envelope %+v", out.Envelope.GetStatus(), out.Envelope)
+	}
+	if em := out.Envelope.GetError(); em == nil || em.GetMessage() != orchestrator.WebauthnDegradedMessage {
+		t.Fatalf("error = %+v, want message %q", em, orchestrator.WebauthnDegradedMessage)
+	}
+	// 不进终点：无会话写入、无绑定放行痕迹（auto_bind 绑定发生在 MFA 判定
+	// 之前，允许存在；但绝不得签发会话）。
+	if out.Envelope.GetSessionId() != "" || out.Envelope.GetUserId() != 0 {
+		t.Fatalf("fail-closed must not reach terminal: %+v", out.Envelope)
+	}
+}
+
 // TestLoginOauthUnionMerge Union 归并（§12.7 行 1549）：普通行未命中、
 // Union 行 (union_provider, unionid) 命中 → 归并到同一账号。
 func TestLoginOauthUnionMerge(t *testing.T) {
@@ -836,7 +882,7 @@ func TestLoginOauthAPIChannel(t *testing.T) {
 }
 
 // TestLoginOauthExchangeFails 渠道 Exchange / FetchUser 失败 → failed
-//（§1.6 行 261 兜底，不暴露内部信息）。
+// （§1.6 行 261 兜底，不暴露内部信息）。
 func TestLoginOauthExchangeFails(t *testing.T) {
 	ctx := context.Background()
 	e := newTPEnv(t)

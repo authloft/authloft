@@ -113,4 +113,22 @@ func TestRegistryAssertComplete(t *testing.T) {
 	if err := onlyPending.AssertComplete(); !errors.Is(err, ErrRegistryIncomplete) {
 		t.Fatalf("pending-only registry err = %v, want ErrRegistryIncomplete", err)
 	}
+
+	// degraded 排除清单（§8.3 行 1069：webauthn 启动期初始化失败降级）：
+	// 缺该 kind 时无参断言报缺失，以清单显式放行后通过。
+	r2 := NewRegistry()
+	for _, kind := range allKinds {
+		if isPending(kind) || kind == FactorWebAuthn {
+			continue
+		}
+		if err := r2.Register(kind, &fakeFactor{kind: kind}); err != nil {
+			t.Fatalf("Register(%s): %v", kind, err)
+		}
+	}
+	if err := r2.AssertComplete(); !errors.Is(err, ErrRegistryIncomplete) {
+		t.Fatalf("webauthn-missing err = %v, want ErrRegistryIncomplete", err)
+	}
+	if err := r2.AssertComplete(FactorWebAuthn); err != nil {
+		t.Fatalf("webauthn-missing (degraded list) err = %v, want nil", err)
+	}
 }

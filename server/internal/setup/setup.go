@@ -92,7 +92,7 @@ func setupCodeFor(code string) connect.Code {
 // message=固定安全文案，§1.5 行 197-224）；其余（写盘失败等服务端故障）
 // 记日志后原样返回——错误包装 interceptor（internal/connect，最内层）
 // 把非 connect.Error 的错误包成 internal 并消毒线上文本，不透出内部细节
-//（§3.14 行 481）。日志侧经 redact 脱敏；Err 为 nil 的纯业务失败（如
+// （§3.14 行 481）。日志侧经 redact 脱敏；Err 为 nil 的纯业务失败（如
 // admin_missing）只记 code。
 func setupFail(err error) error {
 	var pe *PathError
@@ -215,8 +215,8 @@ func (s *Server) Run() error {
 }
 
 // newHTTPServerFrom 从 server 段构造 http.Server：监听地址与协议
-//（Protocols / TLSConfig）经 config.ServerConfig.ConfigureHTTPServer 映射
-//（与生产 bootstrap.newHTTPServer 同口径，§3.15）。
+// （Protocols / TLSConfig）经 config.ServerConfig.ConfigureHTTPServer 映射
+// （与生产 bootstrap.newHTTPServer 同口径，§3.15）。
 func (s *Server) newHTTPServerFrom(sc config.ServerConfig) (*http.Server, error) {
 	srv := &http.Server{Handler: s.handler}
 	if err := sc.ConfigureHTTPServer(srv); err != nil {
@@ -257,10 +257,10 @@ func (s *Server) UploadConfig(ctx context.Context, req *connect.Request[setupv1.
 }
 
 // Install 是 SetupService/Install（§13.3 行 1775）：路径 B 全新安装，执行体
-// 接 paths.go 的 FreshInstall（双路径状态机不动）。root / rp_id 缺省推导取
-// 当前请求 Host——connect-go handler 在分发前把 r.Host 注入 request.Header
-//（connect@v1.21.1 handler.go 行 317-318 setHeaderCanonical(request.Header,
-// "Host", request.Host)），AnyRequest.Header() 原样暴露，无需自造 ctx 注入。
+// 接 paths.go 的 FreshInstall（双路径状态机不动）。root 必填（字段校验在
+// FreshInstall 步骤 ①，config_invalid——既定口径）；rpId 缺省
+// 取 root 的 host（去 scheme 与端口），不再自动读取请求 Host（安装
+// 不得靠自动推导的 IP 蒙混过关，IP rp_id 会被 WebAuthn 库校验拒绝）。
 func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.InstallRequest]) (*connect.Response[setupv1.RestartingResponse], error) {
 	msg := req.Msg
 	if msg.DbDsn == "" || msg.RedisAddr == "" || msg.AdminUsername == "" || msg.AdminPassword == "" {
@@ -268,10 +268,6 @@ func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.Insta
 	}
 	if msg.RedisDb < 0 {
 		return nil, setupParamError("redis_db must be >= 0")
-	}
-	host := req.Header().Get("Host")
-	if host == "" {
-		return nil, setupParamError("missing Host header")
 	}
 	in := InstallInput{
 		DBDSN:         msg.DbDsn,
@@ -282,7 +278,6 @@ func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.Insta
 		RpID:          msg.RpId,
 		AdminUsername: msg.AdminUsername,
 		AdminPassword: msg.AdminPassword,
-		Host:          host,
 	}
 	if err := FreshInstall(ctx, s.configPath, in); err != nil {
 		return nil, setupFail(err)

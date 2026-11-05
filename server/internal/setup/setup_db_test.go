@@ -98,7 +98,7 @@ func connQuiet(db *sql.DB) bool {
 }
 
 // envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例
-//（skip-on-no-env，与 migrate_test 同口径）。
+// （skip-on-no-env，与 migrate_test 同口径）。
 func envDSN(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
@@ -136,7 +136,7 @@ func newSetupTestDB(t *testing.T) (dsn string, configPath string) {
 }
 
 // dropAllTablesForSetup / assertNoTablesForSetup 与 migrate_test 同实现
-//（跨包私有不共享，此处保持同口径副本）。
+// （跨包私有不共享，此处保持同口径副本）。
 func dropAllTablesForSetup(db *sql.DB) error {
 	rows, err := db.Query("SHOW TABLES")
 	if err != nil {
@@ -211,11 +211,10 @@ func openSetupTestDB(t *testing.T, dsn string) *sql.DB {
 }
 
 // postInstallJSON 向 setup server 发 SetupService/Install 的 Connect unary
-// JSON 请求（带安装页 Host，供 root / rp_id 推导；§13.3）。
+// JSON 请求（§13.3；root 必填由调用方在 body 提供——D6 后不再读请求 Host）。
 func postInstallJSON(s *Server, body map[string]any) *httptest.ResponseRecorder {
 	payload, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api.setup.v1.SetupService/Install", strings.NewReader(string(payload)))
-	req.Host = "install.example.com:8080"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
@@ -227,7 +226,6 @@ func postInstallJSON(s *Server, body map[string]any) *httptest.ResponseRecorder 
 func postConfigJSON(s *Server, configText string) *httptest.ResponseRecorder {
 	payload, _ := json.Marshal(map[string]string{"config": configText})
 	req := httptest.NewRequest(http.MethodPost, "/api.setup.v1.SetupService/UploadConfig", strings.NewReader(string(payload)))
-	req.Host = "install.example.com:8080"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
@@ -276,7 +274,8 @@ func adminCredentialSecret(t *testing.T, db *sql.DB) string {
 // TestInstallFreshEndToEnd 路径 B 端到端（§13.3）：空库 + 假 Redis →
 // 200 {"restarting":true}（成功响应即消息本身，§1.0）+ 退出触发 + config
 // 原子写入（可被 config.Load 加载）+ 管理员 ID=1 创建 + argon2id 凭证行 +
-// root/rp_id 按请求 Host 推导。
+// root 按所填写入、rp_id 缺省取 root 的 host（去 scheme 与端口，D6 后不再
+// 读请求 Host）。
 func TestInstallFreshEndToEnd(t *testing.T) {
 	dsn, configPath := newSetupTestDB(t)
 	redisAddr := fakeRedis(t, "")
@@ -287,6 +286,7 @@ func TestInstallFreshEndToEnd(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com:8080",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
@@ -307,10 +307,10 @@ func TestInstallFreshEndToEnd(t *testing.T) {
 		t.Errorf("config db/redis = %q / %q, want install inputs", cfg.DB.DSN, cfg.Redis.Addr)
 	}
 	if cfg.Authloft.Root != "https://install.example.com:8080" {
-		t.Errorf("root = %q, want https://+request Host", cfg.Authloft.Root)
+		t.Errorf("root = %q, want input root verbatim", cfg.Authloft.Root)
 	}
 	if cfg.Authloft.RpID != "install.example.com" {
-		t.Errorf("rp_id = %q, want Host without port", cfg.Authloft.RpID)
+		t.Errorf("rp_id = %q, want root host without port", cfg.Authloft.RpID)
 	}
 
 	// 管理员与凭证。
@@ -338,6 +338,7 @@ func TestInstallIdempotentRetry(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	if first.Code != http.StatusOK {
 		t.Fatalf("first install: HTTP %d (body %s)", first.Code, first.Body.String())
@@ -350,6 +351,7 @@ func TestInstallIdempotentRetry(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "other",
 		"adminPassword": "SecondStr0ng9",
+		"root":          "https://install.example.com",
 	})
 	if second.Code != http.StatusOK {
 		t.Fatalf("second install: HTTP %d (body %s)", second.Code, second.Body.String())
@@ -371,6 +373,7 @@ func TestInstallIdempotentRetry(t *testing.T) {
 		"redisAddr":     "127.0.0.1:1",
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	code, info := decodeConnectError(t, rec)
 	if code != "unavailable" || info == nil || info.Code != CodeRedisUnreachable {
@@ -395,6 +398,7 @@ func TestUploadConfigEndToEnd(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	if prep.Code != http.StatusOK {
 		t.Fatalf("prepare install: HTTP %d (body %s)", prep.Code, prep.Body.String())
@@ -437,6 +441,7 @@ func TestUploadConfigAdminMissing(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	if prep.Code != http.StatusOK {
 		t.Fatalf("prepare install: HTTP %d", prep.Code)
@@ -474,6 +479,7 @@ func TestInstallDomainErrorsWithRealDB(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "bad!",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	if code, info := decodeConnectError(t, rec); code != "invalid_argument" || info == nil || info.Code != CodeUsernameInvalid {
 		t.Errorf("username invalid: connect=(%q, %+v), want invalid_argument + %s (rec %s)", code, info, CodeUsernameInvalid, rec.Body.String())
@@ -484,6 +490,7 @@ func TestInstallDomainErrorsWithRealDB(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "weakpass",
+		"root":          "https://install.example.com",
 	})
 	if code, info := decodeConnectError(t, rec); code != "invalid_argument" || info == nil || info.Code != CodePasswordWeak {
 		t.Errorf("weak password: connect=(%q, %+v), want invalid_argument + %s (rec %s)", code, info, CodePasswordWeak, rec.Body.String())
@@ -513,6 +520,7 @@ func TestInstallAdminUserStatusColumn(t *testing.T) {
 		"redisAddr":     redisAddr,
 		"adminUsername": "admin",
 		"adminPassword": "Str0ngPassw0rd",
+		"root":          "https://install.example.com",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP status = %d, want 200 (body %s)", rec.Code, rec.Body.String())

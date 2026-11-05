@@ -342,15 +342,22 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		return nil, nil, nil, err
 	}
 	// 注册令牌复用 login 域密钥（§1.4 五把密钥未单列 webauthn；purpose
-	// 作为 AAD 保证跨场景隔离，§11.6.1）。
-	wa, err := webauthn.New(deps.codecs.Login, webauthnRepo, deps.queue, webauthn.Options{
+	// 作为 AAD 保证跨场景隔离，§11.6.1）。启动期初始化失败降级（§8.3 行
+	// 1069，2026-11-05 定稿）：rp_id 为 IP / 非法域名导致库 RPID
+	// 校验失败（must be a domain and not an IP）时禁用 webauthn 因子——
+	// 不注册进注册表（登录方式列表与 MFA 开放集合随之不含 webauthn：
+	// dispatch 对未注册 kind 返回 method_disabled），打 WARN 日志（含失败
+	// 原因），程序不退出、其余功能可用；已绑定凭据的用户改走其余登录 /
+	// MFA 方式。AssertComplete 以降级清单显式放行该 kind。
+	wa, waErr := webauthn.New(deps.codecs.Login, webauthnRepo, deps.queue, webauthn.Options{
 		RPID:      cfg.Authloft.RpID,
 		RPOrigins: []string{cfg.Authloft.Root},
 	})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if err := registry.Register(factor.FactorWebAuthn, wa); err != nil {
+	var degraded []factor.FactorKind
+	if waErr != nil {
+		slog.Warn("bootstrap: webauthn factor disabled (init failed, degrading; webauthn login/mfa unavailable, other factors continue)", "err", waErr)
+		degraded = append(degraded, factor.FactorWebAuthn)
+	} else if err := registry.Register(factor.FactorWebAuthn, wa); err != nil {
 		return nil, nil, nil, err
 	}
 	if err := registry.Register(factor.FactorTOTP, totp.New()); err != nil {
@@ -390,7 +397,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err := registry.Register(factor.FactorOTPEmail, otpEmail); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := registry.AssertComplete(); err != nil {
+	if err := registry.AssertComplete(degraded...); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -407,6 +414,10 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	)
 	loginState := orchestrator.NewState(deps.codecs.Login)
 	mfa := orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings)
+	// MFA 开放集合联动启动降级（§8.3 行 1069）——注入同一
+	// registry（与页面壳 Factors 同源；webauthn 降级未注册时 Build 的
+	// webauthn case 跳过注入 methods）。
+	mfa.Factors = registry
 
 	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State / MFA /
 	// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走

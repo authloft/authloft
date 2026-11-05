@@ -25,6 +25,15 @@ type RPConfig struct {
 	Timeout       time.Duration
 }
 
+// ValidRPID 判定字符串是否为库启动期接受的 RP ID 域名字符串（localhost
+// 或多 label 域名；拒绝 IP、scheme、端口、路径等，W3C RP ID 语义）。
+// 供安装域源头校验复用（接口文档 §13.3：安装期接受的 rp_id 集合必须 ⊆
+// 启动期库接受集合，避免装出装完即降级的 config，D6）；仍经本文件转出，
+// 不破坏「go-webauthn 唯一引用点」约定（§1.5 行 78）。
+func ValidRPID(rpID string) bool {
+	return protocol.ValidateRPID(rpID) == nil
+}
+
 // ceremony 封装库实例；库类型不越出本文件。
 type ceremony struct {
 	rp RPConfig

@@ -158,8 +158,8 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	}
 
 	fctx := &factor.FactorContext{
-		Context:         ctx,
-		LoginToken:      req.LoginToken,
+		Context:    ctx,
+		LoginToken: req.LoginToken,
 		// loadPayload 首步也会生成 tid / 选定 flow，Start 之前即可用
 		// （主因子 challenge 需以 owner=tid、purpose=flow 写码，§10.1 行 1121）。
 		Login:           p,
@@ -237,7 +237,7 @@ func flowAccepts(endpointFlow, payloadFlow string) bool {
 // WebAuthn 取 options（challenge 步）不需要人机校验（§2.5 行 526）。
 // 三方免密建号（tp 非空 + flow=login 的 set_password）同样不经
 // captcha：该分支由 LoginOauth 已验证的三方身份背书，请求只提交 username
-//（§2.7.5 行 685「仅提交用户名」——此处默认口径，待复核）。
+// （§2.7.5 行 685「仅提交用户名」——此处默认口径，待复核）。
 func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request, p *token.LoginTokenPayload) (captcha.Outcome, error) {
 	if e.gate == nil {
 		return captcha.Outcome{}, nil
@@ -372,6 +372,16 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		if e.mfa != nil {
 			mfa, required, err := e.mfa.Build(ctx, p.Uid)
 			if err != nil {
+				// 窗口期 fail-closed（§8.3 行 1069）：
+				// webauthn 唯一可用因子因启动降级不可用 → 拒绝登录（§1.6
+				// 行 250 method_disabled + 行 272 明示文案），绝不静默放行。
+				if errors.Is(err, ErrWebauthnDegraded) {
+					msg := WebauthnDegradedMessage
+					return &ssov1.LoginFlowResponse{
+						Status: StatusMethodDisabled,
+						Error:  &ssov1.SsoError{Message: &msg},
+					}
+				}
 				return failed()
 			}
 			if required {
