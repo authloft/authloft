@@ -37,7 +37,7 @@ func TestLoginDefaultConnect(t *testing.T) {
 		LoginToken: "tok-1",
 		UserId:     10086,
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(engine))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -70,14 +70,13 @@ func TestLoginDefaultConnect(t *testing.T) {
 	}
 }
 
-// TestOtherMethodsUnimplemented 校验其余 8 个方法由生成基类返回
-// unimplemented（卡面 NON-GOALS）。
+// TestOtherMethodsUnimplemented 校验其余 7 个方法由生成基类返回
+// unimplemented（CreateCaptchaImage 已实装，移出桩清单）。
 func TestOtherMethodsUnimplemented(t *testing.T) {
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil))
 	cases := []string{
 		ssov1connect.SsoServiceRegisterProcedure,
 		ssov1connect.SsoServiceResetPasswordProcedure,
-		ssov1connect.SsoServiceCreateCaptchaImageProcedure,
 		ssov1connect.SsoServiceAuthorizeProcedure,
 		ssov1connect.SsoServiceLoginOauthProcedure,
 		ssov1connect.SsoServiceCreateQrcodeProcedure,

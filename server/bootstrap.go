@@ -44,6 +44,7 @@ import (
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
+	"authloft/internal/captcha"
 	"authloft/internal/config"
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
@@ -136,6 +137,14 @@ type assembled struct {
 	// oidcJWT OIDC RS256 签发密钥集（§3.2 约定 6 / §14.3：启动期一次性解析
 	// config.oidc.jwt_keys，首项签发、全列表发 JWKS；iss = authloft.root）。
 	oidcJWT *oidc.JWT
+
+	// captcha 链（§9）：Gate 是登录引擎人机校验唯一拦截点（engine
+	// 六步之四，§9.3 行 1110）；imageCaptcha 供 sso 域 CreateCaptchaImage
+	// 生成自绘图形码。catalog / verifier 每次 Evaluate 现算（§9.1 行 1094
+	// 不缓存），provider 行源走 repo 直查（不与 Loader 的 60s LRU 共用，
+	// 保证「每次生成时重新判定」）。
+	gate         *captcha.Gate
+	imageCaptcha *captcha.ImageCaptcha
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -248,6 +257,42 @@ func (r mfaCredentialReader) ListWebauthn(ctx context.Context, userID int64) ([]
 	return r.webauthn.ListByUser(ctx, userID)
 }
 
+// captchaProviderSource 把 provider 表行转成 captcha 包窄投影
+//（captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；与
+// mfaCredentialReader 同款组合模式，不修改 repo 公共接口）。ext 编解码
+// 唯一出口 repo.ParseProviderExt（§12.1：site_key=client_id、
+// secret=client_secret、endpoint=自定义校验地址）；未命中唯一键按
+//「无此行」返回 nil,nil，其余错误原样上抛。
+type captchaProviderSource struct {
+	providers *repo.ProviderRepo
+}
+
+func (s captchaProviderSource) Find(ctx context.Context, providerKey string) (*captcha.ProviderRecord, error) {
+	if providerKey == "" {
+		return nil, nil
+	}
+	row, err := s.providers.FindByKey(ctx, providerKey)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	ext, err := repo.ParseProviderExt(row.Ext)
+	if err != nil {
+		return nil, err
+	}
+	return &captcha.ProviderRecord{
+		ProviderKey: row.ProviderKey,
+		Category:    row.Category,
+		Type:        row.Type,
+		Enabled:     row.IsEnabled != 0,
+		SiteKey:     ext.GetClientId(),
+		Secret:      ext.GetClientSecret(),
+		VerifyURL:   ext.GetEndpoint(),
+	}, nil
+}
+
 // buildEngine 构造因子注册表（§3.8）、登录终点 Terminal（§7.3）与单引擎
 // Engine（§7.2-§7.4），供 assemble 注入。返回 terminal / registry 便于装配单测
 // 直接核对注入完整性，不进入 assembled 字段。
@@ -349,9 +394,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
 		State:      orchestrator.NewState(deps.codecs.Login),
 		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: deps.settings},
-		// TODO(§9)：captcha Gate 依赖 ProviderCatalog / Verifier，尚未落地；
-		// engine.go:209 对 nil Gate 安全（跳过人机校验）。
-		Gate:     nil,
+		// captcha Gate（§9.3 行 1110 唯一拦截点）：装配层构造
+		// 真实 Gate；测试夹具未注入时为 nil，engine.go:209 对 nil 安全。
+		Gate:     deps.gate,
 		MFA:      orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings),
 		Terminal: terminal,
 		Failures: fails,
@@ -448,6 +493,19 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	}
 	deps.settings = store
 	deps.watcher = watcher
+
+	// 步骤 7.5（captcha 链，§9）：Gate = settings 阈值 + catalog
+	//（settings 键 → provider 表生效行，每次现算不缓存，§9.1 行 1094）
+	// + verifier（image GETDEL 一次性 + 三家第三方 siteverify）。同一
+	// CaptchaStore 同时供 verifier 的 image 校验与 CreateCaptchaImage 生成
+	//（al:cap:{id} 单一键空间，§9.2）。provider 行源走 repo 直查（避免
+	// 并行占用 provider 包，不引入 Loader）。
+	captchaStore := cache.NewCaptchaStore(rdb)
+	captchaSrc := captchaProviderSource{providers: repo.NewProviderRepo(db)}
+	deps.gate = captcha.NewGate(store,
+		captcha.NewCatalog(store, captchaSrc),
+		captcha.NewVerifier(captchaSrc, captchaStore, captcha.VerifierOptions{}))
+	deps.imageCaptcha = captcha.NewImageCaptcha(captchaStore)
 
 	// 步骤 8：延迟写入队列（§5.2）与登录事件 sink（§4.6）。队列执行器同时
 	// 消费 event_log / last_login 与 webauthn sign_count（合并且取最大值）。
@@ -738,7 +796,7 @@ func newDomainSessionInterceptor(cfg *config.Config, deps *assembled) connectrpc
 // 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
-		ssohandler.New(deps.engine),
+		ssohandler.New(deps.engine, deps.imageCaptcha),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
