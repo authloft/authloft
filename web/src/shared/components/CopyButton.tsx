@@ -4,6 +4,7 @@
  */
 import { useCopy } from '../hooks/useCopy';
 import { t } from '../i18n';
+import styles from './CopyButton.module.less';
 
 export interface CopyButtonProps {
   /** 待复制文本。 */
@@ -15,7 +16,7 @@ export interface CopyButtonProps {
 export function CopyButton({ text, durationMs }: CopyButtonProps) {
   const { copied, copy } = useCopy(durationMs);
   return (
-    <button type="button" onClick={() => void copy(text)}>
+    <button type="button" className={styles.copyButton} onClick={() => void copy(text)}>
       {copied ? t('common.copied') : t('common.copy')}
     </button>
   );

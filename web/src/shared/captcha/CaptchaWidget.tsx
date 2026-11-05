@@ -18,6 +18,7 @@ import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { createImageAdapter } from './adapters/Image';
 import type { CaptchaAdapter, CaptchaAdapterFactory } from './types';
+import styles from './CaptchaWidget.module.less';
 
 /**
  * 未实现 type（turnstile / recaptcha / hcaptcha 等）的兜底错误态文案。
@@ -98,17 +99,10 @@ export function CaptchaWidget({ captcha, ref }: CaptchaWidgetProps) {
 
   if (factory === undefined) {
     return (
-      <p role="alert" style={fallbackStyle}>
+      <p role="alert" className={styles.fallbackAlert}>
         {FALLBACK_TYPE_TEXT}
       </p>
     );
   }
-  return <div ref={containerRef} />;
+  return <div ref={containerRef} className={styles.container} />;
 }
-
-const fallbackStyle = {
-  margin: 0,
-  padding: '0.75rem 1rem',
-  border: '1px solid',
-  borderRadius: '0.25rem',
-} as const;

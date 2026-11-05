@@ -1,0 +1,18 @@
+// 验证码组件族样式（docs/前端架构.md §1.7；兜底态内联样式清零迁入）。
+@import (reference) '../styles/tokens.less';
+
+// adapter 挂载点容器：图形码 adapter 自管的 img/input 依此纵向排布。
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+// 未实现 type（turnstile / recaptcha 等）的兜底错误态。
+.fallbackAlert {
+  padding: @spacing-md @spacing-lg;
+  border: @border-width solid @color-danger;
+  border-radius: @radius-sm;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}

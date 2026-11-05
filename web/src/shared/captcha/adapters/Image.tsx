@@ -26,6 +26,7 @@ import {
 import { createCaptchaImage } from '../../api/sso';
 import { t } from '../../i18n';
 import type { CaptchaAdapter } from '../types';
+import styles from './Image.module.less';
 
 /** 连续取图失败上限：达到后停止自动换新、转手动重试态（重拉不死循环）。 */
 export const IMAGE_FETCH_MAX_FAILURES = 3;
@@ -120,9 +121,11 @@ export class ImageCaptchaAdapter implements CaptchaAdapter {
     const img = this.doc.createElement('img');
     img.src = `data:image/png;base64,${imageBase64}`;
     img.alt = 'captcha';
+    img.className = styles.image;
     const input = this.doc.createElement('input');
     input.type = 'text';
     input.autocomplete = 'off';
+    input.className = styles.answerInput;
     container.replaceChildren(img, input);
     this.input = input;
   }
@@ -131,9 +134,11 @@ export class ImageCaptchaAdapter implements CaptchaAdapter {
     const message = this.doc.createElement('p');
     message.textContent = t('errors.status.unknown');
     message.setAttribute('role', 'alert');
+    message.className = styles.retryMessage;
     const button = this.doc.createElement('button');
     button.type = 'button';
     button.textContent = t('common.retry');
+    button.className = styles.retryButton;
     button.addEventListener('click', () => {
       this.reset();
     });

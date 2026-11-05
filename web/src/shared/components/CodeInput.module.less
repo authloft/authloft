@@ -1,0 +1,17 @@
+// 分段验证码输入样式（docs/前端架构.md §1.7；内联样式清零迁入）。
+@import (reference) '../styles/tokens.less';
+
+.group {
+  display: flex;
+  gap: @spacing-sm;
+}
+
+// 单格：宽高 / 居中 / 字号沿用迁入前取值；边框保证裸 reset 下的可见性。
+.box {
+  width: 2.5rem;
+  height: 2.75rem;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  text-align: center;
+  font-size: @font-size-lg;
+}

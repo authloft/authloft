@@ -8,6 +8,7 @@
  * （沿 hooks.test.ts / RestartingPage.test.ts 的模式）。
  */
 import { useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import styles from './CodeInput.module.less';
 
 /** 默认分段数（§2.1 codeLength 6；§1.10 totp 六位动态码）。 */
 export const DEFAULT_CODE_LENGTH = 6;
@@ -143,7 +144,7 @@ export function CodeInput({
   };
 
   return (
-    <div role="group" aria-label={ariaLabel} style={groupStyle}>
+    <div role="group" aria-label={ariaLabel} className={styles.group}>
       {boxes.map((char, i) => (
         <input
           key={i}
@@ -155,7 +156,7 @@ export function CodeInput({
           pattern="[0-9]*"
           autoComplete={i === 0 ? 'one-time-code' : 'off'}
           maxLength={1}
-          style={boxStyle}
+          className={styles.box}
           disabled={disabled}
           value={char}
           onChange={(e) => handleInput(i, e.target.value)}
@@ -167,15 +168,3 @@ export function CodeInput({
     </div>
   );
 }
-
-const groupStyle = {
-  display: 'flex',
-  gap: '0.5rem',
-};
-
-const boxStyle = {
-  width: '2.5rem',
-  height: '2.75rem',
-  textAlign: 'center',
-  fontSize: '1.25rem',
-} as const;
