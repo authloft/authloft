@@ -16,15 +16,13 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
+import { t } from '../i18n';
 import { createImageAdapter } from './adapters/Image';
 import type { CaptchaAdapter, CaptchaAdapterFactory } from './types';
 import styles from './CaptchaWidget.module.less';
 
-/**
- * 未实现 type（turnstile / recaptcha / hcaptcha 等）的兜底错误态文案。
- * i18n 字典暂无对应键，扩键归后续 i18n 收口实现。
- */
-const FALLBACK_TYPE_TEXT = '请刷新重试';
+// 未实现 type（turnstile / recaptcha / hcaptcha 等）→ 兜底错误态，
+// 文案 common.refreshAndRetry（i18n 收口）。
 
 /**
  * wrapper 重建判据：providerKey / type / siteKey 三字段联合（§2.5 行 478-486
@@ -100,7 +98,7 @@ export function CaptchaWidget({ captcha, ref }: CaptchaWidgetProps) {
   if (factory === undefined) {
     return (
       <p role="alert" className={styles.fallbackAlert}>
-        {FALLBACK_TYPE_TEXT}
+        {t('common.refreshAndRetry')}
       </p>
     );
   }

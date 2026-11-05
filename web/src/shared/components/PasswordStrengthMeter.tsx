@@ -14,16 +14,17 @@ import {
   type PasswordWeakReason,
   type ValidatePasswordOptions,
 } from '../utils/validate';
+import { t, type I18nKey } from '../i18n';
 import styles from './PasswordStrengthMeter.module.less';
 
-/** 适用规则的展示文案（i18n 无键，中文字面量声明，扩键归后续 i18n 实现）。 */
-const RULE_LABELS: Readonly<Record<PasswordWeakReason, string>> = {
-  too_short: '长度至少 8 位',
-  too_long: '长度至多 64 位',
-  contains_whitespace: '不能包含空白字符',
-  too_few_classes: '须包含大写、小写、数字中的 3 类',
-  contains_username: '不能包含用户名',
-  same_as_identifier: '不能与用户名或邮箱相同',
+/** 适用规则 → i18n 键（common.pwd*；文案见 zh-CN / en-US 字典）。 */
+const RULE_LABEL_KEYS: Readonly<Record<PasswordWeakReason, I18nKey>> = {
+  too_short: 'common.pwdTooShort',
+  too_long: 'common.pwdTooLong',
+  contains_whitespace: 'common.pwdNoWhitespace',
+  too_few_classes: 'common.pwdNeedClasses',
+  contains_username: 'common.pwdNoUsername',
+  same_as_identifier: 'common.pwdNotSameAsIdentifier',
 };
 
 /** 单条规则的展示形态（key 对应 validatePassword 的未满足项）。 */
@@ -58,7 +59,7 @@ export function meterRules(
   }
   return keys.map((key) => ({
     key,
-    label: RULE_LABELS[key],
+    label: t(RULE_LABEL_KEYS[key]),
     satisfied: !reasons.includes(key),
   }));
 }

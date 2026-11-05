@@ -205,7 +205,8 @@ export function createQRPanelController(
       fetchAbort = attempt;
       ticket = '';
       currentQRUrl = '';
-      lastTicketStatus = 'pending'; // 拉码成功即 active(pending)
+      // 拉码成功即 active(pending)。
+      lastTicketStatus = 'pending';
       options.onPhase({ kind: 'fetching' });
       void options.requestQR(attempt.signal).then(
         (qr) => {
@@ -256,16 +257,16 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
     <div className={styles.panel}>
       {phase.kind === 'fetching' && (
         <p className={styles.hint} role="status">
-          正在获取二维码…
+          {t('common.qrFetching')}
         </p>
       )}
       {phase.kind === 'active' && (
         <>
-          <img className={styles.qrcode} src={phase.qrcodeUrl} alt="扫码二维码" />
+          <img className={styles.qrcode} src={phase.qrcodeUrl} alt={t('common.qrCodeAlt')} />
           <p className={styles.hint} role="status">
             {phase.ticketStatus === 'scanned'
               ? t('errors.status.scanned')
-              : '请使用手机扫码'}
+              : t('common.qrScanPrompt')}
           </p>
         </>
       )}

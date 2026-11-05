@@ -99,7 +99,7 @@ export function CodeInput({
 
   const handleInput = (i: number, raw: string) => {
     // 多字符 = 整串到达（粘贴未走 paste 事件 / 浏览器自动填充 / 输入法）：
-    // 统一按整串拆分回填（autocomplete="one-time-code" 的填充路径）。
+    // 统一按整串拆分回填（autocomplete=one-time-code 的填充路径）。
     if (raw.length > 1) {
       const pasted = pasteValue(raw, length);
       onChange(pasted);
@@ -125,7 +125,7 @@ export function CodeInput({
       return;
     }
     if (boxes[i] !== '') {
-      // 有字符的格交给浏览器默认删除，onChange('') 分支收尾。
+      // 有字符的格交给浏览器默认删除，onChange 空串分支收尾。
       return;
     }
     e.preventDefault();

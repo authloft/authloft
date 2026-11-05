@@ -7,6 +7,7 @@
  * onError → 占位的翻转在组件壳（icon 变化时重置，给新地址新机会）。
  */
 import { useEffect, useState } from 'react';
+import { t } from '../i18n';
 import styles from './ProviderIcon.module.less';
 
 export type ProviderIconMode = 'image' | 'placeholder';
@@ -69,14 +70,14 @@ export function ProviderIcon({ icon, alt }: ProviderIconProps) {
         <img
           className={styles.iconImage}
           src={icon}
-          alt={alt || '渠道图标'}
+          alt={alt || t('common.providerIconAlt')}
           onError={() => setLoadFailed(true)}
         />
       </span>
     );
   }
   return (
-    <span className={styles.icon} role="img" aria-label={alt || '渠道图标'}>
+    <span className={styles.icon} role="img" aria-label={alt || t('common.providerIconAlt')}>
       <PlaceholderGlyph />
     </span>
   );

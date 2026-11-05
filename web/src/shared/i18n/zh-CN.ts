@@ -29,6 +29,17 @@ export const zhCN = {
   'common.reveal': '显示',
   'common.hide': '隐藏',
   'common.selectPlaceholder': '请选择',
+  'common.pwdTooShort': '长度至少 8 位',
+  'common.pwdTooLong': '长度至多 64 位',
+  'common.pwdNoWhitespace': '不能包含空白字符',
+  'common.pwdNeedClasses': '须包含大写、小写、数字中的 3 类',
+  'common.pwdNoUsername': '不能包含用户名',
+  'common.pwdNotSameAsIdentifier': '不能与用户名或邮箱相同',
+  'common.qrFetching': '正在获取二维码…',
+  'common.qrCodeAlt': '扫码二维码',
+  'common.qrScanPrompt': '请使用手机扫码',
+  'common.providerIconAlt': '渠道图标',
+  'common.refreshAndRetry': '请刷新重试',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': '密码登录',

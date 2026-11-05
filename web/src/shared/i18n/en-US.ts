@@ -22,6 +22,17 @@ export const enUS: I18nMessages = {
   'common.reveal': 'Show',
   'common.hide': 'Hide',
   'common.selectPlaceholder': 'Select',
+  'common.pwdTooShort': 'At least 8 characters',
+  'common.pwdTooLong': 'At most 64 characters',
+  'common.pwdNoWhitespace': 'Must not contain whitespace',
+  'common.pwdNeedClasses': 'Must include uppercase, lowercase, and digits',
+  'common.pwdNoUsername': 'Must not contain your username',
+  'common.pwdNotSameAsIdentifier': 'Must not match your username or email',
+  'common.qrFetching': 'Fetching QR code…',
+  'common.qrCodeAlt': 'QR code',
+  'common.qrScanPrompt': 'Please scan the QR code with your phone',
+  'common.providerIconAlt': 'Provider icon',
+  'common.refreshAndRetry': 'Please refresh and try again',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': 'Password',
