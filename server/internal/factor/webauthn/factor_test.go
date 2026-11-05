@@ -405,7 +405,15 @@ func TestRegistrationTokenTamperedAndExpired(t *testing.T) {
 	valid := a.attestation(t, ceremonyFixture{challenge: challenge, origin: testOrigin, rpID: testRPID, counter: 0})
 
 	// 篡改 / 无效 → invalid_request。
-	tampered := ch.Token[:len(ch.Token)-1] + "A"
+	// 不动末字符：Raw base64 末字符低位是解码丢弃位，仅替换末字符时解码字节
+	// 可能不变，token 仍通过验证（flaky 根因）。改中段字符（6 位全有效）并
+	// 保证与原字符不同 → 解码字节必变 → GCM 认证必败。
+	idx := len(ch.Token) / 2
+	replacement := "A"
+	if ch.Token[idx] == 'A' {
+		replacement = "B"
+	}
+	tampered := ch.Token[:idx] + replacement + ch.Token[idx+1:]
 	if res := f.FinishRegistration(tampered, valid); res.Status != StatusInvalidRequest {
 		t.Fatalf("tampered token status = %q, want invalid_request", res.Status)
 	}
