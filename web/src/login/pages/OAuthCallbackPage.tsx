@@ -1,0 +1,292 @@
+/**
+ * OAuth 回调页（docs/前端架构.md §4.4 行 467；docs/接口文档.md §2.7.3 行
+ * 602-616、§10.5 行 1534-1550）：不做任何业务逻辑——把 location.search（code、
+ * state 等）原样装进请求报文，补上路径参数 providerKey（routes.tsx 从 pathname
+ * 提取传入），按 state 首字母分派（§2.7.3 行 606-610）：
+ * - `l` → SsoService/LoginOauth（api.loginOauth；oidc 由 api 层从 al_oidc_ctx
+ *   读回注入请求体、读完即清，§2.7.2 行 599-600——本页不读 localStorage）；
+ * - `b` → AccountService/ThirdpartyOauth：**占位帧**（account 端前端封装未交付，
+ *   完整编排归 account 端实现）：提示「绑定功能即将上线」；§4.4 行 467 的绑定完成
+ *   跳转 `/account/security?bind={success｜ErrorInfo.code}` 在占位态下暂不可达
+ *   （本页不实现该跳转，待后续实现接线）；
+ * - 其他 / 缺失 → 视为 state_mismatch，跳 /sso/login（§2.7.3 行 610）。
+ *
+ * LoginOauth 响应走 §1.3 登录流程信封（loginToken 无条件覆盖 / success 清空由
+ * api 层 applyEnvelope 托管），页面级处理裁量（接入
+ * LoginContainer 不属本实现范围）：
+ * - success → 终点跳转（flowTerminalUrl：syncCookieUrl 优先，§1.3 行 136）；
+ * - binding_required → 原地渲染 BindingPage（§1.6 行 234「渲染绑定选择页」，
+ *   LoginContainer binding 分支同款用法；建号 / 退出编排由其自带）；
+ * - mfa_required → **占位帧**：§1.6 行 233 规定就地渲染 mfa.methods 选择器 +
+ *   因子组件（LoginContainer 既有能力），接入不属本实现范围——提示返回重新
+ *   登录，完整编排归后续联调实现；
+ * - 失败态 → ErrorBanner（§1.6 表驱动文案）+ 返回登录：回调页无表单，字段级
+ *   提示无处着落，「回到第一步」类动作统一为回 /sso/login。
+ *
+ * 结构沿 RegisterPage / BindingPage 模式：View 纯状态帧（renderToStaticMarkup
+ * 可测任意 status 帧）+ 页壳薄胶水；分派编排抽为 dispatchCallback（依赖注入、
+ * node 可测），页壳 useEffect 挂载即分派一次（ref 守卫防 dev 严格模式双跑）。
+ *
+ * 文案：回调页专属（处理中 / 占位 / 成功 / 返回登录）在字典无键，中文
+ * 字面量 + 注释声明，扩键归后续 i18n 实现。
+ */
+import { useEffect, useRef, useState } from 'react';
+import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { resolveFlowStatus } from '../../shared/api/errors';
+import { ErrorBanner } from '../../shared/components';
+import { loginOauth, type LoginOauthInput } from '../api';
+import { clearLoginToken } from '../loginTokenStore';
+import { BindingPage, exitBinding } from './BindingPage';
+import { flowTerminalUrl, isFlowErrorStatus, ssoPath } from './RegisterPage';
+import styles from './OAuthCallbackPage.module.less';
+
+// ---------------------------------------------------------------------------
+// 纯函数（node 可测；state 分派 / 请求报文组装是本实现契约落点）
+// ---------------------------------------------------------------------------
+
+/** state 首字母分派结果（§2.7.3 行 606-610：l 登录 / b 绑定 / 其他缺失回登录）。 */
+export type CallbackDispatch = 'login' | 'bind' | 'mismatch';
+
+/** 按 state 首字母分派（§2.7.3）：`l` → login、`b` → bind、其他 / 空串 → mismatch。 */
+export function callbackDispatch(state: string): CallbackDispatch {
+  if (state.startsWith('l')) {
+    return 'login';
+  }
+  return state.startsWith('b') ? 'bind' : 'mismatch';
+}
+
+/** location.search → query 对象（§2.7.3 行 604「原样作为 body JSON」；键重复取首值，与 URLSearchParams.get 同口径）。 */
+export function callbackQuery(search: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(search)) {
+    if (!(key in out)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * LoginOauth 请求报文（§2.7.3 行 612-615）：query 原样透传 + 路径参数
+ * providerKey 补上（同名以路径为准）；loginToken / oidc 由 api 层托管注入。
+ */
+export function buildLoginOauthInput(
+  providerKey: string,
+  search: string,
+): LoginOauthInput {
+  return { ...callbackQuery(search), providerKey };
+}
+
+/** dispatchCallback 依赖（注入；页壳给真实实现，node 测试给记录函数）。 */
+export interface CallbackDispatchDeps {
+  /** l 分派的 LoginOauth 请求（api.loginOauth）。 */
+  loginOauthRequest: (req: LoginOauthInput) => Promise<LoginFlowResponse>;
+  /** 信封落地（含 binding_required / mfa_required / 失败态；success 亦落地驱动「正在跳转」帧）。 */
+  onEnvelope: (envelope: LoginFlowResponse) => void;
+  /** 传输层异常（§1.6 行 272：failed 兜底，不暴露内部信息）。 */
+  onTransportError: () => void;
+  /** b 分支占位帧落地（account 端未交付，本实现不请求）。 */
+  onBindUnavailable: () => void;
+  /** mismatch → /sso/login（§2.7.3 行 610）；success → 终点 URL（§1.3 行 136）。 */
+  navigate: (url: string) => void;
+}
+
+/**
+ * 回调分派编排（§2.7.3 / §10.5 行 1541-1545）：mismatch 跳登录、b 落占位、
+ * l 发 LoginOauth 并按 §1.3 信封处理（success 终点跳转；其余状态交页面帧渲染）。
+ */
+export async function dispatchCallback(
+  input: { providerKey: string; search: string },
+  deps: CallbackDispatchDeps,
+): Promise<void> {
+  const state = new URLSearchParams(input.search).get('state') ?? '';
+  const kind = callbackDispatch(state);
+  if (kind === 'mismatch') {
+    deps.navigate(ssoPath('/sso/login'));
+    return;
+  }
+  if (kind === 'bind') {
+    deps.onBindUnavailable();
+    return;
+  }
+  try {
+    const envelope = await deps.loginOauthRequest(
+      buildLoginOauthInput(input.providerKey, input.search),
+    );
+    deps.onEnvelope(envelope);
+    if (envelope.status === 'success') {
+      const url = flowTerminalUrl(envelope);
+      if (url !== '') {
+        deps.navigate(url);
+      }
+    }
+  } catch {
+    deps.onTransportError();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 视图（纯状态帧渲染；renderToStaticMarkup 下不执行副作用）
+// ---------------------------------------------------------------------------
+
+/** 处理中（初始 / l 分派请求在途）。 */
+const PROCESSING_TEXT = '正在处理，请稍候…';
+/** b 分支占位（完整编排与 /account/security?bind= 跳转归 account 卡，见文件头）。 */
+const BIND_UNAVAILABLE_TEXT = '绑定功能即将上线';
+/** success 渲染（终点跳转由 dispatchCallback 执行）。 */
+const SUCCESS_TEXT = '登录成功，正在跳转…';
+/** mfa_required 占位（完整编排归后续联调卡，见文件头）。 */
+const MFA_PLACEHOLDER_TEXT = '登录需要二次验证，请返回重新登录';
+/** 返回登录（b 占位 / mfa 占位 / 失败态出口；§1.6「回到第一步」）。 */
+const BACK_TO_LOGIN_TEXT = '返回登录';
+
+export interface OAuthCallbackViewProps {
+  /** 帧状态：'idle'（处理中）/ 'bind'（b 占位）/ 信封 status。 */
+  readonly status: string;
+  /** 最近一次响应信封（binding_required 的 binding、失败态 error 来源）。 */
+  readonly envelope: LoginFlowResponse | undefined;
+  /** 返回登录（清内存 login_token → 跳 /sso/login；exitBinding 同款动作）。 */
+  onBackToLogin: () => void;
+}
+
+export function OAuthCallbackView({
+  status,
+  envelope,
+  onBackToLogin,
+}: OAuthCallbackViewProps) {
+  // 失败态（§1.6 表驱动文案；bind / idle / success 不进此分支）。
+  const failed =
+    status !== 'idle' && status !== 'bind' && isFlowErrorStatus(status);
+  const resolution = failed ? resolveFlowStatus(status) : undefined;
+  const error = envelope?.error;
+
+  return (
+    <main className={styles.page}>
+      {status === 'bind' ? (
+        // b 分支占位帧：AccountService/ThirdpartyOauth 前端封装未交付，本帧不发
+        // 请求；绑定完成跳 /account/security?bind={success｜ErrorInfo.code}
+        // （§4.4 行 467）在占位态下暂不可达，归 account 卡接线。
+        <section className={styles.section}>
+          <p role="status" className={styles.status}>
+            {BIND_UNAVAILABLE_TEXT}
+          </p>
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={onBackToLogin}
+          >
+            {BACK_TO_LOGIN_TEXT}
+          </button>
+        </section>
+      ) : status === 'success' ? (
+        <section className={styles.section}>
+          <p role="status" className={styles.status}>
+            {SUCCESS_TEXT}
+          </p>
+        </section>
+      ) : status === 'binding_required' ? (
+        // §1.6 行 234：原地渲染绑定选择页（不跳路由；建号 / 退出编排自带）。
+        <BindingPage binding={envelope?.binding} />
+      ) : status === 'mfa_required' ? (
+        // mfa_required 占位帧：完整编排（就地渲染 mfa.methods 选择器 + 因子
+        // 组件，§1.6 行 233）归后续联调实现（裁量见文件头）。
+        <section className={styles.section}>
+          <p role="status" className={styles.status}>
+            {MFA_PLACEHOLDER_TEXT}
+          </p>
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={onBackToLogin}
+          >
+            {BACK_TO_LOGIN_TEXT}
+          </button>
+        </section>
+      ) : resolution !== undefined ? (
+        // 失败态（§1.6 表驱动文案）：回调页无表单，字段级提示无处着落，
+        // 「回到第一步」类动作统一为返回登录（绑定中间态 restart 类同口径）。
+        <section className={styles.section}>
+          <ErrorBanner
+            i18nKey={resolution.i18nKey}
+            fallbackMessage={error?.message}
+            retryAfter={error?.retryAfter}
+            attemptsLeft={error?.attemptsLeft}
+            retryable={resolution.retryable}
+          />
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={onBackToLogin}
+          >
+            {BACK_TO_LOGIN_TEXT}
+          </button>
+        </section>
+      ) : (
+        // 初始 / l 分派请求在途（静态渲染不跑 effect，此帧即回调路由首帧）。
+        <section className={styles.section}>
+          <p role="status" className={styles.status}>
+            {PROCESSING_TEXT}
+          </p>
+        </section>
+      )}
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 页壳（薄胶水：挂载即分派一次；状态帧由 View 渲染）
+// ---------------------------------------------------------------------------
+
+export interface OAuthCallbackPageProps {
+  /** 路径参数 provider_key（routes.tsx 从 pathname 提取，§2.7.3）。 */
+  readonly providerKey: string;
+}
+
+export function OAuthCallbackPage({ providerKey }: OAuthCallbackPageProps) {
+  const [status, setStatus] = useState('idle');
+  const [envelope, setEnvelope] = useState<LoginFlowResponse | undefined>(
+    undefined,
+  );
+  // 挂载即分派一次（回调 code 单次有效）：dev 严格模式 effect 双跑守卫。
+  const dispatchedRef = useRef(false);
+
+  useEffect(() => {
+    if (dispatchedRef.current) {
+      return;
+    }
+    dispatchedRef.current = true;
+    void dispatchCallback(
+      { providerKey, search: window.location.search },
+      {
+        loginOauthRequest: loginOauth,
+        onEnvelope: (env) => {
+          setEnvelope(env);
+          setStatus(env.status);
+        },
+        onTransportError: () => {
+          setStatus('failed');
+        },
+        onBindUnavailable: () => {
+          setStatus('bind');
+        },
+        navigate: (url) => {
+          location.replace(url);
+        },
+      },
+    );
+  }, [providerKey]);
+
+  // 返回登录（§1.6「回到第一步」）：清内存 login_token → 跳 /sso/login
+  //（BindingPage.exitBinding 同款动作，导出复用）。
+  const backToLogin = () => {
+    exitBinding(clearLoginToken, (url) => location.replace(url));
+  };
+
+  return (
+    <OAuthCallbackView
+      status={status}
+      envelope={envelope}
+      onBackToLogin={backToLogin}
+    />
+  );
+}

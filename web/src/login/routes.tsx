@@ -3,8 +3,9 @@
  * `/sso/login`、`/auth/authorize` → LoginPage——「OIDC 授权页即登录页」；
  * `/sso/register` → RegisterPage、`/sso/reset` → ResetPage。
  * `/auth/authorize` 的已登录直达由后端直接 302 处理（§4.4 行 447），
- * 前端只渲染无会话空壳；`/sso/oauth/callback/:provider_key` 随后续实现补
- * （本实现不注册，未注册路径渲染兜底提示）。
+ * 前端只渲染无会话空壳；`/sso/oauth/callback/:provider_key` 已注册
+ * （§4.1 行 392）：前缀匹配提取路径参数 → OAuthCallbackPage 空壳页（无业务
+ * 逻辑，分派归页面，接口文档 §2.7.3）。
  *
  * 零第三方路由库（§1.6 行 110：login 无额外依赖）：entry 自挂载
  * （disableMount），极简 pathname 匹配即可；页面刷新即丢失内存态、
@@ -12,6 +13,7 @@
  */
 import { loadLoginBootstrap } from './bootstrap';
 import { LoginPage } from './pages/LoginPage';
+import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ResetPage } from './pages/ResetPage';
 
@@ -22,6 +24,18 @@ const LOGIN_ROUTES: ReadonlySet<string> = new Set([
   '/sso/reset',
   '/auth/authorize',
 ]);
+
+/** OAuth 回调路由前缀（§4.1 行 392 / §2.7.3：`/sso/oauth/callback/:provider_key`）。 */
+const CALLBACK_PREFIX = '/sso/oauth/callback/';
+
+/** 提取路径参数 provider_key：URL 编码段解码，非法编码原样透传（后端按未知 provider 处理）。 */
+function decodeProviderKey(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
 
 /** methods 缺失错误态文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
 const INIT_MISSING_TEXT = '初始化数据缺失，请刷新重试';
@@ -40,6 +54,14 @@ export function LoginApp() {
   // 尾斜杠归一（`/sso/login/` 与 `/sso/login` 同页；根路径归一为空串不匹配）。
   const path = window.location.pathname.replace(/\/+$/, '');
   if (!LOGIN_ROUTES.has(path)) {
+    // 回调路由带路径参数，不走精确 Set：前缀 + 单段非空 key 才匹配（§2.7.3）；
+    // 其余（含缺 key / 多段）走兜底提示。
+    const rest = path.startsWith(CALLBACK_PREFIX)
+      ? path.slice(CALLBACK_PREFIX.length)
+      : '';
+    if (rest !== '' && !rest.includes('/')) {
+      return <OAuthCallbackPage providerKey={decodeProviderKey(rest)} />;
+    }
     return <p role="status">{ROUTE_NOT_FOUND_TEXT}</p>;
   }
   // 注册 / 重置页共用注入快照（flow=register / flow=reset 已按 §2.1 过滤）。

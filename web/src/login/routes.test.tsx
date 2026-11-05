@@ -207,6 +207,45 @@ describe('LoginApp：bootstrap 错误态与路由分派（§4.1 行 374-376）',
     expect(html).toContain('页面不存在');
     expect(html).not.toContain('<h1>登录</h1>');
   });
+
+  test('/sso/oauth/callback/qq → OAuthCallbackPage 处理中首帧（静态渲染不跑分派副作用）', () => {
+    const html = renderLoginApp('/sso/oauth/callback/qq', {
+      al_root: BASE,
+      static_base: '/assets/',
+      methods: makeSnapshot(),
+    });
+    expect(html).toContain('正在处理，请稍候…');
+    expect(html).not.toContain('<h1>登录</h1>');
+    expect(html).not.toContain('页面不存在');
+  });
+
+  test('尾斜杠归一：/sso/oauth/callback/qq/ 同回调页', () => {
+    const html = renderLoginApp('/sso/oauth/callback/qq/', {
+      al_root: BASE,
+      static_base: '/assets/',
+      methods: makeSnapshot(),
+    });
+    expect(html).toContain('正在处理，请稍候…');
+  });
+
+  test('缺 provider_key（/sso/oauth/callback）→ 兜底提示，不渲染回调页', () => {
+    const html = renderLoginApp('/sso/oauth/callback', {
+      al_root: BASE,
+      static_base: '/assets/',
+      methods: makeSnapshot(),
+    });
+    expect(html).toContain('页面不存在');
+    expect(html).not.toContain('正在处理');
+  });
+
+  test('多段路径（/sso/oauth/callback/qq/extra）→ 不匹配，兜底提示', () => {
+    const html = renderLoginApp('/sso/oauth/callback/qq/extra', {
+      al_root: BASE,
+      static_base: '/assets/',
+      methods: makeSnapshot(),
+    });
+    expect(html).toContain('页面不存在');
+  });
 });
 
 // ---------------------------------------------------------------------------

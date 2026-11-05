@@ -1,0 +1,26 @@
+// OAuth 回调页样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+// 过渡页无表单：容器 + 状态文案 + 返回登录按钮；binding_required 帧复用
+// BindingPage 自带样式（pages/BindingPage.module.less），此处只包页面容器。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: @spacing-xl @spacing-lg;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.status {
+  color: @color-text-muted;
+  font-size: @font-size-md;
+}
+
+.backButton {
+  padding: 0.375rem 0.875rem;
+  align-self: flex-start;
+}
