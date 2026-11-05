@@ -1,8 +1,9 @@
 // epoch 读取链（docs/后端架构.md §11.1 步骤 3 + §5.1 行 863）：
 // 进程内 localCache（TTL 60s）→ Redis GET al:pwdep:{uid} → 缺失回源
 // 注入函数并 SET 新值（TTL 24h）。Redis client 与回源函数由构造注入
-// （叶子件，不 import config / repo）；epoch 递增写路径（改密 / 重置 /
-// 管理员禁用）不在本文件，归对应链路卡。
+// （叶子件，不 import config / repo）；epoch 的 DB 递增写路径（改密 /
+// 重置 / 管理员禁用，repo.UserRepo.IncEpoch）不在本文件，改密链路通过
+// Sync 同步缓存。
 package cache
 
 import (
@@ -23,6 +24,7 @@ type EpochSource func(ctx context.Context, uid int64) (int64, error)
 type epochRedis interface {
 	Get(ctx context.Context, key string) *redis.StringCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
 }
 
 const (
@@ -81,6 +83,20 @@ func (s *EpochStore) Current(ctx context.Context, uid int64) (int64, error) {
 	_ = s.rdb.Set(ctx, EpochKey(uid), cur, epochRedisTTL).Err()
 	s.local.set(uid, cur)
 	return cur, nil
+}
+
+// Sync 覆盖式同步 al:pwdep:{uid}（改密 / 重置 / 管理员禁用后的写路径，
+// §5.1 行 850、TTL 24h）：SET 新值并刷新 localCache，让后续校验立即看到
+// 新 epoch。SET 失败时退而 DEL（读取链 miss 后回源 DB 真源，避免 Redis
+// 残留旧值最长 24h）；DEL 也失败才向调用方报错（由调用方决定失败语义）。
+func (s *EpochStore) Sync(ctx context.Context, uid int64, epoch int16) error {
+	v := int64(epoch)
+	if err := s.rdb.Set(ctx, EpochKey(uid), v, epochRedisTTL).Err(); err != nil {
+		_ = s.rdb.Del(ctx, EpochKey(uid)).Err()
+		return err
+	}
+	s.local.set(uid, v)
+	return nil
 }
 
 // epochLocalCache 进程内 epoch 缓存：RWMutex + map（读多写少，热路径

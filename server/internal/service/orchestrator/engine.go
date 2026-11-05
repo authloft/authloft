@@ -31,6 +31,10 @@ const (
 	StatusResetDisabled   = "reset_disabled"
 	StatusInvalidRequest  = "invalid_request"
 	StatusFailed          = "failed"
+	// set_password 步的字段级失败（§1.6 行 255-256，封闭集合成员）。
+	StatusUsernameTaken = "username_taken"
+	StatusTargetTaken   = "target_taken"
+	StatusPasswordWeak  = "password_weak"
 )
 
 const (
@@ -74,6 +78,7 @@ type EngineDeps struct {
 	Terminal   *Terminal
 	Failures   PasswordFailures
 	Factor     FactorDeps
+	SetPass    *SetPassDeps
 	NewTID     func() (string, error)
 }
 
@@ -86,6 +91,7 @@ type Engine struct {
 	terminal   *Terminal
 	failures   PasswordFailures
 	repo       FactorDeps
+	setpass    *SetPassDeps
 	newTID     func() (string, error)
 }
 
@@ -99,6 +105,7 @@ func NewEngine(d EngineDeps) *Engine {
 		terminal:   d.Terminal,
 		failures:   d.Failures,
 		repo:       d.Factor,
+		setpass:    d.SetPass,
 		newTID:     d.NewTID,
 	}
 	if e.newTID == nil {
@@ -146,6 +153,9 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 
 	if req.Step == "challenge" {
 		return e.start(ctx, flow, req, p, d, fctx)
+	}
+	if req.Step == stepSetPassword {
+		return e.setPassword(ctx, flow, req, p, d)
 	}
 	return e.verify(ctx, flow, req, p, d, fctx)
 }
@@ -212,8 +222,14 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 	if d.Kind == factor.FactorWebAuthn && req.Step == "challenge" {
 		return captcha.Outcome{}, nil
 	}
+	// register 直通入口（method=password、step=set_password）captcha 必经
+	// （§2.3 行 450-451「captcha 必填」）。到达这里的 password + set_password
+	// 只可能是 register 流（login 流被 dispatch 拒、reset 流被方式开关拒），
+	// 复用 gate 的 Challenge 必经通道——docs 未明说 set_password 的 gate
+	// Request 形态，默认口径，待定。
+	direct := d.Kind == factor.FactorPassword && req.Step == stepSetPassword
 	r := captcha.Request{
-		Challenge: req.Step == "challenge",
+		Challenge: req.Step == "challenge" || direct,
 		Password:  d.Kind == factor.FactorPassword && req.Step == "verify",
 	}
 	if req.Captcha != nil {
@@ -304,9 +320,28 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 	}
 	p.Passed = appendOnce(p.Passed, string(d.Kind))
 	p.Amr = appendOnce(p.Amr, string(d.Kind))
-	p.Ch = nil
+	// login 流清挑战（终点 / MFA 不再需要）；register / reset 保留 ch.target
+	// 供 set_password 建号落库（§7.4），令牌重新加密防篡改。
+	if flow == "login" {
+		p.Ch = nil
+	}
 
 	if d.Usage == factor.UsagePrimary {
+		// 注册 / 重置的 verify 通过后不进 MFA / 终点（§7.4 行 1025-1026）：
+		// register 流用户尚未建号（uid=0 合法，现状 uid==0 → failed 的分支
+		// 不适用于 register），重签 login_token 返回 next，next_step 指向
+		// set_password（endpoint 按 flow）。
+		if flow == "register" || flow == "reset" {
+			tok, err := e.state.Issue(p)
+			if err != nil {
+				return failed()
+			}
+			return &ssov1.LoginFlowResponse{
+				Status:     StatusNext,
+				LoginToken: tok,
+				NextStep:   nextStep(flow, d.Kind, setPasswordForm(flow)),
+			}
+		}
 		if p.Uid == 0 {
 			return failed()
 		}
@@ -332,6 +367,12 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 	if e.terminal == nil {
 		return failed()
 	}
+	return e.completeSuccess(ctx, req, p)
+}
+
+// completeSuccess 组装 status=success 信封（verify 与 set_password 共用，
+// §2.2 行 430-437、§10.3 行 1527、§10.4 行 1532）。
+func (e *Engine) completeSuccess(ctx context.Context, req Request, p *token.LoginTokenPayload) *ssov1.LoginFlowResponse {
 	success, err := e.terminal.Complete(ctx, p)
 	if err != nil {
 		return failed()

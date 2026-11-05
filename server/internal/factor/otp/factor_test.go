@@ -364,3 +364,124 @@ func TestVerifyEmailChannel(t *testing.T) {
 		t.Fatalf("Verify = %+v, want passed uid=7", res)
 	}
 }
+
+// TestStartResetUnverifiedTarget reset 前提校验（§2.4 行 465）：目标已绑定
+// 但未验证 → user_not_found（不写码、不发信）。
+func TestStartResetUnverifiedTarget(t *testing.T) {
+	phone := "13800000000"
+	f, st, sender := newFactor(t, factor.FactorOTPSMS)
+	ctx := &factor.FactorContext{
+		Context: context.Background(),
+		Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: "reset"},
+		Payload: &factor.Payload{Phone: phone},
+		Users:   fakeUsers{byPhone: &model.User{ID: 7, Phone: &phone, PhoneVerified: 0}},
+	}
+	res, err := f.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.Status != StatusUserNotFound {
+		t.Fatalf("Start = %+v, want user_not_found（未验证目标）", res)
+	}
+	if st.sendCalls != 0 || sender.calls != 0 {
+		t.Fatalf("store/sender called: %d/%d, want 0/0", st.sendCalls, sender.calls)
+	}
+}
+
+// TestStartResetVerifiedTarget reset + 已绑定且已验证 → 正常发码（purpose=reset）。
+func TestStartResetVerifiedTarget(t *testing.T) {
+	phone := "13800000000"
+	f, st, sender := newFactor(t, factor.FactorOTPSMS)
+	ctx := &factor.FactorContext{
+		Context: context.Background(),
+		Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: "reset"},
+		Payload: &factor.Payload{Phone: phone},
+		Users:   fakeUsers{byPhone: &model.User{ID: 7, Phone: &phone, PhoneVerified: 1}},
+	}
+	res, err := f.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.Status != "" || res.Kind != factor.StepForm {
+		t.Fatalf("Start = %+v, want form step", res)
+	}
+	if st.gotPurpose != "reset" || st.gotTarget != phone {
+		t.Fatalf("store args = %q/%q, want reset/%s", st.gotPurpose, st.gotTarget, phone)
+	}
+	if sender.calls != 1 {
+		t.Fatalf("sender calls = %d, want 1", sender.calls)
+	}
+}
+
+// TestStartRegisterNewTarget register 注册入口：目标不存在才发码
+// （purpose=register，§2.3 行 446）。
+func TestStartRegisterNewTarget(t *testing.T) {
+	f, st, sender := newFactor(t, factor.FactorOTPEmail)
+	ctx := &factor.FactorContext{
+		Context: context.Background(),
+		Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: "register"},
+		Payload: &factor.Payload{Email: "new@example.com"},
+		Users:   fakeUsers{},
+	}
+	res, err := f.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.Status != "" || res.Kind != factor.StepForm {
+		t.Fatalf("Start = %+v, want form step", res)
+	}
+	if st.gotPurpose != "register" || st.gotTarget != "new@example.com" {
+		t.Fatalf("store args = %q/%q, want register/new@example.com", st.gotPurpose, st.gotTarget)
+	}
+	if sender.calls != 1 {
+		t.Fatalf("sender calls = %d, want 1", sender.calls)
+	}
+}
+
+// TestStartRegisterTargetTaken register + 目标已占用 → target_taken
+// （§1.6 行 256，不写码、不发信）。
+func TestStartRegisterTargetTaken(t *testing.T) {
+	email := "taken@example.com"
+	f, st, sender := newFactor(t, factor.FactorOTPEmail)
+	ctx := &factor.FactorContext{
+		Context: context.Background(),
+		Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: "register"},
+		Payload: &factor.Payload{Email: email},
+		Users:   fakeUsers{byEmail: &model.User{ID: 9, Email: &email, EmailVerified: 1}},
+	}
+	res, err := f.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.Status != StatusTargetTaken {
+		t.Fatalf("Start = %+v, want target_taken", res)
+	}
+	if st.sendCalls != 0 || sender.calls != 0 {
+		t.Fatalf("store/sender called: %d/%d, want 0/0", st.sendCalls, sender.calls)
+	}
+}
+
+// TestVerifyRegisterNoUserLookup register 流 verify 通过后不反查用户
+// （建号在 set_password 步，§7.4）：Passed 且不带 uid。
+func TestVerifyRegisterNoUserLookup(t *testing.T) {
+	f, st, _ := newFactor(t, factor.FactorOTPEmail)
+	st.verifyResult = cache.VerifyOK
+	ctx := &factor.FactorContext{
+		Context: context.Background(),
+		Login: &token.LoginTokenPayload{
+			Tid: "tid-1", Flow: "register",
+			Ch: &token.Challenge{Purpose: "register", Target: "new@example.com"},
+		},
+		Payload: &factor.Payload{Code: "123456"},
+		// Users 不提供已存在用户：login 语义会反查并返回 user_not_found，
+		// register 语义必须跳过反查。
+		Users: fakeUsers{},
+	}
+	res, err := f.Verify(ctx)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if !res.Passed || res.UID != 0 {
+		t.Fatalf("Verify = %+v, want passed with uid=0（register 未建号）", res)
+	}
+}

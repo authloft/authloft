@@ -31,10 +31,15 @@ type Dispatcher struct {
 	Settings SettingsReader
 }
 
-// stepKinds 登录流程只接受 challenge / verify 两种 step 值（§2.2）。
+// stepSetPassword 注册 / 重置专用 step（§1.4 行 165 请求侧 step）。
+const stepSetPassword = "set_password"
+
+// stepKinds 登录流程接受的 step 值（§2.2；set_password 见 §1.4 行 165、
+// §2.3 行 444-450、§2.4 行 462-466，渲染 kind=form）。
 var stepKinds = map[string]factor.StepKind{
-	"challenge": factor.StepChallenge,
-	"verify":    factor.StepForm,
+	"challenge":       factor.StepChallenge,
+	"verify":          factor.StepForm,
+	stepSetPassword:   factor.StepForm,
 }
 
 // Resolve 校验并返回分派结果；第二个返回值为非空时表示业务失败 status。
@@ -68,10 +73,53 @@ func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTok
 		return nil, StatusStepInvalid
 	}
 
+	// set_password 不是因子验证：强制按 primary 语义走方式开关（§2.3 行 453 /
+	// §2.4 行 471 的 signup_disabled / reset_disabled 对各 step 一律生效），
+	// 避免 reset 验后（uid≠0 且 passed 非空）被 resolveUsage 误判为 MFA 阶段。
+	if step == stepSetPassword {
+		usage = factor.UsagePrimary
+	}
+
 	if status := methodStatus(flow, kind, usage, d.Settings); status != "" {
 		return nil, status
 	}
+
+	// set_password 仅 register | reset 流接受（§1.4 行 165、§7.4 行 1025）：
+	// register 直通入口 method=password（§2.3 行 451）无需先过 verify；
+	// 其余方式（register / reset 的 otp）必须已完成 verify（passed 含该因子）。
+	if step == stepSetPassword {
+		if status := setPasswordAccepts(flow, kind, p); status != "" {
+			return nil, status
+		}
+	}
 	return &Dispatched{Factor: f, Kind: kind, Usage: usage, Step: stepKind}, ""
+}
+
+// setPasswordAccepts 校验 set_password 步的 flow / method / 前置状态。
+func setPasswordAccepts(flow string, kind factor.FactorKind, p *token.LoginTokenPayload) string {
+	switch flow {
+	case "register":
+		if kind == factor.FactorPassword {
+			// 用户名 + 密码直通入口（§2.3 行 451：无 challenge / verify）。
+			return ""
+		}
+		if kind != factor.FactorOTPSMS && kind != factor.FactorOTPEmail {
+			return StatusStepInvalid
+		}
+	case "reset":
+		if kind != factor.FactorOTPSMS && kind != factor.FactorOTPEmail {
+			return StatusStepInvalid
+		}
+	default:
+		// login 流不接受 set_password（§1.4 行 165：注册 / 重置专用）。
+		return StatusStepInvalid
+	}
+	// otp 方式必须验后（login_token.passed 含该因子），防止跳过
+	// challenge / verify 直达 set_password。
+	if p == nil || !sliceContains(p.GetPassed(), string(kind)) {
+		return StatusStepInvalid
+	}
+	return ""
 }
 
 // methodStatus 按 flow 判定方式是否启用（§2.2 第 2 步、§2.3、§2.4）。

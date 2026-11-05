@@ -1,8 +1,8 @@
 // Package sso 实现 api.sso.v1.SsoService 的 Connect handler（docs/后端架构.md
 // §3.4 行 316）：handler 只做请求绑定与组装，登录流程编排全部在
-// orchestrator，图形码生成委托 internal/captcha。已落地 LoginDefault 与
-// CreateCaptchaImage（接口文档 §2.5），其余 7 个方法由生成的
-// UnimplementedSsoServiceHandler 返回 unimplemented。
+// orchestrator，图形码生成委托 internal/captcha。已落地 LoginDefault、
+// Register、ResetPassword 与 CreateCaptchaImage（接口文档 §2.2-§2.5），
+// 其余 5 个方法由生成的 UnimplementedSsoServiceHandler 返回 unimplemented。
 package sso
 
 import (
@@ -17,8 +17,12 @@ import (
 	"authloft/internal/service/orchestrator"
 )
 
-// loginFlow 登录端点固定 flow（接口文档 §2.2 行 415）。
-const loginFlow = "login"
+// 各端点固定 flow（接口文档 §2.2 行 415、§2.3 行 443、§2.4 行 460）。
+const (
+	loginFlow    = "login"
+	registerFlow = "register"
+	resetFlow    = "reset"
+)
 
 // Engine 登录单引擎窄接口（§20 依赖注入）：生产注入 *orchestrator.Engine，
 // 测试可传 fake，不感知引擎内部依赖。
@@ -45,5 +49,19 @@ func New(engine Engine, images *captcha.ImageCaptcha) *Handler {
 // 信封 status，不经 Connect 错误体。
 func (h *Handler) LoginDefault(ctx context.Context, req *connect.Request[ssov1.LoginDefaultRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
 	resp := h.engine.Submit(ctx, loginFlow, dto.LoginDefault(req.Msg))
+	return connect.NewResponse(resp), nil
+}
+
+// Register 注册端点（接口文档 §2.3 行 441-455）：与 LoginDefault 同构，
+// 仅 flow=register（引擎内走 challenge → verify → set_password）。
+func (h *Handler) Register(ctx context.Context, req *connect.Request[ssov1.RegisterRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
+	resp := h.engine.Submit(ctx, registerFlow, dto.Register(req.Msg))
+	return connect.NewResponse(resp), nil
+}
+
+// ResetPassword 重置密码端点（接口文档 §2.4 行 459-471）：与 LoginDefault
+// 同构，仅 flow=reset。
+func (h *Handler) ResetPassword(ctx context.Context, req *connect.Request[ssov1.ResetPasswordRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
+	resp := h.engine.Submit(ctx, resetFlow, dto.Reset(req.Msg))
 	return connect.NewResponse(resp), nil
 }

@@ -85,6 +85,31 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 	return nil
 }
 
+// CreateWithCredential 建号写入在同一事务内完成（后端架构 §7.4 行 1025）：
+// 单 gorm Transaction 内先 INSERT user、再 INSERT user_credential（c.UserID
+// 由 user INSERT 回填的自增 ID 关联后写入），任一失败整体回滚——两跳非同
+// 事务会在 credential 失败时留下无凭证 user 行，username / email / phone
+// 占位无自愈。user 表唯一键冲突（username / phone / email）仍返回
+// ErrUserDuplicate（errors.Is 可判别，判别口径与错误包装同 Create）；user 表
+// gorm default tag 的回填语义同 Create（user_status=1 / mfa_required=0 零值
+// 被 tag 值显式写入 INSERT 并回填 struct，见 model.User 注释）。
+func (r *UserRepo) CreateWithCredential(ctx context.Context, u *model.User, c *model.UserCredential) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(u).Error; err != nil {
+			return err
+		}
+		c.UserID = u.ID
+		return tx.Create(c).Error
+	})
+	if err != nil {
+		if isUserDuplicateKey(err) {
+			return fmt.Errorf("user repo: create with credential: %w: %w", ErrUserDuplicate, err)
+		}
+		return fmt.Errorf("user repo: create with credential: %w", err)
+	}
+	return nil
+}
+
 // GetEpoch 读 user.epoch：§11.1 第 3 步缓存 miss 时的回源路径。
 // 用户不存在返回包装的 gorm.ErrRecordNotFound。
 func (r *UserRepo) GetEpoch(ctx context.Context, id int64) (int16, error) {

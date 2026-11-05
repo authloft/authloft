@@ -85,8 +85,8 @@ func (f *fakeEpochReader) callCount() int {
 }
 
 // countingRedis 计数型 fake redis（满足 cache 包 epochRedis 窄接口的
-// 方法签名，可传给 cache.NewEpochStore）：记录 GET/SET 次数、键名与
-// SET 的 TTL；vals 为键值表。
+// 方法签名，可传给 cache.NewEpochStore；现接口含 Del——Sync 写路径
+// 的兜底）：记录 GET/SET 次数、键名与 SET 的 TTL；vals 为键值表。
 type countingRedis struct {
 	mu      sync.Mutex
 	gets    int
@@ -123,6 +123,17 @@ func (f *countingRedis) Set(ctx context.Context, key string, value interface{}, 
 	f.vals[key] = fmt.Sprint(value)
 	cmd := redis.NewStatusCmd(ctx)
 	cmd.SetVal("OK")
+	return cmd
+}
+
+func (f *countingRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, key := range keys {
+		delete(f.vals, key)
+	}
+	cmd := redis.NewIntCmd(ctx)
+	cmd.SetVal(1)
 	return cmd
 }
 

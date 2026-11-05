@@ -29,6 +29,7 @@ const (
 	StatusTooManyAttempts  = "too_many_attempts"
 	StatusStepInvalid      = "step_invalid"
 	StatusProviderDisabled = "provider_disabled" // 行 259：提供方未启用（消息渠道未配置）
+	StatusTargetTaken      = "target_taken"      // 行 256：手机号 / 邮箱占用于他人（注册入口）
 )
 
 // Sender 投递通道（短信 / 邮件），装配方按厂商注入；本包不直接调第三方 SDK。
@@ -102,7 +103,19 @@ func (f *Factor) Start(ctx *factor.FactorContext) (*factor.StepResult, error) {
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-		if user == nil {
+		// 存在性口径按 flow 分支（§7.4 注册 / 重置复用同一引擎）：
+		//   login   —— 目标未绑定任何账号 → user_not_found，不写码不发信（§2.6）；
+		//   reset   —— 目标必须是已绑定且已验证的（§2.4 行 465）：未绑定或
+		//              未验证同样 user_not_found（§1.6 行 269）；
+		//   register —— 注册入口反向：目标不存在才发码；已占用 → target_taken
+		//              （§1.6 行 256，§2.3 行 446 注册入口）。
+		switch {
+		case user == nil && ctx.Login.GetFlow() == "register":
+		case user == nil:
+			return &factor.StepResult{Status: StatusUserNotFound}, nil
+		case ctx.Login.GetFlow() == "register":
+			return &factor.StepResult{Status: StatusTargetTaken}, nil
+		case ctx.Login.GetFlow() == "reset" && !f.verified(user):
 			return &factor.StepResult{Status: StatusUserNotFound}, nil
 		}
 	}
@@ -185,6 +198,12 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 		if secondary {
 			return &factor.VerifyResult{Passed: true, UID: ctx.Login.GetUid()}, nil
 		}
+		// register 流用户尚未建号（建号在 set_password 步，§7.4 行 1025），
+		// 目标占用已在 challenge 拦截（target_taken），这里不反查用户、
+		// 不带 uid——引擎对 register 的 verify 通过返回 next（set_password）。
+		if ctx.Login.GetFlow() == "register" {
+			return &factor.VerifyResult{Passed: true}, nil
+		}
 		user, err := f.findTarget(ctx, target)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -232,6 +251,21 @@ func (f *Factor) target(p *factor.Payload) string {
 		return strings.TrimSpace(p.Email)
 	}
 	return ""
+}
+
+// verified reset 前提校验（§2.4 行 465）：目标必须是已绑定且已验证的
+//（手机号看 phone_verified、邮箱看 email_verified，§4.2）。
+func (f *Factor) verified(user *model.User) bool {
+	if user == nil {
+		return false
+	}
+	switch f.kind {
+	case factor.FactorOTPSMS:
+		return user.Phone != nil && user.PhoneVerified == 1
+	case factor.FactorOTPEmail:
+		return user.Email != nil && user.EmailVerified == 1
+	}
+	return false
 }
 
 // findTarget 按目标反查用户（存在性检查，§8.2 行 1033）。

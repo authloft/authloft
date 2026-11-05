@@ -17,16 +17,19 @@ import (
 )
 
 // fakeEpochRedis 计数型 fake（实现 epochRedis 窄接口）：vals 为键值表，
-// getErr 非 nil 时 GET 返回故障错误（模拟 Redis 挂掉）。
+// getErr 非 nil 时 GET 返回故障错误（模拟 Redis 挂掉）；setErr 非 nil 时
+// SET 返回故障错误（模拟 Sync 写入失败）。
 type fakeEpochRedis struct {
 	mu      sync.Mutex
 	gets    int
 	sets    int
+	dels    int
 	getKeys []string
 	setKeys []string
 	setTTNs []time.Duration
 	vals    map[string]string
 	getErr  error
+	setErr  error
 }
 
 func (f *fakeEpochRedis) Get(ctx context.Context, key string) *redis.StringCmd {
@@ -53,12 +56,28 @@ func (f *fakeEpochRedis) Set(ctx context.Context, key string, value interface{},
 	f.sets++
 	f.setKeys = append(f.setKeys, key)
 	f.setTTNs = append(f.setTTNs, expiration)
+	cmd := redis.NewStatusCmd(ctx)
+	if f.setErr != nil {
+		cmd.SetErr(f.setErr)
+		return cmd
+	}
 	if f.vals == nil {
 		f.vals = make(map[string]string)
 	}
 	f.vals[key] = fmt.Sprint(value)
-	cmd := redis.NewStatusCmd(ctx)
 	cmd.SetVal("OK")
+	return cmd
+}
+
+func (f *fakeEpochRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dels++
+	cmd := redis.NewIntCmd(ctx)
+	for _, key := range keys {
+		delete(f.vals, key)
+	}
+	cmd.SetVal(1)
 	return cmd
 }
 
@@ -328,5 +347,60 @@ func TestEpochStoreReal(t *testing.T) {
 	}
 	if srcCalls != 2 {
 		t.Fatalf("source calls = %d, want 2（Redis 命中不回源）", srcCalls)
+	}
+}
+
+// TestEpochSyncWritesNewValueAndLocalCache Sync 覆盖式同步（§5.1
+// 行 850）：SET 新值（TTL 24h 量级）并刷新 localCache，后续 Current 直接
+// 命中新值、不再回源。
+func TestEpochSyncWritesNewValueAndLocalCache(t *testing.T) {
+	fake := &fakeEpochRedis{vals: map[string]string{EpochKey(42): "3"}}
+	src := &fakeSource{value: 3}
+	store := newEpochStore(fake, src.call, time.Minute)
+
+	if err := store.Sync(context.Background(), 42, 4); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	_, sets, _, setKeys, setTTNs := fake.snapshot()
+	if sets != 1 || len(setKeys) != 1 || setKeys[0] != EpochKey(42) {
+		t.Fatalf("sets = %d keys = %v, want 1 × %s", sets, setKeys, EpochKey(42))
+	}
+	if len(setTTNs) != 1 || setTTNs[0] <= 23*time.Hour {
+		t.Fatalf("set ttl = %v, want > 23h（§5.1 行 850：24h）", setTTNs)
+	}
+	if fake.vals[EpochKey(42)] != "4" {
+		t.Fatalf("redis value = %q, want 4", fake.vals[EpochKey(42)])
+	}
+
+	// localCache 已刷新：Current 命中新值（不 GET、不回源）。
+	v, err := store.Current(context.Background(), 42)
+	if err != nil || v != 4 {
+		t.Fatalf("Current after Sync = (%d, %v), want (4, nil)", v, err)
+	}
+	if n := src.count(); n != 0 {
+		t.Fatalf("source calls = %d, want 0（localCache 命中）", n)
+	}
+}
+
+// TestEpochSyncSetFailureFallsBackToDel Sync 的 SET 失败退而 DEL
+//（读取链 miss 后回源 DB 真源，避免 Redis 残留旧值最长 24h）。
+func TestEpochSyncSetFailureFallsBackToDel(t *testing.T) {
+	fake := &fakeEpochRedis{
+		vals:   map[string]string{EpochKey(42): "3"},
+		setErr: errors.New("redis write error"),
+	}
+	src := &fakeSource{value: 5}
+	store := newEpochStore(fake, src.call, time.Minute)
+
+	if err := store.Sync(context.Background(), 42, 4); err == nil {
+		t.Fatal("Sync must report SET failure")
+	}
+	if fake.dels != 1 {
+		t.Fatalf("dels = %d, want 1（SET 失败退 DEL）", fake.dels)
+	}
+	// 键已 DEL → Current 回源拿到 DB 真值（而非残留的 3）。
+	v, err := store.Current(context.Background(), 42)
+	if err != nil || v != 5 {
+		t.Fatalf("Current after failed Sync = (%d, %v), want (5, nil)（回源真值）", v, err)
 	}
 }

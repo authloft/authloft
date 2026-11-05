@@ -326,7 +326,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	fails := cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{BanTTL: pwOpts.BanTTL})
 
 	registry := factor.NewRegistry()
-	// TODO(§8.1)：ResetQueue / IPResolver 实现归后续卡（暂不并入），
+	// TODO(§8.1)：ResetQueue / IPResolver 实现归后续实现（暂不并入），
 	// password.New 对二者 nil 安全（跳过清零 / user_ref 回退 "unknown"）。
 	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, nil, pwOpts)); err != nil {
 		return nil, nil, nil, err
@@ -409,8 +409,43 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 			Users:       users,
 			Credentials: creds,
 		},
+		// set_password 步写入依赖（§7.4）：repo.UserRepo /
+		// repo.CredentialRepo 天然满足窄接口；epoch 同步复用共享单例
+		// EpochStore；审计经 resetAuditSink 走延迟队列。
+		SetPass: &orchestrator.SetPassDeps{
+			Users:       users,
+			Credentials: creds,
+			Epoch:       deps.epochStore,
+			Audit:       resetAuditSink{logs: eventlog.NewWriter(deps.queue)},
+			Settings:    deps.settings,
+		},
 	})
 	return engine, terminal, registry, nil
+}
+
+// resetAuditSink 把重置密码审计事件投递到延迟队列（docs/后端架构.md §7.4
+// 行 1026「异步写审计」）：事件形态复用 eventlog 既有任务——
+// EventResetPassword + DetailPwdEpoch（§4.6 行 770/799），实现
+// orchestrator.ResetAuditSink（装配接线）。
+type resetAuditSink struct {
+	logs *eventlog.Writer
+}
+
+// RecordReset 非阻塞投递；队列满 / 关闭由 eventlog.Writer 静默降级（§5.2
+// 行 893），不影响重置主链路。
+func (s resetAuditSink) RecordReset(_ context.Context, uid int64, epoch int16, amr []string) {
+	if s.logs == nil {
+		return
+	}
+	s.logs.PushEvent(model.EventLog{
+		Event:     eventlog.EventResetPassword,
+		ActorType: eventlog.ActorTypeUser,
+		ActorID:   uid,
+		UserID:    uid,
+		AMR:       strings.Join(amr, ","),
+		Detail:    eventlog.DetailPwdEpoch(int64(epoch)),
+		CreatedAt: time.Now(),
+	})
 }
 
 // otpParamsFromSettings 验证码五参数启动期快照（接口文档 §5.6 行 1303-1311
