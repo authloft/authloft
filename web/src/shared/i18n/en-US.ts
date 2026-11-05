@@ -2,8 +2,15 @@
  * en-US 文案字典（docs/前端架构.md §3.4 行 343）。
  * 键集以 I18nMessages（zh-CN.ts 定义）约束：缺译 / 多译都在编译期报错，
  * 不允许静默回退 undefined（既定约束）。
+ *
+ * 分域结构：login/setup/account/admin 域键在各域模块（en/<域>.ts，
+ * 以 zh 侧同名模块为类型约束）内维护、于本对象尾部 spread 汇入。
  */
 import type { I18nMessages } from './zh-CN';
+import { login } from './en/login';
+import { setup } from './en/setup';
+import { account } from './en/account';
+import { admin } from './en/admin';
 
 export const enUS: I18nMessages = {
   // ---- shared 组件公共文案 ------------------------------------------------
@@ -120,4 +127,10 @@ export const enUS: I18nMessages = {
   'errors.code.unavailable':
     'The service is temporarily unavailable. Please try again later',
   'errors.code.unknown': 'Something went wrong. Please try again later',
+
+  // ---- 分域模块（底座）：域键在 en/<域>.ts 维护，随 zh 侧键集对齐 --
+  ...login,
+  ...setup,
+  ...account,
+  ...admin,
 };

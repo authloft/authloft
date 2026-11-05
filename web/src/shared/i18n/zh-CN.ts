@@ -10,7 +10,15 @@
  *
  * 本文件是字典形状（键集）的唯一定义源：其他语言包以 I18nMessages 类型
  * 约束，两套 key 全量对齐由编译期强制（缺译 / 多译都过不了 tsc）。
+ *
+ * 分域结构：login/setup/account/admin 域键在各域模块（zh/<域>.ts）
+ * 内维护、于本对象尾部 spread 汇入，供后续域收口并行扩展。
  */
+import { login } from './zh/login';
+import { setup } from './zh/setup';
+import { account } from './zh/account';
+import { admin } from './zh/admin';
+
 export const zhCN = {
   // ---- shared 组件公共文案 ------------------------------------------------
   'common.copy': '复制',
@@ -107,6 +115,12 @@ export const zhCN = {
   'errors.code.internal': '服务内部错误，请稍后重试',
   'errors.code.unavailable': '服务暂时不可用，请稍后重试',
   'errors.code.unknown': '操作失败，请稍后重试',
+
+  // ---- 分域模块（底座）：域键在 zh/<域>.ts 维护，供后续域收口并行扩展
+  ...login,
+  ...setup,
+  ...account,
+  ...admin,
 } as const;
 
 /** 字典形状（键集唯一定义处）；各语言包必须与之完全对齐（编译期强制）。 */
