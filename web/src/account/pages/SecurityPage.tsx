@@ -10,15 +10,24 @@
  *   GetConfig 的 captcha 对象——account entry 的配置读取处，§3.2 行 819）；
  * - 通行密钥：WebauthnList（§3.6 / 需求 §4.1.6：注册 resident key / 重命名 /
  *   删除；增删会翻转 mfaPolicy.webauthn.bound → onChanged 时重取 GetConfig
- *   并递增 detailVersion 驱动已展开的 GetMfa 明细重取）。
+ *   并递增 detailVersion 驱动已展开的 GetMfa 明细重取）；
+ * - 第三方账号：ThirdPartyList（§3.7 / §3.7.1：双列表 + redirect / qrcode
+ *   通道绑定 + 解绑置灰）。
  * 头像上传挂载点为 ProfilePage（§5 行 491），AvatarUploader 组件本次
  * 交付但不落本页（doc 优先：SecurityPage 无头像区块）。
+ *
+ * 【redirect 绑定回调落地（§3.7.1 A 行 969-971）】OAuthCallbackPage b 分支
+ * 完成后 location.replace('/account/security?bind={success|ErrorInfo.code}')
+ * 回到本页——挂载时读取 ?bind= 出成功 / 失败横幅（bindParamMessage：target_
+ * taken 出绑定语境文案「该账号已被其他账号绑定」），
+ * 随即 replaceState 清参防刷新复读（不新增历史项）。
  *
  * 401 处理沿 ProfilePage 模式（§5 行 480）：isUnauthenticatedError +
  * loginUrl 由页面层统一实现。文案无 i18n 键：中文字面量 + 注释声明。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 // 子路径 import（同 ProfilePage 口径：避免全量入口，测试链 / 产物见其注释）。
+import Button from '@douyinfe/semi-ui/lib/es/button';
 import Card from '@douyinfe/semi-ui/lib/es/card';
 import Spin from '@douyinfe/semi-ui/lib/es/spin';
 import Typography from '@douyinfe/semi-ui/lib/es/typography';
@@ -30,11 +39,17 @@ import type {
 import { MfaPolicySchema } from '../../gen/proto/api/account/v1/profile_pb';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
-import { getConfig, isUnauthenticatedError } from '../api';
+import {
+  bindParamMessage,
+  getConfig,
+  isUnauthenticatedError,
+  readBindParam,
+} from '../api';
 import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import { ContactBindForm } from '../components/ContactBindForm';
 import { MfaMethodList } from '../components/MfaMethodList';
 import { PasswordChangeForm } from '../components/PasswordChangeForm';
+import { ThirdPartyList } from '../components/ThirdPartyList';
 import { WebauthnList } from '../components/WebauthnList';
 import styles from './SecurityPage.module.less';
 
@@ -44,10 +59,16 @@ const ZERO_MFA_POLICY: MfaPolicy = create(MfaPolicySchema, {});
 /** captcha 零值兜底（§3.1）：GetConfig 未下发 captcha 时 CaptchaWidget 走其兜底错误态。 */
 const ZERO_CAPTCHA_CONFIG = create(CaptchaConfigSchema, {});
 
+/** redirect 绑定回调横幅（§3.7.1 A 行 969-971）：success / ErrorInfo.code 两态。 */
+export interface BindNotice {
+  readonly kind: 'success' | 'error';
+  readonly text: string;
+}
+
 /**
  * 安全中心帧视图（纯渲染，无请求）：
  * 配置未就绪 → 401 以外的错误提示 / 加载态；就绪 → 摘要 + 明细 + 密码 +
- * 联系方式 + 通行密钥。
+ * 联系方式 + 通行密钥 + 第三方。
  */
 export function SecurityPageView(props: {
   readonly status: RequestStatus;
@@ -59,6 +80,10 @@ export function SecurityPageView(props: {
   readonly onRefreshConfig: () => void;
   /** 通行密钥增删成功：重取 GetConfig + 递增 detailVersion。 */
   readonly onWebauthnChanged: () => void;
+  /** redirect 绑定回调横幅（?bind= 参数消费；无 → 不渲染）。 */
+  readonly bindNotice: BindNotice | undefined;
+  /** 关闭横幅。 */
+  readonly onDismissBindNotice: () => void;
 }): ReactNode {
   const { config, error } = props;
   if (config === undefined) {
@@ -72,6 +97,17 @@ export function SecurityPageView(props: {
   return (
     <section className={styles.page}>
       <Typography.Title heading={3}>安全中心</Typography.Title>
+      {props.bindNotice !== undefined ? (
+        <div
+          role={props.bindNotice.kind === 'success' ? 'status' : 'alert'}
+          className={props.bindNotice.kind === 'success' ? styles.bindOk : styles.bindError}
+        >
+          <span>{props.bindNotice.text}</span>
+          <Button size="small" type="tertiary" onClick={props.onDismissBindNotice}>
+            关闭
+          </Button>
+        </div>
+      ) : null}
       <Card title="两步验证" className={styles.card}>
         <p className={styles.mfaStatus}>
           {policy.enabled ? '已开启两步验证' : '未开启两步验证'}
@@ -99,6 +135,9 @@ export function SecurityPageView(props: {
       <Card title="通行密钥" className={styles.card}>
         <WebauthnList onChanged={props.onWebauthnChanged} />
       </Card>
+      <Card title="第三方账号" className={styles.card}>
+        <ThirdPartyList hasPassword={config.hasPassword} captcha={captcha} />
+      </Card>
     </section>
   );
 }
@@ -107,6 +146,7 @@ export function SecurityPageView(props: {
 export function SecurityPage(): ReactNode {
   const { status, data, error, run } = useRequest(getConfig);
   const [detailVersion, setDetailVersion] = useState(0);
+  const [bindNotice, setBindNotice] = useState<BindNotice | undefined>(undefined);
   const alRoot = loadAccountBootstrap().alRoot;
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
@@ -119,6 +159,19 @@ export function SecurityPage(): ReactNode {
     // unhandled rejection；错误呈现 / 401 跳转由上 effect + View 帧处理。
     run().catch(() => {});
   }, [run]);
+  // redirect 绑定回调落地（§3.7.1 A 行 969-971）：挂载时消费 ?bind= 出横幅，
+  // 随即清参（replaceState 不新增历史项，防刷新复读；readBindParam 纯函数在
+  // ./api，node 可测）。仅挂载时执行一次（[] 空依赖，pathname 固定本页）。
+  useEffect(() => {
+    const code = readBindParam(window.location.search);
+    if (code !== undefined) {
+      setBindNotice({
+        kind: code === 'success' ? 'success' : 'error',
+        text: bindParamMessage(code),
+      });
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
   const refreshConfig = () => {
     // 开关 / 绑定成功只刷 mfaPolicy（§5 行 495：重取 GetConfig 摘要）。
     run().catch(() => {});
@@ -136,6 +189,8 @@ export function SecurityPage(): ReactNode {
       detailVersion={detailVersion}
       onRefreshConfig={refreshConfig}
       onWebauthnChanged={handleWebauthnChanged}
+      bindNotice={bindNotice}
+      onDismissBindNotice={() => setBindNotice(undefined)}
     />
   );
 }

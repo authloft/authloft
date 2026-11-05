@@ -4,7 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { create, type JsonObject } from '@bufbuild/protobuf';
+import { create, toJson, type JsonObject } from '@bufbuild/protobuf';
 import {
   AvatarUploadConfigSchema,
   CommitAvatarRequestSchema,
@@ -21,6 +21,14 @@ import type {
   BindPhoneRequest,
 } from '../gen/proto/api/account/v1/security_pb';
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
+import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
+import {
+  GetThirdpartyTicketRequestSchema,
+  ThirdpartyBindingSchema,
+  ThirdpartyOptionSchema,
+  UnbindThirdpartyRequestSchema,
+} from '../gen/proto/api/account/v1/thirdparty_pb';
+import type { QRPanelPhase } from '../shared/components/QRCodePanel';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
 
@@ -43,6 +51,12 @@ import { t } from '../shared/i18n';
  *   三步编排（依赖注入：challengeData / credential 引用恒等透传、取消 /
  *   失败语义，§12.9 方案 A）；rename / delete wire；formatUnixTime /
  *   mfaFactorDetail 展示纯函数。
+ * - 三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
+ *   GetThirdpartyTicket 封装（msw 真实 transport 归一链）+ shared/api/sso 的
+ *   Authorize / CreateQrcode 薄封装（scene=bind wire）；置灰判定 / Union 识别
+ *   / 入口分流 / 排序 / redirect 分派（不落盘 OIDC）/ CreateQrcode 请求构造 /
+ *   ?bind= 参数与扫码 failed 帧文案纯函数（§3.7 / §3.7.1；target_taken 绑定
+ *   语境文案「该账号已被其他账号绑定」）。
  *
  * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
@@ -80,6 +94,11 @@ const REGEN_RECOVERY_CODES_URL = `${BASE}/api.account.v1.AccountService/Regenera
 const GET_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/GetWebauthnCredentials`;
 const RENAME_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/RenameWebauthnCredential`;
 const DELETE_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/DeleteWebauthnCredential`;
+const GET_THIRDPARTY_BINDINGS_URL = `${BASE}/api.account.v1.AccountService/GetThirdpartyBindings`;
+const UNBIND_THIRDPARTY_URL = `${BASE}/api.account.v1.AccountService/UnbindThirdparty`;
+const GET_THIRDPARTY_TICKET_URL = `${BASE}/api.account.v1.AccountService/GetThirdpartyTicket`;
+const SSO_AUTHORIZE_URL = `${BASE}/api.sso.v1.SsoService/Authorize`;
+const SSO_CREATE_QRCODE_URL = `${BASE}/api.sso.v1.SsoService/CreateQrcode`;
 
 /** 10 个恢复码样例（§3.5 行 906/907 一次性下发格式 xxxx-xxxx）。 */
 const TEN_RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `a1${i}b-c3d${i}`);
@@ -144,11 +163,13 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
+let ssoMod: typeof import('../shared/api/sso');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   bootstrapMod = await import('./bootstrap');
   apiMod = await import('./api');
+  ssoMod = await import('../shared/api/sso');
 });
 
 beforeEach(() => {
@@ -1281,5 +1302,314 @@ describe('formatUnixTime / mfaFactorDetail（§3.1 零值兜底）', () => {
     expect(
       apiMod.mfaFactorDetail(create(MfaFactorSchema, { factor: 'otp_email', bound: false }), fmt),
     ).toBe('尚未绑定'); // 未绑定 → 其余字段不适用
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 三方绑定族封装（§3.7 / §3.7.1，msw 真实 transport 归一链）
+// ---------------------------------------------------------------------------
+
+/** 已绑定行夹具（§3.7 行 936 items 条目；Union 行 type='union'）。 */
+function bindingRow(over: { providerKey: string; type?: string }) {
+  return create(ThirdpartyBindingSchema, {
+    providerKey: over.providerKey,
+    displayName: over.providerKey,
+    type: over.type ?? over.providerKey,
+    channel: 'redirect',
+    icon: '',
+    createdAt: BigInt(1761800000),
+  });
+}
+
+describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（§3.7 / §3.7.1）', () => {
+  test('GetThirdpartyBindings → 双列表解码（items/available；createdAt / sortOrder int64 → bigint）', async () => {
+    server.use(
+      http.post(GET_THIRDPARTY_BINDINGS_URL, () =>
+        HttpResponse.json({
+          items: [
+            { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', icon: '', createdAt: '1761800000' },
+            { providerKey: 'wechat_union', displayName: '微信联合身份', type: 'union', channel: 'redirect', icon: '', createdAt: '1761800001' },
+          ],
+          available: [
+            { providerKey: 'wechat_mp_scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', icon: '', uiGroup: 'social', sortOrder: '20' },
+          ],
+        }),
+      ),
+    );
+
+    const res = await apiMod.getThirdpartyBindings();
+
+    expect(res.items).toHaveLength(2);
+    expect(res.items[0].createdAt).toBe(BigInt(1761800000));
+    expect(apiMod.isUnionThirdpartyRow(res.items[1])).toBe(true); // type='union' → Union 行
+    expect(res.available[0].channel).toBe('qrcode');
+    expect(res.available[0].sortOrder).toBe(BigInt(20));
+  });
+
+  test('unbindThirdparty → {providerKey} wire + 成功空响应（OkResponse）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(UNBIND_THIRDPARTY_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({});
+      }),
+    );
+
+    const res = await apiMod.unbindThirdparty(apiMod.buildUnbindThirdpartyRequest('qq'));
+
+    expect(await captured.json()).toEqual({ providerKey: 'qq' });
+    expect(res.$typeName).toBe('api.account.v1.OkResponse');
+  });
+
+  test('getThirdpartyTicket → {ticket, poll:"15"} wire（§2.8 行 714 上限）+ 信封 .bind 解码（行 1024）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(GET_THIRDPARTY_TICKET_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({
+          status: 'success',
+          ticket: { status: 'success', ticketId: 'c7Kx9' },
+          bind: { providerKey: 'wechat_mp_scan', displayName: '微信扫码' },
+        });
+      }),
+    );
+
+    const res = await apiMod.getThirdpartyTicket(
+      apiMod.buildGetThirdpartyTicketRequest('tk-1'),
+    );
+
+    expect(await captured.json()).toEqual({ ticket: 'tk-1', poll: '15' }); // int64 → 十进制字符串（§1.12）
+    expect(res.status).toBe('success');
+    expect(res.bind?.providerKey).toBe('wechat_mp_scan');
+    expect(res.bind?.displayName).toBe('微信扫码');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shared/api/sso 的 Authorize / CreateQrcode 薄封装（§5 行 479 落位）
+// ---------------------------------------------------------------------------
+
+describe('shared/api/sso.authorize / createQrcode（§2.7.2 行 580 / §2.8 行 688）', () => {
+  test('authorize：{provider, scene:"bind"} wire 直传，响应 authorizeUrl（scene=bind 需 al_session）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(SSO_AUTHORIZE_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({ authorizeUrl: 'https://qq.example/auth?state=b-x1' });
+      }),
+    );
+
+    const res = await ssoMod.authorize({ provider: 'qq', scene: 'bind' });
+
+    expect(await captured.json()).toEqual({ provider: 'qq', scene: 'bind' });
+    expect(res.authorizeUrl).toBe('https://qq.example/auth?state=b-x1');
+  });
+
+  test('createQrcode：scene=bind + captcha 必带（行 703），响应 {ticket, ticketId, qrcodeUrl, expiresIn}', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(SSO_CREATE_QRCODE_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({
+          ticket: 'tk-2',
+          ticketId: 'c7Kx9',
+          qrcodeUrl: 'https://cdn.test/qrcodes_c7Kx9.jpg',
+          expiresIn: '600',
+        });
+      }),
+    );
+
+    const captcha = create(CaptchaPayloadSchema, {
+      providerKey: 'builtin_image',
+      id: 'cap-1',
+      answer: '1234',
+    });
+    const res = await ssoMod.createQrcode(
+      apiMod.buildCreateQrcodeBindRequest('wechat_mp_scan', captcha),
+    );
+
+    expect(await captured.json()).toEqual({
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
+      captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '1234' }, // token 零值省略（§2.5 行 503-506）
+    });
+    expect(res.ticket).toBe('tk-2');
+    expect(res.ticketId).toBe('c7Kx9');
+    expect(res.qrcodeUrl).toBe('https://cdn.test/qrcodes_c7Kx9.jpg');
+    expect(res.expiresIn).toBe(BigInt(600));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 三方绑定纯逻辑（§3.7 / §3.7.1）
+// ---------------------------------------------------------------------------
+
+describe('isUnionThirdpartyRow / canUnbindThirdpartyRow（§3.7 行 938/945/947，纯函数）', () => {
+  test('hasPassword=true → 非 Union 行全部可解绑（解绑后仍持有 password 凭证）', () => {
+    const items = [bindingRow({ providerKey: 'qq' })];
+    expect(apiMod.canUnbindThirdpartyRow(true, items, items[0])).toBe(true);
+  });
+
+  test('hasPassword=false 且无其他非 Union 绑定 → 置灰（解绑后无任何凭证可用）', () => {
+    const items = [bindingRow({ providerKey: 'qq' })];
+    expect(apiMod.canUnbindThirdpartyRow(false, items, items[0])).toBe(false);
+  });
+
+  test('hasPassword=false 但仍绑定另一非 Union 项 → 可解绑（排除自身行后计数 ≥1）', () => {
+    const items = [bindingRow({ providerKey: 'qq' }), bindingRow({ providerKey: 'feishu' })];
+    expect(apiMod.canUnbindThirdpartyRow(false, items, items[0])).toBe(true);
+  });
+
+  test('Union 行不计入已绑定数、不能单独解绑 → 恒 false（行 947）', () => {
+    const items = [
+      bindingRow({ providerKey: 'qq' }),
+      bindingRow({ providerKey: 'wechat_union', type: 'union' }),
+    ];
+    expect(apiMod.canUnbindThirdpartyRow(true, items, items[1])).toBe(false);
+    expect(apiMod.canUnbindThirdpartyRow(false, items, items[1])).toBe(false);
+  });
+
+  test('hasPassword=false、仅剩 Union 兄弟行 → 置灰（Union 不计入非 Union 计数）', () => {
+    const items = [
+      bindingRow({ providerKey: 'qq' }),
+      bindingRow({ providerKey: 'wechat_union', type: 'union' }),
+    ];
+    expect(apiMod.canUnbindThirdpartyRow(false, items, items[0])).toBe(false);
+  });
+});
+
+describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯函数）', () => {
+  test('redirect / qrcode 渲染绑定入口；api 通道与未知渠道保守不渲染（行 943）', () => {
+    expect(apiMod.hasBindEntry('redirect')).toBe(true);
+    expect(apiMod.hasBindEntry('qrcode')).toBe(true);
+    expect(apiMod.hasBindEntry('api')).toBe(false);
+    expect(apiMod.hasBindEntry('')).toBe(false);
+  });
+
+  test('available 按 sortOrder 升序兜底（bigint 比较；同值保持稳定）', () => {
+    const options = [
+      create(ThirdpartyOptionSchema, { providerKey: 'b', displayName: 'B', type: 'b', channel: 'qrcode', icon: '', uiGroup: 'social', sortOrder: BigInt(20) }),
+      create(ThirdpartyOptionSchema, { providerKey: 'a', displayName: 'A', type: 'a', channel: 'redirect', icon: '', uiGroup: 'social', sortOrder: BigInt(10) }),
+      create(ThirdpartyOptionSchema, { providerKey: 'c', displayName: 'C', type: 'c', channel: 'redirect', icon: '', uiGroup: 'social', sortOrder: BigInt(20) }),
+    ];
+    const sorted = apiMod.sortThirdpartyOptions(options);
+    expect(sorted.map((o) => o.providerKey)).toEqual(['a', 'b', 'c']); // b/c 同值 → 数组序稳定
+  });
+});
+
+describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / buildUnbindThirdpartyRequest（§3.7.1 B，纯函数）', () => {
+  test('CreateQrcode 请求：scene 固定 bind + captcha 透传（行 993 / §2.8 行 703）', () => {
+    const captcha = create(CaptchaPayloadSchema, {
+      providerKey: 'cf_turnstile',
+      token: '0.xxx',
+    });
+    const request = apiMod.buildCreateQrcodeBindRequest('wechat_mp_scan', captcha);
+    expect(toJson(CreateQrcodeRequestSchema, request)).toEqual({
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
+      captcha: { providerKey: 'cf_turnstile', token: '0.xxx' }, // id/answer 零值省略
+    });
+  });
+
+  test('GetThirdpartyTicket 请求：poll 固定 15（§2.8 行 714 上限，与面板 pollSeconds 同值）', () => {
+    expect(
+      toJson(GetThirdpartyTicketRequestSchema, apiMod.buildGetThirdpartyTicketRequest('tk-3')),
+    ).toEqual({
+      ticket: 'tk-3',
+      poll: '15',
+    });
+  });
+
+  test('UnbindThirdparty 请求：{providerKey}（行 937）', () => {
+    expect(
+      toJson(UnbindThirdpartyRequestSchema, apiMod.buildUnbindThirdpartyRequest('qq')),
+    ).toEqual({
+      providerKey: 'qq',
+    });
+  });
+});
+
+describe('startBindRedirect（§3.7.1 A 行 956-960，依赖注入）', () => {
+  test('成功 → 返回 authorizeUrl（绑定跳转无 saveOidcContext——依赖集无落盘通道，结构上即「不落盘」）', async () => {
+    const url = await apiMod.startBindRedirect('qq', {
+      request: async () => 'https://qq.example/auth?state=b-9',
+    });
+    expect(url).toBe('https://qq.example/auth?state=b-9');
+  });
+
+  test('Authorize 失败 → undefined；空 authorizeUrl → undefined（零值兜底不跳转，§9 第 18 条）', async () => {
+    expect(
+      await apiMod.startBindRedirect('qq', {
+        request: async () => {
+          throw new ApiError({ httpStatus: 500, code: 'internal', message: '', requestId: '' });
+        },
+      }),
+    ).toBe(undefined);
+    expect(
+      await apiMod.startBindRedirect('qq', { request: async () => '' }),
+    ).toBe(undefined);
+  });
+
+  test('缺省依赖走 shared/api/sso 的 Authorize{provider, scene:"bind"}（§5 行 479 落位）', async () => {
+    server.use(
+      http.post(SSO_AUTHORIZE_URL, () =>
+        HttpResponse.json({ authorizeUrl: 'https://qq.example/auth?state=b-default' }),
+      ),
+    );
+
+    const url = await apiMod.startBindRedirect('qq');
+
+    expect(url).toBe('https://qq.example/auth?state=b-default');
+  });
+});
+
+describe('readBindParam / bindParamMessage（§3.7.1 A 行 969-971，纯函数）', () => {
+  test('readBindParam：?bind= 读取；空串 / 缺省 → undefined', () => {
+    expect(apiMod.readBindParam('?bind=success')).toBe('success');
+    expect(apiMod.readBindParam('?bind=target_taken&x=1')).toBe('target_taken');
+    expect(apiMod.readBindParam('?bind=')).toBe(undefined);
+    expect(apiMod.readBindParam('')).toBe(undefined);
+    expect(apiMod.readBindParam('?other=1')).toBe(undefined);
+  });
+
+  test('bindParamMessage：success → 绑定成功提示（行 969）', () => {
+    expect(apiMod.bindParamMessage('success')).toBe('第三方账号绑定成功');
+  });
+
+  test('bindParamMessage：target_taken → 绑定语境文案（行 971）', () => {
+    expect(apiMod.bindParamMessage('target_taken')).toBe('该账号已被其他账号绑定');
+    expect(apiMod.bindParamMessage('target_taken')).not.toBe(t('errors.code.target_taken')); // 非联系方式通用文案
+  });
+
+  test('bindParamMessage：其余按 §1.6 位置二出文案；未知码 unknown 兜底（行 272）', () => {
+    expect(apiMod.bindParamMessage('state_mismatch')).toBe(t('errors.code.state_mismatch'));
+    expect(apiMod.bindParamMessage('weird_code')).toBe(t('errors.code.unknown'));
+  });
+});
+
+describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
+  test('failed + 最近轮询 status=target_taken → 语境文案替换通用文案', () => {
+    const phase: QRPanelPhase = { kind: 'failed', message: t('errors.status.target_taken') };
+    expect(apiMod.bindPollPhase(phase, 'target_taken')).toEqual({
+      kind: 'failed',
+      message: '该账号已被其他账号绑定',
+    });
+  });
+
+  test('failed + 其他 status → 原样透传（qrFailureText 通用文案，§1.6 出文案口径）', () => {
+    const phase: QRPanelPhase = { kind: 'failed', message: t('errors.status.provider_disabled') };
+    expect(apiMod.bindPollPhase(phase, 'provider_disabled')).toBe(phase);
+  });
+
+  test('非 failed 帧原样引用返回——pending / scanned / expired / success 流转不受影响（面板四态流转约束）', () => {
+    const phases: QRPanelPhase[] = [
+      { kind: 'fetching' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.test/qr.jpg', ticketStatus: 'scanned' },
+      { kind: 'success' },
+      { kind: 'expired' },
+    ];
+    for (const phase of phases) {
+      expect(apiMod.bindPollPhase(phase, 'target_taken')).toBe(phase);
+    }
   });
 });

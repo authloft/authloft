@@ -6,8 +6,12 @@
  * SetMfa / BindTotp / GetRecoveryCodes / RegenerateRecoveryCodes /
  * GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
  * DeleteWebauthnCredential + 注册编排 registerWebauthnCredential（§3.5-§3.6）。
- * UpdateProfile / ThirdpartyOauth 等随消费页面落地时再封（api.ts
- * 可封装方法但页面不消费桩方法）。
+ * 追加三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
+ * GetThirdpartyTicket + 置灰判定 / Union 识别 / 请求构造 / redirect 分派 /
+ * ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
+ * UpdateProfile / ThirdpartyOauth 等仍随消费页面落地再封（ThirdpartyOauth
+ * 实调归 OAuthCallbackPage b 分支联调批；api.ts 可封装方法但页面
+ * 不消费桩方法）。
  * 本 entry 另需的 SsoService 方法（Authorize scene=bind / CreateQrcode）
  * 从 shared/api/sso 取，不在此重复定义（§5 行 479）。
  *
@@ -84,10 +88,24 @@ import {
   RegisterWebauthnRequestSchema,
   RenameWebauthnCredentialRequestSchema,
 } from '../gen/proto/api/account/v1/webauthn_pb';
+import type {
+  GetThirdpartyTicketRequest,
+  ThirdpartyBindingsResponse,
+  UnbindThirdpartyRequest,
+} from '../gen/proto/api/account/v1/thirdparty_pb';
+import {
+  GetThirdpartyTicketRequestSchema,
+  UnbindThirdpartyRequestSchema,
+} from '../gen/proto/api/account/v1/thirdparty_pb';
+import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
+import type { CreateQrcodeRequest } from '../gen/proto/api/sso/v1/ticket_pb';
+import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
+import { MAX_POLL_SECONDS, type QRPanelPhase } from '../shared/components/QRCodePanel';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { accountClient, postForm, type UploadProgress } from '../shared/api/http';
+import { authorize } from '../shared/api/sso';
 import { t } from '../shared/i18n';
 import {
   isValidEmail,
@@ -656,4 +674,205 @@ export function mfaFactorDetail(
     default:
       return factor.factor;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 三方绑定族封装（§3.7 / §3.7.1）
+// ---------------------------------------------------------------------------
+
+/** 三方绑定双列表（§3.7 行 936）：items=已绑定，available=可绑定（过滤口径行 942）。 */
+export function getThirdpartyBindings(): Promise<ThirdpartyBindingsResponse> {
+  return accountClient.getThirdpartyBindings({});
+}
+
+/**
+ * 解绑（§3.7 行 937-938）：{providerKey}；置灰口径见 canUnbindThirdpartyRow，
+ * 服务端按「解绑后」同一口径兜底校验（行 945），不满足返回 invalid_request。
+ */
+export function unbindThirdparty(request: UnbindThirdpartyRequest): Promise<OkResponse> {
+  return accountClient.unbindThirdparty(request);
+}
+
+/**
+ * 扫码绑定长轮询（§3.7.1 B 行 996、行 1011-1017）：{ticket, poll}；响应复用
+ * 登录流程信封（§1.3 行 152-154，success 读 .bind）。
+ */
+export function getThirdpartyTicket(
+  request: GetThirdpartyTicketRequest,
+): Promise<LoginFlowResponse> {
+  return accountClient.getThirdpartyTicket(request);
+}
+
+// ---------------------------------------------------------------------------
+// 三方绑定纯逻辑（node 可测；落位说明见文件头）
+// ---------------------------------------------------------------------------
+
+/**
+ * Union 绑定行识别（§3.7 行 945/947 + 后端架构 §2 行 185 / §12.7）：Union
+ * Provider 是 provider/union/ 虚拟适配器（category=union）的实例，信封 type
+ * = 适配器名（§2.7.1 例证 qq / wechat_mp_scan），wire 级标记即 type='union'。
+ * 后端本接口未实装（桩，走 msw mock），实装若改用其他标记仅需改本判别一处。
+ */
+export function isUnionThirdpartyRow(row: { readonly type: string }): boolean {
+  return row.type === 'union';
+}
+
+/**
+ * 解绑入口置灰判定（§3.7 行 938「解绑后」口径 / 行 945 两个输入）：允许 =
+ * hasPassword（解绑后仍持有 password 凭证），或排除自身行后非 Union 绑定数
+ * ≥1（解绑后仍绑定至少 1 个非 Union 第三方）；Union 行不能单独解绑，恒 false
+ * （行 947）。两者都不满足 → 置灰；服务端仍按同一口径校验兜底。
+ */
+export function canUnbindThirdpartyRow(
+  hasPassword: boolean,
+  items: readonly { readonly type: string; readonly providerKey: string }[],
+  row: { readonly type: string; readonly providerKey: string },
+): boolean {
+  if (isUnionThirdpartyRow(row)) {
+    return false;
+  }
+  if (hasPassword) {
+    return true;
+  }
+  const remaining = items.filter(
+    (item) => !isUnionThirdpartyRow(item) && item.providerKey !== row.providerKey,
+  ).length;
+  return remaining >= 1;
+}
+
+/**
+ * 可绑定条目的绑定入口渲染判定（§3.7 行 943）：redirect / qrcode 渲染入口；
+ * api（小程序接口）通道不提供绑定入口（宿主内直接完成登录，无「已登录」
+ * 前提）；未知渠道保守不渲染（ProviderButtons 同口径）。
+ */
+export function hasBindEntry(channel: string): boolean {
+  return channel === 'redirect' || channel === 'qrcode';
+}
+
+/**
+ * available 可绑定条目排序（§3.7 行 936 sortOrder）：后端权威下发（§2.7.1
+ * 同构，数组序即结果），前端按 sortOrder 升序兜底；bigint 直接比较不转
+ * Number（§1.12），同值保持稳定（Array.sort 稳定语义）。
+ */
+export function sortThirdpartyOptions<T extends { readonly sortOrder: bigint }>(
+  options: readonly T[],
+): T[] {
+  return [...options].sort((a, b) =>
+    a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : 0,
+  );
+}
+
+/** UnbindThirdparty 请求（§3.7 行 937）：{providerKey}。 */
+export function buildUnbindThirdpartyRequest(providerKey: string): UnbindThirdpartyRequest {
+  return create(UnbindThirdpartyRequestSchema, { providerKey });
+}
+
+/** 扫码绑定轮询 poll 秒数 = §2.8 行 714 上限（与 QRCodePanel.MAX_POLL_SECONDS 同源）。 */
+export const THIRD_PARTY_POLL_SECONDS = MAX_POLL_SECONDS;
+
+/** GetThirdpartyTicket 请求（§3.7.1 B 行 1011-1017）：{ticket, poll}。 */
+export function buildGetThirdpartyTicketRequest(ticket: string): GetThirdpartyTicketRequest {
+  return create(GetThirdpartyTicketRequestSchema, {
+    ticket,
+    poll: BigInt(THIRD_PARTY_POLL_SECONDS),
+  });
+}
+
+/**
+ * CreateQrcode 绑定场景请求（§3.7.1 B 行 993 / §2.8 行 688-703）：scene 固定
+ * 'bind'（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方实时
+ * 取 CaptchaWidget 句柄传入。
+ */
+export function buildCreateQrcodeBindRequest(
+  providerKey: string,
+  captcha: CaptchaPayload,
+): CreateQrcodeRequest {
+  return create(CreateQrcodeRequestSchema, { providerKey, scene: 'bind', captcha });
+}
+
+/** redirect 绑定分派依赖（测试注入替身；缺省走 shared/api/sso 的 Authorize）。 */
+export interface BindRedirectDeps {
+  /** 取授权 URL（§2.7.2 行 580-587：{provider, scene:'bind'} → {authorizeUrl}）。 */
+  request?: (provider: string) => Promise<string>;
+}
+
+/** 缺省取授权 URL：shared/api/sso 的 Authorize 薄封装（§5 行 479 落位）。 */
+async function requestBindAuthorizeUrl(providerKey: string): Promise<string> {
+  const response = await authorize({ provider: providerKey, scene: 'bind' });
+  return response.authorizeUrl;
+}
+
+/**
+ * redirect 渠道绑定分派（§3.7.1 A 行 956-960 + §2.7.2 行 589）：Authorize
+ * {provider, scene:'bind'} 取 authorizeUrl，由调用方 location.replace 跳转
+ * （RPC 非 302，不做 <a href> 直跳）。与 login 端 startRedirect 的差异：
+ * **不做 saveOidcContext**——OIDC 上下文（§2.7.2 行 585、600）是 /auth/
+ * authorize 注入的登录场景状态，绑定跳转无此上下文，取到 URL 直接跳。
+ * 失败 / 空 authorizeUrl → undefined（零值兜底不跳转，§9 第 18 条）。
+ */
+export async function startBindRedirect(
+  providerKey: string,
+  deps: BindRedirectDeps = {},
+): Promise<string | undefined> {
+  const request = deps.request ?? requestBindAuthorizeUrl;
+  try {
+    const url = await request(providerKey);
+    return url === '' ? undefined : url;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 绑定结果文案（target_taken 绑定语境）
+// ---------------------------------------------------------------------------
+
+/** 绑定语境 target_taken 文案（§3.7.1 A 行 971 / B 行 1028）。 */
+export const BIND_TARGET_TAKEN_TEXT = '该账号已被其他账号绑定';
+
+/** redirect 绑定成功提示（§3.7.1 A 行 969）。 */
+const BIND_SUCCESS_TEXT = '第三方账号绑定成功';
+
+/**
+ * redirect 回调落地 ?bind= 参数读取（§3.7.1 A 行 969-970：OAuthCallbackPage
+ * b 分支完成后 location.replace('/account/security?bind=…') 带回）；
+ * 空 / 缺省 → undefined。
+ */
+export function readBindParam(search: string): string | undefined {
+  const value = new URLSearchParams(search).get('bind');
+  return value === null || value === '' ? undefined : value;
+}
+
+/**
+ * ?bind={success|ErrorInfo.code} → 展示文案（§3.7.1 A 行 969-971）：success →
+ * 成功提示；target_taken → 绑定语境文案（通用字典 errors.code.target_taken
+ * 系联系方式语境）；其余按 §1.6 位置二出文案，未知码走
+ * unknown 兜底（§1.6 行 272 不暴露内部信息）。
+ */
+export function bindParamMessage(code: string): string {
+  if (code === 'success') {
+    return BIND_SUCCESS_TEXT;
+  }
+  return apiErrorText(
+    new ApiError({ httpStatus: 400, code, message: '', requestId: '' }),
+    { target_taken: BIND_TARGET_TAKEN_TEXT },
+  );
+}
+
+/**
+ * 扫码绑定 failed 帧文案映射：QRCodePanel 的
+ * qrFailureText 按 §1.5 行 202 i18n 优先，target_taken 出通用文案（联系方式
+ * 语境）；绑定语境（§3.7.1 B 行 1028）出「该账号已被其他账号绑定」。
+ * lastPollStatus = 调用方在 pollUrl 里记录的最近一次轮询信封顶层 status——
+ * failed 且 target_taken 时替换文案；其余帧原样返回（四态流转仍归面板控制器，
+ * 面板四态流转测试约束不破）。
+ */
+export function bindPollPhase(
+  phase: QRPanelPhase,
+  lastPollStatus: string,
+): QRPanelPhase {
+  if (phase.kind === 'failed' && lastPollStatus === 'target_taken') {
+    return { kind: 'failed', message: BIND_TARGET_TAKEN_TEXT };
+  }
+  return phase;
 }
