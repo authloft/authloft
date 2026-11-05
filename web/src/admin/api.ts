@@ -5,7 +5,8 @@
  * SetProviderEnabled / SortProviders 薄封装 + 列表 / 排序请求构造与策略标签
  * 展示纯函数（§5.2 行 1164-1177）；并追加 Provider 编辑族：
  * GetProviderTypes / GetProviderSchema / GetProvider / Create / Update /
- * TestProvider（§5.2 行 1169-1177 + §5.3）；用户 / 客户端 / settings /
+ * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
+ * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；客户端 / settings /
  * 工具族方法随后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
@@ -30,8 +31,30 @@ import { StructSchema } from '@bufbuild/protobuf/wkt';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
 import { t } from '../shared/i18n';
-import { FIRST_PAGE, MAX_PAGE_SIZE } from '../shared/app-ui/dataTableLogic';
+import { FIRST_PAGE, MAX_PAGE_SIZE, type TableQueryState } from '../shared/app-ui/dataTableLogic';
 import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
+import type {
+  GetUserEventsRequest,
+  GetUserRequest,
+  ListUsersRequest,
+  ResetUserPasswordRequest,
+  UnbindUserThirdpartyRequest,
+  UnlockUserRequest,
+  UpdateUserStatusRequest,
+  UserDetailResponse,
+  UserEventsResponse,
+  UserListResponse,
+} from '../gen/proto/api/admin/v1/user_pb';
+import {
+  GetUserEventsRequestSchema,
+  GetUserRequestSchema,
+  ListUsersRequestSchema,
+  ResetUserPasswordRequestSchema,
+  UnbindUserThirdpartyRequestSchema,
+  UnlockUserRequestSchema,
+  UpdateUserStatusRequestSchema,
+} from '../gen/proto/api/admin/v1/user_pb';
+import type { MfaResponse } from '../gen/proto/api/account/v1/mfa_pb';
 import type {
   AdminProvider,
   GetProviderRequest,
@@ -230,4 +253,212 @@ export function apiErrorText(error: unknown): string {
     return t(resolveCode(error).i18nKey);
   }
   return UNKNOWN_ERROR_TEXT;
+}
+
+// ---------------------------------------------------------------------------
+// 用户管理族（§5.4 行 1245-1255）：ListUsers / GetUser / UpdateUserStatus /
+// ResetUserPassword / UnbindUserThirdparty / UnlockUser / GetUserEvents 七方法
+// 全部真调（后端已实装）；单测走 msw。请求构造 / 展示纯函数同段落位
+// （adminDisplayName 同口径，node 可测；页面壳 import Semi 不可测见
+// admin.test.tsx 头注）。user_status 值域（§5.4 行 1251）：1 启用 0 禁用。
+// ---------------------------------------------------------------------------
+
+/** ListUsers（§5.4 行 1249：筛选入参 {q, userStatus} + 分页 §1.7）→ 用户列表。 */
+export function listUsers(request: ListUsersRequest): Promise<UserListResponse> {
+  return adminClient.listUsers(request);
+}
+
+/** GetUser（§5.4 行 1250：{id} 详情，含凭证概览 / 三方绑定 / MFA 状态）。 */
+export function getUser(request: GetUserRequest): Promise<UserDetailResponse> {
+  return adminClient.getUser(request);
+}
+
+/**
+ * 禁用 / 启用（§5.4 行 1251：{id, userStatus: 0 或 1}）→ OkResponse；
+ * UsersPage 行内开关经此持久化（DataTable switchColumn 消费方）。
+ */
+export function updateUserStatus(request: UpdateUserStatusRequest): Promise<OkResponse> {
+  return adminClient.updateUserStatus(request);
+}
+
+/**
+ * 管理员重置密码（§5.4 行 1252：{id, password}，§5.6 密码策略服务端权威）→
+ * OkResponse **仅成功**——§5.4 未定义返回新密码，新密码由管理员输入并转交
+ * 该用户（范围明确不含自动生成新密码）。
+ */
+export function resetUserPassword(request: ResetUserPasswordRequest): Promise<OkResponse> {
+  return adminClient.resetUserPassword(request);
+}
+
+/** 解绑第三方（§5.4 行 1253：{id, providerKey}）→ OkResponse。 */
+export function unbindUserThirdparty(
+  request: UnbindUserThirdpartyRequest,
+): Promise<OkResponse> {
+  return adminClient.unbindUserThirdparty(request);
+}
+
+/** 解除登录限制（§5.4 行 1254：{id}，清 uid / ip+账号 维度键）→ OkResponse。 */
+export function unlockUser(request: UnlockUserRequest): Promise<OkResponse> {
+  return adminClient.unlockUser(request);
+}
+
+/** 该用户登录记录（§5.4 行 1255：{id} + 分页 §1.7）→ UserEventsResponse。 */
+export function getUserEvents(request: GetUserEventsRequest): Promise<UserEventsResponse> {
+  return adminClient.getUserEvents(request);
+}
+
+/** user_status 值域（§5.4 行 1251）：1 启用 0 禁用。 */
+export const USER_STATUS_ENABLED = BigInt(1);
+export const USER_STATUS_DISABLED = BigInt(0);
+
+/**
+ * userStatus 筛选 / 行内开关共用的列 dataIndex（§5.4 行 1249 筛选入参）。
+ * 可排序列的 dataIndex 直接取 wire 字段名（§1.7 行 277 sort 由前端限定），
+ * TableQueryState.sort / filters 即 wire 值，无需映射表。
+ */
+export const USER_STATUS_DATA_INDEX = 'user_status';
+
+/** 状态筛选下拉（DataTableColumn.filters；值 = user_status 十进制字符串）。 */
+export const USER_STATUS_FILTERS: readonly { readonly value: string; readonly text: string }[] = [
+  { value: '1', text: '正常' },
+  { value: '0', text: '禁用' },
+];
+
+/**
+ * ListUsers 请求构造（§5.4 行 1249 + §1.7 行 275-278）：
+ * - q 去首尾空白，空即省略（不过滤；后端 q 匹配 username / nickname /
+ *   email / phone 四列）；
+ * - userStatus 取筛选列「恰好单选」的值（0 / 1 互斥语义，未选 / 多选即
+ *   不过滤——多选等价全集，确定性规则）；
+ * - 分页直映射；排序仅 order 非空时下发（dataTableLogic：清除排序后
+ *   order=''，受控渲染与 wire 均只认非空 order）。
+ */
+export function buildListUsersRequest(q: string, query: TableQueryState): ListUsersRequest {
+  const statusFilter = query.filters[USER_STATUS_DATA_INDEX] ?? [];
+  const trimmed = q.trim();
+  return create(ListUsersRequestSchema, {
+    q: trimmed === '' ? undefined : trimmed,
+    userStatus:
+      statusFilter.length === 1 ? BigInt(statusFilter[0]) : undefined,
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/** GetUser 请求构造（§5.4 行 1250：{id}）。 */
+export function buildGetUserRequest(id: bigint): GetUserRequest {
+  return create(GetUserRequestSchema, { id });
+}
+
+/**
+ * UpdateUserStatus 请求构造（§5.4 行 1251）：next=true 启用（1）/
+ * false 禁用（0）。protojson 零值省略：禁用（0）时 userStatus 不下发，
+ * 后端读零值即禁用，语义一致。
+ */
+export function buildUpdateUserStatusRequest(
+  id: bigint,
+  next: boolean,
+): UpdateUserStatusRequest {
+  return create(UpdateUserStatusRequestSchema, {
+    id,
+    userStatus: next ? USER_STATUS_ENABLED : USER_STATUS_DISABLED,
+  });
+}
+
+/** ResetUserPassword 请求构造（§5.4 行 1252：{id, password}）。 */
+export function buildResetUserPasswordRequest(
+  id: bigint,
+  password: string,
+): ResetUserPasswordRequest {
+  return create(ResetUserPasswordRequestSchema, { id, password });
+}
+
+/** UnbindUserThirdparty 请求构造（§5.4 行 1253：{id, providerKey}）。 */
+export function buildUnbindUserThirdpartyRequest(
+  id: bigint,
+  providerKey: string,
+): UnbindUserThirdpartyRequest {
+  return create(UnbindUserThirdpartyRequestSchema, { id, providerKey });
+}
+
+/** UnlockUser 请求构造（§5.4 行 1254：{id}）。 */
+export function buildUnlockUserRequest(id: bigint): UnlockUserRequest {
+  return create(UnlockUserRequestSchema, { id });
+}
+
+/** GetUserEvents 请求构造（§5.4 行 1255：{id} + 分页 §1.7；排序口径同 buildListUsersRequest）。 */
+export function buildGetUserEventsRequest(
+  id: bigint,
+  query: TableQueryState,
+): GetUserEventsRequest {
+  return create(GetUserEventsRequestSchema, {
+    id,
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/**
+ * Unix 秒 → 本地时间 YYYY-MM-DD HH:mm；零值 / 负值 → 占位符（§9 第 18 条
+ * 零值兜底）。entry 间禁止互引（§9 第 13 条）故不 import account/api.ts
+ * 同名函数，此处为 admin 落位版（实现同构）。
+ */
+export function formatUnixTime(seconds: bigint): string {
+  if (seconds <= BigInt(0)) {
+    return '—';
+  }
+  const d = new Date(Number(seconds) * 1000);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** user_status 展示文案（§5.4 行 1251 值域 1/0）。 */
+export function userStatusLabel(userStatus: bigint): string {
+  return userStatus === USER_STATUS_ENABLED ? '正常' : '禁用';
+}
+
+/**
+ * 凭证类型展示文案（《后端架构》§4.3 行 669 kind 五值域：password|totp|
+ * webauthn|recovery_code|mfa_setting——GetUser 凭证概览含 mfa_setting
+ * 行；跨版本新增原样兜底）。
+ */
+const USER_CREDENTIAL_KIND_LABELS: Readonly<Record<string, string>> = {
+  password: '密码',
+  totp: 'TOTP 动态码',
+  webauthn: '通行密钥',
+  recovery_code: '恢复码',
+  mfa_setting: 'MFA 开关',
+};
+
+/** 凭证类型 kind → 展示文案（§5.4 行 1250 凭证概览）。 */
+export function credentialKindLabel(kind: string): string {
+  return USER_CREDENTIAL_KIND_LABELS[kind] ?? kind;
+}
+
+/** MFA 因子展示文案（§3.5 行 891-895 factor 值域；新增值原样兜底）。 */
+const MFA_FACTOR_LABELS: Readonly<Record<string, string>> = {
+  totp: 'TOTP 动态码',
+  otp_sms: '短信验证码',
+  otp_email: '邮箱验证码',
+  webauthn: '通行密钥',
+  recovery_code: '恢复码',
+};
+
+/** MFA 因子 factor → 展示文案。 */
+export function mfaFactorLabel(factor: string): string {
+  return MFA_FACTOR_LABELS[factor] ?? factor;
+}
+
+/**
+ * 详情页 MFA 状态（§5.4 行 1250「MFA 状态」）：已绑定因子的展示文案列表；
+ * mfa 缺省（protojson 零值省略）或无已绑定因子 → 空数组（消费方渲染占位）。
+ */
+export function boundMfaFactors(mfa: MfaResponse | undefined): string[] {
+  return (mfa?.factors ?? [])
+    .filter((factor) => factor.bound)
+    .map((factor) => mfaFactorLabel(factor.factor));
 }

@@ -21,6 +21,11 @@ import {
   SchemaResponseSchema,
   type SchemaField,
 } from '../gen/proto/api/admin/v1/schema_pb';
+import { MfaResponseSchema } from '../gen/proto/api/account/v1/mfa_pb';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../shared/app-ui/dataTableLogic';
 import { ApiError } from '../shared/api/errors';
 import { moveItem, SortableList } from './components/SortableList';
 import {
@@ -75,6 +80,20 @@ import {
  *   形态）+ Create / Update / TestProvider 请求体 wire 校验（Struct 平铺）；
  * - JsonEditor 静态渲染（零 Semi 依赖）。
  *
+ * 用户管理族追加（接口文档 §5.4 行 1249-1255；后端已实装，
+ * 读路径真调语义 → msw 走真实 transport 归一链）：
+ * - api 七方法 msw：ListUsers / GetUser / GetUserEvents 读路径解码
+ *   （AdminUser / 凭证 / 绑定 / mfa 嵌套 / EventItem）+ 404 带 Connect JSON
+ *   体口径 + UpdateUserStatus / ResetUserPassword / UnbindUserThirdparty /
+ *   UnlockUser 请求体 wire 校验（含 userStatus 零值省略语义）；
+ * - 请求构造纯函数：buildListUsersRequest（q 去空白 / userStatus 单选
+ *   映射 / 排序仅 order 非空下发）/ buildGetUserEventsRequest / 其余
+ *   buildXxxRequest；
+ * - 展示纯函数：userStatusLabel / credentialKindLabel / mfaFactorLabel /
+ *   boundMfaFactors（mfa 缺省防御）/ formatUnixTime（时区无关断言）。
+ * UsersPage / UserDetailPage 渲染不可测（同上 Blocker），DataTable 分页 /
+ * 排序 / 筛选 / 行内开关编排已由 shared/app-ui 四约束测试覆盖。
+ *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
@@ -103,6 +122,13 @@ const GET_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/GetProvider`;
 const CREATE_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/CreateProvider`;
 const UPDATE_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/UpdateProvider`;
 const TEST_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/TestProvider`;
+const LIST_USERS_URL = `${BASE}/api.admin.v1.AdminService/ListUsers`;
+const GET_USER_URL = `${BASE}/api.admin.v1.AdminService/GetUser`;
+const UPDATE_USER_STATUS_URL = `${BASE}/api.admin.v1.AdminService/UpdateUserStatus`;
+const RESET_USER_PASSWORD_URL = `${BASE}/api.admin.v1.AdminService/ResetUserPassword`;
+const UNBIND_USER_THIRDPARTY_URL = `${BASE}/api.admin.v1.AdminService/UnbindUserThirdparty`;
+const UNLOCK_USER_URL = `${BASE}/api.admin.v1.AdminService/UnlockUser`;
+const GET_USER_EVENTS_URL = `${BASE}/api.admin.v1.AdminService/GetUserEvents`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -1160,5 +1186,494 @@ describe('api.testProvider（§5.2 行 1177：发送测试 {providerKey, target}
     }
     expect(caught).toBeInstanceOf(ApiError);
     expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api 用户管理族 msw（§5.4 行 1249-1255；后端已实装，读路径
+// 真调语义 → msw 走真实 transport 归一链；写路径校验请求体 wire 形态）
+// ---------------------------------------------------------------------------
+
+describe('api.listUsers（§5.4 行 1249：筛选 {q, userStatus} + 分页 §1.7）', () => {
+  test('请求体 wire（q + userStatus 单选 + 分页/排序）→ UserListResponse 解码（AdminUser int64 → bigint；零值省略 → 零值）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(LIST_USERS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              id: '2',
+              username: 'zhang',
+              nickname: '张三',
+              phone: '13800000000',
+              email: 'zhang@test.dev',
+              phoneVerified: '1',
+              emailVerified: '1',
+              userStatus: '1',
+              mfaRequired: '0',
+              lastLoginAt: '1730000000',
+              createdAt: '1720000000',
+            },
+            {
+              // 禁用用户：字符串 / 计数零值省略（protojson）→ 解码零值。
+              id: '3',
+              username: 'li',
+              userStatus: '0',
+            },
+          ],
+          total: '2',
+          page: '1',
+          pageSize: '20',
+        });
+      }),
+    );
+
+    const query: TableQueryState = {
+      ...initialTableQuery(),
+      sort: 'created_at',
+      order: 'desc',
+      filters: { user_status: ['1'] },
+    };
+    const res = await apiMod.listUsers(apiMod.buildListUsersRequest('张', query));
+
+    // 请求体：optional 字段显式下发（int64 → 十进制字符串）。
+    expect(requestBody).toEqual({
+      q: '张',
+      userStatus: '1',
+      page: '1',
+      pageSize: '20',
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(res.total).toBe(BigInt(2));
+    expect(res.items).toHaveLength(2);
+    expect(res.items[0].id).toBe(BigInt(2));
+    expect(res.items[0].userStatus).toBe(BigInt(1));
+    expect(res.items[0].lastLoginAt).toBe(BigInt(1730000000));
+    expect(res.items[1].userStatus).toBe(BigInt(0));
+    expect(res.items[1].nickname).toBe('');
+    expect(res.items[1].emailVerified).toBe(BigInt(0));
+  });
+
+  test('500 → ApiError 归一（非 401：页面错误态，不跳登录）', async () => {
+    server.use(
+      http.post(LIST_USERS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.listUsers(apiMod.buildListUsersRequest('', initialTableQuery()));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+    expect(apiMod.isUnauthenticatedError(caught)).toBe(false);
+  });
+});
+
+describe('api.getUser（§5.4 行 1250：{id} 详情含凭证概览 / 绑定 / MFA 状态）', () => {
+  test('请求体 {id} + UserDetailResponse 解码（嵌套 AdminUser / credentials / bindings / 跨包 mfa）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_USER_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          user: {
+            id: '2',
+            username: 'zhang',
+            nickname: '张三',
+            userStatus: '1',
+            mfaRequired: '1',
+            createdAt: '1720000000',
+          },
+          credentials: [
+            { id: '10', kind: 'password', label: '', isEnabled: true, createdAt: '1720000000' },
+            { id: '11', kind: 'totp', label: '主手机', isEnabled: false },
+          ],
+          bindings: [
+            {
+              id: '20',
+              providerKey: 'wechat_mp',
+              openId: 'oX-123',
+              unionId: 'u-1',
+              nickname: '微信张三',
+              createdAt: '1720000100',
+            },
+          ],
+          mfa: {
+            factors: [
+              { factor: 'totp', bound: true, boundAt: '1720000200' },
+              { factor: 'otp_sms', bound: false },
+            ],
+          },
+        });
+      }),
+    );
+
+    const res = await apiMod.getUser(apiMod.buildGetUserRequest(BigInt(2)));
+
+    expect(requestBody).toEqual({ id: '2' });
+    expect(res.user?.id).toBe(BigInt(2));
+    expect(res.user?.username).toBe('zhang');
+    expect(res.user?.mfaRequired).toBe(BigInt(1));
+    expect(res.credentials).toHaveLength(2);
+    expect(res.credentials[0].kind).toBe('password');
+    expect(res.credentials[0].isEnabled).toBe(true);
+    expect(res.credentials[1].isEnabled).toBe(false);
+    expect(res.credentials[1].createdAt).toBe(BigInt(0)); // 零值省略 → 0n
+    expect(res.bindings).toHaveLength(1);
+    expect(res.bindings[0].providerKey).toBe('wechat_mp');
+    expect(res.bindings[0].createdAt).toBe(BigInt(1720000100));
+    expect(res.mfa?.factors).toHaveLength(2);
+    expect(res.mfa?.factors[0].bound).toBe(true);
+    expect(res.mfa?.factors[0].boundAt).toBe(BigInt(1720000200));
+    expect(res.mfa?.factors[1].bound).toBe(false);
+  });
+
+  test('404（带 Connect JSON 体，msw 既有口径）→ ApiError not_found → 通用文案（不暴露管理面语义）', async () => {
+    // connect-go 拦截器真实 wire 形态：HTTP 404 + Connect 错误 JSON 体
+    //（空 body 会被 connect-web 按协议状态兜底表映射 Unimplemented）。
+    server.use(
+      http.post(GET_USER_URL, () =>
+        new HttpResponse(JSON.stringify({ code: 'not_found', message: 'user not found' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await apiMod.getUser(apiMod.buildGetUserRequest(BigInt(999)));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(404);
+    expect((caught as ApiError).code).toBe('not_found');
+    expect(apiMod.apiErrorText(caught)).toBe('资源不存在');
+  });
+});
+
+describe('api.updateUserStatus（§5.4 行 1251：{id, userStatus: 0 或 1} → OkResponse）', () => {
+  test('启用 → wire {id, userStatus:"1"}；禁用 → userStatus 零值省略（wire 无键，后端读零值即禁用）', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(UPDATE_USER_STATUS_URL, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+
+    const enable = await apiMod.updateUserStatus(
+      apiMod.buildUpdateUserStatusRequest(BigInt(2), true),
+    );
+    const disable = await apiMod.updateUserStatus(
+      apiMod.buildUpdateUserStatusRequest(BigInt(3), false),
+    );
+
+    expect(bodies[0]).toEqual({ id: '2', userStatus: '1' });
+    // 非 optional int64 零值省略（§1.0 零值缺省）——语义即禁用（值域 0|1）。
+    expect(bodies[1]).toEqual({ id: '3' });
+    expect(enable.$typeName).toBe('api.admin.v1.OkResponse');
+    expect(disable.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('500 reject → ApiError（DataTable 行内开关回滚触发链：消费方 catch 展示后 rethrow）', async () => {
+    server.use(
+      http.post(UPDATE_USER_STATUS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.updateUserStatus(
+        apiMod.buildUpdateUserStatusRequest(BigInt(2), true),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('api.resetUserPassword（§5.4 行 1252：{id, password} → OkResponse 仅成功，无新密码返回）', () => {
+  test('请求体 wire 校验 → OkResponse；500 reject → ApiError（password_weak 等策略错误由服务端权威判定）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(RESET_USER_PASSWORD_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.resetUserPassword(
+      apiMod.buildResetUserPasswordRequest(BigInt(2), 'NewPass!23'),
+    );
+    expect(requestBody).toEqual({ id: '2', password: 'NewPass!23' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+
+    server.use(
+      http.post(RESET_USER_PASSWORD_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.resetUserPassword(
+        apiMod.buildResetUserPasswordRequest(BigInt(2), 'weak'),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('api.unbindUserThirdparty（§5.4 行 1253：{id, providerKey}）', () => {
+  test('请求体 wire 校验 → OkResponse；500 reject → ApiError（Union 行不可单独解绑由服务端 invalid_request 兜底）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(UNBIND_USER_THIRDPARTY_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.unbindUserThirdparty(
+      apiMod.buildUnbindUserThirdpartyRequest(BigInt(2), 'wechat_mp'),
+    );
+    expect(requestBody).toEqual({ id: '2', providerKey: 'wechat_mp' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+
+    server.use(
+      http.post(UNBIND_USER_THIRDPARTY_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.unbindUserThirdparty(
+        apiMod.buildUnbindUserThirdpartyRequest(BigInt(2), 'x'),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('api.unlockUser（§5.4 行 1254：{id} 解除登录限制）', () => {
+  test('请求体 wire 校验 → OkResponse', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(UNLOCK_USER_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.unlockUser(apiMod.buildUnlockUserRequest(BigInt(2)));
+    expect(requestBody).toEqual({ id: '2' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+describe('api.getUserEvents（§5.4 行 1255：{id} + 分页 §1.7）', () => {
+  test('请求体 wire（id + 分页/排序）→ UserEventsResponse 解码（EventItem 含 Struct detail）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_USER_EVENTS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              id: '30',
+              event: 'login_success',
+              actorType: 'user',
+              actorId: '2',
+              userId: '2',
+              amr: 'pwd',
+              ip: '203.0.113.1',
+              ua: 'Mozilla/5.0',
+              detail: { client: 'web' },
+              createdAt: '1730000100',
+            },
+          ],
+          total: '1',
+          page: '1',
+          pageSize: '20',
+        });
+      }),
+    );
+
+    const query: TableQueryState = {
+      ...initialTableQuery(),
+      sort: 'created_at',
+      order: 'desc',
+    };
+    const res = await apiMod.getUserEvents(apiMod.buildGetUserEventsRequest(BigInt(2), query));
+
+    expect(requestBody).toEqual({
+      id: '2',
+      page: '1',
+      pageSize: '20',
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(res.total).toBe(BigInt(1));
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].id).toBe(BigInt(30));
+    expect(res.items[0].event).toBe('login_success');
+    expect(res.items[0].createdAt).toBe(BigInt(1730000100));
+    expect(res.items[0].detail?.client).toBe('web');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 请求构造纯函数（落位 api.ts，adminDisplayName 同口径）
+// ---------------------------------------------------------------------------
+
+describe('buildListUsersRequest（§5.4 行 1249 + §1.7 行 275-278）', () => {
+  test('q 去首尾空白、空即省略；userStatus 筛选恰好单选才下发；分页直映射', () => {
+    const base = initialTableQuery();
+
+    // 空 q + 无筛选：仅分页。
+    const plain = apiMod.buildListUsersRequest('   ', base);
+    expect(plain.q).toBeUndefined();
+    expect(plain.userStatus).toBeUndefined();
+    expect(plain.page).toBe(BigInt(1));
+    expect(plain.pageSize).toBe(BigInt(20));
+    expect(plain.sort).toBeUndefined();
+    expect(plain.order).toBeUndefined();
+
+    // q 去空白 + 禁用筛选（'0' 显式下发：optional 字段零值保留 presence）。
+    const disabled = apiMod.buildListUsersRequest('  张  ', {
+      ...base,
+      filters: { user_status: ['0'] },
+    });
+    expect(disabled.q).toBe('张');
+    expect(disabled.userStatus).toBe(BigInt(0));
+
+    // 筛选多选（等价全集）/ 未选 → 不过滤。
+    expect(
+      apiMod.buildListUsersRequest('', { ...base, filters: { user_status: ['0', '1'] } })
+        .userStatus,
+    ).toBeUndefined();
+    expect(
+      apiMod.buildListUsersRequest('', { ...base, filters: { user_status: [] } }).userStatus,
+    ).toBeUndefined();
+  });
+
+  test('排序仅 order 非空时下发（dataTableLogic：清除排序后 order=""，sort 保留但不下发）', () => {
+    const sorted = apiMod.buildListUsersRequest('', {
+      ...initialTableQuery(),
+      sort: 'last_login_at',
+      order: 'desc',
+    });
+    expect(sorted.sort).toBe('last_login_at');
+    expect(sorted.order).toBe('desc');
+
+    const cleared = apiMod.buildListUsersRequest('', {
+      ...initialTableQuery(),
+      sort: 'last_login_at',
+      order: '',
+    });
+    expect(cleared.sort).toBeUndefined();
+    expect(cleared.order).toBeUndefined();
+  });
+});
+
+describe('buildGetUserEventsRequest / buildGetUserRequest / 其余 buildXxxRequest（请求构造纯函数）', () => {
+  test('buildGetUserEventsRequest：id + 分页直映射 + 排序口径同 ListUsers', () => {
+    const req = apiMod.buildGetUserEventsRequest(BigInt(7), {
+      ...initialTableQuery(),
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(req.id).toBe(BigInt(7));
+    expect(req.page).toBe(BigInt(1));
+    expect(req.pageSize).toBe(BigInt(20));
+    expect(req.sort).toBe('created_at');
+    expect(req.order).toBe('desc');
+
+    const unsorted = apiMod.buildGetUserEventsRequest(BigInt(7), initialTableQuery());
+    expect(unsorted.sort).toBeUndefined();
+    expect(unsorted.order).toBeUndefined();
+  });
+
+  test('buildUpdateUserStatusRequest：true → 1n / false → 0n（wire 零值省略语义见 msw 用例）', () => {
+    expect(apiMod.buildUpdateUserStatusRequest(BigInt(2), true).userStatus).toBe(BigInt(1));
+    expect(apiMod.buildUpdateUserStatusRequest(BigInt(2), false).userStatus).toBe(BigInt(0));
+  });
+
+  test('buildGetUserRequest / buildResetUserPasswordRequest / buildUnbindUserThirdpartyRequest / buildUnlockUserRequest：字段直映射', () => {
+    expect(apiMod.buildGetUserRequest(BigInt(9)).id).toBe(BigInt(9));
+    const reset = apiMod.buildResetUserPasswordRequest(BigInt(9), 'p@ss');
+    expect(reset.id).toBe(BigInt(9));
+    expect(reset.password).toBe('p@ss');
+    const unbind = apiMod.buildUnbindUserThirdpartyRequest(BigInt(9), 'qq');
+    expect(unbind.id).toBe(BigInt(9));
+    expect(unbind.providerKey).toBe('qq');
+    expect(apiMod.buildUnlockUserRequest(BigInt(9)).id).toBe(BigInt(9));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 展示纯函数（§9 第 18 条零值兜底；node 可测）
+// ---------------------------------------------------------------------------
+
+describe('userStatusLabel / USER_STATUS_FILTERS（§5.4 行 1251 值域 1/0）', () => {
+  test('1n → 正常；0n → 禁用；筛选值与文案对齐', () => {
+    expect(apiMod.userStatusLabel(BigInt(1))).toBe('正常');
+    expect(apiMod.userStatusLabel(BigInt(0))).toBe('禁用');
+    expect(apiMod.USER_STATUS_FILTERS).toEqual([
+      { value: '1', text: '正常' },
+      { value: '0', text: '禁用' },
+    ]);
+  });
+});
+
+describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增值原样兜底）', () => {
+  test('已知 kind → 文案；未知值原样返回（跨版本新增，§12.9 行 1754）', () => {
+    expect(apiMod.credentialKindLabel('password')).toBe('密码');
+    expect(apiMod.credentialKindLabel('totp')).toBe('TOTP 动态码');
+    expect(apiMod.credentialKindLabel('webauthn')).toBe('通行密钥');
+    expect(apiMod.credentialKindLabel('recovery_code')).toBe('恢复码');
+    // §4.3 行 669 五值域第五值：GetUser 凭证概览含 mfa_setting 行。
+    expect(apiMod.credentialKindLabel('mfa_setting')).toBe('MFA 开关');
+    expect(apiMod.credentialKindLabel('passkey_v2')).toBe('passkey_v2');
+  });
+
+  test('已知 factor → 文案；未知值原样返回', () => {
+    expect(apiMod.mfaFactorLabel('totp')).toBe('TOTP 动态码');
+    expect(apiMod.mfaFactorLabel('otp_sms')).toBe('短信验证码');
+    expect(apiMod.mfaFactorLabel('otp_email')).toBe('邮箱验证码');
+    expect(apiMod.mfaFactorLabel('webauthn')).toBe('通行密钥');
+    expect(apiMod.mfaFactorLabel('recovery_code')).toBe('恢复码');
+    expect(apiMod.mfaFactorLabel('future_kind')).toBe('future_kind');
+  });
+});
+
+describe('boundMfaFactors（§5.4 行 1250「MFA 状态」：已绑定因子文案列表）', () => {
+  test('只取 bound=true 的因子文案；mfa 缺省 / 无绑定 → 空数组', () => {
+    const mfa = create(MfaResponseSchema, {
+      factors: [
+        { factor: 'totp', bound: true },
+        { factor: 'otp_sms', bound: false },
+        { factor: 'webauthn', bound: true },
+        { factor: 'future_kind', bound: true },
+      ],
+    });
+    expect(apiMod.boundMfaFactors(mfa)).toEqual(['TOTP 动态码', '通行密钥', 'future_kind']);
+    expect(apiMod.boundMfaFactors(undefined)).toEqual([]);
+    expect(apiMod.boundMfaFactors(create(MfaResponseSchema, {}))).toEqual([]);
+  });
+});
+
+describe('formatUnixTime（§9 第 18 条零值兜底；时区无关断言）', () => {
+  test('零值 / 负值 → 占位符；正值 → YYYY-MM-DD HH:mm 本地时间', () => {
+    expect(apiMod.formatUnixTime(BigInt(0))).toBe('—');
+    expect(apiMod.formatUnixTime(BigInt(-1))).toBe('—');
+    const formatted = apiMod.formatUnixTime(BigInt(1730000000));
+    expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    // 与 Date 本地渲染年份一致（跨时区稳定断言）。
+    const d = new Date(1730000000 * 1000);
+    expect(formatted.startsWith(`${d.getFullYear()}-`)).toBe(true);
   });
 });
