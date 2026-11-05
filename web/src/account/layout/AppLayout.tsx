@@ -19,6 +19,7 @@ import type { ReactNode } from 'react';
 // 组件样式随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
 // _base/base.css 引入（见 entry.tsx 注释）。
 import { Breadcrumb, Layout, Nav } from '@douyinfe/semi-ui-19';
+import { t, type I18nKey } from '../../shared/i18n';
 import { logoutUrl } from '../bootstrap';
 import styles from './AppLayout.module.less';
 
@@ -28,19 +29,20 @@ const { Sider, Header, Content } = Layout;
  * 侧边栏导航项（§5 行 478 路由清单的已交付子集）：
  * 安全中心（/account/security）已随 SecurityPage 长入；登录日志
  * （/account/audit）已随 AuditPage 长入；
- * itemKey 即路由路径，点击原生跳转。
+ * itemKey 即路由路径，点击原生跳转。text 为 i18n 域键（account.*），
+ * 渲染期经 t() 取文案（模块级求值会冻结在默认语言，故不在常量里调 t）。
  */
-const NAV_ITEMS: { itemKey: string; text: string }[] = [
-  { itemKey: '/account/profile', text: '个人资料' },
-  { itemKey: '/account/security', text: '安全中心' },
-  { itemKey: '/account/audit', text: '登录日志' },
+const NAV_ITEMS: { itemKey: string; textKey: I18nKey }[] = [
+  { itemKey: '/account/profile', textKey: 'account.profileTitle' },
+  { itemKey: '/account/security', textKey: 'account.securityTitle' },
+  { itemKey: '/account/audit', textKey: 'account.auditTitle' },
 ];
 
 /** 登出链接（§5 行 480）：跳 `{al_root}/sso/logout`，Go 处理（接口文档 §8 行 1420）。 */
 function LogoutLink({ alRoot }: { readonly alRoot: string }) {
   return (
     <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      退出登录
+      {t('account.logout')}
     </a>
   );
 }
@@ -60,14 +62,17 @@ export function AppLayout(props: {
       <Sider>
         <Nav
           className={styles.nav}
-          items={NAV_ITEMS}
+          items={NAV_ITEMS.map(({ itemKey, textKey }) => ({
+            itemKey,
+            text: t(textKey),
+          }))}
           selectedKeys={[props.activeKey]}
           onClick={({ itemKey }) => {
             if (typeof itemKey === 'string') {
               window.location.assign(itemKey);
             }
           }}
-          header={{ text: 'Authloft 用户中心' }}
+          header={{ text: t('account.appTitle') }}
         />
       </Sider>
       <Layout>

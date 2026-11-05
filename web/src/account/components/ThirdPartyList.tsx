@@ -3,7 +3,7 @@
  * GetThirdpartyBindings 双列表——items 已绑定（Union 行不计入已绑定数、不能
  * 单独解绑，行 947，带「联合身份」标记展示）+ available 可绑定（过滤口径
  * 行 942，按 channel 分流绑定入口，行 943）：
- * - redirect → SsoService/Authorize{provider, scene:'bind'} 取 authorizeUrl 后
+ * - redirect → SsoService/Authorize{provider, scene:bind} 取 authorizeUrl 后
  *   location.replace（§3.7.1 A 行 956-960；RPC 非 302 不做 <a href> 直跳；
  *   不做 saveOidcContext——OIDC 上下文属登录场景，裁量见 ./api 注释）；
  * - qrcode → 打开 ThirdPartyBindDialog（§3.7.1 B）；
@@ -16,7 +16,7 @@
  * apiErrorText 出文案）。
  * redirect 绑定的 target_taken 经回调链 ?bind= 参数由 SecurityPage 出文案；
  * 扫码绑定的 target_taken 在 ThirdPartyBindDialog 内落地。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键 + common.refreshAndRetry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
@@ -27,6 +27,7 @@ import type {
 } from '../../gen/proto/api/account/v1/thirdparty_pb';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   apiErrorText,
   buildUnbindThirdpartyRequest,
@@ -40,9 +41,6 @@ import {
 } from '../api';
 import { ThirdPartyBindDialog } from './ThirdPartyBindDialog';
 import styles from './ThirdPartyList.module.less';
-
-/** redirect 取 URL 失败 / 空 URL 提示（零值兜底不跳转；同款文案口径）。 */
-const REDIRECT_FAILED_TEXT = '请刷新重试';
 
 /** 打开的扫码绑定对话框（channel=qrcode 的 available 条目；关闭即置空）。 */
 interface OpenDialog {
@@ -65,19 +63,21 @@ function BoundRow(props: {
       {/* Union 行不计入已绑定数、不能单独解绑（§3.7 行 947）——标记展示、无解绑入口。 */}
       {item.type === 'union' ? (
         <Tag size="small" color="grey">
-          联合身份
+          {t('account.unionTag')}
         </Tag>
       ) : (
         <Popconfirm
-          title={`确定解绑「${item.displayName}」？解绑后无法再用它登录。`}
+          title={t('account.unbindConfirm', { name: item.displayName })}
           onConfirm={() => props.onUnbind(item.providerKey)}
         >
           <Button size="small" type="danger" disabled={!props.canUnbind} loading={props.unbinding}>
-            解绑
+            {t('account.unbindAction')}
           </Button>
         </Popconfirm>
       )}
-      <span className={styles.times}>绑定于 {formatUnixTime(item.createdAt)}</span>
+      <span className={styles.times}>
+        {t('account.boundAt', { time: formatUnixTime(item.createdAt) })}
+      </span>
     </li>
   );
 }
@@ -102,11 +102,11 @@ function OptionRow(props: {
           disabled={props.redirecting}
           onClick={() => props.onRedirect(option.providerKey)}
         >
-          绑定
+          {t('account.bindAction')}
         </Button>
       ) : (
         <Button size="small" theme="solid" onClick={() => props.onQrcode(option)}>
-          绑定
+          {t('account.bindAction')}
         </Button>
       )}
     </li>
@@ -176,13 +176,13 @@ export function ThirdPartyList(props: {
       ) : status === 'error' && data === undefined ? (
         <div className={styles.body}>
           <p role="alert" className={styles.error}>
-            第三方账号加载失败，请刷新重试
+            {t('account.thirdpartyLoadFailed')}
           </p>
         </div>
       ) : (
         <div className={styles.body}>
           {items === undefined || items.length === 0 ? (
-            <p className={styles.empty}>尚未绑定第三方账号</p>
+            <p className={styles.empty}>{t('account.thirdpartyEmpty')}</p>
           ) : (
             <ul className={styles.list}>
               {items.map((item) => (
@@ -203,12 +203,12 @@ export function ThirdPartyList(props: {
           ) : null}
           {redirectFailed ? (
             <p role="alert" className={styles.error}>
-              {REDIRECT_FAILED_TEXT}
+              {t('common.refreshAndRetry')}
             </p>
           ) : null}
           {available === undefined || available.length === 0 ? null : (
             <>
-              <p className={styles.sectionLabel}>可绑定的第三方账号</p>
+              <p className={styles.sectionLabel}>{t('account.thirdpartyAvailableTitle')}</p>
               <ul className={styles.list}>
                 {/* api 通道不渲染绑定入口（行 943）；未知渠道保守不渲染（同口径）。 */}
                 {sortThirdpartyOptions(available)

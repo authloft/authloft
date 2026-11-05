@@ -113,6 +113,7 @@ import { accountClient, postForm, type UploadProgress } from '../shared/api/http
 import { authorize } from '../shared/api/sso';
 import type { TableQueryState } from '../shared/app-ui/dataTableLogic';
 import { t } from '../shared/i18n';
+import { toCount } from '../shared/utils/int';
 import {
   isValidEmail,
   isValidPhone,
@@ -194,7 +195,7 @@ export function uploadAvatarProxy(
 
 /**
  * §3.2 行 826：avatar_storage_provider 未配置时 GetConfig 下发零值投影
- * {mode:"proxy", maxSize:0, allowedTypes:[]}（protojson 省略零值 → 解码为
+ * {mode:proxy, maxSize:0, allowedTypes:[]}（protojson 省略零值 → 解码为
  * 0n / []），前端据此隐藏上传入口；配置未加载（undefined）同样隐藏。
  * 两信号任一为零即视为不可上传（零值投影两者同时为零，此处保守取或）。
  */
@@ -408,14 +409,12 @@ export function buildBindVerifyRequest(
 // 错误展示文案（§1.5 行 202：i18n 优先 + 组件级语境覆盖）
 // ---------------------------------------------------------------------------
 
-/** 非 ApiError（未知异常）兜底文案；与 errors.code.unknown 同文（i18n 无独立键）。 */
-const UNKNOWN_ERROR_TEXT = '操作失败，请稍后重试';
-
 /**
  * 提交错误 → 展示文案：ApiError 经 resolveCode 取 i18nKey（errors.code.<code>，
  * shared/i18n 字典——预校验 / 服务端同一份文案源）；调用方可传语境覆盖
  * （如改密表单把 invalid_credentials 覆写为「当前密码不正确」）；未知异常
- * 兜底不透出内部信息（既定口径）。覆盖文案归后续 i18n 实现统一处理。
+ * 兜底走 errors.code.unknown，不透出内部信息（既定口径）。覆盖文案归
+ * i18n 收口统一处理。
  */
 export function apiErrorText(
   error: unknown,
@@ -428,7 +427,7 @@ export function apiErrorText(
     }
     return t(resolveCode(error).i18nKey);
   }
-  return UNKNOWN_ERROR_TEXT;
+  return t('errors.code.unknown');
 }
 
 // ---------------------------------------------------------------------------
@@ -519,7 +518,7 @@ export function buildSetMfaRequest(
   return { ok: true, request: create(SetMfaRequestSchema, { methods: next }) };
 }
 
-/** BindTotp challenge 请求（§3.5 行 905）：{step:"challenge"}，secret / code 零值省略。 */
+/** BindTotp challenge 请求（§3.5 行 905）：{step:challenge}，secret / code 零值省略。 */
 export function buildBindTotpChallengeRequest(): BindTotpRequest {
   return create(BindTotpRequestSchema, { step: 'challenge' });
 }
@@ -656,27 +655,32 @@ export function formatUnixTime(seconds: bigint): string {
  * GetMfa 单因子明细文案（§3.5 行 890-895：不同因子只填各自相关字段）：
  * 未绑定 → 占位；totp → 绑定 / 使用时间；otp_sms / otp_email → 掩码目标 +
  * 使用时间；webauthn → 凭据数 + 使用时间；recovery_code → 剩余数。
- * formatTime 参数化以便测试注入固定时区断言。
+ * formatTime 参数化以便测试注入固定时区断言。文案经 shared/i18n 域键
+ * （account.*）；bigint 计数经 utils/int toCount 转 number（§9.17）。
  */
 export function mfaFactorDetail(
   factor: MfaFactor,
   formatTime: (seconds: bigint) => string = formatUnixTime,
 ): string {
   if (!factor.bound) {
-    return '尚未绑定';
+    return t('account.mfaNotBound');
   }
   const lastUsed =
-    factor.lastUsedAt > BigInt(0) ? ` · 最近使用 ${formatTime(factor.lastUsedAt)}` : '';
+    factor.lastUsedAt > BigInt(0)
+      ? t('account.mfaLastUsedAt', { time: formatTime(factor.lastUsedAt) })
+      : '';
   switch (factor.factor) {
     case 'totp':
-      return `绑定于 ${formatTime(factor.boundAt)}${lastUsed}`;
+      return t('account.boundAt', { time: formatTime(factor.boundAt) }) + lastUsed;
     case 'otp_sms':
     case 'otp_email':
-      return `目标 ${factor.target}${lastUsed}`;
+      return t('account.mfaTarget', { target: factor.target }) + lastUsed;
     case 'webauthn':
-      return `已绑定 ${factor.credentials} 个凭据${lastUsed}`;
+      return (
+        t('account.mfaCredentialCount', { count: toCount(factor.credentials) }) + lastUsed
+      );
     case 'recovery_code':
-      return `剩余 ${factor.remaining} 个可用`;
+      return t('account.mfaRemainingCount', { count: toCount(factor.remaining) });
     default:
       return factor.factor;
   }
@@ -786,7 +790,7 @@ export function buildGetThirdpartyTicketRequest(ticket: string): GetThirdpartyTi
 
 /**
  * CreateQrcode 绑定场景请求（§3.7.1 B 行 993 / §2.8 行 688-703）：scene 固定
- * 'bind'（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方实时
+ * bind（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方实时
  * 取 CaptchaWidget 句柄传入。
  */
 export function buildCreateQrcodeBindRequest(
@@ -810,7 +814,7 @@ async function requestBindAuthorizeUrl(providerKey: string): Promise<string> {
 
 /**
  * redirect 渠道绑定分派（§3.7.1 A 行 956-960 + §2.7.2 行 589）：Authorize
- * {provider, scene:'bind'} 取 authorizeUrl，由调用方 location.replace 跳转
+ * {provider, scene:bind} 取 authorizeUrl，由调用方 location.replace 跳转
  * （RPC 非 302，不做 <a href> 直跳）。与 login 端 startRedirect 的差异：
  * **不做 saveOidcContext**——OIDC 上下文（§2.7.2 行 585、600）是 /auth/
  * authorize 注入的登录场景状态，绑定跳转无此上下文，取到 URL 直接跳。
@@ -833,15 +837,9 @@ export async function startBindRedirect(
 // 绑定结果文案（target_taken 绑定语境）
 // ---------------------------------------------------------------------------
 
-/** 绑定语境 target_taken 文案（§3.7.1 A 行 971 / B 行 1028）。 */
-export const BIND_TARGET_TAKEN_TEXT = '该账号已被其他账号绑定';
-
-/** redirect 绑定成功提示（§3.7.1 A 行 969）。 */
-const BIND_SUCCESS_TEXT = '第三方账号绑定成功';
-
 /**
  * redirect 回调落地 ?bind= 参数读取（§3.7.1 A 行 969-970：OAuthCallbackPage
- * b 分支完成后 location.replace('/account/security?bind=…') 带回）；
+ * b 分支完成后 location.replace(/account/security?bind=…) 带回）；
  * 空 / 缺省 → undefined。
  */
 export function readBindParam(search: string): string | undefined {
@@ -853,22 +851,24 @@ export function readBindParam(search: string): string | undefined {
  * ?bind={success|ErrorInfo.code} → 展示文案（§3.7.1 A 行 969-971）：success →
  * 成功提示；target_taken → 绑定语境文案（通用字典 errors.code.target_taken
  * 系联系方式语境）；其余按 §1.6 位置二出文案，未知码走
- * unknown 兜底（§1.6 行 272 不暴露内部信息）。
+ * unknown 兜底（§1.6 行 272 不暴露内部信息）。文案经 shared/i18n 域键
+ * （account.*）。
  */
 export function bindParamMessage(code: string): string {
   if (code === 'success') {
-    return BIND_SUCCESS_TEXT;
+    return t('account.bindSuccess');
   }
   return apiErrorText(
     new ApiError({ httpStatus: 400, code, message: '', requestId: '' }),
-    { target_taken: BIND_TARGET_TAKEN_TEXT },
+    { target_taken: t('account.bindTargetTaken') },
   );
 }
 
 /**
  * 扫码绑定 failed 帧文案映射：QRCodePanel 的
  * qrFailureText 按 §1.5 行 202 i18n 优先，target_taken 出通用文案（联系方式
- * 语境）；绑定语境（§3.7.1 B 行 1028）出「该账号已被其他账号绑定」。
+ * 语境）；绑定语境（§3.7.1 B 行 1028）出「该账号已被其他账号绑定」
+ * （account.bindTargetTaken 域键）。
  * lastPollStatus = 调用方在 pollUrl 里记录的最近一次轮询信封顶层 status——
  * failed 且 target_taken 时替换文案；其余帧原样返回（四态流转仍归面板控制器，
  * 面板四态流转测试约束不破）。
@@ -878,7 +878,7 @@ export function bindPollPhase(
   lastPollStatus: string,
 ): QRPanelPhase {
   if (phase.kind === 'failed' && lastPollStatus === 'target_taken') {
-    return { kind: 'failed', message: BIND_TARGET_TAKEN_TEXT };
+    return { kind: 'failed', message: t('account.bindTargetTaken') };
   }
   return phase;
 }

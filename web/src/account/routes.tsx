@@ -7,7 +7,9 @@
  * 沿 login/routes.tsx 模式：零第三方路由库（§1.6 行 110），
  * disableMount 自挂载，极简 pathname 匹配；bootstrap 无 methods 必需校验
  * （§8：methods 仅 login 必填），故无登录端的错误态分支。
+ * 文案经 shared/i18n（account.* 域键）。
  */
+import { t } from '../shared/i18n';
 import { loadAccountBootstrap } from './bootstrap';
 import { AppLayout } from './layout/AppLayout';
 import { AuditPage } from './pages/AuditPage';
@@ -23,9 +25,6 @@ const SECURITY_PATH = '/account/security';
 /** 登录日志路由（§5 行 478）。 */
 const AUDIT_PATH = '/account/audit';
 
-/** 未注册路由兜底文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
-const ROUTE_NOT_FOUND_TEXT = '页面不存在';
-
 /** account 应用根：bootstrap 读注入变量（al_root / static_base）→ 路由分派。 */
 export function AccountApp() {
   const boot = loadAccountBootstrap();
@@ -36,7 +35,7 @@ export function AccountApp() {
       <AppLayout
         alRoot={boot.alRoot}
         activeKey={PROFILE_PATH}
-        breadcrumb={['个人中心', '个人资料']}
+        breadcrumb={[t('account.personalCenter'), t('account.profileTitle')]}
       >
         <ProfilePage />
       </AppLayout>
@@ -47,7 +46,7 @@ export function AccountApp() {
       <AppLayout
         alRoot={boot.alRoot}
         activeKey={SECURITY_PATH}
-        breadcrumb={['个人中心', '安全中心']}
+        breadcrumb={[t('account.personalCenter'), t('account.securityTitle')]}
       >
         <SecurityPage />
       </AppLayout>
@@ -58,11 +57,11 @@ export function AccountApp() {
       <AppLayout
         alRoot={boot.alRoot}
         activeKey={AUDIT_PATH}
-        breadcrumb={['个人中心', '登录日志']}
+        breadcrumb={[t('account.personalCenter'), t('account.auditTitle')]}
       >
         <AuditPage />
       </AppLayout>
     );
   }
-  return <p role="status">{ROUTE_NOT_FOUND_TEXT}</p>;
+  return <p role="status">{t('account.routeNotFound')}</p>;
 }

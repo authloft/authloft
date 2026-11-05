@@ -29,7 +29,7 @@ import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { setLocale } from '../shared/i18n';
+import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
 import { AccountApp } from './routes';
@@ -39,7 +39,7 @@ declare global {
 }
 
 // §1.5 行 99：任何动态 import() 之前把 `__webpack_public_path__` 设为
-// static_base + '/'（已归一），此后异步 chunk 与图片按该前缀加载；
+// static_base 加尾斜杠（已归一），此后异步 chunk 与图片按该前缀加载；
 // static_base 可为 CDN 绝对地址，不写死资源域名（§9 第 14 条）。
 __webpack_public_path__ = normalizeStaticBase(getInit()?.static_base);
 
@@ -62,8 +62,8 @@ class AccountErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== undefined) {
-      // 文案无 i18n 键：最简中文字面量（归后续 i18n 实现）。
-      return <p role="alert">页面出现异常，请刷新重试</p>;
+      // 兜底文案经 shared/i18n 域键（account.renderError）。
+      return <p role="alert">{t('account.renderError')}</p>;
     }
     return this.props.children;
   }

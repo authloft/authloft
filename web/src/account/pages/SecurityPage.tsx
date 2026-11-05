@@ -23,7 +23,8 @@
  * 随即 replaceState 清参防刷新复读（不新增历史项）。
  *
  * 401 处理沿 ProfilePage 模式（§5 行 480）：isUnauthenticatedError +
- * loginUrl 由页面层统一实现。文案无 i18n 键：中文字面量 + 注释声明。
+ * loginUrl 由页面层统一实现。文案经 shared/i18n（account.* 域键；
+ * 「通行密钥」卡片题复用 factors.webauthn）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
@@ -35,6 +36,7 @@ import type {
 import { MfaPolicySchema } from '../../gen/proto/api/account/v1/profile_pb';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   bindParamMessage,
   getConfig,
@@ -84,7 +86,7 @@ export function SecurityPageView(props: {
   const { config, error } = props;
   if (config === undefined) {
     if (props.status === 'error' && !isUnauthenticatedError(error)) {
-      return <p role="alert">配置加载失败，请刷新重试</p>;
+      return <p role="alert">{t('account.configLoadFailed')}</p>;
     }
     return <Spin />;
   }
@@ -92,7 +94,7 @@ export function SecurityPageView(props: {
   const captcha = config.captcha ?? ZERO_CAPTCHA_CONFIG;
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>安全中心</Typography.Title>
+      <Typography.Title heading={3}>{t('account.securityTitle')}</Typography.Title>
       {props.bindNotice !== undefined ? (
         <div
           role={props.bindNotice.kind === 'success' ? 'status' : 'alert'}
@@ -100,17 +102,17 @@ export function SecurityPageView(props: {
         >
           <span>{props.bindNotice.text}</span>
           <Button size="small" type="tertiary" onClick={props.onDismissBindNotice}>
-            关闭
+            {t('account.close')}
           </Button>
         </div>
       ) : null}
-      <Card title="两步验证" className={styles.card}>
+      <Card title={t('account.twoFactorTitle')} className={styles.card}>
         <p className={styles.mfaStatus}>
-          {policy.enabled ? '已开启两步验证' : '未开启两步验证'}
-          {policy.required ? '（策略强制开启，不可关闭）' : ''}
+          {policy.enabled ? t('account.mfaEnabledStatus') : t('account.mfaDisabledStatus')}
+          {policy.required ? t('account.mfaRequiredNote') : ''}
         </p>
         {/* §3.2 行 847：trustedDeviceDays 预留恒 0——本期无「信任此设备」。 */}
-        <p className={styles.mfaTrust}>信任设备：暂不支持（每次登录均需二次验证）</p>
+        <p className={styles.mfaTrust}>{t('account.trustDeviceNote')}</p>
         {/* 因子列表 + 开关 + 绑定明细（§3.5），占位提示随之替换。 */}
         <MfaMethodList
           methods={policy.methods}
@@ -119,19 +121,19 @@ export function SecurityPageView(props: {
           onPolicyRefresh={props.onRefreshConfig}
         />
       </Card>
-      <Card title="登录密码" className={styles.card}>
+      <Card title={t('account.passwordCardTitle')} className={styles.card}>
         <PasswordChangeForm hasPassword={config.hasPassword} />
       </Card>
-      <Card title="联系方式" className={styles.card}>
+      <Card title={t('account.contactCardTitle')} className={styles.card}>
         <div className={styles.contactStack}>
           <ContactBindForm kind="phone" captcha={captcha} />
           <ContactBindForm kind="email" captcha={captcha} />
         </div>
       </Card>
-      <Card title="通行密钥" className={styles.card}>
+      <Card title={t('factors.webauthn')} className={styles.card}>
         <WebauthnList onChanged={props.onWebauthnChanged} />
       </Card>
-      <Card title="第三方账号" className={styles.card}>
+      <Card title={t('account.thirdpartyCardTitle')} className={styles.card}>
         <ThirdPartyList hasPassword={config.hasPassword} captcha={captcha} />
       </Card>
     </section>

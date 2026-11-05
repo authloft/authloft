@@ -12,17 +12,18 @@
  * 跳 `{al_root}/sso/login`（AppLayout 层无请求，跳转逻辑经 ./api 的
  * isUnauthenticatedError + ./bootstrap 的 loginUrl 由页面层统一实现，
  * 后续页面复用同一对工具）；其余错误就地提示。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, type ReactNode } from 'react';
 import { Avatar, Descriptions, Spin, Typography } from '@douyinfe/semi-ui-19';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { getProfile, isUnauthenticatedError } from '../api';
 import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import styles from './ProfilePage.module.less';
 
-/** 昵称为空串（protojson 省略零值 → 解码为 ''）时的占位（§9 第 18 条零值兜底）。 */
+/** 昵称为空串（protojson 省略零值 → 解码即空串）时的占位（§9 第 18 条零值兜底）。 */
 const EMPTY_PLACEHOLDER = '-';
 
 /**
@@ -40,16 +41,16 @@ export function ProfilePageView(props: {
   const { profile, error } = props;
   if (profile === undefined) {
     if (props.status === 'error' && !isUnauthenticatedError(error)) {
-      return <p role="alert">资料加载失败，请刷新重试</p>;
+      return <p role="alert">{t('account.profileLoadFailed')}</p>;
     }
     return <Spin />;
   }
   const username = profile.username;
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>个人资料</Typography.Title>
+      <Typography.Title heading={3}>{t('account.profileTitle')}</Typography.Title>
       <div className={styles.avatarRow}>
-        <Avatar size="large" src={profile.avatarUrl || undefined} alt="用户头像">
+        <Avatar size="large" src={profile.avatarUrl || undefined} alt={t('account.avatarAlt')}>
           {username.charAt(0)}
         </Avatar>
         <Typography.Text type="secondary">
@@ -58,8 +59,8 @@ export function ProfilePageView(props: {
       </div>
       <Descriptions
         data={[
-          { key: '用户名', value: username },
-          { key: '昵称', value: profile.nickname || EMPTY_PLACEHOLDER },
+          { key: t('account.usernameLabel'), value: username },
+          { key: t('account.nicknameLabel'), value: profile.nickname || EMPTY_PLACEHOLDER },
         ]}
       />
     </section>

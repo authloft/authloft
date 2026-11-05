@@ -11,7 +11,7 @@
  *   不另发请求；入口激活为真链接（/sso/reset、/sso/register，Go 渲染
  *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）。
  *
- * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用（F-036 收口）。
+ * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用。
  */
 import { t } from '../../shared/i18n';
 import { LoginContainer } from '../LoginContainer';
