@@ -15,6 +15,7 @@ import (
 	connectrpc "connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
@@ -28,6 +29,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/session"
+	adminsvc "authloft/internal/service/admin"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
 	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
 	_ "authloft/internal/provider/email/smtp"
@@ -68,11 +70,69 @@ func (f *fakeProviders) ListProviders(_ context.Context, q repo.ProviderListQuer
 	return f.rows, f.total, f.listErr
 }
 
+// fakeWriter ProviderService（写族 7 方法）的 fake：入参全留档断言，错误可
+// 注入。
+type fakeWriter struct {
+	createErr error
+	updateErr error
+	deleteErr error
+	enableErr error
+	sortErr   error
+	testErr   error
+
+	createBody map[string]any
+	updateBody map[string]any
+	deleteKey  string
+	enableKey  string
+	enableTo   bool
+	sortItems  []adminsvc.SortItem
+	testKey    string
+	testTarget string
+
+	types []adminsvc.ProviderTypeInfo
+}
+
+func (f *fakeWriter) CreateProvider(_ context.Context, body *structpb.Struct) error {
+	f.createBody = body.AsMap()
+	return f.createErr
+}
+
+func (f *fakeWriter) UpdateProvider(_ context.Context, body *structpb.Struct) error {
+	f.updateBody = body.AsMap()
+	return f.updateErr
+}
+
+func (f *fakeWriter) DeleteProvider(_ context.Context, providerKey string) error {
+	f.deleteKey = providerKey
+	return f.deleteErr
+}
+
+func (f *fakeWriter) SetProviderEnabled(_ context.Context, providerKey string, enabled bool) error {
+	f.enableKey, f.enableTo = providerKey, enabled
+	return f.enableErr
+}
+
+func (f *fakeWriter) SortProviders(_ context.Context, items []adminsvc.SortItem) error {
+	f.sortItems = items
+	return f.sortErr
+}
+
+func (f *fakeWriter) ProviderTypes() []adminsvc.ProviderTypeInfo { return f.types }
+
+func (f *fakeWriter) TestProvider(_ context.Context, providerKey, target string) error {
+	f.testKey, f.testTarget = providerKey, target
+	return f.testErr
+}
+
 // newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
 // 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
-// 助手与 http.Handler（口径同 handler/account/account_test.go）。
-func newAdminHandler(t *testing.T, providers ProviderReader) (*session.Tokens, *fakeEpochReader, http.Handler) {
+// 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
+// nil 时用 no-op fake（读路径用例不触写族）。
+func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
+	if writer == nil {
+		writer = &fakeWriter{}
+	}
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(0x20 + i)
@@ -84,7 +144,7 @@ func newAdminHandler(t *testing.T, providers ProviderReader) (*session.Tokens, *
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers),
+		New(providers, writer),
 		connectrpc.WithInterceptors(
 			internalconnect.NewSessionInterceptor(
 				session.NewVerifier(tokens, epochs),
@@ -237,7 +297,7 @@ func TestListProvidersAdminSession(t *testing.T) {
 		total:    5,
 		unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"},
 	}
-	tokens, epochs, h := newAdminHandler(t, fakes)
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure,
@@ -301,7 +361,7 @@ func TestListProvidersAdminSession(t *testing.T) {
 // Struct 明文（全站唯一明文出口，键 = Ext 字段名 snake_case）。
 func TestGetProviderAdminSession(t *testing.T) {
 	fakes := &fakeProviders{keyRow: wantRow(t)}
-	tokens, epochs, h := newAdminHandler(t, fakes)
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderProcedure,
@@ -344,7 +404,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 // 管理后台单资源）。
 func TestGetProviderNotFound(t *testing.T) {
 	fakes := &fakeProviders{keyErr: fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)}
-	tokens, epochs, h := newAdminHandler(t, fakes)
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderProcedure,
@@ -362,7 +422,7 @@ func TestGetProviderNotFound(t *testing.T) {
 // 逐项等于 LookupSenderMeta；基线字段同在；union options 来自 union 查询。
 func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"}}
-	tokens, epochs, h := newAdminHandler(t, fakes)
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	got := schemaOf(t, h, "smtp", cookie)
@@ -417,7 +477,7 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 // 且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
-	tokens, epochs, h := newAdminHandler(t, fakes)
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	got := schemaOf(t, h, "wechat_mp", cookie)
@@ -495,7 +555,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 // TestGetProviderSchemaUnknownType 未注册 / 空 type → §1.6 封闭集合内
 // invalid_request（Connect 标准码 invalid_argument，ErrorInfo domain=admin）。
 func TestGetProviderSchemaUnknownType(t *testing.T) {
-	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	for _, body := range []string{`{"type":"no_such_type"}`, `{"type":""}`} {
@@ -517,7 +577,7 @@ func TestGetProviderSchemaUnknownType(t *testing.T) {
 // admin 拦截器拦下 → 401 unauthenticated（§5 行 1145，与 account 域
 // handler 自判 401 的路径不同——admin 域在拦截器层）。
 func TestListProvidersWithoutSession(t *testing.T) {
-	_, _, h := newAdminHandler(t, &fakeProviders{})
+	_, _, h := newAdminHandler(t, &fakeProviders{}, nil)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure, `{}`, "")
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -531,7 +591,7 @@ func TestListProvidersWithoutSession(t *testing.T) {
 // TestNonAdminReturns404 会话有效但 uid≠1 → 404 not_found，文案与普通 404
 // 一致（掩护管理面存在，§1.5 行 189 / wrapper_test 口径）。
 func TestNonAdminReturns404(t *testing.T) {
-	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 42)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure, `{}`, cookie)
@@ -553,21 +613,14 @@ func TestNonAdminReturns404(t *testing.T) {
 	}
 }
 
-// TestStubsUnimplemented 其余全部 admin 方法（管理员自身 / Provider 写路径与
-// 下拉 / 用户 / 客户端 / settings / 工具，共 30 个）一律返回生成基类的
-// unimplemented（桩 + TODO(后续 admin 实现)，见包注释清单）。
+// TestStubsUnimplemented 其余全部 admin 方法（管理员自身 / 用户 / 客户端 /
+// settings / 工具，共 23 个）一律返回生成基类的 unimplemented（桩 + TODO(后续
+// admin 实现)，见包注释清单）。
 func TestStubsUnimplemented(t *testing.T) {
-	tokens, epochs, h := newAdminHandler(t, &fakeProviders{})
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 	cases := []string{
 		adminv1connect.AdminServiceGetMeProcedure,
-		adminv1connect.AdminServiceCreateProviderProcedure,
-		adminv1connect.AdminServiceUpdateProviderProcedure,
-		adminv1connect.AdminServiceDeleteProviderProcedure,
-		adminv1connect.AdminServiceSetProviderEnabledProcedure,
-		adminv1connect.AdminServiceSortProvidersProcedure,
-		adminv1connect.AdminServiceGetProviderTypesProcedure,
-		adminv1connect.AdminServiceTestProviderProcedure,
 		adminv1connect.AdminServiceListUsersProcedure,
 		adminv1connect.AdminServiceGetUserProcedure,
 		adminv1connect.AdminServiceUpdateUserStatusProcedure,
@@ -602,4 +655,242 @@ func TestStubsUnimplemented(t *testing.T) {
 			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, code, rec.Body.String())
 		}
 	}
+}
+
+// —— 写族 7 方法（handler 层：Connect 形态映射 + 入参透传）——
+
+// TestCreateProviderHandler 管理员会话新建：合法提交体原样平铺透传到
+// service（Struct 不包装）；uk 冲突 → 409 already_exists（§1.5 行 190，无
+// ErrorInfo，§1.6 无对应业务细分码）；校验失败 → 400 + ErrorInfo
+// (admin, invalid_request)（同 GetProviderSchema 先例）。
+func TestCreateProviderHandler(t *testing.T) {
+	t.Run("合法提交体透传", func(t *testing.T) {
+		writer := &fakeWriter{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateProviderProcedure,
+			`{"type":"wechat_mp","provider_key":"wx_new","display_name":"微信","client_id":"a","client_secret":"b"}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if writer.createBody["provider_key"] != "wx_new" || writer.createBody["type"] != "wechat_mp" ||
+			writer.createBody["client_secret"] != "b" {
+			t.Errorf("提交体透传 = %v（平铺键值原样到达 service）", writer.createBody)
+		}
+	})
+	t.Run("唯一键冲突 409", func(t *testing.T) {
+		writer := &fakeWriter{createErr: adminsvc.ErrDuplicateKey}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateProviderProcedure, `{}`, cookie)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 (body %s)", resp.StatusCode, raw)
+		}
+		if code := decodeErrorCode(t, raw); code != "already_exists" {
+			t.Errorf("code = %q, want already_exists (body %s)", code, raw)
+		}
+		// §1.6 封闭集合无 provider 冲突业务码 → 不挂 ErrorInfo，前端按标准码兜底（行 226）。
+		if strings.Contains(raw, "api.common.v1.ErrorInfo") {
+			t.Errorf("冲突响应不应携带 ErrorInfo detail: %s", raw)
+		}
+	})
+	t.Run("校验失败 400 + ErrorInfo", func(t *testing.T) {
+		writer := &fakeWriter{createErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateProviderProcedure, `{}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+		}
+		if code := decodeErrorCode(t, raw); code != "invalid_argument" {
+			t.Errorf("code = %q, want invalid_argument (body %s)", code, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (domain=%q code=%q), want (admin, invalid_request)", info.GetDomain(), info.GetCode())
+		}
+	})
+}
+
+// TestUpdateProviderHandler 编辑：提交体平铺透传（provider_key 兼定位）；
+//「改 key 拒绝」等校验失败 → 400 + ErrorInfo(admin, invalid_request)。
+func TestUpdateProviderHandler(t *testing.T) {
+	t.Run("提交体透传", func(t *testing.T) {
+		writer := &fakeWriter{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateProviderProcedure,
+			`{"provider_key":"wx_exist","display_name":"新名"}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if writer.updateBody["provider_key"] != "wx_exist" || writer.updateBody["display_name"] != "新名" {
+			t.Errorf("提交体透传 = %v", writer.updateBody)
+		}
+	})
+	t.Run("改 key 拒绝 400", func(t *testing.T) {
+		writer := &fakeWriter{updateErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateProviderProcedure,
+			`{"provider_key":"changed","display_name":"x"}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (domain=%q code=%q), want (admin, invalid_request)", info.GetDomain(), info.GetCode())
+		}
+	})
+}
+
+// TestDeleteAndEnableHandler 删除 / 行内开关：入参透传；不存在 → 404
+// not_found（§1.5 行 189 管理后台单资源）。
+func TestDeleteAndEnableHandler(t *testing.T) {
+	t.Run("delete 透传", func(t *testing.T) {
+		writer := &fakeWriter{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDeleteProviderProcedure,
+			`{"providerKey":"wx_exist"}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if writer.deleteKey != "wx_exist" {
+			t.Errorf("delete 入参 = %q, want wx_exist", writer.deleteKey)
+		}
+	})
+	t.Run("delete 不存在 404", func(t *testing.T) {
+		writer := &fakeWriter{deleteErr: fmt.Errorf("admin service: %w", gorm.ErrRecordNotFound)}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDeleteProviderProcedure,
+			`{"providerKey":"missing"}`, cookie)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body %s)", resp.StatusCode, raw)
+		}
+		if code := decodeErrorCode(t, raw); code != "not_found" {
+			t.Errorf("code = %q, want not_found (body %s)", code, raw)
+		}
+	})
+	t.Run("enabled 开关透传（false 非零值语义）", func(t *testing.T) {
+		writer := &fakeWriter{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetProviderEnabledProcedure,
+			`{"providerKey":"wx_exist","isEnabled":false}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if writer.enableKey != "wx_exist" || writer.enableTo {
+			t.Errorf("enabled 入参 = (%q, %v), want (wx_exist, false)", writer.enableKey, writer.enableTo)
+		}
+	})
+	t.Run("enabled 不存在 404", func(t *testing.T) {
+		writer := &fakeWriter{enableErr: fmt.Errorf("admin service: %w", gorm.ErrRecordNotFound)}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetProviderEnabledProcedure,
+			`{"providerKey":"missing","isEnabled":true}`, cookie)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body %s)", resp.StatusCode, raw)
+		}
+	})
+}
+
+// TestSortProvidersHandler 拖拽排序：items 透传到 service（providerKey +
+// sortOrder，int64 → int32 收窄）；成功 200。
+func TestSortProvidersHandler(t *testing.T) {
+	writer := &fakeWriter{}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceSortProvidersProcedure,
+		`{"items":[{"providerKey":"smtp_exist","sortOrder":"10"},{"providerKey":"wx_exist","sortOrder":"30"}]}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	if len(writer.sortItems) != 2 ||
+		writer.sortItems[0].ProviderKey != "smtp_exist" || writer.sortItems[0].SortOrder != 10 ||
+		writer.sortItems[1].ProviderKey != "wx_exist" || writer.sortItems[1].SortOrder != 30 {
+		t.Errorf("sort items 透传 = %+v", writer.sortItems)
+	}
+}
+
+// TestGetProviderTypesHandler 下拉数据源：service 返回项逐字段透传
+//（type/category/display_name）；排序归 service 层，此处只验映射。
+func TestGetProviderTypesHandler(t *testing.T) {
+	writer := &fakeWriter{types: []adminsvc.ProviderTypeInfo{
+		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
+		{Type: "wechat_mp", Category: "oauth", DisplayName: "微信小程序"},
+	}}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetProviderTypesProcedure, `{}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.ProviderTypesResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got.GetItems()) != 2 {
+		t.Fatalf("items = %d, want 2", len(got.GetItems()))
+	}
+	for i, want := range []struct{ typ, cat, name string }{
+		{"aliyun_sms", "sms", "阿里云短信"},
+		{"wechat_mp", "oauth", "微信小程序"},
+	} {
+		item := got.GetItems()[i]
+		if item.GetType() != want.typ || item.GetCategory() != want.cat || item.GetDisplayName() != want.name {
+			t.Errorf("items[%d] = %+v, want (%q, %q, %q)", i, item, want.typ, want.cat, want.name)
+		}
+	}
+}
+
+// TestTestProviderHandler 发送测试：{providerKey, target} 透传；非 sms/email
+// 类别校验失败 → 400 + ErrorInfo(admin, invalid_request)。
+func TestTestProviderHandler(t *testing.T) {
+	t.Run("入参透传", func(t *testing.T) {
+		writer := &fakeWriter{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceTestProviderProcedure,
+			`{"providerKey":"smtp_exist","target":"alice@example.com"}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if writer.testKey != "smtp_exist" || writer.testTarget != "alice@example.com" {
+			t.Errorf("test 入参 = (%q, %q)", writer.testKey, writer.testTarget)
+		}
+	})
+	t.Run("非 sms/email 类别拒绝 400", func(t *testing.T) {
+		writer := &fakeWriter{testErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceTestProviderProcedure,
+			`{"providerKey":"wx_exist","target":"alice@example.com"}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+		}
+		if code := decodeErrorCode(t, raw); code != "invalid_argument" {
+			t.Errorf("code = %q, want invalid_argument (body %s)", code, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (domain=%q code=%q), want (admin, invalid_request)", info.GetDomain(), info.GetCode())
+		}
+	})
 }

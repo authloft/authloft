@@ -75,6 +75,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service"
+	adminsvc "authloft/internal/service/admin"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
 	"authloft/internal/settings"
@@ -123,8 +124,12 @@ type assembled struct {
 	// provider 链（§3.9 / §15.3 / §13.0）：Loader 供后续 thirdparty
 	// 登录卡按 provider_key 取实例；Whitelist 是 origin 中间件 Referer 白
 	// 名单的唯一动态来源（已启用 wechat_mp / wechat_mp_scan 的 app_id 集合）。
+	// providerCache 与 Loader 共用同一 *cache.ProviderCache 实例：
+	// admin 写路径的写后失效（§15.3 行 1734 固定三步）与读路径的整行缓存
+	// / 版本号共用键空间，双实例会造成失效与回写各说各话。
 	providerLoader    *provider.Loader
 	providerWhitelist *provider.Whitelist
+	providerCache      *cache.ProviderCache
 
 	// 会话 / 令牌共享单例（消除 registerSSO 与 buildEngine
 	// 的重复构造）：sessionTokens 供 sso 会话拦截器与 Terminal SessionWriter
@@ -476,8 +481,10 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// wechat_mp_scan 的 Ext.app_id 集合，供 origin Referer 白名单热更新）。
 	// Loader 挂入 assembled，供后续 thirdparty 登录卡按 provider_key 取实例。
 	// NewLoader 对 nil src panic（程序错误，等同 fail-fast）；rdb 此处必非 nil。
+	// providerCache 同实例挂入 assembled（admin 写路径写后失效用）。
+	deps.providerCache = cache.NewProviderCache(rdb)
 	deps.providerLoader = provider.NewLoader(
-		repo.NewProviderRepo(db), cache.NewProviderCache(rdb), provider.LoaderOptions{})
+		repo.NewProviderRepo(db), deps.providerCache, provider.LoaderOptions{})
 	deps.providerWhitelist = provider.NewWhitelist(deps.providerLoader)
 
 	// 步骤 7：settings 全量预热（缺失键补齐，fail-fast）→ watcher 订阅热更新。
@@ -823,16 +830,22 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 	csrv.Register(path, h)
 }
 
-// registerAdmin 注册 AdminService Connect handler：session 拦截器
-// 在外（注入会话身份），connect.NewAdminInterceptor 在内（uid==1 判定，接口
-// 文档 §5 行 1145-1146：无会话 401 / 非管理员 404 掩护），错误包装由
-// connect.Server.HandlerOptions 统一补最内层。本实现仅落地 Provider 族读路径
-// （ListProviders / GetProvider / GetProviderSchema——详情为全站唯一明文凭证
-// 出口，访问日志不打印 body），其余方法由生成的
+// registerAdmin 注册 AdminService Connect handler：session 拦截器在外（注入
+// 会话身份），connect.NewAdminInterceptor 在内（uid==1 判定，接口文档 §5 行
+// 1145-1146：无会话 401 / 非管理员 404 掩护），错误包装由
+// connect.Server.HandlerOptions 统一补最内层。读路径（ListProviders /
+// GetProvider / GetProviderSchema——详情为全站唯一明文凭证出口，访问日志不
+// 打印 body）直连 ProviderRepo；写族 7 方法走 service/admin（业务校验 + 写后
+// 缓存失效，§18 行 1792 分层），ProviderCache 与 Loader 共用同一实例（见
+// assembled.providerCache 注释），其余方法由生成的
 // UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	providers := repo.NewProviderRepo(deps.db)
 	path, h := adminv1connect.NewAdminServiceHandler(
-		adminhandler.New(repo.NewProviderRepo(deps.db)),
+		adminhandler.New(
+			providers,
+			adminsvc.NewService(providers, deps.providerCache),
+		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)
 	csrv.Register(path, h)

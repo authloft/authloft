@@ -165,6 +165,80 @@ func (r *ProviderRepo) Update(ctx context.Context, p *model.Provider) error {
 	return nil
 }
 
+// ProviderSortUpdate SortProviders 的单行排序更新（provider_key 定位 +
+// 目标 sort_order；admin §5.2 行 1174 拖拽排序）。
+type ProviderSortUpdate struct {
+	ProviderKey string
+	SortOrder   int32
+}
+
+// SetEnabled 按主键列级最小 UPDATE is_enabled（列级收编
+// repo，service 不自写 SQL；default tag 只影响 Create，禁用零值必须走列级
+// UPDATE 才可落库，见 Create 注释）。changed-rows 语义下同值 UPDATE
+// RowsAffected=0 与行不存在不可区分，rows=0 时补 SELECT 存在性判定
+//（行在则幂等成功，查无此行才报 ErrRecordNotFound，与 Update 同口径）。
+func (r *ProviderRepo) SetEnabled(ctx context.Context, id int64, enabled int8) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.Provider{}).
+		Where("id = ?", id).
+		Update("is_enabled", enabled)
+	if res.Error != nil {
+		return fmt.Errorf("provider repo: set enabled: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return r.ensureProviderExists(ctx, id, "set enabled")
+	}
+	return nil
+}
+
+// UpdateSortOrders 批量列级最小 UPDATE sort_order（admin §5.2 行 1174：
+// {items:[{providerKey, sortOrder}]} 拖拽排序）：事务内逐行按 provider_key
+// 更新，任一行失败全批回滚（批量语义要么全成、要么全败）。rows=0 同
+// changed-rows 歧义：补查存在性——行在则同值幂等，查无此行（provider_key
+// 不存在）报 ErrRecordNotFound，调用方映射 404。
+func (r *ProviderRepo) UpdateSortOrders(ctx context.Context, updates []ProviderSortUpdate) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, u := range updates {
+			res := tx.Model(&model.Provider{}).
+				Where("provider_key = ?", u.ProviderKey).
+				Update("sort_order", u.SortOrder)
+			if res.Error != nil {
+				return fmt.Errorf("provider repo: update sort orders: %w", res.Error)
+			}
+			if res.RowsAffected == 0 {
+				var exists int64
+				if err := tx.Model(&model.Provider{}).
+					Select("COUNT(*)").
+					Where("provider_key = ?", u.ProviderKey).
+					Scan(&exists).Error; err != nil {
+					return fmt.Errorf("provider repo: update sort orders: %w", err)
+				}
+				if exists == 0 {
+					return fmt.Errorf("provider repo: update sort orders: key %q: %w", u.ProviderKey, gorm.ErrRecordNotFound)
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// ensureProviderExists 列级 UPDATE rows=0 时的存在性补查（changed-rows 语义，
+// 与 Update 的补查同口径）。
+func (r *ProviderRepo) ensureProviderExists(ctx context.Context, id int64, op string) error {
+	var exists int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.Provider{}).
+		Select("COUNT(*)").
+		Where("id = ?", id).
+		Scan(&exists).Error; err != nil {
+		return fmt.Errorf("provider repo: %s: %w", op, err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("provider repo: %s: %w", op, gorm.ErrRecordNotFound)
+	}
+	return nil
+}
+
 // Delete 按主键删除；行不存在返回包装的 gorm.ErrRecordNotFound
 //（DELETE 的 rows=0 无同值歧义，直接判 not found，无需补查）。
 func (r *ProviderRepo) Delete(ctx context.Context, id int64) error {

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -151,6 +152,20 @@ func LookupSenderMeta(senderType string) (SenderMeta, bool) {
 		return SenderMeta{}, false
 	}
 	return e.meta, true
+}
+
+// SenderTypes 返回消息域全部已注册厂商的元信息快照，按 Type 稳定排序
+//（admin GetProviderTypes 下拉数据源的两域之一，接口文档 §5.2 行 1175；
+// 与 oauth 域 Types() 对称：排序保证确定性输出）。
+func SenderTypes() []SenderMeta {
+	senderRegistry.mu.RLock()
+	defer senderRegistry.mu.RUnlock()
+	out := make([]SenderMeta, 0, len(senderRegistry.entries))
+	for _, e := range senderRegistry.entries {
+		out = append(out, e.meta)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
+	return out
 }
 
 // SettingGetter settings 快照读取窄接口（*settings.Store 天然满足；本包不

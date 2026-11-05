@@ -10,9 +10,6 @@
 //
 // TODO(后续 admin 实现)——桩方法归属（均返回生成基类的 unimplemented）：
 //   - 管理员自身：GetMe（§5.1）
-//   - Provider 写路径：CreateProvider / UpdateProvider / DeleteProvider /
-//     SetProviderEnabled / SortProviders / TestProvider（§5.2）；下拉数据源
-//     GetProviderTypes（§5.2 行 1175，同样待后续实现接线）
 //   - 用户管理：ListUsers / GetUser / UpdateUserStatus / ResetUserPassword /
 //     UnbindUserThirdparty / UnlockUser / GetUserEvents（§5.4）
 //   - 客户端管理：ListSsoClients / CreateSsoClient / GetSsoClient /
@@ -28,6 +25,7 @@ import (
 	"fmt"
 
 	connectrpc "connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
@@ -37,6 +35,7 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	adminsvc "authloft/internal/service/admin"
 )
 
 // ProviderReader admin 域 provider 读取窄接口（§20 依赖注入）：生产注入
@@ -47,11 +46,26 @@ type ProviderReader interface {
 	ListProviders(ctx context.Context, q repo.ProviderListQuery) ([]model.Provider, int64, error)
 }
 
+// ProviderService admin 域 provider 写族 + 下拉 + 发送测试窄接口（
+// §20 依赖注入）：生产注入 *adminsvc.Service（分层 §18 行 1792：handler →
+// service/admin → repo → cache），测试可传 fake。
+type ProviderService interface {
+	CreateProvider(ctx context.Context, body *structpb.Struct) error
+	UpdateProvider(ctx context.Context, body *structpb.Struct) error
+	DeleteProvider(ctx context.Context, providerKey string) error
+	SetProviderEnabled(ctx context.Context, providerKey string, enabled bool) error
+	SortProviders(ctx context.Context, items []adminsvc.SortItem) error
+	ProviderTypes() []adminsvc.ProviderTypeInfo
+	TestProvider(ctx context.Context, providerKey, target string) error
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect/interceptors.go 与 account handler）。
 var (
 	errNotFound        = errors.New("not found")
 	errUnknownProvType = errors.New("unknown provider type")
+	errInvalidRequest  = errors.New("invalid request")
+	errDuplicateKey    = errors.New("provider key already exists")
 )
 
 // providerListPageSize 管理列表分页上限（§1.7 行 277：pageSize 上限 100），
@@ -63,11 +77,13 @@ const providerListPageSize = 100
 type Handler struct {
 	adminv1connect.UnimplementedAdminServiceHandler
 	providers ProviderReader
+	svc       ProviderService
 }
 
-// New 构造 AdminService handler。
-func New(providers ProviderReader) *Handler {
-	return &Handler{providers: providers}
+// New 构造 AdminService handler（providers：读路径；svc：写族 +
+// GetProviderTypes + TestProvider）。
+func New(providers ProviderReader, svc ProviderService) *Handler {
+	return &Handler{providers: providers, svc: svc}
 }
 
 // ListProviders（接口文档 §5.2 行 1168）：筛选 {category, type, isEnabled} +
@@ -206,4 +222,100 @@ func boolPtrToInt8(b *bool) *int8 {
 		v = 1
 	}
 	return &v
+}
+
+// —— 写族 7 方法（§5.2 行 1169-1177）：service 层业务校验与缓存失效，
+// handler 只做 Connect 形态映射（§18 行 1792 分层）——
+
+// CreateProvider（§5.2 行 1169）：新建，请求体为 §5.3 schema 的动态键集合
+//（google.protobuf.Struct）。
+func (h *Handler) CreateProvider(ctx context.Context, req *connectrpc.Request[structpb.Struct]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.svc.CreateProvider(ctx, req.Msg); err != nil {
+		return nil, mapWriteError("create provider", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// UpdateProvider（§5.2 行 1171）：编辑，提交体平铺含 provider_key（定位），
+// provider_key 创建后不可改；缺省键保留原值（PATCH，service 层口径）。
+func (h *Handler) UpdateProvider(ctx context.Context, req *connectrpc.Request[structpb.Struct]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.svc.UpdateProvider(ctx, req.Msg); err != nil {
+		return nil, mapWriteError("update provider", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// DeleteProvider（§5.2 行 1172）：{providerKey} 删除；不存在 → 404 not_found
+//（§1.5 行 189 管理后台单资源）。
+func (h *Handler) DeleteProvider(ctx context.Context, req *connectrpc.Request[adminv1.DeleteProviderRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.svc.DeleteProvider(ctx, req.Msg.GetProviderKey()); err != nil {
+		return nil, mapWriteError("delete provider", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// SetProviderEnabled（§5.2 行 1173）：{providerKey, isEnabled} 行内开关。
+func (h *Handler) SetProviderEnabled(ctx context.Context, req *connectrpc.Request[adminv1.SetProviderEnabledRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.svc.SetProviderEnabled(ctx, req.Msg.GetProviderKey(), req.Msg.GetIsEnabled()); err != nil {
+		return nil, mapWriteError("set provider enabled", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// SortProviders（§5.2 行 1174）：{items:[{providerKey, sortOrder}]} 拖拽排序。
+func (h *Handler) SortProviders(ctx context.Context, req *connectrpc.Request[adminv1.SortProvidersRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	items := make([]adminsvc.SortItem, len(req.Msg.GetItems()))
+	for i, it := range req.Msg.GetItems() {
+		items[i] = adminsvc.SortItem{ProviderKey: it.GetProviderKey(), SortOrder: int32(it.GetSortOrder())}
+	}
+	if err := h.svc.SortProviders(ctx, items); err != nil {
+		return nil, mapWriteError("sort providers", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// GetProviderTypes（§5.2 行 1175）：Provider type 下拉数据源，来自两域注册表
+// metas（§15.3），type 稳定排序（service 层保证）。
+func (h *Handler) GetProviderTypes(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderTypesRequest]) (*connectrpc.Response[adminv1.ProviderTypesResponse], error) {
+	infos := h.svc.ProviderTypes()
+	items := make([]*adminv1.ProviderType, len(infos))
+	for i := range infos {
+		items[i] = &adminv1.ProviderType{
+			Type:        infos[i].Type,
+			Category:    infos[i].Category,
+			DisplayName: infos[i].DisplayName,
+		}
+	}
+	return connectrpc.NewResponse(&adminv1.ProviderTypesResponse{Items: items}), nil
+}
+
+// TestProvider（§5.2 行 1177）：{providerKey, target} 短信 / 邮件 Provider 的
+//「发送测试」——同步 Send 给管理员即时反馈（service 层不经 Loader / asyncqueue）。
+func (h *Handler) TestProvider(ctx context.Context, req *connectrpc.Request[adminv1.TestProviderRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.svc.TestProvider(ctx, req.Msg.GetProviderKey(), req.Msg.GetTarget()); err != nil {
+		return nil, mapWriteError("test provider", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// mapWriteError service 写路径错误 → Connect 形态（§1.5 行 182-195 统一口径）：
+// 参数 / 校验类 → invalid_argument + ErrorInfo domain=admin code=invalid_request
+//（§1.6 封闭集合，同 GetProviderSchema 先例）；唯一键冲突 → already_exists
+//（行 190，409，§1.6 无对应业务细分码故不挂 ErrorInfo，前端按标准码兜底，
+// 行 226）；资源不存在 → not_found（行 189）；其余原样上抛由错误包装拦截器
+// 消毒为 internal（行 192）。
+func mapWriteError(op string, err error) error {
+	switch {
+	case errors.Is(err, adminsvc.ErrInvalidRequest):
+		return connect.WithErrorInfo(
+			connectrpc.NewError(connectrpc.CodeInvalidArgument, errInvalidRequest),
+			connect.NewErrorInfo("admin", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, adminsvc.ErrDuplicateKey):
+		return connectrpc.NewError(connectrpc.CodeAlreadyExists, errDuplicateKey)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("admin handler: %s: %w", op, err)
+	}
 }

@@ -11,6 +11,8 @@ package dto
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -217,4 +219,157 @@ func schemaDefaultValue(s string) *structpb.Value {
 		}
 	}
 	return structpb.NewStringValue(s)
+}
+
+// extUnmarshal 提交体 → provider.Ext 的 protojson 解析选项（protojson 解析
+// 同时接受 proto 字段名与 lowerCamelCase 两种键形，§5.3 行 1183 的提交体键
+// 即 Ext 字段名 snake_case，无需选项切换）；DiscardUnknown 保险——合法键集
+// 已在 service 校验，此处仅防御注册表未声明却与 Ext 字段同名的残余键。类型
+// 不符（bool 列收到字符串等）由 protojson 报错，service 映射 invalid_request。
+var extUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+// AdminProviderColumnKeys provider 表列中可经提交体写入的基线键集（§5.3 行
+// 1192-1225 示例即契约：display / policy 区块 + basic 区块的 display_name /
+// union_provider）。不含 provider_key（service 单独校验「创建后不可改」）、
+// category 与 type（由注册表按 type 决定，只读）。
+var AdminProviderColumnKeys = []string{
+	"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark",
+	"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+}
+
+// ApplyProviderColumns 把提交体中的表列基线键（AdminProviderColumnKeys）应
+// 用到 row（写路径：Create 从零值行起、Update 从 FindByKey 读回的完整
+// 行上——未提交的键不动即「缺省键保留原值」，PATCH over schema 键集。该
+// 缺省语义 docs 未明说，按默认口径处理）。provider_key /
+// category / type 不经本函数（service 层按 §5.2 行 1171「创建后不可改」与
+// 注册表只读口径单独校验）。值类型不符返回错误（service 映射 invalid_request）；
+// 显式 null 按清零语义落列默认值。
+func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value) error {
+	if row == nil {
+		return fmt.Errorf("dto: apply provider columns: nil row")
+	}
+	for _, key := range AdminProviderColumnKeys {
+		v, ok := fields[key]
+		if !ok {
+			continue // 缺省保留原值（PATCH）
+		}
+		var err error
+		switch key {
+		case "display_name":
+			row.DisplayName, err = columnString(v)
+		case "union_provider":
+			row.UnionProvider, err = columnString(v)
+		case "icon_url":
+			row.IconURL, err = columnString(v)
+		case "ui_group":
+			row.UiGroup, err = columnString(v)
+		case "remark":
+			row.Remark, err = columnString(v)
+		case "auto_bind_fields":
+			row.AutoBindFields, err = columnString(v)
+		case "sort_order":
+			row.SortOrder, err = columnInt32(v)
+		case "is_enabled":
+			row.IsEnabled, err = columnInt8Bool(v)
+		case "enable_signin":
+			row.EnableSignin, err = columnInt8Bool(v)
+		case "enable_signup":
+			row.EnableSignup, err = columnInt8Bool(v)
+		case "auto_bind":
+			row.AutoBind, err = columnInt8Bool(v)
+		}
+		if err != nil {
+			return fmt.Errorf("dto: apply provider columns: key %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// MergeProviderExt 把提交体中属于 Ext 键集（extKeys，注册表 meta.Fields 声明
+// 的字段名集合）的值合并进原 Ext（protojson 往返：原 Ext 按 UseProtoNames 序
+// 列化为键值 map，提交值覆盖同名键，再整体解析回 provider.Ext——未提交的
+// Ext 字段保留原值，PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起
+// 点即可。类型不符由 protojson 报错（service 映射 invalid_request）。orig 为
+// nil 时按空 Ext 起点（与 ParseProviderExt 的非 nil 语义一致）。
+func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, extKeys []string) (*providerpb.Ext, error) {
+	if orig == nil {
+		orig = &providerpb.Ext{}
+	}
+	raw, err := extJSON.Marshal(orig)
+	if err != nil {
+		return nil, fmt.Errorf("dto: merge provider ext: %w", err)
+	}
+	m := map[string]any{}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("dto: merge provider ext: %w", err)
+	}
+	for _, key := range extKeys {
+		v, ok := fields[key]
+		if !ok {
+			continue // 缺省保留原值（PATCH）
+		}
+		m[key] = v.AsInterface()
+	}
+	merged, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("dto: merge provider ext: %w", err)
+	}
+	out := &providerpb.Ext{}
+	if err := extUnmarshal.Unmarshal(merged, out); err != nil {
+		return nil, fmt.Errorf("dto: merge provider ext: %w", err)
+	}
+	return out, nil
+}
+
+// columnString 表列 string 值（§1.11 text 渲染）；null 清零、非 string 报错。
+func columnString(v *structpb.Value) (string, error) {
+	if v == nil {
+		return "", nil
+	}
+	switch v := v.GetKind().(type) {
+	case *structpb.Value_NullValue:
+		return "", nil
+	case *structpb.Value_StringValue:
+		return v.StringValue, nil
+	default:
+		return "", fmt.Errorf("want string value, got %T", v)
+	}
+}
+
+// columnInt32 表列 int32 值（§1.11 number 渲染）；null 清零、非 number 报错。
+func columnInt32(v *structpb.Value) (int32, error) {
+	if v == nil {
+		return 0, nil
+	}
+	switch v := v.GetKind().(type) {
+	case *structpb.Value_NullValue:
+		return 0, nil
+	case *structpb.Value_NumberValue:
+		n := v.NumberValue
+		if n != math.Trunc(n) {
+			return 0, fmt.Errorf("want integer, got %v", n)
+		}
+		return int32(n), nil
+	default:
+		return 0, fmt.Errorf("want number value, got %T", v)
+	}
+}
+
+// columnInt8Bool 表列 tinyint 开关（§1.11 checkbox 渲染，§12.9 行 1749 用 bool
+// 承载）；null 清零、非 bool 报错。
+func columnInt8Bool(v *structpb.Value) (int8, error) {
+	if v == nil {
+		return 0, nil
+	}
+	switch v := v.GetKind().(type) {
+	case *structpb.Value_NullValue:
+		return 0, nil
+	case *structpb.Value_BoolValue:
+		if v.BoolValue {
+			return 1, nil
+		}
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("want bool value, got %T", v)
+	}
 }

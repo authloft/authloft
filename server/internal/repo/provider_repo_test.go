@@ -288,6 +288,91 @@ func TestProviderRepoCRUD(t *testing.T) {
 	}
 }
 
+// TestProviderRepoColumnUpdates（env-skip）：列级 UPDATE 最小增量——
+// SetEnabled 置 0/置 1、同值幂等、行不存在判别；UpdateSortOrders 批量落库
+// 与「含不存在 key 全批回滚」。
+func TestProviderRepoColumnUpdates(t *testing.T) {
+	rp, _ := providerTestSetup(t)
+	ctx := context.Background()
+
+	seed := []model.Provider{
+		{ProviderKey: "wx", UnionProvider: "", DisplayName: "微信", Category: "oauth", Type: "wechat_mp", SortOrder: 10, IsEnabled: 1},
+		{ProviderKey: "smtp", UnionProvider: "", DisplayName: "SMTP", Category: "email", Type: "smtp", SortOrder: 20, IsEnabled: 1},
+	}
+	for i := range seed {
+		if err := rp.Create(ctx, &seed[i]); err != nil {
+			t.Fatalf("Create %s 失败: %v", seed[i].ProviderKey, err)
+		}
+	}
+	wx := seed[0]
+
+	// SetEnabled 置 0（禁用零值只能走列级 UPDATE，default tag 只影响 Create）。
+	if err := rp.SetEnabled(ctx, wx.ID, 0); err != nil {
+		t.Fatalf("SetEnabled(0) 失败: %v", err)
+	}
+	got, err := rp.FindByKey(ctx, "wx")
+	if err != nil {
+		t.Fatalf("FindByKey 失败: %v", err)
+	}
+	if got.IsEnabled != 0 {
+		t.Errorf("SetEnabled 后 is_enabled = %d, want 0", got.IsEnabled)
+	}
+	if got.DisplayName != "微信" || got.SortOrder != 10 {
+		t.Errorf("列级 UPDATE 不得波及其他列: %+v", got)
+	}
+
+	// 同值二次 SetEnabled：changed-rows rows=0 但行在 → 幂等成功不误报。
+	if err := rp.SetEnabled(ctx, wx.ID, 0); err != nil {
+		t.Errorf("同值 SetEnabled 应幂等成功: %v", err)
+	}
+	// 置回 1。
+	if err := rp.SetEnabled(ctx, wx.ID, 1); err != nil {
+		t.Fatalf("SetEnabled(1) 失败: %v", err)
+	}
+	// 行不存在：rows=0 补查 → ErrRecordNotFound。
+	if err := rp.SetEnabled(ctx, 404, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("SetEnabled 不存在的行应 ErrRecordNotFound, got %v", err)
+	}
+
+	// UpdateSortOrders 批量落库：两行 sort_order 互换。
+	if err := rp.UpdateSortOrders(ctx, []ProviderSortUpdate{
+		{ProviderKey: "wx", SortOrder: 20},
+		{ProviderKey: "smtp", SortOrder: 10},
+	}); err != nil {
+		t.Fatalf("UpdateSortOrders 失败: %v", err)
+	}
+	for key, want := range map[string]int32{"wx": 20, "smtp": 10} {
+		row, err := rp.FindByKey(ctx, key)
+		if err != nil {
+			t.Fatalf("FindByKey(%s) 失败: %v", key, err)
+		}
+		if row.SortOrder != want {
+			t.Errorf("%s sort_order = %d, want %d", key, row.SortOrder, want)
+		}
+	}
+
+	// 含不存在 key：全批回滚（事务语义），已存在行的值不变。
+	err = rp.UpdateSortOrders(ctx, []ProviderSortUpdate{
+		{ProviderKey: "wx", SortOrder: 99},
+		{ProviderKey: "nope", SortOrder: 1},
+	})
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("含不存在 key 应 ErrRecordNotFound, got %v", err)
+	}
+	row, err := rp.FindByKey(ctx, "wx")
+	if err != nil {
+		t.Fatalf("回滚后 FindByKey 失败: %v", err)
+	}
+	if row.SortOrder != 20 {
+		t.Errorf("回滚后 wx sort_order = %d, want 20（全批回滚）", row.SortOrder)
+	}
+
+	// 空 updates：no-op 成功。
+	if err := rp.UpdateSortOrders(ctx, nil); err != nil {
+		t.Errorf("空 updates 应 no-op: %v", err)
+	}
+}
+
 // TestProviderRepoList（env-skip）：category / type / is_enabled 过滤 +
 // §1.7 分页参数归一 + sort_order ASC, id ASC 全序稳定。
 func TestProviderRepoList(t *testing.T) {

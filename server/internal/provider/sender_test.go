@@ -168,6 +168,40 @@ func TestNewSenderMatrix(t *testing.T) {
 	}
 }
 
+// TestSenderTypes 消息域注册表枚举（GetProviderTypes 数据源之一）：
+// 全部已注册厂商返回、按 Type 稳定升序、meta 逐字段与 LookupSenderMeta 同源。
+func TestSenderTypes(t *testing.T) {
+	ensureTestVendors()
+	got := provider.SenderTypes()
+	if len(got) == 0 {
+		t.Fatal("SenderTypes = 空（ensureTestVendors 后必非空）")
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1].Type >= got[i].Type {
+			t.Errorf("Type 未稳定排序: %q >= %q", got[i-1].Type, got[i].Type)
+		}
+	}
+	for _, meta := range got {
+		want, ok := provider.LookupSenderMeta(meta.Type)
+		if !ok {
+			t.Fatalf("SenderTypes 含 %q 但 LookupSenderMeta 未命中", meta.Type)
+		}
+		if want.Type != meta.Type || want.Category != meta.Category || want.DisplayName != meta.DisplayName {
+			t.Errorf("meta 与注册表不同源: %+v vs %+v", meta, want)
+		}
+	}
+	// 抽查测试厂商在列。
+	byType := map[string]bool{}
+	for _, meta := range got {
+		byType[meta.Type] = true
+	}
+	for _, want := range []string{testEmailVendorType, testSMSVendorType, testBridgeVendorType} {
+		if !byType[want] {
+			t.Errorf("SenderTypes 缺少已注册厂商 %q", want)
+		}
+	}
+}
+
 // TestNewCodeBridgeValidation 桥构造 fail-fast：依赖缺失 / 非法 category。
 func TestNewCodeBridgeValidation(t *testing.T) {
 	if _, err := provider.NewCodeBridge(nil, nil, nil, "k", provider.CategorySMS); err == nil {
