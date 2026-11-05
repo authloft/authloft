@@ -5,16 +5,19 @@
  *   不设专属组件（§1.2 行 48「totp 不设专属组件，由通用 FormStep +
  *   CodeInput 渲染」）——null 是「通用表单渲染」的语义标记，不是缺映射；
  * - otp_sms / otp_email → OTPForm（双段组件，扩展 props 由容器按 step 派生，
- *   OTPForm.isOtpForm 判定）；recovery_code → RecoveryCodeForm；
- * - 缺映射（lookupFactor 返回 undefined，如未交付的 webauthn /
- *   thirdparty）走兜底错误态，**不许无映射静默回退**（§4.3 行 434）；
- *   新增因子只改本表一行（§4.3 行 434）。
+ *   OTPForm.isOtpForm 判定）；recovery_code → RecoveryCodeForm；webauthn →
+ *   WebAuthnButton（usernameless 免密按钮，challengeData 注入 / 断言
+ *   经 onCredential 上抛，容器 isWebAuthnForm 判定）；
+ * - 缺映射（lookupFactor 返回 undefined，如 thirdparty——由 MethodTabs 链路
+ *   接入，不进本表）走兜底错误态，**不许无映射静默回退**（§4.3 行
+ *   434）；新增因子只改本表一行（§4.3 行 434）。
  */
 import type { ComponentType } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { OTPForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
 import { RecoveryCodeForm } from './RecoveryCodeForm';
+import { WebAuthnButton } from './WebAuthnButton';
 
 /** 因子组件契约：容器以统一 props 驱动各因子表单（fields 以后端下发为准，§2.1）。 */
 export interface FactorProps {
@@ -37,6 +40,7 @@ export const FACTOR_REGISTRY: Readonly<Record<string, FactorComponent | null>> =
   totp: null,
   otp_sms: OTPForm,
   otp_email: OTPForm,
+  webauthn: WebAuthnButton,
   recovery_code: RecoveryCodeForm,
 };
 

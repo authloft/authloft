@@ -18,6 +18,7 @@
     "@connectrpc/connect": "^2.3.0",
     "@connectrpc/connect-web": "^2.3.0",
     "@modern-js/runtime": "3.11.0",
+    "@simplewebauthn/browser": "^14.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.0"
   },

@@ -18,6 +18,7 @@ import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
 import { OTPForm } from './factors/OTPForm';
 import { PasswordForm } from './factors/PasswordForm';
 import { RecoveryCodeForm } from './factors/RecoveryCodeForm';
+import { WebAuthnButton } from './factors/WebAuthnButton';
 import { lookupFactor } from './factors/registry';
 import { groupProviders, MethodTabs } from './MethodTabs';
 import {
@@ -315,11 +316,11 @@ describe('isErrorStatus（§4.1 行 395：非 success 即失败，轮询进行�
 // ---------------------------------------------------------------------------
 
 describe('lookupFactor（§4.3 行 434：映射表三态）', () => {
-  test('password → PasswordForm；totp → null（通用 FormStep 语义）；其余缺映射 → undefined', () => {
+  test('password → PasswordForm；totp → null（通用 FormStep 语义）；webauthn → WebAuthnButton；其余缺映射 → undefined', () => {
     expect(lookupFactor('password')).toBe(PasswordForm);
     expect(lookupFactor('totp')).toBeNull();
     expect(lookupFactor('otp_sms')).toBe(OTPForm);
-    expect(lookupFactor('webauthn')).toBeUndefined();
+    expect(lookupFactor('webauthn')).toBe(WebAuthnButton);
     expect(lookupFactor('recovery_code')).toBe(RecoveryCodeForm);
     expect(lookupFactor('thirdparty')).toBeUndefined();
   });
@@ -705,6 +706,91 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     state = result.events.reduce(flowReducer, state);
     expect(state.status).toBe('success'); // 二次因子过 → 终点
   });
+
+  test('webauthn challenge → next(kind=form)：payload {}（§2.6 行 547）+ advance 推进 + challengeData 信封下发（§1.3 行 117）', async () => {
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'next',
+          loginToken: 'tok-4',
+          nextStep: {
+            kind: 'form',
+            method: 'webauthn',
+            challengeData: { challenge: 'k9v0x8', rpId: 'example.test' },
+          },
+        });
+      }),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'webauthn',
+      firstStep: 'challenge', // §1.10 行 308：challenge → form
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'challenge' });
+    const result = await container.runSubmit(
+      state,
+      {}, // challenge 步空 payload（usernameless 不收集用户名，§2.6 行 547）
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(false);
+    expect(JSON.parse(raw)).toEqual({
+      method: 'webauthn',
+      step: 'challenge',
+      payload: {},
+    });
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('next');
+    expect(state.step).toBe('verify'); // advance 推进（§1.10 行 306-307 同款）
+    // Struct 不解析、整体透传到信封（§12.9 行 1784）。
+    expect(state.envelope?.nextStep?.challengeData).toEqual({
+      challenge: 'k9v0x8',
+      rpId: 'example.test',
+    });
+  });
+
+  test('webauthn verify 提交：payload {credential}（§2.6 行 548 断言原样）→ success 终点', async () => {
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'success',
+          loginToken: 'tok-5',
+          redirectTo: 'https://app.test/home',
+        });
+      }),
+    );
+    const ASSERTION = {
+      id: 'cred-1',
+      rawId: 'cred-1',
+      type: 'public-key',
+      response: { clientDataJSON: 'eyJ9', authenticatorData: 'o2NmbQ' },
+    };
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'webauthn',
+      firstStep: 'verify', // verify 段断言提交（challenge 步 advance 后）
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'verify' });
+    const result = await container.runSubmit(
+      state,
+      { credential: ASSERTION }, // Struct JSON 不走表单值通道（容器 submitCredential 组装）
+      () => undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(false);
+    // @simplewebauthn 断言对象原样提交（§12.9 行 1783 credential 透传）。
+    expect(JSON.parse(raw)).toEqual({
+      method: 'webauthn',
+      step: 'verify',
+      payload: { credential: ASSERTION },
+    });
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('success'); // 断言过 → 终点
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -775,6 +861,33 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
+  test('mfa_required webauthn 条目 → 选择器显示 hint 提示文案（§1.3 行 125）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'mfa_required',
+        envelope: envelope({
+          status: 'mfa_required',
+          mfa: create(MfaSchema, {
+            methods: [
+              // hint 零值（其余因子）：不渲染提示 span。
+              create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
+              create(MfaMethodSchema, {
+                method: 'webauthn',
+                steps: ['challenge', 'form'],
+                hint: '请触摸已绑定的通行密钥设备',
+              }),
+            ],
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('通行密钥'); // t('factors.webauthn')
+    expect(markup).toContain('请触摸已绑定的通行密钥设备'); // §1.3 行 125 hint
+    // hint 零值条目（totp）不出现空提示。
+    expect(markup).not.toContain('动态口令</span>');
+  });
+
   test('binding_required：原地渲染 BindingPage 两选项（§4.1 行 406 / §2.7.5）；轮询态占位保留', () => {
     const markup = renderView(
       stateWith({
@@ -832,8 +945,20 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).toContain('登录已超时，请重新登录');
   });
 
-  test('缺映射（webauthn，WebAuthnButton 归后续实现）→ 兜底错误态，不静默回退（§4.3 行 434）', () => {
+  test('选中 webauthn（challenge 步）：PublicKeyCredential 缺失 → 隐藏；满足 → WebAuthnButton 发起按钮（§4.3 行 453）', () => {
+    // node 无 window：组件渲染空（需求 §4.1.6 行 105 不支持自动不展示；
+    // MethodTabs 的 webauthn tab 同因 capability 隐藏）。
+    expect(
+      renderView(stateWith({ method: 'webauthn', step: 'challenge' })),
+    ).not.toContain('使用通行密钥登录');
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
     const markup = renderView(stateWith({ method: 'webauthn', step: 'challenge' }));
+    expect(markup).toContain('使用通行密钥登录');
+    expect(markup).not.toContain('<form'); // 不走通用字段渲染器（§4.3 行 453）
+  });
+
+  test('缺映射（未注册 method）→ 兜底错误态，不静默回退（§4.3 行 434）', () => {
+    const markup = renderView(stateWith({ method: 'nosuchfactor', step: 'challenge' }));
     expect(markup).toContain('请刷新重试');
     expect(markup).not.toContain('<form');
   });
@@ -911,6 +1036,27 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     );
     expect(markup).toContain('autoComplete="one-time-code"');
     expect(markup).toContain('60 秒后可重发');
+  });
+
+  test('status=next + kind=form（webauthn）→ WebAuthnButton 断言按钮 + challengeData 信封注入（§1.3 行 117 / §2.6 行 547-548）', () => {
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    const markup = renderView(
+      stateWith({
+        method: 'webauthn',
+        step: 'verify',
+        status: 'next',
+        envelope: envelope({
+          status: 'next',
+          nextStep: create(NextStepSchema, {
+            kind: 'form',
+            method: 'webauthn',
+            challengeData: { challenge: 'k9v0x8', rpId: 'example.test' },
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('验证'); // challengeData 注入 → 断言按钮
+    expect(markup).not.toContain('使用通行密钥登录'); // 非 challenge 步发起按钮
   });
 });
 

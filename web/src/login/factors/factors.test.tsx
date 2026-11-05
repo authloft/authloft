@@ -7,7 +7,7 @@ import * as React from 'react';
 // renderToStaticMarkup（沿 login-container.test.ts / components.test.ts 惯例）；
 // useCountdown 在静态渲染下只执行初始 state（effects 不跑），倒计时文案可断言。
 import { renderToStaticMarkup } from 'react-dom/server';
-import { create } from '@bufbuild/protobuf';
+import { create, type JsonObject } from '@bufbuild/protobuf';
 import { FieldSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type {
   OidcContext,
@@ -17,6 +17,11 @@ import { OTPForm, isOtpForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
 import { ProviderButtons, startRedirect } from './ProviderButtons';
 import { RecoveryCodeForm } from './RecoveryCodeForm';
+import {
+  WebAuthnButton,
+  authenticate,
+  isWebAuthnForm,
+} from './WebAuthnButton';
 import { lookupFactor } from './registry';
 
 const { createElement } = React;
@@ -54,12 +59,13 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('lookupFactor / isOtpForm（§4.3 映射表三态）', () => {
-  test('otp_sms / otp_email → OTPForm；recovery_code → RecoveryCodeForm；totp → null；password → PasswordForm', () => {
+  test('otp_sms / otp_email → OTPForm；recovery_code → RecoveryCodeForm；totp → null；password → PasswordForm；webauthn → WebAuthnButton', () => {
     expect(lookupFactor('otp_sms')).toBe(OTPForm);
     expect(lookupFactor('otp_email')).toBe(OTPForm);
     expect(lookupFactor('recovery_code')).toBe(RecoveryCodeForm);
     expect(lookupFactor('totp')).toBeNull();
     expect(lookupFactor('password')).toBe(PasswordForm);
+    expect(lookupFactor('webauthn')).toBe(WebAuthnButton);
   });
 
   test('isOtpForm：OTP 系组件判定（容器 verify 段扩展 props 的渲染开关）', () => {
@@ -70,8 +76,7 @@ describe('lookupFactor / isOtpForm（§4.3 映射表三态）', () => {
     expect(isOtpForm(undefined)).toBe(false);
   });
 
-  test('缺映射 → undefined（webauthn 归后续实现；thirdparty 由 MethodTabs 链路接入，均不进 registry，不静默回退）', () => {
-    expect(lookupFactor('webauthn')).toBeUndefined();
+  test('缺映射 → undefined（thirdparty 由 MethodTabs 链路接入，不进 registry，不静默回退）', () => {
     expect(lookupFactor('thirdparty')).toBeUndefined();
     expect(lookupFactor('')).toBeUndefined();
   });
@@ -279,5 +284,102 @@ describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 
     });
     expect(url).toBe('https://auth.example/authorize');
     expect(saved).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WebAuthnButton（§4.3 行 453；§1.10 行 308 usernameless）
+// ---------------------------------------------------------------------------
+
+/** 后端下发的 WebAuthn options（§1.3 行 117 challengeData 形状示例）。 */
+const WEBAUTHN_CHALLENGE: JsonObject = {
+  challenge: 'k9v0x8',
+  rpId: 'example.test',
+  timeout: 60000,
+};
+/** @simplewebauthn 断言对象形状（§12.9 行 1783 credential 透传）。 */
+const WEBAUTHN_ASSERTION: JsonObject = {
+  id: 'cred-1',
+  rawId: 'cred-1',
+  type: 'public-key',
+  response: { clientDataJSON: 'eyJ9', authenticatorData: 'o2NmbQ' },
+};
+
+describe('WebAuthnButton（§4.3 行 453：缺失隐藏 / usernameless 双段按钮）', () => {
+  function renderWebauthn(props: Record<string, unknown> = {}): string {
+    return renderToStaticMarkup(
+      createElement(WebAuthnButton, {
+        fields: [],
+        loading: false,
+        disabled: false,
+        onSubmit: () => {},
+        ...props,
+      }),
+    );
+  }
+
+  test('window.PublicKeyCredential 缺失 → 隐藏（需求 §4.1.6 行 105，无「不支持」提示）', () => {
+    const markup = renderWebauthn();
+    expect(markup).not.toContain('<button');
+    expect(markup).not.toContain('通行密钥');
+  });
+
+  test('challenge 步（无 challengeData）：发起按钮；不走通用字段渲染器（§2.6 行 547）', () => {
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    const markup = renderWebauthn();
+    expect(markup).toContain('使用通行密钥登录');
+    // §4.3 行 453：不使用通用字段渲染器——无表单 / 输入控件、不收集用户名。
+    expect(markup).not.toContain('<form');
+    expect(markup).not.toContain('<input');
+  });
+
+  test('verify 段（challengeData 注入）：断言按钮 + loading / disabled 禁用（§3.2）', () => {
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    expect(renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE })).toContain('验证');
+    expect(
+      renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE, loading: true }),
+    ).toContain('disabled=""');
+    expect(
+      renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE, disabled: true }),
+    ).toContain('disabled=""');
+  });
+
+  test('isWebAuthnForm：WebAuthn 判定（容器 challengeData / onCredential 注入开关）', () => {
+    expect(isWebAuthnForm(lookupFactor('webauthn'))).toBe(true);
+    expect(isWebAuthnForm(lookupFactor('password'))).toBe(false);
+    expect(isWebAuthnForm(lookupFactor('totp'))).toBe(false);
+    expect(isWebAuthnForm(undefined)).toBe(false);
+  });
+});
+
+describe('authenticate（§12.9 方案 A：challengeData 整体透传；错误语义独立）', () => {
+  test('optionsJSON 引用恒等透传（不解析、不复制、不额外传 allowCredentials，§1.10 行 308）→ 断言原样上抛', async () => {
+    const seen: JsonObject[] = [];
+    const result = await authenticate(WEBAUTHN_CHALLENGE, {
+      start: async (optionsJSON) => {
+        seen.push(optionsJSON);
+        return WEBAUTHN_ASSERTION;
+      },
+    });
+    expect(result).toEqual({ ok: true, credential: WEBAUTHN_ASSERTION });
+    expect(seen[0]).toBe(WEBAUTHN_CHALLENGE); // 同一引用：整体透传（§12.9 行 1784）
+  });
+
+  test('NotAllowedError → cancelled（用户关闭浏览器原生 UI）；其他异常 → 失败（错误语义独立，§4.3 行 453）', async () => {
+    const cancelled = await authenticate(WEBAUTHN_CHALLENGE, {
+      start: async () => {
+        throw new DOMException(
+          'The operation either timed out or was not allowed.',
+          'NotAllowedError',
+        );
+      },
+    });
+    expect(cancelled).toEqual({ ok: false, cancelled: true });
+    const failed = await authenticate(WEBAUTHN_CHALLENGE, {
+      start: async () => {
+        throw new Error('network');
+      },
+    });
+    expect(failed).toEqual({ ok: false, cancelled: false });
   });
 });
