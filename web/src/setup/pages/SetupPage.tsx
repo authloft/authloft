@@ -7,6 +7,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { fetchSetupStatus } from '../api';
 import { redirectToLogin } from '../bootstrap';
+import { t } from '../../shared/i18n';
 import InstallPage from './InstallPage';
 import RestartingPage from './RestartingPage';
 import UploadConfigPage from './UploadConfigPage';
@@ -38,17 +39,17 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
   const body: ReactNode = (() => {
     switch (phase) {
       case 'checking':
-        return <p>正在检测运行模式…</p>;
+        return <p>{t('setup.checkingMode')}</p>;
       case 'choice':
         return (
           <>
-            <h1>Authloft 初始化</h1>
-            <p>检测到首次启动（setup 模式），请选择初始化方式：</p>
+            <h1>{t('setup.initTitle')}</h1>
+            <p>{t('setup.setupModeDetected')}</p>
             <button type="button" onClick={() => setPhase('upload')}>
-              上传已有配置
+              {t('setup.uploadConfigTitle')}
             </button>
             <button type="button" onClick={() => setPhase('install')}>
-              全新安装
+              {t('setup.installTitle')}
             </button>
           </>
         );

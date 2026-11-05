@@ -7,17 +7,13 @@
 import { useEffect, useState } from 'react';
 import { fetchSetupStatus, type SetupStatusResult } from '../api';
 import { redirectToLogin } from '../bootstrap';
+import { t } from '../../shared/i18n';
 import styles from './RestartingPage.module.less';
 
 /** §13.4：以 2 秒间隔轮询。 */
 export const RESTART_POLL_INTERVAL_MS = 2_000;
 /** §13.4：轮询超过 120 秒仍未恢复 → 提示超时，不自动重试安装。 */
 export const RESTART_POLL_TIMEOUT_MS = 120_000;
-
-/** §13.4 两条路径共用的重启提示文案（逐字取自契约）。 */
-export const RESTARTING_NOTICE =
-  '程序已退出，请手动重新运行；如使用 Docker 或 systemd，会自动重启';
-export const RESTART_TIMEOUT_NOTICE = '重启超时，请检查服务状态';
 
 export type RestartPollResult =
   /** status 404：setup 路由消失，已进入正常模式。 */
@@ -39,15 +35,15 @@ export interface RestartPollOptions {
 
 export interface RestartPollHandle {
   readonly done: Promise<RestartPollResult>;
-  /** 中断轮询：done 以 'cancelled' 结束，之后不再发探测（编码约束 §9 第 7 条）。 */
+  /** 中断轮询：done 结束后不再发探测（编码约束 §9 第 7 条，结束值 'cancelled'）。 */
   cancel(): void;
 }
 
 /**
  * §13.4 重启轮询核心：立即发起首次探测，此后每 intervalMs 一次；
- * 仅 status 404（`kind:'gone'`）视为重启完成，连接被拒 / 超时 / 其他响应
- * 一律继续轮询；到 deadline（默认 120s）仍未恢复 → 'timeout'，不自动重试。
- * 恰好在 deadline 时刻恢复（"未超过"边界）按完成处理。
+ * 仅 status 404（kind 为 gone）视为重启完成，连接被拒 / 超时 / 其他响应
+ * 一律继续轮询；到 deadline（默认 120s）仍未恢复 → 按超时处理，不自动重试。
+ * 恰好在 deadline 时刻恢复（「未超过」边界）按完成处理。
  */
 export function pollRestart(options: RestartPollOptions): RestartPollHandle {
   const intervalMs = options.intervalMs ?? RESTART_POLL_INTERVAL_MS;
@@ -115,10 +111,11 @@ export default function RestartingPage({ alRoot }: { alRoot: string }) {
 
   return (
     <section className={styles.page}>
-      <h1>重启中</h1>
-      <p>{RESTARTING_NOTICE}</p>
+      <h1>{t('setup.restartingTitle')}</h1>
+      {/* §13.4 两条路径共用的重启提示文案（逐字取自契约，键：setup.restartingNotice）。 */}
+      <p>{t('setup.restartingNotice')}</p>
       <p role="status">
-        {timedOut ? RESTART_TIMEOUT_NOTICE : '等待服务重启…'}
+        {timedOut ? t('setup.restartTimeoutNotice') : t('setup.waitingRestart')}
       </p>
     </section>
   );

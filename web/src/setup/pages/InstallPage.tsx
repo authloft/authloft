@@ -7,6 +7,7 @@
 import { useState, type FormEvent } from 'react';
 import { requestInstall, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
+import { t } from '../../shared/i18n';
 import styles from './InstallPage.module.less';
 
 interface InstallPageProps {
@@ -113,16 +114,29 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
     required?: boolean;
     hint?: string;
   }> = [
-    { key: 'dbDsn', label: '数据库连接串（DSN）', required: true },
-    { key: 'redisAddr', label: 'Redis 地址', required: true },
-    { key: 'redisPassword', label: 'Redis 密码', type: 'password' },
-    { key: 'redisDb', label: 'Redis 库号', type: 'number', hint: '默认 0' },
-    { key: 'root', label: '主域名', hint: '默认取当前站点' },
-    { key: 'rpId', label: 'WebAuthn RP ID', hint: '默认取当前域名' },
-    { key: 'adminUsername', label: '管理员用户名', required: true },
+    { key: 'dbDsn', label: t('setup.fieldDbDsn'), required: true },
+    { key: 'redisAddr', label: t('setup.fieldRedisAddr'), required: true },
+    {
+      key: 'redisPassword',
+      label: t('setup.fieldRedisPassword'),
+      type: 'password',
+    },
+    {
+      key: 'redisDb',
+      label: t('setup.fieldRedisDb'),
+      type: 'number',
+      hint: t('setup.hintRedisDb'),
+    },
+    { key: 'root', label: t('setup.fieldRoot'), hint: t('setup.hintRoot') },
+    { key: 'rpId', label: 'WebAuthn RP ID', hint: t('setup.hintRpId') },
+    {
+      key: 'adminUsername',
+      label: t('setup.fieldAdminUsername'),
+      required: true,
+    },
     {
       key: 'adminPassword',
-      label: '管理员密码',
+      label: t('setup.fieldAdminPassword'),
       type: 'password',
       required: true,
     },
@@ -130,13 +144,13 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <h1>全新安装</h1>
-      <p>填写数据库与 Redis 连接信息及管理员账号；成功后自动进入重启。</p>
+      <h1>{t('setup.installTitle')}</h1>
+      <p>{t('setup.installIntro')}</p>
       {fields.map((field) => (
         <div key={field.key} className={styles.field}>
           <label className={styles.fieldLabel}>
             {field.label}
-            {field.required ? '（必填）' : ''}
+            {field.required ? t('setup.requiredMark') : ''}
             <input
               type={field.type ?? 'text'}
               value={form[field.key]}
@@ -164,7 +178,7 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
         </p>
       ) : null}
       <button type="submit" disabled={!requiredFilled || submitting}>
-        {submitting ? '正在安装…' : '开始安装'}
+        {submitting ? t('setup.installing') : t('setup.startInstall')}
       </button>
     </form>
   );

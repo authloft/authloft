@@ -4,4 +4,70 @@
  */
 import type { setup as zhSetup } from '../zh/setup';
 
-export const setup: typeof zhSetup = {};
+export const setup: typeof zhSetup = {
+  // ---- §13 域内业务码 + Connect 标准码 → 展示文案（setup/api.ts setupMessage 表）----
+  // not_found / already_exists 复用 errors.code.* 既有键（与 zh 侧口径一致）。
+  'setup.error.configInvalid':
+    'Configuration file validation failed: the content is incomplete, invalid, or missing sign_key. Please fix it and upload again',
+  'setup.error.dbUnreachable':
+    'Cannot connect to the database. Please check the connection string and try again',
+  'setup.error.redisUnreachable':
+    'Cannot connect to Redis. Please check the address and password, then try again',
+  'setup.error.migrationFailed':
+    'Database initialization (running migrations) failed. Please check the database status and try again',
+  'setup.error.adminMissing':
+    'The version is already up to date but no administrator account exists. Please run a fresh install instead',
+  'setup.error.usernameInvalid':
+    'The administrator username does not meet the requirements',
+  'setup.error.passwordWeak': 'The password is too weak. Please choose a stronger one',
+  'setup.error.invalidArgument': 'Invalid request parameters',
+  'setup.error.unauthenticated': 'The request is not authenticated',
+  'setup.error.permissionDenied': 'The request was denied',
+  'setup.error.resourceExhausted': 'Too many requests. Please try again later',
+  'setup.error.internal': 'Internal server error. Please try again later',
+  'setup.error.unavailable': 'Network error. Please try again later',
+  'setup.error.unknown': 'Operation failed. Please check your input and try again',
+
+  // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
+  'setup.restartingTitle': 'Restarting',
+  'setup.restartingNotice':
+    'The program has exited. Please restart it manually; if you use Docker or systemd, it will restart automatically',
+  'setup.restartTimeoutNotice': 'Restart timed out. Please check the service status',
+  'setup.waitingRestart': 'Waiting for the service to restart…',
+
+  // ---- 上传已有配置页（路径 A，§13.2）----
+  'setup.uploadConfigTitle': 'Upload Existing Configuration',
+  'setup.uploadConfigIntro':
+    'Paste or select the full content of an existing config.yaml. The system will validate the configuration, check the database / Redis connections, and run initialization in order; once it succeeds, the service restarts automatically.',
+  'setup.uploadConfigPlaceholder': 'Full config.yaml content',
+  'setup.unreadableFile': 'Unable to read the selected file',
+  'setup.adminMissingHint':
+    'The configuration is already at the latest version but has no administrator account. A fresh install is required to create one.',
+  'setup.initializing': 'Initializing…',
+  'setup.startInitialize': 'Start Initialization',
+  'setup.switchToInstall': 'Switch to Fresh Install',
+
+  // ---- 全新安装页（路径 B，§13.3）----
+  'setup.installTitle': 'Fresh Install',
+  'setup.installIntro':
+    'Enter the database and Redis connection details and the administrator account; once it succeeds, the service restarts automatically.',
+  'setup.fieldDbDsn': 'Database connection string (DSN)',
+  'setup.fieldRedisAddr': 'Redis address',
+  'setup.fieldRedisPassword': 'Redis password',
+  'setup.fieldRedisDb': 'Redis database number',
+  'setup.fieldRoot': 'Primary domain',
+  'setup.fieldAdminUsername': 'Administrator username',
+  'setup.fieldAdminPassword': 'Administrator password',
+  'setup.hintRedisDb': 'Default: 0',
+  'setup.hintRoot': 'Defaults to the current site',
+  'setup.hintRpId': 'Defaults to the current domain',
+  'setup.requiredMark': '(required)',
+  'setup.installing': 'Installing…',
+  'setup.startInstall': 'Start Install',
+
+  // ---- Entry page (mode detection + two path entries; buttons reuse uploadConfigTitle / installTitle) ----
+  'setup.checkingMode': 'Detecting run mode…',
+  'setup.initTitle': 'Authloft Setup',
+  'setup.setupModeDetected':
+    'First launch detected (setup mode). Choose how to initialize:',
+};

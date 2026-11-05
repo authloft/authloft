@@ -8,6 +8,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { requestUploadConfig, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
+import { t } from '../../shared/i18n';
 import styles from './UploadConfigPage.module.less';
 
 interface UploadConfigPageProps {
@@ -59,17 +60,14 @@ export default function UploadConfigPage({
         setConfigText(text);
       })
       .catch(() => {
-        setErrorText('无法读取所选文件');
+        setErrorText(t('setup.unreadableFile'));
       });
   }
 
   return (
     <>
-      <h1>上传已有配置</h1>
-      <p>
-        粘贴或选择已有的 config.yaml 全文；系统将按序完成配置校验、数据库 /
-        Redis 连接检查与初始化，成功后自动进入重启。
-      </p>
+      <h1>{t('setup.uploadConfigTitle')}</h1>
+      <p>{t('setup.uploadConfigIntro')}</p>
       <div>
         <input
           type="file"
@@ -82,7 +80,7 @@ export default function UploadConfigPage({
           rows={14}
           cols={80}
           spellCheck={false}
-          placeholder="config.yaml 全文"
+          placeholder={t('setup.uploadConfigPlaceholder')}
           value={configText}
           onChange={(event) => setConfigText(event.target.value)}
         />
@@ -92,16 +90,14 @@ export default function UploadConfigPage({
           {errorText}
         </p>
       ) : null}
-      {adminMissing ? (
-        <p>该配置对应版本已最新但缺少管理员账号，需改走全新安装创建管理员。</p>
-      ) : null}
+      {adminMissing ? <p>{t('setup.adminMissingHint')}</p> : null}
       <div>
         <button type="button" disabled={!canSubmit} onClick={handleSubmit}>
-          {submitting ? '正在初始化…' : '开始初始化'}
+          {submitting ? t('setup.initializing') : t('setup.startInitialize')}
         </button>
         {adminMissing ? (
           <button type="button" onClick={onSwitchToInstall}>
-            改走全新安装
+            {t('setup.switchToInstall')}
           </button>
         ) : null}
       </div>
