@@ -874,8 +874,8 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).toContain('动态口令');
   });
 
-  test('status=next + 未实现 kind（qrcode）/ external 宿主承载 → 兜底「请刷新重试」', () => {
-    for (const kind of ['qrcode', 'external', 'redirect', 'poll', 'challenge']) {
+  test('status=next + 未实现 kind（poll 扩展位）/ external 宿主承载 → 兜底「请刷新重试」（redirect / challenge / qrcode 已实体化，断言归 steps.test.tsx）', () => {
+    for (const kind of ['poll', 'external']) {
       const markup = renderView(
         stateWith({
           method: 'otp_sms',

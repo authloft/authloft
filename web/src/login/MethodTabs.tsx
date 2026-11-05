@@ -8,16 +8,13 @@
  *   顺序即数组顺序、前端不重排、不另发请求（页面存活期内不刷新，§2.1 行 410）；
  * - 不展示未启用项（快照本身不注入未启用 / usage 不匹配的方式，§2.1 行 406；
  *   此处再按 usage 含 primary 防御过滤——login 页只展示主因子方式，§2.1）；
- * - ui_group 分组与 sort_order 排序在 wire 上仅存在于 thirdparty.providers
- *   （§2.7.1 行 566-572 的 uiGroup / sortOrder，快照类型 shared/types/init.ts
- *   SnapshotProvider）——图标墙按 uiGroup 分组、组内按 sortOrder 升序
- *   （int64 十进制字符串，§1.12，BigInt 解析后比较、非法串兜底 0）；
+ * - thirdparty 图标墙（uiGroup 分组 / sortOrder 排序 / 点击分派）归
+ *   factors/ProviderButtons 渲染（§4.3 行 454「图标墙 + 按 channel 分派」
+ *   的唯一实现，防双份渲染）：本组件只负责安放
+ *   （传入 providers），不再自带图标墙实现；groupProviders 纯函数随之迁至
+ *   ProviderButtons，此处 re-export 保持既有导入面（login-container.test）；
  * - capability 不满足的方法自动隐藏（需求 §4.1.6 行 105：不展示「不支持」
- *   提示；消费 useCapability——逐条目在子组件内调用，遵守 hook 规则）；
- * - thirdparty 中 channel=api 的 provider 不渲染（§4.3 行 440：wx.login 由
- *   宿主承载，Authloft 前端不实现）；图标墙的点击分派（redirect 取
- *   authorize_url / qrcode 打开面板）归 ProviderButtons 因子实现（后续），本实现
- *   仅渲染展示。
+ *   提示；消费 useCapability——逐条目在子组件内调用，遵守 hook 规则）。
  *
  * 文案：方式名取 i18n 字典 factors.*（§1.10 因子全集，缺键回显键本身可见
  * 可排查）；空状态 / 引导提示在字典无键，中文字面量 + 注释声明，扩键归
@@ -25,8 +22,12 @@
  */
 import { t } from '../shared/i18n';
 import { useCapability } from '../shared/hooks/useCapability';
-import type { LoginMethodEntry, SnapshotProvider } from '../shared/types/init';
+import type { LoginMethodEntry } from '../shared/types/init';
+import { ProviderButtons } from './factors/ProviderButtons';
 import styles from './MethodTabs.module.less';
+
+/** 图标墙分组纯函数自 ProviderButtons 迁入，re-export 保持既有导入面。 */
+export { groupProviders } from './factors/ProviderButtons';
 
 export interface MethodTabsProps {
   /** 注入快照的登录方式列表（§2.1）。 */
@@ -42,55 +43,6 @@ const EMPTY_TEXT = '暂无可用登录方式';
 
 /** 未选择方式时的引导文案（同上）。 */
 const SELECT_HINT_TEXT = '请选择登录方式';
-
-/** 图标墙不渲染的 channel（§4.3 行 440：api 由宿主承载）。 */
-const HIDDEN_CHANNELS: ReadonlySet<string> = new Set(['api']);
-
-/**
- * sortOrder 排序键：int64 十进制字符串（§1.12）→ bigint 比较基准（不转
- * number，防超 2^53 丢精度）；缺失 / 空串 / 非法串兜底 0（§9 第 18 条）。
- */
-function sortOrderKey(provider: SnapshotProvider): bigint {
-  try {
-    return BigInt(provider.sortOrder ?? '');
-  } catch {
-    return BigInt(0);
-  }
-}
-
-/** 组内按 sortOrder 升序（bigint 比较，无精度损失）。 */
-function compareBySortOrder(
-  a: SnapshotProvider,
-  b: SnapshotProvider,
-): number {
-  const x = sortOrderKey(a);
-  const y = sortOrderKey(b);
-  return x < y ? -1 : x > y ? 1 : 0;
-}
-
-/**
- * 图标墙分组（纯函数，可测）：过滤 channel=api → 按 sortOrder 升序 → 按
- * uiGroup 分组（Map 保插入序，组序 = 排序后首元素的出现顺序；uiGroup 缺省
- * 归空串组）。
- */
-export function groupProviders(
-  providers: readonly SnapshotProvider[],
-): ReadonlyMap<string, SnapshotProvider[]> {
-  const sorted = providers
-    .filter((p) => !HIDDEN_CHANNELS.has(p.channel))
-    .sort(compareBySortOrder);
-  const groups = new Map<string, SnapshotProvider[]>();
-  for (const p of sorted) {
-    const key = p.uiGroup ?? '';
-    const bucket = groups.get(key);
-    if (bucket === undefined) {
-      groups.set(key, [p]);
-    } else {
-      bucket.push(p);
-    }
-  }
-  return groups;
-}
 
 export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
   const tabs = methods.filter(
@@ -112,7 +64,9 @@ export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
           />
         ))}
       </ul>
-      {thirdparty !== undefined && <ProviderWall entry={thirdparty} />}
+      {thirdparty !== undefined && (
+        <ProviderButtons providers={thirdparty.providers ?? []} />
+      )}
     </nav>
   );
 }
@@ -144,37 +98,6 @@ function MethodTabItem({
         {t(`factors.${entry.method}`)}
       </button>
     </li>
-  );
-}
-
-/**
- * thirdparty 图标墙（§4.1 行 384「图标墙」形态）：uiGroup 分组 + sortOrder
- * 排序（见 groupProviders）；点击分派归 ProviderButtons 因子实现（后续），
- * 本实现仅渲染（按钮不绑定行为）。
- */
-function ProviderWall({ entry }: { entry: LoginMethodEntry }) {
-  const groups = groupProviders(entry.providers ?? []);
-  if (groups.size === 0) {
-    return null;
-  }
-  return (
-    <div>
-      {[...groups.entries()].map(([group, providers]) => (
-        <div key={group} data-group={group} className={styles.group}>
-          {providers.map((p) => (
-            <button
-              key={p.providerKey}
-              type="button"
-              className={styles.provider}
-              title={p.displayName ?? p.providerKey}
-            >
-              {p.icon ? <img src={p.icon} alt="" className={styles.icon} /> : null}
-              <span>{p.displayName ?? p.providerKey}</span>
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
   );
 }
 

@@ -9,8 +9,13 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { create } from '@bufbuild/protobuf';
 import { FieldSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
+import type {
+  OidcContext,
+  SnapshotProvider,
+} from '../../shared/types/init';
 import { OTPForm, isOtpForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
+import { ProviderButtons, startRedirect } from './ProviderButtons';
 import { RecoveryCodeForm } from './RecoveryCodeForm';
 import { lookupFactor } from './registry';
 
@@ -65,7 +70,7 @@ describe('lookupFactor / isOtpForm（§4.3 映射表三态）', () => {
     expect(isOtpForm(undefined)).toBe(false);
   });
 
-  test('缺映射 → undefined（webauthn / thirdparty 归后续实现，不静默回退）', () => {
+  test('缺映射 → undefined（webauthn 归后续实现；thirdparty 由 MethodTabs 链路接入，均不进 registry，不静默回退）', () => {
     expect(lookupFactor('webauthn')).toBeUndefined();
     expect(lookupFactor('thirdparty')).toBeUndefined();
     expect(lookupFactor('')).toBeUndefined();
@@ -178,5 +183,101 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
         createElement(RecoveryCodeForm, { ...base, loading: false, disabled: true }),
       ),
     ).toContain('disabled=""');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ProviderButtons 图标墙 + redirect 渠道分派（§4.3 行 454）
+// ---------------------------------------------------------------------------
+
+describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', () => {
+  const providers: SnapshotProvider[] = [
+    { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', icon: 'https://ex.test/qq.png', uiGroup: 'social', sortOrder: '10' },
+    { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', uiGroup: 'social', sortOrder: '20' },
+    { providerKey: 'wxmp', displayName: '微信', type: 'wechat_mp', channel: 'api', uiGroup: 'social', sortOrder: '30' },
+    { providerKey: 'ent', displayName: '企业SSO', type: 'cas', channel: 'redirect', uiGroup: 'enterprise', sortOrder: '5' },
+  ];
+
+  function renderWall(list: readonly SnapshotProvider[] = providers): string {
+    return renderToStaticMarkup(
+      createElement(ProviderButtons, { providers: list }),
+    );
+  }
+
+  test('channel=api 不渲染（§4.3 行 456 宿主承载）；未知 channel 不渲染（不硬编码渠道，§4.3 行 454）', () => {
+    const withUnknown = [
+      ...providers,
+      { providerKey: 'x', displayName: '未知渠道', type: 'x', channel: 'teleport' },
+    ];
+    const markup = renderWall(withUnknown);
+    expect(markup).not.toContain('微信</span>'); // wechat_mp（channel=api）不渲染
+    expect(markup).not.toContain('未知渠道');
+  });
+
+  test('uiGroup 分组 + 组内 sortOrder 排序（§2.7.1 行 566-572）', () => {
+    const markup = renderWall();
+    expect(markup.indexOf('data-group="enterprise"')).toBeLessThan(
+      markup.indexOf('data-group="social"'),
+    );
+    // 组内 10 < 20。
+    expect(markup.indexOf('QQ')).toBeLessThan(markup.indexOf('微信扫码'));
+  });
+
+  test('图标经 ProviderIcon（§4.3 行 454）：icon 非空 <img>；空则内联 SVG 占位（§2.7.1 行 578 不做本地回落）', () => {
+    expect(renderWall()).toContain('src="https://ex.test/qq.png"');
+    const markup = renderWall([
+      { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode' },
+    ]);
+    expect(markup).toContain('<svg');
+  });
+});
+
+describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 580）', () => {
+  const OIDC: OidcContext = { client_id: 'cid', redirect_uri: 'https://app/cb' };
+
+  test('Authorize 成功 → 跳转前落盘 oidc（§2.7.2 行 599-600）→ 返回 authorizeUrl', async () => {
+    const saved: OidcContext[] = [];
+    const url = await startRedirect('qq', {
+      request: async () => 'https://auth.example/authorize?state=l…',
+      readOidc: () => OIDC,
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(url).toBe('https://auth.example/authorize?state=l…');
+    expect(saved).toEqual([OIDC]);
+  });
+
+  test('Authorize 失败 → undefined、不落盘', async () => {
+    const saved: OidcContext[] = [];
+    const url = await startRedirect('qq', {
+      request: async () => {
+        throw new Error('network');
+      },
+      readOidc: () => OIDC,
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(url).toBeUndefined();
+    expect(saved).toHaveLength(0);
+  });
+
+  test('空 authorizeUrl → 不落盘不跳（零值兜底，§9 第 18 条）', async () => {
+    const saved: OidcContext[] = [];
+    const url = await startRedirect('qq', {
+      request: async () => '',
+      readOidc: () => OIDC,
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(url).toBeUndefined();
+    expect(saved).toHaveLength(0);
+  });
+
+  test('非 OIDC 场景（快照无 oidc）→ 不落盘、仍返回 URL（§2.7.2 行 600：仅存在时落盘）', async () => {
+    const saved: OidcContext[] = [];
+    const url = await startRedirect('qq', {
+      request: async () => 'https://auth.example/authorize',
+      readOidc: () => undefined,
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(url).toBe('https://auth.example/authorize');
+    expect(saved).toHaveLength(0);
   });
 });

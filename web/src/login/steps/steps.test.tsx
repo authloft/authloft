@@ -7,11 +7,27 @@ import * as React from 'react';
 // renderToStaticMarkup（沿 login-container.test.ts / components.test.ts 惯例）。
 import { renderToStaticMarkup } from 'react-dom/server';
 import { create } from '@bufbuild/protobuf';
+import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import {
   FieldSchema,
+  LoginFlowResponseSchema,
   NextStepSchema,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
+import {
+  CaptchaPayloadSchema,
+  type CaptchaPayload,
+} from '../../gen/proto/api/sso/v1/login_pb';
+import {
+  CreateQrcodeResponseSchema,
+} from '../../gen/proto/api/sso/v1/ticket_pb';
+import { ChallengeStep } from './ChallengeStep';
 import { FormStep } from './FormStep';
+import {
+  QRCodeStep,
+  completeLogin,
+  qrcodeRequester,
+} from './QRCodeStep';
+import { RedirectStep, runRedirect } from './RedirectStep';
 import { StepDispatcher, STEP_FALLBACK_TEXT } from './StepDispatcher';
 
 const { createElement } = React;
@@ -48,13 +64,26 @@ describe('StepDispatcher kind 分派（§4.2 行 423；§1.4 行 169-176 六种�
     expect(markup).not.toContain(STEP_FALLBACK_TEXT);
   });
 
-  test('kind=challenge：未实现（ChallengeStep 归后续实现）→ 兜底，不渲染表单', () => {
-    expect(renderDispatch('challenge')).toContain(STEP_FALLBACK_TEXT);
+  test('kind=challenge → ChallengeStep（触发下发按钮），不再兜底（§4.2 行 441）', () => {
+    const markup = renderDispatch('challenge');
+    expect(markup).toContain('发送验证码');
+    expect(markup).not.toContain(STEP_FALLBACK_TEXT);
   });
 
-  test('kind=redirect / qrcode / poll：未实现（实体组件归后续实现）→ 兜底', () => {
-    expect(renderDispatch('redirect')).toContain(STEP_FALLBACK_TEXT);
-    expect(renderDispatch('qrcode')).toContain(STEP_FALLBACK_TEXT);
+  test('kind=redirect → RedirectStep（正在跳转…），不再兜底（§4.2 行 442）', () => {
+    const markup = renderDispatch('redirect');
+    expect(markup).toContain('正在跳转');
+    expect(markup).not.toContain(STEP_FALLBACK_TEXT);
+  });
+
+  test('kind=qrcode → QRCodeStep 零值占位（NextStep 无 providerKey，§9 第 18 条），不再兜底（§4.2 行 443）', () => {
+    const markup = renderDispatch('qrcode');
+    // 占位是 role=alert（兜底为 role=status）——实体分派的结构证据。
+    expect(markup).toContain('role="alert"');
+    expect(markup).not.toContain('role="status"');
+  });
+
+  test('kind=poll：扩展位保留（§4.2 行 444 当前无实例）→ 兜底', () => {
     expect(renderDispatch('poll')).toContain(STEP_FALLBACK_TEXT);
   });
 
@@ -117,5 +146,163 @@ describe('FormStep（kind=form 通用渲染，§4.2 行 424；totp 渲染落点 
     );
     expect(markup).toContain('<form');
     expect(markup).not.toContain('<label');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RedirectStep（kind=redirect 实体，§4.2 行 442）
+// ---------------------------------------------------------------------------
+
+describe('RedirectStep（§4.2 行 442）', () => {
+  test('展示「正在跳转…」（effect 跳转在 node 静态渲染不执行，副作用经 runRedirect 覆盖）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(RedirectStep, {
+        authorizeUrl: 'https://auth.example/authorize',
+      }),
+    );
+    expect(markup).toContain('正在跳转');
+  });
+
+  test('runRedirect：空 URL 不跳（零值兜底，§9 第 18 条）；非空跳一次', () => {
+    const calls: string[] = [];
+    runRedirect('', (url) => calls.push(url));
+    expect(calls).toHaveLength(0);
+    runRedirect('https://auth.example/authorize', (url) => calls.push(url));
+    expect(calls).toEqual(['https://auth.example/authorize']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChallengeStep（kind=challenge 实体，§4.2 行 441）
+// ---------------------------------------------------------------------------
+
+describe('ChallengeStep（§4.2 行 441）', () => {
+  const phoneField = create(FieldSchema, {
+    name: 'phone',
+    label: '手机号',
+    type: 'phone',
+    required: true,
+  });
+
+  test('challenge_fields → FieldRenderer + 触发下发按钮（phone → tel 控件，§1.11 行 326）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ChallengeStep, { fields: [phoneField] }),
+    );
+    expect(markup).toContain('<form');
+    expect(markup).toContain('手机号');
+    expect(markup).toContain('type="tel"');
+    expect(markup).toContain('发送验证码');
+  });
+
+  test('captcha 配置存在 → 渲染 CaptchaWidget 容器（每次下发需新 captcha，§4.2 行 441）', () => {
+    const withCaptcha = renderToStaticMarkup(
+      createElement(ChallengeStep, {
+        fields: [],
+        captcha: create(CaptchaConfigSchema, {
+          providerKey: 'builtin_image',
+          type: 'image',
+        }),
+      }),
+    );
+    // CaptchaWidget 的 adapter effect 在 node 静态渲染不执行，仅容器 div。
+    expect(withCaptcha).toContain('<div');
+    const bare = renderToStaticMarkup(
+      createElement(ChallengeStep, { fields: [] }),
+    );
+    expect(bare).not.toContain('<div');
+  });
+
+  test('loading / disabled 禁用触发（§3.2）', () => {
+    expect(
+      renderToStaticMarkup(
+        createElement(ChallengeStep, { fields: [], loading: true }),
+      ),
+    ).toContain('disabled=""');
+    expect(
+      renderToStaticMarkup(
+        createElement(ChallengeStep, { fields: [], disabled: true }),
+      ),
+    ).toContain('disabled=""');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QRCodeStep（kind=qrcode 实体，§4.2 行 443）
+// ---------------------------------------------------------------------------
+
+describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
+  test('无 captcha 配置 → QRCodePanel 直出（fetching 态；挂载即拉码归面板，§3.3 行 345）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QRCodeStep, { providerKey: 'scan' }),
+    );
+    expect(markup).toContain('正在获取二维码');
+  });
+
+  test('有 captcha 配置 → 门控：CaptchaWidget + 获取二维码按钮，面板不挂载（§2.8 行 690 必须携带 captcha）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QRCodeStep, {
+        providerKey: 'scan',
+        captcha: create(CaptchaConfigSchema, {
+          providerKey: 'builtin_image',
+          type: 'image',
+        }),
+      }),
+    );
+    expect(markup).toContain('获取二维码');
+    expect(markup).not.toContain('正在获取二维码');
+  });
+
+  test('providerKey 空 → 零值兜底占位（§9 第 18 条；StepDispatcher 防御分派形态）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QRCodeStep, { providerKey: '' }),
+    );
+    expect(markup).toContain('role="alert"');
+  });
+
+  test('qrcodeRequester：凭据未就绪 → reject（§2.8 行 703 每次拉码都要新的 captcha）', async () => {
+    await expect(
+      qrcodeRequester('scan')(new AbortController().signal),
+    ).rejects.toThrow('请先完成人机校验');
+  });
+
+  test('qrcodeRequester：就绪 → {providerKey, captcha} 调拉码（scene 缺省 login 省略，§2.8 行 702）', async () => {
+    const payload: CaptchaPayload = create(CaptchaPayloadSchema, {
+      providerKey: 'builtin_image',
+      id: 'b7f3',
+      answer: '123',
+    });
+    const requests: Array<{ providerKey: string; captcha: CaptchaPayload }> = [];
+    const qr = await qrcodeRequester('scan', {
+      getToken: () => payload,
+      request: async (req) => {
+        requests.push(req);
+        return create(CreateQrcodeResponseSchema, {
+          ticket: 't',
+          qrcodeUrl: 'https://cdn.test/q.jpg',
+        });
+      },
+    })(new AbortController().signal);
+    expect(qr.qrcodeUrl).toBe('https://cdn.test/q.jpg');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.providerKey).toBe('scan');
+    expect(requests[0]?.captcha).toBe(payload);
+  });
+
+  test('completeLogin：syncCookieUrl 优先 / redirectTo 回退 / 皆空不跳（§4.1 行 383 terminalUrl 同口径）', () => {
+    const calls: string[] = [];
+    const nav = (url: string) => calls.push(url);
+    completeLogin(
+      create(LoginFlowResponseSchema, {
+        syncCookieUrl: 'https://sync.test/first',
+        redirectTo: 'https://app.test/done',
+      }),
+      nav,
+    );
+    completeLogin(
+      create(LoginFlowResponseSchema, { redirectTo: 'https://app.test/done' }),
+      nav,
+    );
+    completeLogin(create(LoginFlowResponseSchema, {}), nav);
+    expect(calls).toEqual(['https://sync.test/first', 'https://app.test/done']);
   });
 });

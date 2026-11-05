@@ -1,0 +1,23 @@
+// 扫码步骤样式（docs/前端架构.md §1.7）：captcha 门控区 + 面板包装布局。
+@import (reference) '../../shared/styles/tokens.less';
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.captchaBox {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+}
+
+.fetchButton {
+  padding: 0.375rem 0.875rem;
+}
+
+.notice {
+  color: @color-danger;
+  font-size: @font-size-sm;
+}

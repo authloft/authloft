@@ -1,0 +1,24 @@
+// 第三方图标墙样式（docs/前端架构.md §1.7）：.group / .provider 自
+// MethodTabs.module.less 迁入（图标墙渲染归 ProviderButtons）；MethodTabs
+// 侧原三类留存未引用（不在本实现范围），清理归后续样式实现。.icon 尺寸
+// 类随 ProviderIcon 自有样式（shared/components）不再需要。
+@import (reference) '../../shared/styles/tokens.less';
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  margin-top: @spacing-md;
+}
+
+.provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+}
+
+.error {
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
