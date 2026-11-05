@@ -6,7 +6,8 @@
  * 展示纯函数（§5.2 行 1164-1177）；并追加 Provider 编辑族：
  * GetProviderTypes / GetProviderSchema / GetProvider / Create / Update /
  * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
- * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；客户端 / settings /
+ * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
+ * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；settings /
  * 工具族方法随后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
@@ -32,7 +33,36 @@ import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
 import { t } from '../shared/i18n';
 import { FIRST_PAGE, MAX_PAGE_SIZE, type TableQueryState } from '../shared/app-ui/dataTableLogic';
+import { toCount } from '../shared/utils/int';
 import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
+import type {
+  CreateOidcClientRequest,
+  CreateSsoClientRequest,
+  DeleteOidcClientRequest,
+  DeleteSsoClientRequest,
+  GetOidcClientRequest,
+  GetSsoClientRequest,
+  ListOidcClientsRequest,
+  ListSsoClientsRequest,
+  OidcClient,
+  OidcClientListResponse,
+  SsoClient,
+  SsoClientListResponse,
+  UpdateOidcClientRequest,
+  UpdateSsoClientRequest,
+} from '../gen/proto/api/admin/v1/client_pb';
+import {
+  CreateOidcClientRequestSchema,
+  CreateSsoClientRequestSchema,
+  DeleteOidcClientRequestSchema,
+  DeleteSsoClientRequestSchema,
+  GetOidcClientRequestSchema,
+  GetSsoClientRequestSchema,
+  ListOidcClientsRequestSchema,
+  ListSsoClientsRequestSchema,
+  UpdateOidcClientRequestSchema,
+  UpdateSsoClientRequestSchema,
+} from '../gen/proto/api/admin/v1/client_pb';
 import type {
   GetUserEventsRequest,
   GetUserRequest,
@@ -461,4 +491,324 @@ export function boundMfaFactors(mfa: MfaResponse | undefined): string[] {
   return (mfa?.factors ?? [])
     .filter((factor) => factor.bound)
     .map((factor) => mfaFactorLabel(factor.factor));
+}
+
+// ---------------------------------------------------------------------------
+// 客户端管理族（§5.5 行 1257-1268）：SSO 五方法 + OIDC 五方法全部
+// 真调（后端已实装）；单测走 msw。字段：SSO = clientId /
+// clientSecret / name / redirectUris[]（支持 *）；OIDC 额外 scopes[] /
+// accessTokenTtl / refreshTokenTtl（§5.5 行 1262/1264「额外」逐字）。客户端
+// 仅支持后台手动创建（§5.5 行 1266）；OIDC 不设授权类型字段（§5.5 行 1268
+// 固定 authorization_code + refresh_token，不建模）。服务端口径（后端
+// 实装语义，前端自律对齐 §1.7 行 277）：
+// - Create：clientSecret 由服务端生成（请求同名字段被忽略，构造时不发）；
+//   clientId 空 → 服务端生成、非空用提交值（≤64 字符）；redirectUris 条目
+//   须字面 * 或 ^https?://；OIDC TTL 0 落库端默认（3600 / 2592000）。
+// - Get：按自增 id 定位，返回明文 client_secret（全站唯一明文出口同
+//   §5.2 行 1170 凭证口径）——Create 仅返回 OkResponse，密钥经 Get 查看。
+// - Update：PATCH 缺省保留（空串 / 空组即不修改）；clientId 不可改（不发，
+//   后端同值放行语义由空串触发保留分支）；clientSecret 非空 = 轮换；
+//   OIDC TTL 0 保留原值、非 0 须在值域内。
+// - Delete：硬删，行不存在 → 404。
+// 请求构造 / 校验 / 展示纯函数同段落位（buildListUsersRequest 口径，
+// node 可测；页面壳 import Semi 不可测见 admin.test.tsx 头注）。
+// ---------------------------------------------------------------------------
+
+/** SSO 客户端列表（§5.5 行 1261 + 分页 §1.7）→ SsoClientListResponse。 */
+export function listSsoClients(
+  request: ListSsoClientsRequest,
+): Promise<SsoClientListResponse> {
+  return adminClient.listSsoClients(request);
+}
+
+/** SSO 客户端新建（§5.5 行 1261）→ OkResponse（密钥服务端生成，经 Get 查看）。 */
+export function createSsoClient(request: CreateSsoClientRequest): Promise<OkResponse> {
+  return adminClient.createSsoClient(request);
+}
+
+/** SSO 客户端详情（§5.5 行 1262：{id} → SsoClient，含明文 client_secret）。 */
+export function getSsoClient(request: GetSsoClientRequest): Promise<SsoClient> {
+  return adminClient.getSsoClient(request);
+}
+
+/** SSO 客户端编辑（§5.5 行 1262：PATCH 缺省保留）→ OkResponse。 */
+export function updateSsoClient(request: UpdateSsoClientRequest): Promise<OkResponse> {
+  return adminClient.updateSsoClient(request);
+}
+
+/** SSO 客户端删除（§5.5 行 1262：{id} 硬删）→ OkResponse。 */
+export function deleteSsoClient(request: DeleteSsoClientRequest): Promise<OkResponse> {
+  return adminClient.deleteSsoClient(request);
+}
+
+/** OIDC 客户端列表（§5.5 行 1263 + 分页 §1.7）→ OidcClientListResponse。 */
+export function listOidcClients(
+  request: ListOidcClientsRequest,
+): Promise<OidcClientListResponse> {
+  return adminClient.listOidcClients(request);
+}
+
+/** OIDC 客户端新建（§5.5 行 1263 + 额外 scopes / TTL）→ OkResponse。 */
+export function createOidcClient(request: CreateOidcClientRequest): Promise<OkResponse> {
+  return adminClient.createOidcClient(request);
+}
+
+/** OIDC 客户端详情（§5.5 行 1264：{id} → OidcClient，含明文 client_secret）。 */
+export function getOidcClient(request: GetOidcClientRequest): Promise<OidcClient> {
+  return adminClient.getOidcClient(request);
+}
+
+/** OIDC 客户端编辑（§5.5 行 1264：PATCH 缺省保留 + TTL 0 保留原值）→ OkResponse。 */
+export function updateOidcClient(request: UpdateOidcClientRequest): Promise<OkResponse> {
+  return adminClient.updateOidcClient(request);
+}
+
+/** OIDC 客户端删除（§5.5 行 1264：{id} 硬删）→ OkResponse。 */
+export function deleteOidcClient(request: DeleteOidcClientRequest): Promise<OkResponse> {
+  return adminClient.deleteOidcClient(request);
+}
+
+/**
+ * 列表条目非空清洗：逐条去首尾空白后剔除空串（编辑器允许中间态空行，
+ * 提交前统一收口）。新建与编辑的 redirectUris / scopes 共用。
+ */
+export function cleanStringList(values: readonly string[]): string[] {
+  return values.map((value) => value.trim()).filter((value) => value !== '');
+}
+
+/** 客户端标识长度上限（后端 sso_client.client_id VARCHAR(64) 字符数防御）。 */
+export const CLIENT_ID_MAX_LEN = 64;
+
+/** 展示名长度上限（后端 client_name_max_runes 同值）。 */
+export const CLIENT_NAME_MAX_LEN = 128;
+
+/** OIDC 访问令牌 TTL 默认 / 上限（秒；后端 §4.5 DDL 默认 3600、值域 [1, 86400]）。 */
+export const OIDC_ACCESS_TTL_DEFAULT = 3600;
+export const OIDC_ACCESS_TTL_MAX = 86400;
+
+/** OIDC 刷新令牌 TTL 默认 / 上限（秒；DDL 默认 2592000、值域 [1, 2592000]）。 */
+export const OIDC_REFRESH_TTL_DEFAULT = 2592000;
+export const OIDC_REFRESH_TTL_MAX = 2592000;
+
+/** redirectUris 条目校验失败文案（对齐后端：字面 * 或 ^https?://）。 */
+export const REDIRECT_URIS_ISSUE_TEXT = '回调地址须为 * 或以 http:// / https:// 开头';
+
+/**
+ * 回调白名单条目校验（§5.5 行 1262「支持 *」+ §12.3 整段匹配；后端
+ * 条目规则：字面 * 或 ^https?:// 前缀）。清洗后逐条判定，首个非法
+ * 条目 → 文案；全部合法 / 空表 → null（空表合法性归调用方，见编辑阻断）。
+ */
+export function redirectUrisIssue(uris: readonly string[]): string | null {
+  for (const uri of cleanStringList(uris)) {
+    if (uri !== '*' && !/^https?:\/\//.test(uri)) {
+      return REDIRECT_URIS_ISSUE_TEXT;
+    }
+  }
+  return null;
+}
+
+/** scopes 条目校验失败文案（后端口径：非空且不含逗号——逗号串存储）。 */
+export const SCOPES_ISSUE_TEXT = '权限范围条目不能为空，且不能包含逗号';
+
+/**
+ * 权限范围条目校验（§5.5 行 1264；后端口径：条目空串 / 含逗号 →
+ * invalid_request）。清洗后逐条判定；全部合法 / 空表 → null。
+ */
+export function scopesIssue(scopes: readonly string[]): string | null {
+  for (const scope of cleanStringList(scopes)) {
+    if (scope.includes(',')) {
+      return SCOPES_ISSUE_TEXT;
+    }
+  }
+  return null;
+}
+
+/**
+ * TTL 表单文本 → 秒数：空串 → 0（新建落库端默认 / 编辑保留原值）；正整数
+ * 且 ≤ max → 秒数；其余（0 / 负数 / 非整数 / 超上限 / 非数字）→ null。
+ */
+export function parseTtlField(raw: string, max: number): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return 0;
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value) || value < 1 || value > max) {
+    return null;
+  }
+  return value;
+}
+
+/** SSO 客户端表单草稿（新建与编辑共用字段形态；clientId 仅新建消费——创建后不可改）。 */
+export interface SsoClientDraft {
+  readonly clientId: string;
+  readonly name: string;
+  readonly redirectUris: readonly string[];
+}
+
+/** SSO 客户端编辑草稿（clientId 不编辑；newSecret 留空保留原密钥、非空轮换）。 */
+export interface SsoClientPatchDraft {
+  readonly newSecret: string;
+  readonly name: string;
+  readonly redirectUris: readonly string[];
+}
+
+/** OIDC 客户端表单草稿：SSO 基线 + scopes / TTL（秒；0 = 缺省/保留）。 */
+export interface OidcClientDraft extends SsoClientDraft {
+  readonly scopes: readonly string[];
+  readonly accessTokenTtl: number;
+  readonly refreshTokenTtl: number;
+}
+
+/** OIDC 客户端编辑草稿：SSO 基线 + scopes / TTL（0 = 保留原值）。 */
+export interface OidcClientPatchDraft extends SsoClientPatchDraft {
+  readonly scopes: readonly string[];
+  readonly accessTokenTtl: number;
+  readonly refreshTokenTtl: number;
+}
+
+/** ListSsoClients 请求构造（分页 §1.7；排序仅 order 非空时下发，同 buildListUsersRequest）。 */
+export function buildListSsoClientsRequest(query: TableQueryState): ListSsoClientsRequest {
+  return create(ListSsoClientsRequestSchema, {
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/** ListOidcClients 请求构造（口径同 buildListSsoClientsRequest）。 */
+export function buildListOidcClientsRequest(query: TableQueryState): ListOidcClientsRequest {
+  return create(ListOidcClientsRequestSchema, {
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/** GetSsoClient 请求构造（§5.5 行 1262：{id}）。 */
+export function buildGetSsoClientRequest(id: bigint): GetSsoClientRequest {
+  return create(GetSsoClientRequestSchema, { id });
+}
+
+/** GetOidcClient 请求构造（§5.5 行 1264：{id}）。 */
+export function buildGetOidcClientRequest(id: bigint): GetOidcClientRequest {
+  return create(GetOidcClientRequestSchema, { id });
+}
+
+/**
+ * CreateSsoClient 请求构造：clientId / name 去空白；redirectUris 清洗后
+ * 整组提交；clientSecret 不发（服务端生成，请求同名字段被后端忽略）。
+ * clientId 空串在 protojson 下省略 → 后端读零值生成。
+ */
+export function buildCreateSsoClientRequest(draft: SsoClientDraft): CreateSsoClientRequest {
+  return create(CreateSsoClientRequestSchema, {
+    clientId: draft.clientId.trim(),
+    name: draft.name.trim(),
+    redirectUris: cleanStringList(draft.redirectUris),
+  });
+}
+
+/** CreateOidcClient 请求构造：SSO 基线 + scopes 清洗 + TTL（0 省略落库端默认）。 */
+export function buildCreateOidcClientRequest(draft: OidcClientDraft): CreateOidcClientRequest {
+  return create(CreateOidcClientRequestSchema, {
+    clientId: draft.clientId.trim(),
+    name: draft.name.trim(),
+    redirectUris: cleanStringList(draft.redirectUris),
+    scopes: cleanStringList(draft.scopes),
+    accessTokenTtl: BigInt(draft.accessTokenTtl),
+    refreshTokenTtl: BigInt(draft.refreshTokenTtl),
+  });
+}
+
+/**
+ * UpdateSsoClient 请求构造（PATCH 缺省保留）：clientId 不发（创建后不可改，
+ * 零值省略 → 后端保留分支）；newSecret 留空 → clientSecret 零值省略即保留
+ * 原密钥、非空覆盖轮换；name 空串保留原值。
+ */
+export function buildUpdateSsoClientRequest(
+  id: bigint,
+  draft: SsoClientPatchDraft,
+): UpdateSsoClientRequest {
+  return create(UpdateSsoClientRequestSchema, {
+    id,
+    clientSecret: draft.newSecret.trim(),
+    name: draft.name.trim(),
+    redirectUris: cleanStringList(draft.redirectUris),
+  });
+}
+
+/** UpdateOidcClient 请求构造：SSO 基线 + scopes / TTL（0 省略保留原值）。 */
+export function buildUpdateOidcClientRequest(
+  id: bigint,
+  draft: OidcClientPatchDraft,
+): UpdateOidcClientRequest {
+  return create(UpdateOidcClientRequestSchema, {
+    id,
+    clientSecret: draft.newSecret.trim(),
+    name: draft.name.trim(),
+    redirectUris: cleanStringList(draft.redirectUris),
+    scopes: cleanStringList(draft.scopes),
+    accessTokenTtl: BigInt(draft.accessTokenTtl),
+    refreshTokenTtl: BigInt(draft.refreshTokenTtl),
+  });
+}
+
+/** DeleteSsoClient 请求构造（§5.5 行 1262：{id}）。 */
+export function buildDeleteSsoClientRequest(id: bigint): DeleteSsoClientRequest {
+  return create(DeleteSsoClientRequestSchema, { id });
+}
+
+/** DeleteOidcClient 请求构造（§5.5 行 1264：{id}）。 */
+export function buildDeleteOidcClientRequest(id: bigint): DeleteOidcClientRequest {
+  return create(DeleteOidcClientRequestSchema, { id });
+}
+
+/**
+ * 列表列摘要展示（回调白名单 / 权限范围共用）：空 → 占位符；单条 → 原值；
+ * 多条 → 首条 + 计数（表格列宽受限，全量展示在详情弹窗）。
+ */
+export function summarizeList(values: readonly string[]): string {
+  const cleaned = cleanStringList(values);
+  if (cleaned.length === 0) {
+    return '—';
+  }
+  if (cleaned.length === 1) {
+    return cleaned[0];
+  }
+  return `${cleaned[0]} 等 ${cleaned.length} 条`;
+}
+
+/**
+ * TTL 秒数人性化（OIDC 列表「令牌有效期」列与详情共用）：整除换算
+ * 天 / 小时 / 分钟，否则原样秒数（3700 秒不凑整）。
+ */
+export function humanizeTtlSeconds(seconds: number): string {
+  if (seconds > 0 && seconds % 86400 === 0) {
+    return `${seconds / 86400} 天`;
+  }
+  if (seconds > 0 && seconds % 3600 === 0) {
+    return `${seconds / 3600} 小时`;
+  }
+  if (seconds > 0 && seconds % 60 === 0) {
+    return `${seconds / 60} 分钟`;
+  }
+  return `${seconds} 秒`;
+}
+
+/** OIDC 令牌有效期列摘要：访问 / 刷新两段人性化（int64 经 toCount 收窄）。 */
+export function tokenTtlSummary(accessTokenTtl: bigint, refreshTokenTtl: bigint): string {
+  return `访问 ${humanizeTtlSeconds(toCount(accessTokenTtl))} / 刷新 ${humanizeTtlSeconds(
+    toCount(refreshTokenTtl),
+  )}`;
+}
+
+/** TTL 详情展示（详情弹窗）：人性化 + 原始秒数并列。 */
+export function ttlDetailText(ttl: bigint): string {
+  const seconds = toCount(ttl);
+  return `${humanizeTtlSeconds(seconds)}（${seconds} 秒）`;
 }

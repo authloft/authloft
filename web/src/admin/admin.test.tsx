@@ -35,6 +35,12 @@ import {
 } from './components/ProviderCallbackHint';
 import { JsonEditor } from './components/JsonEditor';
 import {
+  StringListEditor,
+  appendListItem,
+  removeListItem,
+  replaceListItem,
+} from './components/StringListEditor';
+import {
   SECTION_ORDER,
   adminProviderToValues,
   applySchemaDefaults,
@@ -94,6 +100,22 @@ import {
  * UsersPage / UserDetailPage 渲染不可测（同上 Blocker），DataTable 分页 /
  * 排序 / 筛选 / 行内开关编排已由 shared/app-ui 四约束测试覆盖。
  *
+ * 客户端管理族追加（接口文档 §5.5 行 1257-1268；后端已
+ * 实装，读路径真调语义 → msw 走真实 transport 归一链）：
+ * - api 十方法 msw：List / Get 读路径解码（SsoClient / OidcClient：明文
+ *   secret + redirectUris / scopes + TTL int64 → bigint）+ Create / Update /
+ *   Delete 请求体 wire 校验（clientId 空串省略=服务端生成、clientSecret
+ *   Create 不下发 / Update 留空省略=保留、PATCH 空组 / 空串省略=保留原值、
+ *   OIDC TTL 0 省略=库端默认 / 保留原值）+ 404 带 Connect JSON 体口径；
+ * - 请求构造纯函数：buildListXxxClientsRequest（排序仅 order 非空下发）/
+ *   buildCreate / Update / DeleteXxxClientRequest；
+ * - 校验 / 展示纯函数：cleanStringList / redirectUrisIssue / scopesIssue /
+ *   parseTtlField（条目规则与 TTL 值域）/ summarizeList /
+ *   humanizeTtlSeconds / tokenTtlSummary / ttlDetailText；
+ * - StringListEditor：静态渲染（零 Semi 依赖）+ replace/remove/appendListItem
+ *   不可变编排纯函数（moveItem 同口径）。
+ * SsoClientsPage / OidcClientsPage 渲染不可测（同上 Blocker）。
+ *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
@@ -129,6 +151,16 @@ const RESET_USER_PASSWORD_URL = `${BASE}/api.admin.v1.AdminService/ResetUserPass
 const UNBIND_USER_THIRDPARTY_URL = `${BASE}/api.admin.v1.AdminService/UnbindUserThirdparty`;
 const UNLOCK_USER_URL = `${BASE}/api.admin.v1.AdminService/UnlockUser`;
 const GET_USER_EVENTS_URL = `${BASE}/api.admin.v1.AdminService/GetUserEvents`;
+const LIST_SSO_CLIENTS_URL = `${BASE}/api.admin.v1.AdminService/ListSsoClients`;
+const CREATE_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/CreateSsoClient`;
+const GET_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/GetSsoClient`;
+const UPDATE_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/UpdateSsoClient`;
+const DELETE_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/DeleteSsoClient`;
+const LIST_OIDC_CLIENTS_URL = `${BASE}/api.admin.v1.AdminService/ListOidcClients`;
+const CREATE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/CreateOidcClient`;
+const GET_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/GetOidcClient`;
+const UPDATE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/UpdateOidcClient`;
+const DELETE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/DeleteOidcClient`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -1675,5 +1707,496 @@ describe('formatUnixTime（§9 第 18 条零值兜底；时区无关断言）', 
     // 与 Date 本地渲染年份一致（跨时区稳定断言）。
     const d = new Date(1730000000 * 1000);
     expect(formatted.startsWith(`${d.getFullYear()}-`)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api 客户端管理族 msw（§5.5 行 1257-1268；后端已实装，读
+// 路径真调语义 → msw 走真实 transport 归一链；写路径校验请求体 wire 形态）
+// ---------------------------------------------------------------------------
+
+describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () => {
+  test('请求体 wire（排序仅 order 非空下发）→ SsoClientListResponse 解码（int64 → bigint + redirectUris 数组）', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(LIST_SSO_CLIENTS_URL, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({
+          items: [
+            {
+              id: '1',
+              clientId: 'portal',
+              clientSecret: 's-plaintext',
+              name: '门户站',
+              redirectUris: ['https://portal.test/cb', '*'],
+              createdAt: '1720000000',
+              updatedAt: '1720000100',
+            },
+          ],
+          total: '1',
+          page: '1',
+          pageSize: '20',
+        });
+      }),
+    );
+
+    const sorted: TableQueryState = {
+      ...initialTableQuery(),
+      sort: 'created_at',
+      order: 'desc',
+    };
+    const res = await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(sorted));
+    expect(bodies[0]).toEqual({
+      page: '1',
+      pageSize: '20',
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(res.total).toBe(BigInt(1));
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].id).toBe(BigInt(1));
+    expect(res.items[0].clientId).toBe('portal');
+    // 明文 secret 随列表行透出（后端投影口径）。
+    expect(res.items[0].clientSecret).toBe('s-plaintext');
+    expect(res.items[0].redirectUris).toEqual(['https://portal.test/cb', '*']);
+    expect(res.items[0].createdAt).toBe(BigInt(1720000000));
+
+    // 清除排序（order=''）→ sort / order 不下发（dataTableLogic 受控口径）。
+    await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(initialTableQuery()));
+    expect(bodies[1]).toEqual({ page: '1', pageSize: '20' });
+  });
+
+  test('500 → ApiError 归一（非 401：页面错误态，不跳登录）', async () => {
+    server.use(
+      http.post(LIST_SSO_CLIENTS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(initialTableQuery()));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+    expect(apiMod.isUnauthenticatedError(caught)).toBe(false);
+  });
+});
+
+describe('api.getSsoClient（§5.5 行 1262：{id} → SsoClient 明文密钥）', () => {
+  test('{id} 请求体 + SsoClient 解码（clientSecret 明文 = 全站唯一明文出口）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          id: '2',
+          clientId: 'portal',
+          clientSecret: 'secret-64-chars',
+          name: '门户站',
+          redirectUris: ['https://portal.test/cb'],
+          createdAt: '1720000000',
+          updatedAt: '1720000000',
+        });
+      }),
+    );
+
+    const res = await apiMod.getSsoClient(apiMod.buildGetSsoClientRequest(BigInt(2)));
+    expect(requestBody).toEqual({ id: '2' });
+    expect(res.$typeName).toBe('api.admin.v1.SsoClient');
+    expect(res.clientId).toBe('portal');
+    expect(res.clientSecret).toBe('secret-64-chars');
+    expect(res.redirectUris).toEqual(['https://portal.test/cb']);
+  });
+
+  test('404（带 Connect JSON 体，msw 既有口径）→ ApiError not_found → 通用文案', async () => {
+    server.use(
+      http.post(GET_SSO_CLIENT_URL, () =>
+        new HttpResponse(JSON.stringify({ code: 'not_found', message: 'client not found' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.getSsoClient(apiMod.buildGetSsoClientRequest(BigInt(999)));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(404);
+    expect((caught as ApiError).code).toBe('not_found');
+    expect(apiMod.apiErrorText(caught)).toBe('资源不存在');
+  });
+});
+
+describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端生成）', () => {
+  test('clientId 空串省略（服务端生成）/ name 去空白 / redirectUris 清洗后整组；clientSecret 键不下发；500 reject → ApiError', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(CREATE_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+
+    const res = await apiMod.createSsoClient(
+      apiMod.buildCreateSsoClientRequest({
+        clientId: '   ', // trim 后空 → protojson 省略 → 后端读零值生成
+        name: ' 门户站 ',
+        redirectUris: [' https://a.test/cb ', '', '*'],
+      }),
+    );
+    // clientSecret 由服务端生成：请求体无该键（后端忽略同名字段）。
+    expect(requestBody).toEqual({
+      name: '门户站',
+      redirectUris: ['https://a.test/cb', '*'],
+    });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+
+    server.use(
+      http.post(CREATE_SSO_CLIENT_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.createSsoClient(
+        apiMod.buildCreateSsoClientRequest({
+          clientId: 'portal',
+          name: '门户站',
+          redirectUris: [],
+        }),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留）', () => {
+  test('clientId 不下发（创建后不可改）；clientSecret 留空省略=保留 / 非空下发=轮换；name 空串 / 空组省略=保留', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(UPDATE_SSO_CLIENT_URL, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+
+    const keep = await apiMod.updateSsoClient(
+      apiMod.buildUpdateSsoClientRequest(BigInt(1), {
+        newSecret: '',
+        name: '门户站 v2',
+        redirectUris: ['https://portal.test/cb'],
+      }),
+    );
+    expect(bodies[0]).toEqual({
+      id: '1',
+      name: '门户站 v2',
+      redirectUris: ['https://portal.test/cb'],
+    });
+    expect(keep.$typeName).toBe('api.admin.v1.OkResponse');
+
+    // 轮换：newSecret trim 后非空 → wire 下发 clientSecret；name / uris 空即省略（保留原值）。
+    const rotate = await apiMod.updateSsoClient(
+      apiMod.buildUpdateSsoClientRequest(BigInt(2), {
+        newSecret: ' new-secret ',
+        name: '',
+        redirectUris: [],
+      }),
+    );
+    expect(bodies[1]).toEqual({ id: '2', clientSecret: 'new-secret' });
+    expect(rotate.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+describe('api.deleteSsoClient（§5.5 行 1262：{id} 硬删 → OkResponse）', () => {
+  test('请求体 {id} → OkResponse', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(DELETE_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.deleteSsoClient(apiMod.buildDeleteSsoClientRequest(BigInt(3)));
+    expect(requestBody).toEqual({ id: '3' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+describe('api.listOidcClients（§5.5 行 1263：SSO 基线 + scopes / TTL）', () => {
+  test('→ OidcClientListResponse 解码（scopes 数组 + TTL int64 → bigint）', async () => {
+    server.use(
+      http.post(LIST_OIDC_CLIENTS_URL, () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: '5',
+              clientId: 'oidc-portal',
+              name: 'OIDC 门户',
+              redirectUris: ['https://oidc.test/cb'],
+              scopes: ['openid', 'profile', 'email'],
+              accessTokenTtl: '3600',
+              refreshTokenTtl: '2592000',
+              createdAt: '1720000000',
+              updatedAt: '1720000000',
+            },
+          ],
+          total: '1',
+          page: '1',
+          pageSize: '20',
+        }),
+      ),
+    );
+
+    const res = await apiMod.listOidcClients(
+      apiMod.buildListOidcClientsRequest(initialTableQuery()),
+    );
+    expect(res.total).toBe(BigInt(1));
+    expect(res.items[0].scopes).toEqual(['openid', 'profile', 'email']);
+    expect(res.items[0].accessTokenTtl).toBe(BigInt(3600));
+    expect(res.items[0].refreshTokenTtl).toBe(BigInt(2592000));
+  });
+});
+
+describe('api.getOidcClient / api.createOidcClient / api.updateOidcClient / api.deleteOidcClient（§5.5 行 1263-1264）', () => {
+  test('getOidcClient：{id} → OidcClient 解码（明文 secret + scopes）', async () => {
+    server.use(
+      http.post(GET_OIDC_CLIENT_URL, () =>
+        HttpResponse.json({
+          id: '5',
+          clientId: 'oidc-portal',
+          clientSecret: 'oidc-secret',
+          name: 'OIDC 门户',
+          redirectUris: ['https://oidc.test/cb'],
+          scopes: ['openid'],
+          accessTokenTtl: '3600',
+          refreshTokenTtl: '2592000',
+        }),
+      ),
+    );
+    const res = await apiMod.getOidcClient(apiMod.buildGetOidcClientRequest(BigInt(5)));
+    expect(res.$typeName).toBe('api.admin.v1.OidcClient');
+    expect(res.clientSecret).toBe('oidc-secret');
+    expect(res.scopes).toEqual(['openid']);
+  });
+
+  test('createOidcClient：scopes 整组 + TTL 0 省略（落库端默认）/ 值下发十进制字符串', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(CREATE_OIDC_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.createOidcClient(
+      apiMod.buildCreateOidcClientRequest({
+        clientId: 'oidc-portal',
+        name: 'OIDC 门户',
+        redirectUris: ['https://oidc.test/cb'],
+        scopes: ['openid', 'profile'],
+        accessTokenTtl: 0, // 未提交 → protojson 省略 → 后端落 DDL 默认 3600
+        refreshTokenTtl: 2592000,
+      }),
+    );
+    expect(requestBody).toEqual({
+      clientId: 'oidc-portal',
+      name: 'OIDC 门户',
+      redirectUris: ['https://oidc.test/cb'],
+      scopes: ['openid', 'profile'],
+      refreshTokenTtl: '2592000',
+    });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('updateOidcClient：PATCH 保留语义 + scopes 覆盖 + TTL 下发 + 密钥轮换', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(UPDATE_OIDC_CLIENT_URL, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.updateOidcClient(
+      apiMod.buildUpdateOidcClientRequest(BigInt(5), {
+        newSecret: 'rotated',
+        name: 'OIDC 门户 v2',
+        redirectUris: ['https://oidc.test/cb'],
+        scopes: ['openid'],
+        accessTokenTtl: 7200,
+        refreshTokenTtl: 0, // 保留原值 → 省略
+      }),
+    );
+    expect(bodies[0]).toEqual({
+      id: '5',
+      clientSecret: 'rotated',
+      name: 'OIDC 门户 v2',
+      redirectUris: ['https://oidc.test/cb'],
+      scopes: ['openid'],
+      accessTokenTtl: '7200',
+    });
+  });
+
+  test('deleteOidcClient：{id} → OkResponse；500 reject → ApiError', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(DELETE_OIDC_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.deleteOidcClient(apiMod.buildDeleteOidcClientRequest(BigInt(5)));
+    expect(requestBody).toEqual({ id: '5' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+
+    server.use(
+      http.post(DELETE_OIDC_CLIENT_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.deleteOidcClient(apiMod.buildDeleteOidcClientRequest(BigInt(5)));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 请求构造 / 校验 / 展示纯函数（落位 api.ts，node 可测）
+// ---------------------------------------------------------------------------
+
+describe('buildListSsoClientsRequest / buildListOidcClientsRequest（分页 §1.7）', () => {
+  test('排序仅 order 非空时下发；分页直映射（两族同构）', () => {
+    const base = initialTableQuery();
+    const ssoSorted = apiMod.buildListSsoClientsRequest({
+      ...base,
+      sort: 'client_id',
+      order: 'desc',
+    });
+    expect(ssoSorted.page).toBe(BigInt(1));
+    expect(ssoSorted.pageSize).toBe(BigInt(20));
+    expect(ssoSorted.sort).toBe('client_id');
+    expect(ssoSorted.order).toBe('desc');
+
+    const oidcPlain = apiMod.buildListOidcClientsRequest(base);
+    expect(oidcPlain.sort).toBeUndefined();
+    expect(oidcPlain.order).toBeUndefined();
+  });
+});
+
+describe('cleanStringList / redirectUrisIssue / scopesIssue（§1.7 前端自律，对齐后端条目规则）', () => {
+  test('cleanStringList：去首尾空白 + 剔除空串；全空 → 空数组', () => {
+    expect(apiMod.cleanStringList([' a ', '', 'b', '   '])).toEqual(['a', 'b']);
+    expect(apiMod.cleanStringList([])).toEqual([]);
+    expect(apiMod.cleanStringList(['', '  '])).toEqual([]);
+  });
+
+  test('redirectUrisIssue：* / http(s):// 合法；其他前缀 → 文案；清洗后空表 → null', () => {
+    expect(apiMod.redirectUrisIssue(['*', 'https://a.test/cb', 'http://b.test/cb'])).toBeNull();
+    expect(apiMod.redirectUrisIssue(['ftp://a.test/cb'])).toBe(apiMod.REDIRECT_URIS_ISSUE_TEXT);
+    expect(apiMod.redirectUrisIssue(['example.com/cb'])).toBe(apiMod.REDIRECT_URIS_ISSUE_TEXT);
+    expect(apiMod.redirectUrisIssue(['', '   '])).toBeNull();
+  });
+
+  test('scopesIssue：含逗号 → 文案；合法 / 清洗后空表 → null', () => {
+    expect(apiMod.scopesIssue(['openid', 'profile'])).toBeNull();
+    expect(apiMod.scopesIssue(['open,id'])).toBe(apiMod.SCOPES_ISSUE_TEXT);
+    expect(apiMod.scopesIssue([])).toBeNull();
+  });
+});
+
+describe('parseTtlField（TTL 表单文本收敛；值域 [1, max]）', () => {
+  test('空 → 0（缺省语义）；正整数 ≤ max → 秒数；其余 → null', () => {
+    expect(apiMod.parseTtlField('', 86400)).toBe(0);
+    expect(apiMod.parseTtlField(' 3600 ', 86400)).toBe(3600);
+    expect(apiMod.parseTtlField('86400', 86400)).toBe(86400);
+    expect(apiMod.parseTtlField('0', 86400)).toBeNull();
+    expect(apiMod.parseTtlField('-1', 86400)).toBeNull();
+    expect(apiMod.parseTtlField('86401', 86400)).toBeNull();
+    expect(apiMod.parseTtlField('1.5', 86400)).toBeNull();
+    expect(apiMod.parseTtlField('abc', 86400)).toBeNull();
+  });
+});
+
+describe('summarizeList / humanizeTtlSeconds / tokenTtlSummary / ttlDetailText（展示纯函数）', () => {
+  test('summarizeList：空 → 占位；单条 → 原值；多条 → 首条 + 计数', () => {
+    expect(apiMod.summarizeList([])).toBe('—');
+    expect(apiMod.summarizeList(['https://a.test/cb'])).toBe('https://a.test/cb');
+    expect(apiMod.summarizeList(['a', 'b', 'c'])).toBe('a 等 3 条');
+  });
+
+  test('humanizeTtlSeconds：整除换算天 / 小时 / 分钟，否则原样秒数', () => {
+    expect(apiMod.humanizeTtlSeconds(2592000)).toBe('30 天');
+    expect(apiMod.humanizeTtlSeconds(3600)).toBe('1 小时');
+    expect(apiMod.humanizeTtlSeconds(300)).toBe('5 分钟');
+    expect(apiMod.humanizeTtlSeconds(3700)).toBe('3700 秒');
+    expect(apiMod.humanizeTtlSeconds(45)).toBe('45 秒');
+  });
+
+  test('tokenTtlSummary / ttlDetailText：int64 经 toCount 收窄后拼装', () => {
+    expect(apiMod.tokenTtlSummary(BigInt(3600), BigInt(2592000))).toBe('访问 1 小时 / 刷新 30 天');
+    expect(apiMod.ttlDetailText(BigInt(3600))).toBe('1 小时（3600 秒）');
+    expect(apiMod.ttlDetailText(BigInt(45))).toBe('45 秒（45 秒）');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StringListEditor（零 Semi 依赖 → 不可变编排纯函数 + 静态渲染）
+// ---------------------------------------------------------------------------
+
+describe('replaceListItem / removeListItem / appendListItem（不可变编排纯函数）', () => {
+  test('replace：命中换值 / 越界原引用；remove：按位剔除 / 越界原引用；append：追加空串', () => {
+    const items = ['a', 'b', 'c'];
+    expect(replaceListItem(items, 1, 'x')).toEqual(['a', 'x', 'c']);
+    expect(replaceListItem(items, -1, 'x')).toBe(items);
+    expect(replaceListItem(items, 5, 'x')).toBe(items);
+    expect(removeListItem(items, 0)).toEqual(['b', 'c']);
+    expect(removeListItem(items, 5)).toBe(items);
+    expect(appendListItem(items)).toEqual(['a', 'b', 'c', '']);
+    // 原数组不变（不可变）。
+    expect(items).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('StringListEditor（静态渲染：受控条目 + 添加 / 删除按钮 + 空表提示 + 禁用）', () => {
+  test('values 按序渲染 + aria-label 派生 + 添加按钮；非空表不渲染空表提示', () => {
+    const markup = renderToStaticMarkup(
+      createElement(StringListEditor, {
+        values: ['https://a.test/cb', ''],
+        onChange: () => {},
+        disabled: false,
+        ariaLabel: '回调地址',
+        addText: '添加回调地址',
+        placeholder: 'https:// 或 *',
+        emptyHint: '暂无回调地址',
+      }),
+    );
+    expect(markup).toContain('https://a.test/cb');
+    expect(markup).toContain('添加回调地址');
+    expect(markup).toContain('aria-label="回调地址 1"');
+    expect(markup).toContain('aria-label="回调地址 1 删除"');
+    expect(markup).not.toContain('disabled');
+    expect(markup).not.toContain('暂无回调地址');
+  });
+
+  test('空表渲染 emptyHint；disabled → 输入 / 按钮 disabled 属性', () => {
+    const markup = renderToStaticMarkup(
+      createElement(StringListEditor, {
+        values: [],
+        onChange: () => {},
+        disabled: true,
+        ariaLabel: '权限范围',
+        addText: '添加权限范围',
+        placeholder: 'openid',
+        emptyHint: '暂无权限范围',
+      }),
+    );
+    expect(markup).toContain('暂无权限范围');
+    expect(markup).toContain('添加权限范围');
+    expect(markup).toContain('disabled');
   });
 });

@@ -1,0 +1,129 @@
+// OIDC 客户端列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// 与 SsoClientsPage.module.less 同构（两页独立实现，样式各自持有），额外
+// TTL 双列布局。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: block;
+}
+
+// 工具条：新建按钮靠右（无搜索入参，§5.5 ListOidcClients 仅分页 / 排序）。
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: @spacing-md;
+}
+
+.actions {
+  display: inline-flex;
+  gap: @spacing-xs;
+  white-space: nowrap;
+}
+
+// 客户端标识单元格：等宽文本 + 复制按钮同行。
+.idCell {
+  display: inline-flex;
+  align-items: center;
+  gap: @spacing-xs;
+}
+
+.idCode {
+  font-size: @font-size-sm;
+  word-break: break-all;
+}
+
+.notice {
+  margin: 0 0 @spacing-md;
+  color: @color-primary; // tokens 无 success 令牌（shared/ 只读），成功提示沿用主色
+  font-size: @font-size-sm;
+}
+
+.actionError {
+  margin: 0 0 @spacing-md;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+.loadError {
+  margin: @spacing-lg 0;
+  color: @color-danger;
+  font-size: @font-size-md;
+}
+
+// 表单弹窗内容（Modal footer={null}，按钮区自管）。
+.formBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.fieldHint {
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+// TTL 双列（访问 / 刷新并排，窄屏自动换行）。
+.ttlRow {
+  display: flex;
+  gap: @spacing-md;
+  flex-wrap: wrap;
+}
+
+.ttlField {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+  flex: 1;
+  min-width: 200px;
+}
+
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: @spacing-sm;
+}
+
+// 详情弹窗：dt / dd 竖排键值对（dl 语义化结构）。
+.detailList {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+  margin: 0;
+
+  dt {
+    color: @color-text-muted;
+    font-size: @font-size-sm;
+  }
+
+  dd {
+    margin: 0;
+    font-size: @font-size-sm;
+    word-break: break-all;
+  }
+}
+
+.detailValue {
+  display: flex;
+  align-items: center;
+  gap: @spacing-xs;
+}
+
+// 回调白名单全量列表（详情弹窗）。
+.uriList {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+  margin: 0;
+  padding-left: @spacing-lg;
+}

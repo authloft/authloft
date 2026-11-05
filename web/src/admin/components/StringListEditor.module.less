@@ -1,0 +1,64 @@
+// 字符串列表编辑器样式（docs/前端架构.md §1.7）：原生 input /
+// button 的最小对接（零 Semi），tokens 变量消费。
+@import (reference) '../../shared/styles/tokens.less';
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+  width: 100%;
+}
+
+// 空表提示（回调白名单 / scopes 无条目时）。
+.emptyHint {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.row {
+  display: flex;
+  gap: @spacing-sm;
+}
+
+.input {
+  flex: 1;
+  min-width: 0; // flex 子项文本溢出收缩
+  padding: @spacing-xs @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  font-size: @font-size-sm;
+  font-family: inherit;
+
+  &:disabled {
+    background-color: @color-background-muted;
+  }
+}
+
+.remove {
+  padding: @spacing-xs @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background;
+  font-size: @font-size-sm;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.add {
+  align-self: flex-start;
+  padding: @spacing-xs @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background;
+  font-size: @font-size-sm;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}

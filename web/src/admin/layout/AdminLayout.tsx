@@ -1,7 +1,8 @@
 /**
  * admin 端应用布局（docs/前端架构.md §6 行 501/507）：侧边栏（NAV_ITEMS，
- * 「提供方」随 ProvidersPage 长入、「用户」随 UsersPage 长入；其余条目随
- * 后续实现逐项长入）+ 顶栏（GetMe 管理员信息 + LogoutLink）+ 面包屑 + Content。
+ * 「提供方」随 ProvidersPage 长入、「用户」随 UsersPage 长入、「SSO 客户端」/
+ * 「OIDC 客户端」随两页长入；其余条目随后续实现逐项长入）+ 顶栏（GetMe
+ * 管理员信息 + LogoutLink）+ 面包屑 + Content。
  *
  * GetMe（§5.1 行 1159 管理员信息唯一来源）由布局层真调，渲染在顶栏；
  * 失败分流（§6 行 501，判定纯函数 adminMeFailureAction 在 ./api）：
@@ -36,13 +37,17 @@ const { Sider, Header, Content } = Layout;
 
 /**
  * 侧边栏导航项（§6 行 515-523 页面路由清单的已交付子集）：「提供方」随
- * ProvidersPage 长入，「用户」随 UsersPage 长入；其余条目
- * （客户端 / Settings / 工具页）随后续实现逐项长入。itemKey 即路由
- * 路径，点击整页跳转（account AppLayout 同约定）。
+ * ProvidersPage 长入，「用户」随 UsersPage 长入；「SSO 客户端」
+ * 「OIDC 客户端」随两页长入（需求 §4.6 行 257-258 两个独立模块，
+ * 平铺两条目即两路由各自高亮）；其余条目（Settings / 工具页）随后续
+ * 实现逐项长入。itemKey 即路由路径，点击整页跳转（account AppLayout
+ * 同约定）。
  */
 const NAV_ITEMS: { itemKey: string; text: string }[] = [
   { itemKey: '/admin/providers', text: '提供方' },
   { itemKey: '/admin/users', text: '用户' },
+  { itemKey: '/admin/clients/sso', text: 'SSO 客户端' },
+  { itemKey: '/admin/clients/oidc', text: 'OIDC 客户端' },
 ];
 
 /** GetMe 未落地前的加载态文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
