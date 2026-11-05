@@ -23,11 +23,21 @@ import type {
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import {
+  GetEventsRequestSchema,
   GetThirdpartyTicketRequestSchema,
   ThirdpartyBindingSchema,
   ThirdpartyOptionSchema,
   UnbindThirdpartyRequestSchema,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
+import {
+  clampPageSize,
+  DEFAULT_PAGE_SIZE,
+  initialTableQuery,
+  MAX_PAGE_SIZE,
+  patchRowByKey,
+  resolveTableQuery,
+  runInlineToggle,
+} from '../shared/app-ui/dataTableLogic';
 import type { QRPanelPhase } from '../shared/components/QRCodePanel';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
@@ -57,6 +67,11 @@ import { t } from '../shared/i18n';
  *   / 入口分流 / 排序 / redirect 分派（不落盘 OIDC）/ CreateQrcode 请求构造 /
  *   ?bind= 参数与扫码 failed 帧文案纯函数（§3.7 / §3.7.1；target_taken 绑定
  *   语境文案「该账号已被其他账号绑定」）。
+ * - 日志族 + DataTable 纯逻辑：GetEvents 封装（msw 真实 transport；
+ *   后端系桩）+ buildGetEventsRequest 请求构造（§1.7 分页 wire）+
+ *   shared/app-ui/dataTableLogic（前端架构 §8 行 621：分页 / 排序 / 筛选
+ *   回调参数归一、行内开关的乐观更新与回滚；零 Semi 依赖，组件壳渲染测试
+ *   仍受工具链 blocker——见文件头【Blocker】段）。
  *
  * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
@@ -97,6 +112,7 @@ const DELETE_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/DeleteWebauth
 const GET_THIRDPARTY_BINDINGS_URL = `${BASE}/api.account.v1.AccountService/GetThirdpartyBindings`;
 const UNBIND_THIRDPARTY_URL = `${BASE}/api.account.v1.AccountService/UnbindThirdparty`;
 const GET_THIRDPARTY_TICKET_URL = `${BASE}/api.account.v1.AccountService/GetThirdpartyTicket`;
+const GET_EVENTS_URL = `${BASE}/api.account.v1.AccountService/GetEvents`;
 const SSO_AUTHORIZE_URL = `${BASE}/api.sso.v1.SsoService/Authorize`;
 const SSO_CREATE_QRCODE_URL = `${BASE}/api.sso.v1.SsoService/CreateQrcode`;
 
@@ -1611,5 +1627,219 @@ describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
     for (const phase of phases) {
       expect(apiMod.bindPollPhase(phase, 'target_taken')).toBe(phase);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 日志族：GetEvents 封装 + 请求构造（§3.7 行 1041 / §1.7 行 275-278）
+// ---------------------------------------------------------------------------
+
+/** 受控查询状态样例（EventLogTable 初始态：created_at desc）。 */
+const LOG_QUERY = {
+  page: 1,
+  pageSize: DEFAULT_PAGE_SIZE,
+  sort: 'created_at',
+  order: 'desc',
+  filters: {},
+} as const;
+
+describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', () => {
+  test('Connect 协议 POST GetEvents → 请求 wire（§1.7 分页）+ 响应解码（int64 字符串 → bigint）', async () => {
+    let requestBody!: unknown;
+    server.use(
+      http.post(GET_EVENTS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              event: 'login',
+              createdAt: '1730000000',
+              ip: '203.0.113.7',
+              ua: 'Mozilla/5.0 (Windows NT 10.0)',
+              amr: 'pwd',
+              clientId: 'web-console',
+            },
+          ],
+          total: '128',
+          page: '1',
+          pageSize: '20',
+        });
+      }),
+    );
+
+    const response = await apiMod.getEvents(apiMod.buildGetEventsRequest(LOG_QUERY));
+
+    expect(requestBody).toEqual({
+      page: '1',
+      pageSize: '20',
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(response.total).toBe(BigInt(128));
+    expect(response.items.length).toBe(1);
+    expect(response.items[0]?.createdAt).toBe(BigInt(1730000000));
+    expect(response.items[0]?.amr).toBe('pwd');
+  });
+
+  test('空页 items 省略（§1.7 行 278：空 repeated 不输出）→ 解码为 []；零值 total → 0n', async () => {
+    server.use(
+      http.post(GET_EVENTS_URL, () =>
+        HttpResponse.json({ total: '0', page: '1', pageSize: '20' }),
+      ),
+    );
+
+    const response = await apiMod.getEvents(apiMod.buildGetEventsRequest(LOG_QUERY));
+
+    expect(response.items).toEqual([]);
+    expect(response.total).toBe(BigInt(0));
+  });
+});
+
+describe('buildGetEventsRequest（§3.7 行 1041 入参 + §1.7 行 275-278，纯函数）', () => {
+  test('分页 / 排序 → wire int64 十进制字符串（§1.12）+ sort/order 全量下发', () => {
+    expect(
+      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest({
+        page: 3,
+        pageSize: 50,
+        sort: 'created_at',
+        order: 'asc',
+        filters: {},
+      })),
+    ).toEqual({ page: '3', pageSize: '50', sort: 'created_at', order: 'asc' });
+  });
+
+  test('无排序（order 为空）→ sort/order 零值省略（§1.0 零值缺省）', () => {
+    expect(
+      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest(
+        initialTableQuery(),
+      )),
+    ).toEqual({ page: '1', pageSize: '20' });
+  });
+
+  test('event 类型过滤透传（行 1041 入参）；缺省省略不发', () => {
+    expect(
+      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest(initialTableQuery(), 'login')),
+    ).toEqual({ page: '1', pageSize: '20', event: 'login' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DataTable 纯逻辑（前端架构 §3.3 行 348 / §8 行 621；零 Semi 依赖）
+// ---------------------------------------------------------------------------
+
+describe('dataTableLogic 分页常量与归一（§1.7 行 275-278）', () => {
+  test('缺省 page=1 / pageSize=20；上限 100（行 277）', () => {
+    expect(DEFAULT_PAGE_SIZE).toBe(20);
+    expect(MAX_PAGE_SIZE).toBe(100);
+    expect(initialTableQuery()).toEqual({
+      page: 1,
+      pageSize: 20,
+      sort: '',
+      order: '',
+      filters: {},
+    });
+    expect(initialTableQuery(250).pageSize).toBe(100);
+    expect(clampPageSize(0)).toBe(20);
+    expect(clampPageSize(500)).toBe(100);
+  });
+});
+
+describe('dataTableLogic.resolveTableQuery（§8 行 621：分页 / 排序 / 筛选回调参数）', () => {
+  const prev = initialTableQuery();
+
+  test('分页回调：currentPage / pageSize → §1.7 归一（page ≥1、pageSize ∈ [1,100]）', () => {
+    expect(
+      resolveTableQuery({ pagination: { currentPage: 2, pageSize: 50 } }, prev),
+    ).toEqual({ page: 2, pageSize: 50, sort: '', order: '', filters: {} });
+    // 越界夹取（行 277：page 从 1 开始、pageSize 上限 100）
+    expect(
+      resolveTableQuery({ pagination: { currentPage: 0, pageSize: 500 } }, prev),
+    ).toEqual({ page: 1, pageSize: 100, sort: '', order: '', filters: {} });
+  });
+
+  test('分页回调缺省 → 保持 prev（排序 / 筛选变化时仅带 sorter / filters 的防御）', () => {
+    const next = resolveTableQuery(
+      { sorter: { dataIndex: 'created_at', sortOrder: 'ascend' } },
+      { ...prev, page: 4, pageSize: 50 },
+    );
+    expect(next.page).toBe(4);
+    expect(next.pageSize).toBe(50);
+  });
+
+  test('排序回调：ascend / descend → asc / desc；清除排序（false）→ order 置空', () => {
+    expect(
+      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: 'descend' } }, prev),
+    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: 'desc', filters: {} });
+    expect(
+      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: 'ascend' } }, prev),
+    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: 'asc', filters: {} });
+    expect(
+      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: false } }, prev),
+    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: '', filters: {} });
+  });
+
+  test('筛选回调：filters 数组 → dataIndex → 选中值映射；未带 filteredValue → 空数组', () => {
+    const next = resolveTableQuery(
+      {
+        filters: [
+          { dataIndex: 'event', filteredValue: ['login', 'mfa_login'] },
+          { dataIndex: 'ip' },
+        ],
+      },
+      prev,
+    );
+    expect(next.filters).toEqual({ event: ['login', 'mfa_login'], ip: [] });
+  });
+});
+
+describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）', () => {
+  interface FakeRow {
+    readonly key: string;
+    readonly enabled: boolean;
+  }
+
+  const rows: readonly FakeRow[] = [
+    { key: 'a', enabled: false },
+    { key: 'b', enabled: true },
+  ];
+  const keyOf = (row: FakeRow): string => row.key;
+  const toggle = (row: FakeRow): FakeRow => ({ ...row, enabled: !row.enabled });
+
+  test('patchRowByKey：命中行不可变更新（原数组 / 原行对象不动）；未命中 → 原引用', () => {
+    const next = patchRowByKey(rows, keyOf, 'a', (row) => ({ ...row, enabled: true }));
+    expect(next).not.toBe(rows);
+    expect(rows[0]).toEqual({ key: 'a', enabled: false }); // 原行未动 = 回滚依据
+    expect(next[0]).toEqual({ key: 'a', enabled: true });
+    expect(next[1]).toBe(rows[1]); // 未命中行原对象复用
+    expect(patchRowByKey(rows, keyOf, 'zz', (row) => ({ ...row, enabled: true }))).toBe(rows);
+  });
+
+  test('runInlineToggle：persist 成功 → 保留乐观行集（ok: true），persist 收到打补丁行', async () => {
+    const persisted: unknown[] = [];
+    const outcome = await runInlineToggle(rows, keyOf, 'a', toggle, async (patched) => {
+      persisted.push(patched);
+    });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.rows[0]).toEqual({ key: 'a', enabled: true });
+    expect(persisted).toEqual([{ key: 'a', enabled: true }]);
+  });
+
+  test('runInlineToggle：persist 失败 → 回滚原 rows 引用（ok: false）且原数组完好', async () => {
+    const outcome = await runInlineToggle(rows, keyOf, 'a', toggle, async () => {
+      throw new Error('boom');
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.rows).toBe(rows); // 回滚 = 恢复原引用
+    expect(rows[0]).toEqual({ key: 'a', enabled: false });
+  });
+
+  test('runInlineToggle：key 未命中 → 不调 persist、原样返回（无可变更项）', async () => {
+    let persistCalled = false;
+    const outcome = await runInlineToggle(rows, keyOf, 'zz', toggle, async () => {
+      persistCalled = true;
+    });
+    expect(outcome.ok).toBe(true);
+    expect(outcome.rows).toBe(rows);
+    expect(persistCalled).toBe(false);
   });
 });

@@ -9,6 +9,8 @@
  * 追加三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
  * GetThirdpartyTicket + 置灰判定 / Union 识别 / 请求构造 / redirect 分派 /
  * ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
+ * 追加日志族：GetEvents + buildGetEventsRequest（§3.7 行 1041 本人
+ * 登录记录分页；「仅成功记录」由服务端过滤，前端不发筛选参数）。
  * UpdateProfile / ThirdpartyOauth 等仍随消费页面落地再封（ThirdpartyOauth
  * 实调归 OAuthCallbackPage b 分支联调批；api.ts 可封装方法但页面
  * 不消费桩方法）。
@@ -89,11 +91,14 @@ import {
   RenameWebauthnCredentialRequestSchema,
 } from '../gen/proto/api/account/v1/webauthn_pb';
 import type {
+  GetEventsRequest,
+  GetEventsResponse,
   GetThirdpartyTicketRequest,
   ThirdpartyBindingsResponse,
   UnbindThirdpartyRequest,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
 import {
+  GetEventsRequestSchema,
   GetThirdpartyTicketRequestSchema,
   UnbindThirdpartyRequestSchema,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
@@ -106,6 +111,7 @@ import { MAX_POLL_SECONDS, type QRPanelPhase } from '../shared/components/QRCode
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { accountClient, postForm, type UploadProgress } from '../shared/api/http';
 import { authorize } from '../shared/api/sso';
+import type { TableQueryState } from '../shared/app-ui/dataTableLogic';
 import { t } from '../shared/i18n';
 import {
   isValidEmail,
@@ -875,4 +881,41 @@ export function bindPollPhase(
     return { kind: 'failed', message: BIND_TARGET_TAKEN_TEXT };
   }
   return phase;
+}
+
+// ---------------------------------------------------------------------------
+// 日志族封装（§3.7 行 1041 + §1.7 分页）
+// ---------------------------------------------------------------------------
+
+/**
+ * 本人登录记录（§3.7 行 1041）：仅成功记录（服务端过滤），分页 §1.7；
+ * 后端系桩，测试走 msw、联调待实装解锁。
+ */
+export function getEvents(request: GetEventsRequest): Promise<GetEventsResponse> {
+  return accountClient.getEvents(request);
+}
+
+/**
+ * GetEvents 请求构造（§3.7 行 1041 入参 + §1.7 行 275-278）：
+ * - query 为 DataTable 受控查询状态（shared/app-ui/dataTableLogic 归一产物，
+ *   page ≥1 / pageSize ∈ [1,100] 已在归一处夹取），wire 上 int64 字段经
+ *   protojson 输出十进制字符串（§1.12）；
+ * - 排序仅在 order 非空时下发（sort/order 值域前端限定 §1.7——本人记录页
+ *   固定 created_at）；
+ * - event 为行 1041 预留的类型过滤参数，本人记录页未消费（缺省省略不发）。
+ * 实现注：create 显式传零值会置 proto3 optional 的 presence 位 → wire 上仍
+ * 输出空串；故「未激活的段」不进 create 入参（条件展开），保持 §1.0 零值
+ * 缺省语义（与 BindTotp challenge「secret/code 零值省略」同口径）。
+ */
+export function buildGetEventsRequest(
+  query: TableQueryState,
+  event?: string,
+): GetEventsRequest {
+  const sorted = query.order !== '' && query.sort !== '';
+  return create(GetEventsRequestSchema, {
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    ...(sorted ? { sort: query.sort, order: query.order } : {}),
+    ...(event !== undefined && event !== '' ? { event } : {}),
+  });
 }
