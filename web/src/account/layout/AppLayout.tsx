@@ -28,11 +28,12 @@ const { Sider, Header, Content } = Layout;
 
 /**
  * 侧边栏导航项（§5 行 478 路由清单的已交付子集）：
- * 安全中心（/account/security）、审计日志（/account/audit）随
- * 后续页面交付后逐项长入；itemKey 即路由路径，点击原生跳转。
+ * 安全中心（/account/security）已随 SecurityPage 长入；审计日志
+ * （/account/audit）随后续交付长入；itemKey 即路由路径，点击原生跳转。
  */
 const NAV_ITEMS: { itemKey: string; text: string }[] = [
   { itemKey: '/account/profile', text: '个人资料' },
+  { itemKey: '/account/security', text: '安全中心' },
 ];
 
 /** 登出链接（§5 行 480）：跳 `{al_root}/sso/logout`，Go 处理（接口文档 §8 行 1420）。 */

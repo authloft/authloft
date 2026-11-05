@@ -1,0 +1,54 @@
+// 绑定 / 换绑表单样式（§1.7）：同目录同名 module less；类名 camelCase。
+// Semi Input / Button / CaptchaWidget（自带 module.less）样式不在此重复。
+@import (reference) '../../shared/styles/tokens.less';
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+  max-width: 360px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+}
+
+.label {
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.targetLine {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.target {
+  color: @color-text;
+}
+
+.error {
+  margin: 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+.actions {
+  display: flex;
+  gap: @spacing-md;
+}
+
+.done {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.doneText {
+  margin: 0;
+  color: @color-text;
+  font-size: @font-size-md;
+}

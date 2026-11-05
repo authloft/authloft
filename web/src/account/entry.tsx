@@ -60,7 +60,7 @@ class AccountErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== undefined) {
-      // 文案无 i18n 键：最简中文字面量（归 i18n 收口卡）。
+      // 文案无 i18n 键：最简中文字面量（归后续 i18n 实现）。
       return <p role="alert">页面出现异常，请刷新重试</p>;
     }
     return this.props.children;
