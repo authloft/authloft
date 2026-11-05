@@ -226,8 +226,9 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"pool_size zero", func(c *Config) { c.Redis.PoolSize = 0 }, "redis.pool_size"},
 
 		{"root empty", func(c *Config) { c.Authloft.Root = "" }, "authloft.root"},
-		{"root http", func(c *Config) { c.Authloft.Root = "http://sso.example.com" }, "authloft.root"},
+		{"root other scheme", func(c *Config) { c.Authloft.Root = "ftp://sso.example.com" }, "authloft.root"},
 		{"root no host", func(c *Config) { c.Authloft.Root = "https://" }, "authloft.root"},
+		{"root not url", func(c *Config) { c.Authloft.Root = "sso.example.com" }, "authloft.root"},
 		{"rp_id empty", func(c *Config) { c.Authloft.RpID = "" }, "authloft.rp_id"},
 
 		{"key empty", func(c *Config) { c.SignKey.Session.Key = "" }, "sign_key.session.key"},
@@ -266,6 +267,23 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 				t.Errorf("want error containing %q, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestValidateRootHTTPAccepted root 允许 http://（§3.2 约定 7 /
+// 接口文档 §1.1 行 76「明文 HTTP 部署为一等公民」）：http 与 https 均通过
+// Validate，其他 scheme 仍拒绝——既有校验（可解析 URL + host 非空）零回归。
+func TestValidateRootHTTPAccepted(t *testing.T) {
+	for _, root := range []string{
+		"http://sso.example.com",     // 明文 HTTP 一等公民（内网/测试/反代 TLS 终止）
+		"https://sso.example.com",    // 既有 HTTPS 形态零回归
+		"http://sso.example.com:8080",// 带端口明文
+	} {
+		c := validTestConfig(t)
+		c.Authloft.Root = root
+		if err := c.Validate(); err != nil {
+			t.Errorf("root %q 应通过 Validate（http 为一等公民）, got %v", root, err)
+		}
 	}
 }
 

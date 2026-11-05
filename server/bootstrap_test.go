@@ -1067,6 +1067,103 @@ func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 	}
 }
 
+// TestAssembleHTTPSDeploymentHotReload（env-skip 真连）：assemble
+// 装配的 https_deployment 三态源（ssoHTTPSMode 喂 newSessionCookie →
+// session 拦截器 / sso 登录终点）每请求读 settings 快照——默认档（迁移后
+// 无该键 → 种子 auto）+ httptest 明文请求（无 X-Forwarded-Proto、无 TLS）
+// → 拦截器防御性清 Cookie 无 Secure、SameSite=Lax（§1.9 行 292 明文
+// 联动）；Store.Set 改 true → 下一请求即 Secure+None（后台改值立即生效，
+// §1.9 行 306 逐请求判定，沿 cookie_name 热更口径）。观察点取 account 域
+// 任意 Connect 路由无令牌请求——session 拦截器对未登录一律防御性清
+// Cookie，Set-Cookie 属性即三态落点，无需构造有效会话。
+func TestAssembleHTTPSDeploymentHotReload(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	addr := os.Getenv("UC_TEST_REDIS_ADDR")
+	if dsn == "" || addr == "" {
+		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过 https_deployment 热更真连用例")
+	}
+	ctx := context.Background()
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("打开连接失败: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("连接 MariaDB 测试实例失败: %v", err)
+	}
+	if err := dropAllTables(db); err != nil {
+		t.Fatalf("用例开始清空测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := dropAllTables(db); err != nil {
+			t.Errorf("用例结束清理测试库失败: %v", err)
+		}
+		if err := assertNoTables(db); err != nil {
+			t.Errorf("清理自证失败: %v", err)
+		}
+		db.Close()
+	})
+
+	cfg := assembleConfig(t, dsn, addr)
+	deps, err := assemble(ctx, cfg)
+	if err != nil {
+		t.Fatalf("装配链失败: %v", err)
+	}
+	t.Cleanup(func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		deps.close(shutCtx)
+	})
+	h, _ := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
+
+	doClear := func(t *testing.T, hdr map[string]string) *http.Cookie {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api.account.v1.AccountService/GetProfile", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Connect-Protocol-Version", "1")
+		req.Header.Set("Origin", assembledRootOrigin) // 同源 POST（CSRF 校验，既有用例口径）
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		for _, ck := range (&http.Response{Header: rec.Header()}).Cookies() {
+			if ck.Name == "al_session" {
+				return ck
+			}
+		}
+		t.Fatalf("拦截器应防御性清 al_session（无令牌请求），Set-Cookie = %v", rec.Header().Values("Set-Cookie"))
+		return nil
+	}
+
+	// 默认档 auto + 明文请求（无头无 TLS）→ 兜底明文（省略 Secure + Lax）。
+	ck := doClear(t, nil)
+	if ck.Secure || ck.SameSite != http.SameSiteLaxMode {
+		t.Errorf("auto 明文兜底: Secure=%v SameSite=%v, want false/Lax", ck.Secure, ck.SameSite)
+	}
+	// auto + X-Forwarded-Proto: https 头（拦截器采集请求头注入信号）→ HTTPS。
+	ck = doClear(t, map[string]string{"X-Forwarded-Proto": "https"})
+	if !ck.Secure || ck.SameSite != http.SameSiteNoneMode {
+		t.Errorf("auto + 头 https: Secure=%v SameSite=%v, want true/None", ck.Secure, ck.SameSite)
+	}
+
+	// 后台改 true → 下一请求（无头）立即 Secure+None（每请求读快照）。
+	if err := deps.settings.Set(ctx, settings.KeyHttpsDeployment, settings.HTTPSDeploymentTrue, 0); err != nil {
+		t.Fatalf("settings.Set https_deployment=true: %v", err)
+	}
+	ck = doClear(t, nil)
+	if !ck.Secure || ck.SameSite != http.SameSiteNoneMode {
+		t.Errorf("改 true 后: Secure=%v SameSite=%v, want true/None（热更立即生效）", ck.Secure, ck.SameSite)
+	}
+	// 后台改 false → 下一请求立即省略 Secure（无视头信号）。
+	if err := deps.settings.Set(ctx, settings.KeyHttpsDeployment, settings.HTTPSDeploymentFalse, 0); err != nil {
+		t.Fatalf("settings.Set https_deployment=false: %v", err)
+	}
+	ck = doClear(t, map[string]string{"X-Forwarded-Proto": "https"})
+	if ck.Secure || ck.SameSite != http.SameSiteLaxMode {
+		t.Errorf("改 false 后应无视头信号恒明文: Secure=%v SameSite=%v", ck.Secure, ck.SameSite)
+	}
+}
+
 // TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配
 // provider 链 / 共享单例 / OIDC JWT 全部产物非 nil；Referer 白名单按 provider
 // 数据判定（命中 200 / 未命中 403 两向）；OIDC discovery / jwks / token /

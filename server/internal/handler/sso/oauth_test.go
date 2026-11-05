@@ -17,10 +17,13 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"connectrpc.com/connect"
+
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/service"
 	"authloft/internal/session"
+	"authloft/internal/settings"
 )
 
 // sessionCookieForTest 会话 Cookie 构造器（与线上同款属性）。
@@ -289,6 +292,55 @@ func TestLoginOauthConnect(t *testing.T) {
 			t.Errorf("信封 = %+v（api 通道 session_token 应在信封）", got)
 		}
 	})
+}
+
+// TestLoginOauthSessionCookieHTTPSAutoInferred：浏览器终点的
+// al_session Set-Cookie 按 https_deployment=auto + 请求信号逐请求判定
+//（§1.9 行 306-309 全部下发点逐请求判定、后端架构 §11.1 行 1179 同一
+// 构造器）：请求带 X-Forwarded-Proto: https → Secure + SameSite=None。
+// 信号采集复刻装配层（connect.NewSessionInterceptor 入口把 req.Header 包
+// RequestSignal 注入 ctx；handler 直构测试无拦截链，挂同款最小拦截器）。
+func TestLoginOauthSessionCookieHTTPSAutoInferred(t *testing.T) {
+	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+		Envelope:     &ssov1.LoginFlowResponse{Status: "success", UserId: 7},
+		SessionToken: "stok-1",
+	}}
+	cookies := session.NewCookie("al_session", "", 7*24*time.Hour,
+		session.WithHTTPSMode(func() string { return settings.HTTPSDeploymentAuto }))
+	_, handler := ssov1connect.NewSsoServiceHandler(
+		New(&fakeEngine{}, nil, cookies, tp),
+		connect.WithInterceptors(connect.UnaryInterceptorFunc(
+			func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					return next(session.WithRequestSignal(ctx, session.RequestSignal{Header: req.Header()}), req)
+				}
+			})),
+	)
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+ssov1connect.SsoServiceLoginOauthProcedure,
+		strings.NewReader(`{"providerKey":"qq","code":"c","state":"l"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST LoginOauth: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var sessionCookie string
+	for _, c := range resp.Header.Values("Set-Cookie") {
+		if strings.HasPrefix(c, "al_session=") {
+			sessionCookie = c
+		}
+	}
+	if !strings.Contains(sessionCookie, "stok-1") {
+		t.Fatalf("应下发 Set-Cookie: al_session=stok-1, got %q", sessionCookie)
+	}
+	if !strings.Contains(sessionCookie, "Secure") || !strings.Contains(sessionCookie, "SameSite=None") {
+		t.Errorf("auto + X-Forwarded-Proto: https 应 Secure+SameSite=None, got %q", sessionCookie)
+	}
 }
 
 // TestThirdpartyNotConfigured 未装配三方 service：Authorize / LoginOauth

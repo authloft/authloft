@@ -1,12 +1,14 @@
 // settings 包纯逻辑测试（无 DB / Redis，本地可跑）：
-//  1. 35 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
+//  1. 36 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
 //     默认值，缺一多一都算 FAIL）；
 //  2. pwd_* 五键与 security.PasswordRule 规则标识同名（§5.6 行 1275）；
-//  3. Validate 白名单 + 类型校验（含 int→int64 归一化、交叉约束不做）；
+//  3. Validate 白名单 + 类型校验（含 int→int64 归一化、交叉约束不做、
+//     https_deployment 三态值域）；
 //  4. 编解码 roundtrip 与错误形态。
 package settings
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -60,17 +62,18 @@ var spec56 = []struct {
 	{"gateway_tokens", TypeStringSlice, []string{}},
 	{"eventlog_retention_days", TypeInt64, int64(180)},
 	{"static_base", TypeString, "/assets"},
+	{"https_deployment", TypeString, "auto"},
 }
 
 // TestRegistryMatchesSpec：白名单 = §5.6 四张表之和，逐键断言键名 /
-// 类型 / 默认值；总数 35（5+1+5+24）双向无多无缺、无重复。
+// 类型 / 默认值；总数 36（5+1+5+25）双向无多无缺、无重复。
 func TestRegistryMatchesSpec(t *testing.T) {
-	if len(spec56) != 35 {
-		t.Fatalf("§5.6 硬编码副本应 35 键，实际 %d", len(spec56))
+	if len(spec56) != 36 {
+		t.Fatalf("§5.6 硬编码副本应 36 键，实际 %d", len(spec56))
 	}
 	got := Defs()
-	if len(got) != 35 {
-		t.Errorf("白名单应 35 键，实际 %d", len(got))
+	if len(got) != 36 {
+		t.Errorf("白名单应 36 键，实际 %d", len(got))
 	}
 	seen := make(map[string]bool, len(got))
 	for _, d := range got {
@@ -122,6 +125,8 @@ func TestPwdKeysMatchSecurityRules(t *testing.T) {
 func TestValidate(t *testing.T) {
 	if _, err := Validate("no_such_key", "x"); err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Fatalf("白名单外键应拒绝，err = %v", err)
+	} else if !errors.Is(err, ErrInvalidValue) {
+		t.Fatalf("白名单外键拒绝错误应包 ErrInvalidValue, err = %v", err)
 	}
 	bad := []struct {
 		key string
@@ -134,14 +139,31 @@ func TestValidate(t *testing.T) {
 		{KeyMfaEnabled, "true"},              // string 不是 bool
 		{KeyLoginMethods, []any{"password"}}, // []any 不是 []string
 		{KeyLoginMethods, "password"},
+		{KeyHttpsDeployment, "yes"},      // 三态值域外（§5.6 行 1354）
+		{KeyHttpsDeployment, ""},        // 空串不在三态
+		{KeyHttpsDeployment, "TRUE"},     // 大小写敏感，仅小写三态
+		{KeyHttpsDeployment, 8},          // 非 string
 	}
 	for _, c := range bad {
-		if _, err := Validate(c.key, c.val); err == nil {
+		_, err := Validate(c.key, c.val)
+		if err == nil {
 			t.Errorf("Validate(%q, %T) 应拒绝", c.key, c.val)
+			continue
+		}
+		// 全部拒绝路径（既有键类型不符 / https_deployment 值域外）
+		// 均须包裹哨兵，供 service 层 errors.Is 判定转译 invalid_request。
+		if !errors.Is(err, ErrInvalidValue) {
+			t.Errorf("Validate(%q, %T) 拒绝错误应包 ErrInvalidValue, got %v", c.key, c.val, err)
 		}
 	}
 	if v, err := Validate(KeyPwdMinLength, 12); err != nil || v != int64(12) {
 		t.Errorf("int 12 应归一为 int64(12)，得 %#v, err %v", v, err)
+	}
+	// https_deployment 三态值域：true / false / auto 通过（§5.6 行 1354）。
+	for _, ok := range []string{HTTPSDeploymentTrue, HTTPSDeploymentFalse, HTTPSDeploymentAuto} {
+		if v, err := Validate(KeyHttpsDeployment, ok); err != nil || v != ok {
+			t.Errorf("Validate(https_deployment, %q) 应通过，得 %#v, err %v", ok, v, err)
+		}
 	}
 	if v, err := Validate(KeyPwdMinLength, int64(12)); err != nil || v != int64(12) {
 		t.Errorf("int64(12) 应原样通过，得 %#v, err %v", v, err)

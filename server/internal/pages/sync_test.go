@@ -5,12 +5,14 @@ package pages
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"authloft/gen/go/token"
 	"authloft/internal/security"
+	"authloft/internal/settings"
 )
 
 // sealPayload 测试直封载荷。
@@ -111,6 +113,58 @@ func TestSyncCookieLastHop(t *testing.T) {
 	}
 	if ck := setCookieHeader(rec); !strings.HasPrefix(ck, "al_session=v;") {
 		t.Errorf("末跳 Set-Cookie = %q, want 照常写入", ck)
+	}
+}
+
+// TestSyncCookieHTTPSDeployment 接收端写入的会话 Cookie 随
+// settings 键 https_deployment 驱动（§1.9 行 304：接收端按同一构造器写入、
+// 随本键自动生效）：true → Secure; SameSite=None；false → 省略 Secure、
+// SameSite=Lax；缺省（默认档 auto）+ httptest 明文请求（无 X-Forwarded-Proto
+// 头、无 TLS）→ 兜底明文。gin 链双信号（请求头 + TLS）由 sync.go 构造。
+func TestSyncCookieHTTPSDeployment(t *testing.T) {
+	mk := func(t *testing.T, mode string) *httptest.ResponseRecorder {
+		t.Helper()
+		f := newFixture(t)
+		if mode != "" {
+			f.settings.m[settings.KeyHttpsDeployment] = mode
+		}
+		r := f.engine(t)
+		sealed := sealPayload(t, f.deps.Codec, &token.SyncCookiePayload{
+			CookieName: "al_session", CookieValue: "session-value", CookieTtl: "3600",
+			FinalUrl: "https://auth.example.com/ok",
+			Exp:      time.Now().Add(time.Minute).Unix(),
+		})
+		rec := doGet(t, r, "/sso/sync_cookie?"+sealed)
+		if rec.Code != http.StatusFound {
+			t.Fatalf("mode=%q status = %d, want 302", mode, rec.Code)
+		}
+		return rec
+	}
+	for _, tc := range []struct {
+		name   string
+		mode   string
+		secure bool
+	}{
+		{"true → Secure+None", "true", true},
+		{"false → 省略 Secure+Lax", "false", false},
+		{"缺省 auto + 明文请求 → 兜底明文", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := mk(t, tc.mode)
+			ck := setCookieHeader(rec)
+			if !strings.HasPrefix(ck, "al_session=session-value;") {
+				t.Fatalf("Set-Cookie = %q, want al_session 写入", ck)
+			}
+			if tc.secure {
+				if !strings.Contains(ck, "Secure") || !strings.Contains(ck, "SameSite=None") {
+					t.Errorf("Set-Cookie = %q, want Secure+SameSite=None（HTTPS 判定）", ck)
+				}
+			} else {
+				if strings.Contains(ck, "Secure") || !strings.Contains(ck, "SameSite=Lax") {
+					t.Errorf("Set-Cookie = %q, want 省略 Secure+SameSite=Lax（明文判定）", ck)
+				}
+			}
+		})
 	}
 }
 

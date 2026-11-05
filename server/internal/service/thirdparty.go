@@ -21,9 +21,12 @@
 //
 // 业务失败在登录流程信封域（LoginOauth）一律走信封 status（§1.6 封闭集，
 // 零自造）；Authorize 是普通 RPC，可判别哨兵错误由 handler 转 Connect
-// 错误体 + ErrorInfo。Cookie 属性按 §12.4 行 1486 当前口径恒定
-// （HttpOnly; Secure; SameSite=Lax、会话级）；https_deployment 三态驱动
-// 暂不接入。
+// 错误体 + ErrorInfo。al_login_state Cookie 属性（§1.9 行 303 / §12.4
+// 行 1486）：HttpOnly; SameSite=Lax; Path=/ 会话级恒定，Secure 受
+// settings 键 https_deployment 驱动（true → 带 Secure；false →
+// 省略；auto 按请求信号推断——判定复用 session.ResolveHTTPS 唯一判定
+// 点，与 al_session 同源联动；信号经 ctx 由 connect 装配层注入，connect
+// 链 AnyRequest 只暴露 Header）。
 package service
 
 import (
@@ -43,6 +46,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/session"
 )
 
 // al_login_state Cookie 与 state 前缀常量（接口文档 §2.7.2 行 604-611、
@@ -117,6 +121,10 @@ type ThirdpartyDeps struct {
 	Terminal   *orchestrator.Terminal
 	// CookieCodec sign_key.cookie（§12.4 行 1487），al_login_state 加解密。
 	CookieCodec *security.Codec
+	// HTTPSMode https_deployment 三态源（每请求读取，装配层注入 settings
+	// 读取闭包；nil = 未接入本键 → Secure 恒定，沿旧默认）。
+	// al_login_state 的 Secure 属性受其驱动（§1.9 行 303）。
+	HTTPSMode func() string
 	// NewTID login_token.tid 生成（缺省 security.RandomString(32)，同引擎）。
 	NewTID func() (string, error)
 	// Now 时钟注入（缺省 time.Now）。
@@ -204,7 +212,7 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 		return nil, fmt.Errorf("thirdparty: build auth url: %w", err)
 	}
 
-	ck, err := s.sealStateCookie(state, in.UID)
+	ck, err := s.sealStateCookie(ctx, state, in.UID)
 	if err != nil {
 		return nil, fmt.Errorf("thirdparty: seal login state: %w", err)
 	}
@@ -275,23 +283,23 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		if !s.verifyLoginState(in.State, in.StateCookie) {
 			return &OauthOutput{
 				Envelope: &ssov1.LoginFlowResponse{Status: statusStateMismatch},
-				Cookie:   s.clearStateCookie(),
+				Cookie:   s.clearStateCookie(ctx),
 			}
 		}
 	}
 
 	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
 	if err != nil {
-		return s.oauthFail(channel, orchestrator.StatusFailed)
+		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
 	identity, err := adapter.FetchUser(ctx, tok)
 	if err != nil || identity == nil || identity.OpenID == "" {
-		return s.oauthFail(channel, orchestrator.StatusFailed)
+		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
 
 	uid, matched, out := s.resolveBind(ctx, p, identity)
 	if out != nil {
-		return s.withStateCleared(channel, out)
+		return s.withStateCleared(ctx, channel, out)
 	}
 
 	// 已绑定 / Union 归并 / auto_bind 命中的用户状态校验（§1.6 行
@@ -301,10 +309,10 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	if uid != 0 {
 		user, uerr := s.deps.Users.FindByID(ctx, uid)
 		if uerr != nil {
-			return s.oauthFail(channel, orchestrator.StatusFailed)
+			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 		}
 		if user.UserStatus != userStatusNormal {
-			return s.oauthFail(channel, statusUserDisabled)
+			return s.oauthFail(ctx, channel, statusUserDisabled)
 		}
 	}
 
@@ -323,7 +331,7 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 			AvatarURL:   identity.AvatarURL,
 			Extra:       encodeExtra(identity.Raw),
 		}, p.Row.UnionProvider, identity.UnionID); err != nil {
-			return s.oauthFail(channel, orchestrator.StatusTargetTaken)
+			return s.oauthFail(ctx, channel, orchestrator.StatusTargetTaken)
 		}
 	}
 
@@ -350,10 +358,10 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		}
 		signed, err := s.deps.State.Issue(payload)
 		if err != nil {
-			return s.oauthFail(channel, orchestrator.StatusFailed)
+			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 		}
 		allowSignup := p.Row.EnableSignup == 1
-		return s.withStateCleared(channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+		return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status:     orchestrator.StatusBindingRequired,
 			LoginToken: signed,
 			Binding:    orchestrator.BindingEnvelope(payload, p.Row.DisplayName, allowSignup),
@@ -365,14 +373,14 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	if s.deps.MFA != nil {
 		mfa, required, err := s.deps.MFA.Build(ctx, uid)
 		if err != nil {
-			return s.oauthFail(channel, orchestrator.StatusFailed)
+			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 		}
 		if required {
 			signed, err := s.deps.State.Issue(payload)
 			if err != nil {
-				return s.oauthFail(channel, orchestrator.StatusFailed)
+				return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 			}
-			return s.withStateCleared(channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+			return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 				Status:     orchestrator.StatusMFARequired,
 				LoginToken: signed,
 				Mfa:        mfa,
@@ -382,7 +390,7 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 
 	success, err := s.deps.Terminal.Complete(ctx, payload)
 	if err != nil {
-		return s.oauthFail(channel, orchestrator.StatusFailed)
+		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
 	resp := &ssov1.LoginFlowResponse{
 		Status:        orchestrator.StatusSuccess,
@@ -400,7 +408,7 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	// redirect 通道：校验通过的 state Cookie 即删（§2.7.2 行 611）。
 	return &OauthOutput{
 		Envelope:     resp,
-		Cookie:       s.clearStateCookie(),
+		Cookie:       s.clearStateCookie(ctx),
 		SessionToken: success.SessionToken,
 	}
 }
@@ -527,9 +535,11 @@ func (s *Thirdparty) newState(scene string) (string, error) {
 
 // sealStateCookie 签发 al_login_state（LoginStatePayload：state 带前缀、
 // b 场景 uid、10 分钟 exp 兜底；§12.4 行 1485——不含 scene、不含 OIDC
-// 上下文），属性 HttpOnly; Secure; SameSite=Lax; Path=/ 会话级（行 1486
-// 当前口径；https_deployment 三态暂不接入）。
-func (s *Thirdparty) sealStateCookie(state string, uid int64) (*http.Cookie, error) {
+// 上下文）。属性（§1.9 行 303）：HttpOnly; SameSite=Lax; Path=/ 会话级
+// 恒定；Secure 受 https_deployment 驱动——判定为真 → 带 Secure；
+// 判定为假 → 省略。判定走 session.ResolveHTTPS 唯一判定点（与 al_session
+// 同源联动），auto 信号经 ctx（connect 装配层注入请求头）。
+func (s *Thirdparty) sealStateCookie(ctx context.Context, state string, uid int64) (*http.Cookie, error) {
 	now := s.now()
 	payload := &token.LoginStatePayload{
 		State: state,
@@ -546,23 +556,31 @@ func (s *Thirdparty) sealStateCookie(state string, uid int64) (*http.Cookie, err
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   s.stateSecure(ctx),
 		SameSite: http.SameSiteLaxMode,
 	}, nil
 }
 
 // clearStateCookie 构造删除 Cookie（§2.7.2 行 611：校验通过或失败后立即
-// 删除；同名同 Path、MaxAge=-1，属性与下发一致确保覆盖）。
-func (s *Thirdparty) clearStateCookie() *http.Cookie {
+// 删除；同名同 Path、MaxAge=-1，Secure 与 sealStateCookie 同判定确保
+// 属性一致——RFC 6265 删除匹配不看 Secure，对齐仅为一致性）。
+func (s *Thirdparty) clearStateCookie(ctx context.Context) *http.Cookie {
 	return &http.Cookie{
 		Name:     LoginStateCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   s.stateSecure(ctx),
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+// stateSecure al_login_state 的 Secure 判定（§1.9 行 303）：复用
+// session.ResolveHTTPS（https_deployment 三态 + auto 请求信号，唯一判定
+// 点）；deps.HTTPSMode 为 nil（未接入）→ 恒 true 沿旧默认。
+func (s *Thirdparty) stateSecure(ctx context.Context) bool {
+	return session.ResolveHTTPS(s.deps.HTTPSMode, session.RequestSignalFromContext(ctx))
 }
 
 // verifyLoginState 校验 redirect 通道的 state（§12.4 行 1493）：请求 state
@@ -605,17 +623,18 @@ func (s *Thirdparty) envelope(status string) *OauthOutput {
 // （§12.4 行 1486「回调校验通过或失败后立即删除」——mismatch / success 之外
 // 的 binding_required / mfa_required / failed / target_taken 等非成功终态
 // 同样删除，防 state 复用重放）；api 通道无 Cookie 场景不动作。out 已带
-// Cookie（mismatch）时保持原值。
-func (s *Thirdparty) withStateCleared(channel provider.ThirdPartyChannel, out *OauthOutput) *OauthOutput {
+// Cookie（mismatch）时保持原值。ctx 透传给 clearStateCookie 做 Secure
+// 判定（https_deployment 驱动）。
+func (s *Thirdparty) withStateCleared(ctx context.Context, channel provider.ThirdPartyChannel, out *OauthOutput) *OauthOutput {
 	if channel == provider.ChannelRedirect && out.Cookie == nil {
-		out.Cookie = s.clearStateCookie()
+		out.Cookie = s.clearStateCookie(ctx)
 	}
 	return out
 }
 
 // oauthFail 通道判定后的 status-only 终态（redirect 一律删 Cookie）。
-func (s *Thirdparty) oauthFail(channel provider.ThirdPartyChannel, status string) *OauthOutput {
-	return s.withStateCleared(channel, s.envelope(status))
+func (s *Thirdparty) oauthFail(ctx context.Context, channel provider.ThirdPartyChannel, status string) *OauthOutput {
+	return s.withStateCleared(ctx, channel, s.envelope(status))
 }
 
 // SignupState 实现 orchestrator.ThirdpartySignup 窄接口的查询半边：

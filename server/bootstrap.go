@@ -411,7 +411,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State / MFA /
 	// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走
 	// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
-	// 目标匹配走 UserRepo；挂入 assembled 供 registerSSO 注入 handler，
+	// 目标匹配走 UserRepo；HTTPSMode 注入 https_deployment 三态源
+	// （al_login_state 的 Secure 属性随驱动，与 newSessionCookie 同一源）；
+	// 挂入 assembled 供 registerSSO 注入 handler，
 	// SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
 	deps.thirdparty = service.NewThirdparty(service.ThirdpartyDeps{
 		Loader:      deps.providerLoader,
@@ -422,6 +424,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		MFA:         mfa,
 		Terminal:    terminal,
 		CookieCodec: deps.codecs.Cookie,
+		HTTPSMode:   ssoHTTPSMode(deps),
 	})
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
@@ -872,12 +875,27 @@ func ssoCookieName(deps *assembled) func() string {
 	}
 }
 
+// ssoHTTPSMode https_deployment 三态动态源（§1.9 行 299-310：键
+// 缺失回落空串、判定侧按 auto 缺省——与 ssoCookieName 同款每请求读取，
+// 沿 cookie_name 热更口径，禁止进程内缓存死值）。喂 session.Cookie 与
+// thirdparty（al_login_state）——全部 Cookie 下发点同一三态源，随
+// al:settings:chg watcher 热更对后续请求生效。
+func ssoHTTPSMode(deps *assembled) func() string {
+	return func() string {
+		v, _ := deps.settings.GetString(settings.KeyHttpsDeployment)
+		return v
+	}
+}
+
 // newSessionCookie 构造会话 Cookie 属性构造器（§1.9 行 288）：名 / 根域 /
-// TTL 同源于 settings（cookie_name、authloft.root 根域、session_ttl）。
-// session 拦截器（续期下发）与 sso 登录终点（建会话 Set-Cookie 下发）
-// 共用本构造——同名同属性，不另造第二套。
+// TTL 同源于 settings（cookie_name、authloft.root 根域、session_ttl）；
+// Secure/SameSite 三态源同注入（https_deployment：HTTPS 判定 →
+// Secure; SameSite=None；明文 → 省略 Secure、SameSite=Lax；auto 按请求
+// 信号推断）。session 拦截器（续期下发）与 sso 登录终点（建会话
+// Set-Cookie 下发）共用本构造——同名同属性，不另造第二套。
 func newSessionCookie(cfg *config.Config, deps *assembled) *session.Cookie {
-	return session.NewCookie(ssoCookieName(deps)(), rootHost(cfg.Authloft.Root), ssoSessionTTLRaw(deps.settings))
+	return session.NewCookie(ssoCookieName(deps)(), rootHost(cfg.Authloft.Root),
+		ssoSessionTTLRaw(deps.settings), session.WithHTTPSMode(ssoHTTPSMode(deps)))
 }
 
 // registerSSO 注册 SsoService Connect handler：挂 session 拦截器

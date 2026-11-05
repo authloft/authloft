@@ -229,11 +229,15 @@ func settingsRowCount(t *testing.T, raw *sql.DB) int {
 }
 
 // TestNewStoreSeedsDefaults（纯逻辑）：未预热的 Store 即有全量默认快照，
-// 类型化读与副本语义成立（Setup 模式无表即此档，§5.6 行 1275）。
+// 类型化读与副本语义成立（Setup 模式无表即此档，§5.6 行 1275；36 键
+// 含 https_deployment）。
 func TestNewStoreSeedsDefaults(t *testing.T) {
 	st := NewStore(nil, nil)
-	if snap := st.Snapshot(); len(snap) != 35 {
-		t.Fatalf("种子快照应 35 键，得 %d", len(snap))
+	if snap := st.Snapshot(); len(snap) != 36 {
+		t.Fatalf("种子快照应 36 键，得 %d", len(snap))
+	}
+	if v, ok := st.GetString(KeyHttpsDeployment); !ok || v != HTTPSDeploymentAuto {
+		t.Errorf("GetString(https_deployment) = %q, %v；want auto, true（§5.6 行 1354 默认值）", v, ok)
 	}
 	if v, ok := st.GetInt64(KeyPwdMinLength); !ok || v != 8 {
 		t.Errorf("GetInt64(pwd_min_length) = %d, %v；want 8, true", v, ok)
@@ -286,25 +290,26 @@ func TestSetRejectsBeforeDB(t *testing.T) {
 	}
 }
 
-// TestPreloadBackfillIdempotent（env-skip）：空表预热补齐 35 行默认值
-// （updated_by=0）→ 快照与 Defaults 一致；复跑幂等（行数不变、已有自定义
-// 值不被默认值冲掉——InsertIgnore 语义）；库中 JSON 损坏行 fail-fast。
+// TestPreloadBackfillIdempotent（env-skip）：空表预热补齐 36 行默认值
+// （updated_by=0，含 https_deployment）→ 快照与 Defaults 一致；
+// 复跑幂等（行数不变、已有自定义值不被默认值冲掉——InsertIgnore 语义）；
+// 库中 JSON 损坏行 fail-fast。
 func TestPreloadBackfillIdempotent(t *testing.T) {
 	rp, raw := setupTestDB(t)
 	ctx := context.Background()
 	st := NewStore(rp, nil)
 
-	// 空表 → 首次预热补齐全部 35 行。
+	// 空表 → 首次预热补齐全部 36 行。
 	if err := st.Preload(ctx); err != nil {
 		t.Fatalf("首次 Preload 失败: %v", err)
 	}
-	if n := settingsRowCount(t, raw); n != 35 {
-		t.Fatalf("空表预热后应 35 行，得 %d", n)
+	if n := settingsRowCount(t, raw); n != 36 {
+		t.Fatalf("空表预热后应 36 行，得 %d", n)
 	}
 	def := Defaults()
 	snap := st.Snapshot()
-	if len(snap) != 35 {
-		t.Fatalf("预热后快照应 35 键，得 %d", len(snap))
+	if len(snap) != 36 {
+		t.Fatalf("预热后快照应 36 键，得 %d", len(snap))
 	}
 	for k, want := range def {
 		if got := snap[k]; !equalValue(got, want) {
@@ -323,8 +328,8 @@ func TestPreloadBackfillIdempotent(t *testing.T) {
 	if err := st.Preload(ctx); err != nil {
 		t.Fatalf("二次 Preload 失败: %v", err)
 	}
-	if n := settingsRowCount(t, raw); n != 35 {
-		t.Errorf("复跑后行数应仍 35，得 %d", n)
+	if n := settingsRowCount(t, raw); n != 36 {
+		t.Errorf("复跑后行数应仍 36，得 %d", n)
 	}
 	var v string
 	if err := raw.QueryRow("SELECT v FROM settings WHERE k = ?", KeyPwdMinLength).Scan(&v); err != nil || v != "10" {
@@ -341,8 +346,8 @@ func TestPreloadBackfillIdempotent(t *testing.T) {
 	if err := st.Preload(ctx); err != nil {
 		t.Fatalf("三次 Preload 失败: %v", err)
 	}
-	if n := settingsRowCount(t, raw); n != 35 {
-		t.Errorf("补齐缺失行后应回 35，得 %d", n)
+	if n := settingsRowCount(t, raw); n != 36 {
+		t.Errorf("补齐缺失行后应回 36，得 %d", n)
 	}
 	if got, _ := st.GetInt64(KeyOtpTtl); got != 300 {
 		t.Errorf("otp_ttl 应补回默认 300，得 %d", got)

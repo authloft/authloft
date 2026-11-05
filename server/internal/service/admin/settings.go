@@ -5,14 +5,16 @@
 // settings.Store / repo/eventlog_repo.go / asyncqueue.Queue）。
 //
 // 职责边界：
-//   - GetSettings：Store.Snapshot → 35 键全键投影（键名与默认值唯一真相 =
+//   - GetSettings：Store.Snapshot → 36 键全键投影（键名与默认值唯一真相 =
 //     §5.6 四张表，与 internal/settings 常量表逐键一致，键名零自造）；投影
 //     到 SettingsResponse 在 dto.AdminSettings（§3.5 裁剪在 dto）。
 //   - SetSettings：全量替换语义（proto flat 消息 + protojson 零值省略 →
 //     每字段即键、缺省视为零值写回；前端设置页以 GET 结果为底稿改后整体
-//     回写，settings.proto SetSettingsRequest 注释同口径）。35 键整体经
-//     Store.SetMany 落库（白名单 + 值类型校验在 settings.Validate；交叉
-//     约束不做，§5.6 行 1342 前端与管理员自律），PUBLISH al:settings:chg
+//     回写，settings.proto SetSettingsRequest 注释同口径）。36 键整体经
+//     Store.SetMany 落库（白名单 + 值类型校验在 settings.Validate——
+//     https_deployment 三态值域校验同在其内，非法值 → invalid_request，
+//     §5.6 行 1361；交叉约束不做，§5.6 行 1342 前端与管理员自律），
+//     PUBLISH al:settings:chg
 //     由 SetMany 完成 → watcher 热更天然生效。写后投递审计
 //     eventlog.EventSettingsUpdate（actor=admin，actor_id=会话 uid，
 //     「settings_update 审计事件」按待用口径落地；detail 经
@@ -40,6 +42,8 @@ package admin
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -146,25 +150,31 @@ func NewSettingsService(
 }
 
 // GetSettings（§5.6 行 1274，OUTCOME ①）：Store.Snapshot 全量只读副本，
-// 35 键投影在 dto.AdminSettings。键集封闭（settings 白名单），本层零加工。
+// 36 键投影在 dto.AdminSettings。键集封闭（settings 白名单），本层零加工。
 func (s *SettingsService) GetSettings() map[string]any {
 	return s.store.Snapshot()
 }
 
 // SetSettings（§5.6 行 1274，OUTCOME ②）：全量替换——请求消息的每个字段
 // 即一个 settings 键（protojson 零值省略 → 缺省视为零值写回，前端设置页
-// 全量提交），35 键整批 SetMany 落库（updated_by=actor，热更由 SetMany 的
+// 全量提交），36 键整批 SetMany 落库（updated_by=actor，热更由 SetMany 的
 // PUBLISH al:settings:chg 通知各实例 watcher 全量重载，天然生效）。
 // 写成功后投递审计 settings_update：detail 只含变更项（{keys, before,
 // after}，§4.6 行 804），无变更时 keys/before/after 为空集但仍投递——每次
 // 管理员动作都留痕（口径同 UserService.UpdateUserStatus 幂等重放审计）。
 // 写入仅校验值类型（settings.Validate 在 SetMany 内），交叉约束不兜底
-// （§5.6 行 1342）。
+// （§5.6 行 1342）；校验失败（settings.ErrInvalidValue：白名单外 / 类型
+// 不符 / https_deployment 三态值域外）转译本层哨兵 ErrInvalidRequest
+// （§5.6 行 1361 SetSettings 非法值 → invalid_request：裸错误
+// 直传会被 handler mapWriteError 判不中而误落 500），其余错误原样透传。
 func (s *SettingsService) SetSettings(ctx context.Context, actor int64, req *adminv1.SetSettingsRequest) error {
 	before := s.store.Snapshot()
 	kv := settingsRequestValues(req)
 	keys, beforeChanged, after := diffSettings(before, kv)
 	if err := s.store.SetMany(ctx, kv, actor); err != nil {
+		if errors.Is(err, settings.ErrInvalidValue) {
+			return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
 		return err
 	}
 	s.audit.PushEvent(model.EventLog{
@@ -180,9 +190,10 @@ func (s *SettingsService) SetSettings(ctx context.Context, actor int64, req *adm
 	return nil
 }
 
-// settingsRequestValues 把全量提交的请求消息按 settings 键常量组 35 键
+// settingsRequestValues 把全量提交的请求消息按 settings 键常量组 36 键
 // map（键名与 §5.6 四张表逐字一致，零自造；repeated 字段空 = nil →
-// settings.Validate 收敛为 []string 空切片清空该列表）。
+// settings.Validate 收敛为 []string 空切片清空该列表；https_deployment
+// 三态值域校验在 Validate 内，非法值 → invalid_request §5.6 行 1361）。
 func settingsRequestValues(req *adminv1.SetSettingsRequest) map[string]any {
 	return map[string]any{
 		settings.KeyPwdMinLength:          req.GetPwdMinLength(),
@@ -220,6 +231,7 @@ func settingsRequestValues(req *adminv1.SetSettingsRequest) map[string]any {
 		settings.KeyGatewayTokens:         req.GetGatewayTokens(),
 		settings.KeyEventlogRetentionDays: req.GetEventlogRetentionDays(),
 		settings.KeyStaticBase:            req.GetStaticBase(),
+		settings.KeyHttpsDeployment:      req.GetHttpsDeployment(),
 	}
 }
 

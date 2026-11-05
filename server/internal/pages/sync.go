@@ -17,6 +17,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/security"
 	"authloft/internal/session"
+	"authloft/internal/settings"
 )
 
 // syncStepBudget 每地址过期预算（§11.2 行 1210：30s × 地址总数）。
@@ -47,12 +48,19 @@ func (h *Handler) syncCookie(c *gin.Context) {
 
 	// 一律写入（覆盖）本域 Cookie（§11.2 行 1206）：名 / 值 / TTL 全来自
 	// 载荷；TTL "0"（登出）或非法 → Max-Age=0 清除语义。属性沿用 session
-	// 包构造（HttpOnly; Secure; SameSite=None; Path=/，Domain=本部署根域）。
+	// 包构造（§1.9 行 304：接收端按同一构造器写入、随 https_deployment
+	// 自动生效——注入三态源（每请求读 settings，沿 cookie_name
+	// 热更口径）+ gin 双信号（请求头 + TLS）做 auto 推断；HttpOnly/Path=/
+	// 恒定，Domain=本部署根域）。
+	httpsMode := session.WithHTTPSMode(func() string {
+		return h.stringSetting(settings.KeyHttpsDeployment, settings.HTTPSDeploymentAuto)
+	})
+	sig := session.RequestSignal{Header: c.Request.Header, TLS: c.Request.TLS != nil}
 	var ck *http.Cookie
 	if ttl := ttlSeconds(p.GetCookieTtl()); ttl > 0 {
-		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, time.Duration(ttl)*time.Second).Set(p.GetCookieValue())
+		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, time.Duration(ttl)*time.Second, httpsMode).Set(p.GetCookieValue(), sig)
 	} else {
-		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, 0).Clear()
+		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, 0, httpsMode).Clear(sig)
 	}
 	http.SetCookie(c.Writer, ck)
 

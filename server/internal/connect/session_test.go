@@ -20,6 +20,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/security"
 	"authloft/internal/session"
+	"authloft/internal/settings"
 )
 
 // sessionEchoProcedure 测试用 Connect RPC 路径（文档口径的 <包>.<Service>/<Method>）。
@@ -219,7 +220,9 @@ func TestSessionHeaderTokenAuthenticatesAndRenewsViaHeader(t *testing.T) {
 }
 
 // ② Cookie 来源：默认名 al_session 有效令牌 → 注入身份，重签经 Set-Cookie
-// 下发（完整属性 HttpOnly; Secure; SameSite=None; Path=/），不下发 X-Authloft-Token。
+// 下发（HttpOnly; Secure; SameSite=None; Path=/——本用例构造器未注入
+// https_deployment 三态源，沿旧默认恒 HTTPS；三态驱动见
+// TestSessionCookieHTTPSDeploymentTriState），不下发 X-Authloft-Token。
 func TestSessionCookieTokenAuthenticatesAndRenewsViaCookie(t *testing.T) {
 	env := newSessionEnv(t)
 	tok := env.sign(t, env.validPayload())
@@ -252,6 +255,58 @@ func TestSessionCookieTokenAuthenticatesAndRenewsViaCookie(t *testing.T) {
 	if got := resp.Header.Get("X-Authloft-Token"); got != "" {
 		t.Errorf("Cookie 来源不应下发 X-Authloft-Token 响应头（§1.9 行 290），got %q", got)
 	}
+}
+
+// ②b 拦截器续期 Cookie 受 https_deployment 三态驱动（§1.9 行
+// 288/292/299-310）：mode=false → 省略 Secure + SameSite=Lax（明文部署，
+// 浏览器才保存）；mode=auto + X-Forwarded-Proto 头（拦截器采集请求头做
+// 推断信号，头 https → Secure+None、头 http → 明文）。
+func TestSessionCookieHTTPSDeploymentTriState(t *testing.T) {
+	mode := "unset"
+	env := newSessionEnv(t)
+	env.cookie = session.NewCookie("al_session", "", time.Hour,
+		session.WithHTTPSMode(func() string { return mode }))
+	tok := env.sign(t, env.validPayload())
+	srv, _ := newSessionServer(t, env, nil)
+
+	cookieOK := func(t *testing.T, resp *http.Response, secure bool) {
+		t.Helper()
+		ck := lastSetCookie(t, resp)
+		if ck == nil {
+			t.Fatalf("应下发续期 Set-Cookie")
+		}
+		if secure {
+			if !ck.Secure || ck.SameSite != http.SameSiteNoneMode {
+				t.Errorf("HTTPS 判定应 Secure+None, got Secure=%v SameSite=%v", ck.Secure, ck.SameSite)
+			}
+		} else {
+			if ck.Secure || ck.SameSite != http.SameSiteLaxMode {
+				t.Errorf("明文判定应省略 Secure+SameSite=Lax, got Secure=%v SameSite=%v", ck.Secure, ck.SameSite)
+			}
+		}
+	}
+
+	// false：恒明文（无视头）。
+	mode = settings.HTTPSDeploymentFalse
+	resp := doSessionRPC(t, srv, map[string]string{"X-Forwarded-Proto": "https"}, []*http.Cookie{{Name: "al_session", Value: tok}})
+	cookieOK(t, resp, false)
+	resp.Body.Close()
+
+	// auto + 头 https → HTTPS（反代 TLS 终止形态，头优先）。
+	mode = settings.HTTPSDeploymentAuto
+	resp = doSessionRPC(t, srv, map[string]string{"X-Forwarded-Proto": "https"}, []*http.Cookie{{Name: "al_session", Value: tok}})
+	cookieOK(t, resp, true)
+	resp.Body.Close()
+
+	// auto + 头 http → 明文。
+	resp = doSessionRPC(t, srv, map[string]string{"X-Forwarded-Proto": "http"}, []*http.Cookie{{Name: "al_session", Value: tok}})
+	cookieOK(t, resp, false)
+	resp.Body.Close()
+
+	// auto + 无头（connect 链 TLS 不可得 → 兜底明文）。
+	resp = doSessionRPC(t, srv, nil, []*http.Cookie{{Name: "al_session", Value: tok}})
+	cookieOK(t, resp, false)
+	resp.Body.Close()
 }
 
 // ③ 无令牌 → 未登录放行（不 401）：ctx 无身份 + 防御性清 Cookie（MaxAge=-1）。

@@ -983,6 +983,67 @@ func TestSetSettingsHandler(t *testing.T) {
 	})
 }
 
+// —— SetSettings 真 Store 链路 ——
+// 既有用例以 fake 注入哨兵掩盖真链路：真 Store 的 Validate 裸错误经 service
+// 透传后 handler errors.Is 不命中、误落 500。本组用真 settings.NewStore +
+// 真 adminsvc.SettingsService 组装，断言非法 https_deployment 端到端
+// 400 + ErrorInfo(admin, invalid_request)（接口文档 §5.6 行 1361）。
+
+// realChainEvents / realChainAudit / realChainQueue 真 SettingsService 组装
+// 所需最小依赖：SetSettings 校验失败路径不触 events / codecs；audit 仅
+// 落库成功后投递（非法值不投，断言零审计辅助证「不产生半截写入」）。
+type realChainEvents struct{}
+
+func (realChainEvents) List(context.Context, repo.EventAdminQuery) ([]model.EventLog, int64, error) {
+	return nil, 0, nil
+}
+
+type realChainAudit struct{ events []model.EventLog }
+
+func (a *realChainAudit) PushEvent(ev model.EventLog) { a.events = append(a.events, ev) }
+
+type realChainQueue struct{}
+
+func (realChainQueue) Len() int         { return 0 }
+func (realChainQueue) Dropped() uint64  { return 0 }
+func (realChainQueue) FlushMs() int64   { return 0 }
+
+// realSettingsService 真 Store（种子默认档）+ 真 service；audit 返回值供
+// 零投递断言。返回 *adminsvc.SettingsService（满足 handler 侧
+// SettingsService 窄接口，生产装配同款注入形态）。
+func realSettingsService() (*adminsvc.SettingsService, *realChainAudit) {
+	store := settings.NewStore(nil, nil)
+	audit := &realChainAudit{}
+	svc := adminsvc.NewSettingsService(store, realChainEvents{}, audit,
+		adminsvc.TokenCodecs{}, realChainQueue{})
+	return svc, audit
+}
+
+// TestSetSettingsRealChainInvalidValue：真 Store
+// 链路 httpsDeployment="maybe" → 400 + ErrorInfo(admin, invalid_request)
+//（§5.6 行 1361），不再只靠 fake 注入哨兵；同批其余键零值均为合法默认形态，
+// 拒绝发生在 https_deployment 值域校验（Validate 先于落库，nil repo 的
+// NewStore 不触 UpsertAll）——不落库、零审计。合法提交由既有 fake 用例
+// 覆盖（真 Store 正例会触达 nil repo，handler 测试不重复 service 侧已验
+// 的落库路径）。
+func TestSetSettingsRealChainInvalidValue(t *testing.T) {
+	svc, audit := realSettingsService()
+	tokens, epochs, h := newAdminHandlerSettings(t, svc)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetSettingsProcedure,
+		`{"httpsDeployment":"maybe"}`, cookie)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+	}
+	if info := decodeErrorInfo(t, raw); info.Code != "invalid_request" || info.Domain != "admin" {
+		t.Errorf("ErrorInfo = %v, want admin/invalid_request (raw %s)", info, raw)
+	}
+	if len(audit.events) != 0 {
+		t.Errorf("校验失败不应投审计（不产生半截写入）, got %d 条", len(audit.events))
+	}
+}
+
 // TestListEventsHandler 统一事件视图：optional 指针原样透传（nil 不过滤）、
 // 分页归一（page 0 → 1、pageSize 0 → 20、>100 clamp）+ sort/order 透传，
 // 行经 dto.AdminEventItem 投影（detail msgpack → JSON 在 dto）。

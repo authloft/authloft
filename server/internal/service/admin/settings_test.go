@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,7 +108,7 @@ func newSettingsService(store adminsvc.SettingsStore, events adminsvc.EventListe
 // TestSettingsServiceGetSettingsAllKeys 全键投影（OUTCOME ①）：真
 // settings.Store 种子默认档（NewStore(nil,nil)）→ GetSettings →
 // dto.AdminSettings → protojson（UseProtoNames + EmitUnpopulated，测试侧
-// 回放）→ 35 键逐键对 settings.Defaults()——同时验证键名零自造、
+// 回放）→ 36 键逐键对 settings.Defaults()——同时验证键名零自造、
 // 键集完整（= §5.6 四张表之和）与值类型投影。
 func TestSettingsServiceGetSettingsAllKeys(t *testing.T) {
 	store := settings.NewStore(nil, nil)
@@ -125,7 +126,7 @@ func TestSettingsServiceGetSettingsAllKeys(t *testing.T) {
 	}
 	want := settings.Defaults()
 	if len(got) != len(want) {
-		t.Fatalf("投影键数 = %d, want %d（35 键全键，§5.6 四张表之和）", len(got), len(want))
+		t.Fatalf("投影键数 = %d, want %d（36 键全键，§5.6 四张表之和）", len(got), len(want))
 	}
 	for k, v := range want {
 		g, ok := got[k]
@@ -197,11 +198,12 @@ func defaultSetSettingsRequest() *adminv1.SetSettingsRequest {
 		GatewayTokens:         []string{},
 		EventlogRetentionDays: 180,
 		StaticBase:            "/assets",
+		HttpsDeployment:       settings.HTTPSDeploymentAuto,
 	}
 }
 
 // TestSettingsServiceSetSettingsFullReplace 全量替换 + 落库 + 审计
-// （OUTCOME ②）：35 键整批 SetMany（请求 = 全默认底稿 + 4 处显式变更——
+// （OUTCOME ②）：36 键整批 SetMany（请求 = 全默认底稿 + 4 处显式变更——
 // 全量提交语义下「没改的键」按表单原值写回，缺省字段才是零值写回），
 // updatedBy=actor；审计 settings_update（actor=admin、user_id=0），detail
 // 解码后 keys / before / after 只含实际变更的 4 键。
@@ -221,12 +223,12 @@ func TestSettingsServiceSetSettingsFullReplace(t *testing.T) {
 		t.Fatalf("SetSettings: %v", err)
 	}
 
-	// 落库断言：35 键整批、updatedBy=actor、逐键值正确（抽代表键）。
+	// 落库断言：36 键整批、updatedBy=actor、逐键值正确（抽代表键）。
 	if store.gotBy != 1 {
 		t.Fatalf("updatedBy = %d, want 1", store.gotBy)
 	}
 	if len(store.gotKV) != len(settings.Defaults()) {
-		t.Fatalf("SetMany 键数 = %d, want 35（全量替换：每字段即键）", len(store.gotKV))
+		t.Fatalf("SetMany 键数 = %d, want %d（全量替换：每字段即键）", len(store.gotKV), len(settings.Defaults()))
 	}
 	if got, _ := store.gotKV[settings.KeyPwdMinLength].(int64); got != 10 {
 		t.Errorf("pwd_min_length = %v, want 10", store.gotKV[settings.KeyPwdMinLength])
@@ -310,8 +312,8 @@ func TestSettingsServiceSetSettingsNoChangeStillAudits(t *testing.T) {
 	if err := svc.SetSettings(ctx, 7, defaultSetSettingsRequest()); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
-	if store.gotBy != 7 || len(store.gotKV) != 35 {
-		t.Fatalf("落档 = by %d keys %d, want 7/35（全量写库不跳过）", store.gotBy, len(store.gotKV))
+	if store.gotBy != 7 || len(store.gotKV) != len(settings.Defaults()) {
+		t.Fatalf("落档 = by %d keys %d, want 7/%d（全量写库不跳过）", store.gotBy, len(store.gotKV), len(settings.Defaults()))
 	}
 	if len(audit.events) != 1 {
 		t.Fatalf("同值重放也应投审计, got %d 条", len(audit.events))
@@ -329,9 +331,53 @@ func TestSettingsServiceSetSettingsNoChangeStillAudits(t *testing.T) {
 	}
 }
 
+// TestSettingsServiceSetSettingsHTTPSDeploymentValidation：三态
+// 值域 true/false/auto 原样落库（fake 断言传值，值域白名单在 settings 包
+// TestValidate 已覆盖）；三态之外（含空串 / 大写）整批拒绝、不产生半截
+// 写入，且真 Store 链路错误经本层转译可判别——errors.Is 命中
+// ErrInvalidRequest（§5.6 行 1361：SetSettings 非法值 → invalid_request；
+// handler mapWriteError 按本哨兵映射 400，此前裸错误不命中误落
+// 500）。负例用真 Store（nil repo）——Validate 先于落库（store.go
+// SetMany），非法值在触达存储前返回，不会 panic。
+func TestSettingsServiceSetSettingsHTTPSDeploymentValidation(t *testing.T) {
+	ctx := context.Background()
+	for _, ok := range []string{settings.HTTPSDeploymentTrue, settings.HTTPSDeploymentFalse, settings.HTTPSDeploymentAuto} {
+		store := &fakeSettingsStore{snap: settings.Defaults()}
+		svc := newSettingsService(store, &fakeSettingsEvents{}, &settingsFakeAudit{}, nil, &fakeSettingsQueue{})
+		req := defaultSetSettingsRequest()
+		req.HttpsDeployment = ok
+		if err := svc.SetSettings(ctx, 1, req); err != nil {
+			t.Errorf("https_deployment=%q 三态内应通过: %v", ok, err)
+		}
+		if got, _ := store.gotKV[settings.KeyHttpsDeployment].(string); got != ok {
+			t.Errorf("https_deployment=%q 应原样落库, got %v", ok, got)
+		}
+	}
+	for _, bad := range []string{"yes", "", "TRUE", "Auto", "1", "maybe"} {
+		store := settings.NewStore(nil, nil)
+		svc := newSettingsService(store, &fakeSettingsEvents{}, &settingsFakeAudit{}, nil, &fakeSettingsQueue{})
+		req := defaultSetSettingsRequest()
+		req.HttpsDeployment = bad
+		err := svc.SetSettings(ctx, 1, req)
+		if err == nil {
+			t.Errorf("https_deployment=%q 三态外应拒绝", bad)
+			continue
+		}
+		if !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Errorf("https_deployment=%q 拒绝应转译 ErrInvalidRequest（handler 400 判据）, got %v", bad, err)
+		}
+		if !strings.Contains(err.Error(), settings.KeyHttpsDeployment) {
+			t.Errorf("https_deployment=%q 拒绝错误应可判别（含键名）, got %v", bad, err)
+		}
+	}
+}
+
 // TestSettingsServiceSetSettingsZeroValuesWrittenBack protojson 零值省略的
 // 补集语义（settings.proto SetSettingsRequest 注释）：空请求（全字段缺省）
-// 即 35 键全零值写回——缺省视为零值，不作「缺省保留原值」的 PATCH 解读。
+// 即 36 键全零值写回——缺省视为零值，不作「缺省保留原值」的 PATCH 解读。
+// https_deployment 的零值空串在真 Store 会被三态校验拒绝（§5.6 行 1361
+// 全量替换语义内非三态 → invalid_request）；本测试用 fake（不过 Validate）
+// 只断言补集语义，三态拒绝在 TestSettingsServiceSetSettingsHTTPSDeploymentValidation。
 func TestSettingsServiceSetSettingsZeroValuesWrittenBack(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeSettingsStore{snap: settings.Defaults()}
@@ -341,8 +387,8 @@ func TestSettingsServiceSetSettingsZeroValuesWrittenBack(t *testing.T) {
 	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{}); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
-	if len(store.gotKV) != 35 {
-		t.Fatalf("SetMany 键数 = %d, want 35", len(store.gotKV))
+	if len(store.gotKV) != 36 {
+		t.Fatalf("SetMany 键数 = %d, want 36", len(store.gotKV))
 	}
 	if got, _ := store.gotKV[settings.KeyPwdMaxLength].(int64); got != 0 {
 		t.Errorf("pwd_max_length 缺省应零值写回, got %v", got)
@@ -366,11 +412,14 @@ func TestSettingsServiceSetSettingsZeroValuesWrittenBack(t *testing.T) {
 	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	if len(detail.Keys) != 29 {
-		// 35 − 6：默认档本就是零值的 6 键（sso_domains / gateway_tokens /
+	if len(detail.Keys) != 30 {
+		// 36 − 6：默认档本就是零值的 6 键（sso_domains / gateway_tokens /
 		// captcha_provider_key / sms_provider_key / email_provider_key /
-		// avatar_storage_provider）零值写回后同值、不进变更集。
-		t.Errorf("全零提交变更 keys = %d, want 29（35 − 6 个默认零值键）", len(detail.Keys))
+		// avatar_storage_provider）零值写回后同值、不进变更集；
+		// https_deployment 默认 auto 非零 → 全零提交算变更（fake 不过
+		// Validate；真 Store 该提交会被三态校验整批拒绝，见
+		// TestSettingsServiceSetSettingsHTTPSDeploymentValidation）。
+		t.Errorf("全零提交变更 keys = %d, want 30（36 − 6 个默认零值键）", len(detail.Keys))
 	}
 }
 

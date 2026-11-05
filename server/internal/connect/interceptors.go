@@ -57,9 +57,11 @@ const defaultSessionCookieName = "al_session"
 //   - epoch 读取链故障（Redis 与回源均失败）→ internal（§11.1：基础设施
 //     错误不得与未登录混同）；
 //   - 校验通过 → uid/amr/sid 注入 ctx（session.WithSessionContext）+
-//     每请求重签（§11.5：iat/exp 刷新、epoch/sid 不变、纯计算无存储写入），
+//     每请求重签（§11.5：iat/exp 刷新、epoch/sid 不变，纯计算无存储写入），
 //     按令牌来源下发：Header 来源 → X-Authloft-Token 响应头；Cookie 来源 →
-//     Set-Cookie（完整属性 HttpOnly; Secure; SameSite=None; Path=/）。
+//     Set-Cookie（属性受 settings 键 https_deployment 驱动：HTTPS 判定 →
+//     Secure; SameSite=None；明文判定 → 省略 Secure、SameSite=Lax，§1.9
+//     行 288/292；HttpOnly/Path=/ 恒定）。
 //
 // 响应头经 connect.CallInfoForHandlerContext 写回：connect-go 的 handler
 // 在拦截链返回后**无条件**合并进真实响应头（含错误响应），因此下游返回
@@ -68,13 +70,22 @@ const defaultSessionCookieName = "al_session"
 // 其 ctx 身份注入）。复用边界：Verifier 四步校验 / WithSessionContext /
 // Renewer.Renew / Cookie.Set/Clear 全部取自 internal/session 包，与 Gin
 // 链路共用同一实现，未复制任何校验逻辑。
+//
+// 信号采集：拦截器是 connect 链拿得到请求头的最外层——把
+// req.Header() 包成 RequestSignal 注入 ctx（session.WithRequestSignal），
+// 下游（sso 登录终点写点、thirdparty al_login_state）经
+// session.RequestSignalFromContext 读取做 https_deployment auto 推断
+//（§1.9 行 306-309：逐请求判定；connect 链 AnyRequest 只暴露 Header，
+// TLS 信号不可得，头缺省走兜底）。拦截器自身的 Set/Clear 直接传 sig。
 func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer, cookie *session.Cookie, cookieName func() string) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			sig := session.RequestSignal{Header: req.Header()}
+			ctx = session.WithRequestSignal(ctx, sig)
 			tok, fromHeader := pickSessionToken(req.Header(), cookieName)
 			if tok == "" {
 				// 无令牌：未登录。防御性清残留同名 Cookie 后放行匿名。
-				AddSessionCookie(ctx, cookie.Clear())
+				AddSessionCookie(ctx, cookie.Clear(sig))
 				return next(ctx, req)
 			}
 			p, err := verifier.Verify(ctx, tok)
@@ -83,7 +94,7 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 			case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale):
 				// 解不开 / 过期 / epoch 不一致：未登录（§3.14 行 473 口径），
 				// 清 Cookie 放行，401 由下游拦截器判定。
-				AddSessionCookie(ctx, cookie.Clear())
+				AddSessionCookie(ctx, cookie.Clear(sig))
 				return next(ctx, req)
 			default:
 				// epoch 读取链故障：基础设施错误，按 internal 拒绝。
@@ -96,7 +107,7 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 				if fromHeader {
 					setResponseHeader(ctx, sessionTokenHeader, renewed)
 				} else {
-					AddSessionCookie(ctx, cookie.Set(renewed))
+					AddSessionCookie(ctx, cookie.Set(renewed, sig))
 				}
 			}
 			return next(ctx, req)

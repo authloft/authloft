@@ -621,7 +621,7 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 // 字段集合 = §5.6 四张表之和；键名经 internal/settings 常量逐键对齐、零
 // 自造）。快照值恒为注册类型（string / int64 / bool / []string，经
 // settings.DecodeValue 解码），类型断言失败（不可达）按零值投影——proto
-// 消息 35 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
+// 消息 36 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
 //（§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后全量回写（§5.6
 // 行 1342 全量提交语义的配套口径）。
 func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
@@ -664,6 +664,7 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 		GatewayTokens:         toSlice(settings.KeyGatewayTokens, snap),
 		EventlogRetentionDays: toInt(settings.KeyEventlogRetentionDays),
 		StaticBase:            toStr(settings.KeyStaticBase),
+		HttpsDeployment:       toStr(settings.KeyHttpsDeployment),
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/session"
 	"authloft/internal/settings"
 )
 
@@ -206,6 +207,9 @@ type tpEnv struct {
 	settings *tpSettings
 	svc      *Thirdparty
 	now      time.Time
+	// httpsMode https_deployment 三态源（默认 nil = 未接入 → Secure 沿旧
+	// 默认恒 true；三态用例覆写）。
+	httpsMode func() string
 }
 
 // newTPEnv 构造：redirect 渠道 provider_key=qq（默认行形态见各用例覆写）。
@@ -250,6 +254,7 @@ func newTPEnv(t *testing.T) *tpEnv {
 		MFA:     orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
 		Terminal: terminal,
 		CookieCodec: cookieCodec,
+		HTTPSMode: env.httpsMode,
 	})
 	// cookie codec 的时钟跟随 env.now（过期用例推进）。
 	env.svc.now = func() time.Time { return env.now }
@@ -308,8 +313,10 @@ func TestAuthorizeScenes(t *testing.T) {
 		if ck == nil {
 			t.Fatal("应下发 al_login_state Cookie")
 		}
-		// Cookie 属性断言（§12.4 行 1486 当前口径：HttpOnly; Secure;
-		// SameSite=Lax、会话级不设 Max-Age；https_deployment 三态暂不接入）。
+		// Cookie 属性断言（§12.4 行 1486 / §1.9 行 303：HttpOnly; SameSite=Lax
+		// 恒定、会话级不设 Max-Age；Secure 在未注入三态源（deps.HTTPSMode nil）
+		// 时沿旧默认恒 true——三态驱动见
+		// TestAuthorizeLoginStateCookieHTTPSDeployment）。
 		if ck.Name != LoginStateCookieName || ck.Path != "/" || !ck.HttpOnly ||
 			!ck.Secure || ck.SameSite != http.SameSiteLaxMode || ck.MaxAge != 0 || ck.Domain != "" {
 			t.Fatalf("Cookie 属性 = %+v", ck)
@@ -397,6 +404,69 @@ func TestAuthorizeScenes(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestAuthorizeLoginStateCookieHTTPSDeployment al_login_state 的
+// Secure 属性受 https_deployment 三态驱动（§1.9 行 303：HttpOnly /
+// SameSite=Lax / 会话级恒定不变；判定为真 → HttpOnly; Secure; SameSite=Lax，
+// 判定为假 → 省略 Secure）。auto 信号经 ctx（connect 装配层注入的
+// RequestSignal）；SameSite 不随 Secure 联动（它本就是 Lax）——与
+// al_session 的 None↔Lax 联动相区分。
+func TestAuthorizeLoginStateCookieHTTPSDeployment(t *testing.T) {
+	base := context.Background()
+	httpsHeader := http.Header{"X-Forwarded-Proto": []string{"https"}}
+
+	cases := []struct {
+		name   string
+		mode   func() string
+		ctx    context.Context
+		secure bool
+	}{
+		{"false 恒明文（无视 https 头）", func() string { return settings.HTTPSDeploymentFalse },
+			session.WithRequestSignal(base, session.RequestSignal{Header: httpsHeader}), false},
+		{"true 恒 HTTPS（无信号）", func() string { return settings.HTTPSDeploymentTrue }, base, true},
+		{"auto + 头 https", func() string { return settings.HTTPSDeploymentAuto },
+			session.WithRequestSignal(base, session.RequestSignal{Header: httpsHeader}), true},
+		{"auto + 无信号兜底明文", func() string { return settings.HTTPSDeploymentAuto }, base, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTPEnv(t)
+			e.httpsMode = tc.mode
+			// 重新装配 svc（newTPEnv 内构造时 httpsMode 尚未覆写）。
+			e.svc = NewThirdparty(ThirdpartyDeps{
+				Loader:      e.loader,
+				Binds:       e.binds,
+				Users:       e.users,
+				NewAdapter:  func(*provider.Provider) (provider.AuthAdapter, error) { return e.adapter, nil },
+				State:       e.state,
+				MFA:         orchestrator.NewMFABuilder(e.users, &tpCreds{}, e.settings),
+				Terminal:    orchestrator.NewTerminal(e.sessions, nil, nil, nil, nil),
+				CookieCodec: e.svc.deps.CookieCodec,
+				HTTPSMode:   e.httpsMode,
+			})
+			e.svc.now = func() time.Time { return e.now }
+			e.addProvider("qq", nil)
+			out, err := e.svc.Authorize(tc.ctx, AuthorizeInput{Provider: "qq"})
+			if err != nil {
+				t.Fatalf("Authorize: %v", err)
+			}
+			ck := out.Cookie
+			if ck == nil {
+				t.Fatal("应下发 al_login_state Cookie")
+			}
+			if ck.Secure != tc.secure {
+				t.Errorf("Secure = %v, want %v", ck.Secure, tc.secure)
+			}
+			// SameSite 恒 Lax（§1.9 行 303：不随 Secure 联动降级）。
+			if ck.SameSite != http.SameSiteLaxMode {
+				t.Errorf("SameSite = %v, want Lax（al_login_state 恒定）", ck.SameSite)
+			}
+			if !ck.HttpOnly || ck.Path != "/" || ck.MaxAge != 0 {
+				t.Errorf("HttpOnly/Path/Max-Age 应恒定: %+v", ck)
+			}
+		})
+	}
 }
 
 // —— LoginOauth ——

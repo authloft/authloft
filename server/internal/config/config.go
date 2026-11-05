@@ -275,10 +275,18 @@ func (r RedisConfig) validate() []error {
 	return errs
 }
 
+// validate 校验 authloft 段。root 允许 http://（后端架构 §3.2 约定 7、
+// 接口文档 §1.1 行 76「明文 HTTP 部署为一等公民」）：只
+// 校验「可解析 URL 且 scheme 为 http 或 https 且 host 非空」，不强制
+// HTTPS。明文部署适用内网 / 测试 / 反代 TLS 终止后明文直连；公网明文
+// 部署存在会话令牌被窃听风险，由部署方自行负责（安全提示见 §1.1）。
+// 会话 Cookie 的 Secure 属性由 settings 键 https_deployment 驱动
+//（接口文档 §5.6 / §1.9），与本字段无耦合；HTTP→HTTPS 强制跳转与
+// HSTS 由网关层负责，Authloft 不提供（写死不做）。
 func (a AuthloftConfig) validate() []error {
 	var errs []error
-	if u, err := url.Parse(a.Root); err != nil || u.Scheme != "https" || u.Host == "" {
-		errs = append(errs, errors.New(`authloft.root: want https URL like "https://authloft.example.com"`))
+	if u, err := url.Parse(a.Root); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		errs = append(errs, errors.New(`authloft.root: want http(s) URL like "https://authloft.example.com"`))
 	}
 	if a.RpID == "" {
 		errs = append(errs, errors.New("authloft.rp_id: required"))

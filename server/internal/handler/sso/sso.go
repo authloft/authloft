@@ -60,15 +60,19 @@ func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, t
 // withSessionTokenSink 注入登录终点的 session_token 写点：引擎仅
 // 在 status=success 建会话后回调一次，此处经 connect.AddSessionCookie
 // （与 session 拦截器续期同一 CallInfo 写头机制）+ session.Cookie.Set
-// （同一属性构造器：HttpOnly; Secure; SameSite=None; Path=/，§1.9 行 288）
-// 下发 Set-Cookie: al_session=<session_token>。失败态 / 中间态引擎不回调，
+// （同一属性构造器：HttpOnly 恒定；Secure/SameSite 受 settings 键
+// https_deployment 驱动——HTTPS 判定 → Secure; SameSite=None；明文 →
+// 省略 Secure、SameSite=Lax，§1.9 行 288/292）下发 Set-Cookie:
+// al_session=<session_token>。auto 推断信号经 ctx 取自 session 拦截器注入
+// 的 RequestSignal；测试直构 handler（无拦截器）时 ctx 无信号
+// → auto 兜底明文，三态注入的构造器不受影响。失败态 / 中间态引擎不回调，
 // 零 Set-Cookie、信封零 session_token。cookies 未注入（测试）时返回原 ctx。
 func (h *Handler) withSessionTokenSink(ctx context.Context) context.Context {
 	if h.cookies == nil {
 		return ctx
 	}
 	return orchestrator.WithSessionTokenSink(ctx, func(sessionToken string) {
-		internalconnect.AddSessionCookie(ctx, h.cookies.Set(sessionToken))
+		internalconnect.AddSessionCookie(ctx, h.cookies.Set(sessionToken, session.RequestSignalFromContext(ctx)))
 	})
 }
 
@@ -151,9 +155,12 @@ func (h *Handler) LoginOauth(ctx context.Context, req *connect.Request[ssov1.Log
 		internalconnect.AddSessionCookie(ctx, out.Cookie)
 	}
 	// 浏览器（redirect）终点：session_token 经会话 Cookie 构造器下发
-	// （与会话 Cookie 同款属性）；api 通道（SessionInBody）已由 service 写进信封。
+	// （与会话 Cookie 同款属性，Secure/SameSite 受 https_deployment 驱动，auto 信号
+	// 经 ctx 取自 session 拦截器注入的 RequestSignal——§1.9 行 306-309 全部
+	// 下发点逐请求判定）；api 通道（SessionInBody）已由 service
+	// 写进信封。
 	if out.SessionToken != "" && h.cookies != nil {
-		internalconnect.AddSessionCookie(ctx, h.cookies.Set(out.SessionToken))
+		internalconnect.AddSessionCookie(ctx, h.cookies.Set(out.SessionToken, session.RequestSignalFromContext(ctx)))
 	}
 	return connect.NewResponse(out.Envelope), nil
 }
