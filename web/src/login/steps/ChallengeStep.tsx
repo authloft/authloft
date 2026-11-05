@@ -10,7 +10,8 @@
  * 由 OTPForm form 槽承载），按钮渲染但无动作。
  *
  * 布局复用 FormStep.module.less（同构表单布局 .form / .submit，避免新增
- * 样式文件）。文案：i18n 无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 样式文件）。文案：触发按钮经 i18n 字典
+ * login.sendCode 键取用（复用既有键）。
  */
 import { useRef, useState, type FormEvent } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
@@ -18,11 +19,9 @@ import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
 import { FieldRenderer } from '../../shared/components';
+import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import styles from './FormStep.module.less';
-
-/** 触发下发按钮文案（与 OTPForm challenge 段同款，§2.6 行 544 挑战场景）。 */
-const TRIGGER_TEXT = '发送验证码';
 
 /** 首屏注入快照的 captcha 配置（§2.1 行 409：login 端首屏来源；§2.5 行 477 三处之一）。 */
 function initCaptcha(): CaptchaConfig | undefined {
@@ -75,7 +74,7 @@ export function ChallengeStep({
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
       {captcha !== undefined && <CaptchaWidget captcha={captcha} ref={captchaRef} />}
       <button type="submit" disabled={loading || disabled} className={styles.submit}>
-        {TRIGGER_TEXT}
+        {t('login.sendCode')}
       </button>
     </form>
   );

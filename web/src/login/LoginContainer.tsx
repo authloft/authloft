@@ -425,7 +425,7 @@ export function LoginFlowView({
       onSubmit,
     };
     if (factor === undefined) {
-      return <p role="alert">{t('login.refreshRetry')}</p>;
+      return <p role="alert">{t('common.refreshAndRetry')}</p>;
     }
     if (factor === null) {
       return <FormStep {...factorProps} />;
@@ -468,7 +468,7 @@ export function LoginFlowView({
   if (state.status === 'mfa_required' || (mfaMethods?.length ?? 0) > 0) {
     if (mfaList.length === 0) {
       // 零值兜底（§9 第 18 条）：mfa_required 无可用方式（防御，后端必附）。
-      return <p role="alert">{t('login.refreshRetry')}</p>;
+      return <p role="alert">{t('common.refreshAndRetry')}</p>;
     }
     const mfaEntry = mfaList.find((m) => m.method === state.method);
     return (
@@ -518,7 +518,7 @@ export function LoginFlowView({
     const next = state.envelope?.nextStep;
     if (next === undefined) {
       // 零值兜底（§9 第 18 条）：status=next 必有 next_step（防御，§1.3 行 110）。
-      return <p role="alert">{t('login.refreshRetry')}</p>;
+      return <p role="alert">{t('common.refreshAndRetry')}</p>;
     }
     // nextStep.method 零值兜底：空串保持当前方式（与 reducer response 语义一致）。
     const nextMethod = next.method !== '' ? next.method : state.method;

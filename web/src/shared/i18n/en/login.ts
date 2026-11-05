@@ -13,7 +13,6 @@ export const login: typeof zhLogin = {
   'login.selectMethodHint': 'Please choose a sign-in method',
   'login.mfaSelectHint': 'Please choose a second-factor verification method',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
-  'login.refreshRetry': 'Please refresh and try again',
   'login.redirecting': 'Signed in, redirecting…',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': 'No registration methods available',
@@ -61,4 +60,12 @@ export const login: typeof zhLogin = {
   'login.passkeyVerify': 'Verify',
   'login.passkeyCancelled': 'Passkey verification cancelled',
   'login.passkeyFailed': 'Passkey verification failed. Please try again',
+  // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
+  // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
+  'login.qrNeedCaptcha': 'Please complete the verification first',
+  'login.fetchQrcodeAction': 'Get QR code',
+  'login.redirectInProgress': 'Redirecting…',
+  'login.initMissing': 'Initialization data is missing. Please refresh and try again',
+  'login.routeNotFound': 'Page not found',
+  'login.renderError': 'This page hit an unexpected error. Please refresh and try again',
 };

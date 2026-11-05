@@ -14,7 +14,6 @@ export const login = {
   'login.selectMethodHint': '请选择登录方式',
   'login.mfaSelectHint': '请选择二次验证方式',
   'login.pollPlaceholder': '扫码流程即将支持',
-  'login.refreshRetry': '请刷新重试',
   'login.redirecting': '登录成功，正在跳转…',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': '暂无可用注册方式',
@@ -59,4 +58,12 @@ export const login = {
   'login.passkeyVerify': '验证',
   'login.passkeyCancelled': '已取消通行密钥验证',
   'login.passkeyFailed': '通行密钥验证失败，请重试',
+  // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
+  // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
+  'login.qrNeedCaptcha': '请先完成人机校验',
+  'login.fetchQrcodeAction': '获取二维码',
+  'login.redirectInProgress': '正在跳转…',
+  'login.initMissing': '初始化数据缺失，请刷新重试',
+  'login.routeNotFound': '页面不存在',
+  'login.renderError': '页面出现异常，请刷新重试',
 };

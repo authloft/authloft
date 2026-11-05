@@ -9,12 +9,11 @@
  * 不跳转，零值兜底 §9 第 18 条）。
  *
  * 无自有布局样式（单条弱化提示 <p>，reset 兜底）。
- * 文案：i18n 无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：经 i18n 字典 login.redirectInProgress 键取用。
  */
 import { useEffect } from 'react';
 
-/** 跳转中文案（i18n 无键，字面量声明见文件头）。 */
-export const REDIRECTING_TEXT = '正在跳转…';
+import { t } from '../../shared/i18n';
 
 /** 缺省跳转动作（§4.2 行 442 location.replace；非浏览器环境无操作——node 测试）。 */
 export function defaultNavigate(url: string): void {
@@ -51,5 +50,5 @@ export function RedirectStep({
     runRedirect(authorizeUrl, navigate);
     // 跳转幂等（location.replace 同 URL 重复执行无感），全依赖不设防重护栏。
   }, [authorizeUrl, navigate]);
-  return <p role="status">{REDIRECTING_TEXT}</p>;
+  return <p role="status">{t('login.redirectInProgress')}</p>;
 }

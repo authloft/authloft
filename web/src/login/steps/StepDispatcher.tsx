@@ -14,17 +14,16 @@
  * - external 由宿主承载（§9 第 10 条：login/ 下不实现 external 步骤组件），
  *   走兜底；未识别 kind 同兜底；新增 StepKind 时只改本文件（§4.2 行 423）。
  *
- * 文案：兜底文案在 i18n 字典无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：kind 兜底文案经 i18n 字典 common.refreshAndRetry 键取用
+ * （与 registry 缺映射兜底同款口径，§4.2 行 423）。
  */
 import type { ReactNode } from 'react';
 import type { NextStep } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { t } from '../../shared/i18n';
 import { ChallengeStep } from './ChallengeStep';
 import { QRCodeStep } from './QRCodeStep';
 import { RedirectStep } from './RedirectStep';
 import styles from './StepDispatcher.module.less';
-
-/** kind 兜底文案（i18n 无键，字面量声明见文件头；与 registry 缺映射兜底同款，§4.2 行 423）。 */
-export const STEP_FALLBACK_TEXT = '请刷新重试';
 
 export interface StepDispatcherProps {
   /** status=next 时的下一步渲染信息（§1.3 行 110-118）。 */
@@ -56,7 +55,7 @@ export function StepDispatcher({ nextStep, form }: StepDispatcherProps) {
   // （§9 第 10 条）；未识别 kind：同兜底。
   return (
     <p role="status" className={styles.status}>
-      {STEP_FALLBACK_TEXT}
+      {t('common.refreshAndRetry')}
     </p>
   );
 }

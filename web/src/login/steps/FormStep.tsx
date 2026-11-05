@@ -9,15 +9,13 @@
  * 本组件渲染。props 形状与 factors 的 FactorProps 一致（注册 / 重置页可直接
  * 复用，场景差异经 onSubmit 注入）。
  *
- * 文案：提交按钮在 i18n 字典无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：提交按钮经 i18n 字典 login.submit 键取用（复用既有键）。
  */
 import { useState, type FormEvent } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { FieldRenderer } from '../../shared/components';
+import { t } from '../../shared/i18n';
 import styles from './FormStep.module.less';
-
-/** 提交按钮文案（i18n 无键，字面量声明见文件头）。 */
-const SUBMIT_TEXT = '登录';
 
 export interface FormStepProps {
   /** form 步的后端下发字段（§1.3 行 114 fields[]；captcha 字段被 FieldRenderer 跳过，§1.11）。 */
@@ -57,7 +55,7 @@ export function FormStep({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {SUBMIT_TEXT}
+        {t('login.submit')}
       </button>
     </form>
   );

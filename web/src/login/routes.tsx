@@ -10,7 +10,10 @@
  * 零第三方路由库（§1.6 行 110：login 无额外依赖）：entry 自挂载
  * （disableMount），极简 pathname 匹配即可；页面刷新即丢失内存态、
  * 回到流程第一步（§4.1 行 392）。
+ *
+ * 文案：错误态 / 兜底文案经 i18n 字典 login.* 键取用（i18n 收口）。
  */
+import { t } from '../shared/i18n';
 import { loadLoginBootstrap } from './bootstrap';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
@@ -37,11 +40,6 @@ function decodeProviderKey(raw: string): string {
   }
 }
 
-/** methods 缺失错误态文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
-const INIT_MISSING_TEXT = '初始化数据缺失，请刷新重试';
-
-/** 未注册路由兜底文案——同上。 */
-const ROUTE_NOT_FOUND_TEXT = '页面不存在';
 
 /** 登录端应用根：bootstrap 读注入快照 → 路由分派（§4.1 行 374-376）。 */
 export function LoginApp() {
@@ -49,7 +47,7 @@ export function LoginApp() {
   // 提示刷新，没有回退接口。
   const boot = loadLoginBootstrap();
   if (!boot.ok) {
-    return <p role="alert">{INIT_MISSING_TEXT}</p>;
+    return <p role="alert">{t('login.initMissing')}</p>;
   }
   // 尾斜杠归一（`/sso/login/` 与 `/sso/login` 同页；根路径归一为空串不匹配）。
   const path = window.location.pathname.replace(/\/+$/, '');
@@ -62,7 +60,7 @@ export function LoginApp() {
     if (rest !== '' && !rest.includes('/')) {
       return <OAuthCallbackPage providerKey={decodeProviderKey(rest)} />;
     }
-    return <p role="status">{ROUTE_NOT_FOUND_TEXT}</p>;
+    return <p role="status">{t('login.routeNotFound')}</p>;
   }
   // 注册 / 重置页共用注入快照（flow=register / flow=reset 已按 §2.1 过滤）。
   if (path === '/sso/register') {

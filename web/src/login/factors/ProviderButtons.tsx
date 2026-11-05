@@ -16,7 +16,7 @@
  *   （login-container.test 经 MethodTabs 消费）。
  *
  * 文案（i18n 收口）：redirect 失败提示经 shared/i18n 的 t() 消费
- * （login.refreshRetry）。
+ * （common.refreshAndRetry，改用公共键）。
  */
 import { useState, type ComponentType } from 'react';
 import { RedirectStep } from '../steps/RedirectStep';
@@ -214,7 +214,7 @@ export function ProviderButtons({
       return (
         <div>
           <p role="alert" className={styles.error}>
-            {t('login.refreshRetry')}
+            {t('common.refreshAndRetry')}
           </p>
           <ProviderWall
             providers={providers}

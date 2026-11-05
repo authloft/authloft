@@ -126,7 +126,7 @@ export function BindingPageView({
   if (binding === undefined) {
     return (
       <div className={styles.section}>
-        <p role="alert">{t('login.refreshRetry')}</p>
+        <p role="alert">{t('common.refreshAndRetry')}</p>
         <button type="button" className={styles.submit} onClick={onExit}>
           {t('login.exitBinding')}
         </button>

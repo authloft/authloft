@@ -17,7 +17,7 @@
  *   就地实现避免 LoginContainer ↔ MethodTabs 循环依赖）；onResult prop 为
  *   观测钩子（完整状态机接线归容器后续实现，LoginContainer 本次不改）。
  *
- * 文案：i18n 无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
 import { useRef, useState } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
@@ -26,16 +26,10 @@ import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
 import { QRCodePanel, MAX_POLL_SECONDS } from '../../shared/components/QRCodePanel';
+import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import { defaultNavigate } from './RedirectStep';
 import styles from './QRCodeStep.module.less';
-
-/** 门控提示（i18n 无键，字面量声明见文件头）。 */
-const NEED_CAPTCHA_TEXT = '请先完成人机校验';
-/** 门控拉码按钮文案（同上）。 */
-const FETCH_QR_TEXT = '获取二维码';
-/** providerKey 缺失占位（零值兜底 §9 第 18 条；与缺映射兜底同款文案口径）。 */
-const MISSING_PROVIDER_TEXT = '请刷新重试';
 
 /** 首屏注入快照的 captcha 配置（§2.1 行 409：login 端首屏来源；§2.5 行 477 三处之一）。 */
 function initCaptcha(): CaptchaConfig | undefined {
@@ -104,7 +98,7 @@ export function qrcodeRequester(
   return () => {
     const captcha = deps.getToken?.();
     if (captcha === undefined) {
-      return Promise.reject(new Error(NEED_CAPTCHA_TEXT));
+      return Promise.reject(new Error(t('login.qrNeedCaptcha')));
     }
     const request = deps.request ?? defaultCreateQrcode;
     return request({ providerKey, captcha });
@@ -150,7 +144,7 @@ export function QRCodeStep({
   if (providerKey === '') {
     // 零值兜底（§9 第 18 条）：信封驱动的防御分派形态无 provider（NextStep
     // 无 providerKey 字段，§12.9 生成物）；真实拉码链路经 ProviderButtons。
-    return <p role="alert">{MISSING_PROVIDER_TEXT}</p>;
+    return <p role="alert">{t('common.refreshAndRetry')}</p>;
   }
 
   /** 门控按钮：凭据就绪才挂面板（挂载即拉码，面板契约）。 */
@@ -173,12 +167,12 @@ export function QRCodeStep({
               className={styles.fetchButton}
               onClick={start}
             >
-              {FETCH_QR_TEXT}
+              {t('login.fetchQrcodeAction')}
             </button>
           )}
           {!started && notice && (
             <p role="alert" className={styles.notice}>
-              {NEED_CAPTCHA_TEXT}
+              {t('login.qrNeedCaptcha')}
             </p>
           )}
         </div>

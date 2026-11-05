@@ -28,9 +28,12 @@ import {
   qrcodeRequester,
 } from './QRCodeStep';
 import { RedirectStep, runRedirect } from './RedirectStep';
-import { StepDispatcher, STEP_FALLBACK_TEXT } from './StepDispatcher';
+import { StepDispatcher } from './StepDispatcher';
 
 const { createElement } = React;
+
+/** kind 兜底文案（StepDispatcher 经 common.refreshAndRetry 取用；测试断言保留字面量）。 */
+const STEP_FALLBACK_TEXT = '请刷新重试';
 
 /** kind=form 段的内容（FormStep 空字段 + 提交按钮，可辨识）。 */
 function formNode(): React.ReactNode {

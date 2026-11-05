@@ -12,7 +12,7 @@ import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { setLocale } from '../shared/i18n';
+import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
 import { LoginApp } from './routes';
@@ -46,8 +46,8 @@ class LoginErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== undefined) {
-      // 文案无 i18n 键：最简中文字面量（归后续 i18n 实现）。
-      return <p role="alert">页面出现异常，请刷新重试</p>;
+      // 渲染期取 t()（setLocale 已在模块顶层执行，渲染时语言已就位）。
+      return <p role="alert">{t('login.renderError')}</p>;
     }
     return this.props.children;
   }
