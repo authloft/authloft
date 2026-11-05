@@ -27,8 +27,9 @@ interface InstallFormState {
 
 type InstallField = keyof InstallFormState;
 
-/** §6b：字段级错误按接口文档 §13 映射到字段。 */
+/** §6b：字段级错误按接口文档 §13 映射到字段（root 缺失 / IP / 非法 → config_invalid → 域名字段）。 */
 const FIELD_BY_CODE: Readonly<Record<string, InstallField>> = {
+  config_invalid: 'root',
   username_invalid: 'adminUsername',
   password_weak: 'adminPassword',
   db_unreachable: 'dbDsn',
@@ -36,7 +37,67 @@ const FIELD_BY_CODE: Readonly<Record<string, InstallField>> = {
 };
 
 /**
- * 自动读取默认值（§6b / §13.3）：root 取当前站点源（缺省后端取请求 Host）、
+ * 域名 host 形状（§13.3：域名或 localhost；label 为字母数字连字符，
+ * 不以连字符开头 / 结尾）。IP 由 isIpHost 单独判定。
+ */
+const DOMAIN_HOST_PATTERN =
+  /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
+
+/** host 是否为 IP（§13.3 拒 IP）：v4 点分四段数字；v6 含冒号（hostname 无端口与方括号）。 */
+export function isIpHost(host: string): boolean {
+  return host.includes(':') || /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
+}
+
+/** root 前置校验失败项（§6b：必填 / 拒 IP / 域名格式），文案键见 ROOT_ERROR_KEYS。 */
+export type RootCheckError = 'rootRequired' | 'rootIpRejected' | 'rootInvalid';
+
+/** 校验失败项 → i18n 键（体验性校验，§9 第 4 条：后端为唯一权威）。 */
+const ROOT_ERROR_KEYS: Readonly<Record<RootCheckError, string>> = {
+  rootRequired: 'setup.error.rootRequired',
+  rootIpRejected: 'setup.error.rootIpRejected',
+  rootInvalid: 'setup.error.rootInvalid',
+};
+
+/**
+ * root 前置校验（§6b / §13.3）：必填、完整 URL（http:// 或 https:// 开头）、
+ * host 为域名或 localhost（拒 IP v4 / v6）。合法返回 null，非法返回失败项。
+ */
+export function checkRoot(value: string): RootCheckError | null {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return 'rootRequired';
+  }
+  if (!/^https?:\/\//.test(trimmed)) {
+    return 'rootInvalid';
+  }
+  try {
+    const { hostname } = new URL(trimmed);
+    if (isIpHost(hostname)) {
+      return 'rootIpRejected';
+    }
+    return DOMAIN_HOST_PATTERN.test(hostname) ? null : 'rootInvalid';
+  } catch {
+    return 'rootInvalid';
+  }
+}
+
+/**
+ * root 预填（§6b）：仅当 origin 的 host 为域名或 localhost 才回填 origin；
+ * host 为 IP（v4 / v6）一律留空。
+ */
+export function prefillRoot(origin: string): string {
+  try {
+    const { hostname } = new URL(origin);
+    return !isIpHost(hostname) && DOMAIN_HOST_PATTERN.test(hostname)
+      ? origin
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 自动读取默认值（§6b / §13.3）：root 按 §6b 条件预填当前页源（host 为 IP 一律留空），
  * rp_id 取当前 Host 去掉端口；均可显式覆盖。
  */
 function initialFormState(): InstallFormState {
@@ -45,7 +106,7 @@ function initialFormState(): InstallFormState {
     redisAddr: '',
     redisPassword: '',
     redisDb: '0',
-    root: location.origin,
+    root: prefillRoot(location.origin),
     rpId: location.hostname,
     adminUsername: '',
     adminPassword: '',
@@ -74,9 +135,16 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    setSubmitting(true);
     setFieldErrors({});
     setFormError(null);
+    // §6b root 前置校验：必填 + 拒 IP + 域名格式，非法不发起请求
+    //（体验性校验，后端为唯一权威——编码约束 §9 第 4 条）。
+    const rootError = checkRoot(form.root);
+    if (rootError !== null) {
+      setFieldErrors({ root: t(ROOT_ERROR_KEYS[rootError]) });
+      return;
+    }
+    setSubmitting(true);
     try {
       await requestInstall({
         dbDsn: form.dbDsn.trim(),
@@ -127,7 +195,12 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
       type: 'number',
       hint: t('setup.hintRedisDb'),
     },
-    { key: 'root', label: t('setup.fieldRoot'), hint: t('setup.hintRoot') },
+    {
+      key: 'root',
+      label: t('setup.fieldRoot'),
+      required: true,
+      hint: t('setup.hintRoot'),
+    },
     { key: 'rpId', label: 'WebAuthn RP ID', hint: t('setup.hintRpId') },
     {
       key: 'adminUsername',

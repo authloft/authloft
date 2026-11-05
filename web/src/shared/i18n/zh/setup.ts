@@ -56,7 +56,14 @@ export const setup = {
   'setup.fieldAdminUsername': '管理员用户名',
   'setup.fieldAdminPassword': '管理员密码',
   'setup.hintRedisDb': '默认 0',
-  'setup.hintRoot': '默认取当前站点',
+  'setup.hintRoot':
+    '需填域名（拒绝 IP，localhost 允许）；host 为域名或 localhost 时预填当前站点',
+  // root 前置校验文案（§6b 客户端体验性校验；后端为唯一权威）。
+  'setup.error.rootRequired': '请填写主域名',
+  'setup.error.rootIpRejected':
+    '主域名不能是 IP，请填写域名（localhost 允许）',
+  'setup.error.rootInvalid':
+    '主域名格式不正确：须为 http:// 或 https:// 开头的完整地址，且 host 为域名',
   'setup.hintRpId': '默认取当前域名',
   'setup.requiredMark': '（必填）',
   'setup.installing': '正在安装…',

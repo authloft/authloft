@@ -59,7 +59,14 @@ export const setup: typeof zhSetup = {
   'setup.fieldAdminUsername': 'Administrator username',
   'setup.fieldAdminPassword': 'Administrator password',
   'setup.hintRedisDb': 'Default: 0',
-  'setup.hintRoot': 'Defaults to the current site',
+  'setup.hintRoot':
+    'A domain is required (IPs rejected; localhost allowed). Prefilled with the current site when its host is a domain or localhost',
+  // root pre-validation messages (client-side hints only; the backend is the sole authority).
+  'setup.error.rootRequired': 'Please enter the primary domain',
+  'setup.error.rootIpRejected':
+    'The primary domain cannot be an IP address. Please use a domain (localhost is allowed)',
+  'setup.error.rootInvalid':
+    'Invalid primary domain: it must be a full URL starting with http:// or https://, with a domain as its host',
   'setup.hintRpId': 'Defaults to the current domain',
   'setup.requiredMark': '(required)',
   'setup.installing': 'Installing…',
