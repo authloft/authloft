@@ -8,6 +8,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { requestUploadConfig, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
+import styles from './UploadConfigPage.module.less';
 
 interface UploadConfigPageProps {
   onRestarting: () => void;
@@ -87,7 +88,7 @@ export default function UploadConfigPage({
         />
       </div>
       {errorText ? (
-        <p role="alert" style={{ color: '#c0392b' }}>
+        <p role="alert" className={styles.error}>
           {errorText}
         </p>
       ) : null}

@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { fetchSetupStatus, type SetupStatusResult } from '../api';
 import { redirectToLogin } from '../bootstrap';
+import styles from './RestartingPage.module.less';
 
 /** §13.4：以 2 秒间隔轮询。 */
 export const RESTART_POLL_INTERVAL_MS = 2_000;
@@ -113,7 +114,7 @@ export default function RestartingPage({ alRoot }: { alRoot: string }) {
   }, [alRoot]);
 
   return (
-    <section style={pageStyle}>
+    <section className={styles.page}>
       <h1>重启中</h1>
       <p>{RESTARTING_NOTICE}</p>
       <p role="status">
@@ -122,10 +123,3 @@ export default function RestartingPage({ alRoot }: { alRoot: string }) {
     </section>
   );
 }
-
-const pageStyle = {
-  maxWidth: '40em',
-  margin: '4rem auto',
-  fontFamily: 'sans-serif',
-  lineHeight: 1.7,
-};

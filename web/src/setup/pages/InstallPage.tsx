@@ -7,6 +7,7 @@
 import { useState, type FormEvent } from 'react';
 import { requestInstall, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
+import styles from './InstallPage.module.less';
 
 interface InstallPageProps {
   onRestarting: () => void;
@@ -132,8 +133,8 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
       <h1>全新安装</h1>
       <p>填写数据库与 Redis 连接信息及管理员账号；成功后自动进入重启。</p>
       {fields.map((field) => (
-        <div key={field.key} style={{ marginBottom: '0.8em' }}>
-          <label style={{ display: 'block' }}>
+        <div key={field.key} className={styles.field}>
+          <label className={styles.fieldLabel}>
             {field.label}
             {field.required ? '（必填）' : ''}
             <input
@@ -151,14 +152,14 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
           </label>
           {field.hint ? <small>{field.hint}</small> : null}
           {fieldErrors[field.key] ? (
-            <p role="alert" style={{ color: '#c0392b', margin: 0 }}>
+            <p role="alert" className={styles.fieldError}>
               {fieldErrors[field.key]}
             </p>
           ) : null}
         </div>
       ))}
       {formError ? (
-        <p role="alert" style={{ color: '#c0392b' }}>
+        <p role="alert" className={styles.formError}>
           {formError}
         </p>
       ) : null}

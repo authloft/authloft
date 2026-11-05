@@ -10,6 +10,7 @@ import { redirectToLogin } from '../bootstrap';
 import InstallPage from './InstallPage';
 import RestartingPage from './RestartingPage';
 import UploadConfigPage from './UploadConfigPage';
+import styles from './SetupPage.module.less';
 
 type Phase = 'checking' | 'choice' | 'upload' | 'install' | 'restarting';
 
@@ -66,14 +67,7 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
   })();
 
   return (
-    <section
-      style={{
-        maxWidth: '40em',
-        margin: '4rem auto',
-        fontFamily: 'sans-serif',
-        lineHeight: 1.7,
-      }}
-    >
+    <section className={styles.page}>
       {body}
     </section>
   );
