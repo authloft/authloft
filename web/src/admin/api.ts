@@ -1,8 +1,10 @@
 /**
  * AdminService client 方法封装（docs/前端架构.md §6 行 505-506；docs/接口文档.md §5）。
  * 本次交付 GetMe（§5.1 行 1159：前端获取管理员信息的唯一来源，`/admin/**`
- * 空壳页不注入 `admin` 字段）；Provider / 用户 / 客户端 / settings / 工具族
- * 方法随后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
+ * 空壳页不注入 `admin` 字段）并追加 Provider 列表族：ListProviders /
+ * SetProviderEnabled / SortProviders 薄封装 + 列表 / 排序请求构造与策略标签
+ * 展示纯函数（§5.2 行 1164-1177）；用户 / 客户端 / settings / 工具族方法随
+ * 后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
  * - 未携带有效会话 → HTTP 401（`unauthenticated`，框架层错误不进 §1.6 词汇表）
@@ -21,14 +23,102 @@
  * shared/hooks/useRequest（§3.2），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  */
+import { create } from '@bufbuild/protobuf';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
 import { t } from '../shared/i18n';
-import type { MeResponse } from '../gen/proto/api/admin/v1/admin_pb';
+import { FIRST_PAGE, MAX_PAGE_SIZE } from '../shared/app-ui/dataTableLogic';
+import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
+import type {
+  ListProvidersRequest,
+  Provider,
+  ProviderListResponse,
+  SetProviderEnabledRequest,
+  SortProvidersRequest,
+} from '../gen/proto/api/admin/v1/provider_pb';
+import {
+  ListProvidersRequestSchema,
+  SortProvidersRequestSchema,
+} from '../gen/proto/api/admin/v1/provider_pb';
 
 /** 当前管理员信息（§5.1 行 1159）：`{id, username, nickname, avatarUrl, isAdmin:true}`，无入参。 */
 export function getMe(): Promise<MeResponse> {
   return adminClient.getMe({});
+}
+
+// ---------------------------------------------------------------------------
+// Provider 列表族（§5.2 行 1164-1177）：读路径真调（后端已实装
+// List/Get/GetProviderSchema），写路径启停 / 排序后端已实装，单测走 msw。
+// ---------------------------------------------------------------------------
+
+/** Provider 列表（§5.2 行 1165）：筛选入参 {category, type, isEnabled} + 分页 §1.7；本页全量取数（见 buildListProvidersRequest）。 */
+export function listProviders(
+  request: ListProvidersRequest,
+): Promise<ProviderListResponse> {
+  return adminClient.listProviders(request);
+}
+
+/** 行内启停（§5.2 行 1173：`{providerKey, isEnabled}`）→ OkResponse；StatusSwitch 经此持久化。 */
+export function setProviderEnabled(
+  request: SetProviderEnabledRequest,
+): Promise<OkResponse> {
+  return adminClient.setProviderEnabled(request);
+}
+
+/** 拖拽排序（§5.2 行 1174：`{items:[{providerKey, sortOrder}]}`）→ OkResponse。 */
+export function sortProviders(
+  request: SortProvidersRequest,
+): Promise<OkResponse> {
+  return adminClient.sortProviders(request);
+}
+
+/**
+ * 列表请求构造：第 1 页 × pageSize 100（§1.7 行 277 上限）。**全量取数**是
+ * 拖拽排序的前提——SortProviders 按行集整体重排 sort_order（见
+ * buildSortProvidersRequest），部分行集重排会与未载入行的排序值冲突；Provider
+ * 注册表规模（oauth / captcha / sms / email / storage / notify 各有限几种
+ * 类型）远小于 100。超限兜底：ProvidersPage 停用拖拽（数据仍展示）。
+ */
+export function buildListProvidersRequest(): ListProvidersRequest {
+  return create(ListProvidersRequestSchema, {
+    page: BigInt(FIRST_PAGE),
+    pageSize: BigInt(MAX_PAGE_SIZE),
+  });
+}
+
+/**
+ * 排序请求构造：拖拽落定后按新数组序整体重排（index+1 → 1..n），全量行集
+ * 下即全局一致序。不可变：只读入参，输出独立消息。
+ */
+export function buildSortProvidersRequest(
+  rows: readonly Provider[],
+): SortProvidersRequest {
+  return create(SortProvidersRequestSchema, {
+    items: rows.map((row, index) => ({
+      providerKey: row.providerKey,
+      sortOrder: BigInt(index + 1),
+    })),
+  });
+}
+
+/**
+ * 策略标签展示纯函数（§5.2 行 1165 列表「策略标签」列）：enableSignin /
+ * enableSignup / autoBind 三开关 → 文案标签；全 false（如 sms / email /
+ * storage / captcha 类）→ 空数组，消费方渲染占位。零 Semi 依赖、node 可测
+ * （展示纯函数落位同 adminDisplayName 口径）。
+ */
+export function policyTags(provider: Provider): readonly string[] {
+  const tags: string[] = [];
+  if (provider.enableSignin) {
+    tags.push('允许登录');
+  }
+  if (provider.enableSignup) {
+    tags.push('允许注册');
+  }
+  if (provider.autoBind) {
+    tags.push('自动绑定');
+  }
+  return tags;
 }
 
 /**

@@ -1,0 +1,34 @@
+// 回调地址提示自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+@import (reference) '../../shared/styles/tokens.less';
+
+.hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  margin-bottom: @spacing-lg;
+  padding: @spacing-sm @spacing-md;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background-muted;
+  font-size: @font-size-sm;
+}
+
+.label {
+  color: @color-text-muted;
+}
+
+.url {
+  padding: @spacing-xs @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background;
+  color: @color-text;
+  font-size: @font-size-sm;
+  word-break: break-all;
+}
+
+.oidcNote {
+  color: @color-danger;
+  font-size: @font-size-sm;
+}

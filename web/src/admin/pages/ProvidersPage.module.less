@@ -1,0 +1,96 @@
+// 提供方列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// 表头与行共用同一 grid 列模板对齐（SortableList 只包拖拽壳与手柄，行内容
+// 列布局归本页）。列序（§6 行 515）：显示名 / 标识 / 类别 / 类型 / 状态 /
+// 策略标签 / 排序；首列手柄由 SortableList 渲染（不在本模板内）。
+@import (reference) '../../shared/styles/tokens.less';
+
+// 七列 + 排序值列：显示名 1.4 / 标识 1.6 / 类别 0.8 / 类型 1.2 / 状态 72px /
+// 策略标签 1.6 / 排序 56px。
+@providers-columns: 1.4fr 1.6fr 0.8fr 1.2fr 72px 1.6fr 56px;
+
+.page {
+  display: block;
+}
+
+.headerRow {
+  display: grid;
+  grid-template-columns: @providers-columns;
+  gap: @spacing-sm;
+  padding: 0 @spacing-md @spacing-xs;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+// 行内容：撑满拖拽壳 li 的剩余宽度后按列模板排布。
+.row {
+  display: grid;
+  grid-template-columns: @providers-columns;
+  gap: @spacing-sm;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  font-size: @font-size-sm;
+}
+
+.cellName,
+.cellKey,
+.cellCategory,
+.cellType,
+.cellTags {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cellKey,
+.cellType,
+.cellStatus,
+.cellTags {
+  display: inline-flex;
+  align-items: center;
+  gap: @spacing-xs;
+}
+
+.keyText {
+  color: @color-text;
+}
+
+.tag {
+  padding: @spacing-xs @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background-muted;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  white-space: nowrap;
+}
+
+.cellOrder {
+  color: @color-text-muted;
+  text-align: right;
+}
+
+.actionError {
+  margin: 0 0 @spacing-md;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+.dragNote {
+  margin: 0 0 @spacing-sm;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.empty {
+  margin: @spacing-lg 0;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+}
+
+.loadError {
+  margin: @spacing-lg 0;
+  color: @color-danger;
+  font-size: @font-size-md;
+}

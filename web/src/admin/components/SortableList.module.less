@@ -1,0 +1,42 @@
+// 拖拽排序列表自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// 行内容列布局归消费方（ProvidersPage 的 .row grid），此处只承载拖拽壳：
+// 行容器（手柄 + 内容横排）、拖起 / 悬停行标记、手柄视觉。
+@import (reference) '../../shared/styles/tokens.less';
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  margin-bottom: @spacing-xs;
+  padding: @spacing-sm @spacing-md;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background;
+  cursor: grab;
+}
+
+// 拖起行半透明（跟手反馈）；停用态恢复默认光标。
+.item[draggable='false'] {
+  cursor: default;
+}
+
+.itemDragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+// 悬停落点行高亮（落在该行位置）。
+.itemOver {
+  border-color: @color-primary;
+}
+
+.handle {
+  color: @color-text-muted;
+  user-select: none;
+}
