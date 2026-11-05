@@ -805,11 +805,19 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // registerAccount 注册 AccountService Connect handler：挂同一
 // session 拦截器（§1.2 行 96：/api.account.v1.AccountService/** 全接口需
 // 用户会话，无 LoginDefault 式豁免——无有效会话请求由 handler 返回
-// unauthenticated）。本卡仅实现 GetProfile，其余方法（含 GetConfig 桩）
-// 由生成的 UnimplementedAccountServiceHandler 返回 unimplemented。
+// unauthenticated）。GetConfig 依赖：CredentialRepo（hasPassword / mfaPolicy）、
+// settings.Store（mfa_enabled / avatar_storage_provider）、ProviderRepo（storage
+// 行）、captcha Gate（§9.1 行 1094 三处共用出口现算，降级一致）。其余方法由
+// 生成的 UnimplementedAccountServiceHandler 返回 unimplemented。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
-		accounthandler.New(repo.NewUserRepo(deps.db)),
+		accounthandler.New(
+			repo.NewUserRepo(deps.db),
+			repo.NewCredentialRepo(deps.db),
+			deps.settings,
+			repo.NewProviderRepo(deps.db),
+			deps.gate,
+		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)

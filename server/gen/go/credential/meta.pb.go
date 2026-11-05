@@ -36,8 +36,10 @@ type CredentialMeta struct {
 	// kind=recovery_code
 	RecoveryCodes []string `protobuf:"bytes,10,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"` // 10 个恢复码明文（8 位 Crockford Base32 小写，展示形如 xxxx-xxxx）
 	// kind=totp
-	TotpDigits    int32 `protobuf:"varint,20,opt,name=totp_digits,json=totpDigits,proto3" json:"totp_digits,omitempty"` // 默认 6
-	TotpPeriod    int32 `protobuf:"varint,21,opt,name=totp_period,json=totpPeriod,proto3" json:"totp_period,omitempty"` // 默认 30
+	TotpDigits int32 `protobuf:"varint,20,opt,name=totp_digits,json=totpDigits,proto3" json:"totp_digits,omitempty"` // 默认 6
+	TotpPeriod int32 `protobuf:"varint,21,opt,name=totp_period,json=totpPeriod,proto3" json:"totp_period,omitempty"` // 默认 30
+	// kind=mfa_setting
+	MfaMethods    []string `protobuf:"bytes,30,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"` // kind=mfa_setting 启用的二次因子集合
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,12 +130,19 @@ func (x *CredentialMeta) GetTotpPeriod() int32 {
 	return 0
 }
 
+func (x *CredentialMeta) GetMfaMethods() []string {
+	if x != nil {
+		return x.MfaMethods
+	}
+	return nil
+}
+
 var File_credential_meta_proto protoreflect.FileDescriptor
 
 const file_credential_meta_proto_rawDesc = "" +
 	"\n" +
 	"\x15credential/meta.proto\x12\n" +
-	"credential\"\xa8\x02\n" +
+	"credential\"\xc9\x02\n" +
 	"\x0eCredentialMeta\x12\x1e\n" +
 	"\n" +
 	"transports\x18\x01 \x03(\tR\n" +
@@ -147,7 +156,9 @@ const file_credential_meta_proto_rawDesc = "" +
 	"\vtotp_digits\x18\x14 \x01(\x05R\n" +
 	"totpDigits\x12\x1f\n" +
 	"\vtotp_period\x18\x15 \x01(\x05R\n" +
-	"totpPeriodB'Z%authloft/gen/go/credential;credentialb\x06proto3"
+	"totpPeriod\x12\x1f\n" +
+	"\vmfa_methods\x18\x1e \x03(\tR\n" +
+	"mfaMethodsB'Z%authloft/gen/go/credential;credentialb\x06proto3"
 
 var (
 	file_credential_meta_proto_rawDescOnce sync.Once

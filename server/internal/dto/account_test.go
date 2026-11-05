@@ -6,6 +6,7 @@ import (
 
 	"github.com/vmihailenco/msgpack/v5"
 
+	"authloft/gen/go/provider"
 	"authloft/internal/repo/model"
 )
 
@@ -185,5 +186,117 @@ func TestAccountProfileBadExtra(t *testing.T) {
 	}
 	if got.GetId() != 10086 || got.GetUsername() != "zhang_san" {
 		t.Errorf("主信息受 extra 解码失败影响: id=%d username=%q", got.GetId(), got.GetUsername())
+	}
+}
+
+// TestAccountAvatarUploadProjection §3.2 行 818-826 avatarUpload 投影：
+// direct / proxy 模式判定、local+direct 回退、零值投影、maxSize 零值兜底
+// 2MB（§12.1 行 1704）、allowedTypes 逗号分隔解析（含空串 → 空列表、
+// 空段丢弃）。
+func TestAccountAvatarUploadProjection(t *testing.T) {
+	cases := []struct {
+		name         string
+		providerType string
+		ext          *provider.Ext
+		wantMode     string
+		wantMaxSize  int64
+		wantTypes    []string
+	}{
+		{"s3+direct", "s3", &provider.Ext{UploadMode: "direct", MaxSize: 1 << 20, AllowedTypes: "image/png"}, "direct", 1 << 20, []string{"image/png"}},
+		{"s3+proxy（默认）", "s3", &provider.Ext{MaxSize: 1 << 20}, "proxy", 1 << 20, nil},
+		{"local+direct 回退 proxy", "local", &provider.Ext{UploadMode: "direct", MaxSize: 1 << 20}, "proxy", 1 << 20, nil},
+		{"maxSize 零值兜底 2MB", "s3", &provider.Ext{}, "proxy", 2 << 20, nil},
+		{"allowedTypes 去空白丢空段", "s3", &provider.Ext{MaxSize: 1, AllowedTypes: " image/png , ,image/webp ,"}, "proxy", 1, []string{"image/png", "image/webp"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AccountAvatarUpload(tc.providerType, tc.ext)
+			if got.GetMode() != tc.wantMode {
+				t.Errorf("mode = %q, want %q", got.GetMode(), tc.wantMode)
+			}
+			if got.GetMaxSize() != tc.wantMaxSize {
+				t.Errorf("maxSize = %d, want %d", got.GetMaxSize(), tc.wantMaxSize)
+			}
+			if len(got.GetAllowedTypes()) != len(tc.wantTypes) {
+				t.Fatalf("allowedTypes = %v, want %v", got.GetAllowedTypes(), tc.wantTypes)
+			}
+			for i, w := range tc.wantTypes {
+				if got.GetAllowedTypes()[i] != w {
+					t.Errorf("allowedTypes[%d] = %q, want %q", i, got.GetAllowedTypes()[i], w)
+				}
+			}
+		})
+	}
+
+	// 零值投影（未配置）：{mode:"proxy", maxSize:0, allowedTypes:[]}，
+	// mode 值域闭合不新增枚举（行 826）。
+	zero := AccountAvatarUpload("", &provider.Ext{UploadMode: "direct", MaxSize: 1 << 20, AllowedTypes: "image/png"})
+	if zero.GetMode() != "proxy" || zero.GetMaxSize() != 0 || len(zero.GetAllowedTypes()) != 0 {
+		t.Errorf("zero projection = {%q %d %v}, want {proxy 0 []}", zero.GetMode(), zero.GetMaxSize(), zero.GetAllowedTypes())
+	}
+
+	// nil ext（行存在但 ext 空）按零值 Ext 投影：proxy + 默认 2MB。
+	nilExt := AccountAvatarUpload("s3", nil)
+	if nilExt.GetMode() != "proxy" || nilExt.GetMaxSize() != 2<<20 || len(nilExt.GetAllowedTypes()) != 0 {
+		t.Errorf("nil ext = {%q %d %v}, want {proxy %d []}", nilExt.GetMode(), nilExt.GetMaxSize(), nilExt.GetAllowedTypes(), 2<<20)
+	}
+}
+
+// TestAccountMfaPolicyProjection §3.2 行 827-847 mfaPolicy 投影：五因子
+// 序、enabled 按集合（recovery_code 随 totp）、bound 投影、
+// trustedDeviceDays 恒 0、enabled 与集合独立（行存在但集合空）。
+func TestAccountMfaPolicyProjection(t *testing.T) {
+	got := AccountMfaPolicy(
+		true,
+		[]string{"totp", "otp_sms"},
+		true,
+		MfaBound{Totp: true, OtpSms: true, OtpEmail: true, Webauthn: false, RecoveryCode: true},
+	)
+
+	if !got.GetEnabled() || !got.GetRequired() {
+		t.Errorf("enabled/required = (%v, %v), want (true, true)", got.GetEnabled(), got.GetRequired())
+	}
+	if got.GetTrustedDeviceDays() != 0 {
+		t.Errorf("trustedDeviceDays = %d, want 0（预留恒 0）", got.GetTrustedDeviceDays())
+	}
+	want := []struct {
+		factor  string
+		enabled bool
+		bound   bool
+	}{
+		{"totp", true, true},
+		{"otp_sms", true, true},
+		{"otp_email", false, true},
+		{"webauthn", false, false},
+		{"recovery_code", true, true}, // 随 totp，不单列
+	}
+	methods := got.GetMethods()
+	if len(methods) != len(want) {
+		t.Fatalf("methods len = %d, want %d", len(methods), len(want))
+	}
+	for i, w := range want {
+		if methods[i].GetFactor() != w.factor || methods[i].GetEnabled() != w.enabled || methods[i].GetBound() != w.bound {
+			t.Errorf("methods[%d] = {%s %v %v}, want {%s %v %v}", i,
+				methods[i].GetFactor(), methods[i].GetEnabled(), methods[i].GetBound(),
+				w.factor, w.enabled, w.bound)
+		}
+	}
+
+	// recovery_code 随 totp：集合无 totp 时即使集合写了 recovery_code 也不启用
+	//（§5.6：随 totp 生效不单列，投影端不信任集合里的单列值）。
+	noTotp := AccountMfaPolicy(true, []string{"recovery_code"}, false, MfaBound{})
+	if m := noTotp.GetMethods()[4]; m.GetEnabled() {
+		t.Errorf("recovery_code.enabled = true, want false（集合无 totp）")
+	}
+
+	// 行存在但集合空：enabled=true、methods[].enabled 全 false（两态独立）。
+	emptySet := AccountMfaPolicy(true, nil, false, MfaBound{})
+	if !emptySet.GetEnabled() {
+		t.Error("enabled = false, want true（行存在）")
+	}
+	for _, m := range emptySet.GetMethods() {
+		if m.GetEnabled() {
+			t.Errorf("methods[%s].enabled = true, want false（集合空）", m.GetFactor())
+		}
 	}
 }

@@ -2,6 +2,7 @@
 // 774-813）：AccountService/GetProfile 响应的字段映射、phone / email
 // 服务端掩码与 user_profile.extra 的 msgpack 解码均以本文件为唯一出口
 //（docs/后端架构.md §3.5：本层只做转换与裁剪，不定义新的跨端结构）。
+// GetConfig 的 avatarUpload / mfaPolicy 投影（§3.2 行 818-847）同此。
 package dto
 
 import (
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	accountv1 "authloft/gen/go/api/account/v1"
+	"authloft/gen/go/provider"
 	"authloft/internal/repo/model"
 )
 
@@ -108,4 +110,106 @@ func maskEmail(email string) string {
 		return "***" + email[at:]
 	}
 	return string(local[0]) + "***" + email[at:]
+}
+
+// avatarUploadDefaultMaxSize storage Ext.max_size 未配置（proto 零值 0）
+// 的读端兜底默认 2MB（接口文档 §12.1 行 1704 字段默认值语义）。
+const avatarUploadDefaultMaxSize = 2 << 20
+
+// AccountAvatarUpload 把 storage Provider 行投影为 §3.2 行 818 的
+// AvatarUploadConfig。providerType 为该行 type（s3/local）；providerType
+// 空串 = 未配置 → 零值投影 {mode:"proxy", maxSize:0, allowedTypes:[]}
+//（接口文档行 826：mode 值域保持 proxy/direct 闭合，不新增
+// 枚举，前端据零值隐藏上传入口）。local 配置 direct 回退 proxy（行 825、
+// 后端架构 §15.1：local 无预签名能力）；maxSize / allowedTypes 取
+// Ext.max_size / Ext.allowed_types（§12.1 行 1704-1705），maxSize 零值
+// 兜底 2MB，allowedTypes 逗号分隔 → 列表、空串 → 空列表。
+func AccountAvatarUpload(providerType string, ext *provider.Ext) *accountv1.AvatarUploadConfig {
+	if providerType == "" {
+		return &accountv1.AvatarUploadConfig{Mode: "proxy"}
+	}
+	mode := "proxy"
+	if ext.GetUploadMode() == "direct" && providerType != "local" {
+		mode = "direct"
+	}
+	maxSize := ext.GetMaxSize()
+	if maxSize <= 0 {
+		maxSize = avatarUploadDefaultMaxSize
+	}
+	return &accountv1.AvatarUploadConfig{
+		Mode:         mode,
+		MaxSize:      maxSize,
+		AllowedTypes: splitAllowedTypes(ext.GetAllowedTypes()),
+	}
+}
+
+// splitAllowedTypes 逗号分隔 MIME 白名单（§12.1 行 1705）→ 列表；
+// 空串返回空列表（零值投影，行 826），逐项去空白、丢空段。
+func splitAllowedTypes(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// MfaBound MFA 各因子绑定态（§3.2 行 836-840 bound 投影的输入）：
+// totp / webauthn / recovery_code 由 user_credential 行判定（is_enabled=1，
+// recovery_code 需余量非空），otp_sms / otp_email 由 user.phone / email
+// 判定；明细字段归 GetMfa（§3.5），此处仅布尔投影（行 845）。
+type MfaBound struct {
+	Totp         bool
+	OtpSms       bool
+	OtpEmail     bool
+	Webauthn     bool
+	RecoveryCode bool
+}
+
+// mfaFactorOrder 五因子序（§3.2 行 834-840：totp/otp_sms/otp_email/
+// webauthn/recovery_code，顺序即前端渲染顺序，行 845）。
+var mfaFactorOrder = [...]string{"totp", "otp_sms", "otp_email", "webauthn", "recovery_code"}
+
+// AccountMfaPolicy 组装 §3.2 行 827-847 的 mfaPolicy 摘要：
+// enabled=已开启（mfa_setting 行存在，行 846）；methods[].enabled =
+// factor ∈ enabledMethods（mfa_setting 行 CredentialMeta.mfa_methods，
+// 行 846）；recovery_code 随 totp 投影（行 846、§5.6：随 totp 生效
+// 不单列）；bound=绑定态投影；trustedDeviceDays 恒 0（行 847 预留字段，
+// 本期不提供「信任此设备」）。
+func AccountMfaPolicy(enabled bool, enabledMethods []string, required bool, bound MfaBound) *accountv1.MfaPolicy {
+	enabledSet := make(map[string]bool, len(enabledMethods))
+	for _, m := range enabledMethods {
+		enabledSet[m] = true
+	}
+	policy := &accountv1.MfaPolicy{
+		Enabled:           enabled,
+		Required:          required,
+		TrustedDeviceDays: 0,
+		Methods:           make([]*accountv1.MfaPolicyMethod, 0, len(mfaFactorOrder)),
+	}
+	for _, factor := range mfaFactorOrder {
+		m := &accountv1.MfaPolicyMethod{Factor: factor, Enabled: enabledSet[factor]}
+		if factor == "recovery_code" {
+			m.Enabled = enabledSet["totp"]
+		}
+		switch factor {
+		case "totp":
+			m.Bound = bound.Totp
+		case "otp_sms":
+			m.Bound = bound.OtpSms
+		case "otp_email":
+			m.Bound = bound.OtpEmail
+		case "webauthn":
+			m.Bound = bound.Webauthn
+		case "recovery_code":
+			m.Bound = bound.RecoveryCode
+		}
+		policy.Methods = append(policy.Methods, m)
+	}
+	return policy
 }

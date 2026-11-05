@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file credential/meta.proto.
  */
 export const file_credential_meta: GenFile = /*@__PURE__*/
-  fileDesc("ChVjcmVkZW50aWFsL21ldGEucHJvdG8SCmNyZWRlbnRpYWwivwEKDkNyZWRlbnRpYWxNZXRhEhIKCnRyYW5zcG9ydHMYASADKAkSGAoQYXR0ZXN0YXRpb25fdHlwZRgCIAEoCRIOCgZhYWd1aWQYAyABKAkSFwoPYmFja3VwX2VsaWdpYmxlGAQgASgIEhQKDGJhY2t1cF9zdGF0ZRgFIAEoCBIWCg5yZWNvdmVyeV9jb2RlcxgKIAMoCRITCgt0b3RwX2RpZ2l0cxgUIAEoBRITCgt0b3RwX3BlcmlvZBgVIAEoBUInWiVhdXRobG9mdC9nZW4vZ28vY3JlZGVudGlhbDtjcmVkZW50aWFsYgZwcm90bzM");
+  fileDesc("ChVjcmVkZW50aWFsL21ldGEucHJvdG8SCmNyZWRlbnRpYWwi1AEKDkNyZWRlbnRpYWxNZXRhEhIKCnRyYW5zcG9ydHMYASADKAkSGAoQYXR0ZXN0YXRpb25fdHlwZRgCIAEoCRIOCgZhYWd1aWQYAyABKAkSFwoPYmFja3VwX2VsaWdpYmxlGAQgASgIEhQKDGJhY2t1cF9zdGF0ZRgFIAEoCBIWCg5yZWNvdmVyeV9jb2RlcxgKIAMoCRITCgt0b3RwX2RpZ2l0cxgUIAEoBRITCgt0b3RwX3BlcmlvZBgVIAEoBRITCgttZmFfbWV0aG9kcxgeIAMoCUInWiVhdXRobG9mdC9nZW4vZ28vY3JlZGVudGlhbDtjcmVkZW50aWFsYgZwcm90bzM");
 
 /**
  * CredentialMeta 是凭证扩展元数据（docs/接口文档.md §12.2 行 1698-1718），
@@ -76,6 +76,15 @@ export type CredentialMeta = Message<"credential.CredentialMeta"> & {
    * @generated from field: int32 totp_period = 21;
    */
   totpPeriod: number;
+
+  /**
+   * kind=mfa_setting
+   *
+   * kind=mfa_setting 启用的二次因子集合
+   *
+   * @generated from field: repeated string mfa_methods = 30;
+   */
+  mfaMethods: string[];
 };
 
 /**
