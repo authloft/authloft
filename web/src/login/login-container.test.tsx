@@ -24,6 +24,7 @@ import {
   CaptchaConfigSchema,
 } from '../gen/proto/api/common/v1/captcha_pb';
 import {
+  BindingSchema,
   FieldSchema,
   LoginFlowResponseSchema,
   MfaMethodSchema,
@@ -774,10 +775,34 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
-  test('binding_required / 轮询态：占位（对应组件归后续实现）', () => {
+  test('binding_required：原地渲染 BindingPage 两选项（§4.1 行 406 / §2.7.5）；轮询态占位保留', () => {
+    const markup = renderView(
+      stateWith({
+        status: 'binding_required',
+        envelope: envelope({
+          status: 'binding_required',
+          binding: create(BindingSchema, {
+            providerKey: 'qq',
+            displayName: 'QQ',
+            allowSignup: true,
+          }),
+        }),
+      }),
+    );
+    expect(markup).toContain('创建新账号'); // §2.7.5 两选项
+    expect(markup).toContain('退出并使用其他账号登录');
+    expect(markup).toContain('该第三方身份尚未绑定账号'); // t('errors.status.binding_required')
+    expect(markup).not.toContain('绑定已有账号'); // §2.7.5 行 676：不渲染绑定已有账号分支
+    // 信封 binding 零值兜底（§9 第 18 条）：缺失时兜底提示，仅保留退出。
     expect(
-      renderView(stateWith({ status: 'binding_required', envelope: envelope({ status: 'binding_required' }) })),
-    ).toContain('账号绑定流程即将支持');
+      renderView(
+        stateWith({
+          status: 'binding_required',
+          envelope: envelope({ status: 'binding_required' }),
+        }),
+      ),
+    ).toContain('请刷新重试');
+    // 轮询态占位不变（扫码组件归后续实现）。
     expect(
       renderView(stateWith({ status: 'pending', envelope: envelope({ status: 'pending' }) })),
     ).toContain('扫码流程即将支持');

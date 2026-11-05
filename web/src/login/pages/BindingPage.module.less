@@ -1,0 +1,40 @@
+// 绑定页样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  display: block;
+  margin-bottom: @spacing-xs;
+}
+
+.input {
+  padding: @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+}
+
+.hint {
+  margin: @spacing-xs 0 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.submit {
+  padding: 0.375rem 0.875rem;
+}

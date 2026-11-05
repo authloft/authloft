@@ -1,0 +1,33 @@
+// 绑定选择样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.identity {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.optionBtn {
+  padding: @spacing-sm @spacing-md;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background: @color-background;
+  color: @color-text;
+}
+
+.optionBtn:disabled {
+  color: @color-text-muted;
+  background: @color-background-muted;
+}
+
+.signupClosed {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}

@@ -55,6 +55,7 @@ import type {
   SnapshotField,
 } from '../shared/types/init';
 import { loginDefault, type LoginDefaultInput } from './api';
+import { BindingPage } from './pages/BindingPage';
 import { OTPForm, isOtpForm } from './factors/OTPForm';
 import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
@@ -296,7 +297,6 @@ export function isErrorStatus(status: MachineStatus): boolean {
 // ---------------------------------------------------------------------------
 
 /** 占位文案（i18n 无键，字面量声明见文件头）。 */
-const BINDING_PLACEHOLDER = '账号绑定流程即将支持';
 const POLL_PLACEHOLDER = '扫码流程即将支持';
 /** mfa 选择器引导（§1.3 行 121 mfa.methods；i18n 无键，字面量声明见文件头）。 */
 const MFA_SELECT_HINT = '请选择二次验证方式';
@@ -386,14 +386,11 @@ export function LoginFlowView({
   if (state.status === 'success') {
     return <p role="status">{REDIRECTING_TEXT}</p>;
   }
-  // binding_required 占位（绑定选择页归后续实现，§4.4）。
+  // binding_required → 原地渲染绑定选择页（§4.1 行 406；§4.4 行 466）：
+  // 不跳页、不新开流程（mfa_required 同款原地模式）、/sso/binding 不在路由表；
+  // 两选项与建号 / 退出编排在 BindingPage 内闭环（§2.7.5）。
   if (state.status === 'binding_required') {
-    return (
-      <div>
-        <p role="status">{t('errors.status.binding_required')}</p>
-        <p>{BINDING_PLACEHOLDER}</p>
-      </div>
-    );
+    return <BindingPage binding={state.envelope?.binding} notice={notice} />;
   }
 
   const error = state.envelope?.error;
