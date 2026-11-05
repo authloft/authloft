@@ -1,0 +1,100 @@
+/**
+ * 监控页（docs/前端架构.md §6 行 524 StatusPage；docs/接口文档.md §5.6 行 1290
+ * GetStatus；docs/需求.md §4.6 行 261）——/admin/status。
+ *
+ * 三指标只读 + 手动刷新（GetStatus 无入参；轮询文档未规定，不自行发挥）：
+ * 队列长度 / 累计丢弃条数 / 最近 flush 耗时（毫秒——与设置项 queue_flush_ms
+ * 攒批时间窗不同名不同义，生成物 StatusResponse 头注）。零值语义（后端
+ * 只读透传口径）：flush 耗时 0 = 自启动以来尚未发生过批量落库；
+ * 队列长度不含已取出、尚未落库的批次。int64 计数类经 toCount 收窄（§1.12）。
+ *
+ * 401 统一跳登录（§6 行 501，UsersPage 同模式）；其余错误页面错误态。
+ * 组件壳 import Semi 后不可 node 测试（既有 Blocker），可测逻辑收口
+ * ./api（三方法 msw + 展示纯函数）。样式（§1.7）：同目录同名 module less。
+ */
+import { useEffect, type ReactNode } from 'react';
+import { Button, Card, Typography } from '@douyinfe/semi-ui-19';
+import { useRequest } from '../../shared/hooks/useRequest';
+import { toCount } from '../../shared/utils/int';
+import { getStatus, isUnauthenticatedError } from '../api';
+import { loginUrl } from '../bootstrap';
+import styles from './StatusPage.module.less';
+
+/** 加载 / 失败态文案（无 i18n 键，最简中文字面量，归后续 i18n 实现）。 */
+const LOADING_TEXT = '加载中…';
+const LOAD_ERROR_TEXT = '监控数据加载失败，请刷新重试';
+
+/** 指标零值语义注解（生成物 StatusResponse 头注 + 后端透传口径）。 */
+const HINT_TEXT =
+  '队列长度不含已取出、尚未落库的批次；flush 耗时为 0 表示自启动以来尚未发生过批量落库';
+
+/** 监控页：GetStatus 三指标卡片 + 手动刷新。 */
+export function StatusPage(props: {
+  /** 归一后 al_root（401 跳登录前缀）。 */
+  readonly alRoot: string;
+}): ReactNode {
+  const { status, data, error, run } = useRequest(getStatus);
+
+  useEffect(() => {
+    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
+    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
+    run().catch(() => {});
+  }, [run]);
+
+  useEffect(() => {
+    if (isUnauthenticatedError(error)) {
+      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
+      window.location.replace(loginUrl(props.alRoot));
+    }
+  }, [error, props.alRoot]);
+
+  // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  if (status === 'error' && !isUnauthenticatedError(error)) {
+    return (
+      <p role="alert" className={styles.loadError}>
+        {LOAD_ERROR_TEXT}
+      </p>
+    );
+  }
+  // idle / loading：数据未落地前的过渡态。
+  if (data === undefined) {
+    return (
+      <p role="status" className={styles.loading}>
+        {LOADING_TEXT}
+      </p>
+    );
+  }
+
+  return (
+    <section className={styles.page}>
+      <Typography.Title heading={3}>监控</Typography.Title>
+      <div className={styles.stats}>
+        <Card className={styles.statCard} title="队列长度">
+          <Typography.Text className={styles.statValue}>
+            {toCount(data.queueLength)}
+          </Typography.Text>
+        </Card>
+        <Card className={styles.statCard} title="累计丢弃条数">
+          <Typography.Text className={styles.statValue}>
+            {toCount(data.dropped)}
+          </Typography.Text>
+        </Card>
+        <Card className={styles.statCard} title="最近 flush 耗时（毫秒）">
+          <Typography.Text className={styles.statValue}>
+            {toCount(data.flushMs)}
+          </Typography.Text>
+        </Card>
+      </div>
+      <p className={styles.hint}>{HINT_TEXT}</p>
+      <Button
+        theme="solid"
+        loading={status === 'loading'}
+        onClick={() => {
+          run().catch(() => {});
+        }}
+      >
+        刷新
+      </Button>
+    </section>
+  );
+}

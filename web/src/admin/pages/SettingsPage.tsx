@@ -60,7 +60,7 @@ const OVERWRITE_BANNER_TEXT =
 /** 保存成功文案。 */
 const SAVED_TEXT = '设置已保存：全部设置已整体覆盖，热更新对后续请求生效';
 
-/** 加载 / 失败态文案（无 i18n 键，最简中文字面量，归 i18n 收口卡）。 */
+/** 加载 / 失败态文案（无 i18n 键，最简中文字面量，归后续 i18n 实现）。 */
 const LOADING_TEXT = '加载中…';
 const LOAD_ERROR_TEXT = '系统设置加载失败，请刷新重试';
 

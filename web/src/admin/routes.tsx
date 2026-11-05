@@ -6,8 +6,10 @@
  * /admin/users（§6 行 517）+ UserDetailPage 长入 /admin/users/{id}
  * （§6 行 518——id 为 int64，路径段限定十进制数字）；SsoClientsPage 长入
  * /admin/clients/sso + OidcClientsPage 长入 /admin/clients/oidc（§6 行 519）；
- * SettingsPage 长入 /admin/settings（§6 行 520）；其余 `/admin/**`
- * 一律 AdminLayout 包裹占位页（归后续实现逐项长入），不匹配前缀 → 页面不存在。
+ * SettingsPage 长入 /admin/settings（§6 行 520）；工具三页长入——AuditPage
+ * （/admin/audit，§6 行 523）+ StatusPage（/admin/status，§6 行 524）
+ * + DecodePage（/admin/decode，§6 行 525）；其余 `/admin/**` 一律 AdminLayout
+ * 包裹占位页，不匹配前缀 → 页面不存在。
  *
  * 沿 account/routes.tsx 模式：零第三方路由库（§1.6 行 110），
  * disableMount 自挂载，极简 pathname 匹配；bootstrap 无 methods 必需校验
@@ -16,11 +18,14 @@
  */
 import { loadAdminBootstrap } from './bootstrap';
 import { AdminLayout } from './layout/AdminLayout';
+import { AuditPage } from './pages/AuditPage';
+import { DecodePage } from './pages/DecodePage';
 import { OidcClientsPage } from './pages/OidcClientsPage';
 import { ProviderEditPage } from './pages/ProviderEditPage';
 import { ProvidersPage } from './pages/ProvidersPage';
 import { SsoClientsPage } from './pages/SsoClientsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { StatusPage } from './pages/StatusPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
 
@@ -48,8 +53,17 @@ const SSO_CLIENTS_PATH = '/admin/clients/sso';
 /** OIDC 客户端列表页路径（§6 行 519）。 */
 const OIDC_CLIENTS_PATH = '/admin/clients/oidc';
 
-/** 系统设置页路径（§6 行 520；侧边栏 NAV_ITEMS 同约定 itemKey 即路径）。 */
+/** 系统设置页路径（§6 行 520；NAV_ITEMS itemKey 同约定 itemKey 即路径）。 */
 const SETTINGS_PATH = '/admin/settings';
+
+/** 事件日志页路径（§6 行 523；NAV_ITEMS itemKey 同约定）。 */
+const AUDIT_PATH = '/admin/audit';
+
+/** 监控页路径（§6 行 524；NAV_ITEMS itemKey 同约定）。 */
+const STATUS_PATH = '/admin/status';
+
+/** 解码工具页路径（§6 行 525；NAV_ITEMS itemKey 同约定）。 */
+const DECODE_PATH = '/admin/decode';
 
 /** 未注册路由兜底文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
 const ROUTE_NOT_FOUND_TEXT = '页面不存在';
@@ -148,6 +162,39 @@ export function AdminApp() {
         breadcrumb={['管理后台', '设置']}
       >
         <SettingsPage alRoot={boot.alRoot} />
+      </AdminLayout>
+    );
+  }
+  if (path === AUDIT_PATH) {
+    return (
+      <AdminLayout
+        alRoot={boot.alRoot}
+        activeKey={AUDIT_PATH}
+        breadcrumb={['管理后台', '事件日志']}
+      >
+        <AuditPage alRoot={boot.alRoot} />
+      </AdminLayout>
+    );
+  }
+  if (path === STATUS_PATH) {
+    return (
+      <AdminLayout
+        alRoot={boot.alRoot}
+        activeKey={STATUS_PATH}
+        breadcrumb={['管理后台', '监控']}
+      >
+        <StatusPage alRoot={boot.alRoot} />
+      </AdminLayout>
+    );
+  }
+  if (path === DECODE_PATH) {
+    return (
+      <AdminLayout
+        alRoot={boot.alRoot}
+        activeKey={DECODE_PATH}
+        breadcrumb={['管理后台', '解码工具']}
+      >
+        <DecodePage alRoot={boot.alRoot} />
       </AdminLayout>
     );
   }

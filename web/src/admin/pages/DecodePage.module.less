@@ -1,0 +1,55 @@
+// 解码工具页样式（§1.7）：同目录同名 module less；类名 camelCase。
+// 表单控件自带 Semi 样式，此处承载表单纵排 / 结果区代码块。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: block;
+  max-width: 720px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+  margin-bottom: @spacing-md;
+}
+
+.purposeSelect {
+  width: 280px;
+}
+
+.tokenInput {
+  width: 100%;
+}
+
+.formFooter {
+  display: flex;
+}
+
+.actionError {
+  margin: 0 0 @spacing-md;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+}
+
+.resultHint {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+// 载荷 JSON 代码块：等宽展示 + 溢出滚动。
+.result {
+  margin: 0;
+  padding: @spacing-md;
+  overflow: auto;
+  background: @color-background-muted;
+  border-radius: @radius-sm;
+  font-size: @font-size-sm;
+}

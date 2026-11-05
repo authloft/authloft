@@ -9,8 +9,9 @@
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
  * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；并追加
  * settings 族 GetSettings / SetSettings（§5.6 行 1287 全量替换语义）+ 全量
- * 请求构造纯函数；ListEvents / DecodeToken / GetStatus 工具族方法随后续
- * 实现逐步追加（管理端无 multipart 上传，§6 行 506）。
+ * 请求构造纯函数；并追加工具三页族：ListEvents（§5.6 行 1288 统一事件
+ * 视图 + 预设视图）/ DecodeToken（§5.6 行 1289）/ GetStatus（§5.6 行 1290）
+ * + 请求构造 / 预设映射 / 展示纯函数（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
  * - 未携带有效会话 → HTTP 401（`unauthenticated`，框架层错误不进 §1.6 词汇表）
@@ -112,6 +113,17 @@ import type {
 } from '../gen/proto/api/admin/v1/settings_pb';
 import { SetSettingsRequestSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import type { SettingsDraft } from './settingsLogic';
+import type {
+  EventListResponse,
+  ListEventsRequest,
+} from '../gen/proto/api/admin/v1/events_pb';
+import { ListEventsRequestSchema } from '../gen/proto/api/admin/v1/events_pb';
+import type {
+  DecodeResponse,
+  DecodeTokenRequest,
+  StatusResponse,
+} from '../gen/proto/api/admin/v1/tools_pb';
+import { DecodeTokenRequestSchema } from '../gen/proto/api/admin/v1/tools_pb';
 
 /** 当前管理员信息（§5.1 行 1159）：`{id, username, nickname, avatarUrl, isAdmin:true}`，无入参。 */
 export function getMe(): Promise<MeResponse> {
@@ -889,4 +901,173 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
     staticBase: draft.staticBase.trim(),
     httpsDeployment: draft.httpsDeployment,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 工具三页族（§5.6 行 1288-1290 / §6 行 523-525）：ListEvents /
+// DecodeToken / GetStatus 三方法全部真调（后端已实装）；单测走 msw。
+// 预设视图口径（§5.6 行 1288「预设视图『登录记录』『敏感操作』」）：
+// - 「登录记录」= event=login_success（《后端架构》§4.6 行 807 记录范围：
+//   记录成功登录 + 各类敏感操作，登录记录即 login_success 单值）；
+// - 「敏感操作」预设的事件类型集合文档未定义封闭集（《后端架构》§4.6
+//   event 值域以 `|...` 收尾、§12.9 行 1754 跨版本可能新增；ListEvents
+//   的 event 系单值正向精确过滤，无排除语义）——故停报该项，
+//   仅交付「登录记录」预设 + 手动按类型筛选（需求 §4.6 行 260「可按类型
+//   筛选」）。事件类型值域取《后端架构》§4.6 event 列注释，未知值原样
+//   兜底展示（string 承载）。
+// ---------------------------------------------------------------------------
+
+/**
+ * 统一事件视图（§5.6 行 1288：筛选入参 {event, actorType, actorId,
+ * userId, from, to} + 分页 §1.7；查询参数缺省即不过滤，一律 optional）。
+ */
+export function listEvents(request: ListEventsRequest): Promise<EventListResponse> {
+  return adminClient.listEvents(request);
+}
+
+/**
+ * 解码工具（§5.6 行 1289：`{token, purpose:"login"｜"session"｜"cookie"}`
+ * → DecodeResponse.payload，Struct 原样透传不为前台消费建模；排障用）。
+ */
+export function decodeToken(request: DecodeTokenRequest): Promise<DecodeResponse> {
+  return adminClient.decodeToken(request);
+}
+
+/** 监控（§5.6 行 1290：队列长度 / dropped / flush 耗时，无入参）。 */
+export function getStatus(): Promise<StatusResponse> {
+  return adminClient.getStatus({});
+}
+
+/** 「登录记录」预设的事件类型（《后端架构》§4.6 行 807：成功登录 login_success）。 */
+export const LOGIN_RECORDS_EVENT = 'login_success';
+
+/**
+ * AuditPage 预设视图（§5.6 行 1288）：'all' 统一视图（event 手动筛选）/
+ * 'login_records' 登录记录（event 强制 login_success）。「敏感操作」预设
+ * 事件类型集合文档未定义 → 按 STOP ② 停报，不在值域内（见段落头注）。
+ */
+export type AuditPreset = 'all' | 'login_records';
+
+/** ListEvents 六筛选取值（§5.6 行 1288；undefined 即不下发 = 不过滤）。 */
+export interface AuditEventFilters {
+  readonly event?: string;
+  readonly actorType?: string;
+  readonly actorId?: bigint;
+  readonly userId?: bigint;
+  /** 起始时间，Unix 秒（§12.9 时间口径）。 */
+  readonly from?: bigint;
+  /** 结束时间，Unix 秒。 */
+  readonly to?: bigint;
+}
+
+/**
+ * ListEvents 请求构造（§5.6 行 1288 六筛选 + §1.7 行 275-278 分页）：
+ * - login_records 预设：event 强制 login_success（手动 event 筛选让位）；
+ *   其余五项筛选照常叠加（如「登录记录 + 操作者类型」）；
+ * - all 预设：event 取手动筛选值，空 / 缺省即不过滤；
+ * - 分页直映射；排序仅 order 非空时下发（dataTableLogic：清除排序后
+ *   order=''，受控渲染与 wire 均只认非空 order，buildListUsersRequest 同口径）。
+ */
+export function buildListEventsRequest(
+  preset: AuditPreset,
+  filters: AuditEventFilters,
+  query: TableQueryState,
+): ListEventsRequest {
+  return create(ListEventsRequestSchema, {
+    event:
+      preset === 'login_records'
+        ? LOGIN_RECORDS_EVENT
+        : filters.event === '' || filters.event === undefined
+          ? undefined
+          : filters.event,
+    actorType: filters.actorType === '' || filters.actorType === undefined ? undefined : filters.actorType,
+    actorId: filters.actorId,
+    userId: filters.userId,
+    from: filters.from,
+    to: filters.to,
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/** DecodeToken 请求构造（§5.6 行 1289：{token, purpose}；token 去首尾空白）。 */
+export function buildDecodeTokenRequest(token: string, purpose: string): DecodeTokenRequest {
+  return create(DecodeTokenRequestSchema, { token: token.trim(), purpose });
+}
+
+/**
+ * 事件类型展示文案（《后端架构》§4.6 event 列值域 16 常量 + §4.6 行 809
+ * oidc_authorize_no_state，共 17 已知值；跨版本新增原样兜底，§12.9 行 1754）。
+ */
+const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
+  login_success: '登录成功',
+  change_password: '修改密码',
+  reset_password: '重置密码',
+  bind_phone: '绑定手机号',
+  bind_email: '绑定邮箱',
+  enable_mfa: '启用两步验证',
+  disable_mfa: '关闭两步验证',
+  webauthn_register: '注册通行密钥',
+  webauthn_delete: '删除通行密钥',
+  thirdparty_bind: '绑定第三方',
+  thirdparty_unbind: '解绑第三方',
+  admin_disable_user: '管理员禁用用户',
+  admin_reset_password: '管理员重置密码',
+  provider_create: '新建提供方',
+  provider_update: '更新提供方',
+  settings_update: '更新系统设置',
+  oidc_authorize_no_state: 'OIDC 授权缺少 state',
+};
+
+/** 事件类型 → 展示文案（未知值原样兜底，§9 第 18 条）。 */
+export function eventTypeLabel(event: string): string {
+  return EVENT_TYPE_LABELS[event] ?? event;
+}
+
+/** 事件类型筛选下拉（§5.6 行 1288 event 过滤；值域 = 上述 17 已知类型）。 */
+export const EVENT_TYPE_FILTERS: readonly { readonly value: string; readonly text: string }[] =
+  Object.entries(EVENT_TYPE_LABELS).map(([value, text]) => ({ value, text }));
+
+/** 操作者类型展示文案（《后端架构》§4.6 actor_type 值域 user|admin|system）。 */
+const ACTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
+  user: '用户',
+  admin: '管理员',
+  system: '系统',
+};
+
+/** 操作者类型 → 展示文案（未知值原样兜底）。 */
+export function actorTypeLabel(actorType: string): string {
+  return ACTOR_TYPE_LABELS[actorType] ?? actorType;
+}
+
+/** 操作者类型筛选下拉（§5.6 行 1288 actorType 过滤 user|admin|system）。 */
+export const ACTOR_TYPE_FILTERS: readonly { readonly value: string; readonly text: string }[] =
+  Object.entries(ACTOR_TYPE_LABELS).map(([value, text]) => ({ value, text }));
+
+/**
+ * 操作者展示（§4.6：system 事件 actor_id=0 不编造用户 id → 仅展示「系统」；
+ * user / admin 附 actor_id 便于排查）。
+ */
+export function actorText(actorType: string, actorId: bigint): string {
+  if (actorType === 'system') {
+    return '系统';
+  }
+  return `${actorTypeLabel(actorType)} ${actorId}`;
+}
+
+/** ID 类 bigint 展示（§9 第 18 条零值兜底：0 → 占位符；其余十进制化）。 */
+export function bigIdText(value: bigint): string {
+  return value <= BigInt(0) ? '—' : value.toString();
+}
+
+/** 事件详情展示（EventItem.detail，JsonObject → 紧凑 JSON；缺省 → 占位符）。 */
+export function eventDetailText(detail: JsonObject | undefined): string {
+  return detail === undefined ? '—' : JSON.stringify(detail);
+}
+
+/** 解码载荷展示（DecodeResponse.payload，JsonObject → 缩进 JSON；缺省 → 占位符）。 */
+export function decodePayloadText(payload: JsonObject | undefined): string {
+  return payload === undefined ? '—' : JSON.stringify(payload, null, 2);
 }

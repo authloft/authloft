@@ -1,8 +1,9 @@
 /**
  * admin 端应用布局（docs/前端架构.md §6 行 501/507）：侧边栏（NAV_ITEMS，
  * 「提供方」随 ProvidersPage 长入、「用户」随 UsersPage 长入、「SSO 客户端」/
- * 「OIDC 客户端」随两页长入、「设置」随 SettingsPage 长入；其余条目随后续
- * 实现逐项长入）+ 顶栏（GetMe 管理员信息 + LogoutLink）+ 面包屑 + Content。
+ * 「OIDC 客户端」随两页长入、「设置」随 SettingsPage 长入、「事件日志」/
+ * 「监控」/「解码工具」随工具三页长入）+ 顶栏（GetMe 管理员信息 +
+ * LogoutLink）+ 面包屑 + Content。
  *
  * GetMe（§5.1 行 1159 管理员信息唯一来源）由布局层真调，渲染在顶栏；
  * 失败分流（§6 行 501，判定纯函数 adminMeFailureAction 在 ./api）：
@@ -32,12 +33,14 @@ import styles from './AdminLayout.module.less';
 const { Sider, Header, Content } = Layout;
 
 /**
- * 侧边栏导航项（§6 行 515-523 页面路由清单的已交付子集）：「提供方」随
+ * 侧边栏导航项（§6 行 515-525 页面路由清单的已交付子集）：「提供方」随
  * ProvidersPage 长入，「用户」随 UsersPage 长入；「SSO 客户端」
  * 「OIDC 客户端」随两页长入（需求 §4.6 行 257-258 两个独立模块，
  * 平铺两条目即两路由各自高亮）；「设置」随 SettingsPage 长入（需求
- * §4.6 行 259 系统配置）；其余条目（工具页）随后续实现逐项长入。itemKey 即
- * 路由路径，点击整页跳转（account AppLayout 同约定）。
+ * §4.6 行 259 系统配置）；「事件日志」「监控」随 AuditPage / StatusPage
+ * 长入（需求 §4.6 行 260-261），「解码工具」随 DecodePage 长入
+ * （§6 行 525 admin 排障工具，需求 §4.6 无对应模块条目故排最后）。
+ * itemKey 即路由路径，点击整页跳转（account AppLayout 同约定）。
  */
 const NAV_ITEMS: { itemKey: string; text: string }[] = [
   { itemKey: '/admin/providers', text: '提供方' },
@@ -45,6 +48,9 @@ const NAV_ITEMS: { itemKey: string; text: string }[] = [
   { itemKey: '/admin/clients/sso', text: 'SSO 客户端' },
   { itemKey: '/admin/clients/oidc', text: 'OIDC 客户端' },
   { itemKey: '/admin/settings', text: '设置' },
+  { itemKey: '/admin/audit', text: '事件日志' },
+  { itemKey: '/admin/status', text: '监控' },
+  { itemKey: '/admin/decode', text: '解码工具' },
 ];
 
 /** GetMe 未落地前的加载态文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */

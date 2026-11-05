@@ -1,0 +1,37 @@
+// 事件日志统一视图页样式（§1.7）：同目录同名 module less；类名 camelCase。
+// DataTable 自带表格 / 分页样式（Semi），此处只承载页内布局：筛选条 /
+// 长文本列截断（User-Agent / 详情）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: block;
+}
+
+// 筛选条：预设按钮组 + 事件类型 / 操作者类型下拉，窄屏可换行。
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-md;
+  align-items: center;
+  margin-bottom: @spacing-md;
+}
+
+.filterSelect {
+  min-width: 200px;
+}
+
+// 长文本列截断（全量内容经 title 悬浮展示；表格列宽受限）。
+.ellipsis {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.loadError {
+  margin: @spacing-lg 0;
+  color: @color-danger;
+  font-size: @font-size-md;
+}

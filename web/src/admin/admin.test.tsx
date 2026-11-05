@@ -144,6 +144,24 @@ import {
  * 与文档定稿一致 → 随本实现建键；行 1361 非三态 → invalid_request
  * 由 settingsDraftIssue 前端自律拦截（缺该键的全量提交会置空该键被后端拒收）。
  *
+ * 追加工具三页族测试（接口文档 §5.6 行 1288-1290；后端已实装）：
+ * - api 三方法 msw：ListEvents（login_records 预设强制 event=login_success +
+ *   六筛选 wire + EventItem 全字段解码含零值省略）/ DecodeToken（{token,
+ *   purpose} wire + Struct 载荷解码 + 400 Connect 错误体 → ApiError
+ *   invalid_argument）/ GetStatus（int64 十进制 → bigint + 零值省略 → 0n）；
+ * - 请求构造纯函数：buildListEventsRequest（预设强制 / 缺省全省略 / 排序仅
+ *   order 非空下发）/ buildDecodeTokenRequest（token 去首尾空白）；
+ * - 展示纯函数：eventTypeLabel / actorTypeLabel / actorText（system 不附
+ *   actor_id=0）/ bigIdText / eventDetailText / decodePayloadText +
+ *   EVENT_TYPE_FILTERS 值域锚定《后端架构》§4.6（event 列 16 常量 + 行 809
+ *   oidc_authorize_no_state，共 17 项；跨版本新增经 fallback 兜底不进下拉）。
+ * ⚠️「敏感操作」预设停报：其事件类型集合文档未定义封闭集
+ *   （《后端架构》§4.6 event 值域以 `|...` 开放 + ListEvents 的 event 系单值
+ *   正向精确过滤、无排除语义），AuditPage 仅交付「登录记录」预设 + 手动
+ *   事件类型 / 操作者类型筛选；六筛选中 actorId / userId / from / to 由
+ *   buildListEventsRequest 全支持、UI 暴露归后续增强。
+ * AuditPage / StatusPage / DecodePage 渲染不可测（同上 Blocker）。
+ *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
@@ -191,6 +209,9 @@ const UPDATE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/UpdateOidcClie
 const DELETE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/DeleteOidcClient`;
 const GET_SETTINGS_URL = `${BASE}/api.admin.v1.AdminService/GetSettings`;
 const SET_SETTINGS_URL = `${BASE}/api.admin.v1.AdminService/SetSettings`;
+const LIST_EVENTS_URL = `${BASE}/api.admin.v1.AdminService/ListEvents`;
+const DECODE_TOKEN_URL = `${BASE}/api.admin.v1.AdminService/DecodeToken`;
+const GET_STATUS_URL = `${BASE}/api.admin.v1.AdminService/GetStatus`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -2583,5 +2604,319 @@ describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 tr
       'webauthn',
       'thirdparty',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 工具三页族（接口文档 §5.6 行 1288-1290；后端已实装）
+// ---------------------------------------------------------------------------
+
+describe('api.listEvents（§5.6 行 1288：统一事件视图，六筛选 + 分页 §1.7）', () => {
+  test('请求体 wire（login_records 预设强制 event=login_success + actorType 叠加 + 分页/排序）→ EventListResponse 解码（EventItem 全字段 + 零值省略）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(LIST_EVENTS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              id: '9',
+              event: 'login_success',
+              actorType: 'user',
+              actorId: '42',
+              userId: '42',
+              clientId: 'web-portal',
+              amr: 'pwd',
+              ip: '203.0.113.1',
+              ua: 'Mozilla/5.0',
+              target: '',
+              detail: { session_id: 's-1' },
+              createdAt: '1730000100',
+            },
+            {
+              id: '10',
+              event: 'oidc_authorize_no_state',
+              actorType: 'system',
+              actorId: '0',
+              userId: '0',
+              createdAt: '1730000200',
+            },
+          ],
+          total: '2',
+          page: '2',
+          pageSize: '20',
+        });
+      }),
+    );
+
+    const query: TableQueryState = {
+      ...initialTableQuery(),
+      page: 2,
+      sort: 'created_at',
+      order: 'desc',
+    };
+    const res = await apiMod.listEvents(
+      apiMod.buildListEventsRequest('login_records', { actorType: 'user' }, query),
+    );
+
+    // 预设「登录记录」→ event 强制 login_success；其余筛选透传；排序仅 order 非空下发。
+    expect(requestBody).toEqual({
+      event: 'login_success',
+      actorType: 'user',
+      page: '2',
+      pageSize: '20',
+      sort: 'created_at',
+      order: 'desc',
+    });
+    expect(res.$typeName).toBe('api.admin.v1.EventListResponse');
+    expect(res.total).toBe(BigInt(2));
+    expect(res.page).toBe(BigInt(2));
+    expect(res.pageSize).toBe(BigInt(20));
+    expect(res.items).toHaveLength(2);
+    expect(res.items[0].id).toBe(BigInt(9));
+    expect(res.items[0].event).toBe('login_success');
+    expect(res.items[0].actorType).toBe('user');
+    expect(res.items[0].actorId).toBe(BigInt(42));
+    expect(res.items[0].clientId).toBe('web-portal');
+    expect(res.items[0].detail?.session_id).toBe('s-1');
+    expect(res.items[0].createdAt).toBe(BigInt(1730000100));
+    // protojson 零值省略 → 解码为 proto 零值（''/0/undefined，展示层 §9 第 18 条兜底）。
+    expect(res.items[1].actorType).toBe('system');
+    expect(res.items[1].userId).toBe(BigInt(0));
+    expect(res.items[1].ip).toBe('');
+    expect(res.items[1].detail).toBeUndefined();
+  });
+
+  test('500 reject → ApiError', async () => {
+    server.use(
+      http.post(LIST_EVENTS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.listEvents(
+        apiMod.buildListEventsRequest('all', {}, initialTableQuery()),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('buildListEventsRequest（§5.6 行 1288 六筛选 + §1.7 行 275-278 分页）', () => {
+  test('login_records 预设强制 event=LOGIN_RECORDS_EVENT，手动 event 让位、其余筛选叠加', () => {
+    expect(apiMod.LOGIN_RECORDS_EVENT).toBe('login_success');
+    const req = apiMod.buildListEventsRequest(
+      'login_records',
+      { event: 'change_password', actorType: 'admin' },
+      initialTableQuery(),
+    );
+    expect(req.event).toBe('login_success');
+    expect(req.actorType).toBe('admin');
+  });
+
+  test('all 预设：缺省筛选全省略；六筛选全量直映射；排序仅 order 非空下发', () => {
+    const base = initialTableQuery();
+
+    // 查询参数缺省即不过滤（生成物头注：一律 optional）。
+    const plain = apiMod.buildListEventsRequest('all', {}, base);
+    expect(plain.event).toBeUndefined();
+    expect(plain.actorType).toBeUndefined();
+    expect(plain.actorId).toBeUndefined();
+    expect(plain.userId).toBeUndefined();
+    expect(plain.from).toBeUndefined();
+    expect(plain.to).toBeUndefined();
+    expect(plain.page).toBe(BigInt(1));
+    expect(plain.pageSize).toBe(BigInt(20));
+    expect(plain.sort).toBeUndefined();
+    expect(plain.order).toBeUndefined();
+
+    const full = apiMod.buildListEventsRequest(
+      'all',
+      {
+        event: 'settings_update',
+        actorType: 'system',
+        actorId: BigInt(1),
+        userId: BigInt(7),
+        from: BigInt(1730000000),
+        to: BigInt(1730000600),
+      },
+      { ...base, sort: 'created_at', order: 'asc' },
+    );
+    expect(full.event).toBe('settings_update');
+    expect(full.actorType).toBe('system');
+    expect(full.actorId).toBe(BigInt(1));
+    expect(full.userId).toBe(BigInt(7));
+    expect(full.from).toBe(BigInt(1730000000));
+    expect(full.to).toBe(BigInt(1730000600));
+    expect(full.sort).toBe('created_at');
+    expect(full.order).toBe('asc');
+
+    // 清除排序（dataTableLogic：order=''）→ sort / order 均不下发。
+    const cleared = apiMod.buildListEventsRequest('all', {}, {
+      ...base,
+      sort: 'created_at',
+      order: '',
+    });
+    expect(cleared.sort).toBeUndefined();
+    expect(cleared.order).toBeUndefined();
+  });
+});
+
+describe('api.decodeToken（§5.6 行 1289：{token, purpose} → Struct 载荷）', () => {
+  test('请求体 wire（token 去首尾空白）→ DecodeResponse 解码（payload JsonObject）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(DECODE_TOKEN_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          payload: { uid: '1', exp: '1730000600', amr: 'pwd' },
+        });
+      }),
+    );
+
+    const res = await apiMod.decodeToken(
+      apiMod.buildDecodeTokenRequest('  tok-1  ', 'session'),
+    );
+
+    expect(requestBody).toEqual({ token: 'tok-1', purpose: 'session' });
+    expect(res.$typeName).toBe('api.admin.v1.DecodeResponse');
+    expect(res.payload?.uid).toBe('1');
+    expect(res.payload?.exp).toBe('1730000600');
+    expect(res.payload?.amr).toBe('pwd');
+  });
+
+  test('解码失败（篡改 / 跨 purpose / 无效令牌）→ 400 Connect 错误体 → ApiError invalid_argument', async () => {
+    server.use(
+      http.post(DECODE_TOKEN_URL, () =>
+        HttpResponse.json(
+          { code: 'invalid_argument', message: 'decode failed' },
+          { status: 400 },
+        ),
+      ),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.decodeToken(
+        apiMod.buildDecodeTokenRequest('bad-token', 'login'),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(400);
+    expect((caught as ApiError).code).toBe('invalid_argument');
+  });
+});
+
+describe('api.getStatus（§5.6 行 1290：队列长度 / dropped / flush 耗时）', () => {
+  test('无入参（空请求体）→ StatusResponse 解码（int64 十进制字符串 → bigint）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_STATUS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ queueLength: '5', dropped: '2', flushMs: '37' });
+      }),
+    );
+
+    const res = await apiMod.getStatus();
+
+    expect(requestBody).toEqual({});
+    expect(res.$typeName).toBe('api.admin.v1.StatusResponse');
+    expect(res.queueLength).toBe(BigInt(5));
+    expect(res.dropped).toBe(BigInt(2));
+    expect(res.flushMs).toBe(BigInt(37));
+  });
+
+  test('protojson 零值省略（空队列 / 未丢弃 / 未发生过 flush）→ 0n', async () => {
+    server.use(http.post(GET_STATUS_URL, () => HttpResponse.json({})));
+    const res = await apiMod.getStatus();
+    expect(res.queueLength).toBe(BigInt(0));
+    expect(res.dropped).toBe(BigInt(0));
+    expect(res.flushMs).toBe(BigInt(0));
+  });
+
+  test('500 reject → ApiError', async () => {
+    server.use(
+      http.post(GET_STATUS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.getStatus();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('eventTypeLabel / EVENT_TYPE_FILTERS（《后端架构》§4.6 值域锚定）', () => {
+  test('EVENT_TYPE_FILTERS 值域 = §4.6 event 列 16 常量 + 行 809 oidc_authorize_no_state（17 项）', () => {
+    expect(apiMod.EVENT_TYPE_FILTERS.map((option) => option.value)).toEqual([
+      'login_success',
+      'change_password',
+      'reset_password',
+      'bind_phone',
+      'bind_email',
+      'enable_mfa',
+      'disable_mfa',
+      'webauthn_register',
+      'webauthn_delete',
+      'thirdparty_bind',
+      'thirdparty_unbind',
+      'admin_disable_user',
+      'admin_reset_password',
+      'provider_create',
+      'provider_update',
+      'settings_update',
+      'oidc_authorize_no_state',
+    ]);
+    // 下拉项 text 非空（值域同名文案）。
+    for (const option of apiMod.EVENT_TYPE_FILTERS) {
+      expect(option.text).not.toBe('');
+    }
+  });
+
+  test('eventTypeLabel：已知值 → 中文文案；未知值原样兜底（§12.9 跨版本新增）', () => {
+    expect(apiMod.eventTypeLabel('login_success')).toBe('登录成功');
+    expect(apiMod.eventTypeLabel('admin_reset_password')).toBe('管理员重置密码');
+    expect(apiMod.eventTypeLabel('future_event')).toBe('future_event');
+  });
+});
+
+describe('actorTypeLabel / actorText / bigIdText / eventDetailText / decodePayloadText（展示纯函数，§9 第 18 条零值兜底）', () => {
+  test('actorTypeLabel：user/admin/system → 文案；未知原样兜底', () => {
+    expect(apiMod.actorTypeLabel('user')).toBe('用户');
+    expect(apiMod.actorTypeLabel('admin')).toBe('管理员');
+    expect(apiMod.actorTypeLabel('system')).toBe('系统');
+    expect(apiMod.actorTypeLabel('robot')).toBe('robot');
+  });
+
+  test('actorText：system 事件不附 actor_id=0（§4.6 不编造用户 id）；user/admin 附 id', () => {
+    expect(apiMod.actorText('system', BigInt(0))).toBe('系统');
+    expect(apiMod.actorText('user', BigInt(42))).toBe('用户 42');
+    expect(apiMod.actorText('admin', BigInt(1))).toBe('管理员 1');
+  });
+
+  test('bigIdText：零值 → 占位符；非零 → 十进制（§1.12 不经 Number）', () => {
+    expect(apiMod.bigIdText(BigInt(0))).toBe('—');
+    expect(apiMod.bigIdText(BigInt(7))).toBe('7');
+    expect(apiMod.bigIdText(BigInt('9223372036854775807'))).toBe('9223372036854775807');
+  });
+
+  test('eventDetailText：缺省 → 占位符；JsonObject → 紧凑 JSON', () => {
+    expect(apiMod.eventDetailText(undefined)).toBe('—');
+    expect(apiMod.eventDetailText({ session_id: 's-1', n: 2 })).toBe(
+      '{"session_id":"s-1","n":2}',
+    );
+  });
+
+  test('decodePayloadText：缺省 → 占位符；JsonObject → 缩进 JSON', () => {
+    expect(apiMod.decodePayloadText(undefined)).toBe('—');
+    expect(apiMod.decodePayloadText({ uid: '1' })).toBe(
+      JSON.stringify({ uid: '1' }, null, 2),
+    );
   });
 });
