@@ -13,8 +13,10 @@
  * URL 组装（providerCallbackUrl）与 OIDC 判定（isOidcProviderType）为纯
  * 函数（零 Semi 依赖，node 可测）；本组件零 Semi import，渲染可经
  * renderToStaticMarkup 静态验证（components.test.ts 同模式）。
- * OIDC 判定口径：type 前缀 `oidc_`（既定口径；单点判定，后端注册表
- * 新增类型时只改此处）。
+ * OIDC 判定口径：标准协议兜底渠道 type 为 `oidc` 或 `oauth2`
+ * （接口文档 §9 行 1461「type=oidc｜oauth2」+ 需求 §4.3.1 行 162）——
+ * 后端注册表现状（oauth 域 wechat_mp、消息域 aliyun_sms / smtp）无任何
+ * `oidc_` 前缀类型，原前缀判定恒 false。
  * 样式（§1.7）：同目录同名 module less。
  */
 import type { ReactNode } from 'react';
@@ -37,11 +39,11 @@ export function providerCallbackUrl(alRoot: string, providerKey?: string): strin
 }
 
 /**
- * OIDC 类判定（既定口径：type 前缀 `oidc_`）：命中 → 另提示
- * 「回调需精确匹配」。
+ * OIDC 类判定（接口文档 §9 行 1461 + 需求 §4.3.1 行 162：标准协议兜底
+ * 渠道 type=oidc｜oauth2）：命中 → 另提示「回调需精确匹配」。
  */
 export function isOidcProviderType(type: string | undefined): boolean {
-  return type !== undefined && type.startsWith('oidc_');
+  return type === 'oidc' || type === 'oauth2';
 }
 
 export interface ProviderCallbackHintProps {
@@ -49,7 +51,7 @@ export interface ProviderCallbackHintProps {
   readonly alRoot: string;
   /** Provider 唯一标识；缺省渲染字面 `{provider_key}` 模板（列表页顶部形态）。 */
   readonly providerKey?: string;
-  /** Provider 类型；oidc_ 前缀另提示「回调需精确匹配」（编辑页消费）。 */
+  /** Provider 类型；OIDC / OAuth2 标准协议兜底类另提示「回调需精确匹配」（编辑页消费）。 */
   readonly type?: string;
 }
 

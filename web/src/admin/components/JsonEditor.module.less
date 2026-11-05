@@ -1,0 +1,27 @@
+// JSON 编辑器自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+@import (reference) '../../shared/styles/tokens.less';
+
+.editor {
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  padding: @spacing-sm @spacing-md;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background-muted;
+  color: @color-text;
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
+  font-size: @font-size-sm;
+  line-height: 1.5;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: @color-primary;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}

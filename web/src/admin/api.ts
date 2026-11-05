@@ -3,8 +3,10 @@
  * 本次交付 GetMe（§5.1 行 1159：前端获取管理员信息的唯一来源，`/admin/**`
  * 空壳页不注入 `admin` 字段）并追加 Provider 列表族：ListProviders /
  * SetProviderEnabled / SortProviders 薄封装 + 列表 / 排序请求构造与策略标签
- * 展示纯函数（§5.2 行 1164-1177）；用户 / 客户端 / settings / 工具族方法随
- * 后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
+ * 展示纯函数（§5.2 行 1164-1177）；并追加 Provider 编辑族：
+ * GetProviderTypes / GetProviderSchema / GetProvider / Create / Update /
+ * TestProvider（§5.2 行 1169-1177 + §5.3）；用户 / 客户端 / settings /
+ * 工具族方法随后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
  * - 未携带有效会话 → HTTP 401（`unauthenticated`，框架层错误不进 §1.6 词汇表）
@@ -23,23 +25,32 @@
  * shared/hooks/useRequest（§3.2），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  */
-import { create } from '@bufbuild/protobuf';
+import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
+import { StructSchema } from '@bufbuild/protobuf/wkt';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
 import { t } from '../shared/i18n';
 import { FIRST_PAGE, MAX_PAGE_SIZE } from '../shared/app-ui/dataTableLogic';
 import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
 import type {
+  AdminProvider,
+  GetProviderRequest,
   ListProvidersRequest,
   Provider,
   ProviderListResponse,
   SetProviderEnabledRequest,
   SortProvidersRequest,
+  TestProviderRequest,
 } from '../gen/proto/api/admin/v1/provider_pb';
 import {
   ListProvidersRequestSchema,
   SortProvidersRequestSchema,
 } from '../gen/proto/api/admin/v1/provider_pb';
+import type {
+  GetProviderSchemaRequest,
+  ProviderTypesResponse,
+  SchemaResponse,
+} from '../gen/proto/api/admin/v1/schema_pb';
 
 /** 当前管理员信息（§5.1 行 1159）：`{id, username, nickname, avatarUrl, isAdmin:true}`，无入参。 */
 export function getMe(): Promise<MeResponse> {
@@ -99,6 +110,45 @@ export function buildSortProvidersRequest(
       sortOrder: BigInt(index + 1),
     })),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Provider 编辑族（§5.2 行 1169-1177 + §5.3）：GetProviderTypes /
+// GetProviderSchema / GetProvider / Create / Update / Test 全部真调（后端
+// 已实装）；Create / Update 请求体为 google.protobuf.Struct（提交体
+// 即 {"<key>": <value>} 平铺，构造逻辑在 schema/schemaLogic.buildProviderStruct）。
+// ---------------------------------------------------------------------------
+
+/** type 下拉数据源（§5.2 行 1175：来自注册表 metas，不分页）。 */
+export function getProviderTypes(): Promise<ProviderTypesResponse> {
+  return adminClient.getProviderTypes({});
+}
+
+/** 动态表单 schema（§5.2 行 1176 / §5.3：{type} → {type, category, fields}）。 */
+export function getProviderSchema(
+  request: GetProviderSchemaRequest,
+): Promise<SchemaResponse> {
+  return adminClient.getProviderSchema(request);
+}
+
+/** 详情（§5.2 行 1170：{providerKey}，返回明文凭证——全站唯一明文出口）。 */
+export function getProvider(request: GetProviderRequest): Promise<AdminProvider> {
+  return adminClient.getProvider(request);
+}
+
+/** 新建（§5.2 行 1169：请求体为 §5.3 schema 字段集合，JsonObject 平铺含 type）→ OkResponse。 */
+export function createProvider(values: JsonObject): Promise<OkResponse> {
+  return adminClient.createProvider(fromJson(StructSchema, values));
+}
+
+/** 编辑（§5.2 行 1171：提交体平铺含 provider_key 定位，缺省键保留）→ OkResponse。 */
+export function updateProvider(values: JsonObject): Promise<OkResponse> {
+  return adminClient.updateProvider(fromJson(StructSchema, values));
+}
+
+/** 发送测试（§5.2 行 1177：{providerKey, target}，短信 / 邮件类）→ OkResponse。 */
+export function testProvider(request: TestProviderRequest): Promise<OkResponse> {
+  return adminClient.testProvider(request);
 }
 
 /**

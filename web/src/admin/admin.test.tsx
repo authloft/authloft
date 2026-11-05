@@ -6,12 +6,21 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { create } from '@bufbuild/protobuf';
+import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
 import { MeResponseSchema } from '../gen/proto/api/admin/v1/admin_pb';
 import {
+  AdminProviderSchema,
+  GetProviderRequestSchema,
   ProviderSchema,
   SetProviderEnabledRequestSchema,
+  TestProviderRequestSchema,
 } from '../gen/proto/api/admin/v1/provider_pb';
+import {
+  GetProviderSchemaRequestSchema,
+  SchemaFieldSchema,
+  SchemaResponseSchema,
+  type SchemaField,
+} from '../gen/proto/api/admin/v1/schema_pb';
 import { ApiError } from '../shared/api/errors';
 import { moveItem, SortableList } from './components/SortableList';
 import {
@@ -19,6 +28,17 @@ import {
   isOidcProviderType,
   providerCallbackUrl,
 } from './components/ProviderCallbackHint';
+import { JsonEditor } from './components/JsonEditor';
+import {
+  SECTION_ORDER,
+  adminProviderToValues,
+  applySchemaDefaults,
+  buildProviderStruct,
+  groupFieldsBySection,
+  initialCreateValues,
+  isProviderKeyTaken,
+  validateSchemaValues,
+} from './schema/schemaLogic';
 
 /**
  * admin entry 底座测试 + Provider 列表族测试。底座覆盖边界（既定口径
@@ -42,7 +62,18 @@ import {
  * - SortableList.moveItem 重排纯函数 + 组件静态渲染（零 Semi 依赖，经
  *   react-dom/server renderToStaticMarkup，components.test.ts 同模式）；
  * - ProviderCallbackHint：providerCallbackUrl / isOidcProviderType 纯函数 +
- *   模板 / 具体 / OIDC 注记三形态静态渲染。
+ *   模板 / 具体 / OIDC 注记三形态静态渲染（OIDC 判定 type=oidc｜oauth2，
+ *   接口文档 §9 行 1461）。
+ *
+ * Provider 编辑族追加（接口文档 §5.2 行 1169-1177 + §5.3 行 1181-1243）：
+ * - schemaLogic 纯函数全集：五区块分组（section 缺失 / 非法即 throw）/
+ *   默认值应用 / 详情回填（表列 typed 映射 + Ext 合成 + json stringify）/
+ *   提交前校验（required / pattern / number / json）/ 提交体构造
+ *   （type 顶层恒带 + json parse + 空 json 省略）/ provider_key 唯一性预检；
+ * - api Provider 编辑族 msw 真实 transport 链：GetProviderTypes /
+ *   GetProviderSchema / GetProvider 读路径解码（Struct / Value protojson
+ *   形态）+ Create / Update / TestProvider 请求体 wire 校验（Struct 平铺）；
+ * - JsonEditor 静态渲染（零 Semi 依赖）。
  *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
@@ -66,6 +97,12 @@ const GET_ME_URL = `${BASE}/api.admin.v1.AdminService/GetMe`;
 const LIST_PROVIDERS_URL = `${BASE}/api.admin.v1.AdminService/ListProviders`;
 const SET_PROVIDER_ENABLED_URL = `${BASE}/api.admin.v1.AdminService/SetProviderEnabled`;
 const SORT_PROVIDERS_URL = `${BASE}/api.admin.v1.AdminService/SortProviders`;
+const GET_PROVIDER_TYPES_URL = `${BASE}/api.admin.v1.AdminService/GetProviderTypes`;
+const GET_PROVIDER_SCHEMA_URL = `${BASE}/api.admin.v1.AdminService/GetProviderSchema`;
+const GET_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/GetProvider`;
+const CREATE_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/CreateProvider`;
+const UPDATE_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/UpdateProvider`;
+const TEST_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/TestProvider`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -631,8 +668,11 @@ describe('providerCallbackUrl / isOidcProviderType（纯函数）', () => {
     expect(providerCallbackUrl('', 'qq')).toBe('/sso/oauth/callback/qq');
   });
 
-  test('isOidcProviderType：oidc_ 前缀判定（既定口径）', () => {
-    expect(isOidcProviderType('oidc_generic')).toBe(true);
+  test('isOidcProviderType：type=oidc｜oauth2 判定（接口文档 §9 行 1461）', () => {
+    expect(isOidcProviderType('oidc')).toBe(true);
+    expect(isOidcProviderType('oauth2')).toBe(true);
+    // 原 oidc_ 前缀口径与后端注册表不符（oauth 域仅 wechat_mp，无前缀类型）。
+    expect(isOidcProviderType('oidc_generic')).toBe(false);
     expect(isOidcProviderType('qq')).toBe(false);
     expect(isOidcProviderType('')).toBe(false);
     expect(isOidcProviderType(undefined)).toBe(false);
@@ -649,15 +689,15 @@ describe('ProviderCallbackHint（静态渲染：模板 / 具体 / OIDC 注记三
     expect(markup).not.toContain('精确匹配');
   });
 
-  test('具体 providerKey：具体回调地址；oidc_ 前缀另提示「回调需精确匹配」', () => {
+  test('具体 providerKey：具体回调地址；OIDC 兜底类（type=oidc）另提示「回调需精确匹配」', () => {
     const oidc = renderToStaticMarkup(
       createElement(ProviderCallbackHint, {
         alRoot: 'https://uc.test',
-        providerKey: 'qq',
-        type: 'oidc_generic',
+        providerKey: 'oidc_main',
+        type: 'oidc',
       }),
     );
-    expect(oidc).toContain('https://uc.test/sso/oauth/callback/qq');
+    expect(oidc).toContain('https://uc.test/sso/oauth/callback/oidc_main');
     expect(oidc).toContain('精确匹配');
 
     const nonOidc = renderToStaticMarkup(
@@ -669,5 +709,456 @@ describe('ProviderCallbackHint（静态渲染：模板 / 具体 / OIDC 注记三
     );
     expect(nonOidc).toContain('https://uc.test/sso/oauth/callback/qq');
     expect(nonOidc).not.toContain('精确匹配');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// schemaLogic 纯函数（§5.3 行 1181-1243；零 Semi 依赖，node 可测）
+// ---------------------------------------------------------------------------
+
+/** SchemaField 测试工厂（protojson 形态 → fromJson 造 default 的 Value）。 */
+function schemaField(init: JsonObject): SchemaField {
+  return fromJson(SchemaFieldSchema, init);
+}
+
+/**
+ * 测试字段集（§5.3 行 1187-1226 wechat_mp 示例的简化覆盖：五区块 ×
+ * 六类型中的 text / secret / select / number / json / checkbox + required /
+ * pattern / default / advanced 修饰）。
+ */
+const SCHEMA_FIELDS = [
+  schemaField({ key: 'provider_key', label: '唯一标识', type: 'text', section: 'basic', required: true, pattern: '^[a-z0-9_]+$', help: '创建后不可修改' }),
+  schemaField({ key: 'display_name', label: '显示名称', type: 'text', section: 'basic', required: true }),
+  schemaField({ key: 'category', label: '类别', type: 'select', section: 'basic', required: true, options: ['oauth'] }),
+  schemaField({ key: 'union_provider', label: '联合登录归属', type: 'select', section: 'basic', options: [] }),
+  schemaField({ key: 'client_id', label: 'AppID', type: 'text', section: 'credential', required: true }),
+  schemaField({ key: 'client_secret', label: 'AppSecret', type: 'secret', section: 'credential', required: true }),
+  schemaField({ key: 'port', label: '端口', type: 'number', section: 'endpoint' }),
+  schemaField({ key: 'user_mapping', label: '字段映射', type: 'json', section: 'endpoint', advanced: true }),
+  schemaField({ key: 'icon_url', label: '图标 URL', type: 'text', section: 'display', pattern: '^https?://' }),
+  schemaField({ key: 'ui_group', label: '展示分组', type: 'select', section: 'display', default: 'social' }),
+  schemaField({ key: 'sort_order', label: '排序', type: 'number', section: 'display', default: 0 }),
+  schemaField({ key: 'is_enabled', label: '启用', type: 'checkbox', section: 'policy', default: true }),
+];
+
+describe('groupFieldsBySection（§5.3 行 1185：五区块分组 + 数组序 + section 缺失即报错）', () => {
+  test('按 SECTION_ORDER 分组，区块内保持 fields[] 数组序；空区块为空数组', () => {
+    const groups = groupFieldsBySection(SCHEMA_FIELDS);
+    expect(SECTION_ORDER).toEqual(['basic', 'credential', 'endpoint', 'display', 'policy']);
+    expect(groups).toHaveLength(5);
+    expect(groups[0].map((f) => f.key)).toEqual(['provider_key', 'display_name', 'category', 'union_provider']);
+    expect(groups[1].map((f) => f.key)).toEqual(['client_id', 'client_secret']);
+    expect(groups[2].map((f) => f.key)).toEqual(['port', 'user_mapping']);
+    expect(groups[3].map((f) => f.key)).toEqual(['icon_url', 'ui_group', 'sort_order']);
+    expect(groups[4].map((f) => f.key)).toEqual(['is_enabled']);
+  });
+
+  test('section 缺失（protojson 零值省略 → 空串）即 throw（§6 行 508 不维护映射表）', () => {
+    const missing = [schemaField({ key: 'x', label: 'X', type: 'text', section: 'basic' }), schemaField({ key: 'y', label: 'Y', type: 'text' })];
+    expect(() => groupFieldsBySection(missing)).toThrow(/section/);
+  });
+
+  test('section 非法值即 throw（五区块封闭值域）', () => {
+    const illegal = [schemaField({ key: 'x', label: 'X', type: 'text', section: 'unknown' })];
+    expect(() => groupFieldsBySection(illegal)).toThrow(/section/);
+  });
+});
+
+describe('applySchemaDefaults（§5.3 行 1183 default 修饰 + 类型零值）', () => {
+  test('default 有值按 default（string / number / bool）；未下发按类型零值', () => {
+    const values = applySchemaDefaults(SCHEMA_FIELDS);
+    expect(values.provider_key).toBe('');
+    expect(values.category).toBe('');
+    expect(values.port).toBe(0);
+    expect(values.user_mapping).toBe('');
+    expect(values.ui_group).toBe('social');
+    expect(values.sort_order).toBe(0);
+    expect(values.is_enabled).toBe(true);
+  });
+});
+
+describe('initialCreateValues（新建 category 预填注册表权威值，死锁修正）', () => {
+  test('category 取 SchemaResponse 顶层 category（§5.3 行 1183/1195）；其余字段沿用 default / 零值', () => {
+    const schema = create(SchemaResponseSchema, {
+      type: 'wechat_mp',
+      category: 'oauth',
+      fields: SCHEMA_FIELDS,
+    });
+    const values = initialCreateValues(schema);
+    // R1 核心：category 不再是零值 ''（applySchemaDefaults 死锁源）。
+    expect(values.category).toBe('oauth');
+    expect(values.provider_key).toBe('');
+    expect(values.ui_group).toBe('social');
+    expect(values.is_enabled).toBe(true);
+  });
+
+  test('R1 死锁回归锚点：预填值经 validateSchemaValues 后 category 键无 issue（required 通过）', () => {
+    const schema = create(SchemaResponseSchema, {
+      type: 'wechat_mp',
+      category: 'oauth',
+      fields: SCHEMA_FIELDS,
+    });
+    const issues = validateSchemaValues(SCHEMA_FIELDS, initialCreateValues(schema));
+    expect(issues.category).toBeUndefined();
+    // 对照：required 拦截对其他未填字段照常生效（修正未绕过校验）。
+    expect(issues.provider_key).toBe('此项为必填');
+  });
+});
+
+describe('adminProviderToValues（编辑回填：表列 typed 映射 + Ext 合成 + json stringify）', () => {
+  test('表列取 typed 属性（int64 sortOrder → number）；Ext 键取 ext JsonObject；json 对象 stringify；缺失键零值', () => {
+    const provider = create(AdminProviderSchema, {
+      providerKey: 'wx1',
+      displayName: '微信',
+      category: 'oauth',
+      type: 'wechat_mp',
+      enableSignin: true,
+      sortOrder: BigInt(3),
+      iconUrl: 'https://cdn.test/wx.png',
+      ext: {
+        client_id: 'wx-123',
+        client_secret: 'secret-456',
+        port: 443,
+        user_mapping: { nickname: '$.name' },
+      },
+    });
+    const values = adminProviderToValues(SCHEMA_FIELDS, provider);
+    expect(values.provider_key).toBe('wx1');
+    expect(values.display_name).toBe('微信');
+    expect(values.category).toBe('oauth');
+    expect(values.union_provider).toBe('');
+    expect(values.sort_order).toBe(3);
+    expect(values.icon_url).toBe('https://cdn.test/wx.png');
+    expect(values.client_id).toBe('wx-123');
+    expect(values.client_secret).toBe('secret-456');
+    expect(values.port).toBe(443);
+    // json 字段编辑文本态（格式化 JSON 文本）。
+    expect(values.user_mapping).toBe(JSON.stringify({ nickname: '$.name' }, null, 2));
+    // 表列零值（protojson 省略 → false）+ Ext 缺失键零值。
+    expect(values.is_enabled).toBe(false);
+    expect(values.ui_group).toBe('');
+  });
+
+  test('ext 缺省（JsonObject undefined）→ 全部 Ext 字段零值', () => {
+    const provider = create(AdminProviderSchema, {
+      providerKey: 'wx1',
+    });
+    const values = adminProviderToValues(SCHEMA_FIELDS, provider);
+    expect(values.client_id).toBe('');
+    expect(values.user_mapping).toBe('');
+  });
+});
+
+describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法性）', () => {
+  test('required 空值 / pattern 不匹配 / json 非法 → 对应键文案；合法值 → 空', () => {
+    const invalid = validateSchemaValues(SCHEMA_FIELDS, {
+      provider_key: 'Bad Key', // pattern ^[a-z0-9_]+$ 不匹配。
+      display_name: '', // required 空。
+      category: 'oauth',
+      client_id: '',
+      client_secret: 's',
+      port: 0,
+      user_mapping: '{oops', // 非法 JSON。
+      icon_url: 'ftp://cdn.test/x.png', // pattern ^https?:// 不匹配。
+      ui_group: 'social',
+      sort_order: 0,
+      is_enabled: true,
+    });
+    expect(invalid.provider_key).toBe('格式不正确');
+    expect(invalid.display_name).toBe('此项为必填');
+    expect(invalid.client_id).toBe('此项为必填');
+    expect(invalid.user_mapping).toBe('不是合法的 JSON');
+    expect(invalid.icon_url).toBe('格式不正确');
+    expect(Object.keys(invalid).sort()).toEqual(
+      ['client_id', 'display_name', 'icon_url', 'provider_key', 'user_mapping'].sort(),
+    );
+
+    const valid = validateSchemaValues(SCHEMA_FIELDS, {
+      provider_key: 'wx_new',
+      display_name: '新微信',
+      category: 'oauth',
+      client_id: 'wx-123',
+      client_secret: 's',
+      port: 443,
+      user_mapping: '{"nickname": "$.name"}',
+      icon_url: '', // 非必填空值放行（§5.3 行 1213 留空渲染占位）。
+      ui_group: 'social',
+      sort_order: 0,
+      is_enabled: false, // checkbox false 是合法值（required 不适用）。
+    });
+    expect(valid).toEqual({});
+  });
+
+  test('number 类型非 number → 文案（受控态兜底）', () => {
+    const issues = validateSchemaValues([schemaField({ key: 'port', label: '端口', type: 'number', section: 'endpoint' })], { port: '443' });
+    expect(issues.port).toBe('必须是数字');
+  });
+});
+
+describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + type 顶层恒带）', () => {
+  test('type 顶层 + 全键平铺；json 文本 parse 回对象；checkbox false / number 0 原样保留', () => {
+    const struct = buildProviderStruct('wechat_mp', SCHEMA_FIELDS, {
+      provider_key: 'wx_new',
+      display_name: '新微信',
+      category: 'oauth',
+      union_provider: '',
+      client_id: 'wx-123',
+      client_secret: 'secret',
+      port: 443,
+      user_mapping: '{"nickname": "$.name"}',
+      icon_url: '',
+      ui_group: 'social',
+      sort_order: 0,
+      is_enabled: false,
+    });
+    expect(struct).toEqual({
+      type: 'wechat_mp',
+      provider_key: 'wx_new',
+      display_name: '新微信',
+      category: 'oauth',
+      union_provider: '',
+      client_id: 'wx-123',
+      client_secret: 'secret',
+      port: 443,
+      user_mapping: { nickname: '$.name' },
+      icon_url: '',
+      ui_group: 'social',
+      sort_order: 0,
+      is_enabled: false,
+    });
+  });
+
+  test('空 json 文本省略键（未设置）；非 json 空串原样提交（显式空值）', () => {
+    const struct = buildProviderStruct('smtp', [
+      schemaField({ key: 'host', label: '服务地址', type: 'text', section: 'endpoint' }),
+      schemaField({ key: 'metadata', label: '长尾键值', type: 'json', section: 'basic' }),
+    ], {
+      host: '',
+      metadata: '',
+    });
+    expect(struct).toEqual({ type: 'smtp', host: '' });
+    expect('metadata' in struct).toBe(false);
+  });
+});
+
+describe('isProviderKeyTaken（§6 行 516 provider_key 唯一性预检）', () => {
+  test('列表行集存在同 key → true；空 key / 无冲突 → false', () => {
+    const rows = [
+      create(ProviderSchema, { providerKey: 'wechat_mp' }),
+      create(ProviderSchema, { providerKey: 'qq' }),
+    ];
+    expect(isProviderKeyTaken('wechat_mp', rows)).toBe(true);
+    expect(isProviderKeyTaken('wx_new', rows)).toBe(false);
+    expect(isProviderKeyTaken('', rows)).toBe(false);
+    expect(isProviderKeyTaken('wechat_mp', [])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JsonEditor 静态渲染（零 Semi 依赖 → renderToStaticMarkup）
+// ---------------------------------------------------------------------------
+
+describe('JsonEditor（静态渲染：受控文本域 + 无障碍标签 + 禁用）', () => {
+  test('渲染 value 文本 + aria-label；disabled 输出 disabled 属性', () => {
+    const markup = renderToStaticMarkup(
+      createElement(JsonEditor, {
+        value: '{"nickname": "$.name"}',
+        onChange: () => {},
+        disabled: false,
+        ariaLabel: '字段映射',
+      }),
+    );
+    expect(markup).toContain('{&quot;nickname&quot;: &quot;$.name&quot;}');
+    expect(markup).toContain('aria-label="字段映射"');
+    expect(markup).not.toContain('disabled');
+
+    const disabled = renderToStaticMarkup(
+      createElement(JsonEditor, {
+        value: '',
+        onChange: () => {},
+        disabled: true,
+        ariaLabel: '长尾键值',
+      }),
+    );
+    expect(disabled).toContain('disabled');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api Provider 编辑族 msw（§5.2 行 1169-1177；读路径真调 + 写路径
+// 请求体 wire 校验，msw 走真实 transport 归一链）
+// ---------------------------------------------------------------------------
+
+describe('api.getProviderTypes（§5.2 行 1175：type 下拉数据源）', () => {
+  test('Connect 协议 POST → ProviderTypesResponse 解码（displayName camelCase）', async () => {
+    server.use(
+      http.post(GET_PROVIDER_TYPES_URL, () =>
+        HttpResponse.json({
+          items: [
+            { type: 'wechat_mp', category: 'oauth', displayName: '微信小程序' },
+            { type: 'smtp', category: 'email', displayName: 'SMTP' },
+          ],
+        }),
+      ),
+    );
+    const res = await apiMod.getProviderTypes();
+    expect(res.items).toHaveLength(2);
+    expect(res.items[0].type).toBe('wechat_mp');
+    expect(res.items[0].category).toBe('oauth');
+    expect(res.items[0].displayName).toBe('微信小程序');
+    expect(res.items[1].displayName).toBe('SMTP');
+  });
+});
+
+describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema）', () => {
+  test('{type} 请求体 wire + SchemaResponse 解码（fields / default Value / options）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_PROVIDER_SCHEMA_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          type: 'wechat_mp',
+          category: 'oauth',
+          fields: [
+            { key: 'provider_key', label: '唯一标识', type: 'text', section: 'basic', required: true, pattern: '^[a-z0-9_]+$' },
+            { key: 'ui_group', label: '展示分组', type: 'select', section: 'display', options: ['social', 'enterprise', 'dev', 'other'], default: 'social' },
+            { key: 'is_enabled', label: '启用', type: 'checkbox', section: 'policy', default: true },
+            { key: 'user_mapping', label: '字段映射', type: 'json', section: 'endpoint', advanced: true },
+          ],
+        });
+      }),
+    );
+    const res = await apiMod.getProviderSchema(
+      create(GetProviderSchemaRequestSchema, { type: 'wechat_mp' }),
+    );
+    expect(requestBody).toEqual({ type: 'wechat_mp' });
+    expect(res.type).toBe('wechat_mp');
+    expect(res.category).toBe('oauth');
+    expect(res.fields).toHaveLength(4);
+    expect(res.fields[0].required).toBe(true);
+    expect(res.fields[0].pattern).toBe('^[a-z0-9_]+$');
+    expect(res.fields[1].options).toEqual(['social', 'enterprise', 'dev', 'other']);
+    // default = google.protobuf.Value（protojson → kind oneof）。
+    expect(res.fields[1].default?.kind.case).toBe('stringValue');
+    expect(res.fields[1].default?.kind.value).toBe('social');
+    expect(res.fields[2].default?.kind.case).toBe('boolValue');
+    expect(res.fields[2].default?.kind.value).toBe(true);
+    expect(res.fields[3].advanced).toBe(true);
+    // 修饰零值省略（protojson）：advanced=false 解码为 false。
+    expect(res.fields[0].advanced).toBe(false);
+  });
+});
+
+describe('api.getProvider（§5.2 行 1170：详情返回明文凭证）', () => {
+  test('AdminProvider 解码（int64 十进制字符串 → bigint + ext Struct → JsonObject）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(GET_PROVIDER_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          providerKey: 'wx1',
+          displayName: '微信',
+          category: 'oauth',
+          type: 'wechat_mp',
+          enableSignin: true,
+          sortOrder: '3',
+          ext: { client_id: 'wx-123', user_mapping: { nickname: '$.name' } },
+        });
+      }),
+    );
+    const res = await apiMod.getProvider(
+      create(GetProviderRequestSchema, { providerKey: 'wx1' }),
+    );
+    expect(requestBody).toEqual({ providerKey: 'wx1' });
+    expect(res.providerKey).toBe('wx1');
+    expect(res.sortOrder).toBe(BigInt(3));
+    expect(res.ext?.client_id).toBe('wx-123');
+    expect(res.ext?.user_mapping).toEqual({ nickname: '$.name' });
+    // protojson 零值省略 → false。
+    expect(res.isEnabled).toBe(false);
+  });
+});
+
+describe('api.createProvider / updateProvider（§5.2 行 1169/1171：Struct 平铺提交体）', () => {
+  test('JsonObject → Struct wire 平铺（type 顶层 + json 对象）→ OkResponse', async () => {
+    let createBody: unknown;
+    server.use(
+      http.post(CREATE_PROVIDER_URL, async ({ request }) => {
+        createBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.createProvider({
+      type: 'wechat_mp',
+      provider_key: 'wx_new',
+      display_name: '新微信',
+      client_id: 'wx-123',
+      user_mapping: { nickname: '$.name' },
+      is_enabled: false,
+    });
+    expect(createBody).toEqual({
+      type: 'wechat_mp',
+      provider_key: 'wx_new',
+      display_name: '新微信',
+      client_id: 'wx-123',
+      user_mapping: { nickname: '$.name' },
+      // Struct JSON 表示保留显式 false（非 proto message 零值省略）。
+      is_enabled: false,
+    });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('updateProvider：同一 Struct 形态（提交体平铺含 provider_key 定位）', async () => {
+    let updateBody: unknown;
+    server.use(
+      http.post(UPDATE_PROVIDER_URL, async ({ request }) => {
+        updateBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.updateProvider({
+      type: 'smtp',
+      provider_key: 'eml_main',
+      display_name: '邮件主通道',
+      host: 'smtp.example.com',
+    });
+    expect(updateBody).toEqual({
+      type: 'smtp',
+      provider_key: 'eml_main',
+      display_name: '邮件主通道',
+      host: 'smtp.example.com',
+    });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+describe('api.testProvider（§5.2 行 1177：发送测试 {providerKey, target}）', () => {
+  test('请求体 wire 校验 → OkResponse；500 reject → ApiError', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(TEST_PROVIDER_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.testProvider(
+      create(TestProviderRequestSchema, { providerKey: 'sms_main', target: '13800000000' }),
+    );
+    expect(requestBody).toEqual({ providerKey: 'sms_main', target: '13800000000' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+
+    server.use(
+      http.post(TEST_PROVIDER_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.testProvider(
+        create(TestProviderRequestSchema, { providerKey: 'sms_main', target: 'x' }),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
   });
 });

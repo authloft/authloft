@@ -56,6 +56,16 @@
   color: @color-text;
 }
 
+// 编辑入口链接（显示名 → /admin/providers/{key}/edit）。
+.editLink {
+  color: @color-primary;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 .tag {
   padding: @spacing-xs @spacing-sm;
   border: @border-width solid @color-border;

@@ -176,7 +176,12 @@ export function ProvidersPage(props: {
           const tags = policyTags(row);
           return (
             <div className={styles.row}>
-              <span className={styles.cellName}>{row.displayName || EMPTY_TEXT}</span>
+              <span className={styles.cellName}>
+                {/* 编辑入口（§6 行 516 ProviderEditPage；最小改动：显示名作链接）。 */}
+                <a className={styles.editLink} href={`/admin/providers/${row.providerKey}/edit`}>
+                  {row.displayName || EMPTY_TEXT}
+                </a>
+              </span>
               <span className={styles.cellKey}>
                 <code className={styles.keyText}>{row.providerKey}</code>
                 <CopyButton text={row.providerKey} />
