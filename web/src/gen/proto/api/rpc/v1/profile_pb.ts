@@ -233,7 +233,7 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
 
 /**
  * GetUserProfilesRequest 是 UserService/GetUserProfiles 的请求（接口文档 §7.2
- * 行 1442-1446，D-024 定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
+ * 行 1442-1446，定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
  * 缺省或空列表 → 返回空 profiles、不报错（行 1467，空批量是合法的空集语义）。
  *
  * @generated from message api.rpc.v1.GetUserProfilesRequest

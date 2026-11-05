@@ -485,6 +485,81 @@ func TestUserProfileReadWrite(t *testing.T) {
 	}
 }
 
+// TestUserRepoListByIDs（env-skip）：GetUserProfiles 批量读的 repo 支撑
+//（接口文档 §7.2 行 1436）——user / user_profile 两表各一条 IN 语句：
+// 命中行全量返回、缺失 id 自然缺席（跳过语义归 handler）；user_profile 行
+// 缺失的用户（u3）在 profiles 中无行；空 ids 双空零触库；全缺失 ids 返回
+// 空集不报错（空批量空集语义，§7.2 行 1467）。
+func TestUserRepoListByIDs(t *testing.T) {
+	rp, _ := userTestSetup(t)
+	ctx := context.Background()
+
+	u1 := &model.User{Username: "batch_u1", Nickname: "甲"}
+	u2 := &model.User{Username: "batch_u2", Nickname: "乙"}
+	u3 := &model.User{Username: "batch_u3", Nickname: "丙"} // 无 user_profile 行
+	for _, u := range []*model.User{u1, u2, u3} {
+		if err := rp.Create(ctx, u); err != nil {
+			t.Fatalf("Create 失败: %v", err)
+		}
+	}
+	p1 := &model.UserProfile{UserID: u1.ID, Locale: "zh-CN", Timezone: "Asia/Shanghai", UpdatedAt: time.Now().Truncate(time.Second)}
+	p2 := &model.UserProfile{UserID: u2.ID, Locale: "en", Timezone: "UTC", UpdatedAt: time.Now().Truncate(time.Second)}
+	for _, p := range []*model.UserProfile{p1, p2} {
+		if err := rp.SaveProfile(ctx, p); err != nil {
+			t.Fatalf("SaveProfile 失败: %v", err)
+		}
+	}
+
+	// 含缺失 id（999999）的批量：user 行 3、profile 行 2。
+	ids := []int64{u1.ID, 999999, u2.ID, u3.ID, u1.ID}
+	users, profiles, err := rp.ListByIDs(ctx, ids)
+	if err != nil {
+		t.Fatalf("ListByIDs 失败: %v", err)
+	}
+	if len(users) != 3 {
+		t.Fatalf("user 行数 = %d, want 3（缺失 id 不产生行）", len(users))
+	}
+	gotUsers := map[int64]model.User{}
+	for _, u := range users {
+		gotUsers[u.ID] = u
+	}
+	for _, id := range []int64{u1.ID, u2.ID, u3.ID} {
+		u, ok := gotUsers[id]
+		if !ok {
+			t.Fatalf("user id=%d 缺席", id)
+		}
+		if u.Username == "" || u.CreatedAt.IsZero() {
+			t.Errorf("user id=%d 字段不全: %+v", id, u)
+		}
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("profile 行数 = %d, want 2（u3 无行）", len(profiles))
+	}
+	gotProfiles := map[int64]model.UserProfile{}
+	for _, p := range profiles {
+		gotProfiles[p.UserID] = p
+	}
+	for uid, want := range map[int64]*model.UserProfile{u1.ID: p1, u2.ID: p2} {
+		p, ok := gotProfiles[uid]
+		if !ok {
+			t.Fatalf("profile uid=%d 缺席", uid)
+		}
+		if p.Locale != want.Locale || p.Timezone != want.Timezone {
+			t.Errorf("profile uid=%d = (locale=%q tz=%q), want (%q, %q)", uid, p.Locale, p.Timezone, want.Locale, want.Timezone)
+		}
+	}
+
+	// 空 ids：双空零触库、无错误。
+	if users, profiles, err = rp.ListByIDs(ctx, nil); err != nil || users != nil || profiles != nil {
+		t.Errorf("空 ids: (users=%v profiles=%v err=%v), want 双 nil 无错", users, profiles, err)
+	}
+
+	// 全缺失 ids：空集不报错（对应 handler 缺失跳过语义）。
+	if users, profiles, err = rp.ListByIDs(ctx, []int64{404101, 404102}); err != nil || len(users) != 0 || len(profiles) != 0 {
+		t.Errorf("全缺失 ids: (users=%d profiles=%d err=%v), want 空集无错", len(users), len(profiles), err)
+	}
+}
+
 // TestUserRepoListUsersSearchSort（env-skip）：q 对 username / nickname /
 // email / phone 四列模糊匹配（%q%，通配符转义为字面量）；sort / order 消费
 //（合法列名排序、缺省与字符集外回落 id、order 仅 asc 改向）。

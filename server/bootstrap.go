@@ -994,8 +994,11 @@ func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	}
 	hmac := connect.NewRPCHMACInterceptor(cache.NewNonceStore(deps.rdb), lookup)
 
+	// rpc 域两 service 共享同一 UserRepo 实例（GetUserProfiles 批量读
+	// 与 DecodeSession include_user_info 单读走同一数据面，不重复构造）。
+	users := repo.NewUserRepo(deps.db)
 	path, h := rpcv1connect.NewUserServiceHandler(
-		rpchandler.NewUserHandler(repo.NewUserRepo(deps.db)),
+		rpchandler.NewUserHandler(users),
 		csrv.HandlerOptions(hmac)...,
 	)
 	csrv.RegisterRPC(path, h)
@@ -1004,6 +1007,7 @@ func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 		rpchandler.NewTokenHandler(
 			session.NewVerifier(deps.sessionTokens, deps.epochStore),
 			session.NewRenewer(deps.sessionTokens, ssoSessionTTLRaw(deps.settings)),
+			users,
 		),
 		csrv.HandlerOptions(hmac)...,
 	)

@@ -96,25 +96,64 @@ type columnUpdate struct {
 
 // fakeUserStore UserStore 的 fake：可变行 + 调用记录 + 各步错误注入。
 // UpdateProfileColumns / SaveProfile 同步改写内存行，供同链路后续
-// GetUserProfile 端到端复核。
+// GetUserProfile 端到端复核。单行（user / profile）服务 GetUserProfile /
+// DecodeSession include_user_info 单读路径；批量（usersByID / profilesByUID）
+// 服务 GetUserProfiles——ListByIDs 按入参**倒序**返回，模拟 IN 查询行序
+// 不保证，逼出 handler 按 ids 定位回填的实现（§7.2 顺序③行 1464）。
 type fakeUserStore struct {
-	mu          sync.Mutex
-	user        *model.User
-	profile     *model.UserProfile
-	userErr     error
-	profileErr  error
-	columnsErr  error
-	saveErr     error
-	columnCalls []columnUpdate
-	saveCalls   []*model.UserProfile
+	mu            sync.Mutex
+	user          *model.User
+	profile       *model.UserProfile
+	usersByID     map[int64]*model.User
+	profilesByUID map[int64]*model.UserProfile
+	userErr       error
+	profileErr    error
+	columnsErr    error
+	saveErr       error
+	listErr       error
+	columnCalls   []columnUpdate
+	saveCalls     []*model.UserProfile
+	findCalls     int
+	getCalls      int
+	listCalls     int
+	lastListIDs   []int64
 }
 
 func (f *fakeUserStore) FindByID(_ context.Context, _ int64) (*model.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.findCalls++
 	return f.user, f.userErr
 }
 
 func (f *fakeUserStore) GetProfile(_ context.Context, _ int64) (*model.UserProfile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getCalls++
 	return f.profile, f.profileErr
+}
+
+// ListByIDs 倒序回填（行序不保证的保守模拟）+ 调用计数（N+1
+// 断言依据：listCalls 必须恰 1 次，findCalls / getCalls 恒 0）。
+func (f *fakeUserStore) ListByIDs(_ context.Context, ids []int64) ([]model.User, []model.UserProfile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listCalls++
+	f.lastListIDs = append([]int64(nil), ids...)
+	if f.listErr != nil {
+		return nil, nil, f.listErr
+	}
+	users := make([]model.User, 0, len(ids))
+	profiles := make([]model.UserProfile, 0, len(ids))
+	for i := len(ids) - 1; i >= 0; i-- {
+		if u, ok := f.usersByID[ids[i]]; ok {
+			users = append(users, *u)
+		}
+		if p, ok := f.profilesByUID[ids[i]]; ok {
+			profiles = append(profiles, *p)
+		}
+	}
+	return users, profiles, nil
 }
 
 func (f *fakeUserStore) SaveProfile(_ context.Context, p *model.UserProfile) error {
@@ -194,7 +233,7 @@ func newRPCTestMux(t *testing.T, users UserStore, tokens *session.Tokens, epochs
 	}
 	userPath, userH := rpcv1connect.NewUserServiceHandler(NewUserHandler(users), opts()...)
 	tokenPath, tokenH := rpcv1connect.NewTokenServiceHandler(
-		NewTokenHandler(session.NewVerifier(tokens, epochs), session.NewRenewer(tokens, testTTL)),
+		NewTokenHandler(session.NewVerifier(tokens, epochs), session.NewRenewer(tokens, testTTL), users),
 		opts()...)
 	mux := http.NewServeMux()
 	mux.Handle(userPath, internalconnect.CaptureRawBody(userH))
@@ -690,5 +729,312 @@ func TestChainRejectsWithoutValidHMAC(t *testing.T) {
 	}
 	if got := connectCodeOf(t, rec.Body.String()); got != "permission_denied" {
 		t.Errorf("bad signature code = %q, want permission_denied", got)
+	}
+}
+
+// batchUser 造 GetUserProfiles 批量测试的补充用户（id / username 可变；
+// 核心样例仍用 wantUser，此处只造最小完备行）。
+func batchUser(id int64, username string) *model.User {
+	return &model.User{
+		ID: id, Username: username, Nickname: username + "-nick",
+		UserStatus: 1, MfaRequired: 0,
+		CreatedAt: time.Unix(1761700000, 0).UTC(), UpdatedAt: time.Unix(1761800000, 0).UTC(),
+	}
+}
+
+// batchProfile 造批量测试的 user_profile 行。
+func batchProfile(uid int64, locale string) *model.UserProfile {
+	return &model.UserProfile{
+		UserID: uid, Locale: locale, Timezone: "Asia/Shanghai",
+		UpdatedAt: time.Unix(1761800000, 0).UTC(),
+	}
+}
+
+// TestGetUserProfilesBatchSemantics 批量语义四项口径（§7.2 行 1462-1465）：
+// 入参含重复（10010 / 10086 各两次）与缺失（99999）→ 响应顺序 = 入参去重
+// 后（10010, 10086, 10011——缺失 99999 跳过不占位）；重复 id 首现位置去重
+// 恰返回一条；user_profile 行缺失（10011）输出零值 profile 消息（同
+// GetUserProfile 口径）；对存储恰一次 ListByIDs 批量调用（N+1 断言：
+// fake listCalls == 1、findCalls / getCalls == 0）且入参为去重后序列。
+// fake 倒序返回行，验证 handler 按 ids 定位回填、不依赖存储行序。
+func TestGetUserProfilesBatchSemantics(t *testing.T) {
+	users := &fakeUserStore{
+		usersByID: map[int64]*model.User{
+			10086: wantUser(),
+			10010: batchUser(10010, "li_si"),
+			10011: batchUser(10011, "wang_wu"),
+		},
+		profilesByUID: map[int64]*model.UserProfile{
+			10086: wantProfile(t),
+			10010: batchProfile(10010, "zh-CN"),
+		},
+	}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	ids := []int64{10010, 99999, 10086, 10010, 10011, 10086}
+	rec := doRPC(t, h, rpcv1connect.UserServiceGetUserProfilesProcedure, &rpcv1.GetUserProfilesRequest{Ids: ids})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var got rpcv1.GetUserProfilesResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v (body %x)", err, rec.Body.Bytes())
+	}
+	// 顺序③ + 去重④ + 缺失②：恰 3 条，顺序 = 入参去重后（99999 跳过）。
+	order := make([]int64, 0, len(got.GetProfiles()))
+	for _, p := range got.GetProfiles() {
+		order = append(order, p.GetId())
+	}
+	wantOrder := []int64{10010, 10086, 10011}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("条目数 = %d (order %v), want 3 (order %v)", len(order), order, wantOrder)
+	}
+	for i := range wantOrder {
+		if order[i] != wantOrder[i] {
+			t.Fatalf("顺序 = %v, want %v（入参去重后；fake 倒序返回行）", order, wantOrder)
+		}
+	}
+	// 行序乱序下的对位：10010 挂自己的 profile（locale zh-CN），10086 挂
+	// 样例 profile（timezone Asia/Shanghai + 明文 phone）。
+	if p := got.GetProfiles()[0].GetProfile(); p == nil || p.GetLocale() != "zh-CN" || p.GetTimezone() != "Asia/Shanghai" {
+		t.Errorf("10010 条 profile = %+v, want locale=zh-CN timezone=Asia/Shanghai", got.GetProfiles()[0].GetProfile())
+	}
+	if got.GetProfiles()[1].GetPhone() != "13800008000" {
+		t.Errorf("10086 条 phone = %q, want 13800008000（rpc 域明文，同 GetUserProfile）", got.GetProfiles()[1].GetPhone())
+	}
+	if p := got.GetProfiles()[1].GetProfile(); p == nil || p.GetTimezone() != "Asia/Shanghai" {
+		t.Errorf("10086 条 profile = %+v, want 样例 profile", got.GetProfiles()[1].GetProfile())
+	}
+	// 10011 无 user_profile 行 → 零值 profile 消息（非 nil，行缺失不报错）。
+	p11 := got.GetProfiles()[2].GetProfile()
+	if p11 == nil || p11.GetGender() != 0 || p11.GetLocale() != "" || p11.GetTimezone() != "" ||
+		p11.GetBirthday() != "" || p11.GetExtra() != nil {
+		t.Errorf("10011 条 profile = %+v, want 零值消息（行缺失同 GetUserProfile 口径）", p11)
+	}
+	// N+1 断言：批量查询恰一次、单查零调用；入参为去重后序列。
+	if users.listCalls != 1 {
+		t.Errorf("ListByIDs calls = %d, want 1（一次批量查询，N+1 禁止）", users.listCalls)
+	}
+	if users.findCalls != 0 || users.getCalls != 0 {
+		t.Errorf("FindByID / GetProfile calls = (%d, %d), want (0, 0)（严禁循环单查）", users.findCalls, users.getCalls)
+	}
+	wantIDs := []int64{10010, 99999, 10086, 10011}
+	if len(users.lastListIDs) != len(wantIDs) {
+		t.Fatalf("ListByIDs 入参 = %v, want %v（去重后序列）", users.lastListIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if users.lastListIDs[i] != wantIDs[i] {
+			t.Errorf("ListByIDs 入参 = %v, want %v（去重后序列）", users.lastListIDs, wantIDs)
+		}
+	}
+}
+
+// TestGetUserProfilesLimit 上限①（§7.2 行 1462，去重前计数）：
+//   - 101 条入参（去重后仅 2 个唯一 id）→ 400 invalid_argument +
+//     ErrorInfo(rpc, invalid_request)，整单失败零查询（无部分返回、不截断）；
+//     若实现错误地先去重再计数，该用例即漏过；
+//   - 100 条唯一 id 入参 → 200 过界（缺失项照常跳过，恰一次批量查询）。
+func TestGetUserProfilesLimit(t *testing.T) {
+	// 101 拒：50×10086 + 51×10010，去重前 101。
+	over := make([]int64, 0, 101)
+	for i := 0; i < 50; i++ {
+		over = append(over, 10086)
+	}
+	for i := 0; i < 51; i++ {
+		over = append(over, 10010)
+	}
+	users := &fakeUserStore{usersByID: map[int64]*model.User{10086: wantUser()}}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	rec := doRPC(t, h, rpcv1connect.UserServiceGetUserProfilesProcedure, &rpcv1.GetUserProfilesRequest{Ids: over})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("101 ids: status = %d, want 400 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := connectCodeOf(t, rec.Body.String()); got != "invalid_argument" {
+		t.Errorf("101 ids: code = %q, want invalid_argument", got)
+	}
+	info := decodeErrorInfoDetail(t, rec.Body.String())
+	if info.GetDomain() != "rpc" || info.GetCode() != "invalid_request" {
+		t.Errorf("101 ids: ErrorInfo = (domain=%q code=%q), want (rpc, invalid_request)（§7.2 ①行 1462）", info.GetDomain(), info.GetCode())
+	}
+	if users.listCalls != 0 {
+		t.Errorf("101 ids: ListByIDs calls = %d, want 0（整单失败不触库）", users.listCalls)
+	}
+
+	// 100 过界：唯一 id 1..100，仅 id=1 存在 → 其余跳过。
+	atLimit := make([]int64, 100)
+	for i := range atLimit {
+		atLimit[i] = int64(i + 1)
+	}
+	users = &fakeUserStore{usersByID: map[int64]*model.User{1: batchUser(1, "u_one")}}
+	h = newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+	rec = doRPC(t, h, rpcv1connect.UserServiceGetUserProfilesProcedure, &rpcv1.GetUserProfilesRequest{Ids: atLimit})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("100 ids: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var got rpcv1.GetUserProfilesResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if n := len(got.GetProfiles()); n != 1 {
+		t.Errorf("100 ids: 条目数 = %d, want 1（缺失跳过）", n)
+	}
+	if users.listCalls != 1 {
+		t.Errorf("100 ids: ListByIDs calls = %d, want 1", users.listCalls)
+	}
+}
+
+// TestGetUserProfilesEmptyIDs ids 缺省 / 空列表 → 空 profiles、不报错、
+// 零查询（§7.2 行 1467：空批量是合法的空集语义，非参数错误）。
+func TestGetUserProfilesEmptyIDs(t *testing.T) {
+	users := &fakeUserStore{usersByID: map[int64]*model.User{10086: wantUser()}}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	rec := doRPC(t, h, rpcv1connect.UserServiceGetUserProfilesProcedure, &rpcv1.GetUserProfilesRequest{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var got rpcv1.GetUserProfilesResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if n := len(got.GetProfiles()); n != 0 {
+		t.Errorf("条目数 = %d, want 0（空批量空集语义）", n)
+	}
+	if users.listCalls != 0 {
+		t.Errorf("ListByIDs calls = %d, want 0（空批量零查询）", users.listCalls)
+	}
+}
+
+// TestGetUserProfilesSameAsGetUserProfile 同构（§7.2 行 1438）：批量条目与
+// GetUserProfile 单查响应逐字段相等（同一数据源经同一 dto.RPCProfile 投影，
+// proto.Equal 深比较）。
+func TestGetUserProfilesSameAsGetUserProfile(t *testing.T) {
+	users := &fakeUserStore{
+		user: wantUser(), profile: wantProfile(t),
+		usersByID:     map[int64]*model.User{10086: wantUser()},
+		profilesByUID: map[int64]*model.UserProfile{10086: wantProfile(t)},
+	}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	recSingle := doRPC(t, h, rpcv1connect.UserServiceGetUserProfileProcedure, &rpcv1.GetUserProfileRequest{Uid: 10086})
+	if recSingle.Code != http.StatusOK {
+		t.Fatalf("GetUserProfile: status = %d (body %s)", recSingle.Code, recSingle.Body.String())
+	}
+	var single rpcv1.ProfileResponse
+	if err := proto.Unmarshal(recSingle.Body.Bytes(), &single); err != nil {
+		t.Fatalf("Unmarshal single: %v", err)
+	}
+
+	recBatch := doRPC(t, h, rpcv1connect.UserServiceGetUserProfilesProcedure, &rpcv1.GetUserProfilesRequest{Ids: []int64{10086}})
+	if recBatch.Code != http.StatusOK {
+		t.Fatalf("GetUserProfiles: status = %d (body %s)", recBatch.Code, recBatch.Body.String())
+	}
+	var batch rpcv1.GetUserProfilesResponse
+	if err := proto.Unmarshal(recBatch.Body.Bytes(), &batch); err != nil {
+		t.Fatalf("Unmarshal batch: %v", err)
+	}
+	if n := len(batch.GetProfiles()); n != 1 {
+		t.Fatalf("条目数 = %d, want 1", n)
+	}
+	if !proto.Equal(batch.GetProfiles()[0], &single) {
+		t.Errorf("批量条目与 GetUserProfile 响应不同构:\nbatch  = %+v\nsingle = %+v", batch.GetProfiles()[0], &single)
+	}
+}
+
+// TestDecodeSessionIncludeUserInfo include_user_info 三态（§7.1 行 1434）：
+//   - true 且校验通过 → user_info 填充且与 GetUserProfile 响应同构
+//     （proto.Equal），用户读取恰一次单读链（FindByID + GetProfile 各 1）；
+//   - false / 缺省 → user_info 不在场、**零额外查询**（fake 计数 0 增量）、
+//     响应与现行完全一致；
+//   - session 无效 + true → 401 不变（校验先于用户读取），失败路径零用户
+//     查询、无 renewedToken / user_info 语义。
+func TestDecodeSessionIncludeUserInfo(t *testing.T) {
+	tokens := newTestTokens(t)
+	epochs := &fakeEpochReader{values: map[int64]int64{}}
+	users := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
+	h := newRPCTestMux(t, users, tokens, epochs)
+	tok, _ := sessionToken(t, tokens, epochs)
+
+	// 同构基线：GetUserProfile(10086) 的响应（与 user_info 复用同一投影）。
+	recSingle := doRPC(t, h, rpcv1connect.UserServiceGetUserProfileProcedure, &rpcv1.GetUserProfileRequest{Uid: 10086})
+	if recSingle.Code != http.StatusOK {
+		t.Fatalf("GetUserProfile: status = %d", recSingle.Code)
+	}
+	var single rpcv1.ProfileResponse
+	if err := proto.Unmarshal(recSingle.Body.Bytes(), &single); err != nil {
+		t.Fatalf("Unmarshal single: %v", err)
+	}
+	find0, get0, list0 := users.findCalls, users.getCalls, users.listCalls
+
+	// ① true：填充 + 同构 + 恰一次单读链（零批量调用）。
+	rec := doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: tok, IncludeUserInfo: true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("include=true: status = %d (body %s)", rec.Code, rec.Body.String())
+	}
+	var got rpcv1.SessionResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if got.GetRenewedToken() == "" {
+		t.Fatal("include=true: renewedToken 为空（核心产出不受影响）")
+	}
+	if !proto.Equal(got.GetUserInfo(), &single) {
+		t.Errorf("include=true: user_info 与 GetUserProfile 响应不同构:\nuser_info = %+v\nsingle   = %+v", got.GetUserInfo(), &single)
+	}
+	if users.findCalls != find0+1 || users.getCalls != get0+1 {
+		t.Errorf("include=true: FindByID / GetProfile 增量 = (%d, %d), want (1, 1)", users.findCalls-find0, users.getCalls-get0)
+	}
+	if users.listCalls != list0 {
+		t.Errorf("include=true: ListByIDs 增量 = %d, want 0（单读路径不走批量）", users.listCalls-list0)
+	}
+
+	// ② false：零额外查询（fake 计数 0 增量）、无 user_info。
+	rec = doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: tok, IncludeUserInfo: false})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("include=false: status = %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if got.GetUserInfo() != nil {
+		t.Errorf("include=false: user_info 在场（want 省略，§1.1 / §7.1 行 1434）: %+v", got.GetUserInfo())
+	}
+	if got.GetRenewedToken() == "" {
+		t.Error("include=false: renewedToken 为空（现行语义不受影响）")
+	}
+	if users.findCalls != find0+1 || users.getCalls != get0+1 || users.listCalls != list0 {
+		t.Errorf("include=false: 用户查询增量 = (find %d, get %d, list %d), want (0, 0, 0)（零额外查询）",
+			users.findCalls-find0-1, users.getCalls-get0-1, users.listCalls-list0)
+	}
+
+	// ③ 缺省：同 false（零额外查询、无 user_info）。
+	rec = doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: tok})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("缺省: status = %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if got.GetUserInfo() != nil {
+		t.Errorf("缺省: user_info 在场: %+v", got.GetUserInfo())
+	}
+	if users.findCalls != find0+1 || users.getCalls != get0+1 || users.listCalls != list0 {
+		t.Errorf("缺省: 用户查询增量 = (find %d, get %d, list %d), want (0, 0, 0)（零额外查询）",
+			users.findCalls-find0-1, users.getCalls-get0-1, users.listCalls-list0)
+	}
+
+	// ④ session 无效 + true：401 不变（失败分支不受 include_user_info 影响），
+	// 校验先于用户读取 → 失败路径零用户查询。
+	rec = doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: "not-a-session-token", IncludeUserInfo: true})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid + include=true: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := connectCodeOf(t, rec.Body.String()); got != "unauthenticated" {
+		t.Errorf("invalid + include=true: code = %q, want unauthenticated", got)
+	}
+	if users.findCalls != find0+1 || users.getCalls != get0+1 || users.listCalls != list0 {
+		t.Errorf("invalid + include=true: 用户查询增量 = (find %d, get %d, list %d), want (0, 0, 0)（401 路径零用户查询）",
+			users.findCalls-find0-1, users.getCalls-get0-1, users.listCalls-list0)
 	}
 }

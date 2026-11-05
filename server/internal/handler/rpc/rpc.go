@@ -35,14 +35,19 @@ import (
 )
 
 // UserStore rpc 域用户数据面窄接口（§20 依赖注入）：生产注入 *repo.UserRepo
-//（FindByID / GetProfile / SaveProfile / UpdateProfileColumns 均为 UserRepo
-// 既有方法，不扩公共接口），测试注入 fake。
+//（FindByID / GetProfile / SaveProfile / UpdateProfileColumns /
+// ListByIDs 均为 UserRepo 既有方法，不扩公共接口），测试注入 fake。
 type UserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
 	GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error)
 	SaveProfile(ctx context.Context, p *model.UserProfile) error
 	UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error
+	ListByIDs(ctx context.Context, ids []int64) ([]model.User, []model.UserProfile, error)
 }
+
+// maxBatchProfileIDs GetUserProfiles 单次批量上限（§7.2 批量语义①行 1462）：
+// 按入参列表长度计、去重前；超出整单失败、无部分返回、不许截断。
+const maxBatchProfileIDs = 100
 
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 //（口径同 internal/connect interceptors.go、handler/account）。
@@ -51,6 +56,7 @@ var (
 	errNotFound     = errors.New("not found")
 	errInternal     = errors.New("internal error")
 	errBadBirthday  = errors.New("invalid birthday")
+	errTooManyIDs   = errors.New("too many ids")
 )
 
 // UserHandler 实现 api.rpc.v1.UserService。内嵌生成的 unimplemented 基类：
@@ -83,6 +89,70 @@ func (h *UserHandler) GetUserProfile(ctx context.Context, req *connect.Request[r
 		return nil, fmt.Errorf("rpc handler: load profile: %w", err)
 	}
 	return connect.NewResponse(dto.RPCProfile(user, profile)), nil
+}
+
+// GetUserProfiles（§7.2 行 1436）：GetUserProfile 的批量版，批量语义四项口径
+//（行 1462-1465）逐条落地：
+//   - 上限①：ids 按入参列表长度计、**去重前** > 100 → 整单失败 400
+//     invalid_argument + ErrorInfo(rpc, invalid_request)（§1.6 既有码，
+//     不新增词汇），无部分返回、不许截断；
+//   - 去重④：重复 id 按首次出现位置去重，同一 id 至多返回一条；
+//   - 顺序③：响应 profiles 顺序 = 入参去重后的顺序（缺失项跳过后相对
+//     顺序保持）——ListByIDs 返回行序不保证（IN 无序），本处以去重后
+//     ids 为定位主序回填，不依赖也不改写存储层排序；
+//   - 缺失②：实际不存在的 id 跳过、不占位、不报错、不终止整单；
+//     user_profile 行缺失输出零值 profile 消息（同 GetUserProfile 口径，
+//     行缺失不视为错误）。
+//
+// 一次批量读取：对 UserStore 仅一次 ListByIDs 调用（N+1 禁止，
+// §7.2 行 1462 理由——严禁按 id 循环单查）。ids 缺省 / 空 → 空 profiles、
+// 不报错、零查询（空批量是合法的空集语义，行 1467）。读接口不校验
+// nonce（方法名 Get 前缀，拦截器按 §7 前言「命名决定校验」天然放行，
+// nonce 仅参与签名）。
+func (h *UserHandler) GetUserProfiles(ctx context.Context, req *connect.Request[rpcv1.GetUserProfilesRequest]) (*connect.Response[rpcv1.GetUserProfilesResponse], error) {
+	ids := req.Msg.GetIds()
+	if len(ids) > maxBatchProfileIDs {
+		return nil, internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, errTooManyIDs),
+			internalconnect.NewErrorInfo("rpc", "invalid_request", "ids must not exceed 100"),
+		)
+	}
+	// 去重④：按首次出现位置保留（顺序③的主序即此去重后序列）。
+	seen := make(map[int64]struct{}, len(ids))
+	uniq := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 {
+		return connect.NewResponse(&rpcv1.GetUserProfilesResponse{}), nil
+	}
+	users, profiles, err := h.users.ListByIDs(ctx, uniq)
+	if err != nil {
+		return nil, fmt.Errorf("rpc handler: list users: %w", err)
+	}
+	userByID := make(map[int64]*model.User, len(users))
+	for i := range users {
+		userByID[users[i].ID] = &users[i]
+	}
+	profileByUID := make(map[int64]*model.UserProfile, len(profiles))
+	for i := range profiles {
+		profileByUID[profiles[i].UserID] = &profiles[i]
+	}
+	// 顺序③ + 缺失②：以去重后 ids 为主序回填，缺失 id 跳过不占位；
+	// 投影复用 dto.RPCProfile（与 GetUserProfile 响应同构，§7.2 行 1438）。
+	out := make([]*rpcv1.ProfileResponse, 0, len(uniq))
+	for _, id := range uniq {
+		u, ok := userByID[id]
+		if !ok {
+			continue
+		}
+		out = append(out, dto.RPCProfile(u, profileByUID[id]))
+	}
+	return connect.NewResponse(&rpcv1.GetUserProfilesResponse{Profiles: out}), nil
 }
 
 // UpdateUserProfile（§7 行 1392，入参同 §3.2 行 821 的
@@ -190,17 +260,20 @@ func (h *UserHandler) mergeProfile(ctx context.Context, uid int64, in *accountv1
 }
 
 // TokenHandler 实现 api.rpc.v1.TokenService。内嵌 unimplemented 基类同
-// UserHandler。
+// UserHandler。users 为 rpc 域用户数据面窄接口（include_user_info=true 的
+// 用户资料读取；§7.1 行 1434——false / 缺省零额外查询，不注入读取路径）。
 type TokenHandler struct {
 	rpcv1connect.UnimplementedTokenServiceHandler
 	verify *session.Verifier
 	renew  *session.Renewer
+	users  UserStore
 }
 
 // NewTokenHandler 构造 TokenService handler（Verifier / Renewer 复用装配层
-// 共享单例，不新造第二套校验 / 重签链）。
-func NewTokenHandler(verify *session.Verifier, renew *session.Renewer) *TokenHandler {
-	return &TokenHandler{verify: verify, renew: renew}
+// 共享单例，不新造第二套校验 / 重签链；users 与 UserService 共享同一
+// UserRepo 实例，批量 / 单条读取走同一数据面）。
+func NewTokenHandler(verify *session.Verifier, renew *session.Renewer, users UserStore) *TokenHandler {
+	return &TokenHandler{verify: verify, renew: renew, users: users}
 }
 
 // DecodeSession（§7.1 行 1395-1411）：请求体 sessionToken → Verifier 四步
@@ -219,6 +292,16 @@ func NewTokenHandler(verify *session.Verifier, renew *session.Renewer) *TokenHan
 //
 // 本端点不写 Set-Cookie、不设 X-Authloft-Token 响应头（§7.1 行 1408：
 // renewedToken 只经响应体字段下发，按原渠道落盘归调用方）。
+//
+// include_user_info（§7.1 行 1434）：true 且会话校验通过 → 响应
+// user_info 填充——与 UserService/GetUserProfile 响应**同构**，投影复用
+// dto.RPCProfile（不复制造第二份投影）；false / 缺省 → 不触 users、零额外
+// 查询（响应与现行完全一致）；session 无效 / 过期 / epoch 不一致 → 401
+// 不变（校验先于用户读取，include_user_info 不改变失败分支，失败路径
+// 亦零用户查询）。校验已通过而 FindByID 落 NotFound 的防御分支（真实链
+// epoch 比对已触达 user 行，理论不可达）按 internal 拒绝：不与未登录
+//（401）/ 用户不存在（404）混同，口径同 verify.go 行 27-29 基础设施错误。
+// GetProfile 行缺失输出零值 profile 消息，不视为错误（同 GetUserProfile）。
 func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[rpcv1.DecodeSessionRequest]) (*connect.Response[rpcv1.SessionResponse], error) {
 	p, err := h.verify.Verify(ctx, req.Msg.GetSessionToken())
 	if err != nil {
@@ -231,7 +314,22 @@ func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[r
 	if rerr != nil {
 		return nil, connect.NewError(connect.CodeInternal, errInternal)
 	}
-	return connect.NewResponse(dto.RPCSession(fresh, renewed)), nil
+	resp := dto.RPCSession(fresh, renewed)
+	if req.Msg.GetIncludeUserInfo() {
+		user, err := h.users.FindByID(ctx, fresh.GetId())
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, connect.NewError(connect.CodeInternal, errInternal)
+			}
+			return nil, fmt.Errorf("rpc handler: load user: %w", err)
+		}
+		profile, err := h.users.GetProfile(ctx, fresh.GetId())
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("rpc handler: load profile: %w", err)
+		}
+		resp.UserInfo = dto.RPCProfile(user, profile)
+	}
+	return connect.NewResponse(resp), nil
 }
 
 // userNotFound 构造「用户不存在」错误（§1.6 user_not_found，封闭集合）：

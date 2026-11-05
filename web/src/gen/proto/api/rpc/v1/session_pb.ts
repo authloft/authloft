@@ -30,7 +30,7 @@ export type DecodeSessionRequest = Message<"api.rpc.v1.DecodeSessionRequest"> & 
   sessionToken: string;
 
   /**
-   * 是否额外携带用户信息（接口文档 §7.1 行 1419/1434，D-024 定稿）：true 且
+   * 是否额外携带用户信息（接口文档 §7.1 行 1419/1434）：true 且
    * 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
    * 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
    * unauthenticated（行 1433），本字段不改变失败分支。

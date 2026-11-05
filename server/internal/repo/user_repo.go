@@ -356,6 +356,30 @@ func (q UserListQuery) normalize() (page, size int) {
 	return page, size
 }
 
+// ListByIDs 批量按主键读 user 行与对应 user_profile 行（接口文档
+// §7.2 行 1436 GetUserProfiles 批量读，上限 / 缺失 / 顺序 / 去重口径归
+// handler）：user 表与 user_profile 表各一条 IN 语句、零循环单查——
+// handler 一次调用完成整批读取（N+1 禁止，§7.2 行 1462 理由）。
+// 结果顺序不保证（IN 无序），调用方按入参 ids 定位回填顺序自管
+//（§7.2 行 1464：响应顺序 = 入参去重后顺序）；缺失 id 的行自然缺席
+//（§7.2 行 1463 跳过不占位），缺失 profile 行由调用方以 nil 组装零值
+// profile 消息（同 GetProfile 口径：行缺失不视为错误）。ids 为空时返回
+// 双 nil、不触库（空批量空集语义，§7.2 行 1467）。
+func (r *UserRepo) ListByIDs(ctx context.Context, ids []int64) ([]model.User, []model.UserProfile, error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	var users []model.User
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, nil, fmt.Errorf("user repo: list by ids: %w", err)
+	}
+	var profiles []model.UserProfile
+	if err := r.db.WithContext(ctx).Where("user_id IN ?", ids).Find(&profiles).Error; err != nil {
+		return nil, nil, fmt.Errorf("user repo: list profiles by ids: %w", err)
+	}
+	return users, profiles, nil
+}
+
 // GetProfile 取 user_profile 行（§3.1 profile 字段的数据来源）；
 // 未命中返回包装的 gorm.ErrRecordNotFound。
 func (r *UserRepo) GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error) {

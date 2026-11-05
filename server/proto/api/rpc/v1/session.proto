@@ -3,7 +3,7 @@ syntax = "proto3";
 package api.rpc.v1;
 
 // SessionResponse.user_info 复用同包 ProfileResponse（接口文档 §7.1 行 1434；
-// D-024 proto 变更条款：本文件需新增该 import，§7.2 行 1473）。
+// proto 变更条款：本文件需新增该 import，§7.2 行 1473）。
 import "api/rpc/v1/profile.proto";
 
 // 包名 api.rpc.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
@@ -17,7 +17,7 @@ option go_package = "authloft/gen/go/api/rpc/v1;rpcv1";
 message DecodeSessionRequest {
   // 待解码的会话令牌（§7 行 1386）。
   string session_token = 1;
-  // 是否额外携带用户信息（接口文档 §7.1 行 1419/1434，D-024 定稿）：true 且
+  // 是否额外携带用户信息（接口文档 §7.1 行 1419/1434）：true 且
   // 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
   // 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
   // unauthenticated（行 1433），本字段不改变失败分支。
