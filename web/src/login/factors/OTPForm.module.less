@@ -1,0 +1,26 @@
+// OTP 因子表单样式（docs/前端架构.md §1.7；内联清零：labelStyle 常量迁入 .label）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.label {
+  display: block;
+  margin-bottom: @spacing-xs;
+}
+
+.status {
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.resend {
+  padding: 0.375rem 0.875rem;
+}
+
+.submit {
+  padding: 0.375rem 0.875rem;
+}

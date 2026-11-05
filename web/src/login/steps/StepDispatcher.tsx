@@ -14,6 +14,7 @@
  */
 import type { ReactNode } from 'react';
 import type { NextStep } from '../../gen/proto/api/sso/v1/envelope_pb';
+import styles from './StepDispatcher.module.less';
 
 /** kind 兜底文案（i18n 无键，字面量声明见文件头；与 registry 缺映射兜底同款，§4.2 行 423）。 */
 export const STEP_FALLBACK_TEXT = '请刷新重试';
@@ -31,5 +32,9 @@ export function StepDispatcher({ nextStep, form }: StepDispatcherProps) {
   }
   // challenge / redirect / qrcode / poll：未实现（实体组件归后续实现）；
   // external：宿主承载（§9 第 10 条）；未识别 kind：同兜底。
-  return <p role="status">{STEP_FALLBACK_TEXT}</p>;
+  return (
+    <p role="status" className={styles.status}>
+      {STEP_FALLBACK_TEXT}
+    </p>
+  );
 }

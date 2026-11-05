@@ -14,6 +14,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { FieldRenderer } from '../../shared/components';
+import styles from './FormStep.module.less';
 
 /** 提交按钮文案（i18n 无键，字面量声明见文件头）。 */
 const SUBMIT_TEXT = '登录';
@@ -49,9 +50,13 @@ export function FormStep({
   };
 
   return (
-    <form onSubmit={submit}>
+    <form onSubmit={submit} className={styles.form}>
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
-      <button type="submit" disabled={loading || disabled}>
+      <button
+        type="submit"
+        disabled={loading || disabled}
+        className={styles.submit}
+      >
         {SUBMIT_TEXT}
       </button>
     </form>

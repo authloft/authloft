@@ -27,6 +27,7 @@ import { useState, type FormEvent } from 'react';
 import { CodeInput, FieldRenderer } from '../../shared/components';
 import { useCountdown } from '../../shared/hooks/useCountdown';
 import type { FactorProps } from './registry';
+import styles from './OTPForm.module.less';
 
 /** verify 段验证码分段数（§1.10 行 306-307：otp 六位码；下发 fields[].length 的通用渲染归 FormStep）。 */
 const OTP_CODE_LENGTH = 6;
@@ -106,8 +107,8 @@ export function OTPForm({
 
   if (step === 'verify') {
     return (
-      <form onSubmit={submit}>
-        <label style={labelStyle}>{CODE_LABEL}</label>
+      <form onSubmit={submit} className={styles.form}>
+        <label className={styles.label}>{CODE_LABEL}</label>
         <CodeInput
           value={code}
           onChange={setCode}
@@ -116,16 +117,21 @@ export function OTPForm({
           disabled={loading || disabled}
         />
         {attemptsLeft !== undefined && (
-          <p role="status">{`还可尝试 ${attemptsLeft} 次`}</p>
+          <p role="status" className={styles.status}>{`还可尝试 ${attemptsLeft} 次`}</p>
         )}
         <button
           type="button"
           disabled={loading || disabled || !countdown.expired}
           onClick={onResend}
+          className={styles.resend}
         >
           {countdown.expired ? RESEND_TEXT : `${countdown.seconds} 秒后可重发`}
         </button>
-        <button type="submit" disabled={loading || disabled}>
+        <button
+          type="submit"
+          disabled={loading || disabled}
+          className={styles.submit}
+        >
           {SUBMIT_TEXT}
         </button>
       </form>
@@ -134,20 +140,19 @@ export function OTPForm({
 
   // challenge 段：主因子场景目标输入（快照 challengeFields）；MFA 场景掩码目标（§2.6 行 544-545）。
   return (
-    <form onSubmit={submit}>
+    <form onSubmit={submit} className={styles.form}>
       {maskedTarget !== undefined && maskedTarget !== '' ? (
-        <p role="status">{`验证码将发送至 ${maskedTarget}`}</p>
+        <p role="status" className={styles.status}>{`验证码将发送至 ${maskedTarget}`}</p>
       ) : (
         <FieldRenderer fields={fields} values={values} onChange={onChange} />
       )}
-      <button type="submit" disabled={loading || disabled}>
+      <button
+        type="submit"
+        disabled={loading || disabled}
+        className={styles.submit}
+      >
         {SEND_TEXT}
       </button>
     </form>
   );
 }
-
-const labelStyle = {
-  display: 'block',
-  marginBottom: '0.25rem',
-} as const;

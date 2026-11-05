@@ -10,6 +10,7 @@
 import { useState, type FormEvent } from 'react';
 import { FieldRenderer } from '../../shared/components';
 import type { FactorProps } from './registry';
+import styles from './RecoveryCodeForm.module.less';
 
 /** 提交按钮文案（i18n 无键，字面量声明见文件头）。 */
 const SUBMIT_TEXT = '登录';
@@ -34,9 +35,13 @@ export function RecoveryCodeForm({
   };
 
   return (
-    <form onSubmit={submit}>
+    <form onSubmit={submit} className={styles.form}>
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
-      <button type="submit" disabled={loading || disabled}>
+      <button
+        type="submit"
+        disabled={loading || disabled}
+        className={styles.submit}
+      >
         {SUBMIT_TEXT}
       </button>
     </form>

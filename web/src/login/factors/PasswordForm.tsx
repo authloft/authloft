@@ -14,6 +14,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { FieldRenderer } from '../../shared/components';
 import type { FactorProps } from './registry';
+import styles from './PasswordForm.module.less';
 
 /** CapsLock 提示文案（i18n 无键，字面量声明见文件头）。 */
 const CAPS_LOCK_TEXT = '已开启大写锁定（Caps Lock）';
@@ -48,10 +49,23 @@ export function PasswordForm({
   };
 
   return (
-    <form onKeyDown={trackCapsLock} onKeyUp={trackCapsLock} onSubmit={submit}>
+    <form
+      onKeyDown={trackCapsLock}
+      onKeyUp={trackCapsLock}
+      onSubmit={submit}
+      className={styles.form}
+    >
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
-      {capsLock && <p role="status">{CAPS_LOCK_TEXT}</p>}
-      <button type="submit" disabled={loading || disabled}>
+      {capsLock && (
+        <p role="status" className={styles.status}>
+          {CAPS_LOCK_TEXT}
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={loading || disabled}
+        className={styles.submit}
+      >
         {SUBMIT_TEXT}
       </button>
     </form>
