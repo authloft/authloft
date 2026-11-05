@@ -17,7 +17,7 @@ importers:
       '@connectrpc/connect-web':
         specifier: ^2.3.0
         version: 2.3.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.16.0))
-      '@douyinfe/semi-ui':
+      '@douyinfe/semi-ui-19':
         specifier: ^2.104.0
         version: 2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@modern-js/runtime':
@@ -311,11 +311,12 @@ packages:
   '@douyinfe/semi-theme-default@2.104.0':
     resolution: {integrity: sha512-eD+FC/OxMrBVKpWmfJ3NLgzK5clzEc5q6KH6dI3T5qnB28Fc9I9Vsri/UaHC0wLGOujFO0eX95OeWow1v1DacQ==}
 
-  '@douyinfe/semi-ui@2.104.0':
-    resolution: {integrity: sha512-1l6+49mTjka0dpQr0/rUMjfw5S3noXOJOZ0Uu4lin5jDupwA8z+YSehIcO6/pcuO9TAN7RswjidnlCxRjHYwvw==}
+  '@douyinfe/semi-ui-19@2.104.0':
+    resolution: {integrity: sha512-No7sDHvoPVGbe6GYkmwTylyyywojJ4nZyqKhT66g4b3w3Cxc6hFyQqZQghz64HQpVENj2STuuVGFi401Yzoi7A==}
+    engines: {node: '>=18.0.0'}
     peerDependencies:
-      react: '>=16.0.0'
-      react-dom: '>=16.0.0'
+      react: ^19.0.0
+      react-dom: ^19.0.0
 
   '@emnapi/core@1.11.3':
     resolution: {integrity: sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg==}
@@ -4674,7 +4675,7 @@ snapshots:
 
   '@douyinfe/semi-theme-default@2.104.0': {}
 
-  '@douyinfe/semi-ui@2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@douyinfe/semi-ui-19@2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@dnd-kit/core': 6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@dnd-kit/sortable': 7.0.2(@dnd-kit/core@6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)

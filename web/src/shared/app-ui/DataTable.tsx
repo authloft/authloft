@@ -20,9 +20,12 @@
  * （见 AppLayout 注释），此处只承载容器对接。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-// 子路径 import（同 AppLayout 口径：避免全量入口，测试链 / 产物见其注释）。
-import Table, { type ColumnProps } from '@douyinfe/semi-ui/lib/es/table';
-import Switch from '@douyinfe/semi-ui/lib/es/switch';
+// 大包命名导入（§1.6 行 113 硬性口径：一律大包入口、禁子路径）。
+import { Switch, Table } from '@douyinfe/semi-ui-19';
+// ColumnProps 类型导入例外：大包入口（lib/es/index.d.ts）仅转出组件值，
+// 未转出该类型——经官方 exports 白名单内的 table 子路径做纯类型导入
+// （import type，编译期擦除、零运行时痕迹）。
+import type { ColumnProps } from '@douyinfe/semi-ui-19/lib/es/table';
 import {
   MAX_PAGE_SIZE,
   resolveTableQuery,

@@ -21,12 +21,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-// 子路径 import（同 AdminLayout 口径：避免全量入口，测试链 / 产物见其注释）。
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Input from '@douyinfe/semi-ui/lib/es/input';
-import Modal from '@douyinfe/semi-ui/lib/es/modal';
-import Popconfirm from '@douyinfe/semi-ui/lib/es/popconfirm';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Button, Input, Modal, Popconfirm, Typography } from '@douyinfe/semi-ui-19';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';

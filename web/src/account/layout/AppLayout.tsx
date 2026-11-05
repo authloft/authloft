@@ -9,18 +9,16 @@
  * Breadcrumb；登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go
  * 处理，非 SPA），整页跳转走 <a href> 由浏览器原生完成。
  *
- * 样式（§1.7）：同目录同名 module.less，类名 camelCase；Semi 自带组件
- * 样式由 entry.tsx 顶部全量引入（官方接入方式，见 entry.tsx 注释）。
+ * 样式（§1.7）：同目录同名 module.less，类名 camelCase；Semi 组件样式
+ * 随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
+ * _base/base.css 引入（见 entry.tsx 注释）。
  */
 import type { ReactNode } from 'react';
-// 子路径 import（官方包 exports 提供，lib/es/* 逐组件入口）：不做全量
-// '@douyinfe/semi-ui' 入口 import——node 测试链对全量入口（70+ 组件 inline
-// bundle）会触发 rstest 0.12.5 的实体 chunk 拆分（Windows 下模块解析
-// 失败，实测），build 链产物也随组件数收敛；组件样式随组件 JS 内部
-// css import 自动打包，主题变量经 entry.tsx 的 _base/base.css（见其注释）。
-import Breadcrumb from '@douyinfe/semi-ui/lib/es/breadcrumb';
-import { Layout } from '@douyinfe/semi-ui/lib/es/layout';
-import Nav from '@douyinfe/semi-ui/lib/es/navigation';
+// 大包命名导入（§1.6 行 112/113 硬性口径：唯一包 @douyinfe/semi-ui-19，
+// 一律大包入口、禁子路径——此前 lib/es 子路径裁量已废止）。
+// 组件样式随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
+// _base/base.css 引入（见 entry.tsx 注释）。
+import { Breadcrumb, Layout, Nav } from '@douyinfe/semi-ui-19';
 import { logoutUrl } from '../bootstrap';
 import styles from './AppLayout.module.less';
 

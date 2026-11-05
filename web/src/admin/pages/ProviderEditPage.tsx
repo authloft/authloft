@@ -26,11 +26,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
-// 子路径 import（同 ProvidersPage 口径：避免全量入口，测试链 / 产物见其注释）。
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Input from '@douyinfe/semi-ui/lib/es/input';
-import Select from '@douyinfe/semi-ui/lib/es/select';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Button, Input, Select, Typography } from '@douyinfe/semi-ui-19';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
 import {

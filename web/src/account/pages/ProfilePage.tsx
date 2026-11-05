@@ -15,11 +15,7 @@
  * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
  */
 import { useEffect, type ReactNode } from 'react';
-// 子路径 import（同 AppLayout 口径：避免全量入口，测试链 / 产物见其注释）。
-import Avatar from '@douyinfe/semi-ui/lib/es/avatar';
-import Descriptions from '@douyinfe/semi-ui/lib/es/descriptions';
-import Spin from '@douyinfe/semi-ui/lib/es/spin';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Avatar, Descriptions, Spin, Typography } from '@douyinfe/semi-ui-19';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { getProfile, isUnauthenticatedError } from '../api';

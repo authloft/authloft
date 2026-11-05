@@ -26,9 +26,7 @@
  * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-// 子路径 import（同 ProfilePage 口径：避免全量入口，测试链 / 产物见其注释）。
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Modal from '@douyinfe/semi-ui/lib/es/modal';
+import { Button, Modal } from '@douyinfe/semi-ui-19';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';

@@ -6,25 +6,27 @@
  * import() 之前；缺省 `/assets/`）→ 注入 i18n → createRoot 挂载路由
  * （错误边界包裹）。
  *
- * Semi UI 接入（§1.3 行 111：account 端用 Semi UI；本 entry 是全项目唯一
+ * Semi UI 接入（§1.6 行 112/113：account 端用 Semi UI——唯一包
+ * @douyinfe/semi-ui-19，大包命名导入、禁子路径；本 entry 是全项目唯一
  * 引用点，login / setup 零引用）：
- * - 组件 JS 经官方包 exports 的 lib/es 子路径逐组件引入（见
- *   AppLayout.tsx 注释），组件样式随组件 JS 内部的 css import
- *   （semi-foundation 各组件 css）由构建链自动打包；
- * - 主题 css 变量（--semi-color-* 等）统一在 lib/es/_base/base.css 定义
- *   （exports 白名单内），与 tokens/reset 一起由 entry 顶部 import 一次——
- *   dist/css/semi.min.css 不在包 exports 白名单（Rspack 实测拒绝解析），
- *   且全量引入会引入未使用组件样式，弃用。
+ * - 组件一律从大包入口 import（lib/es/index.js，Rsbuild tree shaking
+ *   按需裁剪）；组件样式随组件 JS 内部的 css import（semi-foundation
+ *   各组件 css）由构建链自动打包；
+ * - 主题 css 变量（--semi-color-* 等）在 lib/es/_base/base.css 定义，
+ *   大包入口首行自带该 import 且包 sideEffects 标记 *.css——大包导入
+ *   即自动引入，entry 无需显式 import；dist/css/semi.min.css 不在包
+ *   exports 白名单（Rspack 拒绝解析），且全量引入会带上未使用组件
+ *   样式，弃用。
  *
  * 全局样式顺序（§1.7 行 120：由每个 entry 顶部 import 一次）：
- * tokens（只存变量）→ reset（基础重置）→ Semi 全量组件样式在后，
- * 组件级 .semi-* 类选择器特异度高于 reset 的元素选择器，两不冲突。
+ * tokens（只存变量）→ reset（基础重置）→ Semi 主题变量 + 组件样式随
+ * 大包导入链在后，组件级 .semi-* 类选择器特异度高于 reset 的元素选
+ * 择器，两不冲突。
  */
-// .css 副作用 import 的类型声明由 @modern-js/app-tools/types 提供
+// .less 副作用 import 的类型声明由 @modern-js/app-tools/types 提供
 //（tsconfig types 字段），无需 global.d.ts 扩项（tsc 实测无 TS2307）。
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
-import '@douyinfe/semi-ui/lib/es/_base/base.css';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setLocale } from '../shared/i18n';

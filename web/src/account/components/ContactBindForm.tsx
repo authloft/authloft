@@ -13,9 +13,7 @@
  * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
  */
 import { useRef, useState, type ReactNode, type Ref } from 'react';
-// 子路径 import（同 ProfilePage 口径：避免全量入口，测试链 / 产物见其注释）。
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Input from '@douyinfe/semi-ui/lib/es/input';
+import { Button, Input } from '@douyinfe/semi-ui-19';
 import type { OkResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import type {
   BindEmailRequest,

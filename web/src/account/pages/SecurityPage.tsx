@@ -26,11 +26,7 @@
  * loginUrl 由页面层统一实现。文案无 i18n 键：中文字面量 + 注释声明。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-// 子路径 import（同 ProfilePage 口径：避免全量入口，测试链 / 产物见其注释）。
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Card from '@douyinfe/semi-ui/lib/es/card';
-import Spin from '@douyinfe/semi-ui/lib/es/spin';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { create } from '@bufbuild/protobuf';
 import type {
   AccountConfigResponse,

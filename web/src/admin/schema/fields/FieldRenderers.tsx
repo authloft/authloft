@@ -5,16 +5,13 @@
  * 受控渲染）。六渲染器共享 FieldShell 装配（label / required 星号 / help /
  * issue），故合一个文件（既定口径授权合并轻量类型）。
  *
- * Semi UI 经 lib/es 子路径引入（AdminLayout 口径）；未知 type 渲染占位
+ * Semi UI 经大包入口命名导入（§1.6 行 113 硬性口径）；未知 type 渲染占位
  * 不崩（§12.9 行 1754：fields[].type 跨版本可能新增）——分派在
  * ../FieldRegistry。样式复用 ../SchemaForm.module.less（字段装配属表单
  * 布局；跨文件共享同一 CSS Modules 映射，§1.7）。
  */
 import type { ReactNode } from 'react';
-import Checkbox from '@douyinfe/semi-ui/lib/es/checkbox';
-import Input from '@douyinfe/semi-ui/lib/es/input';
-import InputNumber from '@douyinfe/semi-ui/lib/es/inputNumber';
-import Select from '@douyinfe/semi-ui/lib/es/select';
+import { Checkbox, Input, InputNumber, Select } from '@douyinfe/semi-ui-19';
 import type { SchemaField } from '../../../gen/proto/api/admin/v1/schema_pb';
 import { JsonEditor } from '../../components/JsonEditor';
 import type { FieldRendererProps } from '../FieldRegistry';

@@ -145,7 +145,7 @@ import {
  * 由 settingsDraftIssue 前端自律拦截（缺该键的全量提交会置空该键被后端拒收）。
  *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
- * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
+ * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
  * account.test.tsx 头注）——渲染逻辑因此最小化为「纯函数 + 分支渲染」，
  * 可测部分全部落 api.ts / bootstrap.ts / 零 Semi 组件；StatusSwitch 的

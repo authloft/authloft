@@ -74,7 +74,7 @@ import { t } from '../shared/i18n';
  *   仍受工具链 blocker——见文件头【Blocker】段）。
  *
  * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
- * 测试在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
+ * 测试在本工具链下无法落地：@douyinfe/semi-ui-19 的 lib/es 内部为无扩展名
  * import，node 原生 ESM 无法加载，rstest 0.12.5 对其 externalize（rs.mock /
  * __mocks__ 均为运行时机制，拦不住编译图对 external 包的链接期加载）→ 任何
  * 模块图含 semi import 的测试文件都在加载期崩（实测：rs.mock 全组件 /

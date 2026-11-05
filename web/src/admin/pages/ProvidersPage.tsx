@@ -26,8 +26,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
-// 子路径 import（同 AdminLayout 口径：避免全量入口，测试链 / 产物见其注释）。
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Typography } from '@douyinfe/semi-ui-19';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';

@@ -18,16 +18,17 @@
  * 「全部设置已整体覆盖」。样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-// 子路径 import（同 AdminLayout 口径：避免全量入口，测试链 / 产物见其注释）。
-import Banner from '@douyinfe/semi-ui/lib/es/banner';
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Card from '@douyinfe/semi-ui/lib/es/card';
-import Checkbox from '@douyinfe/semi-ui/lib/es/checkbox';
-import Input from '@douyinfe/semi-ui/lib/es/input';
-import InputNumber from '@douyinfe/semi-ui/lib/es/inputNumber';
-import Select from '@douyinfe/semi-ui/lib/es/select';
-import Switch from '@douyinfe/semi-ui/lib/es/switch';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import {
+  Banner,
+  Button,
+  Card,
+  Checkbox,
+  Input,
+  InputNumber,
+  Select,
+  Switch,
+  Typography,
+} from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { StringListEditor } from '../components/StringListEditor';
 import {

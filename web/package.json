@@ -17,7 +17,7 @@
     "@bufbuild/protobuf": "^2.16.0",
     "@connectrpc/connect": "^2.3.0",
     "@connectrpc/connect-web": "^2.3.0",
-    "@douyinfe/semi-ui": "^2.104.0",
+    "@douyinfe/semi-ui-19": "^2.104.0",
     "@modern-js/runtime": "3.11.0",
     "@simplewebauthn/browser": "^14.0.0",
     "react": "^19.2.3",

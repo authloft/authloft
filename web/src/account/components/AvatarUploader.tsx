@@ -15,9 +15,7 @@
  * 组件与逻辑层测试，挂载 + UpdateProfile 持久化 avatarUrl 归 profile 后续增强。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-// 子路径 import（同 ProfilePage 口径：避免全量入口，测试链 / 产物见其注释）。
-import Avatar from '@douyinfe/semi-ui/lib/es/avatar';
-import Button from '@douyinfe/semi-ui/lib/es/button';
+import { Avatar, Button } from '@douyinfe/semi-ui-19';
 import type { AvatarUploadConfig } from '../../gen/proto/api/account/v1/profile_pb';
 import { ApiError } from '../../shared/api/errors';
 import type { UploadProgress } from '../../shared/api/http';

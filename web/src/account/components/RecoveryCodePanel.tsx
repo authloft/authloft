@@ -10,8 +10,7 @@
  * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
  */
 import type { ReactNode } from 'react';
-import Button from '@douyinfe/semi-ui/lib/es/button';
-import Popconfirm from '@douyinfe/semi-ui/lib/es/popconfirm';
+import { Button, Popconfirm } from '@douyinfe/semi-ui-19';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { formatUnixTime } from '../api';
 import styles from './RecoveryCodePanel.module.less';

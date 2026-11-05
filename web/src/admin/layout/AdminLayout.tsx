@@ -13,9 +13,9 @@
  *   **不跳登录**；错误 / 加载态不渲染管理壳（侧边栏 / 顶栏会泄露管理面
  *   存在，与掩护语义相悖）。
  *
- * Semi UI（§1.3 行 111：admin 端用 Semi UI，同 account 底座）：
- * Layout / Nav / Breadcrumb / Avatar / Typography 经 lib/es 子路径引入
- * （规避 rstest 0.12.5 chunk bug，见 account/layout/AppLayout.tsx 注释）；
+ * Semi UI（§1.6 行 112/113：admin 端用 Semi UI，同 account 底座——唯一包
+ * @douyinfe/semi-ui-19 大包命名导入，禁子路径）：Layout / Nav / Breadcrumb /
+ * Avatar / Typography 均大包具名导入；
  * 登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go 处理，非 SPA）。
  * 侧边栏选中 / 点击导航沿 account AppLayout 先例：itemKey 即路由
  * 路径，selectedKeys 受控于 activeKey prop，点击整页跳转。
@@ -23,11 +23,7 @@
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
 import { useEffect, type ReactNode } from 'react';
-import Avatar from '@douyinfe/semi-ui/lib/es/avatar';
-import Breadcrumb from '@douyinfe/semi-ui/lib/es/breadcrumb';
-import { Layout } from '@douyinfe/semi-ui/lib/es/layout';
-import Nav from '@douyinfe/semi-ui/lib/es/navigation';
-import Typography from '@douyinfe/semi-ui/lib/es/typography';
+import { Avatar, Breadcrumb, Layout, Nav, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { loginUrl, logoutUrl } from '../bootstrap';
 import { adminDisplayName, adminMeFailureAction, apiErrorText, getMe } from '../api';
