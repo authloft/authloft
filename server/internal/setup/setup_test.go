@@ -7,6 +7,7 @@ package setup
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -255,8 +256,11 @@ func TestSetupPageShell(t *testing.T) {
 	if !strings.Contains(body, "window.__AUTHLOFT_INIT__") {
 		t.Error("shell page must inject window.__AUTHLOFT_INIT__")
 	}
-	if !strings.Contains(body, `"al_root":"https://192.168.10.2:8080"`) {
-		t.Errorf("al_root must default to https://+request Host, body:\n%s", body)
+	// httptest 请求无 X-Forwarded-Proto、无 TLS → auto 兜底明文 http
+	//（修复前为硬编码 https://，明文 HTTP 部署下前端把 GetStatus 连接失败误判
+	// 为"已进正常模式"）。scheme 分支专项见 TestSetupPageRootScheme。
+	if !strings.Contains(body, `"al_root":"http://192.168.10.2:8080"`) {
+		t.Errorf("al_root must default to http://+request Host (no signal -> plaintext), body:\n%s", body)
 	}
 	if !strings.Contains(body, `"static_base":"/assets"`) {
 		t.Errorf("static_base must default to /assets, body:\n%s", body)
@@ -281,6 +285,50 @@ func TestSetupPageShell(t *testing.T) {
 		}
 	} else {
 		t.Error("INIT assignment not found for escape check")
+	}
+}
+
+// TestSetupPageRootScheme 壳 al_root 的 scheme 按推导链
+// 逐请求推导——复用唯一判定点 session.ResolveHTTPS（setup 模式无 settings
+// 键，https_deployment 三态恒缺省 auto）：X-Forwarded-Proto 逗号首值
+//（头优先于直连 TLS，忽略大小写）→ 请求自身 TLS → 兜底明文 http。
+// 修复前硬编码 https://，明文 HTTP 部署下前端把 GetStatus 连接失败误判为
+// "已进正常模式"直接跳登录页（§13.4 轮询判据失效）。
+func TestSetupPageRootScheme(t *testing.T) {
+	const host = "192.168.10.2:8080"
+	cases := []struct {
+		name string
+		xfp  string // X-Forwarded-Proto 头值；空 = 不带
+		tls  bool   // 请求自身 TLS 直连
+		want string
+	}{
+		{"xfp https", "https", false, "https://" + host},
+		{"xfp http", "http", false, "http://" + host},
+		{"xfp list first value wins", "https,http", false, "https://" + host},
+		{"xfp list first http wins over tls", "HTTP, https", true, "http://" + host},
+		{"no xfp no tls", "", false, "http://" + host},
+		{"no xfp tls direct", "", true, "https://" + host},
+		{"xfp http wins over tls", "http", true, "http://" + host},
+	}
+	for _, tc := range cases {
+		s, _ := newTestServer(t)
+		req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+		req.Host = host
+		if tc.xfp != "" {
+			req.Header.Set("X-Forwarded-Proto", tc.xfp)
+		}
+		if tc.tls {
+			req.TLS = &tls.ConnectionState{}
+		}
+		rec := httptest.NewRecorder()
+		s.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want %d", tc.name, rec.Code, http.StatusOK)
+		}
+		want := `"al_root":"` + tc.want + `"`
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("%s: body lacks %s, body:\n%s", tc.name, want, rec.Body.String())
+		}
 	}
 }
 

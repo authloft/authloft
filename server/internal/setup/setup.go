@@ -33,6 +33,8 @@ import (
 	"authloft/internal/config"
 	authloftconnect "authloft/internal/connect"
 	"authloft/internal/middleware"
+	"authloft/internal/session"
+	"authloft/internal/settings"
 )
 
 // 监听（§3.1 行 247 / §3.15）：setup 模式同样读 server 段
@@ -311,8 +313,14 @@ const setupPageTmpl = `<!DOCTYPE html>
 
 // handleSetupPage GET /setup：渲染安装页空壳。setup 模式无 config，al_root
 // 缺省取当前请求 Host（§3.15），static_base 取默认 /assets（§8 行 1410）。
-// 页面路由是 §1.5 行 225 的豁免端点（错误形态按 HTTP 语义）：构造失败直接
-// 空体 500，不套 Connect 错误体。
+// al_root 的 scheme 走 https_deployment 推导链：唯一判定点
+// session.ResolveHTTPS——setup 模式无 settings 键（https_deployment 三态
+// 恒缺省 auto），按请求信号推导：X-Forwarded-Proto 逗号首值 → 请求自身
+// TLS → 兜底明文 http（§1.9 行 306-309 同构）。明文 HTTP 部署（§1.1 行 76
+// 一等公民）下硬编码 https:// 会让前端把 GetStatus 连接失败误判为"已进
+// 正常模式"直接跳登录页（§13.4 轮询判据失效）。页面路由是 §1.5 行 225 的
+// 豁免端点（错误形态按 HTTP 语义）：构造失败直接空体 500，不套 Connect
+// 错误体。
 func (s *Server) handleSetupPage(c *gin.Context) {
 	nonce, err := genNonce()
 	if err != nil {
@@ -320,8 +328,13 @@ func (s *Server) handleSetupPage(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	sig := session.RequestSignal{Header: c.Request.Header, TLS: c.Request.TLS != nil}
+	scheme := "http"
+	if session.ResolveHTTPS(func() string { return settings.HTTPSDeploymentAuto }, sig) {
+		scheme = "https"
+	}
 	init, err := json.Marshal(map[string]string{
-		"al_root":     "https://" + c.Request.Host,
+		"al_root":     scheme + "://" + c.Request.Host,
 		"static_base": "/assets",
 	})
 	if err != nil { // map[string]string 的 Marshal，实际不可达
