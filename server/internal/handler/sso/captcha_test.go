@@ -42,7 +42,7 @@ func (f *fakeImageStore) Verify(_ context.Context, id, answer string) (bool, err
 // 写入存储（对应 al:cap:{id} EX 300）。
 func TestCreateCaptchaImageConnect(t *testing.T) {
 	store := &fakeImageStore{answers: map[string]string{}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, captcha.NewImageCaptcha(store)))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, captcha.NewImageCaptcha(store), nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -88,7 +88,7 @@ func TestCreateCaptchaImageConnect(t *testing.T) {
 // TestCreateCaptchaImageNotConfigured 未注入图形码实现（测试 / 半装配
 // 口径）→ Connect internal 错误，不 panic。
 func TestCreateCaptchaImageNotConfigured(t *testing.T) {
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceCreateCaptchaImageProcedure, strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")

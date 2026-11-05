@@ -744,3 +744,142 @@ func TestMfaOnlyFromBoundProfile(t *testing.T) {
 		}
 	}
 }
+
+// sinkCtx 注入「一旦回调即失败」的 session_token 写点：非 success
+// 用例复用，写点被回调 = 引擎在失败态 / 中间态泄漏令牌。
+func sinkCtx(t *testing.T) context.Context {
+	t.Helper()
+	return WithSessionTokenSink(context.Background(), func(sessionToken string) {
+		t.Errorf("非 success 状态写点不得回调, got token %q", sessionToken)
+	})
+}
+
+// TestEngineSuccessInvokesSessionTokenSink 浏览器 Cookie 场景：
+// ctx 挂写点 → 终点建会话签发成功后以新令牌回调恰一次；信封零
+// session_token（§1.3 行 135：浏览器响应 body 不得出现该字段）。
+func TestEngineSuccessInvokesSessionTokenSink(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+	e := deps.engine(testState(t, at))
+
+	var got []string
+	ctx := WithSessionTokenSink(context.Background(), func(sessionToken string) {
+		got = append(got, sessionToken)
+	})
+	resp := e.Submit(ctx, "login", Request{
+		Method: "password", Step: "verify",
+		Payload: &factor.Payload{Username: "alice", Password: "p"},
+	})
+	if resp.Status != StatusSuccess {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if len(got) != 1 || got[0] != "stok-1" {
+		t.Fatalf("写点回调 = %v, want [stok-1] 恰一次", got)
+	}
+	if resp.SessionToken != "" {
+		t.Fatalf("浏览器 success 信封不得携带 session_token, got %q", resp.SessionToken)
+	}
+}
+
+// TestEngineSessionInBodySuppressesSink 无 Cookie 场景既有语义不回归
+//（§1.3 行 135）：SessionInBody=true → 令牌走信封 session_token 字段，
+// ctx 写点不回调（挂点方据此零 Set-Cookie）。
+func TestEngineSessionInBodySuppressesSink(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+	e := deps.engine(testState(t, at))
+
+	called := false
+	ctx := WithSessionTokenSink(context.Background(), func(string) { called = true })
+	resp := e.Submit(ctx, "login", Request{
+		Method: "password", Step: "verify", SessionInBody: true,
+		Payload: &factor.Payload{Username: "alice", Password: "p"},
+	})
+	if resp.Status != StatusSuccess {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if called {
+		t.Fatal("SessionInBody=true 时写点不得回调（令牌走信封字段）")
+	}
+	if resp.SessionToken != "stok-1" {
+		t.Fatalf("session token = %q, want stok-1", resp.SessionToken)
+	}
+}
+
+// TestEngineSinkSilentOnNonSuccess 失败态 / 中间态写点零回调：
+// failed / next / mfa_required / captcha_required 均不触发——零 Set-Cookie、
+// 零 session_token 由引擎侧保证。
+func TestEngineSinkSilentOnNonSuccess(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+
+	t.Run("failed", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.registry.factors[factor.FactorPassword] = &fakeFactor{
+			kind:   factor.FactorPassword,
+			usages: []factor.Usage{factor.UsagePrimary},
+			steps:  []factor.StepKind{factor.StepForm},
+			verify: func(*factor.FactorContext) (*factor.VerifyResult, error) {
+				return &factor.VerifyResult{Passed: false, Status: StatusFailed}, nil
+			},
+		}
+		e := deps.engine(testState(t, at))
+		resp := e.Submit(sinkCtx(t), "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "u", Password: "bad"},
+		})
+		if resp.Status != StatusFailed {
+			t.Fatalf("status = %q, want failed", resp.Status)
+		}
+	})
+
+	t.Run("next", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.registry.factors[factor.FactorOTPEmail] = otpEmailFactor()
+		e := deps.engine(testState(t, at))
+		resp := e.Submit(sinkCtx(t), "login", Request{
+			Method: "otp_email", Step: "challenge", Captcha: captchaSubmission(),
+			Payload: &factor.Payload{Email: "alice@example.com"},
+		})
+		if resp.Status != StatusNext {
+			t.Fatalf("status = %q, want next", resp.Status)
+		}
+	})
+
+	t.Run("mfa_required", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.registry.factors[factor.FactorPassword] = passwordFactor(42)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
+		e := deps.engine(testState(t, at))
+		resp := e.Submit(sinkCtx(t), "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "alice", Password: "p"},
+		})
+		if resp.Status != StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", resp.Status)
+		}
+	})
+
+	// captcha_required 属中间态（失败 / 中间态零
+	// Set-Cookie、零 session_token；docs/接口文档.md §1.6、§2.5）：触发路径
+	// 同 TestEnginePasswordCaptchaAfterFailures——password verify 且当日已
+	// 3 次失败、未随请求提交 captcha → gate 拦在因子执行前，写点零回调。
+	t.Run("captcha_required", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.failures = fakeFailures{n: 3}
+		deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+		e := deps.engine(testState(t, at))
+		resp := e.Submit(sinkCtx(t), "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "u", Password: "p"},
+		})
+		if resp.Status != captcha.StatusRequired {
+			t.Fatalf("status = %q, want captcha_required", resp.Status)
+		}
+		if resp.SessionToken != "" {
+			t.Fatalf("captcha_required 信封不得携带 session_token, got %q", resp.SessionToken)
+		}
+	})
+}

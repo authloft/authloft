@@ -820,25 +820,39 @@ const ssoSessionTTL int64 = 604800
 // account 域（§1.2 行 96：全接口需 al_session，无会话由 handler 判定 401）
 // 共用同一构造，不再各写一份。
 func newDomainSessionInterceptor(cfg *config.Config, deps *assembled) connectrpc.UnaryInterceptorFunc {
-	ttl := ssoSessionTTLRaw(deps.settings)
-	cookieName := func() string {
+	return connect.NewSessionInterceptor(
+		session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		session.NewRenewer(deps.sessionTokens, ssoSessionTTLRaw(deps.settings)),
+		newSessionCookie(cfg, deps),
+		ssoCookieName(deps),
+	)
+}
+
+// ssoCookieName 会话 Cookie 名动态源（settings 键 cookie_name 每请求读取，
+// 缺失回落空串由 session.NewCookie 落回默认 al_session）。
+func ssoCookieName(deps *assembled) func() string {
+	return func() string {
 		v, _ := deps.settings.GetString(settings.KeyCookieName)
 		return v
 	}
-	return connect.NewSessionInterceptor(
-		session.NewVerifier(deps.sessionTokens, deps.epochStore),
-		session.NewRenewer(deps.sessionTokens, ttl),
-		session.NewCookie(cookieName(), rootHost(cfg.Authloft.Root), ttl),
-		cookieName,
-	)
+}
+
+// newSessionCookie 构造会话 Cookie 属性构造器（§1.9 行 288）：名 / 根域 /
+// TTL 同源于 settings（cookie_name、authloft.root 根域、session_ttl）。
+// session 拦截器（续期下发）与 sso 登录终点（建会话 Set-Cookie 下发）
+// 共用本构造——同名同属性，不另造第二套。
+func newSessionCookie(cfg *config.Config, deps *assembled) *session.Cookie {
+	return session.NewCookie(ssoCookieName(deps)(), rootHost(cfg.Authloft.Root), ssoSessionTTLRaw(deps.settings))
 }
 
 // registerSSO 注册 SsoService Connect handler：挂 session 拦截器
 // （§3.14 行 473；LoginDefault 免鉴权，未登录请求由拦截器放行匿名），
 // 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
+// 注入会话 Cookie 属性构造器：LoginDefault / Register / ResetPassword
+// 终点建会话后经引擎写点下发 Set-Cookie: al_session（§1.9 行 288）。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
-		ssohandler.New(deps.engine, deps.imageCaptcha),
+		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps)),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)

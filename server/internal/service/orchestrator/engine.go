@@ -69,6 +69,26 @@ type Request struct {
 	SessionInBody bool
 }
 
+// sessionTokenSinkKey 浏览器 Cookie 场景 session_token 写点的 ctx 注入键
+// （私有类型，包外无法伪造同型键）。
+type sessionTokenSinkKey struct{}
+
+// WithSessionTokenSink 注入登录终点的 session_token 写点：引擎仅在
+// status=success 终点建会话签发成功后以新令牌回调一次（失败态 / 中间态不
+// 回调——零 Set-Cookie、信封零 session_token 由引擎侧天然成立）；与
+// SessionInBody 互斥：SessionInBody=true（无 Cookie 场景，§1.3 行 135）时
+// 令牌走信封 session_token 字段，写点不回调。落地方式归挂点方（sso handler
+// 经 Set-Cookie: al_session 下发，§1.9 行 288）。
+func WithSessionTokenSink(ctx context.Context, sink func(sessionToken string)) context.Context {
+	return context.WithValue(ctx, sessionTokenSinkKey{}, sink)
+}
+
+// SessionTokenSinkFromContext 读取写点；未注入返回 false。
+func SessionTokenSinkFromContext(ctx context.Context) (func(string), bool) {
+	sink, ok := ctx.Value(sessionTokenSinkKey{}).(func(string))
+	return sink, ok
+}
+
 // EngineDeps 构造引擎所需依赖。
 type EngineDeps struct {
 	State      *State
@@ -386,6 +406,8 @@ func (e *Engine) completeSuccess(ctx context.Context, req Request, p *token.Logi
 	}
 	if req.SessionInBody {
 		resp.SessionToken = success.SessionToken
+	} else if sink, ok := SessionTokenSinkFromContext(ctx); ok {
+		sink(success.SessionToken)
 	}
 	return resp
 }

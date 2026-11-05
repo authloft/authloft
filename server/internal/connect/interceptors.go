@@ -74,7 +74,7 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 			tok, fromHeader := pickSessionToken(req.Header(), cookieName)
 			if tok == "" {
 				// 无令牌：未登录。防御性清残留同名 Cookie 后放行匿名。
-				addSessionCookie(ctx, cookie.Clear())
+				AddSessionCookie(ctx, cookie.Clear())
 				return next(ctx, req)
 			}
 			p, err := verifier.Verify(ctx, tok)
@@ -83,7 +83,7 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 			case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale):
 				// 解不开 / 过期 / epoch 不一致：未登录（§3.14 行 473 口径），
 				// 清 Cookie 放行，401 由下游拦截器判定。
-				addSessionCookie(ctx, cookie.Clear())
+				AddSessionCookie(ctx, cookie.Clear())
 				return next(ctx, req)
 			default:
 				// epoch 读取链故障：基础设施错误，按 internal 拒绝。
@@ -96,7 +96,7 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 				if fromHeader {
 					setResponseHeader(ctx, sessionTokenHeader, renewed)
 				} else {
-					addSessionCookie(ctx, cookie.Set(renewed))
+					AddSessionCookie(ctx, cookie.Set(renewed))
 				}
 			}
 			return next(ctx, req)
@@ -132,9 +132,13 @@ func setResponseHeader(ctx context.Context, key, value string) {
 	}
 }
 
-// addSessionCookie 下发完整属性的会话 Cookie（Set / Clear 构造结果）。
+// AddSessionCookie 下发完整属性的会话 Cookie（Set / Clear 构造结果）。
 // cookie.String() 即 http.SetCookie 的序列化来源，属性原样落地（§1.9）。
-func addSessionCookie(ctx context.Context, ck *http.Cookie) {
+// 经 handler 级 CallInfo 写回（connect-go 在拦截链返回后无条件合并，含错误
+// 响应）；非 handler 上下文（拦截链外直接调用）拿不到 CallInfo，静默跳过。
+// 本函数是 Connect 链 Set-Cookie 写出的唯一出口，供 session 拦截器（续期 /
+// 清除）与 sso 登录终点（建会话下发）共用，禁止另造第二套 Cookie 写出。
+func AddSessionCookie(ctx context.Context, ck *http.Cookie) {
 	if info, ok := connect.CallInfoForHandlerContext(ctx); ok {
 		info.ResponseHeader().Add("Set-Cookie", ck.String())
 	}
