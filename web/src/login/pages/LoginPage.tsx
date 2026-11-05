@@ -13,6 +13,7 @@
  */
 import { LoginContainer } from '../LoginContainer';
 import type { MethodsSnapshot } from '../../shared/types/init';
+import styles from './LoginPage.module.less';
 
 export interface LoginPageProps {
   /** 注入快照（§2.1；bootstrap 读取后传入，§4.1 行 375）。 */
@@ -33,18 +34,18 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const showForgot = flags?.passwordReset === true;
   const showRegister = flags?.registration === true;
   return (
-    <main>
-      <h1>{TITLE_TEXT}</h1>
+    <main className={styles.page}>
+      <h1 className={styles.title}>{TITLE_TEXT}</h1>
       <LoginContainer snapshot={snapshot} />
       {(showForgot || showRegister) && (
-        <nav>
+        <nav className={styles.entryNav}>
           {showForgot && (
-            <button type="button" disabled>
+            <button type="button" className={styles.entryButton} disabled>
               {FORGOT_PASSWORD_TEXT}
             </button>
           )}
           {showRegister && (
-            <button type="button" disabled>
+            <button type="button" className={styles.entryButton} disabled>
               {REGISTER_TEXT}
             </button>
           )}

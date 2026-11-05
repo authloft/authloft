@@ -1,0 +1,40 @@
+// 登录方式列表样式（docs/前端架构.md §1.7；内联清零：tab / 图标墙布局迁入）。
+@import (reference) '../shared/styles/tokens.less';
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tab {
+  padding: 0.375rem 0.875rem;
+}
+
+.tabActive {
+  .tab();
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  margin-top: @spacing-md;
+}
+
+.provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}

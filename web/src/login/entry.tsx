@@ -6,6 +6,10 @@
  * 沿 setup/entry.tsx 同构模式：modern.config 注册 disableMount，
  * 不依赖 Modern.js 运行时路由 / SSR。
  */
+// §1.7 行 120：全局样式由 entry 顶部 import 一次——tokens 只存变量（经组件
+// reference 消费，本身无 CSS 产出），reset 为基础重置。
+import '../shared/styles/tokens.less';
+import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { setLocale } from '../shared/i18n';

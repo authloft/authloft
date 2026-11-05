@@ -1,0 +1,21 @@
+// 登录容器样式（docs/前端架构.md §1.7；内联清零：MfaSelector 布局迁入）。
+@import (reference) '../shared/styles/tokens.less';
+
+.mfaList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mfaTab {
+  padding: 0.375rem 0.875rem;
+}
+
+.mfaTabActive {
+  .mfaTab();
+  font-weight: 700;
+  text-decoration: underline;
+}

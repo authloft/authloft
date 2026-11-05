@@ -1,0 +1,39 @@
+// 基础重置（docs/前端架构.md §1.7）：由每个 entry 的 entry.tsx 顶部 import 一次；
+// 只存基础重置最小集（box-sizing / margin 清零 / 字体基础），禁止组件选择器。
+@import (reference) './tokens.less';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: @font-family;
+  font-size: @font-size-md;
+  line-height: 1.5;
+  color: @color-text;
+  background-color: @color-background;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+ul,
+ol {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+}
+
+button {
+  font: inherit;
+}

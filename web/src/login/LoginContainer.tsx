@@ -60,6 +60,7 @@ import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
 import { StepDispatcher } from './steps/StepDispatcher';
 import { MethodTabs, SELECT_HINT } from './MethodTabs';
+import styles from './LoginContainer.module.less';
 import {
   flowReducer,
   type FlowEvent,
@@ -342,12 +343,12 @@ function MfaSelector({
 }) {
   return (
     <nav>
-      <ul style={mfaListStyle}>
+      <ul className={styles.mfaList}>
         {methods.map((m) => (
           <li key={m.method}>
             <button
               type="button"
-              style={m.method === current ? activeMfaTabStyle : mfaTabStyle}
+              className={m.method === current ? styles.mfaTabActive : styles.mfaTab}
               aria-current={m.method === current ? 'true' : undefined}
               onClick={() => onSelect?.(m.method, firstStepFor(m.steps))}
             >
@@ -574,25 +575,6 @@ export function LoginFlowView({
     </div>
   );
 }
-
-const mfaListStyle = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '0.5rem',
-  listStyle: 'none',
-  margin: 0,
-  padding: 0,
-} as const;
-
-const mfaTabStyle = {
-  padding: '0.375rem 0.875rem',
-} as const;
-
-const activeMfaTabStyle = {
-  ...mfaTabStyle,
-  fontWeight: 700,
-  textDecoration: 'underline',
-} as const;
 
 // ---------------------------------------------------------------------------
 // 容器（编排壳：dispatch / effects 落地 / 终点跳转）

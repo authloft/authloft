@@ -26,6 +26,7 @@
 import { t } from '../shared/i18n';
 import { useCapability } from '../shared/hooks/useCapability';
 import type { LoginMethodEntry, SnapshotProvider } from '../shared/types/init';
+import styles from './MethodTabs.module.less';
 
 export interface MethodTabsProps {
   /** 注入快照的登录方式列表（§2.1）。 */
@@ -101,7 +102,7 @@ export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
   return (
     <nav>
       {empty && <p role="status">{EMPTY_TEXT}</p>}
-      <ul style={listStyle}>
+      <ul className={styles.list}>
         {tabs.map((entry) => (
           <MethodTabItem
             key={entry.method}
@@ -136,7 +137,7 @@ function MethodTabItem({
     <li>
       <button
         type="button"
-        style={selected ? activeTabStyle : tabStyle}
+        className={selected ? styles.tabActive : styles.tab}
         aria-current={selected ? 'true' : undefined}
         onClick={() => onSelect(entry.method)}
       >
@@ -159,15 +160,15 @@ function ProviderWall({ entry }: { entry: LoginMethodEntry }) {
   return (
     <div>
       {[...groups.entries()].map(([group, providers]) => (
-        <div key={group} data-group={group} style={groupStyle}>
+        <div key={group} data-group={group} className={styles.group}>
           {providers.map((p) => (
             <button
               key={p.providerKey}
               type="button"
-              style={providerStyle}
+              className={styles.provider}
               title={p.displayName ?? p.providerKey}
             >
-              {p.icon ? <img src={p.icon} alt="" style={iconStyle} /> : null}
+              {p.icon ? <img src={p.icon} alt="" className={styles.icon} /> : null}
               <span>{p.displayName ?? p.providerKey}</span>
             </button>
           ))}
@@ -179,41 +180,3 @@ function ProviderWall({ entry }: { entry: LoginMethodEntry }) {
 
 /** 供视图层复用的引导文案（与 EMPTY_TEXT 同源声明）。 */
 export const SELECT_HINT = SELECT_HINT_TEXT;
-
-const listStyle = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '0.5rem',
-  listStyle: 'none',
-  margin: 0,
-  padding: 0,
-} as const;
-
-const tabStyle = {
-  padding: '0.375rem 0.875rem',
-} as const;
-
-const activeTabStyle = {
-  ...tabStyle,
-  fontWeight: 700,
-  textDecoration: 'underline',
-} as const;
-
-const groupStyle = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '0.5rem',
-  marginTop: '0.75rem',
-} as const;
-
-const providerStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '0.375rem',
-  padding: '0.375rem 0.625rem',
-} as const;
-
-const iconStyle = {
-  width: '1.25rem',
-  height: '1.25rem',
-} as const;
