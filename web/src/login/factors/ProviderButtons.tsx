@@ -15,11 +15,13 @@
  *   （本组件是图标墙唯一实现），MethodTabs re-export 保持既有导入面
  *   （login-container.test 经 MethodTabs 消费）。
  *
- * 文案：提示类文案在字典无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案（i18n 收口）：redirect 失败提示经 shared/i18n 的 t() 消费
+ * （login.refreshRetry）。
  */
 import { useState, type ComponentType } from 'react';
 import { RedirectStep } from '../steps/RedirectStep';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
+import { t } from '../../shared/i18n';
 import {
   getInit,
   type OidcContext,
@@ -151,9 +153,6 @@ type RedirectState =
   | { phase: 'ready'; url: string }
   | { phase: 'failed' };
 
-/** redirect 失败提示（i18n 无键，字面量声明见文件头）。 */
-const REDIRECT_FAILED_TEXT = '请刷新重试';
-
 export interface ProviderButtonsProps {
   /** thirdparty 方式条目的 providers（§2.7.1；channel=api 与未知渠道不渲染）。 */
   providers: readonly SnapshotProvider[];
@@ -215,7 +214,7 @@ export function ProviderButtons({
       return (
         <div>
           <p role="alert" className={styles.error}>
-            {REDIRECT_FAILED_TEXT}
+            {t('login.refreshRetry')}
           </p>
           <ProviderWall
             providers={providers}

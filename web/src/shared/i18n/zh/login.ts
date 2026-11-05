@@ -49,4 +49,14 @@ export const login = {
   'login.bindUnavailable': '绑定功能即将上线',
   'login.mfaPlaceholder': '登录需要二次验证，请返回重新登录',
   'login.backToLogin': '返回登录',
+  // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
+  //      RecoveryCodeForm、ProviderButtons）------------------------------------
+  'login.submit': '登录',
+  'login.sendCode': '发送验证码',
+  'login.codeWillBeSentTo': '验证码将发送至 {target}',
+  'login.capsLockOn': '已开启大写锁定（Caps Lock）',
+  'login.passkeySignIn': '使用通行密钥登录',
+  'login.passkeyVerify': '验证',
+  'login.passkeyCancelled': '已取消通行密钥验证',
+  'login.passkeyFailed': '通行密钥验证失败，请重试',
 };

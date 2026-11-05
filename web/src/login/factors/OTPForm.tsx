@@ -20,29 +20,20 @@
  * 直渲染位）切换而重建，本地 state 会丢已输码——invalid_code 可重试原地重试
  * （§1.6 行 247）不应清空输入；缺省走组件本地 state（独立渲染 / 测试可用）。
  *
- * 文案：OTP 相关（发送 / 重发 / 倒计时 / 剩余次数）在 i18n 字典无键，中文字面量
- * + 注释声明，扩键归后续 i18n 实现。
+ * 文案（i18n 收口）：经 shared/i18n 的 t() 消费——login.codeLabel /
+ * login.sendCode / login.resend / login.resendCountdown / login.attemptsLeft /
+ * login.codeWillBeSentTo / login.submit（zh 原文照搬，en 镜像）。
  */
 import { useState, type FormEvent } from 'react';
 import { CodeInput, FieldRenderer } from '../../shared/components';
 import { useCountdown } from '../../shared/hooks/useCountdown';
+import { t } from '../../shared/i18n';
+import { toDisplay } from '../../shared/utils/int';
 import type { FactorProps } from './registry';
 import styles from './OTPForm.module.less';
 
 /** verify 段验证码分段数（§1.10 行 306-307：otp 六位码；下发 fields[].length 的通用渲染归 FormStep）。 */
 const OTP_CODE_LENGTH = 6;
-
-/** verify 段输码标签（i18n 无键，字面量声明见文件头）。 */
-const CODE_LABEL = '验证码';
-
-/** challenge 段发送按钮文案（同上）。 */
-const SEND_TEXT = '发送验证码';
-
-/** verify 段重发按钮文案（同上）。 */
-const RESEND_TEXT = '重新发送';
-
-/** verify 段提交按钮文案（同上）。 */
-const SUBMIT_TEXT = '登录';
 
 /** OTP 系专属扩展 props（全部可选，不破坏 registry 的 FactorProps 契约）。 */
 export interface OTPFormProps extends FactorProps {
@@ -108,16 +99,18 @@ export function OTPForm({
   if (step === 'verify') {
     return (
       <form onSubmit={submit} className={styles.form}>
-        <label className={styles.label}>{CODE_LABEL}</label>
+        <label className={styles.label}>{t('login.codeLabel')}</label>
         <CodeInput
           value={code}
           onChange={setCode}
           length={OTP_CODE_LENGTH}
-          ariaLabel={CODE_LABEL}
+          ariaLabel={t('login.codeLabel')}
           disabled={loading || disabled}
         />
         {attemptsLeft !== undefined && (
-          <p role="status" className={styles.status}>{`还可尝试 ${attemptsLeft} 次`}</p>
+          <p role="status" className={styles.status}>
+            {t('login.attemptsLeft', { count: toDisplay(attemptsLeft) })}
+          </p>
         )}
         <button
           type="button"
@@ -125,14 +118,16 @@ export function OTPForm({
           onClick={onResend}
           className={styles.resend}
         >
-          {countdown.expired ? RESEND_TEXT : `${countdown.seconds} 秒后可重发`}
+          {countdown.expired
+            ? t('login.resend')
+            : t('login.resendCountdown', { seconds: countdown.seconds })}
         </button>
         <button
           type="submit"
           disabled={loading || disabled}
           className={styles.submit}
         >
-          {SUBMIT_TEXT}
+          {t('login.submit')}
         </button>
       </form>
     );
@@ -142,7 +137,9 @@ export function OTPForm({
   return (
     <form onSubmit={submit} className={styles.form}>
       {maskedTarget !== undefined && maskedTarget !== '' ? (
-        <p role="status" className={styles.status}>{`验证码将发送至 ${maskedTarget}`}</p>
+        <p role="status" className={styles.status}>
+          {t('login.codeWillBeSentTo', { target: maskedTarget })}
+        </p>
       ) : (
         <FieldRenderer fields={fields} values={values} onChange={onChange} />
       )}
@@ -151,7 +148,7 @@ export function OTPForm({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {SEND_TEXT}
+        {t('login.sendCode')}
       </button>
     </form>
   );

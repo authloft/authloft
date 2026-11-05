@@ -5,15 +5,13 @@
  * §1.3 行 126 recovery_code fields=[{name:code,type:text}]）；提交上抛
  * props.onSubmit（容器组装 payload {code}，§2.6 行 550）。
  *
- * 文案：提交按钮在 i18n 字典无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案（i18n 收口）：提交按钮经 shared/i18n 的 t() 消费（login.submit）。
  */
 import { useState, type FormEvent } from 'react';
 import { FieldRenderer } from '../../shared/components';
+import { t } from '../../shared/i18n';
 import type { FactorProps } from './registry';
 import styles from './RecoveryCodeForm.module.less';
-
-/** 提交按钮文案（i18n 无键，字面量声明见文件头）。 */
-const SUBMIT_TEXT = '登录';
 
 export function RecoveryCodeForm({
   fields,
@@ -42,7 +40,7 @@ export function RecoveryCodeForm({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {SUBMIT_TEXT}
+        {t('login.submit')}
       </button>
     </form>
   );

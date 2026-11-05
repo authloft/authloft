@@ -51,4 +51,14 @@ export const login: typeof zhLogin = {
   'login.mfaPlaceholder':
     'Second-factor verification is required. Please go back and sign in again',
   'login.backToLogin': 'Back to sign in',
+  // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
+  //      RecoveryCodeForm、ProviderButtons）------------------------------------
+  'login.submit': 'Sign in',
+  'login.sendCode': 'Send verification code',
+  'login.codeWillBeSentTo': 'The verification code will be sent to {target}',
+  'login.capsLockOn': 'Caps Lock is on',
+  'login.passkeySignIn': 'Sign in with passkey',
+  'login.passkeyVerify': 'Verify',
+  'login.passkeyCancelled': 'Passkey verification cancelled',
+  'login.passkeyFailed': 'Passkey verification failed. Please try again',
 };

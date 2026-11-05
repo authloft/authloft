@@ -18,7 +18,9 @@
  * - 注册 / 创建凭据场景（PublicKeyCredentialCreationOptions）归 account 域
  *   安全中心（§4.5），本组件只承担登录断言。
  *
- * 文案：i18n 无键，中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案（i18n 收口）：按钮与取消 / 失败提示经 shared/i18n 的 t() 消费
+ * （login.passkeySignIn / login.passkeyVerify / login.passkeyCancelled /
+ * login.passkeyFailed）。
  */
 import { useState } from 'react';
 import type { JsonObject } from '@bufbuild/protobuf';
@@ -27,17 +29,9 @@ import {
   type AuthenticationResponseJSON,
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
+import { t } from '../../shared/i18n';
 import type { FactorProps } from './registry';
 import styles from './WebAuthnButton.module.less';
-
-/** challenge 步发起按钮文案（i18n 无键，字面量声明见文件头）。 */
-const USE_TEXT = '使用通行密钥登录';
-/** verify 段断言按钮文案（同上）。 */
-const VERIFY_TEXT = '验证';
-/** 用户取消提示（NotAllowedError = 浏览器原生 UI 关闭；同上）。 */
-const CANCELLED_TEXT = '已取消通行密钥验证';
-/** 失败兜底提示（§1.6 行 272 不暴露内部信息；同上）。 */
-const FAILED_TEXT = '通行密钥验证失败，请重试';
 
 /** window.PublicKeyCredential 缺失则隐藏（§4.3 行 453；node 测试环境无 window）。 */
 function webauthnAvailable(): boolean {
@@ -142,13 +136,13 @@ export function WebAuthnButton({
         onClick={start}
         className={styles.button}
       >
-        {challengeData === undefined ? USE_TEXT : VERIFY_TEXT}
+        {challengeData === undefined ? t('login.passkeySignIn') : t('login.passkeyVerify')}
       </button>
       {error === 'cancelled' && (
-        <p role="alert" className={styles.notice}>{CANCELLED_TEXT}</p>
+        <p role="alert" className={styles.notice}>{t('login.passkeyCancelled')}</p>
       )}
       {error === 'failed' && (
-        <p role="alert" className={styles.notice}>{FAILED_TEXT}</p>
+        <p role="alert" className={styles.notice}>{t('login.passkeyFailed')}</p>
       )}
     </div>
   );

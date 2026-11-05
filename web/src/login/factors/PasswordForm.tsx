@@ -8,19 +8,14 @@
  * （§2.2 / §2.6 行 543：{username, password, captcha?}）。
  *
  * 密码强度提示仅注册 / 改密场景（§4.3 行 435），本组件不实现。
- * 文案说明：CapsLock 提示与提交按钮文案在 i18n 字典中无对应
- * 键，暂用中文字面量并在此声明，扩键归后续 i18n 实现。
+ * 文案（i18n 收口）：CapsLock 提示与提交按钮经 shared/i18n 的 t() 消费
+ * （login.capsLockOn / login.submit）。
  */
 import { useState, type FormEvent, type KeyboardEvent } from 'react';
 import { FieldRenderer } from '../../shared/components';
+import { t } from '../../shared/i18n';
 import type { FactorProps } from './registry';
 import styles from './PasswordForm.module.less';
-
-/** CapsLock 提示文案（i18n 无键，字面量声明见文件头）。 */
-const CAPS_LOCK_TEXT = '已开启大写锁定（Caps Lock）';
-
-/** 提交按钮文案（同上）。 */
-const SUBMIT_TEXT = '登录';
 
 export function PasswordForm({
   fields,
@@ -58,7 +53,7 @@ export function PasswordForm({
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
       {capsLock && (
         <p role="status" className={styles.status}>
-          {CAPS_LOCK_TEXT}
+          {t('login.capsLockOn')}
         </p>
       )}
       <button
@@ -66,7 +61,7 @@ export function PasswordForm({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {SUBMIT_TEXT}
+        {t('login.submit')}
       </button>
     </form>
   );
