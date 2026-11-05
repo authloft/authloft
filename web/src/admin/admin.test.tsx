@@ -50,6 +50,16 @@ import {
   isProviderKeyTaken,
   validateSchemaValues,
 } from './schema/schemaLogic';
+import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
+import {
+  DEFAULT_SETTINGS,
+  HTTPS_DEPLOYMENT_OPTIONS,
+  LOGIN_METHOD_OPTIONS,
+  MFA_METHOD_OPTIONS,
+  SETTINGS_SECTIONS,
+  draftFromSettings,
+  settingsDraftIssue,
+} from './settingsLogic';
 
 /**
  * admin entry 底座测试 + Provider 列表族测试。底座覆盖边界（既定口径
@@ -116,6 +126,24 @@ import {
  *   不可变编排纯函数（moveItem 同口径）。
  * SsoClientsPage / OidcClientsPage 渲染不可测（同上 Blocker）。
  *
+ * 追加 settings 族测试（接口文档 §5.6 行 1287-1363 settings 族；后端已实装
+ * 全量投影 / 全量替换，读路径真调语义 → msw 走真实 transport 归一链）：
+ * - api.getSettings msw：SettingsResponse 读路径解码（int64 十进制字符串 →
+ *   bigint + repeated + protojson 零值省略 → proto 零值）+ 500 → ApiError；
+ * - api.setSettings msw：请求体 wire 校验——**全量替换语义**（36 键整体提交、
+ *   不能只提交改动字段；零值键 wire 省略 = 服务端读零值 = 写入零值，与
+ *   后端实装语义等价）；
+ * - settingsLogic 纯函数全集：DEFAULT_SETTINGS 默认值对 §5.6 四张表逐字 /
+ *   SETTINGS_SECTIONS 36 键全覆盖无重复 / draftFromSettings 全键映射与
+ *   零值即真值（全量替换对称面）/ settingsDraftIssue 交叉校验（行 1363
+ *   前端自律：非负整数 / 字符类数 1-3 / min ≤ max ≤ 64 / https_deployment
+ *   三态行 1361）；
+ * - buildSetSettingsRequest 全量构造：文本 trim / 列表清洗 / number → bigint。
+ * SettingsPage 渲染不可测（同上 Blocker）。
+ * ⚠️ https_deployment（=36）双端 proto / 生成物已先行落地，
+ * 与文档定稿一致 → 随本实现建键；行 1361 非三态 → invalid_request
+ * 由 settingsDraftIssue 前端自律拦截（缺该键的全量提交会置空该键被后端拒收）。
+ *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
@@ -161,6 +189,8 @@ const CREATE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/CreateOidcClie
 const GET_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/GetOidcClient`;
 const UPDATE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/UpdateOidcClient`;
 const DELETE_OIDC_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/DeleteOidcClient`;
+const GET_SETTINGS_URL = `${BASE}/api.admin.v1.AdminService/GetSettings`;
+const SET_SETTINGS_URL = `${BASE}/api.admin.v1.AdminService/SetSettings`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -2198,5 +2228,360 @@ describe('StringListEditor（静态渲染：受控条目 + 添加 / 删除按钮
     expect(markup).toContain('暂无权限范围');
     expect(markup).toContain('添加权限范围');
     expect(markup).toContain('disabled');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api settings 族 msw（§5.6 行 1287；后端已实装——GetSettings
+// 36 键全量投影 + SetSettings 全量替换：零值也写入）
+// ---------------------------------------------------------------------------
+
+describe('api.getSettings（§5.6 行 1287：36 键全量投影）', () => {
+  test('→ SettingsResponse 解码（int64 十进制字符串 → bigint + repeated + protojson 零值省略 → proto 零值）', async () => {
+    server.use(
+      http.post(GET_SETTINGS_URL, () =>
+        HttpResponse.json({
+          pwdMinLength: '12',
+          pwdRequireClasses: '2',
+          mfaEnabled: false,
+          loginMethods: ['password', 'webauthn'],
+          ssoDomains: ['a.test'],
+          cookieName: 'x_session',
+          staticBase: '/cdn/',
+          httpsDeployment: 'false',
+        }),
+      ),
+    );
+
+    const res = await apiMod.getSettings();
+
+    expect(res.$typeName).toBe('api.admin.v1.SettingsResponse');
+    expect(res.pwdMinLength).toBe(BigInt(12));
+    expect(res.pwdRequireClasses).toBe(BigInt(2));
+    expect(res.mfaEnabled).toBe(false);
+    expect(res.loginMethods).toEqual(['password', 'webauthn']);
+    expect(res.ssoDomains).toEqual(['a.test']);
+    expect(res.cookieName).toBe('x_session');
+    expect(res.staticBase).toBe('/cdn/');
+    expect(res.httpsDeployment).toBe('false');
+    // protojson 零值省略 → 解码为 proto 零值（零值即真值，不用默认值兜底）。
+    expect(res.pwdMaxLength).toBe(BigInt(0));
+    expect(res.allowRegistration).toBe(false);
+    expect(res.gatewayTokens).toEqual([]);
+  });
+
+  test('500 reject → ApiError', async () => {
+    server.use(
+      http.post(GET_SETTINGS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.getSettings();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，不能只提交改动字段）', () => {
+  test('默认草稿全量提交：30 个非零键全在 wire；6 个零值键（四个空 provider key + 两个空列表）protojson 省略 = 服务端读零值写入', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(SET_SETTINGS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+
+    const res = await apiMod.setSettings(
+      apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS),
+    );
+
+    // toEqual 精确匹配：既验证 36 键全量构造（未改动键也在），又验证零值键
+    // wire 省略（省略 = 后端读零值 = 写入零值，与全量替换语义等价）。
+    expect(requestBody).toEqual({
+      pwdMinLength: '8',
+      pwdMaxLength: '64',
+      pwdRequireClasses: '3',
+      pwdDisallowUsername: true,
+      pwdDisallowCommon: true,
+      allowPasswordReset: true,
+      otpResendInterval: '60',
+      otpTtl: '300',
+      otpMaxAttempts: '5',
+      otpDailyLimitTarget: '10',
+      otpDailyLimitIp: '50',
+      loginMethods: ['password', 'otp_sms', 'otp_email', 'webauthn', 'thirdparty'],
+      allowRegistration: true,
+      allowSignupPassword: true,
+      allowSignupPhone: true,
+      allowSignupEmail: true,
+      mfaEnabled: true,
+      mfaMethods: ['totp', 'otp_sms', 'otp_email', 'webauthn'],
+      pwdFailCapture: '3',
+      pwdFailBan: '6',
+      pwdBanTtl: '21600',
+      sessionTtl: '604800',
+      cookieName: 'al_session',
+      queueWorkers: '4',
+      queueCapacity: '8192',
+      queueBatch: '200',
+      queueFlushMs: '2000',
+      eventlogRetentionDays: '180',
+      staticBase: '/assets',
+      httpsDeployment: 'auto',
+    });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('管理员显式零值（pwd_ban_ttl=0 / mfa 关闭）同样全量提交：零值键 wire 省略、其余键完整下发', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(SET_SETTINGS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+
+    await apiMod.setSettings(
+      apiMod.buildSetSettingsRequest({
+        ...DEFAULT_SETTINGS,
+        pwdBanTtl: 0,
+        mfaEnabled: false,
+        mfaMethods: [],
+        otpMaxAttempts: 3,
+      }),
+    );
+
+    const body = requestBody as Record<string, unknown>;
+    // 零值省略（= 写入零值）：这 4 键不在 wire。
+    expect(body).not.toHaveProperty('pwdBanTtl');
+    expect(body).not.toHaveProperty('mfaEnabled');
+    expect(body).not.toHaveProperty('mfaMethods');
+    // 改动后的非零键仍下发；未改动键同样全量在（抽查两侧）。
+    expect(body.otpMaxAttempts).toBe('3');
+    expect(body.pwdMinLength).toBe('8');
+    expect(body.staticBase).toBe('/assets');
+    expect(body.httpsDeployment).toBe('auto');
+  });
+
+  test('500 reject → ApiError', async () => {
+    server.use(
+      http.post(SET_SETTINGS_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.setSettings(apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// settingsLogic 纯函数（键集 / 默认值 / 草稿 / 交叉校验，零 Semi node 可测）
+// ---------------------------------------------------------------------------
+
+describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', () => {
+  test('36 键默认值与文档逐字一致（键集 = 生成物 SetSettingsRequest 现状字段集，含 https_deployment=36）', () => {
+    // 密码策略（行 1296-1300）。
+    expect(DEFAULT_SETTINGS.pwdMinLength).toBe(8);
+    expect(DEFAULT_SETTINGS.pwdMaxLength).toBe(64);
+    expect(DEFAULT_SETTINGS.pwdRequireClasses).toBe(3);
+    expect(DEFAULT_SETTINGS.pwdDisallowUsername).toBe(true);
+    expect(DEFAULT_SETTINGS.pwdDisallowCommon).toBe(true);
+    // 账号策略（行 1314）。
+    expect(DEFAULT_SETTINGS.allowPasswordReset).toBe(true);
+    // 验证码限流（行 1320-1324）。
+    expect(DEFAULT_SETTINGS.otpResendInterval).toBe(60);
+    expect(DEFAULT_SETTINGS.otpTtl).toBe(300);
+    expect(DEFAULT_SETTINGS.otpMaxAttempts).toBe(5);
+    expect(DEFAULT_SETTINGS.otpDailyLimitTarget).toBe(10);
+    expect(DEFAULT_SETTINGS.otpDailyLimitIp).toBe(50);
+    // 其余设置项（行 1330-1353）。
+    expect(DEFAULT_SETTINGS.loginMethods).toEqual([
+      'password',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+      'thirdparty',
+    ]);
+    expect(DEFAULT_SETTINGS.allowRegistration).toBe(true);
+    expect(DEFAULT_SETTINGS.allowSignupPassword).toBe(true);
+    expect(DEFAULT_SETTINGS.allowSignupPhone).toBe(true);
+    expect(DEFAULT_SETTINGS.allowSignupEmail).toBe(true);
+    expect(DEFAULT_SETTINGS.mfaEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.mfaMethods).toEqual(['totp', 'otp_sms', 'otp_email', 'webauthn']);
+    expect(DEFAULT_SETTINGS.pwdFailCapture).toBe(3);
+    expect(DEFAULT_SETTINGS.pwdFailBan).toBe(6);
+    expect(DEFAULT_SETTINGS.pwdBanTtl).toBe(21600);
+    expect(DEFAULT_SETTINGS.sessionTtl).toBe(604800);
+    expect(DEFAULT_SETTINGS.cookieName).toBe('al_session');
+    expect(DEFAULT_SETTINGS.ssoDomains).toEqual([]);
+    expect(DEFAULT_SETTINGS.queueWorkers).toBe(4);
+    expect(DEFAULT_SETTINGS.queueCapacity).toBe(8192);
+    expect(DEFAULT_SETTINGS.queueBatch).toBe(200);
+    expect(DEFAULT_SETTINGS.queueFlushMs).toBe(2000);
+    expect(DEFAULT_SETTINGS.captchaProviderKey).toBe('');
+    expect(DEFAULT_SETTINGS.smsProviderKey).toBe('');
+    expect(DEFAULT_SETTINGS.emailProviderKey).toBe('');
+    expect(DEFAULT_SETTINGS.avatarStorageProvider).toBe('');
+    expect(DEFAULT_SETTINGS.gatewayTokens).toEqual([]);
+    expect(DEFAULT_SETTINGS.eventlogRetentionDays).toBe(180);
+    expect(DEFAULT_SETTINGS.staticBase).toBe('/assets');
+    // https_deployment（行 1354：string 三态，默认 auto）。
+    expect(DEFAULT_SETTINGS.httpsDeployment).toBe('auto');
+    // 键集 = 36（与生成物 SetSettingsRequest 字段数一致，含 https_deployment=36）。
+    expect(Object.keys(DEFAULT_SETTINGS).length).toBe(36);
+  });
+});
+
+describe('SETTINGS_SECTIONS / LOGIN_METHOD_OPTIONS / MFA_METHOD_OPTIONS / HTTPS_DEPLOYMENT_OPTIONS（表单分区与选项值域）', () => {
+  test('9 区 36 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
+    const sectionKeys = SETTINGS_SECTIONS.flatMap((section) =>
+      section.fields.map((field) => field.key),
+    );
+    expect(new Set(sectionKeys).size).toBe(36);
+    expect([...sectionKeys].sort()).toEqual(
+      Object.keys(DEFAULT_SETTINGS).sort(),
+    );
+  });
+
+  test('登录方式选项 = 因子名 + thirdparty 五值；MFA 选项四值、recovery_code 随 totp 不单列（行 1330/1336）', () => {
+    expect(LOGIN_METHOD_OPTIONS.map((option) => option.value)).toEqual([
+      'password',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+      'thirdparty',
+    ]);
+    expect(MFA_METHOD_OPTIONS.map((option) => option.value)).toEqual([
+      'totp',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+    ]);
+  });
+
+  test('HTTPS 部署选项三态 = 行 1356 文案定稿（自动推断 / 强制开启 / 强制关闭）', () => {
+    expect(HTTPS_DEPLOYMENT_OPTIONS).toEqual([
+      { value: 'auto', label: '自动推断' },
+      { value: 'true', label: '强制开启' },
+      { value: 'false', label: '强制关闭' },
+    ]);
+  });
+});
+
+describe('draftFromSettings（GetSettings 响应 → 草稿全键映射；全量替换的对称面：零值即真值）', () => {
+  test('36 键直映射：bigint → number、数组防御性拷贝（改草稿不回写响应）', () => {
+    const response = create(SettingsResponseSchema, {
+      pwdMinLength: BigInt(12),
+      pwdRequireClasses: BigInt(2),
+      mfaEnabled: false,
+      loginMethods: ['password'],
+      mfaMethods: ['totp', 'webauthn'],
+      ssoDomains: ['a.test', 'b.test'],
+      cookieName: 'x_session',
+      captchaProviderKey: ' geetest ',
+      staticBase: '/cdn/',
+      httpsDeployment: 'true',
+    });
+    const draft = draftFromSettings(response);
+
+    expect(draft.pwdMinLength).toBe(12);
+    expect(draft.pwdRequireClasses).toBe(2);
+    expect(draft.mfaEnabled).toBe(false);
+    expect(draft.loginMethods).toEqual(['password']);
+    expect(draft.mfaMethods).toEqual(['totp', 'webauthn']);
+    expect(draft.ssoDomains).toEqual(['a.test', 'b.test']);
+    expect(draft.cookieName).toBe('x_session');
+    expect(draft.captchaProviderKey).toBe(' geetest ');
+    expect(draft.staticBase).toBe('/cdn/');
+    expect(draft.httpsDeployment).toBe('true');
+    // 数组为新引用（防御性拷贝）。
+    expect(draft.loginMethods).not.toBe(response.loginMethods);
+  });
+
+  test('protojson 零值省略的响应 → 草稿全零值（不做默认值兜底：后端读出的零值 = 真值）', () => {
+    const draft = draftFromSettings(create(SettingsResponseSchema));
+    expect(draft.pwdMinLength).toBe(0);
+    expect(draft.allowRegistration).toBe(false);
+    expect(draft.loginMethods).toEqual([]);
+    expect(draft.staticBase).toBe('');
+  });
+});
+
+describe('settingsDraftIssue（§5.6 行 1363 值域交叉约束前端自律）', () => {
+  test('默认草稿 → null；非法值逐类命中', () => {
+    expect(settingsDraftIssue(DEFAULT_SETTINGS)).toBeNull();
+
+    // pwd_require_classes 值域 1-3（行 1298）。
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, pwdRequireClasses: 0 }),
+    ).not.toBeNull();
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, pwdRequireClasses: 4 }),
+    ).not.toBeNull();
+    // pwd_min_length ≤ pwd_max_length 交叉约束（行 1363）。
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, pwdMinLength: 65 }),
+    ).not.toBeNull();
+    // pwd_max_length ≤ 64 服务端硬上限（行 1297：可调低不可调高）。
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, pwdMaxLength: 65 }),
+    ).not.toBeNull();
+    // 数字字段非负整数。
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, queueWorkers: -1 }),
+    ).not.toBeNull();
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, otpTtl: 1.5 }),
+    ).not.toBeNull();
+    // https_deployment 三态（行 1361：非 true / false / auto → invalid_request）。
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, httpsDeployment: 'yes' }),
+    ).not.toBeNull();
+    expect(
+      settingsDraftIssue({ ...DEFAULT_SETTINGS, httpsDeployment: '' }),
+    ).not.toBeNull();
+    // 三态取值本身全合法。
+    for (const value of ['auto', 'true', 'false']) {
+      expect(
+        settingsDraftIssue({ ...DEFAULT_SETTINGS, httpsDeployment: value }),
+      ).toBeNull();
+    }
+  });
+});
+
+describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 trim / 列表清洗）', () => {
+  test('草稿 36 键整体构造（含未改动键）；文本去空白、列表去空条目', () => {
+    const request = apiMod.buildSetSettingsRequest({
+      ...DEFAULT_SETTINGS,
+      cookieName: ' x_session ',
+      ssoDomains: [' a.test ', '', '  '],
+      gatewayTokens: [' gw-1 ', ''],
+      staticBase: ' /cdn/ ',
+      otpMaxAttempts: 4,
+      httpsDeployment: 'false',
+    });
+
+    expect(request.pwdMinLength).toBe(BigInt(8));
+    expect(request.otpMaxAttempts).toBe(BigInt(4));
+    expect(request.cookieName).toBe('x_session');
+    expect(request.ssoDomains).toEqual(['a.test']);
+    expect(request.gatewayTokens).toEqual(['gw-1']);
+    expect(request.staticBase).toBe('/cdn/');
+    expect(request.httpsDeployment).toBe('false');
+    expect(request.loginMethods).toEqual([
+      'password',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+      'thirdparty',
+    ]);
   });
 });

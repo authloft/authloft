@@ -7,8 +7,10 @@
  * GetProviderTypes / GetProviderSchema / GetProvider / Create / Update /
  * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
- * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；settings /
- * 工具族方法随后续实现逐步追加（管理端无 multipart 上传，§6 行 506）。
+ * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；并追加
+ * settings 族 GetSettings / SetSettings（§5.6 行 1287 全量替换语义）+ 全量
+ * 请求构造纯函数；ListEvents / DecodeToken / GetStatus 工具族方法随后续
+ * 实现逐步追加（管理端无 multipart 上传，§6 行 506）。
  *
  * 401/404 语义（§6 行 501，本实现关键；接口文档 §5 行 1149）：
  * - 未携带有效会话 → HTTP 401（`unauthenticated`，框架层错误不进 §1.6 词汇表）
@@ -104,6 +106,12 @@ import type {
   ProviderTypesResponse,
   SchemaResponse,
 } from '../gen/proto/api/admin/v1/schema_pb';
+import type {
+  SetSettingsRequest,
+  SettingsResponse,
+} from '../gen/proto/api/admin/v1/settings_pb';
+import { SetSettingsRequestSchema } from '../gen/proto/api/admin/v1/settings_pb';
+import type { SettingsDraft } from './settingsLogic';
 
 /** 当前管理员信息（§5.1 行 1159）：`{id, username, nickname, avatarUrl, isAdmin:true}`，无入参。 */
 export function getMe(): Promise<MeResponse> {
@@ -811,4 +819,74 @@ export function tokenTtlSummary(accessTokenTtl: bigint, refreshTokenTtl: bigint)
 export function ttlDetailText(ttl: bigint): string {
   const seconds = toCount(ttl);
   return `${humanizeTtlSeconds(seconds)}（${seconds} 秒）`;
+}
+
+// ---------------------------------------------------------------------------
+// settings 族（§5.6 行 1287 / §6 行 520）：GetSettings 读 + SetSettings
+// 写全部真调（后端已实装全量投影 / 全量替换）。⚠️ 全量替换语义：
+// 零值也会被写入（protojson 零值字段 wire 省略 = 服务端读零值 = 写入零值），
+// 表单必须全量提交全部 36 键、不能只提交改动字段——buildSetSettingsRequest
+// 以草稿整体构造（草稿初始化 / 交叉校验见 settingsLogic.ts，行 1363 值域
+// 交叉约束由前端设置页自律保证）。键集 = 36 字段：35 既有键 +
+// 定稿新增的 https_deployment（=36，行 1354/1360；行 1361 非三态 → invalid_request，
+// settingsDraftIssue 前端自律拦截）。
+// ---------------------------------------------------------------------------
+
+/** 全部系统配置（§5.6 行 1287：36 键全量投影，键名不得另起别名）。 */
+export function getSettings(): Promise<SettingsResponse> {
+  return adminClient.getSettings({});
+}
+
+/** 全量提交系统配置（§5.6 行 1287 SetSettings）→ OkResponse（热更新生效）。 */
+export function setSettings(request: SetSettingsRequest): Promise<OkResponse> {
+  return adminClient.setSettings(request);
+}
+
+/**
+ * SetSettings 全量请求构造（36 键整体构造，含未改动键）：文本字段去首尾
+ * 空白、列表字段经 cleanStringList 清洗（条目去空白 + 剔除空串）后整组提交
+ * ——中间态空行不落库；其余键原样直映射（https_deployment 三态枚举值不做
+ * trim，非法值由 settingsDraftIssue 前置拦截）。零值字段（false / 0 / '' /
+ * []）在 protojson 下 wire 省略，服务端按零值写入，语义等价（生成物
+ * SetSettingsRequest 头注口径）。
+ */
+export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsRequest {
+  return create(SetSettingsRequestSchema, {
+    pwdMinLength: BigInt(draft.pwdMinLength),
+    pwdMaxLength: BigInt(draft.pwdMaxLength),
+    pwdRequireClasses: BigInt(draft.pwdRequireClasses),
+    pwdDisallowUsername: draft.pwdDisallowUsername,
+    pwdDisallowCommon: draft.pwdDisallowCommon,
+    allowPasswordReset: draft.allowPasswordReset,
+    otpResendInterval: BigInt(draft.otpResendInterval),
+    otpTtl: BigInt(draft.otpTtl),
+    otpMaxAttempts: BigInt(draft.otpMaxAttempts),
+    otpDailyLimitTarget: BigInt(draft.otpDailyLimitTarget),
+    otpDailyLimitIp: BigInt(draft.otpDailyLimitIp),
+    loginMethods: cleanStringList(draft.loginMethods),
+    allowRegistration: draft.allowRegistration,
+    allowSignupPassword: draft.allowSignupPassword,
+    allowSignupPhone: draft.allowSignupPhone,
+    allowSignupEmail: draft.allowSignupEmail,
+    mfaEnabled: draft.mfaEnabled,
+    mfaMethods: cleanStringList(draft.mfaMethods),
+    pwdFailCapture: BigInt(draft.pwdFailCapture),
+    pwdFailBan: BigInt(draft.pwdFailBan),
+    pwdBanTtl: BigInt(draft.pwdBanTtl),
+    sessionTtl: BigInt(draft.sessionTtl),
+    cookieName: draft.cookieName.trim(),
+    ssoDomains: cleanStringList(draft.ssoDomains),
+    queueWorkers: BigInt(draft.queueWorkers),
+    queueCapacity: BigInt(draft.queueCapacity),
+    queueBatch: BigInt(draft.queueBatch),
+    queueFlushMs: BigInt(draft.queueFlushMs),
+    captchaProviderKey: draft.captchaProviderKey.trim(),
+    smsProviderKey: draft.smsProviderKey.trim(),
+    emailProviderKey: draft.emailProviderKey.trim(),
+    avatarStorageProvider: draft.avatarStorageProvider.trim(),
+    gatewayTokens: cleanStringList(draft.gatewayTokens),
+    eventlogRetentionDays: BigInt(draft.eventlogRetentionDays),
+    staticBase: draft.staticBase.trim(),
+    httpsDeployment: draft.httpsDeployment,
+  });
 }

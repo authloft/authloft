@@ -1,0 +1,111 @@
+// 系统设置页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// Semi Card / Banner / InputNumber 等组件样式由组件 JS 内部 css import 随构建
+// 自动打包（主题变量归 entry.tsx 的 _base/base.css），此处只补表单分区布局。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: block;
+}
+
+// 顶部全量替换警示 Banner（「保存将覆盖全部设置」UI 明示）。
+.overwriteBanner {
+  margin-bottom: @spacing-md;
+}
+
+.notice {
+  margin: 0 0 @spacing-md;
+  color: @color-primary; // tokens 无 success 令牌（shared/ 只读），成功提示沿用主色
+  font-size: @font-size-sm;
+}
+
+.actionError {
+  margin: 0 0 @spacing-md;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+.loading {
+  margin: @spacing-lg 0;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+}
+
+.loadError {
+  margin: @spacing-lg 0;
+  color: @color-danger;
+  font-size: @font-size-md;
+}
+
+// 分区表单：纵向卡片流。
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
+}
+
+.sectionCard {
+  display: block;
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+// 竖排字段：标签 + 控件 + 说明。
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.fieldHint {
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+// 行内开关字段：开关 + 标签 + 说明同排（窄屏自动换行）。
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  flex-wrap: wrap;
+}
+
+.switchLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.numberInput {
+  width: 200px;
+}
+
+.textInput {
+  max-width: 480px;
+}
+
+// 三态选择（HTTPS 部署）等下拉字段。
+.selectInput {
+  width: 200px;
+}
+
+// 保存区：警示文案 + 按钮靠右。
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: @spacing-md;
+  margin-top: @spacing-lg;
+}
+
+.overwriteNote {
+  font-size: @font-size-sm;
+  color: @color-danger;
+}

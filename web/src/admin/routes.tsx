@@ -6,8 +6,8 @@
  * /admin/users（§6 行 517）+ UserDetailPage 长入 /admin/users/{id}
  * （§6 行 518——id 为 int64，路径段限定十进制数字）；SsoClientsPage 长入
  * /admin/clients/sso + OidcClientsPage 长入 /admin/clients/oidc（§6 行 519）；
- * 其余 `/admin/**` 一律 AdminLayout 包裹占位页（归后续实现逐项长入），
- * 不匹配前缀 → 页面不存在。
+ * SettingsPage 长入 /admin/settings（§6 行 520）；其余 `/admin/**`
+ * 一律 AdminLayout 包裹占位页（归后续实现逐项长入），不匹配前缀 → 页面不存在。
  *
  * 沿 account/routes.tsx 模式：零第三方路由库（§1.6 行 110），
  * disableMount 自挂载，极简 pathname 匹配；bootstrap 无 methods 必需校验
@@ -20,6 +20,7 @@ import { OidcClientsPage } from './pages/OidcClientsPage';
 import { ProviderEditPage } from './pages/ProviderEditPage';
 import { ProvidersPage } from './pages/ProvidersPage';
 import { SsoClientsPage } from './pages/SsoClientsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
 
@@ -46,6 +47,9 @@ const SSO_CLIENTS_PATH = '/admin/clients/sso';
 
 /** OIDC 客户端列表页路径（§6 行 519）。 */
 const OIDC_CLIENTS_PATH = '/admin/clients/oidc';
+
+/** 系统设置页路径（§6 行 520；侧边栏 NAV_ITEMS 同约定 itemKey 即路径）。 */
+const SETTINGS_PATH = '/admin/settings';
 
 /** 未注册路由兜底文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
 const ROUTE_NOT_FOUND_TEXT = '页面不存在';
@@ -133,6 +137,17 @@ export function AdminApp() {
         breadcrumb={['管理后台', '客户端', 'OIDC 客户端']}
       >
         <OidcClientsPage alRoot={boot.alRoot} />
+      </AdminLayout>
+    );
+  }
+  if (path === SETTINGS_PATH) {
+    return (
+      <AdminLayout
+        alRoot={boot.alRoot}
+        activeKey={SETTINGS_PATH}
+        breadcrumb={['管理后台', '设置']}
+      >
+        <SettingsPage alRoot={boot.alRoot} />
       </AdminLayout>
     );
   }
