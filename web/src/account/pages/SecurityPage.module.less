@@ -1,5 +1,6 @@
 // 安全中心页样式（§1.7）：同目录同名 module less；类名 camelCase。
-// Semi Card / Tag / Typography 自带组件样式不在此重复（主题变量归 entry.tsx）。
+// Semi Card / Typography 自带组件样式不在此重复（主题变量归 entry.tsx）。
+// 因子明细与通行密钥区块样式归各组件 module.less（MfaMethodList / WebauthnList）。
 @import (reference) '../../shared/styles/tokens.less';
 
 .page {
@@ -18,31 +19,6 @@
   margin: 0 0 @spacing-sm;
   color: @color-text-muted;
   font-size: @font-size-sm;
-}
-
-.mfaMethods {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-xs;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.mfaMethod {
-  display: flex;
-  align-items: center;
-  gap: @spacing-sm;
-}
-
-.mfaFactor {
-  min-width: 6em;
-  font-size: @font-size-sm;
-}
-
-.mfaHint {
-  display: block;
-  margin-top: @spacing-sm;
 }
 
 .contactStack {

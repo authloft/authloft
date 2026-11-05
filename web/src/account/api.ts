@@ -2,8 +2,12 @@
  * AccountService client 方法封装（docs/前端架构.md §5 行 479；docs/接口文档.md §3）。
  * 本次交付 GetProfile（§3.2 行 819）与安全中心族：GetConfig /
  * ChangePassword / BindPhone / BindEmail / PresignAvatar / CommitAvatar +
- * proxy 直传（§3.2-§3.4 / §10.8）。UpdateProfile / ThirdpartyOauth 等
- * 随消费页面落地时再封（api.ts 可封装方法但页面不消费桩方法）。
+ * proxy 直传（§3.2-§3.4 / §10.8）；追加 MFA + 通行密钥族：GetMfa /
+ * SetMfa / BindTotp / GetRecoveryCodes / RegenerateRecoveryCodes /
+ * GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
+ * DeleteWebauthnCredential + 注册编排 registerWebauthnCredential（§3.5-§3.6）。
+ * UpdateProfile / ThirdpartyOauth 等随消费页面落地时再封（api.ts
+ * 可封装方法但页面不消费桩方法）。
  * 本 entry 另需的 SsoService 方法（Authorize scene=bind / CreateQrcode）
  * 从 shared/api/sso 取，不在此重复定义（§5 行 479）。
  *
@@ -22,13 +26,19 @@
  * isUnauthenticatedError 供各页面 / 布局层消费，跳转目标 loginUrl
  * 见 ./bootstrap。
  */
-import { create } from '@bufbuild/protobuf';
+import { create, type JsonObject } from '@bufbuild/protobuf';
+import {
+  startRegistration,
+  type PublicKeyCredentialCreationOptionsJSON,
+  type RegistrationResponseJSON,
+} from '@simplewebauthn/browser';
 import type {
   AccountConfigResponse,
   AvatarPresignResponse,
   AvatarResponse,
   AvatarUploadConfig,
   CommitAvatarRequest,
+  MfaPolicyMethod,
   OkResponse,
   PresignAvatarRequest,
   ProfileResponse,
@@ -48,6 +58,32 @@ import {
   BindPhoneRequestSchema,
   ChangePasswordRequestSchema,
 } from '../gen/proto/api/account/v1/security_pb';
+import type {
+  BindTotpRequest,
+  BindTotpResponse,
+  MfaFactor,
+  MfaResponse,
+  RecoveryCodesResponse,
+  RegenerateRecoveryCodesRequest,
+  SetMfaRequest,
+} from '../gen/proto/api/account/v1/mfa_pb';
+import {
+  BindTotpRequestSchema,
+  RegenerateRecoveryCodesRequestSchema,
+  SetMfaRequestSchema,
+} from '../gen/proto/api/account/v1/mfa_pb';
+import type {
+  DeleteWebauthnCredentialRequest,
+  RegisterWebauthnRequest,
+  RegisterWebauthnResponse,
+  RenameWebauthnCredentialRequest,
+  WebauthnListResponse,
+} from '../gen/proto/api/account/v1/webauthn_pb';
+import {
+  DeleteWebauthnCredentialRequestSchema,
+  RegisterWebauthnRequestSchema,
+  RenameWebauthnCredentialRequestSchema,
+} from '../gen/proto/api/account/v1/webauthn_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
 import { ApiError, resolveCode } from '../shared/api/errors';
@@ -369,4 +405,255 @@ export function apiErrorText(
     return t(resolveCode(error).i18nKey);
   }
   return UNKNOWN_ERROR_TEXT;
+}
+
+// ---------------------------------------------------------------------------
+// MFA + 通行密钥族封装（§3.5 / §3.6）
+// ---------------------------------------------------------------------------
+
+/** MFA 绑定明细（§3.5 行 903）：factors 与 mfaPolicy.methods 同集合，数组序即渲染序。 */
+export function getMfa(): Promise<MfaResponse> {
+  return accountClient.getMfa({});
+}
+
+/** 勾选启用因子集合（§3.5 行 904）：空数组=关闭（受 mfaPolicy.required 约束）；成功空响应。 */
+export function setMfa(request: SetMfaRequest): Promise<OkResponse> {
+  return accountClient.setMfa(request);
+}
+
+/** TOTP 绑定两步同端点（§3.5 行 905-906），由 step=challenge｜verify 区分。 */
+export function bindTotp(request: BindTotpRequest): Promise<BindTotpResponse> {
+  return accountClient.bindTotp(request);
+}
+
+/** 恢复码一次性展示（§3.5 行 907）。 */
+export function getRecoveryCodes(): Promise<RecoveryCodesResponse> {
+  return accountClient.getRecoveryCodes({});
+}
+
+/** 恢复码重新生成（§3.5 行 908）：全量作废后同格式一次性下发新码。 */
+export function regenerateRecoveryCodes(
+  request: RegenerateRecoveryCodesRequest,
+): Promise<RecoveryCodesResponse> {
+  return accountClient.regenerateRecoveryCodes(request);
+}
+
+/** 通行密钥列表（§3.6 行 914）。 */
+export function getWebauthnCredentials(): Promise<WebauthnListResponse> {
+  return accountClient.getWebauthnCredentials({});
+}
+
+/** 通行密钥注册两步（§3.6 行 915-916）：challenge 响应 {token, challengeData, expiresIn}。 */
+export function registerWebauthn(
+  request: RegisterWebauthnRequest,
+): Promise<RegisterWebauthnResponse> {
+  return accountClient.registerWebauthn(request);
+}
+
+/** 通行密钥重命名（§3.6 行 917）：成功空响应。 */
+export function renameWebauthnCredential(
+  request: RenameWebauthnCredentialRequest,
+): Promise<OkResponse> {
+  return accountClient.renameWebauthnCredential(request);
+}
+
+/** 通行密钥删除（§3.6 行 918）：成功空响应。 */
+export function deleteWebauthnCredential(
+  request: DeleteWebauthnCredentialRequest,
+): Promise<OkResponse> {
+  return accountClient.deleteWebauthnCredential(request);
+}
+
+// ---------------------------------------------------------------------------
+// MFA + 通行密钥纯逻辑（node 可测；落位说明见文件头）
+// ---------------------------------------------------------------------------
+
+/** SetMfa 本地拒绝形态（§3.5 行 904 空数组=关闭 × §3.2 行 833 required 不可关闭）。 */
+export type SetMfaDenyReason = 'mfa_required_locked';
+
+/**
+ * SetMfa 请求构造（§3.5 行 904）：以 GetConfig 摘要 methods 推导下一启用集——
+ * 勾选 → 追加到启用集尾（保持其余因子既有顺序）；取消 → 从启用集移除；
+ * required=true 且结果为空 → 本地拒绝不发包（策略强制不可关闭，§3.2 行 833；
+ * 服务端同口径兜底），其余交给服务端权威。
+ */
+export function buildSetMfaRequest(
+  methods: readonly MfaPolicyMethod[],
+  factor: string,
+  enable: boolean,
+  required: boolean,
+): { ok: true; request: SetMfaRequest } | { ok: false; error: SetMfaDenyReason } {
+  const enabled = methods.filter((m) => m.enabled).map((m) => m.factor);
+  const next = enable
+    ? enabled.includes(factor)
+      ? enabled
+      : [...enabled, factor]
+    : enabled.filter((f) => f !== factor);
+  if (next.length === 0 && required) {
+    return { ok: false, error: 'mfa_required_locked' };
+  }
+  return { ok: true, request: create(SetMfaRequestSchema, { methods: next }) };
+}
+
+/** BindTotp challenge 请求（§3.5 行 905）：{step:"challenge"}，secret / code 零值省略。 */
+export function buildBindTotpChallengeRequest(): BindTotpRequest {
+  return create(BindTotpRequestSchema, { step: 'challenge' });
+}
+
+/** TOTP 码格式（§1.10 totp 六位动态码；与 ContactBind verify 同 6 位数字口径）。 */
+const TOTP_CODE_PATTERN = new RegExp(`^\\d{${DEFAULT_CODE_LENGTH}}$`);
+
+/**
+ * BindTotp verify 请求构造（§3.5 行 906）：回传 challenge 下发的 secret 与 TOTP 码。
+ */
+export function buildBindTotpVerifyRequest(
+  secret: string,
+  code: string,
+): { ok: true; request: BindTotpRequest } | { ok: false; error: 'invalid_code' } {
+  if (!TOTP_CODE_PATTERN.test(code)) {
+    return { ok: false, error: 'invalid_code' };
+  }
+  return { ok: true, request: create(BindTotpRequestSchema, { step: 'verify', secret, code }) };
+}
+
+/** RegenerateRecoveryCodes 请求（§3.5 行 908）：action 固定 "regenerate"。 */
+export function buildRegenerateRecoveryCodesRequest(): RegenerateRecoveryCodesRequest {
+  return create(RegenerateRecoveryCodesRequestSchema, { action: 'regenerate' });
+}
+
+/** RegisterWebauthn challenge 请求（§3.6 行 915）：resident key 由服务端注入 options。 */
+export function buildRegisterWebauthnChallengeRequest(): RegisterWebauthnRequest {
+  return create(RegisterWebauthnRequestSchema, { step: 'challenge' });
+}
+
+/**
+ * RegisterWebauthn verify 请求构造（§3.6 行 916）：token 前端不感知结构仅透传
+ * （行 930）；credential 为浏览器断言对象原样提交（§12.9 行 1783 Struct 透传）。
+ */
+export function buildRegisterWebauthnVerifyRequest(
+  token: string,
+  credential: JsonObject,
+  label: string,
+): RegisterWebauthnRequest {
+  return create(RegisterWebauthnRequestSchema, {
+    step: 'verify',
+    token,
+    credential,
+    label,
+  });
+}
+
+/** RenameWebauthnCredential 请求（§3.6 行 917）：{id, label}。 */
+export function buildRenameWebauthnRequest(
+  id: bigint,
+  label: string,
+): RenameWebauthnCredentialRequest {
+  return create(RenameWebauthnCredentialRequestSchema, { id, label });
+}
+
+/** DeleteWebauthnCredential 请求（§3.6 行 918）：{id}。 */
+export function buildDeleteWebauthnRequest(id: bigint): DeleteWebauthnCredentialRequest {
+  return create(DeleteWebauthnCredentialRequestSchema, { id });
+}
+
+/** WebAuthn 注册编排依赖（challenge → 浏览器创建 → verify）；测试可注入替身。 */
+export interface WebauthnRegisterDeps {
+  /** step=challenge：取 {token, challengeData, expiresIn}（§3.6 行 921-928）。 */
+  challenge(): Promise<RegisterWebauthnResponse>;
+  /** 浏览器创建凭据：challengeData 整体透传（§12.9 方案 A：前端不解析 options）。 */
+  createCredential(optionsJSON: JsonObject): Promise<JsonObject>;
+  /**
+   * step=verify：{token, credential, label}（§3.6 行 916）；rpc 响应类型为
+   * RegisterWebauthnResponse（verify 成功为其中零值消息，行 916 空响应口径）。
+   */
+  verify(request: RegisterWebauthnRequest): Promise<RegisterWebauthnResponse>;
+}
+
+/** 注册结果：ok=false 时 cancelled 区分用户取消（NotAllowedError）与失败（§4.3 口径）。 */
+export type WebauthnRegisterResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly cancelled: boolean };
+
+/** 缺省凭据创建：@simplewebauthn/browser startRegistration（浏览器原生 UI）。 */
+async function defaultCreateCredential(optionsJSON: JsonObject): Promise<JsonObject> {
+  const registration: RegistrationResponseJSON = await startRegistration({
+    optionsJSON: optionsJSON as unknown as PublicKeyCredentialCreationOptionsJSON,
+  });
+  // @simplewebauthn 注册对象 → Struct JSON 形状（§12.9 行 1783 credential 透传）。
+  return registration as unknown as JsonObject;
+}
+
+/** 真实依赖（生产与 msw 集成测试共用）。 */
+export const webauthnRegisterDeps: WebauthnRegisterDeps = {
+  challenge: () => registerWebauthn(buildRegisterWebauthnChallengeRequest()),
+  createCredential: defaultCreateCredential,
+  verify: registerWebauthn,
+};
+
+/**
+ * WebAuthn 注册编排（§3.6 行 915-916 两步 + 浏览器凭据创建）：
+ * challenge → startRegistration（challengeData 整体透传，不逐字段消费）→
+ * verify（token 仅透传，行 930）。NotAllowedError = 用户取消（浏览器原生 UI
+ * 关闭），其余为失败——异常语义收口在此，组件只消费 cancelled 布尔
+ * （错误语义独立处理，§4.3 行 453 同 WebAuthnButton）。
+ */
+export async function registerWebauthnCredential(
+  label: string,
+  deps: WebauthnRegisterDeps = webauthnRegisterDeps,
+): Promise<WebauthnRegisterResult> {
+  try {
+    const challenge = await deps.challenge();
+    const credential = await deps.createCredential(challenge.challengeData ?? {});
+    await deps.verify(buildRegisterWebauthnVerifyRequest(challenge.token, credential, label));
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      cancelled: err instanceof DOMException && err.name === 'NotAllowedError',
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 展示格式化纯函数（node 可测；时间展示统一走本入口，零值 → 占位符）
+// ---------------------------------------------------------------------------
+
+/** Unix 秒 → 本地时间 YYYY-MM-DD HH:mm；零值 / 负值 → 占位符（§3.1 零值兜底）。 */
+export function formatUnixTime(seconds: bigint): string {
+  if (seconds <= BigInt(0)) {
+    return '—';
+  }
+  const d = new Date(Number(seconds) * 1000);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * GetMfa 单因子明细文案（§3.5 行 890-895：不同因子只填各自相关字段）：
+ * 未绑定 → 占位；totp → 绑定 / 使用时间；otp_sms / otp_email → 掩码目标 +
+ * 使用时间；webauthn → 凭据数 + 使用时间；recovery_code → 剩余数。
+ * formatTime 参数化以便测试注入固定时区断言。
+ */
+export function mfaFactorDetail(
+  factor: MfaFactor,
+  formatTime: (seconds: bigint) => string = formatUnixTime,
+): string {
+  if (!factor.bound) {
+    return '尚未绑定';
+  }
+  const lastUsed =
+    factor.lastUsedAt > BigInt(0) ? ` · 最近使用 ${formatTime(factor.lastUsedAt)}` : '';
+  switch (factor.factor) {
+    case 'totp':
+      return `绑定于 ${formatTime(factor.boundAt)}${lastUsed}`;
+    case 'otp_sms':
+    case 'otp_email':
+      return `目标 ${factor.target}${lastUsed}`;
+    case 'webauthn':
+      return `已绑定 ${factor.credentials} 个凭据${lastUsed}`;
+    case 'recovery_code':
+      return `剩余 ${factor.remaining} 个可用`;
+    default:
+      return factor.factor;
+  }
 }

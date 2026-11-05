@@ -4,12 +4,18 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { create } from '@bufbuild/protobuf';
+import { create, type JsonObject } from '@bufbuild/protobuf';
 import {
   AvatarUploadConfigSchema,
   CommitAvatarRequestSchema,
+  MfaPolicyMethodSchema,
   PresignAvatarRequestSchema,
 } from '../gen/proto/api/account/v1/profile_pb';
+import { MfaFactorSchema } from '../gen/proto/api/account/v1/mfa_pb';
+import {
+  RegisterWebauthnResponseSchema,
+  type RegisterWebauthnRequest,
+} from '../gen/proto/api/account/v1/webauthn_pb';
 import type {
   BindEmailRequest,
   BindPhoneRequest,
@@ -30,6 +36,13 @@ import { t } from '../shared/i18n';
  *   模式）、头像两模式编排 uploadAvatarFile（§10.8：direct 三步走 + proxy
  *   得 url + 超限 / 类型预校验文案与后端一致，前端架构 §8 行 626）、表单
  *   请求构造纯函数（buildChangePasswordRequest / buildBind 系）、apiErrorText。
+ * - MFA + 通行密钥族：GetMfa / SetMfa（buildSetMfaRequest：追加 /
+ *   移除 / required 锁死）/ BindTotp 两步（challenge wire 省略零值 + verify
+ *   回传 secret）/ GetRecoveryCodes / RegenerateRecoveryCodes（action=
+ *   regenerate）/ GetWebauthnCredentials 解码；registerWebauthnCredential
+ *   三步编排（依赖注入：challengeData / credential 引用恒等透传、取消 /
+ *   失败语义，§12.9 方案 A）；rename / delete wire；formatUnixTime /
+ *   mfaFactorDetail 展示纯函数。
  *
  * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
@@ -59,6 +72,17 @@ const BIND_PHONE_URL = `${BASE}/api.account.v1.AccountService/BindPhone`;
 const BIND_EMAIL_URL = `${BASE}/api.account.v1.AccountService/BindEmail`;
 const PRESIGN_AVATAR_URL = `${BASE}/api.account.v1.AccountService/PresignAvatar`;
 const COMMIT_AVATAR_URL = `${BASE}/api.account.v1.AccountService/CommitAvatar`;
+const GET_MFA_URL = `${BASE}/api.account.v1.AccountService/GetMfa`;
+const SET_MFA_URL = `${BASE}/api.account.v1.AccountService/SetMfa`;
+const BIND_TOTP_URL = `${BASE}/api.account.v1.AccountService/BindTotp`;
+const GET_RECOVERY_CODES_URL = `${BASE}/api.account.v1.AccountService/GetRecoveryCodes`;
+const REGEN_RECOVERY_CODES_URL = `${BASE}/api.account.v1.AccountService/RegenerateRecoveryCodes`;
+const GET_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/GetWebauthnCredentials`;
+const RENAME_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/RenameWebauthnCredential`;
+const DELETE_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/DeleteWebauthnCredential`;
+
+/** 10 个恢复码样例（§3.5 行 906/907 一次性下发格式 xxxx-xxxx）。 */
+const TEN_RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `a1${i}b-c3d${i}`);
 
 const server = setupServer();
 
@@ -833,5 +857,429 @@ describe('apiErrorText（§1.5 行 202 i18n 优先 + 语境覆盖）', () => {
     ).toBe('操作失败，请稍后重试');
     expect(apiMod.apiErrorText(new Error('x'))).toBe('操作失败，请稍后重试');
     expect(apiMod.apiErrorText(undefined)).toBe('操作失败，请稍后重试');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api.getMfa（§3.5 行 903）——msw 走真实 transport 归一链
+// ---------------------------------------------------------------------------
+
+describe('api.getMfa（§3.5 行 890-898）', () => {
+  test('factors 明细解码（int64 十进制字符串 → bigint）+ recoveryIssuedAt；数组序即渲染序', async () => {
+    server.use(
+      http.post(GET_MFA_URL, () =>
+        HttpResponse.json({
+          factors: [
+            { factor: 'totp', bound: true, boundAt: '1761800000', lastUsedAt: '1761800500' },
+            { factor: 'otp_sms', bound: true, target: '138****8000', lastUsedAt: '1761800500' },
+            { factor: 'otp_email', bound: false },
+            { factor: 'webauthn', bound: true, credentials: '2', lastUsedAt: '1761800500' },
+            { factor: 'recovery_code', bound: true, remaining: '8' },
+          ],
+          recoveryIssuedAt: '1761700000',
+        }),
+      ),
+    );
+
+    const mfa = await apiMod.getMfa();
+
+    expect(mfa.factors.map((f) => f.factor)).toEqual([
+      'totp',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+      'recovery_code',
+    ]);
+    expect(mfa.factors[0]?.boundAt).toBe(BigInt(1761800000)); // int64 十进制字符串解码（§1.12）
+    expect(mfa.factors[0]?.lastUsedAt).toBe(BigInt(1761800500));
+    expect(mfa.factors[1]?.target).toBe('138****8000');
+    expect(mfa.factors[2]?.bound).toBe(false); // 未绑定因子其余字段零值
+    expect(mfa.factors[2]?.boundAt).toBe(BigInt(0));
+    expect(mfa.factors[3]?.credentials).toBe(BigInt(2));
+    expect(mfa.factors[4]?.remaining).toBe(BigInt(8));
+    expect(mfa.recoveryIssuedAt).toBe(BigInt(1761700000));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api.setMfa + buildSetMfaRequest（§3.5 行 904 / §3.2 行 833）
+// ---------------------------------------------------------------------------
+
+describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
+  /** 摘要样例：totp 启用已绑、otp_sms 未启用已绑、otp_email 均否。 */
+  const methods = [
+    create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+    create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: true }),
+    create(MfaPolicyMethodSchema, { factor: 'otp_email', enabled: false, bound: false }),
+  ];
+
+  test('勾选启用 → 追加到启用集尾（保持其余因子既有顺序，行 904 勾选启用一项或多项）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(SET_MFA_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({});
+      }),
+    );
+
+    const built = apiMod.buildSetMfaRequest(methods, 'otp_sms', true, false);
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+
+    await apiMod.setMfa(built.request);
+
+    expect(await captured.json()).toEqual({ methods: ['totp', 'otp_sms'] });
+  });
+
+  test('取消最后一个启用因子（required=false）→ 空数组=关闭：wire 省略零值输出 {}', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(SET_MFA_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({});
+      }),
+    );
+
+    const single = [
+      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+    ];
+    const built = apiMod.buildSetMfaRequest(single, 'totp', false, false);
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+
+    await apiMod.setMfa(built.request);
+
+    // protojson 省略空 repeated（§12.9 行 1752）→ 空数组=关闭在 wire 上即 {}。
+    expect(await captured.json()).toEqual({});
+    expect(built.request.methods).toEqual([]);
+  });
+
+  test('required=true：结果为空 → 本地拒绝不发包（§3.2 行 833 不可关闭）；结果非空 → 放行', () => {
+    const single = [
+      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+    ];
+    expect(apiMod.buildSetMfaRequest(single, 'totp', false, true)).toEqual({
+      ok: false,
+      error: 'mfa_required_locked',
+    });
+    // required 下换因子（先启用 otp_sms 再关 totp 的第一步）：结果非空 → 放行
+    const two = [
+      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+      create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: true }),
+    ];
+    const swap = apiMod.buildSetMfaRequest(two, 'otp_sms', true, true);
+    expect(swap.ok).toBe(true);
+    if (!swap.ok) {
+      throw new Error('unreachable');
+    }
+    expect(swap.request.methods).toEqual(['totp', 'otp_sms']);
+  });
+
+  test('重复启用 → 启用集不重复', () => {
+    const built = apiMod.buildSetMfaRequest(methods, 'totp', true, false);
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(built.request.methods).toEqual(['totp']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api.bindTotp（§3.5 行 905-906 两步）
+// ---------------------------------------------------------------------------
+
+describe('api.bindTotp（§3.5 行 905-906）', () => {
+  test('challenge：wire {step:"challenge"}（secret / code 零值省略）→ 解码 {secret, otpauthUrl, qrcodeContent}', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(BIND_TOTP_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({
+          secret: 'JBSWY3DPEHPK3PXP',
+          otpauthUrl: 'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
+          qrcodeContent: 'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
+        });
+      }),
+    );
+
+    const res = await apiMod.bindTotp(apiMod.buildBindTotpChallengeRequest());
+
+    expect(await captured.json()).toEqual({ step: 'challenge' }); // 行 905 入参空串
+    expect(res.secret).toBe('JBSWY3DPEHPK3PXP');
+    expect(res.otpauthUrl).toContain('otpauth://');
+    expect(res.qrcodeContent).toContain('otpauth://');
+    expect(res.recoveryCodes).toEqual([]); // challenge 步未用到的字段为零值
+  });
+
+  test('verify：非 6 位数字 → invalid_code；就绪 wire {step, secret, code} → 同一响应解码 10 个恢复码（行 906）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(BIND_TOTP_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({ recoveryCodes: TEN_RECOVERY_CODES });
+      }),
+    );
+
+    expect(apiMod.buildBindTotpVerifyRequest('sec', '12345')).toEqual({
+      ok: false,
+      error: 'invalid_code',
+    });
+    expect(apiMod.buildBindTotpVerifyRequest('sec', '12345a')).toEqual({
+      ok: false,
+      error: 'invalid_code',
+    });
+
+    const built = apiMod.buildBindTotpVerifyRequest('sec', '123456');
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+
+    const res = await apiMod.bindTotp(built.request);
+
+    expect(await captured.json()).toEqual({ step: 'verify', secret: 'sec', code: '123456' });
+    expect(res.recoveryCodes).toHaveLength(10); // 一次性下发 10 个恢复码
+    expect(res.recoveryCodes[0]).toBe('a10b-c3d0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）
+// ---------------------------------------------------------------------------
+
+describe('api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）', () => {
+  test('查看解码 {codes, createdAt}；重新生成 wire {action:"regenerate"} → 新码同格式', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(GET_RECOVERY_CODES_URL, () =>
+        HttpResponse.json({ codes: TEN_RECOVERY_CODES, createdAt: '1761700000' }),
+      ),
+      http.post(REGEN_RECOVERY_CODES_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({
+          codes: TEN_RECOVERY_CODES.map((c) => `new-${c}`),
+          createdAt: '1761900000',
+        });
+      }),
+    );
+
+    const view = await apiMod.getRecoveryCodes();
+    expect(view.codes).toHaveLength(10);
+    expect(view.createdAt).toBe(BigInt(1761700000));
+
+    const regen = await apiMod.regenerateRecoveryCodes(
+      apiMod.buildRegenerateRecoveryCodesRequest(),
+    );
+    expect(await captured.json()).toEqual({ action: 'regenerate' }); // 行 908
+    expect(regen.codes[0]).toBe('new-a10b-c3d0');
+    expect(regen.createdAt).toBe(BigInt(1761900000));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// api.getWebauthnCredentials / rename / delete（§3.6 行 914-918）
+// ---------------------------------------------------------------------------
+
+describe('api.getWebauthnCredentials / rename / delete（§3.6 行 914-918）', () => {
+  test('列表解码：id / createdAt / lastUsedAt → bigint，transports、aaguid 原样', async () => {
+    server.use(
+      http.post(GET_WEBAUTHN_URL, () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: '101',
+              label: 'MacBook Touch ID',
+              createdAt: '1761800000',
+              lastUsedAt: '1761800500',
+              transports: ['internal'],
+              aaguid: 'adce0006-dbec-b1ed-c1ad-3c0e52f886fa',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const list = await apiMod.getWebauthnCredentials();
+
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]?.id).toBe(BigInt(101));
+    expect(list.items[0]?.label).toBe('MacBook Touch ID');
+    expect(list.items[0]?.createdAt).toBe(BigInt(1761800000));
+    expect(list.items[0]?.lastUsedAt).toBe(BigInt(1761800500));
+    expect(list.items[0]?.transports).toEqual(['internal']);
+    expect(list.items[0]?.aaguid).toBe('adce0006-dbec-b1ed-c1ad-3c0e52f886fa');
+  });
+
+  test('重命名 wire {id:"101", label}（int64 十进制字符串上送，§1.12）；删除 wire {id}', async () => {
+    let renameBody!: unknown;
+    let deleteBody!: unknown;
+    server.use(
+      http.post(RENAME_WEBAUTHN_URL, async ({ request }) => {
+        renameBody = await request.json();
+        return HttpResponse.json({});
+      }),
+      http.post(DELETE_WEBAUTHN_URL, async ({ request }) => {
+        deleteBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+
+    await apiMod.renameWebauthnCredential(apiMod.buildRenameWebauthnRequest(BigInt(101), '新名字'));
+    await apiMod.deleteWebauthnCredential(apiMod.buildDeleteWebauthnRequest(BigInt(101)));
+
+    expect(renameBody).toEqual({ id: '101', label: '新名字' }); // 行 917 {id, label}
+    expect(deleteBody).toEqual({ id: '101' }); // 行 918 {id}
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerWebauthnCredential（§3.6 行 915-916 三步编排，依赖注入）
+// ---------------------------------------------------------------------------
+
+describe('registerWebauthnCredential（§3.6 行 915-916 / §12.9 方案 A）', () => {
+  /** challenge 下发的 options（PublicKeyCredentialCreationOptions 形状示例）。 */
+  const CREATION_OPTIONS: JsonObject = {
+    challenge: 'k9v0x8',
+    rp: { name: 'Authloft' },
+    user: { id: '10086', name: 'zhang_san', displayName: '张三' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+  };
+  /** @simplewebauthn 注册对象形状（§12.9 行 1783 credential 透传）。 */
+  const CREDENTIAL: JsonObject = {
+    id: 'cred-1',
+    rawId: 'cred-1',
+    type: 'public-key',
+    response: { clientDataJSON: 'eyJ9', attestationObject: 'o2NmbQ' },
+  };
+
+  async function fakeChallengeResponse() {
+    return create(RegisterWebauthnResponseSchema, {
+      token: 'tok-1',
+      challengeData: CREATION_OPTIONS,
+      expiresIn: BigInt(120), // §3.6 行 926 默认 120
+    });
+  }
+
+  test('三步编排：challenge → createCredential（challengeData 引用恒等透传）→ verify {step, token, credential 引用恒等, label}', async () => {
+    const order: string[] = [];
+    let optionsSeen: JsonObject | undefined;
+    let verifyBody: unknown;
+    const challengeResponse = await fakeChallengeResponse();
+
+    const result = await apiMod.registerWebauthnCredential('我的手机', {
+      challenge: async () => {
+        order.push('challenge');
+        return challengeResponse;
+      },
+      createCredential: async (optionsJSON) => {
+        order.push('create');
+        optionsSeen = optionsJSON;
+        return CREDENTIAL;
+      },
+      verify: async (request) => {
+        order.push('verify');
+        verifyBody = request;
+        // verify 注册成功空响应（行 916）：rpc 响应类型的零值消息。
+        return create(RegisterWebauthnResponseSchema, {});
+      },
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(order).toEqual(['challenge', 'create', 'verify']);
+    // §12.9 方案 A：challengeData 整体透传（同一引用、零字段访问）。
+    expect(optionsSeen).toBe(challengeResponse.challengeData);
+    // token 前端不感知结构仅透传（§3.6 行 930）。
+    const request = verifyBody as RegisterWebauthnRequest;
+    expect(request.step).toBe('verify');
+    expect(request.token).toBe('tok-1');
+    expect(request.credential).toBe(CREDENTIAL); // credential 引用恒等透传
+    expect(request.label).toBe('我的手机');
+  });
+
+  test('NotAllowedError → cancelled（用户关闭浏览器原生 UI），不发包 verify；其他异常 → 失败（§4.3 行 453）', async () => {
+    const order: string[] = [];
+
+    const cancelled = await apiMod.registerWebauthnCredential('label', {
+      challenge: fakeChallengeResponse,
+      createCredential: async () => {
+        order.push('create');
+        throw new DOMException(
+          'The operation either timed out or was not allowed.',
+          'NotAllowedError',
+        );
+      },
+      verify: async () => {
+        order.push('verify');
+        return create(RegisterWebauthnResponseSchema, {});
+      },
+    });
+    expect(cancelled).toEqual({ ok: false, cancelled: true });
+    expect(order).toEqual(['create']); // 取消后不发包
+
+    const failed = await apiMod.registerWebauthnCredential('label', {
+      challenge: async () => {
+        throw new Error('network');
+      },
+      createCredential: async () => CREDENTIAL,
+      verify: async () => create(RegisterWebauthnResponseSchema, {}),
+    });
+    expect(failed).toEqual({ ok: false, cancelled: false }); // challenge 失败（非用户取消）
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 展示纯函数 formatUnixTime / mfaFactorDetail（§3.5 行 890-897）
+// ---------------------------------------------------------------------------
+
+describe('formatUnixTime / mfaFactorDetail（§3.1 零值兜底）', () => {
+  test('formatUnixTime：零值 → 占位符；正值 → YYYY-MM-DD HH:mm', () => {
+    expect(apiMod.formatUnixTime(BigInt(0))).toBe('—'); // 未使用 / 未签发（§3.5 行 898）
+    expect(apiMod.formatUnixTime(BigInt(1761800000))).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
+  test('mfaFactorDetail：各因子只填相关字段（行 890-895），formatTime 可注入', () => {
+    const fmt = (v: bigint): string => `T${v}`;
+    expect(
+      apiMod.mfaFactorDetail(
+        create(MfaFactorSchema, {
+          factor: 'totp',
+          bound: true,
+          boundAt: BigInt(5),
+          lastUsedAt: BigInt(9),
+        }),
+        fmt,
+      ),
+    ).toBe('绑定于 T5 · 最近使用 T9');
+    expect(
+      apiMod.mfaFactorDetail(
+        create(MfaFactorSchema, {
+          factor: 'otp_sms',
+          bound: true,
+          target: '138****8000',
+          lastUsedAt: BigInt(9),
+        }),
+        fmt,
+      ),
+    ).toBe('目标 138****8000 · 最近使用 T9');
+    expect(
+      apiMod.mfaFactorDetail(
+        create(MfaFactorSchema, { factor: 'webauthn', bound: true, credentials: BigInt(2) }),
+        fmt,
+      ),
+    ).toBe('已绑定 2 个凭据'); // lastUsedAt 零值省略
+    expect(
+      apiMod.mfaFactorDetail(
+        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(8) }),
+        fmt,
+      ),
+    ).toBe('剩余 8 个可用');
+    expect(
+      apiMod.mfaFactorDetail(create(MfaFactorSchema, { factor: 'otp_email', bound: false }), fmt),
+    ).toBe('尚未绑定'); // 未绑定 → 其余字段不适用
   });
 });

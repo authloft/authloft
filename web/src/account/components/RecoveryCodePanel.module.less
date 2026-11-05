@@ -1,0 +1,37 @@
+// 恢复码面板样式（§1.7）：同目录同名 module less；类名 camelCase。
+@import (reference) '../../shared/styles/tokens.less';
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.notice {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: @spacing-xs @spacing-md;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.02em;
+  color: @color-text;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: @spacing-md;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
