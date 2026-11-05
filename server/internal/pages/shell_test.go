@@ -29,9 +29,9 @@ import (
 // fakeSettings SettingsReader 的 map fake（map 引用语义：持有句柄可热改值）。
 type fakeSettings struct{ m map[string]any }
 
-func (f fakeSettings) GetString(k string) (string, bool)    { v, ok := f.m[k].(string); return v, ok }
-func (f fakeSettings) GetInt64(k string) (int64, bool)      { v, ok := f.m[k].(int64); return v, ok }
-func (f fakeSettings) GetBool(k string) (bool, bool)        { v, ok := f.m[k].(bool); return v, ok }
+func (f fakeSettings) GetString(k string) (string, bool) { v, ok := f.m[k].(string); return v, ok }
+func (f fakeSettings) GetInt64(k string) (int64, bool)   { v, ok := f.m[k].(int64); return v, ok }
+func (f fakeSettings) GetBool(k string) (bool, bool)     { v, ok := f.m[k].(bool); return v, ok }
 func (f fakeSettings) GetStringSlice(k string) ([]string, bool) {
 	v, ok := f.m[k].([]string)
 	return v, ok
@@ -44,9 +44,9 @@ type stubFactor struct {
 	steps  []factor.StepKind
 }
 
-func (s *stubFactor) Kind() factor.FactorKind         { return s.kind }
-func (s *stubFactor) Usages() []factor.Usage          { return s.usages }
-func (s *stubFactor) Steps() []factor.StepKind        { return s.steps }
+func (s *stubFactor) Kind() factor.FactorKind  { return s.kind }
+func (s *stubFactor) Usages() []factor.Usage   { return s.usages }
+func (s *stubFactor) Steps() []factor.StepKind { return s.steps }
 func (s *stubFactor) Start(*factor.FactorContext) (*factor.StepResult, error) {
 	return nil, nil
 }
@@ -55,7 +55,9 @@ func (s *stubFactor) Verify(*factor.FactorContext) (*factor.VerifyResult, error)
 }
 
 // fakeFactors FactorSource 的 fake。
-type fakeFactors struct{ m map[factor.FactorKind]factor.Factor }
+type fakeFactors struct {
+	m map[factor.FactorKind]factor.Factor
+}
 
 func (f fakeFactors) Get(k factor.FactorKind) (factor.Factor, error) {
 	impl, ok := f.m[k]
@@ -159,6 +161,9 @@ type fixture struct {
 	loader   *fakeLoader
 	jwt      *fakeJWT
 	clients  fakeClients
+	sessions *fakeSessions
+	codes    *fakeCodes
+	audit    *fakeAudit
 }
 
 // newFixture 基线夹具：默认 settings（login_methods 全量 + 开关全开）、
@@ -168,17 +173,23 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	codec := testCodec(t)
 	st := fakeSettings{m: map[string]any{
-		settings.KeyLoginMethods:      []string{"password", "otp_sms", "otp_email", "webauthn", "thirdparty"},
+		settings.KeyLoginMethods:       []string{"password", "otp_sms", "otp_email", "webauthn", "thirdparty"},
 		settings.KeyAllowPasswordReset: true,
 		settings.KeyAllowRegistration:  true,
 	}}
 	loader := &fakeLoader{rows: map[string][]*provider.Provider{}}
 	jw := &fakeJWT{}
+	sess := &fakeSessions{} // authorize 默认无会话；测试改 p / err 生效（指针共享）
+	codes := &fakeCodes{code: "AUTHZ-CODE"}
+	audit := &fakeAudit{}
 	f := &fixture{
 		settings: st,
 		loader:   loader,
 		jwt:      jw,
 		clients:  fakeClients{},
+		sessions: sess,
+		codes:    codes,
+		audit:    audit,
 	}
 	f.deps = Deps{
 		Root:       "https://auth.example.com",
@@ -191,6 +202,9 @@ func newFixture(t *testing.T) *fixture {
 		Codec:      codec,
 		JWT:        jw,
 		Clients:    fakeClients{},
+		Sessions:   sess,
+		Codes:      codes,
+		Audit:      audit,
 		Metas: func() []provider.Meta {
 			return []provider.Meta{
 				{Type: "qq", Category: "oauth", Channel: provider.ChannelRedirect},

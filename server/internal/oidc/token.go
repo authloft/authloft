@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -155,7 +156,7 @@ func (s *TokenService) authorizationCode(ctx context.Context, in TokenInput) (*o
 	}
 	scope := payload.GetScope()
 	if scope == "" {
-		scope = defaultScope
+		scope = DefaultScope
 	}
 	return s.issue(ctx, client, payload.GetUid(), scope, payload.GetAmr(), payload.GetNonce(), "")
 }
@@ -275,7 +276,9 @@ func secretEqual(got, want string) bool {
 }
 
 const (
-	defaultScope           = "openid profile email"
+	// DefaultScope scope 缺省值（接口文档 §4.2 行 1065「缺省 openid profile
+	// email」）：/auth/authorize 授权入口与 token 端点消费侧共用同一口径。
+	DefaultScope           = "openid profile email"
 	defaultAccessTokenTTL  = 3600 * time.Second
 	defaultRefreshTokenTTL = 2592000 * time.Second
 	refreshTokenBytes      = 32
@@ -293,9 +296,26 @@ func secondsOrDefault(v int32, def time.Duration) time.Duration {
 // 逗号 → 空格替换仅兜底历史逗号口径数据，空格口径下行为不变。
 func normalizeScope(s string) string {
 	if s == "" {
-		return defaultScope
+		return DefaultScope
 	}
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, ",", " ")), " ")
+}
+
+// SupportedScopes OIDC 支持的 scope 取值集合（接口文档 §4.2 行 1065 / §4.1
+// discovery scopes_supported 同一清单）：授权入口 /auth/authorize 校验的
+// 唯一口径，与本包 token 端点共享。新增取值须先更新文档。
+var SupportedScopes = []string{"openid", "profile", "email", "phone", "phone_plain", "email_plain"}
+
+// ScopeSupported 报告空格分隔的 scope 串每个取值都在支持集合内（§4.2 行
+// 1075：含未支持值 → invalid_scope）；空串视为合法（缺省补 DefaultScope
+// 由调用侧处理）。
+func ScopeSupported(scope string) bool {
+	for _, s := range strings.Fields(scope) {
+		if !slices.Contains(SupportedScopes, s) {
+			return false
+		}
+	}
+	return true
 }
 
 // hashToken refresh token 落库口径：sha256 小写十六进制（§4.7）。

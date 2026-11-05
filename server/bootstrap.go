@@ -1064,17 +1064,22 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 }
 
 // registerPages 注册页面壳路由族（接口文档 §8 行 1414-1439 +
-// §2.9）：/sso/login、/sso/register、/sso/reset、/sso/oauth/callback/
-// {provider_key}（login entry 空壳）、/account/**、/admin/**（account /
-// admin entry 空壳）、/sso/logout（清 Cookie + 多域同步 + 白名单回跳）、
-// /sso/sync_cookie（多域同步中转接收端）。挂 gin 链（§8 Go 渲染页面路由），
-// GET 安全方法不受 origin 校验；路由组挂 middleware.CSP()（§3.3 行 314
-// csp.go 条目接线——中间件已测未接）：每请求 nonce 写 ctx
-// （renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）。依赖全部复用
-// assemble 共享单例：settings / provider Loader / factor 注册表 /
-// captcha Gate / sync_payload Codec / OIDC JWT / ClientRepo；登出同步
-// 首跳构造复用 service.SyncCookieURLBuilder（与登录终点 Terminal 同一
-// 实现，§11.2 发起端）。
+// §2.9，增挂 §4.2 /auth/authorize）：/sso/login、/sso/register、
+// /sso/reset、/sso/oauth/callback/{provider_key}（login entry 空壳）、
+// /account/**、/admin/**（account / admin entry 空壳）、/sso/logout
+// （清 Cookie + 多域同步 + 白名单回跳）、/sso/sync_cookie（多域同步中转
+// 接收端）、/auth/authorize（OIDC 授权入口：校验矩阵 + 有会话 302 签码 +
+// 无会话渲染登录空壳注入 __AUTHLOFT_INIT__.oidc）。挂 gin 链（§8 Go 渲染
+// 页面路由），GET 安全方法不受 origin 校验；路由组挂 middleware.CSP()
+// （§3.3 行 314 csp.go 条目接线——中间件已测未接）：每请求
+// nonce 写 ctx（renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）。
+// 依赖全部复用 assemble 共享单例：settings / provider Loader / factor
+// 注册表 / captcha Gate / sync_payload Codec / OIDC JWT / ClientRepo；
+// 登出同步首跳构造复用 service.SyncCookieURLBuilder（与登录终点 Terminal
+// 同一实现，§11.2 发起端）。authorize 侧：会话校验复用
+// sessionTokens / epochStore 共享单例（与 sso 拦截器同源）、签发复用
+// deps.codeIssuer（与 Terminal 共用同一实例，§14.2 行 1642 不得各写
+// 一份）、审计走 eventlog.Writer → deps.queue（resetAuditSink 同款链）。
 func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 	pages.Register(r.Group("", middleware.CSP()), pages.Deps{
 		Root:       cfg.Authloft.Root,
@@ -1087,6 +1092,9 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Codec:      deps.codecs.SyncPayload,
 		JWT:        deps.oidcJWT,
 		Clients:    repo.NewClientRepo(deps.db),
+		Sessions:   session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		Codes:      deps.codeIssuer,
+		Audit:      eventlog.NewWriter(deps.queue),
 	})
 }
 

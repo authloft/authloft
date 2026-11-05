@@ -28,12 +28,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
+	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/middleware"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
+	"authloft/internal/service/orchestrator"
 	"authloft/internal/settings"
 )
 
@@ -81,6 +83,25 @@ type OidcClientReader interface {
 	FindOidcClientByClientID(ctx context.Context, clientID string) (*model.OidcClient, error)
 }
 
+// SessionVerifier al_session 会话校验窄接口（后端架构 §11.1 四步）：
+// *session.Verifier 天然满足；/auth/authorize 有无有效会话判定用。
+type SessionVerifier interface {
+	Verify(ctx context.Context, sessionToken string) (*token.SessionTokenPayload, error)
+}
+
+// CodeIssuer OIDC 授权码签发窄接口（后端架构 §14.2 行 1642：与 Terminal
+// 共用同一注入实例，不得各写一份）：*oidc.CodeIssuer 天然满足（签名即
+// orchestrator.OIDCCodeIssuer）；/auth/authorize 有会话路径消费。
+type CodeIssuer interface {
+	Issue(ctx context.Context, in orchestrator.OIDCIssue) (string, error)
+}
+
+// AuditSink 审计事件投递窄接口：*eventlog.Writer 天然满足（非阻塞，队列
+// 满静默降级）；/auth/authorize 记 oidc_authorize_no_state。
+type AuditSink interface {
+	PushEvent(ev model.EventLog)
+}
+
 // Deps 页面壳装配依赖（bootstrap 构造注入，§20）。
 type Deps struct {
 	// Root al_root（cfg.Authloft.Root 完整 URL，§1.1 行 76）。
@@ -102,8 +123,18 @@ type Deps struct {
 	Codec *security.Codec
 	// JWT id_token_hint 验签；nil 时 hint 一律按非法处理（回退默认页）。
 	JWT JWTVerifier
-	// Clients OIDC 客户端行源（logout 白名单）。
+	// Clients OIDC 客户端行源（logout 白名单 + authorize 校验）。
 	Clients OidcClientReader
+	// Sessions al_session 会话校验（§11.1 四步）；nil 时 /auth/authorize
+	// 一律按无有效会话处理（§4.2）。
+	Sessions SessionVerifier
+	// Codes OIDC 授权码签发（与 Terminal 共用同一 CodeIssuer 实例，
+	// §14.2）；/auth/authorize 有会话路径消费，nil 时该路径按服务端故障
+	// 500（正常装配恒注入）。
+	Codes CodeIssuer
+	// Audit 审计事件投递（oidc_authorize_no_state，§4.2 行 1074）；nil
+	// 静默跳过（不阻断授权主链路）。
+	Audit AuditSink
 	// Metas provider 渠道注册表枚举（type → category/channel）；nil 用
 	// provider 全局注册表（Types + Lookup）。测试注入用。
 	Metas func() []provider.Meta
@@ -130,8 +161,8 @@ const pageTmpl = `<!DOCTYPE html>
 
 // initPayload window.__AUTHLOFT_INIT__ 注入体：字段即 §8 注入白名单
 // （al_root / static_base 三端，methods login 必填，oidc login 可选）。
-// oidc 为 json.RawMessage 注入位——/auth/authorize 渲染（§4.2）接入时
-// 填充，当前恒不注入（nil 时 omitted）。
+// oidc 为 json.RawMessage 注入位——/auth/authorize 渲染登录空壳时填充
+// （authorize.go，§4.2 行 1081），其余路由不注入（nil 时 omitted）。
 type initPayload struct {
 	ALRoot     string           `json:"al_root"`
 	StaticBase string           `json:"static_base"`
@@ -151,12 +182,16 @@ type Handler struct {
 	codec      *security.Codec
 	jwt        JWTVerifier
 	clients    OidcClientReader
+	sessions   SessionVerifier
+	codes      CodeIssuer
+	audit      AuditSink
 	metas      func() []provider.Meta
 	now        func() time.Time
 }
 
-// Register 挂全部页面路由（§8 路由表 + §2.9 logout / sync_cookie）。
-// 页面路由归 gin 链（Connect 域走 mux 前缀，互不相交）。
+// Register 挂全部页面路由（§8 路由表 + §2.9 logout / sync_cookie + §4.2
+// /auth/authorize 授权入口）。页面路由归 gin 链（Connect 域走 mux 前缀，
+// 互不相交）。
 func Register(r gin.IRouter, d Deps) *Handler {
 	h := &Handler{
 		root:       d.Root,
@@ -169,6 +204,9 @@ func Register(r gin.IRouter, d Deps) *Handler {
 		codec:      d.Codec,
 		jwt:        d.JWT,
 		clients:    d.Clients,
+		sessions:   d.Sessions,
+		codes:      d.Codes,
+		audit:      d.Audit,
 		metas:      d.Metas,
 		now:        d.Now,
 	}
@@ -185,6 +223,8 @@ func Register(r gin.IRouter, d Deps) *Handler {
 	r.GET("/admin/*path", h.entryPage("admin"))
 	r.GET("/sso/logout", h.logout)
 	r.GET("/sso/sync_cookie", h.syncCookie)
+	// OIDC 授权入口（§4.2）：discovery 已广告 authorization_endpoint。
+	r.GET("/auth/authorize", h.authorize)
 	return h
 }
 
