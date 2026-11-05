@@ -10,18 +10,10 @@
  *   退出项（§2.7.5 行 663 口径：流程分支不变，服务端仍会拒绝建号请求）；
  * - allowSignup=true（enable_signup=1）时两项均可选。
  *
- * 文案：绑定分支专属文案在 i18n 字典无键，中文字面量 + 注释声明，扩键归
- * 后续 i18n 实现。
+ * 文案：绑定分支专属文案经 i18n 字典 login.* 键取用。
  */
+import { t } from '../../shared/i18n';
 import styles from './BindingChoice.module.less';
-
-/** 三方身份提示行前缀（信封 binding.displayName，§1.3 行 130）。 */
-const IDENTITY_TEXT = '登录方式';
-/** 两选项按钮文案（§2.7.5 行 656-661，封闭两项）。 */
-const CREATE_ACCOUNT_TEXT = '创建新账号';
-const EXIT_TEXT = '退出并使用其他账号登录';
-/** allowSignup=false 提示（§2.7.5 行 663）。 */
-const SIGNUP_CLOSED_TEXT = '该渠道未开放注册';
 
 export interface BindingChoiceProps {
   /** 三方身份名（binding.displayName）；空串零值兜底不渲染身份行（§9 第 18 条）。 */
@@ -44,7 +36,7 @@ export function BindingChoice({
     <div className={styles.section}>
       {displayName !== '' && (
         <p className={styles.identity}>
-          {IDENTITY_TEXT}「{displayName}」
+          {t('login.bindingIdentity', { name: displayName })}
         </p>
       )}
       <button
@@ -53,13 +45,13 @@ export function BindingChoice({
         disabled={!allowSignup}
         onClick={onCreateAccount}
       >
-        {CREATE_ACCOUNT_TEXT}
+        {t('login.createAccountOption')}
       </button>
       {!allowSignup && (
-        <p className={styles.signupClosed}>{SIGNUP_CLOSED_TEXT}</p>
+        <p className={styles.signupClosed}>{t('login.channelSignupClosed')}</p>
       )}
       <button type="button" className={styles.optionBtn} onClick={onExit}>
-        {EXIT_TEXT}
+        {t('login.exitBinding')}
       </button>
     </div>
   );

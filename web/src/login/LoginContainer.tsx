@@ -27,8 +27,7 @@
  * - kind→step 映射归容器层（注入快照 steps 为唯一定义，reducer 只镜像事件
  *   不自造语义）。
  *
- * 文案：占位 / 引导类文案在 i18n 字典无键，中文字面量 + 注释声明，扩键归
- * 后续 i18n 实现。
+ * 文案：占位 / 引导类文案经 i18n 字典 login.* 键取用。
  */
 import {
   useEffect,
@@ -64,7 +63,7 @@ import {
 import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
 import { StepDispatcher } from './steps/StepDispatcher';
-import { MethodTabs, SELECT_HINT } from './MethodTabs';
+import { MethodTabs } from './MethodTabs';
 import styles from './LoginContainer.module.less';
 import {
   flowReducer,
@@ -93,8 +92,8 @@ type PayloadInit = NonNullable<LoginDefaultInput['payload']>;
  * login 域 kind→step 映射（§1.10 唯一定义）：
  * 注入快照 steps 的首个 kind → 请求侧 step（§2.2 行 422）。login 域取值仅
  * form / challenge（§1.10：password=一步 form；otp 系 / webauthn=challenge→form），
- * form 映射 'verify'（set_password 属注册 / 重置端点，§2.2 行 422）；空 / 未知
- * 兜底 'verify'（§9 第 18 条零值兜底口径）。
+ * form 映射 verify（set_password 属注册 / 重置端点，§2.2 行 422）；空 / 未知
+ * 兜底同 verify（§9 第 18 条零值兜底口径）。
  */
 export function firstStepFor(steps: readonly string[]): string {
   return steps[0] === 'challenge' ? 'challenge' : 'verify';
@@ -205,7 +204,7 @@ export function fieldsFor(
 
 /**
  * 终点 URL（§4.1 行 383）：syncCookieUrl 非空 → 它（后端拼好的首跳完整 URL，
- * §1.3 行 136）；否则 redirectTo；两者皆空 → ''（无跳转目标，不 replace）。
+ * §1.3 行 136）；否则 redirectTo；两者皆空 → 空串（无跳转目标，不 replace）。
  */
 export function terminalUrl(envelope: LoginFlowResponse): string {
   return envelope.syncCookieUrl !== ''
@@ -300,15 +299,6 @@ export function isErrorStatus(status: MachineStatus): boolean {
 // 视图（状态分支渲染；静态可测——renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
 
-/** 占位文案（i18n 无键，字面量声明见文件头）。 */
-const POLL_PLACEHOLDER = '扫码流程即将支持';
-/** mfa 选择器引导（§1.3 行 121 mfa.methods；i18n 无键，字面量声明见文件头）。 */
-const MFA_SELECT_HINT = '请选择二次验证方式';
-/** 缺映射兜底（§4.3 行 434：不许无映射静默回退；与 StepDispatcher 兜底同款文案，§4.2 行 423）。 */
-const MISSING_FACTOR_TEXT = '请刷新重试';
-/** success 渲染（跳转由 complete 副作用执行）。 */
-const REDIRECTING_TEXT = '登录成功，正在跳转…';
-
 export interface LoginFlowViewProps {
   /** 注入快照（§2.1）。 */
   snapshot: MethodsSnapshot;
@@ -394,10 +384,10 @@ export function LoginFlowView({
     state.status === 'scanned' ||
     state.status === 'expired'
   ) {
-    return <p role="status">{POLL_PLACEHOLDER}</p>;
+    return <p role="status">{t('login.pollPlaceholder')}</p>;
   }
   if (state.status === 'success') {
-    return <p role="status">{REDIRECTING_TEXT}</p>;
+    return <p role="status">{t('login.redirecting')}</p>;
   }
   // binding_required → 原地渲染绑定选择页（§4.1 行 406；§4.4 行 466）：
   // 不跳页、不新开流程（mfa_required 同款原地模式）、/sso/binding 不在路由表；
@@ -435,7 +425,7 @@ export function LoginFlowView({
       onSubmit,
     };
     if (factor === undefined) {
-      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+      return <p role="alert">{t('login.refreshRetry')}</p>;
     }
     if (factor === null) {
       return <FormStep {...factorProps} />;
@@ -478,7 +468,7 @@ export function LoginFlowView({
   if (state.status === 'mfa_required' || (mfaMethods?.length ?? 0) > 0) {
     if (mfaList.length === 0) {
       // 零值兜底（§9 第 18 条）：mfa_required 无可用方式（防御，后端必附）。
-      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+      return <p role="alert">{t('login.refreshRetry')}</p>;
     }
     const mfaEntry = mfaList.find((m) => m.method === state.method);
     return (
@@ -502,7 +492,7 @@ export function LoginFlowView({
           />
         ) : mfaEntry === undefined ? (
           // 未选择二次方式（刚进入 mfa_required，state.method 还是主因子）。
-          <p role="status">{MFA_SELECT_HINT}</p>
+          <p role="status">{t('login.mfaSelectHint')}</p>
         ) : (
           renderFactorNode(mfaEntry.method, mfaEntry.fields, mfaEntry.maskedTarget)
         )}
@@ -528,7 +518,7 @@ export function LoginFlowView({
     const next = state.envelope?.nextStep;
     if (next === undefined) {
       // 零值兜底（§9 第 18 条）：status=next 必有 next_step（防御，§1.3 行 110）。
-      return <p role="alert">{MISSING_FACTOR_TEXT}</p>;
+      return <p role="alert">{t('login.refreshRetry')}</p>;
     }
     // nextStep.method 零值兜底：空串保持当前方式（与 reducer response 语义一致）。
     const nextMethod = next.method !== '' ? next.method : state.method;
@@ -576,7 +566,7 @@ export function LoginFlowView({
         onSelect={onSelect}
       />
       {state.method === '' ? (
-        <p role="status">{SELECT_HINT}</p>
+        <p role="status">{t('login.selectMethodHint')}</p>
       ) : (
         renderFactorNode(state.method, fields)
       )}

@@ -23,8 +23,8 @@
  * verify 段自建（CodeInput + useCountdown）：OTPForm verify 段提交按钮文案为
  * login 域字面量「登录」（factors/** 未改动），注册语境应为「下一步」。
  *
- * 文案：注册页专属（标题 / 方式名 / 步骤按钮）在 i18n 字典无键，中文字面量 +
- * 注释声明，扩键归后续 i18n 实现。
+ * 文案：注册页专属（标题 / 方式名 / 步骤按钮）经 i18n 字典 login.* 键取用；
+ * 注册关闭提示复用 errors.status.signup_disabled。
  */
 import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import { create } from '@bufbuild/protobuf';
@@ -42,6 +42,8 @@ import {
 import { CodeInput, ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useCountdown } from '../../shared/hooks/useCountdown';
+import { t } from '../../shared/i18n';
+import { toDisplay } from '../../shared/utils/int';
 import { isValidUsername } from '../../shared/utils/validate';
 import {
   getInit,
@@ -104,7 +106,7 @@ export function advanceAfterStep(
 
 /**
  * 终点 URL（§1.3 行 136）：syncCookieUrl 非空优先（后端拼好的首跳完整 URL），
- * 否则 redirectTo；双空 → ''（不跳转）。与 LoginContainer.terminalUrl 同款逻辑，
+ * 否则 redirectTo；双空 → 空串（不跳转）。与 LoginContainer.terminalUrl 同款逻辑，
  * 此处不复用它以免本页静态拉入整个 login flow 模块链。
  */
 export function flowTerminalUrl(envelope: LoginFlowResponse): string {
@@ -217,35 +219,14 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
 // 视图（纯状态帧渲染；renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
 
-/** 页面标题（i18n 无键，字面量声明见文件头）。 */
-const TITLE_TEXT = '注册';
-/** 注册关闭整页提示（§4.4 行 464；t('errors.status.signup_disabled') 同文案）。 */
-const SIGNUP_CLOSED_TEXT = '注册未开放';
-/** 无可用注册方式空态（快照 methods 空，§2.1 行 411）。 */
-const NO_METHOD_TEXT = '暂无可用注册方式';
-/** verify 段提交按钮（OTPForm verify 段为 login 域文案，见文件头）。 */
-const NEXT_STEP_TEXT = '下一步';
-/** verify 段重发按钮（回到 challenge 段重走：每次下发都要新的 captcha，§2.5 行 525）。 */
-const RESEND_TEXT = '重新发送';
-/** set_password 段提交按钮。 */
-const SUBMIT_TEXT = '注册';
-/** 用户名规则提示（体验性预校验，§2.3 行 449 唯一定义；服务端权威）。 */
-const USERNAME_HINT_TEXT = '用户名须为 5-20 位字母、数字或下划线';
-/** success 渲染（跳转由终点处理执行）。 */
-const SUCCESS_TEXT = '注册成功，正在跳转…';
-/** 验证码标签。 */
-const CODE_LABEL = '验证码';
-/** 用户名 / 密码字段标签。 */
-const USERNAME_LABEL = '用户名';
-const PASSWORD_LABEL = '密码';
-/** attemptsLeft 提示（§1.3 行 151）。 */
-const ATTEMPTS_LEFT_TEXT = '还可尝试';
-
-/** 注册方式 tab 文案（快照 method → 注册语境名；i18n factors.* 是登录语境，另立字面量）。 */
-const REGISTER_METHOD_NAMES: Readonly<Record<string, string>> = {
-  password: '用户名密码注册',
-  otp_sms: '手机号注册',
-  otp_email: '邮箱注册',
+/**
+ * 注册方式 tab 文案键（快照 method → 注册语境名；i18n factors.* 是登录语境，
+ * 另立键；未知 method 走 t() 键回显，与原字面量兜底同款）。
+ */
+const REGISTER_METHOD_NAME_KEYS: Readonly<Record<string, string>> = {
+  password: 'login.registerMethodPassword',
+  otp_sms: 'login.registerMethodOtpSms',
+  otp_email: 'login.registerMethodOtpEmail',
 };
 
 export interface RegisterPageViewProps {
@@ -313,8 +294,8 @@ export function RegisterPageView({
   if (snapshot.flags?.registration !== true) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{TITLE_TEXT}</h1>
-        <p role="status">{SIGNUP_CLOSED_TEXT}</p>
+        <h1 className={styles.title}>{t('login.register')}</h1>
+        <p role="status">{t('errors.status.signup_disabled')}</p>
       </main>
     );
   }
@@ -322,24 +303,24 @@ export function RegisterPageView({
   if (status === 'signup_disabled') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{TITLE_TEXT}</h1>
-        <p role="status">{SIGNUP_CLOSED_TEXT}</p>
+        <h1 className={styles.title}>{t('login.register')}</h1>
+        <p role="status">{t('errors.status.signup_disabled')}</p>
       </main>
     );
   }
   if (status === 'success') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{TITLE_TEXT}</h1>
-        <p role="status">{SUCCESS_TEXT}</p>
+        <h1 className={styles.title}>{t('login.register')}</h1>
+        <p role="status">{t('login.registerSuccess')}</p>
       </main>
     );
   }
   if (options.length === 0) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{TITLE_TEXT}</h1>
-        <p role="status">{NO_METHOD_TEXT}</p>
+        <h1 className={styles.title}>{t('login.register')}</h1>
+        <p role="status">{t('login.noRegisterMethods')}</p>
       </main>
     );
   }
@@ -377,7 +358,7 @@ export function RegisterPageView({
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>{TITLE_TEXT}</h1>
+      <h1 className={styles.title}>{t('login.register')}</h1>
       {notice !== undefined && <ErrorBanner i18nKey={notice} />}
       {resolution !== undefined && (
         <ErrorBanner
@@ -403,7 +384,7 @@ export function RegisterPageView({
                   aria-current={option.method === method ? 'true' : undefined}
                   onClick={() => onSelectMethod(option.method)}
                 >
-                  {REGISTER_METHOD_NAMES[option.method] ?? option.method}
+                  {t(REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method)}
                 </button>
               </li>
             ))}
@@ -423,17 +404,19 @@ export function RegisterPageView({
       )}
       {step === 'verify' && (
         <form onSubmit={submitVerify} className={styles.section}>
-          <label className={styles.label}>{CODE_LABEL}</label>
+          <label className={styles.label}>{t('login.codeLabel')}</label>
           <CodeInput
             value={otpCode}
             onChange={onOtpCodeChange}
             length={codeLengthOf(entry)}
-            ariaLabel={CODE_LABEL}
+            ariaLabel={t('login.codeLabel')}
             disabled={loading || submitDisabled}
           />
           {error?.attemptsLeft !== undefined && (
             <p role="status" className={styles.status}>
-              {ATTEMPTS_LEFT_TEXT} {error.attemptsLeft} 次
+              {t('login.attemptsLeft', {
+                count: toDisplay(error.attemptsLeft),
+              })}
             </p>
           )}
           <button
@@ -442,21 +425,23 @@ export function RegisterPageView({
             onClick={onResend}
             className={styles.resend}
           >
-            {countdown.expired ? RESEND_TEXT : `${countdown.seconds} 秒后可重发`}
+            {countdown.expired
+              ? t('login.resend')
+              : t('login.resendCountdown', { seconds: countdown.seconds })}
           </button>
           <button
             type="submit"
             disabled={loading || submitDisabled}
             className={styles.submit}
           >
-            {NEXT_STEP_TEXT}
+            {t('login.nextStep')}
           </button>
         </form>
       )}
       {step === 'set_password' && (
         <form onSubmit={submitSetPassword} className={styles.section}>
           <div className={styles.field}>
-            <label className={styles.label}>{USERNAME_LABEL}</label>
+            <label className={styles.label}>{t('login.usernameLabel')}</label>
             <input
               className={styles.input}
               name="username"
@@ -467,12 +452,12 @@ export function RegisterPageView({
             />
             {username !== '' && !isValidUsername(username) && (
               <p role="status" className={styles.hint}>
-                {USERNAME_HINT_TEXT}
+                {t('login.usernameHint')}
               </p>
             )}
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>{PASSWORD_LABEL}</label>
+            <label className={styles.label}>{t('login.passwordLabel')}</label>
             <input
               className={styles.input}
               name="password"
@@ -493,7 +478,7 @@ export function RegisterPageView({
             disabled={loading || submitDisabled}
             className={styles.submit}
           >
-            {SUBMIT_TEXT}
+            {t('login.register')}
           </button>
         </form>
       )}

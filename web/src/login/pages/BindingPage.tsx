@@ -14,15 +14,14 @@
  *   普通注册页（flags.registration 开关 + 三方式 tabs + 密码表单），与免密建号
  *   语义不符。§4.4 行 466 即按原地注册表单落地。
  * - 退出并使用其他账号登录 → 不发请求：清空内存 login_token →
- *   location.replace('/sso/login')（§2.7.5 行 661，exitBinding）。
+ *   location.replace 到 /sso/login（§2.7.5 行 661，exitBinding）。
  *
  * 信封 binding 的 nickname / avatarUrl 本实现不渲染（§4.4 行 466-468 未规定
  * 用场，视觉完善归后续样式实现）。免密建号请求的 method 取值文档未显式规定
  * （§2.3 方式白名单不覆盖三方路径），取登录域三方方式名 'thirdparty'
  * （服务端按 login_token.tp 判定免密建号，§2.7.5 行 667-672）。
  *
- * 文案：绑定页专属（身份行 / 按钮名 / 成功提示）在 i18n 字典无键，中文
- * 字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：绑定页专属（身份行 / 按钮名 / 成功提示）经 i18n 字典 login.* 键取用。
  */
 import { useState, type FormEvent } from 'react';
 import type {
@@ -69,7 +68,7 @@ export function createAccountPayload(username: string): RegisterPayloadInit {
 
 /**
  * 退出动作（§2.7.5 行 661）：不发请求，清空内存 login_token →
- * location.replace('/sso/login')。clearToken / navigate 注入（壳默认
+ * location.replace 到 /sso/login。clearToken / navigate 注入（壳默认
  * clearLoginToken + location.replace；node 测试传记录函数断言顺序与 URL）。
  */
 export function exitBinding(
@@ -86,17 +85,6 @@ export function exitBinding(
 
 /** 绑定分支两帧：choice（两选项）/ create（免密建号表单）。 */
 export type BindingChoiceKind = 'choice' | 'create';
-
-/** 信封缺失 / 兜底文案（与 StepDispatcher 兜底同款，§4.2 行 423）。 */
-const MISSING_TEXT = '请刷新重试';
-/** 免密建号表单文案。 */
-const USERNAME_LABEL = '用户名';
-/** 用户名规则提示（§2.3 行 449 唯一定义：^[A-Za-z0-9_]{5,20}$；服务端权威）。 */
-const USERNAME_HINT_TEXT = '用户名须为 5-20 位字母、数字或下划线';
-/** 建号提交按钮。 */
-const CREATE_ACCOUNT_SUBMIT_TEXT = '创建账号';
-/** success 渲染（终点跳转由壳执行；§10.3 行 1547 建号 → success）。 */
-const SUCCESS_TEXT = '账号创建成功，正在跳转…';
 
 export interface BindingPageViewProps {
   /** 信封 binding（§1.3 行 129-132）；undefined 走零值兜底（§9 第 18 条）。 */
@@ -138,9 +126,9 @@ export function BindingPageView({
   if (binding === undefined) {
     return (
       <div className={styles.section}>
-        <p role="alert">{MISSING_TEXT}</p>
+        <p role="alert">{t('login.refreshRetry')}</p>
         <button type="button" className={styles.submit} onClick={onExit}>
-          退出并使用其他账号登录
+          {t('login.exitBinding')}
         </button>
       </div>
     );
@@ -149,7 +137,7 @@ export function BindingPageView({
   if (status === 'success') {
     return (
       <div className={styles.section}>
-        <p role="status">{SUCCESS_TEXT}</p>
+        <p role="status">{t('login.accountCreated')}</p>
       </div>
     );
   }
@@ -175,7 +163,7 @@ export function BindingPageView({
       {choice === 'create' ? (
         <form onSubmit={submitCreate} className={styles.form}>
           <div className={styles.field}>
-            <label className={styles.label}>{USERNAME_LABEL}</label>
+            <label className={styles.label}>{t('login.usernameLabel')}</label>
             <input
               className={styles.input}
               name="username"
@@ -186,7 +174,7 @@ export function BindingPageView({
             />
             {username !== '' && !isValidUsername(username) && (
               <p role="status" className={styles.hint}>
-                {USERNAME_HINT_TEXT}
+                {t('login.usernameHint')}
               </p>
             )}
           </div>
@@ -195,7 +183,7 @@ export function BindingPageView({
             disabled={loading || submitDisabled}
             className={styles.submit}
           >
-            {CREATE_ACCOUNT_SUBMIT_TEXT}
+            {t('login.createAccount')}
           </button>
         </form>
       ) : (
@@ -267,7 +255,7 @@ export function BindingPage({ binding, notice }: BindingPageProps) {
     setLoading(false);
     if (!result.ok) {
       // 传输层失败：回到第一步 + failed 兜底提示（§1.6 行 272，不暴露内部信息；
-      // failed 表驱动不可重试，不走 status='failed' 帧——RegisterPage 同款模式）。
+      // failed 表驱动不可重试，不走 status 为 failed 帧——RegisterPage 同款模式）。
       restartFlow();
       return;
     }

@@ -10,7 +10,10 @@
  *   §2.1 行 374-377：镜像 allow_password_reset / allow_registration），
  *   不另发请求；入口激活为真链接（/sso/reset、/sso/register，Go 渲染
  *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）。
+ *
+ * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用（F-036 收口）。
  */
+import { t } from '../../shared/i18n';
 import { LoginContainer } from '../LoginContainer';
 import type { MethodsSnapshot } from '../../shared/types/init';
 import { ssoPath } from './RegisterPage';
@@ -21,13 +24,6 @@ export interface LoginPageProps {
   readonly snapshot: MethodsSnapshot;
 }
 
-/** 页面标题——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
-const TITLE_TEXT = '登录';
-/** 入口文案——同上。 */
-const FORGOT_PASSWORD_TEXT = '忘记密码';
-/** 入口文案——同上。 */
-const REGISTER_TEXT = '注册';
-
 export function LoginPage({ snapshot }: LoginPageProps) {
   // §2.1 行 407：flags 只用于隐藏登录页的「忘记密码」「注册」入口；
   // 零值兜底——undefined / 缺省不渲染。
@@ -36,18 +32,18 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const showRegister = flags?.registration === true;
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>{TITLE_TEXT}</h1>
+      <h1 className={styles.title}>{t('login.title')}</h1>
       <LoginContainer snapshot={snapshot} />
       {(showForgot || showRegister) && (
         <nav className={styles.entryNav}>
           {showForgot && (
             <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
-              {FORGOT_PASSWORD_TEXT}
+              {t('login.forgotPassword')}
             </a>
           )}
           {showRegister && (
             <a className={styles.entryLink} href={ssoPath('/sso/register')}>
-              {REGISTER_TEXT}
+              {t('login.register')}
             </a>
           )}
         </nav>

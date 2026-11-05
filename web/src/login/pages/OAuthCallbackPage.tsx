@@ -27,13 +27,14 @@
  * 可测任意 status 帧）+ 页壳薄胶水；分派编排抽为 dispatchCallback（依赖注入、
  * node 可测），页壳 useEffect 挂载即分派一次（ref 守卫防 dev 严格模式双跑）。
  *
- * 文案：回调页专属（处理中 / 占位 / 成功 / 返回登录）在字典无键，中文
- * 字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案：回调页专属（处理中 / 占位 / 成功 / 返回登录）经 i18n 字典 login.* 键
+ * 取用。
  */
 import { useEffect, useRef, useState } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
 import { ErrorBanner } from '../../shared/components';
+import { t } from '../../shared/i18n';
 import { loginOauth, type LoginOauthInput } from '../api';
 import { clearLoginToken } from '../loginTokenStore';
 import { BindingPage, exitBinding } from './BindingPage';
@@ -129,19 +130,8 @@ export async function dispatchCallback(
 // 视图（纯状态帧渲染；renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
 
-/** 处理中（初始 / l 分派请求在途）。 */
-const PROCESSING_TEXT = '正在处理，请稍候…';
-/** b 分支占位（完整编排与 /account/security?bind= 跳转归 account 卡，见文件头）。 */
-const BIND_UNAVAILABLE_TEXT = '绑定功能即将上线';
-/** success 渲染（终点跳转由 dispatchCallback 执行）。 */
-const SUCCESS_TEXT = '登录成功，正在跳转…';
-/** mfa_required 占位（完整编排归后续联调卡，见文件头）。 */
-const MFA_PLACEHOLDER_TEXT = '登录需要二次验证，请返回重新登录';
-/** 返回登录（b 占位 / mfa 占位 / 失败态出口；§1.6「回到第一步」）。 */
-const BACK_TO_LOGIN_TEXT = '返回登录';
-
 export interface OAuthCallbackViewProps {
-  /** 帧状态：'idle'（处理中）/ 'bind'（b 占位）/ 信封 status。 */
+  /** 帧状态：idle（处理中）/ bind（b 占位）/ 信封 status。 */
   readonly status: string;
   /** 最近一次响应信封（binding_required 的 binding、失败态 error 来源）。 */
   readonly envelope: LoginFlowResponse | undefined;
@@ -168,20 +158,20 @@ export function OAuthCallbackView({
         // （§4.4 行 467）在占位态下暂不可达，归 account 卡接线。
         <section className={styles.section}>
           <p role="status" className={styles.status}>
-            {BIND_UNAVAILABLE_TEXT}
+            {t('login.bindUnavailable')}
           </p>
           <button
             type="button"
             className={styles.backButton}
             onClick={onBackToLogin}
           >
-            {BACK_TO_LOGIN_TEXT}
+            {t('login.backToLogin')}
           </button>
         </section>
       ) : status === 'success' ? (
         <section className={styles.section}>
           <p role="status" className={styles.status}>
-            {SUCCESS_TEXT}
+            {t('login.redirecting')}
           </p>
         </section>
       ) : status === 'binding_required' ? (
@@ -192,14 +182,14 @@ export function OAuthCallbackView({
         // 组件，§1.6 行 233）归后续联调实现（裁量见文件头）。
         <section className={styles.section}>
           <p role="status" className={styles.status}>
-            {MFA_PLACEHOLDER_TEXT}
+            {t('login.mfaPlaceholder')}
           </p>
           <button
             type="button"
             className={styles.backButton}
             onClick={onBackToLogin}
           >
-            {BACK_TO_LOGIN_TEXT}
+            {t('login.backToLogin')}
           </button>
         </section>
       ) : resolution !== undefined ? (
@@ -218,14 +208,14 @@ export function OAuthCallbackView({
             className={styles.backButton}
             onClick={onBackToLogin}
           >
-            {BACK_TO_LOGIN_TEXT}
+            {t('login.backToLogin')}
           </button>
         </section>
       ) : (
         // 初始 / l 分派请求在途（静态渲染不跑 effect，此帧即回调路由首帧）。
         <section className={styles.section}>
           <p role="status" className={styles.status}>
-            {PROCESSING_TEXT}
+            {t('login.processing')}
           </p>
         </section>
       )}

@@ -17,8 +17,7 @@
  *   提示；消费 useCapability——逐条目在子组件内调用，遵守 hook 规则）。
  *
  * 文案：方式名取 i18n 字典 factors.*（§1.10 因子全集，缺键回显键本身可见
- * 可排查）；空状态 / 引导提示在字典无键，中文字面量 + 注释声明，扩键归
- * 后续 i18n 实现。
+ * 可排查）；空状态 / 引导提示经 i18n 字典 login.* 键取用。
  */
 import { t } from '../shared/i18n';
 import { useCapability } from '../shared/hooks/useCapability';
@@ -38,12 +37,6 @@ export interface MethodTabsProps {
   onSelect: (method: string) => void;
 }
 
-/** 空状态文案（i18n 无键，字面量声明见文件头）。 */
-const EMPTY_TEXT = '暂无可用登录方式';
-
-/** 未选择方式时的引导文案（同上）。 */
-const SELECT_HINT_TEXT = '请选择登录方式';
-
 export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
   const tabs = methods.filter(
     (m) => m.method !== 'thirdparty' && (m.usage ?? []).includes('primary'),
@@ -53,7 +46,7 @@ export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
 
   return (
     <nav>
-      {empty && <p role="status">{EMPTY_TEXT}</p>}
+      {empty && <p role="status">{t('login.noMethods')}</p>}
       <ul className={styles.list}>
         {tabs.map((entry) => (
           <MethodTabItem
@@ -100,6 +93,3 @@ function MethodTabItem({
     </li>
   );
 }
-
-/** 供视图层复用的引导文案（与 EMPTY_TEXT 同源声明）。 */
-export const SELECT_HINT = SELECT_HINT_TEXT;
