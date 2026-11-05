@@ -1,0 +1,36 @@
+// account 布局自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// Semi Layout / Nav 组件样式由组件 JS 内部 css import 随构建自动打包
+//（主题变量归 entry.tsx 的 _base/base.css），此处只补壳层布局。
+@import (reference) '../../shared/styles/tokens.less';
+
+.shell {
+  min-height: 100vh;
+}
+
+.nav {
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 @spacing-lg;
+  border-bottom: @border-width solid @color-border;
+  background-color: @color-background;
+}
+
+.logoutLink {
+  color: @color-text-muted;
+  font-size: @font-size-md;
+  text-decoration: none;
+
+  &:hover {
+    color: @color-danger;
+  }
+}
+
+.content {
+  padding: @spacing-xl;
+  background-color: @color-background-muted;
+}

@@ -1,0 +1,16 @@
+// 个人资料页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// 头像行 / 明细间距；Semi Typography / Descriptions 自带组件样式不在此重复。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
+  max-width: 480px;
+}
+
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: @spacing-md;
+}

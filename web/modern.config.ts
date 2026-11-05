@@ -18,6 +18,13 @@ export default defineConfig({
         entry: './src/login/entry.tsx',
         disableMount: true,
       },
+      // 用户端安全中心 entry（docs/前端架构.md §2 / §5 行 478）：Go 空壳引用
+      // /assets/account/entry.js（接口文档 §8 行 1421 `/account/**` SPA 空壳）。
+      // 同 setup / login 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      account: {
+        entry: './src/account/entry.tsx',
+        disableMount: true,
+      },
     },
   },
   output: {
