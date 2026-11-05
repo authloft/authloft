@@ -64,6 +64,7 @@ import (
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
 	core "authloft/internal/otp"
+	"authloft/internal/pages"
 	"authloft/internal/provider"
 	// §3.1 行 237：注册表导入在此处统一 `_ import` 触发自注册——
 	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）；
@@ -150,6 +151,10 @@ type assembled struct {
 	// 保证「每次生成时重新判定」）。
 	gate         *captcha.Gate
 	imageCaptcha *captcha.ImageCaptcha
+
+	// factors 因子注册表（§3.8）：buildEngine 构造后挂入，供页面壳
+	// methods 快照按 settings.login_methods 过滤读取（接口文档 §2.1 / §8）。
+	factors *factor.Registry
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -580,13 +585,15 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// 步骤 6（factor 半步）：factor 注册表（password / webauthn / totp /
 	// recovery / otp_sms / otp_email，§3.8）+ Terminal + 单引擎（§7）。
 	// pendingKinds 内的 thirdparty / device 尚无装配依赖，由
-	// registry.AssertComplete 显式排除。
-	engine, _, _, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
+	// registry.AssertComplete 显式排除。注册表挂入 assembled，
+	// 供页面壳 methods 快照按 login_methods 过滤读取（§2.1）。
+	engine, _, registry, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())
 		return nil, err
 	}
 	deps.engine = engine
+	deps.factors = registry
 
 	// 步骤 6（OIDC 半步，§14.3 行 1647）：启动期一次性解析 config.oidc.jwt_keys
 	//（首项签发、全列表发 JWKS），iss = authloft.root 去尾 /（§14.1 行 1626）；
@@ -792,6 +799,9 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 		// 网关 decode（§6）：挂 /api 组的 /gateway 子组 + Gateway 中间件
 		//（REST 豁免域）。
 		registerGateway(apiGroup, deps)
+		// 页面壳路由族（接口文档 §8 行 1414-1439 + §2.9）：三端
+		// SPA 空壳 + /sso/logout + /sso/sync_cookie 中转，全部挂 gin 链。
+		registerPages(ginEngine, cfg, deps)
 	}
 
 	mux := http.NewServeMux()
@@ -1051,6 +1061,33 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 		}
 	}
 	return time.Duration(ssoSessionTTL) * time.Second
+}
+
+// registerPages 注册页面壳路由族（接口文档 §8 行 1414-1439 +
+// §2.9）：/sso/login、/sso/register、/sso/reset、/sso/oauth/callback/
+// {provider_key}（login entry 空壳）、/account/**、/admin/**（account /
+// admin entry 空壳）、/sso/logout（清 Cookie + 多域同步 + 白名单回跳）、
+// /sso/sync_cookie（多域同步中转接收端）。挂 gin 链（§8 Go 渲染页面路由），
+// GET 安全方法不受 origin 校验；路由组挂 middleware.CSP()（§3.3 行 314
+// csp.go 条目接线——中间件已测未接）：每请求 nonce 写 ctx
+// （renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）。依赖全部复用
+// assemble 共享单例：settings / provider Loader / factor 注册表 /
+// captcha Gate / sync_payload Codec / OIDC JWT / ClientRepo；登出同步
+// 首跳构造复用 service.SyncCookieURLBuilder（与登录终点 Terminal 同一
+// 实现，§11.2 发起端）。
+func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
+	pages.Register(r.Group("", middleware.CSP()), pages.Deps{
+		Root:       cfg.Authloft.Root,
+		RootDomain: rootHost(cfg.Authloft.Root),
+		Settings:   deps.settings,
+		Loader:     deps.providerLoader,
+		Factors:    deps.factors,
+		Gate:       deps.gate,
+		Sync:       service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		Codec:      deps.codecs.SyncPayload,
+		JWT:        deps.oidcJWT,
+		Clients:    repo.NewClientRepo(deps.db),
+	})
 }
 
 // rootHost 从 authloft.root（{al_root}，完整 URL）取根域，供会话 Cookie 的
