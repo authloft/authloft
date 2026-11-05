@@ -116,7 +116,7 @@ export function UsersPage(props: {
   async function handleUnlock(row: AdminUser): Promise<void> {
     try {
       await unlockUser(buildUnlockUserRequest(row.id));
-      setNotice(`已解除「${row.username}」的登录限制`);
+      setNotice(t('admin.unlockSuccess', { username: row.username }));
     } catch (unlockError) {
       setActionError(apiErrorText(unlockError));
     }
@@ -139,7 +139,7 @@ export function UsersPage(props: {
     try {
       await resetUserPassword(buildResetUserPasswordRequest(target.id, resetPassword));
       setResetTarget(null);
-      setNotice(`已重置「${target.username}」的密码，请将新密码转交该用户`);
+      setNotice(t('admin.resetPasswordSuccess', { username: target.username }));
     } catch (resetReqError) {
       setResetError(apiErrorText(resetReqError));
     } finally {
@@ -153,7 +153,7 @@ export function UsersPage(props: {
   const columns: readonly DataTableColumn<AdminUser>[] = [
     {
       dataIndex: 'username',
-      title: '用户名',
+      title: t('admin.usernameLabel'),
       render: (_text: unknown, row: AdminUser) => (
         <a className={styles.detailLink} href={`/admin/users/${row.id}`}>
           {row.username}
@@ -162,22 +162,22 @@ export function UsersPage(props: {
     },
     {
       dataIndex: 'nickname',
-      title: '昵称',
+      title: t('admin.nicknameLabel'),
       render: (_text: unknown, row: AdminUser) => row.nickname || EMPTY_TEXT,
     },
     {
       dataIndex: 'phone',
-      title: '手机号',
+      title: t('admin.phoneLabel'),
       render: (_text: unknown, row: AdminUser) => row.phone || EMPTY_TEXT,
     },
     {
       dataIndex: 'email',
-      title: '邮箱',
+      title: t('admin.emailLabel'),
       render: (_text: unknown, row: AdminUser) => row.email || EMPTY_TEXT,
     },
     {
       dataIndex: USER_STATUS_DATA_INDEX,
-      title: '状态',
+      title: t('admin.statusLabel'),
       // USER_STATUS_FILTERS 存 textKey，渲染期 t() 取当前语言。
       filters: USER_STATUS_FILTERS.map(({ value, textKey }) => ({
         value,
@@ -187,33 +187,33 @@ export function UsersPage(props: {
     },
     {
       dataIndex: 'last_login_at',
-      title: '最后登录',
+      title: t('admin.lastLoginLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: AdminUser) => formatUnixTime(row.lastLoginAt),
     },
     {
       dataIndex: 'created_at',
-      title: '创建时间',
+      title: t('admin.createdAtLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: AdminUser) => formatUnixTime(row.createdAt),
     },
     {
       dataIndex: 'actions',
-      title: '操作',
+      title: t('admin.actionsLabel'),
       render: (_text: unknown, row: AdminUser) => (
         <span className={styles.actions}>
           <Button size="small" onClick={() => openReset(row)}>
-            重置密码
+            {t('admin.resetPasswordAction')}
           </Button>
           <Popconfirm
-            title={`确定解除「${row.username}」的登录限制？`}
+            title={t('admin.unlockConfirm', { username: row.username })}
             onConfirm={() => {
               void handleUnlock(row);
             }}
           >
-            <Button size="small">解除登录限制</Button>
+            <Button size="small">{t('admin.unlockAction')}</Button>
           </Popconfirm>
         </span>
       ),
@@ -224,7 +224,7 @@ export function UsersPage(props: {
   // 失败回滚由其内部 runInlineToggle 编排，错误展示归本页 onToggle。
   const switchColumn: DataTableSwitchColumn<AdminUser> = {
     dataIndex: USER_STATUS_DATA_INDEX,
-    title: '禁用/启用',
+    title: t('admin.userStatusToggleColumn'),
     width: 96,
     isOn: (row) => row.userStatus === USER_STATUS_ENABLED,
     toggleRow: (row, next) => ({
@@ -238,25 +238,25 @@ export function UsersPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        用户列表加载失败，请刷新重试
+        {t('admin.usersLoadFailed')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>用户</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navUsers')}</Typography.Title>
       <div className={styles.toolbar}>
         <Input
           className={styles.searchInput}
           value={qDraft}
           onChange={(value) => setQDraft(value)}
           onEnterPress={applySearch}
-          placeholder="搜索用户名 / 昵称 / 手机号 / 邮箱"
-          aria-label="搜索用户"
+          placeholder={t('admin.userSearchPlaceholder')}
+          aria-label={t('admin.userSearchAriaLabel')}
         />
         <Button theme="solid" onClick={applySearch}>
-          搜索
+          {t('admin.searchAction')}
         </Button>
       </div>
       {actionError !== null ? (
@@ -277,25 +277,27 @@ export function UsersPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? '暂无用户' : undefined}
+        empty={status === 'success' ? t('admin.noUsers') : undefined}
         switchColumn={switchColumn}
       />
       <Modal
-        title={resetTarget !== null ? `重置「${resetTarget.username}」的密码` : '重置密码'}
+        title={
+          resetTarget !== null
+            ? t('admin.resetPasswordTitle', { username: resetTarget.username })
+            : t('admin.resetPasswordAction')
+        }
         visible={resetTarget !== null}
         onCancel={() => setResetTarget(null)}
         footer={null}
       >
         <div className={styles.resetBody}>
-          <p className={styles.resetHint}>
-            新密码需满足系统密码策略，重置成功后原会话全部失效，请将新密码转交该用户。
-          </p>
+          <p className={styles.resetHint}>{t('admin.resetPasswordHint')}</p>
           <Input
             mode="password"
             value={resetPassword}
             onChange={(value) => setResetPassword(value)}
-            aria-label="新密码"
-            placeholder="输入新密码"
+            aria-label={t('admin.newPasswordLabel')}
+            placeholder={t('admin.newPasswordPlaceholder')}
             autoComplete="new-password"
           />
           {resetError !== null ? (
@@ -305,7 +307,7 @@ export function UsersPage(props: {
           ) : null}
           <div className={styles.resetFooter}>
             <Button onClick={() => setResetTarget(null)} disabled={resetSubmitting}>
-              取消
+              {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
@@ -315,7 +317,7 @@ export function UsersPage(props: {
               disabled={resetSubmitting || resetPassword === ''}
               loading={resetSubmitting}
             >
-              确认重置
+              {t('admin.confirmResetAction')}
             </Button>
           </div>
         </div>

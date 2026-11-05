@@ -23,6 +23,7 @@ import { Button, Popconfirm, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
 import {
@@ -55,39 +56,44 @@ const INITIAL_EVENTS_QUERY: TableQueryState = {
   order: 'desc',
 };
 
-/** 登录日志列（需求 §4.2 行 152：时间 / 事件 / 方式 / IP / 设备 UA）。 */
-const EVENTS_COLUMNS: readonly DataTableColumn<EventItem>[] = [
-  {
-    dataIndex: EVENTS_SORT_FIELD,
-    title: '时间',
-    width: 170,
-    sorter: true,
-    render: (_text: unknown, row: EventItem) => formatUnixTime(row.createdAt),
-  },
-  {
-    dataIndex: 'event',
-    title: '事件',
-    width: 160,
-    render: (_text: unknown, row: EventItem) => row.event || EMPTY_TEXT,
-  },
-  {
-    dataIndex: 'amr',
-    title: '方式',
-    width: 140,
-    render: (_text: unknown, row: EventItem) => row.amr || EMPTY_TEXT,
-  },
-  {
-    dataIndex: 'ip',
-    title: 'IP',
-    width: 160,
-    render: (_text: unknown, row: EventItem) => row.ip || EMPTY_TEXT,
-  },
-  {
-    dataIndex: 'ua',
-    title: '设备（UA）',
-    render: (_text: unknown, row: EventItem) => row.ua || EMPTY_TEXT,
-  },
-];
+/**
+ * 登录日志列（需求 §4.2 行 152：时间 / 事件 / 方式 / IP / 设备 UA）。
+ * 渲染期函数求值，模块级 t() 会冻结在默认语言。
+ */
+function getEventsColumns(): readonly DataTableColumn<EventItem>[] {
+  return [
+    {
+      dataIndex: EVENTS_SORT_FIELD,
+      title: t('admin.timeColumn'),
+      width: 170,
+      sorter: true,
+      render: (_text: unknown, row: EventItem) => formatUnixTime(row.createdAt),
+    },
+    {
+      dataIndex: 'event',
+      title: t('admin.eventColumn'),
+      width: 160,
+      render: (_text: unknown, row: EventItem) => row.event || EMPTY_TEXT,
+    },
+    {
+      dataIndex: 'amr',
+      title: t('admin.methodColumn'),
+      width: 140,
+      render: (_text: unknown, row: EventItem) => row.amr || EMPTY_TEXT,
+    },
+    {
+      dataIndex: 'ip',
+      title: 'IP',
+      width: 160,
+      render: (_text: unknown, row: EventItem) => row.ip || EMPTY_TEXT,
+    },
+    {
+      dataIndex: 'ua',
+      title: t('admin.deviceUaColumn'),
+      render: (_text: unknown, row: EventItem) => row.ua || EMPTY_TEXT,
+    },
+  ];
+}
 
 /** 登录日志行键（EventItem.id）。 */
 function eventRowKey(row: EventItem): string {
@@ -145,14 +151,14 @@ export function UserDetailPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        用户详情加载失败，请刷新重试
+        {t('admin.userDetailLoadFailed')}
       </p>
     );
   }
   if (data === undefined) {
     return (
       <p role="status" className={styles.loading}>
-        加载中…
+        {t('admin.loading')}
       </p>
     );
   }
@@ -163,7 +169,8 @@ export function UserDetailPage(props: {
   return (
     <section className={styles.page}>
       <Typography.Title heading={3}>
-        用户详情{user !== undefined ? `：${user.username}` : ''}
+        {t('admin.userDetailTitle')}
+        {user !== undefined ? `：${user.username}` : ''}
       </Typography.Title>
       {actionError !== null ? (
         <p role="alert" className={styles.actionError}>
@@ -172,52 +179,58 @@ export function UserDetailPage(props: {
       ) : null}
 
       <section className={styles.block}>
-        <h4 className={styles.blockTitle}>基本信息</h4>
+        <h4 className={styles.blockTitle}>{t('admin.basicInfoSection')}</h4>
         {user === undefined ? (
           // user 缺省（protojson 零值省略）：后端不该下发的防御分支。
-          <p className={styles.muted}>无用户数据</p>
+          <p className={styles.muted}>{t('admin.noUserData')}</p>
         ) : (
           <dl className={styles.infoGrid}>
-            <dt>用户名</dt>
+            <dt>{t('admin.usernameLabel')}</dt>
             <dd>{user.username || EMPTY_TEXT}</dd>
-            <dt>昵称</dt>
+            <dt>{t('admin.nicknameLabel')}</dt>
             <dd>{user.nickname || EMPTY_TEXT}</dd>
-            <dt>手机号</dt>
+            <dt>{t('admin.phoneLabel')}</dt>
             <dd>
               {user.phone || EMPTY_TEXT}
-              {user.phone !== '' && user.phoneVerified === BigInt(1) ? '（已验证）' : ''}
+              {user.phone !== '' && user.phoneVerified === BigInt(1)
+                ? t('admin.verifiedTag')
+                : ''}
             </dd>
-            <dt>邮箱</dt>
+            <dt>{t('admin.emailLabel')}</dt>
             <dd>
               {user.email || EMPTY_TEXT}
-              {user.email !== '' && user.emailVerified === BigInt(1) ? '（已验证）' : ''}
+              {user.email !== '' && user.emailVerified === BigInt(1)
+                ? t('admin.verifiedTag')
+                : ''}
             </dd>
-            <dt>状态</dt>
+            <dt>{t('admin.statusLabel')}</dt>
             <dd>{userStatusLabel(user.userStatus)}</dd>
-            <dt>强制两步验证</dt>
-            <dd>{user.mfaRequired === BigInt(1) ? '是' : '否'}</dd>
-            <dt>最后登录</dt>
+            <dt>{t('admin.mfaRequiredLabel')}</dt>
+            <dd>{user.mfaRequired === BigInt(1) ? t('admin.yesText') : t('admin.noText')}</dd>
+            <dt>{t('admin.lastLoginLabel')}</dt>
             <dd>{formatUnixTime(user.lastLoginAt)}</dd>
-            <dt>创建时间</dt>
+            <dt>{t('admin.createdAtLabel')}</dt>
             <dd>{formatUnixTime(user.createdAt)}</dd>
           </dl>
         )}
       </section>
 
       <section className={styles.block}>
-        <h4 className={styles.blockTitle}>MFA 状态</h4>
+        <h4 className={styles.blockTitle}>{t('admin.mfaStatusSection')}</h4>
         {user !== undefined && user.mfaRequired === BigInt(1) ? (
-          <p className={styles.mfaRequired}>系统强制启用两步验证</p>
+          <p className={styles.mfaRequired}>{t('admin.mfaRequiredNotice')}</p>
         ) : null}
         <p className={styles.muted}>
-          {mfaBound.length > 0 ? `已绑定：${mfaBound.join('、')}` : '未绑定任何二次因子'}
+          {mfaBound.length > 0
+            ? t('admin.mfaBoundSummary', { factors: mfaBound.join('、') })
+            : t('admin.mfaNoneBound')}
         </p>
       </section>
 
       <section className={styles.block}>
-        <h4 className={styles.blockTitle}>凭证概览</h4>
+        <h4 className={styles.blockTitle}>{t('admin.credentialsSection')}</h4>
         {data.credentials.length === 0 ? (
-          <p className={styles.muted}>暂无凭证</p>
+          <p className={styles.muted}>{t('admin.noCredentials')}</p>
         ) : (
           <ul className={styles.list}>
             {data.credentials.map((credential) => (
@@ -227,12 +240,16 @@ export function UserDetailPage(props: {
                   {credential.label !== '' ? `（${credential.label}）` : ''}
                 </span>
                 <span className={credential.isEnabled ? styles.enabled : styles.disabled}>
-                  {credential.isEnabled ? '启用' : '禁用'}
+                  {credential.isEnabled
+                    ? t('admin.credentialEnabled')
+                    : t('admin.credentialDisabled')}
                 </span>
                 <span className={styles.listMeta}>
-                  绑定于 {formatUnixTime(credential.createdAt)}
+                  {t('admin.boundAt', { time: formatUnixTime(credential.createdAt) })}
                   {credential.lastUsedAt > BigInt(0)
-                    ? ` · 最近使用 ${formatUnixTime(credential.lastUsedAt)}`
+                    ? t('admin.credentialLastUsed', {
+                        time: formatUnixTime(credential.lastUsedAt),
+                      })
                     : ''}
                 </span>
               </li>
@@ -242,9 +259,9 @@ export function UserDetailPage(props: {
       </section>
 
       <section className={styles.block}>
-        <h4 className={styles.blockTitle}>三方绑定</h4>
+        <h4 className={styles.blockTitle}>{t('admin.bindingsSection')}</h4>
         {data.bindings.length === 0 ? (
-          <p className={styles.muted}>暂无第三方绑定</p>
+          <p className={styles.muted}>{t('admin.noBindings')}</p>
         ) : (
           <ul className={styles.list}>
             {data.bindings.map((binding) => (
@@ -254,17 +271,17 @@ export function UserDetailPage(props: {
                   {binding.nickname !== '' ? `（${binding.nickname}）` : ''}
                 </span>
                 <span className={styles.listMeta}>
-                  OpenID {binding.openId || EMPTY_TEXT} · 绑定于{' '}
-                  {formatUnixTime(binding.createdAt)}
+                  OpenID {binding.openId || EMPTY_TEXT} ·{' '}
+                  {t('admin.boundAt', { time: formatUnixTime(binding.createdAt) })}
                 </span>
                 <Popconfirm
-                  title={`确定解绑「${binding.providerKey}」？解绑后无法再用它登录。`}
+                  title={t('admin.unbindConfirm', { providerKey: binding.providerKey })}
                   onConfirm={() => {
                     void handleUnbind(binding.providerKey);
                   }}
                 >
                   <Button size="small" type="danger">
-                    解绑
+                    {t('admin.unbindAction')}
                   </Button>
                 </Popconfirm>
               </li>
@@ -274,21 +291,21 @@ export function UserDetailPage(props: {
       </section>
 
       <section className={styles.block}>
-        <h4 className={styles.blockTitle}>登录日志</h4>
+        <h4 className={styles.blockTitle}>{t('admin.loginLogSection')}</h4>
         {eventsStatus === 'error' && !isUnauthenticatedError(eventsError) ? (
           <p role="alert" className={styles.actionError}>
-            登录日志加载失败，请刷新重试
+            {t('admin.loginLogLoadFailed')}
           </p>
         ) : (
           <DataTable<EventItem>
-            columns={EVENTS_COLUMNS}
+            columns={getEventsColumns()}
             rows={eventsData?.items ?? []}
             rowKey={eventRowKey}
             total={eventsData !== undefined ? toCount(eventsData.total) : 0}
             query={eventsQuery}
             onQueryChange={setEventsQuery}
             loading={eventsStatus === 'loading'}
-            empty={eventsStatus === 'success' ? '暂无登录记录' : undefined}
+            empty={eventsStatus === 'success' ? t('admin.noLoginRecords') : undefined}
           />
         )}
       </section>

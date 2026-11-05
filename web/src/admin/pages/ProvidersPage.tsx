@@ -31,6 +31,7 @@ import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { SetProviderEnabledRequestSchema } from '../../gen/proto/api/admin/v1/provider_pb';
 import type { Provider } from '../../gen/proto/api/admin/v1/provider_pb';
@@ -61,16 +62,17 @@ const EMPTY_TEXT = '—';
 /**
  * 表头列（与 .row 网格列一一对应；首列为 SortableList 拖拽手柄，无标题）。
  * 列序沿 §6 行 515：显示名 / 标识 / 类别 / 类型 / 状态 / 策略标签 / 排序。
+ * textKey 字段化——模块级只存键（'' 为拖拽手柄空占位），渲染期 t()。
  */
-const HEADER_CELLS: readonly string[] = [
+const HEADER_CELL_KEYS: readonly (I18nKey | '')[] = [
   '',
-  '显示名',
-  '标识',
-  '类别',
-  '类型',
-  '状态',
-  '策略标签',
-  '排序',
+  'admin.providerColumnDisplayName',
+  'admin.providerColumnKey',
+  'admin.providerColumnCategory',
+  'admin.providerColumnType',
+  'admin.statusLabel',
+  'admin.providerColumnPolicyTags',
+  'admin.providerColumnSortOrder',
 ];
 
 /** 提供方列表页：回调提示 + 全量列表（行内启停 + 拖拽排序）。 */
@@ -143,14 +145,14 @@ export function ProvidersPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        提供方列表加载失败，请刷新重试
+        {t('admin.providersLoadFailed')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>提供方</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navProviders')}</Typography.Title>
       <ProviderCallbackHint alRoot={props.alRoot} />
       {actionError !== null ? (
         <p role="alert" className={styles.actionError}>
@@ -158,11 +160,11 @@ export function ProvidersPage(props: {
         </p>
       ) : null}
       {!canDrag && total > 0 ? (
-        <p className={styles.dragNote}>提供方数量超过单页上限（100），拖拽排序已停用</p>
+        <p className={styles.dragNote}>{t('admin.providersDragDisabledNote')}</p>
       ) : null}
       <div className={styles.headerRow}>
-        {HEADER_CELLS.map((cell) => (
-          <span key={cell}>{cell}</span>
+        {HEADER_CELL_KEYS.map((cell) => (
+          <span key={cell}>{cell === '' ? '' : t(cell)}</span>
         ))}
       </div>
       <SortableList
@@ -170,7 +172,7 @@ export function ProvidersPage(props: {
         itemKey={providerRowKey}
         onSort={handleSort}
         disabled={!canDrag}
-        handleLabel="拖拽调整提供方排序"
+        handleLabel={t('admin.providerDragSortLabel')}
         renderItem={(row) => {
           const tags = policyTags(row);
           return (
@@ -212,12 +214,12 @@ export function ProvidersPage(props: {
       />
       {status === 'loading' && rows.length === 0 ? (
         <p role="status" className={styles.empty}>
-          加载中…
+          {t('admin.loading')}
         </p>
       ) : null}
       {status === 'success' && rows.length === 0 ? (
         <p role="status" className={styles.empty}>
-          暂无提供方
+          {t('admin.noProviders')}
         </p>
       ) : null}
     </section>

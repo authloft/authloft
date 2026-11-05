@@ -15,18 +15,11 @@
 import { useEffect, type ReactNode } from 'react';
 import { Button, Card, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { getStatus, isUnauthenticatedError } from '../api';
 import { loginUrl } from '../bootstrap';
 import styles from './StatusPage.module.less';
-
-/** 加载 / 失败态文案（无 i18n 键，最简中文字面量，归后续 i18n 实现）。 */
-const LOADING_TEXT = '加载中…';
-const LOAD_ERROR_TEXT = '监控数据加载失败，请刷新重试';
-
-/** 指标零值语义注解（生成物 StatusResponse 头注 + 后端透传口径）。 */
-const HINT_TEXT =
-  '队列长度不含已取出、尚未落库的批次；flush 耗时为 0 表示自启动以来尚未发生过批量落库';
 
 /** 监控页：GetStatus 三指标卡片 + 手动刷新。 */
 export function StatusPage(props: {
@@ -52,7 +45,7 @@ export function StatusPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        {LOAD_ERROR_TEXT}
+        {t('admin.statusLoadFailed')}
       </p>
     );
   }
@@ -60,32 +53,32 @@ export function StatusPage(props: {
   if (data === undefined) {
     return (
       <p role="status" className={styles.loading}>
-        {LOADING_TEXT}
+        {t('admin.loading')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>监控</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navStatus')}</Typography.Title>
       <div className={styles.stats}>
-        <Card className={styles.statCard} title="队列长度">
+        <Card className={styles.statCard} title={t('admin.statusQueueLength')}>
           <Typography.Text className={styles.statValue}>
             {toCount(data.queueLength)}
           </Typography.Text>
         </Card>
-        <Card className={styles.statCard} title="累计丢弃条数">
+        <Card className={styles.statCard} title={t('admin.statusDropped')}>
           <Typography.Text className={styles.statValue}>
             {toCount(data.dropped)}
           </Typography.Text>
         </Card>
-        <Card className={styles.statCard} title="最近 flush 耗时（毫秒）">
+        <Card className={styles.statCard} title={t('admin.statusFlushMs')}>
           <Typography.Text className={styles.statValue}>
             {toCount(data.flushMs)}
           </Typography.Text>
         </Card>
       </div>
-      <p className={styles.hint}>{HINT_TEXT}</p>
+      <p className={styles.hint}>{t('admin.statusHint')}</p>
       <Button
         theme="solid"
         loading={status === 'loading'}
@@ -93,7 +86,7 @@ export function StatusPage(props: {
           run().catch(() => {});
         }}
       >
-        刷新
+        {t('admin.refreshAction')}
       </Button>
     </section>
   );

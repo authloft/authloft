@@ -29,6 +29,7 @@ import { create, type JsonObject } from '@bufbuild/protobuf';
 import { Button, Input, Select, Typography } from '@douyinfe/semi-ui-19';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   GetProviderRequestSchema,
   TestProviderRequestSchema,
@@ -64,27 +65,6 @@ const PROVIDERS_LIST_PATH = '/admin/providers';
 
 /** 表单值形态（schemaLogic 值模型：键 → JSON 值 / json 文本态）。 */
 type FormValues = Record<string, unknown>;
-
-/** provider_key 唯一性预检冲突文案（前端架构 §6 行 516；后端权威兜底）。 */
-const KEY_TAKEN_TEXT = '唯一标识已被占用，请换一个';
-
-/** type 未选定提示（新建模式）。 */
-const TYPE_REQUIRED_TEXT = '请先选择提供方类型';
-
-/** 测试目标未填提示。 */
-const TEST_TARGET_REQUIRED_TEXT = '请输入测试接收目标';
-
-/** 测试成功反馈（OkResponse 空应答 → 只提示已发送）。 */
-const TEST_SENT_TEXT = '已发送，请查收';
-
-/** 测试区说明（TestProvider 按已保存配置现构发送，不经 60s 缓存）。 */
-const TEST_NOTE_TEXT = '使用已保存的配置发送一条测试消息';
-
-/** icon_url 预览无障碍标签。 */
-const ICON_PREVIEW_ALT = '图标预览';
-
-/** type 下拉数据源加载失败提示（新建模式阻塞选择；编辑模式 type 锁定不阻塞）。 */
-const TYPES_LOAD_ERROR_TEXT = '提供方类型列表加载失败，请刷新重试';
 
 /**
  * 提供方新建 / 编辑页。providerKey 缺省 = 新建（type 下拉可选）；
@@ -189,7 +169,7 @@ export function ProviderEditPage(props: {
       return null;
     }
     const icon = typeof values.icon_url === 'string' ? values.icon_url : '';
-    return <ProviderIcon icon={icon} alt={ICON_PREVIEW_ALT} />;
+    return <ProviderIcon icon={icon} alt={t('admin.iconPreviewAlt')} />;
   }
 
   async function handleSubmit(): Promise<void> {
@@ -206,7 +186,7 @@ export function ProviderEditPage(props: {
         try {
           const list = await listProviders(buildListProvidersRequest());
           if (isProviderKeyTaken(key, list.items)) {
-            nextIssues.provider_key = KEY_TAKEN_TEXT;
+            nextIssues.provider_key = t('admin.providerKeyTaken');
           }
         } catch {
           // 预检失败不阻塞提交。
@@ -236,7 +216,7 @@ export function ProviderEditPage(props: {
   /** 发送测试（§5.2 行 1177 TestProvider {providerKey, target}）。 */
   function handleTest(): void {
     if (testTarget.trim() === '') {
-      setTestFeedback(TEST_TARGET_REQUIRED_TEXT);
+      setTestFeedback(t('admin.testTargetRequired'));
       return;
     }
     setTestFeedback(null);
@@ -249,7 +229,7 @@ export function ProviderEditPage(props: {
       )
       .then((result) => {
         if (result !== undefined) {
-          setTestFeedback(TEST_SENT_TEXT);
+          setTestFeedback(t('admin.testSent'));
         }
       })
       .catch((error) => {
@@ -262,14 +242,14 @@ export function ProviderEditPage(props: {
   if (editing && providerReq.status === 'error') {
     return (
       <p role="alert" className={styles.loadError}>
-        提供方加载失败，请刷新重试
+        {t('admin.providerLoadFailed')}
       </p>
     );
   }
   if (schemaReq.status === 'error') {
     return (
       <p role="alert" className={styles.loadError}>
-        表单结构加载失败，请刷新重试
+        {t('admin.schemaLoadFailed')}
       </p>
     );
   }
@@ -279,7 +259,7 @@ export function ProviderEditPage(props: {
   if (loading) {
     return (
       <p role="status" className={styles.loading}>
-        加载中…
+        {t('admin.loading')}
       </p>
     );
   }
@@ -298,7 +278,7 @@ export function ProviderEditPage(props: {
   return (
     <section className={styles.page}>
       <Typography.Title heading={3}>
-        {editing ? '编辑提供方' : '新建提供方'}
+        {editing ? t('admin.editProviderTitle') : t('admin.createProviderTitle')}
       </Typography.Title>
       <ProviderCallbackHint
         alRoot={props.alRoot}
@@ -312,7 +292,7 @@ export function ProviderEditPage(props: {
       ) : null}
       {typesReq.status === 'error' ? (
         <p role="alert" className={styles.actionError}>
-          {TYPES_LOAD_ERROR_TEXT}
+          {t('admin.providerTypesLoadFailed')}
         </p>
       ) : null}
       <form
@@ -324,7 +304,7 @@ export function ProviderEditPage(props: {
       >
         <div className={styles.typeField}>
           <label className={styles.typeLabel} htmlFor="provider-type">
-            类型
+            {t('admin.providerTypeLabel')}
           </label>
           <Select
             id="provider-type"
@@ -336,7 +316,7 @@ export function ProviderEditPage(props: {
             }))}
             onChange={(value) => handleTypeChange(String(value))}
             disabled={editing}
-            placeholder="请选择类型"
+            placeholder={t('admin.selectTypePlaceholder')}
           />
         </div>
         {schema !== undefined ? (
@@ -351,7 +331,7 @@ export function ProviderEditPage(props: {
           />
         ) : (
           <p role="status" className={styles.typeRequired}>
-            {TYPE_REQUIRED_TEXT}
+            {t('admin.providerTypeRequired')}
           </p>
         )}
         <Button
@@ -360,28 +340,30 @@ export function ProviderEditPage(props: {
           loading={submitting}
           disabled={schema === undefined || submitting}
         >
-          保存
+          {t('admin.saveAction')}
         </Button>
       </form>
       {canTest ? (
         <section className={styles.testSection}>
-          <h4 className={styles.testTitle}>发送测试</h4>
-          <p className={styles.testNote}>{TEST_NOTE_TEXT}</p>
+          <h4 className={styles.testTitle}>{t('admin.sendTestAction')}</h4>
+          <p className={styles.testNote}>{t('admin.testNote')}</p>
           <div className={styles.testRow}>
             <Input
               className={styles.testTarget}
               value={testTarget}
               onChange={(value) => setTestTarget(value)}
-              placeholder={schema?.category === 'sms' ? '手机号' : '邮箱'}
+              placeholder={
+                schema?.category === 'sms' ? t('admin.phoneLabel') : t('admin.emailLabel')
+              }
               disabled={testReq.status === 'loading'}
-              aria-label="测试接收目标"
+              aria-label={t('admin.testTargetAriaLabel')}
             />
             <Button
               onClick={handleTest}
               loading={testReq.status === 'loading'}
               disabled={testReq.status === 'loading'}
             >
-              发送测试
+              {t('admin.sendTestAction')}
             </Button>
           </div>
           {testFeedback !== null ? (

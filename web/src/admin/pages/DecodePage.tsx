@@ -18,6 +18,7 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
 import type { JsonObject } from '@bufbuild/protobuf';
+import { t, type I18nKey } from '../../shared/i18n';
 import {
   apiErrorText,
   buildDecodeTokenRequest,
@@ -28,16 +29,15 @@ import {
 import { loginUrl } from '../bootstrap';
 import styles from './DecodePage.module.less';
 
-/** 解码口径下拉（§5.6 行 1289 purpose 值域 login|session|cookie，文案注解取值语义）。 */
-const PURPOSE_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: 'login', label: 'login_token（登录令牌）' },
-  { value: 'session', label: 'session_token（会话令牌）' },
-  { value: 'cookie', label: 'al_login_state（登录态 Cookie）' },
+/**
+ * 解码口径下拉（§5.6 行 1289 purpose 值域 login|session|cookie，文案注解取值语义）。
+ * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
+ */
+const PURPOSE_OPTIONS: readonly { readonly value: string; readonly textKey: I18nKey }[] = [
+  { value: 'login', textKey: 'admin.decodePurposeLogin' },
+  { value: 'session', textKey: 'admin.decodePurposeSession' },
+  { value: 'cookie', textKey: 'admin.decodePurposeCookie' },
 ];
-
-/** 结果区说明（§5.6 行 1289：解码内容仅排障用）。 */
-const RESULT_HINT_TEXT =
-  '解码结果为令牌内部载荷（Struct 原样透传），仅供排障参考，请勿外泄令牌与载荷内容。';
 
 /** 解码工具页：token + purpose 表单 → 载荷 JSON 展示。 */
 export function DecodePage(props: {
@@ -76,7 +76,7 @@ export function DecodePage(props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>解码工具</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navDecode')}</Typography.Title>
       <div className={styles.form}>
         <Select
           className={styles.purposeSelect}
@@ -86,17 +86,17 @@ export function DecodePage(props: {
           }}
           optionList={PURPOSE_OPTIONS.map((option) => ({
             value: option.value,
-            label: option.label,
+            label: t(option.textKey),
           }))}
-          aria-label="解码口径"
+          aria-label={t('admin.decodePurposeAriaLabel')}
         />
         <TextArea
           className={styles.tokenInput}
           value={token}
           onChange={(value) => setToken(value)}
           rows={3}
-          placeholder="粘贴待解码的令牌原文"
-          aria-label="待解码令牌"
+          placeholder={t('admin.decodeTokenPlaceholder')}
+          aria-label={t('admin.decodeTokenAriaLabel')}
         />
         <div className={styles.formFooter}>
           <Button
@@ -107,7 +107,7 @@ export function DecodePage(props: {
               void submit();
             }}
           >
-            解码
+            {t('admin.decodeAction')}
           </Button>
         </div>
       </div>
@@ -118,7 +118,7 @@ export function DecodePage(props: {
       ) : null}
       {payload !== undefined ? (
         <div className={styles.resultBlock}>
-          <p className={styles.resultHint}>{RESULT_HINT_TEXT}</p>
+          <p className={styles.resultHint}>{t('admin.decodeResultHint')}</p>
           <pre className={styles.result}>{decodePayloadText(payload)}</pre>
         </div>
       ) : null}

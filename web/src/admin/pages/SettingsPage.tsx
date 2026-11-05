@@ -30,6 +30,7 @@ import {
   Typography,
 } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { StringListEditor } from '../components/StringListEditor';
 import {
   apiErrorText,
@@ -50,19 +51,6 @@ import styles from './SettingsPage.module.less';
 
 const { Group: CheckboxGroup } = Checkbox;
 
-/** 全量替换警示（§5.6 行 1287 SetSettings 的 UI 明示文案）。 */
-const OVERWRITE_NOTICE_TEXT = '保存将覆盖全部设置';
-
-/** 顶部 Banner 展开说明（热更新口径 §5.6 行 1287/1363）。 */
-const OVERWRITE_BANNER_TEXT =
-  'SetSettings 为全量替换：保存时表单内全部设置将整体提交并覆盖（包括未改动的键），改动热更新、只对后续请求生效';
-
-/** 保存成功文案。 */
-const SAVED_TEXT = '设置已保存：全部设置已整体覆盖，热更新对后续请求生效';
-
-/** 加载 / 失败态文案（无 i18n 键，最简中文字面量，归后续 i18n 实现）。 */
-const LOADING_TEXT = '加载中…';
-const LOAD_ERROR_TEXT = '系统设置加载失败，请刷新重试';
 
 /**
  * 单字段渲染（判别联合按 kind 收窄 → key 类型随之收窄，零类型断言）。
@@ -234,7 +222,7 @@ export function SettingsPage(props: {
     try {
       await setSettings(buildSetSettingsRequest(current));
       setActionError(null);
-      setNotice(SAVED_TEXT);
+      setNotice(t('admin.settingsSaved'));
     } catch (err) {
       if (isUnauthenticatedError(err)) {
         window.location.replace(loginUrl(props.alRoot));
@@ -250,7 +238,7 @@ export function SettingsPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        {LOAD_ERROR_TEXT}
+        {t('admin.settingsLoadFailed')}
       </p>
     );
   }
@@ -258,19 +246,19 @@ export function SettingsPage(props: {
   if (draft === null) {
     return (
       <p role="status" className={styles.loading}>
-        {LOADING_TEXT}
+        {t('admin.loading')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>系统设置</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.settingsTitle')}</Typography.Title>
       <Banner
         type="warning"
         className={styles.overwriteBanner}
         closeIcon={null}
-        description={OVERWRITE_BANNER_TEXT}
+        description={t('admin.settingsOverwriteBanner')}
       />
       {actionError !== null ? (
         <p role="alert" className={styles.actionError}>
@@ -301,7 +289,7 @@ export function SettingsPage(props: {
         ))}
       </div>
       <div className={styles.footer}>
-        <span className={styles.overwriteNote}>{OVERWRITE_NOTICE_TEXT}</span>
+        <span className={styles.overwriteNote}>{t('admin.settingsOverwriteNotice')}</span>
         <Button
           theme="solid"
           loading={submitting}
@@ -310,7 +298,7 @@ export function SettingsPage(props: {
             void submit();
           }}
         >
-          保存设置
+          {t('admin.saveSettingsAction')}
         </Button>
       </div>
     </section>
