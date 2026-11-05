@@ -1,5 +1,5 @@
 /**
- * 登录页外壳（docs/前端架构.md §4.4 行 447）：组装 LoginContainer——
+ * 登录页外壳（docs/前端架构.md §4.4 行 463）：组装 LoginContainer——
  * 「MethodTabs + LoginContainer」的组装关系由容器视图 LoginFlowView
  * 内嵌 MethodTabs 满足（既有交付结构），此处不重复渲染防双份。
  *
@@ -8,11 +8,12 @@
  *   LoginContainer 内处理；
  * - 「忘记密码」「注册」入口可见性取注入快照 `methods.flags`（接口文档
  *   §2.1 行 374-377：镜像 allow_password_reset / allow_registration），
- *   不另发请求；注册 / 重置页随后续实现交付，入口按 flags 渲染为禁用占位、
- *   不实现点击跳转。
+ *   不另发请求；入口激活为真链接（/sso/reset、/sso/register，Go 渲染
+ *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）。
  */
 import { LoginContainer } from '../LoginContainer';
 import type { MethodsSnapshot } from '../../shared/types/init';
+import { ssoPath } from './RegisterPage';
 import styles from './LoginPage.module.less';
 
 export interface LoginPageProps {
@@ -40,14 +41,14 @@ export function LoginPage({ snapshot }: LoginPageProps) {
       {(showForgot || showRegister) && (
         <nav className={styles.entryNav}>
           {showForgot && (
-            <button type="button" className={styles.entryButton} disabled>
+            <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
               {FORGOT_PASSWORD_TEXT}
-            </button>
+            </a>
           )}
           {showRegister && (
-            <button type="button" className={styles.entryButton} disabled>
+            <a className={styles.entryLink} href={ssoPath('/sso/register')}>
               {REGISTER_TEXT}
-            </button>
+            </a>
           )}
         </nav>
       )}

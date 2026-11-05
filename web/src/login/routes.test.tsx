@@ -198,8 +198,8 @@ describe('LoginApp：bootstrap 错误态与路由分派（§4.1 行 374-376）',
     expect(html).toContain('<h1>登录</h1>');
   });
 
-  test('未注册路由（/sso/register 随后续页面补）→ 兜底提示，不渲染登录页', () => {
-    const html = renderLoginApp('/sso/register', {
+  test('未注册路由（/sso/unknown）→ 兜底提示，不渲染登录页', () => {
+    const html = renderLoginApp('/sso/unknown', {
       al_root: BASE,
       static_base: '/assets/',
       methods: makeSnapshot(),
@@ -242,10 +242,12 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
     expect(html).toContain('注册');
   });
 
-  test('两 flag 均 true → 两入口可见且为禁用占位（页面随后续实现，不实现跳转）', () => {
+  test('两 flag 均 true → 两入口为真链接（window 未注入 → 同源根路径）', () => {
     const html = renderPage({ passwordReset: true, registration: true });
     expect(html).toContain('忘记密码');
     expect(html).toContain('注册');
-    expect(html).toContain('disabled');
+    // 入口是 <a href>（原禁用占位按钮已激活，§4.4 行 463）。
+    expect(html).toContain('href="/sso/reset"');
+    expect(html).toContain('href="/sso/register"');
   });
 });

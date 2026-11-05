@@ -16,6 +16,10 @@ import { CodeInput, pasteValue, applyChar, applyBackspace } from './CodeInput';
 import { FieldRenderer, controlKindFor, codeLengthOf } from './FieldRenderer';
 import { ErrorBanner, errorText, attemptsCount } from './ErrorBanner';
 import { CopyButton } from './CopyButton';
+import {
+  PasswordStrengthMeter,
+  meterRules,
+} from './PasswordStrengthMeter';
 
 // rstest 对 .tsx 采用 classic JSX runtime（React.createElement），测试链未接
 // @rsbuild/plugin-react 的 automatic runtime（rstack.config.mts 为既有配置
@@ -371,5 +375,67 @@ describe('CopyButton（消费 useCopy + i18n 文案）', () => {
     expect(markup).not.toContain('已复制');
     // 文本不直接渲染在按钮里（复制内容不外显）。
     expect(markup).not.toContain('al_9f2z');
+  });
+});
+
+describe('PasswordStrengthMeter（§5.6 同源规则清单）', () => {
+  function renderMeter(
+    password: string,
+    opts?: { username?: string; email?: string },
+  ): string {
+    return renderToStaticMarkup(
+      createElement(PasswordStrengthMeter, { password, ...opts }),
+    );
+  }
+
+  test('meterRules：与 validatePassword 同源——弱密码列出未满足项，强密码全满足', () => {
+    // §5.6 默认策略：8-64 位 + 3 字符类（大写 / 小写 / 数字）。
+    const weak = meterRules('abc');
+    expect(weak.filter((r) => !r.satisfied).map((r) => r.key)).toEqual([
+      'too_short',
+      'too_few_classes',
+    ]);
+    const strong = meterRules('Abcdef12');
+    expect(strong.every((r) => r.satisfied)).toBe(true);
+  });
+
+  test('meterRules：固定不可配项——空白拒绝、超 64 位拒绝、含用户名 / 与标识相同拒绝', () => {
+    expect(
+      meterRules('Abc def1').find((r) => r.key === 'contains_whitespace')
+        ?.satisfied,
+    ).toBe(false);
+    expect(
+      meterRules(`Abcdef12${'x'.repeat(57)}`).find((r) => r.key === 'too_long')
+        ?.satisfied,
+    ).toBe(false);
+    // username 传入时才适用 contains_username / same_as_identifier。
+    const withUser = meterRules('AliceAbc12', { username: 'Alice' });
+    expect(withUser.map((r) => r.key)).toContain('contains_username');
+    expect(
+      meterRules('alice@example.com', { email: 'alice@example.com' }).find(
+        (r) => r.key === 'same_as_identifier',
+      )?.satisfied,
+    ).toBe(false);
+    // 未传标识：两规则不适用（不出现在清单中）。
+    expect(meterRules('Abcdef12').map((r) => r.key)).not.toContain(
+      'contains_username',
+    );
+  });
+
+  test('渲染：空密码不提示；弱密码逐条打叉；满足项打勾（data-satisfied）', () => {
+    expect(renderMeter('')).toBe('');
+    const markup = renderMeter('abc');
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('长度至少 8 位');
+    expect(markup).toContain('✗ 长度至少 8 位');
+    expect(markup).toContain('✓ 长度至多 64 位');
+    expect(markup).toContain('data-satisfied="false"');
+    expect(renderMeter('Abcdef12')).not.toContain('✗');
+  });
+
+  test('渲染：username 注入时展示「不能包含用户名」规则（注册 set_password 场景）', () => {
+    const markup = renderMeter('Abcdef12', { username: 'alice' });
+    expect(markup).toContain('不能包含用户名');
+    expect(renderMeter('Abcdef12')).not.toContain('不能包含用户名');
   });
 });

@@ -1,0 +1,70 @@
+// 重置密码页样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: @spacing-xl @spacing-lg;
+}
+
+.title {
+  font-size: @font-size-xl;
+  margin-bottom: @spacing-lg;
+}
+
+.methodList {
+  display: flex;
+  gap: @spacing-md;
+  list-style: none;
+  margin: 0 0 @spacing-md;
+  padding: 0;
+}
+
+.methodTab {
+  padding: 0.375rem 0.875rem;
+}
+
+.methodTabActive {
+  padding: 0.375rem 0.875rem;
+  border-color: @color-primary;
+  color: @color-primary;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.label {
+  display: block;
+  margin-bottom: @spacing-xs;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.input {
+  padding: @spacing-sm;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+}
+
+.status {
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.resend {
+  padding: 0.375rem 0.875rem;
+}
+
+.submit {
+  padding: 0.375rem 0.875rem;
+}
+
+.loginLink {
+  margin-top: @spacing-md;
+}
