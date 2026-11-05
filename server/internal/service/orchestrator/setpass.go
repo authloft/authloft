@@ -30,6 +30,24 @@ var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 // credentialKindPassword user_credential.kind=password（§4.2 行 680-684）。
 const credentialKindPassword = "password"
 
+// ThirdpartySignup 三方免密建号步的 provider 状态查询与绑定写入子集
+//（§12.5 行 1504；实现方 service.Thirdparty，装配层注入——thirdparty 域
+// 单一写入口，与 LoginOauth 的 auto_bind 写入共用 CreateBind）。
+type ThirdpartySignup interface {
+	// SignupState 返回 provider 的 enable_signup（建号开关，§2.7.5 行 678
+	// 字段映射）与关联 Union Provider（无关联为空串）。
+	SignupState(ctx context.Context, providerKey string) (ThirdpartySignupState, error)
+	// CreateBind 写绑定行（+ Union 行同事务，§12.7 行 1548）；命中
+	// uk_provider_openid 返回 repo.ErrBindDuplicate（判别归调用方）。
+	CreateBind(ctx context.Context, b *model.UserThirdpartyBind, unionProviderKey, unionID string) error
+}
+
+// ThirdpartySignupState SignupState 的产物。
+type ThirdpartySignupState struct {
+	Enabled  bool
+	UnionKey string
+}
+
 // SetPassDeps set_password 步的写入依赖（EngineDeps.SetPass，装配层注入）。
 type SetPassDeps struct {
 	Users       SignupUsers
@@ -37,7 +55,10 @@ type SetPassDeps struct {
 	Epoch       EpochSync
 	Audit       ResetAuditSink
 	Settings    SettingsReader
-	Now         func() time.Time
+	// Thirdparty 三方免密建号（§12.5 行 1501-1505）：nil 时 tp 非空的
+	// set_password 一律 failed（生产必注入）。
+	Thirdparty ThirdpartySignup
+	Now        func() time.Time
 }
 
 // SignupUsers 建号 / 改密所需的用户读写子集。factor.UserRepo 只暴露
@@ -88,7 +109,12 @@ func (e *Engine) setPassword(ctx context.Context, flow string, req Request, p *t
 // setPassRegister 建号（§2.3 行 448-451）：username 规则与占用校验 →
 // 密码策略 → 建号（user + password credential 在同一事务内写入，§7.4 行
 // 1025，hash 复用 security 既有口径）→ terminal.Complete 直接登录。
+// login_token.tp 非空（三方免密建号，§12.5 行 1501-1505：flow 保持 login、
+// 由 Register 端点接受）改走 setPassThirdparty：仅收 username、忽略 password。
 func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Request, p *token.LoginTokenPayload, kind factor.FactorKind) *ssov1.LoginFlowResponse {
+	if tp := p.GetTp(); tp != nil && p.GetFlow() == "login" {
+		return e.setPassThirdparty(ctx, sp, req, p, tp)
+	}
 	username, password := "", ""
 	if req.Payload != nil {
 		username = strings.TrimSpace(req.Payload.Username)
@@ -165,6 +191,78 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	}
 
 	// 成功 → 直接登录写 Cookie（§10.3 行 1527；amr 补记本步因子）。
+	p.Uid = u.ID
+	p.Ch = nil
+	return e.completeSuccess(ctx, req, p)
+}
+
+// setPassThirdparty 三方免密建号（§12.5 行 1501-1505、§2.7.5 行 685：
+// tp 非空时 set_password 仅提交 username，服务端忽略 password）：
+// provider enable_signup 校验（§12.5 行 1504「校验该 Provider 的
+// enable_signup=1（否则拒绝）」→ signup_disabled，§1.6 行 257）→ 建号
+// （仅 user 行、无 credential，CreateWithCredential nil 分支）→ 写 bind +
+// Union 行（同事务，§12.7 行 1548）→ terminal.Complete 直接登录。
+// 事务边界此处默认：建号与 bind 分步（bind 失败 tp 仍在 login_token 可
+// 重试），Union 行与 bind 同事务（CreateBind 内单 tx），待复核。
+func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Request, p *token.LoginTokenPayload, tp *token.ThirdParty) *ssov1.LoginFlowResponse {
+	if sp.Thirdparty == nil {
+		return failed()
+	}
+	username := ""
+	if req.Payload != nil {
+		username = strings.TrimSpace(req.Payload.Username)
+	}
+	// 仅收 username；password 忽略（§2.7.5 行 685）——带不带、带什么都不参与。
+	if username == "" {
+		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
+	}
+	if !usernameRE.MatchString(username) {
+		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
+	}
+	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
+		return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return failed()
+	}
+
+	// provider enable_signup=1 才允许建号（§12.5 行 1504；provider 不存在 /
+	// 已禁用同拒——tp 载荷经服务端加密签发，正常流不会指向失效 provider，
+	// 管理端禁用后的在途 token 走此口径收敛）。
+	state, err := sp.Thirdparty.SignupState(ctx, tp.GetProviderKey())
+	if err != nil {
+		return failed()
+	}
+	if !state.Enabled {
+		return &ssov1.LoginFlowResponse{Status: StatusSignupDisabled}
+	}
+
+	// 免密建号：仅建 user 行（无 password credential——用户可后置走
+	// ResetPassword 的「无行补建」分支设置密码）。
+	u := &model.User{Username: username}
+	if err := sp.Users.CreateWithCredential(ctx, u, nil); err != nil {
+		if errors.Is(err, repo.ErrUserDuplicate) {
+			return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
+		}
+		return failed()
+	}
+
+	// 写绑定（+ Union 行同事务）；失败时 tp 仍在 login_token，前端可带
+	// 原 token 重试（默认分步边界；重试命中已建 username →
+	// username_taken 收敛，人工路径走安全中心绑定）。
+	if err := sp.Thirdparty.CreateBind(ctx, &model.UserThirdpartyBind{
+		UserID:      u.ID,
+		ProviderKey: tp.GetProviderKey(),
+		OpenID:      tp.GetOpenId(),
+		Nickname:    tp.GetNickname(),
+		AvatarURL:   tp.GetAvatarUrl(),
+	}, state.UnionKey, tp.GetUnionId()); err != nil {
+		if errors.Is(err, repo.ErrBindDuplicate) {
+			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
+		}
+		return failed()
+	}
+
+	// 成功 → 直接登录（§10.3 行 1527 同构；amr 已含 thirdparty）。
 	p.Uid = u.ID
 	p.Ch = nil
 	return e.completeSuccess(ctx, req, p)

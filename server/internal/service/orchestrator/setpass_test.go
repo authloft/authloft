@@ -9,6 +9,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
+	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
@@ -65,7 +67,8 @@ func (u *signupUsers) FindByEmail(_ context.Context, email string) (*model.User,
 // CreateWithCredential 模拟同事务建号（§7.4 行 1025）：事务内 user INSERT
 // 回填 ID 与 default tag，再 credential INSERT；后者失败整体回滚——user
 // 行不落库（自增 ID 与真库一致已消耗不回退；m.ID 回填不撤销，gorm 真库
-// 同口径，service 失败路径不读它）。
+// 同口径，service 失败路径不读它）。c 为 nil 时只建 user 行（三方
+// 免密建号，repo 同款 nil 分支）。
 func (u *signupUsers) CreateWithCredential(ctx context.Context, m *model.User, c *model.UserCredential) error {
 	if u.createErr != nil {
 		return u.createErr
@@ -77,9 +80,11 @@ func (u *signupUsers) CreateWithCredential(ctx context.Context, m *model.User, c
 	if m.UserStatus == 0 {
 		m.UserStatus = 1
 	}
-	c.UserID = m.ID
-	if err := u.creds.Create(ctx, c); err != nil {
-		return err
+	if c != nil {
+		c.UserID = m.ID
+		if err := u.creds.Create(ctx, c); err != nil {
+			return err
+		}
 	}
 	u.created = append(u.created, m)
 	return nil
@@ -175,12 +180,37 @@ func passwordOnlyFactor() *fakeFactor {
 	}
 }
 
+// fakeThirdpartySignup ThirdpartySignup 的 fake（tp 分支）：SignupState
+// 返回预置状态；CreateBind 留档并支持错误注入 / 恢复重试。
+type fakeThirdpartySignup struct {
+	state     ThirdpartySignupState
+	stateErr  error
+	created   []*model.UserThirdpartyBind
+	unionArgs []string // 每次 CreateBind 的 (unionProviderKey, unionID)
+	createErr error
+}
+
+func (f *fakeThirdpartySignup) SignupState(context.Context, string) (ThirdpartySignupState, error) {
+	return f.state, f.stateErr
+}
+
+func (f *fakeThirdpartySignup) CreateBind(_ context.Context, b *model.UserThirdpartyBind, unionProviderKey, unionID string) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	bb := *b
+	f.created = append(f.created, &bb)
+	f.unionArgs = append(f.unionArgs, unionProviderKey+"|"+unionID)
+	return nil
+}
+
 // newSetPassDeps 汇总 set_password 步的全 fake 依赖。
 type setPassFakes struct {
-	users *signupUsers
-	creds *signupCreds
-	epoch *fakeEpochSync
-	audit *fakeAudit
+	users      *signupUsers
+	creds      *signupCreds
+	epoch      *fakeEpochSync
+	audit      *fakeAudit
+	thirdparty *fakeThirdpartySignup
 }
 
 func newSetPassFakes() *setPassFakes {
@@ -191,9 +221,10 @@ func newSetPassFakes() *setPassFakes {
 			byEmail:    map[string]*model.User{},
 			byPhone:    map[string]*model.User{},
 		},
-		creds: &signupCreds{rows: map[int64]*model.UserCredential{}},
-		epoch: &fakeEpochSync{},
-		audit: &fakeAudit{},
+		creds:      &signupCreds{rows: map[int64]*model.UserCredential{}},
+		epoch:      &fakeEpochSync{},
+		audit:      &fakeAudit{},
+		thirdparty: &fakeThirdpartySignup{state: ThirdpartySignupState{Enabled: true}},
 	}
 	// 建号同事务 fake：signupUsers.CreateWithCredential 委托 signupCreds
 	// 写 credential 行（真库语义：单事务两跳，credential 失败整体回滚）。
@@ -208,6 +239,7 @@ func (f *setPassFakes) deps(s SettingsReader) *SetPassDeps {
 		Epoch:       f.epoch,
 		Audit:       f.audit,
 		Settings:    s,
+		Thirdparty:  f.thirdparty,
 	}
 }
 
@@ -723,4 +755,288 @@ func TestResetNoCredentialRowCreates(t *testing.T) {
 	if len(fk.creds.created) != 1 || fk.creds.created[0] != 42 || len(fk.creds.updated) != 0 {
 		t.Fatalf("creds created=%v updated=%v, want created=[42]", fk.creds.created, fk.creds.updated)
 	}
+}
+
+// —— 三方免密建号（§12.5 行 1501-1505、§2.7.5 行 685）——
+
+// tpLoginToken 签一枚 flow=login + tp 的 login_token（LoginOauth
+// binding_required 重签形态，§12.5 行 1501）。
+func tpLoginToken(t *testing.T, s *State) string {
+	t.Helper()
+	tok, err := s.Issue(&token.LoginTokenPayload{
+		Tid:  "tid-tp",
+		Flow: "login",
+		Tp: &token.ThirdParty{
+			ProviderKey: "qq", OpenId: "openid_1", UnionId: "union_1",
+			Nickname: "QQ 用户", AvatarUrl: "https://q.cn/a.png",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	return tok
+}
+
+// newTPSubmitDeps 组装 tp 分支用例的引擎依赖（password 因子注册表 +
+// setpass fakes；tp 分支不经 captcha / verify）。返回 settings 供用例
+// 运行期覆写注册开关。
+func newTPSubmitDeps(t *testing.T, at time.Time) (*Engine, *setPassFakes, *State, *testSettings) {
+	t.Helper()
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorPassword] = passwordOnlyFactor()
+	fk := newSetPassFakes()
+	st := testState(t, at)
+	e := deps.engine(st)
+	e.setpass = fk.deps(deps.settings)
+	return e, fk, st, deps.settings
+}
+
+// TestThirdpartySignupIgnoresPassword tp 分支仅收 username、忽略 password
+//（§2.7.5 行 685）：带 password 请求成功建号且无 password credential 行；
+// flow=login 由 Register 端点接受（§12.5 行 1505）；不提交 captcha 亦成功
+//（tp 分支不经 captcha，此处默认口径）。
+func TestThirdpartySignupIgnoresPassword(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	tok := tpLoginToken(t, st)
+
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tok, Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "alice_tp", Password: testWeakPassword},
+	})
+	if got.Status != StatusSuccess {
+		t.Fatalf("resp = %+v, want success（弱密码应被忽略）", got)
+	}
+	// 免密建号：user 行建立、无 password credential。
+	if len(fk.users.created) != 1 || fk.users.created[0].Username != "alice_tp" {
+		t.Fatalf("created users = %+v", fk.users.created)
+	}
+	if len(fk.creds.created) != 0 {
+		t.Errorf("免密建号不应写 credential, got %v", fk.creds.created)
+	}
+	// 绑定行：pk/openid/nickname/avatar + Union 参数（§12.7 行 1548）。
+	if len(fk.thirdparty.created) != 1 {
+		t.Fatalf("绑定写入 %d 行", len(fk.thirdparty.created))
+	}
+	b := fk.thirdparty.created[0]
+	if b.ProviderKey != "qq" || b.OpenID != "openid_1" || b.Nickname != "QQ 用户" || b.UserID == 0 {
+		t.Errorf("绑定行 = %+v", b)
+	}
+	if got.UserId == 0 || got.SessionId == "" {
+		t.Errorf("success 信封 = %+v", got)
+	}
+}
+
+// TestThirdpartySignupNoPassword 不带 password 的请求同样成功（「仅收
+// username」的正向形态）。
+func TestThirdpartySignupNoPassword(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, _, st, _ := newTPSubmitDeps(t, at)
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "bob_tp"},
+	})
+	if got.Status != StatusSuccess {
+		t.Fatalf("resp = %+v, want success", got)
+	}
+}
+
+// TestThirdpartySignupValidations tp 分支的 username 校验沿用 register
+// 既有口径：缺失 / 规则违规 → invalid_request；占用 → username_taken。
+func TestThirdpartySignupValidations(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	fk.users.byUsername["carol_tp"] = &model.User{ID: 99, Username: "carol_tp"}
+	tok := tpLoginToken(t, st)
+
+	for _, tc := range []struct {
+		name     string
+		username string
+		want     string
+	}{
+		{"缺失", "", StatusInvalidRequest},
+		{"规则违规", "ab", StatusInvalidRequest},
+		{"占用", "carol_tp", StatusUsernameTaken},
+	} {
+		got := e.Submit(context.Background(), "register", Request{
+			LoginToken: tok, Method: "password", Step: "set_password",
+			Payload: &factor.Payload{Username: tc.username},
+		})
+		if got.Status != tc.want {
+			t.Errorf("%s: status = %q, want %q", tc.name, got.Status, tc.want)
+		}
+	}
+	if len(fk.users.created) != 0 {
+		t.Errorf("失败用例不应建号, got %d", len(fk.users.created))
+	}
+}
+
+// TestThirdpartySignupDisabled provider enable_signup=0 → signup_disabled
+//（§12.5 行 1504；provider 失效 stateErr 同走 failed）。
+func TestThirdpartySignupDisabled(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	fk.thirdparty.state = ThirdpartySignupState{Enabled: false, UnionKey: ""}
+
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "dave_tp"},
+	})
+	if got.Status != StatusSignupDisabled {
+		t.Fatalf("status = %q, want signup_disabled", got.Status)
+	}
+	if len(fk.users.created) != 0 {
+		t.Errorf("不应建号, got %d", len(fk.users.created))
+	}
+
+	// provider 失效（查询错误）→ failed。
+	fk.thirdparty.stateErr = errors.New("provider gone")
+	got = e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "dave_tp"},
+	})
+	if got.Status != StatusFailed {
+		t.Errorf("stateErr: status = %q, want failed", got.Status)
+	}
+}
+
+// TestThirdpartySignupBindRetry 绑定写入失败 → failed，tp 仍在 login_token
+// 可重试（默认分步边界）；重试（bind 恢复）换用户名后成功。
+func TestThirdpartySignupBindRetry(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	tok := tpLoginToken(t, st)
+
+	// 第一次：bind 失败 → failed（user 已建）。
+	fk.thirdparty.createErr = errors.New("db down")
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tok, Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "erin_tp"},
+	})
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if len(fk.thirdparty.created) != 0 {
+		t.Errorf("bind 失败不应留档, got %d", len(fk.thirdparty.created))
+	}
+
+	// 重试：bind 恢复，同一 login_token（tp 仍在）→ 换用户名建号成功。
+	fk.thirdparty.createErr = nil
+	got = e.Submit(context.Background(), "register", Request{
+		LoginToken: tok, Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "erin_tp2"},
+	})
+	if got.Status != StatusSuccess {
+		t.Fatalf("重试 status = %q, want success", got.Status)
+	}
+	if len(fk.thirdparty.created) != 1 {
+		t.Errorf("重试后绑定行 = %d, want 1", len(fk.thirdparty.created))
+	}
+}
+
+// TestThirdpartySignupBindDuplicate bind 命中唯一键（三方身份已绑他号）
+// → target_taken（§1.6 行 256）。
+func TestThirdpartySignupBindDuplicate(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	fk.thirdparty.createErr = fmt.Errorf("bind repo: create with union: %w: %w",
+		repo.ErrBindDuplicate, errors.New("1062"))
+
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "frank_tp"},
+	})
+	if got.Status != StatusTargetTaken {
+		t.Fatalf("status = %q, want target_taken", got.Status)
+	}
+}
+
+// TestThirdpartySignupUnionPassthrough SignupState 的 UnionKey / tp 载荷
+// unionid 透传到 CreateBind（§12.7 行 1548：Union 行同事务）。
+func TestThirdpartySignupUnionPassthrough(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	e, fk, st, _ := newTPSubmitDeps(t, at)
+	fk.thirdparty.state = ThirdpartySignupState{Enabled: true, UnionKey: "qq_union"}
+
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "grace_tp"},
+	})
+	if got.Status != StatusSuccess {
+		t.Fatalf("status = %q, want success", got.Status)
+	}
+	if len(fk.thirdparty.unionArgs) != 1 || fk.thirdparty.unionArgs[0] != "qq_union|union_1" {
+		t.Errorf("Union 透传 = %v, want [qq_union|union_1]", fk.thirdparty.unionArgs)
+	}
+}
+
+// TestThirdpartySignupNilDeps 未注入 Thirdparty 依赖 → failed（半装配防御）。
+func TestThirdpartySignupNilDeps(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorPassword] = passwordOnlyFactor()
+	fk := newSetPassFakes()
+	e := deps.engine(testState(t, at))
+	d := fk.deps(deps.settings)
+	d.Thirdparty = nil
+	e.setpass = d
+
+	got := e.Submit(context.Background(), "register", Request{
+		LoginToken: tpLoginToken(t, testState(t, at)), Method: "password", Step: "set_password",
+		Payload: &factor.Payload{Username: "heidi_tp"},
+	})
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+}
+
+// TestThirdpartySignupSignupPasswordSwitch tp 免密建号跳过
+// allow_signup_password（三方建号开关唯一归 provider enable_signup，
+// §2.7.5 行 673 / §12.5 行 1504）、保留 allow_registration（整体开关
+// fail-closed）；普通注册（tp 空）仍受 allow_signup_password 管。
+func TestThirdpartySignupSignupPasswordSwitch(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+
+	t.Run("allow_signup_password=0 + tp 建号仍成功", func(t *testing.T) {
+		e, fk, st, s := newTPSubmitDeps(t, at)
+		s.bools[settings.KeyAllowSignupPassword] = false
+		fk.thirdparty.state = ThirdpartySignupState{Enabled: true}
+
+		got := e.Submit(context.Background(), "register", Request{
+			LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+			Payload: &factor.Payload{Username: "ivy_tp"},
+		})
+		if got.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success（tp 分支不受 allow_signup_password 管）", got.Status)
+		}
+		if len(fk.users.created) != 1 {
+			t.Errorf("建号 = %d, want 1", len(fk.users.created))
+		}
+	})
+
+	t.Run("allow_registration=0 → tp 建号仍拒绝", func(t *testing.T) {
+		e, _, st, s := newTPSubmitDeps(t, at)
+		s.bools[settings.KeyAllowRegistration] = false
+
+		got := e.Submit(context.Background(), "register", Request{
+			LoginToken: tpLoginToken(t, st), Method: "password", Step: "set_password",
+			Payload: &factor.Payload{Username: "jack_tp"},
+		})
+		if got.Status != StatusSignupDisabled {
+			t.Fatalf("status = %q, want signup_disabled（allow_registration fail-closed）", got.Status)
+		}
+	})
+
+	t.Run("普通注册仍受 allow_signup_password 管", func(t *testing.T) {
+		e, _, _, s := newTPSubmitDeps(t, at)
+		s.bools[settings.KeyAllowSignupPassword] = false
+
+		got := e.Submit(context.Background(), "register", Request{
+			LoginToken: "", Method: "password", Step: "set_password",
+			Payload: &factor.Payload{Username: "kate_tp", Password: testStrongPassword},
+		})
+		if got.Status != StatusSignupDisabled {
+			t.Fatalf("status = %q, want signup_disabled（普通直通注册受方式开关管）", got.Status)
+		}
+	})
 }

@@ -91,14 +91,20 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 // 单 gorm Transaction 内先 INSERT user、再 INSERT user_credential（c.UserID
 // 由 user INSERT 回填的自增 ID 关联后写入），任一失败整体回滚——两跳非同
 // 事务会在 credential 失败时留下无凭证 user 行，username / email / phone
-// 占位无自愈。user 表唯一键冲突（username / phone / email）仍返回
-// ErrUserDuplicate（errors.Is 可判别，判别口径与错误包装同 Create）；user 表
-// gorm default tag 的回填语义同 Create（user_status=1 / mfa_required=0 零值
-// 被 tag 值显式写入 INSERT 并回填 struct，见 model.User 注释）。
+// 占位无自愈。c 为 nil 时只 INSERT user（三方免密建号，§12.5 行
+// 1504：免密建号不设密码，user_credential 无 password 行，setPassReset 的
+// 「无行补建」分支即为其后置密码出口）。user 表唯一键冲突（username /
+// phone / email）仍返回 ErrUserDuplicate（errors.Is 可判别，判别口径与
+// 错误包装同 Create）；user 表 gorm default tag 的回填语义同 Create
+// （user_status=1 / mfa_required=0 零值被 tag 值显式写入 INSERT 并回填
+// struct，见 model.User 注释）。
 func (r *UserRepo) CreateWithCredential(ctx context.Context, u *model.User, c *model.UserCredential) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(u).Error; err != nil {
 			return err
+		}
+		if c == nil {
+			return nil
 		}
 		c.UserID = u.ID
 		return tx.Create(c).Error

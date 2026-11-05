@@ -69,8 +69,8 @@ type EventLister interface {
 }
 
 // TokenCodecs 三场景独立令牌编解码器（§1.4 / §11.6.1；bootstrap codecs
-// 结构体的 admin 视图）。Cookie 当前无具名载荷 proto（见 DecodeToken cookie
-// 分支注释），装配位保留——thirdparty 卡落地 LoginStatePayload 后直接消费。
+// 结构体的 admin 视图）。Cookie 解 al_login_state（本实现起消费
+// token.LoginStatePayload，见 DecodeToken cookie 分支）。
 type TokenCodecs struct {
 	Session *security.Codec
 	Login   *security.Codec
@@ -284,18 +284,14 @@ func (s *SettingsService) ListEvents(ctx context.Context, f EventListFilter) ([]
 
 // DecodeToken（§5.6 行 1276，OUTCOME ④）：purpose 即 security 包 §11.6.1
 // AAD purpose 口径（跨 purpose 解令牌由 AAD 构造天然拒绝）。login /
-// session 分别用装配的独立 Codec 解出载荷消息（proto.Message，由
-// dto.AdminDecodePayload 经 protojson 转 Struct 投影）；失败（含篡改、
+// session / cookie 分别用装配的独立 Codec 解出载荷消息（proto.Message，
+// 由 dto.AdminDecodePayload 经 protojson 转 Struct 投影）；失败（含篡改、
 // 跨 purpose、未知 kid）一律 ErrInvalidRequest → invalid_request。
 //
-// cookie purpose（解 al_login_state）：其载荷 proto（LoginStatePayload）归
-// thirdparty redirect/api 通道的后续实现（生成链
-// 未跑、字段级 schema 在 docs 未落地），security.Open 需要载荷 proto 类型、
-// 且 internal/security 不在本次改动范围（无法新增绕过类型的明文解密出口）→
-// 当前按解码失败口径返回 ErrInvalidRequest（默认，待定；
-// LoginStatePayload 落地后本分支收编为具名字段投影，
-// TokenCodecs.Cookie 装配位已备）。错误文案固定、不携带 token 与 payload
-// 内容；本方法任何路径不落日志。
+// cookie purpose（解 al_login_state）：载荷为
+// token.LoginStatePayload（state 带前缀 / b 场景 uid / 10 分钟 exp，后端
+// 架构 §12.4 行 1485、生成链产物），经 security.Open 具名解出投影。
+// 错误文案固定、不携带 token 与 payload 内容；本方法任何路径不落日志。
 func (s *SettingsService) DecodeToken(purpose, tokenStr string) (proto.Message, error) {
 	// 解码失败（篡改 / 跨 purpose / 未知 kid / base64 损坏）统一转译干净
 	// 哨兵 ErrInvalidRequest：security 包原始错误（含内部实现细节）不得
@@ -314,10 +310,15 @@ func (s *SettingsService) DecodeToken(purpose, tokenStr string) (proto.Message, 
 			return nil, ErrInvalidRequest
 		}
 		return msg, nil
+	case security.PurposeCookie:
+		msg, err := security.Open[token.LoginStatePayload](s.codecs.Cookie, security.PurposeCookie, tokenStr)
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		return msg, nil
 	default:
-		// 含 PurposeCookie：载荷 schema 未落地（见方法注释）；其余取值
-		//（空串、bind/ticket/sync_payload/oidc_code 等封闭集外的 DecodeToken
-		// 口径）均为非法 purpose。
+		// 空串、bind/ticket/sync_payload/oidc_code 等封闭集外的 DecodeToken
+		// 口径均为非法 purpose。
 		return nil, ErrInvalidRequest
 	}
 }

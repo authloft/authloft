@@ -47,7 +47,7 @@ func TestLoginDefaultConnect(t *testing.T) {
 		LoginToken: "tok-1",
 		UserId:     10086,
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil, nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -80,14 +80,14 @@ func TestLoginDefaultConnect(t *testing.T) {
 	}
 }
 
-// TestOtherMethodsUnimplemented 校验其余 5 个方法由生成基类返回
-// unimplemented（CreateCaptchaImage、Register、ResetPassword 已实装，
-// 移出桩清单）。
+// TestOtherMethodsUnimplemented 校验其余 3 个扫码方法由生成基类返回
+// unimplemented（CreateCaptchaImage、Register、ResetPassword 已实装；
+// Authorize / LoginOauth 已实装，均移出桩清单；扫码三方法暂不实装）。
+// 未装配三方 service 时 Authorize / LoginOauth 亦 unimplemented（oauth_test.go
+// TestThirdpartyNotConfigured 单测覆盖）。
 func TestOtherMethodsUnimplemented(t *testing.T) {
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil))
 	cases := []string{
-		ssov1connect.SsoServiceAuthorizeProcedure,
-		ssov1connect.SsoServiceLoginOauthProcedure,
 		ssov1connect.SsoServiceCreateQrcodeProcedure,
 		ssov1connect.SsoServiceGetLoginTicketProcedure,
 		ssov1connect.SsoServiceConfirmLoginTicketProcedure,
@@ -118,7 +118,7 @@ func TestRegisterConnect(t *testing.T) {
 		UserId:    10086,
 		SessionId: "sid-1",
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil, nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -162,7 +162,7 @@ func TestResetPasswordConnect(t *testing.T) {
 		Status:     "next",
 		LoginToken: "tok-2",
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil))
+	_, handler := ssov1connect.NewSsoServiceHandler(New(engine, nil, nil, nil))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -229,7 +229,7 @@ func TestSuccessIssuesSessionCookie(t *testing.T) {
 				sinkToken: "stok-1",
 			}
 			_, handler := ssov1connect.NewSsoServiceHandler(
-				New(engine, nil, session.NewCookie("al_session", "", 7*24*time.Hour)),
+				New(engine, nil, session.NewCookie("al_session", "", 7*24*time.Hour), nil),
 			)
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
@@ -273,7 +273,7 @@ func TestNonSuccessZeroSetCookie(t *testing.T) {
 	for _, status := range []string{"failed", "next"} {
 		engine := &fakeEngine{resp: &ssov1.LoginFlowResponse{Status: status, LoginToken: "tok-2"}}
 		_, handler := ssov1connect.NewSsoServiceHandler(
-			New(engine, nil, session.NewCookie("al_session", "", 7*24*time.Hour)),
+			New(engine, nil, session.NewCookie("al_session", "", 7*24*time.Hour), nil),
 		)
 		srv := httptest.NewServer(handler)
 		defer srv.Close()

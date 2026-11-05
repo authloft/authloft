@@ -46,12 +46,16 @@ type Token struct {
 	Raw          map[string]any
 }
 
-// AuthContext 跳转授权上下文；只裁剪出当前需要的字段，完整字段随
-// 首个 redirect 渠道卡补齐。
+// AuthContext 跳转授权上下文（§12.4 行 1476-1478）。本实现补齐 redirect
+// 渠道组装授权 URL 所需字段：state 由 service 层生成（带 l/b 前缀，行
+// 1477）后传入，adapter 只透传不生成；scope 缺省时渠道按自身默认拼装。
+// PKCESupporter / CSPSupporter 等可选接口仍按 §12.1 行 1429-1434 随对应
+// 渠道按需补齐，不提前实现。
 type AuthContext struct {
 	ProviderKey string
 	RedirectURI string
 	State       string
+	Scope       string
 }
 
 // ExchangeInput 用授权码换取令牌的入参（channel=api 时即为前端提交的 code）。

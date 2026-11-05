@@ -149,7 +149,7 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	p.Factor = string(d.Kind)
 
 	// challenge 步与密码登录统一过 captcha gate（§2.2 第 4 步、§2.5）。
-	outcome, err := e.evaluateCaptcha(ctx, d, req)
+	outcome, err := e.evaluateCaptcha(ctx, d, req, p)
 	if err != nil {
 		return failed()
 	}
@@ -235,7 +235,10 @@ func flowAccepts(endpointFlow, payloadFlow string) bool {
 
 // evaluateCaptcha 在 Start 之前完成拦截（§2.2 第 4 步）。
 // WebAuthn 取 options（challenge 步）不需要人机校验（§2.5 行 526）。
-func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request) (captcha.Outcome, error) {
+// 三方免密建号（tp 非空 + flow=login 的 set_password）同样不经
+// captcha：该分支由 LoginOauth 已验证的三方身份背书，请求只提交 username
+//（§2.7.5 行 685「仅提交用户名」——此处默认口径，待复核）。
+func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request, p *token.LoginTokenPayload) (captcha.Outcome, error) {
 	if e.gate == nil {
 		return captcha.Outcome{}, nil
 	}
@@ -244,10 +247,11 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 	}
 	// register 直通入口（method=password、step=set_password）captcha 必经
 	// （§2.3 行 450-451「captcha 必填」）。到达这里的 password + set_password
-	// 只可能是 register 流（login 流被 dispatch 拒、reset 流被方式开关拒），
-	// 复用 gate 的 Challenge 必经通道——docs 未明说 set_password 的 gate
-	// Request 形态，默认口径，待定。
-	direct := d.Kind == factor.FactorPassword && req.Step == stepSetPassword
+	// 只可能是 register 流（login 流被 dispatch 拒、reset 流被方式开关拒；
+	// tp 免密建号除外——见上），复用 gate 的 Challenge 必经通道——docs 未
+	// 明说 set_password 的 gate Request 形态，默认口径，待复核。
+	direct := d.Kind == factor.FactorPassword && req.Step == stepSetPassword &&
+		!(p.GetTp() != nil && p.GetFlow() == "login")
 	r := captcha.Request{
 		Challenge: req.Step == "challenge" || direct,
 		Password:  d.Kind == factor.FactorPassword && req.Step == "verify",

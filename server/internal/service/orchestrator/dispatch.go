@@ -80,7 +80,7 @@ func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTok
 		usage = factor.UsagePrimary
 	}
 
-	if status := methodStatus(flow, kind, usage, d.Settings); status != "" {
+	if status := methodStatus(flow, kind, usage, d.Settings, p); status != "" {
 		return nil, status
 	}
 
@@ -124,7 +124,11 @@ func setPasswordAccepts(flow string, kind factor.FactorKind, p *token.LoginToken
 
 // methodStatus 按 flow 判定方式是否启用（§2.2 第 2 步、§2.3、§2.4）。
 // 二次因子阶段不看 login_methods，改用 mfa_methods（recovery_code 随 totp 生效）。
-func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s SettingsReader) string {
+// tp 免密建号（login_token.tp 非空 + flow=login）跳过
+// allow_signup_password——三方建号开关唯一归 provider enable_signup
+//（§2.7.5 行 673 / §12.5 行 1504），allow_registration（整体开关）仍
+// fail-closed 生效。
+func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s SettingsReader, p *token.LoginTokenPayload) string {
 	if usage == factor.UsageSecondary {
 		if !boolSetting(s, settings.KeyMfaEnabled, true) {
 			return StatusMethodDisabled
@@ -134,6 +138,9 @@ func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s Set
 		}
 		return StatusMethodDisabled
 	}
+	// tp 免密建号：Register 端点 method=password 的 set_password 步携
+	// login_token.tp（§12.5 行 1505），方式开关不适用于该分支。
+	tpSignup := p != nil && p.GetTp() != nil && p.GetFlow() == "login"
 	switch flow {
 	case "login":
 		if !sliceContains(stringSlice(s, settings.KeyLoginMethods), string(kind)) {
@@ -146,7 +153,7 @@ func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s Set
 		}
 		switch kind {
 		case factor.FactorPassword:
-			if !boolSetting(s, settings.KeyAllowSignupPassword, true) {
+			if !tpSignup && !boolSetting(s, settings.KeyAllowSignupPassword, true) {
 				return StatusSignupDisabled
 			}
 		case factor.FactorOTPSMS:

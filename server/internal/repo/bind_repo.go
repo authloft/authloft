@@ -117,6 +117,40 @@ func (r *BindRepo) Unbind(ctx context.Context, id, userID int64) error {
 	return nil
 }
 
+// CreateWithUnion 单事务创建方向的 Union 联动写入（§12.7 行 1548
+// 「首次登录 / 绑定写入普通行时，若该 Provider 关联了 Union Provider 且
+// 适配器返回 unionid，则同事务追加写 Union Provider + unionid 行」；既定
+// 口径 §3.10 行 428：聚合内原子写归 repo 单事务，创建方向与解绑方向
+// UnbindWithUnionCascade 对称）：单 tx 内写普通绑定行 → unionProviderKey
+// 非空且 unionID 非空时追加写 Union 行（open_id=unionid，§12.7 行 1547）。
+// 任一跳命中 uk_provider_openid（普通行或 Union 行已绑他人）返回
+// ErrBindDuplicate 并整体回滚——Union 行被他人占用时普通行不留库（否则
+// 孤立普通行无 Union 归并且占用唯一键）。unionProviderKey 为空表示无关联
+// Union Provider，只写普通行（语义同 Create，供 service 单一写入口复用）。
+func (r *BindRepo) CreateWithUnion(ctx context.Context, b *model.UserThirdpartyBind, unionProviderKey, unionID string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(b).Error; err != nil {
+			return err
+		}
+		if unionProviderKey == "" || unionID == "" {
+			return nil
+		}
+		u := &model.UserThirdpartyBind{
+			UserID:      b.UserID,
+			ProviderKey: unionProviderKey,
+			OpenID:      unionID,
+		}
+		return tx.Create(u).Error
+	})
+	if err != nil {
+		if isBindDuplicateKey(err) {
+			return fmt.Errorf("bind repo: create with union: %w: %w", ErrBindDuplicate, err)
+		}
+		return fmt.Errorf("bind repo: create with union: %w", err)
+	}
+	return nil
+}
+
 // UnbindWithUnionCascade 单事务级联解绑（既定口径 §3.10 行
 // 428：聚合内原子写归 repo 单事务，先例 UserRepo.CreateWithCredential）：
 // 单 tx 内删普通绑定行（id + user_id 双条件，归属判别语义同 Unbind）→

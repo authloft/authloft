@@ -155,6 +155,11 @@ type assembled struct {
 	// factors 因子注册表（§3.8）：buildEngine 构造后挂入，供页面壳
 	// methods 快照按 settings.login_methods 过滤读取（接口文档 §2.1 / §8）。
 	factors *factor.Registry
+
+	// thirdparty 三方登录通道 service（§3.9 / §12.4-§12.5）：buildEngine
+	// 内构造（复用 Terminal / MFA / State 共享 codec），registerSSO 注入
+	// SsoService handler；SetPass.Thirdparty（免密建号）复用同一实例。
+	thirdparty *service.Thirdparty
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -400,14 +405,32 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
 		deps.settings,
 	)
+	loginState := orchestrator.NewState(deps.codecs.Login)
+	mfa := orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings)
+
+	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State / MFA /
+	// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走
+	// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
+	// 目标匹配走 UserRepo；挂入 assembled 供 registerSSO 注入 handler，
+	// SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
+	deps.thirdparty = service.NewThirdparty(service.ThirdpartyDeps{
+		Loader:      deps.providerLoader,
+		Binds:       repo.NewBindRepo(deps.db),
+		Users:       users,
+		NewAdapter:  provider.NewAdapter,
+		State:       loginState,
+		MFA:         mfa,
+		Terminal:    terminal,
+		CookieCodec: deps.codecs.Cookie,
+	})
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
-		State:      orchestrator.NewState(deps.codecs.Login),
+		State:      loginState,
 		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: deps.settings},
 		// captcha Gate（§9.3 行 1110 唯一拦截点）：装配层构造
 		// 真实 Gate；测试夹具未注入时为 nil，engine.go:209 对 nil 安全。
 		Gate:     deps.gate,
-		MFA:      orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings),
+		MFA:      mfa,
 		Terminal: terminal,
 		Failures: fails,
 		Factor: orchestrator.FactorDeps{
@@ -416,13 +439,15 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		},
 		// set_password 步写入依赖（§7.4）：repo.UserRepo /
 		// repo.CredentialRepo 天然满足窄接口；epoch 同步复用共享单例
-		// EpochStore；审计经 resetAuditSink 走延迟队列。
+		// EpochStore；审计经 resetAuditSink 走延迟队列；Thirdparty 三方
+		// 免密建号（§12.5 行 1501）复用上方 deps.thirdparty。
 		SetPass: &orchestrator.SetPassDeps{
 			Users:       users,
 			Credentials: creds,
 			Epoch:       deps.epochStore,
 			Audit:       resetAuditSink{logs: eventlog.NewWriter(deps.queue)},
 			Settings:    deps.settings,
+			Thirdparty:  deps.thirdparty,
 		},
 	})
 	return engine, terminal, registry, nil
@@ -860,9 +885,11 @@ func newSessionCookie(cfg *config.Config, deps *assembled) *session.Cookie {
 // 其余域拦截器 / 错误包装由 connect.Server.HandlerOptions 统一补齐。
 // 注入会话 Cookie 属性构造器：LoginDefault / Register / ResetPassword
 // 终点建会话后经引擎写点下发 Set-Cookie: al_session（§1.9 行 288）。
+// 注入三方登录通道 service：Authorize / LoginOauth（§2.7.2 / §2.7.4），
+// al_login_state 的 Set-Cookie 与浏览器终点 al_session 共用 CallInfo 写头。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
-		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps)),
+		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)

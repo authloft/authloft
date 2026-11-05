@@ -9,6 +9,7 @@ import (
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
+	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
 )
 
@@ -92,6 +93,26 @@ func resetPayload(p *ssov1.ResetPayload) *factor.Payload {
 		Phone:    p.GetPhone(),
 		Email:    p.GetEmail(),
 		Code:     p.GetCode(),
+	}
+}
+
+// LoginOauth 把 SsoService/LoginOauth 请求消息转换为三方登录 service 入参
+// （docs/接口文档.md §2.7.4 行 630-643）：字段名与请求消息 snake_case 一一
+// 对应；oidc 复用 LoginDefault 的映射（§2.7.4 行 642：localStorage 读回后
+// 回传，服务端据此写入 login_token.oidc）。StateCookie 由 handler 从请求
+// Cookie 头解析后填入（dto 不读 HTTP 头）。
+func LoginOauth(req *ssov1.LoginOauthRequest) service.OauthInput {
+	if req == nil {
+		return service.OauthInput{}
+	}
+	return service.OauthInput{
+		ProviderKey: req.GetProviderKey(),
+		Code:        req.GetCode(),
+		State:       req.GetState(),
+		Stage:       req.GetStage(),
+		TicketID:    req.GetTicketId(),
+		LoginToken:  req.GetLoginToken(),
+		OIDC:        oidc(req.GetOidc()),
 	}
 }
 

@@ -244,3 +244,59 @@ func TestBindRepoUnionRowByProviderOpenID(t *testing.T) {
 		t.Fatalf("用户 9 绑定列表 = %d 行 err=%v; want 3/nil", len(rows), err)
 	}
 }
+
+// TestBindRepoCreateWithUnion（env-skip；§12.7 行 1548 创建方向）：
+// 单事务写普通行 + Union 行（open_id=unionid）；Union 键被他人占用时整体
+// 回滚（普通行不留库）；无关联 Union Provider 时只写普通行（语义同 Create）。
+func TestBindRepoCreateWithUnion(t *testing.T) {
+	_, br := providerTestSetup(t)
+	ctx := context.Background()
+
+	const (
+		unionProviderKey = "wechat_union2"
+		unionID          = "union_wx_002"
+	)
+
+	// a) 普通 + Union 同事务写入：两行均落库，Union 行 open_id=unionid。
+	b := &model.UserThirdpartyBind{UserID: 21, ProviderKey: "wechat_mp_a", OpenID: "openid_a", Nickname: "甲"}
+	if err := br.CreateWithUnion(ctx, b, unionProviderKey, unionID); err != nil {
+		t.Fatalf("CreateWithUnion 失败: %v", err)
+	}
+	gotA, err := br.FindByProviderOpenID(ctx, "wechat_mp_a", "openid_a")
+	if err != nil || gotA.UserID != 21 {
+		t.Fatalf("普通行未落库: %+v, %v", gotA, err)
+	}
+	gotU, err := br.FindByProviderOpenID(ctx, unionProviderKey, unionID)
+	if err != nil || gotU.UserID != 21 {
+		t.Fatalf("Union 行未落库（open_id 应为 unionid）: %+v, %v", gotU, err)
+	}
+
+	// b) Union 键被他人占用 → ErrBindDuplicate 且普通行整体回滚（不留
+	//    孤立普通行占用唯一键）。
+	b2 := &model.UserThirdpartyBind{UserID: 22, ProviderKey: "wechat_mp_b", OpenID: "openid_b"}
+	if err := br.CreateWithUnion(ctx, b2, unionProviderKey, unionID); !errors.Is(err, ErrBindDuplicate) {
+		t.Fatalf("Union 键冲突应 ErrBindDuplicate, got %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_b", "openid_b"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("Union 冲突时普通行应整体回滚, got %v", err)
+	}
+
+	// c) unionProviderKey 为空 → 只写普通行（语义同 Create）。
+	b3 := &model.UserThirdpartyBind{UserID: 23, ProviderKey: "wechat_mp_c", OpenID: "openid_c"}
+	if err := br.CreateWithUnion(ctx, b3, "", "union_x"); err != nil {
+		t.Fatalf("无 Union 关联写入失败: %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_c", "openid_c"); err != nil {
+		t.Fatalf("普通行应落库: %v", err)
+	}
+	rows, _ := br.ListByUserID(ctx, 23)
+	if len(rows) != 1 {
+		t.Errorf("用户 23 应只有 1 行（无 Union 行）, got %d", len(rows))
+	}
+
+	// d) unionID 为空（适配器未返回 unionid）→ 只写普通行。
+	b4 := &model.UserThirdpartyBind{UserID: 24, ProviderKey: "wechat_mp_d", OpenID: "openid_d"}
+	if err := br.CreateWithUnion(ctx, b4, unionProviderKey, ""); err != nil {
+		t.Fatalf("unionid 缺失时写入失败: %v", err)
+	}
+}

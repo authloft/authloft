@@ -519,16 +519,39 @@ func TestSettingsServiceDecodeToken(t *testing.T) {
 		}
 	})
 
-	t.Run("cookie 载荷 schema 未落地", func(t *testing.T) {
-		// al_login_state 载荷 proto（LoginStatePayload）归后续 thirdparty 实现，
-		// security.Open 无类型可用 → 当前按解码失败口径（默认，待定；
-		// 落地后收编为具名投影）。
-		tokStr, err := codec.Seal(security.PurposeCookie, &token.SessionTokenPayload{Id: 1})
+	t.Run("cookie 具名投影三态", func(t *testing.T) {
+		// al_login_state 载荷 = token.LoginStatePayload（后端架构 §12.4
+		// 行 1485；生成链产物）：正例解出具名字段、篡改失败、跨
+		// purpose 失败。
+		tokStr, err := codec.Seal(security.PurposeCookie, &token.LoginStatePayload{
+			State: "l" + "abc123", Uid: 42, Iat: 1_700_000_000, Exp: 1_700_000_600,
+		})
 		if err != nil {
 			t.Fatalf("Seal(cookie): %v", err)
 		}
-		if _, err := svc.DecodeToken("cookie", tokStr); !errors.Is(err, adminsvc.ErrInvalidRequest) {
-			t.Fatalf("cookie purpose 当前应 ErrInvalidRequest, got %v", err)
+		msg, err := svc.DecodeToken("cookie", tokStr)
+		if err != nil {
+			t.Fatalf("DecodeToken(cookie): %v", err)
+		}
+		lp, ok := msg.(*token.LoginStatePayload)
+		if !ok || lp.GetState() != "labc123" || lp.GetUid() != 42 ||
+			lp.GetIat() != 1_700_000_000 || lp.GetExp() != 1_700_000_600 {
+			t.Fatalf("cookie 载荷解码 = %+v", msg)
+		}
+
+		// 篡改失败：尾部替换（GCM 认证必失败）→ ErrInvalidRequest。
+		tampered := tokStr[:len(tokStr)-2] + "AA"
+		if _, err := svc.DecodeToken("cookie", tampered); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("篡改 cookie 应 ErrInvalidRequest, got %v", err)
+		}
+
+		// 跨 purpose 失败：login 令牌按 cookie purpose 解（AAD 含 purpose）。
+		loginTok, err := codec.Seal(security.PurposeLogin, &token.LoginTokenPayload{Tid: "t"})
+		if err != nil {
+			t.Fatalf("Seal(login): %v", err)
+		}
+		if _, err := svc.DecodeToken("cookie", loginTok); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("跨 purpose 应 ErrInvalidRequest, got %v", err)
 		}
 	})
 }
