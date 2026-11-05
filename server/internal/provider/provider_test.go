@@ -383,11 +383,13 @@ func TestWhitelistVersionErrorUsesCache(t *testing.T) {
 	}
 }
 
-// TestRegistryRegisterAndFactory：注册、查表、工厂调用与错误分支。
+// TestRegistryRegisterAndFactory：注册、查表（含 Fields 字段级声明透传）、
+// 工厂调用与错误分支。
 func TestRegistryRegisterAndFactory(t *testing.T) {
 	const typ = "test_registry_ok"
 	seen := ""
-	meta := Meta{Type: typ, DisplayName: "测试渠道", Category: "oauth", Channel: ChannelAPI}
+	fields := []FieldMeta{{Key: "client_id", Label: "AppID", Type: "text", Section: "credential", Required: true}}
+	meta := Meta{Type: typ, DisplayName: "测试渠道", Category: "oauth", Channel: ChannelAPI, Fields: fields}
 	if err := register(typ, meta, func(p *Provider) (AuthAdapter, error) {
 		seen = p.Key + ":" + p.Ext.GetAppId()
 		return ChannelAPIAdapter{}, nil
@@ -401,6 +403,9 @@ func TestRegistryRegisterAndFactory(t *testing.T) {
 	got, ok := Lookup(typ)
 	if !ok || got.DisplayName != "测试渠道" || got.Channel != ChannelAPI {
 		t.Fatalf("Lookup = (%+v, %v)", got, ok)
+	}
+	if len(got.Fields) != 1 || got.Fields[0] != fields[0] {
+		t.Fatalf("Lookup Fields = %+v, want %+v（字段级声明随 meta 透传）", got.Fields, fields)
 	}
 
 	p := &Provider{Key: "k1", Type: typ, Ext: &providerpb.Ext{AppId: "wx-k1"}}

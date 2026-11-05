@@ -44,6 +44,24 @@ func init() {
 		DisplayName: "微信小程序",
 		Category:    "oauth",
 		Channel:     provider.ChannelAPI,
+		// Fields §5.3 行 1235 oauth 追加 10 字段 + 行 1239 全类 metadata；
+		// label / type / section / required / advanced / help 与 §5.3 示例
+		// （行 1187-1226）逐字一致：user_mapping 在示例端点区块内 → endpoint，
+		// metadata 按行 1243 约定「其余按语义归 basic」。
+		Fields: []provider.FieldMeta{
+			{Key: "client_id", Label: "AppID", Type: "text", Section: "credential", Required: true},
+			{Key: "client_secret", Label: "AppSecret", Type: "secret", Section: "credential", Required: true},
+			{Key: "app_id", Label: "小程序 AppID", Type: "text", Section: "credential", Advanced: true},
+			{Key: "cert", Label: "证书 / 公钥", Type: "secret", Section: "credential", Advanced: true},
+			{Key: "scopes", Label: "授权范围", Type: "text", Section: "credential", Advanced: true},
+			{Key: "provider_url", Label: "服务地址", Type: "text", Section: "endpoint", Advanced: true},
+			{Key: "custom_auth_url", Label: "授权地址", Type: "text", Section: "endpoint", Advanced: true},
+			{Key: "custom_token_url", Label: "令牌地址", Type: "text", Section: "endpoint", Advanced: true},
+			{Key: "custom_user_info_url", Label: "UserInfo 地址", Type: "text", Section: "endpoint", Advanced: true},
+			{Key: "user_mapping", Label: "字段映射", Type: "json", Section: "endpoint", Advanced: true,
+				Help: "三方字段 → Authloft 字段，值为 JSONata 表达式"},
+			{Key: "metadata", Label: "长尾键值", Type: "json", Section: "basic", Advanced: true},
+		},
 	}, newAdapter)
 }
 

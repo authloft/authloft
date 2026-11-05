@@ -1,7 +1,7 @@
 // 渠道注册表（docs/后端架构.md §12.1 行 1433、§15.3 行 1714）：
 // Register(type, meta, factory) + NewAdapter(p)，各渠道包 init() 自注册。
-// meta 同时驱动管理后台 /schema（接口文档 §5.3），后续 admin 卡在此字段
-// 基础上补齐动态 schema，不另建注册表。
+// meta 同时驱动管理后台 /schema（接口文档 §5.3）：动态 schema 在 meta.Fields
+// 字段级声明上组装，不另建注册表。
 package provider
 
 import (
@@ -26,12 +26,16 @@ var (
 )
 
 // Meta 渠道元信息（§15.3 行 1714：meta 同时是管理后台 /schema 的数据源）。
-// 只落最小集合；字段级 schema 随 admin 实现扩展，避免提前实现。
+// Fields 是该渠道消费的 Ext 字段级声明（§5.3 行 1231-1243：按 category 追加
+// 进 fields[]，section 由 meta 按行 1243 约定声明）；直接复用 sender.go 的
+// FieldMeta——它本就是域中立的单字段渲染口径（§5.3 行 1183-1185），且当前
+// oauth 追加字段无需 options / pattern。nil = 仅表列基线，不追加 Ext 字段。
 type Meta struct {
 	Type        string
 	DisplayName string
 	Category    string
 	Channel     ThirdPartyChannel
+	Fields      []FieldMeta
 }
 
 // Factory 由 Provider 实例构造适配器（§13.0：装配期取 Ext，运行期不

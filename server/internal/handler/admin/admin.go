@@ -146,12 +146,11 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 }
 
 // lookupProviderType 按 type 查两域注册表（§15.3）：先 oauth 域（Lookup），
-// 未命中再消息域（LookupSenderMeta）。oauth 域只落最小 meta、无字段级
-// 声明（registry.go 注释「字段级 schema 随 admin 实现扩展」）——其 Ext 字段部分
-// 随该扩展自动补齐，本实现不硬编码。
+// 未命中再消息域（LookupSenderMeta）。两域 meta 均带 Fields 字段级声明
+// （§5.3 行 1231-1243），Ext 部分逐项来自 meta、不硬编码，两域对称。
 func lookupProviderType(providerType string) (category string, extFields []provider.FieldMeta, ok bool) {
 	if meta, found := provider.Lookup(providerType); found {
-		return meta.Category, nil, true
+		return meta.Category, meta.Fields, true
 	}
 	if meta, found := provider.LookupSenderMeta(providerType); found {
 		return meta.Category, meta.Fields, true
