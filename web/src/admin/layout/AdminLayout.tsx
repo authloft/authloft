@@ -26,6 +26,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Avatar, Breadcrumb, Layout, Nav, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t, type I18nKey } from '../../shared/i18n';
 import { loginUrl, logoutUrl } from '../bootstrap';
 import { adminDisplayName, adminMeFailureAction, apiErrorText, getMe } from '../api';
 import styles from './AdminLayout.module.less';
@@ -41,26 +42,25 @@ const { Sider, Header, Content } = Layout;
  * 长入（需求 §4.6 行 260-261），「解码工具」随 DecodePage 长入
  * （§6 行 525 admin 排障工具，需求 §4.6 无对应模块条目故排最后）。
  * itemKey 即路由路径，点击整页跳转（account AppLayout 同约定）。
+ * text 为 i18n 域键（admin.*），渲染期经 t() 取文案（模块级求值
+ * 会冻结在默认语言，故不在常量里调 t）。
  */
-const NAV_ITEMS: { itemKey: string; text: string }[] = [
-  { itemKey: '/admin/providers', text: '提供方' },
-  { itemKey: '/admin/users', text: '用户' },
-  { itemKey: '/admin/clients/sso', text: 'SSO 客户端' },
-  { itemKey: '/admin/clients/oidc', text: 'OIDC 客户端' },
-  { itemKey: '/admin/settings', text: '设置' },
-  { itemKey: '/admin/audit', text: '事件日志' },
-  { itemKey: '/admin/status', text: '监控' },
-  { itemKey: '/admin/decode', text: '解码工具' },
+const NAV_ITEMS: { itemKey: string; textKey: I18nKey }[] = [
+  { itemKey: '/admin/providers', textKey: 'admin.navProviders' },
+  { itemKey: '/admin/users', textKey: 'admin.navUsers' },
+  { itemKey: '/admin/clients/sso', textKey: 'admin.navSsoClients' },
+  { itemKey: '/admin/clients/oidc', textKey: 'admin.navOidcClients' },
+  { itemKey: '/admin/settings', textKey: 'admin.navSettings' },
+  { itemKey: '/admin/audit', textKey: 'admin.navAudit' },
+  { itemKey: '/admin/status', textKey: 'admin.navStatus' },
+  { itemKey: '/admin/decode', textKey: 'admin.navDecode' },
 ];
-
-/** GetMe 未落地前的加载态文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
-const LOADING_TEXT = '加载中…';
 
 /** 登出链接（§6 行 507 LogoutLink）：跳 `{al_root}/sso/logout`，Go 处理。 */
 function LogoutLink({ alRoot }: { readonly alRoot: string }) {
   return (
     <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      退出登录
+      {t('admin.logout')}
     </a>
   );
 }
@@ -101,7 +101,7 @@ export function AdminLayout(props: {
   if (data === undefined) {
     return (
       <p role="status" className={styles.entryLoading}>
-        {LOADING_TEXT}
+        {t('admin.loading')}
       </p>
     );
   }
@@ -112,7 +112,10 @@ export function AdminLayout(props: {
       <Sider>
         <Nav
           className={styles.nav}
-          items={NAV_ITEMS}
+          items={NAV_ITEMS.map(({ itemKey, textKey }) => ({
+            itemKey,
+            text: t(textKey),
+          }))}
           selectedKeys={[props.activeKey]}
           onClick={({ itemKey }) => {
             if (typeof itemKey === 'string') {
@@ -120,7 +123,7 @@ export function AdminLayout(props: {
               window.location.assign(itemKey);
             }
           }}
-          header={{ text: 'Authloft 管理后台' }}
+          header={{ text: t('admin.appTitle') }}
         />
       </Sider>
       <Layout>

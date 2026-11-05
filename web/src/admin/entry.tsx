@@ -28,7 +28,7 @@ import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { setLocale } from '../shared/i18n';
+import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
 import { AdminApp } from './routes';
@@ -61,8 +61,8 @@ class AdminErrorBoundary extends Component<
 
   render() {
     if (this.state.error !== undefined) {
-      // 文案无 i18n 键：最简中文字面量（归后续 i18n 实现）。
-      return <p role="alert">页面出现异常，请刷新重试</p>;
+      // 渲染期 t()：错误边界文案经 i18n 字典。
+      return <p role="alert">{t('admin.renderError')}</p>;
     }
     return this.props.children;
   }

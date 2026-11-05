@@ -26,6 +26,7 @@ import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { StringListEditor } from '../components/StringListEditor';
 import type { SsoClient } from '../../gen/proto/api/admin/v1/client_pb';
@@ -56,9 +57,6 @@ import styles from './SsoClientsPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
-
-/** 详情加载态文案。 */
-const VIEW_LOADING_TEXT = '加载中…';
 
 /** 行键（SsoClient.id int64 → 十进制字符串，§1.12）。 */
 function ssoClientRowKey(row: SsoClient): string {
@@ -139,7 +137,7 @@ export function SsoClientsPage(props: {
     try {
       await createSsoClient(buildCreateSsoClientRequest(createDraft));
       setCreateOpen(false);
-      setNotice('客户端创建成功，密钥由服务端生成，点击「查看」即可获取');
+      setNotice(t('admin.clientCreateSuccess'));
       // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
       setQuery((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
@@ -196,7 +194,7 @@ export function SsoClientsPage(props: {
     }
     const uris = cleanStringList(editDraft.redirectUris);
     if (uris.length === 0) {
-      setEditError('回调白名单不能为空（清空后保存将保留原值）');
+      setEditError(t('admin.redirectUrisRequired'));
       return;
     }
     const issue = redirectUrisIssue(uris);
@@ -210,7 +208,7 @@ export function SsoClientsPage(props: {
         buildUpdateSsoClientRequest(target.id, { ...editDraft, redirectUris: uris }),
       );
       setEditTarget(null);
-      setNotice(`已更新客户端「${target.clientId}」`);
+      setNotice(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
       refreshList();
     } catch (err) {
       setEditError(apiErrorText(err));
@@ -223,7 +221,7 @@ export function SsoClientsPage(props: {
   async function handleDelete(row: SsoClient): Promise<void> {
     try {
       await deleteSsoClient(buildDeleteSsoClientRequest(row.id));
-      setNotice(`已删除客户端「${row.clientId}」`);
+      setNotice(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
       refreshList();
     } catch (err) {
       setActionError(apiErrorText(err));
@@ -236,7 +234,7 @@ export function SsoClientsPage(props: {
   const columns: readonly DataTableColumn<SsoClient>[] = [
     {
       dataIndex: 'client_id',
-      title: '客户端标识',
+      title: t('admin.clientIdLabel'),
       sorter: true,
       render: (_text: unknown, row: SsoClient) => (
         <span className={styles.idCell}>
@@ -247,46 +245,46 @@ export function SsoClientsPage(props: {
     },
     {
       dataIndex: 'name',
-      title: '展示名',
+      title: t('admin.clientNameLabel'),
       render: (_text: unknown, row: SsoClient) => row.name || EMPTY_TEXT,
     },
     {
       dataIndex: 'redirect_uris',
-      title: '回调白名单',
+      title: t('admin.redirectUrisLabel'),
       render: (_text: unknown, row: SsoClient) => summarizeList(row.redirectUris),
     },
     {
       dataIndex: 'created_at',
-      title: '创建时间',
+      title: t('admin.createdAtLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: SsoClient) => formatUnixTime(row.createdAt),
     },
     {
       dataIndex: 'updated_at',
-      title: '更新时间',
+      title: t('admin.updatedAtLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: SsoClient) => formatUnixTime(row.updatedAt),
     },
     {
       dataIndex: 'actions',
-      title: '操作',
+      title: t('admin.actionsLabel'),
       render: (_text: unknown, row: SsoClient) => (
         <span className={styles.actions}>
           <Button size="small" onClick={() => openView(row)}>
-            查看
+            {t('admin.viewAction')}
           </Button>
           <Button size="small" onClick={() => openEdit(row)}>
-            编辑
+            {t('admin.editAction')}
           </Button>
           <Popconfirm
-            title={`确定删除客户端「${row.clientId}」？删除后不可恢复`}
+            title={t('admin.clientDeleteConfirm', { clientId: row.clientId })}
             onConfirm={() => {
               void handleDelete(row);
             }}
           >
-            <Button size="small">删除</Button>
+            <Button size="small">{t('admin.removeAction')}</Button>
           </Popconfirm>
         </span>
       ),
@@ -297,17 +295,17 @@ export function SsoClientsPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        客户端列表加载失败，请刷新重试
+        {t('admin.clientsLoadFailed')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>SSO 客户端</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navSsoClients')}</Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
-          新建客户端
+          {t('admin.createClientAction')}
         </Button>
       </div>
       {actionError !== null ? (
@@ -328,48 +326,48 @@ export function SsoClientsPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? '暂无客户端' : undefined}
+        empty={status === 'success' ? t('admin.noClients') : undefined}
       />
       <Modal
-        title="新建 SSO 客户端"
+        title={t('admin.createSsoClientTitle')}
         visible={createOpen}
         onCancel={() => setCreateOpen(false)}
         footer={null}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>客户端标识</span>
+            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
             <Input
               value={createDraft.clientId}
               onChange={(value) => setCreateDraft({ ...createDraft, clientId: value })}
               maxLength={CLIENT_ID_MAX_LEN}
-              placeholder="留空自动生成"
-              aria-label="客户端标识"
+              placeholder={t('admin.clientIdAutoGenPlaceholder')}
+              aria-label={t('admin.clientIdLabel')}
               disabled={createSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>展示名</span>
+            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
             <Input
               value={createDraft.name}
               onChange={(value) => setCreateDraft({ ...createDraft, name: value })}
               maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder="客户端展示名"
-              aria-label="展示名"
+              placeholder={t('admin.clientNamePlaceholder')}
+              aria-label={t('admin.clientNameLabel')}
               disabled={createSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>回调白名单</span>
-            <span className={styles.fieldHint}>每条须为 * 或以 http:// / https:// 开头</span>
+            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
             <StringListEditor
               values={createDraft.redirectUris}
               onChange={(next) => setCreateDraft({ ...createDraft, redirectUris: next })}
               disabled={createSubmitting}
-              ariaLabel="回调地址"
-              addText="添加回调地址"
-              placeholder="https://example.com/callback 或 *"
-              emptyHint="暂无回调地址，点击下方按钮添加"
+              ariaLabel={t('admin.redirectUriAriaLabel')}
+              addText={t('admin.addRedirectUri')}
+              placeholder={t('admin.redirectUriPlaceholder')}
+              emptyHint={t('admin.noRedirectUrisHint')}
             />
           </div>
           {createError !== null ? (
@@ -379,7 +377,7 @@ export function SsoClientsPage(props: {
           ) : null}
           <div className={styles.formFooter}>
             <Button onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
-              取消
+              {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
@@ -389,38 +387,38 @@ export function SsoClientsPage(props: {
               disabled={createSubmitting}
               loading={createSubmitting}
             >
-              创建
+              {t('admin.createAction')}
             </Button>
           </div>
         </div>
       </Modal>
       <Modal
-        title="客户端详情"
+        title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
         footer={null}
       >
         {viewLoading ? (
-          <p role="status">{VIEW_LOADING_TEXT}</p>
+          <p role="status">{t('admin.loading')}</p>
         ) : viewError !== null ? (
           <p role="alert" className={styles.actionError}>
             {viewError}
           </p>
         ) : viewDetail !== null ? (
           <dl className={styles.detailList}>
-            <dt>客户端标识</dt>
+            <dt>{t('admin.clientIdLabel')}</dt>
             <dd className={styles.detailValue}>
               <code className={styles.idCode}>{viewDetail.clientId}</code>
               <CopyButton text={viewDetail.clientId} />
             </dd>
-            <dt>客户端密钥</dt>
+            <dt>{t('admin.clientSecretLabel')}</dt>
             <dd className={styles.detailValue}>
               <code className={styles.idCode}>{viewDetail.clientSecret}</code>
               <CopyButton text={viewDetail.clientSecret} />
             </dd>
-            <dt>展示名</dt>
+            <dt>{t('admin.clientNameLabel')}</dt>
             <dd>{viewDetail.name || EMPTY_TEXT}</dd>
-            <dt>回调白名单</dt>
+            <dt>{t('admin.redirectUrisLabel')}</dt>
             <dd>
               {viewDetail.redirectUris.length > 0 ? (
                 <ul className={styles.uriList}>
@@ -434,16 +432,18 @@ export function SsoClientsPage(props: {
                 EMPTY_TEXT
               )}
             </dd>
-            <dt>创建时间</dt>
+            <dt>{t('admin.createdAtLabel')}</dt>
             <dd>{formatUnixTime(viewDetail.createdAt)}</dd>
-            <dt>更新时间</dt>
+            <dt>{t('admin.updatedAtLabel')}</dt>
             <dd>{formatUnixTime(viewDetail.updatedAt)}</dd>
           </dl>
         ) : null}
       </Modal>
       <Modal
         title={
-          editTarget !== null ? `编辑客户端「${editTarget.clientId}」` : '编辑客户端'
+          editTarget !== null
+            ? t('admin.editClientTitle', { clientId: editTarget.clientId })
+            : t('admin.editClientFallbackTitle')
         }
         visible={editTarget !== null}
         onCancel={() => setEditTarget(null)}
@@ -451,44 +451,44 @@ export function SsoClientsPage(props: {
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>客户端标识</span>
-            <Input value={editTarget?.clientId ?? ''} disabled aria-label="客户端标识" />
-            <span className={styles.fieldHint}>创建后不可修改</span>
+            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
+            <Input value={editTarget?.clientId ?? ''} disabled aria-label={t('admin.clientIdLabel')} />
+            <span className={styles.fieldHint}>{t('admin.clientIdImmutable')}</span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>展示名</span>
+            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
             <Input
               value={editDraft.name}
               onChange={(value) => setEditDraft({ ...editDraft, name: value })}
               maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder="客户端展示名"
-              aria-label="展示名"
+              placeholder={t('admin.clientNamePlaceholder')}
+              aria-label={t('admin.clientNameLabel')}
               disabled={editSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>新密钥</span>
+            <span className={styles.fieldLabel}>{t('admin.newSecretLabel')}</span>
             <Input
               mode="password"
               value={editDraft.newSecret}
               onChange={(value) => setEditDraft({ ...editDraft, newSecret: value })}
-              placeholder="留空保留原密钥"
-              aria-label="新密钥"
+              placeholder={t('admin.newSecretPlaceholder')}
+              aria-label={t('admin.newSecretLabel')}
               autoComplete="new-password"
               disabled={editSubmitting}
             />
-            <span className={styles.fieldHint}>填写后保存将轮换密钥，请同步更新接入方</span>
+            <span className={styles.fieldHint}>{t('admin.secretRotateHint')}</span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>回调白名单</span>
-            <span className={styles.fieldHint}>每条须为 * 或以 http:// / https:// 开头</span>
+            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
             <StringListEditor
               values={editDraft.redirectUris}
               onChange={(next) => setEditDraft({ ...editDraft, redirectUris: next })}
               disabled={editSubmitting}
-              ariaLabel="回调地址"
-              addText="添加回调地址"
-              placeholder="https://example.com/callback 或 *"
+              ariaLabel={t('admin.redirectUriAriaLabel')}
+              addText={t('admin.addRedirectUri')}
+              placeholder={t('admin.redirectUriPlaceholder')}
             />
           </div>
           {editError !== null ? (
@@ -498,7 +498,7 @@ export function SsoClientsPage(props: {
           ) : null}
           <div className={styles.formFooter}>
             <Button onClick={() => setEditTarget(null)} disabled={editSubmitting}>
-              取消
+              {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
@@ -508,7 +508,7 @@ export function SsoClientsPage(props: {
               disabled={editSubmitting}
               loading={editSubmitting}
             >
-              保存
+              {t('admin.saveAction')}
             </Button>
           </div>
         </div>

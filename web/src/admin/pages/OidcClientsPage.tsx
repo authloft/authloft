@@ -24,6 +24,7 @@ import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { StringListEditor } from '../components/StringListEditor';
 import type { OidcClient } from '../../gen/proto/api/admin/v1/client_pb';
@@ -60,9 +61,6 @@ import styles from './OidcClientsPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
-
-/** 详情加载态文案。 */
-const VIEW_LOADING_TEXT = '加载中…';
 
 /** 行键（OidcClient.id int64 → 十进制字符串，§1.12）。 */
 function oidcClientRowKey(row: OidcClient): string {
@@ -176,7 +174,7 @@ export function OidcClientsPage(props: {
     const accessTokenTtl = parseTtlField(createForm.accessTokenTtl, OIDC_ACCESS_TTL_MAX);
     if (accessTokenTtl === null) {
       return {
-        error: `访问令牌有效期须为 1-${OIDC_ACCESS_TTL_MAX} 的整数秒`,
+        error: t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }),
         accessTokenTtl: 0,
         refreshTokenTtl: 0,
       };
@@ -184,7 +182,7 @@ export function OidcClientsPage(props: {
     const refreshTokenTtl = parseTtlField(createForm.refreshTokenTtl, OIDC_REFRESH_TTL_MAX);
     if (refreshTokenTtl === null) {
       return {
-        error: `刷新令牌有效期须为 1-${OIDC_REFRESH_TTL_MAX} 的整数秒`,
+        error: t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }),
         accessTokenTtl: 0,
         refreshTokenTtl: 0,
       };
@@ -215,7 +213,7 @@ export function OidcClientsPage(props: {
         }),
       );
       setCreateOpen(false);
-      setNotice('客户端创建成功，密钥由服务端生成，点击「查看」即可获取');
+      setNotice(t('admin.clientCreateSuccess'));
       // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
       setQuery((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
@@ -276,12 +274,12 @@ export function OidcClientsPage(props: {
     }
     const uris = cleanStringList(editForm.redirectUris);
     if (uris.length === 0) {
-      setEditError('回调白名单不能为空（清空后保存将保留原值）');
+      setEditError(t('admin.redirectUrisRequired'));
       return;
     }
     const scopes = cleanStringList(editForm.scopes);
     if (scopes.length === 0) {
-      setEditError('权限范围不能为空（清空后保存将保留原值）');
+      setEditError(t('admin.scopesRequired'));
       return;
     }
     const uriIssue = redirectUrisIssue(uris);
@@ -296,12 +294,12 @@ export function OidcClientsPage(props: {
     }
     const accessTokenTtl = parseTtlField(editForm.accessTokenTtl, OIDC_ACCESS_TTL_MAX);
     if (accessTokenTtl === null) {
-      setEditError(`访问令牌有效期须为 1-${OIDC_ACCESS_TTL_MAX} 的整数秒`);
+      setEditError(t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }));
       return;
     }
     const refreshTokenTtl = parseTtlField(editForm.refreshTokenTtl, OIDC_REFRESH_TTL_MAX);
     if (refreshTokenTtl === null) {
-      setEditError(`刷新令牌有效期须为 1-${OIDC_REFRESH_TTL_MAX} 的整数秒`);
+      setEditError(t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }));
       return;
     }
     setEditSubmitting(true);
@@ -317,7 +315,7 @@ export function OidcClientsPage(props: {
         }),
       );
       setEditTarget(null);
-      setNotice(`已更新客户端「${target.clientId}」`);
+      setNotice(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
       refreshList();
     } catch (err) {
       setEditError(apiErrorText(err));
@@ -330,7 +328,7 @@ export function OidcClientsPage(props: {
   async function handleDelete(row: OidcClient): Promise<void> {
     try {
       await deleteOidcClient(buildDeleteOidcClientRequest(row.id));
-      setNotice(`已删除客户端「${row.clientId}」`);
+      setNotice(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
       refreshList();
     } catch (err) {
       setActionError(apiErrorText(err));
@@ -343,7 +341,7 @@ export function OidcClientsPage(props: {
   const columns: readonly DataTableColumn<OidcClient>[] = [
     {
       dataIndex: 'client_id',
-      title: '客户端标识',
+      title: t('admin.clientIdLabel'),
       sorter: true,
       render: (_text: unknown, row: OidcClient) => (
         <span className={styles.idCell}>
@@ -354,57 +352,57 @@ export function OidcClientsPage(props: {
     },
     {
       dataIndex: 'name',
-      title: '展示名',
+      title: t('admin.clientNameLabel'),
       render: (_text: unknown, row: OidcClient) => row.name || EMPTY_TEXT,
     },
     {
       dataIndex: 'redirect_uris',
-      title: '回调白名单',
+      title: t('admin.redirectUrisLabel'),
       render: (_text: unknown, row: OidcClient) => summarizeList(row.redirectUris),
     },
     {
       dataIndex: 'scopes',
-      title: '权限范围',
+      title: t('admin.scopesLabel'),
       render: (_text: unknown, row: OidcClient) => summarizeList(row.scopes),
     },
     {
       dataIndex: 'access_token_ttl',
-      title: '令牌有效期',
+      title: t('admin.tokenTtlLabel'),
       render: (_text: unknown, row: OidcClient) =>
         tokenTtlSummary(row.accessTokenTtl, row.refreshTokenTtl),
     },
     {
       dataIndex: 'created_at',
-      title: '创建时间',
+      title: t('admin.createdAtLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: OidcClient) => formatUnixTime(row.createdAt),
     },
     {
       dataIndex: 'updated_at',
-      title: '更新时间',
+      title: t('admin.updatedAtLabel'),
       width: 170,
       sorter: true,
       render: (_text: unknown, row: OidcClient) => formatUnixTime(row.updatedAt),
     },
     {
       dataIndex: 'actions',
-      title: '操作',
+      title: t('admin.actionsLabel'),
       render: (_text: unknown, row: OidcClient) => (
         <span className={styles.actions}>
           <Button size="small" onClick={() => openView(row)}>
-            查看
+            {t('admin.viewAction')}
           </Button>
           <Button size="small" onClick={() => openEdit(row)}>
-            编辑
+            {t('admin.editAction')}
           </Button>
           <Popconfirm
-            title={`确定删除客户端「${row.clientId}」？删除后不可恢复`}
+            title={t('admin.clientDeleteConfirm', { clientId: row.clientId })}
             onConfirm={() => {
               void handleDelete(row);
             }}
           >
-            <Button size="small">删除</Button>
+            <Button size="small">{t('admin.removeAction')}</Button>
           </Popconfirm>
         </span>
       ),
@@ -415,17 +413,17 @@ export function OidcClientsPage(props: {
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
       <p role="alert" className={styles.loadError}>
-        客户端列表加载失败，请刷新重试
+        {t('admin.clientsLoadFailed')}
       </p>
     );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>OIDC 客户端</Typography.Title>
+      <Typography.Title heading={3}>{t('admin.navOidcClients')}</Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
-          新建客户端
+          {t('admin.createClientAction')}
         </Button>
       </div>
       {actionError !== null ? (
@@ -446,87 +444,93 @@ export function OidcClientsPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? '暂无客户端' : undefined}
+        empty={status === 'success' ? t('admin.noClients') : undefined}
       />
       <Modal
-        title="新建 OIDC 客户端"
+        title={t('admin.createOidcClientTitle')}
         visible={createOpen}
         onCancel={() => setCreateOpen(false)}
         footer={null}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>客户端标识</span>
+            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
             <Input
               value={createForm.clientId}
               onChange={(value) => setCreateForm({ ...createForm, clientId: value })}
               maxLength={CLIENT_ID_MAX_LEN}
-              placeholder="留空自动生成"
-              aria-label="客户端标识"
+              placeholder={t('admin.clientIdAutoGenPlaceholder')}
+              aria-label={t('admin.clientIdLabel')}
               disabled={createSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>展示名</span>
+            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
             <Input
               value={createForm.name}
               onChange={(value) => setCreateForm({ ...createForm, name: value })}
               maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder="客户端展示名"
-              aria-label="展示名"
+              placeholder={t('admin.clientNamePlaceholder')}
+              aria-label={t('admin.clientNameLabel')}
               disabled={createSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>回调白名单</span>
-            <span className={styles.fieldHint}>每条须为 * 或以 http:// / https:// 开头</span>
+            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
             <StringListEditor
               values={createForm.redirectUris}
               onChange={(next) => setCreateForm({ ...createForm, redirectUris: next })}
               disabled={createSubmitting}
-              ariaLabel="回调地址"
-              addText="添加回调地址"
-              placeholder="https://example.com/callback 或 *"
-              emptyHint="暂无回调地址，点击下方按钮添加"
+              ariaLabel={t('admin.redirectUriAriaLabel')}
+              addText={t('admin.addRedirectUri')}
+              placeholder={t('admin.redirectUriPlaceholder')}
+              emptyHint={t('admin.noRedirectUrisHint')}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>权限范围</span>
-            <span className={styles.fieldHint}>留空使用默认 openid,profile,email</span>
+            <span className={styles.fieldLabel}>{t('admin.scopesLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.scopesDefaultHint')}</span>
             <StringListEditor
               values={createForm.scopes}
               onChange={(next) => setCreateForm({ ...createForm, scopes: next })}
               disabled={createSubmitting}
-              ariaLabel="权限范围"
-              addText="添加权限范围"
-              placeholder="如 openid"
+              ariaLabel={t('admin.scopesLabel')}
+              addText={t('admin.addScope')}
+              placeholder={t('admin.scopePlaceholder')}
             />
           </div>
           <div className={styles.ttlRow}>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>访问令牌有效期（秒）</span>
+              <span className={styles.fieldLabel}>{t('admin.accessTokenTtlFieldLabel')}</span>
               <Input
                 value={createForm.accessTokenTtl}
                 onChange={(value) => setCreateForm({ ...createForm, accessTokenTtl: value })}
-                placeholder={`默认 ${OIDC_ACCESS_TTL_DEFAULT}`}
-                aria-label="访问令牌有效期"
+                placeholder={t('admin.ttlPlaceholder', { value: OIDC_ACCESS_TTL_DEFAULT })}
+                aria-label={t('admin.accessTokenTtlLabel')}
                 disabled={createSubmitting}
               />
               <span className={styles.fieldHint}>
-                1-{OIDC_ACCESS_TTL_MAX}，留空使用默认 {OIDC_ACCESS_TTL_DEFAULT}
+                {t('admin.ttlRangeHint', {
+                  max: OIDC_ACCESS_TTL_MAX,
+                  value: OIDC_ACCESS_TTL_DEFAULT,
+                })}
               </span>
             </div>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>刷新令牌有效期（秒）</span>
+              <span className={styles.fieldLabel}>{t('admin.refreshTokenTtlFieldLabel')}</span>
               <Input
                 value={createForm.refreshTokenTtl}
                 onChange={(value) => setCreateForm({ ...createForm, refreshTokenTtl: value })}
-                placeholder={`默认 ${OIDC_REFRESH_TTL_DEFAULT}`}
-                aria-label="刷新令牌有效期"
+                placeholder={t('admin.ttlPlaceholder', { value: OIDC_REFRESH_TTL_DEFAULT })}
+                aria-label={t('admin.refreshTokenTtlLabel')}
                 disabled={createSubmitting}
               />
               <span className={styles.fieldHint}>
-                1-{OIDC_REFRESH_TTL_MAX}，留空使用默认 {OIDC_REFRESH_TTL_DEFAULT}
+                {t('admin.ttlRangeHint', {
+                  max: OIDC_REFRESH_TTL_MAX,
+                  value: OIDC_REFRESH_TTL_DEFAULT,
+                })}
               </span>
             </div>
           </div>
@@ -537,7 +541,7 @@ export function OidcClientsPage(props: {
           ) : null}
           <div className={styles.formFooter}>
             <Button onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
-              取消
+              {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
@@ -547,38 +551,38 @@ export function OidcClientsPage(props: {
               disabled={createSubmitting}
               loading={createSubmitting}
             >
-              创建
+              {t('admin.createAction')}
             </Button>
           </div>
         </div>
       </Modal>
       <Modal
-        title="客户端详情"
+        title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
         footer={null}
       >
         {viewLoading ? (
-          <p role="status">{VIEW_LOADING_TEXT}</p>
+          <p role="status">{t('admin.loading')}</p>
         ) : viewError !== null ? (
           <p role="alert" className={styles.actionError}>
             {viewError}
           </p>
         ) : viewDetail !== null ? (
           <dl className={styles.detailList}>
-            <dt>客户端标识</dt>
+            <dt>{t('admin.clientIdLabel')}</dt>
             <dd className={styles.detailValue}>
               <code className={styles.idCode}>{viewDetail.clientId}</code>
               <CopyButton text={viewDetail.clientId} />
             </dd>
-            <dt>客户端密钥</dt>
+            <dt>{t('admin.clientSecretLabel')}</dt>
             <dd className={styles.detailValue}>
               <code className={styles.idCode}>{viewDetail.clientSecret}</code>
               <CopyButton text={viewDetail.clientSecret} />
             </dd>
-            <dt>展示名</dt>
+            <dt>{t('admin.clientNameLabel')}</dt>
             <dd>{viewDetail.name || EMPTY_TEXT}</dd>
-            <dt>回调白名单</dt>
+            <dt>{t('admin.redirectUrisLabel')}</dt>
             <dd>
               {viewDetail.redirectUris.length > 0 ? (
                 <ul className={styles.uriList}>
@@ -592,24 +596,26 @@ export function OidcClientsPage(props: {
                 EMPTY_TEXT
               )}
             </dd>
-            <dt>权限范围</dt>
+            <dt>{t('admin.scopesLabel')}</dt>
             <dd>
               {viewDetail.scopes.length > 0 ? viewDetail.scopes.join(', ') : EMPTY_TEXT}
             </dd>
-            <dt>访问令牌有效期</dt>
+            <dt>{t('admin.accessTokenTtlLabel')}</dt>
             <dd>{ttlDetailText(viewDetail.accessTokenTtl)}</dd>
-            <dt>刷新令牌有效期</dt>
+            <dt>{t('admin.refreshTokenTtlLabel')}</dt>
             <dd>{ttlDetailText(viewDetail.refreshTokenTtl)}</dd>
-            <dt>创建时间</dt>
+            <dt>{t('admin.createdAtLabel')}</dt>
             <dd>{formatUnixTime(viewDetail.createdAt)}</dd>
-            <dt>更新时间</dt>
+            <dt>{t('admin.updatedAtLabel')}</dt>
             <dd>{formatUnixTime(viewDetail.updatedAt)}</dd>
           </dl>
         ) : null}
       </Modal>
       <Modal
         title={
-          editTarget !== null ? `编辑客户端「${editTarget.clientId}」` : '编辑客户端'
+          editTarget !== null
+            ? t('admin.editClientTitle', { clientId: editTarget.clientId })
+            : t('admin.editClientFallbackTitle')
         }
         visible={editTarget !== null}
         onCancel={() => setEditTarget(null)}
@@ -617,81 +623,81 @@ export function OidcClientsPage(props: {
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>客户端标识</span>
-            <Input value={editTarget?.clientId ?? ''} disabled aria-label="客户端标识" />
-            <span className={styles.fieldHint}>创建后不可修改</span>
+            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
+            <Input value={editTarget?.clientId ?? ''} disabled aria-label={t('admin.clientIdLabel')} />
+            <span className={styles.fieldHint}>{t('admin.clientIdImmutable')}</span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>展示名</span>
+            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
             <Input
               value={editForm.name}
               onChange={(value) => setEditForm({ ...editForm, name: value })}
               maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder="客户端展示名"
-              aria-label="展示名"
+              placeholder={t('admin.clientNamePlaceholder')}
+              aria-label={t('admin.clientNameLabel')}
               disabled={editSubmitting}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>新密钥</span>
+            <span className={styles.fieldLabel}>{t('admin.newSecretLabel')}</span>
             <Input
               mode="password"
               value={editForm.newSecret}
               onChange={(value) => setEditForm({ ...editForm, newSecret: value })}
-              placeholder="留空保留原密钥"
-              aria-label="新密钥"
+              placeholder={t('admin.newSecretPlaceholder')}
+              aria-label={t('admin.newSecretLabel')}
               autoComplete="new-password"
               disabled={editSubmitting}
             />
-            <span className={styles.fieldHint}>填写后保存将轮换密钥，请同步更新接入方</span>
+            <span className={styles.fieldHint}>{t('admin.secretRotateHint')}</span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>回调白名单</span>
-            <span className={styles.fieldHint}>每条须为 * 或以 http:// / https:// 开头</span>
+            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
             <StringListEditor
               values={editForm.redirectUris}
               onChange={(next) => setEditForm({ ...editForm, redirectUris: next })}
               disabled={editSubmitting}
-              ariaLabel="回调地址"
-              addText="添加回调地址"
-              placeholder="https://example.com/callback 或 *"
+              ariaLabel={t('admin.redirectUriAriaLabel')}
+              addText={t('admin.addRedirectUri')}
+              placeholder={t('admin.redirectUriPlaceholder')}
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>权限范围</span>
-            <span className={styles.fieldHint}>每条不能为空且不能包含逗号</span>
+            <span className={styles.fieldLabel}>{t('admin.scopesLabel')}</span>
+            <span className={styles.fieldHint}>{t('admin.scopesEntryHint')}</span>
             <StringListEditor
               values={editForm.scopes}
               onChange={(next) => setEditForm({ ...editForm, scopes: next })}
               disabled={editSubmitting}
-              ariaLabel="权限范围"
-              addText="添加权限范围"
-              placeholder="如 openid"
+              ariaLabel={t('admin.scopesLabel')}
+              addText={t('admin.addScope')}
+              placeholder={t('admin.scopePlaceholder')}
             />
           </div>
           <div className={styles.ttlRow}>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>访问令牌有效期（秒）</span>
+              <span className={styles.fieldLabel}>{t('admin.accessTokenTtlFieldLabel')}</span>
               <Input
                 value={editForm.accessTokenTtl}
                 onChange={(value) => setEditForm({ ...editForm, accessTokenTtl: value })}
-                aria-label="访问令牌有效期"
+                aria-label={t('admin.accessTokenTtlLabel')}
                 disabled={editSubmitting}
               />
               <span className={styles.fieldHint}>
-                1-{OIDC_ACCESS_TTL_MAX}，留空保存将保留原值
+                {t('admin.ttlKeepHint', { max: OIDC_ACCESS_TTL_MAX })}
               </span>
             </div>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>刷新令牌有效期（秒）</span>
+              <span className={styles.fieldLabel}>{t('admin.refreshTokenTtlFieldLabel')}</span>
               <Input
                 value={editForm.refreshTokenTtl}
                 onChange={(value) => setEditForm({ ...editForm, refreshTokenTtl: value })}
-                aria-label="刷新令牌有效期"
+                aria-label={t('admin.refreshTokenTtlLabel')}
                 disabled={editSubmitting}
               />
               <span className={styles.fieldHint}>
-                1-{OIDC_REFRESH_TTL_MAX}，留空保存将保留原值
+                {t('admin.ttlKeepHint', { max: OIDC_REFRESH_TTL_MAX })}
               </span>
             </div>
           </div>
@@ -702,7 +708,7 @@ export function OidcClientsPage(props: {
           ) : null}
           <div className={styles.formFooter}>
             <Button onClick={() => setEditTarget(null)} disabled={editSubmitting}>
-              取消
+              {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
@@ -712,7 +718,7 @@ export function OidcClientsPage(props: {
               disabled={editSubmitting}
               loading={editSubmitting}
             >
-              保存
+              {t('admin.saveAction')}
             </Button>
           </div>
         </div>

@@ -16,6 +16,7 @@
  * （§8：methods 仅 login 必填）。401/404 分流在 AdminLayout（GetMe 失败时
  * 处理），路由层不发请求。
  */
+import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
 import { AdminLayout } from './layout/AdminLayout';
 import { AuditPage } from './pages/AuditPage';
@@ -65,11 +66,6 @@ const STATUS_PATH = '/admin/status';
 /** 解码工具页路径（§6 行 525；NAV_ITEMS itemKey 同约定）。 */
 const DECODE_PATH = '/admin/decode';
 
-/** 未注册路由兜底文案——无 i18n 键，最简中文字面量（归后续 i18n 实现）。 */
-const ROUTE_NOT_FOUND_TEXT = '页面不存在';
-
-/** 占位页文案（业务页面归后续实现逐项长入）。 */
-const PLACEHOLDER_TEXT = '管理后台';
 
 /** admin 应用根：bootstrap 读注入变量（al_root / static_base）→ 路由分派。 */
 export function AdminApp() {
@@ -81,7 +77,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={PROVIDERS_PATH}
-        breadcrumb={['管理后台', '提供方']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navProviders')]}
       >
         <ProvidersPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -92,7 +88,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={PROVIDERS_PATH}
-        breadcrumb={['管理后台', '提供方', '新建']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navProviders'), t('admin.newAction')]}
       >
         <ProviderEditPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -104,7 +100,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={PROVIDERS_PATH}
-        breadcrumb={['管理后台', '提供方', '编辑']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navProviders'), t('admin.editAction')]}
       >
         <ProviderEditPage
           alRoot={boot.alRoot}
@@ -115,7 +111,11 @@ export function AdminApp() {
   }
   if (path === USERS_PATH) {
     return (
-      <AdminLayout alRoot={boot.alRoot} activeKey={USERS_PATH} breadcrumb={['管理后台', '用户']}>
+      <AdminLayout
+        alRoot={boot.alRoot}
+        activeKey={USERS_PATH}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navUsers')]}
+      >
         <UsersPage alRoot={boot.alRoot} />
       </AdminLayout>
     );
@@ -126,7 +126,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={USERS_PATH}
-        breadcrumb={['管理后台', '用户', '用户详情']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navUsers'), t('admin.userDetailTitle')]}
       >
         <UserDetailPage alRoot={boot.alRoot} userId={BigInt(userMatch[1])} />
       </AdminLayout>
@@ -137,7 +137,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={SSO_CLIENTS_PATH}
-        breadcrumb={['管理后台', '客户端', 'SSO 客户端']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navClients'), t('admin.navSsoClients')]}
       >
         <SsoClientsPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -148,7 +148,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={OIDC_CLIENTS_PATH}
-        breadcrumb={['管理后台', '客户端', 'OIDC 客户端']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navClients'), t('admin.navOidcClients')]}
       >
         <OidcClientsPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -159,7 +159,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={SETTINGS_PATH}
-        breadcrumb={['管理后台', '设置']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navSettings')]}
       >
         <SettingsPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -170,7 +170,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={AUDIT_PATH}
-        breadcrumb={['管理后台', '事件日志']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navAudit')]}
       >
         <AuditPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -181,7 +181,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={STATUS_PATH}
-        breadcrumb={['管理后台', '监控']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navStatus')]}
       >
         <StatusPage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -192,7 +192,7 @@ export function AdminApp() {
       <AdminLayout
         alRoot={boot.alRoot}
         activeKey={DECODE_PATH}
-        breadcrumb={['管理后台', '解码工具']}
+        breadcrumb={[t('admin.rootTitle'), t('admin.navDecode')]}
       >
         <DecodePage alRoot={boot.alRoot} />
       </AdminLayout>
@@ -200,10 +200,10 @@ export function AdminApp() {
   }
   if (path.startsWith(ADMIN_PREFIX)) {
     return (
-      <AdminLayout alRoot={boot.alRoot} activeKey={path} breadcrumb={['管理后台']}>
-        <p role="status">{PLACEHOLDER_TEXT}</p>
+      <AdminLayout alRoot={boot.alRoot} activeKey={path} breadcrumb={[t('admin.rootTitle')]}>
+        <p role="status">{t('admin.rootTitle')}</p>
       </AdminLayout>
     );
   }
-  return <p role="status">{ROUTE_NOT_FOUND_TEXT}</p>;
+  return <p role="status">{t('admin.routeNotFound')}</p>;
 }
