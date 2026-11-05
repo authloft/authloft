@@ -884,16 +884,30 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 // 1145-1146：无会话 401 / 非管理员 404 掩护），错误包装由
 // connect.Server.HandlerOptions 统一补最内层。读路径（ListProviders /
 // GetProvider / GetProviderSchema——详情为全站唯一明文凭证出口，访问日志不
-// 打印 body）直连 ProviderRepo；写族 7 方法走 service/admin（业务校验 + 写后
-// 缓存失效，§18 行 1792 分层），ProviderCache 与 Loader 共用同一实例（见
-// assembled.providerCache 注释），其余方法由生成的
-// UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
+// 打印 body）直连 ProviderRepo；写族 7 方法
+// 走 service/admin/provider.go；用户管理族 8 方法走 service/admin/user.go
+//（业务校验 + IncEpoch/al:pwdep 失效链 + 审计投递 + Union 连带 + 解锁键清除，
+// §18 行 1792 分层）——epoch 同步复用共享单例 deps.epochStore，审计经
+// eventlog.Writer 走 deps.queue（resetAuditSink 同款链）；解锁用的 PwFailStore
+// 就地构造（BanTTL 仅影响 Ban 写路径，删除 / SCAN 不受其影响），其余方法由
+// 生成的 UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	providers := repo.NewProviderRepo(deps.db)
 	path, h := adminv1connect.NewAdminServiceHandler(
 		adminhandler.New(
 			providers,
 			adminsvc.NewService(providers, deps.providerCache),
+			adminsvc.NewUserService(
+				repo.NewUserRepo(deps.db),
+				repo.NewCredentialRepo(deps.db),
+				repo.NewBindRepo(deps.db),
+				providers,
+				repo.NewEventLogRepo(deps.db),
+				deps.epochStore,
+				cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{}),
+				eventlog.NewWriter(deps.queue),
+				deps.settings,
+			),
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)

@@ -44,6 +44,24 @@ func (r *CredentialRepo) FindByUserAndKind(ctx context.Context, userID int64, ki
 	return &c, nil
 }
 
+// ListByUser 按 idx_user_kind 取该用户全部凭证行（admin GetUser 凭证概览
+// 的数据源，接口文档 §5.4 行 1247）：含全部 kind（password / totp /
+// webauthn（每凭据一行）/ recovery_code / mfa_setting），id 正序保证列表
+// 全序稳定（口径同 bind_repo.ListByUserID）；secret 恒在行内，由上层
+// 投影裁剪绝不透出（user.proto UserCredentialSummary 注释）。空集返回
+// 空切片。
+func (r *CredentialRepo) ListByUser(ctx context.Context, userID int64) ([]model.UserCredential, error) {
+	var rows []model.UserCredential
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("id ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("credential repo: list by user: %w", err)
+	}
+	return rows, nil
+}
+
 // Create 插入凭证行（kind / secret 拿到什么存什么，repo 不做白名单与
 // 口令校验；webauthn 凭据行不经此方法，走 WebauthnRepo.Create 同事务
 // 建两行）。

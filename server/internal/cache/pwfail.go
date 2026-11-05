@@ -2,7 +2,7 @@
 // §21.2-C 行 1825）：al:pwf:{user_ref}:{yyyymmdd} 当日失败计数（INCR，首次 /
 // 缺失 TTL 时 EXPIRE 至服务器本地当日 24:00），al:pwban:{user_ref} 达阈值
 // 后禁止密码登录（SET NX EX，默认 21600s = 6h，可由调用方按 pwd_ban_ttl 注入）。
-// 状态映射（status=locked / retry_after 文案）与阈值判定归 service（NON-GOALS）；
+// 状态映射（status=locked / retry_after 文案）与阈值判定归 service（不在本模块范围）；
 // 本文件只做键空间原子读写。
 //
 // 时区口径：文档只写「当天 24:00」未写时区，代码按 time.Local，时钟经
@@ -13,6 +13,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -27,6 +28,7 @@ const defaultPwBanTTL = 21600 * time.Second
 
 // pwFailRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
 // 窄化便于测试注入 fake，不暴露整个 Cmdable，同 codeRedis 口径）。
+// Scan 供管理员解锁的「ip + 账号哈希」维度模式匹配删除。
 type pwFailRedis interface {
 	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
 	Get(ctx context.Context, key string) *redis.StringCmd
@@ -34,6 +36,7 @@ type pwFailRedis interface {
 	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 	PTTL(ctx context.Context, key string) *redis.DurationCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 }
 
 // PwFailOptions 密码失败保护参数（由调用方按 settings 注入，零值取默认）。
@@ -145,4 +148,58 @@ func (s *PwFailStore) Reset(ctx context.Context, userRef string) error {
 		return fmt.Errorf("cache: reset pwfail: %w", err)
 	}
 	return nil
+}
+
+// accountHashPattern 账号哈希段格式（§8.1 行 1027 user_ref 组合的哈希段：
+// sha256(identifier) 的小写十六进制，64 字符）：非该格式（空 / 长度不符 /
+// 非 hex）静默 no-op——合法调用方按同款算法构造，脏值只会来自程序错误，
+// 不扩散为模式匹配风险（hex 字符集外含 glob 元字符时会误删自有键）。
+var accountHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// scanBatchSize SCAN 单批 COUNT（提示值而非硬上限，Redis 自行攒批）。
+const scanBatchSize = 100
+
+// DeleteAccountRef 清除「ip + 输入账号哈希」维度的全部失败计数与封禁键
+// （管理员解锁，后端架构 §8.1 行 1041：该维度 user_ref = ip + "|" +
+// hex(sha256(identifier))，factor/password userRef 同款格式——「账号不存在」
+// 阶段种下的键 ip 未知，无法直接构造键名，只能按账号哈希段 SCAN 模式
+// 匹配删除：al:pwf:*|{accountHash}:{任意日期} 与 al:pwban:*|{accountHash}）。
+// SCAN 游标遍历 + 命中即分批 DEL；pattern 绑定在自有键前缀内，不触碰
+// 其它业务键空间。accountHash 非 64 位小写 hex 时 no-op（见上方注释）。
+func (s *PwFailStore) DeleteAccountRef(ctx context.Context, accountHash string) error {
+	if !accountHashPattern.MatchString(accountHash) {
+		return nil
+	}
+	patterns := []string{
+		pwFailKeyPrefix + "*|" + accountHash + ":*",
+		pwBanKeyPrefix + "*|" + accountHash,
+	}
+	for _, pattern := range patterns {
+		if err := s.deleteMatching(ctx, pattern); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteMatching SCAN 游标遍历匹配 pattern 的键并逐批 DEL（游标为 0 时
+// 结束；SCAN 期间键集变动由 Redis 保证只遍历开始前存在且未被删除的键，
+// 重复出现由 DEL 幂等承担）。
+func (s *PwFailStore) deleteMatching(ctx context.Context, pattern string) error {
+	var cursor uint64
+	for {
+		keys, next, err := s.rdb.Scan(ctx, cursor, pattern, scanBatchSize).Result()
+		if err != nil {
+			return fmt.Errorf("cache: scan pwfail %q: %w", pattern, err)
+		}
+		if len(keys) > 0 {
+			if err := s.rdb.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("cache: delete pwfail %q: %w", pattern, err)
+			}
+		}
+		if next == 0 {
+			return nil
+		}
+		cursor = next
+	}
 }

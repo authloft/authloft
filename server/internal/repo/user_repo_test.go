@@ -484,3 +484,130 @@ func TestUserProfileReadWrite(t *testing.T) {
 		t.Errorf("GetProfile 未命中应 ErrRecordNotFound, got %v", err)
 	}
 }
+
+// TestUserRepoListUsersSearchSort（env-skip）：q 对 username / nickname /
+// email / phone 四列模糊匹配（%q%，通配符转义为字面量）；sort / order 消费
+//（合法列名排序、缺省与字符集外回落 id、order 仅 asc 改向）。
+func TestUserRepoListUsersSearchSort(t *testing.T) {
+	rp, _ := userTestSetup(t)
+	ctx := context.Background()
+
+	rows := []struct {
+		username, nickname, phone, email string
+	}{
+		{"alice_01", "爱丽丝", "13800000001", "alice@example.com"},
+		{"bob_02", "Alice Chen", "13900000002", "bob@example.com"},
+		{"carol_03", "卡罗尔", "13700000003", "carol@example.com"},
+		{"dave_04", "戴夫", "13600000004", "alice@corp.example.com"},
+	}
+	for _, r := range rows {
+		u := &model.User{Username: r.username, Nickname: r.nickname}
+		if r.phone != "" {
+			u.Phone = &r.phone
+		}
+		if r.email != "" {
+			u.Email = &r.email
+		}
+		if err := rp.Create(ctx, u); err != nil {
+			t.Fatalf("Create %s 失败: %v", r.username, err)
+		}
+	}
+
+	// q 命中 username（alice_01）/ nickname（Alice Chen，大小写不敏感列排序规则
+	// 下命中）/ email 域名（alice@、alice@corp）——含列：username + email 两个
+	// alice 条目 + nickname 的 Alice Chen。
+	got, total, err := rp.ListUsers(ctx, UserListQuery{Q: "alice"})
+	if err != nil {
+		t.Fatalf("Q=alice: %v", err)
+	}
+	if total != 3 || len(got) != 3 {
+		t.Fatalf("Q=alice = (%d 行, total=%d), want 3/3（username/nickname/email 三列命中）", len(got), total)
+	}
+
+	// q 命中 phone 前缀。
+	if _, total, err = rp.ListUsers(ctx, UserListQuery{Q: "138"}); err != nil || total != 1 {
+		t.Fatalf("Q=138 = total %d err=%v, want 1（phone 列命中）", total, err)
+	}
+
+	// LIKE 通配符按字面量匹配：q="100%" 只含字面百分号，无行命中（不报错）。
+	if _, total, err = rp.ListUsers(ctx, UserListQuery{Q: "100%"}); err != nil || total != 0 {
+		t.Fatalf("Q=100%% = total %d err=%v, want 0（通配符转义为字面量）", total, err)
+	}
+
+	// sort=username + order=asc：主序生效。
+	if got, _, err = rp.ListUsers(ctx, UserListQuery{Sort: "username", Order: "asc", PageSize: 10}); err != nil ||
+		len(got) != 4 || got[0].Username != "alice_01" || got[3].Username != "dave_04" {
+		t.Fatalf("sort=username asc = %v err=%v", usernames(got), err)
+	}
+	// 同主序（nickname 唯一）+ order 缺省 desc。
+	if got, _, err = rp.ListUsers(ctx, UserListQuery{Sort: "username", PageSize: 10}); err != nil ||
+		got[0].Username != "dave_04" {
+		t.Fatalf("sort=username 缺省 order = %v err=%v, want dave_04 在首（desc）", usernames(got), err)
+	}
+	// 字符集外 sort（注入防御）→ 回落 id，不报错。
+	if _, _, err = rp.ListUsers(ctx, UserListQuery{Sort: "id; DROP TABLE user", Order: "desc"}); err != nil {
+		t.Fatalf("非法 sort 应回落不报错: %v", err)
+	}
+	// 排序 + 分页叠加：sort=username asc，page2 size 2 取后两行。
+	if got, _, err = rp.ListUsers(ctx, UserListQuery{Sort: "username", Order: "asc", Page: 2, PageSize: 2}); err != nil ||
+		len(got) != 2 || got[0].Username != "carol_03" || got[1].Username != "dave_04" {
+		t.Fatalf("sort+page2 = %v err=%v", usernames(got), err)
+	}
+}
+
+func usernames(rows []model.User) []string {
+	out := make([]string, len(rows))
+	for i := range rows {
+		out[i] = rows[i].Username
+	}
+	return out
+}
+
+// TestUserRepoUpdateUserStatus（env-skip）：列级 UPDATE 禁用 / 启用
+//（零值 0 落库——列级更新不受 default:1 tag 影响）；updated_at 刷新；同值
+// 重放幂等成功；不存在 → ErrRecordNotFound。
+func TestUserRepoUpdateUserStatus(t *testing.T) {
+	rp, db := userTestSetup(t)
+	ctx := context.Background()
+
+	u := &model.User{Username: "alice"}
+	if err := rp.Create(ctx, u); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	// updated_at 回拨 1 分钟（DATETIME 秒级精度下，避免与 Create 同秒导致
+	// 刷新断言误判——口径同 userTestSetEpoch 的直接置列前提构造）。
+	before := time.Now().Add(-time.Minute).Truncate(time.Second)
+	if err := db.Model(&model.User{}).Where("id = ?", u.ID).Update("updated_at", before).Error; err != nil {
+		t.Fatalf("回拨 updated_at 失败: %v", err)
+	}
+
+	// 禁用：user_status 0 必须真实落库（Create 的 default:1 tag 契约对照）。
+	if err := rp.UpdateUserStatus(ctx, u.ID, 0); err != nil {
+		t.Fatalf("禁用失败: %v", err)
+	}
+	row, err := rp.FindByID(ctx, u.ID)
+	if err != nil || row.UserStatus != 0 {
+		t.Fatalf("禁用后 user_status = (%d, %v), want 0", row.UserStatus, err)
+	}
+	if !row.UpdatedAt.After(before) {
+		t.Fatalf("updated_at 应刷新: before=%v after=%v", before, row.UpdatedAt)
+	}
+
+	// 同值重放幂等成功（changed-rows=0 + 行在）。
+	if err := rp.UpdateUserStatus(ctx, u.ID, 0); err != nil {
+		t.Fatalf("同值重放应幂等: %v", err)
+	}
+
+	// 启用回 1。
+	if err := rp.UpdateUserStatus(ctx, u.ID, 1); err != nil {
+		t.Fatalf("启用失败: %v", err)
+	}
+	if row, err = rp.FindByID(ctx, u.ID); err != nil || row.UserStatus != 1 {
+		t.Fatalf("启用后 user_status = (%d, %v), want 1", row.UserStatus, err)
+	}
+
+	// 不存在 → ErrRecordNotFound。
+	if err := rp.UpdateUserStatus(ctx, 404, 0); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
+	}
+}

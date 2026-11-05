@@ -1,17 +1,17 @@
 // Package admin 实现 api.admin.v1.AdminService 的 Connect handler
-// （docs/后端架构.md §3.4 行 333：admin 域方法族，全部需管理员会话）。本实现
-// 仅落地 Provider 族读路径，其余方法一律由生成的
-// UnimplementedAdminServiceHandler 返回 unimplemented（不自造错误信封）。
+// （docs/后端架构.md §3.4 行 333：admin 域方法族，全部需管理员会话）。
+// 已落地 Provider 族读路径、Provider 写族、
+// 管理员自身 + 用户管理族（GetMe + §5.4 七方法，service/admin/user.go 分层），
+// 其余方法一律由生成的 UnimplementedAdminServiceHandler 返回 unimplemented
+//（不自造错误信封）。
 //
 // 鉴权口径（docs/接口文档.md §5 行 1145-1146）：管理员 = 安装时创建的
 // user.id = 1 账号；admin 拦截器（connect.NewAdminInterceptor）挂在 session
 // 拦截器之内——无会话 401 unauthenticated、非管理员 404 not_found（掩护管理
-// 面存在），故 handler 不做二次鉴权。
+// 面存在），故 handler 不做二次鉴权；会话身份（uid）经 session.WithSessionContext
+// 注入 ctx，GetMe 与审计 actor 从 ctx 取。
 //
 // TODO(后续 admin 实现)——桩方法归属（均返回生成基类的 unimplemented）：
-//   - 管理员自身：GetMe（§5.1）
-//   - 用户管理：ListUsers / GetUser / UpdateUserStatus / ResetUserPassword /
-//     UnbindUserThirdparty / UnlockUser / GetUserEvents（§5.4）
 //   - 客户端管理：ListSsoClients / CreateSsoClient / GetSsoClient /
 //     UpdateSsoClient / DeleteSsoClient / ListOidcClients / CreateOidcClient /
 //     GetOidcClient / UpdateOidcClient / DeleteOidcClient（§5.5）
@@ -35,6 +35,7 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/session"
 	adminsvc "authloft/internal/service/admin"
 )
 
@@ -59,13 +60,29 @@ type ProviderService interface {
 	TestProvider(ctx context.Context, providerKey, target string) error
 }
 
+// UserService admin 域用户管理族窄接口（§20 依赖注入）：生产注入
+// *adminsvc.UserService（分层 §18 行 1792：handler → service/admin/user.go →
+// repo / cache），测试可传 fake。
+type UserService interface {
+	GetMe(ctx context.Context, uid int64) (*model.User, error)
+	ListUsers(ctx context.Context, f adminsvc.ListUsersFilter) ([]model.User, int64, error)
+	GetUser(ctx context.Context, id int64) (*adminsvc.UserDetail, error)
+	UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error
+	ResetUserPassword(ctx context.Context, actor, id int64, password string) error
+	UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error
+	UnlockUser(ctx context.Context, id int64) error
+	GetUserEvents(ctx context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error)
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect/interceptors.go 与 account handler）。
 var (
-	errNotFound        = errors.New("not found")
-	errUnknownProvType = errors.New("unknown provider type")
-	errInvalidRequest  = errors.New("invalid request")
-	errDuplicateKey    = errors.New("provider key already exists")
+	errNotFound         = errors.New("not found")
+	errUnknownProvType  = errors.New("unknown provider type")
+	errInvalidRequest   = errors.New("invalid request")
+	errDuplicateKey     = errors.New("provider key already exists")
+	errAuthRequired     = errors.New("authentication required")
+	errPasswordWeak     = errors.New("password does not meet policy")
 )
 
 // providerListPageSize 管理列表分页上限（§1.7 行 277：pageSize 上限 100），
@@ -78,12 +95,13 @@ type Handler struct {
 	adminv1connect.UnimplementedAdminServiceHandler
 	providers ProviderReader
 	svc       ProviderService
+	users     UserService
 }
 
 // New 构造 AdminService handler（providers：读路径；svc：写族 +
-// GetProviderTypes + TestProvider）。
-func New(providers ProviderReader, svc ProviderService) *Handler {
-	return &Handler{providers: providers, svc: svc}
+// GetProviderTypes + TestProvider；users：用户管理族 8 方法）。
+func New(providers ProviderReader, svc ProviderService, users UserService) *Handler {
+	return &Handler{providers: providers, svc: svc, users: users}
 }
 
 // ListProviders（接口文档 §5.2 行 1168）：筛选 {category, type, isEnabled} +
@@ -298,6 +316,141 @@ func (h *Handler) TestProvider(ctx context.Context, req *connectrpc.Request[admi
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
 }
 
+// —— 用户管理族 8 方法（§5.1 行 1162、§5.4 行 1249-1255）：service
+// 层业务校验与副作用编排，handler 只做 Connect 形态映射与 dto 投影——
+
+// GetMe（§5.1 行 1162）：当前管理员 {id, username, nickname, avatarUrl,
+// isAdmin:true}——前端获取管理员信息的唯一来源。uid 取 session ctx（session
+// 拦截器注入载荷，admin 拦截器已收口 uid==1，本方法不做二次鉴权）；行缺失
+// → 404（安装账号被删的脏数据防御）。
+func (h *Handler) GetMe(ctx context.Context, _ *connectrpc.Request[adminv1.GetMeRequest]) (*connectrpc.Response[adminv1.MeResponse], error) {
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	row, err := h.users.GetMe(ctx, uid)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
+		}
+		if errors.Is(err, adminsvc.ErrInvalidRequest) {
+			return nil, connect.WithErrorInfo(
+				connectrpc.NewError(connectrpc.CodeInvalidArgument, errInvalidRequest),
+				connect.NewErrorInfo("admin", "invalid_request", "invalid request"),
+			)
+		}
+		return nil, fmt.Errorf("admin handler: get me: %w", err)
+	}
+	return connectrpc.NewResponse(dto.AdminMe(row)), nil
+}
+
+// ListUsers（§5.4 行 1249）：筛选 {q, userStatus} + §1.7 分页的用户列表；
+// sort / order 透传 service（§1.7 行 277 后端不做白名单强制校验，防注入
+// 字符集约束在 repo）。
+func (h *Handler) ListUsers(ctx context.Context, req *connectrpc.Request[adminv1.ListUsersRequest]) (*connectrpc.Response[adminv1.UserListResponse], error) {
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.users.ListUsers(ctx, adminsvc.ListUsersFilter{
+		Q:          req.Msg.GetQ(),
+		UserStatus: req.Msg.UserStatus,
+		Page:       page,
+		PageSize:   size,
+		Sort:       req.Msg.GetSort(),
+		Order:      req.Msg.GetOrder(),
+	})
+	if err != nil {
+		return nil, mapUserError("list users", err)
+	}
+	items := make([]*adminv1.AdminUser, len(rows))
+	for i := range rows {
+		items[i] = dto.AdminUser(&rows[i])
+	}
+	return connectrpc.NewResponse(&adminv1.UserListResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
+// GetUser（§5.4 行 1250）：{id} 详情（含凭证概览、绑定、MFA 状态）——
+// dto.AdminUserDetail 组装，secret 不透出（UserCredentialSummary 无该字段）。
+func (h *Handler) GetUser(ctx context.Context, req *connectrpc.Request[adminv1.GetUserRequest]) (*connectrpc.Response[adminv1.UserDetailResponse], error) {
+	d, err := h.users.GetUser(ctx, req.Msg.GetId())
+	if err != nil {
+		return nil, mapUserError("get user", err)
+	}
+	return connectrpc.NewResponse(dto.AdminUserDetail(d.User, d.Credentials, d.Bindings)), nil
+}
+
+// UpdateUserStatus（§5.4 行 1251）：{id, userStatus 0|1} 禁用 / 启用；禁用
+// 走 IncEpoch 会话失效链 + 审计（service 层编排）。
+func (h *Handler) UpdateUserStatus(ctx context.Context, req *connectrpc.Request[adminv1.UpdateUserStatusRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UpdateUserStatus(ctx, actor, req.Msg.GetId(), req.Msg.GetUserStatus()); err != nil {
+		return nil, mapUserError("update user status", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// ResetUserPassword（§5.4 行 1252）：{id, password} 管理员重置——§5.6 密码
+// 策略校验在 service；不满足 → invalid_argument + code=password_weak
+//（§1.6 封闭集合既有取值，ErrorInfo domain=admin）。
+func (h *Handler) ResetUserPassword(ctx context.Context, req *connectrpc.Request[adminv1.ResetUserPasswordRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.ResetUserPassword(ctx, actor, req.Msg.GetId(), req.Msg.GetPassword()); err != nil {
+		return nil, mapUserError("reset user password", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// UnbindUserThirdparty（§5.4 行 1253）：{id, providerKey} 解绑第三方——
+// Union Provider 行不可单独解绑（invalid_request）、Union 行连带在 service。
+func (h *Handler) UnbindUserThirdparty(ctx context.Context, req *connectrpc.Request[adminv1.UnbindUserThirdpartyRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UnbindUserThirdparty(ctx, actor, req.Msg.GetId(), req.Msg.GetProviderKey()); err != nil {
+		return nil, mapUserError("unbind user thirdparty", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// UnlockUser（§5.4 行 1254）：{id} 解除登录限制——清 uid 维度键 + 按当前
+// phone / email 重算 ip 维度键（service 层编排，§8.1 行 1041）。
+func (h *Handler) UnlockUser(ctx context.Context, req *connectrpc.Request[adminv1.UnlockUserRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.users.UnlockUser(ctx, req.Msg.GetId()); err != nil {
+		return nil, mapUserError("unlock user", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// GetUserEvents（§5.4 行 1255）：{id} + 分页的该用户登录记录（login_success
+// 过滤在 service）；detail msgpack → JSON 对象在 dto 投影。
+func (h *Handler) GetUserEvents(ctx context.Context, req *connectrpc.Request[adminv1.GetUserEventsRequest]) (*connectrpc.Response[adminv1.UserEventsResponse], error) {
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.users.GetUserEvents(ctx, req.Msg.GetId(), page, size)
+	if err != nil {
+		return nil, mapUserError("get user events", err)
+	}
+	items := make([]*adminv1.EventItem, len(rows))
+	for i := range rows {
+		items[i] = dto.AdminEventItem(&rows[i])
+	}
+	return connectrpc.NewResponse(&adminv1.UserEventsResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
 // mapWriteError service 写路径错误 → Connect 形态（§1.5 行 182-195 统一口径）：
 // 参数 / 校验类 → invalid_argument + ErrorInfo domain=admin code=invalid_request
 //（§1.6 封闭集合，同 GetProviderSchema 先例）；唯一键冲突 → already_exists
@@ -313,6 +466,30 @@ func mapWriteError(op string, err error) error {
 		)
 	case errors.Is(err, adminsvc.ErrDuplicateKey):
 		return connectrpc.NewError(connectrpc.CodeAlreadyExists, errDuplicateKey)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("admin handler: %s: %w", op, err)
+	}
+}
+
+// mapUserError 用户管理族 service 错误 → Connect 形态（口径同 mapWriteError，
+// §1.5 行 182-195）：参数 / 校验类 → invalid_argument + code=invalid_request；
+// 密码不满足 §5.6 策略 → invalid_argument + code=password_weak（§1.6 封闭
+// 集合既有业务码，前端已有映射）；资源不存在 → not_found；其余原样上抛
+// 消毒为 internal。
+func mapUserError(op string, err error) error {
+	switch {
+	case errors.Is(err, adminsvc.ErrInvalidRequest):
+		return connect.WithErrorInfo(
+			connectrpc.NewError(connectrpc.CodeInvalidArgument, errInvalidRequest),
+			connect.NewErrorInfo("admin", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, adminsvc.ErrPasswordWeak):
+		return connect.WithErrorInfo(
+			connectrpc.NewError(connectrpc.CodeInvalidArgument, errPasswordWeak),
+			connect.NewErrorInfo("admin", "password_weak", "password does not meet policy"),
+		)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 	default:

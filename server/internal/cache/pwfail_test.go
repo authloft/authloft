@@ -6,6 +6,8 @@
 package cache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 )
@@ -190,4 +192,75 @@ func TestPwFailReset(t *testing.T) {
 	if rem, err := store.BanRemaining(ctx, ref); err != nil || rem != 0 {
 		t.Fatalf("Reset 后 BanRemaining = (%v, %v), want (0, nil)", rem, err)
 	}
+}
+
+// TestPwFailDeleteAccountRef：管理员解锁的「ip + 账号哈希」维度
+// SCAN 清除——按账号哈希段删除该维度任意 ip / 任意日期的 pwf / pwban 键，
+// 不触碰同前缀的其它账号键与非本键空间的键；非 64 位 hex 入参 no-op。
+func TestPwFailDeleteAccountRef(t *testing.T) {
+	ctx, rdb, token := t052RDB(t)
+	store := NewPwFailStore(rdb, PwFailOptions{})
+
+	// 账号哈希段：sha256("alice@example.com") 的 64 位 hex（factor/password
+	// userRef 的哈希段同款格式，§8.1 行 1027）。
+	hash := sha256SumHex("alice@example.com")
+	// 同账号不同 ip 维度键（用户不存在阶段由两个 ip 种下）+ 不同日期。
+	hashKeys := []string{
+		PwFailKey("10.0.0.1|"+hash, "20261104"),
+		PwFailKey("192.168.1.8|"+hash, "20261105"),
+		PwBanKey("10.0.0.1|" + hash),
+	}
+	for _, k := range hashKeys {
+		if err := rdb.Set(ctx, k, "1", time.Hour).Err(); err != nil {
+			t.Fatalf("种键 %s 失败: %v", k, err)
+		}
+	}
+	// 干扰项：其它账号哈希维度 + uid 维度 + 非本键空间。
+	otherHash := sha256SumHex("bob@example.com")
+	unrelated := []string{
+		PwFailKey("10.0.0.1|"+otherHash, "20261104"),
+		PwBanKey("42"),
+		PwFailKey("42", "20261104"),
+		EpochKey(42), // al:pwdep 键空间（同 al: 前缀族，验证不误删）
+		token + "-unrelated",
+	}
+	for _, k := range unrelated {
+		if err := rdb.Set(ctx, k, "1", time.Hour).Err(); err != nil {
+			t.Fatalf("种干扰键 %s 失败: %v", k, err)
+		}
+	}
+
+	if err := store.DeleteAccountRef(ctx, hash); err != nil {
+		t.Fatalf("DeleteAccountRef: %v", err)
+	}
+	for _, k := range hashKeys {
+		if n, err := rdb.Exists(ctx, k).Result(); err != nil || n != 0 {
+			t.Fatalf("维度键 %s exists = (%d, %v), want 0", k, n, err)
+		}
+	}
+	for _, k := range unrelated {
+		if n, err := rdb.Exists(ctx, k).Result(); err != nil || n != 1 {
+			t.Fatalf("干扰键 %s exists = (%d, %v), want 1（不得误删）", k, n, err)
+		}
+	}
+
+	// 非 64 位 hex（空 / 短 / 含 glob 元字符）→ no-op 不报错、不动任何键。
+	if err := store.DeleteAccountRef(ctx, ""); err != nil {
+		t.Fatalf("空哈希应 no-op: %v", err)
+	}
+	if err := store.DeleteAccountRef(ctx, "abc*"); err != nil {
+		t.Fatalf("脏哈希应 no-op: %v", err)
+	}
+	for _, k := range unrelated {
+		if n, err := rdb.Exists(ctx, k).Result(); err != nil || n != 1 {
+			t.Fatalf("no-op 后干扰键 %s exists = (%d, %v), want 1", k, n, err)
+		}
+	}
+}
+
+// sha256SumHex sha256 → 小写十六进制（factor/password userRef 的账号哈希段
+// 同款算法，测试辅助）。
+func sha256SumHex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }

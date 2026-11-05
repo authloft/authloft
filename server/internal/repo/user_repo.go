@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -222,15 +224,33 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 }
 
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
-// ListUsers 筛选入参 {q, userStatus}——q 模糊搜索的搜索字段与规则文档
-// 未定义，归后续 service 实现）；分页按 §1.7（page 从 1 开始、pageSize
-// 默认 20、上限 100）。sort / order 取值由前端限定（§1.7 后端不做白名
-// 单强制校验），repo 固定 ORDER BY id DESC 保证分页全序稳定，任意列
-// 排序归 service / handler 实现。
+// ListUsers 筛选入参 {q, userStatus}）；Q 非空时对 username / nickname /
+// email / phone 四列做模糊匹配（默认口径：LIKE %q%，LIKE 通配
+// 符 %/_/\ 按 \ 转义保证字面匹配，待定）；分页按 §1.7（page 从
+// 1 开始、pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定
+//（§1.7 后端不做白名单强制校验）——repo 只做字符集防注入（非
+// [a-z0-9_] 列名静默回落 id，order 非 asc 一律 desc），不拒绝请求。
 type UserListQuery struct {
 	UserStatus *int8
+	Q          string
+	Sort       string
+	Order      string
 	Page       int
 	PageSize   int
+}
+
+// userSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——user
+// 表列名均在该集合内；字符集校验是防 ORDER BY 注入的格式约束，不是取值
+// 白名单：§1.7 行 277 后端不做白名单强制校验）。
+var userSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+// userDefaultSortColumn 默认排序列（缺省 / 非法 sort 的回落值）。
+const userDefaultSortColumn = "id"
+
+// escapeLike 转义 LIKE 通配符（%/_）与转义符本身（\），保证 Q 按字面子串
+// 匹配；MySQL/MariaDB LIKE 默认转义符即 \。
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // ListUsers 分页列表：返回当页行与过滤后总数（§1.7 响应
@@ -242,6 +262,13 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 		if q.UserStatus != nil {
 			tx = tx.Where("user_status = ?", *q.UserStatus)
 		}
+		if q.Q != "" {
+			like := "%" + escapeLike(q.Q) + "%"
+			tx = tx.Where(
+				"username LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?",
+				like, like, like, like,
+			)
+		}
 		return tx
 	}
 	var total int64
@@ -250,7 +277,7 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 	}
 	var rows []model.User
 	err := filter().
-		Order("id DESC").
+		Order(q.orderClause()).
 		Limit(size).
 		Offset((page - 1) * size).
 		Find(&rows).Error
@@ -258,6 +285,54 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 		return nil, 0, fmt.Errorf("user repo: list: %w", err)
 	}
 	return rows, total, nil
+}
+
+// orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
+//（大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；
+// 非 id 主序恒追加 id 次序保证分页全序稳定（同值行跨页不漂移，口径同
+// webauthn_repo.ListByUser）。
+func (q UserListQuery) orderClause() string {
+	col := q.Sort
+	if col == "" || !userSortColumnPattern.MatchString(col) {
+		col = userDefaultSortColumn
+	}
+	dir := "DESC"
+	if strings.EqualFold(q.Order, "asc") {
+		dir = "ASC"
+	}
+	if col == userDefaultSortColumn {
+		return col + " " + dir
+	}
+	return "`" + col + "` " + dir + ", id DESC"
+}
+
+// UpdateUserStatus 列级更新 user_status（§5.4 行 1248 禁用 / 启用——禁用
+// 入口是列级 UPDATE，不受 Create 的 default:1 tag 影响，见 model.User 注释；
+// 启用态同构）。updated_at 一并刷新。用户不存在返回包装的
+// gorm.ErrRecordNotFound；同值重放幂等成功（changed-rows 语义下 rows=0
+// 补 SELECT 存在性判定，口径同 UpdateProfileColumns）。
+func (r *UserRepo) UpdateUserStatus(ctx context.Context, id int64, userStatus int8) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"user_status": userStatus, "updated_at": time.Now()})
+	if res.Error != nil {
+		return fmt.Errorf("user repo: update user status: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.User{}).
+			Select("COUNT(*)").
+			Where("id = ?", id).
+			Scan(&exists).Error; err != nil {
+			return fmt.Errorf("user repo: update user status: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user repo: update user status: %w", gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
 }
 
 // normalize 分页参数归一（§1.7：page 1 起、pageSize 默认 20 上限 100）。

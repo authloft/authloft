@@ -24,6 +24,7 @@ import (
 	providerpb "authloft/gen/go/provider"
 	"authloft/gen/go/token"
 	internalconnect "authloft/internal/connect"
+	"authloft/internal/eventlog"
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -124,14 +125,107 @@ func (f *fakeWriter) TestProvider(_ context.Context, providerKey, target string)
 	return f.testErr
 }
 
+// fakeUserService 用户管理族（UserService）的 fake：入参全留档断言，
+// 错误可注入；返回数据可预置。
+type fakeUserService struct {
+	meErr     error
+	listErr   error
+	getErr    error
+	statusErr error
+	resetErr  error
+	unbindErr error
+	unlockErr error
+	eventsErr error
+
+	meRow      *model.User
+	listRows   []model.User
+	listTotal  int64
+	detail     *adminsvc.UserDetail
+	events     []model.EventLog
+	eventsTot  int64
+
+	gotList  adminsvc.ListUsersFilter
+	gotMeUID int64
+	gotDetailID int64
+	gotStatus   adminsvcStatusCall
+	gotReset    adminsvcResetCall
+	gotUnbind    adminsvcUnbindCall
+	gotUnlockID  int64
+	gotEvents    adminsvcEventsCall
+}
+
+type (
+	adminsvcStatusCall struct {
+		actor, id int64
+		status    int64
+	}
+	adminsvcResetCall struct {
+		actor, id int64
+		password  string
+	}
+	adminsvcUnbindCall struct {
+		actor, id int64
+		provider  string
+	}
+	adminsvcEventsCall struct {
+		id              int64
+		page, pageSize  int
+	}
+)
+
+func (f *fakeUserService) GetMe(_ context.Context, uid int64) (*model.User, error) {
+	f.gotMeUID = uid
+	return f.meRow, f.meErr
+}
+
+func (f *fakeUserService) ListUsers(_ context.Context, flt adminsvc.ListUsersFilter) ([]model.User, int64, error) {
+	f.gotList = flt
+	return f.listRows, f.listTotal, f.listErr
+}
+
+func (f *fakeUserService) GetUser(_ context.Context, id int64) (*adminsvc.UserDetail, error) {
+	f.gotDetailID = id
+	return f.detail, f.getErr
+}
+
+func (f *fakeUserService) UpdateUserStatus(_ context.Context, actor, id int64, status int64) error {
+	f.gotStatus = adminsvcStatusCall{actor: actor, id: id, status: status}
+	return f.statusErr
+}
+
+func (f *fakeUserService) ResetUserPassword(_ context.Context, actor, id int64, password string) error {
+	f.gotReset = adminsvcResetCall{actor: actor, id: id, password: password}
+	return f.resetErr
+}
+
+func (f *fakeUserService) UnbindUserThirdparty(_ context.Context, actor, id int64, providerKey string) error {
+	f.gotUnbind = adminsvcUnbindCall{actor: actor, id: id, provider: providerKey}
+	return f.unbindErr
+}
+
+func (f *fakeUserService) UnlockUser(_ context.Context, id int64) error {
+	f.gotUnlockID = id
+	return f.unlockErr
+}
+
+func (f *fakeUserService) GetUserEvents(_ context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error) {
+	f.gotEvents = adminsvcEventsCall{id: id, page: page, pageSize: pageSize}
+	return f.events, f.eventsTot, f.eventsErr
+}
+
 // newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
 // 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
 // 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
-// nil 时用 no-op fake（读路径用例不触写族）。
-func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService) (*session.Tokens, *fakeEpochReader, http.Handler) {
+// nil 时用 no-op fake（读路径用例不触写族）；users 为用户族 fake
+//（variadic——既有用例零改动，缺省 no-op）。
+func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, users ...UserService) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	if writer == nil {
 		writer = &fakeWriter{}
+	}
+	var user UserService = &fakeUserService{}
+	if len(users) > 0 && users[0] != nil {
+		user = users[0]
 	}
 	key := make([]byte, 32)
 	for i := range key {
@@ -144,7 +238,7 @@ func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderServ
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers, writer),
+		New(providers, writer, user),
 		connectrpc.WithInterceptors(
 			internalconnect.NewSessionInterceptor(
 				session.NewVerifier(tokens, epochs),
@@ -613,21 +707,14 @@ func TestNonAdminReturns404(t *testing.T) {
 	}
 }
 
-// TestStubsUnimplemented 其余全部 admin 方法（管理员自身 / 用户 / 客户端 /
-// settings / 工具，共 23 个）一律返回生成基类的 unimplemented（桩 + TODO(后续
-// admin 实现)，见包注释清单）。
+// TestStubsUnimplemented 其余全部 admin 方法（客户端 / settings / 工具，
+// 共 15 个——Provider 写族 7 方法、用户管理族
+// 8 方法已实装并从桩清单移除）一律返回生成基类的 unimplemented（桩 +
+// TODO(后续 admin 实现)，见包注释清单）。
 func TestStubsUnimplemented(t *testing.T) {
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 	cases := []string{
-		adminv1connect.AdminServiceGetMeProcedure,
-		adminv1connect.AdminServiceListUsersProcedure,
-		adminv1connect.AdminServiceGetUserProcedure,
-		adminv1connect.AdminServiceUpdateUserStatusProcedure,
-		adminv1connect.AdminServiceResetUserPasswordProcedure,
-		adminv1connect.AdminServiceUnbindUserThirdpartyProcedure,
-		adminv1connect.AdminServiceUnlockUserProcedure,
-		adminv1connect.AdminServiceGetUserEventsProcedure,
 		adminv1connect.AdminServiceListSsoClientsProcedure,
 		adminv1connect.AdminServiceCreateSsoClientProcedure,
 		adminv1connect.AdminServiceGetSsoClientProcedure,
@@ -893,4 +980,260 @@ func TestTestProviderHandler(t *testing.T) {
 			t.Errorf("ErrorInfo = (domain=%q code=%q), want (admin, invalid_request)", info.GetDomain(), info.GetCode())
 		}
 	})
+}
+
+// —— 用户管理族 handler 用例（§5.1 行 1162、§5.4 行 1249-1255）——
+
+// adminUserRow 用户族用例的 user 行（phone / email / 时间齐备）。
+func adminUserRow() *model.User {
+	phone, email := "13800138000", "alice@example.com"
+	now := time.Unix(1761700000, 0).UTC()
+	return &model.User{
+		ID: 42, Username: "alice", Nickname: "Alice", AvatarURL: "https://cdn.example.com/a.png",
+		Phone: &phone, Email: &email, PhoneVerified: 1, EmailVerified: 1,
+		UserStatus: 1, MfaRequired: 1, Epoch: 3, CreatedAt: now, UpdatedAt: now,
+	}
+}
+
+// TestGetMeHandler 覆盖清单：GetMe 四字段 + isAdmin 恒 true（§5.1 行 1162）；
+// uid 从 session ctx 取（= cookie uid）；行缺失 404。
+func TestGetMeHandler(t *testing.T) {
+	users := &fakeUserService{meRow: adminUserRow()}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetMeProcedure, `{}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.MeResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetId() != 42 || got.GetUsername() != "alice" || got.GetNickname() != "Alice" ||
+		got.GetAvatarUrl() != "https://cdn.example.com/a.png" || !got.GetIsAdmin() {
+		t.Fatalf("GetMe = %+v, want 四字段 + isAdmin=true", &got)
+	}
+	if users.gotMeUID != 1 {
+		t.Errorf("uid 透传 = %d, want 1（session ctx）", users.gotMeUID)
+	}
+
+	// 行缺失（安装账号被删的脏数据）→ 404。
+	notFound := &fakeUserService{meErr: gorm.ErrRecordNotFound}
+	tokens2, epochs2, h2 := newAdminHandler(t, &fakeProviders{}, nil, notFound)
+	resp, raw = doRPC(t, h2, adminv1connect.AdminServiceGetMeProcedure, `{}`, adminCookie(t, tokens2, epochs2, 1))
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("行缺失 status = %d, want 404 (body %s)", resp.StatusCode, raw)
+	}
+}
+
+// TestListUsersHandler：{q, userStatus} + 分页透传（归一后回显 page/pageSize）、
+// {items,total,page,pageSize} 响应形态、AdminUser 列投影。
+func TestListUsersHandler(t *testing.T) {
+	users := &fakeUserService{listRows: []model.User{*adminUserRow()}, listTotal: 1}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListUsersProcedure,
+		`{"q":"ali","userStatus":1,"page":0,"pageSize":2,"sort":"created_at","order":"asc"}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.UserListResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetTotal() != 1 || got.GetPage() != 1 || got.GetPageSize() != 2 || len(got.GetItems()) != 1 {
+		t.Fatalf("响应 = (total=%d page=%d size=%d items=%d)", got.GetTotal(), got.GetPage(), got.GetPageSize(), len(got.GetItems()))
+	}
+	item := got.GetItems()[0]
+	if item.GetId() != 42 || item.GetUsername() != "alice" || item.GetPhone() != "13800138000" ||
+		item.GetEmail() != "alice@example.com" || item.GetUserStatus() != 1 || item.GetMfaRequired() != 1 {
+		t.Fatalf("列表项 = %+v", item)
+	}
+	flt := users.gotList
+	if flt.Q != "ali" || flt.UserStatus == nil || *flt.UserStatus != 1 ||
+		flt.Page != 1 || flt.PageSize != 2 || flt.Sort != "created_at" || flt.Order != "asc" {
+		t.Errorf("透传 = %+v, want q=ali status=1 page=1(归一) size=2", flt)
+	}
+}
+
+// TestGetUserHandler：详情 = user 投影 + 凭证概览（kind/is_enabled，含
+// mfa_setting 行）+ 绑定列表 + mfa 五因子明细（otp_sms bound + 掩码 target）。
+func TestGetUserHandler(t *testing.T) {
+	now := time.Unix(1761700000, 0).UTC()
+	users := &fakeUserService{detail: &adminsvc.UserDetail{
+		User: adminUserRow(),
+		Credentials: []model.UserCredential{
+			{ID: 7, UserID: 42, Kind: "password", IsEnabled: 1, CreatedAt: now},
+			{ID: 8, UserID: 42, Kind: "mfa_setting", IsEnabled: 1, CreatedAt: now},
+		},
+		Bindings: []model.UserThirdpartyBind{
+			{ID: 9, UserID: 42, ProviderKey: "wechat_mp_1", OpenID: "oX-1", CreatedAt: now},
+		},
+	}}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetUserProcedure, `{"id":42}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.UserDetailResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetUser().GetId() != 42 || got.GetUser().GetMfaRequired() != 1 {
+		t.Fatalf("user 投影 = %+v", got.GetUser())
+	}
+	if len(got.GetCredentials()) != 2 || got.GetCredentials()[0].GetKind() != "password" ||
+		!got.GetCredentials()[0].GetIsEnabled() || got.GetCredentials()[1].GetKind() != "mfa_setting" {
+		t.Fatalf("凭证概览 = %+v", got.GetCredentials())
+	}
+	if len(got.GetBindings()) != 1 || got.GetBindings()[0].GetProviderKey() != "wechat_mp_1" ||
+		got.GetBindings()[0].GetOpenId() != "oX-1" {
+		t.Fatalf("绑定列表 = %+v", got.GetBindings())
+	}
+	if len(got.GetMfa().GetFactors()) != 5 {
+		t.Fatalf("mfa 五因子 = %d 项", len(got.GetMfa().GetFactors()))
+	}
+	for _, f := range got.GetMfa().GetFactors() {
+		switch f.GetFactor() {
+		case "totp", "webauthn", "recovery_code":
+			if f.GetBound() {
+				t.Errorf("factor %q 未绑定应 false", f.GetFactor())
+			}
+		case "otp_sms":
+			if !f.GetBound() || f.GetTarget() != "138****8000" {
+				t.Errorf("otp_sms = (bound=%v target=%q), want (true, 138****8000)", f.GetBound(), f.GetTarget())
+			}
+		case "otp_email":
+			if !f.GetBound() || f.GetTarget() != "a***@example.com" {
+				t.Errorf("otp_email = (bound=%v target=%q)", f.GetBound(), f.GetTarget())
+			}
+		}
+	}
+	if users.gotDetailID != 42 {
+		t.Errorf("id 透传 = %d", users.gotDetailID)
+	}
+}
+
+// TestUserWriteHandlers：UpdateUserStatus / ResetUserPassword /
+// UnbindUserThirdparty / UnlockUser 四写方法——入参（含 actor=ctx uid）透传 +
+// OkResponse；错误映射：invalid_request 与 password_weak → 400 +
+// ErrorInfo(admin)；404 → not_found。
+func TestUserWriteHandlers(t *testing.T) {
+	const reqStatus = `{"id":42,"userStatus":0}`
+	const reqReset = `{"id":42,"password":"Str0ngPass!"}`
+	const reqUnbind = `{"id":42,"providerKey":"wechat_mp_1"}`
+	const reqUnlock = `{"id":42}`
+
+	t.Run("透传与空应答", func(t *testing.T) {
+		users := &fakeUserService{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		for target, body := range map[string]string{
+			adminv1connect.AdminServiceUpdateUserStatusProcedure:   reqStatus,
+			adminv1connect.AdminServiceResetUserPasswordProcedure:  reqReset,
+			adminv1connect.AdminServiceUnbindUserThirdpartyProcedure: reqUnbind,
+			adminv1connect.AdminServiceUnlockUserProcedure:         reqUnlock,
+		} {
+			resp, raw := doRPC(t, h, target, body, cookie)
+			if resp.StatusCode != http.StatusOK || raw != "{}" {
+				t.Fatalf("%s: (%d, %s), want (200, {})", target, resp.StatusCode, raw)
+			}
+		}
+		want := adminsvcStatusCall{actor: 1, id: 42, status: 0}
+		if users.gotStatus != want {
+			t.Errorf("status 透传 = %+v, want %+v", users.gotStatus, want)
+		}
+		if users.gotReset != (adminsvcResetCall{actor: 1, id: 42, password: "Str0ngPass!"}) {
+			t.Errorf("reset 透传 = %+v", users.gotReset)
+		}
+		if users.gotUnbind != (adminsvcUnbindCall{actor: 1, id: 42, provider: "wechat_mp_1"}) {
+			t.Errorf("unbind 透传 = %+v", users.gotUnbind)
+		}
+		if users.gotUnlockID != 42 {
+			t.Errorf("unlock 透传 = %d", users.gotUnlockID)
+		}
+	})
+
+	t.Run("invalid_request 映射", func(t *testing.T) {
+		users := &fakeUserService{statusErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserStatusProcedure, reqStatus, cookie)
+		if resp.StatusCode != http.StatusBadRequest || decodeErrorCode(t, raw) != "invalid_argument" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (%q, %q)", info.GetDomain(), info.GetCode())
+		}
+	})
+
+	t.Run("password_weak 映射（§1.6 封闭集合）", func(t *testing.T) {
+		users := &fakeUserService{resetErr: adminsvc.ErrPasswordWeak}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceResetUserPasswordProcedure, reqReset, cookie)
+		if resp.StatusCode != http.StatusBadRequest || decodeErrorCode(t, raw) != "invalid_argument" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "password_weak" {
+			t.Errorf("ErrorInfo = (%q, %q), want (admin, password_weak)", info.GetDomain(), info.GetCode())
+		}
+	})
+
+	t.Run("404 映射", func(t *testing.T) {
+		users := &fakeUserService{unlockErr: gorm.ErrRecordNotFound}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUnlockUserProcedure, reqUnlock, cookie)
+		if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
+}
+
+// TestGetUserEventsHandler：{id} + 分页透传 + EventItem 投影（detail msgpack
+// → JSON 对象；事件类型固定 login_success 由 service 过滤）。
+func TestGetUserEventsHandler(t *testing.T) {
+	now := time.Unix(1761700000, 0).UTC()
+	users := &fakeUserService{
+		events: []model.EventLog{{
+			ID: 3, Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42,
+			AMR: "pwd", IP: "1.2.3.4", UA: "curl/8", Detail: eventlog.DetailLoginSuccess("pwd", "", "sid-x", ""),
+			CreatedAt: now,
+		}},
+		eventsTot: 7,
+	}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetUserEventsProcedure,
+		`{"id":42,"page":0,"pageSize":5}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var got adminv1.UserEventsResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetTotal() != 7 || got.GetPage() != 1 || got.GetPageSize() != 5 || len(got.GetItems()) != 1 {
+		t.Fatalf("响应 = (total=%d page=%d size=%d items=%d)", got.GetTotal(), got.GetPage(), got.GetPageSize(), len(got.GetItems()))
+	}
+	item := got.GetItems()[0]
+	if item.GetEvent() != "login_success" || item.GetUserId() != 42 || item.GetIp() != "1.2.3.4" {
+		t.Fatalf("事件项 = %+v", item)
+	}
+	detail := item.GetDetail().GetFields()
+	if detail["factor"].GetStringValue() != "pwd" || detail["session_id"].GetStringValue() != "sid-x" {
+		t.Fatalf("detail = %+v, want factor=pwd session_id=sid-x（msgpack → JSON）", detail)
+	}
+	if users.gotEvents != (adminsvcEventsCall{id: 42, page: 1, pageSize: 5}) {
+		t.Errorf("分页透传 = %+v", users.gotEvents)
+	}
 }

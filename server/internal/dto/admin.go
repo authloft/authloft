@@ -17,9 +17,11 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	accountv1 "authloft/gen/go/api/account/v1"
 	adminv1 "authloft/gen/go/api/admin/v1"
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
 
@@ -371,5 +373,200 @@ func columnInt8Bool(v *structpb.Value) (int8, error) {
 		return 0, nil
 	default:
 		return 0, fmt.Errorf("want bool value, got %T", v)
+	}
+}
+
+// —— 用户管理族（§5.1 行 1162、§5.4 行 1249-1255）——
+
+// adminStr 可空列读值（nil / 空串归一空串；admin 域 phone / email 明文——
+// §5.4 未要求掩码且管理端需真实值，掩码仅 account 域自助视图，§3.1 行 806）。
+func adminStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// AdminMe 当前管理员视图（§5.1 行 1162）：{id, username, nickname,
+// avatarUrl, isAdmin:true}——isAdmin 恒 true（非管理员在 admin 拦截器即被
+// 拦下，不会走到 handler）。
+func AdminMe(row *model.User) *adminv1.MeResponse {
+	if row == nil {
+		return &adminv1.MeResponse{}
+	}
+	return &adminv1.MeResponse{
+		Id:        row.ID,
+		Username:  row.Username,
+		Nickname:  row.Nickname,
+		AvatarUrl: row.AvatarURL,
+		IsAdmin:   true,
+	}
+}
+
+// AdminUser user 行 → AdminUser 视图（§5.4 行 1249 列表 / 行 1250 详情内
+// 嵌套共用；字段集为 user 表列投影，user.proto 注释）。
+func AdminUser(row *model.User) *adminv1.AdminUser {
+	if row == nil {
+		return &adminv1.AdminUser{}
+	}
+	u := &adminv1.AdminUser{
+		Id:            row.ID,
+		Username:      row.Username,
+		Nickname:      row.Nickname,
+		AvatarUrl:     row.AvatarURL,
+		Phone:         adminStr(row.Phone),
+		Email:         adminStr(row.Email),
+		PhoneVerified: int64(row.PhoneVerified),
+		EmailVerified: int64(row.EmailVerified),
+		UserStatus:    int64(row.UserStatus),
+		MfaRequired:   int64(row.MfaRequired),
+		Epoch:         int64(row.Epoch),
+		CreatedAt:     row.CreatedAt.Unix(),
+		UpdatedAt:     row.UpdatedAt.Unix(),
+	}
+	if row.LastLoginAt != nil {
+		u.LastLoginAt = row.LastLoginAt.Unix()
+	}
+	return u
+}
+
+// AdminCredentialSummary user_credential 行 → 凭证概览条目（§5.4 行 1250
+//「凭证概览」：kind / is_enabled；secret 不透出，UserCredentialSummary 无该
+// 字段）。含全部 kind（mfa_setting 行即「MFA 已开启」的行存在性投影）。
+func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSummary {
+	if row == nil {
+		return &adminv1.UserCredentialSummary{}
+	}
+	s := &adminv1.UserCredentialSummary{
+		Id:        row.ID,
+		Kind:      row.Kind,
+		Label:     row.Label,
+		IsEnabled: row.IsEnabled == 1,
+		CreatedAt: row.CreatedAt.Unix(),
+	}
+	if row.LastUsedAt != nil {
+		s.LastUsedAt = row.LastUsedAt.Unix()
+	}
+	return s
+}
+
+// AdminThirdpartyBinding user_thirdparty_bind 行 → 绑定条目（§5.4 行 1250
+//「绑定」）。union_id 恒零值（protojson 省略）：§12.7 行 1543 普通行不存
+// unionid，Union 行的 unionid 即其 open_id 已在列表可见——union_id 字段
+// 留给未来跨行归并视图，不在本投影内拼装（默认口径，待定）。
+func AdminThirdpartyBinding(row *model.UserThirdpartyBind) *adminv1.UserThirdpartyBinding {
+	if row == nil {
+		return &adminv1.UserThirdpartyBinding{}
+	}
+	return &adminv1.UserThirdpartyBinding{
+		Id:          row.ID,
+		ProviderKey: row.ProviderKey,
+		OpenId:      row.OpenID,
+		Nickname:    row.Nickname,
+		AvatarUrl:   row.AvatarURL,
+		CreatedAt:   row.CreatedAt.Unix(),
+	}
+}
+
+// AdminUserDetail GetUser 详情组装（§5.4 行 1250 详情含凭证概览、绑定、
+// MFA 状态）：user 投影（含 mfa_required 列）+ 凭证概览（含 mfa_setting
+// 行存在性）+ 绑定列表 + mfa 五因子绑定明细（§3.5 行 887-898 既有视图，
+// AdminUserMfa）。
+func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []model.UserThirdpartyBind) *adminv1.UserDetailResponse {
+	items := make([]*adminv1.UserCredentialSummary, len(creds))
+	for i := range creds {
+		items[i] = AdminCredentialSummary(&creds[i])
+	}
+	bindings := make([]*adminv1.UserThirdpartyBinding, len(binds))
+	for i := range binds {
+		bindings[i] = AdminThirdpartyBinding(&binds[i])
+	}
+	return &adminv1.UserDetailResponse{
+		User:        AdminUser(user),
+		Credentials: items,
+		Bindings:    bindings,
+		Mfa:         AdminUserMfa(user, creds),
+	}
+}
+
+// AdminUserMfa 用户详情的 MFA 绑定明细（§5.4 行 1250「MFA 状态」的数据
+// 面，§3.5 行 887-898 跨包既有视图）：五因子序同 mfaFactorOrder；bound
+// 判定与 account handler mfaBound 同口径（totp / webauthn / recovery_code
+// 走 user_credential 行存在且 is_enabled=1，recovery_code 另需 meta 余量
+// 非空；otp_sms / otp_email 走 phone / email 非空，target 掩码）；MFA
+// 开关（mfa_setting 行存在性）与强制（user.mfa_required 列）不在此重复
+//（§3.5 行 885：摘要走 §3.2 mfaPolicy——admin 侧由凭证概览的 mfa_setting
+// 行与 user.mfa_required 承载，默认口径）。webauthn 的 credentials
+// 计数需 user_credential_webauthn 表（WebauthnRepo，不在本实现依赖面），
+// 置零由 protojson 省略（§12.9 行 1752），待定。
+func AdminUserMfa(user *model.User, creds []model.UserCredential) *accountv1.MfaResponse {
+	rows := map[string]*model.UserCredential{}
+	for i := range creds {
+		rows[creds[i].Kind] = &creds[i] // webauthn 多行取首行（mfaBound 同款口径）
+	}
+	factors := make([]*accountv1.MfaFactor, 0, len(mfaFactorOrder))
+	for _, name := range mfaFactorOrder {
+		f := &accountv1.MfaFactor{Factor: name}
+		switch name {
+		case "totp", "webauthn":
+			if row := rows[name]; row != nil && row.IsEnabled == 1 {
+				f.Bound = true
+				f.BoundAt = row.CreatedAt.Unix()
+				if row.LastUsedAt != nil {
+					f.LastUsedAt = row.LastUsedAt.Unix()
+				}
+			}
+		case "recovery_code":
+			if row := rows[name]; row != nil && row.IsEnabled == 1 {
+				if meta, err := repo.UnmarshalCredentialMeta(row.Meta); err == nil {
+					f.Remaining = int64(len(meta.GetRecoveryCodes()))
+					f.Bound = f.Remaining > 0
+				}
+				if f.Bound {
+					f.BoundAt = row.CreatedAt.Unix()
+				}
+			}
+		case "otp_sms":
+			if user != nil && adminStr(user.Phone) != "" {
+				f.Bound = true
+				f.Target = maskPhone(*user.Phone)
+			}
+		case "otp_email":
+			if user != nil && adminStr(user.Email) != "" {
+				f.Bound = true
+				f.Target = maskEmail(*user.Email)
+			}
+		}
+		factors = append(factors, f)
+	}
+	resp := &accountv1.MfaResponse{Factors: factors}
+	if row := rows["recovery_code"]; row != nil {
+		resp.RecoveryIssuedAt = row.CreatedAt.Unix()
+	}
+	return resp
+}
+
+// AdminEventItem event_log 行 → 事件条目（§5.4 行 1255 用户登录记录 /
+// §5.6 行 1272 统一事件视图共用，EventItem 注释）：detail 为 msgpack 字节
+// → JSON 对象透出（§12.1 行 1629），解码失败按 nil 处理（附加信息缺失
+// 不影响主字段，复用 account.go decodeProfileExtra 同款口径——同为
+// msgpack map 透传，§3.1 extra 与 §12.0 detail 同源约定）。
+func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
+	if row == nil {
+		return &adminv1.EventItem{}
+	}
+	return &adminv1.EventItem{
+		Id:        row.ID,
+		Event:     row.Event,
+		ActorType: row.ActorType,
+		ActorId:   row.ActorID,
+		UserId:    row.UserID,
+		ClientId:  row.ClientID,
+		Amr:       row.AMR,
+		Ip:        row.IP,
+		Ua:        row.UA,
+		Target:    row.Target,
+		Detail:    decodeProfileExtra(row.Detail),
+		CreatedAt: row.CreatedAt.Unix(),
 	}
 }

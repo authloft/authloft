@@ -223,3 +223,66 @@ func TestCredentialRepoKindRows(t *testing.T) {
 		t.Errorf("SetEnabled 不存在行应 ErrRecordNotFound, got %v", err)
 	}
 }
+
+// TestCredentialRepoListByUser（env-skip）：按用户取全部凭证行
+//（admin GetUser 凭证概览数据源）——全部 kind 齐全（password / totp /
+// webauthn（经 WebauthnRepo.Create 每凭据一行）/ recovery_code / mfa_setting）、
+// id ASC 全序稳定、跨用户不串行、空集返回空切片。
+func TestCredentialRepoListByUser(t *testing.T) {
+	rp, wa, _ := credentialTestSetup(t)
+	ctx := context.Background()
+	const uid, other = int64(201), int64(202)
+
+	// uid 的四类行：password / totp / recovery_code / mfa_setting + webauthn×2
+	//（经 WebauthnRepo.Create 同事务建两行，模拟真实注册路径）。
+	for _, c := range []*model.UserCredential{
+		{UserID: uid, Kind: "password", Secret: []byte("h1")},
+		{UserID: uid, Kind: "totp", Secret: []byte("K1")},
+		{UserID: uid, Kind: "recovery_code", Secret: []byte{}, Meta: []byte{0x91}},
+		{UserID: uid, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x92}},
+	} {
+		if err := rp.Create(ctx, c); err != nil {
+			t.Fatalf("Create %s 失败: %v", c.Kind, err)
+		}
+	}
+	for i, credID := range []string{"web-1", "web-2"} {
+		c := &model.UserCredential{UserID: uid, Kind: "webauthn", Secret: []byte("sec")}
+		if err := wa.Create(ctx, c, &model.UserCredentialWebauthn{
+			UserID: uid, Kind: "webauthn", CredentialID: credID, PublicKey: []byte{byte(i)},
+		}); err != nil {
+			t.Fatalf("WebauthnRepo.Create %s 失败: %v", credID, err)
+		}
+	}
+	// other 用户一行，验证不串行。
+	if err := rp.Create(ctx, &model.UserCredential{UserID: other, Kind: "password", Secret: []byte("h2")}); err != nil {
+		t.Fatalf("Create other 失败: %v", err)
+	}
+
+	got, err := rp.ListByUser(ctx, uid)
+	if err != nil {
+		t.Fatalf("ListByUser 失败: %v", err)
+	}
+	// password(1) + totp(1) + recovery_code(1) + mfa_setting(1) + webauthn(2) = 6。
+	if len(got) != 6 {
+		t.Fatalf("ListByUser = %d 行, want 6（含 webauthn 每凭据一行）: %+v", len(got), got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].ID <= got[i-1].ID || got[i].UserID != uid {
+			t.Fatalf("id ASC / 用户隔离泄漏: %+v", got)
+		}
+	}
+	kinds := map[string]int{}
+	for _, r := range got {
+		kinds[r.Kind]++
+	}
+	for kind, want := range map[string]int{"password": 1, "totp": 1, "recovery_code": 1, "mfa_setting": 1, "webauthn": 2} {
+		if kinds[kind] != want {
+			t.Errorf("kind %s = %d 行, want %d", kind, kinds[kind], want)
+		}
+	}
+
+	// 空集：返回空切片不报错。
+	if empty, err := rp.ListByUser(ctx, 404); err != nil || len(empty) != 0 {
+		t.Fatalf("空集 = (%d 行, %v), want (0, nil)", len(empty), err)
+	}
+}

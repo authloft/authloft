@@ -1,9 +1,11 @@
 // user_thirdparty_bind 表读写（后端架构 §3.9 行 415 / §4.3 / §12）。
 // DDL 归 migrations/（§3.16），本文件只做行级读写与文档明确的查询
-// 最小集；事务边界在 service（§3.9）。(provider_key, open_id) 判重后的
-// 分支（已绑本人幂等 / 已绑他人 target_taken，§12.5 步骤 4）与 Union
-// 归并联动（§12.7 解除任一 Provider 同步解绑 Union Provider）归
-// service/thirdparty.go（§3.9 行 406），repo 只提供查询原语。extra 列
+// 最小集；跨聚合业务事务在 service（§3.9），聚合内原子写归 repo 单事务
+//（§3.10 行 428 既定口径）。(provider_key, open_id) 判重后的分支
+//（已绑本人幂等 / 已绑他人 target_taken，§12.5 步骤 4）与绑定侧 Union
+// 归并联动归 service/thirdparty.go（§3.9 行 406）；解绑侧 Union 连带
+// 删除现收编为 UnbindWithUnionCascade 单事务方法（§12.7
+// 行 1548）。extra 列
 // 只透传字节不解析（§4.3 行 708：仅排查用、不参与任何业务判定，msgpack
 // 编解码与超 1 MiB 整条丢弃降级归上层）；Union Provider 行是否展示 /
 // 计入已绑定数归 service（接口文档 §3.7）。
@@ -29,6 +31,12 @@ var ErrBindDuplicate = errors.New("bind repo: duplicate unique key")
 // ErrBindNotOwned Unbind 时行存在但 user_id 与操作者不符（归属校验
 // 失败——解绑只能解自己的，接口文档 §3.7）。
 var ErrBindNotOwned = errors.New("bind repo: row not owned by user")
+
+// providerCategoryUnion provider 表 category=union（§12.7 行 1542：Union
+// Provider 是虚拟 Provider 仅用于归并）；UnbindWithUnionCascade 级联
+// 判定依据。service/admin 与 handler/admin 各持同款私有常量（包内不
+// 共享，字面量对齐 provider.go Category 列注释）。
+const providerCategoryUnion = "union"
 
 // BindRepo user_thirdparty_bind 表数据访问（§3.9：表与文件对应
 // bind → bind_repo.go）。
@@ -105,6 +113,69 @@ func (r *BindRepo) Unbind(ctx context.Context, id, userID int64) error {
 			return fmt.Errorf("bind repo: unbind: %w", err)
 		}
 		return fmt.Errorf("bind repo: unbind: id=%d owned by user_id=%d, not %d: %w", id, b.UserID, userID, ErrBindNotOwned)
+	}
+	return nil
+}
+
+// UnbindWithUnionCascade 单事务级联解绑（既定口径 §3.10 行
+// 428：聚合内原子写归 repo 单事务，先例 UserRepo.CreateWithCredential）：
+// 单 tx 内删普通绑定行（id + user_id 双条件，归属判别语义同 Unbind）→
+// 查该用户剩余绑定行 → 按 provider.category 判定已无任何非 Union 行时
+// 连带删 unionProviderKey 指向的该用户 Union 行（§12.7 行 1548；仍有
+// 非 Union 行则保留，供其他关联 Provider 继续归并）。unionProviderKey
+// 为空表示无关联 Union Provider，只删普通行。第二跳失败时普通行删除
+// 一并回滚——两跳非同事务时普通行已删、用户重试 404 无法自愈，孤行
+// Union 行永久占用 uk_provider_openid，本方法即为此收编。剩余行的
+// Union / 非 Union 判定在 tx 内查 provider 行；查询失败 / 行缺失（脏
+// 数据）按非 Union 处理（保守保留 Union 行，宁可多留不可误删）；Union
+// 行不存在（并发已删）幂等收敛。行不存在 / 归属不符返回包装的
+// gorm.ErrRecordNotFound / ErrBindNotOwned（errors.Is 可判别）。
+func (r *BindRepo) UnbindWithUnionCascade(ctx context.Context, id, userID int64, unionProviderKey string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ?", id, userID).
+			Delete(&model.UserThirdpartyBind{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			var b model.UserThirdpartyBind
+			err := tx.Where("id = ?", id).Take(&b).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return gorm.ErrRecordNotFound
+			}
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("id=%d owned by user_id=%d, not %d: %w", id, b.UserID, userID, ErrBindNotOwned)
+		}
+		if unionProviderKey == "" {
+			return nil
+		}
+		var rows []model.UserThirdpartyBind
+		if err := tx.Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+			return err
+		}
+		for i := range rows {
+			if rows[i].ProviderKey == unionProviderKey {
+				continue
+			}
+			var p model.Provider
+			err := tx.Where("provider_key = ?", rows[i].ProviderKey).Take(&p).Error
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil // 脏数据：provider 行缺失按非 Union 处理，保留 Union 行
+				}
+				return err
+			}
+			if p.Category != providerCategoryUnion {
+				return nil // 仍有非 Union 绑定行 → 保留 Union 行（§12.7 行 1548）
+			}
+		}
+		return tx.Where("user_id = ? AND provider_key = ?", userID, unionProviderKey).
+			Delete(&model.UserThirdpartyBind{}).Error
+	})
+	if err != nil {
+		return fmt.Errorf("bind repo: unbind with union cascade: %w", err)
 	}
 	return nil
 }

@@ -233,3 +233,61 @@ func TestEventLogRepoBatchInsertEmpty(t *testing.T) {
 		t.Errorf("空批量应不写行, got %d 行", count)
 	}
 }
+
+// TestEventLogRepoListByUser（env-skip）：user 维度 + event 过滤分页
+//（GetUserEvents「该用户登录记录」的数据源）——只出目标用户的行、event
+// 非空时再过滤、id DESC 全序稳定、分页归一（page 1 起、pageSize 默认 20 /
+// clamp 100）、total 为过滤后总数。
+func TestEventLogRepoListByUser(t *testing.T) {
+	rp, _ := eventLogTestSetup(t)
+	ctx := context.Background()
+
+	// 用户 42：3 条 login_success + 1 条 change_password（乱序插入，id 递增）；
+	// 用户 43：2 条 login_success（不串页）。
+	rows := []model.EventLog{
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, IP: "1.1.1.1"},
+		{Event: "change_password", ActorType: "user", ActorID: 42, UserID: 42},
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, IP: "2.2.2.2"},
+		{Event: "login_success", ActorType: "user", ActorID: 43, UserID: 43},
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, IP: "3.3.3.3"},
+		{Event: "login_success", ActorType: "user", ActorID: 43, UserID: 43},
+	}
+	if err := rp.BatchInsert(ctx, rows); err != nil {
+		t.Fatalf("BatchInsert 失败: %v", err)
+	}
+
+	// event=login_success + user=42：3 行，id DESC。
+	got, total, err := rp.ListByUser(ctx, EventLogListQuery{UserID: 42, Event: "login_success"})
+	if err != nil || total != 3 || len(got) != 3 {
+		t.Fatalf("login_success@42 = (%d 行, total=%d, %v), want 3/3", len(got), total, err)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].ID >= got[i-1].ID || got[i].UserID != 42 || got[i].Event != "login_success" {
+			t.Fatalf("顺序 / 过滤泄漏: %+v", got)
+		}
+	}
+
+	// event 过滤关闭（空）：42 的全部 4 行。
+	if _, total, err = rp.ListByUser(ctx, EventLogListQuery{UserID: 42}); err != nil || total != 4 {
+		t.Fatalf("全事件@42 total = %d err=%v, want 4", total, err)
+	}
+
+	// 分页：page 2 size 2（login_success@42 的第 2 页恰 1 行）+ 归一（page 0
+	// → 1、pageSize 0 → 20、>100 clamp 不报错）。
+	if got, total, err = rp.ListByUser(ctx, EventLogListQuery{UserID: 42, Event: "login_success", Page: 2, PageSize: 2}); err != nil ||
+		total != 3 || len(got) != 1 {
+		t.Fatalf("page2 = (%d 行, total=%d, %v), want 1/3", len(got), total, err)
+	}
+	if _, _, err = rp.ListByUser(ctx, EventLogListQuery{UserID: 42, Page: 0, PageSize: 0}); err != nil {
+		t.Fatalf("分页归一不应报错: %v", err)
+	}
+	if _, _, err = rp.ListByUser(ctx, EventLogListQuery{UserID: 42, Page: 1, PageSize: 150}); err != nil {
+		t.Fatalf("pageSize=150 应 clamp 不报错: %v", err)
+	}
+
+	// 不存在的用户：空页 + total 0。
+	if got, total, err = rp.ListByUser(ctx, EventLogListQuery{UserID: 404, Event: "login_success"}); err != nil ||
+		total != 0 || len(got) != 0 {
+		t.Fatalf("空集 = (%d 行, total=%d, %v), want 0/0", len(got), total, err)
+	}
+}
