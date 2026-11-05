@@ -1,17 +1,24 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化落地后移除）。
 // @ts-ignore
-import { afterAll, describe, expect, test, rs } from 'rstack/test';
+import { afterAll, afterEach, describe, expect, test, rs } from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM、未装 happy-dom，rstack.config 不改）：
 // 渲染断言走 react-dom/server 的 renderToStaticMarkup（零新依赖，
 // 不需要 DOM），交互边界（粘贴拆分 / 退格跳格 / 分派）在纯函数层覆盖。
 import { renderToStaticMarkup } from 'react-dom/server';
-import { create } from '@bufbuild/protobuf';
+import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import {
   FieldSchema,
+  LoginFlowResponseSchema,
+  BindResultSchema,
   type Field,
+  type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
+import {
+  CreateQrcodeResponseSchema,
+  type CreateQrcodeResponse,
+} from '../../gen/proto/api/sso/v1/ticket_pb';
 import { CodeInput, pasteValue, applyChar, applyBackspace } from './CodeInput';
 import { FieldRenderer, controlKindFor, codeLengthOf } from './FieldRenderer';
 import { ErrorBanner, errorText, attemptsCount } from './ErrorBanner';
@@ -20,6 +27,18 @@ import {
   PasswordStrengthMeter,
   meterRules,
 } from './PasswordStrengthMeter';
+import {
+  QRCodePanel,
+  QRCodePanelView,
+  createQRPanelController,
+  pollTimeoutMsOf,
+  ticketPhaseOf,
+  qrFailureText,
+  fetchFailureText,
+  type QRPanelPhase,
+} from './QRCodePanel';
+import { ProviderIcon, resolveIconMode } from './ProviderIcon';
+import { ApiError } from '../api/errors';
 
 // rstest 对 .tsx 采用 classic JSX runtime（React.createElement），测试链未接
 // @rsbuild/plugin-react 的 automatic runtime（rstack.config.mts 为既有配置
@@ -437,5 +456,437 @@ describe('PasswordStrengthMeter（§5.6 同源规则清单）', () => {
     const markup = renderMeter('Abcdef12', { username: 'alice' });
     expect(markup).toContain('不能包含用户名');
     expect(renderMeter('Abcdef12')).not.toContain('不能包含用户名');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QRCodePanel（§3.3 行 345 扫码四态面板；§8.2 行 606 测试约束）
+// ---------------------------------------------------------------------------
+
+/** 生成物消息构造（报文类型只从 gen 引用，禁止手写 interface 重复描述）。 */
+function envelope(
+  init: MessageInitShape<typeof LoginFlowResponseSchema> = {},
+): LoginFlowResponse {
+  return create(LoginFlowResponseSchema, init);
+}
+
+function qrcodeResponse(seq: number): CreateQrcodeResponse {
+  return create(CreateQrcodeResponseSchema, {
+    ticket: `tk-${seq}`,
+    ticketId: `id-${seq}`,
+    qrcodeUrl: `https://cdn.example/q${seq}.jpg`,
+    expiresIn: BigInt(600),
+  });
+}
+
+describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文案）', () => {
+  test('ticketPhaseOf：ticket.status 五态优先（§2.8 行 717）', () => {
+    expect(
+      ticketPhaseOf(
+        envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 't' } }),
+      ),
+    ).toBe('pending');
+    expect(
+      ticketPhaseOf(
+        envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 't' } }),
+      ),
+    ).toBe('scanned');
+    expect(
+      ticketPhaseOf(
+        envelope({ status: 'success', ticket: { status: 'success', ticketId: 't' } }),
+      ),
+    ).toBe('success');
+    expect(
+      ticketPhaseOf(
+        envelope({ status: 'expired', ticket: { status: 'expired', ticketId: 't' } }),
+      ),
+    ).toBe('expired');
+    expect(
+      ticketPhaseOf(
+        envelope({
+          status: 'target_taken',
+          ticket: { status: 'failed', ticketId: 't' },
+        }),
+      ),
+    ).toBe('failed');
+  });
+
+  test('ticketPhaseOf：ticket 缺失按顶层 status 兜底；未知顶层保守 failed、未知 ticket.status 继续 pending', () => {
+    expect(ticketPhaseOf(envelope({ status: 'pending' }))).toBe('pending');
+    expect(ticketPhaseOf(envelope({ status: 'scanned' }))).toBe('scanned');
+    expect(ticketPhaseOf(envelope({ status: 'success' }))).toBe('success');
+    expect(ticketPhaseOf(envelope({ status: 'expired' }))).toBe('expired');
+    expect(ticketPhaseOf(envelope({ status: 'target_taken' }))).toBe('failed');
+    expect(ticketPhaseOf(envelope({ status: 'brand_new_status' }))).toBe('failed');
+    // 未知 ticket.status（可能是服务端新增中间态）→ pending 继续轮询。
+    expect(
+      ticketPhaseOf(
+        envelope({ status: 'confirming', ticket: { status: 'confirming', ticketId: 't' } }),
+      ),
+    ).toBe('pending');
+  });
+
+  test('pollTimeoutMsOf：undefined / 非正 / 超上限 → 15 + 缓冲 5；正常值 = (s+5)*1000（§2.8 行 714 上限 15）', () => {
+    expect(pollTimeoutMsOf(undefined)).toBe(20000);
+    expect(pollTimeoutMsOf(0)).toBe(20000);
+    expect(pollTimeoutMsOf(-3)).toBe(20000);
+    expect(pollTimeoutMsOf(16)).toBe(20000);
+    expect(pollTimeoutMsOf(15)).toBe(20000);
+    expect(pollTimeoutMsOf(5)).toBe(10000);
+    expect(pollTimeoutMsOf(1)).toBe(6000);
+  });
+
+  test('qrFailureText：i18n 优先（信封 status → errors.status.*）；未知 status 兜底不透出 message（§1.5 行 202）', () => {
+    expect(
+      qrFailureText(
+        envelope({
+          status: 'target_taken',
+          ticket: { status: 'failed', ticketId: 't' },
+          error: { message: '该账号已被其他账号绑定' },
+        }),
+      ),
+    ).toBe('该手机号/邮箱已被占用');
+    expect(
+      qrFailureText(
+        envelope({ status: 'brand_new', error: { message: '内部细节' } }),
+      ),
+    ).toBe('操作失败，请稍后重试');
+  });
+
+  test('fetchFailureText：ApiError 走位置二（errors.code.*）；其余 unknown 兜底（§1.6 两个位置）', () => {
+    expect(
+      fetchFailureText(
+        new ApiError({
+          httpStatus: 429,
+          code: 'too_many_requests',
+          message: 'slow down',
+          requestId: 'r-1',
+        }),
+      ),
+    ).toBe('操作过于频繁，请稍后再试');
+    expect(fetchFailureText(new Error('network down'))).toBe(
+      '操作失败，请稍后重试',
+    );
+  });
+});
+
+describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态流转一致）', () => {
+  afterEach(() => {
+    rs.useRealTimers();
+  });
+
+  /** 按序列 resolve 的轮询信封（末尾挂起终止微任务链）。 */
+  function sequencedPoll(seq: LoginFlowResponse[]) {
+    let calls = 0;
+    const tickets: string[] = [];
+    const pollUrl = (ticket: string): Promise<LoginFlowResponse> => {
+      tickets.push(ticket);
+      const index = calls;
+      calls += 1;
+      if (index < seq.length) {
+        return Promise.resolve(seq[index]!);
+      }
+      return new Promise(() => {});
+    };
+    return { pollUrl, get calls() { return calls; }, tickets };
+  }
+
+  test('登录组 props：fetching → active(pending) → active(scanned) → success；onResult 收到完整信封（.login）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const results: LoginFlowResponse[] = [];
+    let qrCalls = 0;
+    const poll = sequencedPoll([
+      envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 'id-1' } }),
+      envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 'id-1' } }),
+      envelope({
+        status: 'success',
+        ticket: { status: 'success', ticketId: 'id-1' },
+        login: envelope({ status: 'success' }),
+      }),
+    ]);
+    const controller = createQRPanelController({
+      requestQR: async () => {
+        qrCalls += 1;
+        return qrcodeResponse(qrCalls);
+      },
+      pollUrl: poll.pollUrl,
+      onResult: (e) => results.push(e),
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual([
+      { kind: 'fetching' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'scanned' },
+      { kind: 'success' },
+    ]);
+    expect(poll.calls).toBe(3); // success 终态后轮询停止，不再发起
+    expect(poll.tickets.every((t) => t === 'tk-1')).toBe(true); // ticket_id 全程一致
+    expect(results).toHaveLength(1);
+    expect(results[0]!.login?.status).toBe('success');
+    controller.dispose();
+  });
+
+  test('绑定组 props：同一状态序列下流转与登录组一致（success 载荷换成 .bind）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const results: LoginFlowResponse[] = [];
+    let qrCalls = 0;
+    const poll = sequencedPoll([
+      envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 'id-1' } }),
+      envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 'id-1' } }),
+      envelope({
+        status: 'success',
+        ticket: { status: 'success', ticketId: 'id-1' },
+        bind: create(BindResultSchema, {
+          providerKey: 'wechat_mp_scan',
+          displayName: '微信',
+        }),
+      }),
+    ]);
+    const controller = createQRPanelController({
+      requestQR: async () => {
+        qrCalls += 1;
+        return qrcodeResponse(qrCalls);
+      },
+      pollUrl: poll.pollUrl,
+      onResult: (e) => results.push(e),
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual([
+      { kind: 'fetching' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'scanned' },
+      { kind: 'success' },
+    ]);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.bind?.providerKey).toBe('wechat_mp_scan');
+    controller.dispose();
+  });
+
+  test('expired → refresh 重拉：requestQR 再次调用（新 captcha 由调用方在 requestQR 内携带，§2.8 行 703）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    let qrCalls = 0;
+    let pollCalls = 0;
+    const controller = createQRPanelController({
+      requestQR: async () => {
+        qrCalls += 1;
+        return qrcodeResponse(qrCalls);
+      },
+      pollUrl: (ticket) => {
+        pollCalls += 1;
+        expect(ticket).toBe(`tk-${qrCalls}`);
+        if (pollCalls === 1) {
+          return Promise.resolve(
+            envelope({ status: 'expired', ticket: { status: 'expired', ticketId: 'id-1' } }),
+          );
+        }
+        return new Promise(() => {}); // 新码轮询在途
+      },
+      onResult: () => {},
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual([
+      { kind: 'fetching' },
+      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
+      { kind: 'expired' },
+    ]);
+    expect(qrCalls).toBe(1);
+    controller.refresh(); // expired 面板的刷新动作
+    await rs.advanceTimersByTimeAsync(0);
+    expect(qrCalls).toBe(2); // 新码 = 新 requestQR（captcha 由调用方包装）
+    expect(phases[3]).toEqual({ kind: 'fetching' });
+    expect(phases[4]).toEqual({
+      kind: 'active',
+      qrcodeUrl: 'https://cdn.example/q2.jpg',
+      ticketStatus: 'pending',
+    });
+    expect(pollCalls).toBe(2); // 新 ticket 的轮询已发起
+    controller.dispose();
+  });
+
+  test('failed：按信封顶层 status 出文案（§2.8 行 728-729）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const controller = createQRPanelController({
+      requestQR: async () => qrcodeResponse(1),
+      pollUrl: () =>
+        Promise.resolve(
+          envelope({
+            status: 'target_taken',
+            ticket: { status: 'failed', ticketId: 'id-1' },
+            error: { message: '该账号已被其他账号绑定' },
+          }),
+        ),
+      onResult: () => {},
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases[phases.length - 1]).toEqual({
+      kind: 'failed',
+      message: '该手机号/邮箱已被占用',
+    });
+    controller.dispose();
+  });
+
+  test('拉码失败 → failed（ApiError 走位置二文案）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const controller = createQRPanelController({
+      requestQR: () =>
+        Promise.reject(
+          new ApiError({
+            httpStatus: 400,
+            code: 'provider_disabled',
+            message: 'disabled',
+            requestId: 'r-2',
+          }),
+        ),
+      pollUrl: () => new Promise(() => {}),
+      onResult: () => {},
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual([
+      { kind: 'fetching' },
+      { kind: 'failed', message: '该登录渠道未启用' },
+    ]);
+    controller.dispose();
+  });
+
+  test('dispose：中断在途轮询（abort 通知 + 不再发起，§8.2 行 606「卸载中断轮询」）', async () => {
+    rs.useFakeTimers();
+    let pollCalls = 0;
+    let pollSignal: AbortSignal | undefined;
+    let aborted = false;
+    const controller = createQRPanelController({
+      requestQR: async () => qrcodeResponse(1),
+      pollUrl: (_ticket, signal) => {
+        pollCalls += 1;
+        pollSignal = signal;
+        return new Promise(() => {}); // 在途挂起
+      },
+      onResult: () => {},
+      onPhase: () => {},
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(pollCalls).toBe(1);
+    pollSignal!.addEventListener('abort', () => {
+      aborted = true;
+    });
+    controller.dispose();
+    expect(aborted).toBe(true);
+    await rs.advanceTimersByTimeAsync(60000); // 含单次超时到点
+    expect(pollCalls).toBe(1); // 不再发起
+  });
+
+  test('组件自身不发业务请求：请求只来自注入的 props（SSR 不触发，客户端由 effect 驱动）', () => {
+    let qrCalls = 0;
+    let pollCalls = 0;
+    const markup = renderToStaticMarkup(
+      createElement(QRCodePanel, {
+        requestQR: () => {
+          qrCalls += 1;
+          return Promise.resolve(qrcodeResponse(1));
+        },
+        pollUrl: () => {
+          pollCalls += 1;
+          return Promise.resolve(envelope({ status: 'pending' }));
+        },
+        onResult: () => {},
+      }),
+    );
+    expect(markup).toContain('正在获取二维码'); // 初始 fetching（effect 客户端才跑）
+    expect(qrCalls).toBe(0);
+    expect(pollCalls).toBe(0);
+  });
+});
+
+describe('QRCodePanelView 渲染（四态 + failed）', () => {
+  function renderView(phase: QRPanelPhase): string {
+    return renderToStaticMarkup(
+      createElement(QRCodePanelView, { phase, onRefresh: () => {} }),
+    );
+  }
+
+  test('fetching / active(pending / scanned) / success', () => {
+    expect(renderView({ kind: 'fetching' })).toContain('正在获取二维码');
+    const pending = renderView({
+      kind: 'active',
+      qrcodeUrl: 'https://cdn.example/q1.jpg',
+      ticketStatus: 'pending',
+    });
+    expect(pending).toContain('src="https://cdn.example/q1.jpg"');
+    expect(pending).toContain('alt="扫码二维码"');
+    expect(pending).toContain('请使用手机扫码');
+    expect(
+      renderView({
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'scanned',
+      }),
+    ).toContain('已扫码，请在手机上确认');
+    expect(renderView({ kind: 'success' })).toContain('操作成功');
+  });
+
+  test('expired：过期提示 + 刷新按钮（重拉经 onRefresh → requestQR，captcha 由调用方）', () => {
+    const markup = renderView({ kind: 'expired' });
+    expect(markup).toContain('已过期，请刷新后重试');
+    expect(markup).toContain('<button');
+    expect(markup).toContain('重试');
+  });
+
+  test('failed：role="alert" + 文案，不渲染重试按钮（后续动作归调用方）', () => {
+    const markup = renderView({
+      kind: 'failed',
+      message: '该手机号/邮箱已被占用',
+    });
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('该手机号/邮箱已被占用');
+    expect(markup).not.toContain('<button');
+  });
+});
+
+describe('ProviderIcon（§3.3 行 344：渠道图标唯一渲染入口）', () => {
+  test('resolveIconMode：icon 非空未失败 → image；空 / undefined / 加载失败 → placeholder', () => {
+    expect(resolveIconMode('https://cdn.example/wechat.png', false)).toBe('image');
+    expect(resolveIconMode('https://cdn.example/wechat.png', true)).toBe('placeholder');
+    expect(resolveIconMode('', false)).toBe('placeholder'); // protojson 零值省略
+    expect(resolveIconMode(undefined, false)).toBe('placeholder');
+  });
+
+  test('icon 非空 → <img>（onError 转占位的翻转在组件壳，纯函数层已覆盖）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ProviderIcon, {
+        icon: 'https://cdn.example/wechat.png',
+        alt: '微信',
+      }),
+    );
+    expect(markup).toContain('<img');
+    expect(markup).toContain('src="https://cdn.example/wechat.png"');
+    expect(markup).toContain('alt="微信"');
+    expect(markup).not.toContain('<svg'); // 无占位图形
+  });
+
+  test('icon 空 → 内联 SVG 占位（工程内无渠道图标资源，不做本地文件回落）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ProviderIcon, { alt: '微信' }),
+    );
+    expect(markup).toContain('<svg');
+    expect(markup).not.toContain('<img');
+    expect(markup).toContain('aria-label="微信"');
+    expect(renderToStaticMarkup(createElement(ProviderIcon, {}))).toContain(
+      '渠道图标', // alt 缺省内置文案
+    );
   });
 });

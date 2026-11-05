@@ -1,0 +1,23 @@
+// 渠道图标样式（docs/前端架构.md §1.7；§3.3 行 344 内联 SVG 占位）。
+@import (reference) '../styles/tokens.less';
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  color: @color-text-muted;
+}
+
+.iconImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.iconGlyph {
+  width: 100%;
+  height: 100%;
+}

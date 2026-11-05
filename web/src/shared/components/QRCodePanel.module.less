@@ -1,0 +1,54 @@
+// 扫码面板样式（docs/前端架构.md §1.7；§3.3 行 345 四态面板）。
+@import (reference) '../styles/tokens.less';
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: @spacing-md;
+  padding: @spacing-lg;
+  border: @border-width solid @color-border;
+  border-radius: @radius-md;
+  background: @color-background;
+}
+
+.qrcode {
+  width: 12.5rem;
+  height: 12.5rem;
+  object-fit: contain;
+}
+
+.hint {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+}
+
+.success {
+  margin: 0;
+  color: @color-primary;
+  font-size: @font-size-md;
+}
+
+.actionBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: @spacing-sm;
+}
+
+.errorText {
+  margin: 0;
+  color: @color-danger;
+  font-size: @font-size-md;
+}
+
+.refreshButton {
+  padding: @spacing-xs @spacing-lg;
+  border: @border-width solid @color-primary;
+  border-radius: @radius-sm;
+  color: @color-primary;
+  background: @color-background;
+  font-size: @font-size-md;
+  cursor: pointer;
+}
