@@ -9,7 +9,7 @@
  * onQueryChange 上报（dataTableLogic.resolveTableQuery 归一）重新取数。
  * 401 统一跳登录（§5 行 480，沿 ProfilePage 模式）；其余错误就地提示。
  * 后端本接口系桩——测试走 msw，联调待后端实装解锁。
- * 文案中文字面量：沿 account 既有模式，扩 i18n 键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { buildGetEventsRequest, formatUnixTime, getEvents, isUnauthenticatedError } from '../api';
@@ -21,6 +21,7 @@ import {
 } from '../../shared/app-ui/dataTableLogic';
 import type { UserEventItem } from '../../gen/proto/api/account/v1/thirdparty_pb';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import styles from './EventLogTable.module.less';
 
@@ -42,33 +43,38 @@ function logRowKey(row: UserEventItem): string {
   return `${row.createdAt}:${row.ip}:${row.amr}`;
 }
 
-/** 列口径（需求 §4.2 行 152）：时间 / 方式 / IP / 设备 UA。 */
-const LOG_COLUMNS: readonly DataTableColumn<UserEventItem>[] = [
-  {
-    dataIndex: 'createdAt',
-    title: '时间',
-    width: 180,
-    sorter: true,
-    render: (_text: unknown, row: UserEventItem) => formatUnixTime(row.createdAt),
-  },
-  {
-    dataIndex: 'amr',
-    title: '方式',
-    width: 160,
-    render: (_text: unknown, row: UserEventItem) => row.amr || EMPTY_TEXT,
-  },
-  {
-    dataIndex: 'ip',
-    title: 'IP',
-    width: 180,
-    render: (_text: unknown, row: UserEventItem) => row.ip || EMPTY_TEXT,
-  },
-  {
-    dataIndex: 'ua',
-    title: '设备（UA）',
-    render: (_text: unknown, row: UserEventItem) => row.ua || EMPTY_TEXT,
-  },
-];
+/**
+ * 列口径（需求 §4.2 行 152）：时间 / 方式 / IP / 设备 UA。
+ * 函数形态供渲染期构造（t() 于渲染期调用，防模块级 locale 冻结）。
+ */
+function logColumns(): readonly DataTableColumn<UserEventItem>[] {
+  return [
+    {
+      dataIndex: 'createdAt',
+      title: t('account.logTimeColumn'),
+      width: 180,
+      sorter: true,
+      render: (_text: unknown, row: UserEventItem) => formatUnixTime(row.createdAt),
+    },
+    {
+      dataIndex: 'amr',
+      title: t('account.logMethodColumn'),
+      width: 160,
+      render: (_text: unknown, row: UserEventItem) => row.amr || EMPTY_TEXT,
+    },
+    {
+      dataIndex: 'ip',
+      title: 'IP',
+      width: 180,
+      render: (_text: unknown, row: UserEventItem) => row.ip || EMPTY_TEXT,
+    },
+    {
+      dataIndex: 'ua',
+      title: t('account.logUaColumn'),
+      render: (_text: unknown, row: UserEventItem) => row.ua || EMPTY_TEXT,
+    },
+  ];
+}
 
 /** 登录记录表状态壳：query 受控 → GetEvents 取数 → DataTable 渲染。 */
 export function EventLogTable(): ReactNode {
@@ -90,19 +96,19 @@ export function EventLogTable(): ReactNode {
   }, [error, alRoot]);
 
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return <p role="alert">登录记录加载失败，请刷新重试</p>;
+    return <p role="alert">{t('account.logLoadFailed')}</p>;
   }
   return (
     <div className={styles.tableWrap}>
       <DataTable<UserEventItem>
-        columns={LOG_COLUMNS}
+        columns={logColumns()}
         rows={data?.items ?? []}
         rowKey={logRowKey}
         total={data !== undefined ? toCount(data.total) : 0}
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? '暂无登录记录' : undefined}
+        empty={status === 'success' ? t('account.logEmpty') : undefined}
       />
     </div>
   );

@@ -15,13 +15,14 @@
  * 的兜底：展示密钥 + otpauthUrl 文本（各带复制按钮，验证器应用手动输入
  * 密钥或粘贴 otpauth 地址均可完成绑定）；qrcodeContent 与 otpauthUrl 同源
  * （二维码编码内容），后续引库 / 自绘时直接消费该字段。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键 + common.retry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Modal, Spin } from '@douyinfe/semi-ui-19';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   apiErrorText,
   bindTotp,
@@ -31,10 +32,6 @@ import {
 import { RecoveryCodePanel } from './RecoveryCodePanel';
 import styles from './TotpBindDialog.module.less';
 
-/** 本地校验文案（i18n 无键，中文字面量，归后续 i18n 实现）。 */
-const CODE_INVALID_TEXT = `请输入 ${DEFAULT_CODE_LENGTH} 位数字动态码`;
-/** 验证成功帧确认按钮（§5 行 485 一次性展示后由用户确认已保存）。 */
-const DONE_TEXT = '我已保存，完成绑定';
 
 /**
  * TOTP 绑定状态壳（ContactBindForm 同款两 useRequest 模式）：
@@ -96,7 +93,7 @@ export function TotpBindDialog(props: {
 
   return (
     <Modal
-      title="绑定 TOTP 动态码"
+      title={t('account.totpBindTitle')}
       visible={props.visible}
       onCancel={handleCancel}
       footer={null}
@@ -104,11 +101,11 @@ export function TotpBindDialog(props: {
       {verified ? (
         <div className={styles.body}>
           <p role="status" className={styles.doneText}>
-            TOTP 绑定成功。以下 10 个恢复码仅展示一次，请妥善保存
+            {t('account.totpBindSuccess')}
           </p>
           <RecoveryCodePanel codes={verifyData?.recoveryCodes ?? []} />
           <Button theme="solid" onClick={props.onDone}>
-            {DONE_TEXT}
+            {t('account.totpDoneAction')}
           </Button>
         </div>
       ) : challengeStatus === 'loading' ? (
@@ -119,7 +116,7 @@ export function TotpBindDialog(props: {
             {apiErrorText(challengeError)}
           </p>
           <Button onClick={() => runChallenge(buildBindTotpChallengeRequest()).catch(() => {})}>
-            重试
+            {t('common.retry')}
           </Button>
         </div>
       ) : (
@@ -130,17 +127,14 @@ export function TotpBindDialog(props: {
             submitVerify();
           }}
         >
-          <p className={styles.hint}>
-            请使用验证器应用（如 Google Authenticator）手动输入密钥或粘贴 otpauth
-            地址完成添加，然后输入当前 6 位动态码验证
-          </p>
+          <p className={styles.hint}>{t('account.totpManualHint')}</p>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>密钥</span>
+            <span className={styles.fieldLabel}>{t('account.totpSecretLabel')}</span>
             <span className={styles.mono}>{challenge.secret}</span>
             <CopyButton text={challenge.secret} />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>otpauth 地址</span>
+            <span className={styles.fieldLabel}>{t('account.totpOtpauthLabel')}</span>
             <span className={styles.mono}>{challenge.otpauthUrl}</span>
             <CopyButton text={challenge.otpauthUrl} />
           </div>
@@ -148,12 +142,12 @@ export function TotpBindDialog(props: {
             value={code}
             onChange={setCode}
             length={DEFAULT_CODE_LENGTH}
-            ariaLabel="TOTP 动态码"
+            ariaLabel={t('account.factorTotp')}
             disabled={verifying}
           />
           {inputError !== undefined ? (
             <p role="alert" className={styles.error}>
-              {CODE_INVALID_TEXT}
+              {t('account.totpCodeInvalid', { count: DEFAULT_CODE_LENGTH })}
             </p>
           ) : null}
           {verifyStatus === 'error' ? (
@@ -162,7 +156,7 @@ export function TotpBindDialog(props: {
             </p>
           ) : null}
           <Button theme="solid" htmlType="submit" loading={verifying} disabled={verifying}>
-            验证并完成绑定
+            {t('account.totpVerifyAction')}
           </Button>
         </form>
       )}

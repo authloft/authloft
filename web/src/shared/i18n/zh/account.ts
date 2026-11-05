@@ -58,4 +58,93 @@ export const account = {
   'account.recoveryIssuedAt': '签发时间：{time}',
   'account.recoveryRegenerateConfirm': '重新生成将作废全部现有恢复码，确定继续？',
   'account.recoveryRegenerate': '重新生成',
+
+  // ---- MfaMethodList（因子名复用 factors.*，「恢复码」弹窗题复用
+  //      factors.recovery_code，「绑定」按钮复用 account.bindAction，「尚未绑定」
+  //      复用 account.mfaNotBound，「 · 最近使用 {time}」复用 account.mfaLastUsedAt）--
+  'account.factorTotp': 'TOTP 动态码',
+  'account.factorBoundTag': '已绑定',
+  'account.factorUnboundTag': '未绑定',
+  'account.mfaEnableFactorAria': '启用{factor}',
+  'account.mfaBindPhoneHint': '请先在「联系方式」中绑定手机号',
+  'account.mfaBindEmailHint': '请先在「联系方式」中绑定邮箱',
+  'account.mfaBindWebauthnHint': '请先在下方「通行密钥」中注册',
+  'account.mfaLocked': '策略要求开启两步验证，不可全部关闭',
+  'account.mfaShowDetails': '绑定明细',
+  'account.mfaHideDetails': '收起明细',
+  'account.mfaDetailsLoadFailed': '明细加载失败，{error}',
+  'account.viewRecoveryCodes': '查看恢复码',
+  'account.recoveryIssuedAtLabel': '恢复码签发时间',
+  'account.recoveryLoadFailed': '恢复码加载失败',
+
+  // ---- WebauthnList------------------------------------------------------------
+  'account.webauthnLabelPlaceholder': '为通行密钥命名（可选）',
+  'account.webauthnRegisterAction': '注册通行密钥',
+  'account.webauthnCancelled': '已取消通行密钥注册',
+  'account.webauthnRegisterFailed': '通行密钥注册失败，请重试',
+  'account.webauthnLoadFailed': '通行密钥加载失败，请刷新重试',
+  'account.webauthnEmpty': '尚未注册通行密钥',
+  'account.webauthnUnsupported': '当前浏览器或设备不支持通行密钥',
+  'account.saveAction': '保存',
+  'account.cancelAction': '取消',
+  'account.unnamedCredential': '未命名',
+  'account.webauthnAddedAt': '添加于 {time}',
+  'account.webauthnRenameAction': '重命名',
+  'account.webauthnDeleteConfirm': '确定删除「{name}」？删除后无法用它登录。',
+  'account.deleteAction': '删除',
+
+  // ---- ContactBindForm（「请完成人机校验」复用 errors.status.captcha_required，
+  //      「邮箱」kind 标签复用 channels.email）----------------------------------
+  'account.phoneLabel': '手机号',
+  'account.bindInvalidPhone': '请输入正确的手机号',
+  'account.bindInvalidEmail': '请输入正确的邮箱',
+  'account.bindCodeInvalid': '请输入 {count} 位数字验证码',
+  'account.bindDone': '{kind}绑定成功',
+  'account.bindContinue': '继续绑定 / 换绑',
+  'account.bindCodeSentToPrefix': '验证码已发送至',
+  'account.bindCodeAria': '{kind}绑定验证码',
+  'account.bindConfirmAction': '确认绑定',
+  'account.bindResendAction': '重新发送',
+  'account.phonePlaceholder': '请输入手机号',
+  'account.emailPlaceholder': '请输入邮箱',
+  'account.sendCodeAction': '发送验证码',
+
+  // ---- ThirdPartyBindDialog---------------------------------------------------
+  'account.qrNeedCaptcha': '请先完成人机校验',
+  'account.fetchQrcodeAction': '获取二维码',
+  'account.qrBindHint': '扫码后将绑定到当前账号',
+  'account.scanBindTitle': '扫码绑定',
+  'account.bindNameTitle': '绑定{name}',
+
+  // ---- PasswordChangeForm-----------------------------------------------------
+  'account.currentPasswordRequired': '请输入当前密码',
+  'account.currentPasswordIncorrect': '当前密码不正确',
+  'account.passwordChangedDone': '密码修改成功，已退出登录，请重新登录',
+  'account.currentPasswordLabel': '当前密码',
+  'account.newPasswordLabel': '新密码',
+  'account.changePasswordAction': '修改密码',
+  'account.setPasswordAction': '设置密码',
+
+  // ---- AvatarUploader（「用户头像」alt 复用 account.avatarAlt）-------------
+  'account.uploadProgress': '上传中 {percent}%',
+  'account.avatarChooseFileAria': '选择头像文件',
+  'account.avatarUploadAction': '上传头像',
+
+  // ---- TotpBindDialog（「重试」复用 common.retry，「TOTP 动态码」
+  //      aria-label 复用 account.factorTotp）----------------------------------
+  'account.totpCodeInvalid': '请输入 {count} 位数字动态码',
+  'account.totpBindTitle': '绑定 TOTP 动态码',
+  'account.totpBindSuccess': 'TOTP 绑定成功。以下 10 个恢复码仅展示一次，请妥善保存',
+  'account.totpDoneAction': '我已保存，完成绑定',
+  'account.totpManualHint': '请使用验证器应用（如 Google Authenticator）手动输入密钥或粘贴 otpauth 地址完成添加，然后输入当前 6 位动态码验证',
+  'account.totpSecretLabel': '密钥',
+  'account.totpOtpauthLabel': 'otpauth 地址',
+  'account.totpVerifyAction': '验证并完成绑定',
+
+  // ---- EventLogTable-----------------------------------------------------------
+  'account.logTimeColumn': '时间',
+  'account.logMethodColumn': '方式',
+  'account.logUaColumn': '设备（UA）',
+  'account.logLoadFailed': '登录记录加载失败，请刷新重试',
+  'account.logEmpty': '暂无登录记录',
 };

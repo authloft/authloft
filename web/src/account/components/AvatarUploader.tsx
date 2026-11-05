@@ -20,6 +20,7 @@ import type { AvatarUploadConfig } from '../../gen/proto/api/account/v1/profile_
 import { ApiError } from '../../shared/api/errors';
 import type { UploadProgress } from '../../shared/api/http';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   apiErrorText,
   avatarUploadDeps,
@@ -105,7 +106,11 @@ export function AvatarUploader(props: {
       // proxy 分支经 XHR upload 事件（前端架构 §3.2 行 327）；direct 的 PUT
       // 无进度事件、不回调（§3.2 行 328），进度文案仅在 proxy 分支出现。
       if (progress.total > 0) {
-        setProgressText(`上传中 ${Math.round((progress.loaded / progress.total) * 100)}%`);
+        setProgressText(
+          t('account.uploadProgress', {
+            percent: Math.round((progress.loaded / progress.total) * 100),
+          }),
+        );
       }
     })
       .then((url) => {
@@ -124,7 +129,7 @@ export function AvatarUploader(props: {
   const previewUrl = uploadedUrl ?? props.currentUrl;
   return (
     <div className={styles.uploader}>
-      <Avatar size="large" src={previewUrl || undefined} alt="用户头像" />
+      <Avatar size="large" src={previewUrl || undefined} alt={t('account.avatarAlt')} />
       <div className={styles.controls}>
         <input
           ref={inputRef}
@@ -136,14 +141,14 @@ export function AvatarUploader(props: {
             // 清空 value 允许重复选择同一文件再次触发 onChange。
             event.target.value = '';
           }}
-          aria-label="选择头像文件"
+          aria-label={t('account.avatarChooseFileAria')}
         />
         <Button
           onClick={() => inputRef.current?.click()}
           loading={uploading}
           disabled={uploading}
         >
-          上传头像
+          {t('account.avatarUploadAction')}
         </Button>
         {progressText !== undefined ? (
           <p role="status" className={styles.progress}>

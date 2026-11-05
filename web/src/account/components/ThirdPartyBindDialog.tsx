@@ -23,7 +23,7 @@
  * 契约；login 端 QRCodeStep 同款门控模式，§2.8 行 490-497 取图链在
  * CaptchaWidget 内）。signal 忽略——api 薄封装不支持中断，结果丢弃由面板
  * disposed 检查兜底。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Button, Modal } from '@douyinfe/semi-ui-19';
@@ -39,6 +39,7 @@ import {
   type QRPanelPhase,
 } from '../../shared/components/QRCodePanel';
 import { createQrcode } from '../../shared/api/sso';
+import { t } from '../../shared/i18n';
 import {
   bindPollPhase,
   buildCreateQrcodeBindRequest,
@@ -46,13 +47,6 @@ import {
   getThirdpartyTicket,
 } from '../api';
 import styles from './ThirdPartyBindDialog.module.less';
-
-/** 门控提示（§2.8 行 690 captcha 必带；i18n 无键，字面量声明见文件头）。 */
-const NEED_CAPTCHA_TEXT = '请先完成人机校验';
-/** 门控拉码按钮文案（同上）。 */
-const FETCH_QR_TEXT = '获取二维码';
-/** 面板明示文案（§5 行 489「面板上明示」）。 */
-const BIND_HINT_TEXT = '扫码后将绑定到当前账号';
 
 /** 面板体 props（started 后挂载；controller 生命周期与卸载中断绑定）。 */
 interface PanelBodyProps {
@@ -80,7 +74,7 @@ function BindPanelBody({ providerKey, captchaRef, onDone }: PanelBodyProps): Rea
       requestQR: (_signal: AbortSignal): Promise<CreateQrcodeResponse> => {
         const captcha = propsRef.current.captchaRef.current?.getToken();
         if (captcha === undefined) {
-          return Promise.reject(new Error(NEED_CAPTCHA_TEXT));
+          return Promise.reject(new Error(t('account.qrNeedCaptcha')));
         }
         return createQrcode(
           buildCreateQrcodeBindRequest(propsRef.current.providerKey, captcha),
@@ -160,7 +154,11 @@ export function ThirdPartyBindDialog(props: {
 
   return (
     <Modal
-      title={props.displayName === '' ? '扫码绑定' : `绑定${props.displayName}`}
+      title={
+        props.displayName === ''
+          ? t('account.scanBindTitle')
+          : t('account.bindNameTitle', { name: props.displayName })
+      }
       visible={props.visible}
       onCancel={props.onCancel}
       footer={null}
@@ -168,7 +166,7 @@ export function ThirdPartyBindDialog(props: {
       {props.visible && (
         <div className={styles.body}>
           {/* §5 行 489：面板上明示「扫码后将绑定到当前账号」。 */}
-          <p className={styles.hint}>{BIND_HINT_TEXT}</p>
+          <p className={styles.hint}>{t('account.qrBindHint')}</p>
           {started ? (
             <BindPanelBody
               providerKey={props.providerKey}
@@ -179,11 +177,11 @@ export function ThirdPartyBindDialog(props: {
             <div className={styles.captchaBox}>
               <CaptchaWidget captcha={captcha} ref={captchaRef} />
               <Button theme="solid" onClick={start}>
-                {FETCH_QR_TEXT}
+                {t('account.fetchQrcodeAction')}
               </Button>
               {notice ? (
                 <p role="alert" className={styles.notice}>
-                  {NEED_CAPTCHA_TEXT}
+                  {t('account.qrNeedCaptcha')}
                 </p>
               ) : null}
             </div>

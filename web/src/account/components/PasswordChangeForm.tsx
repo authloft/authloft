@@ -8,12 +8,13 @@
  * 结构沿 ProfilePage 模式：View 为纯状态帧视图，Form 为状态壳
  * （useRequest 提交 + 成功后延时跳转）。请求构造 / 错误文案纯逻辑在 ./api
  * （node 可测；Semi 渲染测试 blocker 见 account.test.tsx 头注）。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input } from '@douyinfe/semi-ui-19';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   apiErrorText,
   buildChangePasswordRequest,
@@ -25,12 +26,6 @@ import styles from './PasswordChangeForm.module.less';
 
 /** 成功帧停留时长（ms）：提示可读后跳登录页（§5 行 483「提示并跳登录页」）。 */
 const REDIRECT_DELAY_MS = 1500;
-
-/** hasPassword=true 且当前密码为空的本地提示（§3.3 行 860 必填）。 */
-const CURRENT_PASSWORD_REQUIRED_TEXT = '请输入当前密码';
-
-/** invalid_credentials 在改密语境的覆写（当前密码校验失败，apiErrorText 的 overrides）。 */
-const INVALID_CREDENTIALS_TEXT = '当前密码不正确';
 
 /**
  * 改密帧视图（纯渲染，无请求）：
@@ -52,7 +47,7 @@ export function PasswordChangeFormView(props: {
   if (props.done) {
     return (
       <div role="status" className={styles.done}>
-        密码修改成功，已退出登录，请重新登录
+        {t('account.passwordChangedDone')}
       </div>
     );
   }
@@ -68,7 +63,7 @@ export function PasswordChangeFormView(props: {
       {props.hasPassword ? (
         <div className={styles.field}>
           <label className={styles.label} htmlFor="account-current-password">
-            当前密码
+            {t('account.currentPasswordLabel')}
           </label>
           <Input
             id="account-current-password"
@@ -82,7 +77,7 @@ export function PasswordChangeFormView(props: {
       ) : null}
       <div className={styles.field}>
         <label className={styles.label} htmlFor="account-new-password">
-          新密码
+          {t('account.newPasswordLabel')}
         </label>
         <Input
           id="account-new-password"
@@ -97,13 +92,13 @@ export function PasswordChangeFormView(props: {
       </div>
       {props.fieldError?.field === 'currentPassword' ? (
         <p role="alert" className={styles.error}>
-          {CURRENT_PASSWORD_REQUIRED_TEXT}
+          {t('account.currentPasswordRequired')}
         </p>
       ) : null}
       {props.status === 'error' ? (
         <p role="alert" className={styles.error}>
           {apiErrorText(props.submitError, {
-            invalid_credentials: INVALID_CREDENTIALS_TEXT,
+            invalid_credentials: t('account.currentPasswordIncorrect'),
           })}
         </p>
       ) : null}
@@ -113,7 +108,7 @@ export function PasswordChangeFormView(props: {
         loading={submitting}
         disabled={submitting}
       >
-        {props.hasPassword ? '修改密码' : '设置密码'}
+        {props.hasPassword ? t('account.changePasswordAction') : t('account.setPasswordAction')}
       </Button>
     </form>
   );

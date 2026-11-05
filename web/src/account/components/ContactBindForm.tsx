@@ -10,7 +10,8 @@
  * 请求构造纯逻辑在 ./api（node 可测；Semi 渲染测试 blocker 见
  * account.test.tsx 头注）；target_taken（新号码被占用）/ invalid_code（码
  * 归属校验）等服务端错误经 apiErrorText → shared/i18n 字典出文案。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键 + errors.status.captcha_required /
+ * channels.email 复用）。
  */
 import { useRef, useState, type ReactNode, type Ref } from 'react';
 import { Button, Input } from '@douyinfe/semi-ui-19';
@@ -23,6 +24,7 @@ import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import {
   apiErrorText,
   bindEmail,
@@ -37,18 +39,18 @@ import styles from './ContactBindForm.module.less';
 /** 三步状态机（§3.4 两步 + 成功帧）。 */
 export type ContactBindStep = 'challenge' | 'verify' | 'done';
 
-/** 本地校验文案（i18n 无键，中文字面量，归后续 i18n 实现）。 */
+/** 本地校验文案（shared/i18n 域键；「请完成人机校验」复用 errors.status.captcha_required）。 */
 function inputErrorText(
   kind: ContactBindKind,
   error: ContactBindChallengeError | 'invalid_code',
 ): string {
   switch (error) {
     case 'invalid_target':
-      return kind === 'phone' ? '请输入正确的手机号' : '请输入正确的邮箱';
+      return t(kind === 'phone' ? 'account.bindInvalidPhone' : 'account.bindInvalidEmail');
     case 'captcha_missing':
-      return '请完成人机校验';
+      return t('errors.status.captcha_required');
     case 'invalid_code':
-      return `请输入 ${DEFAULT_CODE_LENGTH} 位数字验证码`;
+      return t('account.bindCodeInvalid', { count: DEFAULT_CODE_LENGTH });
   }
 }
 
@@ -76,13 +78,13 @@ export function ContactBindFormView(props: {
   readonly onResend: () => void;
   readonly onRestart: () => void;
 }): ReactNode {
-  const kindLabel = props.kind === 'phone' ? '手机号' : '邮箱';
+  const kindLabel = props.kind === 'phone' ? t('account.phoneLabel') : t('channels.email');
 
   if (props.step === 'done') {
     return (
       <div role="status" className={styles.done}>
-        <p className={styles.doneText}>{kindLabel}绑定成功</p>
-        <Button onClick={props.onRestart}>继续绑定 / 换绑</Button>
+        <p className={styles.doneText}>{t('account.bindDone', { kind: kindLabel })}</p>
+        <Button onClick={props.onRestart}>{t('account.bindContinue')}</Button>
       </div>
     );
   }
@@ -98,13 +100,14 @@ export function ContactBindFormView(props: {
         }}
       >
         <p className={styles.targetLine}>
-          验证码已发送至 <span className={styles.target}>{props.target}</span>
+          {t('account.bindCodeSentToPrefix')}{' '}
+          <span className={styles.target}>{props.target}</span>
         </p>
         <CodeInput
           value={props.code}
           onChange={props.onCodeChange}
           length={DEFAULT_CODE_LENGTH}
-          ariaLabel={`${kindLabel}绑定验证码`}
+          ariaLabel={t('account.bindCodeAria', { kind: kindLabel })}
           disabled={verifying}
         />
         {props.inputError !== undefined ? (
@@ -124,10 +127,10 @@ export function ContactBindFormView(props: {
             loading={verifying}
             disabled={verifying}
           >
-            确认绑定
+            {t('account.bindConfirmAction')}
           </Button>
           <Button type="tertiary" onClick={props.onResend} disabled={verifying}>
-            重新发送
+            {t('account.bindResendAction')}
           </Button>
         </div>
       </form>
@@ -151,7 +154,7 @@ export function ContactBindFormView(props: {
           id={`account-bind-${props.kind}-target`}
           value={props.target}
           onChange={props.onTargetChange}
-          placeholder={props.kind === 'phone' ? '请输入手机号' : '请输入邮箱'}
+          placeholder={props.kind === 'phone' ? t('account.phonePlaceholder') : t('account.emailPlaceholder')}
           disabled={challenging}
         />
       </div>
@@ -173,7 +176,7 @@ export function ContactBindFormView(props: {
         loading={challenging}
         disabled={challenging}
       >
-        发送验证码
+        {t('account.sendCodeAction')}
       </Button>
     </form>
   );

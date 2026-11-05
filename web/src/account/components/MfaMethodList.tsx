@@ -12,13 +12,14 @@
  * - 恢复码查看（GetRecoveryCodes）与重新生成（RegenerateRecoveryCodes，
  *   全量作废）经 RecoveryCodePanel 呈现；重新生成失败保留旧码（作废与
  *   新码下发在服务端同事务原子发生）。
- * 文案无 i18n 键：中文字面量 + 注释声明，扩键归后续 i18n 实现。
+ * 文案经 shared/i18n（account.* 域键 + factors.* 因子名复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Checkbox, Modal, Spin, Tag } from '@douyinfe/semi-ui-19';
 import type { MfaPolicyMethod } from '../../gen/proto/api/account/v1/profile_pb';
 import type { MfaFactor } from '../../gen/proto/api/account/v1/mfa_pb';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t, type I18nKey } from '../../shared/i18n';
 import {
   apiErrorText,
   buildRegenerateRecoveryCodesRequest,
@@ -34,28 +35,32 @@ import { RecoveryCodePanel } from './RecoveryCodePanel';
 import { TotpBindDialog } from './TotpBindDialog';
 import styles from './MfaMethodList.module.less';
 
-/** 因子展示名（§3.2 行 835-841 因子全集；未知因子回显原文，§9 第 18 条零值兜底）。 */
-const FACTOR_LABELS: Readonly<Record<string, string>> = {
-  totp: 'TOTP 动态码',
-  otp_sms: '短信验证码',
-  otp_email: '邮箱验证码',
-  webauthn: '通行密钥',
-  recovery_code: '恢复码',
+/** 因子展示名 i18n 键（§3.2 行 835-841 因子全集；未知因子回显原文，§9 第 18 条零值兜底）。 */
+const FACTOR_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
+  totp: 'account.factorTotp',
+  otp_sms: 'factors.otp_sms',
+  otp_email: 'factors.otp_email',
+  webauthn: 'factors.webauthn',
+  recovery_code: 'factors.recovery_code',
 };
 
 function factorLabel(factor: string): string {
-  return FACTOR_LABELS[factor] ?? factor;
+  const key = FACTOR_LABEL_KEYS[factor];
+  return key !== undefined ? t(key) : factor;
 }
 
-/** 未绑定因子的指引文案（绑定入口在对应区块，本列表不重复实现）。 */
-const UNBOUND_HINTS: Readonly<Record<string, string>> = {
-  otp_sms: '请先在「联系方式」中绑定手机号',
-  otp_email: '请先在「联系方式」中绑定邮箱',
-  webauthn: '请先在下方「通行密钥」中注册',
+/** 未绑定因子的指引文案键（绑定入口在对应区块，本列表不重复实现）。 */
+const UNBOUND_HINT_KEYS: Readonly<Record<string, I18nKey>> = {
+  otp_sms: 'account.mfaBindPhoneHint',
+  otp_email: 'account.mfaBindEmailHint',
+  webauthn: 'account.mfaBindWebauthnHint',
 };
 
-/** required=true 时取消最后一个启用因子的本地拒绝文案（§3.2 行 833）。 */
-const MFA_LOCKED_TEXT = '策略要求开启两步验证，不可全部关闭';
+/** 未绑定因子的指引文案（渲染期 t()，防模块级 locale 冻结）。 */
+function unboundHint(factor: string): string | undefined {
+  const key = UNBOUND_HINT_KEYS[factor];
+  return key !== undefined ? t(key) : undefined;
+}
 
 export function MfaMethodList(props: {
   /** 系统开放因子摘要（GetConfig mfaPolicy.methods，§3.2 行 834-845）。 */
@@ -140,31 +145,31 @@ export function MfaMethodList(props: {
               checked={method.enabled}
               disabled={toggling || !method.bound}
               onChange={(e) => handleToggle(method.factor, e.target.checked ?? false)}
-              aria-label={`启用${factorLabel(method.factor)}`}
+              aria-label={t('account.mfaEnableFactorAria', { factor: factorLabel(method.factor) })}
             />
             <span className={styles.factor}>{factorLabel(method.factor)}</span>
             <Tag size="small" color={method.bound ? 'green' : 'grey'}>
-              {method.bound ? '已绑定' : '未绑定'}
+              {method.bound ? t('account.factorBoundTag') : t('account.factorUnboundTag')}
             </Tag>
             {method.factor === 'totp' && !method.bound ? (
               <Button size="small" onClick={() => setTotpOpen(true)}>
-                绑定
+                {t('account.bindAction')}
               </Button>
             ) : null}
             {method.factor === 'recovery_code' && method.bound ? (
               <Button size="small" onClick={() => setRecoveryOpen(true)}>
-                查看恢复码
+                {t('account.viewRecoveryCodes')}
               </Button>
             ) : null}
-            {!method.bound && UNBOUND_HINTS[method.factor] !== undefined ? (
-              <span className={styles.unboundHint}>{UNBOUND_HINTS[method.factor]}</span>
+            {!method.bound && unboundHint(method.factor) !== undefined ? (
+              <span className={styles.unboundHint}>{unboundHint(method.factor)}</span>
             ) : null}
           </li>
         ))}
       </ul>
       {lockedNotice ? (
         <p role="alert" className={styles.notice}>
-          {MFA_LOCKED_TEXT}
+          {t('account.mfaLocked')}
         </p>
       ) : null}
       {toggleStatus === 'error' ? (
@@ -174,14 +179,14 @@ export function MfaMethodList(props: {
       ) : null}
       <div className={styles.detailsBlock}>
         <Button type="tertiary" size="small" onClick={() => setExpanded(!expanded)}>
-          {expanded ? '收起明细' : '绑定明细'}
+          {expanded ? t('account.mfaHideDetails') : t('account.mfaShowDetails')}
         </Button>
         {expanded ? (
           detailStatus === 'loading' ? (
             <Spin size="small" />
           ) : detailStatus === 'error' ? (
             <p role="alert" className={styles.notice}>
-              明细加载失败，{apiErrorText(detailError)}
+              {t('account.mfaDetailsLoadFailed', { error: apiErrorText(detailError) })}
             </p>
           ) : (
             <ul className={styles.detailList}>
@@ -191,13 +196,13 @@ export function MfaMethodList(props: {
                   <li key={method.factor} className={styles.detailRow}>
                     <span className={styles.detailFactor}>{factorLabel(method.factor)}</span>
                     <span className={styles.detailText}>
-                      {factor !== undefined ? mfaFactorDetail(factor) : '尚未绑定'}
+                      {factor !== undefined ? mfaFactorDetail(factor) : t('account.mfaNotBound')}
                     </span>
                   </li>
                 );
               })}
               <li className={styles.detailRow}>
-                <span className={styles.detailFactor}>恢复码签发时间</span>
+                <span className={styles.detailFactor}>{t('account.recoveryIssuedAtLabel')}</span>
                 <span className={styles.detailText}>
                   {formatUnixTime(mfa?.recoveryIssuedAt ?? BigInt(0))}
                 </span>
@@ -219,7 +224,7 @@ export function MfaMethodList(props: {
         }}
       />
       <Modal
-        title="恢复码"
+        title={t('factors.recovery_code')}
         visible={recoveryOpen}
         onCancel={() => {
           // 关框即清上次重新生成结果，防重开时闪现旧码一帧（重开走 GetRecoveryCodes）。
@@ -232,7 +237,7 @@ export function MfaMethodList(props: {
           <Spin />
         ) : codesView === undefined ? (
           <p role="alert" className={styles.notice}>
-            {recoveryStatus === 'error' ? apiErrorText(recoveryError) : '恢复码加载失败'}
+            {recoveryStatus === 'error' ? apiErrorText(recoveryError) : t('account.recoveryLoadFailed')}
           </p>
         ) : (
           <RecoveryCodePanel
