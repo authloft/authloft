@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"authloft/internal/security"
 	adminsvc "authloft/internal/service/admin"
 	"authloft/internal/session"
+	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
 	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
 	_ "authloft/internal/provider/email/smtp"
@@ -306,6 +308,64 @@ func (f *fakeClientService) DeleteOidcClient(_ context.Context, id int64) error 
 	return f.crudErr
 }
 
+// fakeSettingsService settings/事件/工具族（SettingsService）的 fake：
+// 入参全留档断言，错误可注入；返回数据可预置。业务规则断言
+// （全量替换、审计、分页透传等）在 service/admin/settings_test.go，本文件
+// 只关注 Connect 形态映射 / 分页归一 / 错误码投影。
+type fakeSettingsService struct {
+	snap     map[string]any
+	setErr   error
+	listErr  error
+	decode   proto.Message
+	decodeFn func(purpose, token string) (proto.Message, error)
+	status   adminsvc.QueueStatus
+
+	gotSet   adminsvcSettingsSetCall
+	gotList  adminsvc.EventListFilter
+	gotDcd   adminsvcDecodeCall
+	getCalls int
+}
+
+type (
+	adminsvcSettingsSetCall struct {
+		actor int64
+		req   *adminv1.SetSettingsRequest
+	}
+	adminsvcDecodeCall struct {
+		purpose string
+		token   string
+	}
+)
+
+func (f *fakeSettingsService) GetSettings() map[string]any {
+	f.getCalls++
+	return f.snap
+}
+
+func (f *fakeSettingsService) SetSettings(_ context.Context, actor int64, req *adminv1.SetSettingsRequest) error {
+	f.gotSet = adminsvcSettingsSetCall{actor: actor, req: req}
+	return f.setErr
+}
+
+func (f *fakeSettingsService) ListEvents(_ context.Context, flt adminsvc.EventListFilter) ([]model.EventLog, int64, error) {
+	f.gotList = flt
+	return []model.EventLog{
+		{ID: 9, Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: time.Unix(1700000000, 0)},
+	}, 1, f.listErr
+}
+
+func (f *fakeSettingsService) DecodeToken(purpose, token string) (proto.Message, error) {
+	f.gotDcd = adminsvcDecodeCall{purpose: purpose, token: token}
+	if f.decodeFn != nil {
+		return f.decodeFn(purpose, token)
+	}
+	return f.decode, f.setErr
+}
+
+func (f *fakeSettingsService) GetStatus() adminsvc.QueueStatus {
+	return f.status
+}
+
 // newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
 // 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
 // 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
@@ -322,18 +382,26 @@ func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderServ
 	if len(users) > 0 && users[0] != nil {
 		user = users[0]
 	}
-	return assembleAdminHandler(t, providers, writer, user, &fakeClientService{})
+	return assembleAdminHandler(t, providers, writer, user, &fakeClientService{}, &fakeSettingsService{})
+}
+
+// newAdminHandlerSettings settings/工具族用例的构造入口（其余 service 全部
+// no-op——settings 用例不触它们）。
+func newAdminHandlerSettings(t *testing.T, settings SettingsService) (*session.Tokens, *fakeEpochReader, http.Handler) {
+	t.Helper()
+	return assembleAdminHandler(t, &fakeProviders{}, &fakeWriter{}, &fakeUserService{}, &fakeClientService{}, settings)
 }
 
 // newAdminHandlerClients 客户端管理族用例的构造入口（providers / writer /
 // users 全部 no-op——客户端用例不触它们）。
 func newAdminHandlerClients(t *testing.T, clients ClientService) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
-	return assembleAdminHandler(t, &fakeProviders{}, &fakeWriter{}, &fakeUserService{}, clients)
+	return assembleAdminHandler(t, &fakeProviders{}, &fakeWriter{}, &fakeUserService{}, clients, &fakeSettingsService{})
 }
 
-// assembleAdminHandler newAdminHandler / newAdminHandlerClients 的公共主体。
-func assembleAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, user UserService, clients ClientService) (*session.Tokens, *fakeEpochReader, http.Handler) {
+// assembleAdminHandler newAdminHandler / newAdminHandlerClients /
+// newAdminHandlerSettings 的公共主体。
+func assembleAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, user UserService, clients ClientService, settings SettingsService) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	key := make([]byte, 32)
 	for i := range key {
@@ -346,7 +414,7 @@ func assembleAdminHandler(t *testing.T, providers ProviderReader, writer Provide
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers, writer, user, clients),
+		New(providers, writer, user, clients, settings),
 		connectrpc.WithInterceptors(
 			internalconnect.NewSessionInterceptor(
 				session.NewVerifier(tokens, epochs),
@@ -815,33 +883,253 @@ func TestNonAdminReturns404(t *testing.T) {
 	}
 }
 
-// TestStubsUnimplemented 其余全部 admin 方法（§5.6 settings / 工具族 5 个
-// ——Provider 写族 7 方法、用户管理族 8 方法、客户端管理族
-// 10 方法已先后实装并从桩清单移除）一律返回生成基类的
-// unimplemented（桩 + TODO(后续 admin 实现)，见包注释清单）。
-func TestStubsUnimplemented(t *testing.T) {
-	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
-	cookie := adminCookie(t, tokens, epochs, 1)
-	// 客户端管理族 10 方法已实装，桩清单只余 §5.6 settings/工具族
-	//（客户端实装断言见 TestClient*Handlers）。
-	cases := []string{
-		adminv1connect.AdminServiceGetSettingsProcedure,
-		adminv1connect.AdminServiceSetSettingsProcedure,
-		adminv1connect.AdminServiceListEventsProcedure,
-		adminv1connect.AdminServiceDecodeTokenProcedure,
-		adminv1connect.AdminServiceGetStatusProcedure,
-	}
-	for _, procedure := range cases {
-		req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader("{}"))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Cookie", cookie)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
+// —— settings/事件/工具族 5 方法（handler 层：Connect 形态映射 +
+// 入参透传 + 分页归一；业务规则断言在 service/admin/settings_test.go）——
+//（TestStubsUnimplemented 随桩清单清空而删除：33 方法全部实装，无桩可断言。）
 
-		if code := decodeErrorCode(t, rec.Body.String()); code != "unimplemented" {
-			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, code, rec.Body.String())
+// TestGetSettingsHandler 管理员会话取全部系统配置：Snapshot 原样经
+// dto.AdminSettings 投影（35 键全键，键名对 §5.6 四张表逐键一致）——响应
+// 按 protojson UseProtoNames 回放为 snake 键名与快照逐键比对（同时验证
+// 键名零自造与投影完整性）。
+func TestGetSettingsHandler(t *testing.T) {
+	fake := &fakeSettingsService{snap: settings.Defaults()}
+	tokens, epochs, h := newAdminHandlerSettings(t, fake)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetSettingsProcedure, `{}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var out adminv1.SettingsResponse
+	if err := protojson.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, raw)
+	}
+	// UseProtoNames + EmitUnpopulated：仅用于测试侧回放 proto 消息为
+	// snake 键名全集（= §5.6 键 = settings 常量），验证 35 字段键名零自造
+	// 与投影完整性；线上序列化零值省略是标准 protojson 行为（§12.9 行
+	// 1779），不在此断言。
+	b, err := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}.Marshal(&out)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	want := settings.Defaults()
+	if len(got) != len(want) {
+		t.Fatalf("响应键数 = %d, want %d（§5.6 四张表全键）", len(got), len(want))
+	}
+	for k, v := range want {
+		g, ok := got[k]
+		if !ok {
+			t.Fatalf("键 %q 缺失（§5.6 键集应零自造）", k)
+		}
+		switch wv := v.(type) {
+		case int64:
+			gs, ok := g.(string)
+			if !ok || gs != strconv.FormatInt(wv, 10) {
+				t.Errorf("键 %q = %v, want %d", k, g, wv)
+			}
+		case bool, string:
+			if g != any(wv) {
+				t.Errorf("键 %q = %v, want %v", k, g, wv)
+			}
+		case []string:
+			ga, ok := g.([]any)
+			if !ok || len(ga) != len(wv) {
+				t.Errorf("键 %q = %v, want %v", k, g, wv)
+			}
 		}
 	}
+}
+
+// TestSetSettingsHandler 全量提交：请求体原样绑定到 flat 消息透传 service，
+// actor 取会话 uid（审计口径在 service）；service 校验失败 → 400 +
+// ErrorInfo(admin, invalid_request)。
+func TestSetSettingsHandler(t *testing.T) {
+	t.Run("合法提交透传且 actor=会话 uid", func(t *testing.T) {
+		fake := &fakeSettingsService{}
+		tokens, epochs, h := newAdminHandlerSettings(t, fake)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		body := `{"pwdMinLength":10,"allowRegistration":false,"ssoDomains":["https://a.example.com"],"cookieName":"al_session"}`
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetSettingsProcedure, body, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if fake.gotSet.actor != 1 {
+			t.Errorf("actor = %d, want 1（会话 uid）", fake.gotSet.actor)
+		}
+		if fake.gotSet.req.GetPwdMinLength() != 10 || fake.gotSet.req.GetAllowRegistration() {
+			t.Errorf("req 字段绑定错误: %+v", fake.gotSet.req)
+		}
+		if got := fake.gotSet.req.GetSsoDomains(); len(got) != 1 || got[0] != "https://a.example.com" {
+			t.Errorf("ssoDomains = %v", got)
+		}
+	})
+	t.Run("校验失败映射 invalid_request", func(t *testing.T) {
+		fake := &fakeSettingsService{setErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandlerSettings(t, fake)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetSettingsProcedure, `{}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+		}
+		if info := decodeErrorInfo(t, raw); info.Code != "invalid_request" || info.Domain != "admin" {
+			t.Errorf("ErrorInfo = %v, want admin/invalid_request", info)
+		}
+	})
+}
+
+// TestListEventsHandler 统一事件视图：optional 指针原样透传（nil 不过滤）、
+// 分页归一（page 0 → 1、pageSize 0 → 20、>100 clamp）+ sort/order 透传，
+// 行经 dto.AdminEventItem 投影（detail msgpack → JSON 在 dto）。
+func TestListEventsHandler(t *testing.T) {
+	fake := &fakeSettingsService{}
+	tokens, epochs, h := newAdminHandlerSettings(t, fake)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	body := `{"event":"login_success","actorType":"user","actorId":"42","userId":"42",` +
+		`"from":"1700000000","to":"1700003600","page":"0","pageSize":"200","sort":"created_at","order":"asc"}`
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListEventsProcedure, body, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	flt := fake.gotList
+	if flt.Event != "login_success" || flt.ActorType != "user" {
+		t.Errorf("筛选透传错误: %+v", flt)
+	}
+	if flt.ActorID == nil || *flt.ActorID != 42 || flt.UserID == nil || *flt.UserID != 42 {
+		t.Errorf("optional 指针透传错误: %+v", flt)
+	}
+	if flt.From == nil || *flt.From != 1700000000 || flt.To == nil || *flt.To != 1700003600 {
+		t.Errorf("from/to 透传错误: %+v", flt)
+	}
+	if flt.Page != 1 || flt.PageSize != 100 {
+		t.Errorf("分页归一错误: page=%d pageSize=%d, want 1/100", flt.Page, flt.PageSize)
+	}
+	if flt.Sort != "created_at" || flt.Order != "asc" {
+		t.Errorf("sort/order 透传错误: %+v", flt)
+	}
+	var out struct {
+		Items    []json.RawMessage `json:"items"`
+		Total    string            `json:"total"`
+		Page     string            `json:"page"`
+		PageSize string            `json:"pageSize"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("json: %v (body %s)", err, raw)
+	}
+	if out.Total != "1" || out.Page != "1" || out.PageSize != "100" || len(out.Items) != 1 {
+		t.Errorf("响应分页字段错误: %s", raw)
+	}
+}
+
+// TestDecodeTokenHandler 解码成功 → payload Struct 透出；service 报
+// invalid_request（非法 purpose / 解码失败 / cookie 载荷 schema 未落地）→
+// 400 + ErrorInfo(admin, invalid_request)，且响应体不含 token 内容。
+func TestDecodeTokenHandler(t *testing.T) {
+	t.Run("成功投影", func(t *testing.T) {
+		ks := testKeyStore(t)
+		codec := security.NewCodec(ks)
+		tokStr := sealToken(t, codec, security.PurposeSession, &token.SessionTokenPayload{Id: 7, Epoch: 3, Sid: "sid-x", Amr: []string{"pwd"}, Iat: 100, Exp: 200})
+		fake := &fakeSettingsService{decodeFn: func(purpose, tk string) (proto.Message, error) {
+			return security.Open[token.SessionTokenPayload](codec, security.PurposeSession, tk)
+		}}
+		tokens, epochs, h := newAdminHandlerSettings(t, fake)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		body, _ := json.Marshal(map[string]string{"purpose": "session", "token": tokStr})
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDecodeTokenProcedure, string(body), cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		var out struct {
+			Payload struct {
+				ID    string   `json:"id"`
+				Epoch string   `json:"epoch"`
+				Sid   string   `json:"sid"`
+				Amr   []string `json:"amr"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(raw), &out); err != nil {
+			t.Fatalf("json: %v (body %s)", err, raw)
+		}
+		if out.Payload.ID != "7" || out.Payload.Epoch != "3" || out.Payload.Sid != "sid-x" {
+			t.Errorf("payload 投影错误: %s", raw)
+		}
+		if len(out.Payload.Amr) != 1 || out.Payload.Amr[0] != "pwd" {
+			t.Errorf("amr = %v, want [pwd]（camelCase + EmitUnpopulated 口径）", out.Payload.Amr)
+		}
+	})
+	t.Run("解码失败映射 invalid_request 且不落 token", func(t *testing.T) {
+		fake := &fakeSettingsService{decodeFn: func(string, string) (proto.Message, error) {
+			return nil, adminsvc.ErrInvalidRequest
+		}}
+		tokens, epochs, h := newAdminHandlerSettings(t, fake)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDecodeTokenProcedure, `{"purpose":"cookie","token":"whatever"}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+		}
+		if info := decodeErrorInfo(t, raw); info.Code != "invalid_request" || info.Domain != "admin" {
+			t.Errorf("ErrorInfo = %v, want admin/invalid_request", info)
+		}
+		if strings.Contains(raw, "whatever") {
+			t.Errorf("错误体不得回显 token 内容: %s", raw)
+		}
+	})
+}
+
+// TestGetStatusHandler 监控三字段只读透传。
+func TestGetStatusHandler(t *testing.T) {
+	fake := &fakeSettingsService{status: adminsvc.QueueStatus{QueueLength: 7, Dropped: 3, FlushMs: 25}}
+	tokens, epochs, h := newAdminHandlerSettings(t, fake)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetStatusProcedure, `{}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var out struct {
+		QueueLength string `json:"queueLength"`
+		Dropped     string `json:"dropped"`
+		FlushMs     string `json:"flushMs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("json: %v (body %s)", err, raw)
+	}
+	if out.QueueLength != "7" || out.Dropped != "3" || out.FlushMs != "25" {
+		t.Errorf("status 三字段 = %s/%s/%s, want 7/3/25", out.QueueLength, out.Dropped, out.FlushMs)
+	}
+}
+
+// testKeyStore / sealToken DecodeToken handler 用例的编解码 helper：与
+// assembleAdminHandler 同款 32B 密钥（仅用于签发已知令牌，解密走
+// service/admin/settings_test.go 的独立 codec——本文件只测 Connect 形态）。
+func testKeyStore(t *testing.T) *security.KeyStore {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(0x40 + i)
+	}
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: key})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	return ks
+}
+
+func sealToken(t *testing.T, c *security.Codec, purpose string, msg proto.Message) string {
+	t.Helper()
+	tokStr, err := c.Seal(purpose, msg)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	return tokStr
 }
 
 // —— 写族 7 方法（handler 层：Connect 形态映射 + 入参透传）——

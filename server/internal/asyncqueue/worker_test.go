@@ -117,3 +117,43 @@ func TestCloseTimeoutForcesReturn(t *testing.T) {
 		t.Errorf("second Close = %v, want ErrCloseTimeout", err)
 	}
 }
+
+// ⑦ flush 耗时指标（接口文档 §5.6 行 1274「flush 耗时」）：未
+// flush 时为 0；executor 执行完成后 FlushMs 记录该批次的执行耗时
+// （毫秒）。用慢 executor（sleep 25ms）注入真实耗时，断言量级而非精确值，
+// 避免 CI 时钟精度 flake。
+func TestFlushMsRecordedAfterExecute(t *testing.T) {
+	slow := &slowExecutor{delay: 25 * time.Millisecond}
+	q := New(slow, Options{Capacity: 16, Workers: 1, BatchSize: 200, FlushInterval: 10 * time.Millisecond})
+	defer q.Close(context.Background())
+
+	if got := q.FlushMs(); got != 0 {
+		t.Fatalf("未 flush 时 FlushMs = %d, want 0", got)
+	}
+
+	q.Push(Task{Key: "k", Value: 1})
+	// timedExecutor 在 inner.Execute 返回后才写指标，done 信号会早于指标
+	// 可见——用短间隔轮询 FlushMs（批间隔 10ms + 执行 25ms，2s 足够）。
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if got := q.FlushMs(); got >= 10 {
+			if got > 2000 {
+				t.Fatalf("FlushMs = %d, 异常偏大", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("FlushMs 未在 2s 内记录, got %d", q.FlushMs())
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// slowExecutor 注入固定延迟的 executor，使 flush 计时可观测。
+type slowExecutor struct {
+	delay time.Duration
+}
+
+func (s *slowExecutor) Execute(_ context.Context, _ []Task) {
+	time.Sleep(s.delay)
+}

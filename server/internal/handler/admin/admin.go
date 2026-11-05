@@ -2,19 +2,19 @@
 // （docs/后端架构.md §3.4 行 333：admin 域方法族，全部需管理员会话）。
 // 已落地 Provider 族读路径、Provider 写族、
 // 管理员自身 + 用户管理族（GetMe + §5.4 七方法，service/admin/user.go 分层）、
-// 客户端管理族（§5.5 十方法，service/admin/client.go 分层），
-// 其余方法一律由生成的 UnimplementedAdminServiceHandler 返回 unimplemented
-// （不自造错误信封）。
+// 客户端管理族（§5.5 十方法，service/admin/client.go 分层）、
+// 系统配置 / 事件 / 工具族（§5.6 五方法，service/admin/settings.go
+// 分层）——33 方法全部实装，桩清单清空。
 //
 // 鉴权口径（docs/接口文档.md §5 行 1145-1146）：管理员 = 安装时创建的
 // user.id = 1 账号；admin 拦截器（connect.NewAdminInterceptor）挂在 session
 // 拦截器之内——无会话 401 unauthenticated、非管理员 404 not_found（掩护管理
 // 面存在），故 handler 不做二次鉴权；会话身份（uid）经 session.WithSessionContext
-// 注入 ctx，GetMe 与审计 actor 从 ctx 取。
+// 注入 ctx，GetMe / SetSettings 审计 actor 从 ctx 取。
 //
-// TODO(后续 admin 实现)——桩方法归属（均返回生成基类的 unimplemented）：
-//   - 系统配置与工具：GetSettings / SetSettings / ListEvents / DecodeToken /
-//     GetStatus（§5.6）
+// 敏感内容口径：GetProvider 明文 ext 与 DecodeToken 载荷均不落
+// 日志（访问日志只记方法 / 路径 / 状态码 / 耗时，middleware/logger 行 12）；
+// 本文件错误文案全部固定，不携带 token / payload / secret 值。
 package admin
 
 import (
@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	connectrpc "connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
@@ -88,6 +89,18 @@ type ClientService interface {
 	DeleteOidcClient(ctx context.Context, id int64) error
 }
 
+// SettingsService admin 域系统配置 / 事件 / 工具族窄接口（§20
+// 依赖注入）：生产注入 *adminsvc.SettingsService（分层 §18 行 1792：
+// handler → service/admin/settings.go → settings.Store / eventlog_repo /
+// asyncqueue.Queue），测试可传 fake。
+type SettingsService interface {
+	GetSettings() map[string]any
+	SetSettings(ctx context.Context, actor int64, req *adminv1.SetSettingsRequest) error
+	ListEvents(ctx context.Context, f adminsvc.EventListFilter) ([]model.EventLog, int64, error)
+	DecodeToken(purpose, token string) (proto.Message, error)
+	GetStatus() adminsvc.QueueStatus
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect/interceptors.go 与 account handler）。
 var (
@@ -103,21 +116,22 @@ var (
 // 同时是 union_provider options 查询的页大小。
 const providerListPageSize = 100
 
-// Handler AdminService 服务实现。内嵌生成的 unimplemented 基类：本实现未实现的
-// 方法（见包注释 TODO 清单）统一返回 Connect CodeUnimplemented。
+// Handler AdminService 服务实现。内嵌生成的 unimplemented 基类以兼容
+// 生成接口的前向演进；33 方法已全部实装（见包注释）。
 type Handler struct {
 	adminv1connect.UnimplementedAdminServiceHandler
 	providers ProviderReader
 	svc       ProviderService
 	users     UserService
 	clients   ClientService
+	settings  SettingsService
 }
 
 // New 构造 AdminService handler（providers：读路径；svc：写族 +
 // GetProviderTypes + TestProvider；users：用户管理族 8 方法；clients：
-// 客户端管理族 10 方法）。
-func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService) *Handler {
-	return &Handler{providers: providers, svc: svc, users: users, clients: clients}
+// 客户端管理族 10 方法；settings：系统配置 / 事件 / 工具族 5 方法）。
+func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService, settings SettingsService) *Handler {
+	return &Handler{providers: providers, svc: svc, users: users, clients: clients, settings: settings}
 }
 
 // ListProviders（接口文档 §5.2 行 1168）：筛选 {category, type, isEnabled} +
@@ -612,6 +626,94 @@ func (h *Handler) DeleteOidcClient(ctx context.Context, req *connectrpc.Request[
 		return nil, mapWriteError("delete oidc client", err)
 	}
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// —— 系统配置 / 事件 / 工具族 5 方法（§5.6 行 1270-1277）：service
+// 层做业务编排（SetSettings 全量替换 + 审计、ListEvents 透传、DecodeToken
+// 解载荷、GetStatus 队列指标），handler 只做 Connect 形态映射与 dto 投影——
+
+// GetSettings（§5.6 行 1274）：全部系统配置——Store.Snapshot 35 键全键
+// 投影（dto.AdminSettings，键名与 §5.6 四张表逐键一致）；无入参。
+func (h *Handler) GetSettings(ctx context.Context, _ *connectrpc.Request[adminv1.GetSettingsRequest]) (*connectrpc.Response[adminv1.SettingsResponse], error) {
+	snap := h.settings.GetSettings()
+	return connectrpc.NewResponse(dto.AdminSettings(snap)), nil
+}
+
+// SetSettings（§5.6 行 1274）：全量提交系统配置（flat 消息每字段即键、
+// 缺省视为零值写回——前端设置页以 GET 结果为底稿整体回写）；落库与
+// 热更通知、settings_update 审计（actor=会话 uid）在 service；值类型
+// 校验在 settings.Validate（经 SetMany），交叉约束不兜底（行 1342）。
+func (h *Handler) SetSettings(ctx context.Context, req *connectrpc.Request[adminv1.SetSettingsRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.settings.SetSettings(ctx, actor, req.Msg); err != nil {
+		return nil, mapWriteError("set settings", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// ListEvents（§5.6 行 1275）：统一事件视图——六筛选 optional 指针原样
+// 透传（nil 即不过滤）+ §1.7 分页（归一后回显）+ sort / order 透传（防
+// 注入字符集约束在 repo.orderClause，口径同 ListUsers）；行 →
+// EventItem 投影复用 dto.AdminEventItem（detail msgpack → JSON 对象）。
+// 空页 items 按 proto3 空 repeated 省略（§1.7 行 278）。
+func (h *Handler) ListEvents(ctx context.Context, req *connectrpc.Request[adminv1.ListEventsRequest]) (*connectrpc.Response[adminv1.EventListResponse], error) {
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.settings.ListEvents(ctx, adminsvc.EventListFilter{
+		Event:     req.Msg.GetEvent(),
+		ActorType: req.Msg.GetActorType(),
+		ActorID:   req.Msg.ActorId,
+		UserID:    req.Msg.UserId,
+		From:      req.Msg.From,
+		To:        req.Msg.To,
+		Page:      page,
+		PageSize:  size,
+		Sort:      req.Msg.GetSort(),
+		Order:     req.Msg.GetOrder(),
+	})
+	if err != nil {
+		return nil, mapWriteError("list events", err)
+	}
+	items := make([]*adminv1.EventItem, len(rows))
+	for i := range rows {
+		items[i] = dto.AdminEventItem(&rows[i])
+	}
+	return connectrpc.NewResponse(&adminv1.EventListResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
+// DecodeToken（§5.6 行 1276）：令牌解码排障工具——purpose ∈ login|session
+// |cookie（《后端架构》§11.6.1 的 purpose 口径），解载荷 → Struct 投影
+// （dto.AdminDecodePayload，protojson camelCase）。非法 purpose / 解码失败
+// → invalid_argument + ErrorInfo(admin, invalid_request)（§1.5 / §1.6）；
+// 错误文案固定不携带 token 与 payload 内容，本方法不落日志。
+func (h *Handler) DecodeToken(ctx context.Context, req *connectrpc.Request[adminv1.DecodeTokenRequest]) (*connectrpc.Response[adminv1.DecodeResponse], error) {
+	msg, err := h.settings.DecodeToken(req.Msg.GetPurpose(), req.Msg.GetToken())
+	if err != nil {
+		return nil, mapWriteError("decode token", err)
+	}
+	payload, err := dto.AdminDecodePayload(msg)
+	if err != nil {
+		return nil, fmt.Errorf("admin handler: decode token payload: %w", err)
+	}
+	return connectrpc.NewResponse(&adminv1.DecodeResponse{Payload: payload}), nil
+}
+
+// GetStatus（§5.6 行 1277）：监控三字段——队列长度 / 累计 dropped / 最近
+// 一次 flush 耗时（ms），asyncqueue 只读指标透传（FlushMs 增量）。
+func (h *Handler) GetStatus(ctx context.Context, _ *connectrpc.Request[adminv1.GetStatusRequest]) (*connectrpc.Response[adminv1.StatusResponse], error) {
+	st := h.settings.GetStatus()
+	return connectrpc.NewResponse(&adminv1.StatusResponse{
+		QueueLength: st.QueueLength,
+		Dropped:     int64(st.Dropped),
+		FlushMs:     st.FlushMs,
+	}), nil
 }
 
 // mapWriteError service 写路径错误 → Connect 形态（§1.5 行 182-195 统一口径）：

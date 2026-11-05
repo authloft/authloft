@@ -373,6 +373,69 @@ func TestPreloadBackfillIdempotent(t *testing.T) {
 	}
 }
 
+// TestSetManyEmptySliceReloadLoop（env-skip DB+Redis）：
+// SetSettings 全量替换下任一 []string 键清空的落库闭环——SetMany 写
+// 空/nil 切片 → 落库值必须是 "[]" 而非 "null"（修复前 Validate 对空切片
+// 返回 nil → EncodeValue 落 JSON "null"）→ 新实例 Preload（重启口径）
+// 与同实例 reload（watcher 热更口径，共用 loadSnapshot）均不因
+// DecodeValue fail-fast 炸掉 → 快照读回非 nil 空切片。
+func TestSetManyEmptySliceReloadLoop(t *testing.T) {
+	rp, raw := setupTestDB(t)
+	rdb := setupTestRedis(t)
+	ctx := context.Background()
+
+	storeA := NewStore(rp, rdb)
+	if err := storeA.Preload(ctx); err != nil {
+		t.Fatalf("写方 Preload 失败: %v", err)
+	}
+
+	// 全量替换清空场景：sso_domains 空列表、gateway_tokens nil
+	//（proto 空 repeated 的真实形态，SetSettings 直达）。
+	if err := storeA.SetMany(ctx, map[string]any{
+		KeySsoDomains:    []string{},
+		KeyGatewayTokens: []string(nil),
+	}, 1); err != nil {
+		t.Fatalf("SetMany 空列表失败: %v", err)
+	}
+
+	// 核心断言：落库值 "[]"（修复前为 "null"）。
+	for _, k := range []string{KeySsoDomains, KeyGatewayTokens} {
+		var v string
+		if err := raw.QueryRow("SELECT v FROM settings WHERE k = ?", k).Scan(&v); err != nil {
+			t.Fatalf("读取 %s 落库值失败: %v", k, err)
+		}
+		if v != "[]" {
+			t.Fatalf("键 %s 落库值 = %q，want \"[]\"（\"null\" 会令 DecodeValue fail-fast）", k, v)
+		}
+	}
+
+	// 写方本实例立即生效：apply 写入归一值，读回空列表（cloneValue 副本
+	// 语义对空切片返回 nil——既有验收口径，消费方 len/迭代语义等价；
+	// 存储层 DecodeValue("[]") 已归一非 nil，见上）。
+	if got, _ := storeA.GetStringSlice(KeySsoDomains); len(got) != 0 {
+		t.Errorf("写方快照 sso_domains = %#v，want 空列表", got)
+	}
+
+	// 重启口径：新实例 Preload 不炸 + 读回空列表（修复前 DecodeValue("null")
+	// fail-fast，进程起不来）。
+	storeB := NewStore(rp, rdb)
+	if err := storeB.Preload(ctx); err != nil {
+		t.Fatalf("空列表落库后新实例 Preload 应通过，err = %v", err)
+	}
+	if got, _ := storeB.GetStringSlice(KeyGatewayTokens); len(got) != 0 {
+		t.Errorf("新实例快照 gateway_tokens = %#v，want 空列表", got)
+	}
+
+	// 热更口径：watcher reload 同一条 loadSnapshot 路径（包内直调私有
+	// reload，与 Preload 的差异仅缺省键不写回）。
+	if err := storeB.reload(ctx); err != nil {
+		t.Fatalf("空列表落库后 reload 应通过，err = %v", err)
+	}
+	if got, _ := storeB.GetStringSlice(KeySsoDomains); len(got) != 0 {
+		t.Errorf("reload 后快照 sso_domains = %#v，want 空列表", got)
+	}
+}
+
 // settingRow 构造单行 Upsert 输入（测试便捷函数）。
 func settingRow(t *testing.T, k, v string, by int64) model.Setting {
 	t.Helper()

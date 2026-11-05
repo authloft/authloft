@@ -15,6 +15,7 @@ import (
 	"math"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	accountv1 "authloft/gen/go/api/account/v1"
@@ -23,6 +24,7 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/settings"
 )
 
 // extJSON Ext → Struct 的中间 JSON 编码（§12.9 行 1779：AdminProvider.ext 用
@@ -613,4 +615,85 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 		CreatedAt:       row.CreatedAt.Unix(),
 		UpdatedAt:       row.UpdatedAt.Unix(),
 	}
+}
+
+// AdminSettings settings 快照 → SettingsResponse 全键投影（§5.6 行 1274：
+// 字段集合 = §5.6 四张表之和；键名经 internal/settings 常量逐键对齐、零
+// 自造）。快照值恒为注册类型（string / int64 / bool / []string，经
+// settings.DecodeValue 解码），类型断言失败（不可达）按零值投影——proto
+// 消息 35 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
+//（§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后全量回写（§5.6
+// 行 1342 全量提交语义的配套口径）。
+func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
+	toInt := func(k string) int64 { v, _ := snap[k].(int64); return v }
+	toBool := func(k string) bool { v, _ := snap[k].(bool); return v }
+	toStr := func(k string) string { v, _ := snap[k].(string); return v }
+	return &adminv1.SettingsResponse{
+		PwdMinLength:          toInt(settings.KeyPwdMinLength),
+		PwdMaxLength:          toInt(settings.KeyPwdMaxLength),
+		PwdRequireClasses:     toInt(settings.KeyPwdRequireClasses),
+		PwdDisallowUsername:   toBool(settings.KeyPwdDisallowUsername),
+		PwdDisallowCommon:     toBool(settings.KeyPwdDisallowCommon),
+		AllowPasswordReset:    toBool(settings.KeyAllowPasswordReset),
+		OtpResendInterval:     toInt(settings.KeyOtpResendInterval),
+		OtpTtl:                toInt(settings.KeyOtpTtl),
+		OtpMaxAttempts:        toInt(settings.KeyOtpMaxAttempts),
+		OtpDailyLimitTarget:   toInt(settings.KeyOtpDailyLimitTarget),
+		OtpDailyLimitIp:       toInt(settings.KeyOtpDailyLimitIP),
+		LoginMethods:          toSlice(settings.KeyLoginMethods, snap),
+		AllowRegistration:     toBool(settings.KeyAllowRegistration),
+		AllowSignupPassword:   toBool(settings.KeyAllowSignupPassword),
+		AllowSignupPhone:      toBool(settings.KeyAllowSignupPhone),
+		AllowSignupEmail:      toBool(settings.KeyAllowSignupEmail),
+		MfaEnabled:            toBool(settings.KeyMfaEnabled),
+		MfaMethods:            toSlice(settings.KeyMfaMethods, snap),
+		PwdFailCapture:        toInt(settings.KeyPwdFailCapture),
+		PwdFailBan:            toInt(settings.KeyPwdFailBan),
+		PwdBanTtl:             toInt(settings.KeyPwdBanTtl),
+		SessionTtl:            toInt(settings.KeySessionTtl),
+		CookieName:            toStr(settings.KeyCookieName),
+		SsoDomains:            toSlice(settings.KeySsoDomains, snap),
+		QueueWorkers:          toInt(settings.KeyQueueWorkers),
+		QueueCapacity:         toInt(settings.KeyQueueCapacity),
+		QueueBatch:            toInt(settings.KeyQueueBatch),
+		QueueFlushMs:          toInt(settings.KeyQueueFlushMs),
+		CaptchaProviderKey:    toStr(settings.KeyCaptchaProviderKey),
+		SmsProviderKey:        toStr(settings.KeySmsProviderKey),
+		EmailProviderKey:      toStr(settings.KeyEmailProviderKey),
+		AvatarStorageProvider: toStr(settings.KeyAvatarStorageProvider),
+		GatewayTokens:         toSlice(settings.KeyGatewayTokens, snap),
+		EventlogRetentionDays: toInt(settings.KeyEventlogRetentionDays),
+		StaticBase:            toStr(settings.KeyStaticBase),
+	}
+}
+
+// toSlice 快照 []string 键的取值 helper（断言失败即 nil，proto3 空
+// repeated 序列化省略——settings.proto 行 102-105 的恒存在口径由
+// protojson 输出层保证，空列表即省略）。
+func toSlice(k string, snap map[string]any) []string {
+	v, _ := snap[k].([]string)
+	return v
+}
+
+// decodePayloadJSON DecodeToken 载荷 → Struct 的 protojson 编码（§5.6 行
+// 1276）：字段名为标准 protojson lowerCamelCase 映射（§12.9 行 1776），
+// EmitUnpopulated 使零值字段恒可见（排障视图需要完整字段集，默认）。
+// int64 按 protojson 标准编码为十进制字符串。
+var decodePayloadJSON = protojson.MarshalOptions{EmitUnpopulated: true}
+
+// AdminDecodePayload DecodeToken 解出的内部载荷 → google.protobuf.Struct
+// 原样透传（tools.proto：oidc/credential 同口径，前端不解析）。
+// 载荷含敏感内容（session uid/sid、login_token ch 等）：本函数只做转换、
+// 不落日志；编码失败（不可达——载荷是已成功 unmarshal 的 proto 消息）按
+// 错误上抛，由调用方消毒为 internal。
+func AdminDecodePayload(msg proto.Message) (*structpb.Struct, error) {
+	b, err := decodePayloadJSON.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("admin dto: decode payload: %w", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("admin dto: decode payload json: %w", err)
+	}
+	return structpb.NewStruct(m)
 }

@@ -891,8 +891,12 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 // eventlog.Writer 走 deps.queue（resetAuditSink 同款链）；解锁用的 PwFailStore
 // 就地构造（BanTTL 仅影响 Ban 写路径，删除 / SCAN 不受其影响）；客户端管理族
 // 10 方法走 service/admin/client.go（secret 服务端生成、client_id 生成/不可改、
-// redirect_uris 校验、OIDC scopes/TTL 值域，§5.5），其余方法由生成的
-// UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
+// redirect_uris 校验、OIDC scopes/TTL 值域，§5.5）；settings/事件/工具族
+// 5 方法走 service/admin/settings.go（GetSettings/SetSettings 经共享单例
+// deps.settings——SetMany 落库 + PUBLISH 热更；ListEvents 走 EventLogRepo.List；
+// DecodeToken 用 deps.codecs 三场景独立编解码器（§1.4，cookie 装配位已备）；
+// GetStatus 读 deps.queue 三指标；审计同走 eventlog.Writer → deps.queue），
+// 33 方法全部实装。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	providers := repo.NewProviderRepo(deps.db)
 	clients := repo.NewClientRepo(deps.db)
@@ -912,6 +916,17 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 				deps.settings,
 			),
 			adminsvc.NewClientService(clients),
+			adminsvc.NewSettingsService(
+				deps.settings,
+				repo.NewEventLogRepo(deps.db),
+				eventlog.NewWriter(deps.queue),
+				adminsvc.TokenCodecs{
+					Session: deps.codecs.Session,
+					Login:   deps.codecs.Login,
+					Cookie:  deps.codecs.Cookie,
+				},
+				deps.queue,
+			),
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)

@@ -194,7 +194,13 @@ func Validate(key string, value any) (any, error) {
 		}
 	case TypeStringSlice:
 		if v, ok := value.([]string); ok {
-			return append([]string(nil), v...), nil
+			// 归一为非 nil 空切片：append([]string(nil), v...)
+			// 对 nil/空 v 返回 nil → EncodeValue 落库 JSON "null" →
+			// DecodeValue fail-fast（loadSnapshot 对 null 报错）→ watcher
+			// reload 持续失败 + 重启 Preload 起不来。SetSettings 全量替换下
+			// 任一 []string 键清空（sso_domains/gateway_tokens 默认即 []）
+			// 首次提交必现。空列表必须落 "[]"。
+			return append([]string{}, v...), nil
 		}
 	}
 	return nil, fmt.Errorf("settings: key %q expects %s, got %T", key, d.Type, value)

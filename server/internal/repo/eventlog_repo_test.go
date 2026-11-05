@@ -291,3 +291,116 @@ func TestEventLogRepoListByUser(t *testing.T) {
 		t.Fatalf("空集 = (%d 行, total=%d, %v), want 0/0", len(got), total, err)
 	}
 }
+
+// TestEventLogRepoList 统一事件视图（§5.6 行 1275）：六筛选（均可
+// 空）叠加 + §1.7 分页 + 排序（sort 缺省 id DESC、字符集外回落、order 非
+// asc 一律 desc、非 id 主序追加 id DESC——orderClause 与 user_repo 同款）。
+func TestEventLogRepoList(t *testing.T) {
+	rp, db := eventLogTestSetup(t)
+	ctx := context.Background()
+
+	// 行集：覆盖 event / actor_type / actor_id / user_id 四维度 + 显式
+	// created_at 三档时间（-3h / -2h / -1h），乱序插入。
+	base := time.Now().Truncate(time.Second)
+	at := func(d time.Duration) time.Time { return base.Add(-d) }
+	rows := []model.EventLog{
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: at(3 * time.Hour)},
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: at(2 * time.Hour)},
+		{Event: "change_password", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: at(time.Hour)},
+		{Event: "admin_disable_user", ActorType: "admin", ActorID: 1, UserID: 7, CreatedAt: at(time.Hour)},
+		{Event: "oidc_authorize_no_state", ActorType: "system", ActorID: 0, UserID: 0, CreatedAt: at(time.Hour)},
+	}
+	if err := rp.BatchInsert(ctx, rows); err != nil {
+		t.Fatalf("BatchInsert 失败: %v", err)
+	}
+
+	// 无筛选：全部 5 行，缺省 id DESC。
+	got, total, err := rp.List(ctx, EventAdminQuery{})
+	if err != nil || total != 5 || len(got) != 5 {
+		t.Fatalf("无筛选 = (%d 行, total=%d, %v), want 5/5", len(got), total, err)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].ID >= got[i-1].ID {
+			t.Fatalf("缺省应 id DESC: %+v", got)
+		}
+	}
+
+	// 六筛选逐项 + 叠加。
+	if _, total, err = rp.List(ctx, EventAdminQuery{Event: "login_success"}); err != nil || total != 2 {
+		t.Errorf("event=login_success total = %d err=%v, want 2", total, err)
+	}
+	if _, total, err = rp.List(ctx, EventAdminQuery{ActorType: "admin"}); err != nil || total != 1 {
+		t.Errorf("actor_type=admin total = %d, want 1", total)
+	}
+	actorID := int64(1)
+	if _, total, err = rp.List(ctx, EventAdminQuery{ActorID: &actorID}); err != nil || total != 1 {
+		t.Errorf("actor_id=1 total = %d, want 1", total)
+	}
+	zero := int64(0)
+	if _, total, err = rp.List(ctx, EventAdminQuery{ActorID: &zero}); err != nil || total != 1 {
+		t.Errorf("actor_id=0（system 合法值）total = %d, want 1", total)
+	}
+	userID := int64(42)
+	if _, total, err = rp.List(ctx, EventAdminQuery{UserID: &userID, Event: "change_password"}); err != nil || total != 1 {
+		t.Errorf("user_id=42 + change_password total = %d, want 1", total)
+	}
+
+	// 时间窗（闭区间 from <= created_at <= to，Unix 秒）：[-2.5h, -1.5h]
+	// 恰含 -2h 的 1 行（-3h 在窗外、-1h 三行在窗外）。
+	from := at(5 * time.Hour / 2).Unix()
+	to := at(3 * time.Hour / 2).Unix()
+	if _, total, err = rp.List(ctx, EventAdminQuery{From: &from, To: &to}); err != nil || total != 1 {
+		t.Errorf("时间窗 total = %d, want 1（仅 -2h 行）", total)
+	}
+	// from 单边：>= -1h 的 3 行。
+	fromOnly := at(time.Hour).Unix()
+	if _, total, err = rp.List(ctx, EventAdminQuery{From: &fromOnly}); err != nil || total != 3 {
+		t.Errorf("from=-1h total = %d, want 3", total)
+	}
+	// to 单边：<= -2h 的 2 行。
+	toOnly := at(2 * time.Hour).Unix()
+	if _, total, err = rp.List(ctx, EventAdminQuery{To: &toOnly}); err != nil || total != 2 {
+		t.Errorf("to=-2h total = %d, want 2", total)
+	}
+
+	// 排序：event asc + id DESC 兜底（同值行跨页不漂移）。
+	// 字典序：admin_disable_user < change_password < login_success×2 < oidc_authorize_no_state。
+	got, _, err = rp.List(ctx, EventAdminQuery{Sort: "event", Order: "asc"})
+	if err != nil || len(got) != 5 {
+		t.Fatalf("sort=event asc 失败: %v", err)
+	}
+	events := []string{got[0].Event, got[1].Event, got[2].Event, got[3].Event, got[4].Event}
+	want := []string{"admin_disable_user", "change_password", "login_success", "login_success", "oidc_authorize_no_state"}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("event asc 顺序 = %v, want %v", events, want)
+		}
+	}
+	if got[2].ID <= got[3].ID {
+		t.Errorf("同值行应有 id DESC 兜底: [%d]=%d [%d]=%d", 2, got[2].ID, 3, got[3].ID)
+	}
+
+	// 排序防注入：字符集外列静默回落 id；order 大小写不敏感（ASC）。
+	if got, _, err = rp.List(ctx, EventAdminQuery{Sort: "id; DROP TABLE event_log", Order: "ASC"}); err != nil || len(got) != 5 {
+		t.Fatalf("非法 sort 应静默回落 id: %v (rows %d)", err, len(got))
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i].ID < got[i-1].ID {
+			t.Fatalf("order=ASC 应升序: %+v", got)
+		}
+	}
+	// 注入未执行自证：表仍在。
+	var count int64
+	if err := db.WithContext(ctx).Model(&model.EventLog{}).Count(&count).Error; err != nil || count != 5 {
+		t.Fatalf("表应完好 5 行: rows=%d err=%v", count, err)
+	}
+
+	// 分页归一 + 空页：page 0 → 1、pageSize 0 → 20、>100 clamp；空集 items 为空切片。
+	if got, total, err = rp.List(ctx, EventAdminQuery{Event: "no_such_event", Page: 0, PageSize: 0}); err != nil ||
+		total != 0 || len(got) != 0 {
+		t.Fatalf("空页 = (%d 行, total=%d, %v), want 0/0", len(got), total, err)
+	}
+	if _, _, err = rp.List(ctx, EventAdminQuery{Page: 0, PageSize: 200}); err != nil {
+		t.Fatalf("pageSize=200 应 clamp 不报错: %v", err)
+	}
+}

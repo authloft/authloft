@@ -9,6 +9,8 @@ package repo
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -59,9 +61,9 @@ func (r *EventLogRepo) BatchInsert(ctx context.Context, rows []model.EventLog) e
 // 分页按 §1.7 归一（page 1 起、pageSize 默认 20 上限 100，日志类列表同
 // 口径）；排序固定 id DESC 保证分页全序稳定（口径同 user_repo.ListUsers）。
 type EventLogListQuery struct {
-	UserID  int64
-	Event   string
-	Page    int
+	UserID   int64
+	Event    string
+	Page     int
 	PageSize int
 }
 
@@ -105,4 +107,105 @@ func (q EventLogListQuery) normalize() (page, size int) {
 		size = 100
 	}
 	return page, size
+}
+
+// eventSortColumnPattern / eventDefaultSortColumn 排序列口径（§1.7 行 277：
+// 后端不做白名单强制校验，字符集校验是防 ORDER BY 注入的格式约束）——
+// 逐字对齐 user_repo.go 同款形态。
+var eventSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+const eventDefaultSortColumn = "id"
+
+// EventAdminQuery 统一事件视图 List 入参（接口文档 §5.6 行 1275：
+// 筛选 {event, actorType, actorId, userId, from, to} 均可空 + 分页 §1.7）。
+// 指针字段 nil = 不过滤（proto optional 语义原样透传，actor_id=0 是
+// system 事件的合法值，不能用零值哨兵区分「未提供」）；from/to 为 Unix 秒，
+// 过滤口径闭区间 from <= created_at <= to。
+type EventAdminQuery struct {
+	Event     string
+	ActorType string
+	ActorID   *int64
+	UserID    *int64
+	From      *int64
+	To        *int64
+	Page      int
+	PageSize  int
+	Sort      string
+	Order     string
+}
+
+// List 统一事件视图分页查询（§5.6 行 1275）：返回当页行与过滤后
+// 总数。六筛选叠加（均可在索引之上行过滤），排序走 orderClause（缺省
+// id DESC 保证分页全序稳定，口径同 ListByUser）。
+func (r *EventLogRepo) List(ctx context.Context, q EventAdminQuery) ([]model.EventLog, int64, error) {
+	page, size := q.normalize()
+	filter := func() *gorm.DB {
+		tx := r.db.WithContext(ctx).Model(&model.EventLog{})
+		if q.Event != "" {
+			tx = tx.Where("event = ?", q.Event)
+		}
+		if q.ActorType != "" {
+			tx = tx.Where("actor_type = ?", q.ActorType)
+		}
+		if q.ActorID != nil {
+			tx = tx.Where("actor_id = ?", *q.ActorID)
+		}
+		if q.UserID != nil {
+			tx = tx.Where("user_id = ?", *q.UserID)
+		}
+		if q.From != nil {
+			tx = tx.Where("created_at >= ?", time.Unix(*q.From, 0))
+		}
+		if q.To != nil {
+			tx = tx.Where("created_at <= ?", time.Unix(*q.To, 0))
+		}
+		return tx
+	}
+	var total int64
+	if err := filter().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("eventlog repo: list count: %w", err)
+	}
+	var rows []model.EventLog
+	err := filter().
+		Order(q.orderClause()).
+		Limit(size).
+		Offset((page - 1) * size).
+		Find(&rows).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("eventlog repo: list: %w", err)
+	}
+	return rows, total, nil
+}
+
+// normalize 分页归一（§1.7，口径同 EventLogListQuery.normalize）。
+func (q EventAdminQuery) normalize() (page, size int) {
+	page, size = q.Page, q.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+	return page, size
+}
+
+// orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
+// （大小写不敏感，其余含缺省一律 desc），非 id 主序恒追加 id DESC 保证分页
+// 全序稳定——逐字对齐 user_repo.go UserListQuery.orderClause 形态。
+func (q EventAdminQuery) orderClause() string {
+	col := q.Sort
+	if col == "" || !eventSortColumnPattern.MatchString(col) {
+		col = eventDefaultSortColumn
+	}
+	dir := "DESC"
+	if strings.EqualFold(q.Order, "asc") {
+		dir = "ASC"
+	}
+	if col == eventDefaultSortColumn {
+		return col + " " + dir
+	}
+	return "`" + col + "` " + dir + ", id DESC"
 }

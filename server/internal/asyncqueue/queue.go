@@ -18,7 +18,7 @@ var ErrCloseTimeout = errors.New("asyncqueue: close timeout")
 
 // Task 队列任务的最小单元：Key 是合并键（§5.2 行 884），Value 是交给
 // Executor 的最终值。Key 的具体语义（cache 键名、user_id、credential 等）
-// 由后续卡的任务类型决定，本骨架不解释 Key。
+// 由后续任务类型决定，本骨架不解释 Key。
 type Task struct {
 	Key   string
 	Value any
@@ -48,6 +48,7 @@ type Queue struct {
 
 	length  atomic.Int64
 	dropped atomic.Uint64
+	flushMs atomic.Int64
 
 	notify  chan struct{}
 	closeCh chan struct{}
@@ -69,7 +70,7 @@ func New(exec Executor, opts Options) *Queue {
 // newQueue 只构造不启动（测试可直接检查 Push / Len / Dropped 的 ring 语义）。
 func newQueue(exec Executor, opts Options) *Queue {
 	opts = opts.withDefaults()
-	return &Queue{
+	q := &Queue{
 		exec:    exec,
 		opts:    opts,
 		buf:     make([]Task, opts.Capacity),
@@ -77,6 +78,11 @@ func newQueue(exec Executor, opts Options) *Queue {
 		closeCh: make(chan struct{}),
 		jobs:    make(chan []Task),
 	}
+	// flush 指标在构造处包一层计时（最小增量）：不改 dispatch /
+	// worker 调度结构，executor 的真实执行耗时（Redis pipeline /
+	// MariaDB 批量 INSERT-UPDATE）即为 flush 耗时的监控口径。
+	q.exec = &timedExecutor{inner: exec, record: q.flushMs.Store}
+	return q
 }
 
 func (q *Queue) start() {
@@ -113,6 +119,26 @@ func (q *Queue) Len() int { return int(q.length.Load()) }
 
 // Dropped 因队列满或已关闭而丢弃的任务总数（§5.2 行 893、894）。
 func (q *Queue) Dropped() uint64 { return q.dropped.Load() }
+
+// FlushMs 最近一次 flush 耗时（毫秒）：即 executor 执行一个合并批次的
+// 真实耗时（Redis pipeline / MariaDB 批量 INSERT-UPDATE），供
+// AdminService/GetStatus 监控（接口文档 §5.6 行 1277「flush 耗时」）。
+// 与设置项 queue_flush_ms（攒批时间窗，§5.6）不同名不同义。
+// 未发生过 flush 时为 0；多 worker 并发下为任意 worker 最近完成的批次。
+func (q *Queue) FlushMs() int64 { return q.flushMs.Load() }
+
+// timedExecutor flush 计时装饰器（最小增量）：透传执行并记录耗时
+// 毫秒数，不改调度结构（§5.2 行 886 的执行入口语义不变）。
+type timedExecutor struct {
+	inner  Executor
+	record func(int64)
+}
+
+func (t *timedExecutor) Execute(ctx context.Context, tasks []Task) {
+	start := time.Now()
+	t.inner.Execute(ctx, tasks)
+	t.record(time.Since(start).Milliseconds())
+}
 
 // Close 优雅关闭（§5.2 行 892）：停止接收，由 dispatch 把 ring buffer 中
 // 剩余任务全部 flush，再等待执行 worker 退出；超过 opts.CloseTimeout

@@ -161,6 +161,50 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestValidateNormalizesEmptySlice（纯逻辑）：空 / nil 切片必须
+// 归一为**非 nil 空切片**——append([]string(nil), v...) 会返回 nil，
+// EncodeValue 落库 JSON "null"，DecodeValue 对 null fail-fast →
+// watcher reload 持续失败 + 重启 Preload 起不来（SetSettings 全量替换下
+// sso_domains/gateway_tokens 清空必现）。断言：归一值非 nil、EncodeValue
+// 落 "[]"、DecodeValue 回读闭环。
+func TestValidateNormalizesEmptySlice(t *testing.T) {
+	for _, in := range [][]string{{}, nil} {
+		v, err := Validate(KeySsoDomains, in)
+		if err != nil {
+			t.Fatalf("Validate(sso_domains, %#v) 不应报错: %v", in, err)
+		}
+		got, ok := v.([]string)
+		if !ok {
+			t.Fatalf("归一值应为 []string, got %T", v)
+		}
+		if got == nil {
+			t.Fatalf("Validate(%#v) 归一值不得为 nil（落库变 JSON null → DecodeValue fail-fast）", in)
+		}
+		if len(got) != 0 {
+			t.Errorf("归一值应为空切片, got %v", got)
+		}
+		raw, err := EncodeValue(v)
+		if err != nil || raw != "[]" {
+			t.Errorf("EncodeValue(%#v) = %q, err %v；want \"[]\"", v, raw, err)
+		}
+		back, err := DecodeValue(KeySsoDomains, raw)
+		if err != nil {
+			t.Errorf("DecodeValue(\"[]\") 不应报错: %v", err)
+		}
+		if b, ok := back.([]string); !ok || len(b) != 0 {
+			t.Errorf("DecodeValue(\"[]\") 回读 = %#v", back)
+		}
+	}
+	// 非空切片不回归：值原样、编码为数组。
+	v, err := Validate(KeyGatewayTokens, []string{"tok"})
+	if err != nil {
+		t.Fatalf("Validate(gateway_tokens, [tok]): %v", err)
+	}
+	if raw, err := EncodeValue(v); err != nil || raw != `["tok"]` {
+		t.Errorf("EncodeValue([tok]) = %q, err %v", raw, err)
+	}
+}
+
 // TestEncodeValue：§4.7 行 830「标量也按 JSON 存」。
 func TestEncodeValue(t *testing.T) {
 	cases := []struct {
