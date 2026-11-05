@@ -25,6 +25,13 @@ export default defineConfig({
         entry: './src/account/entry.tsx',
         disableMount: true,
       },
+      // 管理端 entry（docs/前端架构.md §2 / §6 行 499）：Go 空壳引用
+      // /assets/admin/entry.js（接口文档 §8 行 1422 `/admin/**` SPA 空壳）。
+      // 同 setup / login / account 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      admin: {
+        entry: './src/admin/entry.tsx',
+        disableMount: true,
+      },
     },
   },
   output: {
