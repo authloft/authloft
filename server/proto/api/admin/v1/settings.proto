@@ -97,6 +97,10 @@ message SetSettingsRequest {
   int64 eventlog_retention_days = 34;
   // 静态资源基址（CDN），改后需刷新页面生效（§5.6 行 1337、§8）。
   string static_base = 35;
+  // HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+  // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
+  //（§1.9 驱动口径）；全量替换语义内写回，取值非三态 → invalid_request（行 1361）。
+  string https_deployment = 36;
 }
 
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6 行 1271）：
@@ -178,4 +182,8 @@ message SettingsResponse {
   int64 eventlog_retention_days = 34;
   // 静态资源基址（CDN），默认 /assets（§5.6 行 1337）。
   string static_base = 35;
+  // HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+  // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
+  //（§1.9 驱动口径）。
+  string https_deployment = 36;
 }

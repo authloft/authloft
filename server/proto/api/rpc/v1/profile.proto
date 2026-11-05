@@ -88,3 +88,22 @@ message UpdateUserProfileRequest {
 // 空 OkResponse，共用响应依赖 buf RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
 // 豁免，buf.yaml except，沿用既有豁免）。
 message OkResponse {}
+
+// GetUserProfilesRequest 是 UserService/GetUserProfiles 的请求（接口文档 §7.2
+// 行 1442-1446，D-024 定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
+// 缺省或空列表 → 返回空 profiles、不报错（行 1467，空批量是合法的空集语义）。
+message GetUserProfilesRequest {
+  // 目标用户 ID 列表；单次上限 100——按入参列表长度计、去重前，超出整单失败
+  // invalid_request、无部分返回（§7.2 批量语义①行 1462）。
+  repeated int64 ids = 1;
+}
+
+// GetUserProfilesResponse 是 UserService/GetUserProfiles 的响应（§7.2 行 1448）：
+// 每条 profiles[] 复用本文件既有 ProfileResponse（§3.1 Authloft 结构全量字段，
+// 与 GetUserProfile 响应同构，§7.2 不复制定义）。缺失 id 跳过、不占位、不报错
+//（批量语义②行 1463）；条目顺序与入参 ids 去重后的顺序一致（③行 1464）；
+// 重复 id 按首次出现位置去重，同一 id 至多返回一条（④行 1465）。
+message GetUserProfilesResponse {
+  // 用户资料列表；顺序 = 入参去重后的顺序，缺失项跳过不占位（批量语义②③④）。
+  repeated ProfileResponse profiles = 1;
+}

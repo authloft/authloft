@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/rpc/v1/profile.proto.
  */
 export const file_api_rpc_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyJ7ChhVcGRhdGVVc2VyUHJvZmlsZVJlcXVlc3QSCwoDdWlkGAEgASgDEhAKCG5pY2tuYW1lGAIgASgJEhIKCmF2YXRhcl91cmwYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIgwKCk9rUmVzcG9uc2VCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw", [file_api_account_v1_profile]);
+  fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyJ7ChhVcGRhdGVVc2VyUHJvZmlsZVJlcXVlc3QSCwoDdWlkGAEgASgDEhAKCG5pY2tuYW1lGAIgASgJEhIKCmF2YXRhcl91cmwYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIgwKCk9rUmVzcG9uc2UiJQoWR2V0VXNlclByb2ZpbGVzUmVxdWVzdBILCgNpZHMYASADKAMiSAoXR2V0VXNlclByb2ZpbGVzUmVzcG9uc2USLQoIcHJvZmlsZXMYASADKAsyGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3JwYy92MTtycGN2MWIGcHJvdG8z", [file_api_account_v1_profile]);
 
 /**
  * ProfileResponse 是 UserService/GetUserProfile 的响应（§7 行 1387）：
@@ -230,4 +230,53 @@ export type OkResponse = Message<"api.rpc.v1.OkResponse"> & {
  */
 export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
   messageDesc(file_api_rpc_v1_profile, 3);
+
+/**
+ * GetUserProfilesRequest 是 UserService/GetUserProfiles 的请求（接口文档 §7.2
+ * 行 1442-1446，D-024 定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
+ * 缺省或空列表 → 返回空 profiles、不报错（行 1467，空批量是合法的空集语义）。
+ *
+ * @generated from message api.rpc.v1.GetUserProfilesRequest
+ */
+export type GetUserProfilesRequest = Message<"api.rpc.v1.GetUserProfilesRequest"> & {
+  /**
+   * 目标用户 ID 列表；单次上限 100——按入参列表长度计、去重前，超出整单失败
+   * invalid_request、无部分返回（§7.2 批量语义①行 1462）。
+   *
+   * @generated from field: repeated int64 ids = 1;
+   */
+  ids: bigint[];
+};
+
+/**
+ * Describes the message api.rpc.v1.GetUserProfilesRequest.
+ * Use `create(GetUserProfilesRequestSchema)` to create a new message.
+ */
+export const GetUserProfilesRequestSchema: GenMessage<GetUserProfilesRequest> = /*@__PURE__*/
+  messageDesc(file_api_rpc_v1_profile, 4);
+
+/**
+ * GetUserProfilesResponse 是 UserService/GetUserProfiles 的响应（§7.2 行 1448）：
+ * 每条 profiles[] 复用本文件既有 ProfileResponse（§3.1 Authloft 结构全量字段，
+ * 与 GetUserProfile 响应同构，§7.2 不复制定义）。缺失 id 跳过、不占位、不报错
+ * （批量语义②行 1463）；条目顺序与入参 ids 去重后的顺序一致（③行 1464）；
+ * 重复 id 按首次出现位置去重，同一 id 至多返回一条（④行 1465）。
+ *
+ * @generated from message api.rpc.v1.GetUserProfilesResponse
+ */
+export type GetUserProfilesResponse = Message<"api.rpc.v1.GetUserProfilesResponse"> & {
+  /**
+   * 用户资料列表；顺序 = 入参去重后的顺序，缺失项跳过不占位（批量语义②③④）。
+   *
+   * @generated from field: repeated api.rpc.v1.ProfileResponse profiles = 1;
+   */
+  profiles: ProfileResponse[];
+};
+
+/**
+ * Describes the message api.rpc.v1.GetUserProfilesResponse.
+ * Use `create(GetUserProfilesResponseSchema)` to create a new message.
+ */
+export const GetUserProfilesResponseSchema: GenMessage<GetUserProfilesResponse> = /*@__PURE__*/
+  messageDesc(file_api_rpc_v1_profile, 5);
 

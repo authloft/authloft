@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6 行 1245-1247），用裸包名 token
+//（存储模型先例：docs/接口文档.md §12.1 行 1641）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6 行 89），§11.6 整型本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// LoginStatePayload 是 al_login_state Cookie 的加密前载荷（docs/后端架构.md
+// §12.4 跳转场景的状态传递）。Cookie 只含 state（带前缀）与 b 场景的 uid，
+// 不含 scene、不含 OIDC 上下文（行 1485）；加密复用 §11.6.1 通用封装——
+// ciphertext 即本 protobuf 载荷，AAD purpose=cookie、密钥 sign_key.cookie
+//（行 1487、§11.6.1 行 1255-1272）。
+message LoginStatePayload {
+  // 带前缀的随机 state：l = 登录、b = 绑定（行 1477、1485）；回调按首字母分派
+  //（l → /api/sso/login/oauth，b → /api/account/thirdparty/oauth，行 1492）。
+  string state = 1;
+  // 绑定场景（前缀 b）携带的目标用户 ID；登录场景（前缀 l）缺省为 0（行 1485）。
+  int64 uid = 2;
+  // 签发时间，Unix 秒。
+  int64 iat = 3;
+  // 过期时间，Unix 秒；内嵌 10 分钟过期兜底（行 1485）。
+  int64 exp = 4;
+}

@@ -4,13 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { ProfileResponse } from "./profile_pb";
+import { file_api_rpc_v1_profile } from "./profile_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/rpc/v1/session.proto.
  */
 export const file_api_rpc_v1_session: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvcnBjL3YxL3Nlc3Npb24ucHJvdG8SCmFwaS5ycGMudjEiLQoURGVjb2RlU2Vzc2lvblJlcXVlc3QSFQoNc2Vzc2lvbl90b2tlbhgBIAEoCSJ3Cg9TZXNzaW9uUmVzcG9uc2USCgoCaWQYASABKAMSDQoFZXBvY2gYAiABKAMSCwoDYW1yGAMgAygJEgsKA3NpZBgEIAEoCRILCgNpYXQYBSABKAMSCwoDZXhwGAYgASgDEhUKDXJlbmV3ZWRfdG9rZW4YByABKAlCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw");
+  fileDesc("ChhhcGkvcnBjL3YxL3Nlc3Npb24ucHJvdG8SCmFwaS5ycGMudjEiSAoURGVjb2RlU2Vzc2lvblJlcXVlc3QSFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIZChFpbmNsdWRlX3VzZXJfaW5mbxgCIAEoCCKnAQoPU2Vzc2lvblJlc3BvbnNlEgoKAmlkGAEgASgDEg0KBWVwb2NoGAIgASgDEgsKA2FtchgDIAMoCRILCgNzaWQYBCABKAkSCwoDaWF0GAUgASgDEgsKA2V4cBgGIAEoAxIVCg1yZW5ld2VkX3Rva2VuGAcgASgJEi4KCXVzZXJfaW5mbxgIIAEoCzIbLmFwaS5ycGMudjEuUHJvZmlsZVJlc3BvbnNlQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvcnBjL3YxO3JwY3YxYgZwcm90bzM", [file_api_rpc_v1_profile]);
 
 /**
  * DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7 行 1389「传入
@@ -26,6 +28,16 @@ export type DecodeSessionRequest = Message<"api.rpc.v1.DecodeSessionRequest"> & 
    * @generated from field: string session_token = 1;
    */
   sessionToken: string;
+
+  /**
+   * 是否额外携带用户信息（接口文档 §7.1 行 1419/1434，D-024 定稿）：true 且
+   * 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
+   * 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
+   * unauthenticated（行 1433），本字段不改变失败分支。
+   *
+   * @generated from field: bool include_user_info = 2;
+   */
+  includeUserInfo: boolean;
 };
 
 /**
@@ -93,6 +105,15 @@ export type SessionResponse = Message<"api.rpc.v1.SessionResponse"> & {
    * @generated from field: string renewed_token = 7;
    */
   renewedToken: string;
+
+  /**
+   * 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1 行 1427）；
+   * 与 UserService/GetUserProfile 响应同构，复用同包 ProfileResponse
+   * （行 1434；§3.1 Authloft 结构，本文件不复制定义）。
+   *
+   * @generated from field: api.rpc.v1.ProfileResponse user_info = 8;
+   */
+  userInfo?: ProfileResponse | undefined;
 };
 
 /**

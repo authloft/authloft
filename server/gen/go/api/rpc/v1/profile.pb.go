@@ -370,6 +370,105 @@ func (*OkResponse) Descriptor() ([]byte, []int) {
 	return file_api_rpc_v1_profile_proto_rawDescGZIP(), []int{3}
 }
 
+// GetUserProfilesRequest 是 UserService/GetUserProfiles 的请求（接口文档 §7.2
+// 行 1442-1446，D-024 定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
+// 缺省或空列表 → 返回空 profiles、不报错（行 1467，空批量是合法的空集语义）。
+type GetUserProfilesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID 列表；单次上限 100——按入参列表长度计、去重前，超出整单失败
+	// invalid_request、无部分返回（§7.2 批量语义①行 1462）。
+	Ids           []int64 `protobuf:"varint,1,rep,packed,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserProfilesRequest) Reset() {
+	*x = GetUserProfilesRequest{}
+	mi := &file_api_rpc_v1_profile_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserProfilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserProfilesRequest) ProtoMessage() {}
+
+func (x *GetUserProfilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_rpc_v1_profile_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserProfilesRequest.ProtoReflect.Descriptor instead.
+func (*GetUserProfilesRequest) Descriptor() ([]byte, []int) {
+	return file_api_rpc_v1_profile_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetUserProfilesRequest) GetIds() []int64 {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+// GetUserProfilesResponse 是 UserService/GetUserProfiles 的响应（§7.2 行 1448）：
+// 每条 profiles[] 复用本文件既有 ProfileResponse（§3.1 Authloft 结构全量字段，
+// 与 GetUserProfile 响应同构，§7.2 不复制定义）。缺失 id 跳过、不占位、不报错
+// （批量语义②行 1463）；条目顺序与入参 ids 去重后的顺序一致（③行 1464）；
+// 重复 id 按首次出现位置去重，同一 id 至多返回一条（④行 1465）。
+type GetUserProfilesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 用户资料列表；顺序 = 入参去重后的顺序，缺失项跳过不占位（批量语义②③④）。
+	Profiles      []*ProfileResponse `protobuf:"bytes,1,rep,name=profiles,proto3" json:"profiles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserProfilesResponse) Reset() {
+	*x = GetUserProfilesResponse{}
+	mi := &file_api_rpc_v1_profile_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserProfilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserProfilesResponse) ProtoMessage() {}
+
+func (x *GetUserProfilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_rpc_v1_profile_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserProfilesResponse.ProtoReflect.Descriptor instead.
+func (*GetUserProfilesResponse) Descriptor() ([]byte, []int) {
+	return file_api_rpc_v1_profile_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetUserProfilesResponse) GetProfiles() []*ProfileResponse {
+	if x != nil {
+		return x.Profiles
+	}
+	return nil
+}
+
 var File_api_rpc_v1_profile_proto protoreflect.FileDescriptor
 
 const file_api_rpc_v1_profile_proto_rawDesc = "" +
@@ -406,7 +505,11 @@ const file_api_rpc_v1_profile_proto_rawDesc = "" +
 	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\x125\n" +
 	"\aprofile\x18\x04 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\f\n" +
 	"\n" +
-	"OkResponseB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
+	"OkResponse\"*\n" +
+	"\x16GetUserProfilesRequest\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\x03R\x03ids\"R\n" +
+	"\x17GetUserProfilesResponse\x127\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x1b.api.rpc.v1.ProfileResponseR\bprofilesB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
 var (
 	file_api_rpc_v1_profile_proto_rawDescOnce sync.Once
@@ -420,22 +523,25 @@ func file_api_rpc_v1_profile_proto_rawDescGZIP() []byte {
 	return file_api_rpc_v1_profile_proto_rawDescData
 }
 
-var file_api_rpc_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_api_rpc_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_api_rpc_v1_profile_proto_goTypes = []any{
 	(*ProfileResponse)(nil),          // 0: api.rpc.v1.ProfileResponse
 	(*GetUserProfileRequest)(nil),    // 1: api.rpc.v1.GetUserProfileRequest
 	(*UpdateUserProfileRequest)(nil), // 2: api.rpc.v1.UpdateUserProfileRequest
 	(*OkResponse)(nil),               // 3: api.rpc.v1.OkResponse
-	(*v1.UserProfile)(nil),           // 4: api.account.v1.UserProfile
+	(*GetUserProfilesRequest)(nil),   // 4: api.rpc.v1.GetUserProfilesRequest
+	(*GetUserProfilesResponse)(nil),  // 5: api.rpc.v1.GetUserProfilesResponse
+	(*v1.UserProfile)(nil),           // 6: api.account.v1.UserProfile
 }
 var file_api_rpc_v1_profile_proto_depIdxs = []int32{
-	4, // 0: api.rpc.v1.ProfileResponse.profile:type_name -> api.account.v1.UserProfile
-	4, // 1: api.rpc.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	6, // 0: api.rpc.v1.ProfileResponse.profile:type_name -> api.account.v1.UserProfile
+	6, // 1: api.rpc.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
+	0, // 2: api.rpc.v1.GetUserProfilesResponse.profiles:type_name -> api.rpc.v1.ProfileResponse
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_api_rpc_v1_profile_proto_init() }
@@ -449,7 +555,7 @@ func file_api_rpc_v1_profile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_rpc_v1_profile_proto_rawDesc), len(file_api_rpc_v1_profile_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

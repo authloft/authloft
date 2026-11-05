@@ -25,24 +25,29 @@ var File_api_rpc_v1_user_proto protoreflect.FileDescriptor
 const file_api_rpc_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"\x15api/rpc/v1/user.proto\x12\n" +
-	"api.rpc.v1\x1a\x18api/rpc/v1/profile.proto2\xb2\x01\n" +
+	"api.rpc.v1\x1a\x18api/rpc/v1/profile.proto2\x8e\x02\n" +
 	"\vUserService\x12P\n" +
 	"\x0eGetUserProfile\x12!.api.rpc.v1.GetUserProfileRequest\x1a\x1b.api.rpc.v1.ProfileResponse\x12Q\n" +
-	"\x11UpdateUserProfile\x12$.api.rpc.v1.UpdateUserProfileRequest\x1a\x16.api.rpc.v1.OkResponseB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
+	"\x11UpdateUserProfile\x12$.api.rpc.v1.UpdateUserProfileRequest\x1a\x16.api.rpc.v1.OkResponse\x12Z\n" +
+	"\x0fGetUserProfiles\x12\".api.rpc.v1.GetUserProfilesRequest\x1a#.api.rpc.v1.GetUserProfilesResponseB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
 var file_api_rpc_v1_user_proto_goTypes = []any{
 	(*GetUserProfileRequest)(nil),    // 0: api.rpc.v1.GetUserProfileRequest
 	(*UpdateUserProfileRequest)(nil), // 1: api.rpc.v1.UpdateUserProfileRequest
-	(*ProfileResponse)(nil),          // 2: api.rpc.v1.ProfileResponse
-	(*OkResponse)(nil),               // 3: api.rpc.v1.OkResponse
+	(*GetUserProfilesRequest)(nil),   // 2: api.rpc.v1.GetUserProfilesRequest
+	(*ProfileResponse)(nil),          // 3: api.rpc.v1.ProfileResponse
+	(*OkResponse)(nil),               // 4: api.rpc.v1.OkResponse
+	(*GetUserProfilesResponse)(nil),  // 5: api.rpc.v1.GetUserProfilesResponse
 }
 var file_api_rpc_v1_user_proto_depIdxs = []int32{
 	0, // 0: api.rpc.v1.UserService.GetUserProfile:input_type -> api.rpc.v1.GetUserProfileRequest
 	1, // 1: api.rpc.v1.UserService.UpdateUserProfile:input_type -> api.rpc.v1.UpdateUserProfileRequest
-	2, // 2: api.rpc.v1.UserService.GetUserProfile:output_type -> api.rpc.v1.ProfileResponse
-	3, // 3: api.rpc.v1.UserService.UpdateUserProfile:output_type -> api.rpc.v1.OkResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
+	2, // 2: api.rpc.v1.UserService.GetUserProfiles:input_type -> api.rpc.v1.GetUserProfilesRequest
+	3, // 3: api.rpc.v1.UserService.GetUserProfile:output_type -> api.rpc.v1.ProfileResponse
+	4, // 4: api.rpc.v1.UserService.UpdateUserProfile:output_type -> api.rpc.v1.OkResponse
+	5, // 5: api.rpc.v1.UserService.GetUserProfiles:output_type -> api.rpc.v1.GetUserProfilesResponse
+	3, // [3:6] is the sub-list for method output_type
+	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name

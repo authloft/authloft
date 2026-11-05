@@ -141,9 +141,13 @@ type SetSettingsRequest struct {
 	// 事件日志保留天数，默认 180（§5.6 行 1336）。
 	EventlogRetentionDays int64 `protobuf:"varint,34,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3" json:"eventlog_retention_days,omitempty"`
 	// 静态资源基址（CDN），改后需刷新页面生效（§5.6 行 1337、§8）。
-	StaticBase    string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	StaticBase string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
+	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
+	// （§1.9 驱动口径）；全量替换语义内写回，取值非三态 → invalid_request（行 1361）。
+	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SetSettingsRequest) Reset() {
@@ -421,6 +425,13 @@ func (x *SetSettingsRequest) GetStaticBase() string {
 	return ""
 }
 
+func (x *SetSettingsRequest) GetHttpsDeployment() string {
+	if x != nil {
+		return x.HttpsDeployment
+	}
+	return ""
+}
+
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6 行 1271）：
 // 键集合、键名、编号与 SetSettingsRequest 完全一致；标量与列表字段按 §12.9 行 1752
 // 恒存在口径输出（零值 / 空串 / false / 空数组）。响应名沿用资源式命名
@@ -500,9 +511,13 @@ type SettingsResponse struct {
 	// 事件日志保留天数，默认 180（§5.6 行 1336）。
 	EventlogRetentionDays int64 `protobuf:"varint,34,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3" json:"eventlog_retention_days,omitempty"`
 	// 静态资源基址（CDN），默认 /assets（§5.6 行 1337）。
-	StaticBase    string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	StaticBase string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
+	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
+	// （§1.9 驱动口径）。
+	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SettingsResponse) Reset() {
@@ -780,12 +795,19 @@ func (x *SettingsResponse) GetStaticBase() string {
 	return ""
 }
 
+func (x *SettingsResponse) GetHttpsDeployment() string {
+	if x != nil {
+		return x.HttpsDeployment
+	}
+	return ""
+}
+
 var File_api_admin_v1_settings_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1bapi/admin/v1/settings.proto\x12\fapi.admin.v1\"\x14\n" +
-	"\x12GetSettingsRequest\"\xc5\v\n" +
+	"\x12GetSettingsRequest\"\xf0\v\n" +
 	"\x12SetSettingsRequest\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -830,7 +852,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x0egateway_tokens\x18! \x03(\tR\rgatewayTokens\x126\n" +
 	"\x17eventlog_retention_days\x18\" \x01(\x03R\x15eventlogRetentionDays\x12\x1f\n" +
 	"\vstatic_base\x18# \x01(\tR\n" +
-	"staticBase\"\xc3\v\n" +
+	"staticBase\x12)\n" +
+	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeployment\"\xee\v\n" +
 	"\x10SettingsResponse\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -875,7 +898,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x0egateway_tokens\x18! \x03(\tR\rgatewayTokens\x126\n" +
 	"\x17eventlog_retention_days\x18\" \x01(\x03R\x15eventlogRetentionDays\x12\x1f\n" +
 	"\vstatic_base\x18# \x01(\tR\n" +
-	"staticBaseB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"staticBase\x12)\n" +
+	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeploymentB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_settings_proto_rawDescOnce sync.Once

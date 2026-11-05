@@ -2,6 +2,10 @@ syntax = "proto3";
 
 package api.rpc.v1;
 
+// SessionResponse.user_info 复用同包 ProfileResponse（接口文档 §7.1 行 1434；
+// D-024 proto 变更条款：本文件需新增该 import，§7.2 行 1473）。
+import "api/rpc/v1/profile.proto";
+
 // 包名 api.rpc.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
 // 目录 api/rpc/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
 // Go 产物：authloft/gen/go/api/rpc/v1（包名 rpcv1）。
@@ -13,6 +17,11 @@ option go_package = "authloft/gen/go/api/rpc/v1;rpcv1";
 message DecodeSessionRequest {
   // 待解码的会话令牌（§7 行 1386）。
   string session_token = 1;
+  // 是否额外携带用户信息（接口文档 §7.1 行 1419/1434，D-024 定稿）：true 且
+  // 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
+  // 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
+  // unauthenticated（行 1433），本字段不改变失败分支。
+  bool include_user_info = 2;
 }
 
 // SessionResponse 是 TokenService/DecodeSession 的响应（§7 行 1389「返回
@@ -35,4 +44,8 @@ message SessionResponse {
   int64 exp = 6;
   // 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
   string renewed_token = 7;
+  // 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1 行 1427）；
+  // 与 UserService/GetUserProfile 响应同构，复用同包 ProfileResponse
+  //（行 1434；§3.1 Authloft 结构，本文件不复制定义）。
+  ProfileResponse user_info = 8;
 }

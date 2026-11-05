@@ -27,9 +27,14 @@ const (
 type DecodeSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 待解码的会话令牌（§7 行 1386）。
-	SessionToken  string `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SessionToken string `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	// 是否额外携带用户信息（接口文档 §7.1 行 1419/1434，D-024 定稿）：true 且
+	// 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
+	// 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
+	// unauthenticated（行 1433），本字段不改变失败分支。
+	IncludeUserInfo bool `protobuf:"varint,2,opt,name=include_user_info,json=includeUserInfo,proto3" json:"include_user_info,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DecodeSessionRequest) Reset() {
@@ -69,6 +74,13 @@ func (x *DecodeSessionRequest) GetSessionToken() string {
 	return ""
 }
 
+func (x *DecodeSessionRequest) GetIncludeUserInfo() bool {
+	if x != nil {
+		return x.IncludeUserInfo
+	}
+	return false
+}
+
 // SessionResponse 是 TokenService/DecodeSession 的响应（§7 行 1389「返回
 // SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
 // 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
@@ -89,7 +101,11 @@ type SessionResponse struct {
 	// 过期时间，Unix 秒（§11.6.3 行 1315）。
 	Exp int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
 	// 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
-	RenewedToken  string `protobuf:"bytes,7,opt,name=renewed_token,json=renewedToken,proto3" json:"renewed_token,omitempty"`
+	RenewedToken string `protobuf:"bytes,7,opt,name=renewed_token,json=renewedToken,proto3" json:"renewed_token,omitempty"`
+	// 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1 行 1427）；
+	// 与 UserService/GetUserProfile 响应同构，复用同包 ProfileResponse
+	// （行 1434；§3.1 Authloft 结构，本文件不复制定义）。
+	UserInfo      *ProfileResponse `protobuf:"bytes,8,opt,name=user_info,json=userInfo,proto3" json:"user_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -173,14 +189,22 @@ func (x *SessionResponse) GetRenewedToken() string {
 	return ""
 }
 
+func (x *SessionResponse) GetUserInfo() *ProfileResponse {
+	if x != nil {
+		return x.UserInfo
+	}
+	return nil
+}
+
 var File_api_rpc_v1_session_proto protoreflect.FileDescriptor
 
 const file_api_rpc_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"\x18api/rpc/v1/session.proto\x12\n" +
-	"api.rpc.v1\";\n" +
+	"api.rpc.v1\x1a\x18api/rpc/v1/profile.proto\"g\n" +
 	"\x14DecodeSessionRequest\x12#\n" +
-	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\"\xa4\x01\n" +
+	"\rsession_token\x18\x01 \x01(\tR\fsessionToken\x12*\n" +
+	"\x11include_user_info\x18\x02 \x01(\bR\x0fincludeUserInfo\"\xde\x01\n" +
 	"\x0fSessionResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x03R\x05epoch\x12\x10\n" +
@@ -188,7 +212,8 @@ const file_api_rpc_v1_session_proto_rawDesc = "" +
 	"\x03sid\x18\x04 \x01(\tR\x03sid\x12\x10\n" +
 	"\x03iat\x18\x05 \x01(\x03R\x03iat\x12\x10\n" +
 	"\x03exp\x18\x06 \x01(\x03R\x03exp\x12#\n" +
-	"\rrenewed_token\x18\a \x01(\tR\frenewedTokenB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
+	"\rrenewed_token\x18\a \x01(\tR\frenewedToken\x128\n" +
+	"\tuser_info\x18\b \x01(\v2\x1b.api.rpc.v1.ProfileResponseR\buserInfoB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
 var (
 	file_api_rpc_v1_session_proto_rawDescOnce sync.Once
@@ -206,13 +231,15 @@ var file_api_rpc_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_api_rpc_v1_session_proto_goTypes = []any{
 	(*DecodeSessionRequest)(nil), // 0: api.rpc.v1.DecodeSessionRequest
 	(*SessionResponse)(nil),      // 1: api.rpc.v1.SessionResponse
+	(*ProfileResponse)(nil),      // 2: api.rpc.v1.ProfileResponse
 }
 var file_api_rpc_v1_session_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: api.rpc.v1.SessionResponse.user_info:type_name -> api.rpc.v1.ProfileResponse
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_api_rpc_v1_session_proto_init() }
@@ -220,6 +247,7 @@ func file_api_rpc_v1_session_proto_init() {
 	if File_api_rpc_v1_session_proto != nil {
 		return
 	}
+	file_api_rpc_v1_profile_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

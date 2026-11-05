@@ -39,6 +39,9 @@ const (
 	// UserServiceUpdateUserProfileProcedure is the fully-qualified name of the UserService's
 	// UpdateUserProfile RPC.
 	UserServiceUpdateUserProfileProcedure = "/api.rpc.v1.UserService/UpdateUserProfile"
+	// UserServiceGetUserProfilesProcedure is the fully-qualified name of the UserService's
+	// GetUserProfiles RPC.
+	UserServiceGetUserProfilesProcedure = "/api.rpc.v1.UserService/GetUserProfiles"
 )
 
 // UserServiceClient is a client for the api.rpc.v1.UserService service.
@@ -47,6 +50,13 @@ type UserServiceClient interface {
 	GetUserProfile(context.Context, *connect.Request[v1.GetUserProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
 	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1388）。
 	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
+	// 批量读用户资料（接口文档 §7.2 行 1436）：响应条目与 GetUserProfile 同构，
+	// 请求/响应消息定义在同包 profile.proto（GetUserProfilesRequest /
+	// GetUserProfilesResponse，§7.2 proto 变更条款行 1471）。读接口不校验 nonce：
+	// 方法名不含 Update / Delete / Set / Create / Revoke 任一前缀，按 §7 前言
+	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
+	// （§7.2 行 1440 命名分流口径）。
+	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
 }
 
 // NewUserServiceClient constructs a client for the api.rpc.v1.UserService service. By default, it
@@ -72,6 +82,12 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(userServiceMethods.ByName("UpdateUserProfile")),
 			connect.WithClientOptions(opts...),
 		),
+		getUserProfiles: connect.NewClient[v1.GetUserProfilesRequest, v1.GetUserProfilesResponse](
+			httpClient,
+			baseURL+UserServiceGetUserProfilesProcedure,
+			connect.WithSchema(userServiceMethods.ByName("GetUserProfiles")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -79,6 +95,7 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type userServiceClient struct {
 	getUserProfile    *connect.Client[v1.GetUserProfileRequest, v1.ProfileResponse]
 	updateUserProfile *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
+	getUserProfiles   *connect.Client[v1.GetUserProfilesRequest, v1.GetUserProfilesResponse]
 }
 
 // GetUserProfile calls api.rpc.v1.UserService.GetUserProfile.
@@ -91,12 +108,24 @@ func (c *userServiceClient) UpdateUserProfile(ctx context.Context, req *connect.
 	return c.updateUserProfile.CallUnary(ctx, req)
 }
 
+// GetUserProfiles calls api.rpc.v1.UserService.GetUserProfiles.
+func (c *userServiceClient) GetUserProfiles(ctx context.Context, req *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error) {
+	return c.getUserProfiles.CallUnary(ctx, req)
+}
+
 // UserServiceHandler is an implementation of the api.rpc.v1.UserService service.
 type UserServiceHandler interface {
 	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7 行 1387）。
 	GetUserProfile(context.Context, *connect.Request[v1.GetUserProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
 	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1388）。
 	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
+	// 批量读用户资料（接口文档 §7.2 行 1436）：响应条目与 GetUserProfile 同构，
+	// 请求/响应消息定义在同包 profile.proto（GetUserProfilesRequest /
+	// GetUserProfilesResponse，§7.2 proto 变更条款行 1471）。读接口不校验 nonce：
+	// 方法名不含 Update / Delete / Set / Create / Revoke 任一前缀，按 §7 前言
+	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
+	// （§7.2 行 1440 命名分流口径）。
+	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
 }
 
 // NewUserServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -118,12 +147,20 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(userServiceMethods.ByName("UpdateUserProfile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userServiceGetUserProfilesHandler := connect.NewUnaryHandler(
+		UserServiceGetUserProfilesProcedure,
+		svc.GetUserProfiles,
+		connect.WithSchema(userServiceMethods.ByName("GetUserProfiles")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.rpc.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UserServiceGetUserProfileProcedure:
 			userServiceGetUserProfileHandler.ServeHTTP(w, r)
 		case UserServiceUpdateUserProfileProcedure:
 			userServiceUpdateUserProfileHandler.ServeHTTP(w, r)
+		case UserServiceGetUserProfilesProcedure:
+			userServiceGetUserProfilesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -139,4 +176,8 @@ func (UnimplementedUserServiceHandler) GetUserProfile(context.Context, *connect.
 
 func (UnimplementedUserServiceHandler) UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.rpc.v1.UserService.UpdateUserProfile is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.rpc.v1.UserService.GetUserProfiles is not implemented"))
 }
