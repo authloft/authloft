@@ -129,7 +129,7 @@ type assembled struct {
 	// / 版本号共用键空间，双实例会造成失效与回写各说各话。
 	providerLoader    *provider.Loader
 	providerWhitelist *provider.Whitelist
-	providerCache      *cache.ProviderCache
+	providerCache     *cache.ProviderCache
 
 	// 会话 / 令牌共享单例（消除 registerSSO 与 buildEngine
 	// 的重复构造）：sessionTokens 供 sso 会话拦截器与 Terminal SessionWriter
@@ -263,11 +263,11 @@ func (r mfaCredentialReader) ListWebauthn(ctx context.Context, userID int64) ([]
 }
 
 // captchaProviderSource 把 provider 表行转成 captcha 包窄投影
-//（captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；与
+// （captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；与
 // mfaCredentialReader 同款组合模式，不修改 repo 公共接口）。ext 编解码
 // 唯一出口 repo.ParseProviderExt（§12.1：site_key=client_id、
 // secret=client_secret、endpoint=自定义校验地址）；未命中唯一键按
-//「无此行」返回 nil,nil，其余错误原样上抛。
+// 「无此行」返回 nil,nil，其余错误原样上抛。
 type captchaProviderSource struct {
 	providers *repo.ProviderRepo
 }
@@ -889,10 +889,13 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 //（业务校验 + IncEpoch/al:pwdep 失效链 + 审计投递 + Union 连带 + 解锁键清除，
 // §18 行 1792 分层）——epoch 同步复用共享单例 deps.epochStore，审计经
 // eventlog.Writer 走 deps.queue（resetAuditSink 同款链）；解锁用的 PwFailStore
-// 就地构造（BanTTL 仅影响 Ban 写路径，删除 / SCAN 不受其影响），其余方法由
-// 生成的 UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
+// 就地构造（BanTTL 仅影响 Ban 写路径，删除 / SCAN 不受其影响）；客户端管理族
+// 10 方法走 service/admin/client.go（secret 服务端生成、client_id 生成/不可改、
+// redirect_uris 校验、OIDC scopes/TTL 值域，§5.5），其余方法由生成的
+// UnimplementedAdminServiceHandler 返回 unimplemented（归后续 admin 实现）。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	providers := repo.NewProviderRepo(deps.db)
+	clients := repo.NewClientRepo(deps.db)
 	path, h := adminv1connect.NewAdminServiceHandler(
 		adminhandler.New(
 			providers,
@@ -908,6 +911,7 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 				eventlog.NewWriter(deps.queue),
 				deps.settings,
 			),
+			adminsvc.NewClientService(clients),
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
 	)
@@ -991,7 +995,7 @@ func registerOIDC(r gin.IRouter, deps *assembled) {
 // registerGateway 注册网关域唯一端点 `ANY /api/gateway/decode`（接口文档 §6、
 // 后端架构 §17 行 1768 / §3.3 行 314）：/api 组（REST 豁免
 // 端点组，router.go）上挂 /gateway 子组，Gateway 中间件先于 handler
-//（X-Gateway-Token 无效 403 空体归中间件，§1.5 行 188）；decode 恒 200
+// （X-Gateway-Token 无效 403 空体归中间件，§1.5 行 188）；decode 恒 200
 // 纯响应头无响应体（§1.0 行 66）。tokens 动态源 = settings 键
 // gateway_tokens 每请求快照读取（§5.6 行 1338，默认 []，热更对后续请求
 // 生效——口径同 Referer 白名单动态源）；Verifier 复用 assemble

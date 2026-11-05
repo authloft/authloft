@@ -1,9 +1,10 @@
 // Package admin 实现 api.admin.v1.AdminService 的 Connect handler
 // （docs/后端架构.md §3.4 行 333：admin 域方法族，全部需管理员会话）。
 // 已落地 Provider 族读路径、Provider 写族、
-// 管理员自身 + 用户管理族（GetMe + §5.4 七方法，service/admin/user.go 分层），
+// 管理员自身 + 用户管理族（GetMe + §5.4 七方法，service/admin/user.go 分层）、
+// 客户端管理族（§5.5 十方法，service/admin/client.go 分层），
 // 其余方法一律由生成的 UnimplementedAdminServiceHandler 返回 unimplemented
-//（不自造错误信封）。
+// （不自造错误信封）。
 //
 // 鉴权口径（docs/接口文档.md §5 行 1145-1146）：管理员 = 安装时创建的
 // user.id = 1 账号；admin 拦截器（connect.NewAdminInterceptor）挂在 session
@@ -12,9 +13,6 @@
 // 注入 ctx，GetMe 与审计 actor 从 ctx 取。
 //
 // TODO(后续 admin 实现)——桩方法归属（均返回生成基类的 unimplemented）：
-//   - 客户端管理：ListSsoClients / CreateSsoClient / GetSsoClient /
-//     UpdateSsoClient / DeleteSsoClient / ListOidcClients / CreateOidcClient /
-//     GetOidcClient / UpdateOidcClient / DeleteOidcClient（§5.5）
 //   - 系统配置与工具：GetSettings / SetSettings / ListEvents / DecodeToken /
 //     GetStatus（§5.6）
 package admin
@@ -35,8 +33,8 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
-	"authloft/internal/session"
 	adminsvc "authloft/internal/service/admin"
+	"authloft/internal/session"
 )
 
 // ProviderReader admin 域 provider 读取窄接口（§20 依赖注入）：生产注入
@@ -74,15 +72,31 @@ type UserService interface {
 	GetUserEvents(ctx context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error)
 }
 
+// ClientService admin 域客户端管理族窄接口（§20 依赖注入）：生产注入
+// *adminsvc.ClientService（分层 §18 行 1792：handler → service/admin/client.go
+// → repo/client_repo.go），测试可传 fake。
+type ClientService interface {
+	ListSsoClients(ctx context.Context, page, pageSize int, sort, order string) ([]adminsvc.SsoClientDetail, int64, error)
+	CreateSsoClient(ctx context.Context, in adminsvc.SsoClientInput) error
+	GetSsoClient(ctx context.Context, id int64) (*adminsvc.SsoClientDetail, error)
+	UpdateSsoClient(ctx context.Context, id int64, p adminsvc.SsoClientPatch) error
+	DeleteSsoClient(ctx context.Context, id int64) error
+	ListOidcClients(ctx context.Context, page, pageSize int, sort, order string) ([]adminsvc.OidcClientDetail, int64, error)
+	CreateOidcClient(ctx context.Context, in adminsvc.OidcClientInput) error
+	GetOidcClient(ctx context.Context, id int64) (*adminsvc.OidcClientDetail, error)
+	UpdateOidcClient(ctx context.Context, id int64, p adminsvc.OidcClientPatch) error
+	DeleteOidcClient(ctx context.Context, id int64) error
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect/interceptors.go 与 account handler）。
 var (
-	errNotFound         = errors.New("not found")
-	errUnknownProvType  = errors.New("unknown provider type")
-	errInvalidRequest   = errors.New("invalid request")
-	errDuplicateKey     = errors.New("provider key already exists")
-	errAuthRequired     = errors.New("authentication required")
-	errPasswordWeak     = errors.New("password does not meet policy")
+	errNotFound        = errors.New("not found")
+	errUnknownProvType = errors.New("unknown provider type")
+	errInvalidRequest  = errors.New("invalid request")
+	errDuplicateKey    = errors.New("provider key already exists")
+	errAuthRequired    = errors.New("authentication required")
+	errPasswordWeak    = errors.New("password does not meet policy")
 )
 
 // providerListPageSize 管理列表分页上限（§1.7 行 277：pageSize 上限 100），
@@ -96,12 +110,14 @@ type Handler struct {
 	providers ProviderReader
 	svc       ProviderService
 	users     UserService
+	clients   ClientService
 }
 
 // New 构造 AdminService handler（providers：读路径；svc：写族 +
-// GetProviderTypes + TestProvider；users：用户管理族 8 方法）。
-func New(providers ProviderReader, svc ProviderService, users UserService) *Handler {
-	return &Handler{providers: providers, svc: svc, users: users}
+// GetProviderTypes + TestProvider；users：用户管理族 8 方法；clients：
+// 客户端管理族 10 方法）。
+func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService) *Handler {
+	return &Handler{providers: providers, svc: svc, users: users, clients: clients}
 }
 
 // ListProviders（接口文档 §5.2 行 1168）：筛选 {category, type, isEnabled} +
@@ -264,7 +280,7 @@ func (h *Handler) UpdateProvider(ctx context.Context, req *connectrpc.Request[st
 }
 
 // DeleteProvider（§5.2 行 1172）：{providerKey} 删除；不存在 → 404 not_found
-//（§1.5 行 189 管理后台单资源）。
+// （§1.5 行 189 管理后台单资源）。
 func (h *Handler) DeleteProvider(ctx context.Context, req *connectrpc.Request[adminv1.DeleteProviderRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	if err := h.svc.DeleteProvider(ctx, req.Msg.GetProviderKey()); err != nil {
 		return nil, mapWriteError("delete provider", err)
@@ -308,7 +324,7 @@ func (h *Handler) GetProviderTypes(ctx context.Context, req *connectrpc.Request[
 }
 
 // TestProvider（§5.2 行 1177）：{providerKey, target} 短信 / 邮件 Provider 的
-//「发送测试」——同步 Send 给管理员即时反馈（service 层不经 Loader / asyncqueue）。
+// 「发送测试」——同步 Send 给管理员即时反馈（service 层不经 Loader / asyncqueue）。
 func (h *Handler) TestProvider(ctx context.Context, req *connectrpc.Request[adminv1.TestProviderRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	if err := h.svc.TestProvider(ctx, req.Msg.GetProviderKey(), req.Msg.GetTarget()); err != nil {
 		return nil, mapWriteError("test provider", err)
@@ -397,7 +413,7 @@ func (h *Handler) UpdateUserStatus(ctx context.Context, req *connectrpc.Request[
 
 // ResetUserPassword（§5.4 行 1252）：{id, password} 管理员重置——§5.6 密码
 // 策略校验在 service；不满足 → invalid_argument + code=password_weak
-//（§1.6 封闭集合既有取值，ErrorInfo domain=admin）。
+// （§1.6 封闭集合既有取值，ErrorInfo domain=admin）。
 func (h *Handler) ResetUserPassword(ctx context.Context, req *connectrpc.Request[adminv1.ResetUserPasswordRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	actor, ok := session.UIDFromContext(ctx)
 	if !ok {
@@ -451,10 +467,157 @@ func (h *Handler) GetUserEvents(ctx context.Context, req *connectrpc.Request[adm
 	}), nil
 }
 
+// —— 客户端管理族 10 方法（§5.5 行 1258-1268）：service 层业务校验
+//（secret 服务端生成、client_id 生成/不可改、redirect_uris 校验、OIDC
+// scopes/TTL 值域），handler 只做 Connect 形态映射与 dto 投影；错误复用
+// mapWriteError 口径（invalid_request / already_exists / not_found 封闭集）——
+
+// ListSsoClients（§5.5 行 1258）：§1.7 分页列表；sort / order 透传
+// service（§1.7 行 277 后端不做白名单强制校验，防注入字符集约束在
+// repo.orderClause，口径同 ListUsers）。空页 items
+// 按 proto3 空 repeated 省略（§1.7 行 278）。
+func (h *Handler) ListSsoClients(ctx context.Context, req *connectrpc.Request[adminv1.ListSsoClientsRequest]) (*connectrpc.Response[adminv1.SsoClientListResponse], error) {
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.clients.ListSsoClients(ctx, page, size, req.Msg.GetSort(), req.Msg.GetOrder())
+	if err != nil {
+		return nil, mapWriteError("list sso clients", err)
+	}
+	items := make([]*adminv1.SsoClient, len(rows))
+	for i := range rows {
+		items[i] = dto.AdminSsoClient(rows[i].Row, rows[i].RedirectURIs)
+	}
+	return connectrpc.NewResponse(&adminv1.SsoClientListResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
+// CreateSsoClient（§5.5 行 1258/1266）：仅后台手动创建；请求中的
+// client_secret 字段被忽略——服务端生成，管理员经 GetSsoClient 明文查看
+// （§5.2 行 1170 凭证口径）。成功返回 OkResponse。
+func (h *Handler) CreateSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.CreateSsoClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.CreateSsoClient(ctx, adminsvc.SsoClientInput{
+		ClientID:     req.Msg.GetClientId(),
+		Name:         req.Msg.GetName(),
+		RedirectURIs: req.Msg.GetRedirectUris(),
+	}); err != nil {
+		return nil, mapWriteError("create sso client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// GetSsoClient（§5.5 行 1259）：{id} 定位（proto 唯一定位字段）→ 详情
+// 含明文 secret（SsoClient 消息列表/详情两用，仅 admin 会话可达）。
+func (h *Handler) GetSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.GetSsoClientRequest]) (*connectrpc.Response[adminv1.SsoClient], error) {
+	d, err := h.clients.GetSsoClient(ctx, req.Msg.GetId())
+	if err != nil {
+		return nil, mapWriteError("get sso client", err)
+	}
+	return connectrpc.NewResponse(dto.AdminSsoClient(d.Row, d.RedirectURIs)), nil
+}
+
+// UpdateSsoClient（§5.5 行 1259）：缺省键保留原值（PATCH，service 层）；
+// client_id 不可改（改 → invalid_request）。
+func (h *Handler) UpdateSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.UpdateSsoClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.UpdateSsoClient(ctx, req.Msg.GetId(), adminsvc.SsoClientPatch{
+		ClientID:     req.Msg.GetClientId(),
+		ClientSecret: req.Msg.GetClientSecret(),
+		Name:         req.Msg.GetName(),
+		RedirectURIs: req.Msg.GetRedirectUris(),
+	}); err != nil {
+		return nil, mapWriteError("update sso client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// DeleteSsoClient（§5.5 行 1259）：硬删；不触发会话失效（docs 未定义，
+// 默认，待定）。
+func (h *Handler) DeleteSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.DeleteSsoClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.DeleteSsoClient(ctx, req.Msg.GetId()); err != nil {
+		return nil, mapWriteError("delete sso client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// ListOidcClients（§5.5 行 1260）：口径同 ListSsoClients（scopes 拆分在
+// service）。
+func (h *Handler) ListOidcClients(ctx context.Context, req *connectrpc.Request[adminv1.ListOidcClientsRequest]) (*connectrpc.Response[adminv1.OidcClientListResponse], error) {
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.clients.ListOidcClients(ctx, page, size, req.Msg.GetSort(), req.Msg.GetOrder())
+	if err != nil {
+		return nil, mapWriteError("list oidc clients", err)
+	}
+	items := make([]*adminv1.OidcClient, len(rows))
+	for i := range rows {
+		items[i] = dto.AdminOidcClient(rows[i].Row, rows[i].RedirectURIs, rows[i].Scopes)
+	}
+	return connectrpc.NewResponse(&adminv1.OidcClientListResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
+// CreateOidcClient（§5.5 行 1260）：SSO 基线 + scopes[] / TTL（0 落 DDL
+// 默认 3600 / 2592000）；授权类型不建模（§5.5 行 1268 固定
+// authorization_code + refresh_token）。client_secret 同 CreateSsoClient
+// 服务端生成。
+func (h *Handler) CreateOidcClient(ctx context.Context, req *connectrpc.Request[adminv1.CreateOidcClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.CreateOidcClient(ctx, adminsvc.OidcClientInput{
+		ClientID:        req.Msg.GetClientId(),
+		Name:            req.Msg.GetName(),
+		RedirectURIs:    req.Msg.GetRedirectUris(),
+		Scopes:          req.Msg.GetScopes(),
+		AccessTokenTTL:  req.Msg.GetAccessTokenTtl(),
+		RefreshTokenTTL: req.Msg.GetRefreshTokenTtl(),
+	}); err != nil {
+		return nil, mapWriteError("create oidc client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// GetOidcClient（§5.5 行 1261）：{id} 定位 → 详情含明文 secret +
+// scopes[] / TTL 投影。
+func (h *Handler) GetOidcClient(ctx context.Context, req *connectrpc.Request[adminv1.GetOidcClientRequest]) (*connectrpc.Response[adminv1.OidcClient], error) {
+	d, err := h.clients.GetOidcClient(ctx, req.Msg.GetId())
+	if err != nil {
+		return nil, mapWriteError("get oidc client", err)
+	}
+	return connectrpc.NewResponse(dto.AdminOidcClient(d.Row, d.RedirectURIs, d.Scopes)), nil
+}
+
+// UpdateOidcClient（§5.5 行 1261）：缺省键保留原值（PATCH）；client_id
+// 不可改；scopes / TTL 同 PATCH 语义（TTL 0 保留原值）。
+func (h *Handler) UpdateOidcClient(ctx context.Context, req *connectrpc.Request[adminv1.UpdateOidcClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.UpdateOidcClient(ctx, req.Msg.GetId(), adminsvc.OidcClientPatch{
+		ClientID:        req.Msg.GetClientId(),
+		ClientSecret:    req.Msg.GetClientSecret(),
+		Name:            req.Msg.GetName(),
+		RedirectURIs:    req.Msg.GetRedirectUris(),
+		Scopes:          req.Msg.GetScopes(),
+		AccessTokenTTL:  req.Msg.GetAccessTokenTtl(),
+		RefreshTokenTTL: req.Msg.GetRefreshTokenTtl(),
+	}); err != nil {
+		return nil, mapWriteError("update oidc client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// DeleteOidcClient（§5.5 行 1261）：硬删；口径同 DeleteSsoClient。
+func (h *Handler) DeleteOidcClient(ctx context.Context, req *connectrpc.Request[adminv1.DeleteOidcClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	if err := h.clients.DeleteOidcClient(ctx, req.Msg.GetId()); err != nil {
+		return nil, mapWriteError("delete oidc client", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
 // mapWriteError service 写路径错误 → Connect 形态（§1.5 行 182-195 统一口径）：
 // 参数 / 校验类 → invalid_argument + ErrorInfo domain=admin code=invalid_request
-//（§1.6 封闭集合，同 GetProviderSchema 先例）；唯一键冲突 → already_exists
-//（行 190，409，§1.6 无对应业务细分码故不挂 ErrorInfo，前端按标准码兜底，
+// （§1.6 封闭集合，同 GetProviderSchema 先例）；唯一键冲突 → already_exists
+// （行 190，409，§1.6 无对应业务细分码故不挂 ErrorInfo，前端按标准码兜底，
 // 行 226）；资源不存在 → not_found（行 189）；其余原样上抛由错误包装拦截器
 // 消毒为 internal（行 192）。
 func mapWriteError(op string, err error) error {

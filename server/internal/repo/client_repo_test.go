@@ -378,8 +378,9 @@ func TestClientRepoOidcClientCRUD(t *testing.T) {
 	}
 }
 
-// TestClientRepoList（env-skip）：两表分页列表（id ASC 创建序稳定）+
-// §1.7 分页参数归一 + 表间互不串扰。
+// TestClientRepoList（env-skip）：两表分页列表 + §1.7 分页参数归一 + 表间
+// 互不串扰。缺省排序 id DESC（orderClause：order 非 asc 一律
+// desc，口径同 user_repo）；排序应用 / 回落专项见 TestClientRepoListSort。
 func TestClientRepoList(t *testing.T) {
 	rp := clientTestSetup(t)
 	ctx := context.Background()
@@ -403,24 +404,24 @@ func TestClientRepoList(t *testing.T) {
 		}
 	}
 
-	// 无分页参数：默认 page1 size20；id ASC 创建序。
+	// 无分页参数：默认 page1 size20；sort / order 缺省 → id DESC。
 	ssoRows, ssoTotal, err := rp.ListSsoClients(ctx, ClientListQuery{})
 	if err != nil || ssoTotal != 3 || len(ssoRows) != 3 {
 		t.Fatalf("SSO 全量 = %d 行 total=%d err=%v; want 3/3/nil", len(ssoRows), ssoTotal, err)
 	}
-	for i, want := range []string{"sso_1", "sso_2", "sso_3"} {
+	for i, want := range []string{"sso_3", "sso_2", "sso_1"} {
 		if ssoRows[i].ClientID != want {
-			t.Errorf("SSO 顺序[%d] = %s, want %s（id ASC）", i, ssoRows[i].ClientID, want)
+			t.Errorf("SSO 顺序[%d] = %s, want %s（id DESC）", i, ssoRows[i].ClientID, want)
 		}
 	}
-	// 分页：page2 size2 → 只剩 sso_3，total 仍为 3。
+	// 分页：page2 size2 → 只剩 sso_1，total 仍为 3。
 	if rows, total, err := rp.ListSsoClients(ctx, ClientListQuery{Page: 2, PageSize: 2}); err != nil ||
-		total != 3 || len(rows) != 1 || rows[0].ClientID != "sso_3" {
-		t.Errorf("SSO page2 = %+v total=%d err=%v; want sso_3/3", rows, total, err)
+		total != 3 || len(rows) != 1 || rows[0].ClientID != "sso_1" {
+		t.Errorf("SSO page2 = %+v total=%d err=%v; want sso_1/3", rows, total, err)
 	}
 	// 分页参数归一：Page=0 归 1；PageSize<1 默认 20；PageSize>100 clamp。
 	if rows, _, err := rp.ListSsoClients(ctx, ClientListQuery{Page: 0, PageSize: 2}); err != nil ||
-		len(rows) != 2 || rows[0].ClientID != "sso_1" {
+		len(rows) != 2 || rows[0].ClientID != "sso_3" {
 		t.Errorf("Page=0 应归 1: %+v err=%v", rows, err)
 	}
 	if _, _, err := rp.ListSsoClients(ctx, ClientListQuery{Page: 1, PageSize: 150}); err != nil {
@@ -432,9 +433,146 @@ func TestClientRepoList(t *testing.T) {
 	if err != nil || oidcTotal != 2 || len(oidcRows) != 2 {
 		t.Fatalf("OIDC 全量 = %d 行 total=%d err=%v; want 2/2/nil", len(oidcRows), oidcTotal, err)
 	}
-	for i, want := range []string{"oidc_1", "oidc_2"} {
+	for i, want := range []string{"oidc_2", "oidc_1"} {
 		if oidcRows[i].ClientID != want {
-			t.Errorf("OIDC 顺序[%d] = %s, want %s（id ASC）", i, oidcRows[i].ClientID, want)
+			t.Errorf("OIDC 顺序[%d] = %s, want %s（id DESC）", i, oidcRows[i].ClientID, want)
 		}
+	}
+}
+
+// TestClientRepoListSort（env-skip）：ClientListQuery 的 sort /
+// order 应用与防御——合法列名排序生效（asc / desc / 大小写不敏感）、sort
+// 缺省 / 字符集外（含注入尝试）静默回落 id、order 缺省 / 非 asc 一律 desc、
+// 非 id 主序下同值行按 id DESC 次序不漂移（口径同 user_repo.ListUsers）。
+func TestClientRepoListSort(t *testing.T) {
+	rp := clientTestSetup(t)
+	ctx := context.Background()
+
+	urisData, err := MarshalClientRedirectUris(clientTestUris())
+	if err != nil {
+		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
+	}
+	// 4 行 SSO：name 与 id 序错开（id 1=beta / 2=alpha / 3=gamma），使 name
+	// 排序与 id 排序可判别；行 4 与行 1 同 name（beta），验证非 id 主序下
+	// 同值行按 id DESC 次序（4 在 1 前）分页不漂移。
+	for _, tc := range []struct{ id, name string }{
+		{"sso_1", "beta"}, {"sso_2", "alpha"}, {"sso_3", "gamma"}, {"sso_4", "beta"},
+	} {
+		if err := rp.CreateSsoClient(ctx, &model.SsoClient{
+			ClientID: tc.id, ClientSecret: strings.Repeat("s", 64),
+			Name: tc.name, RedirectURIs: urisData,
+		}); err != nil {
+			t.Fatalf("CreateSsoClient %s 失败: %v", tc.id, err)
+		}
+	}
+	// 2 行 OIDC：name 与 id 序错开。
+	for _, tc := range []struct{ id, name string }{
+		{"oidc_1", "delta"}, {"oidc_2", "charlie"},
+	} {
+		if err := rp.CreateOidcClient(ctx, &model.OidcClient{
+			ClientID: tc.id, ClientSecret: strings.Repeat("o", 64),
+			Name: tc.name, RedirectURIs: urisData,
+		}); err != nil {
+			t.Fatalf("CreateOidcClient %s 失败: %v", tc.id, err)
+		}
+	}
+
+	// sort=name, order=asc 生效；同值行（beta × 2）按 id DESC 次序。
+	if rows, total, err := rp.ListSsoClients(ctx, ClientListQuery{Sort: "name", Order: "asc"}); err != nil || total != 4 {
+		t.Fatalf("sort=name asc = %d 行 total=%d err=%v", len(rows), total, err)
+	} else {
+		for i, want := range []string{"sso_2", "sso_4", "sso_1", "sso_3"} {
+			if rows[i].ClientID != want {
+				t.Errorf("sort=name asc 顺序[%d] = %s, want %s", i, rows[i].ClientID, want)
+			}
+		}
+	}
+	// sort=name, order=desc 生效（大小写不敏感：DESC）；同值行次序不变。
+	if rows, _, err := rp.ListSsoClients(ctx, ClientListQuery{Sort: "name", Order: "DESC"}); err != nil {
+		t.Fatalf("sort=name DESC: %v", err)
+	} else {
+		for i, want := range []string{"sso_3", "sso_4", "sso_1", "sso_2"} {
+			if rows[i].ClientID != want {
+				t.Errorf("sort=name DESC 顺序[%d] = %s, want %s", i, rows[i].ClientID, want)
+			}
+		}
+	}
+	// sort=id, order=asc：主序即 id 时不追加次序，id ASC 形态可达。
+	if rows, _, err := rp.ListSsoClients(ctx, ClientListQuery{Sort: "id", Order: "asc"}); err != nil {
+		t.Fatalf("sort=id asc: %v", err)
+	} else {
+		for i, want := range []string{"sso_1", "sso_2", "sso_3", "sso_4"} {
+			if rows[i].ClientID != want {
+				t.Errorf("sort=id asc 顺序[%d] = %s, want %s", i, rows[i].ClientID, want)
+			}
+		}
+	}
+	// 非法 sort（字符集外 / 注入尝试）静默回落 id；order 缺省 → desc。
+	for _, bad := range []string{"Name", "id; DROP TABLE sso_client", "id desc"} {
+		if rows, _, err := rp.ListSsoClients(ctx, ClientListQuery{Sort: bad}); err != nil {
+			t.Fatalf("非法 sort %q 应静默回落不报错: %v", bad, err)
+		} else if rows[0].ClientID != "sso_4" {
+			t.Errorf("非法 sort %q 应回落 id DESC（首行 sso_4）, got %s", bad, rows[0].ClientID)
+		}
+	}
+	// order 非 asc（含乱值）一律 desc：首行应为最大 id。
+	if rows, _, err := rp.ListSsoClients(ctx, ClientListQuery{Order: "bogus"}); err != nil || rows[0].ClientID != "sso_4" {
+		t.Errorf("order 非法应一律 desc: %+v err=%v", rows, err)
+	}
+	// OIDC 表排序同样生效。
+	if rows, _, err := rp.ListOidcClients(ctx, ClientListQuery{Sort: "name", Order: "desc"}); err != nil {
+		t.Fatalf("OIDC sort=name desc: %v", err)
+	} else {
+		for i, want := range []string{"oidc_1", "oidc_2"} {
+			if rows[i].ClientID != want {
+				t.Errorf("OIDC sort=name desc 顺序[%d] = %s, want %s", i, rows[i].ClientID, want)
+			}
+		}
+	}
+}
+
+// TestClientRepoFindByID（补齐 Find 操作主键形态的真库用例）：
+// Create 回填 id → FindSsoClientByID / FindOidcClientByID 命中行与列值
+// 一致；表间互不串扰；Delete 后再查 → gorm.ErrRecordNotFound。
+func TestClientRepoFindByID(t *testing.T) {
+	rp := clientTestSetup(t)
+	ctx := context.Background()
+
+	urisData, err := MarshalClientRedirectUris(clientTestUris())
+	if err != nil {
+		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
+	}
+	sso := &model.SsoClient{ClientID: "by_id_sso", ClientSecret: strings.Repeat("s", 64), Name: "SSO", RedirectURIs: urisData}
+	if err := rp.CreateSsoClient(ctx, sso); err != nil {
+		t.Fatalf("CreateSsoClient 失败: %v", err)
+	}
+	oidc := &model.OidcClient{ClientID: "by_id_oidc", ClientSecret: strings.Repeat("o", 64), Name: "OIDC", RedirectURIs: urisData}
+	if err := rp.CreateOidcClient(ctx, oidc); err != nil {
+		t.Fatalf("CreateOidcClient 失败: %v", err)
+	}
+
+	gotSso, err := rp.FindSsoClientByID(ctx, sso.ID)
+	if err != nil || gotSso == nil || gotSso.ClientID != "by_id_sso" || gotSso.ClientSecret != strings.Repeat("s", 64) {
+		t.Fatalf("FindSsoClientByID = %+v err=%v; want by_id_sso 行", gotSso, err)
+	}
+	gotOidc, err := rp.FindOidcClientByID(ctx, oidc.ID)
+	if err != nil || gotOidc == nil || gotOidc.ClientID != "by_id_oidc" {
+		t.Fatalf("FindOidcClientByID = %+v err=%v; want by_id_oidc 行", gotOidc, err)
+	}
+	// 顺带核对 OIDC default tag 回填（gorm 由 DB DEFAULT 回填，§4.5 行 736-737）。
+	if gotOidc.AccessTokenTTL != 3600 || gotOidc.RefreshTokenTTL != 2592000 || gotOidc.Scopes != "openid,profile,email" {
+		t.Errorf("OIDC default 回填 = (ttl=%d/%d scopes=%q), want 3600/2592000/openid,profile,email",
+			gotOidc.AccessTokenTTL, gotOidc.RefreshTokenTTL, gotOidc.Scopes)
+	}
+
+	// Delete 后再查 → not found。
+	if err := rp.DeleteSsoClient(ctx, sso.ID); err != nil {
+		t.Fatalf("DeleteSsoClient 失败: %v", err)
+	}
+	if _, err := rp.FindSsoClientByID(ctx, sso.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("Delete 后 FindSsoClientByID err = %v, want gorm.ErrRecordNotFound", err)
+	}
+	if _, err := rp.FindSsoClientByID(ctx, 1<<40); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("不存在主键 err = %v, want gorm.ErrRecordNotFound", err)
 	}
 }

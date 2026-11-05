@@ -29,8 +29,8 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
-	"authloft/internal/session"
 	adminsvc "authloft/internal/service/admin"
+	"authloft/internal/session"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
 	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
 	_ "authloft/internal/provider/email/smtp"
@@ -137,21 +137,21 @@ type fakeUserService struct {
 	unlockErr error
 	eventsErr error
 
-	meRow      *model.User
-	listRows   []model.User
-	listTotal  int64
-	detail     *adminsvc.UserDetail
-	events     []model.EventLog
-	eventsTot  int64
+	meRow     *model.User
+	listRows  []model.User
+	listTotal int64
+	detail    *adminsvc.UserDetail
+	events    []model.EventLog
+	eventsTot int64
 
-	gotList  adminsvc.ListUsersFilter
-	gotMeUID int64
+	gotList     adminsvc.ListUsersFilter
+	gotMeUID    int64
 	gotDetailID int64
 	gotStatus   adminsvcStatusCall
 	gotReset    adminsvcResetCall
-	gotUnbind    adminsvcUnbindCall
-	gotUnlockID  int64
-	gotEvents    adminsvcEventsCall
+	gotUnbind   adminsvcUnbindCall
+	gotUnlockID int64
+	gotEvents   adminsvcEventsCall
 }
 
 type (
@@ -168,8 +168,8 @@ type (
 		provider  string
 	}
 	adminsvcEventsCall struct {
-		id              int64
-		page, pageSize  int
+		id             int64
+		page, pageSize int
 	}
 )
 
@@ -213,11 +213,106 @@ func (f *fakeUserService) GetUserEvents(_ context.Context, id int64, page, pageS
 	return f.events, f.eventsTot, f.eventsErr
 }
 
+// fakeClientService 客户端管理族（ClientService）的 fake：入参全
+// 留档断言，错误可注入；返回数据可预置。sso / oidc 共用 err 字段（handler
+// 用例只关注拆解 / 归一 / 映射 / 投影，业务规则断言在 service/admin/
+// client_test.go）。
+type fakeClientService struct {
+	listErr error
+	getErr  error
+	crudErr error // Create / Update / Delete 共用注入位
+
+	ssoRows  []adminsvc.SsoClientDetail
+	oidcRows []adminsvc.OidcClientDetail
+	total    int64
+
+	ssoDetail  *adminsvc.SsoClientDetail
+	oidcDetail *adminsvc.OidcClientDetail
+
+	gotSsoList      adminsvcClientListCall
+	gotOidcList     adminsvcClientListCall
+	gotCreateSso    adminsvc.SsoClientInput
+	gotCreateOidc   adminsvc.OidcClientInput
+	gotGetSsoID     int64
+	gotGetOidcID    int64
+	gotUpdateSso    adminsvcClientUpdateSsoCall
+	gotUpdateOidc   adminsvcClientUpdateOidcCall
+	gotDeleteSsoID  int64
+	gotDeleteOidcID int64
+}
+
+type (
+	adminsvcClientListCall struct {
+		page, pageSize int
+		sort, order    string
+	}
+	adminsvcClientUpdateSsoCall struct {
+		id int64
+		p  adminsvc.SsoClientPatch
+	}
+	adminsvcClientUpdateOidcCall struct {
+		id int64
+		p  adminsvc.OidcClientPatch
+	}
+)
+
+func (f *fakeClientService) ListSsoClients(_ context.Context, page, pageSize int, sort, order string) ([]adminsvc.SsoClientDetail, int64, error) {
+	f.gotSsoList = adminsvcClientListCall{page: page, pageSize: pageSize, sort: sort, order: order}
+	return f.ssoRows, f.total, f.listErr
+}
+
+func (f *fakeClientService) ListOidcClients(_ context.Context, page, pageSize int, sort, order string) ([]adminsvc.OidcClientDetail, int64, error) {
+	f.gotOidcList = adminsvcClientListCall{page: page, pageSize: pageSize, sort: sort, order: order}
+	return f.oidcRows, f.total, f.listErr
+}
+
+func (f *fakeClientService) CreateSsoClient(_ context.Context, in adminsvc.SsoClientInput) error {
+	f.gotCreateSso = in
+	return f.crudErr
+}
+
+func (f *fakeClientService) CreateOidcClient(_ context.Context, in adminsvc.OidcClientInput) error {
+	f.gotCreateOidc = in
+	return f.crudErr
+}
+
+func (f *fakeClientService) GetSsoClient(_ context.Context, id int64) (*adminsvc.SsoClientDetail, error) {
+	f.gotGetSsoID = id
+	return f.ssoDetail, f.getErr
+}
+
+func (f *fakeClientService) GetOidcClient(_ context.Context, id int64) (*adminsvc.OidcClientDetail, error) {
+	f.gotGetOidcID = id
+	return f.oidcDetail, f.getErr
+}
+
+func (f *fakeClientService) UpdateSsoClient(_ context.Context, id int64, p adminsvc.SsoClientPatch) error {
+	f.gotUpdateSso = adminsvcClientUpdateSsoCall{id: id, p: p}
+	return f.crudErr
+}
+
+func (f *fakeClientService) UpdateOidcClient(_ context.Context, id int64, p adminsvc.OidcClientPatch) error {
+	f.gotUpdateOidc = adminsvcClientUpdateOidcCall{id: id, p: p}
+	return f.crudErr
+}
+
+func (f *fakeClientService) DeleteSsoClient(_ context.Context, id int64) error {
+	f.gotDeleteSsoID = id
+	return f.crudErr
+}
+
+func (f *fakeClientService) DeleteOidcClient(_ context.Context, id int64) error {
+	f.gotDeleteOidcID = id
+	return f.crudErr
+}
+
 // newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
 // 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
 // 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
 // nil 时用 no-op fake（读路径用例不触写族）；users 为用户族 fake
-//（variadic——既有用例零改动，缺省 no-op）。
+//（variadic——既有用例零改动，缺省 no-op）；clients 为
+// 客户端族 fake，既有用例缺省 no-op，客户端用例经 newAdminHandlerClients
+// 注入（variadic 只能一个，故拆两个入口、共享 assembleAdminHandler）。
 func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, users ...UserService) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	if writer == nil {
@@ -227,6 +322,19 @@ func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderServ
 	if len(users) > 0 && users[0] != nil {
 		user = users[0]
 	}
+	return assembleAdminHandler(t, providers, writer, user, &fakeClientService{})
+}
+
+// newAdminHandlerClients 客户端管理族用例的构造入口（providers / writer /
+// users 全部 no-op——客户端用例不触它们）。
+func newAdminHandlerClients(t *testing.T, clients ClientService) (*session.Tokens, *fakeEpochReader, http.Handler) {
+	t.Helper()
+	return assembleAdminHandler(t, &fakeProviders{}, &fakeWriter{}, &fakeUserService{}, clients)
+}
+
+// assembleAdminHandler newAdminHandler / newAdminHandlerClients 的公共主体。
+func assembleAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, user UserService, clients ClientService) (*session.Tokens, *fakeEpochReader, http.Handler) {
+	t.Helper()
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(0x20 + i)
@@ -238,7 +346,7 @@ func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderServ
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers, writer, user),
+		New(providers, writer, user, clients),
 		connectrpc.WithInterceptors(
 			internalconnect.NewSessionInterceptor(
 				session.NewVerifier(tokens, epochs),
@@ -707,24 +815,16 @@ func TestNonAdminReturns404(t *testing.T) {
 	}
 }
 
-// TestStubsUnimplemented 其余全部 admin 方法（客户端 / settings / 工具，
-// 共 15 个——Provider 写族 7 方法、用户管理族
-// 8 方法已实装并从桩清单移除）一律返回生成基类的 unimplemented（桩 +
-// TODO(后续 admin 实现)，见包注释清单）。
+// TestStubsUnimplemented 其余全部 admin 方法（§5.6 settings / 工具族 5 个
+// ——Provider 写族 7 方法、用户管理族 8 方法、客户端管理族
+// 10 方法已先后实装并从桩清单移除）一律返回生成基类的
+// unimplemented（桩 + TODO(后续 admin 实现)，见包注释清单）。
 func TestStubsUnimplemented(t *testing.T) {
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
+	// 客户端管理族 10 方法已实装，桩清单只余 §5.6 settings/工具族
+	//（客户端实装断言见 TestClient*Handlers）。
 	cases := []string{
-		adminv1connect.AdminServiceListSsoClientsProcedure,
-		adminv1connect.AdminServiceCreateSsoClientProcedure,
-		adminv1connect.AdminServiceGetSsoClientProcedure,
-		adminv1connect.AdminServiceUpdateSsoClientProcedure,
-		adminv1connect.AdminServiceDeleteSsoClientProcedure,
-		adminv1connect.AdminServiceListOidcClientsProcedure,
-		adminv1connect.AdminServiceCreateOidcClientProcedure,
-		adminv1connect.AdminServiceGetOidcClientProcedure,
-		adminv1connect.AdminServiceUpdateOidcClientProcedure,
-		adminv1connect.AdminServiceDeleteOidcClientProcedure,
 		adminv1connect.AdminServiceGetSettingsProcedure,
 		adminv1connect.AdminServiceSetSettingsProcedure,
 		adminv1connect.AdminServiceListEventsProcedure,
@@ -803,7 +903,7 @@ func TestCreateProviderHandler(t *testing.T) {
 }
 
 // TestUpdateProviderHandler 编辑：提交体平铺透传（provider_key 兼定位）；
-//「改 key 拒绝」等校验失败 → 400 + ErrorInfo(admin, invalid_request)。
+// 「改 key 拒绝」等校验失败 → 400 + ErrorInfo(admin, invalid_request)。
 func TestUpdateProviderHandler(t *testing.T) {
 	t.Run("提交体透传", func(t *testing.T) {
 		writer := &fakeWriter{}
@@ -914,7 +1014,7 @@ func TestSortProvidersHandler(t *testing.T) {
 }
 
 // TestGetProviderTypesHandler 下拉数据源：service 返回项逐字段透传
-//（type/category/display_name）；排序归 service 层，此处只验映射。
+// （type/category/display_name）；排序归 service 层，此处只验映射。
 func TestGetProviderTypesHandler(t *testing.T) {
 	writer := &fakeWriter{types: []adminsvc.ProviderTypeInfo{
 		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
@@ -1134,10 +1234,10 @@ func TestUserWriteHandlers(t *testing.T) {
 		cookie := adminCookie(t, tokens, epochs, 1)
 
 		for target, body := range map[string]string{
-			adminv1connect.AdminServiceUpdateUserStatusProcedure:   reqStatus,
-			adminv1connect.AdminServiceResetUserPasswordProcedure:  reqReset,
+			adminv1connect.AdminServiceUpdateUserStatusProcedure:     reqStatus,
+			adminv1connect.AdminServiceResetUserPasswordProcedure:    reqReset,
 			adminv1connect.AdminServiceUnbindUserThirdpartyProcedure: reqUnbind,
-			adminv1connect.AdminServiceUnlockUserProcedure:         reqUnlock,
+			adminv1connect.AdminServiceUnlockUserProcedure:           reqUnlock,
 		} {
 			resp, raw := doRPC(t, h, target, body, cookie)
 			if resp.StatusCode != http.StatusOK || raw != "{}" {
@@ -1236,4 +1336,268 @@ func TestGetUserEventsHandler(t *testing.T) {
 	if users.gotEvents != (adminsvcEventsCall{id: 42, page: 1, pageSize: 5}) {
 		t.Errorf("分页透传 = %+v", users.gotEvents)
 	}
+}
+
+// —— 客户端管理族 10 方法（handler 层：拆解 / 归一 / 映射 / 投影；
+// 业务规则断言在 service/admin/client_test.go）——
+
+// TestClientListHandlers：§1.7 分页归一（page=0 → 1、pageSize=200 → 100）+
+// 列表投影（明文 secret、redirect_uris、OIDC scopes/TTL）+ 空页 items 省略
+// （§1.7 行 278，proto3 空 repeated 不输出）；sort / order 接收但透传面无此
+// 参数（repo 固定 ORDER BY id ASC，默认）。
+func TestClientListHandlers(t *testing.T) {
+	now := time.Unix(1761700000, 0).UTC()
+	ssoRow := &model.SsoClient{
+		ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	oidcRow := &model.OidcClient{
+		ID: 8, ClientID: "oidc-app", ClientSecret: "oidc-sec-64", Name: "OIDC",
+		Scopes: "openid,profile", AccessTokenTTL: 1800, RefreshTokenTTL: 864000,
+		CreatedAt: now, UpdatedAt: now,
+	}
+
+	t.Run("SSO 分页归一与投影", func(t *testing.T) {
+		clients := &fakeClientService{
+			ssoRows: []adminsvc.SsoClientDetail{{Row: ssoRow, RedirectURIs: []string{"*"}}},
+			total:   1,
+		}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceListSsoClientsProcedure,
+			`{"page":0,"pageSize":200,"sort":"created_at","order":"desc"}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		var got adminv1.SsoClientListResponse
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetTotal() != 1 || got.GetPage() != 1 || got.GetPageSize() != 100 || len(got.GetItems()) != 1 {
+			t.Fatalf("响应 = (total=%d page=%d size=%d items=%d)", got.GetTotal(), got.GetPage(), got.GetPageSize(), len(got.GetItems()))
+		}
+		item := got.GetItems()[0]
+		if item.GetId() != 7 || item.GetClientId() != "portal-main" || item.GetClientSecret() != "sec-plain-64" ||
+			item.GetName() != "门户" || len(item.GetRedirectUris()) != 1 || item.GetRedirectUris()[0] != "*" {
+			t.Fatalf("列表项 = %+v", item)
+		}
+		if clients.gotSsoList != (adminsvcClientListCall{page: 1, pageSize: 100, sort: "created_at", order: "desc"}) {
+			t.Errorf("分页归一透传 = %+v, want (1, 100, created_at, desc)", clients.gotSsoList)
+		}
+	})
+	t.Run("SSO 空页 items 省略", func(t *testing.T) {
+		clients := &fakeClientService{}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceListSsoClientsProcedure, `{"page":9}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		if strings.Contains(raw, `"items"`) {
+			t.Errorf("空页 items 应省略（§1.7 行 278）, raw = %s", raw)
+		}
+		var got adminv1.SsoClientListResponse
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetTotal() != 0 || got.GetPage() != 9 || got.GetPageSize() != 20 || len(got.GetItems()) != 0 {
+			t.Fatalf("响应 = (total=%d page=%d size=%d items=%d)", got.GetTotal(), got.GetPage(), got.GetPageSize(), len(got.GetItems()))
+		}
+	})
+	t.Run("OIDC 分页归一与投影", func(t *testing.T) {
+		clients := &fakeClientService{
+			oidcRows: []adminsvc.OidcClientDetail{{
+				Row: oidcRow, RedirectURIs: []string{"https://app.example.com/cb"},
+				Scopes: []string{"openid", "profile"},
+			}},
+			total: 1,
+		}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceListOidcClientsProcedure,
+			`{"page":3,"pageSize":0}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		var got adminv1.OidcClientListResponse
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetPage() != 3 || got.GetPageSize() != 20 || len(got.GetItems()) != 1 {
+			t.Fatalf("响应 = (page=%d size=%d items=%d)", got.GetPage(), got.GetPageSize(), len(got.GetItems()))
+		}
+		item := got.GetItems()[0]
+		if item.GetClientSecret() != "oidc-sec-64" || item.GetAccessTokenTtl() != 1800 || item.GetRefreshTokenTtl() != 864000 ||
+			len(item.GetScopes()) != 2 || item.GetScopes()[0] != "openid" || item.GetScopes()[1] != "profile" {
+			t.Fatalf("列表项 = %+v", item)
+		}
+		if clients.gotOidcList != (adminsvcClientListCall{page: 3, pageSize: 20}) {
+			t.Errorf("分页归一透传 = %+v", clients.gotOidcList)
+		}
+	})
+}
+
+// TestClientGetHandlers：{id} 定位透传 + 详情投影（明文 secret、uris、OIDC
+// scopes/TTL）+ 404 映射。
+func TestClientGetHandlers(t *testing.T) {
+	now := time.Unix(1761700000, 0).UTC()
+	ssoRow := &model.SsoClient{
+		ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	oidcRow := &model.OidcClient{
+		ID: 8, ClientID: "oidc-app", ClientSecret: "oidc-sec-64",
+		Scopes: "openid", AccessTokenTTL: 1800, RefreshTokenTTL: 864000,
+		CreatedAt: now, UpdatedAt: now,
+	}
+
+	t.Run("SSO 详情含明文 secret", func(t *testing.T) {
+		clients := &fakeClientService{
+			ssoDetail: &adminsvc.SsoClientDetail{Row: ssoRow, RedirectURIs: []string{"https://app.example.com/cb"}},
+		}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetSsoClientProcedure, `{"id":7}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		var got adminv1.SsoClient
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetId() != 7 || got.GetClientId() != "portal-main" || got.GetClientSecret() != "sec-plain-64" ||
+			len(got.GetRedirectUris()) != 1 || got.GetRedirectUris()[0] != "https://app.example.com/cb" {
+			t.Fatalf("详情 = %+v", &got)
+		}
+		if clients.gotGetSsoID != 7 {
+			t.Errorf("id 透传 = %d, want 7", clients.gotGetSsoID)
+		}
+	})
+	t.Run("OIDC 详情投影", func(t *testing.T) {
+		clients := &fakeClientService{
+			oidcDetail: &adminsvc.OidcClientDetail{
+				Row: oidcRow, RedirectURIs: []string{"*"}, Scopes: []string{"openid"},
+			},
+		}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceGetOidcClientProcedure, `{"id":8}`, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+		}
+		var got adminv1.OidcClient
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetClientSecret() != "oidc-sec-64" || got.GetAccessTokenTtl() != 1800 ||
+			len(got.GetScopes()) != 1 || got.GetScopes()[0] != "openid" || len(got.GetRedirectUris()) != 1 {
+			t.Fatalf("详情 = %+v", &got)
+		}
+		if clients.gotGetOidcID != 8 {
+			t.Errorf("id 透传 = %d, want 8", clients.gotGetOidcID)
+		}
+	})
+	t.Run("404 映射", func(t *testing.T) {
+		clients := &fakeClientService{getErr: gorm.ErrRecordNotFound}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		for _, target := range []string{
+			adminv1connect.AdminServiceGetSsoClientProcedure,
+			adminv1connect.AdminServiceGetOidcClientProcedure,
+		} {
+			resp, raw := doRPC(t, h, target, `{"id":99}`, cookie)
+			if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
+				t.Fatalf("%s: status=%d raw=%s", target, resp.StatusCode, raw)
+			}
+		}
+	})
+}
+
+// TestClientWriteHandlers：Create / Update / Delete 的请求拆解透传（Create
+// 请求中的 client_secret 字段被忽略——SsoClientInput/OidcClientInput 无该
+// 字段，服务端生成口径由类型系统挡住）+ OkResponse 空应答 + 错误三态映射
+// （invalid_request 400+ErrorInfo / already_exists 409 / not_found 404）。
+func TestClientWriteHandlers(t *testing.T) {
+	const reqCreateSso = `{"clientId":"portal-x","clientSecret":"should-be-ignored","name":"门户","redirectUris":["*"]}`
+	const reqUpdateSso = `{"id":7,"clientId":"portal-x","clientSecret":"rotated-sec","name":"新名","redirectUris":["https://app.example.com/cb"]}`
+	const reqDeleteSso = `{"id":7}`
+	const reqCreateOidc = `{"clientId":"oidc-x","clientSecret":"should-be-ignored","name":"OIDC","redirectUris":["https://a.example.com/cb"],"scopes":["openid","profile"],"accessTokenTtl":1800,"refreshTokenTtl":864000}`
+	const reqUpdateOidc = `{"id":8,"name":"改名","scopes":["openid"],"accessTokenTtl":7200,"refreshTokenTtl":2592000}`
+	const reqDeleteOidc = `{"id":8}`
+
+	t.Run("透传与空应答", func(t *testing.T) {
+		clients := &fakeClientService{}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		for target, body := range map[string]string{
+			adminv1connect.AdminServiceCreateSsoClientProcedure:  reqCreateSso,
+			adminv1connect.AdminServiceUpdateSsoClientProcedure:  reqUpdateSso,
+			adminv1connect.AdminServiceDeleteSsoClientProcedure:  reqDeleteSso,
+			adminv1connect.AdminServiceCreateOidcClientProcedure: reqCreateOidc,
+			adminv1connect.AdminServiceUpdateOidcClientProcedure: reqUpdateOidc,
+			adminv1connect.AdminServiceDeleteOidcClientProcedure: reqDeleteOidc,
+		} {
+			resp, raw := doRPC(t, h, target, body, cookie)
+			if resp.StatusCode != http.StatusOK || raw != "{}" {
+				t.Fatalf("%s: (%d, %s), want (200, {})", target, resp.StatusCode, raw)
+			}
+		}
+		cs := clients.gotCreateSso
+		if cs.ClientID != "portal-x" || cs.Name != "门户" || len(cs.RedirectURIs) != 1 || cs.RedirectURIs[0] != "*" {
+			t.Errorf("create sso 透传 = %+v", cs)
+		}
+		us := clients.gotUpdateSso
+		if us.id != 7 || us.p.ClientID != "portal-x" || us.p.ClientSecret != "rotated-sec" ||
+			us.p.Name != "新名" || len(us.p.RedirectURIs) != 1 || us.p.RedirectURIs[0] != "https://app.example.com/cb" {
+			t.Errorf("update sso 透传 = %+v", us)
+		}
+		if clients.gotDeleteSsoID != 7 {
+			t.Errorf("delete sso 透传 = %d", clients.gotDeleteSsoID)
+		}
+		co := clients.gotCreateOidc
+		if co.ClientID != "oidc-x" || co.Name != "OIDC" || len(co.RedirectURIs) != 1 ||
+			len(co.Scopes) != 2 || co.Scopes[0] != "openid" || co.AccessTokenTTL != 1800 || co.RefreshTokenTTL != 864000 {
+			t.Errorf("create oidc 透传 = %+v", co)
+		}
+		uo := clients.gotUpdateOidc
+		if uo.id != 8 || uo.p.Name != "改名" || len(uo.p.Scopes) != 1 || uo.p.Scopes[0] != "openid" ||
+			uo.p.AccessTokenTTL != 7200 || uo.p.RefreshTokenTTL != 2592000 || uo.p.ClientID != "" || len(uo.p.RedirectURIs) != 0 {
+			t.Errorf("update oidc 透传 = %+v", uo)
+		}
+		if clients.gotDeleteOidcID != 8 {
+			t.Errorf("delete oidc 透传 = %d", clients.gotDeleteOidcID)
+		}
+	})
+	t.Run("invalid_request 映射", func(t *testing.T) {
+		clients := &fakeClientService{crudErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateSsoClientProcedure, reqCreateSso, cookie)
+		if resp.StatusCode != http.StatusBadRequest || decodeErrorCode(t, raw) != "invalid_argument" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (%q, %q), want (admin, invalid_request)", info.GetDomain(), info.GetCode())
+		}
+	})
+	t.Run("already_exists 映射", func(t *testing.T) {
+		clients := &fakeClientService{crudErr: adminsvc.ErrDuplicateKey}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateSsoClientProcedure, reqCreateSso, cookie)
+		if resp.StatusCode != http.StatusConflict || decodeErrorCode(t, raw) != "already_exists" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
+	t.Run("404 映射", func(t *testing.T) {
+		clients := &fakeClientService{crudErr: gorm.ErrRecordNotFound}
+		tokens, epochs, h := newAdminHandlerClients(t, clients)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDeleteOidcClientProcedure, reqDeleteOidc, cookie)
+		if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
 }

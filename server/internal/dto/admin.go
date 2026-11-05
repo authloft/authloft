@@ -431,7 +431,7 @@ func AdminUser(row *model.User) *adminv1.AdminUser {
 }
 
 // AdminCredentialSummary user_credential 行 → 凭证概览条目（§5.4 行 1250
-//「凭证概览」：kind / is_enabled；secret 不透出，UserCredentialSummary 无该
+// 「凭证概览」：kind / is_enabled；secret 不透出，UserCredentialSummary 无该
 // 字段）。含全部 kind（mfa_setting 行即「MFA 已开启」的行存在性投影）。
 func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSummary {
 	if row == nil {
@@ -451,7 +451,7 @@ func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSu
 }
 
 // AdminThirdpartyBinding user_thirdparty_bind 行 → 绑定条目（§5.4 行 1250
-//「绑定」）。union_id 恒零值（protojson 省略）：§12.7 行 1543 普通行不存
+// 「绑定」）。union_id 恒零值（protojson 省略）：§12.7 行 1543 普通行不存
 // unionid，Union 行的 unionid 即其 open_id 已在列表可见——union_id 字段
 // 留给未来跨行归并视图，不在本投影内拼装（默认口径，待定）。
 func AdminThirdpartyBinding(row *model.UserThirdpartyBind) *adminv1.UserThirdpartyBinding {
@@ -568,5 +568,49 @@ func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
 		Target:    row.Target,
 		Detail:    decodeProfileExtra(row.Detail),
 		CreatedAt: row.CreatedAt.Unix(),
+	}
+}
+
+// AdminSsoClient sso_client 行 → SsoClient 消息（§5.5 行 1262 列表项与
+// GetSsoClient 详情共用，client.proto：一个消息两用）。client_secret 按
+// §5.2 行 1170 Provider 凭证明文口径透出（列表与详情同消息，仅 admin 会话
+// 可达——admin 拦截器保证，本文件不做二次脱敏也不落日志）。redirect_uris
+// 由 service 经 repo.ParseClientRedirectUris（§12.3 编解码唯一出口）解析后
+// 以 []string 传入；nil / 空切片按 proto3 空 repeated 序列化省略（空页
+// items 省略同理由，§1.7 行 278）。
+func AdminSsoClient(row *model.SsoClient, uris []string) *adminv1.SsoClient {
+	if row == nil {
+		return &adminv1.SsoClient{}
+	}
+	return &adminv1.SsoClient{
+		Id:           row.ID,
+		ClientId:     row.ClientID,
+		ClientSecret: row.ClientSecret,
+		Name:         row.Name,
+		RedirectUris: uris,
+		CreatedAt:    row.CreatedAt.Unix(),
+		UpdatedAt:    row.UpdatedAt.Unix(),
+	}
+}
+
+// AdminOidcClient oidc_client 行 → OidcClient 消息（§5.5 行 1264 列表项与
+// GetOidcClient 详情共用）：SSO 字段基线 + scopes[] / accessTokenTtl /
+// refreshTokenTtl（§5.5 行 1264「额外」逐字）。uris / scopes 由 service
+// 解码 / 拆分后传入（scopes[] ↔ 逗号串转换归 service，model 注释）。
+func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.OidcClient {
+	if row == nil {
+		return &adminv1.OidcClient{}
+	}
+	return &adminv1.OidcClient{
+		Id:              row.ID,
+		ClientId:        row.ClientID,
+		ClientSecret:    row.ClientSecret,
+		Name:            row.Name,
+		RedirectUris:    uris,
+		Scopes:          scopes,
+		AccessTokenTtl:  int64(row.AccessTokenTTL),
+		RefreshTokenTtl: int64(row.RefreshTokenTTL),
+		CreatedAt:       row.CreatedAt.Unix(),
+		UpdatedAt:       row.UpdatedAt.Unix(),
 	}
 }

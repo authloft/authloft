@@ -12,6 +12,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"google.golang.org/protobuf/proto"
@@ -56,12 +58,64 @@ func (r *ClientRepo) FindOidcClientByClientID(ctx context.Context, clientID stri
 	return &c, nil
 }
 
+// FindSsoClientByID 按主键 id 取 SSO 客户端；未命中返回包装的
+// gorm.ErrRecordNotFound（GetSsoClient / UpdateSsoClient 按 §5.5 行 1259 的
+// int64 id 定位，Find 操作的主键形态，口径同 UserRepo.FindByID）。
+func (r *ClientRepo) FindSsoClientByID(ctx context.Context, id int64) (*model.SsoClient, error) {
+	var c model.SsoClient
+	if err := r.db.WithContext(ctx).Take(&c, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("client repo: find sso client by id: %w", err)
+	}
+	return &c, nil
+}
+
+// FindOidcClientByID 按主键 id 取 OIDC 客户端；未命中返回包装的
+// gorm.ErrRecordNotFound（口径同 FindSsoClientByID）。
+func (r *ClientRepo) FindOidcClientByID(ctx context.Context, id int64) (*model.OidcClient, error) {
+	var c model.OidcClient
+	if err := r.db.WithContext(ctx).Take(&c, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("client repo: find oidc client by id: %w", err)
+	}
+	return &c, nil
+}
+
 // ClientListQuery 客户端列表分页入参；分页按 §1.7（page 从 1 开始、
-// pageSize 默认 20、上限 100）。文档未定义客户端列表筛选与排序字段，
-// repo 固定 ORDER BY id ASC（创建序）保证分页全序稳定。
+// pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定（§1.7 行 277
+// 后端不做白名单强制校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名
+// 静默回落 id，order 非 asc 一律 desc），不拒绝请求；口径同
+// user_repo.UserListQuery。
 type ClientListQuery struct {
+	Sort     string
+	Order    string
 	Page     int
 	PageSize int
+}
+
+// clientSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——
+// sso_client / oidc_client 表列名均在该集合内；字符集校验是防 ORDER BY
+// 注入的格式约束，不是取值白名单：§1.7 行 277 后端不做白名单强制校验）。
+var clientSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+// clientDefaultSortColumn 默认排序列（缺省 / 非法 sort 的回落值）。
+const clientDefaultSortColumn = "id"
+
+// orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
+//（大小写不敏感，其余含缺省一律 desc）；非 id 主序恒追加 id 次序保证分页
+// 全序稳定（同值行跨页不漂移，口径同 user_repo.orderClause /
+// webauthn_repo.ListByUser）。
+func (q ClientListQuery) orderClause() string {
+	col := q.Sort
+	if col == "" || !clientSortColumnPattern.MatchString(col) {
+		col = clientDefaultSortColumn
+	}
+	dir := "DESC"
+	if strings.EqualFold(q.Order, "asc") {
+		dir = "ASC"
+	}
+	if col == clientDefaultSortColumn {
+		return col + " " + dir
+	}
+	return "`" + col + "` " + dir + ", id DESC"
 }
 
 // normalize 分页参数归一（§1.7：page 1 起、pageSize 默认 20 上限 100）。
@@ -89,7 +143,7 @@ func (r *ClientRepo) ListSsoClients(ctx context.Context, q ClientListQuery) ([]m
 	}
 	var rows []model.SsoClient
 	err := r.db.WithContext(ctx).
-		Order("id ASC").
+		Order(q.orderClause()).
 		Limit(size).
 		Offset((page - 1) * size).
 		Find(&rows).Error
@@ -109,7 +163,7 @@ func (r *ClientRepo) ListOidcClients(ctx context.Context, q ClientListQuery) ([]
 	}
 	var rows []model.OidcClient
 	err := r.db.WithContext(ctx).
-		Order("id ASC").
+		Order(q.orderClause()).
 		Limit(size).
 		Offset((page - 1) * size).
 		Find(&rows).Error
