@@ -22,6 +22,7 @@
  * 值域交叉约束（行 1363）由前端设置页自律保证：settingsDraftIssue。
  */
 import type { SettingsResponse } from '../gen/proto/api/admin/v1/settings_pb';
+import { t } from '../shared/i18n';
 import { toCount } from '../shared/utils/int';
 
 /** 密码最大长度服务端硬上限（§5.6 行 1297「可调低不可调高」；行 1304 防 DoS）。 */
@@ -184,43 +185,64 @@ export function draftFromSettings(response: SettingsResponse): SettingsDraft {
 
 /**
  * 已启用的登录方式选项（§5.6 行 1330 值域 = 因子名 / thirdparty，默认全集）。
- * 文案与 api.ts mfaFactorLabel 语义同源但独立持有（api.ts 将 import 本模块
- * 类型，反向 import 成环；label 小量重复可接受）。
+ * 因子名文案复用 factors.* 既有键（与 api.ts mfaFactorLabel 同键同源，无重复；
+ * api.ts 仍 import 本模块类型，反向 import 成环，各自取键不入模块依赖）。
+ * 改函数调用期求值——模块级常量求值先于 entry setLocale 执行，
+ * label 会冻结在默认语言（en 浏览器恒显 zh）；本文件四表统一此形态
+ * （NAV_ITEMS textKey 先例的等价受纳形态，stringList placeholder
+ * 含非文案字面 example.com 故整体取函数化）。
  */
-export const LOGIN_METHOD_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: 'password', label: '密码' },
-  { value: 'otp_sms', label: '短信验证码' },
-  { value: 'otp_email', label: '邮箱验证码' },
-  { value: 'webauthn', label: '通行密钥' },
-  { value: 'thirdparty', label: '第三方登录' },
-];
+export function getLoginMethodOptions(): readonly {
+  readonly value: string;
+  readonly label: string;
+}[] {
+  return [
+    { value: 'password', label: t('factors.password') },
+    { value: 'otp_sms', label: t('factors.otp_sms') },
+    { value: 'otp_email', label: t('factors.otp_email') },
+    { value: 'webauthn', label: t('factors.webauthn') },
+    { value: 'thirdparty', label: t('factors.thirdparty') },
+  ];
+}
 
 /**
  * 系统开放的二次因子选项（§5.6 行 1336 值域：recovery_code 随 totp 生效、
- * 不单列，故不入选项）。
+ * 不单列，故不入选项）。因子名文案复用 factors.* 既有键（求值时机同上）。
  */
-export const MFA_METHOD_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: 'totp', label: 'TOTP 动态码' },
-  { value: 'otp_sms', label: '短信验证码' },
-  { value: 'otp_email', label: '邮箱验证码' },
-  { value: 'webauthn', label: '通行密钥' },
-];
+export function getMfaMethodOptions(): readonly {
+  readonly value: string;
+  readonly label: string;
+}[] {
+  return [
+    { value: 'totp', label: t('factors.totp') },
+    { value: 'otp_sms', label: t('factors.otp_sms') },
+    { value: 'otp_email', label: t('factors.otp_email') },
+    { value: 'webauthn', label: t('factors.webauthn') },
+  ];
+}
 
 /**
  * https_deployment 三态选项（§5.6 行 1354：string 三态 true / false / auto，
  * 默认 auto；行 1356 admin 设置页中文文案定稿：选项「自动推断 / 强制开启 /
- * 强制关闭」逐字）。
+ * 强制关闭」逐字，经 admin.* 键维护；求值时机同上，调用期取文案）。
  */
-export const HTTPS_DEPLOYMENT_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
-  { value: 'auto', label: '自动推断' },
-  { value: 'true', label: '强制开启' },
-  { value: 'false', label: '强制关闭' },
-];
+export function getHttpsDeploymentOptions(): readonly {
+  readonly value: string;
+  readonly label: string;
+}[] {
+  return [
+    { value: 'auto', label: t('admin.httpsDeploymentAuto') },
+    { value: 'true', label: t('admin.httpsDeploymentForceOn') },
+    { value: 'false', label: t('admin.httpsDeploymentForceOff') },
+  ];
+}
 
-/** https_deployment 合法取值集（§5.6 行 1354/1361：非三态 → invalid_request）。 */
-export const HTTPS_DEPLOYMENT_VALUES: readonly string[] = HTTPS_DEPLOYMENT_OPTIONS.map(
-  (option) => option.value,
-);
+/**
+ * https_deployment 合法取值集（§5.6 行 1354/1361：非三态 → invalid_request）。
+ * 纯值集合不涉文案求值时机，保持模块级常量（与 getHttpsDeploymentOptions
+ * 的 value 集恒等：§5.6 行 1354 三态封闭值域）。
+ */
+export const HTTPS_DEPLOYMENT_VALUES: readonly string[] = ['auto', 'true', 'false'];
 
 /** 字段控件形态（判别联合：kind 收窄 → key 类型随之收窄，渲染零断言）。 */
 export type SettingsFieldMeta =
@@ -279,310 +301,313 @@ export interface SettingsSectionMeta {
  * 设置表单分区清单（渲染数据源）：按 §5.6 四张表归组为 9 区——密码策略 /
  * 账号与注册 / 验证码限流 / 登录方式与 MFA / 密码失败保护 / 会话 Cookie 多
  * 域名与 HTTPS 部署 / 队列参数 / Provider 与网关 / 日志与静态资源；36 键
- * 全覆盖、无重复。
+ * 全覆盖、无重复。函数调用期求值（消费方组件渲染期调用），label /
+ * hint / unit / addText / placeholder 经 t() 取当前语言文案——模块级常量
+ * 求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
  */
-export const SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [
+export function getSettingsSections(): readonly SettingsSectionMeta[] {
+  return [
   {
-    title: '密码策略',
+    title: t('admin.settingsSectionPasswordPolicy'),
     fields: [
       {
         kind: 'number',
         key: 'pwdMinLength',
-        label: '最小长度',
-        hint: '默认 8',
+        label: t('admin.pwdMinLengthLabel'),
+        hint: t('admin.pwdMinLengthHint'),
       },
       {
         kind: 'number',
         key: 'pwdMaxLength',
-        label: '最大长度',
-        hint: '可调低不可调高，服务端硬上限 64（默认 64）',
+        label: t('admin.pwdMaxLengthLabel'),
+        hint: t('admin.pwdMaxLengthHint'),
       },
       {
         kind: 'number',
         key: 'pwdRequireClasses',
-        label: '须满足的字符类数',
-        hint: '1-3；字符类 = 大写 / 小写 / 数字，符号不计入（默认 3）',
+        label: t('admin.pwdRequireClassesLabel'),
+        hint: t('admin.pwdRequireClassesHint'),
       },
       {
         kind: 'switch',
         key: 'pwdDisallowUsername',
-        label: '禁止密码包含用户名',
+        label: t('admin.pwdDisallowUsernameLabel'),
       },
       {
         kind: 'switch',
         key: 'pwdDisallowCommon',
-        label: '禁止命中弱口令字典',
+        label: t('admin.pwdDisallowCommonLabel'),
       },
     ],
   },
   {
-    title: '账号与注册',
+    title: t('admin.settingsSectionAccountRegistration'),
     fields: [
       {
         kind: 'switch',
         key: 'allowPasswordReset',
-        label: '开放自助重置密码',
-        hint: '关闭后重置密码一律被拒绝，不发码、不校验验证码',
+        label: t('admin.allowPasswordResetLabel'),
+        hint: t('admin.allowPasswordResetHint'),
       },
       {
         kind: 'switch',
         key: 'allowRegistration',
-        label: '注册总开关',
-        hint: '关闭后注册一律被拒绝',
+        label: t('admin.allowRegistrationLabel'),
+        hint: t('admin.allowRegistrationHint'),
       },
       {
         kind: 'switch',
         key: 'allowSignupPassword',
-        label: '用户名 + 密码注册入口',
+        label: t('admin.allowSignupPasswordLabel'),
       },
       {
         kind: 'switch',
         key: 'allowSignupPhone',
-        label: '手机号注册入口',
+        label: t('admin.allowSignupPhoneLabel'),
       },
       {
         kind: 'switch',
         key: 'allowSignupEmail',
-        label: '邮箱注册入口',
+        label: t('admin.allowSignupEmailLabel'),
       },
     ],
   },
   {
-    title: '验证码限流',
+    title: t('admin.settingsSectionOtpRateLimit'),
     fields: [
       {
         kind: 'number',
         key: 'otpResendInterval',
-        label: '同目标重发冷却',
-        unit: '秒',
-        hint: '默认 60',
+        label: t('admin.otpResendIntervalLabel'),
+        unit: t('admin.unitSeconds'),
+        hint: t('admin.otpResendIntervalHint'),
       },
       {
         kind: 'number',
         key: 'otpTtl',
-        label: '验证码有效期',
-        unit: '秒',
-        hint: '默认 300',
+        label: t('admin.otpTtlLabel'),
+        unit: t('admin.unitSeconds'),
+        hint: t('admin.otpTtlHint'),
       },
       {
         kind: 'number',
         key: 'otpMaxAttempts',
-        label: '单条验证码最大校验失败次数',
-        hint: '超限即作废（默认 5）',
+        label: t('admin.otpMaxAttemptsLabel'),
+        hint: t('admin.otpMaxAttemptsHint'),
       },
       {
         kind: 'number',
         key: 'otpDailyLimitTarget',
-        label: '单目标每日发送上限',
-        unit: '次',
-        hint: '默认 10',
+        label: t('admin.otpDailyLimitTargetLabel'),
+        unit: t('admin.unitTimes'),
+        hint: t('admin.otpDailyLimitTargetHint'),
       },
       {
         kind: 'number',
         key: 'otpDailyLimitIp',
-        label: '单 IP 每日发送上限',
-        unit: '次',
-        hint: '默认 50',
+        label: t('admin.otpDailyLimitIpLabel'),
+        unit: t('admin.unitTimes'),
+        hint: t('admin.otpDailyLimitIpHint'),
       },
     ],
   },
   {
-    title: '登录方式与 MFA',
+    title: t('admin.settingsSectionLoginAndMfa'),
     fields: [
       {
         kind: 'multiSelect',
         key: 'loginMethods',
-        label: '已启用的登录方式',
-        options: LOGIN_METHOD_OPTIONS,
-        hint: '只控登录，不参与注册判定；不在其中的方式登录时被拒绝',
+        label: t('admin.loginMethodsLabel'),
+        options: getLoginMethodOptions(),
+        hint: t('admin.loginMethodsHint'),
       },
       {
         kind: 'switch',
         key: 'mfaEnabled',
-        label: '两步验证总开关',
-        hint: '关闭后所有用户不再二次验证',
+        label: t('admin.mfaEnabledLabel'),
+        hint: t('admin.mfaEnabledHint'),
       },
       {
         kind: 'multiSelect',
         key: 'mfaMethods',
-        label: '系统开放的二次因子',
-        options: MFA_METHOD_OPTIONS,
-        hint: '恢复码随 TOTP 生效，不单列',
+        label: t('admin.mfaMethodsLabel'),
+        options: getMfaMethodOptions(),
+        hint: t('admin.mfaMethodsHint'),
       },
     ],
   },
   {
-    title: '密码失败保护',
+    title: t('admin.settingsSectionPwdFailProtection'),
     fields: [
       {
         kind: 'number',
         key: 'pwdFailCapture',
-        label: '当日密码错误人机校验阈值',
-        hint: '同一账号当日密码错误达此次数后，登录必须携带人机校验（默认 3）',
+        label: t('admin.pwdFailCaptureLabel'),
+        hint: t('admin.pwdFailCaptureHint'),
       },
       {
         kind: 'number',
         key: 'pwdFailBan',
-        label: '禁止密码登录阈值',
-        hint: '累计失败达此次数后禁止密码登录（默认 6）',
+        label: t('admin.pwdFailBanLabel'),
+        hint: t('admin.pwdFailBanHint'),
       },
       {
         kind: 'number',
         key: 'pwdBanTtl',
-        label: '禁止密码登录时长',
-        unit: '秒',
-        hint: '默认 21600（6 小时）',
+        label: t('admin.pwdBanTtlLabel'),
+        unit: t('admin.unitSeconds'),
+        hint: t('admin.pwdBanTtlHint'),
       },
     ],
   },
   {
-    title: '会话、Cookie 与多域名',
+    title: t('admin.settingsSectionSessionCookie'),
     fields: [
       {
         kind: 'number',
         key: 'sessionTtl',
-        label: '会话与 Cookie 有效期',
-        unit: '秒',
-        hint: '默认 604800（7 天）',
+        label: t('admin.sessionTtlLabel'),
+        unit: t('admin.unitSeconds'),
+        hint: t('admin.sessionTtlHint'),
       },
       {
         kind: 'text',
         key: 'cookieName',
-        label: '会话 Cookie 名',
-        hint: '默认 al_session',
+        label: t('admin.cookieNameLabel'),
+        hint: t('admin.cookieNameHint'),
       },
       {
         kind: 'select',
         key: 'httpsDeployment',
-        label: 'HTTPS 部署',
-        options: HTTPS_DEPLOYMENT_OPTIONS,
+        label: t('admin.httpsDeploymentLabel'),
+        options: getHttpsDeploymentOptions(),
         // §5.6 行 1356 admin 设置页中文文案定稿逐字。
-        hint: '声明本实例的 HTTPS 部署形态，决定会话 Cookie 的 Secure 属性：自动推断 = 仅 HTTPS 请求下标记为安全；强制开启 = 按部署于 HTTPS 处理，明文 HTTP 环境下浏览器将不保存该 Cookie；强制关闭 = 按明文部署处理，Cookie 不带 Secure 标记',
+        hint: t('admin.httpsDeploymentHint'),
       },
       {
         kind: 'stringList',
         key: 'ssoDomains',
-        label: '多根域名同步列表',
-        addText: '添加域名',
+        label: t('admin.ssoDomainsLabel'),
+        addText: t('admin.addDomain'),
         placeholder: 'example.com',
-        hint: '登录 / 登出时逐个同步',
+        hint: t('admin.ssoDomainsHint'),
       },
     ],
   },
   {
-    title: '队列参数',
+    title: t('admin.settingsSectionQueue'),
     fields: [
       {
         kind: 'number',
         key: 'queueWorkers',
-        label: '延迟写入队列 worker 数',
-        hint: '默认 4',
+        label: t('admin.queueWorkersLabel'),
+        hint: t('admin.queueWorkersHint'),
       },
       {
         kind: 'number',
         key: 'queueCapacity',
-        label: '队列长度（ring buffer）',
-        hint: '默认 8192',
+        label: t('admin.queueCapacityLabel'),
+        hint: t('admin.queueCapacityHint'),
       },
       {
         kind: 'number',
         key: 'queueBatch',
-        label: '攒批条数阈值',
-        hint: '默认 200',
+        label: t('admin.queueBatchLabel'),
+        hint: t('admin.queueBatchHint'),
       },
       {
         kind: 'number',
         key: 'queueFlushMs',
-        label: '攒批时间窗',
-        unit: '毫秒',
-        hint: '默认 2000',
+        label: t('admin.queueFlushMsLabel'),
+        unit: t('admin.unitMilliseconds'),
+        hint: t('admin.queueFlushMsHint'),
       },
     ],
   },
   {
-    title: 'Provider 与网关',
+    title: t('admin.settingsSectionProviderAndGateway'),
     fields: [
       {
         kind: 'text',
         key: 'captchaProviderKey',
-        label: '当前生效的 Captcha Provider',
-        hint: '留空 = 内置图形码',
+        label: t('admin.captchaProviderKeyLabel'),
+        hint: t('admin.captchaProviderKeyHint'),
       },
       {
         kind: 'text',
         key: 'smsProviderKey',
-        label: '当前生效的短信 Provider',
-        hint: '留空 = 未启用外部短信渠道',
+        label: t('admin.smsProviderKeyLabel'),
+        hint: t('admin.smsProviderKeyHint'),
       },
       {
         kind: 'text',
         key: 'emailProviderKey',
-        label: '当前生效的邮件 Provider',
-        hint: '留空 = 未启用外部邮件渠道',
+        label: t('admin.emailProviderKeyLabel'),
+        hint: t('admin.emailProviderKeyHint'),
       },
       {
         kind: 'text',
         key: 'avatarStorageProvider',
-        label: '头像 / 渠道图标使用的 Storage Provider',
-        hint: '留空 = 未启用外部存储',
+        label: t('admin.avatarStorageProviderLabel'),
+        hint: t('admin.avatarStorageProviderHint'),
       },
       {
         kind: 'stringList',
         key: 'gatewayTokens',
-        label: '网关 Token',
-        addText: '添加 Token',
-        placeholder: '网关调用方令牌',
-        hint: '可多个',
+        label: t('admin.gatewayTokensLabel'),
+        addText: t('admin.addGatewayToken'),
+        placeholder: t('admin.gatewayTokenPlaceholder'),
+        hint: t('admin.gatewayTokensHint'),
       },
     ],
   },
   {
-    title: '日志与静态资源',
+    title: t('admin.settingsSectionLogAndStatic'),
     fields: [
       {
         kind: 'number',
         key: 'eventlogRetentionDays',
-        label: '事件日志保留天数',
-        unit: '天',
-        hint: '默认 180',
+        label: t('admin.eventlogRetentionDaysLabel'),
+        unit: t('admin.unitDays'),
+        hint: t('admin.eventlogRetentionDaysHint'),
       },
       {
         kind: 'text',
         key: 'staticBase',
-        label: '静态资源基址（CDN）',
-        hint: '决定空壳页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
+        label: t('admin.staticBaseLabel'),
+        hint: t('admin.staticBaseHint'),
       },
     ],
   },
-];
+  ];
+}
 
-/** 数字字段非负整数校验失败文案。 */
-const NUMBER_ISSUE_TEXT = '数字设置项须为不小于 0 的整数';
-
-/** 交叉校验失败文案（§5.6 行 1363 交叉约束由前端设置页自律保证）。 */
+/**
+ * 交叉校验失败文案（§5.6 行 1363 交叉约束由前端设置页自律保证）。
+ */
 export function settingsDraftIssue(draft: SettingsDraft): string | null {
   for (const key of NUMBER_KEYS) {
     const value = draft[key];
     if (!Number.isSafeInteger(value) || value < 0) {
-      return NUMBER_ISSUE_TEXT;
+      return t('admin.settingsNumberIssue');
     }
   }
   if (
     draft.pwdRequireClasses < PWD_REQUIRE_CLASSES_MIN ||
     draft.pwdRequireClasses > PWD_REQUIRE_CLASSES_MAX
   ) {
-    return '须满足的字符类数须为 1-3';
+    return t('admin.pwdRequireClassesIssue');
   }
   if (draft.pwdMinLength > draft.pwdMaxLength) {
-    return '密码最小长度不能大于最大长度';
+    return t('admin.pwdMinOverMaxIssue');
   }
   if (draft.pwdMaxLength > PWD_MAX_LENGTH_HARD_CAP) {
-    return '密码最大长度不能超过 64（服务端硬上限，可调低不可调高）';
+    return t('admin.pwdMaxOverCapIssue');
   }
   // §5.6 行 1361：https_deployment 取值非 true / false / auto → invalid_request
   //（服务端拒绝；前端自律前置拦截，防全量提交被整体打回）。
   if (!HTTPS_DEPLOYMENT_VALUES.includes(draft.httpsDeployment)) {
-    return 'HTTPS 部署取值须为 自动推断 / 强制开启 / 强制关闭';
+    return t('admin.httpsDeploymentIssue');
   }
   return null;
 }

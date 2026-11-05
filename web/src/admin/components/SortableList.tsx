@@ -18,6 +18,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
+import { t } from '../../shared/i18n';
 import styles from './SortableList.module.less';
 
 /**
@@ -63,7 +64,7 @@ export function SortableList<T>(props: SortableListProps<T>): ReactNode {
     renderItem,
     onSort,
     disabled = false,
-    handleLabel = '拖拽排序',
+    handleLabel = t('admin.dragSortHandle'),
   } = props;
   const [drag, setDrag] = useState<DragState | null>(null);
 

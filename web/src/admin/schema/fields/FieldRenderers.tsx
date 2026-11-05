@@ -13,6 +13,7 @@
 import type { ReactNode } from 'react';
 import { Checkbox, Input, InputNumber, Select } from '@douyinfe/semi-ui-19';
 import type { SchemaField } from '../../../gen/proto/api/admin/v1/schema_pb';
+import { t } from '../../../shared/i18n';
 import { JsonEditor } from '../../components/JsonEditor';
 import type { FieldRendererProps } from '../FieldRegistry';
 import styles from '../SchemaForm.module.less';
@@ -132,7 +133,7 @@ export function SelectField(props: FieldRendererProps): ReactNode {
         }))}
         onChange={(value) => props.onChange(String(value))}
         disabled={props.disabled}
-        placeholder="请选择"
+        placeholder={t('common.selectPlaceholder')}
       />
     </FieldShell>
   );
@@ -157,7 +158,7 @@ export function UnsupportedField(props: FieldRendererProps): ReactNode {
   return (
     <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
       <p role="note" className={styles.unsupported}>
-        暂不支持的字段类型：{props.field.type}
+        {t('admin.unsupportedFieldType', { type: props.field.type })}
       </p>
     </FieldShell>
   );

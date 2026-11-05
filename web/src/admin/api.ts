@@ -34,7 +34,7 @@ import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
 import { StructSchema } from '@bufbuild/protobuf/wkt';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
-import { t } from '../shared/i18n';
+import { t, type I18nKey } from '../shared/i18n';
 import { FIRST_PAGE, MAX_PAGE_SIZE, type TableQueryState } from '../shared/app-ui/dataTableLogic';
 import { toCount } from '../shared/utils/int';
 import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
@@ -233,13 +233,13 @@ export function testProvider(request: TestProviderRequest): Promise<OkResponse> 
 export function policyTags(provider: Provider): readonly string[] {
   const tags: string[] = [];
   if (provider.enableSignin) {
-    tags.push('允许登录');
+    tags.push(t('admin.policyTagAllowSignin'));
   }
   if (provider.enableSignup) {
-    tags.push('允许注册');
+    tags.push(t('admin.policyTagAllowSignup'));
   }
   if (provider.autoBind) {
-    tags.push('自动绑定');
+    tags.push(t('admin.policyTagAutoBind'));
   }
   return tags;
 }
@@ -287,22 +287,19 @@ export function adminDisplayName(me: MeResponse): string {
   if (me.nickname !== '') {
     return me.nickname;
   }
-  return me.username !== '' ? me.username : '管理员';
+  return me.username !== '' ? me.username : t('admin.displayNameFallback');
 }
-
-/** 非 ApiError（未知异常）兜底文案；与 errors.code.unknown 同文（i18n 无独立键）。 */
-const UNKNOWN_ERROR_TEXT = '操作失败，请稍后重试';
 
 /**
  * 提交错误 → 展示文案（§1.5 行 202：i18n 优先；404 掩护即经
  * errors.code.not_found 出通用「资源不存在」文案，不暴露管理面语义）；
- * 未知异常兜底不透出内部信息（既定口径）。
+ * 未知异常兜底不透出内部信息（既定口径），复用 errors.code.unknown。
  */
 export function apiErrorText(error: unknown): string {
   if (error instanceof ApiError) {
     return t(resolveCode(error).i18nKey);
   }
-  return UNKNOWN_ERROR_TEXT;
+  return t('errors.code.unknown');
 }
 
 // ---------------------------------------------------------------------------
@@ -368,10 +365,17 @@ export const USER_STATUS_DISABLED = BigInt(0);
  */
 export const USER_STATUS_DATA_INDEX = 'user_status';
 
-/** 状态筛选下拉（DataTableColumn.filters；值 = user_status 十进制字符串）。 */
-export const USER_STATUS_FILTERS: readonly { readonly value: string; readonly text: string }[] = [
-  { value: '1', text: '正常' },
-  { value: '0', text: '禁用' },
+/**
+ * 状态筛选下拉（DataTableColumn.filters；值 = user_status 十进制字符串）。
+ * textKey 字段化——模块级常量只存 i18n 键（求值先于 entry
+ * setLocale 会冻结在默认语言），文案由消费方渲染期 t(textKey) 取。
+ */
+export const USER_STATUS_FILTERS: readonly {
+  readonly value: string;
+  readonly textKey: I18nKey;
+}[] = [
+  { value: '1', textKey: 'admin.userStatusEnabled' },
+  { value: '0', textKey: 'admin.userStatusDisabled' },
 ];
 
 /**
@@ -468,39 +472,57 @@ export function formatUnixTime(seconds: bigint): string {
 
 /** user_status 展示文案（§5.4 行 1251 值域 1/0）。 */
 export function userStatusLabel(userStatus: bigint): string {
-  return userStatus === USER_STATUS_ENABLED ? '正常' : '禁用';
+  return userStatus === USER_STATUS_ENABLED
+    ? t('admin.userStatusEnabled')
+    : t('admin.userStatusDisabled');
 }
 
 /**
- * 凭证类型展示文案（《后端架构》§4.3 行 669 kind 五值域：password|totp|
- * webauthn|recovery_code|mfa_setting——GetUser 凭证概览含 mfa_setting
- * 行；跨版本新增原样兜底）。
+ * 凭证类型 kind → i18n 键（《后端架构》§4.3 行 669 kind 五值域：password|
+ * totp|webauthn|recovery_code|mfa_setting——GetUser 凭证概览含
+ * mfa_setting 行；跨版本新增原样兜底）。表存键不存文案（模块级
+ * 求值会冻结 locale），credentialKindLabel 调用期 t()。
  */
-const USER_CREDENTIAL_KIND_LABELS: Readonly<Record<string, string>> = {
-  password: '密码',
-  totp: 'TOTP 动态码',
-  webauthn: '通行密钥',
-  recovery_code: '恢复码',
-  mfa_setting: 'MFA 开关',
+const USER_CREDENTIAL_KIND_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
+  password: 'factors.password',
+  totp: 'factors.totp',
+  webauthn: 'factors.webauthn',
+  recovery_code: 'factors.recovery_code',
+  mfa_setting: 'admin.credentialKindMfaSetting',
 };
 
-/** 凭证类型 kind → 展示文案（§5.4 行 1250 凭证概览）。 */
+/** 凭证类型 kind → 展示文案（§5.4 行 1250 凭证概览；未知值原样兜底）。 */
 export function credentialKindLabel(kind: string): string {
-  return USER_CREDENTIAL_KIND_LABELS[kind] ?? kind;
+  const labelKey = Object.prototype.hasOwnProperty.call(
+    USER_CREDENTIAL_KIND_LABEL_KEYS,
+    kind,
+  )
+    ? USER_CREDENTIAL_KIND_LABEL_KEYS[kind]
+    : undefined;
+  return labelKey === undefined ? kind : t(labelKey);
 }
 
-/** MFA 因子展示文案（§3.5 行 891-895 factor 值域；新增值原样兜底）。 */
-const MFA_FACTOR_LABELS: Readonly<Record<string, string>> = {
-  totp: 'TOTP 动态码',
-  otp_sms: '短信验证码',
-  otp_email: '邮箱验证码',
-  webauthn: '通行密钥',
-  recovery_code: '恢复码',
+/**
+ * MFA 因子 factor → i18n 键（§3.5 行 891-895 factor 值域；新增值原样兜底；
+ * 表存键不存文案，口径同 USER_CREDENTIAL_KIND_LABEL_KEYS）。
+ */
+const MFA_FACTOR_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
+  totp: 'factors.totp',
+  otp_sms: 'factors.otp_sms',
+  otp_email: 'factors.otp_email',
+  webauthn: 'factors.webauthn',
+  recovery_code: 'factors.recovery_code',
 };
 
 /** MFA 因子 factor → 展示文案。 */
 export function mfaFactorLabel(factor: string): string {
-  return MFA_FACTOR_LABELS[factor] ?? factor;
+  const labelKey = Object.prototype.hasOwnProperty.call(
+    MFA_FACTOR_LABEL_KEYS,
+    factor,
+  )
+    ? MFA_FACTOR_LABEL_KEYS[factor]
+    : undefined;
+  return labelKey === undefined ? factor : t(labelKey);
 }
 
 /**
@@ -610,8 +632,12 @@ export const OIDC_ACCESS_TTL_MAX = 86400;
 export const OIDC_REFRESH_TTL_DEFAULT = 2592000;
 export const OIDC_REFRESH_TTL_MAX = 2592000;
 
-/** redirectUris 条目校验失败文案（对齐后端：字面 * 或 ^https?://）。 */
-export const REDIRECT_URIS_ISSUE_TEXT = '回调地址须为 * 或以 http:// / https:// 开头';
+/**
+ * redirectUris 条目校验失败文案的 i18n 键（对齐后端：字面 * 或
+ * ^https?://）。模块级只存键（存文案会先于 entry setLocale
+ * 求值冻结 locale），redirectUrisIssue 调用期 t()。
+ */
+export const REDIRECT_URIS_ISSUE_TEXT_KEY: I18nKey = 'admin.redirectUrisIssue';
 
 /**
  * 回调白名单条目校验（§5.5 行 1262「支持 *」+ §12.3 整段匹配；后端
@@ -621,14 +647,17 @@ export const REDIRECT_URIS_ISSUE_TEXT = '回调地址须为 * 或以 http:// / h
 export function redirectUrisIssue(uris: readonly string[]): string | null {
   for (const uri of cleanStringList(uris)) {
     if (uri !== '*' && !/^https?:\/\//.test(uri)) {
-      return REDIRECT_URIS_ISSUE_TEXT;
+      return t(REDIRECT_URIS_ISSUE_TEXT_KEY);
     }
   }
   return null;
 }
 
-/** scopes 条目校验失败文案（后端口径：非空且不含逗号——逗号串存储）。 */
-export const SCOPES_ISSUE_TEXT = '权限范围条目不能为空，且不能包含逗号';
+/**
+ * scopes 条目校验失败文案的 i18n 键（后端：非空且不含逗号——逗号串
+ * 存储；口径同 REDIRECT_URIS_ISSUE_TEXT_KEY）。
+ */
+export const SCOPES_ISSUE_TEXT_KEY: I18nKey = 'admin.scopesIssue';
 
 /**
  * 权限范围条目校验（§5.5 行 1264；后端口径：条目空串 / 含逗号 →
@@ -637,7 +666,7 @@ export const SCOPES_ISSUE_TEXT = '权限范围条目不能为空，且不能包�
 export function scopesIssue(scopes: readonly string[]): string | null {
   for (const scope of cleanStringList(scopes)) {
     if (scope.includes(',')) {
-      return SCOPES_ISSUE_TEXT;
+      return t(SCOPES_ISSUE_TEXT_KEY);
     }
   }
   return null;
@@ -800,7 +829,7 @@ export function summarizeList(values: readonly string[]): string {
   if (cleaned.length === 1) {
     return cleaned[0];
   }
-  return `${cleaned[0]} 等 ${cleaned.length} 条`;
+  return t('admin.listSummary', { first: cleaned[0], count: cleaned.length });
 }
 
 /**
@@ -809,28 +838,29 @@ export function summarizeList(values: readonly string[]): string {
  */
 export function humanizeTtlSeconds(seconds: number): string {
   if (seconds > 0 && seconds % 86400 === 0) {
-    return `${seconds / 86400} 天`;
+    return t('admin.durationDays', { count: seconds / 86400 });
   }
   if (seconds > 0 && seconds % 3600 === 0) {
-    return `${seconds / 3600} 小时`;
+    return t('admin.durationHours', { count: seconds / 3600 });
   }
   if (seconds > 0 && seconds % 60 === 0) {
-    return `${seconds / 60} 分钟`;
+    return t('admin.durationMinutes', { count: seconds / 60 });
   }
-  return `${seconds} 秒`;
+  return t('admin.durationSeconds', { count: seconds });
 }
 
 /** OIDC 令牌有效期列摘要：访问 / 刷新两段人性化（int64 经 toCount 收窄）。 */
 export function tokenTtlSummary(accessTokenTtl: bigint, refreshTokenTtl: bigint): string {
-  return `访问 ${humanizeTtlSeconds(toCount(accessTokenTtl))} / 刷新 ${humanizeTtlSeconds(
-    toCount(refreshTokenTtl),
-  )}`;
+  return t('admin.tokenTtlSummary', {
+    access: humanizeTtlSeconds(toCount(accessTokenTtl)),
+    refresh: humanizeTtlSeconds(toCount(refreshTokenTtl)),
+  });
 }
 
 /** TTL 详情展示（详情弹窗）：人性化 + 原始秒数并列。 */
 export function ttlDetailText(ttl: bigint): string {
   const seconds = toCount(ttl);
-  return `${humanizeTtlSeconds(seconds)}（${seconds} 秒）`;
+  return t('admin.ttlDetail', { duration: humanizeTtlSeconds(seconds), seconds });
 }
 
 // ---------------------------------------------------------------------------
@@ -998,53 +1028,83 @@ export function buildDecodeTokenRequest(token: string, purpose: string): DecodeT
 }
 
 /**
- * 事件类型展示文案（《后端架构》§4.6 event 列值域 16 常量 + §4.6 行 809
- * oidc_authorize_no_state，共 17 已知值；跨版本新增原样兜底，§12.9 行 1754）。
+ * 事件类型 event → i18n 键（《后端架构》§4.6 event 列值域 16 常量 + §4.6
+ * 行 809 oidc_authorize_no_state，共 17 已知值；跨版本新增原样兜底，
+ * §12.9 行 1754）。表存键不存文案（模块级求值会冻结 locale），
+ * eventTypeLabel 调用期 t()。
  */
-const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
-  login_success: '登录成功',
-  change_password: '修改密码',
-  reset_password: '重置密码',
-  bind_phone: '绑定手机号',
-  bind_email: '绑定邮箱',
-  enable_mfa: '启用两步验证',
-  disable_mfa: '关闭两步验证',
-  webauthn_register: '注册通行密钥',
-  webauthn_delete: '删除通行密钥',
-  thirdparty_bind: '绑定第三方',
-  thirdparty_unbind: '解绑第三方',
-  admin_disable_user: '管理员禁用用户',
-  admin_reset_password: '管理员重置密码',
-  provider_create: '新建提供方',
-  provider_update: '更新提供方',
-  settings_update: '更新系统设置',
-  oidc_authorize_no_state: 'OIDC 授权缺少 state',
+const EVENT_TYPE_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
+  login_success: 'admin.eventLoginSuccess',
+  change_password: 'admin.eventChangePassword',
+  reset_password: 'admin.eventResetPassword',
+  bind_phone: 'admin.eventBindPhone',
+  bind_email: 'admin.eventBindEmail',
+  enable_mfa: 'admin.eventEnableMfa',
+  disable_mfa: 'admin.eventDisableMfa',
+  webauthn_register: 'admin.eventWebauthnRegister',
+  webauthn_delete: 'admin.eventWebauthnDelete',
+  thirdparty_bind: 'admin.eventThirdpartyBind',
+  thirdparty_unbind: 'admin.eventThirdpartyUnbind',
+  admin_disable_user: 'admin.eventAdminDisableUser',
+  admin_reset_password: 'admin.eventAdminResetPassword',
+  provider_create: 'admin.eventProviderCreate',
+  provider_update: 'admin.eventProviderUpdate',
+  settings_update: 'admin.eventSettingsUpdate',
+  oidc_authorize_no_state: 'admin.eventOidcAuthorizeNoState',
 };
 
 /** 事件类型 → 展示文案（未知值原样兜底，§9 第 18 条）。 */
 export function eventTypeLabel(event: string): string {
-  return EVENT_TYPE_LABELS[event] ?? event;
+  const labelKey = Object.prototype.hasOwnProperty.call(EVENT_TYPE_LABEL_KEYS, event)
+    ? EVENT_TYPE_LABEL_KEYS[event]
+    : undefined;
+  return labelKey === undefined ? event : t(labelKey);
 }
 
-/** 事件类型筛选下拉（§5.6 行 1288 event 过滤；值域 = 上述 17 已知类型）。 */
-export const EVENT_TYPE_FILTERS: readonly { readonly value: string; readonly text: string }[] =
-  Object.entries(EVENT_TYPE_LABELS).map(([value, text]) => ({ value, text }));
+/**
+ * 事件类型筛选下拉（§5.6 行 1288 event 过滤；值域 = 上述 17 已知类型）。
+ * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
+ */
+export const EVENT_TYPE_FILTERS: readonly {
+  readonly value: string;
+  readonly textKey: I18nKey;
+}[] = Object.entries(EVENT_TYPE_LABEL_KEYS).map(([value, textKey]) => ({
+  value,
+  textKey,
+}));
 
-/** 操作者类型展示文案（《后端架构》§4.6 actor_type 值域 user|admin|system）。 */
-const ACTOR_TYPE_LABELS: Readonly<Record<string, string>> = {
-  user: '用户',
-  admin: '管理员',
-  system: '系统',
+/**
+ * 操作者类型 actor_type → i18n 键（《后端架构》§4.6 actor_type 值域
+ * user|admin|system；表存键不存文案，口径同 EVENT_TYPE_LABEL_KEYS）。
+ */
+const ACTOR_TYPE_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
+  user: 'admin.actorUser',
+  admin: 'admin.actorAdmin',
+  system: 'admin.actorSystem',
 };
 
 /** 操作者类型 → 展示文案（未知值原样兜底）。 */
 export function actorTypeLabel(actorType: string): string {
-  return ACTOR_TYPE_LABELS[actorType] ?? actorType;
+  const labelKey = Object.prototype.hasOwnProperty.call(
+    ACTOR_TYPE_LABEL_KEYS,
+    actorType,
+  )
+    ? ACTOR_TYPE_LABEL_KEYS[actorType]
+    : undefined;
+  return labelKey === undefined ? actorType : t(labelKey);
 }
 
-/** 操作者类型筛选下拉（§5.6 行 1288 actorType 过滤 user|admin|system）。 */
-export const ACTOR_TYPE_FILTERS: readonly { readonly value: string; readonly text: string }[] =
-  Object.entries(ACTOR_TYPE_LABELS).map(([value, text]) => ({ value, text }));
+/**
+ * 操作者类型筛选下拉（§5.6 行 1288 actorType 过滤 user|admin|system；
+ * textKey 字段化口径同 EVENT_TYPE_FILTERS）。
+ */
+export const ACTOR_TYPE_FILTERS: readonly {
+  readonly value: string;
+  readonly textKey: I18nKey;
+}[] = Object.entries(ACTOR_TYPE_LABEL_KEYS).map(([value, textKey]) => ({
+  value,
+  textKey,
+}));
 
 /**
  * 操作者展示（§4.6：system 事件 actor_id=0 不编造用户 id → 仅展示「系统」；
@@ -1052,7 +1112,7 @@ export const ACTOR_TYPE_FILTERS: readonly { readonly value: string; readonly tex
  */
 export function actorText(actorType: string, actorId: bigint): string {
   if (actorType === 'system') {
-    return '系统';
+    return t('admin.actorSystem');
   }
   return `${actorTypeLabel(actorType)} ${actorId}`;
 }

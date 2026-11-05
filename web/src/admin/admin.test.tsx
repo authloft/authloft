@@ -27,6 +27,7 @@ import {
   type TableQueryState,
 } from '../shared/app-ui/dataTableLogic';
 import { ApiError } from '../shared/api/errors';
+import { setLocale, t } from '../shared/i18n';
 import { moveItem, SortableList } from './components/SortableList';
 import {
   ProviderCallbackHint,
@@ -42,6 +43,7 @@ import {
 } from './components/StringListEditor';
 import {
   SECTION_ORDER,
+  SECTION_TITLES,
   adminProviderToValues,
   applySchemaDefaults,
   buildProviderStruct,
@@ -53,10 +55,10 @@ import {
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import {
   DEFAULT_SETTINGS,
-  HTTPS_DEPLOYMENT_OPTIONS,
-  LOGIN_METHOD_OPTIONS,
-  MFA_METHOD_OPTIONS,
-  SETTINGS_SECTIONS,
+  getHttpsDeploymentOptions,
+  getLoginMethodOptions,
+  getMfaMethodOptions,
+  getSettingsSections,
   draftFromSettings,
   settingsDraftIssue,
 } from './settingsLogic';
@@ -134,7 +136,7 @@ import {
  *   不能只提交改动字段；零值键 wire 省略 = 服务端读零值 = 写入零值，与
  *   后端实装语义等价）；
  * - settingsLogic 纯函数全集：DEFAULT_SETTINGS 默认值对 §5.6 四张表逐字 /
- *   SETTINGS_SECTIONS 36 键全覆盖无重复 / draftFromSettings 全键映射与
+ *   getSettingsSections 36 键全覆盖无重复 / draftFromSettings 全键映射与
  *   零值即真值（全量替换对称面）/ settingsDraftIssue 交叉校验（行 1363
  *   前端自律：非负整数 / 字符类数 1-3 / min ≤ max ≤ 64 / https_deployment
  *   三态行 1361）；
@@ -1702,10 +1704,15 @@ describe('buildGetUserEventsRequest / buildGetUserRequest / 其余 buildXxxReque
 // ---------------------------------------------------------------------------
 
 describe('userStatusLabel / USER_STATUS_FILTERS（§5.4 行 1251 值域 1/0）', () => {
-  test('1n → 正常；0n → 禁用；筛选值与文案对齐', () => {
+  test('1n → 正常；0n → 禁用；筛选值与文案对齐（textKey 形态）', () => {
     expect(apiMod.userStatusLabel(BigInt(1))).toBe('正常');
     expect(apiMod.userStatusLabel(BigInt(0))).toBe('禁用');
     expect(apiMod.USER_STATUS_FILTERS).toEqual([
+      { value: '1', textKey: 'admin.userStatusEnabled' },
+      { value: '0', textKey: 'admin.userStatusDisabled' },
+    ]);
+    // 渲染口径（消费方 map 同式）：textKey 经 t() 得当前语言文案。
+    expect(apiMod.USER_STATUS_FILTERS.map(({ value, textKey }) => ({ value, text: t(textKey) }))).toEqual([
       { value: '1', text: '正常' },
       { value: '0', text: '禁用' },
     ]);
@@ -1714,8 +1721,9 @@ describe('userStatusLabel / USER_STATUS_FILTERS（§5.4 行 1251 值域 1/0）',
 
 describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增值原样兜底）', () => {
   test('已知 kind → 文案；未知值原样返回（跨版本新增，§12.9 行 1754）', () => {
-    expect(apiMod.credentialKindLabel('password')).toBe('密码');
-    expect(apiMod.credentialKindLabel('totp')).toBe('TOTP 动态码');
+    // 因子名复用 factors.* 既有键（'密码登录' / '动态口令'）。
+    expect(apiMod.credentialKindLabel('password')).toBe('密码登录');
+    expect(apiMod.credentialKindLabel('totp')).toBe('动态口令');
     expect(apiMod.credentialKindLabel('webauthn')).toBe('通行密钥');
     expect(apiMod.credentialKindLabel('recovery_code')).toBe('恢复码');
     // §4.3 行 669 五值域第五值：GetUser 凭证概览含 mfa_setting 行。
@@ -1724,7 +1732,7 @@ describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增�
   });
 
   test('已知 factor → 文案；未知值原样返回', () => {
-    expect(apiMod.mfaFactorLabel('totp')).toBe('TOTP 动态码');
+    expect(apiMod.mfaFactorLabel('totp')).toBe('动态口令');
     expect(apiMod.mfaFactorLabel('otp_sms')).toBe('短信验证码');
     expect(apiMod.mfaFactorLabel('otp_email')).toBe('邮箱验证码');
     expect(apiMod.mfaFactorLabel('webauthn')).toBe('通行密钥');
@@ -1743,7 +1751,7 @@ describe('boundMfaFactors（§5.4 行 1250「MFA 状态」：已绑定因子文�
         { factor: 'future_kind', bound: true },
       ],
     });
-    expect(apiMod.boundMfaFactors(mfa)).toEqual(['TOTP 动态码', '通行密钥', 'future_kind']);
+    expect(apiMod.boundMfaFactors(mfa)).toEqual(['动态口令', '通行密钥', 'future_kind']);
     expect(apiMod.boundMfaFactors(undefined)).toEqual([]);
     expect(apiMod.boundMfaFactors(create(MfaResponseSchema, {}))).toEqual([]);
   });
@@ -2148,14 +2156,19 @@ describe('cleanStringList / redirectUrisIssue / scopesIssue（§1.7 前端自律
 
   test('redirectUrisIssue：* / http(s):// 合法；其他前缀 → 文案；清洗后空表 → null', () => {
     expect(apiMod.redirectUrisIssue(['*', 'https://a.test/cb', 'http://b.test/cb'])).toBeNull();
-    expect(apiMod.redirectUrisIssue(['ftp://a.test/cb'])).toBe(apiMod.REDIRECT_URIS_ISSUE_TEXT);
-    expect(apiMod.redirectUrisIssue(['example.com/cb'])).toBe(apiMod.REDIRECT_URIS_ISSUE_TEXT);
+    // 模块级存键（REDIRECT_URIS_ISSUE_TEXT_KEY），调用期 t() 取文案。
+    expect(apiMod.redirectUrisIssue(['ftp://a.test/cb'])).toBe(
+      t(apiMod.REDIRECT_URIS_ISSUE_TEXT_KEY),
+    );
+    expect(apiMod.redirectUrisIssue(['example.com/cb'])).toBe(
+      t(apiMod.REDIRECT_URIS_ISSUE_TEXT_KEY),
+    );
     expect(apiMod.redirectUrisIssue(['', '   '])).toBeNull();
   });
 
   test('scopesIssue：含逗号 → 文案；合法 / 清洗后空表 → null', () => {
     expect(apiMod.scopesIssue(['openid', 'profile'])).toBeNull();
-    expect(apiMod.scopesIssue(['open,id'])).toBe(apiMod.SCOPES_ISSUE_TEXT);
+    expect(apiMod.scopesIssue(['open,id'])).toBe(t(apiMod.SCOPES_ISSUE_TEXT_KEY));
     expect(apiMod.scopesIssue([])).toBeNull();
   });
 });
@@ -2461,9 +2474,9 @@ describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', (
   });
 });
 
-describe('SETTINGS_SECTIONS / LOGIN_METHOD_OPTIONS / MFA_METHOD_OPTIONS / HTTPS_DEPLOYMENT_OPTIONS（表单分区与选项值域）', () => {
+describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / getHttpsDeploymentOptions（表单分区与选项值域；函数化调用期求值）', () => {
   test('9 区 36 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
-    const sectionKeys = SETTINGS_SECTIONS.flatMap((section) =>
+    const sectionKeys = getSettingsSections().flatMap((section) =>
       section.fields.map((field) => field.key),
     );
     expect(new Set(sectionKeys).size).toBe(36);
@@ -2473,14 +2486,14 @@ describe('SETTINGS_SECTIONS / LOGIN_METHOD_OPTIONS / MFA_METHOD_OPTIONS / HTTPS_
   });
 
   test('登录方式选项 = 因子名 + thirdparty 五值；MFA 选项四值、recovery_code 随 totp 不单列（行 1330/1336）', () => {
-    expect(LOGIN_METHOD_OPTIONS.map((option) => option.value)).toEqual([
+    expect(getLoginMethodOptions().map((option) => option.value)).toEqual([
       'password',
       'otp_sms',
       'otp_email',
       'webauthn',
       'thirdparty',
     ]);
-    expect(MFA_METHOD_OPTIONS.map((option) => option.value)).toEqual([
+    expect(getMfaMethodOptions().map((option) => option.value)).toEqual([
       'totp',
       'otp_sms',
       'otp_email',
@@ -2489,11 +2502,52 @@ describe('SETTINGS_SECTIONS / LOGIN_METHOD_OPTIONS / MFA_METHOD_OPTIONS / HTTPS_
   });
 
   test('HTTPS 部署选项三态 = 行 1356 文案定稿（自动推断 / 强制开启 / 强制关闭）', () => {
-    expect(HTTPS_DEPLOYMENT_OPTIONS).toEqual([
+    expect(getHttpsDeploymentOptions()).toEqual([
       { value: 'auto', label: '自动推断' },
       { value: 'true', label: '强制开启' },
       { value: 'false', label: '强制关闭' },
     ]);
+  });
+});
+
+describe('静态表渲染期求值回归（setLocale 后取表得对应语言文案，防 locale 冻结）', () => {
+  // 本 describe 会切换模块级语言状态：每条用例后复位默认 zh-CN（i18n.test.ts 同模式）。
+  afterEach(() => {
+    setLocale('zh-CN');
+  });
+
+  test("setLocale('en-US') 后 SETTINGS_SECTIONS / 选项表 / *_LABELS 表 / SECTION_TITLES 得 en 文案", () => {
+    setLocale('en-US');
+    // SETTINGS_SECTIONS（settingsLogic 函数化，调用期求值）。
+    const sections = getSettingsSections();
+    expect(sections[0].title).toBe('Password policy');
+    expect(sections[0].fields[0].label).toBe('Minimum length');
+    expect(sections[0].fields[0].hint).toBe('Default 8');
+    // LOGIN / MFA / HTTPS_DEPLOYMENT 选项表。
+    expect(getLoginMethodOptions()[0].label).toBe('Password');
+    expect(getMfaMethodOptions()[0].label).toBe('Authenticator code');
+    expect(getHttpsDeploymentOptions()[0].label).toBe('Auto-detect');
+    // USER_CREDENTIAL_KIND_LABELS 表（键映射 + credentialKindLabel 调用期 t()）。
+    expect(apiMod.credentialKindLabel('password')).toBe('Password');
+    expect(apiMod.credentialKindLabel('mfa_setting')).toBe('MFA switch');
+    // EVENT_TYPE_LABELS 表（经 eventTypeLabel）。
+    expect(apiMod.eventTypeLabel('login_success')).toBe('Signed in');
+    // SECTION_TITLES（schemaLogic，textKey 形态渲染处 t()）。
+    expect(t(SECTION_TITLES.basic)).toBe('Basic information');
+    // USER_STATUS_FILTERS（textKey 形态，消费方渲染同式 map）。
+    expect(
+      apiMod.USER_STATUS_FILTERS.map(({ value, textKey }) => ({
+        value,
+        text: t(textKey),
+      })),
+    ).toEqual([
+      { value: '1', text: 'Active' },
+      { value: '0', text: 'Disabled' },
+    ]);
+    // 反向复核：切回 zh-CN 后同表回中文（求值确实晚于 setLocale）。
+    setLocale('zh-CN');
+    expect(getSettingsSections()[0].title).toBe('密码策略');
+    expect(apiMod.credentialKindLabel('password')).toBe('密码登录');
   });
 });
 
@@ -2873,9 +2927,11 @@ describe('eventTypeLabel / EVENT_TYPE_FILTERS（《后端架构》§4.6 值域�
       'settings_update',
       'oidc_authorize_no_state',
     ]);
-    // 下拉项 text 非空（值域同名文案）。
+    // 下拉项文案可译非空（textKey 形态，渲染处 t() 取文案）。
     for (const option of apiMod.EVENT_TYPE_FILTERS) {
-      expect(option.text).not.toBe('');
+      expect(option.textKey).not.toBe('');
+      expect(t(option.textKey)).not.toBe('');
+      expect(t(option.textKey)).not.toBe(option.textKey);
     }
   });
 

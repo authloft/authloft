@@ -19,6 +19,7 @@ import type {
   SchemaField,
   SchemaResponse,
 } from '../../gen/proto/api/admin/v1/schema_pb';
+import { t } from '../../shared/i18n';
 import { resolveFieldRenderer } from './FieldRegistry';
 import {
   groupFieldsBySection,
@@ -26,15 +27,6 @@ import {
   SECTION_TITLES,
 } from './schemaLogic';
 import styles from './SchemaForm.module.less';
-
-/** endpoint 区块折叠组标题（§5.3 行 1205「端点（高级折叠）」）。 */
-const ENDPOINT_SUMMARY = '端点配置';
-
-/** 区块内 advanced 字段折叠组标题。 */
-const ADVANCED_SUMMARY = '高级选项';
-
-/** section 违规错误帧前缀（groupFieldsBySection 的报错信息随文案展示）。 */
-const SECTION_ERROR_PREFIX = '表单结构异常：';
 
 export interface SchemaFormProps {
   /** GetProviderSchema 响应（§5.3 行 1183：{type, category, fields}）。 */
@@ -67,7 +59,9 @@ function FieldsGroup(props: {
       ))}
       {advanced.length > 0 ? (
         <details className={styles.collapsible}>
-          <summary className={styles.collapsibleSummary}>{ADVANCED_SUMMARY}</summary>
+          <summary className={styles.collapsibleSummary}>
+            {t('admin.advancedOptions')}
+          </summary>
           <div className={styles.collapsibleBody}>
             {advanced.map((field) => (
               <SchemaFieldControl
@@ -114,7 +108,7 @@ export function SchemaForm(props: SchemaFormProps): ReactNode {
   if (sectionError !== null || groups === null) {
     return (
       <p role="alert" className={styles.schemaError}>
-        {SECTION_ERROR_PREFIX}
+        {t('admin.sectionErrorPrefix')}
         {sectionError}
       </p>
     );
@@ -128,12 +122,12 @@ export function SchemaForm(props: SchemaFormProps): ReactNode {
         const section = SECTION_ORDER[index];
         return (
           <section key={section} className={styles.section}>
-            <h4 className={styles.sectionTitle}>{SECTION_TITLES[section]}</h4>
+            <h4 className={styles.sectionTitle}>{t(SECTION_TITLES[section])}</h4>
             {section === 'endpoint' ? (
               // 整块默认折叠（§5.3 行 1185；details 默认收起）。
               <details className={styles.collapsible}>
                 <summary className={styles.collapsibleSummary}>
-                  {ENDPOINT_SUMMARY}
+                  {t('admin.endpointSummary')}
                 </summary>
                 <div className={styles.collapsibleBody}>
                   <FieldsGroup fields={fields} owner={props} />

@@ -22,6 +22,7 @@ import type {
   AdminProvider,
   Provider,
 } from '../../gen/proto/api/admin/v1/provider_pb';
+import { t, type I18nKey } from '../../shared/i18n';
 
 /**
  * 表单五区块（§5.3 行 1185 封闭值域：basic / credential / endpoint（整块
@@ -35,13 +36,17 @@ export const SECTION_ORDER: readonly string[] = [
   'policy',
 ];
 
-/** 区块标题（§5.3 行 1185 括注逐字）。 */
-export const SECTION_TITLES: Readonly<Record<string, string>> = {
-  basic: '基础信息',
-  credential: '凭证',
-  endpoint: '端点',
-  display: '展示与排序',
-  policy: '策略开关',
+/**
+ * 区块标题（§5.3 行 1185 括注逐字）。值存 i18n 键不存文案——
+ * 模块级求值会先于 entry setLocale 执行、冻结在默认语言（NAV_ITEMS
+ * textKey 同口径），消费方（SchemaForm）渲染期 t() 取文案。
+ */
+export const SECTION_TITLES: Readonly<Record<string, I18nKey>> = {
+  basic: 'admin.schemaSectionBasic',
+  credential: 'admin.schemaSectionCredential',
+  endpoint: 'admin.schemaSectionEndpoint',
+  display: 'admin.schemaSectionDisplay',
+  policy: 'admin.schemaSectionPolicy',
 };
 
 /** 六种字段类型（§5.3 行 1229 唯一定义：管理后台只用到这六个）。 */
@@ -69,7 +74,10 @@ export function groupFieldsBySection(
     const index = SECTION_ORDER.indexOf(field.section);
     if (index < 0) {
       throw new Error(
-        `provider schema 字段 ${JSON.stringify(field.key)} 的 section 缺失或非法：${JSON.stringify(field.section)}`,
+        t('admin.schemaSectionError', {
+          key: JSON.stringify(field.key),
+          section: JSON.stringify(field.section),
+        }),
       );
     }
     groups[index].push(field);
@@ -240,7 +248,7 @@ export function validateSchemaValues(
   for (const field of fields) {
     const value = values[field.key];
     if (field.type !== 'checkbox' && field.required && isEmptyValue(value)) {
-      issues[field.key] = '此项为必填';
+      issues[field.key] = t('admin.validateRequired');
       continue;
     }
     if (
@@ -249,11 +257,11 @@ export function validateSchemaValues(
       value !== '' &&
       !new RegExp(field.pattern).test(value)
     ) {
-      issues[field.key] = '格式不正确';
+      issues[field.key] = t('admin.validatePattern');
       continue;
     }
     if (field.type === 'number' && !isEmptyValue(value) && typeof value !== 'number') {
-      issues[field.key] = '必须是数字';
+      issues[field.key] = t('admin.validateNumber');
       continue;
     }
     if (
@@ -264,7 +272,7 @@ export function validateSchemaValues(
       try {
         JSON.parse(value);
       } catch {
-        issues[field.key] = '不是合法的 JSON';
+        issues[field.key] = t('admin.validateJson');
       }
     }
   }

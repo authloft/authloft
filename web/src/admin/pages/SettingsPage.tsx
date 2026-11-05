@@ -39,7 +39,7 @@ import {
   setSettings,
 } from '../api';
 import {
-  SETTINGS_SECTIONS,
+  getSettingsSections,
   draftFromSettings,
   settingsDraftIssue,
   type SettingsDraft,
@@ -283,7 +283,8 @@ export function SettingsPage(props: {
         </p>
       ) : null}
       <div className={styles.sections}>
-        {SETTINGS_SECTIONS.map((section) => (
+        {/* 渲染期调用取当前语言文案（模块级常量会冻结 locale）。 */}
+        {getSettingsSections().map((section) => (
           <Card key={section.title} title={section.title} className={styles.sectionCard}>
             <div className={styles.sectionBody}>
               {section.fields.map((field) => (

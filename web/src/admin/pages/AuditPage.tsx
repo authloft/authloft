@@ -25,6 +25,7 @@ import { RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
+import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
 import {
@@ -201,7 +202,8 @@ export function AuditPage(props: {
           showClear
           optionList={EVENT_TYPE_FILTERS.map((option) => ({
             value: option.value,
-            label: option.text,
+            // FILTERS 存 textKey，渲染期 t() 取当前语言。
+            label: t(option.textKey),
           }))}
           disabled={preset === 'login_records'}
           aria-label="按事件类型筛选"
@@ -214,7 +216,7 @@ export function AuditPage(props: {
           showClear
           optionList={ACTOR_TYPE_FILTERS.map((option) => ({
             value: option.value,
-            label: option.text,
+            label: t(option.textKey),
           }))}
           aria-label="按操作者类型筛选"
         />

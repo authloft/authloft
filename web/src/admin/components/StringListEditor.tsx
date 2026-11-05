@@ -11,10 +11,8 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import type { ReactNode } from 'react';
+import { t } from '../../shared/i18n';
 import styles from './StringListEditor.module.less';
-
-/** 删除按钮文案（原生 button，与 CopyButton「复制」同层级字面量）。 */
-const REMOVE_TEXT = '删除';
 
 /**
  * 条目就地更新（不可变）：命中 index 换值，其余原样；越界 → 原引用返回
@@ -85,9 +83,9 @@ export function StringListEditor(props: StringListEditorProps): ReactNode {
             className={styles.remove}
             onClick={() => props.onChange(removeListItem(props.values, index))}
             disabled={props.disabled}
-            aria-label={`${props.ariaLabel} ${index + 1} ${REMOVE_TEXT}`}
+            aria-label={`${props.ariaLabel} ${index + 1} ${t('admin.removeAction')}`}
           >
-            {REMOVE_TEXT}
+            {t('admin.removeAction')}
           </button>
         </div>
       ))}

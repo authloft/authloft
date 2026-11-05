@@ -21,6 +21,7 @@
  */
 import type { ReactNode } from 'react';
 import { CopyButton } from '../../shared/components/CopyButton';
+import { t } from '../../shared/i18n';
 import styles from './ProviderCallbackHint.module.less';
 
 /** 回调地址路径（§2.7.3 行 602：`/sso/oauth/callback/{provider_key}`）。 */
@@ -60,11 +61,11 @@ export function ProviderCallbackHint(props: ProviderCallbackHintProps): ReactNod
   const url = providerCallbackUrl(props.alRoot, props.providerKey);
   return (
     <div className={styles.hint} role="note">
-      <span className={styles.label}>第三方登录回调地址：</span>
+      <span className={styles.label}>{t('admin.callbackUrlLabel')}</span>
       <code className={styles.url}>{url}</code>
       <CopyButton text={url} />
       {isOidcProviderType(props.type) ? (
-        <span className={styles.oidcNote}>OIDC 类 Provider 回调需精确匹配</span>
+        <span className={styles.oidcNote}>{t('admin.oidcCallbackExactMatchNote')}</span>
       ) : null}
     </div>
   );
