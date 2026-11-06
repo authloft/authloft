@@ -2051,7 +2051,7 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     });
   });
 
-  test('nickname 编辑为空串：wire 省略（proto3 非 optional，「清空昵称」契约不可表达——不因 mock 放宽）', () => {
+  test('nickname 编辑为空串：wire 显式带空串（proto3 optional has 位，「清空昵称」= 显式设值覆盖，§3.2 行 843）', () => {
     const built = apiMod.buildUpdateProfileRequest(
       PROFILE_BASE,
       profileDraft({ nickname: '' }),
@@ -2060,7 +2060,7 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     if (!built.ok) {
       throw new Error('unreachable');
     }
-    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({});
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ nickname: '' });
   });
 
   test('extra 未编辑（undefined）→ 不带 extra；编辑为合法 JSON 对象 → 全量透传（§3.1 行 813）', () => {
@@ -2093,7 +2093,7 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     }
   });
 
-  test('birthday 编辑为空串：profile 上送但 birthday 零值省略（wire 不可表达清空——服务端空操作，契约固有语义）', () => {
+  test('birthday 编辑为空串：wire 显式带空串（proto3 optional has 位，「清空生日」= 显式设值覆盖，§3.2 行 843）', () => {
     const built = apiMod.buildUpdateProfileRequest(
       PROFILE_BASE,
       profileDraft({ birthday: '' }),
@@ -2102,9 +2102,9 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     if (!built.ok) {
       throw new Error('unreachable');
     }
-    // 编辑过 → 进 create 入参（presence 位置上，profile 消息上送）；
-    // string 零值 wire 省略 → 服务端收到空 profile 无可更新字段（§1.0）。
-    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ profile: {} });
+    // 编辑过 → 进 create 入参（has 位建立）；optional string 空串 wire 显式
+    // 出现 → 服务端按「显式设值 = 覆盖」清空 birthday（§3.2 行 843）。
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ profile: { birthday: '' } });
   });
 
   test('基线无 profile 字段（protojson 省略 → 解码 undefined）→ 按零值基线 diff，编辑即变化', () => {

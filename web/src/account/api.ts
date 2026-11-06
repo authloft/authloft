@@ -845,10 +845,10 @@ const BIRTHDAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * UpdateProfile 请求构造（§3.2 行 837 PATCH 语义——缺省保留）：以 GetProfile
  * 原值为 diff 基线，「用户编辑过」（草稿 ≠ 原值）的字段才进 create 入参，
- * wire 上按 §1.0 零值缺省语义省略未编辑字段——编辑为空串的 string 字段 /
- * gender=0 在 proto3 非 optional wire 上同样省略，「清空昵称 / 改回保密」
- * 无法与「未编辑」区分，属契约固有语义（profile.gender 非 proto3 optional，
- * 行 837 的 `?` 仅为字段可省略），不因 mock 放宽：
+ * 未编辑字段不进 create → has 位未建立 → wire 省略 = 服务端不修改。
+ * 入参全字段 proto3 optional（§3.2 行 843，2026-11-06 定稿）：编辑为空串的
+ * string 字段 / gender=0 显式设值 → has 位建立 → wire 字段出现 = 覆盖
+ * （「清空昵称 / 改回保密」可表达），不因 mock 放宽：
  * - birthday 编辑过且非空 → 校验 YYYY-MM-DD + 日历合法（DatePicker 正常
  *   产出恒合法，防异常态）→ invalid_birthday 不发包；
  * - extraText 编辑过 → JSON.parse + 对象校验（§3.1 行 813），失败
