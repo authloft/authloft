@@ -1919,3 +1919,34 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 		t.Fatalf("no-ua: ip/ua = %q/%q, want 192.0.2.5/empty", got.IP, got.UA)
 	}
 }
+
+// TestProviderRegistryComplete 装配 import 完整性断言：本测试
+// 位于 package main，天然继承 bootstrap.go 的 blank import 集——任一渠道
+// 装配行被删，其 init() 不触发、注册表缺 type，本用例变红（生产形态为
+// 12 渠道静默降级 provider_disabled 的原始缺陷形态）。
+// 清单依据 docs/后端架构.md §12.2 行 1469-1481 内置清单全量 14 type。
+func TestProviderRegistryComplete(t *testing.T) {
+	want := []string{
+		// 国内派（§12.2 行 1473）。
+		"qq", "alipay", "feishu", "weibo", "baidu",
+		// 微信系（§12.2 行 1474-1476）。
+		"wechat", "wechat_mp", "wechat_mp_scan",
+		// 标准派（§12.2 行 1477）。
+		"github", "gitee", "microsoft", "google",
+		// 通用兜底（§12.2 行 1478-1479）。
+		"oidc", "oauth2",
+	}
+	got := provider.Types()
+	for _, w := range want {
+		found := false
+		for _, g := range got {
+			if g == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("provider 注册表缺 type %q——bootstrap.go 装配 import 可能被删（在册 %v）", w, got)
+		}
+	}
+}

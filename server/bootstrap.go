@@ -70,10 +70,25 @@ import (
 	"authloft/internal/pages"
 	"authloft/internal/provider"
 	// §3.1 行 237：注册表导入在此处统一触发 init() 自注册——
-	// wechat_mp 适配器 init() 向 provider 渠道注册表登记工厂（§12.2 / §15.3）；
-	// smtp / aliyun_sms 向消息域注册表登记 Sender（§15.2 / §15.3）。
+	// §12.2 内置清单全量 14 渠道适配器向 provider 渠道注册表登记工厂
+	// （qq / alipay / feishu / weibo / baidu / wechat / wechat_mp /
+	// wechat_mp_scan + github / gitee / microsoft / google + oidc / oauth2
+	// 通用兜底；装配接线补齐 12 包 import）；smtp / aliyun_sms 向
+	// 消息域注册表登记 Sender（§15.2 / §15.3）。
 	_ "authloft/internal/provider/email/smtp"
+	_ "authloft/internal/provider/oauth/alipay"
+	_ "authloft/internal/provider/oauth/baidu"
+	_ "authloft/internal/provider/oauth/feishu"
+	_ "authloft/internal/provider/oauth/gitee"
+	_ "authloft/internal/provider/oauth/github"
+	_ "authloft/internal/provider/oauth/google"
+	_ "authloft/internal/provider/oauth/microsoft"
+	_ "authloft/internal/provider/oauth/oauth2"
+	_ "authloft/internal/provider/oauth/oidc"
+	_ "authloft/internal/provider/oauth/qq"
+	_ "authloft/internal/provider/oauth/wechat"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/oauth/weibo"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	// wechat_mp_scan 具名导入：init() 自注册（第二处渠道注册），
 	// 装配期另需 SetAccessTokenCache 注入共享 access_token 缓存（§3.4 行
@@ -499,7 +514,10 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
 		CookieCodec:    deps.codecs.Cookie,
-		HTTPSMode:      ssoHTTPSMode(deps),
+		// RootOrigin {al_root}：redirect_uri 拼装基准
+		// {root}/sso/oauth/callback/{key}，复用 authloft.root 单一配置源。
+		RootOrigin: cfg.Authloft.Root,
+		HTTPSMode:  ssoHTTPSMode(deps),
 	})
 
 	// 扫码三桩 service（§13.2 / §2.8）：State / Terminal 复用引擎同一

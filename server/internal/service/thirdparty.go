@@ -6,8 +6,10 @@
 // 职责边界：
 //   - Authorize：Loader 查 provider（is_enabled + enable_signin）→ channel
 //     限 redirect → 生成带前缀 state（§12.4 行 1477：l = 登录 / b = 绑定）
-//     → BuildAuthURL → 签 al_login_state Cookie（LoginStatePayload，
-//     purpose=cookie、10 分钟兜底，§11.6.1）返回 authorize_url。
+//     → BuildAuthURL（传 RedirectURI={root}/sso/oauth/callback/{key}
+//     与 Scope=Ext.scopes，空则适配器默认）→ 签 al_login_state Cookie
+//     （LoginStatePayload，purpose=cookie、10 分钟兜底，§11.6.1）返回
+//     authorize_url。
 //   - LoginOauth：redirect 通道校验 state Cookie（l 前缀 + 一致 + 未过期，
 //     失败 state_mismatch 清 Cookie；§12.4 行 1493）→ Exchange / FetchUser →
 //     查 user_thirdparty_bind（普通行 → Union 行归并 §12.7 → auto_bind
@@ -140,6 +142,11 @@ type ThirdpartyDeps struct {
 	TicketPayloads TicketPayloadStore
 	// CookieCodec sign_key.cookie（§12.4 行 1487），al_login_state 加解密。
 	CookieCodec *security.Codec
+	// RootOrigin {al_root}（authloft.root，接口文档 §1.1 行 76）：redirect_uri
+	// 拼装基准 {root}/sso/oauth/callback/{key}（§2.7.3 行 614 回调路径，
+	// 装配接线经 bootstrap 注入，不自造第二套配置源）；空 = 未注入（旧测试
+	// 装配），不携带 redirect_uri。
+	RootOrigin string
 	// HTTPSMode https_deployment 三态源（每请求读取，装配层注入 settings
 	// 读取闭包；nil = 未接入本键 → Secure 恒定，沿旧默认）。
 	// al_login_state 的 Secure 属性受其驱动（§1.9 行 303）。
@@ -225,7 +232,11 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 	}
 	url, err := adapter.BuildAuthURL(&provider.AuthContext{
 		ProviderKey: in.Provider,
+		RedirectURI: s.redirectURI(in.Provider),
 		State:       state,
+		// Scope 取 provider 配置（Ext.scopes）；空则适配器按渠道默认
+		// （oauthcore.BuildAuthURL 的 defaultScope 缺省链）。
+		Scope: p.Ext.GetScopes(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("thirdparty: build auth url: %w", err)
@@ -236,6 +247,16 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 		return nil, fmt.Errorf("thirdparty: seal login state: %w", err)
 	}
 	return &AuthorizeOutput{AuthorizeURL: url, Cookie: ck}, nil
+}
+
+// redirectURI {root}/sso/oauth/callback/{provider_key}（§2.7.3 行 614 回调
+// 路径）：root 去尾斜杠归一（与 oidc issuer 同款处理）；RootOrigin
+// 未注入返回空（适配器不携带 redirect_uri，沿旧口径）。
+func (s *Thirdparty) redirectURI(providerKey string) string {
+	if s.deps.RootOrigin == "" {
+		return ""
+	}
+	return strings.TrimSuffix(s.deps.RootOrigin, "/") + "/sso/oauth/callback/" + providerKey
 }
 
 // OauthInput SsoService/LoginOauth 入参（接口文档 §2.7.4 行 630-643）。
@@ -321,7 +342,12 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		return s.loginOauthTicket(ctx, in, p, adapter)
 	}
 
-	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
+	// redirect_uri 与授权时一致（标准 OAuth 令牌交换校验项）；api
+	// 通道适配器（wechat_mp code2session）不消费该字段，透传无害。
+	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{
+		Code:        in.Code,
+		RedirectURI: s.redirectURI(in.ProviderKey),
+	})
 	if err != nil {
 		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
