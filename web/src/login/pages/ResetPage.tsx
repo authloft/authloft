@@ -13,8 +13,9 @@
  * 结构沿 LoginContainer / LoginFlowView 模式：ResetPageView 为纯状态帧视图
  * （renderToStaticMarkup 可测任意 status 帧），ResetPage 为状态壳。
  * 共用编排纯函数复用 RegisterPage 的导出（页族共用落点声明见该文件头）；
- * challenge 段复用 factors/OTPForm；verify 段自建（CodeInput + useCountdown，
- * 与 RegisterPage 同因：OTPForm verify 段提交按钮是 login 域文案「登录」）。
+ * challenge 段复用 factors/OTPForm；verify 段与 OTPForm / RegisterPage 共享
+ * login/VerifyCodeSection（评审 P2-10），重置语境提交按钮文案
+ * login.nextStep 经 props 注入。
  *
  * 文案：重置页专属（标题 / 步骤按钮 / 成功提示）经 i18n 字典 login.* 键取用；
  * 关闭态提示复用 errors.status.reset_disabled。
@@ -27,18 +28,17 @@ import {
   CaptchaWidget,
   type CaptchaWidgetHandle,
 } from '../../shared/captcha/CaptchaWidget';
-import { CodeInput, ErrorBanner } from '../../shared/components';
+import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
-import { useCountdown } from '../../shared/hooks/useCountdown';
 import { t } from '../../shared/i18n';
-import { toDisplay } from '../../shared/utils/int';
 import type {
   LoginMethodEntry,
   MethodsSnapshot,
 } from '../../shared/types/init';
 import { resetPassword, type ResetPasswordInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
-import { codeErrorText, focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
+import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
+import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
 import {
   advanceAfterStep,
@@ -160,14 +160,10 @@ export function ResetPageView({
   captchaRef,
 }: ResetPageViewProps) {
   const options = resetOptionsFor(snapshot);
-  // 确认密码（P1-3，只本地比对）与 set_password / verify 段前置校验错误（P0-2）。
+  // 确认密码（P1-3，只本地比对）与 set_password 段前置校验错误（P0-2；
+  // verify 段输码校验 / 重发倒计时归 VerifyCodeSection）。
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [codeError, setCodeError] = useState<string | undefined>(undefined);
-  // verify 段重发倒计时（nextStep.retryAfter / error.retryAfter，§1.3 行 115/150）。
-  const countdown = useCountdown(
-    envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter,
-  );
   const entry = options.find((m) => m.method === method);
 
   // §4.4 行 465：methods 为空数组或 flags.passwordReset=false → 整页提示关闭。
@@ -217,22 +213,6 @@ export function ResetPageView({
   const showCaptcha = step === 'challenge';
   // 权威 captcha 对象（§2.5 行 518）：响应顶层 captcha 优先，缺省回落快照首屏。
   const captchaConfig = envelope?.captcha ?? snapshot.captcha;
-
-  const submitVerify = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (loading || submitDisabled) {
-      return;
-    }
-    // 评审 P0-2：6 格未输满不提交，字段旁内联错误。
-    const issue = codeErrorText(otpCode, codeLengthOf(entry));
-    if (issue !== undefined) {
-      setCodeError(issue);
-      focusField('reset-code');
-      return;
-    }
-    setCodeError(undefined);
-    onSubmit({ code: otpCode });
-  };
 
   const submitSetPassword = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -311,53 +291,29 @@ export function ResetPageView({
           </div>
         )}
         {step === 'verify' && (
-          <form onSubmit={submitVerify} className={styles.section}>
-            <label className={styles.label} htmlFor="reset-code">
-              {t('login.codeLabel')}
-            </label>
-            <CodeInput
-              value={otpCode}
-              onChange={(value) => {
-                onOtpCodeChange(value);
-                setCodeError(undefined);
-              }}
-              length={codeLengthOf(entry)}
-              ariaLabel={t('login.codeLabel')}
-              id="reset-code"
-              disabled={loading || submitDisabled}
-              ariaInvalid={codeError !== undefined}
-              ariaDescribedBy={codeError !== undefined ? 'reset-code-error' : undefined}
-            />
-            {codeError !== undefined && (
-              <p id="reset-code-error" className={styles.fieldError}>
-                {codeError}
-              </p>
-            )}
-            {error?.attemptsLeft !== undefined && (
-              <p role="status" className={styles.status}>
-                {t('login.attemptsLeft', {
-                  count: toDisplay(error.attemptsLeft),
-                })}
-              </p>
-            )}
-            <button
-              type="button"
-              disabled={loading || !countdown.expired}
-              onClick={onResend}
-              className={styles.resend}
-            >
-              {countdown.expired
-                ? t('login.resend')
-                : t('login.resendCountdown', { seconds: countdown.seconds })}
-            </button>
-            <button
-              type="submit"
-              disabled={loading || submitDisabled}
-              className={styles.submit}
-            >
-              {t('login.nextStep')}
-            </button>
-          </form>
+          <VerifyCodeSection
+            id="reset-code"
+            length={codeLengthOf(entry)}
+            code={otpCode}
+            onCodeChange={onOtpCodeChange}
+            onSubmit={(value) => onSubmit({ code: value })}
+            submitLabelKey="login.nextStep"
+            classes={{
+              form: styles.section,
+              label: styles.label,
+              error: styles.fieldError,
+              status: styles.status,
+              resend: styles.resend,
+              submit: styles.submit,
+            }}
+            loading={loading}
+            disabled={submitDisabled}
+            attemptsLeft={error?.attemptsLeft}
+            retryAfter={
+              envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter
+            }
+            onResend={onResend}
+          />
         )}
         {step === 'set_password' && (
           <form onSubmit={submitSetPassword} className={styles.section}>

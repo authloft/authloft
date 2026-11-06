@@ -11,7 +11,9 @@
   flex: 1 1 0;
   min-width: 2rem;
   max-width: 2.75rem;
-  height: 3.25rem;
+  // 评审 V-10：格高对齐控件统一高度 token（原 3.25rem/52px，
+  // 与同页 44px 输入 / 按钮高低跳动）；仅改高度，其余声明不动。
+  height: @control-height;
   color: @color-text;
   font-size: @font-size-lg;
   text-align: center;

@@ -17,6 +17,9 @@ export const login = {
   'login.backToMethods': '返回方式列表',
   'login.pollPlaceholder': '扫码流程即将支持',
   'login.redirecting': '登录成功，正在跳转…',
+  // 评审 P1-7：footer 语言切换（语言名保持原生写法，双语同值）。
+  'login.langZh': '中文',
+  'login.langEn': 'EN',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': '暂无可用注册方式',
   'login.nextStep': '下一步',
@@ -61,6 +64,8 @@ export const login = {
   'login.passkeyVerify': '验证',
   'login.passkeyCancelled': '已取消通行密钥验证',
   'login.passkeyFailed': '通行密钥验证失败，请重试',
+  // 评审 P2-9：第三方跳转失败文案带 provider 展示名。
+  'login.oauthRedirectFailed': '无法跳转 {provider}，请重试',
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': '请先完成人机校验',

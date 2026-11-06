@@ -1,6 +1,7 @@
 // 登录页外壳样式（docs/前端架构.md §1.7；视觉重做：页面底 + 居中白卡
 // + 标题层级 + 次要链接分隔带；窄屏收敛卡片内边距）。
 @import (reference) '../../shared/styles/tokens.less';
+@import (reference) '../../shared/styles/controls.less';
 
 // 全视口居中：页面底与卡片面分层（参考页默认态结构：浅底 + 白卡）。
 .page {
@@ -48,6 +49,25 @@
 
 .entryLink:hover {
   color: @color-primary-hover;
+  text-decoration: underline;
+}
+
+// 评审 P1-7：footer 语言切换（文字按钮归 controls.less mixin，
+// 激活态加下划线 + 加重，不自造控件）。
+.footer {
+  display: flex;
+  justify-content: center;
+  gap: @spacing-md;
+  margin-top: @spacing-lg;
+}
+
+.langButton {
+  .control-text-button();
+}
+
+.langButtonActive {
+  .control-text-button();
+  font-weight: @font-weight-semibold;
   text-decoration: underline;
 }
 

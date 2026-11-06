@@ -15,6 +15,9 @@ export const login: typeof zhLogin = {
   'login.backToMethods': 'Back to sign-in options',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
   'login.redirecting': 'Signed in, redirecting…',
+  // review P1-7: footer language switch (native names, same in both locales).
+  'login.langZh': '中文',
+  'login.langEn': 'EN',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': 'No registration methods available',
   'login.nextStep': 'Next',
@@ -60,6 +63,8 @@ export const login: typeof zhLogin = {
   'login.passkeyVerify': 'Verify',
   'login.passkeyCancelled': 'Passkey verification cancelled',
   'login.passkeyFailed': 'Passkey verification failed. Please try again',
+  // 评审 P2-9: redirect failure message carries the provider display name.
+  'login.oauthRedirectFailed': 'Could not redirect to {provider}. Please try again',
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': 'Please complete the verification first',

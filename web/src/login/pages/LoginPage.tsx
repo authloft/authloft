@@ -12,8 +12,14 @@
  *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）。
  *
  * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用。
+ *
+ * 评审 P1-7：卡片 footer 极简语言切换（中文 / EN）——只做
+ * 会话内存内切换（setLocale 模块级变量 + 本地 state 触发整树重渲染，
+ * t() 渲染期取新语言）；不写 localStorage / 不做持久化（与 §9 第 1 条
+ * 冲突，持久化口径待定）。
  */
-import { t } from '../../shared/i18n';
+import { useState } from 'react';
+import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
 import { LoginContainer } from '../LoginContainer';
 import type { MethodsSnapshot } from '../../shared/types/init';
 import { ssoPath } from './RegisterPage';
@@ -30,6 +36,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const flags = snapshot.flags;
   const showForgot = flags?.passwordReset === true;
   const showRegister = flags?.registration === true;
+  // 内存内语言切换（持久化口径待定）；state 驱动重渲染使 t() 生效。
+  const [locale, setLocaleState] = useState<Locale>(getLocale);
+  const switchLocale = (next: Locale) => {
+    setLocale(next);
+    setLocaleState(next);
+  };
   return (
     <main className={styles.page}>
       {/* 统一卡片容器（页面底 + 居中白卡），DOM 语义不变。 */}
@@ -50,6 +62,29 @@ export function LoginPage({ snapshot }: LoginPageProps) {
             )}
           </nav>
         )}
+        {/* 评审 P1-7：footer 语言切换，仅内存内（不持久化）。 */}
+        <footer className={styles.footer}>
+          <button
+            type="button"
+            className={
+              locale === 'zh-CN' ? styles.langButtonActive : styles.langButton
+            }
+            aria-pressed={locale === 'zh-CN'}
+            onClick={() => switchLocale('zh-CN')}
+          >
+            {t('login.langZh')}
+          </button>
+          <button
+            type="button"
+            className={
+              locale === 'en-US' ? styles.langButtonActive : styles.langButton
+            }
+            aria-pressed={locale === 'en-US'}
+            onClick={() => switchLocale('en-US')}
+          >
+            {t('login.langEn')}
+          </button>
+        </footer>
       </div>
     </main>
   );

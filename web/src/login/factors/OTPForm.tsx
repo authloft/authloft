@@ -5,11 +5,11 @@
  *   390-394；challenge payload {phone}/{email}，§2.6 行 544）；MFA 场景不传
  *   目标（§2.6 行 545，目标取 uid 绑定资料），渲染掩码目标（§1.3 行 123-125
  *   maskedTarget）；
- * - verify 段：CodeInput 输码（§2.6 行 546 payload {code}）；autocomplete=
- *   "one-time-code" 与整串粘贴拆分由 shared CodeInput 承担（§1.11 行 330），
- *   本组件不重复实现；重发倒计时消费 useCountdown（入参 bigint、基于
- *   时间戳，§3.2 行 303）；错误计数提示 error.attemptsLeft（§1.3 行 151；
- *   §1.6 行 247 invalid_code 提示 + 剩余次数）。
+ * - verify 段：CodeInput 输码（§2.6 行 546 payload {code}）——评审
+ *   P2-10 起收敛为 login/VerifyCodeSection 共享实现（提交按钮文案
+ *   login.submit、重发随 disabled 禁用为本组件口径，经 props 注入）；
+ *   autocomplete="one-time-code" 与整串粘贴拆分由 shared CodeInput 承担
+ *   （§1.11 行 330）；错误计数提示 error.attemptsLeft（§1.3 行 151）。
  *
  * 组件不感知登录 / 注册场景（可被 RegisterPage 复用）：场景差异经 props 注入
  * （step / maskedTarget / onResend 由容器派生），提交统一上抛 props.onSubmit
@@ -25,11 +25,10 @@
  * login.codeWillBeSentTo / login.submit（zh 原文照搬，en 镜像）。
  */
 import { useState, type FormEvent } from 'react';
-import { CodeInput, FieldRenderer } from '../../shared/components';
-import { useCountdown } from '../../shared/hooks/useCountdown';
+import { FieldRenderer } from '../../shared/components';
 import { t } from '../../shared/i18n';
-import { toDisplay } from '../../shared/utils/int';
-import { codeErrorText, focusField, validateFormValues } from '../validate';
+import { focusField, validateFormValues } from '../validate';
+import { VerifyCodeSection } from '../VerifyCodeSection';
 import type { FactorProps } from './registry';
 import styles from './OTPForm.module.less';
 
@@ -91,15 +90,12 @@ export function OTPForm({
     ...initialValues,
   }));
   const [localCode, setLocalCode] = useState('');
-  // 评审 P0-2：challenge 段字段级错误 / verify 段输码未过错误。
+  // 评审 P0-2：challenge 段字段级错误（verify 段输码校验归 VerifyCodeSection）。
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const [codeError, setCodeError] = useState<string | undefined>(undefined);
   // 受控 / 非受控双模式：容器注入（code + onCodeChange）→ 容器持值，
   // 实例随状态分支重建不丢已输码；缺省 → 本地 state（独立渲染）。
   const code = codeProp ?? localCode;
   const setCode = onCodeChange ?? setLocalCode;
-  // 重发倒计时（§4.3 行 436）：入参 bigint（§1.12），内部经 toCount 归一。
-  const countdown = useCountdown(retryAfter);
 
   const onChange = (name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -113,25 +109,9 @@ export function OTPForm({
     });
   };
 
-  const onCodeInput = (value: string) => {
-    setCode(value);
-    setCodeError(undefined);
-  };
-
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (loading || disabled) {
-      return;
-    }
-    if (step === 'verify') {
-      // 评审 P0-2：6 格未输满不提交，字段旁内联错误。
-      const issue = codeErrorText(code, OTP_CODE_LENGTH);
-      if (issue !== undefined) {
-        setCodeError(issue);
-        focusField(OTP_CODE_INPUT_ID);
-        return;
-      }
-      onSubmit({ code }); // §2.6 行 546
       return;
     }
     // challenge 段目标字段（§2.6 行 544-545，MFA 场景空对象）：前置校验（P0-2）。
@@ -145,50 +125,32 @@ export function OTPForm({
     onSubmit(values);
   };
 
+  // verify 段收敛为共享 VerifyCodeSection（评审 P2-10）：提交按钮文案
+  // login.submit、重发随 disabled 禁用为本组件口径，经 props 注入保持原语义。
   if (step === 'verify') {
     return (
-      <form onSubmit={submit} className={styles.form}>
-        <label className={styles.label} htmlFor={OTP_CODE_INPUT_ID}>
-          {t('login.codeLabel')}
-        </label>
-        <CodeInput
-          value={code}
-          onChange={onCodeInput}
-          length={OTP_CODE_LENGTH}
-          ariaLabel={t('login.codeLabel')}
-          id={OTP_CODE_INPUT_ID}
-          disabled={loading || disabled}
-          ariaInvalid={codeError !== undefined}
-          ariaDescribedBy={codeError !== undefined ? `${OTP_CODE_INPUT_ID}-error` : undefined}
-        />
-        {codeError !== undefined && (
-          <p id={`${OTP_CODE_INPUT_ID}-error`} className={styles.error}>
-            {codeError}
-          </p>
-        )}
-        {attemptsLeft !== undefined && (
-          <p role="status" className={styles.status}>
-            {t('login.attemptsLeft', { count: toDisplay(attemptsLeft) })}
-          </p>
-        )}
-        <button
-          type="button"
-          disabled={loading || disabled || !countdown.expired}
-          onClick={onResend}
-          className={styles.resend}
-        >
-          {countdown.expired
-            ? t('login.resend')
-            : t('login.resendCountdown', { seconds: countdown.seconds })}
-        </button>
-        <button
-          type="submit"
-          disabled={loading || disabled}
-          className={styles.submit}
-        >
-          {t('login.submit')}
-        </button>
-      </form>
+      <VerifyCodeSection
+        id={OTP_CODE_INPUT_ID}
+        length={OTP_CODE_LENGTH}
+        code={code}
+        onCodeChange={setCode}
+        onSubmit={(value) => onSubmit({ code: value })} // §2.6 行 546
+        submitLabelKey="login.submit"
+        classes={{
+          form: styles.form,
+          label: styles.label,
+          error: styles.error,
+          status: styles.status,
+          resend: styles.resend,
+          submit: styles.submit,
+        }}
+        loading={loading}
+        disabled={disabled}
+        resendDisabled={disabled}
+        attemptsLeft={attemptsLeft}
+        retryAfter={retryAfter}
+        onResend={onResend}
+      />
     );
   }
 
