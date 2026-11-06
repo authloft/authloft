@@ -4,6 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
@@ -244,7 +245,7 @@ let apiMod: typeof import('./api');
 let routesMod: typeof import('./routes');
 
 // routes 兜底渲染断言（文末 describe）专用：AdminLayout 的 GetMe 数据门
-// （F-067 加载态 Spin）在 renderToStaticMarkup 下恒落于 loading 分支（effects
+// （加载态 Spin）在 renderToStaticMarkup 下恒落于 loading 分支（effects
 // 不执行、useRequest 无数据），children 永不到达——故对「路由分派 + 兜底
 // 内容」断言时把 AdminLayout 换成透明壳。仅桩布局壳，Semi Empty 等为真实渲染。
 // rstest 仅支持同步工厂且工厂内不可引外部 import（hoisting）——函数组件直接
@@ -2629,35 +2630,63 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
 });
 
 // ---------------------------------------------------------------------------
-// routes：未知路径兜底真渲染（测试链解锁 Semi 加载）
+// routes：HashRouter 路由表（path:'*' 兜底 + 参数页 useParams 解析；
+// MemoryRouter 注入 hash 内路径——模式无关）
 // ---------------------------------------------------------------------------
 
-describe('routes：未知路径兜底真渲染', () => {
-  function renderAdminApp(pathname: string): string {
+describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
+  function renderAdminApp(initialPath: string): string {
     rs.stubGlobal('window', {
-      location: { pathname },
+      location: { pathname: '/admin' },
       __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
         .__AUTHLOFT_INIT__,
     });
-    return renderToStaticMarkup(createElement(routesMod.AdminApp));
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [initialPath] },
+        createElement(routesMod.AdminApp),
+      ),
+    );
   }
 
-  test('未知 /admin/** → 带布局兜底：Semi Empty 文案 + 返回管理首页链接', () => {
-    const html = renderAdminApp('/admin/does-not-exist');
+  test('未知路径 → path:\'*\' 兜底：带布局 Semi Empty + 返回管理首页 Link', () => {
+    const html = renderAdminApp('/does-not-exist');
     expect(html).toContain('页面不存在');
     expect(html).toContain('返回管理首页');
-    expect(html).toContain('href="/admin/providers"');
-    // 经 AdminLayout 挂载（文件头部透明壳 mock 的标记），与裸兜底分支区分。
+    // 返回链接取 ADMIN_NAV_ROUTES 单一来源（MemoryRouter 下 Link href 即 hash 内路径）。
+    expect(html).toContain('href="/providers"');
+    // 经 AdminLayout 挂载（文件头部透明壳 mock 的标记）。
     expect(html).toContain('__ADMIN_LAYOUT_STUB__');
     expect(html).toContain('semi-empty');
   });
 
-  test('非 /admin 前缀 → 裸兜底（同款文案链接，不套 Layout）', () => {
-    const html = renderAdminApp('/nope');
+  test('参数页 /users/123 → UserDetailPage 解析（数据未落地 Spin 帧，非兜底页）', () => {
+    const html = renderAdminApp('/users/123');
+    expect(html).toContain('__ADMIN_LAYOUT_STUB__');
+    expect(html).not.toContain('页面不存在');
+    // effects 不执行 → UserDetailPage 停在数据未落地的 Spin 帧。
+    expect(html).toContain('semi-spin');
+  });
+
+  test('参数页 /users/abc（非十进制）→ 段内数字校验落兜底页（原 \\d+ 正则口径迁移）', () => {
+    const html = renderAdminApp('/users/abc');
     expect(html).toContain('页面不存在');
-    expect(html).toContain('返回管理首页');
-    expect(html).toContain('href="/admin/providers"');
-    expect(html).not.toContain('__ADMIN_LAYOUT_STUB__');
+  });
+
+  test('参数页 /providers/wechat_mp/edit → ProviderEditPage 编辑首帧（非兜底页）', () => {
+    const html = renderAdminApp('/providers/wechat_mp/edit');
+    expect(html).toContain('__ADMIN_LAYOUT_STUB__');
+    expect(html).not.toContain('页面不存在');
+    // 编辑模式首帧：provider / schema 未落地 → Spin。
+    expect(html).toContain('semi-spin');
+  });
+
+  test('新建页 /providers/new 静态优先于参数路由（不匹配 /providers/:key/edit）', () => {
+    const html = renderAdminApp('/providers/new');
+    expect(html).not.toContain('页面不存在');
+    // 新建模式首帧：类型清单未就绪但非编辑加载帧——type 必选提示在场。
+    expect(html).toContain('semi');
   });
 });
 

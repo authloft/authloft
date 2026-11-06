@@ -1,8 +1,6 @@
 /**
- * admin 端应用布局（docs/前端架构.md §6 行 501/507）：侧边栏（NAV_ITEMS，
- * 「提供方」随 ProvidersPage 长入、「用户」随 UsersPage 长入、「SSO 客户端」/
- * 「OIDC 客户端」随两页长入、「设置」随 SettingsPage 长入、「事件日志」/
- * 「监控」/「解码工具」随工具三页长入）+ 顶栏（GetMe 管理员信息 +
+ * admin 端应用布局（docs/前端架构.md §6 行 501/507）：侧边栏（由
+ * ADMIN_NAV_ROUTES 单一来源派生）+ 顶栏（GetMe 管理员信息 +
  * LogoutLink）+ 面包屑 + Content。
  *
  * GetMe（§5.1 行 1159 管理员信息唯一来源）由布局层真调，渲染在顶栏；
@@ -22,43 +20,27 @@
  * Avatar / Typography 均大包具名导入；入口加载 / 错误态（评审 V-6/
  * §9.3 映射）换 Semi Spin / Banner（Banner 自带 role="alert"）。
  * 登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go 处理，非 SPA）。
- * 侧边栏选中 / 点击导航沿 account AppLayout 先例：itemKey 即路由
- * 路径，selectedKeys 受控于 activeKey prop，点击整页跳转。
+ * 侧边栏：NAV 项与高亮均由 shared/app-ui/nav-routes.ts 的
+ * ADMIN_NAV_ROUTES 派生（单一来源）；itemKey 即 hash 内路由路径，
+ * selectedKeys 由 useLocation + matchActivePath 现算，点击经 router 导航。
  *
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { useLocation, useNavigate } from '@modern-js/runtime/router';
+import {
+  ADMIN_NAV_ROUTES,
+  matchActivePath,
+  toNavItems,
+} from '../../shared/app-ui/nav-routes';
 import { useRequest } from '../../shared/hooks/useRequest';
-import { t, type I18nKey } from '../../shared/i18n';
+import { t } from '../../shared/i18n';
 import { loginUrl, logoutUrl } from '../bootstrap';
 import { adminDisplayName, adminMeFailureAction, apiErrorText, getMe } from '../api';
 import styles from './AdminLayout.module.less';
 
 const { Sider, Header, Content } = Layout;
-
-/**
- * 侧边栏导航项（§6 行 515-525 页面路由清单的已交付子集）：「提供方」随
- * ProvidersPage 长入，「用户」随 UsersPage 长入；「SSO 客户端」
- * 「OIDC 客户端」随两页长入（需求 §4.6 行 257-258 两个独立模块，
- * 平铺两条目即两路由各自高亮）；「设置」随 SettingsPage 长入（需求
- * §4.6 行 259 系统配置）；「事件日志」「监控」随 AuditPage / StatusPage
- * 长入（需求 §4.6 行 260-261），「解码工具」随 DecodePage 长入
- * （§6 行 525 admin 排障工具，需求 §4.6 无对应模块条目故排最后）。
- * itemKey 即路由路径，点击整页跳转（account AppLayout 同约定）。
- * text 为 i18n 域键（admin.*），渲染期经 t() 取文案（模块级求值
- * 会冻结在默认语言，故不在常量里调 t）。
- */
-const NAV_ITEMS: { itemKey: string; textKey: I18nKey }[] = [
-  { itemKey: '/admin/providers', textKey: 'admin.navProviders' },
-  { itemKey: '/admin/users', textKey: 'admin.navUsers' },
-  { itemKey: '/admin/clients/sso', textKey: 'admin.navSsoClients' },
-  { itemKey: '/admin/clients/oidc', textKey: 'admin.navOidcClients' },
-  { itemKey: '/admin/settings', textKey: 'admin.navSettings' },
-  { itemKey: '/admin/audit', textKey: 'admin.navAudit' },
-  { itemKey: '/admin/status', textKey: 'admin.navStatus' },
-  { itemKey: '/admin/decode', textKey: 'admin.navDecode' },
-];
 
 /** 登出链接（§6 行 507 LogoutLink）：跳 `{al_root}/sso/logout`，Go 处理。 */
 function LogoutLink({ alRoot }: { readonly alRoot: string }) {
@@ -69,12 +51,12 @@ function LogoutLink({ alRoot }: { readonly alRoot: string }) {
   );
 }
 
-/** admin 布局壳（§6 行 507）：Sider(Nav) + Header(管理员信息 + 面包屑 + 登出) + Content。 */
+/** admin 布局壳（§6 行 507）：Sider(Nav) + Header(管理员信息 + 面包屑 + 登出) + Content。
+ *  NAV 项与高亮均由 ADMIN_NAV_ROUTES 派生（单一来源，8 条字面量已删）；
+ *  点击经 router 导航（HashRouter SPA 内跳，不再整页刷新）。 */
 export function AdminLayout(props: {
   /** 归一后 al_root（登出 / 401 跳登录的前缀，见 ./bootstrap）。 */
   readonly alRoot: string;
-  /** 侧边栏选中项（NAV_ITEMS 的 itemKey，同路由路径；account AppLayout 同约定）。 */
-  readonly activeKey: string;
   /** 顶栏面包屑层级（当前页标题链）。 */
   readonly breadcrumb: readonly string[];
   readonly children: ReactNode;
@@ -85,6 +67,10 @@ export function AdminLayout(props: {
   // registerMediaQuery 的 callInInit 立即回调覆盖，state 初值即正确。
   // 必须在所有提前 return 之前声明（hooks 顺序恒定）。
   const [navCollapsed, setNavCollapsed] = useState(false);
+  // 导航与高亮取当前 hash 内路径（useLocation），命中经
+  // matchActivePath（详情页归列表项高亮，如 /users/123 → /users）。
+  const location = useLocation();
+  const navigate = useNavigate();
   const { status, data, error, run } = useRequest(getMe);
   useEffect(() => {
     // §6 行 501：401 未携带有效会话 → 统一跳登录（adminMeFailureAction 分流，
@@ -121,15 +107,14 @@ export function AdminLayout(props: {
         <Nav
           className={styles.nav}
           isCollapsed={navCollapsed}
-          items={NAV_ITEMS.map(({ itemKey, textKey }) => ({
-            itemKey,
-            text: t(textKey),
-          }))}
-          selectedKeys={[props.activeKey]}
+          // NAV 项由 ADMIN_NAV_ROUTES 派生（toNavItems 渲染期 t() 求值）。
+          items={[...toNavItems(ADMIN_NAV_ROUTES)]}
+          // 高亮：当前 hash 内路径命中的导航 path（详情页归列表项）。
+          selectedKeys={[matchActivePath(ADMIN_NAV_ROUTES, location.pathname)]}
           onClick={({ itemKey }) => {
             if (typeof itemKey === 'string') {
-              // itemKey 即路由路径：点击整页跳转（account AppLayout 同模式）。
-              window.location.assign(itemKey);
+              // itemKey 即 hash 内路由路径：SPA 内导航（HashRouter）。
+              navigate(itemKey);
             }
           }}
           header={{ text: t('admin.appTitle') }}

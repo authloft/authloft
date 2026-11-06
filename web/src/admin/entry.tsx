@@ -27,6 +27,7 @@
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
+import { HashRouter } from '@modern-js/runtime/router';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
@@ -67,11 +68,15 @@ class AdminErrorBoundary extends Component<
   }
 }
 
-/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。 */
+/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。
+ * HashRouter 挂 entry 顶层——path 全在 hash 内
+ *（/admin#/providers），路由表见 routes.tsx。 */
 export default function App(): ReactNode {
   return (
     <AdminErrorBoundary>
-      <AdminApp />
+      <HashRouter>
+        <AdminApp />
+      </HashRouter>
     </AdminErrorBoundary>
   );
 }

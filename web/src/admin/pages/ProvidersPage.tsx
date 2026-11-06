@@ -28,6 +28,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
 import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Link, useNavigate } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
@@ -50,6 +51,7 @@ import { loginUrl } from '../bootstrap';
 import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
 import { SortableList } from '../components/SortableList';
 import { StatusSwitch } from '../components/StatusSwitch';
+import { PROVIDER_NEW_PATH, providerEditPath } from '../paths';
 import styles from './ProvidersPage.module.less';
 
 /** 行键（§5.3 行 1192：provider_key 创建后不可改，天然行键）。 */
@@ -59,9 +61,6 @@ function providerRowKey(row: Provider): string {
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
-
-/** 新建页路径（§6 行 516；与 routes.tsx 同名常量同值，SPA 全量刷新路由）。 */
-const PROVIDER_NEW_PATH = '/admin/providers/new';
 
 /**
  * 表头列（与 .row 网格列一一对应；首列为 SortableList 拖拽手柄，无标题）。
@@ -85,6 +84,8 @@ export function ProvidersPage(props: {
   readonly alRoot: string;
 }): ReactNode {
   const { status, data, error, run } = useRequest(listProviders);
+  // 页内跳转换 router 导航（HashRouter SPA 内跳，不再整页刷新）。
+  const navigate = useNavigate();
   // 行集本地态：列表载入同步 + 启停 / 排序写操作成功后就地补丁（乐观）。
   const [rows, setRows] = useState<readonly Provider[]>([]);
   // 写操作（启停 / 排序）失败反馈改走 Semi Toast（原就地 actionError
@@ -168,7 +169,7 @@ export function ProvidersPage(props: {
       <Typography.Title heading={3}>{t('admin.navProviders')}</Typography.Title>
       {/* 新建入口（需求 §4.6 列表/新建/编辑/启用/排序；对照 OidcClientsPage 工具栏写法）。 */}
       <div className={styles.toolbar}>
-        <Button theme="solid" onClick={() => window.location.assign(PROVIDER_NEW_PATH)}>
+        <Button theme="solid" onClick={() => void navigate(PROVIDER_NEW_PATH)}>
           {t('admin.createProviderAction')}
         </Button>
       </div>
@@ -192,11 +193,11 @@ export function ProvidersPage(props: {
           return (
             <div className={styles.row}>
               <span className={styles.cellName}>
-                {/* 编辑入口（§6 行 516 ProviderEditPage；最小改动：显示名作链接）。
-                    链接去自绘主色装饰，交互色交 Semi 默认。 */}
-                <a href={`/admin/providers/${row.providerKey}/edit`}>
+                {/* 编辑入口（§6 行 516 ProviderEditPage；去自绘主色装饰，
+                    改 SPA 内 Link，路径经 providerEditPath 编码拼接）。 */}
+                <Link to={providerEditPath(row.providerKey)}>
                   {row.displayName || EMPTY_TEXT}
-                </a>
+                </Link>
               </span>
               <span className={styles.cellKey}>
                 <code className={styles.keyText}>{row.providerKey}</code>

@@ -16,7 +16,8 @@
  * draft / applied 两态——生效即回第 1 页（§1.7 服务端分页语义）。
  * 重置密码（§5.4 行 1252）：Modal 输入新密码 → ResetUserPassword → 仅成功
  * （OkResponse），新密码由管理员转交该用户；解除登录限制（§5.4 行 1254）：
- * UnlockUser，Popconfirm 确认。用户名 → /admin/users/{id} 详情入口。
+ * UnlockUser，Popconfirm 确认。用户名 → /admin#/users/{id} 详情入口
+ * （SPA 内 Link）。
  *
  * 401 统一跳登录（§6 行 501，ProvidersPage 同模式）；404 掩护等其余错误走
  * 页面错误态。组件壳 import Semi 后不可在 node 测试（工具链 blocker），
@@ -25,6 +26,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Link } from '@modern-js/runtime/router';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
@@ -50,6 +52,7 @@ import {
   userStatusLabel,
 } from '../api';
 import { loginUrl } from '../bootstrap';
+import { userDetailPath } from '../paths';
 import styles from './UsersPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
@@ -170,8 +173,9 @@ export function UsersPage(props: {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
       render: (_text: unknown, row: AdminUser) => (
-        // 链接去自绘主色装饰，交互色交 Semi / 浏览器默认。
-        <a href={`/admin/users/${row.id}`}>{row.username}</a>
+        // 去自绘主色装饰；改 SPA 内 Link（userDetailPath 构造，
+        // 取代模板字符串直拼 /admin/users/{id}）。
+        <Link to={userDetailPath(row.id)}>{row.username}</Link>
       ),
     },
     {

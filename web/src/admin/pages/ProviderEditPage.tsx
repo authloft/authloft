@@ -27,6 +27,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { useNavigate } from '@modern-js/runtime/router';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
@@ -49,6 +50,7 @@ import {
 } from '../api';
 import { loginUrl } from '../bootstrap';
 import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
+import { adminNavPath } from '../paths';
 import { SchemaForm } from '../schema/SchemaForm';
 import {
   adminProviderToValues,
@@ -59,9 +61,6 @@ import {
 } from '../schema/schemaLogic';
 import type { SchemaField } from '../../gen/proto/api/admin/v1/schema_pb';
 import styles from './ProviderEditPage.module.less';
-
-/** 列表页地址（保存成功后整页跳回，刷新列表数据）。 */
-const PROVIDERS_LIST_PATH = '/admin/providers';
 
 /** 表单值形态（schemaLogic 值模型：键 → JSON 值 / json 文本态）。 */
 type FormValues = Record<string, unknown>;
@@ -77,6 +76,8 @@ export function ProviderEditPage(props: {
   readonly providerKey?: string;
 }): ReactNode {
   const editing = props.providerKey !== undefined;
+  // 保存成功跳回列表改 router 导航（HashRouter SPA 内跳）。
+  const navigate = useNavigate();
 
   const typesReq = useRequest(getProviderTypes);
   const providerReq = useRequest(getProvider);
@@ -205,7 +206,8 @@ export function ProviderEditPage(props: {
       .run(buildProviderStruct(type, schema.fields, values))
       .then((result) => {
         if (result !== undefined) {
-          window.location.assign(PROVIDERS_LIST_PATH);
+          // 列表页路径取 ADMIN_NAV_ROUTES 单一来源（paths.adminNavPath）。
+          void navigate(adminNavPath('admin.navProviders'));
         }
       })
       .catch((error) => {
