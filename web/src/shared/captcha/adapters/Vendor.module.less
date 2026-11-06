@@ -1,0 +1,21 @@
+// 厂商无感验证码 wrapper 样式（docs/前端架构.md §1.7）。命令式 DOM
+//（VendorChallenge 基座自管 createElement）经 className 挂 CSS Modules 哈希
+// 类，与 Image adapter 同构；厂商 SDK 自带的 iframe / badge 样式自管。
+@import (reference) '../../styles/tokens.less');
+
+// 脚本加载 / 挑战失败的错误态文案。
+.errorMessage {
+  margin-bottom: @spacing-sm;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+// 错误态手动重试按钮。
+.retryButton {
+  padding: @spacing-xs @spacing-md;
+  border: @border-width solid @color-border;
+  border-radius: @radius-sm;
+  background-color: @color-background;
+  font-size: @font-size-sm;
+  cursor: pointer;
+}

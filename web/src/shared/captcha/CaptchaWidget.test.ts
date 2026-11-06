@@ -19,7 +19,10 @@ import {
   adapterFactoryFor,
   adapterKey,
 } from './CaptchaWidget';
+import { createHCaptchaAdapter } from './adapters/HCaptcha';
 import { createImageAdapter } from './adapters/Image';
+import { createRecaptchaAdapter } from './adapters/Recaptcha';
+import { createTurnstileAdapter } from './adapters/Turnstile';
 
 const { createElement } = React;
 rs.stubGlobal('React', React);
@@ -39,15 +42,18 @@ function makeCaptcha(init: CaptchaInit): CaptchaConfig {
   return create(CaptchaConfigSchema, init);
 }
 
-describe('adapterFactoryFor 分派（§3.5 行 350；§2.5 行 486 四种 type）', () => {
+describe('adapterFactoryFor 分派（§3.5 行 350；§2.5 行 500 四种 type + 未知兜底）', () => {
   test('image → Image 工厂（含降级态）', () => {
     expect(adapterFactoryFor('image')).toBe(createImageAdapter);
   });
 
-  test('其余 type 厂商 wrapper 未落地 → undefined（兜底错误态）', () => {
-    expect(adapterFactoryFor('turnstile')).toBeUndefined();
-    expect(adapterFactoryFor('recaptcha')).toBeUndefined();
-    expect(adapterFactoryFor('hcaptcha')).toBeUndefined();
+  test('turnstile / recaptcha / hcaptcha → 各自厂商 wrapper 工厂', () => {
+    expect(adapterFactoryFor('turnstile')).toBe(createTurnstileAdapter);
+    expect(adapterFactoryFor('recaptcha')).toBe(createRecaptchaAdapter);
+    expect(adapterFactoryFor('hcaptcha')).toBe(createHCaptchaAdapter);
+  });
+
+  test('未知 type（协议外取值）→ undefined（兜底错误态）', () => {
     expect(adapterFactoryFor('future_vendor_v2')).toBeUndefined();
     expect(adapterFactoryFor('')).toBeUndefined();
   });
@@ -81,7 +87,7 @@ describe('adapterKey 重建判据（§3.5 行 361：权威来源变化按新 typ
   });
 });
 
-describe('CaptchaWidget 静态渲染（未知 type 兜底 / image 容器）', () => {
+describe('CaptchaWidget 静态渲染（四态容器 / 未知 type 兜底）', () => {
   test('type=image → 渲染 wrapper 容器（adapter 挂载点）', () => {
     const markup = renderToStaticMarkup(
       createElement(CaptchaWidget, {
@@ -91,14 +97,26 @@ describe('CaptchaWidget 静态渲染（未知 type 兜底 / image 容器）', ()
     expect(markup).toContain('<div');
   });
 
-  test('type=recaptcha（wrapper 未落地）→ 兜底错误态「请刷新重试」', () => {
+  test('type=turnstile / recaptcha / hcaptcha → 渲染 wrapper 容器（不兜底；挂载细节由各 adapter 测试覆盖）', () => {
+    for (const type of ['turnstile', 'recaptcha', 'hcaptcha']) {
+      const markup = renderToStaticMarkup(
+        createElement(CaptchaWidget, {
+          captcha: makeCaptcha({
+            providerKey: 'cf_turnstile',
+            type,
+            siteKey: '0x4AAA',
+          }),
+        }),
+      );
+      expect(markup).toContain('<div');
+      expect(markup).not.toContain('role="alert"');
+    }
+  });
+
+  test('未知 type（协议外取值）→ 兜底错误态「请刷新重试」', () => {
     const markup = renderToStaticMarkup(
       createElement(CaptchaWidget, {
-        captcha: makeCaptcha({
-          providerKey: 'cf_turnstile',
-          type: 'recaptcha',
-          siteKey: '0x4AAA',
-        }),
+        captcha: makeCaptcha({ providerKey: 'x', type: 'future_vendor_v2' }),
       }),
     );
     expect(markup).toContain('请刷新重试');

@@ -1,8 +1,9 @@
 /**
  * CaptchaWidget 分派器（docs/前端架构.md §3.5 行 350）：按当前
- * captcha.type 加载对应 wrapper（本实现 type=image → adapters/Image；其余 type
- * 的厂商 wrapper 未落地——后端第三方 provider 未交付，归后续实现——渲染兜底
- * 错误态），统一生命周期（render / getToken / reset 经 ref 暴露给调用方）。
+ * captcha.type 加载对应 wrapper（image →
+ * adapters/Image；turnstile / recaptcha / hcaptcha → 对应厂商 wrapper，第三方
+ * JS 由 wrapper 经 loadVendorScript 运行期动态加载，不打包不写死标签），
+ * 统一生命周期（render / getToken / reset 经 ref 暴露给调用方）。
  *
  * 本组件不发任何配置请求（§3.5 行 363、§9 第 11 条）：{providerKey, type,
  * siteKey} 全部由调用方 prop 传入——首屏注入快照（login）/ GetConfig（account）
@@ -17,11 +18,14 @@ import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { t } from '../i18n';
+import { createHCaptchaAdapter } from './adapters/HCaptcha';
 import { createImageAdapter } from './adapters/Image';
+import { createRecaptchaAdapter } from './adapters/Recaptcha';
+import { createTurnstileAdapter } from './adapters/Turnstile';
 import type { CaptchaAdapter, CaptchaAdapterFactory } from './types';
 import styles from './CaptchaWidget.module.less';
 
-// 未实现 type（turnstile / recaptcha / hcaptcha 等）→ 兜底错误态，
+// 未知 type（§2.5 行 500 四值之外的协议外取值）→ 兜底错误态，
 // 文案 common.refreshAndRetry（i18n 收口）。
 
 /**
@@ -34,14 +38,27 @@ export function adapterKey(captcha: CaptchaConfig): string {
 }
 
 /**
- * type → wrapper 工厂分派（§3.5 行 350）。image 含服务端降级态（§2.5 行 486、
- * 515：第三方不可用时服务端下发 type=image）；其余 type 的厂商 wrapper 未
- * 落地 → undefined → 兜底错误态。
+ * type → wrapper 工厂分派（§3.5 行 350；§2.5 行 500 四种 type）。image 含
+ * 服务端降级态（§2.5 行 486、515：第三方不可用时服务端下发 type=image）；
+ * turnstile / recaptcha / hcaptcha →
+ * 厂商 wrapper；未知 type →
+ * undefined → 兜底错误态。
  */
 export function adapterFactoryFor(
   type: string,
 ): CaptchaAdapterFactory | undefined {
-  return type === 'image' ? createImageAdapter : undefined;
+  switch (type) {
+    case 'image':
+      return createImageAdapter;
+    case 'turnstile':
+      return createTurnstileAdapter;
+    case 'recaptcha':
+      return createRecaptchaAdapter;
+    case 'hcaptcha':
+      return createHCaptchaAdapter;
+    default:
+      return undefined;
+  }
 }
 
 /** 经 ref 暴露给调用方的统一生命周期句柄（提交取凭据、校验失败重置）。 */
