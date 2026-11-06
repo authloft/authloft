@@ -40,6 +40,7 @@ export const zhCN = {
   'common.qrScanPrompt': '请使用手机扫码',
   'common.providerIconAlt': '渠道图标',
   'common.refreshAndRetry': '请刷新重试',
+  'common.captchaLoadFailed': '验证码加载失败',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': '密码登录',

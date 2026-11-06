@@ -33,6 +33,7 @@ export const enUS: I18nMessages = {
   'common.qrScanPrompt': 'Please scan the QR code with your phone',
   'common.providerIconAlt': 'Provider icon',
   'common.refreshAndRetry': 'Please refresh and try again',
+  'common.captchaLoadFailed': 'Captcha failed to load',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': 'Password',
