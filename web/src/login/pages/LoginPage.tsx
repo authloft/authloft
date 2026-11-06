@@ -32,22 +32,25 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const showRegister = flags?.registration === true;
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>{t('login.title')}</h1>
-      <LoginContainer snapshot={snapshot} />
-      {(showForgot || showRegister) && (
-        <nav className={styles.entryNav}>
-          {showForgot && (
-            <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
-              {t('login.forgotPassword')}
-            </a>
-          )}
-          {showRegister && (
-            <a className={styles.entryLink} href={ssoPath('/sso/register')}>
-              {t('login.register')}
-            </a>
-          )}
-        </nav>
-      )}
+      {/* 统一卡片容器（页面底 + 居中白卡），DOM 语义不变。 */}
+      <div className={styles.card}>
+        <h1 className={styles.title}>{t('login.title')}</h1>
+        <LoginContainer snapshot={snapshot} />
+        {(showForgot || showRegister) && (
+          <nav className={styles.entryNav}>
+            {showForgot && (
+              <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
+                {t('login.forgotPassword')}
+              </a>
+            )}
+            {showRegister && (
+              <a className={styles.entryLink} href={ssoPath('/sso/register')}>
+                {t('login.register')}
+              </a>
+            )}
+          </nav>
+        )}
+      </div>
     </main>
   );
 }

@@ -1,23 +1,63 @@
-// 登录页外壳样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+// 登录页外壳样式（docs/前端架构.md §1.7；视觉重做：页面底 + 居中白卡
+// + 标题层级 + 次要链接分隔带；窄屏收敛卡片内边距）。
 @import (reference) '../../shared/styles/tokens.less';
 
+// 全视口居中：页面底与卡片面分层（参考页默认态结构：浅底 + 白卡）。
 .page {
-  max-width: 24rem;
-  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: @spacing-xl @spacing-lg;
+  background-color: @color-page;
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  padding: 2.25rem 2rem;
+  background-color: @color-surface;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-lg;
+  box-shadow: @shadow-card;
 }
 
 .title {
+  margin-bottom: @spacing-xl;
+  color: @color-text-strong;
   font-size: @font-size-xl;
-  margin-bottom: @spacing-lg;
+  font-weight: @font-weight-semibold;
+  text-align: center;
 }
 
 .entryNav {
   display: flex;
-  gap: @spacing-md;
-  margin-top: @spacing-md;
+  justify-content: center;
+  gap: @spacing-lg;
+  margin-top: @spacing-xl;
+  padding-top: @spacing-lg;
+  border-top: @border-width solid @color-border-subtle;
 }
 
 .entryLink {
-  padding: 0.375rem 0.875rem;
+  color: @color-primary;
+  font-size: @font-size-sm;
+  text-decoration: none;
+  transition: color @transition-fast;
+}
+
+.entryLink:hover {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}
+
+// 窄屏收敛：卡片贴边留小外边距、内边距收紧。
+@media (max-width: 480px) {
+  .page {
+    padding: @spacing-lg @spacing-md;
+  }
+
+  .card {
+    padding: @spacing-xl @spacing-lg;
+  }
 }

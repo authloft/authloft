@@ -264,7 +264,7 @@ describe('registerPayloadFor / resetPayloadFor（§2.3 行 444-451 / §2.4 行 4
 });
 
 describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
-  test('syncCookieUrl 非空优先（§1.3 行 136）；双空不跳转', () => {
+  test('syncCookieUrl 非空优先；双空 → 默认落点 /account/profile（§1.3 行 158-162）', () => {
     expect(
       pagesMod.flowTerminalUrl(
         envelope({
@@ -276,7 +276,7 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
     expect(
       pagesMod.flowTerminalUrl(envelope({ redirectTo: 'https://app.test/home' })),
     ).toBe('https://app.test/home');
-    expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('');
+    expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account/profile');
   });
 
   test('流程 / captcha 中间态非失败；signup_disabled / username_taken 等为失败', () => {

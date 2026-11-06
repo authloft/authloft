@@ -105,14 +105,19 @@ export function advanceAfterStep(
 }
 
 /**
- * 终点 URL（§1.3 行 136）：syncCookieUrl 非空优先（后端拼好的首跳完整 URL），
- * 否则 redirectTo；双空 → 空串（不跳转）。与 LoginContainer.terminalUrl 同款逻辑，
+ * 终点 URL（§1.3 行 158-162 定稿）：syncCookieUrl 非空优先（后端拼好的
+ * 首跳完整 URL），否则 redirectTo；双空 → 默认落点 /account/profile（直登
+ * 场景，禁止停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，
  * 此处不复用它以免本页静态拉入整个 login flow 模块链。
  */
 export function flowTerminalUrl(envelope: LoginFlowResponse): string {
-  return envelope.syncCookieUrl !== ''
-    ? envelope.syncCookieUrl
-    : envelope.redirectTo;
+  if (envelope.syncCookieUrl !== '') {
+    return envelope.syncCookieUrl;
+  }
+  if (envelope.redirectTo !== '') {
+    return envelope.redirectTo;
+  }
+  return '/account/profile';
 }
 
 /** 流程步提交编排（纯逻辑，request 可注入；传输层异常 → ok:false 不伪造信封）。 */

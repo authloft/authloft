@@ -1,12 +1,42 @@
-// 通用表单步骤样式（docs/前端架构.md §1.7）。
+// 动态表单步骤样式（docs/前端架构.md §1.7；视觉重做；ChallengeStep
+// 复用本文件的 .form / .submit）。
 @import (reference) '../../shared/styles/tokens.less';
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: @spacing-md;
+  gap: @spacing-lg;
 }
 
 .submit {
-  padding: 0.375rem 0.875rem;
+  width: 100%;
+  height: @control-height;
+  color: @color-text-inverse;
+  font-size: @font-size-md;
+  font-weight: @font-weight-semibold;
+  background-color: @color-primary;
+  border: none;
+  border-radius: @radius-md;
+  cursor: pointer;
+  transition:
+    background-color @transition-fast,
+    box-shadow @transition-fast;
+}
+
+.submit:hover:not(:disabled) {
+  background-color: @color-primary-hover;
+}
+
+.submit:active:not(:disabled) {
+  background-color: @color-primary-active;
+}
+
+.submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

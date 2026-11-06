@@ -1,26 +1,78 @@
-// OTP 因子表单样式（docs/前端架构.md §1.7；内联清零：labelStyle 常量迁入 .label）。
+// OTP 因子表单样式（docs/前端架构.md §1.7；视觉重做：字段节奏、
+// 重发文字按钮、主按钮全态）。
 @import (reference) '../../shared/styles/tokens.less';
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: @spacing-md;
+  gap: @spacing-lg;
 }
 
 .label {
   display: block;
-  margin-bottom: @spacing-xs;
+  color: @color-text;
+  font-size: @font-size-sm;
+  font-weight: @font-weight-medium;
 }
 
+// 剩余尝试次数等运行状态（信息性，次级灰）。
 .status {
+  margin: 0;
   color: @color-text-muted;
   font-size: @font-size-sm;
 }
 
+// 重发验证码：文字链接按钮（次要操作层级，参考页次要操作同款呈现）。
 .resend {
-  padding: 0.375rem 0.875rem;
+  align-self: flex-start;
+  padding: 0;
+  color: @color-primary;
+  font-size: @font-size-sm;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color @transition-fast;
+}
+
+.resend:hover:not(:disabled) {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}
+
+.resend:disabled {
+  color: @color-text-muted;
+  cursor: not-allowed;
 }
 
 .submit {
-  padding: 0.375rem 0.875rem;
+  width: 100%;
+  height: @control-height;
+  color: @color-text-inverse;
+  font-size: @font-size-md;
+  font-weight: @font-weight-semibold;
+  background-color: @color-primary;
+  border: none;
+  border-radius: @radius-md;
+  cursor: pointer;
+  transition:
+    background-color @transition-fast,
+    box-shadow @transition-fast;
+}
+
+.submit:hover:not(:disabled) {
+  background-color: @color-primary-hover;
+}
+
+.submit:active:not(:disabled) {
+  background-color: @color-primary-active;
+}
+
+.submit:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

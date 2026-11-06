@@ -293,7 +293,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(requests[0]?.captcha).toBe(payload);
   });
 
-  test('completeLogin：syncCookieUrl 优先 / redirectTo 回退 / 皆空不跳（§4.1 行 383 terminalUrl 同口径）', () => {
+  test('completeLogin：syncCookieUrl 优先 / redirectTo 回退 / 皆空 → 默认落点（§1.3 行 158-162）', () => {
     const calls: string[] = [];
     const nav = (url: string) => calls.push(url);
     completeLogin(
@@ -308,7 +308,11 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
       nav,
     );
     completeLogin(create(LoginFlowResponseSchema, {}), nav);
-    expect(calls).toEqual(['https://sync.test/first', 'https://app.test/done']);
+    expect(calls).toEqual([
+      'https://sync.test/first',
+      'https://app.test/done',
+      '/account/profile',
+    ]);
   });
 
   // onResult 完整状态机（§2.8 行 739-743——登录结论在内层 login 信封）。

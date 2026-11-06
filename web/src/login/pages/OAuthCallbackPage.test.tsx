@@ -387,14 +387,14 @@ describe('dispatchCallback 分派编排', () => {
     expect(calls.navigations).toEqual(['https://sync.test/first']);
   });
 
-  test('success 双空终点 → 落帧不跳转（flowTerminalUrl 双空 ""）', async () => {
+  test('success 双空终点 → 跳默认落点 /account/profile（§1.3 行 158-162）', async () => {
     const { calls, deps } = recorder(envelope({ status: 'success' }));
     await pagesMod.dispatchCallback(
       { providerKey: 'qq', search: '?code=c-1&state=l-1' },
       deps,
     );
     expect(calls.envelopes[0].status).toBe('success');
-    expect(calls.navigations).toHaveLength(0);
+    expect(calls.navigations).toEqual(['/account/profile']);
   });
 
   test('mfa_required → 落帧不跳转（mfa 编排帧渲染交页面，§1.6 行 233；现为 LoginContainer 完整编排）', async () => {

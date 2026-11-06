@@ -1,40 +1,49 @@
-// 登录方式列表样式（docs/前端架构.md §1.7；内联清零：tab / 图标墙布局迁入）。
+// 登录方式切换样式（docs/前端架构.md §1.7；视觉重做：参考页默认态
+// 的文字 tab + 选中下划线高亮形态；原 .group/.provider/.icon 三种无引用
+// 样式随本实现清理——图标墙归 factors/ProviderButtons）。
 @import (reference) '../shared/styles/tokens.less';
 
 .list {
   display: flex;
-  flex-wrap: wrap;
-  gap: @spacing-sm;
+  gap: @spacing-lg;
   list-style: none;
   margin: 0;
   padding: 0;
+  border-bottom: @border-width solid @color-border-subtle;
 }
 
+.list > li {
+  display: flex;
+}
+
+// 文字 tab：常态次级灰，hover 加深，选中主色 + 底部 2px 高亮线。
 .tab {
-  padding: 0.375rem 0.875rem;
+  margin-bottom: -@border-width; // 压住 .list 底边，高亮线贴底
+  padding: @spacing-sm @spacing-xs;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+  font-weight: @font-weight-medium;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color @transition-fast,
+    border-color @transition-fast;
+}
+
+.tab:hover {
+  color: @color-text;
+}
+
+.tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+  border-radius: @radius-sm;
 }
 
 .tabActive {
   .tab();
-  font-weight: 700;
-  text-decoration: underline;
-}
-
-.group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: @spacing-sm;
-  margin-top: @spacing-md;
-}
-
-.provider {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-}
-
-.icon {
-  width: 1.25rem;
-  height: 1.25rem;
+  color: @color-primary;
+  border-bottom-color: @color-primary;
 }

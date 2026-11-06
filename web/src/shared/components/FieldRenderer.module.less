@@ -1,33 +1,87 @@
-// 通用字段渲染器样式（docs/前端架构.md §1.7；内联清零：FieldRenderer
-// 12 type 控件只做结构级布局——label/控件排列，不逐 type 视觉发挥）。
+// FieldRenderer 样式（docs/前端架构.md §1.7；视觉重做：输入控件统一
+// 高度 / 边框 / 聚焦环 / 禁用态，字段纵向节奏交给父级 .form 的 gap）。
 @import (reference) '../styles/tokens.less';
 
 .field {
-  margin-bottom: @spacing-lg;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
 }
 
 .label {
   display: block;
-  margin-bottom: @spacing-xs;
+  color: @color-text;
+  font-size: @font-size-sm;
+  font-weight: @font-weight-medium;
 }
 
 .input {
-  padding: @spacing-sm 0.625rem;
-  font: inherit;
+  width: 100%;
+  height: @control-height;
+  padding: 0 0.75rem;
+  color: @color-text;
+  font-size: @font-size-md;
+  background-color: @color-surface;
+  border: @border-width solid @color-border;
+  border-radius: @radius-md;
+  outline: none;
+  transition:
+    border-color @transition-fast,
+    box-shadow @transition-fast;
 }
 
-.checkbox {
-  width: 1.125rem;
-  height: 1.125rem;
+.input::placeholder {
+  color: @color-text-muted;
+}
+
+.input:hover:not(:disabled) {
+  border-color: @color-border-strong;
+}
+
+.input:focus {
+  border-color: @color-primary;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+}
+
+.input:disabled {
+  color: @color-text-muted;
+  background-color: @color-background-muted;
+  cursor: not-allowed;
 }
 
 .textarea {
-  padding: @spacing-sm 0.625rem;
-  font: inherit;
-  font-family: monospace;
-  width: 100%;
+  .input();
+  height: auto;
+  min-height: 5rem;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
 }
 
+.checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: @color-primary;
+  cursor: pointer;
+}
+
+// 字段内联辅助按钮（如「发送验证码」之外的字段级操作）。
 .inlineButton {
-  margin-left: @spacing-sm;
+  align-self: flex-start;
+  padding: 0;
+  color: @color-primary;
+  font-size: @font-size-sm;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color @transition-fast;
+}
+
+.inlineButton:hover:not(:disabled) {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}
+
+.inlineButton:disabled {
+  color: @color-text-muted;
+  cursor: not-allowed;
 }

@@ -1,17 +1,34 @@
-// 分段验证码输入样式（docs/前端架构.md §1.7；内联样式清零迁入）。
-@import (reference) '../styles/tokens.less';
+// CodeInput 样式（docs/前端架构.md §1.7；视觉重做：单格控件统一
+// 高度 / 边框 / 聚焦环；格子弹性伸缩适配窄屏）。
+@import (reference) '../../shared/styles/tokens.less';
 
 .group {
   display: flex;
   gap: @spacing-sm;
 }
 
-// 单格：宽高 / 居中 / 字号沿用迁入前取值；边框保证裸 reset 下的可见性。
 .box {
-  width: 2.5rem;
-  height: 2.75rem;
-  border: @border-width solid @color-border;
-  border-radius: @radius-sm;
-  text-align: center;
+  flex: 1 1 0;
+  min-width: 2rem;
+  max-width: 2.75rem;
+  height: 3.25rem;
+  color: @color-text;
   font-size: @font-size-lg;
+  text-align: center;
+  background-color: @color-surface;
+  border: @border-width solid @color-border;
+  border-radius: @radius-md;
+  outline: none;
+  transition:
+    border-color @transition-fast,
+    box-shadow @transition-fast;
+}
+
+.box:hover:not(:focus) {
+  border-color: @color-border-strong;
+}
+
+.box:focus {
+  border-color: @color-primary;
+  box-shadow: 0 0 0 @ring-width @ring-color;
 }

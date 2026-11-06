@@ -37,3 +37,32 @@
 @radius-md: 8px;
 @radius-lg: 12px;
 @border-width: 1px;
+
+// ── 登录主链视觉重做追加令牌（仍只存变量，无组件选择器）──
+// 颜色状态与层级：主色 hover/active/soft 底、危险 soft 底、文字强层级、
+// 反色文字（主色按钮上）、边框强/弱层级、页面底与卡片面。
+@color-primary-hover: #1d4ed8;
+@color-primary-active: #1e40af;
+@color-primary-soft: #eff6ff;
+@color-danger-soft: #fef2f2;
+@color-text-strong: #111827;
+@color-text-inverse: #ffffff;
+@color-border-strong: #9ca3af;
+@color-border-subtle: #e5e7eb;
+@color-page: #f5f7fa;
+@color-surface: #ffffff;
+
+// 焦点环（输入 / 按钮 focus-visible）
+@ring-color: rgba(37, 99, 235, 0.18);
+@ring-width: 3px;
+
+// 卡片投影（克制：近距硬阴影 + 远距柔阴影两层）
+@shadow-card:
+  0 1px 2px rgba(16, 24, 40, 0.05),
+  0 12px 32px rgba(16, 24, 40, 0.08);
+
+// 控件尺寸 / 字重 / 动效
+@control-height: 2.75rem; // 44px，与参考页输入 / 主按钮同量级
+@font-weight-medium: 500;
+@font-weight-semibold: 600;
+@transition-fast: 160ms ease;

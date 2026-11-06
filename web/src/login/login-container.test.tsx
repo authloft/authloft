@@ -268,12 +268,12 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     ).toBe('https://sync.test/first');
   });
 
-  test('syncCookieUrl 省略 → redirectTo；双空 → 不跳转', () => {
+  test('syncCookieUrl 省略 → redirectTo；双空 → 默认落点 /account/profile（§1.3 行 158-162）', () => {
     expect(container.terminalUrl(envelope({ redirectTo: 'https://app.test/home' }))).toBe('https://app.test/home');
-    expect(container.terminalUrl(envelope({}))).toBe('');
+    expect(container.terminalUrl(envelope({}))).toBe('/account/profile');
   });
 
-  test('complete → 跳转回调（双空目标不调用）；restart → 回第一步回调', () => {
+  test('complete → 跳转回调（双空 → 默认落点）；restart → 回第一步回调', () => {
     const redirects: string[] = [];
     const restarts: string[] = [];
     const handlers = {
@@ -289,7 +289,7 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
       handlers,
     );
     container.executeEffects([{ type: 'restart', status: 'token_expired' }], handlers);
-    expect(redirects).toEqual(['https://sync.test/first']);
+    expect(redirects).toEqual(['https://sync.test/first', '/account/profile']);
     expect(restarts).toEqual(['token_expired']);
   });
 });

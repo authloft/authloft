@@ -42,8 +42,9 @@ function initCaptcha(): CaptchaConfig | undefined {
 }
 
 /**
- * 扫码登录终点（§4.1 行 383 与 LoginContainer.terminalUrl 同口径：syncCookieUrl
- * 是后端拼好的多域名同步首跳完整 URL → 优先；否则 redirectTo；皆空不跳）。
+ * 扫码登录终点（§1.3 行 158-162 定稿，与 LoginContainer.terminalUrl 同口径：
+ * syncCookieUrl 是后端拼好的多域名同步首跳完整 URL → 优先；否则 redirectTo；
+ * 皆空 → 默认落点 /account/profile，禁止停留提示页）。
  */
 export function completeLogin(
   envelope: LoginFlowResponse,
@@ -52,7 +53,9 @@ export function completeLogin(
   const url =
     envelope.syncCookieUrl !== ''
       ? envelope.syncCookieUrl
-      : envelope.redirectTo;
+      : envelope.redirectTo !== ''
+        ? envelope.redirectTo
+        : '/account/profile';
   if (url !== '') {
     navigate(url);
   }

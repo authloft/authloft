@@ -1,17 +1,38 @@
-// 错误横幅样式（docs/前端架构.md §1.7；内联清零：ErrorBanner 布局迁入）。
+// ErrorBanner 样式（docs/前端架构.md §1.7；视觉重做：危险 soft 底 +
+// 左侧强调条，文案与重试操作纵向排列）。
 @import (reference) '../styles/tokens.less';
 
 .banner {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
   padding: @spacing-md @spacing-lg;
-  border: @border-width solid @color-danger;
-  border-radius: @radius-sm;
+  background-color: @color-danger-soft;
+  border-left: 3px solid @color-danger;
+  border-radius: @radius-md;
 }
 
 .text {
   margin: 0;
   color: @color-danger;
+  font-size: @font-size-sm;
+  line-height: 1.5;
 }
 
 .button {
-  margin-top: @spacing-sm;
+  align-self: flex-start;
+  padding: 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+  font-weight: @font-weight-medium;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+  border-radius: @radius-sm;
 }
