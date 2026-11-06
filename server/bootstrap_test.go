@@ -844,6 +844,20 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 	csrv := connect.NewServer(defaultReadMaxBytes)
 	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
 
+	// 装配断言：五族 service 经 buildEngine 构造挂 deps 后由
+	// registerAccount 注入 NewWithServices——四单例非 nil；bindcontact 为
+	// 双渠道组合（bindContactPair，sms / email 两实例均非 nil）。
+	if deps.accountAvatar == nil || deps.accountPassword == nil ||
+		deps.accountMfa == nil || deps.accountEvents == nil {
+		t.Fatalf("account 四族 service 存在 nil: avatar=%v password=%v mfa=%v events=%v",
+			deps.accountAvatar, deps.accountPassword, deps.accountMfa, deps.accountEvents)
+	}
+	bindPair, ok := deps.accountBindContact.(bindContactPair)
+	if !ok || bindPair.phone == nil || bindPair.email == nil {
+		t.Fatalf("accountBindContact 应为双渠道 bindContactPair 且 sms/email 两实例非 nil, got %T",
+			deps.accountBindContact)
+	}
+
 	// 装配断言：account 域前缀已注册（sso 域零回归仍在）。
 	var hasAccount, hasSSO bool
 	for _, rt := range csrv.Routes() {

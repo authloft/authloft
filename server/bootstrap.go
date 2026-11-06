@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -189,6 +190,25 @@ type assembled struct {
 	// AccountService handler。Factor 注入 nil 时 service 五路 fail-closed
 	//（启动降级窗口，§8.3 行 1071）。
 	accountWebauthn *accountsvc.WebauthnService
+
+	// account 五族 service（接口文档 §3.2-§3.7）：avatar
+	//（头像直传）/ password（改密）/ mfa（两步验证族）/
+	// events（本人事件日志）四族 buildEngine 内构造（依赖复用
+	// users / creds / webauthnRepo / settings / epochStore / provider Loader /
+	// storage Resolver / eventlog 延迟队列审计，同款挂 deps 模式），
+	// registerAccount 经 NewWithServices 注入 AccountService handler。
+	accountAvatar   *accountsvc.AvatarService
+	accountPassword *accountsvc.PasswordService
+	accountMfa      *accountsvc.MfaService
+	accountEvents   *accountsvc.EventsService
+
+	// accountBindContact 换绑族双渠道组合（接口文档 §3.4）：BindPhone
+	// / BindEmail 各持一个 BindContactService 实例——OTP / captcha Gate /
+	// 限流 Config / 审计依赖全同（与登录因子共享同一 otp 单例，purpose=bind
+	// 键空间独立），仅 Sender 按渠道分注（sms 桥 / email 桥；
+	// BindCodeSender「装配方按渠道注入」的落地）；handler 侧 ContactBinder
+	// 单注入位由 bindContactPair 适配，registerAccount 注入。
+	accountBindContact accounthandler.ContactBinder
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -533,6 +553,57 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Creds:    creds,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
+
+	// account 域五族 service 构造（接口文档 §3.2-§3.7）：四族
+	// 单实例直挂 deps；换绑族双渠道各一实例（见 bindContactPair）。审计统一
+	// 走 eventlog.Writer 延迟队列（accountThirdparty / accountWebauthn 同款
+	// 链）；Now / Rand 缺省（time.Now / crypto/rand.Reader，service 构造内
+	// 落回）。mfa 的 Rand 显式注入 crypto/rand.Reader（MfaDeps 字段语义，
+	// 与缺省同值——留显式注入便于阅读）。
+	deps.accountAvatar = accountsvc.NewAvatarService(accountsvc.AvatarDeps{
+		Settings:  deps.settings,
+		Providers: repo.NewProviderRepo(deps.db),
+		Users:     users,
+		// storage Resolver 与扫码域（deps.qrcode）同源同构造的装配
+		// 惯例，presign / commit 共用 provider Loader 行缓存。
+		Resolver: storage.NewResolver(deps.providerLoader),
+	})
+	deps.accountPassword = accountsvc.NewPasswordService(accountsvc.PasswordDeps{
+		Users:    users,
+		Creds:    creds,
+		Epoch:    deps.epochStore,
+		Settings: deps.settings,
+		Audit:    eventlog.NewWriter(deps.queue),
+	})
+	deps.accountMfa = accountsvc.NewMfaService(accountsvc.MfaDeps{
+		Users:    users,
+		Creds:    creds,
+		Webauthn: webauthnRepo,
+		Settings: deps.settings,
+		Audit:    eventlog.NewWriter(deps.queue),
+		Rand:     rand.Reader,
+	})
+	deps.accountEvents = accountsvc.NewEventsService(repo.NewEventLogRepo(deps.db))
+
+	// 换绑族双渠道（§3.4）：两实例共用同一 OTP 单例（purpose=bind
+	// 键空间与登录因子隔离，§10.1）/ captcha Gate / 限流 Config（与 factor/
+	// otp 双注入同值，otpParamsFromSettings 启动期快照）——仅 Sender 分渠道
+	//（BindCodeSender「装配方按渠道注入」）。
+	bindContactBase := accountsvc.BindContactDeps{
+		Users:  users,
+		OTP:    otpSvc,
+		Gate:   deps.gate,
+		Config: otpCfg,
+		Audit:  eventlog.NewWriter(deps.queue),
+	}
+	bindPhoneDeps := bindContactBase
+	bindPhoneDeps.Sender = smsSender
+	bindEmailDeps := bindContactBase
+	bindEmailDeps.Sender = emailSender
+	deps.accountBindContact = bindContactPair{
+		phone: accountsvc.NewBindContactService(bindPhoneDeps),
+		email: accountsvc.NewBindContactService(bindEmailDeps),
+	}
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
 		State:      loginState,
@@ -1050,11 +1121,14 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // WebauthnService（均 buildEngine 内构造的共享单例）；UpdateProfile
 //（接口文档 §3.2 行 837）走 service/account.ProfileService——单依赖
 // UserRepo，无跨 service 共享需求，本函数内就地构造（UserRepo 本就地
-// new，同款口径）。其余方法由生成的 UnimplementedAccountServiceHandler
-// 返回 unimplemented。
+// new，同款口径）。五族 service（avatar / password / bindcontact /
+// mfa / events，接口文档 §3.2-§3.7）经 NewWithServices 注入——buildEngine
+// 内构造的共享单例（bindcontact 为双渠道组合 bindContactPair）；cookies
+// 注入 newSessionCookie（ChangePassword 清 al_session 用，与 session 拦截
+// 器 / sso 登录终点同一构造器）。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
-		accounthandler.New(
+		accounthandler.NewWithServices(
 			repo.NewUserRepo(deps.db),
 			repo.NewCredentialRepo(deps.db),
 			deps.settings,
@@ -1063,20 +1137,44 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			deps.accountThirdparty,
 			deps.accountWebauthn,
 			accountsvc.NewProfileService(repo.NewUserRepo(deps.db)),
+			deps.accountAvatar,
+			deps.accountPassword,
+			deps.accountBindContact,
+			deps.accountMfa,
+			deps.accountEvents,
+			newSessionCookie(cfg, deps),
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
 }
 
-// registerAdmin 注册 AdminService Connect handler：session 拦截器在外（注入
-// 会话身份），connect.NewAdminInterceptor 在内（uid==1 判定，接口文档 §5 行
-// 1145-1146：无会话 401 / 非管理员 404 掩护），错误包装由
-// connect.Server.HandlerOptions 统一补最内层。读路径（ListProviders /
-// GetProvider / GetProviderSchema——详情为全站唯一明文凭证出口，访问日志不
-// 打印 body）直连 ProviderRepo；写族 7 方法
-// 走 service/admin/provider.go；用户管理族 8 方法走 service/admin/user.go
-//（业务校验 + IncEpoch/al:pwdep 失效链 + 审计投递 + Union 连带 + 解锁键清除，
+// bindContactPair 换绑族双渠道 ContactBinder 组合（§3.4）：BindPhone
+// / BindEmail 各持各自渠道的 BindContactService 实例（buildEngine 构造——
+// 依赖全同，仅 Sender 按 sms / email 渠道分注，BindCodeSender「装配
+// 方按渠道注入」的落地）；handler 侧 ContactBinder 单注入位由此适配。
+type bindContactPair struct {
+	phone *accountsvc.BindContactService
+	email *accountsvc.BindContactService
+}
+
+func (p bindContactPair) BindPhone(ctx context.Context, uid int64, in accountsvc.BindPhoneInput) error {
+	return p.phone.BindPhone(ctx, uid, in)
+}
+
+func (p bindContactPair) BindEmail(ctx context.Context, uid int64, in accountsvc.BindEmailInput) error {
+	return p.email.BindEmail(ctx, uid, in)
+}
+
+// registerAdmin 注册 AdminService Connect handler（读路径 + 写族
+// + 用户管理族 + 客户端管理族 + 系统配置 / 事件 / 工具族）：
+// session 拦截器在外（注入会话身份），connect.NewAdminInterceptor 在内
+// （uid==1 判定，接口文档 §5 行 1145-1146：无会话 401 / 非管理员 404 掩护），
+// 错误包装由 connect.Server.HandlerOptions 统一补最内层。读路径
+// （ListProviders / GetProvider / GetProviderSchema——详情为全站唯一明文凭证
+// 出口，访问日志不打印 body）直连 ProviderRepo；写族 7 方法走
+// service/admin/provider.go；用户管理族 8 方法走 service/admin/user.go（业务
+// 校验 + IncEpoch/al:pwdep 失效链 + 审计投递 + Union 连带 + 解锁键清除，
 // §18 行 1792 分层）——epoch 同步复用共享单例 deps.epochStore，审计经
 // eventlog.Writer 走 deps.queue（resetAuditSink 同款链）；解锁用的 PwFailStore
 // 就地构造（BanTTL 仅影响 Ban 写路径，删除 / SCAN 不受其影响）；客户端管理族

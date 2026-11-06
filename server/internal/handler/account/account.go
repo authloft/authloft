@@ -208,18 +208,7 @@ type Handler struct {
 	cookies *session.Cookie
 }
 
-// New 构造 AccountService handler（既有八依赖签名，兼容既有装配点；
-// bootstrap 装配段在 CSP 窗口期冻结，五族新依赖经 NewWithServices
-// 注入，装配切换归阶段二）。thirdparty 为三方绑定族 service、
-// webauthn 为通行密钥族 service、profile 为资料更新 service；
-// 未装配的五族 service（avatar / password / bindcontact / mfa /
-// events）为 nil，对应方法返回 unimplemented。
-func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater) *Handler {
-	return NewWithServices(users, creds, settings, providers, captcha, thirdparty, webauthn, profile,
-		nil, nil, nil, nil, nil, nil)
-}
-
-// NewWithServices 全依赖构造：在 New 八依赖之上补五族 service
+// NewWithServices 全依赖构造：八基础依赖 + 五族 service
 //（avatar / password / bindcontact / mfa / events）与会话 Cookie
 // 构造器（ChangePassword 清除 al_session 用；
 // session.Cookie 属性构造器与拦截器同源，sso handler cookies 同款注入）。
