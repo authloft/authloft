@@ -13,7 +13,7 @@
  * ./api（三方法 msw + 展示纯函数）。样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, type ReactNode } from 'react';
-import { Button, Card, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
@@ -42,19 +42,16 @@ export function StatusPage(props: {
   }, [error, props.alRoot]);
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.statusLoadFailed')}
-      </p>
-    );
+    return <Banner type="danger" fullMode={false} description={t('admin.statusLoadFailed')} />;
   }
-  // idle / loading：数据未落地前的过渡态。
+  // idle / loading：数据未落地前的过渡态（裸文字换 Semi Spin）。
   if (data === undefined) {
     return (
-      <p role="status" className={styles.loading}>
-        {t('admin.loading')}
-      </p>
+      <div className={styles.stateCenter} role="status">
+        <Spin size="large" />
+      </div>
     );
   }
 

@@ -16,7 +16,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { t, type I18nKey } from '../../shared/i18n';
 import {
@@ -112,9 +112,8 @@ export function DecodePage(props: {
         </div>
       </div>
       {decodeError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {decodeError}
-        </p>
+        // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
+        <Banner type="danger" fullMode={false} className={styles.actionBanner} description={decodeError} />
       ) : null}
       {payload !== undefined ? (
         <div className={styles.resultBlock}>

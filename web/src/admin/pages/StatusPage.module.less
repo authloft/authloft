@@ -30,13 +30,10 @@
   font-size: @font-size-sm;
 }
 
-.loading {
-  margin: @spacing-lg 0;
-  color: @color-text-muted;
-}
-
-.loadError {
-  margin: @spacing-lg 0;
-  color: @color-danger;
-  font-size: @font-size-md;
+// 整页加载态（Semi Spin 居中容器；错误态直接用 Semi Banner 默认样式，
+// 原 .loading / .loadError 自绘文字规则随替换删除）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
 }

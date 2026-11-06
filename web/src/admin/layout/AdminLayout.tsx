@@ -19,7 +19,8 @@
  *
  * Semi UI（§1.6 行 112/113：admin 端用 Semi UI，同 account 底座——唯一包
  * @douyinfe/semi-ui-19 大包命名导入，禁子路径）：Layout / Nav / Breadcrumb /
- * Avatar / Typography 均大包具名导入；
+ * Avatar / Typography 均大包具名导入；入口加载 / 错误态（评审 V-6/
+ * §9.3 映射）换 Semi Spin / Banner（Banner 自带 role="alert"）。
  * 登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go 处理，非 SPA）。
  * 侧边栏选中 / 点击导航沿 account AppLayout 先例：itemKey 即路由
  * 路径，selectedKeys 受控于 activeKey prop，点击整页跳转。
@@ -27,7 +28,7 @@
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
 import { useEffect, type ReactNode } from 'react';
-import { Avatar, Breadcrumb, Layout, Nav, Typography } from '@douyinfe/semi-ui-19';
+import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t, type I18nKey } from '../../shared/i18n';
 import { loginUrl, logoutUrl } from '../bootstrap';
@@ -92,20 +93,18 @@ export function AdminLayout(props: {
     run().catch(() => {});
   }, [run]);
 
-  // 错误态（含 404 掩护）：朴素文案、不渲染管理壳（见文件头分流说明）。
+  // 错误态（含 404 掩护）：不渲染管理壳（见文件头分流说明）；
+  // 自绘文字换 Semi Banner（自带 role="alert"）。
   if (status === 'error') {
-    return (
-      <p role="alert" className={styles.entryError}>
-        {apiErrorText(error)}
-      </p>
-    );
+    return <Banner type="danger" description={apiErrorText(error)} />;
   }
   // idle / loading：GetMe 未落地前不渲染管理壳（会话校验前置）。
+  // 裸文字换 Semi Spin（居中容器为唯一布局自定义）。
   if (data === undefined) {
     return (
-      <p role="status" className={styles.entryLoading}>
-        {t('admin.loading')}
-      </p>
+      <div className={styles.entryState} role="status">
+        <Spin size="large" />
+      </div>
     );
   }
 

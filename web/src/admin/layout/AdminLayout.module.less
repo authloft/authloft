@@ -46,14 +46,10 @@
   background-color: @color-background-muted;
 }
 
-// GetMe 未落地（加载）/ 失败（含 404 掩护）的整页朴素态——不渲染管理壳。
-.entryLoading,
-.entryError {
-  margin: @spacing-xl;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-}
-
-.entryError {
-  color: @color-danger;
+// GetMe 未落地（加载）整页态——不渲染管理壳（Semi Spin 居中容器；
+// 错误态直接用 Semi Banner 默认样式，无自定义类）。
+.entryState {
+  display: flex;
+  justify-content: center;
+  padding-top: 30vh;
 }

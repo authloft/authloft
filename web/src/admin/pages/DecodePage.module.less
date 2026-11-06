@@ -26,10 +26,10 @@
   display: flex;
 }
 
-.actionError {
-  margin: 0 0 @spacing-md;
-  color: @color-danger;
-  font-size: @font-size-sm;
+// 错误 Banner 与结果区间的间距（原 .actionError 自绘文字规则随
+// 错误态换 Semi Banner 删除，仅保留这一处间距对接）。
+.actionBanner {
+  margin-bottom: @spacing-md;
 }
 
 .resultBlock {

@@ -32,7 +32,7 @@
  * 同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { DatePicker, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
@@ -264,12 +264,9 @@ export function AuditPage(props: {
   ];
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.auditLoadFailed')}
-      </p>
-    );
+    return <Banner type="danger" fullMode={false} description={t('admin.auditLoadFailed')} />;
   }
 
   return (
@@ -359,7 +356,8 @@ export function AuditPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? t('admin.noEvents') : undefined}
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
+        empty={status === 'success' ? <Empty description={t('admin.noEvents')} /> : undefined}
       />
     </section>
   );
