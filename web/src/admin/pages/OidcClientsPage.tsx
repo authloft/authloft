@@ -15,11 +15,12 @@
  *   默认 / 编辑保留原值；值域 [1, 86400] / [1, 2592000]）；
  * - 编辑阻断：scopes 空组 = 保留原值（后端 PATCH），前端阻断防误解。
  *
- * 401 统一跳登录（§6 行 501）；写操作失败就地提示；可测逻辑全部收口在
+ * 401 统一跳登录（§6 行 501）；写操作成功 / 失败 Toast 提示（Modal
+ * 内表单错误保持行内）；可测逻辑全部收口在
  * ./api（工具链 blocker 同口径）。样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input, Modal, Popconfirm, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
@@ -107,9 +108,8 @@ export function OidcClientsPage(props: {
   // §1.7 受控查询状态：分页 / 排序由 DataTable 上报更新。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
   const { status, data, error, run } = useRequest(listOidcClients);
-  // 写操作反馈就地展示。
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // 写操作成功 / 删除失败反馈统一走 Semi Toast（原就地 notice /
+  // actionError 文字已随 Semi 回归移除）；Modal 内表单错误保持行内。
   // 新建弹窗。
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<OidcCreateForm>(initialCreateForm);
@@ -130,6 +130,8 @@ export function OidcClientsPage(props: {
     accessTokenTtl: '',
     refreshTokenTtl: '',
   });
+  // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
+  const [editBaseline, setEditBaseline] = useState<OidcEditForm | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -156,6 +158,39 @@ export function OidcClientsPage(props: {
     setCreateForm(initialCreateForm());
     setCreateError(null);
     setCreateOpen(true);
+  }
+
+  /**
+   * 编辑未保存保护：有未保存改动（dirty）时经 Semi Modal.confirm
+   * 二次确认后执行 close；无改动直接关闭。dirty 由现值与打开时基线的
+   * 序列化对比判定（表单为扁平字符串 / 字符串数组结构，对比无损）。
+   */
+  function confirmCloseIfDirty(dirty: boolean, close: () => void): void {
+    if (dirty) {
+      Modal.confirm({
+        title: t('admin.unsavedChangesTitle'),
+        content: t('admin.unsavedChangesContent'),
+        onOk: close,
+      });
+      return;
+    }
+    close();
+  }
+
+  /** 关闭新建弹窗（草稿相对 initialCreateForm 有改动时需确认）。 */
+  function closeCreate(): void {
+    confirmCloseIfDirty(
+      JSON.stringify(createForm) !== JSON.stringify(initialCreateForm()),
+      () => setCreateOpen(false),
+    );
+  }
+
+  /** 关闭编辑弹窗（现值相对打开时基线有改动时需确认）。 */
+  function closeEdit(): void {
+    confirmCloseIfDirty(
+      editBaseline !== null && JSON.stringify(editForm) !== JSON.stringify(editBaseline),
+      () => setEditTarget(null),
+    );
   }
 
   /**
@@ -213,7 +248,7 @@ export function OidcClientsPage(props: {
         }),
       );
       setCreateOpen(false);
-      setNotice(t('admin.clientCreateSuccess'));
+      Toast.success(t('admin.clientCreateSuccess'));
       // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
       setQuery((prev) => ({ ...prev, page: 1 }));
     } catch (err) {
@@ -250,15 +285,17 @@ export function OidcClientsPage(props: {
 
   /** 打开编辑弹窗：clientId 只读展示（创建后不可改），草稿按行现值回填。 */
   function openEdit(row: OidcClient): void {
-    setEditTarget(row);
-    setEditForm({
+    const baseline: OidcEditForm = {
       newSecret: '',
       name: row.name,
       redirectUris: [...row.redirectUris],
       scopes: [...row.scopes],
       accessTokenTtl: toCount(row.accessTokenTtl).toString(),
       refreshTokenTtl: toCount(row.refreshTokenTtl).toString(),
-    });
+    };
+    setEditTarget(row);
+    setEditForm(baseline);
+    setEditBaseline(baseline); // dirty 判定基线。
     setEditError(null);
   }
 
@@ -315,7 +352,7 @@ export function OidcClientsPage(props: {
         }),
       );
       setEditTarget(null);
-      setNotice(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
+      Toast.success(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
       refreshList();
     } catch (err) {
       setEditError(apiErrorText(err));
@@ -328,10 +365,10 @@ export function OidcClientsPage(props: {
   async function handleDelete(row: OidcClient): Promise<void> {
     try {
       await deleteOidcClient(buildDeleteOidcClientRequest(row.id));
-      setNotice(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
+      Toast.success(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
       refreshList();
     } catch (err) {
-      setActionError(apiErrorText(err));
+      Toast.error(apiErrorText(err));
     }
   }
 
@@ -410,12 +447,9 @@ export function OidcClientsPage(props: {
   ];
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.clientsLoadFailed')}
-      </p>
-    );
+    return <Banner type="danger" fullMode={false} description={t('admin.clientsLoadFailed')} />;
   }
 
   return (
@@ -426,16 +460,6 @@ export function OidcClientsPage(props: {
           {t('admin.createClientAction')}
         </Button>
       </div>
-      {actionError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {actionError}
-        </p>
-      ) : null}
-      {notice !== null ? (
-        <p role="status" className={styles.notice}>
-          {notice}
-        </p>
-      ) : null}
       <DataTable<OidcClient>
         columns={columns}
         rows={data?.items ?? []}
@@ -444,12 +468,14 @@ export function OidcClientsPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? t('admin.noClients') : undefined}
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
+        empty={status === 'success' ? <Empty description={t('admin.noClients')} /> : undefined}
       />
       <Modal
         title={t('admin.createOidcClientTitle')}
         visible={createOpen}
-        onCancel={() => setCreateOpen(false)}
+        onCancel={closeCreate}
+        maskClosable={false}
         footer={null}
       >
         <div className={styles.formBody}>
@@ -540,7 +566,7 @@ export function OidcClientsPage(props: {
             </p>
           ) : null}
           <div className={styles.formFooter}>
-            <Button onClick={() => setCreateOpen(false)} disabled={createSubmitting}>
+            <Button onClick={closeCreate} disabled={createSubmitting}>
               {t('admin.cancelAction')}
             </Button>
             <Button
@@ -563,7 +589,10 @@ export function OidcClientsPage(props: {
         footer={null}
       >
         {viewLoading ? (
-          <p role="status">{t('admin.loading')}</p>
+          // 弹窗内加载裸文字换 Semi Spin。
+          <div className={styles.stateCenter} role="status">
+            <Spin />
+          </div>
         ) : viewError !== null ? (
           <p role="alert" className={styles.actionError}>
             {viewError}
@@ -618,7 +647,8 @@ export function OidcClientsPage(props: {
             : t('admin.editClientFallbackTitle')
         }
         visible={editTarget !== null}
-        onCancel={() => setEditTarget(null)}
+        onCancel={closeEdit}
+        maskClosable={false}
         footer={null}
       >
         <div className={styles.formBody}>
@@ -707,7 +737,7 @@ export function OidcClientsPage(props: {
             </p>
           ) : null}
           <div className={styles.formFooter}>
-            <Button onClick={() => setEditTarget(null)} disabled={editSubmitting}>
+            <Button onClick={closeEdit} disabled={editSubmitting}>
               {t('admin.cancelAction')}
             </Button>
             <Button

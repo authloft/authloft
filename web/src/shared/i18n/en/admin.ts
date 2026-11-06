@@ -400,4 +400,7 @@ export const admin: typeof zhAdmin = {
   'admin.decodeTokenPlaceholder': 'Paste the token to decode',
   'admin.decodeTokenAriaLabel': 'Token to decode',
   'admin.decodeAction': 'Decode',
+  // ---- unsaved-changes guard (Modal.confirm) ----
+  'admin.unsavedChangesTitle': 'Discard unsaved changes?',
+  'admin.unsavedChangesContent': 'Your edits have not been saved and will be lost if you close now.',
 };

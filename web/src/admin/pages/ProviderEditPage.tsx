@@ -19,14 +19,14 @@
  * adminProviderToValues；提交体 buildProviderStruct（type 顶层恒带，
  * 后端从提交体取 type 定位注册表）。成功后整页跳回列表。
  *
- * 401 统一跳登录（§6 行 501，列表页同模式）；其余错误走页面错误帧 /
- * actionError 就地展示。渲染壳薄（工具链 blocker）：逻辑全在 ./api 与
- * schema/schemaLogic（node 可测）。
+ * 401 统一跳登录（§6 行 501，列表页同模式）；其余错误走页面错误帧
+ * （Semi Banner）/ 写操作失败 Toast 提示（Semi 回归）。渲染壳薄
+ * （工具链 blocker）：逻辑全在 ./api 与 schema/schemaLogic（node 可测）。
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
-import { Button, Input, Select, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
@@ -91,7 +91,8 @@ export function ProviderEditPage(props: {
   const [type, setType] = useState('');
   const [values, setValues] = useState<FormValues>({});
   const [issues, setIssues] = useState<Record<string, string>>({});
-  const [actionError, setActionError] = useState<string | null>(null);
+  // 提交失败 / 测试发送成败反馈改走 Semi Toast（原 actionError 就地
+  // 文字随 Semi 回归移除）；testFeedback 仅保留本地校验（target 必填）行内提示。
   const [testTarget, setTestTarget] = useState('');
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
@@ -198,7 +199,6 @@ export function ProviderEditPage(props: {
       return;
     }
     setIssues({});
-    setActionError(null);
     // run 失败会 rethrow（状态已入 state），吞掉防 unhandled rejection；
     // 竞态丢弃（undefined）不触发跳转。
     submitReq
@@ -209,7 +209,7 @@ export function ProviderEditPage(props: {
         }
       })
       .catch((error) => {
-        setActionError(apiErrorText(error));
+        Toast.error(apiErrorText(error));
       });
   }
 
@@ -229,28 +229,24 @@ export function ProviderEditPage(props: {
       )
       .then((result) => {
         if (result !== undefined) {
-          setTestFeedback(t('admin.testSent'));
+          Toast.success(t('admin.testSent'));
         }
       })
       .catch((error) => {
-        setTestFeedback(apiErrorText(error));
+        Toast.error(apiErrorText(error));
       });
   }
 
-  // —— 错误 / 加载帧 ——
+  // —— 错误 / 加载帧（自绘文字换 Semi Banner / Spin）——
 
   if (editing && providerReq.status === 'error') {
     return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.providerLoadFailed')}
-      </p>
+      <Banner type="danger" fullMode={false} description={t('admin.providerLoadFailed')} />
     );
   }
   if (schemaReq.status === 'error') {
     return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.schemaLoadFailed')}
-      </p>
+      <Banner type="danger" fullMode={false} description={t('admin.schemaLoadFailed')} />
     );
   }
   const loading =
@@ -258,9 +254,9 @@ export function ProviderEditPage(props: {
     (editing && (providerReq.data === undefined || schemaReq.data === undefined));
   if (loading) {
     return (
-      <p role="status" className={styles.loading}>
-        {t('admin.loading')}
-      </p>
+      <div className={styles.stateCenter} role="status">
+        <Spin size="large" />
+      </div>
     );
   }
 
@@ -285,15 +281,14 @@ export function ProviderEditPage(props: {
         providerKey={provider?.providerKey}
         type={provider?.type}
       />
-      {actionError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {actionError}
-        </p>
-      ) : null}
       {typesReq.status === 'error' ? (
-        <p role="alert" className={styles.actionError}>
-          {t('admin.providerTypesLoadFailed')}
-        </p>
+        // 类型清单加载失败自绘文字换 Semi Banner（表单缺类型不可用，页级口径）。
+        <Banner
+          type="danger"
+          fullMode={false}
+          className={styles.actionBanner}
+          description={t('admin.providerTypesLoadFailed')}
+        />
       ) : null}
       <form
         className={styles.form}
@@ -367,6 +362,7 @@ export function ProviderEditPage(props: {
             </Button>
           </div>
           {testFeedback !== null ? (
+            // 仅本地校验（target 必填）行内；发送成败已改走 Toast。
             <p role="status" className={styles.testFeedback}>
               {testFeedback}
             </p>

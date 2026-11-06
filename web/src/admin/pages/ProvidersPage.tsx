@@ -14,7 +14,7 @@
  * （buildListProvidersRequest：第 1 页 × 100，拖拽排序需全量行集，见其
  * 注释）；超限兜底停用拖拽（数据仍展示）。写路径 SetProviderEnabled /
  * SortProviders 后端已实装，单测走 msw；启停 / 拖拽均乐观更新 +
- * 失败回滚，错误文案就地展示（错误展示归消费方——DataTable 行内开关同口径）。
+ * 失败回滚，错误文案 Toast 展示（错误展示归消费方——DataTable 行内开关同口径）。
  *
  * 401 统一跳登录（§6 行 501，account EventLogTable 同模式：会话在 GetMe
  * 之后过期等场景）；404 掩护等其余错误走页面错误态（AdminLayout 已对
@@ -27,7 +27,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { Button, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
@@ -87,8 +87,8 @@ export function ProvidersPage(props: {
   const { status, data, error, run } = useRequest(listProviders);
   // 行集本地态：列表载入同步 + 启停 / 排序写操作成功后就地补丁（乐观）。
   const [rows, setRows] = useState<readonly Provider[]>([]);
-  // 写操作（启停 / 排序）失败文案，就地展示；成功不清除由下次失败覆盖。
-  const [actionError, setActionError] = useState<string | null>(null);
+  // 写操作（启停 / 排序）失败反馈改走 Semi Toast（原就地 actionError
+  // 文字已随 Semi 回归移除）；启停 / 拖拽成功反馈不做（无现成 i18n 键）。
 
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
@@ -131,7 +131,7 @@ export function ProvidersPage(props: {
       );
     } catch (toggleError) {
       // 失败：错误展示归消费方 + rethrow 触发 StatusSwitch 回滚。
-      setActionError(apiErrorText(toggleError));
+      Toast.error(apiErrorText(toggleError));
       throw toggleError;
     }
   }
@@ -141,17 +141,14 @@ export function ProvidersPage(props: {
     setRows(next); // 乐观：新序先行。
     sortProviders(buildSortProvidersRequest(next)).catch((sortError) => {
       setRows(prev); // 失败回滚原序。
-      setActionError(apiErrorText(sortError));
+      Toast.error(apiErrorText(sortError));
     });
   }
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.providersLoadFailed')}
-      </p>
-    );
+    return <Banner type="danger" fullMode={false} description={t('admin.providersLoadFailed')} />;
   }
 
   return (
@@ -164,11 +161,6 @@ export function ProvidersPage(props: {
         </Button>
       </div>
       <ProviderCallbackHint alRoot={props.alRoot} />
-      {actionError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {actionError}
-        </p>
-      ) : null}
       {!canDrag && total > 0 ? (
         <p className={styles.dragNote}>{t('admin.providersDragDisabledNote')}</p>
       ) : null}
@@ -188,8 +180,9 @@ export function ProvidersPage(props: {
           return (
             <div className={styles.row}>
               <span className={styles.cellName}>
-                {/* 编辑入口（§6 行 516 ProviderEditPage；最小改动：显示名作链接）。 */}
-                <a className={styles.editLink} href={`/admin/providers/${row.providerKey}/edit`}>
+                {/* 编辑入口（§6 行 516 ProviderEditPage；最小改动：显示名作链接）。
+                    链接去自绘主色装饰，交互色交 Semi 默认。 */}
+                <a href={`/admin/providers/${row.providerKey}/edit`}>
                   {row.displayName || EMPTY_TEXT}
                 </a>
               </span>
@@ -209,11 +202,12 @@ export function ProvidersPage(props: {
                 />
               </span>
               <span className={styles.cellTags}>
+                {/* 自绘徽章换 Semi Tag（默认语义色）。 */}
                 {tags.length > 0
                   ? tags.map((tag) => (
-                      <span key={tag} className={styles.tag}>
+                      <Tag key={tag} size="small">
                         {tag}
-                      </span>
+                      </Tag>
                     ))
                   : EMPTY_TEXT}
               </span>
@@ -223,14 +217,14 @@ export function ProvidersPage(props: {
         }}
       />
       {status === 'loading' && rows.length === 0 ? (
-        <p role="status" className={styles.empty}>
-          {t('admin.loading')}
-        </p>
+        // 整页加载态裸文字换 Semi Spin。
+        <div className={styles.stateCenter} role="status">
+          <Spin size="large" />
+        </div>
       ) : null}
       {status === 'success' && rows.length === 0 ? (
-        <p role="status" className={styles.empty}>
-          {t('admin.noProviders')}
-        </p>
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
+        <Empty description={t('admin.noProviders')} />
       ) : null}
     </section>
   );

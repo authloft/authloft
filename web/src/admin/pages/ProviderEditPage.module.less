@@ -32,10 +32,10 @@
   font-size: @font-size-sm;
 }
 
-.actionError {
-  margin: 0 0 @spacing-md;
-  color: @color-danger;
-  font-size: @font-size-sm;
+// 提交失败自绘文字（.actionError）改走 Toast；类型清单加载失败换
+// Semi Banner，仅保留间距对接（DecodePage 同形态）。
+.actionBanner {
+  margin-bottom: @spacing-md;
 }
 
 .testSection {
@@ -73,14 +73,10 @@
   font-size: @font-size-sm;
 }
 
-.loading {
-  margin: @spacing-lg 0;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-}
-
-.loadError {
-  margin: @spacing-lg 0;
-  color: @color-danger;
-  font-size: @font-size-md;
+// 整页加载态（Semi Spin 居中容器；页级错误换 Semi Banner，
+// 原 .loading / .loadError 自绘文字规则随替换删除）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
 }

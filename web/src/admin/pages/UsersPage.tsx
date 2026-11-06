@@ -9,7 +9,7 @@
  *   filters 下拉，wire 值映射见 buildListUsersRequest；
  * - 行内开关（禁用 / 启用，§5.4 行 1251 UpdateUserStatus）：DataTable
  *   switchColumn——onToggle reject 只回滚（runInlineToggle），**错误展示
- *   归消费方**：本页 catch 后就地提示再 rethrow 触发回滚（ProvidersPage
+ *   归消费方**：本页 catch 后 Toast 提示再 rethrow 触发回滚（ProvidersPage
  *   StatusSwitch 同口径）。
  *
  * q 搜索：后端 q 匹配 username / nickname / email / phone 四列，
@@ -24,7 +24,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input, Modal, Popconfirm, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
@@ -71,9 +71,8 @@ export function UsersPage(props: {
   const [qDraft, setQDraft] = useState('');
   const [appliedQ, setAppliedQ] = useState('');
   const { status, data, error, run } = useRequest(listUsers);
-  // 写操作反馈就地展示（行内开关 / 解锁 / 重置的失败与成功提示，消费方口径）。
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // 写操作成功 / 失败反馈统一走 Semi Toast（原就地 notice/actionError
+  // 文字已随 Semi 回归移除）；Modal 内表单错误（resetError）保持行内。
   // 重置密码弹窗（§5.4 行 1252）：resetTarget 即当前目标行；空即关闭。
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetPassword, setResetPassword] = useState('');
@@ -100,14 +99,14 @@ export function UsersPage(props: {
   }
 
   /**
-   * 行内禁用 / 启停（§5.4 行 1251）：失败 → 就地提示后 rethrow，DataTable
+   * 行内禁用 / 启停（§5.4 行 1251）：失败 → Toast 提示后 rethrow，DataTable
    * 内部 runInlineToggle 捕获即回滚（错误展示归消费方，DataTable 契约）。
    */
   async function handleStatusToggle(row: AdminUser, next: boolean): Promise<void> {
     try {
       await updateUserStatus(buildUpdateUserStatusRequest(row.id, next));
     } catch (toggleError) {
-      setActionError(apiErrorText(toggleError));
+      Toast.error(apiErrorText(toggleError));
       throw toggleError;
     }
   }
@@ -116,9 +115,9 @@ export function UsersPage(props: {
   async function handleUnlock(row: AdminUser): Promise<void> {
     try {
       await unlockUser(buildUnlockUserRequest(row.id));
-      setNotice(t('admin.unlockSuccess', { username: row.username }));
+      Toast.success(t('admin.unlockSuccess', { username: row.username }));
     } catch (unlockError) {
-      setActionError(apiErrorText(unlockError));
+      Toast.error(apiErrorText(unlockError));
     }
   }
 
@@ -127,6 +126,22 @@ export function UsersPage(props: {
     setResetTarget(row);
     setResetPassword('');
     setResetError(null);
+  }
+
+  /**
+   * 关闭重置弹窗（编辑未保存保护）：已输入新密码（dirty）时
+   * 经 Semi Modal.confirm 二次确认；未输入（无改动可丢）直接关闭。
+   */
+  function closeReset(): void {
+    if (resetPassword !== '') {
+      Modal.confirm({
+        title: t('admin.unsavedChangesTitle'),
+        content: t('admin.unsavedChangesContent'),
+        onOk: () => setResetTarget(null),
+      });
+      return;
+    }
+    setResetTarget(null);
   }
 
   /** 提交重置（§5.4 行 1252）：password_weak 等策略错误由服务端权威判定展示。 */
@@ -139,7 +154,7 @@ export function UsersPage(props: {
     try {
       await resetUserPassword(buildResetUserPasswordRequest(target.id, resetPassword));
       setResetTarget(null);
-      setNotice(t('admin.resetPasswordSuccess', { username: target.username }));
+      Toast.success(t('admin.resetPasswordSuccess', { username: target.username }));
     } catch (resetReqError) {
       setResetError(apiErrorText(resetReqError));
     } finally {
@@ -155,9 +170,8 @@ export function UsersPage(props: {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
       render: (_text: unknown, row: AdminUser) => (
-        <a className={styles.detailLink} href={`/admin/users/${row.id}`}>
-          {row.username}
-        </a>
+        // 链接去自绘主色装饰，交互色交 Semi / 浏览器默认。
+        <a href={`/admin/users/${row.id}`}>{row.username}</a>
       ),
     },
     {
@@ -235,12 +249,9 @@ export function UsersPage(props: {
   };
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.usersLoadFailed')}
-      </p>
-    );
+    return <Banner type="danger" fullMode={false} description={t('admin.usersLoadFailed')} />;
   }
 
   return (
@@ -259,16 +270,6 @@ export function UsersPage(props: {
           {t('admin.searchAction')}
         </Button>
       </div>
-      {actionError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {actionError}
-        </p>
-      ) : null}
-      {notice !== null ? (
-        <p role="status" className={styles.notice}>
-          {notice}
-        </p>
-      ) : null}
       <DataTable<AdminUser>
         columns={columns}
         rows={data?.items ?? []}
@@ -277,7 +278,8 @@ export function UsersPage(props: {
         query={query}
         onQueryChange={setQuery}
         loading={status === 'loading'}
-        empty={status === 'success' ? t('admin.noUsers') : undefined}
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
+        empty={status === 'success' ? <Empty description={t('admin.noUsers')} /> : undefined}
         switchColumn={switchColumn}
       />
       <Modal
@@ -287,7 +289,8 @@ export function UsersPage(props: {
             : t('admin.resetPasswordAction')
         }
         visible={resetTarget !== null}
-        onCancel={() => setResetTarget(null)}
+        onCancel={closeReset}
+        maskClosable={false}
         footer={null}
       >
         <div className={styles.resetBody}>
@@ -306,7 +309,7 @@ export function UsersPage(props: {
             </p>
           ) : null}
           <div className={styles.resetFooter}>
-            <Button onClick={() => setResetTarget(null)} disabled={resetSubmitting}>
+            <Button onClick={closeReset} disabled={resetSubmitting}>
               {t('admin.cancelAction')}
             </Button>
             <Button

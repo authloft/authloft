@@ -382,4 +382,7 @@ export const admin = {
   'admin.decodeTokenPlaceholder': '粘贴待解码的令牌原文',
   'admin.decodeTokenAriaLabel': '待解码令牌',
   'admin.decodeAction': '解码',
+  // ---- 编辑未保存保护（Modal.confirm 二次确认）----
+  'admin.unsavedChangesTitle': '放弃未保存的修改？',
+  'admin.unsavedChangesContent': '当前编辑尚未保存，关闭后修改将丢失。',
 };

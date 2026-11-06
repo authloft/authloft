@@ -63,36 +63,14 @@
   color: @color-text;
 }
 
-// 编辑入口链接（显示名 → /admin/providers/{key}/edit）。
-.editLink {
-  color: @color-primary;
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
-.tag {
-  padding: @spacing-xs @spacing-sm;
-  border: @border-width solid @color-border;
-  border-radius: @radius-sm;
-  background-color: @color-background-muted;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-  white-space: nowrap;
-}
+// 编辑链接自绘主色（.editLink）随 Semi 回归删除——交互色交 Semi 默认。
 
 .cellOrder {
   color: @color-text-muted;
   text-align: right;
 }
 
-.actionError {
-  margin: 0 0 @spacing-md;
-  color: @color-danger;
-  font-size: @font-size-sm;
-}
+// 自绘策略标签徽章（.tag）换 Semi Tag，规则删除。
 
 .dragNote {
   margin: 0 0 @spacing-sm;
@@ -100,14 +78,12 @@
   font-size: @font-size-sm;
 }
 
-.empty {
-  margin: @spacing-lg 0;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-}
+// 写操作失败自绘文字（.actionError）改走 Toast、页级错误（.loadError）
+// 换 Semi Banner、空态（.empty）换 Semi Empty，原规则随替换删除。
 
-.loadError {
-  margin: @spacing-lg 0;
-  color: @color-danger;
-  font-size: @font-size-md;
+// 整页加载态（Semi Spin 居中容器，StatusPage 同形态）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
 }
