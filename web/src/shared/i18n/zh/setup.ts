@@ -44,7 +44,7 @@ export const setup = {
   'setup.startInitialize': '开始初始化',
   'setup.switchToInstall': '改走全新安装',
 
-  // ---- 全新安装页（路径 B，§13.3；rpId 标签「WebAuthn RP ID」无中文不设键）----
+  // ---- 全新安装页（路径 B，§13.3；rpId 标签「WebAuthn RP ID」入键）----
   'setup.installTitle': '全新安装',
   'setup.installIntro':
     '填写数据库与 Redis 连接信息及管理员账号；成功后自动进入重启。',
@@ -85,12 +85,33 @@ export const setup = {
   'setup.error.dbUnreachableFields':
     '数据库连接失败，请检查地址 / 端口 / 用户名 / 密码',
   'setup.hintRpId': '默认取当前域名',
-  'setup.requiredMark': '（必填）',
   'setup.installing': '正在安装…',
   'setup.startInstall': '开始安装',
 
-  // ---- 入口页（模式判定 + 两条路径入口；两个按钮复用 uploadConfigTitle / installTitle）----
+  // ---- 入口页（模式判定 + 两条路径入口；两个选项复用 uploadConfigTitle / installTitle）----
   'setup.checkingMode': '正在检测运行模式…',
   'setup.initTitle': 'Authloft 初始化',
   'setup.setupModeDetected': '检测到首次启动（setup 模式），请选择初始化方式：',
+
+  // ---- setup Semi 化：Steps 步序 / 路径说明 / 幂等引导 / 重试与重探 ----
+  'setup.stepChoice': '选择安装方式',
+  'setup.stepFill': '填写配置信息',
+  'setup.stepRun': '执行安装',
+  'setup.stepRestart': '重启完成',
+  'setup.uploadConfigDesc': '已有 config.yaml：上传后按序完成校验、连接检查与初始化。',
+  'setup.installDesc': '无既有配置：填写数据库、Redis 与管理员信息，从零初始化。',
+  'setup.alreadyInstalled': '检测到已完成安装，服务已处于正常模式。',
+  'setup.goToLogin': '前往登录',
+  'setup.retryInstall': '重试安装',
+  'setup.reprobe': '重新探测',
+  'setup.cancel': '取消',
+  'setup.adminMissingConfirmTitle': '改走全新安装',
+  'setup.adminMissingConfirmContent':
+    '将放弃当前上传的配置，转入全新安装流程以创建管理员账号。',
+  'setup.uploadDragMain': '点击或拖拽 config.yaml 到此处',
+  'setup.uploadDragSub': '仅按纯文本读入编辑框，不解析内容',
+  'setup.fieldRpId': 'WebAuthn RP ID',
+  'setup.error.redisAddrRequired': '请填写 Redis 地址',
+  'setup.error.adminUsernameRequired': '请填写管理员用户名',
+  'setup.error.adminPasswordRequired': '请填写管理员密码',
 };

@@ -2,7 +2,9 @@
 //（tsconfig 现代化后移除）。
 // @ts-ignore
 import { describe, expect, test } from 'rstack/test';
-import { checkRoot, isIpHost, prefillRoot } from './InstallPage';
+// root 预填 / 校验逻辑移至 ../wizard（零 Semi 依赖，rstest 可加载；
+// InstallPage.tsx Semi 化后模块图含 Semi import，测试不可直接引用）。
+import { checkRoot, isIpHost, prefillRoot } from '../wizard';
 
 /** root 预填与前置校验（docs/前端架构.md §6b / 接口文档 §13.3）。 */
 describe('setup/InstallPage root 预填与前置校验', () => {

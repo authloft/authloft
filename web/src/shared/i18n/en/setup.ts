@@ -90,13 +90,40 @@ export const setup: typeof zhSetup = {
   'setup.error.dbUnreachableFields':
     'Cannot connect to the database. Please check the host / port / username / password',
   'setup.hintRpId': 'Defaults to the current domain',
-  'setup.requiredMark': '(required)',
   'setup.installing': 'Installing…',
   'setup.startInstall': 'Start Install',
 
-  // ---- Entry page (mode detection + two path entries; buttons reuse uploadConfigTitle / installTitle) ----
+  // ---- Entry page (mode detection + two path entries; options reuse uploadConfigTitle / installTitle) ----
   'setup.checkingMode': 'Detecting run mode…',
   'setup.initTitle': 'Authloft Setup',
   'setup.setupModeDetected':
     'First launch detected (setup mode). Choose how to initialize:',
+
+  // ---- setup Semi migration: steps / path descriptions / idempotent guide / retry & re-probe ----
+  'setup.stepChoice': 'Choose Setup Method',
+  'setup.stepFill': 'Configure',
+  'setup.stepRun': 'Run Installation',
+  'setup.stepRestart': 'Restart & Finish',
+  'setup.uploadConfigDesc':
+    'Have an existing config.yaml: upload it to run validation, connectivity checks, and initialization in order.',
+  'setup.installDesc':
+    'No existing configuration: enter the database, Redis, and administrator details for a fresh initialization.',
+  'setup.alreadyInstalled':
+    'Installation is already complete; the service is running in normal mode.',
+  'setup.goToLogin': 'Go to Sign In',
+  'setup.retryInstall': 'Retry Installation',
+  'setup.reprobe': 'Check Again',
+  'setup.cancel': 'Cancel',
+  'setup.adminMissingConfirmTitle': 'Switch to Fresh Install',
+  'setup.adminMissingConfirmContent':
+    'The uploaded configuration will be discarded and you will switch to a fresh install to create the administrator account.',
+  'setup.uploadDragMain': 'Click or drag config.yaml here',
+  'setup.uploadDragSub':
+    'The file is loaded into the editor as plain text only; nothing is parsed',
+  'setup.fieldRpId': 'WebAuthn RP ID',
+  'setup.error.redisAddrRequired': 'Please enter the Redis address',
+  'setup.error.adminUsernameRequired':
+    'Please enter the administrator username',
+  'setup.error.adminPasswordRequired':
+    'Please enter the administrator password',
 };

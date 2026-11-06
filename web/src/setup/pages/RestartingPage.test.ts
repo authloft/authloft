@@ -2,11 +2,13 @@
 //（tsconfig 现代化后移除）。
 // @ts-ignore
 import { describe, expect, test } from 'rstack/test';
+// pollRestart 移至 ../wizard（零 Semi 依赖，rstest 可加载；
+// RestartingPage.tsx Semi 化后模块图含 Semi import，测试不可直接引用）。
 import {
   pollRestart,
   RESTART_POLL_INTERVAL_MS,
   RESTART_POLL_TIMEOUT_MS,
-} from './RestartingPage';
+} from '../wizard';
 import type { SetupStatusResult } from '../api';
 
 /** 探测桩：按序回放结果，用尽后重复最后一项；记录调用次数。 */
