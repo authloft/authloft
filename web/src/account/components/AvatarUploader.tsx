@@ -31,6 +31,9 @@ export function AvatarUploader(props: {
   const [progressText, setProgressText] = useState<string | undefined>(undefined);
   const [error, setError] = useState<unknown>(undefined);
   const [uploadedUrl, setUploadedUrl] = useState<string | undefined>(undefined);
+  // 评审 P2-2：上传失败保留原文件供「重试」——不必重新选择文件；
+  // 成功或选择新文件时清除。
+  const [retryFile, setRetryFile] = useState<File | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   if (hidden) {
@@ -44,6 +47,7 @@ export function AvatarUploader(props: {
     }
     setUploading(true);
     setError(undefined);
+    setRetryFile(undefined);
     setProgressText(undefined);
     upload(file, (progress) => {
       // proxy 分支经 XHR upload 事件（前端架构 §3.2 行 349）；direct 的 PUT
@@ -61,6 +65,7 @@ export function AvatarUploader(props: {
         props.onUploaded?.(url);
       })
       .catch((uploadError: unknown) => {
+        setRetryFile(file); // 失败：留存原文件，错误文案旁给「重试」入口。
         setError(uploadError);
       })
       .finally(() => {
@@ -102,6 +107,16 @@ export function AvatarUploader(props: {
           <p role="alert" className={styles.error}>
             {apiErrorText(error)}
           </p>
+        ) : null}
+        {error !== undefined && retryFile !== undefined ? (
+          // 评审 P2-2：失败重试——以上次选择的文件重走上传链。
+          <Button
+            size="small"
+            onClick={() => handleFile(retryFile)}
+            disabled={uploading}
+          >
+            {t('common.retry')}
+          </Button>
         ) : null}
       </div>
     </div>

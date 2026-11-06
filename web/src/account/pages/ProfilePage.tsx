@@ -39,6 +39,7 @@ import {
   Input,
   Select,
   Spin,
+  Toast,
   Typography,
 } from '@douyinfe/semi-ui-19';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';
@@ -377,10 +378,11 @@ export function ProfilePage(): ReactNode {
           // 保存成功：退出编辑态 + 重取 GetProfile（裁量：重取优于乐观更新，
           // 服务端权威回读为准）；avatarOverride 一并清除——重取后以服务端
           // avatarUrl 为准（若此前头像持久化失败，此处回到服务端旧值属预期，
-          // 持久化失败提示已单独呈现）。
+          // 持久化失败提示已单独呈现）；成功反馈接 Semi Toast（P1-6）。
           setEditing(false);
           setAvatarOverride(undefined);
           run().catch(() => {});
+          Toast.success(t('account.profileSaved'));
         }
       })
       .catch(() => {});

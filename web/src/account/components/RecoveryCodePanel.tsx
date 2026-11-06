@@ -7,6 +7,8 @@
  *   （§5 行 485「直接交给 RecoveryCodePanel」；无 createdAt / 重新生成入口）；
  * - MfaMethodList 查看场景：GetRecoveryCodes 结果 + 重新生成回调。
  * 复制走 shared CopyButton（useCopy，剪贴板不可用静默失败）。
+ * 评审 P2-3：「下载为文本」——纯前端 Blob 下载（非请求，§9 第 16 条
+ * 仅禁手拼 Blob 发请求），文件名固定 authloft-recovery-codes.txt。
  * 文案经 shared/i18n（account.* 域键）。
  */
 import type { ReactNode } from 'react';
@@ -41,6 +43,22 @@ export function RecoveryCodePanel(props: {
           <span>{t('account.recoveryIssuedAt', { time: formatUnixTime(props.createdAt) })}</span>
         ) : null}
         <CopyButton text={props.codes.join('\n')} />
+        {/* 评审 P2-3：下载为文本（纯前端 Blob 下载，对齐 Casdoor）。 */}
+        <Button
+          type="tertiary"
+          onClick={() => {
+            const url = URL.createObjectURL(
+              new Blob([props.codes.join('\n')], { type: 'text/plain;charset=utf-8' }),
+            );
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = 'authloft-recovery-codes.txt';
+            anchor.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          {t('account.recoveryDownload')}
+        </Button>
       </div>
       {props.onRegenerate !== undefined ? (
         <Popconfirm title={t('account.recoveryRegenerateConfirm')} onConfirm={props.onRegenerate}>

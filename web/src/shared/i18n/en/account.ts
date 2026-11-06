@@ -49,6 +49,8 @@ export const account: typeof zhAccount = {
   'account.unionTag': 'Federated identity',
   'account.unbindConfirm': 'Unlink "{name}"? You will no longer be able to sign in with it.',
   'account.unbindAction': 'Unlink',
+  // unbind success feedback (P1-6, unified Semi Toast success channel).
+  'account.unbindSuccess': 'Unlinked "{name}"',
   'account.bindAction': 'Link',
   'account.thirdpartyLoadFailed':
     'Failed to load third-party accounts. Please refresh and try again',
@@ -61,6 +63,8 @@ export const account: typeof zhAccount = {
   'account.recoveryRegenerateConfirm':
     'Regenerating will invalidate all existing recovery codes. Continue?',
   'account.recoveryRegenerate': 'Regenerate',
+  // download as text (P2-3, pure frontend Blob download).
+  'account.recoveryDownload': 'Download as text',
 
   // ---- MfaMethodList (factor names reuse factors.*, the recovery-code
   //      modal title reuses factors.recovery_code, the bind button reuses
@@ -165,6 +169,8 @@ export const account: typeof zhAccount = {
   //      phone label reuses phoneLabel; avatar persist failure reuses
   //      errors.status.failed) --------------------------------------------------
   'account.profileEditAction': 'Edit Profile',
+  // save success feedback (P1-6, unified Semi Toast success channel).
+  'account.profileSaved': 'Profile saved',
   'account.emailLabel': 'Email',
   'account.genderLabel': 'Gender',
   'account.genderSecret': 'Prefer not to say',

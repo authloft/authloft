@@ -291,6 +291,8 @@ export const admin = {
   'admin.noBindings': '暂无第三方绑定',
   'admin.unbindConfirm': '确定解绑「{providerKey}」？解绑后无法再用它登录。',
   'admin.unbindAction': '解绑',
+  // 解绑成功反馈（P1-6）。
+  'admin.unbindSuccess': '已解绑「{providerKey}」',
   'admin.loginLogSection': '登录日志',
   'admin.loginLogLoadFailed': '登录日志加载失败，请刷新重试',
   'admin.noLoginRecords': '暂无登录记录',
@@ -341,6 +343,10 @@ export const admin = {
   'admin.providersDragDisabledNote': '提供方数量超过单页上限（100），拖拽排序已停用',
   'admin.providerDragSortLabel': '拖拽调整提供方排序',
   'admin.noProviders': '暂无提供方',
+  // 启停 / 拖拽排序成功反馈（P1-6，此前「不新增键」，本次统一补齐）。
+  'admin.providerEnableSuccess': '已启用「{name}」',
+  'admin.providerDisableSuccess': '已停用「{name}」',
+  'admin.providerSortSuccess': '提供方排序已保存',
   'admin.createProviderAction': '新建提供方',
   'admin.providerKeyTaken': '唯一标识已被占用，请换一个',
   'admin.providerTypeRequired': '请先选择提供方类型',

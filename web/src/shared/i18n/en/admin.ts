@@ -305,6 +305,8 @@ export const admin: typeof zhAdmin = {
   'admin.noBindings': 'No third-party bindings',
   'admin.unbindConfirm': 'Unbind "{providerKey}"? It can no longer be used to sign in afterwards.',
   'admin.unbindAction': 'Unbind',
+  // unbind success feedback (P1-6).
+  'admin.unbindSuccess': 'Unbound "{providerKey}"',
   'admin.loginLogSection': 'Sign-in Log',
   'admin.loginLogLoadFailed': 'Failed to load the sign-in log; please refresh and try again',
   'admin.noLoginRecords': 'No sign-in records yet',
@@ -357,6 +359,11 @@ export const admin: typeof zhAdmin = {
     'More than one page of providers (100); drag sorting is disabled',
   'admin.providerDragSortLabel': 'Drag to reorder providers',
   'admin.noProviders': 'No providers yet',
+  // success feedback for enable/disable and drag sorting (P1-6; the
+  // earlier "no new keys" ruling is resolved here).
+  'admin.providerEnableSuccess': 'Enabled "{name}"',
+  'admin.providerDisableSuccess': 'Disabled "{name}"',
+  'admin.providerSortSuccess': 'Provider order saved',
   'admin.createProviderAction': 'New Provider',
   'admin.providerKeyTaken': 'The key is already taken; please choose another one',
   'admin.providerTypeRequired': 'Select a provider type first',

@@ -19,7 +19,7 @@
  * 文案经 shared/i18n（account.* 域键 + common.refreshAndRetry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Empty, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Popconfirm, Spin, Tag, Toast } from '@douyinfe/semi-ui-19';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,
@@ -53,7 +53,7 @@ function BoundRow(props: {
   readonly item: ThirdpartyBinding;
   readonly canUnbind: boolean;
   readonly unbinding: boolean;
-  readonly onUnbind: (providerKey: string) => void;
+  readonly onUnbind: (providerKey: string, displayName: string) => void;
 }): ReactNode {
   const { item } = props;
   return (
@@ -75,7 +75,7 @@ function BoundRow(props: {
         {item.type === 'union' ? null : (
           <Popconfirm
             title={t('account.unbindConfirm', { name: item.displayName })}
-            onConfirm={() => props.onUnbind(item.providerKey)}
+            onConfirm={() => props.onUnbind(item.providerKey, item.displayName)}
           >
             <Button size="small" type="danger" disabled={!props.canUnbind} loading={props.unbinding}>
               {t('account.unbindAction')}
@@ -161,12 +161,14 @@ export function ThirdPartyList(props: {
     window.location.replace(url);
   };
 
-  const handleUnbind = (providerKey: string) => {
+  const handleUnbind = (providerKey: string, displayName: string) => {
     setUnbindError(undefined);
     runUnbind(buildUnbindThirdpartyRequest(providerKey))
       .then((result) => {
         if (result !== undefined) {
           run().catch(() => {});
+          // 解绑成功反馈（P1-6 统一 Semi Toast 成功通道）。
+          Toast.success(t('account.unbindSuccess', { name: displayName }));
         }
       })
       .catch((error: unknown) => {

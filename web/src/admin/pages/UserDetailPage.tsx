@@ -7,7 +7,8 @@
  * {id, providerKey}）Popconfirm 确认 → 成功后重取详情；Union 行不可单独解绑
  * 由服务端兜底（invalid_request）——admin 绑定视图 UserThirdpartyBinding 无
  * type 标记（§5.4 未定义），前端不预判置灰，失败经 Semi Toast 展示
- * （原就地 actionError 文字已移除；解绑成功反馈无现成 i18n 键，留待后续打磨）。
+ * （原就地 actionError 文字已移除）；成功反馈接 Toast.success
+ * （admin.unbindSuccess，P1-6 统一成功通道）。
  *
  * 登录日志（§5.4 行 1255 GetUserEvents {id} + 分页 §1.7）：DataTable 消费
  * （分页 / 排序受控 TableQueryState，初始 created_at desc——EventLogTable
@@ -134,7 +135,7 @@ export function UserDetailPage(props: {
   /**
    * 解绑第三方（§5.4 行 1253）：Union 行不可单独解绑由服务端兜底
    * （invalid_request → 失败经 Toast 展示）；成功后重取详情刷新
-   * 绑定列表（成功反馈无现成 i18n 键，留待后续打磨）。
+   * 绑定列表 + 成功反馈（P1-6 统一成功通道，新增 admin.unbindSuccess）。
    */
   async function handleUnbind(providerKey: string): Promise<void> {
     try {
@@ -142,6 +143,7 @@ export function UserDetailPage(props: {
         buildUnbindUserThirdpartyRequest(props.userId, providerKey),
       );
       await run(buildGetUserRequest(props.userId));
+      Toast.success(t('admin.unbindSuccess', { providerKey }));
     } catch (unbindError) {
       Toast.error(apiErrorText(unbindError));
     }

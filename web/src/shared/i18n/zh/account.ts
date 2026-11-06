@@ -48,6 +48,8 @@ export const account = {
   'account.unionTag': '联合身份',
   'account.unbindConfirm': '确定解绑「{name}」？解绑后无法再用它登录。',
   'account.unbindAction': '解绑',
+  // 解绑成功反馈（P1-6，统一 Semi Toast 成功通道）。
+  'account.unbindSuccess': '已解绑「{name}」',
   'account.bindAction': '绑定',
   'account.thirdpartyLoadFailed': '第三方账号加载失败，请刷新重试',
   'account.thirdpartyEmpty': '尚未绑定第三方账号',
@@ -58,6 +60,8 @@ export const account = {
   'account.recoveryIssuedAt': '签发时间：{time}',
   'account.recoveryRegenerateConfirm': '重新生成将作废全部现有恢复码，确定继续？',
   'account.recoveryRegenerate': '重新生成',
+  // 下载为文本（P2-3，纯前端 Blob 下载）。
+  'account.recoveryDownload': '下载为文本',
 
   // ---- MfaMethodList（因子名复用 factors.*，「恢复码」弹窗题复用
   //      factors.recovery_code，「绑定」按钮复用 account.bindAction，「尚未绑定」
@@ -156,6 +160,8 @@ export const account = {
   // ---- ProfilePage 资料编辑（保存 / 取消复用 saveAction / cancelAction，
   //      手机号复用 phoneLabel；头像持久化失败复用 errors.status.failed）----
   'account.profileEditAction': '编辑资料',
+  // 保存成功反馈（P1-6，统一 Semi Toast 成功通道）。
+  'account.profileSaved': '资料已保存',
   'account.emailLabel': '邮箱',
   'account.genderLabel': '性别',
   'account.genderSecret': '保密',

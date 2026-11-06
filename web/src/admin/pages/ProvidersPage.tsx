@@ -88,7 +88,8 @@ export function ProvidersPage(props: {
   // 行集本地态：列表载入同步 + 启停 / 排序写操作成功后就地补丁（乐观）。
   const [rows, setRows] = useState<readonly Provider[]>([]);
   // 写操作（启停 / 排序）失败反馈改走 Semi Toast（原就地 actionError
-  // 文字已随 Semi 回归移除）；启停 / 拖拽成功反馈不做（无现成 i18n 键）。
+  // 文字已随 Semi 回归移除）；成功反馈接 Toast.success（P1-6 统一成功
+  // 通道，新增最小键集 admin.provider{Enable,Disable,Sort}Success）。
 
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
@@ -122,12 +123,18 @@ export function ProvidersPage(props: {
           isEnabled: next,
         }),
       );
-      // 成功：行数据追上乐观态（StatusSwitch 覆盖清除依赖此更新）。
+      // 成功：行数据追上乐观态（StatusSwitch 覆盖清除依赖此更新）+
+      // 成功反馈（displayName 空串兜底 providerKey，§9 第 18 条零值口径）。
       setRows((prev) =>
         patchRowByKey(prev, providerRowKey, row.providerKey, (r) => ({
           ...r,
           isEnabled: next,
         })),
+      );
+      Toast.success(
+        t(next ? 'admin.providerEnableSuccess' : 'admin.providerDisableSuccess', {
+          name: row.displayName || row.providerKey,
+        }),
       );
     } catch (toggleError) {
       // 失败：错误展示归消费方 + rethrow 触发 StatusSwitch 回滚。
@@ -139,10 +146,15 @@ export function ProvidersPage(props: {
   function handleSort(next: readonly Provider[]): void {
     const prev = rows;
     setRows(next); // 乐观：新序先行。
-    sortProviders(buildSortProvidersRequest(next)).catch((sortError) => {
-      setRows(prev); // 失败回滚原序。
-      Toast.error(apiErrorText(sortError));
-    });
+    sortProviders(buildSortProvidersRequest(next))
+      .then(() => {
+        // 拖拽排序成功反馈（P1-6 统一成功通道）。
+        Toast.success(t('admin.providerSortSuccess'));
+      })
+      .catch((sortError) => {
+        setRows(prev); // 失败回滚原序。
+        Toast.error(apiErrorText(sortError));
+      });
   }
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
