@@ -7,7 +7,8 @@
  * （该字段在 AdminProvider 详情，§5.3 行 1210），故列表恒渲染内置占位图形）/
  * 状态（StatusSwitch 行内启停）/ 策略标签（api.policyTags）/ 排序
  * （sort_order 值 + SortableList 拖拽）。顶部 ProviderCallbackHint：回调
- * 地址模板只读提示 + 复制（§5.3 行 1193）。
+ * 地址模板只读提示 + 复制（§5.3 行 1193）。工具栏「新建提供方」入口指向
+ * PROVIDER_NEW_PATH（需求 §4.6 列表/新建/编辑/启用/排序补全）。
  *
  * 取数：ListProviders **真调**（后端已实装）——全量取数
  * （buildListProvidersRequest：第 1 页 × 100，拖拽排序需全量行集，见其
@@ -26,7 +27,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { Typography } from '@douyinfe/semi-ui-19';
+import { Button, Typography } from '@douyinfe/semi-ui-19';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
@@ -58,6 +59,9 @@ function providerRowKey(row: Provider): string {
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
+
+/** 新建页路径（§6 行 516；与 routes.tsx 同名常量同值，SPA 全量刷新路由）。 */
+const PROVIDER_NEW_PATH = '/admin/providers/new';
 
 /**
  * 表头列（与 .row 网格列一一对应；首列为 SortableList 拖拽手柄，无标题）。
@@ -153,6 +157,12 @@ export function ProvidersPage(props: {
   return (
     <section className={styles.page}>
       <Typography.Title heading={3}>{t('admin.navProviders')}</Typography.Title>
+      {/* 新建入口（需求 §4.6 列表/新建/编辑/启用/排序；对照 OidcClientsPage 工具栏写法）。 */}
+      <div className={styles.toolbar}>
+        <Button theme="solid" onClick={() => window.location.assign(PROVIDER_NEW_PATH)}>
+          {t('admin.createProviderAction')}
+        </Button>
+      </div>
       <ProviderCallbackHint alRoot={props.alRoot} />
       {actionError !== null ? (
         <p role="alert" className={styles.actionError}>

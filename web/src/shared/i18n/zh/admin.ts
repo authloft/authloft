@@ -341,6 +341,7 @@ export const admin = {
   'admin.providersDragDisabledNote': '提供方数量超过单页上限（100），拖拽排序已停用',
   'admin.providerDragSortLabel': '拖拽调整提供方排序',
   'admin.noProviders': '暂无提供方',
+  'admin.createProviderAction': '新建提供方',
   'admin.providerKeyTaken': '唯一标识已被占用，请换一个',
   'admin.providerTypeRequired': '请先选择提供方类型',
   'admin.testTargetRequired': '请输入测试接收目标',

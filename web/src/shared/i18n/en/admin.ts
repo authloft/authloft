@@ -357,6 +357,7 @@ export const admin: typeof zhAdmin = {
     'More than one page of providers (100); drag sorting is disabled',
   'admin.providerDragSortLabel': 'Drag to reorder providers',
   'admin.noProviders': 'No providers yet',
+  'admin.createProviderAction': 'New Provider',
   'admin.providerKeyTaken': 'The key is already taken; please choose another one',
   'admin.providerTypeRequired': 'Select a provider type first',
   'admin.testTargetRequired': 'Enter a test target',
