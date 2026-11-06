@@ -43,6 +43,7 @@ import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
 import { isValidUsername } from '../../shared/utils/validate';
+import { DEFAULT_ACCOUNT_HOME } from '../../shared/urls';
 import {
   getInit,
   type LoginMethodEntry,
@@ -107,8 +108,8 @@ export function advanceAfterStep(
 
 /**
  * 终点 URL（§1.3 行 158-162 定稿）：syncCookieUrl 非空优先（后端拼好的
- * 首跳完整 URL），否则 redirectTo；双空 → 默认落点 /account/profile（直登
- * 场景，禁止停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，
+ * 首跳完整 URL），否则 redirectTo；双空 → 默认落点 DEFAULT_ACCOUNT_HOME
+ * （直登场景，禁止停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，
  * 此处不复用它以免本页静态拉入整个 login flow 模块链。
  */
 export function flowTerminalUrl(envelope: LoginFlowResponse): string {
@@ -118,7 +119,7 @@ export function flowTerminalUrl(envelope: LoginFlowResponse): string {
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return '/account/profile';
+  return DEFAULT_ACCOUNT_HOME;
 }
 
 /** 流程步提交编排（纯逻辑，request 可注入；传输层异常 → ok:false 不伪造信封）。 */

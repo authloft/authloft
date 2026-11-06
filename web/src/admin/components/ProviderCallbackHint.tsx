@@ -22,10 +22,8 @@
 import type { ReactNode } from 'react';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { t } from '../../shared/i18n';
+import { OAUTH_CALLBACK_PREFIX } from '../../shared/urls';
 import styles from './ProviderCallbackHint.module.less';
-
-/** 回调地址路径（§2.7.3 行 602：`/sso/oauth/callback/{provider_key}`）。 */
-const CALLBACK_PATH = '/sso/oauth/callback/';
 
 /** providerKey 未给定时渲染的字面占位（复制产物即此模板）。 */
 const PROVIDER_KEY_PLACEHOLDER = '{provider_key}';
@@ -36,7 +34,7 @@ const PROVIDER_KEY_PLACEHOLDER = '{provider_key}';
  * 见 ./bootstrap；node 环境为空串 → 相对路径形态）。
  */
 export function providerCallbackUrl(alRoot: string, providerKey?: string): string {
-  return `${alRoot}${CALLBACK_PATH}${providerKey ?? PROVIDER_KEY_PLACEHOLDER}`;
+  return `${alRoot}${OAUTH_CALLBACK_PREFIX}${providerKey ?? PROVIDER_KEY_PLACEHOLDER}`;
 }
 
 /**

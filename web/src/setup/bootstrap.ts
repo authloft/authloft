@@ -3,6 +3,7 @@
  * （接口文档 §8 白名单；docs/前端架构.md §6b：只读 `static_base`，
  * 安装态无业务配置、不读 `methods`；`al_root` 用于跳转 /sso/login）。
  */
+import { loginUrl, normalizeAlRoot } from '../shared/urls';
 
 /** 空壳注入变量的最小形状（§8 白名单中 setup 页可用项）。 */
 interface RawSetupInit {
@@ -32,6 +33,10 @@ export function loadSetupInit(): SetupInit {
   };
 }
 
+// normalizeAlRoot / 登录页地址实现收口 shared/urls.ts（URL
+// 唯一真值）；此处再导出保持既有引用面（含测试）不变。
+export { normalizeAlRoot };
+
 /** static_base 归一为以 `/` 结尾；缺省回落 `/assets/`（§1.5 / §8）。 */
 export function normalizeStaticBase(base: string): string {
   if (base.trim() === '') {
@@ -40,16 +45,10 @@ export function normalizeStaticBase(base: string): string {
   return base.endsWith('/') ? base : `${base}/`;
 }
 
-/** al_root 去掉末尾斜杠；缺省回落当前站点源。 */
-export function normalizeAlRoot(root: string): string {
-  const trimmed = root.trim().replace(/\/+$/, '');
-  return trimmed !== '' ? trimmed : location.origin;
-}
-
 /**
  * 跳转登录页：setup 完成 / 加载时已处于正常模式的统一出口（§6b / §13.4）。
- * 用 replace 避免回退键回到安装页。
+ * 用 replace 避免回退键回到安装页。地址经 shared/urls.ts。
  */
 export function redirectToLogin(alRoot: string): void {
-  window.location.replace(`${alRoot}/sso/login`);
+  window.location.replace(loginUrl(alRoot));
 }

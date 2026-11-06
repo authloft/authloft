@@ -17,7 +17,7 @@
  * - 终点（§4.1 行 383；§1.3 行 158-162 三级优先级）：syncCookieUrl
  *   是后端拼好的多域名同步首跳完整 URL（§1.3 行 137、§2.9）→ location.replace
  *   它（跳转链由各域页面接力，最终回 redirectTo）；省略时直接 replace(redirectTo)；
- *   皆空（直登场景）→ 默认落点 /account/profile，禁止停留提示页——移动端用
+ *   皆空（直登场景）→ 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页——移动端用
  *   replace 防回退死循环（§4.2 行 426 RedirectStep 同款语义）；
  * - captcha_required / captcha_invalid **原地插入** CaptchaWidget（shared/captcha）：
  *   运行期响应顶层 captcha 是权威来源（§2.5 行 519），按新 captcha 对象重新渲染、
@@ -50,6 +50,7 @@ import { resolveFlowStatus } from '../shared/api/errors';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../shared/captcha/CaptchaWidget';
 import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
+import { DEFAULT_ACCOUNT_HOME } from '../shared/urls';
 import type {
   MethodsSnapshot,
   SnapshotField,
@@ -207,7 +208,7 @@ export function fieldsFor(
 /**
  * 终点 URL（§4.1 行 383；§1.3 行 158-162 定稿）：syncCookieUrl 非空 →
  * 它（后端拼好的首跳完整 URL，§1.3 行 137）；否则 redirectTo；两者皆空 →
- * 默认落点 /account/profile（直登场景，三级互斥完备；禁止停留「登录成功」提示页）。
+ * 默认落点 DEFAULT_ACCOUNT_HOME（直登场景，三级互斥完备；禁止停留「登录成功」提示页）。
  */
 export function terminalUrl(envelope: LoginFlowResponse): string {
   if (envelope.syncCookieUrl !== '') {
@@ -216,7 +217,7 @@ export function terminalUrl(envelope: LoginFlowResponse): string {
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return '/account/profile';
+  return DEFAULT_ACCOUNT_HOME;
 }
 
 /**

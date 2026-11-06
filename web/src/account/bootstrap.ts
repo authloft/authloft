@@ -7,11 +7,12 @@
  * - `al_root`：Authloft 主域名（§8），用于拼登出跳转 `{al_root}/sso/logout`
  *   （§5 行 480）与 401 未登录跳登录 `{al_root}/sso/login`；
  *   归一口径与 shared/api/http.ts 的 resolveBaseUrl 一致（shared 层禁止
- *   import entry、entry 间禁止互引 §9 第 13 条，故内联同款实现）；
+ *   import entry、entry 间禁止互引 §9 第 13 条——实现已收口 shared/urls.ts）；
  * - `static_base`：静态资源基址（§8），entry 首行赋 `__webpack_public_path__`，
  *   与 login/bootstrap.ts 同口径归一。
  */
 import { getInit } from '../shared/types/init';
+import { normalizeAlRoot } from '../shared/urls';
 
 /** static_base 缺省回落值（接口文档 §8 行 1428：默认 /assets）。 */
 const DEFAULT_STATIC_BASE = '/assets/';
@@ -25,19 +26,6 @@ export function normalizeStaticBase(base: string | undefined): string {
     return DEFAULT_STATIC_BASE;
   }
   return base.endsWith('/') ? base : `${base}/`;
-}
-
-/**
- * al_root 归一：string 校验 → trim → 去尾斜杠；缺省回落当前站点源；
- * 非浏览器环境（单测 node）为空串（与 shared/api/http.ts 同口径）。
- */
-function normalizeAlRoot(alRoot: unknown): string {
-  const value =
-    typeof alRoot === 'string' ? alRoot.trim().replace(/\/+$/, '') : '';
-  if (value !== '') {
-    return value;
-  }
-  return typeof location !== 'undefined' ? location.origin : '';
 }
 
 /** account 引导结果（§5 行 478）：归一后的注入值，无必需校验（恒 ok）。 */
@@ -59,12 +47,6 @@ export function loadAccountBootstrap(): AccountBootstrapResult {
   };
 }
 
-/** 401 未登录统一跳转的登录页地址（§5 行 480：跳 `{al_root}/sso/login`；Go 渲染，§8 行 1418）。 */
-export function loginUrl(alRoot: string): string {
-  return `${alRoot}/sso/login`;
-}
-
-/** 登出地址（§5 行 480 / 接口文档 §8 行 1420：`{al_root}/sso/logout`，Go 处理非 SPA）。 */
-export function logoutUrl(alRoot: string): string {
-  return `${alRoot}/sso/logout`;
-}
+// loginUrl / logoutUrl / normalizeAlRoot 实现收口 shared/urls.ts
+//（URL 唯一真值），此处 re-export 保持既有引用面不变。
+export { loginUrl, logoutUrl } from '../shared/urls';

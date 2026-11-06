@@ -311,7 +311,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(calls).toEqual([
       'https://sync.test/first',
       'https://app.test/done',
-      '/account/profile',
+      '/account#/profile',
     ]);
   });
 

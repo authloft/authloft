@@ -33,6 +33,7 @@ import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/Ca
 import { QRCodePanel, MAX_POLL_SECONDS } from '../../shared/components/QRCodePanel';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
+import { DEFAULT_ACCOUNT_HOME } from '../../shared/urls';
 import { defaultNavigate } from './RedirectStep';
 import styles from './QRCodeStep.module.less';
 
@@ -44,7 +45,7 @@ function initCaptcha(): CaptchaConfig | undefined {
 /**
  * 扫码登录终点（§1.3 行 158-162 定稿，与 LoginContainer.terminalUrl 同口径：
  * syncCookieUrl 是后端拼好的多域名同步首跳完整 URL → 优先；否则 redirectTo；
- * 皆空 → 默认落点 /account/profile，禁止停留提示页）。
+ * 皆空 → 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页）。
  */
 export function completeLogin(
   envelope: LoginFlowResponse,
@@ -55,7 +56,7 @@ export function completeLogin(
       ? envelope.syncCookieUrl
       : envelope.redirectTo !== ''
         ? envelope.redirectTo
-        : '/account/profile';
+        : DEFAULT_ACCOUNT_HOME;
   if (url !== '') {
     navigate(url);
   }
