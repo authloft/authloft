@@ -34,3 +34,11 @@
   padding: @spacing-xl;
   background-color: @color-background-muted;
 }
+
+// 窄屏收敛（评审 P0-4）：内容区内边距收窄；侧栏折叠走 Semi
+// Sider breakpoint + Nav isCollapsed（见 AppLayout.tsx），此处只管内容区。
+@media (max-width: @breakpoint-md) {
+  .content {
+    padding: @spacing-lg;
+  }
+}

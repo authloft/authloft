@@ -13,7 +13,7 @@
  * 随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
  * _base/base.css 引入（见 entry.tsx 注释）。
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 // 大包命名导入（§1.6 行 112/113 硬性口径：唯一包 @douyinfe/semi-ui-19，
 // 一律大包入口、禁子路径——此前 lib/es 子路径裁量已废止）。
 // 组件样式随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
@@ -57,11 +57,17 @@ export function AppLayout(props: {
   readonly breadcrumb: readonly string[];
   readonly children: ReactNode;
 }) {
+  // 窄屏侧栏折叠（评审 P0-4(c)）：用 Semi 自带响应式能力——Sider
+  // breakpoint 注册 matchMedia（xs = max-width 575px，Semi 内置断点表），
+  // onBreakpoint 驱动 Nav isCollapsed；不自写断点体系。初始窄屏由
+  // registerMediaQuery 的 callInInit 立即回调覆盖，state 初值即正确。
+  const [navCollapsed, setNavCollapsed] = useState(false);
   return (
     <Layout className={styles.shell}>
-      <Sider>
+      <Sider breakpoint={['xs']} onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}>
         <Nav
           className={styles.nav}
+          isCollapsed={navCollapsed}
           items={NAV_ITEMS.map(({ itemKey, textKey }) => ({
             itemKey,
             text: t(textKey),

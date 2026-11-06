@@ -6,3 +6,17 @@
 .table {
   width: 100%;
 }
+
+// 窄屏横向滚动（评审 P0-4(d) 最小处理）：表格保持可读最小宽度，
+// 列不再无限压缩，由 .scroll 容器横向滚动。
+@media (max-width: @breakpoint-md) {
+  .scroll {
+    overflow-x: auto;
+  }
+
+  // :global 对接 Semi Table 渲染的原生 table 元素（§1.7：第三方 DOM 结构
+  // 对接处允许 :global，此处限定在 .scroll 容器内）。
+  .scroll :global(table) {
+    min-width: 40rem;
+  }
+}

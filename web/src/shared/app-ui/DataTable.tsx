@@ -144,22 +144,26 @@ export function DataTable<T extends Record<string, unknown>>(
   }
 
   return (
-    <Table<T>
-      className={styles.table}
-      columns={columns}
-      dataSource={[...displayRows]}
-      rowKey={(record) => (record === undefined ? '' : rowKey(record))}
-      loading={props.loading}
-      empty={props.empty}
-      pagination={{
-        currentPage: query.page,
-        pageSize: query.pageSize,
-        total: props.total,
-        pageSizeOpts: [...PAGE_SIZE_OPTS],
-      }}
-      onChange={(changeInfo) => {
-        onQueryChange(resolveTableQuery(changeInfo, query));
-      }}
-    />
+    // 滚动容器（评审 P0-4(d)）：窄屏下表格保持可读最小宽度、
+    // 列不再无限压缩，由本容器横向滚动（样式见 DataTable.module.less）。
+    <div className={styles.scroll}>
+      <Table<T>
+        className={styles.table}
+        columns={columns}
+        dataSource={[...displayRows]}
+        rowKey={(record) => (record === undefined ? '' : rowKey(record))}
+        loading={props.loading}
+        empty={props.empty}
+        pagination={{
+          currentPage: query.page,
+          pageSize: query.pageSize,
+          total: props.total,
+          pageSizeOpts: [...PAGE_SIZE_OPTS],
+        }}
+        onChange={(changeInfo) => {
+          onQueryChange(resolveTableQuery(changeInfo, query));
+        }}
+      />
+    </div>
   );
 }

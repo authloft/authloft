@@ -27,7 +27,7 @@
  *
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t, type I18nKey } from '../../shared/i18n';
@@ -79,6 +79,12 @@ export function AdminLayout(props: {
   readonly breadcrumb: readonly string[];
   readonly children: ReactNode;
 }) {
+  // 窄屏侧栏折叠（评审 P0-4(c)）：用 Semi 自带响应式能力——Sider
+  // breakpoint 注册 matchMedia（xs = max-width 575px，Semi 内置断点表），
+  // onBreakpoint 驱动 Nav isCollapsed；不自写断点体系。初始窄屏由
+  // registerMediaQuery 的 callInInit 立即回调覆盖，state 初值即正确。
+  // 必须在所有提前 return 之前声明（hooks 顺序恒定）。
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const { status, data, error, run } = useRequest(getMe);
   useEffect(() => {
     // §6 行 501：401 未携带有效会话 → 统一跳登录（adminMeFailureAction 分流，
@@ -111,9 +117,10 @@ export function AdminLayout(props: {
   const displayName = adminDisplayName(data);
   return (
     <Layout className={styles.shell}>
-      <Sider>
+      <Sider breakpoint={['xs']} onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}>
         <Nav
           className={styles.nav}
+          isCollapsed={navCollapsed}
           items={NAV_ITEMS.map(({ itemKey, textKey }) => ({
             itemKey,
             text: t(textKey),
