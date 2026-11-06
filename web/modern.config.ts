@@ -99,10 +99,8 @@ export default defineConfig({
     //（static_base 注入值）覆盖（§1.5）。
     assetPrefix: '/assets/',
     distPath: {
-      // 初始 JS 落在 dist 根。文件名恢复全量 contenthash（§9 第 23 条禁去 hash，
-      // 原 filename.js 固定 `${name}/entry.js` 的反口径回调已删）；壳层模板由
-      // scripts/sync-templates.mjs 原样复制 dist/html 产物（§1.5），不依赖固定文件名。
-      js: '',
+      js: 'js',
+      css: 'css',
     },
   },
 });
