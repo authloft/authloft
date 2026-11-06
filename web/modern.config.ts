@@ -8,6 +8,9 @@ const CSP_NONCE = '{{AUTHLOFT_CSP_NONCE}}';
 const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
 const INIT_JSON = '{{AUTHLOFT_INIT_JSON}}';
 
+const IS_DEV = process.env.NODE_ENV === 'development';
+const DEV_INIT_JSON = {"al_root":"http://localhost:8080","static_base":"/assets","methods":{"flags":{"passwordReset":true,"registration":true},"captcha":{"providerKey":"builtin_image","type":"image"},"methods":[{"method":"password","usage":["primary"],"steps":["form"],"fields":[{"name":"username","label":"用户名/邮箱/手机号","type":"text","required":true},{"name":"password","label":"密码","type":"password","required":true},{"name":"captcha","label":"人机校验","type":"captcha"}]},{"method":"otp_sms","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"phone","label":"手机号","type":"phone","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"otp_email","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"email","label":"邮箱","type":"email","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"webauthn","usage":["primary","secondary"],"steps":["challenge","form"],"capability":"window.PublicKeyCredential"}]}}
+
 export default defineConfig({
   plugins: [appTools()],
   source: {
@@ -59,7 +62,7 @@ export default defineConfig({
       //    标签的 src / href 前缀（/assets/xxx → {{AUTHLOFT_STATIC_BASE}}/xxx）。
       //    运行期 publicPath（产物 runtime 的 "/assets/"）、CSS url()、异步 chunk
       //    不受影响——entry.tsx 的 __webpack_public_path__ 运行期覆盖逻辑不动。
-      publicPath: `${STATIC_BASE}/`,
+      publicPath: IS_DEV ? '/' : `${STATIC_BASE}/`,
     },
   },
   html: {
@@ -85,7 +88,7 @@ export default defineConfig({
           {
             tag: 'script',
             attrs: { nonce: CSP_NONCE },
-            children: `window.__AUTHLOFT_INIT__ = ${INIT_JSON};`,
+            children: `window.__AUTHLOFT_INIT__ = ${IS_DEV ? JSON.stringify(DEV_INIT_JSON) : INIT_JSON};`,
             head: true,
             append: false,
           },
