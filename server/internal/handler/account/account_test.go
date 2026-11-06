@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,10 +14,13 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/gen/go/api/account/v1/accountv1connect"
+	"authloft/gen/go/api/common/v1"
+	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/credential"
 	"authloft/gen/go/provider"
 	"authloft/gen/go/token"
@@ -25,6 +29,8 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
+	"authloft/internal/service"
+	accountsvc "authloft/internal/service/account"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -38,9 +44,9 @@ func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
 
 // fakeUsers UserReader 的 fake：分别控制 user / profile 行与错误。
 type fakeUsers struct {
-	user      *model.User
-	profile   *model.UserProfile
-	userErr   error
+	user       *model.User
+	profile    *model.UserProfile
+	userErr    error
 	profileErr error
 }
 
@@ -109,8 +115,8 @@ func (f *fakeCaptcha) Config(context.Context) captcha.Config { return f.cfg }
 
 // newSessionHandler 构造挂真实 session 拦截器的生成 handler（自造密钥
 // version=1 kid=1，同 internal/connect/session_test.go 口径），返回签发
-// 助手与 http.Handler。GetConfig 依赖经 deps 可选注入（nil 取空 fake，
-// GetProfile 用例不受影响）。
+// 助手与 http.Handler。GetConfig / 三方绑定族依赖经 deps 可选注入（nil 取
+// 空 fake，GetProfile 用例不受影响）。
 func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	var d *getConfigDeps
@@ -131,7 +137,7 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := accountv1connect.NewAccountServiceHandler(
-		New(users, d.creds(), d.settings(), d.providers(), d.captcha),
+		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty()),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -142,12 +148,13 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	return tokens, epochs, h
 }
 
-// getConfigDeps GetConfig 用例的依赖集（缺省字段取空 fake）。
+// getConfigDeps GetConfig / 三方绑定族用例的依赖集（缺省字段取空 fake）。
 type getConfigDeps struct {
-	credsIn    CredentialReader
-	settingsIn SettingsReader
-	providersIn ProviderReader
-	captcha    CaptchaConfiger
+	credsIn      CredentialReader
+	settingsIn   SettingsReader
+	providersIn  ProviderReader
+	captcha      CaptchaConfiger
+	thirdpartyIn Thirdparty
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -170,6 +177,8 @@ func (d *getConfigDeps) providers() ProviderReader {
 	}
 	return d.providersIn
 }
+
+func (d *getConfigDeps) thirdparty() Thirdparty { return d.thirdpartyIn }
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -217,7 +226,7 @@ func wantProfile(t *testing.T) *model.UserProfile {
 
 // TestGetProfileWithSession 有会话端到端：带有效 al_session Cookie 打
 // GetProfile → 200，protojson 解码后逐项断言 §3.1 字段与掩码
-//（138****8000 / a***@example.com）。
+// （138****8000 / a***@example.com）。
 func TestGetProfileWithSession(t *testing.T) {
 	users := &fakeUsers{user: wantUser(), profile: wantProfile(t)}
 	tokens, epochs, h := newSessionHandler(t, users)
@@ -564,7 +573,7 @@ func TestGetConfigAvatarUploadUnconfigured(t *testing.T) {
 }
 
 // TestGetConfigAvatarUploadLocalDirect local 配置 direct 自动回退 proxy
-//（行 825、后端架构 §15.1：local 无预签名能力）；maxSize / allowedTypes
+// （行 825、后端架构 §15.1：local 无预签名能力）；maxSize / allowedTypes
 // 照常投影。
 func TestGetConfigAvatarUploadLocalDirect(t *testing.T) {
 	ext, err := repo.MarshalProviderExt(&provider.Ext{
@@ -700,7 +709,9 @@ func TestGetConfigWithoutSession(t *testing.T) {
 }
 
 // TestOtherMethodsUnimplemented 其余方法一律返回生成基类的 unimplemented
-//（GetConfig 已实装，移出桩清单）。
+// （GetConfig 与三方绑定族四方法均已实装，移出桩清单——未装配
+// thirdparty service 时的 unimplemented 由 TestThirdpartyMethodsNotConfigured
+// 单独覆盖）。
 func TestOtherMethodsUnimplemented(t *testing.T) {
 	_, _, h := newSessionHandler(t, &fakeUsers{})
 	cases := []string{
@@ -719,10 +730,6 @@ func TestOtherMethodsUnimplemented(t *testing.T) {
 		accountv1connect.AccountServiceRegisterWebauthnProcedure,
 		accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
 		accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
-		accountv1connect.AccountServiceGetThirdpartyBindingsProcedure,
-		accountv1connect.AccountServiceUnbindThirdpartyProcedure,
-		accountv1connect.AccountServiceThirdpartyOauthProcedure,
-		accountv1connect.AccountServiceGetThirdpartyTicketProcedure,
 		accountv1connect.AccountServiceGetEventsProcedure,
 	}
 	for _, procedure := range cases {
@@ -741,6 +748,331 @@ func TestOtherMethodsUnimplemented(t *testing.T) {
 			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, errBody.Code, rec.Body.String())
 		}
 	}
+}
+
+// —— 三方绑定族四方法（接口文档 §3.7 / §3.7.1）——
+
+// fakeThirdparty Thirdparty 窄接口的 fake：预置结果回放 + 入参记录。
+type fakeThirdparty struct {
+	bindings    *accountsvc.BindingsResult
+	bindingsErr error
+	bindingsUID int64
+	unbindErr   error
+	unbindUID   int64
+	unbindKey   string
+	oauthOut    *accountsvc.BindOutcome
+	oauthErr    error
+	oauthIn     accountsvc.OauthInput
+	ticketResp  *ssov1.LoginFlowResponse
+	ticketIn    accountsvc.TicketInput
+}
+
+func (f *fakeThirdparty) GetThirdpartyBindings(_ context.Context, uid int64) (*accountsvc.BindingsResult, error) {
+	f.bindingsUID = uid
+	return f.bindings, f.bindingsErr
+}
+
+func (f *fakeThirdparty) UnbindThirdparty(_ context.Context, uid int64, providerKey string) error {
+	f.unbindUID, f.unbindKey = uid, providerKey
+	return f.unbindErr
+}
+
+func (f *fakeThirdparty) ThirdpartyOauth(_ context.Context, in accountsvc.OauthInput) (*accountsvc.BindOutcome, error) {
+	f.oauthIn = in
+	return f.oauthOut, f.oauthErr
+}
+
+func (f *fakeThirdparty) GetThirdpartyTicket(_ context.Context, in accountsvc.TicketInput) *ssov1.LoginFlowResponse {
+	f.ticketIn = in
+	return f.ticketResp
+}
+
+// decodeAccountErrorInfo 从 Connect 错误体 details 解出 ErrorInfo（base64
+// value → proto 解码，§1.5 行 203-210；口径同 handler/admin admin_test.go
+// decodeErrorInfo——测试包私有，各落一份）。
+func decodeAccountErrorInfo(t *testing.T, raw string) *commonv1.ErrorInfo {
+	t.Helper()
+	var body struct {
+		Code    string `json:"code"`
+		Details []struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if len(body.Details) != 1 {
+		t.Fatalf("details 数量 = %d, want 1 (body %s)", len(body.Details), raw)
+	}
+	buf, err := base64.RawStdEncoding.DecodeString(body.Details[0].Value)
+	if err != nil {
+		t.Fatalf("decode detail value: %v", err)
+	}
+	info := &commonv1.ErrorInfo{}
+	if err := proto.Unmarshal(buf, info); err != nil {
+		t.Fatalf("unmarshal ErrorInfo: %v", err)
+	}
+	return info
+}
+
+// TestThirdpartyMethodsNotConfigured 未装配三方绑定 service（测试桩）时四方法
+// 一律 unimplemented（sso 域 Thirdparty/Qrcode nil 同款口径）。
+func TestThirdpartyMethodsNotConfigured(t *testing.T) {
+	_, _, h := newSessionHandler(t, &fakeUsers{})
+	cases := []string{
+		accountv1connect.AccountServiceGetThirdpartyBindingsProcedure,
+		accountv1connect.AccountServiceUnbindThirdpartyProcedure,
+		accountv1connect.AccountServiceThirdpartyOauthProcedure,
+		accountv1connect.AccountServiceGetThirdpartyTicketProcedure,
+	}
+	for _, procedure := range cases {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(rec, req)
+
+		var errBody struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+			t.Fatalf("%s: decode error body %q: %v", procedure, rec.Body.String(), err)
+		}
+		if errBody.Code != "unimplemented" {
+			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, errBody.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestGetThirdpartyBindingsConnect 端到端：双列表投影 + uid 注入 + 无会话 401。
+func TestGetThirdpartyBindingsConnect(t *testing.T) {
+	tp := &fakeThirdparty{bindings: &accountsvc.BindingsResult{
+		Items: []accountsvc.BoundItem{{
+			ProviderKey: "qq", DisplayName: "QQ", Type: "qq",
+			Channel: "redirect", Icon: "https://q.cn/icon.png", CreatedAt: 1761800000,
+		}},
+		Available: []accountsvc.BindOption{{
+			ProviderKey: "wechat_mp_scan", DisplayName: "微信扫码", Type: "wechat_mp_scan",
+			Channel: "qrcode", Icon: "", UiGroup: "social", SortOrder: 20,
+		}},
+	}}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{thirdpartyIn: tp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceGetThirdpartyBindingsProcedure, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST GetThirdpartyBindings: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	if tp.bindingsUID != 10086 {
+		t.Errorf("service 收到 uid = %d, want 10086（会话注入）", tp.bindingsUID)
+	}
+	var got accountv1.ThirdpartyBindingsResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got.GetItems()) != 1 || len(got.GetAvailable()) != 1 {
+		t.Fatalf("items/available = (%d, %d), want (1, 1)", len(got.GetItems()), len(got.GetAvailable()))
+	}
+	if it := got.GetItems()[0]; it.GetProviderKey() != "qq" || it.GetChannel() != "redirect" ||
+		it.GetCreatedAt() != 1761800000 || it.GetIcon() != "https://q.cn/icon.png" {
+		t.Errorf("items[0] = %+v", it)
+	}
+	if op := got.GetAvailable()[0]; op.GetProviderKey() != "wechat_mp_scan" || op.GetChannel() != "qrcode" ||
+		op.GetUiGroup() != "social" || op.GetSortOrder() != 20 {
+		t.Errorf("available[0] = %+v", op)
+	}
+}
+
+// TestUnbindThirdpartyConnect 端到端：成功空响应 + 入参透传；判定不满足 →
+// 400 + ErrorInfo(account, invalid_request)；无会话 401。
+func TestUnbindThirdpartyConnect(t *testing.T) {
+	post := func(t *testing.T, tp *fakeThirdparty, withSession bool) (int, string, *http.Response) {
+		t.Helper()
+		tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{thirdpartyIn: tp})
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUnbindThirdpartyProcedure,
+			strings.NewReader(`{"providerKey":"qq"}`))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if withSession {
+			req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST UnbindThirdparty: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode, readBody(t, resp.Body), resp
+	}
+
+	t.Run("成功空响应", func(t *testing.T) {
+		tp := &fakeThirdparty{}
+		status, raw, _ := post(t, tp, true)
+		if status != http.StatusOK || strings.TrimSpace(raw) != "{}" {
+			t.Errorf("status = %d body = %q, want 200 {}", status, raw)
+		}
+		if tp.unbindUID != 10086 || tp.unbindKey != "qq" {
+			t.Errorf("service 收到 (uid=%d, key=%q), want (10086, qq)", tp.unbindUID, tp.unbindKey)
+		}
+	})
+	t.Run("判定不满足 → 400 + ErrorInfo invalid_request", func(t *testing.T) {
+		tp := &fakeThirdparty{unbindErr: fmt.Errorf("%w: no sign-in method left", accountsvc.ErrInvalidRequest)}
+		status, raw, resp := post(t, tp, true)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (domain=%q code=%q), want (account, invalid_request)", info.GetDomain(), info.GetCode())
+		}
+		if hasLoginStateCookie(resp) {
+			t.Error("解绑不触碰 al_login_state（绑定 / 解绑不改变登录态）")
+		}
+	})
+	t.Run("无会话 401", func(t *testing.T) {
+		status, raw, _ := post(t, &fakeThirdparty{}, false)
+		if status != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (body %s)", status, raw)
+		}
+	})
+}
+
+// TestThirdpartyOauthConnect 端到端：Cookie 头解析 al_login_state、成功
+// {providerKey, displayName}、target_taken → 409 + ErrorInfo、零 Set-Cookie。
+func TestThirdpartyOauthConnect(t *testing.T) {
+	post := func(t *testing.T, tp *fakeThirdparty, cookie string) (int, string, *http.Response) {
+		t.Helper()
+		tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{thirdpartyIn: tp})
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		body := `{"providerKey":"qq","code":"c1","state":"b0123456789abcdef0123456789abcde"}`
+		req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceThirdpartyOauthProcedure, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", sessionCookie(t, tokens, epochs)+"; al_login_state="+cookie)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST ThirdpartyOauth: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode, readBody(t, resp.Body), resp
+	}
+
+	t.Run("成功 {providerKey, displayName} + Cookie 头解析", func(t *testing.T) {
+		tp := &fakeThirdparty{oauthOut: &accountsvc.BindOutcome{ProviderKey: "qq", DisplayName: "QQ"}}
+		status, raw, resp := post(t, tp, "sealed_state")
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+		}
+		var got accountv1.ThirdpartyOauthResponse
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetProviderKey() != "qq" || got.GetDisplayName() != "QQ" {
+			t.Errorf("response = {%q %q}, want {qq QQ}", got.GetProviderKey(), got.GetDisplayName())
+		}
+		if tp.oauthIn.StateCookie != "sealed_state" {
+			t.Errorf("StateCookie = %q, want al_login_state 解析透传", tp.oauthIn.StateCookie)
+		}
+		if tp.oauthIn.UID != 10086 || tp.oauthIn.Code != "c1" {
+			t.Errorf("service 入参 = %+v, want uid=10086 code=c1", tp.oauthIn)
+		}
+		if hasLoginStateCookie(resp) {
+			t.Error("绑定回调不删不签 al_login_state（行 1000 绑定不改变登录态）")
+		}
+	})
+	t.Run("target_taken → 409 + ErrorInfo", func(t *testing.T) {
+		tp := &fakeThirdparty{oauthErr: accountsvc.ErrTargetTaken}
+		status, raw, resp := post(t, tp, "sealed_state")
+		if status != http.StatusConflict {
+			t.Fatalf("status = %d, want 409（§1.5 行 191 重复绑定）(body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "target_taken" || info.GetMessage() != "该账号已被其他账号绑定" {
+			t.Errorf("ErrorInfo = %+v, want (account, target_taken, 固定文案)", info)
+		}
+		if hasLoginStateCookie(resp) {
+			t.Error("失败路径同样不触碰 al_login_state（行 1000）")
+		}
+	})
+}
+
+// TestGetThirdpartyTicketConnect 端到端：信封透传（success 带 bind 字段）+
+// 入参（ticket/poll/uid）+ 不触碰 al_login_state（行 1049）。
+func TestGetThirdpartyTicketConnect(t *testing.T) {
+	tp := &fakeThirdparty{ticketResp: &ssov1.LoginFlowResponse{
+		Status: "success",
+		Ticket: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"},
+		Bind:   &ssov1.BindResult{Ok: true, ProviderKey: "wechat_mp_scan", DisplayName: "微信扫码"},
+	}}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{thirdpartyIn: tp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceGetThirdpartyTicketProcedure,
+		strings.NewReader(`{"ticket":"tk-1","poll":"15"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST GetThirdpartyTicket: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200（轮询结论走信封域）(body %s)", resp.StatusCode, raw)
+	}
+	var got ssov1.LoginFlowResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetStatus() != "success" || got.GetTicket().GetTicketId() != "c7Kx9" {
+		t.Errorf("envelope = %s, want status=success + ticketId 回显", raw)
+	}
+	if b := got.GetBind(); b.GetProviderKey() != "wechat_mp_scan" || b.GetDisplayName() != "微信扫码" {
+		t.Errorf("bind = %+v, want {wechat_mp_scan 微信扫码}（行 1040）", b)
+	}
+	if got.GetLoginToken() != "" || got.GetSessionToken() != "" {
+		t.Errorf("envelope 不得携带 login_token / session_token（行 1049）: %s", raw)
+	}
+	if hasLoginStateCookie(resp) {
+		t.Error("绑定轮询不触碰 al_login_state（行 1049 绑定不改变登录态）")
+	}
+	if tp.ticketIn.Ticket != "tk-1" || tp.ticketIn.Poll != 15 || tp.ticketIn.UID != 10086 {
+		t.Errorf("service 入参 = %+v, want {tk-1 15 10086}", tp.ticketIn)
+	}
+}
+
+// hasLoginStateCookie 响应是否出现 al_login_state 的 Set-Cookie（绑定 / 解绑 /
+// 轮询一律不触碰该 Cookie——行 1000 / 1049；al_session 的会话拦截器续期属
+// 通用会话机制，随全部鉴权 RPC 同等发生，不在本断言范围）。
+func hasLoginStateCookie(resp *http.Response) bool {
+	for _, c := range resp.Header.Values("Set-Cookie") {
+		if strings.HasPrefix(c, service.LoginStateCookieName+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func readBody(t *testing.T, r io.Reader) string {

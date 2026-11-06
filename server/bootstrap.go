@@ -81,6 +81,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service"
+	accountsvc "authloft/internal/service/account"
 	adminsvc "authloft/internal/service/admin"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
@@ -172,6 +173,12 @@ type assembled struct {
 	// cache.TicketStore 读写 al:ticket（sealer = protojson 整值加密，
 	// §11.6.5），registerSSO 注入 SsoService handler。
 	qrcode *service.QRCode
+
+	// accountThirdparty account 域三方绑定族 service（§12.6 绑定内核 /
+	// 接口文档 §3.7）：buildEngine 内构造（复用 provider Loader / cache.TicketStore
+	// / ticket / cookie 两把 codec / eventlog 延迟队列审计），registerAccount
+	// 注入 AccountService handler。
+	accountThirdparty *accountsvc.ThirdpartyService
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -477,6 +484,25 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),
 		State:          loginState,
 		Terminal:       terminal,
+	})
+
+	// account 域三方绑定族 service（§12.6 / 接口文档 §3.7）：绑定内核
+	// 两通道共用（redirect 解 al_login_state 用 codecs.Cookie；扫码轮询解
+	// ticket 用 codecs.Ticket、结果读写与 thirdparty / qrcode 共用同一
+	// cache.TicketStore 实例）；available 列表数据源复用 provider Loader（与
+	// §2.7.1 登录快照同构）；解绑判定查 CredentialRepo；审计走 eventlog.Writer
+	// 延迟队列（registerAdmin 同款链）。挂入 assembled 供 registerAccount
+	// 注入 handler。
+	deps.accountThirdparty = accountsvc.NewThirdpartyService(accountsvc.Deps{
+		Loader:      deps.providerLoader,
+		Providers:   repo.NewProviderRepo(deps.db),
+		Binds:       repo.NewBindRepo(deps.db),
+		Creds:       repo.NewCredentialRepo(deps.db),
+		NewAdapter:  provider.NewAdapter,
+		Tickets:     tickets,
+		TicketCodec: deps.codecs.Ticket,
+		CookieCodec: deps.codecs.Cookie,
+		Audit:       eventlog.NewWriter(deps.queue),
 	})
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
@@ -977,13 +1003,17 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	csrv.Register(path, h)
 }
 
-// registerAccount 注册 AccountService Connect handler：挂同一
-// session 拦截器（§1.2 行 96：/api.account.v1.AccountService/** 全接口需
-// 用户会话，无 LoginDefault 式豁免——无有效会话请求由 handler 返回
-// unauthenticated）。GetConfig 依赖：CredentialRepo（hasPassword / mfaPolicy）、
-// settings.Store（mfa_enabled / avatar_storage_provider）、ProviderRepo（storage
-// 行）、captcha Gate（§9.1 行 1094 三处共用出口现算，降级一致）。其余方法由
-// 生成的 UnimplementedAccountServiceHandler 返回 unimplemented。
+// registerAccount 注册 AccountService Connect handler（GetProfile /
+// GetConfig + 三方绑定族四方法）：挂同一 session 拦截器（§1.2
+// 行 96：/api.account.v1.AccountService/** 全接口需用户会话，无 LoginDefault
+// 式豁免——无有效会话请求由 handler 返回 unauthenticated）。GetConfig 依赖：
+// CredentialRepo（hasPassword / mfaPolicy）、settings.Store（mfa_enabled /
+// avatar_storage_provider）、ProviderRepo（storage 行）、captcha Gate
+// （§9.1 行 1094 三处共用出口现算，降级一致）。三方绑定族
+// （GetThirdpartyBindings / UnbindThirdparty / ThirdpartyOauth /
+// GetThirdpartyTicket，接口文档 §3.7 / §3.7.1）走 service/account.
+// ThirdpartyService（buildEngine 内构造的共享单例）。其余方法由生成的
+// UnimplementedAccountServiceHandler 返回 unimplemented。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
 		accounthandler.New(
@@ -992,6 +1022,7 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			deps.settings,
 			repo.NewProviderRepo(deps.db),
 			deps.gate,
+			deps.accountThirdparty,
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
