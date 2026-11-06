@@ -25,6 +25,7 @@
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
 import { useRef, useState } from 'react';
+import { useSearchParams } from '@modern-js/runtime/router';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
@@ -33,7 +34,7 @@ import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/Ca
 import { QRCodePanel, MAX_POLL_SECONDS } from '../../shared/components/QRCodePanel';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
-import { DEFAULT_ACCOUNT_HOME } from '../../shared/urls';
+import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
 import { defaultNavigate } from './RedirectStep';
 import styles from './QRCodeStep.module.less';
 
@@ -43,20 +44,25 @@ function initCaptcha(): CaptchaConfig | undefined {
 }
 
 /**
- * 扫码登录终点（§1.3 行 158-162 定稿，与 LoginContainer.terminalUrl 同口径：
- * syncCookieUrl 是后端拼好的多域名同步首跳完整 URL → 优先；否则 redirectTo；
- * 皆空 → 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页）。
+ * 扫码登录终点（§1.3 行 158-162 定稿 + returnTo 消费，与
+ * LoginContainer.terminalUrl 同口径：syncCookieUrl 是后端拼好的多域名同步
+ * 首跳完整 URL → 优先；否则 redirectTo；皆空（直登场景）→ query `returnTo`
+ * 经 sanitizeReturnTo 白名单校验（调用方已解码，不二次 decode），非法 /
+ * 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页）。
  */
 export function completeLogin(
   envelope: LoginFlowResponse,
   navigate: (url: string) => void = defaultNavigate,
+  returnTo?: string,
 ): void {
   const url =
     envelope.syncCookieUrl !== ''
       ? envelope.syncCookieUrl
       : envelope.redirectTo !== ''
         ? envelope.redirectTo
-        : DEFAULT_ACCOUNT_HOME;
+        : returnTo === undefined
+          ? DEFAULT_ACCOUNT_HOME
+          : sanitizeReturnTo(returnTo);
   if (url !== '') {
     navigate(url);
   }
@@ -180,6 +186,8 @@ export function QRCodeStep({
   const [started, setStarted] = useState(false);
   const [notice, setNotice] = useState(false);
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
+  const [searchParams] = useSearchParams();
 
   if (providerKey === '') {
     // 零值兜底（§9 第 18 条）：信封驱动的防御分派形态无 provider（NextStep
@@ -229,7 +237,12 @@ export function QRCodeStep({
             // binding_required / 失败态上抛交容器（mfa_required 不会出现，
             // §2.8 行 750——MFA×扫码 PC 端轮询至 expired，不做分支）。
             dispatchQrResult(outer, {
-              completeLogin: (login) => completeLogin(login, navigate),
+              completeLogin: (login) =>
+                completeLogin(
+                  login,
+                  navigate,
+                  searchParams.get('returnTo') ?? undefined,
+                ),
               onResult,
             })
           }

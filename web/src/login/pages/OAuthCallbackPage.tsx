@@ -8,7 +8,8 @@
  * - `b` → AccountService/ThirdpartyOauth（shared/api/account 的 thirdpartyOauth，
  *   完整编排，§3.7.1 A 行 969-1003）：code / state 从 location.search
  *   原样透传 + providerKey 路径参数；成功 / 失败一律回跳安全中心
- *   `/account/security?bind={success｜ErrorInfo.code}`（§4.4 行 467），结果横幅
+ *   `/account#/security?bind={success｜ErrorInfo.code}`（§4.4 行 467；account
+ *   hash 化改 hash 形态，query 在 hash 内，§9 第 25 条），结果横幅
  *   由 SecurityPage 消费（已交付）；响应非信封、不 Set-Cookie、不签发
  *   login_token——绑定不改变登录态（行 1000），失败码经 errors.ts 归一取
  *   ErrorInfo.code（§1.6 位置二）；
@@ -35,6 +36,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { create } from '@bufbuild/protobuf';
+import { useSearchParams } from '@modern-js/runtime/router';
 import {
   ThirdpartyOauthRequestSchema,
   type ThirdpartyOauthRequest,
@@ -119,13 +121,14 @@ export function bindErrorCode(error: unknown): string {
 }
 
 /**
- * 绑定结果回跳安全中心（§3.7.1 A 行 985-986 / §4.4 行 467）：
- * `{al_root}/account/security?bind={success｜ErrorInfo.code}`（ssoPath 即
- * al_root 前缀拼接）——结果横幅由 SecurityPage 挂载时消费，本页不
- * 渲染绑定终态帧。
+ * 绑定结果回跳安全中心（§3.7.1 A 行 985-986 / §4.4 行 467；account
+ * hash 化改 hash 形态）：`{al_root}/account#/security?bind={success｜
+ * ErrorInfo.code}`——query 必须在 hash 内（§9 第 25 条，禁 `/account?bind=x#
+ * /security`）；al_root 前缀拼接沿用 ssoPath 既定方式（不另起字符串）。结果
+ * 横幅由 SecurityPage 挂载时消费，本页不渲染绑定终态帧。
  */
 export function securityBindUrl(bind: string): string {
-  return ssoPath(`/account/security?bind=${bind}`);
+  return ssoPath(`/account#/security?bind=${bind}`);
 }
 
 /** dispatchCallback 依赖（注入；页壳给真实实现，node 测试给记录函数）。 */
@@ -150,7 +153,7 @@ export interface CallbackDispatchDeps {
  * l 发 LoginOauth 并按 §1.3 信封处理（success 终点跳转；其余状态交页面帧渲染）。
  */
 export async function dispatchCallback(
-  input: { providerKey: string; search: string },
+  input: { providerKey: string; search: string; returnTo?: string },
   deps: CallbackDispatchDeps,
 ): Promise<void> {
   const state = new URLSearchParams(input.search).get('state') ?? '';
@@ -178,7 +181,9 @@ export async function dispatchCallback(
     );
     deps.onEnvelope(envelope);
     if (envelope.status === 'success') {
-      const url = flowTerminalUrl(envelope);
+      // 终点 returnTo 消费（调用方已解码，不二次 decode；
+      // 白名单校验在 flowTerminalUrl → sanitizeReturnTo）。
+      const url = flowTerminalUrl(envelope, input.returnTo);
       if (url !== '') {
         deps.navigate(url);
       }
@@ -287,6 +292,9 @@ export function OAuthCallbackPage({
   );
   // 挂载即分派一次（回调 code 单次有效）：dev 严格模式 effect 双跑守卫。
   const dispatchedRef = useRef(false);
+  // 登录终点的 returnTo 消费（useSearchParams 已解码；
+  // code / state 等透传 query 仍取 location.search 原样，不经路由层改写）。
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     if (dispatchedRef.current) {
@@ -294,7 +302,11 @@ export function OAuthCallbackPage({
     }
     dispatchedRef.current = true;
     void dispatchCallback(
-      { providerKey, search: window.location.search },
+      {
+        providerKey,
+        search: window.location.search,
+        returnTo: searchParams.get('returnTo') ?? undefined,
+      },
       {
         loginOauthRequest: loginOauth,
         thirdpartyOauthRequest: thirdpartyOauth,
@@ -310,7 +322,7 @@ export function OAuthCallbackPage({
         },
       },
     );
-  }, [providerKey]);
+  }, [providerKey, searchParams]);
 
   // 返回登录（§1.6「回到第一步」）：清内存 login_token → 跳 /sso/login
   //（BindingPage.exitBinding 同款动作，导出复用）。

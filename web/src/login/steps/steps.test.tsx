@@ -6,6 +6,7 @@ import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 login-container.test.ts / components.test.ts 惯例）。
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { create } from '@bufbuild/protobuf';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import {
@@ -48,11 +49,16 @@ function formNode(): React.ReactNode {
 }
 
 function renderDispatch(kind: string): string {
+  // kind=qrcode 分派的 QRCodeStep 消费 useSearchParams，统一 MemoryRouter 包裹。
   return renderToStaticMarkup(
-    createElement(StepDispatcher, {
-      nextStep: create(NextStepSchema, { kind, method: 'totp' }),
-      form: formNode(),
-    }),
+    createElement(
+      MemoryRouter,
+      { initialEntries: ['/sso/login'] },
+      createElement(StepDispatcher, {
+        nextStep: create(NextStepSchema, { kind, method: 'totp' }),
+        form: formNode(),
+      }),
+    ),
   );
 }
 
@@ -236,31 +242,36 @@ describe('ChallengeStep（§4.2 行 441）', () => {
 // ---------------------------------------------------------------------------
 
 describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
-  test('无 captcha 配置 → QRCodePanel 直出（fetching 态；挂载即拉码归面板，§3.3 行 345）', () => {
-    const markup = renderToStaticMarkup(
-      createElement(QRCodeStep, { providerKey: 'scan' }),
+  // QRCodeStep 消费 useSearchParams（returnTo 终点），直接渲染需 MemoryRouter。
+  function renderQr(props: React.ComponentProps<typeof QRCodeStep>): string {
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/sso/login'] },
+        createElement(QRCodeStep, props),
+      ),
     );
+  }
+
+  test('无 captcha 配置 → QRCodePanel 直出（fetching 态；挂载即拉码归面板，§3.3 行 345）', () => {
+    const markup = renderQr({ providerKey: 'scan' });
     expect(markup).toContain('正在获取二维码');
   });
 
   test('有 captcha 配置 → 门控：CaptchaWidget + 获取二维码按钮，面板不挂载（§2.8 行 690 必须携带 captcha）', () => {
-    const markup = renderToStaticMarkup(
-      createElement(QRCodeStep, {
-        providerKey: 'scan',
-        captcha: create(CaptchaConfigSchema, {
-          providerKey: 'builtin_image',
-          type: 'image',
-        }),
+    const markup = renderQr({
+      providerKey: 'scan',
+      captcha: create(CaptchaConfigSchema, {
+        providerKey: 'builtin_image',
+        type: 'image',
       }),
-    );
+    });
     expect(markup).toContain('获取二维码');
     expect(markup).not.toContain('正在获取二维码');
   });
 
   test('providerKey 空 → 零值兜底占位（§9 第 18 条；StepDispatcher 防御分派形态）', () => {
-    const markup = renderToStaticMarkup(
-      createElement(QRCodeStep, { providerKey: '' }),
-    );
+    const markup = renderQr({ providerKey: '' });
     expect(markup).toContain('role="alert"');
   });
 
@@ -312,6 +323,30 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
       'https://sync.test/first',
       'https://app.test/done',
       '/account#/profile',
+    ]);
+  });
+
+  test('completeLogin returnTo 消费：皆空时合法值放行 / 站外值拒绝回落；信封字段优先', () => {
+    const calls: string[] = [];
+    const nav = (url: string) => calls.push(url);
+    // 合法 returnTo（/account# 前缀白名单）→ 放行。
+    completeLogin(create(LoginFlowResponseSchema, {}), nav, '/account#/security');
+    // 站外值 → 回落默认落点（防开放重定向）。
+    completeLogin(
+      create(LoginFlowResponseSchema, {}),
+      nav,
+      'https://evil.example.com/x',
+    );
+    // 信封 redirectTo 优先于 returnTo（§1.3 三级优先级）。
+    completeLogin(
+      create(LoginFlowResponseSchema, { redirectTo: 'https://app.test/done' }),
+      nav,
+      '/account#/security',
+    );
+    expect(calls).toEqual([
+      '/account#/security',
+      '/account#/profile',
+      'https://app.test/done',
     ]);
   });
 

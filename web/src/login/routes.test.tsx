@@ -7,6 +7,7 @@ import * as React from 'react';
 // renderToStaticMarkup（沿 login-container.test.tsx 边界惯例），路由
 // / flags 可见性均为纯渲染断言，交互在容器层测试覆盖。
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import type { MethodsSnapshot } from '../shared/types/init';
 
 const { createElement } = React;
@@ -71,17 +72,21 @@ function makeSnapshot(
   return { flags, methods: [PASSWORD_METHOD] };
 }
 
-/** stub window（路由 pathname + 注入块；§8 白名单字段）。 */
-function stubWindow(pathname: string, init: unknown): void {
-  rs.stubGlobal('window', {
-    location: { pathname },
-    __AUTHLOFT_INIT__: init,
-  });
+/** stub window（注入块；§8 白名单字段。路由路径由 MemoryRouter 注入，不再经 location.pathname）。 */
+function stubWindow(init: unknown): void {
+  rs.stubGlobal('window', { __AUTHLOFT_INIT__: init });
 }
 
+/** 路由表经 MemoryRouter 注入初始路径（BrowserRouter 挂在 entry 顶层，模式无关）。 */
 function renderLoginApp(pathname: string, init: unknown): string {
-  stubWindow(pathname, init);
-  return renderToStaticMarkup(createElement(routesMod.LoginApp));
+  stubWindow(init);
+  return renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: [pathname] },
+      createElement(routesMod.LoginApp),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -90,18 +95,18 @@ function renderLoginApp(pathname: string, init: unknown): string {
 
 describe('bootstrap（§4.1 行 375 / §1.5 行 98-99）', () => {
   test('注入块未下发 → ok:false（§8：methods 必填，无回退接口）', () => {
-    stubWindow('/sso/login', undefined);
+    stubWindow(undefined);
     expect(bootstrapMod.loadLoginBootstrap()).toEqual({ ok: false });
   });
 
   test('注入块无 methods 键 → ok:false（缺失即服务端故障）', () => {
-    stubWindow('/sso/login', { al_root: BASE, static_base: '/assets/' });
+    stubWindow({ al_root: BASE, static_base: '/assets/' });
     expect(bootstrapMod.loadLoginBootstrap()).toEqual({ ok: false });
   });
 
   test('methods 存在、无 oidc → ok:true 且不带 oidc（§8：oidc 可选）', () => {
     const snapshot = makeSnapshot();
-    stubWindow('/sso/login', {
+    stubWindow({
       al_root: BASE,
       static_base: '/assets/',
       methods: snapshot,
@@ -119,7 +124,7 @@ describe('bootstrap（§4.1 行 375 / §1.5 行 98-99）', () => {
       redirect_uri: 'https://app.test/cb',
       state: 's0',
     };
-    stubWindow('/auth/authorize', {
+    stubWindow({
       al_root: BASE,
       static_base: '/assets/',
       methods: snapshot,
@@ -246,6 +251,29 @@ describe('LoginApp：bootstrap 错误态与路由分派（§4.1 行 374-376）',
     });
     expect(html).toContain('页面不存在');
   });
+
+  test('path:* 兜底：未注册深层路径（/totally/unknown）→ 兜底提示（路由表）', () => {
+    const html = renderLoginApp('/totally/unknown', {
+      al_root: BASE,
+      static_base: '/assets/',
+      methods: makeSnapshot(),
+    });
+    expect(html).toContain('页面不存在');
+    expect(html).not.toContain('<h1>');
+  });
+
+  test('returnTo query 不影响路由匹配：/sso/login?returnTo=… 仍渲染登录页', () => {
+    const html = renderLoginApp(
+      `/sso/login?returnTo=${encodeURIComponent('/account#/security')}`,
+      {
+        al_root: BASE,
+        static_base: '/assets/',
+        methods: makeSnapshot(),
+      },
+    );
+    expect(html).toContain('<h1>登录</h1>');
+    expect(html).not.toContain('页面不存在');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -256,10 +284,15 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
   function renderPage(
     flags?: { passwordReset?: boolean; registration?: boolean },
   ): string {
-    // LoginPage 纯组装（不读 window），直接渲染。
-    stubWindow('/sso/login', undefined);
+    // LoginPage 纯组装（不读 window）；LoginContainer 消费 useSearchParams，
+    // 直接渲染需 MemoryRouter 包裹（与生产 BrowserRouter 模式无关）。
+    stubWindow(undefined);
     return renderToStaticMarkup(
-      createElement(pagesMod.LoginPage, { snapshot: makeSnapshot(flags) }),
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/sso/login'] },
+        createElement(pagesMod.LoginPage, { snapshot: makeSnapshot(flags) }),
+      ),
     );
   }
 

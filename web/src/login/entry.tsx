@@ -12,6 +12,7 @@
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
+import { BrowserRouter } from '@modern-js/runtime/router';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
@@ -53,11 +54,15 @@ class LoginErrorBoundary extends Component<
   }
 }
 
-/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。 */
+/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。
+ * login 用 BrowserRouter（account / admin 为 hash，选型归各 entry 顶层，
+ * §9 第 26 条）；测试以 MemoryRouter 注入初始路径（模式无关）。 */
 export default function App(): ReactNode {
   return (
     <LoginErrorBoundary>
-      <LoginApp />
+      <BrowserRouter>
+        <LoginApp />
+      </BrowserRouter>
     </LoginErrorBoundary>
   );
 }

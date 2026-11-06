@@ -39,6 +39,7 @@ import {
   type Ref,
 } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
+import { useSearchParams } from '@modern-js/runtime/router';
 import {
   FieldSchema,
   type Field,
@@ -50,7 +51,7 @@ import { resolveFlowStatus } from '../shared/api/errors';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../shared/captcha/CaptchaWidget';
 import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
-import { DEFAULT_ACCOUNT_HOME } from '../shared/urls';
+import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
 import type {
   MethodsSnapshot,
   SnapshotField,
@@ -206,18 +207,26 @@ export function fieldsFor(
 }
 
 /**
- * 终点 URL（§4.1 行 383；§1.3 行 158-162 定稿）：syncCookieUrl 非空 →
- * 它（后端拼好的首跳完整 URL，§1.3 行 137）；否则 redirectTo；两者皆空 →
- * 默认落点 DEFAULT_ACCOUNT_HOME（直登场景，三级互斥完备；禁止停留「登录成功」提示页）。
+ * 终点 URL（§4.1 行 383；§1.3 行 158-162 定稿 + returnTo 消费）：
+ * syncCookieUrl 非空 → 它（后端拼好的首跳完整 URL，§1.3 行 137）；否则
+ * redirectTo；两者皆空（直登场景）→ query `returnTo` 经 sanitizeReturnTo
+ * 白名单校验（防开放重定向；调用方以 useSearchParams 取值，已解码，
+ * 本函数不二次 decode），非法 / 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME（三级
+ * 互斥完备；禁止停留「登录成功」提示页）。
  */
-export function terminalUrl(envelope: LoginFlowResponse): string {
+export function terminalUrl(
+  envelope: LoginFlowResponse,
+  returnTo?: string,
+): string {
   if (envelope.syncCookieUrl !== '') {
     return envelope.syncCookieUrl;
   }
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return DEFAULT_ACCOUNT_HOME;
+  return returnTo === undefined
+    ? DEFAULT_ACCOUNT_HOME
+    : sanitizeReturnTo(returnTo);
 }
 
 /**
@@ -249,10 +258,12 @@ export function executeEffects(
     complete: (url: string) => void;
     restart: (status: LoginStatus) => void;
   },
+  /** returnTo 消费端（complete 终点直登场景的回跳地址，见 terminalUrl）。 */
+  options?: { readonly returnTo?: string },
 ): void {
   for (const effect of effects) {
     if (effect.type === 'complete') {
-      const url = terminalUrl(effect.envelope);
+      const url = terminalUrl(effect.envelope, options?.returnTo);
       if (url !== '') {
         handlers.complete(url);
       }
@@ -806,22 +817,31 @@ export function LoginContainer({
     }
   }, [state.status, state.envelope]);
 
+  // 登录成功终点的 returnTo 消费——query 读取归路由 hook
+  //（已解码，terminalUrl 不二次 decode），白名单校验在 sanitizeReturnTo。
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo') ?? undefined;
+
   // 副作用落地（reducer 标记 → 容器执行；effects 每次迁移重置，不重复执行）。
   useEffect(() => {
-    executeEffects(state.effects, {
-      complete: (url) => {
-        setMfaMethods(undefined);
-        setChallengeData(undefined);
-        location.replace(url);
+    executeEffects(
+      state.effects,
+      {
+        complete: (url) => {
+          setMfaMethods(undefined);
+          setChallengeData(undefined);
+          location.replace(url);
+        },
+        restart: (status) => {
+          setMfaMethods(undefined);
+          setChallengeData(undefined);
+          dispatch({ type: 'reset' });
+          setNotice(resolveFlowStatus(status).i18nKey);
+        },
       },
-      restart: (status) => {
-        setMfaMethods(undefined);
-        setChallengeData(undefined);
-        dispatch({ type: 'reset' });
-        setNotice(resolveFlowStatus(status).i18nKey);
-      },
-    });
-  }, [state.effects]);
+      { returnTo },
+    );
+  }, [state.effects, returnTo]);
 
   // captcha_invalid → reset widget 后重试（§1.6 行 241；权威 captcha 对象
   // 变化时 adapterKey 自动按新对象重建，无需此处处理）。

@@ -28,6 +28,7 @@
  */
 import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import { create } from '@bufbuild/protobuf';
+import { useSearchParams } from '@modern-js/runtime/router';
 import {
   FieldSchema,
   type Field,
@@ -43,7 +44,7 @@ import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
 import { isValidUsername } from '../../shared/utils/validate';
-import { DEFAULT_ACCOUNT_HOME } from '../../shared/urls';
+import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
 import {
   getInit,
   type LoginMethodEntry,
@@ -107,19 +108,26 @@ export function advanceAfterStep(
 }
 
 /**
- * 终点 URL（§1.3 行 158-162 定稿）：syncCookieUrl 非空优先（后端拼好的
- * 首跳完整 URL），否则 redirectTo；双空 → 默认落点 DEFAULT_ACCOUNT_HOME
- * （直登场景，禁止停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，
- * 此处不复用它以免本页静态拉入整个 login flow 模块链。
+ * 终点 URL（§1.3 行 158-162 定稿 + returnTo 消费）：syncCookieUrl
+ * 非空优先（后端拼好的首跳完整 URL），否则 redirectTo；双空（直登场景）→
+ * query `returnTo` 经 sanitizeReturnTo 白名单校验（调用方已解码，
+ * 本函数不二次 decode），非法 / 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME（禁止
+ * 停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，此处不复用它以免
+ * 本页静态拉入整个 login flow 模块链。
  */
-export function flowTerminalUrl(envelope: LoginFlowResponse): string {
+export function flowTerminalUrl(
+  envelope: LoginFlowResponse,
+  returnTo?: string,
+): string {
   if (envelope.syncCookieUrl !== '') {
     return envelope.syncCookieUrl;
   }
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return DEFAULT_ACCOUNT_HOME;
+  return returnTo === undefined
+    ? DEFAULT_ACCOUNT_HOME
+    : sanitizeReturnTo(returnTo);
 }
 
 /** 流程步提交编排（纯逻辑，request 可注入；传输层异常 → ok:false 不伪造信封）。 */
@@ -613,6 +621,10 @@ export interface RegisterPageProps {
 
 export function RegisterPage({ snapshot }: RegisterPageProps) {
   const options = registerOptionsFor(snapshot);
+  // 注册成功 = 完成登录的终点 returnTo 消费（useSearchParams
+  // 已解码，flowTerminalUrl 不二次 decode）。
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo') ?? undefined;
   const [method, setMethod] = useState(options[0]?.method ?? '');
   const [step, setStep] = useState<FlowStep>(() =>
     registerFirstStep(options[0]?.method ?? ''),
@@ -693,7 +705,7 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     setNotice(undefined);
     if (env.status === 'success') {
       // 注册成功 = 完成登录（§2.3 行 455）：终点跳转（loginToken 已由 api 层清空）。
-      const url = flowTerminalUrl(env);
+      const url = flowTerminalUrl(env, returnTo);
       if (url !== '') {
         location.replace(url);
       }

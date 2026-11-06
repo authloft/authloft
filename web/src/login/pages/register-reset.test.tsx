@@ -9,6 +9,7 @@ import * as React from 'react';
 // api 层覆盖；状态帧视图（RegisterPageView / ResetPageView）可注入任意
 // status 帧（LoginFlowView 同款模式）。
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create } from '@bufbuild/protobuf';
@@ -341,6 +342,24 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
       pagesMod.flowTerminalUrl(envelope({ redirectTo: 'https://app.test/home' })),
     ).toBe('https://app.test/home');
     expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account#/profile');
+  });
+
+  test('returnTo 消费：双空时合法值放行、站外值拒绝回落；信封终点字段优先', () => {
+    // 合法 returnTo（/account# 前缀白名单）→ 放行。
+    expect(pagesMod.flowTerminalUrl(envelope({}), '/account#/security')).toBe(
+      '/account#/security',
+    );
+    // 站外值 → 回落默认落点（防开放重定向）。
+    expect(
+      pagesMod.flowTerminalUrl(envelope({}), 'https://evil.example.com/x'),
+    ).toBe('/account#/profile');
+    // redirectTo / syncCookieUrl 优先于 returnTo（§1.3 三级优先级）。
+    expect(
+      pagesMod.flowTerminalUrl(
+        envelope({ redirectTo: 'https://app.test/home' }),
+        '/account#/security',
+      ),
+    ).toBe('https://app.test/home');
   });
 
   test('流程 / captcha 中间态非失败；signup_disabled / username_taken 等为失败', () => {
@@ -915,16 +934,22 @@ describe('重置链路（msw 全链，§10.4）', () => {
 // ---------------------------------------------------------------------------
 
 describe('LoginApp 路由分派：/sso/register、/sso/reset', () => {
+  // 路由表经 MemoryRouter 注入初始路径（BrowserRouter 挂 entry 顶层）。
   function renderLoginApp(pathname: string, methods: MethodsSnapshot): string {
     rs.stubGlobal('window', {
-      location: { pathname },
       __AUTHLOFT_INIT__: {
         al_root: `${BASE}/`,
         static_base: '/assets/',
         methods,
       },
     });
-    return renderToStaticMarkup(createElement(routesMod.LoginApp));
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [pathname] },
+        createElement(routesMod.LoginApp),
+      ),
+    );
   }
 
   test('/sso/register → RegisterPage（首方式 password → set_password 直入帧）', () => {
@@ -952,8 +977,13 @@ describe('LoginApp 路由分派：/sso/register、/sso/reset', () => {
 
 describe('RegisterPage / ResetPage 静态 smoke', () => {
   test('注册壳：默认方式首帧渲染（flags.registration=true）', () => {
+    // RegisterPage 壳消费 useSearchParams（returnTo 终点），需 MemoryRouter。
     const markup = renderToStaticMarkup(
-      createElement(pagesMod.RegisterPage, { snapshot: REGISTER_SNAPSHOT }),
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/sso/register'] },
+        createElement(pagesMod.RegisterPage, { snapshot: REGISTER_SNAPSHOT }),
+      ),
     );
     expect(markup).toContain('<h1>注册</h1>');
     expect(markup).toContain('name="username"');

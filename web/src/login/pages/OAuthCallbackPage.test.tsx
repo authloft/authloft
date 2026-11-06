@@ -11,6 +11,7 @@ import * as React from 'react';
 // target_taken（409 ErrorInfo detail）/ state_mismatch（400 ErrorInfo detail）
 // 三路 wire（后端属 account 域桩，响应体按 Connect 错误形态，既定口径）。
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create, toBinary } from '@bufbuild/protobuf';
@@ -138,13 +139,18 @@ const CALLBACK_SNAPSHOT: MethodsSnapshot = { methods: [] };
 function renderView(
   init: { status: string; envelope?: LoginFlowResponse },
 ): string {
+  // mfa 帧经 LoginContainer 消费 useSearchParams，统一 MemoryRouter 包裹。
   return renderToStaticMarkup(
-    createElement(pagesMod.OAuthCallbackView, {
-      snapshot: CALLBACK_SNAPSHOT,
-      status: init.status,
-      envelope: init.envelope,
-      onBackToLogin: () => {},
-    }),
+    createElement(
+      MemoryRouter,
+      { initialEntries: ['/sso/oauth/callback/qq'] },
+      createElement(pagesMod.OAuthCallbackView, {
+        snapshot: CALLBACK_SNAPSHOT,
+        status: init.status,
+        envelope: init.envelope,
+        onBackToLogin: () => {},
+      }),
+    ),
   );
 }
 
@@ -224,14 +230,19 @@ describe('buildThirdpartyOauthInput / bindErrorCode / securityBindUrl（§3.7.1 
     expect(pagesMod.bindErrorCode('weird')).toBe('internal');
   });
 
-  test('securityBindUrl：al_root 前缀 + ?bind= 拼接（§4.4 行 467）', () => {
+  test('securityBindUrl：al_root 前缀 + hash 形态 bind 拼接（§4.4 行 467；hash 化后 query 在 hash 内，§9 第 25 条）', () => {
     stubWindow();
-    expect(pagesMod.securityBindUrl('success')).toBe(
-      'https://uc.test/account/security?bind=success',
-    );
+    const success = pagesMod.securityBindUrl('success');
+    // 回跳 URL 以 /account#/security 开头且含 bind（硬性断言）。
+    expect(success).toContain('/account#/security');
+    expect(success.indexOf('/account#/security?bind=')).toBeGreaterThan(-1);
+    expect(success).toBe('https://uc.test/account#/security?bind=success');
     expect(pagesMod.securityBindUrl('provider_disabled')).toBe(
-      'https://uc.test/account/security?bind=provider_disabled',
+      'https://uc.test/account#/security?bind=provider_disabled',
     );
+    // 禁 pathname 形态残留（§9 第 25 条：query 必须在 hash 内）。
+    expect(success).not.toContain('/account?bind=');
+    expect(success).not.toContain('/account/security');
   });
 });
 
@@ -319,7 +330,7 @@ describe('dispatchCallback 分派编排', () => {
     expect(calls.requests).toHaveLength(0); // 不发 LoginOauth
     expect(calls.envelopes).toHaveLength(0); // 非信封响应不落帧
     expect(calls.navigations).toEqual([
-      'https://uc.test/account/security?bind=success',
+      'https://uc.test/account#/security?bind=success',
     ]);
   });
 
@@ -339,7 +350,7 @@ describe('dispatchCallback 分派编排', () => {
       deps,
     );
     expect(calls.navigations).toEqual([
-      'https://uc.test/account/security?bind=target_taken',
+      'https://uc.test/account#/security?bind=target_taken',
     ]);
     expect(calls.transportErrors).toBe(0); // b 分支失败走回跳，不落 failed 帧
   });
@@ -352,7 +363,7 @@ describe('dispatchCallback 分派编排', () => {
       deps,
     );
     expect(calls.navigations).toEqual([
-      'https://uc.test/account/security?bind=internal',
+      'https://uc.test/account#/security?bind=internal',
     ]);
   });
 
@@ -395,6 +406,31 @@ describe('dispatchCallback 分派编排', () => {
     );
     expect(calls.envelopes[0].status).toBe('success');
     expect(calls.navigations).toEqual(['/account#/profile']);
+  });
+
+  test('success 双空终点消费 returnTo——合法值放行、站外值拒绝回落（不二次 decode）', async () => {
+    // 合法 returnTo（已解码形态注入，/account# 前缀白名单）→ 放行。
+    const allow = recorder(envelope({ status: 'success' }));
+    await pagesMod.dispatchCallback(
+      {
+        providerKey: 'qq',
+        search: '?code=c-1&state=l-1',
+        returnTo: '/account#/security',
+      },
+      allow.deps,
+    );
+    expect(allow.calls.navigations).toEqual(['/account#/security']);
+    // 站外值 → 白名单拒绝，回落默认落点（防开放重定向）。
+    const deny = recorder(envelope({ status: 'success' }));
+    await pagesMod.dispatchCallback(
+      {
+        providerKey: 'qq',
+        search: '?code=c-1&state=l-1',
+        returnTo: 'https://evil.example.com/x',
+      },
+      deny.deps,
+    );
+    expect(deny.calls.navigations).toEqual(['/account#/profile']);
   });
 
   test('mfa_required → 落帧不跳转（mfa 编排帧渲染交页面，§1.6 行 233；现为 LoginContainer 完整编排）', async () => {
@@ -600,7 +636,7 @@ describe('b 分支 wire 契约（msw 拦截 AccountService/ThirdpartyOauth）', 
       state: 'b-s1',
     });
     expect(navigations).toEqual([
-      'https://uc.test/account/security?bind=success',
+      'https://uc.test/account#/security?bind=success',
     ]);
   });
 
@@ -635,7 +671,7 @@ describe('b 分支 wire 契约（msw 拦截 AccountService/ThirdpartyOauth）', 
       bindWireDeps(navigations),
     );
     expect(navigations).toEqual([
-      'https://uc.test/account/security?bind=target_taken',
+      'https://uc.test/account#/security?bind=target_taken',
     ]);
   });
 
@@ -670,7 +706,7 @@ describe('b 分支 wire 契约（msw 拦截 AccountService/ThirdpartyOauth）', 
       bindWireDeps(navigations),
     );
     expect(navigations).toEqual([
-      'https://uc.test/account/security?bind=state_mismatch',
+      'https://uc.test/account#/security?bind=state_mismatch',
     ]);
   });
 });

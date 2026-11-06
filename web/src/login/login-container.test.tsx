@@ -8,6 +8,7 @@ import * as React from 'react';
 // 交互 / 副作用生命周期在纯逻辑层覆盖（runSubmit / executeEffects /
 // groupProviders 等容器层纯函数 + msw 拦截 api 层）。
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create } from '@bufbuild/protobuf';
@@ -273,6 +274,36 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     expect(container.terminalUrl(envelope({}))).toBe('/account#/profile');
   });
 
+  test('returnTo 消费：双空时合法值放行、站外值拒绝回落；redirectTo / syncCookieUrl 优先于 returnTo', () => {
+    // 合法 returnTo（/account# 前缀白名单）→ 放行。
+    expect(
+      container.terminalUrl(envelope({}), '/account#/security'),
+    ).toBe('/account#/security');
+    expect(container.terminalUrl(envelope({}), '/admin#/users')).toBe(
+      '/admin#/users',
+    );
+    // 站外 / 非白名单值 → 回落默认落点（防开放重定向）。
+    expect(
+      container.terminalUrl(envelope({}), 'https://evil.example.com/x'),
+    ).toBe('/account#/profile');
+    expect(container.terminalUrl(envelope({}), '/sso/login')).toBe(
+      '/account#/profile',
+    );
+    // 信封终点字段优先于 returnTo（§1.3 三级优先级不被 query 覆盖）。
+    expect(
+      container.terminalUrl(
+        envelope({ redirectTo: 'https://app.test/home' }),
+        '/account#/security',
+      ),
+    ).toBe('https://app.test/home');
+    expect(
+      container.terminalUrl(
+        envelope({ syncCookieUrl: 'https://sync.test/first' }),
+        '/account#/security',
+      ),
+    ).toBe('https://sync.test/first');
+  });
+
   test('complete → 跳转回调（双空 → 默认落点）；restart → 回第一步回调', () => {
     const redirects: string[] = [];
     const restarts: string[] = [];
@@ -291,6 +322,25 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     container.executeEffects([{ type: 'restart', status: 'token_expired' }], handlers);
     expect(redirects).toEqual(['https://sync.test/first', '/account#/profile']);
     expect(restarts).toEqual(['token_expired']);
+  });
+
+  test('executeEffects options.returnTo 注入——complete 双空终点消费 returnTo（合法放行 / 非法回落）', () => {
+    const redirects: string[] = [];
+    const handlers = {
+      complete: (url: string) => redirects.push(url),
+      restart: () => {},
+    };
+    container.executeEffects(
+      [{ type: 'complete', envelope: envelope({}) }],
+      handlers,
+      { returnTo: '/account#/security' },
+    );
+    container.executeEffects(
+      [{ type: 'complete', envelope: envelope({}) }],
+      handlers,
+      { returnTo: 'https://evil.example.com/x' },
+    );
+    expect(redirects).toEqual(['/account#/security', '/account#/profile']);
   });
 });
 
@@ -1290,35 +1340,44 @@ describe('LoginFlowView mfa 场景渲染（信封 mfa / 本地镜像 mfaMethods�
 // ---------------------------------------------------------------------------
 
 describe('LoginContainer 静态 smoke', () => {
-  test('挂载渲染 = MethodTabs + 引导提示（effects 不执行，renderToStaticMarkup 语义）', () => {
-    const markup = renderToStaticMarkup(
-      createElement(container.LoginContainer, { snapshot: SNAPSHOT }),
+  // 容器消费 useSearchParams（returnTo 终点），直接渲染需 MemoryRouter 包裹。
+  function renderContainer(
+    props: React.ComponentProps<typeof container.LoginContainer>,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/sso/login'] },
+        createElement(container.LoginContainer, props),
+      ),
     );
+  }
+
+  test('挂载渲染 = MethodTabs + 引导提示（effects 不执行，renderToStaticMarkup 语义）', () => {
+    const markup = renderContainer({ snapshot: SNAPSHOT });
     expect(markup).toContain('密码登录');
     expect(markup).toContain('请选择登录方式');
   });
 
   // OAuth 回调 mfa_required 完整编排——初始信封直接进状态机。
   test('initialEnvelope（mfa_required）→ 挂载即渲染 MfaSelector + 未选方式引导（§1.6 行 233 不跳页；信封 mfa.methods 驱动，静态渲染读信封不依赖 effect 镜像）', () => {
-    const markup = renderToStaticMarkup(
-      createElement(container.LoginContainer, {
-        snapshot: SNAPSHOT,
-        initialEnvelope: envelope({
-          status: 'mfa_required',
-          loginToken: 'lt-mfa',
-          mfa: {
-            methods: [
-              create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
-              create(MfaMethodSchema, {
-                method: 'otp_sms',
-                steps: ['challenge', 'form'],
-                maskedTarget: '138****8000',
-              }),
-            ],
-          },
-        }),
+    const markup = renderContainer({
+      snapshot: SNAPSHOT,
+      initialEnvelope: envelope({
+        status: 'mfa_required',
+        loginToken: 'lt-mfa',
+        mfa: {
+          methods: [
+            create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
+            create(MfaMethodSchema, {
+              method: 'otp_sms',
+              steps: ['challenge', 'form'],
+              maskedTarget: '138****8000',
+            }),
+          ],
+        },
       }),
-    );
+    });
     expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
     expect(markup).toContain('短信验证码'); // factors.otp_sms
     expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式）
