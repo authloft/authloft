@@ -14,6 +14,14 @@
  *
  * 仅用 node 内置模块（fs / path / url），零新增依赖；任何失败以非零 exit code 结束，
  * 供 CI 与 package.json build 命令的 && 链感知。路径经 import.meta.url 相对定位，不依赖 cwd。
+ *
+ * —— 前端产物复制段（docs/后端架构.md §3.13 施工口径，按 2026-11-06 dist 实盘校准）：
+ * 模板段之后把 web/dist/** 原样复制到 server/assets/dist/**（保持相对目录结构，供后端
+ * assets 包 //go:embed all:dist 经 /assets/** 伺服）；剔除：顶层 html/（模板源，模板段已消费）、
+ * 全部 *.map、dist 根级 *.json（按扩展名/层级判定，布局无关，子目录 json 不剔）。复制前清空
+ * 目标目录但保全 .gitkeep（bootstrap_assets_probe_test.go 依赖 GET /assets/.gitkeep → 200），
+ * 复制后确保其在场（缺失则重建空文件）；源缺失/为空 → 直接非零 exit、不做任何清理/复制；
+ * 清空重拷语义保证幂等（连续多次执行结果完全一致）。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -107,3 +115,71 @@ if (failed) {
 }
 
 console.log(`[sync-templates] 完成：${ENTRIES.length} 份壳层模板对账通过，已同步到 server/internal/pages/templates/`);
+
+// ---------- 前端产物复制段（docs/后端架构.md §3.13 口径）----------
+/** 产物源（web/dist 根）与目标（后端 assets 包 embed 根）。 */
+const distRootDir = path.join(webDir, 'dist');
+const assetsDistDir = path.join(webDir, '..', 'server', 'assets', 'dist');
+/** 入库占位文件：清理目标目录时必须保全（bootstrap_assets_probe_test.go 依赖其 200）。 */
+const KEEP_FILE = '.gitkeep';
+
+/** 递归收集目录下全部文件的相对路径（'/' 分隔，布局无关）。 */
+function collectFiles(dir, prefix = '') {
+  const files = [];
+  for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${item.name}` : item.name;
+    if (item.isDirectory()) files.push(...collectFiles(path.join(dir, item.name), rel));
+    else if (item.isFile()) files.push(rel);
+  }
+  return files;
+}
+
+/** 剔除判定：顶层 html/ 模板源、全部 *.map、dist 根级 *.json（子目录 json 不剔——布局无关）。 */
+function isExcluded(rel) {
+  const segments = rel.split('/');
+  return (
+    segments[0] === 'html' ||
+    rel.endsWith('.map') ||
+    (segments.length === 1 && rel.endsWith('.json'))
+  );
+}
+
+try {
+  // 源校验先行：缺失/为空直接非零退出，不做任何清理/复制（不产出半份产物）。
+  if (!fs.existsSync(distRootDir)) {
+    console.error('[sync-templates] web/dist 不存在，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制');
+    process.exit(1);
+  }
+  const allFiles = collectFiles(distRootDir);
+  if (allFiles.length === 0) {
+    console.error('[sync-templates] web/dist 为空目录，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制');
+    process.exit(1);
+  }
+
+  const copyFiles = allFiles.filter((rel) => !isExcluded(rel));
+  const skippedCount = allFiles.length - copyFiles.length;
+
+  // 清理目标目录：除 .gitkeep 外全删（避免旧 hash 文件残留堆积），清空重拷保证幂等。
+  fs.mkdirSync(assetsDistDir, { recursive: true });
+  for (const item of fs.readdirSync(assetsDistDir, { withFileTypes: true })) {
+    if (item.name === KEEP_FILE) continue;
+    fs.rmSync(path.join(assetsDistDir, item.name), { recursive: true, force: true });
+  }
+
+  for (const rel of copyFiles) {
+    const dest = path.join(assetsDistDir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(distRootDir, rel), dest);
+  }
+
+  // .gitkeep 保全：复制完成后确保在场（被意外删除则重建空文件）。
+  const keepPath = path.join(assetsDistDir, KEEP_FILE);
+  if (!fs.existsSync(keepPath)) fs.writeFileSync(keepPath, '');
+
+  console.log(
+    `[sync-templates] 资产同步完成：${copyFiles.length} 个文件已复制到 server/assets/dist（剔除 ${skippedCount} 个：html 模板源 / *.map / 根级 *.json），.gitkeep 在场`,
+  );
+} catch (err) {
+  console.error(`[sync-templates] 资产复制失败：${err?.message ?? err}`);
+  process.exit(1);
+}
