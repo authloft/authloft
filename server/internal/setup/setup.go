@@ -25,6 +25,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gin-gonic/gin"
 
+	"authloft/assets"
 	setupv1 "authloft/gen/go/api/setup/v1"
 	"authloft/gen/go/api/setup/v1/setupv1connect"
 	"authloft/internal/config"
@@ -142,7 +143,8 @@ type Server struct {
 // 不经 gin 全局链，middleware/httpmw.go；origin 同 gin 侧不挂）；其余
 // 全部 mux.Handle("/", ginEngine)——未注册路径 gin 原生 404 兜底
 // （不再经 gin.NoRoute 桥，connect 成功响应直接由
-// 生成 handler 写出，无预置状态码）。
+// 生成 handler 写出，无预置状态码）；/assets/** 静态资源同层挂载
+// （§3.13 行 484：正常 / setup 两模式恒在）。
 func NewServer(configPath string) *Server {
 	s := &Server{
 		configPath: configPath,
@@ -162,6 +164,10 @@ func NewServer(configPath string) *Server {
 	for _, rt := range csrv.Routes() {
 		mux.Handle(rt.Prefix, middleware.HTTPRequestID(rt.Handler))
 	}
+	// /assets/** 静态资源（§3.13 行 484：正常 / setup 两模式恒在——setup
+	// 壳模板引用的前端构建产物同样由此供给，无 config.yaml 也必须可达；
+	// 无鉴权、不进 gin 全局链，也不套 Connect 前缀中间件链）。
+	assets.Register(mux)
 	s.handler = mux
 	return s
 }

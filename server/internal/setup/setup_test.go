@@ -854,6 +854,42 @@ func TestRequestExitIdempotent(t *testing.T) {
 	}
 }
 
+// TestNewServerServesAssets（§3.13 行 484）：NewServer 顶层 mux 恒挂
+// /assets/**——setup 壳模板引用的前端构建产物由此供给，无 config.yaml 也
+// 必须可达。当前 dist 为空仓占位形态（仅入库 .gitkeep），可达性以占位 200 +
+// 未命中 404 + 非法方法 405 三向印证（405 证明响应方是 assets handler 而非
+// gin 兜底）；真实产物入驻后同一断言即覆盖。
+func TestNewServerServesAssets(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/.gitkeep", nil)
+	w := httptest.NewRecorder()
+	s.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /assets/.gitkeep = %d, want 200", w.Code)
+	}
+	if got := w.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Errorf("Cache-Control = %q, want year-long immutable", got)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/assets/missing.abc.js", nil)
+	w2 := httptest.NewRecorder()
+	s.Router().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("GET /assets/missing.abc.js = %d, want 404", w2.Code)
+	}
+
+	req3 := httptest.NewRequest(http.MethodPost, "/assets/anything.js", nil)
+	w3 := httptest.NewRecorder()
+	s.Router().ServeHTTP(w3, req3)
+	if w3.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /assets/anything.js = %d, want 405", w3.Code)
+	}
+	if got := w3.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Errorf("Allow = %q, want GET, HEAD", got)
+	}
+}
+
 // TestSetupHTTPServerFromEnv setup 模式监听装配（§3.15：只读 server 段
 // env，默认值 + env 覆盖；监听 / TLS 模式与生产同口径）：
 //   - 无 env：Addr 默认 ":8080"、h2c 形态 Protocols；
