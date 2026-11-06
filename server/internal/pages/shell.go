@@ -1,6 +1,7 @@
 // Package pages 页面壳路由族（接口文档 §8 行 1486-1543）：/sso/login、
 // /sso/register、/sso/reset、/sso/oauth/callback/{provider_key}（login
-// entry）、/account/**、/admin/**（account / admin entry）的 SPA 空壳渲染，
+// entry）、/account、/admin（仅根映射，account / admin entry；子路径走
+// 前端 hash 路由，未注册子路径 gin 原生 404，通配收窄）的 SPA 空壳渲染，
 // 外加 /sso/logout（§2.9）与 /sso/sync_cookie 中转（§11.2 接收端）。
 //
 // 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
@@ -198,8 +199,10 @@ func Register(r gin.IRouter, d Deps) *Handler {
 	// callback 零业务逻辑（§2.7.3 行 604）：只渲染 login entry 空壳，
 	// provider_key 路径参数不做任何业务校验（分派归前端）。
 	r.GET("/sso/oauth/callback/:provider_key", h.loginPage(flowLogin))
-	r.GET("/account/*path", h.entryPage("account"))
-	r.GET("/admin/*path", h.entryPage("admin"))
+	// 收窄：仅根映射——子路径走前端 hash 路由（/account#/…），
+	// 不发往服务端；未注册子路径由 gin 原生 404 兜底（接口文档 §8）。
+	r.GET("/account", h.entryPage("account"))
+	r.GET("/admin", h.entryPage("admin"))
 	r.GET("/sso/logout", h.logout)
 	r.GET("/sso/sync_cookie", h.syncCookie)
 	// OIDC 授权入口（§4.2）：discovery 已广告 authorization_endpoint。

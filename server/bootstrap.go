@@ -1415,7 +1415,8 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // registerPages 注册页面壳路由族（接口文档 §8 行 1414-1439 +
 // §2.9，增挂 §4.2 /auth/authorize）：/sso/login、/sso/register、
 // /sso/reset、/sso/oauth/callback/{provider_key}（login entry 空壳）、
-// /account/**、/admin/**（account / admin entry 空壳）、/sso/logout
+// /account、/admin（仅根映射，account / admin entry 空壳；子路径走前端
+// hash 路由，通配收窄）、/sso/logout
 // （清 Cookie + 多域同步 + 白名单回跳）、/sso/sync_cookie（多域同步中转
 // 接收端）、/auth/authorize（OIDC 授权入口：校验矩阵 + 有会话 302 签码 +
 // 无会话渲染登录空壳注入 __AUTHLOFT_INIT__.oidc）。挂 gin 链（§8 Go 渲染

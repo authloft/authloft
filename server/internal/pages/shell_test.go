@@ -297,7 +297,7 @@ func tmplPlaceholderCount(t *testing.T, entry, ph string) int {
 // al_root / static_base 两键（零凭证键）。
 func TestShellBasics(t *testing.T) {
 	f := newFixture(t)
-	rec := doGet(t, f.engine(t), "/account/")
+	rec := doGet(t, f.engine(t), "/account")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200（body %s）", rec.Code, rec.Body.String())
@@ -335,7 +335,7 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 	r := gin.New()
 	Register(r.Group("", middleware.CSP()), f.deps)
 
-	rec := doGet(t, r, "/account/")
+	rec := doGet(t, r, "/account")
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonce := nonceFromCSP(t, csp)
 	for _, want := range []string{
@@ -364,7 +364,7 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 	Register(r.Group("", middleware.CSP(StaticBaseCSPSupporter(f.settings))), f.deps)
 
 	// 同域默认：无追加段。
-	rec := doGet(t, r, "/admin/")
+	rec := doGet(t, r, "/admin")
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonce := nonceFromCSP(t, csp)
 	if got, want := csp, strings.Join([]string{
@@ -381,7 +381,7 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 	// CDN 绝对地址：三指令合并单条（基线源在前 + CDN 源追加；script-src
 	// CDN 源仅为 CSP2 回退）。
 	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
-	rec = doGet(t, r, "/admin/")
+	rec = doGet(t, r, "/admin")
 	csp = rec.Header().Get("Content-Security-Policy")
 	nonce = nonceFromCSP(t, csp)
 	for _, want := range []string{
@@ -405,7 +405,7 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 	}
 	// 每请求现算：改回同域后新请求无追加段。
 	f.settings.m[settings.KeyStaticBase] = "/assets"
-	if csp := doGet(t, r, "/admin/").Header().Get("Content-Security-Policy"); strings.Contains(csp, "cdn.example.com") {
+	if csp := doGet(t, r, "/admin").Header().Get("Content-Security-Policy"); strings.Contains(csp, "cdn.example.com") {
 		t.Errorf("static_base 热更回同域后仍带 CDN 段：%s", csp)
 	}
 }
@@ -415,7 +415,7 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 func TestShellStaticBaseOverrides(t *testing.T) {
 	f := newFixture(t)
 	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
-	rec := doGet(t, f.engine(t), "/admin/")
+	rec := doGet(t, f.engine(t), "/admin")
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `src="https://cdn.example.com/static/`) {
@@ -442,7 +442,7 @@ func TestShellStaticBaseOverrides(t *testing.T) {
 
 	// 转义：<>& 必须被 \u003c/\u003e/\u0026 转义，不得裸出现在 INIT 内。
 	f.settings.m[settings.KeyStaticBase] = "/a<b>&c"
-	body = doGet(t, f.engine(t), "/admin/").Body.String()
+	body = doGet(t, f.engine(t), "/admin").Body.String()
 	init := initJSON(t, body)
 	if strings.Contains(init, "<b>") || strings.Contains(init, "&c\"") {
 		t.Errorf("INIT 未转义 <>&: %s", init)
@@ -453,7 +453,8 @@ func TestShellStaticBaseOverrides(t *testing.T) {
 }
 
 // TestThreeEntryRoutes 三端路由 200：login（含 methods）、account / admin
-// （仅 al_root / static_base）；深路径命中同一空壳。
+// 仅根映射（仅 al_root / static_base）；account / admin 根路径下发
+// 含 id="root" 的壳。
 func TestThreeEntryRoutes(t *testing.T) {
 	f := newFixture(t)
 	r := f.engine(t)
@@ -463,8 +464,8 @@ func TestThreeEntryRoutes(t *testing.T) {
 		entry  string
 	}{
 		{"/sso/login", "login"},
-		{"/account/security/password", "account"},
-		{"/admin/users", "admin"},
+		{"/account", "account"},
+		{"/admin", "admin"},
 	}
 	for _, tc := range cases {
 		rec := doGet(t, r, tc.target)
@@ -472,6 +473,9 @@ func TestThreeEntryRoutes(t *testing.T) {
 			t.Fatalf("%s: status = %d, want 200", tc.target, rec.Code)
 		}
 		body := rec.Body.String()
+		if !strings.Contains(body, `id="root"`) {
+			t.Errorf("%s: 壳缺 id=\"root\" 挂载容器", tc.target)
+		}
 		if !strings.Contains(body, `src="/assets/`) {
 			t.Errorf("%s: 缺 /assets/ 前缀产物引用", tc.target)
 		}
@@ -488,7 +492,7 @@ func TestThreeEntryRoutes(t *testing.T) {
 	}
 
 	// account / admin 不得带 methods（§8：methods 是 login 必填项）。
-	for _, target := range []string{"/account/", "/admin/"} {
+	for _, target := range []string{"/account", "/admin"} {
 		if init := initJSON(t, doGet(t, r, target).Body.String()); strings.Contains(init, "methods") {
 			t.Errorf("%s: account/admin 空壳不应注入 methods: %s", target, init)
 		}
@@ -498,15 +502,42 @@ func TestThreeEntryRoutes(t *testing.T) {
 		t.Errorf("login 空壳缺 methods 注入: %s", init)
 	}
 
-	// 无尾斜杠形态（/account、/admin）：gin RedirectTrailingSlash 301 到
-	// 尾斜杠形式，不 404。
-	for _, target := range []string{"/account", "/admin"} {
+	// 带尾斜杠形态（/account/、/admin/）：gin RedirectTrailingSlash 301 到
+	// 无尾斜杠的根路径，不 404（仅注册根映射）。
+	for _, target := range []string{"/account/", "/admin/"} {
 		rec := doGet(t, r, target)
 		if rec.Code != http.StatusMovedPermanently {
 			t.Errorf("%s: status = %d, want 301（尾斜杠归一）", target, rec.Code)
 		}
-		if loc := rec.Header().Get("Location"); loc != target+"/" {
-			t.Errorf("%s: Location = %q, want %q", target, loc, target+"/")
+		if loc := rec.Header().Get("Location"); loc != strings.TrimSuffix(target, "/") {
+			t.Errorf("%s: Location = %q, want %q", target, loc, strings.TrimSuffix(target, "/"))
+		}
+	}
+}
+
+// TestShellSubPaths404 account / admin 子路径 404（通配收窄）：子路径
+// 走前端 hash 路由（/account#/…）不发往服务端，服务端未注册子路径由 gin
+// 原生 404 兜底（纯文本 "404 page not found"）；X-Request-Id 由全局链
+// requestid 回写（bootstrap §1.1 同构挂法，与既有 404 口径一致，main_test.go
+// TestNewRouterConnectFallbackAndXRequestID 同款）。
+func TestShellSubPaths404(t *testing.T) {
+	f := newFixture(t)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	// requestid 挂全局链（bootstrap §1.1 同构）：404 兜底响应亦回写。
+	r.Use(middleware.RequestID())
+	Register(r, f.deps)
+
+	for _, target := range []string{"/account/profile", "/admin/users/123"} {
+		rec := doGet(t, r, target)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404（子路径不下发壳）", target, rec.Code)
+		}
+		if body := rec.Body.String(); body != "404 page not found" {
+			t.Errorf("%s: body = %q, want gin 原生 \"404 page not found\"", target, body)
+		}
+		if got := rec.Header().Get("X-Request-Id"); got == "" {
+			t.Errorf("%s: X-Request-Id is empty, want non-empty（404 亦回写）", target)
 		}
 	}
 }
