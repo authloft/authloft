@@ -308,6 +308,33 @@ describe('bootstrap（§6 行 505 / §8）', () => {
     expect(bootstrapMod.loginUrl(BASE)).toBe(`${BASE}/sso/login`);
     expect(bootstrapMod.logoutUrl(BASE)).toBe(`${BASE}/sso/logout`);
   });
+
+  test('loadAdminBootstrap：注入 al_root 空串 / 纯空白 → location.origin 兜底（壳注入空串合规，前端回落同源）', () => {
+    const FALLBACK_ORIGIN = 'https://admin-fallback.test';
+    // normalizeAlRoot 读全局 location（非 window.location）；node 单测环境
+    // 经 stubGlobal 模拟浏览器站点源，afterEach 的 unstubAllGlobals 自动恢复。
+    rs.stubGlobal('location', { origin: FALLBACK_ORIGIN });
+    // beforeEach 已按顶层注入 stub window（BASE 非空），此处覆盖为空串注入。
+    rs.stubGlobal('window', {
+      location: { pathname: '/admin' },
+      __AUTHLOFT_INIT__: { al_root: '' },
+    });
+    expect(bootstrapMod.loadAdminBootstrap()).toEqual({
+      ok: true,
+      alRoot: FALLBACK_ORIGIN,
+      staticBase: '/assets/',
+    });
+    // 纯空白：trim 后归一为空，仍回落站点源（与 setup/bootstrap.ts 同口径）。
+    rs.stubGlobal('window', {
+      location: { pathname: '/admin' },
+      __AUTHLOFT_INIT__: { al_root: '   ' },
+    });
+    expect(bootstrapMod.loadAdminBootstrap()).toEqual({
+      ok: true,
+      alRoot: FALLBACK_ORIGIN,
+      staticBase: '/assets/',
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
