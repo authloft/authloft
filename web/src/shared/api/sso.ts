@@ -7,8 +7,9 @@
  * §2.5 触发规则表）与 account（绑定 / 换绑手机号邮箱，接口文档 §3.4）两端的
  * captcha 取图共用（§2.5 行 490-497）。
  * 追加 Authorize / CreateQrcode（前端架构 §5 行 479：account entry 的
- * 三方绑定明确从本模块取这两个 SsoService 方法，不重复定义；login/api.ts 的
- * 既有封装继续承载 login 域，后续收敛到本模块）。
+ * 三方绑定明确从本模块取这两个 SsoService 方法，不重复定义）；已完成收
+ * 敛——login/api.ts 删除同构实现改为 re-export 本模块导出，MessageInput /
+ * MessageField 工具类型亦以本模块为单一来源（§3.1 行 319 禁止双份手写）。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（§3.1 行 279、§9 第 16 条），
  * 本模块从那里拿 ssoClient、不自建 transport；报文类型只从 src/gen/proto
@@ -21,16 +22,17 @@ import type { AuthorizeRequest, AuthorizeResponse } from '../../gen/proto/api/ss
 import type { CreateQrcodeRequest, CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
 
 /**
- * 生成物消息 → init 形状（login/api.ts 同口径，@connectrpc/connect 未导出该
- * 工具类型）：字段 optional 化、嵌套消息递归、剔除消息符号键 $typeName /
- * $unknown——authorize({provider, scene}) 一类平铺对象即可入参。
+ * 生成物消息 → init 形状（@connectrpc/connect 未导出该工具类型；
+ * 此处为唯一定义，login/api.ts 从本模块引用）：字段 optional 化、嵌套消息递
+ * 归、剔除消息符号键 $typeName / $unknown——authorize({provider, scene})
+ * 一类平铺对象即可入参。
  */
-type MessageInput<T> = {
+export type MessageInput<T> = {
   [P in keyof T as P extends '$typeName' | '$unknown' ? never : P]?: MessageField<T[P]>;
 };
 
 /** 嵌套字段递归：消息 → init；数组逐元素；其余（string / bigint / JsonObject）原样。 */
-type MessageField<F> =
+export type MessageField<F> =
   F extends Message<string>
     ? MessageInput<F>
     : F extends (infer U)[]

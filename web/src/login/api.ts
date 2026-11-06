@@ -4,7 +4,9 @@
  * LoginOauth（§2.7.4）、CreateQrcode（§2.8）、GetLoginTicket（§2.8 轮询）。
  * ConfirmLoginTicket 由宿主 / 第三方客户端调用，本工程不实现（接口文档 §2.8 行
  * 749）；CreateCaptchaImage 已归口 shared/api/sso.ts（跨 entry 共用，
- * 本实现删除本模块同名函数）。
+ * 本实现删除本模块同名函数）；Authorize /
+ * CreateQrcode 亦已归口该模块（登录与 account 绑定共用，本模块
+ * re-export 保持消费方 ../api import 路径不变）。
  *
  * login_token 传递（接口文档 §1.8 / §1.3 行 145 唯一定义；前端架构 §4.1
  * 行 397-403 五条不可打折）：
@@ -19,22 +21,15 @@
  * 从那里拿 ssoClient、不自建 transport；请求状态语义归 shared/hooks/useRequest
  * （§3.2），本模块是薄封装。报文类型全部取自 src/gen/proto 生成物。
  */
-import type { JsonObject, Message } from '@bufbuild/protobuf';
+import type { JsonObject } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';
+import type { MessageInput } from '../shared/api/sso';
 import { getInit, type OidcContext } from '../shared/types/init';
 import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { LoginDefaultRequest } from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
-import type {
-  AuthorizeRequest,
-  AuthorizeResponse,
-  LoginOauthRequest,
-} from '../gen/proto/api/sso/v1/oauth_pb';
-import type {
-  CreateQrcodeRequest,
-  CreateQrcodeResponse,
-} from '../gen/proto/api/sso/v1/ticket_pb';
+import type { LoginOauthRequest } from '../gen/proto/api/sso/v1/oauth_pb';
 import { clearLoginToken, getLoginToken, setLoginToken } from './loginTokenStore';
 import { loadOidcContext } from './oidcContext';
 
@@ -43,20 +38,10 @@ import { loadOidcContext } from './oidcContext';
 // ---------------------------------------------------------------------------
 
 /**
- * 生成物消息 → init 形状（与 @bufbuild/protobuf MessageInit 同口径）：
- * 字段 optional 化、嵌套消息递归 init、剔除消息符号键 $typeName / $unknown。
+ * 生成物消息 → init 形状的入参工具类型（MessageInput / MessageField）唯一定义
+ * 在 shared/api/sso.ts（本模块原有同构手写已删除），此处引用；
+ * authorize / createQrcode 的入参形状随函数一并归口 shared 侧。
  */
-type MessageInput<T> = {
-  [P in keyof T as P extends '$typeName' | '$unknown' ? never : P]?: MessageField<T[P]>;
-};
-
-/** 嵌套字段递归：消息 → init；数组逐元素；其余（string / bigint / bool / JsonObject）原样。 */
-type MessageField<F> =
-  F extends Message<string>
-    ? MessageInput<F>
-    : F extends (infer U)[]
-      ? MessageField<U>[]
-      : F;
 
 /** 登录流程请求入参：再剔除托管字段 loginToken / oidc（由本模块统一注入）。 */
 type FlowInput<T extends { loginToken: string }> = Omit<
@@ -174,19 +159,14 @@ export async function loginOauth(
 // 其余方法（响应非信封，无 loginToken 注入 / 后处理）
 // ---------------------------------------------------------------------------
 
-/** SsoService/Authorize（§2.7.2 行 580）：取第三方授权 URL（RPC 非 302）；跳转由调用方 location.replace。 */
-export async function authorize(
-  req: MessageInput<AuthorizeRequest>,
-): Promise<AuthorizeResponse> {
-  return ssoClient.authorize(req);
-}
-
-/** SsoService/CreateQrcode（§2.8 行 688）：拉取小程序码（必须携带 captcha，登录与绑定共用）。 */
-export async function createQrcode(
-  req: MessageInput<CreateQrcodeRequest>,
-): Promise<CreateQrcodeResponse> {
-  return ssoClient.createQrcode(req);
-}
+/**
+ * SsoService/Authorize（§2.7.2 行 580，取第三方授权 URL，跳转由调用方
+ * location.replace）与 SsoService/CreateQrcode（§2.8 行 688，拉取小程序码，
+ * captcha 必带、登录与绑定共用靠 scene 区分）已归口 shared/api/sso.ts
+ * （登录与 account 绑定共用）；本模块 re-export 承载 login 域
+ * 既有 ../api import 路径，消费方零改动。
+ */
+export { authorize, createQrcode } from '../shared/api/sso';
 
 /**
  * SsoService/GetLoginTicket（§2.8 行 710）：查询 / 长轮询 / 完成登录；pollSeconds
