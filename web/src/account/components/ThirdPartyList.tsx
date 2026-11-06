@@ -19,7 +19,7 @@
  * 文案经 shared/i18n（account.* 域键 + common.refreshAndRetry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,
@@ -58,26 +58,31 @@ function BoundRow(props: {
   const { item } = props;
   return (
     <li className={styles.row}>
-      <ProviderIcon icon={item.icon} alt={item.displayName} />
-      <span className={styles.label}>{item.displayName}</span>
-      {/* Union 行不计入已绑定数、不能单独解绑（§3.7 行 947）——标记展示、无解绑入口。 */}
-      {item.type === 'union' ? (
-        <Tag size="small" color="grey">
-          {t('account.unionTag')}
-        </Tag>
-      ) : (
-        <Popconfirm
-          title={t('account.unbindConfirm', { name: item.displayName })}
-          onConfirm={() => props.onUnbind(item.providerKey)}
-        >
-          <Button size="small" type="danger" disabled={!props.canUnbind} loading={props.unbinding}>
-            {t('account.unbindAction')}
-          </Button>
-        </Popconfirm>
-      )}
-      <span className={styles.times}>
-        {t('account.boundAt', { time: formatUnixTime(item.createdAt) })}
-      </span>
+      <div className={styles.rowMain}>
+        <ProviderIcon icon={item.icon} alt={item.displayName} />
+        <span className={styles.label}>{item.displayName}</span>
+        {/* Union 行不计入已绑定数、不能单独解绑（§3.7 行 947）——标记展示、无解绑入口。 */}
+        {item.type === 'union' ? (
+          <Tag size="small" color="grey">
+            {t('account.unionTag')}
+          </Tag>
+        ) : null}
+        <span className={styles.times}>
+          {t('account.boundAt', { time: formatUnixTime(item.createdAt) })}
+        </span>
+      </div>
+      <div className={styles.rowActions}>
+        {item.type === 'union' ? null : (
+          <Popconfirm
+            title={t('account.unbindConfirm', { name: item.displayName })}
+            onConfirm={() => props.onUnbind(item.providerKey)}
+          >
+            <Button size="small" type="danger" disabled={!props.canUnbind} loading={props.unbinding}>
+              {t('account.unbindAction')}
+            </Button>
+          </Popconfirm>
+        )}
+      </div>
     </li>
   );
 }
@@ -92,23 +97,27 @@ function OptionRow(props: {
   const { option } = props;
   return (
     <li className={styles.row}>
-      <ProviderIcon icon={option.icon} alt={option.displayName} />
-      <span className={styles.label}>{option.displayName}</span>
-      {option.channel === 'redirect' ? (
-        <Button
-          size="small"
-          theme="solid"
-          loading={props.redirecting}
-          disabled={props.redirecting}
-          onClick={() => props.onRedirect(option.providerKey)}
-        >
-          {t('account.bindAction')}
-        </Button>
-      ) : (
-        <Button size="small" theme="solid" onClick={() => props.onQrcode(option)}>
-          {t('account.bindAction')}
-        </Button>
-      )}
+      <div className={styles.rowMain}>
+        <ProviderIcon icon={option.icon} alt={option.displayName} />
+        <span className={styles.label}>{option.displayName}</span>
+      </div>
+      <div className={styles.rowActions}>
+        {option.channel === 'redirect' ? (
+          <Button
+            size="small"
+            theme="solid"
+            loading={props.redirecting}
+            disabled={props.redirecting}
+            onClick={() => props.onRedirect(option.providerKey)}
+          >
+            {t('account.bindAction')}
+          </Button>
+        ) : (
+          <Button size="small" theme="solid" onClick={() => props.onQrcode(option)}>
+            {t('account.bindAction')}
+          </Button>
+        )}
+      </div>
     </li>
   );
 }
@@ -182,7 +191,8 @@ export function ThirdPartyList(props: {
       ) : (
         <div className={styles.body}>
           {items === undefined || items.length === 0 ? (
-            <p className={styles.empty}>{t('account.thirdpartyEmpty')}</p>
+            // 空态裸文字 → Semi Empty（§9.3 映射表）。
+            <Empty description={t('account.thirdpartyEmpty')} />
           ) : (
             <ul className={styles.list}>
               {items.map((item) => (

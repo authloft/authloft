@@ -27,7 +27,7 @@
  * 「通行密钥」卡片题复用 factors.webauthn）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { create } from '@bufbuild/protobuf';
 import type {
   AccountConfigResponse,
@@ -96,17 +96,15 @@ export function SecurityPageView(props: {
     <section className={styles.page}>
       <Typography.Title heading={3}>{t('account.securityTitle')}</Typography.Title>
       {props.bindNotice !== undefined ? (
-        <div
-          role={props.bindNotice.kind === 'success' ? 'status' : 'alert'}
-          className={props.bindNotice.kind === 'success' ? styles.bindOk : styles.bindError}
-        >
-          <span>{props.bindNotice.text}</span>
-          <Button size="small" type="tertiary" onClick={props.onDismissBindNotice}>
-            {t('account.close')}
-          </Button>
-        </div>
+        // V-8：自绘 bindOk/bindError 灰底横幅 → Semi Banner（自带关闭按钮）。
+        <Banner
+          type={props.bindNotice.kind === 'success' ? 'success' : 'danger'}
+          fullMode={false}
+          onClose={props.onDismissBindNotice}
+          description={props.bindNotice.text}
+        />
       ) : null}
-      <Card title={t('account.twoFactorTitle')} className={styles.card}>
+      <Card title={t('account.twoFactorTitle')}>
         <p className={styles.mfaStatus}>
           {policy.enabled ? t('account.mfaEnabledStatus') : t('account.mfaDisabledStatus')}
           {policy.required ? t('account.mfaRequiredNote') : ''}
@@ -121,19 +119,19 @@ export function SecurityPageView(props: {
           onPolicyRefresh={props.onRefreshConfig}
         />
       </Card>
-      <Card title={t('account.passwordCardTitle')} className={styles.card}>
+      <Card title={t('account.passwordCardTitle')}>
         <PasswordChangeForm hasPassword={config.hasPassword} />
       </Card>
-      <Card title={t('account.contactCardTitle')} className={styles.card}>
+      <Card title={t('account.contactCardTitle')}>
         <div className={styles.contactStack}>
           <ContactBindForm kind="phone" captcha={captcha} />
           <ContactBindForm kind="email" captcha={captcha} />
         </div>
       </Card>
-      <Card title={t('factors.webauthn')} className={styles.card}>
+      <Card title={t('factors.webauthn')}>
         <WebauthnList onChanged={props.onWebauthnChanged} />
       </Card>
-      <Card title={t('account.thirdpartyCardTitle')} className={styles.card}>
+      <Card title={t('account.thirdpartyCardTitle')}>
         <ThirdPartyList hasPassword={config.hasPassword} captcha={captcha} />
       </Card>
     </section>

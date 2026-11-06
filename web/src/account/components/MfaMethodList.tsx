@@ -141,29 +141,33 @@ export function MfaMethodList(props: {
       <ul className={styles.list}>
         {props.methods.map((method) => (
           <li key={method.factor} className={styles.row}>
-            <Checkbox
-              checked={method.enabled}
-              disabled={toggling || !method.bound}
-              onChange={(e) => handleToggle(method.factor, e.target.checked ?? false)}
-              aria-label={t('account.mfaEnableFactorAria', { factor: factorLabel(method.factor) })}
-            />
-            <span className={styles.factor}>{factorLabel(method.factor)}</span>
-            <Tag size="small" color={method.bound ? 'green' : 'grey'}>
-              {method.bound ? t('account.factorBoundTag') : t('account.factorUnboundTag')}
-            </Tag>
-            {method.factor === 'totp' && !method.bound ? (
-              <Button size="small" onClick={() => setTotpOpen(true)}>
-                {t('account.bindAction')}
-              </Button>
-            ) : null}
-            {method.factor === 'recovery_code' && method.bound ? (
-              <Button size="small" onClick={() => setRecoveryOpen(true)}>
-                {t('account.viewRecoveryCodes')}
-              </Button>
-            ) : null}
-            {!method.bound && unboundHint(method.factor) !== undefined ? (
-              <span className={styles.unboundHint}>{unboundHint(method.factor)}</span>
-            ) : null}
+            <div className={styles.rowMain}>
+              <Checkbox
+                checked={method.enabled}
+                disabled={toggling || !method.bound}
+                onChange={(e) => handleToggle(method.factor, e.target.checked ?? false)}
+                aria-label={t('account.mfaEnableFactorAria', { factor: factorLabel(method.factor) })}
+              />
+              <span className={styles.factor}>{factorLabel(method.factor)}</span>
+              <Tag size="small" color={method.bound ? 'green' : 'grey'}>
+                {method.bound ? t('account.factorBoundTag') : t('account.factorUnboundTag')}
+              </Tag>
+              {!method.bound && unboundHint(method.factor) !== undefined ? (
+                <span className={styles.unboundHint}>{unboundHint(method.factor)}</span>
+              ) : null}
+            </div>
+            <div className={styles.rowActions}>
+              {method.factor === 'totp' && !method.bound ? (
+                <Button size="small" onClick={() => setTotpOpen(true)}>
+                  {t('account.bindAction')}
+                </Button>
+              ) : null}
+              {method.factor === 'recovery_code' && method.bound ? (
+                <Button size="small" onClick={() => setRecoveryOpen(true)}>
+                  {t('account.viewRecoveryCodes')}
+                </Button>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

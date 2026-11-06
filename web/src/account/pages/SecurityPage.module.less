@@ -26,25 +26,3 @@
   flex-direction: column;
   gap: @spacing-xl;
 }
-
-// redirect 绑定回调横幅（§3.7.1 A 行 969-971）：success / error 两态。
-.bindOk,
-.bindError {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: @spacing-sm;
-  padding: @spacing-sm @spacing-md;
-  font-size: @font-size-sm;
-  border-radius: @radius-sm;
-}
-
-.bindOk {
-  color: @color-text;
-  background: @color-background-muted;
-}
-
-.bindError {
-  color: @color-danger;
-  background: @color-background-muted;
-}

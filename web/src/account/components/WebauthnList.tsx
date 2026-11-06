@@ -15,7 +15,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
 import type { WebauthnCredential } from '../../gen/proto/api/account/v1/webauthn_pb';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
@@ -145,67 +145,76 @@ export function WebauthnList(props: {
           {t('account.webauthnLoadFailed')}
         </p>
       ) : items === undefined || items.length === 0 ? (
-        <p className={styles.empty}>
-          {available ? t('account.webauthnEmpty') : t('account.webauthnUnsupported')}
-        </p>
+        // 空态裸文字 → Semi Empty（§9.3 映射表）。
+        <Empty
+          description={available ? t('account.webauthnEmpty') : t('account.webauthnUnsupported')}
+        />
       ) : (
         <ul className={styles.list}>
           {items.map((item) => (
             <li key={item.id.toString()} className={styles.row}>
               {renamingId === item.id ? (
                 <>
-                  <Input
-                    className={styles.renameInput}
-                    value={renameLabel}
-                    onChange={setRenameLabel}
-                    disabled={renameStatus === 'loading'}
-                  />
-                  <Button
-                    size="small"
-                    loading={renameStatus === 'loading'}
-                    disabled={renameStatus === 'loading' || renameLabel.trim() === ''}
-                    onClick={submitRename}
-                  >
-                    {t('account.saveAction')}
-                  </Button>
-                  <Button
-                    size="small"
-                    type="tertiary"
-                    onClick={() => setRenamingId(undefined)}
-                  >
-                    {t('account.cancelAction')}
-                  </Button>
+                  <div className={styles.rowMain}>
+                    <Input
+                      className={styles.renameInput}
+                      value={renameLabel}
+                      onChange={setRenameLabel}
+                      disabled={renameStatus === 'loading'}
+                    />
+                  </div>
+                  <div className={styles.rowActions}>
+                    <Button
+                      size="small"
+                      loading={renameStatus === 'loading'}
+                      disabled={renameStatus === 'loading' || renameLabel.trim() === ''}
+                      onClick={submitRename}
+                    >
+                      {t('account.saveAction')}
+                    </Button>
+                    <Button
+                      size="small"
+                      type="tertiary"
+                      onClick={() => setRenamingId(undefined)}
+                    >
+                      {t('account.cancelAction')}
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <>
-                  <span className={styles.label}>
-                    {item.label === '' ? t('account.unnamedCredential') : item.label}
-                  </span>
-                  {item.transports.map((transport) => (
-                    <Tag key={transport} size="small" color="grey">
-                      {transport}
-                    </Tag>
-                  ))}
-                  <span className={styles.times}>
-                    {t('account.webauthnAddedAt', { time: formatUnixTime(item.createdAt) })}
-                    {t('account.mfaLastUsedAt', { time: formatUnixTime(item.lastUsedAt) })}
-                  </span>
-                  {item.aaguid !== '' ? (
-                    <span className={styles.aaguid}>AAGUID {item.aaguid}</span>
-                  ) : null}
-                  <Button size="small" onClick={() => startRename(item)}>
-                    {t('account.webauthnRenameAction')}
-                  </Button>
-                  <Popconfirm
-                    title={t('account.webauthnDeleteConfirm', {
-                      name: item.label === '' ? t('account.unnamedCredential') : item.label,
-                    })}
-                    onConfirm={() => handleDelete(item.id)}
-                  >
-                    <Button size="small" type="danger" loading={deleteStatus === 'loading'}>
-                      {t('account.deleteAction')}
+                  <div className={styles.rowMain}>
+                    <span className={styles.label}>
+                      {item.label === '' ? t('account.unnamedCredential') : item.label}
+                    </span>
+                    {item.transports.map((transport) => (
+                      <Tag key={transport} size="small" color="grey">
+                        {transport}
+                      </Tag>
+                    ))}
+                    <span className={styles.times}>
+                      {t('account.webauthnAddedAt', { time: formatUnixTime(item.createdAt) })}
+                      {t('account.mfaLastUsedAt', { time: formatUnixTime(item.lastUsedAt) })}
+                    </span>
+                    {item.aaguid !== '' ? (
+                      <span className={styles.aaguid}>AAGUID {item.aaguid}</span>
+                    ) : null}
+                  </div>
+                  <div className={styles.rowActions}>
+                    <Button size="small" onClick={() => startRename(item)}>
+                      {t('account.webauthnRenameAction')}
                     </Button>
-                  </Popconfirm>
+                    <Popconfirm
+                      title={t('account.webauthnDeleteConfirm', {
+                        name: item.label === '' ? t('account.unnamedCredential') : item.label,
+                      })}
+                      onConfirm={() => handleDelete(item.id)}
+                    >
+                      <Button size="small" type="danger" loading={deleteStatus === 'loading'}>
+                        {t('account.deleteAction')}
+                      </Button>
+                    </Popconfirm>
+                  </div>
                 </>
               )}
             </li>
