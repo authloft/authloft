@@ -24,25 +24,40 @@ export default defineConfig({
       },
       // 登录 entry（docs/前端架构.md §2 行 119 / §4.1）：壳层模板 = 构建产物
       // dist/html/login/index.html 原样复制（§1.5，接口文档 §8）。
-      // 同 setup 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      // F-077（D-037）：去 disableMount——框架接管挂载（容器 #root），
+      // entry.tsx 退化为默认导出根组件（副作用留在其模块作用域）。
       login: {
         entry: './src/login/entry.tsx',
-        disableMount: true,
       },
       // 用户端安全中心 entry（docs/前端架构.md §2 / §5 行 478）：壳层模板 =
       // 构建产物 dist/html/account/index.html 原样复制（§1.5，接口文档 §8）。
-      // 同 setup / login 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      // 同 login 模式（F-077）：框架接管挂载，entry.tsx 默认导出根组件。
       account: {
         entry: './src/account/entry.tsx',
-        disableMount: true,
       },
       // 管理端 entry（docs/前端架构.md §2 / §6 行 499）：壳层模板 =
       // 构建产物 dist/html/admin/index.html 原样复制（§1.5，接口文档 §8）。
-      // 同 setup / login / account 模式：disableMount，entry.tsx 自行 createRoot 挂载。
+      // 同 login 模式（F-077）：框架接管挂载，entry.tsx 默认导出根组件。
       admin: {
         entry: './src/admin/entry.tsx',
-        disableMount: true,
       },
+    },
+  },
+  // server.routes：entry → 访问路径映射，dev 与 serve 双
+  // 生效——login 映射五条真实路径（回调段 :provider_key 动态参数），
+  // account / admin / setup 各映射根路径（子路径走前端路由）。
+  server: {
+    routes: {
+      login: [
+        '/sso/login',
+        '/sso/register',
+        '/sso/reset',
+        '/sso/oauth/callback/:provider_key',
+        '/auth/authorize',
+      ],
+      account: '/account',
+      admin: '/admin',
+      setup: '/setup',
     },
   },
   // ── 壳层模板三个运行期占位符的构建期注入（docs/前端架构.md §1.5 定稿）──

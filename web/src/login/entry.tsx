@@ -1,17 +1,17 @@
 /**
- * login entry 挂载（docs/前端架构.md §4.1 行 374 / §1.5 行 99）：
- * 首条执行语句读 `__AUTHLOFT_INIT__.static_base` 赋 `__webpack_public_path__`
- * （任何动态 import() 之前；缺省 `/assets/`）→ 注入 i18n（按浏览器语言
- * setLocale，zh-CN 默认）→ createRoot 挂载路由（错误边界包裹）。
- * 沿 setup/entry.tsx 同构模式：modern.config 注册 disableMount，
- * 不依赖 Modern.js 运行时路由 / SSR。
+ * login entry（docs/前端架构.md §4.1 行 415 / §1.4 / §1.5 行 122）：
+ * 去 `disableMount`——框架接管挂载（容器 `#root`，HTML 结构不变），
+ * 本文件只默认导出根组件；原挂载前副作用留在本模块作用域（框架生成的
+ * entry 静态 import 本模块，为首个自有执行点）：读
+ * `__AUTHLOFT_INIT__.static_base` 赋 `__webpack_public_path__`（任何动态
+ * import() 之前；缺省 `/assets/`）→ 注入 i18n（按浏览器语言 setLocale，
+ * zh-CN 默认）→ 根组件 = 错误边界包裹路由（语义与自行挂载时期一致）。
  */
 // §1.7 行 120：全局样式由 entry 顶部 import 一次——tokens 只存变量（经组件
 // reference 消费，本身无 CSS 产出），reset 为基础重置。
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
-import { createRoot } from 'react-dom/client';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
@@ -21,16 +21,16 @@ declare global {
   var __webpack_public_path__: string;
 }
 
-// §1.5 行 99 / §4.1 行 374：任何动态 import() 之前把
-// `__webpack_public_path__` 设为 static_base + '/'（已归一），此后异步
-// chunk 与图片按该前缀加载；static_base 可为 CDN 绝对地址，不写死资源
-// 域名（本 entry 当前无动态 import，该值为异步扩展预留，同 setup 口径）。
+// §1.5 行 122：任何动态 import() 之前把 `__webpack_public_path__` 设为
+// static_base + '/'（已归一），此后异步 chunk 与图片按该前缀加载；
+// static_base 可为 CDN 绝对地址，不写死资源域名（本 entry 当前无动态
+// import，该值为异步扩展预留）。
 __webpack_public_path__ = normalizeStaticBase(getInit()?.static_base);
 
-// §4.1 行 374：注入 i18n（i18n/index.ts：模块级当前语言，zh-CN 默认）。
+// §4.1：注入 i18n（i18n/index.ts：模块级当前语言，zh-CN 默认）。
 setLocale(navigator.language);
 
-/** 渲染期异常兜底（§4.1 行 374：错误边界）。 */
+/** 渲染期异常兜底（错误边界，语义沿自行挂载时期不变）。 */
 class LoginErrorBoundary extends Component<
   { readonly children: ReactNode },
   { readonly error: unknown }
@@ -53,11 +53,11 @@ class LoginErrorBoundary extends Component<
   }
 }
 
-const container = document.getElementById('root');
-if (container) {
-  createRoot(container).render(
+/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。 */
+export default function App(): ReactNode {
+  return (
     <LoginErrorBoundary>
       <LoginApp />
-    </LoginErrorBoundary>,
+    </LoginErrorBoundary>
   );
 }
