@@ -148,6 +148,12 @@ export const account: typeof zhAccount = {
   'account.totpOtpauthLabel': 'otpauth URL',
   'account.totpVerifyAction': 'Verify and finish linking',
 
+  // ---- TotpBindDialog QR code (the key / otpauth text fallback keeps
+  //      totpSecretLabel / totpOtpauthLabel / totpManualHint, not removed) ------
+  'account.totpScanHint':
+    'Scan the QR code with your authenticator app (such as Google Authenticator) to add it',
+  'account.totpQrImageAlt': 'TOTP binding QR code',
+
   // ---- EventLogTable -----------------------------------------------------------
   'account.logTimeColumn': 'Time',
   'account.logMethodColumn': 'Method',

@@ -38,6 +38,7 @@ import {
   type QRPanelPhase,
 } from './QRCodePanel';
 import { ProviderIcon, resolveIconMode } from './ProviderIcon';
+import { QrImage, buildQrSvg } from './QrImage';
 import { ApiError } from '../api/errors';
 
 // rstest 对 .tsx 采用 classic JSX runtime（React.createElement），测试链未接
@@ -888,5 +889,56 @@ describe('ProviderIcon（§3.3 行 344：渠道图标唯一渲染入口）', () 
     expect(renderToStaticMarkup(createElement(ProviderIcon, {}))).toContain(
       '渠道图标', // alt 缺省内置文案
     );
+  });
+});
+
+describe('QrImage 文本二维码自绘（接口文档 §3.5 行 922「前端绘制二维码」）', () => {
+  /** account.test.tsx 同款 otpauth 样例（challenge 下发的 qrcodeContent）。 */
+  const OTPAUTH =
+    'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft';
+
+  test('二维码渲染：有效内容 → SVG（role=img + aria-label + 白底黑点 + 静默区 viewBox）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QrImage, { content: OTPAUTH, alt: 'TOTP 绑定二维码' }),
+    );
+    expect(markup).toContain('<svg');
+    expect(markup).toContain('role="img"');
+    expect(markup).toContain('aria-label="TOTP 绑定二维码"');
+    expect(markup).toContain('fill="#fff"'); // 白底（含静默区）
+    expect(markup).toContain('fill="#000"'); // 暗模块单 path
+    expect(markup).toContain('shape-rendering="crispEdges"');
+  });
+
+  test('组件确实消费 content：不同内容 → 不同码点路径；run-length 前缀确定性', () => {
+    const a = buildQrSvg(OTPAUTH)!;
+    const b = buildQrSvg(
+      'otpauth://totp/Authloft:li_si?secret=JBSWY3DPEHPK3PXP%20A&issuer=Authloft',
+    )!;
+    expect(a.modules).toBeGreaterThanOrEqual(21); // 最小版本 1 = 21 模块
+    expect(b.modules).toBeGreaterThanOrEqual(21);
+    expect(a.path).not.toBe(b.path);
+    // 左上定位图案恒定：首行首段 = 7 个连续暗模块（run-length 编码）。
+    expect(a.path.startsWith('M0 0h7v1h-7z')).toBe(true);
+    // viewBox 含四周静默区（-4 起点）。
+    const markup = renderToStaticMarkup(
+      createElement(QrImage, { content: OTPAUTH, alt: 'qr' }),
+    );
+    expect(markup).toContain(`viewBox="-4 -4 ${a.modules + 8} ${a.modules + 8}"`);
+  });
+
+  test('加载失败回退：空串 / 超容量 → 组件渲染为空（调用方文本兜底——TotpBindDialog 密钥 / otpauth 文本展示保留，不随码图失败消失）', () => {
+    // 空串：protojson 零值省略语境（§9.18 调用方回退同源 otpauthUrl 后仍可能空）。
+    expect(buildQrSvg('')).toBeUndefined();
+    expect(
+      renderToStaticMarkup(createElement(QrImage, { content: '', alt: 'qr' })),
+    ).toBe('');
+    // 超容量：QR 40 版 M 级 Byte 模式上限约 2331 字节，4000 字节必失败。
+    const oversized = 'x'.repeat(4000);
+    expect(buildQrSvg(oversized)).toBeUndefined();
+    expect(
+      renderToStaticMarkup(
+        createElement(QrImage, { content: oversized, alt: 'qr' }),
+      ),
+    ).toBe('');
   });
 });

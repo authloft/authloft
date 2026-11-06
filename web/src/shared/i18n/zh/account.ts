@@ -141,6 +141,11 @@ export const account = {
   'account.totpOtpauthLabel': 'otpauth 地址',
   'account.totpVerifyAction': '验证并完成绑定',
 
+  // ---- TotpBindDialog 二维码（密钥 / otpauth 文本兜底沿用
+  //      totpSecretLabel / totpOtpauthLabel / totpManualHint，不删）--------------
+  'account.totpScanHint': '请使用验证器应用（如 Google Authenticator）扫描二维码完成添加',
+  'account.totpQrImageAlt': 'TOTP 绑定二维码',
+
   // ---- EventLogTable-----------------------------------------------------------
   'account.logTimeColumn': '时间',
   'account.logMethodColumn': '方式',

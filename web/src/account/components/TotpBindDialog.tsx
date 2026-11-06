@@ -8,19 +8,19 @@
  * RecoveryCodePanel」），用户确认已保存后经 onDone 上抛（父级刷新 mfaPolicy
  * 摘要 + GetMfa 明细并关闭）。
  *
- * 【二维码绘制裁量】challenge 下发的 qrcodeContent
- * 为 otpauth:// 文本（行 905「前端绘制二维码」）；项目内无既有文本码绘制能力
- * （shared/QRCodePanel 只渲染服务端图片 URL），自绘 QR 需完整 Reed-Solomon
- * 纠错 + 掩码评估编码器（数百行高风险算法码，超出「最简」口径）→ 取约定
- * 的兜底：展示密钥 + otpauthUrl 文本（各带复制按钮，验证器应用手动输入
- * 密钥或粘贴 otpauth 地址均可完成绑定）；qrcodeContent 与 otpauthUrl 同源
- * （二维码编码内容），后续引库 / 自绘时直接消费该字段。
- * 文案经 shared/i18n（account.* 域键 + common.retry 复用）。
+ * 【二维码绘制（2026-11-06 授权引库口径落地）】challenge 下发的
+ * qrcodeContent（行 922「前端绘制二维码」）经 shared/components/QrImage 自绘
+ * SVG 码图（qrcode-generator@2.0.4，零传递依赖，纯 DOM 无脚本 → CSP 安全）；
+ * 空串按零值兜底回退同源的 otpauthUrl（§9.18）。码图生成失败（超容量等）
+ * QrImage 渲染 null，下方密钥 + otpauthUrl 文本兜底保留不删（码图失败 /
+ * 手动输入场景回退，交付语义不变）；verify 流程与 RecoveryCodePanel
+ * 交接不动。文案经 shared/i18n（account.* 域键 + common.retry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Modal, Spin } from '@douyinfe/semi-ui-19';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
 import { CopyButton } from '../../shared/components/CopyButton';
+import { QrImage } from '../../shared/components/QrImage';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import {
@@ -127,6 +127,13 @@ export function TotpBindDialog(props: {
             submitVerify();
           }}
         >
+          {/* 行 922：qrcodeContent 码图置于挑战帧显眼位（顶部）；protojson
+              省略空串 → 空值按零值兜底回退同源的 otpauthUrl（§9.18）。 */}
+          <QrImage
+            content={challenge.qrcodeContent || challenge.otpauthUrl}
+            alt={t('account.totpQrImageAlt')}
+          />
+          <p className={styles.hint}>{t('account.totpScanHint')}</p>
           <p className={styles.hint}>{t('account.totpManualHint')}</p>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>{t('account.totpSecretLabel')}</span>
