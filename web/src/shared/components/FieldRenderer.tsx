@@ -86,6 +86,10 @@ export interface FieldRendererProps {
   values: Readonly<Record<string, string>>;
   /** 字段值变化上抛（组件不持有业务状态）。 */
   onChange: (name: string, value: string) => void;
+  /** 字段级错误文案（字段名 → 已解析的最终展示文案；评审 P1-2：命中即渲染错误槽并标 aria-invalid + aria-describedby 关联）。 */
+  errors?: Readonly<Record<string, string>>;
+  /** 控件 id 前缀（默认 'fr'；同页多个实例并存时调用方传不同前缀避免撞 id）。 */
+  idPrefix?: string;
 }
 
 /** 按 fields[] 渲染表单控件；空数组渲染空（不产生任何 DOM）。 */
@@ -93,6 +97,8 @@ export function FieldRenderer({
   fields,
   values,
   onChange,
+  errors,
+  idPrefix = 'fr',
 }: FieldRendererProps) {
   return (
     <>
@@ -101,6 +107,8 @@ export function FieldRenderer({
           key={field.name}
           field={field}
           value={values[field.name] ?? ''}
+          error={errors?.[field.name]}
+          idPrefix={idPrefix}
           onChange={onChange}
         />
       ))}
@@ -111,10 +119,14 @@ export function FieldRenderer({
 function FieldControl({
   field,
   value,
+  error,
+  idPrefix,
   onChange,
 }: {
   field: Field;
   value: string;
+  error: string | undefined;
+  idPrefix: string;
   onChange: (name: string, value: string) => void;
 }) {
   const kind = controlKindFor(field.type);
@@ -125,14 +137,25 @@ function FieldControl({
     return null;
   }
 
+  // 评审 P0-3：稳定 id（label htmlFor 关联）+ 错误时 aria-invalid /
+  // aria-describedby 绑到错误槽。
+  const inputId = `${idPrefix}-${field.name}`;
+  const errorId = `${inputId}-error`;
+  const hasError = error !== undefined && error !== '';
+  const invalidProps = hasError
+    ? { 'aria-invalid': true as const, 'aria-describedby': errorId }
+    : {};
+
   const emit = (v: string) => onChange(field.name, v);
   const input = (type: string, extra: Record<string, unknown> = {}) => (
     <input
       className={styles.input}
+      id={inputId}
       name={field.name}
       type={type}
       value={value}
       onChange={(e) => emit(e.target.value)}
+      {...invalidProps}
       {...extra}
     />
   );
@@ -160,6 +183,9 @@ function FieldControl({
           onChange={emit}
           length={codeLengthOf(field)}
           ariaLabel={field.label}
+          id={inputId}
+          ariaInvalid={hasError}
+          ariaDescribedBy={hasError ? errorId : undefined}
         />
       );
       break;
@@ -167,10 +193,12 @@ function FieldControl({
       control = (
         <input
           className={styles.checkbox}
+          id={inputId}
           name={field.name}
           type="checkbox"
           checked={value === 'true'}
           onChange={(e) => emit(String(e.target.checked))}
+          {...invalidProps}
         />
       );
       break;
@@ -180,9 +208,11 @@ function FieldControl({
       control = (
         <select
           className={styles.input}
+          id={inputId}
           name={field.name}
           value={value}
           onChange={(e) => emit(e.target.value)}
+          {...invalidProps}
         >
           <option value="">{t('common.selectPlaceholder')}</option>
         </select>
@@ -206,11 +236,13 @@ function FieldControl({
       control = (
         <textarea
           className={styles.textarea}
+          id={inputId}
           name={field.name}
           rows={6}
           spellCheck={false}
           value={value}
           onChange={(e) => emit(e.target.value)}
+          {...invalidProps}
         />
       );
       break;
@@ -221,11 +253,16 @@ function FieldControl({
 
   return (
     <div className={styles.field}>
-      <label className={styles.label}>
+      <label className={styles.label} htmlFor={inputId}>
         {field.label}
         {field.required ? ' *' : ''}
       </label>
       {control}
+      {hasError && (
+        <p id={errorId} className={styles.fieldError}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

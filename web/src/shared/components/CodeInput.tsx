@@ -22,6 +22,12 @@ export interface CodeInputProps {
   length?: number;
   /** 无障碍组名（视觉标签由调用方自行渲染，组件不重复画）。 */
   ariaLabel?: string;
+  /** 首格输入框 id（label htmlFor 关联用；评审 P0-3）。 */
+  id?: string;
+  /** 错误标态（每格 aria-invalid；字段级错误）。 */
+  ariaInvalid?: boolean;
+  /** 错误描述元素 id（每格 aria-describedby；字段级错误）。 */
+  ariaDescribedBy?: string;
   disabled?: boolean;
 }
 
@@ -84,6 +90,9 @@ export function CodeInput({
   onChange,
   length = DEFAULT_CODE_LENGTH,
   ariaLabel,
+  id,
+  ariaInvalid,
+  ariaDescribedBy,
   disabled,
 }: CodeInputProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([]);
@@ -151,6 +160,7 @@ export function CodeInput({
           ref={(el) => {
             refs.current[i] = el;
           }}
+          id={i === 0 ? id : undefined}
           type="text"
           inputMode="numeric"
           pattern="[0-9]*"
@@ -158,6 +168,8 @@ export function CodeInput({
           maxLength={1}
           className={styles.box}
           disabled={disabled}
+          aria-invalid={ariaInvalid || undefined}
+          aria-describedby={ariaDescribedBy}
           value={char}
           onChange={(e) => handleInput(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}

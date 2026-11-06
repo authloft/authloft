@@ -23,6 +23,7 @@ import { CodeInput, pasteValue, applyChar, applyBackspace } from './CodeInput';
 import { FieldRenderer, controlKindFor, codeLengthOf } from './FieldRenderer';
 import { ErrorBanner, errorText, attemptsCount } from './ErrorBanner';
 import { CopyButton } from './CopyButton';
+import { Spinner } from './Spinner';
 import {
   PasswordStrengthMeter,
   meterRules,
@@ -69,9 +70,10 @@ function makeField(init: FieldInit): Field {
 function renderFields(
   fields: readonly Field[],
   values: Readonly<Record<string, string>> = {},
+  extra: { errors?: Readonly<Record<string, string>>; idPrefix?: string } = {},
 ): string {
   return renderToStaticMarkup(
-    createElement(FieldRenderer, { fields, values, onChange: () => {} }),
+    createElement(FieldRenderer, { fields, values, onChange: () => {}, ...extra }),
   );
 }
 
@@ -221,6 +223,66 @@ describe('FieldRenderer 渲染（正常 + 边界）', () => {
     expect(markup).toContain('显示');
     expect(markup).toContain('value="raw-value"');
     expect(markup).not.toContain('隐藏');
+  });
+});
+
+describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）', () => {
+  test('label htmlFor ↔ 控件 id 稳定关联（默认前缀 fr-，可用 idPrefix 覆盖防撞）', () => {
+    const markup = renderFields([
+      makeField({ name: 'username', label: '用户名', type: 'text' }),
+      makeField({ name: 'agree', label: '同意条款', type: 'checkbox' }),
+      makeField({ name: 'region', label: '区域', type: 'select' }),
+      makeField({ name: 'mapping', label: '映射', type: 'json' }),
+    ]);
+    expect(markup).toContain('<label');
+    expect(markup).toContain('for="fr-username"');
+    expect(markup).toContain('id="fr-username"');
+    expect(markup).toContain('for="fr-agree"');
+    expect(markup).toContain('id="fr-agree"');
+    expect(markup).toContain('id="fr-region"');
+    expect(markup).toContain('id="fr-mapping"');
+    const custom = renderFields(
+      [makeField({ name: 'username', label: '用户名', type: 'text' })],
+      {},
+      { idPrefix: 'mfa' },
+    );
+    expect(custom).toContain('for="mfa-username"');
+    expect(custom).toContain('id="mfa-username"');
+    expect(custom).not.toContain('fr-username');
+  });
+
+  test('无错误时不标 aria-invalid / 不渲染错误槽', () => {
+    const markup = renderFields([
+      makeField({ name: 'username', label: '用户名', type: 'text' }),
+    ]);
+    expect(markup).not.toContain('aria-invalid');
+    expect(markup).not.toContain('aria-describedby');
+    expect(markup).not.toContain('-error');
+  });
+
+  test('命中 errors：错误槽渲染 + aria-invalid + aria-describedby 指向错误槽', () => {
+    const markup = renderFields(
+      [makeField({ name: 'username', label: '用户名', type: 'text' })],
+      { username: 'alice' },
+      { errors: { username: '该用户名已被占用' } },
+    );
+    expect(markup).toContain('aria-invalid="true"');
+    expect(markup).toContain('aria-describedby="fr-username-error"');
+    expect(markup).toContain('id="fr-username-error"');
+    expect(markup).toContain('该用户名已被占用');
+  });
+
+  test('code 型字段：首格 id 供 htmlFor、每格 aria-invalid / aria-describedby', () => {
+    const markup = renderFields(
+      [makeField({ name: 'code', label: '验证码', type: 'otp', length: BigInt(6) })],
+      { code: '12' },
+      { errors: { code: '请输入完整验证码' } },
+    );
+    expect(markup).toContain('for="fr-code"');
+    expect(markup).toContain('id="fr-code"');
+    expect(count(markup, 'aria-invalid="true"')).toBe(6);
+    expect(count(markup, 'aria-describedby="fr-code-error"')).toBe(6);
+    expect(markup).toContain('请输入完整验证码');
   });
 });
 
@@ -383,6 +445,34 @@ describe('ErrorBanner（错误文案 + 倒计时 + 可重试）', () => {
     expect(markup).toContain('请先登录');
     expect(markup).not.toContain('<button');
   });
+
+  test('焦点管理能力（评审 P0-3c）：横幅自带 tabIndex=-1，可编程 focus', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ErrorBanner, { i18nKey: 'errors.status.failed' }),
+    );
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('role="alert"');
+  });
+});
+
+describe('Spinner（评审 P1-1：零依赖 CSS 圆环）', () => {
+  test('role="status" + 默认播报文案 common.loading；可自定义 label', () => {
+    const fallback = renderToStaticMarkup(createElement(Spinner, {}));
+    expect(fallback).toContain('role="status"');
+    expect(fallback).toContain('aria-label="加载中…"');
+    const custom = renderToStaticMarkup(
+      createElement(Spinner, { label: '正在登录' }),
+    );
+    expect(custom).toContain('aria-label="正在登录"');
+  });
+
+  test('size 档：sm / md 均渲染 span（类名映射在构建期，测试环境 CSS Modules 为 mock）', () => {
+    for (const size of ['sm', 'md'] as const) {
+      const markup = renderToStaticMarkup(createElement(Spinner, { size }));
+      expect(markup).toContain('<span');
+      expect(markup).toContain('role="status"');
+    }
+  });
 });
 
 describe('CopyButton（消费 useCopy + i18n 文案）', () => {
@@ -446,6 +536,8 @@ describe('PasswordStrengthMeter（§5.6 同源规则清单）', () => {
     expect(renderMeter('')).toBe('');
     const markup = renderMeter('abc');
     expect(markup).toContain('role="status"');
+    // 评审 P0-3e：显式 aria-live="polite"。
+    expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('长度至少 8 位');
     expect(markup).toContain('✗ 长度至少 8 位');
     expect(markup).toContain('✓ 长度至多 64 位');

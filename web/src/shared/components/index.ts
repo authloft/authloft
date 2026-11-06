@@ -25,3 +25,4 @@ export {
   type ErrorBannerProps,
 } from './ErrorBanner';
 export { CopyButton, type CopyButtonProps } from './CopyButton';
+export { Spinner, type SpinnerProps } from './Spinner';

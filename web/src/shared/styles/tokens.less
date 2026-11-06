@@ -66,3 +66,27 @@
 @font-weight-medium: 500;
 @font-weight-semibold: 600;
 @transition-fast: 160ms ease;
+
+// ── 追加令牌（FRONTEND-UX-REVIEW §9.2 token 表「现状缺失需新增」项）──
+// 全部纯追加，不改既有值；作用域 = login + shared 无 Semi 组件（account/admin
+// 用 Semi 语义组件，不消费本节）。
+// 语义色：成功 / 警告 / 信息 soft 底
+@color-success: #16a34a;
+@color-success-soft: #f0fdf4;
+@color-warning: #d97706;
+@color-warning-soft: #fffbeb;
+@color-info-soft: #f0f9ff;
+
+// 间距 / 字号扩展档
+@spacing-2xl: 2rem; // 32px
+@font-size-xs: 0.75rem; // 12px
+@font-size-2xl: 1.875rem; // 30px
+
+// 行高
+@line-height-body: 1.5;
+@line-height-heading: 1.3;
+
+// 移动端断点（供后续移动端适配消费；仅在媒体查询中使用，不自建第二套断点体系）
+@breakpoint-sm: 480px;
+@breakpoint-md: 768px;
+@breakpoint-lg: 1024px;

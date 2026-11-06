@@ -1,0 +1,104 @@
+// 控件样式 mixin 归集（FRONTEND-UX-REVIEW V-3 存量：.submit/.input/.label
+// 在 login 域 ≥5 份逐字重复）。mixin 仅在被调用时产出 CSS，本文件自身零输出，
+// 与 tokens.less 一样经 `@import (reference)` 消费（docs/前端架构.md §1.7）。
+// 消费归集：login 域各模块后续切换；shared 组件本次就地切换。
+@import (reference) './tokens.less';
+
+// 主提交按钮（视觉基线：全宽、44px、主色全态 + 焦点环 + 禁用态）。
+.control-submit() {
+  width: 100%;
+  height: @control-height;
+  color: @color-text-inverse;
+  font-size: @font-size-md;
+  font-weight: @font-weight-semibold;
+  background-color: @color-primary;
+  border: none;
+  border-radius: @radius-md;
+  cursor: pointer;
+  transition:
+    background-color @transition-fast,
+    box-shadow @transition-fast;
+
+  &:hover:not(:disabled) {
+    background-color: @color-primary-hover;
+  }
+
+  &:active:not(:disabled) {
+    background-color: @color-primary-active;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 @ring-width @ring-color;
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+// 文本输入控件（全宽、44px、边框 / 悬停 / 聚焦环 / 禁用态）。
+.control-input() {
+  width: 100%;
+  height: @control-height;
+  padding: 0 0.75rem;
+  color: @color-text;
+  font-size: @font-size-md;
+  background-color: @color-surface;
+  border: @border-width solid @color-border;
+  border-radius: @radius-md;
+  outline: none;
+  transition:
+    border-color @transition-fast,
+    box-shadow @transition-fast;
+
+  &::placeholder {
+    color: @color-text-muted;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: @color-border-strong;
+  }
+
+  &:focus {
+    border-color: @color-primary;
+    box-shadow: 0 0 0 @ring-width @ring-color;
+  }
+
+  &:disabled {
+    color: @color-text-muted;
+    background-color: @color-background-muted;
+    cursor: not-allowed;
+  }
+}
+
+// 字段标签（块级、sm 字号、medium 字重）。
+.control-label() {
+  display: block;
+  color: @color-text;
+  font-size: @font-size-sm;
+  font-weight: @font-weight-medium;
+}
+
+// 文字链接型次按钮（重发验证码 / 字段内联操作同款；login 域 ≥2 份重复）。
+.control-text-button() {
+  align-self: flex-start;
+  padding: 0;
+  color: @color-primary;
+  font-size: @font-size-sm;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color @transition-fast;
+
+  &:hover:not(:disabled) {
+    color: @color-primary-hover;
+    text-decoration: underline;
+  }
+
+  &:disabled {
+    color: @color-text-muted;
+    cursor: not-allowed;
+  }
+}

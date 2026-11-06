@@ -83,7 +83,9 @@ export function PasswordStrengthMeter({
   }
   const rules = meterRules(password, { username, email });
   return (
-    <div role="status" className={styles.meter}>
+    // 评审 P0-3e：aria-live="polite" 显式标注（role="status" 的
+    // 隐式语义补强，规则打勾变化时向读屏播报）。
+    <div role="status" aria-live="polite" className={styles.meter}>
       {rules.map((rule) => (
         <p
           key={rule.key}

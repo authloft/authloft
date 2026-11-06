@@ -36,6 +36,106 @@ export function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value);
 }
 
+// ---------------------------------------------------------------------------
+// 前置校验（评审 P0-2：提交前统一走一道纯函数校验，失败聚焦首错字段）
+// ---------------------------------------------------------------------------
+
+/** required：去首尾空白后非空。 */
+export function isFilled(value: string): boolean {
+  return value.trim() !== '';
+}
+
+/** 验证码满格（§2.1 codeLength 6 同款默认值；组件层常量在 CodeInput，本层不反向依赖）。 */
+const DEFAULT_VALIDATE_CODE_LENGTH = 6;
+
+/** 验证码长度满格：纯数字且位数达标（与 CodeInput 剥离非数字的输入口径一致）。 */
+export function isCodeComplete(
+  value: string,
+  length: number = DEFAULT_VALIDATE_CODE_LENGTH,
+): boolean {
+  return value.length === length && /^\d+$/.test(value);
+}
+
+/** 单字段前置校验未通过原因（i18n 文案由字典层落，本层只给结构化原因）。 */
+export type FieldIssue =
+  | 'required'
+  | 'invalid_email'
+  | 'invalid_phone'
+  | 'code_incomplete';
+
+/** FieldIssue → i18n 键（纯字符串表，不引 i18n 模块，沿组件层键表模式）。 */
+export const FIELD_ISSUE_I18N_KEY: Readonly<Record<FieldIssue, string>> = {
+  required: 'common.errRequired',
+  invalid_email: 'common.errInvalidEmail',
+  invalid_phone: 'common.errInvalidPhone',
+  code_incomplete: 'common.errIncompleteCode',
+};
+
+/**
+ * 可校验字段的最小结构（与 api.sso.v1.Field 生成物结构兼容：
+ * name / type / required / length 子集；length 为生成物 int64（bigint）或已归一 number）。
+ * captcha 类型由 CaptchaWidget 承接，不参与本校验。
+ */
+export interface ValidatableField {
+  readonly name: string;
+  readonly type: string;
+  readonly required?: boolean;
+  readonly length?: bigint | number;
+}
+
+/**
+ * 提交前整表前置校验（纯函数）：required 空值 → email / phone 格式 →
+ * 验证码满格；返回「字段名 → 未通过原因」映射（仅含未通过字段，空对象 = 全过）。
+ * 体验性预校验，服务端为唯一权威（§1.11）。
+ */
+export function validateFields(
+  fields: readonly ValidatableField[],
+  values: Readonly<Record<string, string>>,
+): Readonly<Record<string, FieldIssue>> {
+  const issues: Record<string, FieldIssue> = {};
+  for (const field of fields) {
+    if (field.type === 'captcha') {
+      continue;
+    }
+    const value = values[field.name] ?? '';
+    if (field.required && !isFilled(value)) {
+      issues[field.name] = 'required';
+      continue;
+    }
+    if (!isFilled(value)) {
+      continue; // 非必填空值放行（服务端权威）。
+    }
+    if (field.type === 'email' && !isValidEmail(value)) {
+      issues[field.name] = 'invalid_email';
+    } else if (field.type === 'phone' && !isValidPhone(value)) {
+      issues[field.name] = 'invalid_phone';
+    } else if (
+      (field.type === 'otp' || field.type === 'totp') &&
+      !isCodeComplete(value, normalizeCodeLength(field.length))
+    ) {
+      issues[field.name] = 'code_incomplete';
+    }
+  }
+  return issues;
+}
+
+/** 字段顺序取首个未通过字段名（聚焦首错字段用）；全过 → undefined。 */
+export function firstInvalidField(
+  fields: readonly ValidatableField[],
+  issues: Readonly<Record<string, FieldIssue>>,
+): string | undefined {
+  return fields.find((field) => issues[field.name] !== undefined)?.name;
+}
+
+/** 验证码目标长度归一：缺省 / 零值 / 非法 → 默认 6（与 FieldRenderer codeLengthOf 同口径）。 */
+function normalizeCodeLength(length: bigint | number | undefined): number {
+  if (length === undefined) {
+    return DEFAULT_VALIDATE_CODE_LENGTH;
+  }
+  const n = typeof length === 'bigint' ? Number(length) : length;
+  return Number.isSafeInteger(n) && n > 0 ? n : DEFAULT_VALIDATE_CODE_LENGTH;
+}
+
 /**
  * §5.6 密码策略（键名与默认值同源；前端按同值预校验，服务端为权威）。
  * 各键值域交叉约束（如 min ≤ max ≤ 64）由设置页与管理员自律保证（§5.6 末段）。

@@ -195,6 +195,31 @@ export function resolveFlowStatus(status: string): StatusResolution {
 }
 
 // ---------------------------------------------------------------------------
+// status → 字段名映射（评审 P1-2：field_error 语义的字段落点）
+// ---------------------------------------------------------------------------
+
+/**
+ * field_error 类 status → 后端下发 fields[].name（纯前端表；字段名与登录流程
+ * 因子下发的字段名同源，见 server factor 层下发：username / password / code /
+ * target）。命中后调用方把文案同时 / 改落到字段下方错误槽（FieldRenderer
+ * errors prop）并标 aria-invalid；未命中（如 invalid_request 无确定字段）仍走
+ * 底部 banner。invalid_credentials 系「用户名或密码错误」合并口径，锚定密码字段。
+ */
+export const STATUS_FIELD_MAP: Readonly<Partial<Record<FlowStatusKey, string>>> = {
+  invalid_credentials: 'password',
+  invalid_code: 'code',
+  code_expired: 'code',
+  password_weak: 'password',
+  username_taken: 'username',
+  target_taken: 'target',
+};
+
+/** 查 status 的字段落点；未登记 / 未知 status → undefined（调用方回落 banner）。 */
+export function fieldForStatus(status: string): string | undefined {
+  return (STATUS_FIELD_MAP as Readonly<Record<string, string>>)[status];
+}
+
+// ---------------------------------------------------------------------------
 // 层②（位置二）：ErrorInfo.code——其余域非 200 Connect 错误体（§1.5 行 199-221）
 // ---------------------------------------------------------------------------
 

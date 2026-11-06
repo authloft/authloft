@@ -4,14 +4,20 @@
 import { describe, expect, test } from 'rstack/test';
 import {
   DEFAULT_PASSWORD_POLICY,
+  FIELD_ISSUE_I18N_KEY,
+  firstInvalidField,
+  isCodeComplete,
+  isFilled,
   isValidEmail,
   isValidPhone,
   isValidProviderKey,
   isValidUsername,
   PROVIDER_KEY_PATTERN,
   USERNAME_PATTERN,
+  validateFields,
   validatePassword,
   type PasswordWeakReason,
+  type ValidatableField,
 } from './validate';
 import { maskEmail, maskPhone } from './mask';
 import { toCount, toDisplay } from './int';
@@ -68,6 +74,99 @@ describe('utils/validate 手机号 / 邮箱（§1.11：体验性预校验，后�
     expect(isValidEmail('user@example')).toBe(false);
     expect(isValidEmail('a b@example.com')).toBe(false);
     expect(isValidEmail('')).toBe(false);
+  });
+});
+
+describe('utils/validate 前置校验（评审 P0-2；服务端权威）', () => {
+  test('isFilled：去空白非空；空串 / 纯空白拒绝', () => {
+    expect(isFilled('a')).toBe(true);
+    expect(isFilled(' a ')).toBe(true);
+    expect(isFilled('')).toBe(false);
+    expect(isFilled('   ')).toBe(false);
+  });
+
+  test('isCodeComplete：满格纯数字通过；短 / 长 / 含非数字 / 空串拒绝', () => {
+    expect(isCodeComplete('123456')).toBe(true);
+    expect(isCodeComplete('12345')).toBe(false);
+    expect(isCodeComplete('1234567')).toBe(false);
+    expect(isCodeComplete('12345a')).toBe(false);
+    expect(isCodeComplete('')).toBe(false);
+    // 自定义长度（totp 8 位场景）。
+    expect(isCodeComplete('12345678', 8)).toBe(true);
+    expect(isCodeComplete('123456', 8)).toBe(false);
+  });
+
+  const FORM: readonly ValidatableField[] = [
+    { name: 'username', type: 'text', required: true },
+    { name: 'email', type: 'email', required: true },
+    { name: 'phone', type: 'phone' },
+    { name: 'code', type: 'otp', required: true, length: BigInt(6) },
+    { name: 'captcha', type: 'captcha' },
+  ];
+
+  test('validateFields：全过返回空对象；captcha 不参与', () => {
+    expect(
+      validateFields(FORM, {
+        username: 'alice',
+        email: 'a@b.co',
+        code: '123456',
+      }),
+    ).toEqual({});
+  });
+
+  test('validateFields：required 空值 / email 格式 / phone 格式 / 验证码未满格逐项命中', () => {
+    const issues = validateFields(FORM, {
+      username: '  ',
+      email: 'not-an-email',
+      phone: '12345',
+      code: '123',
+    });
+    expect(issues).toEqual({
+      username: 'required',
+      email: 'invalid_email',
+      phone: 'invalid_phone',
+      code: 'code_incomplete',
+    });
+  });
+
+  test('validateFields：非必填空值放行；required 优先于格式校验', () => {
+    expect(validateFields(FORM, { username: 'u', email: 'a@b.co', code: '123456' })).toEqual({});
+    expect(validateFields([{ name: 'e', type: 'email', required: true }], {})).toEqual({
+      e: 'required',
+    });
+    // 验证码长度取字段 length（bigint 归一）；缺省 / 零值 → 默认 6。
+    expect(
+      validateFields([{ name: 'c', type: 'totp', required: true, length: 8 }], {
+        c: '12345678',
+      }),
+    ).toEqual({});
+    expect(
+      validateFields([{ name: 'c', type: 'totp', required: true, length: 8 }], {
+        c: '123456',
+      }),
+    ).toEqual({ c: 'code_incomplete' });
+    expect(
+      validateFields([{ name: 'c', type: 'otp', required: true, length: BigInt(0) }], {
+        c: '123456',
+      }),
+    ).toEqual({});
+  });
+
+  test('firstInvalidField：按字段顺序取首错；全过 → undefined', () => {
+    const issues = validateFields(FORM, { email: 'bad', code: '1' });
+    expect(firstInvalidField(FORM, issues)).toBe('username');
+    expect(firstInvalidField(FORM, { code: 'code_incomplete' })).toBe('code');
+    expect(firstInvalidField(FORM, {})).toBeUndefined();
+  });
+
+  test('FIELD_ISSUE_I18N_KEY：四种原因全覆盖且键在字典存在', () => {
+    expect(Object.keys(FIELD_ISSUE_I18N_KEY).sort()).toEqual(
+      ['code_incomplete', 'invalid_email', 'invalid_phone', 'required'].sort(),
+    );
+    // 键存在性由 i18n 测试（字典键集对齐）与组件层消费共同保证。
+    for (const key of Object.values(FIELD_ISSUE_I18N_KEY)) {
+      expect(key).toMatch(/^common\.err/);
+    }
   });
 });
 

@@ -5,10 +5,12 @@ import { describe, expect, test } from 'rstack/test';
 import {
   ApiError,
   CODE_TABLE,
+  fieldForStatus,
   FLOW_STATUS_TABLE,
   isKnownCode,
   resolveCode,
   resolveFlowStatus,
+  STATUS_FIELD_MAP,
   type FlowStatusKey,
   type StatusAction,
 } from './errors';
@@ -242,6 +244,35 @@ describe('shared/api/errors 层②（位置二）：ErrorInfo.code + Connect 标
     }
     for (const code of ['__no_such_code__', 'canceled', 'deadline_exceeded', 'config_invalid']) {
       expect(isKnownCode(code)).toBe(false);
+    }
+  });
+});
+
+describe('shared/api/errors status→字段名映射（评审 P1-2 field_error 落点）', () => {
+  test('登记项：与后端 fields[].name 同源（username / password / code / target）', () => {
+    expect(fieldForStatus('username_taken')).toBe('username');
+    expect(fieldForStatus('password_weak')).toBe('password');
+    expect(fieldForStatus('target_taken')).toBe('target');
+    expect(fieldForStatus('invalid_code')).toBe('code');
+    expect(fieldForStatus('code_expired')).toBe('code');
+    // invalid_credentials 系「用户名或密码错误」合并口径，锚定密码字段。
+    expect(fieldForStatus('invalid_credentials')).toBe('password');
+  });
+
+  test('未登记 status（含 field_error 动作但无确定字段的 invalid_request）→ undefined', () => {
+    expect(fieldForStatus('invalid_request')).toBeUndefined();
+    expect(fieldForStatus('failed')).toBeUndefined();
+    expect(fieldForStatus('too_many_requests')).toBeUndefined();
+  });
+
+  test('未知 / 空 status → undefined（调用方回落 banner，不透出原文）', () => {
+    expect(fieldForStatus('__no_such_status__')).toBeUndefined();
+    expect(fieldForStatus('')).toBeUndefined();
+  });
+
+  test('映射键集是 §1.6 封闭全表的子集（防自造 status 词）', () => {
+    for (const key of Object.keys(STATUS_FIELD_MAP)) {
+      expect(FLOW_STATUS_TABLE).toHaveProperty(key);
     }
   });
 });

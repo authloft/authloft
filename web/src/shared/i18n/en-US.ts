@@ -34,6 +34,12 @@ export const enUS: I18nMessages = {
   'common.providerIconAlt': 'Provider icon',
   'common.refreshAndRetry': 'Please refresh and try again',
   'common.captchaLoadFailed': 'Captcha failed to load',
+  'common.loading': 'Loading…',
+  // 前置校验字段级文案（validate.ts FieldIssue → 键映射见 FIELD_ISSUE_I18N_KEY）。
+  'common.errRequired': 'This field is required',
+  'common.errInvalidEmail': 'Invalid email address',
+  'common.errInvalidPhone': 'Invalid phone number',
+  'common.errIncompleteCode': 'Please enter the full code',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': 'Password',

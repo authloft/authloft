@@ -1,6 +1,8 @@
 // FieldRenderer 样式（docs/前端架构.md §1.7；视觉重做：输入控件统一
-// 高度 / 边框 / 聚焦环 / 禁用态，字段纵向节奏交给父级 .form 的 gap）。
+// 高度 / 边框 / 聚焦环 / 禁用态，字段纵向节奏交给父级 .form 的 gap；
+// .label/.input/.inlineButton 改消费 controls.less 归集 mixin）。
 @import (reference) '../styles/tokens.less';
+@import (reference) '../styles/controls.less';
 
 .field {
   display: flex;
@@ -9,52 +11,27 @@
 }
 
 .label {
-  display: block;
-  color: @color-text;
-  font-size: @font-size-sm;
-  font-weight: @font-weight-medium;
+  .control-label();
 }
 
 .input {
-  width: 100%;
-  height: @control-height;
-  padding: 0 0.75rem;
-  color: @color-text;
-  font-size: @font-size-md;
-  background-color: @color-surface;
-  border: @border-width solid @color-border;
-  border-radius: @radius-md;
-  outline: none;
-  transition:
-    border-color @transition-fast,
-    box-shadow @transition-fast;
-}
-
-.input::placeholder {
-  color: @color-text-muted;
-}
-
-.input:hover:not(:disabled) {
-  border-color: @color-border-strong;
-}
-
-.input:focus {
-  border-color: @color-primary;
-  box-shadow: 0 0 0 @ring-width @ring-color;
-}
-
-.input:disabled {
-  color: @color-text-muted;
-  background-color: @color-background-muted;
-  cursor: not-allowed;
+  .control-input();
 }
 
 .textarea {
-  .input();
+  .control-input();
   height: auto;
   min-height: 5rem;
   padding: 0.5rem 0.75rem;
   resize: vertical;
+}
+
+// 字段级错误槽（评审 P1-2）：aria-describedby 关联的错误文案落点。
+.fieldError {
+  margin: 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+  line-height: @line-height-body;
 }
 
 .checkbox {
@@ -66,22 +43,5 @@
 
 // 字段内联辅助按钮（如「发送验证码」之外的字段级操作）。
 .inlineButton {
-  align-self: flex-start;
-  padding: 0;
-  color: @color-primary;
-  font-size: @font-size-sm;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: color @transition-fast;
-}
-
-.inlineButton:hover:not(:disabled) {
-  color: @color-primary-hover;
-  text-decoration: underline;
-}
-
-.inlineButton:disabled {
-  color: @color-text-muted;
-  cursor: not-allowed;
+  .control-text-button();
 }

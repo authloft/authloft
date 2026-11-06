@@ -41,6 +41,12 @@ export const zhCN = {
   'common.providerIconAlt': '渠道图标',
   'common.refreshAndRetry': '请刷新重试',
   'common.captchaLoadFailed': '验证码加载失败',
+  'common.loading': '加载中…',
+  // 前置校验字段级文案（validate.ts FieldIssue → 键映射见 FIELD_ISSUE_I18N_KEY）。
+  'common.errRequired': '请填写此项',
+  'common.errInvalidEmail': '邮箱格式不正确',
+  'common.errInvalidPhone': '手机号格式不正确',
+  'common.errIncompleteCode': '请输入完整验证码',
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': '密码登录',

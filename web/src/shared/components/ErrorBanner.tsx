@@ -7,6 +7,7 @@
  * 文案解析（errorText）与剩余次数归一（attemptsCount）为纯函数，
  * node 环境测试覆盖。
  */
+import type { Ref } from 'react';
 import { useCountdown } from '../hooks/useCountdown';
 import { toCount } from '../utils/int';
 import { hasKey, t } from '../i18n';
@@ -51,6 +52,11 @@ export interface ErrorBannerProps {
   retryable?: boolean;
   /** 可重试动作；提供且 retryable 才渲染按钮，倒计时进行中禁用。 */
   onRetry?: () => void;
+  /**
+   * 焦点管理能力（评审 P0-3c）：横幅自带 tabIndex={-1}，调用方持
+   * ref 在提交失败时 `bannerRef.current?.focus()` 移焦（接线归调用侧）。
+   */
+  ref?: Ref<HTMLDivElement>;
 }
 
 export function ErrorBanner({
@@ -60,13 +66,14 @@ export function ErrorBanner({
   attemptsLeft,
   retryable,
   onRetry,
+  ref,
 }: ErrorBannerProps) {
   const { seconds, expired } = useCountdown(retryAfter);
   const counting = !expired && seconds > 0;
   const attempts = attemptsCount(attemptsLeft);
 
   return (
-    <div role="alert" className={styles.banner}>
+    <div role="alert" tabIndex={-1} ref={ref} className={styles.banner}>
       <p className={styles.text}>{errorText(i18nKey, fallbackMessage)}</p>
       {attempts > 0 && (
         <p className={styles.text}>

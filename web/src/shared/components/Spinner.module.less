@@ -1,0 +1,31 @@
+// Spinner 样式（评审 P1-1）：CSS 圆环（边框上段着色 + 旋转），零依赖。
+@import (reference) '../styles/tokens.less';
+
+.spinnerBase() {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.15em;
+  border: 2px solid @color-border-subtle;
+  border-top-color: @color-primary;
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+.spinner {
+  .spinnerBase();
+  width: 20px;
+  height: 20px;
+}
+
+// 按钮内嵌档：与 md 字号按钮文字同量级。
+.spinnerSm {
+  .spinnerBase();
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
