@@ -180,12 +180,14 @@ import {
  *   的数据面；携带 avatarUrl 的解码已在既有用例断言）。
  * AdminLayout / AuditPage 渲染不可测（同上 Blocker）。
  *
- * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
- * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
+ * 【Blocker·已解除】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
+ * 渲染测试曾无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
- * account.test.tsx 头注）——渲染逻辑因此最小化为「纯函数 + 分支渲染」，
- * 可测部分全部落 api.ts / bootstrap.ts / 零 Semi 组件；StatusSwitch 的
- * 乐观更新 / 回滚编排已收口在 shared/app-ui/dataTableLogic（已有测试覆盖）。
+ * account.test.tsx 头注）——**测试链已修复**（define.test
+ * bundleDependencies + ProvidePlugin），路由兜底真渲染断言见文末 routes
+ * describe；可测逻辑最小化收口 api.ts / bootstrap.ts / 零 Semi 组件的
+ * 口径不变；StatusSwitch 的乐观更新 / 回滚编排在 shared/app-ui/
+ * dataTableLogic（已有测试覆盖）。
  *
  * msw 请求链沿 account.test.tsx 模式；al_root 在 transport（http.ts）模块
  * 求值时读 globalThis，故被测模块经 beforeAll 动态 import；单测环境为
@@ -239,11 +241,27 @@ const server = setupServer();
 
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
+let routesMod: typeof import('./routes');
+
+// routes 兜底渲染断言（文末 describe）专用：AdminLayout 的 GetMe 数据门
+// （F-067 加载态 Spin）在 renderToStaticMarkup 下恒落于 loading 分支（effects
+// 不执行、useRequest 无数据），children 永不到达——故对「路由分派 + 兜底
+// 内容」断言时把 AdminLayout 换成透明壳。仅桩布局壳，Semi Empty 等为真实渲染。
+// rstest 仅支持同步工厂且工厂内不可引外部 import（hoisting）——函数组件直接
+// 返回 children 即合法 ReactNode（React 19），数组首元素字符串充「经布局
+// 挂载」标记，用于区分带布局 / 裸兜底两分支形态。
+rs.mock('./layout/AdminLayout', () => ({
+  AdminLayout: (props: { readonly children?: unknown }) => [
+    '__ADMIN_LAYOUT_STUB__',
+    props.children,
+  ],
+}));
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   bootstrapMod = await import('./bootstrap');
   apiMod = await import('./api');
+  routesMod = await import('./routes');
 });
 
 beforeEach(() => {
@@ -2607,6 +2625,39 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
     setLocale('zh-CN');
     expect(getSettingsSections()[0].title).toBe('密码策略');
     expect(apiMod.credentialKindLabel('password')).toBe('密码登录');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// routes：未知路径兜底真渲染（测试链解锁 Semi 加载）
+// ---------------------------------------------------------------------------
+
+describe('routes：未知路径兜底真渲染', () => {
+  function renderAdminApp(pathname: string): string {
+    rs.stubGlobal('window', {
+      location: { pathname },
+      __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
+        .__AUTHLOFT_INIT__,
+    });
+    return renderToStaticMarkup(createElement(routesMod.AdminApp));
+  }
+
+  test('未知 /admin/** → 带布局兜底：Semi Empty 文案 + 返回管理首页链接', () => {
+    const html = renderAdminApp('/admin/does-not-exist');
+    expect(html).toContain('页面不存在');
+    expect(html).toContain('返回管理首页');
+    expect(html).toContain('href="/admin/providers"');
+    // 经 AdminLayout 挂载（文件头部透明壳 mock 的标记），与裸兜底分支区分。
+    expect(html).toContain('__ADMIN_LAYOUT_STUB__');
+    expect(html).toContain('semi-empty');
+  });
+
+  test('非 /admin 前缀 → 裸兜底（同款文案链接，不套 Layout）', () => {
+    const html = renderAdminApp('/nope');
+    expect(html).toContain('页面不存在');
+    expect(html).toContain('返回管理首页');
+    expect(html).toContain('href="/admin/providers"');
+    expect(html).not.toContain('__ADMIN_LAYOUT_STUB__');
   });
 });
 

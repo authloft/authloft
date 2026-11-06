@@ -16,6 +16,7 @@
  * （§8：methods 仅 login 必填）。401/404 分流在 AdminLayout（GetMe 失败时
  * 处理），路由层不发请求。
  */
+import { Empty } from '@douyinfe/semi-ui-19';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
 import { AdminLayout } from './layout/AdminLayout';
@@ -199,11 +200,20 @@ export function AdminApp() {
     );
   }
   if (path.startsWith(ADMIN_PREFIX)) {
+    // 未知 /admin/** 兜底——带布局的不存在页（Semi Empty +
+    // 回首页链接，整页跳转沿 NAV 既有 <a href> 口径，不做 SPA 化、不引路由库）。
     return (
       <AdminLayout alRoot={boot.alRoot} activeKey={path} breadcrumb={[t('admin.rootTitle')]}>
-        <p role="status">{t('admin.rootTitle')}</p>
+        <Empty description={t('admin.routeNotFound')}>
+          <a href={PROVIDERS_PATH}>{t('admin.backToHome')}</a>
+        </Empty>
       </AdminLayout>
     );
   }
-  return <p role="status">{t('admin.routeNotFound')}</p>;
+  // 非 /admin 前缀（服务端仅在 /admin/** 下发本 SPA 的防御分支）：同款不存在页，无布局可挂。
+  return (
+    <Empty description={t('admin.routeNotFound')}>
+      <a href={PROVIDERS_PATH}>{t('admin.backToHome')}</a>
+    </Empty>
+  );
 }

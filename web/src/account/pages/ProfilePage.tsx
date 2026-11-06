@@ -33,6 +33,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Avatar,
+  Banner,
   Button,
   DatePicker,
   Descriptions,
@@ -243,7 +244,10 @@ export function ProfilePageView(props: {
   const { profile, error } = props;
   if (profile === undefined) {
     if (props.status === 'error' && !isUnauthenticatedError(error)) {
-      return <p role="alert">{t('account.profileLoadFailed')}</p>;
+      // 页级加载失败裸文本 → Semi Banner（自带 role="alert"）。
+      return (
+        <Banner type="danger" fullMode={false} description={t('account.profileLoadFailed')} />
+      );
     }
     return <Spin />;
   }

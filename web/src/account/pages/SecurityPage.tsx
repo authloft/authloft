@@ -86,7 +86,12 @@ export function SecurityPageView(props: {
   const { config, error } = props;
   if (config === undefined) {
     if (props.status === 'error' && !isUnauthenticatedError(error)) {
-      return <p role="alert">{t('account.configLoadFailed')}</p>;
+      // 页级加载失败裸文本 → Semi Banner（自带 role="alert"；
+      // fullMode=false 为内容区形态，admin 同口径）。行内表单校验
+      // 错误保持行内不动。
+      return (
+        <Banner type="danger" fullMode={false} description={t('account.configLoadFailed')} />
+      );
     }
     return <Spin />;
   }

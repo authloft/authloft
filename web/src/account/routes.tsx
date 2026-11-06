@@ -9,6 +9,7 @@
  * （§8：methods 仅 login 必填），故无登录端的错误态分支。
  * 文案经 shared/i18n（account.* 域键）。
  */
+import { Empty } from '@douyinfe/semi-ui-19';
 import { t } from '../shared/i18n';
 import { loadAccountBootstrap } from './bootstrap';
 import { AppLayout } from './layout/AppLayout';
@@ -63,5 +64,13 @@ export function AccountApp() {
       </AppLayout>
     );
   }
-  return <p role="status">{t('account.routeNotFound')}</p>;
+  // 未知路径兜底——带布局的不存在页（Semi Empty + 回首页链接，
+  // 整页跳转沿 NAV 既有 <a href> 口径，不做 SPA 化、不引路由库）。
+  return (
+    <AppLayout alRoot={boot.alRoot} activeKey="" breadcrumb={[t('account.personalCenter')]}>
+      <Empty description={t('account.routeNotFound')}>
+        <a href={PROFILE_PATH}>{t('account.backToHome')}</a>
+      </Empty>
+    </AppLayout>
+  );
 }

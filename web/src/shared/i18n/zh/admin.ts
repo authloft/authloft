@@ -188,6 +188,8 @@ export const admin = {
   'admin.logout': '退出登录',
   'admin.loading': '加载中…',
   'admin.routeNotFound': '页面不存在',
+  // 未知路径兜底页的返回链接。
+  'admin.backToHome': '返回管理首页',
   'admin.renderError': '页面出现异常，请刷新重试',
   'admin.meAvatarAlt': '管理员头像',
 

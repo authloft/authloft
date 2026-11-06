@@ -14,6 +14,8 @@ export const account = {
   'account.logout': '退出登录',
   'account.appTitle': 'Authloft 用户中心',
   'account.routeNotFound': '页面不存在',
+  // 未知路径兜底页的返回链接。
+  'account.backToHome': '返回个人中心',
   'account.renderError': '页面出现异常，请刷新重试',
 
   // ---- SecurityPage（「通行密钥」卡片题复用 factors.webauthn）-------------

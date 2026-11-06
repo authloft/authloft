@@ -12,6 +12,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import { Banner } from '@douyinfe/semi-ui-19';
 import { buildGetEventsRequest, formatUnixTime, getEvents, isUnauthenticatedError } from '../api';
 import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
@@ -96,7 +97,8 @@ export function EventLogTable(): ReactNode {
   }, [error, alRoot]);
 
   if (status === 'error' && !isUnauthenticatedError(error)) {
-    return <p role="alert">{t('account.logLoadFailed')}</p>;
+    // 区块级加载失败裸文本 → Semi Banner（自带 role="alert"）。
+    return <Banner type="danger" fullMode={false} description={t('account.logLoadFailed')} />;
   }
   return (
     <div className={styles.tableWrap}>

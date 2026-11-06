@@ -197,6 +197,8 @@ export const admin: typeof zhAdmin = {
   'admin.logout': 'Sign Out',
   'admin.loading': 'Loading…',
   'admin.routeNotFound': 'Page not found',
+  // back link on the not-found fallback page.
+  'admin.backToHome': 'Back to admin home',
   'admin.renderError': 'Something went wrong; please refresh and try again',
   'admin.meAvatarAlt': 'Administrator avatar',
 

@@ -2,6 +2,8 @@
 //（tsconfig 现代化后移除）。
 // @ts-ignore
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import * as React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { create, toJson, type JsonObject } from '@bufbuild/protobuf';
@@ -88,15 +90,15 @@ import { t } from '../shared/i18n';
  *   ProfilePageView 编辑帧渲染测试受工具链 blocker（本文件头【Blocker】
  *   段），表单交互的可测逻辑即构造函数（本段）。
  *
- * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
- * 测试在本工具链下无法落地：@douyinfe/semi-ui-19 的 lib/es 内部为无扩展名
+ * 【Blocker·已解除】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
+ * 测试曾在本工具链下无法落地：@douyinfe/semi-ui-19 的 lib/es 内部为无扩展名
  * import，node 原生 ESM 无法加载，rstest 0.12.5 对其 externalize（rs.mock /
  * __mocks__ 均为运行时机制，拦不住编译图对 external 包的链接期加载）→ 任何
  * 模块图含 semi import 的测试文件都在加载期崩（实测：rs.mock 全组件 /
- * __mocks__ 目录 / 子路径 import 三路都试过）。唯一工具级解法是
- * rstack.config.mts 的 define.test 配置（Rstest deps inline），该文件本次
- * 不改。渲染测试待工具链修复后补齐；表单 / 上传的可测逻辑因此落在 api.ts
- * （零 Semi 依赖），本文件只 import api / bootstrap。
+ * __mocks__ 目录 / 子路径 import 三路都试过）。**测试链已修复**
+ * （rstack.config.mts define.test bundleDependencies + ProvidePlugin，Semi 经
+ * rspack 管线加载），路由兜底真渲染断言见文末 routes describe；表单组件的
+ * 可测逻辑仍沿原收口落 api.ts（零 Semi 依赖）。
  *
  * msw 请求链沿 login/api.test.ts 模式；al_root 在 transport（http.ts）模块
  * 求值时读 globalThis，故被测模块经 beforeAll 动态 import；单测环境为
@@ -197,6 +199,7 @@ let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
 let ssoMod: typeof import('../shared/api/sso');
 let uploadMod: typeof import('../shared/hooks/useUpload');
+let routesMod: typeof import('./routes');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -204,11 +207,18 @@ beforeAll(async () => {
   apiMod = await import('./api');
   ssoMod = await import('../shared/api/sso');
   uploadMod = await import('../shared/hooks/useUpload');
+  routesMod = await import('./routes');
 });
 
+// rstest 对 .tsx 采用 classic JSX runtime，路由渲染断言经 createElement 显式
+// 引用（admin.test.tsx / login/routes.test.tsx 同口径）。
+const { createElement } = React;
+
 beforeEach(() => {
-  // routes / AppLayout 渲染不可测（见文件头 Blocker），本文件无 JSX 渲染；
-  // stub window 供 getInit（shared/types/init.ts）读取注入块。
+  // classic JSX runtime：测试链 JSX 编译产物引用全局 React——渲染断言前 stub
+  //（afterEach 的 unstubAllGlobals 移除，每测试重置）。
+  rs.stubGlobal('React', React);
+  // stub window 供 getInit（shared/types/init.ts）读取注入块 + routes 读 pathname。
   rs.stubGlobal('window', {
     location: { pathname: '/account/profile' },
     __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
@@ -2132,5 +2142,34 @@ describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函�
     expect(apiMod.profileGenderText(BigInt(1))).toBe('男');
     expect(apiMod.profileGenderText(BigInt(2))).toBe('女');
     expect(apiMod.profileGenderText(BigInt(9))).toBe('9');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// routes：未知路径兜底真渲染（测试链解锁 Semi 加载）
+// ---------------------------------------------------------------------------
+
+describe('routes：未知路径兜底真渲染', () => {
+  function renderAccountApp(pathname: string): string {
+    rs.stubGlobal('window', {
+      location: { pathname },
+      __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
+        .__AUTHLOFT_INIT__,
+    });
+    return renderToStaticMarkup(createElement(routesMod.AccountApp));
+  }
+
+  test('未知路径 /account/does-not-exist → Semi Empty 兜底文案 + 回首页链接', () => {
+    const html = renderAccountApp('/account/does-not-exist');
+    expect(html).toContain('页面不存在');
+    expect(html).toContain('返回个人中心');
+    expect(html).toContain('href="/account/profile"');
+    expect(html).toContain('semi-empty');
+  });
+
+  test('已知路径 /account/security → 不被兜底吞掉（渲染安全中心，无兜底文案）', () => {
+    const html = renderAccountApp('/account/security');
+    expect(html).not.toContain('页面不存在');
+    expect(html).toContain('安全中心');
   });
 });

@@ -14,6 +14,8 @@ export const account: typeof zhAccount = {
   'account.logout': 'Sign out',
   'account.appTitle': 'Authloft User Center',
   'account.routeNotFound': 'Page not found',
+  // back link on the not-found fallback page.
+  'account.backToHome': 'Back to account home',
   'account.renderError': 'This page hit an unexpected error. Please refresh and try again',
 
   // ---- SecurityPage (passkey card title reuses factors.webauthn) ----------
