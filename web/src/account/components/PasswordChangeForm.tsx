@@ -12,10 +12,12 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input } from '@douyinfe/semi-ui-19';
+import { useLocation } from '@modern-js/runtime/router';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   apiErrorText,
   buildChangePasswordRequest,
   changePassword,
@@ -130,15 +132,17 @@ export function PasswordChangeForm(props: {
 
   // §3.3 行 863：改密成功 → 当前会话与全部令牌失效——短暂停留展示提示后
   // 跳登录页（§5 行 483；与 401 同一 loginUrl，replace 防回退到已失效会话页）。
+  // 同样带 returnTo（重登后回安全页；本组件恒渲染于 /security 路由内）。
+  const location = useLocation();
   useEffect(() => {
     if (!done) {
       return;
     }
     const timer = window.setTimeout(() => {
-      window.location.replace(loginUrl(alRoot));
+      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
     }, REDIRECT_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [done, alRoot]);
+  }, [done, alRoot, location]);
 
   const handleSubmit = () => {
     const built = buildChangePasswordRequest(props.hasPassword, currentPassword, newPassword);

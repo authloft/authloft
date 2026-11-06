@@ -28,6 +28,7 @@
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
+import { HashRouter } from '@modern-js/runtime/router';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
@@ -68,11 +69,14 @@ class AccountErrorBoundary extends Component<
   }
 }
 
-/** 根组件（框架接管挂载，默认导出即挂载单元）：错误边界包裹路由。 */
+/** 根组件（框架接管挂载，默认导出即挂载单元）：HashRouter
+ *（hash 内路径 `/account#/profile` 等）包裹错误边界与路由表。 */
 export default function App(): ReactNode {
   return (
-    <AccountErrorBoundary>
-      <AccountApp />
-    </AccountErrorBoundary>
+    <HashRouter>
+      <AccountErrorBoundary>
+        <AccountApp />
+      </AccountErrorBoundary>
+    </HashRouter>
   );
 }

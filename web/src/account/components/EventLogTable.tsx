@@ -13,7 +13,14 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Banner } from '@douyinfe/semi-ui-19';
-import { buildGetEventsRequest, formatUnixTime, getEvents, isUnauthenticatedError } from '../api';
+import { useLocation } from '@modern-js/runtime/router';
+import {
+  accountReturnTo,
+  buildGetEventsRequest,
+  formatUnixTime,
+  getEvents,
+  isUnauthenticatedError,
+} from '../api';
 import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
@@ -89,12 +96,14 @@ export function EventLogTable(): ReactNode {
     run(buildGetEventsRequest(query)).catch(() => {});
   }, [run, query]);
 
+  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §5 行 480：401 统一跳登录（replace：日志页不可回退占位）。
-      window.location.replace(loginUrl(alRoot));
+      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
     }
-  }, [error, alRoot]);
+  }, [error, alRoot, location]);
 
   if (status === 'error' && !isUnauthenticatedError(error)) {
     // 区块级加载失败裸文本 → Semi Banner（自带 role="alert"）。

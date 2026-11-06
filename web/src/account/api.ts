@@ -715,6 +715,18 @@ export async function startBindRedirect(
 // ---------------------------------------------------------------------------
 
 /**
+ * 401 跳登录的 returnTo 拼装（returnTo 约定）：`/account#`
+ * 前缀 + hash 内路径与 query（HashRouter 下 `useLocation()` 的 pathname /
+ * search 即 hash 内部分）——前缀形态保证落在 shared/urls.ts
+ * `sanitizeReturnTo` 白名单内（仅放行 `/account#` / `/admin#`，防开放重定向）。
+ * 纯函数，node 可测（四处 401 跳登录消费：ProfilePage / SecurityPage /
+ * EventLogTable / PasswordChangeForm）。
+ */
+export function accountReturnTo(pathname: string, search: string): string {
+  return `/account#${pathname}${search}`;
+}
+
+/**
  * redirect 回调落地 ?bind= 参数读取（§3.7.1 A 行 969-970：OAuthCallbackPage
  * b 分支完成后 location.replace(/account/security?bind=…) 带回）；
  * 空 / 缺省 → undefined。

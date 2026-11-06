@@ -4,6 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from '@modern-js/runtime/router';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { create, toJson, type JsonObject } from '@bufbuild/protobuf';
@@ -46,6 +47,7 @@ import {
 import type { QRPanelPhase } from '../shared/components/QRCodePanel';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
+import { loginUrl, sanitizeReturnTo } from '../shared/urls';
 
 /**
  * account 底座 + 安全中心测试。覆盖边界（既定口径「覆盖
@@ -2146,30 +2148,64 @@ describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函�
 });
 
 // ---------------------------------------------------------------------------
-// routes：未知路径兜底真渲染（测试链解锁 Semi 加载）
+// routes：HashRouter 路由表 + path:'*' 兜底（MemoryRouter
+// 注入初始路径，模式无关；pathname 兜底断言已随 hash 化重写）
 // ---------------------------------------------------------------------------
 
-describe('routes：未知路径兜底真渲染', () => {
-  function renderAccountApp(pathname: string): string {
-    rs.stubGlobal('window', {
-      location: { pathname },
-      __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
-        .__AUTHLOFT_INIT__,
-    });
-    return renderToStaticMarkup(createElement(routesMod.AccountApp));
+describe("routes：HashRouter 路由表与 path:'*' 兜底", () => {
+  function renderAccountApp(initialPath: string): string {
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [initialPath] },
+        createElement(routesMod.AccountApp),
+      ),
+    );
   }
 
-  test('未知路径 /account/does-not-exist → Semi Empty 兜底文案 + 回首页链接', () => {
-    const html = renderAccountApp('/account/does-not-exist');
+  test("未知路径 → path:'*' 兜底：Semi Empty 文案 + hash 内返回链接", () => {
+    const html = renderAccountApp('/does-not-exist');
     expect(html).toContain('页面不存在');
     expect(html).toContain('返回个人中心');
-    expect(html).toContain('href="/account/profile"');
+    expect(html).toContain('href="#/profile"');
     expect(html).toContain('semi-empty');
   });
 
-  test('已知路径 /account/security → 不被兜底吞掉（渲染安全中心，无兜底文案）', () => {
-    const html = renderAccountApp('/account/security');
+  test('已知路径 /security → 不被兜底吞掉（渲染安全中心，无兜底文案）', () => {
+    const html = renderAccountApp('/security');
     expect(html).not.toContain('页面不存在');
     expect(html).toContain('安全中心');
+  });
+
+  test('hash 内 query 不影响路由匹配（/security?bind=success 仍命中安全中心）', () => {
+    const html = renderAccountApp('/security?bind=success');
+    expect(html).not.toContain('页面不存在');
+    expect(html).toContain('安全中心');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// accountReturnTo（四处 401 跳登录带 returnTo）
+// ---------------------------------------------------------------------------
+
+describe('accountReturnTo（401 跳登录 returnTo 白名单形态，纯函数）', () => {
+  test('hash 内路径 + query 拼为 /account# 前缀形态', () => {
+    expect(apiMod.accountReturnTo('/profile', '')).toBe('/account#/profile');
+    expect(apiMod.accountReturnTo('/security', '')).toBe('/account#/security');
+    expect(apiMod.accountReturnTo('/security', '?bind=success')).toBe(
+      '/account#/security?bind=success',
+    );
+    expect(apiMod.accountReturnTo('/audit', '')).toBe('/account#/audit');
+  });
+
+  test('401 跳转 URL：loginUrl 拼装后含编码 returnTo，解码后以 /account# 开头且过白名单', () => {
+    const returnTo = apiMod.accountReturnTo('/security', '?bind=x');
+    const url = loginUrl('https://uc.example.com', returnTo);
+    expect(url).toContain('/sso/login?returnTo=');
+    const encoded = url.slice(url.indexOf('returnTo=') + 'returnTo='.length);
+    expect(encoded).not.toContain('/account#'); // 已编码（# → %23）
+    expect(decodeURIComponent(encoded).startsWith('/account#')).toBe(true);
+    // 白名单校验（sanitizeReturnTo 仅放行 /account# / /admin# 前缀）原样放行。
+    expect(sanitizeReturnTo(decodeURIComponent(encoded))).toBe(returnTo);
   });
 });

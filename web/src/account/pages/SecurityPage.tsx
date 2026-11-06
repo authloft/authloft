@@ -17,16 +17,17 @@
  * SecurityPage 不渲染 AvatarUploader）。
  *
  * 【redirect 绑定回调落地（§3.7.1 A 行 969-971）】OAuthCallbackPage b 分支
- * 完成后 location.replace('/account/security?bind={success|ErrorInfo.code}')
+ * 完成后 location.replace('/account#/security?bind={success|ErrorInfo.code}')
  * 回到本页——挂载时读取 ?bind= 出成功 / 失败横幅（bindParamMessage：target_
  * taken 出绑定语境文案「该账号已被其他账号绑定」），
- * 随即 replaceState 清参防刷新复读（不新增历史项）。
+ * 随即清参防刷新复读（setSearchParams replace，保 hash 清 query）。
  *
  * 401 处理沿 ProfilePage 模式（§5 行 480）：isUnauthenticatedError +
  * loginUrl 由页面层统一实现。文案经 shared/i18n（account.* 域键；
  * 「通行密钥」卡片题复用 factors.webauthn）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import { useLocation, useSearchParams } from '@modern-js/runtime/router';
 import { Banner, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { create } from '@bufbuild/protobuf';
 import type {
@@ -38,6 +39,7 @@ import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   bindParamMessage,
   getConfig,
   isUnauthenticatedError,
@@ -149,29 +151,38 @@ export function SecurityPage(): ReactNode {
   const [detailVersion, setDetailVersion] = useState(0);
   const [bindNotice, setBindNotice] = useState<BindNotice | undefined>(undefined);
   const alRoot = loadAccountBootstrap().alRoot;
+  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §5 行 480：401 统一跳登录（replace：安全中心不可回退占位）。
-      window.location.replace(loginUrl(alRoot));
+      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
     }
-  }, [error, alRoot]);
+  }, [error, alRoot, location]);
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
     // unhandled rejection；错误呈现 / 401 跳转由上 effect + View 帧处理。
     run().catch(() => {});
   }, [run]);
   // redirect 绑定回调落地（§3.7.1 A 行 969-971）：挂载时消费 ?bind= 出横幅，
-  // 随即清参（replaceState 不新增历史项，防刷新复读；readBindParam 纯函数在
-  // ./api，node 可测）。仅挂载时执行一次（[] 空依赖，pathname 固定本页）。
+  // 随即清参（不新增历史项，防刷新复读；readBindParam 纯函数在 ./api，node
+  // 可测）。**hash 路由已知坑**：query 在 hash 内
+  // （`/account#/security?bind=…`），必须经 useSearchParams 读、
+  // setSearchParams(replace) 清（保留 hash 路径只清 query）——禁止沿用
+  // pathname 时代的 history.replaceState(pathname)（会把整段 hash 抹掉，
+  // 路由跌回 path:'*' 兜底页）。
+  const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    const code = readBindParam(window.location.search);
+    const code = readBindParam(searchParams.toString());
     if (code !== undefined) {
       setBindNotice({
         kind: code === 'success' ? 'success' : 'error',
         text: bindParamMessage(code),
       });
-      window.history.replaceState(null, '', window.location.pathname);
+      setSearchParams({}, { replace: true });
     }
+    // 仅挂载时执行一次；setSearchParams 引用稳定，不入依赖（防清参后重触发）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const refreshConfig = () => {
     // 开关 / 绑定成功只刷 mfaPolicy（§5 行 495：重取 GetConfig 摘要）。

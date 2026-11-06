@@ -43,11 +43,13 @@ import {
   Toast,
   Typography,
 } from '@douyinfe/semi-ui-19';
+import { useLocation } from '@modern-js/runtime/router';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { AvatarUploader } from '../components/AvatarUploader';
 import {
+  accountReturnTo,
   apiErrorText,
   buildAvatarPersistRequest,
   buildUpdateProfileRequest,
@@ -323,12 +325,15 @@ export function ProfilePage(): ReactNode {
   const [draft, setDraft] = useState<ProfileEditDraft | undefined>(undefined);
   const [fieldError, setFieldError] = useState<ProfileEditFieldError | undefined>(undefined);
   const alRoot = loadAccountBootstrap().alRoot;
+  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页；
+  // useLocation 在 HashRouter 下即 hash 内 location，白名单前缀形态见 api.ts）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §5 行 480：401 统一跳登录（replace：资料页不可回退占位）。
-      window.location.replace(loginUrl(alRoot));
+      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
     }
-  }, [error, alRoot]);
+  }, [error, alRoot, location]);
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防 unhandled rejection；
     // 错误呈现 / 401 跳转均由上 effect + View 帧 处理。
