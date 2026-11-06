@@ -294,6 +294,32 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
   });
 });
 
+describe('qrResultEvent（扫码结论分派，§2.8 行 739-743：登录结论在内层 login 信封）', () => {
+  test('内层 binding_required / 失败态 → response 事件（信封=内层，交状态机分派）', () => {
+    for (const innerStatus of ['binding_required', 'target_taken', 'failed']) {
+      const login = envelope({ status: innerStatus, loginToken: 'lt-bind' });
+      const event = container.qrResultEvent(
+        envelope({ status: 'success', login }),
+      );
+      expect(event).toEqual({ type: 'response', envelope: login });
+    }
+  });
+
+  test('内层 success / 内层缺失 → undefined（终点已由 QRCodeStep completeLogin 跳，不镜像防二次 replace）', () => {
+    expect(
+      container.qrResultEvent(
+        envelope({
+          status: 'success',
+          login: envelope({ status: 'success', redirectTo: 'https://app/h' }),
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      container.qrResultEvent(envelope({ status: 'success' })),
+    ).toBeUndefined(); // 防御：外层 success 必附 login（pollResult 契约）
+  });
+});
+
 describe('isErrorStatus（§4.1 行 395：非 success 即失败，轮询进行中除外）', () => {
   test('流程 / 轮询 / captcha 中间态不作失败处理', () => {
     for (const status of [
@@ -1151,5 +1177,33 @@ describe('LoginContainer 静态 smoke', () => {
     );
     expect(markup).toContain('密码登录');
     expect(markup).toContain('请选择登录方式');
+  });
+
+  // OAuth 回调 mfa_required 完整编排——初始信封直接进状态机。
+  test('initialEnvelope（mfa_required）→ 挂载即渲染 MfaSelector + 未选方式引导（§1.6 行 233 不跳页；信封 mfa.methods 驱动，静态渲染读信封不依赖 effect 镜像）', () => {
+    const markup = renderToStaticMarkup(
+      createElement(container.LoginContainer, {
+        snapshot: SNAPSHOT,
+        initialEnvelope: envelope({
+          status: 'mfa_required',
+          loginToken: 'lt-mfa',
+          mfa: {
+            methods: [
+              create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
+              create(MfaMethodSchema, {
+                method: 'otp_sms',
+                steps: ['challenge', 'form'],
+                maskedTarget: '138****8000',
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
+    expect(markup).toContain('短信验证码'); // factors.otp_sms
+    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式）
+    expect(markup).not.toContain('请选择登录方式'); // 不渲染主因子表单区
+    expect(markup).not.toContain('正在处理'); // 非回调页处理中帧
   });
 });

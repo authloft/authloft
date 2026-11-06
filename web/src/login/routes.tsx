@@ -58,7 +58,12 @@ export function LoginApp() {
       ? path.slice(CALLBACK_PREFIX.length)
       : '';
     if (rest !== '' && !rest.includes('/')) {
-      return <OAuthCallbackPage providerKey={decodeProviderKey(rest)} />;
+      return (
+        <OAuthCallbackPage
+          providerKey={decodeProviderKey(rest)}
+          snapshot={boot.snapshot}
+        />
+      );
     }
     return <p role="status">{t('login.routeNotFound')}</p>;
   }

@@ -19,6 +19,7 @@
  * （common.refreshAndRetry，改用公共键）。
  */
 import { useState, type ComponentType } from 'react';
+import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { RedirectStep } from '../steps/RedirectStep';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { t } from '../../shared/i18n';
@@ -160,15 +161,26 @@ export interface ProviderButtonsProps {
   navigate?: (url: string) => void;
   /** 取授权 URL（缺省 SsoService/Authorize；测试替身）。 */
   request?: (provider: string) => Promise<string>;
+  /**
+   * 扫码登录结论上抛（§2.8 行 739-743）：QRCodeStep onResult 透传——
+   * success 已在面板侧完成终点跳转；binding_required / 失败态交容器状态机
+   * 分派（LoginContainer qrResultEvent）。上抛后关闭扫码面板（图标墙恢复
+   * 可重点，失败态重试 = 重新点击拉码，每次拉码新 captcha §2.8 行 703）。
+   */
+  onQrResult?: (envelope: LoginFlowResponse) => void;
 }
 
 /** qrcode 面板组件的加载态（动态 import 产物，见 pickQr）。 */
-type QRCodeStepComponent = ComponentType<{ providerKey: string }>;
+type QRCodeStepComponent = ComponentType<{
+  providerKey: string;
+  onResult?: (envelope: LoginFlowResponse) => void;
+}>;
 
 export function ProviderButtons({
   providers,
   navigate,
   request,
+  onQrResult,
 }: ProviderButtonsProps) {
   const [redirect, setRedirect] = useState<RedirectState | undefined>(
     undefined,
@@ -230,6 +242,17 @@ export function ProviderButtons({
 
   // JSX 组件变量须大写开头（小写会被解析为字符串标签）。
   const QRStep = qrStep;
+
+  /**
+   * 扫码结论落地：面板结论（success 已跳转 / binding / 失败）上抛
+   * 后关闭面板——分派归容器状态机（LoginContainer qrResultEvent）；图标墙
+   * 恢复可重点（失败态重试 = 重新拉码，每次新 captcha，§2.8 行 703）。
+   */
+  const handleQrResult = (envelope: LoginFlowResponse) => {
+    setQrProvider(undefined);
+    onQrResult?.(envelope);
+  };
+
   return (
     <div>
       <ProviderWall
@@ -238,7 +261,7 @@ export function ProviderButtons({
         onPickQr={pickQr}
       />
       {qrProvider !== undefined && QRStep !== null && (
-        <QRStep providerKey={qrProvider} />
+        <QRStep providerKey={qrProvider} onResult={handleQrResult} />
       )}
     </div>
   );

@@ -213,6 +213,24 @@ export function terminalUrl(envelope: LoginFlowResponse): string {
 }
 
 /**
+ * 扫码结论信封事件（§2.8 行 739-743）：QRCodeStep 上抛外层信封，
+ * 登录结论在**内层 `login`**（§1.3 同构信封）——内层非 success → 状态机
+ * response 事件（binding_required → LoginFlowView 原地渲染 BindingPage，
+ * §1.6 行 234；失败态 → 表单区 + ErrorBanner 表驱动文案，图标墙可重新
+ * 拉码 = 重试动作，§1.6 行 240）；内层 success 不镜像（终点跳转已由
+ * QRCodeStep completeLogin 完成，防二次 replace）；内层缺失（防御，
+ * 后端 pollResult 必填）→ undefined 交消费方零值兜底。纯函数，node 可测。
+ */
+export function qrResultEvent(
+  outer: LoginFlowResponse,
+): FlowEvent | undefined {
+  const login = outer.login;
+  return login !== undefined && login.status !== 'success'
+    ? { type: 'response', envelope: login }
+    : undefined;
+}
+
+/**
  * 副作用执行（machine.FlowEffect 的容器落地）：complete → 跳转（注入
  * location.replace 语义，测试传记录函数）；restart → 回到第一步并按 status
  * 提示（token 类提示「登录已超时…」由 errors.status.* 字典承载，§4.1 行 403）。
@@ -323,6 +341,11 @@ export interface LoginFlowViewProps {
   onCredential?: (credential: JsonObject) => void;
   /** webauthn 最近一次下发的 options 容器镜像（失败态信封无 nextStep，容器持值注入）。 */
   challengeData?: JsonObject;
+  /**
+   * 扫码登录结论（§2.8 行 739-743）：透传 MethodTabs → ProviderButtons
+   * → QRCodeStep 上抛——binding_required / 失败态经容器 qrResultEvent 分派。
+   */
+  onQrResult?: (envelope: LoginFlowResponse) => void;
 }
 
 /**
@@ -377,6 +400,7 @@ export function LoginFlowView({
   mfaMethods,
   onCredential,
   challengeData,
+  onQrResult,
 }: LoginFlowViewProps) {
   // 扫码轮询态（本容器不发起轮询；QRCodeStep / PollStep 归后续实现）。
   if (
@@ -564,6 +588,7 @@ export function LoginFlowView({
         methods={snapshot.methods}
         current={state.method}
         onSelect={onSelect}
+        onQrResult={onQrResult}
       />
       {state.method === '' ? (
         <p role="status">{t('login.selectMethodHint')}</p>
@@ -594,10 +619,30 @@ export function LoginFlowView({
 export interface LoginContainerProps {
   /** 注入快照（§2.1；由 bootstrap / 页面层读取后传入）。 */
   snapshot: MethodsSnapshot;
+  /**
+   * 初始信封（OAuth 回调 mfa_required 场景）：LoginOauth 响应直接
+   * 进状态机（response 事件语义，挂载即生效）——mfa_required 就地渲染
+   * mfa.methods 选择器 + 因子组件（§1.6 行 233「不跳页」），MFA 提交走
+   * SsoService/LoginDefault（loginToken 由 api 层 applyEnvelope 托管续接，
+   * 页面不自管），success 终点跳转 executeEffects（§4.1 行 383）。
+   */
+  initialEnvelope?: LoginFlowResponse;
 }
 
-export function LoginContainer({ snapshot }: LoginContainerProps) {
-  const [state, dispatch] = useReducer(flowReducer, INITIAL_FLOW_STATE);
+export function LoginContainer({
+  snapshot,
+  initialEnvelope,
+}: LoginContainerProps) {
+  // 惰性初始化：初始信封经 reducer response 事件进状态机（effects 语义
+  // 完整保留——mfa_required / binding_required 无副作用标记）。
+  const [state, dispatch] = useReducer(
+    flowReducer,
+    initialEnvelope,
+    (env) =>
+      env === undefined
+        ? INITIAL_FLOW_STATE
+        : flowReducer(INITIAL_FLOW_STATE, { type: 'response', envelope: env }),
+  );
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
   // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
@@ -755,6 +800,17 @@ export function LoginContainer({ snapshot }: LoginContainerProps) {
     setChallengeData(undefined);
   };
 
+  // 扫码登录结论（§2.8 行 739-743）：内层非 success 信封进状态机
+  // 分派（binding_required → 原地 BindingPage；失败态 → 表单区 + ErrorBanner，
+  // 图标墙可重新拉码 = 重试）；success / 内层缺失不动作（终点跳转已由
+  // QRCodeStep completeLogin 完成）。
+  const onQrResult = (outer: LoginFlowResponse) => {
+    const event = qrResultEvent(outer);
+    if (event !== undefined) {
+      dispatch(event);
+    }
+  };
+
   return (
     <LoginFlowView
       snapshot={snapshot}
@@ -770,6 +826,7 @@ export function LoginContainer({ snapshot }: LoginContainerProps) {
       mfaMethods={mfaMethods}
       onCredential={submitCredential}
       challengeData={challengeData}
+      onQrResult={onQrResult}
     />
   );
 }

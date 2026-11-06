@@ -188,15 +188,28 @@ export async function createQrcode(
   return ssoClient.createQrcode(req);
 }
 
-/** SsoService/GetLoginTicket（§2.8 行 710）：查询 / 长轮询 / 完成登录；pollSeconds 上限 15（§2.8 行 714，由调用方遵守）。 */
+/**
+ * SsoService/GetLoginTicket（§2.8 行 710）：查询 / 长轮询 / 完成登录；pollSeconds
+ * 上限 15（§2.8 行 714，由调用方遵守）。
+ *
+ * 扫码轮询双层信封（§2.8 行 739/743）：外层是票据状态应答（status /
+ * ticket / login），**内层 `login` 才是 §1.3 登录流程信封**（命中时后端
+ * pollResult 必填）——loginToken 的覆盖 / 清空以内层为准：binding_required 时
+ * 内层携带 tp 载荷 login_token（免密建号续接依赖），外层 success（票据终态）
+ * 不得误清；外层 success 而内层缺失（防御，不会发生）时兜底清空。
+ */
 export async function getLoginTicket(
   ticket: string,
   pollSeconds?: number,
 ): Promise<LoginFlowResponse> {
-  return applyEnvelope(
-    await ssoClient.getLoginTicket({
-      ticket,
-      poll: BigInt(pollSeconds ?? 0),
-    }),
-  );
+  const response = await ssoClient.getLoginTicket({
+    ticket,
+    poll: BigInt(pollSeconds ?? 0),
+  });
+  if (response.login !== undefined) {
+    applyEnvelope(response.login);
+  } else if (response.status === 'success') {
+    clearLoginToken();
+  }
+  return response;
 }

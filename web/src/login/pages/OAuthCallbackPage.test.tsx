@@ -14,8 +14,11 @@ import { create } from '@bufbuild/protobuf';
 import { clearLoginToken, getLoginToken } from '../loginTokenStore';
 import {
   LoginFlowResponseSchema,
+  MfaMethodSchema,
+  MfaSchema,
   type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
+import type { MethodsSnapshot } from '../../shared/types/init';
 import { saveOidcContext } from '../oidcContext';
 
 const { createElement } = React;
@@ -95,11 +98,18 @@ function envelope(init: Record<string, unknown>): LoginFlowResponse {
   return create(LoginFlowResponseSchema, init);
 }
 
+/**
+ * mfa 分支经 LoginContainer 消费快照（完整编排）；其余状态帧不读快照，
+ * 取空快照（mfa 分支不渲染 MethodTabs，空 methods 无影响）。
+ */
+const CALLBACK_SNAPSHOT: MethodsSnapshot = { methods: [] };
+
 function renderView(
   init: { status: string; envelope?: LoginFlowResponse },
 ): string {
   return renderToStaticMarkup(
     createElement(pagesMod.OAuthCallbackView, {
+      snapshot: CALLBACK_SNAPSHOT,
       status: init.status,
       envelope: init.envelope,
       onBackToLogin: () => {},
@@ -257,7 +267,7 @@ describe('dispatchCallback 分派编排', () => {
     expect(calls.navigations).toHaveLength(0);
   });
 
-  test('mfa_required → 落帧不跳转（占位帧渲染交页面，§1.6 行 233）', async () => {
+  test('mfa_required → 落帧不跳转（mfa 编排帧渲染交页面，§1.6 行 233；现为 LoginContainer 完整编排）', async () => {
     const { calls, deps } = recorder(
       envelope({ status: 'mfa_required', loginToken: 'lt-mfa' }),
     );
@@ -321,13 +331,31 @@ describe('OAuthCallbackView 状态帧渲染', () => {
     expect(markup).not.toContain('正在处理');
   });
 
-  test('mfa_required 占位帧 → 提示返回重新登录 + 返回登录按钮（完整编排归联调卡）', () => {
+  test('mfa_required 帧 → LoginContainer 完整编排：MfaSelector 因子按钮 + 未选方式引导（§1.6 行 233「就地渲染、不跳页」）', () => {
     const markup = renderView({
       status: 'mfa_required',
-      envelope: envelope({ status: 'mfa_required', loginToken: 'lt-1' }),
+      envelope: envelope({
+        status: 'mfa_required',
+        loginToken: 'lt-1',
+        mfa: create(MfaSchema, {
+          methods: [
+            create(MfaMethodSchema, {
+              method: 'totp',
+              steps: ['form'],
+            }),
+            create(MfaMethodSchema, {
+              method: 'otp_sms',
+              steps: ['challenge', 'form'],
+              maskedTarget: '138****8000',
+            }),
+          ],
+        }),
+      }),
     });
-    expect(markup).toContain('登录需要二次验证，请返回重新登录');
-    expect(markup).toContain('返回登录');
+    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
+    expect(markup).toContain('短信验证码'); // factors.otp_sms
+    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式引导）
+    expect(markup).not.toContain('正在处理'); // 非处理中帧
   });
 
   test('失败态（state_mismatch 响应）→ ErrorBanner（§1.6 表驱动）+ 返回登录', () => {

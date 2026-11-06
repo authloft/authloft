@@ -12,14 +12,14 @@
  * - 其他 / 缺失 → 视为 state_mismatch，跳 /sso/login（§2.7.3 行 610）。
  *
  * LoginOauth 响应走 §1.3 登录流程信封（loginToken 无条件覆盖 / success 清空由
- * api 层 applyEnvelope 托管），页面级处理裁量（接入
- * LoginContainer 不属本实现范围）：
+ * api 层 applyEnvelope 托管），页面级处理（既定分派口径，完整编排）：
  * - success → 终点跳转（flowTerminalUrl：syncCookieUrl 优先，§1.3 行 136）；
  * - binding_required → 原地渲染 BindingPage（§1.6 行 234「渲染绑定选择页」，
  *   LoginContainer binding 分支同款用法；建号 / 退出编排由其自带）；
- * - mfa_required → **占位帧**：§1.6 行 233 规定就地渲染 mfa.methods 选择器 +
- *   因子组件（LoginContainer 既有能力），接入不属本实现范围——提示返回重新
- *   登录，完整编排归后续联调实现；
+ * - mfa_required → **完整编排**（§1.6 行 233「就地渲染 mfa.methods
+ *   选择器 + 因子组件，不跳页」）：复用 LoginContainer 既有能力
+ *   （initialEnvelope 进状态机；MFA 提交走 SsoService/LoginDefault，success
+ *   终点跳转 executeEffects；loginToken 由 api 层托管续接，页面不自管）；
  * - 失败态 → ErrorBanner（§1.6 表驱动文案）+ 返回登录：回调页无表单，字段级
  *   提示无处着落，「回到第一步」类动作统一为回 /sso/login。
  *
@@ -35,7 +35,9 @@ import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
 import { ErrorBanner } from '../../shared/components';
 import { t } from '../../shared/i18n';
+import type { MethodsSnapshot } from '../../shared/types/init';
 import { loginOauth, type LoginOauthInput } from '../api';
+import { LoginContainer } from '../LoginContainer';
 import { clearLoginToken } from '../loginTokenStore';
 import { BindingPage, exitBinding } from './BindingPage';
 import { flowTerminalUrl, isFlowErrorStatus, ssoPath } from './RegisterPage';
@@ -131,6 +133,8 @@ export async function dispatchCallback(
 // ---------------------------------------------------------------------------
 
 export interface OAuthCallbackViewProps {
+  /** 注入快照（§2.1；mfa_required 完整编排经 LoginContainer 消费）。 */
+  readonly snapshot: MethodsSnapshot;
   /** 帧状态：idle（处理中）/ bind（b 占位）/ 信封 status。 */
   readonly status: string;
   /** 最近一次响应信封（binding_required 的 binding、失败态 error 来源）。 */
@@ -140,6 +144,7 @@ export interface OAuthCallbackViewProps {
 }
 
 export function OAuthCallbackView({
+  snapshot,
   status,
   envelope,
   onBackToLogin,
@@ -178,20 +183,11 @@ export function OAuthCallbackView({
         // §1.6 行 234：原地渲染绑定选择页（不跳路由；建号 / 退出编排自带）。
         <BindingPage binding={envelope?.binding} />
       ) : status === 'mfa_required' ? (
-        // mfa_required 占位帧：完整编排（就地渲染 mfa.methods 选择器 + 因子
-        // 组件，§1.6 行 233）归后续联调实现（裁量见文件头）。
-        <section className={styles.section}>
-          <p role="status" className={styles.status}>
-            {t('login.mfaPlaceholder')}
-          </p>
-          <button
-            type="button"
-            className={styles.backButton}
-            onClick={onBackToLogin}
-          >
-            {t('login.backToLogin')}
-          </button>
-        </section>
+        // §1.6 行 233 完整编排：就地渲染 mfa.methods 选择器 + 因子
+        // 组件（不跳页）——复用 LoginContainer 既有能力（信封进状态机；
+        // MFA 提交走 LoginDefault，success 终点跳转 executeEffects；loginToken
+        // 由 api 层托管续接，页面不自管）。
+        <LoginContainer snapshot={snapshot} initialEnvelope={envelope} />
       ) : resolution !== undefined ? (
         // 失败态（§1.6 表驱动文案）：回调页无表单，字段级提示无处着落，
         // 「回到第一步」类动作统一为返回登录（绑定中间态 restart 类同口径）。
@@ -230,9 +226,14 @@ export function OAuthCallbackView({
 export interface OAuthCallbackPageProps {
   /** 路径参数 provider_key（routes.tsx 从 pathname 提取，§2.7.3）。 */
   readonly providerKey: string;
+  /** 注入快照（§2.1；mfa_required 完整编排经 LoginContainer 消费）。 */
+  readonly snapshot: MethodsSnapshot;
 }
 
-export function OAuthCallbackPage({ providerKey }: OAuthCallbackPageProps) {
+export function OAuthCallbackPage({
+  providerKey,
+  snapshot,
+}: OAuthCallbackPageProps) {
   const [status, setStatus] = useState('idle');
   const [envelope, setEnvelope] = useState<LoginFlowResponse | undefined>(
     undefined,
@@ -274,6 +275,7 @@ export function OAuthCallbackPage({ providerKey }: OAuthCallbackPageProps) {
 
   return (
     <OAuthCallbackView
+      snapshot={snapshot}
       status={status}
       envelope={envelope}
       onBackToLogin={backToLogin}

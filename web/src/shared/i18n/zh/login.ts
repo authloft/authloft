@@ -46,7 +46,6 @@ export const login = {
   // ---- OAuth 回调页（OAuthCallbackPage）------------------------------------
   'login.processing': '正在处理，请稍候…',
   'login.bindUnavailable': '绑定功能即将上线',
-  'login.mfaPlaceholder': '登录需要二次验证，请返回重新登录',
   'login.backToLogin': '返回登录',
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------

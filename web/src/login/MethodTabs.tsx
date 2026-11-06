@@ -19,6 +19,7 @@
  * 文案：方式名取 i18n 字典 factors.*（§1.10 因子全集，缺键回显键本身可见
  * 可排查）；空状态 / 引导提示经 i18n 字典 login.* 键取用。
  */
+import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
 import { t } from '../shared/i18n';
 import { useCapability } from '../shared/hooks/useCapability';
 import type { LoginMethodEntry } from '../shared/types/init';
@@ -35,9 +36,19 @@ export interface MethodTabsProps {
   current: string;
   /** 选择方式（容器推导 firstStep 后 dispatch select_method）。 */
   onSelect: (method: string) => void;
+  /**
+   * 扫码登录结论上抛：透传 ProviderButtons → QRCodeStep——
+   * binding_required / 失败态交容器状态机分派（§2.8 行 739-743）。
+   */
+  onQrResult?: (envelope: LoginFlowResponse) => void;
 }
 
-export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
+export function MethodTabs({
+  methods,
+  current,
+  onSelect,
+  onQrResult,
+}: MethodTabsProps) {
   const tabs = methods.filter(
     (m) => m.method !== 'thirdparty' && (m.usage ?? []).includes('primary'),
   );
@@ -58,7 +69,10 @@ export function MethodTabs({ methods, current, onSelect }: MethodTabsProps) {
         ))}
       </ul>
       {thirdparty !== undefined && (
-        <ProviderButtons providers={thirdparty.providers ?? []} />
+        <ProviderButtons
+          providers={thirdparty.providers ?? []}
+          onQrResult={onQrResult}
+        />
       )}
     </nav>
   );

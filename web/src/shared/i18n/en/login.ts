@@ -47,8 +47,6 @@ export const login: typeof zhLogin = {
   // ---- OAuth 回调页（OAuthCallbackPage）------------------------------------
   'login.processing': 'Processing, please wait…',
   'login.bindUnavailable': 'Account binding is coming soon',
-  'login.mfaPlaceholder':
-    'Second-factor verification is required. Please go back and sign in again',
   'login.backToLogin': 'Back to sign in',
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------

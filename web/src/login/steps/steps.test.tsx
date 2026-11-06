@@ -12,6 +12,7 @@ import {
   FieldSchema,
   LoginFlowResponseSchema,
   NextStepSchema,
+  type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
 import {
   CaptchaPayloadSchema,
@@ -25,6 +26,7 @@ import { FormStep } from './FormStep';
 import {
   QRCodeStep,
   completeLogin,
+  dispatchQrResult,
   qrcodeRequester,
 } from './QRCodeStep';
 import { RedirectStep, runRedirect } from './RedirectStep';
@@ -307,5 +309,64 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     );
     completeLogin(create(LoginFlowResponseSchema, {}), nav);
     expect(calls).toEqual(['https://sync.test/first', 'https://app.test/done']);
+  });
+
+  // onResult 完整状态机（§2.8 行 739-743——登录结论在内层 login 信封）。
+  test('dispatchQrResult：内层 success → completeLogin 收内层信封（终点字段在内层）+ 上抛外层（§2.8 行 739）', () => {
+    const login = create(LoginFlowResponseSchema, {
+      status: 'success',
+      syncCookieUrl: 'https://sync.test/first',
+      redirectTo: 'https://app.test/done',
+    });
+    const outer = create(LoginFlowResponseSchema, {
+      status: 'success',
+      login,
+    });
+    const completed: LoginFlowResponse[] = [];
+    const raised: LoginFlowResponse[] = [];
+    dispatchQrResult(outer, {
+      completeLogin: (env) => completed.push(env),
+      onResult: (env) => raised.push(env),
+    });
+    expect(completed).toHaveLength(1);
+    expect(completed[0]?.syncCookieUrl).toBe('https://sync.test/first'); // 内层终点
+    expect(raised).toEqual([outer]); // 上抛外层（观测）
+  });
+
+  test('dispatchQrResult：内层 binding_required / 失败态 → 不跳转，上抛外层交容器分派（§1.6 行 234/240）', () => {
+    for (const innerStatus of ['binding_required', 'target_taken', 'failed']) {
+      const outer = create(LoginFlowResponseSchema, {
+        status: 'success',
+        login: create(LoginFlowResponseSchema, {
+          status: innerStatus,
+          loginToken: 'lt-bind',
+        }),
+      });
+      let completed = 0;
+      const raised: LoginFlowResponse[] = [];
+      dispatchQrResult(outer, {
+        completeLogin: () => {
+          completed += 1;
+        },
+        onResult: (env) => raised.push(env),
+      });
+      expect(completed).toBe(0); // 不跳转
+      expect(raised).toEqual([outer]);
+    }
+  });
+
+  test('dispatchQrResult：内层缺失（防御，外层 success 必附 login）→ 不跳转仍上抛；无 onResult 不炸', () => {
+    const outer = create(LoginFlowResponseSchema, { status: 'success' });
+    let completed = 0;
+    const raised: LoginFlowResponse[] = [];
+    dispatchQrResult(outer, {
+      completeLogin: () => {
+        completed += 1;
+      },
+      onResult: (env) => raised.push(env),
+    });
+    dispatchQrResult(outer, { completeLogin: () => {} }); // onResult 缺省
+    expect(completed).toBe(0);
+    expect(raised).toEqual([outer]);
   });
 });

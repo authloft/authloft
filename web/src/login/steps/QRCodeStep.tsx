@@ -12,10 +12,15 @@
  *   CaptchaWidget +「获取二维码」，凭据就绪才挂面板（挂载即拉码，
  *   面板契约）；expired 重拉走面板「重试」，requestQR 实时取新凭据；
  *   无配置（服务端未启用 captcha）直挂面板；
- * - onResult（success 信封）→ completeLogin 终点跳转（syncCookieUrl 优先 /
- *   redirectTo 回退，§4.1 行 383 与 LoginContainer.terminalUrl 同口径——
- *   就地实现避免 LoginContainer ↔ MethodTabs 循环依赖）；onResult prop 为
- *   观测钩子（完整状态机接线归容器后续实现，LoginContainer 本次不改）。
+ * - onResult 完整状态机（§2.8 行 739-743）：面板 success（外层
+ *   ticket 终态）后登录结论在**内层 `login`**（§1.3 同构信封）——success →
+ *   completeLogin 终点跳转（终点字段 syncCookieUrl / redirectTo 在内层，
+ *   §4.1 行 383 与 LoginContainer.terminalUrl 同口径，就地实现避免
+ *   LoginContainer ↔ MethodTabs 循环依赖）；binding_required / 失败态经
+ *   onResult 上抛交容器状态机分派（ProviderButtons → MethodTabs →
+ *   LoginContainer 链，「LoginContainer 禁改」约束已解除）；
+ *   mfa_required 不会出现（§2.8 行 750 MFA×扫码：PC 端轮询至 expired
+ *   终态，扫码通道不在 PC 端续走 MFA）——不做分支。
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
@@ -105,10 +110,41 @@ export function qrcodeRequester(
   };
 }
 
+/**
+ * 扫码结果分派（§2.8 行 739-743）：面板 success（外层 ticket 终态）
+ * 后，登录结论在**内层 `login`**（§1.3 同构信封，后端 pollResult 必填）：
+ * - 内层 success → completeLogin 终点跳转（终点字段 syncCookieUrl /
+ *   redirectTo 在内层，§1.3 行 136-138）；
+ * - 内层 binding_required / 失败态 → 不跳转，经 onResult 上抛外层信封，
+ *   交容器状态机分派（binding 原地渲染 BindingPage / 失败态表驱动文案，
+ *   §1.6 行 234/240）；
+ * - mfa_required 不会出现（§2.8 行 750 MFA×扫码：PC 端轮询至 expired
+ *   终态）——不做分支；
+ * - 内层缺失（防御，外层 success 必附 login）：不跳转仍上抛，交消费方
+ *   零值兜底。纯函数，node 可测。
+ */
+export function dispatchQrResult(
+  outer: LoginFlowResponse,
+  handlers: {
+    completeLogin: (login: LoginFlowResponse) => void;
+    onResult?: (envelope: LoginFlowResponse) => void;
+  },
+): void {
+  const login = outer.login;
+  if (login !== undefined && login.status === 'success') {
+    handlers.completeLogin(login);
+  }
+  handlers.onResult?.(outer);
+}
+
 export interface QRCodeStepProps {
   /** 扫码类 Provider 的 providerKey（§2.8 行 701）。 */
   providerKey: string;
-  /** 结果就绪观测钩子（success 信封上抛；终点跳转固定经 completeLogin）。 */
+  /**
+   * 扫码登录结论上抛（外层信封；内层 login 为 §1.3 登录流程信封）：
+   * success 已由本组件 completeLogin 完成终点跳转；binding_required /
+   * 失败态经本回调交容器状态机分派（§2.8 行 739-743）。
+   */
   onResult?: (envelope: LoginFlowResponse) => void;
   /** captcha 配置（缺省取注入快照 methods.captcha；来源三处见 §2.5 行 477）。 */
   captcha?: CaptchaConfig;
@@ -184,10 +220,15 @@ export function QRCodeStep({
             request: requestQrcode,
           })}
           pollUrl={(ticket) => pollTicket(ticket, pollSeconds)}
-          onResult={(envelope) => {
-            onResult?.(envelope);
-            completeLogin(envelope, navigate);
-          }}
+          onResult={(outer) =>
+            // 完整状态机分派：success 用内层信封终点跳转；
+            // binding_required / 失败态上抛交容器（mfa_required 不会出现，
+            // §2.8 行 750——MFA×扫码 PC 端轮询至 expired，不做分支）。
+            dispatchQrResult(outer, {
+              completeLogin: (login) => completeLogin(login, navigate),
+              onResult,
+            })
+          }
           pollSeconds={pollSeconds}
         />
       )}

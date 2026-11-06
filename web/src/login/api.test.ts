@@ -324,4 +324,28 @@ describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', ()
     expect(response.login?.redirectTo).toBe('/home');
     expect(getLoginToken()).toBe(''); // 五条之 3
   });
+
+  // 双层信封 loginToken 托管归内层（外层 success 是票据终态、不是登录终点）。
+  test('轮询命中 binding：内层 loginToken 托管（§1.3 行 145 无条件覆盖）——外层 success 不误清（免密建号续接依赖）', async () => {
+    server.use(
+      http.post(LOGIN_TICKET, () =>
+        HttpResponse.json({
+          status: 'success',
+          ticket: { status: 'success', ticketId: 'c7Kx9' },
+          login: {
+            status: 'binding_required',
+            loginToken: 'lt-bind',
+            binding: {
+              providerKey: 'scan',
+              displayName: '微信扫码',
+              allowSignup: true,
+            },
+          },
+        }),
+      ),
+    );
+    const response = await mod.getLoginTicket('t-1');
+    expect(response.login?.status).toBe('binding_required');
+    expect(getLoginToken()).toBe('lt-bind'); // 内层信封托管（BindingPage 建号续接）
+  });
 });
