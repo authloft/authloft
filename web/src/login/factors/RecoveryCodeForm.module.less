@@ -1,5 +1,7 @@
-// 恢复码因子表单样式（docs/前端架构.md §1.7；视觉重做）。
+// 恢复码因子表单样式（docs/前端架构.md §1.7；视觉基线；
+// .submit 改消费 shared/styles/controls.less mixin，V-3 去逐字重复）。
 @import (reference) '../../shared/styles/tokens.less';
+@import (reference) '../../shared/styles/controls.less';
 
 .form {
   display: flex;
@@ -8,34 +10,5 @@
 }
 
 .submit {
-  width: 100%;
-  height: @control-height;
-  color: @color-text-inverse;
-  font-size: @font-size-md;
-  font-weight: @font-weight-semibold;
-  background-color: @color-primary;
-  border: none;
-  border-radius: @radius-md;
-  cursor: pointer;
-  transition:
-    background-color @transition-fast,
-    box-shadow @transition-fast;
-}
-
-.submit:hover:not(:disabled) {
-  background-color: @color-primary-hover;
-}
-
-.submit:active:not(:disabled) {
-  background-color: @color-primary-active;
-}
-
-.submit:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 @ring-width @ring-color;
-}
-
-.submit:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  .control-submit();
 }

@@ -1087,6 +1087,125 @@ describe('LoginFlowView 状态分支静态渲染', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 评审 P0-1 / P1-4：返回方式列表入口、onRetry 接线、剩余次数去重
+// ---------------------------------------------------------------------------
+
+describe('P0-1「返回方式列表」入口（next / mfa 分支）', () => {
+  function renderWithBack(state: FlowState, withBack: boolean): string {
+    return renderToStaticMarkup(
+      createElement(container.LoginFlowView, {
+        snapshot: SNAPSHOT,
+        state,
+        onSelect: () => {},
+        onSelectMfa: () => {},
+        onSubmit: () => {},
+        onBackToMethods: withBack ? () => {} : undefined,
+        mfaMethods: [
+          create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
+          create(MfaMethodSchema, { method: 'otp_sms', steps: ['challenge', 'form'] }),
+        ],
+      }),
+    );
+  }
+
+  test('next 分支（OTP verify）：注入回调 → 渲染入口；未注入 → 不渲染', () => {
+    const state = stateWith({
+      method: 'otp_sms',
+      step: 'verify',
+      status: 'next',
+      envelope: envelope({
+        status: 'next',
+        nextStep: create(NextStepSchema, {
+          kind: 'form',
+          method: 'otp_sms',
+          fields: [create(FieldSchema, { name: 'code', label: '验证码', type: 'otp', length: BigInt(6) })],
+        }),
+      }),
+    });
+    expect(renderWithBack(state, true)).toContain('返回方式列表');
+    expect(renderWithBack(state, false)).not.toContain('返回方式列表');
+  });
+
+  test('mfa 分支：注入回调 → 渲染入口', () => {
+    const markup = renderWithBack(
+      stateWith({ method: 'totp', step: 'verify' }),
+      true,
+    );
+    expect(markup).toContain('返回方式列表');
+  });
+});
+
+describe('P1-4：ErrorBanner onRetry 接线 + 剩余次数去重', () => {
+  function renderWithRetry(state: FlowState): string {
+    return renderToStaticMarkup(
+      createElement(container.LoginFlowView, {
+        snapshot: SNAPSHOT,
+        state,
+        onSelect: () => {},
+        onSubmit: () => {},
+        onRetry: () => {},
+        otpCode: '123456',
+        onOtpCodeChange: () => {},
+      }),
+    );
+  }
+
+  test('internal_error（白名单 + retryable）→ banner 出「重试」按钮', () => {
+    const markup = renderWithRetry(
+      stateWith({
+        method: 'password',
+        step: 'verify',
+        status: 'internal_error',
+        envelope: envelope({ status: 'internal_error' }),
+      }),
+    );
+    expect(markup).toContain('>重试</button>');
+  });
+
+  test('invalid_credentials（非白名单）→ banner 不出「重试」按钮（同值必败，不接）', () => {
+    const markup = renderWithRetry(
+      stateWith({
+        method: 'password',
+        step: 'verify',
+        status: 'invalid_credentials',
+        envelope: envelope({ status: 'invalid_credentials' }),
+      }),
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).not.toContain('>重试</button>');
+  });
+
+  test('OTP 系失败态：attemptsLeft 由字段旁内联承载，banner 不重复（二选一）', () => {
+    const markup = renderWithRetry(
+      stateWith({
+        method: 'otp_sms',
+        step: 'verify',
+        status: 'invalid_code',
+        envelope: envelope({
+          status: 'invalid_code',
+          error: { message: '验证码错误', attemptsLeft: '3' },
+        }),
+      }),
+    );
+    expect(markup).toContain('还可尝试 3 次'); // 字段旁内联（OTPForm）
+    expect(markup).not.toContain('次尝试机会'); // banner 不重复（common.remainingAttempts）
+    // 非 OTP 因子（password）：banner 保留剩余次数展示。
+    const passwordMarkup = renderWithRetry(
+      stateWith({
+        method: 'password',
+        step: 'verify',
+        status: 'invalid_credentials',
+        envelope: envelope({
+          status: 'invalid_credentials',
+          error: { attemptsLeft: '2' },
+        }),
+      }),
+    );
+    expect(passwordMarkup).toContain('次尝试机会');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // mfa 场景视图（选择器切换渲染；§4.1 行 407 原地、不跳页）
 // ---------------------------------------------------------------------------
 

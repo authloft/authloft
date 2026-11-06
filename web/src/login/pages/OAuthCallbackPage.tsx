@@ -217,49 +217,51 @@ export function OAuthCallbackView({
 
   return (
     <main className={styles.page}>
-      {status === 'success' ? (
-        <section className={styles.section}>
-          <p role="status" className={styles.status}>
-            {t('login.redirecting')}
-          </p>
-        </section>
-      ) : status === 'binding_required' ? (
-        // §1.6 行 234：原地渲染绑定选择页（不跳路由；建号 / 退出编排自带）。
-        <BindingPage binding={envelope?.binding} />
-      ) : status === 'mfa_required' ? (
-        // §1.6 行 233 完整编排：就地渲染 mfa.methods 选择器 + 因子
-        // 组件（不跳页）——复用 LoginContainer 既有能力（信封进状态机；
-        // MFA 提交走 LoginDefault，success 终点跳转 executeEffects；loginToken
-        // 由 api 层托管续接，页面不自管）。
-        <LoginContainer snapshot={snapshot} initialEnvelope={envelope} />
-      ) : resolution !== undefined ? (
-        // 失败态（§1.6 表驱动文案）：回调页无表单，字段级提示无处着落，
-        // 「回到第一步」类动作统一为返回登录（绑定中间态 restart 类同口径）。
-        <section className={styles.section}>
-          <ErrorBanner
-            i18nKey={resolution.i18nKey}
-            fallbackMessage={error?.message}
-            retryAfter={error?.retryAfter}
-            attemptsLeft={error?.attemptsLeft}
-            retryable={resolution.retryable}
-          />
-          <button
-            type="button"
-            className={styles.backButton}
-            onClick={onBackToLogin}
-          >
-            {t('login.backToLogin')}
-          </button>
-        </section>
-      ) : (
-        // 初始 / l / b 分派请求在途（静态渲染不跑 effect，此帧即回调路由首帧；
-        // b 两态均回跳安全中心，不会落此页终态帧）。
-        <section className={styles.section}>
-          <p role="status" className={styles.status}>
-            {t('login.processing')}
-          </p>
-        </section>
-      )}
+      <div className={styles.card}>
+        {status === 'success' ? (
+          <section className={styles.section}>
+            <p role="status" className={styles.status}>
+              {t('login.redirecting')}
+            </p>
+          </section>
+        ) : status === 'binding_required' ? (
+          // §1.6 行 234：原地渲染绑定选择页（不跳路由；建号 / 退出编排自带）。
+          <BindingPage binding={envelope?.binding} />
+        ) : status === 'mfa_required' ? (
+          // §1.6 行 233 完整编排：就地渲染 mfa.methods 选择器 + 因子
+          // 组件（不跳页）——复用 LoginContainer 既有能力（信封进状态机；
+          // MFA 提交走 LoginDefault，success 终点跳转 executeEffects；loginToken
+          // 由 api 层托管续接，页面不自管）。
+          <LoginContainer snapshot={snapshot} initialEnvelope={envelope} />
+        ) : resolution !== undefined ? (
+          // 失败态（§1.6 表驱动文案）：回调页无表单，字段级提示无处着落，
+          // 「回到第一步」类动作统一为返回登录（绑定中间态 restart 类同口径）。
+          <section className={styles.section}>
+            <ErrorBanner
+              i18nKey={resolution.i18nKey}
+              fallbackMessage={error?.message}
+              retryAfter={error?.retryAfter}
+              attemptsLeft={error?.attemptsLeft}
+              retryable={resolution.retryable}
+            />
+            <button
+              type="button"
+              className={styles.backButton}
+              onClick={onBackToLogin}
+            >
+              {t('login.backToLogin')}
+            </button>
+          </section>
+        ) : (
+          // 初始 / l / b 分派请求在途（静态渲染不跑 effect，此帧即回调路由首帧；
+          // b 两态均回跳安全中心，不会落此页终态帧）。
+          <section className={styles.section}>
+            <p role="status" className={styles.status}>
+              {t('login.processing')}
+            </p>
+          </section>
+        )}
+      </div>
     </main>
   );
 }

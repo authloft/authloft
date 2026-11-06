@@ -15,6 +15,7 @@ import { useState, type FormEvent } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { FieldRenderer } from '../../shared/components';
 import { t } from '../../shared/i18n';
+import { focusField, validateFormValues } from '../validate';
 import styles from './FormStep.module.less';
 
 export interface FormStepProps {
@@ -35,21 +36,46 @@ export function FormStep({
   onSubmit,
 }: FormStepProps) {
   const [values, setValues] = useState<Record<string, string>>({});
+  // 评审 P0-2：前置校验未过的字段级错误（字段名 → 文案，落 FieldRenderer 错误槽）。
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const onChange = (name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
+    // 编辑即清该字段错误（提交前再整表校验）。
+    setErrors((prev) => {
+      if (prev[name] === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !disabled) {
-      onSubmit(values);
+    if (loading || disabled) {
+      return;
     }
+    // 评审 P0-2：提交前统一前置校验，未过聚焦首错字段、不发请求。
+    const { errors: issues, firstField } = validateFormValues(fields, values);
+    if (firstField !== undefined) {
+      setErrors(issues);
+      focusField(`fr-${firstField}`);
+      return;
+    }
+    setErrors({});
+    onSubmit(values);
   };
 
   return (
     <form onSubmit={submit} className={styles.form}>
-      <FieldRenderer fields={fields} values={values} onChange={onChange} />
+      <FieldRenderer
+        fields={fields}
+        values={values}
+        onChange={onChange}
+        errors={errors}
+      />
       <button
         type="submit"
         disabled={loading || disabled}

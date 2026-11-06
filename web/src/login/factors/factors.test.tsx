@@ -16,7 +16,7 @@ import type {
 import { OTPForm, isOtpForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
 import { ProviderButtons, startRedirect } from './ProviderButtons';
-import { RecoveryCodeForm } from './RecoveryCodeForm';
+import { RecoveryCodeForm, recoverySubmitGuard } from './RecoveryCodeForm';
 import {
   WebAuthnButton,
   authenticate,
@@ -111,6 +111,16 @@ describe('OTPForm challenge 段（§2.6 行 544-545）', () => {
     expect(renderOtp({ step: 'challenge', loading: true })).toContain('disabled=""');
     expect(renderOtp({ step: 'challenge', disabled: true })).toContain('disabled=""');
   });
+
+  test('initialValues 回填（评审 P1-5：传输失败 reset 后已输入目标不丢）', () => {
+    const markup = renderOtp({
+      step: 'challenge',
+      initialValues: { phone: '13800000000' },
+    });
+    expect(markup).toContain('value="13800000000"');
+    // 缺省 → 空值初态（既有行为不变）。
+    expect(renderOtp({ step: 'challenge' })).toContain('value=""');
+  });
 });
 
 describe('OTPForm verify 段（§2.6 行 546 payload {code}）', () => {
@@ -188,6 +198,17 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
         createElement(RecoveryCodeForm, { ...base, loading: false, disabled: true }),
       ),
     ).toContain('disabled=""');
+  });
+
+  test('recoverySubmitGuard（评审 P0-2）：空值拦截（错误槽文案 + 焦点锚 fr-code）；满值放行', () => {
+    // 空恢复码不直提：拦截 + 聚焦首错字段（FieldRenderer 缺省 idPrefix 'fr'）。
+    const block = recoverySubmitGuard([codeField], {});
+    expect(block?.errors).toEqual({ code: '请填写此项' });
+    expect(block?.focusId).toBe('fr-code');
+    // 纯空白同空值（isFilled 去首尾空白）。
+    expect(recoverySubmitGuard([codeField], { code: '  ' })?.focusId).toBe('fr-code');
+    // 满值放行（xxxx-xxxx 原样，不做格式化校验，§4.3 行 441）。
+    expect(recoverySubmitGuard([codeField], { code: 'abcd-1234' })).toBeUndefined();
   });
 });
 

@@ -29,11 +29,15 @@ import { CodeInput, FieldRenderer } from '../../shared/components';
 import { useCountdown } from '../../shared/hooks/useCountdown';
 import { t } from '../../shared/i18n';
 import { toDisplay } from '../../shared/utils/int';
+import { codeErrorText, focusField, validateFormValues } from '../validate';
 import type { FactorProps } from './registry';
 import styles from './OTPForm.module.less';
 
 /** verify 段验证码分段数（§1.10 行 306-307：otp 六位码；下发 fields[].length 的通用渲染归 FormStep）。 */
 const OTP_CODE_LENGTH = 6;
+
+/** verify 段 CodeInput 稳定 id（label htmlFor / 错误槽 aria-describedby 关联）。 */
+const OTP_CODE_INPUT_ID = 'otp-code';
 
 /** OTP 系专属扩展 props（全部可选，不破坏 registry 的 FactorProps 契约）。 */
 export interface OTPFormProps extends FactorProps {
@@ -51,6 +55,11 @@ export interface OTPFormProps extends FactorProps {
   code?: string;
   /** verify 段输码变化上抛（与 code 成对注入即受控模式）。 */
   onCodeChange?: (value: string) => void;
+  /**
+   * challenge 段初始表单值（评审 P1-5：传输失败 reset 后回填已输入
+   * 目标——容器持值 challengeValues 注入；仅作本地 state 初值，后续编辑不回写）。
+   */
+  initialValues?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -74,9 +83,17 @@ export function OTPForm({
   onResend,
   code: codeProp,
   onCodeChange,
+  initialValues,
 }: OTPFormProps) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  // challenge 段表单值：容器持值注入作初值（评审 P1-5 reset 后回填），
+  // 仅挂载时消费一次，后续编辑走本地 state。
+  const [values, setValues] = useState<Record<string, string>>(() => ({
+    ...initialValues,
+  }));
   const [localCode, setLocalCode] = useState('');
+  // 评审 P0-2：challenge 段字段级错误 / verify 段输码未过错误。
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [codeError, setCodeError] = useState<string | undefined>(undefined);
   // 受控 / 非受控双模式：容器注入（code + onCodeChange）→ 容器持值，
   // 实例随状态分支重建不丢已输码；缺省 → 本地 state（独立渲染）。
   const code = codeProp ?? localCode;
@@ -86,27 +103,69 @@ export function OTPForm({
 
   const onChange = (name: string, value: string) => {
     setValues((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => {
+      if (prev[name] === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const onCodeInput = (value: string) => {
+    setCode(value);
+    setCodeError(undefined);
   };
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !disabled) {
-      // verify 段 {code}（§2.6 行 546）；challenge 段目标字段（行 544-545，MFA 场景空对象）。
-      onSubmit(step === 'verify' ? { code } : values);
+    if (loading || disabled) {
+      return;
     }
+    if (step === 'verify') {
+      // 评审 P0-2：6 格未输满不提交，字段旁内联错误。
+      const issue = codeErrorText(code, OTP_CODE_LENGTH);
+      if (issue !== undefined) {
+        setCodeError(issue);
+        focusField(OTP_CODE_INPUT_ID);
+        return;
+      }
+      onSubmit({ code }); // §2.6 行 546
+      return;
+    }
+    // challenge 段目标字段（§2.6 行 544-545，MFA 场景空对象）：前置校验（P0-2）。
+    const { errors: issues, firstField } = validateFormValues(fields, values);
+    if (firstField !== undefined) {
+      setErrors(issues);
+      focusField(`fr-${firstField}`);
+      return;
+    }
+    setErrors({});
+    onSubmit(values);
   };
 
   if (step === 'verify') {
     return (
       <form onSubmit={submit} className={styles.form}>
-        <label className={styles.label}>{t('login.codeLabel')}</label>
+        <label className={styles.label} htmlFor={OTP_CODE_INPUT_ID}>
+          {t('login.codeLabel')}
+        </label>
         <CodeInput
           value={code}
-          onChange={setCode}
+          onChange={onCodeInput}
           length={OTP_CODE_LENGTH}
           ariaLabel={t('login.codeLabel')}
+          id={OTP_CODE_INPUT_ID}
           disabled={loading || disabled}
+          ariaInvalid={codeError !== undefined}
+          ariaDescribedBy={codeError !== undefined ? `${OTP_CODE_INPUT_ID}-error` : undefined}
         />
+        {codeError !== undefined && (
+          <p id={`${OTP_CODE_INPUT_ID}-error`} className={styles.error}>
+            {codeError}
+          </p>
+        )}
         {attemptsLeft !== undefined && (
           <p role="status" className={styles.status}>
             {t('login.attemptsLeft', { count: toDisplay(attemptsLeft) })}
@@ -141,7 +200,12 @@ export function OTPForm({
           {t('login.codeWillBeSentTo', { target: maskedTarget })}
         </p>
       ) : (
-        <FieldRenderer fields={fields} values={values} onChange={onChange} />
+        <FieldRenderer
+          fields={fields}
+          values={values}
+          onChange={onChange}
+          errors={errors}
+        />
       )}
       <button
         type="submit"

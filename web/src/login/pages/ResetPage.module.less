@@ -1,33 +1,83 @@
-// 重置密码页样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+// 重置密码页样式（docs/前端架构.md §1.7；V-1：对齐主链 LoginPage——
+// 页面底 + 居中白卡外壳 + 标题层级 + 文字 tab；.label/.input/.resend/.submit
+// 改消费 shared/styles/controls.less mixin，V-3 去逐字重复；窄屏适配见文件尾
+// @media，评审 P0-4。
 @import (reference) '../../shared/styles/tokens.less';
+@import (reference) '../../shared/styles/controls.less';
 
+// 全视口居中：页面底与卡片面分层（LoginPage 同款）。
 .page {
-  max-width: 24rem;
-  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: @spacing-xl @spacing-lg;
+  background-color: @color-page;
+}
+
+// 卡片外壳（LoginPage 同款；flex 列节奏承载标题 / 横幅 / tabs / 表单）。
+.card {
+  width: 100%;
+  max-width: 26rem;
+  padding: 2.25rem 2rem;
+  background-color: @color-surface;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-lg;
+  box-shadow: @shadow-card;
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
 }
 
 .title {
+  color: @color-text-strong;
   font-size: @font-size-xl;
-  margin-bottom: @spacing-lg;
+  font-weight: @font-weight-semibold;
+  text-align: center;
 }
 
+// 方式切换：与主链 MethodTabs 同款文字 tab（选中主色 + 底部高亮线）。
 .methodList {
   display: flex;
-  gap: @spacing-md;
+  gap: @spacing-lg;
   list-style: none;
-  margin: 0 0 @spacing-md;
   padding: 0;
+  border-bottom: @border-width solid @color-border-subtle;
+}
+
+.methodList > li {
+  display: flex;
 }
 
 .methodTab {
-  padding: 0.375rem 0.875rem;
+  margin-bottom: -@border-width; // 压住 .methodList 底边，高亮线贴底
+  padding: @spacing-sm @spacing-xs;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+  font-weight: @font-weight-medium;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color @transition-fast,
+    border-color @transition-fast;
+}
+
+.methodTab:hover {
+  color: @color-text;
+}
+
+.methodTab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+  border-radius: @radius-sm;
 }
 
 .methodTabActive {
-  padding: 0.375rem 0.875rem;
-  border-color: @color-primary;
+  .methodTab();
   color: @color-primary;
+  border-bottom-color: @color-primary;
 }
 
 .section {
@@ -37,7 +87,7 @@
 }
 
 .label {
-  display: block;
+  .control-label();
   margin-bottom: @spacing-xs;
 }
 
@@ -47,9 +97,7 @@
 }
 
 .input {
-  padding: @spacing-sm;
-  border: @border-width solid @color-border;
-  border-radius: @radius-sm;
+  .control-input();
 }
 
 .status {
@@ -57,14 +105,44 @@
   font-size: @font-size-sm;
 }
 
+// 字段旁内联错误槽（评审 P0-2；FieldRenderer fieldError 同款呈现）。
+.fieldError {
+  margin: @spacing-xs 0 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+  line-height: @line-height-body;
+}
+
 .resend {
-  padding: 0.375rem 0.875rem;
+  .control-text-button();
 }
 
 .submit {
-  padding: 0.375rem 0.875rem;
+  .control-submit();
 }
 
+// 成功帧的登录页链接：与主链 entryLink 同款文字链接。
 .loginLink {
-  margin-top: @spacing-md;
+  align-self: center;
+  color: @color-primary;
+  font-size: @font-size-sm;
+  text-decoration: none;
+  transition: color @transition-fast;
+}
+
+.loginLink:hover {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}
+
+// 窄屏收敛（评审 P0-4；LoginPage 同款）：卡片贴边留小外边距、
+// 内边距收紧；卡宽已由 width:100% + max-width 自适应撑满。
+@media (max-width: @breakpoint-sm) {
+  .page {
+    padding: @spacing-lg @spacing-md;
+  }
+
+  .card {
+    padding: @spacing-xl @spacing-lg;
+  }
 }

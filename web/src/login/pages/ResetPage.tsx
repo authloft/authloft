@@ -38,11 +38,15 @@ import type {
 } from '../../shared/types/init';
 import { resetPassword, type ResetPasswordInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
+import { codeErrorText, focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
+import { PasswordField } from './PasswordField';
 import {
   advanceAfterStep,
   isFlowErrorStatus,
   RESTART_STATUSES,
   runFlowStep,
+  SET_PASSWORD_FIELD_ORDER,
+  setPasswordIssues,
   snapshotFields,
   ssoPath,
   type FlowStep,
@@ -122,6 +126,8 @@ export interface ResetPageViewProps {
   readonly otpCode: string;
   /** set_password 段新密码（受控）。 */
   readonly password: string;
+  /** challenge 段已提交的目标值（评审 P1-5：reset / 重发回 challenge 段时经 OTPForm initialValues 回填）。 */
+  readonly challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
   /** 提交（challenge 段上抛目标 values；verify 段 {code}；set_password 段 {}）。 */
   onSubmit: (values: Readonly<Record<string, string>>) => void;
@@ -129,6 +135,8 @@ export interface ResetPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
+  /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
+  onRetry?: () => void;
   captchaRef?: Ref<CaptchaWidgetHandle>;
 }
 
@@ -142,14 +150,20 @@ export function ResetPageView({
   loading,
   otpCode,
   password,
+  challengeValues,
   onSelectMethod,
   onSubmit,
   onOtpCodeChange,
   onPasswordChange,
   onResend,
+  onRetry,
   captchaRef,
 }: ResetPageViewProps) {
   const options = resetOptionsFor(snapshot);
+  // 确认密码（P1-3，只本地比对）与 set_password / verify 段前置校验错误（P0-2）。
+  const [confirm, setConfirm] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [codeError, setCodeError] = useState<string | undefined>(undefined);
   // verify 段重发倒计时（nextStep.retryAfter / error.retryAfter，§1.3 行 115/150）。
   const countdown = useCountdown(
     envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter,
@@ -160,8 +174,10 @@ export function ResetPageView({
   if (snapshot.flags?.passwordReset !== true || options.length === 0) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.reset')}</h1>
-        <p role="status">{t('errors.status.reset_disabled')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.reset')}</h1>
+          <p role="status">{t('errors.status.reset_disabled')}</p>
+        </div>
       </main>
     );
   }
@@ -169,19 +185,23 @@ export function ResetPageView({
   if (status === 'reset_disabled') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.reset')}</h1>
-        <p role="status">{t('errors.status.reset_disabled')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.reset')}</h1>
+          <p role="status">{t('errors.status.reset_disabled')}</p>
+        </div>
       </main>
     );
   }
   if (status === 'success') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.reset')}</h1>
-        <p role="status">{t('login.resetSuccess')}</p>
-        <a className={styles.loginLink} href={ssoPath('/sso/login')}>
-          {t('login.goLogin')}
-        </a>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.reset')}</h1>
+          <p role="status">{t('login.resetSuccess')}</p>
+          <a className={styles.loginLink} href={ssoPath('/sso/login')}>
+            {t('login.goLogin')}
+          </a>
+        </div>
       </main>
     );
   }
@@ -200,125 +220,196 @@ export function ResetPageView({
 
   const submitVerify = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !submitDisabled) {
-      onSubmit({ code: otpCode });
+    if (loading || submitDisabled) {
+      return;
     }
+    // 评审 P0-2：6 格未输满不提交，字段旁内联错误。
+    const issue = codeErrorText(otpCode, codeLengthOf(entry));
+    if (issue !== undefined) {
+      setCodeError(issue);
+      focusField('reset-code');
+      return;
+    }
+    setCodeError(undefined);
+    onSubmit({ code: otpCode });
   };
 
   const submitSetPassword = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !submitDisabled) {
-      onSubmit({});
+    if (loading || submitDisabled) {
+      return;
     }
+    // 评审 P0-2 + P1-3：密码必填 + 确认密码本地比对（重置无用户名字段，§10.4）。
+    const issues = setPasswordIssues({
+      username: '',
+      password,
+      confirm,
+      requireUsername: false,
+    });
+    const first = SET_PASSWORD_FIELD_ORDER.find((name) => issues[name] !== undefined);
+    if (first !== undefined) {
+      setFormErrors(issues);
+      focusField(`reset-${first}`);
+      return;
+    }
+    setFormErrors({});
+    onSubmit({}); // 确认密码不进 payload（P1-3；§10.4 行 1532 只提交 password）
   };
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>{t('login.reset')}</h1>
-      {notice !== undefined && <ErrorBanner i18nKey={notice} />}
-      {resolution !== undefined && (
-        <ErrorBanner
-          i18nKey={resolution.i18nKey}
-          fallbackMessage={error?.message}
-          retryAfter={error?.retryAfter}
-          attemptsLeft={error?.attemptsLeft}
-          retryable={resolution.retryable}
-        />
-      )}
-      {options.length > 1 && (
-        <nav>
-          <ul className={styles.methodList}>
-            {options.map((option) => (
-              <li key={option.method}>
-                <button
-                  type="button"
-                  className={
-                    option.method === method
-                      ? styles.methodTabActive
-                      : styles.methodTab
-                  }
-                  aria-current={option.method === method ? 'true' : undefined}
-                  onClick={() => onSelectMethod(option.method)}
-                >
-                  {t(RESET_METHOD_NAME_KEYS[option.method] ?? option.method)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
-      {step === 'challenge' && (
-        <div className={styles.section}>
-          <OTPForm
-            fields={snapshotFields(entry?.challengeFields)}
-            loading={loading}
-            disabled={submitDisabled}
-            onSubmit={onSubmit}
+      <div className={styles.card}>
+        <h1 className={styles.title}>{t('login.reset')}</h1>
+        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+        {resolution !== undefined && (
+          <ErrorBanner
+            i18nKey={resolution.i18nKey}
+            fallbackMessage={error?.message}
+            retryAfter={error?.retryAfter}
+            // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+            attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
+            retryable={resolution.retryable}
+            onRetry={
+              RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined
+            }
           />
-          {showCaptcha && captchaConfig !== undefined && (
-            <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
-          )}
-        </div>
-      )}
-      {step === 'verify' && (
-        <form onSubmit={submitVerify} className={styles.section}>
-          <label className={styles.label}>{t('login.codeLabel')}</label>
-          <CodeInput
-            value={otpCode}
-            onChange={onOtpCodeChange}
-            length={codeLengthOf(entry)}
-            ariaLabel={t('login.codeLabel')}
-            disabled={loading || submitDisabled}
-          />
-          {error?.attemptsLeft !== undefined && (
-            <p role="status" className={styles.status}>
-              {t('login.attemptsLeft', {
-                count: toDisplay(error.attemptsLeft),
-              })}
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={loading || !countdown.expired}
-            onClick={onResend}
-            className={styles.resend}
-          >
-            {countdown.expired
-              ? t('login.resend')
-              : t('login.resendCountdown', { seconds: countdown.seconds })}
-          </button>
-          <button
-            type="submit"
-            disabled={loading || submitDisabled}
-            className={styles.submit}
-          >
-            {t('login.nextStep')}
-          </button>
-        </form>
-      )}
-      {step === 'set_password' && (
-        <form onSubmit={submitSetPassword} className={styles.section}>
-          <div className={styles.field}>
-            <label className={styles.label}>{t('login.newPasswordLabel')}</label>
-            <input
-              className={styles.input}
-              name="password"
-              type="password"
-              value={password}
-              autoComplete="new-password"
-              onChange={(e) => onPasswordChange(e.target.value)}
+        )}
+        {options.length > 1 && (
+          <nav>
+            <ul className={styles.methodList}>
+              {options.map((option) => (
+                <li key={option.method}>
+                  <button
+                    type="button"
+                    className={
+                      option.method === method
+                        ? styles.methodTabActive
+                        : styles.methodTab
+                    }
+                    aria-current={option.method === method ? 'true' : undefined}
+                    onClick={() => onSelectMethod(option.method)}
+                  >
+                    {t(RESET_METHOD_NAME_KEYS[option.method] ?? option.method)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+        {step === 'challenge' && (
+          <div className={styles.section}>
+            <OTPForm
+              fields={snapshotFields(entry?.challengeFields)}
+              loading={loading}
+              disabled={submitDisabled}
+              onSubmit={onSubmit}
+              initialValues={challengeValues}
             />
+            {showCaptcha && captchaConfig !== undefined && (
+              <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
+            )}
           </div>
-          <PasswordStrengthMeter password={password} />
-          <button
-            type="submit"
-            disabled={loading || submitDisabled}
-            className={styles.submit}
-          >
-            {t('login.reset')}
-          </button>
-        </form>
-      )}
+        )}
+        {step === 'verify' && (
+          <form onSubmit={submitVerify} className={styles.section}>
+            <label className={styles.label} htmlFor="reset-code">
+              {t('login.codeLabel')}
+            </label>
+            <CodeInput
+              value={otpCode}
+              onChange={(value) => {
+                onOtpCodeChange(value);
+                setCodeError(undefined);
+              }}
+              length={codeLengthOf(entry)}
+              ariaLabel={t('login.codeLabel')}
+              id="reset-code"
+              disabled={loading || submitDisabled}
+              ariaInvalid={codeError !== undefined}
+              ariaDescribedBy={codeError !== undefined ? 'reset-code-error' : undefined}
+            />
+            {codeError !== undefined && (
+              <p id="reset-code-error" className={styles.fieldError}>
+                {codeError}
+              </p>
+            )}
+            {error?.attemptsLeft !== undefined && (
+              <p role="status" className={styles.status}>
+                {t('login.attemptsLeft', {
+                  count: toDisplay(error.attemptsLeft),
+                })}
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={loading || !countdown.expired}
+              onClick={onResend}
+              className={styles.resend}
+            >
+              {countdown.expired
+                ? t('login.resend')
+                : t('login.resendCountdown', { seconds: countdown.seconds })}
+            </button>
+            <button
+              type="submit"
+              disabled={loading || submitDisabled}
+              className={styles.submit}
+            >
+              {t('login.nextStep')}
+            </button>
+          </form>
+        )}
+        {step === 'set_password' && (
+          <form onSubmit={submitSetPassword} className={styles.section}>
+            <PasswordField
+              id="reset-password"
+              name="password"
+              label={t('login.newPasswordLabel')}
+              value={password}
+              onChange={(value) => {
+                onPasswordChange(value);
+                setFormErrors((prev) => {
+                  if (prev.password === undefined) {
+                    return prev;
+                  }
+                  const next = { ...prev };
+                  delete next.password;
+                  return next;
+                });
+              }}
+              error={formErrors.password}
+              disabled={loading}
+            />
+            <PasswordField
+              id="reset-confirm"
+              name="password_confirm"
+              label={t('login.confirmPasswordLabel')}
+              value={confirm}
+              onChange={(value) => {
+                setConfirm(value);
+                setFormErrors((prev) => {
+                  if (prev.confirm === undefined) {
+                    return prev;
+                  }
+                  const next = { ...prev };
+                  delete next.confirm;
+                  return next;
+                });
+              }}
+              error={formErrors.confirm}
+              disabled={loading}
+            />
+            <PasswordStrengthMeter password={password} />
+            <button
+              type="submit"
+              disabled={loading || submitDisabled}
+              className={styles.submit}
+            >
+              {t('login.reset')}
+            </button>
+          </form>
+        )}
+      </div>
     </main>
   );
 }
@@ -344,6 +435,10 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
+  // challenge 段已提交目标（评审 P1-5：传输失败 / 重发回 challenge 段回填）。
+  const [challengeValues, setChallengeValues] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
 
   // captcha_invalid → reset widget 后重试（§1.6 行 241）。
@@ -353,7 +448,8 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     }
   }, [status, envelope]);
 
-  /** 回到 challenge 第一步（restart 类 / 传输失败；§1.6「回到第一步」）。 */
+  /** 回到 challenge 第一步（restart 类 / 传输失败；§1.6「回到第一步」；
+   * 目标持值保留（P1-5 回填），已输码随流程重发而作废）。 */
   const restartFlow = () => {
     setStep('challenge');
     setStatus('idle');
@@ -369,10 +465,14 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     setNotice(undefined);
     setOtpCode('');
     setPassword('');
+    setChallengeValues({});
   };
 
   const submit = async (values: Readonly<Record<string, string>>) => {
     setLoading(true);
+    if (step === 'challenge') {
+      setChallengeValues(values);
+    }
     // captcha 凭据（§2.5 行 528：重置的下发必须）：challenge 段必带；
     // verify / set_password 不带（payload 无 captcha 字段，§2.4 行 465-466）。
     const needsCaptcha = step === 'challenge';
@@ -414,12 +514,24 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     }
   };
 
-  // verify 段「重新发送」：回到 challenge 段重走（每次下发都要新的 captcha）。
+  // verify 段「重新发送」：回到 challenge 段重走（每次下发都要新的 captcha；
+  // 原目标经 challengeValues → OTPForm initialValues 回填，P1-5）。
   const backToChallenge = () => {
     setStep('challenge');
     setStatus('idle');
     setEnvelope(undefined);
     setOtpCode('');
+  };
+
+  // 评审 P1-4：可重试失败态「重试」= 按当前 step 重提容器持值。
+  const retrySubmit = () => {
+    if (step === 'challenge') {
+      void submit(challengeValues);
+    } else if (step === 'verify') {
+      void submit({ code: otpCode });
+    } else {
+      void submit({});
+    }
   };
 
   return (
@@ -433,11 +545,13 @@ export function ResetPage({ snapshot }: ResetPageProps) {
       loading={loading}
       otpCode={otpCode}
       password={password}
+      challengeValues={challengeValues}
       onSelectMethod={selectMethod}
       onSubmit={submit}
       onOtpCodeChange={setOtpCode}
       onPasswordChange={setPassword}
       onResend={backToChallenge}
+      onRetry={retrySubmit}
       captchaRef={captchaRef}
     />
   );

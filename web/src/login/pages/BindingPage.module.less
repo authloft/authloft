@@ -1,5 +1,9 @@
-// 绑定页样式（docs/前端架构.md §1.7；同目录同名 / camelCase 类名）。
+// 绑定页样式（docs/前端架构.md §1.7；.label/.input/.submit 改消费
+// shared/styles/controls.less mixin，V-3 去逐字重复。本页原地渲染于
+// LoginContainer / OAuthCallbackPage 内（不跳路由），卡片外壳由宿主页面
+// 提供，此处不加——避免嵌套卡）。
 @import (reference) '../../shared/styles/tokens.less';
+@import (reference) '../../shared/styles/controls.less';
 
 .section {
   display: flex;
@@ -19,14 +23,12 @@
 }
 
 .label {
-  display: block;
+  .control-label();
   margin-bottom: @spacing-xs;
 }
 
 .input {
-  padding: @spacing-sm;
-  border: @border-width solid @color-border;
-  border-radius: @radius-sm;
+  .control-input();
 }
 
 .hint {
@@ -36,5 +38,5 @@
 }
 
 .submit {
-  padding: 0.375rem 0.875rem;
+  .control-submit();
 }

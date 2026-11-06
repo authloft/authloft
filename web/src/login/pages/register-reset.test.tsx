@@ -263,6 +263,70 @@ describe('registerPayloadFor / resetPayloadFor（§2.3 行 444-451 / §2.4 行 4
   });
 });
 
+describe('setPasswordIssues（评审 P0-2 + P1-3：set_password 段前置校验）', () => {
+  test('注册（requireUsername）：必填 / 用户名格式 / 确认密码本地比对', () => {
+    // 全空：三字段齐错（用户名必填 + 密码必填 + 确认必填）。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: '',
+        password: '',
+        confirm: '',
+        requireUsername: true,
+      }),
+    ).toEqual({
+      username: '请填写此项',
+      password: '请填写此项',
+      confirm: '请填写此项',
+    });
+    // 用户名格式未过（§2.3 行 449 唯一定义）。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'ab',
+        password: 'Abcdef12',
+        confirm: 'Abcdef12',
+        requireUsername: true,
+      }),
+    ).toEqual({ username: '用户名须为 5-20 位字母、数字或下划线' });
+    // 确认密码不一致（只本地比对，不进 payload）。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'alice',
+        password: 'Abcdef12',
+        confirm: 'Abcdef13',
+        requireUsername: true,
+      }),
+    ).toEqual({ confirm: '两次输入的密码不一致' });
+    // 全过 → 空对象。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'alice',
+        password: 'Abcdef12',
+        confirm: 'Abcdef12',
+        requireUsername: true,
+      }),
+    ).toEqual({});
+  });
+
+  test('重置（requireUsername=false）：不校验用户名，只密码 + 确认', () => {
+    expect(
+      pagesMod.setPasswordIssues({
+        username: '',
+        password: 'NewAbc12',
+        confirm: 'NewAbc12',
+        requireUsername: false,
+      }),
+    ).toEqual({});
+    expect(
+      pagesMod.setPasswordIssues({
+        username: '',
+        password: 'NewAbc12',
+        confirm: '',
+        requireUsername: false,
+      }),
+    ).toEqual({ confirm: '请填写此项' });
+  });
+});
+
 describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
   test('syncCookieUrl 非空优先；双空 → 默认落点 /account/profile（§1.3 行 158-162）', () => {
     expect(
@@ -448,6 +512,46 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).toContain('注册成功，正在跳转');
     expect(markup).not.toContain('<form');
   });
+
+  test('P1-3：set_password 段确认密码 + 密码显隐（PasswordField）', () => {
+    const markup = renderRegisterView({ method: 'password', step: 'set_password' });
+    expect(markup).toContain('确认密码'); // login.confirmPasswordLabel
+    expect(markup).toContain('name="password_confirm"');
+    expect(markup).toContain('>显示</button>'); // 显隐切换（common.reveal）
+    expect(markup).toContain('autoComplete="new-password"'); // PasswordField 缺省
+  });
+
+  test('P1-5：challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
+    const markup = renderRegisterView({
+      method: 'otp_sms',
+      step: 'challenge',
+      challengeValues: { phone: '13800000000' },
+    });
+    expect(markup).toContain('value="13800000000"');
+  });
+
+  test('P1-4：internal_error + onRetry → banner「重试」；verify 段剩余次数 banner 不重复', () => {
+    const retryMarkup = renderRegisterView({
+      status: 'internal_error',
+      envelope: envelope({ status: 'internal_error' }),
+      onRetry: () => {},
+    });
+    expect(retryMarkup).toContain('>重试</button>');
+
+    const verifyMarkup = renderRegisterView({
+      step: 'verify',
+      otpCode: '123456',
+      status: 'invalid_code',
+      envelope: envelope({
+        status: 'invalid_code',
+        error: { message: '验证码错误', attemptsLeft: '3' },
+      }),
+      onRetry: () => {},
+    });
+    expect(verifyMarkup).toContain('还可尝试 3 次'); // 字段旁内联
+    expect(verifyMarkup).not.toContain('次尝试机会'); // banner 不重复
+    expect(verifyMarkup).not.toContain('>重试</button>'); // 非白名单不接 onRetry
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -533,6 +637,21 @@ describe('ResetPageView 状态帧渲染', () => {
     expect(markup).toContain('密码重置成功，请使用新密码登录');
     expect(markup).toContain('href="/sso/login"');
     expect(markup).toContain('去登录');
+  });
+
+  test('P1-3：set_password 段确认密码 + 显隐（重置无用户名字段，§10.4）', () => {
+    const markup = renderResetView({ step: 'set_password' });
+    expect(markup).toContain('确认密码');
+    expect(markup).toContain('新密码');
+    expect(markup).toContain('>显示</button>');
+    expect(markup).not.toContain('name="username"');
+  });
+
+  test('P1-5：challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
+    const markup = renderResetView({
+      challengeValues: { email: 'alice@example.com' },
+    });
+    expect(markup).toContain('value="alice@example.com"');
   });
 });
 

@@ -53,6 +53,8 @@ import {
 } from '../../shared/types/init';
 import { register, type RegisterInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
+import { codeErrorText, focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
+import { PasswordField } from './PasswordField';
 import styles from './RegisterPage.module.less';
 
 // ---------------------------------------------------------------------------
@@ -220,6 +222,41 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 6;
 }
 
+/**
+ * set_password 段前置校验（评审 P0-2 + P1-3；ResetPage 复用）：
+ * 用户名必填 + 格式（§2.3 行 449 唯一定义；requireUsername=false 的重置页跳过）、
+ * 密码必填、确认密码只本地比对（不进 payload，§10.3 / §10.4 字段表无此字段）。
+ * 返回「字段锚（username / password / confirm）→ 错误文案」，空对象 = 全过；
+ * 聚焦顺序即对象键序（SET_PASSWORD_FIELD_ORDER）。纯函数，node 可测。
+ */
+export const SET_PASSWORD_FIELD_ORDER = ['username', 'password', 'confirm'] as const;
+
+export function setPasswordIssues(input: {
+  username: string;
+  password: string;
+  confirm: string;
+  /** 注册 = true（校验用户名）；重置 = false（无用户名字段，§10.4 行 1532）。 */
+  requireUsername: boolean;
+}): Record<string, string> {
+  const issues: Record<string, string> = {};
+  if (input.requireUsername) {
+    if (input.username.trim() === '') {
+      issues.username = t('common.errRequired');
+    } else if (!isValidUsername(input.username)) {
+      issues.username = t('login.usernameHint');
+    }
+  }
+  if (input.password === '') {
+    issues.password = t('common.errRequired');
+  }
+  if (input.confirm === '') {
+    issues.confirm = t('common.errRequired');
+  } else if (input.confirm !== input.password) {
+    issues.confirm = t('login.errPasswordMismatch');
+  }
+  return issues;
+}
+
 // ---------------------------------------------------------------------------
 // 视图（纯状态帧渲染；renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
@@ -257,6 +294,11 @@ export interface RegisterPageViewProps {
   readonly password: string;
   /** challenge 段已提交的目标邮箱（set_password 段 Meter 的标识比对，§5.6）。 */
   readonly challengeEmail?: string;
+  /**
+   * challenge 段已提交的目标值（评审 P1-5：传输失败 / 重发回 challenge
+   * 段时经 OTPForm initialValues 回填；容器持值，页面壳注入）。
+   */
+  readonly challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
   /** 提交（challenge 段上抛目标 values；verify 段 {code}；set_password 段 {}）。 */
   onSubmit: (values: Readonly<Record<string, string>>) => void;
@@ -265,6 +307,8 @@ export interface RegisterPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
+  /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
+  onRetry?: () => void;
   captchaRef?: Ref<CaptchaWidgetHandle>;
 }
 
@@ -280,15 +324,21 @@ export function RegisterPageView({
   username,
   password,
   challengeEmail,
+  challengeValues,
   onSelectMethod,
   onSubmit,
   onOtpCodeChange,
   onUsernameChange,
   onPasswordChange,
   onResend,
+  onRetry,
   captchaRef,
 }: RegisterPageViewProps) {
   const options = registerOptionsFor(snapshot);
+  // 确认密码（P1-3，只本地比对）与 set_password / verify 段前置校验错误（P0-2）。
+  const [confirm, setConfirm] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [codeError, setCodeError] = useState<string | undefined>(undefined);
   // verify 段重发倒计时（nextStep.retryAfter / error.retryAfter，§1.3 行 115/150）。
   const countdown = useCountdown(
     envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter,
@@ -299,8 +349,10 @@ export function RegisterPageView({
   if (snapshot.flags?.registration !== true) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.register')}</h1>
-        <p role="status">{t('errors.status.signup_disabled')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.register')}</h1>
+          <p role="status">{t('errors.status.signup_disabled')}</p>
+        </div>
       </main>
     );
   }
@@ -308,24 +360,30 @@ export function RegisterPageView({
   if (status === 'signup_disabled') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.register')}</h1>
-        <p role="status">{t('errors.status.signup_disabled')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.register')}</h1>
+          <p role="status">{t('errors.status.signup_disabled')}</p>
+        </div>
       </main>
     );
   }
   if (status === 'success') {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.register')}</h1>
-        <p role="status">{t('login.registerSuccess')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.register')}</h1>
+          <p role="status">{t('login.registerSuccess')}</p>
+        </div>
       </main>
     );
   }
   if (options.length === 0) {
     return (
       <main className={styles.page}>
-        <h1 className={styles.title}>{t('login.register')}</h1>
-        <p role="status">{t('login.noRegisterMethods')}</p>
+        <div className={styles.card}>
+          <h1 className={styles.title}>{t('login.register')}</h1>
+          <p role="status">{t('login.noRegisterMethods')}</p>
+        </div>
       </main>
     );
   }
@@ -349,144 +407,241 @@ export function RegisterPageView({
 
   const submitVerify = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !submitDisabled) {
-      onSubmit({ code: otpCode });
+    if (loading || submitDisabled) {
+      return;
     }
+    // 评审 P0-2：6 格未输满不提交，字段旁内联错误。
+    const issue = codeErrorText(otpCode, codeLengthOf(entry));
+    if (issue !== undefined) {
+      setCodeError(issue);
+      focusField('reg-code');
+      return;
+    }
+    setCodeError(undefined);
+    onSubmit({ code: otpCode });
   };
 
   const submitSetPassword = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !submitDisabled) {
-      onSubmit({});
+    if (loading || submitDisabled) {
+      return;
     }
+    // 评审 P0-2 + P1-3：必填 / 用户名格式 / 确认密码本地比对，未过聚焦首错。
+    const issues = setPasswordIssues({
+      username,
+      password,
+      confirm,
+      requireUsername: true,
+    });
+    const first = SET_PASSWORD_FIELD_ORDER.find((name) => issues[name] !== undefined);
+    if (first !== undefined) {
+      setFormErrors(issues);
+      focusField(`reg-${first}`);
+      return;
+    }
+    setFormErrors({});
+    onSubmit({}); // 确认密码不进 payload（P1-3；§2.3 行 451 字段表）
   };
 
   return (
     <main className={styles.page}>
-      <h1 className={styles.title}>{t('login.register')}</h1>
-      {notice !== undefined && <ErrorBanner i18nKey={notice} />}
-      {resolution !== undefined && (
-        <ErrorBanner
-          i18nKey={resolution.i18nKey}
-          fallbackMessage={error?.message}
-          retryAfter={error?.retryAfter}
-          attemptsLeft={error?.attemptsLeft}
-          retryable={resolution.retryable}
-        />
-      )}
-      {options.length > 1 && (
-        <nav>
-          <ul className={styles.methodList}>
-            {options.map((option) => (
-              <li key={option.method}>
-                <button
-                  type="button"
-                  className={
-                    option.method === method
-                      ? styles.methodTabActive
-                      : styles.methodTab
-                  }
-                  aria-current={option.method === method ? 'true' : undefined}
-                  onClick={() => onSelectMethod(option.method)}
-                >
-                  {t(REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
-      {step === 'challenge' && (
-        <div className={styles.section}>
-          <OTPForm
-            fields={snapshotFields(entry?.challengeFields)}
-            loading={loading}
-            disabled={submitDisabled}
-            onSubmit={onSubmit}
+      <div className={styles.card}>
+        <h1 className={styles.title}>{t('login.register')}</h1>
+        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+        {resolution !== undefined && (
+          <ErrorBanner
+            i18nKey={resolution.i18nKey}
+            fallbackMessage={error?.message}
+            retryAfter={error?.retryAfter}
+            // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+            attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
+            retryable={resolution.retryable}
+            onRetry={
+              RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined
+            }
           />
-          {captchaNode}
-        </div>
-      )}
-      {step === 'verify' && (
-        <form onSubmit={submitVerify} className={styles.section}>
-          <label className={styles.label}>{t('login.codeLabel')}</label>
-          <CodeInput
-            value={otpCode}
-            onChange={onOtpCodeChange}
-            length={codeLengthOf(entry)}
-            ariaLabel={t('login.codeLabel')}
-            disabled={loading || submitDisabled}
-          />
-          {error?.attemptsLeft !== undefined && (
-            <p role="status" className={styles.status}>
-              {t('login.attemptsLeft', {
-                count: toDisplay(error.attemptsLeft),
-              })}
-            </p>
-          )}
-          <button
-            type="button"
-            disabled={loading || !countdown.expired}
-            onClick={onResend}
-            className={styles.resend}
-          >
-            {countdown.expired
-              ? t('login.resend')
-              : t('login.resendCountdown', { seconds: countdown.seconds })}
-          </button>
-          <button
-            type="submit"
-            disabled={loading || submitDisabled}
-            className={styles.submit}
-          >
-            {t('login.nextStep')}
-          </button>
-        </form>
-      )}
-      {step === 'set_password' && (
-        <form onSubmit={submitSetPassword} className={styles.section}>
-          <div className={styles.field}>
-            <label className={styles.label}>{t('login.usernameLabel')}</label>
-            <input
-              className={styles.input}
-              name="username"
-              type="text"
-              value={username}
-              autoComplete="username"
-              onChange={(e) => onUsernameChange(e.target.value)}
+        )}
+        {options.length > 1 && (
+          <nav>
+            <ul className={styles.methodList}>
+              {options.map((option) => (
+                <li key={option.method}>
+                  <button
+                    type="button"
+                    className={
+                      option.method === method
+                        ? styles.methodTabActive
+                        : styles.methodTab
+                    }
+                    aria-current={option.method === method ? 'true' : undefined}
+                    onClick={() => onSelectMethod(option.method)}
+                  >
+                    {t(REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+        {step === 'challenge' && (
+          <div className={styles.section}>
+            <OTPForm
+              fields={snapshotFields(entry?.challengeFields)}
+              loading={loading}
+              disabled={submitDisabled}
+              onSubmit={onSubmit}
+              initialValues={challengeValues}
             />
-            {username !== '' && !isValidUsername(username) && (
-              <p role="status" className={styles.hint}>
-                {t('login.usernameHint')}
+            {captchaNode}
+          </div>
+        )}
+        {step === 'verify' && (
+          <form onSubmit={submitVerify} className={styles.section}>
+            <label className={styles.label} htmlFor="reg-code">
+              {t('login.codeLabel')}
+            </label>
+            <CodeInput
+              value={otpCode}
+              onChange={(value) => {
+                onOtpCodeChange(value);
+                setCodeError(undefined);
+              }}
+              length={codeLengthOf(entry)}
+              ariaLabel={t('login.codeLabel')}
+              id="reg-code"
+              disabled={loading || submitDisabled}
+              ariaInvalid={codeError !== undefined}
+              ariaDescribedBy={codeError !== undefined ? 'reg-code-error' : undefined}
+            />
+            {codeError !== undefined && (
+              <p id="reg-code-error" className={styles.fieldError}>
+                {codeError}
               </p>
             )}
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>{t('login.passwordLabel')}</label>
-            <input
-              className={styles.input}
+            {error?.attemptsLeft !== undefined && (
+              <p role="status" className={styles.status}>
+                {t('login.attemptsLeft', {
+                  count: toDisplay(error.attemptsLeft),
+                })}
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={loading || !countdown.expired}
+              onClick={onResend}
+              className={styles.resend}
+            >
+              {countdown.expired
+                ? t('login.resend')
+                : t('login.resendCountdown', { seconds: countdown.seconds })}
+            </button>
+            <button
+              type="submit"
+              disabled={loading || submitDisabled}
+              className={styles.submit}
+            >
+              {t('login.nextStep')}
+            </button>
+          </form>
+        )}
+        {step === 'set_password' && (
+          <form onSubmit={submitSetPassword} className={styles.section}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="reg-username">
+                {t('login.usernameLabel')}
+              </label>
+              <input
+                className={styles.input}
+                id="reg-username"
+                name="username"
+                type="text"
+                value={username}
+                autoComplete="username"
+                onChange={(e) => {
+                  onUsernameChange(e.target.value);
+                  setFormErrors((prev) => {
+                    if (prev.username === undefined) {
+                      return prev;
+                    }
+                    const next = { ...prev };
+                    delete next.username;
+                    return next;
+                  });
+                }}
+                {...(formErrors.username !== undefined
+                  ? {
+                      'aria-invalid': true as const,
+                      'aria-describedby': 'reg-username-error',
+                    }
+                  : {})}
+              />
+              {formErrors.username !== undefined ? (
+                <p id="reg-username-error" className={styles.fieldError}>
+                  {formErrors.username}
+                </p>
+              ) : (
+                username !== '' &&
+                !isValidUsername(username) && (
+                  <p role="status" className={styles.hint}>
+                    {t('login.usernameHint')}
+                  </p>
+                )
+              )}
+            </div>
+            <PasswordField
+              id="reg-password"
               name="password"
-              type="password"
+              label={t('login.passwordLabel')}
               value={password}
-              autoComplete="new-password"
-              onChange={(e) => onPasswordChange(e.target.value)}
+              onChange={(value) => {
+                onPasswordChange(value);
+                setFormErrors((prev) => {
+                  if (prev.password === undefined) {
+                    return prev;
+                  }
+                  const next = { ...prev };
+                  delete next.password;
+                  return next;
+                });
+              }}
+              error={formErrors.password}
+              disabled={loading}
             />
-          </div>
-          <PasswordStrengthMeter
-            password={password}
-            username={username}
-            email={challengeEmail}
-          />
-          {captchaNode}
-          <button
-            type="submit"
-            disabled={loading || submitDisabled}
-            className={styles.submit}
-          >
-            {t('login.register')}
-          </button>
-        </form>
-      )}
+            <PasswordField
+              id="reg-confirm"
+              name="password_confirm"
+              label={t('login.confirmPasswordLabel')}
+              value={confirm}
+              onChange={(value) => {
+                setConfirm(value);
+                setFormErrors((prev) => {
+                  if (prev.confirm === undefined) {
+                    return prev;
+                  }
+                  const next = { ...prev };
+                  delete next.confirm;
+                  return next;
+                });
+              }}
+              error={formErrors.confirm}
+              disabled={loading}
+            />
+            <PasswordStrengthMeter
+              password={password}
+              username={username}
+              email={challengeEmail}
+            />
+            {captchaNode}
+            <button
+              type="submit"
+              disabled={loading || submitDisabled}
+              className={styles.submit}
+            >
+              {t('login.register')}
+            </button>
+          </form>
+        )}
+      </div>
     </main>
   );
 }
@@ -546,6 +701,8 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     setOtpCode('');
     setUsername('');
     setPassword('');
+    // 换方式 = 全新流程：目标持值一并清空（防上一种方式的目标泄进新流程的 Meter 比对）。
+    setChallengeValues({});
   };
 
   const submit = async (values: Readonly<Record<string, string>>) => {
@@ -600,12 +757,24 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
   };
 
   // verify 段「重新发送」：回到 challenge 段重走（每次下发都要新的 captcha，
-  // §2.5 行 525；原目标在 OTPForm challenge 段重渲染，用户可改可重发）。
+  // §2.5 行 525；原目标经 challengeValues → OTPForm initialValues 回填，P1-5）。
   const backToChallenge = () => {
     setStep('challenge');
     setStatus('idle');
     setEnvelope(undefined);
     setOtpCode('');
+  };
+
+  // 评审 P1-4：可重试失败态「重试」= 按当前 step 重提容器持值
+  // （challenge 目标 / verify 已输码 / set_password 受控用户名密码均在壳内）。
+  const retrySubmit = () => {
+    if (step === 'challenge') {
+      void submit(challengeValues);
+    } else if (step === 'verify') {
+      void submit({ code: otpCode });
+    } else {
+      void submit({});
+    }
   };
 
   return (
@@ -621,12 +790,14 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
       username={username}
       password={password}
       challengeEmail={challengeValues.email}
+      challengeValues={challengeValues}
       onSelectMethod={selectMethod}
       onSubmit={submit}
       onOtpCodeChange={setOtpCode}
       onUsernameChange={setUsername}
       onPasswordChange={setPassword}
       onResend={backToChallenge}
+      onRetry={retrySubmit}
       captchaRef={captchaRef}
     />
   );

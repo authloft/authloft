@@ -51,8 +51,9 @@
   text-decoration: underline;
 }
 
-// 窄屏收敛：卡片贴边留小外边距、内边距收紧。
-@media (max-width: 480px) {
+// 窄屏收敛（评审 P0-4）：断点消费 tokens.less @breakpoint-sm，
+// 卡片贴边留小外边距、内边距收紧。
+@media (max-width: @breakpoint-sm) {
   .page {
     padding: @spacing-lg @spacing-md;
   }

@@ -65,6 +65,7 @@ import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
 import { StepDispatcher } from './steps/StepDispatcher';
 import { MethodTabs } from './MethodTabs';
+import { RETRY_RESUBMIT_STATUSES } from './validate';
 import styles from './LoginContainer.module.less';
 import {
   flowReducer,
@@ -352,6 +353,15 @@ export interface LoginFlowViewProps {
    * → QRCodeStep 上抛——binding_required / 失败态经容器 qrResultEvent 分派。
    */
   onQrResult?: (envelope: LoginFlowResponse) => void;
+  /**
+   * 「返回方式列表」入口（评审 P0-1）：next / mfa 分支渲染次级链接，
+   * 容器 dispatch reset 回第一步（reducer「换方式 = 全新流程」语义）。
+   */
+  onBackToMethods?: () => void;
+  /** 可重试失败态的「重试」动作（评审 P1-4：重提最近一次提交的容器持值）。 */
+  onRetry?: () => void;
+  /** challenge 段已提交目标值（评审 P1-5：OTPForm initialValues 回填）。 */
+  challengeValues?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -407,6 +417,9 @@ export function LoginFlowView({
   onCredential,
   challengeData,
   onQrResult,
+  onBackToMethods,
+  onRetry,
+  challengeValues,
 }: LoginFlowViewProps) {
   // 扫码轮询态（本容器不发起轮询；QRCodeStep / PollStep 归后续实现）。
   if (
@@ -434,6 +447,29 @@ export function LoginFlowView({
   const resolution = isErrorStatus(state.status)
     ? resolveFlowStatus(state.status)
     : undefined;
+
+  /**
+   * 评审 P1-4：banner 公共接线——OTP 系因子的剩余次数由字段旁内联
+   * 承载（OTPForm attemptsLeft），banner 不再重复；onRetry 仅「重提同值有意义」
+   * 的白名单失败态接线（RETRY_RESUBMIT_STATUSES；retryable 由 ErrorBanner 自身判定）。
+   */
+  const bannerExtras = (factorMethod: string) => ({
+    attemptsLeft: isOtpForm(lookupFactor(factorMethod))
+      ? undefined
+      : error?.attemptsLeft,
+    onRetry: RETRY_RESUBMIT_STATUSES.has(state.status) ? onRetry : undefined,
+  });
+
+  /** 评审 P0-1：next / mfa 分支的「返回方式列表」次级入口。 */
+  const backToMethodsNode = onBackToMethods !== undefined && (
+    <button
+      type="button"
+      className={styles.backLink}
+      onClick={onBackToMethods}
+    >
+      {t('login.backToMethods')}
+    </button>
+  );
 
   /**
    * 因子渲染三态（§4.3 行 434）：undefined → 缺映射兜底（如 thirdparty，不静默
@@ -480,6 +516,7 @@ export function LoginFlowView({
           onResend={onResend}
           code={otpCode}
           onCodeChange={onOtpCodeChange}
+          initialValues={challengeValues}
         />
       );
     }
@@ -535,10 +572,11 @@ export function LoginFlowView({
             i18nKey={resolution.i18nKey}
             fallbackMessage={error?.message}
             retryAfter={error?.retryAfter}
-            attemptsLeft={error?.attemptsLeft}
             retryable={resolution.retryable}
+            {...bannerExtras(mfaEntry?.method ?? state.method)}
           />
         )}
+        {backToMethodsNode}
       </div>
     );
   }
@@ -568,10 +606,11 @@ export function LoginFlowView({
             i18nKey={resolution.i18nKey}
             fallbackMessage={error?.message}
             retryAfter={error?.retryAfter}
-            attemptsLeft={error?.attemptsLeft}
             retryable={resolution.retryable}
+            {...bannerExtras(nextMethod)}
           />
         )}
+        {backToMethodsNode}
       </div>
     );
   }
@@ -610,8 +649,8 @@ export function LoginFlowView({
           i18nKey={resolution.i18nKey}
           fallbackMessage={error?.message}
           retryAfter={error?.retryAfter}
-          attemptsLeft={error?.attemptsLeft}
           retryable={resolution.retryable}
+          {...bannerExtras(state.method)}
         />
       )}
     </div>
@@ -671,6 +710,10 @@ export function LoginContainer({
   const [challengeData, setChallengeData] = useState<JsonObject | undefined>(
     undefined,
   );
+  // 最近一次提交的表单值（评审 P1-4：可重试失败态 onRetry 重提）。
+  const [lastValues, setLastValues] = useState<
+    Readonly<Record<string, string>> | undefined
+  >(undefined);
 
   const submit = async (values: Readonly<Record<string, string>>) => {
     // request_started 先于请求同步派发（loading 立即反映 UI）。
@@ -678,6 +721,7 @@ export function LoginContainer({
     if (state.step === 'challenge') {
       setChallengeValues(values);
     }
+    setLastValues(values);
     const { events, failed } = await runSubmit(
       state,
       toPayloadInit(
@@ -817,6 +861,24 @@ export function LoginContainer({
     }
   };
 
+  // 评审 P0-1：「返回方式列表」= 回第一步（reducer「换方式 = 全新
+  // 流程」语义的 reset 落地）；一次性提示与 options 镜像清空，challengeValues /
+  // otpCode 持值保留（重选 OTP 方式时回填，P1-5 同款语义）。
+  const backToMethods = () => {
+    dispatch({ type: 'reset' });
+    setMfaMethods(undefined);
+    setChallengeData(undefined);
+    setNotice(undefined);
+  };
+
+  // 评审 P1-4：可重试失败态「重试」= 重提最近一次提交值（captcha
+  // 凭据由 submit 内 captchaRef 现取，captcha_invalid 换凭据重提成立）。
+  const retrySubmit = () => {
+    if (lastValues !== undefined) {
+      void submit(lastValues);
+    }
+  };
+
   return (
     <LoginFlowView
       snapshot={snapshot}
@@ -833,6 +895,9 @@ export function LoginContainer({
       onCredential={submitCredential}
       challengeData={challengeData}
       onQrResult={onQrResult}
+      onBackToMethods={backToMethods}
+      onRetry={retrySubmit}
+      challengeValues={challengeValues}
     />
   );
 }

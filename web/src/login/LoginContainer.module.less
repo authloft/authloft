@@ -1,6 +1,7 @@
 // 登录容器样式（docs/前端架构.md §1.7；视觉重做：状态分支统一流式
 // 间距节奏 + MFA 选择器改纵向可选卡片列表）。
 @import (reference) '../shared/styles/tokens.less';
+@import (reference) '../shared/styles/controls.less';
 
 // 状态分支外层：横幅 / 方式切换 / 因子表单 / captcha / 错误提示的纵向节奏。
 .flow {
@@ -63,4 +64,10 @@
   padding-left: @spacing-lg;
   color: @color-text-muted;
   font-size: @font-size-sm;
+}
+
+// 「返回方式列表」次级入口（评审 P0-1）：文字链接型次按钮。
+.backLink {
+  .control-text-button();
+  align-self: center;
 }

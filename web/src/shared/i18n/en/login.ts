@@ -12,6 +12,7 @@ export const login: typeof zhLogin = {
   'login.noMethods': 'No sign-in methods available',
   'login.selectMethodHint': 'Please choose a sign-in method',
   'login.mfaSelectHint': 'Please choose a second-factor verification method',
+  'login.backToMethods': 'Back to sign-in options',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
   'login.redirecting': 'Signed in, redirecting…',
   // ---- 注册页（RegisterPage）----------------------------------------------
@@ -25,6 +26,8 @@ export const login: typeof zhLogin = {
   'login.codeLabel': 'Verification code',
   'login.usernameLabel': 'Username',
   'login.passwordLabel': 'Password',
+  'login.confirmPasswordLabel': 'Confirm password',
+  'login.errPasswordMismatch': 'Passwords do not match',
   'login.attemptsLeft': '{count} attempts left',
   'login.registerMethodPassword': 'Register with username and password',
   'login.registerMethodOtpSms': 'Register with phone number',

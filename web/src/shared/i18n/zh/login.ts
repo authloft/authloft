@@ -13,6 +13,8 @@ export const login = {
   'login.noMethods': '暂无可用登录方式',
   'login.selectMethodHint': '请选择登录方式',
   'login.mfaSelectHint': '请选择二次验证方式',
+  // 评审 P0-1：next / mfa 分支「返回方式列表」入口。
+  'login.backToMethods': '返回方式列表',
   'login.pollPlaceholder': '扫码流程即将支持',
   'login.redirecting': '登录成功，正在跳转…',
   // ---- 注册页（RegisterPage）----------------------------------------------
@@ -25,6 +27,9 @@ export const login = {
   'login.codeLabel': '验证码',
   'login.usernameLabel': '用户名',
   'login.passwordLabel': '密码',
+  // 评审 P1-3：注册 / 重置确认密码（只本地比对，不进 payload）。
+  'login.confirmPasswordLabel': '确认密码',
+  'login.errPasswordMismatch': '两次输入的密码不一致',
   'login.attemptsLeft': '还可尝试 {count} 次',
   'login.registerMethodPassword': '用户名密码注册',
   'login.registerMethodOtpSms': '手机号注册',
