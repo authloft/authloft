@@ -47,11 +47,20 @@ export const setup: typeof zhSetup = {
   'setup.startInitialize': 'Start Initialization',
   'setup.switchToInstall': 'Switch to Fresh Install',
 
-  // ---- 全新安装页（路径 B，§13.3）----
+  // ---- Fresh install page (path B, §13.3) ----
   'setup.installTitle': 'Fresh Install',
   'setup.installIntro':
     'Enter the database and Redis connection details and the administrator account; once it succeeds, the service restarts automatically.',
-  'setup.fieldDbDsn': 'Database connection string (DSN)',
+  // DB six fields (assembled into a single dbDsn on the client; wire contract unchanged).
+  'setup.fieldDbHost': 'Database host',
+  'setup.fieldDbPort': 'Database port',
+  'setup.fieldDbUser': 'Database username',
+  'setup.fieldDbPassword': 'Database password',
+  'setup.fieldDbName': 'Database name',
+  'setup.fieldDbParams': 'Extra parameters',
+  'setup.hintDbPort': 'MySQL default 3306; range 1-65535',
+  'setup.hintDbParams':
+    'Optional; appended to the DSN as-is, e.g. charset=utf8mb4&parseTime=true',
   'setup.fieldRedisAddr': 'Redis address',
   'setup.fieldRedisPassword': 'Redis password',
   'setup.fieldRedisDb': 'Redis database number',
@@ -67,6 +76,19 @@ export const setup: typeof zhSetup = {
     'The primary domain cannot be an IP address. Please use a domain (localhost is allowed)',
   'setup.error.rootInvalid':
     'Invalid primary domain: it must be a full URL starting with http:// or https://, with a domain as its host',
+  // DB six-field pre-validation messages (client-side hints only; the backend is the sole authority).
+  'setup.error.dbHostRequired': 'Please enter the database host',
+  'setup.error.dbPortRequired': 'Please enter the database port',
+  'setup.error.dbUserRequired': 'Please enter the database username',
+  'setup.error.dbPasswordRequired': 'Please enter the database password',
+  'setup.error.dbNameRequired': 'Please enter the database name',
+  'setup.error.dbPortInvalid': 'The port must be a number between 1 and 65535',
+  'setup.error.dbUserColon':
+    'The database username cannot contain a colon (:)',
+  'setup.error.dbNameInvalid': 'The database name cannot contain ? or /',
+  // Field-level display for db_unreachable (InstallPage points at the DSN field group; UploadConfig keeps dbUnreachable).
+  'setup.error.dbUnreachableFields':
+    'Cannot connect to the database. Please check the host / port / username / password',
   'setup.hintRpId': 'Defaults to the current domain',
   'setup.requiredMark': '(required)',
   'setup.installing': 'Installing…',

@@ -48,7 +48,15 @@ export const setup = {
   'setup.installTitle': '全新安装',
   'setup.installIntro':
     '填写数据库与 Redis 连接信息及管理员账号；成功后自动进入重启。',
-  'setup.fieldDbDsn': '数据库连接串（DSN）',
+  // DB 六字段（前端拼装为单个 dbDsn，wire 契约不变）。
+  'setup.fieldDbHost': '数据库地址',
+  'setup.fieldDbPort': '数据库端口',
+  'setup.fieldDbUser': '数据库用户名',
+  'setup.fieldDbPassword': '数据库密码',
+  'setup.fieldDbName': '数据库名',
+  'setup.fieldDbParams': '额外参数',
+  'setup.hintDbPort': 'MySQL 默认 3306，取值 1-65535',
+  'setup.hintDbParams': '可选，原样追加在 DSN 末尾，如 charset=utf8mb4&parseTime=true',
   'setup.fieldRedisAddr': 'Redis 地址',
   'setup.fieldRedisPassword': 'Redis 密码',
   'setup.fieldRedisDb': 'Redis 库号',
@@ -64,6 +72,18 @@ export const setup = {
     '主域名不能是 IP，请填写域名（localhost 允许）',
   'setup.error.rootInvalid':
     '主域名格式不正确：须为 http:// 或 https:// 开头的完整地址，且 host 为域名',
+  // DB 六字段前置校验文案（DSN 拼装见 setup/dsn.ts，后端为唯一权威）。
+  'setup.error.dbHostRequired': '请填写数据库地址',
+  'setup.error.dbPortRequired': '请填写数据库端口',
+  'setup.error.dbUserRequired': '请填写数据库用户名',
+  'setup.error.dbPasswordRequired': '请填写数据库密码',
+  'setup.error.dbNameRequired': '请填写数据库名',
+  'setup.error.dbPortInvalid': '端口须为 1-65535 的数字',
+  'setup.error.dbUserColon': '数据库用户名不能包含冒号（:）',
+  'setup.error.dbNameInvalid': '数据库名不能包含 ? 或 /',
+  // db_unreachable 字段级展示（InstallPage 定位到 DSN 字段组；UploadConfig 沿用 dbUnreachable）。
+  'setup.error.dbUnreachableFields':
+    '数据库连接失败，请检查地址 / 端口 / 用户名 / 密码',
   'setup.hintRpId': '默认取当前域名',
   'setup.requiredMark': '（必填）',
   'setup.installing': '正在安装…',

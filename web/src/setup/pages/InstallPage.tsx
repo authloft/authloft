@@ -1,11 +1,20 @@
 /**
  * 全新安装页（路径 B，docs/前端架构.md §6b / 接口文档 §13.3）：
- * DB / Redis 连接、主域名与 RP ID（自动读取默认值）、管理员账号密码。
+ * DB（六字段，../dsn 拼装为单个 dbDsn，wire 契约不变）/ Redis 连接、
+ * 主域名与 RP ID（自动读取默认值）、管理员账号密码。
  * 约束（§6b）：密码字段不回显；字段级错误（username_invalid / password_weak 等）
- * 按 §13 映射到字段；成功（restarting:true）进入重启流程。
+ * 按 §13 映射到字段（db_unreachable 定位到 DSN 字段组提示）；成功
+ * （restarting:true）进入重启流程。
  */
 import { useState, type FormEvent } from 'react';
 import { requestInstall, setupMessage } from '../api';
+import {
+  buildMysqlDsn,
+  validateDbDsnFields,
+  type DbDsnFieldError,
+  type DbDsnFieldKey,
+  type DbDsnFormFields,
+} from '../dsn';
 import { ApiError } from '../../shared/api/errors';
 import { t } from '../../shared/i18n';
 import styles from './InstallPage.module.less';
@@ -15,7 +24,12 @@ interface InstallPageProps {
 }
 
 interface InstallFormState {
-  dbDsn: string;
+  dbHost: string;
+  dbPort: string;
+  dbUser: string;
+  dbPassword: string;
+  dbName: string;
+  dbParams: string;
   redisAddr: string;
   redisPassword: string;
   redisDb: string;
@@ -32,9 +46,57 @@ const FIELD_BY_CODE: Readonly<Record<string, InstallField>> = {
   config_invalid: 'root',
   username_invalid: 'adminUsername',
   password_weak: 'adminPassword',
-  db_unreachable: 'dbDsn',
+  db_unreachable: 'dbHost',
   redis_unreachable: 'redisAddr',
 };
+
+/**
+ * 字段级展示文案键覆盖（拆字段后 db_unreachable 指向 DSN 字段组合，
+ * 不复用 UploadConfig 的「检查连接串」措辞，其余错误码沿用 setupMessage）。
+ */
+const FIELD_MESSAGE_KEY_BY_CODE: Readonly<Record<string, string>> = {
+  db_unreachable: 'setup.error.dbUnreachableFields',
+};
+
+/** dsn.ts 字段键 → 本表单字段键。 */
+const DB_FIELD_TO_FORM: Readonly<Record<DbDsnFieldKey, InstallField>> = {
+  host: 'dbHost',
+  port: 'dbPort',
+  user: 'dbUser',
+  password: 'dbPassword',
+  database: 'dbName',
+  params: 'dbParams',
+};
+
+/** DB 必填文案按字段区分（params 可选，不会触发 required）。 */
+const DB_REQUIRED_KEYS: Readonly<Partial<Record<DbDsnFieldKey, string>>> = {
+  host: 'setup.error.dbHostRequired',
+  port: 'setup.error.dbPortRequired',
+  user: 'setup.error.dbUserRequired',
+  password: 'setup.error.dbPasswordRequired',
+  database: 'setup.error.dbNameRequired',
+};
+
+/** DB 非必填类校验失败 → i18n 键（体验性校验，§9 第 4 条：后端为唯一权威）。 */
+const DB_ERROR_KEYS: Readonly<
+  Record<Exclude<DbDsnFieldError, 'required'>, string>
+> = {
+  portInvalid: 'setup.error.dbPortInvalid',
+  userColon: 'setup.error.dbUserColon',
+  nameInvalid: 'setup.error.dbNameInvalid',
+};
+
+/** 表单 DB 六字段 → dsn.ts 校验入参（host/port/user/database/params）。 */
+function formToDbDsnFields(form: InstallFormState): DbDsnFormFields {
+  return {
+    host: form.dbHost,
+    port: form.dbPort,
+    user: form.dbUser,
+    password: form.dbPassword,
+    database: form.dbName,
+    params: form.dbParams,
+  };
+}
 
 /**
  * 域名 host 形状（§13.3：域名或 localhost；label 为字母数字连字符，
@@ -102,7 +164,13 @@ export function prefillRoot(origin: string): string {
  */
 function initialFormState(): InstallFormState {
   return {
-    dbDsn: '',
+    dbHost: '',
+    // MySQL 标准端口预填（与 redisDb 默认 '0' 同款惯例；仍可显式覆盖）。
+    dbPort: '3306',
+    dbUser: '',
+    dbPassword: '',
+    dbName: '',
+    dbParams: '',
     redisAddr: '',
     redisPassword: '',
     redisDb: '0',
@@ -121,10 +189,14 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // §13.3 必填：db_dsn / redis_addr / admin_username / admin_password
+  // §13.3 必填：DB 五项 / redis_addr / admin_username / admin_password
   //（前端仅体验性校验，后端是唯一权威——编码约束 §9 第 4 条）。
   const requiredFilled =
-    form.dbDsn.trim() !== '' &&
+    form.dbHost.trim() !== '' &&
+    form.dbPort.trim() !== '' &&
+    form.dbUser.trim() !== '' &&
+    form.dbPassword !== '' &&
+    form.dbName.trim() !== '' &&
     form.redisAddr.trim() !== '' &&
     form.adminUsername.trim() !== '' &&
     form.adminPassword !== '';
@@ -137,17 +209,32 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
     event.preventDefault();
     setFieldErrors({});
     setFormError(null);
-    // §6b root 前置校验：必填 + 拒 IP + 域名格式，非法不发起请求
-    //（体验性校验，后端为唯一权威——编码约束 §9 第 4 条）。
+    // §6b 前置体验性校验（后端为唯一权威——编码约束 §9 第 4 条）：
+    // root 必填 + 拒 IP + 域名格式；DB 六字段口径（必填 / 端口 1-65535 /
+    // 用户名拒 `:` / 库名拒 `?` `/`，见 ../dsn）。失败项合并一次展示。
+    const nextErrors: Partial<Record<InstallField, string>> = {};
     const rootError = checkRoot(form.root);
     if (rootError !== null) {
-      setFieldErrors({ root: t(ROOT_ERROR_KEYS[rootError]) });
+      nextErrors.root = t(ROOT_ERROR_KEYS[rootError]);
+    }
+    const dbErrors = validateDbDsnFields(formToDbDsnFields(form));
+    for (const [field, error] of Object.entries(
+      dbErrors,
+    ) as Array<[DbDsnFieldKey, DbDsnFieldError]>) {
+      nextErrors[DB_FIELD_TO_FORM[field]] =
+        error === 'required'
+          ? t(DB_REQUIRED_KEYS[field] ?? 'setup.error.unknown')
+          : t(DB_ERROR_KEYS[error]);
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
       return;
     }
     setSubmitting(true);
     try {
       await requestInstall({
-        dbDsn: form.dbDsn.trim(),
+        // wire 契约不变（§13.3）：六字段拼装为单个 dbDsn 再提交。
+        dbDsn: buildMysqlDsn(formToDbDsnFields(form)),
         redisAddr: form.redisAddr.trim(),
         redisPassword: form.redisPassword,
         redisDb: Number.parseInt(form.redisDb, 10) || 0,
@@ -160,7 +247,10 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
       onRestarting();
     } catch (error) {
       if (error instanceof ApiError) {
-        const message = setupMessage(error.code);
+        const overrideKey = FIELD_MESSAGE_KEY_BY_CODE[error.code];
+        const message = overrideKey
+          ? t(overrideKey)
+          : setupMessage(error.code);
         const field = FIELD_BY_CODE[error.code];
         if (field) {
           setFieldErrors((prev) => ({ ...prev, [field]: message }));
@@ -182,7 +272,27 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
     required?: boolean;
     hint?: string;
   }> = [
-    { key: 'dbDsn', label: t('setup.fieldDbDsn'), required: true },
+    { key: 'dbHost', label: t('setup.fieldDbHost'), required: true },
+    {
+      key: 'dbPort',
+      label: t('setup.fieldDbPort'),
+      type: 'number',
+      required: true,
+      hint: t('setup.hintDbPort'),
+    },
+    { key: 'dbUser', label: t('setup.fieldDbUser'), required: true },
+    {
+      key: 'dbPassword',
+      label: t('setup.fieldDbPassword'),
+      type: 'password',
+      required: true,
+    },
+    { key: 'dbName', label: t('setup.fieldDbName'), required: true },
+    {
+      key: 'dbParams',
+      label: t('setup.fieldDbParams'),
+      hint: t('setup.hintDbParams'),
+    },
     { key: 'redisAddr', label: t('setup.fieldRedisAddr'), required: true },
     {
       key: 'redisPassword',
