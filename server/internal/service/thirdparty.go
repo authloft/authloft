@@ -16,8 +16,16 @@
 //     （api 通道 SessionInBody）；未绑定：binding_required + 重签 login_token
 //     精简 tp 载荷（§12.5 行 1501：去掉 Raw，只留 pk/openid/unionid/
 //     nickname/avatar）+ binding.allowSignup（enable_signup 映射）。
-//   - 扫码（stage/ticketId）与 LoginOauth 的 ticket 写入暂不实装：带
-//     ticketId 或 stage=scanned 一律 invalid_request（此处默认口径）。
+//   - 扫码两阶段写入（接口文档 §2.7.4 行 656-659「扫码两阶段
+//     写入」）：stage=scanned 只带 providerKey+ticketId，取快照键
+//     al:ticket:payload:{ticket_id}（CreateQrcode 写入，§2.8 行 719）校验
+//     （存在 / scene 合法 / providerKey 匹配 / 未过期）→ WriteScanned（SET
+//     NX 幂等，不覆盖 success）→ 票据状态应答 {status:"scanned"}；stage=
+//     complete 带 ticketId：快照校验 → 既有 Exchange / FetchUser 链 → 按
+//     scene 分派写 TicketResult（§13.2b：login → login_result；bind →
+//     thirdparty_identity，不建会话 / 不查绑定 / 不写绑定关系）→
+//     {status:"success", ticketId}；失败类 ticket failed + 信封 status；
+//     MFA×扫码（行 653 / 750）：mfa_required 信封、不写 ticket。
 //
 // 业务失败在登录流程信封域（LoginOauth）一律走信封 status（§1.6 封闭集，
 // 零自造）；Authorize 是普通 RPC，可判别哨兵错误由 handler 转 Connect
@@ -33,11 +41,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
@@ -65,6 +75,9 @@ const (
 	stateRandomLen = 32
 	// amrThirdParty 三方登录的认证方法引用（§12.5：MFA 信封 amr）。
 	amrThirdParty = "thirdparty"
+	// stageScanned LoginOauth.stage 的 scanned 取值（§2.7.4 行 640：complete
+	// 默认｜scanned 仅上报已扫码；其余取值按 complete 默认处理，跨版本可新增）。
+	stageScanned = "scanned"
 	// userStatusNormal user.user_status=1 正常，其余禁用（§4.2 行 630；
 	// 先例 factor/password/factor.go:178 同款字面量口径）。
 	userStatusNormal = 1
@@ -119,6 +132,12 @@ type ThirdpartyDeps struct {
 	State      *orchestrator.State
 	MFA        *orchestrator.MFABuilder
 	Terminal   *orchestrator.Terminal
+	// Tickets al:ticket:{ticket_id} 结果读写（§11.6.5；扫码 ticket
+	// 分支）。
+	Tickets TicketStore
+	// TicketPayloads al:ticket:payload:{ticket_id} 快照读取（§5.1 行 863、
+	// §11.6.4 行 1350；扫码 ticket 分支——CreateQrcode 写、此处读）。
+	TicketPayloads TicketPayloadStore
 	// CookieCodec sign_key.cookie（§12.4 行 1487），al_login_state 加解密。
 	CookieCodec *security.Codec
 	// HTTPSMode https_deployment 三态源（每请求读取，装配层注入 settings
@@ -244,20 +263,13 @@ type OauthOutput struct {
 }
 
 // LoginOauth 三方登录统一入口（§2.7.4）：redirect（浏览器回调）与 api
-// （小程序 code）两通道；扫码 ticket 写入暂不实装。
+// （小程序 code）两通道；扫码提交（qrcode 通道，必带 ticketId）走两阶段
+// 写入（stage=scanned / complete，§2.7.4 行 656-659）。
 func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput {
-	// 边界：带 ticketId / stage=scanned 一律 invalid_request。该分支原
-	// 计划一并收编，经实证存在文档内部缺口无法合规落实现：LoginOauth
-	// 请求 wire 仅携带 ticket_id（oauth.proto LoginOauthRequest 无 ticket 字
-	// 段，零 proto 改动约束），小程序端从码图 scene 也只拿得到 ticket_id
-	// （§11.6.4 行 1342）；而接口文档 §2.7.4 行 658 / §3.7.1B 行 1014 /
-	// 后端架构 §13.2b 行 1611 要求小程序端提交时「先解 ticket 取 scene」
-	// （存在 / 未过期 / scene / providerKey 匹配校验，scene 不由客户端指
-	// 定）——服务端无从取 TicketPayload，键表（§5.1 行 861）亦无其存储位。
-	// 该缺口待定（proto 增 ticket 字段或键表新增 TicketPayload 存储位）
-	// 后另行收编；此前维持拒绝（比无校验写入 scanned 更安全）。
-	if in.TicketID != "" || in.Stage == "scanned" {
-		return s.envelope(orchestrator.StatusInvalidRequest)
+	// stage=scanned（§2.7.4 行 656-658）：只带 providerKey + ticketId，
+	// 不需要任何凭证，独立分支（不进下述通道 / Exchange 链）。
+	if in.Stage == stageScanned {
+		return s.loginOauthScanned(ctx, in)
 	}
 	if strings.TrimSpace(in.ProviderKey) == "" || in.Code == "" {
 		return s.envelope(orchestrator.StatusInvalidRequest)
@@ -278,15 +290,22 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		return s.envelope(statusProviderDisabled)
 	}
 	channel := adapter.Channel()
-	if channel != provider.ChannelRedirect && channel != provider.ChannelAPI {
-		// qrcode 通道的提交必带 ticketId（§13.2），已在入口拒绝；无 ticketId
-		// 的 qrcode 请求不合规范。
+	// 通道判定（§13.2）：扫码提交（带 ticketId）必为 qrcode 通道（快照由
+	// CreateQrcode 落、provider 必为扫码类）；qrcode 通道的提交必带
+	// ticketId，无 ticketId 的 qrcode 请求不合规范。
+	if in.TicketID != "" {
+		if channel != provider.ChannelQRCode {
+			return s.envelope(orchestrator.StatusInvalidRequest)
+		}
+	} else if channel != provider.ChannelRedirect && channel != provider.ChannelAPI {
 		return s.envelope(orchestrator.StatusInvalidRequest)
 	}
 
 	// redirect 通道：校验 al_login_state（l 前缀、一致、未过期；§12.4 行
 	// 1493），通过 / 失败即删 Cookie（§2.7.2 行 611）。b 前缀不由本接口
-	// 处理（§2.7.4 行 653），统一并入 state_mismatch。
+	// 处理（§2.7.4 行 653），统一并入 state_mismatch。扫码提交（qrcode
+	// 通道）无 Cookie 语境不校验（小程序端无 Origin，Referer 白名单归
+	// HTTP 层，§13.2 行 1606）。
 	if channel == provider.ChannelRedirect {
 		if !s.verifyLoginState(in.State, in.StateCookie) {
 			return &OauthOutput{
@@ -294,6 +313,12 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 				Cookie:   s.clearStateCookie(ctx),
 			}
 		}
+	}
+
+	// 扫码 stage=complete（带 ticketId，§2.7.4 行 649 / 659）：快照校验 →
+	// 既有 Exchange / FetchUser 链 → 按 scene 分派写 TicketResult（§13.2b）。
+	if in.TicketID != "" {
+		return s.loginOauthTicket(ctx, in, p, adapter)
 	}
 
 	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
@@ -305,42 +330,11 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
 
-	uid, matched, out := s.resolveBind(ctx, p, identity)
-	if out != nil {
-		return s.withStateCleared(ctx, channel, out)
-	}
-
-	// 已绑定 / Union 归并 / auto_bind 命中的用户状态校验（§1.6 行
-	// 253「账号被禁用单独返回 user_disabled」，先例 factor/password/factor.go
-	// 行 178）：置于 auto_bind 写入之前——禁用用户不产生绑定副作用。
-	// 查询失败按 failed 收敛（不泄露存在性之外的细节）。
-	if uid != 0 {
-		user, uerr := s.deps.Users.FindByID(ctx, uid)
-		if uerr != nil {
-			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
-		}
-		if user.UserStatus != userStatusNormal {
-			return s.oauthFail(ctx, channel, statusUserDisabled)
-		}
-	}
-
-	// auto_bind 命中 → 直接绑定（§12.5 行 1508「匹配已有用户并直接绑定，
-	// 跳过绑定页」，先绑定再走已绑定路径）；并发被抢 → target_taken
-	//（§1.6 行 256：第三方身份已绑他号）。Union 行与普通行同事务（§12.7
-	// 行 1548）；extra 落本次请求原始资料 Raw（§12.5 行 1502——
-	// 直接绑定无中间态，extra 即刻落库；§4.3 行 708 超限 / 编码失败整条
-	// 丢弃降级，不阻断绑定）。
-	if matched {
-		if err := s.deps.Binds.CreateWithUnion(ctx, &model.UserThirdpartyBind{
-			UserID:      uid,
-			ProviderKey: identity.ProviderKey,
-			OpenID:      identity.OpenID,
-			Nickname:    identity.Nickname,
-			AvatarURL:   identity.AvatarURL,
-			Extra:       encodeExtra(identity.Raw),
-		}, p.Row.UnionProvider, identity.UnionID); err != nil {
-			return s.oauthFail(ctx, channel, orchestrator.StatusTargetTaken)
-		}
+	// 三方身份 → uid 解析链（resolveBind / 用户状态校验 / auto_bind 写入，
+	// 与扫码 ticket 分支共用，见 resolveLoginUID）。
+	uid, failStatus := s.resolveLoginUID(ctx, p, identity)
+	if failStatus != "" {
+		return s.oauthFail(ctx, channel, failStatus)
 	}
 
 	payload := &token.LoginTokenPayload{
@@ -378,32 +372,20 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 
 	// 已绑定 / Union 归并 / auto_bind 命中：MFA 判定（§2.7.4 行 652、
 	// §2.7.5 行 691——auto_bind 命中用户已启用 MFA 同样继续 mfa_required）。
-	if s.deps.MFA != nil {
-		mfa, required, err := s.deps.MFA.Build(ctx, uid)
+	mfa, required, mfaOut := s.mfaCheck(ctx, uid)
+	if mfaOut != nil {
+		return s.withStateCleared(ctx, channel, mfaOut)
+	}
+	if required {
+		signed, err := s.deps.State.Issue(payload)
 		if err != nil {
-			// 窗口期 fail-closed（§8.3 行 1069）：
-			// webauthn 唯一可用因子因启动降级不可用 → 拒绝登录（与引擎
-			// 路径同一 status / 文案），绝不静默放行直通终点。
-			if errors.Is(err, orchestrator.ErrWebauthnDegraded) {
-				msg := orchestrator.WebauthnDegradedMessage
-				return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
-					Status: orchestrator.StatusMethodDisabled,
-					Error:  &ssov1.SsoError{Message: &msg},
-				}})
-			}
 			return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 		}
-		if required {
-			signed, err := s.deps.State.Issue(payload)
-			if err != nil {
-				return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
-			}
-			return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
-				Status:     orchestrator.StatusMFARequired,
-				LoginToken: signed,
-				Mfa:        mfa,
-			}})
-		}
+		return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+			Status:     orchestrator.StatusMFARequired,
+			LoginToken: signed,
+			Mfa:        mfa,
+		}})
 	}
 
 	success, err := s.deps.Terminal.Complete(ctx, payload)
@@ -431,7 +413,271 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	}
 }
 
-// encodeExtra 三方原始资料 → extra 列 msgpack 字节（§4.3 行 708
+// loginOauthScanned stage=scanned 分支（§2.7.4 行 656-658）：小程序端进入
+// 页面先上报「已扫码」，只带 providerKey + ticketId、不需要任何凭证。服务端
+// 取快照校验后写 al:ticket:{ticket_id} = TicketResult{status:"scanned"}
+// （channel=qrcode，不含 login_result / thirdparty_identity）→ 返回票据状态
+// 应答 {status:"scanned"}（取值沿用 ticket.status，非 §1.3 登录流程信封）。
+// 重复上报幂等（WriteScanned SET NX）；已存在 success 时不覆盖。
+func (s *Thirdparty) loginOauthScanned(ctx context.Context, in OauthInput) *OauthOutput {
+	if strings.TrimSpace(in.ProviderKey) == "" || in.TicketID == "" {
+		return s.envelope(orchestrator.StatusInvalidRequest)
+	}
+	payload, bad := s.ticketSnapshot(ctx, in)
+	if bad != "" {
+		return s.envelope(bad)
+	}
+	res := &token.TicketResult{
+		V:           ticketResultV,
+		Scene:       payload.GetScene(),
+		Status:      ticketStatusScanned,
+		ProviderKey: payload.GetProviderKey(),
+		Channel:     channelQRCode,
+		CreatedAt:   s.now().Unix(),
+		ExpiresAt:   payload.GetExp(),
+	}
+	if _, err := s.deps.Tickets.WriteScanned(ctx, in.TicketID, res); err != nil {
+		return s.envelope(orchestrator.StatusFailed)
+	}
+	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{Status: ticketStatusScanned}}
+}
+
+// loginOauthTicket stage=complete 带 ticketId 分支（§2.7.4 行 649 / 659、
+// §13.2b 行 1616）：快照校验 → 既有 Exchange / FetchUser 链 → 按 scene 分派
+// 写 TicketResult（scene 由快照加密保护，客户端不可篡改）：
+//   - scene=login：既有 resolveBind / 用户状态校验 / auto_bind 解析链 →
+//     login_result{uid, binding_required}（未绑定为 0/true，轮询方据此建会话
+//     或签 login_token，§11.6.5 行 1368-1371）；未绑定另附 thirdparty_identity
+//     （§11.6.5 行 1372 login binding_required=true 与 bind 共用）。
+//   - scene=bind：只写 thirdparty_identity（含 raw，绑定要落 extra），
+//     不建会话、不查绑定、不写绑定关系（绑定判定一律推迟到 PC 端轮询）。
+//
+// 成功返回 {status:"success", ticketId}；失败类结论落 TicketResult.status
+// 整体覆盖（§13.2 行 1603），信封 status 同步、ticket 只报 failed（§2.8 行
+// 743 同构）。MFA×扫码（§2.8 行 750、§13.2 行 1607）：用户已启用 MFA →
+// mfa_required 信封、**不写 ticket**（授权结果不落键，PC 端轮询至 expired）。
+func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *provider.Provider, adapter provider.AuthAdapter) *OauthOutput {
+	snap, bad := s.ticketSnapshot(ctx, in)
+	if bad != "" {
+		return s.envelope(bad)
+	}
+	id := in.TicketID
+
+	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
+	if err != nil {
+		return s.ticketFail(ctx, id, snap, orchestrator.StatusFailed)
+	}
+	identity, err := adapter.FetchUser(ctx, tok)
+	if err != nil || identity == nil || identity.OpenID == "" {
+		return s.ticketFail(ctx, id, snap, orchestrator.StatusFailed)
+	}
+
+	// scene=bind（§13.2b 行 1616）：不经 uid 解析链，无 MFA / 会话语义。
+	if snap.GetScene() == sceneBind {
+		return s.ticketDone(ctx, id, s.newTicketResult(snap, "", nil, identity))
+	}
+
+	// scene=login：既有解析链（与浏览器 / api 通道共用，见 resolveLoginUID）。
+	uid, failStatus := s.resolveLoginUID(ctx, p, identity)
+	if failStatus != "" {
+		return s.ticketFail(ctx, id, snap, failStatus)
+	}
+	if uid == 0 {
+		// 未绑定（§11.6.5 行 1361/1372）：login_result{uid:0,
+		// binding_required:true} + thirdparty_identity——轮询方用其签发
+		// login_token 并返回 binding_required 信封（本侧不签 token）。
+		return s.ticketDone(ctx, id, s.newTicketResult(snap, "", &token.LoginResult{BindingRequired: true}, identity))
+	}
+
+	// 已绑定：MFA 判定。mfa_required 及其判定失败（degraded / 内部错误）
+	// 一律不写 ticket——授权结果未定，PC 端轮询至 expired（§2.8 行 750
+	// 「不写 ticket」口径，小程序端收到即止）。
+	mfa, required, mfaOut := s.mfaCheck(ctx, uid)
+	if mfaOut != nil {
+		return mfaOut
+	}
+	if required {
+		signed, err := s.deps.State.Issue(&token.LoginTokenPayload{
+			Tid:    s.newTID(),
+			Flow:   "login",
+			Uid:    uid,
+			Passed: []string{amrThirdParty},
+			Amr:    []string{amrThirdParty},
+			Oidc:   in.OIDC,
+		})
+		if err != nil {
+			return s.envelope(orchestrator.StatusFailed)
+		}
+		return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+			Status:     orchestrator.StatusMFARequired,
+			LoginToken: signed,
+			Mfa:        mfa,
+		}}
+	}
+
+	// 建会话推迟到 PC 端轮询（§2.8 行 746：GetLoginTicket 命中后
+	// Terminal.Complete），本侧只写 login_result{uid, binding_required:false}。
+	return s.ticketDone(ctx, id, s.newTicketResult(snap, "", &token.LoginResult{Uid: uid}, identity))
+}
+
+// ticketSnapshot 读快照并校验（§2.7.4 行 658、§11.6.4 行 1350）：快照存在
+// （缺失即不存在 / 已过期）、ticket_id 自洽、scene 合法（login / bind——
+// scene 与本次扫码用途一致，用途由快照加密保护、不由客户端指定）、
+// providerKey 匹配、未过期（键 TTL 与 ticket 同寿命，此处防御性复判）。
+// 返回 status 非空表示以该信封状态拒绝（infra 故障 failed，其余
+// invalid_request）。
+func (s *Thirdparty) ticketSnapshot(ctx context.Context, in OauthInput) (*token.TicketPayload, string) {
+	payload, err := s.deps.TicketPayloads.Read(ctx, in.TicketID)
+	if err != nil {
+		return nil, orchestrator.StatusFailed
+	}
+	if payload == nil ||
+		payload.GetTicketId() != in.TicketID ||
+		(payload.GetScene() != sceneLogin && payload.GetScene() != sceneBind) ||
+		payload.GetProviderKey() != in.ProviderKey ||
+		s.now().Unix() >= payload.GetExp() {
+		return nil, orchestrator.StatusInvalidRequest
+	}
+	return payload, ""
+}
+
+// newTicketResult 组装 TicketResult（§11.6.5）：v / scene / provider_key 取
+// 快照（scene 不由客户端指定）、channel 固定 qrcode、expires_at 与 ticket.exp
+// 一致；status 缺省按 login_result / thirdparty_identity 的存在取 success；
+// lr 为 nil 且 identity 为 nil 的空结果仅 scanned 分支自组装。
+func (s *Thirdparty) newTicketResult(snap *token.TicketPayload, status string, lr *token.LoginResult, identity *provider.ExternalIdentity) *token.TicketResult {
+	if status == "" {
+		status = ticketStatusSuccess
+	}
+	res := &token.TicketResult{
+		V:           ticketResultV,
+		Scene:       snap.GetScene(),
+		Status:      status,
+		ProviderKey: snap.GetProviderKey(),
+		Channel:     channelQRCode,
+		CreatedAt:   s.now().Unix(),
+		ExpiresAt:   snap.GetExp(),
+		LoginResult: lr,
+	}
+	// thirdparty_identity：bind 场景（绑定要落 extra，含 raw）与 login
+	// binding_required=true 共用（§11.6.5 行 1372）；已绑定登录不填。
+	if snap.GetScene() == sceneBind || (lr != nil && lr.GetBindingRequired()) {
+		res.ThirdpartyIdentity = tpIdentity(identity)
+	}
+	return res
+}
+
+// ticketDone 写 stage=complete 成功结果（WriteComplete 整体覆盖 scanned，
+// 已存在 success 不覆盖——重复提交幂等成功）并组装 {status:"success",
+// ticketId} 应答（§2.7.4 行 649；写入失败按 failed 收敛，PC 端轮询至 expired）。
+func (s *Thirdparty) ticketDone(ctx context.Context, id string, res *token.TicketResult) *OauthOutput {
+	if _, err := s.deps.Tickets.WriteComplete(ctx, id, res); err != nil {
+		slog.Warn("thirdparty: write ticket result failed", "ticket_id", id, "error", err)
+		return s.envelope(orchestrator.StatusFailed)
+	}
+	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+		Status: orchestrator.StatusSuccess,
+		Ticket: &ssov1.TicketStatus{Status: ticketStatusSuccess, TicketId: id},
+	}}
+}
+
+// ticketFail 写 failed 类票据结果并组装失败应答（§13.2 行 1603：结论落
+// TicketResult.status，轮询方原样上抛信封 status、ticket 只报 failed）。
+// 写入失败仅记日志、不改变应答（PC 端轮询至 expired，不阻塞小程序端结论）。
+func (s *Thirdparty) ticketFail(ctx context.Context, id string, snap *token.TicketPayload, status string) *OauthOutput {
+	if _, err := s.deps.Tickets.WriteComplete(ctx, id, s.newTicketResult(snap, status, nil, nil)); err != nil {
+		slog.Warn("thirdparty: write ticket result failed", "ticket_id", id, "error", err)
+	}
+	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+		Status: status,
+		Ticket: &ssov1.TicketStatus{Status: ticketStatusFailed, TicketId: id},
+	}}
+}
+
+// resolveLoginUID 三方身份 → uid 解析链（浏览器 / api 通道与扫码 ticket
+// 分支共用）：resolveBind（普通行 → Union 归并 → auto_bind）→ 已绑定 /
+// 归并 / auto_bind 命中的用户状态校验（R1-1，置于 auto_bind 写入之前——
+// 禁用用户不产生绑定副作用；查询失败按 failed 收敛）→ auto_bind 命中直接
+// 绑定（§12.5 行 1508；并发被抢 target_taken §1.6 行 256；extra 落 Raw
+// R1-3，§4.3 行 708 超限 / 编码失败整条丢弃降级）。失败返回 failStatus
+// （信封域失败类），成功返回 uid（0 = 未绑定）。
+func (s *Thirdparty) resolveLoginUID(ctx context.Context, p *provider.Provider, identity *provider.ExternalIdentity) (uid int64, failStatus string) {
+	uid, matched, out := s.resolveBind(ctx, p, identity)
+	if out != nil {
+		return 0, out.Envelope.GetStatus()
+	}
+	if uid != 0 {
+		user, uerr := s.deps.Users.FindByID(ctx, uid)
+		if uerr != nil {
+			return 0, orchestrator.StatusFailed
+		}
+		if user.UserStatus != userStatusNormal {
+			return 0, statusUserDisabled
+		}
+	}
+	if matched {
+		if err := s.deps.Binds.CreateWithUnion(ctx, &model.UserThirdpartyBind{
+			UserID:      uid,
+			ProviderKey: identity.ProviderKey,
+			OpenID:      identity.OpenID,
+			Nickname:    identity.Nickname,
+			AvatarURL:   identity.AvatarURL,
+			Extra:       encodeExtra(identity.Raw),
+		}, p.Row.UnionProvider, identity.UnionID); err != nil {
+			return 0, orchestrator.StatusTargetTaken
+		}
+	}
+	return uid, ""
+}
+
+// mfaCheck MFA 判定（§2.7.4 行 652、§12.5）：deps.MFA 为 nil（未装配）直通。
+// 返回 required=true 时 mfa 为挑战件（调用方签 login_token 组 mfa_required
+// 信封）；out 非 nil 表示以该失败信封终止——窗口期 fail-closed（§8.3 行
+// 1069 + 2026-11-05 定稿）：webauthn 唯一可用因子因启动降级不可用 →
+// method_disabled + 固定文案（与引擎路径同一 status / 文案），绝不静默放行
+// 直通终点；其余判定故障 failed。
+func (s *Thirdparty) mfaCheck(ctx context.Context, uid int64) (mfa *ssov1.Mfa, required bool, out *OauthOutput) {
+	if s.deps.MFA == nil {
+		return nil, false, nil
+	}
+	mfa, required, err := s.deps.MFA.Build(ctx, uid)
+	if err != nil {
+		if errors.Is(err, orchestrator.ErrWebauthnDegraded) {
+			msg := orchestrator.WebauthnDegradedMessage
+			return nil, false, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+				Status: orchestrator.StatusMethodDisabled,
+				Error:  &ssov1.SsoError{Message: &msg},
+			}}
+		}
+		return nil, false, s.envelope(orchestrator.StatusFailed)
+	}
+	return mfa, required, nil
+}
+
+// tpIdentity 三方身份 → TicketResult.thirdparty_identity（§11.6.5 行
+// 1372-1378：open_id / union_id / nickname / avatar_url / raw；raw 为第三方
+// 原始资料，任意 JSON 经 structpb 承载——oidc/credential 先例，
+// 空 map 落 nil）。
+func tpIdentity(identity *provider.ExternalIdentity) *token.ThirdpartyIdentity {
+	if identity == nil {
+		return nil
+	}
+	var raw *structpb.Struct
+	if len(identity.Raw) > 0 {
+		if s, err := structpb.NewStruct(identity.Raw); err == nil {
+			raw = s
+		}
+	}
+	return &token.ThirdpartyIdentity{
+		OpenId:    identity.OpenID,
+		UnionId:   identity.UnionID,
+		Nickname:  identity.Nickname,
+		AvatarUrl: identity.AvatarURL,
+		Raw:       raw,
+	}
+}
+
+// encodeExtra 三方原始资料 → extra 列 msgpack 字节（R1-3；§4.3 行 708
 // 「仅排查用、不参与任何业务判定」；先例 dto/rpc.go EncodeRPCProfileExtra
 // 同款 msgpack.Marshal(map)）：raw 为空 / 编码失败 / 超 1 MiB 返回 nil
 // （整条丢弃降级，绑定主链路不受影响）。

@@ -436,38 +436,47 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
 	// 目标匹配走 UserRepo；HTTPSMode 注入 https_deployment 三态源
 	// （al_login_state 的 Secure 属性随驱动，与 newSessionCookie 同一源）；
-	// 挂入 assembled 供 registerSSO 注入 handler，
-	// SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
+	// 扫码 ticket 分支：Tickets（al:ticket 结果读写）与 TicketPayloads
+	//（al:ticket:payload 快照）与下方扫码域共用同一实例（同一
+	// sign_key.ticket 密钥与封装）。挂入 assembled 供 registerSSO 注入
+	// handler，SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
+	tickets := cache.NewTicketStore(deps.rdb, service.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
+	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, service.NewTicketPayloadSealer(deps.codecs.Ticket))
 	deps.thirdparty = service.NewThirdparty(service.ThirdpartyDeps{
-		Loader:      deps.providerLoader,
-		Binds:       repo.NewBindRepo(deps.db),
-		Users:       users,
-		NewAdapter:  provider.NewAdapter,
-		State:       loginState,
-		MFA:         mfa,
-		Terminal:    terminal,
-		CookieCodec: deps.codecs.Cookie,
-		HTTPSMode:   ssoHTTPSMode(deps),
+		Loader:         deps.providerLoader,
+		Binds:          repo.NewBindRepo(deps.db),
+		Users:          users,
+		NewAdapter:     provider.NewAdapter,
+		State:          loginState,
+		MFA:            mfa,
+		Terminal:       terminal,
+		Tickets:        tickets,
+		TicketPayloads: ticketPayloads,
+		CookieCodec:    deps.codecs.Cookie,
+		HTTPSMode:      ssoHTTPSMode(deps),
 	})
 
 	// 扫码三桩 service（§13.2 / §2.8）：State / Terminal 复用引擎同一
 	// 实例（同一 login 密钥与终点链路）；al:ticket 读写走 cache.TicketStore
-	// （sealer = protojson 整值加密 + purpose=ticket，§11.6.5）；storage 解析
-	// 走 internal/storage Resolver（§15.1）；码图自动删除投递复用延迟队列
-	//（执行器挂 combinedExecutor，§13.3）；Confirm 会话校验复用共享单例
+	//（sealer = protojson 整值加密 + purpose=ticket，§11.6.5）；拉码
+	// 同步写快照键 al:ticket:payload（cache.TicketPayloadStore，§5.1 行 863），
+	// 与 Thirdparty 侧读取共用同一实例；storage 解析走 internal/storage
+	// Resolver（§15.1）；码图自动删除投递复用延迟队列（执行器挂
+	// combinedExecutor，§13.3）；Confirm 会话校验复用共享单例
 	// sessionTokens / epochStore（与 sso 拦截器同源）。挂入 assembled 供
 	// registerSSO 注入 handler。
 	deps.qrcode = service.NewQRCode(service.QRCodeDeps{
-		Loader:      deps.providerLoader,
-		NewAdapter:  provider.NewAdapter,
-		Gate:        deps.gate,
-		TicketCodec: deps.codecs.Ticket,
-		Tickets:     cache.NewTicketStore(deps.rdb, service.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{}),
-		Storage:     storage.NewResolver(deps.providerLoader),
-		Queue:       deps.queue,
-		Sessions:    session.NewVerifier(deps.sessionTokens, deps.epochStore),
-		State:       loginState,
-		Terminal:    terminal,
+		Loader:         deps.providerLoader,
+		NewAdapter:     provider.NewAdapter,
+		Gate:           deps.gate,
+		TicketCodec:    deps.codecs.Ticket,
+		Tickets:        tickets,
+		TicketPayloads: ticketPayloads,
+		Storage:        storage.NewResolver(deps.providerLoader),
+		Queue:          deps.queue,
+		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		State:          loginState,
+		Terminal:       terminal,
 	})
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{

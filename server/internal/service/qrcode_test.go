@@ -156,6 +156,7 @@ type qrEnv struct {
 	gate     *captcha.Gate
 	verifier *qrVerifier
 	tickets  *qrTickets
+	payloads *tpTicketPayloads
 	store    *qrStorage
 	resolver *qrResolver
 	sessions *qrSessions
@@ -178,6 +179,7 @@ func newQrEnv(t *testing.T) *qrEnv {
 		},
 		verifier: &qrVerifier{},
 		tickets:  &qrTickets{res: map[string]*token.TicketResult{}},
+		payloads: &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}},
 		store:    &qrStorage{putURL: "https://cdn.example.com/qr/x.jpg"},
 		sessions: &qrSessions{uid: 9},
 		queue:    &qrQueue{},
@@ -190,18 +192,19 @@ func newQrEnv(t *testing.T) *qrEnv {
 	env.gate = captcha.NewGate(&tpSettings{}, &qrCatalog{}, env.verifier)
 	env.state = orchestrator.NewState(env.loginC)
 	env.svc = NewQRCode(QRCodeDeps{
-		Loader:      env.loader,
-		NewAdapter:  func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
-		Gate:        env.gate,
-		TicketCodec: env.ticketC,
-		Tickets:     env.tickets,
-		Storage:     env.resolver,
-		Queue:       env.queue,
-		Sessions:    env.sessions,
-		State:       env.state,
-		Terminal:    orchestrator.NewTerminal(env.writer, nil, nil, nil, nil),
-		NewTID:      func() (string, error) { return "tid-qr-1", nil },
-		Now:         func() time.Time { return env.now },
+		Loader:         env.loader,
+		NewAdapter:     func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
+		Gate:           env.gate,
+		TicketCodec:    env.ticketC,
+		Tickets:        env.tickets,
+		TicketPayloads: env.payloads,
+		Storage:        env.resolver,
+		Queue:          env.queue,
+		Sessions:       env.sessions,
+		State:          env.state,
+		Terminal:       orchestrator.NewTerminal(env.writer, nil, nil, nil, nil),
+		NewTID:         func() (string, error) { return "tid-qr-1", nil },
+		Now:            func() time.Time { return env.now },
 	})
 	return env
 }
@@ -350,6 +353,65 @@ func TestCreateQrcodeTicketForm(t *testing.T) {
 	if _, err := security.Open[token.TicketPayload](other, security.PurposeTicket, out.Ticket); err == nil {
 		t.Fatalf("跨密钥不应解 开")
 	}
+}
+
+// TestCreateQrcodeSnapshotWrite 拉码同步写快照键（§2.8 行 719、
+// §11.6.4 行 1350）：快照与 ticket 串同源（ticket_id / provider_key /
+// scene / iat / exp 逐字段一致），供小程序端提交侧校验；写入失败拉码失败。
+func TestCreateQrcodeSnapshotWrite(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("快照与 ticket 同源", func(t *testing.T) {
+		e := newQrEnv(t)
+		e.addScanProvider("scan", nil)
+		out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
+		if err != nil {
+			t.Fatalf("CreateQrcode: %v", err)
+		}
+		snap, err := e.payloads.Read(ctx, out.TicketID)
+		if err != nil {
+			t.Fatalf("Read 快照: %v", err)
+		}
+		got, err := security.Open[token.TicketPayload](e.ticketC, security.PurposeTicket, out.Ticket)
+		if err != nil {
+			t.Fatalf("Open ticket: %v", err)
+		}
+		if snap == nil {
+			t.Fatal("快照缺失（CreateQrcode 应 1 次写入）")
+		}
+		if snap.GetTicketId() != got.GetTicketId() || snap.GetProviderKey() != got.GetProviderKey() ||
+			snap.GetScene() != got.GetScene() || snap.GetIat() != got.GetIat() || snap.GetExp() != got.GetExp() {
+			t.Fatalf("快照与 ticket 不同源: snap=%+v ticket=%+v", snap, got)
+		}
+		if snap.GetScene() != sceneLogin || snap.GetTicketId() != out.TicketID {
+			t.Fatalf("快照形态 = %+v", snap)
+		}
+	})
+
+	t.Run("bind scene 快照带 scene", func(t *testing.T) {
+		e := newQrEnv(t)
+		e.addScanProvider("scan", nil)
+		out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Scene: "bind", UID: 9, Captcha: validCaptcha()})
+		if err != nil {
+			t.Fatalf("CreateQrcode: %v", err)
+		}
+		snap, err := e.payloads.Read(ctx, out.TicketID)
+		if err != nil || snap == nil {
+			t.Fatalf("快照: (%+v, %v)", snap, err)
+		}
+		if snap.GetScene() != sceneBind {
+			t.Fatalf("scene = %q, want bind", snap.GetScene())
+		}
+	})
+
+	t.Run("快照写入失败 → 拉码失败", func(t *testing.T) {
+		e := newQrEnv(t)
+		e.addScanProvider("scan", nil)
+		e.payloads.writeErr = errors.New("redis down")
+		if _, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()}); err == nil {
+			t.Fatal("快照写入失败应导致拉码失败")
+		}
+	})
 }
 
 // TestCreateQrcodeWxacodeAndStorage 拉码链：FetchQrcode 的 scene=ticket_id、

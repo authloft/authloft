@@ -3,11 +3,12 @@
 // LoginOauth redirect 全链（fake adapter）/ state_mismatch 清 Cookie /
 // api 通道信封 session_token / binding_required（allowSignup 两态 + tp 载荷
 // 形态 §12.5 行 1499）/ auto_bind 命中与关闭 / Union 归并 / MFA 信封与
-// amr=thirdparty / ticketId 与 stage=scanned 拒绝；追加：user_disabled
-// （普通行 / Union / auto_bind）/ auto_bind extra 落 Raw / 非成功终态删
-// al_login_state。全部走 fake，不连 DB / Redis；wechat_mp 渠道
-// code2session 的 httptest 拦截已由 provider/oauth/wechat_mp 包内测试
-// 覆盖，此处 api 通道以 fake adapter 验证 service 编排语义。
+// amr=thirdparty / 扫码两阶段写入（scanned 快照校验链与幂等 /
+// complete 按 scene 分派写 login_result / thirdparty_identity / MFA 不写
+// ticket）；追加：user_disabled（普通行 / Union / auto_bind）/ auto_bind
+// extra 落 Raw / 非成功终态删 al_login_state。全部走 fake，不连 DB / Redis；
+// wechat_mp 渠道 code2session 的 httptest 拦截已由 provider/oauth/wechat_mp
+// 包内测试覆盖，此处 api 通道以 fake adapter 验证 service 编排语义。
 package service
 
 import (
@@ -21,6 +22,7 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
+	"authloft/internal/cache"
 	"authloft/internal/factor"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
@@ -146,6 +148,68 @@ func (s *tpSessions) Write(_ context.Context, uid int64, amr []string) (string, 
 	return "sid-1", "stok-1", nil
 }
 
+// tpTicketPayloads TicketPayloadStore 的 fake：内存快照 + 读取
+// 记录 + 可注入 infra 错误（Read / Write 分开）；Read 缺失返回 (nil, nil)。
+type tpTicketPayloads struct {
+	snapshots map[string]*token.TicketPayload
+	reads     []string
+	err       error
+	writeErr  error
+}
+
+func (f *tpTicketPayloads) Write(_ context.Context, p *token.TicketPayload) error {
+	if f.writeErr != nil {
+		return f.writeErr
+	}
+	f.snapshots[p.GetTicketId()] = p
+	return nil
+}
+
+func (f *tpTicketPayloads) Read(_ context.Context, ticketID string) (*token.TicketPayload, error) {
+	f.reads = append(f.reads, ticketID)
+	if f.err != nil {
+		return nil, f.err
+	}
+	if p, ok := f.snapshots[ticketID]; ok {
+		return p, nil
+	}
+	return nil, nil
+}
+
+// tpTickets TicketStore 的 fake（thirdparty 侧）：内存结果 +
+// WriteScanned SET NX / WriteComplete 不覆盖 success 的简化语义 + 写入记录。
+type tpTickets struct {
+	results    map[string]*token.TicketResult
+	scanWrites []string
+	compWrites []string
+}
+
+func (f *tpTickets) WriteScanned(_ context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error) {
+	f.scanWrites = append(f.scanWrites, id)
+	if _, ok := f.results[id]; ok {
+		return cache.TicketWriteSkipped, nil
+	}
+	f.results[id] = res
+	return cache.TicketWriteOK, nil
+}
+
+func (f *tpTickets) WriteComplete(_ context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error) {
+	f.compWrites = append(f.compWrites, id)
+	if prev, ok := f.results[id]; ok && prev.GetStatus() == ticketStatusSuccess {
+		return cache.TicketWriteSkipped, nil
+	}
+	f.results[id] = res
+	return cache.TicketWriteOK, nil
+}
+
+func (f *tpTickets) Take(_ context.Context, id string) (*token.TicketResult, error) {
+	return f.results[id], nil
+}
+
+func (f *tpTickets) Wait(_ context.Context, _ string, _ time.Duration) error {
+	return cache.ErrTicketWaitTimeout
+}
+
 // tpSettings SettingsReader 的 fake（mfa_methods 显式给值）。
 type tpSettings struct {
 	bools  map[string]bool
@@ -210,6 +274,8 @@ type tpEnv struct {
 	state    *orchestrator.State
 	sessions *tpSessions
 	settings *tpSettings
+	tickets  *tpTickets
+	payloads *tpTicketPayloads
 	svc      *Thirdparty
 	now      time.Time
 	// httpsMode https_deployment 三态源（默认 nil = 未接入 → Secure 沿旧
@@ -238,6 +304,8 @@ func newTPEnv(t *testing.T) *tpEnv {
 			},
 		},
 		sessions: &tpSessions{},
+		tickets:  &tpTickets{results: map[string]*token.TicketResult{}},
+		payloads: &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}},
 		now:      at,
 	}
 	loginCodec := tpCodec(t, 0x10)
@@ -251,15 +319,17 @@ func newTPEnv(t *testing.T) *tpEnv {
 	env.settings = st
 	terminal := orchestrator.NewTerminal(env.sessions, nil, nil, nil, nil)
 	env.svc = NewThirdparty(ThirdpartyDeps{
-		Loader:      env.loader,
-		Binds:       env.binds,
-		Users:       env.users,
-		NewAdapter:  func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
-		State:       env.state,
-		MFA:         orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
-		Terminal:    terminal,
-		CookieCodec: cookieCodec,
-		HTTPSMode:   env.httpsMode,
+		Loader:         env.loader,
+		Binds:          env.binds,
+		Users:          env.users,
+		NewAdapter:     func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
+		State:          env.state,
+		MFA:            orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
+		Terminal:       terminal,
+		Tickets:        env.tickets,
+		TicketPayloads: env.payloads,
+		CookieCodec:    cookieCodec,
+		HTTPSMode:      env.httpsMode,
 	})
 	// cookie codec 的时钟跟随 env.now（过期用例推进）。
 	env.svc.now = func() time.Time { return env.now }
@@ -573,17 +643,21 @@ func TestLoginOauthStateMismatch(t *testing.T) {
 	}
 }
 
-// TestLoginOauthRejects 入口拒绝：ticketId / stage=scanned（扫码边界）、
-// provider_key 空、code 空、qrcode 通道、未启用 provider。
+// TestLoginOauthRejects 入口拒绝：scanned 缺 ticketId / complete 带
+// ticketId 但非 qrcode 通道 / provider_key 空、code 空、qrcode 通道无
+// ticketId、未启用 provider。
 func TestLoginOauthRejects(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("ticketId 与 stage=scanned 拒绝（扫码边界）", func(t *testing.T) {
+	t.Run("scanned 缺 ticketId / ticketId 通道不符", func(t *testing.T) {
 		e := newTPEnv(t)
 		e.addProvider("qq", nil)
 		for _, in := range []OauthInput{
+			// stage=scanned 必带 ticketId（§2.7.4 行 641）。
+			{ProviderKey: "qq", Code: "c", Stage: stageScanned},
+			// 扫码提交必为 qrcode 通道（§13.2）；redirect 通道携带 ticketId
+			// 不合规范。
 			{ProviderKey: "qq", Code: "c", TicketID: "t-1"},
-			{ProviderKey: "qq", Code: "c", Stage: "scanned"},
 		} {
 			if out := e.svc.LoginOauth(ctx, in); out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 				t.Errorf("in=%+v: status = %q, want invalid_request", in, out.Envelope.GetStatus())
@@ -622,6 +696,321 @@ func TestLoginOauthRejects(t *testing.T) {
 			t.Fatalf("status = %q, want provider_disabled", out.Envelope.GetStatus())
 		}
 	})
+}
+
+// —— 扫码两阶段写入（§2.7.4 行 656-659、§13.2b）——
+
+// seedSnapshot 预置一张快照（默认与 env.now 对齐、exp=600s）。
+func (e *tpEnv) seedSnapshot(id, pk, scene string) *token.TicketPayload {
+	p := &token.TicketPayload{
+		TicketId:    id,
+		ProviderKey: pk,
+		Scene:       scene,
+		Iat:         e.now.Unix(),
+		Exp:         e.now.Add(qrcodeTicketTTL).Unix(),
+	}
+	e.payloads.snapshots[id] = p
+	return p
+}
+
+// newScanEnv 构造扫码提交环境：qrcode 通道 provider + 快照。
+func newScanEnv(t *testing.T, scene string) *tpEnv {
+	t.Helper()
+	e := newTPEnv(t)
+	e.addProvider("wxscan", nil)
+	e.adapter.channel = provider.ChannelQRCode
+	e.adapter.identity.ProviderKey = "wxscan"
+	e.seedSnapshot("tid-1", "wxscan", scene)
+	return e
+}
+
+// TestLoginOauthScanned stage=scanned：快照校验通过 → WriteScanned 空结果
+// （TicketResult{status:"scanned", scene, channel=qrcode, expires_at 与
+// ticket.exp 一致}，不含 login_result / thirdparty_identity）→ 票据状态应答
+// {status:"scanned"}；重复上报幂等（SET NX 不覆盖）。
+func TestLoginOauthScanned(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("正向写入", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
+		if out.Envelope.GetStatus() != ticketStatusScanned {
+			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
+		}
+		if out.Envelope.GetTicket() != nil {
+			t.Errorf("scanned 应答只含 status, got ticket %+v", out.Envelope.GetTicket())
+		}
+		if len(e.tickets.scanWrites) != 1 || e.tickets.scanWrites[0] != "tid-1" {
+			t.Fatalf("WriteScanned = %v, want [tid-1]", e.tickets.scanWrites)
+		}
+		res := e.tickets.results["tid-1"]
+		if res.GetStatus() != ticketStatusScanned || res.GetScene() != sceneLogin ||
+			res.GetProviderKey() != "wxscan" || res.GetChannel() != channelQRCode ||
+			res.GetV() != ticketResultV {
+			t.Fatalf("TicketResult = %+v", res)
+		}
+		if res.GetExpiresAt() != e.payloads.snapshots["tid-1"].GetExp() {
+			t.Errorf("expires_at = %d, want 与 ticket.exp 一致", res.GetExpiresAt())
+		}
+		if res.GetLoginResult() != nil || res.GetThirdpartyIdentity() != nil {
+			t.Errorf("scanned 空结果不含 login_result / thirdparty_identity, got %+v", res)
+		}
+		// scanned 不建会话、不签 token。
+		if e.sessions.gotUID != 0 {
+			t.Errorf("不应建会话, uid=%d", e.sessions.gotUID)
+		}
+	})
+
+	t.Run("幂等：重复上报不覆盖", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		for i := 0; i < 2; i++ {
+			out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
+			if out.Envelope.GetStatus() != ticketStatusScanned {
+				t.Fatalf("第 %d 次上报 status = %q, want scanned", i+1, out.Envelope.GetStatus())
+			}
+		}
+		if len(e.tickets.scanWrites) != 2 {
+			t.Fatalf("两次上报应各调一次 WriteScanned, got %v", e.tickets.scanWrites)
+		}
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketStatusScanned {
+			t.Fatalf("结果应为 scanned, got %q", res.GetStatus())
+		}
+	})
+
+	t.Run("已存在 success 不覆盖", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		e.tickets.results["tid-1"] = &token.TicketResult{V: ticketResultV, Status: ticketStatusSuccess}
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
+		if out.Envelope.GetStatus() != ticketStatusScanned {
+			t.Fatalf("status = %q, want scanned（上报幂等成功）", out.Envelope.GetStatus())
+		}
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketStatusSuccess {
+			t.Fatalf("success 被覆盖为 %q", res.GetStatus())
+		}
+	})
+
+	t.Run("快照校验链拒绝", func(t *testing.T) {
+		// 缺失（不存在 / 已过期）。
+		e := newScanEnv(t, sceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-none"})
+		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("快照缺失: status = %q, want invalid_request", out.Envelope.GetStatus())
+		}
+		// scene 非法（与本次扫码用途不一致）。
+		e2 := newScanEnv(t, sceneLogin)
+		e2.seedSnapshot("tid-2", "wxscan", "other")
+		out2 := e2.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-2"})
+		if out2.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("scene 不匹配: status = %q, want invalid_request", out2.Envelope.GetStatus())
+		}
+		// providerKey 不匹配。
+		e3 := newScanEnv(t, sceneLogin)
+		out3 := e3.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxother", Stage: stageScanned, TicketID: "tid-1"})
+		if out3.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("providerKey 不匹配: status = %q, want invalid_request", out3.Envelope.GetStatus())
+		}
+		// 快照过期（键 TTL 与 ticket 同寿命的防御性复判）。
+		e4 := newScanEnv(t, sceneLogin)
+		e4.seedSnapshot("tid-3", "wxscan", sceneLogin).Exp = e4.now.Unix()
+		out4 := e4.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-3"})
+		if out4.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("快照过期: status = %q, want invalid_request", out4.Envelope.GetStatus())
+		}
+		// 校验不通过一律不写 ticket。
+		for _, env := range []*tpEnv{e, e2, e3, e4} {
+			if len(env.tickets.scanWrites) != 0 {
+				t.Errorf("校验失败不应写 ticket, got %v", env.tickets.scanWrites)
+			}
+		}
+	})
+
+	t.Run("bind 场景同样支持 scanned 中间态", func(t *testing.T) {
+		e := newScanEnv(t, sceneBind)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
+		if out.Envelope.GetStatus() != ticketStatusScanned {
+			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
+		}
+		if res := e.tickets.results["tid-1"]; res.GetScene() != sceneBind {
+			t.Fatalf("scene = %q, want bind", res.GetScene())
+		}
+	})
+
+	t.Run("快照读取 infra 故障 → failed", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		e.payloads.err = errors.New("redis down")
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
+		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("status = %q, want failed", out.Envelope.GetStatus())
+		}
+	})
+}
+
+// TestLoginOauthTicketComplete stage=complete 带 ticketId：按 scene 分派写
+// TicketResult（§2.7.4 行 649、§13.2b 行 1616、§11.6.5）。
+func TestLoginOauthTicketComplete(t *testing.T) {
+	ctx := context.Background()
+
+	submit := func(e *tpEnv) *OauthOutput {
+		return e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
+	}
+
+	t.Run("login 已绑定 → login_result", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 7, ProviderKey: "wxscan", OpenID: "openid_1"}
+		e.users.byID[7] = &model.User{ID: 7, UserStatus: 1, MfaRequired: 0}
+		out := submit(e)
+		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
+			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
+		}
+		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketStatusSuccess || tk.GetTicketId() != "tid-1" {
+			t.Fatalf("ticket = %+v, want {success, tid-1}", tk)
+		}
+		res := e.tickets.results["tid-1"]
+		lr := res.GetLoginResult()
+		if lr == nil || lr.GetUid() != 7 || lr.GetBindingRequired() {
+			t.Fatalf("login_result = %+v, want {uid:7, binding_required:false}", lr)
+		}
+		if res.GetThirdpartyIdentity() != nil {
+			t.Errorf("已绑定登录不填 thirdparty_identity, got %+v", res.GetThirdpartyIdentity())
+		}
+		// 建会话推迟到 PC 端轮询（§2.8 行 746），本侧不建。
+		if e.sessions.gotUID != 0 {
+			t.Errorf("不应建会话, uid=%d", e.sessions.gotUID)
+		}
+		if out.SessionToken != "" || out.Cookie != nil {
+			t.Errorf("ticket 分支无会话 / Cookie 出参, got %+v", out)
+		}
+	})
+
+	t.Run("login 未绑定 → binding_required + thirdparty_identity", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		out := submit(e)
+		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
+			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
+		}
+		res := e.tickets.results["tid-1"]
+		lr := res.GetLoginResult()
+		if lr == nil || lr.GetUid() != 0 || !lr.GetBindingRequired() {
+			t.Fatalf("login_result = %+v, want {uid:0, binding_required:true}", lr)
+		}
+		// 轮询方用 thirdparty_identity 签发 login_token（§11.6.5 行 1370）。
+		idn := res.GetThirdpartyIdentity()
+		if idn == nil || idn.GetOpenId() != "openid_1" || idn.GetNickname() != "QQ 用户" {
+			t.Fatalf("thirdparty_identity = %+v", idn)
+		}
+		// 不签 token、不建会话（信封由轮询方组装）。
+		if out.Envelope.GetLoginToken() != "" || e.sessions.gotUID != 0 {
+			t.Errorf("本侧不签 token / 不建会话, out=%+v uid=%d", out.Envelope, e.sessions.gotUID)
+		}
+	})
+
+	t.Run("bind → thirdparty_identity，不建会话不查绑定不写绑定关系", func(t *testing.T) {
+		e := newScanEnv(t, sceneBind)
+		e.adapter.identity.UnionID = "union_1"
+		e.adapter.identity.Raw = map[string]any{"session_key": "sk-1"}
+		out := submit(e)
+		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
+			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
+		}
+		res := e.tickets.results["tid-1"]
+		if res.GetScene() != sceneBind || res.GetLoginResult() != nil {
+			t.Fatalf("bind 结果 = %+v（无 login_result）", res)
+		}
+		idn := res.GetThirdpartyIdentity()
+		if idn == nil || idn.GetOpenId() != "openid_1" || idn.GetUnionId() != "union_1" ||
+			idn.GetNickname() != "QQ 用户" || idn.GetAvatarUrl() != "https://q.cn/a.png" {
+			t.Fatalf("thirdparty_identity = %+v", idn)
+		}
+		if idn.GetRaw().GetFields()["session_key"].GetStringValue() != "sk-1" {
+			t.Errorf("raw = %+v, want 含 session_key（绑定要落 extra）", idn.GetRaw())
+		}
+		// 不查绑定（预置普通行也不归并）、不写绑定、不建会话（§13.2b）。
+		e2 := newScanEnv(t, sceneBind)
+		e2.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 7, ProviderKey: "wxscan", OpenID: "openid_1"}
+		e2.users.byID[7] = &model.User{ID: 7, UserStatus: 1}
+		out2 := submit(e2)
+		if out2.Envelope.GetStatus() != orchestrator.StatusSuccess {
+			t.Fatalf("status = %q, want success", out2.Envelope.GetStatus())
+		}
+		if len(e2.binds.created) != 0 {
+			t.Errorf("bind 场景不应写绑定关系, got %d 行", len(e2.binds.created))
+		}
+		if e2.sessions.gotUID != 0 {
+			t.Errorf("bind 场景不建会话, uid=%d", e2.sessions.gotUID)
+		}
+	})
+
+	t.Run("失败类 → ticket failed + 信封 status", func(t *testing.T) {
+		// Exchange 失败。
+		e := newScanEnv(t, sceneLogin)
+		e.adapter.exchangeErr = errors.New("upstream 500")
+		out := submit(e)
+		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("Exchange 失败: status = %q, want failed", out.Envelope.GetStatus())
+		}
+		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketStatusFailed || tk.GetTicketId() != "tid-1" {
+			t.Fatalf("ticket = %+v, want {failed, tid-1}", tk)
+		}
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("TicketResult.status = %q, want failed（结论落结果）", res.GetStatus())
+		}
+		// 用户禁用（§1.6 行 253）。
+		e2 := newScanEnv(t, sceneLogin)
+		e2.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 8, ProviderKey: "wxscan", OpenID: "openid_1"}
+		e2.users.byID[8] = &model.User{ID: 8, UserStatus: 2}
+		out2 := submit(e2)
+		if out2.Envelope.GetStatus() != statusUserDisabled {
+			t.Fatalf("user_disabled: status = %q", out2.Envelope.GetStatus())
+		}
+		if res := e2.tickets.results["tid-1"]; res.GetStatus() != statusUserDisabled {
+			t.Fatalf("TicketResult.status = %q, want user_disabled", res.GetStatus())
+		}
+		if tk := out2.Envelope.GetTicket(); tk.GetStatus() != ticketStatusFailed {
+			t.Fatalf("ticket = %+v, want failed", tk)
+		}
+	})
+
+	t.Run("快照校验拒绝 → 不写 ticket", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-none"})
+		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("status = %q, want invalid_request", out.Envelope.GetStatus())
+		}
+		if len(e.tickets.compWrites) != 0 {
+			t.Errorf("校验失败不应写 ticket, got %v", e.tickets.compWrites)
+		}
+	})
+}
+
+// TestLoginOauthTicketMFA MFA×扫码（§2.8 行 750、§13.2 行 1607）：已绑定
+// 用户启用 MFA → mfa_required 信封（login_token + mfa，语义与非扫码路径
+// 一致）、**不写 ticket**（PC 端轮询至 expired）。
+func TestLoginOauthTicketMFA(t *testing.T) {
+	ctx := context.Background()
+	e := newScanEnv(t, sceneLogin)
+	e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "wxscan", OpenID: "openid_1"}
+	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	// totp 凭证存在 → MFA required（凭证 fake 重建 builder）。
+	e.svc.deps.MFA = orchestrator.NewMFABuilder(e.users, &tpCreds{totp: true}, e.settings)
+
+	out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
+	if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
+		t.Fatalf("status = %q, want mfa_required", out.Envelope.GetStatus())
+	}
+	if m := out.Envelope.GetMfa(); m == nil || len(m.GetMethods()) == 0 {
+		t.Errorf("mfa = %+v", m)
+	}
+	if out.Envelope.GetLoginToken() == "" {
+		t.Error("mfa_required 信封应含 login_token（既有分支语义）")
+	}
+	// 不写 ticket：无 scanned / complete 写入、无结果键。
+	if len(e.tickets.scanWrites) != 0 || len(e.tickets.compWrites) != 0 || len(e.tickets.results) != 0 {
+		t.Fatalf("MFA 不写 ticket, scan=%v comp=%v results=%v",
+			e.tickets.scanWrites, e.tickets.compWrites, e.tickets.results)
+	}
+	if e.sessions.gotUID != 0 {
+		t.Errorf("MFA 前不应建会话, uid=%d", e.sessions.gotUID)
+	}
 }
 
 // TestLoginOauthBindingRequired 未绑定：binding_required 信封 + 重签

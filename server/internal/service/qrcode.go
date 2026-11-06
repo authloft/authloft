@@ -19,12 +19,10 @@
 //     invalid_request；校验会话 → 写 TicketResult{scene=login,
 //     status=success}；写 ticket 不改变任何登录态（不建会话）。
 //
-// LoginOauth 的扫码两阶段写入（stage=ticketId 分支）**不在本文件**：该
-// 分支被文档内部缺口阻塞（wire 仅携带 ticket_id、无加密 ticket 串，
-// §13.2b 行 1611「先解 ticket 取 scene」无从执行——详见 thirdparty.go
-// 入口注释），该缺口待定（proto 增 ticket 字段或键表新增
-// TicketPayload 存储位）后另行收编；当前维持既有实现的 invalid_request
-// 默认拒绝。
+// LoginOauth 的扫码两阶段写入（stage / ticketId 分支）归 thirdparty.go：
+// 小程序端提交仅携带 ticket_id，服务端取本文件写入的快照键
+// al:ticket:payload:{ticket_id}（§5.1 行 863、§11.6.4 行 1350）校验 scene /
+// expiry / provider_key 后按 scene 分派写 al:ticket 结果（§13.2b）。
 package service
 
 import (
@@ -98,6 +96,16 @@ type TicketStore interface {
 	Wait(ctx context.Context, id string, timeout time.Duration) error
 }
 
+// TicketPayloadStore al:ticket:payload:{ticket_id} 快照读写窄接口（§5.1 行
+// 863、§11.6.4 行 1350）：*cache.TicketPayloadStore 天然满足；测试传
+// fake。CreateQrcode 写（1 次、TTL = exp − iat），LoginOauth 扫码分支读。
+type TicketPayloadStore interface {
+	// Write 写快照（CreateQrcode 1 次，TTL = exp − iat，默认 600s）。
+	Write(ctx context.Context, payload *token.TicketPayload) error
+	// Read 读快照；缺失（不存在 / 已过期）返回 (nil, nil)。
+	Read(ctx context.Context, ticketID string) (*token.TicketPayload, error)
+}
+
 // QRCodeStorageResolver 按 storage provider key 解析 Storage；
 // *storage.Resolver 天然满足。
 type QRCodeStorageResolver interface {
@@ -126,6 +134,9 @@ type QRCodeDeps struct {
 	TicketCodec *security.Codec
 	// Tickets al:ticket 结果读写（§11.6.5）。
 	Tickets TicketStore
+	// TicketPayloads al:ticket:payload 快照读写（§5.1 行 863、§11.6.4 行
+	// 1350）：CreateQrcode 1 次写入，TTL = exp − iat。
+	TicketPayloads TicketPayloadStore
 	// Storage storage provider 解析（§15.1）。
 	Storage QRCodeStorageResolver
 	// Queue 码图自动删除投递（§13.3；nil = 跳过）。
@@ -241,6 +252,15 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	ticket, err := s.deps.TicketCodec.Seal(security.PurposeTicket, payload)
 	if err != nil {
 		return nil, fmt.Errorf("qrcode: seal ticket: %w", err)
+	}
+
+	// 写快照键 al:ticket:payload:{ticket_id}（1 次 Redis 写，§2.8 行 719、
+	// §11.6.4 行 1350、§5.1 行 863）：TTL = exp − iat 与 ticket 同寿命；
+	// 小程序端提交仅带 ticket_id（无加密串可解），LoginOauth 据此校验
+	// scene / expiry / provider_key（§2.7.4）。写入失败即拉码失败——快照
+	// 缺失的 ticket 无法完成扫码提交。
+	if err := s.deps.TicketPayloads.Write(ctx, payload); err != nil {
+		return nil, fmt.Errorf("qrcode: write ticket payload snapshot: %w", err)
 	}
 
 	// 拉码 → JPEG 75% 压缩（§13.2 行 1593）。
@@ -620,4 +640,34 @@ func (s *ticketResultSealer) Open(sealed string) (*token.TicketResult, error) {
 		return nil, fmt.Errorf("qrcode: unknown ticket result version %d", res.GetV())
 	}
 	return res, nil
+}
+
+// NewTicketPayloadSealer 构造快照 sealer（cache.TicketPayloadSealer 实现，
+// 装配层注入 cache.NewTicketPayloadStore）：TicketPayload 全标量
+// 字段，直接经 §11.6.1 封装整值加密（purpose=ticket，与 ticket 串同一
+// 封装路径——§5.1 行 863「TicketPayload 加密快照」，无需 protojson +
+// BytesValue 包封）。
+func NewTicketPayloadSealer(codec *security.Codec) cache.TicketPayloadSealer {
+	return &ticketPayloadSealer{codec: codec}
+}
+
+type ticketPayloadSealer struct {
+	codec *security.Codec
+}
+
+// Seal 整值加密。
+func (s *ticketPayloadSealer) Seal(p *token.TicketPayload) (string, error) {
+	if p == nil {
+		return "", errors.New("qrcode: seal ticket payload: nil payload")
+	}
+	return s.codec.Seal(security.PurposeTicket, p)
+}
+
+// Open 解密（§11.6.1 封装自带认证，篡改 / 跨 purpose 不可解）。
+func (s *ticketPayloadSealer) Open(sealed string) (*token.TicketPayload, error) {
+	p, err := security.Open[token.TicketPayload](s.codec, security.PurposeTicket, sealed)
+	if err != nil {
+		return nil, fmt.Errorf("qrcode: open ticket payload: %w", err)
+	}
+	return p, nil
 }
