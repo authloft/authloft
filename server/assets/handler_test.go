@@ -1,7 +1,7 @@
 // assets 包 handler 行为测试（§3.13 行 484-487 施工口径）：
 // Content-Type 与缓存头矩阵、404 / 405 语义、目录穿越拒绝（含编码变体，
 // 实证 fs.FS 边界）、HEAD 无 body、Register 挂载可达性与真实 embed 子树
-// （空仓 .gitkeep 形态）。
+// （空仓 .gitignore 形态）。
 package assets
 
 import (
@@ -60,9 +60,9 @@ func TestNewHandlerNotFound(t *testing.T) {
 	h := NewHandler(mapFS(), prefix)
 	missPaths := []string{
 		"/assets/missing.abc.js",
-		"/assets/",          // 根目录
-		"/assets/static",    // 目录（无尾斜杠）
-		"/assets/static/",   // 目录
+		"/assets/",        // 根目录
+		"/assets/static",  // 目录（无尾斜杠）
+		"/assets/static/", // 目录
 		"/assets/static/css",
 	}
 	for _, p := range missPaths {
@@ -170,7 +170,7 @@ func TestNewHandlerRealEmbedTraversal(t *testing.T) {
 
 // TestRegisterMountsPrefix Register 挂载后 /assets/** 经真实 ServeMux 可达
 // （§3.13 行 484；setup / bootstrap 两装配点同用此形态）。空仓形态下以入库
-// 占位 .gitkeep 200 印证；穿越请求经 mux 后无论被 ServeMux clean 重定向
+// 占位 .gitignore 200 印证；穿越请求经 mux 后无论被 ServeMux clean 重定向
 // 还是直达 handler，最终均 404、拿不到 dist 上层文件。
 func TestRegisterMountsPrefix(t *testing.T) {
 	mux := http.NewServeMux()
@@ -178,13 +178,13 @@ func TestRegisterMountsPrefix(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/assets/.gitkeep")
+	resp, err := http.Get(srv.URL + "/assets/.gitignore")
 	if err != nil {
-		t.Fatalf("GET /assets/.gitkeep: %v", err)
+		t.Fatalf("GET /assets/.gitignore: %v", err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("GET /assets/.gitkeep = %d, want 200", resp.StatusCode)
+		t.Errorf("GET /assets/.gitignore = %d, want 200", resp.StatusCode)
 	}
 	if got := resp.Header.Get("Cache-Control"); got != cacheControl {
 		t.Errorf("Cache-Control = %q, want %q", got, cacheControl)
@@ -229,8 +229,8 @@ func TestRegisterMountsPrefix(t *testing.T) {
 // 形态）映射正确：剥离 base 后文件名扁平直达（§3.13 行 481）。
 func TestNewHandlerServesFromSubtreeFS(t *testing.T) {
 	sub, err := fs.Sub(fstest.MapFS{
-		"dist/login.abc.js":          &fstest.MapFile{Data: []byte("ok")},
-		"dist/static/css/x.y.css":     &fstest.MapFile{Data: []byte("c")},
+		"dist/login.abc.js":       &fstest.MapFile{Data: []byte("ok")},
+		"dist/static/css/x.y.css": &fstest.MapFile{Data: []byte("c")},
 	}, "dist")
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)

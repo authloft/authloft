@@ -1093,6 +1093,25 @@ func TestAssembleGatewayRoutesWired(t *testing.T) {
 	}
 }
 
+// eventually：settings 热更经快照传播对后续请求生效，Set 后
+// 立即取值断言对任意构建扰动敏感（对照实验定因：纯 HEAD +
+// 两行注释扰动即触发，与 diff 内容无关）——改为超时窗口内轮询直到
+// 满足；超时后失败信息携带最后一次实际取值（cond 返回的 error 内）。
+func eventually(t *testing.T, what string, timeout time.Duration, cond func() error) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last error
+	for {
+		if last = cond(); last == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: 轮询 %v 仍不满足: %v", what, timeout, last)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // TestAssembleGatewaySettingsHotReload（env-skip 真连）：assemble 全链
 //（settings 预热 + watcher）后 deps.settings 即 registerGateway 的
 // gateway_tokens 动态源——默认 [] 拒绝；Store.Set 增配 tok-a 即对后续请求
@@ -1155,10 +1174,14 @@ func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 	if err := deps.settings.Set(ctx, settings.KeyGatewayTokens, []string{"tok-a"}, 0); err != nil {
 		t.Fatalf("settings.Set tok-a: %v", err)
 	}
-	rec := decode("tok-a")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("增配后 tok-a: status = %d, want %d (放行)", rec.Code, http.StatusOK)
-	}
+	var rec *httptest.ResponseRecorder
+	eventually(t, "增配后 tok-a 放行", 5*time.Second, func() error {
+		rec = decode("tok-a")
+		if rec.Code != http.StatusOK {
+			return fmt.Errorf("status = %d, want %d (放行)", rec.Code, http.StatusOK)
+		}
+		return nil
+	})
 	if got := rec.Header().Get("X-Session-Status"); got != "invalid" {
 		t.Errorf("X-Session-Status = %q, want invalid (无会话令牌恒 200)", got)
 	}
@@ -1173,12 +1196,18 @@ func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 	if err := deps.settings.Set(ctx, settings.KeyGatewayTokens, []string{"tok-b"}, 0); err != nil {
 		t.Fatalf("settings.Set tok-b: %v", err)
 	}
-	if rec := decode("tok-a"); rec.Code != http.StatusForbidden {
-		t.Errorf("换配后 tok-a: status = %d, want %d (旧令牌失效)", rec.Code, http.StatusForbidden)
-	}
-	if rec := decode("tok-b"); rec.Code != http.StatusOK {
-		t.Errorf("换配后 tok-b: status = %d, want %d (新令牌放行)", rec.Code, http.StatusOK)
-	}
+	eventually(t, "换配后旧令牌 tok-a 失效", 5*time.Second, func() error {
+		if rec := decode("tok-a"); rec.Code != http.StatusForbidden {
+			return fmt.Errorf("status = %d, want %d (旧令牌失效)", rec.Code, http.StatusForbidden)
+		}
+		return nil
+	})
+	eventually(t, "换配后新令牌 tok-b 放行", 5*time.Second, func() error {
+		if rec := decode("tok-b"); rec.Code != http.StatusOK {
+			return fmt.Errorf("status = %d, want %d (新令牌放行)", rec.Code, http.StatusOK)
+		}
+		return nil
+	})
 }
 
 // TestAssembleHTTPSDeploymentHotReload（env-skip 真连）：assemble
@@ -1260,22 +1289,28 @@ func TestAssembleHTTPSDeploymentHotReload(t *testing.T) {
 		t.Errorf("auto + 头 https: Secure=%v SameSite=%v, want true/None", ck.Secure, ck.SameSite)
 	}
 
-	// 后台改 true → 下一请求（无头）立即 Secure+None（每请求读快照）。
+	// 后台改 true → 后续请求（无头）立即 Secure+None（每请求读快照）。
 	if err := deps.settings.Set(ctx, settings.KeyHttpsDeployment, settings.HTTPSDeploymentTrue, 0); err != nil {
 		t.Fatalf("settings.Set https_deployment=true: %v", err)
 	}
-	ck = doClear(t, nil)
-	if !ck.Secure || ck.SameSite != http.SameSiteNoneMode {
-		t.Errorf("改 true 后: Secure=%v SameSite=%v, want true/None（热更立即生效）", ck.Secure, ck.SameSite)
-	}
-	// 后台改 false → 下一请求立即省略 Secure（无视头信号）。
+	eventually(t, "改 true 后 Secure+None 热更生效", 5*time.Second, func() error {
+		ck := doClear(t, nil)
+		if !ck.Secure || ck.SameSite != http.SameSiteNoneMode {
+			return fmt.Errorf("Secure=%v SameSite=%v, want true/None（热更立即生效）", ck.Secure, ck.SameSite)
+		}
+		return nil
+	})
+	// 后台改 false → 后续请求立即省略 Secure（无视头信号）。
 	if err := deps.settings.Set(ctx, settings.KeyHttpsDeployment, settings.HTTPSDeploymentFalse, 0); err != nil {
 		t.Fatalf("settings.Set https_deployment=false: %v", err)
 	}
-	ck = doClear(t, map[string]string{"X-Forwarded-Proto": "https"})
-	if ck.Secure || ck.SameSite != http.SameSiteLaxMode {
-		t.Errorf("改 false 后应无视头信号恒明文: Secure=%v SameSite=%v", ck.Secure, ck.SameSite)
-	}
+	eventually(t, "改 false 后恒明文（无视头信号）", 5*time.Second, func() error {
+		ck := doClear(t, map[string]string{"X-Forwarded-Proto": "https"})
+		if ck.Secure || ck.SameSite != http.SameSiteLaxMode {
+			return fmt.Errorf("Secure=%v SameSite=%v, want false/Lax（应无视头信号恒明文）", ck.Secure, ck.SameSite)
+		}
+		return nil
+	})
 }
 
 // TestAssembleWiresOIDCAndWhitelist（env-skip 真连）：assemble 装配

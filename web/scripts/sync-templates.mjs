@@ -19,7 +19,7 @@
  * 模板段之后把 web/dist/** 原样复制到 server/assets/dist/**（保持相对目录结构，供后端
  * assets 包 //go:embed all:dist 经 /assets/** 伺服）；剔除：顶层 html/（模板源，模板段已消费）、
  * 全部 *.map、dist 根级 *.json（按扩展名/层级判定，布局无关，子目录 json 不剔）。复制前清空
- * 目标目录但保全 .gitkeep（bootstrap_assets_probe_test.go 依赖 GET /assets/.gitkeep → 200），
+ * 目标目录但保全 .gitignore（bootstrap_assets_probe_test.go 依赖 GET /assets/.gitignore → 200），
  * 复制后确保其在场（缺失则重建空文件）；源缺失/为空 → 直接非零 exit、不做任何清理/复制；
  * 清空重拷语义保证幂等（连续多次执行结果完全一致）。
  */
@@ -121,7 +121,7 @@ console.log(`[sync-templates] 完成：${ENTRIES.length} 份壳层模板对账�
 const distRootDir = path.join(webDir, 'dist');
 const assetsDistDir = path.join(webDir, '..', 'server', 'assets', 'dist');
 /** 入库占位文件：清理目标目录时必须保全（bootstrap_assets_probe_test.go 依赖其 200）。 */
-const KEEP_FILE = '.gitkeep';
+const KEEP_FILE = '.gitignore';
 
 /** 递归收集目录下全部文件的相对路径（'/' 分隔，布局无关）。 */
 function collectFiles(dir, prefix = '') {
@@ -159,7 +159,7 @@ try {
   const copyFiles = allFiles.filter((rel) => !isExcluded(rel));
   const skippedCount = allFiles.length - copyFiles.length;
 
-  // 清理目标目录：除 .gitkeep 外全删（避免旧 hash 文件残留堆积），清空重拷保证幂等。
+  // 清理目标目录：除 .gitignore 外全删（避免旧 hash 文件残留堆积），清空重拷保证幂等。
   fs.mkdirSync(assetsDistDir, { recursive: true });
   for (const item of fs.readdirSync(assetsDistDir, { withFileTypes: true })) {
     if (item.name === KEEP_FILE) continue;
@@ -172,12 +172,12 @@ try {
     fs.copyFileSync(path.join(distRootDir, rel), dest);
   }
 
-  // .gitkeep 保全：复制完成后确保在场（被意外删除则重建空文件）。
+  // .gitignore 保全：复制完成后确保在场（被意外删除则重建空文件）。
   const keepPath = path.join(assetsDistDir, KEEP_FILE);
   if (!fs.existsSync(keepPath)) fs.writeFileSync(keepPath, '');
 
   console.log(
-    `[sync-templates] 资产同步完成：${copyFiles.length} 个文件已复制到 server/assets/dist（剔除 ${skippedCount} 个：html 模板源 / *.map / 根级 *.json），.gitkeep 在场`,
+    `[sync-templates] 资产同步完成：${copyFiles.length} 个文件已复制到 server/assets/dist（剔除 ${skippedCount} 个：html 模板源 / *.map / 根级 *.json），.gitignore 在场`,
   );
 } catch (err) {
   console.error(`[sync-templates] 资产复制失败：${err?.message ?? err}`);

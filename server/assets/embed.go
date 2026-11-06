@@ -11,10 +11,10 @@ import (
 	"io/fs"
 )
 
-// distFS 嵌入的构建产物子树。all: 前缀把点文件（.gitkeep 等）一并嵌入——
-// dist 仅含入库占位 .gitkeep 的空仓形态下 go build 恒过；缺 dist 目录则
+// distFS 嵌入的构建产物子树。all: 前缀把点文件（.gitignore 等）一并嵌入——
+// dist 仅含入库占位 .gitignore 的空仓形态下 go build 恒过；缺 dist 目录则
 // embed 硬约束直接编译失败（§3.13 行 483 防漏构建）。dist 内容本身不入库
-//（.gitignore 条目随实装落地，仅 .gitkeep 占位除外）。
+// （.gitignore 条目随实装落地，仅 .gitignore 占位除外）。
 //
 //go:embed all:dist
 var distFS embed.FS

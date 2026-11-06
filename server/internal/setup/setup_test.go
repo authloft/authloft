@@ -856,17 +856,17 @@ func TestRequestExitIdempotent(t *testing.T) {
 
 // TestNewServerServesAssets（§3.13 行 484）：NewServer 顶层 mux 恒挂
 // /assets/**——setup 壳模板引用的前端构建产物由此供给，无 config.yaml 也
-// 必须可达。当前 dist 为空仓占位形态（仅入库 .gitkeep），可达性以占位 200 +
+// 必须可达。当前 dist 为空仓占位形态（仅入库 .gitignore），可达性以占位 200 +
 // 未命中 404 + 非法方法 405 三向印证（405 证明响应方是 assets handler 而非
 // gin 兜底）；真实产物入驻后同一断言即覆盖。
 func TestNewServerServesAssets(t *testing.T) {
 	s, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/assets/.gitkeep", nil)
+	req := httptest.NewRequest(http.MethodGet, "/assets/.gitignore", nil)
 	w := httptest.NewRecorder()
 	s.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /assets/.gitkeep = %d, want 200", w.Code)
+		t.Fatalf("GET /assets/.gitignore = %d, want 200", w.Code)
 	}
 	if got := w.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
 		t.Errorf("Cache-Control = %q, want year-long immutable", got)
