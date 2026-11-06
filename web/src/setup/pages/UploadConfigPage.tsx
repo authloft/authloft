@@ -66,11 +66,12 @@ export default function UploadConfigPage({
 
   return (
     <>
-      <h1>{t('setup.uploadConfigTitle')}</h1>
-      <p>{t('setup.uploadConfigIntro')}</p>
-      <div>
+      <h1 className={styles.title}>{t('setup.uploadConfigTitle')}</h1>
+      <p className={styles.intro}>{t('setup.uploadConfigIntro')}</p>
+      <div className={styles.fileRow}>
         <input
           type="file"
+          className={styles.fileInput}
           accept=".yaml,.yml,text/yaml,text/plain"
           onChange={handleFileChange}
         />
@@ -80,6 +81,7 @@ export default function UploadConfigPage({
           rows={14}
           cols={80}
           spellCheck={false}
+          className={styles.textarea}
           placeholder={t('setup.uploadConfigPlaceholder')}
           value={configText}
           onChange={(event) => setConfigText(event.target.value)}
@@ -90,13 +92,24 @@ export default function UploadConfigPage({
           {errorText}
         </p>
       ) : null}
-      {adminMissing ? <p>{t('setup.adminMissingHint')}</p> : null}
-      <div>
-        <button type="button" disabled={!canSubmit} onClick={handleSubmit}>
+      {adminMissing ? (
+        <p className={styles.hint}>{t('setup.adminMissingHint')}</p>
+      ) : null}
+      <div className={styles.actions}>
+        <button
+          type="button"
+          className={styles.primaryButton}
+          disabled={!canSubmit}
+          onClick={handleSubmit}
+        >
           {submitting ? t('setup.initializing') : t('setup.startInitialize')}
         </button>
         {adminMissing ? (
-          <button type="button" onClick={onSwitchToInstall}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={onSwitchToInstall}
+          >
             {t('setup.switchToInstall')}
           </button>
         ) : null}

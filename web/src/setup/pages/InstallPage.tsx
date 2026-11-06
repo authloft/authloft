@@ -216,16 +216,19 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
   ];
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h1>{t('setup.installTitle')}</h1>
-      <p>{t('setup.installIntro')}</p>
+    <form className={styles.form} onSubmit={handleSubmit}>
+      <h1 className={styles.title}>{t('setup.installTitle')}</h1>
+      <p className={styles.intro}>{t('setup.installIntro')}</p>
       {fields.map((field) => (
         <div key={field.key} className={styles.field}>
           <label className={styles.fieldLabel}>
-            {field.label}
-            {field.required ? t('setup.requiredMark') : ''}
+            <span className={styles.labelText}>
+              {field.label}
+              {field.required ? t('setup.requiredMark') : ''}
+            </span>
             <input
               type={field.type ?? 'text'}
+              className={styles.input}
               value={form[field.key]}
               onChange={(event) => setField(field.key, event.target.value)}
               autoComplete={
@@ -237,7 +240,9 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
               }
             />
           </label>
-          {field.hint ? <small>{field.hint}</small> : null}
+          {field.hint ? (
+            <small className={styles.hint}>{field.hint}</small>
+          ) : null}
           {fieldErrors[field.key] ? (
             <p role="alert" className={styles.fieldError}>
               {fieldErrors[field.key]}
@@ -250,7 +255,7 @@ export default function InstallPage({ onRestarting }: InstallPageProps) {
           {formError}
         </p>
       ) : null}
-      <button type="submit" disabled={!requiredFilled || submitting}>
+      <button type="submit" className={styles.submit} disabled={!requiredFilled || submitting}>
         {submitting ? t('setup.installing') : t('setup.startInstall')}
       </button>
     </form>

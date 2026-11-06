@@ -39,18 +39,28 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
   const body: ReactNode = (() => {
     switch (phase) {
       case 'checking':
-        return <p>{t('setup.checkingMode')}</p>;
+        return <p className={styles.statusText}>{t('setup.checkingMode')}</p>;
       case 'choice':
         return (
           <>
-            <h1>{t('setup.initTitle')}</h1>
-            <p>{t('setup.setupModeDetected')}</p>
-            <button type="button" onClick={() => setPhase('upload')}>
-              {t('setup.uploadConfigTitle')}
-            </button>
-            <button type="button" onClick={() => setPhase('install')}>
-              {t('setup.installTitle')}
-            </button>
+            <h1 className={styles.title}>{t('setup.initTitle')}</h1>
+            <p className={styles.intro}>{t('setup.setupModeDetected')}</p>
+            <div className={styles.pathList}>
+              <button
+                type="button"
+                className={styles.pathCard}
+                onClick={() => setPhase('upload')}
+              >
+                {t('setup.uploadConfigTitle')}
+              </button>
+              <button
+                type="button"
+                className={styles.pathCard}
+                onClick={() => setPhase('install')}
+              >
+                {t('setup.installTitle')}
+              </button>
+            </div>
           </>
         );
       case 'upload':
@@ -69,7 +79,8 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
 
   return (
     <section className={styles.page}>
-      {body}
+      {/* 统一卡片容器（页面底 + 居中白卡），DOM 语义不变。 */}
+      <div className={styles.card}>{body}</div>
     </section>
   );
 }

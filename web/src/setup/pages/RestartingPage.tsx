@@ -110,11 +110,11 @@ export default function RestartingPage({ alRoot }: { alRoot: string }) {
   }, [alRoot]);
 
   return (
-    <section className={styles.page}>
-      <h1>{t('setup.restartingTitle')}</h1>
+    <section className={styles.block}>
+      <h1 className={styles.title}>{t('setup.restartingTitle')}</h1>
       {/* §13.4 两条路径共用的重启提示文案（逐字取自契约，键：setup.restartingNotice）。 */}
-      <p>{t('setup.restartingNotice')}</p>
-      <p role="status">
+      <p className={styles.notice}>{t('setup.restartingNotice')}</p>
+      <p role="status" className={timedOut ? styles.statusTimeout : styles.statusText}>
         {timedOut ? t('setup.restartTimeoutNotice') : t('setup.waitingRestart')}
       </p>
     </section>

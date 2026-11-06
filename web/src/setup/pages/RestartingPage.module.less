@@ -1,9 +1,40 @@
-// 重启中页样式（docs/前端架构.md §1.7；内联清零：pageStyle 常量迁入）。
+// 重启中页样式（docs/前端架构.md §1.7；套用登录域视觉语言：
+// 外壳（浅底 + 居中白卡）由 SetupPage 提供，本页只负责卡片内排版）。
 @import (reference) '../../shared/styles/tokens.less';
 
-.page {
-  max-width: 40em;
-  margin: 4rem auto;
-  font-family: @font-family;
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
   line-height: 1.7;
+}
+
+.title {
+  margin: 0;
+  color: @color-text-strong;
+  font-size: @font-size-xl;
+  font-weight: @font-weight-semibold;
+  text-align: center;
+}
+
+// §13.4 两条路径共用的重启提示文案（契约逐字文案）。
+.notice {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: 1.6;
+  text-align: center;
+}
+
+// 等待中主色提示；超时转危险色（仅表现层区分，文案键不变）。
+.statusText {
+  margin: 0;
+  color: @color-primary;
+  font-size: @font-size-md;
+  text-align: center;
+}
+
+.statusTimeout {
+  .statusText();
+  color: @color-danger;
 }
