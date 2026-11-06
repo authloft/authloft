@@ -14,9 +14,6 @@ package setup
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -33,8 +30,7 @@ import (
 	"authloft/internal/config"
 	authloftconnect "authloft/internal/connect"
 	"authloft/internal/middleware"
-	"authloft/internal/session"
-	"authloft/internal/settings"
+	"authloft/internal/pages"
 )
 
 // 监听（§3.1 行 247 / §3.15）：setup 模式同样读 server 段
@@ -131,9 +127,12 @@ type Server struct {
 }
 
 // NewServer 构造 setup server 并注册全部路由（仅 setup 模式使用）。
-// gin engine 链：recover 最外层 → requestid（页面响应回写 X-Request-Id 头）；
-// 不挂 origin——安装期无 rootOrigin 可配（首次部署可能经 IP
-// 访问），§13 响应恒为 Connect JSON。
+// gin engine 链：recover 最外层 → requestid（页面响应回写 X-Request-Id 头）
+// → CSP（阶段 C：每请求 nonce 写 ctx + 输出终稿基线 CSP 响应
+// 头——setup 壳与正常模式统一基线，接口文档 §8 行 1521；
+// handleSetupPage 经 pages.RenderGinShell 消费 ctx nonce）；不挂 origin——
+// 安装期无 rootOrigin 可配（首次部署可能经 IP 访问），§13 响应恒为 Connect
+// JSON。
 //
 // SetupService 经 internal/connect 装配（§3.14 行 480、行 489「setup 模式下
 // 仅注册 SetupService」）：connect.NewServer 注入请求体上限，HandlerOptions
@@ -150,7 +149,7 @@ func NewServer(configPath string) *Server {
 		exited:     make(chan struct{}),
 	}
 	r := gin.New()
-	r.Use(middleware.Recover(), middleware.RequestID())
+	r.Use(middleware.Recover(), middleware.RequestID(), middleware.CSP())
 	r.GET("/setup", s.handleSetupPage)
 	s.router = r
 
@@ -286,69 +285,30 @@ func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.Insta
 	return connect.NewResponse(&setupv1.RestartingResponse{Restarting: true}), nil
 }
 
-// setupPageTmpl /setup 安装页 SPA 空壳（接口文档 §8 行 1398 / 1401-1403）：
-// 注入 window.__AUTHLOFT_INIT__（al_root / static_base，JSON 编码默认
-// <>& 转义）、引用 {static_base}/{entry}/entry.js（entry=setup，static_base
-// 默认 /assets）、no-store、CSP nonce、不注入任何凭证。
-// 三个 %s 依次为：inline nonce、INIT JSON、entry 脚本 nonce。
-const setupPageTmpl = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Authloft Setup</title>
-</head>
-<body>
-<div id="root"></div>
-<script nonce="%s">window.__AUTHLOFT_INIT__ = %s;</script>
-<script nonce="%s" src="/assets/setup/entry.js"></script>
-</body>
-</html>
-`
+// setupStaticBase setup 模式无 settings 可读，static_base 取默认 /assets
+// （§5.6 行默认值；init 注入值与占位符替换值同源）。
+const setupStaticBase = "/assets"
 
-// handleSetupPage GET /setup：渲染安装页空壳。setup 模式无 config，al_root
-// 缺省取当前请求 Host（§3.15），static_base 取默认 /assets（§8 行 1410）。
-// al_root 的 scheme 走 https_deployment 推导链：唯一判定点
-// session.ResolveHTTPS——setup 模式无 settings 键（https_deployment 三态
-// 恒缺省 auto），按请求信号推导：X-Forwarded-Proto 逗号首值 → 请求自身
-// TLS → 兜底明文 http（§1.9 行 306-309 同构）。明文 HTTP 部署（§1.1 行 76
-// 一等公民）下硬编码 https:// 会让前端把 GetStatus 连接失败误判为"已进
-// 正常模式"直接跳登录页（§13.4 轮询判据失效）。页面路由是 §1.5 行 225 的
-// 豁免端点（错误形态按 HTTP 语义）：构造失败直接空体 500，不套 Connect
-// 错误体。
-func (s *Server) handleSetupPage(c *gin.Context) {
-	nonce, err := genNonce()
-	if err != nil {
-		slog.Error("setup: gen nonce", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	sig := session.RequestSignal{Header: c.Request.Header, TLS: c.Request.TLS != nil}
-	scheme := "http"
-	if session.ResolveHTTPS(func() string { return settings.HTTPSDeploymentAuto }, sig) {
-		scheme = "https"
-	}
-	init, err := json.Marshal(map[string]string{
-		"al_root":     scheme + "://" + c.Request.Host,
-		"static_base": "/assets",
-	})
-	if err != nil { // map[string]string 的 Marshal，实际不可达
-		slog.Error("setup: marshal init", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	c.Header("Cache-Control", "no-store")
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
-		fmt.Sprintf(setupPageTmpl, nonce, init, nonce),
-	))
+// setupInit __AUTHLOFT_INIT__ 注入体（§8 行 1534-1541 白名单中 setup entry
+// 适用键：al_root / static_base；不注入 methods——安装态无业务配置，
+// 前端架构 §6b）。
+type setupInit struct {
+	ALRoot     string `json:"al_root"`
+	StaticBase string `json:"static_base"`
 }
 
-// genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url）。
-func genNonce() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("crypto/rand: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
+// handleSetupPage GET /setup：渲染安装页空壳——复用 pages.RenderGinShell
+// 统一渲染入口（阶段 C：读嵌入模板 templates/setup.html + 三
+// 占位符纯字符串全量替换；CSP 头与 nonce 由 gin 链上的 middleware.CSP
+// 输出，setup 壳与正常模式同基线，§8 行 1521）。
+//
+// al_root 数据源（如实报告不粉饰）：setup 模式无 config.yaml
+// （root 必填要等安装表单提交才落 config），后端无 al_root 数据
+// 源，且按既定契约不自动读请求 Host——注入空串，不自造值。前端
+// bootstrap 对空 al_root 有 location.origin 回落（web/src/setup/bootstrap.ts
+// normalizeAlRoot，前端架构 §6b），跳 /sso/login 的目标即当前站点，语义
+// 与读 Host 等价且由浏览器自身判定（优于服务端 XFP→TLS→明文推测）。
+// 若改判（如恢复读 Host），只动本函数一处。
+func (s *Server) handleSetupPage(c *gin.Context) {
+	pages.RenderGinShell(c, "setup", setupInit{StaticBase: setupStaticBase}, setupStaticBase)
 }

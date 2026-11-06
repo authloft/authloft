@@ -1185,8 +1185,11 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // 无会话渲染登录空壳注入 __AUTHLOFT_INIT__.oidc）。挂 gin 链（§8 Go 渲染
 // 页面路由），GET 安全方法不受 origin 校验；路由组挂 middleware.CSP()
 // （§3.3 行 314 csp.go 条目接线——中间件已测未接）：每请求
-// nonce 写 ctx（renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）。
-// 依赖全部复用 assemble 共享单例：settings / provider Loader / factor
+// nonce 写 ctx（renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）；
+// 阶段 C 起 CSP() 挂 pages.StaticBaseCSPSupporter——static_base 为 CDN
+// 绝对地址时每请求向 script / style / font 三条资源类指令追加 CDN 源
+// （§3.13 行 488；script-src CDN 源仅为 CSP2 回退）。依赖全部复用
+// assemble 共享单例：settings / provider Loader / factor
 // 注册表 / captcha Gate / sync_payload Codec / OIDC JWT / ClientRepo；
 // 登出同步首跳构造复用 service.SyncCookieURLBuilder（与登录终点 Terminal
 // 同一实现，§11.2 发起端）。authorize 侧：会话校验复用
@@ -1194,7 +1197,7 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // deps.codeIssuer（与 Terminal 共用同一实例，§14.2 行 1642 不得各写
 // 一份）、审计走 eventlog.Writer → deps.queue（resetAuditSink 同款链）。
 func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
-	pages.Register(r.Group("", middleware.CSP()), pages.Deps{
+	pages.Register(r.Group("", middleware.CSP(pages.StaticBaseCSPSupporter(deps.settings))), pages.Deps{
 		Root:       cfg.Authloft.Root,
 		RootDomain: rootHost(cfg.Authloft.Root),
 		Settings:   deps.settings,

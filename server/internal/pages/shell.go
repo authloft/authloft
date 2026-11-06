@@ -1,17 +1,15 @@
-// Package pages 页面壳路由族（接口文档 §8 行 1414-1439）：/sso/login、
+// Package pages 页面壳路由族（接口文档 §8 行 1486-1543）：/sso/login、
 // /sso/register、/sso/reset、/sso/oauth/callback/{provider_key}（login
 // entry）、/account/**、/admin/**（account / admin entry）的 SPA 空壳渲染，
 // 外加 /sso/logout（§2.9）与 /sso/sync_cookie 中转（§11.2 接收端）。
 //
-// 空壳模式沿 internal/setup handleSetupPage 先例（§3.15）：HTML 空壳 +
-// window.__AUTHLOFT_INIT__ 注入（JSON 编码默认转义 <>&）、Cache-Control:
-// no-store、CSP nonce、不注入任何凭证（CSP 基线不沿 setup：
-// 基线 = middleware/csp.go——setup 的 default-src 'none' 无
-// strict-dynamic，会拦死前端异步 chunk / fetch / CSS，三端页真浏览器
-// 不可用）；产物引用固定 {static_base}/{entry}/
-// entry.js（§8 行 1428）。注入键白名单（§8 行 1430-1437）：al_root /
-// static_base 三端，methods（login 必填，缺失即服务端故障）、oidc（login
-// 可选——本实现仅留注入位，/auth/authorize 渲染接入）。
+// 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
+// templates）+ 三占位符纯字符串全量替换，注入 window.__AUTHLOFT_INIT__
+// （四键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
+// no-store、CSP nonce、不注入任何凭证（CSP 终稿：基线 =
+// middleware/csp.go + cdnOrigin 追加，setup 壳同基线）。注入键白名单
+// （§8 行 1534-1541）：al_root / static_base 三端，methods（login 必填，
+// 缺失即服务端故障）、oidc（login 可选，/auth/authorize 渲染空壳时注入）。
 package pages
 
 import (
@@ -22,7 +20,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +28,6 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
-	"authloft/internal/middleware"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -142,23 +138,6 @@ type Deps struct {
 	Now func() time.Time
 }
 
-// pageTmpl SPA 空壳模板（setup 先例同构）：五个 %s 依次为 title、inline
-// nonce、INIT JSON、entry 脚本 nonce、entry 脚本地址。
-const pageTmpl = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>%s</title>
-</head>
-<body>
-<div id="root"></div>
-<script nonce="%s">window.__AUTHLOFT_INIT__ = %s;</script>
-<script nonce="%s" src="%s"></script>
-</body>
-</html>
-`
-
 // initPayload window.__AUTHLOFT_INIT__ 注入体：字段即 §8 注入白名单
 // （al_root / static_base 三端，methods login 必填，oidc login 可选）。
 // oidc 为 json.RawMessage 注入位——/auth/authorize 渲染登录空壳时填充
@@ -267,40 +246,12 @@ func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 	}
 }
 
-// renderShell 渲染 SPA 空壳（setup 先例同构）：marshal 失败空体 500；
-// no-store；nonce 优先消费 CSP 中间件（bootstrap 页面路由组已挂
-// middleware.CSP，§3.3 行 314）写入 ctx 的 CSPNonceKey；不经中间件的
-// 调用路径（测试 / 未来挂载点）自生成 nonce 并自设同基线响应头
-// （基线逐字同 middleware/csp.go——default-src 'self' +
-// script-src 'nonce-…' 'strict-dynamic' 放行异步 chunk 与 fetch，
-// style / font 'self'，img-src https:，不破坏前端加载）。JSON 编码
-// 默认转义 <>&。
+// renderShell 渲染 SPA 空壳：委托 render.go RenderGinShell 统一渲染出口
+// （阶段 C：读嵌入模板 + 三占位符全量替换；nonce 消费 / CSP 头 / no-store
+// / 500 语义见其注释，三端壳、authorize login 壳与 setup 壳共用）。
+// static_base 取 settings 快照（nil 回落默认 /assets）。
 func (h *Handler) renderShell(c *gin.Context, entry string, init *initPayload) {
-	nonce := ""
-	if v, ok := c.Get(middleware.CSPNonceKey); ok {
-		nonce, _ = v.(string)
-	}
-	if nonce == "" {
-		var err error
-		if nonce, err = genNonce(); err != nil {
-			slog.Error("pages: gen nonce", "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		c.Header("Content-Security-Policy",
-			"default-src 'self'; script-src 'nonce-"+nonce+"' 'strict-dynamic'; style-src 'self'; font-src 'self'; img-src https:")
-	}
-	initJSON, err := json.Marshal(init)
-	if err != nil {
-		slog.Error("pages: marshal init", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	src := strings.TrimRight(h.staticBase(), "/") + "/" + entry + "/entry.js"
-	c.Header("Cache-Control", "no-store")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
-		fmt.Sprintf(pageTmpl, "Authloft", nonce, initJSON, nonce, src),
-	))
+	RenderGinShell(c, entry, init, h.staticBase())
 }
 
 // staticBase settings 键 static_base（§5.6 默认 /assets，可为 CDN 绝对
@@ -314,7 +265,9 @@ func (h *Handler) staticBase() string {
 	return "/assets"
 }
 
-// genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url，setup 先例同款）。
+// genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url，22 字符）：
+// RenderGinShell 未经中间件路径的兜底（中间件路径用 middleware.CSP 的
+// security.RandomString）。
 func genNonce() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

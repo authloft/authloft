@@ -241,7 +241,7 @@ func TestAuthorizePromptNoneNoSession(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("prompt=login: status = %d, want 200（忽略，渲染空壳）", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "entry.js") {
+	if !strings.Contains(rec.Body.String(), "window.__AUTHLOFT_INIT__") {
 		t.Error("prompt=login: 应渲染登录空壳")
 	}
 }
@@ -378,8 +378,8 @@ func TestAuthorizeShellWithoutSession(t *testing.T) {
 		t.Fatalf("status = %d, want 200（URL 保持 /auth/authorize 渲染空壳，非 302）", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `src="/assets/login/entry.js"`) {
-		t.Errorf("缺 login entry.js 引用:\n%s", body)
+	if !strings.Contains(body, `src="/assets/`) {
+		t.Errorf("缺 login 产物引用（static_base 前缀）:\n%s", body)
 	}
 	init := initJSON(t, body)
 	if !strings.Contains(init, `"methods"`) {

@@ -7,7 +7,6 @@ package setup
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -230,9 +229,12 @@ func TestSetupConnectClientInterop(t *testing.T) {
 	}
 }
 
-// TestSetupPageShell GET /setup 空壳页（接口文档 §8 行 1398 / 1401-1403）：
-// HTML、no-store、CSP nonce、__AUTHLOFT_INIT__ 注入（al_root 取请求 Host、
-// static_base 默认 /assets）、entry 引用 /assets/setup/entry.js、不注入凭证。
+// TestSetupPageShell GET /setup 空壳页（接口文档 §8 行 1495 / 1500）：
+// 读嵌入模板 + 三占位符全量替换（阶段 C：setup 壳复用 pages
+// 统一渲染入口）；no-store；CSP 与正常模式同基线（middleware.CSP
+// 挂 gin 链）；__AUTHLOFT_INIT__ 注入 al_root=""（setup 模式无 config、
+// 不读 Host——前端 bootstrap location.origin 回落，见 handleSetupPage
+// 注）+ static_base 默认 /assets；不注入凭证。
 func TestSetupPageShell(t *testing.T) {
 	s, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
@@ -246,30 +248,58 @@ func TestSetupPageShell(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
+	// CSP 终稿基线（§8 行 1521-1532）：style-src 带 nonce、img-src
+	// 含 data: 与 https:、connect-src 'self'，禁 unsafe-inline。
 	csp := rec.Header().Get("Content-Security-Policy")
 	nonceRe := regexp.MustCompile(`'nonce-([A-Za-z0-9_-]{20,})'`)
 	m := nonceRe.FindStringSubmatch(csp)
 	if m == nil {
 		t.Fatalf("CSP %q has no nonce", csp)
 	}
+	nonce := m[1]
+	for _, want := range []string{
+		"default-src 'self'",
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
+		"style-src 'nonce-" + nonce + "' 'self'",
+		"font-src 'self'",
+		"img-src 'self' data: https:",
+		"connect-src 'self'",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP 缺终稿指令 %q: %s", want, csp)
+		}
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Errorf("CSP 禁 unsafe-inline: %s", csp)
+	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "window.__AUTHLOFT_INIT__") {
 		t.Error("shell page must inject window.__AUTHLOFT_INIT__")
 	}
-	// httptest 请求无 X-Forwarded-Proto、无 TLS → auto 兜底明文 http
-	//（修复前为硬编码 https://，明文 HTTP 部署下前端把 GetStatus 连接失败误判
-	// 为"已进正常模式"）。scheme 分支专项见 TestSetupPageRootScheme。
-	if !strings.Contains(body, `"al_root":"http://192.168.10.2:8080"`) {
-		t.Errorf("al_root must default to http://+request Host (no signal -> plaintext), body:\n%s", body)
+	// al_root 数据源缺口（如实报告）：setup 模式无 config.yaml、不读
+	// 请求 Host → 注入空串；前端 bootstrap normalizeAlRoot 空值回落
+	// location.origin（web/src/setup/bootstrap.ts）。
+	if !strings.Contains(body, `"al_root":""`) {
+		t.Errorf("al_root must be empty (no config, no Host reading), body:\n%s", body)
+	}
+	if strings.Contains(body, "192.168.10.2") {
+		t.Errorf("al_root must not read request Host, body:\n%s", body)
 	}
 	if !strings.Contains(body, `"static_base":"/assets"`) {
 		t.Errorf("static_base must default to /assets, body:\n%s", body)
 	}
-	if !strings.Contains(body, `src="/assets/setup/entry.js"`) {
-		t.Errorf("entry script must reference /assets/setup/entry.js, body:\n%s", body)
+	// 占位符全量替换：无残留、产物引用走归一后的 static_base 前缀。
+	if strings.Contains(body, "{{AUTHLOFT_") {
+		t.Errorf("body has residual placeholder, body:\n%s", body)
 	}
-	if !strings.Contains(body, `nonce="`+m[1]+`"`) {
-		t.Errorf("script tags must carry the CSP nonce %q", m[1])
+	if !strings.Contains(body, `src="/assets/`) {
+		t.Errorf("entry scripts must reference /assets/ prefix, body:\n%s", body)
+	}
+	// 模板全部 nonce 属性都携带 CSP 头同一 nonce（renderTemplate 全量替换，
+	// 漏一处页面即挂；计数不写死，随构建产物 chunk 数伸缩）。
+	attrN := strings.Count(body, `nonce="`)
+	if attrN == 0 || attrN != strings.Count(body, `nonce="`+nonce+`"`) {
+		t.Errorf("nonce 属性 %d 处，其中携带 CSP nonce %d 处（须全部一致）", attrN, strings.Count(body, `nonce="`+nonce+`"`))
 	}
 	// <>& 转义（接口文档 §8 行 1401）：INIT 的 JSON 值部分不含裸 < > &
 	//（json.Marshal 默认 HTML escape；script 标签本身的 <> 不在 JSON 值内）。
@@ -285,50 +315,6 @@ func TestSetupPageShell(t *testing.T) {
 		}
 	} else {
 		t.Error("INIT assignment not found for escape check")
-	}
-}
-
-// TestSetupPageRootScheme 壳 al_root 的 scheme 按推导链
-// 逐请求推导——复用唯一判定点 session.ResolveHTTPS（setup 模式无 settings
-// 键，https_deployment 三态恒缺省 auto）：X-Forwarded-Proto 逗号首值
-// （头优先于直连 TLS，忽略大小写）→ 请求自身 TLS → 兜底明文 http。
-// 修复前硬编码 https://，明文 HTTP 部署下前端把 GetStatus 连接失败误判为
-// "已进正常模式"直接跳登录页（§13.4 轮询判据失效）。
-func TestSetupPageRootScheme(t *testing.T) {
-	const host = "192.168.10.2:8080"
-	cases := []struct {
-		name string
-		xfp  string // X-Forwarded-Proto 头值；空 = 不带
-		tls  bool   // 请求自身 TLS 直连
-		want string
-	}{
-		{"xfp https", "https", false, "https://" + host},
-		{"xfp http", "http", false, "http://" + host},
-		{"xfp list first value wins", "https,http", false, "https://" + host},
-		{"xfp list first http wins over tls", "HTTP, https", true, "http://" + host},
-		{"no xfp no tls", "", false, "http://" + host},
-		{"no xfp tls direct", "", true, "https://" + host},
-		{"xfp http wins over tls", "http", true, "http://" + host},
-	}
-	for _, tc := range cases {
-		s, _ := newTestServer(t)
-		req := httptest.NewRequest(http.MethodGet, "/setup", nil)
-		req.Host = host
-		if tc.xfp != "" {
-			req.Header.Set("X-Forwarded-Proto", tc.xfp)
-		}
-		if tc.tls {
-			req.TLS = &tls.ConnectionState{}
-		}
-		rec := httptest.NewRecorder()
-		s.Router().ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s: status = %d, want %d", tc.name, rec.Code, http.StatusOK)
-		}
-		want := `"al_root":"` + tc.want + `"`
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Errorf("%s: body lacks %s, body:\n%s", tc.name, want, rec.Body.String())
-		}
 	}
 }
 

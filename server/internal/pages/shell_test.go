@@ -1,8 +1,9 @@
-// shell_test.go 空壳渲染与路由注册测试（接口文档 §8）：转义 /
-// no-store / CSP 基线（头形态 + nonce 注入 + strict-dynamic；
-// 缺省自设与中间件两路径各测）、entry.js 引用按 static_base、三端路由
-// 200 且注入零凭证键、callback 零业务。本文件同时承载 pages 包全部测试
-// 夹具。
+// shell_test.go 空壳渲染与路由注册测试（阶段 C，接口文档 §8）：
+// 模板三占位符全量替换（nonce 出现次数 = 模板占位符数、无残留）、转义 /
+// no-store / CSP 终稿（自设与中间件两路径各测 + CDN 追加）、static_base
+// 尾斜杠归一、三端路由 200 且注入零凭证键、callback 零业务、四份模板
+// 穷尽替换（含 setup entry，供 setup 壳同契约对账）。本文件同时承载
+// pages 包全部测试夹具。
 package pages
 
 import (
@@ -251,25 +252,49 @@ func initJSON(t *testing.T, body string) string {
 	return strings.TrimSuffix(rest[:j], ";")
 }
 
-// cspNonceFromHeader 断言 CSP 头为基线形态（default-src
-// 'self'；script-src 'nonce-…' 'strict-dynamic'；style / font 'self'；
-// img-src https:——与 middleware/csp.go 基线逐字一致）并提取 nonce。
-func cspNonceFromHeader(t *testing.T, csp string) string {
+// fallbackCSP 未经中间件路径的自设 CSP 头（render.go cspDirectives 终稿
+// 形态，static_base 同域时）。
+func fallbackCSP(nonce string) string {
+	return "default-src 'self'; script-src 'nonce-" + nonce + "' 'strict-dynamic'; " +
+		"style-src 'nonce-" + nonce + "' 'self'; font-src 'self'; " +
+		"img-src 'self' data: https:; connect-src 'self'"
+}
+
+// nonceFromCSP 从 CSP 头提取 script-src 的 nonce（script-src 在 style-src
+// 之前，头两段形态固定：default-src 'self'; script-src 'nonce-…'）。
+func nonceFromCSP(t *testing.T, csp string) string {
 	t.Helper()
 	const (
 		head = "default-src 'self'; script-src 'nonce-"
-		tail = "' 'strict-dynamic'; style-src 'self'; font-src 'self'; img-src https:"
+		tail = "' 'strict-dynamic'"
 	)
-	if !strings.HasPrefix(csp, head) || !strings.HasSuffix(csp, tail) {
-		t.Fatalf("CSP = %q, want 基线形态 %q…%q（strict-dynamic 必须在）", csp, head, tail)
+	if !strings.HasPrefix(csp, head) {
+		t.Fatalf("CSP = %q, want 前缀 %q", csp, head)
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(csp, head), tail)
+	rest := strings.TrimPrefix(csp, head)
+	i := strings.Index(rest, tail)
+	if i < 0 {
+		t.Fatalf("CSP = %q, script-src 缺 'strict-dynamic' 尾", csp)
+	}
+	return rest[:i]
 }
 
-// TestShellBasics account 空壳：200、no-store、CSP 基线头 + nonce 两个
-// script 一致（fixture engine 不挂 middleware.CSP，走 renderShell
-// 缺省自设路径）、entry.js 引用按 static_base、INIT 仅 al_root /
-// static_base 两键（零凭证键）。
+// tmplPlaceholderCount 模板 {entry}.html 中占位符 ph 的出现次数——
+// renderTemplate 全量替换后 body 中该值的期望出现次数（硬约束 2：出现
+// 几次替换几次）。
+func tmplPlaceholderCount(t *testing.T, entry, ph string) int {
+	t.Helper()
+	tpl, err := templatesFS.ReadFile("templates/" + entry + ".html")
+	if err != nil {
+		t.Fatalf("read template %s: %v", entry, err)
+	}
+	return strings.Count(string(tpl), ph)
+}
+
+// TestShellBasics account 空壳：200、no-store、CSP 终稿头（fixture engine
+// 不挂 middleware.CSP，走 RenderGinShell 缺省自设路径）+ nonce 出现次数 =
+// 模板占位符数、无残留占位符、产物引用按 static_base 前缀、INIT 仅
+// al_root / static_base 两键（零凭证键）。
 func TestShellBasics(t *testing.T) {
 	f := newFixture(t)
 	rec := doGet(t, f.engine(t), "/account/")
@@ -280,23 +305,30 @@ func TestShellBasics(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
-	nonce := cspNonceFromHeader(t, rec.Header().Get("Content-Security-Policy"))
-	body := rec.Body.String()
-	if n := strings.Count(body, `nonce="`+nonce+`"`); n != 2 {
-		t.Errorf("两个 script 的 nonce 出现 %d 次，want 2（inline + entry）", n)
+	nonce := nonceFromCSP(t, rec.Header().Get("Content-Security-Policy"))
+	if got, want := rec.Header().Get("Content-Security-Policy"), fallbackCSP(nonce); got != want {
+		t.Errorf("CSP = %q, want 终稿基线 %q", got, want)
 	}
-	if !strings.Contains(body, `src="/assets/account/entry.js"`) {
-		t.Errorf("body 缺 entry.js 引用 /assets/account/entry.js:\n%s", body)
+	body := rec.Body.String()
+	if n := strings.Count(body, `nonce="`+nonce+`"`); n != tmplPlaceholderCount(t, "account", phCSPNonce) {
+		t.Errorf("nonce 出现 %d 次, want = 模板占位符 %d 次（全量替换，漏一处页面即挂）", n, tmplPlaceholderCount(t, "account", phCSPNonce))
+	}
+	if strings.Contains(body, "{{AUTHLOFT_") {
+		t.Errorf("body 残留占位符:\n%s", body)
+	}
+	if !strings.Contains(body, `src="/assets/`) {
+		t.Errorf("body 缺 /assets/ 前缀的产物引用:\n%s", body)
 	}
 	if got, want := initJSON(t, body), `{"al_root":"https://auth.example.com","static_base":"/assets"}`; got != want {
 		t.Errorf("INIT = %s, want %s（白名单外零键）", got, want)
 	}
 }
 
-// TestShellCSPConsumesMiddleware CSP 中间件路径（与
-// bootstrap 页面路由组同构挂法 r.Group("", middleware.CSP())）：renderShell
-// 消费 ctx 的 CSPNonceKey——body 两个 script 的 nonce 与中间件所设
-// CSP 头一致（未自生成新值另设头）；头保持中间件基线（strict-dynamic 在）。
+// TestShellCSPConsumesMiddleware CSP 中间件路径（bootstrap 页面路由组同构
+// 挂法 r.Group("", middleware.CSP())）：RenderGinShell 消费 ctx 的
+// CSPNonceKey——body 全部 nonce 属性与中间件所设 CSP 头同 nonce（未自
+// 生成新值另设头）；头保持中间件终稿基线（style-src 带 nonce、
+// strict-dynamic 在、connect-src 'self'）。
 func TestShellCSPConsumesMiddleware(t *testing.T) {
 	f := newFixture(t)
 	gin.SetMode(gin.TestMode)
@@ -304,22 +336,100 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 	Register(r.Group("", middleware.CSP()), f.deps)
 
 	rec := doGet(t, r, "/account/")
-	nonce := cspNonceFromHeader(t, rec.Header().Get("Content-Security-Policy"))
-	if n := strings.Count(rec.Body.String(), `nonce="`+nonce+`"`); n != 2 {
-		t.Errorf("两个 script 的 nonce 出现 %d 次，want 2（与 CSP 头同 nonce，即消费 ctx 而非自生成）", n)
+	csp := rec.Header().Get("Content-Security-Policy")
+	nonce := nonceFromCSP(t, csp)
+	for _, want := range []string{
+		"style-src 'nonce-" + nonce + "' 'self'",
+		"font-src 'self'",
+		"img-src 'self' data: https:",
+		"connect-src 'self'",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP 头缺终稿指令 %q：%s", want, csp)
+		}
+	}
+	if n := strings.Count(rec.Body.String(), `nonce="`+nonce+`"`); n != tmplPlaceholderCount(t, "account", phCSPNonce) {
+		t.Errorf("nonce 出现 %d 次, want %d（与 CSP 头同 nonce，即消费 ctx 而非自生成）", n, tmplPlaceholderCount(t, "account", phCSPNonce))
 	}
 }
 
-// TestShellStaticBaseOverrides static_base 覆盖（CDN 绝对地址 + 尾斜杠防御）
-// 与 <>& 转义（JSON 编码默认 HTML 转义）。
+// TestShellCSPSupporterCDN 生产装配路径（bootstrap registerPages 同构）：
+// middleware.CSP 挂 pages.StaticBaseCSPSupporter——static_base 为 CDN
+// 绝对地址时头追加 script / style / font 三段 CDN 源；同域 /assets 时
+// 不追加。同名指令多次出现取并集（csp.go 注）。
+func TestShellCSPSupporterCDN(t *testing.T) {
+	f := newFixture(t)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	Register(r.Group("", middleware.CSP(StaticBaseCSPSupporter(f.settings))), f.deps)
+
+	// 同域默认：无追加段。
+	rec := doGet(t, r, "/admin/")
+	csp := rec.Header().Get("Content-Security-Policy")
+	nonce := nonceFromCSP(t, csp)
+	if got, want := csp, strings.Join([]string{
+		"default-src 'self'",
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
+		"style-src 'nonce-" + nonce + "' 'self'",
+		"font-src 'self'",
+		"img-src 'self' data: https:",
+		"connect-src 'self'",
+	}, "; "); got != want {
+		t.Errorf("同域 CSP = %q, want 基线 %q", got, want)
+	}
+
+	// CDN 绝对地址：追加三段 CDN 源（script-src CDN 源仅为 CSP2 回退）。
+	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
+	rec = doGet(t, r, "/admin/")
+	csp = rec.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"script-src https://cdn.example.com",
+		"style-src https://cdn.example.com",
+		"font-src https://cdn.example.com",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CDN CSP 头缺追加段 %q：%s", want, csp)
+		}
+	}
+	// img / connect / default 不追加（§8 表：https: 已覆盖 CDN、API 恒同源）。
+	if strings.Contains(csp, "img-src https://cdn") || strings.Contains(csp, "connect-src https://") {
+		t.Errorf("img-src / connect-src 不追加 CDN 源：%s", csp)
+	}
+	// 每请求现算：改回同域后新请求无追加段。
+	f.settings.m[settings.KeyStaticBase] = "/assets"
+	if csp := doGet(t, r, "/admin/").Header().Get("Content-Security-Policy"); strings.Contains(csp, "cdn.example.com") {
+		t.Errorf("static_base 热更回同域后仍带 CDN 段：%s", csp)
+	}
+}
+
+// TestShellStaticBaseOverrides static_base 覆盖（CDN 绝对地址 + 尾斜杠
+// 归一）与 <>& 转义（JSON 编码默认 HTML 转义）。
 func TestShellStaticBaseOverrides(t *testing.T) {
 	f := newFixture(t)
 	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
 	rec := doGet(t, f.engine(t), "/admin/")
 
 	body := rec.Body.String()
-	if !strings.Contains(body, `src="https://cdn.example.com/static/admin/entry.js"`) {
-		t.Errorf("entry.js 引用未按 static_base 拼接（含尾斜杠防御）:\n%s", body)
+	if !strings.Contains(body, `src="https://cdn.example.com/static/`) {
+		t.Errorf("产物引用未按 static_base 拼接:\n%s", body)
+	}
+	if strings.Contains(body, "https://cdn.example.com/static//") {
+		t.Errorf("尾斜杠未归一（出现 //）:\n%s", body)
+	}
+	if got := initJSON(t, body); !strings.Contains(got, `"static_base":"https://cdn.example.com/static/"`) {
+		t.Errorf("INIT static_base 应为原值（归一只作用占位符替换）: %s", got)
+	}
+	// 自设头（无中间件路径）同需追加 CDN 源（cspDirectives）。
+	csp := rec.Header().Get("Content-Security-Policy")
+	nonce := nonceFromCSP(t, csp)
+	for _, want := range []string{
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic' https://cdn.example.com",
+		"style-src 'nonce-" + nonce + "' 'self' https://cdn.example.com",
+		"font-src 'self' https://cdn.example.com",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("自设 CSP 头缺 CDN 追加 %q：%s", want, csp)
+		}
 	}
 
 	// 转义：<>& 必须被 \u003c/\u003e/\u0026 转义，不得裸出现在 INIT 内。
@@ -341,12 +451,12 @@ func TestThreeEntryRoutes(t *testing.T) {
 	r := f.engine(t)
 
 	cases := []struct {
-		target  string
-		wantSrc string
+		target string
+		entry  string
 	}{
-		{"/sso/login", "/assets/login/entry.js"},
-		{"/account/security/password", "/assets/account/entry.js"},
-		{"/admin/users", "/assets/admin/entry.js"},
+		{"/sso/login", "login"},
+		{"/account/security/password", "account"},
+		{"/admin/users", "admin"},
 	}
 	for _, tc := range cases {
 		rec := doGet(t, r, tc.target)
@@ -354,8 +464,15 @@ func TestThreeEntryRoutes(t *testing.T) {
 			t.Fatalf("%s: status = %d, want 200", tc.target, rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `src="`+tc.wantSrc+`"`) {
-			t.Errorf("%s: 缺 entry.js %s", tc.target, tc.wantSrc)
+		if !strings.Contains(body, `src="/assets/`) {
+			t.Errorf("%s: 缺 /assets/ 前缀产物引用", tc.target)
+		}
+		if n := strings.Count(body, "{{AUTHLOFT_"); n != 0 {
+			t.Errorf("%s: 残留占位符 %d 处", tc.target, n)
+		}
+		nonce := nonceFromCSP(t, rec.Header().Get("Content-Security-Policy"))
+		if n := strings.Count(body, `nonce="`+nonce+`"`); n != tmplPlaceholderCount(t, tc.entry, phCSPNonce) {
+			t.Errorf("%s: nonce 出现 %d 次, want = 模板 %d 次", tc.target, n, tmplPlaceholderCount(t, tc.entry, phCSPNonce))
 		}
 		if !strings.Contains(initJSON(t, body), `"al_root":"https://auth.example.com"`) {
 			t.Errorf("%s: 缺 al_root", tc.target)
@@ -368,7 +485,7 @@ func TestThreeEntryRoutes(t *testing.T) {
 			t.Errorf("%s: account/admin 空壳不应注入 methods: %s", target, init)
 		}
 	}
-	// login 空壳必须带 methods（§8 行 1436）。
+	// login 空壳必须带 methods（§8 行 1540）。
 	if init := initJSON(t, doGet(t, r, "/sso/login").Body.String()); !strings.Contains(init, `"methods"`) {
 		t.Errorf("login 空壳缺 methods 注入: %s", init)
 	}
@@ -396,11 +513,51 @@ func TestCallbackZeroBusiness(t *testing.T) {
 			t.Fatalf("callback %q: status = %d, want 200", pk, rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `src="/assets/login/entry.js"`) {
-			t.Errorf("callback %q: 缺 login entry.js", pk)
+		if !strings.Contains(body, `src="/assets/`) {
+			t.Errorf("callback %q: 缺 login 产物引用", pk)
 		}
 		if !strings.Contains(initJSON(t, body), `"methods"`) {
 			t.Errorf("callback %q: 缺 methods", pk)
+		}
+	}
+}
+
+// TestRenderTemplatePlaceholderExhaustive 四份模板占位符穷尽替换（阶段 C
+// 验收锚点：含 setup entry——setup 壳同契约由本测试对账，setup 包侧仅测
+// gin 链接线）：固定 nonce + INIT 直接调 renderTemplate，断言 ① 无残留
+// `{{AUTHLOFT_`；② nonce 出现次数 = 模板占位符出现次数（login/account/
+// admin/setup 各异，随前端构建产物伸缩）；③ static_base 占位符全量替换
+// 且尾斜杠归一；④ INIT 注入原样落位、\u2028/\u2029 转义（json.Marshal）。
+func TestRenderTemplatePlaceholderExhaustive(t *testing.T) {
+	const nonce = "fixed-test-nonce"
+	type init4 struct {
+		ALRoot     string `json:"al_root"`
+		StaticBase string `json:"static_base"`
+		S2028      string `json:"s2028"`
+	}
+	init := init4{ALRoot: "https://uc.example.com", StaticBase: "/init-assets", S2028: "a\u2028b\u2029c"}
+	for _, entry := range []string{"login", "account", "admin", "setup"} {
+		// static_base 传带尾斜杠值：占位符替换须归一为 /assets（INIT 内原值
+		// 用不同字符串，避免干扰 /assets/ 计数）。
+		body, err := renderTemplate(entry, init, "/assets/", nonce)
+		if err != nil {
+			t.Fatalf("%s: renderTemplate: %v", entry, err)
+		}
+		got := string(body)
+		if strings.Contains(got, "{{AUTHLOFT_") {
+			t.Errorf("%s: 残留占位符:\n%s", entry, got)
+		}
+		if n := strings.Count(got, nonce); n != tmplPlaceholderCount(t, entry, phCSPNonce) {
+			t.Errorf("%s: nonce 出现 %d 次, want = 模板占位符 %d 次", entry, n, tmplPlaceholderCount(t, entry, phCSPNonce))
+		}
+		if n := strings.Count(got, "/assets/"); n != tmplPlaceholderCount(t, entry, phStaticBase) {
+			t.Errorf("%s: static_base 出现 %d 次, want = 模板占位符 %d 次（尾斜杠已归一）", entry, n, tmplPlaceholderCount(t, entry, phStaticBase))
+		}
+		if strings.Contains(got, "/assets//") {
+			t.Errorf("%s: 尾斜杠未归一（出现 /assets//）:\n%s", entry, got)
+		}
+		if !strings.Contains(got, `window.__AUTHLOFT_INIT__ = {"al_root":"https://uc.example.com","static_base":"/init-assets","s2028":"a`+`\u2028`+`b`+`\u2029`+`c"};`) {
+			t.Errorf("%s: INIT 注入或 \\u2028/\\u2029 转义不正确:\n%s", entry, got)
 		}
 	}
 }

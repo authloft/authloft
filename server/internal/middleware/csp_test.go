@@ -45,8 +45,9 @@ func TestCSPNonceUniquePerRequest(t *testing.T) {
 	}
 }
 
-// ② CSP 响应头含 ctx 中同一 nonce 与基线指令（default-src / script-src
-// nonce+strict-dynamic / style-src / font-src / img-src https:）。
+// ② CSP 响应头含 ctx 中同一 nonce 与终稿基线指令（接口文档 §8
+// 行 1521-1532：default-src / script-src nonce+strict-dynamic / style-src
+// nonce+'self' / font-src / img-src 'self' data: https: / connect-src）。
 func TestCSPHeaderContainsNonceAndBaseDirectives(t *testing.T) {
 	var nonce string
 	r := newTestRouter(CSP())
@@ -66,13 +67,17 @@ func TestCSPHeaderContainsNonceAndBaseDirectives(t *testing.T) {
 	for _, want := range []string{
 		"default-src 'self'",
 		"script-src 'nonce-" + nonce + "' 'strict-dynamic'",
-		"style-src 'self'",
+		"style-src 'nonce-" + nonce + "' 'self'",
 		"font-src 'self'",
-		"img-src https:",
+		"img-src 'self' data: https:",
+		"connect-src 'self'",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP 头缺少基线指令 %q：%s", want, csp)
 		}
+	}
+	if strings.Contains(csp, "unsafe-inline") {
+		t.Errorf("CSP 头禁 unsafe-inline：%s", csp)
 	}
 }
 
@@ -90,7 +95,7 @@ func TestCSPSupporterDirectivesAppended(t *testing.T) {
 	if !strings.Contains(csp, "script-src https://cdn.example.com") {
 		t.Errorf("CSP 头未追加 supporter 指令：%s", csp)
 	}
-	if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "img-src https:") {
+	if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "img-src 'self' data: https:") {
 		t.Errorf("追加后基线指令丢失：%s", csp)
 	}
 	if strings.Contains(csp, "; ;") || strings.HasSuffix(csp, ";") {
