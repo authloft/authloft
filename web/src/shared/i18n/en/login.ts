@@ -46,7 +46,6 @@ export const login: typeof zhLogin = {
   'login.channelSignupClosed': 'Sign-up is not available for this channel',
   // ---- OAuth 回调页（OAuthCallbackPage）------------------------------------
   'login.processing': 'Processing, please wait…',
-  'login.bindUnavailable': 'Account binding is coming soon',
   'login.backToLogin': 'Back to sign in',
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------

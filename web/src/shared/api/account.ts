@@ -6,7 +6,8 @@
  * 头像族四件（自 account/api.ts 迁移落位，原实现不再保留）：
  * GetConfig / PresignAvatar / CommitAvatar + proxy 直传 postForm（接口文档
  * §3.2 行 835-840；avatarUpload 供 useUpload 在 proxy / direct 间切换）。
- * ThirdpartyOauth 随 OAuthCallbackPage b 分支联调再封（§2.7.3）。
+ * ThirdpartyOauth（§3.7.1 A 行 969-1003）：OAuthCallbackPage b
+ * 前缀分支的绑定回调实调（login entry 消费，§2.7.3）。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（§9 第 16 条），本模块
  * 从那里拿 accountClient、不自建 transport；报文类型只从 src/gen/proto
@@ -26,6 +27,10 @@ import type {
   PresignAvatarRequest,
 } from '../../gen/proto/api/account/v1/profile_pb';
 import { AvatarResponseSchema } from '../../gen/proto/api/account/v1/profile_pb';
+import type {
+  ThirdpartyOauthRequest,
+  ThirdpartyOauthResponse,
+} from '../../gen/proto/api/account/v1/thirdparty_pb';
 
 /** __AUTHLOFT_INIT__ 的最小形状（接口文档 §8 白名单中的 al_root）。 */
 interface RawInit {
@@ -62,6 +67,18 @@ export function presignAvatar(request: PresignAvatarRequest): Promise<AvatarPres
 /** direct 模式确认上传（§3.2 行 840）：仅记录已上传，不回读校验。 */
 export function commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse> {
   return accountClient.commitAvatar(request);
+}
+
+/**
+ * 三方绑定回调落地（§3.7.1 A 行 969-1003）：channel=redirect，OAuthCallbackPage
+ * b 前缀分支实调（需 al_session）。**非信封**、不 Set-Cookie、不签发
+ * login_token——绑定不改变登录态（行 1000）；失败为 Connect 错误体，
+ * ErrorInfo.code 走 §1.6 位置二（由调用方消费，本层只薄转发）。
+ */
+export function thirdpartyOauth(
+  request: ThirdpartyOauthRequest,
+): Promise<ThirdpartyOauthResponse> {
+  return accountClient.thirdpartyOauth(request);
 }
 
 /**

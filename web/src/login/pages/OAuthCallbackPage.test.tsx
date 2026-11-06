@@ -7,17 +7,28 @@ import * as React from 'react';
 // renderToStaticMarkup（沿 register-reset.test.tsx 边界惯例），分派编排经
 // dispatchCallback（依赖注入）+ msw wire 契约拦截 api 层覆盖；状态帧视图
 // （OAuthCallbackView）可注入任意 status 帧（RegisterPageView 同款模式）。
+// b 分支：ThirdpartyOauth 走 msw 真实 transport 归一链——成功 /
+// target_taken（409 ErrorInfo detail）/ state_mismatch（400 ErrorInfo detail）
+// 三路 wire（后端属 account 域桩，响应体按 Connect 错误形态，既定口径）。
 import { renderToStaticMarkup } from 'react-dom/server';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import { create } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
 import { clearLoginToken, getLoginToken } from '../loginTokenStore';
+import {
+  ErrorInfoSchema,
+} from '../../gen/proto/api/common/v1/error_info_pb';
+import {
+  ThirdpartyOauthResponseSchema,
+  type ThirdpartyOauthResponse,
+} from '../../gen/proto/api/account/v1/thirdparty_pb';
 import {
   LoginFlowResponseSchema,
   MfaMethodSchema,
   MfaSchema,
   type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { ApiError } from '../../shared/api/errors';
 import type { MethodsSnapshot } from '../../shared/types/init';
 import { saveOidcContext } from '../oidcContext';
 
@@ -34,11 +45,22 @@ const BASE = 'https://uc.test';
 };
 
 const LOGIN_OAUTH_URL = `${BASE}/api.sso.v1.SsoService/LoginOauth`;
+const THIRDPARTY_OAUTH_URL = `${BASE}/api.account.v1.AccountService/ThirdpartyOauth`;
 
 const server = setupServer();
 
 let pagesMod: typeof import('./OAuthCallbackPage');
 let apiMod: typeof import('../api');
+let sharedAccountMod: typeof import('../../shared/api/account');
+
+/** Connect 错误体 details 的 base64 编码（沿 setup/api.test.ts 同款桩）。 */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
 
 /** 内存版 Storage 桩（oidcContext 落盘目标；沿 api.test.ts）。 */
 function fakeStorage(): Storage {
@@ -72,6 +94,7 @@ beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   pagesMod = await import('./OAuthCallbackPage');
   apiMod = await import('../api');
+  sharedAccountMod = await import('../../shared/api/account');
 });
 
 beforeEach(() => {
@@ -96,6 +119,14 @@ afterAll(() => {
 
 function envelope(init: Record<string, unknown>): LoginFlowResponse {
   return create(LoginFlowResponseSchema, init);
+}
+
+/** ThirdpartyOauth 成功响应（§3.7.1 A 行 977：{providerKey, displayName}，非信封）。 */
+function bindResponse(): ThirdpartyOauthResponse {
+  return create(ThirdpartyOauthResponseSchema, {
+    providerKey: 'qq',
+    displayName: 'QQ',
+  });
 }
 
 /**
@@ -157,18 +188,72 @@ describe('callbackQuery / buildLoginOauthInput（§2.7.3 行 604/612-615）', ()
   });
 });
 
+describe('buildThirdpartyOauthInput / bindErrorCode / securityBindUrl（§3.7.1 A 行 985-994）', () => {
+  test('buildThirdpartyOauthInput：code/state 原样透传 + providerKey 路径参数（同名以路径为准）', () => {
+    // create() 消息运行时带 $typeName，toMatchObject 做字段级子集断言。
+    expect(pagesMod.buildThirdpartyOauthInput('qq', '?code=c-1&state=b-1')).toMatchObject({
+      providerKey: 'qq',
+      code: 'c-1',
+      state: 'b-1',
+    });
+    expect(
+      pagesMod.buildThirdpartyOauthInput('qq', '?code=c-1&state=b-1&providerKey=hack'),
+    ).toMatchObject({ providerKey: 'qq', code: 'c-1', state: 'b-1' });
+  });
+
+  test('buildThirdpartyOauthInput：缺 code/state → 零值空串上送（服务端 invalid_request 判定，不因前端放宽契约）', () => {
+    expect(pagesMod.buildThirdpartyOauthInput('qq', '?state=b-1')).toMatchObject({
+      providerKey: 'qq',
+      code: '',
+      state: 'b-1',
+    });
+    expect(pagesMod.buildThirdpartyOauthInput('qq', '')).toMatchObject({
+      providerKey: 'qq',
+      code: '',
+      state: '',
+    });
+  });
+
+  test('bindErrorCode：ApiError（errors.ts 归一形态）→ code 透传；其余 → internal 兜底（§1.6 行 273）', () => {
+    expect(
+      pagesMod.bindErrorCode(
+        new ApiError({ httpStatus: 400, code: 'state_mismatch', message: 'x', requestId: '' }),
+      ),
+    ).toBe('state_mismatch');
+    expect(pagesMod.bindErrorCode(new Error('transport'))).toBe('internal');
+    expect(pagesMod.bindErrorCode('weird')).toBe('internal');
+  });
+
+  test('securityBindUrl：al_root 前缀 + ?bind= 拼接（§4.4 行 467）', () => {
+    stubWindow();
+    expect(pagesMod.securityBindUrl('success')).toBe(
+      'https://uc.test/account/security?bind=success',
+    );
+    expect(pagesMod.securityBindUrl('provider_disabled')).toBe(
+      'https://uc.test/account/security?bind=provider_disabled',
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // dispatchCallback 分派编排（§2.7.3 / §10.5 行 1541-1545）
 // ---------------------------------------------------------------------------
 
 describe('dispatchCallback 分派编排', () => {
-  /** 记录型依赖桩（请求 / 信封 / 传输失败 / 占位 / 跳转逐项落账）。 */
-  function recorder(result?: LoginFlowResponse | 'reject') {
+  /**
+   * 记录型依赖桩（请求 / 信封 / 传输失败 / 跳转逐项落账）；bindResult 控制
+   * b 分支 ThirdpartyOauth 的结果：缺省成功响应、'reject' 传输异常、ApiError
+   * 业务失败（§1.6 位置二归一形态）。
+   */
+  function recorder(
+    result?: LoginFlowResponse | 'reject',
+    bindResult?: ThirdpartyOauthResponse | 'reject' | ApiError,
+  ) {
     const calls = {
       requests: [] as unknown[],
+      bindRequests: [] as unknown[],
       envelopes: [] as LoginFlowResponse[],
       transportErrors: 0,
-      bindUnavailable: 0,
       navigations: [] as string[],
     };
     const deps = {
@@ -179,12 +264,19 @@ describe('dispatchCallback 分派编排', () => {
         }
         return Promise.resolve(result ?? envelope({ status: 'failed' }));
       },
+      thirdpartyOauthRequest: (req: unknown) => {
+        calls.bindRequests.push(req);
+        if (bindResult === 'reject') {
+          return Promise.reject(new Error('transport'));
+        }
+        if (bindResult instanceof ApiError) {
+          return Promise.reject(bindResult);
+        }
+        return Promise.resolve(bindResult ?? bindResponse());
+      },
       onEnvelope: (env: LoginFlowResponse) => calls.envelopes.push(env),
       onTransportError: () => {
         calls.transportErrors += 1;
-      },
-      onBindUnavailable: () => {
-        calls.bindUnavailable += 1;
       },
       navigate: (url: string) => calls.navigations.push(url),
     };
@@ -214,16 +306,54 @@ describe('dispatchCallback 分派编排', () => {
     expect(calls.requests).toHaveLength(0);
   });
 
-  test('`b` 前缀 → 占位帧落地，不发请求不跳转（account 卡未交付）', async () => {
+  test('`b` 前缀 → ThirdpartyOauth 携 code/state + providerKey，成功回跳 security?bind=success（§3.7.1 A 行 985）', async () => {
     stubWindow();
     const { calls, deps } = recorder();
     await pagesMod.dispatchCallback(
       { providerKey: 'qq', search: '?code=c-1&state=b-1' },
       deps,
     );
-    expect(calls.bindUnavailable).toBe(1);
-    expect(calls.requests).toHaveLength(0);
-    expect(calls.navigations).toHaveLength(0);
+    expect(calls.bindRequests).toMatchObject([
+      { providerKey: 'qq', code: 'c-1', state: 'b-1' },
+    ]);
+    expect(calls.requests).toHaveLength(0); // 不发 LoginOauth
+    expect(calls.envelopes).toHaveLength(0); // 非信封响应不落帧
+    expect(calls.navigations).toEqual([
+      'https://uc.test/account/security?bind=success',
+    ]);
+  });
+
+  test('`b` 失败（ApiError 归一形态）→ 回跳 security?bind={ErrorInfo.code}（行 986）', async () => {
+    stubWindow();
+    const { calls, deps } = recorder(
+      undefined,
+      new ApiError({
+        httpStatus: 409,
+        code: 'target_taken',
+        message: '该账号已被其他账号绑定',
+        requestId: 'req-1',
+      }),
+    );
+    await pagesMod.dispatchCallback(
+      { providerKey: 'qq', search: '?code=c-1&state=b-1' },
+      deps,
+    );
+    expect(calls.navigations).toEqual([
+      'https://uc.test/account/security?bind=target_taken',
+    ]);
+    expect(calls.transportErrors).toBe(0); // b 分支失败走回跳，不落 failed 帧
+  });
+
+  test('`b` 传输层异常（非归一形态）→ internal 兜底回跳（§1.6 行 273 其余域口径）', async () => {
+    stubWindow();
+    const { calls, deps } = recorder(undefined, 'reject');
+    await pagesMod.dispatchCallback(
+      { providerKey: 'qq', search: '?code=c-1&state=b-1' },
+      deps,
+    );
+    expect(calls.navigations).toEqual([
+      'https://uc.test/account/security?bind=internal',
+    ]);
   });
 
   test('`l` 前缀 → LoginOauth 携 query + providerKey；success 落帧后终点跳转', async () => {
@@ -301,12 +431,6 @@ describe('OAuthCallbackView 状态帧渲染', () => {
     expect(markup).toContain('正在处理，请稍候…');
     expect(markup).not.toContain('<h1>');
     expect(markup).toContain('role="status"');
-  });
-
-  test('bind 占位帧（b 分支）：提示「绑定功能即将上线」+ 返回登录（§4.4 行 467）', () => {
-    const markup = renderView({ status: 'bind' });
-    expect(markup).toContain('绑定功能即将上线');
-    expect(markup).toContain('返回登录');
   });
 
   test('success 帧 → 登录成功跳转中文案', () => {
@@ -412,9 +536,9 @@ describe('回调 wire 契约（msw 拦截 SsoService/LoginOauth）', () => {
       { providerKey: 'qq', search: '?code=c-1&state=l-s1&extra=e-1' },
       {
         loginOauthRequest: apiMod.loginOauth,
+        thirdpartyOauthRequest: sharedAccountMod.thirdpartyOauth,
         onEnvelope: (env) => envelopes.push(env),
         onTransportError: () => {},
-        onBindUnavailable: () => {},
         navigate: (url) => navigations.push(url),
       },
     );
@@ -432,5 +556,121 @@ describe('回调 wire 契约（msw 拦截 SsoService/LoginOauth）', () => {
     expect(envelopes[0].status).toBe('success');
     expect(navigations).toEqual(['https://app.test/home']); // 终点跳转（success）
     expect(getLoginToken()).toBe(''); // success 清空（api 层 applyEnvelope）
+  });
+});
+
+// ---------------------------------------------------------------------------
+// b 分支 wire 契约（msw 拦截 AccountService/ThirdpartyOauth，走真实 transport
+// 归一链；后端属 account 域桩——mock 不放宽契约，错误体按 Connect 形态）
+// ---------------------------------------------------------------------------
+
+describe('b 分支 wire 契约（msw 拦截 AccountService/ThirdpartyOauth）', () => {
+  /** b 分支 wire 依赖（l 侧给真实实现，不会被调用）。 */
+  function bindWireDeps(navigations: string[]) {
+    return {
+      loginOauthRequest: apiMod.loginOauth,
+      thirdpartyOauthRequest: sharedAccountMod.thirdpartyOauth,
+      onEnvelope: () => {},
+      onTransportError: () => {},
+      navigate: (url: string) => navigations.push(url),
+    };
+  }
+
+  test('code/state 原样上送 + providerKey 路径参数补上；成功回跳 ?bind=success（§3.7.1 A 行 985）', async () => {
+    stubWindow();
+    let raw = '';
+    server.use(
+      http.post(THIRDPARTY_OAUTH_URL, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ providerKey: 'qq', displayName: 'QQ' });
+      }),
+    );
+
+    const navigations: string[] = [];
+    await pagesMod.dispatchCallback(
+      { providerKey: 'qq', search: '?code=c-1&state=b-s1&extra=e-1' },
+      bindWireDeps(navigations),
+    );
+
+    // 请求报文（§3.7.1 A 行 990-994 字段表）：ThirdpartyOauthRequest 只建模
+    // providerKey/code/state 三字段（其余 query 键组装层即不透传）。
+    expect(JSON.parse(raw)).toEqual({
+      providerKey: 'qq',
+      code: 'c-1',
+      state: 'b-s1',
+    });
+    expect(navigations).toEqual([
+      'https://uc.test/account/security?bind=success',
+    ]);
+  });
+
+  test('target_taken（409 Connect 错误体 ErrorInfo detail）→ 回跳 ?bind=target_taken（行 986 / 行 981）', async () => {
+    stubWindow();
+    const info = create(ErrorInfoSchema, {
+      domain: 'account',
+      code: 'target_taken',
+      message: '该账号已被其他账号绑定',
+    });
+    server.use(
+      http.post(THIRDPARTY_OAUTH_URL, () =>
+        HttpResponse.json(
+          {
+            code: 'already_exists',
+            message: 'bind target taken',
+            details: [
+              {
+                type: 'api.common.v1.ErrorInfo',
+                value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+              },
+            ],
+          },
+          { status: 409, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+
+    const navigations: string[] = [];
+    await pagesMod.dispatchCallback(
+      { providerKey: 'qq', search: '?code=c-1&state=b-1' },
+      bindWireDeps(navigations),
+    );
+    expect(navigations).toEqual([
+      'https://uc.test/account/security?bind=target_taken',
+    ]);
+  });
+
+  test('state_mismatch（400 Connect 错误体 ErrorInfo detail）→ 回跳 ?bind=state_mismatch（行 986 / §1.6）', async () => {
+    stubWindow();
+    const info = create(ErrorInfoSchema, {
+      domain: 'account',
+      code: 'state_mismatch',
+      message: 'state 校验失败',
+    });
+    server.use(
+      http.post(THIRDPARTY_OAUTH_URL, () =>
+        HttpResponse.json(
+          {
+            code: 'invalid_argument',
+            message: 'state mismatch',
+            details: [
+              {
+                type: 'api.common.v1.ErrorInfo',
+                value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+              },
+            ],
+          },
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    );
+
+    const navigations: string[] = [];
+    await pagesMod.dispatchCallback(
+      { providerKey: 'qq', search: '?code=c-1&state=b-1' },
+      bindWireDeps(navigations),
+    );
+    expect(navigations).toEqual([
+      'https://uc.test/account/security?bind=state_mismatch',
+    ]);
   });
 });

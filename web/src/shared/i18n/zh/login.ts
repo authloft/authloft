@@ -45,7 +45,6 @@ export const login = {
   'login.channelSignupClosed': '该渠道未开放注册',
   // ---- OAuth 回调页（OAuthCallbackPage）------------------------------------
   'login.processing': '正在处理，请稍候…',
-  'login.bindUnavailable': '绑定功能即将上线',
   'login.backToLogin': '返回登录',
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------
