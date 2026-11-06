@@ -10,6 +10,9 @@ import {
   CommitAvatarRequestSchema,
   MfaPolicyMethodSchema,
   PresignAvatarRequestSchema,
+  ProfileResponseSchema,
+  UpdateProfileRequestSchema,
+  UserProfileSchema,
 } from '../gen/proto/api/account/v1/profile_pb';
 import { MfaFactorSchema } from '../gen/proto/api/account/v1/mfa_pb';
 import {
@@ -75,6 +78,15 @@ import { t } from '../shared/i18n';
  *   shared/app-ui/dataTableLogic（前端架构 §8 行 621：分页 / 排序 / 筛选
  *   回调参数归一、行内开关的乐观更新与回滚；零 Semi 依赖，组件壳渲染测试
  *   仍受工具链 blocker——见文件头【Blocker】段）。
+ * - UpdateProfile 资料编辑 + 头像持久化（§3.2 行 837；后端 account 域
+ *   桩未实装，契约先行口径：按接口契约消费 + msw mock，不因 mock 放宽契约）：
+ *   updateProfile 封装 msw（成功 OkResponse 空响应 / 校验失败 400 Connect
+ *   错误体归一 ApiError）+ buildUpdateProfileRequest PATCH 语义纯函数（diff
+ *   基线 → 只带编辑过字段 / wire 零值省略契约限制 / birthday + extra 本地
+ *   校验）+ buildAvatarPersistRequest（头像持久化接线：AvatarUploader
+ *   onUploaded 后 {avatarUrl} 单字段提交）+ profileGenderText 展示映射；
+ *   ProfilePageView 编辑帧渲染测试受工具链 blocker（本文件头【Blocker】
+ *   段），表单交互的可测逻辑即构造函数（本段）。
  *
  * 【Blocker】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试在本工具链下无法落地：@douyinfe/semi-ui-19 的 lib/es 内部为无扩展名
@@ -116,6 +128,7 @@ const GET_THIRDPARTY_BINDINGS_URL = `${BASE}/api.account.v1.AccountService/GetTh
 const UNBIND_THIRDPARTY_URL = `${BASE}/api.account.v1.AccountService/UnbindThirdparty`;
 const GET_THIRDPARTY_TICKET_URL = `${BASE}/api.account.v1.AccountService/GetThirdpartyTicket`;
 const GET_EVENTS_URL = `${BASE}/api.account.v1.AccountService/GetEvents`;
+const UPDATE_PROFILE_URL = `${BASE}/api.account.v1.AccountService/UpdateProfile`;
 const SSO_AUTHORIZE_URL = `${BASE}/api.sso.v1.SsoService/Authorize`;
 const SSO_CREATE_QRCODE_URL = `${BASE}/api.sso.v1.SsoService/CreateQrcode`;
 
@@ -250,6 +263,33 @@ describe('bootstrap（§5 行 478 / §8）', () => {
   test('loginUrl / logoutUrl：{al_root} 前缀拼接（§5 行 480 / §8 行 1418/1420）', () => {
     expect(bootstrapMod.loginUrl(BASE)).toBe(`${BASE}/sso/login`);
     expect(bootstrapMod.logoutUrl(BASE)).toBe(`${BASE}/sso/logout`);
+  });
+
+  test('loadAccountBootstrap：注入 al_root 空串 / 纯空白 → location.origin 兜底（壳注入空串合规，前端回落同源）', () => {
+    const FALLBACK_ORIGIN = 'https://account-fallback.test';
+    // normalizeAlRoot 读全局 location（非 window.location）；node 单测环境
+    // 经 stubGlobal 模拟浏览器站点源，afterEach 的 unstubAllGlobals 自动恢复。
+    rs.stubGlobal('location', { origin: FALLBACK_ORIGIN });
+    // beforeEach 已按顶层注入 stub window（BASE 非空），此处覆盖为空串注入。
+    rs.stubGlobal('window', {
+      location: { pathname: '/account/profile' },
+      __AUTHLOFT_INIT__: { al_root: '' },
+    });
+    expect(bootstrapMod.loadAccountBootstrap()).toEqual({
+      ok: true,
+      alRoot: FALLBACK_ORIGIN,
+      staticBase: '/assets/',
+    });
+    // 纯空白：trim 后归一为空，仍回落站点源（与 setup/bootstrap.ts 同口径）。
+    rs.stubGlobal('window', {
+      location: { pathname: '/account/profile' },
+      __AUTHLOFT_INIT__: { al_root: '   ' },
+    });
+    expect(bootstrapMod.loadAccountBootstrap()).toEqual({
+      ok: true,
+      alRoot: FALLBACK_ORIGIN,
+      staticBase: '/assets/',
+    });
   });
 });
 
@@ -1847,5 +1887,250 @@ describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）',
     expect(outcome.ok).toBe(true);
     expect(outcome.rows).toBe(rows);
     expect(persistCalled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UpdateProfile 资料编辑 + 头像持久化（§3.2 行 837；后端 account 域桩
+// 未实装——契约先行口径：按接口契约消费 + msw mock，不因 mock 放宽契约）
+// ---------------------------------------------------------------------------
+
+/** GetProfile 基线样例（§3.1 行 795-815 全字段；diff 基线，头像持久化同用）。 */
+const PROFILE_BASE = create(ProfileResponseSchema, {
+  id: BigInt(10086),
+  username: 'zhang_san',
+  nickname: '张三',
+  avatarUrl: 'https://cdn.test/a.jpg',
+  phone: '138****8000',
+  phoneVerified: BigInt(1),
+  email: 'a***@example.com',
+  emailVerified: BigInt(1),
+  userStatus: BigInt(1),
+  mfaRequired: BigInt(0),
+  epoch: BigInt(3),
+  lastLoginAt: BigInt(1761800000),
+  createdAt: BigInt(1761700000),
+  updatedAt: BigInt(1761800000),
+  profile: create(UserProfileSchema, {
+    gender: BigInt(0),
+    birthday: '1990-01-01',
+    locale: 'zh-CN',
+    timezone: 'Asia/Shanghai',
+    extra: { company: 'acme' },
+  }),
+});
+
+/** 基线草稿样例（编辑帧预填值 = PROFILE_BASE 原值；patch 覆盖变化字段）。 */
+const profileDraft = (
+  patch: Partial<import('./api').ProfileEditDraft>,
+): import('./api').ProfileEditDraft => ({
+  nickname: '张三',
+  gender: 0,
+  birthday: '1990-01-01',
+  locale: 'zh-CN',
+  timezone: 'Asia/Shanghai',
+  ...patch,
+});
+
+describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）', () => {
+  test('Connect 协议 POST → OkResponse 空响应 + 请求 wire 全字段（int64 十进制字符串 §1.12）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(UPDATE_PROFILE_URL, ({ request }) => {
+        captured = request;
+        // OkResponse 空消息 → protojson 输出 {}（§1.0 行 57 成功响应即响应消息）。
+        return HttpResponse.json({});
+      }),
+    );
+
+    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({
+      nickname: '张三丰',
+      gender: 2,
+      birthday: '1991-02-03',
+      locale: 'en-US',
+      timezone: 'UTC',
+      extraText: '{"company": "acme", "level": 3}',
+    }));
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+
+    await apiMod.updateProfile(built.request);
+
+    expect(await captured.json()).toEqual({
+      nickname: '张三丰',
+      profile: {
+        gender: '2',
+        birthday: '1991-02-03',
+        locale: 'en-US',
+        timezone: 'UTC',
+        extra: { company: 'acme', level: 3 },
+      },
+    });
+  });
+
+  test('头像持久化：buildAvatarPersistRequest → wire 仅 {avatarUrl}（§3.2 行 837）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(UPDATE_PROFILE_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({});
+      }),
+    );
+
+    await apiMod.updateProfile(apiMod.buildAvatarPersistRequest('https://cdn.test/b.jpg'));
+
+    expect(await captured.json()).toEqual({ avatarUrl: 'https://cdn.test/b.jpg' });
+  });
+
+  test('校验失败：HTTP 400 Connect 错误体 → 归一 ApiError（既定口径：mock 须带错误 JSON 体）', async () => {
+    server.use(
+      http.post(UPDATE_PROFILE_URL, () =>
+        HttpResponse.json(
+          { code: 'invalid_argument', message: 'profile invalid' },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const caught = await captureRejection(
+      apiMod.updateProfile(apiMod.buildAvatarPersistRequest('u')),
+    );
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(400);
+    expect((caught as ApiError).code).toBe('invalid_argument');
+  });
+});
+
+describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保留，纯函数）', () => {
+  test('草稿与基线全同（extra 未编辑）→ 零值 request：wire {}（服务端空操作幂等）', () => {
+    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({}));
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({});
+  });
+
+  test('PATCH 缺省保留：仅 nickname 编辑 → wire 只带 nickname（profile 整体省略）', () => {
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ nickname: '李四' }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ nickname: '李四' });
+  });
+
+  test('gender 编辑 0→2：number → bigint，wire 十进制字符串（§1.12）；nickname 未编辑不带', () => {
+    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ gender: 2 }));
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      profile: { gender: '2' },
+    });
+  });
+
+  test('多字段编辑：profile 只带变化字段，未编辑字段零值省略（§1.0）', () => {
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ birthday: '1991-02-03', locale: 'en-US', timezone: 'UTC' }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      profile: { birthday: '1991-02-03', locale: 'en-US', timezone: 'UTC' },
+    });
+  });
+
+  test('nickname 编辑为空串：wire 省略（proto3 非 optional，「清空昵称」契约不可表达——不因 mock 放宽）', () => {
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ nickname: '' }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({});
+  });
+
+  test('extra 未编辑（undefined）→ 不带 extra；编辑为合法 JSON 对象 → 全量透传（§3.1 行 813）', () => {
+    const edited = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ extraText: '{"city": "北京"}' }),
+    );
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, edited.request)).toEqual({
+      profile: { extra: { city: '北京' } },
+    });
+  });
+
+  test('extra 编辑为非法 JSON / 数组 / 原始值 / null → invalid_extra_json 不发包（JSON 对象语义）', () => {
+    for (const extraText of ['{oops', '[1, 2]', '"text"', '123', 'null', '']) {
+      expect(
+        apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ extraText })),
+      ).toEqual({ ok: false, error: 'invalid_extra_json' });
+    }
+  });
+
+  test('birthday 编辑为非法格式 / 非法日历 → invalid_birthday 不发包（YYYY-MM-DD §3.1 行 811）', () => {
+    for (const birthday of ['1990/01/01', '1990-1-1', '19901301', '1990-13-01', '1990-02-40']) {
+      expect(
+        apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ birthday })),
+      ).toEqual({ ok: false, error: 'invalid_birthday' });
+    }
+  });
+
+  test('birthday 编辑为空串：profile 上送但 birthday 零值省略（wire 不可表达清空——服务端空操作，契约固有语义）', () => {
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ birthday: '' }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    // 编辑过 → 进 create 入参（presence 位置上，profile 消息上送）；
+    // string 零值 wire 省略 → 服务端收到空 profile 无可更新字段（§1.0）。
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ profile: {} });
+  });
+
+  test('基线无 profile 字段（protojson 省略 → 解码 undefined）→ 按零值基线 diff，编辑即变化', () => {
+    const bare = create(ProfileResponseSchema, { username: 'u1' });
+    const built = apiMod.buildUpdateProfileRequest(bare, {
+      nickname: '',
+      gender: 1,
+      birthday: '',
+      locale: '',
+      timezone: '',
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      profile: { gender: '1' },
+    });
+  });
+});
+
+describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函数）', () => {
+  test('0 保密 / 1 男 / 2 女；出域值原样显示数字不粉饰（沿 mfaFactorDetail default 同口径）', () => {
+    expect(apiMod.profileGenderText(BigInt(0))).toBe('保密');
+    expect(apiMod.profileGenderText(BigInt(1))).toBe('男');
+    expect(apiMod.profileGenderText(BigInt(2))).toBe('女');
+    expect(apiMod.profileGenderText(BigInt(9))).toBe('9');
   });
 });

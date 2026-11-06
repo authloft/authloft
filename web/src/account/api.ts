@@ -15,9 +15,11 @@
  * 直传四件薄封装迁 shared/api/account.ts（本模块转发保既有调用方零改动），
  * useUpload + 上传编排 / 预校验迁 shared/hooks/useUpload.ts（前端架构 §2
  * 行 174 / §3.2 行 321-322、344）。
- * UpdateProfile / ThirdpartyOauth 等仍随消费页面落地再封（ThirdpartyOauth
- * 实调归 OAuthCallbackPage b 分支联调批；api.ts 可封装方法但页面
- * 不消费桩方法）。
+ * 追加 UpdateProfile：薄封装 + PATCH 语义请求构造纯函数
+ * buildUpdateProfileRequest（编辑表单）/ buildAvatarPersistRequest（头像
+ * 持久化接线）+ gender 展示映射 profileGenderText（§3.2 行 837 /
+ * §3.1 行 810-814）。ThirdpartyOauth 实调归 OAuthCallbackPage b 分支
+ * 联调批落地再封（api.ts 可封装方法但页面不消费桩方法）。
  * 本 entry 另需的 SsoService 方法（Authorize scene=bind / CreateQrcode）
  * 从 shared/api/sso 取，不在此重复定义（§5 行 479）。
  *
@@ -48,6 +50,11 @@ import type {
   MfaPolicyMethod,
   OkResponse,
   ProfileResponse,
+  UpdateProfileRequest,
+} from '../gen/proto/api/account/v1/profile_pb';
+import {
+  UpdateProfileRequestSchema,
+  UserProfileSchema,
 } from '../gen/proto/api/account/v1/profile_pb';
 import type {
   BindEmailRequest,
@@ -788,4 +795,139 @@ export function buildGetEventsRequest(
     ...(sorted ? { sort: query.sort, order: query.order } : {}),
     ...(event !== undefined && event !== '' ? { event } : {}),
   });
+}
+
+// ---------------------------------------------------------------------------
+// UpdateProfile 封装 + 请求构造（§3.2 行 837 / §3.1 行 810-814）
+// ---------------------------------------------------------------------------
+
+/**
+ * 更新用户资料（§3.2 行 837）：成功空响应（OkResponse）；username / 手机号 /
+ * 邮箱不可由此修改（行 837）。后端 account 域桩未实装，前端按接口契约
+ * 消费（msw mock 覆盖，不因 mock 放宽契约——契约先行批次口径）。
+ */
+export function updateProfile(request: UpdateProfileRequest): Promise<OkResponse> {
+  return accountClient.updateProfile(request);
+}
+
+/**
+ * 头像持久化请求（§3.2 行 837 avatarUrl）：头像上传链路（§10.8）终点
+ * {url} 单字段提交，avatarUrl 不进资料编辑表单（走上传链路，持久化
+ * 随本实现接通）。
+ */
+export function buildAvatarPersistRequest(url: string): UpdateProfileRequest {
+  return create(UpdateProfileRequestSchema, { avatarUrl: url });
+}
+
+/** 资料编辑表单草稿：基线为 GetProfile 原值，构造时按 diff 只带变化字段。 */
+export interface ProfileEditDraft {
+  readonly nickname: string;
+  /** 0/1/2（§3.1 行 811 枚举；Select 产出 number，wire int64 → bigint 构造处转换）。 */
+  readonly gender: number;
+  /** YYYY-MM-DD（§3.1 行 811）或 ''（未设置 / DatePicker 清空）。 */
+  readonly birthday: string;
+  readonly locale: string;
+  readonly timezone: string;
+  /**
+   * extra JSON 文本（§3.1 行 813「JSON 对象透出」）：undefined = 未编辑
+   * （diff 跳过不带 extra）；编辑过则须为合法 JSON 对象——原始值 / 数组 /
+   * null 均拒绝；清空内容写 {}（消息字段无法表达 null 清除，契约限制）。
+   */
+  readonly extraText?: string;
+}
+
+/** UpdateProfile 本地校验失败形态（birthday 格式 / extra JSON 对象，§3.1）。 */
+export type ProfileEditFieldError = 'invalid_birthday' | 'invalid_extra_json';
+
+/** birthday 严格格式（§3.1 行 811 "1990-01-01"）。 */
+const BIRTHDAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * UpdateProfile 请求构造（§3.2 行 837 PATCH 语义——缺省保留）：以 GetProfile
+ * 原值为 diff 基线，「用户编辑过」（草稿 ≠ 原值）的字段才进 create 入参，
+ * wire 上按 §1.0 零值缺省语义省略未编辑字段——编辑为空串的 string 字段 /
+ * gender=0 在 proto3 非 optional wire 上同样省略，「清空昵称 / 改回保密」
+ * 无法与「未编辑」区分，属契约固有语义（profile.gender 非 proto3 optional，
+ * 行 837 的 `?` 仅为字段可省略），不因 mock 放宽：
+ * - birthday 编辑过且非空 → 校验 YYYY-MM-DD + 日历合法（DatePicker 正常
+ *   产出恒合法，防异常态）→ invalid_birthday 不发包；
+ * - extraText 编辑过 → JSON.parse + 对象校验（§3.1 行 813），失败
+ *   invalid_extra_json 不发包；
+ * - 全部字段无变化 → 零值 request（wire {}，服务端空操作幂等）。
+ */
+export function buildUpdateProfileRequest(
+  current: ProfileResponse,
+  draft: ProfileEditDraft,
+): { ok: true; request: UpdateProfileRequest } | { ok: false; error: ProfileEditFieldError } {
+  const currentProfile = current.profile;
+  const currentGender = currentProfile?.gender ?? BigInt(0);
+  const currentBirthday = currentProfile?.birthday ?? '';
+  const currentLocale = currentProfile?.locale ?? '';
+  const currentTimezone = currentProfile?.timezone ?? '';
+  const gender = BigInt(draft.gender);
+  const birthdayChanged = draft.birthday !== currentBirthday;
+  const localeChanged = draft.locale !== currentLocale;
+  const timezoneChanged = draft.timezone !== currentTimezone;
+  if (
+    birthdayChanged &&
+    draft.birthday !== '' &&
+    (!BIRTHDAY_PATTERN.test(draft.birthday) ||
+      Number.isNaN(new Date(`${draft.birthday}T00:00:00`).getTime()))
+  ) {
+    return { ok: false, error: 'invalid_birthday' };
+  }
+  let extra: JsonObject | undefined = undefined;
+  if (draft.extraText !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draft.extraText);
+    } catch {
+      return { ok: false, error: 'invalid_extra_json' };
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return { ok: false, error: 'invalid_extra_json' };
+    }
+    extra = parsed as JsonObject;
+  }
+  const profileChanged =
+    gender !== currentGender ||
+    birthdayChanged ||
+    localeChanged ||
+    timezoneChanged ||
+    extra !== undefined;
+  return {
+    ok: true,
+    request: create(UpdateProfileRequestSchema, {
+      ...(draft.nickname !== current.nickname ? { nickname: draft.nickname } : {}),
+      ...(profileChanged
+        ? {
+            profile: create(UserProfileSchema, {
+              ...(gender !== currentGender ? { gender } : {}),
+              ...(birthdayChanged ? { birthday: draft.birthday } : {}),
+              ...(localeChanged ? { locale: draft.locale } : {}),
+              ...(timezoneChanged ? { timezone: draft.timezone } : {}),
+              ...(extra !== undefined ? { extra } : {}),
+            }),
+          }
+        : {}),
+    }),
+  };
+}
+
+/**
+ * gender 展示映射（§3.1 行 811 枚举 0/1/2）：0 保密 / 1 男 / 2 女（接口文档
+ * 未标注语义，按通用惯例裁量）；出域值原样显示数字不粉饰
+ * （沿 mfaFactorDetail default 分支同口径）。
+ */
+export function profileGenderText(gender: bigint): string {
+  switch (gender) {
+    case BigInt(0):
+      return t('account.genderSecret');
+    case BigInt(1):
+      return t('account.genderMale');
+    case BigInt(2):
+      return t('account.genderFemale');
+    default:
+      return gender.toString();
+  }
 }

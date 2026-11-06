@@ -152,4 +152,20 @@ export const account = {
   'account.logUaColumn': '设备（UA）',
   'account.logLoadFailed': '登录记录加载失败，请刷新重试',
   'account.logEmpty': '暂无登录记录',
+
+  // ---- ProfilePage 资料编辑（保存 / 取消复用 saveAction / cancelAction，
+  //      手机号复用 phoneLabel；头像持久化失败复用 errors.status.failed）----
+  'account.profileEditAction': '编辑资料',
+  'account.emailLabel': '邮箱',
+  'account.genderLabel': '性别',
+  'account.genderSecret': '保密',
+  'account.genderMale': '男',
+  'account.genderFemale': '女',
+  'account.birthdayLabel': '生日',
+  'account.localeLabel': '语言区域',
+  'account.timezoneLabel': '时区',
+  'account.extraLabel': '扩展信息',
+  'account.extraPlaceholder': '{"key": "value"}',
+  'account.extraInvalidJson': '扩展信息须为合法的 JSON 对象',
+  'account.birthdayInvalid': '请输入正确的日期（YYYY-MM-DD）',
 };

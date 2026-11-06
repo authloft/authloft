@@ -160,4 +160,21 @@ export const account: typeof zhAccount = {
   'account.logUaColumn': 'Device (UA)',
   'account.logLoadFailed': 'Failed to load sign-in history. Please refresh and try again',
   'account.logEmpty': 'No sign-in records yet',
+
+  // ---- ProfilePage editing (save / cancel reuse saveAction / cancelAction,
+  //      phone label reuses phoneLabel; avatar persist failure reuses
+  //      errors.status.failed) --------------------------------------------------
+  'account.profileEditAction': 'Edit Profile',
+  'account.emailLabel': 'Email',
+  'account.genderLabel': 'Gender',
+  'account.genderSecret': 'Prefer not to say',
+  'account.genderMale': 'Male',
+  'account.genderFemale': 'Female',
+  'account.birthdayLabel': 'Birthday',
+  'account.localeLabel': 'Locale',
+  'account.timezoneLabel': 'Time Zone',
+  'account.extraLabel': 'Extra',
+  'account.extraPlaceholder': '{"key": "value"}',
+  'account.extraInvalidJson': 'Extra must be a valid JSON object',
+  'account.birthdayInvalid': 'Enter a valid date (YYYY-MM-DD)',
 };
