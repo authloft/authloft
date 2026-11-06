@@ -326,9 +326,9 @@ export const admin = {
   'admin.fromFilterPlaceholder': '开始时间',
   'admin.toFilterPlaceholder': '结束时间',
 
-  // ---- pages/AuditPage.tsx「敏感操作」预设（需求 §4.6 行 260 定稿）--
+  // ---- pages/AuditPage.tsx「敏感操作」预设（五类封闭集）--
   'admin.auditPresetSensitiveRecords': '敏感操作',
-  'admin.auditPresetSensitiveHint': '敏感操作：改密、解绑、启用两步验证',
+  'admin.auditPresetSensitiveHint': '敏感操作：改密、重置密码、解绑、启用/停用两步验证',
 
   // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供方族--------
   'admin.providerColumnDisplayName': '显示名',

@@ -340,10 +340,10 @@ export const admin: typeof zhAdmin = {
   'admin.fromFilterPlaceholder': 'From',
   'admin.toFilterPlaceholder': 'To',
 
-  // ---- pages/AuditPage.tsx Sensitive Operations preset (需求 §4.6 行 260) ----
+  // ---- pages/AuditPage.tsx Sensitive Operations preset (five-event closed set) ----
   'admin.auditPresetSensitiveRecords': 'Sensitive Operations',
   'admin.auditPresetSensitiveHint':
-    'Sensitive operations: change password, unbind, enable two-factor verification',
+    'Sensitive operations: change password, reset password, unbind, enable/disable two-factor verification',
 
   // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供方族--------
   'admin.providerColumnDisplayName': 'Display Name',

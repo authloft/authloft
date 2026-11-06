@@ -5,12 +5,13 @@
  * 预设视图（§5.6 行 1297「预设视图『登录记录』『敏感操作』」）：
  * - 「登录记录」：event 强制 login_success（《后端架构》§4.6 行 807 记录范围
  *   ——记录成功登录 + 各类敏感操作，登录记录即 login_success 单值）；
- * - 「敏感操作」（需求 §4.6 行 260 定稿口径）：改密 / 解绑 / 启用
- *   两步验证三类——ListEvents 的 event 系 optional string 单值正向过滤
- *   （预设为前端组装概念）→ event 下拉限定三类单选（eventTypeFilterOptions）、
- *   进预设出集现值默认 change_password（resolveEventFilterOnPreset，列表
- *   立即有数据）、入集保留；切其余预设保留现值（预设切换不清筛选惯例）；
- *   四项筛选在该预设下照常叠加（与 login_records 下行为一致）。
+ * - 「敏感操作」（2026-11-06 定稿五类封闭集）：改密 / 重置
+ *   密码 / 解绑 / 启用/停用两步验证五类——ListEvents 的 event 系 optional
+ *   string 单值正向过滤（预设为前端组装概念）→ event 下拉限定五类单选
+ *   （eventTypeFilterOptions）、进预设出集现值默认 change_password
+ *   （resolveEventFilterOnPreset，列表立即有数据）、入集保留；切其余预设
+ *   保留现值（预设切换不清筛选惯例）；四项筛选在该预设下照常叠加
+ *   （与 login_records 下行为一致）。
  *
  * DataTable 消费分页（UsersPage 同模式）：§1.7 服务端分页受控
  * TableQueryState；created_at 可排序（dataIndex 即 wire 名口径）；预设 /
@@ -155,13 +156,13 @@ export function AuditPage(props: {
   /** 预设变更（§5.6 行 1297）：回第 1 页重取（§1.7 语义）。 */
   function changePreset(next: AuditPreset): void {
     setPreset(next);
-    // 「敏感操作」：event 下拉限定三类，进预设出集现值默认 change_password
+    // 「敏感操作」：event 下拉限定五类，进预设出集现值默认 change_password
     // （列表立即有数据）、入集保留；切其余预设保留现值（预设切换不清筛选惯例）。
     setEventFilter(resolveEventFilterOnPreset(next, eventFilter));
     setQuery((prev) => ({ ...prev, page: 1 }));
   }
 
-  /** 事件类型筛选变更（sensitive_records 下限定三类单选；login_records 下已禁用）：回第 1 页重取。 */
+  /** 事件类型筛选变更（sensitive_records 下限定五类单选；login_records 下已禁用）：回第 1 页重取。 */
   function changeEventFilter(value: string): void {
     setEventFilter(value);
     setQuery((prev) => ({ ...prev, page: 1 }));
