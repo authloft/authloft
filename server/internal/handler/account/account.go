@@ -16,6 +16,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
@@ -25,6 +26,7 @@ import (
 	"authloft/internal/captcha"
 	internalconnect "authloft/internal/connect"
 	"authloft/internal/dto"
+	"authloft/internal/factor/webauthn"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/service"
@@ -77,6 +79,17 @@ type Thirdparty interface {
 	GetThirdpartyTicket(ctx context.Context, in accountsvc.TicketInput) *ssov1.LoginFlowResponse
 }
 
+// Webauthn 通行密钥族 service 窄接口（§20 依赖注入；Delete 为补充
+// 实装）：生产注入 *accountsvc.WebauthnService，测试可传 fake；nil（未装配）
+// 时对应方法返回 unimplemented。
+type Webauthn interface {
+	ListCredentials(ctx context.Context, uid int64) ([]accountsvc.WebauthnItem, error)
+	BeginRegister(ctx context.Context, uid int64) (*webauthn.RegistrationChallenge, error)
+	FinishRegister(ctx context.Context, uid int64, tok string, credential *structpb.Struct, label string) error
+	RenameCredential(ctx context.Context, uid int64, id int64, label string) error
+	DeleteCredential(ctx context.Context, uid int64, id int64) error
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go）。
 var (
@@ -87,6 +100,14 @@ var (
 	// errThirdpartyInternal 未知异常的固定文案（§1.5：不暴露内部信息；
 	// §1.6 行 273 internal 无 ErrorInfo）。
 	errThirdpartyInternal = errors.New("internal error")
+	// errWebauthnNotConfigured 未装配通行密钥 service（测试桩）。
+	errWebauthnNotConfigured = errors.New("webauthn service not configured")
+	// errWebauthnInternal 未知异常的固定文案（同 errThirdpartyInternal 口径）。
+	errWebauthnInternal = errors.New("internal error")
+	// errWebauthnDuplicate 重复注册的固定文案（§1.5 行 191「重复绑定」）。
+	errWebauthnDuplicate = errors.New("credential already exists")
+	// errWebauthnInvalidStep step 取值非法。
+	errWebauthnInvalidStep = errors.New("invalid step")
 )
 
 // Handler AccountService 服务实现。内嵌生成的 unimplemented 基类：本包未
@@ -99,12 +120,14 @@ type Handler struct {
 	providers  ProviderReader
 	captcha    CaptchaConfiger
 	thirdparty Thirdparty
+	webauthn   Webauthn
 }
 
-// New 构造 AccountService handler。thirdparty 为三方绑定族 service；
-// 测试 / 未装配时传 nil（四方法返回 unimplemented）。
-func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty) *Handler {
-	return &Handler{users: users, creds: creds, settings: settings, providers: providers, captcha: captcha, thirdparty: thirdparty}
+// New 构造 AccountService handler。thirdparty 为三方绑定族 service、
+// webauthn 为通行密钥族 service；测试 / 未装配时传 nil（对应方法
+// 返回 unimplemented）。
+func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn) *Handler {
+	return &Handler{users: users, creds: creds, settings: settings, providers: providers, captcha: captcha, thirdparty: thirdparty, webauthn: webauthn}
 }
 
 // GetProfile（接口文档 §3.1 行 774-813 / §3.2 行 820）：从会话取 uid → 读
@@ -490,6 +513,153 @@ func mapThirdpartyError(op string, err error) error {
 		)
 	case errors.Is(err, accountsvc.ErrFailed):
 		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 通行密钥族（接口文档 §3.6 行 927-947 / 后端架构 §8.3 行
+// 1071-1075；Delete 为补充实装）——
+//
+// 请求绑定与投影归本层，挑战 / 断言校验编排全部在
+// service/account.WebauthnService（内核复用 factor/webauthn）。
+// 业务失败走可判别哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行 198-211）。
+// 降级窗口 fail-closed：ErrWebauthnDegraded → invalid_argument +
+// ErrorInfo{method_disabled, 「通行密钥暂不可用，请联系管理员」}（§1.6
+// 行 250、§8.3 行 1071-1075——service 层已逐次 WARN）。五接口均需
+// al_session（§1.2 行 96）。
+
+// GetWebauthnCredentials 通行密钥列表（§3.6 行 931）：{items:[{id, label,
+// createdAt, lastUsedAt, transports, aaguid}]}。
+func (h *Handler) GetWebauthnCredentials(ctx context.Context, req *connect.Request[accountv1.GetWebauthnCredentialsRequest]) (*connect.Response[accountv1.WebauthnListResponse], error) {
+	if h.webauthn == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errWebauthnNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	items, err := h.webauthn.ListCredentials(ctx, uid)
+	if err != nil {
+		return nil, mapWebauthnError("get webauthn credentials", err)
+	}
+	out := make([]*accountv1.WebauthnCredential, len(items))
+	for i := range items {
+		it := &items[i]
+		out[i] = &accountv1.WebauthnCredential{
+			Id:         it.ID,
+			Label:      it.Label,
+			CreatedAt:  it.CreatedAt,
+			LastUsedAt: it.LastUsedAt,
+			Transports: it.Transports,
+			Aaguid:     it.AAGUID,
+		}
+	}
+	return connect.NewResponse(&accountv1.WebauthnListResponse{Items: out}), nil
+}
+
+// RegisterWebauthn 绑定通行密钥两态（§3.6 行 932-933）：step=challenge →
+// {token, challengeData, expiresIn}（token 为独立原子 token，前端不感知
+// 结构仅透传）；step=verify → {token, credential, label} 注册成功空响应。
+// step 非法 → invalid_request。
+func (h *Handler) RegisterWebauthn(ctx context.Context, req *connect.Request[accountv1.RegisterWebauthnRequest]) (*connect.Response[accountv1.RegisterWebauthnResponse], error) {
+	if h.webauthn == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errWebauthnNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	switch req.Msg.GetStep() {
+	case "challenge":
+		ch, err := h.webauthn.BeginRegister(ctx, uid)
+		if err != nil {
+			return nil, mapWebauthnError("register webauthn challenge", err)
+		}
+		return connect.NewResponse(&accountv1.RegisterWebauthnResponse{
+			Token:         ch.Token,
+			ChallengeData: ch.ChallengeData,
+			ExpiresIn:     ch.ExpiresIn,
+		}), nil
+	case "verify":
+		if err := h.webauthn.FinishRegister(ctx, uid, req.Msg.GetToken(), req.Msg.GetCredential(), req.Msg.GetLabel()); err != nil {
+			return nil, mapWebauthnError("register webauthn verify", err)
+		}
+		// 注册成功为空响应：零值消息 protojson 输出 {}（webauthn.proto
+		// RegisterWebauthnResponse 注释，§12.9 行 1752）。
+		return connect.NewResponse(&accountv1.RegisterWebauthnResponse{}), nil
+	default:
+		return nil, internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, errWebauthnInvalidStep),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid step"),
+		)
+	}
+}
+
+// RenameWebauthnCredential 重命名（§3.6 行 934）：{id, label} 仅本人；成功
+// 空响应（OkResponse）。
+func (h *Handler) RenameWebauthnCredential(ctx context.Context, req *connect.Request[accountv1.RenameWebauthnCredentialRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.webauthn == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errWebauthnNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.webauthn.RenameCredential(ctx, uid, req.Msg.GetId(), req.Msg.GetLabel()); err != nil {
+		return nil, mapWebauthnError("rename webauthn credential", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// DeleteWebauthnCredential 删除（§3.6 行 935）：{id} 仅本人；
+// 成功空响应（OkResponse）。
+func (h *Handler) DeleteWebauthnCredential(ctx context.Context, req *connect.Request[accountv1.DeleteWebauthnCredentialRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.webauthn == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errWebauthnNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.webauthn.DeleteCredential(ctx, uid, req.Msg.GetId()); err != nil {
+		return nil, mapWebauthnError("delete webauthn credential", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// mapWebauthnError 通行密钥族 service 错误 → Connect 形态（§1.5 行 181-195
+// 统一口径）：降级窗口 → invalid_argument + ErrorInfo{method_disabled,
+// 固定文案}（§1.6 行 250）；参数 / 校验类 → invalid_argument + ErrorInfo
+// （code 取 §1.6 封闭集）；重复注册 → already_exists（§1.5 行 191「重复
+// 绑定」，admin ErrDuplicateKey 先例——裸 Connect code）；资源不存在 →
+// not_found；内部故障 → internal 固定文案（§1.6 行 273 internal 无
+// ErrorInfo）；其余原样上抛由错误包装拦截器消毒。
+func mapWebauthnError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrWebauthnUnauthenticated):
+		return connect.NewError(connect.CodeUnauthenticated, err)
+	case errors.Is(err, accountsvc.ErrWebauthnDegraded):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "method_disabled", accountsvc.WebauthnDegradedMessage),
+		)
+	case errors.Is(err, accountsvc.ErrWebauthnInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, accountsvc.ErrWebauthnCodeExpired):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "code_expired", "challenge expired, restart with step=challenge"),
+		)
+	case errors.Is(err, accountsvc.ErrWebauthnDuplicate):
+		return connect.NewError(connect.CodeAlreadyExists, errWebauthnDuplicate)
+	case errors.Is(err, accountsvc.ErrWebauthnInternal):
+		return connect.NewError(connect.CodeInternal, errWebauthnInternal)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:

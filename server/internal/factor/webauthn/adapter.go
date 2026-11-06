@@ -138,10 +138,15 @@ func (c *ceremony) verifyAssertion(credential *structpb.Struct, storedChallenge 
 }
 
 // attestationResult 注册校验结果（标准类型，交给账号域建库）。
+// Transports / AAGUID 为展示类投影字段（§3.6 行 914 列表项）：取自注册
+// 响应 response.transports 与 attestationObject.authData 的 AAGUID，
+// 不参与四项固定校验。
 type attestationResult struct {
 	CredentialID string
 	PublicKey    []byte
 	SignCount    int64
+	Transports   []string
+	AAGUID       string
 }
 
 // verifyAttestation 校验账号域注册提交的 attestation 对象：challenge 匹配、
@@ -169,11 +174,32 @@ func (c *ceremony) verifyAttestation(credential *structpb.Struct, storedChalleng
 		return nil, fmt.Errorf("webauthn: verify attestation: %w", err)
 	}
 	auth := pcc.Response.AttestationObject.AuthData
+	transports := make([]string, 0, len(pcc.Response.Transports))
+	for _, tr := range pcc.Response.Transports {
+		transports = append(transports, string(tr))
+	}
 	return &attestationResult{
 		CredentialID: base64.RawURLEncoding.EncodeToString(pcc.RawID),
 		PublicKey:    auth.AttData.CredentialPublicKey,
 		SignCount:    int64(auth.Counter),
+		Transports:   transports,
+		AAGUID:       formatAAGUID(auth.AttData.AAGUID),
 	}, nil
+}
+
+// formatAAGUID AAGUID（16 字节）→ 标准 UUID 展示形 8-4-4-4-12 小写十六
+// 进制（§3.6 行 914 aaguid 字段）；全零值 / 非 16 字节返回空串（认证器
+// 未提供）。
+func formatAAGUID(a []byte) string {
+	if len(a) != 16 {
+		return ""
+	}
+	for _, b := range a {
+		if b != 0 {
+			return fmt.Sprintf("%x-%x-%x-%x-%x", a[0:4], a[4:6], a[6:8], a[8:10], a[10:16])
+		}
+	}
+	return ""
 }
 
 // marshalOptions 把库 options 结构经 JSON 转成 map[string]any（Struct 只解决

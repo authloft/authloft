@@ -390,6 +390,31 @@ func TestRegistrationRoundTrip(t *testing.T) {
 	if res.Status != "" || res.UID != 42 || res.CredentialID != b64(a.credID) || len(res.PublicKey) == 0 {
 		t.Fatalf("FinishRegistration = %+v", res)
 	}
+	// 展示类投影字段（§3.6 行 914 列表项）：transports 取注册响应
+	// response.transports，aaguid 取 attestationObject.authData（fixture 携带
+	// 固定非零 AAGUID）。
+	if len(res.Transports) != 2 || res.Transports[0] != "internal" || res.Transports[1] != "usb" {
+		t.Errorf("Transports = %v, want [internal usb]", res.Transports)
+	}
+	if res.AAGUID != "adce0002-35bc-c60a-648b-0b25f1f05503" {
+		t.Errorf("AAGUID = %q, want fixture 展示形", res.AAGUID)
+	}
+	if res.SignCount != 0 {
+		t.Errorf("SignCount = %d, want 0（fixture counter）", res.SignCount)
+	}
+}
+
+// TestFormatAAGUID AAGUID → UUID 展示形 / 边界。
+func TestFormatAAGUID(t *testing.T) {
+	if got := formatAAGUID(fixtureAAGUID[:]); got != "adce0002-35bc-c60a-648b-0b25f1f05503" {
+		t.Errorf("formatAAGUID(非零) = %q", got)
+	}
+	if got := formatAAGUID(make([]byte, 16)); got != "" {
+		t.Errorf("formatAAGUID(全零) = %q, want 空串", got)
+	}
+	if got := formatAAGUID([]byte{1, 2, 3}); got != "" {
+		t.Errorf("formatAAGUID(非 16 字节) = %q, want 空串", got)
+	}
 }
 
 func TestRegistrationTokenTamperedAndExpired(t *testing.T) {

@@ -1,7 +1,8 @@
 // user_credential_webauthn 表 repo 层测试：env 注入口径与共享
 // 辅助见 credential_repo_test.go 头注；本文件覆盖同事务建两行（主键同值，
-// §4.2 行 667）、uk_kind_credid 冲突判别与回滚零残留、sign_count 单行
-// 更新（§8.3 行 1047）、CredentialMeta webauthn 段 round-trip。
+// §4.2 行 667）、uk_kind_credid 冲突判别与回滚零残留、Delete 同事务删两行
+// sign_count 单行更新（§8.3 行 1047）、CredentialMeta webauthn
+// 段 round-trip。
 package repo
 
 import (
@@ -148,8 +149,82 @@ func TestWebauthnRepoDuplicateRollback(t *testing.T) {
 	}
 }
 
+// TestWebauthnRepoDelete（env-skip）：Delete 同事务删两行
+// （user_credential_webauthn + user_credential，行 667 主键同值口径的镜像
+// 方向）；uid 不匹配（凭据属他人 / 不存在）返回 ErrRecordNotFound 且两表
+// 均无残留；成功后两行齐消失、他人行不受影响；重复删除可判别 not found。
+func TestWebauthnRepoDelete(t *testing.T) {
+	_, wr, db := credentialTestSetup(t)
+	ctx := context.Background()
+	const uid, other = int64(204), int64(205)
+
+	// uid 两凭据 + other 一凭据。
+	c1 := &model.UserCredential{UserID: uid, Kind: "webauthn", Secret: []byte("d1"), Label: "Mac"}
+	w1 := &model.UserCredentialWebauthn{UserID: uid, Kind: "webauthn", PublicKey: []byte{0x01}, CredentialID: "d1"}
+	if err := wr.Create(ctx, c1, w1); err != nil {
+		t.Fatalf("Create 1 失败: %v", err)
+	}
+	c2 := &model.UserCredential{UserID: uid, Kind: "webauthn", Secret: []byte("d2"), Label: "iPhone"}
+	w2 := &model.UserCredentialWebauthn{UserID: uid, Kind: "webauthn", PublicKey: []byte{0x02}, CredentialID: "d2"}
+	if err := wr.Create(ctx, c2, w2); err != nil {
+		t.Fatalf("Create 2 失败: %v", err)
+	}
+	co := &model.UserCredential{UserID: other, Kind: "webauthn", Secret: []byte("o1")}
+	wo := &model.UserCredentialWebauthn{UserID: other, Kind: "webauthn", PublicKey: []byte{0x03}, CredentialID: "o1"}
+	if err := wr.Create(ctx, co, wo); err != nil {
+		t.Fatalf("Create other 失败: %v", err)
+	}
+
+	// uid 串号防御：用 other 的 uid 删 uid 的凭据 → not found，两行均保留。
+	if err := wr.Delete(ctx, w1.ID, other); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("他人 uid 删除应 ErrRecordNotFound, got %v", err)
+	}
+	var n int64
+	db.Model(&model.UserCredentialWebauthn{}).Where("id = ?", w1.ID).Count(&n)
+	if n != 1 {
+		t.Fatalf("串号删除后 webauthn 行 = %d, want 1（无残留删除）", n)
+	}
+	db.Model(&model.UserCredential{}).Where("id = ?", c1.ID).Count(&n)
+	if n != 1 {
+		t.Fatalf("串号删除后 credential 行 = %d, want 1（无残留删除）", n)
+	}
+
+	// 不存在的 id → not found。
+	if err := wr.Delete(ctx, 999999, uid); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("不存在 id 应 ErrRecordNotFound, got %v", err)
+	}
+
+	// 成功删除 w1：两行齐消失。
+	if err := wr.Delete(ctx, w1.ID, uid); err != nil {
+		t.Fatalf("Delete 失败: %v", err)
+	}
+	db.Model(&model.UserCredentialWebauthn{}).Where("id = ?", w1.ID).Count(&n)
+	if n != 0 {
+		t.Fatalf("删除后 webauthn 行 = %d, want 0", n)
+	}
+	db.Model(&model.UserCredential{}).Where("id = ?", c1.ID).Count(&n)
+	if n != 0 {
+		t.Fatalf("删除后 credential 行 = %d, want 0（同事务两行）", n)
+	}
+
+	// 同 id 重复删除 → not found。
+	if err := wr.Delete(ctx, w1.ID, uid); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("重复删除应 ErrRecordNotFound, got %v", err)
+	}
+
+	// 他人行 / 本人另一凭据不受影响。
+	rows, err := wr.ListByUser(ctx, uid)
+	if err != nil || len(rows) != 1 || rows[0].ID != w2.ID {
+		t.Fatalf("uid 剩余 = %+v err %v; want 仅 w2", rows, err)
+	}
+	oRows, err := wr.ListByUser(ctx, other)
+	if err != nil || len(oRows) != 1 || oRows[0].ID != wo.ID {
+		t.Fatalf("other 剩余 = %+v err %v; want 不受影响", oRows, err)
+	}
+}
+
 // TestWebauthnRepoUpdateSignCount（env-skip）：sign_count 单行 UPDATE
-//（§8.3 行 1047 延迟队列 flush 的写路径）；同值重放幂等；行不存在可判别。
+// （§8.3 行 1047 延迟队列 flush 的写路径）；同值重放幂等；行不存在可判别。
 func TestWebauthnRepoUpdateSignCount(t *testing.T) {
 	_, wr, _ := credentialTestSetup(t)
 	ctx := context.Background()

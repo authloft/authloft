@@ -82,6 +82,37 @@ func (r *WebauthnRepo) Create(ctx context.Context, c *model.UserCredential, w *m
 	return nil
 }
 
+// Delete 同一事务内删两行（Create 的镜像方向）：先删
+// user_credential_webauthn 行、再删 user_credential 行，定位条件均为
+// id + user_id + kind（kind 恒 'webauthn'，行 669）——uid 不匹配（凭据
+// 属他人 / 不存在 / 非 webauthn 行）不命中任何行，返回包装的
+// gorm.ErrRecordNotFound，两表均无残留（事务回滚）。任一步失败整体
+// 回滚，与 Create 的事务结构一致（行 667 主键同值口径）。
+func (r *WebauthnRepo) Delete(ctx context.Context, id, userID int64) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ? AND kind = ?", id, userID, "webauthn").
+			Delete(&model.UserCredentialWebauthn{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Where("id = ? AND user_id = ? AND kind = ?", id, userID, "webauthn").
+			Delete(&model.UserCredential{}).Error; err != nil {
+			return err
+		}
+		// user_credential 行与 webauthn 行主键同值同事务创建（Create），正常
+		// 数据不可能先删成功后删 zero-affected；脏数据残留（credential 行
+		// 缺失）不阻断删除，主目标两行口径以 webauthn 行为准。
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("webauthn repo: delete: %w", err)
+	}
+	return nil
+}
+
 // UpdateSignCount 单行更新 sign_count（§8.3 行 1047：断言校验通过后投递
 // 延迟队列，按凭据同键合并取最大值后经 flusher 调用本方法落库）。行不
 // 存在返回包装的 gorm.ErrRecordNotFound；同值重放（changed-rows 语义下

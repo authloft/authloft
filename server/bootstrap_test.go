@@ -39,6 +39,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/asyncqueue"
@@ -52,6 +53,7 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/service"
+	accountsvc "authloft/internal/service/account"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -603,6 +605,31 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 	}
 	if err := registry.AssertComplete(factor.FactorWebAuthn); err != nil {
 		t.Fatalf("AssertComplete(webauthn) err = %v, want nil (degraded kind excluded)", err)
+	}
+
+	// account 域 fail-closed 装配断言（§8.3 行 1073「实装后必须带
+	// 窗口期拒绝」）：降级时 accountWebauthn service 仍构造（非 nil），
+	// 但 Factor 注入 nil 接口——四方法一律 ErrWebauthnDegraded（typed-nil
+	// 会绕过 Factor==nil 判定，此处即防回归）。DB 未注入，降级判定必须
+	// 先于任何存储触达。
+	if deps.accountWebauthn == nil {
+		t.Fatal("accountWebauthn must be constructed even when degraded")
+	}
+	ctx := context.Background()
+	if _, err := deps.accountWebauthn.ListCredentials(ctx, 1); !errors.Is(err, accountsvc.ErrWebauthnDegraded) {
+		t.Errorf("ListCredentials err = %v, want ErrWebauthnDegraded (fail-closed)", err)
+	}
+	if _, err := deps.accountWebauthn.BeginRegister(ctx, 1); !errors.Is(err, accountsvc.ErrWebauthnDegraded) {
+		t.Errorf("BeginRegister err = %v, want ErrWebauthnDegraded (fail-closed)", err)
+	}
+	if err := deps.accountWebauthn.FinishRegister(ctx, 1, "t", &structpb.Struct{}, ""); !errors.Is(err, accountsvc.ErrWebauthnDegraded) {
+		t.Errorf("FinishRegister err = %v, want ErrWebauthnDegraded (fail-closed)", err)
+	}
+	if err := deps.accountWebauthn.RenameCredential(ctx, 1, 1, "x"); !errors.Is(err, accountsvc.ErrWebauthnDegraded) {
+		t.Errorf("RenameCredential err = %v, want ErrWebauthnDegraded (fail-closed)", err)
+	}
+	if err := deps.accountWebauthn.DeleteCredential(ctx, 1, 1); !errors.Is(err, accountsvc.ErrWebauthnDegraded) {
+		t.Errorf("DeleteCredential err = %v, want ErrWebauthnDegraded (fail-closed)", err)
 	}
 }
 

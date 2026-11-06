@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
@@ -26,6 +27,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	internalconnect "authloft/internal/connect"
+	"authloft/internal/factor/webauthn"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -137,7 +139,7 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := accountv1connect.NewAccountServiceHandler(
-		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty()),
+		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn()),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -148,13 +150,15 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	return tokens, epochs, h
 }
 
-// getConfigDeps GetConfig / 三方绑定族用例的依赖集（缺省字段取空 fake）。
+// getConfigDeps GetConfig / 三方绑定族 / 通行密钥族用例的依赖集（缺省字段
+// 取空 fake）。
 type getConfigDeps struct {
 	credsIn      CredentialReader
 	settingsIn   SettingsReader
 	providersIn  ProviderReader
 	captcha      CaptchaConfiger
 	thirdpartyIn Thirdparty
+	webauthnIn   Webauthn
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -179,6 +183,7 @@ func (d *getConfigDeps) providers() ProviderReader {
 }
 
 func (d *getConfigDeps) thirdparty() Thirdparty { return d.thirdpartyIn }
+func (d *getConfigDeps) webauthn() Webauthn     { return d.webauthnIn }
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -709,8 +714,10 @@ func TestGetConfigWithoutSession(t *testing.T) {
 }
 
 // TestOtherMethodsUnimplemented 其余方法一律返回生成基类的 unimplemented
-// （GetConfig 与三方绑定族四方法均已实装，移出桩清单——未装配
-// thirdparty service 时的 unimplemented 由 TestThirdpartyMethodsNotConfigured
+// （GetConfig、三方绑定族四方法与通行密钥族四方法
+// 〔GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
+// DeleteWebauthnCredential〕均已实装，移出桩清单——未装配 service 时的
+// unimplemented 由 TestThirdpartyMethodsNotConfigured / TestWebauthnMethodsNotConfigured
 // 单独覆盖）。
 func TestOtherMethodsUnimplemented(t *testing.T) {
 	_, _, h := newSessionHandler(t, &fakeUsers{})
@@ -726,10 +733,6 @@ func TestOtherMethodsUnimplemented(t *testing.T) {
 		accountv1connect.AccountServiceBindTotpProcedure,
 		accountv1connect.AccountServiceGetRecoveryCodesProcedure,
 		accountv1connect.AccountServiceRegenerateRecoveryCodesProcedure,
-		accountv1connect.AccountServiceGetWebauthnCredentialsProcedure,
-		accountv1connect.AccountServiceRegisterWebauthnProcedure,
-		accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
-		accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
 		accountv1connect.AccountServiceGetEventsProcedure,
 	}
 	for _, procedure := range cases {
@@ -1073,6 +1076,334 @@ func hasLoginStateCookie(resp *http.Response) bool {
 		}
 	}
 	return false
+}
+
+// —— 通行密钥族（接口文档 §3.6 行 927-947 / 后端架构 §8.3）——
+
+// fakeWebauthn Webauthn 窄接口的 fake：预置结果回放 + 入参记录。
+type fakeWebauthn struct {
+	list      []accountsvc.WebauthnItem
+	listErr   error
+	listUID   int64
+	begin     *webauthn.RegistrationChallenge
+	beginErr  error
+	beginUID  int64
+	finishErr error
+	finishIn  struct {
+		uid   int64
+		tok   string
+		label string
+		cred  *structpb.Struct
+	}
+	renameErr error
+	renameIn  struct {
+		uid   int64
+		id    int64
+		label string
+	}
+	deleteErr error
+	deleteIn  struct {
+		uid int64
+		id  int64
+	}
+}
+
+func (f *fakeWebauthn) ListCredentials(_ context.Context, uid int64) ([]accountsvc.WebauthnItem, error) {
+	f.listUID = uid
+	return f.list, f.listErr
+}
+
+func (f *fakeWebauthn) BeginRegister(_ context.Context, uid int64) (*webauthn.RegistrationChallenge, error) {
+	f.beginUID = uid
+	return f.begin, f.beginErr
+}
+
+func (f *fakeWebauthn) FinishRegister(_ context.Context, uid int64, tok string, credential *structpb.Struct, label string) error {
+	f.finishIn.uid, f.finishIn.tok, f.finishIn.cred, f.finishIn.label = uid, tok, credential, label
+	return f.finishErr
+}
+
+func (f *fakeWebauthn) RenameCredential(_ context.Context, uid int64, id int64, label string) error {
+	f.renameIn.uid, f.renameIn.id, f.renameIn.label = uid, id, label
+	return f.renameErr
+}
+
+func (f *fakeWebauthn) DeleteCredential(_ context.Context, uid int64, id int64) error {
+	f.deleteIn.uid, f.deleteIn.id = uid, id
+	return f.deleteErr
+}
+
+// postWebauthn 带会话 Cookie POST 指定 procedure，返回状态码与响应体。
+func postWebauthn(t *testing.T, wa Webauthn, procedure, body string) (int, string) {
+	t.Helper()
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{webauthnIn: wa})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+procedure, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", procedure, err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode, readBody(t, resp.Body)
+}
+
+// TestWebauthnMethodsNotConfigured 未装配通行密钥 service（测试桩）时
+// 四方法一律 unimplemented（sso / thirdparty nil 同款口径）。
+func TestWebauthnMethodsNotConfigured(t *testing.T) {
+	_, _, h := newSessionHandler(t, &fakeUsers{})
+	cases := []string{
+		accountv1connect.AccountServiceGetWebauthnCredentialsProcedure,
+		accountv1connect.AccountServiceRegisterWebauthnProcedure,
+		accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
+		accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
+	}
+	for _, procedure := range cases {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(rec, req)
+		var errBody struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+			t.Fatalf("%s: decode error body %q: %v", procedure, err, rec.Body.String())
+		}
+		if errBody.Code != "unimplemented" {
+			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, errBody.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestGetWebauthnCredentialsConnect 端到端：列表投影 + uid 注入 + 无会话 401。
+func TestGetWebauthnCredentialsConnect(t *testing.T) {
+	wa := &fakeWebauthn{list: []accountsvc.WebauthnItem{{
+		ID: 11, Label: "MacBook Touch ID", CreatedAt: 1764000100, LastUsedAt: 1764100000,
+		Transports: []string{"internal", "hybrid"}, AAGUID: "adce0002-35bc-c60a-648b-0b25f1f05503",
+	}}}
+	status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceGetWebauthnCredentialsProcedure, `{}`)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+	}
+	var got accountv1.WebauthnListResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	items := got.GetItems()
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1: %s", len(items), raw)
+	}
+	it := items[0]
+	if it.GetId() != 11 || it.GetLabel() != "MacBook Touch ID" || it.GetCreatedAt() != 1764000100 ||
+		it.GetLastUsedAt() != 1764100000 || it.GetAaguid() != "adce0002-35bc-c60a-648b-0b25f1f05503" {
+		t.Errorf("item = {%d %q %d %d %q}", it.GetId(), it.GetLabel(), it.GetCreatedAt(), it.GetLastUsedAt(), it.GetAaguid())
+	}
+	if len(it.GetTransports()) != 2 || it.GetTransports()[0] != "internal" || it.GetTransports()[1] != "hybrid" {
+		t.Errorf("transports = %v", it.GetTransports())
+	}
+	if wa.listUID != 10086 {
+		t.Errorf("service uid = %d, want 10086（会话注入）", wa.listUID)
+	}
+
+	// 无会话 → 401（§1.2 行 96 本域全接口需会话）。
+	_, _, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{webauthnIn: wa})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceGetWebauthnCredentialsProcedure, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRegisterWebauthnConnect 两态端到端：challenge 透传（token /
+// challengeData / expiresIn）、verify 错误映射（降级 method_disabled 固定
+// 文案、code_expired、step 非法）、verify 成功空响应 {}、无会话 401。
+func TestRegisterWebauthnConnect(t *testing.T) {
+	challengeData, err := structpb.NewStruct(map[string]any{"rp": map[string]any{"id": "example.com"}})
+	if err != nil {
+		t.Fatalf("NewStruct: %v", err)
+	}
+
+	t.Run("challenge 透传", func(t *testing.T) {
+		wa := &fakeWebauthn{begin: &webauthn.RegistrationChallenge{
+			Token: "sealed-token", ChallengeData: challengeData, ExpiresIn: 120,
+		}}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRegisterWebauthnProcedure, `{"step":"challenge"}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+		}
+		var got accountv1.RegisterWebauthnResponse
+		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode response %q: %v", raw, err)
+		}
+		if got.GetToken() != "sealed-token" || got.GetExpiresIn() != 120 {
+			t.Errorf("response token/expiresIn = {%q %d}", got.GetToken(), got.GetExpiresIn())
+		}
+		if d := got.GetChallengeData(); d == nil || d.GetFields()["rp"] == nil {
+			t.Errorf("challengeData 未透传: %s", raw)
+		}
+		if wa.beginUID != 10086 {
+			t.Errorf("service uid = %d, want 10086", wa.beginUID)
+		}
+	})
+	t.Run("verify 降级窗口 fail-closed", func(t *testing.T) {
+		wa := &fakeWebauthn{finishErr: accountsvc.ErrWebauthnDegraded}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRegisterWebauthnProcedure,
+			`{"step":"verify","token":"t","credential":{},"label":"L"}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400（§8.3 行 1072 method_disabled 经 Connect 错误体）(body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "method_disabled" ||
+			info.GetMessage() != "通行密钥暂不可用，请联系管理员" {
+			t.Errorf("ErrorInfo = %+v, want (account, method_disabled, 固定文案)", info)
+		}
+	})
+	t.Run("verify token 过期", func(t *testing.T) {
+		wa := &fakeWebauthn{finishErr: accountsvc.ErrWebauthnCodeExpired}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRegisterWebauthnProcedure,
+			`{"step":"verify","token":"t","credential":{},"label":"L"}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "code_expired" {
+			t.Errorf("ErrorInfo = %+v, want (account, code_expired)", info)
+		}
+	})
+	t.Run("verify 成功空响应", func(t *testing.T) {
+		wa := &fakeWebauthn{}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRegisterWebauthnProcedure,
+			`{"step":"verify","token":"tk","credential":{"rawId":"abc"},"label":"YubiKey"}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+		}
+		if strings.TrimSpace(raw) != "{}" {
+			t.Errorf("verify 成功响应 = %q, want {}（空响应）", raw)
+		}
+		if wa.finishIn.uid != 10086 || wa.finishIn.tok != "tk" || wa.finishIn.label != "YubiKey" ||
+			wa.finishIn.cred.GetFields()["rawId"] == nil {
+			t.Errorf("service 入参 = %+v, want token/credential/label 透传 + uid=10086", wa.finishIn)
+		}
+	})
+	t.Run("step 非法", func(t *testing.T) {
+		wa := &fakeWebauthn{}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRegisterWebauthnProcedure, `{"step":"restart"}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = %+v, want (account, invalid_request)", info)
+		}
+	})
+	t.Run("无会话 401", func(t *testing.T) {
+		_, _, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{webauthnIn: &fakeWebauthn{}})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceRegisterWebauthnProcedure,
+			strings.NewReader(`{"step":"challenge"}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+// TestRenameWebauthnCredentialConnect 端到端：成功空响应 + 入参透传 +
+// not_found 404（不存在 / 非本人统一 not_found，不泄露存在性）。
+func TestRenameWebauthnCredentialConnect(t *testing.T) {
+	t.Run("成功", func(t *testing.T) {
+		wa := &fakeWebauthn{}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
+			`{"id":"11","label":"new name"}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+		}
+		if strings.TrimSpace(raw) != "{}" {
+			t.Errorf("rename 成功响应 = %q, want {}（空响应）", raw)
+		}
+		if wa.renameIn.uid != 10086 || wa.renameIn.id != 11 || wa.renameIn.label != "new name" {
+			t.Errorf("service 入参 = %+v, want {10086 11 new name}", wa.renameIn)
+		}
+	})
+	t.Run("目标不存在 → 404", func(t *testing.T) {
+		wa := &fakeWebauthn{renameErr: fmt.Errorf("account webauthn: rename: %w", gorm.ErrRecordNotFound)}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
+			`{"id":"999","label":"x"}`)
+		if status != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body %s)", status, raw)
+		}
+	})
+	t.Run("空 label → 400 invalid_request", func(t *testing.T) {
+		wa := &fakeWebauthn{renameErr: accountsvc.ErrWebauthnInvalidRequest}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
+			`{"id":"11","label":""}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = %+v, want (account, invalid_request)", info)
+		}
+	})
+}
+
+// TestDeleteWebauthnCredentialConnect 端到端：成功空响应 +
+// 入参透传 + not_found 404（不存在 / 非本人统一 not_found）+ 无会话 401。
+func TestDeleteWebauthnCredentialConnect(t *testing.T) {
+	t.Run("成功", func(t *testing.T) {
+		wa := &fakeWebauthn{}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
+			`{"id":"11"}`)
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+		}
+		if strings.TrimSpace(raw) != "{}" {
+			t.Errorf("delete 成功响应 = %q, want {}（空响应）", raw)
+		}
+		if wa.deleteIn.uid != 10086 || wa.deleteIn.id != 11 {
+			t.Errorf("service 入参 = %+v, want {10086 11}", wa.deleteIn)
+		}
+	})
+	t.Run("目标不存在 → 404", func(t *testing.T) {
+		wa := &fakeWebauthn{deleteErr: fmt.Errorf("account webauthn: delete: %w", gorm.ErrRecordNotFound)}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
+			`{"id":"999"}`)
+		if status != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404 (body %s)", status, raw)
+		}
+	})
+	t.Run("降级窗口 fail-closed → 400 method_disabled", func(t *testing.T) {
+		wa := &fakeWebauthn{deleteErr: accountsvc.ErrWebauthnDegraded}
+		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
+			`{"id":"11"}`)
+		if status != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", status, raw)
+		}
+		info := decodeAccountErrorInfo(t, raw)
+		if info.GetDomain() != "account" || info.GetCode() != "method_disabled" ||
+			info.GetMessage() != "通行密钥暂不可用，请联系管理员" {
+			t.Errorf("ErrorInfo = %+v, want (account, method_disabled, 固定文案)", info)
+		}
+	})
+	t.Run("无会话 401", func(t *testing.T) {
+		_, _, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{webauthnIn: &fakeWebauthn{}})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
+			strings.NewReader(`{"id":"11"}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func readBody(t *testing.T, r io.Reader) string {

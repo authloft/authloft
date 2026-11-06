@@ -179,6 +179,13 @@ type assembled struct {
 	// / ticket / cookie 两把 codec / eventlog 延迟队列审计），registerAccount
 	// 注入 AccountService handler。
 	accountThirdparty *accountsvc.ThirdpartyService
+
+	// accountWebauthn account 域通行密钥族 service（接口文档 §3.6 /
+	// 后端架构 §8.3 行 1070-1075）：buildEngine 内构造（注册内核复用 webauthn
+	// 因子同一实例、审计走 eventlog 延迟队列），registerAccount 注入
+	// AccountService handler。Factor 注入 nil 时 service 五路 fail-closed
+	//（启动降级窗口，§8.3 行 1071）。
+	accountWebauthn *accountsvc.WebauthnService
 }
 
 // codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -503,6 +510,25 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		TicketCodec: deps.codecs.Ticket,
 		CookieCodec: deps.codecs.Cookie,
 		Audit:       eventlog.NewWriter(deps.queue),
+	})
+
+	// account 域通行密钥族 service（接口文档 §3.6 / 后端架构 §8.3
+	// 行 1070-1075）：注册两态内核复用上方 webauthn 因子同一实例（同一
+	// RPID / origins / 独立原子 token 密钥——login 域密钥 + AAD purpose
+	// 隔离）；user_credential / user_credential_webauthn 读写注入两 repo；
+	// webauthn_register 审计走 eventlog 延迟队列。**fail-closed 关键**：
+	// wa 为 nil（启动初始化失败降级，上方 waErr 分支）时必须注入 nil 接口
+	// 而非 nil *webauthn.Factor（typed-nil 会绕过 Factor==nil 判定），
+	// service 四方法据此一律 method_disabled（§8.3 行 1071-1075）。
+	var accountWebauthnFactor accountsvc.WebauthnFactor
+	if wa != nil {
+		accountWebauthnFactor = wa
+	}
+	deps.accountWebauthn = accountsvc.NewWebauthnService(accountsvc.WebauthnDeps{
+		Factor:   accountWebauthnFactor,
+		Webauthn: webauthnRepo,
+		Creds:    creds,
+		Audit:    eventlog.NewWriter(deps.queue),
 	})
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
@@ -1004,15 +1030,18 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 }
 
 // registerAccount 注册 AccountService Connect handler（GetProfile /
-// GetConfig + 三方绑定族四方法）：挂同一 session 拦截器（§1.2
-// 行 96：/api.account.v1.AccountService/** 全接口需用户会话，无 LoginDefault
+// GetConfig + 三方绑定族四方法 + 通行密钥族四方法）：挂同一 session 拦截器
+// （§1.2 行 96：/api.account.v1.AccountService/** 全接口需用户会话，无 LoginDefault
 // 式豁免——无有效会话请求由 handler 返回 unauthenticated）。GetConfig 依赖：
 // CredentialRepo（hasPassword / mfaPolicy）、settings.Store（mfa_enabled /
 // avatar_storage_provider）、ProviderRepo（storage 行）、captcha Gate
 // （§9.1 行 1094 三处共用出口现算，降级一致）。三方绑定族
 // （GetThirdpartyBindings / UnbindThirdparty / ThirdpartyOauth /
 // GetThirdpartyTicket，接口文档 §3.7 / §3.7.1）走 service/account.
-// ThirdpartyService（buildEngine 内构造的共享单例）。其余方法由生成的
+// ThirdpartyService；通行密钥族（GetWebauthnCredentials /
+// RegisterWebauthn 两态 / RenameWebauthnCredential /
+// DeleteWebauthnCredential，接口文档 §3.6）走 service/account.
+// WebauthnService（均 buildEngine 内构造的共享单例）。其余方法由生成的
 // UnimplementedAccountServiceHandler 返回 unimplemented。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
@@ -1023,6 +1052,7 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			repo.NewProviderRepo(deps.db),
 			deps.gate,
 			deps.accountThirdparty,
+			deps.accountWebauthn,
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)

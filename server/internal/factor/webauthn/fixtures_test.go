@@ -112,6 +112,10 @@ func (a *testAuthenticator) assertion(t *testing.T, f ceremonyFixture) *structpb
 	})
 }
 
+// fixtureAAGUID 固定非零 AAGUID（展示形 adce0002-35bc-c60a-648b-0b25f1f05503，
+// attestation 夹具携带，供 transports / aaguid 投影断言）。
+var fixtureAAGUID = [16]byte{0xad, 0xce, 0x00, 0x02, 0x35, 0xbc, 0xc6, 0x0a, 0x64, 0x8b, 0x0b, 0x25, 0xf1, 0xf0, 0x55, 0x03}
+
 // attestation 构造一条合法的 navigator.credentials.create() 注册对象
 // （fmt="none" 自证明，便于不引入证书链即可覆盖注册路径）。
 func (a *testAuthenticator) attestation(t *testing.T, f ceremonyFixture) *structpb.Struct {
@@ -127,7 +131,7 @@ func (a *testAuthenticator) attestation(t *testing.T, f ceremonyFixture) *struct
 	}
 	// attestedCredentialData = aaguid(16) || credIdLen(2) || credId || COSE pubkey
 	extra := make([]byte, 0, 16+2+len(a.credID)+len(a.pubCOSE))
-	extra = append(extra, make([]byte, 16)...)
+	extra = append(extra, fixtureAAGUID[:]...)
 	credLen := make([]byte, 2)
 	binary.BigEndian.PutUint16(credLen, uint16(len(a.credID)))
 	extra = append(extra, credLen...)
@@ -149,6 +153,7 @@ func (a *testAuthenticator) attestation(t *testing.T, f ceremonyFixture) *struct
 		"response": map[string]any{
 			"clientDataJSON":    b64(clientDataJSON),
 			"attestationObject": b64(attObj),
+			"transports":        []any{"internal", "usb"},
 		},
 		"clientExtensionResults": map[string]any{},
 	})

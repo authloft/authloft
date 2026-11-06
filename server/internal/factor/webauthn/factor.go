@@ -202,12 +202,15 @@ type RegistrationChallenge struct {
 }
 
 // RegistrationVerify 账号域注册 verify 产出；Status 非空即失败结论
-// （invalid_request / code_expired）。
+// （invalid_request / code_expired）。Transports / AAGUID 为展示类投影
+// 字段（§3.6 行 914 列表项），由账号域卡落 user_credential.meta。
 type RegistrationVerify struct {
 	UID          int64
 	CredentialID string
 	PublicKey    []byte
 	SignCount    int64
+	Transports   []string
+	AAGUID       string
 	Status       string
 }
 
@@ -261,6 +264,8 @@ func (f *Factor) FinishRegistration(tok string, credential *structpb.Struct) *Re
 		CredentialID: res.CredentialID,
 		PublicKey:    res.PublicKey,
 		SignCount:    res.SignCount,
+		Transports:   res.Transports,
+		AAGUID:       res.AAGUID,
 	}
 }
 
