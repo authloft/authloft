@@ -8,6 +8,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"strings"
 
 	commonv1 "authloft/gen/go/api/common/v1"
 	ssov1 "authloft/gen/go/api/sso/v1"
@@ -47,6 +48,14 @@ const (
 // PasswordFailures 读取同账号当日密码失败次数（触发阈值在 Gate 内按 settings 判定）。
 type PasswordFailures interface {
 	Count(ctx context.Context, userRef string) (int64, error)
+}
+
+// UserRefResolver 由登录标识推导密码失败计数的 user_ref：生产装配
+// 注入 factor/password 的共用实现——引擎读计数与因子写计数共用唯一定义
+//（用户存在 → "{userID}"；不存在 → "{ip}|{sha256(identifier)}"，§8.1 行
+// 1027）。未注入（nil）时跳过失败计数读取，渐进式保护第 1 级不触发。
+type UserRefResolver interface {
+	UserRef(ctx context.Context, identifier string) (string, error)
 }
 
 // FactorDeps 是因子执行所需的注入依赖（不含任何存储句柄）。
@@ -97,6 +106,7 @@ type EngineDeps struct {
 	MFA        *MFABuilder
 	Terminal   *Terminal
 	Failures   PasswordFailures
+	UserRef    UserRefResolver
 	Factor     FactorDeps
 	SetPass    *SetPassDeps
 	NewTID     func() (string, error)
@@ -110,6 +120,7 @@ type Engine struct {
 	mfa        *MFABuilder
 	terminal   *Terminal
 	failures   PasswordFailures
+	userRef    UserRefResolver
 	repo       FactorDeps
 	setpass    *SetPassDeps
 	newTID     func() (string, error)
@@ -124,6 +135,7 @@ func NewEngine(d EngineDeps) *Engine {
 		mfa:        d.MFA,
 		terminal:   d.Terminal,
 		failures:   d.Failures,
+		userRef:    d.UserRef,
 		repo:       d.Factor,
 		setpass:    d.SetPass,
 		newTID:     d.NewTID,
@@ -264,13 +276,16 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 			Answer:      req.Captcha.Answer,
 		}
 	}
-	if r.Password && e.failures != nil {
-		userRef := ""
-		if req.Payload != nil {
-			userRef = req.Payload.Username
-		}
-		if userRef != "" {
-			n, err := e.failures.Count(ctx, userRef)
+	// 密码登录读当日失败计数：user_ref 经注入的解析器按因子写入侧
+	// 同款口径推导（用户存在 → "{userID}"；不存在 → "{ip}|{sha256}"），禁止
+	// 直接拿 username 原文当键（键口径漂移 → 计数恒 0，渐进式保护失效）。
+	if r.Password && e.failures != nil && e.userRef != nil && req.Payload != nil {
+		if identifier := strings.TrimSpace(req.Payload.Username); identifier != "" {
+			ref, err := e.userRef.UserRef(ctx, identifier)
+			if err != nil {
+				return captcha.Outcome{}, err
+			}
+			n, err := e.failures.Count(ctx, ref)
 			if err != nil {
 				return captcha.Outcome{}, err
 			}

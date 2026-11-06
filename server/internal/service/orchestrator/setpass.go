@@ -190,9 +190,12 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 		return failed()
 	}
 
-	// 成功 → 直接登录写 Cookie（§10.3 行 1527；amr 补记本步因子）。
+	// 成功 → 直接登录写 Cookie（§10.3 行 1527；amr 补记本步因子——直通入口
+	// 未经过 verify，本步因子不进 amr 会使 login_success 事件 amr 恒空，
+	// 此处补齐；otp 注册 amr 已含该因子，appendOnce 幂等）。
 	p.Uid = u.ID
 	p.Ch = nil
+	p.Amr = appendOnce(p.Amr, string(kind))
 	return e.completeSuccess(ctx, req, p)
 }
 

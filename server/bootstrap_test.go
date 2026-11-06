@@ -54,6 +54,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -1873,5 +1874,48 @@ func TestNewHTTPServerTLSProtocols(t *testing.T) {
 	cfg.Server.MinTLSVersion = "bogus"
 	if _, err := newHTTPServer(cfg, http.NotFoundHandler()); err == nil {
 		t.Error("bogus min_tls_version must fail-fast")
+	}
+}
+
+// TestConnectRequestInfoInjectsCtx connect 前缀链入口包装器：把
+// 来源 IP 与 User-Agent 注入 ctx（登录终点经 RequestInfoFromContext 读取落
+// event_log）；来源 IP 取值优先级 X-Forwarded-For 首段 → X-Real-IP →
+// RemoteAddr host 段。
+func TestConnectRequestInfoInjectsCtx(t *testing.T) {
+	var got orchestrator.RequestInfo
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = orchestrator.RequestInfoFromContext(r.Context())
+	})
+	h := connectRequestInfo(inner)
+
+	do := func(remoteAddr string, hdr map[string]string) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/api.sso.v1.SsoService/LoginDefault", nil)
+		r.RemoteAddr = remoteAddr
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
+
+	// 直连：RemoteAddr host 段 + User-Agent。
+	do("203.0.113.7:54123", map[string]string{"User-Agent": "ua-direct"})
+	if got.IP != "203.0.113.7" || got.UA != "ua-direct" {
+		t.Fatalf("direct: ip/ua = %q/%q, want 203.0.113.7/ua-direct", got.IP, got.UA)
+	}
+	// 反代 XFF 多段：取首段并 TrimSpace。
+	do("10.0.0.1:443", map[string]string{"X-Forwarded-For": "198.51.100.9, 10.0.0.1"})
+	if got.IP != "198.51.100.9" {
+		t.Fatalf("xff: ip = %q, want 198.51.100.9", got.IP)
+	}
+	// X-Real-IP 次选。
+	do("10.0.0.1:443", map[string]string{"X-Real-IP": "198.51.100.10"})
+	if got.IP != "198.51.100.10" {
+		t.Fatalf("xrip: ip = %q, want 198.51.100.10", got.IP)
+	}
+	// 无 UA 头：空串（与 DDL 默认一致），不报错。
+	do("192.0.2.5:80", nil)
+	if got.IP != "192.0.2.5" || got.UA != "" {
+		t.Fatalf("no-ua: ip/ua = %q/%q, want 192.0.2.5/empty", got.IP, got.UA)
 	}
 }

@@ -47,6 +47,41 @@ type LoginEvent struct {
 	ClientID string
 	AMR      []string
 	AuthTime int64
+	// IP / UA 请求侧信息：装配层 http 包装器在 connect 前缀链入口
+	// 采集并注入 ctx，Complete 据此填充，eventlog 落 event_log.ip / ua
+	//（§4.6 行 776-777）。缺省（未注入）为空串，与既有行为兼容。
+	IP string
+	UA string
+	// SessionID 本次终点建会话的会话 ID（Complete 建会话后可得）。
+	SessionID string
+}
+
+// RequestInfo 请求侧信息载体：来源 IP 与 User-Agent。唯一采集点
+// 是 http 挂载层（connect 链 AnyRequest 只暴露 Header、拿不到 RemoteAddr，
+// 先例同 session.RequestSignal 的 TLS 信号），经 ctx 注入后由 Terminal
+// 读取填进 LoginEvent。
+type RequestInfo struct {
+	IP string
+	UA string
+}
+
+// requestInfoKey ctx 注入键（私有类型，包外无法伪造同型键；sessionTokenSinkKey
+// 同款先例）。
+type requestInfoKey struct{}
+
+// WithRequestInfo 把请求侧信息注入 ctx（装配层 http 包装器调用）。
+func WithRequestInfo(ctx context.Context, info RequestInfo) context.Context {
+	return context.WithValue(ctx, requestInfoKey{}, info)
+}
+
+// RequestInfoFromContext 读取请求侧信息；未注入返回零值（ip/ua 落空串，
+// 与旧行为一致）。
+func RequestInfoFromContext(ctx context.Context) RequestInfo {
+	if ctx == nil {
+		return RequestInfo{}
+	}
+	info, _ := ctx.Value(requestInfoKey{}).(RequestInfo)
+	return info
 }
 
 // LoginEventSink 投递登录日志与 last_login_at 更新（实现方走延迟队列）。
@@ -133,13 +168,19 @@ func (t *Terminal) Complete(ctx context.Context, p *token.LoginTokenPayload) (*S
 	}
 
 	// 日志 + last_login 走注入的投递接口；投递失败不回滚登录（主链路零同步写库）。
+	// ip/ua 取 ctx 携带的请求侧信息（装配层 http 包装器注入）；session_id
+	// 取刚建会话的 sid（session_id 与 device_hint 归 detail，§4.6 行 798）。
 	if t.Events != nil {
+		info := RequestInfoFromContext(ctx)
 		_ = t.Events.Record(ctx, LoginEvent{
 			UID:      p.Uid,
 			TID:      p.Tid,
 			ClientID: clientID,
 			AMR:      append([]string(nil), p.Amr...),
 			AuthTime: at,
+			IP:       info.IP,
+			UA:       info.UA,
+			SessionID: sid,
 		})
 	}
 

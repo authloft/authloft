@@ -117,6 +117,16 @@ type fakeFailures struct {
 
 func (f fakeFailures) Count(context.Context, string) (int64, error) { return f.n, f.err }
 
+// stubUserRef 固定引用的解析器 Fake：默认装进 testEngineDeps，保证既有
+// 失败计数用例（fakeFailures{n}）不依赖真实键推导也能覆盖 gate 行为；
+// 真实链路键口径断言见 pwfailchain_test.go。
+type stubUserRef struct {
+	ref string
+	err error
+}
+
+func (s stubUserRef) UserRef(context.Context, string) (string, error) { return s.ref, s.err }
+
 type fakeUsers struct {
 	user *model.User
 	err  error
@@ -199,6 +209,7 @@ type testEngineDeps struct {
 	users    *fakeUsers
 	creds    *fakeCredentials
 	failures PasswordFailures
+	userRef  UserRefResolver
 	verifier *fakeCaptchaVerifier
 	sessions *fakeSessionWriter
 	oidc     *fakeOIDCIssuer
@@ -231,6 +242,9 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 	return &testEngineDeps{
 		settings: s, registry: reg, gate: gate, mfa: mfa, terminal: terminal,
 		users: users, creds: creds, verifier: verifier,
+		// 默认固定引用解析器：失败计数用例不关心键推导（真实键口径
+		// 断言在 pwfailchain_test.go）。
+		userRef:  stubUserRef{ref: "ref-1"},
 		sessions: sessions, oidc: oidc, events: events, sync: sync,
 	}
 }
@@ -244,6 +258,7 @@ func (d *testEngineDeps) engine(state *State) *Engine {
 		MFA:        d.mfa,
 		Terminal:   d.terminal,
 		Failures:   d.failures,
+		UserRef:    d.userRef,
 		Factor: FactorDeps{
 			CaptchaVerifier: fakeFactorCaptcha{},
 			Users:           d.users,
@@ -1057,4 +1072,83 @@ func TestEngineSinkSilentOnNonSuccess(t *testing.T) {
 			t.Fatalf("captcha_required 信封不得携带 session_token, got %q", resp.SessionToken)
 		}
 	})
+}
+
+// TestEngineSuccessCarriesRequestInfo 请求侧信息链路：装配层经
+// WithRequestInfo 注入 ctx 的 ip/ua 与终点建会话的 sid 随 LoginEvent 一起
+// 到达事件投递端；未注入时 ip/ua 为空串（与旧行为兼容），session_id 恒为
+// 本次会话。
+func TestEngineSuccessCarriesRequestInfo(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+
+	t.Run("injected", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+		e := deps.engine(testState(t, at))
+		ctx := WithRequestInfo(context.Background(), RequestInfo{IP: "203.0.113.7", UA: "ua-x"})
+		resp := e.Submit(ctx, "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "alice", Password: "p"},
+		})
+		if resp.Status != StatusSuccess {
+			t.Fatalf("resp = %+v", resp)
+		}
+		if len(deps.events.got) != 1 {
+			t.Fatalf("events = %+v, want 1", deps.events.got)
+		}
+		ev := deps.events.got[0]
+		if ev.IP != "203.0.113.7" || ev.UA != "ua-x" {
+			t.Fatalf("ip/ua = %q/%q, want 203.0.113.7/ua-x", ev.IP, ev.UA)
+		}
+		if ev.SessionID != "sid-1" {
+			t.Fatalf("session_id = %q, want sid-1", ev.SessionID)
+		}
+	})
+
+	t.Run("not injected keeps empty", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+		e := deps.engine(testState(t, at))
+		resp := e.Submit(context.Background(), "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "alice", Password: "p"},
+		})
+		if resp.Status != StatusSuccess {
+			t.Fatalf("resp = %+v", resp)
+		}
+		ev := deps.events.got[0]
+		if ev.IP != "" || ev.UA != "" {
+			t.Fatalf("ip/ua = %q/%q, want empty when not injected", ev.IP, ev.UA)
+		}
+		if ev.SessionID != "sid-1" {
+			t.Fatalf("session_id = %q, want sid-1（sid 与注入无关）", ev.SessionID)
+		}
+	})
+}
+
+// TestRegisterDirectAmrInLoginEvent 注册直通入口补记本步因子：
+// password 直通注册未经 verify，amr 需在 set_password 步补齐——login_success
+// 事件的 amr 恒空缺陷在事件载荷处断言。
+func TestRegisterDirectAmrInLoginEvent(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	deps := newTestDeps(t, at)
+	deps.registry.factors[factor.FactorPassword] = passwordOnlyFactor()
+	fk := newSetPassFakes()
+	e := deps.engine(testState(t, at))
+	e.setpass = fk.deps(deps.settings)
+
+	resp := e.Submit(context.Background(), "register", Request{
+		Method: "password", Step: "set_password", Captcha: captchaSubmission(),
+		Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword},
+	})
+	if resp.Status != StatusSuccess {
+		t.Fatalf("status = %q, want success", resp.Status)
+	}
+	if len(deps.events.got) != 1 {
+		t.Fatalf("events = %+v, want 1", deps.events.got)
+	}
+	ev := deps.events.got[0]
+	if len(ev.AMR) != 1 || ev.AMR[0] != "password" {
+		t.Fatalf("amr = %v, want [password]", ev.AMR)
+	}
 }

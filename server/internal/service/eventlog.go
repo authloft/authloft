@@ -33,9 +33,9 @@ var _ orchestrator.LoginEventSink = (*LoginEventWriter)(nil)
 // 静默降级（§5.2 行 893），绝不回滚登录（terminal.go 行 135-144）。
 //
 // 字段映射：actor_type=user、actor_id/user_id=UID、client_id 原样、amr
-// 逗号连接（§4.6 行 774-775）。LoginEvent 不带 ip/ua/session_id：
-// ip/ua 本卡写空串（DDL 默认 ''，§4.6 行 776-777），session_id 与
-// device_hint 在 detail 中填空串（不改 orchestrator 接口）。
+// 逗号连接（§4.6 行 774-775）；ip/ua 原样落列（§4.6 行 776-777，
+// 未注入为空串）、session_id 进 detail（§4.6 行 798；device_hint 无数据源
+// 维持空串，不自造）。
 func (w *LoginEventWriter) Record(_ context.Context, ev orchestrator.LoginEvent) error {
 	if w == nil || w.Logs == nil {
 		return nil
@@ -54,7 +54,9 @@ func (w *LoginEventWriter) Record(_ context.Context, ev orchestrator.LoginEvent)
 		UserID:    ev.UID,
 		ClientID:  ev.ClientID,
 		AMR:       strings.Join(ev.AMR, ","),
-		Detail:    eventlog.DetailLoginSuccess(factor, mfaFactor, "", ""),
+		IP:        ev.IP,
+		UA:        ev.UA,
+		Detail:    eventlog.DetailLoginSuccess(factor, mfaFactor, ev.SessionID, ""),
 		CreatedAt: at,
 	})
 	w.Logs.PushLastLogin(ev.UID, at)

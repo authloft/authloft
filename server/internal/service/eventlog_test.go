@@ -63,17 +63,20 @@ type loginDetail struct {
 }
 
 // TestLoginEventWriterRecordMapsFields 校验 LoginEvent → login_success 行
-// 的字段映射（actor/user/client/amr/detail）与 last_login 任务（§4.6 行
-// 774-775、798、806）。
+// 的字段映射（actor/user/client/amr/ip/ua/detail）与 last_login 任务
+//（§4.6 行 774-775、776-777、798、806；ip/ua/session_id 落库）。
 func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 	w, exec, q := newLoginEventWriter()
 	const authTime = int64(1700000000)
 	ev := orchestrator.LoginEvent{
-		UID:      42,
-		TID:      "tid-1",
-		ClientID: "client-a",
-		AMR:      []string{"pwd", "otp"},
-		AuthTime: authTime,
+		UID:       42,
+		TID:       "tid-1",
+		ClientID:  "client-a",
+		AMR:       []string{"pwd", "otp"},
+		AuthTime:  authTime,
+		IP:        "203.0.113.7",
+		UA:        "ua-x",
+		SessionID: "sid-9",
 	}
 	if err := w.Record(context.Background(), ev); err != nil {
 		t.Fatalf("Record: %v", err)
@@ -121,9 +124,9 @@ func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 	if row.AMR != "pwd,otp" {
 		t.Errorf("amr = %q, want pwd,otp", row.AMR)
 	}
-	// 本卡无请求上下文：ip/ua 写空串（DDL 默认 ''，§4.6 行 776-777）。
-	if row.IP != "" || row.UA != "" {
-		t.Errorf("ip/ua = %q/%q, want empty strings", row.IP, row.UA)
+	// 请求侧信息原样落列（§4.6 行 776-777）。
+	if row.IP != "203.0.113.7" || row.UA != "ua-x" {
+		t.Errorf("ip/ua = %q/%q, want 203.0.113.7/ua-x", row.IP, row.UA)
 	}
 	if row.Target != "" {
 		t.Errorf("target = %q, want empty", row.Target)
@@ -139,9 +142,12 @@ func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 	if detail.Factor != "pwd" || detail.MFAFactor != "otp" {
 		t.Errorf("detail factor/mfa_factor = %q/%q, want pwd/otp", detail.Factor, detail.MFAFactor)
 	}
-	// LoginEvent 不含 session_id / device_hint：本卡写空串（不扩接口）。
-	if detail.SessionID != "" || detail.DeviceHint != "" {
-		t.Errorf("detail session_id/device_hint = %q/%q, want empty", detail.SessionID, detail.DeviceHint)
+	// session_id 落 detail（§4.6 行 798）；device_hint 无数据源维持空串。
+	if detail.SessionID != "sid-9" {
+		t.Errorf("detail session_id = %q, want sid-9", detail.SessionID)
+	}
+	if detail.DeviceHint != "" {
+		t.Errorf("detail device_hint = %q, want empty", detail.DeviceHint)
 	}
 
 	if want := "last_login:42"; lastKey != want {

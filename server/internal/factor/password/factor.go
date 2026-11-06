@@ -5,11 +5,8 @@ package password
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -203,42 +200,20 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 	return &factor.VerifyResult{Passed: true, UID: user.ID}, nil
 }
 
-// lookup 按 username → phone → email 顺序解析登录标识（§2.1 行 350）。
-// 均不存在返回 (nil, nil)；其它仓储错误向上传递。
+// lookup 委托共用 lookupIdentifier（与引擎读计数侧共用同一用户
+// 解析，保证「用户是否存在」两侧判定一致）。
 func (f *Factor) lookup(ctx context.Context, identifier string) (*model.User, error) {
-	if u, err := f.users.FindByUsername(ctx, identifier); err == nil {
-		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	if u, err := f.users.FindByPhone(ctx, identifier); err == nil {
-		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	if u, err := f.users.FindByEmail(ctx, identifier); err == nil {
-		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	return nil, nil
+	return lookupIdentifier(ctx, f.users, identifier)
 }
 
-// userRef 生成失败计数 / 封禁所用 user_ref（§8.1 行 1027）。
+// userRef 生成失败计数 / 封禁所用 user_ref：委托 UserRefOf 唯一格式定义
+// （§8.1 行 1027；两侧收敛）。
 func (f *Factor) userRef(ctx context.Context, identifier string, user *model.User) string {
-	if user != nil {
-		return strconv.FormatInt(user.ID, 10)
-	}
 	ip := ""
 	if f.ip != nil {
 		ip = f.ip.ClientIP(ctx)
 	}
-	// 未知 IP 用 "unknown" 兜底：共享桶宁可偏严，也不留空键造成限流旁路。
-	if ip == "" {
-		ip = "unknown"
-	}
-	sum := sha256.Sum256([]byte(identifier))
-	return ip + "|" + hex.EncodeToString(sum[:])
+	return UserRefOf(identifier, user, ip)
 }
 
 // onFailure 失败累计（§8.1 行 1026-1028）：达到封禁阈值即封禁并返回 locked。

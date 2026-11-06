@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -385,10 +386,17 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	}
 	fails := cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{BanTTL: pwOpts.BanTTL})
 
+	// 引擎读计数与因子写计数共用同一 user_ref 推导——同一 Users /
+	// IPResolver 实例注入两侧，键口径唯一定义在 factor/password
+	// UserRefResolver / UserRefOf。TODO(§8.1)：IPResolver 实现归后续实现
+	//（暂不并入），双侧共用 nil → "unknown" 兜底；落地时改此一处
+	// 即两侧同步生效。
+	var pwIP factorpassword.IPResolver
+	pwUserRef := factorpassword.UserRefResolver{Users: users, IP: pwIP}
+
 	registry := factor.NewRegistry()
-	// TODO(§8.1)：ResetQueue / IPResolver 实现归后续实现（暂不并入），
-	// password.New 对二者 nil 安全（跳过清零 / user_ref 回退 "unknown"）。
-	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, nil, pwOpts)); err != nil {
+	// password.New 对 ResetQueue nil 安全（跳过清零 / user_ref 回退 "unknown"）。
+	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, pwIP, pwOpts)); err != nil {
 		return nil, nil, nil, err
 	}
 	// 注册令牌复用 login 域密钥（§1.4 五把密钥未单列 webauthn；purpose
@@ -615,6 +623,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		MFA:      mfa,
 		Terminal: terminal,
 		Failures: fails,
+		// 引擎读计数键经与因子写入侧同源的 user_ref 解析器（见上方
+		// pwUserRef 装配注释）。
+		UserRef: pwUserRef,
 		Factor: orchestrator.FactorDeps{
 			Users:       users,
 			Credentials: creds,
@@ -1034,12 +1045,46 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 				middleware.HTTPMetrics(
 					// Connect 前缀链 origin 用动态白名单形态（与 gin 版同一
 					// 判定核心；静态 HTTPOrigin 保留兼容存量调用方）。
-					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, rt.Handler),
+					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, connectRequestInfo(rt.Handler)),
 				),
 			),
 		))
 	}
 	return mux, apiGroup
+}
+
+// connectRequestInfo 给 connect 前缀链注入请求侧信息：http 挂载层
+// 是唯一能同时拿到 RemoteAddr 与头信息的层（connect 链 AnyRequest 只暴露
+// Header——session.RequestSignal 只采头、拿不到来源 IP 的先例），登录成功
+// 事件经 ctx 带到 orchestrator.Terminal.Complete，落 event_log.ip / ua
+//（§4.6 行 776-777）。所有 connect 域统一注入，消费点只有登录终点。
+func connectRequestInfo(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(orchestrator.WithRequestInfo(r.Context(), orchestrator.RequestInfo{
+			IP: clientIPFromRequest(r),
+			UA: r.UserAgent(),
+		})))
+	})
+}
+
+// clientIPFromRequest 来源 IP（审计用途 event_log.ip，非安全判定依据）：
+// 反代链优先 X-Forwarded-For 首段，次选 X-Real-IP，直连回落 RemoteAddr
+// host 段。直连场景客户端可伪造 XFF / X-Real-IP，如实记录——部署方负责
+// 在反代清洗入站头（§1.1 明文部署风险自负的同款口径）。
+func clientIPFromRequest(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			xff = xff[:i]
+		}
+		return strings.TrimSpace(xff)
+	}
+	if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
+		return rip
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // ssoSessionTTL session_ttl 键缺失 / 非法时的回落值（接口文档 §1.9、§5.6：
