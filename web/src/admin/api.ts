@@ -936,15 +936,15 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
 // ---------------------------------------------------------------------------
 // 工具三页族（§5.6 行 1288-1290 / §6 行 523-525）：ListEvents /
 // DecodeToken / GetStatus 三方法全部真调（后端已实装）；单测走 msw。
-// 预设视图口径（§5.6 行 1288「预设视图『登录记录』『敏感操作』」）：
+// 预设视图口径（§5.6 行 1297「预设视图『登录记录』『敏感操作』」）：
 // - 「登录记录」= event=login_success（《后端架构》§4.6 行 807 记录范围：
 //   记录成功登录 + 各类敏感操作，登录记录即 login_success 单值）；
-// - 「敏感操作」预设的事件类型集合文档未定义封闭集（《后端架构》§4.6
-//   event 值域以 `|...` 收尾、§12.9 行 1885 跨版本可能新增；ListEvents
-//   的 event 系单值正向精确过滤，无排除语义）——故停报该项，
-//   仅交付「登录记录」预设 + 手动按类型筛选（需求 §4.6 行 260「可按类型
-//   筛选」）。事件类型值域取《后端架构》§4.6 event 列注释，未知值原样
-//   兜底展示（string 承载）。
+// - 「敏感操作」= 已落地（需求 §4.6 行 260 定稿口径：改密、解绑、
+//   启用两步验证三类）：ListEvents 的 event 系 optional string 单值正向
+//   精确过滤（无集合/排除语义）→ 预设为前端组装概念——下拉限定三类单选、
+//   进预设出集默认 change_password（见 SENSITIVE_RECORDS_* 与
+//   eventTypeFilterOptions / resolveEventFilterOnPreset），构造函数零改动。
+//   事件类型值域取《后端架构》§4.6 event 列注释，未知值原样兜底展示。
 // ---------------------------------------------------------------------------
 
 /**
@@ -972,11 +972,12 @@ export function getStatus(): Promise<StatusResponse> {
 export const LOGIN_RECORDS_EVENT = 'login_success';
 
 /**
- * AuditPage 预设视图（§5.6 行 1288）：'all' 统一视图（event 手动筛选）/
- * 'login_records' 登录记录（event 强制 login_success）。「敏感操作」预设
- * 事件类型集合文档未定义 → 按 STOP ② 停报，不在值域内（见段落头注）。
+ * AuditPage 预设视图（§5.6 行 1297）：'all' 统一视图（event 手动筛选）/
+ * 'login_records' 登录记录（event 强制 login_success）/ 'sensitive_records'
+ * 敏感操作（需求 §4.6 行 260 定稿口径三类：改密、解绑、启用两步验证；
+ * 预设为前端组装概念，接口仅 event 单值筛选原语 → UI 限定三类单选）。
  */
-export type AuditPreset = 'all' | 'login_records';
+export type AuditPreset = 'all' | 'login_records' | 'sensitive_records';
 
 /** ListEvents 六筛选取值（§5.6 行 1288；undefined 即不下发 = 不过滤）。 */
 export interface AuditEventFilters {
@@ -995,6 +996,8 @@ export interface AuditEventFilters {
  * - login_records 预设：event 强制 login_success（手动 event 筛选让位）；
  *   其余五项筛选照常叠加（如「登录记录 + 操作者类型」）；
  * - all 预设：event 取手动筛选值，空 / 缺省即不过滤；
+ * - sensitive_records 预设：与 all 同分支——event 取手动单值
+ *   （UI 已限定三类单选，见 eventTypeFilterOptions），四项筛选照常叠加；
  * - 分页直映射；排序仅 order 非空时下发（dataTableLogic：清除排序后
  *   order=''，受控渲染与 wire 均只认非空 order，buildListUsersRequest 同口径）。
  */
@@ -1072,6 +1075,50 @@ export const EVENT_TYPE_FILTERS: readonly {
   value,
   textKey,
 }));
+
+/**
+ * 「敏感操作」预设事件类型集合（需求 §4.6 行 260 定稿口径：改密、
+ * 解绑、启用两步验证，三类逐字对应 event 值域）。ListEvents 的 event 系
+ * optional string 单值（events.proto）→ 预设在前端组装：下拉限定三类单选，
+ * 接口仅收单值正向过滤。
+ */
+export const SENSITIVE_RECORDS_EVENTS: readonly string[] = [
+  'change_password',
+  'thirdparty_unbind',
+  'enable_mfa',
+];
+
+/** 「敏感操作」预设默认事件（进预设即有数据，非空态）。 */
+export const SENSITIVE_RECORDS_DEFAULT_EVENT = 'change_password';
+
+/**
+ * 预设 → 事件类型下拉 optionList（§5.6 行 1297：预设为前端组装概念）：
+ * sensitive_records 限定三类（复用 EVENT_TYPE_FILTERS 对应项，顺序沿其
+ * 声明序）；all / login_records 全量 17 类（后者下拉禁用、构造函数强制）。
+ * 项形态与 EVENT_TYPE_FILTERS 同构（textKey 字段化）。
+ */
+export function eventTypeFilterOptions(
+  preset: AuditPreset,
+): readonly { readonly value: string; readonly textKey: I18nKey }[] {
+  if (preset === 'sensitive_records') {
+    return EVENT_TYPE_FILTERS.filter((option) =>
+      SENSITIVE_RECORDS_EVENTS.includes(option.value),
+    );
+  }
+  return EVENT_TYPE_FILTERS;
+}
+
+/**
+ * 预设切换 → event 筛选值：进「敏感操作」时现值入集保留、出集
+ * （含空）默认 change_password（列表立即有数据）；切其余预设保留现值
+ * （预设切换不清筛选，既有惯例——三类值在 17 类全量值域中均合法）。
+ */
+export function resolveEventFilterOnPreset(next: AuditPreset, current: string): string {
+  if (next === 'sensitive_records' && !SENSITIVE_RECORDS_EVENTS.includes(current)) {
+    return SENSITIVE_RECORDS_DEFAULT_EVENT;
+  }
+  return current;
+}
 
 /**
  * 操作者类型 actor_type → i18n 键（《后端架构》§4.6 actor_type 值域

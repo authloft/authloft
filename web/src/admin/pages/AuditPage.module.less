@@ -31,6 +31,14 @@
   width: 224px;
 }
 
+// 「敏感操作」预设含义提示：muted 小字，仅该预设选中时渲染。
+// （ProvidersPage .dragNote 同款。）
+.presetHint {
+  margin: 0 0 @spacing-md;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
 // 长文本列截断（全量内容经 title 悬浮展示；表格列宽受限）。
 .ellipsis {
   display: inline-block;

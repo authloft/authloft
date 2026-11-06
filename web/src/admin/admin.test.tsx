@@ -157,11 +157,13 @@ import {
  *   actor_id=0）/ bigIdText / eventDetailText / decodePayloadText +
  *   EVENT_TYPE_FILTERS 值域锚定《后端架构》§4.6（event 列 16 常量 + 行 809
  *   oidc_authorize_no_state，共 17 项；跨版本新增经 fallback 兜底不进下拉）。
- * ⚠️「敏感操作」预设停报：其事件类型集合文档未定义封闭集
- *   （《后端架构》§4.6 event 值域以 `|...` 开放 + ListEvents 的 event 系单值
- *   正向精确过滤、无排除语义），AuditPage 仅交付「登录记录」预设 + 手动
- *   事件类型 / 操作者类型筛选；六筛选中 actorId / userId / from / to 由
- *   buildListEventsRequest 全支持、UI 暴露归后续增强。
+ * ⚠️「敏感操作」预设曾暂缓（事件类型集合未定义封闭集）——现已按需求
+ *   §4.6 行 260 定稿口径落地三类（改密 / 解绑 / 启用两步验证）；
+ *   ListEvents 的 event 系 optional string 单值（events.proto）→
+ *   预设为前端组装概念：SENSITIVE_RECORDS_EVENTS 值域锚定 + 进预设出集
+ *   默认 change_password（eventTypeFilterOptions / resolveEventFilterOnPreset
+ *   预设映射收口 ./api，渲染不可测同上 Blocker）；构造函数零改动
+ *   （sensitive_records 与 all 同分支，wire 单值见下文 describe）。
  * AuditPage / StatusPage / DecodePage 渲染不可测（同上 Blocker）。
  *
  * 追加（admin 增强收尾）：四项筛选 UI 已暴露（上段「归后续
@@ -2901,6 +2903,128 @@ describe('buildListEventsRequest（§5.6 行 1288 六筛选 + §1.7 行 275-278 
     expect(req.userId).toBe(BigInt(1));
     expect(req.from).toBe(BigInt(1730000000));
     expect(req.to).toBe(BigInt(1730000600));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 「敏感操作」预设（需求 §4.6 行 260 定稿：改密、解绑、启用两步验证）
+// ---------------------------------------------------------------------------
+
+describe('SENSITIVE_RECORDS_EVENTS / eventTypeFilterOptions / resolveEventFilterOnPreset（预设映射）', () => {
+  test('SENSITIVE_RECORDS_EVENTS = 三类逐字对应 event 值域；默认事件 change_password', () => {
+    expect(apiMod.SENSITIVE_RECORDS_EVENTS).toEqual([
+      'change_password',
+      'thirdparty_unbind',
+      'enable_mfa',
+    ]);
+    expect(apiMod.SENSITIVE_RECORDS_DEFAULT_EVENT).toBe('change_password');
+    // 三类均在 17 类全量值域内（optionList 复用 EVENT_TYPE_FILTERS 对应项）。
+    const allValues = apiMod.EVENT_TYPE_FILTERS.map((option) => option.value);
+    for (const value of apiMod.SENSITIVE_RECORDS_EVENTS) {
+      expect(allValues).toContain(value);
+    }
+  });
+
+  test('eventTypeFilterOptions：sensitive_records 限定三类（沿 EVENT_TYPE_FILTERS 声明序）；切回 all / login_records 恢复 17 类全量', () => {
+    // 预设切换 optionList 限定三类（复用 EVENT_TYPE_FILTERS 对应项，value + textKey 同构）。
+    const sensitive = apiMod.eventTypeFilterOptions('sensitive_records');
+    expect(sensitive.map((option) => option.value)).toEqual([
+      'change_password',
+      'enable_mfa',
+      'thirdparty_unbind',
+    ]);
+    for (const option of sensitive) {
+      expect(apiMod.EVENT_TYPE_FILTERS).toContainEqual(option);
+    }
+    // 切回「全部」恢复 17 类全量（login_records 下拉禁用但仍全量）。
+    const all = apiMod.eventTypeFilterOptions('all');
+    expect(all).toHaveLength(17);
+    expect(apiMod.eventTypeFilterOptions('login_records')).toHaveLength(17);
+    expect(all.map((option) => option.value)).toEqual(
+      apiMod.EVENT_TYPE_FILTERS.map((option) => option.value),
+    );
+  });
+
+  test('resolveEventFilterOnPreset：进敏感操作出集（含空）默认 change_password、入集保留；切其余预设保留现值', () => {
+    // 进预设：出集 / 空现值 → 默认 change_password（列表立即有数据非空态）。
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', '')).toBe('change_password');
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'settings_update')).toBe(
+      'change_password',
+    );
+    // 入集现值保留（用户已单选另两类亦然）。
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'change_password')).toBe(
+      'change_password',
+    );
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'thirdparty_unbind')).toBe(
+      'thirdparty_unbind',
+    );
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'enable_mfa')).toBe('enable_mfa');
+    // 切回「全部」/「登录记录」保留现值（预设切换不清筛选惯例；三类值在 17 类中合法）。
+    expect(apiMod.resolveEventFilterOnPreset('all', 'thirdparty_unbind')).toBe(
+      'thirdparty_unbind',
+    );
+    expect(apiMod.resolveEventFilterOnPreset('all', '')).toBe('');
+    expect(apiMod.resolveEventFilterOnPreset('login_records', 'change_password')).toBe(
+      'change_password',
+    );
+  });
+});
+
+describe('buildListEventsRequest × sensitive_records（构造函数零改动，wire 单值实证）', () => {
+  test('sensitive_records 与 all 同分支：event 取手动单值（三类逐一透传），四项筛选照常叠加', () => {
+    for (const value of apiMod.SENSITIVE_RECORDS_EVENTS) {
+      const req = apiMod.buildListEventsRequest(
+        'sensitive_records',
+        { event: value },
+        initialTableQuery(),
+      );
+      expect(req.event).toBe(value);
+    }
+    // 四项筛选在该预设下照常叠加（与 login_records 下行为一致）。
+    const req = apiMod.buildListEventsRequest(
+      'sensitive_records',
+      {
+        event: 'change_password',
+        actorType: 'user',
+        actorId: BigInt(42),
+        userId: BigInt(7),
+        from: BigInt(1730000000),
+        to: BigInt(1730000600),
+      },
+      initialTableQuery(),
+    );
+    expect(req.event).toBe('change_password');
+    expect(req.actorType).toBe('user');
+    expect(req.actorId).toBe(BigInt(42));
+    expect(req.userId).toBe(BigInt(7));
+    expect(req.from).toBe(BigInt(1730000000));
+    expect(req.to).toBe(BigInt(1730000600));
+  });
+
+  test('msw wire：sensitive_records × 默认 change_password → 请求体 event 为单值字符串（非集合）+ userId 叠加', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(LIST_EVENTS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ items: [], total: '0', page: '1', pageSize: '20' });
+      }),
+    );
+
+    await apiMod.listEvents(
+      apiMod.buildListEventsRequest(
+        'sensitive_records',
+        { event: apiMod.SENSITIVE_RECORDS_DEFAULT_EVENT, userId: BigInt(7) },
+        initialTableQuery(),
+      ),
+    );
+
+    // §1.12 wire：event 单值字符串直下（ListEvents 无集合过滤原语），userId 十进制。
+    expect(requestBody).toEqual({
+      event: 'change_password',
+      userId: '7',
+      page: '1',
+      pageSize: '20',
+    });
   });
 });
 
