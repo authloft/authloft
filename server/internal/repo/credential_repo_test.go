@@ -286,3 +286,42 @@ func TestCredentialRepoListByUser(t *testing.T) {
 		t.Fatalf("空集 = (%d 行, %v), want (0, nil)", len(empty), err)
 	}
 }
+
+// TestCredentialRepoDeleteByUserAndKind（env-skip）：按
+// user+kind 删行 round-trip——目标行删除后 Find 可判别未命中；同 user
+// 其他 kind 行与同 kind 其他 user 行不受影响；未命中返回包装的
+// ErrRecordNotFound（幂等语义归 service 判定）。
+func TestCredentialRepoDeleteByUserAndKind(t *testing.T) {
+	rp, _, _ := credentialTestSetup(t)
+	ctx := context.Background()
+	const uid, other = int64(301), int64(302)
+
+	for _, c := range []*model.UserCredential{
+		{UserID: uid, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x92}},
+		{UserID: uid, Kind: "password", Secret: []byte("h1")},
+		{UserID: other, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x93}},
+	} {
+		if err := rp.Create(ctx, c); err != nil {
+			t.Fatalf("Create %s 失败: %v", c.Kind, err)
+		}
+	}
+
+	// 删除 uid 的 mfa_setting 行（SetMfa 关闭路径的数据源动作）。
+	if err := rp.DeleteByUserAndKind(ctx, uid, "mfa_setting"); err != nil {
+		t.Fatalf("DeleteByUserAndKind 失败: %v", err)
+	}
+	if _, err := rp.FindByUserAndKind(ctx, uid, "mfa_setting"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("删除后 Find 应 ErrRecordNotFound, got %v", err)
+	}
+	// 他行不受影响：同 user 其他 kind、同 kind 其他 user。
+	if got, err := rp.FindByUserAndKind(ctx, uid, "password"); err != nil || got.Kind != "password" {
+		t.Errorf("同 user 其他 kind 行不应受影响: (%v, %v)", got, err)
+	}
+	if got, err := rp.FindByUserAndKind(ctx, other, "mfa_setting"); err != nil || got.UserID != other {
+		t.Errorf("同 kind 其他 user 行不应受影响: (%v, %v)", got, err)
+	}
+	// 再次删除（行已不存在）→ ErrRecordNotFound 可判别。
+	if err := rp.DeleteByUserAndKind(ctx, uid, "mfa_setting"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("未命中 Delete 应 ErrRecordNotFound, got %v", err)
+	}
+}

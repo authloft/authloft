@@ -141,6 +141,26 @@ func (r *CredentialRepo) SetEnabled(ctx context.Context, id int64, enabled bool)
 	return nil
 }
 
+// DeleteByUserAndKind 按 user_id + kind 定位删除凭证行（credential 职责
+// 含增删改查，§3 行 388 / 行 704；调用方：SetMfa 关闭 = 删除 mfa_setting
+// 行，接口文档 §3.2 行 862「行存在即顶层 enabled=true」⇒ 关闭 ⇔ 行不存在，
+// 既定口径）。「一行一种凭证」由 service 先查后写保证
+//（行 680-684，idx_user_kind 非唯一），本方法不做行数断言——多行命中
+// 一并删除属脏数据防御，正常数据不发生；未命中返回包装的
+// gorm.ErrRecordNotFound（幂等语义归 service 判定）。
+func (r *CredentialRepo) DeleteByUserAndKind(ctx context.Context, userID int64, kind string) error {
+	res := r.db.WithContext(ctx).
+		Where("user_id = ? AND kind = ?", userID, kind).
+		Delete(&model.UserCredential{})
+	if res.Error != nil {
+		return fmt.Errorf("credential repo: delete by user kind: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("credential repo: delete by user kind: %w", gorm.ErrRecordNotFound)
+	}
+	return nil
+}
+
 // MarshalCredentialMeta 将 CredentialMeta（接口文档 §12.2 行 1703-1717，
 // 对应 user_credential.meta 列，VARBINARY Protobuf 序列化）编码为存储
 // 字节。nil 输入返回 nil（「无 meta」写入 NULL 列）；编码错误原样包装。
