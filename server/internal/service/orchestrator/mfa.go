@@ -58,8 +58,9 @@ func NewMFABuilder(users factor.UserRepo, creds MFACredentialReader, s SettingsR
 // 随 totp 生效（§5.6 行 1319-1321）。
 var mfaOrder = []string{"totp", "otp_sms", "otp_email", "webauthn"}
 
-// Build 返回 (mfa, required, err)。required 仅在全局 mfa_enabled、用户
-// mfa_required=1 且至少存在一个可用二次因子时为 true。
+// Build 返回 (mfa, required, err)。required 仅在全局 mfa_enabled、用户需
+// 二次验证（策略强制 user.mfa_required=1 ∨ 用户自选启用 mfa_setting 行，
+// 见下行注释）且至少存在一个可用二次因子时为 true。
 func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, error) {
 	if uid == 0 || b.Users == nil {
 		return nil, false, nil
@@ -68,8 +69,23 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 	if err != nil {
 		return nil, false, err
 	}
-	if user == nil || user.MfaRequired != 1 {
+	if user == nil {
 		return nil, false, nil
+	}
+	// 方案 B（读取兼容，2026-11-06 定稿）：二次验证触发 =
+	// 策略强制（user.mfa_required=1，列语义保持「系统强制」，后端架构 §4
+	// 行 649）∨ 用户自选启用（mfa_setting 行存在且 is_enabled=1——kind 与
+	// account/mfa.go:99 同值，接口文档 §3.2 行 868「行存在即顶层
+	// enabled=true」同源；SetMfa 关闭 = 删行，登录侧随读随消，关闭守卫与
+	// mfaPolicy 投影零改动）。存量「行存在但列为 0」经读取自动兼容，零迁移。
+	if user.MfaRequired != 1 {
+		userEnabled, err := b.hasCredential(ctx, uid, "mfa_setting")
+		if err != nil {
+			return nil, false, err
+		}
+		if !userEnabled {
+			return nil, false, nil
+		}
 	}
 	if !boolSetting(b.Settings, settings.KeyMfaEnabled, true) {
 		return nil, false, nil
