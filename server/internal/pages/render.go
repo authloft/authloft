@@ -134,9 +134,10 @@ type staticBaseCSP struct{ settings SettingsReader }
 
 // StaticBaseCSPSupporter 构造把 CDN static_base 追加进 CSP 资源类指令的
 // middleware.CSPSupporter（bootstrap 页面路由组装配注入 settings 快照；
-// CSP 规范同名指令多次出现取并集，追加片段与中间件基线直接拼接即语义
-// 合并，见 csp.go CSPSupporter 注）。非 CDN（同域 /assets 或相对路径）时
-// 返回空片段，不产生空指令。
+// 同名指令由 CSP 中间件按指令名聚合去重后单条输出——后端架构 §9.4 /
+// 接口文档 §8，非拼接追加（CSP 规范同名指令仅首条生效），见 csp.go
+// CSPSupporter 注）。非 CDN（同域 /assets 或相对路径）时返回空片段，
+// 不产生空指令。
 func StaticBaseCSPSupporter(s SettingsReader) middleware.CSPSupporter {
 	return staticBaseCSP{settings: s}
 }

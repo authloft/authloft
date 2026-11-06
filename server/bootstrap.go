@@ -155,9 +155,12 @@ type assembled struct {
 	// 六步之四，§9.3 行 1110）；imageCaptcha 供 sso 域 CreateCaptchaImage
 	// 生成自绘图形码。catalog / verifier 每次 Evaluate 现算（§9.1 行 1094
 	// 不缓存），provider 行源走 repo 直查（不与 Loader 的 60s LRU 共用，
-	// 保证「每次生成时重新判定」）。
-	gate         *captcha.Gate
-	imageCaptcha *captcha.ImageCaptcha
+	// 保证「每次生成时重新判定」）。catalog 同实例兼任 CSP
+	// supporter（§9.4：CSP 贡献与下发配置、拦截校验同源），registerPages
+	// 页面路由组的 CSP 中间件追加注入。
+	gate           *captcha.Gate
+	captchaCatalog *captcha.Catalog
+	imageCaptcha   *captcha.ImageCaptcha
 
 	// factors 因子注册表（§3.8）：buildEngine 构造后挂入，供页面壳
 	// methods 快照按 settings.login_methods 过滤读取（接口文档 §2.1 / §8）。
@@ -678,11 +681,14 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// + verifier（image GETDEL 一次性 + 三家第三方 siteverify）。同一
 	// CaptchaStore 同时供 verifier 的 image 校验与 CreateCaptchaImage 生成
 	//（al:cap:{id} 单一键空间，§9.2）。provider 行源走 repo 直查（避免
-	// 并行占用 provider 包，不引入 Loader）。
+	// 并行占用 provider 包，不引入 Loader）。catalog 提为共享单例
+	//——Gate 与 registerPages 的 CSP supporter 复用同一实例（§9.4 行
+	// 1134「CSP 贡献与下发配置、拦截校验同源」）。
 	captchaStore := cache.NewCaptchaStore(rdb)
 	captchaSrc := captchaProviderSource{providers: repo.NewProviderRepo(db)}
+	deps.captchaCatalog = captcha.NewCatalog(store, captchaSrc)
 	deps.gate = captcha.NewGate(store,
-		captcha.NewCatalog(store, captchaSrc),
+		deps.captchaCatalog,
 		captcha.NewVerifier(captchaSrc, captchaStore, captcha.VerifierOptions{}))
 	deps.imageCaptcha = captcha.NewImageCaptcha(captchaStore)
 
@@ -1253,7 +1259,11 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // nonce 写 ctx（renderShell 消费）+ 输出基线 CSP 头（不破坏前端加载）；
 // 阶段 C 起 CSP() 挂 pages.StaticBaseCSPSupporter——static_base 为 CDN
 // 绝对地址时每请求向 script / style / font 三条资源类指令追加 CDN 源
-// （§3.13 行 488；script-src CDN 源仅为 CSP2 回退）。依赖全部复用
+// （§3.13 行 488；script-src CDN 源仅为 CSP2 回退）；追加第二个
+// supporter = deps.captchaCatalog（§9.4 provider 贡献源：按「当前启用
+// 且已配置」的 captcha Provider 贡献 frame/connect/style 源，与 Gate
+// 下发配置同实例同源；中间件按指令名聚合去重单条输出，未启用零写入）。
+// 依赖全部复用
 // assemble 共享单例：settings / provider Loader / factor
 // 注册表 / captcha Gate / sync_payload Codec / OIDC JWT / ClientRepo；
 // 登出同步首跳构造复用 service.SyncCookieURLBuilder（与登录终点 Terminal
@@ -1262,7 +1272,10 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // deps.codeIssuer（与 Terminal 共用同一实例，§14.2 行 1642 不得各写
 // 一份）、审计走 eventlog.Writer → deps.queue（resetAuditSink 同款链）。
 func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
-	pages.Register(r.Group("", middleware.CSP(pages.StaticBaseCSPSupporter(deps.settings))), pages.Deps{
+	pages.Register(r.Group("", middleware.CSP(
+		pages.StaticBaseCSPSupporter(deps.settings),
+		deps.captchaCatalog,
+	)), pages.Deps{
 		Root:       cfg.Authloft.Root,
 		RootDomain: rootHost(cfg.Authloft.Root),
 		Settings:   deps.settings,

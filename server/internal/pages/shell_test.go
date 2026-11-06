@@ -355,8 +355,8 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 
 // TestShellCSPSupporterCDN 生产装配路径（bootstrap registerPages 同构）：
 // middleware.CSP 挂 pages.StaticBaseCSPSupporter——static_base 为 CDN
-// 绝对地址时头追加 script / style / font 三段 CDN 源；同域 /assets 时
-// 不追加。同名指令多次出现取并集（csp.go 注）。
+// 绝对地址时 script / style / font 三指令与基线**合并单条输出**（基线源
+// 在前 + CDN 源追加，同名指令合并语义）；同域 /assets 时不追加。
 func TestShellCSPSupporterCDN(t *testing.T) {
 	f := newFixture(t)
 	gin.SetMode(gin.TestMode)
@@ -378,17 +378,25 @@ func TestShellCSPSupporterCDN(t *testing.T) {
 		t.Errorf("同域 CSP = %q, want 基线 %q", got, want)
 	}
 
-	// CDN 绝对地址：追加三段 CDN 源（script-src CDN 源仅为 CSP2 回退）。
+	// CDN 绝对地址：三指令合并单条（基线源在前 + CDN 源追加；script-src
+	// CDN 源仅为 CSP2 回退）。
 	f.settings.m[settings.KeyStaticBase] = "https://cdn.example.com/static/"
 	rec = doGet(t, r, "/admin/")
 	csp = rec.Header().Get("Content-Security-Policy")
+	nonce = nonceFromCSP(t, csp)
 	for _, want := range []string{
-		"script-src https://cdn.example.com",
-		"style-src https://cdn.example.com",
-		"font-src https://cdn.example.com",
+		"script-src 'nonce-" + nonce + "' 'strict-dynamic' https://cdn.example.com",
+		"style-src 'nonce-" + nonce + "' 'self' https://cdn.example.com",
+		"font-src 'self' https://cdn.example.com",
 	} {
 		if !strings.Contains(csp, want) {
-			t.Errorf("CDN CSP 头缺追加段 %q：%s", want, csp)
+			t.Errorf("CDN CSP 头缺合并指令 %q：%s", want, csp)
+		}
+	}
+	// 同名指令合并语义：三指令整串各只出现一次（接口文档 §8 行 1538）。
+	for _, d := range []string{"script-src", "style-src", "font-src"} {
+		if n := strings.Count(csp, d); n != 1 {
+			t.Errorf("CDN CSP 头 %s 出现 %d 次, want 1（同名指令单条输出）：%s", d, n, csp)
 		}
 	}
 	// img / connect / default 不追加（§8 表：https: 已覆盖 CDN、API 恒同源）。
