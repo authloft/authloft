@@ -11,6 +11,10 @@
  * ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
  * 追加日志族：GetEvents + buildGetEventsRequest（§3.7 行 1041 本人
  * 登录记录分页；「仅成功记录」由服务端过滤，前端不发筛选参数）。
+ * 头像族迁文档位：GetConfig / PresignAvatar / CommitAvatar / proxy
+ * 直传四件薄封装迁 shared/api/account.ts（本模块转发保既有调用方零改动），
+ * useUpload + 上传编排 / 预校验迁 shared/hooks/useUpload.ts（前端架构 §2
+ * 行 174 / §3.2 行 321-322、344）。
  * UpdateProfile / ThirdpartyOauth 等仍随消费页面落地再封（ThirdpartyOauth
  * 实调归 OAuthCallbackPage b 分支联调批；api.ts 可封装方法但页面
  * 不消费桩方法）。
@@ -22,10 +26,12 @@
  * shared/hooks/useRequest（§3.2），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  *
- * 【纯逻辑落位说明】头像上传编排 / 预校验与表单请求构造等可测纯函数落在本
- * 模块（而非组件文件）：组件壳 import Semi 后，任何含其模块图的测试文件都
- * 在 rstest 0.12.5 加载期崩（实测 blocker，见 account.test.tsx 头注），
- * 本模块零 Semi 依赖、node 可测（前端架构 §8 行 626 的被测对象在此）。
+ * 【纯逻辑落位说明】表单请求构造等可测纯函数落在本模块（而非组件文件）：
+ * 组件壳 import Semi 后，任何含其模块图的测试文件都在 rstest 0.12.5 加载期
+ * 崩（实测 blocker，见 account.test.tsx 头注），本模块零 Semi 依赖、
+ * node 可测（前端架构 §8 行 626 的被测对象在此）。头像上传编排 / 预校验随
+ * useUpload 迁文档位 shared/hooks/useUpload.ts（同样零 Semi 依赖、
+ * node 可测；被测对象移至彼处，测试直引新落位，本模块不转发）。
  *
  * 401 统一跳登录（§5 行 480）：shared/api/http 的错误归一层只做
  * ConnectError → ApiError（无统一跳转），判定 + 跳转的职责在本 entry：
@@ -39,20 +45,9 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type {
-  AccountConfigResponse,
-  AvatarPresignResponse,
-  AvatarResponse,
-  AvatarUploadConfig,
-  CommitAvatarRequest,
   MfaPolicyMethod,
   OkResponse,
-  PresignAvatarRequest,
   ProfileResponse,
-} from '../gen/proto/api/account/v1/profile_pb';
-import {
-  AvatarResponseSchema,
-  CommitAvatarRequestSchema,
-  PresignAvatarRequestSchema,
 } from '../gen/proto/api/account/v1/profile_pb';
 import type {
   BindEmailRequest,
@@ -109,7 +104,7 @@ import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
 import { MAX_POLL_SECONDS, type QRPanelPhase } from '../shared/components/QRCodePanel';
 import { ApiError, resolveCode } from '../shared/api/errors';
-import { accountClient, postForm, type UploadProgress } from '../shared/api/http';
+import { accountClient } from '../shared/api/http';
 import { authorize } from '../shared/api/sso';
 import type { TableQueryState } from '../shared/app-ui/dataTableLogic';
 import { t } from '../shared/i18n';
@@ -120,9 +115,8 @@ import {
   validatePassword,
   type PasswordWeakReason,
 } from '../shared/utils/validate';
-import { loadAccountBootstrap } from './bootstrap';
 
-/** 用户资料（§3.2 行 819；§3.1 统一用户信息结构，无入参）。 */
+/** 用户资料（§3.2 行 836；§3.1 统一用户信息结构，无入参）。 */
 export function getProfile(): Promise<ProfileResponse> {
   return accountClient.getProfile({});
 }
@@ -143,10 +137,19 @@ export function isUnauthenticatedError(error: unknown): boolean {
 // 安全中心族封装（§3.2-§3.4 / §10.8）
 // ---------------------------------------------------------------------------
 
-/** 安全中心配置（§3.2 行 819）：avatarUpload / mfaPolicy / captcha / hasPassword。 */
-export function getConfig(): Promise<AccountConfigResponse> {
-  return accountClient.getConfig({});
-}
+/**
+ * 头像族迁移收编（§3.2 行 831-868）：GetConfig / PresignAvatar / CommitAvatar /
+ * proxy 直传 uploadAvatarProxy 四件薄封装已迁文档位 shared/api/account.ts
+ * （前端架构 §3.1 行 321 薄封装口径），此处转发保既有调用方（SecurityPage
+ * 等）零改动——实现唯一、注释见彼处。proxy / direct 模式差异归
+ * shared/hooks/useUpload，不外泄到本层。
+ */
+export {
+  commitAvatar,
+  getConfig,
+  presignAvatar,
+  uploadAvatarProxy,
+} from '../shared/api/account';
 
 /** 修改密码（§3.3 行 855-862）：成功空响应（OkResponse）；全会话失效由调用方消化。 */
 export function changePassword(request: ChangePasswordRequest): Promise<OkResponse> {
@@ -161,139 +164,6 @@ export function bindPhone(request: BindPhoneRequest): Promise<OkResponse> {
 /** 邮箱绑定 / 换绑（§3.4 行 872-873）：两步同端点，step=challenge｜verify。 */
 export function bindEmail(request: BindEmailRequest): Promise<OkResponse> {
   return accountClient.bindEmail(request);
-}
-
-/** direct 模式取预签名（§3.2 行 822 / §10.8）。 */
-export function presignAvatar(request: PresignAvatarRequest): Promise<AvatarPresignResponse> {
-  return accountClient.presignAvatar(request);
-}
-
-/** direct 模式确认上传（§3.2 行 823）：仅记录已上传，不回读校验。 */
-export function commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse> {
-  return accountClient.commitAvatar(request);
-}
-
-/**
- * proxy 模式头像直传（§3.2 行 821：POST /api/account/avatar，REST 豁免，§1.0）：
- * 不走 transport，经 shared/api/http 的 postForm（XHR 进度 + 同口径错误归一）。
- * URL 前缀取 ./bootstrap 归一后的 al_root——与 transport baseUrl（shared/api/http
- * 的 resolveBaseUrl，同口径但不导出）一致；shared 层禁止 import entry（§9 第 13 条）。
- */
-export function uploadAvatarProxy(
-  formData: FormData,
-  onUploadProgress?: (progress: UploadProgress) => void,
-): Promise<AvatarResponse> {
-  return postForm(`${loadAccountBootstrap().alRoot}/api/account/avatar`, formData, {
-    res: AvatarResponseSchema,
-    onUploadProgress,
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 头像上传纯逻辑（§3.2 / §10.8 唯一流程；node 可测，落位说明见文件头）
-// ---------------------------------------------------------------------------
-
-/**
- * §3.2 行 826：avatar_storage_provider 未配置时 GetConfig 下发零值投影
- * {mode:proxy, maxSize:0, allowedTypes:[]}（protojson 省略零值 → 解码为
- * 0n / []），前端据此隐藏上传入口；配置未加载（undefined）同样隐藏。
- * 两信号任一为零即视为不可上传（零值投影两者同时为零，此处保守取或）。
- */
-export function isUploadEntryHidden(config: AvatarUploadConfig | undefined): boolean {
-  if (config === undefined) {
-    return true;
-  }
-  return config.maxSize <= BigInt(0) || config.allowedTypes.length === 0;
-}
-
-/**
- * 上传前体积 / 类型预校验（§3.2 行 852 / 前端架构 §3.2 useUpload 关键约束）：
- * 返回码与后端一致（file_too_large / file_type_not_allowed，§1.6 封闭集），
- * 文案经 shared/i18n 的 errors.code.<code> 同一份字典（§8 行 626「文案与
- * 后端一致」）；服务端仍是权威（PresignAvatar 同口径校验）。
- */
-export function validateAvatarFile(
-  config: AvatarUploadConfig,
-  file: Pick<File, 'size' | 'type'>,
-): 'file_too_large' | 'file_type_not_allowed' | undefined {
-  if (config.maxSize > BigInt(0) && BigInt(file.size) > config.maxSize) {
-    return 'file_too_large';
-  }
-  if (config.allowedTypes.length > 0 && !config.allowedTypes.includes(file.type)) {
-    return 'file_type_not_allowed';
-  }
-  return undefined;
-}
-
-/** 头像上传依赖（proxy 一支 / direct 三支）；测试可注入假实现。 */
-export interface AvatarUploadDeps {
-  uploadProxy(
-    formData: FormData,
-    onUploadProgress?: (progress: UploadProgress) => void,
-  ): Promise<AvatarResponse>;
-  presignAvatar(request: PresignAvatarRequest): Promise<AvatarPresignResponse>;
-  commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse>;
-  putToStorage(url: string, headers: Record<string, string>, file: File): Promise<void>;
-}
-
-/**
- * direct 模式对象存储直传（前端架构 §3.2 行 328 / §10.8）：PUT uploadUrl 携带
- * presign 下发的 headers（如 Content-Type）、不带 Cookie（不用 credentials）；
- * 非 2xx 按 §3.2 行 826 映射 internal（未知异常，不新增错误码）。
- */
-async function putAvatarToStorage(
-  url: string,
-  headers: Record<string, string>,
-  file: File,
-): Promise<void> {
-  const response = await fetch(url, { method: 'PUT', headers, body: file });
-  if (!response.ok) {
-    throw new ApiError({ httpStatus: 0, code: 'internal', message: '', requestId: '' });
-  }
-}
-
-/** 真实依赖（生产与 msw 集成测试共用）。 */
-export const avatarUploadDeps: AvatarUploadDeps = {
-  uploadProxy: uploadAvatarProxy,
-  presignAvatar,
-  commitAvatar,
-  putToStorage: putAvatarToStorage,
-};
-
-/**
- * 头像上传编排（§10.8 唯一流程，前端架构 §8 行 626 用例的被测对象）：
- * 预校验 → 按 mode 分支——proxy 一支（postForm multipart）；direct 三步
- * （PresignAvatar → PUT uploadUrl → CommitAvatar）。预校验失败抛 code 与
- * 后端一致的 ApiError（文案归 apiErrorText / i18n 字典）；mode 取值域
- * proxy｜direct（§3.2 行 826 闭合），非 direct 一律走 proxy 分支（保守）。
- */
-export async function uploadAvatarFile(
-  config: AvatarUploadConfig,
-  file: File,
-  deps: AvatarUploadDeps = avatarUploadDeps,
-  onUploadProgress?: (progress: UploadProgress) => void,
-): Promise<string> {
-  const invalid = validateAvatarFile(config, file);
-  if (invalid !== undefined) {
-    throw new ApiError({ httpStatus: 400, code: invalid, message: '', requestId: '' });
-  }
-  if (config.mode === 'direct') {
-    const presigned = await deps.presignAvatar(
-      create(PresignAvatarRequestSchema, {
-        filename: file.name,
-        contentType: file.type,
-        size: BigInt(file.size),
-      }),
-    );
-    await deps.putToStorage(presigned.uploadUrl, presigned.headers, file);
-    const committed = await deps.commitAvatar(
-      create(CommitAvatarRequestSchema, { key: presigned.key }),
-    );
-    return committed.url;
-  }
-  const formData = new FormData();
-  formData.append('file', file);
-  return (await deps.uploadProxy(formData, onUploadProgress)).url;
 }
 
 // ---------------------------------------------------------------------------

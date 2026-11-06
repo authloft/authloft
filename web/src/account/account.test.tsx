@@ -52,8 +52,11 @@ import { t } from '../shared/i18n';
  *   PresignAvatar / CommitAvatar 封装（msw 真实 transport 归一链）、
  *   proxy 直传 uploadAvatarProxy（FakeXhr，复用 shared/api/http.test.ts 桩
  *   模式）、头像两模式编排 uploadAvatarFile（§10.8：direct 三步走 + proxy
- *   得 url + 超限 / 类型预校验文案与后端一致，前端架构 §8 行 626）、表单
+ *   得 url + 超限 / 类型预校验文案与后端一致，前端架构 §8.2 行 648）、表单
  *   请求构造纯函数（buildChangePasswordRequest / buildBind 系）、apiErrorText。
+ *   薄封装经 account/api 转发自 shared/api/account（getConfig
+ *   等仍走 apiMod）；上传编排 / 预校验直引新落位 shared/hooks/useUpload
+ *   （uploadMod，被测对象移位、断言零改动）。
  * - MFA + 通行密钥族：GetMfa / SetMfa（buildSetMfaRequest：追加 /
  *   移除 / required 锁死）/ BindTotp 两步（challenge wire 省略零值 + verify
  *   回传 secret）/ GetRecoveryCodes / RegenerateRecoveryCodes（action=
@@ -180,12 +183,14 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
 let ssoMod: typeof import('../shared/api/sso');
+let uploadMod: typeof import('../shared/hooks/useUpload');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   bootstrapMod = await import('./bootstrap');
   apiMod = await import('./api');
   ssoMod = await import('../shared/api/sso');
+  uploadMod = await import('../shared/hooks/useUpload');
 });
 
 beforeEach(() => {
@@ -413,7 +418,7 @@ describe('api.getConfig（§3.2 行 819）', () => {
     expect(config.avatarUpload?.mode).toBe('proxy');
     expect(config.avatarUpload?.maxSize).toBe(BigInt(0));
     expect(config.avatarUpload?.allowedTypes).toEqual([]);
-    expect(apiMod.isUploadEntryHidden(config.avatarUpload)).toBe(true);
+    expect(uploadMod.isUploadEntryHidden(config.avatarUpload)).toBe(true);
     expect(config.mfaPolicy).toBeUndefined(); // 页面侧按 §3.1 零值兜底
   });
 });
@@ -714,17 +719,18 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
 });
 
 // ---------------------------------------------------------------------------
-// 头像上传纯逻辑 + 两模式编排（§3.2 / §10.8 / 前端架构 §8 行 626）
+// 头像上传纯逻辑 + 两模式编排（§3.2 / §10.8 / 前端架构
+// §8.2 行 648；被测对象已迁 shared/hooks/useUpload，直引新落位）
 // ---------------------------------------------------------------------------
 
-describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
-  test('isUploadEntryHidden：未加载 / 零值投影 → true；正常配置 → false（行 826）', () => {
-    expect(apiMod.isUploadEntryHidden(undefined)).toBe(true);
-    expect(apiMod.isUploadEntryHidden(create(AvatarUploadConfigSchema, { mode: 'proxy' }))).toBe(
+describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => {
+  test('isUploadEntryHidden：未加载 / 零值投影 → true；正常配置 → false（行 842）', () => {
+    expect(uploadMod.isUploadEntryHidden(undefined)).toBe(true);
+    expect(uploadMod.isUploadEntryHidden(create(AvatarUploadConfigSchema, { mode: 'proxy' }))).toBe(
       true,
     );
     expect(
-      apiMod.isUploadEntryHidden(
+      uploadMod.isUploadEntryHidden(
         create(AvatarUploadConfigSchema, {
           mode: 'proxy',
           maxSize: BigInt(2097152),
@@ -734,19 +740,19 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
     ).toBe(false);
   });
 
-  test('validateAvatarFile：超限 / 类型不符（code 与后端一致，行 852）', () => {
+  test('validateAvatarFile：超限 / 类型不符（code 与后端一致，行 868）', () => {
     const config = create(AvatarUploadConfigSchema, {
       mode: 'proxy',
       maxSize: BigInt(100),
       allowedTypes: ['image/png'],
     });
-    expect(apiMod.validateAvatarFile(config, { size: 101, type: 'image/png' })).toBe(
+    expect(uploadMod.validateAvatarFile(config, { size: 101, type: 'image/png' })).toBe(
       'file_too_large',
     );
-    expect(apiMod.validateAvatarFile(config, { size: 50, type: 'image/gif' })).toBe(
+    expect(uploadMod.validateAvatarFile(config, { size: 50, type: 'image/gif' })).toBe(
       'file_type_not_allowed',
     );
-    expect(apiMod.validateAvatarFile(config, { size: 50, type: 'image/png' })).toBe(undefined);
+    expect(uploadMod.validateAvatarFile(config, { size: 50, type: 'image/png' })).toBe(undefined);
   });
 
   test('uploadAvatarFile 预校验失败：抛 code 与后端一致的 ApiError，文案同源 i18n 字典', async () => {
@@ -758,18 +764,18 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
 
     const oversize = new File([new Uint8Array(101)], 'a.png', { type: 'image/png' });
     const tooLargeError = (await captureRejection(
-      apiMod.uploadAvatarFile(config, oversize),
+      uploadMod.uploadAvatarFile(config, oversize),
     )) as ApiError;
     expect(tooLargeError).toBeInstanceOf(ApiError);
     expect(tooLargeError.code).toBe('file_too_large');
 
     const wrongType = new File([new Uint8Array(10)], 'a.gif', { type: 'image/gif' });
     const typeError = (await captureRejection(
-      apiMod.uploadAvatarFile(config, wrongType),
+      uploadMod.uploadAvatarFile(config, wrongType),
     )) as ApiError;
     expect(typeError.code).toBe('file_type_not_allowed');
 
-    // §8 行 626：预校验文案与后端一致（shared/i18n 同一份字典）。
+    // §8.2 行 648：预校验文案与后端一致（shared/i18n 同一份字典）。
     expect(t('errors.code.file_too_large')).toBe('文件大小超出限制');
     expect(t('errors.code.file_type_not_allowed')).toBe('文件类型不受支持');
     expect(apiMod.apiErrorText(tooLargeError)).toBe('文件大小超出限制');
@@ -810,10 +816,10 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
     });
     const file = new File([new Uint8Array(2048)], 'a.png', { type: 'image/png' });
 
-    const url = await apiMod.uploadAvatarFile(config, file);
+    const url = await uploadMod.uploadAvatarFile(config, file);
 
     expect(url).toBe('https://cdn.test/direct.png');
-    expect(order).toEqual(['presign', 'put', 'commit']); // direct 三步（§8 行 626）
+    expect(order).toEqual(['presign', 'put', 'commit']); // direct 三步（§8.2 行 648）
     expect(presignBody).toEqual({
       filename: 'a.png',
       contentType: 'image/png',
@@ -823,7 +829,7 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
     expect(commitBody).toEqual({ key: 'avatars/k1' });
   });
 
-  test('proxy 模式（mock GetConfig）：postForm 得 url + 进度透传（§10.8 / §8 行 626）', async () => {
+  test('proxy 模式（mock GetConfig）：postForm 得 url + 进度透传（§10.8 / §8.2 行 648）', async () => {
     server.use(
       http.post(CONFIG_URL, () =>
         HttpResponse.json({
@@ -839,10 +845,10 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8 行 626）', () => {
     if (avatarUpload === undefined) {
       throw new Error('GetConfig 未下发 avatarUpload');
     }
-    expect(apiMod.isUploadEntryHidden(avatarUpload)).toBe(false);
+    expect(uploadMod.isUploadEntryHidden(avatarUpload)).toBe(false);
 
     const progress: Array<{ loaded: number; total: number }> = [];
-    const url = await apiMod.uploadAvatarFile(
+    const url = await uploadMod.uploadAvatarFile(
       avatarUpload,
       new File([new Uint8Array(8)], 'a.png', { type: 'image/png' }),
       undefined,

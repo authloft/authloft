@@ -13,8 +13,8 @@
  *   并递增 detailVersion 驱动已展开的 GetMfa 明细重取）；
  * - 第三方账号：ThirdPartyList（§3.7 / §3.7.1：双列表 + redirect / qrcode
  *   通道绑定 + 解绑置灰）。
- * 头像上传挂载点为 ProfilePage（§5 行 491），AvatarUploader 组件本次
- * 交付但不落本页（doc 优先：SecurityPage 无头像区块）。
+ * 头像上传入口已挂载 ProfilePage（§5 行 513；本页无头像区块——
+ * SecurityPage 不渲染 AvatarUploader）。
  *
  * 【redirect 绑定回调落地（§3.7.1 A 行 969-971）】OAuthCallbackPage b 分支
  * 完成后 location.replace('/account/security?bind={success|ErrorInfo.code}')
