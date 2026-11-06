@@ -24,11 +24,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
 import {
+  adminReturnTo,
   apiErrorText,
   boundMfaFactors,
   buildGetUserEventsRequest,
@@ -124,13 +126,17 @@ export function UserDetailPage(props: {
     runEvents(buildGetUserEventsRequest(props.userId, eventsQuery)).catch(() => {});
   }, [runEvents, props.userId, eventsQuery]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     const authError = isUnauthenticatedError(error) || isUnauthenticatedError(eventsError);
     if (authError) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, eventsError, props.alRoot]);
+  }, [error, eventsError, props.alRoot, location]);
 
   /**
    * 解绑第三方（§5.4 行 1253）：Union 行不可单独解绑由服务端兜底

@@ -26,7 +26,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui-19';
-import { Link } from '@modern-js/runtime/router';
+import { Link, useLocation } from '@modern-js/runtime/router';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
@@ -34,6 +34,7 @@ import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { AdminUser } from '../../gen/proto/api/admin/v1/user_pb';
 import {
+  adminReturnTo,
   USER_STATUS_DATA_INDEX,
   USER_STATUS_DISABLED,
   USER_STATUS_ENABLED,
@@ -88,12 +89,16 @@ export function UsersPage(props: {
     run(buildListUsersRequest(appliedQ, query)).catch(() => {});
   }, [run, query, appliedQ]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   /** 搜索生效：applied 词落地 + 回第 1 页（§1.7：筛选 / 搜索变化重置页码）。 */
   function applySearch(): void {

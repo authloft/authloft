@@ -29,6 +29,7 @@ import {
 } from '../shared/app-ui/dataTableLogic';
 import { ApiError } from '../shared/api/errors';
 import { setLocale, t } from '../shared/i18n';
+import { DEFAULT_ACCOUNT_HOME, loginUrl, sanitizeReturnTo } from '../shared/urls';
 import { moveItem, SortableList } from './components/SortableList';
 import {
   ProviderCallbackHint,
@@ -3307,5 +3308,38 @@ describe('actorTypeLabel / actorText / bigIdText / eventDetailText / decodePaylo
     expect(apiMod.decodePayloadText({ uid: '1' })).toBe(
       JSON.stringify({ uid: '1' }, null, 2),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// adminReturnTo（14 处 401 跳登录带 returnTo；
+// 镜像 account 域 accountReturnTo）
+// ---------------------------------------------------------------------------
+
+describe('adminReturnTo（401 跳登录 returnTo 白名单形态，纯函数）', () => {
+  test('形态断言：列表页 / 参数页 / 带 query（/admin# 前缀，无重复段）', () => {
+    expect(apiMod.adminReturnTo('/providers', '')).toBe('/admin#/providers');
+    expect(apiMod.adminReturnTo('/users/123', '')).toBe('/admin#/users/123');
+    expect(apiMod.adminReturnTo('/providers/wechat_mp/edit', '')).toBe(
+      '/admin#/providers/wechat_mp/edit',
+    );
+    expect(apiMod.adminReturnTo('/settings', '?tab=mfa')).toBe('/admin#/settings?tab=mfa');
+    // 不得出现 /admin#/admin/… 重复段（前缀由 alRoot 提供）。
+    expect(apiMod.adminReturnTo('/providers', '')).not.toContain('/admin#/admin/');
+  });
+
+  test('白名单贯通：loginUrl 拼装 → 编码 returnTo → 解码以 /admin# 开头且过 sanitizeReturnTo', () => {
+    const returnTo = apiMod.adminReturnTo('/users/123', '');
+    const url = loginUrl('https://uc.example.com', returnTo);
+    expect(url).toContain('/sso/login?returnTo=');
+    const encoded = url.slice(url.indexOf('returnTo=') + 'returnTo='.length);
+    expect(encoded).not.toContain('/admin#'); // 已编码（# → %23）
+    expect(decodeURIComponent(encoded).startsWith('/admin#')).toBe(true);
+    expect(sanitizeReturnTo(decodeURIComponent(encoded))).toBe(returnTo);
+  });
+
+  test('非法 returnTo 由 sanitizeReturnTo 回落默认落点（防开放重定向兜底）', () => {
+    expect(sanitizeReturnTo('https://evil.example.com/x')).toBe(DEFAULT_ACCOUNT_HOME);
+    expect(sanitizeReturnTo('/admin/providers')).toBe(DEFAULT_ACCOUNT_HOME);
   });
 });

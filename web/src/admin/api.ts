@@ -256,6 +256,19 @@ export function isUnauthenticatedError(error: unknown): boolean {
 }
 
 /**
+ * 401 跳登录的 returnTo 拼装（returnTo 约定；镜像 account 域
+ * accountReturnTo 的签名与实现口径）：`/admin#` 前缀 + hash 内路径与 query
+ *（HashRouter 下 `useLocation()` 的 pathname / search 即 hash 内部分，
+ * `/admin` 前缀由 alRoot 提供，不得出现 `/admin#/admin/…` 重复段）——前缀
+ * 形态保证落在 shared/urls.ts `sanitizeReturnTo` 白名单内（仅放行
+ * `/account#` / `/admin#`，防开放重定向）。纯函数，node 可测（admin 域
+ * 15 处 401 跳登录消费）。
+ */
+export function adminReturnTo(pathname: string, search: string): string {
+  return `/admin#${pathname}${search}`;
+}
+
+/**
  * 404 掩护判定（§6 行 501 / 接口文档 §5 行 1149）：会话有效但非管理员 →
  * HTTP 404（`not_found`）；双条件口径与 isUnauthenticatedError 对称。
  */

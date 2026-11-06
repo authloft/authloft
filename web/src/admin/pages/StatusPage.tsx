@@ -14,10 +14,11 @@
  */
 import { useEffect, type ReactNode } from 'react';
 import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
-import { getStatus, isUnauthenticatedError } from '../api';
+import { adminReturnTo, getStatus, isUnauthenticatedError } from '../api';
 import { loginUrl } from '../bootstrap';
 import styles from './StatusPage.module.less';
 
@@ -34,12 +35,16 @@ export function StatusPage(props: {
     run().catch(() => {});
   }, [run]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。

@@ -35,11 +35,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
 import {
+  adminReturnTo,
   ACTOR_TYPE_FILTERS,
   actorText,
   bigIdText,
@@ -146,12 +148,16 @@ export function AuditPage(props: {
     toFilter,
   ]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   /** 预设变更（§5.6 行 1297）：回第 1 页重取（§1.7 语义）。 */
   function changePreset(next: AuditPreset): void {

@@ -27,7 +27,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
-import { useNavigate } from '@modern-js/runtime/router';
+import { useLocation, useNavigate } from '@modern-js/runtime/router';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
@@ -37,6 +37,7 @@ import {
 } from '../../gen/proto/api/admin/v1/provider_pb';
 import { GetProviderSchemaRequestSchema } from '../../gen/proto/api/admin/v1/schema_pb';
 import {
+  adminReturnTo,
   apiErrorText,
   buildListProvidersRequest,
   createProvider,
@@ -125,6 +126,8 @@ export function ProviderEditPage(props: {
   }, []);
 
   // 401 统一跳登录（§6 行 501；replace：管理面不留回退占位）。
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     const errors = [
       typesReq.error,
@@ -134,7 +137,9 @@ export function ProviderEditPage(props: {
       testReq.error,
     ];
     if (errors.some((error) => isUnauthenticatedError(error))) {
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
   }, [
     typesReq.error,
@@ -143,6 +148,7 @@ export function ProviderEditPage(props: {
     submitReq.error,
     testReq.error,
     props.alRoot,
+    location,
   ]);
 
   /** 新建模式切换 type → 重拉 schema 重置表单（编辑模式下拉锁定）。 */

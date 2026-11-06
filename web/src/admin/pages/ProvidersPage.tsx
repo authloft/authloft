@@ -28,7 +28,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
 import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
-import { Link, useNavigate } from '@modern-js/runtime/router';
+import { Link, useLocation, useNavigate } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
@@ -38,6 +38,7 @@ import { toCount } from '../../shared/utils/int';
 import { SetProviderEnabledRequestSchema } from '../../gen/proto/api/admin/v1/provider_pb';
 import type { Provider } from '../../gen/proto/api/admin/v1/provider_pb';
 import {
+  adminReturnTo,
   apiErrorText,
   buildListProvidersRequest,
   buildSortProvidersRequest,
@@ -105,12 +106,16 @@ export function ProvidersPage(props: {
     }
   }, [data]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   const total = data !== undefined ? toCount(data.total) : 0;
   // 拖拽排序需全量行集（部分行集重排会与未载入行冲突，见 buildListProvidersRequest）。

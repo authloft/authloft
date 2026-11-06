@@ -24,12 +24,14 @@ import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typograph
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { StringListEditor } from '../components/StringListEditor';
 import type { OidcClient } from '../../gen/proto/api/admin/v1/client_pb';
 import {
+  adminReturnTo,
   CLIENT_ID_MAX_LEN,
   CLIENT_NAME_MAX_LEN,
   OIDC_ACCESS_TTL_DEFAULT,
@@ -141,12 +143,16 @@ export function OidcClientsPage(props: {
     run(buildListOidcClientsRequest(query)).catch(() => {});
   }, [run, query]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     if (isUnauthenticatedError(error)) {
       // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   /** 写操作后就地刷新当前页列表。 */
   function refreshList(): void {
@@ -273,7 +279,9 @@ export function OidcClientsPage(props: {
       })
       .catch((err) => {
         if (isUnauthenticatedError(err)) {
-          window.location.replace(loginUrl(props.alRoot));
+          window.location.replace(
+            loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+          );
           return;
         }
         setViewError(apiErrorText(err));

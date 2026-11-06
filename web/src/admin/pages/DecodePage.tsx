@@ -17,9 +17,11 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
+import { useLocation } from '@modern-js/runtime/router';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { t, type I18nKey } from '../../shared/i18n';
 import {
+  adminReturnTo,
   apiErrorText,
   buildDecodeTokenRequest,
   decodePayloadText,
@@ -49,6 +51,8 @@ export function DecodePage(props: {
   const [payload, setPayload] = useState<JsonObject | undefined>(undefined);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
 
   /** 提交解码（§5.6 行 1289）：失败就地提示（invalid_request 语义经 apiErrorText 通用文案）。 */
   async function submit(): Promise<void> {
@@ -65,7 +69,9 @@ export function DecodePage(props: {
     } catch (error) {
       if (isUnauthenticatedError(error)) {
         // §6 行 501：401 统一跳登录（提交请求失败内联分流；本页无自动请求）。
-        window.location.replace(loginUrl(props.alRoot));
+        window.location.replace(
+          loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+        );
       } else {
         setDecodeError(apiErrorText(error));
       }

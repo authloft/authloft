@@ -37,10 +37,12 @@ import {
   Toast,
   Typography,
 } from '@douyinfe/semi-ui-19';
+import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { StringListEditor } from '../components/StringListEditor';
 import {
+  adminReturnTo,
   apiErrorText,
   buildSetSettingsRequest,
   getSettings,
@@ -232,12 +234,16 @@ export function SettingsPage(props: {
     }
   }, [data]);
 
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
   useEffect(() => {
     // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
     if (isUnauthenticatedError(error)) {
-      window.location.replace(loginUrl(props.alRoot));
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
 
   // 未保存改动（P1-8）= 草稿与已保存快照键级不等。
   const dirty = draft !== null && savedDraft !== null && !draftEquals(draft, savedDraft);
@@ -285,7 +291,9 @@ export function SettingsPage(props: {
       Toast.success(t('admin.settingsSaved'));
     } catch (err) {
       if (isUnauthenticatedError(err)) {
-        window.location.replace(loginUrl(props.alRoot));
+        window.location.replace(
+          loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+        );
         return;
       }
       Toast.error(apiErrorText(err));

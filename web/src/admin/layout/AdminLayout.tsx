@@ -37,7 +37,7 @@ import {
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { loginUrl, logoutUrl } from '../bootstrap';
-import { adminDisplayName, adminMeFailureAction, apiErrorText, getMe } from '../api';
+import { adminDisplayName, adminMeFailureAction, adminReturnTo, apiErrorText, getMe } from '../api';
 import styles from './AdminLayout.module.less';
 
 const { Sider, Header, Content } = Layout;
@@ -76,9 +76,13 @@ export function AdminLayout(props: {
     // §6 行 501：401 未携带有效会话 → 统一跳登录（adminMeFailureAction 分流，
     // 404 掩护等其余错误不跳，由渲染分支出错误态）。
     if (adminMeFailureAction(error) === 'redirect_login') {
-      window.location.replace(loginUrl(props.alRoot));
+      // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页；
+      // location 即上方导航用的 useLocation，HashRouter 下为 hash 内部分）。
+      window.location.replace(
+        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
+      );
     }
-  }, [error, props.alRoot]);
+  }, [error, props.alRoot, location]);
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
     // unhandled rejection；错误呈现 / 401 跳转由上 effect + 渲染分支处理。
