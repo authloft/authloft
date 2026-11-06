@@ -275,6 +275,10 @@ func doRPC(t *testing.T, h http.Handler, procedure string, msg proto.Message) *h
 	return rec
 }
 
+// strPtr UpdateProfile / UpdateUserProfile 的 proto3 optional 字符串字段
+//（has 位口径）取地址助手。
+func strPtr(s string) *string { return &s }
+
 // connectCodeOf 解 Connect 错误体的标准码（错误体恒 JSON，§1.5）。
 func connectCodeOf(t *testing.T, raw string) string {
 	t.Helper()
@@ -443,8 +447,8 @@ func TestUpdateUserProfilePartialMerge(t *testing.T) {
 
 	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{
 		Uid:      10086,
-		Nickname: "李四",
-		Profile:  &accountv1.UserProfile{Timezone: "Asia/Tokyo"},
+		Nickname: strPtr("李四"),
+		Profile:  &accountv1.UserProfile{Timezone: strPtr("Asia/Tokyo")},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
@@ -503,16 +507,20 @@ func TestUpdateUserProfilePartialMerge(t *testing.T) {
 	}
 }
 
-// TestUpdateUserProfileNoop 全字段未传 = 纯 no-op：仅 uid → 200 且零存储
-// 写入（连 updated_at 都不刷）；profile 消息在场但子字段全零值同样零写入
-//（「零值 = 未传」约定，§3.2 部分更新）。
+// TestUpdateUserProfileNoop 全字段未设置 = 纯 no-op：仅 uid → 200 且零存储
+// 写入（连 updated_at 都不刷）；profile 消息在场但子字段全未设置（指针
+// 全 nil）同样零写入（proto3 optional has 位口径，§3.2 行 837）。
 func TestUpdateUserProfileNoop(t *testing.T) {
 	users := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
 	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
 
 	for name, req := range map[string]*rpcv1.UpdateUserProfileRequest{
-		"uid only":    {Uid: 10086},
-		"zero fields": {Uid: 10086, Profile: &accountv1.UserProfile{}},
+		"uid only": {Uid: 10086},
+		// 子消息在场但全字段未设置：has 位无任何置位 → 零写入。
+		"empty profile": {Uid: 10086, Profile: &accountv1.UserProfile{}},
+		// 标量未设置（nil）与显式空串语义不同：本用例只覆盖前者（后者见
+		// TestUpdateUserProfileOptionalSemantics）。
+		"nil scalars": {Uid: 10086, Nickname: nil, AvatarUrl: nil},
 	} {
 		rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, req)
 		if rec.Code != http.StatusOK {
@@ -533,7 +541,7 @@ func TestUpdateUserProfileUserNotFound(t *testing.T) {
 	users := &fakeUserStore{userErr: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
 	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
 
-	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{Uid: 404, Nickname: "x"})
+	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{Uid: 404, Nickname: strPtr("x")})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -552,7 +560,7 @@ func TestUpdateUserProfileBadBirthday(t *testing.T) {
 
 	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{
 		Uid:     10086,
-		Profile: &accountv1.UserProfile{Birthday: "1990/01/01"},
+		Profile: &accountv1.UserProfile{Birthday: strPtr("1990/01/01")},
 	})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %s)", rec.Code, rec.Body.String())
@@ -566,6 +574,67 @@ func TestUpdateUserProfileBadBirthday(t *testing.T) {
 	}
 	if n := users.saveCallCount(); n != 0 {
 		t.Errorf("SaveProfile calls = %d, want 0（非法入参不落库）", n)
+	}
+}
+
+// TestUpdateUserProfileOptionalSemantics proto3 optional 三态回归
+//（§3.2 行 837 / 后端架构 §17 行 1789）：显式零值生效——gender=0 覆盖现行 1、
+// birthday / locale 显式空串清空现行值；未设置（nil）不覆盖——timezone 未
+// 设置保留现行、extra 未设置保留原字节；nickname 显式空串 = user 表列清空
+//（avatar_url 未设置保留）。对照旧「零值 = 未传」实现：gender=0 / 空串
+// birthday / locale 均曾被静默忽略，本用例锁定三者已改为 has 位生效。
+func TestUpdateUserProfileOptionalSemantics(t *testing.T) {
+	users := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{
+		Uid:      10086,
+		Nickname: strPtr(""),
+		Profile: &accountv1.UserProfile{
+			Gender:   new(int64), // 显式 0：覆盖现行 1（旧实现 0 被当未传忽略）
+			Birthday: strPtr(""), // 显式空串：清空现行 1990-01-01
+			Locale:   strPtr(""), // 显式空串：清空现行 zh-CN
+			// Timezone / Extra 未设置：保留现行值（has 位缺省不覆盖）
+		},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+
+	// user 表：恰一次列级更新，nickname 显式空串写入（avatar_url 未传不写）。
+	if n := users.columnCallCount(); n != 1 {
+		t.Fatalf("UpdateProfileColumns calls = %d, want 1", n)
+	}
+	cu := users.columnCalls[0]
+	if cu.nickname == nil || *cu.nickname != "" {
+		t.Errorf("column update nickname = %v, want 显式空串（has 位生效）", cu.nickname)
+	}
+	if cu.avatarURL != nil {
+		t.Errorf("avatarURL 列被写入 %q, want nil（未设置不覆盖）", *cu.avatarURL)
+	}
+
+	// user_profile 行：恰一次整行 UPSERT，三态逐项断言。
+	if n := users.saveCallCount(); n != 1 {
+		t.Fatalf("SaveProfile calls = %d, want 1", n)
+	}
+	saved := users.saveCalls[0]
+	if saved.Gender != 0 {
+		t.Errorf("gender = %d, want 0（显式置 0 生效，旧实现被忽略）", saved.Gender)
+	}
+	if saved.Birthday != nil {
+		t.Errorf("birthday = %v, want nil（显式空串清空）", saved.Birthday)
+	}
+	if saved.Locale != "" {
+		t.Errorf("locale = %q, want 空串（显式清空）", saved.Locale)
+	}
+	if saved.Timezone != "Asia/Shanghai" {
+		t.Errorf("timezone = %q, want Asia/Shanghai（未设置不覆盖）", saved.Timezone)
+	}
+	if string(saved.Extra) != string(wantProfile(t).Extra) {
+		t.Errorf("extra = %x, want 原字节（未设置不覆盖）", saved.Extra)
+	}
+	if saved.UpdatedAt.IsZero() {
+		t.Error("updated_at 未刷新（changed 路径应刷 updated_at）")
 	}
 }
 

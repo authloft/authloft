@@ -3,10 +3,10 @@
 // GetProfile 与 GetConfig（四件全量下发：avatarUpload / mfaPolicy /
 // captcha / hasPassword，接口文档 §3.2 行 818-847）及三方绑定族四
 // 方法（GetThirdpartyBindings / UnbindThirdparty / ThirdpartyOauth /
-// GetThirdpartyTicket，§3.7 / §3.7.1——编排全部在 service/account，本层只做
-// 请求绑定、Cookie 头解析、信封透传与 Connect 形态映射）；其余方法一律由
-// 生成的 UnimplementedAccountServiceHandler 返回 unimplemented（不自造错误
-// 信封）。
+// GetThirdpartyTicket，§3.7 / §3.7.1）；UpdateProfile 落地（§3.2 行
+// 837，proto3 optional 口径——编排全部在 service/account.ProfileService，
+// 本层只做会话判定与错误映射）；其余方法一律由生成的
+// UnimplementedAccountServiceHandler 返回 unimplemented（不自造错误信封）。
 package account
 
 import (
@@ -90,6 +90,13 @@ type Webauthn interface {
 	DeleteCredential(ctx context.Context, uid int64, id int64) error
 }
 
+// ProfileUpdater 资料更新 service 窄接口（§20 依赖注入）：生产注入
+// *accountsvc.ProfileService，测试可传 fake；nil（未装配）时 UpdateProfile
+// 返回 unimplemented。
+type ProfileUpdater interface {
+	UpdateProfile(ctx context.Context, uid int64, in *accountv1.UpdateProfileRequest) error
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go）。
 var (
@@ -108,6 +115,8 @@ var (
 	errWebauthnDuplicate = errors.New("credential already exists")
 	// errWebauthnInvalidStep step 取值非法。
 	errWebauthnInvalidStep = errors.New("invalid step")
+	// errProfileNotConfigured 未装配资料更新 service（测试桩）。
+	errProfileNotConfigured = errors.New("profile service not configured")
 )
 
 // Handler AccountService 服务实现。内嵌生成的 unimplemented 基类：本包未
@@ -121,13 +130,14 @@ type Handler struct {
 	captcha    CaptchaConfiger
 	thirdparty Thirdparty
 	webauthn   Webauthn
+	profile    ProfileUpdater
 }
 
 // New 构造 AccountService handler。thirdparty 为三方绑定族 service、
-// webauthn 为通行密钥族 service；测试 / 未装配时传 nil（对应方法
-// 返回 unimplemented）。
-func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn) *Handler {
-	return &Handler{users: users, creds: creds, settings: settings, providers: providers, captcha: captcha, thirdparty: thirdparty, webauthn: webauthn}
+// webauthn 为通行密钥族 service、profile 为资料更新 service；
+// 测试 / 未装配时传 nil（对应方法返回 unimplemented）。
+func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater) *Handler {
+	return &Handler{users: users, creds: creds, settings: settings, providers: providers, captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile}
 }
 
 // GetProfile（接口文档 §3.1 行 774-813 / §3.2 行 820）：从会话取 uid → 读
@@ -153,6 +163,48 @@ func (h *Handler) GetProfile(ctx context.Context, req *connect.Request[accountv1
 		return nil, fmt.Errorf("account handler: load profile: %w", err)
 	}
 	return connect.NewResponse(dto.AccountProfile(user, profile)), nil
+}
+
+// UpdateProfile（接口文档 §3.2 行 837）：当前用户资料的部分更新——proto3
+// optional has 位语义（2026-11-06 定稿）：未设置 = 不修改、显式设值（含
+// 0 / 空串）= 覆盖（gender 可改回 0=保密、字符串字段可显式清空）；
+// nickname / avatarUrl / profile 子字段分别按 has 处理；用户名 / 手机号 /
+// 邮箱不可由此修改（proto 不含该三项，契约结构上即不可改）。仅本人
+//（会话 uid，不接受任何入参目标）；全字段未设置 = 合法空操作（零写库
+// 直接成功，§3.2 无明确口径时由实现裁量）。会话要求同 GetProfile：session
+// 拦截器放行匿名（既定语义），ctx 无 uid 即 unauthenticated（401）；
+// 编排在 service/account.ProfileService，本层做会话判定与错误映射。
+func (h *Handler) UpdateProfile(ctx context.Context, req *connect.Request[accountv1.UpdateProfileRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.profile == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errProfileNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.profile.UpdateProfile(ctx, uid, req.Msg); err != nil {
+		return nil, mapProfileError("update profile", err)
+	}
+	// 成功为空响应（§3.2 行 837）：零值消息 protojson 输出 {}。
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// mapProfileError 资料更新 service 错误 → Connect 形态（§1.5 行 182-195
+// 统一口径）：birthday 格式非法 → invalid_argument + ErrorInfo(account,
+// invalid_request)（§1.6 封闭集；文案同 rpc 域先例）；用户不存在 →
+// not_found（口径同 GetProfile）；其余原样上抛由错误包装拦截器消毒。
+func mapProfileError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrProfileInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "birthday must be YYYY-MM-DD"),
+		)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
 }
 
 // GetConfig（接口文档 §3.2 行 818-847）：account entry 的配置读取处，

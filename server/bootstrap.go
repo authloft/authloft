@@ -1041,8 +1041,11 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // ThirdpartyService；通行密钥族（GetWebauthnCredentials /
 // RegisterWebauthn 两态 / RenameWebauthnCredential /
 // DeleteWebauthnCredential，接口文档 §3.6）走 service/account.
-// WebauthnService（均 buildEngine 内构造的共享单例）。其余方法由生成的
-// UnimplementedAccountServiceHandler 返回 unimplemented。
+// WebauthnService（均 buildEngine 内构造的共享单例）；UpdateProfile
+//（接口文档 §3.2 行 837）走 service/account.ProfileService——单依赖
+// UserRepo，无跨 service 共享需求，本函数内就地构造（UserRepo 本就地
+// new，同款口径）。其余方法由生成的 UnimplementedAccountServiceHandler
+// 返回 unimplemented。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
 		accounthandler.New(
@@ -1053,6 +1056,7 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			deps.gate,
 			deps.accountThirdparty,
 			deps.accountWebauthn,
+			accountsvc.NewProfileService(repo.NewUserRepo(deps.db)),
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)

@@ -252,20 +252,25 @@ func (x *GetUserProfileRequest) GetUid() int64 {
 	return 0
 }
 
-// UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1388
+// UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1423
 // `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
-// 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 820：nickname /
-// avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）；嵌套 profile
-// 结构跨包复用 api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。
+// 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 837：nickname /
+// avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）并一并继承
+// proto3 optional 口径（2026-11-06 定稿）：未设置 = 不修改、显式设值（含
+// 0 / 空串）= 覆盖（gender 可显式改回 0=保密）；uid 为必填定位键不加
+// optional；profile 为消息字段自带 presence（nil = 未传），子字段 optional
+// 口径见 api.account.v1.UserProfile；嵌套 profile 结构跨包复用
+// api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。字段编号
+// 不变（纯加 optional，wire 兼容）。
 type UpdateUserProfileRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§7 行 1385）。
+	// 目标用户 ID（§7 行 1385）；必填定位键，不加 optional。
 	Uid int64 `protobuf:"varint,1,opt,name=uid,proto3" json:"uid,omitempty"`
-	// 昵称，可选（§3.2 行 820）。
-	Nickname string `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 头像地址，可选（§3.2 行 820）。
-	AvatarUrl string `protobuf:"bytes,3,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	// 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+	// 昵称，可选（§3.2 行 837 同构）；显式空串 = 清空。
+	Nickname *string `protobuf:"bytes,2,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	// 头像地址，可选（§3.2 行 837 同构）；显式空串 = 清空。
+	AvatarUrl *string `protobuf:"bytes,3,opt,name=avatar_url,json=avatarUrl,proto3,oneof" json:"avatar_url,omitempty"`
+	// 用户资料，可选（§3.2 行 837 同构，字段见 §3.1 行 793-797）。
 	Profile       *v1.UserProfile `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -309,15 +314,15 @@ func (x *UpdateUserProfileRequest) GetUid() int64 {
 }
 
 func (x *UpdateUserProfileRequest) GetNickname() string {
-	if x != nil {
-		return x.Nickname
+	if x != nil && x.Nickname != nil {
+		return *x.Nickname
 	}
 	return ""
 }
 
 func (x *UpdateUserProfileRequest) GetAvatarUrl() string {
-	if x != nil {
-		return x.AvatarUrl
+	if x != nil && x.AvatarUrl != nil {
+		return *x.AvatarUrl
 	}
 	return ""
 }
@@ -497,13 +502,15 @@ const file_api_rpc_v1_profile_proto_rawDesc = "" +
 	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\x125\n" +
 	"\aprofile\x18\x0f \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\")\n" +
 	"\x15GetUserProfileRequest\x12\x10\n" +
-	"\x03uid\x18\x01 \x01(\x03R\x03uid\"\x9e\x01\n" +
+	"\x03uid\x18\x01 \x01(\x03R\x03uid\"\xc4\x01\n" +
 	"\x18UpdateUserProfileRequest\x12\x10\n" +
-	"\x03uid\x18\x01 \x01(\x03R\x03uid\x12\x1a\n" +
-	"\bnickname\x18\x02 \x01(\tR\bnickname\x12\x1d\n" +
+	"\x03uid\x18\x01 \x01(\x03R\x03uid\x12\x1f\n" +
+	"\bnickname\x18\x02 \x01(\tH\x00R\bnickname\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"avatar_url\x18\x03 \x01(\tR\tavatarUrl\x125\n" +
-	"\aprofile\x18\x04 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\f\n" +
+	"avatar_url\x18\x03 \x01(\tH\x01R\tavatarUrl\x88\x01\x01\x125\n" +
+	"\aprofile\x18\x04 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofileB\v\n" +
+	"\t_nicknameB\r\n" +
+	"\v_avatar_url\"\f\n" +
 	"\n" +
 	"OkResponse\"*\n" +
 	"\x16GetUserProfilesRequest\x12\x10\n" +
@@ -549,6 +556,7 @@ func file_api_rpc_v1_profile_proto_init() {
 	if File_api_rpc_v1_profile_proto != nil {
 		return
 	}
+	file_api_rpc_v1_profile_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

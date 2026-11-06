@@ -109,14 +109,23 @@ func (s *UserInfoService) GetUserInfo(ctx context.Context, accessToken string) (
 	resp.EmailVerified = int64(user.EmailVerified)
 
 	if p, err := s.Profiles.GetProfile(ctx, user.ID); err == nil && p != nil {
-		resp.Profile = &accountv1.UserProfile{
-			Gender:   int64(p.Gender),
-			Locale:   p.Locale,
-			Timezone: p.Timezone,
-			Extra:    decodeExtra(p.Extra),
+		// UserProfile 全字段 proto3 optional（2026-11-06 定稿）后标量字段为
+		// 指针，读路径仅投影非零值（零值不设置 → protojson 省略，保持既有
+		// JSON 形态；口径同 dto.accountUserProfile）。
+		resp.Profile = &accountv1.UserProfile{Extra: decodeExtra(p.Extra)}
+		if p.Gender != 0 {
+			gender := int64(p.Gender)
+			resp.Profile.Gender = &gender
 		}
 		if p.Birthday != nil {
-			resp.Profile.Birthday = p.Birthday.Format("2006-01-02")
+			birthday := p.Birthday.Format("2006-01-02")
+			resp.Profile.Birthday = &birthday
+		}
+		if p.Locale != "" {
+			resp.Profile.Locale = &p.Locale
+		}
+		if p.Timezone != "" {
+			resp.Profile.Timezone = &p.Timezone
 		}
 	}
 	return resp, nil

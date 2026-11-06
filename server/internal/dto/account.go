@@ -55,19 +55,83 @@ func AccountProfile(u *model.User, p *model.UserProfile) *accountv1.ProfileRespo
 
 // accountUserProfile user_profile 行 → §3.1 行 793-797 的 profile 结构：
 // birthday DATE → YYYY-MM-DD 字符串；extra（msgpack 字节）→ JSON 对象。
+// UserProfile 全字段 proto3 optional（2026-11-06 定稿）后标量字段为指针，
+// 读路径仅投影非零值（含显式空串不投影）：零值不设置 → protojson 省略，
+// 保持 §1.1 空值口径下的既有 JSON 形态（读路径如实输出存储值无信息增益，
+// 零值与「从未设置」在存储层本不可区分）。
 func accountUserProfile(p *model.UserProfile) *accountv1.UserProfile {
 	profile := &accountv1.UserProfile{}
 	if p == nil {
 		return profile
 	}
-	profile.Gender = int64(p.Gender)
-	if p.Birthday != nil {
-		profile.Birthday = p.Birthday.Format("2006-01-02")
+	if p.Gender != 0 {
+		gender := int64(p.Gender)
+		profile.Gender = &gender
 	}
-	profile.Locale = p.Locale
-	profile.Timezone = p.Timezone
+	if p.Birthday != nil {
+		birthday := p.Birthday.Format("2006-01-02")
+		profile.Birthday = &birthday
+	}
+	if p.Locale != "" {
+		profile.Locale = &p.Locale
+	}
+	if p.Timezone != "" {
+		profile.Timezone = &p.Timezone
+	}
 	profile.Extra = decodeProfileExtra(p.Extra)
 	return profile
+}
+
+// MergeUserProfile 按 proto3 optional has 位合并 UpdateProfile /
+// UpdateUserProfile 入参的 profile 子字段到现行行（接口文档 §3.2 行 837、
+// 《后端架构》§17 行 1789，2026-11-06 定稿）：未设置（指针 nil）= 不修改，
+// 显式设值 = 覆盖——含 0 / 空串（gender 可显式改回 0=保密、birthday 显式
+// 空串 = 清空〔Birthday 置 nil〕、locale / timezone 显式空串 = 清空），
+// 禁止按零值猜「未传」。existing 为现行行（nil = 行缺失，从零值行起、
+// UserID 补 uid）；in 为入参 profile 子消息（调用方保证非 nil）。
+// 返回合并后整行与 changed（是否存在任一 has 字段——全未设置由调用方
+// 跳过写库）。birthday 格式非法返回 ParseRPCProfileBirthday 原错误，
+// 由调用方按 invalid_request 拒绝（§1.6）；updated_at 刷新归调用方
+//（仅 changed 时）。
+func MergeUserProfile(uid int64, existing *model.UserProfile, in *accountv1.UserProfile) (*model.UserProfile, bool, error) {
+	merged := &model.UserProfile{UserID: uid}
+	if existing != nil {
+		merged = existing
+	}
+	changed := false
+	if in.Gender != nil {
+		merged.Gender = int8(in.GetGender())
+		changed = true
+	}
+	if in.Birthday != nil {
+		if in.GetBirthday() == "" {
+			merged.Birthday = nil
+		} else {
+			t, err := ParseRPCProfileBirthday(in.GetBirthday())
+			if err != nil {
+				return nil, false, err
+			}
+			merged.Birthday = &t
+		}
+		changed = true
+	}
+	if in.Locale != nil {
+		merged.Locale = in.GetLocale()
+		changed = true
+	}
+	if in.Timezone != nil {
+		merged.Timezone = in.GetTimezone()
+		changed = true
+	}
+	if in.Extra != nil {
+		raw, err := EncodeRPCProfileExtra(in.Extra)
+		if err != nil {
+			return nil, false, err
+		}
+		merged.Extra = raw
+		changed = true
+	}
+	return merged, changed, nil
 }
 
 // decodeProfileExtra user_profile.extra（msgpack）→ JSON 对象（§3.1 行 796）；

@@ -117,8 +117,8 @@ func (f *fakeCaptcha) Config(context.Context) captcha.Config { return f.cfg }
 
 // newSessionHandler 构造挂真实 session 拦截器的生成 handler（自造密钥
 // version=1 kid=1，同 internal/connect/session_test.go 口径），返回签发
-// 助手与 http.Handler。GetConfig / 三方绑定族依赖经 deps 可选注入（nil 取
-// 空 fake，GetProfile 用例不受影响）。
+// 助手与 http.Handler。GetConfig / 三方绑定族 / UpdateProfile 依赖经 deps
+// 可选注入（nil 取空 fake，GetProfile 用例不受影响）。
 func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	var d *getConfigDeps
@@ -139,7 +139,7 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := accountv1connect.NewAccountServiceHandler(
-		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn()),
+		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile()),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -150,8 +150,8 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	return tokens, epochs, h
 }
 
-// getConfigDeps GetConfig / 三方绑定族 / 通行密钥族用例的依赖集（缺省字段
-// 取空 fake）。
+// getConfigDeps GetConfig / 三方绑定族 / 通行密钥族 / UpdateProfile 用例的
+// 依赖集（缺省字段取空 fake）。
 type getConfigDeps struct {
 	credsIn      CredentialReader
 	settingsIn   SettingsReader
@@ -159,6 +159,7 @@ type getConfigDeps struct {
 	captcha      CaptchaConfiger
 	thirdpartyIn Thirdparty
 	webauthnIn   Webauthn
+	profileIn    ProfileUpdater
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -184,6 +185,7 @@ func (d *getConfigDeps) providers() ProviderReader {
 
 func (d *getConfigDeps) thirdparty() Thirdparty { return d.thirdpartyIn }
 func (d *getConfigDeps) webauthn() Webauthn     { return d.webauthnIn }
+func (d *getConfigDeps) profile() ProfileUpdater { return d.profileIn }
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -714,15 +716,14 @@ func TestGetConfigWithoutSession(t *testing.T) {
 }
 
 // TestOtherMethodsUnimplemented 其余方法一律返回生成基类的 unimplemented
-// （GetConfig、三方绑定族四方法与通行密钥族四方法
+// （GetConfig、三方绑定族四方法、通行密钥族四方法与 UpdateProfile
 // 〔GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
 // DeleteWebauthnCredential〕均已实装，移出桩清单——未装配 service 时的
-// unimplemented 由 TestThirdpartyMethodsNotConfigured / TestWebauthnMethodsNotConfigured
-// 单独覆盖）。
+// unimplemented 由 TestThirdpartyMethodsNotConfigured /
+// TestWebauthnMethodsNotConfigured / TestUpdateProfileNotConfigured 单独覆盖）。
 func TestOtherMethodsUnimplemented(t *testing.T) {
 	_, _, h := newSessionHandler(t, &fakeUsers{})
 	cases := []string{
-		accountv1connect.AccountServiceUpdateProfileProcedure,
 		accountv1connect.AccountServicePresignAvatarProcedure,
 		accountv1connect.AccountServiceCommitAvatarProcedure,
 		accountv1connect.AccountServiceChangePasswordProcedure,
@@ -750,6 +751,229 @@ func TestOtherMethodsUnimplemented(t *testing.T) {
 		if errBody.Code != "unimplemented" {
 			t.Errorf("%s: code = %q, want unimplemented (body %s)", procedure, errBody.Code, rec.Body.String())
 		}
+	}
+}
+
+// —— UpdateProfile（接口文档 §3.2 行 837）——
+
+// fakeProfileUpdater ProfileUpdater 窄接口的 fake：预置错误回放 + 入参记录。
+type fakeProfileUpdater struct {
+	err   error
+	calls int
+	uids  []int64
+	reqs  []*accountv1.UpdateProfileRequest
+}
+
+func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, uid int64, in *accountv1.UpdateProfileRequest) error {
+	f.calls++
+	f.uids = append(f.uids, uid)
+	f.reqs = append(f.reqs, in)
+	return f.err
+}
+
+// TestUpdateProfileWithSession 有会话端到端：带有效 al_session Cookie 打
+// UpdateProfile → 200 空响应（§3.2 行 837）；service 收到会话 uid=10086
+//（仅本人——目标一律取 ctx 身份，不接受入参指定）与请求体原样透传
+//（proto3 optional 的 has 位解析归 service，handler 不做裁剪）。
+func TestUpdateProfileWithSession(t *testing.T) {
+	fp := &fakeProfileUpdater{}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	body := `{"nickname":"李四","avatarUrl":"https://cdn.example.com/b.jpg","profile":{"gender":0,"birthday":"","locale":""}}`
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST UpdateProfile: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	// 成功为空响应：protojson 输出 {}。
+	if strings.TrimSpace(raw) != "{}" {
+		t.Errorf("body = %q, want {}", raw)
+	}
+	if fp.calls != 1 {
+		t.Fatalf("service calls = %d, want 1", fp.calls)
+	}
+	if fp.uids[0] != 10086 {
+		t.Errorf("service uid = %d, want 10086（仅本人：会话身份）", fp.uids[0])
+	}
+	in := fp.reqs[0]
+	if in.GetNickname() != "李四" || in.GetAvatarUrl() != "https://cdn.example.com/b.jpg" {
+		t.Errorf("req = (nickname=%q avatarUrl=%q), want 原样透传", in.GetNickname(), in.GetAvatarUrl())
+	}
+	if p := in.GetProfile(); p == nil || p.GetGender() != 0 || p.GetBirthday() != "" || p.GetLocale() != "" {
+		t.Errorf("req profile = %+v, want 显式零值透传（has 位保留）", in.GetProfile())
+	}
+}
+
+// TestUpdateProfileEmptyBody 有会话空 body（全字段未设置）→ 200：合法空
+// 操作直透 service（零写库语义由 service 层测试覆盖，本用例锁定 handler
+// 不拦截空 body）。
+func TestUpdateProfileEmptyBody(t *testing.T) {
+	fp := &fakeProfileUpdater{}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST UpdateProfile: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	if fp.calls != 1 || fp.reqs[0].GetProfile() != nil {
+		t.Errorf("service calls = %d profile = %v, want (1, nil 原样透传)", fp.calls, fp.reqs[0].GetProfile())
+	}
+}
+
+// TestUpdateProfileUnauthenticated 无会话 → 401 unauthenticated（§1.2 行
+// 96：本域全接口需 al_session；拦截器放行匿名、401 由 handler 判定），
+// 且不触 service。
+func TestUpdateProfileUnauthenticated(t *testing.T) {
+	fp := &fakeProfileUpdater{}
+	_, _, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST UpdateProfile: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (body %s)", resp.StatusCode, raw)
+	}
+	var errBody struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if errBody.Code != "unauthenticated" {
+		t.Errorf("code = %q, want unauthenticated (body %s)", errBody.Code, raw)
+	}
+	if fp.calls != 0 {
+		t.Errorf("service calls = %d, want 0（401 先于 service）", fp.calls)
+	}
+}
+
+// TestUpdateProfileUserNotFound service 回 user 不存在（gorm.ErrRecordNotFound
+// 包装）→ 404 not_found（口径同 GetProfile）。
+func TestUpdateProfileUserNotFound(t *testing.T) {
+	fp := &fakeProfileUpdater{err: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(`{"nickname":"x"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST UpdateProfile: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", resp.StatusCode, raw)
+	}
+	var errBody struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if errBody.Code != "not_found" {
+		t.Errorf("code = %q, want not_found (body %s)", errBody.Code, raw)
+	}
+}
+
+// TestUpdateProfileBadBirthday service 回 ErrProfileInvalidRequest（birthday
+// 格式非法）→ 400 invalid_argument + ErrorInfo(account, invalid_request)
+//（§1.6 封闭集；文案同 rpc 域先例）。
+func TestUpdateProfileBadBirthday(t *testing.T) {
+	fp := &fakeProfileUpdater{err: accountsvc.ErrProfileInvalidRequest}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(`{"profile":{"birthday":"1990/01/01"}}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST UpdateProfile: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, raw)
+	}
+	var errBody struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
+	}
+	if errBody.Code != "invalid_argument" {
+		t.Errorf("code = %q, want invalid_argument (body %s)", errBody.Code, raw)
+	}
+	info := decodeAccountErrorInfo(t, raw)
+	if info.GetDomain() != "account" || info.GetCode() != "invalid_request" {
+		t.Errorf("ErrorInfo = (domain=%q code=%q), want (account, invalid_request)", info.GetDomain(), info.GetCode())
+	}
+}
+
+// TestUpdateProfileNotConfigured 未装配资料更新 service（测试桩）→
+// unimplemented（TestOtherMethodsUnimplemented 移出 UpdateProfile 后的
+// 未装配分支覆盖，口径同三方绑定 / 通行密钥族）。
+func TestUpdateProfileNotConfigured(t *testing.T) {
+	_, _, h := newSessionHandler(t, &fakeUsers{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceUpdateProfileProcedure, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+
+	var errBody struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("decode error body %q: %v", rec.Body.String(), err)
+	}
+	if errBody.Code != "unimplemented" {
+		t.Errorf("code = %q, want unimplemented (body %s)", errBody.Code, rec.Body.String())
 	}
 }
 

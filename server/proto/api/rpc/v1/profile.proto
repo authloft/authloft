@@ -66,19 +66,24 @@ message GetUserProfileRequest {
   int64 uid = 1;
 }
 
-// UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1388
+// UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1423
 // `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
-// 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 820：nickname /
-// avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）；嵌套 profile
-// 结构跨包复用 api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。
+// 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 837：nickname /
+// avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）并一并继承
+// proto3 optional 口径（2026-11-06 定稿）：未设置 = 不修改、显式设值（含
+// 0 / 空串）= 覆盖（gender 可显式改回 0=保密）；uid 为必填定位键不加
+// optional；profile 为消息字段自带 presence（nil = 未传），子字段 optional
+// 口径见 api.account.v1.UserProfile；嵌套 profile 结构跨包复用
+// api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。字段编号
+// 不变（纯加 optional，wire 兼容）。
 message UpdateUserProfileRequest {
-  // 目标用户 ID（§7 行 1385）。
+  // 目标用户 ID（§7 行 1385）；必填定位键，不加 optional。
   int64 uid = 1;
-  // 昵称，可选（§3.2 行 820）。
-  string nickname = 2;
-  // 头像地址，可选（§3.2 行 820）。
-  string avatar_url = 3;
-  // 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+  // 昵称，可选（§3.2 行 837 同构）；显式空串 = 清空。
+  optional string nickname = 2;
+  // 头像地址，可选（§3.2 行 837 同构）；显式空串 = 清空。
+  optional string avatar_url = 3;
+  // 用户资料，可选（§3.2 行 837 同构，字段见 §3.1 行 793-797）。
   api.account.v1.UserProfile profile = 4;
 }
 

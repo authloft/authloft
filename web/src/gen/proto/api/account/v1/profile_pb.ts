@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/profile.proto.
  */
 export const file_api_account_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9wcm9maWxlLnByb3RvEg5hcGkuYWNjb3VudC52MSISChBHZXRDb25maWdSZXF1ZXN0IhMKEUdldFByb2ZpbGVSZXF1ZXN0InkKC1VzZXJQcm9maWxlEg4KBmdlbmRlchgBIAEoAxIQCghiaXJ0aGRheRgCIAEoCRIOCgZsb2NhbGUYAyABKAkSEAoIdGltZXpvbmUYBCABKAkSJgoFZXh0cmEYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IsoCCg9Qcm9maWxlUmVzcG9uc2USCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlImoKFFVwZGF0ZVByb2ZpbGVSZXF1ZXN0EhAKCG5pY2tuYW1lGAEgASgJEhIKCmF2YXRhcl91cmwYAiABKAkSLAoHcHJvZmlsZRgDIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIgwKCk9rUmVzcG9uc2UiSwoSQXZhdGFyVXBsb2FkQ29uZmlnEgwKBG1vZGUYASABKAkSEAoIbWF4X3NpemUYAiABKAMSFQoNYWxsb3dlZF90eXBlcxgDIAMoCSJBCg9NZmFQb2xpY3lNZXRob2QSDgoGZmFjdG9yGAEgASgJEg8KB2VuYWJsZWQYAiABKAgSDQoFYm91bmQYAyABKAgifQoJTWZhUG9saWN5Eg8KB2VuYWJsZWQYASABKAgSEAoIcmVxdWlyZWQYAiABKAgSGwoTdHJ1c3RlZF9kZXZpY2VfZGF5cxgDIAEoAxIwCgdtZXRob2RzGAQgAygLMh8uYXBpLmFjY291bnQudjEuTWZhUG9saWN5TWV0aG9kIsYBChVBY2NvdW50Q29uZmlnUmVzcG9uc2USOQoNYXZhdGFyX3VwbG9hZBgBIAEoCzIiLmFwaS5hY2NvdW50LnYxLkF2YXRhclVwbG9hZENvbmZpZxItCgptZmFfcG9saWN5GAIgASgLMhkuYXBpLmFjY291bnQudjEuTWZhUG9saWN5Ei0KB2NhcHRjaGEYAyABKAsyHC5hcGkuY29tbW9uLnYxLkNhcHRjaGFDb25maWcSFAoMaGFzX3Bhc3N3b3JkGAQgASgIIh0KDkF2YXRhclJlc3BvbnNlEgsKA3VybBgBIAEoCSJMChRQcmVzaWduQXZhdGFyUmVxdWVzdBIQCghmaWxlbmFtZRgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSDAoEc2l6ZRgDIAEoAyLBAQoVQXZhdGFyUHJlc2lnblJlc3BvbnNlEgsKA2tleRgBIAEoCRISCgp1cGxvYWRfdXJsGAIgASgJEkMKB2hlYWRlcnMYAyADKAsyMi5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2UuSGVhZGVyc0VudHJ5EhIKCmV4cGlyZXNfaW4YBCABKAMaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiIgoTQ29tbWl0QXZhdGFyUmVxdWVzdBILCgNrZXkYASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_api_common_v1_captcha]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9wcm9maWxlLnByb3RvEg5hcGkuYWNjb3VudC52MSISChBHZXRDb25maWdSZXF1ZXN0IhMKEUdldFByb2ZpbGVSZXF1ZXN0IswBCgtVc2VyUHJvZmlsZRITCgZnZW5kZXIYASABKANIAIgBARIVCghiaXJ0aGRheRgCIAEoCUgBiAEBEhMKBmxvY2FsZRgDIAEoCUgCiAEBEhUKCHRpbWV6b25lGAQgASgJSAOIAQESKwoFZXh0cmEYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0SASIAQFCCQoHX2dlbmRlckILCglfYmlydGhkYXlCCQoHX2xvY2FsZUILCglfdGltZXpvbmVCCAoGX2V4dHJhIsoCCg9Qcm9maWxlUmVzcG9uc2USCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIpABChRVcGRhdGVQcm9maWxlUmVxdWVzdBIVCghuaWNrbmFtZRgBIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAiABKAlIAYgBARIsCgdwcm9maWxlGAMgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiSwoSQXZhdGFyVXBsb2FkQ29uZmlnEgwKBG1vZGUYASABKAkSEAoIbWF4X3NpemUYAiABKAMSFQoNYWxsb3dlZF90eXBlcxgDIAMoCSJBCg9NZmFQb2xpY3lNZXRob2QSDgoGZmFjdG9yGAEgASgJEg8KB2VuYWJsZWQYAiABKAgSDQoFYm91bmQYAyABKAgifQoJTWZhUG9saWN5Eg8KB2VuYWJsZWQYASABKAgSEAoIcmVxdWlyZWQYAiABKAgSGwoTdHJ1c3RlZF9kZXZpY2VfZGF5cxgDIAEoAxIwCgdtZXRob2RzGAQgAygLMh8uYXBpLmFjY291bnQudjEuTWZhUG9saWN5TWV0aG9kIsYBChVBY2NvdW50Q29uZmlnUmVzcG9uc2USOQoNYXZhdGFyX3VwbG9hZBgBIAEoCzIiLmFwaS5hY2NvdW50LnYxLkF2YXRhclVwbG9hZENvbmZpZxItCgptZmFfcG9saWN5GAIgASgLMhkuYXBpLmFjY291bnQudjEuTWZhUG9saWN5Ei0KB2NhcHRjaGEYAyABKAsyHC5hcGkuY29tbW9uLnYxLkNhcHRjaGFDb25maWcSFAoMaGFzX3Bhc3N3b3JkGAQgASgIIh0KDkF2YXRhclJlc3BvbnNlEgsKA3VybBgBIAEoCSJMChRQcmVzaWduQXZhdGFyUmVxdWVzdBIQCghmaWxlbmFtZRgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSDAoEc2l6ZRgDIAEoAyLBAQoVQXZhdGFyUHJlc2lnblJlc3BvbnNlEgsKA2tleRgBIAEoCRISCgp1cGxvYWRfdXJsGAIgASgJEkMKB2hlYWRlcnMYAyADKAsyMi5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2UuSGVhZGVyc0VudHJ5EhIKCmV4cGlyZXNfaW4YBCABKAMaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiIgoTQ29tbWl0QXZhdGFyUmVxdWVzdBILCgNrZXkYASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_api_common_v1_captcha]);
 
 /**
  * GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 行 818 入参「—」）。
@@ -48,44 +48,48 @@ export const GetProfileRequestSchema: GenMessage<GetProfileRequest> = /*@__PURE_
 
 /**
  * UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
- * 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile 请求的 profile 载荷
- * （§3.2 行 820）；字段名与 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1749）。
+ * 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
+ * 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+ * 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
+ * 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
+ * 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
+ * wire 兼容，§12.9 行 1749 / §12.8）。
  *
  * @generated from message api.account.v1.UserProfile
  */
 export type UserProfile = Message<"api.account.v1.UserProfile"> & {
   /**
-   * 性别（§3.1 行 794）。
+   * 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
    *
-   * @generated from field: int64 gender = 1;
+   * @generated from field: optional int64 gender = 1;
    */
-  gender: bigint;
+  gender?: bigint | undefined;
 
   /**
-   * 生日，YYYY-MM-DD（§3.1 行 794）。
+   * 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
    *
-   * @generated from field: string birthday = 2;
+   * @generated from field: optional string birthday = 2;
    */
-  birthday: string;
+  birthday?: string | undefined;
 
   /**
-   * 语言区域，如 zh-CN（§3.1 行 795）。
+   * 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
    *
-   * @generated from field: string locale = 3;
+   * @generated from field: optional string locale = 3;
    */
-  locale: string;
+  locale?: string | undefined;
 
   /**
-   * 时区，如 Asia/Shanghai（§3.1 行 795）。
+   * 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
    *
-   * @generated from field: string timezone = 4;
+   * @generated from field: optional string timezone = 4;
    */
-  timezone: string;
+  timezone?: string | undefined;
 
   /**
    * user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
    *
-   * @generated from field: google.protobuf.Struct extra = 5;
+   * @generated from field: optional google.protobuf.Struct extra = 5;
    */
   extra?: JsonObject | undefined;
 };
@@ -221,29 +225,33 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 3);
 
 /**
- * UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 820）：
- * {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}；
- * 用户名 / 手机号 / 邮箱不可由此修改（行 820）。成功为空响应（行 820），返回 OkResponse。
+ * UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+ * {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
+ * 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
+ * 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
+ * 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
+ * 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
+ * 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
  *
  * @generated from message api.account.v1.UpdateProfileRequest
  */
 export type UpdateProfileRequest = Message<"api.account.v1.UpdateProfileRequest"> & {
   /**
-   * 昵称，可选（§3.2 行 820）。
+   * 昵称，可选（§3.2 行 837）；显式空串 = 清空。
    *
-   * @generated from field: string nickname = 1;
+   * @generated from field: optional string nickname = 1;
    */
-  nickname: string;
+  nickname?: string | undefined;
 
   /**
-   * 头像地址，可选（§3.2 行 820）。
+   * 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
    *
-   * @generated from field: string avatar_url = 2;
+   * @generated from field: optional string avatar_url = 2;
    */
-  avatarUrl: string;
+  avatarUrl?: string | undefined;
 
   /**
-   * 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+   * 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 3;
    */

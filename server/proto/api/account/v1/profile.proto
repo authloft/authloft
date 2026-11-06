@@ -21,19 +21,23 @@ message GetConfigRequest {}
 message GetProfileRequest {}
 
 // UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
-// 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile 请求的 profile 载荷
-//（§3.2 行 820）；字段名与 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1749）。
+// 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
+// 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+// 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
+// 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
+// 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
+// wire 兼容，§12.9 行 1749 / §12.8）。
 message UserProfile {
-  // 性别（§3.1 行 794）。
-  int64 gender = 1;
-  // 生日，YYYY-MM-DD（§3.1 行 794）。
-  string birthday = 2;
-  // 语言区域，如 zh-CN（§3.1 行 795）。
-  string locale = 3;
-  // 时区，如 Asia/Shanghai（§3.1 行 795）。
-  string timezone = 4;
+  // 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
+  optional int64 gender = 1;
+  // 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
+  optional string birthday = 2;
+  // 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+  optional string locale = 3;
+  // 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+  optional string timezone = 4;
   // user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
-  google.protobuf.Struct extra = 5;
+  optional google.protobuf.Struct extra = 5;
 }
 
 // ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 行 775-798 的
@@ -74,15 +78,19 @@ message ProfileResponse {
   UserProfile profile = 15;
 }
 
-// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 820）：
-// {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}；
-// 用户名 / 手机号 / 邮箱不可由此修改（行 820）。成功为空响应（行 820），返回 OkResponse。
+// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+// {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
+// 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
+// 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
+// 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
+// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
+// 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
 message UpdateProfileRequest {
-  // 昵称，可选（§3.2 行 820）。
-  string nickname = 1;
-  // 头像地址，可选（§3.2 行 820）。
-  string avatar_url = 2;
-  // 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+  // 昵称，可选（§3.2 行 837）；显式空串 = 清空。
+  optional string nickname = 1;
+  // 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
+  optional string avatar_url = 2;
+  // 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
   UserProfile profile = 3;
 }
 

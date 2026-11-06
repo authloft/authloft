@@ -836,7 +836,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 // 前缀已注册（handler 非 nil 的装配等效断言）；无会话 GetProfile 穿透
 // origin 前缀链 + session 拦截器抵达 handler，返回 401 unauthenticated
 // （§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
-// UpdateProfile 为生成 Unimplemented 桩。
+// UpdateProfile 已实装（service 真装配），无会话同样 401。
 func TestAssembleAccountRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
@@ -881,10 +881,15 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 		t.Errorf("GetProfile code = %v, want unauthenticated (body %s)", got, rec.Body.String())
 	}
 
-	// UpdateProfile（本卡桩）→ unimplemented。
+	// UpdateProfile（已实装，service 随 buildWiredDeps 真装配）→
+	// 路由可达且非桩：无会话同样 401（§1.2 行 96 全接口需 al_session，
+	// 401 由 handler 判定）。
 	rec = doPostJSON("/api.account.v1.AccountService/UpdateProfile")
-	if got := decodeOIDCJSON(t, rec)["code"]; got != "unimplemented" {
-		t.Errorf("UpdateProfile code = %v, want unimplemented (body %s)", got, rec.Body.String())
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("UpdateProfile without session: status = %d, want %d (body %s)", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if got := decodeOIDCJSON(t, rec)["code"]; got != "unauthenticated" {
+		t.Errorf("UpdateProfile code = %v, want unauthenticated (body %s)", got, rec.Body.String())
 	}
 }
 

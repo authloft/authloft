@@ -82,10 +82,12 @@ func RPCSession(p *token.SessionTokenPayload, renewedToken string) *rpcv1.Sessio
 	}
 }
 
-// ParseRPCProfileBirthday 解析 UpdateUserProfile 入参的 birthday
-//（§3.1 行 794：YYYY-MM-DD）。raw 须非空（空串 = 未传，由调用方按部分更新
-// 语义跳过，§3.2 行 821）；格式非法返回错误（调用方按 §1.6 invalid_request
-// 拒绝）。仅取日期、截断时分秒。
+// ParseRPCProfileBirthday 解析 UpdateProfile / UpdateUserProfile 入参的
+// birthday（§3.1 行 794：YYYY-MM-DD）。proto3 optional 口径（2026-11-06
+// 定稿，§3.2 行 837）：「未设置 = 不传」由调用方按 has 位（指针非 nil）
+// 判定跳过，显式空串 = 清空由合并层（MergeUserProfile）处理，本函数只
+// 接受非空串；格式非法返回错误（调用方按 §1.6 invalid_request 拒绝）。
+// 仅取日期、截断时分秒。
 func ParseRPCProfileBirthday(raw string) (time.Time, error) {
 	t, err := time.Parse("2006-01-02", raw)
 	if err != nil {

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/rpc/v1/profile.proto.
  */
 export const file_api_rpc_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyJ7ChhVcGRhdGVVc2VyUHJvZmlsZVJlcXVlc3QSCwoDdWlkGAEgASgDEhAKCG5pY2tuYW1lGAIgASgJEhIKCmF2YXRhcl91cmwYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIgwKCk9rUmVzcG9uc2UiJQoWR2V0VXNlclByb2ZpbGVzUmVxdWVzdBILCgNpZHMYASADKAMiSAoXR2V0VXNlclByb2ZpbGVzUmVzcG9uc2USLQoIcHJvZmlsZXMYASADKAsyGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3JwYy92MTtycGN2MWIGcHJvdG8z", [file_api_account_v1_profile]);
+  fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyKhAQoYVXBkYXRlVXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiJQoWR2V0VXNlclByb2ZpbGVzUmVxdWVzdBILCgNpZHMYASADKAMiSAoXR2V0VXNlclByb2ZpbGVzUmVzcG9uc2USLQoIcHJvZmlsZXMYASADKAsyGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3JwYy92MTtycGN2MWIGcHJvdG8z", [file_api_account_v1_profile]);
 
 /**
  * ProfileResponse 是 UserService/GetUserProfile 的响应（§7 行 1387）：
@@ -167,38 +167,43 @@ export const GetUserProfileRequestSchema: GenMessage<GetUserProfileRequest> = /*
   messageDesc(file_api_rpc_v1_profile, 1);
 
 /**
- * UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1388
+ * UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1423
  * `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
- * 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 820：nickname /
- * avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）；嵌套 profile
- * 结构跨包复用 api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。
+ * 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 837：nickname /
+ * avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）并一并继承
+ * proto3 optional 口径（2026-11-06 定稿）：未设置 = 不修改、显式设值（含
+ * 0 / 空串）= 覆盖（gender 可显式改回 0=保密）；uid 为必填定位键不加
+ * optional；profile 为消息字段自带 presence（nil = 未传），子字段 optional
+ * 口径见 api.account.v1.UserProfile；嵌套 profile 结构跨包复用
+ * api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。字段编号
+ * 不变（纯加 optional，wire 兼容）。
  *
  * @generated from message api.rpc.v1.UpdateUserProfileRequest
  */
 export type UpdateUserProfileRequest = Message<"api.rpc.v1.UpdateUserProfileRequest"> & {
   /**
-   * 目标用户 ID（§7 行 1385）。
+   * 目标用户 ID（§7 行 1385）；必填定位键，不加 optional。
    *
    * @generated from field: int64 uid = 1;
    */
   uid: bigint;
 
   /**
-   * 昵称，可选（§3.2 行 820）。
+   * 昵称，可选（§3.2 行 837 同构）；显式空串 = 清空。
    *
-   * @generated from field: string nickname = 2;
+   * @generated from field: optional string nickname = 2;
    */
-  nickname: string;
+  nickname?: string | undefined;
 
   /**
-   * 头像地址，可选（§3.2 行 820）。
+   * 头像地址，可选（§3.2 行 837 同构）；显式空串 = 清空。
    *
-   * @generated from field: string avatar_url = 3;
+   * @generated from field: optional string avatar_url = 3;
    */
-  avatarUrl: string;
+  avatarUrl?: string | undefined;
 
   /**
-   * 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+   * 用户资料，可选（§3.2 行 837 同构，字段见 §3.1 行 793-797）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 4;
    */

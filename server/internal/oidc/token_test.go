@@ -472,11 +472,11 @@ func TestGetUserInfo(t *testing.T) {
 	if resp.PhoneVerified != 1 || resp.EmailVerified != 1 {
 		t.Errorf("verified = %d/%d", resp.PhoneVerified, resp.EmailVerified)
 	}
-	if resp.Profile == nil || resp.Profile.Birthday != "1990-01-01" || resp.Profile.Locale != "zh-CN" {
+	if resp.Profile == nil || resp.Profile.GetBirthday() != "1990-01-01" || resp.Profile.GetLocale() != "zh-CN" {
 		t.Errorf("profile = %+v", resp.Profile)
 	}
-	if !strings.HasPrefix(resp.Profile.Timezone, "Asia/") {
-		t.Errorf("timezone = %q", resp.Profile.Timezone)
+	if !strings.HasPrefix(resp.Profile.GetTimezone(), "Asia/") {
+		t.Errorf("timezone = %q", resp.Profile.GetTimezone())
 	}
 
 	resp, oe = svc.GetUserInfo(context.Background(), signAccess(t, j, "openid email email_plain phone phone_plain", 3))

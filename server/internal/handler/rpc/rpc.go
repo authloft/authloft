@@ -155,18 +155,21 @@ func (h *UserHandler) GetUserProfiles(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&rpcv1.GetUserProfilesResponse{Profiles: out}), nil
 }
 
-// UpdateUserProfile（§7 行 1392，入参同 §3.2 行 821 的
-// AccountService/UpdateProfile）：部分更新——未传字段不覆盖。proto3 标量无
-// presence，未传与零值不可区分，按「零值 = 未传」约定落地（nickname /
-// avatar_url / profile 各子字段均如此）；嵌套 profile 消息本身有 presence
-//（nil = 未传，不触碰 user_profile 行）。
+// UpdateUserProfile（§7 行 1423，入参同 §3.2 行 837 的
+// AccountService/UpdateProfile）：proto3 optional 部分更新（2026-11-06
+// 定稿）——has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」：nickname /
+// avatar_url 显式空串 = 清空，profile 各子字段（gender / birthday / locale /
+// timezone / extra）显式零值均可表达（gender 可改回 0=保密、birthday 显式
+// 空串 = 清空），禁止按零值猜「未传」（后端架构 §17 行 1789）；嵌套
+// profile 消息自带 presence（nil = 未传，不触碰 user_profile 行）。
 //
-// 用户名 / 手机号 / 邮箱不可由此修改（§3.2 行 821）：proto
+// 用户名 / 手机号 / 邮箱不可由此修改（§3.2 行 837）：proto
 // UpdateUserProfileRequest 不含这三项字段，契约结构上即不可改，本实现亦
 // 不提供任何绕过入口；user 表仅更新 nickname / avatar_url 两列（经
 // UpdateProfileColumns），user_profile 行按 SaveProfile 行 224 注释的合并
-// 语义「先读后拼整行」——读现行（缺失从零值行起）→ 逐字段合并 → 整行
-// UPSERT。全字段未传时为纯 no-op，不触碰任何存储（连 updated_at 也不刷）。
+// 语义「先读后拼整行」——读现行（缺失从零值行起）→ 逐字段合并（共享
+// dto.MergeUserProfile）→ 整行 UPSERT。全字段未设置时为纯 no-op，不触碰
+// 任何存储（连 updated_at 也不刷）。
 func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Request[rpcv1.UpdateUserProfileRequest]) (*connect.Response[rpcv1.OkResponse], error) {
 	uid := req.Msg.GetUid()
 	// 先判存在（行不存在 → 404，不落入 UPSERT 的隐式建行）。
@@ -177,13 +180,14 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 		return nil, fmt.Errorf("rpc handler: load user: %w", err)
 	}
 
-	// user 表资料列：nickname / avatar_url（§3.2 行 821），nil = 该列未传不写。
+	// user 表资料列：nickname / avatar_url（§3.2 行 837 optional 口径），
+	// has 位判定（指针非 nil = 显式设置，含空串 = 显式清空）。
 	var nickname, avatarURL *string
-	if v := req.Msg.GetNickname(); v != "" {
-		nickname = &v
+	if req.Msg.Nickname != nil {
+		nickname = req.Msg.Nickname
 	}
-	if v := req.Msg.GetAvatarUrl(); v != "" {
-		avatarURL = &v
+	if req.Msg.AvatarUrl != nil {
+		avatarURL = req.Msg.AvatarUrl
 	}
 	if nickname != nil || avatarURL != nil {
 		if err := h.users.UpdateProfileColumns(ctx, uid, nickname, avatarURL); err != nil {
@@ -209,49 +213,25 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&rpcv1.OkResponse{}), nil
 }
 
-// mergeProfile 读现行并合并 UpdateUserProfile 入参的 profile 子字段
-//（§3.2 行 821：gender?/birthday?/locale?/timezone?/extra?）。「零值 = 未传」
-// 逐字段判定（gender 0 / 空串 / nil extra 均保留现行值）；现行行缺失从
-// 零值行起（UserID 补 uid）。changed = 是否存在任一已传子字段（全未传则
-// 调用方跳过写库）。birthday 格式非法 → 400 invalid_argument +
-// ErrorInfo(rpc, invalid_request)（§1.6；先例 admin GetProviderSchema）。
+// mergeProfile 读现行并按 has 位合并 UpdateUserProfile 入参的 profile
+// 子字段（§3.2 行 837：gender?/birthday?/locale?/timezone?/extra?），
+// 合并本体共享 dto.MergeUserProfile（account 域 UpdateProfile 同一出口，
+// §12.9 行 1748「同一结构只定义一次」先例）：未设置 = 不修改，显式设值
+//（含 0 / 空串）= 覆盖——gender 可显式改回 0、birthday / locale / timezone
+// 可显式清空；现行行缺失从零值行起（UserID 补 uid）。changed = 是否存在
+// 任一 has 子字段（全未设置则调用方跳过写库）。birthday 格式非法 →
+// 400 invalid_argument + ErrorInfo(rpc, invalid_request)（§1.6；先例
+// admin GetProviderSchema）。
 func (h *UserHandler) mergeProfile(ctx context.Context, uid int64, in *accountv1.UserProfile) (*model.UserProfile, bool, error) {
-	merged := &model.UserProfile{UserID: uid}
-	if existing, err := h.users.GetProfile(ctx, uid); err == nil && existing != nil {
-		merged = existing
-	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	existing, err := h.users.GetProfile(ctx, uid)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, fmt.Errorf("rpc handler: load profile: %w", err)
 	}
-	changed := false
-	if in.GetGender() != 0 {
-		merged.Gender = int8(in.GetGender())
-		changed = true
-	}
-	if raw := in.GetBirthday(); raw != "" {
-		t, err := dto.ParseRPCProfileBirthday(raw)
-		if err != nil {
-			return nil, false, internalconnect.WithErrorInfo(
-				connect.NewError(connect.CodeInvalidArgument, errBadBirthday),
-				internalconnect.NewErrorInfo("rpc", "invalid_request", "birthday must be YYYY-MM-DD"))
-		}
-		merged.Birthday = &t
-		changed = true
-	}
-	if v := in.GetLocale(); v != "" {
-		merged.Locale = v
-		changed = true
-	}
-	if v := in.GetTimezone(); v != "" {
-		merged.Timezone = v
-		changed = true
-	}
-	if extra := in.GetExtra(); extra != nil {
-		raw, err := dto.EncodeRPCProfileExtra(extra)
-		if err != nil {
-			return nil, false, fmt.Errorf("rpc handler: encode profile extra: %w", err)
-		}
-		merged.Extra = raw
-		changed = true
+	merged, changed, err := dto.MergeUserProfile(uid, existing, in)
+	if err != nil {
+		return nil, false, internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, errBadBirthday),
+			internalconnect.NewErrorInfo("rpc", "invalid_request", "birthday must be YYYY-MM-DD"))
 	}
 	if changed {
 		merged.UpdatedAt = time.Now()

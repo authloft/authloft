@@ -99,20 +99,24 @@ func (*GetProfileRequest) Descriptor() ([]byte, []int) {
 }
 
 // UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
-// 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile 请求的 profile 载荷
-// （§3.2 行 820）；字段名与 JSON 示例逐字一致，编号从 1 起连续（§12.9 行 1749）。
+// 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
+// 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+// 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
+// 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
+// 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
+// wire 兼容，§12.9 行 1749 / §12.8）。
 type UserProfile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 性别（§3.1 行 794）。
-	Gender int64 `protobuf:"varint,1,opt,name=gender,proto3" json:"gender,omitempty"`
-	// 生日，YYYY-MM-DD（§3.1 行 794）。
-	Birthday string `protobuf:"bytes,2,opt,name=birthday,proto3" json:"birthday,omitempty"`
-	// 语言区域，如 zh-CN（§3.1 行 795）。
-	Locale string `protobuf:"bytes,3,opt,name=locale,proto3" json:"locale,omitempty"`
-	// 时区，如 Asia/Shanghai（§3.1 行 795）。
-	Timezone string `protobuf:"bytes,4,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
+	Gender *int64 `protobuf:"varint,1,opt,name=gender,proto3,oneof" json:"gender,omitempty"`
+	// 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
+	Birthday *string `protobuf:"bytes,2,opt,name=birthday,proto3,oneof" json:"birthday,omitempty"`
+	// 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+	Locale *string `protobuf:"bytes,3,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
+	// 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+	Timezone *string `protobuf:"bytes,4,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"`
 	// user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
-	Extra         *structpb.Struct `protobuf:"bytes,5,opt,name=extra,proto3" json:"extra,omitempty"`
+	Extra         *structpb.Struct `protobuf:"bytes,5,opt,name=extra,proto3,oneof" json:"extra,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -148,29 +152,29 @@ func (*UserProfile) Descriptor() ([]byte, []int) {
 }
 
 func (x *UserProfile) GetGender() int64 {
-	if x != nil {
-		return x.Gender
+	if x != nil && x.Gender != nil {
+		return *x.Gender
 	}
 	return 0
 }
 
 func (x *UserProfile) GetBirthday() string {
-	if x != nil {
-		return x.Birthday
+	if x != nil && x.Birthday != nil {
+		return *x.Birthday
 	}
 	return ""
 }
 
 func (x *UserProfile) GetLocale() string {
-	if x != nil {
-		return x.Locale
+	if x != nil && x.Locale != nil {
+		return *x.Locale
 	}
 	return ""
 }
 
 func (x *UserProfile) GetTimezone() string {
-	if x != nil {
-		return x.Timezone
+	if x != nil && x.Timezone != nil {
+		return *x.Timezone
 	}
 	return ""
 }
@@ -358,16 +362,20 @@ func (x *ProfileResponse) GetProfile() *UserProfile {
 	return nil
 }
 
-// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 820）：
-// {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}；
-// 用户名 / 手机号 / 邮箱不可由此修改（行 820）。成功为空响应（行 820），返回 OkResponse。
+// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+// {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
+// 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
+// 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
+// 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
+// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
+// 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
 type UpdateProfileRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 昵称，可选（§3.2 行 820）。
-	Nickname string `protobuf:"bytes,1,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 头像地址，可选（§3.2 行 820）。
-	AvatarUrl string `protobuf:"bytes,2,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	// 用户资料，可选（§3.2 行 820，字段见 §3.1 行 793-797）。
+	// 昵称，可选（§3.2 行 837）；显式空串 = 清空。
+	Nickname *string `protobuf:"bytes,1,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	// 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
+	AvatarUrl *string `protobuf:"bytes,2,opt,name=avatar_url,json=avatarUrl,proto3,oneof" json:"avatar_url,omitempty"`
+	// 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
 	Profile       *UserProfile `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -404,15 +412,15 @@ func (*UpdateProfileRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *UpdateProfileRequest) GetNickname() string {
-	if x != nil {
-		return x.Nickname
+	if x != nil && x.Nickname != nil {
+		return *x.Nickname
 	}
 	return ""
 }
 
 func (x *UpdateProfileRequest) GetAvatarUrl() string {
-	if x != nil {
-		return x.AvatarUrl
+	if x != nil && x.AvatarUrl != nil {
+		return *x.AvatarUrl
 	}
 	return ""
 }
@@ -988,13 +996,18 @@ const file_api_account_v1_profile_proto_rawDesc = "" +
 	"\n" +
 	"\x1capi/account/v1/profile.proto\x12\x0eapi.account.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\x12\n" +
 	"\x10GetConfigRequest\"\x13\n" +
-	"\x11GetProfileRequest\"\xa4\x01\n" +
-	"\vUserProfile\x12\x16\n" +
-	"\x06gender\x18\x01 \x01(\x03R\x06gender\x12\x1a\n" +
-	"\bbirthday\x18\x02 \x01(\tR\bbirthday\x12\x16\n" +
-	"\x06locale\x18\x03 \x01(\tR\x06locale\x12\x1a\n" +
-	"\btimezone\x18\x04 \x01(\tR\btimezone\x12-\n" +
-	"\x05extra\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x05extra\"\xe5\x03\n" +
+	"\x11GetProfileRequest\"\xf7\x01\n" +
+	"\vUserProfile\x12\x1b\n" +
+	"\x06gender\x18\x01 \x01(\x03H\x00R\x06gender\x88\x01\x01\x12\x1f\n" +
+	"\bbirthday\x18\x02 \x01(\tH\x01R\bbirthday\x88\x01\x01\x12\x1b\n" +
+	"\x06locale\x18\x03 \x01(\tH\x02R\x06locale\x88\x01\x01\x12\x1f\n" +
+	"\btimezone\x18\x04 \x01(\tH\x03R\btimezone\x88\x01\x01\x122\n" +
+	"\x05extra\x18\x05 \x01(\v2\x17.google.protobuf.StructH\x04R\x05extra\x88\x01\x01B\t\n" +
+	"\a_genderB\v\n" +
+	"\t_birthdayB\t\n" +
+	"\a_localeB\v\n" +
+	"\t_timezoneB\b\n" +
+	"\x06_extra\"\xe5\x03\n" +
 	"\x0fProfileResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
@@ -1015,12 +1028,14 @@ const file_api_account_v1_profile_proto_rawDesc = "" +
 	"created_at\x18\r \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\x125\n" +
-	"\aprofile\x18\x0f \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\x88\x01\n" +
-	"\x14UpdateProfileRequest\x12\x1a\n" +
-	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x1d\n" +
+	"\aprofile\x18\x0f \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\xae\x01\n" +
+	"\x14UpdateProfileRequest\x12\x1f\n" +
+	"\bnickname\x18\x01 \x01(\tH\x00R\bnickname\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"avatar_url\x18\x02 \x01(\tR\tavatarUrl\x125\n" +
-	"\aprofile\x18\x03 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\"\f\n" +
+	"avatar_url\x18\x02 \x01(\tH\x01R\tavatarUrl\x88\x01\x01\x125\n" +
+	"\aprofile\x18\x03 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofileB\v\n" +
+	"\t_nicknameB\r\n" +
+	"\v_avatar_url\"\f\n" +
 	"\n" +
 	"OkResponse\"h\n" +
 	"\x12AvatarUploadConfig\x12\x12\n" +
@@ -1114,6 +1129,8 @@ func file_api_account_v1_profile_proto_init() {
 	if File_api_account_v1_profile_proto != nil {
 		return
 	}
+	file_api_account_v1_profile_proto_msgTypes[2].OneofWrappers = []any{}
+	file_api_account_v1_profile_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
