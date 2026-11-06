@@ -82,16 +82,8 @@
   text-overflow: ellipsis;
 }
 
-.enabled {
-  color: @color-primary;
-  white-space: nowrap;
-}
-
-// 禁用凭证 / 禁用用户态文案（tokens 无 muted-danger，取 text-muted 弱化展示）。
-.disabled {
-  color: @color-text-muted;
-  white-space: nowrap;
-}
+// 凭证启停状态徽章换 Semi Tag（启用 color=green / 禁用默认），原
+// .enabled（装饰性 @color-primary 引用）/ .disabled 自绘文字规则随替换删除。
 
 .mfaRequired {
   margin: 0 0 @spacing-xs;
@@ -105,20 +97,11 @@
   font-size: @font-size-sm;
 }
 
-.actionError {
-  margin: 0 0 @spacing-md;
-  color: @color-danger;
-  font-size: @font-size-sm;
-}
-
-.loading {
-  margin: @spacing-lg 0;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-}
-
-.loadError {
-  margin: @spacing-lg 0;
-  color: @color-danger;
-  font-size: @font-size-md;
+// 整页加载态（Semi Spin 居中容器；页级 / 区块级错误态直接用 Semi
+// Banner 默认样式，解绑失败反馈走 Toast——原 .actionError / .loading /
+// .loadError 自绘文字规则随替换删除）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
 }

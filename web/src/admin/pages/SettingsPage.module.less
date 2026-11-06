@@ -12,28 +12,19 @@
   margin-bottom: @spacing-md;
 }
 
-.notice {
-  margin: 0 0 @spacing-md;
-  color: @color-primary; // tokens 无 success 令牌（shared/ 只读），成功提示沿用主色
-  font-size: @font-size-sm;
-}
-
 .actionError {
   margin: 0 0 @spacing-md;
   color: @color-danger;
   font-size: @font-size-sm;
 }
 
-.loading {
-  margin: @spacing-lg 0;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-}
-
-.loadError {
-  margin: @spacing-lg 0;
-  color: @color-danger;
-  font-size: @font-size-md;
+// 整页加载态（Semi Spin 居中容器；页级错误态直接用 Semi Banner 默认
+// 样式，成功 / 写失败反馈走 Toast——原 .notice / .loading / .loadError 自绘
+// 文字规则随替换删除，装饰性 @color-primary 引用一并清除）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
 }
 
 // 分区表单：纵向卡片流。

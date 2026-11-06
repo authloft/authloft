@@ -6,7 +6,8 @@
  * （后端已实装）；解绑第三方（§5.4 行 1253 UnbindUserThirdparty
  * {id, providerKey}）Popconfirm 确认 → 成功后重取详情；Union 行不可单独解绑
  * 由服务端兜底（invalid_request）——admin 绑定视图 UserThirdpartyBinding 无
- * type 标记（§5.4 未定义），前端不预判置灰，失败文案就地展示。
+ * type 标记（§5.4 未定义），前端不预判置灰，失败经 Semi Toast 展示
+ * （原就地 actionError 文字已移除；解绑成功反馈无现成 i18n 键，留待后续打磨）。
  *
  * 登录日志（§5.4 行 1255 GetUserEvents {id} + 分页 §1.7）：DataTable 消费
  * （分页 / 排序受控 TableQueryState，初始 created_at desc——EventLogTable
@@ -19,7 +20,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Popconfirm, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useRequest } from '../../shared/hooks/useRequest';
@@ -111,8 +112,6 @@ export function UserDetailPage(props: {
   const [eventsQuery, setEventsQuery] = useState<TableQueryState>(INITIAL_EVENTS_QUERY);
   const { status: eventsStatus, data: eventsData, error: eventsError, run: runEvents } =
     useRequest(getUserEvents);
-  // 解绑失败文案就地展示（成功经详情重取自然刷新）。
-  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
@@ -134,7 +133,8 @@ export function UserDetailPage(props: {
 
   /**
    * 解绑第三方（§5.4 行 1253）：Union 行不可单独解绑由服务端兜底
-   * （invalid_request → 文案就地展示）；成功后重取详情刷新绑定列表。
+   * （invalid_request → 失败经 Toast 展示）；成功后重取详情刷新
+   * 绑定列表（成功反馈无现成 i18n 键，留待后续打磨）。
    */
   async function handleUnbind(providerKey: string): Promise<void> {
     try {
@@ -143,23 +143,23 @@ export function UserDetailPage(props: {
       );
       await run(buildGetUserRequest(props.userId));
     } catch (unbindError) {
-      setActionError(apiErrorText(unbindError));
+      Toast.error(apiErrorText(unbindError));
     }
   }
 
-  // 详情错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 页级错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (status === 'error' && !isUnauthenticatedError(error)) {
     return (
-      <p role="alert" className={styles.loadError}>
-        {t('admin.userDetailLoadFailed')}
-      </p>
+      <Banner type="danger" fullMode={false} description={t('admin.userDetailLoadFailed')} />
     );
   }
+  // 裸文字换 Semi Spin。
   if (data === undefined) {
     return (
-      <p role="status" className={styles.loading}>
-        {t('admin.loading')}
-      </p>
+      <div className={styles.stateCenter} role="status">
+        <Spin size="large" />
+      </div>
     );
   }
 
@@ -172,11 +172,6 @@ export function UserDetailPage(props: {
         {t('admin.userDetailTitle')}
         {user !== undefined ? `：${user.username}` : ''}
       </Typography.Title>
-      {actionError !== null ? (
-        <p role="alert" className={styles.actionError}>
-          {actionError}
-        </p>
-      ) : null}
 
       <section className={styles.block}>
         <h4 className={styles.blockTitle}>{t('admin.basicInfoSection')}</h4>
@@ -239,11 +234,12 @@ export function UserDetailPage(props: {
                   {credentialKindLabel(credential.kind)}
                   {credential.label !== '' ? `（${credential.label}）` : ''}
                 </span>
-                <span className={credential.isEnabled ? styles.enabled : styles.disabled}>
-                  {credential.isEnabled
-                    ? t('admin.credentialEnabled')
-                    : t('admin.credentialDisabled')}
-                </span>
+                {/* 自绘状态徽章（主色蓝代偿）换 Semi Tag，语义色交 Semi。 */}
+                {credential.isEnabled ? (
+                  <Tag color="green">{t('admin.credentialEnabled')}</Tag>
+                ) : (
+                  <Tag>{t('admin.credentialDisabled')}</Tag>
+                )}
                 <span className={styles.listMeta}>
                   {t('admin.boundAt', { time: formatUnixTime(credential.createdAt) })}
                   {credential.lastUsedAt > BigInt(0)
@@ -293,9 +289,8 @@ export function UserDetailPage(props: {
       <section className={styles.block}>
         <h4 className={styles.blockTitle}>{t('admin.loginLogSection')}</h4>
         {eventsStatus === 'error' && !isUnauthenticatedError(eventsError) ? (
-          <p role="alert" className={styles.actionError}>
-            {t('admin.loginLogLoadFailed')}
-          </p>
+          // 区块级错误态换 Semi Banner（自带 role="alert"）。
+          <Banner type="danger" fullMode={false} description={t('admin.loginLogLoadFailed')} />
         ) : (
           <DataTable<EventItem>
             columns={getEventsColumns()}
