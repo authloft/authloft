@@ -117,8 +117,10 @@ func (f *fakeCaptcha) Config(context.Context) captcha.Config { return f.cfg }
 
 // newSessionHandler 构造挂真实 session 拦截器的生成 handler（自造密钥
 // version=1 kid=1，同 internal/connect/session_test.go 口径），返回签发
-// 助手与 http.Handler。GetConfig / 三方绑定族 / UpdateProfile 依赖经 deps
-// 可选注入（nil 取空 fake，GetProfile 用例不受影响）。
+// 助手与 http.Handler。GetConfig / 三方绑定族 / UpdateProfile / 五族接线
+// 依赖经 deps 可选注入（nil 取空 fake，GetProfile 用例不受影响）；
+// cookies 为会话 Cookie 构造器（ChangePassword 清除断言用，与拦截器同源
+// 构造）。
 func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	var d *getConfigDeps
@@ -138,8 +140,13 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	}
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
+	cookies := session.NewCookie("al_session", "", time.Hour)
+	if d.cookies != nil {
+		cookies = d.cookies
+	}
 	_, h := accountv1connect.NewAccountServiceHandler(
-		New(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile()),
+		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
+			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -150,16 +157,22 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	return tokens, epochs, h
 }
 
-// getConfigDeps GetConfig / 三方绑定族 / 通行密钥族 / UpdateProfile 用例的
-// 依赖集（缺省字段取空 fake）。
+// getConfigDeps GetConfig / 三方绑定族 / 通行密钥族 / UpdateProfile / 五族
+// 接线用例的依赖集（缺省字段取空 fake）。
 type getConfigDeps struct {
-	credsIn      CredentialReader
-	settingsIn   SettingsReader
-	providersIn  ProviderReader
-	captcha      CaptchaConfiger
-	thirdpartyIn Thirdparty
-	webauthnIn   Webauthn
-	profileIn    ProfileUpdater
+	credsIn       CredentialReader
+	settingsIn    SettingsReader
+	providersIn   ProviderReader
+	captcha       CaptchaConfiger
+	thirdpartyIn  Thirdparty
+	webauthnIn    Webauthn
+	profileIn     ProfileUpdater
+	avatarIn      AvatarDirector
+	passwordIn    PasswordChanger
+	bindcontactIn ContactBinder
+	mfaIn         MfaManager
+	eventsIn      EventReader
+	cookies       *session.Cookie
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -183,9 +196,14 @@ func (d *getConfigDeps) providers() ProviderReader {
 	return d.providersIn
 }
 
-func (d *getConfigDeps) thirdparty() Thirdparty { return d.thirdpartyIn }
-func (d *getConfigDeps) webauthn() Webauthn     { return d.webauthnIn }
-func (d *getConfigDeps) profile() ProfileUpdater { return d.profileIn }
+func (d *getConfigDeps) thirdparty() Thirdparty     { return d.thirdpartyIn }
+func (d *getConfigDeps) webauthn() Webauthn         { return d.webauthnIn }
+func (d *getConfigDeps) profile() ProfileUpdater    { return d.profileIn }
+func (d *getConfigDeps) avatar() AvatarDirector     { return d.avatarIn }
+func (d *getConfigDeps) password() PasswordChanger  { return d.passwordIn }
+func (d *getConfigDeps) bindcontact() ContactBinder { return d.bindcontactIn }
+func (d *getConfigDeps) mfa() MfaManager            { return d.mfaIn }
+func (d *getConfigDeps) events() EventReader        { return d.eventsIn }
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -715,13 +733,13 @@ func TestGetConfigWithoutSession(t *testing.T) {
 	}
 }
 
-// TestOtherMethodsUnimplemented 其余方法一律返回生成基类的 unimplemented
-// （GetConfig、三方绑定族四方法、通行密钥族四方法与 UpdateProfile
-// 〔GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
-// DeleteWebauthnCredential〕均已实装，移出桩清单——未装配 service 时的
-// unimplemented 由 TestThirdpartyMethodsNotConfigured /
-// TestWebauthnMethodsNotConfigured / TestUpdateProfileNotConfigured 单独覆盖）。
-func TestOtherMethodsUnimplemented(t *testing.T) {
+// TestServiceMethodsNotConfigured 未装配五族 service（avatar / password /
+// bindcontact / mfa / events，降级装配口径）时十一桩一律
+// unimplemented（TestThirdpartyMethodsNotConfigured /
+// TestWebauthnMethodsNotConfigured / TestUpdateProfileNotConfigured 同款）。
+// 至此 account 域 22 方法全部实装，桩清单测试（原 TestOtherMethodsUnimplemented）
+// 随十一桩移出而清空删除。
+func TestServiceMethodsNotConfigured(t *testing.T) {
 	_, _, h := newSessionHandler(t, &fakeUsers{})
 	cases := []string{
 		accountv1connect.AccountServicePresignAvatarProcedure,
@@ -1637,4 +1655,632 @@ func readBody(t *testing.T, r io.Reader) string {
 		t.Fatalf("read body: %v", err)
 	}
 	return string(b)
+}
+
+// —— 五族接线（接口文档 §3.2 行 839-840 / §3.3 / §3.4 / §3.5 /
+// §3.7 行 1057）——
+//
+// fake service 注入（不依赖 bootstrap 装配——CSP 窗口期冻结，装配归
+// 阶段二）：各 fake 预置出参 / 错误回放 + 入参记录（uid / 透传字段），
+// 断言「仅本人（会话 uid 注入）+ 请求透传 + 错误映射」三层。
+
+// fakeAvatar AvatarDirector 的 fake。
+type fakeAvatar struct {
+	presignOut  *accountv1.AvatarPresignResponse
+	presignErr  error
+	commitOut   *accountv1.AvatarResponse
+	commitErr   error
+	presignUIDs []int64
+	presignReqs []*accountv1.PresignAvatarRequest
+	commitUIDs  []int64
+	commitKeys  []string
+}
+
+func (f *fakeAvatar) PresignAvatar(_ context.Context, uid int64, in *accountv1.PresignAvatarRequest) (*accountv1.AvatarPresignResponse, error) {
+	f.presignUIDs = append(f.presignUIDs, uid)
+	f.presignReqs = append(f.presignReqs, in)
+	return f.presignOut, f.presignErr
+}
+
+func (f *fakeAvatar) CommitAvatar(_ context.Context, uid int64, in *accountv1.CommitAvatarRequest) (*accountv1.AvatarResponse, error) {
+	f.commitUIDs = append(f.commitUIDs, uid)
+	f.commitKeys = append(f.commitKeys, in.GetKey())
+	return f.commitOut, f.commitErr
+}
+
+// postService 挂会话打一桩（五族接线用例共用请求模式）。
+func postService(t *testing.T, procedure, body string, d *getConfigDeps) (int, string, *http.Response) {
+	t.Helper()
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, d)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+procedure, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", procedure, err)
+	}
+	raw := readBody(t, resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, raw, resp
+}
+
+// TestPresignAvatarConnect：成功回显 presign 产物 + uid 注入；MIME 不合规 →
+// 400 + ErrorInfo(account, file_type_not_allowed)；无会话 401。
+func TestPresignAvatarConnect(t *testing.T) {
+	av := &fakeAvatar{presignOut: &accountv1.AvatarPresignResponse{
+		Key: "avatars/10086/abc123.png", UploadUrl: "https://s3.example.com/put",
+		Headers: map[string]string{"Content-Type": "image/png"}, ExpiresIn: 300,
+	}}
+	code, raw, _ := postService(t, accountv1connect.AccountServicePresignAvatarProcedure,
+		`{"filename":"a.png","contentType":"image/png","size":"1024"}`, &getConfigDeps{avatarIn: av})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(av.presignUIDs) != 1 || av.presignUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]（会话注入）", av.presignUIDs)
+	}
+	if len(av.presignReqs) != 1 || av.presignReqs[0].GetContentType() != "image/png" {
+		t.Errorf("service 收到请求 = %v（proto 原样透传）", av.presignReqs)
+	}
+	var got accountv1.AvatarPresignResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetKey() != "avatars/10086/abc123.png" || got.GetUploadUrl() != "https://s3.example.com/put" ||
+		got.GetExpiresIn() != 300 || got.GetHeaders()["Content-Type"] != "image/png" {
+		t.Errorf("presign 产物回显 = %+v", &got)
+	}
+
+	av2 := &fakeAvatar{presignErr: fmt.Errorf("wrap: %w", accountsvc.ErrAvatarFileTypeNotAllowed)}
+	code, raw, _ = postService(t, accountv1connect.AccountServicePresignAvatarProcedure,
+		`{"filename":"a.exe","contentType":"application/octet-stream","size":"1"}`, &getConfigDeps{avatarIn: av2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "file_type_not_allowed" || info.GetDomain() != "account" {
+		t.Errorf("ErrorInfo = %s/%s, want account/file_type_not_allowed", info.GetDomain(), info.GetCode())
+	}
+}
+
+// TestCommitAvatarConnect：成功 {url} + key 透传；非法 key 边界（跨用户
+// 前缀）→ 400 + invalid_request。
+func TestCommitAvatarConnect(t *testing.T) {
+	av := &fakeAvatar{commitOut: &accountv1.AvatarResponse{Url: "https://cdn.example.com/avatars/10086/abc.png"}}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceCommitAvatarProcedure,
+		`{"key":"avatars/10086/abc123.png"}`, &getConfigDeps{avatarIn: av})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(av.commitUIDs) != 1 || av.commitUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", av.commitUIDs)
+	}
+	if len(av.commitKeys) != 1 || av.commitKeys[0] != "avatars/10086/abc123.png" {
+		t.Errorf("service 收到 key = %v", av.commitKeys)
+	}
+	var got accountv1.AvatarResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetUrl() != "https://cdn.example.com/avatars/10086/abc.png" {
+		t.Errorf("url = %q", got.GetUrl())
+	}
+
+	av2 := &fakeAvatar{commitErr: accountsvc.ErrAvatarInvalidRequest}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceCommitAvatarProcedure,
+		`{"key":"avatars/42/other.png"}`, &getConfigDeps{avatarIn: av2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_request" {
+		t.Errorf("ErrorInfo code = %q, want invalid_request", info.GetCode())
+	}
+}
+
+// fakePassword PasswordChanger 的 fake。
+type fakePassword struct {
+	err      error
+	uids     []int64
+	currents []string
+	news     []string
+}
+
+func (f *fakePassword) ChangePassword(_ context.Context, uid int64, currentPassword, newPassword string) error {
+	f.uids = append(f.uids, uid)
+	f.currents = append(f.currents, currentPassword)
+	f.news = append(f.news, newPassword)
+	return f.err
+}
+
+// TestChangePasswordConnect：成功空响应 + 透传 + Set-Cookie al_session 清除
+//（MaxAge=-1，§3.3 行 879 epoch 失效链的浏览器侧收尾）；password_weak /
+// invalid_credentials 两主要错误映射；无会话 401。
+func TestChangePasswordConnect(t *testing.T) {
+	fp := &fakePassword{}
+	code, raw, resp := postService(t, accountv1connect.AccountServiceChangePasswordProcedure,
+		`{"currentPassword":"old-secret","newPassword":"new-secret-1A"}`, &getConfigDeps{passwordIn: fp})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if raw != "{}" {
+		t.Errorf("body = %q, want {}（空响应）", raw)
+	}
+	if len(fp.uids) != 1 || fp.uids[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", fp.uids)
+	}
+	if fp.currents[0] != "old-secret" || fp.news[0] != "new-secret-1A" {
+		t.Errorf("service 收到密码 = (%q, %q)", fp.currents[0], fp.news[0])
+	}
+	var cleared bool
+	for _, ck := range resp.Cookies() {
+		if ck.Name == "al_session" && ck.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Error("响应应携带 MaxAge<0 的 al_session 清除 Cookie")
+	}
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"password_weak", accountsvc.ErrPasswordWeak, "password_weak"},
+		{"invalid_credentials", accountsvc.ErrPasswordInvalidCredentials, "invalid_credentials"},
+		{"invalid_request", fmt.Errorf("wrap: %w", accountsvc.ErrPasswordInvalidRequest), "invalid_request"},
+	}
+	for _, tc := range cases {
+		fp := &fakePassword{err: tc.err}
+		code, raw, _ := postService(t, accountv1connect.AccountServiceChangePasswordProcedure,
+			`{"currentPassword":"x","newPassword":"y"}`, &getConfigDeps{passwordIn: fp})
+		if code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body %s)", tc.name, code, raw)
+		}
+		if info := decodeAccountErrorInfo(t, raw); info.GetCode() != tc.want {
+			t.Errorf("%s: ErrorInfo code = %q, want %q", tc.name, info.GetCode(), tc.want)
+		}
+	}
+}
+
+// fakeBindContact ContactBinder 的 fake。
+type fakeBindContact struct {
+	phoneErr   error
+	emailErr   error
+	phoneUIDs  []int64
+	phoneCalls []accountsvc.BindPhoneInput
+	emailUIDs  []int64
+	emailCalls []accountsvc.BindEmailInput
+}
+
+func (f *fakeBindContact) BindPhone(_ context.Context, uid int64, in accountsvc.BindPhoneInput) error {
+	f.phoneUIDs = append(f.phoneUIDs, uid)
+	f.phoneCalls = append(f.phoneCalls, in)
+	return f.phoneErr
+}
+
+func (f *fakeBindContact) BindEmail(_ context.Context, uid int64, in accountsvc.BindEmailInput) error {
+	f.emailUIDs = append(f.emailUIDs, uid)
+	f.emailCalls = append(f.emailCalls, in)
+	return f.emailErr
+}
+
+// TestBindPhoneConnect：challenge 成功（step / target / captcha 转换透传）；
+// captcha_required → 400；invalid_code 携带 attemptsLeft（§1.5 行 222）。
+func TestBindPhoneConnect(t *testing.T) {
+	bc := &fakeBindContact{}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceBindPhoneProcedure,
+		`{"step":"challenge","payload":{"phone":"13900008000","captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}}`,
+		&getConfigDeps{bindcontactIn: bc})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if raw != "{}" {
+		t.Errorf("body = %q, want {}", raw)
+	}
+	if len(bc.phoneUIDs) != 1 || bc.phoneUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", bc.phoneUIDs)
+	}
+	in := bc.phoneCalls[0]
+	if in.Step != "challenge" || in.Target != "13900008000" {
+		t.Errorf("service 收到入参 = %+v", in)
+	}
+	if in.Captcha == nil || in.Captcha.ProviderKey != "builtin_image" || in.Captcha.ID != "cap-1" || in.Captcha.Answer != "1234" {
+		t.Errorf("captcha 转换 = %+v, want ProviderKey/ID/Answer 直映", in.Captcha)
+	}
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"captcha_required", accountsvc.ErrBindCaptchaRequired, "captcha_required"},
+		{"target_taken", accountsvc.ErrBindTargetTaken, "target_taken"},
+		{"too_many_requests", accountsvc.ErrBindTooManyRequests, "too_many_requests"},
+		{"code_expired", accountsvc.ErrBindCodeExpired, "code_expired"},
+	}
+	for _, tc := range cases {
+		bc := &fakeBindContact{phoneErr: tc.err}
+		code, raw, _ := postService(t, accountv1connect.AccountServiceBindPhoneProcedure,
+			`{"step":"challenge","payload":{"phone":"13900008000"}}`, &getConfigDeps{bindcontactIn: bc})
+		if code != http.StatusBadRequest && code != http.StatusConflict && code != http.StatusTooManyRequests {
+			t.Fatalf("%s: status = %d (body %s)", tc.name, code, raw)
+		}
+		if info := decodeAccountErrorInfo(t, raw); info.GetCode() != tc.want {
+			t.Errorf("%s: ErrorInfo code = %q, want %q", tc.name, info.GetCode(), tc.want)
+		}
+	}
+
+	// invalid_code + attemptsLeft：BindInvalidCodeError 经 errors.As 取余量。
+	bc = &fakeBindContact{phoneErr: &accountsvc.BindInvalidCodeError{AttemptsLeft: 2}}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceBindPhoneProcedure,
+		`{"step":"verify","payload":{"phone":"13900008000","code":"000000"}}`, &getConfigDeps{bindcontactIn: bc})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_code" || info.GetAttemptsLeft() != 2 {
+		t.Errorf("ErrorInfo = %s/%s attemptsLeft=%d, want invalid_code/2", info.GetDomain(), info.GetCode(), info.GetAttemptsLeft())
+	}
+}
+
+// TestBindEmailConnect：verify 成功（step / target / code 透传，captcha 忽略）；
+// target_taken → 409 already_exists；无会话 401。
+func TestBindEmailConnect(t *testing.T) {
+	bc := &fakeBindContact{}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceBindEmailProcedure,
+		`{"step":"verify","payload":{"email":"new@example.com","code":"123456"}}`, &getConfigDeps{bindcontactIn: bc})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(bc.emailUIDs) != 1 || bc.emailUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", bc.emailUIDs)
+	}
+	in := bc.emailCalls[0]
+	if in.Step != "verify" || in.Target != "new@example.com" || in.Code != "123456" {
+		t.Errorf("service 收到入参 = %+v", in)
+	}
+
+	bc2 := &fakeBindContact{emailErr: fmt.Errorf("wrap: %w", accountsvc.ErrBindTargetTaken)}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceBindEmailProcedure,
+		`{"step":"verify","payload":{"email":"taken@example.com","code":"123456"}}`, &getConfigDeps{bindcontactIn: bc2})
+	if code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "target_taken" {
+		t.Errorf("ErrorInfo code = %q, want target_taken", info.GetCode())
+	}
+
+	// 无会话 401。
+	_, _, h := newSessionHandler(t, &fakeUsers{}, &getConfigDeps{bindcontactIn: bc})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceBindEmailProcedure, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// fakeMfa MfaManager 的 fake。
+type fakeMfa struct {
+	detail       *accountsvc.MfaDetail
+	detailErr    error
+	setErr       error
+	setCalls     [][]string
+	challenge    *accountsvc.TotpChallenge
+	challengeErr error
+	verifyErr    error
+	verifyUIDs   []int64
+	secrets      []string
+	codes        []string
+	recovery     *accountsvc.RecoveryCodesResult
+	recoveryErr  error
+	regen        *accountsvc.RecoveryCodesResult
+	regenErr     error
+	regenActions []string
+}
+
+func (f *fakeMfa) GetMfa(_ context.Context, _ int64) (*accountsvc.MfaDetail, error) {
+	return f.detail, f.detailErr
+}
+
+func (f *fakeMfa) SetMfa(_ context.Context, _ int64, methods []string) error {
+	f.setCalls = append(f.setCalls, methods)
+	return f.setErr
+}
+
+func (f *fakeMfa) BindTotpChallenge(_ context.Context, _ int64) (*accountsvc.TotpChallenge, error) {
+	return f.challenge, f.challengeErr
+}
+
+func (f *fakeMfa) BindTotpVerify(_ context.Context, uid int64, secret, code string) ([]string, error) {
+	f.verifyUIDs = append(f.verifyUIDs, uid)
+	f.secrets = append(f.secrets, secret)
+	f.codes = append(f.codes, code)
+	return []string{"aaaa-bbbb", "cccc-dddd"}, f.verifyErr
+}
+
+func (f *fakeMfa) GetRecoveryCodes(_ context.Context, _ int64) (*accountsvc.RecoveryCodesResult, error) {
+	return f.recovery, f.recoveryErr
+}
+
+func (f *fakeMfa) RegenerateRecoveryCodes(_ context.Context, _ int64, action string) (*accountsvc.RecoveryCodesResult, error) {
+	f.regenActions = append(f.regenActions, action)
+	return f.regen, f.regenErr
+}
+
+// TestGetMfaConnect：五因子明细投影（factor/bound/target/remaining/
+// credentials）+ recoveryIssuedAt；用户不存在 → 404。
+func TestGetMfaConnect(t *testing.T) {
+	m := &fakeMfa{detail: &accountsvc.MfaDetail{
+		Factors: []accountsvc.MfaFactorDetail{
+			{Factor: "totp", Bound: true, BoundAt: 1761800000, LastUsedAt: 1761800500},
+			{Factor: "otp_sms", Bound: true, Target: "138****8000"},
+			{Factor: "otp_email", Bound: false},
+			{Factor: "webauthn", Bound: true, Credentials: 2, LastUsedAt: 1761800600},
+			{Factor: "recovery_code", Bound: true, Remaining: 8},
+		},
+		RecoveryIssuedAt: 1761800000,
+	}}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceGetMfaProcedure, `{}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	var got accountv1.MfaResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got.GetFactors()) != 5 {
+		t.Fatalf("factors = %d, want 5（§3.5 五因子序）", len(got.GetFactors()))
+	}
+	f0 := got.GetFactors()[0]
+	if f0.GetFactor() != "totp" || !f0.GetBound() || f0.GetBoundAt() != 1761800000 || f0.GetLastUsedAt() != 1761800500 {
+		t.Errorf("factors[0] = %+v", f0)
+	}
+	if f1 := got.GetFactors()[1]; f1.GetTarget() != "138****8000" || !f1.GetBound() {
+		t.Errorf("factors[1] = %+v（掩码目标投影）", f1)
+	}
+	if f3 := got.GetFactors()[3]; f3.GetCredentials() != 2 {
+		t.Errorf("factors[3] credentials = %d, want 2", f3.GetCredentials())
+	}
+	if f4 := got.GetFactors()[4]; f4.GetRemaining() != 8 {
+		t.Errorf("factors[4] remaining = %d, want 8", f4.GetRemaining())
+	}
+	if got.GetRecoveryIssuedAt() != 1761800000 {
+		t.Errorf("recoveryIssuedAt = %d", got.GetRecoveryIssuedAt())
+	}
+
+	m2 := &fakeMfa{detailErr: fmt.Errorf("load: %w", gorm.ErrRecordNotFound)}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceGetMfaProcedure, `{}`, &getConfigDeps{mfaIn: m2})
+	if code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", code, raw)
+	}
+}
+
+// TestSetMfaConnect：methods 透传 + 成功空响应；未知因子 → 400
+// invalid_request。
+func TestSetMfaConnect(t *testing.T) {
+	m := &fakeMfa{}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceSetMfaProcedure,
+		`{"methods":["totp","otp_sms"]}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if raw != "{}" {
+		t.Errorf("body = %q, want {}", raw)
+	}
+	if len(m.setCalls) != 1 || len(m.setCalls[0]) != 2 || m.setCalls[0][0] != "totp" || m.setCalls[0][1] != "otp_sms" {
+		t.Errorf("service 收到 methods = %v", m.setCalls)
+	}
+
+	m2 := &fakeMfa{setErr: fmt.Errorf("wrap: %w", accountsvc.ErrMfaInvalidRequest)}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceSetMfaProcedure,
+		`{"methods":["recovery_code"]}`, &getConfigDeps{mfaIn: m2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_request" {
+		t.Errorf("ErrorInfo code = %q, want invalid_request", info.GetCode())
+	}
+}
+
+// TestBindTotpConnect：challenge {secret, otpauthUrl, qrcodeContent}；verify
+// {recoveryCodes} + uid/secret/code 透传；step 非法 → 400 invalid_request。
+func TestBindTotpConnect(t *testing.T) {
+	m := &fakeMfa{challenge: &accountsvc.TotpChallenge{
+		Secret:        "JBSWY3DPEHPK3PXP",
+		OtpauthUrl:    "otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft",
+		QrcodeContent: "otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft",
+	}}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceBindTotpProcedure,
+		`{"step":"challenge"}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	var got accountv1.BindTotpResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetSecret() != "JBSWY3DPEHPK3PXP" || got.GetQrcodeContent() == "" || got.GetOtpauthUrl() == "" {
+		t.Errorf("challenge 产物 = %+v", &got)
+	}
+
+	m2 := &fakeMfa{}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceBindTotpProcedure,
+		`{"step":"verify","secret":"JBSWY3DPEHPK3PXP","code":"123456"}`, &getConfigDeps{mfaIn: m2})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(m2.verifyUIDs) != 1 || m2.verifyUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", m2.verifyUIDs)
+	}
+	if m2.secrets[0] != "JBSWY3DPEHPK3PXP" || m2.codes[0] != "123456" {
+		t.Errorf("service 收到 (secret, code) = (%q, %q)", m2.secrets[0], m2.codes[0])
+	}
+	var got2 accountv1.BindTotpResponse
+	if err := protojson.Unmarshal([]byte(raw), &got2); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got2.GetRecoveryCodes()) != 2 || got2.GetRecoveryCodes()[0] != "aaaa-bbbb" {
+		t.Errorf("recoveryCodes = %v", got2.GetRecoveryCodes())
+	}
+
+	m3 := &fakeMfa{}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceBindTotpProcedure,
+		`{"step":"bogus"}`, &getConfigDeps{mfaIn: m3})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_request" {
+		t.Errorf("ErrorInfo code = %q, want invalid_request（step 非法）", info.GetCode())
+	}
+}
+
+// TestGetRecoveryCodesConnect：成功 {codes, createdAt}；无签发 → 400
+// code_expired（§8.4 行 1083）。
+func TestGetRecoveryCodesConnect(t *testing.T) {
+	m := &fakeMfa{recovery: &accountsvc.RecoveryCodesResult{
+		Codes: []string{"aaaa-bbbb", "cccc-dddd"}, CreatedAt: 1761800000,
+	}}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceGetRecoveryCodesProcedure, `{}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	var got accountv1.RecoveryCodesResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got.GetCodes()) != 2 || got.GetCreatedAt() != 1761800000 {
+		t.Errorf("recovery codes = %v createdAt=%d", got.GetCodes(), got.GetCreatedAt())
+	}
+
+	m2 := &fakeMfa{recoveryErr: accountsvc.ErrMfaCodeExpired}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceGetRecoveryCodesProcedure, `{}`, &getConfigDeps{mfaIn: m2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "code_expired" {
+		t.Errorf("ErrorInfo code = %q, want code_expired", info.GetCode())
+	}
+}
+
+// TestRegenerateRecoveryCodesConnect：action 透传 + 新码下发；非法 action →
+// 400 invalid_request。
+func TestRegenerateRecoveryCodesConnect(t *testing.T) {
+	m := &fakeMfa{regen: &accountsvc.RecoveryCodesResult{
+		Codes: []string{"eeee-ffff"}, CreatedAt: 1761800100,
+	}}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceRegenerateRecoveryCodesProcedure,
+		`{"action":"regenerate"}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(m.regenActions) != 1 || m.regenActions[0] != "regenerate" {
+		t.Errorf("service 收到 action = %v", m.regenActions)
+	}
+	var got accountv1.RecoveryCodesResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if len(got.GetCodes()) != 1 || got.GetCodes()[0] != "eeee-ffff" || got.GetCreatedAt() != 1761800100 {
+		t.Errorf("regen 产物 = %v createdAt=%d", got.GetCodes(), got.GetCreatedAt())
+	}
+
+	m2 := &fakeMfa{regenErr: fmt.Errorf("wrap: %w", accountsvc.ErrMfaInvalidRequest)}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceRegenerateRecoveryCodesProcedure,
+		`{"action":"bogus"}`, &getConfigDeps{mfaIn: m2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_request" {
+		t.Errorf("ErrorInfo code = %q, want invalid_request", info.GetCode())
+	}
+}
+
+// fakeEvents EventReader 的 fake。
+type fakeEvents struct {
+	rows   []model.EventLog
+	total  int64
+	err    error
+	uids   []int64
+	events []string
+	pages  []int
+	sizes  []int
+}
+
+func (f *fakeEvents) GetEvents(_ context.Context, uid int64, event string, page, pageSize int) ([]model.EventLog, int64, error) {
+	f.uids = append(f.uids, uid)
+	f.events = append(f.events, event)
+	f.pages = append(f.pages, page)
+	f.sizes = append(f.sizes, pageSize)
+	return f.rows, f.total, f.err
+}
+
+// TestGetEventsConnect：分页归一（缺省 page=1 / pageSize=20，§1.7）+ 回显 +
+// 行投影（detail msgpack → JSON 对象、created_at → Unix 秒）；无会话 401。
+func TestGetEventsConnect(t *testing.T) {
+	// {"ip":"203.0.113.9"} 的 msgpack 字节（fixmap1 + str2 "ip" + str11）。
+	detail := []byte{0x81, 0xa2, 'i', 'p', 0xab, '2', '0', '3', '.', '0', '.', '1', '1', '3', '.', '9'}
+	ev := &fakeEvents{
+		rows: []model.EventLog{{
+			ID: 1, Event: "login_success", UserID: 10086,
+			IP: "203.0.113.9", UA: "ua-x", AMR: "pwd", ClientID: "web",
+			Detail: detail, CreatedAt: time.Unix(1761800000, 0).UTC(),
+		}},
+		total: 1,
+	}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceGetEventsProcedure,
+		`{}`, &getConfigDeps{eventsIn: ev})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(ev.uids) != 1 || ev.uids[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]（仅本人）", ev.uids)
+	}
+	if ev.events[0] != "" || ev.pages[0] != 1 || ev.sizes[0] != 20 {
+		t.Errorf("service 收到 (event, page, size) = (%q, %d, %d), want 缺省归一 (\"\", 1, 20)", ev.events[0], ev.pages[0], ev.sizes[0])
+	}
+	var got accountv1.GetEventsResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetTotal() != 1 || got.GetPage() != 1 || got.GetPageSize() != 20 {
+		t.Errorf("total/page/pageSize = %d/%d/%d, want 1/1/20（归一回显）", got.GetTotal(), got.GetPage(), got.GetPageSize())
+	}
+	if len(got.GetItems()) != 1 {
+		t.Fatalf("items = %d, want 1", len(got.GetItems()))
+	}
+	it := got.GetItems()[0]
+	if it.GetEvent() != "login_success" || it.GetCreatedAt() != 1761800000 ||
+		it.GetIp() != "203.0.113.9" || it.GetUa() != "ua-x" || it.GetAmr() != "pwd" || it.GetClientId() != "web" {
+		t.Errorf("items[0] = %+v", it)
+	}
+	if it.GetDetail().GetFields()["ip"].GetStringValue() != "203.0.113.9" {
+		t.Errorf("detail = %v, want {ip: 203.0.113.9}（msgpack → JSON 对象）", it.GetDetail())
+	}
+
+	// event 过滤 + pageSize 上限钳制（§1.7：上限 100）。
+	ev2 := &fakeEvents{}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceGetEventsProcedure,
+		`{"event":"login_success","page":"2","pageSize":"500"}`, &getConfigDeps{eventsIn: ev2})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if ev2.events[0] != "login_success" || ev2.pages[0] != 2 || ev2.sizes[0] != 100 {
+		t.Errorf("service 收到 (event, page, size) = (%q, %d, %d), want (login_success, 2, 100)", ev2.events[0], ev2.pages[0], ev2.sizes[0])
+	}
+
+	// 无会话 401。
+	_, _, h := newSessionHandler(t, &fakeUsers{}, &getConfigDeps{eventsIn: ev})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceGetEventsProcedure, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
 }

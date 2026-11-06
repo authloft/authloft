@@ -5,8 +5,13 @@
 // 方法（GetThirdpartyBindings / UnbindThirdparty / ThirdpartyOauth /
 // GetThirdpartyTicket，§3.7 / §3.7.1）；UpdateProfile 落地（§3.2 行
 // 837，proto3 optional 口径——编排全部在 service/account.ProfileService，
-// 本层只做会话判定与错误映射）；其余方法一律由生成的
-// UnimplementedAccountServiceHandler 返回 unimplemented（不自造错误信封）。
+// 本层只做会话判定与错误映射）；落地剩余十一桩（PresignAvatar /
+// CommitAvatar §3.2 行 839-840、ChangePassword §3.3、BindPhone / BindEmail
+// §3.4、GetMfa / SetMfa / BindTotp / GetRecoveryCodes /
+// RegenerateRecoveryCodes §3.5、GetEvents §3.7 行 1057——五族 service
+// 已交付，本层做会话判定、proto ↔ 领域结构转换与错误映射），
+// 22 方法全部实装；未装配 service 的方法仍由生成的
+// UnimplementedAccountServiceHandler 语义返回 unimplemented（不自造错误信封）。
 package account
 
 import (
@@ -97,6 +102,49 @@ type ProfileUpdater interface {
 	UpdateProfile(ctx context.Context, uid int64, in *accountv1.UpdateProfileRequest) error
 }
 
+// AvatarDirector 头像直传两桩 service 窄接口（§20 依赖注入）：生产
+// 注入 *accountsvc.AvatarService，测试可传 fake；nil（未装配）时对应方法
+// 返回 unimplemented。service 直接消费 / 产出 proto 消息（avatar.go 签名），
+// 本层不做二次转换。
+type AvatarDirector interface {
+	PresignAvatar(ctx context.Context, uid int64, in *accountv1.PresignAvatarRequest) (*accountv1.AvatarPresignResponse, error)
+	CommitAvatar(ctx context.Context, uid int64, in *accountv1.CommitAvatarRequest) (*accountv1.AvatarResponse, error)
+}
+
+// PasswordChanger 改密 service 窄接口（§20 依赖注入）：生产注入
+// *accountsvc.PasswordService，测试可传 fake；nil（未装配）时 ChangePassword
+// 返回 unimplemented。
+type PasswordChanger interface {
+	ChangePassword(ctx context.Context, uid int64, currentPassword, newPassword string) error
+}
+
+// ContactBinder 换绑 service 窄接口（§20 依赖注入）：生产注入
+// *accountsvc.BindContactService，测试可传 fake；nil（未装配）时对应方法
+// 返回 unimplemented。
+type ContactBinder interface {
+	BindPhone(ctx context.Context, uid int64, in accountsvc.BindPhoneInput) error
+	BindEmail(ctx context.Context, uid int64, in accountsvc.BindEmailInput) error
+}
+
+// MfaManager 两步验证族 service 窄接口（§20 依赖注入）：生产注入
+// *accountsvc.MfaService，测试可传 fake；nil（未装配）时对应方法返回
+// unimplemented。
+type MfaManager interface {
+	GetMfa(ctx context.Context, uid int64) (*accountsvc.MfaDetail, error)
+	SetMfa(ctx context.Context, uid int64, methods []string) error
+	BindTotpChallenge(ctx context.Context, uid int64) (*accountsvc.TotpChallenge, error)
+	BindTotpVerify(ctx context.Context, uid int64, secret, code string) ([]string, error)
+	GetRecoveryCodes(ctx context.Context, uid int64) (*accountsvc.RecoveryCodesResult, error)
+	RegenerateRecoveryCodes(ctx context.Context, uid int64, action string) (*accountsvc.RecoveryCodesResult, error)
+}
+
+// EventReader 本人事件日志 service 窄接口（§20 依赖注入）：生产注入
+// *accountsvc.EventsService，测试可传 fake；nil（未装配）时 GetEvents 返回
+// unimplemented。
+type EventReader interface {
+	GetEvents(ctx context.Context, uid int64, event string, page, pageSize int) ([]model.EventLog, int64, error)
+}
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go）。
 var (
@@ -117,27 +165,73 @@ var (
 	errWebauthnInvalidStep = errors.New("invalid step")
 	// errProfileNotConfigured 未装配资料更新 service（测试桩）。
 	errProfileNotConfigured = errors.New("profile service not configured")
+	// errAvatarNotConfigured 未装配头像直传 service（测试桩）。
+	errAvatarNotConfigured = errors.New("avatar service not configured")
+	// errAvatarInternal 头像直传未知异常的固定文案（§1.6 行 273 internal 无
+	// ErrorInfo；行 842 未配置 / 非 direct 模式同口径）。
+	errAvatarInternal = errors.New("internal error")
+	// errPasswordNotConfigured 未装配改密 service（测试桩）。
+	errPasswordNotConfigured = errors.New("password service not configured")
+	// errBindNotConfigured 未装配换绑 service（测试桩）。
+	errBindNotConfigured = errors.New("bind contact service not configured")
+	// errMfaNotConfigured 未装配两步验证 service（测试桩）。
+	errMfaNotConfigured = errors.New("mfa service not configured")
+	// errMfaInternal 两步验证族未知异常的固定文案（ErrMfaInternal 映射，
+	// §1.6 行 273 internal 无 ErrorInfo）。
+	errMfaInternal = errors.New("internal error")
+	// errMfaInvalidStep BindTotp step 取值非法。
+	errMfaInvalidStep = errors.New("invalid step")
+	// errEventsNotConfigured 未装配事件日志 service（测试桩）。
+	errEventsNotConfigured = errors.New("events service not configured")
 )
 
 // Handler AccountService 服务实现。内嵌生成的 unimplemented 基类：本包未
 // 实现的方法统一返回 Connect CodeUnimplemented。
 type Handler struct {
 	accountv1connect.UnimplementedAccountServiceHandler
-	users      UserReader
-	creds      CredentialReader
-	settings   SettingsReader
-	providers  ProviderReader
-	captcha    CaptchaConfiger
-	thirdparty Thirdparty
-	webauthn   Webauthn
-	profile    ProfileUpdater
+	users       UserReader
+	creds       CredentialReader
+	settings    SettingsReader
+	providers   ProviderReader
+	captcha     CaptchaConfiger
+	thirdparty  Thirdparty
+	webauthn    Webauthn
+	profile     ProfileUpdater
+	avatar      AvatarDirector
+	password    PasswordChanger
+	bindcontact ContactBinder
+	mfa         MfaManager
+	events      EventReader
+	// cookies 会话 Cookie 属性构造器（ChangePassword 成功后清除
+	// al_session——service 层 IncEpoch 已令全部旧令牌失效，浏览器侧清
+	// Cookie 属 handler 收尾；sso handler 同款注入）。
+	cookies *session.Cookie
 }
 
-// New 构造 AccountService handler。thirdparty 为三方绑定族 service、
+// New 构造 AccountService handler（既有八依赖签名，兼容既有装配点；
+// bootstrap 装配段在 CSP 窗口期冻结，五族新依赖经 NewWithServices
+// 注入，装配切换归阶段二）。thirdparty 为三方绑定族 service、
 // webauthn 为通行密钥族 service、profile 为资料更新 service；
-// 测试 / 未装配时传 nil（对应方法返回 unimplemented）。
+// 未装配的五族 service（avatar / password / bindcontact / mfa /
+// events）为 nil，对应方法返回 unimplemented。
 func New(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater) *Handler {
-	return &Handler{users: users, creds: creds, settings: settings, providers: providers, captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile}
+	return NewWithServices(users, creds, settings, providers, captcha, thirdparty, webauthn, profile,
+		nil, nil, nil, nil, nil, nil)
+}
+
+// NewWithServices 全依赖构造：在 New 八依赖之上补五族 service
+//（avatar / password / bindcontact / mfa / events）与会话 Cookie
+// 构造器（ChangePassword 清除 al_session 用；
+// session.Cookie 属性构造器与拦截器同源，sso handler cookies 同款注入）。
+// 各 service 可为 nil（对应方法返回 unimplemented，测试 / 降级装配用）；
+// cookies 为 nil 时跳过 Cookie 清除。
+func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie) *Handler {
+	return &Handler{
+		users: users, creds: creds, settings: settings, providers: providers,
+		captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile,
+		avatar: avatar, password: password, bindcontact: bindcontact, mfa: mfa,
+		events: events, cookies: cookies,
+	}
 }
 
 // GetProfile（接口文档 §3.1 行 774-813 / §3.2 行 820）：从会话取 uid → 读
@@ -714,6 +808,510 @@ func mapWebauthnError(op string, err error) error {
 		return connect.NewError(connect.CodeInternal, errWebauthnInternal)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 头像直传两桩（接口文档 §3.2 行 839-840、
+// §10.8 /《后端架构》§15.1）——
+//
+// 请求绑定与错误映射归本层，direct 三步编排（数据源链复判、key 服务端
+// 生成、presign 签发、URL 回显）在 service/account.AvatarService。
+// avatarUpload 未配置 / 非 direct 模式被直调按未知异常映射 internal
+//（行 842，不新增错误码）。两接口均需 al_session（§1.2 行 96）。
+
+// PresignAvatar（§3.2 行 839、§10.8 direct 第一步）：direct 模式签发有时效
+// PUT URL，{filename, contentType, size} → {key, uploadUrl, headers,
+// expiresIn}；service 直接消费 proto 请求，本层透传。
+func (h *Handler) PresignAvatar(ctx context.Context, req *connect.Request[accountv1.PresignAvatarRequest]) (*connect.Response[accountv1.AvatarPresignResponse], error) {
+	if h.avatar == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errAvatarNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, err := h.avatar.PresignAvatar(ctx, uid, req.Msg)
+	if err != nil {
+		return nil, mapAvatarError("presign avatar", err)
+	}
+	return connect.NewResponse(res), nil
+}
+
+// CommitAvatar（§3.2 行 840、§10.8 direct 第三步）：仅记录已上传并回显
+// 地址，不回读校验（行 868 禁止 Get/HEAD）；{key} → {url}。
+func (h *Handler) CommitAvatar(ctx context.Context, req *connect.Request[accountv1.CommitAvatarRequest]) (*connect.Response[accountv1.AvatarResponse], error) {
+	if h.avatar == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errAvatarNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, err := h.avatar.CommitAvatar(ctx, uid, req.Msg)
+	if err != nil {
+		return nil, mapAvatarError("commit avatar", err)
+	}
+	return connect.NewResponse(res), nil
+}
+
+// mapAvatarError 头像直传 service 错误 → Connect 形态（§1.5 行 181-195
+// 统一口径）：未配置 / 非 direct 模式 → internal 固定文案（行 842 + §1.6
+// 行 273 internal 无 ErrorInfo）；MIME / size 校验类 → invalid_argument +
+// ErrorInfo{file_type_not_allowed / file_too_large}（§1.6 行 261，文案与
+// 前端预校验一致）；文档未覆盖边界的非法入参 → invalid_request；用户不
+// 存在 → not_found（profile.go 口径同源）；其余原样上抛由错误包装拦截器
+// 消毒。
+func mapAvatarError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrAvatarNotConfigured), errors.Is(err, accountsvc.ErrAvatarPresignUnavailable):
+		return connect.NewError(connect.CodeInternal, errAvatarInternal)
+	case errors.Is(err, accountsvc.ErrAvatarFileTypeNotAllowed):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "file_type_not_allowed", "file type not allowed"),
+		)
+	case errors.Is(err, accountsvc.ErrAvatarFileTooLarge):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "file_too_large", "file too large"),
+		)
+	case errors.Is(err, accountsvc.ErrAvatarInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 改密（接口文档 §3.3 行 870-879）——
+
+// ChangePassword（§3.3 行 872）：当前用户改密 / 无密码账号设密，编排全部在
+// service/account.PasswordService（策略校验、旧密码校验、credential 更新、
+// IncEpoch + al:pwdep 同步、审计）；成功为空响应。改密成功后旧会话与全部
+// 已颁发令牌经 epoch 失效链失效（行 879），浏览器侧清除 al_session 收尾
+//（Cookie 构造器 Clear，与 session 拦截器同一写出出口 AddSessionCookie；
+// 未注入时跳过——测试装配用）。
+func (h *Handler) ChangePassword(ctx context.Context, req *connect.Request[accountv1.ChangePasswordRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.password == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errPasswordNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.password.ChangePassword(ctx, uid, req.Msg.GetCurrentPassword(), req.Msg.GetNewPassword()); err != nil {
+		return nil, mapPasswordError("change password", err)
+	}
+	if h.cookies != nil {
+		internalconnect.AddSessionCookie(ctx, h.cookies.Clear(session.RequestSignalFromContext(ctx)))
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// mapPasswordError 改密 service 错误 → Connect 形态（§1.5 行 181-195 统一
+// 口径）：newPassword 不满足策略 → invalid_argument + ErrorInfo{password_weak}
+//（§3.3 行 879）；旧密码校验失败 → invalid_credentials（§1.6 行 247/269
+// 默认口径——password_incorrect 系笔误，不另设码）；参数类 →
+// invalid_request；用户不存在 → not_found；其余原样上抛由错误包装拦截器
+// 消毒。
+func mapPasswordError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrPasswordWeak):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "password_weak", "password does not meet policy"),
+		)
+	case errors.Is(err, accountsvc.ErrPasswordInvalidCredentials):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_credentials", "invalid credentials"),
+		)
+	case errors.Is(err, accountsvc.ErrPasswordInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 手机 / 邮箱换绑族（接口文档 §3.4 行 881-898）——
+//
+// 请求绑定（step / payload 拆解、CaptchaPayload → captcha.Submission）与
+// 错误映射归本层，两步编排（captcha 必检、占用判定、发码、GETDEL 核销、
+// 列级落库、审计）在 service/account.BindContactService。两接口均需
+// al_session（§1.2 行 96）。IP 维度：Connect 链仅暴露请求头、生产侧
+// IPResolver 尚未落地（bootstrap.go TODO §8.1，OTP 因子同走 "unknown"
+// 兜底），本层传空串由 service bindSourceIP 兜底，不自造 Header 解析。
+
+// BindPhone（§3.4 行 887）：手机号绑定 / 换绑两步同端点，由 step 区分
+//（challenge {phone, captcha} / verify {phone, code}）；成功为空响应。
+func (h *Handler) BindPhone(ctx context.Context, req *connect.Request[accountv1.BindPhoneRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.bindcontact == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errBindNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	in := accountsvc.BindPhoneInput{Step: req.Msg.GetStep()}
+	if p := req.Msg.GetPayload(); p != nil {
+		in.Target = p.GetPhone()
+		in.Code = p.GetCode()
+		in.Captcha = captchaSubmission(p.GetCaptcha())
+	}
+	if err := h.bindcontact.BindPhone(ctx, uid, in); err != nil {
+		return nil, mapBindError("bind phone", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// BindEmail（§3.4 行 889）：邮箱绑定 / 换绑两步同端点，由 step 区分；成功
+// 为空响应。
+func (h *Handler) BindEmail(ctx context.Context, req *connect.Request[accountv1.BindEmailRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.bindcontact == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errBindNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	in := accountsvc.BindEmailInput{Step: req.Msg.GetStep()}
+	if p := req.Msg.GetPayload(); p != nil {
+		in.Target = p.GetEmail()
+		in.Code = p.GetCode()
+		in.Captcha = captchaSubmission(p.GetCaptcha())
+	}
+	if err := h.bindcontact.BindEmail(ctx, uid, in); err != nil {
+		return nil, mapBindError("bind email", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// captchaSubmission CaptchaPayload → captcha.Submission（§2.5 行 478-486
+// 统一提交格式）：与 dto/sso.go captchaSubmission 同名字段直映（跨包私有
+// 按既有分工各落一份——本包不为此扩大 dto 导出面）；nil payload 返回 nil
+// 交由 service 按 challenge 步判定缺失。
+func captchaSubmission(c *ssov1.CaptchaPayload) *captcha.Submission {
+	if c == nil {
+		return nil
+	}
+	return &captcha.Submission{
+		ProviderKey: c.GetProviderKey(),
+		Token:       c.GetToken(),
+		ID:          c.GetId(),
+		Answer:      c.GetAnswer(),
+	}
+}
+
+// mapBindError 换绑 service 错误 → Connect 形态（§1.5 行 181-195 统一口径，
+// 十哨兵与 §1.6 行 229-273 封闭集一一对应）：参数 / 校验类 →
+// invalid_argument + ErrorInfo；target_taken → already_exists（409，§1.5
+// 行 191 占用）；user_not_found → not_found（404，行 190 资源不存在）；
+// 限流 / 冷却 / 日限额 → resource_exhausted（429，行 192）；invalid_code
+// 经 errors.As 取 BindInvalidCodeError.AttemptsLeft 挂 ErrorInfo.attemptsLeft
+//（§1.5 行 222「剩余尝试次数」）；其余原样上抛由错误包装拦截器消毒。
+func mapBindError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrBindInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, accountsvc.ErrBindCaptchaRequired):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "captcha_required", "captcha required"),
+		)
+	case errors.Is(err, accountsvc.ErrBindCaptchaInvalid):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "captcha_invalid", "captcha invalid"),
+		)
+	case errors.Is(err, accountsvc.ErrBindTargetTaken):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeAlreadyExists, err),
+			internalconnect.NewErrorInfo("account", "target_taken", "该账号已被其他账号绑定"),
+		)
+	case errors.Is(err, accountsvc.ErrBindUserNotFound):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeNotFound, err),
+			internalconnect.NewErrorInfo("account", "user_not_found", "user not found"),
+		)
+	case errors.Is(err, accountsvc.ErrBindTooManyRequests):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeResourceExhausted, err),
+			internalconnect.NewErrorInfo("account", "too_many_requests", "too many requests"),
+		)
+	case errors.Is(err, accountsvc.ErrBindProviderDisabled):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "provider_disabled", "provider not available"),
+		)
+	case errors.Is(err, accountsvc.ErrBindTooManyAttempts):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "too_many_attempts", "too many attempts"),
+		)
+	case errors.Is(err, accountsvc.ErrBindCodeExpired):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "code_expired", "code expired"),
+		)
+	case errors.Is(err, accountsvc.ErrBindInvalidCode):
+		info := internalconnect.NewErrorInfo("account", "invalid_code", "invalid code")
+		var ic *accountsvc.BindInvalidCodeError
+		if errors.As(err, &ic) {
+			info.AttemptsLeft = ic.AttemptsLeft
+		}
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			info,
+		)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 两步验证族五方法（接口文档 §3.5 行 900-925）——
+//
+// 请求绑定（step 分派、MfaDetail → proto 投影）与错误映射归本层，明细
+// 聚合 / mfa_setting 写入 / TOTP 绑定 / 恢复码生成在
+// service/account.MfaService。五接口均需 al_session（§1.2 行 96）。
+
+// GetMfa（§3.5 行 920）：五因子绑定明细 + recoveryIssuedAt（摘要走 §3.2
+// mfaPolicy，本接口只出明细不重复）。
+func (h *Handler) GetMfa(ctx context.Context, req *connect.Request[accountv1.GetMfaRequest]) (*connect.Response[accountv1.MfaResponse], error) {
+	if h.mfa == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	d, err := h.mfa.GetMfa(ctx, uid)
+	if err != nil {
+		return nil, mapMfaError("get mfa", err)
+	}
+	factors := make([]*accountv1.MfaFactor, len(d.Factors))
+	for i := range d.Factors {
+		f := &d.Factors[i]
+		factors[i] = &accountv1.MfaFactor{
+			Factor:      f.Factor,
+			Bound:       f.Bound,
+			BoundAt:     f.BoundAt,
+			LastUsedAt:  f.LastUsedAt,
+			Target:      f.Target,
+			Credentials: f.Credentials,
+			Remaining:   f.Remaining,
+		}
+	}
+	return connect.NewResponse(&accountv1.MfaResponse{
+		Factors:          factors,
+		RecoveryIssuedAt: d.RecoveryIssuedAt,
+	}), nil
+}
+
+// SetMfa（§3.5 行 921）：勾选启用因子集合；空数组 = 关闭（受 §3.2
+// mfaPolicy.required 约束）；成功为空响应。
+func (h *Handler) SetMfa(ctx context.Context, req *connect.Request[accountv1.SetMfaRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	if h.mfa == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.mfa.SetMfa(ctx, uid, req.Msg.GetMethods()); err != nil {
+		return nil, mapMfaError("set mfa", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// BindTotp 绑定两步（§3.5 行 922-923，step 分派同 RegisterWebauthn 惯例）：
+// challenge → {secret, otpauthUrl, qrcodeContent} 前端绘制二维码；verify
+//（{secret, code}）→ {recoveryCodes} 验证一次后生效并同一响应下发 10 个
+// 恢复码；step 非法 → invalid_request。
+func (h *Handler) BindTotp(ctx context.Context, req *connect.Request[accountv1.BindTotpRequest]) (*connect.Response[accountv1.BindTotpResponse], error) {
+	if h.mfa == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	switch req.Msg.GetStep() {
+	case "challenge":
+		ch, err := h.mfa.BindTotpChallenge(ctx, uid)
+		if err != nil {
+			return nil, mapMfaError("bind totp challenge", err)
+		}
+		return connect.NewResponse(&accountv1.BindTotpResponse{
+			Secret:         ch.Secret,
+			OtpauthUrl:     ch.OtpauthUrl,
+			QrcodeContent:  ch.QrcodeContent,
+		}), nil
+	case "verify":
+		codes, err := h.mfa.BindTotpVerify(ctx, uid, req.Msg.GetSecret(), req.Msg.GetCode())
+		if err != nil {
+			return nil, mapMfaError("bind totp verify", err)
+		}
+		return connect.NewResponse(&accountv1.BindTotpResponse{RecoveryCodes: codes}), nil
+	default:
+		return nil, internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, errMfaInvalidStep),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid step"),
+		)
+	}
+}
+
+// GetRecoveryCodes（§3.5 行 924）：存量恢复码一次性展示 {codes, createdAt}；
+// 无签发 → code_expired（§8.4 行 1083）。
+func (h *Handler) GetRecoveryCodes(ctx context.Context, req *connect.Request[accountv1.GetRecoveryCodesRequest]) (*connect.Response[accountv1.RecoveryCodesResponse], error) {
+	if h.mfa == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, err := h.mfa.GetRecoveryCodes(ctx, uid)
+	if err != nil {
+		return nil, mapMfaError("get recovery codes", err)
+	}
+	return connect.NewResponse(&accountv1.RecoveryCodesResponse{
+		Codes:     res.Codes,
+		CreatedAt: res.CreatedAt,
+	}), nil
+}
+
+// RegenerateRecoveryCodes（§3.5 行 925）：重新生成即全量作废，{action:
+// "regenerate"}；出参同 GetRecoveryCodes 格式一次性下发新码。
+func (h *Handler) RegenerateRecoveryCodes(ctx context.Context, req *connect.Request[accountv1.RegenerateRecoveryCodesRequest]) (*connect.Response[accountv1.RecoveryCodesResponse], error) {
+	if h.mfa == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, err := h.mfa.RegenerateRecoveryCodes(ctx, uid, req.Msg.GetAction())
+	if err != nil {
+		return nil, mapMfaError("regenerate recovery codes", err)
+	}
+	return connect.NewResponse(&accountv1.RecoveryCodesResponse{
+		Codes:     res.Codes,
+		CreatedAt: res.CreatedAt,
+	}), nil
+}
+
+// mapMfaError 两步验证族 service 错误 → Connect 形态（§1.5 行 181-195 统一
+// 口径）：无有效会话 → unauthenticated；参数 / step / 码格式 / action 类 →
+// invalid_argument + ErrorInfo{invalid_request}；码不匹配 → invalid_code；
+// 无签发 / 消费尽 / 未启用 → code_expired（§8.4 行 1083 封闭集）；基础设施
+// 故障 → internal 固定文案（§1.6 行 273 internal 无 ErrorInfo）；用户不
+// 存在 → not_found；其余原样上抛由错误包装拦截器消毒。
+func mapMfaError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrMfaUnauthenticated):
+		return connect.NewError(connect.CodeUnauthenticated, err)
+	case errors.Is(err, accountsvc.ErrMfaInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
+	case errors.Is(err, accountsvc.ErrMfaInvalidCode):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_code", "invalid code"),
+		)
+	case errors.Is(err, accountsvc.ErrMfaCodeExpired):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "code_expired", "recovery codes not available"),
+		)
+	case errors.Is(err, accountsvc.ErrMfaInternal):
+		return connect.NewError(connect.CodeInternal, errMfaInternal)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return connect.NewError(connect.CodeNotFound, errNotFound)
+	default:
+		return fmt.Errorf("account handler: %s: %w", op, err)
+	}
+}
+
+// —— 本人事件日志（接口文档 §3.7 行 1055-1058）——
+
+// eventsListPageSizeMax §1.7 行 277 分页上限（与 admin 域
+// providerListPageSize 同值，跨包私有各落一份）。
+const eventsListPageSizeMax = 100
+
+// GetEvents（§3.7 行 1057）：本人登录记录（仅成功记录——数据源口径，无
+// login_failed 常量与成功标志列，service 头注）；分页沿 §1.7（归一后回显
+// page / pageSize）；行 → proto UserEventItem 投影（detail msgpack → JSON
+// 对象、created_at → Unix 秒）在 dto.AccountUserEventItem（AdminEventItem
+// 同款口径）。sort / order 字段保留但不应用（service 头注：沿
+// admin GetUserEvents 先例固定 id DESC，值域核对留待真后端联调）。
+func (h *Handler) GetEvents(ctx context.Context, req *connect.Request[accountv1.GetEventsRequest]) (*connect.Response[accountv1.GetEventsResponse], error) {
+	if h.events == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errEventsNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	page, size := normalizeListPage(int(req.Msg.GetPage()), int(req.Msg.GetPageSize()))
+	rows, total, err := h.events.GetEvents(ctx, uid, req.Msg.GetEvent(), page, size)
+	if err != nil {
+		return nil, mapEventsError("get events", err)
+	}
+	items := make([]*accountv1.UserEventItem, len(rows))
+	for i := range rows {
+		items[i] = dto.AccountUserEventItem(&rows[i])
+	}
+	return connect.NewResponse(&accountv1.GetEventsResponse{
+		Items:    items,
+		Total:    total,
+		Page:     int64(page),
+		PageSize: int64(size),
+	}), nil
+}
+
+// normalizeListPage §1.7 行 277 分页归一（page 从 1 开始、pageSize 默认 20、
+// 上限 100）——响应回显归一后的生效值；admin 域同名函数为包内私有，跨包
+// 各落一份（口径相同）。
+func normalizeListPage(page, size int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > eventsListPageSizeMax {
+		size = eventsListPageSizeMax
+	}
+	return page, size
+}
+
+// mapEventsError 事件日志 service 错误 → Connect 形态（§1.5 行 181-195 统一
+// 口径）：uid 契约违约（拼装层必须注入会话 uid）→ invalid_argument +
+// ErrorInfo{invalid_request}；repo 错误原样上抛由错误包装拦截器消毒
+//（admin GetUserEvents 同款）。
+func mapEventsError(op string, err error) error {
+	switch {
+	case errors.Is(err, accountsvc.ErrEventsInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
+		)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
 	}

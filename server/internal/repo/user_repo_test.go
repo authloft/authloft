@@ -348,6 +348,91 @@ func TestUserRepoUpdateProfileColumns(t *testing.T) {
 	}
 }
 
+// TestUserRepoUpdateContactColumns（env-skip；BindContactStore 窄接口
+// 的生产实现）：phone / email + 对应 verified 位列级更新（nil = 不写入）、
+// uk_phone / uk_email 唯一键冲突 → ErrUserDuplicate（TOCTOU 占用回补口径，
+// §10.2）、行不存在 → ErrRecordNotFound、同值幂等。
+func TestUserRepoUpdateContactColumns(t *testing.T) {
+	rp, _ := userTestSetup(t)
+	ctx := context.Background()
+
+	u := &model.User{Username: "bind_user"}
+	if err := rp.Create(ctx, u); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	other := &model.User{Username: "other_user"}
+	if err := rp.Create(ctx, other); err != nil {
+		t.Fatalf("Create other 失败: %v", err)
+	}
+
+	// 绑定手机：phone + phone_verified=1，email 列不动（nil 不写入）。
+	phone := "13800138000"
+	one := int8(1)
+	if err := rp.UpdateContactColumns(ctx, u.ID, &phone, nil, &one, nil); err != nil {
+		t.Fatalf("UpdateContactColumns phone 失败: %v", err)
+	}
+	got, err := rp.FindByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("FindByID 失败: %v", err)
+	}
+	if got.Phone == nil || *got.Phone != phone || got.PhoneVerified != 1 {
+		t.Errorf("phone 列 = (%v, %d), want (%q, 1)", got.Phone, got.PhoneVerified, phone)
+	}
+	if got.Email != nil || got.EmailVerified != 0 {
+		t.Errorf("email 列 = (%v, %d), want (nil, 0)（nil 不写入）", got.Email, got.EmailVerified)
+	}
+
+	// 换绑邮箱：email + email_verified=1，phone 列保留。
+	email := "bound@example.com"
+	if err := rp.UpdateContactColumns(ctx, u.ID, nil, &email, nil, &one); err != nil {
+		t.Fatalf("UpdateContactColumns email 失败: %v", err)
+	}
+	if got, err = rp.FindByID(ctx, u.ID); err != nil || *got.Phone != phone || *got.Email != email ||
+		got.PhoneVerified != 1 || got.EmailVerified != 1 {
+		t.Errorf("两联系方式 = (%v %d, %v %d)", got.Phone, got.PhoneVerified, got.Email, got.EmailVerified)
+	}
+
+	// 唯一键冲突：目标 phone 已被他人占用 → ErrUserDuplicate（errors.Is 判别，
+	// service 层 TOCTOU 分支依赖）。
+	if err := rp.UpdateContactColumns(ctx, u.ID, &phone, nil, &one, nil); err != nil {
+		t.Fatalf("占位预置失败: %v", err)
+	}
+	taken := "13900139000"
+	if err := rp.UpdateContactColumns(ctx, other.ID, &taken, nil, &one, nil); err != nil {
+		t.Fatalf("占位预置 other 失败: %v", err)
+	}
+	if err := rp.UpdateContactColumns(ctx, u.ID, &taken, nil, &one, nil); !errors.Is(err, ErrUserDuplicate) {
+		t.Errorf("占用目标应 ErrUserDuplicate, got %v", err)
+	}
+	takenEmail := "taken@example.com"
+	if err := rp.UpdateContactColumns(ctx, other.ID, nil, &takenEmail, nil, &one); err != nil {
+		t.Fatalf("占位预置 other email 失败: %v", err)
+	}
+	if err := rp.UpdateContactColumns(ctx, u.ID, nil, &takenEmail, nil, &one); !errors.Is(err, ErrUserDuplicate) {
+		t.Errorf("占用邮箱应 ErrUserDuplicate, got %v", err)
+	}
+
+	// 占用冲突后原值未被动：u 仍是 phone + bound@example.com。
+	if got, err = rp.FindByID(ctx, u.ID); err != nil || *got.Phone != phone || *got.Email != email {
+		t.Errorf("冲突后原值 = (%v, %v), want (%q, %q)", got.Phone, got.Email, phone, email)
+	}
+
+	// 全指针 nil：仅刷新 updated_at（幂等成功，changed-rows 语义不误报）。
+	if err := rp.UpdateContactColumns(ctx, u.ID, nil, nil, nil, nil); err != nil {
+		t.Fatalf("全 nil 应幂等成功: %v", err)
+	}
+
+	// 同值二次更新：changed-rows 语义 RowsAffected=0，行存在 → 幂等成功。
+	if err := rp.UpdateContactColumns(ctx, u.ID, &phone, nil, &one, nil); err != nil {
+		t.Fatalf("同值二次更新应幂等成功: %v", err)
+	}
+
+	// 行不存在 → ErrRecordNotFound。
+	if err := rp.UpdateContactColumns(ctx, 404, &phone, nil, &one, nil); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)
+	}
+}
+
 // TestUserRepoListUsers（env-skip）：user_status 过滤 + §1.7 分页参数
 //（page 1 起、pageSize 默认 20 上限 100）、id 降序全序稳定。
 func TestUserRepoListUsers(t *testing.T) {

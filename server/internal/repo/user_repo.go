@@ -229,6 +229,56 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 	return nil
 }
 
+// UpdateContactColumns 列级更新 user 表联系方式列 phone / email 与对应
+// verified 位（接口文档 §3.4 BindPhone / BindEmail verify 步落库——目标列 +
+// phone_verified / email_verified 置 1；BindContactStore 窄接口契约）。
+// 指针语义 nil = 该列不写入（UpdateProfileColumns 惯例）；
+// updated_at 一并刷新。目标被他人抢占命中 uk_phone / uk_email 唯一键
+//（MySQL 1062）返回 errors.Is 可判别的 ErrUserDuplicate（UserRepo.Create
+// 判别同源——challenge 拦截后 verify 落库前的 TOCTOU 占用由 service 层
+// 回补 target_taken，《后端架构》§10.2 行 1168）。用户不存在返回包装的
+// gorm.ErrRecordNotFound：MySQL 驱动默认 changed-rows 语义，rows=0 时补
+// SELECT 存在性判定（口径同 UpdateProfileColumns）。
+func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error {
+	cols := map[string]any{"updated_at": time.Now()}
+	if phone != nil {
+		cols["phone"] = *phone
+	}
+	if email != nil {
+		cols["email"] = *email
+	}
+	if phoneVerified != nil {
+		cols["phone_verified"] = *phoneVerified
+	}
+	if emailVerified != nil {
+		cols["email_verified"] = *emailVerified
+	}
+	res := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Updates(cols)
+	if res.Error != nil {
+		if isUserDuplicateKey(res.Error) {
+			return fmt.Errorf("user repo: update contact columns: %w: %w", ErrUserDuplicate, res.Error)
+		}
+		return fmt.Errorf("user repo: update contact columns: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.User{}).
+			Select("COUNT(*)").
+			Where("id = ?", id).
+			Scan(&exists).Error; err != nil {
+			return fmt.Errorf("user repo: update contact columns: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user repo: update contact columns: %w", gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
+}
+
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
 // ListUsers 筛选入参 {q, userStatus}）；Q 非空时对 username / nickname /
 // email / phone 四列做模糊匹配（默认口径：LIKE %q%，LIKE 通配

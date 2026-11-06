@@ -277,3 +277,23 @@ func AccountMfaPolicy(enabled bool, enabledMethods []string, required bool, boun
 	}
 	return policy
 }
+
+// AccountUserEventItem event_log 行 → 本人登录记录条目（§3.7 行 1057）：
+// detail 为 msgpack 字节 → JSON 对象透出（§12.1 行 1629），解码
+// 失败按 nil 处理（AdminEventItem 同款口径——附加信息缺失不影响主字段，
+// 复用 decodeProfileExtra，§3.1 extra 与 §12.0 detail 同源约定）；
+// created_at → Unix 秒。
+func AccountUserEventItem(row *model.EventLog) *accountv1.UserEventItem {
+	if row == nil {
+		return &accountv1.UserEventItem{}
+	}
+	return &accountv1.UserEventItem{
+		Event:     row.Event,
+		CreatedAt: row.CreatedAt.Unix(),
+		Ip:        row.IP,
+		Ua:        row.UA,
+		Amr:       row.AMR,
+		ClientId:  row.ClientID,
+		Detail:    decodeProfileExtra(row.Detail),
+	}
+}
