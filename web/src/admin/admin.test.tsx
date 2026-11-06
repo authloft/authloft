@@ -164,6 +164,18 @@ import {
  *   buildListEventsRequest 全支持、UI 暴露归后续增强。
  * AuditPage / StatusPage / DecodePage 渲染不可测（同上 Blocker）。
  *
+ * 追加（admin 增强收尾）：四项筛选 UI 已暴露（上段「归后续
+ * 增强」销账）——AuditPage 内联换算（idInputToFilter：^\d+$ → BigInt；
+ * dateToUnixFilter：Date → Unix 秒）紧贴 Semi 控件值形态落页面文件，渲染
+ * 不可测（同上 Blocker）；本文件锚定 UI 换算产物形态的请求链：
+ * - listEvents msw：all 预设 × actorId/userId/from/to → wire 十进制字符串
+ *   （§1.12，超 2^53 ID 逐字符保真）；
+ * - buildListEventsRequest：login_records 预设 × 四项叠加照常下发
+ *   （event 让位、四项不让位 → UI 预设下不禁用）；
+ * - getMe avatarUrl 零值省略 → 解码空串（AdminLayout 空串回退文字头像
+ *   的数据面；携带 avatarUrl 的解码已在既有用例断言）。
+ * AdminLayout / AuditPage 渲染不可测（同上 Blocker）。
+ *
  * 【Blocker】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
  * 渲染测试在本工具链下无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
@@ -322,6 +334,22 @@ describe('api.getMe（§5.1 行 1159）', () => {
     expect(res.nickname).toBe('管理员甲');
     expect(res.avatarUrl).toBe('https://cdn.test/a.jpg');
     expect(res.isAdmin).toBe(true);
+  });
+
+  test('avatarUrl 零值省略 → 解码空串（AdminLayout 空串回退文字头像的数据面）', async () => {
+    server.use(
+      http.post(GET_ME_URL, () =>
+        // protojson 省略零值字段（§1.1）：avatarUrl / nickname 未下发。
+        HttpResponse.json({ id: '1', username: 'admin', nickname: '', isAdmin: true }),
+      ),
+    );
+
+    const res = await apiMod.getMe();
+
+    // §9 第 18 条零值兜底：未下发 → ''；AdminLayout 空串分支 → 文字头像。
+    expect(res.avatarUrl).toBe('');
+    // 展示链不变：昵称缺省 → username 回落（adminDisplayName 既有语义）。
+    expect(apiMod.adminDisplayName(res)).toBe('admin');
   });
 
   test('401 → transport 归一 ApiError → isUnauthenticatedError 真 + 分流 redirect_login（§6 行 501 跳登录）', async () => {
@@ -1720,7 +1748,7 @@ describe('userStatusLabel / USER_STATUS_FILTERS（§5.4 行 1251 值域 1/0）',
 });
 
 describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增值原样兜底）', () => {
-  test('已知 kind → 文案；未知值原样返回（跨版本新增，§12.9 行 1754）', () => {
+  test('已知 kind → 文案；未知值原样返回（跨版本新增，§12.9 行 1885）', () => {
     // 因子名复用 factors.* 既有键（'密码登录' / '动态口令'）。
     expect(apiMod.credentialKindLabel('password')).toBe('密码登录');
     expect(apiMod.credentialKindLabel('totp')).toBe('动态口令');
@@ -2741,6 +2769,44 @@ describe('api.listEvents（§5.6 行 1288：统一事件视图，六筛选 + 分
     expect(res.items[1].detail).toBeUndefined();
   });
 
+  test('all 预设 × 四项数值/时间筛选（UI 暴露形态）→ 请求体 wire 十进制字符串（超 2^53 ID 保真）→ 解码', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(LIST_EVENTS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ items: [], total: '0', page: '1', pageSize: '20' });
+      }),
+    );
+
+    // UI 换算产物形态（AuditPage idInputToFilter / dateToUnixFilter）：actorId
+    // 超 2^53（InputNumber 超精度以 string 原样承载 → BigInt 无精度损失，§1.12）。
+    const res = await apiMod.listEvents(
+      apiMod.buildListEventsRequest(
+        'all',
+        {
+          actorId: BigInt('9007199254740993'),
+          userId: BigInt(7),
+          from: BigInt(1730000000),
+          to: BigInt(1730000600),
+        },
+        initialTableQuery(),
+      ),
+    );
+
+    // §1.12 wire：整型一律十进制字符串，超精度 bigint ID 逐字符保真。
+    expect(requestBody).toEqual({
+      actorId: '9007199254740993',
+      userId: '7',
+      from: '1730000000',
+      to: '1730000600',
+      page: '1',
+      pageSize: '20',
+    });
+    expect(res.$typeName).toBe('api.admin.v1.EventListResponse');
+    expect(res.items).toHaveLength(0);
+    expect(res.total).toBe(BigInt(0));
+  });
+
   test('500 reject → ApiError', async () => {
     server.use(
       http.post(LIST_EVENTS_URL, () => new HttpResponse(null, { status: 500 })),
@@ -2815,6 +2881,26 @@ describe('buildListEventsRequest（§5.6 行 1288 六筛选 + §1.7 行 275-278 
     });
     expect(cleared.sort).toBeUndefined();
     expect(cleared.order).toBeUndefined();
+  });
+
+  test('login_records 预设 × actorId/userId/from/to 叠加照常下发（四项在预设下不让位）', () => {
+    // 预设下 event 让位、其余五项照常叠加（构造函数既有语义，UI 不禁用四项）。
+    const req = apiMod.buildListEventsRequest(
+      'login_records',
+      {
+        event: 'settings_update',
+        actorId: BigInt(42),
+        userId: BigInt(1),
+        from: BigInt(1730000000),
+        to: BigInt(1730000600),
+      },
+      initialTableQuery(),
+    );
+    expect(req.event).toBe('login_success');
+    expect(req.actorId).toBe(BigInt(42));
+    expect(req.userId).toBe(BigInt(1));
+    expect(req.from).toBe(BigInt(1730000000));
+    expect(req.to).toBe(BigInt(1730000600));
   });
 });
 

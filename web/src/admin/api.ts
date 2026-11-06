@@ -940,7 +940,7 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
 // - 「登录记录」= event=login_success（《后端架构》§4.6 行 807 记录范围：
 //   记录成功登录 + 各类敏感操作，登录记录即 login_success 单值）；
 // - 「敏感操作」预设的事件类型集合文档未定义封闭集（《后端架构》§4.6
-//   event 值域以 `|...` 收尾、§12.9 行 1754 跨版本可能新增；ListEvents
+//   event 值域以 `|...` 收尾、§12.9 行 1885 跨版本可能新增；ListEvents
 //   的 event 系单值正向精确过滤，无排除语义）——故停报该项，
 //   仅交付「登录记录」预设 + 手动按类型筛选（需求 §4.6 行 260「可按类型
 //   筛选」）。事件类型值域取《后端架构》§4.6 event 列注释，未知值原样
@@ -1030,7 +1030,7 @@ export function buildDecodeTokenRequest(token: string, purpose: string): DecodeT
 /**
  * 事件类型 event → i18n 键（《后端架构》§4.6 event 列值域 16 常量 + §4.6
  * 行 809 oidc_authorize_no_state，共 17 已知值；跨版本新增原样兜底，
- * §12.9 行 1754）。表存键不存文案（模块级求值会冻结 locale），
+ * §12.9 行 1885）。表存键不存文案（模块级求值会冻结 locale），
  * eventTypeLabel 调用期 t()。
  */
 const EVENT_TYPE_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {

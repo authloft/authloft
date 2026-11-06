@@ -6,7 +6,10 @@
  * LogoutLink）+ 面包屑 + Content。
  *
  * GetMe（§5.1 行 1159 管理员信息唯一来源）由布局层真调，渲染在顶栏；
- * 失败分流（§6 行 501，判定纯函数 adminMeFailureAction 在 ./api）：
+ * 头像消费：avatarUrl 非空 → Semi Avatar src 渲染图片（alt 走
+ * admin.meAvatarAlt）；空串 / 零值省略（§9 第 18 条兜底 → ''）→ 回退现状
+ * 首字符文字头像，不新增占位图；失败分流（§6 行 523，判定纯函数
+ * adminMeFailureAction 在 ./api）：
  * - 401（未携带有效会话）→ 统一跳登录 `{al_root}/sso/login`（replace：
  *   管理面不留回退占位，account/ProfilePage 同模式）；
  * - 404（会话有效但非管理员，掩护管理面存在）→ 归一化 ApiError 走统一
@@ -130,7 +133,12 @@ export function AdminLayout(props: {
         <Header className={styles.header}>
           <Breadcrumb routes={[...props.breadcrumb]} />
           <span className={styles.me}>
-            <Avatar size="small">{displayName.slice(0, 1)}</Avatar>
+            {data.avatarUrl !== '' ? (
+              <Avatar size="small" src={data.avatarUrl} alt={t('admin.meAvatarAlt')} />
+            ) : (
+              // 空串回退现状：首字符文字头像（§9 第 18 条零值兜底，无占位图）。
+              <Avatar size="small">{displayName.slice(0, 1)}</Avatar>
+            )}
             <Typography.Text className={styles.meName}>{displayName}</Typography.Text>
           </span>
           <LogoutLink alRoot={props.alRoot} />

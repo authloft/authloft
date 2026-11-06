@@ -198,6 +198,7 @@ export const admin: typeof zhAdmin = {
   'admin.loading': 'Loading…',
   'admin.routeNotFound': 'Page not found',
   'admin.renderError': 'Something went wrong; please refresh and try again',
+  'admin.meAvatarAlt': 'Administrator avatar',
 
   // ---- pages/{SsoClientsPage,OidcClientsPage}.tsx（客户端族共用）--------
   'admin.clientIdLabel': 'Client ID',
@@ -330,6 +331,14 @@ export const admin: typeof zhAdmin = {
   'admin.actorFilterPlaceholder': 'Actor type: all',
   'admin.actorFilterAriaLabel': 'Filter by actor type',
   'admin.noEvents': 'No events yet',
+
+  // ---- pages/AuditPage.tsx 四项筛选（actorId/userId/from/to）----
+  'admin.actorIdFilterPlaceholder': 'Actor ID',
+  'admin.actorIdFilterAriaLabel': 'Filter by actor ID',
+  'admin.userIdFilterPlaceholder': 'User ID',
+  'admin.userIdFilterAriaLabel': 'Filter by user ID',
+  'admin.fromFilterPlaceholder': 'From',
+  'admin.toFilterPlaceholder': 'To',
 
   // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供方族--------
   'admin.providerColumnDisplayName': 'Display Name',

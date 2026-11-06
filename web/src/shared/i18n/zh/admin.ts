@@ -189,6 +189,7 @@ export const admin = {
   'admin.loading': '加载中…',
   'admin.routeNotFound': '页面不存在',
   'admin.renderError': '页面出现异常，请刷新重试',
+  'admin.meAvatarAlt': '管理员头像',
 
   // ---- pages/{SsoClientsPage,OidcClientsPage}.tsx（客户端族共用）--------
   'admin.clientIdLabel': '客户端标识',
@@ -316,6 +317,14 @@ export const admin = {
   'admin.actorFilterPlaceholder': '操作者类型：全部',
   'admin.actorFilterAriaLabel': '按操作者类型筛选',
   'admin.noEvents': '暂无事件记录',
+
+  // ---- pages/AuditPage.tsx 四项筛选（actorId/userId/from/to）----
+  'admin.actorIdFilterPlaceholder': '操作者 ID',
+  'admin.actorIdFilterAriaLabel': '按操作者 ID 筛选',
+  'admin.userIdFilterPlaceholder': '用户 ID',
+  'admin.userIdFilterAriaLabel': '按用户 ID 筛选',
+  'admin.fromFilterPlaceholder': '开始时间',
+  'admin.toFilterPlaceholder': '结束时间',
 
   // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供方族--------
   'admin.providerColumnDisplayName': '显示名',

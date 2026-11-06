@@ -7,7 +7,8 @@
   display: block;
 }
 
-// 筛选条：预设按钮组 + 事件类型 / 操作者类型下拉，窄屏可换行。
+// 筛选条：预设按钮组 + 事件类型 / 操作者类型下拉 + 操作者 / 用户 ID 数值输入
+// + 起止时间选择（四项筛选），窄屏可换行。
 .filterBar {
   display: flex;
   flex-wrap: wrap;
@@ -18,6 +19,16 @@
 
 .filterSelect {
   min-width: 200px;
+}
+
+// ID 数值输入：紧凑宽度即可承载 bigint 量级数字。
+.filterInput {
+  width: 180px;
+}
+
+// 时间选择（type=dateTime 输入更长）。
+.filterDate {
+  width: 224px;
 }
 
 // 长文本列截断（全量内容经 title 悬浮展示；表格列宽受限）。
