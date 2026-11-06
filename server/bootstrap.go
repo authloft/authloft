@@ -39,6 +39,7 @@ import (
 
 	connectrpc "connectrpc.com/connect"
 
+	"authloft/assets"
 	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
 	adminv1connect "authloft/gen/go/api/admin/v1/adminv1connect"
 	rpcv1connect "authloft/gen/go/api/rpc/v1/rpcv1connect"
@@ -1024,6 +1025,9 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 
 	mux := http.NewServeMux()
 	mux.Handle("/", ginEngine)
+	// 静态资源 /assets/**：无鉴权恒在（CDN 回源与内网直连，
+	// §3.13），挂 mux 子树与 gin 链平级——不经 Connect/中间件链。
+	assets.Register(mux)
 	for _, rt := range csrv.Routes() {
 		mux.Handle(rt.Prefix, middleware.HTTPRequestID(
 			middleware.HTTPLogger(
