@@ -45,7 +45,7 @@ import {
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { thirdpartyOauth } from '../../shared/api/account';
 import { ApiError, resolveFlowStatus } from '../../shared/api/errors';
-import { ErrorBanner } from '../../shared/components';
+import { ErrorBanner, Spinner } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import type { MethodsSnapshot } from '../../shared/types/init';
 import { loginOauth, type LoginOauthInput } from '../api';
@@ -262,7 +262,8 @@ export function OAuthCallbackView({
           // b 两态均回跳安全中心，不会落此页终态帧）。
           <section className={styles.section}>
             <p role="status" className={styles.status}>
-              {t('login.processing')}
+              {/* 处理中帧接 Spinner（原纯文本无加载视觉）。 */}
+              <Spinner /> {t('login.processing')}
             </p>
           </section>
         )}

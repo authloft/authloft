@@ -146,6 +146,13 @@ describe('FormStep（kind=form 通用渲染，§4.2 行 424；totp 渲染落点 
     expect(renderForm()).not.toContain('disabled=""');
   });
 
+  test('加载视觉：loading → spinner + 「登录中…」替换按钮文案', () => {
+    const markup = renderForm({ loading: true });
+    expect(markup).toContain('aria-label="加载中…"');
+    expect(markup).toContain('登录中…');
+    expect(renderForm()).not.toContain('登录中…');
+  });
+
   test('空 fields → 空表单（不产生字段控件，§1.11 零值兜底）', () => {
     const markup = renderToStaticMarkup(
       createElement(FormStep, {
@@ -165,13 +172,14 @@ describe('FormStep（kind=form 通用渲染，§4.2 行 424；totp 渲染落点 
 // ---------------------------------------------------------------------------
 
 describe('RedirectStep（§4.2 行 442）', () => {
-  test('展示「正在跳转…」（effect 跳转在 node 静态渲染不执行，副作用经 runRedirect 覆盖）', () => {
+  test('展示「正在跳转…」+ Spinner（加载视觉；effect 跳转在 node 静态渲染不执行，副作用经 runRedirect 覆盖）', () => {
     const markup = renderToStaticMarkup(
       createElement(RedirectStep, {
         authorizeUrl: 'https://auth.example/authorize',
       }),
     );
     expect(markup).toContain('正在跳转');
+    expect(markup).toContain('aria-label="加载中…"'); // Spinner md
   });
 
   test('runRedirect：空 URL 不跳（零值兜底，§9 第 18 条）；非空跳一次', () => {

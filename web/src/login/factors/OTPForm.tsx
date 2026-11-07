@@ -25,7 +25,7 @@
  * login.codeWillBeSentTo / login.submit（zh 原文照搬，en 镜像）。
  */
 import { useState, type FormEvent } from 'react';
-import { FieldRenderer } from '../../shared/components';
+import { FieldRenderer, Spinner } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import { focusField, validateFormValues } from '../validate';
 import { VerifyCodeSection } from '../VerifyCodeSection';
@@ -174,7 +174,14 @@ export function OTPForm({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {t('login.sendCode')}
+        {/* 下发在途的加载视觉。 */}
+        {loading ? (
+          <>
+            <Spinner size="sm" /> {t('login.sending')}
+          </>
+        ) : (
+          t('login.sendCode')
+        )}
       </button>
     </form>
   );

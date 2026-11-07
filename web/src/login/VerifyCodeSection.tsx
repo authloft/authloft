@@ -20,7 +20,7 @@
  * 变化即清内联错误。
  */
 import { useState, type FormEvent } from 'react';
-import { CodeInput } from '../shared/components';
+import { CodeInput, Spinner } from '../shared/components';
 import { useCountdown } from '../shared/hooks/useCountdown';
 import { t } from '../shared/i18n';
 import { toDisplay } from '../shared/utils/int';
@@ -142,7 +142,15 @@ export function VerifyCodeSection({
         disabled={controlsDisabled}
         className={classes.submit}
       >
-        {t(submitLabelKey)}
+        {/* 提交在途的加载视觉（spinner 前置 + 原文案——本组件为登录 /
+            注册 / 重置三场景共享，不替换为 login.submitting 以免语义错位）。 */}
+        {loading === true ? (
+          <>
+            <Spinner size="sm" /> {t(submitLabelKey)}
+          </>
+        ) : (
+          t(submitLabelKey)
+        )}
       </button>
     </form>
   );

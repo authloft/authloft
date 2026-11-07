@@ -13,6 +13,7 @@
  */
 import { useEffect } from 'react';
 
+import { Spinner } from '../../shared/components';
 import { t } from '../../shared/i18n';
 
 /** 缺省跳转动作（§4.2 行 442 location.replace；非浏览器环境无操作——node 测试）。 */
@@ -50,5 +51,10 @@ export function RedirectStep({
     runRedirect(authorizeUrl, navigate);
     // 跳转幂等（location.replace 同 URL 重复执行无感），全依赖不设防重护栏。
   }, [authorizeUrl, navigate]);
-  return <p role="status">{t('login.redirectInProgress')}</p>;
+  // 跳转中帧接 Spinner（原纯文本无加载视觉）。
+  return (
+    <p role="status">
+      <Spinner /> {t('login.redirectInProgress')}
+    </p>
+  );
 }

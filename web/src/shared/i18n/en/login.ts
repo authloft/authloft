@@ -56,6 +56,8 @@ export const login: typeof zhLogin = {
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------
   'login.submit': 'Sign in',
+  'login.submitting': 'Signing in…',
+  'login.sending': 'Sending…',
   'login.sendCode': 'Send verification code',
   'login.codeWillBeSentTo': 'The verification code will be sent to {target}',
   'login.capsLockOn': 'Caps Lock is on',

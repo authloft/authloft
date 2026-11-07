@@ -510,6 +510,14 @@ describe('PasswordForm 静态渲染（§4.3 行 435）', () => {
     expect(renderForm({ loading: true })).toContain('disabled=""');
     expect(renderForm({ disabled: true })).toContain('disabled=""');
   });
+
+  test('加载视觉：loading → spinner + 「登录中…」替换按钮文案（非 loading 原样「登录」）', () => {
+    const markup = renderForm({ loading: true });
+    expect(markup).toContain('aria-label="加载中…"');
+    expect(markup).toContain('登录中…');
+    expect(markup).not.toContain('登录</button>');
+    expect(renderForm()).toContain('登录</button>');
+  });
 });
 
 // ---------------------------------------------------------------------------

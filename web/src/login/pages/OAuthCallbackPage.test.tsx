@@ -462,9 +462,10 @@ describe('dispatchCallback 分派编排', () => {
 // ---------------------------------------------------------------------------
 
 describe('OAuthCallbackView 状态帧渲染', () => {
-  test('初始 / 请求在途 → 处理中提示（不渲染登录页 / 兜底文案）', () => {
+  test('初始 / 请求在途 → 处理中提示 + Spinner（加载视觉；不渲染登录页 / 兜底文案）', () => {
     const markup = renderView({ status: 'idle' });
     expect(markup).toContain('正在处理，请稍候…');
+    expect(markup).toContain('aria-label="加载中…"'); // Spinner md
     expect(markup).not.toContain('<h1>');
     expect(markup).toContain('role="status"');
   });

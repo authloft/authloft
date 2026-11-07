@@ -29,6 +29,7 @@ import {
   type AuthenticationResponseJSON,
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
+import { Spinner } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import type { FactorProps } from './registry';
 import styles from './WebAuthnButton.module.less';
@@ -136,7 +137,16 @@ export function WebAuthnButton({
         onClick={start}
         className={styles.button}
       >
-        {challengeData === undefined ? t('login.passkeySignIn') : t('login.passkeyVerify')}
+        {/* 请求在途的加载视觉。 */}
+        {loading ? (
+          <>
+            <Spinner size="sm" /> {t('login.submitting')}
+          </>
+        ) : challengeData === undefined ? (
+          t('login.passkeySignIn')
+        ) : (
+          t('login.passkeyVerify')
+        )}
       </button>
       {error === 'cancelled' && (
         <p role="alert" className={styles.notice}>{t('login.passkeyCancelled')}</p>

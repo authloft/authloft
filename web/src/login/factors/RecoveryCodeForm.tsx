@@ -9,7 +9,7 @@
  */
 import { useState, type FormEvent } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
-import { FieldRenderer } from '../../shared/components';
+import { FieldRenderer, Spinner } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import { focusField, validateFormValues } from '../validate';
 import type { FactorProps } from './registry';
@@ -87,7 +87,14 @@ export function RecoveryCodeForm({
         disabled={loading || disabled}
         className={styles.submit}
       >
-        {t('login.submit')}
+        {/* 提交在途的加载视觉。 */}
+        {loading ? (
+          <>
+            <Spinner size="sm" /> {t('login.submitting')}
+          </>
+        ) : (
+          t('login.submit')
+        )}
       </button>
     </form>
   );

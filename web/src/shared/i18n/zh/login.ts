@@ -57,6 +57,9 @@ export const login = {
   // ---- 因子表单（factors/：OTPForm、PasswordForm、WebAuthnButton、
   //      RecoveryCodeForm、ProviderButtons）------------------------------------
   'login.submit': '登录',
+  // 提交 / 发送在途的按钮文案（与 Spinner 内嵌同款帧）。
+  'login.submitting': '登录中…',
+  'login.sending': '发送中…',
   'login.sendCode': '发送验证码',
   'login.codeWillBeSentTo': '验证码将发送至 {target}',
   'login.capsLockOn': '已开启大写锁定（Caps Lock）',

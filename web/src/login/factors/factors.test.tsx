@@ -116,6 +116,20 @@ describe('OTPForm challenge 段（§2.6 行 544-545）', () => {
     expect(renderOtp({ step: 'challenge', disabled: true })).toContain('disabled=""');
   });
 
+  test('加载视觉：challenge 段 loading → spinner + 「发送中…」（非 loading 原样）', () => {
+    const markup = renderOtp({ step: 'challenge', loading: true });
+    expect(markup).toContain('aria-label="加载中…"'); // Spinner 内嵌
+    expect(markup).toContain('发送中…');
+    expect(markup).not.toContain('发送验证码</button>');
+    expect(renderOtp({ step: 'challenge' })).toContain('发送验证码');
+  });
+
+  test('加载视觉：verify 段 loading → spinner 前置 + 原文案保留（VerifyCodeSection 共享口径）', () => {
+    const markup = renderOtp({ step: 'verify', loading: true });
+    expect(markup).toContain('aria-label="加载中…"');
+    expect(markup).toContain('登录</button>');
+  });
+
   test('initialValues 回填（评审 P1-5：传输失败 reset 后已输入目标不丢）', () => {
     const markup = renderOtp({
       step: 'challenge',
@@ -202,6 +216,19 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
         createElement(RecoveryCodeForm, { ...base, loading: false, disabled: true }),
       ),
     ).toContain('disabled=""');
+  });
+
+  test('加载视觉：loading → spinner + 「登录中…」替换按钮文案', () => {
+    const markup = renderToStaticMarkup(
+      createElement(RecoveryCodeForm, {
+        fields: [codeField],
+        loading: true,
+        disabled: false,
+        onSubmit: () => {},
+      }),
+    );
+    expect(markup).toContain('aria-label="加载中…"');
+    expect(markup).toContain('登录中…');
   });
 
   test('recoverySubmitGuard（评审 P0-2）：空值拦截（错误槽文案 + 焦点锚 fr-code）；满值放行', () => {
@@ -381,6 +408,14 @@ describe('WebAuthnButton（§4.3 行 453：缺失隐藏 / usernameless 双段按
     expect(
       renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE, disabled: true }),
     ).toContain('disabled=""');
+  });
+
+  test('加载视觉：loading → spinner + 「登录中…」（challenge / verify 同帧）', () => {
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    const markup = renderWebauthn({ loading: true });
+    expect(markup).toContain('aria-label="加载中…"');
+    expect(markup).toContain('登录中…');
+    expect(markup).not.toContain('使用通行密钥登录');
   });
 
   test('isWebAuthnForm：WebAuthn 判定（容器 challengeData / onCredential 注入开关）', () => {
