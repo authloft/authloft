@@ -26,13 +26,16 @@
  * 文案经 shared/i18n（account.* 域键 + common.retry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui-19';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { QrImage } from '../../shared/components/QrImage';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   apiErrorText,
   bindTotp,
   buildBindTotpChallengeRequest,
@@ -45,58 +48,54 @@ import styles from './TotpBindDialog.module.less';
 const CODE_INPUT_FIRST_ID = 'totp-bind-code-input';
 
 /**
- * TOTP 绑定状态壳（ContactBindForm 同款两 useRequest 模式）：
- * 打开（visible 翻转）→ 重置本地态 + 发起 challenge；verify 成功 → 恢复码帧。
+ * TOTP 绑定状态壳（父级条件渲染，打开才挂载——每次打开新实例，本地态
+ * 与 hook 态天然全新，替代自研 reset 语义，review/frontend-request-layer.md
+ * R4 处置）：
+ * 挂载即自动发起 challenge（行 905：入参空串）；verify 成功 → 恢复码帧。
  * Modal 的 X / 遮罩关闭在恢复码帧路由到 onDone（绑定已生效，父级仍需刷新）。
  */
 export function TotpBindDialog(props: {
-  readonly visible: boolean;
   /** 未完成绑定时的关闭（父级仅关框）。 */
   readonly onCancel: () => void;
   /** 绑定完成（含恢复码帧的 X / 遮罩关闭）：父级关框 + 刷新 mfaPolicy / GetMfa。 */
   readonly onDone: () => void;
 }): ReactNode {
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+  // challenge 自动请求（挂载即取）；错误行内帧 + 重试（toast:false 防双报）。
   const {
-    status: challengeStatus,
     data: challenge,
     error: challengeError,
-    run: runChallenge,
-    reset: resetChallenge,
-  } = useRequest(bindTotp);
+    loading: challengeLoading,
+    refresh: retryChallenge,
+  } = useRequest(bindTotp, {
+    defaultParams: [buildBindTotpChallengeRequest()],
+    ...requestOptions({ toast: false, returnTo }),
+  });
+  // verify（手动）：错误行内呈现；成功帧由 verifyData 驱动。
   const {
-    status: verifyStatus,
     data: verifyData,
     error: verifyError,
+    loading: verifying,
     run: runVerify,
-    reset: resetVerify,
-  } = useRequest(bindTotp);
+  } = useRequest(bindTotp, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+  });
   const [code, setCode] = useState('');
   const [inputError, setInputError] = useState<'invalid_code' | undefined>(undefined);
   // 扫码帧（0）/ 输码帧（1）两段；恢复码帧由 verify 成功态驱动。
   const [formStep, setFormStep] = useState<0 | 1>(0);
 
-  // 打开 → 重置 + 发起 challenge（行 905：入参空串）；关框无清理（下次打开重置）。
-  useEffect(() => {
-    if (props.visible) {
-      setCode('');
-      setInputError(undefined);
-      setFormStep(0);
-      resetChallenge();
-      resetVerify();
-      runChallenge(buildBindTotpChallengeRequest()).catch(() => {});
-    }
-  }, [props.visible, runChallenge, resetChallenge, runVerify, resetVerify]);
-
-  const verifying = verifyStatus === 'loading';
   // verify 成功帧（§3.5 行 906）：recoveryCodes 同一响应一次性交给 RecoveryCodePanel。
-  const verified = verifyStatus === 'success';
+  const verified = verifyData !== undefined;
 
   // 自动聚焦：进入输码帧即聚焦首格（直接输入 / 整段粘贴无需先点）。
   useEffect(() => {
-    if (props.visible && formStep === 1 && challenge !== undefined && !verified) {
+    if (formStep === 1 && challenge !== undefined && !verified) {
       document.getElementById(CODE_INPUT_FIRST_ID)?.focus();
     }
-  }, [props.visible, formStep, challenge, verified]);
+  }, [formStep, challenge, verified]);
 
   const submitVerify = () => {
     if (challenge === undefined) {
@@ -108,8 +107,8 @@ export function TotpBindDialog(props: {
       return;
     }
     setInputError(undefined);
-    // 失败 rethrow 已入 state（apiErrorText 出文案），吞掉防 unhandled rejection。
-    runVerify(built.request).catch(() => {});
+    // run 不吞错：错误进集中 onError（toast:false 静默，行内 apiErrorText 呈现）。
+    runVerify(built.request);
   };
 
   const handleCancel = () => {
@@ -122,7 +121,7 @@ export function TotpBindDialog(props: {
   };
 
   return (
-    <Modal title={t('account.totpBindTitle')} visible={props.visible} onCancel={handleCancel} footer={null}>
+    <Modal title={t('account.totpBindTitle')} visible onCancel={handleCancel} footer={null}>
       {/* 步骤指示：添加验证器 → 验证动态码 → 保存恢复码。 */}
       <Steps current={verified ? 2 : formStep} size="small" className={styles.steps}>
         <Steps.Step title={t('account.totpStepAdd')} />
@@ -139,14 +138,14 @@ export function TotpBindDialog(props: {
             {t('account.totpDoneAction')}
           </Button>
         </div>
-      ) : challengeStatus === 'loading' ? (
+      ) : challengeLoading ? (
         <Spin />
       ) : challenge === undefined ? (
         <div className={styles.body}>
           <p role="alert" className={styles.error}>
             {apiErrorText(challengeError)}
           </p>
-          <Button onClick={() => runChallenge(buildBindTotpChallengeRequest()).catch(() => {})}>
+          <Button onClick={() => retryChallenge()}>
             {t('common.retry')}
           </Button>
         </div>
@@ -195,7 +194,7 @@ export function TotpBindDialog(props: {
               {t('account.totpCodeInvalid', { count: DEFAULT_CODE_LENGTH })}
             </p>
           ) : null}
-          {verifyStatus === 'error' ? (
+          {verifyError !== undefined ? (
             <p role="alert" className={styles.error}>
               {apiErrorText(verifyError)}
             </p>

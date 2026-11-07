@@ -24,8 +24,9 @@
  * 从 shared/api/sso 取，不在此重复定义（§5 行 479）。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（§9 第 16 条），本模块
- * 从那里拿 accountClient、不自建 transport；请求状态语义归
- * shared/hooks/useRequest（§3.2），本模块是薄封装。
+ * 从那里拿 accountClient、不自建 transport；请求状态与错误分派归 ahooks
+ * useRequest + shared/hooks/requestOptions 集中 onError（§3.2），
+ * 本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  *
  * 【纯逻辑落位说明】表单请求构造等可测纯函数落在本模块（而非组件文件）：

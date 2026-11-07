@@ -22,15 +22,15 @@
  *
  * 结构沿 login 页族模式（ResetPage 等）：View 为纯状态帧视图
  * （renderToStaticMarkup 可测任意 status 帧），Page 为状态壳
- * （useRequest 发请求 + 401 统一跳登录）。
+ * （ahooks useRequest 发请求 + 集中 onError 分派）。
  *
- * 401 处理（§5 行 480）：GetProfile 返回未登录 → window.location.replace
- * 跳 `{al_root}/sso/login`（AppLayout 层无请求，跳转逻辑经 ./api 的
- * isUnauthenticatedError + ./bootstrap 的 loginUrl 由页面层统一实现，
- * 后续页面复用同一对工具）；其余错误就地提示。
+ * 401 处理（§5 行 480）：统一走 shared/hooks/requestOptions 的集中
+ * onError（跳 `{al_root}/sso/login` 带 returnTo）；其余错误
+ * 静默（toast:false）就地错误帧呈现。例外：头像持久化（手写保留点，
+ * §5.4-#7）与改密成功后的延时跳登录（PasswordChangeForm）仍内联。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Avatar,
   Banner,
@@ -44,8 +44,13 @@ import {
   Typography,
 } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';
-import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import {
+  deriveRequestStatus,
+  type RequestStatus,
+} from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { AvatarUploader } from '../components/AvatarUploader';
 import {
@@ -60,7 +65,6 @@ import {
   type ProfileEditDraft,
   type ProfileEditFieldError,
 } from '../api';
-import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import styles from './ProfilePage.module.less';
 
 /** 昵称为空串（protojson 省略零值 → 解码即空串）时的占位（§9 第 18 条零值兜底）。 */
@@ -315,30 +319,44 @@ export function ProfilePageView(props: {
   );
 }
 
-/** 资料页状态壳：首次进入请求 GetProfile；401 统一跳登录（§5 行 480）。 */
+/** 资料页状态壳：首次进入请求 GetProfile；401 集中 onError 跳登录（§5 行 480）。 */
 export function ProfilePage(): ReactNode {
-  const { status, data, error, run } = useRequest(getProfile);
-  const { status: editStatus, error: editError, run: submitRun } = useRequest(updateProfile);
+  // 自动请求 + 集中 onError（401 跳登录带 returnTo；其余静默，
+  // 错误帧呈现防双报）；useLocation 在 HashRouter 下即 hash 内 location。
+  const location = useLocation();
+  const { data, error, loading, refresh } = useRequest(
+    getProfile,
+    requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+  );
+  const status = deriveRequestStatus(loading, error, data);
+  // 编辑提交（手动）：错误行内呈现（toast:false），成功链走 onSuccess——
+  // 退出编辑态 + 重取 GetProfile + Toast，run 不吞错、错误进集中 onError。
+  const submit = useRequest(updateProfile, {
+    manual: true,
+    ...requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+    onSuccess: () => {
+      // 保存成功：退出编辑态 + 重取 GetProfile（裁量：重取优于乐观更新，
+      // 服务端权威回读为准）；avatarOverride 一并清除——重取后以服务端
+      // avatarUrl 为准（若此前头像持久化失败，此处回到服务端旧值属预期，
+      // 持久化失败提示已单独呈现）。成功反馈接 Semi Toast（P1-6）。
+      setEditing(false);
+      setAvatarOverride(undefined);
+      refresh();
+      Toast.success(t('account.profileSaved'));
+    },
+  });
+  const editStatus = deriveRequestStatus(submit.loading, submit.error, submit.data);
   const [avatarOverride, setAvatarOverride] = useState<string | undefined>(undefined);
   const [avatarPersistFailed, setAvatarPersistFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProfileEditDraft | undefined>(undefined);
   const [fieldError, setFieldError] = useState<ProfileEditFieldError | undefined>(undefined);
-  const alRoot = loadAccountBootstrap().alRoot;
-  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页；
-  // useLocation 在 HashRouter 下即 hash 内 location，白名单前缀形态见 api.ts）。
-  const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §5 行 480：401 统一跳登录（replace：资料页不可回退占位）。
-      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
-    }
-  }, [error, alRoot, location]);
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防 unhandled rejection；
-    // 错误呈现 / 401 跳转均由上 effect + View 帧 处理。
-    run().catch(() => {});
-  }, [run]);
 
   /** 头像上传成功（§10.8 终点 {url}）：本地刷新展示 + 持久化接线。 */
   const handleAvatarUploaded = (url: string) => {
@@ -379,22 +397,8 @@ export function ProfilePage(): ReactNode {
       return;
     }
     setFieldError(undefined);
-    // submitRun 失败 rethrow（错误已入 reducer），吞掉防 unhandled rejection；
-    // 竞态丢弃（undefined）不切回展示态。
-    submitRun(built.request)
-      .then((result) => {
-        if (result !== undefined) {
-          // 保存成功：退出编辑态 + 重取 GetProfile（裁量：重取优于乐观更新，
-          // 服务端权威回读为准）；avatarOverride 一并清除——重取后以服务端
-          // avatarUrl 为准（若此前头像持久化失败，此处回到服务端旧值属预期，
-          // 持久化失败提示已单独呈现）；成功反馈接 Semi Toast（P1-6）。
-          setEditing(false);
-          setAvatarOverride(undefined);
-          run().catch(() => {});
-          Toast.success(t('account.profileSaved'));
-        }
-      })
-      .catch(() => {});
+    // 成功链在 onSuccess；错误由集中 onError 静默（行内 apiErrorText 呈现）。
+    submit.run(built.request);
   };
 
   return (
@@ -409,7 +413,7 @@ export function ProfilePage(): ReactNode {
       draft={draft}
       editStatus={editStatus}
       fieldError={fieldError}
-      editError={editError}
+      editError={submit.error}
       onEdit={startEdit}
       onCancelEdit={() => setEditing(false)}
       onSaveEdit={handleSaveEdit}

@@ -22,12 +22,14 @@
  * taken 出绑定语境文案「该账号已被其他账号绑定」），
  * 随即清参防刷新复读（setSearchParams replace，保 hash 清 query）。
  *
- * 401 处理沿 ProfilePage 模式（§5 行 480）：isUnauthenticatedError +
- * loginUrl 由页面层统一实现。文案经 shared/i18n（account.* 域键；
+ * 401 处理（§5 行 480）：统一走 shared/hooks/requestOptions 的集中
+ * onError（跳登录带 returnTo）；改密成功
+ * 后的延时跳登录仍保留内联跳转。文案经 shared/i18n（account.* 域键；
  * 「通行密钥」卡片题复用 factors.webauthn）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Banner, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { create } from '@bufbuild/protobuf';
 import type {
@@ -36,7 +38,11 @@ import type {
 } from '../../gen/proto/api/account/v1/profile_pb';
 import { MfaPolicySchema } from '../../gen/proto/api/account/v1/profile_pb';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
-import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import {
+  deriveRequestStatus,
+  type RequestStatus,
+} from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
   accountReturnTo,
@@ -45,7 +51,6 @@ import {
   isUnauthenticatedError,
   readBindParam,
 } from '../api';
-import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import { ContactBindForm } from '../components/ContactBindForm';
 import { MfaMethodList } from '../components/MfaMethodList';
 import { PasswordChangeForm } from '../components/PasswordChangeForm';
@@ -145,25 +150,23 @@ export function SecurityPageView(props: {
   );
 }
 
-/** 安全中心状态壳：首次进入请求 GetConfig；401 统一跳登录（§5 行 480）。 */
+/** 安全中心状态壳：首次进入请求 GetConfig；401 集中 onError 跳登录（§5 行 480）。 */
 export function SecurityPage(): ReactNode {
-  const { status, data, error, run } = useRequest(getConfig);
+  // 自动请求（挂载即取，消掉 run().catch 模板）；错误统一走集中
+  // onError——401 跳登录带 returnTo（HashRouter 下 useLocation 即
+  // hash 内 location，ahooks options 每轮渲染取最新闭包），其余静默
+  // （toast:false：错误帧呈现，防 Toast + Banner 双报）。
+  const location = useLocation();
+  const { data, error, loading, refresh } = useRequest(
+    getConfig,
+    requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+  );
+  const status = deriveRequestStatus(loading, error, data);
   const [detailVersion, setDetailVersion] = useState(0);
   const [bindNotice, setBindNotice] = useState<BindNotice | undefined>(undefined);
-  const alRoot = loadAccountBootstrap().alRoot;
-  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页）。
-  const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §5 行 480：401 统一跳登录（replace：安全中心不可回退占位）。
-      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
-    }
-  }, [error, alRoot, location]);
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由上 effect + View 帧处理。
-    run().catch(() => {});
-  }, [run]);
   // redirect 绑定回调落地（§3.7.1 A 行 969-971）：挂载时消费 ?bind= 出横幅，
   // 随即清参（不新增历史项，防刷新复读；readBindParam 纯函数在 ./api，node
   // 可测）。**hash 路由已知坑**：query 在 hash 内
@@ -186,12 +189,12 @@ export function SecurityPage(): ReactNode {
   }, []);
   const refreshConfig = () => {
     // 开关 / 绑定成功只刷 mfaPolicy（§5 行 495：重取 GetConfig 摘要）。
-    run().catch(() => {});
+    refresh();
   };
   const handleWebauthnChanged = () => {
-    // webauthn.bound 可能翻转 → 刷摘要 + 已展开明细重取。
+    // webauthn.bound 可能翻转 → 刷摘要 + 明细重取。
     setDetailVersion((v) => v + 1);
-    run().catch(() => {});
+    refresh();
   };
   return (
     <SecurityPageView

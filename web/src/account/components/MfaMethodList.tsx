@@ -21,14 +21,18 @@
  * 视觉保持 Semi 默认（§9.3 口径：不加卡片外壳与自造装饰）。
  * 文案经 shared/i18n（account.* 域键 + factors.* 因子名复用）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Button, Modal, Popconfirm, Spin, Tag, Toast } from '@douyinfe/semi-ui-19';
 import type { MfaPolicyMethod } from '../../gen/proto/api/account/v1/profile_pb';
 import type { MfaFactor } from '../../gen/proto/api/account/v1/mfa_pb';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import {
+  accountReturnTo,
   apiErrorText,
   buildRegenerateRecoveryCodesRequest,
   buildSetMfaRequest,
@@ -70,6 +74,76 @@ function unboundHint(factor: string): string | undefined {
   return key !== undefined ? t(key) : undefined;
 }
 
+/**
+ * 恢复码弹窗内容（父级条件渲染：打开才挂载 → 每次打开都是新实例，
+ * 本地态与 hook 态天然全新，无旧码 / 旧错误残留——替代自研 reset 语义，
+ * review/frontend-request-layer.md R4 处置）。挂载即取 GetRecoveryCodes
+ * （服务端最新为准）；重新生成成功以新码为准（失败保留旧码，服务端原子作废）。
+ */
+function RecoveryCodesModalBody(props: {
+  /** 重新生成成功回调：父级重取 GetMfa 刷新剩余数。 */
+  readonly onChanged: () => void;
+}): ReactNode {
+  const location = useLocation();
+  const { data: recoveryData, error: recoveryError, loading: recoveryLoading } = useRequest(
+    getRecoveryCodes,
+    requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+  );
+  // 弹窗内重新生成（手动）：错误行内呈现（toast:false），成功 Toast + 上抛刷新。
+  const {
+    data: regenData,
+    error: regenError,
+    loading: regenBusy,
+    run: runRegen,
+  } = useRequest(regenerateRecoveryCodes, {
+    manual: true,
+    ...requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+    onSuccess: () => {
+      Toast.success(t('account.recoveryRegenerateSuccess'));
+      props.onChanged();
+    },
+  });
+
+  // 恢复码视图：重新生成成功后以新码为准；失败保留旧码（服务端原子作废）。
+  const codesView = regenData ?? recoveryData;
+  const initialLoading =
+    recoveryLoading && recoveryData === undefined && regenData === undefined;
+
+  return (
+    <>
+      {initialLoading ? (
+        <Spin />
+      ) : codesView === undefined ? (
+        <p role="alert" className={styles.notice}>
+          {recoveryError !== undefined
+            ? apiErrorText(recoveryError)
+            : t('account.recoveryLoadFailed')}
+        </p>
+      ) : (
+        <RecoveryCodePanel
+          codes={codesView.codes}
+          createdAt={codesView.createdAt}
+          onRegenerate={() => {
+            runRegen(buildRegenerateRecoveryCodesRequest());
+          }}
+          regenerateBusy={regenBusy}
+        />
+      )}
+      {regenError !== undefined ? (
+        <p role="alert" className={styles.notice}>
+          {apiErrorText(regenError)}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export function MfaMethodList(props: {
   /** 系统开放因子摘要（GetConfig mfaPolicy.methods，§3.2 行 834-845）。 */
   readonly methods: MfaPolicyMethod[];
@@ -84,37 +158,62 @@ export function MfaMethodList(props: {
   const [totpOpen, setTotpOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
-  const { status: toggleStatus, error: toggleError, run: runToggle } = useRequest(setMfa);
-  const { data: mfa, status: detailStatus, error: detailError, run: runDetails } =
-    useRequest(getMfa);
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+
+  // 明细自动请求（挂载即取，行内常显摘要）+ refreshDeps
+  // （detailVersion 变化重取，替代 effect 模板）；错误静默（行内呈现防双报）。
   const {
-    data: recoveryData,
-    status: recoveryStatus,
-    error: recoveryError,
-    run: runRecovery,
-  } = useRequest(getRecoveryCodes);
+    data: mfa,
+    error: detailError,
+    loading: detailLoading,
+    refresh: refreshDetails,
+  } = useRequest(getMfa, {
+    refreshDeps: [props.detailVersion],
+    ...requestOptions({ toast: false, returnTo }),
+  });
+  const detailStatus = deriveRequestStatus(detailLoading, detailError, mfa);
+
+  // 最近一次开关动作（onSuccess 出 Toast 文案用；run 成功链不夹带业务参数）。
+  const lastToggleRef = useRef<{ factor: string; next: boolean } | undefined>(undefined);
+  // 启用 / 停用（手动）：错误行内呈现（toast:false），成功 Toast + 双链重取。
   const {
-    data: regenData,
-    status: regenStatus,
-    error: regenError,
-    run: runRegen,
-    reset: resetRegen,
-  } = useRequest(regenerateRecoveryCodes);
+    error: toggleError,
+    loading: toggling,
+    run: runToggle,
+  } = useRequest(setMfa, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+    onSuccess: () => {
+      const action = lastToggleRef.current;
+      if (action !== undefined) {
+        Toast.success(
+          t(action.next ? 'account.mfaEnabledSuccess' : 'account.mfaDisabledSuccess', {
+            factor: factorLabel(action.factor),
+          }),
+        );
+      }
+      props.onPolicyRefresh();
+      refreshDetails();
+    },
+  });
 
-  // 挂载即取一次 GetMfa（行内常显摘要）；detailVersion 变化（通行密钥
-  // 增删）重取。原「显示明细」展开入口删除，不再按需拉取。
-  useEffect(() => {
-    runDetails().catch(() => {});
-  }, [props.detailVersion, runDetails]);
+  // 低余量行内「重新生成」（手动）：行内无错误帧 → 失败走集中 Toast
+  // （toast 默认 true，手动提交标准分派）；成功 Toast + 开弹窗展示新码 + 重取剩余数。
+  const { loading: inlineRegenBusy, run: runInlineRegen } = useRequest(
+    regenerateRecoveryCodes,
+    {
+      manual: true,
+      ...requestOptions({ returnTo }),
+      onSuccess: () => {
+        Toast.success(t('account.recoveryRegenerateSuccess'));
+        setRecoveryOpen(true);
+        refreshDetails();
+      },
+    },
+  );
 
-  // 打开查看恢复码 → 重取（服务端最新为准）；上次重新生成结果在关框时已清。
-  useEffect(() => {
-    if (recoveryOpen) {
-      runRecovery().catch(() => {});
-    }
-  }, [recoveryOpen, runRecovery]);
-
-  /** 启用 / 停用（§3.5 行 904 SetMfa 全量集合）：成功 Toast + 双链重取。 */
+  /** 启用 / 停用（§3.5 行 904 SetMfa 全量集合）：成功链在 onSuccess。 */
   const handleSetEnabled = (factor: string, next: boolean) => {
     const built = buildSetMfaRequest(props.methods, factor, next, props.required);
     if (!built.ok) {
@@ -122,45 +221,19 @@ export function MfaMethodList(props: {
       return;
     }
     setLockedNotice(false);
-    runToggle(built.request)
-      .then((result) => {
-        if (result !== undefined) {
-          Toast.success(
-            t(next ? 'account.mfaEnabledSuccess' : 'account.mfaDisabledSuccess', {
-              factor: factorLabel(factor),
-            }),
-          );
-          props.onPolicyRefresh();
-          runDetails().catch(() => {});
-        }
-      })
-      .catch(() => {});
+    lastToggleRef.current = { factor, next };
+    runToggle(built.request);
   };
 
-  /** 低余量行内「重新生成」：成功开弹窗展示新码 + 重取剩余数。 */
+  /** 低余量行内「重新生成」：成功链在 onSuccess。 */
   const handleRegenerateInline = () => {
-    runRegen(buildRegenerateRecoveryCodesRequest())
-      .then((result) => {
-        if (result !== undefined) {
-          Toast.success(t('account.recoveryRegenerateSuccess'));
-          setRecoveryOpen(true);
-          runDetails().catch(() => {});
-        }
-      })
-      .catch(() => {});
+    runInlineRegen(buildRegenerateRecoveryCodesRequest());
   };
 
-  const toggling = toggleStatus === 'loading';
   // 摘要 methods 与 GetMfa 明细同集合（§3.5 行 886 / §3.2 行 845），按 factor 关联。
   const factorMap = new Map<string, MfaFactor>(
     (mfa?.factors ?? []).map((factor) => [factor.factor, factor]),
   );
-
-  // 恢复码视图：重新生成成功后以新码为准；失败保留旧码（服务端原子作废）。
-  const codesView = regenData ?? recoveryData;
-  const recoveryBusy = regenStatus === 'loading';
-  const recoveryLoading =
-    recoveryStatus === 'loading' && recoveryData === undefined && regenData === undefined;
 
   return (
     <div className={styles.wrap}>
@@ -238,8 +311,8 @@ export function MfaMethodList(props: {
                       <Button
                         size="small"
                         onClick={handleRegenerateInline}
-                        loading={recoveryBusy}
-                        disabled={recoveryBusy}
+                        loading={inlineRegenBusy}
+                        disabled={inlineRegenBusy}
                       >
                         {t('account.recoveryRegenerate')}
                       </Button>
@@ -259,65 +332,36 @@ export function MfaMethodList(props: {
           {t('account.mfaLocked')}
         </p>
       ) : null}
-      {toggleStatus === 'error' ? (
+      {toggleError !== undefined ? (
         <p role="alert" className={styles.notice}>
           {apiErrorText(toggleError)}
         </p>
       ) : null}
-      <TotpBindDialog
-        visible={totpOpen}
-        onCancel={() => setTotpOpen(false)}
-        onDone={() => {
-          setTotpOpen(false);
-          // 绑定成功（P1-6 统一通道）：Toast + 双链重取（totp / recovery_code 翻转）。
-          Toast.success(
-            t('account.mfaEnabledSuccess', { factor: factorLabel('totp') }),
-          );
-          props.onPolicyRefresh();
-          runDetails().catch(() => {});
-        }}
-      />
-      <Modal
-        title={t('factors.recovery_code')}
-        visible={recoveryOpen}
-        onCancel={() => {
-          // 关框即清上次重新生成结果，防重开时闪现旧码一帧（重开走 GetRecoveryCodes）。
-          resetRegen();
-          setRecoveryOpen(false);
-        }}
-        footer={null}
-      >
-        {recoveryLoading ? (
-          <Spin />
-        ) : codesView === undefined ? (
-          <p role="alert" className={styles.notice}>
-            {recoveryStatus === 'error'
-              ? apiErrorText(recoveryError)
-              : t('account.recoveryLoadFailed')}
-          </p>
-        ) : (
-          <RecoveryCodePanel
-            codes={codesView.codes}
-            createdAt={codesView.createdAt}
-            onRegenerate={() => {
-              runRegen(buildRegenerateRecoveryCodesRequest())
-                .then((result) => {
-                  if (result !== undefined) {
-                    Toast.success(t('account.recoveryRegenerateSuccess'));
-                    runDetails().catch(() => {});
-                  }
-                })
-                .catch(() => {});
-            }}
-            regenerateBusy={recoveryBusy}
-          />
-        )}
-        {regenStatus === 'error' ? (
-          <p role="alert" className={styles.notice}>
-            {apiErrorText(regenError)}
-          </p>
-        ) : null}
-      </Modal>
+      {/* 条件渲染替代 reset——打开才挂载（每次打开新实例，无旧错误残留）。 */}
+      {totpOpen ? (
+        <TotpBindDialog
+          onCancel={() => setTotpOpen(false)}
+          onDone={() => {
+            setTotpOpen(false);
+            // 绑定成功（P1-6 统一通道）：Toast + 双链重取（totp / recovery_code 翻转）。
+            Toast.success(
+              t('account.mfaEnabledSuccess', { factor: factorLabel('totp') }),
+            );
+            props.onPolicyRefresh();
+            refreshDetails();
+          }}
+        />
+      ) : null}
+      {recoveryOpen ? (
+        <Modal
+          title={t('factors.recovery_code')}
+          visible
+          onCancel={() => setRecoveryOpen(false)}
+          footer={null}
+        >
+          <RecoveryCodesModalBody onChanged={() => refreshDetails()} />
+        </Modal>
+      ) : null}
     </div>
   );
 }

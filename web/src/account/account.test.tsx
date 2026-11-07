@@ -16,6 +16,7 @@ import {
   ProfileResponseSchema,
   UpdateProfileRequestSchema,
   UserProfileSchema,
+  type MfaPolicyMethod,
 } from '../gen/proto/api/account/v1/profile_pb';
 import { MfaFactorSchema } from '../gen/proto/api/account/v1/mfa_pb';
 import {
@@ -2257,19 +2258,27 @@ describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
 
 describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
   const noop = () => {};
+  // 组件经 useLocation 取 401 returnTo（集中 onError），静态渲染须包
+  // MemoryRouter（HashRouter 下 useLocation 即 hash 内 location）。
+  const renderList = (methods: MfaPolicyMethod[]): string =>
+    renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        {},
+        createElement(mfaMethodListMod.MfaMethodList, {
+          methods,
+          required: false,
+          detailVersion: 0,
+          onPolicyRefresh: noop,
+        }),
+      ),
+    );
 
   test('已启用因子 → 已绑定 Tag + 停用按钮；已停用 → 已停用 Tag + 启用按钮；无 Checkbox', () => {
-    const html = renderToStaticMarkup(
-      createElement(mfaMethodListMod.MfaMethodList, {
-        methods: [
-          create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
-          create(MfaPolicyMethodSchema, { factor: 'webauthn', enabled: false, bound: true }),
-        ],
-        required: false,
-        detailVersion: 0,
-        onPolicyRefresh: noop,
-      }),
-    );
+    const html = renderList([
+      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+      create(MfaPolicyMethodSchema, { factor: 'webauthn', enabled: false, bound: true }),
+    ]);
     expect(html).toContain('已绑定');
     expect(html).toContain('已停用');
     expect(html).toContain('停用');
@@ -2278,21 +2287,23 @@ describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
     expect(html).not.toContain('semi-checkbox');
   });
 
-  test('未绑定：totp 出「绑定」按钮；otp_sms 给指引不出按钮；未绑定 Tag', () => {
-    const html = renderToStaticMarkup(
-      createElement(mfaMethodListMod.MfaMethodList, {
-        methods: [
-          create(MfaPolicyMethodSchema, { factor: 'totp', enabled: false, bound: false }),
-          create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: false }),
-        ],
-        required: false,
-        detailVersion: 0,
-        onPolicyRefresh: noop,
-      }),
-    );
+  test('未绑定：totp 出「绑定」按钮；otp_sms 给指引不出按钮；未绑定 Tag；弹窗条件渲染不挂载', () => {
+    const html = renderList([
+      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: false, bound: false }),
+      create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: false }),
+    ]);
     expect(html).toContain('绑定');
     expect(html).toContain('未绑定');
-    expect(html).toContain('请先在「联系方式」中绑定手机号');
+    // R5 行为差异（定稿口径）：明细改 ahooks 自动请求后 loading 初值
+    // 即 true——SSR 首帧为行内 Spin；未绑定指引在 GetMfa 到达后渲染，SSR
+    // 静态渲染不可达（原断言「请先在…」随 idle 起步语义一并失效，如实改写）。
+    expect(html).toContain('semi-spin');
     expect(html).not.toContain('semi-checkbox');
+    // 「重开无旧错误残留」的结构性断言：TotpBindDialog / 恢复码 Modal 改
+    // 父级条件渲染——未打开不挂载（打开即新实例，hook 态天然全新，替代自研
+    // reset；TotpBindDialog 的 visible prop 已删，回退常驻挂载即 tsc 红）。
+    // SSR 无法模拟「开 → 失败 → 关 → 重开」过程（effects 不跑），过程性断言
+    // 登记为不可达，鉴别力由本结构断言 + props 接口编译期钉死承担。
+    expect(html).not.toContain('绑定 TOTP 动态码');
   });
 });

@@ -11,9 +11,10 @@
  * 后端本接口系桩——测试走 msw，联调待后端实装解锁。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Banner } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import {
   accountReturnTo,
   buildGetEventsRequest,
@@ -21,14 +22,14 @@ import {
   getEvents,
   isUnauthenticatedError,
 } from '../api';
-import { loadAccountBootstrap, loginUrl } from '../bootstrap';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
   initialTableQuery,
   type TableQueryState,
 } from '../../shared/app-ui/dataTableLogic';
 import type { UserEventItem } from '../../gen/proto/api/account/v1/thirdparty_pb';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import styles from './EventLogTable.module.less';
@@ -87,23 +88,20 @@ function logColumns(): readonly DataTableColumn<UserEventItem>[] {
 /** 登录记录表状态壳：query 受控 → GetEvents 取数 → DataTable 渲染。 */
 export function EventLogTable(): ReactNode {
   const [query, setQuery] = useState<TableQueryState>(INITIAL_LOG_QUERY);
-  const { status, data, error, run } = useRequest(getEvents);
-  const alRoot = loadAccountBootstrap().alRoot;
-
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防 unhandled rejection；
-    // 错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run(buildGetEventsRequest(query)).catch(() => {});
-  }, [run, query]);
-
-  // 401 跳登录带 returnTo（/account# + hash 内路径，登录后跳回本页）。
+  // 自动请求 + refreshDeps（query 变化重取，替代 effect 模板）；401
+  // 集中 onError 跳登录带 returnTo，其余静默（错误帧呈现防双报）。
   const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §5 行 480：401 统一跳登录（replace：日志页不可回退占位）。
-      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
-    }
-  }, [error, alRoot, location]);
+  const { data, error, loading } = useRequest(
+    () => getEvents(buildGetEventsRequest(query)),
+    {
+      refreshDeps: [query],
+      ...requestOptions({
+        toast: false,
+        returnTo: () => accountReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const status = deriveRequestStatus(loading, error, data);
 
   if (status === 'error' && !isUnauthenticatedError(error)) {
     // 区块级加载失败裸文本 → Semi Banner（自带 role="alert"）。

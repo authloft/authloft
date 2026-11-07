@@ -14,12 +14,15 @@
  * 分开提示（§4.3 行 453 错误语义独立）。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Button, Empty, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
 import type { WebauthnCredential } from '../../gen/proto/api/account/v1/webauthn_pb';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   buildDeleteWebauthnRequest,
   buildRenameWebauthnRequest,
   deleteWebauthnCredential,
@@ -40,18 +43,36 @@ export function WebauthnList(props: {
   readonly onChanged?: () => void;
 }): ReactNode {
   const available = webauthnAvailable();
-  const { data, status, run } = useRequest(getWebauthnCredentials);
-  const { status: renameStatus, run: runRename } = useRequest(renameWebauthnCredential);
-  const { status: deleteStatus, run: runDelete } = useRequest(deleteWebauthnCredential);
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+  // 列表自动请求（挂载即取）；错误行内呈现（toast:false 防双报）。
+  const { data, error, loading, refresh } = useRequest(
+    getWebauthnCredentials,
+    requestOptions({ toast: false, returnTo }),
+  );
+  // 重命名 / 删除（手动）：错误行内呈现；成功链走 onSuccess（重取列表 +
+  // 翻转上抛，删除会翻转 mfaPolicy.webauthn.bound）。
+  const rename = useRequest(renameWebauthnCredential, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+    onSuccess: () => {
+      setRenamingId(undefined);
+      refresh();
+    },
+  });
+  const del = useRequest(deleteWebauthnCredential, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+    onSuccess: () => {
+      refresh();
+      props.onChanged?.();
+    },
+  });
   const [notice, setNotice] = useState<'cancelled' | 'failed' | null>(null);
   const [registering, setRegistering] = useState(false);
   const [label, setLabel] = useState('');
   const [renamingId, setRenamingId] = useState<bigint | undefined>(undefined);
   const [renameLabel, setRenameLabel] = useState('');
-
-  useEffect(() => {
-    run().catch(() => {});
-  }, [run]);
 
   // 注册三步编排（./api）：成功 → 清 label + 刷新列表 + onChanged 上抛。
   const handleRegister = async () => {
@@ -64,7 +85,7 @@ export function WebauthnList(props: {
       const result = await registerWebauthnCredential(label);
       if (result.ok) {
         setLabel('');
-        run().catch(() => {});
+        refresh();
         props.onChanged?.();
       } else {
         setNotice(result.cancelled ? 'cancelled' : 'failed');
@@ -84,25 +105,11 @@ export function WebauthnList(props: {
     if (renamingId === undefined || trimmed === '') {
       return;
     }
-    runRename(buildRenameWebauthnRequest(renamingId, trimmed))
-      .then((result) => {
-        if (result !== undefined) {
-          setRenamingId(undefined);
-          run().catch(() => {});
-        }
-      })
-      .catch(() => {});
+    rename.run(buildRenameWebauthnRequest(renamingId, trimmed));
   };
 
   const handleDelete = (id: bigint) => {
-    runDelete(buildDeleteWebauthnRequest(id))
-      .then((result) => {
-        if (result !== undefined) {
-          run().catch(() => {});
-          props.onChanged?.();
-        }
-      })
-      .catch(() => {});
+    del.run(buildDeleteWebauthnRequest(id));
   };
 
   const items = data?.items;
@@ -138,9 +145,9 @@ export function WebauthnList(props: {
           {t('account.webauthnRegisterFailed')}
         </p>
       ) : null}
-      {status === 'loading' && items === undefined ? (
+      {loading && items === undefined ? (
         <Spin />
-      ) : status === 'error' && items === undefined ? (
+      ) : error !== undefined && items === undefined ? (
         <p role="alert" className={styles.error}>
           {t('account.webauthnLoadFailed')}
         </p>
@@ -160,14 +167,14 @@ export function WebauthnList(props: {
                       className={styles.renameInput}
                       value={renameLabel}
                       onChange={setRenameLabel}
-                      disabled={renameStatus === 'loading'}
+                      disabled={rename.loading}
                     />
                   </div>
                   <div className={styles.rowActions}>
                     <Button
                       size="small"
-                      loading={renameStatus === 'loading'}
-                      disabled={renameStatus === 'loading' || renameLabel.trim() === ''}
+                      loading={rename.loading}
+                      disabled={rename.loading || renameLabel.trim() === ''}
                       onClick={submitRename}
                     >
                       {t('account.saveAction')}
@@ -210,7 +217,7 @@ export function WebauthnList(props: {
                       })}
                       onConfirm={() => handleDelete(item.id)}
                     >
-                      <Button size="small" type="danger" loading={deleteStatus === 'loading'}>
+                      <Button size="small" type="danger" loading={del.loading}>
                         {t('account.deleteAction')}
                       </Button>
                     </Popconfirm>

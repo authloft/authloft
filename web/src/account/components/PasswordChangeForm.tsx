@@ -13,8 +13,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input, Toast } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
-import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
+import {
+  deriveRequestStatus,
+  type RequestStatus,
+} from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
   accountReturnTo,
@@ -147,13 +152,32 @@ export function PasswordChangeForm(props: {
     undefined,
   );
   const [done, setDone] = useState(false);
-  const { status, error, run } = useRequest(changePassword);
   const alRoot = loadAccountBootstrap().alRoot;
+  // useLocation 在 HashRouter 下即 hash 内 location——
+  // done 跳转与集中 onError 的 401 returnTo 共用同一拼装（accountReturnTo）。
+  const location = useLocation();
+  // 手动提交：错误行内呈现（toast:false 防双报），成功链走 onSuccess——
+  // 清空表单 + Toast（P1-6 统一通道；文案含「已退出登录」语义）+ done 驱动
+  // 延时跳登录页（全会话失效契约不变）。run 不吞错、错误进集中 onError。
+  const { data, error, loading, run } = useRequest(changePassword, {
+    manual: true,
+    ...requestOptions({
+      toast: false,
+      returnTo: () => accountReturnTo(location.pathname, location.search),
+    }),
+    onSuccess: () => {
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Toast.success(t('account.passwordChangedDone'));
+      setDone(true);
+    },
+  });
+  const status = deriveRequestStatus(loading, error, data);
 
   // §3.3 行 863：改密成功 → 当前会话与全部令牌失效——短暂停留展示提示后
   // 跳登录页（§5 行 483；与 401 同一 loginUrl，replace 防回退到已失效会话页）。
   // 同样带 returnTo（重登后回安全页；本组件恒渲染于 /security 路由内）。
-  const location = useLocation();
   useEffect(() => {
     if (!done) {
       return;
@@ -182,21 +206,9 @@ export function PasswordChangeForm(props: {
       return;
     }
     setMismatch(false);
-    // run 失败会 rethrow（错误已入 state），吞掉防 unhandled rejection；
-    // 竞态丢弃（undefined）不切成功态。
-    run(built.request)
-      .then((result) => {
-        if (result !== undefined) {
-          // 成功：清空表单 + Toast（P1-6 统一成功通道；文案含「已退出登录」
-          // 语义），全会话失效 → 壳 effect 延时跳登录页（契约不变）。
-          setCurrentPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
-          Toast.success(t('account.passwordChangedDone'));
-          setDone(true);
-        }
-      })
-      .catch(() => {});
+    // 成功链在 onSuccess（清空表单 + Toast + done 延时跳登录，全会话失效契约不变）；
+    // 错误进集中 onError（toast:false 静默，行内 apiErrorText 呈现）。
+    run(built.request);
   };
 
   return (

@@ -13,7 +13,9 @@
  * 文案经 shared/i18n（account.* 域键 + errors.status.captcha_required /
  * channels.email 复用）。
  */
-import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useRef, useState, type ReactNode, type Ref } from 'react';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Button, Input } from '@douyinfe/semi-ui-19';
 import type { OkResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import type {
@@ -23,10 +25,15 @@ import type {
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
+import {
+  deriveRequestStatus,
+  type RequestStatus,
+} from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { useCountdown } from '../../shared/hooks/useCountdown';
-import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   apiErrorText,
   bindEmail,
   bindPhone,
@@ -236,14 +243,32 @@ export function ContactBindForm(props: {
     request.$typeName === 'api.account.v1.BindPhoneRequest'
       ? bindPhone(request)
       : bindEmail(request);
-  const challenge = useRequest(call);
-  const verify = useRequest(call);
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+  // challenge（手动）：错误行内呈现（toast:false）。竞态说明（§5.2/R3）：
+  // 同实例并发提交不可达——发送按钮按 loading 禁用，challenge / verify 各持
+  // 独立实例，旧响应落地仅影响本实例 state。
+  const challenge = useRequest(call, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+  });
+  // verify（手动）：错误行内呈现；成功链走 onSuccess——done 帧 + 上抛 +
+  // 重取资料刷新「当前」回显行。
+  const verify = useRequest(call, {
+    manual: true,
+    ...requestOptions({ toast: false, returnTo }),
+    onSuccess: () => {
+      setStep('done');
+      onBound?.(target);
+      refreshProfile();
+    },
+  });
   // A-2：当前已绑定值回显（GetProfile 服务端脱敏字段；不改 SecurityPage 传参，
-  // 组件自取）；绑定成功后重取刷新。
-  const { data: profile, run: runProfile } = useRequest(getProfile);
-  useEffect(() => {
-    runProfile().catch(() => {});
-  }, [runProfile]);
+  // 组件自取）——自动请求（挂载即取），绑定成功后 refresh 刷新。
+  const { data: profile, refresh: refreshProfile } = useRequest(
+    getProfile,
+    requestOptions({ toast: false, returnTo }),
+  );
   const currentValue = kind === 'phone' ? profile?.phone : profile?.email;
   const currentVerified =
     (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !== undefined &&
@@ -259,15 +284,15 @@ export function ContactBindForm(props: {
       return;
     }
     setInputError(undefined);
+    // §5.4-#1（固定 runAsync）：challenge 失败须重置 captcha（本次
+    // token 已被消费，§3.4 行 880）——调用方降级处理错误，runAsync 正当
+    // 场景③；集中 onError 同时静默（toast:false，行内错误帧呈现）。
     challenge
-      .run(built.request)
-      .then((result) => {
-        if (result !== undefined) {
-          setStep('verify');
-        }
+      .runAsync(built.request)
+      .then(() => {
+        setStep('verify');
       })
       .catch(() => {
-        // 本次 captcha 已被消费（§3.4 行 880 challenge 必过），重置供重试。
         captchaRef.current?.reset();
       });
   };
@@ -279,17 +304,8 @@ export function ContactBindForm(props: {
       return;
     }
     setInputError(undefined);
-    verify
-      .run(built.request)
-      .then((result) => {
-        if (result !== undefined) {
-          setStep('done');
-          onBound?.(target);
-          // 绑定成功 → 重取资料刷新「当前」回显行。
-          runProfile().catch(() => {});
-        }
-      })
-      .catch(() => {});
+    // 成功链在 onSuccess；错误进集中 onError（静默，行内 apiErrorText 呈现）。
+    verify.run(built.request);
   };
 
   const resend = () => {
@@ -319,8 +335,8 @@ export function ContactBindForm(props: {
       currentVerified={currentVerified}
       resendSeconds={cooldown.seconds}
       resendExpired={cooldown.expired}
-      challengeStatus={challenge.status}
-      verifyStatus={verify.status}
+      challengeStatus={deriveRequestStatus(challenge.loading, challenge.error, challenge.data)}
+      verifyStatus={deriveRequestStatus(verify.loading, verify.error, verify.data)}
       inputError={inputError}
       challengeError={challenge.error}
       verifyError={verify.error}

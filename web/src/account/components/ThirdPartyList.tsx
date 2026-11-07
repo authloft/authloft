@@ -18,7 +18,9 @@
  * 扫码绑定的 target_taken 在 ThirdPartyBindDialog 内落地。
  * 文案经 shared/i18n（account.* 域键 + common.refreshAndRetry 复用）。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { Button, Empty, Popconfirm, Spin, Tag, Toast, Tooltip } from '@douyinfe/semi-ui-19';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
@@ -26,15 +28,17 @@ import type {
   ThirdpartyOption,
 } from '../../gen/proto/api/account/v1/thirdparty_pb';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
+  accountReturnTo,
   apiErrorText,
   buildUnbindThirdpartyRequest,
   canUnbindThirdpartyRow,
   formatUnixTime,
   getThirdpartyBindings,
   hasBindEntry,
+  isUnauthenticatedError,
   sortThirdpartyOptions,
   startBindRedirect,
   unbindThirdparty,
@@ -144,16 +148,38 @@ export function ThirdPartyList(props: {
   readonly captcha: CaptchaConfig;
 }): ReactNode {
   const { hasPassword, captcha } = props;
-  const { data, status, run } = useRequest(getThirdpartyBindings);
-  const { status: unbindStatus, run: runUnbind } = useRequest(unbindThirdparty);
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+  // 双列表自动请求（挂载即取）；错误静默（错误帧呈现防双报）。
+  const { data, error, loading, refresh } = useRequest(
+    getThirdpartyBindings,
+    requestOptions({ toast: false, returnTo }),
+  );
   const [redirecting, setRedirecting] = useState(false);
   const [redirectFailed, setRedirectFailed] = useState(false);
   const [unbindError, setUnbindError] = useState<unknown>(undefined);
   const [dialog, setDialog] = useState<OpenDialog | undefined>(undefined);
-
-  useEffect(() => {
-    run().catch(() => {});
-  }, [run]);
+  // 最近一次解绑的展示名（onSuccess 出 Toast 文案用）。
+  const unbindNameRef = useRef('');
+  // §5.4-#2（固定 per-call 覆盖）：解绑失败行内呈现（非 Toast）；401 仍走
+  // 集中分派跳转（与页面口径一致）。成功链：重取双列表 + Toast。
+  const central = requestOptions({ toast: false, returnTo });
+  const unbind = useRequest(unbindThirdparty, {
+    manual: true,
+    ...central,
+    onError: (err: Error) => {
+      if (isUnauthenticatedError(err)) {
+        central.onError(err);
+        return;
+      }
+      // 服务端置灰口径兜底（§3.7 行 945）：invalid_request 等行内出文案。
+      setUnbindError(err);
+    },
+    onSuccess: () => {
+      refresh();
+      Toast.success(t('account.unbindSuccess', { name: unbindNameRef.current }));
+    },
+  });
 
   // redirect 渠道（§3.7.1 A）：取 authorizeUrl → location.replace 离页；
   // 失败 / 空 URL → 原地提示（startBindRedirect 纯编排，错误吞在内部）。
@@ -174,18 +200,9 @@ export function ThirdPartyList(props: {
 
   const handleUnbind = (providerKey: string, displayName: string) => {
     setUnbindError(undefined);
-    runUnbind(buildUnbindThirdpartyRequest(providerKey))
-      .then((result) => {
-        if (result !== undefined) {
-          run().catch(() => {});
-          // 解绑成功反馈（P1-6 统一 Semi Toast 成功通道）。
-          Toast.success(t('account.unbindSuccess', { name: displayName }));
-        }
-      })
-      .catch((error: unknown) => {
-        // 服务端置灰口径兜底（§3.7 行 945）：invalid_request 等经 apiErrorText 出文案。
-        setUnbindError(error);
-      });
+    unbindNameRef.current = displayName;
+    // 成功链在 onSuccess；错误进 per-call onError（§5.4-#2 行内呈现）。
+    unbind.run(buildUnbindThirdpartyRequest(providerKey));
   };
 
   const items = data?.items;
@@ -193,9 +210,9 @@ export function ThirdPartyList(props: {
 
   return (
     <div className={styles.wrap}>
-      {status === 'loading' && data === undefined ? (
+      {loading && data === undefined ? (
         <Spin />
-      ) : status === 'error' && data === undefined ? (
+      ) : error !== undefined && data === undefined ? (
         <div className={styles.body}>
           <p role="alert" className={styles.error}>
             {t('account.thirdpartyLoadFailed')}
@@ -213,7 +230,7 @@ export function ThirdPartyList(props: {
                   key={item.providerKey}
                   item={item}
                   canUnbind={canUnbindThirdpartyRow(hasPassword, items, item)}
-                  unbinding={unbindStatus === 'loading'}
+                  unbinding={unbind.loading}
                   onUnbind={handleUnbind}
                 />
               ))}
@@ -264,7 +281,7 @@ export function ThirdPartyList(props: {
         onDone={() => {
           // §3.7.1 B 行 1007：成功 → 关闭面板并刷新列表。
           setDialog(undefined);
-          run().catch(() => {});
+          refresh();
         }}
       />
     </div>
