@@ -61,12 +61,19 @@ export const setup: typeof zhSetup = {
   'setup.hintDbPort': 'MySQL default 3306; range 1-65535',
   'setup.hintDbParams':
     'Optional; appended to the DSN as-is, e.g. charset=utf8mb4&parseTime=true',
-  'setup.fieldRedisAddr': 'Redis address',
+  // Redis (UI splits host + port like the database; joined as host:port on submit, wire contract unchanged).
+  'setup.fieldRedisHost': 'Redis host',
+  'setup.fieldRedisPort': 'Redis port',
+  'setup.hintRedisPort': 'Redis default 6379; range 1-65535',
   'setup.fieldRedisPassword': 'Redis password',
   'setup.fieldRedisDb': 'Redis database number',
   'setup.fieldRoot': 'Primary domain',
   'setup.fieldAdminUsername': 'Administrator username',
   'setup.fieldAdminPassword': 'Administrator password',
+  // Admin password policy hint (source of truth: server security.DefaultPasswordPolicy:
+  // 8-64 chars / uppercase+lowercase+digit / no whitespace / not equal to or containing the username / not a common password).
+  'setup.hintAdminPassword':
+    '8-64 characters with uppercase, lowercase, and a digit; no whitespace; must not equal or contain the username; must not be a common password',
   'setup.hintRedisDb': 'Default: 0',
   'setup.hintRoot':
     'A domain is required (IPs rejected; localhost allowed). Prefilled with the current site when its host is a domain or localhost',
@@ -121,7 +128,8 @@ export const setup: typeof zhSetup = {
   'setup.uploadDragSub':
     'The file is loaded into the editor as plain text only; nothing is parsed',
   'setup.fieldRpId': 'WebAuthn RP ID',
-  'setup.error.redisAddrRequired': 'Please enter the Redis address',
+  'setup.error.redisHostRequired': 'Please enter the Redis host',
+  'setup.error.redisPortRequired': 'Please enter the Redis port',
   'setup.error.adminUsernameRequired':
     'Please enter the administrator username',
   'setup.error.adminPasswordRequired':

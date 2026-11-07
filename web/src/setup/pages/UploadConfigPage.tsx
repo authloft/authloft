@@ -5,27 +5,31 @@
  * 约束（§6b）：不解析、不回显配置内容（可能含密钥）——文件只按纯文本读入
  * 编辑框，此外不渲染、不日志输出配置内容。
  * §9 第 13 条 setup 例外：Semi 化——Upload（点击 / 拖拽）
- * + TextArea 预览 + Banner 反馈；admin_missing → Banner warning + Modal
- * 确认「改走全新安装」（S-4 分支动作）。
+ * + TextArea 预览；admin_missing → Banner warning + Modal 确认「改走全新安装」。
+ * 请求收口：提交经 shared/hooks/useRequest（按钮 loading 绑请求状态）；
+ * 请求 / 后端错误走 Semi Toast——admin_missing 除外（§13.2 ④ 分支动作：
+ * Banner + Modal 专属呈现，不是一般错误提示）。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Banner,
   Button,
   Modal,
   TextArea,
+  Toast,
   Typography,
   Upload,
 } from '@douyinfe/semi-ui-19';
 import { requestUploadConfig, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
+import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import styles from './UploadConfigPage.module.less';
 
 interface UploadConfigPageProps {
   onRestarting: () => void;
   onSwitchToInstall: () => void;
-  /** S-2：提交态上抛给 SetupPage 推进 Steps「执行安装」步并锁步骤跳转。 */
+  /** Steps 推进用：提交态上抛给 SetupPage（「执行安装」步 + 锁步骤跳转）。 */
   onSubmittingChange?: (submitting: boolean) => void;
 }
 
@@ -35,36 +39,39 @@ export default function UploadConfigPage({
   onSubmittingChange,
 }: UploadConfigPageProps) {
   const [configText, setConfigText] = useState('');
-  const [errorText, setErrorText] = useState<string | null>(null);
   const [adminMissing, setAdminMissing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  // 接口调用收口 useRequest——loading 与请求状态绑定。
+  const { status: uploadStatus, run: uploadRun } =
+    useRequest(requestUploadConfig);
+  const submitting = uploadStatus === 'loading';
+
+  // 提交态上抛（Steps current 推进 + 锁步骤跳转），随请求状态联动。
+  useEffect(() => {
+    onSubmittingChange?.(submitting);
+  }, [submitting, onSubmittingChange]);
 
   const canSubmit = configText.trim() !== '' && !submitting;
 
-  function setSubmittingBoth(value: boolean): void {
-    setSubmitting(value);
-    onSubmittingChange?.(value);
-  }
-
   async function handleSubmit(): Promise<void> {
-    setSubmittingBoth(true);
-    setErrorText(null);
     setAdminMissing(false);
     try {
       // §13.2：成功响应 restarting:true，进入与全新安装一致的重启流程。
-      await requestUploadConfig(configText);
+      await uploadRun(configText);
       onRestarting();
     } catch (error) {
+      // useRequest.run 失败会 rethrow（状态已入 state），此处吞掉防 unhandled rejection。
+      // 请求 / 后端错误走 Toast；admin_missing 是分支动作（§13.2 ④），
+      // 专属 Banner + Modal 呈现，不再弹 Toast。
       if (error instanceof ApiError) {
-        setErrorText(setupMessage(error.code));
-        // §13.2 ④：版本已最新但管理员缺失 → Banner warning + Modal 确认后改走全新安装。
-        setAdminMissing(error.code === 'admin_missing');
+        if (error.code === 'admin_missing') {
+          setAdminMissing(true);
+        } else {
+          Toast.error({ content: setupMessage(error.code) });
+        }
       } else {
-        setErrorText(setupMessage('internal'));
+        Toast.error({ content: setupMessage('internal') });
       }
-    } finally {
-      setSubmittingBoth(false);
     }
   }
 
@@ -93,7 +100,7 @@ export default function UploadConfigPage({
               onSuccess({});
             })
             .catch(() => {
-              setErrorText(t('setup.unreadableFile'));
+              Toast.error({ content: t('setup.unreadableFile') });
               onError({});
             });
         }}
@@ -104,9 +111,6 @@ export default function UploadConfigPage({
         placeholder={t('setup.uploadConfigPlaceholder')}
         onChange={(value) => setConfigText(value)}
       />
-      {errorText ? (
-        <Banner type="danger" description={errorText} />
-      ) : null}
       {adminMissing ? (
         <>
           <Banner type="warning" description={t('setup.adminMissingHint')} />

@@ -57,12 +57,19 @@ export const setup = {
   'setup.fieldDbParams': '额外参数',
   'setup.hintDbPort': 'MySQL 默认 3306，取值 1-65535',
   'setup.hintDbParams': '可选，原样追加在 DSN 末尾，如 charset=utf8mb4&parseTime=true',
-  'setup.fieldRedisAddr': 'Redis 地址',
+  // Redis（UI 拆 host + port 两栏对齐 DB，提交拼 host:port，wire 契约不变）。
+  'setup.fieldRedisHost': 'Redis 主机',
+  'setup.fieldRedisPort': 'Redis 端口',
+  'setup.hintRedisPort': 'Redis 默认 6379，取值 1-65535',
   'setup.fieldRedisPassword': 'Redis 密码',
   'setup.fieldRedisDb': 'Redis 库号',
   'setup.fieldRoot': '主域名',
   'setup.fieldAdminUsername': '管理员用户名',
   'setup.fieldAdminPassword': '管理员密码',
+  // 管理员密码规则提示（规则以 server security.DefaultPasswordPolicy 为准：
+  // 8-64 位 / 大写+小写+数字三类 / 不含空白 / 不等于且不包含用户名 / 不命中弱口令字典）。
+  'setup.hintAdminPassword':
+    '8-64 位，须含大写字母、小写字母和数字；不能含空白字符，不能与用户名相同或包含用户名，不能是常见弱密码',
   'setup.hintRedisDb': '默认 0',
   'setup.hintRoot':
     '需填域名（拒绝 IP，localhost 允许）；host 为域名或 localhost 时预填当前站点',
@@ -111,7 +118,8 @@ export const setup = {
   'setup.uploadDragMain': '点击或拖拽 config.yaml 到此处',
   'setup.uploadDragSub': '仅按纯文本读入编辑框，不解析内容',
   'setup.fieldRpId': 'WebAuthn RP ID',
-  'setup.error.redisAddrRequired': '请填写 Redis 地址',
+  'setup.error.redisHostRequired': '请填写 Redis 主机',
+  'setup.error.redisPortRequired': '请填写 Redis 端口',
   'setup.error.adminUsernameRequired': '请填写管理员用户名',
   'setup.error.adminPasswordRequired': '请填写管理员密码',
 };

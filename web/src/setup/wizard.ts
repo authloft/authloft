@@ -5,7 +5,10 @@
  * 头注），可测逻辑因此从 Semi 化页面（InstallPage / RestartingPage）抽回此处。
  */
 
-import type { SetupStatusResult } from './api';
+import { setupMessage, type SetupStatusResult } from './api';
+import { ApiError } from '../shared/api/errors';
+import { t } from '../shared/i18n';
+import { isValidPort } from './dsn';
 
 // ---------------------------------------------------------------------------
 // root 主域名（§6b / §13.3：必填、完整 URL、host 为域名或 localhost、拒 IP）
@@ -69,6 +72,103 @@ export function prefillRoot(origin: string): string {
   } catch {
     return '';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Redis 地址（UI 拆 host + port 两栏对齐 DB；wire 契约不变——§13.3
+// 仍为单字符串 redisAddr，提交时拼 `host:port`，接口字段名不动）
+// ---------------------------------------------------------------------------
+
+export type RedisFieldKey = 'host' | 'port';
+
+/** Redis 字段级校验失败项（host 必填 / port 必填 + 1-65535，与 dsn.ts 端口同口径）。 */
+export type RedisFieldError = 'required' | 'portInvalid';
+
+/**
+ * Redis host + port 体验性校验（§9 第 4 条：后端为唯一权威，连接失败最终由
+ * redis_unreachable 兜底）：host trim 后非空必填；port 必填且纯数字 1-65535
+ * （复用 dsn.ts isValidPort，语义一致）。
+ */
+export function validateRedisFields(
+  host: string,
+  port: string,
+): Partial<Record<RedisFieldKey, RedisFieldError>> {
+  const errors: Partial<Record<RedisFieldKey, RedisFieldError>> = {};
+  if (host.trim() === '') {
+    errors.host = 'required';
+  }
+  if (port.trim() === '') {
+    errors.port = 'required';
+  } else if (!isValidPort(port.trim())) {
+    errors.port = 'portInvalid';
+  }
+  return errors;
+}
+
+/** 拼装 wire 契约的单个 redisAddr（`host:port`，两侧 trim）；调用前应先过 validateRedisFields。 */
+export function joinRedisAddr(host: string, port: string): string {
+  return `${host.trim()}:${port.trim()}`;
+}
+
+// ---------------------------------------------------------------------------
+// 请求错误分派（字段级校验错误留行内，请求失败 / 后端返回错误走 Toast）
+// ---------------------------------------------------------------------------
+
+/** InstallPage 表单字段集（Semi Form 字段名；放此处供错误分派返回带类型的字段名）。 */
+export interface InstallFormState {
+  dbHost: string;
+  dbPort: string;
+  dbUser: string;
+  dbPassword: string;
+  dbName: string;
+  dbParams: string;
+  redisHost: string;
+  redisPort: string;
+  redisPassword: string;
+  redisDb: string;
+  root: string;
+  rpId: string;
+  adminUsername: string;
+  adminPassword: string;
+}
+
+/** §13 字段级错误码 → InstallPage 表单字段（root 缺失 / IP / 非法 → config_invalid → 域名组；redis_unreachable → Redis 主机）。 */
+export const INSTALL_FIELD_BY_CODE: Readonly<
+  Record<string, keyof InstallFormState>
+> = {
+  config_invalid: 'root',
+  username_invalid: 'adminUsername',
+  password_weak: 'adminPassword',
+  db_unreachable: 'dbHost',
+  redis_unreachable: 'redisHost',
+};
+
+/** 字段级展示文案键覆盖（db_unreachable 指向 DSN 字段组，措辞与 UploadConfig 区分）。 */
+const INSTALL_FIELD_MESSAGE_KEY_BY_CODE: Readonly<Record<string, string>> = {
+  db_unreachable: 'setup.error.dbUnreachableFields',
+};
+
+export type InstallErrorAction =
+  /** 命中 §13 字段映射：行内呈现（用户需知道哪一栏错）。 */
+  | {
+      readonly kind: 'field';
+      readonly field: keyof InstallFormState;
+      readonly message: string;
+    }
+  /** 其余请求 / 后端错误：Toast 弹出。 */
+  | { readonly kind: 'toast'; readonly message: string };
+
+/** Install 请求错误分派：ApiError 命中字段映射 → 行内；其余（含非 ApiError）→ Toast。 */
+export function classifyInstallError(error: unknown): InstallErrorAction {
+  if (error instanceof ApiError) {
+    const overrideKey = INSTALL_FIELD_MESSAGE_KEY_BY_CODE[error.code];
+    const message = overrideKey ? t(overrideKey) : setupMessage(error.code);
+    const field = INSTALL_FIELD_BY_CODE[error.code];
+    return field
+      ? { kind: 'field', field, message }
+      : { kind: 'toast', message };
+  }
+  return { kind: 'toast', message: setupMessage('internal') };
 }
 
 // ---------------------------------------------------------------------------

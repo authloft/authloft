@@ -156,7 +156,9 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
     <section className={styles.page}>
       <div className={styles.content}>
         {showSteps ? (
+          // type="nav"——导航式步骤条，长标题在窄屏下不再被截断。
           <Steps
+            type="nav"
             current={stepCurrent(phase, submitting)}
             onChange={handleStepChange}
             aria-label={t('setup.initTitle')}
