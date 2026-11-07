@@ -18,8 +18,9 @@
  *   status=success 时清空。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（前端架构 §3.1），本模块
- * 从那里拿 ssoClient、不自建 transport；请求状态语义归 shared/hooks/useRequest
- * （§3.2），本模块是薄封装。报文类型全部取自 src/gen/proto 生成物。
+ * 从那里拿 ssoClient、不自建 transport；请求状态语义归 ahooks useRequest +
+ * shared/hooks/requestOptions（§3.2 定稿口径），本模块是薄封装。
+ * 报文类型全部取自 src/gen/proto 生成物。
  */
 import type { JsonObject } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';

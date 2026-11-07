@@ -6,13 +6,15 @@
  * §9 第 13 条 setup 例外：Semi Form 化——label 自动关联 +
  * 必填星号 + onBlur 单字段 / submit 全量校验（trigger="blur"，校验
  * 复用 ../dsn 与 ../wizard 纯函数，语义不变）。
- * 请求收口：提交经 shared/hooks/useRequest（按钮 loading 直接绑
- * status === 'loading'）；请求 / 后端错误经 ../wizard.classifyInstallError
- * 分派——命中 §13 字段映射的留行内（formApi.setError），其余走 Semi Toast。
+ * 请求层迁移：提交改 ahooks useRequest（manual，按钮 loading 绑
+ * hook loading）；错误统一进集中 onError——分派接 ../wizard.classifyInstallError
+ * 纯函数（requestOptions 的 classify 注入点，§5.4-#4 样板）：命中 §13 字段
+ * 映射的留行内（formApi.setError），其余走 Semi Toast。
  * 约束（§6b）：密码字段不回显；成功（restarting:true）进入重启流程。
  */
 import { useEffect, useRef } from 'react';
-import { Button, Form, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { useRequest } from 'ahooks';
+import { Button, Form, Typography } from '@douyinfe/semi-ui-19';
 import { requestInstall } from '../api';
 import {
   buildMysqlDsn,
@@ -30,7 +32,7 @@ import {
   validateRedisFields,
   type InstallFormState,
 } from '../wizard';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import styles from './InstallPage.module.less';
 
@@ -179,9 +181,22 @@ export default function InstallPage({
   onSubmittingChange,
 }: InstallPageProps) {
   const formApi = useRef<InstallFormApi | null>(null);
-  // 接口调用收口 useRequest——loading 与请求状态绑定，不再手写三件套。
-  const { status: installStatus, run: installRun } = useRequest(requestInstall);
-  const submitting = installStatus === 'loading';
+  // 提交改 ahooks manual + 集中 onError（§5.4-#4 样板）——分派接
+  // classifyInstallError（纯函数不动，经 requestOptions classify 注入）：
+  // 字段级留行内，其余 Toast；成功经 onSuccess 进入重启流程。
+  const { run: installRun, loading: submitting } = useRequest(requestInstall, {
+    manual: true,
+    onSuccess: () => {
+      // §13.3 ⑤：成功响应 restarting:true，进入与上传配置一致的重启流程。
+      onRestarting();
+    },
+    ...requestOptions({
+      classify: classifyInstallError,
+      // field 由 INSTALL_FIELD_BY_CODE 收敛（取值域即 keyof InstallFormState）。
+      onFieldError: (field, message) =>
+        formApi.current?.setError(field as keyof InstallFormState, message),
+    }),
+  });
 
   // 提交态上抛（Steps current 推进 + 锁步骤跳转），随请求状态联动。
   useEffect(() => {
@@ -190,31 +205,18 @@ export default function InstallPage({
 
   // Semi Form 仅在全量校验通过后触发 onSubmit（submit 全量校验；
   // Redis host/port 非法在本层被拦下，不会发请求）。
-  async function handleSubmit(values: InstallFormState): Promise<void> {
-    try {
-      await installRun({
-        // wire 契约不变（§13.3）：DB 六字段拼 dbDsn、Redis host:port 拼 redisAddr。
-        dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
-        redisAddr: joinRedisAddr(values.redisHost, values.redisPort),
-        redisPassword: values.redisPassword,
-        redisDb: Number.parseInt(values.redisDb, 10) || 0,
-        root: values.root.trim(),
-        rpId: values.rpId.trim(),
-        adminUsername: values.adminUsername.trim(),
-        adminPassword: values.adminPassword,
-      });
-      // §13.3 ⑤：成功响应 restarting:true，进入与上传配置一致的重启流程。
-      onRestarting();
-    } catch (error) {
-      // useRequest.run 失败会 rethrow（状态已入 state）：按口径分派——
-      // 字段级留行内，其余 Toast；此处吞掉防 unhandled rejection。
-      const action = classifyInstallError(error);
-      if (action.kind === 'field') {
-        formApi.current?.setError(action.field, action.message);
-      } else {
-        Toast.error({ content: action.message });
-      }
-    }
+  function handleSubmit(values: InstallFormState): void {
+    installRun({
+      // wire 契约不变（§13.3）：DB 六字段拼 dbDsn、Redis host:port 拼 redisAddr。
+      dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
+      redisAddr: joinRedisAddr(values.redisHost, values.redisPort),
+      redisPassword: values.redisPassword,
+      redisDb: Number.parseInt(values.redisDb, 10) || 0,
+      root: values.root.trim(),
+      rpId: values.rpId.trim(),
+      adminUsername: values.adminUsername.trim(),
+      adminPassword: values.adminPassword,
+    });
   }
 
   return (

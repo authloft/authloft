@@ -144,4 +144,28 @@ describe('requestOptions onError 副作用分派', () => {
     expect(showToast.calls.length).toBe(0);
     expect(redirect.calls.length).toBe(0);
   });
+
+  test('classify 注入（§5.4-#4 样板）：完全接管分派，field/toast 副作用不变', () => {
+    const showToast = recorder<string>();
+    const redirect = recorder<string>();
+    const fieldCalls: Array<readonly [string, string]> = [];
+    // 域内分派器：401 也走 Toast（setup 口径：未装完无会话可跳）；
+    // db_unreachable → 行内。
+    const opts = requestOptions({
+      classify: (error) =>
+        error instanceof ApiError && error.code === 'db_unreachable'
+          ? { kind: 'field', field: 'dbHost', message: 'DSN 组错误' }
+          : { kind: 'toast', message: '域内文案' },
+      onFieldError: (field, message) => void fieldCalls.push([field, message]),
+      showToast: showToast.fn,
+      redirect: redirect.fn,
+    });
+    opts.onError(apiError('db_unreachable') as unknown as Error);
+    expect(fieldCalls).toEqual([['dbHost', 'DSN 组错误']]);
+    expect(showToast.calls.length).toBe(0);
+    opts.onError(apiError('unauthenticated', 401) as unknown as Error);
+    // classify 接管含 401：不 redirect，按域内返回 toast。
+    expect(redirect.calls.length).toBe(0);
+    expect(showToast.calls).toEqual(['域内文案']);
+  });
 });

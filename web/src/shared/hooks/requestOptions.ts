@@ -90,6 +90,14 @@ export interface RequestOptionsInput {
   readonly onFieldError?: (field: string, message: string) => void;
   /** 401 跳转的域内 returnTo 构造（accountReturnTo / adminReturnTo 分域注入）。 */
   readonly returnTo?: (path: string, search: string) => string;
+  /**
+   * 域内自定义分派（§5.4-#4 样板：setup 注入 classifyInstallError，域内
+   * 专用文案表〔setupMessage / 字段覆盖键〕与本工厂 requestErrorText 口径
+   * 不同，故整体接管）。提供则**完全接管**分派（含 401——setup 未装完无
+   * 会话可跳，401 按域内 Toast 口径）；返回值仍是 RequestErrorAction，
+   * field / toast 的副作用执行不变。
+   */
+  readonly classify?: (error: unknown) => RequestErrorAction;
   /** 测试注入点：默认 location.replace。 */
   readonly redirect?: (url: string) => void;
   /** 测试注入点：默认 Toast.error。 */
@@ -120,7 +128,7 @@ export function requestOptions(input: RequestOptionsInput = {}): RequestOptionsR
   const showToast = input.showToast ?? ((message: string) => Toast.error(message));
   return {
     onError: (error) => {
-      const action = classifyRequestError(error, input);
+      const action = input.classify?.(error) ?? classifyRequestError(error, input);
       switch (action.kind) {
         case 'redirect': {
           const raw = (globalThis as { __AUTHLOFT_INIT__?: RawInit })

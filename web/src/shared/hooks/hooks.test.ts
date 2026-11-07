@@ -3,12 +3,6 @@
 // @ts-ignore
 import { afterAll, afterEach, describe, expect, rs, test } from 'rstack/test';
 import {
-  createRaceGuard,
-  INITIAL_REQUEST_STATE,
-  requestReducer,
-  type RequestState,
-} from './useRequest';
-import {
   COUNTDOWN_TICK_MS,
   countdownSeconds,
   secondsUntil,
@@ -29,67 +23,6 @@ import {
  */
 afterAll(() => {
   rs.unstubAllGlobals();
-});
-
-describe('hooks/useRequest 状态机（§3.2：idle/loading/success/error）', () => {
-  type S = RequestState<string>;
-  const initial: S = INITIAL_REQUEST_STATE as S;
-
-  test('初始态 idle；start → loading（清空 data / error）', () => {
-    expect(initial).toEqual({ status: 'idle', data: undefined, error: undefined });
-    const loading = requestReducer(initial, { type: 'start' });
-    expect(loading).toEqual({ status: 'loading', data: undefined, error: undefined });
-    // 上一轮结果被新一轮 start 覆盖。
-    const again = requestReducer(
-      { status: 'success', data: 'x', error: undefined },
-      { type: 'start' },
-    );
-    expect(again.status).toBe('loading');
-    expect(again.data).toBeUndefined();
-  });
-
-  test('success → 存 data 清 error；failure → 存 error 清 data（互斥）', () => {
-    const loading = requestReducer(initial, { type: 'start' });
-    expect(requestReducer(loading, { type: 'success', data: 'x' })).toEqual({
-      status: 'success',
-      data: 'x',
-      error: undefined,
-    });
-    expect(requestReducer(loading, { type: 'failure', error: new Error('e') })).toEqual({
-      status: 'error',
-      data: undefined,
-      error: new Error('e'),
-    });
-  });
-
-  test('reset → 回 idle 并清空（手动 reset 口径）', () => {
-    expect(
-      requestReducer({ status: 'error', data: undefined, error: 'boom' }, {
-        type: 'reset',
-      }),
-    ).toEqual(initial);
-  });
-});
-
-describe('hooks/useRequest 竞态令牌（§3.2：旧响应到达时丢弃）', () => {
-  test('begin 递增；isCurrent 仅对最新一次为真', () => {
-    const guard = createRaceGuard();
-    const first = guard.begin();
-    const second = guard.begin();
-    expect(first).toBe(1);
-    expect(second).toBe(2);
-    expect(guard.isCurrent(first)).toBe(false);
-    expect(guard.isCurrent(second)).toBe(true);
-  });
-
-  test('reset 语义复用 begin：使在途请求失效', () => {
-    const guard = createRaceGuard();
-    const inFlight = guard.begin();
-    expect(guard.isCurrent(inFlight)).toBe(true);
-    const afterReset = guard.begin();
-    expect(guard.isCurrent(inFlight)).toBe(false);
-    expect(guard.isCurrent(afterReset)).toBe(true);
-  });
 });
 
 describe('hooks/useCountdown 秒级换算（§3.2：retryAfter/expiresIn 的 bigint 归一）', () => {

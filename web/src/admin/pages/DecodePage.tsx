@@ -7,28 +7,27 @@
  * 不为前台消费建模，前端不解析载荷、只展示 JSON）。口径（行 1289 +
  * 《后端架构》§11.6.1）：login 解 login_token、session 解 session_token、
  * cookie 解 al_login_state Cookie（三取值均按文档常驻选项；后端 cookie
- * 分支的解锁节奏不影响前端表单）。失败（篡改 / 跨 purpose / 无效）→
- * ApiError 就地展示（invalid_argument → 通用文案，不透出内部细节）；
- * 401 跳登录（提交失败内联分流，页面无自动请求）。
+ * 分支的解锁节奏不影响前端表单）。提交改 ahooks manual + 集中
+ * onError——401 跳登录（带 returnTo）与其余错误 Toast 均由
+ * requestOptions 分派（原内联分流删除，页面无自动请求）。
  *
  * 组件壳 import Semi 后不可 node 测试（既有 Blocker），可测逻辑收口
  * ./api（buildDecodeTokenRequest / decodePayloadText）。
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
+import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { t, type I18nKey } from '../../shared/i18n';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import {
   adminReturnTo,
-  apiErrorText,
   buildDecodeTokenRequest,
   decodePayloadText,
   decodeToken,
-  isUnauthenticatedError,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import styles from './DecodePage.module.less';
 
 /**
@@ -42,42 +41,39 @@ const PURPOSE_OPTIONS: readonly { readonly value: string; readonly textKey: I18n
 ];
 
 /** 解码工具页：token + purpose 表单 → 载荷 JSON 展示。 */
-export function DecodePage(props: {
-  /** 归一后 al_root（401 跳登录前缀）。 */
+export function DecodePage(_props: {
+  /** 归一后 al_root（路由传参保留；401 跳登录已收敛集中 onError，本页不再消费）。 */
   readonly alRoot: string;
 }): ReactNode {
   const [token, setToken] = useState('');
   const [purpose, setPurpose] = useState('login');
   const [payload, setPayload] = useState<JsonObject | undefined>(undefined);
-  const [decodeError, setDecodeError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
+  // 提交改 ahooks manual + 集中 onError（定稿 §7）——401 由
+  // requestOptions 跳登录（returnTo 取 HashRouter 内路径），其余错误
+  // Toast；成功经 onSuccess 落 payload。
+  const decodeReq = useRequest(
+    (request: ReturnType<typeof buildDecodeTokenRequest>) => decodeToken(request),
+    {
+      manual: true,
+      onSuccess: (res) => {
+        setPayload(res.payload);
+      },
+      ...requestOptions({
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
 
-  /** 提交解码（§5.6 行 1289）：失败就地提示（invalid_request 语义经 apiErrorText 通用文案）。 */
-  async function submit(): Promise<void> {
+  /** 提交解码（§5.6 行 1289）：失败经集中 onError（401 跳登录 / 其余 Toast）。 */
+  function submit(): void {
     const trimmed = token.trim();
-    if (trimmed === '' || submitting) {
+    if (trimmed === '' || decodeReq.loading) {
       return;
     }
-    setSubmitting(true);
-    setDecodeError(null);
     setPayload(undefined);
-    try {
-      const res = await decodeToken(buildDecodeTokenRequest(trimmed, purpose));
-      setPayload(res.payload);
-    } catch (error) {
-      if (isUnauthenticatedError(error)) {
-        // §6 行 501：401 统一跳登录（提交请求失败内联分流；本页无自动请求）。
-        window.location.replace(
-          loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-        );
-      } else {
-        setDecodeError(apiErrorText(error));
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    decodeReq.run(buildDecodeTokenRequest(trimmed, purpose));
   }
 
   return (
@@ -108,19 +104,13 @@ export function DecodePage(props: {
           <Button
             theme="solid"
             disabled={token.trim() === ''}
-            loading={submitting}
-            onClick={() => {
-              void submit();
-            }}
+            loading={decodeReq.loading}
+            onClick={submit}
           >
             {t('admin.decodeAction')}
           </Button>
         </div>
       </div>
-      {decodeError !== null ? (
-        // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-        <Banner type="danger" fullMode={false} className={styles.actionBanner} description={decodeError} />
-      ) : null}
       {payload !== undefined ? (
         <div className={styles.resultBlock}>
           <p className={styles.resultHint}>{t('admin.decodeResultHint')}</p>

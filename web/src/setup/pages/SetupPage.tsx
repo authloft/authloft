@@ -7,7 +7,8 @@
  * §9 第 13 条 setup 例外：外壳 Semi 化——Steps 步骤条
  * + Typography/RadioGroup/Spin/Banner 默认样式，不造卡片外壳与装饰样式。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useRequest } from 'ahooks';
 import {
   Banner,
   Button,
@@ -47,12 +48,13 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
   // 子页提交态上抛（Steps current 推进到「执行安装」，并锁步骤跳转）。
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchSetupStatus().then((result) => {
-      if (cancelled) {
-        return;
-      }
+  // 首取改 ahooks 自动请求（定稿 §2-C）——fetchSetupStatus 不 reject
+  //（unreachable 归 kind union，见 setup/api.ts），故无 onError 可接；kind
+  // union 判定保留在 onSuccess（原 then 分支）；旧 cancelled flag 删除
+  //（卸载后 setState 由 ahooks 内置保护）。alRoot 变化重取沿用 refreshDeps。
+  useRequest(fetchSetupStatus, {
+    refreshDeps: [alRoot],
+    onSuccess: (result) => {
       if (result.kind === 'setup') {
         // 安装中刷新经 GetStatus 恢复——契约只给到模式，回到选择步
         //（纯前端恢复，不动契约；安装进度百分比缺口见评审报告）。
@@ -64,11 +66,8 @@ export default function SetupPage({ alRoot }: { alRoot: string }) {
         // §6b：连接失败维持原口径，跳 /sso/login。
         redirectToLogin(alRoot);
       }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [alRoot]);
+    },
+  });
 
   // Steps 只允许点回「选择安装方式」（已完成步）；提交中 / 重启中禁止跳转。
   function handleStepChange(index: number): void {

@@ -6,11 +6,13 @@
  * 编辑框，此外不渲染、不日志输出配置内容。
  * §9 第 13 条 setup 例外：Semi 化——Upload（点击 / 拖拽）
  * + TextArea 预览；admin_missing → Banner warning + Modal 确认「改走全新安装」。
- * 请求收口：提交经 shared/hooks/useRequest（按钮 loading 绑请求状态）；
- * 请求 / 后端错误走 Semi Toast——admin_missing 除外（§13.2 ④ 分支动作：
- * Banner + Modal 专属呈现，不是一般错误提示）。
+ * 请求层迁移：提交改 ahooks useRequest（manual，按钮 loading 绑
+ * hook loading）；错误进 onError（§5.4-#5 per-call 覆盖）——请求 / 后端
+ * 错误走 Semi Toast，admin_missing 除外（§13.2 ④ 分支动作：Banner +
+ * Modal 专属呈现，不是一般错误提示）。
  */
 import { useEffect, useState } from 'react';
+import { useRequest } from 'ahooks';
 import {
   Banner,
   Button,
@@ -22,7 +24,6 @@ import {
 } from '@douyinfe/semi-ui-19';
 import { requestUploadConfig, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
-import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import styles from './UploadConfigPage.module.less';
 
@@ -41,10 +42,25 @@ export default function UploadConfigPage({
   const [configText, setConfigText] = useState('');
   const [adminMissing, setAdminMissing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // 接口调用收口 useRequest——loading 与请求状态绑定。
-  const { status: uploadStatus, run: uploadRun } =
-    useRequest(requestUploadConfig);
-  const submitting = uploadStatus === 'loading';
+  // 提交改 ahooks manual + onError 覆盖（§5.4-#5）——admin_missing
+  // 是分支动作（§13.2 ④：Banner + Modal），不走集中 Toast；其余 Toast。
+  // 成功经 onSuccess 进入重启流程（错误进 onError，run 不 rethrow）。
+  const { run: uploadRun, loading: submitting } = useRequest(requestUploadConfig, {
+    manual: true,
+    onSuccess: () => {
+      // §13.2：成功响应 restarting:true，进入与全新安装一致的重启流程。
+      onRestarting();
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === 'admin_missing') {
+        setAdminMissing(true);
+      } else {
+        Toast.error({
+          content: setupMessage(error instanceof ApiError ? error.code : 'internal'),
+        });
+      }
+    },
+  });
 
   // 提交态上抛（Steps current 推进 + 锁步骤跳转），随请求状态联动。
   useEffect(() => {
@@ -53,26 +69,9 @@ export default function UploadConfigPage({
 
   const canSubmit = configText.trim() !== '' && !submitting;
 
-  async function handleSubmit(): Promise<void> {
+  function handleSubmit(): void {
     setAdminMissing(false);
-    try {
-      // §13.2：成功响应 restarting:true，进入与全新安装一致的重启流程。
-      await uploadRun(configText);
-      onRestarting();
-    } catch (error) {
-      // useRequest.run 失败会 rethrow（状态已入 state），此处吞掉防 unhandled rejection。
-      // 请求 / 后端错误走 Toast；admin_missing 是分支动作（§13.2 ④），
-      // 专属 Banner + Modal 呈现，不再弹 Toast。
-      if (error instanceof ApiError) {
-        if (error.code === 'admin_missing') {
-          setAdminMissing(true);
-        } else {
-          Toast.error({ content: setupMessage(error.code) });
-        }
-      } else {
-        Toast.error({ content: setupMessage('internal') });
-      }
-    }
+    uploadRun(configText);
   }
 
   return (
@@ -129,7 +128,7 @@ export default function UploadConfigPage({
         block
         disabled={!canSubmit}
         loading={submitting}
-        onClick={() => void handleSubmit()}
+        onClick={handleSubmit}
       >
         {submitting ? t('setup.initializing') : t('setup.startInitialize')}
       </Button>
