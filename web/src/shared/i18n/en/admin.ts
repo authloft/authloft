@@ -279,6 +279,9 @@ export const admin: typeof zhAdmin = {
     'The new password must satisfy the system password policy; once the reset succeeds, all existing sessions are invalidated. Please hand the new password to the user.',
   'admin.newPasswordLabel': 'New Password',
   'admin.newPasswordPlaceholder': 'Enter the new password',
+  'admin.confirmPasswordLabel': 'Confirm New Password',
+  'admin.confirmPasswordPlaceholder': 'Re-enter the new password',
+  'admin.passwordMismatchError': 'The two passwords do not match',
   'admin.confirmResetAction': 'Confirm Reset',
   'admin.resetPasswordSuccess':
     'Password of "{username}" has been reset; please hand the new password to the user',
@@ -393,6 +396,9 @@ export const admin: typeof zhAdmin = {
     'Settings saved: all settings overwritten; the hot reload applies to subsequent requests',
   'admin.settingsLoadFailed': 'Failed to load the settings; please refresh and try again',
   'admin.saveSettingsAction': 'Save Settings',
+  'admin.settingsDiffTitle': 'Confirm Settings Changes',
+  'admin.settingsDiffSummary': '{count} setting(s) will be changed:',
+  'admin.settingsDiffEmptyValue': '(empty)',
   'admin.statusLoadFailed': 'Failed to load the metrics; please refresh and try again',
   'admin.statusHint':
     'Queue length excludes batches picked up but not yet persisted; a flush time of 0 means no batch has been persisted since startup',

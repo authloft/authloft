@@ -29,6 +29,7 @@ import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } fr
 import { Link, useLocation } from '@modern-js/runtime/router';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useRequest } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
@@ -80,6 +81,8 @@ export function UsersPage(props: {
   // 重置密码弹窗（§5.4 行 1252）：resetTarget 即当前目标行；空即关闭。
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetMismatch, setResetMismatch] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSubmitting, setResetSubmitting] = useState(false);
 
@@ -133,6 +136,8 @@ export function UsersPage(props: {
   function openReset(row: AdminUser): void {
     setResetTarget(row);
     setResetPassword('');
+    setResetConfirm('');
+    setResetMismatch(false);
     setResetError(null);
   }
 
@@ -141,7 +146,7 @@ export function UsersPage(props: {
    * 经 Semi Modal.confirm 二次确认；未输入（无改动可丢）直接关闭。
    */
   function closeReset(): void {
-    if (resetPassword !== '') {
+    if (resetPassword !== '' || resetConfirm !== '') {
       Modal.confirm({
         title: t('admin.unsavedChangesTitle'),
         content: t('admin.unsavedChangesContent'),
@@ -152,12 +157,17 @@ export function UsersPage(props: {
     setResetTarget(null);
   }
 
-  /** 提交重置（§5.4 行 1252）：password_weak 等策略错误由服务端权威判定展示。 */
+  /** 提交重置（§5.4 行 1252）：确认密码不一致行内报错不发请求；password_weak 等策略错误由服务端权威判定展示。 */
   async function submitReset(): Promise<void> {
     const target = resetTarget;
     if (target === null || resetPassword === '' || resetSubmitting) {
       return;
     }
+    if (resetPassword !== resetConfirm) {
+      setResetMismatch(true);
+      return;
+    }
+    setResetMismatch(false);
     setResetSubmitting(true);
     try {
       await resetUserPassword(buildResetUserPasswordRequest(target.id, resetPassword));
@@ -304,14 +314,41 @@ export function UsersPage(props: {
       >
         <div className={styles.resetBody}>
           <p className={styles.resetHint}>{t('admin.resetPasswordHint')}</p>
+          {/* Semi Input mode=password 自带显隐 eye；强度提示用 shared
+              PasswordStrengthMeter（规则与接口文档 §5.6 默认策略同源，
+              password_weak 服务端权威判定）。 */}
           <Input
             mode="password"
             value={resetPassword}
-            onChange={(value) => setResetPassword(value)}
+            onChange={(value) => {
+              setResetPassword(value);
+              setResetMismatch(false);
+            }}
             aria-label={t('admin.newPasswordLabel')}
             placeholder={t('admin.newPasswordPlaceholder')}
             autoComplete="new-password"
           />
+          <PasswordStrengthMeter
+            password={resetPassword}
+            username={resetTarget?.username}
+            email={resetTarget?.email}
+          />
+          <Input
+            mode="password"
+            value={resetConfirm}
+            onChange={(value) => {
+              setResetConfirm(value);
+              setResetMismatch(false);
+            }}
+            aria-label={t('admin.confirmPasswordLabel')}
+            placeholder={t('admin.confirmPasswordPlaceholder')}
+            autoComplete="new-password"
+          />
+          {resetMismatch ? (
+            <p role="alert" className={styles.actionError}>
+              {t('admin.passwordMismatchError')}
+            </p>
+          ) : null}
           {resetError !== null ? (
             <p role="alert" className={styles.actionError}>
               {resetError}
@@ -326,7 +363,7 @@ export function UsersPage(props: {
               onClick={() => {
                 void submitReset();
               }}
-              disabled={resetSubmitting || resetPassword === ''}
+              disabled={resetSubmitting || resetPassword === '' || resetConfirm === ''}
               loading={resetSubmitting}
             >
               {t('admin.confirmResetAction')}

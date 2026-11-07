@@ -7,6 +7,9 @@
  * 表单以 GetSettings 响应初始化完整键集（settingsLogic.draftFromSettings），
  * 保存时经 api.buildSetSettingsRequest 全量提交全部键（不能只提交改动字段）；
  * 保存按钮旁固定提示「保存将覆盖全部设置」，顶部 Banner 展开说明。
+ * 保存前变更预览：点保存先弹确认 Modal（diff 数据源 = 草稿 vs
+ * 已保存快照，buildSettingsDiff 键级比对），逐键列出 旧值 → 新值（gateway
+ * Tokens 脱敏）并显示「将变更 N 项」，确认才提交；无变更时保存按钮禁用。
  *
  * 键集 / 分区 / 默认值 / 交叉校验全部收口在 ./settingsLogic（零 Semi 可测）；
  * 本组件为渲染壳薄层（渲染不可测见 admin.test.tsx 头注 Blocker）。固定规则
@@ -31,6 +34,8 @@ import {
   Checkbox,
   Input,
   InputNumber,
+  List,
+  Modal,
   Select,
   Spin,
   Switch,
@@ -202,7 +207,89 @@ function draftEquals(a: SettingsDraft, b: SettingsDraft): boolean {
   return true;
 }
 
-/** 系统设置页：加载 → 草稿初始化（全键集）→ 分区表单 → 全量保存。 */
+/**
+ * 变更预览单条（保存前确认 Modal）：label 取分区元数据当前语言文案，
+ * before / after 为已格式化的展示值（敏感键脱敏，见 SENSITIVE_DIFF_KEYS）。
+ */
+interface SettingsDiffItem {
+  readonly key: keyof SettingsDraft;
+  readonly label: string;
+  readonly before: string;
+  readonly after: string;
+}
+
+/** 变更预览中脱敏的键（网关 Token 不明文回显，防误截图外泄）。 */
+const SENSITIVE_DIFF_KEYS: ReadonlySet<keyof SettingsDraft> = new Set(['gatewayTokens']);
+
+/** 脱敏占位（符号无语言差异，不占 i18n 键）。 */
+const MASKED_VALUE = '••••••';
+
+/** 单键展示值格式化（与 FieldView 的控件形态对齐：布尔→是/否、空→（空）、下拉→选项文案）。 */
+function formatSettingsValue(field: SettingsFieldMeta, draft: SettingsDraft): string {
+  switch (field.kind) {
+    case 'number':
+      return String(draft[field.key]);
+    case 'switch':
+      return draft[field.key] ? t('admin.yesText') : t('admin.noText');
+    case 'text': {
+      const value = draft[field.key];
+      return value === '' ? t('admin.settingsDiffEmptyValue') : value;
+    }
+    case 'select': {
+      const value = draft[field.key];
+      const hit = field.options.find((option) => option.value === value);
+      if (hit !== undefined) {
+        return hit.label;
+      }
+      return value === '' ? t('admin.settingsDiffEmptyValue') : value;
+    }
+    case 'multiSelect':
+    case 'stringList': {
+      const list = draft[field.key];
+      if (list.length === 0) {
+        return t('admin.settingsDiffEmptyValue');
+      }
+      if (SENSITIVE_DIFF_KEYS.has(field.key)) {
+        return MASKED_VALUE;
+      }
+      return list.join(', ');
+    }
+  }
+}
+
+/**
+ * 草稿 vs 已保存快照的键级 diff（保存前变更预览数据源）：比较语义与
+ * draftEquals 一致（数组键序敏感），保证 dirty ⇔ diff 非空。调用期为点击
+ * 保存时（渲染期之外），getSettingsSections() 取当前语言文案无冻结问题。
+ */
+function buildSettingsDiff(
+  saved: SettingsDraft,
+  draft: SettingsDraft,
+): SettingsDiffItem[] {
+  const items: SettingsDiffItem[] = [];
+  for (const section of getSettingsSections()) {
+    for (const field of section.fields) {
+      const before: number | boolean | string | readonly string[] = saved[field.key];
+      const after: number | boolean | string | readonly string[] = draft[field.key];
+      const equal =
+        Array.isArray(before) && Array.isArray(after)
+          ? before.length === after.length &&
+            before.every((item, index) => item === after[index])
+          : before === after;
+      if (!equal) {
+        items.push({
+          key: field.key,
+          label: field.label,
+          before: formatSettingsValue(field, saved),
+          after: formatSettingsValue(field, draft),
+        });
+      }
+    }
+  }
+  return items;
+}
+
+/** 系统设置页：加载 → 草稿初始化（全键集）→ 分区表单 → 变更预览确认 → 全量保存。 */
 export function SettingsPage(props: {
   /** 归一后 al_root（401 跳登录前缀）。 */
   readonly alRoot: string;
@@ -217,6 +304,10 @@ export function SettingsPage(props: {
   // draft 更新走不可变 set（updateField 展开 / 编辑器下发新数组），与快照
   // 共享初始引用互不污染。
   const [savedDraft, setSavedDraft] = useState<SettingsDraft | null>(null);
+  // 保存前变更预览：点保存先弹确认 Modal 列出将变更键（旧值 → 新值），
+  // 确认才提交；items 在点击时快照，弹窗期间草稿冻结（Modal 遮罩阻断编辑）。
+  const [diffItems, setDiffItems] = useState<SettingsDiffItem[]>([]);
+  const [diffOpen, setDiffOpen] = useState(false);
 
   useEffect(() => {
     // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
@@ -270,10 +361,14 @@ export function SettingsPage(props: {
     setDraft((prev) => (prev === null ? prev : { ...prev, [key]: value }));
   }
 
-  /** 保存（§5.6 行 1287 全量替换）：交叉校验前置，全部 36 键整体提交。 */
-  async function submit(): Promise<void> {
+  /**
+   * 点保存（变更预览入口）：交叉校验前置（不过则行内报错不弹窗）→
+   * 计算键级 diff 快照并弹确认 Modal；零 diff 不弹（按钮已按 !dirty 禁用，
+   * 此处兜底）。确认后由 Modal onOk 调 submit 真正提交。
+   */
+  function requestSave(): void {
     const current = draft;
-    if (current === null || submitting) {
+    if (current === null || savedDraft === null || submitting) {
       return;
     }
     const issue = settingsDraftIssue(current);
@@ -283,11 +378,26 @@ export function SettingsPage(props: {
     }
     // 校验通过即清行内校验槽；写失败反馈走 Toast，不回填本槽。
     setActionError(null);
+    const items = buildSettingsDiff(savedDraft, current);
+    if (items.length === 0) {
+      return;
+    }
+    setDiffItems(items);
+    setDiffOpen(true);
+  }
+
+  /** 保存（§5.6 行 1287 全量替换）：确认 Modal 的 onOk，全部 36 键整体提交。 */
+  async function submit(): Promise<void> {
+    const current = draft;
+    if (current === null || submitting) {
+      return;
+    }
     setSubmitting(true);
     try {
       await setSettings(buildSetSettingsRequest(current));
       // 保存成功即快照前移（dirty 清零，离开不再二次确认）。
       setSavedDraft(current);
+      setDiffOpen(false);
       Toast.success(t('admin.settingsSaved'));
     } catch (err) {
       if (isUnauthenticatedError(err)) {
@@ -353,17 +463,41 @@ export function SettingsPage(props: {
       </div>
       <div className={styles.footer}>
         <span className={styles.overwriteNote}>{t('admin.settingsOverwriteNotice')}</span>
+        {/* 无变更禁用保存，避免无意义全量覆盖提交。 */}
         <Button
           theme="solid"
           loading={submitting}
-          disabled={submitting}
-          onClick={() => {
-            void submit();
-          }}
+          disabled={submitting || !dirty}
+          onClick={requestSave}
         >
           {t('admin.saveSettingsAction')}
         </Button>
       </div>
+      {/* 保存前变更预览：逐键列出 旧值 → 新值（敏感键脱敏），确认才提交；
+          失败 Modal 保持打开（Toast 报错后可修正重试），成功在 submit 内关闭。 */}
+      <Modal
+        title={t('admin.settingsDiffTitle')}
+        visible={diffOpen}
+        onCancel={() => setDiffOpen(false)}
+        onOk={() => {
+          void submit();
+        }}
+        okText={t('admin.saveSettingsAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={submitting}
+        maskClosable={false}
+      >
+        <p>{t('admin.settingsDiffSummary', { count: diffItems.length })}</p>
+        <List
+          size="small"
+          dataSource={diffItems}
+          renderItem={(item) => (
+            <List.Item key={item.key}>
+              {item.label}：{item.before} → {item.after}
+            </List.Item>
+          )}
+        />
+      </Modal>
     </section>
   );
 }
