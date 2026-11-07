@@ -180,3 +180,40 @@ export async function runInlineToggle<T>(
     return { ok: false, rows };
   }
 }
+
+/**
+ * 行内开关 per-row 防重守卫（P0-1，定稿 §6.1）：tryEnter 首次返回
+ * true 并登记在途；同 key 在途期间再次 tryEnter 返回 false——调用方据此
+ * no-op（连点两次只发一次 persist）；leave 解除登记（finally 中调用，
+ * 成功 / 失败均放行下一次）。判定必须同步（React state 异步更新挡不住
+ * 同一拍内的连续点击），故状态封装在闭包内、组件以 useRef 持有跨渲染
+ * 存活；零 Semi 依赖，node 可测。
+ */
+export interface InflightGuard {
+  /** 进入在途：已在途 → false（重复触发应 no-op）。 */
+  tryEnter(key: string): boolean;
+  /** 离开在途（成功 / 失败均须调用，否则该行永久锁死）。 */
+  leave(key: string): void;
+  /** 当前在途判定（渲染行内 Switch loading 用）。 */
+  has(key: string): boolean;
+}
+
+/** 创建 per-row 防重守卫（每组件实例一个，useRef 持有）。 */
+export function createInflightGuard(): InflightGuard {
+  const inflight = new Set<string>();
+  return {
+    tryEnter(key) {
+      if (inflight.has(key)) {
+        return false;
+      }
+      inflight.add(key);
+      return true;
+    },
+    leave(key) {
+      inflight.delete(key);
+    },
+    has(key) {
+      return inflight.has(key);
+    },
+  };
+}

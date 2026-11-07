@@ -120,7 +120,12 @@ export function UsersPage(_props: {
     }
   }
 
-  /** 解除登录限制（§5.4 行 1254 UnlockUser）：Popconfirm 确认后调用。 */
+  /**
+   * 解除登录限制（§5.4 行 1254 UnlockUser）：Popconfirm 确认后调用。
+   * P0-2 防重：onConfirm 返回本 Promise——Semi Popconfirm 原生机制
+   * （popconfirmFoundation.handleConfirm）在途期间确认钮 loading + 禁用
+   * （连点不再触发），落地才关框；失败反馈仍走 Toast（catch 不抛出）。
+   */
   async function handleUnlock(row: AdminUser): Promise<void> {
     try {
       await unlockUser(buildUnlockUserRequest(row.id));
@@ -240,9 +245,7 @@ export function UsersPage(_props: {
           </Button>
           <Popconfirm
             title={t('admin.unlockConfirm', { username: row.username })}
-            onConfirm={() => {
-              void handleUnlock(row);
-            }}
+            onConfirm={() => handleUnlock(row)}
           >
             <Button size="small">{t('admin.unlockAction')}</Button>
           </Popconfirm>

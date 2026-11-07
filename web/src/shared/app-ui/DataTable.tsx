@@ -15,11 +15,14 @@
  * （runInlineToggle），onToggle reject 即回滚原行集；rows prop 引用更换
  * （消费方重新取数）时清除本地乐观覆盖。错误提示不在本组件：onToggle 的
  * reject 只承担「触发回滚」语义，展示归消费方在自身 onToggle 内处理。
+ * P0-1 防重：per-row 在途守卫（createInflightGuard，ref 持有保证同步
+ * 判定）——在途行 Switch loading（Semi loading 即禁用），在途期间重复触发
+ * 直接 no-op（连点两次只发一次 persist）。
  *
  * 样式（§1.7）：同目录同名 module less；Semi 组件样式随组件 JS 自动打包
  * （见 AppLayout 注释），此处只承载容器对接。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 // 大包命名导入（§1.6 行 113 硬性口径：一律大包入口、禁子路径）。
 import { Switch, Table } from '@douyinfe/semi-ui-19';
 // ColumnProps 类型导入例外：大包入口（lib/es/index.d.ts）仅转出组件值，
@@ -27,9 +30,11 @@ import { Switch, Table } from '@douyinfe/semi-ui-19';
 // （import type，编译期擦除、零运行时痕迹）。
 import type { ColumnProps } from '@douyinfe/semi-ui-19/lib/es/table';
 import {
+  createInflightGuard,
   MAX_PAGE_SIZE,
   resolveTableQuery,
   runInlineToggle,
+  type InflightGuard,
   type TableQueryState,
 } from './dataTableLogic';
 import styles from './DataTable.module.less';
@@ -99,21 +104,41 @@ export function DataTable<T extends Record<string, unknown>>(
   }, [rows]);
   const displayRows = overrideRows ?? rows;
 
+  // P0-1：per-row 防重守卫。判定走 ref（同步——state 异步更新挡不住
+  // 同一拍内的连续点击）；版本号 state 仅驱动在途视觉（Switch loading）重渲染。
+  const guardRef = useRef<InflightGuard | null>(null);
+  if (guardRef.current === null) {
+    guardRef.current = createInflightGuard();
+  }
+  const guard = guardRef.current;
+  const [, setInflightVersion] = useState(0);
+
   async function handleToggle(row: T, next: boolean): Promise<void> {
     if (switchColumn === undefined) {
       return;
     }
-    const outcome = await runInlineToggle(
-      displayRows,
-      rowKey,
-      rowKey(row),
-      (r) => switchColumn.toggleRow(r, next),
-      async (patched) => {
-        await switchColumn.onToggle(patched, next);
-      },
-    );
-    // 成功 → 保留打补丁行集（乐观生效）；失败 → 原 rows（回滚）；未变更 → 清空覆盖。
-    setOverrideRows(outcome.rows === rows ? null : outcome.rows);
+    const key = rowKey(row);
+    // 在途重复触发：no-op（连点两次只发一次 persist，dataTableLogic 单测锁定）。
+    if (!guard.tryEnter(key)) {
+      return;
+    }
+    setInflightVersion((version) => version + 1);
+    try {
+      const outcome = await runInlineToggle(
+        displayRows,
+        rowKey,
+        key,
+        (r) => switchColumn.toggleRow(r, next),
+        async (patched) => {
+          await switchColumn.onToggle(patched, next);
+        },
+      );
+      // 成功 → 保留打补丁行集（乐观生效）；失败 → 原 rows（回滚）；未变更 → 清空覆盖。
+      setOverrideRows(outcome.rows === rows ? null : outcome.rows);
+    } finally {
+      guard.leave(key);
+      setInflightVersion((version) => version + 1);
+    }
   }
 
   const columns: ColumnProps<T>[] = props.columns.map((column) => ({
@@ -135,6 +160,8 @@ export function DataTable<T extends Record<string, unknown>>(
       render: (_text: unknown, row: T) => (
         <Switch
           checked={switchColumn.isOn(row)}
+          // P0-1：在途行 loading（Semi Switch loading 即禁用点击）。
+          loading={guard.has(rowKey(row))}
           onChange={(checked) => {
             void handleToggle(row, checked);
           }}

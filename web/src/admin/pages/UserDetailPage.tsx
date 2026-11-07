@@ -148,6 +148,8 @@ export function UserDetailPage(props: {
    * 解绑第三方（§5.4 行 1253）：Union 行不可单独解绑由服务端兜底
    * （invalid_request → 失败经 Toast 展示）；成功后重取详情刷新
    * 绑定列表 + 成功反馈（P1-6 统一成功通道，新增 admin.unbindSuccess）。
+   * P0-3 防重：onConfirm 返回本 Promise——Semi Popconfirm 原生机制
+   * 在途期间确认钮 loading + 禁用（连点不再触发），落地才关框。
    */
   async function handleUnbind(providerKey: string): Promise<void> {
     try {
@@ -286,9 +288,7 @@ export function UserDetailPage(props: {
                 </span>
                 <Popconfirm
                   title={t('admin.unbindConfirm', { providerKey: binding.providerKey })}
-                  onConfirm={() => {
-                    void handleUnbind(binding.providerKey);
-                  }}
+                  onConfirm={() => handleUnbind(binding.providerKey)}
                 >
                   <Button size="small" type="danger">
                     {t('admin.unbindAction')}
