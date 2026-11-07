@@ -51,6 +51,10 @@ export const account: typeof zhAccount = {
   'account.unionTag': 'Federated identity',
   'account.unbindConfirm': 'Unlink "{name}"? You will no longer be able to sign in with it.',
   'account.unbindAction': 'Unlink',
+  // disabled reason (canUnbindThirdpartyRow: no password and no other
+  // non-union binding left).
+  'account.unbindDisabledReason':
+    'No password is set and no other third-party account is linked. Unlinking this would leave you with no way to sign in. Set a password or link another account first',
   // unbind success feedback (P1-6, unified Semi Toast success channel).
   'account.unbindSuccess': 'Unlinked "{name}"',
   'account.bindAction': 'Link',
@@ -68,6 +72,19 @@ export const account: typeof zhAccount = {
   // download as text (P2-3, pure frontend Blob download).
   'account.recoveryDownload': 'Download as text',
 
+  // ---- MfaMethodList interaction rework (Tag for state + action
+  //      buttons + inline summary + low-remaining hint + success Toast; the
+  //      Checkbox enable switch was removed) --------------------------------
+  'account.mfaEnableAction': 'Enable',
+  'account.mfaDisableAction': 'Disable',
+  'account.mfaDisableConfirm':
+    'Disable "{factor}"? It will no longer be required when you sign in.',
+  'account.factorDisabledTag': 'Disabled',
+  'account.mfaEnabledSuccess': '{factor} enabled',
+  'account.mfaDisabledSuccess': '{factor} disabled',
+  'account.recoveryLowWarning': 'Only {count} recovery codes left',
+  'account.recoveryRegenerateSuccess': 'Recovery codes regenerated; all old codes are void',
+
   // ---- MfaMethodList (factor names reuse factors.*, the recovery-code
   //      modal title reuses factors.recovery_code, the bind button reuses
   //      account.bindAction, the not-bound text reuses account.mfaNotBound,
@@ -75,16 +92,12 @@ export const account: typeof zhAccount = {
   'account.factorTotp': 'TOTP authenticator code',
   'account.factorBoundTag': 'Linked',
   'account.factorUnboundTag': 'Not linked',
-  'account.mfaEnableFactorAria': 'Enable {factor}',
   'account.mfaBindPhoneHint': 'Link a phone number under "Contact Information" first',
   'account.mfaBindEmailHint': 'Link an email address under "Contact Information" first',
   'account.mfaBindWebauthnHint': 'Register one under "Passkeys" below first',
   'account.mfaLocked': 'Policy requires two-step verification; it cannot be fully turned off',
-  'account.mfaShowDetails': 'Linked details',
-  'account.mfaHideDetails': 'Hide details',
   'account.mfaDetailsLoadFailed': 'Failed to load details: {error}',
   'account.viewRecoveryCodes': 'View recovery codes',
-  'account.recoveryIssuedAtLabel': 'Recovery codes issued at',
   'account.recoveryLoadFailed': 'Failed to load recovery codes',
 
   // ---- WebauthnList ---------------------------------------------------------
@@ -115,6 +128,10 @@ export const account: typeof zhAccount = {
   'account.bindCodeAria': '{kind} binding code',
   'account.bindConfirmAction': 'Confirm',
   'account.bindResendAction': 'Resend',
+  // A-2: current bound value display + resend cooldown countdown.
+  'account.bindCurrentValue': 'Current: {value}',
+  'account.bindCurrentVerified': 'Current: {value} (verified)',
+  'account.bindResendCountdown': 'Resend available in {seconds}s',
   'account.phonePlaceholder': 'Enter a phone number',
   'account.emailPlaceholder': 'Enter an email address',
   'account.sendCodeAction': 'Send code',
@@ -133,6 +150,9 @@ export const account: typeof zhAccount = {
     'Password changed. You have been signed out. Please sign in again',
   'account.currentPasswordLabel': 'Current password',
   'account.newPasswordLabel': 'New password',
+  // A-1: confirm new password (local-only check, never sent, same as RegisterPage).
+  'account.confirmPasswordLabel': 'Confirm new password',
+  'account.confirmPasswordMismatch': 'The new passwords do not match',
   'account.changePasswordAction': 'Change password',
   'account.setPasswordAction': 'Set password',
 
@@ -153,6 +173,12 @@ export const account: typeof zhAccount = {
   'account.totpSecretLabel': 'Secret key',
   'account.totpOtpauthLabel': 'otpauth URL',
   'account.totpVerifyAction': 'Verify and finish linking',
+  // ---- TotpBindDialog steps (Steps indicator + back / next) ---------
+  'account.totpStepAdd': 'Add authenticator',
+  'account.totpStepVerify': 'Verify code',
+  'account.totpStepRecovery': 'Save recovery codes',
+  'account.totpNextAction': 'Next',
+  'account.backAction': 'Back',
 
   // ---- TotpBindDialog QR code (the key / otpauth text fallback keeps
   //      totpSecretLabel / totpOtpauthLabel / totpManualHint, not removed) ------

@@ -50,6 +50,9 @@ export const account = {
   'account.unionTag': '联合身份',
   'account.unbindConfirm': '确定解绑「{name}」？解绑后无法再用它登录。',
   'account.unbindAction': '解绑',
+  // 置灰原因（canUnbindThirdpartyRow 口径：未设密码且无其他非 Union 绑定）。
+  'account.unbindDisabledReason':
+    '未设置密码，且没有其他已绑定的第三方账号；解绑后将没有可用的登录方式，请先设置密码或绑定其他账号',
   // 解绑成功反馈（P1-6，统一 Semi Toast 成功通道）。
   'account.unbindSuccess': '已解绑「{name}」',
   'account.bindAction': '绑定',
@@ -68,19 +71,25 @@ export const account = {
   // ---- MfaMethodList（因子名复用 factors.*，「恢复码」弹窗题复用
   //      factors.recovery_code，「绑定」按钮复用 account.bindAction，「尚未绑定」
   //      复用 account.mfaNotBound，「 · 最近使用 {time}」复用 account.mfaLastUsedAt）--
+  // ---- MfaMethodList 交互重构（Tag 承载状态 + 动作按钮 + 行内摘要 +
+  //      低余量提示 + 成功 Toast；Checkbox 启用开关已删除）------------------
+  'account.mfaEnableAction': '启用',
+  'account.mfaDisableAction': '停用',
+  'account.mfaDisableConfirm': '确定停用「{factor}」？停用后登录时将不再要求完成该因子验证。',
+  'account.factorDisabledTag': '已停用',
+  'account.mfaEnabledSuccess': '已启用{factor}',
+  'account.mfaDisabledSuccess': '已停用{factor}',
+  'account.recoveryLowWarning': '恢复码仅剩 {count} 个',
+  'account.recoveryRegenerateSuccess': '恢复码已重新生成，旧码全部作废',
   'account.factorTotp': 'TOTP 动态码',
   'account.factorBoundTag': '已绑定',
   'account.factorUnboundTag': '未绑定',
-  'account.mfaEnableFactorAria': '启用{factor}',
   'account.mfaBindPhoneHint': '请先在「联系方式」中绑定手机号',
   'account.mfaBindEmailHint': '请先在「联系方式」中绑定邮箱',
   'account.mfaBindWebauthnHint': '请先在下方「通行密钥」中注册',
   'account.mfaLocked': '策略要求开启两步验证，不可全部关闭',
-  'account.mfaShowDetails': '绑定明细',
-  'account.mfaHideDetails': '收起明细',
   'account.mfaDetailsLoadFailed': '明细加载失败，{error}',
   'account.viewRecoveryCodes': '查看恢复码',
-  'account.recoveryIssuedAtLabel': '恢复码签发时间',
   'account.recoveryLoadFailed': '恢复码加载失败',
 
   // ---- WebauthnList------------------------------------------------------------
@@ -111,6 +120,10 @@ export const account = {
   'account.bindCodeAria': '{kind}绑定验证码',
   'account.bindConfirmAction': '确认绑定',
   'account.bindResendAction': '重新发送',
+  // A-2：当前绑定值回显 + 重发倒计时。
+  'account.bindCurrentValue': '当前：{value}',
+  'account.bindCurrentVerified': '当前：{value}（已验证）',
+  'account.bindResendCountdown': '{seconds} 秒后可重发',
   'account.phonePlaceholder': '请输入手机号',
   'account.emailPlaceholder': '请输入邮箱',
   'account.sendCodeAction': '发送验证码',
@@ -128,6 +141,9 @@ export const account = {
   'account.passwordChangedDone': '密码修改成功，已退出登录，请重新登录',
   'account.currentPasswordLabel': '当前密码',
   'account.newPasswordLabel': '新密码',
+  // A-1：确认新密码（只本地比对，不进 payload，沿 RegisterPage 同款）。
+  'account.confirmPasswordLabel': '确认新密码',
+  'account.confirmPasswordMismatch': '两次输入的新密码不一致',
   'account.changePasswordAction': '修改密码',
   'account.setPasswordAction': '设置密码',
 
@@ -146,6 +162,12 @@ export const account = {
   'account.totpSecretLabel': '密钥',
   'account.totpOtpauthLabel': 'otpauth 地址',
   'account.totpVerifyAction': '验证并完成绑定',
+  // ---- TotpBindDialog 步骤化（Steps 指示 + 上一步 / 下一步）--------
+  'account.totpStepAdd': '添加验证器',
+  'account.totpStepVerify': '验证动态码',
+  'account.totpStepRecovery': '保存恢复码',
+  'account.totpNextAction': '下一步',
+  'account.backAction': '上一步',
 
   // ---- TotpBindDialog 二维码（密钥 / otpauth 文本兜底沿用
   //      totpSecretLabel / totpOtpauthLabel / totpManualHint，不删）--------------

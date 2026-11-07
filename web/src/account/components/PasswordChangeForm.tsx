@@ -11,7 +11,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input } from '@douyinfe/semi-ui-19';
+import { Button, Input, Toast } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
@@ -31,8 +31,9 @@ const REDIRECT_DELAY_MS = 1500;
 
 /**
  * 改密帧视图（纯渲染，无请求）：
- * 成功 → 「已退出登录，请重新登录」（壳的 effect 随即跳登录页）；
- * 表单 → 当前密码（hasPassword 时）+ 新密码 + 强度提示 + 错误提示。
+ * 表单 → 当前密码（hasPassword 时）+ 新密码 + 确认新密码（A-1，只本地比对）
+ * + 强度提示 + 错误提示；成功后壳清空表单 + Toast 并延时跳登录页，done 期间
+ * 全表单禁用防重复提交。
  */
 export function PasswordChangeFormView(props: {
   readonly hasPassword: boolean;
@@ -40,20 +41,18 @@ export function PasswordChangeFormView(props: {
   readonly done: boolean;
   readonly currentPassword: string;
   readonly newPassword: string;
+  readonly confirmPassword: string;
   readonly fieldError: PasswordChangeFieldError | undefined;
+  /** 确认密码与新密码不一致（A-1：只本地比对，不进 payload，不发请求）。 */
+  readonly mismatch: boolean;
   readonly submitError: unknown;
   readonly onCurrentPasswordChange: (value: string) => void;
   readonly onNewPasswordChange: (value: string) => void;
+  readonly onConfirmPasswordChange: (value: string) => void;
   readonly onSubmit: () => void;
 }): ReactNode {
-  if (props.done) {
-    return (
-      <div role="status" className={styles.done}>
-        {t('account.passwordChangedDone')}
-      </div>
-    );
-  }
-  const submitting = props.status === 'loading';
+  // 成功后清空表单并 Toast（壳已清值），done 期间禁再提交，等跳转登录页。
+  const submitting = props.status === 'loading' || props.done;
   return (
     <form
       className={styles.form}
@@ -92,6 +91,25 @@ export function PasswordChangeFormView(props: {
         {/* §4.3：密码强度提示仅注册 / 改密 / 重置场景渲染（复用既有组件）。 */}
         <PasswordStrengthMeter password={props.newPassword} />
       </div>
+      {/* A-1：确认新密码（mode=password 自带显隐眼睛）；不一致行内报错不发请求。 */}
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="account-confirm-new-password">
+          {t('account.confirmPasswordLabel')}
+        </label>
+        <Input
+          id="account-confirm-new-password"
+          mode="password"
+          value={props.confirmPassword}
+          onChange={props.onConfirmPasswordChange}
+          disabled={submitting}
+          autoComplete="new-password"
+        />
+      </div>
+      {props.mismatch ? (
+        <p role="alert" className={styles.error}>
+          {t('account.confirmPasswordMismatch')}
+        </p>
+      ) : null}
       {props.fieldError?.field === 'currentPassword' ? (
         <p role="alert" className={styles.error}>
           {t('account.currentPasswordRequired')}
@@ -123,6 +141,8 @@ export function PasswordChangeForm(props: {
 }): ReactNode {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [mismatch, setMismatch] = useState(false);
   const [fieldError, setFieldError] = useState<PasswordChangeFieldError | undefined>(
     undefined,
   );
@@ -151,11 +171,28 @@ export function PasswordChangeForm(props: {
       return;
     }
     setFieldError(undefined);
+    // A-1：确认密码只本地比对（不进 payload，沿 RegisterPage 同款）；
+    // 不一致行内报错不发请求，并聚焦确认框（Semi Input 无公开 focus 方法，
+    // 走原生 DOM id）。
+    if (newPassword !== confirmPassword) {
+      setMismatch(true);
+      if (typeof document !== 'undefined') {
+        document.getElementById('account-confirm-new-password')?.focus();
+      }
+      return;
+    }
+    setMismatch(false);
     // run 失败会 rethrow（错误已入 state），吞掉防 unhandled rejection；
-    // 竞态丢弃（undefined）不切成功帧。
+    // 竞态丢弃（undefined）不切成功态。
     run(built.request)
       .then((result) => {
         if (result !== undefined) {
+          // 成功：清空表单 + Toast（P1-6 统一成功通道；文案含「已退出登录」
+          // 语义），全会话失效 → 壳 effect 延时跳登录页（契约不变）。
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          Toast.success(t('account.passwordChangedDone'));
           setDone(true);
         }
       })
@@ -169,10 +206,19 @@ export function PasswordChangeForm(props: {
       done={done}
       currentPassword={currentPassword}
       newPassword={newPassword}
+      confirmPassword={confirmPassword}
       fieldError={fieldError}
+      mismatch={mismatch}
       submitError={error}
       onCurrentPasswordChange={setCurrentPassword}
-      onNewPasswordChange={setNewPassword}
+      onNewPasswordChange={(value) => {
+        setNewPassword(value);
+        setMismatch(false);
+      }}
+      onConfirmPasswordChange={(value) => {
+        setConfirmPassword(value);
+        setMismatch(false);
+      }}
       onSubmit={handleSubmit}
     />
   );

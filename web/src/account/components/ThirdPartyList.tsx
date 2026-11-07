@@ -19,7 +19,7 @@
  * 文案经 shared/i18n（account.* 域键 + common.refreshAndRetry 复用）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Empty, Popconfirm, Spin, Tag, Toast } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Popconfirm, Spin, Tag, Toast, Tooltip } from '@douyinfe/semi-ui-19';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,
@@ -72,15 +72,26 @@ function BoundRow(props: {
         </span>
       </div>
       <div className={styles.rowActions}>
-        {item.type === 'union' ? null : (
+        {item.type === 'union' ? null : props.canUnbind ? (
           <Popconfirm
             title={t('account.unbindConfirm', { name: item.displayName })}
             onConfirm={() => props.onUnbind(item.providerKey, item.displayName)}
           >
-            <Button size="small" type="danger" disabled={!props.canUnbind} loading={props.unbinding}>
+            <Button size="small" type="danger" loading={props.unbinding}>
               {t('account.unbindAction')}
             </Button>
           </Popconfirm>
+        ) : (
+          // A-3：置灰必须说明原因——canUnbindThirdpartyRow（api.ts）口径 =
+          // 未设置密码且排除自身后无其他非 Union 绑定 → 解绑后将没有可用登录方式。
+          // disabled 按钮不触发 hover，外包 span 让 Tooltip 生效。
+          <Tooltip content={t('account.unbindDisabledReason')}>
+            <span>
+              <Button size="small" type="danger" disabled loading={props.unbinding}>
+                {t('account.unbindAction')}
+              </Button>
+            </span>
+          </Tooltip>
         )}
       </div>
     </li>

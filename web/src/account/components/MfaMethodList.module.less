@@ -1,5 +1,6 @@
 // MFA 因子列表样式（§1.7）：同目录同名 module less；类名 camelCase。
 // V-4 setting-row 白名单口径：hairline 分隔 + 右置 Semi Button + 语义 Tag，不加卡片外壳。
+// 明细展开区（detailsBlock/detail*）随行内常显摘要删除，新增 .summary。
 @import (reference) '../../shared/styles/tokens.less';
 
 .wrap {
@@ -47,6 +48,11 @@
   font-size: @font-size-sm;
 }
 
+.summary {
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
 .unboundHint {
   color: @color-text-muted;
   font-size: @font-size-sm;
@@ -56,34 +62,4 @@
   margin: 0;
   color: @color-danger;
   font-size: @font-size-sm;
-}
-
-.detailsBlock {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-sm;
-}
-
-.detailList {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-xs;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.detailRow {
-  display: flex;
-  gap: @spacing-sm;
-  font-size: @font-size-sm;
-}
-
-.detailFactor {
-  min-width: 9em;
-  color: @color-text-muted;
-}
-
-.detailText {
-  color: @color-text;
 }

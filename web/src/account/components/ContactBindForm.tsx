@@ -13,7 +13,7 @@
  * 文案经 shared/i18n（account.* 域键 + errors.status.captcha_required /
  * channels.email 复用）。
  */
-import { useRef, useState, type ReactNode, type Ref } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Button, Input } from '@douyinfe/semi-ui-19';
 import type { OkResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import type {
@@ -23,6 +23,7 @@ import type {
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
+import { useCountdown } from '../../shared/hooks/useCountdown';
 import { useRequest, type RequestStatus } from '../../shared/hooks/useRequest';
 import { t } from '../../shared/i18n';
 import {
@@ -31,6 +32,7 @@ import {
   bindPhone,
   buildBindChallengeRequest,
   buildBindVerifyRequest,
+  getProfile,
   type ContactBindChallengeError,
   type ContactBindKind,
 } from '../api';
@@ -38,6 +40,9 @@ import styles from './ContactBindForm.module.less';
 
 /** 三步状态机（§3.4 两步 + 成功帧）。 */
 export type ContactBindStep = 'challenge' | 'verify' | 'done';
+
+/** 重发冷却秒数（A-2：发码成功后倒计时，期间禁用重发；login OTPForm 同款口径）。 */
+const RESEND_COOLDOWN_SECONDS = BigInt(60);
 
 /** 本地校验文案（shared/i18n 域键；「请完成人机校验」复用 errors.status.captcha_required）。 */
 function inputErrorText(
@@ -66,6 +71,13 @@ export function ContactBindFormView(props: {
   readonly step: ContactBindStep;
   readonly target: string;
   readonly code: string;
+  /** 当前已绑定值（GetProfile 服务端脱敏字段，A-2 回显；未绑定 / 未加载 → undefined 不渲染）。 */
+  readonly currentValue: string | undefined;
+  /** 当前绑定值已验证（phoneVerified / emailVerified 非 0）。 */
+  readonly currentVerified: boolean;
+  /** 重发倒计时剩余秒（A-2）；expired=false 期间禁用重发。 */
+  readonly resendSeconds: number;
+  readonly resendExpired: boolean;
   readonly challengeStatus: RequestStatus;
   readonly verifyStatus: RequestStatus;
   readonly inputError: ContactBindChallengeError | 'invalid_code' | undefined;
@@ -129,8 +141,15 @@ export function ContactBindFormView(props: {
           >
             {t('account.bindConfirmAction')}
           </Button>
-          <Button type="tertiary" onClick={props.onResend} disabled={verifying}>
-            {t('account.bindResendAction')}
+          {/* A-2：发码后重发冷却倒计时，期间禁用并显示剩余秒数。 */}
+          <Button
+            type="tertiary"
+            onClick={props.onResend}
+            disabled={verifying || !props.resendExpired}
+          >
+            {props.resendExpired
+              ? t('account.bindResendAction')
+              : t('account.bindResendCountdown', { seconds: props.resendSeconds })}
           </Button>
         </div>
       </form>
@@ -146,6 +165,14 @@ export function ContactBindFormView(props: {
         props.onChallenge();
       }}
     >
+      {/* A-2：回显当前已绑定值（GetProfile 服务端脱敏），让用户知道换掉的是什么。 */}
+      {props.currentValue !== undefined && props.currentValue !== '' ? (
+        <p className={styles.targetLine}>
+          {props.currentVerified
+            ? t('account.bindCurrentVerified', { value: props.currentValue })
+            : t('account.bindCurrentValue', { value: props.currentValue })}
+        </p>
+      ) : null}
       <div className={styles.field}>
         <label className={styles.label} htmlFor={`account-bind-${props.kind}-target`}>
           {kindLabel}
@@ -158,8 +185,12 @@ export function ContactBindFormView(props: {
           disabled={challenging}
         />
       </div>
-      {/* captcha 必过（§3.4 行 880）：提交前 getToken，未就绪不发包。 */}
-      <CaptchaWidget captcha={props.captcha} ref={props.captchaRef} />
+      {/* captcha 必过（§3.4 行 880）：提交前 getToken，未就绪不发包。
+          A-2：同屏两个表单各常驻一个 CaptchaWidget 视觉打架——改为目标非空
+          （本表单进入填写态）时才挂载，未填写时不渲染。 */}
+      {props.target.trim() !== '' ? (
+        <CaptchaWidget captcha={props.captcha} ref={props.captchaRef} />
+      ) : null}
       {props.inputError !== undefined ? (
         <p role="alert" className={styles.error}>
           {inputErrorText(props.kind, props.inputError)}
@@ -207,6 +238,19 @@ export function ContactBindForm(props: {
       : bindEmail(request);
   const challenge = useRequest(call);
   const verify = useRequest(call);
+  // A-2：当前已绑定值回显（GetProfile 服务端脱敏字段；不改 SecurityPage 传参，
+  // 组件自取）；绑定成功后重取刷新。
+  const { data: profile, run: runProfile } = useRequest(getProfile);
+  useEffect(() => {
+    runProfile().catch(() => {});
+  }, [runProfile]);
+  const currentValue = kind === 'phone' ? profile?.phone : profile?.email;
+  const currentVerified =
+    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !== undefined &&
+    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !== BigInt(0);
+  // A-2：重发冷却倒计时——challenge 步 undefined（无倒计时），进 verify（发码
+  // 成功）起 60s；重发回 challenge 再进 verify 时 undefined↔60 切换重启倒计时。
+  const cooldown = useCountdown(step === 'verify' ? RESEND_COOLDOWN_SECONDS : undefined);
 
   const submitChallenge = () => {
     const built = buildBindChallengeRequest(kind, target, captchaRef.current?.getToken());
@@ -241,6 +285,8 @@ export function ContactBindForm(props: {
         if (result !== undefined) {
           setStep('done');
           onBound?.(target);
+          // 绑定成功 → 重取资料刷新「当前」回显行。
+          runProfile().catch(() => {});
         }
       })
       .catch(() => {});
@@ -269,6 +315,10 @@ export function ContactBindForm(props: {
       step={step}
       target={target}
       code={code}
+      currentValue={currentValue}
+      currentVerified={currentVerified}
+      resendSeconds={cooldown.seconds}
+      resendExpired={cooldown.expired}
       challengeStatus={challenge.status}
       verifyStatus={verify.status}
       inputError={inputError}

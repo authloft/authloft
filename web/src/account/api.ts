@@ -563,6 +563,21 @@ export function mfaFactorDetail(
   }
 }
 
+/** 恢复码低余量阈值（剩余 ≤ 2 行内显著提示 + 重新生成入口）。 */
+export const RECOVERY_LOW_THRESHOLD = 2;
+
+/**
+ * 恢复码低余量判定（纯函数）：factor=recovery_code 且已绑定且
+ * remaining ≤ RECOVERY_LOW_THRESHOLD；其余因子 / 未绑定 → false。
+ */
+export function isRecoveryLow(factor: MfaFactor): boolean {
+  return (
+    factor.factor === 'recovery_code' &&
+    factor.bound &&
+    factor.remaining <= BigInt(RECOVERY_LOW_THRESHOLD)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 三方绑定族封装（§3.7 / §3.7.1）
 // ---------------------------------------------------------------------------

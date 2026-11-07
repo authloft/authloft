@@ -202,6 +202,7 @@ let apiMod: typeof import('./api');
 let ssoMod: typeof import('../shared/api/sso');
 let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
+let mfaMethodListMod: typeof import('./components/MfaMethodList');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -210,6 +211,7 @@ beforeAll(async () => {
   ssoMod = await import('../shared/api/sso');
   uploadMod = await import('../shared/hooks/useUpload');
   routesMod = await import('./routes');
+  mfaMethodListMod = await import('./components/MfaMethodList');
 });
 
 // rstest 对 .tsx 采用 classic JSX runtime，路由渲染断言经 createElement 显式
@@ -2207,5 +2209,90 @@ describe('accountReturnTo（401 跳登录 returnTo 白名单形态，纯函数�
     expect(decodeURIComponent(encoded).startsWith('/account#')).toBe(true);
     // 白名单校验（sanitizeReturnTo 仅放行 /account# / /admin# 前缀）原样放行。
     expect(sanitizeReturnTo(decodeURIComponent(encoded))).toBe(returnTo);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRecoveryLow（恢复码低余量行内提示阈值判定，纯函数）
+// ---------------------------------------------------------------------------
+
+describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
+  test('recovery_code 已绑定且剩余 ≤ 2 → true；> 2 → false', () => {
+    expect(
+      apiMod.isRecoveryLow(
+        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(2) }),
+      ),
+    ).toBe(true);
+    expect(
+      apiMod.isRecoveryLow(
+        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(0) }),
+      ),
+    ).toBe(true);
+    expect(
+      apiMod.isRecoveryLow(
+        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(3) }),
+      ),
+    ).toBe(false);
+    expect(apiMod.RECOVERY_LOW_THRESHOLD).toBe(2);
+  });
+
+  test('未绑定 / 非 recovery_code 因子 → false', () => {
+    expect(
+      apiMod.isRecoveryLow(
+        create(MfaFactorSchema, { factor: 'recovery_code', bound: false, remaining: BigInt(0) }),
+      ),
+    ).toBe(false);
+    expect(
+      apiMod.isRecoveryLow(
+        create(MfaFactorSchema, { factor: 'webauthn', bound: true, credentials: BigInt(1) }),
+      ),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MfaMethodList 静态渲染（交互重构：Tag 承载状态 + 动作按钮分派，
+// Checkbox 启用开关已删除；Semi 静态渲染解锁）
+// ---------------------------------------------------------------------------
+
+describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
+  const noop = () => {};
+
+  test('已启用因子 → 已绑定 Tag + 停用按钮；已停用 → 已停用 Tag + 启用按钮；无 Checkbox', () => {
+    const html = renderToStaticMarkup(
+      createElement(mfaMethodListMod.MfaMethodList, {
+        methods: [
+          create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+          create(MfaPolicyMethodSchema, { factor: 'webauthn', enabled: false, bound: true }),
+        ],
+        required: false,
+        detailVersion: 0,
+        onPolicyRefresh: noop,
+      }),
+    );
+    expect(html).toContain('已绑定');
+    expect(html).toContain('已停用');
+    expect(html).toContain('停用');
+    expect(html).toContain('启用');
+    // Checkbox 启用开关已删除（状态一律 Tag / 文本承载）。
+    expect(html).not.toContain('semi-checkbox');
+  });
+
+  test('未绑定：totp 出「绑定」按钮；otp_sms 给指引不出按钮；未绑定 Tag', () => {
+    const html = renderToStaticMarkup(
+      createElement(mfaMethodListMod.MfaMethodList, {
+        methods: [
+          create(MfaPolicyMethodSchema, { factor: 'totp', enabled: false, bound: false }),
+          create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: false }),
+        ],
+        required: false,
+        detailVersion: 0,
+        onPolicyRefresh: noop,
+      }),
+    );
+    expect(html).toContain('绑定');
+    expect(html).toContain('未绑定');
+    expect(html).toContain('请先在「联系方式」中绑定手机号');
+    expect(html).not.toContain('semi-checkbox');
   });
 });
