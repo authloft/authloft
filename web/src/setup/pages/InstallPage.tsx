@@ -221,7 +221,7 @@ export default function InstallPage({
     await doInstall({
       // wire 契约不变（§13.3）：六字段拼装为单个 dbDsn 再提交。
       dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
-      redisAddr: values.redisAddr.trim(),
+      redisAddr: (values.redisAddr || '').trim(),
       redisPassword: values.redisPassword,
       redisDb: Number.parseInt(values.redisDb, 10) || 0,
       root: values.root.trim(),

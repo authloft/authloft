@@ -9,35 +9,22 @@ const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
 const INIT_JSON = '{{AUTHLOFT_INIT_JSON}}';
 
 const IS_DEV = process.env.NODE_ENV === 'development';
-const DEV_INIT_JSON = {"al_root":"http://localhost:8080","static_base":"/assets","methods":{"flags":{"passwordReset":true,"registration":true},"captcha":{"providerKey":"builtin_image","type":"image"},"methods":[{"method":"password","usage":["primary"],"steps":["form"],"fields":[{"name":"username","label":"用户名/邮箱/手机号","type":"text","required":true},{"name":"password","label":"密码","type":"password","required":true},{"name":"captcha","label":"人机校验","type":"captcha"}]},{"method":"otp_sms","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"phone","label":"手机号","type":"phone","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"otp_email","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"email","label":"邮箱","type":"email","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"webauthn","usage":["primary","secondary"],"steps":["challenge","form"],"capability":"window.PublicKeyCredential"}]}}
+const DEV_INIT_JSON = {"al_root":"http://localhost:3000","static_base":"/assets","methods":{"flags":{"passwordReset":true,"registration":true},"captcha":{"providerKey":"builtin_image","type":"image"},"methods":[{"method":"password","usage":["primary"],"steps":["form"],"fields":[{"name":"username","label":"用户名/邮箱/手机号","type":"text","required":true},{"name":"password","label":"密码","type":"password","required":true},{"name":"captcha","label":"人机校验","type":"captcha"}]},{"method":"otp_sms","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"phone","label":"手机号","type":"phone","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"otp_email","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"email","label":"邮箱","type":"email","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"webauthn","usage":["primary","secondary"],"steps":["challenge","form"],"capability":"window.PublicKeyCredential"}]}}
 
 export default defineConfig({
   plugins: [appTools()],
   source: {
     entries: {
-      // 安装 entry（docs/前端架构.md §2 / §6b）：壳层模板 = 构建产物
-      // dist/html/setup/index.html 原样复制（§1.5，占位符由下方三 config 注入）。
-      // disableMount：entry.tsx 自行 createRoot 挂载，不用 Modern.js 生成入口代码。
       setup: {
         entry: './src/setup/entry.tsx',
         disableMount: true,
       },
-      // 登录 entry（docs/前端架构.md §2 行 119 / §4.1）：壳层模板 = 构建产物
-      // dist/html/login/index.html 原样复制（§1.5，接口文档 §8）。
-      // F-077（D-037）：去 disableMount——框架接管挂载（容器 #root），
-      // entry.tsx 退化为默认导出根组件（副作用留在其模块作用域）。
       login: {
         entry: './src/login/entry.tsx',
       },
-      // 用户端安全中心 entry（docs/前端架构.md §2 / §5 行 478）：壳层模板 =
-      // 构建产物 dist/html/account/index.html 原样复制（§1.5，接口文档 §8）。
-      // 同 login 模式（F-077）：框架接管挂载，entry.tsx 默认导出根组件。
       account: {
         entry: './src/account/entry.tsx',
       },
-      // 管理端 entry（docs/前端架构.md §2 / §6 行 499）：壳层模板 =
-      // 构建产物 dist/html/admin/index.html 原样复制（§1.5，接口文档 §8）。
-      // 同 login 模式（F-077）：框架接管挂载，entry.tsx 默认导出根组件。
       admin: {
         entry: './src/admin/entry.tsx',
       },
@@ -47,6 +34,7 @@ export default defineConfig({
   // 生效——login 映射五条真实路径（回调段 :provider_key 动态参数），
   // account / admin / setup 各映射根路径（子路径走前端路由）。
   server: {
+    port: 3000,
     routes: {
       login: [
         '/sso/login',
@@ -59,6 +47,13 @@ export default defineConfig({
       admin: '/admin',
       setup: '/setup',
     },
+  },
+  dev: {
+    server: {
+      proxy: {
+        '/api': 'http://localhost:8080'
+      }
+    }
   },
   // ── 壳层模板三个运行期占位符的构建期注入（docs/前端架构.md §1.5 定稿）──
   // 壳层模板 = dist/html/{entry}/index.html 原样复制（scripts/sync-templates.mjs 仅复制

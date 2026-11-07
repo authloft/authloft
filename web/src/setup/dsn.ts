@@ -98,7 +98,7 @@ export function buildMysqlDsn(fields: DbDsnFormFields): string {
   const host = fields.host.trim();
   const hostExpr =
     host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-  const params = fields.params.trim();
+  const params = (fields.params || '').trim();
   const paramsPart =
     params === '' ? '' : params.startsWith('?') ? params : `?${params}`;
   return `${fields.user.trim()}:${fields.password}@tcp(${hostExpr}:${fields.port.trim()})/${fields.database.trim()}${paramsPart}`;
