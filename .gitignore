@@ -5,3 +5,5 @@ ENV.md
 .workbuddy
 *.exe
 review
+.agent-temp
+AGENTS.md
