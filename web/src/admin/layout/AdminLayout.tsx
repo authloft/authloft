@@ -26,18 +26,19 @@
  *
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { useLocation, useNavigate } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import {
   ADMIN_NAV_ROUTES,
   matchActivePath,
   toNavItems,
 } from '../../shared/app-ui/nav-routes';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
-import { loginUrl, logoutUrl } from '../bootstrap';
-import { adminDisplayName, adminMeFailureAction, adminReturnTo, apiErrorText, getMe } from '../api';
+import { logoutUrl } from '../bootstrap';
+import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from '../api';
 import styles from './AdminLayout.module.less';
 
 const { Sider, Header, Content } = Layout;
@@ -71,27 +72,20 @@ export function AdminLayout(props: {
   // matchActivePath（详情页归列表项高亮，如 /users/123 → /users）。
   const location = useLocation();
   const navigate = useNavigate();
-  const { status, data, error, run } = useRequest(getMe);
-  useEffect(() => {
-    // §6 行 501：401 未携带有效会话 → 统一跳登录（adminMeFailureAction 分流，
-    // 404 掩护等其余错误不跳，由渲染分支出错误态）。
-    if (adminMeFailureAction(error) === 'redirect_login') {
-      // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页；
-      // location 即上方导航用的 useLocation，HashRouter 下为 hash 内部分）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由上 effect + 渲染分支处理。
-    run().catch(() => {});
-  }, [run]);
+  // GetMe 改 ahooks 自动请求（§5.1-①）；401 由集中 onError
+  // 跳登录（returnTo 取 HashRouter 内路径，即上方导航用 location），
+  // 404 掩护等其余错误不跳、走 error 态页面帧（toast:false 静默防双报）。
+  const { data, error } = useRequest(
+    getMe,
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
 
   // 错误态（含 404 掩护）：不渲染管理壳（见文件头分流说明）；
   // 自绘文字换 Semi Banner（自带 role="alert"）。
-  if (status === 'error') {
+  if (error !== undefined) {
     return <Banner type="danger" description={apiErrorText(error)} />;
   }
   // idle / loading：GetMe 未落地前不渲染管理壳（会话校验前置）。

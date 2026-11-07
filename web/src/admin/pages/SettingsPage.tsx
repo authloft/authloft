@@ -43,7 +43,8 @@ import {
   Typography,
 } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { StringListEditor } from '../components/StringListEditor';
 import {
@@ -294,7 +295,17 @@ export function SettingsPage(props: {
   /** 归一后 al_root（401 跳登录前缀）。 */
   readonly alRoot: string;
 }): ReactNode {
-  const { status, data, error, run } = useRequest(getSettings);
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
+  // GetSettings 首取改 ahooks 自动请求；401 由集中 onError 跳登录，
+  // 其余错误走页面错误帧（toast:false 静默防双报）。
+  const { data, error } = useRequest(
+    getSettings,
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 行内校验错误槽（settingsDraftIssue 交叉校验文案，保持行内）；写操作
@@ -310,12 +321,6 @@ export function SettingsPage(props: {
   const [diffOpen, setDiffOpen] = useState(false);
 
   useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run().catch(() => {});
-  }, [run]);
-
-  useEffect(() => {
     // 全量替换语义：草稿以响应初始化完整键集，保存整体回写。
     if (data !== undefined) {
       const initial = draftFromSettings(data);
@@ -324,17 +329,6 @@ export function SettingsPage(props: {
       setSavedDraft(initial);
     }
   }, [data]);
-
-  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
-  const location = useLocation();
-  useEffect(() => {
-    // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-    if (isUnauthenticatedError(error)) {
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
 
   // 未保存改动（P1-8）= 草稿与已保存快照键级不等。
   const dirty = draft !== null && savedDraft !== null && !draftEquals(draft, savedDraft);
@@ -412,9 +406,9 @@ export function SettingsPage(props: {
     }
   }
 
-  // 页级错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 页级错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return (
       <Banner type="danger" fullMode={false} description={t('admin.settingsLoadFailed')} />
     );

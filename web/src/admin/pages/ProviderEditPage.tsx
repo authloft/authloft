@@ -24,12 +24,13 @@
  * （工具链 blocker）：逻辑全在 ./api 与 schema/schemaLogic（node 可测）。
  * 样式（§1.7）：同目录同名 module less。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { useLocation, useNavigate } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import {
   GetProviderRequestSchema,
@@ -38,18 +39,15 @@ import {
 import { GetProviderSchemaRequestSchema } from '../../gen/proto/api/admin/v1/schema_pb';
 import {
   adminReturnTo,
-  apiErrorText,
   buildListProvidersRequest,
   createProvider,
   getProvider,
   getProviderSchema,
   getProviderTypes,
-  isUnauthenticatedError,
   listProviders,
   testProvider,
   updateProvider,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
 import { adminNavPath } from '../paths';
 import { SchemaForm } from '../schema/SchemaForm';
@@ -79,16 +77,8 @@ export function ProviderEditPage(props: {
   const editing = props.providerKey !== undefined;
   // 保存成功跳回列表改 router 导航（HashRouter SPA 内跳）。
   const navigate = useNavigate();
-
-  const typesReq = useRequest(getProviderTypes);
-  const providerReq = useRequest(getProvider);
-  const schemaReq = useRequest(getProviderSchema);
-  const submitReq = useRequest(
-    editing
-      ? (values: JsonObject) => updateProvider(values)
-      : (values: JsonObject) => createProvider(values),
-  );
-  const testReq = useRequest(testProvider);
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
 
   const [type, setType] = useState('');
   const [values, setValues] = useState<FormValues>({});
@@ -98,73 +88,89 @@ export function ProviderEditPage(props: {
   const [testTarget, setTestTarget] = useState('');
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），吞掉防 unhandled
-    // rejection；错误呈现 / 401 跳转由下方 effect 与错误分支处理。
-    typesReq.run().catch(() => {});
-    if (!editing) {
-      return;
-    }
-    providerReq
-      .run(create(GetProviderRequestSchema, { providerKey: props.providerKey }))
-      .then((provider) => {
-        if (provider === undefined) {
-          return; // 竞态丢弃。
-        }
+  // 五请求实例迁 ahooks（§5 映射）——首取（types / 编辑链
+  // provider → schema）改自动请求（ready / refreshDeps 驱动，旧挂载 effect
+  // 删除），提交 / 测试改 manual + 集中 onError（失败 Toast 与原 catch 等价
+  // 〔§5.4-#3〕，401 集中跳登录）；成功副作用（编辑回填 / 跳列表 / 测试提示）
+  // 走 onSuccess，均用 run 不用 runAsync（无调用方降级场景，§0-④）。
+  const typesReq = useRequest(
+    getProviderTypes,
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
+  const providerReq = useRequest(
+    () =>
+      getProvider(
+        create(GetProviderRequestSchema, { providerKey: props.providerKey ?? '' }),
+      ),
+    {
+      // 编辑模式挂载即取（ready 门控；providerKey 由路由层给定，不随渲染变化）。
+      ready: editing,
+      onSuccess: (provider) => {
+        // 编辑回填链第一步：type 落地即驱动下方 schema 自动请求（refreshDeps）。
         setType(provider.type);
-        return schemaReq
-          .run(create(GetProviderSchemaRequestSchema, { type: provider.type }))
-          .then((schema) => {
-            if (schema !== undefined) {
-              setValues(adminProviderToValues(schema.fields, provider));
-            }
-          });
-      })
-      .catch(() => {});
-    // 挂载期一次性加载（providerKey / editing 由路由层决定，不随渲染变化）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      },
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const schemaReq = useRequest(
+    () => getProviderSchema(create(GetProviderSchemaRequestSchema, { type })),
+    {
+      // type 非空即取（编辑链回填 / 新建选型两入口同源）；type 变更重取，
+      // 连击 stale 由 ahooks latest-only 保证（旧竞态令牌语义）。
+      ready: type !== '',
+      refreshDeps: [type],
+      onSuccess: (schema) => {
+        // 编辑：按 provider 明文回填；新建：按 schema 默认值初始化
+        // （category 用顶层 category 预填——applySchemaDefaults
+        // 的零值 '' 会被 required + 锁定键死锁）。
+        const provider = providerReq.data;
+        setValues(
+          editing && provider !== undefined
+            ? adminProviderToValues(schema.fields, provider)
+            : initialCreateValues(schema),
+        );
+      },
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const submitReq = useRequest(
+    editing
+      ? (values: JsonObject) => updateProvider(values)
+      : (values: JsonObject) => createProvider(values),
+    {
+      manual: true,
+      onSuccess: () => {
+        // 列表页路径取 ADMIN_NAV_ROUTES 单一来源（paths.adminNavPath）。
+        void navigate(adminNavPath('admin.navProviders'));
+      },
+      ...requestOptions({
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const testReq = useRequest(testProvider, {
+    manual: true,
+    onSuccess: () => {
+      Toast.success(t('admin.testSent'));
+    },
+    ...requestOptions({
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  });
 
-  // 401 统一跳登录（§6 行 501；replace：管理面不留回退占位）。
-  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
-  const location = useLocation();
-  useEffect(() => {
-    const errors = [
-      typesReq.error,
-      providerReq.error,
-      schemaReq.error,
-      submitReq.error,
-      testReq.error,
-    ];
-    if (errors.some((error) => isUnauthenticatedError(error))) {
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [
-    typesReq.error,
-    providerReq.error,
-    schemaReq.error,
-    submitReq.error,
-    testReq.error,
-    props.alRoot,
-    location,
-  ]);
-
-  /** 新建模式切换 type → 重拉 schema 重置表单（编辑模式下拉锁定）。 */
+  /** 新建模式切换 type → 自动重拉 schema 并重置表单（编辑模式下拉锁定）。 */
   function handleTypeChange(next: string): void {
     setType(next);
     setIssues({});
-    schemaReq
-      .run(create(GetProviderSchemaRequestSchema, { type: next }))
-      .then((schema) => {
-        if (schema !== undefined) {
-          // category 用顶层 category 预填（注册表权威）——
-          // applySchemaDefaults 的零值 '' 会被 required + 锁定键死锁。
-          setValues(initialCreateValues(schema));
-        }
-      })
-      .catch(() => {});
   }
 
   function handleChange(key: string, value: unknown): void {
@@ -206,19 +212,9 @@ export function ProviderEditPage(props: {
       return;
     }
     setIssues({});
-    // run 失败会 rethrow（状态已入 state），吞掉防 unhandled rejection；
-    // 竞态丢弃（undefined）不触发跳转。
-    submitReq
-      .run(buildProviderStruct(type, schema.fields, values))
-      .then((result) => {
-        if (result !== undefined) {
-          // 列表页路径取 ADMIN_NAV_ROUTES 单一来源（paths.adminNavPath）。
-          void navigate(adminNavPath('admin.navProviders'));
-        }
-      })
-      .catch((error) => {
-        Toast.error(apiErrorText(error));
-      });
+    // 成功跳列表走 onSuccess，失败 Toast 走集中 onError（§5.4-#3 等价替换，
+    // 本地 then/catch 删除）；竞态 / 错误态由 ahooks 实例承载。
+    submitReq.run(buildProviderStruct(type, schema.fields, values));
   }
 
   /** 发送测试（§5.2 行 1177 TestProvider {providerKey, target}）。 */
@@ -228,37 +224,29 @@ export function ProviderEditPage(props: {
       return;
     }
     setTestFeedback(null);
-    testReq
-      .run(
-        create(TestProviderRequestSchema, {
-          providerKey: props.providerKey ?? '',
-          target: testTarget.trim(),
-        }),
-      )
-      .then((result) => {
-        if (result !== undefined) {
-          Toast.success(t('admin.testSent'));
-        }
-      })
-      .catch((error) => {
-        Toast.error(apiErrorText(error));
-      });
+    // 成功 / 失败反馈均走 hook 回调（onSuccess Toast + 集中 onError Toast）。
+    testReq.run(
+      create(TestProviderRequestSchema, {
+        providerKey: props.providerKey ?? '',
+        target: testTarget.trim(),
+      }),
+    );
   }
 
   // —— 错误 / 加载帧（自绘文字换 Semi Banner / Spin）——
 
-  if (editing && providerReq.status === 'error') {
+  if (editing && providerReq.error !== undefined) {
     return (
       <Banner type="danger" fullMode={false} description={t('admin.providerLoadFailed')} />
     );
   }
-  if (schemaReq.status === 'error') {
+  if (schemaReq.error !== undefined) {
     return (
       <Banner type="danger" fullMode={false} description={t('admin.schemaLoadFailed')} />
     );
   }
   const loading =
-    typesReq.status === 'loading' ||
+    typesReq.loading ||
     (editing && (providerReq.data === undefined || schemaReq.data === undefined));
   if (loading) {
     return (
@@ -270,7 +258,7 @@ export function ProviderEditPage(props: {
 
   const provider = providerReq.data;
   const schema = schemaReq.data;
-  const submitting = submitReq.status === 'loading';
+  const submitting = submitReq.loading;
   // category 恒只读（§5.3 行 1195 由注册表决定）；provider_key 编辑锁定
   //（§5.3 行 1192 创建后不可改）。
   const lockedKeys = editing ? ['category', 'provider_key'] : ['category'];
@@ -289,7 +277,7 @@ export function ProviderEditPage(props: {
         providerKey={provider?.providerKey}
         type={provider?.type}
       />
-      {typesReq.status === 'error' ? (
+      {typesReq.error !== undefined ? (
         // 类型清单加载失败自绘文字换 Semi Banner（表单缺类型不可用，页级口径）。
         <Banner
           type="danger"
@@ -358,13 +346,13 @@ export function ProviderEditPage(props: {
               placeholder={
                 schema?.category === 'sms' ? t('admin.phoneLabel') : t('admin.emailLabel')
               }
-              disabled={testReq.status === 'loading'}
+              disabled={testReq.loading}
               aria-label={t('admin.testTargetAriaLabel')}
             />
             <Button
               onClick={handleTest}
-              loading={testReq.status === 'loading'}
-              disabled={testReq.status === 'loading'}
+              loading={testReq.loading}
+              disabled={testReq.loading}
             >
               {t('admin.sendTestAction')}
             </Button>

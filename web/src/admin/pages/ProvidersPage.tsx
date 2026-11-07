@@ -32,7 +32,9 @@ import { Link, useLocation, useNavigate } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { SetProviderEnabledRequestSchema } from '../../gen/proto/api/admin/v1/provider_pb';
@@ -48,7 +50,6 @@ import {
   setProviderEnabled,
   sortProviders,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
 import { SortableList } from '../components/SortableList';
 import { StatusSwitch } from '../components/StatusSwitch';
@@ -84,7 +85,17 @@ export function ProvidersPage(props: {
   /** 归一后 al_root（401 跳登录前缀 / 回调地址前缀）。 */
   readonly alRoot: string;
 }): ReactNode {
-  const { status, data, error, run } = useRequest(listProviders);
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
+  // 列表取数改 ahooks 自动请求；401 由集中 onError 跳登录，其余
+  // 错误走页面错误帧（toast:false 静默防双报）。
+  const { data, error, loading } = useRequest(
+    () => listProviders(buildListProvidersRequest()),
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
   // 页内跳转换 router 导航（HashRouter SPA 内跳，不再整页刷新）。
   const navigate = useNavigate();
   // 行集本地态：列表载入同步 + 启停 / 排序写操作成功后就地补丁（乐观）。
@@ -93,29 +104,12 @@ export function ProvidersPage(props: {
   // 文字已随 Semi 回归移除）；成功反馈接 Toast.success（P1-6 统一成功
   // 通道，新增最小键集 admin.provider{Enable,Disable,Sort}Success）。
 
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下方 effect 与错误分支处理。
-    run(buildListProvidersRequest()).catch(() => {});
-  }, [run]);
-
   // 列表数据落地 → 同步行集（引用更换即覆盖本地补丁，DataTable 同模式）。
   useEffect(() => {
     if (data !== undefined) {
       setRows(data.items);
     }
   }, [data]);
-
-  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
-  const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
 
   const total = data !== undefined ? toCount(data.total) : 0;
   // 拖拽排序需全量行集（部分行集重排会与未载入行冲突，见 buildListProvidersRequest）。
@@ -163,9 +157,9 @@ export function ProvidersPage(props: {
       });
   }
 
-  // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return <Banner type="danger" fullMode={false} description={t('admin.providersLoadFailed')} />;
   }
 
@@ -234,13 +228,14 @@ export function ProvidersPage(props: {
           );
         }}
       />
-      {status === 'loading' && rows.length === 0 ? (
+      {loading && rows.length === 0 ? (
         // 整页加载态裸文字换 Semi Spin。
         <div className={styles.stateCenter} role="status">
           <Spin size="large" />
         </div>
       ) : null}
-      {status === 'success' && rows.length === 0 ? (
+      {/* success 空态判定走 deriveRequestStatus 派生（§5.3）。 */}
+      {deriveRequestStatus(loading, error, data) === 'success' && rows.length === 0 ? (
         // 空态裸文字换 Semi Empty（默认插图 + 文案）。
         <Empty description={t('admin.noProviders')} />
       ) : null}

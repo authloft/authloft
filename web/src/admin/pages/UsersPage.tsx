@@ -24,13 +24,15 @@
  * 可测逻辑全部收口在 ./api（请求构造 / 展示纯函数）。
  * 样式（§1.7）：同目录同名 module less。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { Link, useLocation } from '@modern-js/runtime/router';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { AdminUser } from '../../gen/proto/api/admin/v1/user_pb';
@@ -53,7 +55,6 @@ import {
   updateUserStatus,
   userStatusLabel,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import { userDetailPath } from '../paths';
 import styles from './UsersPage.module.less';
 
@@ -66,8 +67,8 @@ function userRowKey(row: AdminUser): string {
 }
 
 /** 用户列表页：搜索 + DataTable（状态筛选 / 行内禁用启停 / 排序 / 分页）+ 行内操作。 */
-export function UsersPage(props: {
-  /** 归一后 al_root（401 跳登录前缀）。 */
+export function UsersPage(_props: {
+  /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
   readonly alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序 / 筛选全部由 DataTable 上报更新。
@@ -75,7 +76,21 @@ export function UsersPage(props: {
   // 搜索词两态：draft（输入框即时值）/ applied（已生效取数词）；生效即回第 1 页。
   const [qDraft, setQDraft] = useState('');
   const [appliedQ, setAppliedQ] = useState('');
-  const { status, data, error, run } = useRequest(listUsers);
+  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
+  const location = useLocation();
+  // 列表取数改 ahooks 自动请求 + refreshDeps（query / appliedQ 变更
+  // 重取，同原 effect 依赖）；401 由集中 onError 跳登录，其余错误走页面
+  // 错误帧（toast:false 静默防双报）。
+  const { data, error, loading } = useRequest(
+    () => listUsers(buildListUsersRequest(appliedQ, query)),
+    {
+      refreshDeps: [appliedQ, query],
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
   // 写操作成功 / 失败反馈统一走 Semi Toast（原就地 notice/actionError
   // 文字已随 Semi 回归移除）；Modal 内表单错误（resetError）保持行内。
   // 重置密码弹窗（§5.4 行 1252）：resetTarget 即当前目标行；空即关闭。
@@ -85,23 +100,6 @@ export function UsersPage(props: {
   const [resetMismatch, setResetMismatch] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSubmitting, setResetSubmitting] = useState(false);
-
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run(buildListUsersRequest(appliedQ, query)).catch(() => {});
-  }, [run, query, appliedQ]);
-
-  // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
-  const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
 
   /** 搜索生效：applied 词落地 + 回第 1 页（§1.7：筛选 / 搜索变化重置页码）。 */
   function applySearch(): void {
@@ -267,9 +265,9 @@ export function UsersPage(props: {
     onToggle: handleStatusToggle,
   };
 
-  // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return <Banner type="danger" fullMode={false} description={t('admin.usersLoadFailed')} />;
   }
 
@@ -296,9 +294,14 @@ export function UsersPage(props: {
         total={data !== undefined ? toCount(data.total) : 0}
         query={query}
         onQueryChange={setQuery}
-        loading={status === 'loading'}
-        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
-        empty={status === 'success' ? <Empty description={t('admin.noUsers')} /> : undefined}
+        loading={loading}
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）；success 空态
+        // 判定走 deriveRequestStatus 派生（§5.3，禁手写三条件）。
+        empty={
+          deriveRequestStatus(loading, error, data) === 'success' ? (
+            <Empty description={t('admin.noUsers')} />
+          ) : undefined
+        }
         switchColumn={switchColumn}
       />
       <Modal

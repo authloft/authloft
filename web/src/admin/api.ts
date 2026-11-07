@@ -26,8 +26,8 @@
  * node 测试（工具链 blocker），纯逻辑按 account/api.ts 落位口径置此。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（§9 第 16 条），本模块
- * 从那里拿 adminClient、不自建 transport；请求状态语义归
- * shared/hooks/useRequest（§3.2），本模块是薄封装。
+ * 从那里拿 adminClient、不自建 transport；请求层归 ahooks `useRequest` +
+ * `shared/hooks/requestOptions` 集中错误分派（§3.2），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  */
 import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';

@@ -31,12 +31,14 @@
  * 换算处紧贴 Semi 控件值形态内联本文件（见上）。样式（§1.7）：同目录
  * 同名 module less。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
@@ -55,7 +57,6 @@ import {
   resolveEventFilterOnPreset,
   type AuditPreset,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import styles from './AuditPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
@@ -102,8 +103,8 @@ function eventRowKey(row: EventItem): string {
 }
 
 /** 事件日志统一视图页：预设 + 类型筛选 + DataTable 服务端分页。 */
-export function AuditPage(props: {
-  /** 归一后 al_root（401 跳登录前缀）。 */
+export function AuditPage(_props: {
+  /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
   readonly alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序由 DataTable 上报更新；筛选 / 预设变更回第 1 页。
@@ -117,47 +118,44 @@ export function AuditPage(props: {
   const [userIdFilter, setUserIdFilter] = useState<number | string>('');
   const [fromFilter, setFromFilter] = useState<Date | undefined>(undefined);
   const [toFilter, setToFilter] = useState<Date | undefined>(undefined);
-  const { status, data, error, run } = useRequest(listEvents);
-
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run(
-      buildListEventsRequest(
-        preset,
-        {
-          event: eventFilter,
-          actorType: actorTypeFilter,
-          actorId: idInputToFilter(actorIdFilter),
-          userId: idInputToFilter(userIdFilter),
-          from: dateToUnixFilter(fromFilter),
-          to: dateToUnixFilter(toFilter),
-        },
-        query,
-      ),
-    ).catch(() => {});
-  }, [
-    run,
-    query,
-    preset,
-    eventFilter,
-    actorTypeFilter,
-    actorIdFilter,
-    userIdFilter,
-    fromFilter,
-    toFilter,
-  ]);
-
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
+  // 列表取数改 ahooks 自动请求 + refreshDeps（query / 预设 / 六项筛选
+  // 变更重取，同原 effect 依赖集）；401 由集中 onError 跳登录，其余错误走
+  // 页面错误帧（toast:false 静默防双报）。
+  const { data, error, loading } = useRequest(
+    () =>
+      listEvents(
+        buildListEventsRequest(
+          preset,
+          {
+            event: eventFilter,
+            actorType: actorTypeFilter,
+            actorId: idInputToFilter(actorIdFilter),
+            userId: idInputToFilter(userIdFilter),
+            from: dateToUnixFilter(fromFilter),
+            to: dateToUnixFilter(toFilter),
+          },
+          query,
+        ),
+      ),
+    {
+      refreshDeps: [
+        query,
+        preset,
+        eventFilter,
+        actorTypeFilter,
+        actorIdFilter,
+        userIdFilter,
+        fromFilter,
+        toFilter,
+      ],
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
 
   /** 预设变更（§5.6 行 1297）：回第 1 页重取（§1.7 语义）。 */
   function changePreset(next: AuditPreset): void {
@@ -269,9 +267,9 @@ export function AuditPage(props: {
     },
   ];
 
-  // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return <Banner type="danger" fullMode={false} description={t('admin.auditLoadFailed')} />;
   }
 
@@ -361,9 +359,14 @@ export function AuditPage(props: {
         total={data !== undefined ? toCount(data.total) : 0}
         query={query}
         onQueryChange={setQuery}
-        loading={status === 'loading'}
-        // 空态裸文字换 Semi Empty（默认插图 + 文案）。
-        empty={status === 'success' ? <Empty description={t('admin.noEvents')} /> : undefined}
+        loading={loading}
+        // 空态裸文字换 Semi Empty（默认插图 + 文案）；success 空态
+        // 判定走 deriveRequestStatus 派生（§5.3，禁手写三条件）。
+        empty={
+          deriveRequestStatus(loading, error, data) === 'success' ? (
+            <Empty description={t('admin.noEvents')} />
+          ) : undefined
+        }
       />
     </section>
   );

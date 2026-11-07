@@ -14,7 +14,8 @@
  * - `path:'*'` 兜底：带布局 Semi Empty + 返回首页 Link
  *   （SPA 内跳转，不再整页刷新）。
  *
- * 401 链路不变：仍由各页 / AdminLayout 内 `location.replace(loginUrl(...))`。
+ * 401 链路：读路径经 `requestOptions` 集中 `onError` 跳登录；
+ * Modal 写路径与 `DecodePage` 保留内联 `location.replace(loginUrl(...))`。
  * bootstrap 无 methods 必需校验（§8：methods 仅 login 必填），路由层不发请求。
  */
 import type { ReactNode } from 'react';

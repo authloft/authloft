@@ -12,43 +12,37 @@
  * 组件壳 import Semi 后不可 node 测试（既有 Blocker），可测逻辑收口
  * ./api（三方法 msw + 展示纯函数）。样式（§1.7）：同目录同名 module less。
  */
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
 import { useLocation } from '@modern-js/runtime/router';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { adminReturnTo, getStatus, isUnauthenticatedError } from '../api';
-import { loginUrl } from '../bootstrap';
 import styles from './StatusPage.module.less';
 
 /** 监控页：GetStatus 三指标卡片 + 手动刷新。 */
-export function StatusPage(props: {
-  /** 归一后 al_root（401 跳登录前缀）。 */
+export function StatusPage(_props: {
+  /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
   readonly alRoot: string;
 }): ReactNode {
-  const { status, data, error, run } = useRequest(getStatus);
-
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run().catch(() => {});
-  }, [run]);
-
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
-  useEffect(() => {
-    if (isUnauthenticatedError(error)) {
-      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, props.alRoot, location]);
+  // 首取改 ahooks 自动请求；401 由集中 onError 跳登录，其余错误
+  // 走页面错误帧（toast:false 静默防双报）；手动刷新走 ahooks refresh
+  // （按末次入参重发，错误同样进集中 onError）。
+  const { data, error, loading, refresh } = useRequest(
+    getStatus,
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
 
-  // 列表错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return <Banner type="danger" fullMode={false} description={t('admin.statusLoadFailed')} />;
   }
   // idle / loading：数据未落地前的过渡态（裸文字换 Semi Spin）。
@@ -83,9 +77,9 @@ export function StatusPage(props: {
       <p className={styles.hint}>{t('admin.statusHint')}</p>
       <Button
         theme="solid"
-        loading={status === 'loading'}
+        loading={loading}
         onClick={() => {
-          run().catch(() => {});
+          refresh();
         }}
       >
         {t('admin.refreshAction')}

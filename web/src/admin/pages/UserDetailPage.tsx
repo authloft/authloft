@@ -20,12 +20,14 @@
  * userStatusLabel / formatUnixTime / 请求构造）。
  * 样式（§1.7）：同目录同名 module less。
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
-import { useRequest } from '../../shared/hooks/useRequest';
+import { useRequest } from 'ahooks';
+import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
@@ -44,7 +46,6 @@ import {
   unbindUserThirdparty,
   userStatusLabel,
 } from '../api';
-import { loginUrl } from '../bootstrap';
 import styles from './UserDetailPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 '' / 0n）。 */
@@ -111,32 +112,37 @@ export function UserDetailPage(props: {
   /** 目标用户 ID（路由 \d+ 段解析，见 ./routes）。 */
   readonly userId: bigint;
 }): ReactNode {
-  const { status, data, error, run } = useRequest(getUser);
-  const [eventsQuery, setEventsQuery] = useState<TableQueryState>(INITIAL_EVENTS_QUERY);
-  const { status: eventsStatus, data: eventsData, error: eventsError, run: runEvents } =
-    useRequest(getUserEvents);
-
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 reducer），此处吞掉防
-    // unhandled rejection；错误呈现 / 401 跳转由下 effect 与错误分支处理。
-    run(buildGetUserRequest(props.userId)).catch(() => {});
-  }, [run, props.userId]);
-
-  useEffect(() => {
-    runEvents(buildGetUserEventsRequest(props.userId, eventsQuery)).catch(() => {});
-  }, [runEvents, props.userId, eventsQuery]);
-
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
-  useEffect(() => {
-    const authError = isUnauthenticatedError(error) || isUnauthenticatedError(eventsError);
-    if (authError) {
-      // §6 行 501：401 统一跳登录（replace：管理面不留回退占位）。
-      window.location.replace(
-        loginUrl(props.alRoot, adminReturnTo(location.pathname, location.search)),
-      );
-    }
-  }, [error, eventsError, props.alRoot, location]);
+  // 详情 / 登录日志双请求改 ahooks 自动请求 + refreshDeps；401 由
+  // 集中 onError 跳登录，其余错误走错误帧（toast:false 静默防双报）。
+  // refreshAsync 供解绑成功后串行重取（runAsync 正当场景①：await 结果串行
+  // ——须待详情重取完成再报成功，沿旧 await run 语义）。
+  const { data, error, refreshAsync } = useRequest(
+    () => getUser(buildGetUserRequest(props.userId)),
+    {
+      refreshDeps: [props.userId],
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const [eventsQuery, setEventsQuery] = useState<TableQueryState>(INITIAL_EVENTS_QUERY);
+  const {
+    data: eventsData,
+    error: eventsError,
+    loading: eventsLoading,
+  } = useRequest(
+    () => getUserEvents(buildGetUserEventsRequest(props.userId, eventsQuery)),
+    {
+      refreshDeps: [props.userId, eventsQuery],
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
 
   /**
    * 解绑第三方（§5.4 行 1253）：Union 行不可单独解绑由服务端兜底
@@ -148,16 +154,16 @@ export function UserDetailPage(props: {
       await unbindUserThirdparty(
         buildUnbindUserThirdpartyRequest(props.userId, providerKey),
       );
-      await run(buildGetUserRequest(props.userId));
+      await refreshAsync();
       Toast.success(t('admin.unbindSuccess', { providerKey }));
     } catch (unbindError) {
       Toast.error(apiErrorText(unbindError));
     }
   }
 
-  // 页级错误态（404 掩护等其余错误；401 由上方 effect 跳登录）。
+  // 页级错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
-  if (status === 'error' && !isUnauthenticatedError(error)) {
+  if (error !== undefined && !isUnauthenticatedError(error)) {
     return (
       <Banner type="danger" fullMode={false} description={t('admin.userDetailLoadFailed')} />
     );
@@ -296,7 +302,7 @@ export function UserDetailPage(props: {
 
       <section className={styles.block}>
         <h4 className={styles.blockTitle}>{t('admin.loginLogSection')}</h4>
-        {eventsStatus === 'error' && !isUnauthenticatedError(eventsError) ? (
+        {eventsError !== undefined && !isUnauthenticatedError(eventsError) ? (
           // 区块级错误态换 Semi Banner（自带 role="alert"）。
           <Banner type="danger" fullMode={false} description={t('admin.loginLogLoadFailed')} />
         ) : (
@@ -307,8 +313,13 @@ export function UserDetailPage(props: {
             total={eventsData !== undefined ? toCount(eventsData.total) : 0}
             query={eventsQuery}
             onQueryChange={setEventsQuery}
-            loading={eventsStatus === 'loading'}
-            empty={eventsStatus === 'success' ? t('admin.noLoginRecords') : undefined}
+            loading={eventsLoading}
+            // success 空态判定走 deriveRequestStatus 派生（§5.3）。
+            empty={
+              deriveRequestStatus(eventsLoading, eventsError, eventsData) === 'success'
+                ? t('admin.noLoginRecords')
+                : undefined
+            }
           />
         )}
       </section>
