@@ -18,11 +18,15 @@
  * 未加载（undefined）同样隐藏。
  *
  * 【落位说明】头像上传自 account/api.ts + AvatarUploader.tsx（内联）迁文档位
- * 本模块；编排 / 预校验等可测纯函数随 hook 落此（零 Semi 依赖、node 可测——
- * 工具链 blocker 见 account.test.tsx 头注；前端架构 §8.2 行 648 的被测
- * 对象在此）。
+ * 本模块；编排 / 预校验等可测纯函数随 hook 落此（纯函数本身零 Semi 依赖、
+ * node 可测——工具链 blocker 见 account.test.tsx 头注；前端架构 §8.2
+ * 行 648 的被测对象在此）。hook 壳改 ahooks useRequest +
+ * requestOptions 集中 onError，模块 import 链因此含
+ * ahooks / Semi（Toast）——测试链 bundleDependencies 已覆盖，
+ * ahooks 无 CSS 不需新增配置（ahooks-probe.test.ts 绊线）。
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
+import { useRequest } from 'ahooks';
 import { create } from '@bufbuild/protobuf';
 import type {
   AvatarPresignResponse,
@@ -43,7 +47,8 @@ import {
   presignAvatar,
   uploadAvatarProxy,
 } from '../api/account';
-import { useRequest, type RequestStatus } from './useRequest';
+import { deriveRequestStatus, type RequestStatus } from './deriveRequestStatus';
+import { requestOptions } from './requestOptions';
 
 /**
  * §3.2 行 842：零值投影 {mode:"proxy", maxSize:0, allowedTypes:[]} 时
@@ -169,11 +174,10 @@ export interface UseUploadResult {
  * 在 proxy / direct 间切换——分支只在 uploadAvatarFile 内，hook 壳零模式感知。
  */
 export function useUpload(): UseUploadResult {
-  const { status, data, run } = useRequest(getConfig);
-  useEffect(() => {
-    // useRequest.run 失败会 rethrow（状态已入 state），吞掉防 unhandled rejection。
-    run().catch(() => {});
-  }, [run]);
+  // 配置读取改 ahooks 自动请求（§5.1-①）；集中 onError——401 跳登录，
+  // 其余静默（toast:false：失败仅 hidden=true 隐藏入口，沿用旧行为不弹 Toast）。
+  const { data, error, loading } = useRequest(getConfig, requestOptions({ toast: false }));
+  const status = deriveRequestStatus(loading, error, data);
   const config = data?.avatarUpload;
   const upload = useCallback(
     (file: File, onUploadProgress?: (progress: UploadProgress) => void) => {

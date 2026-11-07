@@ -21,6 +21,7 @@
     "@douyinfe/semi-ui-19": "^2.104.0",
     "@modern-js/runtime": "3.11.0",
     "@simplewebauthn/browser": "^14.0.0",
+    "ahooks": "^3.11.0",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.0"
