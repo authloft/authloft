@@ -961,11 +961,20 @@ func serve(cfg *config.Config) error {
 // listenAndServe 按 server 段 TLS 配置选择监听模式（§3.1 行 244）：已配
 // cert+key → 同端口 HTTP/1.1(TLS) + H2(TLS)（证书路径经 Validate 已校验
 // 可读）；未配 → 明文 HTTP/1.1 + H2C。
+//
+// 显式 net.Listen 拿到真实监听地址（":8080" 落到 0.0.0.0 还是 [::] 由
+// 操作系统决定）后再 Serve，避免 http.Server 内部 ListenAndServe 的黑盒；
+// 启动日志打印 ln.Addr() 的真实值（IPv6 自动带方括号），不打印配置原串。
 func listenAndServe(cfg *config.Config, srv *http.Server) error {
-	if cfg.Server.TLSEnabled() {
-		return srv.ListenAndServeTLS(cfg.Server.CertFile, cfg.Server.KeyFile)
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		return err
 	}
-	return srv.ListenAndServe()
+	slog.Info("authloft listening", "addr", ln.Addr().String())
+	if cfg.Server.TLSEnabled() {
+		return srv.ServeTLS(ln, cfg.Server.CertFile, cfg.Server.KeyFile)
+	}
+	return srv.Serve(ln)
 }
 
 // setupMode 判定首次启动（§3.1 行 253 / §3.15）：configs/config.yaml

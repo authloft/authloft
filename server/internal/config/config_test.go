@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -415,5 +416,79 @@ func TestConfigureHTTPServerListenModes(t *testing.T) {
 	// 非法 min + TLS：fail-fast。
 	if err := (ServerConfig{MinTLSVersion: "bogus", CertFile: "c.pem", KeyFile: "k.pem"}).ConfigureHTTPServer(&http.Server{}); err == nil {
 		t.Error("bogus min_tls_version with TLS must fail-fast")
+	}
+}
+
+// TestValidateListenForms server.listen 新口径：支持 :port、
+// IPv4:port、[IPv6]:port；非法形态（缺端口、裸 IPv6 无方括号、端口越界 /
+// 非数字）一律 fail-fast，不静默回落默认值。
+func TestValidateListenForms(t *testing.T) {
+	valid := []string{
+		":8080",
+		"0.0.0.0:8080",
+		"127.0.0.1:8080",
+		"[::1]:8080",
+		"[::]:8080",
+		"192.0.2.1:65535",
+	}
+	for _, in := range valid {
+		c := validTestConfig(t)
+		c.Server.Listen = in
+		if err := c.Validate(); err != nil {
+			t.Errorf("listen %q: want valid, got %v", in, err)
+		}
+	}
+
+	invalid := []struct {
+		in      string
+		wantErr string
+	}{
+		{"", "server.listen: required"},
+		{"8080", "want [host:]port"},
+		{":http", "port"},
+		{":70000", "out of range"},
+		{":0", "out of range"},
+		{"127.0.0.1", "want [host:]port"},
+		{"127.0.0.1:", "missing port"},
+		{"::1:8080", "IPv6 must be"},
+		{"fe80::1:8080", "IPv6 must be"},
+	}
+	for _, tc := range invalid {
+		c := validTestConfig(t)
+		c.Server.Listen = tc.in
+		err := c.Validate()
+		if err == nil {
+			t.Errorf("listen %q: want error containing %q, got nil", tc.in, tc.wantErr)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("listen %q: err = %v, want containing %q", tc.in, err, tc.wantErr)
+		}
+	}
+}
+
+// TestListenRealAddress 启动日志打印真实监听地址：net.Listen
+// 落到 0.0.0.0 还是 [::] 由 OS 决定，只断言地址族与端口可解析、IPv6 输出
+// 带方括号。端口取 0（随机）避免占用。
+func TestListenRealAddress(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:0", "[::1]:0"} {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Skipf("listen %q skipped (IPv6 不可用或环境限制): %v", addr, err)
+		}
+		got := ln.Addr().String()
+		host, port, perr := net.SplitHostPort(got)
+		if perr != nil {
+			t.Fatalf("%s: Addr()=%q not host:port: %v", addr, got, perr)
+		}
+		if port == "0" || port == "" {
+			t.Errorf("%s: port = %q, want real assigned port", addr, port)
+		}
+		if strings.Contains(addr, "[") {
+			if host == "" || !strings.Contains(got, "[") {
+				t.Errorf("%s: IPv6 Addr()=%q must bracket the host", addr, got)
+			}
+		}
+		_ = ln.Close()
 	}
 }

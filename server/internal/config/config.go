@@ -176,11 +176,21 @@ func (s ServerConfig) validate() []error {
 	switch {
 	case s.Listen == "":
 		errs = append(errs, errors.New("server.listen: required"))
-	case !strings.HasPrefix(s.Listen, ":"):
-		errs = append(errs, errors.New(`server.listen: want ":port" form`))
 	default:
-		if port, err := strconv.Atoi(s.Listen[1:]); err != nil || port < 1 || port > 65535 {
-			errs = append(errs, errors.New(`server.listen: port must be numeric 1-65535`))
+		// 支持 :port（空 host = 全部接口）、IPv4:port、[IPv6]:port。
+		// 裸 IPv6 不带方括号会被 net.SplitHostPort 判为 too many colons，
+		// 归入 invalid address 错误；缺端口 / 端口非数字 / 越界分别报错，
+		// 不静默回落默认值（fail-fast）。
+		_, port, err := net.SplitHostPort(s.Listen)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("server.listen: invalid address %q: want [host:]port (IPv6 must be [host]:port)", s.Listen))
+		case port == "":
+			errs = append(errs, fmt.Errorf("server.listen: missing port in %q", s.Listen))
+		default:
+			if p, perr := strconv.Atoi(port); perr != nil || p < 1 || p > 65535 {
+				errs = append(errs, fmt.Errorf("server.listen: port %q out of range (1-65535)", port))
+			}
 		}
 	}
 	// min_tls_version 取值合法性恒校验（§3.2 约定 5：「非法取值启动

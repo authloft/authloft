@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -193,11 +194,19 @@ func (s *Server) Run() error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
+		// 显式 net.Listen 拿真实监听地址（同 bootstrap.listenAndServe 口径），
+		// 启动日志打印 ln.Addr() 真实值，不打印配置原串。
+		ln, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		slog.Info("setup listening", "addr", ln.Addr().String())
 		var serveErr error
 		if sc.TLSEnabled() {
-			serveErr = srv.ListenAndServeTLS(sc.CertFile, sc.KeyFile)
+			serveErr = srv.ServeTLS(ln, sc.CertFile, sc.KeyFile)
 		} else {
-			serveErr = srv.ListenAndServe()
+			serveErr = srv.Serve(ln)
 		}
 		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			errCh <- serveErr
