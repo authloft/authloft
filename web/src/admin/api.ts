@@ -262,7 +262,7 @@ export function isUnauthenticatedError(error: unknown): boolean {
  * `/admin` 前缀由 alRoot 提供，不得出现 `/admin#/admin/…` 重复段）——前缀
  * 形态保证落在 shared/urls.ts `sanitizeReturnTo` 白名单内（仅放行
  * `/account#` / `/admin#`，防开放重定向）。纯函数，node 可测（admin 域
- * 15 处 401 跳登录消费）。
+ * 14 处 401 跳登录消费）。
  */
 export function adminReturnTo(pathname: string, search: string): string {
   return `/admin#${pathname}${search}`;
