@@ -5,7 +5,7 @@
 // 队列 + 事件日志 sink 与优雅关闭；factor 注册表、Terminal 与登录单引擎
 // 已接入；provider 注册表与 cron 仍为 TODO。
 //
-// 启动分支（§3.1 行 253）：configs/config.yaml 不存在 → setup 模式
+// 启动分支（§3.1 行 253）：配置文件不存在 → setup 模式
 //——不加载 config、不初始化 DB / Redis、不起业务链路，只启动 internal/setup
 //（§3.15）；存在 → 正常装配（保持既有结构）。
 //
@@ -977,8 +977,8 @@ func listenAndServe(cfg *config.Config, srv *http.Server) error {
 	return srv.Serve(ln)
 }
 
-// setupMode 判定首次启动（§3.1 行 253 / §3.15）：configs/config.yaml
-// 不存在即 setup 模式。纯文件存在性判定，不含其他启发式。
+// setupMode 判定首次启动（§3.1 行 253 / §3.15）：配置文件不存在即
+// setup 模式。纯文件存在性判定，不含其他启发式。
 func setupMode(configPath string) bool {
 	_, err := os.Stat(configPath)
 	return errors.Is(err, fs.ErrNotExist)

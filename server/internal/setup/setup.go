@@ -1,7 +1,7 @@
 // Package setup 提供安装模式的 HTTP 服务（docs/后端架构.md §3.15、
 // docs/接口文档.md §13）。
 //
-// 仅 setup 模式（configs/config.yaml 不存在，bootstrap 判定）下存活：
+// 仅 setup 模式（配置文件不存在，bootstrap 判定）下存活：
 // 不加载 config、不初始化 DB / Redis、不挂业务链路；HTTP 侧只暴露 /setup
 // 空壳页与 SetupService connect handler（/api/setup/** REST 三条路由
 // 删除，Connect 路径 /api.setup.v1.SetupService/<Method>，§13 行 1759）。
