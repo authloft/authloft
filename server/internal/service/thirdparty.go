@@ -93,7 +93,7 @@ const (
 var (
 	// ErrThirdpartyInvalidRequest 参数缺失 / scene 非法 / 通道不支持。
 	ErrThirdpartyInvalidRequest = errors.New("thirdparty: invalid request")
-	// ErrThirdpartyProviderDisabled 提供方未启用 / 不允许用于登录 / 未配置。
+	// ErrThirdpartyProviderDisabled 提供商未启用 / 不允许用于登录 / 未配置。
 	ErrThirdpartyProviderDisabled = errors.New("thirdparty: provider disabled")
 	// ErrThirdpartyUnauthenticated scene=bind 需要会话（401，§2.7.2 行 583）。
 	ErrThirdpartyUnauthenticated = errors.New("thirdparty: authentication required")

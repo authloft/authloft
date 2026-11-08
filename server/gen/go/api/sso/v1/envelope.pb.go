@@ -8,12 +8,13 @@ package ssov1
 
 import (
 	v1 "authloft/gen/go/api/common/v1"
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -552,9 +553,9 @@ func (x *MfaMethod) GetHint() string {
 // Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。
 type Binding struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 提供方标识（§1.3 行 130）。
+	// 提供商标识（§1.3 行 130）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 提供方展示名（§1.3 行 130）。
+	// 提供商展示名（§1.3 行 130）。
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// 是否允许免密建号，由 Provider 的 enable_signup 映射（§1.3 行 129-130、§2.7.5 行 664）。
 	AllowSignup bool `protobuf:"varint,3,opt,name=allow_signup,json=allowSignup,proto3" json:"allow_signup,omitempty"`

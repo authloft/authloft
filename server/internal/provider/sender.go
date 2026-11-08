@@ -34,7 +34,7 @@ const (
 
 // ErrChannelNotConfigured 渠道不可用：settings 键空 / 实例缺失或未启用 /
 // 类型不符 / 厂商 Ext 缺必填项。属配置状态而非瞬时故障——登录链将其映射为
-// 接口文档 §1.6 行 259 的封闭集合取值 provider_disabled（提供方未启用），
+// 接口文档 §1.6 行 259 的封闭集合取值 provider_disabled（提供商未启用），
 // 不自造 status。
 var ErrChannelNotConfigured = errors.New("provider: message channel not configured")
 
@@ -155,7 +155,7 @@ func LookupSenderMeta(senderType string) (SenderMeta, bool) {
 }
 
 // SenderTypes 返回消息域全部已注册厂商的元信息快照，按 Type 稳定排序
-//（admin GetProviderTypes 下拉数据源的两域之一，接口文档 §5.2 行 1175；
+// （admin GetProviderTypes 下拉数据源的两域之一，接口文档 §5.2 行 1175；
 // 与 oauth 域 Types() 对称：排序保证确定性输出）。
 func SenderTypes() []SenderMeta {
 	senderRegistry.mu.RLock()

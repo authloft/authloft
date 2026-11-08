@@ -352,7 +352,7 @@ export const admin: typeof zhAdmin = {
   'admin.auditPresetSensitiveHint':
     'Sensitive operations: change password, reset password, unbind, enable/disable two-factor verification',
 
-  // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供方族--------
+  // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供商族--------
   'admin.providerColumnDisplayName': 'Display Name',
   'admin.providerColumnKey': 'Key',
   'admin.providerColumnCategory': 'Category',

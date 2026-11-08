@@ -18,10 +18,10 @@ export function adminNavPath(textKey: I18nKey): string {
   return ADMIN_NAV_ROUTES.find((route) => route.textKey === textKey)?.path ?? '';
 }
 
-/** 提供方新建页路径（§6 行 516；非侧边栏条目，导航表不覆盖）。 */
+/** 提供商新建页路径（§6 行 516；非侧边栏条目，导航表不覆盖）。 */
 export const PROVIDER_NEW_PATH = '/providers/new';
 
-/** 提供方编辑页路径（§6 行 516）：provider_key 单段，编码后拼接。 */
+/** 提供商编辑页路径（§6 行 516）：provider_key 单段，编码后拼接。 */
 export function providerEditPath(providerKey: string): string {
   return `/providers/${encodeURIComponent(providerKey)}/edit`;
 }

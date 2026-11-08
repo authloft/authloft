@@ -39,7 +39,7 @@ import { PROVIDER_NEW_PATH, adminNavPath } from './paths';
 /** 用户详情路由模式（§6 行 518；段内数字校验在 UserDetailRoute，见下）。 */
 const USER_DETAIL_ROUTE = '/users/:id';
 
-/** 提供方编辑路由模式（§6 行 516：provider_key 单段）。 */
+/** 提供商编辑路由模式（§6 行 516：provider_key 单段）。 */
 const PROVIDER_EDIT_ROUTE = '/providers/:key/edit';
 
 /** 兜底页：Semi Empty + 返回管理首页（SPA 内 Link）。 */
@@ -51,7 +51,7 @@ function NotFoundPage(): ReactNode {
   );
 }
 
-/** 提供方新建 / 编辑路由（useParams 取 key；缺省 = 新建）。 */
+/** 提供商新建 / 编辑路由（useParams 取 key；缺省 = 新建）。 */
 function ProviderEditRoute(props: { readonly alRoot: string }): ReactNode {
   const { key } = useParams();
   return (

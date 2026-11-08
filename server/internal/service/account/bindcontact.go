@@ -3,7 +3,7 @@
 // §10.1 行 1141-1162、§10.2 行 1164-1171、§10.3、§8.2 行 1051）。
 //
 // 职责：AccountService/BindPhone、BindEmail 的换绑编排——统一走验证码
-//（purpose=bind）+ captcha 两步（§3.4 行 883）：
+// （purpose=bind）+ captcha 两步（§3.4 行 883）：
 //   - challenge {target, captcha}：captcha 必过（Gate Challenge 恒触发，
 //     §3.4 行 896）→ target 非空 → 存在性先判（uid 用户行不存在 →
 //     user_not_found 口径哨兵，同 profile.go 先于任何写操作）→ 占用判定
@@ -77,7 +77,7 @@ var (
 	ErrBindUserNotFound = errors.New("account bind: user not found")
 	// ErrBindTooManyRequests 发码触发冷却或日限额（§1.6 行 243）。
 	ErrBindTooManyRequests = errors.New("account bind: too many requests")
-	// ErrBindProviderDisabled 发送渠道未配置（§1.6 行 260 提供方未启用）。
+	// ErrBindProviderDisabled 发送渠道未配置（§1.6 行 260 提供商未启用）。
 	ErrBindProviderDisabled = errors.New("account bind: provider disabled")
 	// ErrBindInvalidCode 验证码错误（§1.6 行 248，含剩余次数）。
 	ErrBindInvalidCode = errors.New("account bind: invalid code")
@@ -88,7 +88,7 @@ var (
 )
 
 // BindInvalidCodeError invalid_code 且键保留时的携带剩余次数的错误形态
-//（§1.6 行 248「验证码错误（含剩余次数）」）：errors.Is 命中基哨兵
+// （§1.6 行 248「验证码错误（含剩余次数）」）：errors.Is 命中基哨兵
 // ErrBindInvalidCode，errors.As 取 AttemptsLeft（handler 转 ErrorInfo 时
 // 可携带剩余次数，factor/otp 的 VerifyResult.AttemptsLeft 同口径）。
 type BindInvalidCodeError struct {
@@ -410,7 +410,7 @@ func bindMaskTarget(kind bindContactKind, target string) string {
 }
 
 // bindMaskPhone 固定掩码：前 3 + "****" + 后 4；不足 8 位整体 "****"
-//（§3.1 行 813 格式；dto/account.go maskPhone 同构私有实现——后端架构
+// （§3.1 行 813 格式；dto/account.go maskPhone 同构私有实现——后端架构
 // §3.5「各落一份」惯例，跨包私有不可复用，前后保留位与 dto 版一致）。
 func bindMaskPhone(phone string) string {
 	if len(phone) <= 7 {

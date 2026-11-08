@@ -113,7 +113,7 @@ var (
 	ErrUnauthenticated = errors.New("account thirdparty: authentication required")
 	// ErrStateMismatch al_login_state 校验失败（缺失 / 不一致 / 过期）。
 	ErrStateMismatch = errors.New("account thirdparty: state mismatch")
-	// ErrProviderDisabled 提供方未启用 / 不允许登录 / 未配置。
+	// ErrProviderDisabled 提供商未启用 / 不允许登录 / 未配置。
 	ErrProviderDisabled = errors.New("account thirdparty: provider disabled")
 	// ErrTargetTaken 三方身份已绑他人（§3.7.1）。
 	ErrTargetTaken = errors.New("account thirdparty: target taken")

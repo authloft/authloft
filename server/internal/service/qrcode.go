@@ -77,7 +77,7 @@ const (
 var (
 	// ErrQrcodeInvalidRequest 参数缺失 / scene 非法 / 通道不支持。
 	ErrQrcodeInvalidRequest = errors.New("qrcode: invalid request")
-	// ErrQrcodeProviderDisabled 提供方未启用 / 不允许登录 / 未配置 / 拉码链故障。
+	// ErrQrcodeProviderDisabled 提供商未启用 / 不允许登录 / 未配置 / 拉码链故障。
 	ErrQrcodeProviderDisabled = errors.New("qrcode: provider disabled")
 	// ErrQrcodeUnauthenticated scene=bind 需要会话 / Confirm 会话缺失失效（401）。
 	ErrQrcodeUnauthenticated = errors.New("qrcode: authentication required")
@@ -266,7 +266,7 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	// 拉码 → JPEG 75% 压缩（§13.2 行 1593）。
 	raw, err := fetcher.FetchQrcode(ctx, ticketID)
 	if err != nil {
-		// 微信侧故障（配额 / 未发布等）按提供方失败收敛（§13.0 行 1576）。
+		// 微信侧故障（配额 / 未发布等）按提供商失败收敛（§13.0 行 1576）。
 		return nil, fmt.Errorf("%w: fetch wxacode: %v", ErrQrcodeProviderDisabled, err)
 	}
 	jpegBody, err := qrcodepkg.CompressJPEG(raw)

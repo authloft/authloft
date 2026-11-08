@@ -122,7 +122,7 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
  * Connect 路径 = /api.admin.v1.AdminService/<Method>；方法清单与 §5 各节逐一对应：
  *   —— §5.1 管理员自身（行 1155-1159）——
  *   GetMe                 §5.1 行 1159
- *   —— §5.2 提供方（行 1161-1176）——
+ *   —— §5.2 提供商（行 1161-1176）——
  *   ListProviders          §5.2 行 1165    CreateProvider      §5.2 行 1166
  *   GetProvider            §5.2 行 1167    UpdateProvider      §5.2 行 1168
  *   DeleteProvider         §5.2 行 1169    SetProviderEnabled  §5.2 行 1170

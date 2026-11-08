@@ -361,14 +361,14 @@ export const MfaMethodSchema: GenMessage<MfaMethod> = /*@__PURE__*/
  */
 export type Binding = Message<"api.sso.v1.Binding"> & {
   /**
-   * 提供方标识（§1.3 行 130）。
+   * 提供商标识（§1.3 行 130）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 提供方展示名（§1.3 行 130）。
+   * 提供商展示名（§1.3 行 130）。
    *
    * @generated from field: string display_name = 2;
    */

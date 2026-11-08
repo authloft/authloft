@@ -28,7 +28,7 @@ const (
 	StatusCodeExpired      = "code_expired"
 	StatusTooManyAttempts  = "too_many_attempts"
 	StatusStepInvalid      = "step_invalid"
-	StatusProviderDisabled = "provider_disabled" // 行 259：提供方未启用（消息渠道未配置）
+	StatusProviderDisabled = "provider_disabled" // 行 259：提供商未启用（消息渠道未配置）
 	StatusTargetTaken      = "target_taken"      // 行 256：手机号 / 邮箱占用于他人（注册入口）
 )
 
@@ -142,7 +142,7 @@ func (f *Factor) Start(ctx *factor.FactorContext) (*factor.StepResult, error) {
 	}
 	// §8.2 行 1051：发送失败不回滚已写的码，允许 60s 后重发。渠道未配置
 	//（settings 键空 / 实例缺失或未启用 / 类型不符，§15.2/§15.3）映射封闭
-	// 集合 provider_disabled（§1.6 行 259，提供方未启用）；其余错误（瞬时
+	// 集合 provider_disabled（§1.6 行 259，提供商未启用）；其余错误（瞬时
 	// 故障）交由编排层按未知异常置 failed。厂商侧投递失败发生在异步队列
 	// 内（§15.2 行 1726），不影响本步返回。
 	if err := f.sender.SendCode(ctx.Context, target, code); err != nil {
@@ -254,7 +254,7 @@ func (f *Factor) target(p *factor.Payload) string {
 }
 
 // verified reset 前提校验（§2.4 行 465）：目标必须是已绑定且已验证的
-//（手机号看 phone_verified、邮箱看 email_verified，§4.2）。
+// （手机号看 phone_verified、邮箱看 email_verified，§4.2）。
 func (f *Factor) verified(user *model.User) bool {
 	if user == nil {
 		return false

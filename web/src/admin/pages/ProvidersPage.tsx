@@ -1,5 +1,5 @@
 /**
- * 提供方列表页（docs/前端架构.md §6 行 515；docs/接口文档.md §5.2 行
+ * 提供商列表页（docs/前端架构.md §6 行 515；docs/接口文档.md §5.2 行
  * 1164-1177；docs/需求.md §4.6 行 255）——/admin/providers。
  *
  * 列口径（§6 行 515）：显示名 / provider_key（可复制，shared CopyButton）/
@@ -7,7 +7,7 @@
  * （该字段在 AdminProvider 详情，§5.3 行 1210），故列表恒渲染内置占位图形）/
  * 状态（StatusSwitch 行内启停）/ 策略标签（api.policyTags）/ 排序
  * （sort_order 值 + SortableList 拖拽）。顶部 ProviderCallbackHint：回调
- * 地址模板只读提示 + 复制（§5.3 行 1193）。工具栏「新建提供方」入口指向
+ * 地址模板只读提示 + 复制（§5.3 行 1193）。工具栏「新建提供商」入口指向
  * PROVIDER_NEW_PATH（需求 §4.6 列表/新建/编辑/启用/排序补全）。
  *
  * 取数：ListProviders **真调**（后端已实装）——全量取数
@@ -80,7 +80,7 @@ const HEADER_CELL_KEYS: readonly (I18nKey | '')[] = [
   'admin.providerColumnSortOrder',
 ];
 
-/** 提供方列表页：回调提示 + 全量列表（行内启停 + 拖拽排序）。 */
+/** 提供商列表页：回调提示 + 全量列表（行内启停 + 拖拽排序）。 */
 export function ProvidersPage(props: {
   /** 归一后 al_root（401 跳登录前缀 / 回调地址前缀）。 */
   readonly alRoot: string;

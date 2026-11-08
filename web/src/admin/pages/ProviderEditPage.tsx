@@ -1,5 +1,5 @@
 /**
- * 提供方新建 / 编辑页（docs/前端架构.md §6 行 516；docs/接口文档.md
+ * 提供商新建 / 编辑页（docs/前端架构.md §6 行 516；docs/接口文档.md
  * §5.2 行 1164-1179 / §5.3）——/admin/providers/new 与
  * /admin/providers/{provider_key}/edit。
  *
@@ -65,7 +65,7 @@ import styles from './ProviderEditPage.module.less';
 type FormValues = Record<string, unknown>;
 
 /**
- * 提供方新建 / 编辑页。providerKey 缺省 = 新建（type 下拉可选）；
+ * 提供商新建 / 编辑页。providerKey 缺省 = 新建（type 下拉可选）；
  * 给定 = 编辑（type / provider_key 锁定，回填明文凭证）。
  */
 export function ProviderEditPage(props: {
