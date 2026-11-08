@@ -23,6 +23,7 @@
     "@modern-js/runtime": "3.11.0",
     "@simplewebauthn/browser": "^14.0.0",
     "ahooks": "^3.11.0",
+    "lodash-es": "^4.18.1",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.0"
@@ -31,6 +32,7 @@
     "@bufbuild/protoc-gen-es": "^2.16.0",
     "@modern-js/app-tools": "3.11.0",
     "@modern-js/tsconfig": "3.11.0",
+    "@types/lodash-es": "^4.17.12",
     "@types/node": "^20",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

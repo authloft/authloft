@@ -32,6 +32,9 @@ importers:
       ahooks:
         specifier: ^3.11.0
         version: 3.11.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      lodash-es:
+        specifier: ^4.18.1
+        version: 4.18.1
       qrcode-generator:
         specifier: ^2.0.4
         version: 2.0.4
@@ -51,6 +54,9 @@ importers:
       '@modern-js/tsconfig':
         specifier: 3.11.0
         version: 3.11.0
+      '@types/lodash-es':
+        specifier: ^4.17.12
+        version: 4.17.12
       '@types/node':
         specifier: ^20
         version: 20.19.43
@@ -1744,6 +1750,12 @@ packages:
 
   '@types/loadable__component@5.13.10':
     resolution: {integrity: sha512-2/LjmgG1JcGPj7T3NViq7BB5cvOA0s63gL3Gv+FPULj2L+3ExWfsNQcsFPUIOoGsVUJeZxgNPf320JZDyxjtCQ==}
+
+  '@types/lodash-es@4.17.12':
+    resolution: {integrity: sha512-0NgftHUcV4v34VhXm8QBSftKVXtbkBG3ViCjs6+eJ5a6y6Mi/jiFGPc1sC7QK+9BFhWrURE3EOggmWaSxL9OzQ==}
+
+  '@types/lodash@4.17.27':
+    resolution: {integrity: sha512-VenMRv/eKNrspX9v3H4dbmjsrnCOYdYBG3kxXKk3dG6X+urBGcj2Prww3xw1U5K4FV/mE4h5GbWd0szEKf+9ew==}
 
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
@@ -6231,6 +6243,12 @@ snapshots:
   '@types/loadable__component@5.13.10':
     dependencies:
       '@types/react': 19.3.0
+
+  '@types/lodash-es@4.17.12':
+    dependencies:
+      '@types/lodash': 4.17.27
+
+  '@types/lodash@4.17.27': {}
 
   '@types/mdast@4.0.4':
     dependencies:

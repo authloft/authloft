@@ -172,7 +172,6 @@ export function ProvidersPage(props: {
           {t('admin.createProviderAction')}
         </Button>
       </div>
-      <ProviderCallbackHint alRoot={props.alRoot} />
       {!canDrag && total > 0 ? (
         <p className={styles.dragNote}>{t('admin.providersDragDisabledNote')}</p>
       ) : null}
