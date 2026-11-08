@@ -1,17 +1,17 @@
 // Package admin 实现 AdminService Provider 写族 7 方法（CreateProvider /
 // UpdateProvider / DeleteProvider / SetProviderEnabled / SortProviders /
 // GetProviderTypes / TestProvider，接口文档 §5.2 行 1169-1177）的业务层
-//（docs/后端架构.md §3.9 行 390「Provider CRUD + 缓存失效」、§18
+// （docs/后端架构.md §3.9 行 390「Provider CRUD + 缓存失效」、§18
 // 行 1792 分层 handler → service/admin/provider.go → repo → cache/provider）。
 //
 // 职责边界：schema 键集校验（表列 ∪ 注册表 meta 声明的 Ext 字段，§5.3 行
 // 1183「提交体即 {"<key>": <value>}」）、provider_key 字符集与「创建后不可改」
-//（§12.1 行 1719）、category 由注册表按 type 决定只读、meta required 字段齐
-//（仅 Create；Update 按缺省键保留原值的 PATCH 口径不强制）、写后缓存失效
-//（§15.3 行 1734 固定三步，经 cache.ProviderCache.Invalidate 唯一出口）。
+// （§12.1 行 1719）、category 由注册表按 type 决定只读、meta required 字段齐
+// （仅 Create；Update 按缺省键保留原值的 PATCH 口径不强制）、写后缓存失效
+// （§15.3 行 1734 固定三步，经 cache.ProviderCache.Invalidate 唯一出口）。
 // Connect 错误形态映射归 handler；本层返回可判别哨兵错误：
 //   - ErrInvalidRequest 参数 / 校验类（handler 映射 §1.5 行 186 invalid_argument
-//     + ErrorInfo domain=admin code=invalid_request，§1.6 封闭集合）；
+//   - ErrorInfo domain=admin code=invalid_request，§1.6 封闭集合）；
 //   - ErrDuplicateKey 唯一键 uk_provider_key 冲突（handler 映射 §1.5 行 190
 //     already_exists，409）；
 //   - gorm.ErrRecordNotFound 资源不存在（handler 映射 §1.5 行 189 not_found）；
@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -84,7 +83,7 @@ type Service struct {
 }
 
 // NewService 构造；store / invalidator 为装配依赖，任一为 nil 属程序错误
-//（fail-fast，口径同 provider.NewLoader）。
+// （fail-fast，口径同 provider.NewLoader）。
 func NewService(store ProviderStore, invalidator ProviderInvalidator) *Service {
 	if store == nil {
 		panic("admin service: NewService: nil ProviderStore")
@@ -96,7 +95,7 @@ func NewService(store ProviderStore, invalidator ProviderInvalidator) *Service {
 }
 
 // CreateProvider（§5.2 行 1169，OUTCOME ①）：提交体为 §5.3 schema 的字段集合
-//（{"<key>": <value>}）。校验：type 两域注册表命中、provider_key 字符集、
+// （{"<key>": <value>}）。校验：type 两域注册表命中、provider_key 字符集、
 // display_name / meta required 字段齐、category 与注册表一致（只读）、未知键
 // 拒绝。表列经 dto.ApplyProviderColumns 落行，Ext 经 dto.MergeProviderExt 构造
 // 后 MarshalProviderExt（1 MiB 业务上限在唯一出口校验，§4.1 行 615）。uk 冲突
@@ -178,7 +177,7 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 // 保留原值（PATCH over schema 键集——docs 未明说，按默认口径处理）：
 // 表列在 FindByKey 读回的完整行上仅覆盖已提交键，Ext 经 protojson 往返合并。
 // provider_key / type / category 提交值与行现值不一致 → invalid_request
-//（「创建后不可改」防御式校验；生产 FindByKey 语义下 provider_key 分支不可达，
+// （「创建后不可改」防御式校验；生产 FindByKey 语义下 provider_key 分支不可达，
 // 保留给列级定位或脏数据场景）。写后失效（§15.3）。
 func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) error {
 	fields := body.GetFields()
@@ -255,7 +254,7 @@ func (s *Service) DeleteProvider(ctx context.Context, providerKey string) error 
 }
 
 // SetProviderEnabled（§5.2 行 1173，OUTCOME ④）：行内开关，列级最小 UPDATE
-//（repo.SetEnabled，不自写 SQL）→ 失效。
+// （repo.SetEnabled，不自写 SQL）→ 失效。
 func (s *Service) SetProviderEnabled(ctx context.Context, providerKey string, enabled bool) error {
 	if providerKey == "" {
 		return ErrInvalidRequest
@@ -304,33 +303,31 @@ func (s *Service) SortProviders(ctx context.Context, items []SortItem) error {
 	return nil
 }
 
-// ProviderTypeInfo GetProviderTypes 的下拉条目（§5.2 行 1175：来自注册表 metas）。
+// ProviderTypeInfo GetProviderTypes 的下拉条目（§5.2 行 1175：来自类型 meta）。
 type ProviderTypeInfo struct {
 	Type        string
 	Category    string
 	DisplayName string
 }
 
-// ProviderTypes（§5.2 行 1175，OUTCOME ⑥）：两域注册表枚举并集（oauth 域
-// registry.Types() + 消息域 SenderTypes()，§15.3），type 稳定排序。无入库
-// 读取，纯注册表快照。
+// ProviderTypes（§5.2 行 1175，OUTCOME ⑥）：三源类型并集（oauth 域注册表 +
+// 消息域注册表 + 虚拟 Union meta，provider.TypeMetas()）按 type 稳定排序。
+// 无入库读取，纯注册表快照；虚拟类型因此出现在管理后台新建下拉里，但不会
+// 被 NewAdapter / NewSender 解析（无登录入口、无消息发送）。
 func (s *Service) ProviderTypes() []ProviderTypeInfo {
-	out := make([]ProviderTypeInfo, 0, len(provider.Types())+len(provider.SenderTypes()))
-	for _, t := range provider.Types() {
-		if meta, ok := provider.Lookup(t); ok {
-			out = append(out, ProviderTypeInfo{Type: meta.Type, Category: meta.Category, DisplayName: meta.DisplayName})
-		}
+	metas := provider.TypeMetas()
+	out := make([]ProviderTypeInfo, 0, len(metas))
+	for _, meta := range metas {
+		out = append(out, ProviderTypeInfo{
+			Type: meta.Type, Category: meta.Category, DisplayName: meta.DisplayName,
+		})
 	}
-	for _, meta := range provider.SenderTypes() {
-		out = append(out, ProviderTypeInfo{Type: meta.Type, Category: meta.Category, DisplayName: meta.DisplayName})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
 	return out
 }
 
 // TestProvider（§5.2 行 1177，OUTCOME ⑦）：{providerKey, target} 发送测试。
 // FindByKey 现构 provider.Provider{Key, Type, Row, Ext}——**不经 Loader**
-//（本地 LRU TTL 60s 会让「改完配置点测试」打到旧值，§15.3 加载链）→
+// （本地 LRU TTL 60s 会让「改完配置点测试」打到旧值，§15.3 加载链）→
 // NewSender(p, category) → **同步** Send（管理员即时反馈，不走 asyncqueue，
 // §15.2 行 1726 的异步化仅约束验证码链路）。非 sms/email 类别 / Ext 配置
 // 缺失（NewSender ErrChannelNotConfigured）→ invalid_request；厂商 Send 失败
@@ -387,25 +384,26 @@ func lookupSchema(fields map[string]*structpb.Value) (string, schemaMeta, bool) 
 	return providerType, meta, true
 }
 
-// lookupSchemaByType 按 type 查两域注册表（oauth 域 → 消息域，§15.3）。
+// lookupSchemaByType 按 type 查三源统一 meta（oauth / 消息 / 虚拟，
+// provider.LookupTypeMeta），schema 只取类别与 Ext 字段声明。
 func lookupSchemaByType(providerType string) (schemaMeta, bool) {
-	if meta, ok := provider.Lookup(providerType); ok {
-		return schemaMeta{Category: meta.Category, Fields: meta.Fields}, true
+	meta, ok := provider.LookupTypeMeta(providerType)
+	if !ok {
+		return schemaMeta{}, false
 	}
-	if meta, ok := provider.LookupSenderMeta(providerType); ok {
-		return schemaMeta{Category: meta.Category, Fields: meta.Fields}, true
-	}
-	return schemaMeta{}, false
+	return schemaMeta{Category: meta.Category, Fields: meta.Fields}, true
 }
 
 // validateSchemaKeys 未知键拒绝：提交体键集 ⊆ {type, category, provider_key} ∪
-// dto.AdminProviderColumnKeys ∪ meta.Fields（§5.3 行 1183：key 恒等于 provider
-// 表列名或 provider.Ext 字段名——表单外的键一律 invalid_request，防止管理员
-// 提交表单不可见字段）。Create 的 category 一致性校验亦在此（注册表决定、
-// 只读）。
+// dto.AdminProviderColumnKeysFor(meta.Category) ∪ meta.Fields（§5.3 行 1183：
+// key 恒等于 provider 表列名或 provider.Ext 字段名——表单外的键一律
+// invalid_request，防止管理员提交表单不可见字段）。表列白名单按 category 裁
+// 剪：union_provider / enable_signin / enable_signup / auto_bind /
+// auto_bind_fields 仅 oauth 可提交（sms/email 的注册登录开关在 §5.6 设置项）。
+// Create 的 category 一致性校验亦在此（类型 meta 决定、只读）。
 func validateSchemaKeys(fields map[string]*structpb.Value, meta schemaMeta) error {
 	valid := map[string]bool{"type": true, "category": true, "provider_key": true}
-	for _, k := range dto.AdminProviderColumnKeys {
+	for _, k := range dto.AdminProviderColumnKeysFor(meta.Category) {
 		valid[k] = true
 	}
 	for _, f := range meta.Fields {
@@ -490,7 +488,7 @@ func metaFieldKeys(fields []provider.FieldMeta) []string {
 }
 
 // invalidate 写后缓存失效（§15.3 行 1734 固定三步的唯一出口）；失败上抛
-//（写已落库、失效失败时按 internal 告警，缓存有 TTL 600s 自然过期兜底，
+// （写已落库、失效失败时按 internal 告警，缓存有 TTL 600s 自然过期兜底，
 // §5.1 行 847，不回滚已落库的写）。
 func (s *Service) invalidate(ctx context.Context, providerKey string) error {
 	if err := s.cache.Invalidate(ctx, providerKey); err != nil {

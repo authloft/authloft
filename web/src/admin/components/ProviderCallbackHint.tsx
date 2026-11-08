@@ -45,6 +45,15 @@ export function isOidcProviderType(type: string | undefined): boolean {
   return type === 'oidc' || type === 'oauth2';
 }
 
+/**
+ * 回调地址提示是否展示：只有 oauth 类 Provider 有 `/sso/oauth/callback/{key}`
+ * 入口。schema 未落地（尚未选型）沿用模板形态提示；`sms` / `email` /
+ * `union` 及虚拟类别一律不展示（接口文档 §5.3 表列按 category 裁剪）。
+ */
+export function showsCallbackHint(category: string | undefined): boolean {
+  return category === undefined || category === 'oauth';
+}
+
 export interface ProviderCallbackHintProps {
   /** 归一后 Authloft 根域名（回调地址前缀）。 */
   readonly alRoot: string;

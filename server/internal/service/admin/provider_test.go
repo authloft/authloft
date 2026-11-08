@@ -1,6 +1,6 @@
 // provider_test.go：admin Provider 写族 service 层单测。fake store /
 // fake invalidator 进程内隔离（不连 DB / Redis），注册表用真实两域渠道
-//（wechat_mp / smtp / aliyun_sms 经 _ import 触发自注册，§15.3）+ 一个测试
+// （wechat_mp / smtp / aliyun_sms 经 _ import 触发自注册，§15.3）+ 一个测试
 // 专用消息厂商（TestProvider 断言 Send 入参）。覆盖以下用例清单：
 // key 字符集拒绝、required 缺失拒绝、未知键处置、create 唯一键冲突、
 // update 改 key 拒绝 + 缺省键保留、delete/enabled 不存在 404、sort 批量
@@ -241,7 +241,7 @@ func TestCreateProviderValidation(t *testing.T) {
 // TestCreateProviderSuccess 合法新建：行组装（表列 + category 由注册表决定）
 // 与 Ext（Marshal → Parse round-trip）逐项落位；显式 is_enabled=false 触发
 // default tag 修正（Create 后补一次 Update 落禁用零值）；写后失效恰一次
-//（写后 Invalidate 被调）。
+// （写后 Invalidate 被调）。
 func TestCreateProviderSuccess(t *testing.T) {
 	store := newFakeStore()
 	inv := &fakeInvalidator{}
@@ -486,7 +486,7 @@ func TestDeleteProvider(t *testing.T) {
 }
 
 // TestSetProviderEnabled 行内开关：true/false 列级落 1/0 + 失效；不存在 404
-//（delete/enabled 不存在 404）。
+// （delete/enabled 不存在 404）。
 func TestSetProviderEnabled(t *testing.T) {
 	ctx := context.Background()
 	t.Run("禁用 false", func(t *testing.T) {
@@ -568,8 +568,8 @@ func TestSortProviders(t *testing.T) {
 	})
 }
 
-// TestProviderTypes 两域并集：oauth 域 wechat_mp + 消息域 smtp /
-// aliyun_sms 全部出现，type 稳定升序，category 由注册表决定。
+// TestProviderTypes 三源并集：oauth 域 wechat_mp + 消息域 smtp /
+// aliyun_sms + 虚拟 Union meta 全部出现，type 稳定升序，category 由 meta 决定。
 func TestProviderTypes(t *testing.T) {
 	svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
 	got := svc.ProviderTypes()
@@ -582,6 +582,8 @@ func TestProviderTypes(t *testing.T) {
 		{Type: "wechat_mp", Category: "oauth", DisplayName: "微信小程序"},
 		{Type: "smtp", Category: "email", DisplayName: "SMTP（通用）"},
 		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
+		// 虚拟 Union 类型：静态 meta-only 第三源，管理后台新建下拉可见。
+		{Type: provider.UnionProviderType, Category: provider.CategoryUnion, DisplayName: "Union ID 归并（虚拟）"},
 	} {
 		g, ok := byType[want.Type]
 		if !ok {
@@ -595,6 +597,140 @@ func TestProviderTypes(t *testing.T) {
 		if got[i-1].Type >= got[i].Type {
 			t.Errorf("type 未稳定排序: %q >= %q", got[i-1].Type, got[i].Type)
 		}
+	}
+}
+
+// TestCreateUnionProvider 管理后台可新建虚拟 Union Provider：type=unionid
+// 由第三源 meta 命中，落行 category=union / type=unionid、无 Ext 必填项，
+// 写后缓存失效照常触发。该行随后会出现在 oauth 表单 union_provider 下拉。
+func TestCreateUnionProvider(t *testing.T) {
+	store := newFakeStore()
+	inv := &fakeInvalidator{}
+	svc := adminsvc.NewService(store, inv)
+	body := structBody(t, map[string]any{
+		"type":         provider.UnionProviderType,
+		"provider_key": "wechat_union",
+		"category":     provider.CategoryUnion,
+		"display_name": "微信 Union 归并",
+	})
+	if err := svc.CreateProvider(context.Background(), body); err != nil {
+		t.Fatalf("CreateProvider(unionid): %v", err)
+	}
+	if len(store.created) != 1 {
+		t.Fatalf("created = %d, want 1", len(store.created))
+	}
+	row := store.created[0]
+	if row.ProviderKey != "wechat_union" || row.Type != provider.UnionProviderType ||
+		row.Category != provider.CategoryUnion || row.DisplayName != "微信 Union 归并" {
+		t.Errorf("落行 = %+v", row)
+	}
+	if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "wechat_union" {
+		t.Errorf("失效 key = %v, want [wechat_union]", keys)
+	}
+}
+
+// TestCreateProviderCategoryColumnKeys 按 category 裁剪写入白名单：5 个
+// oauth 专属列对 sms/email/union 提交一律 invalid_request（且零落库），
+// oauth 提交同名列仍可通过（回归防线，防止过度裁剪）。
+func TestCreateProviderCategoryColumnKeys(t *testing.T) {
+	oauthOnly := []string{
+		"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+	}
+	smtpBody := map[string]any{
+		"type": "smtp", "provider_key": "smtp_1", "category": provider.CategoryEmail,
+		"display_name": "SMTP", "host": "smtp.example.com", "from": "noreply@example.com",
+	}
+	for _, key := range oauthOnly {
+		t.Run("email 拒绝 "+key, func(t *testing.T) {
+			store := newFakeStore()
+			svc := adminsvc.NewService(store, &fakeInvalidator{})
+			body := map[string]any{}
+			for k, v := range smtpBody {
+				body[k] = v
+			}
+			body[key] = true
+			if err := svc.CreateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+				t.Fatalf("err = %v, want ErrInvalidRequest", err)
+			}
+			if len(store.created) != 0 {
+				t.Fatal("非法请求不得落库")
+			}
+		})
+	}
+	t.Run("union 拒绝 oauth 专属列", func(t *testing.T) {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		body := structBody(t, map[string]any{
+			"type": provider.UnionProviderType, "provider_key": "u1",
+			"category": provider.CategoryUnion, "display_name": "U", "enable_signin": true,
+		})
+		if err := svc.CreateProvider(context.Background(), body); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+	})
+	t.Run("union 拒绝 is_enabled", func(t *testing.T) {
+		// 虚拟 Provider 无 adapter / 无登录入口，启用开关没有可开关的行为：
+		// schema 不下发、提交即未知键（与「表单外键一律 invalid_request」同口径）。
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		body := structBody(t, map[string]any{
+			"type": provider.UnionProviderType, "provider_key": "u1",
+			"category": provider.CategoryUnion, "display_name": "U", "is_enabled": false,
+		})
+		if err := svc.CreateProvider(context.Background(), body); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+		if len(store.created) != 0 {
+			t.Fatal("非法请求不得落库")
+		}
+	})
+	t.Run("email 仍接受 is_enabled", func(t *testing.T) {
+		// 裁剪只针对虚拟类别：sms / email 的消息发送链按行启用态判定，开关保留。
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		body := map[string]any{}
+		for k, v := range smtpBody {
+			body[k] = v
+		}
+		body["is_enabled"] = false
+		if err := svc.CreateProvider(context.Background(), structBody(t, body)); err != nil {
+			t.Fatalf("email 提交 is_enabled 应通过: %v", err)
+		}
+	})
+	t.Run("oauth 允许 oauth 专属列", func(t *testing.T) {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		overrides := map[string]any{"auto_bind": true, "union_provider": "wechat_union"}
+		if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, overrides)); err != nil {
+			t.Fatalf("oauth 提交 oauth 专属列应通过: %v", err)
+		}
+		if store.created[0].AutoBind != 1 || store.created[0].UnionProvider != "wechat_union" {
+			t.Errorf("落行 = %+v（oauth 专属列应写入）", store.created[0])
+		}
+	})
+}
+
+// TestUpdateUnionProvider 编辑虚拟 Union Provider：type=unionid 由第三源
+// meta 命中（旧实现会报 unregistered type），通用列可改、oauth 专属列拒绝。
+func TestUpdateUnionProvider(t *testing.T) {
+	row := &model.Provider{
+		ID: 7, ProviderKey: "wechat_union", DisplayName: "原名",
+		Category: provider.CategoryUnion, Type: provider.UnionProviderType, IsEnabled: 1,
+	}
+	store := newFakeStore(row)
+	svc := adminsvc.NewService(store, &fakeInvalidator{})
+	if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+		"provider_key": "wechat_union", "display_name": "新名",
+	})); err != nil {
+		t.Fatalf("UpdateProvider(unionid): %v", err)
+	}
+	if len(store.updated) != 1 || store.updated[0].DisplayName != "新名" {
+		t.Errorf("updated = %+v", store.updated)
+	}
+	if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+		"provider_key": "wechat_union", "enable_signin": true,
+	})); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Errorf("err = %v, want ErrInvalidRequest（union 不接受 oauth 专属列）", err)
 	}
 }
 

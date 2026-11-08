@@ -35,6 +35,7 @@ import {
   ProviderCallbackHint,
   isOidcProviderType,
   providerCallbackUrl,
+  showsCallbackHint,
 } from './components/ProviderCallbackHint';
 import { JsonEditor } from './components/JsonEditor';
 import {
@@ -853,6 +854,15 @@ describe('providerCallbackUrl / isOidcProviderType（纯函数）', () => {
     expect(isOidcProviderType('qq')).toBe(false);
     expect(isOidcProviderType('')).toBe(false);
     expect(isOidcProviderType(undefined)).toBe(false);
+  });
+
+  test('showsCallbackHint：仅 oauth / 未选型展示，sms / email / union 隐藏', () => {
+    expect(showsCallbackHint(undefined)).toBe(true);
+    expect(showsCallbackHint('oauth')).toBe(true);
+    expect(showsCallbackHint('sms')).toBe(false);
+    expect(showsCallbackHint('email')).toBe(false);
+    expect(showsCallbackHint('union')).toBe(false);
+    expect(showsCallbackHint('')).toBe(false);
   });
 });
 

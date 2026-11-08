@@ -113,26 +113,51 @@ const (
 
 // AdminSchema 组装 §5.3 行 1181-1227 的动态表单 schema：
 //
-//   - type / category：由注册表按 type 决定（行 1190、1192，《后端架构》§15.3
-//     行 1731：注册表 meta 是 /schema 唯一数据源）；
-//   - fields[]：provider 表列基线（全类型共有的封闭集，§5.3 示例即契约——
-//     行 1192-1225 逐字：key / label / type / section / required / default /
-//     options / pattern / advanced / help）+ Ext 字段逐项来自 meta 声明
-//     （§15.3 行 1731「动态 schema 由适配器声明（provider.Ext 字段的标签、
-//     渲染类型与默认值）」，不硬编码）；
+//   - type / category：由类型 meta 按 type 决定（行 1190、1192，《后端架构》
+//     §15.3 行 1731：meta 是 /schema 唯一数据源）；
+//   - fields[]：provider 表列基线（§5.3 示例即契约——行 1192-1225 逐字：
+//     key / label / type / section / required / default / options / pattern /
+//     advanced / help）+ Ext 字段逐项来自 meta 声明（§15.3 行 1731），并按
+//     category 裁剪表列基线（见 AdminProviderColumnKeysFor）；
 //   - 顺序：basic 基线 → meta 声明的 Ext 字段（声明序）→ display / policy
 //     基线，即 §5.3 示例的区块排列；前端按 section 分组、区块内沿用 fields[]
-//     数组顺序（行 1185），不做二次排序。
+//     数组顺序（行 1185），不做二次排序。空区块（如 sms / email 的 policy 只剩
+//     is_enabled；union 的 policy 整块为空，虚拟 Provider 无启用开关）由前端
+//     分组自行跳过。
 //
 // unionProviderKeys 是 union_provider 字段的 options 数据源（行 1197：仅列
-// category=union 的 Provider），由调用方（handler）查库注入。
+// category=union 的 Provider），由调用方（handler）在 oauth 类别时查库注入。
 func AdminSchema(providerType, category string, extFields []provider.FieldMeta, unionProviderKeys []string) *adminv1.SchemaResponse {
+	allowed := schemaColumnKeySet(category)
 	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
-	resp.Fields = append(resp.Fields, schemaBaselineBasic(category, unionProviderKeys)...)
+	for _, f := range schemaBaselineBasic(category, unionProviderKeys) {
+		if allowed[f.GetKey()] {
+			resp.Fields = append(resp.Fields, f)
+		}
+	}
 	resp.Fields = append(resp.Fields, schemaFieldsFromMeta(extFields)...)
-	resp.Fields = append(resp.Fields, schemaBaselineDisplay()...)
-	resp.Fields = append(resp.Fields, schemaBaselinePolicy()...)
+	for _, f := range schemaBaselineDisplay() {
+		if allowed[f.GetKey()] {
+			resp.Fields = append(resp.Fields, f)
+		}
+	}
+	for _, f := range schemaBaselinePolicy() {
+		if allowed[f.GetKey()] {
+			resp.Fields = append(resp.Fields, f)
+		}
+	}
 	return resp
+}
+
+// schemaColumnKeySet 该类别允许出现在 schema 的表列键（含只读的
+// provider_key / category——它们不进可写白名单但必须渲染）。数据源恒为
+// AdminProviderColumnKeysFor，保证 schema 与写入 / 校验口径同源。
+func schemaColumnKeySet(category string) map[string]bool {
+	allowed := map[string]bool{"provider_key": true, "category": true}
+	for _, key := range AdminProviderColumnKeysFor(category) {
+		allowed[key] = true
+	}
+	return allowed
 }
 
 // schemaBaselineBasic §5.3 基础信息区块基线（行 1192-1198）：category 的
@@ -232,27 +257,73 @@ func schemaDefaultValue(s string) *structpb.Value {
 // 不符（bool 列收到字符串等）由 protojson 报错，service 映射 invalid_request。
 var extUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
 
-// AdminProviderColumnKeys provider 表列中可经提交体写入的基线键集（§5.3 行
-// 1192-1225 示例即契约：display / policy 区块 + basic 区块的 display_name /
-// union_provider）。不含 provider_key（service 单独校验「创建后不可改」）、
-// category 与 type（由注册表按 type 决定，只读）。
+// AdminProviderColumnKeys provider 表列中可经提交体写入的**全量**基线键集
+// （§5.3 行 1192-1225 示例即契约：display / policy 区块 + basic 区块的
+// display_name / union_provider）。不含 provider_key（service 单独校验「创建后
+// 不可改」）、category 与 type（由类型 meta 按 type 决定，只读）。
+// 消费方一律走 AdminProviderColumnKeysFor(category)，不要直接遍历本变量。
 var AdminProviderColumnKeys = []string{
 	"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark",
 	"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 }
 
-// ApplyProviderColumns 把提交体中的表列基线键（AdminProviderColumnKeys）应
-// 用到 row（写路径：Create 从零值行起、Update 从 FindByKey 读回的完整
-// 行上——未提交的键不动即「缺省键保留原值」，PATCH over schema 键集。该
-// 缺省语义 docs 未明说，按默认口径处理）。provider_key /
-// category / type 不经本函数（service 层按 §5.2 行 1171「创建后不可改」与
-// 注册表只读口径单独校验）。值类型不符返回错误（service 映射 invalid_request）；
-// 显式 null 按清零语义落列默认值。
+// oauthOnlyProviderColumns 仅 oauth 类别可读写的表列：union_provider 承载
+// Union ID 归属，四个开关承载三方登录 / 建号 / 自动绑定策略（消费点在
+// service/thirdparty.go、account/thirdparty.go、qrcode.go）。sms / email
+// 能否注册登录由 §5.6 设置项 login_methods / allow_registration /
+// allow_signup_phone / allow_signup_email 决定，不是 provider 级；虚拟
+// Union Provider 更无登录入口。故非 oauth 类别全部裁掉。
+var oauthOnlyProviderColumns = map[string]struct{}{
+	"union_provider":   {},
+	"enable_signin":    {},
+	"enable_signup":    {},
+	"auto_bind":        {},
+	"auto_bind_fields": {},
+}
+
+// virtualOmittedProviderColumns 虚拟类别（category=union）连通用列也要裁掉
+// 的表列：is_enabled。虚拟 Provider 无 adapter / sender、无登录入口、不产生
+// 任何 HTTP 交互（provider/virtual.go 头注），没有任何「启用 / 停用」可开关
+// 的行为，行值恒取 DDL 默认 1；表单呈现一个改了也不生效的开关只会误导管理
+// 员。sms / email 的 is_enabled 仍需保留（消息发送链按行启用态判定）。
+// 注意：§5.2 行 1195 SetProviderEnabled 是独立的行内开关端点，不经本键集。
+var virtualOmittedProviderColumns = map[string]struct{}{
+	"is_enabled": {},
+}
+
+// AdminProviderColumnKeysFor 按 category 返回可写 / 可展示的表列键集（唯一
+// 真相：AdminSchema 字段过滤、ApplyProviderColumns 写入、validateSchemaKeys
+// 白名单三处共用，防止显示层与写入层漂移）。oauth 返回全量；sms / email 及
+// 任何非 oauth 类别只留通用列（display_name / icon_url / ui_group /
+// sort_order / remark / is_enabled）；union（虚拟）再裁掉 is_enabled，只剩
+// display_name / icon_url / ui_group / sort_order / remark。返回值是副本，
+// 调用方可安全持有。
+func AdminProviderColumnKeysFor(category string) []string {
+	out := make([]string, 0, len(AdminProviderColumnKeys))
+	for _, key := range AdminProviderColumnKeys {
+		if _, oauthOnly := oauthOnlyProviderColumns[key]; oauthOnly && category != provider.CategoryOAuth {
+			continue
+		}
+		if _, omitted := virtualOmittedProviderColumns[key]; omitted && category == provider.CategoryUnion {
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
+}
+
+// ApplyProviderColumns 把提交体中的表列基线键（按 row.Category 裁剪，见
+// AdminProviderColumnKeysFor）应用到 row（写路径：Create 从零值行起、
+// Update 从 FindByKey 读回的完整行上——未提交的键不动即「缺省键保留原值」，
+// PATCH over schema 键集。该缺省语义 docs 未明说，按默认口径处理）。
+// provider_key / category / type 不经本函数（service 层按 §5.2 行 1171
+// 「创建后不可改」与类型 meta 只读口径单独校验）。值类型不符返回错误
+// （service 映射 invalid_request）；显式 null 按清零语义落列默认值。
 func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value) error {
 	if row == nil {
 		return fmt.Errorf("dto: apply provider columns: nil row")
 	}
-	for _, key := range AdminProviderColumnKeys {
+	for _, key := range AdminProviderColumnKeysFor(row.Category) {
 		v, ok := fields[key]
 		if !ok {
 			continue // 缺省保留原值（PATCH）
@@ -497,7 +568,7 @@ func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []mod
 // 走 user_credential 行存在且 is_enabled=1，recovery_code 另需 meta 余量
 // 非空；otp_sms / otp_email 走 phone / email 非空，target 掩码）；MFA
 // 开关（mfa_setting 行存在性）与强制（user.mfa_required 列）不在此重复
-//（§3.5 行 885：摘要走 §3.2 mfaPolicy——admin 侧由凭证概览的 mfa_setting
+// （§3.5 行 885：摘要走 §3.2 mfaPolicy——admin 侧由凭证概览的 mfa_setting
 // 行与 user.mfa_required 承载，默认口径）。webauthn 的 credentials
 // 计数需 user_credential_webauthn 表（WebauthnRepo，不在本实现依赖面），
 // 置零由 protojson 省略（§12.9 行 1752），待定。
@@ -622,9 +693,9 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 // 自造）。快照值恒为注册类型（string / int64 / bool / []string，经
 // settings.DecodeValue 解码），类型断言失败（不可达）按零值投影——proto
 // 消息 36 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
-//（§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后整体回写；服务端
+// （§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后整体回写；服务端
 // 按 §5.6 SetSettings 的 optional has 位 + repeated 伴生标志做部分更新
-//（PATCH；Response 不含伴生标志）。
+// （PATCH；Response 不含伴生标志）。
 func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 	toInt := func(k string) int64 { v, _ := snap[k].(int64); return v }
 	toBool := func(k string) bool { v, _ := snap[k].(bool); return v }

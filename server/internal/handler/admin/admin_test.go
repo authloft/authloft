@@ -370,7 +370,7 @@ func (f *fakeSettingsService) GetStatus() adminsvc.QueueStatus {
 // 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
 // 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
 // nil 时用 no-op fake（读路径用例不触写族）；users 为用户族 fake
-//（variadic——既有用例零改动，缺省 no-op）；clients 为
+// （variadic——既有用例零改动，缺省 no-op）；clients 为
 // 客户端族 fake，既有用例缺省 no-op，客户端用例经 newAdminHandlerClients
 // 注入（variadic 只能一个，故拆两个入口、共享 assembleAdminHandler）。
 func newAdminHandler(t *testing.T, providers ProviderReader, writer ProviderService, users ...UserService) (*session.Tokens, *fakeEpochReader, http.Handler) {
@@ -723,20 +723,53 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	if v := byKey["port"].GetDefault().GetNumberValue(); v != 587 {
 		t.Errorf("port default = %v, want 587", v)
 	}
-	// 基线表列字段仍在。
-	for _, key := range []string{"provider_key", "display_name", "category", "union_provider",
-		"icon_url", "ui_group", "sort_order", "remark",
-		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+	// 非 oauth 类别：表列基线只剩通用 8 项（basic 3 + display 4 + policy 1）。
+	for _, key := range []string{"provider_key", "display_name", "category",
+		"icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
 		if _, ok := byKey[key]; !ok {
-			t.Errorf("schema 缺少表列基线字段 %q", key)
+			t.Errorf("schema 缺少通用表列字段 %q", key)
 		}
 	}
-	// union_provider options 来自 union 类查询（§5.3 行 1197）。
-	if len(fakes.queries) != 1 || fakes.queries[0].Category == nil || *fakes.queries[0].Category != "union" {
-		t.Fatalf("union 查询入参 = %+v, want category=union", fakes.queries)
+	// 5 个 oauth 专属列不得出现（sms/email 注册登录开关在 §5.6 设置项）。
+	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+		if _, ok := byKey[key]; ok {
+			t.Errorf("email schema 不应含 oauth 专属字段 %q", key)
+		}
 	}
-	if opts := byKey["union_provider"].GetOptions(); len(opts) != 1 || opts[0] != "union_a" {
-		t.Errorf("union_provider options = %v, want [union_a]", opts)
+	// 非 oauth 不需要 union_provider options，故不查库（§5.3 行 1197）。
+	if len(fakes.queries) != 0 {
+		t.Errorf("email schema 不应触发 union 查询, got %+v", fakes.queries)
+	}
+}
+
+// TestGetProviderSchemaUnionMeta 虚拟 Union Provider（type=unionid，
+// category=union）：由 provider.LookupTypeMeta 第三源命中，schema 只有
+// 7 个通用表列字段（无 Ext 声明、无 oauth 专属列、无启用开关——虚拟 Provider
+// 无 adapter / 无登录入口，is_enabled 对它没有意义），且不触发 union 查询。
+func TestGetProviderSchemaUnionMeta(t *testing.T) {
+	fakes := &fakeProviders{}
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	got := schemaOf(t, h, provider.UnionProviderType, cookie)
+	if got.GetType() != provider.UnionProviderType || got.GetCategory() != provider.CategoryUnion {
+		t.Fatalf("type/category = (%q, %q), want (%q, %q)",
+			got.GetType(), got.GetCategory(), provider.UnionProviderType, provider.CategoryUnion)
+	}
+	if len(got.GetFields()) != 7 {
+		t.Fatalf("字段数 = %d, want 7（虚拟类型无 Ext 字段且无启用开关）", len(got.GetFields()))
+	}
+	byKey := map[string]bool{}
+	for _, f := range got.GetFields() {
+		byKey[f.GetKey()] = true
+	}
+	for _, key := range []string{"is_enabled", "union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+		if byKey[key] {
+			t.Errorf("union schema 不应含字段 %q", key)
+		}
+	}
+	if len(fakes.queries) != 0 {
+		t.Errorf("union schema 不应触发 union 查询, got %+v", fakes.queries)
 	}
 }
 
@@ -1004,9 +1037,9 @@ func (a *realChainAudit) PushEvent(ev model.EventLog) { a.events = append(a.even
 
 type realChainQueue struct{}
 
-func (realChainQueue) Len() int         { return 0 }
-func (realChainQueue) Dropped() uint64  { return 0 }
-func (realChainQueue) FlushMs() int64   { return 0 }
+func (realChainQueue) Len() int        { return 0 }
+func (realChainQueue) Dropped() uint64 { return 0 }
+func (realChainQueue) FlushMs() int64  { return 0 }
 
 // realSettingsService 真 Store（种子默认档）+ 真 service；audit 返回值供
 // 零投递断言。返回 *adminsvc.SettingsService（满足 handler 侧
@@ -1021,7 +1054,7 @@ func realSettingsService() (*adminsvc.SettingsService, *realChainAudit) {
 
 // TestSetSettingsRealChainInvalidValue：真 Store
 // 链路 httpsDeployment="maybe" → 400 + ErrorInfo(admin, invalid_request)
-//（§5.6 行 1361），不再只靠 fake 注入哨兵；同批其余键零值均为合法默认形态，
+// （§5.6 行 1361），不再只靠 fake 注入哨兵；同批其余键零值均为合法默认形态，
 // 拒绝发生在 https_deployment 值域校验（Validate 先于落库，nil repo 的
 // NewStore 不触 UpsertAll）——不落库、零审计。合法提交由既有 fake 用例
 // 覆盖（真 Store 正例会触达 nil repo，handler 测试不重复 service 侧已验

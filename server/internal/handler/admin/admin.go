@@ -184,13 +184,14 @@ func (h *Handler) GetProvider(ctx context.Context, req *connectrpc.Request[admin
 	return connectrpc.NewResponse(dto.AdminProviderDetail(row, ext)), nil
 }
 
-// GetProviderSchema（§5.2 行 1176、§5.3 行 1181-1244）：由注册表 meta 驱动的
-// 动态表单 schema——oauth 域 Register 与消息域 RegisterSender 两张注册表按
-// type 查（§15.3 行 1731：注册表 meta 是 /schema 唯一数据源；两域 type 名天然
-// 不相交，sender.go 注册表取舍）。表列基线字段（全类型共有）在
-// dto.AdminSchema 按 §5.3 示例组装，Ext 字段逐项来自 meta 声明、不硬编码。
-// 未注册 / 空 type → §1.6 封闭集合内取值 invalid_request（参数缺失 / 格式
-// 错误），Connect 标准码 invalid_argument（§1.5），ErrorInfo domain=admin。
+// GetProviderSchema（§5.2 行 1176、§5.3 行 1181-1244）：由类型 meta 驱动的
+// 动态表单 schema——provider.LookupTypeMeta 统一查 oauth 域 / 消息域 / 虚拟
+// Union 三源（§15.3 行 1731：meta 是 /schema 唯一数据源）。表列基线字段在
+// dto.AdminSchema 按 §5.3 示例组装，并按 category 裁剪：union_provider 与
+// enable_signin / enable_signup / auto_bind / auto_bind_fields 仅 oauth 出现
+// （sms/email 能否注册登录由 §5.6 设置项决定，非 provider 级）；Ext 字段
+// 逐项来自 meta 声明、不硬编码。未注册 / 空 type → invalid_request
+// （参数缺失 / 格式错误），Connect 标准码 invalid_argument，domain=admin。
 func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderSchemaRequest]) (*connectrpc.Response[adminv1.SchemaResponse], error) {
 	providerType := req.Msg.GetType()
 	category, extFields, ok := lookupProviderType(providerType)
@@ -200,32 +201,35 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 			connect.NewErrorInfo("admin", "invalid_request", "unknown provider type"),
 		)
 	}
-	// union_provider 字段的 options 数据源（§5.3 行 1197：仅列 category=union
-	// 的 Provider）；查询失败按 internal 上抛（错误包装拦截器消毒线上文本）。
-	unionKeys, err := h.unionProviderKeys(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("admin handler: list union providers: %w", err)
+	// union_provider 字段仅 oauth 类别出现（§5.3 行 1197）；其 options 需查
+	// category=union 的 Provider，故非 oauth 类别不必查库。查询失败按
+	// internal 上抛（错误包装拦截器消毒线上文本）。
+	var unionKeys []string
+	if category == provider.CategoryOAuth {
+		keys, err := h.unionProviderKeys(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("admin handler: list union providers: %w", err)
+		}
+		unionKeys = keys
 	}
 	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, extFields, unionKeys)), nil
 }
 
-// lookupProviderType 按 type 查两域注册表（§15.3）：先 oauth 域（Lookup），
-// 未命中再消息域（LookupSenderMeta）。两域 meta 均带 Fields 字段级声明
-// （§5.3 行 1231-1243），Ext 部分逐项来自 meta、不硬编码，两域对称。
+// lookupProviderType 按 type 查三源统一 meta（provider.LookupTypeMeta：
+// oauth 域 / 消息域 / 虚拟 Union）。三源 meta 同构，Ext 部分逐项来自
+// Fields 声明、不硬编码；虚拟类型 Fields 为空（无 Ext 字段）。
 func lookupProviderType(providerType string) (category string, extFields []provider.FieldMeta, ok bool) {
-	if meta, found := provider.Lookup(providerType); found {
-		return meta.Category, meta.Fields, true
+	meta, found := provider.LookupTypeMeta(providerType)
+	if !found {
+		return "", nil, false
 	}
-	if meta, found := provider.LookupSenderMeta(providerType); found {
-		return meta.Category, meta.Fields, true
-	}
-	return "", nil, false
+	return meta.Category, meta.Fields, true
 }
 
 // unionProviderKeys 分页读完全部 category=union 的 provider_key（§5.3 行 1197；
 // §1.7 分页上限 100，union 类数量有限，循环取满 total 即止）。
 func (h *Handler) unionProviderKeys(ctx context.Context) ([]string, error) {
-	category := "union"
+	category := provider.CategoryUnion
 	var keys []string
 	for page := 1; ; page++ {
 		rows, total, err := h.providers.ListProviders(ctx, repo.ProviderListQuery{
@@ -276,7 +280,7 @@ func boolPtrToInt8(b *bool) *int8 {
 // handler 只做 Connect 形态映射（§18 行 1792 分层）——
 
 // CreateProvider（§5.2 行 1169）：新建，请求体为 §5.3 schema 的动态键集合
-//（google.protobuf.Struct）。
+// （google.protobuf.Struct）。
 func (h *Handler) CreateProvider(ctx context.Context, req *connectrpc.Request[structpb.Struct]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	if err := h.svc.CreateProvider(ctx, req.Msg); err != nil {
 		return nil, mapWriteError("create provider", err)

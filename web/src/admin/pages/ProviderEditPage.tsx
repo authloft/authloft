@@ -48,7 +48,10 @@ import {
   testProvider,
   updateProvider,
 } from '../api';
-import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
+import {
+  ProviderCallbackHint,
+  showsCallbackHint,
+} from '../components/ProviderCallbackHint';
 import { adminNavPath } from '../paths';
 import { SchemaForm } from '../schema/SchemaForm';
 import {
@@ -272,11 +275,13 @@ export function ProviderEditPage(props: {
       <Typography.Title heading={3} className="page-title">
         {editing ? t('admin.editProviderTitle') : t('admin.createProviderTitle')}
       </Typography.Title>
-      <ProviderCallbackHint
-        alRoot={props.alRoot}
-        providerKey={provider?.providerKey}
-        type={provider?.type}
-      />
+      {showsCallbackHint(schema?.category) ? (
+        <ProviderCallbackHint
+          alRoot={props.alRoot}
+          providerKey={provider?.providerKey}
+          type={provider?.type}
+        />
+      ) : null}
       {typesReq.error !== undefined ? (
         // 类型清单加载失败自绘文字换 Semi Banner（表单缺类型不可用，页级口径）。
         <Banner
