@@ -25,7 +25,7 @@ import (
 // testKeyB64 是 32 字节的 std base64 编码（合法 AES-256-GCM 密钥形态）。
 var testKeyB64 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xA5}, 32))
 
-// exampleKeyPlaceholder 必须与 configs/config.yaml.example 的密钥占位符逐字一致：
+// exampleKeyPlaceholder 必须与 authloft.yml.example 的密钥占位符逐字一致：
 // example 同步测试靠它把占位符替换成真密钥后整份加载，验证示例与 Config schema 同步。
 const exampleKeyPlaceholder = "<base64-32B，首次运行自动生成>"
 
@@ -310,11 +310,11 @@ func TestValidateErrorsDoNotEchoKeyValues(t *testing.T) {
 	}
 }
 
-// TestExampleFileMatchesSchema 验证 config.yaml.example 与 Config schema 同步
+// TestExampleFileMatchesSchema 验证 authloft.yml.example 与 Config schema 同步
 // （§3.2 职责表：新增字段必须同步 example）：把占位密钥替换成真密钥后，
 // example 必须能整份解析并通过 Validate。
 func TestExampleFileMatchesSchema(t *testing.T) {
-	raw, err := os.ReadFile("../../configs/config.yaml.example")
+	raw, err := os.ReadFile("../../authloft.yml.example")
 	if err != nil {
 		t.Fatalf("read example: %v", err)
 	}

@@ -48,7 +48,7 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 func (d Duration) MarshalYAML() (any, error) { return d.Duration.String(), nil }
 
 // Config 与 docs/后端架构.md §3.2 行 258-284 的 YAML schema 一一对应
-// （yaml 标签 snake_case）；新增字段必须同步 config.yaml.example 与默认值说明。
+// （yaml 标签 snake_case）；新增字段必须同步 authloft.yml.example 与默认值说明。
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	DB       DBConfig       `yaml:"db"`

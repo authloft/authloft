@@ -60,7 +60,7 @@ func validateInstallInput(in InstallInput) error {
 
 // BuildInstallConfig 生成全新安装的完整 config（§3.15 路径 B 步骤 ④）：
 // 用户所填项 + 随机生成的全部 sign_key / oidc.jwt_keys + 其余项默认值
-// （config.DefaultConfig，与 config.yaml.example 同源）。root 必填、
+// （config.DefaultConfig，与 authloft.yml.example 同源）。root 必填、
 // rp_id 缺省取 root 的 host（步骤 ①已校验，见 validateInstallInput）。
 func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c, err := config.DefaultConfig()

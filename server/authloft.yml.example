@@ -1,7 +1,7 @@
 # Authloft 统一用户中心 · YAML 启动配置示例（docs/后端架构.md §3.2）
 #
-# 用法：复制为当前工作目录下的 authloft.yaml 后按部署环境修改（也可用 --config
-# 指定其他路径）。authloft.yaml 含真实密钥，不入库（.gitignore 已忽略）；部署时提供，
+# 用法：复制为当前工作目录下的 authloft.yml 后按部署环境修改（也可用 --config
+# 指定其他路径）。authloft.yml 含真实密钥，不入库（.gitignore 已忽略）；部署时提供，
 # 或首次运行自动生成。
 #
 # 整份配置只在启动时读取一次，运行期不可变（不监听文件变更、无刷新接口），

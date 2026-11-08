@@ -59,7 +59,7 @@ func parseAndValidate(data []byte) (*Config, error) {
 	return &c, nil
 }
 
-// DefaultConfig 构造全量默认值结构（与 configs/config.yaml.example 同源），
+// DefaultConfig 构造全量默认值结构（与 authloft.yml.example 同源），
 // sign_key 五场景现场随机生成（crypto/rand 32 字节 → std base64，kid=1，
 // 互不复用），oidc.jwt_keys 现场生成一把 RSA 2048（PKCS#8 PEM → std base64，
 // kid="1"）。供安装流程消费（§3.15 writer.go：全新安装生成完整 config；

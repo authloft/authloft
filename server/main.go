@@ -6,9 +6,9 @@ import (
 	"os"
 )
 
-// defaultConfigPath 默认配置文件路径：当前工作目录下的 authloft.yaml
+// defaultConfigPath 默认配置文件路径：当前工作目录下的 authloft.yml
 //（相对路径按进程 cwd 解析）。--config / -config 可覆盖，读写共用同一路径。
-const defaultConfigPath = "authloft.yaml"
+const defaultConfigPath = "authloft.yml"
 
 func main() {
 	configPath := flag.String("config", defaultConfigPath, "path to the config file (relative paths resolve against the working directory)")
