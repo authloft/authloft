@@ -86,6 +86,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Sync shell templates
+        run: node web/scripts/sync-templates.mjs
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
