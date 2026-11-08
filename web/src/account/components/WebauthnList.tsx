@@ -17,7 +17,7 @@
 import { useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Empty, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui';
 import type { WebauthnCredential } from '../../gen/proto/api/account/v1/webauthn_pb';
 import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';

@@ -17,7 +17,10 @@ importers:
       '@connectrpc/connect-web':
         specifier: ^2.3.0
         version: 2.3.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.3.0(@bufbuild/protobuf@2.16.0))
-      '@douyinfe/semi-ui-19':
+      '@douyinfe/semi-icons':
+        specifier: ^2.104.0
+        version: 2.104.0(react@19.3.1)
+      '@douyinfe/semi-ui':
         specifier: ^2.104.0
         version: 2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@modern-js/runtime':
@@ -317,12 +320,11 @@ packages:
   '@douyinfe/semi-theme-default@2.104.0':
     resolution: {integrity: sha512-eD+FC/OxMrBVKpWmfJ3NLgzK5clzEc5q6KH6dI3T5qnB28Fc9I9Vsri/UaHC0wLGOujFO0eX95OeWow1v1DacQ==}
 
-  '@douyinfe/semi-ui-19@2.104.0':
-    resolution: {integrity: sha512-No7sDHvoPVGbe6GYkmwTylyyywojJ4nZyqKhT66g4b3w3Cxc6hFyQqZQghz64HQpVENj2STuuVGFi401Yzoi7A==}
-    engines: {node: '>=18.0.0'}
+  '@douyinfe/semi-ui@2.104.0':
+    resolution: {integrity: sha512-1l6+49mTjka0dpQr0/rUMjfw5S3noXOJOZ0Uu4lin5jDupwA8z+YSehIcO6/pcuO9TAN7RswjidnlCxRjHYwvw==}
     peerDependencies:
-      react: ^19.0.0
-      react-dom: ^19.0.0
+      react: '>=16.0.0'
+      react-dom: '>=16.0.0'
 
   '@emnapi/core@1.11.3':
     resolution: {integrity: sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg==}
@@ -2900,8 +2902,8 @@ packages:
   mdast-util-from-markdown@2.1.0:
     resolution: {integrity: sha512-KRLgmPaP2H1ul2bpoJkOS+9pAcDAAj9Nu1mqLnh8NLeJG5tlvj42TH80PIGBpROWlRXLk0lDrWNuZCFy/tsB4A==}
 
-  mdast-util-gfm-autolink-literal@2.0.1:
-    resolution: {integrity: sha512-5HVP2MKaP6L+G6YaxPNjuL0BPrq9orG3TsrZ9YXbA3vDw/ACI4MEsnoDpn6ZNm7GnZgtAcONJyPhOP8tNJQavQ==}
+  mdast-util-gfm-autolink-literal@2.1.0:
+    resolution: {integrity: sha512-Jx6QSK8wDo558Bcf7q+1pe0v81g2PVs09Hlvu9xJHmCFRF3sAPW7vXFVIAwBncs3sde92WbsVqNxwdqViA2XnQ==}
 
   mdast-util-gfm-footnote@2.1.0:
     resolution: {integrity: sha512-sqpDWlsHn7Ac9GNZQMeUzPQSMzR6Wv0WKRNvQRg0KqHh02fpTz69Qc1QSseNX29bhz1ROIyNyxExfawVKTm1GQ==}
@@ -2912,8 +2914,8 @@ packages:
   mdast-util-gfm-table@2.0.1:
     resolution: {integrity: sha512-fiIjPrAy4kz68/eFbPHhsiWDGHhqUSVoU1XsfLM5DsEPXw7MxgiVVyulUggFRckVWeT1KXQXkg5vm3kv4oMSOA==}
 
-  mdast-util-gfm-task-list-item@2.0.0:
-    resolution: {integrity: sha512-IrtvNvjxC1o06taBAVJznEnkiHxLFTzgonUdy8hzFVeDun0uTjxxrRGVaNFqkU1wJR3RBPEfsxmU6jDWPofrTQ==}
+  mdast-util-gfm-task-list-item@2.0.1:
+    resolution: {integrity: sha512-jXVO1hvB2hs82g1esi7I9nIJDqiijbQLIyH2jDUb5s7jIAZMr/79h0VHSq7XHKTqpLARRm+DDNjduB7S9+6XZA==}
 
   mdast-util-gfm@3.1.0:
     resolution: {integrity: sha512-0ulfdQOM3ysHhCJ1p06l0b0VKlhU0wuQs3thxZQagjcjPrlFRqY215uZGHHJan9GEAXd9MbfPjFJz+qMkVR6zQ==}
@@ -4359,8 +4361,8 @@ packages:
   varint@6.0.0:
     resolution: {integrity: sha512-cXEIW6cfr15lFv563k4GuVuW/fiwjknytD37jIOLSdSWuOI6WnO/oKwmP2FQTU2l01LP8/M5TSAJpzUaGe3uWg==}
 
-  vfile-message@4.0.3:
-    resolution: {integrity: sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw==}
+  vfile-message@4.0.4:
+    resolution: {integrity: sha512-66ycRswIkNmHH9PHku7ADtv5RVwgIrOcuv3J8Svz6h4qgGRrKVa+9/neuKyJZUXyOpYwLTvS+whZ4R2urHHgQg==}
 
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
@@ -4703,7 +4705,7 @@ snapshots:
 
   '@douyinfe/semi-theme-default@2.104.0': {}
 
-  '@douyinfe/semi-ui-19@2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@douyinfe/semi-ui@2.104.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@dnd-kit/core': 6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@dnd-kit/sortable': 7.0.2(@dnd-kit/core@6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
@@ -7138,7 +7140,7 @@ snapshots:
       space-separated-tokens: 2.0.2
       style-to-object: 2.0.2
       unist-util-position: 5.0.0
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
     transitivePeerDependencies:
       - supports-color
 
@@ -7441,7 +7443,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  mdast-util-gfm-autolink-literal@2.0.1:
+  mdast-util-gfm-autolink-literal@2.1.0:
     dependencies:
       '@types/mdast': 4.0.4
       ccount: 2.0.1
@@ -7479,7 +7481,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  mdast-util-gfm-task-list-item@2.0.0:
+  mdast-util-gfm-task-list-item@2.0.1:
     dependencies:
       '@types/mdast': 4.0.4
       devlop: 1.1.0
@@ -7491,11 +7493,11 @@ snapshots:
   mdast-util-gfm@3.1.0:
     dependencies:
       mdast-util-from-markdown: 2.1.0
-      mdast-util-gfm-autolink-literal: 2.0.1
+      mdast-util-gfm-autolink-literal: 2.1.0
       mdast-util-gfm-footnote: 2.1.0
       mdast-util-gfm-strikethrough: 2.0.1
       mdast-util-gfm-table: 2.0.1
-      mdast-util-gfm-task-list-item: 2.0.0
+      mdast-util-gfm-task-list-item: 2.0.1
       mdast-util-to-markdown: 2.2.2
     transitivePeerDependencies:
       - supports-color
@@ -7524,7 +7526,7 @@ snapshots:
       parse-entities: 4.0.2
       stringify-entities: 4.0.4
       unist-util-stringify-position: 4.0.0
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
     transitivePeerDependencies:
       - supports-color
 
@@ -7713,7 +7715,7 @@ snapshots:
       micromark-util-events-to-acorn: 2.0.3
       micromark-util-symbol: 2.0.0
       micromark-util-types: 2.0.3
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
 
   micromark-extension-mdx-md@2.0.0:
     dependencies:
@@ -7729,7 +7731,7 @@ snapshots:
       micromark-util-symbol: 2.0.0
       micromark-util-types: 2.0.3
       unist-util-position-from-estree: 2.0.0
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
 
   micromark-extension-mdxjs@3.0.0:
     dependencies:
@@ -7764,7 +7766,7 @@ snapshots:
       micromark-util-symbol: 2.0.0
       micromark-util-types: 2.0.3
       unist-util-position-from-estree: 1.1.2
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
 
   micromark-factory-space@2.1.0:
     dependencies:
@@ -7830,7 +7832,7 @@ snapshots:
       estree-util-visit: 2.0.0
       micromark-util-symbol: 2.0.0
       micromark-util-types: 2.0.3
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
 
   micromark-util-html-tag-name@2.0.0: {}
 
@@ -9173,7 +9175,7 @@ snapshots:
 
   varint@6.0.0: {}
 
-  vfile-message@4.0.3:
+  vfile-message@4.0.4:
     dependencies:
       '@types/unist': 3.0.3
       unist-util-stringify-position: 4.0.0
@@ -9181,7 +9183,7 @@ snapshots:
   vfile@6.0.3:
     dependencies:
       '@types/unist': 3.0.3
-      vfile-message: 4.0.3
+      vfile-message: 4.0.4
 
   w3c-keyname@2.2.8: {}
 

@@ -312,6 +312,9 @@ export function apiErrorText(error: unknown): string {
   if (error instanceof ApiError) {
     return t(resolveCode(error).i18nKey);
   }
+  if (error instanceof Error) {
+    return error.message;
+  }
   return t('errors.code.unknown');
 }
 

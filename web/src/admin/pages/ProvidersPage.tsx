@@ -27,7 +27,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { Link, useLocation, useNavigate } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
@@ -165,7 +165,7 @@ export function ProvidersPage(props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navProviders')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navProviders')}</Typography.Title>
       {/* 新建入口（需求 §4.6 列表/新建/编辑/启用/排序；对照 OidcClientsPage 工具栏写法）。 */}
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={() => void navigate(PROVIDER_NEW_PATH)}>

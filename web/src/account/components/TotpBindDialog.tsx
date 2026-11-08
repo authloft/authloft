@@ -28,7 +28,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui-19';
+import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui';
 import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { QrImage } from '../../shared/components/QrImage';

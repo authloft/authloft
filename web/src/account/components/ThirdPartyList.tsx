@@ -21,7 +21,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Empty, Popconfirm, Spin, Tag, Toast, Tooltip } from '@douyinfe/semi-ui-19';
+import { Button, Empty, Popconfirm, Spin, Tag, Toast, Tooltip } from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,

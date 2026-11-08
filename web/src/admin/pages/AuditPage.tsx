@@ -32,7 +32,7 @@
  * 同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
@@ -275,7 +275,7 @@ export function AuditPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navAudit')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navAudit')}</Typography.Title>
       <div className={styles.filterBar}>
         <RadioGroup
           type="button"

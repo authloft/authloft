@@ -24,7 +24,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Modal, Popconfirm, Spin, Tag, Toast } from '@douyinfe/semi-ui-19';
+import { Button, Modal, Popconfirm, Spin, Tag, Toast } from '@douyinfe/semi-ui';
 import type { MfaPolicyMethod } from '../../gen/proto/api/account/v1/profile_pb';
 import type { MfaFactor } from '../../gen/proto/api/account/v1/mfa_pb';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';

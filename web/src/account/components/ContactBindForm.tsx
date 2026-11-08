@@ -16,7 +16,7 @@
 import { useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Input } from '@douyinfe/semi-ui-19';
+import { Button, Input } from '@douyinfe/semi-ui';
 import type { OkResponse } from '../../gen/proto/api/account/v1/profile_pb';
 import type {
   BindEmailRequest,

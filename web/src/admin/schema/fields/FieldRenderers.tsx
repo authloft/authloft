@@ -11,7 +11,7 @@
  * 布局；跨文件共享同一 CSS Modules 映射，§1.7）。
  */
 import type { ReactNode } from 'react';
-import { Checkbox, Input, InputNumber, Select } from '@douyinfe/semi-ui-19';
+import { Checkbox, Input, InputNumber, Select } from '@douyinfe/semi-ui';
 import type { SchemaField } from '../../../gen/proto/api/admin/v1/schema_pb';
 import { t } from '../../../shared/i18n';
 import { JsonEditor } from '../../components/JsonEditor';

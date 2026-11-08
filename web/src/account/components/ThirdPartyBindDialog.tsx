@@ -26,7 +26,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Button, Modal } from '@douyinfe/semi-ui-19';
+import { Button, Modal } from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';

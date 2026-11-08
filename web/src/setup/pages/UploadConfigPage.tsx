@@ -21,7 +21,7 @@ import {
   Toast,
   Typography,
   Upload,
-} from '@douyinfe/semi-ui-19';
+} from '@douyinfe/semi-ui';
 import { requestUploadConfig, setupMessage } from '../api';
 import { ApiError } from '../../shared/api/errors';
 import { t } from '../../shared/i18n';

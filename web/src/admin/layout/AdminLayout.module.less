@@ -11,7 +11,15 @@
   height: 100%;
 }
 
+.layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .header {
+  flex-grow: 0;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -42,8 +50,21 @@
 }
 
 .content {
+  flex-grow: 1;
+  flex-shrink: 1;
   padding: @spacing-xl;
   background-color: @color-background-muted;
+  overflow: auto;
+
+  :global(.page-title) {
+    margin-bottom: @spacing-md;
+  }
+
+  :global(.page-content),
+  :global(.semi-table-body .semi-table-placeholder) {
+    background-color: var(--semi-color-bg-0);
+
+  }
 }
 
 // GetMe 未落地（加载）整页态——不渲染管理壳（Semi Spin 居中容器；

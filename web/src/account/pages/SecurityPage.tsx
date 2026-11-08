@@ -30,7 +30,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useSearchParams } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Banner, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Card, Spin, Typography } from '@douyinfe/semi-ui';
 import { create } from '@bufbuild/protobuf';
 import type {
   AccountConfigResponse,

@@ -21,7 +21,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
@@ -184,7 +184,7 @@ export function UserDetailPage(props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>
+      <Typography.Title heading={3} className="page-title">
         {t('admin.userDetailTitle')}
         {user !== undefined ? `：${user.username}` : ''}
       </Typography.Title>

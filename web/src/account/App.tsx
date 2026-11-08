@@ -7,7 +7,7 @@
  * import() 之前；缺省 `/assets/`）→ 注入 i18n → 根组件 = 错误边界包裹路由。
  *
  * Semi UI 接入（§1.6 行 112/113：account 端用 Semi UI——唯一包
- * @douyinfe/semi-ui-19，大包命名导入、禁子路径；本 entry 链是全项目唯一
+ * @douyinfe/semi-ui，大包命名导入、禁子路径；本 entry 链是全项目唯一
  * 引用点，login / setup 零引用）：
  * - 组件一律从大包入口 import（lib/es/index.js，Rsbuild tree shaking
  *   按需裁剪）；组件样式随组件 JS 内部的 css import（semi-foundation
@@ -28,6 +28,7 @@
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
+import '@douyinfe/semi-ui/react19-adapter';
 import { HashRouter } from '@modern-js/runtime/router';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';

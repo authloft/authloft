@@ -20,11 +20,11 @@
  * _base/base.css 引入（见 entry.tsx 注释）。
  */
 import { useState, type ReactNode } from 'react';
-// 大包命名导入（§1.6 行 112/113 硬性口径：唯一包 @douyinfe/semi-ui-19，
+// 大包命名导入（§1.6 行 112/113 硬性口径：唯一包 @douyinfe/semi-ui，
 // 一律大包入口、禁子路径——此前 lib/es 子路径裁量已废止）。
 // 组件样式随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
 // _base/base.css 引入（见 entry.tsx 注释）。
-import { Breadcrumb, Layout, Nav } from '@douyinfe/semi-ui-19';
+import { Breadcrumb, Layout, Nav } from '@douyinfe/semi-ui';
 import { useLocation, useNavigate } from '@modern-js/runtime/router';
 import {
   ACCOUNT_NAV_ROUTES,

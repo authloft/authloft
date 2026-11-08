@@ -16,7 +16,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui-19';
+import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import type { JsonObject } from '@bufbuild/protobuf';
@@ -78,7 +78,7 @@ export function DecodePage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navDecode')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navDecode')}</Typography.Title>
       <div className={styles.form}>
         <Select
           className={styles.purposeSelect}

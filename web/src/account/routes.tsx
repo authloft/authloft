@@ -10,7 +10,7 @@
  * 禁第二份路径字面量）；bootstrap 读注入变量（al_root / static_base）。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import { Empty } from '@douyinfe/semi-ui-19';
+import { Empty } from '@douyinfe/semi-ui';
 import { Route, Routes } from '@modern-js/runtime/router';
 import { t } from '../shared/i18n';
 import { loadAccountBootstrap } from './bootstrap';

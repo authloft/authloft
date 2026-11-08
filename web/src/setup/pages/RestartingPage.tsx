@@ -8,7 +8,7 @@
  * 补「重新探测」（重置计时重新轮询）。
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Spin, Typography } from '@douyinfe/semi-ui';
 import { fetchSetupStatus } from '../api';
 import { pollRestart } from '../wizard';
 import { redirectToLogin } from '../bootstrap';

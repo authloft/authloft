@@ -183,7 +183,7 @@ import {
  * AdminLayout / AuditPage 渲染不可测（同上 Blocker）。
  *
  * 【Blocker·已解除】routes / AdminLayout / entry / ProvidersPage / StatusSwitch 的
- * 渲染测试曾无法落地（@douyinfe/semi-ui-19 lib/es 无扩展名 import →
+ * 渲染测试曾无法落地（@douyinfe/semi-ui lib/es 无扩展名 import →
  * rstest 0.12.5 externalize 下 node ESM 模块图崩，实测，见
  * account.test.tsx 头注）——**测试链已修复**（define.test
  * bundleDependencies + ProvidePlugin），路由兜底真渲染断言见文末 routes

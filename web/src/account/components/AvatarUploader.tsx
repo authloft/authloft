@@ -10,7 +10,7 @@
  * UpdateProfile（后端仍为桩，随其实装接线）。
  */
 import { useRef, useState, type ReactNode } from 'react';
-import { Avatar, Button } from '@douyinfe/semi-ui-19';
+import { Avatar, Button } from '@douyinfe/semi-ui';
 import { apiErrorText } from '../api';
 import { useUpload } from '../../shared/hooks/useUpload';
 import { t } from '../../shared/i18n';

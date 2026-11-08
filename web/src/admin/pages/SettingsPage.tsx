@@ -41,7 +41,7 @@ import {
   Switch,
   Toast,
   Typography,
-} from '@douyinfe/semi-ui-19';
+} from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { requestOptions } from '../../shared/hooks/requestOptions';
@@ -425,7 +425,7 @@ export function SettingsPage(props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.settingsTitle')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.settingsTitle')}</Typography.Title>
       <Banner
         type="warning"
         className={styles.overwriteBanner}

@@ -20,7 +20,7 @@ define.staged({
 });
 
 // node 环境下 rstest 默认把 node_modules 依赖 externalize 给 Node 原生
-// ESM 加载，@douyinfe/semi-ui-19（含 semi-foundation）内部的 .css 因此触发
+// ESM 加载，@douyinfe/semi-ui（含 semi-foundation）内部的 .css 因此触发
 // Unknown file extension ".css"。把 @douyinfe/* 打进测试 bundle，CSS 改走
 // rspack 管线在构建期被吞掉。define.test 仅作用于 rs test，
 // 生产构建走 modern.config.ts（Rsbuild），互不影响。

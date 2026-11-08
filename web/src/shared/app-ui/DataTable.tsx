@@ -24,11 +24,11 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 // 大包命名导入（§1.6 行 113 硬性口径：一律大包入口、禁子路径）。
-import { Switch, Table } from '@douyinfe/semi-ui-19';
+import { Switch, Table } from '@douyinfe/semi-ui';
 // ColumnProps 类型导入例外：大包入口（lib/es/index.d.ts）仅转出组件值，
 // 未转出该类型——经官方 exports 白名单内的 table 子路径做纯类型导入
 // （import type，编译期擦除、零运行时痕迹）。
-import type { ColumnProps } from '@douyinfe/semi-ui-19/lib/es/table';
+import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table';
 import {
   createInflightGuard,
   MAX_PAGE_SIZE,

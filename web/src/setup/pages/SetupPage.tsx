@@ -17,7 +17,7 @@ import {
   Spin,
   Steps,
   Typography,
-} from '@douyinfe/semi-ui-19';
+} from '@douyinfe/semi-ui';
 import { fetchSetupStatus } from '../api';
 import { redirectToLogin } from '../bootstrap';
 import { t } from '../../shared/i18n';

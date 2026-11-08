@@ -171,7 +171,7 @@ export const admin = {
   'admin.oidcCallbackExactMatchNote': 'OIDC 类 Provider 回调需精确匹配',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
-  'admin.appTitle': 'Authloft 管理后台',
+  'admin.appTitle': 'Authloft 管理',
   'admin.rootTitle': '管理后台',
   'admin.navProviders': '提供方',
   'admin.navUsers': '用户',

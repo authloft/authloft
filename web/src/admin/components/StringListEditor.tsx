@@ -13,6 +13,8 @@
 import type { ReactNode } from 'react';
 import { t } from '../../shared/i18n';
 import styles from './StringListEditor.module.less';
+import { Button, Input } from '@douyinfe/semi-ui';
+import { IconDelete } from '@douyinfe/semi-icons';
 
 /**
  * 条目就地更新（不可变）：命中 index 换值，其余原样；越界 → 原引用返回
@@ -67,36 +69,33 @@ export function StringListEditor(props: StringListEditorProps): ReactNode {
       ) : null}
       {props.values.map((value, index) => (
         <div className={styles.row} key={index}>
-          <input
+          <Input
             className={styles.input}
             value={value}
-            onChange={(event) =>
-              props.onChange(replaceListItem(props.values, index, event.target.value))
+            onChange={(value) =>
+              props.onChange(replaceListItem(props.values, index, value))
             }
             disabled={props.disabled}
             aria-label={`${props.ariaLabel} ${index + 1}`}
             placeholder={props.placeholder}
             spellCheck={false}
           />
-          <button
-            type="button"
-            className={styles.remove}
+          <Button
             onClick={() => props.onChange(removeListItem(props.values, index))}
             disabled={props.disabled}
+            type="tertiary"
             aria-label={`${props.ariaLabel} ${index + 1} ${t('admin.removeAction')}`}
-          >
-            {t('admin.removeAction')}
-          </button>
+            icon={<IconDelete />}
+          />
         </div>
       ))}
-      <button
-        type="button"
-        className={styles.add}
+      <Button
         onClick={() => props.onChange(appendListItem(props.values))}
         disabled={props.disabled}
+        type="tertiary"
       >
         {props.addText}
-      </button>
+      </Button>
     </div>
   );
 }

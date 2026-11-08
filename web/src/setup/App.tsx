@@ -6,7 +6,7 @@
 // reference 消费，本身无 CSS 产出），reset 为基础重置（与 login entry 同模式）。
 import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
-import { createRoot } from 'react-dom/client';
+import '@douyinfe/semi-ui/react19-adapter';
 import { loadSetupInit } from './bootstrap';
 import SetupPage from './pages/SetupPage';
 

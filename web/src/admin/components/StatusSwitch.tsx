@@ -19,7 +19,7 @@
  * 纯 Semi Switch 组合无自定义样式 → 不建 .module.less（§1.7 既定口径）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Switch } from '@douyinfe/semi-ui-19';
+import { Switch } from '@douyinfe/semi-ui';
 import { runInlineToggle } from '../../shared/app-ui/dataTableLogic';
 
 /** 单行行集的固定键（runInlineToggle 以 key 命中行；本组件恒单行）。 */

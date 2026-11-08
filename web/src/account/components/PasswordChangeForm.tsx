@@ -11,7 +11,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Input, Toast } from '@douyinfe/semi-ui-19';
+import { Button, Input, Toast } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';

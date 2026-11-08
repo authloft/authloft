@@ -25,7 +25,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui';
 import { Link, useLocation } from '@modern-js/runtime/router';
 import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
@@ -276,7 +276,7 @@ export function UsersPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navUsers')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navUsers')}</Typography.Title>
       <div className={styles.toolbar}>
         <Input
           className={styles.searchInput}

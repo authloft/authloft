@@ -22,7 +22,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Input, Modal, Popconfirm, SideSheet, Spin, Toast, Typography } from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
@@ -98,7 +98,6 @@ export function SsoClientsPage(_props: {
     redirectUris: [],
   });
   const [createError, setCreateError] = useState<string | null>(null);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
   // 查看弹窗（GetSsoClient 明文密钥的唯一展示位）。
   const [viewId, setViewId] = useState<bigint | null>(null);
   // 弹窗详情手写三态收编 ahooks（manual，开弹窗即 run）；401 由集中
@@ -171,28 +170,22 @@ export function SsoClientsPage(_props: {
   }
 
   /** 提交新建（§5.5 行 1261）：redirectUris 条目校验前置（§1.7 前端自律）。 */
-  async function submitCreate(): Promise<void> {
-    if (createSubmitting) {
-      return;
-    }
+  const { run: submitCreate, loading: createSubmitting } = useRequest(async () => {
     const issue = redirectUrisIssue(createDraft.redirectUris);
     if (issue !== null) {
-      setCreateError(issue);
-      return;
+      throw new Error(issue);
     }
-    setCreateSubmitting(true);
-    try {
       await createSsoClient(buildCreateSsoClientRequest(createDraft));
       setCreateOpen(false);
+  }, {
+    manual: true,
+    onSuccess: () => {
       Toast.success(t('admin.clientCreateSuccess'));
       // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
       setQuery((prev) => ({ ...prev, page: 1 }));
-    } catch (err) {
-      setCreateError(apiErrorText(err));
-    } finally {
-      setCreateSubmitting(false);
-    }
-  }
+    },
+    onError: (err) => Toast.error(apiErrorText(err)),
+  });
 
   /**
    * 打开查看（§5.5 行 1262 GetSsoClient）：读取明文密钥；401 由集中 onError
@@ -332,7 +325,7 @@ export function SsoClientsPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navSsoClients')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navSsoClients')}</Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createClientAction')}
@@ -354,12 +347,27 @@ export function SsoClientsPage(_props: {
           ) : undefined
         }
       />
-      <Modal
+      <SideSheet
         title={t('admin.createSsoClientTitle')}
         visible={createOpen}
         onCancel={closeCreate}
         maskClosable={false}
-        footer={null}
+        footer={
+          <div className={styles.formFooter}>
+            <Button onClick={closeCreate} disabled={createSubmitting}>
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              onClick={() => {
+                void submitCreate();
+              }}
+              disabled={createSubmitting}
+              loading={createSubmitting}
+            >
+              {t('admin.createAction')}
+            </Button>
+          </div>}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -402,23 +410,8 @@ export function SsoClientsPage(_props: {
               {createError}
             </p>
           ) : null}
-          <div className={styles.formFooter}>
-            <Button onClick={closeCreate} disabled={createSubmitting}>
-              {t('admin.cancelAction')}
-            </Button>
-            <Button
-              theme="solid"
-              onClick={() => {
-                void submitCreate();
-              }}
-              disabled={createSubmitting}
-              loading={createSubmitting}
-            >
-              {t('admin.createAction')}
-            </Button>
-          </div>
         </div>
-      </Modal>
+      </SideSheet>
       <Modal
         title={t('admin.clientDetailTitle')}
         visible={viewId !== null}

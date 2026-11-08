@@ -13,7 +13,7 @@
  * ./api（三方法 msw + 展示纯函数）。样式（§1.7）：同目录同名 module less。
  */
 import { type ReactNode } from 'react';
-import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { requestOptions } from '../../shared/hooks/requestOptions';
@@ -56,7 +56,7 @@ export function StatusPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navStatus')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navStatus')}</Typography.Title>
       <div className={styles.stats}>
         <Card className={styles.statCard} title={t('admin.statusQueueLength')}>
           <Typography.Text className={styles.statValue}>

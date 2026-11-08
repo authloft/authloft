@@ -12,7 +12,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner } from '@douyinfe/semi-ui-19';
+import { Banner } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import {

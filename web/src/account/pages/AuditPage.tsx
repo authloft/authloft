@@ -5,7 +5,7 @@
  * 文案经 shared/i18n（复用 account.auditTitle）。
  */
 import type { ReactNode } from 'react';
-import { Typography } from '@douyinfe/semi-ui-19';
+import { Typography } from '@douyinfe/semi-ui';
 import { EventLogTable } from '../components/EventLogTable';
 import { t } from '../../shared/i18n';
 import styles from './AuditPage.module.less';

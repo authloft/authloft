@@ -20,7 +20,7 @@
  * ./api（工具链 blocker 同口径）。样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typography } from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
@@ -449,7 +449,7 @@ export function OidcClientsPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('admin.navOidcClients')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">{t('admin.navOidcClients')}</Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createClientAction')}

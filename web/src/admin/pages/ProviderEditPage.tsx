@@ -26,7 +26,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
-import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui-19';
+import { Banner, Button, Input, Select, Spin, Toast, Typography } from '@douyinfe/semi-ui';
 import { useLocation, useNavigate } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { ProviderIcon } from '../../shared/components/ProviderIcon';
@@ -269,7 +269,7 @@ export function ProviderEditPage(props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>
+      <Typography.Title heading={3} className="page-title">
         {editing ? t('admin.editProviderTitle') : t('admin.createProviderTitle')}
       </Typography.Title>
       <ProviderCallbackHint

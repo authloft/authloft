@@ -19,7 +19,7 @@
  * bootstrap 无 methods 必需校验（§8：methods 仅 login 必填），路由层不发请求。
  */
 import type { ReactNode } from 'react';
-import { Empty } from '@douyinfe/semi-ui-19';
+import { Empty } from '@douyinfe/semi-ui';
 import { Link, useParams, useRoutes, type RouteObject } from '@modern-js/runtime/router';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';

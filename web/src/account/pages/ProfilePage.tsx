@@ -42,7 +42,7 @@ import {
   Spin,
   Toast,
   Typography,
-} from '@douyinfe/semi-ui-19';
+} from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import type { ProfileResponse } from '../../gen/proto/api/account/v1/profile_pb';

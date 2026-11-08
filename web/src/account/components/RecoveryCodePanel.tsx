@@ -12,7 +12,7 @@
  * 文案经 shared/i18n（account.* 域键）。
  */
 import type { ReactNode } from 'react';
-import { Button, Popconfirm } from '@douyinfe/semi-ui-19';
+import { Button, Popconfirm } from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { t } from '../../shared/i18n';
 import { formatUnixTime } from '../api';

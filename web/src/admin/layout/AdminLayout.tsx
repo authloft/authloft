@@ -16,7 +16,7 @@
  *   存在，与掩护语义相悖）。
  *
  * Semi UI（§1.6 行 112/113：admin 端用 Semi UI，同 account 底座——唯一包
- * @douyinfe/semi-ui-19 大包命名导入，禁子路径）：Layout / Nav / Breadcrumb /
+ * @douyinfe/semi-ui 大包命名导入，禁子路径）：Layout / Nav / Breadcrumb /
  * Avatar / Typography 均大包具名导入；入口加载 / 错误态（评审 V-6/
  * §9.3 映射）换 Semi Spin / Banner（Banner 自带 role="alert"）。
  * 登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go 处理，非 SPA）。
@@ -27,7 +27,7 @@
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
 import { useState, type ReactNode } from 'react';
-import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui-19';
+import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui';
 import { useLocation, useNavigate } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import {
@@ -40,6 +40,8 @@ import { t } from '../../shared/i18n';
 import { logoutUrl } from '../bootstrap';
 import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from '../api';
 import styles from './AdminLayout.module.less';
+import { SubNavProps } from '@douyinfe/semi-ui/lib/es/navigation';
+import { IconBox, IconConnectionPoint1, IconGlobe, IconGlobeStroke, IconHome, IconSafe, IconSetting, IconUserList, IconWrench } from '@douyinfe/semi-icons';
 
 const { Sider, Header, Content } = Layout;
 
@@ -51,6 +53,17 @@ function LogoutLink({ alRoot }: { readonly alRoot: string }) {
     </a>
   );
 }
+
+const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
+  '/status': <IconHome />,
+  '/providers': <IconGlobe />,
+  '/users': <IconUserList />,
+  '/clients/sso': <IconBox />,
+  '/clients/oidc': <IconConnectionPoint1 />,
+  '/settings': <IconSetting />,
+  '/audit': <IconSafe />,
+  '/decode': <IconWrench />,
+});
 
 /** admin 布局壳（§6 行 507）：Sider(Nav) + Header(管理员信息 + 面包屑 + 登出) + Content。
  *  NAV 项与高亮均由 ADMIN_NAV_ROUTES 派生（单一来源，8 条字面量已删）；
@@ -103,10 +116,10 @@ export function AdminLayout(props: {
     <Layout className={styles.shell}>
       <Sider breakpoint={['xs']} onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}>
         <Nav
-          className={styles.nav}
+          className={`${styles.nav} semi-always-dark`}
           isCollapsed={navCollapsed}
           // NAV 项由 ADMIN_NAV_ROUTES 派生（toNavItems 渲染期 t() 求值）。
-          items={[...toNavItems(ADMIN_NAV_ROUTES)]}
+          items={adminNavItems}
           // 高亮：当前 hash 内路径命中的导航 path（详情页归列表项）。
           selectedKeys={[matchActivePath(ADMIN_NAV_ROUTES, location.pathname)]}
           onClick={({ itemKey }) => {
@@ -118,7 +131,7 @@ export function AdminLayout(props: {
           header={{ text: t('admin.appTitle') }}
         />
       </Sider>
-      <Layout>
+      <Layout className={styles.layout}>
         <Header className={styles.header}>
           <Breadcrumb routes={[...props.breadcrumb]} />
           <span className={styles.me}>

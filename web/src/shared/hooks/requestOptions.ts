@@ -13,7 +13,7 @@
  * returnTo 白名单校验，防开放重定向）。分派判定抽纯函数
  * classifyRequestError，node 可测；redirect / showToast 为测试注入点。
  */
-import { Toast } from '@douyinfe/semi-ui-19';
+import { Toast } from '@douyinfe/semi-ui';
 import { ApiError, resolveCode } from '../api/errors';
 import { t } from '../i18n';
 import { loginUrl, normalizeAlRoot } from '../urls';

@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { useRequest } from 'ahooks';
-import { Button, Form, Typography } from '@douyinfe/semi-ui-19';
+import { Button, Form, Typography } from '@douyinfe/semi-ui';
 import { requestInstall } from '../api';
 import {
   buildMysqlDsn,

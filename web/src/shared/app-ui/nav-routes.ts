@@ -5,6 +5,7 @@
  * （`{ itemKey, text }`），故落 `app-ui/` 而非 shared 根（§9 第 13 条：
  * login 禁引 Semi——本模块零运行时 Semi import，仅纯结构 + i18n）。
  */
+import { ComponentType } from 'react';
 import { t, type I18nKey } from '../i18n';
 
 /** 导航路由项（path 为 hash 内路径；textKey 渲染期经 t() 求值）。 */
@@ -24,25 +25,26 @@ export const ACCOUNT_NAV_ROUTES: readonly AppRoute[] = [
 
 /** admin 域导航路由表（§6 行 515-525 页面清单，顺序即侧边栏顺序）。 */
 export const ADMIN_NAV_ROUTES: readonly AppRoute[] = [
-  { path: '/providers', textKey: 'admin.navProviders' },
+  { path: '/status', textKey: 'admin.navStatus' },
   { path: '/users', textKey: 'admin.navUsers' },
   { path: '/clients/sso', textKey: 'admin.navSsoClients' },
   { path: '/clients/oidc', textKey: 'admin.navOidcClients' },
+  { path: '/providers', textKey: 'admin.navProviders' },
   { path: '/settings', textKey: 'admin.navSettings' },
   { path: '/audit', textKey: 'admin.navAudit' },
-  { path: '/status', textKey: 'admin.navStatus' },
   { path: '/decode', textKey: 'admin.navDecode' },
 ];
 
 /** Semi Nav `items` 的元素形态（结构对齐，零运行时 Semi import）。 */
 export interface SemiNavItem {
-  readonly itemKey: string;
-  readonly text: string;
+  itemKey: string;
+  text: string;
+  icon?: React.ReactNode;
 }
 
 /** 由路由表派生 Semi Nav items：itemKey 即路由 path，text 渲染期 t() 求值。 */
-export function toNavItems(routes: readonly AppRoute[]): readonly SemiNavItem[] {
-  return routes.map(({ path, textKey }) => ({ itemKey: path, text: t(textKey) }));
+export function toNavItems(routes: readonly AppRoute[], iconMap?: Record<string, React.ReactNode>): SemiNavItem[] {
+  return routes.map(({ path, textKey }) => ({ itemKey: path, text: t(textKey), icon: iconMap?.[path] }));
 }
 
 /**
