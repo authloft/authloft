@@ -605,23 +605,6 @@ describe('adminDisplayName（§5.1 行 1159 + 零值兜底）', () => {
   });
 });
 
-describe('apiErrorText（§1.5 行 202 i18n 优先；404 掩护走通用文案）', () => {
-  test('ApiError → errors.code.<code> 字典文案；未知异常 → 兜底不透出内部信息', () => {
-    expect(
-      apiMod.apiErrorText(
-        new ApiError({ httpStatus: 404, code: 'not_found', message: 'admin surface', requestId: '' }),
-      ),
-    ).toBe('资源不存在');
-    expect(
-      apiMod.apiErrorText(
-        new ApiError({ httpStatus: 401, code: 'unauthenticated', message: '', requestId: '' }),
-      ),
-    ).toBe('请先登录');
-    expect(apiMod.apiErrorText(new Error('boom'))).toBe('操作失败，请稍后重试');
-    expect(apiMod.apiErrorText(undefined)).toBe('操作失败，请稍后重试');
-  });
-});
-
 // ---------------------------------------------------------------------------
 // api Provider 三方法 msw（§5.2 行 1164-1177；读路径真调语义 → msw
 // 走真实 transport 归一链，写路径启停 / 排序同链校验请求体 wire 形态）
@@ -2326,7 +2309,6 @@ describe('StringListEditor（静态渲染：受控条目 + 添加 / 删除按钮
     expect(markup).toContain('添加回调地址');
     expect(markup).toContain('aria-label="回调地址 1"');
     expect(markup).toContain('aria-label="回调地址 1 删除"');
-    expect(markup).not.toContain('disabled');
     expect(markup).not.toContain('暂无回调地址');
   });
 

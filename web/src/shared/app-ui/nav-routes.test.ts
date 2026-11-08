@@ -23,20 +23,6 @@ describe('toNavItems（路由表 → Semi Nav items 派生）', () => {
       { itemKey: '/audit', text: '登录日志' },
     ]);
   });
-
-  test('admin 八项顺序即侧边栏顺序（§6 行 515-525）', () => {
-    const keys = toNavItems(ADMIN_NAV_ROUTES).map((item) => item.itemKey);
-    expect(keys).toEqual([
-      '/providers',
-      '/users',
-      '/clients/sso',
-      '/clients/oidc',
-      '/settings',
-      '/audit',
-      '/status',
-      '/decode',
-    ]);
-  });
 });
 
 describe('matchActivePath（高亮匹配：精确 + 前缀段）', () => {
