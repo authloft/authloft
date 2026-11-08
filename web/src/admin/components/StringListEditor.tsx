@@ -45,6 +45,7 @@ export function appendListItem(values: readonly string[]): readonly string[] {
 }
 
 export interface StringListEditorProps {
+  className?: string;
   /** 编辑值（受控；中间态允许空串条目）。 */
   readonly values: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
@@ -63,7 +64,7 @@ export interface StringListEditorProps {
 /** 字符串列表编辑器：受控、逐条输入 + 添加 / 删除。 */
 export function StringListEditor(props: StringListEditorProps): ReactNode {
   return (
-    <div className={styles.editor}>
+    <div className={[styles.editor, props.className || ''].join(' ')}>
       {props.values.length === 0 && props.emptyHint !== undefined ? (
         <p className={styles.emptyHint}>{props.emptyHint}</p>
       ) : null}

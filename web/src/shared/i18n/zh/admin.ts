@@ -371,10 +371,14 @@ export const admin = {
 
   // ---- pages/{SettingsPage,StatusPage,DecodePage}.tsx-------------
   'admin.settingsTitle': '系统设置',
-  'admin.settingsOverwriteNotice': '保存将覆盖全部设置',
-  'admin.settingsOverwriteBanner':
-    'SetSettings 为全量替换：保存时表单内全部设置将整体提交并覆盖（包括未改动的键），改动热更新、只对后续请求生效',
-  'admin.settingsSaved': '设置已保存：全部设置已整体覆盖，热更新对后续请求生效',
+  // ---- SettingsPage 分 Tab（4 组 / 每 Tab 独立保存）----
+  'admin.settingsTabAccount': '账号与密码',
+  'admin.settingsTabAuth': '登录与验证',
+  'admin.settingsTabSession': '会话与域名',
+  'admin.settingsTabSystem': '系统与集成',
+  'admin.settingsTabUnsaved': '该页签有未保存的修改',
+  'admin.settingsTabSaveAction': '保存本页',
+  'admin.settingsSaved': '设置已保存',
   'admin.settingsLoadFailed': '系统设置加载失败，请刷新重试',
   'admin.saveSettingsAction': '保存设置',
   'admin.settingsDiffTitle': '确认保存设置',

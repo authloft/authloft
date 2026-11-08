@@ -9,7 +9,8 @@
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
  * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；并追加
  * settings 族 GetSettings / SetSettings（§5.6 行 1287；服务端按 optional
- * has 位 + repeated 伴生标志部分更新、前端仍全量提交）+ 全量请求构造纯函数；
+ * has 位 + repeated 伴生标志部分更新、设置页分 Tab 只提交改动键）+ 全量 /
+ * 部分请求构造纯函数；
  * 并追加工具三页族：ListEvents（§5.6 行 1288 统一事件
  * 视图 + 预设视图）/ DecodeToken（§5.6 行 1289）/ GetStatus（§5.6 行 1290）
  * + 请求构造 / 预设映射 / 展示纯函数（管理端无 multipart 上传，§6 行 506）。
@@ -31,7 +32,12 @@
  * `shared/hooks/requestOptions` 集中错误分派（§3.2），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物（§9 第 15 条）。
  */
-import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
+import {
+  create,
+  fromJson,
+  type JsonObject,
+  type MessageInitShape,
+} from '@bufbuild/protobuf';
 import { StructSchema } from '@bufbuild/protobuf/wkt';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
@@ -886,11 +892,11 @@ export function ttlDetailText(ttl: bigint): string {
 // 标量全字段 proto3 optional：服务端按 has 位写入，未设置 = 不修改、
 // 显式零值 = 覆盖；四个 repeated 键各带 has_* 伴生标志（protojson 下 []
 // 与缺省同解为 nil），标志置 true = 列表在场，空数组即清空该列表。
-// 前端仍以草稿整体构造全部 36 键（buildSetSettingsRequest），保证每个标量
-// 的 has 位与四个伴生标志都在场——旧全量提交客户端与新 PATCH 语义兼容；
-// 草稿初始化 / 交叉校验见 settingsLogic.ts（行 1363 值域交叉约束由前端
-// 设置页自律保证）。键集 = 36 数据键（另有 4 个伴生标志，不进 settings）：
-// 35 既有键 +
+// 设置页按 getSettingsTabs() 分 4 个 Tab；保存走 buildSettingsPatchRequest
+// 只提交改动键（本 Tab / 全部），未改动键不进 wire。buildSetSettingsRequest
+// 仍保留全量构造（兼容旧客户端 / 键集测试基线）。草稿初始化 / 分区 / 交叉
+// 校验见 settingsLogic.ts（行 1363 值域交叉约束由前端设置页自律保证）。
+// 键集 = 36 数据键（另有 4 个伴生标志，不进 settings）：35 既有键 +
 // 定稿新增的 https_deployment（=36，行 1354/1360；行 1361 非三态 → invalid_request，
 // settingsDraftIssue 前端自律拦截）。
 // ---------------------------------------------------------------------------
@@ -905,17 +911,30 @@ export function setSettings(request: SetSettingsRequest): Promise<OkResponse> {
   return adminClient.setSettings(request);
 }
 
+/** SetSettingsRequest 初始化形态（36 数据键 + 4 伴生标志；字段均可选）。 */
+type SettingsRequestInit = MessageInitShape<typeof SetSettingsRequestSchema>;
+
+/** repeated 数据键 → 伴生 has 位字段名（清空列表时标志同样是必带项）。 */
+const SETTINGS_HAS_FLAG: Readonly<
+  Partial<Record<keyof SettingsDraft, keyof SettingsRequestInit>>
+> = {
+  loginMethods: 'hasLoginMethods',
+  mfaMethods: 'hasMfaMethods',
+  ssoDomains: 'hasSsoDomains',
+  gatewayTokens: 'hasGatewayTokens',
+};
+
 /**
- * SetSettings 全量请求构造（36 键整体构造，含未改动键）：文本字段去首尾
- * 空白、列表字段经 cleanStringList 清洗（条目去空白 + 剔除空串）后整组提交
- * ——中间态空行不落库；其余键原样直映射（https_deployment 三态枚举值不做
- * trim，非法值由 settingsDraftIssue 前置拦截）。零值标量（false / 0 / ''）
- * 经 optional has 位在 wire 明确下发、服务端显式覆盖；四个列表的 has_*
- * 伴生标志一律置 true（全量提交语义），列表整组替换——空列表 [] 在 wire
- * 省略，但标志在场即被服务端解释成清空该列表。
+ * 全量 init（36 数据键 + 4 伴生标志）：文本字段去首尾空白、列表字段经
+ * cleanStringList 清洗（条目去空白 + 剔除空串）后整组提交——中间态空行
+ * 不落库；其余键原样直映射（https_deployment 三态枚举值不做 trim，非法
+ * 值由 settingsDraftIssue 前置拦截）。零值标量经 optional has 位在 wire
+ * 明确下发；四个列表的 has_* 伴生标志一律置 true，空列表 [] 在 wire
+ * 省略但标志在场即被服务端解释成清空。抽取为纯 init 对象供全量 / 部分
+ * 构造共用，避免 36 键映射维护两份。
  */
-export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsRequest {
-  return create(SetSettingsRequestSchema, {
+function settingsRequestInit(draft: SettingsDraft): SettingsRequestInit {
+  return {
     pwdMinLength: BigInt(draft.pwdMinLength),
     pwdMaxLength: BigInt(draft.pwdMaxLength),
     pwdRequireClasses: BigInt(draft.pwdRequireClasses),
@@ -956,7 +975,37 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
     eventlogRetentionDays: BigInt(draft.eventlogRetentionDays),
     staticBase: draft.staticBase.trim(),
     httpsDeployment: draft.httpsDeployment,
-  });
+  };
+}
+
+/** 全量提交构造（36 数据键 + 4 伴生标志）：兼容旧客户端 / 键集测试基线。 */
+export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsRequest {
+  return create(SetSettingsRequestSchema, settingsRequestInit(draft));
+}
+
+/**
+ * 部分提交构造（设置页多 Tab 保存用）：只带 keys 指定的数据键，并只为
+ * 其中的 repeated 键补对应 has_* 标志；其余键连标志都不带 → 服务端按
+ * PATCH 保留现值。keys 来自草稿 diff（本 Tab 的改动键 / 全部改动键），
+ * 因此未改动的键完全不进 wire，不再整体覆盖设置。
+ */
+export function buildSettingsPatchRequest(
+  draft: SettingsDraft,
+  keys: readonly (keyof SettingsDraft)[],
+): SetSettingsRequest {
+  const full = settingsRequestInit(draft);
+  const init: SettingsRequestInit = {};
+  for (const key of keys) {
+    // SettingsDraft 的键名与 SetSettingsRequest 数据字段名逐字一致（生成物
+    // 同源）；Object.assign 承载异构字段值，避免逐字段 36 路断言。
+    const field = key as keyof SettingsRequestInit;
+    Object.assign(init, { [field]: full[field] });
+    const flag = SETTINGS_HAS_FLAG[key];
+    if (flag !== undefined) {
+      Object.assign(init, { [flag]: true });
+    }
+  }
+  return create(SetSettingsRequestSchema, init);
 }
 
 // ---------------------------------------------------------------------------

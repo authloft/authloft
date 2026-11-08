@@ -7,23 +7,25 @@
  * ⚠️ SetSettings 部分更新语义（§5.6 行 1287；proto3 optional has 位 +
  * 四个 repeated 键的 has_* 伴生标志）：未设置 = 不修改、显式零值 = 覆盖；
  * 标志置 true = 列表在场，空数组即清空（protojson 下 [] 与缺省同为 nil）。
- * 表单仍以 GetSettings 响应初始化完整键集（draftFromSettings）、保存时
- * 全量提交全部键 + 四个伴生标志（api.buildSetSettingsRequest），UI 仍
- * 提示「保存将覆盖全部设置」（SettingsPage 保存按钮旁落位）。
+ * 表单以 GetSettings 响应初始化完整键集（draftFromSettings），按
+ * getSettingsTabs() 分 4 个 Tab 展示；保存只提交「本 Tab 的改动键」或
+ * 「全部改动键」（api.buildSettingsPatchRequest），未改动键不进 wire，
+ * 不再整体覆盖。全量构造函数 api.buildSetSettingsRequest 仍保留，供
+ * 兼容场景与键集测试使用。
  *
  * 键集 = 36 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
  * https_deployment（=36，行 1354/1360 proto 变更条款）。server proto 与
  * web 生成物已同步刷入 36——文档 / proto /
  * 生成物三处一致，照常建键；行 1361「取值非 true / false / auto →
- * invalid_request」由 settingsDraftIssue 前端自律拦截（缺该键的全量提交
- * 会置空该键被后端拒收，故该键为全量提交必含项）。
+ * invalid_request」由 settingsDraftIssue 前端自律拦截（三态外的值一旦
+ * 被选并提交即被后端拒收）。
  *
  * 固定规则（§5.6 行 1302-1306：长度 > 64 一律拒绝、与用户名 / 邮箱完全相同
  * 拒绝、含空白拒绝）写死在服务端代码、不进 settings → 不在表单暴露。
  * 值域交叉约束（行 1363）由前端设置页自律保证：settingsDraftIssue。
  */
 import type { SettingsResponse } from '../gen/proto/api/admin/v1/settings_pb';
-import { t } from '../shared/i18n';
+import { t, type I18nKey } from '../shared/i18n';
 import { toCount } from '../shared/utils/int';
 
 /** 密码最大长度服务端硬上限（§5.6 行 1297「可调低不可调高」；行 1304 防 DoS）。 */
@@ -79,7 +81,8 @@ export type SettingsListKey = 'loginMethods' | 'mfaMethods' | 'ssoDomains' | 'ga
 
 /**
  * 设置表单草稿（int64 字段以 number 编辑，提交前经 api.buildSetSettingsRequest
- * 收敛 BigInt；值域均远小于 Number.MAX_SAFE_INTEGER）。
+ * / buildSettingsPatchRequest 收敛 BigInt；值域均远小于
+ * Number.MAX_SAFE_INTEGER）。Tab 只切展示与保存作用域，草稿恒为全键集。
  */
 export type SettingsDraft = Readonly<{
   [K in SettingsNumberKey]: number;
@@ -292,10 +295,39 @@ export type SettingsFieldMeta =
       readonly hint?: string;
     };
 
+/**
+ * 分区稳定标识（slug，非文案）：Tab 分组按此引用，避免按 title / 数组
+ * 下标归组（locale 切换会改 title、调整分区顺序会让下标静默错位）。
+ */
+export type SettingsSectionKey =
+  | 'passwordPolicy'
+  | 'accountRegistration'
+  | 'otpRateLimit'
+  | 'loginAndMfa'
+  | 'pwdFailProtection'
+  | 'sessionCookie'
+  | 'queue'
+  | 'providerAndGateway'
+  | 'logAndStatic';
+
 /** 表单分区（§5.6 四张表的展示归组；36 键全覆盖、无重复）。 */
 export interface SettingsSectionMeta {
+  /** 稳定标识（Tab 分组引用点，不随语言变化）。 */
+  readonly key: SettingsSectionKey;
   readonly title: string;
   readonly fields: readonly SettingsFieldMeta[];
+}
+
+/**
+ * 设置页 Tab（§5.6 四张表按主题归组；36 键在 4 个 Tab 间全覆盖、无重复）。
+ * keys = 该 Tab 全部字段键，供「脏标记 / 仅保存本页签 / 提交键集」共用。
+ */
+export interface SettingsTabMeta {
+  /** 稳定标识（Tabs.activeKey）。 */
+  readonly key: string;
+  readonly title: string;
+  readonly sections: readonly SettingsSectionMeta[];
+  readonly keys: readonly (keyof SettingsDraft)[];
 }
 
 /**
@@ -309,6 +341,7 @@ export interface SettingsSectionMeta {
 export function getSettingsSections(): readonly SettingsSectionMeta[] {
   return [
   {
+    key: 'passwordPolicy',
     title: t('admin.settingsSectionPasswordPolicy'),
     fields: [
       {
@@ -342,6 +375,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'accountRegistration',
     title: t('admin.settingsSectionAccountRegistration'),
     fields: [
       {
@@ -374,6 +408,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'otpRateLimit',
     title: t('admin.settingsSectionOtpRateLimit'),
     fields: [
       {
@@ -413,6 +448,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'loginAndMfa',
     title: t('admin.settingsSectionLoginAndMfa'),
     fields: [
       {
@@ -438,6 +474,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'pwdFailProtection',
     title: t('admin.settingsSectionPwdFailProtection'),
     fields: [
       {
@@ -462,6 +499,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'sessionCookie',
     title: t('admin.settingsSectionSessionCookie'),
     fields: [
       {
@@ -490,12 +528,13 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
         key: 'ssoDomains',
         label: t('admin.ssoDomainsLabel'),
         addText: t('admin.addDomain'),
-        placeholder: 'example.com',
+        placeholder: 'https://example.com/',
         hint: t('admin.ssoDomainsHint'),
       },
     ],
   },
   {
+    key: 'queue',
     title: t('admin.settingsSectionQueue'),
     fields: [
       {
@@ -526,6 +565,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'providerAndGateway',
     title: t('admin.settingsSectionProviderAndGateway'),
     fields: [
       {
@@ -563,6 +603,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   {
+    key: 'logAndStatic',
     title: t('admin.settingsSectionLogAndStatic'),
     fields: [
       {
@@ -581,6 +622,71 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
     ],
   },
   ];
+}
+
+/**
+ * 设置页 Tab 清单（渲染 / 保存作用域的唯一数据源）：9 个分区按主题归
+ * 4 组——账号与密码 / 登录与验证 / 会话与域名 / 系统与集成，36 键在
+ * 四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平（不另
+ * 手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug 引用，
+ * 标题走 t() 调用期求值（locale 切换不冻结）。
+ */
+export function getSettingsTabs(): readonly SettingsTabMeta[] {
+  const sections = getSettingsSections();
+  const byKey = new Map<SettingsSectionKey, SettingsSectionMeta>(
+    sections.map((section) => [section.key, section]),
+  );
+  function tab(
+    key: string,
+    titleKey: I18nKey,
+    sectionKeys: readonly SettingsSectionKey[],
+  ): SettingsTabMeta {
+    const picked = sectionKeys.map((sectionKey) => {
+      const section = byKey.get(sectionKey);
+      if (section === undefined) {
+        // 分区 slug 写错属程序错误（开发期即暴露），不静默丢字段。
+        throw new Error(`settings tab ${key}: unknown section ${sectionKey}`);
+      }
+      return section;
+    });
+    return {
+      key,
+      title: t(titleKey),
+      sections: picked,
+      keys: picked.flatMap((section) => section.fields.map((field) => field.key)),
+    };
+  }
+  return [
+    tab('account', 'admin.settingsTabAccount', [
+      'passwordPolicy',
+      'accountRegistration',
+      'pwdFailProtection',
+    ]),
+    tab('auth', 'admin.settingsTabAuth', ['otpRateLimit', 'loginAndMfa']),
+    tab('session', 'admin.settingsTabSession', ['sessionCookie']),
+    tab('system', 'admin.settingsTabSystem', [
+      'queue',
+      'providerAndGateway',
+      'logAndStatic',
+    ]),
+  ];
+}
+
+/**
+ * 保存成功后前移已保存快照：只把**已提交键**的当前值写入新快照，其余键
+ * 原样保留。多 Tab 下「保存本页签」成功不能把其他 Tab 的未保存改动误标
+ * 成已保存（否则 dirty 清零、离开不再二次确认会丢改动）。
+ */
+export function mergeSavedSettings(
+  saved: SettingsDraft,
+  current: SettingsDraft,
+  keys: readonly (keyof SettingsDraft)[],
+): SettingsDraft {
+  const next: SettingsDraft = { ...saved };
+  for (const key of keys) {
+    Object.assign(next, { [key]: current[key] });
+  }
+  return next;
 }
 
 /**
@@ -606,7 +712,7 @@ export function settingsDraftIssue(draft: SettingsDraft): string | null {
     return t('admin.pwdMaxOverCapIssue');
   }
   // §5.6 行 1361：https_deployment 取值非 true / false / auto → invalid_request
-  //（服务端拒绝；前端自律前置拦截，防全量提交被整体打回）。
+  //（服务端拒绝；前端自律前置拦截，防该键被提交后整批打回）。
   if (!HTTPS_DEPLOYMENT_VALUES.includes(draft.httpsDeployment)) {
     return t('admin.httpsDeploymentIssue');
   }

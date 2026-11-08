@@ -389,11 +389,14 @@ export const admin: typeof zhAdmin = {
 
   // ---- pages/{SettingsPage,StatusPage,DecodePage}.tsx-------------
   'admin.settingsTitle': 'System Settings',
-  'admin.settingsOverwriteNotice': 'Saving overwrites all settings',
-  'admin.settingsOverwriteBanner':
-    'SetSettings is a full replacement: on save every setting in the form is submitted and overwrites the stored values (including unchanged keys); changes hot-reload and apply only to subsequent requests',
-  'admin.settingsSaved':
-    'Settings saved: all settings overwritten; the hot reload applies to subsequent requests',
+  // ---- SettingsPage tabs (4 groups / per-tab save) ----
+  'admin.settingsTabAccount': 'Account & password',
+  'admin.settingsTabAuth': 'Sign-in & verification',
+  'admin.settingsTabSession': 'Session & domains',
+  'admin.settingsTabSystem': 'System & integrations',
+  'admin.settingsTabUnsaved': 'This tab has unsaved changes',
+  'admin.settingsTabSaveAction': 'Save This Tab',
+  'admin.settingsSaved': 'Settings saved',
   'admin.settingsLoadFailed': 'Failed to load the settings; please refresh and try again',
   'admin.saveSettingsAction': 'Save Settings',
   'admin.settingsDiffTitle': 'Confirm Settings Changes',

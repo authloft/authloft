@@ -61,7 +61,9 @@ import {
   getLoginMethodOptions,
   getMfaMethodOptions,
   getSettingsSections,
+  getSettingsTabs,
   draftFromSettings,
+  mergeSavedSettings,
   settingsDraftIssue,
 } from './settingsLogic';
 
@@ -142,7 +144,9 @@ import {
  *   零值即真值（PATCH 全量提交对称面）/ settingsDraftIssue 交叉校验（行 1363
  *   前端自律：非负整数 / 字符类数 1-3 / min ≤ max ≤ 64 / https_deployment
  *   三态行 1361）；
- * - buildSetSettingsRequest 全量构造：文本 trim / 列表清洗 / number → bigint。
+ * - buildSetSettingsRequest 全量构造：文本 trim / 列表清洗 / number → bigint；
+ * - buildSettingsPatchRequest 部分构造：只带指定键 + 对应 has 标志（wire
+ *   验证，多 Tab 保存用）；getSettingsTabs 4 组 36 键全覆盖无重复；
  * SettingsPage 渲染不可测（同上 Blocker）。
  * ⚠️ https_deployment（=36）双端 proto / 生成物已先行落地，
  * 与文档定稿一致 → 随本实现建键；行 1361 非三态 → invalid_request
@@ -2399,7 +2403,7 @@ describe('api.getSettings（§5.6 行 1287：36 键全量投影）', () => {
   });
 });
 
-describe('api.setSettings（§5.6 行 1287：前端仍全量提交 36 键 + 4 个 repeated 伴生标志；服务端按 has 位部分更新）', () => {
+describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 36 键 + 4 个 repeated 伴生标志；服务端按 has 位部分更新）', () => {
   test('默认草稿全量提交：38 键在 wire（optional 显式零值 + 四个 has_* 标志）；两个空列表省略但标志在场 = 服务端清空', async () => {
     let requestBody: unknown;
     server.use(
@@ -2600,6 +2604,70 @@ describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / ge
       { value: 'true', label: '强制开启' },
       { value: 'false', label: '强制关闭' },
     ]);
+  });
+});
+
+describe('getSettingsTabs（4 Tab 分组：36 键全覆盖、无重复，按稳定 slug 引用分区）', () => {
+  test('4 个 Tab；键集 = DEFAULT_SETTINGS 键集且无重复；9 个分区各归一组', () => {
+    const tabs = getSettingsTabs();
+    expect(tabs.map((tab) => tab.key)).toEqual(['account', 'auth', 'session', 'system']);
+    const tabKeys = tabs.flatMap((tab) => tab.keys);
+    expect(tabKeys).toHaveLength(36);
+    expect(new Set(tabKeys).size).toBe(36);
+    expect([...tabKeys].sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
+    const sections = tabs.flatMap((tab) => tab.sections);
+    expect(sections).toHaveLength(9);
+    expect([...sections.map((section) => section.key)].sort()).toEqual(
+      [...getSettingsSections().map((section) => section.key)].sort(),
+    );
+  });
+
+  test('每个 Tab 的 keys 与自身分区字段逐字自洽（不手写键表）', () => {
+    for (const tab of getSettingsTabs()) {
+      expect(tab.keys).toEqual(
+        tab.sections.flatMap((section) => section.fields.map((field) => field.key)),
+      );
+    }
+  });
+
+  test('Tab 标题随 locale 切换（与 getSettingsSections 同式调用期求值）', () => {
+    expect(getSettingsTabs()[0].title).toBe('账号与密码');
+    setLocale('en-US');
+    expect(getSettingsTabs()[0].title).toBe('Account & password');
+    setLocale('zh-CN');
+    expect(getSettingsTabs()[0].title).toBe('账号与密码');
+  });
+});
+
+describe('mergeSavedSettings（多 Tab 保存成功后只前移已提交键的快照）', () => {
+  test('只提交 1 个键时，其余键仍保留旧值（其他 Tab 改动不丢）', () => {
+    const saved = DEFAULT_SETTINGS;
+    const current = {
+      ...DEFAULT_SETTINGS,
+      pwdMinLength: 12,
+      queueWorkers: 9,
+      cookieName: 'changed_but_not_saved',
+    };
+    const next = mergeSavedSettings(saved, current, ['pwdMinLength']);
+    expect(next.pwdMinLength).toBe(12);
+    expect(next.queueWorkers).toBe(4);
+    expect(next.cookieName).toBe('al_session');
+  });
+
+  test('数组键一并前移；空 keys 返回同值新对象；原快照不被就地改写', () => {
+    const saved = DEFAULT_SETTINGS;
+    const current = { ...DEFAULT_SETTINGS, mfaMethods: ['totp'] };
+    const next = mergeSavedSettings(saved, current, ['mfaMethods']);
+    expect(next.mfaMethods).toEqual(['totp']);
+    expect(saved.mfaMethods).toEqual([
+      'totp',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+    ]);
+    const noop = mergeSavedSettings(saved, current, []);
+    expect(noop).not.toBe(saved);
+    expect(noop).toEqual(saved);
   });
 });
 
@@ -2817,6 +2885,85 @@ describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 tr
       'webauthn',
       'thirdparty',
     ]);
+  });
+});
+
+describe('buildSettingsPatchRequest（多 Tab 部分提交：只带指定键 + 对应 has 标志）', () => {
+  test('单键：仅该键在场，其余 optional 数据键与伴生标志均缺省', () => {
+    const request = apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, ['pwdMinLength']);
+    expect(request.pwdMinLength).toBe(BigInt(8));
+    expect(request.pwdMaxLength).toBeUndefined();
+    expect(request.cookieName).toBeUndefined();
+    expect(request.hasLoginMethods).toBeUndefined();
+    expect(request.hasMfaMethods).toBeUndefined();
+    expect(request.hasSsoDomains).toBeUndefined();
+    expect(request.hasGatewayTokens).toBeUndefined();
+  });
+
+  test('列表键：只补该列表的 has 标志；文本 trim / 列表清洗仍生效', () => {
+    const request = apiMod.buildSettingsPatchRequest(
+      {
+        ...DEFAULT_SETTINGS,
+        cookieName: ' x_session ',
+        mfaMethods: [],
+        gatewayTokens: [' gw-1 ', '', '  '],
+      },
+      ['cookieName', 'mfaMethods', 'gatewayTokens'],
+    );
+    expect(request.cookieName).toBe('x_session');
+    expect(request.hasMfaMethods).toBe(true);
+    expect(request.mfaMethods).toEqual([]);
+    expect(request.hasGatewayTokens).toBe(true);
+    expect(request.gatewayTokens).toEqual(['gw-1']);
+    expect(request.hasLoginMethods).toBeUndefined();
+    expect(request.hasSsoDomains).toBeUndefined();
+  });
+
+  test('空 keys → 空消息（不写任何键）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(SET_SETTINGS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.setSettings(apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, []));
+    expect(requestBody).toEqual({});
+  });
+
+  test('wire：只提交改动键 + 对应 has 标志，未改动键完全不进 wire', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(SET_SETTINGS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.setSettings(
+      apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, ['pwdMinLength', 'mfaMethods']),
+    );
+    expect(requestBody).toEqual({
+      pwdMinLength: '8',
+      hasMfaMethods: true,
+      mfaMethods: ['totp', 'otp_sms', 'otp_email', 'webauthn'],
+    });
+  });
+
+  test('wire：空列表 + has 标志 = 清空该列表（数组自身省略）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(SET_SETTINGS_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.setSettings(
+      apiMod.buildSettingsPatchRequest(
+        { ...DEFAULT_SETTINGS, ssoDomains: [] },
+        ['ssoDomains'],
+      ),
+    );
+    expect(requestBody).toEqual({ hasSsoDomains: true });
   });
 });
 

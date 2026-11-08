@@ -7,9 +7,29 @@
   display: block;
 }
 
-// 顶部全量替换警示 Banner（「保存将覆盖全部设置」UI 明示）。
-.overwriteBanner {
+// 顶部部分保存说明 Banner（「只提交改动项」UI 明示）。
+.patchBanner {
   margin-bottom: @spacing-md;
+}
+
+// 4 个 Tab 的页签容器；内容区沿用 .sections 纵向卡片流。
+.tabs {
+  display: block;
+}
+
+// 页签标题 + 未保存脏点（同一行，不挤占文字）。
+.tabLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: @spacing-xs;
+}
+
+.tabDirtyDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: @color-warning;
 }
 
 .actionError {
@@ -36,6 +56,7 @@
 
 .sectionCard {
   display: block;
+  margin-top: @spacing-md;
 }
 
 .sectionBody {
@@ -46,14 +67,14 @@
 
 // 竖排字段：标签 + 控件 + 说明。
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-xs;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .fieldLabel {
   font-size: @font-size-sm;
   color: @color-text;
+  display: block;
 }
 
 .fieldHint {
@@ -87,16 +108,7 @@
   width: 200px;
 }
 
-// 保存区：警示文案 + 按钮靠右。
-.footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: @spacing-md;
-  margin-top: @spacing-lg;
-}
-
-.overwriteNote {
-  font-size: @font-size-sm;
-  color: @color-danger;
+.stringListInput,
+.multiSelectInput {
+  width: 320px;
 }
