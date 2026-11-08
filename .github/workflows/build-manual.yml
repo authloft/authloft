@@ -19,11 +19,11 @@ on:
         options: [prod, debug]
         default: prod
       docker:
-        description: '是否构建并推送 Docker 镜像到 Docker Hub'
+        description: 'Docker 镜像'
         type: boolean
         default: false
       docker_tag:
-        description: '自定义镜像 tag'
+        description: '镜像 tag'
         type: string
         required: false
         default: ''
