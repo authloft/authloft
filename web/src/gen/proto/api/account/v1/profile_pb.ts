@@ -168,7 +168,7 @@ export type ProfileResponse = Message<"api.account.v1.ProfileResponse"> & {
 
   /**
    * 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
-   *（JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
+   * （JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
    *
    * @generated from field: int64 user_status = 9;
    */

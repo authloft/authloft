@@ -46,7 +46,7 @@ export const GetMeRequestSchema: GenMessage<GetMeRequest> = /*@__PURE__*/
 
 /**
  * MeResponse 是 AdminService/GetMe 的响应（§5.1 行 1159）：
- * 前端获取管理员信息的唯一来源——/admin/** 空壳页不注入 admin 字段（§5 行 1147）。
+ * 前端获取管理员信息的唯一来源——仅根映射 /admin 空壳页不注入 admin 字段，子路径走前端 hash 路由（§5 行 1147，路由收窄）。
  * 字段名与 §5.1 行 1159 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
  * 编号从 1 起连续（§12.9 行 1749）。
  *

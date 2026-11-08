@@ -310,7 +310,7 @@ func (*GetProviderTypesRequest) Descriptor() ([]byte, []int) {
 // ProviderType 是 AdminService/GetProviderTypes 的下拉条目（§5.2 行 1172
 // 「Provider type 下拉数据源（来自注册表 metas）」，《后端架构》§15.3）。
 // display_name 文档未定义，按下拉数据源三要素（值 / 分组 / 展示名）最小定义，
-// 待定，待 handler 验证。
+// 待 handler 验证。
 type ProviderType struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 类型，即 AdminService/GetProviderSchema 的 type 入参（§5.2 行 1173）。

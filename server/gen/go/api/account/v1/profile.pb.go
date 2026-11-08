@@ -209,7 +209,7 @@ type ProfileResponse struct {
 	// 邮箱是否已验证，JSON 示例为 1/0（§3.1 行 786）。
 	EmailVerified int64 `protobuf:"varint,8,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
 	// 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
-	//（JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
+	// （JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
 	// 系统强制启用两步验证（§3.1 行 788）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
@@ -440,7 +440,7 @@ func (x *UpdateProfileRequest) GetProfile() *UserProfile {
 // UnbindThirdparty（§3.7 行 937）。
 // 无 status 字段：信封顶层 status 为保留字，旧版 {ok:true} 遗留
 // 已按既定口径删除；多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE
-// 豁免（buf.yaml except，沿用前例）。
+// 豁免（buf.yaml except，沿用既有豁免）。
 type OkResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields

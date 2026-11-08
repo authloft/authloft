@@ -19,6 +19,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Web install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -34,6 +50,10 @@ jobs:
       # 保证 buf generate 产物与仓库零 diff（docs/后端架构.md 行 119）
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+
+      # 版本与 server/go.mod 的 connectrpc.com/connect 一致（buf.gen.yaml 注释）
+      - name: Install protoc-gen-connect-go
+        run: go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.1
 
       - name: Regenerate from proto
         run: buf generate
@@ -51,6 +71,10 @@ jobs:
   server-test:
     name: server-test
     runs-on: ubuntu-latest
+    # 依赖 web-build 产物：壳层模板为前端构建产物、不入库，下载 web-dist 后
+    # 经 sync-templates.mjs 同步到 server/（模板 + assets/dist），server 测试
+    # 直接消费同步结果，不重复做 web 构建。
+    needs: [web-build]
     # 测试真连用例经 UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 读连接串（server/bootstrap_test.go），
     # 这里用 services 起 MariaDB + Redis，凭据为 CI 内一次性本地值。
     # 宿主机端口刻意用 13306 / 16379，避开 runner 上可能已占用的默认端口。
@@ -88,6 +112,25 @@ jobs:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
 
+      # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Sync shell templates
+        run: node web/scripts/sync-templates.mjs
+
+      - name: Server vet
+        run: go vet ./...
+        working-directory: server
+
       - name: Server test
         env:
           UC_TEST_MYSQL_DSN: ci_test:ci_pass_ci_only@tcp(127.0.0.1:13306)/authloft_test?charset=utf8mb4&parseTime=true&loc=Local
@@ -114,11 +157,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Frontend install
+      - name: Web install
         run: pnpm install --frozen-lockfile
         working-directory: web
 
-      - name: Frontend test
+      - name: Web test
         run: pnpm exec rs test
         working-directory: web
 
