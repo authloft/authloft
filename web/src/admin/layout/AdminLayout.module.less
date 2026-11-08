@@ -24,8 +24,8 @@
   align-items: center;
   justify-content: space-between;
   gap: @spacing-lg;
-  padding: 0 @spacing-lg;
-  border-bottom: @border-width solid @color-border;
+  padding: @spacing-xs @spacing-lg;
+  border-bottom: @border-width solid var(--semi-color-border);
   background-color: @color-background;
 }
 
@@ -53,7 +53,6 @@
   flex-grow: 1;
   flex-shrink: 1;
   padding: @spacing-xl;
-  background-color: @color-background-muted;
   overflow: auto;
 
   :global(.page-title) {

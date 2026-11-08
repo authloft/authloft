@@ -26,22 +26,41 @@
  *
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
-import { useState, type ReactNode } from 'react';
-import { Avatar, Banner, Breadcrumb, Layout, Nav, Spin, Typography } from '@douyinfe/semi-ui';
-import { useLocation, useNavigate } from '@modern-js/runtime/router';
-import { useRequest } from 'ahooks';
+import { useState, type ReactNode } from "react";
+import {
+  Avatar,
+  Banner,
+  Breadcrumb,
+  Dropdown,
+  Layout,
+  Nav,
+  Spin,
+  Typography,
+} from "@douyinfe/semi-ui";
+import { useLocation, useNavigate } from "@modern-js/runtime/router";
+import { useRequest } from "ahooks";
 import {
   ADMIN_NAV_ROUTES,
   matchActivePath,
   toNavItems,
-} from '../../shared/app-ui/nav-routes';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
-import { logoutUrl } from '../bootstrap';
-import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from '../api';
-import styles from './AdminLayout.module.less';
-import { SubNavProps } from '@douyinfe/semi-ui/lib/es/navigation';
-import { IconBox, IconConnectionPoint1, IconGlobe, IconGlobeStroke, IconHome, IconSafe, IconSetting, IconUserList, IconWrench } from '@douyinfe/semi-icons';
+} from "../../shared/app-ui/nav-routes";
+import { requestOptions } from "../../shared/hooks/requestOptions";
+import { t } from "../../shared/i18n";
+import { logoutUrl } from "../bootstrap";
+import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from "../api";
+import styles from "./AdminLayout.module.less";
+import { SubNavProps } from "@douyinfe/semi-ui/lib/es/navigation";
+import {
+  IconBox,
+  IconConnectionPoint1,
+  IconGlobe,
+  IconGlobeStroke,
+  IconHome,
+  IconSafe,
+  IconSetting,
+  IconUserList,
+  IconWrench,
+} from "@douyinfe/semi-icons";
 
 const { Sider, Header, Content } = Layout;
 
@@ -49,20 +68,20 @@ const { Sider, Header, Content } = Layout;
 function LogoutLink({ alRoot }: { readonly alRoot: string }) {
   return (
     <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      {t('admin.logout')}
+      {t("admin.logout")}
     </a>
   );
 }
 
 const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
-  '/status': <IconHome />,
-  '/providers': <IconGlobe />,
-  '/users': <IconUserList />,
-  '/clients/sso': <IconBox />,
-  '/clients/oidc': <IconConnectionPoint1 />,
-  '/settings': <IconSetting />,
-  '/audit': <IconSafe />,
-  '/decode': <IconWrench />,
+  "/status": <IconHome />,
+  "/providers": <IconGlobe />,
+  "/users": <IconUserList />,
+  "/clients/sso": <IconBox />,
+  "/clients/oidc": <IconConnectionPoint1 />,
+  "/settings": <IconSetting />,
+  "/audit": <IconSafe />,
+  "/decode": <IconWrench />,
 });
 
 /** admin 布局壳（§6 行 507）：Sider(Nav) + Header(管理员信息 + 面包屑 + 登出) + Content。
@@ -114,36 +133,45 @@ export function AdminLayout(props: {
   const displayName = adminDisplayName(data);
   return (
     <Layout className={styles.shell}>
-      <Sider breakpoint={['xs']} onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}>
+      <Sider
+        breakpoint={["xs"]}
+        onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}
+      >
         <Nav
-          className={`${styles.nav} semi-always-dark`}
+          className={`${styles.nav} semi-always-dark2`}
           isCollapsed={navCollapsed}
           // NAV 项由 ADMIN_NAV_ROUTES 派生（toNavItems 渲染期 t() 求值）。
           items={adminNavItems}
           // 高亮：当前 hash 内路径命中的导航 path（详情页归列表项）。
           selectedKeys={[matchActivePath(ADMIN_NAV_ROUTES, location.pathname)]}
           onClick={({ itemKey }) => {
-            if (typeof itemKey === 'string') {
+            if (typeof itemKey === "string") {
               // itemKey 即 hash 内路由路径：SPA 内导航（HashRouter）。
               navigate(itemKey);
             }
           }}
-          header={{ text: t('admin.appTitle') }}
+          header={{ text: t("admin.appTitle") }}
         />
       </Sider>
       <Layout className={styles.layout}>
         <Header className={styles.header}>
           <Breadcrumb routes={[...props.breadcrumb]} />
-          <span className={styles.me}>
-            {data.avatarUrl !== '' ? (
-              <Avatar size="small" src={data.avatarUrl} alt={t('admin.meAvatarAlt')} />
-            ) : (
-              // 空串回退现状：首字符文字头像（§9 第 18 条零值兜底，无占位图）。
-              <Avatar size="small">{displayName.slice(0, 1)}</Avatar>
-            )}
-            <Typography.Text className={styles.meName}>{displayName}</Typography.Text>
-          </span>
-          <LogoutLink alRoot={props.alRoot} />
+          <Dropdown
+            menu={[
+              {
+                node: "item",
+                name: t("admin.logout"),
+                onClick: () => navigate(logoutUrl(props.alRoot)),
+              },
+            ]}
+            position="bottomRight"
+          >
+            <span className={styles.me}>
+              <Typography.Text className={styles.meName}>
+                {displayName}
+              </Typography.Text>
+            </span>
+          </Dropdown>
         </Header>
         <Content className={styles.content}>{props.children}</Content>
       </Layout>
