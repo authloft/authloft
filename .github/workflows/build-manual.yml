@@ -1,0 +1,111 @@
+# 手动构建 CI：workflow_dispatch 触发，产出 web 与多平台 go 产物并上传 artifact（保留 7 天）
+# 基准：.github/workflows/ci.yml（沿用其 setup 步骤与版本）
+# 说明：
+# - 输入 profile 仅影响 go 编译：prod 加 -ldflags "-s -w" 去符号表，debug 保留符号。
+# - go 产物：linux/amd64、linux/aarch64、windows/amd64、darwin/arm64 四种基础产物，
+#   外加一个 CGO_ENABLED=0 + GOAMD64=v1 的 linux/amd64 产物，全部经 matrix 并行构建。
+
+name: Build (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Go 构建档位'
+        type: choice
+        options: [prod, debug]
+        default: prod
+
+permissions:
+  contents: read
+
+jobs:
+  web-build:
+    name: web-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Frontend install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Frontend build
+        run: pnpm build
+        working-directory: web
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  go-build:
+    name: go-build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+            extra_env: ''
+          - name: linux-arm64
+            goos: linux
+            goarch: arm64
+            extra_env: ''
+          - name: windows-amd64
+            goos: windows
+            goarch: amd64
+            extra_env: ''
+          - name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            extra_env: ''
+          # 兼容旧 CPU 的静态产物
+          - name: linux-amd64-v1-static
+            goos: linux
+            goarch: amd64
+            extra_env: 'CGO_ENABLED=0 GOAMD64=v1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Go build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          EXTRA_ENV: ${{ matrix.extra_env }}
+          # prod：去符号表与调试信息；debug：保留符号便于排查
+          LDFLAGS: ${{ inputs.profile == 'prod' && '-s -w' || '' }}
+        run: |
+          env $EXTRA_ENV go build -ldflags "$LDFLAGS" -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
+        working-directory: server
+
+      - name: Upload go artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: authloft-${{ matrix.name }}
+          path: server/dist/
+          retention-days: 7

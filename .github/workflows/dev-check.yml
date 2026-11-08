@@ -1,0 +1,217 @@
+name: Dev Check
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  gen-gate:
+    name: gen-gate
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0：buf breaking 需从 .git 读取 tag 引用（pre-connect）
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          buf-version: 1.75.0
+
+      # protoc-gen-go 固定为生成入库时的版本（server/gen/go 产物头注释）
+      # 保证 buf generate 产物与仓库零 diff（docs/后端架构.md 行 119）
+      - name: Install protoc-gen-go
+        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+
+      - name: Regenerate from proto
+        run: buf generate
+        working-directory: server
+
+      - name: Generated code zero-diff gate
+        run: git diff --exit-code -- server/gen web/src/gen
+
+      # 必须在 server/ 下运行：buf.yaml 的 check 插件用相对 cwd 路径 ./tools/bufcheck；
+      # against 的 .git 相对 cwd 解析（仓库根），subdir=server 显式指向 git 树中的模块根。
+      - name: Buf breaking gate
+        run: buf breaking --against '../.git#tag=pre-connect,subdir=server'
+        working-directory: server
+
+  server-test:
+    name: server-test
+    runs-on: ubuntu-latest
+    # 测试真连用例经 UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 读连接串（server/bootstrap_test.go），
+    # 这里用 services 起 MariaDB + Redis，凭据为 CI 内一次性本地值。
+    # 宿主机端口刻意用 13306 / 16379，避开 runner 上可能已占用的默认端口。
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_USER: ci_test
+          MARIADB_PASSWORD: ci_pass_ci_only
+          MARIADB_DATABASE: authloft_test
+          MARIADB_RANDOM_ROOT_PASSWORD: 'yes'
+        ports:
+          - 13306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Server test
+        env:
+          UC_TEST_MYSQL_DSN: ci_test:ci_pass_ci_only@tcp(127.0.0.1:13306)/authloft_test?charset=utf8mb4&parseTime=true&loc=Local
+          UC_TEST_REDIS_ADDR: 127.0.0.1:16379
+        run: go test -count=1 ./...
+        working-directory: server
+
+  web-test:
+    name: web-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Frontend install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Frontend test
+        run: pnpm exec rs test
+        working-directory: web
+
+  server-build:
+    name: server-build
+    runs-on: ubuntu-latest
+    needs: [server-test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+          - name: windows-amd64
+            goos: windows
+            goarch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Go build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          env $EXTRA_ENV go build -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
+        working-directory: server
+
+      - name: Upload go artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: authloft-${{ matrix.name }}
+          path: server/dist/
+          retention-days: 3
+
+  web-build:
+    name: web-build
+    runs-on: ubuntu-latest
+    needs: [web-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Web install
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Web build
+        run: pnpm build
+        working-directory: web
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 3
+
+  dispatch-sdk-sync:
+    name: dispatch-sdk-sync
+    runs-on: ubuntu-latest
+    needs: [gen-gate, server-build, web-build]
+    if: github.ref_name != 'master'
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_GITHUB_APP_SECRET }}
+          private-key: ${{ secrets.ORG_GITHUB_APP_SECRET }}
+
+      - name: Dispatch sdk sync workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DOWNSTREAM_REPO: authloft/sdk-go
+          DOWNSTREAM_WORKFLOW: sync.yml # 目标仓库中真实的 workflow 文件名
+        run: gh workflow run "$DOWNSTREAM_WORKFLOW" --repo "$DOWNSTREAM_REPO" -f branch="${GITHUB_REF_NAME}"
