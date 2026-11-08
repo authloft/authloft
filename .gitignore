@@ -7,3 +7,5 @@ ENV.md
 review
 .agent-temp
 AGENTS.md
+# 本地 Docker 最小构建上下文（CI 中由 docker-publish 组装，无需入库）
+.docker-build/

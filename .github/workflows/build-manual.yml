@@ -4,6 +4,9 @@
 # - 输入 profile 仅影响 go 编译：prod 加 -ldflags "-s -w" 去符号表，debug 保留符号。
 # - go 产物：linux/amd64、linux/aarch64、windows/amd64、darwin/arm64 四种基础产物，
 #   外加一个 CGO_ENABLED=0 + GOAMD64=v1 的 linux/amd64 产物，全部经 matrix 并行构建。
+# - Docker 发布复用 web-build 的 web-dist artifact：镜像内不再跑 pnpm install / pnpm build；
+#   debian / alpine 经 matrix 并行 build + push，由 docker/build-push-action 推送到 Docker Hub；
+#   构建上下文是各 job 组装的最小目录 .docker-build/
 
 name: Build (manual)
 
@@ -15,6 +18,15 @@ on:
         type: choice
         options: [prod, debug]
         default: prod
+      docker:
+        description: '是否构建并推送 Docker 镜像到 Docker Hub'
+        type: boolean
+        default: false
+      docker_tag:
+        description: '自定义镜像 tag'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -123,3 +135,86 @@ jobs:
           name: authloft-${{ matrix.name }}
           path: server/dist/
           retention-days: 7
+
+  # Docker 发布：依赖 web-build 并复用 web-dist artifact，镜像内只做壳层同步 + go 编译 + 运行时组装
+  # （docs/后端架构.md §23）；经 docker/build-push-action + buildx 单平台 linux/amd64 构建，不推 latest。
+  # debian / alpine 用 matrix 拆成两个并行 job，各自 build + push 自己的 tag、互不等对方；
+  # 两个 tag 不同，Docker Hub 并发推送无冲突。fail-fast: false 保证一个变体失败不取消另一个。
+  docker-publish:
+    name: docker-publish (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [web-build]
+    if: ${{ inputs.docker }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: debian
+            dockerfile: Dockerfile
+            suffix: ''
+          - name: alpine
+            dockerfile: Dockerfile.alpine
+            suffix: '-alpine'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve image tag
+        id: meta
+        env:
+          CUSTOM_TAG: ${{ inputs.docker_tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # tag：自定义优先，否则取当前分支/引用名；/ 等 Docker tag 非法字符清洗为 -
+          T="${CUSTOM_TAG:-$REF_NAME}"
+          T="$(echo "$T" | tr -c 'a-zA-Z0-9_.-' '-' | sed 's/^-*//;s/-*$//')"
+          if [ -z "$T" ]; then echo "::error::镜像 tag 清洗后为空"; exit 1; fi
+          echo "tag=$T" >> "$GITHUB_OUTPUT"
+
+      # 不指定 registry 时 login-action 默认登录 Docker Hub（docker.io）
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.ORG_DOCKERHUB_USERNAME }}
+          password: ${{ secrets.ORG_DOCKERHUB_TOKEN }}
+
+      # buildx 的 docker-container 驱动是导出 type=gha 缓存的前提（默认 docker 驱动不支持）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # 前序 web-build 已产出 web/dist（pnpm build），这里直接复用，镜像内不再重复前端构建
+      - name: Download web dist
+        uses: actions/download-artifact@v8
+        with:
+          name: web-dist
+          path: web/dist
+
+      # 最小构建上下文 = Dockerfile 实际 COPY 的输入，目录布局与 COPY 路径一一对应：
+      #   server/、web/dist、web/scripts/sync-templates.mjs，外加当前变体的 Dockerfile（平铺到上下文根）。
+      # 上下文本身已完成净化（checkout 里没有 node_modules / dist 残留），故无需 .dockerignore；
+      # Dockerfile 平铺为 .docker-build/Dockerfile，正好对上 build-push-action 的默认 file = {context}/Dockerfile；
+      # 两个 matrix job 各自组装一份同布局上下文（内容一致，各自使用独立的 gha 缓存 scope）。
+      - name: Prepare minimal build context
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+        run: |
+          CTX=.docker-build
+          rm -rf "$CTX"
+          mkdir -p "$CTX/server" "$CTX/web/dist" "$CTX/web/scripts"
+          cp "docker/$DOCKERFILE" "$CTX/Dockerfile"
+          cp -a server/. "$CTX/server/"
+          cp -a web/dist/. "$CTX/web/dist/"
+          cp web/scripts/sync-templates.mjs "$CTX/web/scripts/"
+          du -sh "$CTX"
+
+      # 每个 matrix 变体只构建并推送自己的 tag，build → push 由 action 一次完成，两个变体之间并行。
+      # 不指定 platforms：沿用 runner 的 linux/amd64；gha 缓存按变体分 scope，避免并发写同一 key。
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .docker-build
+          file: .docker-build/Dockerfile
+          push: true
+          tags: ${{ vars.ORG_DOCKERHUB_USERNAME }}/authloft:${{ steps.meta.outputs.tag }}${{ matrix.suffix }}
+          cache-from: type=gha,scope=authloft-${{ matrix.name }}
+          cache-to: type=gha,scope=authloft-${{ matrix.name }},mode=max
