@@ -441,7 +441,7 @@ export const AdminService: GenService<{
     output: typeof SettingsResponseSchema;
   },
   /**
-   * 全量提交系统配置（§5.6 行 1271）。
+   * 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
    *
    * @generated from rpc api.admin.v1.AdminService.SetSettings
    */

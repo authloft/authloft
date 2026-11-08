@@ -186,8 +186,8 @@ func TestValidate(t *testing.T) {
 // TestValidateNormalizesEmptySlice（纯逻辑）：空 / nil 切片必须
 // 归一为**非 nil 空切片**——append([]string(nil), v...) 会返回 nil，
 // EncodeValue 落库 JSON "null"，DecodeValue 对 null fail-fast →
-// watcher reload 持续失败 + 重启 Preload 起不来（SetSettings 全量替换下
-// sso_domains/gateway_tokens 清空必现）。断言：归一值非 nil、EncodeValue
+// watcher reload 持续失败 + 重启 Preload 起不来（SetMany 收到空 / nil
+// 切片的清空写入时必现）。断言：归一值非 nil、EncodeValue
 // 落 "[]"、DecodeValue 回读闭环。
 func TestValidateNormalizesEmptySlice(t *testing.T) {
 	for _, in := range [][]string{{}, nil} {

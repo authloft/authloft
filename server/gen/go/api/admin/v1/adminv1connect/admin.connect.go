@@ -190,7 +190,7 @@ type AdminServiceClient interface {
 	DeleteOidcClient(context.Context, *connect.Request[v1.DeleteOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
 	// 全部系统配置（§5.6 行 1271）。
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.SettingsResponse], error)
-	// 全量提交系统配置（§5.6 行 1271）。
+	// 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
 	SetSettings(context.Context, *connect.Request[v1.SetSettingsRequest]) (*connect.Response[v1.OkResponse], error)
 	// 统一事件视图（§5.6 行 1272）。
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.EventListResponse], error)
@@ -675,7 +675,7 @@ type AdminServiceHandler interface {
 	DeleteOidcClient(context.Context, *connect.Request[v1.DeleteOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
 	// 全部系统配置（§5.6 行 1271）。
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.SettingsResponse], error)
-	// 全量提交系统配置（§5.6 行 1271）。
+	// 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
 	SetSettings(context.Context, *connect.Request[v1.SetSettingsRequest]) (*connect.Response[v1.OkResponse], error)
 	// 统一事件视图（§5.6 行 1272）。
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.EventListResponse], error)

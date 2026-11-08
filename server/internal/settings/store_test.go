@@ -379,7 +379,7 @@ func TestPreloadBackfillIdempotent(t *testing.T) {
 }
 
 // TestSetManyEmptySliceReloadLoop（env-skip DB+Redis）：
-// SetSettings 全量替换下任一 []string 键清空的落库闭环——SetMany 写
+// SetMany 收到任一 []string 键空 / nil 切片的落库闭环——SetMany 写
 // 空/nil 切片 → 落库值必须是 "[]" 而非 "null"（修复前 Validate 对空切片
 // 返回 nil → EncodeValue 落 JSON "null"）→ 新实例 Preload（重启口径）
 // 与同实例 reload（watcher 热更口径，共用 loadSnapshot）均不因
@@ -394,8 +394,8 @@ func TestSetManyEmptySliceReloadLoop(t *testing.T) {
 		t.Fatalf("写方 Preload 失败: %v", err)
 	}
 
-	// 全量替换清空场景：sso_domains 空列表、gateway_tokens nil
-	//（proto 空 repeated 的真实形态，SetSettings 直达）。
+	// 清空场景：sso_domains 空列表、gateway_tokens nil
+	//（proto 空 repeated 的真实形态，SetMany 直达）。
 	if err := storeA.SetMany(ctx, map[string]any{
 		KeySsoDomains:    []string{},
 		KeyGatewayTokens: []string(nil),

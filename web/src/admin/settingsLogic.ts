@@ -4,11 +4,12 @@
  * 键集映射 / 默认值 / 草稿初始化 / 交叉校验全部收口在此，零 Semi 依赖、node
  * 可测（schemaLogic 同模式；页面壳渲染不可测见 admin.test.tsx 头注 Blocker）。
  *
- * ⚠️ SetSettings 全量替换语义（§5.6 行 1287）：零值也
- * 会被写入（protojson 零值字段在 wire 省略 = 服务端读零值 = 写入零值，语义
- * 等价）——表单必须以 GetSettings 响应初始化完整键集（draftFromSettings）、
- * 保存时全量提交全部键（api.buildSetSettingsRequest），不能只提交改动字段；
- * UI 须提示「保存将覆盖全部设置」（SettingsPage 保存按钮旁落位）。
+ * ⚠️ SetSettings 部分更新语义（§5.6 行 1287；proto3 optional has 位 +
+ * 四个 repeated 键的 has_* 伴生标志）：未设置 = 不修改、显式零值 = 覆盖；
+ * 标志置 true = 列表在场，空数组即清空（protojson 下 [] 与缺省同为 nil）。
+ * 表单仍以 GetSettings 响应初始化完整键集（draftFromSettings）、保存时
+ * 全量提交全部键 + 四个伴生标志（api.buildSetSettingsRequest），UI 仍
+ * 提示「保存将覆盖全部设置」（SettingsPage 保存按钮旁落位）。
  *
  * 键集 = 36 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
  * https_deployment（=36，行 1354/1360 proto 变更条款）。server proto 与

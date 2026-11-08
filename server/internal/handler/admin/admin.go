@@ -629,7 +629,7 @@ func (h *Handler) DeleteOidcClient(ctx context.Context, req *connectrpc.Request[
 }
 
 // —— 系统配置 / 事件 / 工具族 5 方法（§5.6 行 1270-1277）：service
-// 层做业务编排（SetSettings 全量替换 + 审计、ListEvents 透传、DecodeToken
+// 层做业务编排（SetSettings 部分更新 + 审计、ListEvents 透传、DecodeToken
 // 解载荷、GetStatus 队列指标），handler 只做 Connect 形态映射与 dto 投影——
 
 // GetSettings（§5.6 行 1274）：全部系统配置——Store.Snapshot 35 键全键
@@ -639,10 +639,12 @@ func (h *Handler) GetSettings(ctx context.Context, _ *connectrpc.Request[adminv1
 	return connectrpc.NewResponse(dto.AdminSettings(snap)), nil
 }
 
-// SetSettings（§5.6 行 1274）：全量提交系统配置（flat 消息每字段即键、
-// 缺省视为零值写回——前端设置页以 GET 结果为底稿整体回写）；落库与
-// 热更通知、settings_update 审计（actor=会话 uid）在 service；值类型
-// 校验在 settings.Validate（经 SetMany），交叉约束不兜底（行 1342）。
+// SetSettings（§5.6 行 1274）：部分更新（PATCH）系统配置（optional 标量
+// has 位 = 在场，未设置不修改、显式零值覆盖；四个 repeated 键由 has_*
+// 伴生标志取 true 判定在场，空数组 = 清空列表、标志缺省 = 不修改）；
+// flat 消息原样透传 service，落库与热更通知、settings_update 审计
+// （actor=会话 uid）在 service；值类型校验在 settings.Validate（经
+// SetMany），交叉约束不兜底（行 1342）。
 func (h *Handler) SetSettings(ctx context.Context, req *connectrpc.Request[adminv1.SetSettingsRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	actor, ok := session.UIDFromContext(ctx)
 	if !ok {

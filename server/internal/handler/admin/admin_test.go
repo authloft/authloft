@@ -310,7 +310,7 @@ func (f *fakeClientService) DeleteOidcClient(_ context.Context, id int64) error 
 
 // fakeSettingsService settings/事件/工具族（SettingsService）的 fake：
 // 入参全留档断言，错误可注入；返回数据可预置。业务规则断言
-// （全量替换、审计、分页透传等）在 service/admin/settings_test.go，本文件
+// （部分更新 PATCH、审计、分页透传等）在 service/admin/settings_test.go，本文件
 // 只关注 Connect 形态映射 / 分页归一 / 错误码投影。
 type fakeSettingsService struct {
 	snap     map[string]any
@@ -944,7 +944,7 @@ func TestGetSettingsHandler(t *testing.T) {
 	}
 }
 
-// TestSetSettingsHandler 全量提交：请求体原样绑定到 flat 消息透传 service，
+// TestSetSettingsHandler 部分提交：请求体原样绑定到 flat 消息透传 service，
 // actor 取会话 uid（审计口径在 service）；service 校验失败 → 400 +
 // ErrorInfo(admin, invalid_request)。
 func TestSetSettingsHandler(t *testing.T) {
@@ -953,7 +953,7 @@ func TestSetSettingsHandler(t *testing.T) {
 		tokens, epochs, h := newAdminHandlerSettings(t, fake)
 		cookie := adminCookie(t, tokens, epochs, 1)
 
-		body := `{"pwdMinLength":10,"allowRegistration":false,"ssoDomains":["https://a.example.com"],"cookieName":"al_session"}`
+		body := `{"pwdMinLength":10,"allowRegistration":false,"hasSsoDomains":true,"ssoDomains":["https://a.example.com"],"cookieName":"al_session"}`
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetSettingsProcedure, body, cookie)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)

@@ -3,9 +3,10 @@
  * 行 1287 GetSettings / SetSettings；docs/需求.md §4.6 行 259）——/admin/settings
  * （§5.6 四张表全量键，生成物现状 36 字段）的大表单。
  *
- * ⚠️ SetSettings 全量替换语义：零值也会被写入——
- * 表单以 GetSettings 响应初始化完整键集（settingsLogic.draftFromSettings），
- * 保存时经 api.buildSetSettingsRequest 全量提交全部键（不能只提交改动字段）；
+ * ⚠️ SetSettings 按 has 位部分更新（PATCH）：未设置不修改、显式零值
+ * 覆盖；四个 repeated 键带 has_* 伴生标志，置 true 时列表在场、空数组
+ * 即清空。表单以 GetSettings 响应初始化完整键集（draftFromSettings），
+ * 保存时经 api.buildSetSettingsRequest 全量提交全部键 + 四个伴生标志；
  * 保存按钮旁固定提示「保存将覆盖全部设置」，顶部 Banner 展开说明。
  * 保存前变更预览：点保存先弹确认 Modal（diff 数据源 = 草稿 vs
  * 已保存快照，buildSettingsDiff 键级比对），逐键列出 旧值 → 新值（gateway

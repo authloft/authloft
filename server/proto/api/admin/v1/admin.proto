@@ -136,7 +136,7 @@ service AdminService {
   rpc DeleteOidcClient(DeleteOidcClientRequest) returns (OkResponse);
   // 全部系统配置（§5.6 行 1271）。
   rpc GetSettings(GetSettingsRequest) returns (SettingsResponse);
-  // 全量提交系统配置（§5.6 行 1271）。
+  // 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
   rpc SetSettings(SetSettingsRequest) returns (OkResponse);
   // 统一事件视图（§5.6 行 1272）。
   rpc ListEvents(ListEventsRequest) returns (EventListResponse);

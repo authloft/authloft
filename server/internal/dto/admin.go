@@ -622,8 +622,9 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 // 自造）。快照值恒为注册类型（string / int64 / bool / []string，经
 // settings.DecodeValue 解码），类型断言失败（不可达）按零值投影——proto
 // 消息 36 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
-//（§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后全量回写（§5.6
-// 行 1342 全量提交语义的配套口径）。
+//（§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后整体回写；服务端
+// 按 §5.6 SetSettings 的 optional has 位 + repeated 伴生标志做部分更新
+//（PATCH；Response 不含伴生标志）。
 func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 	toInt := func(k string) int64 { v, _ := snap[k].(int64); return v }
 	toBool := func(k string) bool { v, _ := snap[k].(bool); return v }
@@ -669,8 +670,8 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 }
 
 // toSlice 快照 []string 键的取值 helper（断言失败即 nil，proto3 空
-// repeated 序列化省略——settings.proto 行 102-105 的恒存在口径由
-// protojson 输出层保证，空列表即省略）。
+// repeated 序列化省略——settings.proto SettingsResponse 头注的恒存在
+// 口径由 protojson 输出层保证，空列表即省略）。
 func toSlice(k string, snap map[string]any) []string {
 	v, _ := snap[k].([]string)
 	return v

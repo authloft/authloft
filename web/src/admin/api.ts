@@ -8,8 +8,9 @@
  * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
  * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；并追加
- * settings 族 GetSettings / SetSettings（§5.6 行 1287 全量替换语义）+ 全量
- * 请求构造纯函数；并追加工具三页族：ListEvents（§5.6 行 1288 统一事件
+ * settings 族 GetSettings / SetSettings（§5.6 行 1287；服务端按 optional
+ * has 位 + repeated 伴生标志部分更新、前端仍全量提交）+ 全量请求构造纯函数；
+ * 并追加工具三页族：ListEvents（§5.6 行 1288 统一事件
  * 视图 + 预设视图）/ DecodeToken（§5.6 行 1289）/ GetStatus（§5.6 行 1290）
  * + 请求构造 / 预设映射 / 展示纯函数（管理端无 multipart 上传，§6 行 506）。
  *
@@ -881,11 +882,15 @@ export function ttlDetailText(ttl: bigint): string {
 
 // ---------------------------------------------------------------------------
 // settings 族（§5.6 行 1287 / §6 行 520）：GetSettings 读 + SetSettings
-// 写全部真调（后端已实装全量投影 / 全量替换）。⚠️ 全量替换语义：
-// 零值也会被写入（protojson 零值字段 wire 省略 = 服务端读零值 = 写入零值），
-// 表单必须全量提交全部 36 键、不能只提交改动字段——buildSetSettingsRequest
-// 以草稿整体构造（草稿初始化 / 交叉校验见 settingsLogic.ts，行 1363 值域
-// 交叉约束由前端设置页自律保证）。键集 = 36 字段：35 既有键 +
+// 写全部真调（后端已实装全量投影 / 部分更新 PATCH）。⚠️ SetSettingsRequest
+// 标量全字段 proto3 optional：服务端按 has 位写入，未设置 = 不修改、
+// 显式零值 = 覆盖；四个 repeated 键各带 has_* 伴生标志（protojson 下 []
+// 与缺省同解为 nil），标志置 true = 列表在场，空数组即清空该列表。
+// 前端仍以草稿整体构造全部 36 键（buildSetSettingsRequest），保证每个标量
+// 的 has 位与四个伴生标志都在场——旧全量提交客户端与新 PATCH 语义兼容；
+// 草稿初始化 / 交叉校验见 settingsLogic.ts（行 1363 值域交叉约束由前端
+// 设置页自律保证）。键集 = 36 数据键（另有 4 个伴生标志，不进 settings）：
+// 35 既有键 +
 // 定稿新增的 https_deployment（=36，行 1354/1360；行 1361 非三态 → invalid_request，
 // settingsDraftIssue 前端自律拦截）。
 // ---------------------------------------------------------------------------
@@ -904,9 +909,10 @@ export function setSettings(request: SetSettingsRequest): Promise<OkResponse> {
  * SetSettings 全量请求构造（36 键整体构造，含未改动键）：文本字段去首尾
  * 空白、列表字段经 cleanStringList 清洗（条目去空白 + 剔除空串）后整组提交
  * ——中间态空行不落库；其余键原样直映射（https_deployment 三态枚举值不做
- * trim，非法值由 settingsDraftIssue 前置拦截）。零值字段（false / 0 / '' /
- * []）在 protojson 下 wire 省略，服务端按零值写入，语义等价（生成物
- * SetSettingsRequest 头注口径）。
+ * trim，非法值由 settingsDraftIssue 前置拦截）。零值标量（false / 0 / ''）
+ * 经 optional has 位在 wire 明确下发、服务端显式覆盖；四个列表的 has_*
+ * 伴生标志一律置 true（全量提交语义），列表整组替换——空列表 [] 在 wire
+ * 省略，但标志在场即被服务端解释成清空该列表。
  */
 export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsRequest {
   return create(SetSettingsRequestSchema, {
@@ -921,18 +927,21 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
     otpMaxAttempts: BigInt(draft.otpMaxAttempts),
     otpDailyLimitTarget: BigInt(draft.otpDailyLimitTarget),
     otpDailyLimitIp: BigInt(draft.otpDailyLimitIp),
+    hasLoginMethods: true,
     loginMethods: cleanStringList(draft.loginMethods),
     allowRegistration: draft.allowRegistration,
     allowSignupPassword: draft.allowSignupPassword,
     allowSignupPhone: draft.allowSignupPhone,
     allowSignupEmail: draft.allowSignupEmail,
     mfaEnabled: draft.mfaEnabled,
+    hasMfaMethods: true,
     mfaMethods: cleanStringList(draft.mfaMethods),
     pwdFailCapture: BigInt(draft.pwdFailCapture),
     pwdFailBan: BigInt(draft.pwdFailBan),
     pwdBanTtl: BigInt(draft.pwdBanTtl),
     sessionTtl: BigInt(draft.sessionTtl),
     cookieName: draft.cookieName.trim(),
+    hasSsoDomains: true,
     ssoDomains: cleanStringList(draft.ssoDomains),
     queueWorkers: BigInt(draft.queueWorkers),
     queueCapacity: BigInt(draft.queueCapacity),
@@ -942,6 +951,7 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
     smsProviderKey: draft.smsProviderKey.trim(),
     emailProviderKey: draft.emailProviderKey.trim(),
     avatarStorageProvider: draft.avatarStorageProvider.trim(),
+    hasGatewayTokens: true,
     gatewayTokens: cleanStringList(draft.gatewayTokens),
     eventlogRetentionDays: BigInt(draft.eventlogRetentionDays),
     staticBase: draft.staticBase.trim(),

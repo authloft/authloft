@@ -8,9 +8,13 @@
 //   - GetSettings：Store.Snapshot → 36 键全键投影（键名与默认值唯一真相 =
 //     §5.6 四张表，与 internal/settings 常量表逐键一致，键名零自造）；投影
 //     到 SettingsResponse 在 dto.AdminSettings（§3.5 裁剪在 dto）。
-//   - SetSettings：全量替换语义（proto flat 消息 + protojson 零值省略 →
-//     每字段即键、缺省视为零值写回；前端设置页以 GET 结果为底稿改后整体
-//     回写，settings.proto SetSettingsRequest 注释同口径）。36 键整体经
+//   - SetSettings：部分更新（PATCH）语义——标量按 proto3 optional has 位
+//     （生成物 *int64 / *bool / *string）判定：未设置 = 不修改（保留快照
+//     现值），显式设值 = 覆盖（含 0 / false / 空串，口径同 §3.2 行 837
+//     UpdateProfile）；四个 repeated 键各带一个 has_* 伴生标志（protojson
+//     下 [] 与字段缺省同解为 nil，无法自带 has 位），标志取 true = 该列表
+//     在场，按请求中的数组整组替换，空数组 / 缺省数组即清空该列表；
+//     标志缺省 / 显式 false = 不修改。仅把在场键组经
 //     Store.SetMany 落库（白名单 + 值类型校验在 settings.Validate——
 //     https_deployment 三态值域校验同在其内，非法值 → invalid_request，
 //     §5.6 行 1361；交叉约束不做，§5.6 行 1342 前端与管理员自律），
@@ -18,7 +22,7 @@
 //     由 SetMany 完成 → watcher 热更天然生效。写后投递审计
 //     eventlog.EventSettingsUpdate（actor=admin，actor_id=会话 uid，
 //     「settings_update 审计事件」按待用口径落地；detail 经
-//     eventlog.DetailSettingsUpdate 只含变更项 keys/before/after）。
+//     eventlog.DetailSettingsUpdate 只含在场键中的变更项 keys/before/after）。
 //   - ListEvents：统一事件视图（§5.6 行 1275），六筛选 + 分页 §1.7 透传
 //     repo.EventLogRepo.List（最小增量，排序口径同 user_repo
 //     orderClause）。响应投影复用 dto.AdminEventItem。
@@ -155,21 +159,27 @@ func (s *SettingsService) GetSettings() map[string]any {
 	return s.store.Snapshot()
 }
 
-// SetSettings（§5.6 行 1274，OUTCOME ②）：全量替换——请求消息的每个字段
-// 即一个 settings 键（protojson 零值省略 → 缺省视为零值写回，前端设置页
-// 全量提交），36 键整批 SetMany 落库（updated_by=actor，热更由 SetMany 的
-// PUBLISH al:settings:chg 通知各实例 watcher 全量重载，天然生效）。
-// 写成功后投递审计 settings_update：detail 只含变更项（{keys, before,
-// after}，§4.6 行 804），无变更时 keys/before/after 为空集但仍投递——每次
-// 管理员动作都留痕（口径同 UserService.UpdateUserStatus 幂等重放审计）。
-// 写入仅校验值类型（settings.Validate 在 SetMany 内），交叉约束不兜底
-// （§5.6 行 1342）；校验失败（settings.ErrInvalidValue：白名单外 / 类型
-// 不符 / https_deployment 三态值域外）转译本层哨兵 ErrInvalidRequest
+// SetSettings（§5.6 行 1274，OUTCOME ②）：部分更新（PATCH）——请求里
+// 「在场」的键才写入：optional 标量指针非 nil 即 has 位置位（显式 0 /
+// false / 空串同样写回，口径同 §3.2 行 837 UpdateProfile）；四个 repeated
+// 键以各自的 has_* 伴生标志取 true 为在场，按请求数组整组替换——数组为
+// 空 / 缺省即清空该列表，标志缺省或显式 false 则不修改。未在场键保留
+// 快照现值。settingsRequestValues 只产出在场键 map，
+// SetMany 仅 UPSERT 这批键（updated_by=actor；PUBLISH al:settings:chg
+// 通知各实例 watcher 全量重载，热更天然生效；空 map 在 Store.SetMany
+// 内直接返回，不触库也不发通知）。
+// 写成功后投递审计 settings_update：detail 只含在场键里的变更项
+// （{keys, before, after}，§4.6 行 804），无变更（含空请求）时
+// keys/before/after 为空集但仍投递——每次管理员动作都留痕（口径同
+// UserService.UpdateUserStatus 幂等重放审计）。写入仅校验值类型
+// （settings.Validate 在 SetMany 内），交叉约束不兜底（§5.6 行 1342）；
+// 校验失败（settings.ErrInvalidValue：白名单外 / 类型不符 /
+// https_deployment 三态值域外）转译本层哨兵 ErrInvalidRequest
 // （§5.6 行 1361 SetSettings 非法值 → invalid_request：裸错误
 // 直传会被 handler mapWriteError 判不中而误落 500），其余错误原样透传。
 func (s *SettingsService) SetSettings(ctx context.Context, actor int64, req *adminv1.SetSettingsRequest) error {
 	before := s.store.Snapshot()
-	kv := settingsRequestValues(req)
+	kv := settingsRequestValues(req) // 只含在场键；未设置字段不进 map
 	keys, beforeChanged, after := diffSettings(before, kv)
 	if err := s.store.SetMany(ctx, kv, actor); err != nil {
 		if errors.Is(err, settings.ErrInvalidValue) {
@@ -190,60 +200,100 @@ func (s *SettingsService) SetSettings(ctx context.Context, actor int64, req *adm
 	return nil
 }
 
-// settingsRequestValues 把全量提交的请求消息按 settings 键常量组 36 键
-// map（键名与 §5.6 四张表逐字一致，零自造；repeated 字段空 = nil →
-// settings.Validate 收敛为 []string 空切片清空该列表；https_deployment
-// 三态值域校验在 Validate 内，非法值 → invalid_request §5.6 行 1361）。
+// settingsRequestValues 把请求消息按 has 位投影成「待写入」 settings 键 map
+// （键名与 §5.6 四张表逐字一致，零自造；has_* 伴生标志本身不是 settings 键）：
+//   - 标量（*int64 / *bool / *string）：ptr != nil = 显式设值，写入其值
+//     ——含 0 / false / 空串（pwd_ban_ttl 调 0、cookie_name 清空可表达）；
+//     nil = 未设置，不进 map，保留快照现值；
+//   - repeated（[]string）：proto3 无 has 位，protojson 下显式 [] 与字段
+//     缺省同解为 nil，故每个列表配一个 has_* 伴生标志；标志取 true =
+//     列表在场，按数组整组替换（nil / 空数组归一为非 nil 空切片 → 清空
+//     该列表），标志缺省 / 显式 false = 不进 map、保留现值。
+//
+// nil 请求按空请求处理（无任何 has 位）；https_deployment 三态值域校验在
+// settings.Validate 内，非法值 → invalid_request（§5.6 行 1361）。
 func settingsRequestValues(req *adminv1.SetSettingsRequest) map[string]any {
-	return map[string]any{
-		settings.KeyPwdMinLength:          req.GetPwdMinLength(),
-		settings.KeyPwdMaxLength:          req.GetPwdMaxLength(),
-		settings.KeyPwdRequireClasses:     req.GetPwdRequireClasses(),
-		settings.KeyPwdDisallowUsername:   req.GetPwdDisallowUsername(),
-		settings.KeyPwdDisallowCommon:     req.GetPwdDisallowCommon(),
-		settings.KeyAllowPasswordReset:    req.GetAllowPasswordReset(),
-		settings.KeyOtpResendInterval:     req.GetOtpResendInterval(),
-		settings.KeyOtpTtl:                req.GetOtpTtl(),
-		settings.KeyOtpMaxAttempts:        req.GetOtpMaxAttempts(),
-		settings.KeyOtpDailyLimitTarget:   req.GetOtpDailyLimitTarget(),
-		settings.KeyOtpDailyLimitIP:       req.GetOtpDailyLimitIp(),
-		settings.KeyLoginMethods:          req.GetLoginMethods(),
-		settings.KeyAllowRegistration:     req.GetAllowRegistration(),
-		settings.KeyAllowSignupPassword:   req.GetAllowSignupPassword(),
-		settings.KeyAllowSignupPhone:      req.GetAllowSignupPhone(),
-		settings.KeyAllowSignupEmail:      req.GetAllowSignupEmail(),
-		settings.KeyMfaEnabled:            req.GetMfaEnabled(),
-		settings.KeyMfaMethods:            req.GetMfaMethods(),
-		settings.KeyPwdFailCapture:        req.GetPwdFailCapture(),
-		settings.KeyPwdFailBan:            req.GetPwdFailBan(),
-		settings.KeyPwdBanTtl:             req.GetPwdBanTtl(),
-		settings.KeySessionTtl:            req.GetSessionTtl(),
-		settings.KeyCookieName:            req.GetCookieName(),
-		settings.KeySsoDomains:            req.GetSsoDomains(),
-		settings.KeyQueueWorkers:          req.GetQueueWorkers(),
-		settings.KeyQueueCapacity:         req.GetQueueCapacity(),
-		settings.KeyQueueBatch:            req.GetQueueBatch(),
-		settings.KeyQueueFlushMs:          req.GetQueueFlushMs(),
-		settings.KeyCaptchaProviderKey:    req.GetCaptchaProviderKey(),
-		settings.KeySmsProviderKey:        req.GetSmsProviderKey(),
-		settings.KeyEmailProviderKey:      req.GetEmailProviderKey(),
-		settings.KeyAvatarStorageProvider: req.GetAvatarStorageProvider(),
-		settings.KeyGatewayTokens:         req.GetGatewayTokens(),
-		settings.KeyEventlogRetentionDays: req.GetEventlogRetentionDays(),
-		settings.KeyStaticBase:            req.GetStaticBase(),
-		settings.KeyHttpsDeployment:      req.GetHttpsDeployment(),
+	kv := make(map[string]any, 36)
+	if req == nil {
+		return kv
+	}
+	putOptional(kv, settings.KeyPwdMinLength, req.PwdMinLength)
+	putOptional(kv, settings.KeyPwdMaxLength, req.PwdMaxLength)
+	putOptional(kv, settings.KeyPwdRequireClasses, req.PwdRequireClasses)
+	putOptional(kv, settings.KeyPwdDisallowUsername, req.PwdDisallowUsername)
+	putOptional(kv, settings.KeyPwdDisallowCommon, req.PwdDisallowCommon)
+	putOptional(kv, settings.KeyAllowPasswordReset, req.AllowPasswordReset)
+	putOptional(kv, settings.KeyOtpResendInterval, req.OtpResendInterval)
+	putOptional(kv, settings.KeyOtpTtl, req.OtpTtl)
+	putOptional(kv, settings.KeyOtpMaxAttempts, req.OtpMaxAttempts)
+	putOptional(kv, settings.KeyOtpDailyLimitTarget, req.OtpDailyLimitTarget)
+	putOptional(kv, settings.KeyOtpDailyLimitIP, req.OtpDailyLimitIp)
+	putList(kv, settings.KeyLoginMethods, req.GetHasLoginMethods(), req.GetLoginMethods())
+	putOptional(kv, settings.KeyAllowRegistration, req.AllowRegistration)
+	putOptional(kv, settings.KeyAllowSignupPassword, req.AllowSignupPassword)
+	putOptional(kv, settings.KeyAllowSignupPhone, req.AllowSignupPhone)
+	putOptional(kv, settings.KeyAllowSignupEmail, req.AllowSignupEmail)
+	putOptional(kv, settings.KeyMfaEnabled, req.MfaEnabled)
+	putList(kv, settings.KeyMfaMethods, req.GetHasMfaMethods(), req.GetMfaMethods())
+	putOptional(kv, settings.KeyPwdFailCapture, req.PwdFailCapture)
+	putOptional(kv, settings.KeyPwdFailBan, req.PwdFailBan)
+	putOptional(kv, settings.KeyPwdBanTtl, req.PwdBanTtl)
+	putOptional(kv, settings.KeySessionTtl, req.SessionTtl)
+	putOptional(kv, settings.KeyCookieName, req.CookieName)
+	putList(kv, settings.KeySsoDomains, req.GetHasSsoDomains(), req.GetSsoDomains())
+	putOptional(kv, settings.KeyQueueWorkers, req.QueueWorkers)
+	putOptional(kv, settings.KeyQueueCapacity, req.QueueCapacity)
+	putOptional(kv, settings.KeyQueueBatch, req.QueueBatch)
+	putOptional(kv, settings.KeyQueueFlushMs, req.QueueFlushMs)
+	putOptional(kv, settings.KeyCaptchaProviderKey, req.CaptchaProviderKey)
+	putOptional(kv, settings.KeySmsProviderKey, req.SmsProviderKey)
+	putOptional(kv, settings.KeyEmailProviderKey, req.EmailProviderKey)
+	putOptional(kv, settings.KeyAvatarStorageProvider, req.AvatarStorageProvider)
+	putList(kv, settings.KeyGatewayTokens, req.GetHasGatewayTokens(), req.GetGatewayTokens())
+	putOptional(kv, settings.KeyEventlogRetentionDays, req.EventlogRetentionDays)
+	putOptional(kv, settings.KeyStaticBase, req.StaticBase)
+	putOptional(kv, settings.KeyHttpsDeployment, req.HttpsDeployment)
+	return kv
+}
+
+// putOptional 按 has 位写入标量键：指针非 nil 才写，值取指针所指（显式零值
+// 同样写入）。泛型只覆盖请求的 int64 / bool / string 三类标量，逐键显式表
+// 而非反射，避免把「未设置」误投影成零值写回。
+func putOptional[T any](kv map[string]any, key string, ptr *T) {
+	if ptr != nil {
+		kv[key] = *ptr
 	}
 }
 
-// diffSettings 变更项比对：按 settings.Defs() 表序遍历白名单键集，返回
+// putList repeated 键：has_* 伴生标志取 true 才写入（在场判据见
+// settingsRequestValues）；数组为空 / 缺省时归一为非 nil 空切片——
+// settings.Validate 会再收敛一次，落库 JSON "[]" 而非 "null"，
+// DecodeValue / watcher reload 不会因 null fail-fast（store.go 口径）。
+func putList(kv map[string]any, key string, present bool, v []string) {
+	if !present {
+		return
+	}
+	if len(v) == 0 {
+		v = []string{}
+	}
+	kv[key] = v
+}
+
+// diffSettings 变更项比对：按 settings.Defs() 表序遍历「本批在场键」，返回
 // 值有变化的键列表与 before / after 片段（只含变更项，§4.6 行 804）。
+// PATCH 语义下 next 只含在场键：未在场键必须跳过（若拿 next 里的 nil 与
+// 快照现值比较，所有未提交键都会被误判为「改成零值」）。
 // []string 按 slices.Equal 语义（nil 与空切片同值——proto 空 repeated 为
 // nil、快照经 DecodeValue 归一为 []string{}，语义上均为清空）。
 func diffSettings(before, next map[string]any) (keys []string, beforeChanged, after map[string]any) {
 	beforeChanged = map[string]any{}
 	after = map[string]any{}
 	for _, d := range settings.Defs() {
-		oldV, newV := before[d.Key], next[d.Key]
+		newV, ok := next[d.Key]
+		if !ok {
+			continue // 未在场键：保留现值，不参与落库 / 变更集
+		}
+		oldV := before[d.Key]
 		if settingsValueEqual(oldV, newV) {
 			continue
 		}

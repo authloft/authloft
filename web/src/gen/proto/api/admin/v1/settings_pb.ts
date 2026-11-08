@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/settings.proto.
  */
 export const file_api_admin_v1_settings: GenFile = /*@__PURE__*/
-  fileDesc("ChthcGkvYWRtaW4vdjEvc2V0dGluZ3MucHJvdG8SDGFwaS5hZG1pbi52MSIUChJHZXRTZXR0aW5nc1JlcXVlc3QisAcKElNldFNldHRpbmdzUmVxdWVzdBIWCg5wd2RfbWluX2xlbmd0aBgBIAEoAxIWCg5wd2RfbWF4X2xlbmd0aBgCIAEoAxIbChNwd2RfcmVxdWlyZV9jbGFzc2VzGAMgASgDEh0KFXB3ZF9kaXNhbGxvd191c2VybmFtZRgEIAEoCBIbChNwd2RfZGlzYWxsb3dfY29tbW9uGAUgASgIEhwKFGFsbG93X3Bhc3N3b3JkX3Jlc2V0GAYgASgIEhsKE290cF9yZXNlbmRfaW50ZXJ2YWwYByABKAMSDwoHb3RwX3R0bBgIIAEoAxIYChBvdHBfbWF4X2F0dGVtcHRzGAkgASgDEh4KFm90cF9kYWlseV9saW1pdF90YXJnZXQYCiABKAMSGgoSb3RwX2RhaWx5X2xpbWl0X2lwGAsgASgDEhUKDWxvZ2luX21ldGhvZHMYDCADKAkSGgoSYWxsb3dfcmVnaXN0cmF0aW9uGA0gASgIEh0KFWFsbG93X3NpZ251cF9wYXNzd29yZBgOIAEoCBIaChJhbGxvd19zaWdudXBfcGhvbmUYDyABKAgSGgoSYWxsb3dfc2lnbnVwX2VtYWlsGBAgASgIEhMKC21mYV9lbmFibGVkGBEgASgIEhMKC21mYV9tZXRob2RzGBIgAygJEhgKEHB3ZF9mYWlsX2NhcHR1cmUYEyABKAMSFAoMcHdkX2ZhaWxfYmFuGBQgASgDEhMKC3B3ZF9iYW5fdHRsGBUgASgDEhMKC3Nlc3Npb25fdHRsGBYgASgDEhMKC2Nvb2tpZV9uYW1lGBcgASgJEhMKC3Nzb19kb21haW5zGBggAygJEhUKDXF1ZXVlX3dvcmtlcnMYGSABKAMSFgoOcXVldWVfY2FwYWNpdHkYGiABKAMSEwoLcXVldWVfYmF0Y2gYGyABKAMSFgoOcXVldWVfZmx1c2hfbXMYHCABKAMSHAoUY2FwdGNoYV9wcm92aWRlcl9rZXkYHSABKAkSGAoQc21zX3Byb3ZpZGVyX2tleRgeIAEoCRIaChJlbWFpbF9wcm92aWRlcl9rZXkYHyABKAkSHwoXYXZhdGFyX3N0b3JhZ2VfcHJvdmlkZXIYICABKAkSFgoOZ2F0ZXdheV90b2tlbnMYISADKAkSHwoXZXZlbnRsb2dfcmV0ZW50aW9uX2RheXMYIiABKAMSEwoLc3RhdGljX2Jhc2UYIyABKAkSGAoQaHR0cHNfZGVwbG95bWVudBgkIAEoCSKuBwoQU2V0dGluZ3NSZXNwb25zZRIWCg5wd2RfbWluX2xlbmd0aBgBIAEoAxIWCg5wd2RfbWF4X2xlbmd0aBgCIAEoAxIbChNwd2RfcmVxdWlyZV9jbGFzc2VzGAMgASgDEh0KFXB3ZF9kaXNhbGxvd191c2VybmFtZRgEIAEoCBIbChNwd2RfZGlzYWxsb3dfY29tbW9uGAUgASgIEhwKFGFsbG93X3Bhc3N3b3JkX3Jlc2V0GAYgASgIEhsKE290cF9yZXNlbmRfaW50ZXJ2YWwYByABKAMSDwoHb3RwX3R0bBgIIAEoAxIYChBvdHBfbWF4X2F0dGVtcHRzGAkgASgDEh4KFm90cF9kYWlseV9saW1pdF90YXJnZXQYCiABKAMSGgoSb3RwX2RhaWx5X2xpbWl0X2lwGAsgASgDEhUKDWxvZ2luX21ldGhvZHMYDCADKAkSGgoSYWxsb3dfcmVnaXN0cmF0aW9uGA0gASgIEh0KFWFsbG93X3NpZ251cF9wYXNzd29yZBgOIAEoCBIaChJhbGxvd19zaWdudXBfcGhvbmUYDyABKAgSGgoSYWxsb3dfc2lnbnVwX2VtYWlsGBAgASgIEhMKC21mYV9lbmFibGVkGBEgASgIEhMKC21mYV9tZXRob2RzGBIgAygJEhgKEHB3ZF9mYWlsX2NhcHR1cmUYEyABKAMSFAoMcHdkX2ZhaWxfYmFuGBQgASgDEhMKC3B3ZF9iYW5fdHRsGBUgASgDEhMKC3Nlc3Npb25fdHRsGBYgASgDEhMKC2Nvb2tpZV9uYW1lGBcgASgJEhMKC3Nzb19kb21haW5zGBggAygJEhUKDXF1ZXVlX3dvcmtlcnMYGSABKAMSFgoOcXVldWVfY2FwYWNpdHkYGiABKAMSEwoLcXVldWVfYmF0Y2gYGyABKAMSFgoOcXVldWVfZmx1c2hfbXMYHCABKAMSHAoUY2FwdGNoYV9wcm92aWRlcl9rZXkYHSABKAkSGAoQc21zX3Byb3ZpZGVyX2tleRgeIAEoCRIaChJlbWFpbF9wcm92aWRlcl9rZXkYHyABKAkSHwoXYXZhdGFyX3N0b3JhZ2VfcHJvdmlkZXIYICABKAkSFgoOZ2F0ZXdheV90b2tlbnMYISADKAkSHwoXZXZlbnRsb2dfcmV0ZW50aW9uX2RheXMYIiABKAMSEwoLc3RhdGljX2Jhc2UYIyABKAkSGAoQaHR0cHNfZGVwbG95bWVudBgkIAEoCUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw");
+  fileDesc("ChthcGkvYWRtaW4vdjEvc2V0dGluZ3MucHJvdG8SDGFwaS5hZG1pbi52MSIUChJHZXRTZXR0aW5nc1JlcXVlc3QixQ8KElNldFNldHRpbmdzUmVxdWVzdBIbCg5wd2RfbWluX2xlbmd0aBgBIAEoA0gAiAEBEhsKDnB3ZF9tYXhfbGVuZ3RoGAIgASgDSAGIAQESIAoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoA0gCiAEBEiIKFXB3ZF9kaXNhbGxvd191c2VybmFtZRgEIAEoCEgDiAEBEiAKE3B3ZF9kaXNhbGxvd19jb21tb24YBSABKAhIBIgBARIhChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCEgFiAEBEiAKE290cF9yZXNlbmRfaW50ZXJ2YWwYByABKANIBogBARIUCgdvdHBfdHRsGAggASgDSAeIAQESHQoQb3RwX21heF9hdHRlbXB0cxgJIAEoA0gIiAEBEiMKFm90cF9kYWlseV9saW1pdF90YXJnZXQYCiABKANICYgBARIfChJvdHBfZGFpbHlfbGltaXRfaXAYCyABKANICogBARIeChFoYXNfbG9naW5fbWV0aG9kcxgMIAEoCEgLiAEBEhUKDWxvZ2luX21ldGhvZHMYDSADKAkSHwoSYWxsb3dfcmVnaXN0cmF0aW9uGA4gASgISAyIAQESIgoVYWxsb3dfc2lnbnVwX3Bhc3N3b3JkGA8gASgISA2IAQESHwoSYWxsb3dfc2lnbnVwX3Bob25lGBAgASgISA6IAQESHwoSYWxsb3dfc2lnbnVwX2VtYWlsGBEgASgISA+IAQESGAoLbWZhX2VuYWJsZWQYEiABKAhIEIgBARIcCg9oYXNfbWZhX21ldGhvZHMYEyABKAhIEYgBARITCgttZmFfbWV0aG9kcxgUIAMoCRIdChBwd2RfZmFpbF9jYXB0dXJlGBUgASgDSBKIAQESGQoMcHdkX2ZhaWxfYmFuGBYgASgDSBOIAQESGAoLcHdkX2Jhbl90dGwYFyABKANIFIgBARIYCgtzZXNzaW9uX3R0bBgYIAEoA0gViAEBEhgKC2Nvb2tpZV9uYW1lGBkgASgJSBaIAQESHAoPaGFzX3Nzb19kb21haW5zGBogASgISBeIAQESEwoLc3NvX2RvbWFpbnMYGyADKAkSGgoNcXVldWVfd29ya2VycxgcIAEoA0gYiAEBEhsKDnF1ZXVlX2NhcGFjaXR5GB0gASgDSBmIAQESGAoLcXVldWVfYmF0Y2gYHiABKANIGogBARIbCg5xdWV1ZV9mbHVzaF9tcxgfIAEoA0gbiAEBEiEKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GCAgASgJSByIAQESHQoQc21zX3Byb3ZpZGVyX2tleRghIAEoCUgdiAEBEh8KEmVtYWlsX3Byb3ZpZGVyX2tleRgiIAEoCUgeiAEBEiQKF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCMgASgJSB+IAQESHwoSaGFzX2dhdGV3YXlfdG9rZW5zGCQgASgISCCIAQESFgoOZ2F0ZXdheV90b2tlbnMYJSADKAkSJAoXZXZlbnRsb2dfcmV0ZW50aW9uX2RheXMYJiABKANIIYgBARIYCgtzdGF0aWNfYmFzZRgnIAEoCUgiiAEBEh0KEGh0dHBzX2RlcGxveW1lbnQYKCABKAlII4gBAUIRCg9fcHdkX21pbl9sZW5ndGhCEQoPX3B3ZF9tYXhfbGVuZ3RoQhYKFF9wd2RfcmVxdWlyZV9jbGFzc2VzQhgKFl9wd2RfZGlzYWxsb3dfdXNlcm5hbWVCFgoUX3B3ZF9kaXNhbGxvd19jb21tb25CFwoVX2FsbG93X3Bhc3N3b3JkX3Jlc2V0QhYKFF9vdHBfcmVzZW5kX2ludGVydmFsQgoKCF9vdHBfdHRsQhMKEV9vdHBfbWF4X2F0dGVtcHRzQhkKF19vdHBfZGFpbHlfbGltaXRfdGFyZ2V0QhUKE19vdHBfZGFpbHlfbGltaXRfaXBCFAoSX2hhc19sb2dpbl9tZXRob2RzQhUKE19hbGxvd19yZWdpc3RyYXRpb25CGAoWX2FsbG93X3NpZ251cF9wYXNzd29yZEIVChNfYWxsb3dfc2lnbnVwX3Bob25lQhUKE19hbGxvd19zaWdudXBfZW1haWxCDgoMX21mYV9lbmFibGVkQhIKEF9oYXNfbWZhX21ldGhvZHNCEwoRX3B3ZF9mYWlsX2NhcHR1cmVCDwoNX3B3ZF9mYWlsX2JhbkIOCgxfcHdkX2Jhbl90dGxCDgoMX3Nlc3Npb25fdHRsQg4KDF9jb29raWVfbmFtZUISChBfaGFzX3Nzb19kb21haW5zQhAKDl9xdWV1ZV93b3JrZXJzQhEKD19xdWV1ZV9jYXBhY2l0eUIOCgxfcXVldWVfYmF0Y2hCEQoPX3F1ZXVlX2ZsdXNoX21zQhcKFV9jYXB0Y2hhX3Byb3ZpZGVyX2tleUITChFfc21zX3Byb3ZpZGVyX2tleUIVChNfZW1haWxfcHJvdmlkZXJfa2V5QhoKGF9hdmF0YXJfc3RvcmFnZV9wcm92aWRlckIVChNfaGFzX2dhdGV3YXlfdG9rZW5zQhoKGF9ldmVudGxvZ19yZXRlbnRpb25fZGF5c0IOCgxfc3RhdGljX2Jhc2VCEwoRX2h0dHBzX2RlcGxveW1lbnQirgcKEFNldHRpbmdzUmVzcG9uc2USFgoOcHdkX21pbl9sZW5ndGgYASABKAMSFgoOcHdkX21heF9sZW5ndGgYAiABKAMSGwoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoAxIdChVwd2RfZGlzYWxsb3dfdXNlcm5hbWUYBCABKAgSGwoTcHdkX2Rpc2FsbG93X2NvbW1vbhgFIAEoCBIcChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCBIbChNvdHBfcmVzZW5kX2ludGVydmFsGAcgASgDEg8KB290cF90dGwYCCABKAMSGAoQb3RwX21heF9hdHRlbXB0cxgJIAEoAxIeChZvdHBfZGFpbHlfbGltaXRfdGFyZ2V0GAogASgDEhoKEm90cF9kYWlseV9saW1pdF9pcBgLIAEoAxIVCg1sb2dpbl9tZXRob2RzGAwgAygJEhoKEmFsbG93X3JlZ2lzdHJhdGlvbhgNIAEoCBIdChVhbGxvd19zaWdudXBfcGFzc3dvcmQYDiABKAgSGgoSYWxsb3dfc2lnbnVwX3Bob25lGA8gASgIEhoKEmFsbG93X3NpZ251cF9lbWFpbBgQIAEoCBITCgttZmFfZW5hYmxlZBgRIAEoCBITCgttZmFfbWV0aG9kcxgSIAMoCRIYChBwd2RfZmFpbF9jYXB0dXJlGBMgASgDEhQKDHB3ZF9mYWlsX2JhbhgUIAEoAxITCgtwd2RfYmFuX3R0bBgVIAEoAxITCgtzZXNzaW9uX3R0bBgWIAEoAxITCgtjb29raWVfbmFtZRgXIAEoCRITCgtzc29fZG9tYWlucxgYIAMoCRIVCg1xdWV1ZV93b3JrZXJzGBkgASgDEhYKDnF1ZXVlX2NhcGFjaXR5GBogASgDEhMKC3F1ZXVlX2JhdGNoGBsgASgDEhYKDnF1ZXVlX2ZsdXNoX21zGBwgASgDEhwKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GB0gASgJEhgKEHNtc19wcm92aWRlcl9rZXkYHiABKAkSGgoSZW1haWxfcHJvdmlkZXJfa2V5GB8gASgJEh8KF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCAgASgJEhYKDmdhdGV3YXlfdG9rZW5zGCEgAygJEh8KF2V2ZW50bG9nX3JldGVudGlvbl9kYXlzGCIgASgDEhMKC3N0YXRpY19iYXNlGCMgASgJEhgKEGh0dHBzX2RlcGxveW1lbnQYJCABKAlCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM");
 
 /**
  * GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6 行 1271，无入参）。
@@ -29,13 +29,15 @@ export const GetSettingsRequestSchema: GenMessage<GetSettingsRequest> = /*@__PUR
 
 /**
  * SetSettingsRequest 是 AdminService/SetSettings 的请求（§5.6 行 1271「全部系统配置」）：
- * 全量提交——前端以 GET 结果为底稿改后整体回写；protojson 严格模式拒绝未知字段，
- * 「写入不接受表外键名」由编解码层直接保证（行 1271）。改动热更新、只对后续请求生效
- * （行 1339）。标量字段不标 optional：全量提交语义下零值即写入值（如 pwd_ban_ttl 调 0），
- * repeated 字段空数组即清空该列表；值域交叉约束由前端设置页与管理员自律保证，
- * 后端写入仅校验键名与值类型（行 1339）。消息名随方法名（§12.9 行 1747；
- * pre-connect 时代按资源命名 SettingsRequest，Connect 化时更名）。
- * 成功返回 OkResponse。
+ * 部分更新（PATCH）：标量全字段 proto3 optional，未设置 = 不修改（保留现值）、
+ * 显式设值 = 覆盖（含 0 / false / 空串，如 pwd_ban_ttl 调 0）；四个 repeated
+ * 键各带 has_* 伴生标志（repeated 无 has 位、protojson 下 [] 与缺省同为 nil）：
+ * 标志取 true = 列表在场，按数组整组替换，空数组 / 缺省数组 = 清空该列表；
+ * 标志缺省 / 显式 false = 不修改。前端以 GET 结果为底稿整体回写仍兼容（须
+ * 一并下发四个标志）；严格模式拒绝未知字段（行 1271），后端仅校验键名与值
+ * 类型（行 1339），交叉约束由前端设置页与管理员自律保证；改动热更新、只对
+ * 后续请求生效（行 1339）。消息名随方法名（§12.9 行 1747；pre-connect 时代
+ * 按资源命名 SettingsRequest，Connect 化时更名）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.SetSettingsRequest
  */
@@ -44,259 +46,283 @@ export type SetSettingsRequest = Message<"api.admin.v1.SetSettingsRequest"> & {
    * —— 密码策略（§5.6 行 1276-1291，键名与默认值的唯一定义处）——
    * 最小长度，默认 8（§5.6 行 1280）。
    *
-   * @generated from field: int64 pwd_min_length = 1;
+   * @generated from field: optional int64 pwd_min_length = 1;
    */
-  pwdMinLength: bigint;
+  pwdMinLength?: bigint | undefined;
 
   /**
    * 最大长度，默认 64；可调低不可调高，服务端硬上限 64（§5.6 行 1281）。
    *
-   * @generated from field: int64 pwd_max_length = 2;
+   * @generated from field: optional int64 pwd_max_length = 2;
    */
-  pwdMaxLength: bigint;
+  pwdMaxLength?: bigint | undefined;
 
   /**
    * 须满足的字符类数（1-3），字符类 = 大写 / 小写 / 数字（§5.6 行 1282）。
    *
-   * @generated from field: int64 pwd_require_classes = 3;
+   * @generated from field: optional int64 pwd_require_classes = 3;
    */
-  pwdRequireClasses: bigint;
+  pwdRequireClasses?: bigint | undefined;
 
   /**
    * 禁止密码包含用户名，默认 true（§5.6 行 1283）。
    *
-   * @generated from field: bool pwd_disallow_username = 4;
+   * @generated from field: optional bool pwd_disallow_username = 4;
    */
-  pwdDisallowUsername: boolean;
+  pwdDisallowUsername?: boolean | undefined;
 
   /**
    * 禁止命中弱口令字典，默认 true（§5.6 行 1284）。
    *
-   * @generated from field: bool pwd_disallow_common = 5;
+   * @generated from field: optional bool pwd_disallow_common = 5;
    */
-  pwdDisallowCommon: boolean;
+  pwdDisallowCommon?: boolean | undefined;
 
   /**
    * —— 账号策略（§5.6 行 1294-1298）——
    * 是否开放自助重置密码，默认 true；false 时 §2.4 一律 status=reset_disabled（§5.6 行 1298）。
    *
-   * @generated from field: bool allow_password_reset = 6;
+   * @generated from field: optional bool allow_password_reset = 6;
    */
-  allowPasswordReset: boolean;
+  allowPasswordReset?: boolean | undefined;
 
   /**
    * —— 验证码限流（§5.6 行 1300-1308）——
    * 同目标重发冷却（秒），默认 60（§5.6 行 1304）。
    *
-   * @generated from field: int64 otp_resend_interval = 7;
+   * @generated from field: optional int64 otp_resend_interval = 7;
    */
-  otpResendInterval: bigint;
+  otpResendInterval?: bigint | undefined;
 
   /**
    * 验证码有效期（秒），默认 300（§5.6 行 1305）。
    *
-   * @generated from field: int64 otp_ttl = 8;
+   * @generated from field: optional int64 otp_ttl = 8;
    */
-  otpTtl: bigint;
+  otpTtl?: bigint | undefined;
 
   /**
    * 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6 行 1306）。
    *
-   * @generated from field: int64 otp_max_attempts = 9;
+   * @generated from field: optional int64 otp_max_attempts = 9;
    */
-  otpMaxAttempts: bigint;
+  otpMaxAttempts?: bigint | undefined;
 
   /**
    * 单目标每日发送上限（次），默认 10（§5.6 行 1307）。
    *
-   * @generated from field: int64 otp_daily_limit_target = 10;
+   * @generated from field: optional int64 otp_daily_limit_target = 10;
    */
-  otpDailyLimitTarget: bigint;
+  otpDailyLimitTarget?: bigint | undefined;
 
   /**
    * 单 IP 每日发送上限（次），默认 50（§5.6 行 1308）。
    *
-   * @generated from field: int64 otp_daily_limit_ip = 11;
+   * @generated from field: optional int64 otp_daily_limit_ip = 11;
    */
-  otpDailyLimitIp: bigint;
+  otpDailyLimitIp?: bigint | undefined;
 
   /**
    * —— 其余设置项（§5.6 行 1310-1337）——
    * 已启用的登录方式（因子名 / thirdparty），只控登录，默认全开（§5.6 行 1314）。
+   * has 位：true = login_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
    *
-   * @generated from field: repeated string login_methods = 12;
+   * @generated from field: optional bool has_login_methods = 12;
+   */
+  hasLoginMethods?: boolean | undefined;
+
+  /**
+   * @generated from field: repeated string login_methods = 13;
    */
   loginMethods: string[];
 
   /**
    * 注册总开关，默认 true；false 时 §2.3 一律 status=signup_disabled（§5.6 行 1315）。
    *
-   * @generated from field: bool allow_registration = 13;
+   * @generated from field: optional bool allow_registration = 14;
    */
-  allowRegistration: boolean;
+  allowRegistration?: boolean | undefined;
 
   /**
    * 用户名 + 密码注册入口，默认 true（§5.6 行 1316）。
    *
-   * @generated from field: bool allow_signup_password = 14;
+   * @generated from field: optional bool allow_signup_password = 15;
    */
-  allowSignupPassword: boolean;
+  allowSignupPassword?: boolean | undefined;
 
   /**
    * 手机号注册入口，默认 true（§5.6 行 1317）。
    *
-   * @generated from field: bool allow_signup_phone = 15;
+   * @generated from field: optional bool allow_signup_phone = 16;
    */
-  allowSignupPhone: boolean;
+  allowSignupPhone?: boolean | undefined;
 
   /**
    * 邮箱注册入口，默认 true（§5.6 行 1318）。
    *
-   * @generated from field: bool allow_signup_email = 16;
+   * @generated from field: optional bool allow_signup_email = 17;
    */
-  allowSignupEmail: boolean;
+  allowSignupEmail?: boolean | undefined;
 
   /**
    * 两步验证总开关，默认 true；关闭后 mfa_policy.required 恒为 false（§5.6 行 1319）。
    *
-   * @generated from field: bool mfa_enabled = 17;
+   * @generated from field: optional bool mfa_enabled = 18;
    */
-  mfaEnabled: boolean;
+  mfaEnabled?: boolean | undefined;
 
   /**
    * 系统开放的二次因子集合（recovery_code 随 totp 生效，不单列）（§5.6 行 1320）。
+   * has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
    *
-   * @generated from field: repeated string mfa_methods = 18;
+   * @generated from field: optional bool has_mfa_methods = 19;
+   */
+  hasMfaMethods?: boolean | undefined;
+
+  /**
+   * @generated from field: repeated string mfa_methods = 20;
    */
   mfaMethods: string[];
 
   /**
    * 同一账号当日密码错误达此次数后登录必须携带人机校验，默认 3（§5.6 行 1321）。
    *
-   * @generated from field: int64 pwd_fail_capture = 19;
+   * @generated from field: optional int64 pwd_fail_capture = 21;
    */
-  pwdFailCapture: bigint;
+  pwdFailCapture?: bigint | undefined;
 
   /**
    * 累计失败达此次数后禁止密码登录，默认 6（§5.6 行 1322）。
    *
-   * @generated from field: int64 pwd_fail_ban = 20;
+   * @generated from field: optional int64 pwd_fail_ban = 22;
    */
-  pwdFailBan: bigint;
+  pwdFailBan?: bigint | undefined;
 
   /**
    * 禁止密码登录时长（秒），默认 21600 即 6 小时（§5.6 行 1323）。
    *
-   * @generated from field: int64 pwd_ban_ttl = 21;
+   * @generated from field: optional int64 pwd_ban_ttl = 23;
    */
-  pwdBanTtl: bigint;
+  pwdBanTtl?: bigint | undefined;
 
   /**
    * 会话与 Cookie 有效期（秒），默认 604800 即 7 天（§5.6 行 1324）。
    *
-   * @generated from field: int64 session_ttl = 22;
+   * @generated from field: optional int64 session_ttl = 24;
    */
-  sessionTtl: bigint;
+  sessionTtl?: bigint | undefined;
 
   /**
    * 会话 Cookie 名，默认 al_session（§5.6 行 1325）。
    *
-   * @generated from field: string cookie_name = 23;
+   * @generated from field: optional string cookie_name = 25;
    */
-  cookieName: string;
+  cookieName?: string | undefined;
 
   /**
    * 多根域名同步列表，登录 / 登出时逐个同步（§5.6 行 1326、§2.9）。
+   * has 位：true = sso_domains 在场（空数组 = 清空）；缺省 / false = 不修改。
    *
-   * @generated from field: repeated string sso_domains = 24;
+   * @generated from field: optional bool has_sso_domains = 26;
+   */
+  hasSsoDomains?: boolean | undefined;
+
+  /**
+   * @generated from field: repeated string sso_domains = 27;
    */
   ssoDomains: string[];
 
   /**
    * 延迟写入队列 worker 数，默认 4（§5.6 行 1327）。
    *
-   * @generated from field: int64 queue_workers = 25;
+   * @generated from field: optional int64 queue_workers = 28;
    */
-  queueWorkers: bigint;
+  queueWorkers?: bigint | undefined;
 
   /**
    * 队列长度（ring buffer），默认 8192（§5.6 行 1328）。
    *
-   * @generated from field: int64 queue_capacity = 26;
+   * @generated from field: optional int64 queue_capacity = 29;
    */
-  queueCapacity: bigint;
+  queueCapacity?: bigint | undefined;
 
   /**
    * 攒批条数阈值，默认 200（§5.6 行 1329）。
    *
-   * @generated from field: int64 queue_batch = 27;
+   * @generated from field: optional int64 queue_batch = 30;
    */
-  queueBatch: bigint;
+  queueBatch?: bigint | undefined;
 
   /**
    * 攒批时间窗（毫秒），默认 2000（§5.6 行 1330）。
    *
-   * @generated from field: int64 queue_flush_ms = 28;
+   * @generated from field: optional int64 queue_flush_ms = 31;
    */
-  queueFlushMs: bigint;
+  queueFlushMs?: bigint | undefined;
 
   /**
    * 当前生效的 captcha Provider；空串 = 内置图形码 builtin_image（§5.6 行 1331）。
    *
-   * @generated from field: string captcha_provider_key = 29;
+   * @generated from field: optional string captcha_provider_key = 32;
    */
-  captchaProviderKey: string;
+  captchaProviderKey?: string | undefined;
 
   /**
    * 当前生效的短信 Provider（§5.6 行 1332）。
    *
-   * @generated from field: string sms_provider_key = 30;
+   * @generated from field: optional string sms_provider_key = 33;
    */
-  smsProviderKey: string;
+  smsProviderKey?: string | undefined;
 
   /**
    * 当前生效的邮件 Provider（§5.6 行 1333）。
    *
-   * @generated from field: string email_provider_key = 31;
+   * @generated from field: optional string email_provider_key = 34;
    */
-  emailProviderKey: string;
+  emailProviderKey?: string | undefined;
 
   /**
    * 头像 / 渠道图标使用的 Storage Provider（§5.6 行 1334）。
    *
-   * @generated from field: string avatar_storage_provider = 32;
+   * @generated from field: optional string avatar_storage_provider = 35;
    */
-  avatarStorageProvider: string;
+  avatarStorageProvider?: string | undefined;
 
   /**
    * 网关 Token 列表，可多个（§5.6 行 1335、§6）。
+   * has 位：true = gateway_tokens 在场（空数组 = 清空）；缺省 / false = 不修改。
    *
-   * @generated from field: repeated string gateway_tokens = 33;
+   * @generated from field: optional bool has_gateway_tokens = 36;
+   */
+  hasGatewayTokens?: boolean | undefined;
+
+  /**
+   * @generated from field: repeated string gateway_tokens = 37;
    */
   gatewayTokens: string[];
 
   /**
    * 事件日志保留天数，默认 180（§5.6 行 1336）。
    *
-   * @generated from field: int64 eventlog_retention_days = 34;
+   * @generated from field: optional int64 eventlog_retention_days = 38;
    */
-  eventlogRetentionDays: bigint;
+  eventlogRetentionDays?: bigint | undefined;
 
   /**
    * 静态资源基址（CDN），改后需刷新页面生效（§5.6 行 1337、§8）。
    *
-   * @generated from field: string static_base = 35;
+   * @generated from field: optional string static_base = 39;
    */
-  staticBase: string;
+  staticBase?: string | undefined;
 
   /**
    * HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
    * 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
-   * （§1.9 驱动口径）；全量替换语义内写回，取值非三态 → invalid_request（行 1361）。
+   * （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request（行 1361）。
    *
-   * @generated from field: string https_deployment = 36;
+   * @generated from field: optional string https_deployment = 40;
    */
-  httpsDeployment: string;
+  httpsDeployment?: string | undefined;
 };
 
 /**
@@ -308,9 +334,10 @@ export const SetSettingsRequestSchema: GenMessage<SetSettingsRequest> = /*@__PUR
 
 /**
  * SettingsResponse 是 AdminService/GetSettings 的响应（§5.6 行 1271）：
- * 键集合、键名、编号与 SetSettingsRequest 完全一致；标量与列表字段按 §12.9 行 1752
- * 恒存在口径输出（零值 / 空串 / false / 空数组）。响应名沿用资源式命名
- * （buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+ * 键集合 / 键名与 SetSettingsRequest 的 36 个数据键一致，编号按表序从 1 起
+ * 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
+ * 标量与列表字段按 §12.9 行 1752 恒存在口径输出（零值 / 空串 / false /
+ * 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
  *
  * @generated from message api.admin.v1.SettingsResponse
  */

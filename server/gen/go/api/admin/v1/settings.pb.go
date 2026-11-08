@@ -59,93 +59,103 @@ func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
 }
 
 // SetSettingsRequest 是 AdminService/SetSettings 的请求（§5.6 行 1271「全部系统配置」）：
-// 全量提交——前端以 GET 结果为底稿改后整体回写；protojson 严格模式拒绝未知字段，
-// 「写入不接受表外键名」由编解码层直接保证（行 1271）。改动热更新、只对后续请求生效
-// （行 1339）。标量字段不标 optional：全量提交语义下零值即写入值（如 pwd_ban_ttl 调 0），
-// repeated 字段空数组即清空该列表；值域交叉约束由前端设置页与管理员自律保证，
-// 后端写入仅校验键名与值类型（行 1339）。消息名随方法名（§12.9 行 1747；
-// pre-connect 时代按资源命名 SettingsRequest，Connect 化时更名）。
-// 成功返回 OkResponse。
+// 部分更新（PATCH）：标量全字段 proto3 optional，未设置 = 不修改（保留现值）、
+// 显式设值 = 覆盖（含 0 / false / 空串，如 pwd_ban_ttl 调 0）；四个 repeated
+// 键各带 has_* 伴生标志（repeated 无 has 位、protojson 下 [] 与缺省同为 nil）：
+// 标志取 true = 列表在场，按数组整组替换，空数组 / 缺省数组 = 清空该列表；
+// 标志缺省 / 显式 false = 不修改。前端以 GET 结果为底稿整体回写仍兼容（须
+// 一并下发四个标志）；严格模式拒绝未知字段（行 1271），后端仅校验键名与值
+// 类型（行 1339），交叉约束由前端设置页与管理员自律保证；改动热更新、只对
+// 后续请求生效（行 1339）。消息名随方法名（§12.9 行 1747；pre-connect 时代
+// 按资源命名 SettingsRequest，Connect 化时更名）。成功返回 OkResponse。
 type SetSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// —— 密码策略（§5.6 行 1276-1291，键名与默认值的唯一定义处）——
 	// 最小长度，默认 8（§5.6 行 1280）。
-	PwdMinLength int64 `protobuf:"varint,1,opt,name=pwd_min_length,json=pwdMinLength,proto3" json:"pwd_min_length,omitempty"`
+	PwdMinLength *int64 `protobuf:"varint,1,opt,name=pwd_min_length,json=pwdMinLength,proto3,oneof" json:"pwd_min_length,omitempty"`
 	// 最大长度，默认 64；可调低不可调高，服务端硬上限 64（§5.6 行 1281）。
-	PwdMaxLength int64 `protobuf:"varint,2,opt,name=pwd_max_length,json=pwdMaxLength,proto3" json:"pwd_max_length,omitempty"`
+	PwdMaxLength *int64 `protobuf:"varint,2,opt,name=pwd_max_length,json=pwdMaxLength,proto3,oneof" json:"pwd_max_length,omitempty"`
 	// 须满足的字符类数（1-3），字符类 = 大写 / 小写 / 数字（§5.6 行 1282）。
-	PwdRequireClasses int64 `protobuf:"varint,3,opt,name=pwd_require_classes,json=pwdRequireClasses,proto3" json:"pwd_require_classes,omitempty"`
+	PwdRequireClasses *int64 `protobuf:"varint,3,opt,name=pwd_require_classes,json=pwdRequireClasses,proto3,oneof" json:"pwd_require_classes,omitempty"`
 	// 禁止密码包含用户名，默认 true（§5.6 行 1283）。
-	PwdDisallowUsername bool `protobuf:"varint,4,opt,name=pwd_disallow_username,json=pwdDisallowUsername,proto3" json:"pwd_disallow_username,omitempty"`
+	PwdDisallowUsername *bool `protobuf:"varint,4,opt,name=pwd_disallow_username,json=pwdDisallowUsername,proto3,oneof" json:"pwd_disallow_username,omitempty"`
 	// 禁止命中弱口令字典，默认 true（§5.6 行 1284）。
-	PwdDisallowCommon bool `protobuf:"varint,5,opt,name=pwd_disallow_common,json=pwdDisallowCommon,proto3" json:"pwd_disallow_common,omitempty"`
+	PwdDisallowCommon *bool `protobuf:"varint,5,opt,name=pwd_disallow_common,json=pwdDisallowCommon,proto3,oneof" json:"pwd_disallow_common,omitempty"`
 	// —— 账号策略（§5.6 行 1294-1298）——
 	// 是否开放自助重置密码，默认 true；false 时 §2.4 一律 status=reset_disabled（§5.6 行 1298）。
-	AllowPasswordReset bool `protobuf:"varint,6,opt,name=allow_password_reset,json=allowPasswordReset,proto3" json:"allow_password_reset,omitempty"`
+	AllowPasswordReset *bool `protobuf:"varint,6,opt,name=allow_password_reset,json=allowPasswordReset,proto3,oneof" json:"allow_password_reset,omitempty"`
 	// —— 验证码限流（§5.6 行 1300-1308）——
 	// 同目标重发冷却（秒），默认 60（§5.6 行 1304）。
-	OtpResendInterval int64 `protobuf:"varint,7,opt,name=otp_resend_interval,json=otpResendInterval,proto3" json:"otp_resend_interval,omitempty"`
+	OtpResendInterval *int64 `protobuf:"varint,7,opt,name=otp_resend_interval,json=otpResendInterval,proto3,oneof" json:"otp_resend_interval,omitempty"`
 	// 验证码有效期（秒），默认 300（§5.6 行 1305）。
-	OtpTtl int64 `protobuf:"varint,8,opt,name=otp_ttl,json=otpTtl,proto3" json:"otp_ttl,omitempty"`
+	OtpTtl *int64 `protobuf:"varint,8,opt,name=otp_ttl,json=otpTtl,proto3,oneof" json:"otp_ttl,omitempty"`
 	// 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6 行 1306）。
-	OtpMaxAttempts int64 `protobuf:"varint,9,opt,name=otp_max_attempts,json=otpMaxAttempts,proto3" json:"otp_max_attempts,omitempty"`
+	OtpMaxAttempts *int64 `protobuf:"varint,9,opt,name=otp_max_attempts,json=otpMaxAttempts,proto3,oneof" json:"otp_max_attempts,omitempty"`
 	// 单目标每日发送上限（次），默认 10（§5.6 行 1307）。
-	OtpDailyLimitTarget int64 `protobuf:"varint,10,opt,name=otp_daily_limit_target,json=otpDailyLimitTarget,proto3" json:"otp_daily_limit_target,omitempty"`
+	OtpDailyLimitTarget *int64 `protobuf:"varint,10,opt,name=otp_daily_limit_target,json=otpDailyLimitTarget,proto3,oneof" json:"otp_daily_limit_target,omitempty"`
 	// 单 IP 每日发送上限（次），默认 50（§5.6 行 1308）。
-	OtpDailyLimitIp int64 `protobuf:"varint,11,opt,name=otp_daily_limit_ip,json=otpDailyLimitIp,proto3" json:"otp_daily_limit_ip,omitempty"`
+	OtpDailyLimitIp *int64 `protobuf:"varint,11,opt,name=otp_daily_limit_ip,json=otpDailyLimitIp,proto3,oneof" json:"otp_daily_limit_ip,omitempty"`
 	// —— 其余设置项（§5.6 行 1310-1337）——
 	// 已启用的登录方式（因子名 / thirdparty），只控登录，默认全开（§5.6 行 1314）。
-	LoginMethods []string `protobuf:"bytes,12,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
+	// has 位：true = login_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
+	HasLoginMethods *bool    `protobuf:"varint,12,opt,name=has_login_methods,json=hasLoginMethods,proto3,oneof" json:"has_login_methods,omitempty"`
+	LoginMethods    []string `protobuf:"bytes,13,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
 	// 注册总开关，默认 true；false 时 §2.3 一律 status=signup_disabled（§5.6 行 1315）。
-	AllowRegistration bool `protobuf:"varint,13,opt,name=allow_registration,json=allowRegistration,proto3" json:"allow_registration,omitempty"`
+	AllowRegistration *bool `protobuf:"varint,14,opt,name=allow_registration,json=allowRegistration,proto3,oneof" json:"allow_registration,omitempty"`
 	// 用户名 + 密码注册入口，默认 true（§5.6 行 1316）。
-	AllowSignupPassword bool `protobuf:"varint,14,opt,name=allow_signup_password,json=allowSignupPassword,proto3" json:"allow_signup_password,omitempty"`
+	AllowSignupPassword *bool `protobuf:"varint,15,opt,name=allow_signup_password,json=allowSignupPassword,proto3,oneof" json:"allow_signup_password,omitempty"`
 	// 手机号注册入口，默认 true（§5.6 行 1317）。
-	AllowSignupPhone bool `protobuf:"varint,15,opt,name=allow_signup_phone,json=allowSignupPhone,proto3" json:"allow_signup_phone,omitempty"`
+	AllowSignupPhone *bool `protobuf:"varint,16,opt,name=allow_signup_phone,json=allowSignupPhone,proto3,oneof" json:"allow_signup_phone,omitempty"`
 	// 邮箱注册入口，默认 true（§5.6 行 1318）。
-	AllowSignupEmail bool `protobuf:"varint,16,opt,name=allow_signup_email,json=allowSignupEmail,proto3" json:"allow_signup_email,omitempty"`
+	AllowSignupEmail *bool `protobuf:"varint,17,opt,name=allow_signup_email,json=allowSignupEmail,proto3,oneof" json:"allow_signup_email,omitempty"`
 	// 两步验证总开关，默认 true；关闭后 mfa_policy.required 恒为 false（§5.6 行 1319）。
-	MfaEnabled bool `protobuf:"varint,17,opt,name=mfa_enabled,json=mfaEnabled,proto3" json:"mfa_enabled,omitempty"`
+	MfaEnabled *bool `protobuf:"varint,18,opt,name=mfa_enabled,json=mfaEnabled,proto3,oneof" json:"mfa_enabled,omitempty"`
 	// 系统开放的二次因子集合（recovery_code 随 totp 生效，不单列）（§5.6 行 1320）。
-	MfaMethods []string `protobuf:"bytes,18,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
+	// has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
+	HasMfaMethods *bool    `protobuf:"varint,19,opt,name=has_mfa_methods,json=hasMfaMethods,proto3,oneof" json:"has_mfa_methods,omitempty"`
+	MfaMethods    []string `protobuf:"bytes,20,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
 	// 同一账号当日密码错误达此次数后登录必须携带人机校验，默认 3（§5.6 行 1321）。
-	PwdFailCapture int64 `protobuf:"varint,19,opt,name=pwd_fail_capture,json=pwdFailCapture,proto3" json:"pwd_fail_capture,omitempty"`
+	PwdFailCapture *int64 `protobuf:"varint,21,opt,name=pwd_fail_capture,json=pwdFailCapture,proto3,oneof" json:"pwd_fail_capture,omitempty"`
 	// 累计失败达此次数后禁止密码登录，默认 6（§5.6 行 1322）。
-	PwdFailBan int64 `protobuf:"varint,20,opt,name=pwd_fail_ban,json=pwdFailBan,proto3" json:"pwd_fail_ban,omitempty"`
+	PwdFailBan *int64 `protobuf:"varint,22,opt,name=pwd_fail_ban,json=pwdFailBan,proto3,oneof" json:"pwd_fail_ban,omitempty"`
 	// 禁止密码登录时长（秒），默认 21600 即 6 小时（§5.6 行 1323）。
-	PwdBanTtl int64 `protobuf:"varint,21,opt,name=pwd_ban_ttl,json=pwdBanTtl,proto3" json:"pwd_ban_ttl,omitempty"`
+	PwdBanTtl *int64 `protobuf:"varint,23,opt,name=pwd_ban_ttl,json=pwdBanTtl,proto3,oneof" json:"pwd_ban_ttl,omitempty"`
 	// 会话与 Cookie 有效期（秒），默认 604800 即 7 天（§5.6 行 1324）。
-	SessionTtl int64 `protobuf:"varint,22,opt,name=session_ttl,json=sessionTtl,proto3" json:"session_ttl,omitempty"`
+	SessionTtl *int64 `protobuf:"varint,24,opt,name=session_ttl,json=sessionTtl,proto3,oneof" json:"session_ttl,omitempty"`
 	// 会话 Cookie 名，默认 al_session（§5.6 行 1325）。
-	CookieName string `protobuf:"bytes,23,opt,name=cookie_name,json=cookieName,proto3" json:"cookie_name,omitempty"`
+	CookieName *string `protobuf:"bytes,25,opt,name=cookie_name,json=cookieName,proto3,oneof" json:"cookie_name,omitempty"`
 	// 多根域名同步列表，登录 / 登出时逐个同步（§5.6 行 1326、§2.9）。
-	SsoDomains []string `protobuf:"bytes,24,rep,name=sso_domains,json=ssoDomains,proto3" json:"sso_domains,omitempty"`
+	// has 位：true = sso_domains 在场（空数组 = 清空）；缺省 / false = 不修改。
+	HasSsoDomains *bool    `protobuf:"varint,26,opt,name=has_sso_domains,json=hasSsoDomains,proto3,oneof" json:"has_sso_domains,omitempty"`
+	SsoDomains    []string `protobuf:"bytes,27,rep,name=sso_domains,json=ssoDomains,proto3" json:"sso_domains,omitempty"`
 	// 延迟写入队列 worker 数，默认 4（§5.6 行 1327）。
-	QueueWorkers int64 `protobuf:"varint,25,opt,name=queue_workers,json=queueWorkers,proto3" json:"queue_workers,omitempty"`
+	QueueWorkers *int64 `protobuf:"varint,28,opt,name=queue_workers,json=queueWorkers,proto3,oneof" json:"queue_workers,omitempty"`
 	// 队列长度（ring buffer），默认 8192（§5.6 行 1328）。
-	QueueCapacity int64 `protobuf:"varint,26,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
+	QueueCapacity *int64 `protobuf:"varint,29,opt,name=queue_capacity,json=queueCapacity,proto3,oneof" json:"queue_capacity,omitempty"`
 	// 攒批条数阈值，默认 200（§5.6 行 1329）。
-	QueueBatch int64 `protobuf:"varint,27,opt,name=queue_batch,json=queueBatch,proto3" json:"queue_batch,omitempty"`
+	QueueBatch *int64 `protobuf:"varint,30,opt,name=queue_batch,json=queueBatch,proto3,oneof" json:"queue_batch,omitempty"`
 	// 攒批时间窗（毫秒），默认 2000（§5.6 行 1330）。
-	QueueFlushMs int64 `protobuf:"varint,28,opt,name=queue_flush_ms,json=queueFlushMs,proto3" json:"queue_flush_ms,omitempty"`
+	QueueFlushMs *int64 `protobuf:"varint,31,opt,name=queue_flush_ms,json=queueFlushMs,proto3,oneof" json:"queue_flush_ms,omitempty"`
 	// 当前生效的 captcha Provider；空串 = 内置图形码 builtin_image（§5.6 行 1331）。
-	CaptchaProviderKey string `protobuf:"bytes,29,opt,name=captcha_provider_key,json=captchaProviderKey,proto3" json:"captcha_provider_key,omitempty"`
+	CaptchaProviderKey *string `protobuf:"bytes,32,opt,name=captcha_provider_key,json=captchaProviderKey,proto3,oneof" json:"captcha_provider_key,omitempty"`
 	// 当前生效的短信 Provider（§5.6 行 1332）。
-	SmsProviderKey string `protobuf:"bytes,30,opt,name=sms_provider_key,json=smsProviderKey,proto3" json:"sms_provider_key,omitempty"`
+	SmsProviderKey *string `protobuf:"bytes,33,opt,name=sms_provider_key,json=smsProviderKey,proto3,oneof" json:"sms_provider_key,omitempty"`
 	// 当前生效的邮件 Provider（§5.6 行 1333）。
-	EmailProviderKey string `protobuf:"bytes,31,opt,name=email_provider_key,json=emailProviderKey,proto3" json:"email_provider_key,omitempty"`
+	EmailProviderKey *string `protobuf:"bytes,34,opt,name=email_provider_key,json=emailProviderKey,proto3,oneof" json:"email_provider_key,omitempty"`
 	// 头像 / 渠道图标使用的 Storage Provider（§5.6 行 1334）。
-	AvatarStorageProvider string `protobuf:"bytes,32,opt,name=avatar_storage_provider,json=avatarStorageProvider,proto3" json:"avatar_storage_provider,omitempty"`
+	AvatarStorageProvider *string `protobuf:"bytes,35,opt,name=avatar_storage_provider,json=avatarStorageProvider,proto3,oneof" json:"avatar_storage_provider,omitempty"`
 	// 网关 Token 列表，可多个（§5.6 行 1335、§6）。
-	GatewayTokens []string `protobuf:"bytes,33,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
+	// has 位：true = gateway_tokens 在场（空数组 = 清空）；缺省 / false = 不修改。
+	HasGatewayTokens *bool    `protobuf:"varint,36,opt,name=has_gateway_tokens,json=hasGatewayTokens,proto3,oneof" json:"has_gateway_tokens,omitempty"`
+	GatewayTokens    []string `protobuf:"bytes,37,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
 	// 事件日志保留天数，默认 180（§5.6 行 1336）。
-	EventlogRetentionDays int64 `protobuf:"varint,34,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3" json:"eventlog_retention_days,omitempty"`
+	EventlogRetentionDays *int64 `protobuf:"varint,38,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3,oneof" json:"eventlog_retention_days,omitempty"`
 	// 静态资源基址（CDN），改后需刷新页面生效（§5.6 行 1337、§8）。
-	StaticBase string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
+	StaticBase *string `protobuf:"bytes,39,opt,name=static_base,json=staticBase,proto3,oneof" json:"static_base,omitempty"`
 	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
-	// （§1.9 驱动口径）；全量替换语义内写回，取值非三态 → invalid_request（行 1361）。
-	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
+	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request（行 1361）。
+	HttpsDeployment *string `protobuf:"bytes,40,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -181,80 +191,87 @@ func (*SetSettingsRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *SetSettingsRequest) GetPwdMinLength() int64 {
-	if x != nil {
-		return x.PwdMinLength
+	if x != nil && x.PwdMinLength != nil {
+		return *x.PwdMinLength
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetPwdMaxLength() int64 {
-	if x != nil {
-		return x.PwdMaxLength
+	if x != nil && x.PwdMaxLength != nil {
+		return *x.PwdMaxLength
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetPwdRequireClasses() int64 {
-	if x != nil {
-		return x.PwdRequireClasses
+	if x != nil && x.PwdRequireClasses != nil {
+		return *x.PwdRequireClasses
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetPwdDisallowUsername() bool {
-	if x != nil {
-		return x.PwdDisallowUsername
+	if x != nil && x.PwdDisallowUsername != nil {
+		return *x.PwdDisallowUsername
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetPwdDisallowCommon() bool {
-	if x != nil {
-		return x.PwdDisallowCommon
+	if x != nil && x.PwdDisallowCommon != nil {
+		return *x.PwdDisallowCommon
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetAllowPasswordReset() bool {
-	if x != nil {
-		return x.AllowPasswordReset
+	if x != nil && x.AllowPasswordReset != nil {
+		return *x.AllowPasswordReset
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetOtpResendInterval() int64 {
-	if x != nil {
-		return x.OtpResendInterval
+	if x != nil && x.OtpResendInterval != nil {
+		return *x.OtpResendInterval
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetOtpTtl() int64 {
-	if x != nil {
-		return x.OtpTtl
+	if x != nil && x.OtpTtl != nil {
+		return *x.OtpTtl
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetOtpMaxAttempts() int64 {
-	if x != nil {
-		return x.OtpMaxAttempts
+	if x != nil && x.OtpMaxAttempts != nil {
+		return *x.OtpMaxAttempts
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetOtpDailyLimitTarget() int64 {
-	if x != nil {
-		return x.OtpDailyLimitTarget
+	if x != nil && x.OtpDailyLimitTarget != nil {
+		return *x.OtpDailyLimitTarget
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetOtpDailyLimitIp() int64 {
-	if x != nil {
-		return x.OtpDailyLimitIp
+	if x != nil && x.OtpDailyLimitIp != nil {
+		return *x.OtpDailyLimitIp
 	}
 	return 0
+}
+
+func (x *SetSettingsRequest) GetHasLoginMethods() bool {
+	if x != nil && x.HasLoginMethods != nil {
+		return *x.HasLoginMethods
+	}
+	return false
 }
 
 func (x *SetSettingsRequest) GetLoginMethods() []string {
@@ -265,36 +282,43 @@ func (x *SetSettingsRequest) GetLoginMethods() []string {
 }
 
 func (x *SetSettingsRequest) GetAllowRegistration() bool {
-	if x != nil {
-		return x.AllowRegistration
+	if x != nil && x.AllowRegistration != nil {
+		return *x.AllowRegistration
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetAllowSignupPassword() bool {
-	if x != nil {
-		return x.AllowSignupPassword
+	if x != nil && x.AllowSignupPassword != nil {
+		return *x.AllowSignupPassword
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetAllowSignupPhone() bool {
-	if x != nil {
-		return x.AllowSignupPhone
+	if x != nil && x.AllowSignupPhone != nil {
+		return *x.AllowSignupPhone
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetAllowSignupEmail() bool {
-	if x != nil {
-		return x.AllowSignupEmail
+	if x != nil && x.AllowSignupEmail != nil {
+		return *x.AllowSignupEmail
 	}
 	return false
 }
 
 func (x *SetSettingsRequest) GetMfaEnabled() bool {
-	if x != nil {
-		return x.MfaEnabled
+	if x != nil && x.MfaEnabled != nil {
+		return *x.MfaEnabled
+	}
+	return false
+}
+
+func (x *SetSettingsRequest) GetHasMfaMethods() bool {
+	if x != nil && x.HasMfaMethods != nil {
+		return *x.HasMfaMethods
 	}
 	return false
 }
@@ -307,38 +331,45 @@ func (x *SetSettingsRequest) GetMfaMethods() []string {
 }
 
 func (x *SetSettingsRequest) GetPwdFailCapture() int64 {
-	if x != nil {
-		return x.PwdFailCapture
+	if x != nil && x.PwdFailCapture != nil {
+		return *x.PwdFailCapture
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetPwdFailBan() int64 {
-	if x != nil {
-		return x.PwdFailBan
+	if x != nil && x.PwdFailBan != nil {
+		return *x.PwdFailBan
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetPwdBanTtl() int64 {
-	if x != nil {
-		return x.PwdBanTtl
+	if x != nil && x.PwdBanTtl != nil {
+		return *x.PwdBanTtl
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetSessionTtl() int64 {
-	if x != nil {
-		return x.SessionTtl
+	if x != nil && x.SessionTtl != nil {
+		return *x.SessionTtl
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetCookieName() string {
-	if x != nil {
-		return x.CookieName
+	if x != nil && x.CookieName != nil {
+		return *x.CookieName
 	}
 	return ""
+}
+
+func (x *SetSettingsRequest) GetHasSsoDomains() bool {
+	if x != nil && x.HasSsoDomains != nil {
+		return *x.HasSsoDomains
+	}
+	return false
 }
 
 func (x *SetSettingsRequest) GetSsoDomains() []string {
@@ -349,59 +380,66 @@ func (x *SetSettingsRequest) GetSsoDomains() []string {
 }
 
 func (x *SetSettingsRequest) GetQueueWorkers() int64 {
-	if x != nil {
-		return x.QueueWorkers
+	if x != nil && x.QueueWorkers != nil {
+		return *x.QueueWorkers
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetQueueCapacity() int64 {
-	if x != nil {
-		return x.QueueCapacity
+	if x != nil && x.QueueCapacity != nil {
+		return *x.QueueCapacity
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetQueueBatch() int64 {
-	if x != nil {
-		return x.QueueBatch
+	if x != nil && x.QueueBatch != nil {
+		return *x.QueueBatch
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetQueueFlushMs() int64 {
-	if x != nil {
-		return x.QueueFlushMs
+	if x != nil && x.QueueFlushMs != nil {
+		return *x.QueueFlushMs
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetCaptchaProviderKey() string {
-	if x != nil {
-		return x.CaptchaProviderKey
+	if x != nil && x.CaptchaProviderKey != nil {
+		return *x.CaptchaProviderKey
 	}
 	return ""
 }
 
 func (x *SetSettingsRequest) GetSmsProviderKey() string {
-	if x != nil {
-		return x.SmsProviderKey
+	if x != nil && x.SmsProviderKey != nil {
+		return *x.SmsProviderKey
 	}
 	return ""
 }
 
 func (x *SetSettingsRequest) GetEmailProviderKey() string {
-	if x != nil {
-		return x.EmailProviderKey
+	if x != nil && x.EmailProviderKey != nil {
+		return *x.EmailProviderKey
 	}
 	return ""
 }
 
 func (x *SetSettingsRequest) GetAvatarStorageProvider() string {
-	if x != nil {
-		return x.AvatarStorageProvider
+	if x != nil && x.AvatarStorageProvider != nil {
+		return *x.AvatarStorageProvider
 	}
 	return ""
+}
+
+func (x *SetSettingsRequest) GetHasGatewayTokens() bool {
+	if x != nil && x.HasGatewayTokens != nil {
+		return *x.HasGatewayTokens
+	}
+	return false
 }
 
 func (x *SetSettingsRequest) GetGatewayTokens() []string {
@@ -412,30 +450,31 @@ func (x *SetSettingsRequest) GetGatewayTokens() []string {
 }
 
 func (x *SetSettingsRequest) GetEventlogRetentionDays() int64 {
-	if x != nil {
-		return x.EventlogRetentionDays
+	if x != nil && x.EventlogRetentionDays != nil {
+		return *x.EventlogRetentionDays
 	}
 	return 0
 }
 
 func (x *SetSettingsRequest) GetStaticBase() string {
-	if x != nil {
-		return x.StaticBase
+	if x != nil && x.StaticBase != nil {
+		return *x.StaticBase
 	}
 	return ""
 }
 
 func (x *SetSettingsRequest) GetHttpsDeployment() string {
-	if x != nil {
-		return x.HttpsDeployment
+	if x != nil && x.HttpsDeployment != nil {
+		return *x.HttpsDeployment
 	}
 	return ""
 }
 
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6 行 1271）：
-// 键集合、键名、编号与 SetSettingsRequest 完全一致；标量与列表字段按 §12.9 行 1752
-// 恒存在口径输出（零值 / 空串 / false / 空数组）。响应名沿用资源式命名
-// （buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+// 键集合 / 键名与 SetSettingsRequest 的 36 个数据键一致，编号按表序从 1 起
+// 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
+// 标量与列表字段按 §12.9 行 1752 恒存在口径输出（零值 / 空串 / false /
+// 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type SettingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// —— 密码策略（§5.6 行 1276-1291）——
@@ -807,53 +846,95 @@ var File_api_admin_v1_settings_proto protoreflect.FileDescriptor
 const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1bapi/admin/v1/settings.proto\x12\fapi.admin.v1\"\x14\n" +
-	"\x12GetSettingsRequest\"\xf0\v\n" +
-	"\x12SetSettingsRequest\x12$\n" +
-	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
-	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
-	"\x13pwd_require_classes\x18\x03 \x01(\x03R\x11pwdRequireClasses\x122\n" +
-	"\x15pwd_disallow_username\x18\x04 \x01(\bR\x13pwdDisallowUsername\x12.\n" +
-	"\x13pwd_disallow_common\x18\x05 \x01(\bR\x11pwdDisallowCommon\x120\n" +
-	"\x14allow_password_reset\x18\x06 \x01(\bR\x12allowPasswordReset\x12.\n" +
-	"\x13otp_resend_interval\x18\a \x01(\x03R\x11otpResendInterval\x12\x17\n" +
-	"\aotp_ttl\x18\b \x01(\x03R\x06otpTtl\x12(\n" +
-	"\x10otp_max_attempts\x18\t \x01(\x03R\x0eotpMaxAttempts\x123\n" +
+	"\x12GetSettingsRequest\"\xc6\x14\n" +
+	"\x12SetSettingsRequest\x12)\n" +
+	"\x0epwd_min_length\x18\x01 \x01(\x03H\x00R\fpwdMinLength\x88\x01\x01\x12)\n" +
+	"\x0epwd_max_length\x18\x02 \x01(\x03H\x01R\fpwdMaxLength\x88\x01\x01\x123\n" +
+	"\x13pwd_require_classes\x18\x03 \x01(\x03H\x02R\x11pwdRequireClasses\x88\x01\x01\x127\n" +
+	"\x15pwd_disallow_username\x18\x04 \x01(\bH\x03R\x13pwdDisallowUsername\x88\x01\x01\x123\n" +
+	"\x13pwd_disallow_common\x18\x05 \x01(\bH\x04R\x11pwdDisallowCommon\x88\x01\x01\x125\n" +
+	"\x14allow_password_reset\x18\x06 \x01(\bH\x05R\x12allowPasswordReset\x88\x01\x01\x123\n" +
+	"\x13otp_resend_interval\x18\a \x01(\x03H\x06R\x11otpResendInterval\x88\x01\x01\x12\x1c\n" +
+	"\aotp_ttl\x18\b \x01(\x03H\aR\x06otpTtl\x88\x01\x01\x12-\n" +
+	"\x10otp_max_attempts\x18\t \x01(\x03H\bR\x0eotpMaxAttempts\x88\x01\x01\x128\n" +
 	"\x16otp_daily_limit_target\x18\n" +
-	" \x01(\x03R\x13otpDailyLimitTarget\x12+\n" +
-	"\x12otp_daily_limit_ip\x18\v \x01(\x03R\x0fotpDailyLimitIp\x12#\n" +
-	"\rlogin_methods\x18\f \x03(\tR\floginMethods\x12-\n" +
-	"\x12allow_registration\x18\r \x01(\bR\x11allowRegistration\x122\n" +
-	"\x15allow_signup_password\x18\x0e \x01(\bR\x13allowSignupPassword\x12,\n" +
-	"\x12allow_signup_phone\x18\x0f \x01(\bR\x10allowSignupPhone\x12,\n" +
-	"\x12allow_signup_email\x18\x10 \x01(\bR\x10allowSignupEmail\x12\x1f\n" +
-	"\vmfa_enabled\x18\x11 \x01(\bR\n" +
-	"mfaEnabled\x12\x1f\n" +
-	"\vmfa_methods\x18\x12 \x03(\tR\n" +
-	"mfaMethods\x12(\n" +
-	"\x10pwd_fail_capture\x18\x13 \x01(\x03R\x0epwdFailCapture\x12 \n" +
-	"\fpwd_fail_ban\x18\x14 \x01(\x03R\n" +
-	"pwdFailBan\x12\x1e\n" +
-	"\vpwd_ban_ttl\x18\x15 \x01(\x03R\tpwdBanTtl\x12\x1f\n" +
-	"\vsession_ttl\x18\x16 \x01(\x03R\n" +
-	"sessionTtl\x12\x1f\n" +
-	"\vcookie_name\x18\x17 \x01(\tR\n" +
-	"cookieName\x12\x1f\n" +
-	"\vsso_domains\x18\x18 \x03(\tR\n" +
-	"ssoDomains\x12#\n" +
-	"\rqueue_workers\x18\x19 \x01(\x03R\fqueueWorkers\x12%\n" +
-	"\x0equeue_capacity\x18\x1a \x01(\x03R\rqueueCapacity\x12\x1f\n" +
-	"\vqueue_batch\x18\x1b \x01(\x03R\n" +
-	"queueBatch\x12$\n" +
-	"\x0equeue_flush_ms\x18\x1c \x01(\x03R\fqueueFlushMs\x120\n" +
-	"\x14captcha_provider_key\x18\x1d \x01(\tR\x12captchaProviderKey\x12(\n" +
-	"\x10sms_provider_key\x18\x1e \x01(\tR\x0esmsProviderKey\x12,\n" +
-	"\x12email_provider_key\x18\x1f \x01(\tR\x10emailProviderKey\x126\n" +
-	"\x17avatar_storage_provider\x18  \x01(\tR\x15avatarStorageProvider\x12%\n" +
-	"\x0egateway_tokens\x18! \x03(\tR\rgatewayTokens\x126\n" +
-	"\x17eventlog_retention_days\x18\" \x01(\x03R\x15eventlogRetentionDays\x12\x1f\n" +
-	"\vstatic_base\x18# \x01(\tR\n" +
-	"staticBase\x12)\n" +
-	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeployment\"\xee\v\n" +
+	" \x01(\x03H\tR\x13otpDailyLimitTarget\x88\x01\x01\x120\n" +
+	"\x12otp_daily_limit_ip\x18\v \x01(\x03H\n" +
+	"R\x0fotpDailyLimitIp\x88\x01\x01\x12/\n" +
+	"\x11has_login_methods\x18\f \x01(\bH\vR\x0fhasLoginMethods\x88\x01\x01\x12#\n" +
+	"\rlogin_methods\x18\r \x03(\tR\floginMethods\x122\n" +
+	"\x12allow_registration\x18\x0e \x01(\bH\fR\x11allowRegistration\x88\x01\x01\x127\n" +
+	"\x15allow_signup_password\x18\x0f \x01(\bH\rR\x13allowSignupPassword\x88\x01\x01\x121\n" +
+	"\x12allow_signup_phone\x18\x10 \x01(\bH\x0eR\x10allowSignupPhone\x88\x01\x01\x121\n" +
+	"\x12allow_signup_email\x18\x11 \x01(\bH\x0fR\x10allowSignupEmail\x88\x01\x01\x12$\n" +
+	"\vmfa_enabled\x18\x12 \x01(\bH\x10R\n" +
+	"mfaEnabled\x88\x01\x01\x12+\n" +
+	"\x0fhas_mfa_methods\x18\x13 \x01(\bH\x11R\rhasMfaMethods\x88\x01\x01\x12\x1f\n" +
+	"\vmfa_methods\x18\x14 \x03(\tR\n" +
+	"mfaMethods\x12-\n" +
+	"\x10pwd_fail_capture\x18\x15 \x01(\x03H\x12R\x0epwdFailCapture\x88\x01\x01\x12%\n" +
+	"\fpwd_fail_ban\x18\x16 \x01(\x03H\x13R\n" +
+	"pwdFailBan\x88\x01\x01\x12#\n" +
+	"\vpwd_ban_ttl\x18\x17 \x01(\x03H\x14R\tpwdBanTtl\x88\x01\x01\x12$\n" +
+	"\vsession_ttl\x18\x18 \x01(\x03H\x15R\n" +
+	"sessionTtl\x88\x01\x01\x12$\n" +
+	"\vcookie_name\x18\x19 \x01(\tH\x16R\n" +
+	"cookieName\x88\x01\x01\x12+\n" +
+	"\x0fhas_sso_domains\x18\x1a \x01(\bH\x17R\rhasSsoDomains\x88\x01\x01\x12\x1f\n" +
+	"\vsso_domains\x18\x1b \x03(\tR\n" +
+	"ssoDomains\x12(\n" +
+	"\rqueue_workers\x18\x1c \x01(\x03H\x18R\fqueueWorkers\x88\x01\x01\x12*\n" +
+	"\x0equeue_capacity\x18\x1d \x01(\x03H\x19R\rqueueCapacity\x88\x01\x01\x12$\n" +
+	"\vqueue_batch\x18\x1e \x01(\x03H\x1aR\n" +
+	"queueBatch\x88\x01\x01\x12)\n" +
+	"\x0equeue_flush_ms\x18\x1f \x01(\x03H\x1bR\fqueueFlushMs\x88\x01\x01\x125\n" +
+	"\x14captcha_provider_key\x18  \x01(\tH\x1cR\x12captchaProviderKey\x88\x01\x01\x12-\n" +
+	"\x10sms_provider_key\x18! \x01(\tH\x1dR\x0esmsProviderKey\x88\x01\x01\x121\n" +
+	"\x12email_provider_key\x18\" \x01(\tH\x1eR\x10emailProviderKey\x88\x01\x01\x12;\n" +
+	"\x17avatar_storage_provider\x18# \x01(\tH\x1fR\x15avatarStorageProvider\x88\x01\x01\x121\n" +
+	"\x12has_gateway_tokens\x18$ \x01(\bH R\x10hasGatewayTokens\x88\x01\x01\x12%\n" +
+	"\x0egateway_tokens\x18% \x03(\tR\rgatewayTokens\x12;\n" +
+	"\x17eventlog_retention_days\x18& \x01(\x03H!R\x15eventlogRetentionDays\x88\x01\x01\x12$\n" +
+	"\vstatic_base\x18' \x01(\tH\"R\n" +
+	"staticBase\x88\x01\x01\x12.\n" +
+	"\x10https_deployment\x18( \x01(\tH#R\x0fhttpsDeployment\x88\x01\x01B\x11\n" +
+	"\x0f_pwd_min_lengthB\x11\n" +
+	"\x0f_pwd_max_lengthB\x16\n" +
+	"\x14_pwd_require_classesB\x18\n" +
+	"\x16_pwd_disallow_usernameB\x16\n" +
+	"\x14_pwd_disallow_commonB\x17\n" +
+	"\x15_allow_password_resetB\x16\n" +
+	"\x14_otp_resend_intervalB\n" +
+	"\n" +
+	"\b_otp_ttlB\x13\n" +
+	"\x11_otp_max_attemptsB\x19\n" +
+	"\x17_otp_daily_limit_targetB\x15\n" +
+	"\x13_otp_daily_limit_ipB\x14\n" +
+	"\x12_has_login_methodsB\x15\n" +
+	"\x13_allow_registrationB\x18\n" +
+	"\x16_allow_signup_passwordB\x15\n" +
+	"\x13_allow_signup_phoneB\x15\n" +
+	"\x13_allow_signup_emailB\x0e\n" +
+	"\f_mfa_enabledB\x12\n" +
+	"\x10_has_mfa_methodsB\x13\n" +
+	"\x11_pwd_fail_captureB\x0f\n" +
+	"\r_pwd_fail_banB\x0e\n" +
+	"\f_pwd_ban_ttlB\x0e\n" +
+	"\f_session_ttlB\x0e\n" +
+	"\f_cookie_nameB\x12\n" +
+	"\x10_has_sso_domainsB\x10\n" +
+	"\x0e_queue_workersB\x11\n" +
+	"\x0f_queue_capacityB\x0e\n" +
+	"\f_queue_batchB\x11\n" +
+	"\x0f_queue_flush_msB\x17\n" +
+	"\x15_captcha_provider_keyB\x13\n" +
+	"\x11_sms_provider_keyB\x15\n" +
+	"\x13_email_provider_keyB\x1a\n" +
+	"\x18_avatar_storage_providerB\x15\n" +
+	"\x13_has_gateway_tokensB\x1a\n" +
+	"\x18_eventlog_retention_daysB\x0e\n" +
+	"\f_static_baseB\x13\n" +
+	"\x11_https_deployment\"\xee\v\n" +
 	"\x10SettingsResponse\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -932,6 +1013,7 @@ func file_api_admin_v1_settings_proto_init() {
 	if File_api_admin_v1_settings_proto != nil {
 		return
 	}
+	file_api_admin_v1_settings_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

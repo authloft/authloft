@@ -1,5 +1,7 @@
 // settings.go 的 service 层测试：GetSettings 全键投影对 §5.6 /
-// internal/settings 键表逐键、SetSettings 全量替换 + SetMany 落库 +
+// internal/settings 键表逐键、SetSettings 部分更新（PATCH：optional has
+// 位 / 显式零值 / 未设置不修改 / repeated 伴生 has_* 标志与清空列表）
+// + SetMany 落库 +
 // settings_update 审计（detail 变更项解码断言）、ListEvents 透传、
 // DecodeToken login/session 正例 + 非法 / 篡改 / 跨 purpose / cookie
 // 载荷 schema 未落地失败例、GetStatus 三字段。真库 List 用例在
@@ -158,96 +160,117 @@ func TestSettingsServiceGetSettingsAllKeys(t *testing.T) {
 	}
 }
 
-// defaultSetSettingsRequest 全默认请求（= settings.Defaults() 的全量提交
-// 形态——前端设置页以 GET 结果为底稿整表单回写；全量替换语义的测试基线）。
+// —— proto3 optional 指针构造（生成物标量字段为 *int64 / *bool / *string）——
+// 指针非 nil = has 位置位（显式设值，含 0 / false / 空串）；nil = 未设置。
+// 与 §3.2 行 837 UpdateProfile 的可选字段测试口径一致。
+func i64Ptr(v int64) *int64   { return &v }
+func boolPtr(v bool) *bool    { return &v }
+func strPtr(v string) *string { return &v }
+
+// defaultSetSettingsRequest 全默认请求（= settings.Defaults() 全字段显式
+// 提交形态，即前端设置页以 GET 结果为底稿整体回写）。PATCH 语义下这是
+// 「全部标量 has 位置位 + 四个 repeated 伴生标志置 true」的兼容基线：
+// 与快照同值也照常写入；两个默认空列表同样在写入集里（显式清空）。
 func defaultSetSettingsRequest() *adminv1.SetSettingsRequest {
 	def := settings.Defaults()
 	return &adminv1.SetSettingsRequest{
-		PwdMinLength:          8,
-		PwdMaxLength:          64,
-		PwdRequireClasses:     3,
-		PwdDisallowUsername:   true,
-		PwdDisallowCommon:     true,
-		AllowPasswordReset:    true,
-		OtpResendInterval:     60,
-		OtpTtl:                300,
-		OtpMaxAttempts:        5,
-		OtpDailyLimitTarget:   10,
-		OtpDailyLimitIp:       50,
+		PwdMinLength:          i64Ptr(8),
+		PwdMaxLength:          i64Ptr(64),
+		PwdRequireClasses:     i64Ptr(3),
+		PwdDisallowUsername:   boolPtr(true),
+		PwdDisallowCommon:     boolPtr(true),
+		AllowPasswordReset:    boolPtr(true),
+		OtpResendInterval:     i64Ptr(60),
+		OtpTtl:                i64Ptr(300),
+		OtpMaxAttempts:        i64Ptr(5),
+		OtpDailyLimitTarget:   i64Ptr(10),
+		OtpDailyLimitIp:       i64Ptr(50),
+		HasLoginMethods:       boolPtr(true),
 		LoginMethods:          def[settings.KeyLoginMethods].([]string),
-		AllowRegistration:     true,
-		AllowSignupPassword:   true,
-		AllowSignupPhone:      true,
-		AllowSignupEmail:      true,
-		MfaEnabled:            true,
+		AllowRegistration:     boolPtr(true),
+		AllowSignupPassword:   boolPtr(true),
+		AllowSignupPhone:      boolPtr(true),
+		AllowSignupEmail:      boolPtr(true),
+		MfaEnabled:            boolPtr(true),
+		HasMfaMethods:         boolPtr(true),
 		MfaMethods:            def[settings.KeyMfaMethods].([]string),
-		PwdFailCapture:        3,
-		PwdFailBan:            6,
-		PwdBanTtl:             21600,
-		SessionTtl:            604800,
-		CookieName:            "al_session",
+		PwdFailCapture:        i64Ptr(3),
+		PwdFailBan:            i64Ptr(6),
+		PwdBanTtl:             i64Ptr(21600),
+		SessionTtl:            i64Ptr(604800),
+		CookieName:            strPtr("al_session"),
+		HasSsoDomains:         boolPtr(true),
 		SsoDomains:            []string{},
-		QueueWorkers:          4,
-		QueueCapacity:         8192,
-		QueueBatch:            200,
-		QueueFlushMs:          2000,
-		CaptchaProviderKey:    "",
-		SmsProviderKey:        "",
-		EmailProviderKey:      "",
-		AvatarStorageProvider: "",
+		QueueWorkers:          i64Ptr(4),
+		QueueCapacity:         i64Ptr(8192),
+		QueueBatch:            i64Ptr(200),
+		QueueFlushMs:          i64Ptr(2000),
+		CaptchaProviderKey:    strPtr(""),
+		SmsProviderKey:        strPtr(""),
+		EmailProviderKey:      strPtr(""),
+		AvatarStorageProvider: strPtr(""),
+		HasGatewayTokens:      boolPtr(true),
 		GatewayTokens:         []string{},
-		EventlogRetentionDays: 180,
-		StaticBase:            "/assets",
-		HttpsDeployment:       settings.HTTPSDeploymentAuto,
+		EventlogRetentionDays: i64Ptr(180),
+		StaticBase:            strPtr("/assets"),
+		HttpsDeployment:       strPtr(settings.HTTPSDeploymentAuto),
 	}
 }
 
-// TestSettingsServiceSetSettingsFullReplace 全量替换 + 落库 + 审计
-// （OUTCOME ②）：36 键整批 SetMany（请求 = 全默认底稿 + 4 处显式变更——
-// 全量提交语义下「没改的键」按表单原值写回，缺省字段才是零值写回），
-// updatedBy=actor；审计 settings_update（actor=admin、user_id=0），detail
-// 解码后 keys / before / after 只含实际变更的 4 键。
-func TestSettingsServiceSetSettingsFullReplace(t *testing.T) {
+// TestSettingsServiceSetSettingsPatchOnlyPresentKeys 部分更新主链路
+// （OUTCOME ②）：只提交 4 个在场键 → SetMany 只落这 4 键（updatedBy=actor），
+// 未提交键（含快照非默认现值的 pwd_max_length / https_deployment）既不进
+// kv 也不进审计变更集；审计 settings_update（actor=admin、user_id=0），
+// detail 的 keys / before / after 只含在场且实际变化的键。
+func TestSettingsServiceSetSettingsPatchOnlyPresentKeys(t *testing.T) {
 	ctx := context.Background()
-	// 快照基线 = 默认档（真 NewStore 种子，非手工拼——diff 断言才真实）。
-	store := &fakeSettingsStore{snap: settings.Defaults()}
+	// 快照基线 = 默认档 + 两处非默认现值（证明「未提交 = 保留现值」）。
+	snap := settings.Defaults()
+	snap[settings.KeyPwdMaxLength] = int64(40)
+	snap[settings.KeyHttpsDeployment] = settings.HTTPSDeploymentTrue
+	store := &fakeSettingsStore{snap: snap}
 	audit := &settingsFakeAudit{}
 	svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
 
-	req := defaultSetSettingsRequest()
-	req.PwdMinLength = 10         // 默认 8 → 变更
-	req.AllowRegistration = false // 默认 true → 变更
-	req.MfaMethods = nil          // 清空（proto 空 repeated = nil → 写回空列表）
-	req.SsoDomains = []string{"https://a.example.com", "https://b.example.com"}
+	req := &adminv1.SetSettingsRequest{
+		PwdMinLength:      i64Ptr(10),           // 默认 8 → 变更
+		AllowRegistration: boolPtr(false),       // 默认 true → 变更
+		HasMfaMethods:     boolPtr(true),        // 伴生标志置 true → 列表在场
+		MfaMethods:        []string{"webauthn"}, // 整组替换
+		HasSsoDomains:     boolPtr(true),        // 伴生标志置 true → 列表在场
+		SsoDomains:        []string{"https://a.example.com", "https://b.example.com"},
+	}
 	if err := svc.SetSettings(ctx, 1, req); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
 
-	// 落库断言：36 键整批、updatedBy=actor、逐键值正确（抽代表键）。
+	// 落库断言：只 4 键、updatedBy=actor、逐键值正确。
 	if store.gotBy != 1 {
 		t.Fatalf("updatedBy = %d, want 1", store.gotBy)
 	}
-	if len(store.gotKV) != len(settings.Defaults()) {
-		t.Fatalf("SetMany 键数 = %d, want %d（全量替换：每字段即键）", len(store.gotKV), len(settings.Defaults()))
+	if len(store.gotKV) != 4 {
+		t.Fatalf("SetMany 键数 = %d, want 4（PATCH：只写在场键）", len(store.gotKV))
 	}
 	if got, _ := store.gotKV[settings.KeyPwdMinLength].(int64); got != 10 {
 		t.Errorf("pwd_min_length = %v, want 10", store.gotKV[settings.KeyPwdMinLength])
 	}
-	if got, _ := store.gotKV[settings.KeyMfaMethods].([]string); len(got) != 0 {
-		t.Errorf("mfa_methods = %v, want 空列表（清空）", store.gotKV[settings.KeyMfaMethods])
-	}
 	if got, _ := store.gotKV[settings.KeyAllowRegistration].(bool); got {
 		t.Errorf("allow_registration = %v, want false", store.gotKV[settings.KeyAllowRegistration])
+	}
+	if got, _ := store.gotKV[settings.KeyMfaMethods].([]string); len(got) != 1 || got[0] != "webauthn" {
+		t.Errorf("mfa_methods = %v, want [webauthn]（整组替换）", store.gotKV[settings.KeyMfaMethods])
 	}
 	if got, _ := store.gotKV[settings.KeySsoDomains].([]string); len(got) != 2 || got[0] != "https://a.example.com" {
 		t.Errorf("sso_domains = %v", store.gotKV[settings.KeySsoDomains])
 	}
-	// 未变更键按表单原值写回（全量替换核心：与快照同值也整批落库）：
-	if got, _ := store.gotKV[settings.KeyPwdMaxLength].(int64); got != 64 {
-		t.Errorf("pwd_max_length 应表单原值写回, got %v", got)
-	}
-	if got, _ := store.gotKV[settings.KeyStaticBase].(string); got != "/assets" {
-		t.Errorf("static_base 应表单原值写回, got %q", got)
+	// 未在场键：不落库（旧全量替换会写零值），保留快照现值。
+	for _, k := range []string{
+		settings.KeyPwdMaxLength, settings.KeyCookieName,
+		settings.KeyHttpsDeployment, settings.KeyLoginMethods,
+	} {
+		if _, ok := store.gotKV[k]; ok {
+			t.Errorf("未设置键 %q 不应写入: %v", k, store.gotKV[k])
+		}
 	}
 
 	// 审计断言：settings_update、actor=admin、actor_id=1、user_id=0。
@@ -268,7 +291,7 @@ func TestSettingsServiceSetSettingsFullReplace(t *testing.T) {
 		t.Fatalf("detail msgpack 解码: %v", err)
 	}
 	// 变更项 = pwd_min_length / allow_registration / mfa_methods / sso_domains，
-	// 按 settings.Defs() 表序。
+	// 按 settings.Defs() 表序；未在场键一律不进变更集（diffSettings 的核心修正）。
 	wantKeys := []string{
 		settings.KeyPwdMinLength,
 		settings.KeyAllowRegistration,
@@ -295,15 +318,23 @@ func TestSettingsServiceSetSettingsFullReplace(t *testing.T) {
 	if a, _ := detail.After[settings.KeyPwdMinLength].(int64); a != 10 {
 		t.Errorf("after[pwd_min_length] = %v, want 10", detail.After[settings.KeyPwdMinLength])
 	}
-	if _, ok := detail.Before[settings.KeyCookieName]; ok {
-		t.Errorf("未变更键不得进 before: %v", detail.Before)
+	for _, k := range []string{settings.KeyPwdMaxLength, settings.KeyHttpsDeployment, settings.KeyCookieName} {
+		if _, ok := detail.Before[k]; ok {
+			t.Errorf("未设置键 %q 不得进 before: %v", k, detail.Before)
+		}
+		if _, ok := detail.After[k]; ok {
+			t.Errorf("未设置键 %q 不得进 after: %v", k, detail.After)
+		}
 	}
 }
 
-// TestSettingsServiceSetSettingsNoChangeStillAudits 幂等重放：全部键与
-// 快照同值 → keys/before/after 空集，仍投审计 + 仍整批落库（每次管理员
-// 动作留痕，口径同 UserService.UpdateUserStatus）。
-func TestSettingsServiceSetSettingsNoChangeStillAudits(t *testing.T) {
+// TestSettingsServiceSetSettingsFullRequestNoChangeStillAudits 全量提交
+// 客户端兼容 + 幂等重放：32 个标量 has 位置位、四个 repeated 伴生标志
+// 置 true，且所有值与快照同 → 36 键照常整批 SetMany（PATCH 不做
+// 「同值跳过」），两个默认空列表也在写入集里（显式清空但不算变更）；
+// detail 的 keys/before/after 空集，仍投审计（每次管理员动作留痕，
+// 口径同 UserService.UpdateUserStatus）。
+func TestSettingsServiceSetSettingsFullRequestNoChangeStillAudits(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeSettingsStore{snap: settings.Defaults()}
 	audit := &settingsFakeAudit{}
@@ -312,8 +343,22 @@ func TestSettingsServiceSetSettingsNoChangeStillAudits(t *testing.T) {
 	if err := svc.SetSettings(ctx, 7, defaultSetSettingsRequest()); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
-	if store.gotBy != 7 || len(store.gotKV) != len(settings.Defaults()) {
-		t.Fatalf("落档 = by %d keys %d, want 7/%d（全量写库不跳过）", store.gotBy, len(store.gotKV), len(settings.Defaults()))
+	if store.gotBy != 7 || len(store.gotKV) != 36 {
+		t.Fatalf("落档 = by %d keys %d, want 7/36（32 标量 + 4 列表，含 2 个空列表）", store.gotBy, len(store.gotKV))
+	}
+	// 同值键仍显式写回（has 位生效，不因与快照同值而跳过）。
+	if got, _ := store.gotKV[settings.KeyPwdMaxLength].(int64); got != 64 {
+		t.Errorf("pwd_max_length 应原值写回, got %v", got)
+	}
+	if got, _ := store.gotKV[settings.KeyStaticBase].(string); got != "/assets" {
+		t.Errorf("static_base 应原值写回, got %q", got)
+	}
+	// 伴生标志置 true 时，空列表也整组写入（非 nil 空切片 → 清空该列表）。
+	for _, k := range []string{settings.KeySsoDomains, settings.KeyGatewayTokens} {
+		got, ok := store.gotKV[k].([]string)
+		if !ok || got == nil || len(got) != 0 {
+			t.Errorf("空列表 %q 应写入非 nil 空切片, got %#v", k, store.gotKV[k])
+		}
 	}
 	if len(audit.events) != 1 {
 		t.Fatalf("同值重放也应投审计, got %d 条", len(audit.events))
@@ -333,21 +378,24 @@ func TestSettingsServiceSetSettingsNoChangeStillAudits(t *testing.T) {
 
 // TestSettingsServiceSetSettingsHTTPSDeploymentValidation：三态
 // 值域 true/false/auto 原样落库（fake 断言传值，值域白名单在 settings 包
-// TestValidate 已覆盖）；三态之外（含空串 / 大写）整批拒绝、不产生半截
+// TestValidate 已覆盖）；三态之外（含显式空串 / 大写）整批拒绝、不产生半截
 // 写入，且真 Store 链路错误经本层转译可判别——errors.Is 命中
 // ErrInvalidRequest（§5.6 行 1361：SetSettings 非法值 → invalid_request；
 // handler mapWriteError 按本哨兵映射 400，此前裸错误不命中误落
 // 500）。负例用真 Store（nil repo）——Validate 先于落库（store.go
-// SetMany），非法值在触达存储前返回，不会 panic。
+// SetMany），非法值在触达存储前返回，不会 panic。PATCH 下正负例均只提交
+// https_deployment 单键：其余键缺省不影响校验链，也不会被误写零值。
 func TestSettingsServiceSetSettingsHTTPSDeploymentValidation(t *testing.T) {
 	ctx := context.Background()
 	for _, ok := range []string{settings.HTTPSDeploymentTrue, settings.HTTPSDeploymentFalse, settings.HTTPSDeploymentAuto} {
 		store := &fakeSettingsStore{snap: settings.Defaults()}
 		svc := newSettingsService(store, &fakeSettingsEvents{}, &settingsFakeAudit{}, nil, &fakeSettingsQueue{})
-		req := defaultSetSettingsRequest()
-		req.HttpsDeployment = ok
+		req := &adminv1.SetSettingsRequest{HttpsDeployment: strPtr(ok)}
 		if err := svc.SetSettings(ctx, 1, req); err != nil {
 			t.Errorf("https_deployment=%q 三态内应通过: %v", ok, err)
+		}
+		if len(store.gotKV) != 1 {
+			t.Errorf("https_deployment=%q PATCH 只应写 1 键, got %d", ok, len(store.gotKV))
 		}
 		if got, _ := store.gotKV[settings.KeyHttpsDeployment].(string); got != ok {
 			t.Errorf("https_deployment=%q 应原样落库, got %v", ok, got)
@@ -355,9 +403,9 @@ func TestSettingsServiceSetSettingsHTTPSDeploymentValidation(t *testing.T) {
 	}
 	for _, bad := range []string{"yes", "", "TRUE", "Auto", "1", "maybe"} {
 		store := settings.NewStore(nil, nil)
-		svc := newSettingsService(store, &fakeSettingsEvents{}, &settingsFakeAudit{}, nil, &fakeSettingsQueue{})
-		req := defaultSetSettingsRequest()
-		req.HttpsDeployment = bad
+		audit := &settingsFakeAudit{}
+		svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
+		req := &adminv1.SetSettingsRequest{HttpsDeployment: strPtr(bad)}
 		err := svc.SetSettings(ctx, 1, req)
 		if err == nil {
 			t.Errorf("https_deployment=%q 三态外应拒绝", bad)
@@ -369,58 +417,266 @@ func TestSettingsServiceSetSettingsHTTPSDeploymentValidation(t *testing.T) {
 		if !strings.Contains(err.Error(), settings.KeyHttpsDeployment) {
 			t.Errorf("https_deployment=%q 拒绝错误应可判别（含键名）, got %v", bad, err)
 		}
+		if len(audit.events) != 0 {
+			t.Errorf("https_deployment=%q 校验失败不应投审计, got %d 条", bad, len(audit.events))
+		}
 	}
 }
 
-// TestSettingsServiceSetSettingsZeroValuesWrittenBack protojson 零值省略的
-// 补集语义（settings.proto SetSettingsRequest 注释）：空请求（全字段缺省）
-// 即 36 键全零值写回——缺省视为零值，不作「缺省保留原值」的 PATCH 解读。
-// https_deployment 的零值空串在真 Store 会被三态校验拒绝（§5.6 行 1361
-// 全量替换语义内非三态 → invalid_request）；本测试用 fake（不过 Validate）
-// 只断言补集语义，三态拒绝在 TestSettingsServiceSetSettingsHTTPSDeploymentValidation。
-func TestSettingsServiceSetSettingsZeroValuesWrittenBack(t *testing.T) {
+// TestSettingsServiceSetSettingsExplicitZeroValues proto3 optional 三态回归
+// （§3.2 行 837 口径）：显式 0 / false / 空串覆盖现值（旧「零值 = 未传」
+// 实现会漏写），未设置字段不写入；显式同值键（captcha_provider_key="" /
+// https_deployment="auto"）照常写入但不进变更集。fake 不过 Validate，
+// 三态值域拒绝另见 TestSettingsServiceSetSettingsHTTPSDeploymentValidation。
+func TestSettingsServiceSetSettingsExplicitZeroValues(t *testing.T) {
 	ctx := context.Background()
 	store := &fakeSettingsStore{snap: settings.Defaults()}
 	audit := &settingsFakeAudit{}
 	svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
 
-	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{}); err != nil {
+	req := &adminv1.SetSettingsRequest{
+		AllowRegistration:  boolPtr(false),
+		PwdBanTtl:          i64Ptr(0),
+		CookieName:         strPtr(""),
+		CaptchaProviderKey: strPtr(""),                           // 显式空串，与默认同值
+		HttpsDeployment:    strPtr(settings.HTTPSDeploymentAuto), // 显式同值
+	}
+	if err := svc.SetSettings(ctx, 1, req); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
-	if len(store.gotKV) != 36 {
-		t.Fatalf("SetMany 键数 = %d, want 36", len(store.gotKV))
+	if len(store.gotKV) != 5 {
+		t.Fatalf("SetMany 键数 = %d, want 5（只写在场键）", len(store.gotKV))
 	}
-	if got, _ := store.gotKV[settings.KeyPwdMaxLength].(int64); got != 0 {
-		t.Errorf("pwd_max_length 缺省应零值写回, got %v", got)
-	}
-	if got, _ := store.gotKV[settings.KeyCookieName].(string); got != "" {
-		t.Errorf("cookie_name 缺省应零值写回, got %q", got)
+	if got, _ := store.gotKV[settings.KeyPwdBanTtl].(int64); got != 0 {
+		t.Errorf("pwd_ban_ttl 显式 0 应写回, got %v", store.gotKV[settings.KeyPwdBanTtl])
 	}
 	if got, _ := store.gotKV[settings.KeyAllowRegistration].(bool); got {
-		t.Errorf("allow_registration 缺省应 false 写回, got %v", got)
+		t.Errorf("allow_registration 显式 false 应写回, got %v", store.gotKV[settings.KeyAllowRegistration])
 	}
-	if got, _ := store.gotKV[settings.KeyLoginMethods].([]string); len(got) != 0 {
-		t.Errorf("login_methods 缺省应空列表写回, got %v", got)
+	if got, _ := store.gotKV[settings.KeyCookieName].(string); got != "" {
+		t.Errorf("cookie_name 显式空串应清空, got %q", got)
 	}
-	// detail 全键变更（默认快照 → 全零）。
+	if _, ok := store.gotKV[settings.KeyPwdMaxLength]; ok {
+		t.Error("pwd_max_length 未设置不应写入（更不应零值写回）")
+	}
+	if _, ok := store.gotKV[settings.KeySessionTtl]; ok {
+		t.Error("session_ttl 未设置不应写入")
+	}
+
+	// 变更集只含 3 个真正变值的键（按 defs 表序）；显式同值键不进变更集。
 	if len(audit.events) != 1 {
 		t.Fatalf("审计 = %d, want 1", len(audit.events))
 	}
 	var detail struct {
-		Keys []string `msgpack:"keys"`
+		Keys   []string       `msgpack:"keys"`
+		Before map[string]any `msgpack:"before"`
+		After  map[string]any `msgpack:"after"`
 	}
 	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	if len(detail.Keys) != 30 {
-		// 36 − 6：默认档本就是零值的 6 键（sso_domains / gateway_tokens /
-		// captcha_provider_key / sms_provider_key / email_provider_key /
-		// avatar_storage_provider）零值写回后同值、不进变更集；
-		// https_deployment 默认 auto 非零 → 全零提交算变更（fake 不过
-		// Validate；真 Store 该提交会被三态校验整批拒绝，见
-		// TestSettingsServiceSetSettingsHTTPSDeploymentValidation）。
-		t.Errorf("全零提交变更 keys = %d, want 30（36 − 6 个默认零值键）", len(detail.Keys))
+	wantKeys := []string{settings.KeyAllowRegistration, settings.KeyPwdBanTtl, settings.KeyCookieName}
+	if len(detail.Keys) != len(wantKeys) {
+		t.Fatalf("变更 keys = %v, want %v", detail.Keys, wantKeys)
 	}
+	for i, k := range wantKeys {
+		if detail.Keys[i] != k {
+			t.Fatalf("变更 keys[%d] = %q, want %q", i, detail.Keys[i], k)
+		}
+	}
+	if b, _ := detail.Before[settings.KeyPwdBanTtl].(int64); b != 21600 {
+		t.Errorf("before[pwd_ban_ttl] = %v, want 21600", detail.Before[settings.KeyPwdBanTtl])
+	}
+	if a, _ := detail.After[settings.KeyPwdBanTtl].(int64); a != 0 {
+		t.Errorf("after[pwd_ban_ttl] = %v, want 0", detail.After[settings.KeyPwdBanTtl])
+	}
+	for _, k := range []string{settings.KeyCaptchaProviderKey, settings.KeyHttpsDeployment, settings.KeyPwdMaxLength} {
+		if _, ok := detail.After[k]; ok {
+			t.Errorf("键 %q 不应进 after: %v", k, detail.After)
+		}
+	}
+}
+
+// TestSettingsServiceSetSettingsEmptyRequestNoop 空请求 / nil 请求：无任何
+// has 位 → 零写入（SetMany 收到空 map，真 Store 内部直接返回）、零变更，
+// 仍投一条审计（每次管理员动作留痕）；不会像旧全量替换那样把 36 键清零。
+func TestSettingsServiceSetSettingsEmptyRequestNoop(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		req  *adminv1.SetSettingsRequest
+	}{
+		{"空请求", &adminv1.SetSettingsRequest{}},
+		{"nil 请求", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeSettingsStore{snap: settings.Defaults()}
+			audit := &settingsFakeAudit{}
+			svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
+
+			if err := svc.SetSettings(ctx, 1, tc.req); err != nil {
+				t.Fatalf("SetSettings: %v", err)
+			}
+			if len(store.gotKV) != 0 {
+				t.Fatalf("空请求写入键 = %v, want 空集", store.gotKV)
+			}
+			if store.setCall != 1 {
+				t.Errorf("SetMany 调用数 = %d, want 1（空 map 在 Store 内即 no-op）", store.setCall)
+			}
+			if len(audit.events) != 1 {
+				t.Fatalf("空请求也应投审计, got %d 条", len(audit.events))
+			}
+			var detail struct {
+				Keys   []string       `msgpack:"keys"`
+				Before map[string]any `msgpack:"before"`
+				After  map[string]any `msgpack:"after"`
+			}
+			if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
+				t.Fatalf("detail: %v", err)
+			}
+			if len(detail.Keys) != 0 || len(detail.Before) != 0 || len(detail.After) != 0 {
+				t.Errorf("空请求 detail 应空集, got %v/%v/%v", detail.Keys, detail.Before, detail.After)
+			}
+		})
+	}
+}
+
+// TestSettingsServiceSetSettingsRepeatedListSemantics has_* 伴生标志口径：
+// 标志取 true = 列表在场（非空数组整组替换 / 空数组或缺省数组清空该列表）；
+// 标志缺省 / 显式 false = 不写入，即便带了非空数组也不「按数组推测在场」。
+// protojson 把 `[]` 解成 nil，故客户端清空必须显式带 hasXxx=true——用例把
+// 这条 wire 契约（含仅带标志不带数组的清空形态）钉死。
+func TestSettingsServiceSetSettingsRepeatedListSemantics(t *testing.T) {
+	ctx := context.Background()
+	// 快照里 sso_domains 非默认现值，清空动作才可在 kv / 审计中被观测。
+	run := func(t *testing.T, req *adminv1.SetSettingsRequest) (*fakeSettingsStore, *settingsFakeAudit) {
+		t.Helper()
+		snap := settings.Defaults()
+		snap[settings.KeySsoDomains] = []string{"https://old.example.com"}
+		store := &fakeSettingsStore{snap: snap}
+		audit := &settingsFakeAudit{}
+		svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
+		if err := svc.SetSettings(ctx, 1, req); err != nil {
+			t.Fatalf("SetSettings: %v", err)
+		}
+		return store, audit
+	}
+	assertCleared := func(t *testing.T, store *fakeSettingsStore) {
+		t.Helper()
+		if len(store.gotKV) != 1 {
+			t.Fatalf("清空应只写 1 键, got %v", store.gotKV)
+		}
+		got, ok := store.gotKV[settings.KeySsoDomains].([]string)
+		if !ok || got == nil || len(got) != 0 {
+			t.Fatalf("sso_domains 应写入非 nil 空切片, got %#v", store.gotKV[settings.KeySsoDomains])
+		}
+	}
+
+	t.Run("has=true + 非空数组整组替换", func(t *testing.T) {
+		store, _ := run(t, &adminv1.SetSettingsRequest{
+			HasSsoDomains: boolPtr(true), SsoDomains: []string{"https://a.example.com"},
+		})
+		if len(store.gotKV) != 1 {
+			t.Fatalf("写入键 = %v, want 1 键", store.gotKV)
+		}
+		if got, _ := store.gotKV[settings.KeySsoDomains].([]string); len(got) != 1 || got[0] != "https://a.example.com" {
+			t.Errorf("sso_domains = %v", store.gotKV[settings.KeySsoDomains])
+		}
+	})
+
+	t.Run("has=true + 空数组清空（含审计变更项）", func(t *testing.T) {
+		store, audit := run(t, &adminv1.SetSettingsRequest{
+			HasSsoDomains: boolPtr(true), SsoDomains: []string{},
+		})
+		assertCleared(t, store)
+		var detail struct {
+			Keys  []string       `msgpack:"keys"`
+			After map[string]any `msgpack:"after"`
+		}
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
+			t.Fatalf("detail: %v", err)
+		}
+		if len(detail.Keys) != 1 || detail.Keys[0] != settings.KeySsoDomains {
+			t.Errorf("清空应进变更集, got keys = %v", detail.Keys)
+		}
+		if _, ok := detail.After[settings.KeySsoDomains]; !ok {
+			t.Errorf("after 应含清空的 sso_domains: %v", detail.After)
+		}
+	})
+
+	t.Run("has=true 不带数组也清空", func(t *testing.T) {
+		store, _ := run(t, &adminv1.SetSettingsRequest{HasSsoDomains: boolPtr(true)})
+		assertCleared(t, store)
+	})
+
+	for _, body := range []string{
+		`{"hasSsoDomains":true,"ssoDomains":[]}`,
+		`{"hasSsoDomains":true}`,
+	} {
+		t.Run("wire "+body+" 清空", func(t *testing.T) {
+			req := &adminv1.SetSettingsRequest{}
+			if err := protojson.Unmarshal([]byte(body), req); err != nil {
+				t.Fatalf("protojson: %v", err)
+			}
+			if !req.GetHasSsoDomains() {
+				t.Fatalf("wire %s 的 has 标志应为 true", body)
+			}
+			if req.GetSsoDomains() != nil {
+				t.Fatalf("wire %s 的 [] / 缺省数组应解码为 nil, got %#v", body, req.GetSsoDomains())
+			}
+			store, _ := run(t, req)
+			assertCleared(t, store)
+		})
+	}
+
+	t.Run("标志缺省或显式 false 不写入（标志是唯一在场判据）", func(t *testing.T) {
+		wireEmptyList := &adminv1.SetSettingsRequest{}
+		if err := protojson.Unmarshal([]byte(`{"ssoDomains":[]}`), wireEmptyList); err != nil {
+			t.Fatalf("protojson: %v", err)
+		}
+		for _, tc := range []struct {
+			name string
+			req  *adminv1.SetSettingsRequest
+		}{
+			{"缺省 + 非空数组", &adminv1.SetSettingsRequest{SsoDomains: []string{"https://a.example.com"}}},
+			{"缺省 + 空数组", &adminv1.SetSettingsRequest{SsoDomains: []string{}}},
+			{"显式 false + 非空数组", &adminv1.SetSettingsRequest{
+				HasSsoDomains: boolPtr(false), SsoDomains: []string{"https://a.example.com"},
+			}},
+			{"wire 无标志 + []", wireEmptyList},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				store, _ := run(t, tc.req)
+				if len(store.gotKV) != 0 {
+					t.Errorf("标志未置 true 不应写入, got %v", store.gotKV)
+				}
+			})
+		}
+	})
+
+	t.Run("四个列表的 has 标志各自独立", func(t *testing.T) {
+		store, _ := run(t, &adminv1.SetSettingsRequest{
+			HasLoginMethods:  boolPtr(true),
+			LoginMethods:     []string{"password"},
+			HasMfaMethods:    boolPtr(true),
+			MfaMethods:       []string{"totp"},
+			HasSsoDomains:    boolPtr(true),
+			SsoDomains:       []string{"https://a.example.com"},
+			HasGatewayTokens: boolPtr(true),
+			GatewayTokens:    []string{"gw-1"},
+		})
+		if len(store.gotKV) != 4 {
+			t.Fatalf("四标志全置位应写 4 键, got %v", store.gotKV)
+		}
+		for _, k := range []string{
+			settings.KeyLoginMethods, settings.KeyMfaMethods,
+			settings.KeySsoDomains, settings.KeyGatewayTokens,
+		} {
+			if _, ok := store.gotKV[k]; !ok {
+				t.Errorf("缺键 %q: %v", k, store.gotKV)
+			}
+		}
+	})
 }
 
 // TestSettingsServiceSetSettingsStoreError SetMany 失败 → 原样上抛、零审计
@@ -431,7 +687,7 @@ func TestSettingsServiceSetSettingsStoreError(t *testing.T) {
 	audit := &settingsFakeAudit{}
 	svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
 
-	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{}); err == nil {
+	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{PwdMinLength: i64Ptr(10)}); err == nil {
 		t.Fatal("SetMany 错误应上抛")
 	}
 	if len(audit.events) != 0 {
@@ -626,7 +882,7 @@ func TestSettingsServiceNowInjected(t *testing.T) {
 	store := &fakeSettingsStore{snap: settings.Defaults()}
 	audit := &settingsFakeAudit{}
 	svc := newSettingsService(store, &fakeSettingsEvents{}, audit, nil, &fakeSettingsQueue{})
-	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{}); err != nil {
+	if err := svc.SetSettings(ctx, 1, &adminv1.SetSettingsRequest{PwdMinLength: i64Ptr(9)}); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
 	if audit.events[0].CreatedAt.IsZero() {

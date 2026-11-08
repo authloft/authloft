@@ -131,22 +131,22 @@ import {
  * SsoClientsPage / OidcClientsPage 渲染不可测（同上 Blocker）。
  *
  * 追加 settings 族测试（接口文档 §5.6 行 1287-1363 settings 族；后端已实装
- * 全量投影 / 全量替换，读路径真调语义 → msw 走真实 transport 归一链）：
+ * 全量投影 / 部分更新，读路径真调语义 → msw 走真实 transport 归一链）：
  * - api.getSettings msw：SettingsResponse 读路径解码（int64 十进制字符串 →
  *   bigint + repeated + protojson 零值省略 → proto 零值）+ 500 → ApiError；
- * - api.setSettings msw：请求体 wire 校验——**全量替换语义**（36 键整体提交、
- *   不能只提交改动字段；零值键 wire 省略 = 服务端读零值 = 写入零值，与
- *   后端实装语义等价）；
+ * - api.setSettings msw：请求体 wire 校验——前端仍 36 数据键整体提交 +
+ *   四个 has_* 伴生标志，服务端按 has 位部分更新（PATCH）；标量显式零值在
+ *   wire 明确下发，空 repeated 数组自身省略但标志在场 = 清空该列表；
  * - settingsLogic 纯函数全集：DEFAULT_SETTINGS 默认值对 §5.6 四张表逐字 /
  *   getSettingsSections 36 键全覆盖无重复 / draftFromSettings 全键映射与
- *   零值即真值（全量替换对称面）/ settingsDraftIssue 交叉校验（行 1363
+ *   零值即真值（PATCH 全量提交对称面）/ settingsDraftIssue 交叉校验（行 1363
  *   前端自律：非负整数 / 字符类数 1-3 / min ≤ max ≤ 64 / https_deployment
  *   三态行 1361）；
  * - buildSetSettingsRequest 全量构造：文本 trim / 列表清洗 / number → bigint。
  * SettingsPage 渲染不可测（同上 Blocker）。
  * ⚠️ https_deployment（=36）双端 proto / 生成物已先行落地，
  * 与文档定稿一致 → 随本实现建键；行 1361 非三态 → invalid_request
- * 由 settingsDraftIssue 前端自律拦截（缺该键的全量提交会置空该键被后端拒收）。
+ * 由 settingsDraftIssue 前端自律拦截（显式空串被三态校验拒收；缺省保留现值）。
  *
  * 追加工具三页族测试（接口文档 §5.6 行 1288-1290；后端已实装）：
  * - api 三方法 msw：ListEvents（login_records 预设强制 event=login_success +
@@ -2346,7 +2346,8 @@ describe('StringListEditor（静态渲染：受控条目 + 添加 / 删除按钮
 
 // ---------------------------------------------------------------------------
 // api settings 族 msw（§5.6 行 1287；后端已实装——GetSettings
-// 36 键全量投影 + SetSettings 全量替换：零值也写入）
+// 36 键全量投影 + SetSettings 按 has 位部分更新：显式零值覆盖、
+// repeated 伴生标志置 true 时空数组清空列表）
 // ---------------------------------------------------------------------------
 
 describe('api.getSettings（§5.6 行 1287：36 键全量投影）', () => {
@@ -2398,8 +2399,8 @@ describe('api.getSettings（§5.6 行 1287：36 键全量投影）', () => {
   });
 });
 
-describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，不能只提交改动字段）', () => {
-  test('默认草稿全量提交：30 个非零键全在 wire；6 个零值键（四个空 provider key + 两个空列表）protojson 省略 = 服务端读零值写入', async () => {
+describe('api.setSettings（§5.6 行 1287：前端仍全量提交 36 键 + 4 个 repeated 伴生标志；服务端按 has 位部分更新）', () => {
+  test('默认草稿全量提交：38 键在 wire（optional 显式零值 + 四个 has_* 标志）；两个空列表省略但标志在场 = 服务端清空', async () => {
     let requestBody: unknown;
     server.use(
       http.post(SET_SETTINGS_URL, async ({ request }) => {
@@ -2412,8 +2413,10 @@ describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，�
       apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS),
     );
 
-    // toEqual 精确匹配：既验证 36 键全量构造（未改动键也在），又验证零值键
-    // wire 省略（省略 = 后端读零值 = 写入零值，与全量替换语义等价）。
+    // toEqual 精确匹配：既验证 36 数据键全量构造（未改动键也在），又验证
+    // proto3 optional 标量的显式零值（四个空 provider key）与四个 has_*
+    // 伴生标志都在 wire 上；空 repeated 数组自身省略，但 has_* 标志在场
+    // → 服务端按「列表在场 + 空数组」清空该列表。
     expect(requestBody).toEqual({
       pwdMinLength: '8',
       pwdMaxLength: '64',
@@ -2426,22 +2429,30 @@ describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，�
       otpMaxAttempts: '5',
       otpDailyLimitTarget: '10',
       otpDailyLimitIp: '50',
+      hasLoginMethods: true,
       loginMethods: ['password', 'otp_sms', 'otp_email', 'webauthn', 'thirdparty'],
       allowRegistration: true,
       allowSignupPassword: true,
       allowSignupPhone: true,
       allowSignupEmail: true,
       mfaEnabled: true,
+      hasMfaMethods: true,
       mfaMethods: ['totp', 'otp_sms', 'otp_email', 'webauthn'],
       pwdFailCapture: '3',
       pwdFailBan: '6',
       pwdBanTtl: '21600',
       sessionTtl: '604800',
       cookieName: 'al_session',
+      hasSsoDomains: true,
       queueWorkers: '4',
       queueCapacity: '8192',
       queueBatch: '200',
       queueFlushMs: '2000',
+      captchaProviderKey: '',
+      smsProviderKey: '',
+      emailProviderKey: '',
+      avatarStorageProvider: '',
+      hasGatewayTokens: true,
       eventlogRetentionDays: '180',
       staticBase: '/assets',
       httpsDeployment: 'auto',
@@ -2449,7 +2460,7 @@ describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，�
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
   });
 
-  test('管理员显式零值（pwd_ban_ttl=0 / mfa 关闭）同样全量提交：零值键 wire 省略、其余键完整下发', async () => {
+  test('管理员显式零值（pwd_ban_ttl=0 / mfa 关闭 / mfa 列表清空）：零值键与 has_* 标志明确下发', async () => {
     let requestBody: unknown;
     server.use(
       http.post(SET_SETTINGS_URL, async ({ request }) => {
@@ -2469,10 +2480,12 @@ describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，�
     );
 
     const body = requestBody as Record<string, unknown>;
-    // 零值省略（= 写入零值）：这 4 键不在 wire。
-    expect(body).not.toHaveProperty('pwdBanTtl');
-    expect(body).not.toHaveProperty('mfaEnabled');
+    // optional 标量显式零值有 has 位：wire 明确下发，服务端按 PATCH 覆盖。
+    expect(body.pwdBanTtl).toBe('0');
+    expect(body.mfaEnabled).toBe(false);
+    // 空 repeated 数组 wire 省略，但伴生标志 true 在场 → 服务端清空列表。
     expect(body).not.toHaveProperty('mfaMethods');
+    expect(body.hasMfaMethods).toBe(true);
     // 改动后的非零键仍下发；未改动键同样全量在（抽查两侧）。
     expect(body.otpMaxAttempts).toBe('3');
     expect(body.pwdMinLength).toBe('8');
@@ -2500,7 +2513,7 @@ describe('api.setSettings（§5.6 行 1287 全量替换：36 键整体提交，�
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', () => {
-  test('36 键默认值与文档逐字一致（键集 = 生成物 SetSettingsRequest 现状字段集，含 https_deployment=36）', () => {
+  test('36 键默认值与文档逐字一致（键集 = §5.6 四张表数据键，不含 4 个 has_* 伴生标志）', () => {
     // 密码策略（行 1296-1300）。
     expect(DEFAULT_SETTINGS.pwdMinLength).toBe(8);
     expect(DEFAULT_SETTINGS.pwdMaxLength).toBe(64);
@@ -2548,7 +2561,8 @@ describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', (
     expect(DEFAULT_SETTINGS.staticBase).toBe('/assets');
     // https_deployment（行 1354：string 三态，默认 auto）。
     expect(DEFAULT_SETTINGS.httpsDeployment).toBe('auto');
-    // 键集 = 36（与生成物 SetSettingsRequest 字段数一致，含 https_deployment=36）。
+    // 键集 = 36 数据键（含 https_deployment）；生成物另有 4 个 has_* 伴生标志，
+    // 由 api.buildSetSettingsRequest 统一置 true，不属于草稿键集。
     expect(Object.keys(DEFAULT_SETTINGS).length).toBe(36);
   });
 });
@@ -2691,7 +2705,7 @@ describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
   });
 });
 
-describe('draftFromSettings（GetSettings 响应 → 草稿全键映射；全量替换的对称面：零值即真值）', () => {
+describe('draftFromSettings（GetSettings 响应 → 草稿全键映射；PATCH 全量提交的对称面：零值即真值）', () => {
   test('36 键直映射：bigint → number、数组防御性拷贝（改草稿不回写响应）', () => {
     const response = create(SettingsResponseSchema, {
       pwdMinLength: BigInt(12),
@@ -2789,6 +2803,11 @@ describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 tr
     expect(request.cookieName).toBe('x_session');
     expect(request.ssoDomains).toEqual(['a.test']);
     expect(request.gatewayTokens).toEqual(['gw-1']);
+    // 四个 repeated 键的 has_* 伴生标志一律置 true（全量提交 = 列表在场）。
+    expect(request.hasLoginMethods).toBe(true);
+    expect(request.hasMfaMethods).toBe(true);
+    expect(request.hasSsoDomains).toBe(true);
+    expect(request.hasGatewayTokens).toBe(true);
     expect(request.staticBase).toBe('/cdn/');
     expect(request.httpsDeployment).toBe('false');
     expect(request.loginMethods).toEqual([

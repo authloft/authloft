@@ -227,9 +227,9 @@ func Validate(key string, value any) (any, error) {
 			// 归一为非 nil 空切片：append([]string(nil), v...)
 			// 对 nil/空 v 返回 nil → EncodeValue 落库 JSON "null" →
 			// DecodeValue fail-fast（loadSnapshot 对 null 报错）→ watcher
-			// reload 持续失败 + 重启 Preload 起不来。SetSettings 全量替换下
-			// 任一 []string 键清空（sso_domains/gateway_tokens 默认即 []）
-			// 首次提交必现。空列表必须落 "[]"。
+			// reload 持续失败 + 重启 Preload 起不来。任一 []string 键以空
+			// / nil 切片写入时必现（SetMany 的全部调用方）。空列表必须
+			// 落 "[]"。
 			return append([]string{}, v...), nil
 		}
 	}
