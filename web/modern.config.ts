@@ -15,19 +15,10 @@ export default defineConfig({
   plugins: [appTools()],
   source: {
     entries: {
-      setup: {
-        entry: './src/setup/entry.tsx',
-        disableMount: true,
-      },
-      login: {
-        entry: './src/login/entry.tsx',
-      },
-      account: {
-        entry: './src/account/entry.tsx',
-      },
-      admin: {
-        entry: './src/admin/entry.tsx',
-      },
+      setup: './src/setup/App.tsx',
+      login: './src/login/App.tsx',
+      account: './src/account/App.tsx',
+      admin: './src/admin/App.tsx',
     },
   },
   // server.routes：entry → 访问路径映射，dev 与 serve 双

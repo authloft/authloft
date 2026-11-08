@@ -19,7 +19,6 @@ const init = loadSetupInit();
 //（已归一为以 / 结尾）；本 entry 无动态 chunk，该值为后续扩展预留。
 __webpack_public_path__ = init.staticBase;
 
-const container = document.getElementById('root');
-if (container) {
-  createRoot(container).render(<SetupPage alRoot={init.alRoot} />);
+export default function App() {
+  return <SetupPage alRoot={init.alRoot} />;
 }
