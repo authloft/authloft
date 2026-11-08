@@ -25,15 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.3.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: pnpm
@@ -48,7 +48,7 @@ jobs:
         working-directory: web
 
       - name: Upload web artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: web/dist
@@ -57,6 +57,7 @@ jobs:
   go-build:
     name: go-build (${{ matrix.name }})
     runs-on: ubuntu-latest
+    needs: [web-build]
     strategy:
       fail-fast: false
       matrix:
@@ -84,15 +85,15 @@ jobs:
             extra_env: 'CGO_ENABLED=0 GOAMD64=v1'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Download web dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: web-dist
           path: web/dist
@@ -100,7 +101,7 @@ jobs:
         run: node web/scripts/sync-templates.mjs
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
@@ -117,7 +118,7 @@ jobs:
         working-directory: server
 
       - name: Upload go artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: authloft-${{ matrix.name }}
           path: server/dist/
