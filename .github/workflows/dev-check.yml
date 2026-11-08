@@ -123,7 +123,7 @@ jobs:
         with:
           name: web-dist
           path: web/dist
-          retention-days: 3
+          retention-days: 1
 
   server-test:
     name: server-test
@@ -163,7 +163,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -211,7 +210,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -243,7 +241,7 @@ jobs:
         with:
           name: authloft-${{ matrix.name }}
           path: server/dist/
-          retention-days: 3
+          retention-days: 1
 
   dispatch-sdk-sync:
     name: dispatch-sdk-sync

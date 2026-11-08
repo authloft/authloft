@@ -99,7 +99,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # sync-templates.mjs 仅用 node 内置模块（零依赖安装）
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
