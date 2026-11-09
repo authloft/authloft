@@ -27,7 +27,7 @@ var testKeyB64 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xA5}, 32
 
 // exampleKeyPlaceholder 必须与 authloft.yml.example 的密钥占位符逐字一致：
 // example 同步测试靠它把占位符替换成真密钥后整份加载，验证示例与 Config schema 同步。
-const exampleKeyPlaceholder = "<base64-32B，首次运行自动生成>"
+const exampleKeyPlaceholder = "<base64-32B，安装自动生成>"
 
 // testValidYAML 是全字段齐全的合法配置模板；"<KEY>" 占位在加载前替换为
 // testKeyB64，"<RSA_KEY>" 替换为 testOIDCKey（合法 OIDC 私钥）。
@@ -276,9 +276,9 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 // Validate，其他 scheme 仍拒绝——既有校验（可解析 URL + host 非空）零回归。
 func TestValidateRootHTTPAccepted(t *testing.T) {
 	for _, root := range []string{
-		"http://sso.example.com",     // 明文 HTTP 一等公民（内网/测试/反代 TLS 终止）
-		"https://sso.example.com",    // 既有 HTTPS 形态零回归
-		"http://sso.example.com:8080",// 带端口明文
+		"http://sso.example.com",      // 明文 HTTP 一等公民（内网/测试/反代 TLS 终止）
+		"https://sso.example.com",     // 既有 HTTPS 形态零回归
+		"http://sso.example.com:8080", // 带端口明文
 	} {
 		c := validTestConfig(t)
 		c.Authloft.Root = root

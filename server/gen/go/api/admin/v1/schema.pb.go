@@ -78,7 +78,9 @@ type SchemaField struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 恒等于 provider 表列名或 provider.Ext 字段名，提交体即 { "<key>": <value> }（§5.3 行 1180）。
 	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	// 展示文案（§5.3 行 1189）。
+	// 展示文案的 i18n 键，如 admin.schemaField.providerKeyLabel（§5.3 行 1189）；
+	// 语言包在前端 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期 t() 解析。
+	// 后端不持有任何语言文案；缺键时前端回显键本身（可见、可排查）。
 	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
 	// 渲染类型，取值是 §5.3 行 1226 的六个：text|secret|checkbox|number|select|json；
 	// §12.9 行 1754 明确 fields[].type 跨版本可能新增，用 string 承载。
@@ -92,13 +94,17 @@ type SchemaField struct {
 	// 默认值，任意 JSON 值（§5.3 行 1212-1216）；未设置时 JSON 视图为 null
 	// （§12.9 行 1752 口径由生成侧保证）。
 	Default *structpb.Value `protobuf:"bytes,6,opt,name=default,proto3" json:"default,omitempty"`
-	// select 类型的取值集合，与 §1.11 同名同义（§5.3 行 1226）。
+	// select 类型的取值集合，与 §1.11 同名同义（§5.3 行 1226）。恒为 wire 取值
+	// （如 ui_group 的 social / enterprise / dev / other、union_provider 的
+	// provider_key），不是 i18n 键；前端仅按 admin.schemaOption.<fieldKey>.<value>
+	// 翻译显示名（按字段命名空间，避免自定义 provider_key 撞上通用枚举值），
+	// 未定义键时原样显示并提交原值。
 	Options []string `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
 	// 校验正则，如 ^[a-z0-9_]+$（§5.3 行 1190）。
 	Pattern string `protobuf:"bytes,8,opt,name=pattern,proto3" json:"pattern,omitempty"`
 	// 区块内是否折叠（§5.3 行 1226：advanced 只管单个字段在区块内是否折叠）。
 	Advanced bool `protobuf:"varint,9,opt,name=advanced,proto3" json:"advanced,omitempty"`
-	// 帮助文案（§5.3 行 1190）。
+	// 帮助文案的 i18n 键（§5.3 行 1190）；语义同 label，空串表示无帮助文案。
 	Help          string `protobuf:"bytes,10,opt,name=help,proto3" json:"help,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

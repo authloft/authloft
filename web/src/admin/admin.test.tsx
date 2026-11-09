@@ -10,6 +10,9 @@ import {
   expect,
   rs,
   test,
+  // moduleResolution=node 下 TS2307 定位在收尾行，首行的 @ts-ignore 覆盖不到
+  //（tsconfig 现代化后连同两处 @ts-ignore 一起移除）。
+  // @ts-ignore
 } from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -67,7 +70,7 @@ import {
   initialCreateValues,
   isProviderKeyTaken,
   validateSchemaValues,
-} from './schema/schemaLogic';
+} from './pages/ProviderEditPage/schema/schemaLogic';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import {
   DEFAULT_SETTINGS,
@@ -1040,23 +1043,23 @@ function schemaField(init: JsonObject): SchemaField {
 const SCHEMA_FIELDS = [
   schemaField({
     key: 'provider_key',
-    label: '唯一标识',
+    label: 'admin.schemaField.providerKeyLabel',
     type: 'text',
     section: 'basic',
     required: true,
     pattern: '^[a-z0-9_]+$',
-    help: '创建后不可修改',
+    help: 'admin.schemaField.providerKeyHelp',
   }),
   schemaField({
     key: 'display_name',
-    label: '显示名称',
+    label: 'admin.schemaField.displayNameLabel',
     type: 'text',
     section: 'basic',
     required: true,
   }),
   schemaField({
     key: 'category',
-    label: '类别',
+    label: 'admin.schemaField.categoryLabel',
     type: 'select',
     section: 'basic',
     required: true,
@@ -1064,62 +1067,62 @@ const SCHEMA_FIELDS = [
   }),
   schemaField({
     key: 'union_provider',
-    label: '联合登录归属',
+    label: 'admin.schemaField.unionProviderLabel',
     type: 'select',
     section: 'basic',
     options: [],
   }),
   schemaField({
     key: 'client_id',
-    label: 'AppID',
+    label: 'admin.schemaField.clientIdLabel',
     type: 'text',
     section: 'credential',
     required: true,
   }),
   schemaField({
     key: 'client_secret',
-    label: 'AppSecret',
+    label: 'admin.schemaField.clientSecretLabel',
     type: 'secret',
     section: 'credential',
     required: true,
   }),
   schemaField({
     key: 'port',
-    label: '端口',
+    label: 'admin.schemaField.smtpPortLabel',
     type: 'number',
     section: 'endpoint',
   }),
   schemaField({
     key: 'user_mapping',
-    label: '字段映射',
+    label: 'admin.schemaField.userMappingLabel',
     type: 'json',
     section: 'endpoint',
     advanced: true,
   }),
   schemaField({
     key: 'icon_url',
-    label: '图标 URL',
+    label: 'admin.schemaField.iconUrlLabel',
     type: 'text',
     section: 'display',
     pattern: '^https?://',
   }),
   schemaField({
     key: 'ui_group',
-    label: '展示分组',
+    label: 'admin.schemaField.uiGroupLabel',
     type: 'select',
     section: 'display',
     default: 'social',
   }),
   schemaField({
     key: 'sort_order',
-    label: '排序',
+    label: 'admin.schemaField.sortOrderLabel',
     type: 'number',
     section: 'display',
     default: 0,
   }),
   schemaField({
     key: 'is_enabled',
-    label: '启用',
+    label: 'admin.schemaField.isEnabledLabel',
     type: 'checkbox',
     section: 'policy',
     default: true,
@@ -1310,7 +1313,7 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
       [
         schemaField({
           key: 'port',
-          label: '端口',
+          label: 'admin.schemaField.smtpPortLabel',
           type: 'number',
           section: 'endpoint',
         }),
@@ -1360,13 +1363,13 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
       [
         schemaField({
           key: 'host',
-          label: '服务地址',
+          label: 'admin.schemaField.providerUrlLabel',
           type: 'text',
           section: 'endpoint',
         }),
         schemaField({
           key: 'metadata',
-          label: '长尾键值',
+          label: 'admin.schemaField.metadataLabel',
           type: 'json',
           section: 'basic',
         }),
@@ -1462,7 +1465,7 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
           fields: [
             {
               key: 'provider_key',
-              label: '唯一标识',
+              label: 'admin.schemaField.providerKeyLabel',
               type: 'text',
               section: 'basic',
               required: true,
@@ -1470,7 +1473,7 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
             },
             {
               key: 'ui_group',
-              label: '展示分组',
+              label: 'admin.schemaField.uiGroupLabel',
               type: 'select',
               section: 'display',
               options: ['social', 'enterprise', 'dev', 'other'],
@@ -1478,14 +1481,14 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
             },
             {
               key: 'is_enabled',
-              label: '启用',
+              label: 'admin.schemaField.isEnabledLabel',
               type: 'checkbox',
               section: 'policy',
               default: true,
             },
             {
               key: 'user_mapping',
-              label: '字段映射',
+              label: 'admin.schemaField.userMappingLabel',
               type: 'json',
               section: 'endpoint',
               advanced: true,

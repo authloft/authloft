@@ -56,13 +56,13 @@ func init() {
 		DisplayName: "阿里云短信",
 		Category:    provider.CategorySMS,
 		Fields: []provider.FieldMeta{
-			{Key: "client_id", Label: "AccessKeyId", Type: "text", Section: "credential", Required: true},
-			{Key: "client_secret", Label: "AccessKeySecret", Type: "secret", Section: "credential", Required: true},
-			{Key: "sign_name", Label: "短信签名", Type: "text", Section: "credential", Required: true},
-			{Key: "template_code", Label: "短信模板 ID", Type: "text", Section: "credential", Required: true},
-			{Key: "intranet_endpoint", Label: "内网 endpoint", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "metadata", Label: "长尾键值", Type: "json", Section: "credential", Advanced: true,
-				Help: "template_code.<tpl> 按模板键覆盖短信模板 ID"},
+			{Key: "client_id", Label: "admin.schemaField.aliyunAccessKeyIdLabel", Type: "text", Section: "credential", Required: true},
+			{Key: "client_secret", Label: "admin.schemaField.aliyunAccessKeySecretLabel", Type: "secret", Section: "credential", Required: true},
+			{Key: "sign_name", Label: "admin.schemaField.aliyunSignNameLabel", Type: "text", Section: "credential", Required: true},
+			{Key: "template_code", Label: "admin.schemaField.aliyunTemplateCodeLabel", Type: "text", Section: "credential", Required: true},
+			{Key: "intranet_endpoint", Label: "admin.schemaField.aliyunIntranetEndpointLabel", Type: "text", Section: "endpoint", Advanced: true},
+			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
+				Help: "admin.schemaField.aliyunMetadataHelp"},
 		},
 	}, newSender)
 }

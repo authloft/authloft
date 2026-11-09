@@ -723,12 +723,16 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	if v := byKey["port"].GetDefault().GetNumberValue(); v != 587 {
 		t.Errorf("port default = %v, want 587", v)
 	}
-	// 非 oauth 类别：表列基线只剩通用 8 项（basic 3 + display 4 + policy 1）。
-	for _, key := range []string{"provider_key", "display_name", "category",
+	// 非 oauth 类别：表列基线只剩通用 7 项（basic 2 + display 4 + policy 1）；
+	// category 只读字段已改由页面级类型下拉承载，不进 fields[]。
+	for _, key := range []string{"provider_key", "display_name",
 		"icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
 		if _, ok := byKey[key]; !ok {
 			t.Errorf("schema 缺少通用表列字段 %q", key)
 		}
+	}
+	if _, ok := byKey["category"]; ok {
+		t.Error("schema 不应再含 category 只读字段")
 	}
 	// 5 个 oauth 专属列不得出现（sms/email 注册登录开关在 §5.6 设置项）。
 	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
@@ -744,7 +748,7 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 
 // TestGetProviderSchemaUnionMeta 虚拟 Union Provider（type=unionid，
 // category=union）：由 provider.LookupTypeMeta 第三源命中，schema 只有
-// 7 个通用表列字段（无 Ext 声明、无 oauth 专属列、无启用开关——虚拟 Provider
+// 6 个通用表列字段（无 Ext 声明、无 oauth 专属列、无启用开关——虚拟 Provider
 // 无 adapter / 无登录入口，is_enabled 对它没有意义），且不触发 union 查询。
 func TestGetProviderSchemaUnionMeta(t *testing.T) {
 	fakes := &fakeProviders{}
@@ -756,8 +760,8 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 		t.Fatalf("type/category = (%q, %q), want (%q, %q)",
 			got.GetType(), got.GetCategory(), provider.UnionProviderType, provider.CategoryUnion)
 	}
-	if len(got.GetFields()) != 7 {
-		t.Fatalf("字段数 = %d, want 7（虚拟类型无 Ext 字段且无启用开关）", len(got.GetFields()))
+	if len(got.GetFields()) != 6 {
+		t.Fatalf("字段数 = %d, want 6（虚拟类型无 Ext 字段且无启用开关）", len(got.GetFields()))
 	}
 	byKey := map[string]bool{}
 	for _, f := range got.GetFields() {
@@ -774,10 +778,10 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 }
 
 // TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
-// 由 oauth 注册表 Lookup 决定；fields = 表列基线 13 项 + §5.3 行 1235 oauth
-// 追加 10 字段 + 行 1239 全类 metadata = 24 项。追加字段 label / type /
-// section / required / advanced / help 与 §5.3 示例（行 1187-1226）逐字一致，
-// 且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
+// 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + §5.3 行 1235 oauth
+// 追加 10 字段 + 行 1239 全类 metadata = 23 项。追加字段 label / help 是前端
+// i18n 键，type / section / required / advanced 与 §5.3 示例（行 1187-1226）
+// 逐字一致，且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -791,9 +795,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
-	// 13 表列基线 + 10 oauth 追加（行 1235）+ 全类 metadata（行 1239）。
-	if len(got.GetFields()) != 24 {
-		t.Fatalf("字段数 = %d, want 24（13 表列基线 + 10 oauth 追加 + metadata）", len(got.GetFields()))
+	// 12 表列基线 + 10 oauth 追加（行 1235）+ 全类 metadata（行 1239）。
+	if len(got.GetFields()) != 23 {
+		t.Fatalf("字段数 = %d, want 23（12 表列基线 + 10 oauth 追加 + metadata）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -805,8 +809,8 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("%s section = %q, 非法（不在五区块封闭集合）", f.GetKey(), f.GetSection())
 		}
 	}
-	// 表列基线 13 项仍在。
-	for _, key := range []string{"provider_key", "display_name", "category", "union_provider",
+	// 表列基线 12 项仍在（category 只读字段由页面级类型下拉承载）。
+	for _, key := range []string{"provider_key", "display_name", "union_provider",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
 		if _, ok := byKey[key]; !ok {
@@ -817,18 +821,18 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	// 行 1243 约定「其余按语义归 basic」）；声明序即渲染序（行 1185），
 	// Ext 区块夹在 basic / display 基线之间。
 	wantExt := []provider.FieldMeta{
-		{Key: "client_id", Label: "AppID", Type: "text", Section: "credential", Required: true},
-		{Key: "client_secret", Label: "AppSecret", Type: "secret", Section: "credential", Required: true},
-		{Key: "app_id", Label: "小程序 AppID", Type: "text", Section: "credential", Advanced: true},
-		{Key: "cert", Label: "证书 / 公钥", Type: "secret", Section: "credential", Advanced: true},
-		{Key: "scopes", Label: "授权范围", Type: "text", Section: "credential", Advanced: true},
-		{Key: "provider_url", Label: "服务地址", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_auth_url", Label: "授权地址", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_token_url", Label: "令牌地址", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_user_info_url", Label: "UserInfo 地址", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "user_mapping", Label: "字段映射", Type: "json", Section: "endpoint", Advanced: true,
-			Help: "三方字段 → Authloft 字段，值为 JSONata 表达式"},
-		{Key: "metadata", Label: "长尾键值", Type: "json", Section: "basic", Advanced: true},
+		{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
+		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
+		{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
+		{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
+		{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
+		{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
+			Help: "admin.schemaField.userMappingHelp"},
+		{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
 	}
 	if len(meta.Fields) != len(wantExt) {
 		t.Fatalf("注册表 meta.Fields 数 = %d, want %d", len(meta.Fields), len(wantExt))
@@ -837,19 +841,16 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 		if meta.Fields[i] != want {
 			t.Errorf("meta.Fields[%d] = %+v, want %+v（§5.3 行 1187-1226）", i, meta.Fields[i], want)
 		}
-		f := got.GetFields()[4+i] // basic 基线 4 项之后即 Ext 区块（声明序）。
+		f := got.GetFields()[3+i] // basic 基线 3 项之后即 Ext 区块（声明序）。
 		if f.GetKey() != want.Key {
-			t.Errorf("fields[%d].key = %q, want %q（Ext 区块按 meta 声明序）", 4+i, f.GetKey(), want.Key)
+			t.Errorf("fields[%d].key = %q, want %q（Ext 区块按 meta 声明序）", 3+i, f.GetKey(), want.Key)
 		}
 		if f.GetLabel() != want.Label || f.GetType() != want.Type || f.GetSection() != want.Section ||
 			f.GetRequired() != want.Required || f.GetAdvanced() != want.Advanced || f.GetHelp() != want.Help {
 			t.Errorf("%s 与 §5.3 示例不一致: schema=%+v", want.Key, f)
 		}
 	}
-	// category / union_provider options 仍由注册表 / union 查询驱动。
-	if opts := byKey["category"].GetOptions(); len(opts) != 1 || opts[0] != "oauth" {
-		t.Errorf("category options = %v, want [oauth]", opts)
-	}
+	// union_provider options 仍由 union 查询驱动（category 只读字段不再进 schema）。
 	if opts := byKey["union_provider"].GetOptions(); len(opts) != 1 || opts[0] != "union_b" {
 		t.Errorf("union_provider options = %v, want [union_b]", opts)
 	}

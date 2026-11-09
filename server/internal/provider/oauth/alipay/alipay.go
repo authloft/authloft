@@ -66,16 +66,16 @@ func init() {
 	for i, f := range m.Fields {
 		switch f.Key {
 		case "client_id":
-			m.Fields[i].Label = "AppID"
+			m.Fields[i].Label = "admin.schemaField.clientIdLabel"
 		case "client_secret":
-			m.Fields[i].Label = "应用私钥（PEM）"
-			m.Fields[i].Help = "PKCS8 / PKCS1 RSA 私钥，用于请求 RSA2 签名"
+			m.Fields[i].Label = "admin.schemaField.alipayPrivateKeyLabel"
+			m.Fields[i].Help = "admin.schemaField.alipayPrivateKeyHelp"
 		case "cert":
-			m.Fields[i].Label = "支付宝公钥（PEM）"
-			m.Fields[i].Help = "用于验签网关响应；留空跳过验签（不推荐）"
+			m.Fields[i].Label = "admin.schemaField.alipayPublicKeyLabel"
+			m.Fields[i].Help = "admin.schemaField.alipayPublicKeyHelp"
 		case "provider_url":
-			m.Fields[i].Label = "网关地址"
-			m.Fields[i].Help = "留空默认 https://openapi.alipay.com/gateway.do（沙箱可改填沙箱网关）"
+			m.Fields[i].Label = "admin.schemaField.alipayGatewayLabel"
+			m.Fields[i].Help = "admin.schemaField.alipayGatewayHelp"
 		}
 	}
 	provider.Register(Type, m, newAdapter)
@@ -287,7 +287,7 @@ func (a *Adapter) callGateway(ctx context.Context, biz map[string]string, method
 }
 
 // methodResponseKey 网关响应键：method 的点号替换为下划线再拼 _response
-//（支付宝网关惯例：alipay.system.oauth.token → alipay_system_oauth_token_response）。
+// （支付宝网关惯例：alipay.system.oauth.token → alipay_system_oauth_token_response）。
 func methodResponseKey(method string) string {
 	return strings.ReplaceAll(method, ".", "_") + "_response"
 }

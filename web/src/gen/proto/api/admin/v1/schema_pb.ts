@@ -54,7 +54,9 @@ export type SchemaField = Message<"api.admin.v1.SchemaField"> & {
   key: string;
 
   /**
-   * 展示文案（§5.3 行 1189）。
+   * 展示文案的 i18n 键，如 admin.schemaField.providerKeyLabel（§5.3 行 1189）；
+   * 语言包在前端 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期 t() 解析。
+   * 后端不持有任何语言文案；缺键时前端回显键本身（可见、可排查）。
    *
    * @generated from field: string label = 2;
    */
@@ -93,7 +95,11 @@ export type SchemaField = Message<"api.admin.v1.SchemaField"> & {
   default?: Value | undefined;
 
   /**
-   * select 类型的取值集合，与 §1.11 同名同义（§5.3 行 1226）。
+   * select 类型的取值集合，与 §1.11 同名同义（§5.3 行 1226）。恒为 wire 取值
+   * （如 ui_group 的 social / enterprise / dev / other、union_provider 的
+   * provider_key），不是 i18n 键；前端仅按 admin.schemaOption.<fieldKey>.<value>
+   * 翻译显示名（按字段命名空间，避免自定义 provider_key 撞上通用枚举值），
+   * 未定义键时原样显示并提交原值。
    *
    * @generated from field: repeated string options = 7;
    */
@@ -114,7 +120,7 @@ export type SchemaField = Message<"api.admin.v1.SchemaField"> & {
   advanced: boolean;
 
   /**
-   * 帮助文案（§5.3 行 1190）。
+   * 帮助文案的 i18n 键（§5.3 行 1190）；语义同 label，空串表示无帮助文案。
    *
    * @generated from field: string help = 10;
    */

@@ -36,8 +36,8 @@ func init() {
 	m := oauthcore.NewMeta(Type, "Microsoft", provider.ChannelRedirect)
 	for i, f := range m.Fields {
 		if f.Key == "provider_url" {
-			m.Fields[i].Label = "Tenant（common / organizations / 租户 ID）"
-			m.Fields[i].Help = "留空默认 common"
+			m.Fields[i].Label = "admin.schemaField.microsoftTenantLabel"
+			m.Fields[i].Help = "admin.schemaField.microsoftTenantHelp"
 		}
 	}
 	provider.Register(Type, m, newAdapter)

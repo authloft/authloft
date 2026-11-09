@@ -22,11 +22,13 @@ export const admin = {
   'admin.pwdMaxLengthLabel': '最大长度',
   'admin.pwdMaxLengthHint': '可调低不可调高，服务端硬上限 64（默认 64）',
   'admin.pwdRequireClassesLabel': '须满足的字符类数',
-  'admin.pwdRequireClassesHint': '1-3；字符类 = 大写 / 小写 / 数字，符号不计入（默认 3）',
+  'admin.pwdRequireClassesHint':
+    '1-3；字符类 = 大写 / 小写 / 数字，符号不计入（默认 3）',
   'admin.pwdDisallowUsernameLabel': '禁止密码包含用户名',
   'admin.pwdDisallowCommonLabel': '禁止命中弱口令字典',
   'admin.allowPasswordResetLabel': '开放自助重置密码',
-  'admin.allowPasswordResetHint': '关闭后重置密码一律被拒绝，不发码、不校验验证码',
+  'admin.allowPasswordResetHint':
+    '关闭后重置密码一律被拒绝，不发码、不校验验证码',
   'admin.allowRegistrationLabel': '注册总开关',
   'admin.allowRegistrationHint': '关闭后注册一律被拒绝',
   'admin.allowSignupPasswordLabel': '用户名 + 密码注册入口',
@@ -43,13 +45,15 @@ export const admin = {
   'admin.otpDailyLimitIpLabel': '单 IP 每日发送上限',
   'admin.otpDailyLimitIpHint': '默认 50',
   'admin.loginMethodsLabel': '已启用的登录方式',
-  'admin.loginMethodsHint': '只控登录，不参与注册判定；不在其中的方式登录时被拒绝',
+  'admin.loginMethodsHint':
+    '只控登录，不参与注册判定；不在其中的方式登录时被拒绝',
   'admin.mfaEnabledLabel': '两步验证总开关',
   'admin.mfaEnabledHint': '关闭后所有用户不再二次验证',
   'admin.mfaMethodsLabel': '系统开放的二次因子',
   'admin.mfaMethodsHint': '恢复码随 TOTP 生效，不单列',
   'admin.pwdFailCaptureLabel': '当日密码错误人机校验阈值',
-  'admin.pwdFailCaptureHint': '同一账号当日密码错误达此次数后，登录必须携带人机校验（默认 3）',
+  'admin.pwdFailCaptureHint':
+    '同一账号当日密码错误达此次数后，登录必须携带人机校验（默认 3）',
   'admin.pwdFailBanLabel': '禁止密码登录阈值',
   'admin.pwdFailBanHint': '累计失败达此次数后禁止密码登录（默认 6）',
   'admin.pwdBanTtlLabel': '禁止密码登录时长',
@@ -84,7 +88,8 @@ export const admin = {
   'admin.eventlogRetentionDaysLabel': '事件日志保留天数',
   'admin.eventlogRetentionDaysHint': '默认 180',
   'admin.staticBaseLabel': '静态资源基址（CDN）',
-  'admin.staticBaseHint': '决定空壳页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
+  'admin.staticBaseHint':
+    '决定空壳页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
 
   'admin.unitSeconds': '秒',
   'admin.unitTimes': '次',
@@ -101,8 +106,10 @@ export const admin = {
   'admin.settingsNumberIssue': '数字设置项须为不小于 0 的整数',
   'admin.pwdRequireClassesIssue': '须满足的字符类数须为 1-3',
   'admin.pwdMinOverMaxIssue': '密码最小长度不能大于最大长度',
-  'admin.pwdMaxOverCapIssue': '密码最大长度不能超过 64（服务端硬上限，可调低不可调高）',
-  'admin.httpsDeploymentIssue': 'HTTPS 部署取值须为 自动推断 / 强制开启 / 强制关闭',
+  'admin.pwdMaxOverCapIssue':
+    '密码最大长度不能超过 64（服务端硬上限，可调低不可调高）',
+  'admin.httpsDeploymentIssue':
+    'HTTPS 部署取值须为 自动推断 / 强制开启 / 强制关闭',
 
   // ---- api.ts 展示纯函数------------------------------------------------------
   'admin.policyTagAllowSignin': '允许登录',
@@ -150,7 +157,8 @@ export const admin = {
   'admin.schemaSectionEndpoint': '端点',
   'admin.schemaSectionDisplay': '展示与排序',
   'admin.schemaSectionPolicy': '策略开关',
-  'admin.schemaSectionError': 'provider schema 字段 {key} 的 section 缺失或非法：{section}',
+  'admin.schemaSectionError':
+    'provider schema 字段 {key} 的 section 缺失或非法：{section}',
   'admin.validateRequired': '此项为必填',
   'admin.validatePattern': '格式不正确',
   'admin.validateNumber': '必须是数字',
@@ -163,6 +171,98 @@ export const admin = {
 
   // ---- schema/fields/FieldRenderers.tsx---------------------------------------
   'admin.unsupportedFieldType': '暂不支持的字段类型：{type}',
+
+  // ---- schema 字段文案（后端 GetProviderSchema 下发 label / help 的 i18n 键）----
+  // 后端只发键不发文案；同一 Ext 字段在不同渠道可有不同标签，故键按语义命名
+  // （如 client_id：oauth 用 clientIdLabel、阿里云短信用 aliyunAccessKeyIdLabel）。
+  // 表列基线（dto/admin.go）。
+  'admin.schemaField.providerKeyLabel': '唯一标识',
+  'admin.schemaField.providerKeyHelp': '创建后不可修改，将出现在回调地址中',
+  'admin.schemaField.displayNameLabel': '显示名称',
+  // §5.3 契约示例的 category 只读字段（现由页面级类型下拉取代，后端不再下发；
+  // 键保留供旧版 schema / 契约示例使用）。
+  'admin.schemaField.categoryLabel': '类别',
+  'admin.schemaField.categoryHelp': '由注册表按 type 决定，只读',
+  'admin.schemaField.unionProviderLabel': '联合登录归属',
+  'admin.schemaField.unionProviderHelp': '留空表示不参与 Union ID 归并',
+  'admin.schemaField.iconUrlLabel': '图标 URL',
+  'admin.schemaField.iconUrlHelp': '留空时前端渲染通用占位图标',
+  'admin.schemaField.uiGroupLabel': '展示分组',
+  'admin.schemaField.sortOrderLabel': '排序',
+  'admin.schemaField.remarkLabel': '备注',
+  'admin.schemaField.isEnabledLabel': '启用',
+  'admin.schemaField.enableSigninLabel': '允许用于登录',
+  'admin.schemaField.enableSignupLabel': '允许用于注册',
+  'admin.schemaField.enableSignupHelp': '关闭后该渠道不得用于建号',
+  'admin.schemaField.autoBindLabel': '按联系方式自动绑定',
+  'admin.schemaField.autoBindFieldsLabel': '自动绑定字段',
+  'admin.schemaField.autoBindFieldsHelp': 'auto_bind 开启时生效',
+
+  // oauth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
+  'admin.schemaField.clientIdLabel': 'AppID',
+  'admin.schemaField.clientSecretLabel': 'AppSecret',
+  'admin.schemaField.appIdLabel': '小程序 AppID',
+  'admin.schemaField.certLabel': '证书 / 公钥',
+  'admin.schemaField.scopesLabel': '授权范围',
+  'admin.schemaField.providerUrlLabel': '服务地址',
+  'admin.schemaField.customAuthUrlLabel': '授权地址',
+  'admin.schemaField.customTokenUrlLabel': '令牌地址',
+  'admin.schemaField.customUserInfoUrlLabel': 'UserInfo 地址',
+  'admin.schemaField.userMappingLabel': '字段映射',
+  'admin.schemaField.userMappingHelp':
+    '三方字段 → Authloft 字段，值为 JSONata 表达式',
+  'admin.schemaField.metadataLabel': '长尾键值',
+  'admin.schemaField.oauth2UserMappingHelp':
+    '必填 open_id：三方字段 → Authloft 字段，值为 JSONata 表达式（如 {"open_id": "$.id"}）',
+  'admin.schemaField.oidcProviderUrlHelp':
+    'IdP issuer 地址，自动 discovery（.well-known/openid-configuration）',
+
+  // wechat_mp_scan 追加三字段。
+  'admin.schemaField.qrcodeAutoDeleteLabel': '登录后自动删除码图',
+  'admin.schemaField.storageProviderLabel': '存储 Provider',
+  'admin.schemaField.storagePathLabel': '存储路径模板',
+  'admin.schemaField.storagePathHelp':
+    "JSONata 表达式，内置变量 ticket_id / timestamp，如 'qrcodes_' & $.ticket_id & '.jpg'",
+
+  // 渠道语义化覆盖（alipay / microsoft）。
+  'admin.schemaField.alipayPrivateKeyLabel': '应用私钥（PEM）',
+  'admin.schemaField.alipayPrivateKeyHelp':
+    'PKCS8 / PKCS1 RSA 私钥，用于请求 RSA2 签名',
+  'admin.schemaField.alipayPublicKeyLabel': '支付宝公钥（PEM）',
+  'admin.schemaField.alipayPublicKeyHelp':
+    '用于验签网关响应；留空跳过验签（不推荐）',
+  'admin.schemaField.alipayGatewayLabel': '网关地址',
+  'admin.schemaField.alipayGatewayHelp':
+    '留空默认 https://openapi.alipay.com/gateway.do（沙箱可改填沙箱网关）',
+  'admin.schemaField.microsoftTenantLabel':
+    'Tenant（common / organizations / 租户 ID）',
+  'admin.schemaField.microsoftTenantHelp': '留空默认 common',
+
+  // 消息域 Ext 字段（smtp / aliyun_sms）。
+  'admin.schemaField.smtpHostLabel': 'SMTP 服务器',
+  'admin.schemaField.smtpPortLabel': '端口',
+  'admin.schemaField.smtpPortHelp':
+    '465 = 隐式 TLS；其余明文连接并在服务器支持时 STARTTLS 升级',
+  'admin.schemaField.smtpFromLabel': '发件人地址',
+  'admin.schemaField.smtpDisableSslLabel': '禁用 STARTTLS',
+  'admin.schemaField.smtpDisableSslHelp': '内网自签场景跳过 STARTTLS 升级',
+  'admin.schemaField.smtpMetadataHelp':
+    'username / password = SMTP 认证凭证；subject.<tpl> / body.<tpl> = 标题与正文模板（{code} 占位）',
+  'admin.schemaField.aliyunAccessKeyIdLabel': 'AccessKeyId',
+  'admin.schemaField.aliyunAccessKeySecretLabel': 'AccessKeySecret',
+  'admin.schemaField.aliyunSignNameLabel': '短信签名',
+  'admin.schemaField.aliyunTemplateCodeLabel': '短信模板 ID',
+  'admin.schemaField.aliyunIntranetEndpointLabel': '内网 endpoint',
+  'admin.schemaField.aliyunMetadataHelp':
+    'template_code.<tpl> 按模板键覆盖短信模板 ID',
+
+  // select options 显示名（options 仍是 wire 取值；键 =
+  // admin.schemaOption.<fieldKey>.<value>，按字段命名空间取键，避免
+  // union_provider 的自定义 provider_key 撞上通用枚举值；未定义键原样显示）。
+  'admin.schemaOption.ui_group.social': '社交',
+  'admin.schemaOption.ui_group.enterprise': '企业',
+  'admin.schemaOption.ui_group.dev': '开发',
+  'admin.schemaOption.ui_group.other': '其他',
 
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': '删除',
@@ -210,7 +310,8 @@ export const admin = {
   'admin.clientSecretLabel': '客户端密钥',
   'admin.editClientTitle': '编辑客户端「{clientId}」',
   'admin.editClientFallbackTitle': '编辑客户端',
-  'admin.clientCreateSuccess': '客户端创建成功，密钥由服务端生成，点击「查看」即可获取',
+  'admin.clientCreateSuccess':
+    '客户端创建成功，密钥由服务端生成，点击「查看」即可获取',
   'admin.clientUpdateSuccess': '已更新客户端「{clientId}」',
   'admin.clientDeleteSuccess': '已删除客户端「{clientId}」',
   'admin.redirectUrisRequired': '回调白名单不能为空（清空后保存将保留原值）',
@@ -270,7 +371,8 @@ export const admin = {
   'admin.confirmPasswordPlaceholder': '再次输入新密码',
   'admin.passwordMismatchError': '两次输入的密码不一致',
   'admin.confirmResetAction': '确认重置',
-  'admin.resetPasswordSuccess': '已重置「{username}」的密码，请将新密码转交该用户',
+  'admin.resetPasswordSuccess':
+    '已重置「{username}」的密码，请将新密码转交该用户',
   'admin.unlockAction': '解除登录限制',
   'admin.unlockConfirm': '确定解除「{username}」的登录限制？',
   'admin.unlockSuccess': '已解除「{username}」的登录限制',
@@ -335,7 +437,8 @@ export const admin = {
 
   // ---- pages/AuditPage.tsx「敏感操作」预设（五类封闭集）--
   'admin.auditPresetSensitiveRecords': '敏感操作',
-  'admin.auditPresetSensitiveHint': '敏感操作：改密、重置密码、解绑、启用/停用两步验证',
+  'admin.auditPresetSensitiveHint':
+    '敏感操作：改密、重置密码、解绑、启用/停用两步验证',
 
   // ---- pages/{ProvidersPage,ProviderEditPage}.tsx 提供商族--------
   'admin.providerColumnDisplayName': '显示名',
@@ -345,7 +448,8 @@ export const admin = {
   'admin.providerColumnPolicyTags': '策略标签',
   'admin.providerColumnSortOrder': '排序',
   'admin.providersLoadFailed': '提供商列表加载失败，请刷新重试',
-  'admin.providersDragDisabledNote': '提供商数量超过单页上限（100），拖拽排序已停用',
+  'admin.providersDragDisabledNote':
+    '提供商数量超过单页上限（100），拖拽排序已停用',
   'admin.providerDragSortLabel': '拖拽调整提供商排序',
   'admin.noProviders': '暂无提供商',
   // 启停 / 拖拽排序成功反馈（P1-6，此前「不新增键」，本次统一补齐）。

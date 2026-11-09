@@ -119,6 +119,12 @@ const (
 //     key / label / type / section / required / default / options / pattern /
 //     advanced / help）+ Ext 字段逐项来自 meta 声明（§15.3 行 1731），并按
 //     category 裁剪表列基线（见 AdminProviderColumnKeysFor）；
+//   - label / help 不再是展示文案，而是前端 i18n 键（admin.schemaField.*，
+//     文案在 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期
+//     t() 解析）。后端不持有任何语言文案；options 仍是 wire 取值（如
+//     ui_group 的 social / enterprise / dev / other、union Provider 的
+//     provider_key），前端只翻译其显示名、提交值不变。缺键时 t() 回显键
+//     本身（i18n 既有口径），旧版本下发的中文字面量也按原文显示，不崩；
 //   - 顺序：basic 基线 → meta 声明的 Ext 字段（声明序）→ display / policy
 //     基线，即 §5.3 示例的区块排列；前端按 section 分组、区块内沿用 fields[]
 //     数组顺序（行 1185），不做二次排序。空区块（如 sms / email 的 policy 只剩
@@ -130,7 +136,7 @@ const (
 func AdminSchema(providerType, category string, extFields []provider.FieldMeta, unionProviderKeys []string) *adminv1.SchemaResponse {
 	allowed := schemaColumnKeySet(category)
 	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
-	for _, f := range schemaBaselineBasic(category, unionProviderKeys) {
+	for _, f := range schemaBaselineBasic(unionProviderKeys) {
 		if allowed[f.GetKey()] {
 			resp.Fields = append(resp.Fields, f)
 		}
@@ -160,51 +166,54 @@ func schemaColumnKeySet(category string) map[string]bool {
 	return allowed
 }
 
-// schemaBaselineBasic §5.3 基础信息区块基线（行 1192-1198）：category 的
-// options 由注册表 meta 决定（单值只读，行 1196），union_provider 的 options
-// 为 union 类 Provider 的 provider_key 列表（行 1197）。
-func schemaBaselineBasic(category string, unionProviderKeys []string) []*adminv1.SchemaField {
+// schemaBaselineBasic §5.3 基础信息区块基线（行 1192-1198）：category 只读
+// 字段已由页面级类型下拉取代，不再进 fields[]；union_provider 的 options
+// 为 union 类 Provider 的 provider_key 列表（行 1197）。label / help 全是
+// admin.schemaField.* i18n 键（见 AdminSchema 头注），不含中文展示文案。
+func schemaBaselineBasic(unionProviderKeys []string) []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
-		{Key: "provider_key", Label: "唯一标识", Type: "text", Section: sectionBasic, Required: true,
+		{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: sectionBasic, Required: true,
 			Pattern: "^[a-z0-9_]+$",
-			Help:    "创建后不可修改，将出现在回调地址中"},
-		{Key: "display_name", Label: "显示名称", Type: "text", Section: sectionBasic, Required: true},
-		{Key: "union_provider", Label: "联合登录归属", Type: "select", Section: sectionBasic,
+			Help:    "admin.schemaField.providerKeyHelp"},
+		{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: sectionBasic, Required: true},
+		{Key: "union_provider", Label: "admin.schemaField.unionProviderLabel", Type: "select", Section: sectionBasic,
 			Options: unionProviderKeys,
-			Help:    "留空表示不参与 Union ID 归并"},
+			Help:    "admin.schemaField.unionProviderHelp"},
 	}
 }
 
 // schemaBaselineDisplay §5.3 展示与排序区块基线（行 1213-1217）。
+// ui_group 的 options 是写库取值，不改成 i18n 键；前端按
+// admin.schemaOption.<fieldKey>.<value> 翻译显示名后仍提交原值。
 func schemaBaselineDisplay() []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
-		{Key: "icon_url", Label: "图标 URL", Type: "text", Section: sectionDisplay,
+		{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: sectionDisplay,
 			Pattern: "^https?://",
-			Help:    "留空时前端渲染通用占位图标"},
-		{Key: "ui_group", Label: "展示分组", Type: "select", Section: sectionDisplay,
+			Help:    "admin.schemaField.iconUrlHelp"},
+		{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: sectionDisplay,
 			Options: []string{"social", "enterprise", "dev", "other"},
 			Default: structpb.NewStringValue("social")},
-		{Key: "sort_order", Label: "排序", Type: "number", Section: sectionDisplay,
+		{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: sectionDisplay,
 			Default: structpb.NewNumberValue(0)},
-		{Key: "remark", Label: "备注", Type: "text", Section: sectionDisplay, Advanced: true},
+		{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: sectionDisplay, Advanced: true},
 	}
 }
 
 // schemaBaselinePolicy §5.3 策略开关区块基线（行 1219-1225）。
 func schemaBaselinePolicy() []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
-		{Key: "is_enabled", Label: "启用", Type: "checkbox", Section: sectionPolicy,
+		{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(true)},
-		{Key: "enable_signin", Label: "允许用于登录", Type: "checkbox", Section: sectionPolicy,
+		{Key: "enable_signin", Label: "admin.schemaField.enableSigninLabel", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(true)},
-		{Key: "enable_signup", Label: "允许用于注册", Type: "checkbox", Section: sectionPolicy,
+		{Key: "enable_signup", Label: "admin.schemaField.enableSignupLabel", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(true),
-			Help:    "关闭后该渠道不得用于建号"},
-		{Key: "auto_bind", Label: "按联系方式自动绑定", Type: "checkbox", Section: sectionPolicy,
+			Help:    "admin.schemaField.enableSignupHelp"},
+		{Key: "auto_bind", Label: "admin.schemaField.autoBindLabel", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(false)},
-		{Key: "auto_bind_fields", Label: "自动绑定字段", Type: "text", Section: sectionPolicy,
+		{Key: "auto_bind_fields", Label: "admin.schemaField.autoBindFieldsLabel", Type: "text", Section: sectionPolicy,
 			Default: structpb.NewStringValue("email,phone"),
-			Help:    "auto_bind 开启时生效"},
+			Help:    "admin.schemaField.autoBindFieldsHelp"},
 	}
 }
 
@@ -212,7 +221,8 @@ func schemaBaselinePolicy() []*adminv1.SchemaField {
 // 1731：标签 / 渲染类型 / 默认值由适配器声明；§5.3 行 1243：section 亦由 meta
 // 声明），保持声明顺序（区块内顺序沿用 fields[] 数组顺序，§5.3 行 1185）。
 // FieldMeta 无 options / pattern（当前 Ext 字段渲染类型只有 text / secret /
-// checkbox / number / json 声明集），对应字段保持零值。
+// checkbox / number / json 声明集），对应字段保持零值。meta 里的 Label / Help
+// 同样是 i18n 键（见 provider.FieldMeta 契约），本函数只做透传不翻译。
 func schemaFieldsFromMeta(fields []provider.FieldMeta) []*adminv1.SchemaField {
 	out := make([]*adminv1.SchemaField, 0, len(fields))
 	for _, f := range fields {

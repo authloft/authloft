@@ -39,7 +39,7 @@ func init() {
 			f.Required = true
 		case "user_mapping":
 			f.Required = true
-			f.Help = "必填 open_id：三方字段 → Authloft 字段，值为 JSONata 表达式（如 {\"open_id\": \"$.id\"}）"
+			f.Help = "admin.schemaField.oauth2UserMappingHelp"
 		}
 		fields = append(fields, f)
 	}

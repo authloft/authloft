@@ -51,6 +51,10 @@ type SenderFactory func(p *Provider) (Sender, error)
 // FieldMeta 管理后台 /schema 单字段渲染口径（接口文档 §5.3 行 1183-1185：
 // key 恒等于 provider 表列名或 Ext 字段名；section 取值封闭五区块；type 取
 // §1.11 渲染枚举的 text / secret / checkbox / number / select / json）。
+// Label / Help 不是展示文案，而是前端 i18n 键（admin.schemaField.*，语言包
+// 在 web/src/shared/i18n/{zh,en}/admin.ts）；同一 Ext 字段在不同渠道可有不同
+// 标签（如 client_id 在 oauth 是 AppID、在阿里云短信是 AccessKeyId），故键
+// 按语义命名而非按字段 key 推导。空 Help 表示无帮助文案（protojson 省略）。
 type FieldMeta struct {
 	Key      string
 	Label    string

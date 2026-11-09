@@ -143,8 +143,9 @@ func TestAdminProviderDetailEmptyInputs(t *testing.T) {
 }
 
 // TestAdminSchemaOauthBaseline oauth 类型（wechat_mp，注册表 meta 无 Ext 字段
-// 声明）：schema 仅含 13 个表列基线字段（§5.3 示例的表列部分），逐项对行
-// 1192-1225；category / union_provider 的 options 由调用方注入。
+// 声明）：schema 仅含 12 个表列基线字段（§5.3 示例的表列部分，category 只读
+// 字段已改由页面级类型下拉承载、不进 fields[]），逐项对行 1192-1225；
+// union_provider 的 options 由调用方注入。
 func TestAdminSchemaOauthBaseline(t *testing.T) {
 	meta, ok := provider.Lookup("wechat_mp")
 	if !ok || meta.Category != "oauth" {
@@ -154,11 +155,11 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
-	if len(resp.GetFields()) != 13 {
-		t.Fatalf("基线字段数 = %d, want 13（表列基线，oauth meta 无字段声明）", len(resp.GetFields()))
+	if len(resp.GetFields()) != 12 {
+		t.Fatalf("基线字段数 = %d, want 12（表列基线，oauth meta 无字段声明）", len(resp.GetFields()))
 	}
 	// 顺序即 §5.3 示例排列。
-	wantOrder := []string{"provider_key", "display_name", "category", "union_provider",
+	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}
 	for i, key := range wantOrder {
@@ -166,15 +167,15 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 			t.Fatalf("fields[%d].key = %q, want %q", i, resp.GetFields()[i].GetKey(), key)
 		}
 	}
-	// 逐项对 §5.3 行 1192-1225。
+	// 逐项对 §5.3 行 1192-1225；label / help 是前端 i18n 键，不是展示文案。
 	f := schemaFieldByKey(t, resp, "provider_key")
-	if f.GetLabel() != "唯一标识" || f.GetType() != "text" || f.GetSection() != "basic" ||
-		!f.GetRequired() || f.GetPattern() != "^[a-z0-9_]+$" || f.GetHelp() == "" {
+	if f.GetLabel() != "admin.schemaField.providerKeyLabel" || f.GetType() != "text" || f.GetSection() != "basic" ||
+		!f.GetRequired() || f.GetPattern() != "^[a-z0-9_]+$" ||
+		f.GetHelp() != "admin.schemaField.providerKeyHelp" {
 		t.Errorf("provider_key = %+v", f)
 	}
-	f = schemaFieldByKey(t, resp, "category")
-	if f.GetType() != "select" || !f.GetRequired() || len(f.GetOptions()) != 1 || f.GetOptions()[0] != "oauth" {
-		t.Errorf("category = %+v（options 应为注册表类别）", f)
+	if f := schemaFieldByKey(t, resp, "display_name"); f.GetLabel() != "admin.schemaField.displayNameLabel" {
+		t.Errorf("display_name label = %q, want i18n key", f.GetLabel())
 	}
 	f = schemaFieldByKey(t, resp, "union_provider")
 	if f.GetType() != "select" || len(f.GetOptions()) != 1 || f.GetOptions()[0] != "union_a" {
@@ -203,22 +204,22 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 			t.Errorf("%s default = %v, want true", key, f.GetDefault())
 		}
 	}
-	if f := schemaFieldByKey(t, resp, "enable_signup"); f.GetHelp() == "" {
-		t.Errorf("enable_signup = %+v（help 应含关闭后语义，行 1222）", f)
+	if f := schemaFieldByKey(t, resp, "enable_signup"); f.GetHelp() != "admin.schemaField.enableSignupHelp" {
+		t.Errorf("enable_signup help = %q, want i18n key（关闭后语义，行 1222）", f.GetHelp())
 	}
 	if f := schemaFieldByKey(t, resp, "auto_bind"); f.GetDefault().GetBoolValue() {
 		t.Errorf("auto_bind default = %v, want false", f.GetDefault())
 	}
 	f = schemaFieldByKey(t, resp, "auto_bind_fields")
-	if f.GetDefault().GetStringValue() != "email,phone" || f.GetHelp() != "auto_bind 开启时生效" {
+	if f.GetDefault().GetStringValue() != "email,phone" || f.GetHelp() != "admin.schemaField.autoBindFieldsHelp" {
 		t.Errorf("auto_bind_fields = %+v", f)
 	}
 }
 
 // TestAdminSchemaSenderMetaFields 消息域（smtp）类型：Ext 字段与注册表
 // SenderMeta.Fields 逐项一致（§15.3：meta 是 /schema 唯一数据源）。表列基线
-// 按 category 裁剪后为 8 项（只留通用列，见 AdminProviderColumnKeysFor），
-// 加 meta 5 共 13 个字段；meta 字段顺序保持声明序。
+// 按 category 裁剪后为 7 项（只留通用列，见 AdminProviderColumnKeysFor），
+// 加 meta 5 共 12 个字段；meta 字段顺序保持声明序。
 func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	meta, ok := provider.LookupSenderMeta("smtp")
 	if !ok || meta.Category != provider.CategoryEmail {
@@ -228,7 +229,7 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	if resp.GetCategory() != "email" {
 		t.Errorf("category = %q, want email（注册表 meta 决定）", resp.GetCategory())
 	}
-	const commonBaseline = 8 // basic 3 + display 4 + policy 1（非 oauth 裁剪后）
+	const commonBaseline = 7 // basic 2 + display 4 + policy 1（非 oauth 裁剪后）
 	if len(resp.GetFields()) != commonBaseline+len(meta.Fields) {
 		t.Fatalf("字段数 = %d, want %d 基线 + %d meta 声明", len(resp.GetFields()), commonBaseline, len(meta.Fields))
 	}
@@ -262,9 +263,9 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 			}
 		}
 	}
-	// 顺序：basic 基线 3 项后即 meta 声明序（§5.3 行 1185 区块内沿用数组序）。
-	if resp.GetFields()[3].GetKey() != meta.Fields[0].Key {
-		t.Errorf("fields[3].key = %q, want %q（meta 首个声明字段）", resp.GetFields()[3].GetKey(), meta.Fields[0].Key)
+	// 顺序：basic 基线 2 项后即 meta 声明序（§5.3 行 1185 区块内沿用数组序）。
+	if resp.GetFields()[2].GetKey() != meta.Fields[0].Key {
+		t.Errorf("fields[2].key = %q, want %q（meta 首个声明字段）", resp.GetFields()[2].GetKey(), meta.Fields[0].Key)
 	}
 	// 通用基线在 meta 字段之后仍在（display 4 + policy 的 is_enabled）。
 	for _, key := range []string{"icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
@@ -333,15 +334,16 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 	if AdminProviderColumnKeys[0] == "tampered" {
 		t.Fatal("AdminProviderColumnKeysFor 应返回副本")
 	}
-	// schema 字段集与可写键集同源（oauth 13 表列字段 = 11 可写 + provider_key + category）。
+	// schema 字段集与可写键集同源（oauth 12 表列字段 = 11 可写 + 只读 provider_key；
+	// category 已改由页面级类型下拉承载，不再占一个 field）。
 	oauthSchema := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
-	if len(oauthSchema.GetFields()) != len(oauth)+2 {
-		t.Errorf("oauth schema 字段数 = %d, want %d", len(oauthSchema.GetFields()), len(oauth)+2)
+	if len(oauthSchema.GetFields()) != len(oauth)+1 {
+		t.Errorf("oauth schema 字段数 = %d, want %d", len(oauthSchema.GetFields()), len(oauth)+1)
 	}
 	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, nil, nil)
-	if len(unionSchema.GetFields()) != len(union)+2 {
-		t.Errorf("union schema 字段数 = %d, want %d（可写键集 + provider_key + category）",
-			len(unionSchema.GetFields()), len(union)+2)
+	if len(unionSchema.GetFields()) != len(union)+1 {
+		t.Errorf("union schema 字段数 = %d, want %d（可写键集 + provider_key）",
+			len(unionSchema.GetFields()), len(union)+1)
 	}
 	if f, ok := schemaFieldMaybe(unionSchema, "is_enabled"); ok {
 		t.Errorf("union schema 不应含启用开关: %+v", f)

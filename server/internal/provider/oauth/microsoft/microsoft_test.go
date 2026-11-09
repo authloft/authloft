@@ -113,15 +113,16 @@ func TestRegistry(t *testing.T) {
 	if !ok || meta.DisplayName != "Microsoft" {
 		t.Fatalf("meta = %+v ok=%v", meta, ok)
 	}
-	// provider_url 标签改写为 Tenant。
+	// provider_url 标签改写为 Tenant 的 i18n 键（文案在前端语言包）。
 	found := false
 	for _, f := range meta.Fields {
 		if f.Key == "provider_url" {
-			found = f.Label == "Tenant（common / organizations / 租户 ID）"
+			found = f.Label == "admin.schemaField.microsoftTenantLabel" &&
+				f.Help == "admin.schemaField.microsoftTenantHelp"
 		}
 	}
 	if !found {
-		t.Fatalf("provider_url Label 未改写")
+		t.Fatalf("provider_url Label / Help 未改写为 i18n 键")
 	}
 	if _, err := provider.NewAdapter(testProvider("ms", "id", "s", "")); err != nil {
 		t.Fatalf("NewAdapter: %v", err)

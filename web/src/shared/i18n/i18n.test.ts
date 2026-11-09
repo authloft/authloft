@@ -89,6 +89,41 @@ describe('t() 取文案', () => {
   });
 });
 
+describe('schema 字段文案契约（后端下发 i18n 键，文案只在本字典）', () => {
+  const schemaKeys = Object.keys(zhCN).filter(
+    (key) =>
+      key.startsWith('admin.schemaField.') ||
+      key.startsWith('admin.schemaOption.'),
+  );
+
+  test('全部 schema 字段 / option 键在 zh / en 两套字典都可译（不回显键）', () => {
+    expect(schemaKeys.length).toBeGreaterThan(0);
+    for (const key of schemaKeys) {
+      expect(t(key)).not.toBe(key);
+      setLocale('en-US');
+      expect(t(key)).not.toBe(key);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('option 显示名按字段命名空间取键，未定义取值原样回显', () => {
+    expect(t('admin.schemaOption.ui_group.social')).toBe('社交');
+    setLocale('en-US');
+    expect(t('admin.schemaOption.ui_group.social')).toBe('Social');
+    setLocale('zh-CN');
+    // union_provider 的 options 是自定义 provider_key；即便值恰好叫 social，
+    // 也不会命中 ui_group 的枚举译文。
+    expect(hasKey('admin.schemaOption.union_provider.social')).toBe(false);
+  });
+
+  test('兼容路径：旧版中文字面量 / 缺译键一律回显本身（不静默 undefined）', () => {
+    expect(t('唯一标识')).toBe('唯一标识');
+    expect(t('admin.schemaField.notYetTranslated')).toBe(
+      'admin.schemaField.notYetTranslated',
+    );
+  });
+});
+
 describe('与 shared/api/errors.ts 的 i18nKey 契约（§1.6 / §1.5，不造第二套）', () => {
   test('FLOW_STATUS_TABLE（§1.6 全表 33 词）的 i18nKey 两套字典全部可译', () => {
     const resolutions = Object.values(FLOW_STATUS_TABLE);

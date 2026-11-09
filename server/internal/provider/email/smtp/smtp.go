@@ -60,14 +60,14 @@ func init() {
 		DisplayName: "SMTP（通用）",
 		Category:    provider.CategoryEmail,
 		Fields: []provider.FieldMeta{
-			{Key: "host", Label: "SMTP 服务器", Type: "text", Section: "endpoint", Required: true},
-			{Key: "port", Label: "端口", Type: "number", Section: "endpoint", Default: "587",
-				Help: "465 = 隐式 TLS；其余明文连接并在服务器支持时 STARTTLS 升级"},
-			{Key: "from", Label: "发件人地址", Type: "text", Section: "basic", Required: true},
-			{Key: "disable_ssl", Label: "禁用 STARTTLS", Type: "checkbox", Section: "policy",
-				Help: "内网自签场景跳过 STARTTLS 升级"},
-			{Key: "metadata", Label: "长尾键值", Type: "json", Section: "credential", Advanced: true,
-				Help: "username / password = SMTP 认证凭证；subject.<tpl> / body.<tpl> = 标题与正文模板（{code} 占位）"},
+			{Key: "host", Label: "admin.schemaField.smtpHostLabel", Type: "text", Section: "endpoint", Required: true},
+			{Key: "port", Label: "admin.schemaField.smtpPortLabel", Type: "number", Section: "endpoint", Default: "587",
+				Help: "admin.schemaField.smtpPortHelp"},
+			{Key: "from", Label: "admin.schemaField.smtpFromLabel", Type: "text", Section: "basic", Required: true},
+			{Key: "disable_ssl", Label: "admin.schemaField.smtpDisableSslLabel", Type: "checkbox", Section: "policy",
+				Help: "admin.schemaField.smtpDisableSslHelp"},
+			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
+				Help: "admin.schemaField.smtpMetadataHelp"},
 		},
 	}, newSender)
 }

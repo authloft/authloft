@@ -313,7 +313,9 @@ func TestRegistry(t *testing.T) {
 	for _, f := range meta.Fields {
 		labels[f.Key] = f.Label
 	}
-	if labels["client_secret"] != "应用私钥（PEM）" || labels["cert"] != "支付宝公钥（PEM）" {
+	if labels["client_secret"] != "admin.schemaField.alipayPrivateKeyLabel" ||
+		labels["cert"] != "admin.schemaField.alipayPublicKeyLabel" ||
+		labels["provider_url"] != "admin.schemaField.alipayGatewayLabel" {
 		t.Fatalf("labels = %v", labels)
 	}
 	if _, err := provider.NewAdapter(testProvider(ks, "https://gw")); err != nil {

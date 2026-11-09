@@ -39,7 +39,7 @@ func init() {
 			continue
 		case "provider_url":
 			f.Required = true
-			f.Help = "IdP issuer 地址，自动 discovery（.well-known/openid-configuration）"
+			f.Help = "admin.schemaField.oidcProviderUrlHelp"
 		}
 		fields = append(fields, f)
 	}

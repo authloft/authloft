@@ -13,11 +13,20 @@
  * 禁用占位不崩（§12.9 行 1754：fields[].type 跨版本可能新增）。
  * 样式复用 ../SchemaForm.module.less（字段装配属表单布局；跨文件共享
  * 同一 CSS Modules 映射，§1.7）。
+ *
+ * 【schema 文案 i18n 化】GetProviderSchema 下发的 label / help 不是展示文案，
+ * 而是 i18n 键（admin.schemaField.*，语言包在 shared/i18n/{zh,en}/admin.ts）；
+ * 本文件是 schema 的唯一渲染消费点，一律渲染期 t() 取文案（不能在模块级求值，
+ * 否则会冻结在默认语言，SECTION_TITLES textKey 同口径）。t() 缺键回显键本身：
+ * 旧版本后端仍下发中文字面量时按原文显示、新增字段缺译可见，均不返回
+ * undefined。options 恒为 wire 取值（schema.proto），只翻译显示名、不改提交值；
+ * 显示名键按字段命名空间取（admin.schemaOption.<fieldKey>.<value>），避免
+ * union_provider 的自定义 provider_key 撞上通用枚举值。
  */
 import type { ReactNode } from 'react';
 import { Form } from '@douyinfe/semi-ui';
 import type { SchemaField } from '@/gen/proto/api/admin/v1/schema_pb';
-import { t } from '@/shared/i18n';
+import { hasKey, t } from '@/shared/i18n';
 import type { FieldRendererProps } from '../FieldRegistry';
 import styles from '../SchemaForm.module.less';
 
@@ -26,12 +35,24 @@ function fieldLabel(field: SchemaField): {
   text: string;
   required: boolean;
 } {
-  return { text: field.label, required: field.required };
+  return { text: t(field.label), required: field.required };
 }
 
-/** help 文案（空串不传，避免渲染空占位）。 */
+/** help 文案（空串不传，避免渲染空占位；非空串按 i18n 键取文案）。 */
 function fieldHelp(field: SchemaField): string | undefined {
-  return field.help !== '' ? field.help : undefined;
+  return field.help !== '' ? t(field.help) : undefined;
+}
+
+/**
+ * select 取值显示名：options 是写库取值（如 ui_group 的 social、union_provider
+ * 的 provider_key），不是 i18n 键——按 admin.schemaOption.<fieldKey>.<value>
+ * 查译文，未定义的取值原样显示；optionList 的 value 始终保持原值，提交不受
+ * 翻译影响。按字段命名空间取键可避免 union_provider 里恰好叫 social 的
+ * provider_key 被误当成枚举值翻译。
+ */
+function optionLabel(fieldKey: string, option: string): string {
+  const key = `admin.schemaOption.${fieldKey}.${option}`;
+  return hasKey(key) ? t(key) : option;
 }
 
 /**
@@ -109,7 +130,7 @@ export function SelectField(props: FieldRendererProps): ReactNode {
       extraText={props.extra}
       optionList={props.field.options.map((option) => ({
         value: option,
-        label: option,
+        label: optionLabel(props.field.key, option),
       }))}
       placeholder={t('common.selectPlaceholder')}
       convert={(value: unknown) =>
@@ -133,7 +154,7 @@ export function JsonField(props: FieldRendererProps): ReactNode {
       placeholder='{"key": "value"}'
       allowEmptyString={KEEP_EMPTY_STRING}
       disabled={props.disabled}
-      aria-label={props.field.label}
+      aria-label={t(props.field.label)}
     />
   );
 }

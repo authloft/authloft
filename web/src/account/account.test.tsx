@@ -10,6 +10,9 @@ import {
   expect,
   rs,
   test,
+  // moduleResolution=node 下 TS2307 定位在收尾行，首行的 @ts-ignore 覆盖不到
+  //（tsconfig 现代化后连同两处 @ts-ignore 一起移除）。
+  // @ts-ignore
 } from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';

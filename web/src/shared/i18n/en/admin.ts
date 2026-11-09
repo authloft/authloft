@@ -20,11 +20,13 @@ export const admin: typeof zhAdmin = {
   'admin.pwdMinLengthLabel': 'Minimum length',
   'admin.pwdMinLengthHint': 'Default 8',
   'admin.pwdMaxLengthLabel': 'Maximum length',
-  'admin.pwdMaxLengthHint': 'Can be lowered but not raised; server hard cap is 64 (default 64)',
+  'admin.pwdMaxLengthHint':
+    'Can be lowered but not raised; server hard cap is 64 (default 64)',
   'admin.pwdRequireClassesLabel': 'Required character classes',
   'admin.pwdRequireClassesHint':
     '1-3; classes = uppercase / lowercase / digits; symbols do not count (default 3)',
-  'admin.pwdDisallowUsernameLabel': 'Disallow passwords containing the username',
+  'admin.pwdDisallowUsernameLabel':
+    'Disallow passwords containing the username',
   'admin.pwdDisallowCommonLabel': 'Reject commonly used passwords',
   'admin.allowPasswordResetLabel': 'Allow self-service password reset',
   'admin.allowPasswordResetHint':
@@ -39,7 +41,8 @@ export const admin: typeof zhAdmin = {
   'admin.otpTtlLabel': 'Verification code validity',
   'admin.otpTtlHint': 'Default 300',
   'admin.otpMaxAttemptsLabel': 'Max failed verification attempts per code',
-  'admin.otpMaxAttemptsHint': 'The code is voided once the limit is exceeded (default 5)',
+  'admin.otpMaxAttemptsHint':
+    'The code is voided once the limit is exceeded (default 5)',
   'admin.otpDailyLimitTargetLabel': 'Daily send limit per target',
   'admin.otpDailyLimitTargetHint': 'Default 10',
   'admin.otpDailyLimitIpLabel': 'Daily send limit per IP',
@@ -48,10 +51,13 @@ export const admin: typeof zhAdmin = {
   'admin.loginMethodsHint':
     'Controls sign-in only, not sign-up; methods not listed are rejected at sign-in',
   'admin.mfaEnabledLabel': 'Two-factor verification master switch',
-  'admin.mfaEnabledHint': 'When off, users are no longer asked for second verification',
+  'admin.mfaEnabledHint':
+    'When off, users are no longer asked for second verification',
   'admin.mfaMethodsLabel': 'Available second factors',
-  'admin.mfaMethodsHint': 'Recovery codes are enabled with TOTP and are not listed separately',
-  'admin.pwdFailCaptureLabel': 'Daily password failures before captcha is required',
+  'admin.mfaMethodsHint':
+    'Recovery codes are enabled with TOTP and are not listed separately',
+  'admin.pwdFailCaptureLabel':
+    'Daily password failures before captcha is required',
   'admin.pwdFailCaptureHint':
     'Once daily password failures for an account reach this count, sign-in requires captcha (default 3)',
   'admin.pwdFailBanLabel': 'Failures before password sign-in is banned',
@@ -82,7 +88,8 @@ export const admin: typeof zhAdmin = {
   'admin.smsProviderKeyHint': 'Empty = no external SMS channel',
   'admin.emailProviderKeyLabel': 'Active email provider',
   'admin.emailProviderKeyHint': 'Empty = no external email channel',
-  'admin.avatarStorageProviderLabel': 'Storage provider for avatars / provider icons',
+  'admin.avatarStorageProviderLabel':
+    'Storage provider for avatars / provider icons',
   'admin.avatarStorageProviderHint': 'Empty = no external storage',
   'admin.gatewayTokensLabel': 'Gateway tokens',
   'admin.gatewayTokensHint': 'Multiple values allowed',
@@ -104,9 +111,12 @@ export const admin: typeof zhAdmin = {
   'admin.httpsDeploymentForceOn': 'Force on',
   'admin.httpsDeploymentForceOff': 'Force off',
 
-  'admin.settingsNumberIssue': 'Numeric settings must be integers no less than 0',
-  'admin.pwdRequireClassesIssue': 'Required character classes must be between 1 and 3',
-  'admin.pwdMinOverMaxIssue': 'Minimum password length cannot exceed the maximum',
+  'admin.settingsNumberIssue':
+    'Numeric settings must be integers no less than 0',
+  'admin.pwdRequireClassesIssue':
+    'Required character classes must be between 1 and 3',
+  'admin.pwdMinOverMaxIssue':
+    'Minimum password length cannot exceed the maximum',
   'admin.pwdMaxOverCapIssue':
     'Maximum password length cannot exceed 64 (server hard cap; can only be lowered)',
   'admin.httpsDeploymentIssue':
@@ -120,8 +130,10 @@ export const admin: typeof zhAdmin = {
   'admin.userStatusEnabled': 'Active',
   'admin.userStatusDisabled': 'Disabled',
   'admin.credentialKindMfaSetting': 'MFA switch',
-  'admin.redirectUrisIssue': 'Redirect URIs must be * or start with http:// or https://',
-  'admin.scopesIssue': 'Scope entries must be non-empty and must not contain commas',
+  'admin.redirectUrisIssue':
+    'Redirect URIs must be * or start with http:// or https://',
+  'admin.scopesIssue':
+    'Scope entries must be non-empty and must not contain commas',
   'admin.listSummary': '{first} and {count} more',
   'admin.durationDays': '{count} days',
   'admin.durationHours': '{count} hours',
@@ -173,11 +185,112 @@ export const admin: typeof zhAdmin = {
   // ---- schema/fields/FieldRenderers.tsx---------------------------------------
   'admin.unsupportedFieldType': 'Unsupported field type: {type}',
 
+  // ---- schema field copy (i18n keys sent by GetProviderSchema as label / help) ----
+  // The server sends keys only; the same Ext field may have a different label per
+  // provider (e.g. client_id: clientIdLabel for OAuth, aliyunAccessKeyIdLabel for
+  // Aliyun SMS), so keys are named by meaning rather than derived from field.key.
+  // Table-column baselines (dto/admin.go).
+  'admin.schemaField.providerKeyLabel': 'Key',
+  'admin.schemaField.providerKeyHelp':
+    'Cannot be changed after creation; appears in the callback URL',
+  'admin.schemaField.displayNameLabel': 'Display Name',
+  // category read-only field from the §5.3 contract example (now replaced by the
+  // page-level type picker and no longer emitted; kept for legacy schema/contract).
+  'admin.schemaField.categoryLabel': 'Category',
+  'admin.schemaField.categoryHelp':
+    'Determined by the registry from type; read-only',
+  'admin.schemaField.unionProviderLabel': 'Union ID Provider',
+  'admin.schemaField.unionProviderHelp': 'Leave empty to skip Union ID merging',
+  'admin.schemaField.iconUrlLabel': 'Icon URL',
+  'admin.schemaField.iconUrlHelp':
+    'Leave empty to show a generic placeholder icon',
+  'admin.schemaField.uiGroupLabel': 'Display Group',
+  'admin.schemaField.sortOrderLabel': 'Sort Order',
+  'admin.schemaField.remarkLabel': 'Remark',
+  'admin.schemaField.isEnabledLabel': 'Enabled',
+  'admin.schemaField.enableSigninLabel': 'Allow sign-in',
+  'admin.schemaField.enableSignupLabel': 'Allow sign-up',
+  'admin.schemaField.enableSignupHelp':
+    'When off, this provider cannot be used to create accounts',
+  'admin.schemaField.autoBindLabel': 'Auto-bind by contact info',
+  'admin.schemaField.autoBindFieldsLabel': 'Auto-bind fields',
+  'admin.schemaField.autoBindFieldsHelp': 'Applies when auto_bind is enabled',
+
+  // OAuth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
+  'admin.schemaField.clientIdLabel': 'App ID',
+  'admin.schemaField.clientSecretLabel': 'App Secret',
+  'admin.schemaField.appIdLabel': 'Mini Program App ID',
+  'admin.schemaField.certLabel': 'Certificate / Public Key',
+  'admin.schemaField.scopesLabel': 'Scopes',
+  'admin.schemaField.providerUrlLabel': 'Service URL',
+  'admin.schemaField.customAuthUrlLabel': 'Authorization URL',
+  'admin.schemaField.customTokenUrlLabel': 'Token URL',
+  'admin.schemaField.customUserInfoUrlLabel': 'UserInfo URL',
+  'admin.schemaField.userMappingLabel': 'Field Mapping',
+  'admin.schemaField.userMappingHelp':
+    'Maps third-party fields to Authloft fields; values are JSONata expressions',
+  'admin.schemaField.metadataLabel': 'Extra Key-Values',
+  'admin.schemaField.oauth2UserMappingHelp':
+    'open_id is required: maps third-party fields to Authloft fields with JSONata expressions (e.g. {"open_id": "$.id"})',
+  'admin.schemaField.oidcProviderUrlHelp':
+    'IdP issuer URL; endpoints are auto-discovered via .well-known/openid-configuration',
+
+  // wechat_mp_scan extra fields.
+  'admin.schemaField.qrcodeAutoDeleteLabel':
+    'Delete QR code image after sign-in',
+  'admin.schemaField.storageProviderLabel': 'Storage Provider',
+  'admin.schemaField.storagePathLabel': 'Storage Path Template',
+  'admin.schemaField.storagePathHelp':
+    "JSONata expression with built-in variables ticket_id / timestamp, e.g. 'qrcodes_' & $.ticket_id & '.jpg'",
+
+  // Provider-specific overrides (alipay / microsoft).
+  'admin.schemaField.alipayPrivateKeyLabel': 'App Private Key (PEM)',
+  'admin.schemaField.alipayPrivateKeyHelp':
+    'PKCS8 / PKCS1 RSA private key used for RSA2 request signing',
+  'admin.schemaField.alipayPublicKeyLabel': 'Alipay Public Key (PEM)',
+  'admin.schemaField.alipayPublicKeyHelp':
+    'Used to verify gateway responses; leave empty to skip verification (not recommended)',
+  'admin.schemaField.alipayGatewayLabel': 'Gateway URL',
+  'admin.schemaField.alipayGatewayHelp':
+    'Defaults to https://openapi.alipay.com/gateway.do when empty (use the sandbox gateway for testing)',
+  'admin.schemaField.microsoftTenantLabel':
+    'Tenant (common / organizations / tenant ID)',
+  'admin.schemaField.microsoftTenantHelp': 'Leave empty to use common',
+
+  // Messaging Ext fields (smtp / aliyun_sms).
+  'admin.schemaField.smtpHostLabel': 'SMTP Server',
+  'admin.schemaField.smtpPortLabel': 'Port',
+  'admin.schemaField.smtpPortHelp':
+    '465 = implicit TLS; other ports connect in plaintext and upgrade via STARTTLS when supported',
+  'admin.schemaField.smtpFromLabel': 'From Address',
+  'admin.schemaField.smtpDisableSslLabel': 'Disable STARTTLS',
+  'admin.schemaField.smtpDisableSslHelp':
+    'Skip the STARTTLS upgrade for intranet self-signed certificates',
+  'admin.schemaField.smtpMetadataHelp':
+    'username / password = SMTP credentials; subject.<tpl> / body.<tpl> = subject and body templates ({code} placeholder)',
+  'admin.schemaField.aliyunAccessKeyIdLabel': 'AccessKey ID',
+  'admin.schemaField.aliyunAccessKeySecretLabel': 'AccessKey Secret',
+  'admin.schemaField.aliyunSignNameLabel': 'SMS Signature',
+  'admin.schemaField.aliyunTemplateCodeLabel': 'SMS Template ID',
+  'admin.schemaField.aliyunIntranetEndpointLabel': 'Intranet Endpoint',
+  'admin.schemaField.aliyunMetadataHelp':
+    'template_code.<tpl> overrides the SMS template ID per template key',
+
+  // select option labels (options remain wire values; key =
+  // admin.schemaOption.<fieldKey>.<value>, namespaced by field so a custom
+  // union_provider provider_key is never mistaken for a generic enum label;
+  // values without a key are shown verbatim).
+  'admin.schemaOption.ui_group.social': 'Social',
+  'admin.schemaOption.ui_group.enterprise': 'Enterprise',
+  'admin.schemaOption.ui_group.dev': 'Developer',
+  'admin.schemaOption.ui_group.other': 'Other',
+
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': 'Delete',
   'admin.dragSortHandle': 'Drag to sort',
   'admin.callbackUrlLabel': 'Third-party sign-in callback URL: ',
-  'admin.oidcCallbackExactMatchNote': 'OIDC provider callbacks must match exactly',
+  'admin.oidcCallbackExactMatchNote':
+    'OIDC provider callbacks must match exactly',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
   'admin.appTitle': 'Authloft Admin Console',
@@ -211,8 +324,10 @@ export const admin: typeof zhAdmin = {
   'admin.updatedAtLabel': 'Updated At',
   'admin.actionsLabel': 'Actions',
   'admin.viewAction': 'View',
-  'admin.clientDeleteConfirm': 'Delete client "{clientId}"? This cannot be undone',
-  'admin.clientsLoadFailed': 'Failed to load the client list; please refresh and try again',
+  'admin.clientDeleteConfirm':
+    'Delete client "{clientId}"? This cannot be undone',
+  'admin.clientsLoadFailed':
+    'Failed to load the client list; please refresh and try again',
   'admin.createClientAction': 'New Client',
   'admin.noClients': 'No clients yet',
   'admin.clientDetailTitle': 'Client Details',
@@ -227,11 +342,13 @@ export const admin: typeof zhAdmin = {
     'The redirect URI allowlist cannot be empty (saving after clearing keeps the previous value)',
   'admin.clientIdAutoGenPlaceholder': 'Leave empty to auto-generate',
   'admin.clientNamePlaceholder': 'Client display name',
-  'admin.redirectUriEntryHint': 'Each entry must be * or start with http:// or https://',
+  'admin.redirectUriEntryHint':
+    'Each entry must be * or start with http:// or https://',
   'admin.redirectUriAriaLabel': 'Redirect URI',
   'admin.addRedirectUri': 'Add Redirect URI',
   'admin.redirectUriPlaceholder': 'https://example.com/callback or *',
-  'admin.noRedirectUrisHint': 'No redirect URIs yet; click the button below to add one',
+  'admin.noRedirectUrisHint':
+    'No redirect URIs yet; click the button below to add one',
   'admin.clientIdImmutable': 'Cannot be changed after creation',
   'admin.newSecretLabel': 'New Secret',
   'admin.newSecretPlaceholder': 'Leave empty to keep the current secret',
@@ -249,14 +366,18 @@ export const admin: typeof zhAdmin = {
   'admin.accessTokenTtlLabel': 'Access Token Lifetime',
   'admin.refreshTokenTtlFieldLabel': 'Refresh Token Lifetime (seconds)',
   'admin.refreshTokenTtlLabel': 'Refresh Token Lifetime',
-  'admin.accessTtlIssue': 'Access token lifetime must be an integer number of seconds within 1-{max}',
+  'admin.accessTtlIssue':
+    'Access token lifetime must be an integer number of seconds within 1-{max}',
   'admin.refreshTtlIssue':
     'Refresh token lifetime must be an integer number of seconds within 1-{max}',
-  'admin.scopesRequired': 'Scopes cannot be empty (saving after clearing keeps the previous value)',
-  'admin.scopesDefaultHint': 'Leave empty to use the default openid,profile,email',
+  'admin.scopesRequired':
+    'Scopes cannot be empty (saving after clearing keeps the previous value)',
+  'admin.scopesDefaultHint':
+    'Leave empty to use the default openid,profile,email',
   'admin.addScope': 'Add Scope',
   'admin.scopePlaceholder': 'e.g. openid',
-  'admin.scopesEntryHint': 'Each entry must be non-empty and must not contain commas',
+  'admin.scopesEntryHint':
+    'Each entry must be non-empty and must not contain commas',
   'admin.ttlPlaceholder': 'Default {value}',
   'admin.ttlRangeHint': '1-{max}; leave empty to use the default {value}',
   'admin.ttlKeepHint': '1-{max}; leave empty to keep the previous value',
@@ -271,7 +392,8 @@ export const admin: typeof zhAdmin = {
   'admin.userSearchPlaceholder': 'Search username / nickname / phone / email',
   'admin.userSearchAriaLabel': 'Search users',
   'admin.searchAction': 'Search',
-  'admin.usersLoadFailed': 'Failed to load the user list; please refresh and try again',
+  'admin.usersLoadFailed':
+    'Failed to load the user list; please refresh and try again',
   'admin.noUsers': 'No users yet',
   'admin.resetPasswordAction': 'Reset Password',
   'admin.resetPasswordTitle': 'Reset the password of "{username}"',
@@ -289,7 +411,8 @@ export const admin: typeof zhAdmin = {
   'admin.unlockConfirm': 'Remove the sign-in restriction on "{username}"?',
   'admin.unlockSuccess': 'Sign-in restriction on "{username}" removed',
   'admin.userStatusToggleColumn': 'Disable/Enable',
-  'admin.userDetailLoadFailed': 'Failed to load the user details; please refresh and try again',
+  'admin.userDetailLoadFailed':
+    'Failed to load the user details; please refresh and try again',
   'admin.basicInfoSection': 'Basic Information',
   'admin.noUserData': 'No user data',
   'admin.mfaRequiredLabel': 'Required Two-Step Verification',
@@ -308,12 +431,14 @@ export const admin: typeof zhAdmin = {
   'admin.credentialLastUsed': ' · Last used {time}',
   'admin.bindingsSection': 'Third-Party Bindings',
   'admin.noBindings': 'No third-party bindings',
-  'admin.unbindConfirm': 'Unbind "{providerKey}"? It can no longer be used to sign in afterwards.',
+  'admin.unbindConfirm':
+    'Unbind "{providerKey}"? It can no longer be used to sign in afterwards.',
   'admin.unbindAction': 'Unbind',
   // unbind success feedback (P1-6).
   'admin.unbindSuccess': 'Unbound "{providerKey}"',
   'admin.loginLogSection': 'Sign-in Log',
-  'admin.loginLogLoadFailed': 'Failed to load the sign-in log; please refresh and try again',
+  'admin.loginLogLoadFailed':
+    'Failed to load the sign-in log; please refresh and try again',
   'admin.noLoginRecords': 'No sign-in records yet',
   'admin.timeColumn': 'Time',
   'admin.eventColumn': 'Event',
@@ -332,7 +457,8 @@ export const admin: typeof zhAdmin = {
   'admin.actionTargetColumn': 'Action Target',
   'admin.detailColumn': 'Detail',
   'admin.occurredAtColumn': 'Occurred At',
-  'admin.auditLoadFailed': 'Failed to load the event log; please refresh and try again',
+  'admin.auditLoadFailed':
+    'Failed to load the event log; please refresh and try again',
   'admin.eventFilterPlaceholder': 'Event type: all',
   'admin.eventFilterAriaLabel': 'Filter by event type',
   'admin.actorFilterPlaceholder': 'Actor type: all',
@@ -359,7 +485,8 @@ export const admin: typeof zhAdmin = {
   'admin.providerColumnType': 'Type',
   'admin.providerColumnPolicyTags': 'Policy Tags',
   'admin.providerColumnSortOrder': 'Sort',
-  'admin.providersLoadFailed': 'Failed to load the provider list; please refresh and try again',
+  'admin.providersLoadFailed':
+    'Failed to load the provider list; please refresh and try again',
   'admin.providersDragDisabledNote':
     'More than one page of providers (100); drag sorting is disabled',
   'admin.providerDragSortLabel': 'Drag to reorder providers',
@@ -370,7 +497,8 @@ export const admin: typeof zhAdmin = {
   'admin.providerDisableSuccess': 'Disabled "{name}"',
   'admin.providerSortSuccess': 'Provider order saved',
   'admin.createProviderAction': 'New Provider',
-  'admin.providerKeyTaken': 'The key is already taken; please choose another one',
+  'admin.providerKeyTaken':
+    'The key is already taken; please choose another one',
   'admin.providerTypeRequired': 'Select a provider type first',
   'admin.testTargetRequired': 'Enter a test target',
   'admin.testSent': 'Sent; please check',
@@ -378,8 +506,10 @@ export const admin: typeof zhAdmin = {
   'admin.iconPreviewAlt': 'Icon preview',
   'admin.providerTypesLoadFailed':
     'Failed to load the provider type list; please refresh and try again',
-  'admin.providerLoadFailed': 'Failed to load the provider; please refresh and try again',
-  'admin.schemaLoadFailed': 'Failed to load the form schema; please refresh and try again',
+  'admin.providerLoadFailed':
+    'Failed to load the provider; please refresh and try again',
+  'admin.schemaLoadFailed':
+    'Failed to load the form schema; please refresh and try again',
   'admin.editProviderTitle': 'Edit Provider',
   'admin.createProviderTitle': 'New Provider',
   'admin.providerTypeLabel': 'Type',
@@ -397,12 +527,14 @@ export const admin: typeof zhAdmin = {
   'admin.settingsTabUnsaved': 'This tab has unsaved changes',
   'admin.settingsTabSaveAction': 'Save This Tab',
   'admin.settingsSaved': 'Settings saved',
-  'admin.settingsLoadFailed': 'Failed to load the settings; please refresh and try again',
+  'admin.settingsLoadFailed':
+    'Failed to load the settings; please refresh and try again',
   'admin.saveSettingsAction': 'Save Settings',
   'admin.settingsDiffTitle': 'Confirm Settings Changes',
   'admin.settingsDiffSummary': '{count} setting(s) will be changed:',
   'admin.settingsDiffEmptyValue': '(empty)',
-  'admin.statusLoadFailed': 'Failed to load the metrics; please refresh and try again',
+  'admin.statusLoadFailed':
+    'Failed to load the metrics; please refresh and try again',
   'admin.statusHint':
     'Queue length excludes batches picked up but not yet persisted; a flush time of 0 means no batch has been persisted since startup',
   'admin.statusQueueLength': 'Queue Length',
@@ -420,5 +552,6 @@ export const admin: typeof zhAdmin = {
   'admin.decodeAction': 'Decode',
   // ---- unsaved-changes guard (Modal.confirm) ----
   'admin.unsavedChangesTitle': 'Discard unsaved changes?',
-  'admin.unsavedChangesContent': 'Your edits have not been saved and will be lost if you close now.',
+  'admin.unsavedChangesContent':
+    'Your edits have not been saved and will be lost if you close now.',
 };
