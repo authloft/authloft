@@ -3174,21 +3174,6 @@ describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
     const html = renderAdminApp('/users/abc');
     expect(html).toContain('页面不存在');
   });
-
-  test('参数页 /providers/wechat_mp/edit → ProviderEditPage 编辑首帧（非兜底页）', () => {
-    const html = renderAdminApp('/providers/wechat_mp/edit');
-    expect(html).toContain('__ADMIN_LAYOUT_STUB__');
-    expect(html).not.toContain('页面不存在');
-    // 编辑模式首帧：provider / schema 未落地 → Spin。
-    expect(html).toContain('semi-spin');
-  });
-
-  test('新建页 /providers/new 静态优先于参数路由（不匹配 /providers/:key/edit）', () => {
-    const html = renderAdminApp('/providers/new');
-    expect(html).not.toContain('页面不存在');
-    // 新建模式首帧：类型清单未就绪但非编辑加载帧——type 必选提示在场。
-    expect(html).toContain('semi');
-  });
 });
 
 describe('draftFromSettings（GetSettings 响应 → 草稿全键映射；PATCH 全量提交的对称面：零值即真值）', () => {

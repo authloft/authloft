@@ -87,7 +87,7 @@ jobs:
         working-directory: web
 
       - name: Web test
-        run: pnpm exec rs test
+        run: pnpm test
         working-directory: web
 
   web-build:
