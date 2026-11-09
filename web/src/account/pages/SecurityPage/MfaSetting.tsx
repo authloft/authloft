@@ -170,7 +170,8 @@ export function useMfaSetting(props: {
             title={t('factors.recovery_code')}
             visible
             onCancel={() => setRecoveryOpen(false)}
-            footer={null}
+            okButtonProps={{ style: { display: 'none' } }}
+            cancelText={t('account.cancelAction')}
           >
             <RecoveryCodesModalBody />
           </Modal>

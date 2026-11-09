@@ -130,7 +130,8 @@ export function TotpBindDialog(props: {
       title={t('account.totpBindTitle')}
       visible
       onCancel={handleCancel}
-      footer={null}
+      okButtonProps={{ style: { display: 'none' } }}
+      cancelText={t('account.cancelAction')}
     >
       {/* 步骤指示：添加验证器 → 验证动态码 → 保存恢复码。 */}
       <Steps

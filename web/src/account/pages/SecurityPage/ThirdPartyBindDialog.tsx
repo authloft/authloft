@@ -179,7 +179,8 @@ export function ThirdPartyBindDialog(props: {
       }
       visible={props.visible}
       onCancel={props.onCancel}
-      footer={null}
+      okButtonProps={{ style: { display: 'none' } }}
+      cancelText={t('account.cancelAction')}
     >
       {props.visible && (
         <div className={styles.body}>

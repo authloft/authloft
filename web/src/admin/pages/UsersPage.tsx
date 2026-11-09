@@ -31,7 +31,6 @@ import {
   Empty,
   Input,
   Modal,
-  Popconfirm,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -46,6 +45,7 @@ import {
   type TableQueryState,
 } from '../../shared/app-ui/dataTableLogic';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
+import { ConfirmActionButton } from '../components/ConfirmActionButton';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
@@ -107,15 +107,13 @@ export function UsersPage(_props: {
       }),
     },
   );
-  // 写操作成功 / 失败反馈统一走 Semi Toast（原就地 notice/actionError
-  // 文字已随 Semi 回归移除）；Modal 内表单错误（resetError）保持行内。
+  // 写操作成功 / 失败反馈统一走 Semi Toast；重置弹窗内仅保留「两次密码
+  // 不一致」这一纯前端字段校验的行内提示（resetMismatch）。
   // 重置密码弹窗（§5.4 行 1252）：resetTarget 即当前目标行；空即关闭。
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetMismatch, setResetMismatch] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [resetSubmitting, setResetSubmitting] = useState(false);
 
   /** 搜索生效：applied 词落地 + 回第 1 页（§1.7：筛选 / 搜索变化重置页码）。 */
   function applySearch(): void {
@@ -139,28 +137,12 @@ export function UsersPage(_props: {
     }
   }
 
-  /**
-   * 解除登录限制（§5.4 行 1254 UnlockUser）：Popconfirm 确认后调用。
-   * P0-2 防重：onConfirm 返回本 Promise——Semi Popconfirm 原生机制
-   * （popconfirmFoundation.handleConfirm）在途期间确认钮 loading + 禁用
-   * （连点不再触发），落地才关框；失败反馈仍走 Toast（catch 不抛出）。
-   */
-  async function handleUnlock(row: AdminUser): Promise<void> {
-    try {
-      await unlockUser(buildUnlockUserRequest(row.id));
-      Toast.success(t('admin.unlockSuccess', { username: row.username }));
-    } catch (unlockError) {
-      Toast.error(apiErrorText(unlockError));
-    }
-  }
-
-  /** 打开重置密码弹窗：清空上次输入 / 错误。 */
+  /** 打开重置密码弹窗：清空上次输入 / 不一致提示。 */
   function openReset(row: AdminUser): void {
     setResetTarget(row);
     setResetPassword('');
     setResetConfirm('');
     setResetMismatch(false);
-    setResetError(null);
   }
 
   /**
@@ -179,10 +161,30 @@ export function UsersPage(_props: {
     setResetTarget(null);
   }
 
-  /** 提交重置（§5.4 行 1252）：确认密码不一致行内报错不发请求；password_weak 等策略错误由服务端权威判定展示。 */
-  async function submitReset(): Promise<void> {
-    const target = resetTarget;
-    if (target === null || resetPassword === '' || resetSubmitting) {
+  /** 重置提交（§5.4 行 1252）：password_weak 等策略错误由服务端权威判定，经 onError 出 Toast。 */
+  const { run: runReset, loading: resetSubmitting } = useRequest(
+    async (target: AdminUser) => {
+      await resetUserPassword(
+        buildResetUserPasswordRequest(target.id, resetPassword),
+      );
+      return target.username;
+    },
+    {
+      manual: true,
+      onSuccess: (username) => {
+        setResetTarget(null);
+        Toast.success(t('admin.resetPasswordSuccess', { username }));
+      },
+      onError: (err) => Toast.error(apiErrorText(err)),
+    },
+  );
+
+  /**
+   * 两次密码不一致是纯前端字段校验：行内报错且不发请求。不能并入 hook——
+   * 提前 return 会被当成功触发 onSuccess 关框。空值禁用由 okButtonProps 承担。
+   */
+  function submitReset(): void {
+    if (resetTarget === null) {
       return;
     }
     if (resetPassword !== resetConfirm) {
@@ -190,20 +192,7 @@ export function UsersPage(_props: {
       return;
     }
     setResetMismatch(false);
-    setResetSubmitting(true);
-    try {
-      await resetUserPassword(
-        buildResetUserPasswordRequest(target.id, resetPassword),
-      );
-      setResetTarget(null);
-      Toast.success(
-        t('admin.resetPasswordSuccess', { username: target.username }),
-      );
-    } catch (resetReqError) {
-      setResetError(apiErrorText(resetReqError));
-    } finally {
-      setResetSubmitting(false);
-    }
+    runReset(resetTarget);
   }
 
   // 列口径（§6 行 517 用户列表）：用户名（详情链接）/ 昵称 / 手机号 / 邮箱 /
@@ -268,12 +257,17 @@ export function UsersPage(_props: {
           <Button size="small" onClick={() => openReset(row)}>
             {t('admin.resetPasswordAction')}
           </Button>
-          <Popconfirm
+          <ConfirmActionButton
             title={t('admin.unlockConfirm', { username: row.username })}
-            onConfirm={() => handleUnlock(row)}
+            action={() => unlockUser(buildUnlockUserRequest(row.id))}
+            onSuccess={() => {
+              Toast.success(
+                t('admin.unlockSuccess', { username: row.username }),
+              );
+            }}
           >
-            <Button size="small">{t('admin.unlockAction')}</Button>
-          </Popconfirm>
+            {t('admin.unlockAction')}
+          </ConfirmActionButton>
         </span>
       ),
     },
@@ -348,8 +342,15 @@ export function UsersPage(_props: {
         }
         visible={resetTarget !== null}
         onCancel={closeReset}
+        onOk={submitReset}
+        okText={t('admin.confirmResetAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={resetSubmitting}
+        okButtonProps={{
+          disabled: resetPassword === '' || resetConfirm === '',
+        }}
+        cancelButtonProps={{ disabled: resetSubmitting }}
         maskClosable={false}
-        footer={null}
       >
         <div className={styles.resetBody}>
           <p className={styles.resetHint}>{t('admin.resetPasswordHint')}</p>
@@ -388,28 +389,6 @@ export function UsersPage(_props: {
               {t('admin.passwordMismatchError')}
             </p>
           ) : null}
-          {resetError !== null ? (
-            <p role="alert" className={styles.actionError}>
-              {resetError}
-            </p>
-          ) : null}
-          <div className={styles.resetFooter}>
-            <Button onClick={closeReset} disabled={resetSubmitting}>
-              {t('admin.cancelAction')}
-            </Button>
-            <Button
-              theme="solid"
-              onClick={() => {
-                void submitReset();
-              }}
-              disabled={
-                resetSubmitting || resetPassword === '' || resetConfirm === ''
-              }
-              loading={resetSubmitting}
-            >
-              {t('admin.confirmResetAction')}
-            </Button>
-          </div>
         </div>
       </Modal>
     </section>

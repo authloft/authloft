@@ -48,7 +48,7 @@
   padding: @spacing-xl 0;
 }
 
-// 表单弹窗内容（Modal footer={null}，按钮区自管）。
+// 表单弹窗内容（提交 / 取消钮由 Modal footer 承担）。
 .formBody {
   display: flex;
   flex-direction: column;
@@ -84,12 +84,6 @@
   gap: @spacing-xs;
   flex: 1;
   min-width: 200px;
-}
-
-.formFooter {
-  display: flex;
-  justify-content: flex-end;
-  gap: @spacing-sm;
 }
 
 // 详情弹窗：dt / dd 竖排键值对（dl 语义化结构）。

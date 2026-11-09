@@ -49,6 +49,7 @@ function WebauthnAddDialog(props: {
       title={t('account.webauthnAddTitle')}
       visible
       okButtonProps={{ style: { display: 'none' } }}
+      cancelText={t('account.cancelAction')}
       onCancel={props.onCancel}
     >
       <div className={styles.register}>
@@ -114,7 +115,8 @@ export function useWebauthnSetting(): ListItemProps {
             title={t('factors.webauthn')}
             visible
             onCancel={() => setViewOpen(false)}
-            footer={null}
+            okButtonProps={{ style: { display: 'none' } }}
+            cancelText={t('account.cancelAction')}
           >
             <WebauthnList onChanged={refresh} />
           </Modal>

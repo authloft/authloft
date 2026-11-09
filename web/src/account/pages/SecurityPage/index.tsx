@@ -161,7 +161,8 @@ export function SecurityPageView(props: {
             ? t('account.changePasswordAction')
             : t('account.setPasswordAction')
         }
-        footer={null}
+        okButtonProps={{ style: { display: 'none' } }}
+        cancelText={t('account.cancelAction')}
         onCancel={() => setShowPasswordModal(false)}
       >
         <PasswordChangeForm hasPassword={hasPassword} />
@@ -169,6 +170,8 @@ export function SecurityPageView(props: {
       <Modal
         visible={showBindPhoneModal}
         title={t('account.bindPhoneTitle')}
+        okButtonProps={{ style: { display: 'none' } }}
+        cancelText={t('account.cancelAction')}
         onCancel={() => setShowBindPhoneModal(false)}
       >
         <ContactBindForm
@@ -180,6 +183,8 @@ export function SecurityPageView(props: {
       <Modal
         visible={showBindEmailModal}
         title={t('account.bindEmailTitle')}
+        okButtonProps={{ style: { display: 'none' } }}
+        cancelText={t('account.cancelAction')}
         onCancel={() => setShowBindEmailModal(false)}
       >
         <ContactBindForm

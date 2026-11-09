@@ -26,7 +26,6 @@ import {
   Empty,
   Input,
   Modal,
-  Popconfirm,
   Spin,
   Toast,
   Typography,
@@ -43,6 +42,7 @@ import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
+import { ConfirmActionButton } from '../components/ConfirmActionButton';
 import { StringListEditor } from '../components/StringListEditor';
 import type { OidcClient } from '../../gen/proto/api/admin/v1/client_pb';
 import {
@@ -137,14 +137,12 @@ export function OidcClientsPage(_props: {
       }),
     },
   );
-  // 写操作成功 / 删除失败反馈统一走 Semi Toast（原就地 notice /
-  // actionError 文字已随 Semi 回归移除）；Modal 内表单错误保持行内。
+  // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError，
+  // 与 SsoClientsPage 新建同口径）；弹窗内不再自持错误态。
   // 新建弹窗。
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] =
     useState<OidcCreateForm>(initialCreateForm);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
   // 查看弹窗（GetOidcClient 明文密钥的唯一展示位）。
   const [viewId, setViewId] = useState<bigint | null>(null);
   // 弹窗详情手写三态收编 ahooks（manual，开弹窗即 run）；401 由集中
@@ -170,18 +168,15 @@ export function OidcClientsPage(_props: {
   });
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
   const [editBaseline, setEditBaseline] = useState<OidcEditForm | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editSubmitting, setEditSubmitting] = useState(false);
 
   /** 写操作后就地刷新当前页列表（ahooks refresh：按末次入参重发）。 */
   function refreshList(): void {
     refresh();
   }
 
-  /** 打开新建弹窗：清空上次草稿 / 错误。 */
+  /** 打开新建弹窗：清空上次草稿。 */
   function openCreate(): void {
     setCreateForm(initialCreateForm());
-    setCreateError(null);
     setCreateOpen(true);
   }
 
@@ -261,18 +256,16 @@ export function OidcClientsPage(_props: {
     return { error: null, accessTokenTtl, refreshTokenTtl };
   }
 
-  /** 提交新建（§5.5 行 1263）：校验前置；TTL 0 落库端默认。 */
-  async function submitCreate(): Promise<void> {
-    if (createSubmitting) {
-      return;
-    }
-    const resolved = resolveCreateInput();
-    if (resolved.error !== null) {
-      setCreateError(resolved.error);
-      return;
-    }
-    setCreateSubmitting(true);
-    try {
+  /**
+   * 提交新建（§5.5 行 1263）：校验前置（issue 经 throw 进 onError 出 Toast）；
+   * TTL 0 落库端默认。防重由 confirmLoading 禁用 OK 钮承担。
+   */
+  const { run: submitCreate, loading: createSubmitting } = useRequest(
+    async () => {
+      const resolved = resolveCreateInput();
+      if (resolved.error !== null) {
+        throw new Error(resolved.error);
+      }
       await createOidcClient(
         buildCreateOidcClientRequest({
           clientId: createForm.clientId,
@@ -284,15 +277,17 @@ export function OidcClientsPage(_props: {
         }),
       );
       setCreateOpen(false);
-      Toast.success(t('admin.clientCreateSuccess'));
-      // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
-      setQuery((prev) => ({ ...prev, page: 1 }));
-    } catch (err) {
-      setCreateError(apiErrorText(err));
-    } finally {
-      setCreateSubmitting(false);
-    }
-  }
+    },
+    {
+      manual: true,
+      onSuccess: () => {
+        Toast.success(t('admin.clientCreateSuccess'));
+        // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
+        setQuery((prev) => ({ ...prev, page: 1 }));
+      },
+      onError: (err) => Toast.error(apiErrorText(err)),
+    },
+  );
 
   /**
    * 打开查看（§5.5 行 1264 GetOidcClient）：读取明文密钥；401 由集中 onError
@@ -316,57 +311,49 @@ export function OidcClientsPage(_props: {
     setEditTarget(row);
     setEditForm(baseline);
     setEditBaseline(baseline); // dirty 判定基线。
-    setEditError(null);
   }
 
   /**
    * 提交编辑（§5.5 行 1264 PATCH）：空白名单 / 空 scopes 阻断（后端空组
    * = 保留原值，清空提交不生效，前端自律拦截防误解）；TTL 文本解析
-   * （空 → 0 = 保留原值）。
+   * （空 → 0 = 保留原值）。校验 issue 经 throw 进 onError 出 Toast。
    */
-  async function submitEdit(): Promise<void> {
-    const target = editTarget;
-    if (target === null || editSubmitting) {
-      return;
-    }
-    const uris = cleanStringList(editForm.redirectUris);
-    if (uris.length === 0) {
-      setEditError(t('admin.redirectUrisRequired'));
-      return;
-    }
-    const scopes = cleanStringList(editForm.scopes);
-    if (scopes.length === 0) {
-      setEditError(t('admin.scopesRequired'));
-      return;
-    }
-    const uriIssue = redirectUrisIssue(uris);
-    if (uriIssue !== null) {
-      setEditError(uriIssue);
-      return;
-    }
-    const scopeIssue = scopesIssue(scopes);
-    if (scopeIssue !== null) {
-      setEditError(scopeIssue);
-      return;
-    }
-    const accessTokenTtl = parseTtlField(
-      editForm.accessTokenTtl,
-      OIDC_ACCESS_TTL_MAX,
-    );
-    if (accessTokenTtl === null) {
-      setEditError(t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }));
-      return;
-    }
-    const refreshTokenTtl = parseTtlField(
-      editForm.refreshTokenTtl,
-      OIDC_REFRESH_TTL_MAX,
-    );
-    if (refreshTokenTtl === null) {
-      setEditError(t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }));
-      return;
-    }
-    setEditSubmitting(true);
-    try {
+  const { run: submitEdit, loading: editSubmitting } = useRequest(
+    async (target: OidcClient) => {
+      const uris = cleanStringList(editForm.redirectUris);
+      if (uris.length === 0) {
+        throw new Error(t('admin.redirectUrisRequired'));
+      }
+      const scopes = cleanStringList(editForm.scopes);
+      if (scopes.length === 0) {
+        throw new Error(t('admin.scopesRequired'));
+      }
+      const uriIssue = redirectUrisIssue(uris);
+      if (uriIssue !== null) {
+        throw new Error(uriIssue);
+      }
+      const scopeIssue = scopesIssue(scopes);
+      if (scopeIssue !== null) {
+        throw new Error(scopeIssue);
+      }
+      const accessTokenTtl = parseTtlField(
+        editForm.accessTokenTtl,
+        OIDC_ACCESS_TTL_MAX,
+      );
+      if (accessTokenTtl === null) {
+        throw new Error(
+          t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }),
+        );
+      }
+      const refreshTokenTtl = parseTtlField(
+        editForm.refreshTokenTtl,
+        OIDC_REFRESH_TTL_MAX,
+      );
+      if (refreshTokenTtl === null) {
+        throw new Error(
+          t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }),
+        );
+      }
       await updateOidcClient(
         buildUpdateOidcClientRequest(target.id, {
           newSecret: editForm.newSecret,
@@ -377,28 +364,18 @@ export function OidcClientsPage(_props: {
           refreshTokenTtl,
         }),
       );
-      setEditTarget(null);
-      Toast.success(
-        t('admin.clientUpdateSuccess', { clientId: target.clientId }),
-      );
-      refreshList();
-    } catch (err) {
-      setEditError(apiErrorText(err));
-    } finally {
-      setEditSubmitting(false);
-    }
-  }
-
-  /** 删除（§5.5 行 1264 硬删）：Popconfirm 确认后调用。 */
-  async function handleDelete(row: OidcClient): Promise<void> {
-    try {
-      await deleteOidcClient(buildDeleteOidcClientRequest(row.id));
-      Toast.success(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
-      refreshList();
-    } catch (err) {
-      Toast.error(apiErrorText(err));
-    }
-  }
+      return target.clientId;
+    },
+    {
+      manual: true,
+      onSuccess: (clientId) => {
+        setEditTarget(null);
+        Toast.success(t('admin.clientUpdateSuccess', { clientId }));
+        refreshList();
+      },
+      onError: (err) => Toast.error(apiErrorText(err)),
+    },
+  );
 
   // 列口径（§6 行 519 客户端 CRUD / 回调白名单 / scopes）：SSO 基线列 +
   // 权限范围（摘要）+ 令牌有效期（tokenTtlSummary）；可排序列 dataIndex
@@ -464,14 +441,20 @@ export function OidcClientsPage(_props: {
           <Button size="small" onClick={() => openEdit(row)}>
             {t('admin.editAction')}
           </Button>
-          <Popconfirm
+          <ConfirmActionButton
             title={t('admin.clientDeleteConfirm', { clientId: row.clientId })}
-            onConfirm={() => {
-              void handleDelete(row);
+            action={() =>
+              deleteOidcClient(buildDeleteOidcClientRequest(row.id))
+            }
+            onSuccess={() => {
+              Toast.success(
+                t('admin.clientDeleteSuccess', { clientId: row.clientId }),
+              );
+              refreshList();
             }}
           >
-            <Button size="small">{t('admin.removeAction')}</Button>
-          </Popconfirm>
+            {t('admin.removeAction')}
+          </ConfirmActionButton>
         </span>
       ),
     },
@@ -519,8 +502,14 @@ export function OidcClientsPage(_props: {
         title={t('admin.createOidcClientTitle')}
         visible={createOpen}
         onCancel={closeCreate}
+        onOk={() => {
+          submitCreate();
+        }}
+        okText={t('admin.createAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={createSubmitting}
+        cancelButtonProps={{ disabled: createSubmitting }}
         maskClosable={false}
-        footer={null}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -634,33 +623,14 @@ export function OidcClientsPage(_props: {
               </span>
             </div>
           </div>
-          {createError !== null ? (
-            <p role="alert" className={styles.actionError}>
-              {createError}
-            </p>
-          ) : null}
-          <div className={styles.formFooter}>
-            <Button onClick={closeCreate} disabled={createSubmitting}>
-              {t('admin.cancelAction')}
-            </Button>
-            <Button
-              theme="solid"
-              onClick={() => {
-                void submitCreate();
-              }}
-              disabled={createSubmitting}
-              loading={createSubmitting}
-            >
-              {t('admin.createAction')}
-            </Button>
-          </div>
         </div>
       </Modal>
       <Modal
         title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
-        footer={null}
+        okButtonProps={{ style: { display: 'none' } }}
+        cancelText={t('admin.cancelAction')}
       >
         {/* 三态帧：错误行内（非在途时）→ 加载 / 跨行重开旧数据
             残留兜 Spin（loading 或 data 非当前 viewId）→ 详情。 */}
@@ -728,8 +698,16 @@ export function OidcClientsPage(_props: {
         }
         visible={editTarget !== null}
         onCancel={closeEdit}
+        onOk={() => {
+          if (editTarget !== null) {
+            submitEdit(editTarget);
+          }
+        }}
+        okText={t('admin.saveAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={editSubmitting}
+        cancelButtonProps={{ disabled: editSubmitting }}
         maskClosable={false}
-        footer={null}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -842,26 +820,6 @@ export function OidcClientsPage(_props: {
                 {t('admin.ttlKeepHint', { max: OIDC_REFRESH_TTL_MAX })}
               </span>
             </div>
-          </div>
-          {editError !== null ? (
-            <p role="alert" className={styles.actionError}>
-              {editError}
-            </p>
-          ) : null}
-          <div className={styles.formFooter}>
-            <Button onClick={closeEdit} disabled={editSubmitting}>
-              {t('admin.cancelAction')}
-            </Button>
-            <Button
-              theme="solid"
-              onClick={() => {
-                void submitEdit();
-              }}
-              disabled={editSubmitting}
-              loading={editSubmitting}
-            >
-              {t('admin.saveAction')}
-            </Button>
           </div>
         </div>
       </Modal>

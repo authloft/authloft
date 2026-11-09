@@ -28,7 +28,6 @@ import {
   Empty,
   Input,
   Modal,
-  Popconfirm,
   SideSheet,
   Spin,
   Toast,
@@ -46,6 +45,7 @@ import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
+import { ConfirmActionButton } from '../components/ConfirmActionButton';
 import { StringListEditor } from '../components/StringListEditor';
 import type { SsoClient } from '../../gen/proto/api/admin/v1/client_pb';
 import {
@@ -102,8 +102,8 @@ export function SsoClientsPage(_props: {
       }),
     },
   );
-  // 写操作成功 / 删除失败反馈统一走 Semi Toast（原就地 notice /
-  // actionError 文字已随 Semi 回归移除）；Modal 内表单错误保持行内。
+  // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError）；
+  // 弹窗内不再自持错误态。
   // 新建弹窗（§5.5 行 1261：clientSecret 服务端生成，表单无密钥项）。
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<SsoClientDraft>({
@@ -111,7 +111,6 @@ export function SsoClientsPage(_props: {
     name: '',
     redirectUris: [],
   });
-  const [createError, setCreateError] = useState<string | null>(null);
   // 查看弹窗（GetSsoClient 明文密钥的唯一展示位）。
   const [viewId, setViewId] = useState<bigint | null>(null);
   // 弹窗详情手写三态收编 ahooks（manual，开弹窗即 run）；401 由集中
@@ -136,18 +135,15 @@ export function SsoClientsPage(_props: {
   const [editBaseline, setEditBaseline] = useState<SsoClientPatchDraft | null>(
     null,
   );
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editSubmitting, setEditSubmitting] = useState(false);
 
   /** 写操作后就地刷新当前页列表（ahooks refresh：按末次入参重发）。 */
   function refreshList(): void {
     refresh();
   }
 
-  /** 打开新建弹窗：清空上次草稿 / 错误。 */
+  /** 打开新建弹窗：清空上次草稿。 */
   function openCreate(): void {
     setCreateDraft({ clientId: '', name: '', redirectUris: [] });
-    setCreateError(null);
     setCreateOpen(true);
   }
 
@@ -226,58 +222,41 @@ export function SsoClientsPage(_props: {
     setEditTarget(row);
     setEditDraft(baseline);
     setEditBaseline(baseline); // dirty 判定基线。
-    setEditError(null);
   }
 
   /**
    * 提交编辑（§5.5 行 1262 PATCH）：空白名单阻断（后端空组 = 保留原值，
    * 清空提交不生效，前端自律拦截防误解）；密钥留空保留 / 非空轮换。
+   * 校验 issue 经 throw 进 onError 出 Toast（与新建同口径）。
    */
-  async function submitEdit(): Promise<void> {
-    const target = editTarget;
-    if (target === null || editSubmitting) {
-      return;
-    }
-    const uris = cleanStringList(editDraft.redirectUris);
-    if (uris.length === 0) {
-      setEditError(t('admin.redirectUrisRequired'));
-      return;
-    }
-    const issue = redirectUrisIssue(uris);
-    if (issue !== null) {
-      setEditError(issue);
-      return;
-    }
-    setEditSubmitting(true);
-    try {
+  const { run: submitEdit, loading: editSubmitting } = useRequest(
+    async (target: SsoClient) => {
+      const uris = cleanStringList(editDraft.redirectUris);
+      if (uris.length === 0) {
+        throw new Error(t('admin.redirectUrisRequired'));
+      }
+      const issue = redirectUrisIssue(uris);
+      if (issue !== null) {
+        throw new Error(issue);
+      }
       await updateSsoClient(
         buildUpdateSsoClientRequest(target.id, {
           ...editDraft,
           redirectUris: uris,
         }),
       );
-      setEditTarget(null);
-      Toast.success(
-        t('admin.clientUpdateSuccess', { clientId: target.clientId }),
-      );
-      refreshList();
-    } catch (err) {
-      setEditError(apiErrorText(err));
-    } finally {
-      setEditSubmitting(false);
-    }
-  }
-
-  /** 删除（§5.5 行 1262 硬删）：Popconfirm 确认后调用。 */
-  async function handleDelete(row: SsoClient): Promise<void> {
-    try {
-      await deleteSsoClient(buildDeleteSsoClientRequest(row.id));
-      Toast.success(t('admin.clientDeleteSuccess', { clientId: row.clientId }));
-      refreshList();
-    } catch (err) {
-      Toast.error(apiErrorText(err));
-    }
-  }
+      return target.clientId;
+    },
+    {
+      manual: true,
+      onSuccess: (clientId) => {
+        setEditTarget(null);
+        Toast.success(t('admin.clientUpdateSuccess', { clientId }));
+        refreshList();
+      },
+      onError: (err) => Toast.error(apiErrorText(err)),
+    },
+  );
 
   // 列口径（§6 行 519 客户端 CRUD / 回调白名单）：客户端标识（可复制 + 可
   // 排序）/ 展示名 / 回调白名单（摘要，全量在详情）/ 创建 / 更新时间（可
@@ -330,14 +309,18 @@ export function SsoClientsPage(_props: {
           <Button size="small" onClick={() => openEdit(row)}>
             {t('admin.editAction')}
           </Button>
-          <Popconfirm
+          <ConfirmActionButton
             title={t('admin.clientDeleteConfirm', { clientId: row.clientId })}
-            onConfirm={() => {
-              void handleDelete(row);
+            action={() => deleteSsoClient(buildDeleteSsoClientRequest(row.id))}
+            onSuccess={() => {
+              Toast.success(
+                t('admin.clientDeleteSuccess', { clientId: row.clientId }),
+              );
+              refreshList();
             }}
           >
-            <Button size="small">{t('admin.removeAction')}</Button>
-          </Popconfirm>
+            {t('admin.removeAction')}
+          </ConfirmActionButton>
         </span>
       ),
     },
@@ -381,6 +364,8 @@ export function SsoClientsPage(_props: {
           ) : undefined
         }
       />
+      {/* SideSheet 无 Modal 的 onOk / okText / confirmLoading 族 props，
+          只有 footer?: ReactNode → 提交 / 取消钮在此自管。 */}
       <SideSheet
         title={t('admin.createSsoClientTitle')}
         visible={createOpen}
@@ -388,16 +373,20 @@ export function SsoClientsPage(_props: {
         maskClosable={false}
         footer={
           <div className={styles.formFooter}>
-            <Button onClick={closeCreate} disabled={createSubmitting}>
+            <Button
+              type="tertiary"
+              onClick={closeCreate}
+              disabled={createSubmitting}
+            >
               {t('admin.cancelAction')}
             </Button>
             <Button
               theme="solid"
-              onClick={() => {
-                void submitCreate();
-              }}
-              disabled={createSubmitting}
               loading={createSubmitting}
+              disabled={createSubmitting}
+              onClick={() => {
+                submitCreate();
+              }}
             >
               {t('admin.createAction')}
             </Button>
@@ -454,18 +443,14 @@ export function SsoClientsPage(_props: {
               emptyHint={t('admin.noRedirectUrisHint')}
             />
           </div>
-          {createError !== null ? (
-            <p role="alert" className={styles.actionError}>
-              {createError}
-            </p>
-          ) : null}
         </div>
       </SideSheet>
       <Modal
         title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
-        footer={null}
+        okButtonProps={{ style: { display: 'none' } }}
+        cancelText={t('admin.cancelAction')}
       >
         {/* 三态帧：错误行内（非在途时）→ 加载 / 跨行重开旧数据
             残留兜 Spin（loading 或 data 非当前 viewId）→ 详情。 */}
@@ -523,8 +508,16 @@ export function SsoClientsPage(_props: {
         }
         visible={editTarget !== null}
         onCancel={closeEdit}
+        onOk={() => {
+          if (editTarget !== null) {
+            submitEdit(editTarget);
+          }
+        }}
+        okText={t('admin.saveAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={editSubmitting}
+        cancelButtonProps={{ disabled: editSubmitting }}
         maskClosable={false}
-        footer={null}
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -589,26 +582,6 @@ export function SsoClientsPage(_props: {
               addText={t('admin.addRedirectUri')}
               placeholder={t('admin.redirectUriPlaceholder')}
             />
-          </div>
-          {editError !== null ? (
-            <p role="alert" className={styles.actionError}>
-              {editError}
-            </p>
-          ) : null}
-          <div className={styles.formFooter}>
-            <Button onClick={closeEdit} disabled={editSubmitting}>
-              {t('admin.cancelAction')}
-            </Button>
-            <Button
-              theme="solid"
-              onClick={() => {
-                void submitEdit();
-              }}
-              disabled={editSubmitting}
-              loading={editSubmitting}
-            >
-              {t('admin.saveAction')}
-            </Button>
           </div>
         </div>
       </Modal>

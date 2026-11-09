@@ -262,6 +262,9 @@ const server = setupServer();
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
 let routesMod: typeof import('./routes');
+// ConfirmActionButton 引 ../api（apiErrorText）→ 同 http.ts 模块求值时机约束，
+// 必须与 apiMod 一样在 beforeAll 动态 import，不可顶层静态引。
+let confirmActionButtonMod: typeof import('./components/ConfirmActionButton');
 
 // routes 兜底渲染断言（文末 describe）专用：AdminLayout 的 GetMe 数据门
 // （加载态 Spin）在 renderToStaticMarkup 下恒落于 loading 分支（effects
@@ -282,6 +285,7 @@ beforeAll(async () => {
   bootstrapMod = await import('./bootstrap');
   apiMod = await import('./api');
   routesMod = await import('./routes');
+  confirmActionButtonMod = await import('./components/ConfirmActionButton');
 });
 
 beforeEach(() => {
@@ -2716,6 +2720,20 @@ describe('StringListEditor（静态渲染：受控条目 + 添加 / 删除按钮
     expect(markup).toContain('暂无权限范围');
     expect(markup).toContain('添加权限范围');
     expect(markup).toContain('disabled');
+  });
+});
+
+describe('ConfirmActionButton（静态渲染：触发钮文案 + 初始非在途）', () => {
+  test('渲染触发钮文案；未触发时按钮不 disabled', () => {
+    const markup = renderToStaticMarkup(
+      createElement(confirmActionButtonMod.ConfirmActionButton, {
+        title: '确认删除该客户端？',
+        action: async () => {},
+        children: '删除',
+      }),
+    );
+    expect(markup).toContain('删除');
+    expect(markup).not.toContain('aria-disabled="true"');
   });
 });
 

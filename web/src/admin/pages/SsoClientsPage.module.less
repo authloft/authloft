@@ -48,7 +48,8 @@
   padding: @spacing-xl 0;
 }
 
-// 表单弹窗内容（Modal footer={null}，按钮区自管）。
+// 表单弹窗内容（编辑 Modal 的提交 / 取消钮由 Modal footer 承担；
+// 新建 SideSheet 无 onOk 族 props，按钮区自管 → .formFooter）。
 .formBody {
   display: flex;
   flex-direction: column;
@@ -71,6 +72,7 @@
   color: @color-text-muted;
 }
 
+// 新建 SideSheet 自管按钮区（SideSheet 只有 footer?: ReactNode）。
 .formFooter {
   display: flex;
   justify-content: flex-end;
