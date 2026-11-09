@@ -7,17 +7,32 @@
   min-height: 100vh;
 }
 
-.nav {
-  height: 100%;
+.layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
+  flex-grow: 0;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 @spacing-lg;
+  gap: @spacing-lg;
+  padding: @spacing-xs @spacing-lg;
   border-bottom: @border-width solid var(--semi-color-border);
   background-color: @color-background;
+}
+
+.me {
+  display: inline-flex;
+  align-items: center;
+  gap: @spacing-sm;
+}
+
+.meName {
+  font-size: @font-size-md;
 }
 
 .logoutLink {
@@ -31,7 +46,19 @@
 }
 
 .content {
+  flex-grow: 1;
+  flex-shrink: 1;
   padding: @spacing-xl;
+  overflow: auto;
+
+  :global(.page-title) {
+    margin-bottom: @spacing-md;
+  }
+
+  :global(.page-content),
+  :global(.semi-table-body .semi-table-placeholder) {
+    background-color: var(--semi-color-bg-0);
+  }
 }
 
 // 窄屏收敛（评审 P0-4）：内容区内边距收窄；侧栏折叠走 Semi

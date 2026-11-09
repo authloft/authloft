@@ -151,12 +151,12 @@ const INSTALL_FIELD_MESSAGE_KEY_BY_CODE: Readonly<Record<string, string>> = {
 export type InstallErrorAction =
   /** 命中 §13 字段映射：行内呈现（用户需知道哪一栏错）。 */
   | {
-      readonly kind: 'field';
-      readonly field: keyof InstallFormState;
-      readonly message: string;
+      kind: 'field';
+      field: keyof InstallFormState;
+      message: string;
     }
   /** 其余请求 / 后端错误：Toast 弹出。 */
-  | { readonly kind: 'toast'; readonly message: string };
+  | { kind: 'toast'; message: string };
 
 /** Install 请求错误分派：ApiError 命中字段映射 → 行内；其余（含非 ApiError）→ Toast。 */
 export function classifyInstallError(error: unknown): InstallErrorAction {
@@ -199,7 +199,7 @@ export interface RestartPollOptions {
 }
 
 export interface RestartPollHandle {
-  readonly done: Promise<RestartPollResult>;
+  done: Promise<RestartPollResult>;
   /** 中断轮询：done 结束后不再发探测（编码约束 §9 第 7 条，结束值 'cancelled'）。 */
   cancel(): void;
 }

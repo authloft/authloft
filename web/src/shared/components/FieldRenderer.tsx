@@ -81,7 +81,7 @@ export function codeLengthOf(field: Field): number {
 
 export interface FieldRendererProps {
   /** 后端下发的字段集合（NextStep.fields / MfaMethod.fields / 注入快照）。 */
-  fields: readonly Field[];
+  fields: Field[];
   /** 表单值（字段名 → 字符串；checkbox 用 'true' / 'false'，number 按字符串回传 §1.12）。 */
   values: Readonly<Record<string, string>>;
   /** 字段值变化上抛（组件不持有业务状态）。 */

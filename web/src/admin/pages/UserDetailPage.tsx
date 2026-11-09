@@ -21,9 +21,20 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Popconfirm, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Popconfirm,
+  Spin,
+  Tag,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
-import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
@@ -65,7 +76,7 @@ const INITIAL_EVENTS_QUERY: TableQueryState = {
  * 登录日志列（需求 §4.2 行 152：时间 / 事件 / 方式 / IP / 设备 UA）。
  * 渲染期函数求值，模块级 t() 会冻结在默认语言。
  */
-function getEventsColumns(): readonly DataTableColumn<EventItem>[] {
+function getEventsColumns(): DataTableColumn<EventItem>[] {
   return [
     {
       dataIndex: EVENTS_SORT_FIELD,
@@ -108,9 +119,9 @@ function eventRowKey(row: EventItem): string {
 /** 用户详情页：基本信息 + 凭证概览 + MFA 状态 + 三方绑定（解绑）+ 登录日志。 */
 export function UserDetailPage(props: {
   /** 归一后 al_root（401 跳登录前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** 目标用户 ID（路由 \d+ 段解析，见 ./routes）。 */
-  readonly userId: bigint;
+  userId: bigint;
 }): ReactNode {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
@@ -128,7 +139,8 @@ export function UserDetailPage(props: {
       }),
     },
   );
-  const [eventsQuery, setEventsQuery] = useState<TableQueryState>(INITIAL_EVENTS_QUERY);
+  const [eventsQuery, setEventsQuery] =
+    useState<TableQueryState>(INITIAL_EVENTS_QUERY);
   const {
     data: eventsData,
     error: eventsError,
@@ -167,7 +179,11 @@ export function UserDetailPage(props: {
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
     return (
-      <Banner type="danger" fullMode={false} description={t('admin.userDetailLoadFailed')} />
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.userDetailLoadFailed')}
+      />
     );
   }
   // 裸文字换 Semi Spin。
@@ -217,7 +233,11 @@ export function UserDetailPage(props: {
             <dt>{t('admin.statusLabel')}</dt>
             <dd>{userStatusLabel(user.userStatus)}</dd>
             <dt>{t('admin.mfaRequiredLabel')}</dt>
-            <dd>{user.mfaRequired === BigInt(1) ? t('admin.yesText') : t('admin.noText')}</dd>
+            <dd>
+              {user.mfaRequired === BigInt(1)
+                ? t('admin.yesText')
+                : t('admin.noText')}
+            </dd>
             <dt>{t('admin.lastLoginLabel')}</dt>
             <dd>{formatUnixTime(user.lastLoginAt)}</dd>
             <dt>{t('admin.createdAtLabel')}</dt>
@@ -257,7 +277,9 @@ export function UserDetailPage(props: {
                   <Tag>{t('admin.credentialDisabled')}</Tag>
                 )}
                 <span className={styles.listMeta}>
-                  {t('admin.boundAt', { time: formatUnixTime(credential.createdAt) })}
+                  {t('admin.boundAt', {
+                    time: formatUnixTime(credential.createdAt),
+                  })}
                   {credential.lastUsedAt > BigInt(0)
                     ? t('admin.credentialLastUsed', {
                         time: formatUnixTime(credential.lastUsedAt),
@@ -284,10 +306,14 @@ export function UserDetailPage(props: {
                 </span>
                 <span className={styles.listMeta}>
                   OpenID {binding.openId || EMPTY_TEXT} ·{' '}
-                  {t('admin.boundAt', { time: formatUnixTime(binding.createdAt) })}
+                  {t('admin.boundAt', {
+                    time: formatUnixTime(binding.createdAt),
+                  })}
                 </span>
                 <Popconfirm
-                  title={t('admin.unbindConfirm', { providerKey: binding.providerKey })}
+                  title={t('admin.unbindConfirm', {
+                    providerKey: binding.providerKey,
+                  })}
                   onConfirm={() => handleUnbind(binding.providerKey)}
                 >
                   <Button size="small" type="danger">
@@ -304,7 +330,11 @@ export function UserDetailPage(props: {
         <h4 className={styles.blockTitle}>{t('admin.loginLogSection')}</h4>
         {eventsError !== undefined && !isUnauthenticatedError(eventsError) ? (
           // 区块级错误态换 Semi Banner（自带 role="alert"）。
-          <Banner type="danger" fullMode={false} description={t('admin.loginLogLoadFailed')} />
+          <Banner
+            type="danger"
+            fullMode={false}
+            description={t('admin.loginLogLoadFailed')}
+          />
         ) : (
           <DataTable<EventItem>
             columns={getEventsColumns()}
@@ -316,7 +346,8 @@ export function UserDetailPage(props: {
             loading={eventsLoading}
             // success 空态判定走 deriveRequestStatus 派生（§5.3）。
             empty={
-              deriveRequestStatus(eventsLoading, eventsError, eventsData) === 'success'
+              deriveRequestStatus(eventsLoading, eventsError, eventsData) ===
+              'success'
                 ? t('admin.noLoginRecords')
                 : undefined
             }

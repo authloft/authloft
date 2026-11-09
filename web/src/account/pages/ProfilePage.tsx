@@ -79,14 +79,14 @@ const EMPTY_PLACEHOLDER = '-';
  */
 function ProfileEditView(props: {
   /** GetProfile 原值：extra 未编辑时展示基线对象文本。 */
-  readonly profile: ProfileResponse;
-  readonly draft: ProfileEditDraft;
-  readonly status: RequestStatus;
-  readonly fieldError: ProfileEditFieldError | undefined;
-  readonly error: unknown;
-  readonly onDraftChange: (draft: ProfileEditDraft) => void;
-  readonly onSave: () => void;
-  readonly onCancel: () => void;
+  profile: ProfileResponse;
+  draft: ProfileEditDraft;
+  status: RequestStatus;
+  fieldError: ProfileEditFieldError | undefined;
+  error: unknown;
+  onDraftChange: (draft: ProfileEditDraft) => void;
+  onSave: () => void;
+  onCancel: () => void;
 }): ReactNode {
   const submitting = props.status === 'loading';
   const setDraft = (patch: Partial<ProfileEditDraft>): void => {
@@ -95,10 +95,13 @@ function ProfileEditView(props: {
   // DatePicker 受控值：YYYY-MM-DD 本地 0 点反解（无时区后缀，避免 UTC 解析在
   // 西半球展示回退一天）；'' → undefined（清空）。
   const birthdayDate =
-    props.draft.birthday === '' ? undefined : new Date(`${props.draft.birthday}T00:00:00`);
+    props.draft.birthday === ''
+      ? undefined
+      : new Date(`${props.draft.birthday}T00:00:00`);
   // extraText undefined = 未编辑 → 展示基线对象文本；onChange 后即用户文本。
   const extraText =
-    props.draft.extraText ?? JSON.stringify(props.profile.profile?.extra ?? {}, null, 2);
+    props.draft.extraText ??
+    JSON.stringify(props.profile.profile?.extra ?? {}, null, 2);
   return (
     <form
       className={styles.editForm}
@@ -143,7 +146,9 @@ function ProfileEditView(props: {
           onChange={(_date, dateString) => {
             // type="date" 单选：dateString 即 format 产物（'YYYY-MM-DD' / 清空 '');
             // dateRange 才是 string[]，typeof 收窄保类型完整。
-            setDraft({ birthday: typeof dateString === 'string' ? dateString : '' });
+            setDraft({
+              birthday: typeof dateString === 'string' ? dateString : '',
+            });
           }}
           disabled={submitting}
           placeholder={t('common.selectPlaceholder')}
@@ -200,7 +205,12 @@ function ProfileEditView(props: {
         </p>
       ) : null}
       <div className={styles.actions}>
-        <Button theme="solid" htmlType="submit" loading={submitting} disabled={submitting}>
+        <Button
+          theme="solid"
+          htmlType="submit"
+          loading={submitting}
+          disabled={submitting}
+        >
           {t('account.saveAction')}
         </Button>
         <Button type="tertiary" onClick={props.onCancel} disabled={submitting}>
@@ -223,36 +233,40 @@ function ProfileEditView(props: {
  *   编辑态渲染 ProfileEditView。
  */
 export function ProfilePageView(props: {
-  readonly status: RequestStatus;
-  readonly profile: ProfileResponse | undefined;
-  readonly error: unknown;
+  status: RequestStatus;
+  profile: ProfileResponse | undefined;
+  error: unknown;
   /** 上传成功后的头像地址（§10.8 流程终点 {url}），优先于 profile.avatarUrl 展示。 */
-  readonly avatarOverride?: string;
+  avatarOverride?: string;
   /** AvatarUploader 上传成功回调：刷新展示 + 持久化接线（壳内消化）。 */
-  readonly onAvatarUploaded?: (url: string) => void;
+  onAvatarUploaded?: (url: string) => void;
   /** 头像持久化失败（UpdateProfile {avatarUrl} 提交失败；展示不回滚）。 */
-  readonly avatarPersistFailed: boolean;
+  avatarPersistFailed: boolean;
   /** 编辑 / 展示两态开关。 */
-  readonly editing: boolean;
+  editing: boolean;
   /** 编辑草稿（editing=true 时非 undefined）。 */
-  readonly draft: ProfileEditDraft | undefined;
+  draft: ProfileEditDraft | undefined;
   /** UpdateProfile 提交状态（编辑帧按钮态）。 */
-  readonly editStatus: RequestStatus;
+  editStatus: RequestStatus;
   /** 本地校验失败（birthday / extra，键定位展示）。 */
-  readonly fieldError: ProfileEditFieldError | undefined;
+  fieldError: ProfileEditFieldError | undefined;
   /** 服务端提交错误（apiErrorText 归一展示）。 */
-  readonly editError: unknown;
-  readonly onEdit: () => void;
-  readonly onCancelEdit: () => void;
-  readonly onSaveEdit: () => void;
-  readonly onDraftChange: (draft: ProfileEditDraft) => void;
+  editError: unknown;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onDraftChange: (draft: ProfileEditDraft) => void;
 }): ReactNode {
   const { profile, error } = props;
   if (profile === undefined) {
     if (props.status === 'error' && !isUnauthenticatedError(error)) {
       // 页级加载失败裸文本 → Semi Banner（自带 role="alert"）。
       return (
-        <Banner type="danger" fullMode={false} description={t('account.profileLoadFailed')} />
+        <Banner
+          type="danger"
+          fullMode={false}
+          description={t('account.profileLoadFailed')}
+        />
       );
     }
     return <Spin />;
@@ -261,14 +275,23 @@ export function ProfilePageView(props: {
   const avatarUrl = props.avatarOverride ?? profile.avatarUrl;
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3}>{t('account.profileTitle')}</Typography.Title>
+      <Typography.Title heading={3}>
+        {t('account.profileTitle')}
+      </Typography.Title>
       <div className={styles.avatarRow}>
-        <Avatar size="large" src={avatarUrl || undefined} alt={t('account.avatarAlt')}>
+        <Avatar
+          size="large"
+          src={avatarUrl || undefined}
+          alt={t('account.avatarAlt')}
+        >
           {username.charAt(0)}
         </Avatar>
         <Typography.Text type="secondary">{username}</Typography.Text>
       </div>
-      <AvatarUploader currentUrl={avatarUrl} onUploaded={props.onAvatarUploaded} />
+      <AvatarUploader
+        currentUrl={avatarUrl}
+        onUploaded={props.onAvatarUploaded}
+      />
       {props.avatarPersistFailed ? (
         <p role="alert" className={styles.error}>
           {t('errors.status.failed')}
@@ -290,10 +313,19 @@ export function ProfilePageView(props: {
           <Descriptions
             data={[
               { key: t('account.usernameLabel'), value: username },
-              { key: t('account.nicknameLabel'), value: profile.nickname || EMPTY_PLACEHOLDER },
+              {
+                key: t('account.nicknameLabel'),
+                value: profile.nickname || EMPTY_PLACEHOLDER,
+              },
               // 掩码服务端完成（§3.1 行 818-829），前端零处理直接展示。
-              { key: t('account.phoneLabel'), value: profile.phone || EMPTY_PLACEHOLDER },
-              { key: t('account.emailLabel'), value: profile.email || EMPTY_PLACEHOLDER },
+              {
+                key: t('account.phoneLabel'),
+                value: profile.phone || EMPTY_PLACEHOLDER,
+              },
+              {
+                key: t('account.emailLabel'),
+                value: profile.email || EMPTY_PLACEHOLDER,
+              },
               {
                 key: t('account.genderLabel'),
                 value: profileGenderText(profile.profile?.gender ?? BigInt(0)),
@@ -312,7 +344,9 @@ export function ProfilePageView(props: {
               },
             ]}
           />
-          <Button onClick={props.onEdit}>{t('account.profileEditAction')}</Button>
+          <Button onClick={props.onEdit}>
+            {t('account.profileEditAction')}
+          </Button>
         </>
       )}
     </section>
@@ -351,12 +385,20 @@ export function ProfilePage(): ReactNode {
       Toast.success(t('account.profileSaved'));
     },
   });
-  const editStatus = deriveRequestStatus(submit.loading, submit.error, submit.data);
-  const [avatarOverride, setAvatarOverride] = useState<string | undefined>(undefined);
+  const editStatus = deriveRequestStatus(
+    submit.loading,
+    submit.error,
+    submit.data,
+  );
+  const [avatarOverride, setAvatarOverride] = useState<string | undefined>(
+    undefined,
+  );
   const [avatarPersistFailed, setAvatarPersistFailed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProfileEditDraft | undefined>(undefined);
-  const [fieldError, setFieldError] = useState<ProfileEditFieldError | undefined>(undefined);
+  const [fieldError, setFieldError] = useState<
+    ProfileEditFieldError | undefined
+  >(undefined);
 
   /** 头像上传成功（§10.8 终点 {url}）：本地刷新展示 + 持久化接线。 */
   const handleAvatarUploaded = (url: string) => {

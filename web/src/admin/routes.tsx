@@ -20,7 +20,12 @@
  */
 import type { ReactNode } from 'react';
 import { Empty } from '@douyinfe/semi-ui';
-import { Link, useParams, useRoutes, type RouteObject } from '@modern-js/runtime/router';
+import {
+  Link,
+  useParams,
+  useRoutes,
+  type RouteObject,
+} from '@modern-js/runtime/router';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
 import { AdminLayout } from './layout/AdminLayout';
@@ -46,13 +51,15 @@ const PROVIDER_EDIT_ROUTE = '/providers/:key/edit';
 function NotFoundPage(): ReactNode {
   return (
     <Empty description={t('admin.routeNotFound')}>
-      <Link to={adminNavPath('admin.navProviders')}>{t('admin.backToHome')}</Link>
+      <Link to={adminNavPath('admin.navProviders')}>
+        {t('admin.backToHome')}
+      </Link>
     </Empty>
   );
 }
 
 /** 提供商新建 / 编辑路由（useParams 取 key；缺省 = 新建）。 */
-function ProviderEditRoute(props: { readonly alRoot: string }): ReactNode {
+function ProviderEditRoute(props: { alRoot: string }): ReactNode {
   const { key } = useParams();
   return (
     <AdminLayout
@@ -69,7 +76,7 @@ function ProviderEditRoute(props: { readonly alRoot: string }): ReactNode {
 }
 
 /** 用户详情路由（useParams 取 id；非十进制数字段落兜底页——原 \d+ 正则口径）。 */
-function UserDetailRoute(props: { readonly alRoot: string }): ReactNode {
+function UserDetailRoute(props: { alRoot: string }): ReactNode {
   const { id } = useParams();
   if (id === undefined || !/^\d+$/.test(id)) {
     return (
@@ -81,7 +88,11 @@ function UserDetailRoute(props: { readonly alRoot: string }): ReactNode {
   return (
     <AdminLayout
       alRoot={props.alRoot}
-      breadcrumb={[t('admin.rootTitle'), t('admin.navUsers'), t('admin.userDetailTitle')]}
+      breadcrumb={[
+        t('admin.rootTitle'),
+        t('admin.navUsers'),
+        t('admin.userDetailTitle'),
+      ]}
     >
       <UserDetailPage alRoot={props.alRoot} userId={BigInt(id)} />
     </AdminLayout>
@@ -98,17 +109,26 @@ export function AdminApp(): ReactNode {
     {
       path: adminNavPath('admin.navProviders'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navProviders')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navProviders')]}
+        >
           <ProvidersPage alRoot={alRoot} />
         </AdminLayout>
       ),
     },
     { path: PROVIDER_NEW_PATH, element: <ProviderEditRoute alRoot={alRoot} /> },
-    { path: PROVIDER_EDIT_ROUTE, element: <ProviderEditRoute alRoot={alRoot} /> },
+    {
+      path: PROVIDER_EDIT_ROUTE,
+      element: <ProviderEditRoute alRoot={alRoot} />,
+    },
     {
       path: adminNavPath('admin.navUsers'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navUsers')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navUsers')]}
+        >
           <UsersPage alRoot={alRoot} />
         </AdminLayout>
       ),
@@ -119,7 +139,11 @@ export function AdminApp(): ReactNode {
       element: (
         <AdminLayout
           alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navClients'), t('admin.navSsoClients')]}
+          breadcrumb={[
+            rootTitle,
+            t('admin.navClients'),
+            t('admin.navSsoClients'),
+          ]}
         >
           <SsoClientsPage alRoot={alRoot} />
         </AdminLayout>
@@ -130,7 +154,11 @@ export function AdminApp(): ReactNode {
       element: (
         <AdminLayout
           alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navClients'), t('admin.navOidcClients')]}
+          breadcrumb={[
+            rootTitle,
+            t('admin.navClients'),
+            t('admin.navOidcClients'),
+          ]}
         >
           <OidcClientsPage alRoot={alRoot} />
         </AdminLayout>
@@ -139,7 +167,10 @@ export function AdminApp(): ReactNode {
     {
       path: adminNavPath('admin.navSettings'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navSettings')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navSettings')]}
+        >
           <SettingsPage alRoot={alRoot} />
         </AdminLayout>
       ),
@@ -147,7 +178,10 @@ export function AdminApp(): ReactNode {
     {
       path: adminNavPath('admin.navAudit'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navAudit')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navAudit')]}
+        >
           <AuditPage alRoot={alRoot} />
         </AdminLayout>
       ),
@@ -155,7 +189,10 @@ export function AdminApp(): ReactNode {
     {
       path: adminNavPath('admin.navStatus'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navStatus')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navStatus')]}
+        >
           <StatusPage alRoot={alRoot} />
         </AdminLayout>
       ),
@@ -163,7 +200,10 @@ export function AdminApp(): ReactNode {
     {
       path: adminNavPath('admin.navDecode'),
       element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle, t('admin.navDecode')]}>
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navDecode')]}
+        >
           <DecodePage alRoot={alRoot} />
         </AdminLayout>
       ),

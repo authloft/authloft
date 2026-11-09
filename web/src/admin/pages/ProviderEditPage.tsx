@@ -24,8 +24,8 @@
  * （工具链 blocker）：逻辑全在 ./api 与 schema/schemaLogic（node 可测）。
  * 样式（§1.7）：同目录同名 module less。
  */
-import { useMemo, useState, type ReactNode } from "react";
-import { create, type JsonObject } from "@bufbuild/protobuf";
+import { useMemo, useState, type ReactNode } from 'react';
+import { create, type JsonObject } from '@bufbuild/protobuf';
 import {
   Banner,
   Button,
@@ -35,17 +35,17 @@ import {
   Spin,
   Toast,
   Typography,
-} from "@douyinfe/semi-ui";
-import { useLocation, useNavigate } from "@modern-js/runtime/router";
-import { useRequest } from "ahooks";
-import { ProviderIcon } from "../../shared/components/ProviderIcon";
-import { requestOptions } from "../../shared/hooks/requestOptions";
-import { t } from "../../shared/i18n";
+} from '@douyinfe/semi-ui';
+import { useLocation, useNavigate } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
+import { ProviderIcon } from '../../shared/components/ProviderIcon';
+import { requestOptions } from '../../shared/hooks/requestOptions';
+import { t } from '../../shared/i18n';
 import {
   GetProviderRequestSchema,
   TestProviderRequestSchema,
-} from "../../gen/proto/api/admin/v1/provider_pb";
-import { GetProviderSchemaRequestSchema } from "../../gen/proto/api/admin/v1/schema_pb";
+} from '../../gen/proto/api/admin/v1/provider_pb';
+import { GetProviderSchemaRequestSchema } from '../../gen/proto/api/admin/v1/schema_pb';
 import {
   adminReturnTo,
   buildListProvidersRequest,
@@ -56,23 +56,23 @@ import {
   listProviders,
   testProvider,
   updateProvider,
-} from "../api";
+} from '../api';
 import {
   ProviderCallbackHint,
   showsCallbackHint,
-} from "../components/ProviderCallbackHint";
-import { adminNavPath } from "../paths";
-import { SchemaForm } from "../schema/SchemaForm";
+} from '../components/ProviderCallbackHint';
+import { adminNavPath } from '../paths';
+import { SchemaForm } from '../schema/SchemaForm';
 import {
   adminProviderToValues,
   buildProviderStruct,
   initialCreateValues,
   isProviderKeyTaken,
   validateSchemaValues,
-} from "../schema/schemaLogic";
-import type { SchemaField } from "../../gen/proto/api/admin/v1/schema_pb";
-import styles from "./ProviderEditPage.module.less";
-import { last } from "lodash-es";
+} from '../schema/schemaLogic';
+import type { SchemaField } from '../../gen/proto/api/admin/v1/schema_pb';
+import styles from './ProviderEditPage.module.less';
+import { last } from 'lodash-es';
 
 /** 表单值形态（schemaLogic 值模型：键 → JSON 值 / json 文本态）。 */
 type FormValues = Record<string, unknown>;
@@ -83,9 +83,9 @@ type FormValues = Record<string, unknown>;
  */
 export function ProviderEditPage(props: {
   /** 归一后 al_root（401 跳登录前缀 / 回调地址前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** 编辑目标 provider_key；缺省 = 新建。 */
-  readonly providerKey?: string;
+  providerKey?: string;
 }): ReactNode {
   const editing = props.providerKey !== undefined;
   // 保存成功跳回列表改 router 导航（HashRouter SPA 内跳）。
@@ -93,13 +93,13 @@ export function ProviderEditPage(props: {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
 
-  const [category, setCategory] = useState("");
-  const [type, setType] = useState("");
+  const [category, setCategory] = useState('');
+  const [type, setType] = useState('');
   const [values, setValues] = useState<FormValues>({});
   const [issues, setIssues] = useState<Record<string, string>>({});
   // 提交失败 / 测试发送成败反馈改走 Semi Toast（原 actionError 就地
   // 文字随 Semi 回归移除）；testFeedback 仅保留本地校验（target 必填）行内提示。
-  const [testTarget, setTestTarget] = useState("");
+  const [testTarget, setTestTarget] = useState('');
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
   // 五请求实例迁 ahooks（§5 映射）——首取（types / 编辑链
@@ -118,7 +118,7 @@ export function ProviderEditPage(props: {
     () =>
       getProvider(
         create(GetProviderRequestSchema, {
-          providerKey: props.providerKey ?? "",
+          providerKey: props.providerKey ?? '',
         }),
       ),
     {
@@ -139,7 +139,7 @@ export function ProviderEditPage(props: {
     {
       // type 非空即取（编辑链回填 / 新建选型两入口同源）；type 变更重取，
       // 连击 stale 由 ahooks latest-only 保证（旧竞态令牌语义）。
-      ready: type !== "",
+      ready: type !== '',
       refreshDeps: [type],
       onSuccess: (schema) => {
         // 编辑：按 provider 明文回填；新建：按 schema 默认值初始化
@@ -166,7 +166,7 @@ export function ProviderEditPage(props: {
       manual: true,
       onSuccess: () => {
         // 列表页路径取 ADMIN_NAV_ROUTES 单一来源（paths.adminNavPath）。
-        void navigate(adminNavPath("admin.navProviders"));
+        void navigate(adminNavPath('admin.navProviders'));
       },
       ...requestOptions({
         returnTo: () => adminReturnTo(location.pathname, location.search),
@@ -176,7 +176,7 @@ export function ProviderEditPage(props: {
   const testReq = useRequest(testProvider, {
     manual: true,
     onSuccess: () => {
-      Toast.success(t("admin.testSent"));
+      Toast.success(t('admin.testSent'));
     },
     ...requestOptions({
       returnTo: () => adminReturnTo(location.pathname, location.search),
@@ -197,7 +197,7 @@ export function ProviderEditPage(props: {
         .map((y) => ({ label: y.displayName, value: y.type })),
     }));
   }, [typesReq.data]);
-  const treeValue = useMemo(() => { 
+  const treeValue = useMemo(() => {
     if (!type) {
       return undefined;
     }
@@ -205,7 +205,7 @@ export function ProviderEditPage(props: {
     if (items.length === 0) {
       return [];
     }
-    return [items.find(x => x.type === type)?.category || "", type];
+    return [items.find((x) => x.type === type)?.category || '', type];
   }, [typesReq.data, type]);
 
   /** 新建模式切换 type → 自动重拉 schema 并重置表单（编辑模式下拉锁定）。 */
@@ -220,11 +220,11 @@ export function ProviderEditPage(props: {
 
   /** icon_url 实时预览（§6 行 516：手填绝对 URL，空则占位）。 */
   function iconPreview(field: SchemaField): ReactNode {
-    if (field.key !== "icon_url") {
+    if (field.key !== 'icon_url') {
       return null;
     }
-    const icon = typeof values.icon_url === "string" ? values.icon_url : "";
-    return <ProviderIcon icon={icon} alt={t("admin.iconPreviewAlt")} />;
+    const icon = typeof values.icon_url === 'string' ? values.icon_url : '';
+    return <ProviderIcon icon={icon} alt={t('admin.iconPreviewAlt')} />;
   }
 
   async function handleSubmit(): Promise<void> {
@@ -237,12 +237,12 @@ export function ProviderEditPage(props: {
     // already_exists 权威兜底）。
     if (!editing && nextIssues.provider_key === undefined) {
       const key =
-        typeof values.provider_key === "string" ? values.provider_key : "";
-      if (key !== "") {
+        typeof values.provider_key === 'string' ? values.provider_key : '';
+      if (key !== '') {
         try {
           const list = await listProviders(buildListProvidersRequest());
           if (isProviderKeyTaken(key, list.items)) {
-            nextIssues.provider_key = t("admin.providerKeyTaken");
+            nextIssues.provider_key = t('admin.providerKeyTaken');
           }
         } catch {
           // 预检失败不阻塞提交。
@@ -261,15 +261,15 @@ export function ProviderEditPage(props: {
 
   /** 发送测试（§5.2 行 1177 TestProvider {providerKey, target}）。 */
   function handleTest(): void {
-    if (testTarget.trim() === "") {
-      setTestFeedback(t("admin.testTargetRequired"));
+    if (testTarget.trim() === '') {
+      setTestFeedback(t('admin.testTargetRequired'));
       return;
     }
     setTestFeedback(null);
     // 成功 / 失败反馈均走 hook 回调（onSuccess Toast + 集中 onError Toast）。
     testReq.run(
       create(TestProviderRequestSchema, {
-        providerKey: props.providerKey ?? "",
+        providerKey: props.providerKey ?? '',
         target: testTarget.trim(),
       }),
     );
@@ -282,7 +282,7 @@ export function ProviderEditPage(props: {
       <Banner
         type="danger"
         fullMode={false}
-        description={t("admin.providerLoadFailed")}
+        description={t('admin.providerLoadFailed')}
       />
     );
   }
@@ -291,7 +291,7 @@ export function ProviderEditPage(props: {
       <Banner
         type="danger"
         fullMode={false}
-        description={t("admin.schemaLoadFailed")}
+        description={t('admin.schemaLoadFailed')}
       />
     );
   }
@@ -311,18 +311,18 @@ export function ProviderEditPage(props: {
   const submitting = submitReq.loading;
   // category 恒只读（§5.3 行 1195 由注册表决定）；provider_key 编辑锁定
   //（§5.3 行 1192 创建后不可改）。
-  const lockedKeys = editing ? ["category", "provider_key"] : ["category"];
+  const lockedKeys = editing ? ['category', 'provider_key'] : ['category'];
   const canTest =
     editing &&
     schema !== undefined &&
-    (schema.category === "sms" || schema.category === "email");
+    (schema.category === 'sms' || schema.category === 'email');
 
   return (
     <section className={styles.page}>
       <Typography.Title heading={3} className="page-title">
         {editing
-          ? t("admin.editProviderTitle")
-          : t("admin.createProviderTitle")}
+          ? t('admin.editProviderTitle')
+          : t('admin.createProviderTitle')}
       </Typography.Title>
       {typesReq.error !== undefined ? (
         // 类型清单加载失败自绘文字换 Semi Banner（表单缺类型不可用，页级口径）。
@@ -330,21 +330,23 @@ export function ProviderEditPage(props: {
           type="danger"
           fullMode={false}
           className={styles.actionBanner}
-          description={t("admin.providerTypesLoadFailed")}
+          description={t('admin.providerTypesLoadFailed')}
         />
       ) : null}
       <div className={styles.typeField}>
         <label className={styles.typeLabel} htmlFor="provider-type">
-          {t("admin.providerTypeLabel")}
+          {t('admin.providerTypeLabel')}
         </label>
         <Cascader
           id="provider-type"
           className={styles.typeSelect}
           value={treeValue}
           treeData={treeData}
-          onChange={(value) => handleTypeChange(String(last(value as string[])))}
+          onChange={(value) =>
+            handleTypeChange(String(last(value as string[])))
+          }
           disabled={editing}
-          placeholder={t("admin.selectTypePlaceholder")}
+          placeholder={t('admin.selectTypePlaceholder')}
         />
       </div>
       {showsCallbackHint(schema?.category) ? (
@@ -373,7 +375,7 @@ export function ProviderEditPage(props: {
           />
         ) : (
           <p role="status" className={styles.typeRequired}>
-            {t("admin.providerTypeRequired")}
+            {t('admin.providerTypeRequired')}
           </p>
         )}
         <Button
@@ -382,32 +384,32 @@ export function ProviderEditPage(props: {
           loading={submitting}
           disabled={schema === undefined || submitting}
         >
-          {t("admin.saveAction")}
+          {t('admin.saveAction')}
         </Button>
       </form>
       {canTest ? (
         <section className={styles.testSection}>
-          <h4 className={styles.testTitle}>{t("admin.sendTestAction")}</h4>
-          <p className={styles.testNote}>{t("admin.testNote")}</p>
+          <h4 className={styles.testTitle}>{t('admin.sendTestAction')}</h4>
+          <p className={styles.testNote}>{t('admin.testNote')}</p>
           <div className={styles.testRow}>
             <Input
               className={styles.testTarget}
               value={testTarget}
               onChange={(value) => setTestTarget(value)}
               placeholder={
-                schema?.category === "sms"
-                  ? t("admin.phoneLabel")
-                  : t("admin.emailLabel")
+                schema?.category === 'sms'
+                  ? t('admin.phoneLabel')
+                  : t('admin.emailLabel')
               }
               disabled={testReq.loading}
-              aria-label={t("admin.testTargetAriaLabel")}
+              aria-label={t('admin.testTargetAriaLabel')}
             />
             <Button
               onClick={handleTest}
               loading={testReq.loading}
               disabled={testReq.loading}
             >
-              {t("admin.sendTestAction")}
+              {t('admin.sendTestAction')}
             </Button>
           </div>
           {testFeedback !== null ? (

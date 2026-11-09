@@ -68,7 +68,9 @@ describe('classifyRequestError 分派顺序', () => {
   });
 
   test('toast:false 仅作用「其余」分支 → silent；字段级不受影响', () => {
-    expect(classifyRequestError(apiError('internal', 500), { toast: false })).toEqual({
+    expect(
+      classifyRequestError(apiError('internal', 500), { toast: false }),
+    ).toEqual({
       kind: 'silent',
     });
     expect(
@@ -81,9 +83,14 @@ describe('classifyRequestError 分派顺序', () => {
   });
 
   test('其余 ApiError / 非 ApiError → toast，未知错误兜底文案不透出原文', () => {
-    expect(classifyRequestError(apiError('internal', 500), {}).kind).toBe('toast');
+    expect(classifyRequestError(apiError('internal', 500), {}).kind).toBe(
+      'toast',
+    );
     const action = classifyRequestError(new Error('secret internals'), {});
-    expect(action).toEqual({ kind: 'toast', message: requestErrorText(new Error('x')) });
+    expect(action).toEqual({
+      kind: 'toast',
+      message: requestErrorText(new Error('x')),
+    });
   });
 });
 
@@ -102,7 +109,9 @@ describe('requestOptions onError 副作用分派', () => {
     onError(apiError('unauthenticated', 401) as unknown as Error);
     expect(redirect.calls.length).toBe(1);
     expect(
-      redirect.calls[0].startsWith('https://uc.example.com/sso/login?returnTo='),
+      redirect.calls[0].startsWith(
+        'https://uc.example.com/sso/login?returnTo=',
+      ),
     ).toBe(true);
     expect(redirect.calls[0]).toContain(encodeURIComponent('/admin#'));
     expect(showToast.calls.length).toBe(0);
@@ -117,7 +126,7 @@ describe('requestOptions onError 副作用分派', () => {
   });
 
   test('字段级 → onFieldError 行内，不弹 Toast', () => {
-    const fieldCalls: Array<readonly [string, string]> = [];
+    const fieldCalls: Array<[string, string]> = [];
     const showToast = recorder<string>();
     requestOptions({
       fieldByCode: { password_weak: 'password' },
@@ -138,9 +147,11 @@ describe('requestOptions onError 副作用分派', () => {
     );
     expect(showToast.calls.length).toBe(1);
     showToast.calls.length = 0;
-    requestOptions({ toast: false, showToast: showToast.fn, redirect: redirect.fn }).onError(
-      apiError('internal', 500) as unknown as Error,
-    );
+    requestOptions({
+      toast: false,
+      showToast: showToast.fn,
+      redirect: redirect.fn,
+    }).onError(apiError('internal', 500) as unknown as Error);
     expect(showToast.calls.length).toBe(0);
     expect(redirect.calls.length).toBe(0);
   });
@@ -148,7 +159,7 @@ describe('requestOptions onError 副作用分派', () => {
   test('classify 注入（§5.4-#4 样板）：完全接管分派，field/toast 副作用不变', () => {
     const showToast = recorder<string>();
     const redirect = recorder<string>();
-    const fieldCalls: Array<readonly [string, string]> = [];
+    const fieldCalls: Array<[string, string]> = [];
     // 域内分派器：401 也走 Toast（setup 口径：未装完无会话可跳）；
     // db_unreachable → 行内。
     const opts = requestOptions({

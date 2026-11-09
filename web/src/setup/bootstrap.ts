@@ -13,9 +13,9 @@ interface RawSetupInit {
 
 export interface SetupInit {
   /** 站点根（形如 https://uc.example.com），末尾无斜杠。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** 静态资源基址，以 `/` 结尾（§1.5：`__webpack_public_path__` 用）。 */
-  readonly staticBase: string;
+  staticBase: string;
 }
 
 /** static_base 缺省回落值（接口文档 §8：默认 /assets）。 */

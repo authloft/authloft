@@ -21,10 +21,10 @@ import { IconDelete } from '@douyinfe/semi-icons';
  * （无变更即无新引用，受控 state 相等短路）。
  */
 export function replaceListItem(
-  values: readonly string[],
+  values: string[],
   index: number,
   value: string,
-): readonly string[] {
+): string[] {
   if (index < 0 || index >= values.length) {
     return values;
   }
@@ -32,7 +32,7 @@ export function replaceListItem(
 }
 
 /** 条目按位剔除（不可变）：越界 → 原引用返回。 */
-export function removeListItem(values: readonly string[], index: number): readonly string[] {
+export function removeListItem(values: string[], index: number): string[] {
   if (index < 0 || index >= values.length) {
     return values;
   }
@@ -40,25 +40,25 @@ export function removeListItem(values: readonly string[], index: number): readon
 }
 
 /** 追加空条目（添加按钮；焦点随受控输入落新行）。 */
-export function appendListItem(values: readonly string[]): readonly string[] {
+export function appendListItem(values: string[]): string[] {
   return [...values, ''];
 }
 
 export interface StringListEditorProps {
   className?: string;
   /** 编辑值（受控；中间态允许空串条目）。 */
-  readonly values: readonly string[];
-  readonly onChange: (next: readonly string[]) => void;
+  values: string[];
+  onChange: (next: string[]) => void;
   /** 禁用（提交中）。 */
-  readonly disabled: boolean;
+  disabled: boolean;
   /** 无障碍标签（字段名，条目 / 删除按钮按序号派生）。 */
-  readonly ariaLabel: string;
+  ariaLabel: string;
   /** 添加按钮文案（如「添加回调地址」）。 */
-  readonly addText: string;
+  addText: string;
   /** 条目输入占位提示（如「https://example.com/callback 或 *」）。 */
-  readonly placeholder: string;
+  placeholder: string;
   /** 空表提示文案；缺省不渲染（非空表恒不渲染）。 */
-  readonly emptyHint?: string;
+  emptyHint?: string;
 }
 
 /** 字符串列表编辑器：受控、逐条输入 + 添加 / 删除。 */

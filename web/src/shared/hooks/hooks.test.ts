@@ -30,9 +30,9 @@ describe('hooks/useCountdown 秒级换算（§3.2：retryAfter/expiresIn 的 big
     expect(countdownSeconds(undefined)).toBe(0);
     expect(countdownSeconds(BigInt(0))).toBe(0);
     expect(countdownSeconds(BigInt(-3))).toBe(0);
-    expect(
-      countdownSeconds(BigInt(Number.MAX_SAFE_INTEGER) + BigInt(1)),
-    ).toBe(0);
+    expect(countdownSeconds(BigInt(Number.MAX_SAFE_INTEGER) + BigInt(1))).toBe(
+      0,
+    );
   });
 
   test('countdownSeconds：正常时长经 toCount 归一为 number', () => {
@@ -184,7 +184,7 @@ describe('hooks/useCopy 复制控制器（§3.2：剪贴板复制 + 短暂成功
 
 describe('hooks/useLongPoll 轮询控制器（§3.2 行 318 / §8.2 行 591）', () => {
   interface PollResult {
-    readonly state: string;
+    state: string;
   }
 
   afterEach(() => {

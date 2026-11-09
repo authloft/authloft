@@ -17,9 +17,9 @@ import styles from './BindingChoice.module.less';
 
 export interface BindingChoiceProps {
   /** 三方身份名（binding.displayName）；空串零值兜底不渲染身份行（§9 第 18 条）。 */
-  readonly displayName: string;
+  displayName: string;
   /** 信封 binding.allowSignup（enable_signup 映射，§2.7.5 行 665）。 */
-  readonly allowSignup: boolean;
+  allowSignup: boolean;
   /** 选「创建新账号」（置灰时不可达，§2.7.5 行 660）。 */
   onCreateAccount: () => void;
   /** 选「退出并使用其他账号登录」（§2.7.5 行 661：清 login_token 回 /sso/login）。 */

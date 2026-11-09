@@ -56,14 +56,15 @@ function logRowKey(row: UserEventItem): string {
  * 列口径（需求 §4.2 行 152）：时间 / 方式 / IP / 设备 UA。
  * 函数形态供渲染期构造（t() 于渲染期调用，防模块级 locale 冻结）。
  */
-function logColumns(): readonly DataTableColumn<UserEventItem>[] {
+function logColumns(): DataTableColumn<UserEventItem>[] {
   return [
     {
       dataIndex: 'createdAt',
       title: t('account.logTimeColumn'),
       width: 180,
       sorter: true,
-      render: (_text: unknown, row: UserEventItem) => formatUnixTime(row.createdAt),
+      render: (_text: unknown, row: UserEventItem) =>
+        formatUnixTime(row.createdAt),
     },
     {
       dataIndex: 'amr',
@@ -105,7 +106,13 @@ export function EventLogTable(): ReactNode {
 
   if (status === 'error' && !isUnauthenticatedError(error)) {
     // 区块级加载失败裸文本 → Semi Banner（自带 role="alert"）。
-    return <Banner type="danger" fullMode={false} description={t('account.logLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('account.logLoadFailed')}
+      />
+    );
   }
   return (
     <div className={styles.tableWrap}>

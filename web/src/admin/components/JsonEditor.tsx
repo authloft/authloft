@@ -18,12 +18,12 @@ const PLACEHOLDER = '{"key": "value"}';
 
 export interface JsonEditorProps {
   /** 编辑文本态的 JSON 值（schemaLogic 值模型：json → string）。 */
-  readonly value: string;
-  readonly onChange: (value: string) => void;
+  value: string;
+  onChange: (value: string) => void;
   /** 禁用（提交中 / 锁定键）。 */
-  readonly disabled: boolean;
+  disabled: boolean;
   /** 无障碍标签（字段 label）。 */
-  readonly ariaLabel: string;
+  ariaLabel: string;
 }
 
 /** JSON 文本域编辑器：受控、等宽字体、关闭拼写检查。 */

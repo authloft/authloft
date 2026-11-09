@@ -110,7 +110,10 @@ import type { CreateQrcodeRequest } from '../gen/proto/api/sso/v1/ticket_pb';
 import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
-import { MAX_POLL_SECONDS, type QRPanelPhase } from '../shared/components/QRCodePanel';
+import {
+  MAX_POLL_SECONDS,
+  type QRPanelPhase,
+} from '../shared/components/QRCodePanel';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { accountClient } from '../shared/api/http';
 import { authorize } from '../shared/api/sso';
@@ -160,7 +163,9 @@ export {
 } from '../shared/api/account';
 
 /** 修改密码（§3.3 行 855-862）：成功空响应（OkResponse）；全会话失效由调用方消化。 */
-export function changePassword(request: ChangePasswordRequest): Promise<OkResponse> {
+export function changePassword(
+  request: ChangePasswordRequest,
+): Promise<OkResponse> {
   return accountClient.changePassword(request);
 }
 
@@ -180,8 +185,8 @@ export function bindEmail(request: BindEmailRequest): Promise<OkResponse> {
 
 /** 改密表单本地校验失败形态（§3.3 行 860 currentPassword 必填 + §5.6 新密码策略）。 */
 export type PasswordChangeFieldError =
-  | { readonly field: 'currentPassword' }
-  | { readonly field: 'newPassword'; readonly reasons: readonly PasswordWeakReason[] };
+  | { field: 'currentPassword' }
+  | { field: 'newPassword'; reasons: PasswordWeakReason[] };
 
 /**
  * ChangePassword 请求构造（§3.3 行 855-862）：
@@ -195,7 +200,9 @@ export function buildChangePasswordRequest(
   hasPassword: boolean,
   currentPassword: string,
   newPassword: string,
-): { ok: true; request: ChangePasswordRequest } | { ok: false; error: PasswordChangeFieldError } {
+):
+  | { ok: true; request: ChangePasswordRequest }
+  | { ok: false; error: PasswordChangeFieldError } {
   if (hasPassword && currentPassword === '') {
     return { ok: false, error: { field: 'currentPassword' } };
   }
@@ -230,7 +237,9 @@ export function buildBindChallengeRequest(
   kind: ContactBindKind,
   target: string,
   captcha: CaptchaPayload | undefined,
-): { ok: true; request: BindPhoneRequest | BindEmailRequest } | { ok: false; error: ContactBindChallengeError } {
+):
+  | { ok: true; request: BindPhoneRequest | BindEmailRequest }
+  | { ok: false; error: ContactBindChallengeError } {
   if (!(kind === 'phone' ? isValidPhone(target) : isValidEmail(target))) {
     return { ok: false, error: 'invalid_target' };
   }
@@ -262,7 +271,9 @@ export function buildBindVerifyRequest(
   kind: ContactBindKind,
   target: string,
   code: string,
-): { ok: true; request: BindPhoneRequest | BindEmailRequest } | { ok: false; error: 'invalid_code' } {
+):
+  | { ok: true; request: BindPhoneRequest | BindEmailRequest }
+  | { ok: false; error: 'invalid_code' } {
   if (!BIND_CODE_PATTERN.test(code)) {
     return { ok: false, error: 'invalid_code' };
   }
@@ -379,11 +390,13 @@ export type SetMfaDenyReason = 'mfa_required_locked';
  * 服务端同口径兜底），其余交给服务端权威。
  */
 export function buildSetMfaRequest(
-  methods: readonly MfaPolicyMethod[],
+  methods: MfaPolicyMethod[],
   factor: string,
   enable: boolean,
   required: boolean,
-): { ok: true; request: SetMfaRequest } | { ok: false; error: SetMfaDenyReason } {
+):
+  | { ok: true; request: SetMfaRequest }
+  | { ok: false; error: SetMfaDenyReason } {
   const enabled = methods.filter((m) => m.enabled).map((m) => m.factor);
   const next = enable
     ? enabled.includes(factor)
@@ -410,11 +423,16 @@ const TOTP_CODE_PATTERN = new RegExp(`^\\d{${DEFAULT_CODE_LENGTH}}$`);
 export function buildBindTotpVerifyRequest(
   secret: string,
   code: string,
-): { ok: true; request: BindTotpRequest } | { ok: false; error: 'invalid_code' } {
+):
+  | { ok: true; request: BindTotpRequest }
+  | { ok: false; error: 'invalid_code' } {
   if (!TOTP_CODE_PATTERN.test(code)) {
     return { ok: false, error: 'invalid_code' };
   }
-  return { ok: true, request: create(BindTotpRequestSchema, { step: 'verify', secret, code }) };
+  return {
+    ok: true,
+    request: create(BindTotpRequestSchema, { step: 'verify', secret, code }),
+  };
 }
 
 /** RegenerateRecoveryCodes 请求（§3.5 行 908）：action 固定 "regenerate"。 */
@@ -453,7 +471,9 @@ export function buildRenameWebauthnRequest(
 }
 
 /** DeleteWebauthnCredential 请求（§3.6 行 918）：{id}。 */
-export function buildDeleteWebauthnRequest(id: bigint): DeleteWebauthnCredentialRequest {
+export function buildDeleteWebauthnRequest(
+  id: bigint,
+): DeleteWebauthnCredentialRequest {
   return create(DeleteWebauthnCredentialRequestSchema, { id });
 }
 
@@ -472,13 +492,15 @@ export interface WebauthnRegisterDeps {
 
 /** 注册结果：ok=false 时 cancelled 区分用户取消（NotAllowedError）与失败（§4.3 口径）。 */
 export type WebauthnRegisterResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly cancelled: boolean };
+  { ok: true } | { ok: false; cancelled: boolean };
 
 /** 缺省凭据创建：@simplewebauthn/browser startRegistration（浏览器原生 UI）。 */
-async function defaultCreateCredential(optionsJSON: JsonObject): Promise<JsonObject> {
+async function defaultCreateCredential(
+  optionsJSON: JsonObject,
+): Promise<JsonObject> {
   const registration: RegistrationResponseJSON = await startRegistration({
-    optionsJSON: optionsJSON as unknown as PublicKeyCredentialCreationOptionsJSON,
+    optionsJSON:
+      optionsJSON as unknown as PublicKeyCredentialCreationOptionsJSON,
   });
   // @simplewebauthn 注册对象 → Struct JSON 形状（§12.9 行 1783 credential 透传）。
   return registration as unknown as JsonObject;
@@ -504,8 +526,12 @@ export async function registerWebauthnCredential(
 ): Promise<WebauthnRegisterResult> {
   try {
     const challenge = await deps.challenge();
-    const credential = await deps.createCredential(challenge.challengeData ?? {});
-    await deps.verify(buildRegisterWebauthnVerifyRequest(challenge.token, credential, label));
+    const credential = await deps.createCredential(
+      challenge.challengeData ?? {},
+    );
+    await deps.verify(
+      buildRegisterWebauthnVerifyRequest(challenge.token, credential, label),
+    );
     return { ok: true };
   } catch (err) {
     return {
@@ -549,16 +575,22 @@ export function mfaFactorDetail(
       : '';
   switch (factor.factor) {
     case 'totp':
-      return t('account.boundAt', { time: formatTime(factor.boundAt) }) + lastUsed;
+      return (
+        t('account.boundAt', { time: formatTime(factor.boundAt) }) + lastUsed
+      );
     case 'otp_sms':
     case 'otp_email':
       return t('account.mfaTarget', { target: factor.target }) + lastUsed;
     case 'webauthn':
       return (
-        t('account.mfaCredentialCount', { count: toCount(factor.credentials) }) + lastUsed
+        t('account.mfaCredentialCount', {
+          count: toCount(factor.credentials),
+        }) + lastUsed
       );
     case 'recovery_code':
-      return t('account.mfaRemainingCount', { count: toCount(factor.remaining) });
+      return t('account.mfaRemainingCount', {
+        count: toCount(factor.remaining),
+      });
     default:
       return factor.factor;
   }
@@ -592,7 +624,9 @@ export function getThirdpartyBindings(): Promise<ThirdpartyBindingsResponse> {
  * 解绑（§3.7 行 937-938）：{providerKey}；置灰口径见 canUnbindThirdpartyRow，
  * 服务端按「解绑后」同一口径兜底校验（行 945），不满足返回 invalid_request。
  */
-export function unbindThirdparty(request: UnbindThirdpartyRequest): Promise<OkResponse> {
+export function unbindThirdparty(
+  request: UnbindThirdpartyRequest,
+): Promise<OkResponse> {
   return accountClient.unbindThirdparty(request);
 }
 
@@ -616,7 +650,7 @@ export function getThirdpartyTicket(
  * = 适配器名（§2.7.1 例证 qq / wechat_mp_scan），wire 级标记即 type='union'。
  * 后端本接口未实装（桩，走 msw mock），实装若改用其他标记仅需改本判别一处。
  */
-export function isUnionThirdpartyRow(row: { readonly type: string }): boolean {
+export function isUnionThirdpartyRow(row: { type: string }): boolean {
   return row.type === 'union';
 }
 
@@ -628,8 +662,8 @@ export function isUnionThirdpartyRow(row: { readonly type: string }): boolean {
  */
 export function canUnbindThirdpartyRow(
   hasPassword: boolean,
-  items: readonly { readonly type: string; readonly providerKey: string }[],
-  row: { readonly type: string; readonly providerKey: string },
+  items: { type: string; providerKey: string }[],
+  row: { type: string; providerKey: string },
 ): boolean {
   if (isUnionThirdpartyRow(row)) {
     return false;
@@ -638,7 +672,8 @@ export function canUnbindThirdpartyRow(
     return true;
   }
   const remaining = items.filter(
-    (item) => !isUnionThirdpartyRow(item) && item.providerKey !== row.providerKey,
+    (item) =>
+      !isUnionThirdpartyRow(item) && item.providerKey !== row.providerKey,
   ).length;
   return remaining >= 1;
 }
@@ -657,8 +692,8 @@ export function hasBindEntry(channel: string): boolean {
  * 同构，数组序即结果），前端按 sortOrder 升序兜底；bigint 直接比较不转
  * Number（§1.12），同值保持稳定（Array.sort 稳定语义）。
  */
-export function sortThirdpartyOptions<T extends { readonly sortOrder: bigint }>(
-  options: readonly T[],
+export function sortThirdpartyOptions<T extends { sortOrder: bigint }>(
+  options: T[],
 ): T[] {
   return [...options].sort((a, b) =>
     a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : 0,
@@ -666,7 +701,9 @@ export function sortThirdpartyOptions<T extends { readonly sortOrder: bigint }>(
 }
 
 /** UnbindThirdparty 请求（§3.7 行 937）：{providerKey}。 */
-export function buildUnbindThirdpartyRequest(providerKey: string): UnbindThirdpartyRequest {
+export function buildUnbindThirdpartyRequest(
+  providerKey: string,
+): UnbindThirdpartyRequest {
   return create(UnbindThirdpartyRequestSchema, { providerKey });
 }
 
@@ -674,7 +711,9 @@ export function buildUnbindThirdpartyRequest(providerKey: string): UnbindThirdpa
 export const THIRD_PARTY_POLL_SECONDS = MAX_POLL_SECONDS;
 
 /** GetThirdpartyTicket 请求（§3.7.1 B 行 1011-1017）：{ticket, poll}。 */
-export function buildGetThirdpartyTicketRequest(ticket: string): GetThirdpartyTicketRequest {
+export function buildGetThirdpartyTicketRequest(
+  ticket: string,
+): GetThirdpartyTicketRequest {
   return create(GetThirdpartyTicketRequestSchema, {
     ticket,
     poll: BigInt(THIRD_PARTY_POLL_SECONDS),
@@ -690,7 +729,11 @@ export function buildCreateQrcodeBindRequest(
   providerKey: string,
   captcha: CaptchaPayload,
 ): CreateQrcodeRequest {
-  return create(CreateQrcodeRequestSchema, { providerKey, scene: 'bind', captcha });
+  return create(CreateQrcodeRequestSchema, {
+    providerKey,
+    scene: 'bind',
+    captcha,
+  });
 }
 
 /** redirect 绑定分派依赖（测试注入替身；缺省走 shared/api/sso 的 Authorize）。 */
@@ -796,7 +839,9 @@ export function bindPollPhase(
  * 本人登录记录（§3.7 行 1041）：仅成功记录（服务端过滤），分页 §1.7；
  * 后端系桩，测试走 msw、联调待实装解锁。
  */
-export function getEvents(request: GetEventsRequest): Promise<GetEventsResponse> {
+export function getEvents(
+  request: GetEventsRequest,
+): Promise<GetEventsResponse> {
   return accountClient.getEvents(request);
 }
 
@@ -834,7 +879,9 @@ export function buildGetEventsRequest(
  * 邮箱不可由此修改（行 837）。后端 account 域桩未实装，前端按接口契约
  * 消费（msw mock 覆盖，不因 mock 放宽契约——契约先行批次口径）。
  */
-export function updateProfile(request: UpdateProfileRequest): Promise<OkResponse> {
+export function updateProfile(
+  request: UpdateProfileRequest,
+): Promise<OkResponse> {
   return accountClient.updateProfile(request);
 }
 
@@ -849,19 +896,19 @@ export function buildAvatarPersistRequest(url: string): UpdateProfileRequest {
 
 /** 资料编辑表单草稿：基线为 GetProfile 原值，构造时按 diff 只带变化字段。 */
 export interface ProfileEditDraft {
-  readonly nickname: string;
+  nickname: string;
   /** 0/1/2（§3.1 行 811 枚举；Select 产出 number，wire int64 → bigint 构造处转换）。 */
-  readonly gender: number;
+  gender: number;
   /** YYYY-MM-DD（§3.1 行 811）或 ''（未设置 / DatePicker 清空）。 */
-  readonly birthday: string;
-  readonly locale: string;
-  readonly timezone: string;
+  birthday: string;
+  locale: string;
+  timezone: string;
   /**
    * extra JSON 文本（§3.1 行 813「JSON 对象透出」）：undefined = 未编辑
    * （diff 跳过不带 extra）；编辑过则须为合法 JSON 对象——原始值 / 数组 /
    * null 均拒绝；清空内容写 {}（消息字段无法表达 null 清除，契约限制）。
    */
-  readonly extraText?: string;
+  extraText?: string;
 }
 
 /** UpdateProfile 本地校验失败形态（birthday 格式 / extra JSON 对象，§3.1）。 */
@@ -886,7 +933,9 @@ const BIRTHDAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export function buildUpdateProfileRequest(
   current: ProfileResponse,
   draft: ProfileEditDraft,
-): { ok: true; request: UpdateProfileRequest } | { ok: false; error: ProfileEditFieldError } {
+):
+  | { ok: true; request: UpdateProfileRequest }
+  | { ok: false; error: ProfileEditFieldError } {
   const currentProfile = current.profile;
   const currentGender = currentProfile?.gender ?? BigInt(0);
   const currentBirthday = currentProfile?.birthday ?? '';
@@ -912,7 +961,11 @@ export function buildUpdateProfileRequest(
     } catch {
       return { ok: false, error: 'invalid_extra_json' };
     }
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       return { ok: false, error: 'invalid_extra_json' };
     }
     extra = parsed as JsonObject;
@@ -926,7 +979,9 @@ export function buildUpdateProfileRequest(
   return {
     ok: true,
     request: create(UpdateProfileRequestSchema, {
-      ...(draft.nickname !== current.nickname ? { nickname: draft.nickname } : {}),
+      ...(draft.nickname !== current.nickname
+        ? { nickname: draft.nickname }
+        : {}),
       ...(profileChanged
         ? {
             profile: create(UserProfileSchema, {

@@ -82,10 +82,14 @@ function unboundHint(factor: string): string | undefined {
  */
 function RecoveryCodesModalBody(props: {
   /** 重新生成成功回调：父级重取 GetMfa 刷新剩余数。 */
-  readonly onChanged: () => void;
+  onChanged: () => void;
 }): ReactNode {
   const location = useLocation();
-  const { data: recoveryData, error: recoveryError, loading: recoveryLoading } = useRequest(
+  const {
+    data: recoveryData,
+    error: recoveryError,
+    loading: recoveryLoading,
+  } = useRequest(
     getRecoveryCodes,
     requestOptions({
       toast: false,
@@ -146,13 +150,13 @@ function RecoveryCodesModalBody(props: {
 
 export function MfaMethodList(props: {
   /** 系统开放因子摘要（GetConfig mfaPolicy.methods，§3.2 行 834-845）。 */
-  readonly methods: MfaPolicyMethod[];
+  methods: MfaPolicyMethod[];
   /** 策略强制（§3.2 行 833：true 时不可关闭两步验证）。 */
-  readonly required: boolean;
+  required: boolean;
   /** 父级递增（如通行密钥增删后）触发明细重取（GetMfa 与凭据数联动）。 */
-  readonly detailVersion: number;
+  detailVersion: number;
   /** 开关 / 绑定成功回调：父级重取 GetConfig 刷新 mfaPolicy（§5 行 495 只刷摘要）。 */
-  readonly onPolicyRefresh: () => void;
+  onPolicyRefresh: () => void;
 }): ReactNode {
   const [lockedNotice, setLockedNotice] = useState(false);
   const [totpOpen, setTotpOpen] = useState(false);
@@ -175,7 +179,9 @@ export function MfaMethodList(props: {
   const detailStatus = deriveRequestStatus(detailLoading, detailError, mfa);
 
   // 最近一次开关动作（onSuccess 出 Toast 文案用；run 成功链不夹带业务参数）。
-  const lastToggleRef = useRef<{ factor: string; next: boolean } | undefined>(undefined);
+  const lastToggleRef = useRef<{ factor: string; next: boolean } | undefined>(
+    undefined,
+  );
   // 启用 / 停用（手动）：错误行内呈现（toast:false），成功 Toast + 双链重取。
   const {
     error: toggleError,
@@ -188,9 +194,14 @@ export function MfaMethodList(props: {
       const action = lastToggleRef.current;
       if (action !== undefined) {
         Toast.success(
-          t(action.next ? 'account.mfaEnabledSuccess' : 'account.mfaDisabledSuccess', {
-            factor: factorLabel(action.factor),
-          }),
+          t(
+            action.next
+              ? 'account.mfaEnabledSuccess'
+              : 'account.mfaDisabledSuccess',
+            {
+              factor: factorLabel(action.factor),
+            },
+          ),
         );
       }
       props.onPolicyRefresh();
@@ -215,7 +226,12 @@ export function MfaMethodList(props: {
 
   /** 启用 / 停用（§3.5 行 904 SetMfa 全量集合）：成功链在 onSuccess。 */
   const handleSetEnabled = (factor: string, next: boolean) => {
-    const built = buildSetMfaRequest(props.methods, factor, next, props.required);
+    const built = buildSetMfaRequest(
+      props.methods,
+      factor,
+      next,
+      props.required,
+    );
     if (!built.ok) {
       setLockedNotice(true);
       return;
@@ -244,7 +260,9 @@ export function MfaMethodList(props: {
           return (
             <li key={method.factor} className={styles.row}>
               <div className={styles.rowMain}>
-                <span className={styles.factor}>{factorLabel(method.factor)}</span>
+                <span className={styles.factor}>
+                  {factorLabel(method.factor)}
+                </span>
                 {/* 状态一律 Tag 承载（不用可点勾选框承载状态）。 */}
                 {!method.bound ? (
                   <Tag size="small" color="grey">
@@ -264,16 +282,25 @@ export function MfaMethodList(props: {
                   <Spin size="small" />
                 ) : detailStatus === 'error' && mfa === undefined ? (
                   <span className={styles.unboundHint}>
-                    {t('account.mfaDetailsLoadFailed', { error: apiErrorText(detailError) })}
+                    {t('account.mfaDetailsLoadFailed', {
+                      error: apiErrorText(detailError),
+                    })}
                   </span>
                 ) : method.bound && factor !== undefined ? (
-                  <span className={styles.summary}>{mfaFactorDetail(factor)}</span>
-                ) : !method.bound && unboundHint(method.factor) !== undefined ? (
-                  <span className={styles.unboundHint}>{unboundHint(method.factor)}</span>
+                  <span className={styles.summary}>
+                    {mfaFactorDetail(factor)}
+                  </span>
+                ) : !method.bound &&
+                  unboundHint(method.factor) !== undefined ? (
+                  <span className={styles.unboundHint}>
+                    {unboundHint(method.factor)}
+                  </span>
                 ) : null}
                 {recoveryLow && factor !== undefined ? (
                   <Tag size="small" color="yellow">
-                    {t('account.recoveryLowWarning', { count: toCount(factor.remaining) })}
+                    {t('account.recoveryLowWarning', {
+                      count: toCount(factor.remaining),
+                    })}
                   </Tag>
                 ) : null}
               </div>

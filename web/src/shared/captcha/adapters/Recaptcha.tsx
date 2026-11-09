@@ -50,7 +50,7 @@ export interface RecaptchaAdapterOptions extends VendorChallengeOptions {
 }
 
 export class RecaptchaAdapter extends VendorChallengeAdapter<GrecaptchaApi> {
-  private readonly getVendorFn: () => GrecaptchaApi | undefined;
+  private getVendorFn: () => GrecaptchaApi | undefined;
 
   constructor(captcha: CaptchaConfig, options: RecaptchaAdapterOptions = {}) {
     super(captcha, options);

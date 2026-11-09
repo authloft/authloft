@@ -54,7 +54,7 @@ const NUMBER_KEYS = [
   'queueBatch',
   'queueFlushMs',
   'eventlogRetentionDays',
-] as const satisfies readonly string[];
+] as const satisfies string[];
 
 export type SettingsNumberKey = (typeof NUMBER_KEYS)[number];
 
@@ -77,7 +77,8 @@ export type SettingsTextKey =
   | 'staticBase'
   | 'httpsDeployment';
 
-export type SettingsListKey = 'loginMethods' | 'mfaMethods' | 'ssoDomains' | 'gatewayTokens';
+export type SettingsListKey =
+  'loginMethods' | 'mfaMethods' | 'ssoDomains' | 'gatewayTokens';
 
 /**
  * 设置表单草稿（int64 字段以 number 编辑，提交前经 api.buildSetSettingsRequest
@@ -94,7 +95,7 @@ export type SettingsDraft = Readonly<{
     [K in SettingsTextKey]: string;
   }> &
   Readonly<{
-    [K in SettingsListKey]: readonly string[];
+    [K in SettingsListKey]: string[];
   }>;
 
 /**
@@ -196,9 +197,9 @@ export function draftFromSettings(response: SettingsResponse): SettingsDraft {
  * （NAV_ITEMS textKey 先例的等价受纳形态，stringList placeholder
  * 含非文案字面 example.com 故整体取函数化）。
  */
-export function getLoginMethodOptions(): readonly {
-  readonly value: string;
-  readonly label: string;
+export function getLoginMethodOptions(): {
+  value: string;
+  label: string;
 }[] {
   return [
     { value: 'password', label: t('factors.password') },
@@ -213,9 +214,9 @@ export function getLoginMethodOptions(): readonly {
  * 系统开放的二次因子选项（§5.6 行 1336 值域：recovery_code 随 totp 生效、
  * 不单列，故不入选项）。因子名文案复用 factors.* 既有键（求值时机同上）。
  */
-export function getMfaMethodOptions(): readonly {
-  readonly value: string;
-  readonly label: string;
+export function getMfaMethodOptions(): {
+  value: string;
+  label: string;
 }[] {
   return [
     { value: 'totp', label: t('factors.totp') },
@@ -230,9 +231,9 @@ export function getMfaMethodOptions(): readonly {
  * 默认 auto；行 1356 admin 设置页中文文案定稿：选项「自动推断 / 强制开启 /
  * 强制关闭」逐字，经 admin.* 键维护；求值时机同上，调用期取文案）。
  */
-export function getHttpsDeploymentOptions(): readonly {
-  readonly value: string;
-  readonly label: string;
+export function getHttpsDeploymentOptions(): {
+  value: string;
+  label: string;
 }[] {
   return [
     { value: 'auto', label: t('admin.httpsDeploymentAuto') },
@@ -246,53 +247,53 @@ export function getHttpsDeploymentOptions(): readonly {
  * 纯值集合不涉文案求值时机，保持模块级常量（与 getHttpsDeploymentOptions
  * 的 value 集恒等：§5.6 行 1354 三态封闭值域）。
  */
-export const HTTPS_DEPLOYMENT_VALUES: readonly string[] = ['auto', 'true', 'false'];
+export const HTTPS_DEPLOYMENT_VALUES: string[] = ['auto', 'true', 'false'];
 
 /** 字段控件形态（判别联合：kind 收窄 → key 类型随之收窄，渲染零断言）。 */
 export type SettingsFieldMeta =
   | {
-      readonly kind: 'number';
-      readonly key: SettingsNumberKey;
-      readonly label: string;
+      kind: 'number';
+      key: SettingsNumberKey;
+      label: string;
       /** 单位（渲染在标签括号内，如「秒」「天」）。 */
-      readonly unit?: string;
-      readonly hint?: string;
+      unit?: string;
+      hint?: string;
     }
   | {
-      readonly kind: 'switch';
-      readonly key: SettingsBoolKey;
-      readonly label: string;
-      readonly hint?: string;
+      kind: 'switch';
+      key: SettingsBoolKey;
+      label: string;
+      hint?: string;
     }
   | {
-      readonly kind: 'text';
-      readonly key: SettingsTextKey;
-      readonly label: string;
-      readonly hint?: string;
+      kind: 'text';
+      key: SettingsTextKey;
+      label: string;
+      hint?: string;
     }
   | {
-      readonly kind: 'select';
-      readonly key: SettingsTextKey;
-      readonly label: string;
-      readonly options: readonly { readonly value: string; readonly label: string }[];
-      readonly hint?: string;
+      kind: 'select';
+      key: SettingsTextKey;
+      label: string;
+      options: { value: string; label: string }[];
+      hint?: string;
     }
   | {
-      readonly kind: 'multiSelect';
-      readonly key: SettingsListKey;
-      readonly label: string;
-      readonly options: readonly { readonly value: string; readonly label: string }[];
-      readonly hint?: string;
+      kind: 'multiSelect';
+      key: SettingsListKey;
+      label: string;
+      options: { value: string; label: string }[];
+      hint?: string;
     }
   | {
-      readonly kind: 'stringList';
-      readonly key: SettingsListKey;
-      readonly label: string;
+      kind: 'stringList';
+      key: SettingsListKey;
+      label: string;
       /** StringListEditor 添加按钮文案（如「添加域名」）。 */
-      readonly addText: string;
+      addText: string;
       /** 条目输入占位提示。 */
-      readonly placeholder: string;
-      readonly hint?: string;
+      placeholder: string;
+      hint?: string;
     };
 
 /**
@@ -313,9 +314,9 @@ export type SettingsSectionKey =
 /** 表单分区（§5.6 四张表的展示归组；36 键全覆盖、无重复）。 */
 export interface SettingsSectionMeta {
   /** 稳定标识（Tab 分组引用点，不随语言变化）。 */
-  readonly key: SettingsSectionKey;
-  readonly title: string;
-  readonly fields: readonly SettingsFieldMeta[];
+  key: SettingsSectionKey;
+  title: string;
+  fields: SettingsFieldMeta[];
 }
 
 /**
@@ -324,10 +325,10 @@ export interface SettingsSectionMeta {
  */
 export interface SettingsTabMeta {
   /** 稳定标识（Tabs.activeKey）。 */
-  readonly key: string;
-  readonly title: string;
-  readonly sections: readonly SettingsSectionMeta[];
-  readonly keys: readonly (keyof SettingsDraft)[];
+  key: string;
+  title: string;
+  sections: SettingsSectionMeta[];
+  keys: (keyof SettingsDraft)[];
 }
 
 /**
@@ -338,289 +339,289 @@ export interface SettingsTabMeta {
  * hint / unit / addText / placeholder 经 t() 取当前语言文案——模块级常量
  * 求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
  */
-export function getSettingsSections(): readonly SettingsSectionMeta[] {
+export function getSettingsSections(): SettingsSectionMeta[] {
   return [
-  {
-    key: 'passwordPolicy',
-    title: t('admin.settingsSectionPasswordPolicy'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'pwdMinLength',
-        label: t('admin.pwdMinLengthLabel'),
-        hint: t('admin.pwdMinLengthHint'),
-      },
-      {
-        kind: 'number',
-        key: 'pwdMaxLength',
-        label: t('admin.pwdMaxLengthLabel'),
-        hint: t('admin.pwdMaxLengthHint'),
-      },
-      {
-        kind: 'number',
-        key: 'pwdRequireClasses',
-        label: t('admin.pwdRequireClassesLabel'),
-        hint: t('admin.pwdRequireClassesHint'),
-      },
-      {
-        kind: 'switch',
-        key: 'pwdDisallowUsername',
-        label: t('admin.pwdDisallowUsernameLabel'),
-      },
-      {
-        kind: 'switch',
-        key: 'pwdDisallowCommon',
-        label: t('admin.pwdDisallowCommonLabel'),
-      },
-    ],
-  },
-  {
-    key: 'accountRegistration',
-    title: t('admin.settingsSectionAccountRegistration'),
-    fields: [
-      {
-        kind: 'switch',
-        key: 'allowPasswordReset',
-        label: t('admin.allowPasswordResetLabel'),
-        hint: t('admin.allowPasswordResetHint'),
-      },
-      {
-        kind: 'switch',
-        key: 'allowRegistration',
-        label: t('admin.allowRegistrationLabel'),
-        hint: t('admin.allowRegistrationHint'),
-      },
-      {
-        kind: 'switch',
-        key: 'allowSignupPassword',
-        label: t('admin.allowSignupPasswordLabel'),
-      },
-      {
-        kind: 'switch',
-        key: 'allowSignupPhone',
-        label: t('admin.allowSignupPhoneLabel'),
-      },
-      {
-        kind: 'switch',
-        key: 'allowSignupEmail',
-        label: t('admin.allowSignupEmailLabel'),
-      },
-    ],
-  },
-  {
-    key: 'otpRateLimit',
-    title: t('admin.settingsSectionOtpRateLimit'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'otpResendInterval',
-        label: t('admin.otpResendIntervalLabel'),
-        unit: t('admin.unitSeconds'),
-        hint: t('admin.otpResendIntervalHint'),
-      },
-      {
-        kind: 'number',
-        key: 'otpTtl',
-        label: t('admin.otpTtlLabel'),
-        unit: t('admin.unitSeconds'),
-        hint: t('admin.otpTtlHint'),
-      },
-      {
-        kind: 'number',
-        key: 'otpMaxAttempts',
-        label: t('admin.otpMaxAttemptsLabel'),
-        hint: t('admin.otpMaxAttemptsHint'),
-      },
-      {
-        kind: 'number',
-        key: 'otpDailyLimitTarget',
-        label: t('admin.otpDailyLimitTargetLabel'),
-        unit: t('admin.unitTimes'),
-        hint: t('admin.otpDailyLimitTargetHint'),
-      },
-      {
-        kind: 'number',
-        key: 'otpDailyLimitIp',
-        label: t('admin.otpDailyLimitIpLabel'),
-        unit: t('admin.unitTimes'),
-        hint: t('admin.otpDailyLimitIpHint'),
-      },
-    ],
-  },
-  {
-    key: 'loginAndMfa',
-    title: t('admin.settingsSectionLoginAndMfa'),
-    fields: [
-      {
-        kind: 'multiSelect',
-        key: 'loginMethods',
-        label: t('admin.loginMethodsLabel'),
-        options: getLoginMethodOptions(),
-        hint: t('admin.loginMethodsHint'),
-      },
-      {
-        kind: 'switch',
-        key: 'mfaEnabled',
-        label: t('admin.mfaEnabledLabel'),
-        hint: t('admin.mfaEnabledHint'),
-      },
-      {
-        kind: 'multiSelect',
-        key: 'mfaMethods',
-        label: t('admin.mfaMethodsLabel'),
-        options: getMfaMethodOptions(),
-        hint: t('admin.mfaMethodsHint'),
-      },
-    ],
-  },
-  {
-    key: 'pwdFailProtection',
-    title: t('admin.settingsSectionPwdFailProtection'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'pwdFailCapture',
-        label: t('admin.pwdFailCaptureLabel'),
-        hint: t('admin.pwdFailCaptureHint'),
-      },
-      {
-        kind: 'number',
-        key: 'pwdFailBan',
-        label: t('admin.pwdFailBanLabel'),
-        hint: t('admin.pwdFailBanHint'),
-      },
-      {
-        kind: 'number',
-        key: 'pwdBanTtl',
-        label: t('admin.pwdBanTtlLabel'),
-        unit: t('admin.unitSeconds'),
-        hint: t('admin.pwdBanTtlHint'),
-      },
-    ],
-  },
-  {
-    key: 'sessionCookie',
-    title: t('admin.settingsSectionSessionCookie'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'sessionTtl',
-        label: t('admin.sessionTtlLabel'),
-        unit: t('admin.unitSeconds'),
-        hint: t('admin.sessionTtlHint'),
-      },
-      {
-        kind: 'text',
-        key: 'cookieName',
-        label: t('admin.cookieNameLabel'),
-        hint: t('admin.cookieNameHint'),
-      },
-      {
-        kind: 'select',
-        key: 'httpsDeployment',
-        label: t('admin.httpsDeploymentLabel'),
-        options: getHttpsDeploymentOptions(),
-        // §5.6 行 1356 admin 设置页中文文案定稿逐字。
-        hint: t('admin.httpsDeploymentHint'),
-      },
-      {
-        kind: 'stringList',
-        key: 'ssoDomains',
-        label: t('admin.ssoDomainsLabel'),
-        addText: t('admin.addDomain'),
-        placeholder: 'https://example.com/',
-        hint: t('admin.ssoDomainsHint'),
-      },
-    ],
-  },
-  {
-    key: 'queue',
-    title: t('admin.settingsSectionQueue'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'queueWorkers',
-        label: t('admin.queueWorkersLabel'),
-        hint: t('admin.queueWorkersHint'),
-      },
-      {
-        kind: 'number',
-        key: 'queueCapacity',
-        label: t('admin.queueCapacityLabel'),
-        hint: t('admin.queueCapacityHint'),
-      },
-      {
-        kind: 'number',
-        key: 'queueBatch',
-        label: t('admin.queueBatchLabel'),
-        hint: t('admin.queueBatchHint'),
-      },
-      {
-        kind: 'number',
-        key: 'queueFlushMs',
-        label: t('admin.queueFlushMsLabel'),
-        unit: t('admin.unitMilliseconds'),
-        hint: t('admin.queueFlushMsHint'),
-      },
-    ],
-  },
-  {
-    key: 'providerAndGateway',
-    title: t('admin.settingsSectionProviderAndGateway'),
-    fields: [
-      {
-        kind: 'text',
-        key: 'captchaProviderKey',
-        label: t('admin.captchaProviderKeyLabel'),
-        hint: t('admin.captchaProviderKeyHint'),
-      },
-      {
-        kind: 'text',
-        key: 'smsProviderKey',
-        label: t('admin.smsProviderKeyLabel'),
-        hint: t('admin.smsProviderKeyHint'),
-      },
-      {
-        kind: 'text',
-        key: 'emailProviderKey',
-        label: t('admin.emailProviderKeyLabel'),
-        hint: t('admin.emailProviderKeyHint'),
-      },
-      {
-        kind: 'text',
-        key: 'avatarStorageProvider',
-        label: t('admin.avatarStorageProviderLabel'),
-        hint: t('admin.avatarStorageProviderHint'),
-      },
-      {
-        kind: 'stringList',
-        key: 'gatewayTokens',
-        label: t('admin.gatewayTokensLabel'),
-        addText: t('admin.addGatewayToken'),
-        placeholder: t('admin.gatewayTokenPlaceholder'),
-        hint: t('admin.gatewayTokensHint'),
-      },
-    ],
-  },
-  {
-    key: 'logAndStatic',
-    title: t('admin.settingsSectionLogAndStatic'),
-    fields: [
-      {
-        kind: 'number',
-        key: 'eventlogRetentionDays',
-        label: t('admin.eventlogRetentionDaysLabel'),
-        unit: t('admin.unitDays'),
-        hint: t('admin.eventlogRetentionDaysHint'),
-      },
-      {
-        kind: 'text',
-        key: 'staticBase',
-        label: t('admin.staticBaseLabel'),
-        hint: t('admin.staticBaseHint'),
-      },
-    ],
-  },
+    {
+      key: 'passwordPolicy',
+      title: t('admin.settingsSectionPasswordPolicy'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'pwdMinLength',
+          label: t('admin.pwdMinLengthLabel'),
+          hint: t('admin.pwdMinLengthHint'),
+        },
+        {
+          kind: 'number',
+          key: 'pwdMaxLength',
+          label: t('admin.pwdMaxLengthLabel'),
+          hint: t('admin.pwdMaxLengthHint'),
+        },
+        {
+          kind: 'number',
+          key: 'pwdRequireClasses',
+          label: t('admin.pwdRequireClassesLabel'),
+          hint: t('admin.pwdRequireClassesHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'pwdDisallowUsername',
+          label: t('admin.pwdDisallowUsernameLabel'),
+        },
+        {
+          kind: 'switch',
+          key: 'pwdDisallowCommon',
+          label: t('admin.pwdDisallowCommonLabel'),
+        },
+      ],
+    },
+    {
+      key: 'accountRegistration',
+      title: t('admin.settingsSectionAccountRegistration'),
+      fields: [
+        {
+          kind: 'switch',
+          key: 'allowPasswordReset',
+          label: t('admin.allowPasswordResetLabel'),
+          hint: t('admin.allowPasswordResetHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowRegistration',
+          label: t('admin.allowRegistrationLabel'),
+          hint: t('admin.allowRegistrationHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupPassword',
+          label: t('admin.allowSignupPasswordLabel'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupPhone',
+          label: t('admin.allowSignupPhoneLabel'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupEmail',
+          label: t('admin.allowSignupEmailLabel'),
+        },
+      ],
+    },
+    {
+      key: 'otpRateLimit',
+      title: t('admin.settingsSectionOtpRateLimit'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'otpResendInterval',
+          label: t('admin.otpResendIntervalLabel'),
+          unit: t('admin.unitSeconds'),
+          hint: t('admin.otpResendIntervalHint'),
+        },
+        {
+          kind: 'number',
+          key: 'otpTtl',
+          label: t('admin.otpTtlLabel'),
+          unit: t('admin.unitSeconds'),
+          hint: t('admin.otpTtlHint'),
+        },
+        {
+          kind: 'number',
+          key: 'otpMaxAttempts',
+          label: t('admin.otpMaxAttemptsLabel'),
+          hint: t('admin.otpMaxAttemptsHint'),
+        },
+        {
+          kind: 'number',
+          key: 'otpDailyLimitTarget',
+          label: t('admin.otpDailyLimitTargetLabel'),
+          unit: t('admin.unitTimes'),
+          hint: t('admin.otpDailyLimitTargetHint'),
+        },
+        {
+          kind: 'number',
+          key: 'otpDailyLimitIp',
+          label: t('admin.otpDailyLimitIpLabel'),
+          unit: t('admin.unitTimes'),
+          hint: t('admin.otpDailyLimitIpHint'),
+        },
+      ],
+    },
+    {
+      key: 'loginAndMfa',
+      title: t('admin.settingsSectionLoginAndMfa'),
+      fields: [
+        {
+          kind: 'multiSelect',
+          key: 'loginMethods',
+          label: t('admin.loginMethodsLabel'),
+          options: getLoginMethodOptions(),
+          hint: t('admin.loginMethodsHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'mfaEnabled',
+          label: t('admin.mfaEnabledLabel'),
+          hint: t('admin.mfaEnabledHint'),
+        },
+        {
+          kind: 'multiSelect',
+          key: 'mfaMethods',
+          label: t('admin.mfaMethodsLabel'),
+          options: getMfaMethodOptions(),
+          hint: t('admin.mfaMethodsHint'),
+        },
+      ],
+    },
+    {
+      key: 'pwdFailProtection',
+      title: t('admin.settingsSectionPwdFailProtection'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'pwdFailCapture',
+          label: t('admin.pwdFailCaptureLabel'),
+          hint: t('admin.pwdFailCaptureHint'),
+        },
+        {
+          kind: 'number',
+          key: 'pwdFailBan',
+          label: t('admin.pwdFailBanLabel'),
+          hint: t('admin.pwdFailBanHint'),
+        },
+        {
+          kind: 'number',
+          key: 'pwdBanTtl',
+          label: t('admin.pwdBanTtlLabel'),
+          unit: t('admin.unitSeconds'),
+          hint: t('admin.pwdBanTtlHint'),
+        },
+      ],
+    },
+    {
+      key: 'sessionCookie',
+      title: t('admin.settingsSectionSessionCookie'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'sessionTtl',
+          label: t('admin.sessionTtlLabel'),
+          unit: t('admin.unitSeconds'),
+          hint: t('admin.sessionTtlHint'),
+        },
+        {
+          kind: 'text',
+          key: 'cookieName',
+          label: t('admin.cookieNameLabel'),
+          hint: t('admin.cookieNameHint'),
+        },
+        {
+          kind: 'select',
+          key: 'httpsDeployment',
+          label: t('admin.httpsDeploymentLabel'),
+          options: getHttpsDeploymentOptions(),
+          // §5.6 行 1356 admin 设置页中文文案定稿逐字。
+          hint: t('admin.httpsDeploymentHint'),
+        },
+        {
+          kind: 'stringList',
+          key: 'ssoDomains',
+          label: t('admin.ssoDomainsLabel'),
+          addText: t('admin.addDomain'),
+          placeholder: 'https://example.com/',
+          hint: t('admin.ssoDomainsHint'),
+        },
+      ],
+    },
+    {
+      key: 'queue',
+      title: t('admin.settingsSectionQueue'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'queueWorkers',
+          label: t('admin.queueWorkersLabel'),
+          hint: t('admin.queueWorkersHint'),
+        },
+        {
+          kind: 'number',
+          key: 'queueCapacity',
+          label: t('admin.queueCapacityLabel'),
+          hint: t('admin.queueCapacityHint'),
+        },
+        {
+          kind: 'number',
+          key: 'queueBatch',
+          label: t('admin.queueBatchLabel'),
+          hint: t('admin.queueBatchHint'),
+        },
+        {
+          kind: 'number',
+          key: 'queueFlushMs',
+          label: t('admin.queueFlushMsLabel'),
+          unit: t('admin.unitMilliseconds'),
+          hint: t('admin.queueFlushMsHint'),
+        },
+      ],
+    },
+    {
+      key: 'providerAndGateway',
+      title: t('admin.settingsSectionProviderAndGateway'),
+      fields: [
+        {
+          kind: 'text',
+          key: 'captchaProviderKey',
+          label: t('admin.captchaProviderKeyLabel'),
+          hint: t('admin.captchaProviderKeyHint'),
+        },
+        {
+          kind: 'text',
+          key: 'smsProviderKey',
+          label: t('admin.smsProviderKeyLabel'),
+          hint: t('admin.smsProviderKeyHint'),
+        },
+        {
+          kind: 'text',
+          key: 'emailProviderKey',
+          label: t('admin.emailProviderKeyLabel'),
+          hint: t('admin.emailProviderKeyHint'),
+        },
+        {
+          kind: 'text',
+          key: 'avatarStorageProvider',
+          label: t('admin.avatarStorageProviderLabel'),
+          hint: t('admin.avatarStorageProviderHint'),
+        },
+        {
+          kind: 'stringList',
+          key: 'gatewayTokens',
+          label: t('admin.gatewayTokensLabel'),
+          addText: t('admin.addGatewayToken'),
+          placeholder: t('admin.gatewayTokenPlaceholder'),
+          hint: t('admin.gatewayTokensHint'),
+        },
+      ],
+    },
+    {
+      key: 'logAndStatic',
+      title: t('admin.settingsSectionLogAndStatic'),
+      fields: [
+        {
+          kind: 'number',
+          key: 'eventlogRetentionDays',
+          label: t('admin.eventlogRetentionDaysLabel'),
+          unit: t('admin.unitDays'),
+          hint: t('admin.eventlogRetentionDaysHint'),
+        },
+        {
+          kind: 'text',
+          key: 'staticBase',
+          label: t('admin.staticBaseLabel'),
+          hint: t('admin.staticBaseHint'),
+        },
+      ],
+    },
   ];
 }
 
@@ -631,7 +632,7 @@ export function getSettingsSections(): readonly SettingsSectionMeta[] {
  * 手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug 引用，
  * 标题走 t() 调用期求值（locale 切换不冻结）。
  */
-export function getSettingsTabs(): readonly SettingsTabMeta[] {
+export function getSettingsTabs(): SettingsTabMeta[] {
   const sections = getSettingsSections();
   const byKey = new Map<SettingsSectionKey, SettingsSectionMeta>(
     sections.map((section) => [section.key, section]),
@@ -639,7 +640,7 @@ export function getSettingsTabs(): readonly SettingsTabMeta[] {
   function tab(
     key: string,
     titleKey: I18nKey,
-    sectionKeys: readonly SettingsSectionKey[],
+    sectionKeys: SettingsSectionKey[],
   ): SettingsTabMeta {
     const picked = sectionKeys.map((sectionKey) => {
       const section = byKey.get(sectionKey);
@@ -653,7 +654,9 @@ export function getSettingsTabs(): readonly SettingsTabMeta[] {
       key,
       title: t(titleKey),
       sections: picked,
-      keys: picked.flatMap((section) => section.fields.map((field) => field.key)),
+      keys: picked.flatMap((section) =>
+        section.fields.map((field) => field.key),
+      ),
     };
   }
   return [
@@ -680,7 +683,7 @@ export function getSettingsTabs(): readonly SettingsTabMeta[] {
 export function mergeSavedSettings(
   saved: SettingsDraft,
   current: SettingsDraft,
-  keys: readonly (keyof SettingsDraft)[],
+  keys: (keyof SettingsDraft)[],
 ): SettingsDraft {
   const next: SettingsDraft = { ...saved };
   for (const key of keys) {

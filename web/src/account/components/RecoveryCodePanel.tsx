@@ -20,13 +20,13 @@ import styles from './RecoveryCodePanel.module.less';
 
 export function RecoveryCodePanel(props: {
   /** 恢复码列表（xxxx-xxxx，§3.5 行 907）。 */
-  readonly codes: readonly string[];
+  codes: string[];
   /** 签发时间（Unix 秒，§3.5 行 907 createdAt）；bind 一次性展示场景无该值 → 省略行。 */
-  readonly createdAt?: bigint;
+  createdAt?: bigint;
   /** 重新生成回调（§3.5 行 908 全量作废）；不传则不渲染重新生成入口。 */
-  readonly onRegenerate?: () => void;
+  onRegenerate?: () => void;
   /** 重新生成进行中（按钮 loading，调用方维护）。 */
-  readonly regenerateBusy?: boolean;
+  regenerateBusy?: boolean;
 }): ReactNode {
   return (
     <div className={styles.panel}>
@@ -40,7 +40,11 @@ export function RecoveryCodePanel(props: {
       </ul>
       <div className={styles.meta}>
         {props.createdAt !== undefined ? (
-          <span>{t('account.recoveryIssuedAt', { time: formatUnixTime(props.createdAt) })}</span>
+          <span>
+            {t('account.recoveryIssuedAt', {
+              time: formatUnixTime(props.createdAt),
+            })}
+          </span>
         ) : null}
         <CopyButton text={props.codes.join('\n')} />
         {/* 评审 P2-3：下载为文本（纯前端 Blob 下载，对齐 Casdoor）。 */}
@@ -48,7 +52,9 @@ export function RecoveryCodePanel(props: {
           type="tertiary"
           onClick={() => {
             const url = URL.createObjectURL(
-              new Blob([props.codes.join('\n')], { type: 'text/plain;charset=utf-8' }),
+              new Blob([props.codes.join('\n')], {
+                type: 'text/plain;charset=utf-8',
+              }),
             );
             const anchor = document.createElement('a');
             anchor.href = url;
@@ -61,7 +67,10 @@ export function RecoveryCodePanel(props: {
         </Button>
       </div>
       {props.onRegenerate !== undefined ? (
-        <Popconfirm title={t('account.recoveryRegenerateConfirm')} onConfirm={props.onRegenerate}>
+        <Popconfirm
+          title={t('account.recoveryRegenerateConfirm')}
+          onConfirm={props.onRegenerate}
+        >
           <Button type="tertiary" loading={props.regenerateBusy ?? false}>
             {t('account.recoveryRegenerate')}
           </Button>

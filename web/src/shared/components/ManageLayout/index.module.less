@@ -1,0 +1,41 @@
+@import (reference) '../../styles/tokens.less';
+
+.shell {
+  min-height: 100vh;
+}
+
+.header {
+  flex-grow: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: @spacing-lg;
+  padding: @spacing-xs @spacing-lg;
+  border-bottom: @border-width solid var(--semi-color-border);
+  background-color: @color-background;
+}
+
+.content {
+  flex-grow: 1;
+  flex-shrink: 1;
+  padding: @spacing-xl;
+  overflow: auto;
+
+  :global(.page-title) {
+    margin-bottom: @spacing-md;
+  }
+
+  :global(.page-content),
+  :global(.semi-table-body .semi-table-placeholder) {
+    background-color: var(--semi-color-bg-0);
+  }
+}
+
+// 窄屏收敛（评审 P0-4）：内容区内边距收窄；侧栏折叠走 Semi
+// Sider breakpoint + Nav isCollapsed（见 AppLayout.tsx），此处只管内容区。
+@media (max-width: @breakpoint-md) {
+  .content {
+    padding: @spacing-lg;
+  }
+}

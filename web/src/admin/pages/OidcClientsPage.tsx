@@ -20,10 +20,23 @@
  * ./api（工具链 blocker 同口径）。样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, Spin, Toast, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Popconfirm,
+  Spin,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
-import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
@@ -73,22 +86,22 @@ function oidcClientRowKey(row: OidcClient): string {
 
 /** OIDC 新建表单态（TTL 为表单文本态，提交前经 parseTtlField 收敛）。 */
 interface OidcCreateForm {
-  readonly clientId: string;
-  readonly name: string;
-  readonly redirectUris: readonly string[];
-  readonly scopes: readonly string[];
-  readonly accessTokenTtl: string;
-  readonly refreshTokenTtl: string;
+  clientId: string;
+  name: string;
+  redirectUris: string[];
+  scopes: string[];
+  accessTokenTtl: string;
+  refreshTokenTtl: string;
 }
 
 /** OIDC 编辑表单态（clientId 只读展示不编辑，TTL 文本态）。 */
 interface OidcEditForm {
-  readonly newSecret: string;
-  readonly name: string;
-  readonly redirectUris: readonly string[];
-  readonly scopes: readonly string[];
-  readonly accessTokenTtl: string;
-  readonly refreshTokenTtl: string;
+  newSecret: string;
+  name: string;
+  redirectUris: string[];
+  scopes: string[];
+  accessTokenTtl: string;
+  refreshTokenTtl: string;
 }
 
 /** 新建表单初值：TTL 预填库端默认（§4.5：3600 / 2592000）。 */
@@ -106,7 +119,7 @@ function initialCreateForm(): OidcCreateForm {
 /** OIDC 客户端列表页：DataTable + 新建 / 查看 / 编辑 / 删除弹窗（含 scopes / TTL）。 */
 export function OidcClientsPage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序由 DataTable 上报更新。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
@@ -128,7 +141,8 @@ export function OidcClientsPage(_props: {
   // actionError 文字已随 Semi 回归移除）；Modal 内表单错误保持行内。
   // 新建弹窗。
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<OidcCreateForm>(initialCreateForm);
+  const [createForm, setCreateForm] =
+    useState<OidcCreateForm>(initialCreateForm);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
   // 查看弹窗（GetOidcClient 明文密钥的唯一展示位）。
@@ -199,7 +213,8 @@ export function OidcClientsPage(_props: {
   /** 关闭编辑弹窗（现值相对打开时基线有改动时需确认）。 */
   function closeEdit(): void {
     confirmCloseIfDirty(
-      editBaseline !== null && JSON.stringify(editForm) !== JSON.stringify(editBaseline),
+      editBaseline !== null &&
+        JSON.stringify(editForm) !== JSON.stringify(editBaseline),
       () => setEditTarget(null),
     );
   }
@@ -208,7 +223,11 @@ export function OidcClientsPage(_props: {
    * 表单态收敛为请求入参：条目校验（回调白名单 / scopes）+ TTL 文本解析；
    * 返回错误文案（null = 通过）。第二段为解析后的 TTL 秒数对。
    */
-  function resolveCreateInput(): { error: string | null; accessTokenTtl: number; refreshTokenTtl: number } {
+  function resolveCreateInput(): {
+    error: string | null;
+    accessTokenTtl: number;
+    refreshTokenTtl: number;
+  } {
     const uriIssue = redirectUrisIssue(createForm.redirectUris);
     if (uriIssue !== null) {
       return { error: uriIssue, accessTokenTtl: 0, refreshTokenTtl: 0 };
@@ -217,7 +236,10 @@ export function OidcClientsPage(_props: {
     if (scopeIssue !== null) {
       return { error: scopeIssue, accessTokenTtl: 0, refreshTokenTtl: 0 };
     }
-    const accessTokenTtl = parseTtlField(createForm.accessTokenTtl, OIDC_ACCESS_TTL_MAX);
+    const accessTokenTtl = parseTtlField(
+      createForm.accessTokenTtl,
+      OIDC_ACCESS_TTL_MAX,
+    );
     if (accessTokenTtl === null) {
       return {
         error: t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }),
@@ -225,7 +247,10 @@ export function OidcClientsPage(_props: {
         refreshTokenTtl: 0,
       };
     }
-    const refreshTokenTtl = parseTtlField(createForm.refreshTokenTtl, OIDC_REFRESH_TTL_MAX);
+    const refreshTokenTtl = parseTtlField(
+      createForm.refreshTokenTtl,
+      OIDC_REFRESH_TTL_MAX,
+    );
     if (refreshTokenTtl === null) {
       return {
         error: t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }),
@@ -324,12 +349,18 @@ export function OidcClientsPage(_props: {
       setEditError(scopeIssue);
       return;
     }
-    const accessTokenTtl = parseTtlField(editForm.accessTokenTtl, OIDC_ACCESS_TTL_MAX);
+    const accessTokenTtl = parseTtlField(
+      editForm.accessTokenTtl,
+      OIDC_ACCESS_TTL_MAX,
+    );
     if (accessTokenTtl === null) {
       setEditError(t('admin.accessTtlIssue', { max: OIDC_ACCESS_TTL_MAX }));
       return;
     }
-    const refreshTokenTtl = parseTtlField(editForm.refreshTokenTtl, OIDC_REFRESH_TTL_MAX);
+    const refreshTokenTtl = parseTtlField(
+      editForm.refreshTokenTtl,
+      OIDC_REFRESH_TTL_MAX,
+    );
     if (refreshTokenTtl === null) {
       setEditError(t('admin.refreshTtlIssue', { max: OIDC_REFRESH_TTL_MAX }));
       return;
@@ -347,7 +378,9 @@ export function OidcClientsPage(_props: {
         }),
       );
       setEditTarget(null);
-      Toast.success(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
+      Toast.success(
+        t('admin.clientUpdateSuccess', { clientId: target.clientId }),
+      );
       refreshList();
     } catch (err) {
       setEditError(apiErrorText(err));
@@ -370,7 +403,7 @@ export function OidcClientsPage(_props: {
   // 列口径（§6 行 519 客户端 CRUD / 回调白名单 / scopes）：SSO 基线列 +
   // 权限范围（摘要）+ 令牌有效期（tokenTtlSummary）；可排序列 dataIndex
   // 即 wire 列名（§1.7 sort 前端限定）。
-  const columns: readonly DataTableColumn<OidcClient>[] = [
+  const columns: DataTableColumn<OidcClient>[] = [
     {
       dataIndex: 'client_id',
       title: t('admin.clientIdLabel'),
@@ -390,7 +423,8 @@ export function OidcClientsPage(_props: {
     {
       dataIndex: 'redirect_uris',
       title: t('admin.redirectUrisLabel'),
-      render: (_text: unknown, row: OidcClient) => summarizeList(row.redirectUris),
+      render: (_text: unknown, row: OidcClient) =>
+        summarizeList(row.redirectUris),
     },
     {
       dataIndex: 'scopes',
@@ -408,14 +442,16 @@ export function OidcClientsPage(_props: {
       title: t('admin.createdAtLabel'),
       width: 170,
       sorter: true,
-      render: (_text: unknown, row: OidcClient) => formatUnixTime(row.createdAt),
+      render: (_text: unknown, row: OidcClient) =>
+        formatUnixTime(row.createdAt),
     },
     {
       dataIndex: 'updated_at',
       title: t('admin.updatedAtLabel'),
       width: 170,
       sorter: true,
-      render: (_text: unknown, row: OidcClient) => formatUnixTime(row.updatedAt),
+      render: (_text: unknown, row: OidcClient) =>
+        formatUnixTime(row.updatedAt),
     },
     {
       dataIndex: 'actions',
@@ -444,12 +480,20 @@ export function OidcClientsPage(_props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.clientsLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.clientsLoadFailed')}
+      />
+    );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navOidcClients')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navOidcClients')}
+      </Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createClientAction')}
@@ -480,10 +524,14 @@ export function OidcClientsPage(_props: {
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientIdLabel')}
+            </span>
             <Input
               value={createForm.clientId}
-              onChange={(value) => setCreateForm({ ...createForm, clientId: value })}
+              onChange={(value) =>
+                setCreateForm({ ...createForm, clientId: value })
+              }
               maxLength={CLIENT_ID_MAX_LEN}
               placeholder={t('admin.clientIdAutoGenPlaceholder')}
               aria-label={t('admin.clientIdLabel')}
@@ -491,10 +539,14 @@ export function OidcClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientNameLabel')}
+            </span>
             <Input
               value={createForm.name}
-              onChange={(value) => setCreateForm({ ...createForm, name: value })}
+              onChange={(value) =>
+                setCreateForm({ ...createForm, name: value })
+              }
               maxLength={CLIENT_NAME_MAX_LEN}
               placeholder={t('admin.clientNamePlaceholder')}
               aria-label={t('admin.clientNameLabel')}
@@ -502,11 +554,17 @@ export function OidcClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.redirectUrisLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.redirectUriEntryHint')}
+            </span>
             <StringListEditor
               values={createForm.redirectUris}
-              onChange={(next) => setCreateForm({ ...createForm, redirectUris: next })}
+              onChange={(next) =>
+                setCreateForm({ ...createForm, redirectUris: next })
+              }
               disabled={createSubmitting}
               ariaLabel={t('admin.redirectUriAriaLabel')}
               addText={t('admin.addRedirectUri')}
@@ -516,10 +574,14 @@ export function OidcClientsPage(_props: {
           </div>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>{t('admin.scopesLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.scopesDefaultHint')}</span>
+            <span className={styles.fieldHint}>
+              {t('admin.scopesDefaultHint')}
+            </span>
             <StringListEditor
               values={createForm.scopes}
-              onChange={(next) => setCreateForm({ ...createForm, scopes: next })}
+              onChange={(next) =>
+                setCreateForm({ ...createForm, scopes: next })
+              }
               disabled={createSubmitting}
               ariaLabel={t('admin.scopesLabel')}
               addText={t('admin.addScope')}
@@ -528,11 +590,17 @@ export function OidcClientsPage(_props: {
           </div>
           <div className={styles.ttlRow}>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>{t('admin.accessTokenTtlFieldLabel')}</span>
+              <span className={styles.fieldLabel}>
+                {t('admin.accessTokenTtlFieldLabel')}
+              </span>
               <Input
                 value={createForm.accessTokenTtl}
-                onChange={(value) => setCreateForm({ ...createForm, accessTokenTtl: value })}
-                placeholder={t('admin.ttlPlaceholder', { value: OIDC_ACCESS_TTL_DEFAULT })}
+                onChange={(value) =>
+                  setCreateForm({ ...createForm, accessTokenTtl: value })
+                }
+                placeholder={t('admin.ttlPlaceholder', {
+                  value: OIDC_ACCESS_TTL_DEFAULT,
+                })}
                 aria-label={t('admin.accessTokenTtlLabel')}
                 disabled={createSubmitting}
               />
@@ -544,11 +612,17 @@ export function OidcClientsPage(_props: {
               </span>
             </div>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>{t('admin.refreshTokenTtlFieldLabel')}</span>
+              <span className={styles.fieldLabel}>
+                {t('admin.refreshTokenTtlFieldLabel')}
+              </span>
               <Input
                 value={createForm.refreshTokenTtl}
-                onChange={(value) => setCreateForm({ ...createForm, refreshTokenTtl: value })}
-                placeholder={t('admin.ttlPlaceholder', { value: OIDC_REFRESH_TTL_DEFAULT })}
+                onChange={(value) =>
+                  setCreateForm({ ...createForm, refreshTokenTtl: value })
+                }
+                placeholder={t('admin.ttlPlaceholder', {
+                  value: OIDC_REFRESH_TTL_DEFAULT,
+                })}
                 aria-label={t('admin.refreshTokenTtlLabel')}
                 disabled={createSubmitting}
               />
@@ -594,7 +668,9 @@ export function OidcClientsPage(_props: {
           <p role="alert" className={styles.actionError}>
             {apiErrorText(viewReq.error)}
           </p>
-        ) : viewReq.loading || viewReq.data === undefined || viewReq.data.id !== viewId ? (
+        ) : viewReq.loading ||
+          viewReq.data === undefined ||
+          viewReq.data.id !== viewId ? (
           // 弹窗内加载裸文字换 Semi Spin。
           <div className={styles.stateCenter} role="status">
             <Spin />
@@ -629,7 +705,9 @@ export function OidcClientsPage(_props: {
             </dd>
             <dt>{t('admin.scopesLabel')}</dt>
             <dd>
-              {viewReq.data.scopes.length > 0 ? viewReq.data.scopes.join(', ') : EMPTY_TEXT}
+              {viewReq.data.scopes.length > 0
+                ? viewReq.data.scopes.join(', ')
+                : EMPTY_TEXT}
             </dd>
             <dt>{t('admin.accessTokenTtlLabel')}</dt>
             <dd>{ttlDetailText(viewReq.data.accessTokenTtl)}</dd>
@@ -655,12 +733,22 @@ export function OidcClientsPage(_props: {
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
-            <Input value={editTarget?.clientId ?? ''} disabled aria-label={t('admin.clientIdLabel')} />
-            <span className={styles.fieldHint}>{t('admin.clientIdImmutable')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientIdLabel')}
+            </span>
+            <Input
+              value={editTarget?.clientId ?? ''}
+              disabled
+              aria-label={t('admin.clientIdLabel')}
+            />
+            <span className={styles.fieldHint}>
+              {t('admin.clientIdImmutable')}
+            </span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientNameLabel')}
+            </span>
             <Input
               value={editForm.name}
               onChange={(value) => setEditForm({ ...editForm, name: value })}
@@ -671,24 +759,36 @@ export function OidcClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.newSecretLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.newSecretLabel')}
+            </span>
             <Input
               mode="password"
               value={editForm.newSecret}
-              onChange={(value) => setEditForm({ ...editForm, newSecret: value })}
+              onChange={(value) =>
+                setEditForm({ ...editForm, newSecret: value })
+              }
               placeholder={t('admin.newSecretPlaceholder')}
               aria-label={t('admin.newSecretLabel')}
               autoComplete="new-password"
               disabled={editSubmitting}
             />
-            <span className={styles.fieldHint}>{t('admin.secretRotateHint')}</span>
+            <span className={styles.fieldHint}>
+              {t('admin.secretRotateHint')}
+            </span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.redirectUrisLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.redirectUriEntryHint')}
+            </span>
             <StringListEditor
               values={editForm.redirectUris}
-              onChange={(next) => setEditForm({ ...editForm, redirectUris: next })}
+              onChange={(next) =>
+                setEditForm({ ...editForm, redirectUris: next })
+              }
               disabled={editSubmitting}
               ariaLabel={t('admin.redirectUriAriaLabel')}
               addText={t('admin.addRedirectUri')}
@@ -697,7 +797,9 @@ export function OidcClientsPage(_props: {
           </div>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>{t('admin.scopesLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.scopesEntryHint')}</span>
+            <span className={styles.fieldHint}>
+              {t('admin.scopesEntryHint')}
+            </span>
             <StringListEditor
               values={editForm.scopes}
               onChange={(next) => setEditForm({ ...editForm, scopes: next })}
@@ -709,10 +811,14 @@ export function OidcClientsPage(_props: {
           </div>
           <div className={styles.ttlRow}>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>{t('admin.accessTokenTtlFieldLabel')}</span>
+              <span className={styles.fieldLabel}>
+                {t('admin.accessTokenTtlFieldLabel')}
+              </span>
               <Input
                 value={editForm.accessTokenTtl}
-                onChange={(value) => setEditForm({ ...editForm, accessTokenTtl: value })}
+                onChange={(value) =>
+                  setEditForm({ ...editForm, accessTokenTtl: value })
+                }
                 aria-label={t('admin.accessTokenTtlLabel')}
                 disabled={editSubmitting}
               />
@@ -721,10 +827,14 @@ export function OidcClientsPage(_props: {
               </span>
             </div>
             <div className={styles.ttlField}>
-              <span className={styles.fieldLabel}>{t('admin.refreshTokenTtlFieldLabel')}</span>
+              <span className={styles.fieldLabel}>
+                {t('admin.refreshTokenTtlFieldLabel')}
+              </span>
               <Input
                 value={editForm.refreshTokenTtl}
-                onChange={(value) => setEditForm({ ...editForm, refreshTokenTtl: value })}
+                onChange={(value) =>
+                  setEditForm({ ...editForm, refreshTokenTtl: value })
+                }
                 aria-label={t('admin.refreshTokenTtlLabel')}
                 disabled={editSubmitting}
               />

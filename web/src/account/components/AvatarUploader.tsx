@@ -22,13 +22,15 @@ import styles from './AvatarUploader.module.less';
  */
 export function AvatarUploader(props: {
   /** 当前头像地址（预览底图；上传成功后预览切换为新 url）。 */
-  readonly currentUrl?: string;
+  currentUrl?: string;
   /** 上传成功回调（§10.8 流程终点 {url}）。 */
-  readonly onUploaded?: (url: string) => void;
+  onUploaded?: (url: string) => void;
 }): ReactNode {
   const { hidden, config, upload } = useUpload();
   const [uploading, setUploading] = useState(false);
-  const [progressText, setProgressText] = useState<string | undefined>(undefined);
+  const [progressText, setProgressText] = useState<string | undefined>(
+    undefined,
+  );
   const [error, setError] = useState<unknown>(undefined);
   const [uploadedUrl, setUploadedUrl] = useState<string | undefined>(undefined);
   // 评审 P2-2：上传失败保留原文件供「重试」——不必重新选择文件；
@@ -77,7 +79,11 @@ export function AvatarUploader(props: {
   const previewUrl = uploadedUrl ?? props.currentUrl;
   return (
     <div className={styles.uploader}>
-      <Avatar size="large" src={previewUrl || undefined} alt={t('account.avatarAlt')} />
+      <Avatar
+        size="large"
+        src={previewUrl || undefined}
+        alt={t('account.avatarAlt')}
+      />
       <div className={styles.controls}>
         <input
           ref={inputRef}

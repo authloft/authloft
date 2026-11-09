@@ -9,10 +9,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import { FieldSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
-import type {
-  OidcContext,
-  SnapshotProvider,
-} from '../../shared/types/init';
+import type { OidcContext, SnapshotProvider } from '../../shared/types/init';
 import { OTPForm, isOtpForm } from './OTPForm';
 import { PasswordForm } from './PasswordForm';
 import {
@@ -21,11 +18,7 @@ import {
   startRedirect,
 } from './ProviderButtons';
 import { RecoveryCodeForm, recoverySubmitGuard } from './RecoveryCodeForm';
-import {
-  WebAuthnButton,
-  authenticate,
-  isWebAuthnForm,
-} from './WebAuthnButton';
+import { WebAuthnButton, authenticate, isWebAuthnForm } from './WebAuthnButton';
 import { lookupFactor } from './registry';
 
 const { createElement } = React;
@@ -101,7 +94,10 @@ describe('OTPForm challenge 段（§2.6 行 544-545）', () => {
   });
 
   test('MFA：maskedTarget 掩码展示、不渲染目标输入（§2.6 行 545 不传目标）', () => {
-    const markup = renderOtp({ step: 'challenge', maskedTarget: '138****8000' });
+    const markup = renderOtp({
+      step: 'challenge',
+      maskedTarget: '138****8000',
+    });
     expect(markup).toContain('138****8000');
     expect(markup).not.toContain('type="tel"');
     expect(markup).toContain('发送验证码');
@@ -112,8 +108,12 @@ describe('OTPForm challenge 段（§2.6 行 544-545）', () => {
   });
 
   test('loading / disabled 禁用发送（§3.2）', () => {
-    expect(renderOtp({ step: 'challenge', loading: true })).toContain('disabled=""');
-    expect(renderOtp({ step: 'challenge', disabled: true })).toContain('disabled=""');
+    expect(renderOtp({ step: 'challenge', loading: true })).toContain(
+      'disabled=""',
+    );
+    expect(renderOtp({ step: 'challenge', disabled: true })).toContain(
+      'disabled=""',
+    );
   });
 
   test('加载视觉：challenge 段 loading → spinner + 「发送中…」（非 loading 原样）', () => {
@@ -158,7 +158,9 @@ describe('OTPForm verify 段（§2.6 行 546 payload {code}）', () => {
   });
 
   test('错误计数提示 attemptsLeft（§1.3 行 151；§1.6 行 247 invalid_code 带剩余次数）', () => {
-    expect(renderOtp({ step: 'verify', attemptsLeft: BigInt(3) })).toContain('还可尝试 3 次');
+    expect(renderOtp({ step: 'verify', attemptsLeft: BigInt(3) })).toContain(
+      '还可尝试 3 次',
+    );
     expect(renderOtp({ step: 'verify' })).not.toContain('还可尝试');
   });
 
@@ -208,12 +210,20 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
     const base = { fields: [codeField], onSubmit: () => {} };
     expect(
       renderToStaticMarkup(
-        createElement(RecoveryCodeForm, { ...base, loading: true, disabled: false }),
+        createElement(RecoveryCodeForm, {
+          ...base,
+          loading: true,
+          disabled: false,
+        }),
       ),
     ).toContain('disabled=""');
     expect(
       renderToStaticMarkup(
-        createElement(RecoveryCodeForm, { ...base, loading: false, disabled: true }),
+        createElement(RecoveryCodeForm, {
+          ...base,
+          loading: false,
+          disabled: true,
+        }),
       ),
     ).toContain('disabled=""');
   });
@@ -237,9 +247,13 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
     expect(block?.errors).toEqual({ code: '请填写此项' });
     expect(block?.focusId).toBe('fr-code');
     // 纯空白同空值（isFilled 去首尾空白）。
-    expect(recoverySubmitGuard([codeField], { code: '  ' })?.focusId).toBe('fr-code');
+    expect(recoverySubmitGuard([codeField], { code: '  ' })?.focusId).toBe(
+      'fr-code',
+    );
     // 满值放行（xxxx-xxxx 原样，不做格式化校验，§4.3 行 441）。
-    expect(recoverySubmitGuard([codeField], { code: 'abcd-1234' })).toBeUndefined();
+    expect(
+      recoverySubmitGuard([codeField], { code: 'abcd-1234' }),
+    ).toBeUndefined();
   });
 });
 
@@ -249,13 +263,42 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
 
 describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', () => {
   const providers: SnapshotProvider[] = [
-    { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', icon: 'https://ex.test/qq.png', uiGroup: 'social', sortOrder: '10' },
-    { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', uiGroup: 'social', sortOrder: '20' },
-    { providerKey: 'wxmp', displayName: '微信', type: 'wechat_mp', channel: 'api', uiGroup: 'social', sortOrder: '30' },
-    { providerKey: 'ent', displayName: '企业SSO', type: 'cas', channel: 'redirect', uiGroup: 'enterprise', sortOrder: '5' },
+    {
+      providerKey: 'qq',
+      displayName: 'QQ',
+      type: 'qq',
+      channel: 'redirect',
+      icon: 'https://ex.test/qq.png',
+      uiGroup: 'social',
+      sortOrder: '10',
+    },
+    {
+      providerKey: 'scan',
+      displayName: '微信扫码',
+      type: 'wechat_mp_scan',
+      channel: 'qrcode',
+      uiGroup: 'social',
+      sortOrder: '20',
+    },
+    {
+      providerKey: 'wxmp',
+      displayName: '微信',
+      type: 'wechat_mp',
+      channel: 'api',
+      uiGroup: 'social',
+      sortOrder: '30',
+    },
+    {
+      providerKey: 'ent',
+      displayName: '企业SSO',
+      type: 'cas',
+      channel: 'redirect',
+      uiGroup: 'enterprise',
+      sortOrder: '5',
+    },
   ];
 
-  function renderWall(list: readonly SnapshotProvider[] = providers): string {
+  function renderWall(list: SnapshotProvider[] = providers): string {
     return renderToStaticMarkup(
       createElement(ProviderButtons, { providers: list }),
     );
@@ -264,7 +307,12 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
   test('channel=api 不渲染（§4.3 行 456 宿主承载）；未知 channel 不渲染（不硬编码渠道，§4.3 行 454）', () => {
     const withUnknown = [
       ...providers,
-      { providerKey: 'x', displayName: '未知渠道', type: 'x', channel: 'teleport' },
+      {
+        providerKey: 'x',
+        displayName: '未知渠道',
+        type: 'x',
+        channel: 'teleport',
+      },
     ];
     const markup = renderWall(withUnknown);
     expect(markup).not.toContain('微信</span>'); // wechat_mp（channel=api）不渲染
@@ -283,14 +331,22 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
   test('图标经 ProviderIcon（§4.3 行 454）：icon 非空 <img>；空则内联 SVG 占位（§2.7.1 行 578 不做本地回落）', () => {
     expect(renderWall()).toContain('src="https://ex.test/qq.png"');
     const markup = renderWall([
-      { providerKey: 'scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode' },
+      {
+        providerKey: 'scan',
+        displayName: '微信扫码',
+        type: 'wechat_mp_scan',
+        channel: 'qrcode',
+      },
     ]);
     expect(markup).toContain('<svg');
   });
 });
 
 describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 580）', () => {
-  const OIDC: OidcContext = { client_id: 'cid', redirect_uri: 'https://app/cb' };
+  const OIDC: OidcContext = {
+    client_id: 'cid',
+    redirect_uri: 'https://app/cb',
+  };
 
   test('Authorize 成功 → 跳转前落盘 oidc（§2.7.2 行 599-600）→ 返回 authorizeUrl', async () => {
     const saved: OidcContext[] = [];
@@ -401,7 +457,9 @@ describe('WebAuthnButton（§4.3 行 453：缺失隐藏 / usernameless 双段按
 
   test('verify 段（challengeData 注入）：断言按钮 + loading / disabled 禁用（§3.2）', () => {
     rs.stubGlobal('window', { PublicKeyCredential: {} });
-    expect(renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE })).toContain('验证');
+    expect(renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE })).toContain(
+      '验证',
+    );
     expect(
       renderWebauthn({ challengeData: WEBAUTHN_CHALLENGE, loading: true }),
     ).toContain('disabled=""');

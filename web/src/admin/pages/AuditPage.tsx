@@ -32,9 +32,20 @@
  * 同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, DatePicker, Empty, InputNumber, RadioGroup, Select, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  DatePicker,
+  Empty,
+  InputNumber,
+  RadioGroup,
+  Select,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
-import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
@@ -68,7 +79,9 @@ const EMPTY_TEXT = '—';
  * 损失——超 2^53 输入由 InputNumber 以 string 原样承载；空态 / 非十进制
  * 中间态一律 undefined = 不过滤（与构造函数 optional 语义对齐）。
  */
-function idInputToFilter(value: number | string | undefined): bigint | undefined {
+function idInputToFilter(
+  value: number | string | undefined,
+): bigint | undefined {
   if (value === undefined || value === '') {
     return undefined;
   }
@@ -91,7 +104,7 @@ function dateToUnixFilter(value: Date | undefined): bigint | undefined {
  * 预设视图选项（§5.6 行 1297：全部 / 登录记录 / 敏感操作三项）。
  * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
  */
-const PRESET_OPTIONS: readonly { readonly value: AuditPreset; readonly textKey: I18nKey }[] = [
+const PRESET_OPTIONS: { value: AuditPreset; textKey: I18nKey }[] = [
   { value: 'all', textKey: 'admin.auditPresetAll' },
   { value: 'login_records', textKey: 'admin.auditPresetLoginRecords' },
   { value: 'sensitive_records', textKey: 'admin.auditPresetSensitiveRecords' },
@@ -105,7 +118,7 @@ function eventRowKey(row: EventItem): string {
 /** 事件日志统一视图页：预设 + 类型筛选 + DataTable 服务端分页。 */
 export function AuditPage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序由 DataTable 上报更新；筛选 / 预设变更回第 1 页。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
@@ -204,7 +217,7 @@ export function AuditPage(_props: {
 
   // 列口径（EventItem 全字段投影，《后端架构》§4.6；dataIndex 即 wire 名——
   // created_at 可排序走后端 orderClause ^[a-z0-9_]+$，既定口径）。
-  const columns: readonly DataTableColumn<EventItem>[] = [
+  const columns: DataTableColumn<EventItem>[] = [
     {
       dataIndex: 'event',
       title: t('admin.eventTypeColumn'),
@@ -213,7 +226,8 @@ export function AuditPage(_props: {
     {
       dataIndex: 'actor_type',
       title: t('admin.actorColumn'),
-      render: (_text: unknown, row: EventItem) => actorText(row.actorType, row.actorId),
+      render: (_text: unknown, row: EventItem) =>
+        actorText(row.actorType, row.actorId),
     },
     {
       dataIndex: 'user_id',
@@ -270,12 +284,20 @@ export function AuditPage(_props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.auditLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.auditLoadFailed')}
+      />
+    );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navAudit')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navAudit')}
+      </Typography.Title>
       <div className={styles.filterBar}>
         <RadioGroup
           type="button"
@@ -289,7 +311,9 @@ export function AuditPage(_props: {
         <Select
           className={styles.filterSelect}
           value={eventFilter}
-          onChange={(value) => changeEventFilter(typeof value === 'string' ? value : '')}
+          onChange={(value) =>
+            changeEventFilter(typeof value === 'string' ? value : '')
+          }
           placeholder={t('admin.eventFilterPlaceholder')}
           showClear
           optionList={eventTypeFilterOptions(preset).map((option) => ({
@@ -303,7 +327,9 @@ export function AuditPage(_props: {
         <Select
           className={styles.filterSelect}
           value={actorTypeFilter}
-          onChange={(value) => changeActorTypeFilter(typeof value === 'string' ? value : '')}
+          onChange={(value) =>
+            changeActorTypeFilter(typeof value === 'string' ? value : '')
+          }
           placeholder={t('admin.actorFilterPlaceholder')}
           showClear
           optionList={ACTOR_TYPE_FILTERS.map((option) => ({
@@ -336,7 +362,9 @@ export function AuditPage(_props: {
           className={styles.filterDate}
           type="dateTime"
           value={fromFilter}
-          onChange={(date) => changeFromFilter(date instanceof Date ? date : undefined)}
+          onChange={(date) =>
+            changeFromFilter(date instanceof Date ? date : undefined)
+          }
           placeholder={t('admin.fromFilterPlaceholder')}
           showClear
         />
@@ -344,13 +372,17 @@ export function AuditPage(_props: {
           className={styles.filterDate}
           type="dateTime"
           value={toFilter}
-          onChange={(date) => changeToFilter(date instanceof Date ? date : undefined)}
+          onChange={(date) =>
+            changeToFilter(date instanceof Date ? date : undefined)
+          }
           placeholder={t('admin.toFilterPlaceholder')}
           showClear
         />
       </div>
       {preset === 'sensitive_records' ? (
-        <p className={styles.presetHint}>{t('admin.auditPresetSensitiveHint')}</p>
+        <p className={styles.presetHint}>
+          {t('admin.auditPresetSensitiveHint')}
+        </p>
       ) : null}
       <DataTable<EventItem>
         columns={columns}

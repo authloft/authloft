@@ -71,9 +71,9 @@ export function createCopyController(
 
 export interface UseCopyResult {
   /** 最近一次复制是否处于成功态窗口内。 */
-  readonly copied: boolean;
+  copied: boolean;
   /** 复制（语义同 CopyController.copy）。 */
-  readonly copy: (text: string) => Promise<boolean>;
+  copy: (text: string) => Promise<boolean>;
 }
 
 /** @param durationMs 成功态持续时间（默认 COPY_FEEDBACK_MS）。 */
@@ -83,6 +83,9 @@ export function useCopy(durationMs?: number): UseCopyResult {
     createCopyController(setCopied, { durationMs }),
   );
   useEffect(() => controller.dispose, [controller]);
-  const copy = useCallback((text: string) => controller.copy(text), [controller]);
+  const copy = useCallback(
+    (text: string) => controller.copy(text),
+    [controller],
+  );
   return { copied, copy };
 }

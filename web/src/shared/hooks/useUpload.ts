@@ -56,7 +56,9 @@ import { requestOptions } from './requestOptions';
  * 前端据此隐藏上传入口；配置未加载（undefined）同样隐藏。
  * 两信号任一为零即视为不可上传（零值投影两者同时为零，此处保守取或）。
  */
-export function isUploadEntryHidden(config: AvatarUploadConfig | undefined): boolean {
+export function isUploadEntryHidden(
+  config: AvatarUploadConfig | undefined,
+): boolean {
   if (config === undefined) {
     return true;
   }
@@ -76,7 +78,10 @@ export function validateAvatarFile(
   if (config.maxSize > BigInt(0) && BigInt(file.size) > config.maxSize) {
     return 'file_too_large';
   }
-  if (config.allowedTypes.length > 0 && !config.allowedTypes.includes(file.type)) {
+  if (
+    config.allowedTypes.length > 0 &&
+    !config.allowedTypes.includes(file.type)
+  ) {
     return 'file_type_not_allowed';
   }
   return undefined;
@@ -90,7 +95,11 @@ export interface AvatarUploadDeps {
   ): Promise<AvatarResponse>;
   presignAvatar(request: PresignAvatarRequest): Promise<AvatarPresignResponse>;
   commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse>;
-  putToStorage(url: string, headers: Record<string, string>, file: File): Promise<void>;
+  putToStorage(
+    url: string,
+    headers: Record<string, string>,
+    file: File,
+  ): Promise<void>;
 }
 
 /**
@@ -105,7 +114,12 @@ async function putAvatarToStorage(
 ): Promise<void> {
   const response = await fetch(url, { method: 'PUT', headers, body: file });
   if (!response.ok) {
-    throw new ApiError({ httpStatus: 0, code: 'internal', message: '', requestId: '' });
+    throw new ApiError({
+      httpStatus: 0,
+      code: 'internal',
+      message: '',
+      requestId: '',
+    });
   }
 }
 
@@ -132,7 +146,12 @@ export async function uploadAvatarFile(
 ): Promise<string> {
   const invalid = validateAvatarFile(config, file);
   if (invalid !== undefined) {
-    throw new ApiError({ httpStatus: 400, code: invalid, message: '', requestId: '' });
+    throw new ApiError({
+      httpStatus: 400,
+      code: invalid,
+      message: '',
+      requestId: '',
+    });
   }
   if (config.mode === 'direct') {
     const presigned = await deps.presignAvatar(
@@ -156,11 +175,11 @@ export async function uploadAvatarFile(
 /** useUpload 对外形态（前端架构 §3.2 行 344 契约：config + upload(file) → url）。 */
 export interface UseUploadResult {
   /** GetConfig 加载态（配置未就绪时入口隐藏、不可上传）。 */
-  readonly status: RequestStatus;
+  status: RequestStatus;
   /** §3.2 行 842：零值投影 / 配置未加载 → true（隐藏上传入口）。 */
-  readonly hidden: boolean;
+  hidden: boolean;
   /** 当前 avatarUpload 投影（未加载 / 缺省为 undefined，§3.1 零值兜底）。 */
-  readonly config: AvatarUploadConfig | undefined;
+  config: AvatarUploadConfig | undefined;
   /** 上传（§10.8）：预校验失败与服务端错误统一抛 ApiError（文案走 i18n 字典）。 */
   upload(
     file: File,
@@ -176,7 +195,10 @@ export interface UseUploadResult {
 export function useUpload(): UseUploadResult {
   // 配置读取改 ahooks 自动请求（§5.1-①）；集中 onError——401 跳登录，
   // 其余静默（toast:false：失败仅 hidden=true 隐藏入口，沿用旧行为不弹 Toast）。
-  const { data, error, loading } = useRequest(getConfig, requestOptions({ toast: false }));
+  const { data, error, loading } = useRequest(
+    getConfig,
+    requestOptions({ toast: false }),
+  );
   const status = deriveRequestStatus(loading, error, data);
   const config = data?.avatarUpload;
   const upload = useCallback(
@@ -184,7 +206,12 @@ export function useUpload(): UseUploadResult {
       if (config === undefined) {
         // 入口已按 hidden 隐藏，此处防御性兜底（§3.1 零值兜底，不透出细节）。
         return Promise.reject(
-          new ApiError({ httpStatus: 0, code: 'internal', message: '', requestId: '' }),
+          new ApiError({
+            httpStatus: 0,
+            code: 'internal',
+            message: '',
+            requestId: '',
+          }),
         );
       }
       return uploadAvatarFile(config, file, avatarUploadDeps, onUploadProgress);

@@ -9,7 +9,8 @@ const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
 const INIT_JSON = '{{AUTHLOFT_INIT_JSON}}';
 
 const IS_DEV = process.env.NODE_ENV === 'development';
-const DEV_INIT_JSON = {"al_root":"http://localhost:3000","static_base":"/assets","methods":{"flags":{"passwordReset":true,"registration":true},"captcha":{"providerKey":"builtin_image","type":"image"},"methods":[{"method":"password","usage":["primary"],"steps":["form"],"fields":[{"name":"username","label":"用户名/邮箱/手机号","type":"text","required":true},{"name":"password","label":"密码","type":"password","required":true},{"name":"captcha","label":"人机校验","type":"captcha"}]},{"method":"otp_sms","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"phone","label":"手机号","type":"phone","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"otp_email","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"email","label":"邮箱","type":"email","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"webauthn","usage":["primary","secondary"],"steps":["challenge","form"],"capability":"window.PublicKeyCredential"}]}}
+const DEV_INIT_JSON =
+  '{"al_root":"http://localhost:3000","static_base":"/assets","methods":{"flags":{"passwordReset":true,"registration":true},"captcha":{"providerKey":"builtin_image","type":"image"},"methods":[{"method":"password","usage":["primary"],"steps":["form"],"fields":[{"name":"username","label":"用户名/邮箱/手机号","type":"text","required":true},{"name":"password","label":"密码","type":"password","required":true},{"name":"captcha","label":"人机校验","type":"captcha"}]},{"method":"otp_sms","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"phone","label":"手机号","type":"phone","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"otp_email","usage":["primary","secondary"],"steps":["challenge","form"],"challengeFields":[{"name":"email","label":"邮箱","type":"email","required":true}],"codeLength":"6","resendAfter":"60","expiresIn":"300"},{"method":"webauthn","usage":["primary","secondary"],"steps":["challenge","form"],"capability":"window.PublicKeyCredential"}]}}';
 
 export default defineConfig({
   plugins: [appTools()],
@@ -42,9 +43,9 @@ export default defineConfig({
   dev: {
     server: {
       proxy: {
-        '/api': 'http://localhost:8080'
-      }
-    }
+        '/api': 'http://localhost:8080',
+      },
+    },
   },
   // ── 壳层模板三个运行期占位符的构建期注入（docs/前端架构.md §1.5 定稿）──
   // 壳层模板 = dist/html/{entry}/index.html 原样复制（scripts/sync-templates.mjs 仅复制
@@ -89,7 +90,7 @@ export default defineConfig({
           {
             tag: 'script',
             attrs: { nonce: CSP_NONCE },
-            children: `window.__AUTHLOFT_INIT__ = ${IS_DEV ? JSON.stringify(DEV_INIT_JSON) : INIT_JSON};`,
+            children: `window.__AUTHLOFT_INIT__ = ${IS_DEV ? DEV_INIT_JSON : INIT_JSON};`,
             head: true,
             append: false,
           },

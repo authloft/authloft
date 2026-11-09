@@ -24,10 +24,7 @@ import { FieldRenderer, controlKindFor, codeLengthOf } from './FieldRenderer';
 import { ErrorBanner, errorText, attemptsCount } from './ErrorBanner';
 import { CopyButton } from './CopyButton';
 import { Spinner } from './Spinner';
-import {
-  PasswordStrengthMeter,
-  meterRules,
-} from './PasswordStrengthMeter';
+import { PasswordStrengthMeter, meterRules } from './PasswordStrengthMeter';
 import {
   QRCodePanel,
   QRCodePanelView,
@@ -68,12 +65,17 @@ function makeField(init: FieldInit): Field {
 }
 
 function renderFields(
-  fields: readonly Field[],
+  fields: Field[],
   values: Readonly<Record<string, string>> = {},
   extra: { errors?: Readonly<Record<string, string>>; idPrefix?: string } = {},
 ): string {
   return renderToStaticMarkup(
-    createElement(FieldRenderer, { fields, values, onChange: () => {}, ...extra }),
+    createElement(FieldRenderer, {
+      fields,
+      values,
+      onChange: () => {},
+      ...extra,
+    }),
   );
 }
 
@@ -274,7 +276,14 @@ describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）'
 
   test('code 型字段：首格 id 供 htmlFor、每格 aria-invalid / aria-describedby', () => {
     const markup = renderFields(
-      [makeField({ name: 'code', label: '验证码', type: 'otp', length: BigInt(6) })],
+      [
+        makeField({
+          name: 'code',
+          label: '验证码',
+          type: 'otp',
+          length: BigInt(6),
+        }),
+      ],
       { code: '12' },
       { errors: { code: '请输入完整验证码' } },
     );
@@ -576,22 +585,34 @@ describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文�
   test('ticketPhaseOf：ticket.status 五态优先（§2.8 行 717）', () => {
     expect(
       ticketPhaseOf(
-        envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 't' } }),
+        envelope({
+          status: 'pending',
+          ticket: { status: 'pending', ticketId: 't' },
+        }),
       ),
     ).toBe('pending');
     expect(
       ticketPhaseOf(
-        envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 't' } }),
+        envelope({
+          status: 'scanned',
+          ticket: { status: 'scanned', ticketId: 't' },
+        }),
       ),
     ).toBe('scanned');
     expect(
       ticketPhaseOf(
-        envelope({ status: 'success', ticket: { status: 'success', ticketId: 't' } }),
+        envelope({
+          status: 'success',
+          ticket: { status: 'success', ticketId: 't' },
+        }),
       ),
     ).toBe('success');
     expect(
       ticketPhaseOf(
-        envelope({ status: 'expired', ticket: { status: 'expired', ticketId: 't' } }),
+        envelope({
+          status: 'expired',
+          ticket: { status: 'expired', ticketId: 't' },
+        }),
       ),
     ).toBe('expired');
     expect(
@@ -610,11 +631,16 @@ describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文�
     expect(ticketPhaseOf(envelope({ status: 'success' }))).toBe('success');
     expect(ticketPhaseOf(envelope({ status: 'expired' }))).toBe('expired');
     expect(ticketPhaseOf(envelope({ status: 'target_taken' }))).toBe('failed');
-    expect(ticketPhaseOf(envelope({ status: 'brand_new_status' }))).toBe('failed');
+    expect(ticketPhaseOf(envelope({ status: 'brand_new_status' }))).toBe(
+      'failed',
+    );
     // 未知 ticket.status（可能是服务端新增中间态）→ pending 继续轮询。
     expect(
       ticketPhaseOf(
-        envelope({ status: 'confirming', ticket: { status: 'confirming', ticketId: 't' } }),
+        envelope({
+          status: 'confirming',
+          ticket: { status: 'confirming', ticketId: 't' },
+        }),
       ),
     ).toBe('pending');
   });
@@ -681,7 +707,13 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
       }
       return new Promise(() => {});
     };
-    return { pollUrl, get calls() { return calls; }, tickets };
+    return {
+      pollUrl,
+      get calls() {
+        return calls;
+      },
+      tickets,
+    };
   }
 
   test('登录组 props：fetching → active(pending) → active(scanned) → success；onResult 收到完整信封（.login）', async () => {
@@ -690,8 +722,14 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     const results: LoginFlowResponse[] = [];
     let qrCalls = 0;
     const poll = sequencedPoll([
-      envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 'id-1' } }),
-      envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 'id-1' } }),
+      envelope({
+        status: 'pending',
+        ticket: { status: 'pending', ticketId: 'id-1' },
+      }),
+      envelope({
+        status: 'scanned',
+        ticket: { status: 'scanned', ticketId: 'id-1' },
+      }),
       envelope({
         status: 'success',
         ticket: { status: 'success', ticketId: 'id-1' },
@@ -711,8 +749,16 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'scanned' },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'pending',
+      },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'scanned',
+      },
       { kind: 'success' },
     ]);
     expect(poll.calls).toBe(3); // success 终态后轮询停止，不再发起
@@ -728,8 +774,14 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     const results: LoginFlowResponse[] = [];
     let qrCalls = 0;
     const poll = sequencedPoll([
-      envelope({ status: 'pending', ticket: { status: 'pending', ticketId: 'id-1' } }),
-      envelope({ status: 'scanned', ticket: { status: 'scanned', ticketId: 'id-1' } }),
+      envelope({
+        status: 'pending',
+        ticket: { status: 'pending', ticketId: 'id-1' },
+      }),
+      envelope({
+        status: 'scanned',
+        ticket: { status: 'scanned', ticketId: 'id-1' },
+      }),
       envelope({
         status: 'success',
         ticket: { status: 'success', ticketId: 'id-1' },
@@ -752,8 +804,16 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'scanned' },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'pending',
+      },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'scanned',
+      },
       { kind: 'success' },
     ]);
     expect(results).toHaveLength(1);
@@ -776,7 +836,10 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
         expect(ticket).toBe(`tk-${qrCalls}`);
         if (pollCalls === 1) {
           return Promise.resolve(
-            envelope({ status: 'expired', ticket: { status: 'expired', ticketId: 'id-1' } }),
+            envelope({
+              status: 'expired',
+              ticket: { status: 'expired', ticketId: 'id-1' },
+            }),
           );
         }
         return new Promise(() => {}); // 新码轮询在途
@@ -788,7 +851,11 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.example/q1.jpg', ticketStatus: 'pending' },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.example/q1.jpg',
+        ticketStatus: 'pending',
+      },
       { kind: 'expired' },
     ]);
     expect(qrCalls).toBe(1);
@@ -952,8 +1019,12 @@ describe('QRCodePanelView 渲染（四态 + failed）', () => {
 
 describe('ProviderIcon（§3.3 行 344：渠道图标唯一渲染入口）', () => {
   test('resolveIconMode：icon 非空未失败 → image；空 / undefined / 加载失败 → placeholder', () => {
-    expect(resolveIconMode('https://cdn.example/wechat.png', false)).toBe('image');
-    expect(resolveIconMode('https://cdn.example/wechat.png', true)).toBe('placeholder');
+    expect(resolveIconMode('https://cdn.example/wechat.png', false)).toBe(
+      'image',
+    );
+    expect(resolveIconMode('https://cdn.example/wechat.png', true)).toBe(
+      'placeholder',
+    );
     expect(resolveIconMode('', false)).toBe('placeholder'); // protojson 零值省略
     expect(resolveIconMode(undefined, false)).toBe('placeholder');
   });
@@ -1015,7 +1086,9 @@ describe('QrImage 文本二维码自绘（接口文档 §3.5 行 922「前端绘
     const markup = renderToStaticMarkup(
       createElement(QrImage, { content: OTPAUTH, alt: 'qr' }),
     );
-    expect(markup).toContain(`viewBox="-4 -4 ${a.modules + 8} ${a.modules + 8}"`);
+    expect(markup).toContain(
+      `viewBox="-4 -4 ${a.modules + 8} ${a.modules + 8}"`,
+    );
   });
 
   test('加载失败回退：空串 / 超容量 → 组件渲染为空（调用方文本兜底——TotpBindDialog 密钥 / otpauth 文本展示保留，不随码图失败消失）', () => {

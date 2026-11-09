@@ -31,7 +31,7 @@ import {
 // ---------------------------------------------------------------------------
 
 interface FakeElement {
-  readonly tag: string;
+  tag: string;
   children: FakeElement[];
   textContent: string;
   type: string;
@@ -116,7 +116,10 @@ function makeScriptStub(init: { failScript?: boolean } = {}) {
 // Turnstile（显式渲染：render 回调 token / expired-callback / remove）
 // ---------------------------------------------------------------------------
 
-function mountTurnstile(siteKey = '0x4AAA', init: { failScript?: boolean } = {}) {
+function mountTurnstile(
+  siteKey = '0x4AAA',
+  init: { failScript?: boolean } = {},
+) {
   const script = makeScriptStub(init);
   const renderCalls: Array<{
     container: FakeElement;
@@ -163,7 +166,9 @@ describe('Turnstile adapter：挂载 → token 回调 → getToken（§2.5 行 5
     expect(h.renderCalls[0].container).toBe(h.container);
     expect(h.renderCalls[0].options.sitekey).toBe('0x4AAA');
     expect(typeof h.renderCalls[0].options.callback).toBe('function');
-    expect(typeof h.renderCalls[0].options['expired-callback']).toBe('function');
+    expect(typeof h.renderCalls[0].options['expired-callback']).toBe(
+      'function',
+    );
   });
 
   test('token 回调 → getToken 返回第三方二元组（id / answer 零值省略）；未完成 → undefined', async () => {
@@ -272,7 +277,10 @@ describe('Turnstile adapter：过期换新与 reset（remove + 重新挂载）',
 // reCAPTCHA v3（?render=SITEKEY 加载；ready → execute → Promise<token>）
 // ---------------------------------------------------------------------------
 
-function mountRecaptcha(siteKey = '6LeAAA', init: { failScript?: boolean } = {}) {
+function mountRecaptcha(
+  siteKey = '6LeAAA',
+  init: { failScript?: boolean } = {},
+) {
   const script = makeScriptStub(init);
   const executeCalls: Array<{ siteKey: string; action: string }> = [];
   let readyCalls = 0;
@@ -389,7 +397,10 @@ describe('Recaptcha adapter（v3 无感：挂载即预取 token）', () => {
 // hCaptcha（显式渲染：render 回调 token / expired-callback / 原地 reset）
 // ---------------------------------------------------------------------------
 
-function mountHCaptcha(siteKey = '1000-aaaa', init: { failScript?: boolean } = {}) {
+function mountHCaptcha(
+  siteKey = '1000-aaaa',
+  init: { failScript?: boolean } = {},
+) {
   const script = makeScriptStub(init);
   const renderCalls: Array<{
     container: FakeElement;
@@ -436,7 +447,9 @@ describe('HCaptcha adapter：挂载 → token 回调 → getToken', () => {
     expect(h.renderCalls[0].container).toBe(h.container);
     expect(h.renderCalls[0].options.sitekey).toBe('1000-aaaa');
     expect(typeof h.renderCalls[0].options.callback).toBe('function');
-    expect(typeof h.renderCalls[0].options['expired-callback']).toBe('function');
+    expect(typeof h.renderCalls[0].options['expired-callback']).toBe(
+      'function',
+    );
   });
 
   test('token 回调 → getToken 返回第三方二元组；未完成 → undefined', async () => {

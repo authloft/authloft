@@ -199,11 +199,11 @@ export async function dispatchCallback(
 
 export interface OAuthCallbackViewProps {
   /** 注入快照（§2.1；mfa_required 完整编排经 LoginContainer 消费）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
   /** 帧状态：idle（处理中，含 b 分支回跳前）/ 信封 status。 */
-  readonly status: string;
+  status: string;
   /** 最近一次响应信封（binding_required 的 binding、失败态 error 来源）。 */
-  readonly envelope: LoginFlowResponse | undefined;
+  envelope: LoginFlowResponse | undefined;
   /** 返回登录（清内存 login_token → 跳 /sso/login；exitBinding 同款动作）。 */
   onBackToLogin: () => void;
 }
@@ -278,9 +278,9 @@ export function OAuthCallbackView({
 
 export interface OAuthCallbackPageProps {
   /** 路径参数 provider_key（routes.tsx 从 pathname 提取，§2.7.3）。 */
-  readonly providerKey: string;
+  providerKey: string;
   /** 注入快照（§2.1；mfa_required 完整编排经 LoginContainer 消费）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
 }
 
 export function OAuthCallbackPage({

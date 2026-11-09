@@ -88,19 +88,19 @@ export type BindingChoiceKind = 'choice' | 'create';
 
 export interface BindingPageViewProps {
   /** 信封 binding（§1.3 行 129-132）；undefined 走零值兜底（§9 第 18 条）。 */
-  readonly binding: Binding | undefined;
+  binding: Binding | undefined;
   /** choice（两选项）/ create（免密建号表单）。 */
-  readonly choice: BindingChoiceKind;
+  choice: BindingChoiceKind;
   /** 建号表单用户名（受控）。 */
-  readonly username: string;
+  username: string;
   /** 请求在途（提交按钮禁用，§3.2）。 */
-  readonly loading: boolean;
+  loading: boolean;
   /** 最近一次 Register 响应 status（初始 'idle'）。 */
-  readonly status: string;
+  status: string;
   /** 最近一次响应信封（失败态 ErrorBanner 字段来源）。 */
-  readonly envelope: LoginFlowResponse | undefined;
+  envelope: LoginFlowResponse | undefined;
   /** restart / 传输失败的一次性提示（i18nKey）。 */
-  readonly notice?: string;
+  notice?: string;
   onChooseCreate: () => void;
   onExit: () => void;
   onUsernameChange: (value: string) => void;
@@ -213,9 +213,9 @@ export function BindingPageView({
 
 export interface BindingPageProps {
   /** 信封 binding（LoginContainer binding_required 分支传入，§1.3 行 129）。 */
-  readonly binding: Binding | undefined;
+  binding: Binding | undefined;
   /** restart / 传输失败的一次性提示（容器 notice 透传）。 */
-  readonly notice?: string;
+  notice?: string;
 }
 
 export function BindingPage({ binding, notice }: BindingPageProps) {

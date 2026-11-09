@@ -18,7 +18,7 @@ import {
 describe('toNavItems（路由表 → Semi Nav items 派生）', () => {
   test('itemKey 即路由 path，text 经 i18n 求值（默认 zh-CN）', () => {
     expect(toNavItems(ACCOUNT_NAV_ROUTES)).toEqual([
-      { itemKey: '/profile', text: '个人资料' },
+      { itemKey: '/', text: '个人资料' },
       { itemKey: '/security', text: '安全中心' },
       { itemKey: '/audit', text: '登录日志' },
     ]);
@@ -32,7 +32,9 @@ describe('matchActivePath（高亮匹配：精确 + 前缀段）', () => {
 
   test('详情页前缀段归列表项（/users/123 → /users）', () => {
     expect(matchActivePath(ADMIN_NAV_ROUTES, '/users/123')).toBe('/users');
-    expect(matchActivePath(ADMIN_NAV_ROUTES, '/providers/wechat_mp/edit')).toBe('/providers');
+    expect(matchActivePath(ADMIN_NAV_ROUTES, '/providers/wechat_mp/edit')).toBe(
+      '/providers',
+    );
   });
 
   test('未命中 / 根路径 → 空串（不高亮）', () => {

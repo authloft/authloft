@@ -27,7 +27,7 @@ import styles from './LoginPage.module.less';
 
 export interface LoginPageProps {
   /** 注入快照（§2.1；bootstrap 读取后传入，§4.1 行 375）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
 }
 
 export function LoginPage({ snapshot }: LoginPageProps) {

@@ -25,8 +25,14 @@ import styles from './SortableList.module.less';
  * 不可变重排（node 可测纯函数）：把 from 位元素移到 to 位；越界 / 同位 →
  * **原数组引用**原样返回（无变更即无新引用——消费方回滚语义依赖此约定）。
  */
-export function moveItem<T>(items: readonly T[], from: number, to: number): readonly T[] {
-  if (from < 0 || from >= items.length || to < 0 || to >= items.length || from === to) {
+export function moveItem<T>(items: T[], from: number, to: number): T[] {
+  if (
+    from < 0 ||
+    from >= items.length ||
+    to < 0 ||
+    to >= items.length ||
+    from === to
+  ) {
     return items;
   }
   const next = [...items];
@@ -37,23 +43,23 @@ export function moveItem<T>(items: readonly T[], from: number, to: number): read
 
 export interface SortableListProps<T> {
   /** 行集（受控：顺序由消费方持有，onSort 只上报新序）。 */
-  readonly items: readonly T[];
+  items: T[];
   /** 行键（拖拽态追踪与列表 key；Provider 列表为 provider_key）。 */
-  readonly itemKey: (item: T) => string;
+  itemKey: (item: T) => string;
   /** 行内容渲染（列布局归消费方，本组件只包拖拽壳与手柄）。 */
-  readonly renderItem: (item: T) => ReactNode;
+  renderItem: (item: T) => ReactNode;
   /** 拖拽落定 → 新顺序（不可变新数组；持久化 / 失败回滚归消费方）。 */
-  readonly onSort: (next: readonly T[]) => void;
+  onSort: (next: T[]) => void;
   /** 停用拖拽（行集截断等）；缺省可拖。 */
-  readonly disabled?: boolean;
+  disabled?: boolean;
   /** 拖拽手柄无障碍标签。 */
-  readonly handleLabel?: string;
+  handleLabel?: string;
 }
 
 /** 拖拽进行态：拖起行 + 悬停行（key 追踪，防行集重排后索引漂移）。 */
 interface DragState {
-  readonly dragKey: string;
-  readonly overKey: string;
+  dragKey: string;
+  overKey: string;
 }
 
 /** 拖拽排序容器：每行 = 手柄 + renderItem；落定即 onSort(moveItem(...))。 */
@@ -86,8 +92,13 @@ export function SortableList<T>(props: SortableListProps<T>): ReactNode {
       {items.map((item) => {
         const key = itemKey(item);
         const isDragging = drag !== null && drag.dragKey === key;
-        const isOver = drag !== null && drag.overKey === key && drag.dragKey !== key;
-        const itemClass = [styles.item, isDragging ? styles.itemDragging : '', isOver ? styles.itemOver : '']
+        const isOver =
+          drag !== null && drag.overKey === key && drag.dragKey !== key;
+        const itemClass = [
+          styles.item,
+          isDragging ? styles.itemDragging : '',
+          isOver ? styles.itemOver : '',
+        ]
           .join(' ')
           .trim();
         return (

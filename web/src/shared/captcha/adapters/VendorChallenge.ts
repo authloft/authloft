@@ -43,13 +43,13 @@ export interface VendorChallengeOptions {
   loadScript?: (src: string) => Promise<void>;
 }
 
-export abstract class VendorChallengeAdapter<Vendor extends object>
-  implements CaptchaAdapter
-{
-  private readonly providerKey: string;
-  protected readonly siteKey: string;
-  protected readonly doc: Document;
-  private readonly loadScript: (src: string) => Promise<void>;
+export abstract class VendorChallengeAdapter<
+  Vendor extends object,
+> implements CaptchaAdapter {
+  private providerKey: string;
+  protected siteKey: string;
+  protected doc: Document;
+  private loadScript: (src: string) => Promise<void>;
   private container: HTMLElement | null = null;
   private token = '';
   /** 会话序号：每次 recover 递增，使旧挑战的迟到回调作废（竞态丢弃）。 */

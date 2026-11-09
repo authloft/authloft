@@ -28,37 +28,37 @@ import { codeErrorText, focusField } from './validate';
 
 /** 消费方 module.less 类名注入（各键缺省 = 该节点无类名，结构不变）。 */
 export interface VerifyCodeSectionClasses {
-  readonly form?: string;
-  readonly label?: string;
-  readonly error?: string;
-  readonly status?: string;
-  readonly resend?: string;
-  readonly submit?: string;
+  form?: string;
+  label?: string;
+  error?: string;
+  status?: string;
+  resend?: string;
+  submit?: string;
 }
 
 export interface VerifyCodeSectionProps {
   /** CodeInput 稳定 id（label htmlFor / 错误槽 aria-describedby / 聚焦锚共用）。 */
-  readonly id: string;
+  id: string;
   /** 验证码分段数（OTPForm 固定 6；页族取快照 codeLength）。 */
-  readonly length: number;
+  length: number;
   /** 已输码（受控，容器持值防实例重建丢失，同款语义）。 */
-  readonly code: string;
-  readonly onCodeChange: (value: string) => void;
+  code: string;
+  onCodeChange: (value: string) => void;
   /** 前置校验通过后上抛已输码（payload 组装归消费方，§9 第 6 条）。 */
-  readonly onSubmit: (code: string) => void;
+  onSubmit: (code: string) => void;
   /** 提交按钮文案 i18n 键（P2-10 可配文案：login.submit / login.nextStep）。 */
-  readonly submitLabelKey: string;
+  submitLabelKey: string;
   /** 类名注入（见 VerifyCodeSectionClasses）。 */
-  readonly classes: VerifyCodeSectionClasses;
-  readonly loading?: boolean;
-  readonly disabled?: boolean;
+  classes: VerifyCodeSectionClasses;
+  loading?: boolean;
+  disabled?: boolean;
   /** 剩余尝试次数（§1.3 行 151 error.attemptsLeft；undefined 不展示）。 */
-  readonly attemptsLeft?: bigint;
+  attemptsLeft?: bigint;
   /** 重发冷却（§1.3 行 115 nextStep.retryAfter / 行 150 error.retryAfter；undefined 无倒计时）。 */
-  readonly retryAfter?: bigint;
-  readonly onResend?: () => void;
+  retryAfter?: bigint;
+  onResend?: () => void;
   /** 重发按钮随 disabled 一并禁用（OTPForm 原口径；页族原口径不含，缺省 false）。 */
-  readonly resendDisabled?: boolean;
+  resendDisabled?: boolean;
 }
 
 export function VerifyCodeSection({

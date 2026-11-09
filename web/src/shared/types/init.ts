@@ -17,14 +17,14 @@ import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
  * string 承载（§12.9 行 1754）。
  */
 export interface SnapshotField {
-  readonly name: string;
-  readonly label?: string;
-  readonly type: string;
-  readonly required?: boolean;
+  name: string;
+  label?: string;
+  type: string;
+  required?: boolean;
   /** 输入长度（如验证码位数）；int64 → 十进制字符串（§1.12）。 */
-  readonly length?: string;
+  length?: string;
   /** 最大校验失败次数；int64 → 十进制字符串（§1.12）。 */
-  readonly maxAttempts?: string;
+  maxAttempts?: string;
 }
 
 /**
@@ -32,63 +32,63 @@ export interface SnapshotField {
  * 的注入 JSON 形状）。
  */
 export interface SnapshotProvider {
-  readonly providerKey: string;
-  readonly displayName?: string;
-  readonly type: string;
+  providerKey: string;
+  displayName?: string;
+  type: string;
   /** 交互通道：redirect | api | qrcode（§1.10 / §2.7.1 行 576）。 */
-  readonly channel: string;
+  channel: string;
   /** 空 / 省略 = 渲染通用占位图标（§2.7.1 行 578，不做本地文件回落）。 */
-  readonly icon?: string;
-  readonly uiGroup?: string;
+  icon?: string;
+  uiGroup?: string;
   /** int64 → 十进制字符串（§1.12）。 */
-  readonly sortOrder?: string;
+  sortOrder?: string;
 }
 
 /** __AUTHLOFT_INIT__.methods 的 methods[] 单个方式条目（§2.1 行 382-400）。 */
 export interface LoginMethodEntry {
-  readonly method: string;
+  method: string;
   /** primary / secondary（§2.1）。 */
-  readonly usage?: string[];
+  usage?: string[];
   /** 步骤序列，kind 取值见 §1.4（§2.1）。 */
-  readonly steps?: string[];
+  steps?: string[];
   /** form 步字段（api.sso.v1.Field 的注入 JSON 形状）。 */
-  readonly fields?: SnapshotField[];
+  fields?: SnapshotField[];
   /** challenge 步字段（§2.1）。 */
-  readonly challengeFields?: SnapshotField[];
+  challengeFields?: SnapshotField[];
   /** 验证码位数；int64 → 十进制字符串（§1.12）。 */
-  readonly codeLength?: string;
+  codeLength?: string;
   /** 同目标重发冷却（秒）；int64 → 十进制字符串（§1.12）。 */
-  readonly resendAfter?: string;
+  resendAfter?: string;
   /** 有效性（秒）；int64 → 十进制字符串（§1.12）。 */
-  readonly expiresIn?: string;
+  expiresIn?: string;
   /** 能力检测表达式（如 window.PublicKeyCredential；§3.2 useCapability 消费）。 */
-  readonly capability?: string;
+  capability?: string;
   /** thirdparty 渠道列表（§2.7.1）。 */
-  readonly providers?: SnapshotProvider[];
+  providers?: SnapshotProvider[];
 }
 
 /** __AUTHLOFT_INIT__.methods 的值（§2.1 行 370-402 注入结构）。 */
 export interface MethodsSnapshot {
   /** 入口可见性，镜像 allow_password_reset / allow_registration（§5.6），按零值兜底。 */
-  readonly flags?: {
-    readonly passwordReset?: boolean;
-    readonly registration?: boolean;
+  flags?: {
+    passwordReset?: boolean;
+    registration?: boolean;
   };
   /** 首屏 captcha 配置（§2.5 唯一定义；仅预判 type、预加载厂商脚本）。 */
-  readonly captcha?: CaptchaConfig;
+  captcha?: CaptchaConfig;
   /** 登录方式列表（空数组 = 按开关隐藏入口，§2.1 行 407 / 412）。 */
-  readonly methods: LoginMethodEntry[];
+  methods: LoginMethodEntry[];
 }
 
 /** OIDC 授权上下文（§4.2 行 1081：七个原样参数；前端首次请求原样回传，不解析）。 */
 export interface OidcContext {
-  readonly client_id: string;
-  readonly redirect_uri: string;
-  readonly scope?: string;
-  readonly state?: string;
-  readonly nonce?: string;
-  readonly code_challenge?: string;
-  readonly code_challenge_method?: string;
+  client_id: string;
+  redirect_uri: string;
+  scope?: string;
+  state?: string;
+  nonce?: string;
+  code_challenge?: string;
+  code_challenge_method?: string;
 }
 
 /**
@@ -97,10 +97,10 @@ export interface OidcContext {
  * 转义、no-store、CSP nonce 由后端保证（前端架构 §1.5 行 104），前端不做二次信任。
  */
 export interface AuthloftInit {
-  readonly al_root: string;
-  readonly static_base: string;
-  readonly methods?: MethodsSnapshot;
-  readonly oidc?: OidcContext;
+  al_root: string;
+  static_base: string;
+  methods?: MethodsSnapshot;
+  oidc?: OidcContext;
 }
 
 declare global {

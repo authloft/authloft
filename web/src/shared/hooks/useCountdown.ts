@@ -13,8 +13,8 @@ import { toCount } from '../utils/int';
 export const COUNTDOWN_TICK_MS = 250;
 
 export interface CountdownState {
-  readonly seconds: number;
-  readonly expired: boolean;
+  seconds: number;
+  expired: boolean;
 }
 
 /**
@@ -44,12 +44,12 @@ export function secondsUntil(deadline: number, now: number): number {
  * @returns seconds 剩余整秒；expired 是否到期（无倒计时恒为 true）。
  * 入参变化（新值）时重启倒计时。
  */
-export function useCountdown(
-  retryAfter: bigint | undefined,
-): CountdownState {
+export function useCountdown(retryAfter: bigint | undefined): CountdownState {
   const total = countdownSeconds(retryAfter);
   const [state, setState] = useState<CountdownState>(() =>
-    total <= 0 ? { seconds: 0, expired: true } : { seconds: total, expired: false },
+    total <= 0
+      ? { seconds: 0, expired: true }
+      : { seconds: total, expired: false },
   );
 
   useEffect(() => {

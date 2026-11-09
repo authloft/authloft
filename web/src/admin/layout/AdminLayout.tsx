@@ -26,7 +26,7 @@
  *
  * 样式（§1.7）：同目录同名 module.less，类名 camelCase，无内联布局样式。
  */
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode } from 'react';
 import {
   Avatar,
   Banner,
@@ -36,20 +36,20 @@ import {
   Nav,
   Spin,
   Typography,
-} from "@douyinfe/semi-ui";
-import { useLocation, useNavigate } from "@modern-js/runtime/router";
-import { useRequest } from "ahooks";
+} from '@douyinfe/semi-ui';
+import { useLocation, useNavigate } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
 import {
   ADMIN_NAV_ROUTES,
   matchActivePath,
   toNavItems,
-} from "../../shared/app-ui/nav-routes";
-import { requestOptions } from "../../shared/hooks/requestOptions";
-import { t } from "../../shared/i18n";
-import { logoutUrl } from "../bootstrap";
-import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from "../api";
-import styles from "./AdminLayout.module.less";
-import { SubNavProps } from "@douyinfe/semi-ui/lib/es/navigation";
+} from '../../shared/app-ui/nav-routes';
+import { requestOptions } from '../../shared/hooks/requestOptions';
+import { t } from '../../shared/i18n';
+import { logoutUrl } from '../bootstrap';
+import { adminDisplayName, adminReturnTo, apiErrorText, getMe } from '../api';
+import styles from './AdminLayout.module.less';
+import { SubNavProps } from '@douyinfe/semi-ui/lib/es/navigation';
 import {
   IconBox,
   IconConnectionPoint1,
@@ -60,28 +60,28 @@ import {
   IconSetting,
   IconUserList,
   IconWrench,
-} from "@douyinfe/semi-icons";
+} from '@douyinfe/semi-icons';
 
 const { Sider, Header, Content } = Layout;
 
 /** 登出链接（§6 行 507 LogoutLink）：跳 `{al_root}/sso/logout`，Go 处理。 */
-function LogoutLink({ alRoot }: { readonly alRoot: string }) {
+function LogoutLink({ alRoot }: { alRoot: string }) {
   return (
     <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      {t("admin.logout")}
+      {t('admin.logout')}
     </a>
   );
 }
 
 const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
-  "/status": <IconHome />,
-  "/providers": <IconGlobe />,
-  "/users": <IconUserList />,
-  "/clients/sso": <IconBox />,
-  "/clients/oidc": <IconConnectionPoint1 />,
-  "/settings": <IconSetting />,
-  "/audit": <IconSafe />,
-  "/decode": <IconWrench />,
+  '/status': <IconHome />,
+  '/providers': <IconGlobe />,
+  '/users': <IconUserList />,
+  '/clients/sso': <IconBox />,
+  '/clients/oidc': <IconConnectionPoint1 />,
+  '/settings': <IconSetting />,
+  '/audit': <IconSafe />,
+  '/decode': <IconWrench />,
 });
 
 /** admin 布局壳（§6 行 507）：Sider(Nav) + Header(管理员信息 + 面包屑 + 登出) + Content。
@@ -89,10 +89,10 @@ const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
  *  点击经 router 导航（HashRouter SPA 内跳，不再整页刷新）。 */
 export function AdminLayout(props: {
   /** 归一后 al_root（登出 / 401 跳登录的前缀，见 ./bootstrap）。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** 顶栏面包屑层级（当前页标题链）。 */
-  readonly breadcrumb: readonly string[];
-  readonly children: ReactNode;
+  breadcrumb: string[];
+  children: ReactNode;
 }) {
   // 窄屏侧栏折叠（评审 P0-4(c)）：用 Semi 自带响应式能力——Sider
   // breakpoint 注册 matchMedia（xs = max-width 575px，Semi 内置断点表），
@@ -134,7 +134,7 @@ export function AdminLayout(props: {
   return (
     <Layout className={styles.shell}>
       <Sider
-        breakpoint={["xs"]}
+        breakpoint={['xs']}
         onBreakpoint={(_screen, matches) => setNavCollapsed(matches)}
       >
         <Nav
@@ -145,12 +145,12 @@ export function AdminLayout(props: {
           // 高亮：当前 hash 内路径命中的导航 path（详情页归列表项）。
           selectedKeys={[matchActivePath(ADMIN_NAV_ROUTES, location.pathname)]}
           onClick={({ itemKey }) => {
-            if (typeof itemKey === "string") {
+            if (typeof itemKey === 'string') {
               // itemKey 即 hash 内路由路径：SPA 内导航（HashRouter）。
               navigate(itemKey);
             }
           }}
-          header={{ text: t("admin.appTitle") }}
+          header={{ text: t('admin.appTitle') }}
         />
       </Sider>
       <Layout className={styles.layout}>
@@ -159,8 +159,8 @@ export function AdminLayout(props: {
           <Dropdown
             menu={[
               {
-                node: "item",
-                name: t("admin.logout"),
+                node: 'item',
+                name: t('admin.logout'),
                 onClick: () => navigate(logoutUrl(props.alRoot)),
               },
             ]}

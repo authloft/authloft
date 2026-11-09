@@ -20,7 +20,7 @@ import styles from './FormStep.module.less';
 
 export interface FormStepProps {
   /** form 步的后端下发字段（§1.3 行 114 fields[]；captcha 字段被 FieldRenderer 跳过，§1.11）。 */
-  fields: readonly Field[];
+  fields: Field[];
   /** 请求在途（提交按钮禁用，§3.2）。 */
   loading: boolean;
   /** 不可重试失败态禁用提交（selectors.selectSubmitDisabled，§1.6「可重试」列）。 */

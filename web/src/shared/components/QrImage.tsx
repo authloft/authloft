@@ -21,8 +21,8 @@ const DEFAULT_SIZE = 180;
 
 /** 码图 SVG 组装结果：modules = 单边模块数，path = 暗模块单路径。 */
 export interface QrSvgBuild {
-  readonly modules: number;
-  readonly path: string;
+  modules: number;
+  path: string;
 }
 
 /**
@@ -66,11 +66,11 @@ export function buildQrSvg(content: string): QrSvgBuild | undefined {
  */
 export function QrImage(props: {
   /** 编码内容（BindTotp challenge 的 qrcodeContent；§9.18 零值兜底由调用方完成）。 */
-  readonly content: string;
+  content: string;
   /** 无障碍名（role="img" 的 aria-label），调用方传 i18n 键值。 */
-  readonly alt: string;
+  alt: string;
   /** 渲染尺寸 px（缺省 180）。 */
-  readonly size?: number;
+  size?: number;
 }): ReactNode {
   const build = buildQrSvg(props.content);
   if (build === undefined || build.path === '') {
@@ -88,7 +88,13 @@ export function QrImage(props: {
       viewBox={`${-QUIET_ZONE} ${-QUIET_ZONE} ${span} ${span}`}
       shapeRendering="crispEdges"
     >
-      <rect x={-QUIET_ZONE} y={-QUIET_ZONE} width={span} height={span} fill="#fff" />
+      <rect
+        x={-QUIET_ZONE}
+        y={-QUIET_ZONE}
+        width={span}
+        height={span}
+        fill="#fff"
+      />
       <path d={build.path} fill="#000" />
     </svg>
   );

@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
@@ -138,7 +147,10 @@ const SSO_AUTHORIZE_URL = `${BASE}/api.sso.v1.SsoService/Authorize`;
 const SSO_CREATE_QRCODE_URL = `${BASE}/api.sso.v1.SsoService/CreateQrcode`;
 
 /** 10 个恢复码样例（§3.5 行 906/907 一次性下发格式 xxxx-xxxx）。 */
-const TEN_RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `a1${i}b-c3d${i}`);
+const TEN_RECOVERY_CODES = Array.from(
+  { length: 10 },
+  (_, i) => `a1${i}b-c3d${i}`,
+);
 
 const server = setupServer();
 
@@ -158,7 +170,9 @@ class FakeXhr {
   ontimeout: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onload: (() => void) | null = null;
-  upload: { onprogress: ((event: unknown) => void) | null } = { onprogress: null };
+  upload: { onprogress: ((event: unknown) => void) | null } = {
+    onprogress: null,
+  };
   withCredentials = false;
   timeout = 0;
   status = 0;
@@ -388,17 +402,32 @@ describe('isUnauthenticatedError（§5 行 480 判定纯函数）', () => {
   test('HTTP 401 或 Connect 标准码 unauthenticated → true', () => {
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 401, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 401, code: 'session_required', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'session_required',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 403, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 403,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
   });
@@ -406,7 +435,12 @@ describe('isUnauthenticatedError（§5 行 480 判定纯函数）', () => {
   test('其他 ApiError / 非错误对象 → false', () => {
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 403, code: 'permission_denied', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 403,
+          code: 'permission_denied',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(false);
     expect(apiMod.isUnauthenticatedError(new Error('x'))).toBe(false);
@@ -447,7 +481,10 @@ describe('api.getConfig（§3.2 行 819）', () => {
 
     expect(config.avatarUpload?.mode).toBe('direct');
     expect(config.avatarUpload?.maxSize).toBe(BigInt(2097152)); // int64 十进制字符串解码（§1.12）
-    expect(config.avatarUpload?.allowedTypes).toEqual(['image/png', 'image/jpeg']);
+    expect(config.avatarUpload?.allowedTypes).toEqual([
+      'image/png',
+      'image/jpeg',
+    ]);
     expect(config.mfaPolicy?.enabled).toBe(true);
     expect(config.mfaPolicy?.required).toBe(false);
     expect(config.mfaPolicy?.trustedDeviceDays).toBe(BigInt(0)); // 预留恒 0（§3.2 行 847）
@@ -464,7 +501,10 @@ describe('api.getConfig（§3.2 行 819）', () => {
   test('零值投影（§3.2 行 826）：protojson 省略零值 → maxSize 0n / allowedTypes [] → 隐藏上传入口', async () => {
     server.use(
       http.post(CONFIG_URL, () =>
-        HttpResponse.json({ avatarUpload: { mode: 'proxy' }, hasPassword: false }),
+        HttpResponse.json({
+          avatarUpload: { mode: 'proxy' },
+          hasPassword: false,
+        }),
       ),
     );
 
@@ -514,7 +554,11 @@ describe('api.changePassword（§3.3 行 855-863）', () => {
       }),
     );
 
-    const built = apiMod.buildChangePasswordRequest(true, 'OldPass12', 'NewPass12');
+    const built = apiMod.buildChangePasswordRequest(
+      true,
+      'OldPass12',
+      'NewPass12',
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -548,7 +592,11 @@ describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
       id: 'cap-1',
       answer: '1234',
     });
-    const built = apiMod.buildBindChallengeRequest('phone', '13800138000', captcha);
+    const built = apiMod.buildBindChallengeRequest(
+      'phone',
+      '13800138000',
+      captcha,
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -574,7 +622,11 @@ describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
       }),
     );
 
-    const built = apiMod.buildBindVerifyRequest('email', 'a@example.com', '123456');
+    const built = apiMod.buildBindVerifyRequest(
+      'email',
+      'a@example.com',
+      '123456',
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -652,10 +704,15 @@ describe('api.presignAvatar / commitAvatar（§3.2 行 822-823）', () => {
 describe('api.uploadAvatarProxy（§3.2 行 821 proxy 直传，REST 豁免）', () => {
   test('postForm multipart → AvatarResponse 解码 + onUploadProgress 透传', async () => {
     rs.stubGlobal('XMLHttpRequest', FakeXhr);
-    FakeXhr.respondWith(200, JSON.stringify({ url: 'https://cdn.test/proxy.png' }));
+    FakeXhr.respondWith(
+      200,
+      JSON.stringify({ url: 'https://cdn.test/proxy.png' }),
+    );
 
     const progress: Array<{ loaded: number; total: number }> = [];
-    const result = await apiMod.uploadAvatarProxy(new FormData(), (p) => progress.push(p));
+    const result = await apiMod.uploadAvatarProxy(new FormData(), (p) =>
+      progress.push(p),
+    );
 
     expect(result.url).toBe('https://cdn.test/proxy.png');
     expect(progress).toEqual([{ loaded: 1, total: 2 }]);
@@ -684,7 +741,11 @@ describe('buildChangePasswordRequest（§3.3，纯函数）', () => {
   });
 
   test('hasPassword=false（首设密码）：currentPassword 置空（wire 省略）', () => {
-    const built = apiMod.buildChangePasswordRequest(false, 'whatever', 'Abcdef12');
+    const built = apiMod.buildChangePasswordRequest(
+      false,
+      'whatever',
+      'Abcdef12',
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -694,7 +755,11 @@ describe('buildChangePasswordRequest（§3.3，纯函数）', () => {
   });
 
   test('hasPassword=true 通过：两字段齐备', () => {
-    const built = apiMod.buildChangePasswordRequest(true, 'OldPass12', 'NewPass12');
+    const built = apiMod.buildChangePasswordRequest(
+      true,
+      'OldPass12',
+      'NewPass12',
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -716,21 +781,29 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
       ok: false,
       error: 'invalid_target',
     });
-    expect(apiMod.buildBindChallengeRequest('email', 'not-an-email', captcha)).toEqual({
+    expect(
+      apiMod.buildBindChallengeRequest('email', 'not-an-email', captcha),
+    ).toEqual({
       ok: false,
       error: 'invalid_target',
     });
   });
 
   test('captcha 未就绪 → captcha_missing（§3.4 行 880 challenge 必过，不发包）', () => {
-    expect(apiMod.buildBindChallengeRequest('phone', '13800138000', undefined)).toEqual({
+    expect(
+      apiMod.buildBindChallengeRequest('phone', '13800138000', undefined),
+    ).toEqual({
       ok: false,
       error: 'captcha_missing',
     });
   });
 
   test('phone challenge 就绪：step / payload 透传（captcha 引用恒等）', () => {
-    const built = apiMod.buildBindChallengeRequest('phone', '13800138000', captcha);
+    const built = apiMod.buildBindChallengeRequest(
+      'phone',
+      '13800138000',
+      captcha,
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -743,25 +816,39 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
   });
 
   test('email challenge 就绪：payload.email', () => {
-    const built = apiMod.buildBindChallengeRequest('email', 'a@example.com', captcha);
+    const built = apiMod.buildBindChallengeRequest(
+      'email',
+      'a@example.com',
+      captcha,
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
     }
     expect(built.request.$typeName).toBe('api.account.v1.BindEmailRequest');
-    expect((built.request as BindEmailRequest).payload?.email).toBe('a@example.com');
+    expect((built.request as BindEmailRequest).payload?.email).toBe(
+      'a@example.com',
+    );
   });
 
   test('verify：非 6 位 / 非数字 → invalid_code；就绪回传相同 target + code（行 881-882）', () => {
-    expect(apiMod.buildBindVerifyRequest('phone', '13800138000', '12345')).toEqual({
+    expect(
+      apiMod.buildBindVerifyRequest('phone', '13800138000', '12345'),
+    ).toEqual({
       ok: false,
       error: 'invalid_code',
     });
-    expect(apiMod.buildBindVerifyRequest('phone', '13800138000', '12345a')).toEqual({
+    expect(
+      apiMod.buildBindVerifyRequest('phone', '13800138000', '12345a'),
+    ).toEqual({
       ok: false,
       error: 'invalid_code',
     });
-    const built = apiMod.buildBindVerifyRequest('phone', '13800138000', '123456');
+    const built = apiMod.buildBindVerifyRequest(
+      'phone',
+      '13800138000',
+      '123456',
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -781,9 +868,11 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
 describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => {
   test('isUploadEntryHidden：未加载 / 零值投影 → true；正常配置 → false（行 842）', () => {
     expect(uploadMod.isUploadEntryHidden(undefined)).toBe(true);
-    expect(uploadMod.isUploadEntryHidden(create(AvatarUploadConfigSchema, { mode: 'proxy' }))).toBe(
-      true,
-    );
+    expect(
+      uploadMod.isUploadEntryHidden(
+        create(AvatarUploadConfigSchema, { mode: 'proxy' }),
+      ),
+    ).toBe(true);
     expect(
       uploadMod.isUploadEntryHidden(
         create(AvatarUploadConfigSchema, {
@@ -801,13 +890,15 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
       maxSize: BigInt(100),
       allowedTypes: ['image/png'],
     });
-    expect(uploadMod.validateAvatarFile(config, { size: 101, type: 'image/png' })).toBe(
-      'file_too_large',
-    );
-    expect(uploadMod.validateAvatarFile(config, { size: 50, type: 'image/gif' })).toBe(
-      'file_type_not_allowed',
-    );
-    expect(uploadMod.validateAvatarFile(config, { size: 50, type: 'image/png' })).toBe(undefined);
+    expect(
+      uploadMod.validateAvatarFile(config, { size: 101, type: 'image/png' }),
+    ).toBe('file_too_large');
+    expect(
+      uploadMod.validateAvatarFile(config, { size: 50, type: 'image/gif' }),
+    ).toBe('file_type_not_allowed');
+    expect(
+      uploadMod.validateAvatarFile(config, { size: 50, type: 'image/png' }),
+    ).toBe(undefined);
   });
 
   test('uploadAvatarFile 预校验失败：抛 code 与后端一致的 ApiError，文案同源 i18n 字典', async () => {
@@ -817,14 +908,18 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
       allowedTypes: ['image/png'],
     });
 
-    const oversize = new File([new Uint8Array(101)], 'a.png', { type: 'image/png' });
+    const oversize = new File([new Uint8Array(101)], 'a.png', {
+      type: 'image/png',
+    });
     const tooLargeError = (await captureRejection(
       uploadMod.uploadAvatarFile(config, oversize),
     )) as ApiError;
     expect(tooLargeError).toBeInstanceOf(ApiError);
     expect(tooLargeError.code).toBe('file_too_large');
 
-    const wrongType = new File([new Uint8Array(10)], 'a.gif', { type: 'image/gif' });
+    const wrongType = new File([new Uint8Array(10)], 'a.gif', {
+      type: 'image/gif',
+    });
     const typeError = (await captureRejection(
       uploadMod.uploadAvatarFile(config, wrongType),
     )) as ApiError;
@@ -869,7 +964,9 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
       maxSize: BigInt(2097152),
       allowedTypes: ['image/png'],
     });
-    const file = new File([new Uint8Array(2048)], 'a.png', { type: 'image/png' });
+    const file = new File([new Uint8Array(2048)], 'a.png', {
+      type: 'image/png',
+    });
 
     const url = await uploadMod.uploadAvatarFile(config, file);
 
@@ -888,12 +985,19 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
     server.use(
       http.post(CONFIG_URL, () =>
         HttpResponse.json({
-          avatarUpload: { mode: 'proxy', maxSize: '2097152', allowedTypes: ['image/png'] },
+          avatarUpload: {
+            mode: 'proxy',
+            maxSize: '2097152',
+            allowedTypes: ['image/png'],
+          },
         }),
       ),
     );
     rs.stubGlobal('XMLHttpRequest', FakeXhr);
-    FakeXhr.respondWith(200, JSON.stringify({ url: 'https://cdn.test/proxy.png' }));
+    FakeXhr.respondWith(
+      200,
+      JSON.stringify({ url: 'https://cdn.test/proxy.png' }),
+    );
 
     const config = await apiMod.getConfig();
     const avatarUpload = config.avatarUpload;
@@ -923,12 +1027,22 @@ describe('apiErrorText（§1.5 行 202 i18n 优先 + 语境覆盖）', () => {
   test('ApiError → errors.code.<code> 字典文案', () => {
     expect(
       apiMod.apiErrorText(
-        new ApiError({ httpStatus: 400, code: 'password_weak', message: 'x', requestId: '' }),
+        new ApiError({
+          httpStatus: 400,
+          code: 'password_weak',
+          message: 'x',
+          requestId: '',
+        }),
       ),
     ).toBe('密码强度不足，请调整后重试');
     expect(
       apiMod.apiErrorText(
-        new ApiError({ httpStatus: 409, code: 'target_taken', message: 'x', requestId: '' }),
+        new ApiError({
+          httpStatus: 409,
+          code: 'target_taken',
+          message: 'x',
+          requestId: '',
+        }),
       ),
     ).toBe('该手机号/邮箱已被占用');
   });
@@ -950,7 +1064,12 @@ describe('apiErrorText（§1.5 行 202 i18n 优先 + 语境覆盖）', () => {
   test('未知 code / 非 ApiError → 兜底不透出细节（既定口径）', () => {
     expect(
       apiMod.apiErrorText(
-        new ApiError({ httpStatus: 400, code: 'weird_code', message: '内部细节', requestId: '' }),
+        new ApiError({
+          httpStatus: 400,
+          code: 'weird_code',
+          message: '内部细节',
+          requestId: '',
+        }),
       ),
     ).toBe('操作失败，请稍后重试');
     expect(apiMod.apiErrorText(new Error('x'))).toBe('操作失败，请稍后重试');
@@ -968,10 +1087,25 @@ describe('api.getMfa（§3.5 行 890-898）', () => {
       http.post(GET_MFA_URL, () =>
         HttpResponse.json({
           factors: [
-            { factor: 'totp', bound: true, boundAt: '1761800000', lastUsedAt: '1761800500' },
-            { factor: 'otp_sms', bound: true, target: '138****8000', lastUsedAt: '1761800500' },
+            {
+              factor: 'totp',
+              bound: true,
+              boundAt: '1761800000',
+              lastUsedAt: '1761800500',
+            },
+            {
+              factor: 'otp_sms',
+              bound: true,
+              target: '138****8000',
+              lastUsedAt: '1761800500',
+            },
             { factor: 'otp_email', bound: false },
-            { factor: 'webauthn', bound: true, credentials: '2', lastUsedAt: '1761800500' },
+            {
+              factor: 'webauthn',
+              bound: true,
+              credentials: '2',
+              lastUsedAt: '1761800500',
+            },
             { factor: 'recovery_code', bound: true, remaining: '8' },
           ],
           recoveryIssuedAt: '1761700000',
@@ -1006,9 +1140,21 @@ describe('api.getMfa（§3.5 行 890-898）', () => {
 describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
   /** 摘要样例：totp 启用已绑、otp_sms 未启用已绑、otp_email 均否。 */
   const methods = [
-    create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
-    create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: true }),
-    create(MfaPolicyMethodSchema, { factor: 'otp_email', enabled: false, bound: false }),
+    create(MfaPolicyMethodSchema, {
+      factor: 'totp',
+      enabled: true,
+      bound: true,
+    }),
+    create(MfaPolicyMethodSchema, {
+      factor: 'otp_sms',
+      enabled: false,
+      bound: true,
+    }),
+    create(MfaPolicyMethodSchema, {
+      factor: 'otp_email',
+      enabled: false,
+      bound: false,
+    }),
   ];
 
   test('勾选启用 → 追加到启用集尾（保持其余因子既有顺序，行 904 勾选启用一项或多项）', async () => {
@@ -1041,7 +1187,11 @@ describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
     );
 
     const single = [
-      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'totp',
+        enabled: true,
+        bound: true,
+      }),
     ];
     const built = apiMod.buildSetMfaRequest(single, 'totp', false, false);
     expect(built.ok).toBe(true);
@@ -1058,7 +1208,11 @@ describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
 
   test('required=true：结果为空 → 本地拒绝不发包（§3.2 行 833 不可关闭）；结果非空 → 放行', () => {
     const single = [
-      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'totp',
+        enabled: true,
+        bound: true,
+      }),
     ];
     expect(apiMod.buildSetMfaRequest(single, 'totp', false, true)).toEqual({
       ok: false,
@@ -1066,8 +1220,16 @@ describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
     });
     // required 下换因子（先启用 otp_sms 再关 totp 的第一步）：结果非空 → 放行
     const two = [
-      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
-      create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: true }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'totp',
+        enabled: true,
+        bound: true,
+      }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'otp_sms',
+        enabled: false,
+        bound: true,
+      }),
     ];
     const swap = apiMod.buildSetMfaRequest(two, 'otp_sms', true, true);
     expect(swap.ok).toBe(true);
@@ -1099,8 +1261,10 @@ describe('api.bindTotp（§3.5 行 905-906）', () => {
         captured = request;
         return HttpResponse.json({
           secret: 'JBSWY3DPEHPK3PXP',
-          otpauthUrl: 'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
-          qrcodeContent: 'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
+          otpauthUrl:
+            'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
+          qrcodeContent:
+            'otpauth://totp/Authloft:zhang_san?secret=JBSWY3DPEHPK3PXP&issuer=Authloft',
         });
       }),
     );
@@ -1140,7 +1304,11 @@ describe('api.bindTotp（§3.5 行 905-906）', () => {
 
     const res = await apiMod.bindTotp(built.request);
 
-    expect(await captured.json()).toEqual({ step: 'verify', secret: 'sec', code: '123456' });
+    expect(await captured.json()).toEqual({
+      step: 'verify',
+      secret: 'sec',
+      code: '123456',
+    });
     expect(res.recoveryCodes).toHaveLength(10); // 一次性下发 10 个恢复码
     expect(res.recoveryCodes[0]).toBe('a10b-c3d0');
   });
@@ -1155,7 +1323,10 @@ describe('api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）'
     let captured!: Request;
     server.use(
       http.post(GET_RECOVERY_CODES_URL, () =>
-        HttpResponse.json({ codes: TEN_RECOVERY_CODES, createdAt: '1761700000' }),
+        HttpResponse.json({
+          codes: TEN_RECOVERY_CODES,
+          createdAt: '1761700000',
+        }),
       ),
       http.post(REGEN_RECOVERY_CODES_URL, ({ request }) => {
         captured = request;
@@ -1227,8 +1398,12 @@ describe('api.getWebauthnCredentials / rename / delete（§3.6 行 914-918）', 
       }),
     );
 
-    await apiMod.renameWebauthnCredential(apiMod.buildRenameWebauthnRequest(BigInt(101), '新名字'));
-    await apiMod.deleteWebauthnCredential(apiMod.buildDeleteWebauthnRequest(BigInt(101)));
+    await apiMod.renameWebauthnCredential(
+      apiMod.buildRenameWebauthnRequest(BigInt(101), '新名字'),
+    );
+    await apiMod.deleteWebauthnCredential(
+      apiMod.buildDeleteWebauthnRequest(BigInt(101)),
+    );
 
     expect(renameBody).toEqual({ id: '101', label: '新名字' }); // 行 917 {id, label}
     expect(deleteBody).toEqual({ id: '101' }); // 行 918 {id}
@@ -1337,7 +1512,9 @@ describe('registerWebauthnCredential（§3.6 行 915-916 / §12.9 方案 A）', 
 describe('formatUnixTime / mfaFactorDetail（§3.1 零值兜底）', () => {
   test('formatUnixTime：零值 → 占位符；正值 → YYYY-MM-DD HH:mm', () => {
     expect(apiMod.formatUnixTime(BigInt(0))).toBe('—'); // 未使用 / 未签发（§3.5 行 898）
-    expect(apiMod.formatUnixTime(BigInt(1761800000))).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(apiMod.formatUnixTime(BigInt(1761800000))).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/,
+    );
   });
 
   test('mfaFactorDetail：各因子只填相关字段（行 890-895），formatTime 可注入', () => {
@@ -1366,18 +1543,29 @@ describe('formatUnixTime / mfaFactorDetail（§3.1 零值兜底）', () => {
     ).toBe('目标 138****8000 · 最近使用 T9');
     expect(
       apiMod.mfaFactorDetail(
-        create(MfaFactorSchema, { factor: 'webauthn', bound: true, credentials: BigInt(2) }),
+        create(MfaFactorSchema, {
+          factor: 'webauthn',
+          bound: true,
+          credentials: BigInt(2),
+        }),
         fmt,
       ),
     ).toBe('已绑定 2 个凭据'); // lastUsedAt 零值省略
     expect(
       apiMod.mfaFactorDetail(
-        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(8) }),
+        create(MfaFactorSchema, {
+          factor: 'recovery_code',
+          bound: true,
+          remaining: BigInt(8),
+        }),
         fmt,
       ),
     ).toBe('剩余 8 个可用');
     expect(
-      apiMod.mfaFactorDetail(create(MfaFactorSchema, { factor: 'otp_email', bound: false }), fmt),
+      apiMod.mfaFactorDetail(
+        create(MfaFactorSchema, { factor: 'otp_email', bound: false }),
+        fmt,
+      ),
     ).toBe('尚未绑定'); // 未绑定 → 其余字段不适用
   });
 });
@@ -1404,11 +1592,33 @@ describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（�
       http.post(GET_THIRDPARTY_BINDINGS_URL, () =>
         HttpResponse.json({
           items: [
-            { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect', icon: '', createdAt: '1761800000' },
-            { providerKey: 'wechat_union', displayName: '微信联合身份', type: 'union', channel: 'redirect', icon: '', createdAt: '1761800001' },
+            {
+              providerKey: 'qq',
+              displayName: 'QQ',
+              type: 'qq',
+              channel: 'redirect',
+              icon: '',
+              createdAt: '1761800000',
+            },
+            {
+              providerKey: 'wechat_union',
+              displayName: '微信联合身份',
+              type: 'union',
+              channel: 'redirect',
+              icon: '',
+              createdAt: '1761800001',
+            },
           ],
           available: [
-            { providerKey: 'wechat_mp_scan', displayName: '微信扫码', type: 'wechat_mp_scan', channel: 'qrcode', icon: '', uiGroup: 'social', sortOrder: '20' },
+            {
+              providerKey: 'wechat_mp_scan',
+              displayName: '微信扫码',
+              type: 'wechat_mp_scan',
+              channel: 'qrcode',
+              icon: '',
+              uiGroup: 'social',
+              sortOrder: '20',
+            },
           ],
         }),
       ),
@@ -1432,7 +1642,9 @@ describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（�
       }),
     );
 
-    const res = await apiMod.unbindThirdparty(apiMod.buildUnbindThirdpartyRequest('qq'));
+    const res = await apiMod.unbindThirdparty(
+      apiMod.buildUnbindThirdpartyRequest('qq'),
+    );
 
     expect(await captured.json()).toEqual({ providerKey: 'qq' });
     expect(res.$typeName).toBe('api.account.v1.OkResponse');
@@ -1472,7 +1684,9 @@ describe('shared/api/sso.authorize / createQrcode（§2.7.2 行 580 / §2.8 行 
     server.use(
       http.post(SSO_AUTHORIZE_URL, ({ request }) => {
         captured = request;
-        return HttpResponse.json({ authorizeUrl: 'https://qq.example/auth?state=b-x1' });
+        return HttpResponse.json({
+          authorizeUrl: 'https://qq.example/auth?state=b-x1',
+        });
       }),
     );
 
@@ -1533,7 +1747,10 @@ describe('isUnionThirdpartyRow / canUnbindThirdpartyRow（§3.7 行 938/945/947�
   });
 
   test('hasPassword=false 但仍绑定另一非 Union 项 → 可解绑（排除自身行后计数 ≥1）', () => {
-    const items = [bindingRow({ providerKey: 'qq' }), bindingRow({ providerKey: 'feishu' })];
+    const items = [
+      bindingRow({ providerKey: 'qq' }),
+      bindingRow({ providerKey: 'feishu' }),
+    ];
     expect(apiMod.canUnbindThirdpartyRow(false, items, items[0])).toBe(true);
   });
 
@@ -1565,9 +1782,33 @@ describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯�
 
   test('available 按 sortOrder 升序兜底（bigint 比较；同值保持稳定）', () => {
     const options = [
-      create(ThirdpartyOptionSchema, { providerKey: 'b', displayName: 'B', type: 'b', channel: 'qrcode', icon: '', uiGroup: 'social', sortOrder: BigInt(20) }),
-      create(ThirdpartyOptionSchema, { providerKey: 'a', displayName: 'A', type: 'a', channel: 'redirect', icon: '', uiGroup: 'social', sortOrder: BigInt(10) }),
-      create(ThirdpartyOptionSchema, { providerKey: 'c', displayName: 'C', type: 'c', channel: 'redirect', icon: '', uiGroup: 'social', sortOrder: BigInt(20) }),
+      create(ThirdpartyOptionSchema, {
+        providerKey: 'b',
+        displayName: 'B',
+        type: 'b',
+        channel: 'qrcode',
+        icon: '',
+        uiGroup: 'social',
+        sortOrder: BigInt(20),
+      }),
+      create(ThirdpartyOptionSchema, {
+        providerKey: 'a',
+        displayName: 'A',
+        type: 'a',
+        channel: 'redirect',
+        icon: '',
+        uiGroup: 'social',
+        sortOrder: BigInt(10),
+      }),
+      create(ThirdpartyOptionSchema, {
+        providerKey: 'c',
+        displayName: 'C',
+        type: 'c',
+        channel: 'redirect',
+        icon: '',
+        uiGroup: 'social',
+        sortOrder: BigInt(20),
+      }),
     ];
     const sorted = apiMod.sortThirdpartyOptions(options);
     expect(sorted.map((o) => o.providerKey)).toEqual(['a', 'b', 'c']); // b/c 同值 → 数组序稳定
@@ -1580,7 +1821,10 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
       providerKey: 'cf_turnstile',
       token: '0.xxx',
     });
-    const request = apiMod.buildCreateQrcodeBindRequest('wechat_mp_scan', captcha);
+    const request = apiMod.buildCreateQrcodeBindRequest(
+      'wechat_mp_scan',
+      captcha,
+    );
     expect(toJson(CreateQrcodeRequestSchema, request)).toEqual({
       providerKey: 'wechat_mp_scan',
       scene: 'bind',
@@ -1590,7 +1834,10 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
 
   test('GetThirdpartyTicket 请求：poll 固定 15（§2.8 行 714 上限，与面板 pollSeconds 同值）', () => {
     expect(
-      toJson(GetThirdpartyTicketRequestSchema, apiMod.buildGetThirdpartyTicketRequest('tk-3')),
+      toJson(
+        GetThirdpartyTicketRequestSchema,
+        apiMod.buildGetThirdpartyTicketRequest('tk-3'),
+      ),
     ).toEqual({
       ticket: 'tk-3',
       poll: '15',
@@ -1599,7 +1846,10 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
 
   test('UnbindThirdparty 请求：{providerKey}（行 937）', () => {
     expect(
-      toJson(UnbindThirdpartyRequestSchema, apiMod.buildUnbindThirdpartyRequest('qq')),
+      toJson(
+        UnbindThirdpartyRequestSchema,
+        apiMod.buildUnbindThirdpartyRequest('qq'),
+      ),
     ).toEqual({
       providerKey: 'qq',
     });
@@ -1618,7 +1868,12 @@ describe('startBindRedirect（§3.7.1 A 行 956-960，依赖注入）', () => {
     expect(
       await apiMod.startBindRedirect('qq', {
         request: async () => {
-          throw new ApiError({ httpStatus: 500, code: 'internal', message: '', requestId: '' });
+          throw new ApiError({
+            httpStatus: 500,
+            code: 'internal',
+            message: '',
+            requestId: '',
+          });
         },
       }),
     ).toBe(undefined);
@@ -1630,7 +1885,9 @@ describe('startBindRedirect（§3.7.1 A 行 956-960，依赖注入）', () => {
   test('缺省依赖走 shared/api/sso 的 Authorize{provider, scene:"bind"}（§5 行 479 落位）', async () => {
     server.use(
       http.post(SSO_AUTHORIZE_URL, () =>
-        HttpResponse.json({ authorizeUrl: 'https://qq.example/auth?state=b-default' }),
+        HttpResponse.json({
+          authorizeUrl: 'https://qq.example/auth?state=b-default',
+        }),
       ),
     );
 
@@ -1654,19 +1911,30 @@ describe('readBindParam / bindParamMessage（§3.7.1 A 行 969-971，纯函数�
   });
 
   test('bindParamMessage：target_taken → 绑定语境文案（行 971）', () => {
-    expect(apiMod.bindParamMessage('target_taken')).toBe('该账号已被其他账号绑定');
-    expect(apiMod.bindParamMessage('target_taken')).not.toBe(t('errors.code.target_taken')); // 非联系方式通用文案
+    expect(apiMod.bindParamMessage('target_taken')).toBe(
+      '该账号已被其他账号绑定',
+    );
+    expect(apiMod.bindParamMessage('target_taken')).not.toBe(
+      t('errors.code.target_taken'),
+    ); // 非联系方式通用文案
   });
 
   test('bindParamMessage：其余按 §1.6 位置二出文案；未知码 unknown 兜底（行 272）', () => {
-    expect(apiMod.bindParamMessage('state_mismatch')).toBe(t('errors.code.state_mismatch'));
-    expect(apiMod.bindParamMessage('weird_code')).toBe(t('errors.code.unknown'));
+    expect(apiMod.bindParamMessage('state_mismatch')).toBe(
+      t('errors.code.state_mismatch'),
+    );
+    expect(apiMod.bindParamMessage('weird_code')).toBe(
+      t('errors.code.unknown'),
+    );
   });
 });
 
 describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
   test('failed + 最近轮询 status=target_taken → 语境文案替换通用文案', () => {
-    const phase: QRPanelPhase = { kind: 'failed', message: t('errors.status.target_taken') };
+    const phase: QRPanelPhase = {
+      kind: 'failed',
+      message: t('errors.status.target_taken'),
+    };
     expect(apiMod.bindPollPhase(phase, 'target_taken')).toEqual({
       kind: 'failed',
       message: '该账号已被其他账号绑定',
@@ -1674,14 +1942,21 @@ describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
   });
 
   test('failed + 其他 status → 原样透传（qrFailureText 通用文案，§1.6 出文案口径）', () => {
-    const phase: QRPanelPhase = { kind: 'failed', message: t('errors.status.provider_disabled') };
+    const phase: QRPanelPhase = {
+      kind: 'failed',
+      message: t('errors.status.provider_disabled'),
+    };
     expect(apiMod.bindPollPhase(phase, 'provider_disabled')).toBe(phase);
   });
 
   test('非 failed 帧原样引用返回——pending / scanned / expired / success 流转不受影响（面板四态流转约束）', () => {
     const phases: QRPanelPhase[] = [
       { kind: 'fetching' },
-      { kind: 'active', qrcodeUrl: 'https://cdn.test/qr.jpg', ticketStatus: 'scanned' },
+      {
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.test/qr.jpg',
+        ticketStatus: 'scanned',
+      },
       { kind: 'success' },
       { kind: 'expired' },
     ];
@@ -1728,7 +2003,9 @@ describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', (
       }),
     );
 
-    const response = await apiMod.getEvents(apiMod.buildGetEventsRequest(LOG_QUERY));
+    const response = await apiMod.getEvents(
+      apiMod.buildGetEventsRequest(LOG_QUERY),
+    );
 
     expect(requestBody).toEqual({
       page: '1',
@@ -1749,7 +2026,9 @@ describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', (
       ),
     );
 
-    const response = await apiMod.getEvents(apiMod.buildGetEventsRequest(LOG_QUERY));
+    const response = await apiMod.getEvents(
+      apiMod.buildGetEventsRequest(LOG_QUERY),
+    );
 
     expect(response.items).toEqual([]);
     expect(response.total).toBe(BigInt(0));
@@ -1759,27 +2038,34 @@ describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', (
 describe('buildGetEventsRequest（§3.7 行 1041 入参 + §1.7 行 275-278，纯函数）', () => {
   test('分页 / 排序 → wire int64 十进制字符串（§1.12）+ sort/order 全量下发', () => {
     expect(
-      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest({
-        page: 3,
-        pageSize: 50,
-        sort: 'created_at',
-        order: 'asc',
-        filters: {},
-      })),
+      toJson(
+        GetEventsRequestSchema,
+        apiMod.buildGetEventsRequest({
+          page: 3,
+          pageSize: 50,
+          sort: 'created_at',
+          order: 'asc',
+          filters: {},
+        }),
+      ),
     ).toEqual({ page: '3', pageSize: '50', sort: 'created_at', order: 'asc' });
   });
 
   test('无排序（order 为空）→ sort/order 零值省略（§1.0 零值缺省）', () => {
     expect(
-      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest(
-        initialTableQuery(),
-      )),
+      toJson(
+        GetEventsRequestSchema,
+        apiMod.buildGetEventsRequest(initialTableQuery()),
+      ),
     ).toEqual({ page: '1', pageSize: '20' });
   });
 
   test('event 类型过滤透传（行 1041 入参）；缺省省略不发', () => {
     expect(
-      toJson(GetEventsRequestSchema, apiMod.buildGetEventsRequest(initialTableQuery(), 'login')),
+      toJson(
+        GetEventsRequestSchema,
+        apiMod.buildGetEventsRequest(initialTableQuery(), 'login'),
+      ),
     ).toEqual({ page: '1', pageSize: '20', event: 'login' });
   });
 });
@@ -1814,7 +2100,10 @@ describe('dataTableLogic.resolveTableQuery（§8 行 621：分页 / 排序 / 筛
     ).toEqual({ page: 2, pageSize: 50, sort: '', order: '', filters: {} });
     // 越界夹取（行 277：page 从 1 开始、pageSize 上限 100）
     expect(
-      resolveTableQuery({ pagination: { currentPage: 0, pageSize: 500 } }, prev),
+      resolveTableQuery(
+        { pagination: { currentPage: 0, pageSize: 500 } },
+        prev,
+      ),
     ).toEqual({ page: 1, pageSize: 100, sort: '', order: '', filters: {} });
   });
 
@@ -1829,14 +2118,41 @@ describe('dataTableLogic.resolveTableQuery（§8 行 621：分页 / 排序 / 筛
 
   test('排序回调：ascend / descend → asc / desc；清除排序（false）→ order 置空', () => {
     expect(
-      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: 'descend' } }, prev),
-    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: 'desc', filters: {} });
+      resolveTableQuery(
+        { sorter: { dataIndex: 'created_at', sortOrder: 'descend' } },
+        prev,
+      ),
+    ).toEqual({
+      page: 1,
+      pageSize: 20,
+      sort: 'created_at',
+      order: 'desc',
+      filters: {},
+    });
     expect(
-      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: 'ascend' } }, prev),
-    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: 'asc', filters: {} });
+      resolveTableQuery(
+        { sorter: { dataIndex: 'created_at', sortOrder: 'ascend' } },
+        prev,
+      ),
+    ).toEqual({
+      page: 1,
+      pageSize: 20,
+      sort: 'created_at',
+      order: 'asc',
+      filters: {},
+    });
     expect(
-      resolveTableQuery({ sorter: { dataIndex: 'created_at', sortOrder: false } }, prev),
-    ).toEqual({ page: 1, pageSize: 20, sort: 'created_at', order: '', filters: {} });
+      resolveTableQuery(
+        { sorter: { dataIndex: 'created_at', sortOrder: false } },
+        prev,
+      ),
+    ).toEqual({
+      page: 1,
+      pageSize: 20,
+      sort: 'created_at',
+      order: '',
+      filters: {},
+    });
   });
 
   test('筛选回调：filters 数组 → dataIndex → 选中值映射；未带 filteredValue → 空数组', () => {
@@ -1855,11 +2171,11 @@ describe('dataTableLogic.resolveTableQuery（§8 行 621：分页 / 排序 / 筛
 
 describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）', () => {
   interface FakeRow {
-    readonly key: string;
-    readonly enabled: boolean;
+    key: string;
+    enabled: boolean;
   }
 
-  const rows: readonly FakeRow[] = [
+  const rows: FakeRow[] = [
     { key: 'a', enabled: false },
     { key: 'b', enabled: true },
   ];
@@ -1867,28 +2183,45 @@ describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）',
   const toggle = (row: FakeRow): FakeRow => ({ ...row, enabled: !row.enabled });
 
   test('patchRowByKey：命中行不可变更新（原数组 / 原行对象不动）；未命中 → 原引用', () => {
-    const next = patchRowByKey(rows, keyOf, 'a', (row) => ({ ...row, enabled: true }));
+    const next = patchRowByKey(rows, keyOf, 'a', (row) => ({
+      ...row,
+      enabled: true,
+    }));
     expect(next).not.toBe(rows);
     expect(rows[0]).toEqual({ key: 'a', enabled: false }); // 原行未动 = 回滚依据
     expect(next[0]).toEqual({ key: 'a', enabled: true });
     expect(next[1]).toBe(rows[1]); // 未命中行原对象复用
-    expect(patchRowByKey(rows, keyOf, 'zz', (row) => ({ ...row, enabled: true }))).toBe(rows);
+    expect(
+      patchRowByKey(rows, keyOf, 'zz', (row) => ({ ...row, enabled: true })),
+    ).toBe(rows);
   });
 
   test('runInlineToggle：persist 成功 → 保留乐观行集（ok: true），persist 收到打补丁行', async () => {
     const persisted: unknown[] = [];
-    const outcome = await runInlineToggle(rows, keyOf, 'a', toggle, async (patched) => {
-      persisted.push(patched);
-    });
+    const outcome = await runInlineToggle(
+      rows,
+      keyOf,
+      'a',
+      toggle,
+      async (patched) => {
+        persisted.push(patched);
+      },
+    );
     expect(outcome.ok).toBe(true);
     expect(outcome.rows[0]).toEqual({ key: 'a', enabled: true });
     expect(persisted).toEqual([{ key: 'a', enabled: true }]);
   });
 
   test('runInlineToggle：persist 失败 → 回滚原 rows 引用（ok: false）且原数组完好', async () => {
-    const outcome = await runInlineToggle(rows, keyOf, 'a', toggle, async () => {
-      throw new Error('boom');
-    });
+    const outcome = await runInlineToggle(
+      rows,
+      keyOf,
+      'a',
+      toggle,
+      async () => {
+        throw new Error('boom');
+      },
+    );
     expect(outcome.ok).toBe(false);
     expect(outcome.rows).toBe(rows); // 回滚 = 恢复原引用
     expect(rows[0]).toEqual({ key: 'a', enabled: false });
@@ -1896,9 +2229,15 @@ describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）',
 
   test('runInlineToggle：key 未命中 → 不调 persist、原样返回（无可变更项）', async () => {
     let persistCalled = false;
-    const outcome = await runInlineToggle(rows, keyOf, 'zz', toggle, async () => {
-      persistCalled = true;
-    });
+    const outcome = await runInlineToggle(
+      rows,
+      keyOf,
+      'zz',
+      toggle,
+      async () => {
+        persistCalled = true;
+      },
+    );
     expect(outcome.ok).toBe(true);
     expect(outcome.rows).toBe(rows);
     expect(persistCalled).toBe(false);
@@ -1958,14 +2297,17 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
       }),
     );
 
-    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({
-      nickname: '张三丰',
-      gender: 2,
-      birthday: '1991-02-03',
-      locale: 'en-US',
-      timezone: 'UTC',
-      extraText: '{"company": "acme", "level": 3}',
-    }));
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({
+        nickname: '张三丰',
+        gender: 2,
+        birthday: '1991-02-03',
+        locale: 'en-US',
+        timezone: 'UTC',
+        extraText: '{"company": "acme", "level": 3}',
+      }),
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -1994,9 +2336,13 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
       }),
     );
 
-    await apiMod.updateProfile(apiMod.buildAvatarPersistRequest('https://cdn.test/b.jpg'));
+    await apiMod.updateProfile(
+      apiMod.buildAvatarPersistRequest('https://cdn.test/b.jpg'),
+    );
 
-    expect(await captured.json()).toEqual({ avatarUrl: 'https://cdn.test/b.jpg' });
+    expect(await captured.json()).toEqual({
+      avatarUrl: 'https://cdn.test/b.jpg',
+    });
   });
 
   test('校验失败：HTTP 400 Connect 错误体 → 归一 ApiError（既定口径：mock 须带错误 JSON 体）', async () => {
@@ -2021,7 +2367,10 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
 
 describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保留，纯函数）', () => {
   test('草稿与基线全同（extra 未编辑）→ 零值 request：wire {}（服务端空操作幂等）', () => {
-    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({}));
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({}),
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -2038,11 +2387,16 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     if (!built.ok) {
       throw new Error('unreachable');
     }
-    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ nickname: '李四' });
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      nickname: '李四',
+    });
   });
 
   test('gender 编辑 0→2：number → bigint，wire 十进制字符串（§1.12）；nickname 未编辑不带', () => {
-    const built = apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ gender: 2 }));
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ gender: 2 }),
+    );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
@@ -2055,7 +2409,11 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
   test('多字段编辑：profile 只带变化字段，未编辑字段零值省略（§1.0）', () => {
     const built = apiMod.buildUpdateProfileRequest(
       PROFILE_BASE,
-      profileDraft({ birthday: '1991-02-03', locale: 'en-US', timezone: 'UTC' }),
+      profileDraft({
+        birthday: '1991-02-03',
+        locale: 'en-US',
+        timezone: 'UTC',
+      }),
     );
     expect(built.ok).toBe(true);
     if (!built.ok) {
@@ -2075,7 +2433,9 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     if (!built.ok) {
       throw new Error('unreachable');
     }
-    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ nickname: '' });
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      nickname: '',
+    });
   });
 
   test('extra 未编辑（undefined）→ 不带 extra；编辑为合法 JSON 对象 → 全量透传（§3.1 行 813）', () => {
@@ -2095,15 +2455,27 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
   test('extra 编辑为非法 JSON / 数组 / 原始值 / null → invalid_extra_json 不发包（JSON 对象语义）', () => {
     for (const extraText of ['{oops', '[1, 2]', '"text"', '123', 'null', '']) {
       expect(
-        apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ extraText })),
+        apiMod.buildUpdateProfileRequest(
+          PROFILE_BASE,
+          profileDraft({ extraText }),
+        ),
       ).toEqual({ ok: false, error: 'invalid_extra_json' });
     }
   });
 
   test('birthday 编辑为非法格式 / 非法日历 → invalid_birthday 不发包（YYYY-MM-DD §3.1 行 811）', () => {
-    for (const birthday of ['1990/01/01', '1990-1-1', '19901301', '1990-13-01', '1990-02-40']) {
+    for (const birthday of [
+      '1990/01/01',
+      '1990-1-1',
+      '19901301',
+      '1990-13-01',
+      '1990-02-40',
+    ]) {
       expect(
-        apiMod.buildUpdateProfileRequest(PROFILE_BASE, profileDraft({ birthday })),
+        apiMod.buildUpdateProfileRequest(
+          PROFILE_BASE,
+          profileDraft({ birthday }),
+        ),
       ).toEqual({ ok: false, error: 'invalid_birthday' });
     }
   });
@@ -2119,7 +2491,9 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     }
     // 编辑过 → 进 create 入参（has 位建立）；optional string 空串 wire 显式
     // 出现 → 服务端按「显式设值 = 覆盖」清空 birthday（§3.2 行 843）。
-    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({ profile: { birthday: '' } });
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      profile: { birthday: '' },
+    });
   });
 
   test('基线无 profile 字段（protojson 省略 → 解码 undefined）→ 按零值基线 diff，编辑即变化', () => {
@@ -2221,17 +2595,29 @@ describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
   test('recovery_code 已绑定且剩余 ≤ 2 → true；> 2 → false', () => {
     expect(
       apiMod.isRecoveryLow(
-        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(2) }),
+        create(MfaFactorSchema, {
+          factor: 'recovery_code',
+          bound: true,
+          remaining: BigInt(2),
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isRecoveryLow(
-        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(0) }),
+        create(MfaFactorSchema, {
+          factor: 'recovery_code',
+          bound: true,
+          remaining: BigInt(0),
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isRecoveryLow(
-        create(MfaFactorSchema, { factor: 'recovery_code', bound: true, remaining: BigInt(3) }),
+        create(MfaFactorSchema, {
+          factor: 'recovery_code',
+          bound: true,
+          remaining: BigInt(3),
+        }),
       ),
     ).toBe(false);
     expect(apiMod.RECOVERY_LOW_THRESHOLD).toBe(2);
@@ -2240,12 +2626,20 @@ describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
   test('未绑定 / 非 recovery_code 因子 → false', () => {
     expect(
       apiMod.isRecoveryLow(
-        create(MfaFactorSchema, { factor: 'recovery_code', bound: false, remaining: BigInt(0) }),
+        create(MfaFactorSchema, {
+          factor: 'recovery_code',
+          bound: false,
+          remaining: BigInt(0),
+        }),
       ),
     ).toBe(false);
     expect(
       apiMod.isRecoveryLow(
-        create(MfaFactorSchema, { factor: 'webauthn', bound: true, credentials: BigInt(1) }),
+        create(MfaFactorSchema, {
+          factor: 'webauthn',
+          bound: true,
+          credentials: BigInt(1),
+        }),
       ),
     ).toBe(false);
   });
@@ -2276,8 +2670,16 @@ describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
 
   test('已启用因子 → 已绑定 Tag + 停用按钮；已停用 → 已停用 Tag + 启用按钮；无 Checkbox', () => {
     const html = renderList([
-      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: true, bound: true }),
-      create(MfaPolicyMethodSchema, { factor: 'webauthn', enabled: false, bound: true }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'totp',
+        enabled: true,
+        bound: true,
+      }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'webauthn',
+        enabled: false,
+        bound: true,
+      }),
     ]);
     expect(html).toContain('已绑定');
     expect(html).toContain('已停用');
@@ -2289,8 +2691,16 @@ describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
 
   test('未绑定：totp 出「绑定」按钮；otp_sms 给指引不出按钮；未绑定 Tag；弹窗条件渲染不挂载', () => {
     const html = renderList([
-      create(MfaPolicyMethodSchema, { factor: 'totp', enabled: false, bound: false }),
-      create(MfaPolicyMethodSchema, { factor: 'otp_sms', enabled: false, bound: false }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'totp',
+        enabled: false,
+        bound: false,
+      }),
+      create(MfaPolicyMethodSchema, {
+        factor: 'otp_sms',
+        enabled: false,
+        bound: false,
+      }),
     ]);
     expect(html).toContain('绑定');
     expect(html).toContain('未绑定');

@@ -26,17 +26,17 @@ export interface ApiErrorInit {
 
 /** 统一错误体：非 200 Connect 错误体（ErrorInfo detail 或标准码兜底）与传输层失败的归一形态（docs/接口文档.md §1.5）。 */
 export class ApiError extends Error {
-  readonly httpStatus: number;
+  httpStatus: number;
 
-  readonly code: string;
+  code: string;
 
-  readonly requestId: string;
+  requestId: string;
 
   /** 冷却 / 封禁剩余秒数（§1.5 行 220）；未携带或零值（protojson 省略零值，§1.1）为 undefined。 */
-  readonly retryAfter?: bigint;
+  retryAfter?: bigint;
 
   /** 剩余尝试次数（§1.5 行 221）；未携带或零值为 undefined。 */
-  readonly attemptsLeft?: bigint;
+  attemptsLeft?: bigint;
 
   constructor(init: ApiErrorInit) {
     super(init.message);
@@ -92,11 +92,11 @@ export type StatusAction =
 /** 层①解析结果。 */
 export interface StatusResolution {
   /** §1.6「可重试」列；流程态（next / success / pending 等）恒为 false。 */
-  readonly retryable: boolean;
+  retryable: boolean;
   /** §1.6「前端动作」列的归纳。 */
-  readonly action: StatusAction;
+  action: StatusAction;
   /** i18n 键，口径 `errors.status.<status>`；文案由 shared/i18n 字典（后续实现）落。 */
-  readonly i18nKey: string;
+  i18nKey: string;
 }
 
 /**
@@ -143,40 +143,174 @@ export type FlowStatusKey =
  * 逐项对照 docs/接口文档.md 行 230-261）。`failed` 的「可重试」文档标注「视 error」，
  * 需调用方结合信封 error 内容判断，表取保守值 false。
  */
-export const FLOW_STATUS_TABLE: Readonly<Record<FlowStatusKey, StatusResolution>> = {
-  next: { retryable: false, action: 'render_next_step', i18nKey: 'errors.status.next' },
-  mfa_required: { retryable: false, action: 'render_mfa', i18nKey: 'errors.status.mfa_required' },
-  binding_required: { retryable: false, action: 'render_binding', i18nKey: 'errors.status.binding_required' },
-  success: { retryable: false, action: 'complete', i18nKey: 'errors.status.success' },
-  pending: { retryable: false, action: 'continue_polling', i18nKey: 'errors.status.pending' },
-  scanned: { retryable: false, action: 'continue_polling', i18nKey: 'errors.status.scanned' },
-  expired: { retryable: false, action: 'stop_polling', i18nKey: 'errors.status.expired' },
-  failed: { retryable: false, action: 'message', i18nKey: 'errors.status.failed' },
-  captcha_required: { retryable: true, action: 'require_captcha', i18nKey: 'errors.status.captcha_required' },
-  captcha_invalid: { retryable: true, action: 'reset_captcha', i18nKey: 'errors.status.captcha_invalid' },
-  too_many_requests: { retryable: false, action: 'countdown', i18nKey: 'errors.status.too_many_requests' },
-  too_many_attempts: { retryable: false, action: 'message', i18nKey: 'errors.status.too_many_attempts' },
-  locked: { retryable: false, action: 'countdown', i18nKey: 'errors.status.locked' },
-  invalid_request: { retryable: false, action: 'field_error', i18nKey: 'errors.status.invalid_request' },
-  invalid_credentials: { retryable: true, action: 'message', i18nKey: 'errors.status.invalid_credentials' },
-  invalid_code: { retryable: true, action: 'message', i18nKey: 'errors.status.invalid_code' },
-  code_expired: { retryable: false, action: 'message', i18nKey: 'errors.status.code_expired' },
-  method_disabled: { retryable: false, action: 'refresh_methods', i18nKey: 'errors.status.method_disabled' },
-  step_invalid: { retryable: false, action: 'restart', i18nKey: 'errors.status.step_invalid' },
-  token_invalid: { retryable: false, action: 'restart', i18nKey: 'errors.status.token_invalid' },
-  token_expired: { retryable: false, action: 'restart', i18nKey: 'errors.status.token_expired' },
-  state_mismatch: { retryable: false, action: 'restart', i18nKey: 'errors.status.state_mismatch' },
-  user_disabled: { retryable: false, action: 'message', i18nKey: 'errors.status.user_disabled' },
-  user_not_found: { retryable: true, action: 'message', i18nKey: 'errors.status.user_not_found' },
-  password_weak: { retryable: true, action: 'field_error', i18nKey: 'errors.status.password_weak' },
-  username_taken: { retryable: true, action: 'field_error', i18nKey: 'errors.status.username_taken' },
-  target_taken: { retryable: true, action: 'field_error', i18nKey: 'errors.status.target_taken' },
-  signup_disabled: { retryable: false, action: 'message', i18nKey: 'errors.status.signup_disabled' },
-  reset_disabled: { retryable: false, action: 'message', i18nKey: 'errors.status.reset_disabled' },
-  provider_disabled: { retryable: false, action: 'refresh_methods', i18nKey: 'errors.status.provider_disabled' },
-  file_too_large: { retryable: true, action: 'message', i18nKey: 'errors.status.file_too_large' },
-  file_type_not_allowed: { retryable: true, action: 'message', i18nKey: 'errors.status.file_type_not_allowed' },
-  internal_error: { retryable: true, action: 'message', i18nKey: 'errors.status.internal_error' },
+export const FLOW_STATUS_TABLE: Readonly<
+  Record<FlowStatusKey, StatusResolution>
+> = {
+  next: {
+    retryable: false,
+    action: 'render_next_step',
+    i18nKey: 'errors.status.next',
+  },
+  mfa_required: {
+    retryable: false,
+    action: 'render_mfa',
+    i18nKey: 'errors.status.mfa_required',
+  },
+  binding_required: {
+    retryable: false,
+    action: 'render_binding',
+    i18nKey: 'errors.status.binding_required',
+  },
+  success: {
+    retryable: false,
+    action: 'complete',
+    i18nKey: 'errors.status.success',
+  },
+  pending: {
+    retryable: false,
+    action: 'continue_polling',
+    i18nKey: 'errors.status.pending',
+  },
+  scanned: {
+    retryable: false,
+    action: 'continue_polling',
+    i18nKey: 'errors.status.scanned',
+  },
+  expired: {
+    retryable: false,
+    action: 'stop_polling',
+    i18nKey: 'errors.status.expired',
+  },
+  failed: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.failed',
+  },
+  captcha_required: {
+    retryable: true,
+    action: 'require_captcha',
+    i18nKey: 'errors.status.captcha_required',
+  },
+  captcha_invalid: {
+    retryable: true,
+    action: 'reset_captcha',
+    i18nKey: 'errors.status.captcha_invalid',
+  },
+  too_many_requests: {
+    retryable: false,
+    action: 'countdown',
+    i18nKey: 'errors.status.too_many_requests',
+  },
+  too_many_attempts: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.too_many_attempts',
+  },
+  locked: {
+    retryable: false,
+    action: 'countdown',
+    i18nKey: 'errors.status.locked',
+  },
+  invalid_request: {
+    retryable: false,
+    action: 'field_error',
+    i18nKey: 'errors.status.invalid_request',
+  },
+  invalid_credentials: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.invalid_credentials',
+  },
+  invalid_code: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.invalid_code',
+  },
+  code_expired: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.code_expired',
+  },
+  method_disabled: {
+    retryable: false,
+    action: 'refresh_methods',
+    i18nKey: 'errors.status.method_disabled',
+  },
+  step_invalid: {
+    retryable: false,
+    action: 'restart',
+    i18nKey: 'errors.status.step_invalid',
+  },
+  token_invalid: {
+    retryable: false,
+    action: 'restart',
+    i18nKey: 'errors.status.token_invalid',
+  },
+  token_expired: {
+    retryable: false,
+    action: 'restart',
+    i18nKey: 'errors.status.token_expired',
+  },
+  state_mismatch: {
+    retryable: false,
+    action: 'restart',
+    i18nKey: 'errors.status.state_mismatch',
+  },
+  user_disabled: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.user_disabled',
+  },
+  user_not_found: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.user_not_found',
+  },
+  password_weak: {
+    retryable: true,
+    action: 'field_error',
+    i18nKey: 'errors.status.password_weak',
+  },
+  username_taken: {
+    retryable: true,
+    action: 'field_error',
+    i18nKey: 'errors.status.username_taken',
+  },
+  target_taken: {
+    retryable: true,
+    action: 'field_error',
+    i18nKey: 'errors.status.target_taken',
+  },
+  signup_disabled: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.signup_disabled',
+  },
+  reset_disabled: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.status.reset_disabled',
+  },
+  provider_disabled: {
+    retryable: false,
+    action: 'refresh_methods',
+    i18nKey: 'errors.status.provider_disabled',
+  },
+  file_too_large: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.file_too_large',
+  },
+  file_type_not_allowed: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.file_type_not_allowed',
+  },
+  internal_error: {
+    retryable: true,
+    action: 'message',
+    i18nKey: 'errors.status.internal_error',
+  },
 };
 
 /** 未知流程态的兜底口径：不暴露内部信息（§1.6 行 272）。 */
@@ -205,7 +339,9 @@ export function resolveFlowStatus(status: string): StatusResolution {
  * errors prop）并标 aria-invalid；未命中（如 invalid_request 无确定字段）仍走
  * 底部 banner。invalid_credentials 系「用户名或密码错误」合并口径，锚定密码字段。
  */
-export const STATUS_FIELD_MAP: Readonly<Partial<Record<FlowStatusKey, string>>> = {
+export const STATUS_FIELD_MAP: Readonly<
+  Partial<Record<FlowStatusKey, string>>
+> = {
   invalid_credentials: 'password',
   invalid_code: 'code',
   code_expired: 'code',
@@ -273,10 +409,10 @@ export type ErrorCode = BusinessCode | ConnectStandardCode;
 
 /** 层②解析结果：§1.6「可重试 / 前端动作」对两个位置同一套词汇（§8.2 A ①）；i18n 键口径 `errors.code.<code>`。 */
 export interface CodeResolution {
-  readonly retryable: boolean;
-  readonly action: StatusAction;
+  retryable: boolean;
+  action: StatusAction;
   /** 未知 code（含客户端自造 code）走 `errors.code.unknown`。 */
-  readonly i18nKey: string;
+  i18nKey: string;
 }
 
 /**
@@ -285,46 +421,152 @@ export interface CodeResolution {
  */
 const failureResolutions: Readonly<Record<BusinessCode, CodeResolution>> = {
   failed: { ...FLOW_STATUS_TABLE.failed, i18nKey: 'errors.code.failed' },
-  captcha_required: { ...FLOW_STATUS_TABLE.captcha_required, i18nKey: 'errors.code.captcha_required' },
-  captcha_invalid: { ...FLOW_STATUS_TABLE.captcha_invalid, i18nKey: 'errors.code.captcha_invalid' },
-  too_many_requests: { ...FLOW_STATUS_TABLE.too_many_requests, i18nKey: 'errors.code.too_many_requests' },
-  too_many_attempts: { ...FLOW_STATUS_TABLE.too_many_attempts, i18nKey: 'errors.code.too_many_attempts' },
+  captcha_required: {
+    ...FLOW_STATUS_TABLE.captcha_required,
+    i18nKey: 'errors.code.captcha_required',
+  },
+  captcha_invalid: {
+    ...FLOW_STATUS_TABLE.captcha_invalid,
+    i18nKey: 'errors.code.captcha_invalid',
+  },
+  too_many_requests: {
+    ...FLOW_STATUS_TABLE.too_many_requests,
+    i18nKey: 'errors.code.too_many_requests',
+  },
+  too_many_attempts: {
+    ...FLOW_STATUS_TABLE.too_many_attempts,
+    i18nKey: 'errors.code.too_many_attempts',
+  },
   locked: { ...FLOW_STATUS_TABLE.locked, i18nKey: 'errors.code.locked' },
-  invalid_request: { ...FLOW_STATUS_TABLE.invalid_request, i18nKey: 'errors.code.invalid_request' },
-  invalid_credentials: { ...FLOW_STATUS_TABLE.invalid_credentials, i18nKey: 'errors.code.invalid_credentials' },
-  invalid_code: { ...FLOW_STATUS_TABLE.invalid_code, i18nKey: 'errors.code.invalid_code' },
-  code_expired: { ...FLOW_STATUS_TABLE.code_expired, i18nKey: 'errors.code.code_expired' },
-  method_disabled: { ...FLOW_STATUS_TABLE.method_disabled, i18nKey: 'errors.code.method_disabled' },
-  step_invalid: { ...FLOW_STATUS_TABLE.step_invalid, i18nKey: 'errors.code.step_invalid' },
-  token_invalid: { ...FLOW_STATUS_TABLE.token_invalid, i18nKey: 'errors.code.token_invalid' },
-  token_expired: { ...FLOW_STATUS_TABLE.token_expired, i18nKey: 'errors.code.token_expired' },
-  state_mismatch: { ...FLOW_STATUS_TABLE.state_mismatch, i18nKey: 'errors.code.state_mismatch' },
-  user_disabled: { ...FLOW_STATUS_TABLE.user_disabled, i18nKey: 'errors.code.user_disabled' },
-  user_not_found: { ...FLOW_STATUS_TABLE.user_not_found, i18nKey: 'errors.code.user_not_found' },
-  password_weak: { ...FLOW_STATUS_TABLE.password_weak, i18nKey: 'errors.code.password_weak' },
-  username_taken: { ...FLOW_STATUS_TABLE.username_taken, i18nKey: 'errors.code.username_taken' },
-  target_taken: { ...FLOW_STATUS_TABLE.target_taken, i18nKey: 'errors.code.target_taken' },
-  signup_disabled: { ...FLOW_STATUS_TABLE.signup_disabled, i18nKey: 'errors.code.signup_disabled' },
-  reset_disabled: { ...FLOW_STATUS_TABLE.reset_disabled, i18nKey: 'errors.code.reset_disabled' },
-  provider_disabled: { ...FLOW_STATUS_TABLE.provider_disabled, i18nKey: 'errors.code.provider_disabled' },
-  file_too_large: { ...FLOW_STATUS_TABLE.file_too_large, i18nKey: 'errors.code.file_too_large' },
-  file_type_not_allowed: { ...FLOW_STATUS_TABLE.file_type_not_allowed, i18nKey: 'errors.code.file_type_not_allowed' },
-  internal_error: { ...FLOW_STATUS_TABLE.internal_error, i18nKey: 'errors.code.internal_error' },
+  invalid_request: {
+    ...FLOW_STATUS_TABLE.invalid_request,
+    i18nKey: 'errors.code.invalid_request',
+  },
+  invalid_credentials: {
+    ...FLOW_STATUS_TABLE.invalid_credentials,
+    i18nKey: 'errors.code.invalid_credentials',
+  },
+  invalid_code: {
+    ...FLOW_STATUS_TABLE.invalid_code,
+    i18nKey: 'errors.code.invalid_code',
+  },
+  code_expired: {
+    ...FLOW_STATUS_TABLE.code_expired,
+    i18nKey: 'errors.code.code_expired',
+  },
+  method_disabled: {
+    ...FLOW_STATUS_TABLE.method_disabled,
+    i18nKey: 'errors.code.method_disabled',
+  },
+  step_invalid: {
+    ...FLOW_STATUS_TABLE.step_invalid,
+    i18nKey: 'errors.code.step_invalid',
+  },
+  token_invalid: {
+    ...FLOW_STATUS_TABLE.token_invalid,
+    i18nKey: 'errors.code.token_invalid',
+  },
+  token_expired: {
+    ...FLOW_STATUS_TABLE.token_expired,
+    i18nKey: 'errors.code.token_expired',
+  },
+  state_mismatch: {
+    ...FLOW_STATUS_TABLE.state_mismatch,
+    i18nKey: 'errors.code.state_mismatch',
+  },
+  user_disabled: {
+    ...FLOW_STATUS_TABLE.user_disabled,
+    i18nKey: 'errors.code.user_disabled',
+  },
+  user_not_found: {
+    ...FLOW_STATUS_TABLE.user_not_found,
+    i18nKey: 'errors.code.user_not_found',
+  },
+  password_weak: {
+    ...FLOW_STATUS_TABLE.password_weak,
+    i18nKey: 'errors.code.password_weak',
+  },
+  username_taken: {
+    ...FLOW_STATUS_TABLE.username_taken,
+    i18nKey: 'errors.code.username_taken',
+  },
+  target_taken: {
+    ...FLOW_STATUS_TABLE.target_taken,
+    i18nKey: 'errors.code.target_taken',
+  },
+  signup_disabled: {
+    ...FLOW_STATUS_TABLE.signup_disabled,
+    i18nKey: 'errors.code.signup_disabled',
+  },
+  reset_disabled: {
+    ...FLOW_STATUS_TABLE.reset_disabled,
+    i18nKey: 'errors.code.reset_disabled',
+  },
+  provider_disabled: {
+    ...FLOW_STATUS_TABLE.provider_disabled,
+    i18nKey: 'errors.code.provider_disabled',
+  },
+  file_too_large: {
+    ...FLOW_STATUS_TABLE.file_too_large,
+    i18nKey: 'errors.code.file_too_large',
+  },
+  file_type_not_allowed: {
+    ...FLOW_STATUS_TABLE.file_type_not_allowed,
+    i18nKey: 'errors.code.file_type_not_allowed',
+  },
+  internal_error: {
+    ...FLOW_STATUS_TABLE.internal_error,
+    i18nKey: 'errors.code.internal_error',
+  },
 };
 
 /**
  * Connect 标准码兜底处置（§1.5 行 184-193）：标准码不进 §1.6 表（行 273），
  * 文案拦截、动作保守（message / 不可重试）。
  */
-const standardResolutions: Readonly<Record<ConnectStandardCode, CodeResolution>> = {
-  invalid_argument: { retryable: false, action: 'message', i18nKey: 'errors.code.invalid_argument' },
-  unauthenticated: { retryable: false, action: 'message', i18nKey: 'errors.code.unauthenticated' },
-  permission_denied: { retryable: false, action: 'message', i18nKey: 'errors.code.permission_denied' },
-  not_found: { retryable: false, action: 'message', i18nKey: 'errors.code.not_found' },
-  already_exists: { retryable: false, action: 'message', i18nKey: 'errors.code.already_exists' },
-  resource_exhausted: { retryable: false, action: 'message', i18nKey: 'errors.code.resource_exhausted' },
-  internal: { retryable: false, action: 'message', i18nKey: 'errors.code.internal' },
-  unavailable: { retryable: false, action: 'message', i18nKey: 'errors.code.unavailable' },
+const standardResolutions: Readonly<
+  Record<ConnectStandardCode, CodeResolution>
+> = {
+  invalid_argument: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.invalid_argument',
+  },
+  unauthenticated: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.unauthenticated',
+  },
+  permission_denied: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.permission_denied',
+  },
+  not_found: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.not_found',
+  },
+  already_exists: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.already_exists',
+  },
+  resource_exhausted: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.resource_exhausted',
+  },
+  internal: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.internal',
+  },
+  unavailable: {
+    retryable: false,
+    action: 'message',
+    i18nKey: 'errors.code.unavailable',
+  },
 };
 
 /**

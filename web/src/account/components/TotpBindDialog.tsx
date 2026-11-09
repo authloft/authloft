@@ -29,7 +29,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui';
-import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
+import {
+  CodeInput,
+  DEFAULT_CODE_LENGTH,
+} from '../../shared/components/CodeInput';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { QrImage } from '../../shared/components/QrImage';
 import { requestOptions } from '../../shared/hooks/requestOptions';
@@ -56,9 +59,9 @@ const CODE_INPUT_FIRST_ID = 'totp-bind-code-input';
  */
 export function TotpBindDialog(props: {
   /** 未完成绑定时的关闭（父级仅关框）。 */
-  readonly onCancel: () => void;
+  onCancel: () => void;
   /** 绑定完成（含恢复码帧的 X / 遮罩关闭）：父级关框 + 刷新 mfaPolicy / GetMfa。 */
-  readonly onDone: () => void;
+  onDone: () => void;
 }): ReactNode {
   const location = useLocation();
   const returnTo = () => accountReturnTo(location.pathname, location.search);
@@ -83,7 +86,9 @@ export function TotpBindDialog(props: {
     ...requestOptions({ toast: false, returnTo }),
   });
   const [code, setCode] = useState('');
-  const [inputError, setInputError] = useState<'invalid_code' | undefined>(undefined);
+  const [inputError, setInputError] = useState<'invalid_code' | undefined>(
+    undefined,
+  );
   // 扫码帧（0）/ 输码帧（1）两段；恢复码帧由 verify 成功态驱动。
   const [formStep, setFormStep] = useState<0 | 1>(0);
 
@@ -121,9 +126,18 @@ export function TotpBindDialog(props: {
   };
 
   return (
-    <Modal title={t('account.totpBindTitle')} visible onCancel={handleCancel} footer={null}>
+    <Modal
+      title={t('account.totpBindTitle')}
+      visible
+      onCancel={handleCancel}
+      footer={null}
+    >
       {/* 步骤指示：添加验证器 → 验证动态码 → 保存恢复码。 */}
-      <Steps current={verified ? 2 : formStep} size="small" className={styles.steps}>
+      <Steps
+        current={verified ? 2 : formStep}
+        size="small"
+        className={styles.steps}
+      >
         <Steps.Step title={t('account.totpStepAdd')} />
         <Steps.Step title={t('account.totpStepVerify')} />
         <Steps.Step title={t('account.totpStepRecovery')} />
@@ -145,9 +159,7 @@ export function TotpBindDialog(props: {
           <p role="alert" className={styles.error}>
             {apiErrorText(challengeError)}
           </p>
-          <Button onClick={() => retryChallenge()}>
-            {t('common.retry')}
-          </Button>
+          <Button onClick={() => retryChallenge()}>{t('common.retry')}</Button>
         </div>
       ) : formStep === 0 ? (
         <div className={styles.body}>
@@ -160,12 +172,16 @@ export function TotpBindDialog(props: {
           <p className={styles.hint}>{t('account.totpScanHint')}</p>
           <p className={styles.hint}>{t('account.totpManualHint')}</p>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('account.totpSecretLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('account.totpSecretLabel')}
+            </span>
             <span className={styles.mono}>{challenge.secret}</span>
             <CopyButton text={challenge.secret} />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('account.totpOtpauthLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('account.totpOtpauthLabel')}
+            </span>
             <span className={styles.mono}>{challenge.otpauthUrl}</span>
             <CopyButton text={challenge.otpauthUrl} />
           </div>
@@ -200,10 +216,19 @@ export function TotpBindDialog(props: {
             </p>
           ) : null}
           <div className={styles.actions}>
-            <Button type="tertiary" onClick={() => setFormStep(0)} disabled={verifying}>
+            <Button
+              type="tertiary"
+              onClick={() => setFormStep(0)}
+              disabled={verifying}
+            >
               {t('account.backAction')}
             </Button>
-            <Button theme="solid" htmlType="submit" loading={verifying} disabled={verifying}>
+            <Button
+              theme="solid"
+              htmlType="submit"
+              loading={verifying}
+              disabled={verifying}
+            >
               {t('account.totpVerifyAction')}
             </Button>
           </div>

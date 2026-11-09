@@ -1,0 +1,31 @@
+@import (reference) '../../styles/tokens.less';
+
+// 分区表单：纵向卡片流。
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
+}
+
+.sectionCard {
+  display: block;
+  margin-top: @spacing-md;
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+// 竖排字段：标签 + 控件 + 说明。
+.field {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+  display: block;
+}

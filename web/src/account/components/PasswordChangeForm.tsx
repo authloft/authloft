@@ -41,20 +41,20 @@ const REDIRECT_DELAY_MS = 1500;
  * 全表单禁用防重复提交。
  */
 export function PasswordChangeFormView(props: {
-  readonly hasPassword: boolean;
-  readonly status: RequestStatus;
-  readonly done: boolean;
-  readonly currentPassword: string;
-  readonly newPassword: string;
-  readonly confirmPassword: string;
-  readonly fieldError: PasswordChangeFieldError | undefined;
+  hasPassword: boolean;
+  status: RequestStatus;
+  done: boolean;
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+  fieldError: PasswordChangeFieldError | undefined;
   /** 确认密码与新密码不一致（A-1：只本地比对，不进 payload，不发请求）。 */
-  readonly mismatch: boolean;
-  readonly submitError: unknown;
-  readonly onCurrentPasswordChange: (value: string) => void;
-  readonly onNewPasswordChange: (value: string) => void;
-  readonly onConfirmPasswordChange: (value: string) => void;
-  readonly onSubmit: () => void;
+  mismatch: boolean;
+  submitError: unknown;
+  onCurrentPasswordChange: (value: string) => void;
+  onNewPasswordChange: (value: string) => void;
+  onConfirmPasswordChange: (value: string) => void;
+  onSubmit: () => void;
 }): ReactNode {
   // 成功后清空表单并 Toast（壳已清值），done 期间禁再提交，等跳转登录页。
   const submitting = props.status === 'loading' || props.done;
@@ -133,7 +133,9 @@ export function PasswordChangeFormView(props: {
         loading={submitting}
         disabled={submitting}
       >
-        {props.hasPassword ? t('account.changePasswordAction') : t('account.setPasswordAction')}
+        {props.hasPassword
+          ? t('account.changePasswordAction')
+          : t('account.setPasswordAction')}
       </Button>
     </form>
   );
@@ -142,15 +144,15 @@ export function PasswordChangeFormView(props: {
 /** 改密状态壳：本地校验 → ChangePassword；成功 → 全会话失效，延时跳登录页。 */
 export function PasswordChangeForm(props: {
   /** 当前用户是否已有 kind=password 凭证（GetConfig.hasPassword，§3.2 行 819）。 */
-  readonly hasPassword: boolean;
+  hasPassword: boolean;
 }): ReactNode {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [mismatch, setMismatch] = useState(false);
-  const [fieldError, setFieldError] = useState<PasswordChangeFieldError | undefined>(
-    undefined,
-  );
+  const [fieldError, setFieldError] = useState<
+    PasswordChangeFieldError | undefined
+  >(undefined);
   const [done, setDone] = useState(false);
   const alRoot = loadAccountBootstrap().alRoot;
   // useLocation 在 HashRouter 下即 hash 内 location——
@@ -183,13 +185,19 @@ export function PasswordChangeForm(props: {
       return;
     }
     const timer = window.setTimeout(() => {
-      window.location.replace(loginUrl(alRoot, accountReturnTo(location.pathname, location.search)));
+      window.location.replace(
+        loginUrl(alRoot, accountReturnTo(location.pathname, location.search)),
+      );
     }, REDIRECT_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [done, alRoot, location]);
 
   const handleSubmit = () => {
-    const built = buildChangePasswordRequest(props.hasPassword, currentPassword, newPassword);
+    const built = buildChangePasswordRequest(
+      props.hasPassword,
+      currentPassword,
+      newPassword,
+    );
     if (!built.ok) {
       setFieldError(built.error);
       return;

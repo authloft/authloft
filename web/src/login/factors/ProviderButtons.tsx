@@ -55,10 +55,7 @@ function sortOrderKey(provider: SnapshotProvider): bigint {
 }
 
 /** 组内按 sortOrder 升序（bigint 比较，无精度损失）。 */
-function compareBySortOrder(
-  a: SnapshotProvider,
-  b: SnapshotProvider,
-): number {
+function compareBySortOrder(a: SnapshotProvider, b: SnapshotProvider): number {
   const x = sortOrderKey(a);
   const y = sortOrderKey(b);
   return x < y ? -1 : x > y ? 1 : 0;
@@ -70,7 +67,7 @@ function compareBySortOrder(
  * 归空串组）。
  */
 export function groupProviders(
-  providers: readonly SnapshotProvider[],
+  providers: SnapshotProvider[],
 ): ReadonlyMap<string, SnapshotProvider[]> {
   const sorted = providers
     .filter((p) => !HIDDEN_CHANNELS.has(p.channel))
@@ -160,7 +157,7 @@ type RedirectState =
  * 回显 providerKey（§9 第 18 条零值兜底，与图标墙按钮文案同款取舍）。纯函数。
  */
 export function providerDisplayName(
-  providers: readonly SnapshotProvider[],
+  providers: SnapshotProvider[],
   providerKey: string,
 ): string {
   return (
@@ -171,7 +168,7 @@ export function providerDisplayName(
 
 export interface ProviderButtonsProps {
   /** thirdparty 方式条目的 providers（§2.7.1；channel=api 与未知渠道不渲染）。 */
-  providers: readonly SnapshotProvider[];
+  providers: SnapshotProvider[];
   /** 跳转动作注入（透传 RedirectStep，缺省 location.replace；测试记录函数）。 */
   navigate?: (url: string) => void;
   /** 取授权 URL（缺省 SsoService/Authorize；测试替身）。 */
@@ -206,15 +203,16 @@ export function ProviderButtons({
   /** redirect 渠道点击：取 authorize_url → RedirectStep 跳转（§4.3 行 454）。 */
   const pickRedirect = (providerKey: string) => {
     setRedirect({ phase: 'pending' });
-    void startRedirect(providerKey, request === undefined ? {} : { request }).then(
-      (url) => {
-        setRedirect(
-          url === undefined
-            ? { phase: 'failed', providerKey }
-            : { phase: 'ready', url },
-        );
-      },
-    );
+    void startRedirect(
+      providerKey,
+      request === undefined ? {} : { request },
+    ).then((url) => {
+      setRedirect(
+        url === undefined
+          ? { phase: 'failed', providerKey }
+          : { phase: 'ready', url },
+      );
+    });
   };
 
   /**
@@ -293,7 +291,7 @@ function ProviderWall({
   onPick,
   onPickQr,
 }: {
-  providers: readonly SnapshotProvider[];
+  providers: SnapshotProvider[];
   onPick: (providerKey: string) => void;
   onPickQr: (providerKey: string) => void;
 }) {

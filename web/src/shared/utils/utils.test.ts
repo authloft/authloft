@@ -96,7 +96,7 @@ describe('utils/validate 前置校验（评审 P0-2；服务端权威）', () =>
     expect(isCodeComplete('123456', 8)).toBe(false);
   });
 
-  const FORM: readonly ValidatableField[] = [
+  const FORM: ValidatableField[] = [
     { name: 'username', type: 'text', required: true },
     { name: 'email', type: 'email', required: true },
     { name: 'phone', type: 'phone' },
@@ -130,8 +130,12 @@ describe('utils/validate 前置校验（评审 P0-2；服务端权威）', () =>
   });
 
   test('validateFields：非必填空值放行；required 优先于格式校验', () => {
-    expect(validateFields(FORM, { username: 'u', email: 'a@b.co', code: '123456' })).toEqual({});
-    expect(validateFields([{ name: 'e', type: 'email', required: true }], {})).toEqual({
+    expect(
+      validateFields(FORM, { username: 'u', email: 'a@b.co', code: '123456' }),
+    ).toEqual({});
+    expect(
+      validateFields([{ name: 'e', type: 'email', required: true }], {}),
+    ).toEqual({
       e: 'required',
     });
     // 验证码长度取字段 length（bigint 归一）；缺省 / 零值 → 默认 6。
@@ -146,9 +150,12 @@ describe('utils/validate 前置校验（评审 P0-2；服务端权威）', () =>
       }),
     ).toEqual({ c: 'code_incomplete' });
     expect(
-      validateFields([{ name: 'c', type: 'otp', required: true, length: BigInt(0) }], {
-        c: '123456',
-      }),
+      validateFields(
+        [{ name: 'c', type: 'otp', required: true, length: BigInt(0) }],
+        {
+          c: '123456',
+        },
+      ),
     ).toEqual({});
   });
 
@@ -185,7 +192,9 @@ describe('utils/validate 密码强度（接口文档 §5.6 策略与默认值）
   });
 
   test('too_short：不足最小长度（含空密码）', () => {
-    expect(validatePassword('Aa1aaa')).toEqual<PasswordWeakReason[]>(['too_short']);
+    expect(validatePassword('Aa1aaa')).toEqual<PasswordWeakReason[]>([
+      'too_short',
+    ]);
     expect(validatePassword('')).toEqual<PasswordWeakReason[]>([
       'too_short',
       'too_few_classes',
@@ -193,10 +202,12 @@ describe('utils/validate 密码强度（接口文档 §5.6 策略与默认值）
   });
 
   test('too_long：> 64 一律拒绝（固定项）；恰 64 通过', () => {
-    expect(validatePassword(`Aa1${'a'.repeat(61)}`)).toEqual<PasswordWeakReason[]>([]);
-    expect(validatePassword(`Aa1${'a'.repeat(62)}`)).toEqual<PasswordWeakReason[]>([
-      'too_long',
-    ]);
+    expect(validatePassword(`Aa1${'a'.repeat(61)}`)).toEqual<
+      PasswordWeakReason[]
+    >([]);
+    expect(validatePassword(`Aa1${'a'.repeat(62)}`)).toEqual<
+      PasswordWeakReason[]
+    >(['too_long']);
   });
 
   test('pwd_max_length 可调低不可调高：>policy 且 >64 与 >policy（≤64）均拒绝', () => {
@@ -240,22 +251,22 @@ describe('utils/validate 密码强度（接口文档 §5.6 策略与默认值）
   });
 
   test('固定项：与用户名 / 邮箱完全相同拒绝（same_as_identifier）', () => {
-    expect(
-      validatePassword('userAa12', { username: 'userAa12' }),
-    ).toEqual<PasswordWeakReason[]>(['contains_username', 'same_as_identifier']);
-    expect(
-      validatePassword('Aa1aaaaa', { email: 'Aa1aaaaa' }),
-    ).toEqual<PasswordWeakReason[]>(['same_as_identifier']);
+    expect(validatePassword('userAa12', { username: 'userAa12' })).toEqual<
+      PasswordWeakReason[]
+    >(['contains_username', 'same_as_identifier']);
+    expect(validatePassword('Aa1aaaaa', { email: 'Aa1aaaaa' })).toEqual<
+      PasswordWeakReason[]
+    >(['same_as_identifier']);
     // 仅包含邮箱（非完全相同）不触发固定项，也不受 pwd_disallow_username 管。
-    expect(
-      validatePassword('Aa1aaaaa', { email: 'Aa1aaaaa@x.co' }),
-    ).toEqual<PasswordWeakReason[]>([]);
+    expect(validatePassword('Aa1aaaaa', { email: 'Aa1aaaaa@x.co' })).toEqual<
+      PasswordWeakReason[]
+    >([]);
   });
 
   test('pwd_min_length / pwd_require_classes 可按设置覆盖', () => {
-    expect(
-      validatePassword('Aa1aaa', { policy: { minLength: 6 } }),
-    ).toEqual<PasswordWeakReason[]>([]);
+    expect(validatePassword('Aa1aaa', { policy: { minLength: 6 } })).toEqual<
+      PasswordWeakReason[]
+    >([]);
     expect(
       validatePassword('aaaaaaaa', { policy: { requireClasses: 1 } }),
     ).toEqual<PasswordWeakReason[]>([]);
@@ -315,8 +326,8 @@ describe('utils/int（§1.12 int64 进出 UI 唯一转换点）', () => {
     expect(() => toCount(BigInt(Number.MAX_SAFE_INTEGER) + BigInt(1))).toThrow(
       RangeError,
     );
-    expect(() =>
-      toCount(BigInt(-Number.MAX_SAFE_INTEGER) - BigInt(1)),
-    ).toThrow(RangeError);
+    expect(() => toCount(BigInt(-Number.MAX_SAFE_INTEGER) - BigInt(1))).toThrow(
+      RangeError,
+    );
   });
 });

@@ -33,7 +33,10 @@ const PROVIDER_KEY_PLACEHOLDER = '{provider_key}';
  * providerKey 缺省 → 字面 `{provider_key}` 模板（alRoot 归一后无尾斜杠，
  * 见 ./bootstrap；node 环境为空串 → 相对路径形态）。
  */
-export function providerCallbackUrl(alRoot: string, providerKey?: string): string {
+export function providerCallbackUrl(
+  alRoot: string,
+  providerKey?: string,
+): string {
   return `${alRoot}${OAUTH_CALLBACK_PREFIX}${providerKey ?? PROVIDER_KEY_PLACEHOLDER}`;
 }
 
@@ -56,15 +59,17 @@ export function showsCallbackHint(category: string | undefined): boolean {
 
 export interface ProviderCallbackHintProps {
   /** 归一后 Authloft 根域名（回调地址前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** Provider 唯一标识；缺省渲染字面 `{provider_key}` 模板（列表页顶部形态）。 */
-  readonly providerKey?: string;
+  providerKey?: string;
   /** Provider 类型；OIDC / OAuth2 标准协议兜底类另提示「回调需精确匹配」（编辑页消费）。 */
-  readonly type?: string;
+  type?: string;
 }
 
 /** 顶部只读提示：地址文本 + 复制按钮 + 可选 OIDC 精确匹配注记。 */
-export function ProviderCallbackHint(props: ProviderCallbackHintProps): ReactNode {
+export function ProviderCallbackHint(
+  props: ProviderCallbackHintProps,
+): ReactNode {
   const url = providerCallbackUrl(props.alRoot, props.providerKey);
   return (
     <div className={styles.hint} role="note">
@@ -72,7 +77,9 @@ export function ProviderCallbackHint(props: ProviderCallbackHintProps): ReactNod
       <code className={styles.url}>{url}</code>
       <CopyButton text={url} />
       {isOidcProviderType(props.type) ? (
-        <span className={styles.oidcNote}>{t('admin.oidcCallbackExactMatchNote')}</span>
+        <span className={styles.oidcNote}>
+          {t('admin.oidcCallbackExactMatchNote')}
+        </span>
       ) : null}
     </div>
   );

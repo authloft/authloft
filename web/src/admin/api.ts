@@ -42,9 +42,16 @@ import { StructSchema } from '@bufbuild/protobuf/wkt';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { adminClient } from '../shared/api/http';
 import { t, type I18nKey } from '../shared/i18n';
-import { FIRST_PAGE, MAX_PAGE_SIZE, type TableQueryState } from '../shared/app-ui/dataTableLogic';
+import {
+  FIRST_PAGE,
+  MAX_PAGE_SIZE,
+  type TableQueryState,
+} from '../shared/app-ui/dataTableLogic';
 import { toCount } from '../shared/utils/int';
-import type { MeResponse, OkResponse } from '../gen/proto/api/admin/v1/admin_pb';
+import type {
+  MeResponse,
+  OkResponse,
+} from '../gen/proto/api/admin/v1/admin_pb';
 import type {
   CreateOidcClientRequest,
   CreateSsoClientRequest,
@@ -182,7 +189,7 @@ export function buildListProvidersRequest(): ListProvidersRequest {
  * 下即全局一致序。不可变：只读入参，输出独立消息。
  */
 export function buildSortProvidersRequest(
-  rows: readonly Provider[],
+  rows: Provider[],
 ): SortProvidersRequest {
   return create(SortProvidersRequestSchema, {
     items: rows.map((row, index) => ({
@@ -212,7 +219,9 @@ export function getProviderSchema(
 }
 
 /** 详情（§5.2 行 1170：{providerKey}，返回明文凭证——全站唯一明文出口）。 */
-export function getProvider(request: GetProviderRequest): Promise<AdminProvider> {
+export function getProvider(
+  request: GetProviderRequest,
+): Promise<AdminProvider> {
   return adminClient.getProvider(request);
 }
 
@@ -227,7 +236,9 @@ export function updateProvider(values: JsonObject): Promise<OkResponse> {
 }
 
 /** 发送测试（§5.2 行 1177：{providerKey, target}，短信 / 邮件类）→ OkResponse。 */
-export function testProvider(request: TestProviderRequest): Promise<OkResponse> {
+export function testProvider(
+  request: TestProviderRequest,
+): Promise<OkResponse> {
   return adminClient.testProvider(request);
 }
 
@@ -237,7 +248,7 @@ export function testProvider(request: TestProviderRequest): Promise<OkResponse> 
  * storage / captcha 类）→ 空数组，消费方渲染占位。零 Semi 依赖、node 可测
  * （展示纯函数落位同 adminDisplayName 口径）。
  */
-export function policyTags(provider: Provider): readonly string[] {
+export function policyTags(provider: Provider): string[] {
   const tags: string[] = [];
   if (provider.enableSignin) {
     tags.push(t('admin.policyTagAllowSignin'));
@@ -334,7 +345,9 @@ export function apiErrorText(error: unknown): string {
 // ---------------------------------------------------------------------------
 
 /** ListUsers（§5.4 行 1249：筛选入参 {q, userStatus} + 分页 §1.7）→ 用户列表。 */
-export function listUsers(request: ListUsersRequest): Promise<UserListResponse> {
+export function listUsers(
+  request: ListUsersRequest,
+): Promise<UserListResponse> {
   return adminClient.listUsers(request);
 }
 
@@ -347,7 +360,9 @@ export function getUser(request: GetUserRequest): Promise<UserDetailResponse> {
  * 禁用 / 启用（§5.4 行 1251：{id, userStatus: 0 或 1}）→ OkResponse；
  * UsersPage 行内开关经此持久化（DataTable switchColumn 消费方）。
  */
-export function updateUserStatus(request: UpdateUserStatusRequest): Promise<OkResponse> {
+export function updateUserStatus(
+  request: UpdateUserStatusRequest,
+): Promise<OkResponse> {
   return adminClient.updateUserStatus(request);
 }
 
@@ -356,7 +371,9 @@ export function updateUserStatus(request: UpdateUserStatusRequest): Promise<OkRe
  * OkResponse **仅成功**——§5.4 未定义返回新密码，新密码由管理员输入并转交
  * 该用户（范围明确不含自动生成新密码）。
  */
-export function resetUserPassword(request: ResetUserPasswordRequest): Promise<OkResponse> {
+export function resetUserPassword(
+  request: ResetUserPasswordRequest,
+): Promise<OkResponse> {
   return adminClient.resetUserPassword(request);
 }
 
@@ -373,7 +390,9 @@ export function unlockUser(request: UnlockUserRequest): Promise<OkResponse> {
 }
 
 /** 该用户登录记录（§5.4 行 1255：{id} + 分页 §1.7）→ UserEventsResponse。 */
-export function getUserEvents(request: GetUserEventsRequest): Promise<UserEventsResponse> {
+export function getUserEvents(
+  request: GetUserEventsRequest,
+): Promise<UserEventsResponse> {
   return adminClient.getUserEvents(request);
 }
 
@@ -393,9 +412,9 @@ export const USER_STATUS_DATA_INDEX = 'user_status';
  * textKey 字段化——模块级常量只存 i18n 键（求值先于 entry
  * setLocale 会冻结在默认语言），文案由消费方渲染期 t(textKey) 取。
  */
-export const USER_STATUS_FILTERS: readonly {
-  readonly value: string;
-  readonly textKey: I18nKey;
+export const USER_STATUS_FILTERS: {
+  value: string;
+  textKey: I18nKey;
 }[] = [
   { value: '1', textKey: 'admin.userStatusEnabled' },
   { value: '0', textKey: 'admin.userStatusDisabled' },
@@ -410,13 +429,15 @@ export const USER_STATUS_FILTERS: readonly {
  * - 分页直映射；排序仅 order 非空时下发（dataTableLogic：清除排序后
  *   order=''，受控渲染与 wire 均只认非空 order）。
  */
-export function buildListUsersRequest(q: string, query: TableQueryState): ListUsersRequest {
+export function buildListUsersRequest(
+  q: string,
+  query: TableQueryState,
+): ListUsersRequest {
   const statusFilter = query.filters[USER_STATUS_DATA_INDEX] ?? [];
   const trimmed = q.trim();
   return create(ListUsersRequestSchema, {
     q: trimmed === '' ? undefined : trimmed,
-    userStatus:
-      statusFilter.length === 1 ? BigInt(statusFilter[0]) : undefined,
+    userStatus: statusFilter.length === 1 ? BigInt(statusFilter[0]) : undefined,
     page: BigInt(query.page),
     pageSize: BigInt(query.pageSize),
     sort: query.order === '' ? undefined : query.sort,
@@ -587,7 +608,9 @@ export function listSsoClients(
 }
 
 /** SSO 客户端新建（§5.5 行 1261）→ OkResponse（密钥服务端生成，经 Get 查看）。 */
-export function createSsoClient(request: CreateSsoClientRequest): Promise<OkResponse> {
+export function createSsoClient(
+  request: CreateSsoClientRequest,
+): Promise<OkResponse> {
   return adminClient.createSsoClient(request);
 }
 
@@ -597,12 +620,16 @@ export function getSsoClient(request: GetSsoClientRequest): Promise<SsoClient> {
 }
 
 /** SSO 客户端编辑（§5.5 行 1262：PATCH 缺省保留）→ OkResponse。 */
-export function updateSsoClient(request: UpdateSsoClientRequest): Promise<OkResponse> {
+export function updateSsoClient(
+  request: UpdateSsoClientRequest,
+): Promise<OkResponse> {
   return adminClient.updateSsoClient(request);
 }
 
 /** SSO 客户端删除（§5.5 行 1262：{id} 硬删）→ OkResponse。 */
-export function deleteSsoClient(request: DeleteSsoClientRequest): Promise<OkResponse> {
+export function deleteSsoClient(
+  request: DeleteSsoClientRequest,
+): Promise<OkResponse> {
   return adminClient.deleteSsoClient(request);
 }
 
@@ -614,22 +641,30 @@ export function listOidcClients(
 }
 
 /** OIDC 客户端新建（§5.5 行 1263 + 额外 scopes / TTL）→ OkResponse。 */
-export function createOidcClient(request: CreateOidcClientRequest): Promise<OkResponse> {
+export function createOidcClient(
+  request: CreateOidcClientRequest,
+): Promise<OkResponse> {
   return adminClient.createOidcClient(request);
 }
 
 /** OIDC 客户端详情（§5.5 行 1264：{id} → OidcClient，含明文 client_secret）。 */
-export function getOidcClient(request: GetOidcClientRequest): Promise<OidcClient> {
+export function getOidcClient(
+  request: GetOidcClientRequest,
+): Promise<OidcClient> {
   return adminClient.getOidcClient(request);
 }
 
 /** OIDC 客户端编辑（§5.5 行 1264：PATCH 缺省保留 + TTL 0 保留原值）→ OkResponse。 */
-export function updateOidcClient(request: UpdateOidcClientRequest): Promise<OkResponse> {
+export function updateOidcClient(
+  request: UpdateOidcClientRequest,
+): Promise<OkResponse> {
   return adminClient.updateOidcClient(request);
 }
 
 /** OIDC 客户端删除（§5.5 行 1264：{id} 硬删）→ OkResponse。 */
-export function deleteOidcClient(request: DeleteOidcClientRequest): Promise<OkResponse> {
+export function deleteOidcClient(
+  request: DeleteOidcClientRequest,
+): Promise<OkResponse> {
   return adminClient.deleteOidcClient(request);
 }
 
@@ -637,7 +672,7 @@ export function deleteOidcClient(request: DeleteOidcClientRequest): Promise<OkRe
  * 列表条目非空清洗：逐条去首尾空白后剔除空串（编辑器允许中间态空行，
  * 提交前统一收口）。新建与编辑的 redirectUris / scopes 共用。
  */
-export function cleanStringList(values: readonly string[]): string[] {
+export function cleanStringList(values: string[]): string[] {
   return values.map((value) => value.trim()).filter((value) => value !== '');
 }
 
@@ -667,7 +702,7 @@ export const REDIRECT_URIS_ISSUE_TEXT_KEY: I18nKey = 'admin.redirectUrisIssue';
  * 条目规则：字面 * 或 ^https?:// 前缀）。清洗后逐条判定，首个非法
  * 条目 → 文案；全部合法 / 空表 → null（空表合法性归调用方，见编辑阻断）。
  */
-export function redirectUrisIssue(uris: readonly string[]): string | null {
+export function redirectUrisIssue(uris: string[]): string | null {
   for (const uri of cleanStringList(uris)) {
     if (uri !== '*' && !/^https?:\/\//.test(uri)) {
       return t(REDIRECT_URIS_ISSUE_TEXT_KEY);
@@ -686,7 +721,7 @@ export const SCOPES_ISSUE_TEXT_KEY: I18nKey = 'admin.scopesIssue';
  * 权限范围条目校验（§5.5 行 1264；后端口径：条目空串 / 含逗号 →
  * invalid_request）。清洗后逐条判定；全部合法 / 空表 → null。
  */
-export function scopesIssue(scopes: readonly string[]): string | null {
+export function scopesIssue(scopes: string[]): string | null {
   for (const scope of cleanStringList(scopes)) {
     if (scope.includes(',')) {
       return t(SCOPES_ISSUE_TEXT_KEY);
@@ -716,34 +751,36 @@ export function parseTtlField(raw: string, max: number): number | null {
 
 /** SSO 客户端表单草稿（新建与编辑共用字段形态；clientId 仅新建消费——创建后不可改）。 */
 export interface SsoClientDraft {
-  readonly clientId: string;
-  readonly name: string;
-  readonly redirectUris: readonly string[];
+  clientId: string;
+  name: string;
+  redirectUris: string[];
 }
 
 /** SSO 客户端编辑草稿（clientId 不编辑；newSecret 留空保留原密钥、非空轮换）。 */
 export interface SsoClientPatchDraft {
-  readonly newSecret: string;
-  readonly name: string;
-  readonly redirectUris: readonly string[];
+  newSecret: string;
+  name: string;
+  redirectUris: string[];
 }
 
 /** OIDC 客户端表单草稿：SSO 基线 + scopes / TTL（秒；0 = 缺省/保留）。 */
 export interface OidcClientDraft extends SsoClientDraft {
-  readonly scopes: readonly string[];
-  readonly accessTokenTtl: number;
-  readonly refreshTokenTtl: number;
+  scopes: string[];
+  accessTokenTtl: number;
+  refreshTokenTtl: number;
 }
 
 /** OIDC 客户端编辑草稿：SSO 基线 + scopes / TTL（0 = 保留原值）。 */
 export interface OidcClientPatchDraft extends SsoClientPatchDraft {
-  readonly scopes: readonly string[];
-  readonly accessTokenTtl: number;
-  readonly refreshTokenTtl: number;
+  scopes: string[];
+  accessTokenTtl: number;
+  refreshTokenTtl: number;
 }
 
 /** ListSsoClients 请求构造（分页 §1.7；排序仅 order 非空时下发，同 buildListUsersRequest）。 */
-export function buildListSsoClientsRequest(query: TableQueryState): ListSsoClientsRequest {
+export function buildListSsoClientsRequest(
+  query: TableQueryState,
+): ListSsoClientsRequest {
   return create(ListSsoClientsRequestSchema, {
     page: BigInt(query.page),
     pageSize: BigInt(query.pageSize),
@@ -753,7 +790,9 @@ export function buildListSsoClientsRequest(query: TableQueryState): ListSsoClien
 }
 
 /** ListOidcClients 请求构造（口径同 buildListSsoClientsRequest）。 */
-export function buildListOidcClientsRequest(query: TableQueryState): ListOidcClientsRequest {
+export function buildListOidcClientsRequest(
+  query: TableQueryState,
+): ListOidcClientsRequest {
   return create(ListOidcClientsRequestSchema, {
     page: BigInt(query.page),
     pageSize: BigInt(query.pageSize),
@@ -777,7 +816,9 @@ export function buildGetOidcClientRequest(id: bigint): GetOidcClientRequest {
  * 整组提交；clientSecret 不发（服务端生成，请求同名字段被后端忽略）。
  * clientId 空串在 protojson 下省略 → 后端读零值生成。
  */
-export function buildCreateSsoClientRequest(draft: SsoClientDraft): CreateSsoClientRequest {
+export function buildCreateSsoClientRequest(
+  draft: SsoClientDraft,
+): CreateSsoClientRequest {
   return create(CreateSsoClientRequestSchema, {
     clientId: draft.clientId.trim(),
     name: draft.name.trim(),
@@ -786,7 +827,9 @@ export function buildCreateSsoClientRequest(draft: SsoClientDraft): CreateSsoCli
 }
 
 /** CreateOidcClient 请求构造：SSO 基线 + scopes 清洗 + TTL（0 省略落库端默认）。 */
-export function buildCreateOidcClientRequest(draft: OidcClientDraft): CreateOidcClientRequest {
+export function buildCreateOidcClientRequest(
+  draft: OidcClientDraft,
+): CreateOidcClientRequest {
   return create(CreateOidcClientRequestSchema, {
     clientId: draft.clientId.trim(),
     name: draft.name.trim(),
@@ -831,12 +874,16 @@ export function buildUpdateOidcClientRequest(
 }
 
 /** DeleteSsoClient 请求构造（§5.5 行 1262：{id}）。 */
-export function buildDeleteSsoClientRequest(id: bigint): DeleteSsoClientRequest {
+export function buildDeleteSsoClientRequest(
+  id: bigint,
+): DeleteSsoClientRequest {
   return create(DeleteSsoClientRequestSchema, { id });
 }
 
 /** DeleteOidcClient 请求构造（§5.5 行 1264：{id}）。 */
-export function buildDeleteOidcClientRequest(id: bigint): DeleteOidcClientRequest {
+export function buildDeleteOidcClientRequest(
+  id: bigint,
+): DeleteOidcClientRequest {
   return create(DeleteOidcClientRequestSchema, { id });
 }
 
@@ -844,7 +891,7 @@ export function buildDeleteOidcClientRequest(id: bigint): DeleteOidcClientReques
  * 列表列摘要展示（回调白名单 / 权限范围共用）：空 → 占位符；单条 → 原值；
  * 多条 → 首条 + 计数（表格列宽受限，全量展示在详情弹窗）。
  */
-export function summarizeList(values: readonly string[]): string {
+export function summarizeList(values: string[]): string {
   const cleaned = cleanStringList(values);
   if (cleaned.length === 0) {
     return '—';
@@ -873,7 +920,10 @@ export function humanizeTtlSeconds(seconds: number): string {
 }
 
 /** OIDC 令牌有效期列摘要：访问 / 刷新两段人性化（int64 经 toCount 收窄）。 */
-export function tokenTtlSummary(accessTokenTtl: bigint, refreshTokenTtl: bigint): string {
+export function tokenTtlSummary(
+  accessTokenTtl: bigint,
+  refreshTokenTtl: bigint,
+): string {
   return t('admin.tokenTtlSummary', {
     access: humanizeTtlSeconds(toCount(accessTokenTtl)),
     refresh: humanizeTtlSeconds(toCount(refreshTokenTtl)),
@@ -883,7 +933,10 @@ export function tokenTtlSummary(accessTokenTtl: bigint, refreshTokenTtl: bigint)
 /** TTL 详情展示（详情弹窗）：人性化 + 原始秒数并列。 */
 export function ttlDetailText(ttl: bigint): string {
   const seconds = toCount(ttl);
-  return t('admin.ttlDetail', { duration: humanizeTtlSeconds(seconds), seconds });
+  return t('admin.ttlDetail', {
+    duration: humanizeTtlSeconds(seconds),
+    seconds,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -979,7 +1032,9 @@ function settingsRequestInit(draft: SettingsDraft): SettingsRequestInit {
 }
 
 /** 全量提交构造（36 数据键 + 4 伴生标志）：兼容旧客户端 / 键集测试基线。 */
-export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsRequest {
+export function buildSetSettingsRequest(
+  draft: SettingsDraft,
+): SetSettingsRequest {
   return create(SetSettingsRequestSchema, settingsRequestInit(draft));
 }
 
@@ -991,7 +1046,7 @@ export function buildSetSettingsRequest(draft: SettingsDraft): SetSettingsReques
  */
 export function buildSettingsPatchRequest(
   draft: SettingsDraft,
-  keys: readonly (keyof SettingsDraft)[],
+  keys: (keyof SettingsDraft)[],
 ): SetSettingsRequest {
   const full = settingsRequestInit(draft);
   const init: SettingsRequestInit = {};
@@ -1027,7 +1082,9 @@ export function buildSettingsPatchRequest(
  * 统一事件视图（§5.6 行 1288：筛选入参 {event, actorType, actorId,
  * userId, from, to} + 分页 §1.7；查询参数缺省即不过滤，一律 optional）。
  */
-export function listEvents(request: ListEventsRequest): Promise<EventListResponse> {
+export function listEvents(
+  request: ListEventsRequest,
+): Promise<EventListResponse> {
   return adminClient.listEvents(request);
 }
 
@@ -1035,7 +1092,9 @@ export function listEvents(request: ListEventsRequest): Promise<EventListRespons
  * 解码工具（§5.6 行 1289：`{token, purpose:"login"｜"session"｜"cookie"}`
  * → DecodeResponse.payload，Struct 原样透传不为前台消费建模；排障用）。
  */
-export function decodeToken(request: DecodeTokenRequest): Promise<DecodeResponse> {
+export function decodeToken(
+  request: DecodeTokenRequest,
+): Promise<DecodeResponse> {
   return adminClient.decodeToken(request);
 }
 
@@ -1057,14 +1116,14 @@ export type AuditPreset = 'all' | 'login_records' | 'sensitive_records';
 
 /** ListEvents 六筛选取值（§5.6 行 1288；undefined 即不下发 = 不过滤）。 */
 export interface AuditEventFilters {
-  readonly event?: string;
-  readonly actorType?: string;
-  readonly actorId?: bigint;
-  readonly userId?: bigint;
+  event?: string;
+  actorType?: string;
+  actorId?: bigint;
+  userId?: bigint;
   /** 起始时间，Unix 秒（§12.9 时间口径）。 */
-  readonly from?: bigint;
+  from?: bigint;
   /** 结束时间，Unix 秒。 */
-  readonly to?: bigint;
+  to?: bigint;
 }
 
 /**
@@ -1089,7 +1148,10 @@ export function buildListEventsRequest(
         : filters.event === '' || filters.event === undefined
           ? undefined
           : filters.event,
-    actorType: filters.actorType === '' || filters.actorType === undefined ? undefined : filters.actorType,
+    actorType:
+      filters.actorType === '' || filters.actorType === undefined
+        ? undefined
+        : filters.actorType,
     actorId: filters.actorId,
     userId: filters.userId,
     from: filters.from,
@@ -1102,7 +1164,10 @@ export function buildListEventsRequest(
 }
 
 /** DecodeToken 请求构造（§5.6 行 1289：{token, purpose}；token 去首尾空白）。 */
-export function buildDecodeTokenRequest(token: string, purpose: string): DecodeTokenRequest {
+export function buildDecodeTokenRequest(
+  token: string,
+  purpose: string,
+): DecodeTokenRequest {
   return create(DecodeTokenRequestSchema, { token: token.trim(), purpose });
 }
 
@@ -1134,7 +1199,10 @@ const EVENT_TYPE_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
 
 /** 事件类型 → 展示文案（未知值原样兜底，§9 第 18 条）。 */
 export function eventTypeLabel(event: string): string {
-  const labelKey = Object.prototype.hasOwnProperty.call(EVENT_TYPE_LABEL_KEYS, event)
+  const labelKey = Object.prototype.hasOwnProperty.call(
+    EVENT_TYPE_LABEL_KEYS,
+    event,
+  )
     ? EVENT_TYPE_LABEL_KEYS[event]
     : undefined;
   return labelKey === undefined ? event : t(labelKey);
@@ -1144,9 +1212,9 @@ export function eventTypeLabel(event: string): string {
  * 事件类型筛选下拉（§5.6 行 1288 event 过滤；值域 = 上述 17 已知类型）。
  * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
  */
-export const EVENT_TYPE_FILTERS: readonly {
-  readonly value: string;
-  readonly textKey: I18nKey;
+export const EVENT_TYPE_FILTERS: {
+  value: string;
+  textKey: I18nKey;
 }[] = Object.entries(EVENT_TYPE_LABEL_KEYS).map(([value, textKey]) => ({
   value,
   textKey,
@@ -1159,7 +1227,7 @@ export const EVENT_TYPE_FILTERS: readonly {
  * event 系 optional string 单值（events.proto）→ 预设在前端组装：下拉限定
  * 五类单选，接口仅收单值正向过滤。
  */
-export const SENSITIVE_RECORDS_EVENTS: readonly string[] = [
+export const SENSITIVE_RECORDS_EVENTS: string[] = [
   'change_password',
   'reset_password',
   'thirdparty_unbind',
@@ -1178,7 +1246,7 @@ export const SENSITIVE_RECORDS_DEFAULT_EVENT = 'change_password';
  */
 export function eventTypeFilterOptions(
   preset: AuditPreset,
-): readonly { readonly value: string; readonly textKey: I18nKey }[] {
+): { value: string; textKey: I18nKey }[] {
   if (preset === 'sensitive_records') {
     return EVENT_TYPE_FILTERS.filter((option) =>
       SENSITIVE_RECORDS_EVENTS.includes(option.value),
@@ -1192,8 +1260,14 @@ export function eventTypeFilterOptions(
  * 出集（含空）默认 change_password（列表立即有数据）；切其余预设保留现值
  * （预设切换不清筛选，既有惯例——五类值在 17 类全量值域中均合法）。
  */
-export function resolveEventFilterOnPreset(next: AuditPreset, current: string): string {
-  if (next === 'sensitive_records' && !SENSITIVE_RECORDS_EVENTS.includes(current)) {
+export function resolveEventFilterOnPreset(
+  next: AuditPreset,
+  current: string,
+): string {
+  if (
+    next === 'sensitive_records' &&
+    !SENSITIVE_RECORDS_EVENTS.includes(current)
+  ) {
     return SENSITIVE_RECORDS_DEFAULT_EVENT;
   }
   return current;
@@ -1224,9 +1298,9 @@ export function actorTypeLabel(actorType: string): string {
  * 操作者类型筛选下拉（§5.6 行 1288 actorType 过滤 user|admin|system；
  * textKey 字段化口径同 EVENT_TYPE_FILTERS）。
  */
-export const ACTOR_TYPE_FILTERS: readonly {
-  readonly value: string;
-  readonly textKey: I18nKey;
+export const ACTOR_TYPE_FILTERS: {
+  value: string;
+  textKey: I18nKey;
 }[] = Object.entries(ACTOR_TYPE_LABEL_KEYS).map(([value, textKey]) => ({
   value,
   textKey,

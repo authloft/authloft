@@ -34,7 +34,7 @@ import styles from './DecodePage.module.less';
  * 解码口径下拉（§5.6 行 1289 purpose 值域 login|session|cookie，文案注解取值语义）。
  * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
  */
-const PURPOSE_OPTIONS: readonly { readonly value: string; readonly textKey: I18nKey }[] = [
+const PURPOSE_OPTIONS: { value: string; textKey: I18nKey }[] = [
   { value: 'login', textKey: 'admin.decodePurposeLogin' },
   { value: 'session', textKey: 'admin.decodePurposeSession' },
   { value: 'cookie', textKey: 'admin.decodePurposeCookie' },
@@ -43,7 +43,7 @@ const PURPOSE_OPTIONS: readonly { readonly value: string; readonly textKey: I18n
 /** 解码工具页：token + purpose 表单 → 载荷 JSON 展示。 */
 export function DecodePage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录已收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   const [token, setToken] = useState('');
   const [purpose, setPurpose] = useState('login');
@@ -54,7 +54,8 @@ export function DecodePage(_props: {
   // requestOptions 跳登录（returnTo 取 HashRouter 内路径），其余错误
   // Toast；成功经 onSuccess 落 payload。
   const decodeReq = useRequest(
-    (request: ReturnType<typeof buildDecodeTokenRequest>) => decodeToken(request),
+    (request: ReturnType<typeof buildDecodeTokenRequest>) =>
+      decodeToken(request),
     {
       manual: true,
       onSuccess: (res) => {
@@ -78,7 +79,9 @@ export function DecodePage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navDecode')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navDecode')}
+      </Typography.Title>
       <div className={styles.form}>
         <Select
           className={styles.purposeSelect}

@@ -18,16 +18,16 @@ import {
 
 /** 字段渲染器入参（值模型见 schemaLogic 文件头）。 */
 export interface FieldRendererProps {
-  readonly field: SchemaField;
+  field: SchemaField;
   /** 当前值（json → string 文本态；text/secret/select → string；checkbox → boolean；number → number）。 */
-  readonly value: unknown;
-  readonly onChange: (value: unknown) => void;
+  value: unknown;
+  onChange: (value: unknown) => void;
   /** 禁用（提交中 / 锁定键，如 category 只读、provider_key 编辑锁）。 */
-  readonly disabled: boolean;
+  disabled: boolean;
   /** 该字段的校验文案（validateSchemaValues 产物按键定位；undefined = 无问题）。 */
-  readonly issue: string | undefined;
+  issue: string | undefined;
   /** 字段扩展位（SchemaForm fieldExtra 注入，如 icon_url 预览）。 */
-  readonly extra: ReactNode;
+  extra: ReactNode;
 }
 
 export type FieldRenderer = (props: FieldRendererProps) => ReactNode;

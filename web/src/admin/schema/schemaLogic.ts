@@ -28,7 +28,7 @@ import { t, type I18nKey } from '../../shared/i18n';
  * 表单五区块（§5.3 行 1185 封闭值域：basic / credential / endpoint（整块
  * 默认折叠）/ display / policy）；渲染序固定按本数组。
  */
-export const SECTION_ORDER: readonly string[] = [
+export const SECTION_ORDER: string[] = [
   'basic',
   'credential',
   'endpoint',
@@ -50,7 +50,7 @@ export const SECTION_TITLES: Readonly<Record<string, I18nKey>> = {
 };
 
 /** 六种字段类型（§5.3 行 1229 唯一定义：管理后台只用到这六个）。 */
-export const FIELD_TYPES: readonly string[] = [
+export const FIELD_TYPES: string[] = [
   'text',
   'secret',
   'checkbox',
@@ -66,9 +66,7 @@ export const FIELD_TYPES: readonly string[] = [
  * 不维护 key → 区块映射表，section 缺失即报错；§5.3 行 1185「每个字段都
  * 必须带 section」——protojson 零值省略下缺失即空串）。
  */
-export function groupFieldsBySection(
-  fields: readonly SchemaField[],
-): readonly (readonly SchemaField[])[] {
+export function groupFieldsBySection(fields: SchemaField[]): SchemaField[][] {
   const groups: SchemaField[][] = SECTION_ORDER.map(() => []);
   for (const field of fields) {
     const index = SECTION_ORDER.indexOf(field.section);
@@ -147,7 +145,7 @@ function normalizeForForm(field: SchemaField, value: unknown): unknown {
  * 字段 stringify 为编辑文本），未下发按类型零值。
  */
 export function applySchemaDefaults(
-  fields: readonly SchemaField[],
+  fields: SchemaField[],
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const field of fields) {
@@ -210,7 +208,7 @@ const TABLE_COLUMN_GETTERS: Readonly<
  * 消费方（SchemaForm lockedKeys）决定，本函数只管值。
  */
 export function adminProviderToValues(
-  fields: readonly SchemaField[],
+  fields: SchemaField[],
   provider: AdminProvider,
 ): Record<string, unknown> {
   const ext: JsonObject = provider.ext ?? {};
@@ -241,7 +239,7 @@ export function adminProviderToValues(
  * - json：非空文本 JSON.parse 失败即拦截（空文本 = 未设置，放行）。
  */
 export function validateSchemaValues(
-  fields: readonly SchemaField[],
+  fields: SchemaField[],
   values: Readonly<Record<string, unknown>>,
 ): Record<string, string> {
   const issues: Record<string, string> = {};
@@ -260,7 +258,11 @@ export function validateSchemaValues(
       issues[field.key] = t('admin.validatePattern');
       continue;
     }
-    if (field.type === 'number' && !isEmptyValue(value) && typeof value !== 'number') {
+    if (
+      field.type === 'number' &&
+      !isEmptyValue(value) &&
+      typeof value !== 'number'
+    ) {
       issues[field.key] = t('admin.validateNumber');
       continue;
     }
@@ -291,7 +293,7 @@ function isEmptyValue(value: unknown): boolean {
  */
 export function isProviderKeyTaken(
   providerKey: string,
-  rows: readonly Provider[],
+  rows: Provider[],
 ): boolean {
   return (
     providerKey !== '' && rows.some((row) => row.providerKey === providerKey)
@@ -308,7 +310,7 @@ export function isProviderKeyTaken(
  */
 export function buildProviderStruct(
   providerType: string,
-  fields: readonly SchemaField[],
+  fields: SchemaField[],
   values: Readonly<Record<string, unknown>>,
 ): JsonObject {
   const out: JsonObject = { type: providerType };

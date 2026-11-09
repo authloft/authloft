@@ -31,7 +31,7 @@ export { groupProviders } from './factors/ProviderButtons';
 
 export interface MethodTabsProps {
   /** 注入快照的登录方式列表（§2.1）。 */
-  methods: readonly LoginMethodEntry[];
+  methods: LoginMethodEntry[];
   /** 当前方式（空串 = 未选择）。 */
   current: string;
   /** 选择方式（容器推导 firstStep 后 dispatch select_method）。 */

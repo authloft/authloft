@@ -54,9 +54,7 @@ import {
 import styles from './ResetPage.module.less';
 
 /** 重置可用方式白名单（§2.1 行 412：flow=reset 只保留 otp_sms / otp_email，快照已过滤，此处防御性收窄）。 */
-export function resetOptionsFor(
-  snapshot: MethodsSnapshot,
-): readonly LoginMethodEntry[] {
+export function resetOptionsFor(snapshot: MethodsSnapshot): LoginMethodEntry[] {
   return snapshot.methods.filter(
     (m) => m.method === 'otp_sms' || m.method === 'otp_email',
   );
@@ -109,25 +107,25 @@ const RESET_METHOD_NAME_KEYS: Readonly<Record<string, string>> = {
 
 export interface ResetPageViewProps {
   /** 注入快照（§2.1，flow=reset）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
   /** 最近一次响应 status（初始 'idle'）。 */
-  readonly status: string;
+  status: string;
   /** 最近一次响应信封（失败态 ErrorBanner 字段来源）。 */
-  readonly envelope: LoginFlowResponse | undefined;
+  envelope: LoginFlowResponse | undefined;
   /** restart / 传输失败的一次性提示（i18nKey）。 */
-  readonly notice?: string;
+  notice?: string;
   /** 当前重置方式（快照 method）。 */
-  readonly method: string;
+  method: string;
   /** 当前请求侧 step。 */
-  readonly step: FlowStep;
+  step: FlowStep;
   /** 请求在途（提交按钮禁用，§3.2）。 */
-  readonly loading: boolean;
+  loading: boolean;
   /** verify 段已输码（容器持值防实例重建丢失，同款语义）。 */
-  readonly otpCode: string;
+  otpCode: string;
   /** set_password 段新密码（受控）。 */
-  readonly password: string;
+  password: string;
   /** challenge 段已提交的目标值（评审 P1-5：reset / 重发回 challenge 段时经 OTPForm initialValues 回填）。 */
-  readonly challengeValues?: Readonly<Record<string, string>>;
+  challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
   /** 提交（challenge 段上抛目标 values；verify 段 {code}；set_password 段 {}）。 */
   onSubmit: (values: Readonly<Record<string, string>>) => void;
@@ -226,7 +224,9 @@ export function ResetPageView({
       confirm,
       requireUsername: false,
     });
-    const first = SET_PASSWORD_FIELD_ORDER.find((name) => issues[name] !== undefined);
+    const first = SET_PASSWORD_FIELD_ORDER.find(
+      (name) => issues[name] !== undefined,
+    );
     if (first !== undefined) {
       setFormErrors(issues);
       focusField(`reset-${first}`);
@@ -249,9 +249,7 @@ export function ResetPageView({
             // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
             attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
             retryable={resolution.retryable}
-            onRetry={
-              RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined
-            }
+            onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
           />
         )}
         {options.length > 1 && (
@@ -376,7 +374,7 @@ export function ResetPageView({
 
 export interface ResetPageProps {
   /** 注入快照（§2.1；bootstrap 读取后由 routes 传入，flow=reset）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
 }
 
 export function ResetPage({ snapshot }: ResetPageProps) {

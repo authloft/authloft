@@ -30,25 +30,25 @@ import styles from './SchemaForm.module.less';
 
 export interface SchemaFormProps {
   /** GetProviderSchema 响应（§5.3 行 1183：{type, category, fields}）。 */
-  readonly schema: SchemaResponse;
+  schema: SchemaResponse;
   /** 表单值（schemaLogic 值模型；由消费方持有）。 */
-  readonly values: Readonly<Record<string, unknown>>;
+  values: Readonly<Record<string, unknown>>;
   /** 校验文案（validateSchemaValues 产物，键定位）。 */
-  readonly issues: Readonly<Record<string, string>>;
+  issues: Readonly<Record<string, string>>;
   /** 锁定键（渲染禁用：category 只读 §5.3 行 1195、provider_key 编辑锁）。 */
-  readonly lockedKeys: readonly string[];
+  lockedKeys: string[];
   /** 全表单禁用（提交中）。 */
-  readonly disabled: boolean;
+  disabled: boolean;
   /** 值变更（键级上抛）。 */
-  readonly onChange: (key: string, value: unknown) => void;
+  onChange: (key: string, value: unknown) => void;
   /** 字段扩展位注入（如 icon_url 的 ProviderIcon 实时预览）。 */
-  readonly fieldExtra?: (field: SchemaField) => ReactNode;
+  fieldExtra?: (field: SchemaField) => ReactNode;
 }
 
 /** 区块内一组字段的装配（普通字段直渲染，advanced 收折叠组）。 */
 function FieldsGroup(props: {
-  readonly fields: readonly SchemaField[];
-  readonly owner: SchemaFormProps;
+  fields: SchemaField[];
+  owner: SchemaFormProps;
 }): ReactNode {
   const plain = props.fields.filter((field) => !field.advanced);
   const advanced = props.fields.filter((field) => field.advanced);
@@ -79,8 +79,8 @@ function FieldsGroup(props: {
 
 /** 单字段装配：分派渲染器（FieldRegistry）+ 锁定 / 禁用 / issue / 扩展位。 */
 function SchemaFieldControl(props: {
-  readonly field: SchemaField;
-  readonly owner: SchemaFormProps;
+  field: SchemaField;
+  owner: SchemaFormProps;
 }): ReactNode {
   const { field, owner } = props;
   const Renderer = resolveFieldRenderer(field.type);
@@ -98,7 +98,7 @@ function SchemaFieldControl(props: {
 
 /** Schema 驱动表单：五区块（SECTION_ORDER 序），endpoint 整块默认折叠。 */
 export function SchemaForm(props: SchemaFormProps): ReactNode {
-  let groups: readonly (readonly SchemaField[])[] | null = null;
+  let groups: SchemaField[][] | null = null;
   let sectionError: string | null = null;
   try {
     groups = groupFieldsBySection(props.schema.fields);
@@ -122,7 +122,9 @@ export function SchemaForm(props: SchemaFormProps): ReactNode {
         const section = SECTION_ORDER[index];
         return (
           <section key={section} className={styles.section}>
-            <h4 className={styles.sectionTitle}>{t(SECTION_TITLES[section])}</h4>
+            <h4 className={styles.sectionTitle}>
+              {t(SECTION_TITLES[section])}
+            </h4>
             {section === 'endpoint' ? (
               // 整块默认折叠（§5.3 行 1185；details 默认收起）。
               <details className={styles.collapsible}>

@@ -25,12 +25,18 @@ import {
 type EnvelopeInit = MessageInitShape<typeof LoginFlowResponseSchema>;
 
 /** 构造信封（§1.3）：status 必填，其余按需覆盖。 */
-function envelope(status: string, overrides: EnvelopeInit = {}): LoginFlowResponse {
+function envelope(
+  status: string,
+  overrides: EnvelopeInit = {},
+): LoginFlowResponse {
   return create(LoginFlowResponseSchema, { status, ...overrides });
 }
 
 /** 依次派发事件（从初始态起）。 */
-function reduce(events: readonly FlowEvent[], state: FlowState = INITIAL_FLOW_STATE): FlowState {
+function reduce(
+  events: FlowEvent[],
+  state: FlowState = INITIAL_FLOW_STATE,
+): FlowState {
   return events.reduce(flowReducer, state);
 }
 
@@ -81,7 +87,12 @@ describe('reducer status 迁移（§1.3 行 145：status 是唯一分支依据�
   });
 
   test('回到第一步类（§1.6：step_invalid / token_invalid / token_expired / state_mismatch）→ restart 标记', () => {
-    for (const status of ['step_invalid', 'token_invalid', 'token_expired', 'state_mismatch']) {
+    for (const status of [
+      'step_invalid',
+      'token_invalid',
+      'token_expired',
+      'state_mismatch',
+    ]) {
       expect(at(status).effects, `status=${status}`).toEqual([
         { type: 'restart', status },
       ]);
@@ -117,7 +128,11 @@ describe('reducer 事件迁移', () => {
       { type: 'response', envelope: envelope('mfa_required') },
       { type: 'select_method', method: 'totp', firstStep: 'verify' },
     ]);
-    expect(state).toEqual({ ...INITIAL_FLOW_STATE, method: 'totp', step: 'verify' });
+    expect(state).toEqual({
+      ...INITIAL_FLOW_STATE,
+      method: 'totp',
+      step: 'verify',
+    });
   });
 
   test('request_started：loading=true 并记录本次提交的 step（§2.2 行 422）', () => {
@@ -142,7 +157,12 @@ describe('reducer 事件迁移', () => {
   test('advance：推进 step，容器按 next_step 决定（reducer 不做 kind→step 推演）', () => {
     const state = reduce([
       { type: 'select_method', method: 'otp_email', firstStep: 'challenge' },
-      { type: 'response', envelope: envelope('next', { nextStep: { kind: 'form', method: 'otp_email' } }) },
+      {
+        type: 'response',
+        envelope: envelope('next', {
+          nextStep: { kind: 'form', method: 'otp_email' },
+        }),
+      },
       { type: 'advance', step: 'verify' },
     ]);
     expect(selectCurrentStep(state)).toBe('verify');
@@ -154,7 +174,10 @@ describe('reducer 事件迁移', () => {
   });
 
   test('每次事件迁移重置副作用标记（容器处理后继续派发不重复执行）', () => {
-    const state = reduce([{ type: 'request_started', step: 'verify' }], at('success'));
+    const state = reduce(
+      [{ type: 'request_started', step: 'verify' }],
+      at('success'),
+    );
     expect(state.effects).toEqual([]);
   });
 });
@@ -170,10 +193,18 @@ describe('selectors（§4.1 行 382：当前 step / method / captcha / 禁用提
 
   test('selectShowCaptcha：仅 captcha_required / captcha_invalid 且响应顶层 captcha 存在（§1.6 行 240-241）', () => {
     expect(
-      selectShowCaptcha(at('captcha_required', { captcha: { providerKey: 'builtin_image', type: 'image' } })),
+      selectShowCaptcha(
+        at('captcha_required', {
+          captcha: { providerKey: 'builtin_image', type: 'image' },
+        }),
+      ),
     ).toBe(true);
     expect(
-      selectShowCaptcha(at('captcha_invalid', { captcha: { providerKey: 'cf_turnstile', type: 'turnstile' } })),
+      selectShowCaptcha(
+        at('captcha_invalid', {
+          captcha: { providerKey: 'cf_turnstile', type: 'turnstile' },
+        }),
+      ),
     ).toBe(true);
     // 零值兜底：captcha 对象缺失不展示（§2.5 行 518 服务端必附，防御）
     expect(selectShowCaptcha(at('captcha_required'))).toBe(false);
@@ -184,7 +215,9 @@ describe('selectors（§4.1 行 382：当前 step / method / captcha / 禁用提
   test('selectSubmitDisabled：loading / success / 不可重试失败态 → true（§3.2 + §1.6「可重试」列）', () => {
     // 请求在途（§3.2：提交按钮按 loading 禁用）
     expect(
-      selectSubmitDisabled(reduce([{ type: 'request_started', step: 'verify' }])),
+      selectSubmitDisabled(
+        reduce([{ type: 'request_started', step: 'verify' }]),
+      ),
     ).toBe(true);
     // 已完成
     expect(selectSubmitDisabled(at('success'))).toBe(true);

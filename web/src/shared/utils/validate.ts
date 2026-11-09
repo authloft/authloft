@@ -58,10 +58,7 @@ export function isCodeComplete(
 
 /** 单字段前置校验未通过原因（i18n 文案由字典层落，本层只给结构化原因）。 */
 export type FieldIssue =
-  | 'required'
-  | 'invalid_email'
-  | 'invalid_phone'
-  | 'code_incomplete';
+  'required' | 'invalid_email' | 'invalid_phone' | 'code_incomplete';
 
 /** FieldIssue → i18n 键（纯字符串表，不引 i18n 模块，沿组件层键表模式）。 */
 export const FIELD_ISSUE_I18N_KEY: Readonly<Record<FieldIssue, string>> = {
@@ -77,10 +74,10 @@ export const FIELD_ISSUE_I18N_KEY: Readonly<Record<FieldIssue, string>> = {
  * captcha 类型由 CaptchaWidget 承接，不参与本校验。
  */
 export interface ValidatableField {
-  readonly name: string;
-  readonly type: string;
-  readonly required?: boolean;
-  readonly length?: bigint | number;
+  name: string;
+  type: string;
+  required?: boolean;
+  length?: bigint | number;
 }
 
 /**
@@ -89,7 +86,7 @@ export interface ValidatableField {
  * 体验性预校验，服务端为唯一权威（§1.11）。
  */
 export function validateFields(
-  fields: readonly ValidatableField[],
+  fields: ValidatableField[],
   values: Readonly<Record<string, string>>,
 ): Readonly<Record<string, FieldIssue>> {
   const issues: Record<string, FieldIssue> = {};
@@ -121,7 +118,7 @@ export function validateFields(
 
 /** 字段顺序取首个未通过字段名（聚焦首错字段用）；全过 → undefined。 */
 export function firstInvalidField(
-  fields: readonly ValidatableField[],
+  fields: ValidatableField[],
   issues: Readonly<Record<string, FieldIssue>>,
 ): string | undefined {
   return fields.find((field) => issues[field.name] !== undefined)?.name;
@@ -193,7 +190,10 @@ export function validatePassword(
   password: string,
   options: ValidatePasswordOptions = {},
 ): PasswordWeakReason[] {
-  const policy: PasswordPolicy = { ...DEFAULT_PASSWORD_POLICY, ...options.policy };
+  const policy: PasswordPolicy = {
+    ...DEFAULT_PASSWORD_POLICY,
+    ...options.policy,
+  };
   // §5.6：pwd_max_length 可调低不可调高（服务端硬上限 64）。
   const maxLength = Math.min(policy.maxLength, 64);
   const reasons: PasswordWeakReason[] = [];

@@ -45,13 +45,13 @@ export function requestErrorText(error: unknown): string {
 /** 集中分派的四种去处。 */
 export type RequestErrorAction =
   /** 401：跳登录（URL 由工厂拼装，含 returnTo）。 */
-  | { readonly kind: 'redirect' }
+  | { kind: 'redirect' }
   /** 字段级错误码：行内呈现（用户需知道哪一栏错）。 */
-  | { readonly kind: 'field'; readonly field: string; readonly message: string }
+  | { kind: 'field'; field: string; message: string }
   /** 其余错误：Toast 弹出。 */
-  | { readonly kind: 'toast'; readonly message: string }
+  | { kind: 'toast'; message: string }
   /** toast:false（首取页）：静默——错误态由页面错误帧呈现，防双报。 */
-  | { readonly kind: 'silent' };
+  | { kind: 'silent' };
 
 /**
  * 错误分派判定（纯函数）：401 优先于字段级与 toast 开关；字段级命中
@@ -60,9 +60,9 @@ export type RequestErrorAction =
 export function classifyRequestError(
   error: unknown,
   options: {
-    readonly toast?: boolean;
-    readonly fieldByCode?: Readonly<Record<string, string>>;
-    readonly onFieldError?: (field: string, message: string) => void;
+    toast?: boolean;
+    fieldByCode?: Readonly<Record<string, string>>;
+    onFieldError?: (field: string, message: string) => void;
   },
 ): RequestErrorAction {
   if (isUnauthenticatedError(error)) {
@@ -83,13 +83,13 @@ export function classifyRequestError(
 /** requestOptions 入参。 */
 export interface RequestOptionsInput {
   /** 默认 true；首取页（错误帧呈现）传 false 防 Toast + 错误帧双报。 */
-  readonly toast?: boolean;
+  toast?: boolean;
   /** 字段级错误码 → 表单字段名（如 setup 的 INSTALL_FIELD_BY_CODE）。 */
-  readonly fieldByCode?: Readonly<Record<string, string>>;
+  fieldByCode?: Readonly<Record<string, string>>;
   /** 字段级错误的行内落点（如 formApi.setError）。 */
-  readonly onFieldError?: (field: string, message: string) => void;
+  onFieldError?: (field: string, message: string) => void;
   /** 401 跳转的域内 returnTo 构造（accountReturnTo / adminReturnTo 分域注入）。 */
-  readonly returnTo?: (path: string, search: string) => string;
+  returnTo?: (path: string, search: string) => string;
   /**
    * 域内自定义分派（§5.4-#4 样板：setup 注入 classifyInstallError，域内
    * 专用文案表〔setupMessage / 字段覆盖键〕与本工厂 requestErrorText 口径
@@ -97,16 +97,16 @@ export interface RequestOptionsInput {
    * 会话可跳，401 按域内 Toast 口径）；返回值仍是 RequestErrorAction，
    * field / toast 的副作用执行不变。
    */
-  readonly classify?: (error: unknown) => RequestErrorAction;
+  classify?: (error: unknown) => RequestErrorAction;
   /** 测试注入点：默认 location.replace。 */
-  readonly redirect?: (url: string) => void;
+  redirect?: (url: string) => void;
   /** 测试注入点：默认 Toast.error。 */
-  readonly showToast?: (message: string) => void;
+  showToast?: (message: string) => void;
 }
 
 /** 工厂产出：可直接展开进 ahooks useRequest options。 */
 export interface RequestOptionsResult {
-  readonly onError: (error: Error) => void;
+  onError: (error: Error) => void;
 }
 
 /** __AUTHLOFT_INIT__ 的最小形状（接口文档 §8 白名单中的 al_root）。 */
@@ -119,16 +119,20 @@ interface RawInit {
  * `useRequest(fn, requestOptions({ toast: false }))`（首取）/
  * `useRequest(fn, { manual: true, ...requestOptions() })`（提交）。
  */
-export function requestOptions(input: RequestOptionsInput = {}): RequestOptionsResult {
+export function requestOptions(
+  input: RequestOptionsInput = {},
+): RequestOptionsResult {
   const redirect =
     input.redirect ??
     ((url: string) => {
       location.replace(url);
     });
-  const showToast = input.showToast ?? ((message: string) => Toast.error(message));
+  const showToast =
+    input.showToast ?? ((message: string) => Toast.error(message));
   return {
     onError: (error) => {
-      const action = input.classify?.(error) ?? classifyRequestError(error, input);
+      const action =
+        input.classify?.(error) ?? classifyRequestError(error, input);
       switch (action.kind) {
         case 'redirect': {
           const raw = (globalThis as { __AUTHLOFT_INIT__?: RawInit })

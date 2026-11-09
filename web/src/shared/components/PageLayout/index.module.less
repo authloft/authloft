@@ -1,0 +1,114 @@
+// 系统设置页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
+// Semi Card / Banner / InputNumber 等组件样式由组件 JS 内部 css import 随构建
+// 自动打包（主题变量归 entry.tsx 的 _base/base.css），此处只补表单分区布局。
+@import (reference) '../../styles/tokens.less';
+
+.page {
+  display: block;
+}
+
+// 顶部部分保存说明 Banner（「只提交改动项」UI 明示）。
+.patchBanner {
+  margin-bottom: @spacing-md;
+}
+
+// 4 个 Tab 的页签容器；内容区沿用 .sections 纵向卡片流。
+.tabs {
+  display: block;
+}
+
+// 页签标题 + 未保存脏点（同一行，不挤占文字）。
+.tabLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: @spacing-xs;
+}
+
+.tabDirtyDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: @color-warning;
+}
+
+.actionError {
+  margin: 0 0 @spacing-md;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+// 整页加载态（Semi Spin 居中容器；页级错误态直接用 Semi Banner 默认
+// 样式，成功 / 写失败反馈走 Toast——原 .notice / .loading / .loadError 自绘
+// 文字规则随替换删除，装饰性 @color-primary 引用一并清除）。
+.stateCenter {
+  display: flex;
+  justify-content: center;
+  padding: @spacing-xl 0;
+}
+
+// 分区表单：纵向卡片流。
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-lg;
+}
+
+.sectionCard {
+  display: block;
+  margin-top: @spacing-md;
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+// 竖排字段：标签 + 控件 + 说明。
+.field {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+  display: block;
+}
+
+.fieldHint {
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+// 行内开关字段：开关 + 标签 + 说明同排（窄屏自动换行）。
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  flex-wrap: wrap;
+}
+
+.switchLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.numberInput {
+  width: 200px;
+}
+
+.textInput {
+  max-width: 480px;
+}
+
+// 三态选择（HTTPS 部署）等下拉字段。
+.selectInput {
+  width: 200px;
+}
+
+.stringListInput,
+.multiSelectInput {
+  width: 320px;
+}

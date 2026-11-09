@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
@@ -29,7 +38,11 @@ import {
 } from '../shared/app-ui/dataTableLogic';
 import { ApiError } from '../shared/api/errors';
 import { setLocale, t } from '../shared/i18n';
-import { DEFAULT_ACCOUNT_HOME, loginUrl, sanitizeReturnTo } from '../shared/urls';
+import {
+  DEFAULT_ACCOUNT_HOME,
+  loginUrl,
+  sanitizeReturnTo,
+} from '../shared/urls';
 import { moveItem, SortableList } from './components/SortableList';
 import {
   ProviderCallbackHint,
@@ -258,7 +271,7 @@ let routesMod: typeof import('./routes');
 // 返回 children 即合法 ReactNode（React 19），数组首元素字符串充「经布局
 // 挂载」标记，用于区分带布局 / 裸兜底两分支形态。
 rs.mock('./layout/AdminLayout', () => ({
-  AdminLayout: (props: { readonly children?: unknown }) => [
+  AdminLayout: (props: { children?: unknown }) => [
     '__ADMIN_LAYOUT_STUB__',
     props.children,
   ],
@@ -396,7 +409,12 @@ describe('api.getMe（§5.1 行 1159）', () => {
     server.use(
       http.post(GET_ME_URL, () =>
         // protojson 省略零值字段（§1.1）：avatarUrl / nickname 未下发。
-        HttpResponse.json({ id: '1', username: 'admin', nickname: '', isAdmin: true }),
+        HttpResponse.json({
+          id: '1',
+          username: 'admin',
+          nickname: '',
+          isAdmin: true,
+        }),
       ),
     );
 
@@ -431,11 +449,16 @@ describe('api.getMe（§5.1 行 1159）', () => {
     // connect-go 拦截器的真实 wire 形态：HTTP 404 + Connect 错误 JSON 体
     //（空体会被 connect-web 按协议状态兜底表映射 Unimplemented，非后端行为）。
     server.use(
-      http.post(GET_ME_URL, () =>
-        new HttpResponse(JSON.stringify({ code: 'not_found', message: 'not found' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        }),
+      http.post(
+        GET_ME_URL,
+        () =>
+          new HttpResponse(
+            JSON.stringify({ code: 'not_found', message: 'not found' }),
+            {
+              status: 404,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
       ),
     );
 
@@ -482,17 +505,32 @@ describe('isUnauthenticatedError（§6 行 501 判定纯函数）', () => {
   test('HTTP 401 或 Connect 标准码 unauthenticated → true', () => {
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 401, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 401, code: 'session_required', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'session_required',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 403, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 403,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
   });
@@ -500,12 +538,22 @@ describe('isUnauthenticatedError（§6 行 501 判定纯函数）', () => {
   test('其他 ApiError / 非错误对象 → false', () => {
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 403, code: 'permission_denied', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 403,
+          code: 'permission_denied',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(false);
     expect(
       apiMod.isUnauthenticatedError(
-        new ApiError({ httpStatus: 404, code: 'not_found', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 404,
+          code: 'not_found',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(false);
     expect(apiMod.isUnauthenticatedError(new Error('x'))).toBe(false);
@@ -517,12 +565,22 @@ describe('isAdminNotFoundError（§6 行 501 / 接口文档 §5 行 1149 掩护�
   test('HTTP 404 或 Connect 标准码 not_found → true', () => {
     expect(
       apiMod.isAdminNotFoundError(
-        new ApiError({ httpStatus: 404, code: 'not_found', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 404,
+          code: 'not_found',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
     expect(
       apiMod.isAdminNotFoundError(
-        new ApiError({ httpStatus: 200, code: 'not_found', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 200,
+          code: 'not_found',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(true);
   });
@@ -530,12 +588,22 @@ describe('isAdminNotFoundError（§6 行 501 / 接口文档 §5 行 1149 掩护�
   test('401 / 500 / 非 ApiError → false（404 掩护与 401 语义互斥）', () => {
     expect(
       apiMod.isAdminNotFoundError(
-        new ApiError({ httpStatus: 401, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(false);
     expect(
       apiMod.isAdminNotFoundError(
-        new ApiError({ httpStatus: 500, code: 'internal', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 500,
+          code: 'internal',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe(false);
     expect(apiMod.isAdminNotFoundError(new Error('x'))).toBe(false);
@@ -546,17 +614,32 @@ describe('adminMeFailureAction（§6 行 501 分流判定）', () => {
   test('401 → redirect_login；404 掩护 / 500 / 非 ApiError → show_error（不跳登录）', () => {
     expect(
       apiMod.adminMeFailureAction(
-        new ApiError({ httpStatus: 401, code: 'unauthenticated', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 401,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe('redirect_login');
     expect(
       apiMod.adminMeFailureAction(
-        new ApiError({ httpStatus: 404, code: 'not_found', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 404,
+          code: 'not_found',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe('show_error');
     expect(
       apiMod.adminMeFailureAction(
-        new ApiError({ httpStatus: 500, code: 'internal', message: '', requestId: '' }),
+        new ApiError({
+          httpStatus: 500,
+          code: 'internal',
+          message: '',
+          requestId: '',
+        }),
       ),
     ).toBe('show_error');
     expect(apiMod.adminMeFailureAction(new Error('x'))).toBe('show_error');
@@ -663,7 +746,10 @@ describe('api.listProviders（§5.2 行 1165：读路径真调 + protojson 解�
 
   test('500 → ApiError 归一（非 401：页面错误态，不跳登录）', async () => {
     server.use(
-      http.post(LIST_PROVIDERS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        LIST_PROVIDERS_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -687,7 +773,10 @@ describe('api.setProviderEnabled（§5.2 行 1173 行内启停 → OkResponse）
       }),
     );
     const res = await apiMod.setProviderEnabled(
-      create(SetProviderEnabledRequestSchema, { providerKey: 'qq', isEnabled: false }),
+      create(SetProviderEnabledRequestSchema, {
+        providerKey: 'qq',
+        isEnabled: false,
+      }),
     );
     // protojson：非 optional 的 bool false 为零值 → 省略不下发（§1.0 零值缺省）。
     expect(requestBody).toEqual({ providerKey: 'qq' });
@@ -696,12 +785,18 @@ describe('api.setProviderEnabled（§5.2 行 1173 行内启停 → OkResponse）
 
   test('500 reject → ApiError（StatusSwitch 回滚触发链：消费方 catch 展示后 rethrow）', async () => {
     server.use(
-      http.post(SET_PROVIDER_ENABLED_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        SET_PROVIDER_ENABLED_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
       await apiMod.setProviderEnabled(
-        create(SetProviderEnabledRequestSchema, { providerKey: 'qq', isEnabled: true }),
+        create(SetProviderEnabledRequestSchema, {
+          providerKey: 'qq',
+          isEnabled: true,
+        }),
       );
     } catch (error) {
       caught = error;
@@ -721,10 +816,15 @@ describe('api.sortProviders（§5.2 行 1174 拖拽排序 → OkResponse）', ()
       }),
     );
     const rows = [
-      create(ProviderSchema, { providerKey: 'wechat_mp', sortOrder: BigInt(30) }),
+      create(ProviderSchema, {
+        providerKey: 'wechat_mp',
+        sortOrder: BigInt(30),
+      }),
       create(ProviderSchema, { providerKey: 'qq', sortOrder: BigInt(10) }),
     ];
-    const res = await apiMod.sortProviders(apiMod.buildSortProvidersRequest(rows));
+    const res = await apiMod.sortProviders(
+      apiMod.buildSortProvidersRequest(rows),
+    );
     expect(requestBody).toEqual({
       items: [
         { providerKey: 'wechat_mp', sortOrder: '1' },
@@ -748,9 +848,15 @@ describe('buildListProvidersRequest / buildSortProvidersRequest（请求构造�
 
   test('buildSortProvidersRequest：新数组序整体重排（1..n）+ 键保持 + 入参不可变', () => {
     const rows = [
-      create(ProviderSchema, { providerKey: 'wechat_mp', sortOrder: BigInt(30) }),
+      create(ProviderSchema, {
+        providerKey: 'wechat_mp',
+        sortOrder: BigInt(30),
+      }),
       create(ProviderSchema, { providerKey: 'qq', sortOrder: BigInt(10) }),
-      create(ProviderSchema, { providerKey: 'eml_main', sortOrder: BigInt(20) }),
+      create(ProviderSchema, {
+        providerKey: 'eml_main',
+        sortOrder: BigInt(20),
+      }),
     ];
     const req = apiMod.buildSortProvidersRequest(rows);
     expect(req.items.map((item) => item.providerKey)).toEqual([
@@ -758,9 +864,17 @@ describe('buildListProvidersRequest / buildSortProvidersRequest（请求构造�
       'qq',
       'eml_main',
     ]);
-    expect(req.items.map((item) => item.sortOrder)).toEqual([BigInt(1), BigInt(2), BigInt(3)]);
+    expect(req.items.map((item) => item.sortOrder)).toEqual([
+      BigInt(1),
+      BigInt(2),
+      BigInt(3),
+    ]);
     // 原行集序与原 sort_order 不变（不可变构造）。
-    expect(rows.map((row) => row.providerKey)).toEqual(['wechat_mp', 'qq', 'eml_main']);
+    expect(rows.map((row) => row.providerKey)).toEqual([
+      'wechat_mp',
+      'qq',
+      'eml_main',
+    ]);
     expect(rows[0].sortOrder).toBe(BigInt(30));
   });
 });
@@ -769,12 +883,16 @@ describe('policyTags（§5.2 行 1165「策略标签」展示纯函数）', () =
   test('enableSignin / enableSignup / autoBind → 对应标签；全 false → 空数组（消费方渲染占位）', () => {
     expect(
       apiMod.policyTags(
-        create(ProviderSchema, { enableSignin: true, enableSignup: true, autoBind: true }),
+        create(ProviderSchema, {
+          enableSignin: true,
+          enableSignup: true,
+          autoBind: true,
+        }),
       ),
     ).toEqual(['允许登录', '允许注册', '自动绑定']);
-    expect(apiMod.policyTags(create(ProviderSchema, { autoBind: true }))).toEqual([
-      '自动绑定',
-    ]);
+    expect(
+      apiMod.policyTags(create(ProviderSchema, { autoBind: true })),
+    ).toEqual(['自动绑定']);
     expect(apiMod.policyTags(create(ProviderSchema, {}))).toEqual([]);
   });
 });
@@ -871,7 +989,9 @@ describe('ProviderCallbackHint（静态渲染：模板 / 具体 / OIDC 注记三
     const markup = renderToStaticMarkup(
       createElement(ProviderCallbackHint, { alRoot: 'https://uc.test' }),
     );
-    expect(markup).toContain('https://uc.test/sso/oauth/callback/{provider_key}');
+    expect(markup).toContain(
+      'https://uc.test/sso/oauth/callback/{provider_key}',
+    );
     expect(markup).toContain('复制'); // CopyButton（t('common.copy')）
     expect(markup).not.toContain('精确匹配');
   });
@@ -914,39 +1034,133 @@ function schemaField(init: JsonObject): SchemaField {
  * pattern / default / advanced 修饰）。
  */
 const SCHEMA_FIELDS = [
-  schemaField({ key: 'provider_key', label: '唯一标识', type: 'text', section: 'basic', required: true, pattern: '^[a-z0-9_]+$', help: '创建后不可修改' }),
-  schemaField({ key: 'display_name', label: '显示名称', type: 'text', section: 'basic', required: true }),
-  schemaField({ key: 'category', label: '类别', type: 'select', section: 'basic', required: true, options: ['oauth'] }),
-  schemaField({ key: 'union_provider', label: '联合登录归属', type: 'select', section: 'basic', options: [] }),
-  schemaField({ key: 'client_id', label: 'AppID', type: 'text', section: 'credential', required: true }),
-  schemaField({ key: 'client_secret', label: 'AppSecret', type: 'secret', section: 'credential', required: true }),
-  schemaField({ key: 'port', label: '端口', type: 'number', section: 'endpoint' }),
-  schemaField({ key: 'user_mapping', label: '字段映射', type: 'json', section: 'endpoint', advanced: true }),
-  schemaField({ key: 'icon_url', label: '图标 URL', type: 'text', section: 'display', pattern: '^https?://' }),
-  schemaField({ key: 'ui_group', label: '展示分组', type: 'select', section: 'display', default: 'social' }),
-  schemaField({ key: 'sort_order', label: '排序', type: 'number', section: 'display', default: 0 }),
-  schemaField({ key: 'is_enabled', label: '启用', type: 'checkbox', section: 'policy', default: true }),
+  schemaField({
+    key: 'provider_key',
+    label: '唯一标识',
+    type: 'text',
+    section: 'basic',
+    required: true,
+    pattern: '^[a-z0-9_]+$',
+    help: '创建后不可修改',
+  }),
+  schemaField({
+    key: 'display_name',
+    label: '显示名称',
+    type: 'text',
+    section: 'basic',
+    required: true,
+  }),
+  schemaField({
+    key: 'category',
+    label: '类别',
+    type: 'select',
+    section: 'basic',
+    required: true,
+    options: ['oauth'],
+  }),
+  schemaField({
+    key: 'union_provider',
+    label: '联合登录归属',
+    type: 'select',
+    section: 'basic',
+    options: [],
+  }),
+  schemaField({
+    key: 'client_id',
+    label: 'AppID',
+    type: 'text',
+    section: 'credential',
+    required: true,
+  }),
+  schemaField({
+    key: 'client_secret',
+    label: 'AppSecret',
+    type: 'secret',
+    section: 'credential',
+    required: true,
+  }),
+  schemaField({
+    key: 'port',
+    label: '端口',
+    type: 'number',
+    section: 'endpoint',
+  }),
+  schemaField({
+    key: 'user_mapping',
+    label: '字段映射',
+    type: 'json',
+    section: 'endpoint',
+    advanced: true,
+  }),
+  schemaField({
+    key: 'icon_url',
+    label: '图标 URL',
+    type: 'text',
+    section: 'display',
+    pattern: '^https?://',
+  }),
+  schemaField({
+    key: 'ui_group',
+    label: '展示分组',
+    type: 'select',
+    section: 'display',
+    default: 'social',
+  }),
+  schemaField({
+    key: 'sort_order',
+    label: '排序',
+    type: 'number',
+    section: 'display',
+    default: 0,
+  }),
+  schemaField({
+    key: 'is_enabled',
+    label: '启用',
+    type: 'checkbox',
+    section: 'policy',
+    default: true,
+  }),
 ];
 
 describe('groupFieldsBySection（§5.3 行 1185：五区块分组 + 数组序 + section 缺失即报错）', () => {
   test('按 SECTION_ORDER 分组，区块内保持 fields[] 数组序；空区块为空数组', () => {
     const groups = groupFieldsBySection(SCHEMA_FIELDS);
-    expect(SECTION_ORDER).toEqual(['basic', 'credential', 'endpoint', 'display', 'policy']);
+    expect(SECTION_ORDER).toEqual([
+      'basic',
+      'credential',
+      'endpoint',
+      'display',
+      'policy',
+    ]);
     expect(groups).toHaveLength(5);
-    expect(groups[0].map((f) => f.key)).toEqual(['provider_key', 'display_name', 'category', 'union_provider']);
+    expect(groups[0].map((f) => f.key)).toEqual([
+      'provider_key',
+      'display_name',
+      'category',
+      'union_provider',
+    ]);
     expect(groups[1].map((f) => f.key)).toEqual(['client_id', 'client_secret']);
     expect(groups[2].map((f) => f.key)).toEqual(['port', 'user_mapping']);
-    expect(groups[3].map((f) => f.key)).toEqual(['icon_url', 'ui_group', 'sort_order']);
+    expect(groups[3].map((f) => f.key)).toEqual([
+      'icon_url',
+      'ui_group',
+      'sort_order',
+    ]);
     expect(groups[4].map((f) => f.key)).toEqual(['is_enabled']);
   });
 
   test('section 缺失（protojson 零值省略 → 空串）即 throw（§6 行 508 不维护映射表）', () => {
-    const missing = [schemaField({ key: 'x', label: 'X', type: 'text', section: 'basic' }), schemaField({ key: 'y', label: 'Y', type: 'text' })];
+    const missing = [
+      schemaField({ key: 'x', label: 'X', type: 'text', section: 'basic' }),
+      schemaField({ key: 'y', label: 'Y', type: 'text' }),
+    ];
     expect(() => groupFieldsBySection(missing)).toThrow(/section/);
   });
 
   test('section 非法值即 throw（五区块封闭值域）', () => {
-    const illegal = [schemaField({ key: 'x', label: 'X', type: 'text', section: 'unknown' })];
+    const illegal = [
+      schemaField({ key: 'x', label: 'X', type: 'text', section: 'unknown' }),
+    ];
     expect(() => groupFieldsBySection(illegal)).toThrow(/section/);
   });
 });
@@ -985,7 +1199,10 @@ describe('initialCreateValues（新建 category 预填注册表权威值，死�
       category: 'oauth',
       fields: SCHEMA_FIELDS,
     });
-    const issues = validateSchemaValues(SCHEMA_FIELDS, initialCreateValues(schema));
+    const issues = validateSchemaValues(
+      SCHEMA_FIELDS,
+      initialCreateValues(schema),
+    );
     expect(issues.category).toBeUndefined();
     // 对照：required 拦截对其他未填字段照常生效（修正未绕过校验）。
     expect(issues.provider_key).toBe('此项为必填');
@@ -1020,7 +1237,9 @@ describe('adminProviderToValues（编辑回填：表列 typed 映射 + Ext 合�
     expect(values.client_secret).toBe('secret-456');
     expect(values.port).toBe(443);
     // json 字段编辑文本态（格式化 JSON 文本）。
-    expect(values.user_mapping).toBe(JSON.stringify({ nickname: '$.name' }, null, 2));
+    expect(values.user_mapping).toBe(
+      JSON.stringify({ nickname: '$.name' }, null, 2),
+    );
     // 表列零值（protojson 省略 → false）+ Ext 缺失键零值。
     expect(values.is_enabled).toBe(false);
     expect(values.ui_group).toBe('');
@@ -1057,7 +1276,13 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
     expect(invalid.user_mapping).toBe('不是合法的 JSON');
     expect(invalid.icon_url).toBe('格式不正确');
     expect(Object.keys(invalid).sort()).toEqual(
-      ['client_id', 'display_name', 'icon_url', 'provider_key', 'user_mapping'].sort(),
+      [
+        'client_id',
+        'display_name',
+        'icon_url',
+        'provider_key',
+        'user_mapping',
+      ].sort(),
     );
 
     const valid = validateSchemaValues(SCHEMA_FIELDS, {
@@ -1077,7 +1302,17 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
   });
 
   test('number 类型非 number → 文案（受控态兜底）', () => {
-    const issues = validateSchemaValues([schemaField({ key: 'port', label: '端口', type: 'number', section: 'endpoint' })], { port: '443' });
+    const issues = validateSchemaValues(
+      [
+        schemaField({
+          key: 'port',
+          label: '端口',
+          type: 'number',
+          section: 'endpoint',
+        }),
+      ],
+      { port: '443' },
+    );
     expect(issues.port).toBe('必须是数字');
   });
 });
@@ -1116,13 +1351,27 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
   });
 
   test('空 json 文本省略键（未设置）；非 json 空串原样提交（显式空值）', () => {
-    const struct = buildProviderStruct('smtp', [
-      schemaField({ key: 'host', label: '服务地址', type: 'text', section: 'endpoint' }),
-      schemaField({ key: 'metadata', label: '长尾键值', type: 'json', section: 'basic' }),
-    ], {
-      host: '',
-      metadata: '',
-    });
+    const struct = buildProviderStruct(
+      'smtp',
+      [
+        schemaField({
+          key: 'host',
+          label: '服务地址',
+          type: 'text',
+          section: 'endpoint',
+        }),
+        schemaField({
+          key: 'metadata',
+          label: '长尾键值',
+          type: 'json',
+          section: 'basic',
+        }),
+      ],
+      {
+        host: '',
+        metadata: '',
+      },
+    );
     expect(struct).toEqual({ type: 'smtp', host: '' });
     expect('metadata' in struct).toBe(false);
   });
@@ -1207,10 +1456,36 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
           type: 'wechat_mp',
           category: 'oauth',
           fields: [
-            { key: 'provider_key', label: '唯一标识', type: 'text', section: 'basic', required: true, pattern: '^[a-z0-9_]+$' },
-            { key: 'ui_group', label: '展示分组', type: 'select', section: 'display', options: ['social', 'enterprise', 'dev', 'other'], default: 'social' },
-            { key: 'is_enabled', label: '启用', type: 'checkbox', section: 'policy', default: true },
-            { key: 'user_mapping', label: '字段映射', type: 'json', section: 'endpoint', advanced: true },
+            {
+              key: 'provider_key',
+              label: '唯一标识',
+              type: 'text',
+              section: 'basic',
+              required: true,
+              pattern: '^[a-z0-9_]+$',
+            },
+            {
+              key: 'ui_group',
+              label: '展示分组',
+              type: 'select',
+              section: 'display',
+              options: ['social', 'enterprise', 'dev', 'other'],
+              default: 'social',
+            },
+            {
+              key: 'is_enabled',
+              label: '启用',
+              type: 'checkbox',
+              section: 'policy',
+              default: true,
+            },
+            {
+              key: 'user_mapping',
+              label: '字段映射',
+              type: 'json',
+              section: 'endpoint',
+              advanced: true,
+            },
           ],
         });
       }),
@@ -1224,7 +1499,12 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
     expect(res.fields).toHaveLength(4);
     expect(res.fields[0].required).toBe(true);
     expect(res.fields[0].pattern).toBe('^[a-z0-9_]+$');
-    expect(res.fields[1].options).toEqual(['social', 'enterprise', 'dev', 'other']);
+    expect(res.fields[1].options).toEqual([
+      'social',
+      'enterprise',
+      'dev',
+      'other',
+    ]);
     // default = google.protobuf.Value（protojson → kind oneof）。
     expect(res.fields[1].default?.kind.case).toBe('stringValue');
     expect(res.fields[1].default?.kind.value).toBe('social');
@@ -1329,18 +1609,30 @@ describe('api.testProvider（§5.2 行 1177：发送测试 {providerKey, target}
       }),
     );
     const res = await apiMod.testProvider(
-      create(TestProviderRequestSchema, { providerKey: 'sms_main', target: '13800000000' }),
+      create(TestProviderRequestSchema, {
+        providerKey: 'sms_main',
+        target: '13800000000',
+      }),
     );
-    expect(requestBody).toEqual({ providerKey: 'sms_main', target: '13800000000' });
+    expect(requestBody).toEqual({
+      providerKey: 'sms_main',
+      target: '13800000000',
+    });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
     server.use(
-      http.post(TEST_PROVIDER_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        TEST_PROVIDER_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
       await apiMod.testProvider(
-        create(TestProviderRequestSchema, { providerKey: 'sms_main', target: 'x' }),
+        create(TestProviderRequestSchema, {
+          providerKey: 'sms_main',
+          target: 'x',
+        }),
       );
     } catch (error) {
       caught = error;
@@ -1396,7 +1688,9 @@ describe('api.listUsers（§5.4 行 1249：筛选 {q, userStatus} + 分页 §1.7
       order: 'desc',
       filters: { user_status: ['1'] },
     };
-    const res = await apiMod.listUsers(apiMod.buildListUsersRequest('张', query));
+    const res = await apiMod.listUsers(
+      apiMod.buildListUsersRequest('张', query),
+    );
 
     // 请求体：optional 字段显式下发（int64 → 十进制字符串）。
     expect(requestBody).toEqual({
@@ -1423,7 +1717,9 @@ describe('api.listUsers（§5.4 行 1249：筛选 {q, userStatus} + 分页 §1.7
     );
     let caught: unknown;
     try {
-      await apiMod.listUsers(apiMod.buildListUsersRequest('', initialTableQuery()));
+      await apiMod.listUsers(
+        apiMod.buildListUsersRequest('', initialTableQuery()),
+      );
     } catch (error) {
       caught = error;
     }
@@ -1449,7 +1745,13 @@ describe('api.getUser（§5.4 行 1250：{id} 详情含凭证概览 / 绑定 / M
             createdAt: '1720000000',
           },
           credentials: [
-            { id: '10', kind: 'password', label: '', isEnabled: true, createdAt: '1720000000' },
+            {
+              id: '10',
+              kind: 'password',
+              label: '',
+              isEnabled: true,
+              createdAt: '1720000000',
+            },
             { id: '11', kind: 'totp', label: '主手机', isEnabled: false },
           ],
           bindings: [
@@ -1496,11 +1798,16 @@ describe('api.getUser（§5.4 行 1250：{id} 详情含凭证概览 / 绑定 / M
     // connect-go 拦截器真实 wire 形态：HTTP 404 + Connect 错误 JSON 体
     //（空 body 会被 connect-web 按协议状态兜底表映射 Unimplemented）。
     server.use(
-      http.post(GET_USER_URL, () =>
-        new HttpResponse(JSON.stringify({ code: 'not_found', message: 'user not found' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        }),
+      http.post(
+        GET_USER_URL,
+        () =>
+          new HttpResponse(
+            JSON.stringify({ code: 'not_found', message: 'user not found' }),
+            {
+              status: 404,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
       ),
     );
 
@@ -1543,7 +1850,10 @@ describe('api.updateUserStatus（§5.4 行 1251：{id, userStatus: 0 或 1} → 
 
   test('500 reject → ApiError（DataTable 行内开关回滚触发链：消费方 catch 展示后 rethrow）', async () => {
     server.use(
-      http.post(UPDATE_USER_STATUS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        UPDATE_USER_STATUS_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -1574,7 +1884,10 @@ describe('api.resetUserPassword（§5.4 行 1252：{id, password} → OkResponse
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
     server.use(
-      http.post(RESET_USER_PASSWORD_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        RESET_USER_PASSWORD_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -1605,7 +1918,10 @@ describe('api.unbindUserThirdparty（§5.4 行 1253：{id, providerKey}）', () 
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
     server.use(
-      http.post(UNBIND_USER_THIRDPARTY_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        UNBIND_USER_THIRDPARTY_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -1629,7 +1945,9 @@ describe('api.unlockUser（§5.4 行 1254：{id} 解除登录限制）', () => {
         return HttpResponse.json({});
       }),
     );
-    const res = await apiMod.unlockUser(apiMod.buildUnlockUserRequest(BigInt(2)));
+    const res = await apiMod.unlockUser(
+      apiMod.buildUnlockUserRequest(BigInt(2)),
+    );
     expect(requestBody).toEqual({ id: '2' });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
   });
@@ -1668,7 +1986,9 @@ describe('api.getUserEvents（§5.4 行 1255：{id} + 分页 §1.7）', () => {
       sort: 'created_at',
       order: 'desc',
     };
-    const res = await apiMod.getUserEvents(apiMod.buildGetUserEventsRequest(BigInt(2), query));
+    const res = await apiMod.getUserEvents(
+      apiMod.buildGetUserEventsRequest(BigInt(2), query),
+    );
 
     expect(requestBody).toEqual({
       id: '2',
@@ -1713,11 +2033,16 @@ describe('buildListUsersRequest（§5.4 行 1249 + §1.7 行 275-278）', () => 
 
     // 筛选多选（等价全集）/ 未选 → 不过滤。
     expect(
-      apiMod.buildListUsersRequest('', { ...base, filters: { user_status: ['0', '1'] } })
-        .userStatus,
+      apiMod.buildListUsersRequest('', {
+        ...base,
+        filters: { user_status: ['0', '1'] },
+      }).userStatus,
     ).toBeUndefined();
     expect(
-      apiMod.buildListUsersRequest('', { ...base, filters: { user_status: [] } }).userStatus,
+      apiMod.buildListUsersRequest('', {
+        ...base,
+        filters: { user_status: [] },
+      }).userStatus,
     ).toBeUndefined();
   });
 
@@ -1753,14 +2078,21 @@ describe('buildGetUserEventsRequest / buildGetUserRequest / 其余 buildXxxReque
     expect(req.sort).toBe('created_at');
     expect(req.order).toBe('desc');
 
-    const unsorted = apiMod.buildGetUserEventsRequest(BigInt(7), initialTableQuery());
+    const unsorted = apiMod.buildGetUserEventsRequest(
+      BigInt(7),
+      initialTableQuery(),
+    );
     expect(unsorted.sort).toBeUndefined();
     expect(unsorted.order).toBeUndefined();
   });
 
   test('buildUpdateUserStatusRequest：true → 1n / false → 0n（wire 零值省略语义见 msw 用例）', () => {
-    expect(apiMod.buildUpdateUserStatusRequest(BigInt(2), true).userStatus).toBe(BigInt(1));
-    expect(apiMod.buildUpdateUserStatusRequest(BigInt(2), false).userStatus).toBe(BigInt(0));
+    expect(
+      apiMod.buildUpdateUserStatusRequest(BigInt(2), true).userStatus,
+    ).toBe(BigInt(1));
+    expect(
+      apiMod.buildUpdateUserStatusRequest(BigInt(2), false).userStatus,
+    ).toBe(BigInt(0));
   });
 
   test('buildGetUserRequest / buildResetUserPasswordRequest / buildUnbindUserThirdpartyRequest / buildUnlockUserRequest：字段直映射', () => {
@@ -1788,7 +2120,12 @@ describe('userStatusLabel / USER_STATUS_FILTERS（§5.4 行 1251 值域 1/0）',
       { value: '0', textKey: 'admin.userStatusDisabled' },
     ]);
     // 渲染口径（消费方 map 同式）：textKey 经 t() 得当前语言文案。
-    expect(apiMod.USER_STATUS_FILTERS.map(({ value, textKey }) => ({ value, text: t(textKey) }))).toEqual([
+    expect(
+      apiMod.USER_STATUS_FILTERS.map(({ value, textKey }) => ({
+        value,
+        text: t(textKey),
+      })),
+    ).toEqual([
       { value: '1', text: '正常' },
       { value: '0', text: '禁用' },
     ]);
@@ -1827,7 +2164,11 @@ describe('boundMfaFactors（§5.4 行 1250「MFA 状态」：已绑定因子文�
         { factor: 'future_kind', bound: true },
       ],
     });
-    expect(apiMod.boundMfaFactors(mfa)).toEqual(['动态口令', '通行密钥', 'future_kind']);
+    expect(apiMod.boundMfaFactors(mfa)).toEqual([
+      '动态口令',
+      '通行密钥',
+      'future_kind',
+    ]);
     expect(apiMod.boundMfaFactors(undefined)).toEqual([]);
     expect(apiMod.boundMfaFactors(create(MfaResponseSchema, {}))).toEqual([]);
   });
@@ -1880,7 +2221,9 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
       sort: 'created_at',
       order: 'desc',
     };
-    const res = await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(sorted));
+    const res = await apiMod.listSsoClients(
+      apiMod.buildListSsoClientsRequest(sorted),
+    );
     expect(bodies[0]).toEqual({
       page: '1',
       pageSize: '20',
@@ -1897,17 +2240,24 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
     expect(res.items[0].createdAt).toBe(BigInt(1720000000));
 
     // 清除排序（order=''）→ sort / order 不下发（dataTableLogic 受控口径）。
-    await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(initialTableQuery()));
+    await apiMod.listSsoClients(
+      apiMod.buildListSsoClientsRequest(initialTableQuery()),
+    );
     expect(bodies[1]).toEqual({ page: '1', pageSize: '20' });
   });
 
   test('500 → ApiError 归一（非 401：页面错误态，不跳登录）', async () => {
     server.use(
-      http.post(LIST_SSO_CLIENTS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        LIST_SSO_CLIENTS_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
-      await apiMod.listSsoClients(apiMod.buildListSsoClientsRequest(initialTableQuery()));
+      await apiMod.listSsoClients(
+        apiMod.buildListSsoClientsRequest(initialTableQuery()),
+      );
     } catch (error) {
       caught = error;
     }
@@ -1935,7 +2285,9 @@ describe('api.getSsoClient（§5.5 行 1262：{id} → SsoClient 明文密钥）
       }),
     );
 
-    const res = await apiMod.getSsoClient(apiMod.buildGetSsoClientRequest(BigInt(2)));
+    const res = await apiMod.getSsoClient(
+      apiMod.buildGetSsoClientRequest(BigInt(2)),
+    );
     expect(requestBody).toEqual({ id: '2' });
     expect(res.$typeName).toBe('api.admin.v1.SsoClient');
     expect(res.clientId).toBe('portal');
@@ -1945,11 +2297,16 @@ describe('api.getSsoClient（§5.5 行 1262：{id} → SsoClient 明文密钥）
 
   test('404（带 Connect JSON 体，msw 既有口径）→ ApiError not_found → 通用文案', async () => {
     server.use(
-      http.post(GET_SSO_CLIENT_URL, () =>
-        new HttpResponse(JSON.stringify({ code: 'not_found', message: 'client not found' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        }),
+      http.post(
+        GET_SSO_CLIENT_URL,
+        () =>
+          new HttpResponse(
+            JSON.stringify({ code: 'not_found', message: 'client not found' }),
+            {
+              status: 404,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
       ),
     );
     let caught: unknown;
@@ -1990,7 +2347,10 @@ describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端�
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
     server.use(
-      http.post(CREATE_SSO_CLIENT_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        CREATE_SSO_CLIENT_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -2055,7 +2415,9 @@ describe('api.deleteSsoClient（§5.5 行 1262：{id} 硬删 → OkResponse）',
         return HttpResponse.json({});
       }),
     );
-    const res = await apiMod.deleteSsoClient(apiMod.buildDeleteSsoClientRequest(BigInt(3)));
+    const res = await apiMod.deleteSsoClient(
+      apiMod.buildDeleteSsoClientRequest(BigInt(3)),
+    );
     expect(requestBody).toEqual({ id: '3' });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
   });
@@ -2112,7 +2474,9 @@ describe('api.getOidcClient / api.createOidcClient / api.updateOidcClient / api.
         }),
       ),
     );
-    const res = await apiMod.getOidcClient(apiMod.buildGetOidcClientRequest(BigInt(5)));
+    const res = await apiMod.getOidcClient(
+      apiMod.buildGetOidcClientRequest(BigInt(5)),
+    );
     expect(res.$typeName).toBe('api.admin.v1.OidcClient');
     expect(res.clientSecret).toBe('oidc-secret');
     expect(res.scopes).toEqual(['openid']);
@@ -2182,16 +2546,23 @@ describe('api.getOidcClient / api.createOidcClient / api.updateOidcClient / api.
         return HttpResponse.json({});
       }),
     );
-    const res = await apiMod.deleteOidcClient(apiMod.buildDeleteOidcClientRequest(BigInt(5)));
+    const res = await apiMod.deleteOidcClient(
+      apiMod.buildDeleteOidcClientRequest(BigInt(5)),
+    );
     expect(requestBody).toEqual({ id: '5' });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
     server.use(
-      http.post(DELETE_OIDC_CLIENT_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        DELETE_OIDC_CLIENT_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
-      await apiMod.deleteOidcClient(apiMod.buildDeleteOidcClientRequest(BigInt(5)));
+      await apiMod.deleteOidcClient(
+        apiMod.buildDeleteOidcClientRequest(BigInt(5)),
+      );
     } catch (error) {
       caught = error;
     }
@@ -2231,7 +2602,9 @@ describe('cleanStringList / redirectUrisIssue / scopesIssue（§1.7 前端自律
   });
 
   test('redirectUrisIssue：* / http(s):// 合法；其他前缀 → 文案；清洗后空表 → null', () => {
-    expect(apiMod.redirectUrisIssue(['*', 'https://a.test/cb', 'http://b.test/cb'])).toBeNull();
+    expect(
+      apiMod.redirectUrisIssue(['*', 'https://a.test/cb', 'http://b.test/cb']),
+    ).toBeNull();
     // 模块级存键（REDIRECT_URIS_ISSUE_TEXT_KEY），调用期 t() 取文案。
     expect(apiMod.redirectUrisIssue(['ftp://a.test/cb'])).toBe(
       t(apiMod.REDIRECT_URIS_ISSUE_TEXT_KEY),
@@ -2244,7 +2617,9 @@ describe('cleanStringList / redirectUrisIssue / scopesIssue（§1.7 前端自律
 
   test('scopesIssue：含逗号 → 文案；合法 / 清洗后空表 → null', () => {
     expect(apiMod.scopesIssue(['openid', 'profile'])).toBeNull();
-    expect(apiMod.scopesIssue(['open,id'])).toBe(t(apiMod.SCOPES_ISSUE_TEXT_KEY));
+    expect(apiMod.scopesIssue(['open,id'])).toBe(
+      t(apiMod.SCOPES_ISSUE_TEXT_KEY),
+    );
     expect(apiMod.scopesIssue([])).toBeNull();
   });
 });
@@ -2265,7 +2640,9 @@ describe('parseTtlField（TTL 表单文本收敛；值域 [1, max]）', () => {
 describe('summarizeList / humanizeTtlSeconds / tokenTtlSummary / ttlDetailText（展示纯函数）', () => {
   test('summarizeList：空 → 占位；单条 → 原值；多条 → 首条 + 计数', () => {
     expect(apiMod.summarizeList([])).toBe('—');
-    expect(apiMod.summarizeList(['https://a.test/cb'])).toBe('https://a.test/cb');
+    expect(apiMod.summarizeList(['https://a.test/cb'])).toBe(
+      'https://a.test/cb',
+    );
     expect(apiMod.summarizeList(['a', 'b', 'c'])).toBe('a 等 3 条');
   });
 
@@ -2278,7 +2655,9 @@ describe('summarizeList / humanizeTtlSeconds / tokenTtlSummary / ttlDetailText�
   });
 
   test('tokenTtlSummary / ttlDetailText：int64 经 toCount 收窄后拼装', () => {
-    expect(apiMod.tokenTtlSummary(BigInt(3600), BigInt(2592000))).toBe('访问 1 小时 / 刷新 30 天');
+    expect(apiMod.tokenTtlSummary(BigInt(3600), BigInt(2592000))).toBe(
+      '访问 1 小时 / 刷新 30 天',
+    );
     expect(apiMod.ttlDetailText(BigInt(3600))).toBe('1 小时（3600 秒）');
     expect(apiMod.ttlDetailText(BigInt(45))).toBe('45 秒（45 秒）');
   });
@@ -2382,7 +2761,10 @@ describe('api.getSettings（§5.6 行 1287：36 键全量投影）', () => {
 
   test('500 reject → ApiError', async () => {
     server.use(
-      http.post(GET_SETTINGS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        GET_SETTINGS_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
@@ -2426,7 +2808,13 @@ describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 36 键 + 4
       otpDailyLimitTarget: '10',
       otpDailyLimitIp: '50',
       hasLoginMethods: true,
-      loginMethods: ['password', 'otp_sms', 'otp_email', 'webauthn', 'thirdparty'],
+      loginMethods: [
+        'password',
+        'otp_sms',
+        'otp_email',
+        'webauthn',
+        'thirdparty',
+      ],
       allowRegistration: true,
       allowSignupPassword: true,
       allowSignupPhone: true,
@@ -2491,11 +2879,16 @@ describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 36 键 + 4
 
   test('500 reject → ApiError', async () => {
     server.use(
-      http.post(SET_SETTINGS_URL, () => new HttpResponse(null, { status: 500 })),
+      http.post(
+        SET_SETTINGS_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
     );
     let caught: unknown;
     try {
-      await apiMod.setSettings(apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS));
+      await apiMod.setSettings(
+        apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS),
+      );
     } catch (error) {
       caught = error;
     }
@@ -2537,7 +2930,12 @@ describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', (
     expect(DEFAULT_SETTINGS.allowSignupPhone).toBe(true);
     expect(DEFAULT_SETTINGS.allowSignupEmail).toBe(true);
     expect(DEFAULT_SETTINGS.mfaEnabled).toBe(true);
-    expect(DEFAULT_SETTINGS.mfaMethods).toEqual(['totp', 'otp_sms', 'otp_email', 'webauthn']);
+    expect(DEFAULT_SETTINGS.mfaMethods).toEqual([
+      'totp',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+    ]);
     expect(DEFAULT_SETTINGS.pwdFailCapture).toBe(3);
     expect(DEFAULT_SETTINGS.pwdFailBan).toBe(6);
     expect(DEFAULT_SETTINGS.pwdBanTtl).toBe(21600);
@@ -2602,7 +3000,12 @@ describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / ge
 describe('getSettingsTabs（4 Tab 分组：36 键全覆盖、无重复，按稳定 slug 引用分区）', () => {
   test('4 个 Tab；键集 = DEFAULT_SETTINGS 键集且无重复；9 个分区各归一组', () => {
     const tabs = getSettingsTabs();
-    expect(tabs.map((tab) => tab.key)).toEqual(['account', 'auth', 'session', 'system']);
+    expect(tabs.map((tab) => tab.key)).toEqual([
+      'account',
+      'auth',
+      'session',
+      'system',
+    ]);
     const tabKeys = tabs.flatMap((tab) => tab.keys);
     expect(tabKeys).toHaveLength(36);
     expect(new Set(tabKeys).size).toBe(36);
@@ -2617,7 +3020,9 @@ describe('getSettingsTabs（4 Tab 分组：36 键全覆盖、无重复，按稳�
   test('每个 Tab 的 keys 与自身分区字段逐字自洽（不手写键表）', () => {
     for (const tab of getSettingsTabs()) {
       expect(tab.keys).toEqual(
-        tab.sections.flatMap((section) => section.fields.map((field) => field.key)),
+        tab.sections.flatMap((section) =>
+          section.fields.map((field) => field.key),
+        ),
       );
     }
   });
@@ -2725,7 +3130,7 @@ describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
     );
   }
 
-  test('未知路径 → path:\'*\' 兜底：带布局 Semi Empty + 返回管理首页 Link', () => {
+  test("未知路径 → path:'*' 兜底：带布局 Semi Empty + 返回管理首页 Link", () => {
     const html = renderAdminApp('/does-not-exist');
     expect(html).toContain('页面不存在');
     expect(html).toContain('返回管理首页');
@@ -2882,7 +3287,9 @@ describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 tr
 
 describe('buildSettingsPatchRequest（多 Tab 部分提交：只带指定键 + 对应 has 标志）', () => {
   test('单键：仅该键在场，其余 optional 数据键与伴生标志均缺省', () => {
-    const request = apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, ['pwdMinLength']);
+    const request = apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, [
+      'pwdMinLength',
+    ]);
     expect(request.pwdMinLength).toBe(BigInt(8));
     expect(request.pwdMaxLength).toBeUndefined();
     expect(request.cookieName).toBeUndefined();
@@ -2919,7 +3326,9 @@ describe('buildSettingsPatchRequest（多 Tab 部分提交：只带指定键 + �
         return HttpResponse.json({});
       }),
     );
-    await apiMod.setSettings(apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, []));
+    await apiMod.setSettings(
+      apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, []),
+    );
     expect(requestBody).toEqual({});
   });
 
@@ -2932,7 +3341,10 @@ describe('buildSettingsPatchRequest（多 Tab 部分提交：只带指定键 + �
       }),
     );
     await apiMod.setSettings(
-      apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, ['pwdMinLength', 'mfaMethods']),
+      apiMod.buildSettingsPatchRequest(DEFAULT_SETTINGS, [
+        'pwdMinLength',
+        'mfaMethods',
+      ]),
     );
     expect(requestBody).toEqual({
       pwdMinLength: '8',
@@ -3008,7 +3420,11 @@ describe('api.listEvents（§5.6 行 1288：统一事件视图，六筛选 + 分
       order: 'desc',
     };
     const res = await apiMod.listEvents(
-      apiMod.buildListEventsRequest('login_records', { actorType: 'user' }, query),
+      apiMod.buildListEventsRequest(
+        'login_records',
+        { actorType: 'user' },
+        query,
+      ),
     );
 
     // 预设「登录记录」→ event 强制 login_success；其余筛选透传；排序仅 order 非空下发。
@@ -3044,7 +3460,12 @@ describe('api.listEvents（§5.6 行 1288：统一事件视图，六筛选 + 分
     server.use(
       http.post(LIST_EVENTS_URL, async ({ request }) => {
         requestBody = await request.json();
-        return HttpResponse.json({ items: [], total: '0', page: '1', pageSize: '20' });
+        return HttpResponse.json({
+          items: [],
+          total: '0',
+          page: '1',
+          pageSize: '20',
+        });
       }),
     );
 
@@ -3144,11 +3565,15 @@ describe('buildListEventsRequest（§5.6 行 1288 六筛选 + §1.7 行 275-278 
     expect(full.order).toBe('asc');
 
     // 清除排序（dataTableLogic：order=''）→ sort / order 均不下发。
-    const cleared = apiMod.buildListEventsRequest('all', {}, {
-      ...base,
-      sort: 'created_at',
-      order: '',
-    });
+    const cleared = apiMod.buildListEventsRequest(
+      'all',
+      {},
+      {
+        ...base,
+        sort: 'created_at',
+        order: '',
+      },
+    );
     expect(cleared.sort).toBeUndefined();
     expect(cleared.order).toBeUndefined();
   });
@@ -3190,7 +3615,9 @@ describe('SENSITIVE_RECORDS_EVENTS / eventTypeFilterOptions / resolveEventFilter
     ]);
     expect(apiMod.SENSITIVE_RECORDS_DEFAULT_EVENT).toBe('change_password');
     // admin_reset_password 明确不入集（2026-11-06 定稿）。
-    expect(apiMod.SENSITIVE_RECORDS_EVENTS).not.toContain('admin_reset_password');
+    expect(apiMod.SENSITIVE_RECORDS_EVENTS).not.toContain(
+      'admin_reset_password',
+    );
     // 五类均在 17 类全量值域内（optionList 复用 EVENT_TYPE_FILTERS 对应项）。
     const allValues = apiMod.EVENT_TYPE_FILTERS.map((option) => option.value);
     for (const value of apiMod.SENSITIVE_RECORDS_EVENTS) {
@@ -3222,33 +3649,42 @@ describe('SENSITIVE_RECORDS_EVENTS / eventTypeFilterOptions / resolveEventFilter
 
   test('resolveEventFilterOnPreset：进敏感操作出集（含空）默认 change_password、入集保留；切其余预设保留现值', () => {
     // 进预设：出集 / 空现值 → 默认 change_password（列表立即有数据非空态）。
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', '')).toBe('change_password');
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'settings_update')).toBe(
+    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', '')).toBe(
       'change_password',
     );
+    expect(
+      apiMod.resolveEventFilterOnPreset('sensitive_records', 'settings_update'),
+    ).toBe('change_password');
     // 入集现值保留（用户已单选另四类亦然；本次新增 reset_password / disable_mfa）。
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'change_password')).toBe(
-      'change_password',
-    );
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'reset_password')).toBe(
-      'reset_password',
-    );
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'thirdparty_unbind')).toBe(
-      'thirdparty_unbind',
-    );
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'enable_mfa')).toBe('enable_mfa');
-    expect(apiMod.resolveEventFilterOnPreset('sensitive_records', 'disable_mfa')).toBe(
-      'disable_mfa',
-    );
+    expect(
+      apiMod.resolveEventFilterOnPreset('sensitive_records', 'change_password'),
+    ).toBe('change_password');
+    expect(
+      apiMod.resolveEventFilterOnPreset('sensitive_records', 'reset_password'),
+    ).toBe('reset_password');
+    expect(
+      apiMod.resolveEventFilterOnPreset(
+        'sensitive_records',
+        'thirdparty_unbind',
+      ),
+    ).toBe('thirdparty_unbind');
+    expect(
+      apiMod.resolveEventFilterOnPreset('sensitive_records', 'enable_mfa'),
+    ).toBe('enable_mfa');
+    expect(
+      apiMod.resolveEventFilterOnPreset('sensitive_records', 'disable_mfa'),
+    ).toBe('disable_mfa');
     // 切回「全部」/「登录记录」保留现值（预设切换不清筛选惯例；五类值在 17 类中合法）。
     expect(apiMod.resolveEventFilterOnPreset('all', 'thirdparty_unbind')).toBe(
       'thirdparty_unbind',
     );
-    expect(apiMod.resolveEventFilterOnPreset('all', 'disable_mfa')).toBe('disable_mfa');
-    expect(apiMod.resolveEventFilterOnPreset('all', '')).toBe('');
-    expect(apiMod.resolveEventFilterOnPreset('login_records', 'change_password')).toBe(
-      'change_password',
+    expect(apiMod.resolveEventFilterOnPreset('all', 'disable_mfa')).toBe(
+      'disable_mfa',
     );
+    expect(apiMod.resolveEventFilterOnPreset('all', '')).toBe('');
+    expect(
+      apiMod.resolveEventFilterOnPreset('login_records', 'change_password'),
+    ).toBe('change_password');
   });
 });
 
@@ -3288,7 +3724,12 @@ describe('buildListEventsRequest × sensitive_records（构造函数零改动，
     server.use(
       http.post(LIST_EVENTS_URL, async ({ request }) => {
         requestBody = await request.json();
-        return HttpResponse.json({ items: [], total: '0', page: '1', pageSize: '20' });
+        return HttpResponse.json({
+          items: [],
+          total: '0',
+          page: '1',
+          pageSize: '20',
+        });
       }),
     );
 
@@ -3362,7 +3803,11 @@ describe('api.getStatus（§5.6 行 1290：队列长度 / dropped / flush 耗时
     server.use(
       http.post(GET_STATUS_URL, async ({ request }) => {
         requestBody = await request.json();
-        return HttpResponse.json({ queueLength: '5', dropped: '2', flushMs: '37' });
+        return HttpResponse.json({
+          queueLength: '5',
+          dropped: '2',
+          flushMs: '37',
+        });
       }),
     );
 
@@ -3429,7 +3874,9 @@ describe('eventTypeLabel / EVENT_TYPE_FILTERS（《后端架构》§4.6 值域�
 
   test('eventTypeLabel：已知值 → 中文文案；未知值原样兜底（§12.9 跨版本新增）', () => {
     expect(apiMod.eventTypeLabel('login_success')).toBe('登录成功');
-    expect(apiMod.eventTypeLabel('admin_reset_password')).toBe('管理员重置密码');
+    expect(apiMod.eventTypeLabel('admin_reset_password')).toBe(
+      '管理员重置密码',
+    );
     expect(apiMod.eventTypeLabel('future_event')).toBe('future_event');
   });
 });
@@ -3451,7 +3898,9 @@ describe('actorTypeLabel / actorText / bigIdText / eventDetailText / decodePaylo
   test('bigIdText：零值 → 占位符；非零 → 十进制（§1.12 不经 Number）', () => {
     expect(apiMod.bigIdText(BigInt(0))).toBe('—');
     expect(apiMod.bigIdText(BigInt(7))).toBe('7');
-    expect(apiMod.bigIdText(BigInt('9223372036854775807'))).toBe('9223372036854775807');
+    expect(apiMod.bigIdText(BigInt('9223372036854775807'))).toBe(
+      '9223372036854775807',
+    );
   });
 
   test('eventDetailText：缺省 → 占位符；JsonObject → 紧凑 JSON', () => {
@@ -3481,9 +3930,13 @@ describe('adminReturnTo（401 跳登录 returnTo 白名单形态，纯函数）'
     expect(apiMod.adminReturnTo('/providers/wechat_mp/edit', '')).toBe(
       '/admin#/providers/wechat_mp/edit',
     );
-    expect(apiMod.adminReturnTo('/settings', '?tab=mfa')).toBe('/admin#/settings?tab=mfa');
+    expect(apiMod.adminReturnTo('/settings', '?tab=mfa')).toBe(
+      '/admin#/settings?tab=mfa',
+    );
     // 不得出现 /admin#/admin/… 重复段（前缀由 alRoot 提供）。
-    expect(apiMod.adminReturnTo('/providers', '')).not.toContain('/admin#/admin/');
+    expect(apiMod.adminReturnTo('/providers', '')).not.toContain(
+      '/admin#/admin/',
+    );
   });
 
   test('白名单贯通：loginUrl 拼装 → 编码 returnTo → 解码以 /admin# 开头且过 sanitizeReturnTo', () => {
@@ -3497,7 +3950,9 @@ describe('adminReturnTo（401 跳登录 returnTo 白名单形态，纯函数）'
   });
 
   test('非法 returnTo 由 sanitizeReturnTo 回落默认落点（防开放重定向兜底）', () => {
-    expect(sanitizeReturnTo('https://evil.example.com/x')).toBe(DEFAULT_ACCOUNT_HOME);
+    expect(sanitizeReturnTo('https://evil.example.com/x')).toBe(
+      DEFAULT_ACCOUNT_HOME,
+    );
     expect(sanitizeReturnTo('/admin/providers')).toBe(DEFAULT_ACCOUNT_HOME);
   });
 });

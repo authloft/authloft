@@ -41,51 +41,54 @@ import styles from './DataTable.module.less';
 
 /** 数据列规格：Semi ColumnProps 的结构化子集（受控排序 / 筛选开关）。 */
 export interface DataTableColumn<T> {
-  readonly dataIndex: string;
-  readonly title: ReactNode;
-  readonly width?: string | number;
-  readonly align?: 'left' | 'center' | 'right';
+  dataIndex: string;
+  title: ReactNode;
+  width?: string | number;
+  align?: 'left' | 'center' | 'right';
   /** 单元格渲染；缺省按 dataIndex 原样展示。 */
-  readonly render?: (text: unknown, row: T, index: number) => ReactNode;
+  render?: (text: unknown, row: T, index: number) => ReactNode;
   /** 服务端排序：受控（当前方向取 query.sort / query.order）。 */
-  readonly sorter?: boolean;
+  sorter?: boolean;
   /** 服务端筛选下拉选项；选中值经 onQueryChange 的 filters 上报。 */
-  readonly filters?: readonly { readonly value: string; readonly text: string }[];
+  filters?: { value: string; text: string }[];
 }
 
 /** 行内开关列规格（§3.3 行 348）：追加在列尾；乐观更新 + 失败回滚。 */
 export interface DataTableSwitchColumn<T> {
-  readonly dataIndex: string;
-  readonly title: ReactNode;
-  readonly width?: string | number;
-  readonly isOn: (row: T) => boolean;
+  dataIndex: string;
+  title: ReactNode;
+  width?: string | number;
+  isOn: (row: T) => boolean;
   /** 行数据不可变更新（乐观 patch 的构造点；消费方按行类型展开）。 */
-  readonly toggleRow: (row: T, next: boolean) => T;
+  toggleRow: (row: T, next: boolean) => T;
   /** 持久化；reject 即触发回滚（错误展示归消费方，见文件头）。 */
-  readonly onToggle: (row: T, next: boolean) => Promise<void>;
+  onToggle: (row: T, next: boolean) => Promise<void>;
 }
 
 export interface DataTableProps<T> {
-  readonly columns: readonly DataTableColumn<T>[];
-  readonly rows: readonly T[];
+  columns: DataTableColumn<T>[];
+  rows: T[];
   /** 行键（Semi rowKey 同构；乐观覆盖的清除依赖 rows 引用比较）。 */
-  readonly rowKey: (row: T) => string;
+  rowKey: (row: T) => string;
   /** 总条数（§1.7 行 278：服务端权威 total）。 */
-  readonly total: number;
-  readonly query: TableQueryState;
-  readonly onQueryChange: (next: TableQueryState) => void;
-  readonly loading?: boolean;
+  total: number;
+  query: TableQueryState;
+  onQueryChange: (next: TableQueryState) => void;
+  loading?: boolean;
   /** 空态文案（Semi empty）；缺省用 Semi 内置空态。 */
-  readonly empty?: ReactNode;
+  empty?: ReactNode;
   /** 行内开关列；缺省无开关列。 */
-  readonly switchColumn?: DataTableSwitchColumn<T>;
+  switchColumn?: DataTableSwitchColumn<T>;
 }
 
 /** 页码条选项（§1.7 行 277：pageSize 上限 100）。 */
-const PAGE_SIZE_OPTS: readonly number[] = [10, 20, 50, MAX_PAGE_SIZE];
+const PAGE_SIZE_OPTS: number[] = [10, 20, 50, MAX_PAGE_SIZE];
 
 /** 受控排序方向：query.order → Semi sortOrder；未激活 / 未命中列恒 false。 */
-function sortOrderOf(dataIndex: string, query: TableQueryState): 'ascend' | 'descend' | false {
+function sortOrderOf(
+  dataIndex: string,
+  query: TableQueryState,
+): 'ascend' | 'descend' | false {
   if (dataIndex !== query.sort || query.order === '') {
     return false;
   }
@@ -98,7 +101,7 @@ export function DataTable<T extends Record<string, unknown>>(
 ): ReactNode {
   const { rows, rowKey, query, onQueryChange, switchColumn } = props;
   // 行内开关乐观覆盖：rows prop 引用更换（消费方重新取数）→ 清除，让位真值。
-  const [overrideRows, setOverrideRows] = useState<readonly T[] | null>(null);
+  const [overrideRows, setOverrideRows] = useState<T[] | null>(null);
   useEffect(() => {
     setOverrideRows(null);
   }, [rows]);
@@ -148,7 +151,8 @@ export function DataTable<T extends Record<string, unknown>>(
     align: column.align,
     render: column.render,
     sorter: column.sorter === true ? true : undefined,
-    sortOrder: column.sorter === true ? sortOrderOf(column.dataIndex, query) : undefined,
+    sortOrder:
+      column.sorter === true ? sortOrderOf(column.dataIndex, query) : undefined,
     filters: column.filters !== undefined ? [...column.filters] : undefined,
     filteredValue: [...(query.filters[column.dataIndex] ?? [])],
   }));

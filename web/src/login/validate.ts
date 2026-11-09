@@ -19,9 +19,9 @@ import {
 /** 前置校验结果：错误文案映射 + 首错字段（全过时 errors 空、firstField undefined）。 */
 export interface FormValidation {
   /** 字段名 → 已解析的错误文案（FieldRenderer errors prop 直接消费）。 */
-  readonly errors: Readonly<Record<string, string>>;
+  errors: Readonly<Record<string, string>>;
   /** 按 fields 顺序的首个未通过字段名（聚焦首错字段用）。 */
-  readonly firstField: string | undefined;
+  firstField: string | undefined;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface FormValidation {
  * （规则唯一来源 shared/utils/validate.ts，本层只做 i18n 文案组装）。
  */
 export function validateFormValues(
-  fields: readonly ValidatableField[],
+  fields: ValidatableField[],
   values: Readonly<Record<string, string>>,
 ): FormValidation {
   const issues = validateFields(fields, values);
@@ -41,8 +41,13 @@ export function validateFormValues(
 }
 
 /** 验证码满格校验（verify 段 CodeInput，P0-2「空验证码 6 格未输满不可提交」）：未过 → 错误文案。 */
-export function codeErrorText(code: string, length: number): string | undefined {
-  return isCodeComplete(code, length) ? undefined : t('common.errIncompleteCode');
+export function codeErrorText(
+  code: string,
+  length: number,
+): string | undefined {
+  return isCodeComplete(code, length)
+    ? undefined
+    : t('common.errIncompleteCode');
 }
 
 /**

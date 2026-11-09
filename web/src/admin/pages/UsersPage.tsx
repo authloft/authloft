@@ -25,10 +25,26 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, Toast, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Popconfirm,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { Link, useLocation } from '@modern-js/runtime/router';
-import { DataTable, type DataTableColumn, type DataTableSwitchColumn } from '../../shared/app-ui/DataTable';
-import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableSwitchColumn,
+} from '../../shared/app-ui/DataTable';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../../shared/app-ui/dataTableLogic';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
@@ -69,7 +85,7 @@ function userRowKey(row: AdminUser): string {
 /** 用户列表页：搜索 + DataTable（状态筛选 / 行内禁用启停 / 排序 / 分页）+ 行内操作。 */
 export function UsersPage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序 / 筛选全部由 DataTable 上报更新。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
@@ -111,7 +127,10 @@ export function UsersPage(_props: {
    * 行内禁用 / 启停（§5.4 行 1251）：失败 → Toast 提示后 rethrow，DataTable
    * 内部 runInlineToggle 捕获即回滚（错误展示归消费方，DataTable 契约）。
    */
-  async function handleStatusToggle(row: AdminUser, next: boolean): Promise<void> {
+  async function handleStatusToggle(
+    row: AdminUser,
+    next: boolean,
+  ): Promise<void> {
     try {
       await updateUserStatus(buildUpdateUserStatusRequest(row.id, next));
     } catch (toggleError) {
@@ -173,9 +192,13 @@ export function UsersPage(_props: {
     setResetMismatch(false);
     setResetSubmitting(true);
     try {
-      await resetUserPassword(buildResetUserPasswordRequest(target.id, resetPassword));
+      await resetUserPassword(
+        buildResetUserPasswordRequest(target.id, resetPassword),
+      );
       setResetTarget(null);
-      Toast.success(t('admin.resetPasswordSuccess', { username: target.username }));
+      Toast.success(
+        t('admin.resetPasswordSuccess', { username: target.username }),
+      );
     } catch (resetReqError) {
       setResetError(apiErrorText(resetReqError));
     } finally {
@@ -186,7 +209,7 @@ export function UsersPage(_props: {
   // 列口径（§6 行 517 用户列表）：用户名（详情链接）/ 昵称 / 手机号 / 邮箱 /
   // 状态（筛选下拉 + 文案）/ 最后登录 / 创建时间 / 操作；可排序列 dataIndex
   // 即 wire 字段名（§1.7 sort 前端限定，见 ./api USER_STATUS_DATA_INDEX 注）。
-  const columns: readonly DataTableColumn<AdminUser>[] = [
+  const columns: DataTableColumn<AdminUser>[] = [
     {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
@@ -219,14 +242,16 @@ export function UsersPage(_props: {
         value,
         text: t(textKey),
       })),
-      render: (_text: unknown, row: AdminUser) => userStatusLabel(row.userStatus),
+      render: (_text: unknown, row: AdminUser) =>
+        userStatusLabel(row.userStatus),
     },
     {
       dataIndex: 'last_login_at',
       title: t('admin.lastLoginLabel'),
       width: 170,
       sorter: true,
-      render: (_text: unknown, row: AdminUser) => formatUnixTime(row.lastLoginAt),
+      render: (_text: unknown, row: AdminUser) =>
+        formatUnixTime(row.lastLoginAt),
     },
     {
       dataIndex: 'created_at',
@@ -271,12 +296,20 @@ export function UsersPage(_props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.usersLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.usersLoadFailed')}
+      />
+    );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navUsers')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navUsers')}
+      </Typography.Title>
       <div className={styles.toolbar}>
         <Input
           className={styles.searchInput}
@@ -369,7 +402,9 @@ export function UsersPage(_props: {
               onClick={() => {
                 void submitReset();
               }}
-              disabled={resetSubmitting || resetPassword === '' || resetConfirm === ''}
+              disabled={
+                resetSubmitting || resetPassword === '' || resetConfirm === ''
+              }
               loading={resetSubmitting}
             >
               {t('admin.confirmResetAction')}

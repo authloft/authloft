@@ -48,35 +48,26 @@ import {
 } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import { resolveFlowStatus } from '../shared/api/errors';
-import { CaptchaWidget, type CaptchaWidgetHandle } from '../shared/captcha/CaptchaWidget';
+import {
+  CaptchaWidget,
+  type CaptchaWidgetHandle,
+} from '../shared/captcha/CaptchaWidget';
 import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
-import type {
-  MethodsSnapshot,
-  SnapshotField,
-} from '../shared/types/init';
+import type { MethodsSnapshot, SnapshotField } from '../shared/types/init';
 import { loginDefault, type LoginDefaultInput } from './api';
 import { BindingPage } from './pages/BindingPage';
 import { OTPForm, isOtpForm } from './factors/OTPForm';
-import {
-  WebAuthnButton,
-  isWebAuthnForm,
-} from './factors/WebAuthnButton';
+import { WebAuthnButton, isWebAuthnForm } from './factors/WebAuthnButton';
 import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
 import { StepDispatcher } from './steps/StepDispatcher';
 import { MethodTabs } from './MethodTabs';
 import { RETRY_RESUBMIT_STATUSES } from './validate';
 import styles from './LoginContainer.module.less';
-import {
-  flowReducer,
-  type FlowEvent,
-} from './flow/reducer';
-import {
-  selectShowCaptcha,
-  selectSubmitDisabled,
-} from './flow/selectors';
+import { flowReducer, type FlowEvent } from './flow/reducer';
+import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
 import {
   INITIAL_FLOW_STATE,
   type FlowEffect,
@@ -99,7 +90,7 @@ type PayloadInit = NonNullable<LoginDefaultInput['payload']>;
  * form 映射 verify（set_password 属注册 / 重置端点，§2.2 行 422）；空 / 未知
  * 兜底同 verify（§9 第 18 条零值兜底口径）。
  */
-export function firstStepFor(steps: readonly string[]): string {
+export function firstStepFor(steps: string[]): string {
   return steps[0] === 'challenge' ? 'challenge' : 'verify';
 }
 
@@ -144,7 +135,7 @@ const PAYLOAD_STRING_FIELDS: ReadonlySet<string> = new Set([
 
 export function toPayloadInit(
   values: Readonly<Record<string, string>>,
-  fields: readonly Field[],
+  fields: Field[],
 ): PayloadInit {
   const init: Record<string, string> = {};
   for (const field of fields) {
@@ -171,8 +162,8 @@ export function fieldsFor(
   method: string,
   step: string,
   snapshot: MethodsSnapshot,
-  mfaMethods: readonly MfaMethod[] | undefined,
-): readonly Field[] {
+  mfaMethods: MfaMethod[] | undefined,
+): Field[] {
   const snapshotEntry = snapshot.methods.find((m) => m.method === method);
   const otp = isOtpForm(lookupFactor(method));
   /** OTP 系 verify 步的 code 白名单描述（§2.6 行 546 payload 恒 {code}）。 */
@@ -197,8 +188,9 @@ export function fieldsFor(
   }
 
   const fields = (
-    (step === 'challenge' ? snapshotEntry?.challengeFields : snapshotEntry?.fields) ??
-    []
+    (step === 'challenge'
+      ? snapshotEntry?.challengeFields
+      : snapshotEntry?.fields) ?? []
   ).map(snapshotFieldToField);
   if (fields.length > 0) {
     return fields;
@@ -238,9 +230,7 @@ export function terminalUrl(
  * QRCodeStep completeLogin 完成，防二次 replace）；内层缺失（防御，
  * 后端 pollResult 必填）→ undefined 交消费方零值兜底。纯函数，node 可测。
  */
-export function qrResultEvent(
-  outer: LoginFlowResponse,
-): FlowEvent | undefined {
+export function qrResultEvent(outer: LoginFlowResponse): FlowEvent | undefined {
   const login = outer.login;
   return login !== undefined && login.status !== 'success'
     ? { type: 'response', envelope: login }
@@ -253,13 +243,13 @@ export function qrResultEvent(
  * 提示（token 类提示「登录已超时…」由 errors.status.* 字典承载，§4.1 行 403）。
  */
 export function executeEffects(
-  effects: readonly FlowEffect[],
+  effects: FlowEffect[],
   handlers: {
     complete: (url: string) => void;
     restart: (status: LoginStatus) => void;
   },
   /** returnTo 消费端（complete 终点直登场景的回跳地址，见 terminalUrl）。 */
-  options?: { readonly returnTo?: string },
+  options?: { returnTo?: string },
 ): void {
   for (const effect of effects) {
     if (effect.type === 'complete') {
@@ -287,7 +277,7 @@ export async function runSubmit(
   payload: PayloadInit,
   getCaptchaToken: () => CaptchaPayload | undefined,
   request: (input: LoginDefaultInput) => Promise<LoginFlowResponse>,
-): Promise<{ events: readonly FlowEvent[]; failed: boolean }> {
+): Promise<{ events: FlowEvent[]; failed: boolean }> {
   const captcha = getCaptchaToken();
   const payloadWithCaptcha =
     captcha === undefined ? payload : { ...payload, captcha };
@@ -355,7 +345,7 @@ export interface LoginFlowViewProps {
   onOtpCodeChange?: (value: string) => void;
   captchaRef?: Ref<CaptchaWidgetHandle>;
   /** mfa 场景方式列表（select_method 清信封后由容器本地保持，§4.1 行 407 就地渲染）。 */
-  mfaMethods?: readonly MfaMethod[];
+  mfaMethods?: MfaMethod[];
   /** webauthn verify 段断言上抛（容器组装 payload {credential}，§2.6 行 548）。 */
   onCredential?: (credential: JsonObject) => void;
   /** webauthn 最近一次下发的 options 容器镜像（失败态信封无 nextStep，容器持值注入）。 */
@@ -388,7 +378,7 @@ function MfaSelector({
   current,
   onSelect,
 }: {
-  methods: readonly MfaMethod[];
+  methods: MfaMethod[];
   current: string;
   onSelect?: (method: string, firstStep: string) => void;
 }) {
@@ -399,7 +389,9 @@ function MfaSelector({
           <li key={m.method} className={styles.mfaItem}>
             <button
               type="button"
-              className={m.method === current ? styles.mfaTabActive : styles.mfaTab}
+              className={
+                m.method === current ? styles.mfaTabActive : styles.mfaTab
+              }
               aria-current={m.method === current ? 'true' : undefined}
               onClick={() => onSelect?.(m.method, firstStepFor(m.steps))}
             >
@@ -474,11 +466,7 @@ export function LoginFlowView({
 
   /** 评审 P0-1：next / mfa 分支的「返回方式列表」次级入口。 */
   const backToMethodsNode = onBackToMethods !== undefined && (
-    <button
-      type="button"
-      className={styles.backLink}
-      onClick={onBackToMethods}
-    >
+    <button type="button" className={styles.backLink} onClick={onBackToMethods}>
       {t('login.backToMethods')}
     </button>
   );
@@ -492,7 +480,7 @@ export function LoginFlowView({
    */
   const renderFactorNode = (
     method: string,
-    fields: readonly Field[],
+    fields: Field[],
     maskedTarget?: string,
   ): ReactNode => {
     const factor = lookupFactor(method);
@@ -512,7 +500,9 @@ export function LoginFlowView({
       return (
         <WebAuthnButton
           {...factorProps}
-          challengeData={state.envelope?.nextStep?.challengeData ?? challengeData}
+          challengeData={
+            state.envelope?.nextStep?.challengeData ?? challengeData
+          }
           onCredential={onCredential}
         />
       );
@@ -573,12 +563,15 @@ export function LoginFlowView({
           // 未选择二次方式（刚进入 mfa_required，state.method 还是主因子）。
           <p role="status">{t('login.mfaSelectHint')}</p>
         ) : (
-          renderFactorNode(mfaEntry.method, mfaEntry.fields, mfaEntry.maskedTarget)
+          renderFactorNode(
+            mfaEntry.method,
+            mfaEntry.fields,
+            mfaEntry.maskedTarget,
+          )
         )}
-        {selectShowCaptcha(state) &&
-          state.envelope?.captcha !== undefined && (
-            <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
-          )}
+        {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
+          <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
+        )}
         {resolution !== undefined && (
           <ErrorBanner
             i18nKey={resolution.i18nKey}
@@ -609,10 +602,9 @@ export function LoginFlowView({
           nextStep={next}
           form={renderFactorNode(nextMethod, next.fields)}
         />
-        {selectShowCaptcha(state) &&
-          state.envelope?.captcha !== undefined && (
-            <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
-          )}
+        {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
+          <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
+        )}
         {resolution !== undefined && (
           <ErrorBanner
             i18nKey={resolution.i18nKey}
@@ -652,10 +644,9 @@ export function LoginFlowView({
       ) : (
         renderFactorNode(state.method, fields)
       )}
-      {selectShowCaptcha(state) &&
-        state.envelope?.captcha !== undefined && (
-          <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
-        )}
+      {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
+        <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
+      )}
       {resolution !== undefined && (
         <ErrorBanner
           i18nKey={resolution.i18nKey}
@@ -692,21 +683,18 @@ export function LoginContainer({
 }: LoginContainerProps) {
   // 惰性初始化：初始信封经 reducer response 事件进状态机（effects 语义
   // 完整保留——mfa_required / binding_required 无副作用标记）。
-  const [state, dispatch] = useReducer(
-    flowReducer,
-    initialEnvelope,
-    (env) =>
-      env === undefined
-        ? INITIAL_FLOW_STATE
-        : flowReducer(INITIAL_FLOW_STATE, { type: 'response', envelope: env }),
+  const [state, dispatch] = useReducer(flowReducer, initialEnvelope, (env) =>
+    env === undefined
+      ? INITIAL_FLOW_STATE
+      : flowReducer(INITIAL_FLOW_STATE, { type: 'response', envelope: env }),
   );
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
   // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
   // mfa_required 信封到达时镜像；restart / complete / 传输失败时清空退出 mfa 场景。
-  const [mfaMethods, setMfaMethods] = useState<
-    readonly MfaMethod[] | undefined
-  >(undefined);
+  const [mfaMethods, setMfaMethods] = useState<MfaMethod[] | undefined>(
+    undefined,
+  );
   // challenge 段表单值（重发时原目标重用，§4.3 行 436 重发倒计时）：OTPForm
   // 实例随状态分支（表单区 ↔ StepDispatcher form 段）重建，值上提容器。
   const [challengeValues, setChallengeValues] = useState<

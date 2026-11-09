@@ -28,7 +28,7 @@ import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import '@douyinfe/semi-ui/react19-adapter';
-import { HashRouter } from '@modern-js/runtime/router'
+import { HashRouter } from '@modern-js/runtime/router';
 import { setLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
@@ -48,10 +48,10 @@ setLocale(navigator.language);
 
 /** 渲染期异常兜底（错误边界，语义沿自行挂载时期不变）。 */
 class AdminErrorBoundary extends Component<
-  { readonly children: ReactNode },
-  { readonly error: unknown }
+  { children: ReactNode },
+  { error: unknown }
 > {
-  constructor(props: { readonly children: ReactNode }) {
+  constructor(props: { children: ReactNode }) {
     super(props);
     this.state = { error: undefined };
   }

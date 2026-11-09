@@ -18,5 +18,23 @@
   "editor.codeActionsOnSave": {
     "source.fixAll.rslint": "explicit"
   },
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "rstack.rstack"
+  }
 }

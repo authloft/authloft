@@ -25,11 +25,14 @@ export function AccountApp() {
   return (
     <Routes>
       <Route
-        path="/profile"
+        path="/"
         element={
           <AppLayout
             alRoot={boot.alRoot}
-            breadcrumb={[t('account.personalCenter'), t('account.profileTitle')]}
+            breadcrumb={[
+              t('account.personalCenter'),
+              t('account.profileTitle'),
+            ]}
           >
             <ProfilePage />
           </AppLayout>
@@ -40,7 +43,10 @@ export function AccountApp() {
         element={
           <AppLayout
             alRoot={boot.alRoot}
-            breadcrumb={[t('account.personalCenter'), t('account.securityTitle')]}
+            breadcrumb={[
+              t('account.personalCenter'),
+              t('account.securityTitle'),
+            ]}
           >
             <SecurityPage />
           </AppLayout>
@@ -57,12 +63,13 @@ export function AccountApp() {
           </AppLayout>
         }
       />
-      {/* path:'*' 兜底：带布局的不存在页，返回链接走 hash
-          内路径（SPA 导航，不整页刷新）。 */}
       <Route
         path="*"
         element={
-          <AppLayout alRoot={boot.alRoot} breadcrumb={[t('account.personalCenter')]}>
+          <AppLayout
+            alRoot={boot.alRoot}
+            breadcrumb={[t('account.personalCenter')]}
+          >
             <Empty description={t('account.routeNotFound')}>
               <a href="#/profile">{t('account.backToHome')}</a>
             </Empty>

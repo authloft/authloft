@@ -43,7 +43,9 @@ export const MAX_POLL_SECONDS = 15;
  */
 export function pollTimeoutMsOf(pollSeconds: number | undefined): number {
   const seconds =
-    pollSeconds === undefined || pollSeconds <= 0 || pollSeconds > MAX_POLL_SECONDS
+    pollSeconds === undefined ||
+    pollSeconds <= 0 ||
+    pollSeconds > MAX_POLL_SECONDS
       ? MAX_POLL_SECONDS
       : pollSeconds;
   return (seconds + POLL_TIMEOUT_BUFFER_S) * 1000;
@@ -51,11 +53,7 @@ export function pollTimeoutMsOf(pollSeconds: number | undefined): number {
 
 /** 票据五态（§2.8 行 717：ticket.status 取值；「四态面板」+ failed 文案态）。 */
 export type QRTicketPhase =
-  | 'pending'
-  | 'scanned'
-  | 'success'
-  | 'expired'
-  | 'failed';
+  'pending' | 'scanned' | 'success' | 'expired' | 'failed';
 
 /**
  * 信封 → 票据五态（§2.8 行 717、721-729）：ticket.status 优先（未知取值 →
@@ -109,15 +107,15 @@ export function fetchFailureText(error: unknown): string {
 // ---------------------------------------------------------------------------
 
 export type QRPanelPhase =
-  | { readonly kind: 'fetching' }
+  | { kind: 'fetching' }
   | {
-      readonly kind: 'active';
-      readonly qrcodeUrl: string;
-      readonly ticketStatus: 'pending' | 'scanned';
+      kind: 'active';
+      qrcodeUrl: string;
+      ticketStatus: 'pending' | 'scanned';
     }
-  | { readonly kind: 'success' }
-  | { readonly kind: 'expired' }
-  | { readonly kind: 'failed'; readonly message: string };
+  | { kind: 'success' }
+  | { kind: 'expired' }
+  | { kind: 'failed'; message: string };
 
 export interface QRPanelControllerOptions {
   /** 拉码（调用方包装 CreateQrcode——含 captcha；expired 重拉同样走这里）。 */
@@ -160,8 +158,8 @@ export function createQRPanelController(
     ticketStatus: ticketStatus === 'scanned' ? 'scanned' : 'pending',
   });
 
-  const longPoll: LongPollController = createLongPollController<LoginFlowResponse>(
-    () => ({
+  const longPoll: LongPollController =
+    createLongPollController<LoginFlowResponse>(() => ({
       poll: (signal) => options.pollUrl(ticket, signal),
       isSettled: (envelope) => {
         const phase = ticketPhaseOf(envelope);
@@ -187,12 +185,14 @@ export function createQRPanelController(
         }
       },
       onMaxErrors: () => {
-        options.onPhase({ kind: 'failed', message: t('errors.status.unknown') });
+        options.onPhase({
+          kind: 'failed',
+          message: t('errors.status.unknown'),
+        });
       },
       pollTimeoutMs: pollTimeoutMsOf(options.pollSeconds),
       maxErrors: options.maxPollErrors ?? DEFAULT_MAX_POLL_ERRORS,
-    }),
-  );
+    }));
 
   return {
     refresh: () => {
@@ -262,7 +262,11 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
       )}
       {phase.kind === 'active' && (
         <>
-          <img className={styles.qrcode} src={phase.qrcodeUrl} alt={t('common.qrCodeAlt')} />
+          <img
+            className={styles.qrcode}
+            src={phase.qrcodeUrl}
+            alt={t('common.qrCodeAlt')}
+          />
           <p className={styles.hint} role="status">
             {phase.ticketStatus === 'scanned'
               ? t('errors.status.scanned')
@@ -278,7 +282,11 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
       {phase.kind === 'expired' && (
         <div className={styles.actionBox}>
           <p className={styles.hint}>{t('errors.status.expired')}</p>
-          <button type="button" className={styles.refreshButton} onClick={onRefresh}>
+          <button
+            type="button"
+            className={styles.refreshButton}
+            onClick={onRefresh}
+          >
             {t('common.retry')}
           </button>
         </div>
@@ -327,9 +335,6 @@ export function QRCodePanel(props: QRCodePanelProps) {
   }, [controller]);
 
   return (
-    <QRCodePanelView
-      phase={phase}
-      onRefresh={() => controller.refresh()}
-    />
+    <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
   );
 }

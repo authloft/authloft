@@ -31,7 +31,7 @@
  * 无法被 Modal.confirm 拦截，浏览器也不允许自定义文案，故零新增 i18n
  * 键）；无改动时正常离开。样式（§1.7）：同目录同名 module less。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
@@ -48,12 +48,12 @@ import {
   Tabs,
   Toast,
   Typography,
-} from "@douyinfe/semi-ui";
-import { useLocation } from "@modern-js/runtime/router";
-import { useRequest } from "ahooks";
-import { requestOptions } from "../../shared/hooks/requestOptions";
-import { t } from "../../shared/i18n";
-import { StringListEditor } from "../components/StringListEditor";
+} from '@douyinfe/semi-ui';
+import { useLocation } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
+import { requestOptions } from '../../shared/hooks/requestOptions';
+import { t } from '../../shared/i18n';
+import { StringListEditor } from '../components/StringListEditor';
 import {
   adminReturnTo,
   apiErrorText,
@@ -61,7 +61,7 @@ import {
   getSettings,
   isUnauthenticatedError,
   setSettings,
-} from "../api";
+} from '../api';
 import {
   getSettingsSections,
   getSettingsTabs,
@@ -70,9 +70,9 @@ import {
   settingsDraftIssue,
   type SettingsDraft,
   type SettingsFieldMeta,
-} from "../settingsLogic";
-import { loginUrl } from "../bootstrap";
-import styles from "./SettingsPage.module.less";
+} from '../settingsLogic';
+import { loginUrl } from '../bootstrap';
+import styles from './SettingsPage.module.less';
 
 const { Group: CheckboxGroup } = Checkbox;
 
@@ -81,17 +81,17 @@ const { Group: CheckboxGroup } = Checkbox;
  * InputNumber 空态给 ''：收敛 number（NaN → 0，非法值由 settingsDraftIssue 兜文案）。
  */
 function FieldView(props: {
-  readonly field: SettingsFieldMeta;
-  readonly draft: SettingsDraft;
-  readonly disabled: boolean;
-  readonly onChange: <K extends keyof SettingsDraft>(
+  field: SettingsFieldMeta;
+  draft: SettingsDraft;
+  disabled: boolean;
+  onChange: <K extends keyof SettingsDraft>(
     key: K,
     value: SettingsDraft[K],
   ) => void;
 }): ReactNode {
   const { field, draft, disabled, onChange } = props;
   switch (field.kind) {
-    case "number":
+    case 'number':
       return (
         <InputNumber
           className={styles.numberInput}
@@ -99,13 +99,13 @@ function FieldView(props: {
           min={0}
           precision={0}
           onChange={(raw: number | string) => {
-            const next = typeof raw === "number" ? raw : Number(raw);
+            const next = typeof raw === 'number' ? raw : Number(raw);
             onChange(field.key, Number.isNaN(next) ? 0 : next);
           }}
           disabled={disabled}
         />
       );
-    case "switch":
+    case 'switch':
       return (
         <Switch
           checked={draft[field.key]}
@@ -113,7 +113,7 @@ function FieldView(props: {
           disabled={disabled}
         />
       );
-    case "text":
+    case 'text':
       return (
         <Input
           className={styles.textInput}
@@ -122,7 +122,7 @@ function FieldView(props: {
           disabled={disabled}
         />
       );
-    case "select":
+    case 'select':
       return (
         <Select
           className={styles.selectInput}
@@ -131,12 +131,12 @@ function FieldView(props: {
           onChange={(next: string | string[] | undefined) => {
             // 单选模式实际下发 string；清空 / 多值形态非本表单路径，空串
             // 交由 settingsDraftIssue 三态校验兜文案。
-            onChange(field.key, typeof next === "string" ? next : "");
+            onChange(field.key, typeof next === 'string' ? next : '');
           }}
           disabled={disabled}
         />
       );
-    case "multiSelect":
+    case 'multiSelect':
       return (
         <Select
           multiple
@@ -147,7 +147,7 @@ function FieldView(props: {
           disabled={disabled}
         />
       );
-    case "stringList":
+    case 'stringList':
       return (
         <StringListEditor
           className={styles.stringListInput}
@@ -167,19 +167,19 @@ function FieldView(props: {
  * before / after 为已格式化的展示值（敏感键脱敏，见 SENSITIVE_DIFF_KEYS）。
  */
 interface SettingsDiffItem {
-  readonly key: keyof SettingsDraft;
-  readonly label: string;
-  readonly before: string;
-  readonly after: string;
+  key: keyof SettingsDraft;
+  label: string;
+  before: string;
+  after: string;
 }
 
 /** 变更预览中脱敏的键（网关 Token 不明文回显，防误截图外泄）。 */
 const SENSITIVE_DIFF_KEYS: ReadonlySet<keyof SettingsDraft> = new Set([
-  "gatewayTokens",
+  'gatewayTokens',
 ]);
 
 /** 脱敏占位（符号无语言差异，不占 i18n 键）。 */
-const MASKED_VALUE = "••••••";
+const MASKED_VALUE = '••••••';
 
 /** 单键展示值格式化（与 FieldView 的控件形态对齐：布尔→是/否、空→（空）、下拉→选项文案）。 */
 function formatSettingsValue(
@@ -187,32 +187,32 @@ function formatSettingsValue(
   draft: SettingsDraft,
 ): string {
   switch (field.kind) {
-    case "number":
+    case 'number':
       return String(draft[field.key]);
-    case "switch":
-      return draft[field.key] ? t("admin.yesText") : t("admin.noText");
-    case "text": {
+    case 'switch':
+      return draft[field.key] ? t('admin.yesText') : t('admin.noText');
+    case 'text': {
       const value = draft[field.key];
-      return value === "" ? t("admin.settingsDiffEmptyValue") : value;
+      return value === '' ? t('admin.settingsDiffEmptyValue') : value;
     }
-    case "select": {
+    case 'select': {
       const value = draft[field.key];
       const hit = field.options.find((option) => option.value === value);
       if (hit !== undefined) {
         return hit.label;
       }
-      return value === "" ? t("admin.settingsDiffEmptyValue") : value;
+      return value === '' ? t('admin.settingsDiffEmptyValue') : value;
     }
-    case "multiSelect":
-    case "stringList": {
+    case 'multiSelect':
+    case 'stringList': {
       const list = draft[field.key];
       if (list.length === 0) {
-        return t("admin.settingsDiffEmptyValue");
+        return t('admin.settingsDiffEmptyValue');
       }
       if (SENSITIVE_DIFF_KEYS.has(field.key)) {
         return MASKED_VALUE;
       }
-      return list.join(", ");
+      return list.join(', ');
     }
   }
 }
@@ -230,10 +230,8 @@ function buildSettingsDiff(
   const items: SettingsDiffItem[] = [];
   for (const section of getSettingsSections()) {
     for (const field of section.fields) {
-      const before: number | boolean | string | readonly string[] =
-        saved[field.key];
-      const after: number | boolean | string | readonly string[] =
-        draft[field.key];
+      const before: number | boolean | string | string[] = saved[field.key];
+      const after: number | boolean | string | string[] = draft[field.key];
       const equal =
         Array.isArray(before) && Array.isArray(after)
           ? before.length === after.length &&
@@ -255,7 +253,7 @@ function buildSettingsDiff(
 /** 系统设置页：加载 → 全键草稿 → 多 Tab 分区表单 → 变更预览确认 → 部分提交。 */
 export function SettingsPage(props: {
   /** 归一后 al_root（401 跳登录前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
@@ -270,7 +268,7 @@ export function SettingsPage(props: {
   );
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   // 当前 Tab（key 为 settingsLogic 的稳定 slug，locale 切换不影响选中态）。
-  const [activeTab, setActiveTab] = useState("account");
+  const [activeTab, setActiveTab] = useState('account');
   // 已保存快照（加载初始化 / 保存成功前移），dirty 判定基准。
   // draft 更新走不可变 set（updateField 展开 / 编辑器下发新数组），与快照
   // 共享初始引用互不污染。
@@ -293,7 +291,7 @@ export function SettingsPage(props: {
   // 渲染期取当前语言文案（模块级常量会冻结 locale）；Tab 元数据由分区表
   // 自动摊平，dirty / 保存作用域 / 变更预览共用这一份键级 diff。
   const tabs = getSettingsTabs();
-  const allDiff: readonly SettingsDiffItem[] =
+  const allDiff: SettingsDiffItem[] =
     draft !== null && savedDraft !== null
       ? buildSettingsDiff(savedDraft, draft)
       : [];
@@ -316,9 +314,9 @@ export function SettingsPage(props: {
     function handleBeforeUnload(event: BeforeUnloadEvent): void {
       event.preventDefault();
     }
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [dirty]);
 
@@ -374,7 +372,7 @@ export function SettingsPage(props: {
       manual: true,
       onSuccess: () => {
         setDiffOpen(false);
-        Toast.success(t("admin.settingsSaved"));
+        Toast.success(t('admin.settingsSaved'));
       },
       onError: (err: unknown) => {
         if (isUnauthenticatedError(err)) {
@@ -398,7 +396,7 @@ export function SettingsPage(props: {
       <Banner
         type="danger"
         fullMode={false}
-        description={t("admin.settingsLoadFailed")}
+        description={t('admin.settingsLoadFailed')}
       />
     );
   }
@@ -415,7 +413,7 @@ export function SettingsPage(props: {
   return (
     <section className={styles.page}>
       <Typography.Title heading={3} className="page-title">
-        {t("admin.settingsTitle")}
+        {t('admin.settingsTitle')}
       </Typography.Title>
       <Tabs
         className={styles.tabs}
@@ -435,7 +433,7 @@ export function SettingsPage(props: {
                   {tabDirty ? (
                     <span
                       className={styles.tabDirtyDot}
-                      title={t("admin.settingsTabUnsaved")}
+                      title={t('admin.settingsTabUnsaved')}
                     />
                   ) : null}
                 </span>
@@ -457,10 +455,10 @@ export function SettingsPage(props: {
                               <div className={styles.fieldLabelRow}>
                                 <Typography.Text className={styles.fieldLabel}>
                                   {field.label}
-                                  {field.kind === "number" &&
+                                  {field.kind === 'number' &&
                                   field.unit !== undefined
                                     ? `（${field.unit}）`
-                                    : ""}
+                                    : ''}
                                 </Typography.Text>
                                 {field.hint ? (
                                   <Typography.Text type="tertiary">
@@ -494,23 +492,23 @@ export function SettingsPage(props: {
         disabled={submitting || tabDirtyKeys.length === 0}
         onClick={requestSave}
       >
-        {t("admin.settingsTabSaveAction")}
+        {t('admin.settingsTabSaveAction')}
       </Button>
       {/* 保存前变更预览：逐键列出 旧值 → 新值（敏感键脱敏），确认才提交；
           失败 Modal 保持打开（Toast 报错后可修正重试），成功在 submit 内关闭。 */}
       <Modal
-        title={t("admin.settingsDiffTitle")}
+        title={t('admin.settingsDiffTitle')}
         visible={diffOpen}
         onCancel={() => setDiffOpen(false)}
         onOk={() => {
           void submit();
         }}
-        okText={t("admin.saveSettingsAction")}
-        cancelText={t("admin.cancelAction")}
+        okText={t('admin.saveSettingsAction')}
+        cancelText={t('admin.cancelAction')}
         confirmLoading={submitting}
         maskClosable={false}
       >
-        <p>{t("admin.settingsDiffSummary", { count: diffItems.length })}</p>
+        <p>{t('admin.settingsDiffSummary', { count: diffItems.length })}</p>
         <List
           size="small"
           dataSource={diffItems}

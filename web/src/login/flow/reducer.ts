@@ -20,15 +20,15 @@ export type FlowEvent =
    * 选择器、不跳页）；firstStep 由调用方按注入快照 methods[].steps 的首个
    * kind 映射（challenge → 'challenge'，form → 'verify' / 'set_password'）。
    */
-  | { readonly type: 'select_method'; readonly method: string; readonly firstStep: string }
+  | { type: 'select_method'; method: string; firstStep: string }
   /** 发起请求（step 为本次提交的 step，§2.2 行 422）；loading → true。 */
-  | { readonly type: 'request_started'; readonly step: string }
+  | { type: 'request_started'; step: string }
   /** 收到登录流程信封（§1.3）：status 镜像 + 副作用标记，loading → false。 */
-  | { readonly type: 'response'; readonly envelope: LoginFlowResponse }
+  | { type: 'response'; envelope: LoginFlowResponse }
   /** 推进到新 step（容器按 next_step 决定，如 challenge → verify）；reducer 不做 kind→step 推演。 */
-  | { readonly type: 'advance'; readonly step: string }
+  | { type: 'advance'; step: string }
   /** 回到第一步（restart 副作用的落地 / 刷新后重置 / 用户退出重登）。 */
-  | { readonly type: 'reset' };
+  | { type: 'reset' };
 
 /**
  * 未知 status 一律映射为 failed（§1.6 行 272：登录流程域未知异常 → failed
@@ -53,7 +53,7 @@ const RESTART_STATUSES: ReadonlySet<string> = new Set([
 function effectsFor(
   status: MachineStatus,
   envelope: LoginFlowResponse,
-): readonly FlowEffect[] {
+): FlowEffect[] {
   if (status === 'success') {
     return [{ type: 'complete', envelope }];
   }
@@ -68,7 +68,11 @@ export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
   switch (event.type) {
     case 'select_method':
       // 换方式 = 全新流程（含 mfa 方式切换）：回 idle、清信封与副作用标记。
-      return { ...INITIAL_FLOW_STATE, method: event.method, step: event.firstStep };
+      return {
+        ...INITIAL_FLOW_STATE,
+        method: event.method,
+        step: event.firstStep,
+      };
     case 'request_started':
       return { ...state, loading: true, step: event.step, effects: [] };
     case 'response': {

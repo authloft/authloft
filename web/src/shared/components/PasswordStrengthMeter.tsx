@@ -29,9 +29,9 @@ const RULE_LABEL_KEYS: Readonly<Record<PasswordWeakReason, I18nKey>> = {
 
 /** 单条规则的展示形态（key 对应 validatePassword 的未满足项）。 */
 export interface MeterRule {
-  readonly key: PasswordWeakReason;
-  readonly label: string;
-  readonly satisfied: boolean;
+  key: PasswordWeakReason;
+  label: string;
+  satisfied: boolean;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface MeterRule {
 export function meterRules(
   password: string,
   options: ValidatePasswordOptions = {},
-): readonly MeterRule[] {
+): MeterRule[] {
   const reasons = validatePassword(password, options);
   const keys: PasswordWeakReason[] = [
     'too_short',
@@ -66,11 +66,11 @@ export function meterRules(
 
 export interface PasswordStrengthMeterProps {
   /** 当前密码输入（受控；空串不渲染提示）。 */
-  readonly password: string;
+  password: string;
   /** 当前用户名（注册 set_password 步传入；驱动 contains_username / same_as_identifier）。 */
-  readonly username?: string;
+  username?: string;
   /** 当前邮箱（验证码注册场景传入；驱动 same_as_identifier）。 */
-  readonly email?: string;
+  email?: string;
 }
 
 export function PasswordStrengthMeter({

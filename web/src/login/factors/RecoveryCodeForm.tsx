@@ -17,8 +17,8 @@ import styles from './RecoveryCodeForm.module.less';
 
 /** 提交拦截结果（recoverySubmitGuard 未过）：错误槽文案 + 首错字段聚焦锚。 */
 export interface RecoverySubmitBlock {
-  readonly errors: Readonly<Record<string, string>>;
-  readonly focusId: string;
+  errors: Readonly<Record<string, string>>;
+  focusId: string;
 }
 
 /**
@@ -27,7 +27,7 @@ export interface RecoverySubmitBlock {
  * FieldRenderer 缺省 idPrefix 对齐，PasswordForm / FormStep 同款模式）。
  */
 export function recoverySubmitGuard(
-  fields: readonly Field[],
+  fields: Field[],
   values: Readonly<Record<string, string>>,
 ): RecoverySubmitBlock | undefined {
   const { errors, firstField } = validateFormValues(fields, values);

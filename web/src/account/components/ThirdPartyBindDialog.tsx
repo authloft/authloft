@@ -25,12 +25,21 @@
  * disposed 检查兜底。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Button, Modal } from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
-import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
+import {
+  CaptchaWidget,
+  type CaptchaWidgetHandle,
+} from '../../shared/captcha/CaptchaWidget';
 import {
   createQRPanelController,
   MAX_POLL_SECONDS,
@@ -51,11 +60,11 @@ import styles from './ThirdPartyBindDialog.module.less';
 /** 面板体 props（started 后挂载；controller 生命周期与卸载中断绑定）。 */
 interface PanelBodyProps {
   /** 扫码类 Provider 标识（§3.7.1 B 行 993）。 */
-  readonly providerKey: string;
+  providerKey: string;
   /** CaptchaWidget 句柄（useRef<CaptchaWidgetHandle>(null) 产物；实时取拉码凭据，§2.8 行 703）。 */
-  readonly captchaRef: RefObject<CaptchaWidgetHandle | null>;
+  captchaRef: RefObject<CaptchaWidgetHandle | null>;
   /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
-  readonly onDone: () => void;
+  onDone: () => void;
 }
 
 /**
@@ -64,7 +73,11 @@ interface PanelBodyProps {
  * 文案映射（bindPollPhase）；propsRef 模式与 shared 面板组件壳一致（闭包内
  * 读最新 props）。
  */
-function BindPanelBody({ providerKey, captchaRef, onDone }: PanelBodyProps): ReactNode {
+function BindPanelBody({
+  providerKey,
+  captchaRef,
+  onDone,
+}: PanelBodyProps): ReactNode {
   const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
   const lastPollStatusRef = useRef('');
   const propsRef = useRef({ providerKey, captchaRef, onDone });
@@ -80,7 +93,10 @@ function BindPanelBody({ providerKey, captchaRef, onDone }: PanelBodyProps): Rea
           buildCreateQrcodeBindRequest(propsRef.current.providerKey, captcha),
         );
       },
-      pollUrl: async (ticket: string, _signal: AbortSignal): Promise<LoginFlowResponse> => {
+      pollUrl: async (
+        ticket: string,
+        _signal: AbortSignal,
+      ): Promise<LoginFlowResponse> => {
         const envelope = await getThirdpartyTicket(
           buildGetThirdpartyTicketRequest(ticket),
         );
@@ -106,7 +122,9 @@ function BindPanelBody({ providerKey, captchaRef, onDone }: PanelBodyProps): Rea
     return () => controller.dispose();
   }, [controller]);
 
-  return <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />;
+  return (
+    <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
+  );
 }
 
 /**
@@ -116,17 +134,17 @@ function BindPanelBody({ providerKey, captchaRef, onDone }: PanelBodyProps): Rea
  */
 export function ThirdPartyBindDialog(props: {
   /** 打开态（父级 ThirdPartyList 控制）。 */
-  readonly visible: boolean;
+  visible: boolean;
   /** 扫码类 Provider 标识（§3.7.1 B 行 993：channel=qrcode 的 available 条目）。 */
-  readonly providerKey: string;
+  providerKey: string;
   /** Provider 展示名（Modal 标题）。 */
-  readonly displayName: string;
+  displayName: string;
   /** captcha 配置（§3.2 GetConfig 注入，§5 行 489）。 */
-  readonly captcha: CaptchaConfig;
+  captcha: CaptchaConfig;
   /** 未完成绑定的关闭（父级仅关框）。 */
-  readonly onCancel: () => void;
+  onCancel: () => void;
   /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
-  readonly onDone: () => void;
+  onDone: () => void;
 }): ReactNode {
   const { captcha } = props;
   const [started, setStarted] = useState(false);

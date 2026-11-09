@@ -49,10 +49,10 @@ setLocale(navigator.language);
 
 /** 渲染期异常兜底（错误边界，语义沿自行挂载时期不变）。 */
 class AccountErrorBoundary extends Component<
-  { readonly children: ReactNode },
-  { readonly error: unknown }
+  { children: ReactNode },
+  { error: unknown }
 > {
-  constructor(props: { readonly children: ReactNode }) {
+  constructor(props: { children: ReactNode }) {
     super(props);
     this.state = { error: undefined };
   }

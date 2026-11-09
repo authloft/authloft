@@ -30,11 +30,11 @@ export function normalizeStaticBase(base: string | undefined): string {
 
 /** account 引导结果（§5 行 478）：归一后的注入值，无必需校验（恒 ok）。 */
 export interface AccountBootstrapResult {
-  readonly ok: true;
+  ok: true;
   /** 归一后 al_root（登出 / 401 跳登录的前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
   /** 归一后 static_base（entry 首行 `__webpack_public_path__`）。 */
-  readonly staticBase: string;
+  staticBase: string;
 }
 
 /** 读注入变量并归一（§8 白名单 al_root / static_base）；同步纯读取，不阻塞渲染。 */

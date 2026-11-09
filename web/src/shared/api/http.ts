@@ -66,7 +66,9 @@ interface RawInit {
 function resolveBaseUrl(): string {
   const raw = (globalThis as { __AUTHLOFT_INIT__?: RawInit }).__AUTHLOFT_INIT__;
   const alRoot =
-    typeof raw?.al_root === 'string' ? raw.al_root.trim().replace(/\/+$/, '') : '';
+    typeof raw?.al_root === 'string'
+      ? raw.al_root.trim().replace(/\/+$/, '')
+      : '';
   if (alRoot !== '') {
     return alRoot;
   }
@@ -324,9 +326,9 @@ export function postForm(
 
 /** Connect 错误体 JSON 的最小形状（§1.5 行 199-211）。 */
 interface ConnectErrorBody {
-  readonly code?: unknown;
-  readonly message?: unknown;
-  readonly details?: unknown;
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
 }
 
 /**
@@ -343,7 +345,11 @@ function connectBodyToApiError(
   let body: ConnectErrorBody | undefined;
   if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
     const record = parsed as Record<string, unknown>;
-    body = { code: record.code, message: record.message, details: record.details };
+    body = {
+      code: record.code,
+      message: record.message,
+      details: record.details,
+    };
   }
   const info = body !== undefined ? errorInfoFromBody(body) : undefined;
   if (info !== undefined && info.code !== '') {
@@ -370,9 +376,9 @@ function connectBodyToApiError(
  * type 匹配、value 为 base64 的 Protobuf 字节，消费方以 value 解码为准；
  * 解码失败视同无 detail）。
  */
-function errorInfoFromBody(body: ConnectErrorBody): ReturnType<
-  typeof fromBinary<typeof ErrorInfoSchema>
-> | undefined {
+function errorInfoFromBody(
+  body: ConnectErrorBody,
+): ReturnType<typeof fromBinary<typeof ErrorInfoSchema>> | undefined {
   if (!Array.isArray(body.details)) {
     return undefined;
   }

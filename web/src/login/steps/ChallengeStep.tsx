@@ -17,7 +17,10 @@ import { useRef, useState, type FormEvent } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
-import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
+import {
+  CaptchaWidget,
+  type CaptchaWidgetHandle,
+} from '../../shared/captcha/CaptchaWidget';
 import { FieldRenderer } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
@@ -30,7 +33,7 @@ function initCaptcha(): CaptchaConfig | undefined {
 
 export interface ChallengeStepProps {
   /** challenge 步渲染字段（§1.3 行 114 fields[]；captcha 字段被 FieldRenderer 跳过）。 */
-  fields?: readonly Field[];
+  fields?: Field[];
   /** 请求在途（触发按钮禁用，§3.2）。 */
   loading?: boolean;
   /** 不可重试失败态禁用触发（§1.6「可重试」列）。 */
@@ -72,8 +75,14 @@ export function ChallengeStep({
   return (
     <form onSubmit={trigger} className={styles.form}>
       <FieldRenderer fields={fields} values={values} onChange={onChange} />
-      {captcha !== undefined && <CaptchaWidget captcha={captcha} ref={captchaRef} />}
-      <button type="submit" disabled={loading || disabled} className={styles.submit}>
+      {captcha !== undefined && (
+        <CaptchaWidget captcha={captcha} ref={captchaRef} />
+      )}
+      <button
+        type="submit"
+        disabled={loading || disabled}
+        className={styles.submit}
+      >
         {t('login.sendCode')}
       </button>
     </form>

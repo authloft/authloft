@@ -40,9 +40,9 @@ export interface ImageAdapterOptions {
 }
 
 export class ImageCaptchaAdapter implements CaptchaAdapter {
-  private readonly providerKey: string;
-  private readonly fetchImage: () => Promise<CreateCaptchaImageResponse>;
-  private readonly doc: Document;
+  private providerKey: string;
+  private fetchImage: () => Promise<CreateCaptchaImageResponse>;
+  private doc: Document;
   private container: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
   private currentId = '';

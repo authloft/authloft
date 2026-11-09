@@ -21,7 +21,7 @@ import {
 // ---------------------------------------------------------------------------
 
 interface FakeElement {
-  readonly tag: string;
+  tag: string;
   children: FakeElement[];
   textContent: string;
   value: string;
@@ -91,8 +91,8 @@ function imageOk(
 }
 
 interface AdapterHandle {
-  readonly adapter: ReturnType<typeof createImageAdapter>;
-  readonly container: FakeElement;
+  adapter: ReturnType<typeof createImageAdapter>;
+  container: FakeElement;
   input(): FakeElement;
   img(): FakeElement;
 }

@@ -27,23 +27,23 @@ export type MachineStatus = 'idle' | LoginStatus;
  *   （token 类提示「登录已超时，请重新开始」，§4.1 行 403）。
  */
 export type FlowEffect =
-  | { readonly type: 'complete'; readonly envelope: LoginFlowResponse }
-  | { readonly type: 'restart'; readonly status: LoginStatus };
+  | { type: 'complete'; envelope: LoginFlowResponse }
+  | { type: 'restart'; status: LoginStatus };
 
 /** 状态机状态形状（reducer 的 S）。 */
 export interface FlowState {
   /** 当前流程状态；idle = 尚无响应 / 已重置（§4.1 状态机图）。 */
-  readonly status: MachineStatus;
+  status: MachineStatus;
   /** 当前认证方式：select_method 设定；status=next 时按 next_step.method 更新（§1.3 行 112）。 */
-  readonly method: string;
+  method: string;
   /** 当前 step（challenge｜verify｜set_password，§2.2 行 422）：select_method 设首步、advance 推进。 */
-  readonly step: string;
+  step: string;
   /** 最近一次登录流程信封（§1.3）；idle 时无。 */
-  readonly envelope: LoginFlowResponse | undefined;
+  envelope: LoginFlowResponse | undefined;
   /** 请求在途（request_started → response / reset 之间；§3.2 提交按钮按 loading 禁用）。 */
-  readonly loading: boolean;
+  loading: boolean;
   /** 本次迁移产出的待执行副作用标记；每次事件迁移时重置（容器先处理后继续派发）。 */
-  readonly effects: readonly FlowEffect[];
+  effects: FlowEffect[];
 }
 
 /** 初始态（§4.1 状态机图：idle 起点）。 */

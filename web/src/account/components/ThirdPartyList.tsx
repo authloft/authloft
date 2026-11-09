@@ -21,7 +21,15 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Empty, Popconfirm, Spin, Tag, Toast, Tooltip } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Empty,
+  Popconfirm,
+  Spin,
+  Tag,
+  Toast,
+  Tooltip,
+} from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,
@@ -48,16 +56,16 @@ import styles from './ThirdPartyList.module.less';
 
 /** 打开的扫码绑定对话框（channel=qrcode 的 available 条目；关闭即置空）。 */
 interface OpenDialog {
-  readonly providerKey: string;
-  readonly displayName: string;
+  providerKey: string;
+  displayName: string;
 }
 
 /** 已绑定行（items）：Union 行带「联合身份」标记、无解绑入口；其余按置灰判定。 */
 function BoundRow(props: {
-  readonly item: ThirdpartyBinding;
-  readonly canUnbind: boolean;
-  readonly unbinding: boolean;
-  readonly onUnbind: (providerKey: string, displayName: string) => void;
+  item: ThirdpartyBinding;
+  canUnbind: boolean;
+  unbinding: boolean;
+  onUnbind: (providerKey: string, displayName: string) => void;
 }): ReactNode {
   const { item } = props;
   return (
@@ -91,7 +99,12 @@ function BoundRow(props: {
           // disabled 按钮不触发 hover，外包 span 让 Tooltip 生效。
           <Tooltip content={t('account.unbindDisabledReason')}>
             <span>
-              <Button size="small" type="danger" disabled loading={props.unbinding}>
+              <Button
+                size="small"
+                type="danger"
+                disabled
+                loading={props.unbinding}
+              >
                 {t('account.unbindAction')}
               </Button>
             </span>
@@ -104,10 +117,10 @@ function BoundRow(props: {
 
 /** 可绑定行（available）：redirect 跳转授权 / qrcode 开扫码框；api 不渲染。 */
 function OptionRow(props: {
-  readonly option: ThirdpartyOption;
-  readonly redirecting: boolean;
-  readonly onRedirect: (providerKey: string) => void;
-  readonly onQrcode: (option: ThirdpartyOption) => void;
+  option: ThirdpartyOption;
+  redirecting: boolean;
+  onRedirect: (providerKey: string) => void;
+  onQrcode: (option: ThirdpartyOption) => void;
 }): ReactNode {
   const { option } = props;
   return (
@@ -128,7 +141,11 @@ function OptionRow(props: {
             {t('account.bindAction')}
           </Button>
         ) : (
-          <Button size="small" theme="solid" onClick={() => props.onQrcode(option)}>
+          <Button
+            size="small"
+            theme="solid"
+            onClick={() => props.onQrcode(option)}
+          >
             {t('account.bindAction')}
           </Button>
         )}
@@ -143,9 +160,9 @@ function OptionRow(props: {
  */
 export function ThirdPartyList(props: {
   /** GetConfig.hasPassword（§3.7 行 945 置灰判定输入之一）。 */
-  readonly hasPassword: boolean;
+  hasPassword: boolean;
   /** captcha 配置（§3.2 GetConfig 注入；扫码绑定拉码必带，§2.8 行 703）。 */
-  readonly captcha: CaptchaConfig;
+  captcha: CaptchaConfig;
 }): ReactNode {
   const { hasPassword, captcha } = props;
   const location = useLocation();
@@ -177,7 +194,9 @@ export function ThirdPartyList(props: {
     },
     onSuccess: () => {
       refresh();
-      Toast.success(t('account.unbindSuccess', { name: unbindNameRef.current }));
+      Toast.success(
+        t('account.unbindSuccess', { name: unbindNameRef.current }),
+      );
     },
   });
 
@@ -248,7 +267,9 @@ export function ThirdPartyList(props: {
           ) : null}
           {available === undefined || available.length === 0 ? null : (
             <>
-              <p className={styles.sectionLabel}>{t('account.thirdpartyAvailableTitle')}</p>
+              <p className={styles.sectionLabel}>
+                {t('account.thirdpartyAvailableTitle')}
+              </p>
               <ul className={styles.list}>
                 {/* api 通道不渲染绑定入口（行 943）；未知渠道保守不渲染（同口径）。 */}
                 {sortThirdpartyOptions(available)

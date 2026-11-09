@@ -54,7 +54,7 @@ export interface TurnstileAdapterOptions extends VendorChallengeOptions {
 }
 
 export class TurnstileAdapter extends VendorChallengeAdapter<TurnstileApi> {
-  private readonly getVendorFn: () => TurnstileApi | undefined;
+  private getVendorFn: () => TurnstileApi | undefined;
   private widgetId: string | null = null;
 
   constructor(captcha: CaptchaConfig, options: TurnstileAdapterOptions = {}) {
@@ -70,10 +70,7 @@ export class TurnstileAdapter extends VendorChallengeAdapter<TurnstileApi> {
     return this.getVendorFn();
   }
 
-  protected mountChallenge(
-    vendor: TurnstileApi,
-    container: HTMLElement,
-  ): void {
+  protected mountChallenge(vendor: TurnstileApi, container: HTMLElement): void {
     const epoch = this.challengeEpoch();
     this.widgetId = vendor.render(container, {
       sitekey: this.siteKey,

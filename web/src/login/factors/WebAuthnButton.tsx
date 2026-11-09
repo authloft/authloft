@@ -47,13 +47,13 @@ export interface AuthenticateDeps {
 
 /** 断言结果：ok=false 时 cancelled 区分用户取消与失败（错误语义独立，§4.3 行 453）。 */
 export type WebAuthnAuthResult =
-  | { readonly ok: true; readonly credential: JsonObject }
-  | { readonly ok: false; readonly cancelled: boolean };
+  { ok: true; credential: JsonObject } | { ok: false; cancelled: boolean };
 
 /** 缺省发起：@simplewebauthn/browser startAuthentication（浏览器原生 UI）。 */
 async function defaultStart(optionsJSON: JsonObject): Promise<JsonObject> {
   const assertion: AuthenticationResponseJSON = await startAuthentication({
-    optionsJSON: optionsJSON as unknown as PublicKeyCredentialRequestOptionsJSON,
+    optionsJSON:
+      optionsJSON as unknown as PublicKeyCredentialRequestOptionsJSON,
   });
   // @simplewebauthn 断言对象 → Struct JSON 形状（§12.9 行 1783 credential 透传）。
   return assertion as unknown as JsonObject;
@@ -149,10 +149,14 @@ export function WebAuthnButton({
         )}
       </button>
       {error === 'cancelled' && (
-        <p role="alert" className={styles.notice}>{t('login.passkeyCancelled')}</p>
+        <p role="alert" className={styles.notice}>
+          {t('login.passkeyCancelled')}
+        </p>
       )}
       {error === 'failed' && (
-        <p role="alert" className={styles.notice}>{t('login.passkeyFailed')}</p>
+        <p role="alert" className={styles.notice}>
+          {t('login.passkeyFailed')}
+        </p>
       )}
     </div>
   );

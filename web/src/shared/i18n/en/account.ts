@@ -16,10 +16,12 @@ export const account: typeof zhAccount = {
   'account.routeNotFound': 'Page not found',
   // back link on the not-found fallback page.
   'account.backToHome': 'Back to account home',
-  'account.renderError': 'This page hit an unexpected error. Please refresh and try again',
+  'account.renderError':
+    'This page hit an unexpected error. Please refresh and try again',
 
   // ---- SecurityPage (passkey card title reuses factors.webauthn) ----------
-  'account.configLoadFailed': 'Failed to load settings. Please refresh and try again',
+  'account.configLoadFailed':
+    'Failed to load settings. Please refresh and try again',
   'account.close': 'Close',
   'account.twoFactorTitle': 'Two-Step Verification',
   'account.mfaEnabledStatus': 'Two-step verification is on',
@@ -27,12 +29,13 @@ export const account: typeof zhAccount = {
   'account.mfaRequiredNote': ' (required by policy and cannot be turned off)',
   'account.trustDeviceNote':
     'Trusted devices: not supported yet (second verification is required at every sign-in)',
-  'account.passwordCardTitle': 'Sign-in password',
+  'account.loginMethodTitle': 'Sign-in Method',
   'account.contactCardTitle': 'Contact Information',
   'account.thirdpartyCardTitle': 'Third-Party Accounts',
 
   // ---- ProfilePage ---------------------------------------------------------
-  'account.profileLoadFailed': 'Failed to load profile. Please refresh and try again',
+  'account.profileLoadFailed':
+    'Failed to load profile. Please refresh and try again',
   'account.avatarAlt': 'User avatar',
   'account.usernameLabel': 'Username',
   'account.nicknameLabel': 'Nickname',
@@ -44,12 +47,14 @@ export const account: typeof zhAccount = {
   'account.mfaTarget': 'Target {target}',
   'account.mfaCredentialCount': '{count} credentials linked',
   'account.mfaRemainingCount': '{count} remaining',
-  'account.bindTargetTaken': 'This account is already linked to another account',
+  'account.bindTargetTaken':
+    'This account is already linked to another account',
   'account.bindSuccess': 'Third-party account linked successfully',
 
   // ---- ThirdPartyList (refresh hint reuses common.refreshAndRetry) ---------
   'account.unionTag': 'Federated identity',
-  'account.unbindConfirm': 'Unlink "{name}"? You will no longer be able to sign in with it.',
+  'account.unbindConfirm':
+    'Unlink "{name}"? You will no longer be able to sign in with it.',
   'account.unbindAction': 'Unlink',
   // disabled reason (canUnbindThirdpartyRow: no password and no other
   // non-union binding left).
@@ -64,7 +69,8 @@ export const account: typeof zhAccount = {
   'account.thirdpartyAvailableTitle': 'Available third-party accounts',
 
   // ---- RecoveryCodePanel ---------------------------------------------------
-  'account.recoveryNotice': 'Recovery codes are shown only once. Copy and save them somewhere safe',
+  'account.recoveryNotice':
+    'Recovery codes are shown only once. Copy and save them somewhere safe',
   'account.recoveryIssuedAt': 'Issued at: {time}',
   'account.recoveryRegenerateConfirm':
     'Regenerating will invalidate all existing recovery codes. Continue?',
@@ -83,7 +89,8 @@ export const account: typeof zhAccount = {
   'account.mfaEnabledSuccess': '{factor} enabled',
   'account.mfaDisabledSuccess': '{factor} disabled',
   'account.recoveryLowWarning': 'Only {count} recovery codes left',
-  'account.recoveryRegenerateSuccess': 'Recovery codes regenerated; all old codes are void',
+  'account.recoveryRegenerateSuccess':
+    'Recovery codes regenerated; all old codes are void',
 
   // ---- MfaMethodList (factor names reuse factors.*, the recovery-code
   //      modal title reuses factors.recovery_code, the bind button reuses
@@ -92,10 +99,13 @@ export const account: typeof zhAccount = {
   'account.factorTotp': 'TOTP authenticator code',
   'account.factorBoundTag': 'Linked',
   'account.factorUnboundTag': 'Not linked',
-  'account.mfaBindPhoneHint': 'Link a phone number under "Contact Information" first',
-  'account.mfaBindEmailHint': 'Link an email address under "Contact Information" first',
+  'account.mfaBindPhoneHint':
+    'Link a phone number under "Contact Information" first',
+  'account.mfaBindEmailHint':
+    'Link an email address under "Contact Information" first',
   'account.mfaBindWebauthnHint': 'Register one under "Passkeys" below first',
-  'account.mfaLocked': 'Policy requires two-step verification; it cannot be fully turned off',
+  'account.mfaLocked':
+    'Policy requires two-step verification; it cannot be fully turned off',
   'account.mfaDetailsLoadFailed': 'Failed to load details: {error}',
   'account.viewRecoveryCodes': 'View recovery codes',
   'account.recoveryLoadFailed': 'Failed to load recovery codes',
@@ -104,16 +114,20 @@ export const account: typeof zhAccount = {
   'account.webauthnLabelPlaceholder': 'Name this passkey (optional)',
   'account.webauthnRegisterAction': 'Register passkey',
   'account.webauthnCancelled': 'Passkey registration was cancelled',
-  'account.webauthnRegisterFailed': 'Failed to register the passkey. Please try again',
-  'account.webauthnLoadFailed': 'Failed to load passkeys. Please refresh and try again',
+  'account.webauthnRegisterFailed':
+    'Failed to register the passkey. Please try again',
+  'account.webauthnLoadFailed':
+    'Failed to load passkeys. Please refresh and try again',
   'account.webauthnEmpty': 'No passkeys registered yet',
-  'account.webauthnUnsupported': 'Passkeys are not supported by this browser or device',
+  'account.webauthnUnsupported':
+    'Passkeys are not supported by this browser or device',
   'account.saveAction': 'Save',
   'account.cancelAction': 'Cancel',
   'account.unnamedCredential': 'Unnamed',
   'account.webauthnAddedAt': 'Added at {time}',
   'account.webauthnRenameAction': 'Rename',
-  'account.webauthnDeleteConfirm': 'Delete "{name}"? You will no longer be able to sign in with it.',
+  'account.webauthnDeleteConfirm':
+    'Delete "{name}"? You will no longer be able to sign in with it.',
   'account.deleteAction': 'Delete',
 
   // ---- ContactBindForm (the captcha hint reuses errors.status.captcha_required,
@@ -190,7 +204,8 @@ export const account: typeof zhAccount = {
   'account.logTimeColumn': 'Time',
   'account.logMethodColumn': 'Method',
   'account.logUaColumn': 'Device (UA)',
-  'account.logLoadFailed': 'Failed to load sign-in history. Please refresh and try again',
+  'account.logLoadFailed':
+    'Failed to load sign-in history. Please refresh and try again',
   'account.logEmpty': 'No sign-in records yet',
 
   // ---- ProfilePage editing (save / cancel reuse saveAction / cancelAction,

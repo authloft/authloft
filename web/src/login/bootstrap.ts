@@ -35,11 +35,11 @@ export function normalizeStaticBase(base: string | undefined): string {
 /** login 引导结果（§4.1 行 375）：methods 缺失（含注入块未下发）→ ok=false。 */
 export type LoginBootstrapResult =
   | {
-      readonly ok: true;
-      readonly snapshot: MethodsSnapshot;
-      readonly oidc?: OidcContext;
+      ok: true;
+      snapshot: MethodsSnapshot;
+      oidc?: OidcContext;
     }
-  | { readonly ok: false };
+  | { ok: false };
 
 /** 读注入快照（§8：methods 必需、oidc 可选）；同步纯读取，不阻塞渲染。 */
 export function loadLoginBootstrap(): LoginBootstrapResult {

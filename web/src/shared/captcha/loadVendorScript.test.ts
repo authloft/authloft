@@ -11,7 +11,7 @@ import { VENDOR_SCRIPT_TIMEOUT_MS, loadVendorScript } from './loadVendorScript';
 // ---------------------------------------------------------------------------
 
 interface FakeScript {
-  readonly tag: string;
+  tag: string;
   src: string;
   async: boolean;
   onload: (() => void) | null;

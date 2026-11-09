@@ -25,7 +25,7 @@ import styles from './StatusPage.module.less';
 /** 监控页：GetStatus 三指标卡片 + 手动刷新。 */
 export function StatusPage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
@@ -43,7 +43,13 @@ export function StatusPage(_props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.statusLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.statusLoadFailed')}
+      />
+    );
   }
   // idle / loading：数据未落地前的过渡态（裸文字换 Semi Spin）。
   if (data === undefined) {
@@ -56,7 +62,9 @@ export function StatusPage(_props: {
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navStatus')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navStatus')}
+      </Typography.Title>
       <div className={styles.stats}>
         <Card className={styles.statCard} title={t('admin.statusQueueLength')}>
           <Typography.Text className={styles.statValue}>

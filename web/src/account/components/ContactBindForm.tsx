@@ -23,8 +23,14 @@ import type {
   BindPhoneRequest,
 } from '../../gen/proto/api/account/v1/security_pb';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
-import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
-import { CodeInput, DEFAULT_CODE_LENGTH } from '../../shared/components/CodeInput';
+import {
+  CaptchaWidget,
+  type CaptchaWidgetHandle,
+} from '../../shared/captcha/CaptchaWidget';
+import {
+  CodeInput,
+  DEFAULT_CODE_LENGTH,
+} from '../../shared/components/CodeInput';
 import {
   deriveRequestStatus,
   type RequestStatus,
@@ -58,7 +64,11 @@ function inputErrorText(
 ): string {
   switch (error) {
     case 'invalid_target':
-      return t(kind === 'phone' ? 'account.bindInvalidPhone' : 'account.bindInvalidEmail');
+      return t(
+        kind === 'phone'
+          ? 'account.bindInvalidPhone'
+          : 'account.bindInvalidEmail',
+      );
     case 'captcha_missing':
       return t('errors.status.captcha_required');
     case 'invalid_code':
@@ -71,38 +81,41 @@ function inputErrorText(
  * （分段验证码 + 重新发送）→ done（成功 + 继续）。
  */
 export function ContactBindFormView(props: {
-  readonly kind: ContactBindKind;
-  readonly captcha: CaptchaConfig;
+  kind: ContactBindKind;
+  captcha: CaptchaConfig;
   /** CaptchaWidget 句柄（getToken / reset，§3.5 行 351 生命周期归调用方）。 */
-  readonly captchaRef: Ref<CaptchaWidgetHandle>;
-  readonly step: ContactBindStep;
-  readonly target: string;
-  readonly code: string;
+  captchaRef: Ref<CaptchaWidgetHandle>;
+  step: ContactBindStep;
+  target: string;
+  code: string;
   /** 当前已绑定值（GetProfile 服务端脱敏字段，A-2 回显；未绑定 / 未加载 → undefined 不渲染）。 */
-  readonly currentValue: string | undefined;
+  currentValue: string | undefined;
   /** 当前绑定值已验证（phoneVerified / emailVerified 非 0）。 */
-  readonly currentVerified: boolean;
+  currentVerified: boolean;
   /** 重发倒计时剩余秒（A-2）；expired=false 期间禁用重发。 */
-  readonly resendSeconds: number;
-  readonly resendExpired: boolean;
-  readonly challengeStatus: RequestStatus;
-  readonly verifyStatus: RequestStatus;
-  readonly inputError: ContactBindChallengeError | 'invalid_code' | undefined;
-  readonly challengeError: unknown;
-  readonly verifyError: unknown;
-  readonly onTargetChange: (value: string) => void;
-  readonly onCodeChange: (value: string) => void;
-  readonly onChallenge: () => void;
-  readonly onVerify: () => void;
-  readonly onResend: () => void;
-  readonly onRestart: () => void;
+  resendSeconds: number;
+  resendExpired: boolean;
+  challengeStatus: RequestStatus;
+  verifyStatus: RequestStatus;
+  inputError: ContactBindChallengeError | 'invalid_code' | undefined;
+  challengeError: unknown;
+  verifyError: unknown;
+  onTargetChange: (value: string) => void;
+  onCodeChange: (value: string) => void;
+  onChallenge: () => void;
+  onVerify: () => void;
+  onResend: () => void;
+  onRestart: () => void;
 }): ReactNode {
-  const kindLabel = props.kind === 'phone' ? t('account.phoneLabel') : t('channels.email');
+  const kindLabel =
+    props.kind === 'phone' ? t('account.phoneLabel') : t('channels.email');
 
   if (props.step === 'done') {
     return (
       <div role="status" className={styles.done}>
-        <p className={styles.doneText}>{t('account.bindDone', { kind: kindLabel })}</p>
+        <p className={styles.doneText}>
+          {t('account.bindDone', { kind: kindLabel })}
+        </p>
         <Button onClick={props.onRestart}>{t('account.bindContinue')}</Button>
       </div>
     );
@@ -156,7 +169,9 @@ export function ContactBindFormView(props: {
           >
             {props.resendExpired
               ? t('account.bindResendAction')
-              : t('account.bindResendCountdown', { seconds: props.resendSeconds })}
+              : t('account.bindResendCountdown', {
+                  seconds: props.resendSeconds,
+                })}
           </Button>
         </div>
       </form>
@@ -181,14 +196,21 @@ export function ContactBindFormView(props: {
         </p>
       ) : null}
       <div className={styles.field}>
-        <label className={styles.label} htmlFor={`account-bind-${props.kind}-target`}>
+        <label
+          className={styles.label}
+          htmlFor={`account-bind-${props.kind}-target`}
+        >
           {kindLabel}
         </label>
         <Input
           id={`account-bind-${props.kind}-target`}
           value={props.target}
           onChange={props.onTargetChange}
-          placeholder={props.kind === 'phone' ? t('account.phonePlaceholder') : t('account.emailPlaceholder')}
+          placeholder={
+            props.kind === 'phone'
+              ? t('account.phonePlaceholder')
+              : t('account.emailPlaceholder')
+          }
           disabled={challenging}
         />
       </div>
@@ -223,11 +245,11 @@ export function ContactBindFormView(props: {
 /** 绑定状态壳：challenge / verify 两步请求 + 三步状态机。 */
 export function ContactBindForm(props: {
   /** 绑定目标类型（§3.4：phone 走 BindPhone，email 走 BindEmail）。 */
-  readonly kind: ContactBindKind;
+  kind: ContactBindKind;
   /** captcha 配置（§5 行 482：调用方从 GetConfig 注入，account 不读注入快照）。 */
-  readonly captcha: CaptchaConfig;
+  captcha: CaptchaConfig;
   /** verify 成功回调（目标已绑定，调用方可刷新资料展示）。 */
-  readonly onBound?: (target: string) => void;
+  onBound?: (target: string) => void;
 }): ReactNode {
   const { kind, captcha, onBound } = props;
   const [step, setStep] = useState<ContactBindStep>('challenge');
@@ -239,7 +261,9 @@ export function ContactBindForm(props: {
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
   // kind 固定于表单实例，但请求构造返回 Bind 系联合类型——经 $typeName 判别
   // 收窄到具体端点（gen Message 的判别式属性，§9 第 15 条）。
-  const call = (request: BindPhoneRequest | BindEmailRequest): Promise<OkResponse> =>
+  const call = (
+    request: BindPhoneRequest | BindEmailRequest,
+  ): Promise<OkResponse> =>
     request.$typeName === 'api.account.v1.BindPhoneRequest'
       ? bindPhone(request)
       : bindEmail(request);
@@ -271,14 +295,22 @@ export function ContactBindForm(props: {
   );
   const currentValue = kind === 'phone' ? profile?.phone : profile?.email;
   const currentVerified =
-    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !== undefined &&
-    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !== BigInt(0);
+    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !==
+      undefined &&
+    (kind === 'phone' ? profile?.phoneVerified : profile?.emailVerified) !==
+      BigInt(0);
   // A-2：重发冷却倒计时——challenge 步 undefined（无倒计时），进 verify（发码
   // 成功）起 60s；重发回 challenge 再进 verify 时 undefined↔60 切换重启倒计时。
-  const cooldown = useCountdown(step === 'verify' ? RESEND_COOLDOWN_SECONDS : undefined);
+  const cooldown = useCountdown(
+    step === 'verify' ? RESEND_COOLDOWN_SECONDS : undefined,
+  );
 
   const submitChallenge = () => {
-    const built = buildBindChallengeRequest(kind, target, captchaRef.current?.getToken());
+    const built = buildBindChallengeRequest(
+      kind,
+      target,
+      captchaRef.current?.getToken(),
+    );
     if (!built.ok) {
       setInputError(built.error);
       return;
@@ -335,8 +367,16 @@ export function ContactBindForm(props: {
       currentVerified={currentVerified}
       resendSeconds={cooldown.seconds}
       resendExpired={cooldown.expired}
-      challengeStatus={deriveRequestStatus(challenge.loading, challenge.error, challenge.data)}
-      verifyStatus={deriveRequestStatus(verify.loading, verify.error, verify.data)}
+      challengeStatus={deriveRequestStatus(
+        challenge.loading,
+        challenge.error,
+        challenge.data,
+      )}
+      verifyStatus={deriveRequestStatus(
+        verify.loading,
+        verify.error,
+        verify.data,
+      )}
       inputError={inputError}
       challengeError={challenge.error}
       verifyError={verify.error}

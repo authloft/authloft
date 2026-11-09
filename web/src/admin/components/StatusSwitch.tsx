@@ -27,16 +27,19 @@ const SINGLE_ROW_KEY = 'row';
 
 export interface StatusSwitchProps {
   /** 当前行启用态（真值：消费方行数据）。 */
-  readonly isEnabled: boolean;
+  isEnabled: boolean;
   /**
    * 持久化：成功后消费方**必须**把行数据 isEnabled 更新为 next（乐观态让
    * 位真值依赖此更新）；失败 reject 即回滚（错误展示归消费方，见文件头）。
    */
-  readonly onToggle: (next: boolean) => Promise<void>;
+  onToggle: (next: boolean) => Promise<void>;
 }
 
 /** 行内启停开关壳：乐观覆盖态显示 + in-flight loading。 */
-export function StatusSwitch({ isEnabled, onToggle }: StatusSwitchProps): ReactNode {
+export function StatusSwitch({
+  isEnabled,
+  onToggle,
+}: StatusSwitchProps): ReactNode {
   // 乐观覆盖：in-flight（含成功后真值未追上的一拍）期间显示目标态。
   const [override, setOverride] = useState<boolean | null>(null);
   const checked = override ?? isEnabled;

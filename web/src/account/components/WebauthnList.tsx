@@ -40,7 +40,7 @@ function webauthnAvailable(): boolean {
 
 export function WebauthnList(props: {
   /** 注册 / 删除成功回调：父级刷新 mfaPolicy（webauthn.bound 可能翻转）。 */
-  readonly onChanged?: () => void;
+  onChanged?: () => void;
 }): ReactNode {
   const available = webauthnAvailable();
   const location = useLocation();
@@ -154,7 +154,11 @@ export function WebauthnList(props: {
       ) : items === undefined || items.length === 0 ? (
         // 空态裸文字 → Semi Empty（§9.3 映射表）。
         <Empty
-          description={available ? t('account.webauthnEmpty') : t('account.webauthnUnsupported')}
+          description={
+            available
+              ? t('account.webauthnEmpty')
+              : t('account.webauthnUnsupported')
+          }
         />
       ) : (
         <ul className={styles.list}>
@@ -192,7 +196,9 @@ export function WebauthnList(props: {
                 <>
                   <div className={styles.rowMain}>
                     <span className={styles.label}>
-                      {item.label === '' ? t('account.unnamedCredential') : item.label}
+                      {item.label === ''
+                        ? t('account.unnamedCredential')
+                        : item.label}
                     </span>
                     {item.transports.map((transport) => (
                       <Tag key={transport} size="small" color="grey">
@@ -200,11 +206,17 @@ export function WebauthnList(props: {
                       </Tag>
                     ))}
                     <span className={styles.times}>
-                      {t('account.webauthnAddedAt', { time: formatUnixTime(item.createdAt) })}
-                      {t('account.mfaLastUsedAt', { time: formatUnixTime(item.lastUsedAt) })}
+                      {t('account.webauthnAddedAt', {
+                        time: formatUnixTime(item.createdAt),
+                      })}
+                      {t('account.mfaLastUsedAt', {
+                        time: formatUnixTime(item.lastUsedAt),
+                      })}
                     </span>
                     {item.aaguid !== '' ? (
-                      <span className={styles.aaguid}>AAGUID {item.aaguid}</span>
+                      <span className={styles.aaguid}>
+                        AAGUID {item.aaguid}
+                      </span>
                     ) : null}
                   </div>
                   <div className={styles.rowActions}>
@@ -213,7 +225,10 @@ export function WebauthnList(props: {
                     </Button>
                     <Popconfirm
                       title={t('account.webauthnDeleteConfirm', {
-                        name: item.label === '' ? t('account.unnamedCredential') : item.label,
+                        name:
+                          item.label === ''
+                            ? t('account.unnamedCredential')
+                            : item.label,
                       })}
                       onConfirm={() => handleDelete(item.id)}
                     >

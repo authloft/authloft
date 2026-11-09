@@ -159,9 +159,7 @@ function parseCount(value: string | undefined): bigint {
  * 注入快照字段 → 生成物 Field（渲染模型转换，与 LoginContainer
  * snapshotFieldToField 同款逻辑；不复用它以免拉入 login flow 模块链）。
  */
-export function snapshotFields(
-  fields: readonly SnapshotField[] | undefined,
-): Field[] {
+export function snapshotFields(fields: SnapshotField[] | undefined): Field[] {
   return (fields ?? []).map((snapshot) =>
     create(FieldSchema, {
       name: snapshot.name,
@@ -183,9 +181,12 @@ export function ssoPath(path: string): string {
 /** 注册可用方式白名单（§2.3：password / otp_sms / otp_email；快照已按 §2.1 行 411 过滤，此处防御性收窄）。 */
 export function registerOptionsFor(
   snapshot: MethodsSnapshot,
-): readonly LoginMethodEntry[] {
+): LoginMethodEntry[] {
   return snapshot.methods.filter(
-    (m) => m.method === 'password' || m.method === 'otp_sms' || m.method === 'otp_email',
+    (m) =>
+      m.method === 'password' ||
+      m.method === 'otp_sms' ||
+      m.method === 'otp_email',
   );
 }
 
@@ -237,7 +238,11 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
  * 返回「字段锚（username / password / confirm）→ 错误文案」，空对象 = 全过；
  * 聚焦顺序即对象键序（SET_PASSWORD_FIELD_ORDER）。纯函数，node 可测。
  */
-export const SET_PASSWORD_FIELD_ORDER = ['username', 'password', 'confirm'] as const;
+export const SET_PASSWORD_FIELD_ORDER = [
+  'username',
+  'password',
+  'confirm',
+] as const;
 
 export function setPasswordIssues(input: {
   username: string;
@@ -281,32 +286,32 @@ const REGISTER_METHOD_NAME_KEYS: Readonly<Record<string, string>> = {
 
 export interface RegisterPageViewProps {
   /** 注入快照（§2.1，flow=register）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
   /** 最近一次响应 status（初始 'idle'）。 */
-  readonly status: string;
+  status: string;
   /** 最近一次响应信封（失败态 ErrorBanner 字段来源）。 */
-  readonly envelope: LoginFlowResponse | undefined;
+  envelope: LoginFlowResponse | undefined;
   /** restart / 传输失败的一次性提示（i18nKey）。 */
-  readonly notice?: string;
+  notice?: string;
   /** 当前注册方式（快照 method）。 */
-  readonly method: string;
+  method: string;
   /** 当前请求侧 step。 */
-  readonly step: FlowStep;
+  step: FlowStep;
   /** 请求在途（提交按钮禁用，§3.2）。 */
-  readonly loading: boolean;
+  loading: boolean;
   /** verify 段已输码（容器持值防实例重建丢失，同款语义）。 */
-  readonly otpCode: string;
+  otpCode: string;
   /** set_password 段用户名（受控）。 */
-  readonly username: string;
+  username: string;
   /** set_password 段密码（受控）。 */
-  readonly password: string;
+  password: string;
   /** challenge 段已提交的目标邮箱（set_password 段 Meter 的标识比对，§5.6）。 */
-  readonly challengeEmail?: string;
+  challengeEmail?: string;
   /**
    * challenge 段已提交的目标值（评审 P1-5：传输失败 / 重发回 challenge
    * 段时经 OTPForm initialValues 回填；容器持值，页面壳注入）。
    */
-  readonly challengeValues?: Readonly<Record<string, string>>;
+  challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
   /** 提交（challenge 段上抛目标 values；verify 段 {code}；set_password 段 {}）。 */
   onSubmit: (values: Readonly<Record<string, string>>) => void;
@@ -421,7 +426,9 @@ export function RegisterPageView({
       confirm,
       requireUsername: true,
     });
-    const first = SET_PASSWORD_FIELD_ORDER.find((name) => issues[name] !== undefined);
+    const first = SET_PASSWORD_FIELD_ORDER.find(
+      (name) => issues[name] !== undefined,
+    );
     if (first !== undefined) {
       setFormErrors(issues);
       focusField(`reg-${first}`);
@@ -444,9 +451,7 @@ export function RegisterPageView({
             // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
             attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
             retryable={resolution.retryable}
-            onRetry={
-              RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined
-            }
+            onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
           />
         )}
         {options.length > 1 && (
@@ -464,7 +469,9 @@ export function RegisterPageView({
                     aria-current={option.method === method ? 'true' : undefined}
                     onClick={() => onSelectMethod(option.method)}
                   >
-                    {t(REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method)}
+                    {t(
+                      REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method,
+                    )}
                   </button>
                 </li>
               ))}
@@ -616,7 +623,7 @@ export function RegisterPageView({
 
 export interface RegisterPageProps {
   /** 注入快照（§2.1；bootstrap 读取后由 routes 传入，flow=register）。 */
-  readonly snapshot: MethodsSnapshot;
+  snapshot: MethodsSnapshot;
 }
 
 export function RegisterPage({ snapshot }: RegisterPageProps) {
@@ -681,7 +688,8 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     // captcha 凭据（§2.3 行 447/451）：otp challenge 与 password 直入必填；
     // otp 流程 verify / set_password 不带（payload 无 captcha 字段）。
     const needsCaptcha =
-      step === 'challenge' || (step === 'set_password' && method === 'password');
+      step === 'challenge' ||
+      (step === 'set_password' && method === 'password');
     const captcha = needsCaptcha ? captchaRef.current?.getToken() : undefined;
     const result = await runFlowStep(register, {
       method,

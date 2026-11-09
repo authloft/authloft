@@ -31,11 +31,11 @@ export type TableSortOrder = 'asc' | 'desc' | '';
  * dataIndex → 选中值集合（Semi 筛选下拉多选语义）。
  */
 export interface TableQueryState {
-  readonly page: number;
-  readonly pageSize: number;
-  readonly sort: string;
-  readonly order: TableSortOrder;
-  readonly filters: Readonly<Record<string, readonly string[]>>;
+  page: number;
+  pageSize: number;
+  sort: string;
+  order: TableSortOrder;
+  filters: Readonly<Record<string, string[]>>;
 }
 
 /**
@@ -44,11 +44,11 @@ export interface TableQueryState {
  * 渲染下只消费这三段，其余字段忽略。
  */
 export interface TableChangePayload {
-  readonly pagination?: { readonly currentPage?: number; readonly pageSize?: number };
-  readonly sorter?: { readonly dataIndex?: string; readonly sortOrder?: string | boolean };
-  readonly filters?: readonly {
-    readonly dataIndex?: string;
-    readonly filteredValue?: readonly unknown[];
+  pagination?: { currentPage?: number; pageSize?: number };
+  sorter?: { dataIndex?: string; sortOrder?: string | boolean };
+  filters?: {
+    dataIndex?: string;
+    filteredValue?: unknown[];
   }[];
 }
 
@@ -69,7 +69,9 @@ export function clampPage(page: number): number {
 }
 
 /** 初始查询状态（§1.7 缺省：第 1 页、每页 20、无排序、无筛选）。 */
-export function initialTableQuery(pageSize: number = DEFAULT_PAGE_SIZE): TableQueryState {
+export function initialTableQuery(
+  pageSize: number = DEFAULT_PAGE_SIZE,
+): TableQueryState {
   return {
     page: FIRST_PAGE,
     pageSize: clampPageSize(pageSize),
@@ -80,7 +82,9 @@ export function initialTableQuery(pageSize: number = DEFAULT_PAGE_SIZE): TableQu
 }
 
 /** Semi 排序方向 → §1.7 wire 值：ascend→asc、descend→desc、其余（false / undefined）→ ''。 */
-function semiOrderToWire(sortOrder: string | boolean | undefined): TableSortOrder {
+function semiOrderToWire(
+  sortOrder: string | boolean | undefined,
+): TableSortOrder {
   if (sortOrder === 'ascend') {
     return 'asc';
   }
@@ -115,10 +119,12 @@ export function resolveTableQuery(
       : prev.pageSize;
   const sort = payload.sorter?.dataIndex ?? '';
   const order = sort === '' ? '' : semiOrderToWire(payload.sorter?.sortOrder);
-  const filters: Record<string, readonly string[]> = {};
+  const filters: Record<string, string[]> = {};
   for (const column of payload.filters ?? []) {
     if (column.dataIndex !== undefined) {
-      filters[column.dataIndex] = (column.filteredValue ?? []).map((value) => String(value));
+      filters[column.dataIndex] = (column.filteredValue ?? []).map((value) =>
+        String(value),
+      );
     }
   }
   return { page, pageSize, sort, order, filters };
@@ -130,11 +136,11 @@ export function resolveTableQuery(
  * 返回。原数组与行对象永不改动（不可变），调用方保留旧引用即回滚依据。
  */
 export function patchRowByKey<T>(
-  rows: readonly T[],
+  rows: T[],
   keyOf: (row: T) => string,
   key: string,
   update: (row: T) => T,
-): readonly T[] {
+): T[] {
   let hit = false;
   const next = rows.map((row) => {
     if (keyOf(row) === key) {
@@ -148,8 +154,8 @@ export function patchRowByKey<T>(
 
 /** 行内开关编排结果：ok=false（persist 失败）时 rows 为回滚后的行集。 */
 export interface InlineToggleOutcome<T> {
-  readonly ok: boolean;
-  readonly rows: readonly T[];
+  ok: boolean;
+  rows: T[];
 }
 
 /**
@@ -162,14 +168,15 @@ export interface InlineToggleOutcome<T> {
  * persist 收到的参数为打补丁后的行（消费方据此发持久化请求）。
  */
 export async function runInlineToggle<T>(
-  rows: readonly T[],
+  rows: T[],
   keyOf: (row: T) => string,
   key: string,
   update: (row: T) => T,
   persist: (patched: T) => Promise<void>,
 ): Promise<InlineToggleOutcome<T>> {
   const next = patchRowByKey(rows, keyOf, key, update);
-  const patched = next === rows ? undefined : next.find((row) => keyOf(row) === key);
+  const patched =
+    next === rows ? undefined : next.find((row) => keyOf(row) === key);
   if (patched === undefined) {
     return { ok: true, rows };
   }

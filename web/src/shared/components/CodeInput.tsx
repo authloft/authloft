@@ -32,8 +32,8 @@ export interface CodeInputProps {
 }
 
 export interface CodeEditResult {
-  readonly value: string;
-  readonly nextIndex: number;
+  value: string;
+  nextIndex: number;
 }
 
 /**

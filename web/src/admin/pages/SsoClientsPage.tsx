@@ -22,10 +22,24 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Popconfirm, SideSheet, Spin, Toast, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Popconfirm,
+  SideSheet,
+  Spin,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
-import { initialTableQuery, type TableQueryState } from '../../shared/app-ui/dataTableLogic';
+import {
+  initialTableQuery,
+  type TableQueryState,
+} from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
@@ -70,7 +84,7 @@ function ssoClientRowKey(row: SsoClient): string {
 /** SSO 客户端列表页：DataTable + 新建 / 查看 / 编辑 / 删除弹窗。 */
 export function SsoClientsPage(_props: {
   /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序由 DataTable 上报更新。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
@@ -119,7 +133,9 @@ export function SsoClientsPage(_props: {
     redirectUris: [],
   });
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
-  const [editBaseline, setEditBaseline] = useState<SsoClientPatchDraft | null>(null);
+  const [editBaseline, setEditBaseline] = useState<SsoClientPatchDraft | null>(
+    null,
+  );
   const [editError, setEditError] = useState<string | null>(null);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -164,28 +180,32 @@ export function SsoClientsPage(_props: {
   /** 关闭编辑弹窗（现值相对打开时基线有改动时需确认）。 */
   function closeEdit(): void {
     confirmCloseIfDirty(
-      editBaseline !== null && JSON.stringify(editDraft) !== JSON.stringify(editBaseline),
+      editBaseline !== null &&
+        JSON.stringify(editDraft) !== JSON.stringify(editBaseline),
       () => setEditTarget(null),
     );
   }
 
   /** 提交新建（§5.5 行 1261）：redirectUris 条目校验前置（§1.7 前端自律）。 */
-  const { run: submitCreate, loading: createSubmitting } = useRequest(async () => {
-    const issue = redirectUrisIssue(createDraft.redirectUris);
-    if (issue !== null) {
-      throw new Error(issue);
-    }
+  const { run: submitCreate, loading: createSubmitting } = useRequest(
+    async () => {
+      const issue = redirectUrisIssue(createDraft.redirectUris);
+      if (issue !== null) {
+        throw new Error(issue);
+      }
       await createSsoClient(buildCreateSsoClientRequest(createDraft));
       setCreateOpen(false);
-  }, {
-    manual: true,
-    onSuccess: () => {
-      Toast.success(t('admin.clientCreateSuccess'));
-      // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
-      setQuery((prev) => ({ ...prev, page: 1 }));
     },
-    onError: (err) => Toast.error(apiErrorText(err)),
-  });
+    {
+      manual: true,
+      onSuccess: () => {
+        Toast.success(t('admin.clientCreateSuccess'));
+        // 后端缺省序 id DESC（orderClause 回落）：新行在第 1 页，回页可见。
+        setQuery((prev) => ({ ...prev, page: 1 }));
+      },
+      onError: (err) => Toast.error(apiErrorText(err)),
+    },
+  );
 
   /**
    * 打开查看（§5.5 行 1262 GetSsoClient）：读取明文密钥；401 由集中 onError
@@ -231,10 +251,15 @@ export function SsoClientsPage(_props: {
     setEditSubmitting(true);
     try {
       await updateSsoClient(
-        buildUpdateSsoClientRequest(target.id, { ...editDraft, redirectUris: uris }),
+        buildUpdateSsoClientRequest(target.id, {
+          ...editDraft,
+          redirectUris: uris,
+        }),
       );
       setEditTarget(null);
-      Toast.success(t('admin.clientUpdateSuccess', { clientId: target.clientId }));
+      Toast.success(
+        t('admin.clientUpdateSuccess', { clientId: target.clientId }),
+      );
       refreshList();
     } catch (err) {
       setEditError(apiErrorText(err));
@@ -257,7 +282,7 @@ export function SsoClientsPage(_props: {
   // 列口径（§6 行 519 客户端 CRUD / 回调白名单）：客户端标识（可复制 + 可
   // 排序）/ 展示名 / 回调白名单（摘要，全量在详情）/ 创建 / 更新时间（可
   // 排序）/ 操作；可排序列 dataIndex 即 wire 列名（§1.7 sort 前端限定）。
-  const columns: readonly DataTableColumn<SsoClient>[] = [
+  const columns: DataTableColumn<SsoClient>[] = [
     {
       dataIndex: 'client_id',
       title: t('admin.clientIdLabel'),
@@ -277,7 +302,8 @@ export function SsoClientsPage(_props: {
     {
       dataIndex: 'redirect_uris',
       title: t('admin.redirectUrisLabel'),
-      render: (_text: unknown, row: SsoClient) => summarizeList(row.redirectUris),
+      render: (_text: unknown, row: SsoClient) =>
+        summarizeList(row.redirectUris),
     },
     {
       dataIndex: 'created_at',
@@ -320,12 +346,20 @@ export function SsoClientsPage(_props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.clientsLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.clientsLoadFailed')}
+      />
+    );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navSsoClients')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navSsoClients')}
+      </Typography.Title>
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createClientAction')}
@@ -367,14 +401,19 @@ export function SsoClientsPage(_props: {
             >
               {t('admin.createAction')}
             </Button>
-          </div>}
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientIdLabel')}
+            </span>
             <Input
               value={createDraft.clientId}
-              onChange={(value) => setCreateDraft({ ...createDraft, clientId: value })}
+              onChange={(value) =>
+                setCreateDraft({ ...createDraft, clientId: value })
+              }
               maxLength={CLIENT_ID_MAX_LEN}
               placeholder={t('admin.clientIdAutoGenPlaceholder')}
               aria-label={t('admin.clientIdLabel')}
@@ -382,10 +421,14 @@ export function SsoClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientNameLabel')}
+            </span>
             <Input
               value={createDraft.name}
-              onChange={(value) => setCreateDraft({ ...createDraft, name: value })}
+              onChange={(value) =>
+                setCreateDraft({ ...createDraft, name: value })
+              }
               maxLength={CLIENT_NAME_MAX_LEN}
               placeholder={t('admin.clientNamePlaceholder')}
               aria-label={t('admin.clientNameLabel')}
@@ -393,11 +436,17 @@ export function SsoClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.redirectUrisLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.redirectUriEntryHint')}
+            </span>
             <StringListEditor
               values={createDraft.redirectUris}
-              onChange={(next) => setCreateDraft({ ...createDraft, redirectUris: next })}
+              onChange={(next) =>
+                setCreateDraft({ ...createDraft, redirectUris: next })
+              }
               disabled={createSubmitting}
               ariaLabel={t('admin.redirectUriAriaLabel')}
               addText={t('admin.addRedirectUri')}
@@ -424,7 +473,9 @@ export function SsoClientsPage(_props: {
           <p role="alert" className={styles.actionError}>
             {apiErrorText(viewReq.error)}
           </p>
-        ) : viewReq.loading || viewReq.data === undefined || viewReq.data.id !== viewId ? (
+        ) : viewReq.loading ||
+          viewReq.data === undefined ||
+          viewReq.data.id !== viewId ? (
           // 弹窗内加载裸文字换 Semi Spin。
           <div className={styles.stateCenter} role="status">
             <Spin />
@@ -477,12 +528,22 @@ export function SsoClientsPage(_props: {
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientIdLabel')}</span>
-            <Input value={editTarget?.clientId ?? ''} disabled aria-label={t('admin.clientIdLabel')} />
-            <span className={styles.fieldHint}>{t('admin.clientIdImmutable')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientIdLabel')}
+            </span>
+            <Input
+              value={editTarget?.clientId ?? ''}
+              disabled
+              aria-label={t('admin.clientIdLabel')}
+            />
+            <span className={styles.fieldHint}>
+              {t('admin.clientIdImmutable')}
+            </span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.clientNameLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.clientNameLabel')}
+            </span>
             <Input
               value={editDraft.name}
               onChange={(value) => setEditDraft({ ...editDraft, name: value })}
@@ -493,24 +554,36 @@ export function SsoClientsPage(_props: {
             />
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.newSecretLabel')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.newSecretLabel')}
+            </span>
             <Input
               mode="password"
               value={editDraft.newSecret}
-              onChange={(value) => setEditDraft({ ...editDraft, newSecret: value })}
+              onChange={(value) =>
+                setEditDraft({ ...editDraft, newSecret: value })
+              }
               placeholder={t('admin.newSecretPlaceholder')}
               aria-label={t('admin.newSecretLabel')}
               autoComplete="new-password"
               disabled={editSubmitting}
             />
-            <span className={styles.fieldHint}>{t('admin.secretRotateHint')}</span>
+            <span className={styles.fieldHint}>
+              {t('admin.secretRotateHint')}
+            </span>
           </div>
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>{t('admin.redirectUrisLabel')}</span>
-            <span className={styles.fieldHint}>{t('admin.redirectUriEntryHint')}</span>
+            <span className={styles.fieldLabel}>
+              {t('admin.redirectUrisLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.redirectUriEntryHint')}
+            </span>
             <StringListEditor
               values={editDraft.redirectUris}
-              onChange={(next) => setEditDraft({ ...editDraft, redirectUris: next })}
+              onChange={(next) =>
+                setEditDraft({ ...editDraft, redirectUris: next })
+              }
               disabled={editSubmitting}
               ariaLabel={t('admin.redirectUriAriaLabel')}
               addText={t('admin.addRedirectUri')}

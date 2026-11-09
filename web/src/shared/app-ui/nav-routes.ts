@@ -11,20 +11,20 @@ import { t, type I18nKey } from '../i18n';
 /** 导航路由项（path 为 hash 内路径；textKey 渲染期经 t() 求值）。 */
 export interface AppRoute {
   /** 域内路由路径（HashRouter 内路径，如 '/profile'）。 */
-  readonly path: string;
+  path: string;
   /** 文案键（渲染期经 t() 取文案，防模块级 locale 冻结）。 */
-  readonly textKey: I18nKey;
+  textKey: I18nKey;
 }
 
 /** account 域导航路由表（`/account#/profile` 等三页）。 */
-export const ACCOUNT_NAV_ROUTES: readonly AppRoute[] = [
-  { path: '/profile', textKey: 'account.profileTitle' },
+export const ACCOUNT_NAV_ROUTES: AppRoute[] = [
+  { path: '/', textKey: 'account.profileTitle' },
   { path: '/security', textKey: 'account.securityTitle' },
   { path: '/audit', textKey: 'account.auditTitle' },
 ];
 
 /** admin 域导航路由表（§6 行 515-525 页面清单，顺序即侧边栏顺序）。 */
-export const ADMIN_NAV_ROUTES: readonly AppRoute[] = [
+export const ADMIN_NAV_ROUTES: AppRoute[] = [
   { path: '/status', textKey: 'admin.navStatus' },
   { path: '/users', textKey: 'admin.navUsers' },
   { path: '/clients/sso', textKey: 'admin.navSsoClients' },
@@ -43,8 +43,15 @@ export interface SemiNavItem {
 }
 
 /** 由路由表派生 Semi Nav items：itemKey 即路由 path，text 渲染期 t() 求值。 */
-export function toNavItems(routes: readonly AppRoute[], iconMap?: Record<string, React.ReactNode>): SemiNavItem[] {
-  return routes.map(({ path, textKey }) => ({ itemKey: path, text: t(textKey), icon: iconMap?.[path] }));
+export function toNavItems(
+  routes: AppRoute[],
+  iconMap?: Record<string, React.ReactNode>,
+): SemiNavItem[] {
+  return routes.map(({ path, textKey }) => ({
+    itemKey: path,
+    text: t(textKey),
+    icon: iconMap?.[path],
+  }));
 }
 
 /**
@@ -52,7 +59,7 @@ export function toNavItems(routes: readonly AppRoute[], iconMap?: Record<string,
  * 归列表项高亮，如 '/users/123' → '/users'）；未命中 → ''（不高亮）。
  */
 export function matchActivePath(
-  routes: readonly AppRoute[],
+  routes: AppRoute[],
   currentPath: string,
 ): string {
   const hit = routes.find(

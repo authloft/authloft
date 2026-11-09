@@ -54,7 +54,7 @@ export interface HCaptchaAdapterOptions extends VendorChallengeOptions {
 }
 
 export class HCaptchaAdapter extends VendorChallengeAdapter<HCaptchaApi> {
-  private readonly getVendorFn: () => HCaptchaApi | undefined;
+  private getVendorFn: () => HCaptchaApi | undefined;
   private widgetId: string | null = null;
 
   constructor(captcha: CaptchaConfig, options: HCaptchaAdapterOptions = {}) {
@@ -70,10 +70,7 @@ export class HCaptchaAdapter extends VendorChallengeAdapter<HCaptchaApi> {
     return this.getVendorFn();
   }
 
-  protected mountChallenge(
-    vendor: HCaptchaApi,
-    container: HTMLElement,
-  ): void {
+  protected mountChallenge(vendor: HCaptchaApi, container: HTMLElement): void {
     const epoch = this.challengeEpoch();
     this.widgetId = vendor.render(container, {
       sitekey: this.siteKey,

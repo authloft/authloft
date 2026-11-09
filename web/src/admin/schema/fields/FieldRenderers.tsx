@@ -28,10 +28,10 @@ function fieldDomId(field: SchemaField): string {
  * SchemaForm fieldExtra）+ help + issue（校验文案按键定位渲染）。
  */
 function FieldShell(props: {
-  readonly field: SchemaField;
-  readonly issue: string | undefined;
-  readonly extra?: ReactNode;
-  readonly children: ReactNode;
+  field: SchemaField;
+  issue: string | undefined;
+  extra?: ReactNode;
+  children: ReactNode;
 }): ReactNode {
   const { field } = props;
   return (

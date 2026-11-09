@@ -142,4 +142,4 @@ export const zhCN = {
 } as const;
 
 /** 字典形状（键集唯一定义处）；各语言包必须与之完全对齐（编译期强制）。 */
-export type I18nMessages = { readonly [K in keyof typeof zhCN]: string };
+export type I18nMessages = { [K in keyof typeof zhCN]: string };

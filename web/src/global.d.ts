@@ -5,7 +5,7 @@
  * 最小集：CSS Modules（*.module.less）+ 全局样式副作用 import（*.less）。
  */
 declare module '*.module.less' {
-  const classes: { readonly [key: string]: string };
+  const classes: { [key: string]: string };
   export default classes;
 }
 

@@ -25,13 +25,11 @@ import { RegisterPage } from './pages/RegisterPage';
 import { ResetPage } from './pages/ResetPage';
 
 /** 回调路由壳：路径参数 provider_key 经 useParams 提取（禁手写 pathname 解析）。 */
-function OAuthCallbackRoute({
-  snapshot,
-}: {
-  readonly snapshot: MethodsSnapshot;
-}) {
+function OAuthCallbackRoute({ snapshot }: { snapshot: MethodsSnapshot }) {
   const { provider_key: providerKey } = useParams();
-  return <OAuthCallbackPage providerKey={providerKey ?? ''} snapshot={snapshot} />;
+  return (
+    <OAuthCallbackPage providerKey={providerKey ?? ''} snapshot={snapshot} />
+  );
 }
 
 /** 登录端应用根：bootstrap 读注入快照 → 路由表分派（§4.1 行 374-376）。 */
@@ -44,13 +42,19 @@ export function LoginApp() {
   }
   return (
     <Routes>
-      <Route path="/sso/login" element={<LoginPage snapshot={boot.snapshot} />} />
+      <Route
+        path="/sso/login"
+        element={<LoginPage snapshot={boot.snapshot} />}
+      />
       {/* 注册 / 重置页共用注入快照（flow=register / flow=reset 已按 §2.1 过滤）。 */}
       <Route
         path="/sso/register"
         element={<RegisterPage snapshot={boot.snapshot} />}
       />
-      <Route path="/sso/reset" element={<ResetPage snapshot={boot.snapshot} />} />
+      <Route
+        path="/sso/reset"
+        element={<ResetPage snapshot={boot.snapshot} />}
+      />
       <Route
         path="/sso/oauth/callback/:provider_key"
         element={<OAuthCallbackRoute snapshot={boot.snapshot} />}
@@ -61,7 +65,10 @@ export function LoginApp() {
         path="/auth/authorize"
         element={<LoginPage snapshot={boot.snapshot} />}
       />
-      <Route path="*" element={<p role="status">{t('login.routeNotFound')}</p>} />
+      <Route
+        path="*"
+        element={<p role="status">{t('login.routeNotFound')}</p>}
+      />
     </Routes>
   );
 }

@@ -2,7 +2,7 @@
 #
 # 用法：复制为当前工作目录下的 authloft.yml 后按部署环境修改（也可用 --config
 # 指定其他路径）。authloft.yml 含真实密钥，不入库（.gitignore 已忽略）；部署时提供，
-# 或首次运行自动生成。
+# 或安装自动生成。
 #
 # 整份配置只在启动时读取一次，运行期不可变（不监听文件变更、无刷新接口），
 # 改任何一项必须重启；需要热更新的项（开关、阈值、Cookie 名与 TTL、队列参数）
@@ -32,11 +32,11 @@ authloft:
   rp_id: "authloft.example.com"         # WebAuthn RP ID
 sign_key:                          # 各类令牌 / 载荷独立密钥（§1.4）；AES-256-GCM 对称
                                   # 单密钥（§3.2 约定 4）：base64(std)，解码后恰 32 字节
-  session:      { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # session token
-  login:        { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # login token
-  ticket:       { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # ticket（含 al:ticket 存储值，§11.4）
-  cookie:       { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # al_login_state（§11.6.1）
-  sync_payload: { key: "<base64-32B，首次运行自动生成>", kid: 1 }  # 多域名同步载荷（§11.2）
+  session:      { key: "<base64-32B，安装自动生成>", kid: 1 }  # session token
+  login:        { key: "<base64-32B，安装自动生成>", kid: 1 }  # login token
+  ticket:       { key: "<base64-32B，安装自动生成>", kid: 1 }  # ticket（含 al:ticket 存储值，§11.4）
+  cookie:       { key: "<base64-32B，安装自动生成>", kid: 1 }  # al_login_state（§11.6.1）
+  sync_payload: { key: "<base64-32B，安装自动生成>", kid: 1 }  # 多域名同步载荷（§11.2）
 oidc:                              # OIDC RS256 签名密钥集（§14.3）；与顶层 sign_key（AES-256-GCM 对称）是两套密钥，不得混用
   jwt_keys:                        # 列表首项为当前签发密钥，其余为轮换期仅验签的历史公钥
     # 示例私钥仅供本地 / 测试联调（固定测试密钥）；生产由安装流程随机生成，勿直接复用。

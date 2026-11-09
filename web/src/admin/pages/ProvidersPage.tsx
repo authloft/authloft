@@ -27,7 +27,15 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { Banner, Button, Empty, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Empty,
+  Spin,
+  Tag,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { Link, useLocation, useNavigate } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../shared/components/CopyButton';
@@ -69,7 +77,7 @@ const EMPTY_TEXT = '—';
  * 列序沿 §6 行 515：显示名 / 标识 / 类别 / 类型 / 状态 / 策略标签 / 排序。
  * textKey 字段化——模块级只存键（'' 为拖拽手柄空占位），渲染期 t()。
  */
-const HEADER_CELL_KEYS: readonly (I18nKey | '')[] = [
+const HEADER_CELL_KEYS: (I18nKey | '')[] = [
   '',
   'admin.providerColumnDisplayName',
   'admin.providerColumnKey',
@@ -83,7 +91,7 @@ const HEADER_CELL_KEYS: readonly (I18nKey | '')[] = [
 /** 提供商列表页：回调提示 + 全量列表（行内启停 + 拖拽排序）。 */
 export function ProvidersPage(props: {
   /** 归一后 al_root（401 跳登录前缀 / 回调地址前缀）。 */
-  readonly alRoot: string;
+  alRoot: string;
 }): ReactNode {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
@@ -99,7 +107,7 @@ export function ProvidersPage(props: {
   // 页内跳转换 router 导航（HashRouter SPA 内跳，不再整页刷新）。
   const navigate = useNavigate();
   // 行集本地态：列表载入同步 + 启停 / 排序写操作成功后就地补丁（乐观）。
-  const [rows, setRows] = useState<readonly Provider[]>([]);
+  const [rows, setRows] = useState<Provider[]>([]);
   // 写操作（启停 / 排序）失败反馈改走 Semi Toast（原就地 actionError
   // 文字已随 Semi 回归移除）；成功反馈接 Toast.success（P1-6 统一成功
   // 通道，新增最小键集 admin.provider{Enable,Disable,Sort}Success）。
@@ -132,9 +140,12 @@ export function ProvidersPage(props: {
         })),
       );
       Toast.success(
-        t(next ? 'admin.providerEnableSuccess' : 'admin.providerDisableSuccess', {
-          name: row.displayName || row.providerKey,
-        }),
+        t(
+          next ? 'admin.providerEnableSuccess' : 'admin.providerDisableSuccess',
+          {
+            name: row.displayName || row.providerKey,
+          },
+        ),
       );
     } catch (toggleError) {
       // 失败：错误展示归消费方 + rethrow 触发 StatusSwitch 回滚。
@@ -143,7 +154,7 @@ export function ProvidersPage(props: {
     }
   }
 
-  function handleSort(next: readonly Provider[]): void {
+  function handleSort(next: Provider[]): void {
     const prev = rows;
     setRows(next); // 乐观：新序先行。
     sortProviders(buildSortProvidersRequest(next))
@@ -160,12 +171,20 @@ export function ProvidersPage(props: {
   // 列表错误态（404 掩护等其余错误；401 由集中 onError 跳登录）。
   // 自绘文字换 Semi Banner（自带 role="alert"；fullMode=false 为内容区形态）。
   if (error !== undefined && !isUnauthenticatedError(error)) {
-    return <Banner type="danger" fullMode={false} description={t('admin.providersLoadFailed')} />;
+    return (
+      <Banner
+        type="danger"
+        fullMode={false}
+        description={t('admin.providersLoadFailed')}
+      />
+    );
   }
 
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">{t('admin.navProviders')}</Typography.Title>
+      <Typography.Title heading={3} className="page-title">
+        {t('admin.navProviders')}
+      </Typography.Title>
       {/* 新建入口（需求 §4.6 列表/新建/编辑/启用/排序；对照 OidcClientsPage 工具栏写法）。 */}
       <div className={styles.toolbar}>
         <Button theme="solid" onClick={() => void navigate(PROVIDER_NEW_PATH)}>
@@ -173,7 +192,9 @@ export function ProvidersPage(props: {
         </Button>
       </div>
       {!canDrag && total > 0 ? (
-        <p className={styles.dragNote}>{t('admin.providersDragDisabledNote')}</p>
+        <p className={styles.dragNote}>
+          {t('admin.providersDragDisabledNote')}
+        </p>
       ) : null}
       <div className={styles.headerRow}>
         {HEADER_CELL_KEYS.map((cell) => (
@@ -201,7 +222,9 @@ export function ProvidersPage(props: {
                 <code className={styles.keyText}>{row.providerKey}</code>
                 <CopyButton text={row.providerKey} />
               </span>
-              <span className={styles.cellCategory}>{row.category || EMPTY_TEXT}</span>
+              <span className={styles.cellCategory}>
+                {row.category || EMPTY_TEXT}
+              </span>
               <span className={styles.cellType}>
                 <ProviderIcon alt={row.type} />
                 <span>{row.type || EMPTY_TEXT}</span>
@@ -234,7 +257,8 @@ export function ProvidersPage(props: {
         </div>
       ) : null}
       {/* success 空态判定走 deriveRequestStatus 派生（§5.3）。 */}
-      {deriveRequestStatus(loading, error, data) === 'success' && rows.length === 0 ? (
+      {deriveRequestStatus(loading, error, data) === 'success' &&
+      rows.length === 0 ? (
         // 空态裸文字换 Semi Empty（默认插图 + 文案）。
         <Empty description={t('admin.noProviders')} />
       ) : null}

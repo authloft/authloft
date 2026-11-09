@@ -22,7 +22,7 @@ import { WebAuthnButton } from './WebAuthnButton';
 /** 因子组件契约：容器以统一 props 驱动各因子表单（fields 以后端下发为准，§2.1）。 */
 export interface FactorProps {
   /** 该因子 form 步的后端下发字段（§2.1 fields[]；captcha 字段被 FieldRenderer 跳过）。 */
-  fields: readonly Field[];
+  fields: Field[];
   /** 请求在途（提交按钮禁用，§3.2）。 */
   loading: boolean;
   /** 不可重试失败态禁用提交（selectors.selectSubmitDisabled，§1.6「可重试」列）。 */
@@ -35,20 +35,23 @@ export interface FactorProps {
 export type FactorComponent = ComponentType<FactorProps>;
 
 /** method → 组件映射表（§4.3）。 */
-export const FACTOR_REGISTRY: Readonly<Record<string, FactorComponent | null>> = {
-  password: PasswordForm,
-  totp: null,
-  otp_sms: OTPForm,
-  otp_email: OTPForm,
-  webauthn: WebAuthnButton,
-  recovery_code: RecoveryCodeForm,
-};
+export const FACTOR_REGISTRY: Readonly<Record<string, FactorComponent | null>> =
+  {
+    password: PasswordForm,
+    totp: null,
+    otp_sms: OTPForm,
+    otp_email: OTPForm,
+    webauthn: WebAuthnButton,
+    recovery_code: RecoveryCodeForm,
+  };
 
 /**
  * 查表：三态返回——组件（渲染专属因子表单）｜null（totp 语义：通用 FormStep
  * 渲染，由 steps/FormStep 落地）｜undefined（缺映射 → 兜底错误态）。
  */
-export function lookupFactor(method: string): FactorComponent | null | undefined {
+export function lookupFactor(
+  method: string,
+): FactorComponent | null | undefined {
   return Object.prototype.hasOwnProperty.call(FACTOR_REGISTRY, method)
     ? FACTOR_REGISTRY[method]
     : undefined;
