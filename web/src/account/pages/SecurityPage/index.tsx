@@ -169,7 +169,6 @@ export function SecurityPageView(props: {
       <Modal
         visible={showBindPhoneModal}
         title={t('account.bindPhoneTitle')}
-        footer={null}
         onCancel={() => setShowBindPhoneModal(false)}
       >
         <ContactBindForm
@@ -181,7 +180,6 @@ export function SecurityPageView(props: {
       <Modal
         visible={showBindEmailModal}
         title={t('account.bindEmailTitle')}
-        footer={null}
         onCancel={() => setShowBindEmailModal(false)}
       >
         <ContactBindForm
