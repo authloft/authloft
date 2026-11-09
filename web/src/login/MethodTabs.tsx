@@ -95,15 +95,12 @@ function MethodTabItem({
   }
   const selected = entry.method === current;
   return (
-    <li>
-      <button
-        type="button"
-        className={selected ? styles.tabActive : styles.tab}
-        aria-current={selected ? 'true' : undefined}
-        onClick={() => onSelect(entry.method)}
-      >
-        {t(`factors.${entry.method}`)}
-      </button>
+    <li
+      className={selected ? styles.tabActive : ''}
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(entry.method)}
+    >
+      {t(`factors.${entry.method}`)}
     </li>
   );
 }

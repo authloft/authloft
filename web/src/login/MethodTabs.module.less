@@ -5,45 +5,38 @@
 
 .list {
   display: flex;
-  gap: @spacing-lg;
+  gap: @spacing-xs;
   list-style: none;
   margin: 0;
-  padding: 0;
-  border-bottom: @border-width solid @color-border-subtle;
+  padding: @spacing-xs;
+  background: @color-background-muted;
+  border-radius: @radius-md;
 }
 
 .list > li {
-  display: flex;
-}
-
-// 文字 tab：常态次级灰，hover 加深，选中主色 + 底部 2px 高亮线。
-.tab {
-  margin-bottom: -@border-width; // 压住 .list 底边，高亮线贴底
-  padding: @spacing-sm @spacing-xs;
-  color: @color-text-muted;
-  font-size: @font-size-md;
-  font-weight: @font-weight-medium;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
+  display: block;
+  font-size: @font-size-sm;
   cursor: pointer;
-  transition:
-    color @transition-fast,
-    border-color @transition-fast;
-}
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  text-align: center;
+  opacity: 0.6;
+  transition: all 0.1s ease-in-out;
+  border-radius: @radius-md;
+  padding: @spacing-xs @spacing-sm;
 
-.tab:hover {
-  color: @color-text;
-}
+  &:hover {
+    color: @color-text;
+    opacity: 1;
+  }
 
-.tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 @ring-width @ring-color;
-  border-radius: @radius-sm;
-}
-
-.tabActive {
-  .tab();
-  color: @color-primary;
-  border-bottom-color: @color-primary;
+  &.tabActive {
+    opacity: 1;
+    color: @color-text;
+    background: @color-background;
+    box-shadow:
+      0 2px 8px rgba(16, 24, 40, 0.05),
+      0 2px 2px rgba(16, 24, 40, 0.08);
+  }
 }

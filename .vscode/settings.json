@@ -1,4 +1,11 @@
 {
+  "search.exclude": {
+    "**/node_modules": true,
+    "web/dist": true,
+    "server/assets/dist": true,
+    "server/internal/pages/templates": true,
+    "**/.rstack/cache": true
+  },
   "files.eol": "\n",
   "[css]": {
     "editor.formatOnType": true,

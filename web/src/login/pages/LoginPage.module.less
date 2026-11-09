@@ -6,10 +6,7 @@
 // 全视口居中：页面底与卡片面分层（参考页默认态结构：浅底 + 白卡）。
 .page {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: @spacing-xl @spacing-lg;
+  padding: 64px @spacing-lg;
   background-color: @color-page;
 }
 
@@ -21,6 +18,7 @@
   border: @border-width solid @color-border-subtle;
   border-radius: @radius-lg;
   box-shadow: @shadow-card;
+  margin: 0 auto;
 }
 
 .title {

@@ -50,8 +50,8 @@ export const zhCN = {
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': '密码登录',
-  'factors.otp_sms': '短信验证码',
-  'factors.otp_email': '邮箱验证码',
+  'factors.otp_sms': '短信',
+  'factors.otp_email': '邮箱',
   'factors.webauthn': '通行密钥',
   'factors.totp': '动态口令',
   'factors.recovery_code': '恢复码',

@@ -43,8 +43,8 @@ export const enUS: I18nMessages = {
 
   // ---- 因子名（§1.10）------------------------------------------------------
   'factors.password': 'Password',
-  'factors.otp_sms': 'SMS code',
-  'factors.otp_email': 'Email code',
+  'factors.otp_sms': 'SMS',
+  'factors.otp_email': 'Email',
   'factors.webauthn': 'Passkey',
   'factors.totp': 'Authenticator code',
   'factors.recovery_code': 'Recovery code',

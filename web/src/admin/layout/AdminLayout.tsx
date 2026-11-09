@@ -64,15 +64,6 @@ import {
 
 const { Sider, Header, Content } = Layout;
 
-/** 登出链接（§6 行 507 LogoutLink）：跳 `{al_root}/sso/logout`，Go 处理。 */
-function LogoutLink({ alRoot }: { alRoot: string }) {
-  return (
-    <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      {t('admin.logout')}
-    </a>
-  );
-}
-
 const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
   '/status': <IconHome />,
   '/providers': <IconGlobe />,
@@ -161,7 +152,7 @@ export function AdminLayout(props: {
               {
                 node: 'item',
                 name: t('admin.logout'),
-                onClick: () => navigate(logoutUrl(props.alRoot)),
+                onClick: () => (window.location.href = logoutUrl(props.alRoot)),
               },
             ]}
             position="bottomRight"
