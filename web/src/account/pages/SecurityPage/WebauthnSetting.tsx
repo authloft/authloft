@@ -27,33 +27,29 @@ function WebauthnAddDialog(props: {
   onDone: () => void;
 }): ReactNode {
   const [label, setLabel] = useState('');
-  const [registering, setRegistering] = useState(false);
-  const [notice, setNotice] = useState<'cancelled' | 'failed' | null>(null);
 
-  const handleRegister = async () => {
-    if (registering) {
-      return;
-    }
-    setNotice(null);
-    setRegistering(true);
-    try {
-      const result = await registerWebauthnCredential(label);
-      if (result.ok) {
-        props.onDone();
-      } else {
-        setNotice(result.cancelled ? 'cancelled' : 'failed');
-      }
-    } finally {
-      setRegistering(false);
-    }
-  };
+  const { run: handleRegister, loading: registering } = useRequest(
+    () => registerWebauthnCredential(label),
+    {
+      manual: true,
+      onSuccess: (result) => {
+        if (result.ok) {
+          props.onDone();
+        } else if (result.cancelled) {
+          Toast.warning(t('account.webauthnCancelled'));
+        } else {
+          Toast.error(t('account.webauthnRegisterFailed'));
+        }
+      },
+    },
+  );
 
   return (
     <Modal
       title={t('account.webauthnAddTitle')}
       visible
+      okButtonProps={{ style: { display: 'none' } }}
       onCancel={props.onCancel}
-      footer={null}
     >
       <div className={styles.register}>
         <Input
@@ -71,16 +67,6 @@ function WebauthnAddDialog(props: {
           {t('account.webauthnRegisterAction')}
         </Button>
       </div>
-      {notice === 'cancelled' ? (
-        <p role="alert" className={styles.notice}>
-          {t('account.webauthnCancelled')}
-        </p>
-      ) : null}
-      {notice === 'failed' ? (
-        <p role="alert" className={styles.notice}>
-          {t('account.webauthnRegisterFailed')}
-        </p>
-      ) : null}
     </Modal>
   );
 }
