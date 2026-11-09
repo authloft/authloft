@@ -3,6 +3,9 @@
  * 三个修饰的**唯一定义在接口文档 §5.3 行 1229**——本模块只做 type → 渲染
  * 组件的分派，语义（section 分组 / 默认值 / 校验）全部在 schemaLogic。
  * 新增渠道类型不改前端（§5.3 行 1185/1229）：未知 type 走占位渲染。
+ *
+ * 渲染器均为 Semi Form 字段组件：值 / onChange / 校验文案由外层 `<Form>`
+ * 托管，故入参只保留字段描述、禁用态与扩展位（不再传受控值 / 回调）。
  */
 import type { ReactNode } from 'react';
 import type { SchemaField } from '../../gen/proto/api/admin/v1/schema_pb';
@@ -19,13 +22,8 @@ import {
 /** 字段渲染器入参（值模型见 schemaLogic 文件头）。 */
 export interface FieldRendererProps {
   field: SchemaField;
-  /** 当前值（json → string 文本态；text/secret/select → string；checkbox → boolean；number → number）。 */
-  value: unknown;
-  onChange: (value: unknown) => void;
   /** 禁用（提交中 / 锁定键，如 category 只读、provider_key 编辑锁）。 */
   disabled: boolean;
-  /** 该字段的校验文案（validateSchemaValues 产物按键定位；undefined = 无问题）。 */
-  issue: string | undefined;
   /** 字段扩展位（SchemaForm fieldExtra 注入，如 icon_url 预览）。 */
   extra: ReactNode;
 }

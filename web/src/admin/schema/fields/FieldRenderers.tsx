@@ -2,164 +2,152 @@
  * 六种字段类型的渲染实现（docs/前端架构.md §6 行 510；docs/接口文档.md
  * §5.3 行 1229 唯一定义：text / secret / checkbox / number / select / json；
  * 修饰三个：advanced / pattern / default 的语义在 schemaLogic，本文件只管
- * 受控渲染）。六渲染器共享 FieldShell 装配（label / required 星号 / help /
- * issue），故合一个文件（既定口径授权合并轻量类型）。
+ * 字段装配）。
  *
- * Semi UI 经大包入口命名导入（§1.6 行 113 硬性口径）；未知 type 渲染占位
- * 不崩（§12.9 行 1754：fields[].type 跨版本可能新增）——分派在
- * ../FieldRegistry。样式复用 ../SchemaForm.module.less（字段装配属表单
- * 布局；跨文件共享同一 CSS Modules 映射，§1.7）。
+ * 【Semi Form 化】全部改用 `Form.*` 字段组件：值、onChange、label 关联、
+ * 必填星号、help / extra 与校验文案由外层 `<Form>` 托管（CODE_GUIDE §2.4
+ * 「admin 用 Semi UI 自带表单校验」），本文件零受控 state。字段必须挂在
+ * `<Form>` 内渲染（FormApiContext / FormStateContext 由 Form 提供）。
+ *
+ * Semi UI 经大包入口命名导入（§1.6 行 113 硬性口径）；未知 type 渲染
+ * 禁用占位不崩（§12.9 行 1754：fields[].type 跨版本可能新增）。
+ * 样式复用 ../SchemaForm.module.less（字段装配属表单布局；跨文件共享
+ * 同一 CSS Modules 映射，§1.7）。
  */
 import type { ReactNode } from 'react';
-import { Checkbox, Input, InputNumber, Select } from '@douyinfe/semi-ui';
+import { Form } from '@douyinfe/semi-ui';
 import type { SchemaField } from '../../../gen/proto/api/admin/v1/schema_pb';
 import { t } from '../../../shared/i18n';
-import { JsonEditor } from '../../components/JsonEditor';
 import type { FieldRendererProps } from '../FieldRegistry';
 import styles from '../SchemaForm.module.less';
 
-/** 字段控件 id（key 字符集 [a-z0-9_]，§5.3 行 1219——天然安全作 id 片段）。 */
-function fieldDomId(field: SchemaField): string {
-  return `provider-field-${field.key}`;
+/** 字段 label（Semi LabelProps：required 驱动必填星号 + 自动关联控件）。 */
+function fieldLabel(field: SchemaField): {
+  text: string;
+  required: boolean;
+} {
+  return { text: field.label, required: field.required };
+}
+
+/** help 文案（空串不传，避免渲染空占位）。 */
+function fieldHelp(field: SchemaField): string | undefined {
+  return field.help !== '' ? field.help : undefined;
 }
 
 /**
- * 字段装配壳：label（required 星号）+ 控件 + 可选扩展位（icon_url 预览等，
- * SchemaForm fieldExtra）+ help + issue（校验文案按键定位渲染）。
+ * 文本类字段保留空串：Semi Form 默认把清空值转 undefined 并从 formState
+ * 删键，会让 buildProviderStruct 提交 undefined（原受控实现是 ''）。
  */
-function FieldShell(props: {
-  field: SchemaField;
-  issue: string | undefined;
-  extra?: ReactNode;
-  children: ReactNode;
-}): ReactNode {
-  const { field } = props;
-  return (
-    <div className={styles.field}>
-      <label className={styles.label} htmlFor={fieldDomId(field)}>
-        {field.label}
-        {field.required ? (
-          <span className={styles.requiredMark} aria-hidden="true">
-            *
-          </span>
-        ) : null}
-      </label>
-      <div className={styles.control}>
-        {props.children}
-        {props.extra !== undefined && props.extra !== null ? (
-          <span className={styles.fieldExtra}>{props.extra}</span>
-        ) : null}
-      </div>
-      {field.help !== '' ? <p className={styles.help}>{field.help}</p> : null}
-      {props.issue !== undefined ? (
-        <p role="alert" className={styles.issue}>
-          {props.issue}
-        </p>
-      ) : null}
-    </div>
-  );
-}
+const KEEP_EMPTY_STRING = true;
 
-/** text：单行文本。 */
+/** text：单行文本（扩展位如 icon_url 预览挂 suffix，保持输入框内联）。 */
 export function TextField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <Input
-        id={fieldDomId(props.field)}
-        value={typeof props.value === 'string' ? props.value : ''}
-        onChange={(value) => props.onChange(value)}
-        disabled={props.disabled}
-      />
-    </FieldShell>
+    <Form.Input
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      suffix={props.extra}
+      allowEmptyString={KEEP_EMPTY_STRING}
+      disabled={props.disabled}
+    />
   );
 }
 
 /** secret：密码态输入（Semi Input 自带可见性切换）。 */
 export function SecretField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <Input
-        id={fieldDomId(props.field)}
-        mode="password"
-        value={typeof props.value === 'string' ? props.value : ''}
-        onChange={(value) => props.onChange(value)}
-        disabled={props.disabled}
-        autoComplete="new-password"
-      />
-    </FieldShell>
+    <Form.Input
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      suffix={props.extra}
+      mode="password"
+      autoComplete="new-password"
+      allowEmptyString={KEEP_EMPTY_STRING}
+      disabled={props.disabled}
+    />
   );
 }
 
-/** checkbox：开关。 */
+/** checkbox：开关（Form 托管 checked 布尔值）。 */
 export function CheckboxField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <Checkbox
-        id={fieldDomId(props.field)}
-        checked={props.value === true}
-        onChange={(event) => props.onChange(event.target.checked)}
-        disabled={props.disabled}
-      />
-    </FieldShell>
+    <Form.Checkbox
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      extraText={props.extra}
+      disabled={props.disabled}
+    />
   );
 }
 
-/** number：数字（Semi InputNumber 的 onChange 可能回 string，归一为 number）。 */
+/** number：数字（InputNumber 的 onChange 可能回 string，convert 归一为 number）。 */
 export function NumberField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <InputNumber
-        id={fieldDomId(props.field)}
-        value={typeof props.value === 'number' ? props.value : 0}
-        onChange={(value) =>
-          props.onChange(typeof value === 'number' ? value : Number(value) || 0)
-        }
-        disabled={props.disabled}
-      />
-    </FieldShell>
+    <Form.InputNumber
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      extraText={props.extra}
+      convert={(value: unknown) =>
+        typeof value === 'number' ? value : Number(value) || 0
+      }
+      disabled={props.disabled}
+    />
   );
 }
 
 /** select：取值集合即 options（§5.3 行 1229 与 §1.11 同名同义）。 */
 export function SelectField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <Select
-        id={fieldDomId(props.field)}
-        value={typeof props.value === 'string' ? props.value : ''}
-        optionList={props.field.options.map((option) => ({
-          value: option,
-          label: option,
-        }))}
-        onChange={(value) => props.onChange(String(value))}
-        disabled={props.disabled}
-        placeholder={t('common.selectPlaceholder')}
-      />
-    </FieldShell>
+    <Form.Select
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      extraText={props.extra}
+      optionList={props.field.options.map((option) => ({
+        value: option,
+        label: option,
+      }))}
+      placeholder={t('common.selectPlaceholder')}
+      convert={(value: unknown) =>
+        value === undefined || value === null ? '' : String(value)
+      }
+      disabled={props.disabled}
+    />
   );
 }
 
-/** json：JsonEditor 文本域（值模型 string，提交前 parse，schemaLogic 口径）。 */
+/** json：JSON 文本域（值模型 string，提交前 parse，schemaLogic 口径）。 */
 export function JsonField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <JsonEditor
-        value={typeof props.value === 'string' ? props.value : ''}
-        onChange={props.onChange}
-        disabled={props.disabled}
-        ariaLabel={props.field.label}
-      />
-    </FieldShell>
+    <Form.TextArea
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      extraText={props.extra}
+      className={styles.jsonEditor}
+      rows={6}
+      placeholder='{"key": "value"}'
+      allowEmptyString={KEEP_EMPTY_STRING}
+      disabled={props.disabled}
+      aria-label={props.field.label}
+    />
   );
 }
 
 /** 未知 type 占位（§12.9 行 1754：跨版本新增类型渲染占位不丢值不崩）。 */
 export function UnsupportedField(props: FieldRendererProps): ReactNode {
   return (
-    <FieldShell field={props.field} issue={props.issue} extra={props.extra}>
-      <p role="note" className={styles.unsupported}>
-        {t('admin.unsupportedFieldType', { type: props.field.type })}
-      </p>
-    </FieldShell>
+    <Form.Input
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={t('admin.unsupportedFieldType', { type: props.field.type })}
+      extraText={props.extra}
+      allowEmptyString={KEEP_EMPTY_STRING}
+      disabled
+    />
   );
 }

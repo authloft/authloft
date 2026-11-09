@@ -167,11 +167,11 @@ func schemaBaselineBasic(category string, unionProviderKeys []string) []*adminv1
 	return []*adminv1.SchemaField{
 		{Key: "provider_key", Label: "唯一标识", Type: "text", Section: sectionBasic, Required: true,
 			Pattern: "^[a-z0-9_]+$",
-			Help:    "创建后不可修改，将出现在回调地址 /sso/oauth/callback/{provider_key} 中"},
+			Help:    "创建后不可修改，将出现在回调地址中"},
 		{Key: "display_name", Label: "显示名称", Type: "text", Section: sectionBasic, Required: true},
 		{Key: "union_provider", Label: "联合登录归属", Type: "select", Section: sectionBasic,
 			Options: unionProviderKeys,
-			Help:    "仅列 category=union 的 Provider；留空表示不参与 Union ID 归并"},
+			Help:    "留空表示不参与 Union ID 归并"},
 	}
 }
 
@@ -180,7 +180,7 @@ func schemaBaselineDisplay() []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
 		{Key: "icon_url", Label: "图标 URL", Type: "text", Section: sectionDisplay,
 			Pattern: "^https?://",
-			Help:    "绝对 URL，由管理员自行上传到任意可访问位置后填写（Authloft 不提供上传）；留空时前端渲染通用占位图标"},
+			Help:    "留空时前端渲染通用占位图标"},
 		{Key: "ui_group", Label: "展示分组", Type: "select", Section: sectionDisplay,
 			Options: []string{"social", "enterprise", "dev", "other"},
 			Default: structpb.NewStringValue("social")},
@@ -199,7 +199,7 @@ func schemaBaselinePolicy() []*adminv1.SchemaField {
 			Default: structpb.NewBoolValue(true)},
 		{Key: "enable_signup", Label: "允许用于注册", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(true),
-			Help:    "关闭后该渠道不得用于建号：登录时「创建新账号」入口置灰，仅保留「退出并使用其他账号登录」，并提示该渠道未开放注册（已由信封 binding.allowSignup=false 反映）；如需把该三方身份绑到已有账号，由用户先正常登录再从安全中心发起绑定（§3.7）"},
+			Help:    "关闭后该渠道不得用于建号"},
 		{Key: "auto_bind", Label: "按联系方式自动绑定", Type: "checkbox", Section: sectionPolicy,
 			Default: structpb.NewBoolValue(false)},
 		{Key: "auto_bind_fields", Label: "自动绑定字段", Type: "text", Section: sectionPolicy,

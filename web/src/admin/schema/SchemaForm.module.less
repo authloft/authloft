@@ -1,6 +1,7 @@
 // Schema 驱动表单自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// fields/FieldRenderers.tsx 跨文件共享本映射（字段装配属表单布局，
-// 既定口径授权单文件渲染器，样式不另开文件）。
+// 字段控件 / label / 校验文案由 Semi Form 自带样式提供；这里只管区块、
+// 折叠面板与 JSON 文本域的少量业务样式。fields/FieldRenderers.tsx 跨文件
+// 共享本映射（既定口径授权单文件渲染器，样式不另开文件）。
 @import (reference) '../../shared/styles/tokens.less';
 
 .form {
@@ -9,88 +10,15 @@
 
 .section {
   margin: 0 0 @spacing-lg;
-  padding: 0 0 @spacing-lg;
-  border-bottom: @border-width solid var(--semi-color-border);
-
-  &:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
-    padding-bottom: 0;
-  }
 }
 
-.sectionTitle {
-  margin: 0 0 @spacing-md;
-  color: @color-text;
-  font-size: @font-size-md;
-  font-weight: 600;
-}
-
-.collapsible {
-  margin: 0 0 @spacing-sm;
-  border: @border-width solid var(--semi-color-border);
-  border-radius: @radius-sm;
-  background-color: @color-background-muted;
-}
-
-.collapsibleSummary {
-  padding: @spacing-xs @spacing-md;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-  cursor: pointer;
-  user-select: none;
-}
-
-.collapsibleBody {
-  padding: @spacing-sm @spacing-md @spacing-md;
-}
-
-.field {
+.collapse {
   margin: 0 0 @spacing-md;
 }
 
-.label {
-  display: inline-block;
-  margin: 0 0 @spacing-xs;
-  color: @color-text;
-  font-size: @font-size-sm;
-  font-weight: 500;
-}
-
-.requiredMark {
-  margin-left: @spacing-xs;
-  color: @color-danger;
-}
-
-.control {
-  display: flex;
-  align-items: center;
-  gap: @spacing-sm;
-  max-width: 32rem;
-}
-
-.fieldExtra {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.help {
-  margin: @spacing-xs 0 0;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-}
-
-.issue {
-  margin: @spacing-xs 0 0;
-  color: @color-danger;
-  font-size: @font-size-sm;
-}
-
-.unsupported {
-  margin: 0;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
+// JSON 文本域沿用原 JsonEditor 的等宽字体观感。
+.jsonEditor {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
 .schemaError {
