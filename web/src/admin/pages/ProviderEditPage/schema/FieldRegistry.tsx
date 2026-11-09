@@ -8,7 +8,7 @@
  * 托管，故入参只保留字段描述、禁用态与扩展位（不再传受控值 / 回调）。
  */
 import type { ReactNode } from 'react';
-import type { SchemaField } from '../../gen/proto/api/admin/v1/schema_pb';
+import type { SchemaField } from '@/gen/proto/api/admin/v1/schema_pb';
 import {
   CheckboxField,
   JsonField,

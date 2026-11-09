@@ -22,8 +22,8 @@ import { Col, Collapse, Form, Row } from '@douyinfe/semi-ui';
 import type {
   SchemaField,
   SchemaResponse,
-} from '../../gen/proto/api/admin/v1/schema_pb';
-import { t } from '../../shared/i18n';
+} from '@/gen/proto/api/admin/v1/schema_pb';
+import { t } from '@/shared/i18n';
 import { resolveFieldRenderer } from './FieldRegistry';
 import {
   groupFieldsBySection,

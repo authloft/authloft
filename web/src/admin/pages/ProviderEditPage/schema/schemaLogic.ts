@@ -17,12 +17,12 @@ import type { Value } from '@bufbuild/protobuf/wkt';
 import type {
   SchemaField,
   SchemaResponse,
-} from '../../gen/proto/api/admin/v1/schema_pb';
+} from '@/gen/proto/api/admin/v1/schema_pb';
 import type {
   AdminProvider,
   Provider,
-} from '../../gen/proto/api/admin/v1/provider_pb';
-import { t, type I18nKey } from '../../shared/i18n';
+} from '@/gen/proto/api/admin/v1/provider_pb';
+import { t, type I18nKey } from '@/shared/i18n';
 
 /**
  * 表单五区块（§5.3 行 1185 封闭值域：basic / credential / endpoint（整块

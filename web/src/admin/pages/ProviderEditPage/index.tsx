@@ -71,14 +71,14 @@ import {
   showsCallbackHint,
 } from '../../components/ProviderCallbackHint';
 import { adminNavPath } from '../../paths';
-import { SchemaForm } from '../../schema/SchemaForm';
+import { SchemaForm } from './schema/SchemaForm';
 import {
   adminProviderToValues,
   buildProviderStruct,
   initialCreateValues,
   isProviderKeyTaken,
   validateSchemaValues,
-} from '../../schema/schemaLogic';
+} from './schema/schemaLogic';
 import type { SchemaField } from '@/gen/proto/api/admin/v1/schema_pb';
 import styles from './index.module.less';
 

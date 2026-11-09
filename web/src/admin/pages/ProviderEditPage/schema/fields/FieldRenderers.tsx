@@ -16,8 +16,8 @@
  */
 import type { ReactNode } from 'react';
 import { Form } from '@douyinfe/semi-ui';
-import type { SchemaField } from '../../../gen/proto/api/admin/v1/schema_pb';
-import { t } from '../../../shared/i18n';
+import type { SchemaField } from '@/gen/proto/api/admin/v1/schema_pb';
+import { t } from '@/shared/i18n';
 import type { FieldRendererProps } from '../FieldRegistry';
 import styles from '../SchemaForm.module.less';
 
