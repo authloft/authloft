@@ -15,15 +15,9 @@ import type { I18nKey } from '../shared/i18n';
  * 损坏，落 '' 由路由表 path:'*' 兜底页承接）。
  */
 export function adminNavPath(textKey: I18nKey): string {
-  return ADMIN_NAV_ROUTES.find((route) => route.textKey === textKey)?.path ?? '';
-}
-
-/** 提供商新建页路径（§6 行 516；非侧边栏条目，导航表不覆盖）。 */
-export const PROVIDER_NEW_PATH = '/providers/new';
-
-/** 提供商编辑页路径（§6 行 516）：provider_key 单段，编码后拼接。 */
-export function providerEditPath(providerKey: string): string {
-  return `/providers/${encodeURIComponent(providerKey)}/edit`;
+  return (
+    ADMIN_NAV_ROUTES.find((route) => route.textKey === textKey)?.path ?? ''
+  );
 }
 
 /** 用户详情页路径（§6 行 518）：id 为 int64，十进制数字段无需编码。 */

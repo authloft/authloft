@@ -70,7 +70,7 @@ import {
   initialCreateValues,
   isProviderKeyTaken,
   validateSchemaValues,
-} from './pages/ProviderEditPage/schema/schemaLogic';
+} from './pages/ProvidersPage/edit/schema/schemaLogic';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import {
   DEFAULT_SETTINGS,

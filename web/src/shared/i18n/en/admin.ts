@@ -288,7 +288,7 @@ export const admin: typeof zhAdmin = {
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': 'Delete',
   'admin.dragSortHandle': 'Drag to sort',
-  'admin.callbackUrlLabel': 'Third-party sign-in callback URL: ',
+  'admin.callbackUrlLabel': 'Callback URL: ',
   'admin.oidcCallbackExactMatchNote':
     'OIDC provider callbacks must match exactly',
 

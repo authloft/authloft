@@ -1,6 +1,6 @@
 // 提供商新建 / 编辑页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
 // 页壳 / 表单字段样式由 PageLayout + Semi Form 提供，这里只保留页面级间距。
-@import (reference) '../../../shared/styles/tokens.less';
+@import (reference) '../../../../shared/styles/tokens.less';
 
 .form {
   display: block;
@@ -11,16 +11,7 @@
   margin-bottom: @spacing-md;
 }
 
-// 回调提示与类型选择同排：垂直居中对齐输入框。
-.callbackHint {
-  display: flex;
-  align-items: center;
-  min-height: 2.5rem;
-  padding-top: @spacing-lg;
-}
-
 .typeRequired {
-  display: inline-block;
   margin: 0 0 @spacing-lg;
 }
 

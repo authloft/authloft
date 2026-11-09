@@ -4,7 +4,6 @@
 .hint {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: @spacing-sm;
   margin-bottom: @spacing-lg;
   padding: @spacing-sm @spacing-md;
@@ -12,10 +11,13 @@
   border-radius: @radius-sm;
   background-color: @color-background-muted;
   font-size: @font-size-sm;
+  width: 100%;
 }
 
 .label {
   color: @color-text-muted;
+  flex-grow: 0;
+  flex-shrink: 0;
 }
 
 .url {
@@ -26,9 +28,16 @@
   color: @color-text;
   font-size: @font-size-sm;
   word-break: break-all;
+  flex-grow: 1;
+  flex-shrink: 1;
+  text-wrap: nowrap;
+  overflow: auto;
+  scrollbar-width: thin;
 }
 
 .oidcNote {
   color: @color-danger;
   font-size: @font-size-sm;
+  flex-grow: 0;
+  flex-shrink: 0;
 }

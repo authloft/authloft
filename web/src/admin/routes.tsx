@@ -18,7 +18,6 @@
  * Modal 写路径与 `DecodePage` 保留内联 `location.replace(loginUrl(...))`。
  * bootstrap 无 methods 必需校验（§8：methods 仅 login 必填），路由层不发请求。
  */
-import type { ReactNode } from 'react';
 import { Empty } from '@douyinfe/semi-ui';
 import {
   Link,
@@ -26,20 +25,20 @@ import {
   useRoutes,
   type RouteObject,
 } from '@modern-js/runtime/router';
+import type { ReactNode } from 'react';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
 import { AdminLayout } from './layout/AdminLayout';
 import { AuditPage } from './pages/AuditPage';
 import { DecodePage } from './pages/DecodePage';
 import { OidcClientsPage } from './pages/OidcClientsPage';
-import { ProviderEditPage } from './pages/ProviderEditPage';
 import { ProvidersPage } from './pages/ProvidersPage';
-import { SsoClientsPage } from './pages/SsoClientsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SsoClientsPage } from './pages/SsoClientsPage';
 import { StatusPage } from './pages/StatusPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
-import { PROVIDER_NEW_PATH, adminNavPath } from './paths';
+import { adminNavPath } from './paths';
 
 /** 用户详情路由模式（§6 行 518；段内数字校验在 UserDetailRoute，见下）。 */
 const USER_DETAIL_ROUTE = '/users/:id';
@@ -55,23 +54,6 @@ function NotFoundPage(): ReactNode {
         {t('admin.backToHome')}
       </Link>
     </Empty>
-  );
-}
-
-/** 提供商新建 / 编辑路由（useParams 取 key；缺省 = 新建）。 */
-function ProviderEditRoute(props: { alRoot: string }): ReactNode {
-  const { key } = useParams();
-  return (
-    <AdminLayout
-      alRoot={props.alRoot}
-      breadcrumb={[
-        t('admin.rootTitle'),
-        t('admin.navProviders'),
-        t(key === undefined ? 'admin.newAction' : 'admin.editAction'),
-      ]}
-    >
-      <ProviderEditPage alRoot={props.alRoot} providerKey={key} />
-    </AdminLayout>
   );
 }
 
@@ -116,11 +98,6 @@ export function AdminApp(): ReactNode {
           <ProvidersPage alRoot={alRoot} />
         </AdminLayout>
       ),
-    },
-    { path: PROVIDER_NEW_PATH, element: <ProviderEditRoute alRoot={alRoot} /> },
-    {
-      path: PROVIDER_EDIT_ROUTE,
-      element: <ProviderEditRoute alRoot={alRoot} />,
     },
     {
       path: adminNavPath('admin.navUsers'),

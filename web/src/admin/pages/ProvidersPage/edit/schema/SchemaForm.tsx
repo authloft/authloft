@@ -37,8 +37,6 @@ export interface SchemaFormProps {
   schema: SchemaResponse;
   /** 锁定键（渲染禁用：category 只读 §5.3 行 1195、provider_key 编辑锁）。 */
   lockedKeys: string[];
-  /** 全表单禁用（提交中）。 */
-  disabled: boolean;
   /** 字段扩展位注入（如 icon_url 的 ProviderIcon 实时预览）。 */
   fieldExtra?: (field: SchemaField) => ReactNode;
 }
@@ -53,7 +51,7 @@ function SchemaFieldControl(props: {
   return (
     <Renderer
       field={field}
-      disabled={owner.disabled || owner.lockedKeys.includes(field.key)}
+      disabled={owner.lockedKeys.includes(field.key)}
       extra={owner.fieldExtra !== undefined ? owner.fieldExtra(field) : null}
     />
   );
@@ -65,13 +63,11 @@ function FieldRow(props: {
   owner: SchemaFormProps;
 }): ReactNode {
   return (
-    <Row gutter={16}>
+    <>
       {props.fields.map((field) => (
-        <Col key={field.key} span={12} xs={24} sm={24} md={12}>
-          <SchemaFieldControl field={field} owner={props.owner} />
-        </Col>
+        <SchemaFieldControl key={field.key} field={field} owner={props.owner} />
       ))}
-    </Row>
+    </>
   );
 }
 

@@ -37,16 +37,16 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import { Link, useLocation, useNavigate } from '@modern-js/runtime/router';
-import { patchRowByKey } from '../../shared/app-ui/dataTableLogic';
-import { CopyButton } from '../../shared/components/CopyButton';
-import { ProviderIcon } from '../../shared/components/ProviderIcon';
+import { patchRowByKey } from '../../../shared/app-ui/dataTableLogic';
+import { CopyButton } from '../../../shared/components/CopyButton';
+import { ProviderIcon } from '../../../shared/components/ProviderIcon';
 import { useRequest } from 'ahooks';
-import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t, type I18nKey } from '../../shared/i18n';
-import { toCount } from '../../shared/utils/int';
-import { SetProviderEnabledRequestSchema } from '../../gen/proto/api/admin/v1/provider_pb';
-import type { Provider } from '../../gen/proto/api/admin/v1/provider_pb';
+import { deriveRequestStatus } from '../../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { t, type I18nKey } from '../../../shared/i18n';
+import { toCount } from '../../../shared/utils/int';
+import { SetProviderEnabledRequestSchema } from '../../../gen/proto/api/admin/v1/provider_pb';
+import type { Provider } from '../../../gen/proto/api/admin/v1/provider_pb';
 import {
   adminReturnTo,
   apiErrorText,
@@ -57,12 +57,12 @@ import {
   policyTags,
   setProviderEnabled,
   sortProviders,
-} from '../api';
-import { ProviderCallbackHint } from '../components/ProviderCallbackHint';
-import { SortableList } from '../components/SortableList';
-import { StatusSwitch } from '../components/StatusSwitch';
-import { PROVIDER_NEW_PATH, providerEditPath } from '../paths';
-import styles from './ProvidersPage.module.less';
+} from '../../api';
+import { ProviderCallbackHint } from '../../components/ProviderCallbackHint';
+import { SortableList } from '../../components/SortableList';
+import { StatusSwitch } from '../../components/StatusSwitch';
+import styles from './index.module.less';
+import { ProviderEdit } from './edit';
 
 /** 行键（§5.3 行 1192：provider_key 创建后不可改，天然行键）。 */
 function providerRowKey(row: Provider): string {
@@ -111,6 +111,9 @@ export function ProvidersPage(props: {
   // 写操作（启停 / 排序）失败反馈改走 Semi Toast（原就地 actionError
   // 文字已随 Semi 回归移除）；成功反馈接 Toast.success（P1-6 统一成功
   // 通道，新增最小键集 admin.provider{Enable,Disable,Sort}Success）。
+
+  const [showEdit, setShowEdit] = useState(false);
+  const [editProvider, setEditProvider] = useState<Provider | null>(null);
 
   // 列表数据落地 → 同步行集（引用更换即覆盖本地补丁，DataTable 同模式）。
   useEffect(() => {
@@ -185,9 +188,14 @@ export function ProvidersPage(props: {
       <Typography.Title heading={3} className="page-title">
         {t('admin.navProviders')}
       </Typography.Title>
-      {/* 新建入口（需求 §4.6 列表/新建/编辑/启用/排序；对照 OidcClientsPage 工具栏写法）。 */}
       <div className={styles.toolbar}>
-        <Button theme="solid" onClick={() => void navigate(PROVIDER_NEW_PATH)}>
+        <Button
+          theme="solid"
+          onClick={() => {
+            setShowEdit(true);
+            setEditProvider(null);
+          }}
+        >
           {t('admin.createProviderAction')}
         </Button>
       </div>
@@ -212,11 +220,7 @@ export function ProvidersPage(props: {
           return (
             <div className={styles.row}>
               <span className={styles.cellName}>
-                {/* 编辑入口（§6 行 516 ProviderEditPage；去自绘主色装饰，
-                    改 SPA 内 Link，路径经 providerEditPath 编码拼接）。 */}
-                <Link to={providerEditPath(row.providerKey)}>
-                  {row.displayName || EMPTY_TEXT}
-                </Link>
+                {row.displayName || EMPTY_TEXT}
               </span>
               <span className={styles.cellKey}>
                 <code className={styles.keyText}>{row.providerKey}</code>
@@ -262,6 +266,13 @@ export function ProvidersPage(props: {
         // 空态裸文字换 Semi Empty（默认插图 + 文案）。
         <Empty description={t('admin.noProviders')} />
       ) : null}
+      <ProviderEdit
+        alRoot={props.alRoot}
+        providerKey={editProvider?.providerKey}
+        onSave={() => setShowEdit(false)}
+        visible={showEdit}
+        onClose={() => setShowEdit(false)}
+      />
     </section>
   );
 }

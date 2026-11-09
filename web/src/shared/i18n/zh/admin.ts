@@ -267,7 +267,7 @@ export const admin = {
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': '删除',
   'admin.dragSortHandle': '拖拽排序',
-  'admin.callbackUrlLabel': '第三方登录回调地址：',
+  'admin.callbackUrlLabel': '回调地址：',
   'admin.oidcCallbackExactMatchNote': 'OIDC 类 Provider 回调需精确匹配',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
