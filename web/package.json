@@ -6,10 +6,7 @@
     "build": "modern build && node scripts/sync-templates.mjs",
     "serve": "modern serve",
     "sync:templates": "node scripts/sync-templates.mjs",
-    "prepare": "rs hooks",
-    "check": "rs check",
-    "lint": "rs lint",
-    "format": "rs fmt"
+    "check": "rs check"
   },
   "engines": {
     "node": "^22.18.0 || >=24.3.0"

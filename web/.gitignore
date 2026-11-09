@@ -28,3 +28,4 @@ log/
 **/*/typings/auto-generated
 
 modern.config.local.*
+!pnpm-lock.yaml
