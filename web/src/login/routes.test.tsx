@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 login-container.test.tsx 边界惯例），路由
@@ -58,17 +67,23 @@ const PASSWORD_METHOD = {
   fields: [
     {
       name: 'username',
-      label: '用户名/邮箱/手机号',
+      label: 'login.field.usernameOrIdentifier',
       type: 'text',
       required: true,
     },
-    { name: 'password', label: '密码', type: 'password', required: true },
+    {
+      name: 'password',
+      label: 'login.field.password',
+      type: 'password',
+      required: true,
+    },
   ],
 };
 
-function makeSnapshot(
-  flags?: { passwordReset?: boolean; registration?: boolean },
-): MethodsSnapshot {
+function makeSnapshot(flags?: {
+  passwordReset?: boolean;
+  registration?: boolean;
+}): MethodsSnapshot {
   return { flags, methods: [PASSWORD_METHOD] };
 }
 
@@ -146,9 +161,9 @@ describe('bootstrap（§4.1 行 375 / §1.5 行 98-99）', () => {
   test('normalizeStaticBase：补尾斜杠；CDN 绝对地址同口径（§1.5 行 99）', () => {
     expect(bootstrapMod.normalizeStaticBase('/assets')).toBe('/assets/');
     expect(bootstrapMod.normalizeStaticBase('/assets/')).toBe('/assets/');
-    expect(bootstrapMod.normalizeStaticBase('https://cdn.example.com/static')).toBe(
-      'https://cdn.example.com/static/',
-    );
+    expect(
+      bootstrapMod.normalizeStaticBase('https://cdn.example.com/static'),
+    ).toBe('https://cdn.example.com/static/');
   });
 });
 
@@ -281,9 +296,10 @@ describe('LoginApp：bootstrap 错误态与路由分派（§4.1 行 374-376）',
 // ---------------------------------------------------------------------------
 
 describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性（§2.1）', () => {
-  function renderPage(
-    flags?: { passwordReset?: boolean; registration?: boolean },
-  ): string {
+  function renderPage(flags?: {
+    passwordReset?: boolean;
+    registration?: boolean;
+  }): string {
     // LoginPage 纯组装（不读 window）；LoginContainer 消费 useSearchParams，
     // 直接渲染需 MemoryRouter 包裹（与生产 BrowserRouter 模式无关）。
     stubWindow(undefined);

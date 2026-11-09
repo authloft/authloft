@@ -228,7 +228,10 @@ export type Field = Message<"api.sso.v1.Field"> & {
   name: string;
 
   /**
-   * 展示文案（§1.3 行 114）。
+   * 展示文案的前端 i18n 键，如 login.field.password（§1.3 行 114）；
+   * 语言包在 web/src/shared/i18n/{zh,en}/login.ts，由 shared/components/
+   * FieldRenderer 渲染期 t() 解析。后端不持有任何语言文案；缺键时前端回显
+   * 键本身（可见、可排查），旧版本下发的中文字面量也按原文显示。
    *
    * @generated from field: string label = 2;
    */

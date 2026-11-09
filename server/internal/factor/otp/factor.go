@@ -228,7 +228,7 @@ func (f *Factor) formStep() *factor.StepResult {
 		Method: f.kind,
 		Fields: []factor.Field{{
 			Name:        "code",
-			Label:       "验证码",
+			Label:       "login.field.otpCode",
 			Type:        "otp",
 			Required:    true,
 			Length:      core.CodeLength,

@@ -8,13 +8,12 @@ package ssov1
 
 import (
 	v1 "authloft/gen/go/api/common/v1"
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -318,7 +317,10 @@ type Field struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 字段名，与请求体字段一致（§1.3 行 114）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// 展示文案（§1.3 行 114）。
+	// 展示文案的前端 i18n 键，如 login.field.password（§1.3 行 114）；
+	// 语言包在 web/src/shared/i18n/{zh,en}/login.ts，由 shared/components/
+	// FieldRenderer 渲染期 t() 解析。后端不持有任何语言文案；缺键时前端回显
+	// 键本身（可见、可排查），旧版本下发的中文字面量也按原文显示。
 	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
 	// 渲染类型，取值是 §1.11 行 317-335 的封闭集合；跨版本可新增，用 string 承载（§12.9 行 1754）。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`

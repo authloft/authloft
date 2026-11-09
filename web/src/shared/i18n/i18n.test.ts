@@ -124,6 +124,44 @@ describe('schema 字段文案契约（后端下发 i18n 键，文案只在本字
   });
 });
 
+describe('登录字段文案契约（后端下发 login.field.* 键）', () => {
+  const loginFieldKeys = Object.keys(zhCN).filter((key) =>
+    key.startsWith('login.field.'),
+  );
+
+  test('全部登录字段键在 zh / en 两套字典都可译（不回显键）', () => {
+    expect(loginFieldKeys.length).toBeGreaterThan(0);
+    for (const key of loginFieldKeys) {
+      expect(t(key)).not.toBe(key);
+      setLocale('en-US');
+      expect(t(key)).not.toBe(key);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('zh 译文与迁移前逐字一致（避免既有渲染断言 / UI 文案漂移）', () => {
+    expect(t('login.field.usernameOrIdentifier')).toBe('用户名/邮箱/手机号');
+    expect(t('login.field.password')).toBe('密码');
+    expect(t('login.field.captcha')).toBe('人机校验');
+    expect(t('login.field.otpCode')).toBe('验证码');
+    expect(t('login.field.recoveryCode')).toBe('恢复码');
+    expect(t('login.field.totpCode')).toBe('动态口令');
+    expect(t('login.field.phone')).toBe('手机号');
+    expect(t('login.field.email')).toBe('邮箱');
+    expect(t('login.field.username')).toBe('用户名');
+    setLocale('en-US');
+    expect(t('login.field.password')).toBe('Password');
+    setLocale('zh-CN');
+  });
+
+  test('兼容路径：旧版中文字面量 / 缺译键一律回显本身', () => {
+    expect(t('密码')).toBe('密码');
+    expect(t('login.field.notYetTranslated')).toBe(
+      'login.field.notYetTranslated',
+    );
+  });
+});
+
 describe('与 shared/api/errors.ts 的 i18nKey 契约（§1.6 / §1.5，不造第二套）', () => {
   test('FLOW_STATUS_TABLE（§1.6 全表 33 词）的 i18nKey 两套字典全部可译', () => {
     const resolutions = Object.values(FLOW_STATUS_TABLE);

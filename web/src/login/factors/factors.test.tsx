@@ -26,7 +26,7 @@ const { createElement } = React;
 /** 主因子 challenge 步目标字段（§2.1 行 390：otp_sms challengeFields）。 */
 const phoneField = create(FieldSchema, {
   name: 'phone',
-  label: '手机号',
+  label: 'login.field.phone',
   type: 'phone',
   required: true,
 });
@@ -185,7 +185,7 @@ describe('OTPForm verify 段（§2.6 行 546 payload {code}）', () => {
 describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
   const codeField = create(FieldSchema, {
     name: 'code',
-    label: '恢复码',
+    label: 'login.field.recoveryCode',
     type: 'text',
     required: true,
   });

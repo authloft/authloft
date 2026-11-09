@@ -19,9 +19,7 @@ import {
   CaptchaPayloadSchema,
   type CaptchaPayload,
 } from '../../gen/proto/api/sso/v1/login_pb';
-import {
-  CreateQrcodeResponseSchema,
-} from '../../gen/proto/api/sso/v1/ticket_pb';
+import { CreateQrcodeResponseSchema } from '../../gen/proto/api/sso/v1/ticket_pb';
 import { ChallengeStep } from './ChallengeStep';
 import { FormStep } from './FormStep';
 import {
@@ -112,14 +110,17 @@ describe('FormStep（kind=form 通用渲染，§4.2 行 424；totp 渲染落点 
   const totpFields = [
     create(FieldSchema, {
       name: 'code',
-      label: '动态口令',
+      label: 'login.field.totpCode',
       type: 'totp',
       required: true,
       length: BigInt(6),
     }),
   ];
 
-  function renderForm(props?: { loading?: boolean; disabled?: boolean }): string {
+  function renderForm(props?: {
+    loading?: boolean;
+    disabled?: boolean;
+  }): string {
     return renderToStaticMarkup(
       createElement(FormStep, {
         fields: totpFields,
@@ -198,7 +199,7 @@ describe('RedirectStep（§4.2 行 442）', () => {
 describe('ChallengeStep（§4.2 行 441）', () => {
   const phoneField = create(FieldSchema, {
     name: 'phone',
-    label: '手机号',
+    label: 'login.field.phone',
     type: 'phone',
     required: true,
   });
@@ -295,7 +296,8 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
       id: 'b7f3',
       answer: '123',
     });
-    const requests: Array<{ providerKey: string; captcha: CaptchaPayload }> = [];
+    const requests: Array<{ providerKey: string; captcha: CaptchaPayload }> =
+      [];
     const qr = await qrcodeRequester('scan', {
       getToken: () => payload,
       request: async (req) => {
@@ -338,7 +340,11 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     const calls: string[] = [];
     const nav = (url: string) => calls.push(url);
     // 合法 returnTo（/account# 前缀白名单）→ 放行。
-    completeLogin(create(LoginFlowResponseSchema, {}), nav, '/account#/security');
+    completeLogin(
+      create(LoginFlowResponseSchema, {}),
+      nav,
+      '/account#/security',
+    );
     // 站外值 → 回落默认落点（防开放重定向）。
     completeLogin(
       create(LoginFlowResponseSchema, {}),

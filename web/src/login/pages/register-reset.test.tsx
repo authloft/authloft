@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 login-container.test.tsx / routes.test.tsx 边界
@@ -88,9 +97,19 @@ const REGISTER_SNAPSHOT: MethodsSnapshot = {
       usage: ['primary'],
       steps: ['form'],
       fields: [
-        { name: 'username', label: '用户名', type: 'text', required: true },
-        { name: 'password', label: '密码', type: 'password', required: true },
-        { name: 'captcha', label: '人机校验', type: 'captcha' },
+        {
+          name: 'username',
+          label: 'login.field.username',
+          type: 'text',
+          required: true,
+        },
+        {
+          name: 'password',
+          label: 'login.field.password',
+          type: 'password',
+          required: true,
+        },
+        { name: 'captcha', label: 'login.field.captcha', type: 'captcha' },
       ],
     },
     {
@@ -98,7 +117,12 @@ const REGISTER_SNAPSHOT: MethodsSnapshot = {
       usage: ['primary'],
       steps: ['challenge', 'form'],
       challengeFields: [
-        { name: 'phone', label: '手机号', type: 'phone', required: true },
+        {
+          name: 'phone',
+          label: 'login.field.phone',
+          type: 'phone',
+          required: true,
+        },
       ],
       codeLength: '6',
       resendAfter: '60',
@@ -109,7 +133,12 @@ const REGISTER_SNAPSHOT: MethodsSnapshot = {
       usage: ['primary'],
       steps: ['challenge', 'form'],
       challengeFields: [
-        { name: 'email', label: '邮箱', type: 'email', required: true },
+        {
+          name: 'email',
+          label: 'login.field.email',
+          type: 'email',
+          required: true,
+        },
       ],
       codeLength: '6',
       resendAfter: '60',
@@ -122,10 +151,7 @@ const REGISTER_SNAPSHOT: MethodsSnapshot = {
 const RESET_SNAPSHOT: MethodsSnapshot = {
   flags: { passwordReset: true },
   captcha: IMAGE_CAPTCHA,
-  methods: [
-    REGISTER_SNAPSHOT.methods[1],
-    REGISTER_SNAPSHOT.methods[2],
-  ],
+  methods: [REGISTER_SNAPSHOT.methods[1], REGISTER_SNAPSHOT.methods[2]],
 };
 
 function envelope(init: Record<string, unknown>): LoginFlowResponse {
@@ -214,7 +240,10 @@ describe('registerFirstStep / advanceAfterStep（§2.3 行 451 / §10.3-10.4 序
     expect(pagesMod.advanceAfterStep('verify', next)).toBe('set_password');
     // 非 next（失败态 / captcha_required）不推进；set_password 后的 next 防御不推进。
     expect(
-      pagesMod.advanceAfterStep('challenge', envelope({ status: 'captcha_required' })),
+      pagesMod.advanceAfterStep(
+        'challenge',
+        envelope({ status: 'captcha_required' }),
+      ),
     ).toBeUndefined();
     expect(pagesMod.advanceAfterStep('set_password', next)).toBeUndefined();
   });
@@ -339,7 +368,9 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
       ),
     ).toBe('https://sync.test/first');
     expect(
-      pagesMod.flowTerminalUrl(envelope({ redirectTo: 'https://app.test/home' })),
+      pagesMod.flowTerminalUrl(
+        envelope({ redirectTo: 'https://app.test/home' }),
+      ),
     ).toBe('https://app.test/home');
     expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account#/profile');
   });
@@ -387,7 +418,9 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
     rs.stubGlobal('window', {
       __AUTHLOFT_INIT__: { al_root: 'https://uc.test/' },
     });
-    expect(pagesMod.ssoPath('/sso/register')).toBe('https://uc.test/sso/register');
+    expect(pagesMod.ssoPath('/sso/register')).toBe(
+      'https://uc.test/sso/register',
+    );
     rs.stubGlobal('window', { __AUTHLOFT_INIT__: { al_root: '/authloft' } });
     expect(pagesMod.ssoPath('/sso/reset')).toBe('/authloft/sso/reset');
     rs.stubGlobal('window', {});
@@ -526,14 +559,20 @@ describe('RegisterPageView 状态帧渲染', () => {
   test('success：跳转中文案（终点由 api 层信封处理）', () => {
     const markup = renderRegisterView({
       status: 'success',
-      envelope: envelope({ status: 'success', redirectTo: 'https://app.test/' }),
+      envelope: envelope({
+        status: 'success',
+        redirectTo: 'https://app.test/',
+      }),
     });
     expect(markup).toContain('注册成功，正在跳转');
     expect(markup).not.toContain('<form');
   });
 
   test('P1-3：set_password 段确认密码 + 密码显隐（PasswordField）', () => {
-    const markup = renderRegisterView({ method: 'password', step: 'set_password' });
+    const markup = renderRegisterView({
+      method: 'password',
+      step: 'set_password',
+    });
     expect(markup).toContain('确认密码'); // login.confirmPasswordLabel
     expect(markup).toContain('name="password_confirm"');
     expect(markup).toContain('>显示</button>'); // 显隐切换（common.reveal）
@@ -599,7 +638,9 @@ describe('ResetPageView 状态帧渲染', () => {
     const markup = renderToStaticMarkup(
       createElement(
         resetMod.ResetPageView,
-        viewProps({ snapshot: { flags: { passwordReset: true }, methods: [] } }) as never,
+        viewProps({
+          snapshot: { flags: { passwordReset: true }, methods: [] },
+        }) as never,
       ),
     );
     expect(markup).toContain('找回密码未开放');
@@ -698,7 +739,14 @@ describe('注册链路（msw 全链，§10.3）', () => {
       nextStep: {
         kind: 'form',
         method: 'otp_email',
-        fields: [{ name: 'code', label: '验证码', type: 'otp', length: '6' }],
+        fields: [
+          {
+            name: 'code',
+            label: 'login.field.otpCode',
+            type: 'otp',
+            length: '6',
+          },
+        ],
         retryAfter: '60',
       },
     });
@@ -713,7 +761,9 @@ describe('注册链路（msw 全链，§10.3）', () => {
     if (!first.ok) return;
     expect(first.envelope.status).toBe('next');
     expect(getLoginToken()).toBe('reg-tok-1'); // §1.3 行 145 无条件覆盖
-    expect(pagesMod.advanceAfterStep('challenge', first.envelope)).toBe('verify');
+    expect(pagesMod.advanceAfterStep('challenge', first.envelope)).toBe(
+      'verify',
+    );
     expect(JSON.parse(raws[0])).toEqual({
       method: 'otp_email',
       step: 'challenge',
@@ -852,7 +902,11 @@ describe('重置链路（msw 全链，§10.4）', () => {
       );
 
     // 1. challenge：必须 captcha（§2.5 行 528）。
-    respond({ status: 'next', loginToken: 'reset-tok-1', nextStep: { kind: 'form' } });
+    respond({
+      status: 'next',
+      loginToken: 'reset-tok-1',
+      nextStep: { kind: 'form' },
+    });
     const first = await pagesMod.runFlowStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'challenge',
@@ -879,7 +933,11 @@ describe('重置链路（msw 全链，§10.4）', () => {
     });
 
     // 2. verify。
-    respond({ status: 'next', loginToken: 'reset-tok-2', nextStep: { kind: 'form' } });
+    respond({
+      status: 'next',
+      loginToken: 'reset-tok-2',
+      nextStep: { kind: 'form' },
+    });
     const second = await pagesMod.runFlowStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'verify',
@@ -902,7 +960,9 @@ describe('重置链路（msw 全链，§10.4）', () => {
     const third = await pagesMod.runFlowStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'set_password',
-      payload: resetMod.resetPayloadFor('set_password', { password: 'NewAbc12' }),
+      payload: resetMod.resetPayloadFor('set_password', {
+        password: 'NewAbc12',
+      }),
     });
     expect(third.ok).toBe(true);
     expect(getLoginToken()).toBe('');

@@ -77,4 +77,20 @@ export const login = {
   'login.initMissing': '初始化数据缺失，请刷新重试',
   'login.routeNotFound': '页面不存在',
   'login.renderError': '页面出现异常，请刷新重试',
+
+  // ---- 后端下发字段文案（sso.v1.Field.label / 注入快照 SnapshotField.label）----
+  // 登录流程的 factor.Field、pages.SnapshotField、orchestrator.FieldSnapshot
+  // 只下发 login.field.* 键，文案一律放本字典；由 shared/components/
+  // FieldRenderer 渲染期 t() 解析。与 admin 侧 admin.schemaField.* 同口径，
+  // 但按分域收敛到 login 模块。缺键时 t() 回显键本身（旧版后端的中文字面量
+  // 也按原文显示），故 zh 译文与迁移前逐字一致。
+  'login.field.usernameOrIdentifier': '用户名/邮箱/手机号',
+  'login.field.password': '密码',
+  'login.field.captcha': '人机校验',
+  'login.field.otpCode': '验证码',
+  'login.field.recoveryCode': '恢复码',
+  'login.field.totpCode': '动态口令',
+  'login.field.phone': '手机号',
+  'login.field.email': '邮箱',
+  'login.field.username': '用户名',
 };

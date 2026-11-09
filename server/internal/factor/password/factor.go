@@ -126,12 +126,13 @@ func (f *Factor) Start(*factor.FactorContext) (*factor.StepResult, error) {
 	return &factor.StepResult{
 		Kind:   factor.StepForm,
 		Method: factor.FactorPassword,
+		// Label 是前端 i18n 键（login.field.*，见 factor.Field 契约），不下发文案。
 		Fields: []factor.Field{
-			{Name: "username", Label: "用户名/邮箱/手机号", Type: "text", Required: true},
-			{Name: "password", Label: "密码", Type: "password", Required: true},
+			{Name: "username", Label: "login.field.usernameOrIdentifier", Type: "text", Required: true},
+			{Name: "password", Label: "login.field.password", Type: "password", Required: true},
 			// 人机校验按 §8.1 由 captcha/gate.go 统一拦截（§9.3 唯一拦截点），
 			// 该字段仅在触发后必填。
-			{Name: "captcha", Label: "人机校验", Type: "captcha", Required: false},
+			{Name: "captcha", Label: "login.field.captcha", Type: "captcha", Required: false},
 		},
 	}, nil
 }

@@ -63,7 +63,7 @@ func (f *Factor) Start(*factor.FactorContext) (*factor.StepResult, error) {
 	return &factor.StepResult{
 		Kind:   factor.StepForm,
 		Method: factor.FactorTOTP,
-		Fields: []factor.Field{{Name: "code", Label: "动态口令", Type: "totp", Required: true, Length: codeLength}},
+		Fields: []factor.Field{{Name: "code", Label: "login.field.totpCode", Type: "totp", Required: true, Length: codeLength}},
 	}, nil
 }
 

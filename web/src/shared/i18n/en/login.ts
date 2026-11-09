@@ -66,13 +66,31 @@ export const login: typeof zhLogin = {
   'login.passkeyCancelled': 'Passkey verification cancelled',
   'login.passkeyFailed': 'Passkey verification failed. Please try again',
   // 评审 P2-9: redirect failure message carries the provider display name.
-  'login.oauthRedirectFailed': 'Could not redirect to {provider}. Please try again',
+  'login.oauthRedirectFailed':
+    'Could not redirect to {provider}. Please try again',
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': 'Please complete the verification first',
   'login.fetchQrcodeAction': 'Get QR code',
   'login.redirectInProgress': 'Redirecting…',
-  'login.initMissing': 'Initialization data is missing. Please refresh and try again',
+  'login.initMissing':
+    'Initialization data is missing. Please refresh and try again',
   'login.routeNotFound': 'Page not found',
-  'login.renderError': 'This page hit an unexpected error. Please refresh and try again',
+  'login.renderError':
+    'This page hit an unexpected error. Please refresh and try again',
+
+  // ---- Backend-supplied field copy (sso.v1.Field.label / snapshot labels) ----
+  // The login flow only sends login.field.* keys; all wording lives here and is
+  // resolved by shared/components/FieldRenderer via t() at render time. Same
+  // contract as admin.schemaField.* on the admin side, scoped to the login
+  // dictionary. Missing keys echo themselves (legacy Chinese literals too).
+  'login.field.usernameOrIdentifier': 'Username / email / phone',
+  'login.field.password': 'Password',
+  'login.field.captcha': 'Captcha',
+  'login.field.otpCode': 'Verification code',
+  'login.field.recoveryCode': 'Recovery code',
+  'login.field.totpCode': 'Authenticator code',
+  'login.field.phone': 'Phone number',
+  'login.field.email': 'Email',
+  'login.field.username': 'Username',
 };

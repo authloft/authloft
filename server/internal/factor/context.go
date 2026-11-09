@@ -75,6 +75,10 @@ type FactorContext struct {
 }
 
 // Field 渲染侧输入字段描述（接口文档 §1.3 行 114、§1.11）。
+// Label 不是展示文案，而是前端 i18n 键（login.field.*，语言包在
+// web/src/shared/i18n/{zh,en}/login.ts，由 shared/components/FieldRenderer
+// 渲染期 t() 解析）；后端各因子声明里一律不写中文文案。缺键时 t() 回显键
+// 本身，旧版本下发的中文字面量也按原文显示。
 type Field struct {
 	Name        string
 	Label       string

@@ -31,6 +31,7 @@ const (
 const categoryOAuth = "oauth"
 
 // SnapshotField 渲染字段（§2.1 行 384-394、§1.11 type 封闭集合）。
+// Label 是前端 i18n 键（login.field.*，见 factor.Field 契约），不是展示文案。
 type SnapshotField struct {
 	Name     string `json:"name"`
 	Label    string `json:"label,omitempty"`
@@ -75,9 +76,9 @@ type snapshotFlags struct {
 // MethodsSnapshot __AUTHLOFT_INIT__.methods 的值（§2.1 行 370-402）。
 // captcha.Config 字段名与 §2.5 唯一定义一致（providerKey / type / siteKey）。
 type MethodsSnapshot struct {
-	Flags   snapshotFlags `json:"flags"`
+	Flags   snapshotFlags  `json:"flags"`
 	Captcha captcha.Config `json:"captcha"`
-	Methods []MethodEntry `json:"methods"`
+	Methods []MethodEntry  `json:"methods"`
 }
 
 // buildMethods 组装快照。login 流读不到 login_methods（settings 缺键）即
@@ -206,15 +207,15 @@ func (h *Handler) factorEntry(f factor.Factor) MethodEntry {
 	switch f.Kind() {
 	case factor.FactorPassword:
 		e.Fields = []SnapshotField{
-			{Name: "username", Label: "用户名/邮箱/手机号", Type: "text", Required: true},
-			{Name: "password", Label: "密码", Type: "password", Required: true},
-			{Name: "captcha", Label: "人机校验", Type: "captcha", Required: false},
+			{Name: "username", Label: "login.field.usernameOrIdentifier", Type: "text", Required: true},
+			{Name: "password", Label: "login.field.password", Type: "password", Required: true},
+			{Name: "captcha", Label: "login.field.captcha", Type: "captcha", Required: false},
 		}
 	case factor.FactorOTPSMS:
-		e.ChallengeFields = []SnapshotField{{Name: "phone", Label: "手机号", Type: "phone", Required: true}}
+		e.ChallengeFields = []SnapshotField{{Name: "phone", Label: "login.field.phone", Type: "phone", Required: true}}
 		e.CodeLength, e.ResendAfter, e.ExpiresIn = h.otpParams()
 	case factor.FactorOTPEmail:
-		e.ChallengeFields = []SnapshotField{{Name: "email", Label: "邮箱", Type: "email", Required: true}}
+		e.ChallengeFields = []SnapshotField{{Name: "email", Label: "login.field.email", Type: "email", Required: true}}
 		e.CodeLength, e.ResendAfter, e.ExpiresIn = h.otpParams()
 	case factor.FactorWebAuthn:
 		e.Capability = "window.PublicKeyCredential"

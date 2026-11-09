@@ -31,7 +31,7 @@ var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 const credentialKindPassword = "password"
 
 // ThirdpartySignup 三方免密建号步的 provider 状态查询与绑定写入子集
-//（§12.5 行 1504；实现方 service.Thirdparty，装配层注入——thirdparty 域
+// （§12.5 行 1504；实现方 service.Thirdparty，装配层注入——thirdparty 域
 // 单一写入口，与 LoginOauth 的 auto_bind 写入共用 CreateBind）。
 type ThirdpartySignup interface {
 	// SignupState 返回 provider 的 enable_signup（建号开关，§2.7.5 行 678
@@ -353,10 +353,10 @@ func (sp *SetPassDeps) passwordCredential(password string) (*model.UserCredentia
 		now = sp.Now()
 	}
 	return &model.UserCredential{
-		Kind:       credentialKindPassword,
-		Secret:     []byte(hash),
-		IsEnabled:  1,
-		UpdatedAt:  now,
+		Kind:      credentialKindPassword,
+		Secret:    []byte(hash),
+		IsEnabled: 1,
+		UpdatedAt: now,
 	}, nil
 }
 
@@ -410,11 +410,11 @@ func (sp *SetPassDeps) policy() security.PasswordPolicy {
 // §2.4 行 467 reset 仅 password）。
 func setPasswordForm(flow string) *factor.StepResult {
 	fields := []factor.Field{
-		{Name: "password", Label: "密码", Type: "password", Required: true},
+		{Name: "password", Label: "login.field.password", Type: "password", Required: true},
 	}
 	if flow == "register" {
 		fields = append([]factor.Field{{
-			Name: "username", Label: "用户名", Type: "text", Required: true, Length: 20,
+			Name: "username", Label: "login.field.username", Type: "text", Required: true, Length: 20,
 		}}, fields...)
 	}
 	return &factor.StepResult{Kind: factor.StepForm, Fields: fields}

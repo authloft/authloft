@@ -38,7 +38,8 @@ type ThirdPartyProviderLister interface {
 	ListLoginProviders(ctx context.Context) ([]ThirdPartyProvider, error)
 }
 
-// FieldSnapshot 是前端要渲染的字段（§2.1）。
+// FieldSnapshot 是前端要渲染的字段（§2.1）。Label 是前端 i18n 键
+// （login.field.*，见 factor.Field 契约），不是展示文案。
 type FieldSnapshot struct {
 	Name     string `json:"name"`
 	Label    string `json:"label,omitempty"`
@@ -151,9 +152,9 @@ func (b *MethodsBuilder) method(kind factor.FactorKind) MethodSnapshot {
 		m.Usage = []string{string(factor.UsagePrimary)}
 		m.Steps = []string{string(factor.StepForm)}
 		m.Fields = []FieldSnapshot{
-			{Name: "username", Label: "用户名/邮箱/手机号", Type: "text", Required: true},
-			{Name: "password", Label: "密码", Type: "password", Required: true},
-			{Name: "captcha", Label: "人机校验", Type: "captcha", Required: false},
+			{Name: "username", Label: "login.field.usernameOrIdentifier", Type: "text", Required: true},
+			{Name: "password", Label: "login.field.password", Type: "password", Required: true},
+			{Name: "captcha", Label: "login.field.captcha", Type: "captcha", Required: false},
 		}
 	case factor.FactorOTPSMS, factor.FactorOTPEmail:
 		m.Usage = []string{string(factor.UsagePrimary), string(factor.UsageSecondary)}

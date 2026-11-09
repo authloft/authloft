@@ -141,21 +141,21 @@ describe('FieldRenderer 渲染（正常 + 边界）', () => {
     const fields = [
       makeField({
         name: 'username',
-        label: '用户名',
+        label: 'login.field.username',
         type: 'text',
         required: true,
       }),
       makeField({
         name: 'password',
-        label: '密码',
+        label: 'login.field.password',
         type: 'password',
         required: true,
       }),
-      makeField({ name: 'phone', label: '手机号', type: 'phone' }),
-      makeField({ name: 'email', label: '邮箱', type: 'email' }),
+      makeField({ name: 'phone', label: 'login.field.phone', type: 'phone' }),
+      makeField({ name: 'email', label: 'login.field.email', type: 'email' }),
       makeField({
         name: 'code',
-        label: '验证码',
+        label: 'login.field.otpCode',
         type: 'otp',
         length: BigInt(6),
       }),
@@ -190,7 +190,7 @@ describe('FieldRenderer 渲染（正常 + 边界）', () => {
     const markup = renderFields([
       makeField({
         name: 'code',
-        label: '动态口令',
+        label: 'login.field.totpCode',
         type: 'totp',
         length: BigInt(8),
       }),
@@ -206,12 +206,24 @@ describe('FieldRenderer 渲染（正常 + 边界）', () => {
   test('边界：captcha 不走通用输入渲染（§1.11 由 CaptchaWidget 承接）', () => {
     expect(
       renderFields([
-        makeField({ name: 'captcha', label: '人机校验', type: 'captcha' }),
+        makeField({
+          name: 'captcha',
+          label: 'login.field.captcha',
+          type: 'captcha',
+        }),
       ]),
     ).toBe('');
     const markup = renderFields([
-      makeField({ name: 'username', label: '用户名', type: 'text' }),
-      makeField({ name: 'captcha', label: '人机校验', type: 'captcha' }),
+      makeField({
+        name: 'username',
+        label: 'login.field.username',
+        type: 'text',
+      }),
+      makeField({
+        name: 'captcha',
+        label: 'login.field.captcha',
+        type: 'captcha',
+      }),
     ]);
     expect(markup).toContain('name="username"');
     expect(markup).not.toContain('name="captcha"');
@@ -228,10 +240,45 @@ describe('FieldRenderer 渲染（正常 + 边界）', () => {
   });
 });
 
+describe('FieldRenderer 字段文案 i18n 化（后端只下发键）', () => {
+  test('login.field.* 键渲染期取译文；未知字面量回显原文（旧版后端兼容）', () => {
+    const markup = renderFields([
+      makeField({
+        name: 'password',
+        label: 'login.field.password',
+        type: 'password',
+        required: true,
+      }),
+      makeField({ name: 'legacy', label: '自定义字段', type: 'text' }),
+    ]);
+    expect(markup).toContain('密码 *');
+    expect(markup).toContain('自定义字段');
+    // 键本身不得出现在最终渲染（缺译才回显，见上一条）。
+    expect(markup).not.toContain('login.field.password');
+  });
+
+  test('code 控件的 aria-label 同样走 t() 取译文', () => {
+    const markup = renderFields([
+      makeField({
+        name: 'code',
+        label: 'login.field.otpCode',
+        type: 'otp',
+        length: BigInt(6),
+      }),
+    ]);
+    expect(markup).toContain('aria-label="验证码"');
+    expect(markup).not.toContain('aria-label="login.field.otpCode"');
+  });
+});
+
 describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）', () => {
   test('label htmlFor ↔ 控件 id 稳定关联（默认前缀 fr-，可用 idPrefix 覆盖防撞）', () => {
     const markup = renderFields([
-      makeField({ name: 'username', label: '用户名', type: 'text' }),
+      makeField({
+        name: 'username',
+        label: 'login.field.username',
+        type: 'text',
+      }),
       makeField({ name: 'agree', label: '同意条款', type: 'checkbox' }),
       makeField({ name: 'region', label: '区域', type: 'select' }),
       makeField({ name: 'mapping', label: '映射', type: 'json' }),
@@ -244,7 +291,13 @@ describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）'
     expect(markup).toContain('id="fr-region"');
     expect(markup).toContain('id="fr-mapping"');
     const custom = renderFields(
-      [makeField({ name: 'username', label: '用户名', type: 'text' })],
+      [
+        makeField({
+          name: 'username',
+          label: 'login.field.username',
+          type: 'text',
+        }),
+      ],
       {},
       { idPrefix: 'mfa' },
     );
@@ -255,7 +308,11 @@ describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）'
 
   test('无错误时不标 aria-invalid / 不渲染错误槽', () => {
     const markup = renderFields([
-      makeField({ name: 'username', label: '用户名', type: 'text' }),
+      makeField({
+        name: 'username',
+        label: 'login.field.username',
+        type: 'text',
+      }),
     ]);
     expect(markup).not.toContain('aria-invalid');
     expect(markup).not.toContain('aria-describedby');
@@ -264,7 +321,13 @@ describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）'
 
   test('命中 errors：错误槽渲染 + aria-invalid + aria-describedby 指向错误槽', () => {
     const markup = renderFields(
-      [makeField({ name: 'username', label: '用户名', type: 'text' })],
+      [
+        makeField({
+          name: 'username',
+          label: 'login.field.username',
+          type: 'text',
+        }),
+      ],
       { username: 'alice' },
       { errors: { username: '该用户名已被占用' } },
     );
@@ -279,7 +342,7 @@ describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）'
       [
         makeField({
           name: 'code',
-          label: '验证码',
+          label: 'login.field.otpCode',
           type: 'otp',
           length: BigInt(6),
         }),

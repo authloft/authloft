@@ -73,7 +73,7 @@ func (f *Factor) Start(*factor.FactorContext) (*factor.StepResult, error) {
 	return &factor.StepResult{
 		Kind:   factor.StepForm,
 		Method: factor.FactorRecovery,
-		Fields: []factor.Field{{Name: "code", Label: "恢复码", Type: "text", Required: true}},
+		Fields: []factor.Field{{Name: "code", Label: "login.field.recoveryCode", Type: "text", Required: true}},
 	}, nil
 }
 

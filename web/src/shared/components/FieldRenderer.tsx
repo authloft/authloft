@@ -7,6 +7,12 @@
  * 受控组件：值由调用方以 values 注入、经 onChange(name, value) 上抛，
  * 组件不持有业务状态（secret 的「显示 / 隐藏」是本地 UI 态，非业务值）。
  * 分派逻辑抽为纯函数 controlKindFor / codeLengthOf（node 环境测试覆盖）。
+ *
+ * 【字段文案 i18n 化】后端下发的 Field.label 不是展示文案，而是 i18n 键
+ * （login.field.*，语言包在 shared/i18n/{zh,en}/login.ts）；本组件是该字段的
+ * 唯一渲染消费点（label 文本 + code 控件的 aria-label），一律渲染期 t() 取
+ * 文案，不在模块级求值以免冻结在默认语言。t() 缺键回显键本身：旧版本后端
+ * 仍下发中文字面量时按原文显示、新增字段缺译可见，均不返回 undefined。
  */
 import { useState, type ReactNode } from 'react';
 import type { Field } from '../../gen/proto/api/sso/v1/envelope_pb';
@@ -182,7 +188,7 @@ function FieldControl({
           value={value}
           onChange={emit}
           length={codeLengthOf(field)}
-          ariaLabel={field.label}
+          ariaLabel={t(field.label)}
           id={inputId}
           ariaInvalid={hasError}
           ariaDescribedBy={hasError ? errorId : undefined}
@@ -254,7 +260,7 @@ function FieldControl({
   return (
     <div className={styles.field}>
       <label className={styles.label} htmlFor={inputId}>
-        {field.label}
+        {t(field.label)}
         {field.required ? ' *' : ''}
       </label>
       {control}
