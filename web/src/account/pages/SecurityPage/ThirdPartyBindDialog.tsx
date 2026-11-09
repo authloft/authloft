@@ -33,28 +33,28 @@ import {
   type RefObject,
 } from 'react';
 import { Button, Modal } from '@douyinfe/semi-ui';
-import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
-import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
-import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
+import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
+import type { LoginFlowResponse } from '../../../gen/proto/api/sso/v1/envelope_pb';
+import type { CreateQrcodeResponse } from '../../../gen/proto/api/sso/v1/ticket_pb';
 import {
   CaptchaWidget,
   type CaptchaWidgetHandle,
-} from '../../shared/captcha/CaptchaWidget';
+} from '../../../shared/captcha/CaptchaWidget';
 import {
   createQRPanelController,
   MAX_POLL_SECONDS,
   QRCodePanelView,
   type QRPanelController,
   type QRPanelPhase,
-} from '../../shared/components/QRCodePanel';
-import { createQrcode } from '../../shared/api/sso';
-import { t } from '../../shared/i18n';
+} from '../../../shared/components/QRCodePanel';
+import { createQrcode } from '../../../shared/api/sso';
+import { t } from '../../../shared/i18n';
 import {
   bindPollPhase,
   buildCreateQrcodeBindRequest,
   buildGetThirdpartyTicketRequest,
   getThirdpartyTicket,
-} from '../api';
+} from '../../api';
 import styles from './ThirdPartyBindDialog.module.less';
 
 /** 面板体 props（started 后挂载；controller 生命周期与卸载中断绑定）。 */

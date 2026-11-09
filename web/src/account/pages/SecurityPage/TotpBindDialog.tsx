@@ -32,18 +32,18 @@ import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui';
 import {
   CodeInput,
   DEFAULT_CODE_LENGTH,
-} from '../../shared/components/CodeInput';
-import { CopyButton } from '../../shared/components/CopyButton';
-import { QrImage } from '../../shared/components/QrImage';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
+} from '../../../shared/components/CodeInput';
+import { CopyButton } from '../../../shared/components/CopyButton';
+import { QrImage } from '../../../shared/components/QrImage';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { t } from '../../../shared/i18n';
 import {
   accountReturnTo,
   apiErrorText,
   bindTotp,
   buildBindTotpChallengeRequest,
   buildBindTotpVerifyRequest,
-} from '../api';
+} from '../../api';
 import { RecoveryCodePanel } from './RecoveryCodePanel';
 import styles from './TotpBindDialog.module.less';
 

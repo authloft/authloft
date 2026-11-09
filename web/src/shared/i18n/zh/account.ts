@@ -18,17 +18,28 @@ export const account = {
   'account.backToHome': '返回个人中心',
   'account.renderError': '页面出现异常，请刷新重试',
 
-  // ---- SecurityPage（「通行密钥」卡片题复用 factors.webauthn）-------------
+  // ---- SecurityPage（「通行密钥」行题复用 factors.webauthn）-------------
   'account.configLoadFailed': '配置加载失败，请刷新重试',
   'account.close': '关闭',
-  'account.twoFactorTitle': '两步验证',
-  'account.mfaEnabledStatus': '已开启两步验证',
-  'account.mfaDisabledStatus': '未开启两步验证',
-  'account.mfaRequiredNote': '（策略强制开启，不可关闭）',
-  'account.trustDeviceNote': '信任设备：暂不支持（每次登录均需二次验证）',
   'account.loginMethodTitle': '登录方式',
-  'account.contactCardTitle': '联系方式',
   'account.thirdpartyCardTitle': '第三方账号',
+  'account.passwordLabel': '密码',
+  'account.passwordChangeHint': '建议定期更换',
+  'account.passwordNotSet': '未设置',
+  'account.goBindAction': '去绑定',
+  'account.rebindAction': '换绑',
+  'account.setPasswordFirst': '请先设置密码',
+  'account.bindPhoneTitle': '绑定手机号',
+  'account.bindEmailTitle': '绑定邮箱',
+  'account.mfaSectionTitle': '双因素认证',
+  'account.mfaUnbindConfirm':
+    '确定解绑「{factor}」？解绑后登录时将不再要求该因子验证。',
+  'account.mfaUnbindSuccess': '已解绑{factor}',
+  'account.webauthnBoundCount': '已绑定 {count} 个',
+  'account.webauthnViewBound': '查看已绑定',
+  'account.addAction': '新增',
+  'account.webauthnAddTitle': '新增通行密钥',
+  'account.webauthnRegisterSuccess': '通行密钥注册成功',
 
   // ---- ProfilePage ---------------------------------------------------------
   'account.profileLoadFailed': '资料加载失败，请刷新重试',
@@ -69,28 +80,14 @@ export const account = {
   // 下载为文本（P2-3，纯前端 Blob 下载）。
   'account.recoveryDownload': '下载为文本',
 
-  // ---- MfaMethodList（因子名复用 factors.*，「恢复码」弹窗题复用
-  //      factors.recovery_code，「绑定」按钮复用 account.bindAction，「尚未绑定」
-  //      复用 account.mfaNotBound，「 · 最近使用 {time}」复用 account.mfaLastUsedAt）--
-  // ---- MfaMethodList 交互重构（Tag 承载状态 + 动作按钮 + 行内摘要 +
-  //      低余量提示 + 成功 Toast；Checkbox 启用开关已删除）------------------
-  'account.mfaEnableAction': '启用',
-  'account.mfaDisableAction': '停用',
-  'account.mfaDisableConfirm':
-    '确定停用「{factor}」？停用后登录时将不再要求完成该因子验证。',
-  'account.factorDisabledTag': '已停用',
+  // ---- MfaSetting（MFA + 恢复码合并行；因子名复用 factors.*，「恢复码」
+  //      弹窗题复用 factors.recovery_code，「绑定」按钮复用 account.bindAction）--
   'account.mfaEnabledSuccess': '已启用{factor}',
-  'account.mfaDisabledSuccess': '已停用{factor}',
-  'account.recoveryLowWarning': '恢复码仅剩 {count} 个',
   'account.recoveryRegenerateSuccess': '恢复码已重新生成，旧码全部作废',
   'account.factorTotp': 'TOTP 动态码',
   'account.factorBoundTag': '已绑定',
   'account.factorUnboundTag': '未绑定',
-  'account.mfaBindPhoneHint': '请先在「联系方式」中绑定手机号',
-  'account.mfaBindEmailHint': '请先在「联系方式」中绑定邮箱',
-  'account.mfaBindWebauthnHint': '请先在下方「通行密钥」中注册',
   'account.mfaLocked': '策略要求开启两步验证，不可全部关闭',
-  'account.mfaDetailsLoadFailed': '明细加载失败，{error}',
   'account.viewRecoveryCodes': '查看恢复码',
   'account.recoveryLoadFailed': '恢复码加载失败',
 

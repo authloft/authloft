@@ -17,27 +17,27 @@ import { useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { Button, Input } from '@douyinfe/semi-ui';
-import type { OkResponse } from '../../gen/proto/api/account/v1/profile_pb';
+import type { OkResponse } from '../../../gen/proto/api/account/v1/profile_pb';
 import type {
   BindEmailRequest,
   BindPhoneRequest,
-} from '../../gen/proto/api/account/v1/security_pb';
-import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
+} from '../../../gen/proto/api/account/v1/security_pb';
+import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
 import {
   CaptchaWidget,
   type CaptchaWidgetHandle,
-} from '../../shared/captcha/CaptchaWidget';
+} from '../../../shared/captcha/CaptchaWidget';
 import {
   CodeInput,
   DEFAULT_CODE_LENGTH,
-} from '../../shared/components/CodeInput';
+} from '../../../shared/components/CodeInput';
 import {
   deriveRequestStatus,
   type RequestStatus,
-} from '../../shared/hooks/deriveRequestStatus';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { useCountdown } from '../../shared/hooks/useCountdown';
-import { t } from '../../shared/i18n';
+} from '../../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { useCountdown } from '../../../shared/hooks/useCountdown';
+import { t } from '../../../shared/i18n';
 import {
   accountReturnTo,
   apiErrorText,
@@ -48,7 +48,7 @@ import {
   getProfile,
   type ContactBindChallengeError,
   type ContactBindKind,
-} from '../api';
+} from '../../api';
 import styles from './ContactBindForm.module.less';
 
 /** 三步状态机（§3.4 两步 + 成功帧）。 */
@@ -214,12 +214,8 @@ export function ContactBindFormView(props: {
           disabled={challenging}
         />
       </div>
-      {/* captcha 必过（§3.4 行 880）：提交前 getToken，未就绪不发包。
-          A-2：同屏两个表单各常驻一个 CaptchaWidget 视觉打架——改为目标非空
-          （本表单进入填写态）时才挂载，未填写时不渲染。 */}
-      {props.target.trim() !== '' ? (
-        <CaptchaWidget captcha={props.captcha} ref={props.captchaRef} />
-      ) : null}
+      {/* captcha 必过（§3.4 行 880）：提交前 getToken，未就绪不发包。 */}
+      <CaptchaWidget captcha={props.captcha} ref={props.captchaRef} />
       {props.inputError !== undefined ? (
         <p role="alert" className={styles.error}>
           {inputErrorText(props.kind, props.inputError)}

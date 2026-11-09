@@ -55,6 +55,7 @@ import {
   runInlineToggle,
 } from '../shared/app-ui/dataTableLogic';
 import type { QRPanelPhase } from '../shared/components/QRCodePanel';
+import { SettingList } from '../shared/components/SettingList';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
 import { loginUrl, sanitizeReturnTo } from '../shared/urls';
@@ -217,7 +218,7 @@ let apiMod: typeof import('./api');
 let ssoMod: typeof import('../shared/api/sso');
 let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
-let mfaMethodListMod: typeof import('./components/MfaMethodList');
+let mfaSettingMod: typeof import('./pages/SecurityPage/MfaSetting');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -226,7 +227,7 @@ beforeAll(async () => {
   ssoMod = await import('../shared/api/sso');
   uploadMod = await import('../shared/hooks/useUpload');
   routesMod = await import('./routes');
-  mfaMethodListMod = await import('./components/MfaMethodList');
+  mfaSettingMod = await import('./pages/SecurityPage/MfaSetting');
 });
 
 // rstest 对 .tsx 采用 classic JSX runtime，路由渲染断言经 createElement 显式
@@ -2646,74 +2647,62 @@ describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// MfaMethodList 静态渲染（交互重构：Tag 承载状态 + 动作按钮分派，
-// Checkbox 启用开关已删除；Semi 静态渲染解锁）
+// MfaSetting 静态渲染（MFA + 恢复码合并行：已绑定 → 解绑 / 查看恢复码；
+// 未绑定 → 绑定；弹窗条件渲染不挂载）
 // ---------------------------------------------------------------------------
 
-describe('MfaMethodList 静态渲染（动作分派与状态 Tag）', () => {
+describe('MfaSetting 静态渲染（MFA + 恢复码合并行）', () => {
   const noop = () => {};
   // 组件经 useLocation 取 401 returnTo（集中 onError），静态渲染须包
   // MemoryRouter（HashRouter 下 useLocation 即 hash 内 location）。
-  const renderList = (methods: MfaPolicyMethod[]): string =>
+  function MfaRow(props: { methods: MfaPolicyMethod[]; required: boolean }) {
+    return createElement(SettingList, {
+      fields: [
+        mfaSettingMod.useMfaSetting({ ...props, onPolicyRefresh: noop }),
+      ],
+    });
+  }
+  const renderRow = (methods: MfaPolicyMethod[], required = false): string =>
     renderToStaticMarkup(
       createElement(
         MemoryRouter,
         {},
-        createElement(mfaMethodListMod.MfaMethodList, {
-          methods,
-          required: false,
-          detailVersion: 0,
-          onPolicyRefresh: noop,
-        }),
+        createElement(MfaRow, { methods, required }),
       ),
     );
 
-  test('已启用因子 → 已绑定 Tag + 停用按钮；已停用 → 已停用 Tag + 启用按钮；无 Checkbox', () => {
-    const html = renderList([
+  test('totp 已绑定 → 「已绑定」+ 解绑 / 查看恢复码按钮', () => {
+    const html = renderRow([
       create(MfaPolicyMethodSchema, {
         factor: 'totp',
         enabled: true,
         bound: true,
       }),
-      create(MfaPolicyMethodSchema, {
-        factor: 'webauthn',
-        enabled: false,
-        bound: true,
-      }),
     ]);
     expect(html).toContain('已绑定');
-    expect(html).toContain('已停用');
-    expect(html).toContain('停用');
-    expect(html).toContain('启用');
-    // Checkbox 启用开关已删除（状态一律 Tag / 文本承载）。
-    expect(html).not.toContain('semi-checkbox');
+    expect(html).toContain('解绑');
+    expect(html).toContain('查看恢复码');
   });
 
-  test('未绑定：totp 出「绑定」按钮；otp_sms 给指引不出按钮；未绑定 Tag；弹窗条件渲染不挂载', () => {
-    const html = renderList([
+  test('totp 未绑定 → 「未绑定」+ 绑定按钮；弹窗条件渲染不挂载', () => {
+    const html = renderRow([
       create(MfaPolicyMethodSchema, {
         factor: 'totp',
         enabled: false,
         bound: false,
       }),
-      create(MfaPolicyMethodSchema, {
-        factor: 'otp_sms',
-        enabled: false,
-        bound: false,
-      }),
     ]);
-    expect(html).toContain('绑定');
     expect(html).toContain('未绑定');
-    // R5 行为差异（定稿口径）：明细改 ahooks 自动请求后 loading 初值
-    // 即 true——SSR 首帧为行内 Spin；未绑定指引在 GetMfa 到达后渲染，SSR
-    // 静态渲染不可达（原断言「请先在…」随 idle 起步语义一并失效，如实改写）。
-    expect(html).toContain('semi-spin');
-    expect(html).not.toContain('semi-checkbox');
-    // 「重开无旧错误残留」的结构性断言：TotpBindDialog / 恢复码 Modal 改
-    // 父级条件渲染——未打开不挂载（打开即新实例，hook 态天然全新，替代自研
-    // reset；TotpBindDialog 的 visible prop 已删，回退常驻挂载即 tsc 红）。
-    // SSR 无法模拟「开 → 失败 → 关 → 重开」过程（effects 不跑），过程性断言
-    // 登记为不可达，鉴别力由本结构断言 + props 接口编译期钉死承担。
+    expect(html).toContain('绑定');
+    expect(html).not.toContain('查看恢复码');
+    // 「重开无旧错误残留」的结构性断言：TotpBindDialog / 恢复码 Modal 父级
+    // 条件渲染——未打开不挂载（打开即新实例，hook 态天然全新）。
     expect(html).not.toContain('绑定 TOTP 动态码');
+  });
+
+  test('methods 无 totp 条目 → 按未绑定兜底', () => {
+    const html = renderRow([]);
+    expect(html).toContain('未绑定');
+    expect(html).not.toContain('查看恢复码');
   });
 });

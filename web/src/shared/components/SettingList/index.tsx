@@ -8,12 +8,36 @@ export interface ListItemProps {
   help?: ReactNode;
   extra?: ReactNode;
 }
+export function SettingList(props: { fields?: Array<ListItemProps> }) {
+  return (
+    <List>
+      {props.fields?.map((field) => (
+        <List.Item
+          className={styles.field}
+          key={field.key}
+          main={
+            <div className={styles.fieldLabelRow}>
+              <Typography.Text className={styles.fieldLabel}>
+                {field.title}
+              </Typography.Text>
+              {field.help ? (
+                <Typography.Text type="tertiary">{field.help}</Typography.Text>
+              ) : null}
+            </div>
+          }
+          extra={field.extra}
+        />
+      ))}
+    </List>
+  );
+}
 
-export function SettingList(props: {
+export function SettingListSections(props: {
   sections: Array<{
     title?: string;
     key: string;
-    fields: Array<ListItemProps>;
+    children?: ReactNode;
+    fields?: Array<ListItemProps>;
   }>;
 }) {
   return (
@@ -24,27 +48,11 @@ export function SettingList(props: {
             <Typography.Title heading={5}>{section.title}</Typography.Title>
           ) : null}
           <div className={styles.sectionBody}>
-            <List>
-              {section.fields.map((field) => (
-                <List.Item
-                  className={styles.field}
-                  key={field.key}
-                  main={
-                    <div className={styles.fieldLabelRow}>
-                      <Typography.Text className={styles.fieldLabel}>
-                        {field.title}
-                      </Typography.Text>
-                      {field.help ? (
-                        <Typography.Text type="tertiary">
-                          {field.help}
-                        </Typography.Text>
-                      ) : null}
-                    </div>
-                  }
-                  extra={field.extra}
-                />
-              ))}
-            </List>
+            {section.children ? (
+              section.children
+            ) : (
+              <SettingList fields={section.fields} />
+            )}
           </div>
         </div>
       ))}

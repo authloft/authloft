@@ -19,19 +19,29 @@ export const account: typeof zhAccount = {
   'account.renderError':
     'This page hit an unexpected error. Please refresh and try again',
 
-  // ---- SecurityPage (passkey card title reuses factors.webauthn) ----------
+  // ---- SecurityPage (passkey row title reuses factors.webauthn) ----------
   'account.configLoadFailed':
     'Failed to load settings. Please refresh and try again',
   'account.close': 'Close',
-  'account.twoFactorTitle': 'Two-Step Verification',
-  'account.mfaEnabledStatus': 'Two-step verification is on',
-  'account.mfaDisabledStatus': 'Two-step verification is off',
-  'account.mfaRequiredNote': ' (required by policy and cannot be turned off)',
-  'account.trustDeviceNote':
-    'Trusted devices: not supported yet (second verification is required at every sign-in)',
   'account.loginMethodTitle': 'Sign-in Method',
-  'account.contactCardTitle': 'Contact Information',
   'account.thirdpartyCardTitle': 'Third-Party Accounts',
+  'account.passwordLabel': 'Password',
+  'account.passwordChangeHint': 'Recommended to change regularly',
+  'account.passwordNotSet': 'Not set',
+  'account.goBindAction': 'Link',
+  'account.rebindAction': 'Change',
+  'account.setPasswordFirst': 'Set a password first',
+  'account.bindPhoneTitle': 'Link Phone Number',
+  'account.bindEmailTitle': 'Link Email',
+  'account.mfaSectionTitle': 'Two-Factor Authentication',
+  'account.mfaUnbindConfirm':
+    'Unlink "{factor}"? It will no longer be required when you sign in.',
+  'account.mfaUnbindSuccess': '{factor} unlinked',
+  'account.webauthnBoundCount': '{count} linked',
+  'account.webauthnViewBound': 'View linked',
+  'account.addAction': 'Add',
+  'account.webauthnAddTitle': 'Add Passkey',
+  'account.webauthnRegisterSuccess': 'Passkey registered',
 
   // ---- ProfilePage ---------------------------------------------------------
   'account.profileLoadFailed':
@@ -78,35 +88,17 @@ export const account: typeof zhAccount = {
   // download as text (P2-3, pure frontend Blob download).
   'account.recoveryDownload': 'Download as text',
 
-  // ---- MfaMethodList interaction rework (Tag for state + action
-  //      buttons + inline summary + low-remaining hint + success Toast; the
-  //      Checkbox enable switch was removed) --------------------------------
-  'account.mfaEnableAction': 'Enable',
-  'account.mfaDisableAction': 'Disable',
-  'account.mfaDisableConfirm':
-    'Disable "{factor}"? It will no longer be required when you sign in.',
-  'account.factorDisabledTag': 'Disabled',
+  // ---- MfaSetting (merged MFA + recovery-code row; factor names reuse
+  //      factors.*, the recovery-code modal title reuses
+  //      factors.recovery_code, the bind button reuses account.bindAction) ---
   'account.mfaEnabledSuccess': '{factor} enabled',
-  'account.mfaDisabledSuccess': '{factor} disabled',
-  'account.recoveryLowWarning': 'Only {count} recovery codes left',
   'account.recoveryRegenerateSuccess':
     'Recovery codes regenerated; all old codes are void',
-
-  // ---- MfaMethodList (factor names reuse factors.*, the recovery-code
-  //      modal title reuses factors.recovery_code, the bind button reuses
-  //      account.bindAction, the not-bound text reuses account.mfaNotBound,
-  //      the "last used" fragment reuses account.mfaLastUsedAt) ---------------
   'account.factorTotp': 'TOTP authenticator code',
   'account.factorBoundTag': 'Linked',
   'account.factorUnboundTag': 'Not linked',
-  'account.mfaBindPhoneHint':
-    'Link a phone number under "Contact Information" first',
-  'account.mfaBindEmailHint':
-    'Link an email address under "Contact Information" first',
-  'account.mfaBindWebauthnHint': 'Register one under "Passkeys" below first',
   'account.mfaLocked':
     'Policy requires two-step verification; it cannot be fully turned off',
-  'account.mfaDetailsLoadFailed': 'Failed to load details: {error}',
   'account.viewRecoveryCodes': 'View recovery codes',
   'account.recoveryLoadFailed': 'Failed to load recovery codes',
 

@@ -5,7 +5,7 @@
  * 一次性下发新码，行 908）。纯展示组件：码数据与重新生成动作由调用方注入——
  * - TotpBindDialog 成功帧：verify 响应的 recoveryCodes 直接传入一次性展示
  *   （§5 行 485「直接交给 RecoveryCodePanel」；无 createdAt / 重新生成入口）；
- * - MfaMethodList 查看场景：GetRecoveryCodes 结果 + 重新生成回调。
+ * - MfaSetting 查看场景：GetRecoveryCodes 结果 + 重新生成回调。
  * 复制走 shared CopyButton（useCopy，剪贴板不可用静默失败）。
  * 评审 P2-3：「下载为文本」——纯前端 Blob 下载（非请求，§9 第 16 条
  * 仅禁手拼 Blob 发请求），文件名固定 authloft-recovery-codes.txt。
@@ -13,9 +13,9 @@
  */
 import type { ReactNode } from 'react';
 import { Button, Popconfirm } from '@douyinfe/semi-ui';
-import { CopyButton } from '../../shared/components/CopyButton';
-import { t } from '../../shared/i18n';
-import { formatUnixTime } from '../api';
+import { CopyButton } from '../../../shared/components/CopyButton';
+import { t } from '../../../shared/i18n';
+import { formatUnixTime } from '../../api';
 import styles from './RecoveryCodePanel.module.less';
 
 export function RecoveryCodePanel(props: {

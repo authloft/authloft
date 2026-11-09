@@ -30,14 +30,14 @@ import {
   Toast,
   Tooltip,
 } from '@douyinfe/semi-ui';
-import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
+import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
 import type {
   ThirdpartyBinding,
   ThirdpartyOption,
-} from '../../gen/proto/api/account/v1/thirdparty_pb';
-import { ProviderIcon } from '../../shared/components/ProviderIcon';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
+} from '../../../gen/proto/api/account/v1/thirdparty_pb';
+import { ProviderIcon } from '../../../shared/components/ProviderIcon';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { t } from '../../../shared/i18n';
 import {
   accountReturnTo,
   apiErrorText,
@@ -50,7 +50,7 @@ import {
   sortThirdpartyOptions,
   startBindRedirect,
   unbindThirdparty,
-} from '../api';
+} from '../../api';
 import { ThirdPartyBindDialog } from './ThirdPartyBindDialog';
 import styles from './ThirdPartyList.module.less';
 

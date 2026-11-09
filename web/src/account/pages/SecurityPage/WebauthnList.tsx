@@ -1,26 +1,17 @@
 /**
- * 通行密钥列表（docs/前端架构.md §5 行 487；docs/接口文档.md §3.6 行 911-931；
- * 需求 §4.1.6）：GetWebauthnCredentials 列表 {id,label,createdAt,lastUsedAt,
- * transports,aaguid}（行 914）+ 注册（resident key / 可发现凭据，需求行 106）+
- * 重命名 {id,label}（行 917）+ 删除 {id}（行 918）；写操作成功后刷新列表并经
- * onChanged 上抛——首枚凭据注册 / 末枚删除会翻转 mfaPolicy.webauthn.bound，
- * 父级（SecurityPage）重取 GetConfig 并递增 MFA 明细 detailVersion。
- *
- * 注册编排在 ./api 的 registerWebauthnCredential（node 可测）：challenge →
- * startRegistration（challengeData 整体透传 §12.9 方案 A，前端不解析 options）
- * → verify {token, credential, label}（token 前端不感知结构仅透传，行 930）。
- * window.PublicKeyCredential 缺失隐藏注册入口（需求 §4.1.6 行 105 不支持自动
- * 不展示，login 端 WebAuthnButton 同口径）；用户取消（NotAllowedError）与失败
- * 分开提示（§4.3 行 453 错误语义独立）。
+ * 通行密钥列表（docs/接口文档.md §3.6 行 911-931）：GetWebauthnCredentials
+ * 列表 {id,label,createdAt,lastUsedAt,transports,aaguid} + 重命名 {id,label} +
+ * 删除 {id}；删除成功后刷新列表并经 onChanged 上抛（父级刷新凭据数）。
+ * 注册入口归 WebauthnSetting 的「新增」弹窗，本组件只做已绑定管理。
  * 文案经 shared/i18n（account.* 域键）。
  */
 import { useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { Button, Empty, Input, Popconfirm, Spin, Tag } from '@douyinfe/semi-ui';
-import type { WebauthnCredential } from '../../gen/proto/api/account/v1/webauthn_pb';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
+import type { WebauthnCredential } from '../../../gen/proto/api/account/v1/webauthn_pb';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { t } from '../../../shared/i18n';
 import {
   accountReturnTo,
   buildDeleteWebauthnRequest,
@@ -28,18 +19,17 @@ import {
   deleteWebauthnCredential,
   formatUnixTime,
   getWebauthnCredentials,
-  registerWebauthnCredential,
   renameWebauthnCredential,
-} from '../api';
+} from '../../api';
 import styles from './WebauthnList.module.less';
 
 /** window.PublicKeyCredential 缺失隐藏注册入口（需求 §4.1.6 行 105；node 无 window）。 */
-function webauthnAvailable(): boolean {
+export function webauthnAvailable(): boolean {
   return typeof window !== 'undefined' && 'PublicKeyCredential' in window;
 }
 
 export function WebauthnList(props: {
-  /** 注册 / 删除成功回调：父级刷新 mfaPolicy（webauthn.bound 可能翻转）。 */
+  /** 删除成功回调：父级刷新凭据数。 */
   onChanged?: () => void;
 }): ReactNode {
   const available = webauthnAvailable();
@@ -68,32 +58,8 @@ export function WebauthnList(props: {
       props.onChanged?.();
     },
   });
-  const [notice, setNotice] = useState<'cancelled' | 'failed' | null>(null);
-  const [registering, setRegistering] = useState(false);
-  const [label, setLabel] = useState('');
   const [renamingId, setRenamingId] = useState<bigint | undefined>(undefined);
   const [renameLabel, setRenameLabel] = useState('');
-
-  // 注册三步编排（./api）：成功 → 清 label + 刷新列表 + onChanged 上抛。
-  const handleRegister = async () => {
-    if (registering) {
-      return;
-    }
-    setNotice(null);
-    setRegistering(true);
-    try {
-      const result = await registerWebauthnCredential(label);
-      if (result.ok) {
-        setLabel('');
-        refresh();
-        props.onChanged?.();
-      } else {
-        setNotice(result.cancelled ? 'cancelled' : 'failed');
-      }
-    } finally {
-      setRegistering(false);
-    }
-  };
 
   const startRename = (item: WebauthnCredential) => {
     setRenamingId(item.id);
@@ -116,35 +82,6 @@ export function WebauthnList(props: {
 
   return (
     <div className={styles.wrap}>
-      {available ? (
-        <div className={styles.register}>
-          <Input
-            className={styles.registerLabel}
-            value={label}
-            onChange={setLabel}
-            placeholder={t('account.webauthnLabelPlaceholder')}
-            disabled={registering}
-          />
-          <Button
-            theme="solid"
-            loading={registering}
-            disabled={registering}
-            onClick={() => void handleRegister()}
-          >
-            {t('account.webauthnRegisterAction')}
-          </Button>
-        </div>
-      ) : null}
-      {notice === 'cancelled' ? (
-        <p role="alert" className={styles.notice}>
-          {t('account.webauthnCancelled')}
-        </p>
-      ) : null}
-      {notice === 'failed' ? (
-        <p role="alert" className={styles.notice}>
-          {t('account.webauthnRegisterFailed')}
-        </p>
-      ) : null}
       {loading && items === undefined ? (
         <Spin />
       ) : error !== undefined && items === undefined ? (

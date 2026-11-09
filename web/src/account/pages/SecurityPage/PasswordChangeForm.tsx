@@ -14,21 +14,21 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Input, Toast } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
+import { PasswordStrengthMeter } from '../../../shared/components/PasswordStrengthMeter';
 import {
   deriveRequestStatus,
   type RequestStatus,
-} from '../../shared/hooks/deriveRequestStatus';
-import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
+} from '../../../shared/hooks/deriveRequestStatus';
+import { requestOptions } from '../../../shared/hooks/requestOptions';
+import { t } from '../../../shared/i18n';
 import {
   accountReturnTo,
   apiErrorText,
   buildChangePasswordRequest,
   changePassword,
   type PasswordChangeFieldError,
-} from '../api';
-import { loadAccountBootstrap, loginUrl } from '../bootstrap';
+} from '../../api';
+import { loadAccountBootstrap, loginUrl } from '../../bootstrap';
 import styles from './PasswordChangeForm.module.less';
 
 /** 成功帧停留时长（ms）：提示可读后跳登录页（§5 行 483「提示并跳登录页」）。 */
