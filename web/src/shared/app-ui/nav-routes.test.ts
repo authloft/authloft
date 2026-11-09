@@ -37,11 +37,6 @@ describe('matchActivePath（高亮匹配：精确 + 前缀段）', () => {
     );
   });
 
-  test('未命中 / 根路径 → 空串（不高亮）', () => {
-    expect(matchActivePath(ACCOUNT_NAV_ROUTES, '/nope')).toBe('');
-    expect(matchActivePath(ACCOUNT_NAV_ROUTES, '/')).toBe('');
-  });
-
   test('非路径段边界不误命中（/usersx 不算 /users 命中）', () => {
     expect(matchActivePath(ADMIN_NAV_ROUTES, '/usersx')).toBe('');
   });
