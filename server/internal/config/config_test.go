@@ -51,7 +51,7 @@ oidc:
     - kid: "1"
       private_key_pem: "<RSA_KEY>"
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
-log: { level: info, format: json }
+log: { level: info, format: text }
 `
 
 // testOIDCKey 返回一次现场生成并缓存的合法 OIDC 私钥

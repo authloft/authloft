@@ -89,7 +89,7 @@ func DefaultConfig() (*Config, error) {
 			RpID: "authloft.example.com",
 		},
 		Argon2: Argon2Config{Time: 3, Memory: 65536, Threads: 4, KeyLen: 32},
-		Log:    LogConfig{Level: "info", Format: "json"},
+		Log:    LogConfig{Level: "info", Format: "text"},
 	}
 	for _, km := range []*KeyMaterial{
 		&c.SignKey.Session,

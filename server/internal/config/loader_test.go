@@ -35,12 +35,12 @@ authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
 sign_key:
   session: { key: "<KEY>", kid: 1 }
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
-log: { level: info, format: json }
+log: { level: info, format: text }
 `
 
 // TestLoadMissingFileReturnsErrNotExist 文件不存在（已移除首启自动生成
 // 路径后的新语义，§3.15 安装决策）：返回可被 errors.Is 判定的 ErrNotExist
-//（供 bootstrap 转 setup 模式），且不创建文件、不生成任何内容。
+// （供 bootstrap 转 setup 模式），且不创建文件、不生成任何内容。
 func TestLoadMissingFileReturnsErrNotExist(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	_, err := Load(path)
@@ -71,10 +71,10 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 	}
 	seen := make(map[string]bool, 5)
 	for name, km := range map[string]KeyMaterial{
-		"session":     cfg.SignKey.Session,
-		"login":       cfg.SignKey.Login,
-		"ticket":      cfg.SignKey.Ticket,
-		"cookie":      cfg.SignKey.Cookie,
+		"session":      cfg.SignKey.Session,
+		"login":        cfg.SignKey.Login,
+		"ticket":       cfg.SignKey.Ticket,
+		"cookie":       cfg.SignKey.Cookie,
 		"sync_payload": cfg.SignKey.SyncPayload,
 	} {
 		raw, err := base64.StdEncoding.DecodeString(km.Key)
@@ -180,7 +180,7 @@ sign_key:
   cookie:       { key: "<KEY>", kid: 1 }
   sync_payload: { key: "<KEY>", kid: 1 }
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
-log: { level: info, format: json }
+log: { level: info, format: text }
 `
 	path := writeConfigFile(t, strings.ReplaceAll(noDB, "<KEY>", testKeyB64))
 	_, err := Load(path)
@@ -309,7 +309,7 @@ func TestDefaultServerConfig(t *testing.T) {
 }
 
 // TestLoadReadErrorFails 读错误（如路径是目录）原样失败，不得误判为首启语义
-//（返回的错误不得链到 ErrNotExist——目录不是「文件不存在」）。
+// （返回的错误不得链到 ErrNotExist——目录不是「文件不存在」）。
 func TestLoadReadErrorFails(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Load(dir)

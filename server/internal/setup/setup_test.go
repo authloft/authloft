@@ -411,7 +411,7 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 		fmt.Fprintf(&b, "  %s: { key: %q, kid: 1 }\n", sc, testKeyB64('A'))
 	}
 	b.WriteString("argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }\n")
-	b.WriteString("log: { level: info, format: json }\n")
+	b.WriteString("log: { level: info, format: text }\n")
 	b.WriteString("oidc:\n  jwt_keys:\n")
 	fmt.Fprintf(&b, "    - kid: \"1\"\n      private_key_pem: %q\n", oidcTestKeyB64())
 	return b.String()
@@ -442,7 +442,7 @@ db:
 redis: { addr: "127.0.0.1:6379", password: "", db: 0, pool_size: 50 }
 authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
-log: { level: info, format: json }
+log: { level: info, format: text }
 `
 			return text
 		}()},

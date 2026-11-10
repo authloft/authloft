@@ -46,7 +46,7 @@ func RequestID(ctx context.Context) string {
 }
 
 // Setup 按启动配置装配全局 slog logger。level ∈ debug|info|warn|error、
-// format ∈ json|text；空串或未知值回退默认 info/json（正式配置由
+// format ∈ json|text；空串或未知值回退默认 info/text（正式配置由
 // config.Validate 保证合法；setup 模式与配置加载失败路径传空串走默认值）。
 // 启动期一次调用，运行期不可变（§3.2：日志属 YAML 启动配置，不热更新）。
 func Setup(level, format string) {
@@ -58,10 +58,10 @@ func Setup(level, format string) {
 func NewHandler(w io.Writer, level, format string) slog.Handler {
 	opts := &slog.HandlerOptions{Level: parseLevel(level)}
 	var base slog.Handler
-	if format == "text" {
-		base = slog.NewTextHandler(w, opts)
-	} else {
+	if format == "json" {
 		base = slog.NewJSONHandler(w, opts)
+	} else {
+		base = slog.NewTextHandler(w, opts)
 	}
 	return &requestIDHandler{Handler: base}
 }
@@ -82,7 +82,7 @@ func parseLevel(level string) slog.Level {
 // requestIDHandler 在每条携带 ctx 的日志记录上补 request_id。
 // Handle 前 Clone 记录再 AddAttrs，避免改写上游共享的 Record；
 // WithAttrs / WithGroup 保留包装，logger.With(...) 派生后注入仍生效
-//（项目当前不用 WithGroup；若将来启用，该字段按 slog 语义随 handler
+// （项目当前不用 WithGroup；若将来启用，该字段按 slog 语义随 handler
 // 的 group 状态落入组内）。Enabled 由嵌入的 slog.Handler 转发。
 type requestIDHandler struct {
 	slog.Handler

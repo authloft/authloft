@@ -184,10 +184,12 @@ func (s *WebauthnService) ListCredentials(ctx context.Context, uid int64) ([]Web
 	}
 	rows, err := s.deps.Webauthn.ListByUser(ctx, uid)
 	if err != nil {
+		logx.Error(ctx, "list webauthn rows failed", err)
 		return nil, fmt.Errorf("%w: list webauthn rows: %v", ErrWebauthnInternal, err)
 	}
 	creds, err := s.deps.Creds.ListByUser(ctx, uid)
 	if err != nil {
+		logx.Error(ctx, "list credential rows failed", err)
 		return nil, fmt.Errorf("%w: list credential rows: %v", ErrWebauthnInternal, err)
 	}
 	byID := make(map[int64]model.UserCredential, len(creds))
@@ -229,6 +231,7 @@ func (s *WebauthnService) BeginRegister(ctx context.Context, uid int64) (*webaut
 	}
 	ch, err := s.deps.Factor.BeginRegistration(uid)
 	if err != nil {
+		logx.Error(ctx, "begin registration failed", err)
 		return nil, fmt.Errorf("%w: begin registration: %v", ErrWebauthnInternal, err)
 	}
 	return ch, nil
