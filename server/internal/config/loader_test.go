@@ -31,7 +31,7 @@ db:
   max_idle_conns: 10
   conn_max_lifetime: 1h
 redis: { addr: "127.0.0.1:6379", password: "", db: 0, pool_size: 50 }
-authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
+authloft: { root: "https://sso.example.com", rp_id: "sso.example.com", rp_display_name: "Authloft" }
 sign_key:
   session: { key: "<KEY>", kid: 1 }
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
@@ -113,6 +113,7 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	t.Setenv("AUTHLOFT_REDIS_DB", "7")
 	t.Setenv("AUTHLOFT_SIGN_KEY_SESSION_KID", "2")
 	t.Setenv("AUTHLOFT_SIGN_KEY_TICKET_KEY", envKey)
+	t.Setenv("AUTHLOFT_AUTHLOFT_RP_DISPLAY_NAME", "Env Corp SSO")
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -135,6 +136,9 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	}
 	if cfg.SignKey.Ticket.Key != envKey {
 		t.Errorf("ticket key not overridden by env")
+	}
+	if cfg.Authloft.RPDisplayName != "Env Corp SSO" {
+		t.Errorf("rp_display_name = %q, want env value", cfg.Authloft.RPDisplayName)
 	}
 }
 
@@ -172,7 +176,7 @@ func TestLoadMissingSectionFails(t *testing.T) {
 	noDB := `
 server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
 redis: { addr: "127.0.0.1:6379", password: "", db: 0, pool_size: 50 }
-authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
+authloft: { root: "https://sso.example.com", rp_id: "sso.example.com", rp_display_name: "Authloft" }
 sign_key:
   session:      { key: "<KEY>", kid: 1 }
   login:        { key: "<KEY>", kid: 1 }

@@ -274,7 +274,9 @@ func (s *Server) UploadConfig(ctx context.Context, req *connect.Request[setupv1.
 // 接 paths.go 的 FreshInstall（双路径状态机不动）。root 必填（字段校验在
 // FreshInstall 步骤 ①，config_invalid——既定口径）；rpId 缺省
 // 取 root 的 host（去 scheme 与端口），不再自动读取请求 Host（安装
-// 不得靠自动推导的 IP 蒙混过关，IP rp_id 会被 WebAuthn 库校验拒绝）。
+// 不得靠自动推导的 IP 蒙混过关，IP rp_id 会被 WebAuthn 库校验拒绝）；
+// rp_display_name 缺省回落 config.DefaultRPDisplayName（不产出必然让
+// WebAuthn 注册失败的 config）。
 func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.InstallRequest]) (*connect.Response[setupv1.RestartingResponse], error) {
 	msg := req.Msg
 	if msg.DbDsn == "" || msg.RedisAddr == "" || msg.AdminUsername == "" || msg.AdminPassword == "" {
@@ -290,6 +292,7 @@ func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.Insta
 		RedisDB:       int(msg.RedisDb),
 		Root:          msg.Root,
 		RpID:          msg.RpId,
+		RPDisplayName: msg.RpDisplayName,
 		AdminUsername: msg.AdminUsername,
 		AdminPassword: msg.AdminPassword,
 	}

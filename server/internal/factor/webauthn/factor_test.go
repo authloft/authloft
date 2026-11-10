@@ -91,6 +91,50 @@ func testOptions(now func() time.Time) Options {
 	}
 }
 
+// TestCreationOptionsRequireRPDisplayName 固化 rp_display_name 的根因：
+// go-webauthn 只在 BeginRegistration 生成注册选项时校验 rp.name，
+// libwa.New 不校验——缺 RPDisplayName 时服务正常启动、webauthn 因子
+// 不降级，直到用户点「注册通行密钥」才报错。故 authloft.rp_display_name
+// 必须在 config.Validate 层 fail-fast，并由安装流程保证写入。
+func TestCreationOptionsRequireRPDisplayName(t *testing.T) {
+	base := RPConfig{
+		RPID:      testRPID,
+		RPOrigins: []string{testOrigin},
+		Timeout:   120 * time.Second,
+	}
+	challenge := bytes.Repeat([]byte{0x01}, 32)
+	userID := []byte("user-1")
+
+	// 空展示名：构造 ceremony 成功（启动期无感），生成注册选项才失败。
+	empty, err := newCeremony(base)
+	if err != nil {
+		t.Fatalf("newCeremony without RPDisplayName: %v", err)
+	}
+	if _, err := empty.creationOptions(userID, challenge); err == nil ||
+		!strings.Contains(err.Error(), "display name") {
+		t.Errorf("empty RPDisplayName: creationOptions err = %v, want display name error", err)
+	}
+
+	// 有展示名：rp.name 原样出现在注册选项中。
+	base.RPDisplayName = "Corp SSO"
+	c, err := newCeremony(base)
+	if err != nil {
+		t.Fatalf("newCeremony: %v", err)
+	}
+	opts, err := c.creationOptions(userID, challenge)
+	if err != nil {
+		t.Fatalf("creationOptions with RPDisplayName: %v", err)
+	}
+	m := opts.AsMap()
+	rp, ok := m["rp"].(map[string]any)
+	if !ok {
+		t.Fatalf("creation options missing rp: %v", m)
+	}
+	if rp["name"] != "Corp SSO" {
+		t.Errorf("rp.name = %v, want %q", rp["name"], "Corp SSO")
+	}
+}
+
 func newTestFactor(t *testing.T, codec *security.Codec, store WebauthnStore, queue SignCountPusher, now func() time.Time) *Factor {
 	t.Helper()
 	f, err := New(codec, store, queue, testOptions(now))

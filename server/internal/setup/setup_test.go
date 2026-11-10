@@ -405,7 +405,7 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 	b.WriteString("server: { listen: \":8080\" }\n")
 	b.WriteString(fmt.Sprintf("db:\n  dsn: %q\n  max_open_conns: 50\n  max_idle_conns: 10\n  conn_max_lifetime: 1h\n", dsn))
 	b.WriteString(fmt.Sprintf("redis: { addr: %q, password: \"\", db: 0, pool_size: 50 }\n", redisAddr))
-	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\" }\n")
+	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\", rp_display_name: \"Authloft\" }\n")
 	b.WriteString("sign_key:\n")
 	for _, sc := range []string{"session", "login", "ticket", "cookie", "sync_payload"} {
 		fmt.Fprintf(&b, "  %s: { key: %q, kid: 1 }\n", sc, testKeyB64('A'))
@@ -440,7 +440,7 @@ db:
   max_idle_conns: 10
   conn_max_lifetime: 1h
 redis: { addr: "127.0.0.1:6379", password: "", db: 0, pool_size: 50 }
-authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
+authloft: { root: "https://sso.example.com", rp_id: "sso.example.com", rp_display_name: "Authloft" }
 argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }
 log: { level: info, format: text }
 `
@@ -702,6 +702,9 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	if c.Authloft.RpID != "sso.corp.example.com" {
 		t.Errorf("rp_id = %q, want root host without port", c.Authloft.RpID)
 	}
+	if c.Authloft.RPDisplayName != config.DefaultRPDisplayName {
+		t.Errorf("rp_display_name = %q, want default %q", c.Authloft.RPDisplayName, config.DefaultRPDisplayName)
+	}
 	if c.DB.DSN != in.DBDSN || c.Redis.Addr != in.RedisAddr {
 		t.Error("user-provided db/redis must be carried into config")
 	}
@@ -713,12 +716,16 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	}
 
 	in.RpID = "corp.example.com"
+	in.RPDisplayName = "Corp SSO"
 	c2, err := BuildInstallConfig(in)
 	if err != nil {
 		t.Fatalf("build explicit: %v", err)
 	}
 	if c2.Authloft.Root != in.Root || c2.Authloft.RpID != in.RpID {
 		t.Errorf("explicit root/rp_id must win: %q / %q", c2.Authloft.Root, c2.Authloft.RpID)
+	}
+	if c2.Authloft.RPDisplayName != "Corp SSO" {
+		t.Errorf("explicit rp_display_name must win: %q", c2.Authloft.RPDisplayName)
 	}
 
 	// localhost root：rp_id 推导同为 localhost（§13.3 允许）。
@@ -729,6 +736,17 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	}
 	if c3.Authloft.RpID != "localhost" {
 		t.Errorf("rp_id (localhost root) = %q, want localhost", c3.Authloft.RpID)
+	}
+
+	// 空白视为未填：回落默认值，绝不生成空 RP 展示名（否则 config.Validate
+	// 拒绝，且 go-webauthn 的 BeginRegistration 会失败）。
+	in.RPDisplayName = "   "
+	c4, err := BuildInstallConfig(in)
+	if err != nil {
+		t.Fatalf("build blank display name: %v", err)
+	}
+	if c4.Authloft.RPDisplayName != config.DefaultRPDisplayName {
+		t.Errorf("blank rp_display_name = %q, want default %q", c4.Authloft.RPDisplayName, config.DefaultRPDisplayName)
 	}
 }
 

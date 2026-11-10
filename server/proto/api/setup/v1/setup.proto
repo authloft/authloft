@@ -54,6 +54,10 @@ message InstallRequest {
   string admin_username = 7;
   // 管理员密码，必填（策略同 §5.6，§13.3 行 1785；§13.5：不回显、不入日志）。
   string admin_password = 8;
+  // WebAuthn RP 展示名（写入 config 的 authloft.rp_display_name）。
+  // go-webauthn 生成注册选项时要求非空，缺省由安装表单预填 "Authloft"，
+  // 可显式覆盖；为空会被 config.Validate 拒绝（§3.2）。
+  string rp_display_name = 9;
 }
 
 // SetupService 是 setup 域的 Connect service（docs/接口文档.md §13，行 1759-1802）。

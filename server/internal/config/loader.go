@@ -85,8 +85,9 @@ func DefaultConfig() (*Config, error) {
 			PoolSize: 50,
 		},
 		Authloft: AuthloftConfig{
-			Root: "https://authloft.example.com",
-			RpID: "authloft.example.com",
+			Root:          "https://authloft.example.com",
+			RpID:          "authloft.example.com",
+			RPDisplayName: DefaultRPDisplayName,
 		},
 		Argon2: Argon2Config{Time: 3, Memory: 65536, Threads: 4, KeyLen: 32},
 		Log:    LogConfig{Level: "info", Format: "text"},
@@ -200,6 +201,7 @@ var envBindings = slices.Concat(serverEnvBindings, []envBinding{
 
 	{"AUTHLOFT_AUTHLOFT_ROOT", func(c *Config, v string) error { c.Authloft.Root = v; return nil }},
 	{"AUTHLOFT_AUTHLOFT_RP_ID", func(c *Config, v string) error { c.Authloft.RpID = v; return nil }},
+	{"AUTHLOFT_AUTHLOFT_RP_DISPLAY_NAME", func(c *Config, v string) error { c.Authloft.RPDisplayName = v; return nil }},
 
 	{"AUTHLOFT_SIGN_KEY_SESSION_KEY", func(c *Config, v string) error { c.SignKey.Session.Key = v; return nil }},
 	{"AUTHLOFT_SIGN_KEY_SESSION_KID", setInt(func(c *Config, n int) { c.SignKey.Session.Kid = n })},

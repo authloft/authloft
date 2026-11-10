@@ -56,7 +56,8 @@ export const setup = {
   'setup.fieldDbName': '数据库名',
   'setup.fieldDbParams': '额外参数',
   'setup.hintDbPort': 'MySQL 默认 3306，取值 1-65535',
-  'setup.hintDbParams': '可选，原样追加在 DSN 末尾，如 charset=utf8mb4&parseTime=true',
+  'setup.hintDbParams':
+    '可选，原样追加在 DSN 末尾，如 charset=utf8mb4&parseTime=true',
   // Redis（UI 拆 host + port 两栏对齐 DB，提交拼 host:port，wire 契约不变）。
   'setup.fieldRedisHost': 'Redis 主机',
   'setup.fieldRedisPort': 'Redis 端口',
@@ -75,8 +76,7 @@ export const setup = {
     '需填域名（拒绝 IP，localhost 允许）；host 为域名或 localhost 时预填当前站点',
   // root 前置校验文案（§6b 客户端体验性校验；后端为唯一权威）。
   'setup.error.rootRequired': '请填写主域名',
-  'setup.error.rootIpRejected':
-    '主域名不能是 IP，请填写域名（localhost 允许）',
+  'setup.error.rootIpRejected': '主域名不能是 IP，请填写域名（localhost 允许）',
   'setup.error.rootInvalid':
     '主域名格式不正确：须为 http:// 或 https:// 开头的完整地址，且 host 为域名',
   // DB 六字段前置校验文案（DSN 拼装见 setup/dsn.ts，后端为唯一权威）。
@@ -92,6 +92,9 @@ export const setup = {
   'setup.error.dbUnreachableFields':
     '数据库连接失败，请检查地址 / 端口 / 用户名 / 密码',
   'setup.hintRpId': '默认取当前域名',
+  'setup.fieldRpDisplayName': '站点名称（RP 展示名）',
+  'setup.hintRpDisplayName':
+    '通行密钥注册时显示的名称；留空使用默认值 Authloft',
   'setup.installing': '正在安装…',
   'setup.startInstall': '开始安装',
 
@@ -105,8 +108,10 @@ export const setup = {
   'setup.stepFill': '填写配置信息',
   'setup.stepRun': '执行安装',
   'setup.stepRestart': '重启完成',
-  'setup.uploadConfigDesc': '已有 config.yaml：上传后按序完成校验、连接检查与初始化。',
-  'setup.installDesc': '无既有配置：填写数据库、Redis 与管理员信息，从零初始化。',
+  'setup.uploadConfigDesc':
+    '已有 config.yaml：上传后按序完成校验、连接检查与初始化。',
+  'setup.installDesc':
+    '无既有配置：填写数据库、Redis 与管理员信息，从零初始化。',
   'setup.alreadyInstalled': '检测到已完成安装，服务已处于正常模式。',
   'setup.goToLogin': '前往登录',
   'setup.retryInstall': '重试安装',

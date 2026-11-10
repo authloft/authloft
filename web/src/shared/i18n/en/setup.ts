@@ -19,20 +19,23 @@ export const setup: typeof zhSetup = {
     'The version is already up to date but no administrator account exists. Please run a fresh install instead',
   'setup.error.usernameInvalid':
     'The administrator username does not meet the requirements',
-  'setup.error.passwordWeak': 'The password is too weak. Please choose a stronger one',
+  'setup.error.passwordWeak':
+    'The password is too weak. Please choose a stronger one',
   'setup.error.invalidArgument': 'Invalid request parameters',
   'setup.error.unauthenticated': 'The request is not authenticated',
   'setup.error.permissionDenied': 'The request was denied',
   'setup.error.resourceExhausted': 'Too many requests. Please try again later',
   'setup.error.internal': 'Internal server error. Please try again later',
   'setup.error.unavailable': 'Network error. Please try again later',
-  'setup.error.unknown': 'Operation failed. Please check your input and try again',
+  'setup.error.unknown':
+    'Operation failed. Please check your input and try again',
 
   // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
   'setup.restartingTitle': 'Restarting',
   'setup.restartingNotice':
     'The program has exited. Please restart it manually; if you use Docker or systemd, it will restart automatically',
-  'setup.restartTimeoutNotice': 'Restart timed out. Please check the service status',
+  'setup.restartTimeoutNotice':
+    'Restart timed out. Please check the service status',
   'setup.waitingRestart': 'Waiting for the service to restart…',
 
   // ---- 上传已有配置页（路径 A，§13.2）----
@@ -90,13 +93,15 @@ export const setup: typeof zhSetup = {
   'setup.error.dbPasswordRequired': 'Please enter the database password',
   'setup.error.dbNameRequired': 'Please enter the database name',
   'setup.error.dbPortInvalid': 'The port must be a number between 1 and 65535',
-  'setup.error.dbUserColon':
-    'The database username cannot contain a colon (:)',
+  'setup.error.dbUserColon': 'The database username cannot contain a colon (:)',
   'setup.error.dbNameInvalid': 'The database name cannot contain ? or /',
   // Field-level display for db_unreachable (InstallPage points at the DSN field group; UploadConfig keeps dbUnreachable).
   'setup.error.dbUnreachableFields':
     'Cannot connect to the database. Please check the host / port / username / password',
   'setup.hintRpId': 'Defaults to the current domain',
+  'setup.fieldRpDisplayName': 'Site name (RP display name)',
+  'setup.hintRpDisplayName':
+    'Shown when registering a passkey; leave empty to use the default "Authloft"',
   'setup.installing': 'Installing…',
   'setup.startInstall': 'Start Install',
 

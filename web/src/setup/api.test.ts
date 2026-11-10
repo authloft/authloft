@@ -1,7 +1,14 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from 'rstack/test';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create, toBinary, toJson } from '@bufbuild/protobuf';
@@ -76,16 +83,20 @@ describe('setup/api fetchSetupStatus（§13.1）', () => {
     // baseUrl 取注入 al_root（去尾斜杠归一）；GetStatusRequest 为空消息。
     expect(captured.url).toBe(SETUP_GET_STATUS);
     expect(captured.headers.get('content-type')).toBe('application/json');
-    expect(await captured.json()).toEqual(toJson(GetStatusRequestSchema, create(GetStatusRequestSchema)));
+    expect(await captured.json()).toEqual(
+      toJson(GetStatusRequestSchema, create(GetStatusRequestSchema)),
+    );
   });
 
   test('gin 原生 404（text/plain）→ gone（§13.4：setup 路由消失 = 重启完成锚点）', async () => {
     server.use(
-      http.post(SETUP_GET_STATUS, () =>
-        new HttpResponse('404 page not found', {
-          status: 404,
-          headers: { 'content-type': 'text/plain; charset=utf-8' },
-        }),
+      http.post(
+        SETUP_GET_STATUS,
+        () =>
+          new HttpResponse('404 page not found', {
+            status: 404,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          }),
       ),
     );
 
@@ -100,11 +111,13 @@ describe('setup/api fetchSetupStatus（§13.1）', () => {
 
   test('非 404 的非 2xx（如 500）→ unreachable，继续轮询口径', async () => {
     server.use(
-      http.post(SETUP_GET_STATUS, () =>
-        new HttpResponse('internal error', {
-          status: 500,
-          headers: { 'content-type': 'text/plain; charset=utf-8' },
-        }),
+      http.post(
+        SETUP_GET_STATUS,
+        () =>
+          new HttpResponse('internal error', {
+            status: 500,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          }),
       ),
     );
 
@@ -124,7 +137,12 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
     server.use(
       http.post(SETUP_INSTALL, ({ request }) => {
         captured = request;
-        return HttpResponse.json(toJson(RestartingResponseSchema, create(RestartingResponseSchema, { restarting: true })));
+        return HttpResponse.json(
+          toJson(
+            RestartingResponseSchema,
+            create(RestartingResponseSchema, { restarting: true }),
+          ),
+        );
       }),
     );
 
@@ -135,6 +153,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
       redisDb: 2,
       root: 'https://uc.example.com',
       rpId: 'uc.example.com',
+      rpDisplayName: 'Authloft',
       adminUsername: 'admin',
       adminPassword: 's3cret!',
     });
@@ -148,6 +167,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
       redisDb: '2', // int64 → 十进制字符串（§1.12）
       root: 'https://uc.example.com',
       rpId: 'uc.example.com',
+      rpDisplayName: 'Authloft',
       adminUsername: 'admin',
       adminPassword: 's3cret!',
     });
@@ -169,6 +189,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
       redisDb: 0,
       root: '',
       rpId: '',
+      rpDisplayName: '',
       adminUsername: 'admin',
       adminPassword: 's3cret!',
     });
@@ -316,11 +337,13 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
 
   test('requestUploadConfig：非 Connect JSON 错误响应 → 按规范映射兜底（415 → unknown，不透出原文）', async () => {
     server.use(
-      http.post(SETUP_UPLOAD_CONFIG, () =>
-        new HttpResponse('unsupported media type', {
-          status: 415,
-          headers: { 'content-type': 'text/plain; charset=utf-8' },
-        }),
+      http.post(
+        SETUP_UPLOAD_CONFIG,
+        () =>
+          new HttpResponse('unsupported media type', {
+            status: 415,
+            headers: { 'content-type': 'text/plain; charset=utf-8' },
+          }),
       ),
     );
 
@@ -361,6 +384,8 @@ describe('setup/api setupMessage（对齐 errors.ts CODE_TABLE/未知兜底口�
       '版本已最新但缺少管理员账号，请改走全新安装',
     );
     expect(mod.setupMessage('unavailable')).toBe('网络错误，请稍后重试');
-    expect(mod.setupMessage('totally_unknown_code')).toBe('操作失败，请检查输入后重试');
+    expect(mod.setupMessage('totally_unknown_code')).toBe(
+      '操作失败，请检查输入后重试',
+    );
   });
 });

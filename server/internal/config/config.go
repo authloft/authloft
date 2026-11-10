@@ -105,10 +105,19 @@ type RedisConfig struct {
 	PoolSize int    `yaml:"pool_size"`
 }
 
-// AuthloftConfig 站点主域（al_root，拼回调 / 多域名同步地址）与 WebAuthn RP ID。
+// DefaultRPDisplayName 是 rp_display_name 的默认值：全新安装生成 config
+// 时写入（前端安装表单同值预填），用户可显式覆盖。go-webauthn 生成注册
+// 选项时要求 RP 展示名非空，故该值必须是一个有意义的站点名。
+const DefaultRPDisplayName = "Authloft"
+
+// AuthloftConfig 站点主域（al_root，拼回调 / 多域名同步地址）与 WebAuthn
+// RP ID / RP 展示名。rp_display_name 写入注册选项的 rp.name（用户在
+// 通行密钥注册弹窗中看到的名字），为空会让 go-webauthn 的
+// BeginRegistration 直接报 "the relying party display name must be provided"。
 type AuthloftConfig struct {
-	Root string `yaml:"root"`
-	RpID string `yaml:"rp_id"`
+	Root          string `yaml:"root"`
+	RpID          string `yaml:"rp_id"`
+	RPDisplayName string `yaml:"rp_display_name"`
 }
 
 // KeyMaterial 单场景对称密钥材料：AES-256-GCM 单密钥（§3.2 约定 4，非密钥对）。
@@ -300,6 +309,12 @@ func (a AuthloftConfig) validate() []error {
 	}
 	if a.RpID == "" {
 		errs = append(errs, errors.New("authloft.rp_id: required"))
+	}
+	// RP 展示名是 go-webauthn 生成注册选项的硬性前置（空值会让
+	// BeginRegistration 报错）；在配置层 fail-fast，避免装配出必然
+	// 降级的 webauthn 因子。
+	if strings.TrimSpace(a.RPDisplayName) == "" {
+		errs = append(errs, errors.New("authloft.rp_display_name: required"))
 	}
 	return errs
 }

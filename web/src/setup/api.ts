@@ -10,21 +10,27 @@ import { createClient } from '@connectrpc/connect';
 import { createAuthloftTransport } from '../shared/api/http';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
-import { SetupService } from '../gen/proto/api/setup/v1/setup_pb';
+import {
+  SetupService,
+  type InstallRequest,
+} from '../gen/proto/api/setup/v1/setup_pb';
 
 const client = createClient(SetupService, createAuthloftTransport());
 
-/** SetupService/Install 请求体（§13.3；表单值 → proto 序列化由 connect 层完成）。 */
-export interface InstallPayload {
-  dbDsn: string;
-  redisAddr: string;
-  redisPassword: string;
+/**
+ * SetupService/Install 请求体（§13.3）：直接以生成消息 InstallRequest 的
+ * 字段集为基底——proto 增删字段自动跟随，不再手抄一份会漂移的字段清单。
+ * 仅两处 wire 边界适配：
+ *  - Omit 掉 protobuf 运行时元数据（$typeName / $unknown，表单无从构造）；
+ *  - int64 的 redisDb 由 bigint 放宽为 number（UI 层用 number），
+ *    发送前在本层转 BigInt。字段仍全部必填，保留编译期漏传检查。
+ */
+export type InstallPayload = Omit<
+  InstallRequest,
+  '$typeName' | '$unknown' | 'redisDb'
+> & {
   redisDb: number;
-  root: string;
-  rpId: string;
-  adminUsername: string;
-  adminPassword: string;
-}
+};
 
 /** GET SetupService/GetStatus 的探测结果（§13.1 / §13.4）。 */
 export type SetupStatusResult =
@@ -51,7 +57,9 @@ export async function fetchSetupStatus(): Promise<SetupStatusResult> {
     const response = await client.getStatus({});
     // §13.1：正常返回即处于 setup 模式（mode 固定为 setup）；缺失字段按
     // 零值兜底（§9 第 18 条），非 setup 视为异常响应。
-    return response.mode === 'setup' ? { kind: 'setup' } : { kind: 'unreachable' };
+    return response.mode === 'setup'
+      ? { kind: 'setup' }
+      : { kind: 'unreachable' };
   } catch (error) {
     // §13.4：返回 404（setup 路由消失）→ 已进入正常模式。gin 原生 404 为
     // text/plain，connect-es 按 Connect 协议规范将其映射为 Code.Unimplemented
@@ -79,17 +87,9 @@ export async function requestUploadConfig(config: string): Promise<void> {
  * 成功响应语义与 UploadConfig 一致（RestartingResponse）。
  */
 export async function requestInstall(payload: InstallPayload): Promise<void> {
+  // 展开生成的字段集：proto 新增字段时本层无需逐一补写。
   await client.install(
-    {
-      dbDsn: payload.dbDsn,
-      redisAddr: payload.redisAddr,
-      redisPassword: payload.redisPassword,
-      redisDb: BigInt(payload.redisDb),
-      root: payload.root,
-      rpId: payload.rpId,
-      adminUsername: payload.adminUsername,
-      adminPassword: payload.adminPassword,
-    },
+    { ...payload, redisDb: BigInt(payload.redisDb) },
     { timeoutMs: POST_TIMEOUT_MS },
   );
 }

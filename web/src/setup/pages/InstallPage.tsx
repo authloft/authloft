@@ -2,7 +2,7 @@
  * 全新安装页（路径 B，docs/前端架构.md §6b / 接口文档 §13.3）：
  * DB（六字段，../dsn 拼装为单个 dbDsn，wire 契约不变）/ Redis（UI 拆
  * host + port 两栏对齐 DB，提交拼 `host:port` 为单个 redisAddr，
- * 接口字段名不动）、主域名与 RP ID（自动读取默认值）、管理员账号密码。
+ * 接口字段名不动）、主域名 / RP ID / RP 展示名（自动读取默认值）、管理员账号密码。
  * §9 第 13 条 setup 例外：Semi Form 化——label 自动关联 +
  * 必填星号 + onBlur 单字段 / submit 全量校验（trigger="blur"，校验
  * 复用 ../dsn 与 ../wizard 纯函数，语义不变）。
@@ -26,6 +26,7 @@ import {
 import {
   checkRoot,
   classifyInstallError,
+  DEFAULT_RP_DISPLAY_NAME,
   joinRedisAddr,
   prefillRoot,
   ROOT_ERROR_KEYS,
@@ -142,8 +143,7 @@ function rootValidator(value: string): string {
 
 /** trim 后必填（adminUsername 沿用原 requiredFilled 的 trim 口径）。 */
 function requiredTrimValidator(messageKey: string) {
-  return (value: string): string =>
-    value.trim() === '' ? t(messageKey) : '';
+  return (value: string): string => (value.trim() === '' ? t(messageKey) : '');
 }
 
 /** 管理员密码必填：原值判空不 trim（首尾空格可能是真实密码的一部分，同 dsn.ts 口径）。 */
@@ -153,8 +153,8 @@ function adminPasswordValidator(value: string): string {
 
 /**
  * 自动读取默认值（§6b / §13.3）：root 按 §6b 条件预填当前页源（host 为 IP 一律留空），
- * rp_id 取当前 Host 去掉端口；均可显式覆盖。Redis 端口预填 6379（与 dbPort
- * 预填 3306 同款惯例，host/port 对齐）。
+ * rp_id 取当前 Host 去掉端口，rpDisplayName 预填站点名（留空后端回落同值）；
+ * 均可显式覆盖。Redis 端口预填 6379（与 dbPort 预填 3306 同款惯例，host/port 对齐）。
  */
 function initialFormState(): InstallFormState {
   return {
@@ -171,6 +171,7 @@ function initialFormState(): InstallFormState {
     redisDb: '0',
     root: prefillRoot(location.origin),
     rpId: location.hostname,
+    rpDisplayName: DEFAULT_RP_DISPLAY_NAME,
     adminUsername: '',
     adminPassword: '',
   };
@@ -214,6 +215,7 @@ export default function InstallPage({
       redisDb: Number.parseInt(values.redisDb, 10) || 0,
       root: values.root.trim(),
       rpId: values.rpId.trim(),
+      rpDisplayName: values.rpDisplayName.trim(),
       adminUsername: values.adminUsername.trim(),
       adminPassword: values.adminPassword,
     });
@@ -315,6 +317,12 @@ export default function InstallPage({
           field="rpId"
           label={t('setup.fieldRpId')}
           extraText={t('setup.hintRpId')}
+          autoComplete="off"
+        />
+        <Form.Input
+          field="rpDisplayName"
+          label={t('setup.fieldRpDisplayName')}
+          extraText={t('setup.hintRpDisplayName')}
           autoComplete="off"
         />
         <Form.Input

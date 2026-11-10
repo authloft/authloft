@@ -30,6 +30,7 @@ redis:
 authloft:
   root: "https://authloft.example.com"  # al_root：只填主域名，用于拼回调 / 多域名同步地址
   rp_id: "authloft.example.com"         # WebAuthn RP ID
+  rp_display_name: "Authloft"           # WebAuthn RP 展示名（通行密钥注册弹窗显示；必填，go-webauthn 要求非空）
 sign_key:                          # 各类令牌 / 载荷独立密钥（§1.4）；AES-256-GCM 对称
                                   # 单密钥（§3.2 约定 4）：base64(std)，解码后恰 32 字节
   session:      { key: "<base64-32B，安装自动生成>", kid: 1 }  # session token

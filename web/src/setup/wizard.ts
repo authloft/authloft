@@ -114,6 +114,9 @@ export function joinRedisAddr(host: string, port: string): string {
 // 请求错误分派（字段级校验错误留行内，请求失败 / 后端返回错误走 Toast）
 // ---------------------------------------------------------------------------
 
+/** RP 展示名缺省值（与后端 config.DefaultRPDisplayName 同源；留空时后端回落此值）。 */
+export const DEFAULT_RP_DISPLAY_NAME = 'Authloft';
+
 /** InstallPage 表单字段集（Semi Form 字段名；放此处供错误分派返回带类型的字段名）。 */
 export interface InstallFormState {
   dbHost: string;
@@ -128,6 +131,7 @@ export interface InstallFormState {
   redisDb: string;
   root: string;
   rpId: string;
+  rpDisplayName: string;
   adminUsername: string;
   adminPassword: string;
 }

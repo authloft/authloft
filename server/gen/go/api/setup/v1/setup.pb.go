@@ -222,6 +222,10 @@ type InstallRequest struct {
 	AdminUsername string `protobuf:"bytes,7,opt,name=admin_username,json=adminUsername,proto3" json:"admin_username,omitempty"`
 	// 管理员密码，必填（策略同 §5.6，§13.3 行 1785；§13.5：不回显、不入日志）。
 	AdminPassword string `protobuf:"bytes,8,opt,name=admin_password,json=adminPassword,proto3" json:"admin_password,omitempty"`
+	// WebAuthn RP 展示名（写入 config 的 authloft.rp_display_name）。
+	// go-webauthn 生成注册选项时要求非空，缺省由安装表单预填 "Authloft"，
+	// 可显式覆盖；为空会被 config.Validate 拒绝（§3.2）。
+	RpDisplayName string `protobuf:"bytes,9,opt,name=rp_display_name,json=rpDisplayName,proto3" json:"rp_display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -312,6 +316,13 @@ func (x *InstallRequest) GetAdminPassword() string {
 	return ""
 }
 
+func (x *InstallRequest) GetRpDisplayName() string {
+	if x != nil {
+		return x.RpDisplayName
+	}
+	return ""
+}
+
 var File_api_setup_v1_setup_proto protoreflect.FileDescriptor
 
 const file_api_setup_v1_setup_proto_rawDesc = "" +
@@ -325,7 +336,7 @@ const file_api_setup_v1_setup_proto_rawDesc = "" +
 	"\x12RestartingResponse\x12\x1e\n" +
 	"\n" +
 	"restarting\x18\x01 \x01(\bR\n" +
-	"restarting\"\xff\x01\n" +
+	"restarting\"\xa7\x02\n" +
 	"\x0eInstallRequest\x12\x15\n" +
 	"\x06db_dsn\x18\x01 \x01(\tR\x05dbDsn\x12\x1d\n" +
 	"\n" +
@@ -335,7 +346,8 @@ const file_api_setup_v1_setup_proto_rawDesc = "" +
 	"\x04root\x18\x05 \x01(\tR\x04root\x12\x13\n" +
 	"\x05rp_id\x18\x06 \x01(\tR\x04rpId\x12%\n" +
 	"\x0eadmin_username\x18\a \x01(\tR\radminUsername\x12%\n" +
-	"\x0eadmin_password\x18\b \x01(\tR\radminPassword2\xfc\x01\n" +
+	"\x0eadmin_password\x18\b \x01(\tR\radminPassword\x12&\n" +
+	"\x0frp_display_name\x18\t \x01(\tR\rrpDisplayName2\xfc\x01\n" +
 	"\fSetupService\x12L\n" +
 	"\tGetStatus\x12\x1e.api.setup.v1.GetStatusRequest\x1a\x1f.api.setup.v1.GetStatusResponse\x12S\n" +
 	"\fUploadConfig\x12!.api.setup.v1.UploadConfigRequest\x1a .api.setup.v1.RestartingResponse\x12I\n" +

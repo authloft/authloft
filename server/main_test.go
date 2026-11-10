@@ -46,7 +46,7 @@ func doRequest(h http.Handler, method, target string, headers map[string]string)
 func configuredHandler() (http.Handler, *gin.RouterGroup) {
 	gin.SetMode(gin.TestMode)
 	return buildHandler(&config.Config{
-		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}, connect.NewServer(1<<20))
 }
 
@@ -254,7 +254,7 @@ func TestConnectSuccessResponseNot404(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	h, _ := buildHandler(&config.Config{
-		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}, csrv)
 
 	rec := doRequest(h, http.MethodPost, "/api.test.v1.TService/Do", map[string]string{
@@ -281,7 +281,7 @@ func TestConnectDomainMiddlewareEquivalent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	h, _ := buildHandler(&config.Config{
-		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}, csrv)
 
 	// 写方法无 Origin → 403 permission_denied（origin 等效）+ X-Request-Id
@@ -319,7 +319,7 @@ func TestConnectDomainMiddlewareEquivalent(t *testing.T) {
 func bootstrapConfig() *config.Config {
 	return &config.Config{
 		Server:   config.ServerConfig{Listen: ":18080"},
-		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}
 }
 

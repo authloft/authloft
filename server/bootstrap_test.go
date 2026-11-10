@@ -252,7 +252,7 @@ func assembleConfig(t *testing.T, dsn, redisAddr string) *config.Config {
 			ConnMaxLifetime: config.Duration{Duration: time.Minute},
 		},
 		Redis:    config.RedisConfig{Addr: redisAddr, DB: 0, PoolSize: 10},
-		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 		SignKey:  testSignKeyConfig(t),
 		OIDC: config.OIDCConfig{
 			JWTKeys: []config.OIDCKey{{Kid: "1", PrivateKeyPEM: testOIDCKeyPEM()}},
@@ -501,7 +501,7 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
 	cfg := &config.Config{
-		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}
 	users := repo.NewUserRepo(nil)
 	creds := repo.NewCredentialRepo(nil)
@@ -577,7 +577,7 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 	}
 	// rp_id 为 IP：go-webauthn 库校验拒绝（must be a domain and not an IP）。
 	cfg := &config.Config{
-		Authloft: config.AuthloftConfig{Root: "https://192.168.10.2:8080", RpID: "192.168.10.2"},
+		Authloft: config.AuthloftConfig{Root: "https://192.168.10.2:8080", RpID: "192.168.10.2", RPDisplayName: config.DefaultRPDisplayName},
 	}
 
 	engine, terminal, registry, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
@@ -786,7 +786,7 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 // 链 requestid 统一回写（§1.1）。
 func TestOIDCRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	h, _ := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
 
@@ -840,7 +840,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 // UpdateProfile 已实装（service 真装配），无会话同样 401。
 func TestAssembleAccountRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
 	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
@@ -916,7 +916,7 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 // account 两域零回归仍在。
 func TestAssembleAdminRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
 	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
@@ -983,7 +983,7 @@ func TestAssembleAdminRoutesWired(t *testing.T) {
 // 79 例外），请求不带 Origin。sso / account / admin 前缀零回归。
 func TestAssembleRPCRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
 	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
@@ -1055,7 +1055,7 @@ func TestAssembleRPCRoutesWired(t *testing.T) {
 // gin 全局链 requestid 回写（§1.1）。sso / account / admin 前缀零回归。
 func TestAssembleGatewayRoutesWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"}}
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
 	h, _ := buildHandlerWithSSO(cfg, csrv, deps)
@@ -1568,7 +1568,7 @@ func serveAndReadH2Settings(t *testing.T, srv *http.Server, ln net.Listener, tls
 func TestListenModeH2CPriorKnowledge(t *testing.T) {
 	cfg := &config.Config{
 		Server:   config.ServerConfig{Listen: ":0"},
-		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r", RPDisplayName: config.DefaultRPDisplayName},
 	}
 	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1596,7 +1596,7 @@ func TestListenModeTLSALPNH2(t *testing.T) {
 			CertFile:      certPath,
 			KeyFile:       keyPath,
 		},
-		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r", RPDisplayName: config.DefaultRPDisplayName},
 	}
 	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1636,7 +1636,7 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 			CertFile:      certPath,
 			KeyFile:       keyPath,
 		},
-		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r", RPDisplayName: config.DefaultRPDisplayName},
 	}
 	srv, err := newHTTPServer(cfg, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1686,7 +1686,7 @@ func connectTestHandler(t *testing.T, csrv *connect.Server) http.Handler {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	h, _ := buildHandler(&config.Config{
-		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com"},
+		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}, csrv)
 	return h
 }
@@ -1832,7 +1832,7 @@ func TestNewHTTPServerTLSProtocols(t *testing.T) {
 				CertFile: certPath,
 				KeyFile:  keyPath,
 			},
-			Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r"},
+			Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "r", RPDisplayName: config.DefaultRPDisplayName},
 		}
 	}
 

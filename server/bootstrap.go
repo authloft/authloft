@@ -432,8 +432,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// 原因），程序不退出、其余功能可用；已绑定凭据的用户改走其余登录 /
 	// MFA 方式。AssertComplete 以降级清单显式放行该 kind。
 	wa, waErr := webauthn.New(deps.codecs.Login, webauthnRepo, deps.queue, webauthn.Options{
-		RPID:      cfg.Authloft.RpID,
-		RPOrigins: []string{cfg.Authloft.Root},
+		RPID:          cfg.Authloft.RpID,
+		RPDisplayName: cfg.Authloft.RPDisplayName,
+		RPOrigins:     []string{cfg.Authloft.Root},
 	})
 	var degraded []factor.FactorKind
 	if waErr != nil {

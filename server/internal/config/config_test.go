@@ -39,7 +39,7 @@ db:
   max_idle_conns: 10
   conn_max_lifetime: 1h
 redis: { addr: "127.0.0.1:6379", password: "redis-pass", db: 3, pool_size: 50 }
-authloft: { root: "https://sso.example.com", rp_id: "sso.example.com" }
+authloft: { root: "https://sso.example.com", rp_id: "sso.example.com", rp_display_name: "Authloft" }
 sign_key:
   session:      { key: "<KEY>", kid: 1 }
   login:        { key: "<KEY>", kid: 1 }
@@ -231,6 +231,8 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"root no host", func(c *Config) { c.Authloft.Root = "https://" }, "authloft.root"},
 		{"root not url", func(c *Config) { c.Authloft.Root = "sso.example.com" }, "authloft.root"},
 		{"rp_id empty", func(c *Config) { c.Authloft.RpID = "" }, "authloft.rp_id"},
+		{"rp_display_name empty", func(c *Config) { c.Authloft.RPDisplayName = "" }, "authloft.rp_display_name"},
+		{"rp_display_name blank", func(c *Config) { c.Authloft.RPDisplayName = "   " }, "authloft.rp_display_name"},
 
 		{"key empty", func(c *Config) { c.SignKey.Session.Key = "" }, "sign_key.session.key"},
 		{"key not base64", func(c *Config) { c.SignKey.Session.Key = "!!!not-base64!!!" }, "sign_key.session.key"},

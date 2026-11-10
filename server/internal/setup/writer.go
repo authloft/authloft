@@ -21,7 +21,9 @@ import (
 // Root 必填（完整 URL，host 须为域名或 localhost，拒绝 IP——安装
 // 不得靠自动推导的 IP 蒙混过关）；RpID 缺省取 Root 的 host
 // （去 scheme 与端口），显式填写优先（域名字符串，允许 localhost），
-// 不再自动读取请求 Host。
+// 不再自动读取请求 Host。RPDisplayName 缺省取
+// config.DefaultRPDisplayName，保证生成的 config 一定带非空 RP 展示名
+// （go-webauthn 生成注册选项的硬性要求）。
 type InstallInput struct {
 	DBDSN         string
 	RedisAddr     string
@@ -29,6 +31,7 @@ type InstallInput struct {
 	RedisDB       int
 	Root          string
 	RpID          string
+	RPDisplayName string
 	AdminUsername string
 	AdminPassword string
 }
@@ -61,7 +64,8 @@ func validateInstallInput(in InstallInput) error {
 // BuildInstallConfig 生成全新安装的完整 config（§3.15 路径 B 步骤 ④）：
 // 用户所填项 + 随机生成的全部 sign_key / oidc.jwt_keys + 其余项默认值
 // （config.DefaultConfig，与 authloft.yml.example 同源）。root 必填、
-// rp_id 缺省取 root 的 host（步骤 ①已校验，见 validateInstallInput）。
+// rp_id 缺省取 root 的 host（步骤 ①已校验，见 validateInstallInput），
+// rp_display_name 缺省保留 DefaultConfig 的 config.DefaultRPDisplayName。
 func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c, err := config.DefaultConfig()
 	if err != nil {
@@ -76,6 +80,12 @@ func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 		c.Authloft.RpID = in.RpID
 	} else if u, err := url.Parse(in.Root); err == nil {
 		c.Authloft.RpID = u.Hostname()
+	}
+	// 留空时保留 DefaultConfig 写入的默认值：安装向导已预填，直接调
+	// Install API 不传该字段时也不会生成空 RP 展示名（空值既过不了
+	// config.Validate，也会让 go-webauthn 的 BeginRegistration 失败）。
+	if v := strings.TrimSpace(in.RPDisplayName); v != "" {
+		c.Authloft.RPDisplayName = v
 	}
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("setup: generated config invalid: %w", err)
