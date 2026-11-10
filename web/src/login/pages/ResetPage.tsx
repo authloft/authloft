@@ -33,6 +33,7 @@ import type {
   LoginMethodEntry,
   MethodsSnapshot,
 } from '../../shared/types/init';
+import { Modal } from '../components/Modal';
 import { resetPassword, type ResetPasswordInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
@@ -362,7 +363,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     Readonly<Record<string, string>>
   >({});
   // captcha 弹窗编排（shared/captcha）：challenge 下发先问再发，窗内换凭据循环。
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(Modal);
 
   /** 回到 challenge 第一步（restart 类 / 传输失败；§1.6「回到第一步」；
    * 目标持值保留（P1-5 回填），已输码随流程重发而作废）。 */

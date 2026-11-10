@@ -35,7 +35,8 @@ export const enUS: I18nMessages = {
   'common.refreshAndRetry': 'Please refresh and try again',
   'common.captchaLoadFailed': 'Captcha failed to load',
   'common.loading': 'Loading…',
-  // captcha 弹窗（shared/captcha/CaptchaDialog，login 与 account 共用）。
+  // 域弹窗公共文案（login / account 两侧窗体共用；captcha 内容见下）。
+  'common.close': 'Close',
   'common.cancel': 'Cancel',
   'common.captchaTitle': 'Security verification',
   'common.captchaHint': 'Complete the verification below to continue',

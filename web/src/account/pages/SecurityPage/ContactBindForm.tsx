@@ -25,6 +25,7 @@ import type {
   BindPhoneRequest,
 } from '../../../gen/proto/api/account/v1/security_pb';
 import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
+import { Modal } from '../../../shared/app-ui/Modal';
 import { CaptchaDialog } from '../../../shared/captcha/CaptchaDialog';
 import { errorCaptchaOutcome } from '../../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../../shared/captcha/useCaptchaGate';
@@ -252,7 +253,7 @@ export function ContactBindForm(props: {
   const [inputError, setInputError] = useState<
     ContactBindChallengeError | 'invalid_code' | undefined
   >(undefined);
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(Modal);
   // kind 固定于表单实例，但请求构造返回 Bind 系联合类型——经 $typeName 判别
   // 收窄到具体端点（gen Message 的判别式属性，§9 第 15 条）。
   const call = (

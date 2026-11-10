@@ -68,6 +68,7 @@ import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
 import type { MethodsSnapshot, SnapshotField } from '../shared/types/init';
+import { Modal } from './components/Modal';
 import { loginDefault, type LoginDefaultInput } from './api';
 import { BindingPage } from './pages/BindingPage';
 import { OTPForm, isOtpForm } from './factors/OTPForm';
@@ -787,8 +788,9 @@ export function LoginContainer({
   );
   const [notice, setNotice] = useState<string | undefined>(undefined);
   // captcha 弹窗编排（shared/captcha）：gate 吸收 captcha_required /
-  // captcha_invalid 并驱动「确认即重提」，弹窗声明式挂在容器根级（壳脱体到 body）。
-  const captcha = useCaptchaGate();
+  // captcha_invalid 并驱动「确认即重提」，弹窗声明式挂在容器根级（窗体由
+  // 注入的 login 域 Modal 脱体到 body）。
+  const captcha = useCaptchaGate(Modal);
   // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
   // mfa_required 信封到达时镜像；restart / complete / 传输失败时清空退出 mfa 场景。
   const [mfaMethods, setMfaMethods] = useState<MfaMethod[] | undefined>(

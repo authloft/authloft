@@ -34,6 +34,7 @@ import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { isValidUsername } from '../../shared/utils/validate';
 import { t } from '../../shared/i18n';
+import { Modal } from '../components/Modal';
 import { register, type RegisterInput } from '../api';
 import { clearLoginToken } from '../loginTokenStore';
 import {
@@ -233,7 +234,7 @@ export function BindingPage({ binding, notice }: BindingPageProps) {
   // captcha 弹窗编排：三方免密建号是后端豁免项（engine.go evaluateCaptcha：
   // tp != nil && flow=login 的 set_password 不校验），故 reactive 不主动弹窗；
   // 服务端若仍判需要则按其下发的权威配置问一次（防御）。
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(Modal);
 
   // 退出（§2.7.5 行 661）：清内存 login_token → 回登录第一步 /sso/login。
   const exit = () => {

@@ -28,6 +28,7 @@ import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner, FieldRenderer } from '../../shared/components';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
+import { Modal } from '../components/Modal';
 import styles from './FormStep.module.less';
 
 /** 首屏注入快照的 captcha 配置（§2.1 行 409：login 端首屏来源；§2.5 行 477 三处之一）。 */
@@ -66,7 +67,7 @@ export function ChallengeStep({
   captcha: captchaConfig = initCaptcha(),
 }: ChallengeStepProps) {
   const [values, setValues] = useState<Record<string, string>>({});
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(Modal);
   // 本地在途（防御分派形态无调用方 loading 注入）：弹窗确认后的重提也在途。
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);

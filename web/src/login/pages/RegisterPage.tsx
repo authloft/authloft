@@ -58,6 +58,7 @@ import {
   type MethodsSnapshot,
   type SnapshotField,
 } from '../../shared/types/init';
+import { Modal } from '../components/Modal';
 import { register, type RegisterInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
@@ -662,8 +663,8 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   // captcha 弹窗编排（shared/captcha）：吸收 captcha_required / captcha_invalid，
-  // 确认即重提；弹窗声明式挂在页面壳根级（壳脱体到 body）。
-  const gate = useCaptchaGate();
+  // 确认即重提；弹窗声明式挂在页面壳根级（窗体由注入的 login 域 Modal 脱体）。
+  const gate = useCaptchaGate(Modal);
 
   /** 回到当前方式首步（restart 类 / 传输失败；§1.6「回到第一步」）。 */
   const restartFlow = () => {

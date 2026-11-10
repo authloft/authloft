@@ -42,7 +42,8 @@ export const zhCN = {
   'common.refreshAndRetry': '请刷新重试',
   'common.captchaLoadFailed': '验证码加载失败',
   'common.loading': '加载中…',
-  // captcha 弹窗（shared/captcha/CaptchaDialog，login 与 account 共用）。
+  // 域弹窗公共文案（login / account 两侧窗体共用；captcha 内容见下）。
+  'common.close': '关闭',
   'common.cancel': '取消',
   'common.captchaTitle': '安全验证',
   'common.captchaHint': '请完成下方人机校验后继续',

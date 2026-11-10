@@ -8,11 +8,15 @@
  * 弹窗保持打开跨越 captcha_invalid 循环——确认后置 submitting，请求在途时
  * 禁用两个按钮防重复消费凭据；gate 再次询问才解禁并换新凭据。
  *
- * 消费方把 dialogProps 铺给 <CaptchaDialog />，渲染位置须在任何滚动 /
- * transform 祖先之外（壳已脱体到 body，此处只要求节点挂在调用方根级）。
+ * 消费方把 dialogProps 铺给 <CaptchaDialog />，并按 domain 注入窗体实现
+ * （login 传 login/components/Modal，account / admin 传 shared/app-ui/Modal）；
+ * 窗体自己脱体到 body，此处只要求节点挂在调用方根级。窗体 props 沿用 Semi
+ * Modal 同名字段，在途禁动由 CaptchaDialog 用 confirmLoading / closeOnEsc 等
+ * 显式表达（契约见 shared/components/modal）。
  */
 import { useCallback, useRef, useState } from 'react';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
+import type { ModalRenderer } from '../components/modal';
 import type { CaptchaDialogProps, CaptchaDialogSession } from './CaptchaDialog';
 import {
   runCaptchaGate,
@@ -29,7 +33,8 @@ export interface CaptchaGate {
   run<T>(options: CaptchaGateRunOptions<T>): Promise<CaptchaGateResult<T>>;
 }
 
-export function useCaptchaGate(): CaptchaGate {
+/** modal 为 domain 窗体实现（契约见 shared/components/modal），烘进 dialogProps。 */
+export function useCaptchaGate(modal: ModalRenderer): CaptchaGate {
   const [session, setSession] = useState<CaptchaDialogSession | undefined>(
     undefined,
   );
@@ -99,7 +104,7 @@ export function useCaptchaGate(): CaptchaGate {
   );
 
   return {
-    dialogProps: { session, onConfirm, onNotReady, onCancel },
+    dialogProps: { modal, session, onConfirm, onNotReady, onCancel },
     run,
   };
 }

@@ -31,6 +31,7 @@ import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb'
 import type { CaptchaPayload } from '../../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../../gen/proto/api/sso/v1/ticket_pb';
+import { Modal as AppModal } from '../../../shared/app-ui/Modal';
 import { CaptchaDialog } from '../../../shared/captcha/CaptchaDialog';
 import { errorCaptchaOutcome } from '../../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../../shared/captcha/useCaptchaGate';
@@ -75,7 +76,7 @@ function BindPanelBody({
   onDone,
   onCancelled,
 }: PanelBodyProps): ReactNode {
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(AppModal);
   const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
   const lastPollStatusRef = useRef('');
   const propsRef = useRef({ providerKey, captcha, onDone, onCancelled });

@@ -40,6 +40,7 @@ import {
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
+import { Modal } from '../components/Modal';
 import { defaultNavigate } from './RedirectStep';
 import styles from './QRCodeStep.module.less';
 
@@ -179,7 +180,7 @@ export function QRCodeStep({
   pollSeconds = MAX_POLL_SECONDS,
   navigate = defaultNavigate,
 }: QRCodeStepProps) {
-  const gate = useCaptchaGate();
+  const gate = useCaptchaGate(Modal);
   const [cancelled, setCancelled] = useState(false);
   // 取消后重入：新 key 重挂面板 → 再次走 upfront 弹窗（凭据一次性，不能复用）。
   const [panelKey, setPanelKey] = useState(0);
