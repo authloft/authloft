@@ -11,5 +11,5 @@
     }
   },
   "include": ["src", "shared", "config", "modern.config.ts", "server"],
-  "exclude": ["**/node_modules"]
+  "exclude": ["**/node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"]
 }
