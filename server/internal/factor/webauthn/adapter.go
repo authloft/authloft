@@ -56,12 +56,19 @@ func newCeremony(rp RPConfig) (*ceremony, error) {
 	return &ceremony{rp: rp, wa: wa}, nil
 }
 
-// adapterUser 实现库的 webauthn.User 接口，仅用于注册场景构造 options.user.id。
-type adapterUser struct{ id []byte }
+// adapterUser 实现库的 webauthn.User 接口，用于注册场景构造 options.user：
+// id 固定为不透明的 uid 字节串（W3C：user.id 须稳定且不得含可识别信息），
+// name / displayName 取服务端查得的 username——用户在通行密钥注册弹窗与
+// 凭据管理界面看到的是自己的账号名，而不是一串数字 ID。username 变更不
+// 影响已注册凭据（认证始终按 user.id 匹配）。
+type adapterUser struct {
+	id   []byte
+	name string
+}
 
 func (u adapterUser) WebAuthnID() []byte                      { return u.id }
-func (u adapterUser) WebAuthnName() string                    { return string(u.id) }
-func (u adapterUser) WebAuthnDisplayName() string             { return string(u.id) }
+func (u adapterUser) WebAuthnName() string                    { return u.name }
+func (u adapterUser) WebAuthnDisplayName() string             { return u.name }
 func (u adapterUser) WebAuthnCredentials() []libwa.Credential { return nil }
 
 // requestOptions 生成登录 / 断言场景的完整 PublicKeyCredentialRequestOptions
@@ -85,9 +92,11 @@ func (c *ceremony) requestOptions(challenge []byte) (*structpb.Struct, error) {
 // creationOptions 生成账号域注册场景的完整 PublicKeyCredentialCreationOptions
 // （接口文档 §3.6 行 926、§8.3 行 1045）。要求 resident key / 可发现凭据
 // （§8.3 行 1048），challenge 改用与独立原子 token 绑定的同一份随机值。
-func (c *ceremony) creationOptions(userID []byte, challenge []byte) (*structpb.Struct, error) {
+// userID 为不透明 uid 字节串，username 由账号域从服务端用户表查得后传入，
+// 同时作为 options.user.name 与 displayName。
+func (c *ceremony) creationOptions(userID []byte, username string, challenge []byte) (*structpb.Struct, error) {
 	creation, _, err := c.wa.BeginRegistration(
-		adapterUser{id: userID},
+		adapterUser{id: userID, name: username},
 		libwa.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
 	if err != nil {

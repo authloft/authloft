@@ -44,6 +44,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -95,9 +97,17 @@ const WebauthnDegradedMessage = "通行密钥暂不可用，请联系管理员"
 
 // WebauthnFactor 注册两态的因子内核窄接口（§20）：*webauthn.Factor 天然
 // 满足（factor/webauthn 内核）；nil = 启动降级（fail-closed 判定源）。
+// BeginRegistration 的 username 由本层从服务端用户表查得后传入，用于
+// options.user.name / displayName（不信任请求参数）。
 type WebauthnFactor interface {
-	BeginRegistration(uid int64) (*webauthn.RegistrationChallenge, error)
+	BeginRegistration(uid int64, username string) (*webauthn.RegistrationChallenge, error)
 	FinishRegistration(tok string, credential *structpb.Struct) *webauthn.RegistrationVerify
+}
+
+// WebauthnUserStore 注册场景取 username 的窄接口（§20）：*repo.UserRepo
+// 天然满足。username 只从服务端 DB 取，不从会话 / 请求体透传。
+type WebauthnUserStore interface {
+	FindByID(ctx context.Context, id int64) (*model.User, error)
 }
 
 // WebauthnStore user_credential_webauthn 表读写窄接口（§20）：*repo.WebauthnRepo
@@ -125,6 +135,9 @@ type WebauthnDeps struct {
 	Webauthn WebauthnStore
 	// Creds user_credential 读写（列表投影 / Rename）。
 	Creds WebauthnCredentialStore
+	// Users 注册 challenge 取 username（options.user.name / displayName）；
+	// 未注入即装配遗漏，BeginRegister 拒绝而非静默下发缺用户信息的选项。
+	Users WebauthnUserStore
 	// Audit webauthn_register 审计投递（nil = 跳过，测试用）。
 	Audit AuditSink
 	// Now 时钟注入（缺省 time.Now）。
@@ -151,6 +164,7 @@ var (
 	_ WebauthnFactor          = (*webauthn.Factor)(nil)
 	_ WebauthnStore           = (*repo.WebauthnRepo)(nil)
 	_ WebauthnCredentialStore = (*repo.CredentialRepo)(nil)
+	_ WebauthnUserStore       = (*repo.UserRepo)(nil)
 )
 
 // WebauthnItem GetWebauthnCredentials 列表项（§3.6 行 931）。
@@ -221,7 +235,8 @@ func (s *WebauthnService) ListCredentials(ctx context.Context, uid int64) ([]Web
 }
 
 // BeginRegister step=challenge（§3.6 行 932、行 937-945 示例，OUTCOME ①）：
-// 透传 factor 内核产物 {token, challengeData, expiresIn:120}。
+// 先从服务端用户表取 username 注入 options.user.name / displayName，再透传
+// factor 内核产物 {token, challengeData, expiresIn:120}。
 func (s *WebauthnService) BeginRegister(ctx context.Context, uid int64) (*webauthn.RegistrationChallenge, error) {
 	if uid <= 0 {
 		return nil, ErrWebauthnUnauthenticated
@@ -229,12 +244,42 @@ func (s *WebauthnService) BeginRegister(ctx context.Context, uid int64) (*webaut
 	if err := s.failClosed(ctx); err != nil {
 		return nil, err
 	}
-	ch, err := s.deps.Factor.BeginRegistration(uid)
+	username, err := s.resolveUsername(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	ch, err := s.deps.Factor.BeginRegistration(uid, username)
 	if err != nil {
 		logx.Error(ctx, "begin registration failed", err)
 		return nil, fmt.Errorf("%w: begin registration: %v", ErrWebauthnInternal, err)
 	}
 	return ch, nil
+}
+
+// resolveUsername 注册 challenge 的用户名来源：只查服务端用户表，不接受
+// 请求参数（避免伪造 / 越权填他人账号名）。用户不存在（会话 uid 已失效）
+// → unauthenticated，DB 故障 → internal；username 空值回落 uid 字符串，
+// 保证下发的 options.user.name 始终非空。
+func (s *WebauthnService) resolveUsername(ctx context.Context, uid int64) (string, error) {
+	if s.deps.Users == nil {
+		logx.Error(ctx, "webauthn user store not configured", errors.New("missing dependency"))
+		return "", fmt.Errorf("%w: user store not configured", ErrWebauthnInternal)
+	}
+	u, err := s.deps.Users.FindByID(ctx, uid)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrWebauthnUnauthenticated
+		}
+		logx.Error(ctx, "resolve webauthn username failed", err)
+		return "", fmt.Errorf("%w: lookup user: %v", ErrWebauthnInternal, err)
+	}
+	if u == nil {
+		return "", ErrWebauthnUnauthenticated
+	}
+	if name := strings.TrimSpace(u.Username); name != "" {
+		return name, nil
+	}
+	return strconv.FormatInt(uid, 10), nil
 }
 
 // FinishRegister step=verify（§3.6 行 933、行 947 token 契约，OUTCOME ①）：

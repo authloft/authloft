@@ -110,7 +110,7 @@ func TestCreationOptionsRequireRPDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newCeremony without RPDisplayName: %v", err)
 	}
-	if _, err := empty.creationOptions(userID, challenge); err == nil ||
+	if _, err := empty.creationOptions(userID, "alice", challenge); err == nil ||
 		!strings.Contains(err.Error(), "display name") {
 		t.Errorf("empty RPDisplayName: creationOptions err = %v, want display name error", err)
 	}
@@ -121,7 +121,7 @@ func TestCreationOptionsRequireRPDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newCeremony: %v", err)
 	}
-	opts, err := c.creationOptions(userID, challenge)
+	opts, err := c.creationOptions(userID, "alice", challenge)
 	if err != nil {
 		t.Fatalf("creationOptions with RPDisplayName: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestRegistrationRoundTrip(t *testing.T) {
 	a := newTestAuthenticator(t)
 	codec := testCodec(t)
 	f := newTestFactor(t, codec, &fakeStore{}, &fakeQueue{}, func() time.Time { return fixedNow })
-	ch, err := f.BeginRegistration(42)
+	ch, err := f.BeginRegistration(42, "alice")
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
@@ -424,6 +424,16 @@ func TestRegistrationRoundTrip(t *testing.T) {
 	fields := ch.ChallengeData.GetFields()
 	if fields["rp"].GetStructValue() == nil || fields["user"].GetStructValue() == nil || fields["challenge"].GetStringValue() == "" {
 		t.Fatalf("creation options incomplete: %v", fields)
+	}
+	// user.name / displayName 取服务端 username；user.id 仍是不透明 uid 字节串。
+	user := fields["user"].GetStructValue().GetFields()
+	if user["name"].GetStringValue() != "alice" || user["displayName"].GetStringValue() != "alice" {
+		t.Errorf("user.name / displayName = %q / %q, want username alice",
+			user["name"].GetStringValue(), user["displayName"].GetStringValue())
+	}
+	wantID := base64.RawURLEncoding.EncodeToString([]byte("42"))
+	if user["id"].GetStringValue() != wantID {
+		t.Errorf("user.id = %q, want opaque uid bytes %q", user["id"].GetStringValue(), wantID)
 	}
 	_, challenge, status := parseRegistrationToken(codec, ch.Token, fixedNow)
 	if status != "" || challenge == "" {
@@ -466,7 +476,7 @@ func TestRegistrationTokenTamperedAndExpired(t *testing.T) {
 	codec := testCodec(t)
 	current := fixedNow
 	f := newTestFactor(t, codec, &fakeStore{}, &fakeQueue{}, func() time.Time { return current })
-	ch, err := f.BeginRegistration(42)
+	ch, err := f.BeginRegistration(42, "alice")
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
@@ -500,7 +510,7 @@ func TestRegistrationTokenTamperedAndExpired(t *testing.T) {
 func TestRegistrationTokenAADNotInterchangeableWithLoginToken(t *testing.T) {
 	codec := testCodec(t)
 	f := newTestFactor(t, codec, &fakeStore{}, &fakeQueue{}, func() time.Time { return fixedNow })
-	ch, err := f.BeginRegistration(42)
+	ch, err := f.BeginRegistration(42, "alice")
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}
@@ -531,7 +541,7 @@ func TestRegistrationAttestationChecks(t *testing.T) {
 	a := newTestAuthenticator(t)
 	codec := testCodec(t)
 	f := newTestFactor(t, codec, &fakeStore{}, &fakeQueue{}, func() time.Time { return fixedNow })
-	ch, err := f.BeginRegistration(42)
+	ch, err := f.BeginRegistration(42, "alice")
 	if err != nil {
 		t.Fatalf("BeginRegistration: %v", err)
 	}

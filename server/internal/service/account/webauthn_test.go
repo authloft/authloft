@@ -23,17 +23,18 @@ import (
 
 // fakeWebauthnFactor WebauthnFactor 的 fake：预置结果回放 + 入参记录。
 type fakeWebauthnFactor struct {
-	begin    *webauthn.RegistrationChallenge
-	beginErr error
-	beginUID int64
+	begin         *webauthn.RegistrationChallenge
+	beginErr      error
+	beginUID      int64
+	beginUsername string
 
 	finish    *webauthn.RegistrationVerify
 	finishTok string
 	finishIn  *structpb.Struct
 }
 
-func (f *fakeWebauthnFactor) BeginRegistration(uid int64) (*webauthn.RegistrationChallenge, error) {
-	f.beginUID = uid
+func (f *fakeWebauthnFactor) BeginRegistration(uid int64, username string) (*webauthn.RegistrationChallenge, error) {
+	f.beginUID, f.beginUsername = uid, username
 	return f.begin, f.beginErr
 }
 
@@ -125,12 +126,32 @@ func fmtNotFound() error {
 	return fmt.Errorf("webauthn repo: find by credential id: %w", gorm.ErrRecordNotFound)
 }
 
+// fakeUserStore WebauthnUserStore 的 fake：缺省回放 username=alice，可指定
+// 用户行 / 错误以覆盖空值、用户不存在与 DB 故障。
+type fakeUserStore struct {
+	user  *model.User
+	err   error
+	calls []int64
+}
+
+func (s *fakeUserStore) FindByID(_ context.Context, id int64) (*model.User, error) {
+	s.calls = append(s.calls, id)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.user != nil {
+		return s.user, nil
+	}
+	return &model.User{ID: id, Username: "alice"}, nil
+}
+
 // newWebauthnService 构造被测 service（factor 非 nil 正常态）。
 func newWebauthnService(factor WebauthnFactor, rows *fakeWebauthnRows, credRows *fakeWebauthnCredRows, audit *fakeAudit) *WebauthnService {
 	return NewWebauthnService(WebauthnDeps{
 		Factor:   factor,
 		Webauthn: rows,
 		Creds:    credRows,
+		Users:    &fakeUserStore{},
 		Audit:    audit,
 		Now:      func() time.Time { return time.Unix(1764000000, 0).UTC() },
 	})
@@ -238,8 +259,54 @@ func TestWebauthnBeginRegister(t *testing.T) {
 	if f.beginUID != 42 {
 		t.Errorf("factor uid = %d, want 42", f.beginUID)
 	}
+	if f.beginUsername != "alice" {
+		t.Errorf("factor username = %q, want alice (server-side user table)", f.beginUsername)
+	}
 	if _, err := s.BeginRegister(context.Background(), 0); !errors.Is(err, ErrWebauthnUnauthenticated) {
 		t.Errorf("uid=0 err = %v, want ErrWebauthnUnauthenticated", err)
+	}
+}
+
+// TestWebauthnBeginRegisterUsername 注册 options 的用户信息来源：只取服务端
+// 用户表的 username（name / displayName 同值），并覆盖空值回落、用户不存在、
+// DB 故障与装配遗漏四种边界。username 不经请求参数传递，无法被伪造。
+func TestWebauthnBeginRegisterUsername(t *testing.T) {
+	ch := &webauthn.RegistrationChallenge{Token: "t", ExpiresIn: 120}
+	cases := []struct {
+		name     string
+		users    WebauthnUserStore
+		wantName string
+		wantErr  error
+	}{
+		{"username verbatim", &fakeUserStore{user: &model.User{ID: 42, Username: "zhang_san"}}, "zhang_san", nil},
+		{"username trimmed", &fakeUserStore{user: &model.User{ID: 42, Username: "  alice  "}}, "alice", nil},
+		{"blank falls back to uid", &fakeUserStore{user: &model.User{ID: 42, Username: "   "}}, "42", nil},
+		{"user missing", &fakeUserStore{err: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}, "", ErrWebauthnUnauthenticated},
+		{"db failure", &fakeUserStore{err: errors.New("db down")}, "", ErrWebauthnInternal},
+		{"store not wired", nil, "", ErrWebauthnInternal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeWebauthnFactor{begin: ch}
+			s := newWebauthnService(f, &fakeWebauthnRows{}, &fakeWebauthnCredRows{}, &fakeAudit{})
+			s.deps.Users = tc.users
+			got, err := s.BeginRegister(context.Background(), 42)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Errorf("err = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BeginRegister: %v", err)
+			}
+			if got != ch {
+				t.Errorf("challenge = %+v, want factor output", got)
+			}
+			if f.beginUsername != tc.wantName {
+				t.Errorf("factor username = %q, want %q", f.beginUsername, tc.wantName)
+			}
+		})
 	}
 }
 

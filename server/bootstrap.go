@@ -588,6 +588,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Factor:   accountWebauthnFactor,
 		Webauthn: webauthnRepo,
 		Creds:    creds,
+		Users:    users,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
 

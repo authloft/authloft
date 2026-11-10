@@ -216,8 +216,11 @@ type RegistrationVerify struct {
 
 // BeginRegistration 账号域注册 challenge 步：无 login_token，改签独立原子
 // token（§3.6 行 931、§8.3 行 1052），并下发完整
-// PublicKeyCredentialCreationOptions（要求 resident key）。
-func (f *Factor) BeginRegistration(uid int64) (*RegistrationChallenge, error) {
+// PublicKeyCredentialCreationOptions（要求 resident key）。username 由账号域
+// 从服务端用户表查得，作为 options.user.name / displayName；user.id 仍为
+// 不透明的 uid 字节串。空 username 回落 uid 字符串，保证 name 非空
+// （库虽不验 name，但空值会让浏览器 / 密码管理器无法标识凭据）。
+func (f *Factor) BeginRegistration(uid int64, username string) (*RegistrationChallenge, error) {
 	if uid == 0 {
 		return nil, fmt.Errorf("webauthn: registration requires a session uid")
 	}
@@ -229,7 +232,11 @@ func (f *Factor) BeginRegistration(uid int64) (*RegistrationChallenge, error) {
 		return nil, fmt.Errorf("webauthn: generate challenge: %w", err)
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(challenge)
-	data, err := f.ceremony.creationOptions([]byte(strconv.FormatInt(uid, 10)), challenge)
+	userID := []byte(strconv.FormatInt(uid, 10))
+	if username == "" {
+		username = string(userID)
+	}
+	data, err := f.ceremony.creationOptions(userID, username, challenge)
 	if err != nil {
 		return nil, err
 	}
