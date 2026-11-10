@@ -28,7 +28,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Modal, Spin, Steps } from '@douyinfe/semi-ui';
+import { Banner, Button, Modal, Spin, Steps } from '@douyinfe/semi-ui';
 import {
   CodeInput,
   DEFAULT_CODE_LENGTH,
@@ -132,22 +132,21 @@ export function TotpBindDialog(props: {
       onCancel={handleCancel}
       okButtonProps={{ style: { display: 'none' } }}
       cancelText={t('account.cancelAction')}
+      className={styles.modal}
     >
       {/* 步骤指示：添加验证器 → 验证动态码 → 保存恢复码。 */}
-      <Steps
-        current={verified ? 2 : formStep}
-        size="small"
-        className={styles.steps}
-      >
+      <Steps current={verified ? 2 : formStep} size="small" type="nav">
         <Steps.Step title={t('account.totpStepAdd')} />
         <Steps.Step title={t('account.totpStepVerify')} />
         <Steps.Step title={t('account.totpStepRecovery')} />
       </Steps>
       {verified ? (
         <div className={styles.body}>
-          <p role="status" className={styles.doneText}>
-            {t('account.totpBindSuccess')}
-          </p>
+          <Banner
+            type="success"
+            description={t('account.totpBindSuccess')}
+            closeIcon={null}
+          />
           <RecoveryCodePanel codes={verifyData?.recoveryCodes ?? []} />
           <Button theme="solid" onClick={props.onDone}>
             {t('account.totpDoneAction')}
@@ -170,21 +169,12 @@ export function TotpBindDialog(props: {
             content={challenge.qrcodeContent || challenge.otpauthUrl}
             alt={t('account.totpQrImageAlt')}
           />
-          <p className={styles.hint}>{t('account.totpScanHint')}</p>
-          <p className={styles.hint}>{t('account.totpManualHint')}</p>
+          <p className={styles.hint}>{t('account.totpHint')}</p>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>
               {t('account.totpSecretLabel')}
             </span>
             <span className={styles.mono}>{challenge.secret}</span>
-            <CopyButton text={challenge.secret} />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('account.totpOtpauthLabel')}
-            </span>
-            <span className={styles.mono}>{challenge.otpauthUrl}</span>
-            <CopyButton text={challenge.otpauthUrl} />
           </div>
           <Button theme="solid" onClick={() => setFormStep(1)}>
             {t('account.totpNextAction')}
@@ -216,23 +206,21 @@ export function TotpBindDialog(props: {
               {apiErrorText(verifyError)}
             </p>
           ) : null}
-          <div className={styles.actions}>
-            <Button
-              type="tertiary"
-              onClick={() => setFormStep(0)}
-              disabled={verifying}
-            >
-              {t('account.backAction')}
-            </Button>
-            <Button
-              theme="solid"
-              htmlType="submit"
-              loading={verifying}
-              disabled={verifying}
-            >
-              {t('account.totpVerifyAction')}
-            </Button>
-          </div>
+          <Button
+            theme="solid"
+            htmlType="submit"
+            loading={verifying}
+            disabled={verifying}
+          >
+            {t('account.totpVerifyAction')}
+          </Button>
+          <Button
+            type="tertiary"
+            onClick={() => setFormStep(0)}
+            disabled={verifying}
+          >
+            {t('account.backAction')}
+          </Button>
         </form>
       )}
     </Modal>

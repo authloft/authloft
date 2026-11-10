@@ -155,13 +155,9 @@ export const account = {
   //      aria-label 复用 account.factorTotp）----------------------------------
   'account.totpCodeInvalid': '请输入 {count} 位数字动态码',
   'account.totpBindTitle': '绑定 TOTP 动态码',
-  'account.totpBindSuccess':
-    'TOTP 绑定成功。以下 10 个恢复码仅展示一次，请妥善保存',
+  'account.totpBindSuccess': 'TOTP 绑定成功',
   'account.totpDoneAction': '我已保存，完成绑定',
-  'account.totpManualHint':
-    '请使用验证器应用（如 Google Authenticator）手动输入密钥或粘贴 otpauth 地址完成添加，然后输入当前 6 位动态码验证',
   'account.totpSecretLabel': '密钥',
-  'account.totpOtpauthLabel': 'otpauth 地址',
   'account.totpVerifyAction': '验证并完成绑定',
   // ---- TotpBindDialog 步骤化（Steps 指示 + 上一步 / 下一步）--------
   'account.totpStepAdd': '添加验证器',
@@ -172,8 +168,8 @@ export const account = {
 
   // ---- TotpBindDialog 二维码（密钥 / otpauth 文本兜底沿用
   //      totpSecretLabel / totpOtpauthLabel / totpManualHint，不删）--------------
-  'account.totpScanHint':
-    '请使用验证器应用（如 Google Authenticator）扫描二维码完成添加',
+  'account.totpHint':
+    '请使用验证器应用（如 Google Authenticator）扫描二维码或手动输入密钥完成添加',
   'account.totpQrImageAlt': 'TOTP 绑定二维码',
 
   // ---- EventLogTable-----------------------------------------------------------

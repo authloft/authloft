@@ -171,13 +171,9 @@ export const account: typeof zhAccount = {
   //      code aria-label reuses account.factorTotp) -----------------------------
   'account.totpCodeInvalid': 'Enter the {count}-digit code',
   'account.totpBindTitle': 'Link TOTP authenticator',
-  'account.totpBindSuccess':
-    'TOTP linked successfully. The 10 recovery codes below are shown only once — save them somewhere safe',
+  'account.totpBindSuccess': 'TOTP linked successfully.',
   'account.totpDoneAction': 'Saved. Finish linking',
-  'account.totpManualHint':
-    'Use an authenticator app (such as Google Authenticator) to enter the key manually or paste the otpauth URL, then enter the current 6-digit code to verify',
   'account.totpSecretLabel': 'Secret key',
-  'account.totpOtpauthLabel': 'otpauth URL',
   'account.totpVerifyAction': 'Verify and finish linking',
   // ---- TotpBindDialog steps (Steps indicator + back / next) ---------
   'account.totpStepAdd': 'Add authenticator',
@@ -188,8 +184,8 @@ export const account: typeof zhAccount = {
 
   // ---- TotpBindDialog QR code (the key / otpauth text fallback keeps
   //      totpSecretLabel / totpOtpauthLabel / totpManualHint, not removed) ------
-  'account.totpScanHint':
-    'Scan the QR code with your authenticator app (such as Google Authenticator) to add it',
+  'account.totpHint':
+    'Use an authenticator app (such as Google Authenticator) to scan the QR code or enter the key manually to add it',
   'account.totpQrImageAlt': 'TOTP binding QR code',
 
   // ---- EventLogTable -----------------------------------------------------------

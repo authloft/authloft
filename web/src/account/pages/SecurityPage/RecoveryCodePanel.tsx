@@ -50,6 +50,7 @@ export function RecoveryCodePanel(props: {
         {/* 评审 P2-3：下载为文本（纯前端 Blob 下载，对齐 Casdoor）。 */}
         <Button
           type="tertiary"
+          theme="outline"
           onClick={() => {
             const url = URL.createObjectURL(
               new Blob([props.codes.join('\n')], {

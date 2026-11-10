@@ -1,14 +1,23 @@
 // TOTP 绑定对话框样式（§1.7）：同目录同名 module less；类名 camelCase。
 @import (reference) '../../../shared/styles/tokens.less';
 
-.steps {
-  margin-bottom: @spacing-md;
+.modal :global(.semi-modal-body) {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+  align-items: center;
 }
 
 .body {
   display: flex;
   flex-direction: column;
   gap: @spacing-md;
+  align-items: center;
+  width: 100%;
+
+  > :global(.semi-button) {
+    width: 100%;
+  }
 }
 
 .actions {
@@ -26,6 +35,7 @@
   display: flex;
   flex-direction: column;
   gap: @spacing-xs;
+  width: 100%;
 }
 
 .fieldLabel {
