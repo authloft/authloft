@@ -6,13 +6,13 @@ package orchestrator
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
@@ -179,7 +179,7 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 		// 与窗口无关的既有 required=false 语义不变（未绑定任何因子 /
 		// mfa_enabled=false 等）。
 		if degradedLost {
-			slog.Warn("orchestrator: mfa fail-closed, webauthn unavailable (degraded window) and user's only usable factor lost", "uid", uid)
+			logx.Warn(ctx, "orchestrator: mfa fail-closed, webauthn unavailable (degraded window) and user's only usable factor lost", "uid", uid)
 			return nil, false, ErrWebauthnDegraded
 		}
 		return nil, false, nil

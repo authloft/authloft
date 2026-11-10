@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 
 	"github.com/gin-gonic/gin"
+
+	"authloft/internal/logx"
 )
 
 // RequestIDKey 是链路 ID 在 *gin.Context 中的键：requestid 写入，
@@ -16,10 +18,14 @@ const RequestIDKey = "request_id"
 // XRequestIDHeader 链路 ID 响应头名（docs/接口文档.md §1.1 行 83）。
 const XRequestIDHeader = "X-Request-Id"
 
-// RequestID 生成每请求的链路 ID 并写入 ctx 与响应头（docs/后端架构.md
-// §3.3 行 294、docs/接口文档.md §1.1 行 83）：
+// RequestID 生成每请求的链路 ID 并写入 gin ctx、请求 ctx 与响应头
+//（docs/后端架构.md §3.3 行 294、docs/接口文档.md §1.1 行 83）：
 //   - 生成口径：crypto/rand 16 字节 hex（128-bit、32 字符）；不读、不透传、
 //     不信任入站同名头（防客户端伪造/注入）；rand 失败留空串（不伪造值）；
+//   - 标准 context.Context 的注入与 Connect 域共用 logx.WithRequestID：
+//     handler 用 c.Request.Context() 调 service 时，logx.Warn(ctx, …) /
+//     slog.WarnContext(ctx, …) 能自动带上 request_id；gin.Context 的
+//     RequestIDKey 保留给访问日志 / panic 日志 / setup 错误信封读取。
 //   - 所有响应（成功 / 失败 / 豁免端点）统一回写 X-Request-Id 响应头
 //     （错误体内不重复携带）：c.Header 在中间件入口即写入
 //     gin 头表，后续 origin 403 / 404 / recover 500 / connect 错误响应
@@ -31,6 +37,7 @@ func RequestID() gin.HandlerFunc {
 		id := newRequestID()
 		if id != "" {
 			c.Set(RequestIDKey, id)
+			c.Request = c.Request.WithContext(logx.WithRequestID(c.Request.Context(), id))
 		}
 		// rand.Read 失败（Go 1.24+ 实际不可达）时 ctx 与响应头均为空串，
 		// 不伪造值（§3.3 行 294）。

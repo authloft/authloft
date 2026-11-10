@@ -6,10 +6,10 @@ package orchestrator
 import (
 	"context"
 	"errors"
-	"log/slog"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/settings"
 )
 
@@ -45,7 +45,6 @@ var stepKinds = map[string]factor.StepKind{
 
 // Resolve 校验并返回分派结果；第二个返回值为非空时表示业务失败 status。
 func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTokenPayload, method, step string) (*Dispatched, string) {
-	_ = ctx
 	if method == "" {
 		return nil, StatusInvalidRequest
 	}
@@ -63,7 +62,7 @@ func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTok
 			// 未注册被拒的每次请求都要能看出原因；其余 kind（pendingKinds
 			// 等既有未实现项）维持现状不打日志。
 			if kind == factor.FactorWebAuthn {
-				slog.Warn("orchestrator: webauthn method rejected (factor not registered, degraded window)", "flow", flow)
+				logx.Warn(ctx, "orchestrator: webauthn method rejected (factor not registered, degraded window)", "flow", flow)
 			}
 			return nil, StatusMethodDisabled
 		}

@@ -43,7 +43,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +53,7 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
+	"authloft/internal/logx"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -598,7 +598,7 @@ func (s *Thirdparty) newTicketResult(snap *token.TicketPayload, status string, l
 // ticketId} 应答（§2.7.4 行 649；写入失败按 failed 收敛，PC 端轮询至 expired）。
 func (s *Thirdparty) ticketDone(ctx context.Context, id string, res *token.TicketResult) *OauthOutput {
 	if _, err := s.deps.Tickets.WriteComplete(ctx, id, res); err != nil {
-		slog.Warn("thirdparty: write ticket result failed", "ticket_id", id, "error", err)
+		logx.Warn(ctx, "thirdparty: write ticket result failed", "ticket_id", id, "error", err)
 		return s.envelope(orchestrator.StatusFailed)
 	}
 	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
@@ -612,7 +612,7 @@ func (s *Thirdparty) ticketDone(ctx context.Context, id string, res *token.Ticke
 // 写入失败仅记日志、不改变应答（PC 端轮询至 expired，不阻塞小程序端结论）。
 func (s *Thirdparty) ticketFail(ctx context.Context, id string, snap *token.TicketPayload, status string) *OauthOutput {
 	if _, err := s.deps.Tickets.WriteComplete(ctx, id, s.newTicketResult(snap, status, nil, nil)); err != nil {
-		slog.Warn("thirdparty: write ticket result failed", "ticket_id", id, "error", err)
+		logx.Warn(ctx, "thirdparty: write ticket result failed", "ticket_id", id, "error", err)
 	}
 	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 		Status: status,

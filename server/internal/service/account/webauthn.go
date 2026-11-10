@@ -44,7 +44,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -54,6 +53,7 @@ import (
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/eventlog"
 	"authloft/internal/factor/webauthn"
+	"authloft/internal/logx"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -166,9 +166,9 @@ type WebauthnItem struct {
 // failClosed 窗口期判定（§8.3 行 1071-1075）：Factor 未装配（启动初始化
 // 失败降级）→ 逐次 WARN + ErrWebauthnDegraded（handler 映射 method_disabled
 // + 固定文案）。五方法入口统一调用，含只读列表。
-func (s *WebauthnService) failClosed() error {
+func (s *WebauthnService) failClosed(ctx context.Context) error {
 	if s.deps.Factor == nil {
-		slog.Warn("account webauthn: request rejected: webauthn engine degraded (fail-closed)")
+		logx.Warn(ctx, "account webauthn: request rejected: webauthn engine degraded (fail-closed)")
 		return ErrWebauthnDegraded
 	}
 	return nil
@@ -179,7 +179,7 @@ func (s *WebauthnService) ListCredentials(ctx context.Context, uid int64) ([]Web
 	if uid <= 0 {
 		return nil, ErrWebauthnUnauthenticated
 	}
-	if err := s.failClosed(); err != nil {
+	if err := s.failClosed(ctx); err != nil {
 		return nil, err
 	}
 	rows, err := s.deps.Webauthn.ListByUser(ctx, uid)
@@ -224,7 +224,7 @@ func (s *WebauthnService) BeginRegister(ctx context.Context, uid int64) (*webaut
 	if uid <= 0 {
 		return nil, ErrWebauthnUnauthenticated
 	}
-	if err := s.failClosed(); err != nil {
+	if err := s.failClosed(ctx); err != nil {
 		return nil, err
 	}
 	ch, err := s.deps.Factor.BeginRegistration(uid)
@@ -241,7 +241,7 @@ func (s *WebauthnService) FinishRegister(ctx context.Context, uid int64, tok str
 	if uid <= 0 {
 		return ErrWebauthnUnauthenticated
 	}
-	if err := s.failClosed(); err != nil {
+	if err := s.failClosed(ctx); err != nil {
 		return err
 	}
 	if tok == "" || credential == nil {
@@ -329,7 +329,7 @@ func (s *WebauthnService) RenameCredential(ctx context.Context, uid int64, id in
 	if uid <= 0 {
 		return ErrWebauthnUnauthenticated
 	}
-	if err := s.failClosed(); err != nil {
+	if err := s.failClosed(ctx); err != nil {
 		return err
 	}
 	if label == "" {
@@ -369,7 +369,7 @@ func (s *WebauthnService) DeleteCredential(ctx context.Context, uid int64, id in
 	if uid <= 0 {
 		return ErrWebauthnUnauthenticated
 	}
-	if err := s.failClosed(); err != nil {
+	if err := s.failClosed(ctx); err != nil {
 		return err
 	}
 	if id <= 0 {

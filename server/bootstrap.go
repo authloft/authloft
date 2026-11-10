@@ -63,6 +63,7 @@ import (
 	oidchandler "authloft/internal/handler/oidc"
 	rpchandler "authloft/internal/handler/rpc"
 	ssohandler "authloft/internal/handler/sso"
+	"authloft/internal/logx"
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
@@ -116,6 +117,11 @@ const defaultReadMaxBytes = 1 << 20
 // 由 main 转 exit 非 0（fail-fast）；setup 模式下安装完成的退出走 Run 的
 // nil 返回（exit 0，由部署环境拉起，§13.4）。
 func run(configPath string) error {
+	// 步骤 0 日志装配：先按默认 info/json 接管 slog 默认 logger，保证
+	// setup 模式（无 config）与 config 加载失败的 fail-fast 日志也是
+	// 结构化输出；正常模式读到配置后在步骤 1 覆盖为配置值。
+	//（§3.2：log.level / log.format 属 YAML 启动项，启动期只读一次。）
+	logx.Setup("", "")
 	if setupMode(configPath) {
 		return setup.NewServer(configPath).Run()
 	}
@@ -126,6 +132,9 @@ func run(configPath string) error {
 	if err != nil {
 		return err
 	}
+	// AUTHLOFT_LOG_LEVEL / AUTHLOFT_LOG_FORMAT 的覆盖已由 config.Load
+	// 合入 cfg.Log，此处一次生效（含 debug 级别与 json/text 格式）。
+	logx.Setup(cfg.Log.Level, cfg.Log.Format)
 	return serve(cfg)
 }
 

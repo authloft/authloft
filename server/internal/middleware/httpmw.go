@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"authloft/internal/logx"
 )
 
 // 本文件提供 Connect 域（顶层 http.ServeMux 分流链，docs/后端架构.md
@@ -13,16 +15,12 @@ import (
 // 复制（§3.14 同口径）：requestid/origin 共用同包纯函数，logger 共用
 // logAccess（logger.go），metrics 共用 metrics.go 的同一组包级原子变量。
 
-// requestIDCtxKey 链路 ID 在 http 请求 ctx 中的键（HTTPRequestID 写入，
-// RequestIDFromContext 读取）。gin 版写入 gin.Context 的 RequestIDKey，
-// connect 域经本键读取（connect 错误包装 / HTTPLogger 消费）。
-type requestIDCtxKey struct{}
-
-// RequestIDFromContext 从 http 请求 ctx 读取链路 ID（HTTPRequestID 写入；
-// 未写入返回空串）。
+// RequestIDFromContext 从请求 ctx 读取链路 ID（HTTPRequestID 写入；未写入
+// 返回空串）。gin 版 RequestID 同样经 logx.WithRequestID 注入标准 ctx，
+// 两域共用唯一键（下沉在 internal/logx，避免业务层依赖 middleware）；
+// 保留本导出函数供 connect 错误包装 / HTTPLogger 消费。
 func RequestIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDCtxKey{}).(string)
-	return id
+	return logx.RequestID(ctx)
 }
 
 // HTTPRequestID http 版链路 ID 中间件（§3.3 行 302 requestid 职责的
@@ -35,7 +33,7 @@ func HTTPRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
 		if id != "" {
-			r = r.WithContext(context.WithValue(r.Context(), requestIDCtxKey{}, id))
+			r = r.WithContext(logx.WithRequestID(r.Context(), id))
 		}
 		w.Header().Set(XRequestIDHeader, id)
 		next.ServeHTTP(w, r)

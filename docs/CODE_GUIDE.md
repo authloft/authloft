@@ -59,7 +59,7 @@
 4. 登录主链路零同步写库：除建会话与必要的 `GETDEL` 外，所有写入必须经 `asyncqueue`。Review 时用「该写入是否影响当次响应正确性」判定（《后端架构》§5.2 白名单）
 5. 不得在 `factor` / `provider` 层引入 Gin 或 HTTP 概念
 6. 前台响应必须经 `dto/view.go` 裁剪成公开视图消息后返回；Connect 域禁止绕过生成 handler 手写 HTTP 响应、REST 豁免端点（OIDC / gateway / 页面 / multipart）除外（《后端架构》§3.14）
-7. 日志不得打印 login_token、session_token、验证码、密钥、完整手机号 / 邮箱（必要时掩码）
+7. 日志不得打印 login_token、session_token、验证码、密钥、完整手机号 / 邮箱（必要时掩码）；业务日志与链路 ID 的写法见 §3.8
 8. 新增渠道的 diff 不得出现在 `handler/`、`orchestrator/`、`dto/`（§3.3 验收标准）
 9. Protobuf 结构变更必须保持向下兼容（《接口文档》§12.8），`ext` 反序列化失败要能回退；`.proto` 变更必须过 `buf breaking`
 10. 会话续期按《后端架构》§11.5 每次请求重签
@@ -136,6 +136,29 @@
 - requestid：`crypto/rand` 16B hex（32 字符）、不透传入站头、失败留空串。
 - Origin / Referer 免检判据用 `URL.Path`；未来若引入通配路由必须改 `FullPath()`（防路径参数绕过判据）。
 - WebAuthn 必检字段固定：challenge / rpId / origin / 签名 + signCount。
+
+### 3.8 日志与链路 ID
+
+- **唯一落点**：日志库为标准库 `log/slog`（结构化、零第三方依赖）。全局 logger 只由 `bootstrap.run()` 经 `internal/logx.Setup(cfg.Log.Level, cfg.Log.Format)` 装配一次；`log.level`（debug|info|warn|error）与 `log.format`（json|text）属 YAML 启动项，启动期只读、不热更新（《后端架构》§3.2）。业务代码不得自行 `slog.SetDefault`、不得自建 logger、不得引入第三方日志库；setup 模式与配置加载失败路径走默认 info/json。
+- **链路 ID 从哪来**：gin 域 `middleware.RequestID` 与 Connect 域 `middleware.HTTPRequestID` 生成 16B hex 后统一经 `logx.WithRequestID` 写进标准 `context.Context`；`logx` 的 Handler 包装在 `Handle` 时自动补 `request_id` 字段。`internal/logx` 不依赖 gin / net/http，service 不得 import `middleware` 取链路 ID，也不得生成、透传入站 `X-Request-Id` 或手写 `"request_id"` 字段。
+- **业务层写法**（service / handler，请求链路内的日志）：
+
+  ```go
+  import "authloft/internal/logx"
+
+  logx.Warn(ctx, "thirdparty: write ticket result failed",
+      "ticket_id", id,
+      "error", err,
+  )
+  ```
+
+  `logx.Debug/Info/Warn/Error(ctx, msg, args...)` 等价于 `slog.XxxContext(ctx, ...)`；直接写 `slog.WarnContext(ctx, ...)` 同样自动带 `request_id`，但新代码统一用 `logx.*`。消息为「模块: 事件」，字段用 snake_case 的 key/value 成对传，禁止 `fmt.Sprintf` 拼整句、禁止 `log.Printf` / `fmt.Println`。
+
+- **ctx 一路传**：handler 用 `c.Request.Context()`（gin 域）/ Connect 传入的 `ctx` 调下游，中途不得换成 `context.Background()`，否则日志丢失 `request_id`。`logx.*(ctx, …)` 在没有链路 ID 的 ctx 上仍正常输出，只是不带该字段；`logx.RequestID(ctx)` 供排障读取，未注入返回空串。
+- **无请求上下文的场景**：异步队列 worker、启动装配、setup 模式、页面渲染等沿用 `slog.Warn/Info/Error/Debug` 包级函数即可，不伪造 `request_id`；访问日志（`middleware/logger.go`）与 panic 日志（`middleware/recover.go`）由中间件显式带字段，它们不带 ctx，与自动注入不冲突、不会重复。
+- **级别**：`Debug` 细粒度排障（默认级别下不输出）、`Info` 启动与安装关键节点、`Warn` 可降级失败（回写失败、投递失败、降级拒绝）、`Error` 致命错误。
+- **敏感信息**：见 §3.2 第 7 条与 §3.7；错误文本可能含 DSN 密码 / 密钥时先脱敏（`internal/setup` 的 `redact`），日志不打印 body / query / header / cookie。
+- **测试**：用 `logx.NewHandler(&buf, level, format)` 捕获输出断言字段；改动全局 logger 的用例须 `t.Cleanup` 恢复（§5.1）。
 
 ## 4. 前端编码规范
 
@@ -267,6 +290,7 @@ A. 纯单元（无 IO，占比最大）
 | `repo/model`                                             | 字段与《后端架构》§4 表一一对应（反射比对列名，防漂移）                                                                                                                                                                                                                                              |
 | `connect`（框架编解码集成）                              | 同一消息两种编码：JSON 输出为 lowerCamelCase（`loginToken`）、零值字段省略、整型为字符串（`"60"` 而非 `60`）；`application/json` 与 `application/proto` 两种 `Content-Type` 解出等价消息（`proto.Equal`）；未知字段 → `invalid_argument`；超长 body 被 `WithReadMaxBytes` 拒（`resource_exhausted`） |
 | `connect/errors.go`                                      | `ErrorInfo.code` 取值封闭（越界即 panic 或 500）；detail 可被客户端按生成类型解出；`request_id` 不在错误体（走 `X-Request-Id` 头）                                                                                                                                                                   |
+| `internal/logx`                                          | ① `logx.NewHandler` 捕获输出：ctx 有 / 无链路 ID 两分支的 `request_id` 注入；② 级别过滤与 json/text 格式；③ `With` 派生不丢注入；④ 便捷函数在外部裸 handler 下仍带字段；⑤ `Setup` 装配后全局级别生效                                                                                                 |
 | `dto/view.go`                                            | 公开视图消息**不含**任何凭证字段（断言生成消息的字段描述符中不存在 `client_secret` / `app_id` / `cert` 等）；Admin 视图含                                                                                                                                                                            |
 
 B. Fake / Mock 层

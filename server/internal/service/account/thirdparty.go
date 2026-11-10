@@ -53,7 +53,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -65,6 +64,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
 	"authloft/internal/eventlog"
+	"authloft/internal/logx"
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -634,7 +634,7 @@ func (s *ThirdpartyService) GetThirdpartyTicket(ctx context.Context, in TicketIn
 		// 后续轮询仍见 scanned；complete 的 CAS 覆盖路径不受影响（§2.8 同款；
 		// 回写失败仅记日志不阻断——GetLoginTicket 同口径）。
 		if _, werr := s.deps.Tickets.WriteScanned(ctx, id, res); werr != nil {
-			slog.Warn("account thirdparty: rewrite scanned marker failed", "ticket_id", id, "error", werr)
+			logx.Warn(ctx, "account thirdparty: rewrite scanned marker failed", "ticket_id", id, "error", werr)
 		}
 		return envelope(ticketStatusScanned, ticketStatusScanned, nil, nil)
 	case ticketStatusSuccess:

@@ -29,7 +29,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -42,6 +41,7 @@ import (
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
+	"authloft/internal/logx"
 	"authloft/internal/provider"
 	qrcodepkg "authloft/internal/qrcode"
 	"authloft/internal/security"
@@ -397,7 +397,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		// 后续轮询仍见 scanned；complete 的 CAS 覆盖路径不受影响（键值替换
 		// 由 cache/lua/ticket_write.lua 保证原子）。
 		if _, werr := s.deps.Tickets.WriteScanned(ctx, id, res); werr != nil {
-			slog.Warn("qrcode: rewrite scanned marker failed", "ticket_id", id, "error", werr)
+			logx.Warn(ctx, "qrcode: rewrite scanned marker failed", "ticket_id", id, "error", werr)
 		}
 		return envelope(ticketStatusScanned, ticketStatusScanned, nil)
 	case ticketStatusSuccess:
@@ -512,7 +512,7 @@ func (s *QRCode) enqueueAutoDelete(ctx context.Context, payload *token.TicketPay
 	}
 	key, err := storage.RenderKey(p.Ext.GetStoragePath(), payload.GetTicketId(), payload.GetIat())
 	if err != nil {
-		slog.Warn("qrcode: auto delete: render key failed", "ticket_id", payload.GetTicketId(), "error", err)
+		logx.Warn(ctx, "qrcode: auto delete: render key failed", "ticket_id", payload.GetTicketId(), "error", err)
 		return
 	}
 	s.deps.Queue.Push(asyncqueue.Task{
