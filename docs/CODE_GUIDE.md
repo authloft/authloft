@@ -81,16 +81,16 @@
 
 ### 3.3 扩展开发（新增渠道 / 因子 / 接口 / 事件）
 
-| 新增内容 | 改动 | 不改动 |
-|---------|------|--------|
-| 一个第三方渠道 | `internal/provider/oauth/<type>/` 新包（`init()` 自注册） | handler、service、前端均不改 |
-| 一个短信 / 邮件 / 存储厂商 | 对应 category 目录下新包 | 同上 |
-| 一个 captcha 厂商 | `internal/provider/captcha/<type>/` 新包 + 前端一个 adapter | 后端其余不改；自绘图形码仍必须带 `provider_key` |
-| 一个认证因子 | `internal/factor/<name>/` 新包 + 一行注册 + 前端一个组件 | 引擎不改 |
-| 一个 StepKind | `factor.go` 加常量 + 对应因子 `Steps()` | 引擎按 `Steps()` 通用处理 |
-| 一个事件类型 | `eventlog/event.go` 加常量与 detail 构造 | 写入路径不改 |
-| 一个接口 / 一个字段 | `proto/api/<域>/*.proto` 加消息或字段（或加 service 方法）→ `buf generate` → handler 装配 | `internal/connect`、中间件、前端 transport 均不改 |
-| 改某个接口的响应形状 | 只改 `.proto` + `dto/view.go` | 不新增「编码分支」，JSON 与 Protobuf 同步生效 |
+| 新增内容                   | 改动                                                                                      | 不改动                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| 一个第三方渠道             | `internal/provider/oauth/<type>/` 新包（`init()` 自注册）                                 | handler、service、前端均不改                      |
+| 一个短信 / 邮件 / 存储厂商 | 对应 category 目录下新包                                                                  | 同上                                              |
+| 一个 captcha 厂商          | `internal/provider/captcha/<type>/` 新包 + 前端一个 adapter                               | 后端其余不改；自绘图形码仍必须带 `provider_key`   |
+| 一个认证因子               | `internal/factor/<name>/` 新包 + 一行注册 + 前端一个组件                                  | 引擎不改                                          |
+| 一个 StepKind              | `factor.go` 加常量 + 对应因子 `Steps()`                                                   | 引擎按 `Steps()` 通用处理                         |
+| 一个事件类型               | `eventlog/event.go` 加常量与 detail 构造                                                  | 写入路径不改                                      |
+| 一个接口 / 一个字段        | `proto/api/<域>/*.proto` 加消息或字段（或加 service 方法）→ `buf generate` → handler 装配 | `internal/connect`、中间件、前端 transport 均不改 |
+| 改某个接口的响应形状       | 只改 `.proto` + `dto/view.go`                                                             | 不新增「编码分支」，JSON 与 Protobuf 同步生效     |
 
 - 判定是否满足「可插拔」的验收标准：新增渠道的 diff 不应出现在 `handler/`、`service/orchestrator/`、`dto/` 中；新增接口的 diff 不应出现在 `internal/connect/`、`middleware/` 中。
 - 新增三方渠道时，必须同步 `bootstrap` 注册表完整性门禁的渠道清单（`TestProviderRegistryComplete` 断言 ⊇《后端架构》§12.2 全量 type），防「漏 import → 生产静默 provider_disabled」。
@@ -121,11 +121,12 @@
 - 生成链以 **buf 为唯一口径**（勿用 protoc 原生 CLI）；生成产物提交进仓库，改 proto 后必须重跑 `buf generate` 且工作区零 diff。
 
 **api proto 命名与组织（《接口文档》§12.9 的编码侧约定）**
+
 - 源文件在 `server/proto/api/`，按域分目录（`common/`、`sso/`、`account/`、`admin/`、`oidc/`、`gateway/`、`rpc/`）；**包名 `api.<域>.v1`**；**每域一个 service，名为 `<域>Service`**（`SsoService` / `AccountService` / `AdminService` / `SetupService`；**rpc 域例外**：同包 `api.rpc.v1` 内拆两个 service——`UserService` / `TokenService`）；方法名 PascalCase 动词（`LoginDefault` / `GetProfile` / `UpdateUserStatus`…）；请求 `XxxRequest`、响应 `XxxResponse`；OIDC / gateway 豁免域不建 service。
 - 源 `.proto` 字段名一律 **snake_case**（线上 lowerCamelCase 由 protojson 映射，契约形态见《接口文档》§12.9）；编号从 1 起连续分配，遵守《接口文档》§12.8 向下兼容。
 - **枚举承载策略**：跨版本可能新增的取值集（`status` / `kind` / `step` / `fields[].type`）用 `string` 承载；仅真正封闭且双端同版本的集合才用 `enum`（避免旧客户端遇未知枚举值直接解码失败）。
 - 存储模型 proto 的组织豁免见本节上文（裸包名、不建 service、int32 禁令豁免）。
-**结构归属判定口径（新结构定义放哪）**
+  **结构归属判定口径（新结构定义放哪）**
 - 判定标准 = **前端是否按字段读写它**：前端要渲染 / 构造 / 校验字段的结构（`provider.Ext`、`credential.Meta`、各类 API 消息）定义在《接口文档》§12（唯一契约）；前端只当**不透明字符串**透传的载荷（`login_token` / `session_token` / `ticket`）、只在 Redis 流转的存储值（`TicketResult`）、只在服务端之间流转的载荷（`SyncCookiePayload`）定义在《后端架构》§11.6。两类都由 `server/proto/` 下同一批 `.proto` 生成，字节一致性不因定义文档不同而有差别。
 
 ### 3.7 安全编码
@@ -150,7 +151,7 @@
 8. 新增能力时先走 §4.4 的判定表；若需要改 `LoginContainer` / `reducer` 才能接入，视为设计问题而非实现问题
 9. 分支只认 `status` / `ErrorInfo.code`：取值必须落在《接口文档》§1.6 的封闭集合内；禁止在前端定义任何业务错误码常量或按错误码分支（Connect 标准码兜底文案除外）
 10. 小程序 / 宿主能力不在本工程实现：`login/` 下不得出现 `wx.*`、宿主桥接或 `external` 步骤组件
-11. captcha 配置只由调用方注入：`shared/captcha/CaptchaWidget` 不发配置请求；首屏 login 传注入快照的 `methods.captcha`、account 传 `AccountService/GetConfig` 的 `captcha`，运行期以响应顶层的 `captcha` 覆盖（《接口文档》§2.5）——`captcha` 对象不得被缓存为模块级常量
+11. captcha **一律弹窗，禁止在业务视图内联 widget**：调用方只把原请求交给 `shared/captcha/useCaptchaGate` 的 `run`、给出判读函数、把 `dialogProps` 铺给根级 `<CaptchaDialog />`；`captcha_required` / `captcha_invalid` 由弹窗吸收并换凭据重提，其余状态逃逸给既有状态机（编排不得下沉到 reducer）。配置只由调用方注入：`CaptchaWidget` 不发配置请求；首屏 login 传注入快照的 `methods.captcha`、account 传 `AccountService/GetConfig` 的 `captcha`，运行期以响应顶层的 `captcha` 覆盖（《接口文档》§2.5）——`captcha` 对象不得被缓存为模块级常量。凭据一次性：每轮询问重挂 widget 换新，禁止复用上一轮凭据；取消弹窗不得清任何流程态，`login_token` 仍只由 `login/api.ts` 托管（第 6 条）
 12. 三方回调按 `state` 首字母分派，不在前端判业务：`l` 走登录接口、`b` 走绑定接口；`OAuthCallbackPage` 只转发，不解析、不落盘、不自行决定跳哪个业务页
 13. entry 边界由 lint 固化（Rslint，Rstack 体系自带，规则配置接入时补齐）：`login/` 禁止 import `account/`、`admin/`、`shared/app-ui/`、`@douyinfe/semi-ui`；`shared/` 禁止 import 任何 entry；跨 entry 复用只经 `shared/api`、`shared/hooks`、`shared/utils`、`shared/components`、`shared/captcha`、`shared/urls`。**澄清**：本条禁的是 entry 之间互相 import；`shared/**` 是四端合法共用位，把重复实现收进 `shared/` 不违反本条。**setup 例外**：`setup/` 允许并应优先使用 Semi 组件默认样式（Steps / Form / RadioGroup / Upload / Banner / Spin / Modal），允许 import `@douyinfe/semi-ui` 与 `shared/app-ui/`；不自造页面外壳与装饰性样式，自定义样式仅限业务必需；login 维持「不使用 Semi」不变
 14. 静态资源 URL 只由 `static_base`（注入变量）拼出：禁止写死 `/assets`、`/static` 或 CDN 域名；`__webpack_public_path__` 只在根组件模块作用域赋值一次（框架接管挂载，《前端架构》§1.4）
@@ -191,16 +192,16 @@
 
 > 判定规则（键盘输入 / 浏览器原生 API / 等待外部事件 / 仅跳转，四条按序判断）见《前端架构》§1.2；本小节为判定后的改动清单（验证抽象边界是否守住）。
 
-| 判定结果 | 前端改动 | 是否触碰通用层 |
-|---------|---------|---------------|
-| 1. 键盘输入 | 新增 `factors/XxxForm.tsx` + `registry.ts` 一行 | 否 |
-| 2. 浏览器 / 宿主原生 API | 新增 `factors/XxxButton.tsx` + `registry.ts` 一行；后端在 `methods` 下发 `capability` 与 `hint` | 否（`useCapability` 已通用） |
-| 3. 等待外部事件 | 新增面板 + 复用 `useLongPoll` | 否 |
-| 4. 仅跳转 | 零改动（后端给 URL） | 否 |
-| 新 captcha 厂商 | 新增 `shared/captcha/adapters/Xxx.tsx` | 否（login 与 account 同时生效） |
-| 新第三方渠道 | 零改动（列表由注入快照下发；图标由管理员自行上传到任意位置后手填 `icon_url`） | 否 |
-| 新 Provider 字段 | 零改动（后端 meta 声明 `section` 与类型，`SchemaForm` 按 `section` 归入区块） | 否 |
-| 新 StepKind | `steps/` 新增一个组件 + `StepDispatcher` 一行 | 一行 |
+| 判定结果                 | 前端改动                                                                                        | 是否触碰通用层                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------- |
+| 1. 键盘输入              | 新增 `factors/XxxForm.tsx` + `registry.ts` 一行                                                 | 否                              |
+| 2. 浏览器 / 宿主原生 API | 新增 `factors/XxxButton.tsx` + `registry.ts` 一行；后端在 `methods` 下发 `capability` 与 `hint` | 否（`useCapability` 已通用）    |
+| 3. 等待外部事件          | 新增面板 + 复用 `useLongPoll`                                                                   | 否                              |
+| 4. 仅跳转                | 零改动（后端给 URL）                                                                            | 否                              |
+| 新 captcha 厂商          | 新增 `shared/captcha/adapters/Xxx.tsx`                                                          | 否（login 与 account 同时生效） |
+| 新第三方渠道             | 零改动（列表由注入快照下发；图标由管理员自行上传到任意位置后手填 `icon_url`）                   | 否                              |
+| 新 Provider 字段         | 零改动（后端 meta 声明 `section` 与类型，`SchemaForm` 按 `section` 归入区块）                   | 否                              |
+| 新 StepKind              | `steps/` 新增一个组件 + `StepDispatcher` 一行                                                   | 一行                            |
 
 若某次改动需要修改 `LoginContainer.tsx` 或 `reducer.ts`，说明抽象边界已被突破，应回到《前端架构》§1.2 重新判定。
 
@@ -227,15 +228,15 @@
 
 **测试栈**
 
-| 用途 | 选型 |
-|------|------|
-| 断言 | `testing` 标准库，统一 table-driven；**不引入 testify** |
-| Mock | 优先手写 Fake（`test/fakes/`），仅在接口宽时用 `gomock` |
-| Redis | **真连 Redis**（ENV.md test 实例），Lua 脚本走同一接口实测；**不引入 miniredis** |
-| DB | 集成测试**真连 MariaDB**（ENV.md test 实例，避免方言差异）；不 mock SQL 层 |
-| HTTP | `net/http/httptest` + 真实 Gin / Connect 路由（含中间件），不 mock 框架 |
+| 用途     | 选型                                                                                         |
+| -------- | -------------------------------------------------------------------------------------------- |
+| 断言     | `testing` 标准库，统一 table-driven；**不引入 testify**                                      |
+| Mock     | 优先手写 Fake（`test/fakes/`），仅在接口宽时用 `gomock`                                      |
+| Redis    | **真连 Redis**（ENV.md test 实例），Lua 脚本走同一接口实测；**不引入 miniredis**             |
+| DB       | 集成测试**真连 MariaDB**（ENV.md test 实例，避免方言差异）；不 mock SQL 层                   |
+| HTTP     | `net/http/httptest` + 真实 Gin / Connect 路由（含中间件），不 mock 框架                      |
 | 外部服务 | `httptest` 起假第三方（OIDC discovery / token / userinfo / sitesVerify）；小程序用假微信接口 |
-| 并发 | `go test -race`，配合 `-count=N` |
+| 并发     | `go test -race`，配合 `-count=N`                                                             |
 
 **DB 集成测试并发口径**：统一 `GET_LOCK(uc_test_db_slot)` 持锁贯穿 TestMain 串行化；DSN / Redis 凭据经 `UC_TEST_*` 环境变量注入不落盘；测后清理零残留；env 全量 `go test ./...` 免 `-p 1`。
 
@@ -245,102 +246,102 @@
 
 A. 纯单元（无 IO，占比最大）
 
-| 对象 | 用例 |
-|------|------|
-| `security/token.go` | ① round-trip；② 篡改 ciphertext/nonce/prefix 必失败；③ 跨 purpose 不可解（login→session）；④ 不同 kid 不可解；⑤ 版本降级被拒；⑥ 过期令牌被拒；⑦ 空载荷 / 超长载荷 |
-| `security/keystore.go` | kid 轮换期新旧密钥并存；未知 kid 报错 |
-| `security/token.go`（`purpose=cookie` / `sync_payload`） | `al_login_state` 与 `SyncCookiePayload` 的 round-trip；篡改必失败；跨 purpose（cookie ↔ sync_payload ↔ login）不互解；`exp` 过期 / `remaining` 为空的边界 |
-| `security/argon2.go` | 哈希可验证、不同盐不同结果；参数与 `config.argon2` 一致 |
-| `security/policy.go` | 决策矩阵：长度边界、字符类 1–3、含用户名、弱口令；固定规则（>64 / 与用户名或邮箱相同 / 含空白）不可被 settings 绕过 |
-| `security/rand.go` | 位数正确、字符集正确、不重复（大样本） |
-| `cache/keys.go` | 每个键的格式与 TTL 常量与《后端架构》§5.1 一致（表驱动，逐键断言） |
-| `otp/limit.go` | 冷却边界（59/60/61s）、日限额边界、跨天重置（注入 Clock） |
-| `oidc/redirect.go` | 精确匹配、`*` 通配、子域名陷阱（必须整段匹配）、大小写、空白名单 |
-| `oidc/claims.go` | 《后端架构》§14.4 映射逐字段；`email_verified` / `phone_verified` 取 DB 标志；`amr` 来自登录链路 |
-| `oidc/pkce.go` | S256 校验正误两种 |
-| `schema/schema.go` | 每种 type 产出的字段清单快照；每个字段必带 `section` 且取值落在五枚举内；`secret` 字段标记、默认值、`advanced` |
-| `jsonata/` | `user_mapping` 与 `storage_path` 表达式渲染（含 `ticket_id`/`timestamp` 内置变量）；非法 / 不支持表达式归一为所在域既有错误码，断言不透出 gnata 原始错误；不支持清单内语法逐条断言按归一口径返回 |
-| `storage/path.go` | path_prefix 拼接、非法字符、路径穿越（`../`）被拒 |
-| `orchestrator/state.go` | 载荷 round-trip；`passed` 追加；`tp` 覆盖语义（仅最后一次三方身份） |
-| `orchestrator/dispatch.go` | `Usage` 校验矩阵：主因子不能当二次用、反之亦然；未知 method；step 越界 |
-| `repo/model` | 字段与《后端架构》§4 表一一对应（反射比对列名，防漂移） |
-| `connect`（框架编解码集成） | 同一消息两种编码：JSON 输出为 lowerCamelCase（`loginToken`）、零值字段省略、整型为字符串（`"60"` 而非 `60`）；`application/json` 与 `application/proto` 两种 `Content-Type` 解出等价消息（`proto.Equal`）；未知字段 → `invalid_argument`；超长 body 被 `WithReadMaxBytes` 拒（`resource_exhausted`） |
-| `connect/errors.go` | `ErrorInfo.code` 取值封闭（越界即 panic 或 500）；detail 可被客户端按生成类型解出；`request_id` 不在错误体（走 `X-Request-Id` 头） |
-| `dto/view.go` | 公开视图消息**不含**任何凭证字段（断言生成消息的字段描述符中不存在 `client_secret` / `app_id` / `cert` 等）；Admin 视图含 |
+| 对象                                                     | 用例                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `security/token.go`                                      | ① round-trip；② 篡改 ciphertext/nonce/prefix 必失败；③ 跨 purpose 不可解（login→session）；④ 不同 kid 不可解；⑤ 版本降级被拒；⑥ 过期令牌被拒；⑦ 空载荷 / 超长载荷                                                                                                                                    |
+| `security/keystore.go`                                   | kid 轮换期新旧密钥并存；未知 kid 报错                                                                                                                                                                                                                                                                |
+| `security/token.go`（`purpose=cookie` / `sync_payload`） | `al_login_state` 与 `SyncCookiePayload` 的 round-trip；篡改必失败；跨 purpose（cookie ↔ sync_payload ↔ login）不互解；`exp` 过期 / `remaining` 为空的边界                                                                                                                                            |
+| `security/argon2.go`                                     | 哈希可验证、不同盐不同结果；参数与 `config.argon2` 一致                                                                                                                                                                                                                                              |
+| `security/policy.go`                                     | 决策矩阵：长度边界、字符类 1–3、含用户名、弱口令；固定规则（>64 / 与用户名或邮箱相同 / 含空白）不可被 settings 绕过                                                                                                                                                                                  |
+| `security/rand.go`                                       | 位数正确、字符集正确、不重复（大样本）                                                                                                                                                                                                                                                               |
+| `cache/keys.go`                                          | 每个键的格式与 TTL 常量与《后端架构》§5.1 一致（表驱动，逐键断言）                                                                                                                                                                                                                                   |
+| `otp/limit.go`                                           | 冷却边界（59/60/61s）、日限额边界、跨天重置（注入 Clock）                                                                                                                                                                                                                                            |
+| `oidc/redirect.go`                                       | 精确匹配、`*` 通配、子域名陷阱（必须整段匹配）、大小写、空白名单                                                                                                                                                                                                                                     |
+| `oidc/claims.go`                                         | 《后端架构》§14.4 映射逐字段；`email_verified` / `phone_verified` 取 DB 标志；`amr` 来自登录链路                                                                                                                                                                                                     |
+| `oidc/pkce.go`                                           | S256 校验正误两种                                                                                                                                                                                                                                                                                    |
+| `schema/schema.go`                                       | 每种 type 产出的字段清单快照；每个字段必带 `section` 且取值落在五枚举内；`secret` 字段标记、默认值、`advanced`                                                                                                                                                                                       |
+| `jsonata/`                                               | `user_mapping` 与 `storage_path` 表达式渲染（含 `ticket_id`/`timestamp` 内置变量）；非法 / 不支持表达式归一为所在域既有错误码，断言不透出 gnata 原始错误；不支持清单内语法逐条断言按归一口径返回                                                                                                     |
+| `storage/path.go`                                        | path_prefix 拼接、非法字符、路径穿越（`../`）被拒                                                                                                                                                                                                                                                    |
+| `orchestrator/state.go`                                  | 载荷 round-trip；`passed` 追加；`tp` 覆盖语义（仅最后一次三方身份）                                                                                                                                                                                                                                  |
+| `orchestrator/dispatch.go`                               | `Usage` 校验矩阵：主因子不能当二次用、反之亦然；未知 method；step 越界                                                                                                                                                                                                                               |
+| `repo/model`                                             | 字段与《后端架构》§4 表一一对应（反射比对列名，防漂移）                                                                                                                                                                                                                                              |
+| `connect`（框架编解码集成）                              | 同一消息两种编码：JSON 输出为 lowerCamelCase（`loginToken`）、零值字段省略、整型为字符串（`"60"` 而非 `60`）；`application/json` 与 `application/proto` 两种 `Content-Type` 解出等价消息（`proto.Equal`）；未知字段 → `invalid_argument`；超长 body 被 `WithReadMaxBytes` 拒（`resource_exhausted`） |
+| `connect/errors.go`                                      | `ErrorInfo.code` 取值封闭（越界即 panic 或 500）；detail 可被客户端按生成类型解出；`request_id` 不在错误体（走 `X-Request-Id` 头）                                                                                                                                                                   |
+| `dto/view.go`                                            | 公开视图消息**不含**任何凭证字段（断言生成消息的字段描述符中不存在 `client_secret` / `app_id` / `cert` 等）；Admin 视图含                                                                                                                                                                            |
 
 B. Fake / Mock 层
 
-| 对象 | 用例 |
-|------|------|
-| `provider/captcha/*` | 用假 sitesVerify 服务：成功、失败、超时、重复 token |
-| `provider/oauth/*` | 用假 OIDC 服务跑通 discovery→exchange→userinfo；`oauth2` 兜底适配器用假三 URL；`user_mapping` 抽取正确 |
-| `provider/storage/{s3,local}` | Put/Get/Delete/URL/PresignPut；`local` 配置 `direct` 时自动回退 `proxy` |
-| `provider/sms/*` 与 `provider/email/*` | 参数渲染正确；发送失败不回滚验证码 |
-| `factor/*` | 每个因子用 Fake repo+cache 跑：`Steps()` 序列与《接口文档》§1.10 一致；`Start`/`Verify` 的成功 / 失败 / 重试三态 |
+| 对象                                   | 用例                                                                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `provider/captcha/*`                   | 用假 sitesVerify 服务：成功、失败、超时、重复 token                                                              |
+| `provider/oauth/*`                     | 用假 OIDC 服务跑通 discovery→exchange→userinfo；`oauth2` 兜底适配器用假三 URL；`user_mapping` 抽取正确           |
+| `provider/storage/{s3,local}`          | Put/Get/Delete/URL/PresignPut；`local` 配置 `direct` 时自动回退 `proxy`                                          |
+| `provider/sms/*` 与 `provider/email/*` | 参数渲染正确；发送失败不回滚验证码                                                                               |
+| `factor/*`                             | 每个因子用 Fake repo+cache 跑：`Steps()` 序列与《接口文档》§1.10 一致；`Start`/`Verify` 的成功 / 失败 / 重试三态 |
 
 C. cache 与 Lua（真连 Redis）
 
-| 对象 | 用例 |
-|------|------|
-| `cache/code.go` 发码 Lua | ① 首次成功；② 60s 内二次发被拒；③ 日限额到达被拒；④ IP 限额到达被拒；⑤ TTL 正确；⑥ 多写合并后仅 1 次往返（断言命令数） |
-| `cache/code.go` 校验 Lua | ① 正确码成功且键被删；② 错码 `tries+1` 且键保留（`tries < 5`）；③ 第 5 次错码后键被删（作废，与上限 5 一致）；④ 不同归属标识（`tid` / `uid`）的码不可用；⑤ 并发 100 次校验只有 1 次成功 |
-| `cache/captcha.go` | GETDEL 一次性 |
-| `cache/pwfail.go` | 计数递增、当日 24:00 过期、`pwban` 的 TTL 与 `retry_after` 计算；`status` 取 `locked` |
-| `cache/session.go` / `epoch.go` | epoch 读取与回源；递增到 > 30000 时回绕为 1（跳过 0，《后端架构》§4.2）；`session.go` 本期无对应键空间（令牌自包含，逐出扩展点见《后端架构》§11.1） |
-| `cache/provider.go` | 版本号 + pub/sub 失效 |
+| 对象                            | 用例                                                                                                                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cache/code.go` 发码 Lua        | ① 首次成功；② 60s 内二次发被拒；③ 日限额到达被拒；④ IP 限额到达被拒；⑤ TTL 正确；⑥ 多写合并后仅 1 次往返（断言命令数）                                                                  |
+| `cache/code.go` 校验 Lua        | ① 正确码成功且键被删；② 错码 `tries+1` 且键保留（`tries < 5`）；③ 第 5 次错码后键被删（作废，与上限 5 一致）；④ 不同归属标识（`tid` / `uid`）的码不可用；⑤ 并发 100 次校验只有 1 次成功 |
+| `cache/captcha.go`              | GETDEL 一次性                                                                                                                                                                           |
+| `cache/pwfail.go`               | 计数递增、当日 24:00 过期、`pwban` 的 TTL 与 `retry_after` 计算；`status` 取 `locked`                                                                                                   |
+| `cache/session.go` / `epoch.go` | epoch 读取与回源；递增到 > 30000 时回绕为 1（跳过 0，《后端架构》§4.2）；`session.go` 本期无对应键空间（令牌自包含，逐出扩展点见《后端架构》§11.1）                                     |
+| `cache/provider.go`             | 版本号 + pub/sub 失效                                                                                                                                                                   |
 
 D. service / orchestrator（Fake 依赖 + httptest）
 
-| 对象 | 用例 |
-|------|------|
-| `orchestrator/engine.go` | 《后端架构》§7.3 的逐步断言（此为核心用例）：① 目标不存在时返回 `status=user_not_found`（不发码、不签发 login_token）；② 主因子未通过直接打二次因子被拒；③ MFA 阶段手机号只能来自 uid 绑定资料；④ 验证码 `purpose` 与 `tid` 绑定；⑤ MFA 总时长超 10 分钟回到第一步 |
-| `orchestrator/methods.go` | 快照生成：开关过滤、`flow=register/reset` 过滤、`flags` 与 settings 一致、排序分组、快照无凭证；快照结构即 `__AUTHLOFT_INIT__.methods` 的值 |
-| `orchestrator/binding.go` | 《后端架构》§12.5：tp 覆盖、只有两个选项、`enable_signup=0` 时创建被拒、`set_password` 的 password 按 `tp` 判定、注册端点接受 `flow=login`、auto_bind 命中与未命中 |
-| `service/contact.go` | ① bind 的码内 `owner` 是 `uid` 而非 `tid`；② `verify` 时 uid 不一致即 `invalid_code`；③ 换一个 target 取不到码；④ captcha 缺失被拦（《后端架构》§9.3） |
-| `service/thirdparty.go`（`BindToCurrentUser`） | ① `b` 前缀 state 正确路径；② Cookie uid ≠ 会话 uid 被拒；③ open_id 已绑他人 → `target_taken`；④ 已绑本人幂等；⑤ 成功后未签发 login_token、未 Set-Cookie；⑥ 审计事件最终落库；⑦ qrcode 通道与 redirect 通道走同一函数（注入 ticket 身份 vs 现算） |
-| `service/ticket.go`（绑定轮询） | ① `scene=bind` 的 ticket 不被登录轮询接受（反之亦然）；② 命中后 GETDEL 且用会话 uid 绑定；③ 未命中且未过期 → `pending`；④ 过期 → `expired`；⑤ 未带会话 → 401 |
-| `orchestrator/terminal.go` | 建会话 1 次写；日志与 `last_login_at` 走队列不阻塞；OIDC 场景授权码生成与 `redirectTo` 拼接正确 |
-| `session/verify.go` | 《后端架构》§11.1 四步：kid、exp、epoch 比对（缓存命中 / 未命中 / 回源）、失败清 Cookie |
-| `session/renew.go` | 每次请求均重签、按来源返回 `Set-Cookie` / `X-Authloft-Token`；重签纯计算、无存储写入（断言零队列任务） |
-| `service/password.go` | 改密后 epoch 递增、refresh token 批量吊销 |
-| `service/ticket.go` | 长轮询超时（上限见《接口文档》§2.8）返回 `pending`；ticket 过期返回 `expired`；`GETDEL` 原子消费、用后即毁 |
-| `service/qrcode.go` | `ticket_id` 长度上限见《后端架构》§11.6.4；码图走中转；`qrcode_auto_delete=1` 时投递删除任务（同模板重算 key） |
-| `service/admin/provider.go` | 写后 `al:prov:ver` 自增且缓存被删；`provider_key` 唯一性与字符集校验 |
-| `service/upload.go` | presign 的 MIME / 大小校验、key 由服务端生成（前端传路径被忽略）、commit 不回读 |
+| 对象                                           | 用例                                                                                                                                                                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `orchestrator/engine.go`                       | 《后端架构》§7.3 的逐步断言（此为核心用例）：① 目标不存在时返回 `status=user_not_found`（不发码、不签发 login_token）；② 主因子未通过直接打二次因子被拒；③ MFA 阶段手机号只能来自 uid 绑定资料；④ 验证码 `purpose` 与 `tid` 绑定；⑤ MFA 总时长超 10 分钟回到第一步 |
+| `orchestrator/methods.go`                      | 快照生成：开关过滤、`flow=register/reset` 过滤、`flags` 与 settings 一致、排序分组、快照无凭证；快照结构即 `__AUTHLOFT_INIT__.methods` 的值                                                                                                                        |
+| `orchestrator/binding.go`                      | 《后端架构》§12.5：tp 覆盖、只有两个选项、`enable_signup=0` 时创建被拒、`set_password` 的 password 按 `tp` 判定、注册端点接受 `flow=login`、auto_bind 命中与未命中                                                                                                 |
+| `service/contact.go`                           | ① bind 的码内 `owner` 是 `uid` 而非 `tid`；② `verify` 时 uid 不一致即 `invalid_code`；③ 换一个 target 取不到码；④ captcha 缺失被拦（《后端架构》§9.3）                                                                                                             |
+| `service/thirdparty.go`（`BindToCurrentUser`） | ① `b` 前缀 state 正确路径；② Cookie uid ≠ 会话 uid 被拒；③ open_id 已绑他人 → `target_taken`；④ 已绑本人幂等；⑤ 成功后未签发 login_token、未 Set-Cookie；⑥ 审计事件最终落库；⑦ qrcode 通道与 redirect 通道走同一函数（注入 ticket 身份 vs 现算）                   |
+| `service/ticket.go`（绑定轮询）                | ① `scene=bind` 的 ticket 不被登录轮询接受（反之亦然）；② 命中后 GETDEL 且用会话 uid 绑定；③ 未命中且未过期 → `pending`；④ 过期 → `expired`；⑤ 未带会话 → 401                                                                                                       |
+| `orchestrator/terminal.go`                     | 建会话 1 次写；日志与 `last_login_at` 走队列不阻塞；OIDC 场景授权码生成与 `redirectTo` 拼接正确                                                                                                                                                                    |
+| `session/verify.go`                            | 《后端架构》§11.1 四步：kid、exp、epoch 比对（缓存命中 / 未命中 / 回源）、失败清 Cookie                                                                                                                                                                            |
+| `session/renew.go`                             | 每次请求均重签、按来源返回 `Set-Cookie` / `X-Authloft-Token`；重签纯计算、无存储写入（断言零队列任务）                                                                                                                                                             |
+| `service/password.go`                          | 改密后 epoch 递增、refresh token 批量吊销                                                                                                                                                                                                                          |
+| `service/ticket.go`                            | 长轮询超时（上限见《接口文档》§2.8）返回 `pending`；ticket 过期返回 `expired`；`GETDEL` 原子消费、用后即毁                                                                                                                                                         |
+| `service/qrcode.go`                            | `ticket_id` 长度上限见《后端架构》§11.6.4；码图走中转；`qrcode_auto_delete=1` 时投递删除任务（同模板重算 key）                                                                                                                                                     |
+| `service/admin/provider.go`                    | 写后 `al:prov:ver` 自增且缓存被删；`provider_key` 唯一性与字符集校验                                                                                                                                                                                               |
+| `service/upload.go`                            | presign 的 MIME / 大小校验、key 由服务端生成（前端传路径被忽略）、commit 不回读                                                                                                                                                                                    |
 
 E. handler / 中间件（httptest + 真实路由）
 
-| 对象 | 用例 |
-|------|------|
-| `middleware/origin.go` | 同源通过、跨站 403、无 Origin 时走 Referer 白名单 |
-| Connect 框架（Content-Type） | `application/json` 通过、`application/proto` 通过、`text/plain` → 415；OIDC 与 multipart 端点不受 Connect 校验（REST 豁免） |
-| `middleware/csp.go` | nonce 每请求不同；`CSPSupporter` 片段按指令名聚合去重后单条输出（非拼接追加，《后端架构》§3.3 / §9.4）；各指令取值与《接口文档》§8 统一口径逐项一致（含 `static_base` 为 CDN 时追加源、captcha provider 贡献源按当前生效项聚合；setup server 渲染的 `/setup` 壳同基线） |
-| `connect`（rpc HMAC interceptor） | 写接口（`Update`/`Delete`/`Set`/`Create`/`Revoke` 开头）nonce 重放被拒；写 / 读接口签名错（含 nonce 项错）被拒；签名对通过；读接口同一 `X-Nonce-ID` 重复请求均通过（nonce 参与签名、不去重） |
+| 对象                                                            | 用例                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `middleware/origin.go`                                          | 同源通过、跨站 403、无 Origin 时走 Referer 白名单                                                                                                                                                                                                                                                                                                                                                                              |
+| Connect 框架（Content-Type）                                    | `application/json` 通过、`application/proto` 通过、`text/plain` → 415；OIDC 与 multipart 端点不受 Connect 校验（REST 豁免）                                                                                                                                                                                                                                                                                                    |
+| `middleware/csp.go`                                             | nonce 每请求不同；`CSPSupporter` 片段按指令名聚合去重后单条输出（非拼接追加，《后端架构》§3.3 / §9.4）；各指令取值与《接口文档》§8 统一口径逐项一致（含 `static_base` 为 CDN 时追加源、captcha provider 贡献源按当前生效项聚合；setup server 渲染的 `/setup` 壳同基线）                                                                                                                                                        |
+| `connect`（rpc HMAC interceptor）                               | 写接口（`Update`/`Delete`/`Set`/`Create`/`Revoke` 开头）nonce 重放被拒；写 / 读接口签名错（含 nonce 项错）被拒；签名对通过；读接口同一 `X-Nonce-ID` 重复请求均通过（nonce 参与签名、不去重）                                                                                                                                                                                                                                   |
 | `middleware/`（基础层：requestid / logger / recover / metrics） | requestid：格式（16B hex / 32 字符）、不读入站头、所有响应回写 `X-Request-Id` 头、rand 失败留空串；logger：不读 body / query / header / cookie，path 取 `URL.Path` 不含 query，panic 值与堆栈只进日志；recover：panic → 500（Connect 域为 `internal` 错误体），日志含 request_id / method / path / panic / stack，已写与未写响应两分支均 `Abort()` 截断后续链；metrics：3 个原子计数含 panic 请求、`/metrics` 纯文本、近似快照 |
-| `handler/page.go` | 注入块转义 `<>&` 与 `\u2028/\u2029`；`Cache-Control: no-store`；不出现任何密钥字段；`methods` 快照必注入、不含 `admin`、无凭证；占位符替换正确：三个运行期占位符（`{{AUTHLOFT_STATIC_BASE}}` / `{{AUTHLOFT_CSP_NONCE}}` / `{{AUTHLOFT_INIT_JSON}}`）均由后端替换，`{{AUTHLOFT_STATIC_BASE}}` 尾斜杠归一（相对 `/assets` 与 CDN 绝对地址两种取值），残留未知占位符按字面输出 |
-| `handler/sso.go` | 流程信封字段齐全；`loginToken` 每次重签返回新值；失败态只由 `status` 表达 |
-| 全局 | admin 域未携带有效会话返回 401（`unauthenticated`）；会话有效但 `uid != 1` 返回 404（`not_found`，掩护管理面存在，《接口文档》§1.5）；所有写请求带 Origin 校验；同一接口两种 `Content-Type` 的响应解出后 `proto.Equal` |
-| `handler/account.go` | `AccountService/GetConfig` 的 `captcha` 不含任何凭证字段；`AccountService/ThirdpartyOauth` 未带会话 → 401；`X-Authloft-Token` Header 可替代 Cookie 完成鉴权 |
+| `handler/page.go`                                               | 注入块转义 `<>&` 与 `\u2028/\u2029`；`Cache-Control: no-store`；不出现任何密钥字段；`methods` 快照必注入、不含 `admin`、无凭证；占位符替换正确：三个运行期占位符（`{{AUTHLOFT_STATIC_BASE}}` / `{{AUTHLOFT_CSP_NONCE}}` / `{{AUTHLOFT_INIT_JSON}}`）均由后端替换，`{{AUTHLOFT_STATIC_BASE}}` 尾斜杠归一（相对 `/assets` 与 CDN 绝对地址两种取值），残留未知占位符按字面输出                                                    |
+| `handler/sso.go`                                                | 流程信封字段齐全；`loginToken` 每次重签返回新值；失败态只由 `status` 表达                                                                                                                                                                                                                                                                                                                                                      |
+| 全局                                                            | admin 域未携带有效会话返回 401（`unauthenticated`）；会话有效但 `uid != 1` 返回 404（`not_found`，掩护管理面存在，《接口文档》§1.5）；所有写请求带 Origin 校验；同一接口两种 `Content-Type` 的响应解出后 `proto.Equal`                                                                                                                                                                                                         |
+| `handler/account.go`                                            | `AccountService/GetConfig` 的 `captcha` 不含任何凭证字段；`AccountService/ThirdpartyOauth` 未带会话 → 401；`X-Authloft-Token` Header 可替代 Cookie 完成鉴权                                                                                                                                                                                                                                                                    |
 
 F. 异步队列
 
-| 用例 |
-|------|
-| 攒批：200 条触发一次 flush；2s 时间窗触发一次 flush |
+| 用例                                                                               |
+| ---------------------------------------------------------------------------------- |
+| 攒批：200 条触发一次 flush；2s 时间窗触发一次 flush                                |
 | 合并：同一 user_id 的 `last_login_at` 取最新；同一 credential 的 sign_count 取最大 |
-| 队列满：非关键项被丢弃，`dropped` 计数 +1，且业务返回值不受影响 |
-| 优雅关闭：Shutdown 后剩余任务被 flush；超时 10s 强制退出 |
-| `-race` 下并发 Push/Flush 无数据竞争 |
+| 队列满：非关键项被丢弃，`dropped` 计数 +1，且业务返回值不受影响                    |
+| 优雅关闭：Shutdown 后剩余任务被 flush；超时 10s 强制退出                           |
+| `-race` 下并发 Push/Flush 无数据竞争                                               |
 
 G. 集成测试（真连 ENV.md test 实例）
 
-| 用例 |
-|------|
-| 真实 MariaDB + Redis + 假第三方：跑通《后端架构》§7.3 / 《接口文档》§10.2 完整 8 步；断言 `event_log` 最终落库（含队列延迟写入）、`last_login_at` 更新 |
+| 用例                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 真实 MariaDB + Redis + 假第三方：跑通《后端架构》§7.3 / 《接口文档》§10.2 完整 8 步；断言 `event_log` 最终落库（含队列延迟写入）、`last_login_at` 更新                               |
 | 迁移（goose，《后端架构》§3.16）：空库一步 `migrate up` 到最新、表结构与《后端架构》§4 一致；已最新时重复执行零变更（秒过）；人为制造失败后按恢复流程（修复半成品 → 重跑重试）可续装 |
-| 会话失效：改密后旧 session_token 立即不可用 |
-| OIDC 全链路：authorize → login → code → token → userinfo → refresh → revoke |
-| Provider 热更新：改配置后 2 秒内新请求生效（多实例用 pub/sub） |
+| 会话失效：改密后旧 session_token 立即不可用                                                                                                                                          |
+| OIDC 全链路：authorize → login → code → token → userinfo → refresh → revoke                                                                                                          |
+| Provider 热更新：改配置后 2 秒内新请求生效（多实例用 pub/sub）                                                                                                                       |
 
 **安全回归清单（每次改动登录链路都要跑）**
 
@@ -372,68 +373,70 @@ G. 集成测试（真连 ENV.md test 实例）
 
 **测试栈与配置**
 
-| 用途 | 选型 |
-|------|------|
-| 运行器 | Rstack（底层为 Rstest，配置见 `rstack.config.mts`，脚手架） |
-| 环境 | jsdom；WebAuthn 相关用例注入 `window.PublicKeyCredential` stub |
+| 用途     | 选型                                                                                                                                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 运行器   | Rstack（底层为 Rstest，配置见 `rstack.config.mts`，脚手架）                                                                                                                                                              |
+| 环境     | jsdom；WebAuthn 相关用例注入 `window.PublicKeyCredential` stub                                                                                                                                                           |
 | 组件测试 | 渲染断言经 `renderToStaticMarkup`（rstest externalize 与 Semi 子路径不兼容，testing-library 暂不可用，工具链修复后恢复）；按可访问性角色 / 文案断言，不做快照测试；`semi-probe` 探针长期保留作为配置绊线（配置回退即红） |
-| 网络 | msw（handler 内联于各测试文件，非集中 mocks/），拦截所有 `/api/**` |
-| 契约 | 响应类型来自生成的 TS 消息类型，msw fixture 直接以生成类型断言，防止前后端漂移 |
-| E2E | Playwright（体系未建，本节 E2E 用例为规划口径） |
-| 覆盖率 | 全量 ≥ 80% 行覆盖；`login/flow/*`、`loginTokenStore`、`oidcContext`、`shared/captcha/*`、`login/factors/WebAuthnButton.tsx`（webauthn 认证胶水）要求 100% 分支覆盖 |
+| 网络     | msw（handler 内联于各测试文件，非集中 mocks/），拦截所有 `/api/**`                                                                                                                                                       |
+| 契约     | 响应类型来自生成的 TS 消息类型，msw fixture 直接以生成类型断言，防止前后端漂移                                                                                                                                           |
+| E2E      | Playwright（体系未建，本节 E2E 用例为规划口径）                                                                                                                                                                          |
+| 覆盖率   | 全量 ≥ 80% 行覆盖；`login/flow/*`、`loginTokenStore`、`oidcContext`、`shared/captcha/*`、`login/factors/WebAuthnButton.tsx`（webauthn 认证胶水）要求 100% 分支覆盖                                                       |
 
 **各层测法与重点用例**
 
 A. 纯函数层
 
-| 对象 | 用例 |
-|------|------|
-| `flow/reducer.ts` | ① 《接口文档》§1.6 每个 `status` 的迁移正确性（表驱动逐项覆盖大集合）；② `mfa_required` 不跳页、就地切换 method；③ `captcha_required` 插入校验且保留已填内容；④ `captcha_invalid` reset widget 后重试；⑤ `binding_required` 分支；⑥ `success` 清空 token；⑦ 未知 status 走兜底 |
-| `loginTokenStore.ts` | ① set/get/clear；② 响应覆盖语义（旧值作废）；③ 订阅通知；④ 断言 `localStorage.setItem` / `sessionStorage.setItem` / `document.cookie` 均未被调用（spy） |
-| `oidcContext.ts` | ① 写入 / 读出 / 清除 round-trip；② 读出后立即清除（`load` 两次第二次为空）；③ 断言写入内容不含 `login_token` / `session_token`（spy） |
-| `utils/validate.ts` | 用户名边界（规则见《接口文档》§2.3；用例覆盖 4/5/20/21、含中文、含 `-`）、密码强度矩阵（规则见《接口文档》§5.6）、provider_key 正则、邮箱 / 手机号 |
-| `utils/mask.ts` | 掩码结果、短号码、空值 |
-| `shared/api/errors.ts` | ① 《接口文档》§1.6 每个取值 → `{retryable, action}`（表驱动逐项覆盖大集合，含登录域顶层 `status` 与其余域 `ErrorInfo.code` 两个位置）；i18n 优先于 `ErrorInfo.message`；未知取值兜底；② Connect 标准码（§1.5）逐个映射，未知标准码兜底且不透出 `message` 原文 |
-| `shared/api/http.ts` | ① transport 对同一消息 JSON / 二进制往返等价（msw 按 `Content-Type` 分别返回 JSON / proto 字节）；② 非 2xx 抛 `ConnectError`，`findDetail(ErrorInfo)` 解出 `{domain, code, message, retryAfter, attemptsLeft}`；③ 无 detail 时按 Connect 标准码归一；④ 超时 / `AbortController` 中断；⑤ 请求体 JSON 文本里整型为字符串（`"60"` 而非 `60`）、字段名为 camelCase（标准 protojson） |
-| `shared/utils/int.ts` | `toCount` 在 2^53 边界抛错；`toDisplay` 对 `bigint` 与字符串输入输出一致 |
-| `shared/api`（契约） | 用 `tests/fixtures/*.json`（取自《接口文档》示例）以生成的消息类型 `fromJson` 断言可解码；故意删字段可解码为零值（省略零值口径）但类型不符应失败；**整型字段按十进制字符串断言**（《接口文档》§1.12） |
-| `hooks/useCountdown.ts` | 用 fake timers：到期归零、卸载清理、后台节流下仍按时间戳计算 |
-| `hooks/useLongPoll.ts` | 超时重连、指数退避次数上限、卸载后 abort 且不再发起、错误上限停止 |
-| `hooks/useCapability.ts` | 属性链解析：存在 / 不存在 / 非法表达式（非法按不存在处理，不抛错）三种分支 |
+| 对象                     | 用例                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flow/reducer.ts`        | ① 《接口文档》§1.6 每个 `status` 的迁移正确性（表驱动逐项覆盖大集合）；② `mfa_required` 不跳页、就地切换 method；③ `captcha_required` / `captcha_invalid` 只镜像终局 status，编排归弹窗（不在 reducer）；④ `request_cancelled`（取消弹窗）只撤 loading，status / method / step / 信封原样保留；⑤ `binding_required` 分支；⑥ `success` 清空 token；⑦ 未知 status 走兜底           |
+| `loginTokenStore.ts`     | ① set/get/clear；② 响应覆盖语义（旧值作废）；③ 订阅通知；④ 断言 `localStorage.setItem` / `sessionStorage.setItem` / `document.cookie` 均未被调用（spy）                                                                                                                                                                                                                          |
+| `oidcContext.ts`         | ① 写入 / 读出 / 清除 round-trip；② 读出后立即清除（`load` 两次第二次为空）；③ 断言写入内容不含 `login_token` / `session_token`（spy）                                                                                                                                                                                                                                            |
+| `utils/validate.ts`      | 用户名边界（规则见《接口文档》§2.3；用例覆盖 4/5/20/21、含中文、含 `-`）、密码强度矩阵（规则见《接口文档》§5.6）、provider_key 正则、邮箱 / 手机号                                                                                                                                                                                                                               |
+| `utils/mask.ts`          | 掩码结果、短号码、空值                                                                                                                                                                                                                                                                                                                                                           |
+| `shared/api/errors.ts`   | ① 《接口文档》§1.6 每个取值 → `{retryable, action}`（表驱动逐项覆盖大集合，含登录域顶层 `status` 与其余域 `ErrorInfo.code` 两个位置）；i18n 优先于 `ErrorInfo.message`；未知取值兜底；② Connect 标准码（§1.5）逐个映射，未知标准码兜底且不透出 `message` 原文                                                                                                                    |
+| `shared/api/http.ts`     | ① transport 对同一消息 JSON / 二进制往返等价（msw 按 `Content-Type` 分别返回 JSON / proto 字节）；② 非 2xx 抛 `ConnectError`，`findDetail(ErrorInfo)` 解出 `{domain, code, message, retryAfter, attemptsLeft}`；③ 无 detail 时按 Connect 标准码归一；④ 超时 / `AbortController` 中断；⑤ 请求体 JSON 文本里整型为字符串（`"60"` 而非 `60`）、字段名为 camelCase（标准 protojson） |
+| `shared/utils/int.ts`    | `toCount` 在 2^53 边界抛错；`toDisplay` 对 `bigint` 与字符串输入输出一致                                                                                                                                                                                                                                                                                                         |
+| `shared/api`（契约）     | 用 `tests/fixtures/*.json`（取自《接口文档》示例）以生成的消息类型 `fromJson` 断言可解码；故意删字段可解码为零值（省略零值口径）但类型不符应失败；**整型字段按十进制字符串断言**（《接口文档》§1.12）                                                                                                                                                                            |
+| `hooks/useCountdown.ts`  | 用 fake timers：到期归零、卸载清理、后台节流下仍按时间戳计算                                                                                                                                                                                                                                                                                                                     |
+| `hooks/useLongPoll.ts`   | 超时重连、指数退避次数上限、卸载后 abort 且不再发起、错误上限停止                                                                                                                                                                                                                                                                                                                |
+| `hooks/useCapability.ts` | 属性链解析：存在 / 不存在 / 非法表达式（非法按不存在处理，不抛错）三种分支                                                                                                                                                                                                                                                                                                       |
 
 B. 组件层（msw + 渲染断言）
 
-| 对象 | 用例 |
-|------|------|
-| `MethodTabs.tsx` | 按 `sort_order` 排序、`ui_group` 分组、空列表、能力不满足项隐藏（mock `useCapability`）；数据源为注入快照（mock `__AUTHLOFT_INIT__.methods`） |
-| `FieldRenderer.tsx` | 每种 `type` 渲染正确、必填校验、未知 type 兜底 |
-| `CodeInput.tsx` | 粘贴 6 位自动拆分、退格跨格、非数字过滤、`autocomplete` 属性存在、长度由 `length` 驱动 |
-| `PasswordForm.tsx` | 提交载荷结构、`captcha_required` 时插入 widget 且不清空已输入密码、`captcha_invalid` 后 reset 重试、CapsLock 提示、`locked` 时展示剩余时长 |
-| `OTPForm.tsx` | challenge → form 两段、重发倒计时期间禁用按钮、错误计数文案、`expires_in` 到期提示 |
-| `WebAuthnButton.tsx` | 能力缺失时不渲染；`startAuthentication` 以 usernameless 方式调用（不传 `allowCredentials`、不收集用户名）；challenge 过期后前端自动重取一次 options 再让用户重试；`NotAllowedError` / `InvalidStateError` 语义化提示 |
-| `ProviderButtons.tsx` | 三种 channel 的分派、图标取自下发 `icon`；点击先调 `SsoService/Authorize` 取 URL 再 `location.replace`（断言未直接跳外域）；跳转前调用 `saveOidcContext` |
-| `QRCodeStep.tsx` | 四态流转（pending → scanned → success / `expired`），`failed` 时按信封 `status` 出文案；`expired` 触发重拉且要求 captcha；卸载中断轮询；`ticket_id` 全程一致 |
-| `shared/QRCodePanel.tsx` | 两组 props 注入下四态流转一致；组件自身不发业务请求（拉码 / 轮询都由 props 决定）；`expired` 重拉要求新 captcha；卸载中断轮询 |
-| `account/ThirdPartyBindDialog.tsx` | 拉码带 `scene:"bind"`；轮询走 `AccountService/GetThirdpartyTicket`；命中后成功关闭并刷新列表、`target_taken` 展示"该账号已被其他账号绑定"；断言未触碰 `loginTokenStore` |
-| `shared/captcha/CaptchaWidget.tsx` + adapters | 分派到正确 adapter；两种首屏配置来源（注入快照 prop / `AccountService/GetConfig` 结果）渲染一致且组件自身不发配置请求；响应顶层 `captcha` 的 `type` 与首屏不同（含 `image` 降级）时按新 `type` 重渲染；`reset()` 在失败 / 过期时被调用；每个 adapter 只产出 `{providerKey, token}` 或 `{providerKey, id, answer}`（都必须带 `providerKey`）；不在 adapter 内发业务请求 |
-| `LoginContainer.tsx` | 端到端跑一遍《接口文档》§10.2 的 8 步（用 msw 编排 8 段响应）：重点是主因子未通过时不允许进入 MFA、success 后清空 token |
-| `BindingChoice.tsx` | 两个分支：创建新账号（仅提交 `username`）与退出重登（不发请求、清空 token 后跳 `/sso/login`）；信封字段 `binding.allowSignup=false` 时创建项禁用 |
+| 对象                                                         | 用例                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MethodTabs.tsx`                                             | 按 `sort_order` 排序、`ui_group` 分组、空列表、能力不满足项隐藏（mock `useCapability`）；数据源为注入快照（mock `__AUTHLOFT_INIT__.methods`）                                                                                                                                                                                                               |
+| `FieldRenderer.tsx`                                          | 每种 `type` 渲染正确、必填校验、未知 type 兜底                                                                                                                                                                                                                                                                                                              |
+| `CodeInput.tsx`                                              | 粘贴 6 位自动拆分、退格跨格、非数字过滤、`autocomplete` 属性存在、长度由 `length` 驱动                                                                                                                                                                                                                                                                      |
+| `PasswordForm.tsx`                                           | 提交载荷结构、不内联 captcha widget（弹窗承接、不清空已输入密码）、CapsLock 提示、`locked` 时展示剩余时长                                                                                                                                                                                                                                                   |
+| `OTPForm.tsx`                                                | challenge → form 两段、重发倒计时期间禁用按钮、错误计数文案、`expires_in` 到期提示                                                                                                                                                                                                                                                                          |
+| `WebAuthnButton.tsx`                                         | 能力缺失时不渲染；`startAuthentication` 以 usernameless 方式调用（不传 `allowCredentials`、不收集用户名）；challenge 过期后前端自动重取一次 options 再让用户重试；`NotAllowedError` / `InvalidStateError` 语义化提示                                                                                                                                        |
+| `ProviderButtons.tsx`                                        | 三种 channel 的分派、图标取自下发 `icon`；点击先调 `SsoService/Authorize` 取 URL 再 `location.replace`（断言未直接跳外域）；跳转前调用 `saveOidcContext`                                                                                                                                                                                                    |
+| `QRCodeStep.tsx`                                             | 四态流转（pending → scanned → success / `expired`），`failed` 时按信封 `status` 出文案；`expired` 触发重拉且经弹窗换新 captcha；取消弹窗卸面板并留重入按钮（重入换新凭据）；卸载中断轮询；`ticket_id` 全程一致                                                                                                                                              |
+| `shared/QRCodePanel.tsx`                                     | 两组 props 注入下四态流转一致；组件自身不发业务请求（拉码 / 轮询都由 props 决定）；`expired` 重拉要求新 captcha；卸载中断轮询                                                                                                                                                                                                                               |
+| `account/ThirdPartyBindDialog.tsx`                           | 拉码带 `scene:"bind"`；轮询走 `AccountService/GetThirdpartyTicket`；命中后成功关闭并刷新列表、`target_taken` 展示"该账号已被其他账号绑定"；断言未触碰 `loginTokenStore`                                                                                                                                                                                     |
+| `shared/captcha/captchaGate.ts`                              | `upfront` 有配置只发一次带凭据的请求（无裸探）、无配置退化为先探一次；`reactive` 先裸发、命中才问；`captcha_invalid` 窗内循环且 `attempt` 递增、`invalid=true`；响应顶层 `captcha` 覆盖首屏配置（含降级为 `image`）；取消返回 `cancelled` 且不再发请求；非 captcha 动作 / 不可判读错误原样逃逸；两种协议形态（200 信封 `status` / `ApiError.code`）判读一致 |
+| `shared/captcha/CaptchaDialogView.tsx` + `CaptchaDialog.tsx` | 视图纯渲染可 SSR（标题 / 提示 / widget / 错误行 / 两按钮）；widget 以 `attempt` 为 key（每轮换新凭据）；在途禁用两按钮；无 `document` 时壳返回 `null`（容器静态渲染只出状态帧）；未知 `type` 的兜底错误态在窗内可见                                                                                                                                         |
+| `shared/captcha/CaptchaWidget.tsx` + adapters                | 分派到正确 adapter；两种首屏配置来源（注入快照 prop / `AccountService/GetConfig` 结果）渲染一致且组件自身不发配置请求；`captcha.type` 变化（含 `image` 降级）时按新 `type` 重渲染；`reset()` 在失败 / 过期时被调用；每个 adapter 只产出 `{providerKey, token}` 或 `{providerKey, id, answer}`（都必须带 `providerKey`）；不在 adapter 内发业务请求          |
+| `LoginContainer.tsx`                                         | 端到端跑一遍《接口文档》§10.2 的 8 步（用 msw 编排 8 段响应）：重点是主因子未通过时不允许进入 MFA、success 后清空 token                                                                                                                                                                                                                                     |
+| `BindingChoice.tsx`                                          | 两个分支：创建新账号（仅提交 `username`）与退出重登（不发请求、清空 token 后跳 `/sso/login`）；信封字段 `binding.allowSignup=false` 时创建项禁用                                                                                                                                                                                                            |
 
 C. 页面 / 容器层（少量，重集成语义）
 
-| 对象 | 用例 |
-|------|------|
-| `OAuthCallbackPage.tsx` | `location.search` 原样转发（含 code/state），不解析；按 `state` 首字母分派：`l` → `SsoService/LoginOauth`（附 `oidc`，读完即清）、`b` → `AccountService/ThirdpartyOauth`、其他 / 缺失 → 跳 `/sso/login`；绑定成功后跳 `/account#/security?bind=success` |
-| `RegisterPage.tsx` / `ResetPage.tsx` | challenge → verify → set_password 三段；密码强度门禁 |
-| `admin/SchemaForm.tsx` | 六种字段类型渲染；按 `section` 分五区块且 `endpoint` 整块默认折叠；`advanced` 默认折叠；`pattern` 校验；`secret` 默认掩码；新增一种假 schema 类型不需改组件；缺 `section` 时报错而非猜测 |
-| `admin` 入口 | 注入变量不含 `admin`，通过 `AdminService/GetMe` 获取管理员信息 |
-| 三端入口 | 注入 `static_base` 为 `/assets`、`https://cdn.x/uc`、带尾斜杠三种取值时，`__webpack_public_path__` 归一为以 `/` 结尾；缺省回落 `/assets/` |
-| `shared/app-ui/DataTable.tsx` | 分页 / 排序 / 筛选回调参数、行内开关的乐观更新与回滚 |
-| `admin/ProviderEditPage.tsx` | provider_key 创建后只读、回调地址提示拼接、保存前校验 |
-| `account/WebauthnList.tsx` | 重命名 / 删除；最后一个可用方式不允许解绑的按钮禁用 |
-| `account/ThirdPartyList.tsx` | `items` / `available` 两段渲染；解绑前置校验（解绑后仍持 password 凭证，或仍绑定 ≥ 1 个非 Union 第三方 Provider，不满足置灰，口径见《接口文档》§3.7）；按 `channel` 分流绑定入口（`redirect` 跳转 / `qrcode` 开对话框 / `api` 不给入口）；`target_taken` 时提示"该账号已被其他账号绑定" |
-| `account/ContactBindForm.tsx` | challenge → verify 两段；captcha 配置取自 `AccountService/GetConfig`（不读 `__AUTHLOFT_INIT__`）；`verify` 回传与 `challenge` 相同的 target |
-| `account/AvatarUploader.tsx` + `useUpload` | 两种模式（mock `AccountService/GetConfig` 返回 `proxy` / `direct`）下最终都得到 url；`direct` 三步走（presign → PUT → commit）；超限 / 类型不符的预校验文案与后端一致 |
+| 对象                                       | 用例                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OAuthCallbackPage.tsx`                    | `location.search` 原样转发（含 code/state），不解析；按 `state` 首字母分派：`l` → `SsoService/LoginOauth`（附 `oidc`，读完即清）、`b` → `AccountService/ThirdpartyOauth`、其他 / 缺失 → 跳 `/sso/login`；绑定成功后跳 `/account#/security?bind=success`                                 |
+| `RegisterPage.tsx` / `ResetPage.tsx`       | challenge → verify → set_password 三段；密码强度门禁                                                                                                                                                                                                                                    |
+| `admin/SchemaForm.tsx`                     | 六种字段类型渲染；按 `section` 分五区块且 `endpoint` 整块默认折叠；`advanced` 默认折叠；`pattern` 校验；`secret` 默认掩码；新增一种假 schema 类型不需改组件；缺 `section` 时报错而非猜测                                                                                                |
+| `admin` 入口                               | 注入变量不含 `admin`，通过 `AdminService/GetMe` 获取管理员信息                                                                                                                                                                                                                          |
+| 三端入口                                   | 注入 `static_base` 为 `/assets`、`https://cdn.x/uc`、带尾斜杠三种取值时，`__webpack_public_path__` 归一为以 `/` 结尾；缺省回落 `/assets/`                                                                                                                                               |
+| `shared/app-ui/DataTable.tsx`              | 分页 / 排序 / 筛选回调参数、行内开关的乐观更新与回滚                                                                                                                                                                                                                                    |
+| `admin/ProviderEditPage.tsx`               | provider_key 创建后只读、回调地址提示拼接、保存前校验                                                                                                                                                                                                                                   |
+| `account/WebauthnList.tsx`                 | 重命名 / 删除；最后一个可用方式不允许解绑的按钮禁用                                                                                                                                                                                                                                     |
+| `account/ThirdPartyList.tsx`               | `items` / `available` 两段渲染；解绑前置校验（解绑后仍持 password 凭证，或仍绑定 ≥ 1 个非 Union 第三方 Provider，不满足置灰，口径见《接口文档》§3.7）；按 `channel` 分流绑定入口（`redirect` 跳转 / `qrcode` 开对话框 / `api` 不给入口）；`target_taken` 时提示"该账号已被其他账号绑定" |
+| `account/ContactBindForm.tsx`              | challenge → verify 两段；captcha 配置取自 `AccountService/GetConfig`（不读 `__AUTHLOFT_INIT__`）；`verify` 回传与 `challenge` 相同的 target                                                                                                                                             |
+| `account/AvatarUploader.tsx` + `useUpload` | 两种模式（mock `AccountService/GetConfig` 返回 `proxy` / `direct`）下最终都得到 url；`direct` 三步走（presign → PUT → commit）；超限 / 类型不符的预校验文案与后端一致                                                                                                                   |
 
 **测试数据**
 
@@ -447,19 +450,19 @@ C. 页面 / 容器层（少量，重集成语义）
 
 **E2E（Playwright，体系未建，以下为规划口径）**
 
-| 场景 | 断言要点 |
-|------|---------|
-| 《接口文档》§10.2 完整链路 | 邮箱验证码登录 → MFA → 改用短信 → 成功跳转 |
-| 方式列表注入 | 打开 `/sso/login` 即用注入快照渲染，不另发配置请求 |
-| 刷新页面 | 任意中间态刷新 → 回到第一步并提示超时 |
-| 多域名同步 | 命中 `sync_cookie_url`（后端已拼好载荷的首跳 URL）后直接 `location.replace`，前端不读不写任何同步状态；跳转链（中心域 → 业务域 → …）走完落到 `redirect_to` |
-| 密码失败渐进 | 第 3 次失败后要求 captcha；第 6 次后 locked 展示剩余时长（默认阈值 3 / 6，后台可配） |
-| 扫码登录 | 码图展示 → 模拟写入 ticket（`ticket_id`）→ 状态变 success；`expired` 后重拉需 captcha |
-| 已登录绑定邮箱 | 安全中心 → 验证码 + captcha 两段 → 刷新后邮箱已更新 |
-| 已登录绑定第三方 | 安全中心点绑定 → 跳转 → 回调（`state` 前缀 `b`）→ 回到安全中心且列表新增一项；绑到已绑他人的账号时提示 `target_taken` |
-| 已登录扫码绑定 | 安全中心点扫码绑定 → 码图展示 → 模拟写入 ticket → 面板变成功且列表新增一项；过程中未产生登录态；`expired` 后重拉需 captcha |
-| 三方登录带 OIDC | 跳转前 `al_oidc_ctx` 写入 `localStorage`；回调后 `oidc` 被回传且 `localStorage` 已清空 |
-| 管理端 | 新建 Provider 全流程 + 列表排序持久化 |
+| 场景                       | 断言要点                                                                                                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 《接口文档》§10.2 完整链路 | 邮箱验证码登录 → MFA → 改用短信 → 成功跳转                                                                                                                 |
+| 方式列表注入               | 打开 `/sso/login` 即用注入快照渲染，不另发配置请求                                                                                                         |
+| 刷新页面                   | 任意中间态刷新 → 回到第一步并提示超时                                                                                                                      |
+| 多域名同步                 | 命中 `sync_cookie_url`（后端已拼好载荷的首跳 URL）后直接 `location.replace`，前端不读不写任何同步状态；跳转链（中心域 → 业务域 → …）走完落到 `redirect_to` |
+| 密码失败渐进               | 第 3 次失败后要求 captcha；第 6 次后 locked 展示剩余时长（默认阈值 3 / 6，后台可配）                                                                       |
+| 扫码登录                   | 码图展示 → 模拟写入 ticket（`ticket_id`）→ 状态变 success；`expired` 后重拉需 captcha                                                                      |
+| 已登录绑定邮箱             | 安全中心 → 验证码 + captcha 两段 → 刷新后邮箱已更新                                                                                                        |
+| 已登录绑定第三方           | 安全中心点绑定 → 跳转 → 回调（`state` 前缀 `b`）→ 回到安全中心且列表新增一项；绑到已绑他人的账号时提示 `target_taken`                                      |
+| 已登录扫码绑定             | 安全中心点扫码绑定 → 码图展示 → 模拟写入 ticket → 面板变成功且列表新增一项；过程中未产生登录态；`expired` 后重拉需 captcha                                 |
+| 三方登录带 OIDC            | 跳转前 `al_oidc_ctx` 写入 `localStorage`；回调后 `oidc` 被回传且 `localStorage` 已清空                                                                     |
+| 管理端                     | 新建 Provider 全流程 + 列表排序持久化                                                                                                                      |
 
 ## 6. 工程纪律
 

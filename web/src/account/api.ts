@@ -230,8 +230,8 @@ const BIND_CODE_PATTERN = new RegExp(`^\\d{${DEFAULT_CODE_LENGTH}}$`);
 
 /**
  * 绑定 challenge 请求构造（§3.4 行 870-873）：目标做体验性格式预校验
- * （§1.11 后端权威）；challenge 步 captcha 必过（行 880），CaptchaWidget
- * 未就绪（getToken → undefined）→ captcha_missing，不发包。
+ * （§1.11 后端权威）；challenge 步 captcha 必过（行 880），凭据由 captcha
+ * 弹窗注入，未注入（undefined）→ captcha_missing，不发包。
  */
 export function buildBindChallengeRequest(
   kind: ContactBindKind,
@@ -722,8 +722,8 @@ export function buildGetThirdpartyTicketRequest(
 
 /**
  * CreateQrcode 绑定场景请求（§3.7.1 B 行 993 / §2.8 行 688-703）：scene 固定
- * bind（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方实时
- * 取 CaptchaWidget 句柄传入。
+ * bind（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方的
+ * captcha 弹窗每轮现取后传入。
  */
 export function buildCreateQrcodeBindRequest(
   providerKey: string,

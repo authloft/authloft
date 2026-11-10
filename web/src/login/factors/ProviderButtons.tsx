@@ -218,7 +218,7 @@ export function ProviderButtons({
   /**
    * qrcode 渠道点击：原地打开扫码面板（不新开页面，§4.3 行 454）。QRCodeStep
    * 运行时动态加载——MethodTabs 静态 import 本组件（图标墙链路），而 QRCodeStep
-   * → CaptchaWidget → shared/api/http 会连带 transport 单例在测试全局
+   * → shared/captcha → shared/api/http 会连带 transport 单例在测试全局
    * __AUTHLOFT_INIT__ 注入前求值（login-container.test 静态/动态 import 时序），
    * 故图标墙静态链保持零 http 依赖，面板组件按需加载。
    */

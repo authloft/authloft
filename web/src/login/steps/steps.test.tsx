@@ -214,7 +214,7 @@ describe('ChallengeStep（§4.2 行 441）', () => {
     expect(markup).toContain('发送验证码');
   });
 
-  test('captcha 配置存在 → 渲染 CaptchaWidget 容器（每次下发需新 captcha，§4.2 行 441）', () => {
+  test('captcha 配置存在也不内联渲染 widget（弹窗承接，点击触发才问）', () => {
     const withCaptcha = renderToStaticMarkup(
       createElement(ChallengeStep, {
         fields: [],
@@ -224,12 +224,10 @@ describe('ChallengeStep（§4.2 行 441）', () => {
         }),
       }),
     );
-    // CaptchaWidget 的 adapter effect 在 node 静态渲染不执行，仅容器 div。
-    expect(withCaptcha).toContain('<div');
-    const bare = renderToStaticMarkup(
-      createElement(ChallengeStep, { fields: [] }),
-    );
-    expect(bare).not.toContain('<div');
+    expect(withCaptcha).toContain('发送验证码');
+    expect(withCaptcha).not.toContain('<div'); // 无内联 CaptchaWidget 容器
+    expect(withCaptcha).not.toContain('安全验证'); // 弹窗未开（CaptchaDialog 无 session 返回 null）
+    expect(withCaptcha).not.toContain('role="alert"'); // 初始无失败提示
   });
 
   test('loading / disabled 禁用触发（§3.2）', () => {
@@ -267,7 +265,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(markup).toContain('正在获取二维码');
   });
 
-  test('有 captcha 配置 → 门控：CaptchaWidget + 获取二维码按钮，面板不挂载（§2.8 行 690 必须携带 captcha）', () => {
+  test('有 captcha 配置也不内联渲染 widget：面板直出，弹窗关闭（点击拉码才问，§2.8 行 690）', () => {
     const markup = renderQr({
       providerKey: 'scan',
       captcha: create(CaptchaConfigSchema, {
@@ -275,8 +273,9 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
         type: 'image',
       }),
     });
-    expect(markup).toContain('获取二维码');
-    expect(markup).not.toContain('正在获取二维码');
+    expect(markup).toContain('正在获取二维码');
+    expect(markup).not.toContain('安全验证');
+    expect(markup).not.toContain('获取二维码<button');
   });
 
   test('providerKey 空 → 零值兜底占位（§9 第 18 条；StepDispatcher 防御分派形态）', () => {
@@ -284,13 +283,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(markup).toContain('role="alert"');
   });
 
-  test('qrcodeRequester：凭据未就绪 → reject（§2.8 行 703 每次拉码都要新的 captcha）', async () => {
-    await expect(
-      qrcodeRequester('scan')(new AbortController().signal),
-    ).rejects.toThrow('请先完成人机校验');
-  });
-
-  test('qrcodeRequester：就绪 → {providerKey, captcha} 调拉码（scene 缺省 login 省略，§2.8 行 702）', async () => {
+  test('qrcodeRequester：gate 注入的凭据 → {providerKey, captcha} 调拉码（scene 缺省 login 省略，§2.8 行 702-703）', async () => {
     const payload: CaptchaPayload = create(CaptchaPayloadSchema, {
       providerKey: 'builtin_image',
       id: 'b7f3',
@@ -299,7 +292,6 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     const requests: Array<{ providerKey: string; captcha: CaptchaPayload }> =
       [];
     const qr = await qrcodeRequester('scan', {
-      getToken: () => payload,
       request: async (req) => {
         requests.push(req);
         return create(CreateQrcodeResponseSchema, {
@@ -307,7 +299,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
           qrcodeUrl: 'https://cdn.test/q.jpg',
         });
       },
-    })(new AbortController().signal);
+    })(payload);
     expect(qr.qrcodeUrl).toBe('https://cdn.test/q.jpg');
     expect(requests).toHaveLength(1);
     expect(requests[0]?.providerKey).toBe('scan');

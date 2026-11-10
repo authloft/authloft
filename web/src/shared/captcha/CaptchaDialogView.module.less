@@ -1,0 +1,123 @@
+// captcha 弹窗样式（docs/前端架构.md §1.7；《CODE_GUIDE》§4.2）。
+// 零 Semi：login 端不引 UI 库，本弹窗 login 与 account 共用。
+@import (reference) '../styles/tokens.less';
+@import (reference) '../styles/controls.less';
+
+// 遮罩：脱体到 body 后压暗整页并居中；层级须盖住 account 侧的 Semi Modal。
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: @z-captcha-dialog;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: @spacing-lg;
+  background-color: @color-scrim;
+}
+
+// 窗体：厂商挑战有最小宽度（reCAPTCHA / Turnstile 约 300px），窄屏靠外层
+// padding 与 widget 区横向滚动兜住，不撑破布局。
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+  width: min(420px, 100%);
+  max-height: calc(100vh - @spacing-2xl);
+  padding: @spacing-xl;
+  overflow-y: auto;
+  background-color: @color-surface;
+  border-radius: @radius-lg;
+  box-shadow: @shadow-card;
+}
+
+.title {
+  margin: 0;
+  color: @color-text-strong;
+  font-size: @font-size-lg;
+  font-weight: @font-weight-semibold;
+  line-height: @line-height-heading;
+}
+
+.hint {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: @line-height-body;
+}
+
+// adapter 挂载点：图形码与厂商 iframe 都在此居中；min-width 0 防 flex 子项
+// 被内容撑开，overflow-x 兜住窄屏下的厂商最小宽度。
+.widget {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.error {
+  margin: 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+  line-height: @line-height-body;
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @spacing-sm;
+  justify-content: flex-end;
+}
+
+.cancel {
+  height: @control-height;
+  padding: 0 @spacing-lg;
+  color: @color-text;
+  font-size: @font-size-md;
+  font-weight: @font-weight-medium;
+  background-color: @color-surface;
+  border: @border-width solid @color-border;
+  border-radius: @radius-md;
+  cursor: pointer;
+  transition:
+    border-color @transition-fast,
+    background-color @transition-fast;
+
+  &:hover:not(:disabled) {
+    border-color: @color-border-strong;
+    background-color: @color-background-muted;
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 @ring-width @ring-color;
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.confirm {
+  .control-submit();
+
+  width: auto;
+  padding: 0 @spacing-xl;
+}
+
+@media (max-width: @breakpoint-sm) {
+  .dialog {
+    padding: @spacing-lg;
+  }
+
+  // 窄屏两个按钮等分整行，保证 tap target。
+  .actions {
+    flex-direction: column-reverse;
+  }
+
+  .cancel,
+  .confirm {
+    width: 100%;
+  }
+}

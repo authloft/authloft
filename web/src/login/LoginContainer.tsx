@@ -24,10 +24,13 @@
  *   它（跳转链由各域页面接力，最终回 redirectTo）；省略时直接 replace(redirectTo)；
  *   皆空（直登场景）→ 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页——移动端用
  *   replace 防回退死循环（§4.2 行 426 RedirectStep 同款语义）；
- * - captcha_required / captcha_invalid **原地插入** CaptchaWidget（shared/captcha）：
- *   运行期响应顶层 captcha 是权威来源（§2.5 行 519），按新 captcha 对象重新渲染、
- *   不刷新页面（adapterKey 重建机制）；
- *   captcha_invalid 时 reset widget 后重试（§1.6 行 241）；
+ * - captcha_required / captcha_invalid **弹窗承接**（shared/captcha 的
+ *   useCaptchaGate + CaptchaDialog）：gate 吸收这两个动作、弹窗确认即重提原
+ *   请求，不再内联插 widget、也不再要求用户回头点一次提交；challenge 类必经
+ *   拦截的路径先问再发（upfront），密码 verify 由失败计数阈值触发只能先发再问
+ *   （reactive，captchaModeFor）；运行期响应顶层 captcha 是权威配置来源
+ *   （§2.5 行 519），按新对象换凭据、不刷新页面；用户取消 → request_cancelled
+ *   只撤 loading，表单与 loginToken 原样保留；
  * - 请求状态复用状态机的 loading（既有机制，不引 useRequest 双状态源；
  *   提交按钮按 loading 禁用，§3.2）；
  * - kind→step 映射归容器层（注入快照 steps 为唯一定义，reducer 只镜像事件
@@ -39,10 +42,8 @@ import {
   useEffect,
   useMemo,
   useReducer,
-  useRef,
   useState,
   type ReactNode,
-  type Ref,
 } from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import { useSearchParams } from '@modern-js/runtime/router';
@@ -52,12 +53,17 @@ import {
   type LoginFlowResponse,
   type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
-import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
+import type { CaptchaConfig } from '../gen/proto/api/common/v1/captcha_pb';
 import { resolveFlowStatus } from '../shared/api/errors';
+import { CaptchaDialog } from '../shared/captcha/CaptchaDialog';
 import {
-  CaptchaWidget,
-  type CaptchaWidgetHandle,
-} from '../shared/captcha/CaptchaWidget';
+  flowCaptchaOutcome,
+  type CaptchaGateMode,
+} from '../shared/captcha/captchaGate';
+import {
+  useCaptchaGate,
+  type CaptchaGate,
+} from '../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
@@ -73,7 +79,7 @@ import { MethodTabs, primaryTabMethods } from './MethodTabs';
 import { RETRY_RESUBMIT_STATUSES } from './validate';
 import styles from './LoginContainer.module.less';
 import { flowReducer, type FlowEvent } from './flow/reducer';
-import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
+import { selectSubmitDisabled } from './flow/selectors';
 import {
   INITIAL_FLOW_STATE,
   type FlowEffect,
@@ -192,7 +198,7 @@ export function snapshotFieldToField(snapshot: SnapshotField): Field {
  * 表单值 → LoginPayload init：字段名与请求体一致（§1.3 行 114「字段名，与
  * 请求体字段一致」），白名单 = 生成物 LoginPayload 的 string 字段全集
  * （webauthn 的 credential 是 Struct、不走表单值通道，§2.6）；captcha 字段
- * 由容器从 CaptchaWidget 取三元组、不经表单值（§1.11 skip）。
+ * 由 captcha 弹窗的凭据经 gate 并入、不经表单值（§1.11 skip）。
  */
 const PAYLOAD_STRING_FIELDS: ReadonlySet<string> = new Set([
   'username',
@@ -333,10 +339,29 @@ export function executeEffects(
 }
 
 /**
- * 提交编排（纯逻辑，request 可注入）：request_started 由容器在调用前同步
- * dispatch（loading 立即反映 UI）；本函数只承担「请求 → response 事件」。
- * captcha 凭据由调用方注入的 getCaptchaToken 提供（§2.5 行 503-510 提交
- * 格式；未完成 → undefined → 不带 captcha 提交，§3.5 adapter 契约）。
+ * captcha 触发时机（docs/接口文档.md §2.5 / 后端 captcha/gate.go）：
+ * challenge 类后端 Challenge 恒拦截 → 点击即弹窗、一次带凭据的请求（upfront，
+ * 省一次注定被拦的往返）；verify 类由当日失败计数阈值触发、前端无法预知 →
+ * 先发裸请求命中才问（reactive）。
+ *
+ * webauthn 的 challenge 步是后端明确豁免项（engine.go evaluateCaptcha：
+ * FactorWebAuthn && step==challenge 不校验），故也走 reactive——判定经
+ * isWebAuthnForm 的组件引用比较，不在通用层写裸 method 字符串（CODE_GUIDE
+ * §4.1 第 2 条）。
+ */
+export function captchaModeFor(method: string, step: string): CaptchaGateMode {
+  if (step !== 'challenge' || isWebAuthnForm(lookupFactor(method))) {
+    return 'reactive';
+  }
+  return 'upfront';
+}
+
+/**
+ * 提交编排（纯逻辑，request 与 gate 均可注入）：request_started 由容器在调用
+ * 前同步 dispatch（loading 立即反映 UI）；本函数只承担「gate → 事件映射」。
+ * captcha 凭据由 gate 的弹窗提供并并入 payload.captcha（§2.5 行 503-510 提交
+ * 格式），captcha_required / captcha_invalid 在 gate 内吸收循环、不产出事件；
+ * 用户取消 → request_cancelled（只撤 loading，表单原样保留）。
  * 传输层异常（登录流程域业务态一律 HTTP 200，§1.5；非 200 / 网络失败经
  * http.ts 归一 ApiError 抛出）→ 回到第一步（reset）+ failed 兜底（§1.6 行
  * 272：不暴露内部信息），不伪造信封。
@@ -344,32 +369,39 @@ export function executeEffects(
 export async function runSubmit(
   state: FlowState,
   payload: PayloadInit,
-  getCaptchaToken: () => CaptchaPayload | undefined,
+  runGate: CaptchaGate['run'],
+  captchaConfig: CaptchaConfig | undefined,
   request: (input: LoginDefaultInput) => Promise<LoginFlowResponse>,
 ): Promise<{ events: FlowEvent[]; failed: boolean }> {
-  const captcha = getCaptchaToken();
-  const payloadWithCaptcha =
-    captcha === undefined ? payload : { ...payload, captcha };
-  try {
-    const envelope = await request({
-      method: state.method,
-      step: state.step,
-      payload: payloadWithCaptcha,
-    });
-    const events: FlowEvent[] = [{ type: 'response', envelope }];
-    if (
-      state.step === 'challenge' &&
-      envelope.status === 'next' &&
-      envelope.nextStep?.kind === 'form'
-    ) {
-      // §1.10 行 306-307 OTP 系 kind 序列 challenge→form：form 步对应请求侧
-      // verify（kind→step 映射），advance 推进下一次提交的 step。
-      events.push({ type: 'advance', step: 'verify' });
-    }
-    return { events, failed: false };
-  } catch {
+  const outcome = await runGate({
+    mode: captchaModeFor(state.method, state.step),
+    config: captchaConfig,
+    request: (captcha) =>
+      request({
+        method: state.method,
+        step: state.step,
+        payload: captcha === undefined ? payload : { ...payload, captcha },
+      }),
+    readOutcome: flowCaptchaOutcome,
+  });
+  if (outcome.kind === 'cancelled') {
+    return { events: [{ type: 'request_cancelled' }], failed: false };
+  }
+  if (outcome.kind === 'error') {
     return { events: [{ type: 'reset' }], failed: true };
   }
+  const envelope = outcome.result;
+  const events: FlowEvent[] = [{ type: 'response', envelope }];
+  if (
+    state.step === 'challenge' &&
+    envelope.status === 'next' &&
+    envelope.nextStep?.kind === 'form'
+  ) {
+    // §1.10 行 306-307 OTP 系 kind 序列 challenge→form：form 步对应请求侧
+    // verify（kind→step 映射），advance 推进下一次提交的 step。
+    events.push({ type: 'advance', step: 'verify' });
+  }
+  return { events, failed: false };
 }
 
 /** 非失败态（§4.1 行 395 状态机图：流程 / 轮询 / captcha 中间态）——不渲染 ErrorBanner。 */
@@ -412,7 +444,6 @@ export interface LoginFlowViewProps {
   otpCode?: string;
   /** OTP verify 段输码变化上抛（与 otpCode 成对注入）。 */
   onOtpCodeChange?: (value: string) => void;
-  captchaRef?: Ref<CaptchaWidgetHandle>;
   /** mfa 场景方式列表（select_method 清信封后由容器本地保持，§4.1 行 407 就地渲染）。 */
   mfaMethods?: MfaMethod[];
   /** webauthn verify 段断言上抛（容器组装 payload {credential}，§2.6 行 548）。 */
@@ -485,7 +516,6 @@ export function LoginFlowView({
   onResend,
   otpCode,
   onOtpCodeChange,
-  captchaRef,
   mfaMethods,
   onCredential,
   challengeData,
@@ -638,9 +668,6 @@ export function LoginFlowView({
             mfaEntry.maskedTarget,
           )
         )}
-        {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
-          <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
-        )}
         {resolution !== undefined && (
           <ErrorBanner
             i18nKey={resolution.i18nKey}
@@ -671,9 +698,6 @@ export function LoginFlowView({
           nextStep={next}
           form={renderFactorNode(nextMethod, next.fields)}
         />
-        {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
-          <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
-        )}
         {resolution !== undefined && (
           <ErrorBanner
             i18nKey={resolution.i18nKey}
@@ -714,9 +738,6 @@ export function LoginFlowView({
         <p role="status">{t('login.selectMethodHint')}</p>
       ) : (
         renderFactorNode(state.method, fields)
-      )}
-      {selectShowCaptcha(state) && state.envelope?.captcha !== undefined && (
-        <CaptchaWidget captcha={state.envelope.captcha} ref={captchaRef} />
       )}
       {resolution !== undefined && (
         <ErrorBanner
@@ -765,7 +786,9 @@ export function LoginContainer({
     ({ snapshot: s, initialEnvelope: env }) => initialFlowState(s, env),
   );
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  // captcha 弹窗编排（shared/captcha）：gate 吸收 captcha_required /
+  // captcha_invalid 并驱动「确认即重提」，弹窗声明式挂在容器根级（壳脱体到 body）。
+  const captcha = useCaptchaGate();
   // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
   // mfa_required 信封到达时镜像；restart / complete / 传输失败时清空退出 mfa 场景。
   const [mfaMethods, setMfaMethods] = useState<MfaMethod[] | undefined>(
@@ -804,8 +827,8 @@ export function LoginContainer({
         values,
         fieldsFor(state.method, state.step, snapshot, mfaMethods),
       ),
-      () =>
-        selectShowCaptcha(state) ? captchaRef.current?.getToken() : undefined,
+      captcha.run,
+      snapshot.captcha,
       loginDefault,
     );
     for (const event of events) {
@@ -821,7 +844,7 @@ export function LoginContainer({
   // OTP verify 段重发（§1.10 行 306-307 challenge→form 序列重走）：以
   // step=challenge 重发——主因子场景带原目标（§2.6 行 544）、MFA 场景空
   // payload（行 545，目标取 uid 绑定资料）；每次 challenge 均过 captcha 拦截
-  // （§2.2 编排规则 4），返回 captcha_required 时由表单区 CaptchaWidget 接力。
+  // （§2.2 编排规则 4），upfront 先弹窗再发、命中 captcha_invalid 在窗内换凭据。
   const resend = async () => {
     dispatch({ type: 'request_started', step: 'challenge' });
     const { events, failed } = await runSubmit(
@@ -830,8 +853,8 @@ export function LoginContainer({
         challengeValues,
         fieldsFor(state.method, 'challenge', snapshot, mfaMethods),
       ),
-      () =>
-        selectShowCaptcha(state) ? captchaRef.current?.getToken() : undefined,
+      captcha.run,
+      snapshot.captcha,
       loginDefault,
     );
     for (const event of events) {
@@ -852,8 +875,8 @@ export function LoginContainer({
     const { events, failed } = await runSubmit(
       state,
       payload,
-      () =>
-        selectShowCaptcha(state) ? captchaRef.current?.getToken() : undefined,
+      captcha.run,
+      snapshot.captcha,
       loginDefault,
     );
     for (const event of events) {
@@ -907,14 +930,6 @@ export function LoginContainer({
     );
   }, [state.effects, returnTo]);
 
-  // captcha_invalid → reset widget 后重试（§1.6 行 241；权威 captcha 对象
-  // 变化时 adapterKey 自动按新对象重建，无需此处处理）。
-  useEffect(() => {
-    if (state.status === 'captcha_invalid') {
-      captchaRef.current?.reset();
-    }
-  }, [state.status, state.envelope]);
-
   const onSelect = (method: string) => {
     const entry = snapshot.methods.find((m) => m.method === method);
     dispatch({
@@ -957,8 +972,8 @@ export function LoginContainer({
     setNotice(undefined);
   };
 
-  // 评审 P1-4：可重试失败态「重试」= 重提最近一次提交值（captcha
-  // 凭据由 submit 内 captchaRef 现取，captcha_invalid 换凭据重提成立）。
+  // 评审 P1-4：可重试失败态「重试」= 重提最近一次提交值（captcha 凭据由
+  // submit 内的 gate 弹窗现取，每轮换新，不复用已消费的凭据）。
   const retrySubmit = () => {
     if (lastValues !== undefined) {
       void submit(lastValues);
@@ -966,24 +981,26 @@ export function LoginContainer({
   };
 
   return (
-    <LoginFlowView
-      snapshot={snapshot}
-      state={state}
-      notice={notice}
-      onSelect={onSelect}
-      onSelectMfa={onSelectMfa}
-      onSubmit={submit}
-      onResend={resend}
-      otpCode={otpCode}
-      onOtpCodeChange={setOtpCode}
-      captchaRef={captchaRef}
-      mfaMethods={mfaMethods}
-      onCredential={submitCredential}
-      challengeData={challengeData}
-      onQrResult={onQrResult}
-      onBackToMethods={backToMethods}
-      onRetry={retrySubmit}
-      challengeValues={challengeValues}
-    />
+    <>
+      <LoginFlowView
+        snapshot={snapshot}
+        state={state}
+        notice={notice}
+        onSelect={onSelect}
+        onSelectMfa={onSelectMfa}
+        onSubmit={submit}
+        onResend={resend}
+        otpCode={otpCode}
+        onOtpCodeChange={setOtpCode}
+        mfaMethods={mfaMethods}
+        onCredential={submitCredential}
+        challengeData={challengeData}
+        onQrResult={onQrResult}
+        onBackToMethods={backToMethods}
+        onRetry={retrySubmit}
+        challengeValues={challengeValues}
+      />
+      <CaptchaDialog {...captcha.dialogProps} />
+    </>
   );
 }

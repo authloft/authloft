@@ -29,7 +29,20 @@ import {
   NextStepSchema,
   type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
-import { CaptchaPayloadSchema } from '../../gen/proto/api/sso/v1/login_pb';
+import {
+  CaptchaPayloadSchema,
+  type CaptchaPayload,
+} from '../../gen/proto/api/sso/v1/login_pb';
+import {
+  runCaptchaGate,
+  type CaptchaGateMode,
+  type CaptchaGateResult,
+  type CaptchaPrompt,
+} from '../../shared/captcha/captchaGate';
+import type {
+  CaptchaGate,
+  CaptchaGateRunOptions,
+} from '../../shared/captcha/useCaptchaGate';
 import type { MethodsSnapshot } from '../../shared/types/init';
 
 const { createElement } = React;
@@ -198,6 +211,52 @@ function renderResetView(init: Record<string, unknown> = {}): string {
         viewProps({ snapshot: RESET_SNAPSHOT, ...init }) as never,
       ),
     ),
+  );
+}
+
+/**
+ * gate 替身：跑真 runCaptchaGate 循环、只把「弹窗询问」换成脚本化作答
+ *（确认 → 凭据；用尽 / undefined → 取消），并记录每次询问。空脚本 = 不弹窗。
+ */
+function scriptedGate(answers: (CaptchaPayload | undefined)[] = []) {
+  const prompts: CaptchaPrompt[] = [];
+  // .tsx 走 classic JSX runtime：泛型箭头须写 <T,> 消歧。
+  const run = <T,>(
+    options: CaptchaGateRunOptions<T>,
+  ): Promise<CaptchaGateResult<T>> =>
+    runCaptchaGate<T>({
+      ...options,
+      prompt: async (next) => {
+        prompts.push(next);
+        return answers[prompts.length - 1];
+      },
+    });
+  const gate: CaptchaGate['run'] = run;
+  return { run: gate, prompts };
+}
+
+/**
+ * 固定 payload 的 runFlowStep 适配（既有链路用例只验请求体与信封，不随 gate
+ * 轮次重建 payload）；需要验弹窗循环的用例直接调 pagesMod.runFlowStep。
+ */
+function runStep<P extends object>(
+  request: (input: {
+    method: string;
+    step: string;
+    payload: P;
+  }) => Promise<LoginFlowResponse>,
+  input: { method: string; step: string; payload: P },
+  mode: CaptchaGateMode = 'reactive',
+) {
+  return pagesMod.runFlowStep(
+    request,
+    {
+      method: input.method,
+      step: input.step,
+      payloadFor: () => input.payload,
+    },
+    scriptedGate().run,
+    { mode },
   );
 }
 
@@ -465,18 +524,19 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
-  test('otp_email 首帧：方式 tab + challenge 段（目标输入 + captcha 容器，§2.3 行 447）', () => {
+  test('otp_email 首帧：方式 tab + challenge 段（目标输入，captcha 由弹窗承接不内联，§2.3 行 447）', () => {
     const markup = renderRegisterView();
     expect(markup).toContain('用户名密码');
     expect(markup).toContain('手机号');
     expect(markup).toContain('邮箱');
     expect(markup).toContain('邮箱'); // challengeFields label
     expect(markup).toContain('发送验证码'); // OTPForm challenge 段（复用，§4.4 行 464）
-    expect(markup).toContain('<div></div>'); // CaptchaWidget 容器（type=image）
+    expect(markup).not.toContain('<div></div>'); // 不再内联 CaptchaWidget 容器
+    expect(markup).not.toContain('安全验证'); // 弹窗文案不在状态帧视图里
     expect(markup).toContain('aria-current="true"'); // 当前方式高亮
   });
 
-  test('password 方式首帧：set_password 直入（username + password + captcha，§2.3 行 451）', () => {
+  test('password 方式首帧：set_password 直入（username + password，captcha 走弹窗，§2.3 行 451）', () => {
     const markup = renderRegisterView({
       method: 'password',
       step: 'set_password',
@@ -484,7 +544,7 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).toContain('name="username"');
     expect(markup).toContain('type="password"');
     expect(markup).toContain('autoComplete="new-password"');
-    expect(markup).toContain('<div></div>'); // captcha 必填（§2.3 行 451）
+    expect(markup).not.toContain('<div></div>'); // captcha 必填但由弹窗承接（§2.3 行 451）
     expect(markup).toContain('注册</button>');
     // 密码为空 → Meter 不渲染（未输入不提示）。
     expect(markup).not.toContain('长度至少 8 位');
@@ -545,20 +605,23 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(weak).toContain('<form');
   });
 
-  test('captcha_required：表单保留 + 原地 captcha（权威来源，§1.6 行 240）', () => {
-    const markup = renderRegisterView({
-      status: 'captcha_required',
-      envelope: envelope({
-        status: 'captcha_required',
-        captcha: create(CaptchaConfigSchema, {
-          providerKey: 'builtin_image2',
-          type: 'image',
+  test('captcha_* 不再内联渲染 widget（弹窗承接）：表单保留、不出 ErrorBanner', () => {
+    for (const status of ['captcha_required', 'captcha_invalid'] as const) {
+      const markup = renderRegisterView({
+        status,
+        envelope: envelope({
+          status,
+          captcha: create(CaptchaConfigSchema, {
+            providerKey: 'builtin_image2',
+            type: 'image',
+          }),
         }),
-      }),
-    });
-    expect(markup).toContain('<form'); // OTPForm challenge 段保留
-    expect(markup).toContain('<div></div>');
-    expect(markup).not.toContain('role="alert"'); // 非失败态
+      });
+      expect(markup).toContain('<form'); // OTPForm challenge 段保留
+      expect(markup).not.toContain('<div></div>'); // 无内联 widget 容器
+      expect(markup).not.toContain('安全验证'); // 弹窗文案不在状态帧视图里
+      expect(markup).not.toContain('role="alert"'); // 非失败态（防御：正常由 gate 吸收）
+    }
   });
 
   test('success：跳转中文案（终点由 api 层信封处理）', () => {
@@ -660,11 +723,12 @@ describe('ResetPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
-  test('challenge 帧：目标输入 + captcha（§2.5 行 528 重置下发必须）', () => {
+  test('challenge 帧：目标输入（captcha 由弹窗承接不内联，§2.5 行 528 重置下发必须）', () => {
     const markup = renderResetView();
     expect(markup).toContain('邮箱');
     expect(markup).toContain('发送验证码');
-    expect(markup).toContain('<div></div>');
+    expect(markup).not.toContain('<div></div>');
+    expect(markup).not.toContain('安全验证');
   });
 
   test('set_password 帧：只渲染新密码（无 username / 无 captcha，§10.4 行 1532）', () => {
@@ -755,7 +819,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
         retryAfter: '60',
       },
     });
-    const first = await pagesMod.runFlowStep(apiMod.register, {
+    const first = await runStep(apiMod.register, {
       method: 'otp_email',
       step: 'challenge',
       payload: pagesMod.registerPayloadFor('challenge', {
@@ -781,7 +845,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
       loginToken: 'reg-tok-2',
       nextStep: { kind: 'form', method: 'otp_email' },
     });
-    const second = await pagesMod.runFlowStep(apiMod.register, {
+    const second = await runStep(apiMod.register, {
       method: 'otp_email',
       step: 'verify',
       payload: pagesMod.registerPayloadFor('verify', { code: '123456' }),
@@ -804,7 +868,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
       syncCookieUrl: 'https://sync.test/first',
       redirectTo: 'https://app.test/home',
     });
-    const third = await pagesMod.runFlowStep(apiMod.register, {
+    const third = await runStep(apiMod.register, {
       method: 'otp_email',
       step: 'set_password',
       payload: pagesMod.registerPayloadFor('set_password', {
@@ -838,7 +902,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
         });
       }),
     );
-    const result = await pagesMod.runFlowStep(apiMod.register, {
+    const result = await runStep(apiMod.register, {
       method: 'password',
       step: 'set_password',
       payload: pagesMod.registerPayloadFor(
@@ -869,7 +933,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
         HttpResponse.json({ status: 'signup_disabled' }),
       ),
     );
-    const disabled = await pagesMod.runFlowStep(apiMod.register, {
+    const disabled = await runStep(apiMod.register, {
       method: 'otp_email',
       step: 'challenge',
       payload: pagesMod.registerPayloadFor('challenge', {
@@ -884,7 +948,7 @@ describe('注册链路（msw 全链，§10.3）', () => {
     server.use(
       http.post(REGISTER_URL, () => new HttpResponse(null, { status: 500 })),
     );
-    const failed = await pagesMod.runFlowStep(apiMod.register, {
+    const failed = await runStep(apiMod.register, {
       method: 'otp_email',
       step: 'challenge',
       payload: pagesMod.registerPayloadFor('challenge', {
@@ -912,7 +976,7 @@ describe('重置链路（msw 全链，§10.4）', () => {
       loginToken: 'reset-tok-1',
       nextStep: { kind: 'form' },
     });
-    const first = await pagesMod.runFlowStep(apiMod.resetPassword, {
+    const first = await runStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'challenge',
       payload: resetMod.resetPayloadFor(
@@ -943,7 +1007,7 @@ describe('重置链路（msw 全链，§10.4）', () => {
       loginToken: 'reset-tok-2',
       nextStep: { kind: 'form' },
     });
-    const second = await pagesMod.runFlowStep(apiMod.resetPassword, {
+    const second = await runStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'verify',
       payload: resetMod.resetPayloadFor('verify', { code: '654321' }),
@@ -962,7 +1026,7 @@ describe('重置链路（msw 全链，§10.4）', () => {
 
     // 3. set_password：只提交 password（§10.4 行 1532）→ success（loginToken 清空）。
     respond({ status: 'success' });
-    const third = await pagesMod.runFlowStep(apiMod.resetPassword, {
+    const third = await runStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'set_password',
       payload: resetMod.resetPayloadFor('set_password', {
@@ -985,11 +1049,200 @@ describe('重置链路（msw 全链，§10.4）', () => {
         HttpResponse.json({ status: 'user_not_found' }),
       ),
     );
-    const result = await pagesMod.runFlowStep(apiMod.resetPassword, {
+    const result = await runStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'challenge',
       payload: resetMod.resetPayloadFor('challenge', { email: 'ghost@b.com' }),
     });
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captcha 弹窗编排（页族 runFlowStep + gate；§2.5 / §1.6 行 240-241）
+// ---------------------------------------------------------------------------
+
+describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内换凭据 / 取消）', () => {
+  /** 自绘图形码凭据（§2.5 行 503-506 三元组）。 */
+  const token = (id: string, answer: string) =>
+    create(CaptchaPayloadSchema, { providerKey: 'builtin_image', id, answer });
+
+  test('registerCaptchaMode：challenge 与 password 直入 set_password → upfront，其余 reactive', () => {
+    expect(pagesMod.registerCaptchaMode('challenge', 'otp_email')).toBe(
+      'upfront',
+    );
+    expect(pagesMod.registerCaptchaMode('challenge', 'otp_sms')).toBe(
+      'upfront',
+    );
+    expect(pagesMod.registerCaptchaMode('set_password', 'password')).toBe(
+      'upfront',
+    );
+    expect(pagesMod.registerCaptchaMode('verify', 'otp_email')).toBe(
+      'reactive',
+    );
+    expect(pagesMod.registerCaptchaMode('set_password', 'otp_email')).toBe(
+      'reactive',
+    );
+  });
+
+  test('upfront：注册 challenge 先弹窗再发，只发一次带凭据的请求（payloadFor 每轮重建）', async () => {
+    const raws: string[] = [];
+    server.use(
+      http.post(REGISTER_URL, async ({ request }) => {
+        raws.push(await request.text());
+        return HttpResponse.json({
+          status: 'next',
+          loginToken: 'reg-tok-1',
+          nextStep: { kind: 'form', method: 'otp_email' },
+        });
+      }),
+    );
+    const gate = scriptedGate([token('r1', '123')]);
+    const result = await pagesMod.runFlowStep(
+      apiMod.register,
+      {
+        method: 'otp_email',
+        step: 'challenge',
+        payloadFor: (captcha) =>
+          pagesMod.registerPayloadFor(
+            'challenge',
+            { email: 'a@b.com' },
+            captcha,
+          ),
+      },
+      gate.run,
+      { mode: 'upfront', config: IMAGE_CAPTCHA },
+    );
+
+    expect(gate.prompts).toHaveLength(1);
+    expect(gate.prompts[0].config.providerKey).toBe('builtin_image');
+    expect(raws).toHaveLength(1); // 没有注定被拦的裸请求
+    expect(JSON.parse(raws[0])).toEqual({
+      method: 'otp_email',
+      step: 'challenge',
+      payload: {
+        email: 'a@b.com',
+        captcha: { providerKey: 'builtin_image', id: 'r1', answer: '123' },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.envelope.status).toBe('next');
+    expect(getLoginToken()).toBe('reg-tok-1');
+  });
+
+  test('captcha_invalid：窗内换凭据循环（attempt 递增 + 响应顶层降级配置），不落页面状态', async () => {
+    const raws: string[] = [];
+    let calls = 0;
+    server.use(
+      http.post(RESET_URL, async ({ request }) => {
+        raws.push(await request.text());
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json({
+            status: 'captcha_invalid',
+            captcha: { providerKey: 'builtin_image', type: 'image' },
+          });
+        }
+        return HttpResponse.json({ status: 'next', loginToken: 'reset-tok-1' });
+      }),
+    );
+    const gate = scriptedGate([token('c1', 'aaa'), token('c2', 'bbb')]);
+    const result = await pagesMod.runFlowStep(
+      apiMod.resetPassword,
+      {
+        method: 'otp_email',
+        step: 'challenge',
+        payloadFor: (captcha) =>
+          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }, captcha),
+      },
+      gate.run,
+      { mode: 'upfront', config: IMAGE_CAPTCHA },
+    );
+
+    expect(gate.prompts).toHaveLength(2);
+    expect(gate.prompts[0].invalid).toBe(false);
+    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 241：窗内出错误文案
+    expect(gate.prompts[1].attempt).toBe(1); // widget key 换新 → 新凭据
+    expect(JSON.parse(raws[1]).payload.captcha).toEqual({
+      providerKey: 'builtin_image',
+      id: 'c2',
+      answer: 'bbb',
+    });
+    expect(result.ok).toBe(true); // captcha_invalid 被吸收，不逃逸成页面失败态
+    if (!result.ok) return;
+    expect(result.envelope.status).toBe('next');
+  });
+
+  test('用户取消弹窗：ok:false + cancelled:true（不是传输失败，页面不回第一步）', async () => {
+    let calls = 0;
+    server.use(
+      http.post(REGISTER_URL, () => {
+        calls += 1;
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    const gate = scriptedGate([undefined]); // 取消
+    const result = await pagesMod.runFlowStep(
+      apiMod.register,
+      {
+        method: 'otp_email',
+        step: 'challenge',
+        payloadFor: (captcha) =>
+          pagesMod.registerPayloadFor(
+            'challenge',
+            { email: 'a@b.com' },
+            captcha,
+          ),
+      },
+      gate.run,
+      { mode: 'upfront', config: IMAGE_CAPTCHA },
+    );
+    expect(result).toEqual({ ok: false, cancelled: true });
+    expect(calls).toBe(0); // upfront 取消 → 一个请求都没发
+  });
+
+  test('传输层失败（500）：ok:false + cancelled:false（与取消区分，页面回第一步）', async () => {
+    server.use(
+      http.post(RESET_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    const result = await pagesMod.runFlowStep(
+      apiMod.resetPassword,
+      {
+        method: 'otp_email',
+        step: 'challenge',
+        payloadFor: (captcha) =>
+          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }, captcha),
+      },
+      scriptedGate([token('c1', 'aaa')]).run,
+      { mode: 'upfront', config: IMAGE_CAPTCHA },
+    );
+    expect(result).toEqual({ ok: false, cancelled: false });
+  });
+
+  test('reactive 无首屏配置：先裸探一次，不凭空弹窗（服务端未启用 captcha 的部署）', async () => {
+    const raws: string[] = [];
+    server.use(
+      http.post(REGISTER_URL, async ({ request }) => {
+        raws.push(await request.text());
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    const gate = scriptedGate([token('x', '1')]);
+    const result = await pagesMod.runFlowStep(
+      apiMod.register,
+      {
+        method: 'otp_email',
+        step: 'verify',
+        payloadFor: () =>
+          pagesMod.registerPayloadFor('verify', { code: '123456' }),
+      },
+      gate.run,
+      { mode: 'upfront' }, // 无 config → 退化为先探一次
+    );
+    expect(gate.prompts).toHaveLength(0);
+    expect(raws).toHaveLength(1);
+    expect(JSON.parse(raws[0]).payload).toEqual({ code: '123456' });
     expect(result.ok).toBe(true);
   });
 });

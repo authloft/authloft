@@ -1,6 +1,7 @@
 // 图形码 adapter 样式（docs/前端架构.md §1.7）。命令式 DOM（类自管
 // createElement）经 className 挂 CSS Modules 哈希类，与 React 组件消费同构。
 @import (reference) '../../styles/tokens.less';
+@import (reference) '../../styles/controls.less';
 
 // 验证码图片：block 消除行内基线间隙，边框保证裸 reset 下的可见性。
 .image {
@@ -12,6 +13,7 @@
 
 // 作答输入框。
 .answerInput {
+  .control-input();
   padding: @spacing-xs @spacing-sm;
   border: @border-width solid @color-border;
   border-radius: @radius-sm;

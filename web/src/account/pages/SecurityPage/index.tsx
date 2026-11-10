@@ -51,7 +51,7 @@ import { useWebauthnSetting } from './WebauthnSetting';
 /** mfaPolicy 零值兜底（§3.1：缺失字段按零值；protojson 省略未置字段时）。 */
 const ZERO_MFA_POLICY: MfaPolicy = create(MfaPolicySchema, {});
 
-/** captcha 零值兜底（§3.1）：GetConfig 未下发 captcha 时 CaptchaWidget 走其兜底错误态。 */
+/** captcha 零值兜底（§3.1）：GetConfig 未下发 captcha 时弹窗内 widget 走其兜底错误态。 */
 const ZERO_CAPTCHA_CONFIG = create(CaptchaConfigSchema, {});
 
 /** 安全中心帧视图：配置未就绪 → 错误提示 / 加载态。 */

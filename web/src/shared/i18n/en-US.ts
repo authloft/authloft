@@ -35,6 +35,11 @@ export const enUS: I18nMessages = {
   'common.refreshAndRetry': 'Please refresh and try again',
   'common.captchaLoadFailed': 'Captcha failed to load',
   'common.loading': 'Loading…',
+  // captcha 弹窗（shared/captcha/CaptchaDialog，login 与 account 共用）。
+  'common.cancel': 'Cancel',
+  'common.captchaTitle': 'Security verification',
+  'common.captchaHint': 'Complete the verification below to continue',
+  'common.captchaConfirm': 'Verify and continue',
   // 前置校验字段级文案（validate.ts FieldIssue → 键映射见 FIELD_ISSUE_I18N_KEY）。
   'common.errRequired': 'This field is required',
   'common.errInvalidEmail': 'Invalid email address',

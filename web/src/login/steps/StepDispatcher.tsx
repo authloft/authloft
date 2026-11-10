@@ -9,8 +9,8 @@
  *   redirect / qrcode 分派为防御形态（RedirectStep 空 URL 不跳、QRCodeStep
  *   空 providerKey 占位，零值兜底 §9 第 18 条）：真实链路经 ProviderButtons
  *   主方式渲染入口（§4.3 行 454，redirect 渠道点击 / qrcode 面板）；
- * - challenge 分派 ChallengeStep（fields + CaptchaWidget + 触发，无触发通道
- *   ——防御形态；OTP 系挑战段由 OTPForm form 槽承载）；
+ * - challenge 分派 ChallengeStep（fields + 触发按钮，captcha 由其自带弹窗承接；
+ *   无触发通道——防御形态；OTP 系挑战段由 OTPForm form 槽承载）；
  * - external 由宿主承载（§9 第 10 条：login/ 下不实现 external 步骤组件），
  *   走兜底；未识别 kind 同兜底；新增 StepKind 时只改本文件（§4.2 行 423）。
  *
@@ -42,8 +42,8 @@ export function StepDispatcher({ nextStep, form }: StepDispatcherProps) {
     return <RedirectStep />;
   }
   if (nextStep.kind === 'challenge') {
-    // §4.2 行 441：fields（挑战字段）+ CaptchaWidget（配置缺省取注入快照）+
-    // 触发按钮；无触发通道（防御形态，onTrigger 归容器接线后续实现）。
+    // §4.2 行 441：fields（挑战字段）+ 触发按钮（captcha 弹窗由 ChallengeStep
+    // 自持）；无触发通道（防御形态，onTrigger / onResult 归容器接线后续实现）。
     return <ChallengeStep fields={nextStep.fields} />;
   }
   if (nextStep.kind === 'qrcode') {

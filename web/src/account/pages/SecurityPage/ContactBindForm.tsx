@@ -6,14 +6,16 @@
  * （行 881-882：服务端按 target 拼键取码并校验码内 uid 归属）。
  *
  * 状态机：challenge（发码）→ verify（验码）→ done（成功帧）；「重新发送」
- * 回 challenge 并 reset captcha（上一次已被消费，§3.4 行 880）。
+ * 回 challenge，下一次发码在弹窗里换新凭据（上一次已被消费，§3.4 行 880）。
+ * challenge 步 captcha 必过（行 880）→ 走 shared/captcha 的 upfront 弹窗：
+ * 先问凭据再发一次请求，captcha_invalid 在窗内换凭据重试，取消则原地保留表单。
  * 请求构造纯逻辑在 ./api（node 可测；Semi 渲染测试 blocker 见
  * account.test.tsx 头注）；target_taken（新号码被占用）/ invalid_code（码
  * 归属校验）等服务端错误经 apiErrorText → shared/i18n 字典出文案。
  * 文案经 shared/i18n（account.* 域键 + errors.status.captcha_required /
  * channels.email 复用）。
  */
-import { useRef, useState, type ReactNode, type Ref } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { Button, Input } from '@douyinfe/semi-ui';
@@ -23,10 +25,9 @@ import type {
   BindPhoneRequest,
 } from '../../../gen/proto/api/account/v1/security_pb';
 import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
-import {
-  CaptchaWidget,
-  type CaptchaWidgetHandle,
-} from '../../../shared/captcha/CaptchaWidget';
+import { CaptchaDialog } from '../../../shared/captcha/CaptchaDialog';
+import { errorCaptchaOutcome } from '../../../shared/captcha/captchaGate';
+import { useCaptchaGate } from '../../../shared/captcha/useCaptchaGate';
 import {
   CodeInput,
   DEFAULT_CODE_LENGTH,
@@ -77,14 +78,12 @@ function inputErrorText(
 }
 
 /**
- * 绑定帧视图（纯渲染，无请求）：challenge（目标 + captcha）→ verify
- * （分段验证码 + 重新发送）→ done（成功 + 继续）。
+ * 绑定帧视图（纯渲染，无请求）：challenge（目标输入）→ verify
+ * （分段验证码 + 重新发送）→ done（成功 + 继续）。captcha 不在此渲染，
+ * 由状态壳的弹窗承接。
  */
 export function ContactBindFormView(props: {
   kind: ContactBindKind;
-  captcha: CaptchaConfig;
-  /** CaptchaWidget 句柄（getToken / reset，§3.5 行 351 生命周期归调用方）。 */
-  captchaRef: Ref<CaptchaWidgetHandle>;
   step: ContactBindStep;
   target: string;
   code: string;
@@ -214,8 +213,7 @@ export function ContactBindFormView(props: {
           disabled={challenging}
         />
       </div>
-      {/* captcha 必过（§3.4 行 880）：提交前 getToken，未就绪不发包。 */}
-      <CaptchaWidget captcha={props.captcha} ref={props.captchaRef} />
+      {/* captcha 必过（§3.4 行 880）：提交即弹窗问凭据，窗内确认后发包。 */}
       {props.inputError !== undefined ? (
         <p role="alert" className={styles.error}>
           {inputErrorText(props.kind, props.inputError)}
@@ -254,7 +252,7 @@ export function ContactBindForm(props: {
   const [inputError, setInputError] = useState<
     ContactBindChallengeError | 'invalid_code' | undefined
   >(undefined);
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  const gate = useCaptchaGate();
   // kind 固定于表单实例，但请求构造返回 Bind 系联合类型——经 $typeName 判别
   // 收窄到具体端点（gen Message 的判别式属性，§9 第 15 条）。
   const call = (
@@ -301,28 +299,36 @@ export function ContactBindForm(props: {
     step === 'verify' ? RESEND_COOLDOWN_SECONDS : undefined,
   );
 
-  const submitChallenge = () => {
-    const built = buildBindChallengeRequest(
-      kind,
-      target,
-      captchaRef.current?.getToken(),
-    );
-    if (!built.ok) {
-      setInputError(built.error);
+  const submitChallenge = async () => {
+    // 目标格式先本地预校验（§1.11 后端权威）：不合格不开窗、不发包。
+    const probe = buildBindChallengeRequest(kind, target, undefined);
+    if (!probe.ok && probe.error === 'invalid_target') {
+      setInputError(probe.error);
       return;
     }
     setInputError(undefined);
-    // §5.4-#1（固定 runAsync）：challenge 失败须重置 captcha（本次
-    // token 已被消费，§3.4 行 880）——调用方降级处理错误，runAsync 正当
-    // 场景③；集中 onError 同时静默（toast:false，行内错误帧呈现）。
-    challenge
-      .runAsync(built.request)
-      .then(() => {
-        setStep('verify');
-      })
-      .catch(() => {
-        captchaRef.current?.reset();
-      });
+    const outcome = await gate.run({
+      mode: 'upfront',
+      config: captcha,
+      request: async (token) => {
+        const built = buildBindChallengeRequest(kind, target, token);
+        if (!built.ok) {
+          // captcha_missing 为防御分支：upfront 只在用户确认后注入凭据。
+          // 直接抛出而不进 useRequest，避免把本地校验染成请求错误帧。
+          throw new Error(t('errors.status.captcha_required'));
+        }
+        // §5.4-#1（固定 runAsync）：错误原样交回本函数，弹窗吸收 captcha_*、
+        // 其余落 useRequest 错误态供行内 apiErrorText 呈现（toast:false）。
+        return challenge.runAsync(built.request);
+      },
+      // OkResponse 无状态字段：captcha 结论只在 ApiError.code 一侧。
+      readOutcome: () => ({ action: 'message' }),
+      readError: errorCaptchaOutcome,
+    });
+    // 取消：流程态与输入原样保留，表单可原地重提（下一次弹窗换新凭据）。
+    if (outcome.kind === 'result') {
+      setStep('verify');
+    }
   };
 
   const submitVerify = () => {
@@ -340,7 +346,6 @@ export function ContactBindForm(props: {
     setStep('challenge');
     setCode('');
     setInputError(undefined);
-    captchaRef.current?.reset();
   };
 
   const restart = () => {
@@ -348,40 +353,44 @@ export function ContactBindForm(props: {
     setTarget('');
     setCode('');
     setInputError(undefined);
-    captchaRef.current?.reset();
   };
 
   return (
-    <ContactBindFormView
-      kind={kind}
-      captcha={captcha}
-      captchaRef={captchaRef}
-      step={step}
-      target={target}
-      code={code}
-      currentValue={currentValue}
-      currentVerified={currentVerified}
-      resendSeconds={cooldown.seconds}
-      resendExpired={cooldown.expired}
-      challengeStatus={deriveRequestStatus(
-        challenge.loading,
-        challenge.error,
-        challenge.data,
-      )}
-      verifyStatus={deriveRequestStatus(
-        verify.loading,
-        verify.error,
-        verify.data,
-      )}
-      inputError={inputError}
-      challengeError={challenge.error}
-      verifyError={verify.error}
-      onTargetChange={setTarget}
-      onCodeChange={setCode}
-      onChallenge={submitChallenge}
-      onVerify={submitVerify}
-      onResend={resend}
-      onRestart={restart}
-    />
+    <>
+      <ContactBindFormView
+        kind={kind}
+        step={step}
+        target={target}
+        code={code}
+        currentValue={currentValue}
+        currentVerified={currentVerified}
+        resendSeconds={cooldown.seconds}
+        resendExpired={cooldown.expired}
+        challengeStatus={deriveRequestStatus(
+          // 弹窗在途（问凭据 / 窗内重试）也按 loading 呈现：表单禁用，
+          // 与 useRequest 自身的请求在途合成一个「发码进行中」态。
+          challenge.loading || gate.dialogProps.session !== undefined,
+          challenge.error,
+          challenge.data,
+        )}
+        verifyStatus={deriveRequestStatus(
+          verify.loading,
+          verify.error,
+          verify.data,
+        )}
+        inputError={inputError}
+        challengeError={challenge.error}
+        verifyError={verify.error}
+        onTargetChange={setTarget}
+        onCodeChange={setCode}
+        onChallenge={() => {
+          void submitChallenge();
+        }}
+        onVerify={submitVerify}
+        onResend={resend}
+        onRestart={restart}
+      />
+      <CaptchaDialog {...gate.dialogProps} />
+    </>
   );
 }

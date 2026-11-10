@@ -4,14 +4,14 @@
  * 经 PollStep，避免双份轮询，行 443）。
  *
  * - requestQR 调 SsoService/CreateQrcode（scene 缺省即 login，§2.8 行 702；
- *   captcha 必带、每次拉码都要新的，行 703——凭据经 CaptchaWidget getToken
- *   实时取）；pollUrl 调 GetLoginTicket（poll 秒数与面板 pollSeconds 同值，
+ *   captcha 必带、每次拉码都要新的，行 703——凭据由 captcha 弹窗每轮现取）；
+ *   pollUrl 调 GetLoginTicket（poll 秒数与面板 pollSeconds 同值，
  *   §2.8 行 714 上限 15；signal 忽略——api 薄封装不支持中断，结果丢弃由
  *   面板 disposed 检查兜底）；
- * - captcha 门控（§2.8 行 690「必须携带 captcha」）：配置存在时先渲染
- *   CaptchaWidget +「获取二维码」，凭据就绪才挂面板（挂载即拉码，
- *   面板契约）；expired 重拉走面板「重试」，requestQR 实时取新凭据；
- *   无配置（服务端未启用 captcha）直挂面板；
+ * - captcha 门控（§2.8 行 690「必须携带 captcha」）：面板挂载即拉码，拉码经
+ *   shared/captcha 的 gate 走 upfront——先在弹窗里问凭据再发一次请求；
+ *   captcha_invalid 在窗内换凭据重试；用户取消则卸下面板、留「获取二维码」
+ *   按钮原地重入（新 key 重挂 → 再次弹窗），expired 重拉走面板「重试」；
  * - onResult 完整状态机（§2.8 行 739-743）：面板 success（外层
  *   ticket 终态）后登录结论在**内层 `login`**（§1.3 同构信封）——success →
  *   completeLogin 终点跳转（终点字段 syncCookieUrl / redirectTo 在内层，
@@ -24,14 +24,19 @@
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from '@modern-js/runtime/router';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
-import { CaptchaWidget, type CaptchaWidgetHandle } from '../../shared/captcha/CaptchaWidget';
-import { QRCodePanel, MAX_POLL_SECONDS } from '../../shared/components/QRCodePanel';
+import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
+import { errorCaptchaOutcome } from '../../shared/captcha/captchaGate';
+import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
+import {
+  QRCodePanel,
+  MAX_POLL_SECONDS,
+} from '../../shared/components/QRCodePanel';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
@@ -68,10 +73,8 @@ export function completeLogin(
   }
 }
 
-/** requestQR 包装依赖（拉码替身注入；getToken 为 captcha 凭据实时源）。 */
+/** requestQR 包装依赖（拉码替身注入）。 */
 export interface QrcodeRequesterDeps {
-  /** captcha 凭据（CaptchaWidget ref getToken；undefined = 用户未完成）。 */
-  getToken?: () => CaptchaPayload | undefined;
   /** 拉码（缺省 login/api.ts createQrcode，scene 缺省 login）。 */
   request?: (req: {
     providerKey: string;
@@ -102,22 +105,15 @@ async function defaultPollTicket(
 }
 
 /**
- * requestQR 包装（QRCodePanel props 契约，§3.3 行 345）：CreateQrcode 必带
- * captcha（§2.8 行 703）；凭据未就绪 → reject（面板 failed 态走
- * fetchFailureText 兜底文案）。纯工厂，node 可测。
+ * 拉码请求体组装（CreateQrcode 必带 captcha，§2.8 行 703）：凭据由 gate 每轮
+ * 注入（一次性，不可复用）。纯工厂，node 可测。
  */
 export function qrcodeRequester(
   providerKey: string,
   deps: QrcodeRequesterDeps = {},
-): (_signal: AbortSignal) => Promise<CreateQrcodeResponse> {
-  return () => {
-    const captcha = deps.getToken?.();
-    if (captcha === undefined) {
-      return Promise.reject(new Error(t('login.qrNeedCaptcha')));
-    }
-    const request = deps.request ?? defaultCreateQrcode;
-    return request({ providerKey, captcha });
-  };
+): (captcha: CaptchaPayload) => Promise<CreateQrcodeResponse> {
+  const request = deps.request ?? defaultCreateQrcode;
+  return (captcha) => request({ providerKey, captcha });
 }
 
 /**
@@ -183,9 +179,10 @@ export function QRCodeStep({
   pollSeconds = MAX_POLL_SECONDS,
   navigate = defaultNavigate,
 }: QRCodeStepProps) {
-  const [started, setStarted] = useState(false);
-  const [notice, setNotice] = useState(false);
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  const gate = useCaptchaGate();
+  const [cancelled, setCancelled] = useState(false);
+  // 取消后重入：新 key 重挂面板 → 再次走 upfront 弹窗（凭据一次性，不能复用）。
+  const [panelKey, setPanelKey] = useState(0);
   // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
   const [searchParams] = useSearchParams();
 
@@ -195,42 +192,46 @@ export function QRCodeStep({
     return <p role="alert">{t('common.refreshAndRetry')}</p>;
   }
 
-  /** 门控按钮：凭据就绪才挂面板（挂载即拉码，面板契约）。 */
-  const start = () => {
-    if (captchaRef.current?.getToken() === undefined) {
-      setNotice(true);
-      return;
+  const requestQR = async () => {
+    const outcome = await gate.run({
+      mode: 'upfront',
+      config: captcha,
+      request: (token) =>
+        token === undefined
+          ? Promise.reject(new Error(t('login.qrNeedCaptcha')))
+          : qrcodeRequester(providerKey, { request: requestQrcode })(token),
+      // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
+      readOutcome: () => ({ action: 'message' }),
+      readError: errorCaptchaOutcome,
+    });
+    if (outcome.kind === 'result') {
+      return outcome.result;
     }
-    setStarted(true);
+    if (outcome.kind === 'cancelled') {
+      // 面板随即被卸载，其 disposed 检查会吞掉这次 reject 的 failed 态。
+      setCancelled(true);
+      throw new Error(t('login.qrNeedCaptcha'));
+    }
+    throw outcome.error;
   };
 
   return (
     <div className={styles.panel}>
-      {captcha !== undefined && (
-        <div className={styles.captchaBox}>
-          <CaptchaWidget captcha={captcha} ref={captchaRef} />
-          {!started && (
-            <button
-              type="button"
-              className={styles.fetchButton}
-              onClick={start}
-            >
-              {t('login.fetchQrcodeAction')}
-            </button>
-          )}
-          {!started && notice && (
-            <p role="alert" className={styles.notice}>
-              {t('login.qrNeedCaptcha')}
-            </p>
-          )}
-        </div>
-      )}
-      {(started || captcha === undefined) && (
+      {cancelled ? (
+        <button
+          type="button"
+          className={styles.fetchButton}
+          onClick={() => {
+            setCancelled(false);
+            setPanelKey((key) => key + 1);
+          }}
+        >
+          {t('login.fetchQrcodeAction')}
+        </button>
+      ) : (
         <QRCodePanel
-          requestQR={qrcodeRequester(providerKey, {
-            getToken: () => captchaRef.current?.getToken(),
-            request: requestQrcode,
-          })}
+          key={panelKey}
+          requestQR={requestQR}
           pollUrl={(ticket) => pollTicket(ticket, pollSeconds)}
           onResult={(outer) =>
             // 完整状态机分派：success 用内层信封终点跳转；
@@ -249,6 +250,7 @@ export function QRCodeStep({
           pollSeconds={pollSeconds}
         />
       )}
+      <CaptchaDialog {...gate.dialogProps} />
     </div>
   );
 }

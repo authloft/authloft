@@ -76,9 +76,9 @@ export type StatusAction =
   | 'stop_polling'
   /** step / token / state 类失败：回到第一步。 */
   | 'restart'
-  /** captcha_required：按响应顶层 captcha 渲染 CaptchaWidget 并重提。 */
+  /** captcha_required：开 captcha 弹窗（配置取响应顶层 captcha），确认后重提。 */
   | 'require_captcha'
-  /** captcha_invalid：按响应顶层 captcha reset widget 后重试。 */
+  /** captcha_invalid：弹窗不关，换新凭据后重提。 */
   | 'reset_captcha'
   /** too_many_requests / locked：倒计时（retry_after）/ 展示剩余时长。 */
   | 'countdown'

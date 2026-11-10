@@ -29,6 +29,8 @@ import type {
   LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
+import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
+import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { isValidUsername } from '../../shared/utils/validate';
 import { t } from '../../shared/i18n';
@@ -228,6 +230,10 @@ export function BindingPage({ binding, notice }: BindingPageProps) {
   );
   // 传输失败一次性提示（本地镜像；容器 notice 优先，RegisterPage notice 同款语义）。
   const [localNotice, setLocalNotice] = useState<string | undefined>(undefined);
+  // captcha 弹窗编排：三方免密建号是后端豁免项（engine.go evaluateCaptcha：
+  // tp != nil && flow=login 的 set_password 不校验），故 reactive 不主动弹窗；
+  // 服务端若仍判需要则按其下发的权威配置问一次（防御）。
+  const gate = useCaptchaGate();
 
   // 退出（§2.7.5 行 661）：清内存 login_token → 回登录第一步 /sso/login。
   const exit = () => {
@@ -247,13 +253,22 @@ export function BindingPage({ binding, notice }: BindingPageProps) {
   // 步仅提交 username，loginToken 由 api 层自动注入（内存 token flow=login）。
   const submitAccount = async () => {
     setLoading(true);
-    const result = await runFlowStep(register, {
-      method: BINDING_REGISTER_METHOD,
-      step: 'set_password',
-      payload: createAccountPayload(username),
-    });
+    const result = await runFlowStep(
+      register,
+      {
+        method: BINDING_REGISTER_METHOD,
+        step: 'set_password',
+        payloadFor: () => createAccountPayload(username),
+      },
+      gate.run,
+      { mode: 'reactive' },
+    );
     setLoading(false);
     if (!result.ok) {
+      if (result.cancelled) {
+        // 取消弹窗：建号帧与已输用户名原样保留，可直接重提。
+        return;
+      }
       // 传输层失败：回到第一步 + failed 兜底提示（§1.6 行 272，不暴露内部信息；
       // failed 表驱动不可重试，不走 status 为 failed 帧——RegisterPage 同款模式）。
       restartFlow();
@@ -280,18 +295,21 @@ export function BindingPage({ binding, notice }: BindingPageProps) {
   };
 
   return (
-    <BindingPageView
-      binding={binding}
-      choice={choice}
-      username={username}
-      loading={loading}
-      status={status}
-      envelope={envelope}
-      notice={notice ?? localNotice}
-      onChooseCreate={() => setChoice('create')}
-      onExit={exit}
-      onUsernameChange={setUsername}
-      onSubmitAccount={submitAccount}
-    />
+    <>
+      <BindingPageView
+        binding={binding}
+        choice={choice}
+        username={username}
+        loading={loading}
+        status={status}
+        envelope={envelope}
+        notice={notice ?? localNotice}
+        onChooseCreate={() => setChoice('create')}
+        onExit={exit}
+        onUsernameChange={setUsername}
+        onSubmitAccount={submitAccount}
+      />
+      <CaptchaDialog {...gate.dialogProps} />
+    </>
   );
 }

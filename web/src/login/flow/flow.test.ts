@@ -17,7 +17,6 @@ import { flowReducer, type FlowEvent } from './reducer';
 import {
   selectCurrentMethod,
   selectCurrentStep,
-  selectShowCaptcha,
   selectSubmitDisabled,
 } from './selectors';
 
@@ -173,6 +172,25 @@ describe('reducer 事件迁移', () => {
     expect(state).toEqual(INITIAL_FLOW_STATE);
   });
 
+  test('request_cancelled：取消 captcha 弹窗只撤 loading，status / method / step / 信封原样保留', () => {
+    const before = at('invalid_credentials', {
+      captcha: { providerKey: 'builtin_image', type: 'image' },
+    });
+    const pending = reduce(
+      [{ type: 'request_started', step: 'challenge' }],
+      before,
+    );
+    expect(pending.loading).toBe(true);
+    const state = reduce([{ type: 'request_cancelled' }], pending);
+    expect(state).toEqual({ ...pending, loading: false, effects: [] });
+    // 表单与 step 不回退：用户可直接重提（loginToken 由 api.ts 托管，不受影响）。
+    expect(state.status).toBe('invalid_credentials');
+    expect(state.method).toBe(before.method);
+    expect(state.step).toBe('challenge');
+    expect(state.envelope).toBe(before.envelope);
+    expect(selectSubmitDisabled(state)).toBe(false);
+  });
+
   test('每次事件迁移重置副作用标记（容器处理后继续派发不重复执行）', () => {
     const state = reduce(
       [{ type: 'request_started', step: 'verify' }],
@@ -182,34 +200,13 @@ describe('reducer 事件迁移', () => {
   });
 });
 
-describe('selectors（§4.1 行 382：当前 step / method / captcha / 禁用提交）', () => {
+describe('selectors（§4.1 行 382：当前 step / method / 禁用提交）', () => {
   test('selectCurrentStep / selectCurrentMethod', () => {
     const state = reduce([
       { type: 'select_method', method: 'otp_sms', firstStep: 'challenge' },
     ]);
     expect(selectCurrentStep(state)).toBe('challenge');
     expect(selectCurrentMethod(state)).toBe('otp_sms');
-  });
-
-  test('selectShowCaptcha：仅 captcha_required / captcha_invalid 且响应顶层 captcha 存在（§1.6 行 240-241）', () => {
-    expect(
-      selectShowCaptcha(
-        at('captcha_required', {
-          captcha: { providerKey: 'builtin_image', type: 'image' },
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      selectShowCaptcha(
-        at('captcha_invalid', {
-          captcha: { providerKey: 'cf_turnstile', type: 'turnstile' },
-        }),
-      ),
-    ).toBe(true);
-    // 零值兜底：captcha 对象缺失不展示（§2.5 行 518 服务端必附，防御）
-    expect(selectShowCaptcha(at('captcha_required'))).toBe(false);
-    expect(selectShowCaptcha(at('next'))).toBe(false);
-    expect(selectShowCaptcha(at('success'))).toBe(false);
   });
 
   test('selectSubmitDisabled：loading / success / 不可重试失败态 → true（§3.2 + §1.6「可重试」列）', () => {

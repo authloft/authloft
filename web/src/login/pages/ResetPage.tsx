@@ -20,14 +20,12 @@
  * 文案：重置页专属（标题 / 步骤按钮 / 成功提示）经 i18n 字典 login.* 键取用；
  * 关闭态提示复用 errors.status.reset_disabled。
  */
-import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
-import {
-  CaptchaWidget,
-  type CaptchaWidgetHandle,
-} from '../../shared/captcha/CaptchaWidget';
+import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
+import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
@@ -139,7 +137,6 @@ export interface ResetPageViewProps {
   onResend: () => void;
   /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
   onRetry?: () => void;
-  captchaRef?: Ref<CaptchaWidgetHandle>;
 }
 
 export function ResetPageView({
@@ -159,7 +156,6 @@ export function ResetPageView({
   onPasswordChange,
   onResend,
   onRetry,
-  captchaRef,
 }: ResetPageViewProps) {
   const options = resetOptionsFor(snapshot);
   // 确认密码（P1-3，只本地比对）与 set_password 段前置校验错误（P0-2；
@@ -201,11 +197,6 @@ export function ResetPageView({
   // §1.6「可重试 = 否」的失败态禁用提交（表单保留原地，不隐藏）。
   const submitDisabled = resolution !== undefined && !resolution.retryable;
   const error = envelope?.error;
-  // captcha 渲染位置（§2.5 行 528：注册 / 重置的下发必须）：challenge 段渲染；
-  // verify / set_password 的 payload 不含 captcha（§2.4 行 465-466），不渲染。
-  const showCaptcha = step === 'challenge';
-  // 权威 captcha 对象（§2.5 行 518）：响应顶层 captcha 优先，缺省回落快照首屏。
-  const captchaConfig = envelope?.captcha ?? snapshot.captcha;
 
   const submitSetPassword = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -264,9 +255,6 @@ export function ResetPageView({
             onSubmit={onSubmit}
             initialValues={challengeValues}
           />
-          {showCaptcha && captchaConfig !== undefined && (
-            <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
-          )}
         </div>
       )}
       {step === 'verify' && (
@@ -373,14 +361,8 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   const [challengeValues, setChallengeValues] = useState<
     Readonly<Record<string, string>>
   >({});
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
-
-  // captcha_invalid → reset widget 后重试（§1.6 行 241）。
-  useEffect(() => {
-    if (status === 'captcha_invalid') {
-      captchaRef.current?.reset();
-    }
-  }, [status, envelope]);
+  // captcha 弹窗编排（shared/captcha）：challenge 下发先问再发，窗内换凭据循环。
+  const gate = useCaptchaGate();
 
   /** 回到 challenge 第一步（restart 类 / 传输失败；§1.6「回到第一步」；
    * 目标持值保留（P1-5 回填），已输码随流程重发而作废）。 */
@@ -407,21 +389,34 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     if (step === 'challenge') {
       setChallengeValues(values);
     }
-    // captcha 凭据（§2.5 行 528：重置的下发必须）：challenge 段必带；
-    // verify / set_password 不带（payload 无 captcha 字段，§2.4 行 465-466）。
-    const needsCaptcha = step === 'challenge';
-    const captcha = needsCaptcha ? captchaRef.current?.getToken() : undefined;
-    const result = await runFlowStep(resetPassword, {
-      method,
-      step,
-      payload: resetPayloadFor(
+    // captcha 凭据由 gate 弹窗注入（§2.5 行 528：重置的下发必须）：challenge
+    // 段后端恒拦截 → 先问再发；verify / set_password 的 payload 不含 captcha
+    // （§2.4 行 465-466，resetPayloadFor 按 step 决定），命中才问（reactive 防御）。
+    const result = await runFlowStep(
+      resetPassword,
+      {
+        method,
         step,
-        step === 'set_password' ? { password } : values,
-        captcha,
-      ),
-    });
+        payloadFor: (token) =>
+          resetPayloadFor(
+            step,
+            step === 'set_password' ? { password } : values,
+            token,
+          ),
+      },
+      gate.run,
+      {
+        mode: step === 'challenge' ? 'upfront' : 'reactive',
+        // 权威配置（§2.5 行 518）：响应顶层优先，缺省回落快照首屏。
+        config: envelope?.captcha ?? snapshot.captcha,
+      },
+    );
     setLoading(false);
     if (!result.ok) {
+      if (result.cancelled) {
+        // 取消弹窗：流程态与表单原样保留，用户可直接重提（不算失败、不回第一步）。
+        return;
+      }
       // 传输层失败：回到第一步 + failed 兜底（§1.6 行 272，不暴露内部信息）。
       restartFlow();
       setNotice('errors.status.failed');
@@ -469,24 +464,26 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   };
 
   return (
-    <ResetPageView
-      snapshot={snapshot}
-      status={status}
-      envelope={envelope}
-      notice={notice}
-      method={method}
-      step={step}
-      loading={loading}
-      otpCode={otpCode}
-      password={password}
-      challengeValues={challengeValues}
-      onSelectMethod={selectMethod}
-      onSubmit={submit}
-      onOtpCodeChange={setOtpCode}
-      onPasswordChange={setPassword}
-      onResend={backToChallenge}
-      onRetry={retrySubmit}
-      captchaRef={captchaRef}
-    />
+    <>
+      <ResetPageView
+        snapshot={snapshot}
+        status={status}
+        envelope={envelope}
+        notice={notice}
+        method={method}
+        step={step}
+        loading={loading}
+        otpCode={otpCode}
+        password={password}
+        challengeValues={challengeValues}
+        onSelectMethod={selectMethod}
+        onSubmit={submit}
+        onOtpCodeChange={setOtpCode}
+        onPasswordChange={setPassword}
+        onResend={backToChallenge}
+        onRetry={retrySubmit}
+      />
+      <CaptchaDialog {...gate.dialogProps} />
+    </>
   );
 }

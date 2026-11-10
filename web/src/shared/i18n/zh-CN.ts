@@ -42,6 +42,11 @@ export const zhCN = {
   'common.refreshAndRetry': '请刷新重试',
   'common.captchaLoadFailed': '验证码加载失败',
   'common.loading': '加载中…',
+  // captcha 弹窗（shared/captcha/CaptchaDialog，login 与 account 共用）。
+  'common.cancel': '取消',
+  'common.captchaTitle': '安全验证',
+  'common.captchaHint': '请完成下方人机校验后继续',
+  'common.captchaConfirm': '验证并继续',
   // 前置校验字段级文案（validate.ts FieldIssue → 键映射见 FIELD_ISSUE_I18N_KEY）。
   'common.errRequired': '请填写此项',
   'common.errInvalidEmail': '邮箱格式不正确',
@@ -70,8 +75,8 @@ export const zhCN = {
   'errors.status.scanned': '已扫码，请在手机上确认',
   'errors.status.expired': '已过期，请刷新后重试',
   'errors.status.failed': '操作失败，请重试',
-  'errors.status.captcha_required': '请完成人机校验',
-  'errors.status.captcha_invalid': '人机校验未通过，请重试',
+  'errors.status.captcha_required': '请完成验证',
+  'errors.status.captcha_invalid': '验证未通过，请重试',
   'errors.status.too_many_requests': '操作过于频繁，请稍后再试',
   'errors.status.too_many_attempts': '尝试次数超限，请重新获取验证码',
   'errors.status.locked': '密码登录已被暂时锁定',
@@ -99,8 +104,8 @@ export const zhCN = {
 
   // ---- 位置二：ErrorInfo.code（§1.6 失败词 26 + §1.5 标准码 8 + unknown）--
   'errors.code.failed': '操作失败，请重试',
-  'errors.code.captcha_required': '请完成人机校验',
-  'errors.code.captcha_invalid': '人机校验未通过，请重试',
+  'errors.code.captcha_required': '请完成验证',
+  'errors.code.captcha_invalid': '验证未通过，请重试',
   'errors.code.too_many_requests': '操作过于频繁，请稍后再试',
   'errors.code.too_many_attempts': '尝试次数超限，请重新获取验证码',
   'errors.code.locked': '密码登录已被暂时锁定',

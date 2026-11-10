@@ -23,6 +23,12 @@ export type FlowEvent =
   | { type: 'select_method'; method: string; firstStep: string }
   /** 发起请求（step 为本次提交的 step，§2.2 行 422）；loading → true。 */
   | { type: 'request_started'; step: string }
+  /**
+   * 用户取消 captcha 弹窗：本次提交未发出（upfront 先问再发），只撤 loading，
+   * status / envelope / step 全部保留——表单原地可重提，loginToken 由 api.ts
+   * 托管不受影响（弹窗层不触碰）。
+   */
+  | { type: 'request_cancelled' }
   /** 收到登录流程信封（§1.3）：status 镜像 + 副作用标记，loading → false。 */
   | { type: 'response'; envelope: LoginFlowResponse }
   /** 推进到新 step（容器按 next_step 决定，如 challenge → verify）；reducer 不做 kind→step 推演。 */
@@ -75,6 +81,8 @@ export function flowReducer(state: FlowState, event: FlowEvent): FlowState {
       };
     case 'request_started':
       return { ...state, loading: true, step: event.step, effects: [] };
+    case 'request_cancelled':
+      return { ...state, loading: false, effects: [] };
     case 'response': {
       const status = normalizeStatus(event.envelope.status);
       // §1.3 行 112：next_step.method 为当前认证方式；零值兜底（§9 第 18 条）——空串保持原值。

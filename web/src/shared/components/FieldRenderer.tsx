@@ -33,7 +33,7 @@ export type ControlKind =
   | 'secret'
   | 'json'
   | 'number'
-  /** captcha：由 CaptchaWidget 承接，不走通用输入渲染（§1.11）。 */
+  /** captcha：由 captcha 弹窗承接，不走通用输入渲染（§1.11）。 */
   | 'skip';
 
 /** type → 控件形态分派（§1.11 全表；未知 type 兜底单行文本）。 */
@@ -139,7 +139,7 @@ function FieldControl({
   const [revealed, setRevealed] = useState(false);
 
   if (kind === 'skip') {
-    // §1.11：captcha 由 CaptchaWidget 承接（独立卡），本渲染器跳过。
+    // §1.11：captcha 由弹窗承接（独立卡），本渲染器跳过。
     return null;
   }
 

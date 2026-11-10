@@ -7,8 +7,9 @@
  * - flags.registration=false → 整页提示注册已关闭（§4.4 行 464）；任一 step
  *   收到 status=signup_disabled 即提示并停止流程（不渲染注册表单）；
  * - username_taken / password_weak 等失败态按 §1.6 出动作（ErrorBanner + 表单
- *   保留原地重试）；captcha_required / captcha_invalid 原地按响应顶层 captcha
- *   （权威来源，§2.5 行 518）渲染 / reset widget；restart 类回第一步；
+ *   保留原地重试）；captcha_required / captcha_invalid 由弹窗 gate 吸收
+ *   （shared/captcha）：确认即重提、窗内换凭据循环，权威配置取响应顶层
+ *   （§2.5 行 518）；用户取消不动流程态；restart 类回第一步；
  * - set_password 步渲染 PasswordStrengthMeter（§5.6 同源规则，服务端权威）；
  *   注册成功 = 完成登录（§2.3 行 455），终点跳转 syncCookieUrl 优先（§1.3 行 136）。
  *
@@ -26,7 +27,7 @@
  * 文案：注册页专属（标题 / 方式名 / 步骤按钮）经 i18n 字典 login.* 键取用；
  * 注册关闭提示复用 errors.status.signup_disabled。
  */
-import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
+import { useState, type FormEvent } from 'react';
 import { create } from '@bufbuild/protobuf';
 import { useSearchParams } from '@modern-js/runtime/router';
 import {
@@ -34,12 +35,18 @@ import {
   type Field,
   type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
+import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
+import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import {
-  CaptchaWidget,
-  type CaptchaWidgetHandle,
-} from '../../shared/captcha/CaptchaWidget';
+  flowCaptchaOutcome,
+  type CaptchaGateMode,
+} from '../../shared/captcha/captchaGate';
+import {
+  useCaptchaGate,
+  type CaptchaGate,
+} from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
@@ -133,20 +140,65 @@ export function flowTerminalUrl(
     : sanitizeReturnTo(returnTo);
 }
 
-/** 流程步提交编排（纯逻辑，request 可注入；传输层异常 → ok:false 不伪造信封）。 */
+/**
+ * 流程步终局（三者互斥）：信封 / 用户取消 captcha 弹窗 / 传输层失败。
+ * 取消不是失败——流程态与表单原样保留，用户可直接重提。
+ */
+export type FlowStepOutcome =
+  { ok: true; envelope: LoginFlowResponse } | { ok: false; cancelled: boolean };
+
+/**
+ * 流程步提交编排（纯逻辑，request 与 gate 均可注入；ResetPage 复用）：
+ * captcha 凭据由 gate 弹窗提供，payloadFor 每轮重建（凭据一次性，服务端校验
+ * 即失效，§2.5 行 520）；captcha_required / captcha_invalid 在 gate 内吸收
+ * 循环、不落页面状态；传输层异常 → ok:false 不伪造信封（§1.6 行 272）。
+ */
 export async function runFlowStep<P extends object>(
   request: (input: {
     method: string;
     step: string;
     payload: P;
   }) => Promise<LoginFlowResponse>,
-  input: { method: string; step: string; payload: P },
-): Promise<{ ok: true; envelope: LoginFlowResponse } | { ok: false }> {
-  try {
-    return { ok: true, envelope: await request(input) };
-  } catch {
-    return { ok: false };
+  input: {
+    method: string;
+    step: string;
+    /** 每轮重建 payload（gate 注入本轮新凭据；无 captcha 的 step 忽略入参）。 */
+    payloadFor: (captcha?: CaptchaPayload) => P;
+  },
+  runGate: CaptchaGate['run'],
+  captcha: { mode: CaptchaGateMode; config?: CaptchaConfig },
+): Promise<FlowStepOutcome> {
+  const outcome = await runGate({
+    mode: captcha.mode,
+    config: captcha.config,
+    request: (token) =>
+      request({
+        method: input.method,
+        step: input.step,
+        payload: input.payloadFor(token),
+      }),
+    readOutcome: flowCaptchaOutcome,
+  });
+  if (outcome.kind === 'result') {
+    return { ok: true, envelope: outcome.result };
   }
+  return { ok: false, cancelled: outcome.kind === 'cancelled' };
+}
+
+/**
+ * 注册各 step 的 captcha 触发时机（§2.3 行 447/451 + 后端 captcha/gate.go）：
+ * otp challenge（下发）与 password 直入 set_password 后端恒拦截 → 点击即弹窗
+ * 再发（upfront）；otp 流程 verify / set_password 的 payload 本不含 captcha →
+ * 先发裸请求，命中才问（reactive 防御）。
+ */
+export function registerCaptchaMode(
+  step: FlowStep,
+  method: string,
+): CaptchaGateMode {
+  return step === 'challenge' ||
+    (step === 'set_password' && method === 'password')
+    ? 'upfront'
+    : 'reactive';
 }
 
 /** int64 十进制字符串（§1.12）→ bigint；缺失 / 非法兜底 0。 */
@@ -325,7 +377,6 @@ export interface RegisterPageViewProps {
   onResend: () => void;
   /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
   onRetry?: () => void;
-  captchaRef?: Ref<CaptchaWidgetHandle>;
 }
 
 export function RegisterPageView({
@@ -348,7 +399,6 @@ export function RegisterPageView({
   onPasswordChange,
   onResend,
   onRetry,
-  captchaRef,
 }: RegisterPageViewProps) {
   const options = registerOptionsFor(snapshot);
   // 确认密码（P1-3，只本地比对）与 set_password 段前置校验错误（P0-2；
@@ -394,16 +444,6 @@ export function RegisterPageView({
   // §1.6「可重试 = 否」的失败态禁用提交（表单保留原地，不隐藏）。
   const submitDisabled = resolution !== undefined && !resolution.retryable;
   const error = envelope?.error;
-  // captcha 渲染位置（§2.3 行 447/451）：otp challenge 必填；password 直入
-  // set_password 必填；otp 流程的 verify / set_password 不渲染（payload 无 captcha）。
-  const showCaptcha =
-    step === 'challenge' || (step === 'set_password' && method === 'password');
-  // 权威 captcha 对象（§2.5 行 518）：响应顶层 captcha 优先，缺省回落快照首屏。
-  const captchaConfig = envelope?.captcha ?? snapshot.captcha;
-  const captchaNode =
-    showCaptcha && captchaConfig !== undefined ? (
-      <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
-    ) : null;
 
   const submitSetPassword = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -462,7 +502,6 @@ export function RegisterPageView({
             onSubmit={onSubmit}
             initialValues={challengeValues}
           />
-          {captchaNode}
         </div>
       )}
       {step === 'verify' && (
@@ -577,7 +616,6 @@ export function RegisterPageView({
             username={username}
             email={challengeEmail}
           />
-          {captchaNode}
           <button
             type="submit"
             disabled={loading || submitDisabled}
@@ -623,15 +661,9 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
   >({});
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
-
-  // captcha_invalid → reset widget 后重试（§1.6 行 241；权威 captcha 对象
-  // 变化时 adapterKey 自动按新对象重建，无需此处处理）。
-  useEffect(() => {
-    if (status === 'captcha_invalid') {
-      captchaRef.current?.reset();
-    }
-  }, [status, envelope]);
+  // captcha 弹窗编排（shared/captcha）：吸收 captcha_required / captcha_invalid，
+  // 确认即重提；弹窗声明式挂在页面壳根级（壳脱体到 body）。
+  const gate = useCaptchaGate();
 
   /** 回到当前方式首步（restart 类 / 传输失败；§1.6「回到第一步」）。 */
   const restartFlow = () => {
@@ -659,23 +691,30 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     if (step === 'challenge') {
       setChallengeValues(values);
     }
-    // captcha 凭据（§2.3 行 447/451）：otp challenge 与 password 直入必填；
-    // otp 流程 verify / set_password 不带（payload 无 captcha 字段）。
-    const needsCaptcha =
-      step === 'challenge' ||
-      (step === 'set_password' && method === 'password');
-    const captcha = needsCaptcha ? captchaRef.current?.getToken() : undefined;
-    const result = await runFlowStep(register, {
-      method,
-      step,
-      payload: registerPayloadFor(
+    // captcha 凭据由 gate 弹窗注入（§2.3 行 447/451）：otp challenge 与
+    // password 直入 set_password 先问再发；otp 流程 verify / set_password 的
+    // payload 本不含 captcha（registerPayloadFor 按 step 决定是否并入）。
+    const source = step === 'set_password' ? { username, password } : values;
+    const result = await runFlowStep(
+      register,
+      {
+        method,
         step,
-        step === 'set_password' ? { username, password } : values,
-        captcha,
-      ),
-    });
+        payloadFor: (token) => registerPayloadFor(step, source, token),
+      },
+      gate.run,
+      {
+        mode: registerCaptchaMode(step, method),
+        // 权威配置（§2.5 行 518）：响应顶层优先，缺省回落快照首屏。
+        config: envelope?.captcha ?? snapshot.captcha,
+      },
+    );
     setLoading(false);
     if (!result.ok) {
+      if (result.cancelled) {
+        // 取消弹窗：流程态与表单原样保留，用户可直接重提（不算失败、不回第一步）。
+        return;
+      }
       // 传输层失败：回到第一步 + failed 兜底（§1.6 行 272，不暴露内部信息）。
       restartFlow();
       setNotice('errors.status.failed');
@@ -728,27 +767,29 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
   };
 
   return (
-    <RegisterPageView
-      snapshot={snapshot}
-      status={status}
-      envelope={envelope}
-      notice={notice}
-      method={method}
-      step={step}
-      loading={loading}
-      otpCode={otpCode}
-      username={username}
-      password={password}
-      challengeEmail={challengeValues.email}
-      challengeValues={challengeValues}
-      onSelectMethod={selectMethod}
-      onSubmit={submit}
-      onOtpCodeChange={setOtpCode}
-      onUsernameChange={setUsername}
-      onPasswordChange={setPassword}
-      onResend={backToChallenge}
-      onRetry={retrySubmit}
-      captchaRef={captchaRef}
-    />
+    <>
+      <RegisterPageView
+        snapshot={snapshot}
+        status={status}
+        envelope={envelope}
+        notice={notice}
+        method={method}
+        step={step}
+        loading={loading}
+        otpCode={otpCode}
+        username={username}
+        password={password}
+        challengeEmail={challengeValues.email}
+        challengeValues={challengeValues}
+        onSelectMethod={selectMethod}
+        onSubmit={submit}
+        onOtpCodeChange={setOtpCode}
+        onUsernameChange={setUsername}
+        onPasswordChange={setPassword}
+        onResend={backToChallenge}
+        onRetry={retrySubmit}
+      />
+      <CaptchaDialog {...gate.dialogProps} />
+    </>
   );
 }

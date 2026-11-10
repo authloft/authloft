@@ -71,7 +71,7 @@ export const FIELD_ISSUE_I18N_KEY: Readonly<Record<FieldIssue, string>> = {
 /**
  * 可校验字段的最小结构（与 api.sso.v1.Field 生成物结构兼容：
  * name / type / required / length 子集；length 为生成物 int64（bigint）或已归一 number）。
- * captcha 类型由 CaptchaWidget 承接，不参与本校验。
+ * captcha 类型由 captcha 弹窗承接，不参与本校验。
  */
 export interface ValidatableField {
   name: string;

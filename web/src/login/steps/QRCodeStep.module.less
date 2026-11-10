@@ -1,4 +1,4 @@
-// 扫码步骤样式（docs/前端架构.md §1.7；视觉重做：拉码次级按钮 +
+// 扫码步骤样式（docs/前端架构.md §1.7：取消 captcha 弹窗后的重入按钮 +
 // 面板纵向节奏）。
 @import (reference) '../../shared/styles/tokens.less';
 
@@ -6,12 +6,6 @@
   display: flex;
   flex-direction: column;
   gap: @spacing-md;
-}
-
-.captchaBox {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-sm;
 }
 
 .fetchButton {
@@ -42,10 +36,4 @@
 .fetchButton:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.notice {
-  margin: 0;
-  color: @color-danger;
-  font-size: @font-size-sm;
 }

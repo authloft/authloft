@@ -1,7 +1,8 @@
 /**
  * login 域状态机 selectors（docs/前端架构.md §4.1 行 382）：纯函数，从
- * FlowState 派生渲染决策输入——当前 step、当前 method、是否展示 captcha、
- * 是否禁用提交。
+ * FlowState 派生渲染决策输入——当前 step、当前 method、是否禁用提交。
+ * captcha 的展示决策不在此：弹窗由 shared/captcha 的 gate 驱动（编排态在
+ * useCaptchaGate，不在 FlowState），FlowState 只镜像逃逸后的终局 status。
  */
 import { resolveFlowStatus } from '../../shared/api/errors';
 import type { FlowState } from './machine';
@@ -14,19 +15,6 @@ export function selectCurrentStep(state: FlowState): string {
 /** 当前认证方式（select_method 设定；status=next 时已按 next_step.method 更新）。 */
 export function selectCurrentMethod(state: FlowState): string {
   return state.method;
-}
-
-/**
- * 是否展示 captcha：§1.6 行 240-241——captcha_required 按响应顶层 captcha
- * 渲染 CaptchaWidget 并重提、captcha_invalid reset widget 后重试；captcha
- * 对象按零值兜底缺失时不展示（§2.5 行 518 服务端必附，此处防御）。
- */
-export function selectShowCaptcha(state: FlowState): boolean {
-  return (
-    (state.status === 'captcha_required' ||
-      state.status === 'captcha_invalid') &&
-    state.envelope?.captcha !== undefined
-  );
 }
 
 /**

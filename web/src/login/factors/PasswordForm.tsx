@@ -1,8 +1,8 @@
 /**
  * 密码因子表单（docs/前端架构.md §4.3 行 435）：password 主因子的
  * 专属表单组件。字段渲染以后端下发为准（注入快照 methods[].fields，§2.1 行
- * 384-387：username(text) + password(password)；captcha 字段由容器经
- * CaptchaWidget 承接、FieldRenderer 按 §1.11 跳过），复用 shared 的
+ * 384-387：username(text) + password(password)；captcha 字段由容器的
+ * captcha 弹窗承接、FieldRenderer 按 §1.11 跳过），复用 shared 的
  * FieldRenderer（§3.3）；CapsLock 提示（§4.3 行 435）；提交把表单值上抛容器，
  * 由容器组装 payload（含 captcha 三元组）后走 login/api.ts 的 loginDefault
  * （§2.2 / §2.6 行 543：{username, password, captcha?}）。

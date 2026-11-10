@@ -5,7 +5,7 @@
  * captcha 配置取自 §3.2 的 GetConfig、由调用方注入；每次拉码都要新的凭据，
  * 行 703），pollUrl 轮询 AccountService/GetThirdpartyTicket{ticket, poll}（§3.7.1
  * B 行 996），onResult success → onDone（成功 → 关闭面板并刷新列表，行 1007）；
- * expired → 面板「重试」重拉码（requestQR 实时取新 captcha 凭据）；卸载中断
+ * expired → 面板「重试」重拉码（requestQR 每轮经弹窗现取新凭据）；卸载中断
  * 轮询（§3.3 行 345）。不触碰登录状态机（§5 行 489）：onResult 不做
  * completeLogin 类终点跳转，绑定不改登录态（§3.7.1 B 行 1033）。
  *
@@ -18,28 +18,22 @@
  * bindPollPhase（./api 纯函数）替换 target_taken 的 failed 帧文案——两组
  * props 下四态流转仍一致（面板四态流转测试约束不破，仅该帧文案按语境覆盖）。
  *
- * 【captcha 门控】CreateQrcode 必须携带 captcha（§2.8 行 690/703）：先渲染
- * CaptchaWidget +「获取二维码」，凭据就绪才挂面板（挂载即拉码，面板
- * 契约；login 端 QRCodeStep 同款门控模式，§2.8 行 490-497 取图链在
- * CaptchaWidget 内）。signal 忽略——api 薄封装不支持中断，结果丢弃由面板
- * disposed 检查兜底。
+ * 【captcha 门控】CreateQrcode 必须携带 captcha（§2.8 行 690/703）：面板挂载
+ * 即拉码，拉码经 shared/captcha 的 gate 走 upfront——先在弹窗里问凭据再发请求
+ * （login 端 QRCodeStep 同款模式）；captcha_invalid 在窗内换凭据重试；用户
+ * 取消则卸下面板体、留「获取二维码」按钮原地重入。signal 忽略——api 薄封装
+ * 不支持中断，结果丢弃由面板 disposed 检查兜底。
  * 文案经 shared/i18n（account.* 域键）。
  */
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, Modal } from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
+import type { CaptchaPayload } from '../../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../../gen/proto/api/sso/v1/ticket_pb';
-import {
-  CaptchaWidget,
-  type CaptchaWidgetHandle,
-} from '../../../shared/captcha/CaptchaWidget';
+import { CaptchaDialog } from '../../../shared/captcha/CaptchaDialog';
+import { errorCaptchaOutcome } from '../../../shared/captcha/captchaGate';
+import { useCaptchaGate } from '../../../shared/captcha/useCaptchaGate';
 import {
   createQRPanelController,
   MAX_POLL_SECONDS,
@@ -57,14 +51,16 @@ import {
 } from '../../api';
 import styles from './ThirdPartyBindDialog.module.less';
 
-/** 面板体 props（started 后挂载；controller 生命周期与卸载中断绑定）。 */
+/** 面板体 props（挂载即拉码；controller 生命周期与卸载中断绑定）。 */
 interface PanelBodyProps {
   /** 扫码类 Provider 标识（§3.7.1 B 行 993）。 */
   providerKey: string;
-  /** CaptchaWidget 句柄（useRef<CaptchaWidgetHandle>(null) 产物；实时取拉码凭据，§2.8 行 703）。 */
-  captchaRef: RefObject<CaptchaWidgetHandle | null>;
+  /** captcha 配置（§3.2 GetConfig 注入；每轮拉码经弹窗现取凭据，§2.8 行 703）。 */
+  captcha: CaptchaConfig;
   /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
   onDone: () => void;
+  /** 用户取消 captcha 弹窗：父级卸下面板体并留重入按钮。 */
+  onCancelled: () => void;
 }
 
 /**
@@ -75,23 +71,43 @@ interface PanelBodyProps {
  */
 function BindPanelBody({
   providerKey,
-  captchaRef,
+  captcha,
   onDone,
+  onCancelled,
 }: PanelBodyProps): ReactNode {
+  const gate = useCaptchaGate();
   const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
   const lastPollStatusRef = useRef('');
-  const propsRef = useRef({ providerKey, captchaRef, onDone });
-  propsRef.current = { providerKey, captchaRef, onDone };
+  const propsRef = useRef({ providerKey, captcha, onDone, onCancelled });
+  propsRef.current = { providerKey, captcha, onDone, onCancelled };
   const [controller] = useState<QRPanelController>(() =>
     createQRPanelController({
-      requestQR: (_signal: AbortSignal): Promise<CreateQrcodeResponse> => {
-        const captcha = propsRef.current.captchaRef.current?.getToken();
-        if (captcha === undefined) {
-          return Promise.reject(new Error(t('account.qrNeedCaptcha')));
+      requestQR: async (): Promise<CreateQrcodeResponse> => {
+        const outcome = await gate.run({
+          mode: 'upfront',
+          config: propsRef.current.captcha,
+          request: (token: CaptchaPayload | undefined) =>
+            token === undefined
+              ? Promise.reject(new Error(t('account.qrNeedCaptcha')))
+              : createQrcode(
+                  buildCreateQrcodeBindRequest(
+                    propsRef.current.providerKey,
+                    token,
+                  ),
+                ),
+          // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
+          readOutcome: () => ({ action: 'message' }),
+          readError: errorCaptchaOutcome,
+        });
+        if (outcome.kind === 'result') {
+          return outcome.result;
         }
-        return createQrcode(
-          buildCreateQrcodeBindRequest(propsRef.current.providerKey, captcha),
-        );
+        if (outcome.kind === 'cancelled') {
+          // 面板体随即被卸载，其 disposed 检查会吞掉这次 reject 的 failed 态。
+          propsRef.current.onCancelled();
+          throw new Error(t('account.qrNeedCaptcha'));
+        }
+        throw outcome.error;
       },
       pollUrl: async (
         ticket: string,
@@ -123,14 +139,18 @@ function BindPanelBody({
   }, [controller]);
 
   return (
-    <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
+    <>
+      <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
+      <CaptchaDialog {...gate.dialogProps} />
+    </>
   );
 }
 
 /**
- * 扫码绑定状态壳（TotpBindDialog 挂载模式）：打开（visible 翻转）→ 重置本地
- * 态重走 captcha 门控；关闭即卸载面板体（visible 条件渲染）中断轮询，重开
- * 重走门控。Modal 的 X / 遮罩关闭一律路由到 onCancel（未完成不刷新列表）。
+ * 扫码绑定状态壳（TotpBindDialog 挂载模式）：打开即挂面板体（拉码由 captcha
+ * 弹窗门控）；关闭即卸载面板体（visible 条件渲染）中断轮询。取消弹窗只卸面板
+ * 体、留重入按钮，Modal 不关。Modal 的 X / 遮罩关闭一律路由到 onCancel
+ * （未完成不刷新列表）。
  */
 export function ThirdPartyBindDialog(props: {
   /** 打开态（父级 ThirdPartyList 控制）。 */
@@ -146,29 +166,18 @@ export function ThirdPartyBindDialog(props: {
   /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
   onDone: () => void;
 }): ReactNode {
-  const { captcha } = props;
-  const [started, setStarted] = useState(false);
-  const [notice, setNotice] = useState(false);
-  const captchaRef = useRef<CaptchaWidgetHandle>(null);
+  const [cancelled, setCancelled] = useState(false);
+  // 取消后重入：新 key 重挂面板体 → 再次走 upfront 弹窗（凭据一次性，不可复用）。
+  const [panelKey, setPanelKey] = useState(0);
 
-  // 关闭后重置：重开重走 captcha 门控。选关闭沿（非打开沿）——面板体随
-  // visible=false 已卸载、controller 已 dispose，重置发生在卸载之后，避免
-  // 「打开帧先挂旧面板再重置」的一帧闪挂（旧凭据拉错码）。
+  // 关闭后重置：选关闭沿（非打开沿）——面板体随 visible=false 已卸载、
+  // controller 已 dispose，重置发生在卸载之后，避免「打开帧先挂旧面板再重置」
+  // 的一帧闪挂（旧凭据拉错码）。
   useEffect(() => {
     if (!props.visible) {
-      setStarted(false);
-      setNotice(false);
+      setCancelled(false);
     }
   }, [props.visible]);
-
-  /** 门控按钮：凭据就绪才挂面板（挂载即拉码，面板契约）。 */
-  const start = () => {
-    if (captchaRef.current?.getToken() === undefined) {
-      setNotice(true);
-      return;
-    }
-    setStarted(true);
-  };
 
   return (
     <Modal
@@ -186,24 +195,24 @@ export function ThirdPartyBindDialog(props: {
         <div className={styles.body}>
           {/* §5 行 489：面板上明示「扫码后将绑定到当前账号」。 */}
           <p className={styles.hint}>{t('account.qrBindHint')}</p>
-          {started ? (
-            <BindPanelBody
-              providerKey={props.providerKey}
-              captchaRef={captchaRef}
-              onDone={props.onDone}
-            />
+          {cancelled ? (
+            <Button
+              theme="solid"
+              onClick={() => {
+                setCancelled(false);
+                setPanelKey((key) => key + 1);
+              }}
+            >
+              {t('account.fetchQrcodeAction')}
+            </Button>
           ) : (
-            <div className={styles.captchaBox}>
-              <CaptchaWidget captcha={captcha} ref={captchaRef} />
-              <Button theme="solid" onClick={start}>
-                {t('account.fetchQrcodeAction')}
-              </Button>
-              {notice ? (
-                <p role="alert" className={styles.notice}>
-                  {t('account.qrNeedCaptcha')}
-                </p>
-              ) : null}
-            </div>
+            <BindPanelBody
+              key={panelKey}
+              providerKey={props.providerKey}
+              captcha={props.captcha}
+              onDone={props.onDone}
+              onCancelled={() => setCancelled(true)}
+            />
           )}
         </div>
       )}

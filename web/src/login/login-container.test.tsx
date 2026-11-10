@@ -24,7 +24,7 @@ import { create } from '@bufbuild/protobuf';
 import { clearLoginToken, getLoginToken } from './loginTokenStore';
 import { flowReducer } from './flow/reducer';
 import { INITIAL_FLOW_STATE, type FlowState } from './flow/machine';
-import { selectShowCaptcha, selectSubmitDisabled } from './flow/selectors';
+import { selectSubmitDisabled } from './flow/selectors';
 import { OTPForm } from './factors/OTPForm';
 import { PasswordForm } from './factors/PasswordForm';
 import { RecoveryCodeForm } from './factors/RecoveryCodeForm';
@@ -42,7 +42,19 @@ import {
   type LoginFlowResponse,
   type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
-import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
+import {
+  CaptchaPayloadSchema,
+  type CaptchaPayload,
+} from '../gen/proto/api/sso/v1/login_pb';
+import {
+  runCaptchaGate,
+  type CaptchaGateResult,
+  type CaptchaPrompt,
+} from '../shared/captcha/captchaGate';
+import type {
+  CaptchaGate,
+  CaptchaGateRunOptions,
+} from '../shared/captcha/useCaptchaGate';
 import type { MethodsSnapshot, SnapshotProvider } from '../shared/types/init';
 
 const { createElement } = React;
@@ -201,6 +213,37 @@ function renderView(state: FlowState, notice?: string): string {
       onSubmit: () => {},
     }),
   );
+}
+
+/**
+ * gate 替身：跑真 runCaptchaGate 循环、只把「弹窗询问」换成脚本化作答
+ *（确认 → 凭据；用尽 / undefined → 取消），并记录每次询问的配置与轮次。
+ * 空脚本 = 不弹窗（非 captcha 链路用；真被问到会取消，用例随即失败暴露）。
+ */
+function scriptedGate(answers: (CaptchaPayload | undefined)[] = []) {
+  const prompts: CaptchaPrompt[] = [];
+  // .tsx 走 classic JSX runtime：泛型箭头须写 <T,> 消歧（否则被解析成 JSX 标签）。
+  const run = <T,>(
+    options: CaptchaGateRunOptions<T>,
+  ): Promise<CaptchaGateResult<T>> =>
+    runCaptchaGate<T>({
+      ...options,
+      prompt: async (next) => {
+        prompts.push(next);
+        return answers[prompts.length - 1];
+      },
+    });
+  const gate: CaptchaGate['run'] = run;
+  return { run: gate, prompts };
+}
+
+/** 自绘图形码凭据（§2.5 行 503-506 三元组）。 */
+function imageToken(id: string, answer: string): CaptchaPayload {
+  return create(CaptchaPayloadSchema, {
+    providerKey: 'builtin_image',
+    id,
+    answer,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -819,16 +862,26 @@ describe('PasswordForm 静态渲染（§4.3 行 435）', () => {
 // runSubmit 编排全链（msw 拦截 api 层；§2.2 / §1.6 / §2.5）
 // ---------------------------------------------------------------------------
 
-describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重交 → success 终点）', () => {
-  test('首次提交（无 captcha）→ captcha_required：权威 captcha 对象落信封 + loginToken 覆盖', async () => {
+describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → success 终点）', () => {
+  test('reactive：裸提交 → captcha_required → 弹窗（权威配置）→ 带凭据重提 → success 终点', async () => {
+    const bodies: string[] = [];
+    let calls = 0;
     server.use(
-      http.post(LOGIN_DEFAULT, () =>
-        HttpResponse.json({
-          status: 'captcha_required',
-          loginToken: 'tok-1',
-          captcha: { providerKey: 'builtin_image', type: 'image' },
-        }),
-      ),
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        bodies.push(await request.text());
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({
+              status: 'captcha_required',
+              loginToken: 'tok-1',
+              captcha: { providerKey: 'builtin_image', type: 'image' },
+            })
+          : HttpResponse.json({
+              status: 'success',
+              syncCookieUrl: 'https://sync.test/first',
+              redirectTo: 'https://app.test/home',
+            });
+      }),
     );
 
     let state = flowReducer(INITIAL_FLOW_STATE, {
@@ -838,78 +891,37 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     });
     state = flowReducer(state, { type: 'request_started', step: 'verify' });
 
-    const first = await container.runSubmit(
+    // 密码 verify 由失败计数阈值触发、前端无法预知 → 先发裸请求（reactive）。
+    expect(container.captchaModeFor('password', 'verify')).toBe('reactive');
+    const gate = scriptedGate([imageToken('b7f3', '123')]);
+    const result = await container.runSubmit(
       state,
       { username: 'alice', password: 'pw' },
-      () => undefined, // 首次无 captcha 凭据（§3.5：未完成 → undefined 不带）
+      gate.run,
+      undefined, // 无首屏配置：裸探一次，配置取响应顶层（权威，§2.5 行 518）
       apiMod.loginDefault,
     );
-    expect(first.failed).toBe(false);
-    state = first.events.reduce(flowReducer, state);
 
-    // §1.6 行 240：按响应顶层 captcha 渲染并重提（权威来源，§2.5 行 518）。
-    expect(state.status).toBe('captcha_required');
-    expect(state.envelope?.captcha?.providerKey).toBe('builtin_image');
-    expect(state.envelope?.captcha?.type).toBe('image');
-    expect(selectShowCaptcha(state)).toBe(true);
-    expect(getLoginToken()).toBe('tok-1'); // §1.3 行 145：无条件覆盖
-  });
+    // 弹窗只问一次，拿到的是响应顶层的权威配置（不是首屏快照）。
+    expect(gate.prompts).toHaveLength(1);
+    expect(gate.prompts[0].config.providerKey).toBe('builtin_image');
+    expect(gate.prompts[0].config.type).toBe('image');
+    expect(gate.prompts[0].invalid).toBe(false);
+    expect(gate.prompts[0].attempt).toBe(0);
 
-  test('带 captcha 三元组重交 → success：请求体含 §2.5 提交格式 + 终点跳 syncCookieUrl', async () => {
-    // 前置：先到 captcha_required（loginToken = tok-1）。
-    server.use(
-      http.post(LOGIN_DEFAULT, () =>
-        HttpResponse.json({
-          status: 'captcha_required',
-          loginToken: 'tok-1',
-          captcha: { providerKey: 'builtin_image', type: 'image' },
-        }),
-      ),
-    );
-    let state = flowReducer(INITIAL_FLOW_STATE, {
-      type: 'select_method',
-      method: 'password',
-      firstStep: 'verify',
-    });
-    state = (
-      await container.runSubmit(
-        state,
-        { username: 'alice', password: 'pw' },
-        () => undefined,
-        apiMod.loginDefault,
-      )
-    ).events.reduce(flowReducer, state);
-    expect(state.status).toBe('captcha_required');
-
-    // 重交：断言请求体 + success 终点。
-    let raw = '';
-    server.use(
-      http.post(LOGIN_DEFAULT, async ({ request }) => {
-        raw = await request.text();
-        return HttpResponse.json({
-          status: 'success',
-          syncCookieUrl: 'https://sync.test/first',
-          redirectTo: 'https://app.test/home',
-        });
-      }),
-    );
-    const second = await container.runSubmit(
-      state,
-      { username: 'alice', password: 'pw' },
-      () =>
-        create(CaptchaPayloadSchema, {
-          providerKey: 'builtin_image',
-          id: 'b7f3',
-          answer: '123',
-        }),
-      apiMod.loginDefault,
-    );
-    expect(second.failed).toBe(false);
-    state = second.events.reduce(flowReducer, state);
+    expect(result.failed).toBe(false);
+    state = result.events.reduce(flowReducer, state);
+    // captcha_required 被 gate 吸收、不落状态机：直接到终点。
     expect(state.status).toBe('success');
 
-    // 请求体：loginToken 顶层注入（§1.8）+ payload.captcha 自绘三元组（§2.5 行 503-506，token 零值省略）。
-    expect(JSON.parse(raw)).toEqual({
+    // 两次请求体：先裸（无 captcha），确认后并入 payload.captcha（§2.5 行 503-506）；
+    // loginToken 顶层注入（§1.8），首帧空为零值故 protojson 省略（§1.1）。
+    expect(JSON.parse(bodies[0])).toEqual({
+      method: 'password',
+      step: 'verify',
+      payload: { username: 'alice', password: 'pw' },
+    });
+    expect(JSON.parse(bodies[1])).toEqual({
       loginToken: 'tok-1',
       method: 'password',
       step: 'verify',
@@ -932,6 +944,157 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     expect(getLoginToken()).toBe(''); // §1.3 行 145：success 清空（五条之 3）
   });
 
+  test('captcha_invalid：窗内换凭据循环（attempt 递增 + 服务端降级配置），不逃逸状态机', async () => {
+    const bodies: string[] = [];
+    let calls = 0;
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        bodies.push(await request.text());
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json({
+            status: 'captcha_required',
+            captcha: { providerKey: 'cf_turnstile', type: 'turnstile' },
+          });
+        }
+        if (calls === 2) {
+          // 厂商不可用 → 服务端降级为自绘图形码（§2.5），新配置随响应下发。
+          return HttpResponse.json({
+            status: 'captcha_invalid',
+            captcha: { providerKey: 'builtin_image', type: 'image' },
+          });
+        }
+        return HttpResponse.json({
+          status: 'success',
+          redirectTo: 'https://app.test/home',
+        });
+      }),
+    );
+
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    const gate = scriptedGate([
+      imageToken('id-1', 'aaa'),
+      imageToken('id-2', 'bbb'),
+    ]);
+    const result = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      gate.run,
+      undefined,
+      apiMod.loginDefault,
+    );
+
+    expect(gate.prompts).toHaveLength(2);
+    expect(gate.prompts[0].config.type).toBe('turnstile');
+    expect(gate.prompts[0].invalid).toBe(false);
+    expect(gate.prompts[1].config.providerKey).toBe('builtin_image'); // 降级后的权威配置
+    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 241：窗内出错误文案
+    expect(gate.prompts[1].attempt).toBe(1); // widget key 换新 → 新凭据
+    expect(result.failed).toBe(false);
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('success');
+    expect(JSON.parse(bodies[2]).payload.captcha).toEqual({
+      providerKey: 'builtin_image',
+      id: 'id-2',
+      answer: 'bbb',
+    });
+  });
+
+  test('upfront：challenge 类先弹窗再发，只发一次带凭据的请求（省注定被拦的往返）', async () => {
+    const bodies: string[] = [];
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        bodies.push(await request.text());
+        return HttpResponse.json({
+          status: 'next',
+          loginToken: 'tok-2',
+          nextStep: { kind: 'form', method: 'otp_sms', retryAfter: '60' },
+        });
+      }),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'otp_sms',
+      firstStep: 'challenge',
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'challenge' });
+
+    // 后端 Challenge 恒拦截 → 点击即弹窗（§2.5 / captcha/gate.go）。
+    expect(container.captchaModeFor('otp_sms', 'challenge')).toBe('upfront');
+    const gate = scriptedGate([imageToken('up-1', '42')]);
+    const result = await container.runSubmit(
+      state,
+      { phone: '13800000000' },
+      gate.run,
+      create(CaptchaConfigSchema, {
+        providerKey: 'builtin_image',
+        type: 'image',
+      }),
+      apiMod.loginDefault,
+    );
+
+    expect(gate.prompts).toHaveLength(1);
+    expect(bodies).toHaveLength(1); // 没有裸请求
+    expect(JSON.parse(bodies[0])).toEqual({
+      method: 'otp_sms',
+      step: 'challenge',
+      payload: {
+        phone: '13800000000',
+        captcha: { providerKey: 'builtin_image', id: 'up-1', answer: '42' },
+      },
+    });
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('next');
+    expect(state.step).toBe('verify'); // advance 推进（§1.10 行 306-307）
+  });
+
+  test('用户取消弹窗：request_cancelled 只撤 loading，loginToken 与表单态原样保留', async () => {
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({
+          status: 'captcha_required',
+          loginToken: 'tok-keep',
+          captcha: { providerKey: 'builtin_image', type: 'image' },
+        }),
+      ),
+    );
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'verify' });
+
+    const gate = scriptedGate([undefined]); // 取消
+    const result = await container.runSubmit(
+      state,
+      { username: 'alice', password: 'pw' },
+      gate.run,
+      undefined,
+      apiMod.loginDefault,
+    );
+    expect(result.failed).toBe(false);
+    expect(result.events).toEqual([{ type: 'request_cancelled' }]);
+    state = result.events.reduce(flowReducer, state);
+    expect(state.loading).toBe(false);
+    expect(state.method).toBe('password');
+    expect(state.step).toBe('verify');
+    expect(selectSubmitDisabled(state)).toBe(false); // 可直接重提
+    // 取消不清 loginToken（api.ts 托管，弹窗层不触碰）。
+    expect(getLoginToken()).toBe('tok-keep');
+  });
+
+  test('webauthn challenge 豁免 captcha：reactive 不弹窗（后端 engine.go 明确豁免）', () => {
+    expect(container.captchaModeFor('webauthn', 'challenge')).toBe('reactive');
+    expect(container.captchaModeFor('webauthn', 'verify')).toBe('reactive');
+    expect(container.captchaModeFor('otp_email', 'challenge')).toBe('upfront');
+    expect(container.captchaModeFor('password', 'challenge')).toBe('upfront');
+  });
+
   test('locked 失败态：不可重试禁用提交 + 信封 error 展示字段（§1.6 行 244）', async () => {
     server.use(
       http.post(LOGIN_DEFAULT, () =>
@@ -949,7 +1112,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { username: 'alice', password: 'pw' },
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     state = result.events.reduce(flowReducer, state);
@@ -974,7 +1138,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { username: 'alice', password: 'pw' },
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     state = result.events.reduce(flowReducer, state);
@@ -1000,7 +1165,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { username: 'alice', password: 'pw' },
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     expect(result.failed).toBe(true);
@@ -1041,7 +1207,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { phone: '13800000000' },
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     expect(result.failed).toBe(false);
@@ -1080,7 +1247,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { code: 'abcd-1234' },
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     expect(result.failed).toBe(false);
@@ -1118,7 +1286,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       {}, // challenge 步空 payload（usernameless 不收集用户名，§2.6 行 547）
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     expect(result.failed).toBe(false);
@@ -1164,7 +1333,8 @@ describe('runSubmit 编排全链（idle → captcha_required → 带 captcha 重
     const result = await container.runSubmit(
       state,
       { credential: ASSERTION }, // Struct JSON 不走表单值通道（容器 submitCredential 组装）
-      () => undefined,
+      scriptedGate().run,
+      undefined,
       apiMod.loginDefault,
     );
     expect(result.failed).toBe(false);
@@ -1200,24 +1370,26 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).toContain('登录');
   });
 
-  test('captcha_required：表单保留原地 + 原地插入 CaptchaWidget（§4.1 行 391）', () => {
-    const markup = renderView(
-      stateWith({
-        method: 'password',
-        step: 'verify',
-        status: 'captcha_required',
-        envelope: envelope({
-          status: 'captcha_required',
-          captcha: create(CaptchaConfigSchema, {
-            providerKey: 'builtin_image',
-            type: 'image',
+  test('captcha_* 不再内联渲染 widget（弹窗承接）：表单保留原地、不出 ErrorBanner', () => {
+    for (const status of ['captcha_required', 'captcha_invalid'] as const) {
+      const markup = renderView(
+        stateWith({
+          method: 'password',
+          step: 'verify',
+          status,
+          envelope: envelope({
+            status,
+            captcha: create(CaptchaConfigSchema, {
+              providerKey: 'builtin_image',
+              type: 'image',
+            }),
           }),
         }),
-      }),
-    );
-    expect(markup).toContain('<form'); // 不刷新页面、表单保留
-    expect(markup).toContain('<div></div>'); // CaptchaWidget 容器（type=image）
-    expect(markup).not.toContain('role="alert"'); // captcha_required 非失败态
+      );
+      expect(markup).toContain('<form'); // 不刷新页面、表单保留
+      expect(markup).not.toContain('role="alert"'); // 非失败态（防御：正常由 gate 吸收不落此态）
+      expect(markup).not.toContain('安全验证'); // 弹窗文案不在状态帧视图里
+    }
   });
 
   test('mfa_required：原地渲染选择器（不跳页，§4.1 行 407）+ 未选择引导 + 因子名字典', () => {

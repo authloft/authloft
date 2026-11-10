@@ -90,3 +90,11 @@
 @breakpoint-sm: 480px;
 @breakpoint-md: 768px;
 @breakpoint-lg: 1024px;
+
+// 层级：captcha 弹窗脱体到 body，须盖住 account 侧触发它的 Semi 浮层
+// （Modal 默认 1000 / Toast 1010 / Tooltip 1030，实测 semi-ui 源码默认值），
+// 又须低于厂商挑战自管的浮层（reCAPTCHA 等用 2000000000 量级）。
+@z-captcha-dialog: 1100;
+
+// 弹窗遮罩 scrim（基于 @color-text-strong 的半透明压暗）。
+@color-scrim: rgba(17, 24, 39, 0.45);
