@@ -30,7 +30,7 @@ import { PasswordForm } from './factors/PasswordForm';
 import { RecoveryCodeForm } from './factors/RecoveryCodeForm';
 import { WebAuthnButton } from './factors/WebAuthnButton';
 import { lookupFactor } from './factors/registry';
-import { groupProviders, MethodTabs } from './MethodTabs';
+import { groupProviders, MethodTabs, primaryTabMethods } from './MethodTabs';
 import { CaptchaConfigSchema } from '../gen/proto/api/common/v1/captcha_pb';
 import {
   BindingSchema,
@@ -219,6 +219,119 @@ describe('firstStepFor（kind→step 映射；§1.10）', () => {
   test('空 / 未知 kind 兜底 verify（§9 第 18 条零值兜底）', () => {
     expect(container.firstStepFor([])).toBe('verify');
     expect(container.firstStepFor(['poll'])).toBe('verify');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 首屏默认选中第一个 method tab（容器层纯函数，node 可测）
+// ---------------------------------------------------------------------------
+
+describe('首屏默认选中（primaryTabMethods / defaultMethodEvent / initialFlowState / reset 重选）', () => {
+  /** 混合快照：thirdparty / 仅 secondary / capability 隐藏项排在可见 tab 之前。 */
+  const MIXED: MethodsSnapshot = {
+    methods: [
+      { method: 'thirdparty', usage: ['primary'], providers: [] },
+      { method: 'totp', usage: ['secondary'], steps: ['form'] },
+      {
+        method: 'webauthn',
+        usage: ['primary', 'secondary'],
+        steps: ['challenge', 'form'],
+        capability: 'window.PublicKeyCredential',
+      },
+      {
+        method: 'otp_sms',
+        usage: ['primary', 'secondary'],
+        steps: ['challenge', 'form'],
+      },
+    ],
+  };
+
+  test('primaryTabMethods：排除 thirdparty / 非 primary / capability 不满足，保留数组序', () => {
+    // node 无 window.PublicKeyCredential → webauthn 隐藏。
+    expect(primaryTabMethods(MIXED.methods).map((m) => m.method)).toEqual([
+      'otp_sms',
+    ]);
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    expect(primaryTabMethods(MIXED.methods).map((m) => m.method)).toEqual([
+      'webauthn',
+      'otp_sms',
+    ]);
+  });
+
+  test('defaultMethodEvent：首个可见 tab + kind→step 映射（SNAPSHOT → password/verify）', () => {
+    expect(container.defaultMethodEvent(SNAPSHOT)).toEqual({
+      type: 'select_method',
+      method: 'password',
+      firstStep: 'verify',
+    });
+  });
+
+  test('默认选中跳过 capability 隐藏项；能力满足时取该方式（challenge 首步）', () => {
+    expect(container.defaultMethodEvent(MIXED)).toEqual({
+      type: 'select_method',
+      method: 'otp_sms',
+      firstStep: 'challenge',
+    });
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    expect(container.defaultMethodEvent(MIXED)).toEqual({
+      type: 'select_method',
+      method: 'webauthn',
+      firstStep: 'challenge',
+    });
+  });
+
+  test('无可见主因子 tab → undefined；initialFlowState 保持 idle 空态兜底', () => {
+    expect(container.defaultMethodEvent({ methods: [] })).toBeUndefined();
+    expect(
+      container.defaultMethodEvent({
+        methods: [{ method: 'thirdparty', usage: ['primary'] }],
+      }),
+    ).toBeUndefined();
+    expect(container.initialFlowState({ methods: [] })).toEqual(
+      INITIAL_FLOW_STATE,
+    );
+  });
+
+  test('initialFlowState：无信封 → 默认选中；初始信封（mfa_required）不被覆盖', () => {
+    const state = container.initialFlowState(SNAPSHOT);
+    expect(state.status).toBe('idle');
+    expect(state.method).toBe('password');
+    expect(state.step).toBe('verify');
+    expect(state.effects).toEqual([]);
+
+    const mfa = envelope({
+      status: 'mfa_required',
+      mfa: create(MfaSchema, {
+        methods: [create(MfaMethodSchema, { method: 'totp', steps: ['form'] })],
+      }),
+    });
+    const callbackState = container.initialFlowState(SNAPSHOT, mfa);
+    expect(callbackState.status).toBe('mfa_required');
+    expect(callbackState.method).toBe(''); // 不被默认选中覆盖
+    expect(callbackState.envelope).toBe(mfa);
+  });
+
+  test('flowReducerWithDefault：reset 重选默认方式；无默认项 / 非 reset 事件语义不变', () => {
+    const def = container.defaultMethodEvent(SNAPSHOT);
+    const busy = stateWith({
+      method: 'otp_sms',
+      step: 'verify',
+      status: 'invalid_code',
+      loading: true,
+    });
+    expect(
+      container.flowReducerWithDefault(busy, { type: 'reset' }, def),
+    ).toEqual(flowReducer(INITIAL_FLOW_STATE, def!));
+    expect(
+      container.flowReducerWithDefault(busy, { type: 'reset' }, undefined),
+    ).toEqual(INITIAL_FLOW_STATE);
+    expect(
+      container.flowReducerWithDefault(
+        busy,
+        { type: 'request_started', step: 'verify' },
+        def,
+      ),
+    ).toEqual(flowReducer(busy, { type: 'request_started', step: 'verify' }));
   });
 });
 
@@ -608,7 +721,13 @@ describe('MethodTabs 静态渲染', () => {
   test('主因子 tab（数组序 = 后端 sort_order 排序结果）+ 因子名取 i18n 字典', () => {
     const markup = renderTabs();
     expect(markup).toContain('密码登录');
-    expect(markup).toContain('短信验证码');
+    expect(markup).toContain('短信');
+  });
+
+  test('current 命中 → 该 tab 高亮（aria-current="true"）', () => {
+    expect(renderTabs(SNAPSHOT.methods, 'password')).toContain(
+      'aria-current="true"',
+    );
   });
 
   test('usage 不含 primary 的方式不展示（§2.1：login 页只展示主因子方式）', () => {
@@ -1147,7 +1266,7 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     );
     expect(markup).toContain('请选择二次验证方式');
     expect(markup).toContain('动态口令'); // t('factors.totp')
-    expect(markup).toContain('短信验证码'); // t('factors.otp_sms')
+    expect(markup).toContain('短信'); // t('factors.otp_sms')
     expect(markup).toContain('恢复码'); // t('factors.recovery_code')
     // 未选择二次方式：只渲染选择器，不渲染因子表单。
     expect(markup).not.toContain('<form');
@@ -1630,10 +1749,51 @@ describe('LoginContainer 静态 smoke', () => {
     );
   }
 
-  test('挂载渲染 = MethodTabs + 引导提示（effects 不执行，renderToStaticMarkup 语义）', () => {
+  test('挂载渲染 = 默认选中首个 tab（高亮 + 因子表单首帧就绪，effects 不执行，renderToStaticMarkup 语义）', () => {
     const markup = renderContainer({ snapshot: SNAPSHOT });
     expect(markup).toContain('密码登录');
-    expect(markup).toContain('请选择登录方式');
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain('<form');
+    expect(markup).toContain('用户名/邮箱/手机号');
+    expect(markup).not.toContain('请选择登录方式');
+  });
+
+  test('首个 tab 因 capability 隐藏 → 默认选中下一个可见 tab（不出现空态）', () => {
+    const markup = renderContainer({
+      snapshot: {
+        methods: [
+          {
+            method: 'webauthn',
+            usage: ['primary'],
+            steps: ['challenge', 'form'],
+            capability: 'window.PublicKeyCredential',
+          },
+          {
+            method: 'password',
+            usage: ['primary'],
+            steps: ['form'],
+            fields: [
+              {
+                name: 'username',
+                label: 'login.field.usernameOrIdentifier',
+                type: 'text',
+                required: true,
+              },
+              {
+                name: 'password',
+                label: 'login.field.password',
+                type: 'password',
+                required: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain('<form');
+    expect(markup).toContain('用户名/邮箱/手机号');
+    expect(markup).not.toContain('请选择登录方式');
   });
 
   // OAuth 回调 mfa_required 完整编排——初始信封直接进状态机。
@@ -1656,7 +1816,7 @@ describe('LoginContainer 静态 smoke', () => {
       }),
     });
     expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
-    expect(markup).toContain('短信验证码'); // factors.otp_sms
+    expect(markup).toContain('短信'); // factors.otp_sms
     expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式）
     expect(markup).not.toContain('请选择登录方式'); // 不渲染主因子表单区
     expect(markup).not.toContain('正在处理'); // 非回调页处理中帧

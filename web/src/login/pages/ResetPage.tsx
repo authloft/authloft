@@ -51,7 +51,11 @@ import {
   ssoPath,
   type FlowStep,
 } from './RegisterPage';
+import pageStyles from './BasePage.module.less';
 import styles from './ResetPage.module.less';
+import { AppLayout } from '../components/AppLayout';
+import { Link } from '@modern-js/runtime/router';
+import { Tabs } from '../components/Tabs';
 
 /** 重置可用方式白名单（§2.1 行 412：flow=reset 只保留 otp_sms / otp_email，快照已过滤，此处防御性收窄）。 */
 export function resetOptionsFor(snapshot: MethodsSnapshot): LoginMethodEntry[] {
@@ -167,36 +171,27 @@ export function ResetPageView({
   // §4.4 行 465：methods 为空数组或 flags.passwordReset=false → 整页提示关闭。
   if (snapshot.flags?.passwordReset !== true || options.length === 0) {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.reset')}</h1>
-          <p role="status">{t('errors.status.reset_disabled')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.reset')}>
+        <p role="status">{t('errors.status.reset_disabled')}</p>
+      </AppLayout>
     );
   }
   // 任一 step 收到 reset_disabled → 提示并停止流程（§4.4 行 465 / §2.4 行 471）。
   if (status === 'reset_disabled') {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.reset')}</h1>
-          <p role="status">{t('errors.status.reset_disabled')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.reset')}>
+        <p role="status">{t('errors.status.reset_disabled')}</p>
+      </AppLayout>
     );
   }
   if (status === 'success') {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.reset')}</h1>
-          <p role="status">{t('login.resetSuccess')}</p>
-          <a className={styles.loginLink} href={ssoPath('/sso/login')}>
-            {t('login.goLogin')}
-          </a>
-        </div>
-      </main>
+      <AppLayout title={t('login.reset')}>
+        <p role="status">{t('login.resetSuccess')}</p>
+        <Link className={styles.loginLink} to={ssoPath('/sso/login')}>
+          {t('login.goLogin')}
+        </Link>
+      </AppLayout>
     );
   }
 
@@ -237,134 +232,119 @@ export function ResetPageView({
   };
 
   return (
-    <main className={styles.page}>
-      <div className={styles.card}>
-        <h1 className={styles.title}>{t('login.reset')}</h1>
-        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
-        {resolution !== undefined && (
-          <ErrorBanner
-            i18nKey={resolution.i18nKey}
-            fallbackMessage={error?.message}
-            retryAfter={error?.retryAfter}
-            // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
-            attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
-            retryable={resolution.retryable}
-            onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
-          />
-        )}
-        {options.length > 1 && (
-          <nav>
-            <ul className={styles.methodList}>
-              {options.map((option) => (
-                <li key={option.method}>
-                  <button
-                    type="button"
-                    className={
-                      option.method === method
-                        ? styles.methodTabActive
-                        : styles.methodTab
-                    }
-                    aria-current={option.method === method ? 'true' : undefined}
-                    onClick={() => onSelectMethod(option.method)}
-                  >
-                    {t(RESET_METHOD_NAME_KEYS[option.method] ?? option.method)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        )}
-        {step === 'challenge' && (
-          <div className={styles.section}>
-            <OTPForm
-              fields={snapshotFields(entry?.challengeFields)}
-              loading={loading}
-              disabled={submitDisabled}
-              onSubmit={onSubmit}
-              initialValues={challengeValues}
-            />
-            {showCaptcha && captchaConfig !== undefined && (
-              <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
-            )}
-          </div>
-        )}
-        {step === 'verify' && (
-          <VerifyCodeSection
-            id="reset-code"
-            length={codeLengthOf(entry)}
-            code={otpCode}
-            onCodeChange={onOtpCodeChange}
-            onSubmit={(value) => onSubmit({ code: value })}
-            submitLabelKey="login.nextStep"
-            classes={{
-              form: styles.section,
-              label: styles.label,
-              error: styles.fieldError,
-              status: styles.status,
-              resend: styles.resend,
-              submit: styles.submit,
-            }}
+    <AppLayout title={t('login.reset')}>
+      {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+      {resolution !== undefined && (
+        <ErrorBanner
+          i18nKey={resolution.i18nKey}
+          fallbackMessage={error?.message}
+          retryAfter={error?.retryAfter}
+          // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+          attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
+          retryable={resolution.retryable}
+          onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
+        />
+      )}
+      {options.length > 1 && (
+        <Tabs
+          tabList={options.map((option) => ({
+            itemKey: option.method,
+            title: t(RESET_METHOD_NAME_KEYS[option.method] ?? option.method),
+          }))}
+          activeKey={method}
+          onChange={onSelectMethod}
+        />
+      )}
+      {step === 'challenge' && (
+        <div className={styles.section}>
+          <OTPForm
+            fields={snapshotFields(entry?.challengeFields)}
             loading={loading}
             disabled={submitDisabled}
-            attemptsLeft={error?.attemptsLeft}
-            retryAfter={
-              envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter
-            }
-            onResend={onResend}
+            onSubmit={onSubmit}
+            initialValues={challengeValues}
           />
-        )}
-        {step === 'set_password' && (
-          <form onSubmit={submitSetPassword} className={styles.section}>
-            <PasswordField
-              id="reset-password"
-              name="password"
-              label={t('login.newPasswordLabel')}
-              value={password}
-              onChange={(value) => {
-                onPasswordChange(value);
-                setFormErrors((prev) => {
-                  if (prev.password === undefined) {
-                    return prev;
-                  }
-                  const next = { ...prev };
-                  delete next.password;
-                  return next;
-                });
-              }}
-              error={formErrors.password}
-              disabled={loading}
-            />
-            <PasswordField
-              id="reset-confirm"
-              name="password_confirm"
-              label={t('login.confirmPasswordLabel')}
-              value={confirm}
-              onChange={(value) => {
-                setConfirm(value);
-                setFormErrors((prev) => {
-                  if (prev.confirm === undefined) {
-                    return prev;
-                  }
-                  const next = { ...prev };
-                  delete next.confirm;
-                  return next;
-                });
-              }}
-              error={formErrors.confirm}
-              disabled={loading}
-            />
-            <PasswordStrengthMeter password={password} />
-            <button
-              type="submit"
-              disabled={loading || submitDisabled}
-              className={styles.submit}
-            >
-              {t('login.reset')}
-            </button>
-          </form>
-        )}
-      </div>
-    </main>
+          {showCaptcha && captchaConfig !== undefined && (
+            <CaptchaWidget captcha={captchaConfig} ref={captchaRef} />
+          )}
+        </div>
+      )}
+      {step === 'verify' && (
+        <VerifyCodeSection
+          id="reset-code"
+          length={codeLengthOf(entry)}
+          code={otpCode}
+          onCodeChange={onOtpCodeChange}
+          onSubmit={(value) => onSubmit({ code: value })}
+          submitLabelKey="login.nextStep"
+          classes={{
+            form: styles.section,
+            label: styles.label,
+            error: styles.fieldError,
+            status: styles.status,
+            resend: styles.resend,
+            submit: styles.submit,
+          }}
+          loading={loading}
+          disabled={submitDisabled}
+          attemptsLeft={error?.attemptsLeft}
+          retryAfter={
+            envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter
+          }
+          onResend={onResend}
+        />
+      )}
+      {step === 'set_password' && (
+        <form onSubmit={submitSetPassword} className={styles.section}>
+          <PasswordField
+            id="reset-password"
+            name="password"
+            label={t('login.newPasswordLabel')}
+            value={password}
+            onChange={(value) => {
+              onPasswordChange(value);
+              setFormErrors((prev) => {
+                if (prev.password === undefined) {
+                  return prev;
+                }
+                const next = { ...prev };
+                delete next.password;
+                return next;
+              });
+            }}
+            error={formErrors.password}
+            disabled={loading}
+          />
+          <PasswordField
+            id="reset-confirm"
+            name="password_confirm"
+            label={t('login.confirmPasswordLabel')}
+            value={confirm}
+            onChange={(value) => {
+              setConfirm(value);
+              setFormErrors((prev) => {
+                if (prev.confirm === undefined) {
+                  return prev;
+                }
+                const next = { ...prev };
+                delete next.confirm;
+                return next;
+              });
+            }}
+            error={formErrors.confirm}
+            disabled={loading}
+          />
+          <PasswordStrengthMeter password={password} />
+          <button
+            type="submit"
+            disabled={loading || submitDisabled}
+            className={styles.submit}
+          >
+            {t('login.reset')}
+          </button>
+        </form>
+      )}
+    </AppLayout>
   );
 }
 

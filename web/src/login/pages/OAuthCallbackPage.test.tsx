@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 register-reset.test.tsx 边界惯例），分派编排经
@@ -16,9 +25,7 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create, toBinary } from '@bufbuild/protobuf';
 import { clearLoginToken, getLoginToken } from '../loginTokenStore';
-import {
-  ErrorInfoSchema,
-} from '../../gen/proto/api/common/v1/error_info_pb';
+import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
 import {
   ThirdpartyOauthResponseSchema,
   type ThirdpartyOauthResponse,
@@ -136,9 +143,10 @@ function bindResponse(): ThirdpartyOauthResponse {
  */
 const CALLBACK_SNAPSHOT: MethodsSnapshot = { methods: [] };
 
-function renderView(
-  init: { status: string; envelope?: LoginFlowResponse },
-): string {
+function renderView(init: {
+  status: string;
+  envelope?: LoginFlowResponse;
+}): string {
   // mfa 帧经 LoginContainer 消费 useSearchParams，统一 MemoryRouter 包裹。
   return renderToStaticMarkup(
     createElement(
@@ -185,9 +193,9 @@ describe('callbackQuery / buildLoginOauthInput（§2.7.3 行 604/612-615）', ()
   });
 
   test('providerKey 路径参数补上，且覆盖 query 同名（「补上路径参数」，行 604）', () => {
-    expect(
-      pagesMod.buildLoginOauthInput('qq', '?code=c-1&state=l-s1'),
-    ).toEqual({ providerKey: 'qq', code: 'c-1', state: 'l-s1' });
+    expect(pagesMod.buildLoginOauthInput('qq', '?code=c-1&state=l-s1')).toEqual(
+      { providerKey: 'qq', code: 'c-1', state: 'l-s1' },
+    );
     expect(
       pagesMod.buildLoginOauthInput('qq', '?code=c-1&providerKey=hack'),
     ).toEqual({ providerKey: 'qq', code: 'c-1' });
@@ -197,18 +205,25 @@ describe('callbackQuery / buildLoginOauthInput（§2.7.3 行 604/612-615）', ()
 describe('buildThirdpartyOauthInput / bindErrorCode / securityBindUrl（§3.7.1 A 行 985-994）', () => {
   test('buildThirdpartyOauthInput：code/state 原样透传 + providerKey 路径参数（同名以路径为准）', () => {
     // create() 消息运行时带 $typeName，toMatchObject 做字段级子集断言。
-    expect(pagesMod.buildThirdpartyOauthInput('qq', '?code=c-1&state=b-1')).toMatchObject({
+    expect(
+      pagesMod.buildThirdpartyOauthInput('qq', '?code=c-1&state=b-1'),
+    ).toMatchObject({
       providerKey: 'qq',
       code: 'c-1',
       state: 'b-1',
     });
     expect(
-      pagesMod.buildThirdpartyOauthInput('qq', '?code=c-1&state=b-1&providerKey=hack'),
+      pagesMod.buildThirdpartyOauthInput(
+        'qq',
+        '?code=c-1&state=b-1&providerKey=hack',
+      ),
     ).toMatchObject({ providerKey: 'qq', code: 'c-1', state: 'b-1' });
   });
 
   test('buildThirdpartyOauthInput：缺 code/state → 零值空串上送（服务端 invalid_request 判定，不因前端放宽契约）', () => {
-    expect(pagesMod.buildThirdpartyOauthInput('qq', '?state=b-1')).toMatchObject({
+    expect(
+      pagesMod.buildThirdpartyOauthInput('qq', '?state=b-1'),
+    ).toMatchObject({
       providerKey: 'qq',
       code: '',
       state: 'b-1',
@@ -223,7 +238,12 @@ describe('buildThirdpartyOauthInput / bindErrorCode / securityBindUrl（§3.7.1 
   test('bindErrorCode：ApiError（errors.ts 归一形态）→ code 透传；其余 → internal 兜底（§1.6 行 273）', () => {
     expect(
       pagesMod.bindErrorCode(
-        new ApiError({ httpStatus: 400, code: 'state_mismatch', message: 'x', requestId: '' }),
+        new ApiError({
+          httpStatus: 400,
+          code: 'state_mismatch',
+          message: 'x',
+          requestId: '',
+        }),
       ),
     ).toBe('state_mismatch');
     expect(pagesMod.bindErrorCode(new Error('transport'))).toBe('internal');
@@ -514,7 +534,7 @@ describe('OAuthCallbackView 状态帧渲染', () => {
       }),
     });
     expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
-    expect(markup).toContain('短信验证码'); // factors.otp_sms
+    expect(markup).toContain('短信'); // factors.otp_sms
     expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式引导）
     expect(markup).not.toContain('正在处理'); // 非处理中帧
   });

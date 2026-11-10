@@ -56,7 +56,10 @@ import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
 import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
+import pageStyles from './BasePage.module.less';
 import styles from './RegisterPage.module.less';
+import { AppLayout } from '../components/AppLayout';
+import { Tabs } from '../components/Tabs';
 
 // ---------------------------------------------------------------------------
 // 页族共用纯函数（ResetPage 复用；node 可测）
@@ -357,43 +360,31 @@ export function RegisterPageView({
   // §4.4 行 464：flags.registration=false → 整页提示注册已关闭（不渲染表单）。
   if (snapshot.flags?.registration !== true) {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.register')}</h1>
-          <p role="status">{t('errors.status.signup_disabled')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.register')}>
+        <p role="status">{t('errors.status.signup_disabled')}</p>
+      </AppLayout>
     );
   }
   // 任一 step 收到 signup_disabled → 提示并停止流程（§4.4 行 464 / §2.3 行 455）。
   if (status === 'signup_disabled') {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.register')}</h1>
-          <p role="status">{t('errors.status.signup_disabled')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.register')}>
+        <p role="status">{t('errors.status.signup_disabled')}</p>
+      </AppLayout>
     );
   }
   if (status === 'success') {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.register')}</h1>
-          <p role="status">{t('login.registerSuccess')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.register')}>
+        <p role="status">{t('login.registerSuccess')}</p>
+      </AppLayout>
     );
   }
   if (options.length === 0) {
     return (
-      <main className={styles.page}>
-        <div className={styles.card}>
-          <h1 className={styles.title}>{t('login.register')}</h1>
-          <p role="status">{t('login.noRegisterMethods')}</p>
-        </div>
-      </main>
+      <AppLayout title={t('login.register')}>
+        <p role="status">{t('login.noRegisterMethods')}</p>
+      </AppLayout>
     );
   }
 
@@ -439,181 +430,164 @@ export function RegisterPageView({
   };
 
   return (
-    <main className={styles.page}>
-      <div className={styles.card}>
-        <h1 className={styles.title}>{t('login.register')}</h1>
-        {notice !== undefined && <ErrorBanner i18nKey={notice} />}
-        {resolution !== undefined && (
-          <ErrorBanner
-            i18nKey={resolution.i18nKey}
-            fallbackMessage={error?.message}
-            retryAfter={error?.retryAfter}
-            // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
-            attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
-            retryable={resolution.retryable}
-            onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
-          />
-        )}
-        {options.length > 1 && (
-          <nav>
-            <ul className={styles.methodList}>
-              {options.map((option) => (
-                <li key={option.method}>
-                  <button
-                    type="button"
-                    className={
-                      option.method === method
-                        ? styles.methodTabActive
-                        : styles.methodTab
-                    }
-                    aria-current={option.method === method ? 'true' : undefined}
-                    onClick={() => onSelectMethod(option.method)}
-                  >
-                    {t(
-                      REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method,
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        )}
-        {step === 'challenge' && (
-          <div className={styles.section}>
-            <OTPForm
-              fields={snapshotFields(entry?.challengeFields)}
-              loading={loading}
-              disabled={submitDisabled}
-              onSubmit={onSubmit}
-              initialValues={challengeValues}
-            />
-            {captchaNode}
-          </div>
-        )}
-        {step === 'verify' && (
-          <VerifyCodeSection
-            id="reg-code"
-            length={codeLengthOf(entry)}
-            code={otpCode}
-            onCodeChange={onOtpCodeChange}
-            onSubmit={(value) => onSubmit({ code: value })}
-            submitLabelKey="login.nextStep"
-            classes={{
-              form: styles.section,
-              label: styles.label,
-              error: styles.fieldError,
-              status: styles.status,
-              resend: styles.resend,
-              submit: styles.submit,
-            }}
+    <AppLayout title={t('login.register')}>
+      {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+      {resolution !== undefined && (
+        <ErrorBanner
+          i18nKey={resolution.i18nKey}
+          fallbackMessage={error?.message}
+          retryAfter={error?.retryAfter}
+          // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+          attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
+          retryable={resolution.retryable}
+          onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
+        />
+      )}
+      {options.length > 1 && (
+        <Tabs
+          tabList={options.map((option) => ({
+            itemKey: option.method,
+            title: t(REGISTER_METHOD_NAME_KEYS[option.method] ?? option.method),
+          }))}
+          activeKey={method}
+          onChange={onSelectMethod}
+        />
+      )}
+      {step === 'challenge' && (
+        <div className={styles.section}>
+          <OTPForm
+            fields={snapshotFields(entry?.challengeFields)}
             loading={loading}
             disabled={submitDisabled}
-            attemptsLeft={error?.attemptsLeft}
-            retryAfter={
-              envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter
-            }
-            onResend={onResend}
+            onSubmit={onSubmit}
+            initialValues={challengeValues}
           />
-        )}
-        {step === 'set_password' && (
-          <form onSubmit={submitSetPassword} className={styles.section}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="reg-username">
-                {t('login.usernameLabel')}
-              </label>
-              <input
-                className={styles.input}
-                id="reg-username"
-                name="username"
-                type="text"
-                value={username}
-                autoComplete="username"
-                onChange={(e) => {
-                  onUsernameChange(e.target.value);
-                  setFormErrors((prev) => {
-                    if (prev.username === undefined) {
-                      return prev;
-                    }
-                    const next = { ...prev };
-                    delete next.username;
-                    return next;
-                  });
-                }}
-                {...(formErrors.username !== undefined
-                  ? {
-                      'aria-invalid': true as const,
-                      'aria-describedby': 'reg-username-error',
-                    }
-                  : {})}
-              />
-              {formErrors.username !== undefined ? (
-                <p id="reg-username-error" className={styles.fieldError}>
-                  {formErrors.username}
+          {captchaNode}
+        </div>
+      )}
+      {step === 'verify' && (
+        <VerifyCodeSection
+          id="reg-code"
+          length={codeLengthOf(entry)}
+          code={otpCode}
+          onCodeChange={onOtpCodeChange}
+          onSubmit={(value) => onSubmit({ code: value })}
+          submitLabelKey="login.nextStep"
+          classes={{
+            form: styles.section,
+            label: styles.label,
+            error: styles.fieldError,
+            status: styles.status,
+            resend: styles.resend,
+            submit: styles.submit,
+          }}
+          loading={loading}
+          disabled={submitDisabled}
+          attemptsLeft={error?.attemptsLeft}
+          retryAfter={
+            envelope?.nextStep?.retryAfter ?? envelope?.error?.retryAfter
+          }
+          onResend={onResend}
+        />
+      )}
+      {step === 'set_password' && (
+        <form onSubmit={submitSetPassword} className={styles.section}>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reg-username">
+              {t('login.usernameLabel')}
+            </label>
+            <input
+              className={styles.input}
+              id="reg-username"
+              name="username"
+              type="text"
+              value={username}
+              autoComplete="username"
+              onChange={(e) => {
+                onUsernameChange(e.target.value);
+                setFormErrors((prev) => {
+                  if (prev.username === undefined) {
+                    return prev;
+                  }
+                  const next = { ...prev };
+                  delete next.username;
+                  return next;
+                });
+              }}
+              {...(formErrors.username !== undefined
+                ? {
+                    'aria-invalid': true as const,
+                    'aria-describedby': 'reg-username-error',
+                  }
+                : {})}
+            />
+            {formErrors.username !== undefined ? (
+              <p id="reg-username-error" className={styles.fieldError}>
+                {formErrors.username}
+              </p>
+            ) : (
+              username !== '' &&
+              !isValidUsername(username) && (
+                <p role="status" className={styles.hint}>
+                  {t('login.usernameHint')}
                 </p>
-              ) : (
-                username !== '' &&
-                !isValidUsername(username) && (
-                  <p role="status" className={styles.hint}>
-                    {t('login.usernameHint')}
-                  </p>
-                )
-              )}
-            </div>
-            <PasswordField
-              id="reg-password"
-              name="password"
-              label={t('login.passwordLabel')}
-              value={password}
-              onChange={(value) => {
-                onPasswordChange(value);
-                setFormErrors((prev) => {
-                  if (prev.password === undefined) {
-                    return prev;
-                  }
-                  const next = { ...prev };
-                  delete next.password;
-                  return next;
-                });
-              }}
-              error={formErrors.password}
-              disabled={loading}
-            />
-            <PasswordField
-              id="reg-confirm"
-              name="password_confirm"
-              label={t('login.confirmPasswordLabel')}
-              value={confirm}
-              onChange={(value) => {
-                setConfirm(value);
-                setFormErrors((prev) => {
-                  if (prev.confirm === undefined) {
-                    return prev;
-                  }
-                  const next = { ...prev };
-                  delete next.confirm;
-                  return next;
-                });
-              }}
-              error={formErrors.confirm}
-              disabled={loading}
-            />
-            <PasswordStrengthMeter
-              password={password}
-              username={username}
-              email={challengeEmail}
-            />
-            {captchaNode}
-            <button
-              type="submit"
-              disabled={loading || submitDisabled}
-              className={styles.submit}
-            >
-              {t('login.register')}
-            </button>
-          </form>
-        )}
-      </div>
-    </main>
+              )
+            )}
+          </div>
+          <PasswordField
+            id="reg-password"
+            name="password"
+            label={t('login.passwordLabel')}
+            value={password}
+            onChange={(value) => {
+              onPasswordChange(value);
+              setFormErrors((prev) => {
+                if (prev.password === undefined) {
+                  return prev;
+                }
+                const next = { ...prev };
+                delete next.password;
+                return next;
+              });
+            }}
+            error={formErrors.password}
+            disabled={loading}
+          />
+          <PasswordField
+            id="reg-confirm"
+            name="password_confirm"
+            label={t('login.confirmPasswordLabel')}
+            value={confirm}
+            onChange={(value) => {
+              setConfirm(value);
+              setFormErrors((prev) => {
+                if (prev.confirm === undefined) {
+                  return prev;
+                }
+                const next = { ...prev };
+                delete next.confirm;
+                return next;
+              });
+            }}
+            error={formErrors.confirm}
+            disabled={loading}
+          />
+          <PasswordStrengthMeter
+            password={password}
+            username={username}
+            email={challengeEmail}
+          />
+          {captchaNode}
+          <button
+            type="submit"
+            disabled={loading || submitDisabled}
+            className={styles.submit}
+          >
+            {t('login.register')}
+          </button>
+        </form>
+      )}
+    </AppLayout>
   );
 }
 

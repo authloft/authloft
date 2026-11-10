@@ -3,6 +3,11 @@
  * flow/{machine,reducer,selectors} 与 api.ts——发起请求、处理响应、驱动子组件、
  * 处理终点。
  *
+ * - 首屏**默认选中第一个可用的 method tab**（与 MethodTabs 可见 tab 口径一致）：
+ *   初始态经 select_method 事件注入 method / firstStep（首帧即高亮 + 渲染
+ *   因子表单，不靠 effect 二次派发）；reset（回到第一步）后同款重选，避免
+ *   「返回方式列表」/ restart / 传输失败回退退回未选中空态；有初始信封
+ *   （OAuth 回调 mfa_required 等）时不覆盖信封语义；
  * - mfa_required **原地渲染**（不跳页、不新开流程，§4.1 行 407）：mfa.methods
  *   选择器（因子名取 factors.* 字典 + webauthn 条目 hint 提示，§1.3 行 125）+
  *   选中方式的因子组件（select_method 清信封，方式列表由容器本地镜像保持）；
@@ -32,6 +37,7 @@
  */
 import {
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -63,7 +69,7 @@ import { WebAuthnButton, isWebAuthnForm } from './factors/WebAuthnButton';
 import { lookupFactor } from './factors/registry';
 import { FormStep } from './steps/FormStep';
 import { StepDispatcher } from './steps/StepDispatcher';
-import { MethodTabs } from './MethodTabs';
+import { MethodTabs, primaryTabMethods } from './MethodTabs';
 import { RETRY_RESUBMIT_STATUSES } from './validate';
 import styles from './LoginContainer.module.less';
 import { flowReducer, type FlowEvent } from './flow/reducer';
@@ -79,6 +85,9 @@ import {
 /** LoginPayload 的 init 形状（login/api.ts 的 LoginDefaultInput.payload）。 */
 type PayloadInit = NonNullable<LoginDefaultInput['payload']>;
 
+/** select_method 事件形状（首屏默认选中 / reset 重选共用）。 */
+type SelectMethodEvent = Extract<FlowEvent, { type: 'select_method' }>;
+
 // ---------------------------------------------------------------------------
 // 容器层纯函数（node 可测；编排 / 映射 / 终点语义的唯一落点）
 // ---------------------------------------------------------------------------
@@ -92,6 +101,66 @@ type PayloadInit = NonNullable<LoginDefaultInput['payload']>;
  */
 export function firstStepFor(steps: string[]): string {
   return steps[0] === 'challenge' ? 'challenge' : 'verify';
+}
+
+/**
+ * 首屏默认选中事件：取首个「可见」主因子 tab（primaryTabMethods 口径，与
+ * MethodTabs 渲染一致——排除 thirdparty / usage 不含 primary / capability
+ * 不满足），经容器既有 kind→step 映射（firstStepFor）生成 select_method
+ * 事件；状态机仍是 method / step 的唯一真相（提交直接读 state.method）。
+ * 无可用 tab 时返回 undefined，保留「请选择登录方式」空态兜底（§9 第 18 条）。
+ * 数组序即后端 sort_order / ui_group 排序结果，前端不重排（§2.1）。
+ */
+export function defaultMethodEvent(
+  snapshot: MethodsSnapshot,
+): SelectMethodEvent | undefined {
+  const first = primaryTabMethods(snapshot.methods)[0];
+  return first === undefined
+    ? undefined
+    : {
+        type: 'select_method',
+        method: first.method,
+        firstStep: firstStepFor(first.steps ?? []),
+      };
+}
+
+/**
+ * 初始态：无初始信封 → idle 叠加默认选中事件（method / step 一并就绪，
+ * 首帧即高亮首个 tab 并渲染其因子表单）；OAuth 回调初始信封
+ * （mfa_required / binding_required 等）优先，维持 response 事件语义
+ * 与 effects 标记不被默认选中覆盖（§4.1 行 383 / 行 407）。
+ */
+export function initialFlowState(
+  snapshot: MethodsSnapshot,
+  initialEnvelope?: LoginFlowResponse,
+): FlowState {
+  const base =
+    initialEnvelope === undefined
+      ? INITIAL_FLOW_STATE
+      : flowReducer(INITIAL_FLOW_STATE, {
+          type: 'response',
+          envelope: initialEnvelope,
+        });
+  const event = defaultMethodEvent(snapshot);
+  return initialEnvelope === undefined && event !== undefined
+    ? flowReducer(base, event)
+    : base;
+}
+
+/**
+ * 容器 reducer：reset = 回到第一步（§4.1 行 386），而第一步现有默认选中
+ * tab —— reset 后同款重选，避免「返回方式列表」/ restart / 传输失败回退
+ * 退回未选中空态；其余事件原样交 flowReducer（状态机语义不变）。
+ */
+export function flowReducerWithDefault(
+  state: FlowState,
+  event: FlowEvent,
+  defaultEvent: SelectMethodEvent | undefined,
+): FlowState {
+  const next = flowReducer(state, event);
+  return event.type === 'reset' && defaultEvent !== undefined
+    ? flowReducer(next, defaultEvent)
+    : next;
 }
 
 /** int64 十进制字符串（§1.12）→ bigint；缺失 / 空串 / 非法兜底 0。 */
@@ -631,7 +700,7 @@ export function LoginFlowView({
   ).map(snapshotFieldToField);
 
   return (
-    <div className={styles.flow}>
+    <>
       {notice !== undefined && <ErrorBanner i18nKey={notice} />}
       <MethodTabs
         methods={snapshot.methods}
@@ -639,6 +708,8 @@ export function LoginFlowView({
         onSelect={onSelect}
         onQrResult={onQrResult}
       />
+      {/* 空态兜底（§9 第 18 条）：无可用主因子 tab（如 capability 全部不满足）
+          仍显示引导；正常首屏 state.method 已由容器默认选中，不走此分支。 */}
       {state.method === '' ? (
         <p role="status">{t('login.selectMethodHint')}</p>
       ) : (
@@ -656,7 +727,7 @@ export function LoginFlowView({
           {...bannerExtras(state.method)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -681,12 +752,17 @@ export function LoginContainer({
   snapshot,
   initialEnvelope,
 }: LoginContainerProps) {
-  // 惰性初始化：初始信封经 reducer response 事件进状态机（effects 语义
-  // 完整保留——mfa_required / binding_required 无副作用标记）。
-  const [state, dispatch] = useReducer(flowReducer, initialEnvelope, (env) =>
-    env === undefined
-      ? INITIAL_FLOW_STATE
-      : flowReducer(INITIAL_FLOW_STATE, { type: 'response', envelope: env }),
+  // 首屏默认选中项（与 MethodTabs 可见 tab 口径一致；快照页面存活期内不刷新，§2.1）。
+  const defaultEvent = useMemo(() => defaultMethodEvent(snapshot), [snapshot]);
+  // 惰性初始化：无初始信封 → idle + 默认选中事件（首帧即渲染首个 tab 的
+  // 因子表单，不靠 effect 二次派发）；初始信封经 reducer response 事件进
+  // 状态机（effects 语义完整保留——mfa_required / binding_required 无副作用
+  // 标记），不被默认选中覆盖。reset 由 flowReducerWithDefault 重选默认方式。
+  const [state, dispatch] = useReducer(
+    (current: FlowState, event: FlowEvent) =>
+      flowReducerWithDefault(current, event, defaultEvent),
+    { snapshot, initialEnvelope },
+    ({ snapshot: s, initialEnvelope: env }) => initialFlowState(s, env),
   );
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const captchaRef = useRef<CaptchaWidgetHandle>(null);
@@ -871,8 +947,9 @@ export function LoginContainer({
   };
 
   // 评审 P0-1：「返回方式列表」= 回第一步（reducer「换方式 = 全新
-  // 流程」语义的 reset 落地）；一次性提示与 options 镜像清空，challengeValues /
-  // otpCode 持值保留（重选 OTP 方式时回填，P1-5 同款语义）。
+  // 流程」语义的 reset 落地；flowReducerWithDefault 令 reset 后重选默认 tab）；
+  // 一次性提示与 options 镜像清空，challengeValues / otpCode 持值保留
+  // （重选 OTP 方式时回填，P1-5 同款语义）。
   const backToMethods = () => {
     dispatch({ type: 'reset' });
     setMfaMethods(undefined);

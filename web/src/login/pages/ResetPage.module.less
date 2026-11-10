@@ -1,40 +1,5 @@
-// 重置密码页样式（docs/前端架构.md §1.7；V-1：对齐主链 LoginPage——
-// 页面底 + 居中白卡外壳 + 标题层级 + 文字 tab；.label/.input/.resend/.submit
-// 改消费 shared/styles/controls.less mixin，V-3 去逐字重复；窄屏适配见文件尾
-// @media，评审 P0-4。
 @import (reference) '../../shared/styles/tokens.less';
 @import (reference) '../../shared/styles/controls.less';
-
-// 全视口居中：页面底与卡片面分层（LoginPage 同款）。
-.page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: @spacing-xl @spacing-lg;
-  background-color: @color-page;
-}
-
-// 卡片外壳（LoginPage 同款；flex 列节奏承载标题 / 横幅 / tabs / 表单）。
-.card {
-  width: 100%;
-  max-width: 26rem;
-  padding: 2.25rem 2rem;
-  background-color: @color-surface;
-  border: @border-width solid @color-border-subtle;
-  border-radius: @radius-lg;
-  box-shadow: @shadow-card;
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-lg;
-}
-
-.title {
-  color: @color-text-strong;
-  font-size: @font-size-xl;
-  font-weight: @font-weight-semibold;
-  text-align: center;
-}
 
 // 方式切换：与主链 MethodTabs 同款文字 tab（选中主色 + 底部高亮线）。
 .methodList {
@@ -133,16 +98,4 @@
 .loginLink:hover {
   color: @color-primary-hover;
   text-decoration: underline;
-}
-
-// 窄屏收敛（评审 P0-4；LoginPage 同款）：卡片贴边留小外边距、
-// 内边距收紧；卡宽已由 width:100% + max-width 自适应撑满。
-@media (max-width: @breakpoint-sm) {
-  .page {
-    padding: @spacing-lg @spacing-md;
-  }
-
-  .card {
-    padding: @spacing-xl @spacing-lg;
-  }
 }

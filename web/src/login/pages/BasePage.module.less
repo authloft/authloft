@@ -1,0 +1,40 @@
+@import (reference) '../../shared/styles/tokens.less';
+@import (reference) '../../shared/styles/controls.less';
+
+// 全视口居中：页面底与卡片面分层（参考页默认态结构：浅底 + 白卡）。
+.page {
+  min-height: 100vh;
+  padding: 64px @spacing-lg;
+  background-color: @color-page;
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  padding: 2.25rem 2rem;
+  background-color: @color-surface;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-lg;
+  box-shadow: @shadow-card;
+  margin: 0 auto;
+}
+
+.title {
+  margin-bottom: @spacing-xl;
+  color: @color-text-strong;
+  font-size: @font-size-xl;
+  font-weight: @font-weight-semibold;
+  text-align: center;
+}
+
+// 窄屏收敛（评审 P0-4）：断点消费 tokens.less @breakpoint-sm，
+// 卡片贴边留小外边距、内边距收紧。
+@media (max-width: @breakpoint-sm) {
+  .page {
+    padding: @spacing-lg @spacing-md;
+  }
+
+  .card {
+    padding: @spacing-xl @spacing-lg;
+  }
+}

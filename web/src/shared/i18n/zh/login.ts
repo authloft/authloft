@@ -34,9 +34,9 @@ export const login = {
   'login.confirmPasswordLabel': '确认密码',
   'login.errPasswordMismatch': '两次输入的密码不一致',
   'login.attemptsLeft': '还可尝试 {count} 次',
-  'login.registerMethodPassword': '用户名密码注册',
-  'login.registerMethodOtpSms': '手机号注册',
-  'login.registerMethodOtpEmail': '邮箱注册',
+  'login.registerMethodPassword': '用户名密码',
+  'login.registerMethodOtpSms': '手机号',
+  'login.registerMethodOtpEmail': '邮箱',
   // ---- 重置页（ResetPage）--------------------------------------------------
   'login.reset': '重置密码',
   'login.newPasswordLabel': '新密码',

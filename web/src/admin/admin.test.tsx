@@ -2153,8 +2153,8 @@ describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增�
 
   test('已知 factor → 文案；未知值原样返回', () => {
     expect(apiMod.mfaFactorLabel('totp')).toBe('动态口令');
-    expect(apiMod.mfaFactorLabel('otp_sms')).toBe('短信验证码');
-    expect(apiMod.mfaFactorLabel('otp_email')).toBe('邮箱验证码');
+    expect(apiMod.mfaFactorLabel('otp_sms')).toBe('短信');
+    expect(apiMod.mfaFactorLabel('otp_email')).toBe('邮箱');
     expect(apiMod.mfaFactorLabel('webauthn')).toBe('通行密钥');
     expect(apiMod.mfaFactorLabel('recovery_code')).toBe('恢复码');
     expect(apiMod.mfaFactorLabel('future_kind')).toBe('future_kind');

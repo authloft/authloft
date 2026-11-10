@@ -14,20 +14,43 @@
  *   （传入 providers），不再自带图标墙实现；groupProviders 纯函数随之迁至
  *   ProviderButtons，此处 re-export 保持既有导入面（login-container.test）；
  * - capability 不满足的方法自动隐藏（需求 §4.1.6 行 105：不展示「不支持」
- *   提示；消费 useCapability——逐条目在子组件内调用，遵守 hook 规则）。
+ *   提示）；可见性口径与首屏默认选中共用纯函数 primaryTabMethods（唯一定义，
+ *   供 LoginContainer 复用），能力检测走 resolveCapability（非 hook，可在
+ *   filter 内逐条目求值；页面存活期内能力视为恒定）。
  *
  * 文案：方式名取 i18n 字典 factors.*（§1.10 因子全集，缺键回显键本身可见
  * 可排查）；空状态 / 引导提示经 i18n 字典 login.* 键取用。
  */
 import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
+import { resolveCapability } from '../shared/hooks/useCapability';
 import { t } from '../shared/i18n';
-import { useCapability } from '../shared/hooks/useCapability';
 import type { LoginMethodEntry } from '../shared/types/init';
+import { Tabs } from './components/Tabs';
 import { ProviderButtons } from './factors/ProviderButtons';
-import styles from './MethodTabs.module.less';
 
 /** 图标墙分组纯函数自 ProviderButtons 迁入，re-export 保持既有导入面。 */
 export { groupProviders } from './factors/ProviderButtons';
+
+/**
+ * 可见的主因子 tab（登录页 tab 的唯一口径）：MethodTabs 渲染与
+ * LoginContainer 首屏默认选中共同消费，避免「选中了但页面上没有」的错位。
+ *
+ * - 排除 thirdparty（图标墙由 ProviderButtons 承载，§4.1 行 384）；
+ * - 仅 usage 含 primary（§2.1：login 页只展示主因子方式）；
+ * - capability 不满足自动隐藏（需求 §4.1.6 行 105）：resolveCapability
+ *   纯函数求值（非 hook，可在 filter 内逐条目调用）；
+ * - 顺序沿用注入快照数组序（后端 sort_order / ui_group 已排序，§2.1）。
+ */
+export function primaryTabMethods(
+  methods: LoginMethodEntry[],
+): LoginMethodEntry[] {
+  return methods.filter(
+    (m) =>
+      m.method !== 'thirdparty' &&
+      (m.usage ?? []).includes('primary') &&
+      resolveCapability(m.capability),
+  );
+}
 
 export interface MethodTabsProps {
   /** 注入快照的登录方式列表（§2.1）。 */
@@ -49,58 +72,30 @@ export function MethodTabs({
   onSelect,
   onQrResult,
 }: MethodTabsProps) {
-  const tabs = methods.filter(
-    (m) => m.method !== 'thirdparty' && (m.usage ?? []).includes('primary'),
-  );
+  const tabs = primaryTabMethods(methods);
   const thirdparty = methods.find((m) => m.method === 'thirdparty');
   const empty = tabs.length === 0 && thirdparty === undefined;
 
+  if (empty) {
+    return <p role="status">{t('login.noMethods')}</p>;
+  }
+
   return (
-    <nav>
-      {empty && <p role="status">{t('login.noMethods')}</p>}
-      <ul className={styles.list}>
-        {tabs.map((entry) => (
-          <MethodTabItem
-            key={entry.method}
-            entry={entry}
-            current={current}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
+    <>
+      <Tabs
+        tabList={tabs.map((entry) => ({
+          itemKey: entry.method,
+          title: t(`factors.${entry.method}`),
+        }))}
+        activeKey={current}
+        onChange={onSelect}
+      />
       {thirdparty !== undefined && (
         <ProviderButtons
           providers={thirdparty.providers ?? []}
           onQrResult={onQrResult}
         />
       )}
-    </nav>
-  );
-}
-
-/** 单个方式 tab：capability 检测在子组件内消费 useCapability（hook 规则）。 */
-function MethodTabItem({
-  entry,
-  current,
-  onSelect,
-}: {
-  entry: LoginMethodEntry;
-  current: string;
-  onSelect: (method: string) => void;
-}) {
-  const capable = useCapability(entry.capability);
-  if (!capable) {
-    // 需求 §4.1.6 行 105：浏览器 / 设备不支持时自动不展示（无「不支持」提示）。
-    return null;
-  }
-  const selected = entry.method === current;
-  return (
-    <li
-      className={selected ? styles.tabActive : ''}
-      aria-current={selected ? 'true' : undefined}
-      onClick={() => onSelect(entry.method)}
-    >
-      {t(`factors.${entry.method}`)}
-    </li>
+    </>
   );
 }

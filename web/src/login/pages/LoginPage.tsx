@@ -22,8 +22,10 @@ import { useState } from 'react';
 import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
 import { LoginContainer } from '../LoginContainer';
 import type { MethodsSnapshot } from '../../shared/types/init';
-import { ssoPath } from './RegisterPage';
 import styles from './LoginPage.module.less';
+import { Link } from '@modern-js/runtime/router';
+import { AppLayout } from '../components/AppLayout';
+import { ssoPath } from './RegisterPage';
 
 export interface LoginPageProps {
   /** 注入快照（§2.1；bootstrap 读取后传入，§4.1 行 375）。 */
@@ -43,27 +45,10 @@ export function LoginPage({ snapshot }: LoginPageProps) {
     setLocaleState(next);
   };
   return (
-    <main className={styles.page}>
-      {/* 统一卡片容器（页面底 + 居中白卡），DOM 语义不变。 */}
-      <div className={styles.card}>
-        <h1 className={styles.title}>{t('login.title')}</h1>
-        <LoginContainer snapshot={snapshot} />
-        {(showForgot || showRegister) && (
-          <nav className={styles.entryNav}>
-            {showForgot && (
-              <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
-                {t('login.forgotPassword')}
-              </a>
-            )}
-            {showRegister && (
-              <a className={styles.entryLink} href={ssoPath('/sso/register')}>
-                {t('login.register')}
-              </a>
-            )}
-          </nav>
-        )}
-        {/* 评审 P1-7：footer 语言切换，仅内存内（不持久化）。 */}
-        <footer className={styles.footer}>
+    <AppLayout
+      title={t('login.title')}
+      footer={
+        <>
           <button
             type="button"
             className={
@@ -84,8 +69,25 @@ export function LoginPage({ snapshot }: LoginPageProps) {
           >
             {t('login.langEn')}
           </button>
-        </footer>
-      </div>
-    </main>
+        </>
+      }
+    >
+      <LoginContainer snapshot={snapshot} />
+
+      {(showForgot || showRegister) && (
+        <nav className={styles.entryNav}>
+          {showForgot && (
+            <Link className={styles.entryLink} to={ssoPath('/sso/reset')}>
+              {t('login.forgotPassword')}
+            </Link>
+          )}
+          {showRegister && (
+            <Link className={styles.entryLink} to={ssoPath('/sso/register')}>
+              {t('login.register')}
+            </Link>
+          )}
+        </nav>
+      )}
+    </AppLayout>
   );
 }

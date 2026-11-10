@@ -32,9 +32,9 @@ export const login: typeof zhLogin = {
   'login.confirmPasswordLabel': 'Confirm password',
   'login.errPasswordMismatch': 'Passwords do not match',
   'login.attemptsLeft': '{count} attempts left',
-  'login.registerMethodPassword': 'Register with username and password',
-  'login.registerMethodOtpSms': 'Register with phone number',
-  'login.registerMethodOtpEmail': 'Register with email',
+  'login.registerMethodPassword': 'Username and password',
+  'login.registerMethodOtpSms': 'Phone number',
+  'login.registerMethodOtpEmail': 'Email',
   // ---- 重置页（ResetPage）--------------------------------------------------
   'login.reset': 'Reset password',
   'login.newPasswordLabel': 'New password',

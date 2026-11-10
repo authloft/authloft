@@ -188,10 +188,15 @@ function renderRegisterView(init: Record<string, unknown> = {}): string {
 }
 
 function renderResetView(init: Record<string, unknown> = {}): string {
+  // success 帧的登录页链接经 Link 渲染，消费 router 上下文。
   return renderToStaticMarkup(
     createElement(
-      resetMod.ResetPageView,
-      viewProps({ snapshot: RESET_SNAPSHOT, ...init }) as never,
+      MemoryRouter,
+      { initialEntries: ['/sso/reset'] },
+      createElement(
+        resetMod.ResetPageView,
+        viewProps({ snapshot: RESET_SNAPSHOT, ...init }) as never,
+      ),
     ),
   );
 }
@@ -462,9 +467,9 @@ describe('RegisterPageView 状态帧渲染', () => {
 
   test('otp_email 首帧：方式 tab + challenge 段（目标输入 + captcha 容器，§2.3 行 447）', () => {
     const markup = renderRegisterView();
-    expect(markup).toContain('用户名密码注册');
-    expect(markup).toContain('手机号注册');
-    expect(markup).toContain('邮箱注册');
+    expect(markup).toContain('用户名密码');
+    expect(markup).toContain('手机号');
+    expect(markup).toContain('邮箱');
     expect(markup).toContain('邮箱'); // challengeFields label
     expect(markup).toContain('发送验证码'); // OTPForm challenge 段（复用，§4.4 行 464）
     expect(markup).toContain('<div></div>'); // CaptchaWidget 容器（type=image）
@@ -1016,7 +1021,7 @@ describe('LoginApp 路由分派：/sso/register、/sso/reset', () => {
     const html = renderLoginApp('/sso/register', REGISTER_SNAPSHOT);
     expect(html).toContain('<h1>注册</h1>');
     expect(html).toContain('name="username"'); // §2.3 行 451 直入帧
-    expect(html).toContain('用户名密码注册');
+    expect(html).toContain('用户名密码');
   });
 
   test('/sso/reset → ResetPage（challenge 帧）', () => {
