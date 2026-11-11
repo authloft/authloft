@@ -14,6 +14,7 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
 
@@ -47,6 +48,9 @@ type MFABuilder struct {
 	// webauthn」）不再注入 methods，用户不致「选了才遭
 	// dispatch 拒绝」。nil = 不过滤（既有装配与单测行为，保持零回归）。
 	Factors FactorLookup
+	// Policy 验证内核因子策略（§3.7 / §6.1）：允许因子集合的唯一来源；
+	// nil 时用内核默认策略表（§1.10.2）。
+	Policy FactorPolicy
 }
 
 // NewMFABuilder 注入依赖。
@@ -91,7 +95,7 @@ func (b *MFABuilder) Build(ctx context.Context, uid int64) (*ssov1.Mfa, bool, er
 		return nil, false, nil
 	}
 
-	allowed := mfaAllowed(b.Settings)
+	allowed := b.allowedFactors()
 	var methods []*ssov1.MfaMethod
 	degradedLost := false // webauthn 因降级被剔除且该用户已绑定（唯一可用因子候选）
 	for _, method := range mfaOrder {
@@ -215,6 +219,20 @@ func (b *MFABuilder) hasCredential(ctx context.Context, uid int64, kind string) 
 		return false, err
 	}
 	return c != nil && c.IsEnabled == 1, nil
+}
+
+// allowedFactors 允许因子集合由验证内核策略（§1.10.2 的 mfa 行）给出上限，
+// 再与运行期 settings.mfa_methods 取交集（§3.7 策略判定唯一入口）；
+// 与主体已绑定 / 已启用因子的交集在 Build 的逐因子分支内完成（约束 1）。
+func (b *MFABuilder) allowedFactors() map[string]bool {
+	cfg := mfaAllowed(b.Settings)
+	allowed := make(map[string]bool, len(cfg))
+	for _, m := range factorPolicy(b.Policy).Factors(verification.BizPurposeMFA) {
+		if cfg[m] {
+			allowed[m] = true
+		}
+	}
+	return allowed
 }
 
 func mfaAllowed(s SettingsReader) map[string]bool {

@@ -23,7 +23,7 @@ func TestMethodsLoginFiltersAndOrders(t *testing.T) {
 		},
 		slices: map[string][]string{settings.KeyLoginMethods: {"thirdparty", "otp_email", "password"}},
 	}
-	gate := captcha.NewGate(s, fakeCatalog{p: &captcha.Provider{ProviderKey: "turnstile-1", Type: "turnstile", SiteKey: "site-1"}}, &fakeCaptchaVerifier{})
+	gate := captcha.NewGate(s, fakeCatalog{p: &captcha.Provider{ProviderKey: "turnstile-1", Type: "turnstile", SiteKey: "site-1"}}, &fakeCaptchaGate{})
 	providers := fakeProviders{list: []ThirdPartyProvider{
 		{ProviderKey: "wechat", DisplayName: "微信", Channel: "qrcode", SortOrder: 20},
 		{ProviderKey: "qq", DisplayName: "QQ", Channel: "redirect", SortOrder: 10},

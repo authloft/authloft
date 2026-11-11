@@ -43,11 +43,6 @@ type CredentialRepo interface {
 	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
 }
 
-// CaptchaVerifier 人机校验能力注入接口（具体触发 / 降级归 captcha/gate.go，§9.3）。
-type CaptchaVerifier interface {
-	Verify(ctx context.Context, captcha *CaptchaInput) error
-}
-
 // Limiter 限流能力注入接口：Take 申请一次额度，ok=false 时 retryAfter
 // 为建议等待时长（冷却 / 日限额由调用方按 key 区分，§10）。
 type Limiter interface {
@@ -68,10 +63,18 @@ type FactorContext struct {
 	// Captcha 本次请求提交的人机校验凭据；未提交为 nil。
 	Captcha *CaptchaInput
 
-	CaptchaVerifier CaptchaVerifier
-	Limiter         Limiter
-	Users           UserRepo
-	Credentials     CredentialRepo
+	// BizPurpose 本次执行的业务用途（§10.1 / §11.6.7）：登录过程态内取
+	// login / register / reset / mfa，step-up 取 §11.6.7 封闭集合。
+	BizPurpose string
+	// Subject 主体标识：登录链路为 tid，step-up 为会话 uid（§10.1）。
+	Subject string
+	// ChallengeID 本轮挑战标识：登录链路为 LoginTokenPayload.ch.nonce，
+	// step-up 为 ChallengeTokenPayload.nonce（§10.1）。
+	ChallengeID string
+
+	Limiter     Limiter
+	Users       UserRepo
+	Credentials CredentialRepo
 }
 
 // Field 渲染侧输入字段描述（接口文档 §1.3 行 114、§1.11）。

@@ -10,12 +10,29 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
 	"authloft/internal/logx"
+	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
 
 // FactorLookup 是注册表的窄接口，便于编排层单测替换。
 type FactorLookup interface {
 	Get(kind factor.FactorKind) (factor.Factor, error)
+}
+
+// FactorPolicy 验证内核因子策略的窄接口（§3.7 / §6.1 / §6.3）：
+// 因子放行判定唯一入口，编排层只保留调用边界。
+type FactorPolicy interface {
+	Allows(bp verification.BizPurpose, method string) bool
+	Factors(bp verification.BizPurpose) []string
+}
+
+// factorPolicy 未注入时落到内核默认策略表（§1.10.2），保证生产装配
+// 零改动也能让策略判定生效。
+func factorPolicy(p FactorPolicy) FactorPolicy {
+	if p != nil {
+		return p
+	}
+	return verification.DefaultPolicy()
 }
 
 // Dispatched 是校验通过后的分派结果。
@@ -30,6 +47,8 @@ type Dispatched struct {
 type Dispatcher struct {
 	Registry FactorLookup
 	Settings SettingsReader
+	// Policy 验证内核因子策略（§3.7）；nil 走内核默认策略表。
+	Policy FactorPolicy
 }
 
 // stepSetPassword 注册 / 重置专用 step（§1.4 行 165 请求侧 step）。
@@ -74,7 +93,7 @@ func (d *Dispatcher) Resolve(ctx context.Context, flow string, p *token.LoginTok
 		return nil, StatusStepInvalid
 	}
 
-	usage, ok := resolveUsage(f.Usages(), p)
+	usage, ok := d.resolveUsage(f.Usages(), p, kind)
 	if !ok {
 		return nil, StatusStepInvalid
 	}
@@ -187,17 +206,22 @@ func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s Set
 	}
 }
 
-// resolveUsage 判定主因子 / 二次因子。二次因子阶段必须 uid != 0 且 passed 非空
-// （§7.3 行 985-1004）；仅 secondary 的方式在此阶段之前使用一律 step_invalid。
-func resolveUsage(usages []factor.Usage, p *token.LoginTokenPayload) (factor.Usage, bool) {
+// resolveUsage 判定主因子 / 二次因子。二次因子阶段必须 uid != 0 且 passed
+// 非空（§7.3）；该阶段的因子放行改由验证内核按 biz_purpose=mfa 策略表判定
+// （§6.1 / §6.3 / §3.7），不再以因子的 Usages() 作为放行依据。主因子能力
+// （是否可承担 primary）仍按 §1.10.1 能力表由 Usages() 表达，放行由
+// methodStatus 的 login_methods 承担（policy 表不含主因子，§1.10.2 约束 2）。
+func (d *Dispatcher) resolveUsage(usages []factor.Usage, p *token.LoginTokenPayload, kind factor.FactorKind) (factor.Usage, bool) {
 	hasPrimary := usageContains(usages, factor.UsagePrimary)
-	hasSecondary := usageContains(usages, factor.UsageSecondary)
 	secondaryStage := p != nil && p.GetUid() != 0 && len(p.GetPassed()) > 0
 
 	switch {
-	case secondaryStage && hasSecondary:
+	case secondaryStage:
+		if !factorPolicy(d.Policy).Allows(verification.BizPurposeMFA, string(kind)) {
+			return "", false
+		}
 		return factor.UsageSecondary, true
-	case !secondaryStage && hasPrimary:
+	case hasPrimary:
 		return factor.UsagePrimary, true
 	default:
 		return "", false

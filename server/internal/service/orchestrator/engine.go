@@ -52,18 +52,18 @@ type PasswordFailures interface {
 
 // UserRefResolver 由登录标识推导密码失败计数的 user_ref：生产装配
 // 注入 factor/password 的共用实现——引擎读计数与因子写计数共用唯一定义
-//（用户存在 → "{userID}"；不存在 → "{ip}|{sha256(identifier)}"，§8.1 行
+// （用户存在 → "{userID}"；不存在 → "{ip}|{sha256(identifier)}"，§8.1 行
 // 1027）。未注入（nil）时跳过失败计数读取，渐进式保护第 1 级不触发。
 type UserRefResolver interface {
 	UserRef(ctx context.Context, identifier string) (string, error)
 }
 
 // FactorDeps 是因子执行所需的注入依赖（不含任何存储句柄）。
+// captcha 由场景守卫在进入因子前判定（§9.3），不注入因子上下文。
 type FactorDeps struct {
-	CaptchaVerifier factor.CaptchaVerifier
-	Limiter         factor.Limiter
-	Users           factor.UserRepo
-	Credentials     factor.CredentialRepo
+	Limiter     factor.Limiter
+	Users       factor.UserRepo
+	Credentials factor.CredentialRepo
 }
 
 // Request 是引擎单次调用入参。LoginToken 为空表示流程首步。
@@ -174,13 +174,19 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 		LoginToken: req.LoginToken,
 		// loadPayload 首步也会生成 tid / 选定 flow，Start 之前即可用
 		// （主因子 challenge 需以 owner=tid、purpose=flow 写码，§10.1 行 1121）。
-		Login:           p,
-		Payload:         req.Payload,
-		Captcha:         req.Captcha,
-		CaptchaVerifier: e.repo.CaptchaVerifier,
-		Limiter:         e.repo.Limiter,
-		Users:           e.repo.Users,
-		Credentials:     e.repo.Credentials,
+		Login:   p,
+		Payload: req.Payload,
+		Captcha: req.Captcha,
+		// 验证内核调用边界（§3.8 / §6.3）：因子以 biz_purpose + subject +
+		// challengeId 驱动，不感知业务信封；三元组取自 login_token 状态
+		// （§10.1），与 start() 写入的 ch 同源。captcha 由场景守卫在进入
+		// 因子前判定（§9.3），不再注入校验器到因子上下文。
+		BizPurpose:  flowPurpose(flow, d.Usage),
+		Subject:     p.GetTid(),
+		ChallengeID: p.GetCh().GetNonce(),
+		Limiter:     e.repo.Limiter,
+		Users:       e.repo.Users,
+		Credentials: e.repo.Credentials,
 	}
 
 	if req.Step == "challenge" {
@@ -243,6 +249,15 @@ func flowAccepts(endpointFlow, payloadFlow string) bool {
 	default:
 		return false
 	}
+}
+
+// flowPurpose 登录过程态内的业务用途（§1.4 / §10.1）：主因子取 flow，
+// 二次因子阶段取 mfa；与 start() 写 ch.purpose 同源，供因子上下文三元组使用。
+func flowPurpose(flow string, usage factor.Usage) string {
+	if usage == factor.UsageSecondary {
+		return "mfa"
+	}
+	return flow
 }
 
 // evaluateCaptcha 在 Start 之前完成拦截（§2.2 第 4 步）。
@@ -316,10 +331,9 @@ func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.L
 	if err != nil {
 		return failed()
 	}
-	purpose := flow
+	purpose := flowPurpose(flow, d.Usage)
 	target := targetOf(req.Payload)
 	if d.Usage == factor.UsageSecondary {
-		purpose = "mfa"
 		// 二次因子目标只能取自 uid 绑定资料，由因子自行读取；这里不落请求参数。
 		target = ""
 	}

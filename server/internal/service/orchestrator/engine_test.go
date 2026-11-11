@@ -95,20 +95,15 @@ type fakeCatalog struct {
 
 func (f fakeCatalog) Current(context.Context) (*captcha.Provider, error) { return f.p, f.err }
 
-type fakeCaptchaVerifier struct {
+type fakeCaptchaGate struct {
 	err   error
 	calls int
 }
 
-func (f *fakeCaptchaVerifier) Verify(context.Context, string, captcha.Submission) error {
+func (f *fakeCaptchaGate) Verify(context.Context, string, captcha.Submission) error {
 	f.calls++
 	return f.err
 }
-
-// fakeFactorCaptcha 是 factor.CaptchaVerifier 的 Fake（与 captcha.Verifier 不同契约）。
-type fakeFactorCaptcha struct{}
-
-func (fakeFactorCaptcha) Verify(context.Context, *factor.CaptchaInput) error { return nil }
 
 type fakeFailures struct {
 	n   int64
@@ -210,7 +205,7 @@ type testEngineDeps struct {
 	creds    *fakeCredentials
 	failures PasswordFailures
 	userRef  UserRefResolver
-	verifier *fakeCaptchaVerifier
+	verifier *fakeCaptchaGate
 	sessions *fakeSessionWriter
 	oidc     *fakeOIDCIssuer
 	events   *fakeEvents
@@ -226,7 +221,7 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 		slices: map[string][]string{settings.KeyLoginMethods: {"password", "otp_sms", "otp_email", "webauthn", "thirdparty"}, settings.KeyMfaMethods: {"totp", "otp_sms", "otp_email", "webauthn"}},
 	}
 	reg := &fakeRegistry{factors: map[factor.FactorKind]factor.Factor{}}
-	verifier := &fakeCaptchaVerifier{}
+	verifier := &fakeCaptchaGate{}
 	catalog := fakeCatalog{p: &captcha.Provider{ProviderKey: "builtin_image", Type: "image"}}
 	gate := captcha.NewGate(s, catalog, verifier)
 	users := &fakeUsers{}
@@ -260,9 +255,8 @@ func (d *testEngineDeps) engine(state *State) *Engine {
 		Failures:   d.failures,
 		UserRef:    d.userRef,
 		Factor: FactorDeps{
-			CaptchaVerifier: fakeFactorCaptcha{},
-			Users:           d.users,
-			Credentials:     d.creds,
+			Users:       d.users,
+			Credentials: d.creds,
 		},
 		NewTID: func() (string, error) { return "tid-1", nil },
 	})
@@ -973,7 +967,7 @@ func TestEngineSuccessInvokesSessionTokenSink(t *testing.T) {
 }
 
 // TestEngineSessionInBodySuppressesSink 无 Cookie 场景既有语义不回归
-//（§1.3 行 135）：SessionInBody=true → 令牌走信封 session_token 字段，
+// （§1.3 行 135）：SessionInBody=true → 令牌走信封 session_token 字段，
 // ctx 写点不回调（挂点方据此零 Set-Cookie）。
 func TestEngineSessionInBodySuppressesSink(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
@@ -1161,7 +1155,7 @@ const kindMfaSetting = "mfa_setting"
 // TestEngineMfaUserEnabledBySettingRow（方案 B 真实链路）：用户自选
 // 启用（种 mfa_setting 行 is_enabled=1，user.mfa_required=0）→ 引擎 Submit
 // 主因子通过 → 返回 mfa_required 信封。覆盖三条边界：无行且列 0 → 不要求
-//（success）；列 1 无行 → 仍要求（策略强制）；行存在但 is_enabled=0 →
+// （success）；列 1 无行 → 仍要求（策略强制）；行存在但 is_enabled=0 →
 // 不要求。关闭 = 删行 → 随读随消，SetMfa / 关闭守卫 / mfaPolicy 零改动。
 func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)

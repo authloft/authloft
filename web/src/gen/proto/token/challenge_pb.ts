@@ -14,10 +14,11 @@ export const file_token_challenge: GenFile = /*@__PURE__*/
 
 /**
  * ChallengeTokenPayload 是进行中的一次性挑战载荷（docs/后端架构.md §11.6.7）。
- * 复用 §11.6.1 封装与加解密实现；AAD purpose 只取 webauthn（webauthn_enroll
- * 场景，密钥 sign_key.webauthn）或 verification（step-up 挑战，密钥
- * sign_key.verification），与 sign_key.login 互不解。AAD purpose 不进载荷，
- * 载荷内业务用途统一叫 biz_purpose，两套取值各自封闭、解出后分别断言。
+ * 复用 §11.6.1 封装与加解密实现；所有挑战令牌（webauthn_enroll 注册挑战与
+ * step-up 挑战统一）AAD purpose 取 challenge、密钥用 sign_key.challenge，与
+ * 断言令牌（purpose=verification、sign_key.verification）及 sign_key.login
+ * 互不解。AAD purpose 不进载荷，载荷内业务用途统一叫 biz_purpose，两套取值
+ * 各自封闭、解出后分别断言。
  *
  * @generated from message token.ChallengeTokenPayload
  */
