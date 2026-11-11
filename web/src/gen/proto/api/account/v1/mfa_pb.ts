@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/mfa.proto.
  */
 export const file_api_account_v1_mfa: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdtZXRob2RzGAEgAygJIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIhMKEVVuYmluZFRvdHBSZXF1ZXN0IjoKFVJlY292ZXJ5Q29kZXNSZXNwb25zZRINCgVjb2RlcxgBIAMoCRISCgpjcmVhdGVkX2F0GAIgASgDIjAKHlJlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzUmVxdWVzdBIOCgZhY3Rpb24YASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z");
+  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdtZXRob2RzGAEgAygJIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIi8KEVVuYmluZFRvdHBSZXF1ZXN0EhoKEnZlcmlmaWNhdGlvbl90b2tlbhgBIAEoCSI6ChVSZWNvdmVyeUNvZGVzUmVzcG9uc2USDQoFY29kZXMYASADKAkSEgoKY3JlYXRlZF9hdBgCIAEoAyIwCh5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QSDgoGYWN0aW9uGAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw");
 
 /**
  * GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
@@ -231,14 +231,20 @@ export const BindTotpResponseSchema: GenMessage<BindTotpResponse> = /*@__PURE__*
   messageDesc(file_api_account_v1_mfa, 5);
 
 /**
- * UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
- * 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
- * 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
- * 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
+ * UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+ * 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
+ * verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+ * 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
  *
  * @generated from message api.account.v1.UnbindTotpRequest
  */
 export type UnbindTotpRequest = Message<"api.account.v1.UnbindTotpRequest"> & {
+  /**
+   * 敏感操作二次验证通过后的不透明断言令牌；缺失 → verification_required（§3.8.5）。
+   *
+   * @generated from field: string verification_token = 1;
+   */
+  verificationToken: string;
 };
 
 /**

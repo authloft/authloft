@@ -10,6 +10,9 @@ import "api/account/v1/security.proto";
 import "api/account/v1/mfa.proto";
 import "api/account/v1/webauthn.proto";
 import "api/account/v1/thirdparty.proto";
+// 敏感操作二次验证的四组消息单一结构源在 api.common.v1，方法挂本域
+// 与 SsoService，不新建业务域（§3.8、§12.9）。
+import "api/common/v1/verification.proto";
 // GetThirdpartyTicket 的响应复用登录流程信封（§1.3 行 152-154 把 ticket / bind 字段的
 // 出现场景明列为 AccountService/GetThirdpartyTicket；§3.7.1 B 行 1015-1026 的响应形状
 // 即其子集），跨包引用 api.sso.v1.LoginFlowResponse（§12.9 行 1748 单一结构源）。
@@ -33,6 +36,7 @@ option go_package = "authloft/gen/go/api/account/v1;accountv1";
 //   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
 //   UnbindThirdparty           §3.7 行 937    ThirdpartyOauth          §3.7.1 A 行 938
 //   GetThirdpartyTicket        §3.7 行 939    GetEvents                §3.7 行 1038
+//   StartVerification          §3.8 行 1227   SubmitVerification       §3.8 行 1228
 // 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0 行 64），不入本 service。
 // 空响应方法共用同包 OkResponse（空消息，§1.0 行 57 成功响应即消息本身），
 // 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
@@ -60,9 +64,8 @@ service AccountService {
   rpc SetMfa(SetMfaRequest) returns (OkResponse);
   // TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
   rpc BindTotp(BindTotpRequest) returns (BindTotpResponse);
-  // 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
-  // MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
-  // 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+  // 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+  // 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
   rpc UnbindTotp(UnbindTotpRequest) returns (OkResponse);
   // 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
   rpc RegenerateRecoveryCodes(RegenerateRecoveryCodesRequest) returns (RecoveryCodesResponse);
@@ -85,4 +88,8 @@ service AccountService {
   rpc GetThirdpartyTicket(GetThirdpartyTicketRequest) returns (api.sso.v1.LoginFlowResponse);
   // 本人登录记录（仅成功记录，§3.7 行 1038）。
   rpc GetEvents(GetEventsRequest) returns (GetEventsResponse);
+  // 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+  rpc StartVerification(api.common.v1.StartVerificationRequest) returns (api.common.v1.StartVerificationResponse);
+  // 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
+  rpc SubmitVerification(api.common.v1.SubmitVerificationRequest) returns (api.common.v1.SubmitVerificationResponse);
 }

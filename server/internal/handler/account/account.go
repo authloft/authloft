@@ -10,8 +10,7 @@
 // §3.4、GetMfa / SetMfa / BindTotp /
 // RegenerateRecoveryCodes §3.5、GetEvents §3.7 行 1057——五族 service
 // 已交付，本层做会话判定、proto ↔ 领域结构转换与错误映射），
-// 21 方法实装；UnbindTotp（§3.5 解绑前须完成一次 MFA 验证，验证流程
-// 此处不单独定义）为契约先行占位，恒返回 unimplemented；
+// 增加 §3.8 二次验证 Start/Submit 两方法与 UnbindTotp 消费断言；
 // 未装配 service 的方法仍由生成的 UnimplementedAccountServiceHandler
 // 语义返回 unimplemented（不自造错误信封）。
 package account
@@ -21,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -38,6 +38,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -139,6 +140,21 @@ type MfaManager interface {
 	RegenerateRecoveryCodes(ctx context.Context, uid int64, action string) (*accountsvc.RecoveryCodesResult, error)
 }
 
+// MfaUnbinder 解绑能力窄接口（§20）：生产 *accountsvc.MfaService 实现；
+// 未实现该能力的装配 / 测试桩返回 unimplemented。与 MfaManager 分离，
+// 避免既有两步验证族 fake 被迫扩接口。
+type MfaUnbinder interface {
+	UnbindTotp(ctx context.Context, uid int64, token string) error
+}
+
+// Verification step-up 服务窄接口（§20 依赖注入）：生产注入
+// *verification.Service，测试可传 fake；nil（未装配）时两个方法返回
+// unimplemented。
+type Verification interface {
+	Start(ctx context.Context, in verification.StartInput) (*verification.StartResult, *captcha.Failure, error)
+	Submit(ctx context.Context, in verification.SubmitInput) (*verification.SubmitResult, error)
+}
+
 // EventReader 本人事件日志 service 窄接口（§20 依赖注入）：生产注入
 // *accountsvc.EventsService，测试可传 fake；nil（未装配）时 GetEvents 返回
 // unimplemented。
@@ -182,9 +198,8 @@ var (
 	errMfaInternal = errors.New("internal error")
 	// errMfaInvalidStep BindTotp step 取值非法。
 	errMfaInvalidStep = errors.New("invalid step")
-	// errUnbindTotpNotImplemented UnbindTotp 契约先行占位（解绑前的 MFA
-	// 验证流程未单独定义，实装前一律 unimplemented）。
-	errUnbindTotpNotImplemented = errors.New("unbind totp not implemented")
+	// errVerificationNotConfigured 未装配 step-up 服务（测试桩）。
+	errVerificationNotConfigured = errors.New("verification service not configured")
 	// errEventsNotConfigured 未装配事件日志 service（测试桩）。
 	errEventsNotConfigured = errors.New("events service not configured")
 )
@@ -210,21 +225,30 @@ type Handler struct {
 	// al_session——service 层 IncEpoch 已令全部旧令牌失效，浏览器侧清
 	// Cookie 属 handler 收尾；sso handler 同款注入）。
 	cookies *session.Cookie
+	// verification step-up 服务（§3.8）；nil（测试 / 未装配）时两个
+	// 二次验证方法返回 unimplemented。
+	verification Verification
 }
 
 // NewWithServices 全依赖构造：八基础依赖 + 五族 service
-//（avatar / password / bindcontact / mfa / events）与会话 Cookie
+// （avatar / password / bindcontact / mfa / events）与会话 Cookie
 // 构造器（ChangePassword 清除 al_session 用；
 // session.Cookie 属性构造器与拦截器同源，sso handler cookies 同款注入）。
+// 末尾可变参数 v 注入 step-up 服务（§3.8），省略时该族方法返回
+// unimplemented；既有装配点与测试桩的五参数调用保持不变。
 // 各 service 可为 nil（对应方法返回 unimplemented，测试 / 降级装配用）；
 // cookies 为 nil 时跳过 Cookie 清除。
-func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie) *Handler {
-	return &Handler{
+func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie, v ...Verification) *Handler {
+	h := &Handler{
 		users: users, creds: creds, settings: settings, providers: providers,
 		captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile,
 		avatar: avatar, password: password, bindcontact: bindcontact, mfa: mfa,
 		events: events, cookies: cookies,
 	}
+	if len(v) > 0 {
+		h.verification = v[0]
+	}
+	return h
 }
 
 // GetProfile（接口文档 §3.1 行 774-813 / §3.2 行 820）：从会话取 uid → 读
@@ -257,7 +281,7 @@ func (h *Handler) GetProfile(ctx context.Context, req *connect.Request[accountv1
 // 0 / 空串）= 覆盖（gender 可改回 0=保密、字符串字段可显式清空）；
 // nickname / avatarUrl / profile 子字段分别按 has 处理；用户名 / 手机号 /
 // 邮箱不可由此修改（proto 不含该三项，契约结构上即不可改）。仅本人
-//（会话 uid，不接受任何入参目标）；全字段未设置 = 合法空操作（零写库
+// （会话 uid，不接受任何入参目标）；全字段未设置 = 合法空操作（零写库
 // 直接成功，§3.2 无明确口径时由实现裁量）。会话要求同 GetProfile：session
 // 拦截器放行匿名（既定语义），ctx 无 uid 即 unauthenticated（401）；
 // 编排在 service/account.ProfileService，本层做会话判定与错误映射。
@@ -888,7 +912,7 @@ func mapAvatarError(op string, err error) error {
 // service/account.PasswordService（策略校验、旧密码校验、credential 更新、
 // IncEpoch + al:pwdep 同步、审计）；成功为空响应。改密成功后旧会话与全部
 // 已颁发令牌经 epoch 失效链失效（行 879），浏览器侧清除 al_session 收尾
-//（Cookie 构造器 Clear，与 session 拦截器同一写出出口 AddSessionCookie；
+// （Cookie 构造器 Clear，与 session 拦截器同一写出出口 AddSessionCookie；
 // 未注入时跳过——测试装配用）。
 func (h *Handler) ChangePassword(ctx context.Context, req *connect.Request[accountv1.ChangePasswordRequest]) (*connect.Response[accountv1.OkResponse], error) {
 	if h.password == nil {
@@ -909,7 +933,7 @@ func (h *Handler) ChangePassword(ctx context.Context, req *connect.Request[accou
 
 // mapPasswordError 改密 service 错误 → Connect 形态（§1.5 行 181-195 统一
 // 口径）：newPassword 不满足策略 → invalid_argument + ErrorInfo{password_weak}
-//（§3.3 行 879）；旧密码校验失败 → invalid_credentials（§1.6 行 247/269
+// （§3.3 行 879）；旧密码校验失败 → invalid_credentials（§1.6 行 247/269
 // 默认口径——password_incorrect 系笔误，不另设码）；参数类 →
 // invalid_request；用户不存在 → not_found；其余原样上抛由错误包装拦截器
 // 消毒。
@@ -947,7 +971,7 @@ func mapPasswordError(op string, err error) error {
 // 兜底），本层传空串由 service bindSourceIP 兜底，不自造 Header 解析。
 
 // BindPhone（§3.4 行 887）：手机号绑定 / 换绑两步同端点，由 step 区分
-//（challenge 需请求顶层 captcha、payload {phone}；verify payload
+// （challenge 需请求顶层 captcha、payload {phone}；verify payload
 // {phone, code}）；成功为空响应。
 func (h *Handler) BindPhone(ctx context.Context, req *connect.Request[accountv1.BindPhoneRequest]) (*connect.Response[accountv1.OkResponse], error) {
 	if h.bindcontact == nil {
@@ -1011,7 +1035,7 @@ func captchaSubmission(c *ssov1.CaptchaPayload) *captcha.Submission {
 // 行 191 占用）；user_not_found → not_found（404，行 190 资源不存在）；
 // 限流 / 冷却 / 日限额 → resource_exhausted（429，行 192）；invalid_code
 // 经 errors.As 取 BindInvalidCodeError.AttemptsLeft 挂 ErrorInfo.attemptsLeft
-//（§1.5 行 222「剩余尝试次数」）；captcha 失败经 errors.As 取
+// （§1.5 行 222「剩余尝试次数」）；captcha 失败经 errors.As 取
 // BindCaptchaFailure.Config 并列 CaptchaConfig detail（§2.5）；其余原样
 // 上抛由错误包装拦截器消毒。
 func mapBindError(op string, err error) error {
@@ -1094,13 +1118,12 @@ func withBindCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 	return coded
 }
 
-// —— 两步验证族四方法 + UnbindTotp 占位（接口文档 §3.5 行 900-925）——
+// —— 两步验证族四方法 + UnbindTotp（接口文档 §3.5 行 900-925）——
 //
 // 请求绑定（step 分派、MfaDetail → proto 投影）与错误映射归本层，明细
-// 聚合 / mfa_setting 写入 / TOTP 绑定 / 恢复码生成在
+// 聚合 / mfa_setting 写入 / TOTP 绑定 / 恢复码生成与解绑在
 // service/account.MfaService。本族接口均需 al_session（§1.2 行 96）。
-// 原 GetRecoveryCodes 已移除（存量恢复码不再回显）；新增 UnbindTotp
-// 为契约先行占位，实装前恒返回 unimplemented。
+// 原 GetRecoveryCodes 已移除（存量恢复码不再回显）。
 
 // GetMfa（§3.5 行 920）：五因子绑定明细 + recoveryIssuedAt（摘要走 §3.2
 // mfaPolicy，本接口只出明细不重复）。
@@ -1153,7 +1176,7 @@ func (h *Handler) SetMfa(ctx context.Context, req *connect.Request[accountv1.Set
 
 // BindTotp 绑定两步（§3.5 行 922-923，step 分派同 RegisterWebauthn 惯例）：
 // challenge → {secret, otpauthUrl, qrcodeContent} 前端绘制二维码；verify
-//（{secret, code}）→ {recoveryCodes} 验证一次后生效并同一响应下发 10 个
+// （{secret, code}）→ {recoveryCodes} 验证一次后生效并同一响应下发 10 个
 // 恢复码；step 非法 → invalid_request。
 func (h *Handler) BindTotp(ctx context.Context, req *connect.Request[accountv1.BindTotpRequest]) (*connect.Response[accountv1.BindTotpResponse], error) {
 	if h.mfa == nil {
@@ -1170,9 +1193,9 @@ func (h *Handler) BindTotp(ctx context.Context, req *connect.Request[accountv1.B
 			return nil, mapMfaError("bind totp challenge", err)
 		}
 		return connect.NewResponse(&accountv1.BindTotpResponse{
-			Secret:         ch.Secret,
-			OtpauthUrl:     ch.OtpauthUrl,
-			QrcodeContent:  ch.QrcodeContent,
+			Secret:        ch.Secret,
+			OtpauthUrl:    ch.OtpauthUrl,
+			QrcodeContent: ch.QrcodeContent,
 		}), nil
 	case "verify":
 		codes, err := h.mfa.BindTotpVerify(ctx, uid, req.Msg.GetSecret(), req.Msg.GetCode())
@@ -1189,11 +1212,147 @@ func (h *Handler) BindTotp(ctx context.Context, req *connect.Request[accountv1.B
 }
 
 // UnbindTotp（§3.5 行 907）：解除当前 TOTP 绑定，成功为空响应。前置须
-// 完成一次 MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式），验证
-// 的具体流程与承载此处不单独定义。契约先行：通用验证落定前不实装，
-// 恒返回 unimplemented（不自造业务错误信封）。
-func (h *Handler) UnbindTotp(_ context.Context, _ *connect.Request[accountv1.UnbindTotpRequest]) (*connect.Response[accountv1.OkResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errUnbindTotpNotImplemented)
+// 经 §3.8 取得 verificationToken（biz_purpose=unbind_totp）；缺断言返回
+// verification_required，无效 / 过期 / 重放返回 verification_invalid，
+// 通过后才删除绑定（编排与三重校验在 service/account.MfaService）。
+func (h *Handler) UnbindTotp(ctx context.Context, req *connect.Request[accountv1.UnbindTotpRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	unbinder, ok := h.mfa.(MfaUnbinder)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := unbinder.UnbindTotp(ctx, uid, req.Msg.GetVerificationToken()); err != nil {
+		return nil, mapMfaError("unbind totp", err)
+	}
+	return connect.NewResponse(&accountv1.OkResponse{}), nil
+}
+
+// StartVerification（§3.8.1、§3.8.2，AccountService 组）：主体只由会话
+// al_session 的 uid 推导，请求不得携带 uid；成功下发挑战令牌与可用因子。
+func (h *Handler) StartVerification(ctx context.Context, req *connect.Request[commonv1.StartVerificationRequest]) (*connect.Response[commonv1.StartVerificationResponse], error) {
+	if h.verification == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, failure, err := h.verification.Start(ctx, verification.StartInput{
+		Domain:     verification.DomainAccount,
+		BizPurpose: verification.BizPurpose(req.Msg.GetBizPurpose()),
+		Method:     req.Msg.GetMethod(),
+		Operation:  req.Msg.GetOperation(),
+		SessionUID: strconv.FormatInt(uid, 10),
+		Captcha:    verification.ParseCaptchaSubmission(req.Msg.GetCaptcha()),
+	})
+	if err != nil {
+		return nil, mapVerificationError("account", err)
+	}
+	if failure != nil {
+		return nil, encodeAccountCaptchaFailure(failure)
+	}
+	return connect.NewResponse(startVerificationResponse(res)), nil
+}
+
+// SubmitVerification（§3.8.1、§3.8.2，AccountService 组）：提交二次因子，
+// 成功返回不透明断言令牌交回发起该敏感操作的接口。loginToken 仅 SsoService
+// 组可用，本组收到一律按 invalid_request 拒绝（§3.8.5）。
+func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[commonv1.SubmitVerificationRequest]) (*connect.Response[commonv1.SubmitVerificationResponse], error) {
+	if h.verification == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
+	}
+	if req.Msg.GetLoginToken() != "" {
+		return nil, mapVerificationError("account", &verification.Error{Code: "invalid_request"})
+	}
+	res, err := h.verification.Submit(ctx, verification.SubmitInput{
+		Domain:         verification.DomainAccount,
+		ChallengeToken: req.Msg.GetChallengeToken(),
+		Method:         req.Msg.GetMethod(),
+		Payload:        req.Msg.GetPayload(),
+	})
+	if err != nil {
+		return nil, mapVerificationError("account", err)
+	}
+	return connect.NewResponse(&commonv1.SubmitVerificationResponse{
+		VerificationToken: res.VerificationToken,
+		ExpiresIn:         res.ExpiresIn,
+		Amr:               res.AMR,
+	}), nil
+}
+
+// mapVerificationError 把 step-up 领域失败映射为 Connect 错误体 +
+// ErrorInfo（§1.5、§3.8.5）：verification_required / verification_invalid
+// 走 failed_precondition；限流走 resource_exhausted 并带 retry_after；其余
+// 走 invalid_argument；非领域错误原样上抛，由错误包装拦截器消毒。
+func mapVerificationError(domain string, err error) error {
+	var ve *verification.Error
+	if !errors.As(err, &ve) {
+		return fmt.Errorf("account handler: verification: %w", err)
+	}
+	connCode := connect.CodeInvalidArgument
+	switch ve.Code {
+	case "verification_required", "verification_invalid":
+		connCode = connect.CodeFailedPrecondition
+	case "too_many_requests":
+		connCode = connect.CodeResourceExhausted
+	}
+	info := internalconnect.NewErrorInfo(domain, ve.Code, ve.Code)
+	info.RetryAfter = ve.RetryAfter
+	return internalconnect.WithErrorInfo(
+		connect.NewError(connCode, errors.New(ve.Code)),
+		info,
+	)
+}
+
+// encodeAccountCaptchaFailure 把 step-up 的人机校验失败编码为 Connect 错误体：
+// 错误码与当前生效的 CaptchaConfig 并列 details（§1.5、§2.5、§3.8.5），
+// 与 sso 域同款口径，不静默回落、不丢错误码与配置。
+func encodeAccountCaptchaFailure(f *captcha.Failure) error {
+	message := "captcha required"
+	if f.Code == captcha.StatusInvalid {
+		message = "captcha invalid or used"
+	}
+	coded := internalconnect.WithErrorInfo(
+		connect.NewError(connect.CodeInvalidArgument, errors.New(message)),
+		internalconnect.NewErrorInfo("account", f.Code, message),
+	)
+	return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
+		ProviderKey: f.Config.ProviderKey,
+		Type:        f.Config.Type,
+		SiteKey:     f.Config.SiteKey,
+	})
+}
+
+// startVerificationResponse 领域结论 → §3.8.2 响应消息投影。
+func startVerificationResponse(res *verification.StartResult) *commonv1.StartVerificationResponse {
+	out := &commonv1.StartVerificationResponse{
+		ChallengeToken: res.ChallengeToken,
+		ExpiresIn:      res.ExpiresIn,
+	}
+	for i := range res.Methods {
+		m := &res.Methods[i]
+		out.Methods = append(out.Methods, &commonv1.VerificationMethod{
+			Method:          m.Method,
+			Usage:           m.Usage,
+			Steps:           m.Steps,
+			ChallengeFields: m.ChallengeFields,
+			CodeLength:      m.CodeLength,
+			ResendAfter:     m.ResendAfter,
+			ExpiresIn:       m.ExpiresIn,
+			Capability:      m.Capability,
+			Providers:       m.Providers,
+		})
+	}
+	if res.NextStepKind != "" {
+		out.NextStep = &commonv1.VerificationNextStep{
+			Kind:          res.NextStepKind,
+			ChallengeData: res.ChallengeData,
+		}
+	}
+	return out
 }
 
 // RegenerateRecoveryCodes（§3.5 行 925）：重新生成即全量作废，{action:
@@ -1223,6 +1382,12 @@ func (h *Handler) RegenerateRecoveryCodes(ctx context.Context, req *connect.Requ
 // 故障 → internal 固定文案（§1.6 行 273 internal 无 ErrorInfo）；用户不
 // 存在 → not_found；其余原样上抛由错误包装拦截器消毒。
 func mapMfaError(op string, err error) error {
+	// step-up 断言类失败（缺断言 / 无效 / 重放）走 §3.8.5 的专用错误码，
+	// 不并入两步验证族的 invalid_code / code_expired 分支。
+	var ve *verification.Error
+	if errors.As(err, &ve) {
+		return mapVerificationError("account", err)
+	}
 	switch {
 	case errors.Is(err, accountsvc.ErrMfaUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err)
@@ -1306,7 +1471,7 @@ func normalizeListPage(page, size int) (int, int) {
 // mapEventsError 事件日志 service 错误 → Connect 形态（§1.5 行 181-195 统一
 // 口径）：uid 契约违约（拼装层必须注入会话 uid）→ invalid_argument +
 // ErrorInfo{invalid_request}；repo 错误原样上抛由错误包装拦截器消毒
-//（admin GetUserEvents 同款）。
+// （admin GetUserEvents 同款）。
 func mapEventsError(op string, err error) error {
 	switch {
 	case errors.Is(err, accountsvc.ErrEventsInvalidRequest):

@@ -410,14 +410,16 @@ func (x *BindTotpResponse) GetRecoveryCodes() []string {
 	return nil
 }
 
-// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
-// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
-// 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
-// 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
+// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+// 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
 type UnbindTotpRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 敏感操作二次验证通过后的不透明断言令牌；缺失 → verification_required（§3.8.5）。
+	VerificationToken string `protobuf:"bytes,1,opt,name=verification_token,json=verificationToken,proto3" json:"verification_token,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UnbindTotpRequest) Reset() {
@@ -448,6 +450,13 @@ func (x *UnbindTotpRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use UnbindTotpRequest.ProtoReflect.Descriptor instead.
 func (*UnbindTotpRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_mfa_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UnbindTotpRequest) GetVerificationToken() string {
+	if x != nil {
+		return x.VerificationToken
+	}
+	return ""
 }
 
 // RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
@@ -583,8 +592,9 @@ const file_api_account_v1_mfa_proto_rawDesc = "" +
 	"\votpauth_url\x18\x02 \x01(\tR\n" +
 	"otpauthUrl\x12%\n" +
 	"\x0eqrcode_content\x18\x03 \x01(\tR\rqrcodeContent\x12%\n" +
-	"\x0erecovery_codes\x18\x04 \x03(\tR\rrecoveryCodes\"\x13\n" +
-	"\x11UnbindTotpRequest\"L\n" +
+	"\x0erecovery_codes\x18\x04 \x03(\tR\rrecoveryCodes\"B\n" +
+	"\x11UnbindTotpRequest\x12-\n" +
+	"\x12verification_token\x18\x01 \x01(\tR\x11verificationToken\"L\n" +
 	"\x15RecoveryCodesResponse\x12\x14\n" +
 	"\x05codes\x18\x01 \x03(\tR\x05codes\x12\x1d\n" +
 	"\n" +

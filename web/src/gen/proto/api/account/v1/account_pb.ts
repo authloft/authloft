@@ -14,6 +14,8 @@ import type { DeleteWebauthnCredentialRequestSchema, GetWebauthnCredentialsReque
 import { file_api_account_v1_webauthn } from "./webauthn_pb";
 import type { GetEventsRequestSchema, GetEventsResponseSchema, GetThirdpartyBindingsRequestSchema, GetThirdpartyTicketRequestSchema, ThirdpartyBindingsResponseSchema, ThirdpartyOauthRequestSchema, ThirdpartyOauthResponseSchema, UnbindThirdpartyRequestSchema } from "./thirdparty_pb";
 import { file_api_account_v1_thirdparty } from "./thirdparty_pb";
+import type { StartVerificationRequestSchema, StartVerificationResponseSchema, SubmitVerificationRequestSchema, SubmitVerificationResponseSchema } from "../../common/v1/verification_pb";
+import { file_api_common_v1_verification } from "../../common/v1/verification_pb";
 import type { LoginFlowResponseSchema } from "../../sso/v1/envelope_pb";
 import { file_api_sso_v1_envelope } from "../../sso/v1/envelope_pb";
 
@@ -21,7 +23,7 @@ import { file_api_sso_v1_envelope } from "../../sso/v1/envelope_pb";
  * Describes the file api/account/v1/account.proto.
  */
 export const file_api_account_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTLODwoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEksKClVuYmluZFRvdHASIS5hcGkuYWNjb3VudC52MS5VbmJpbmRUb3RwUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScAoXUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXMSLi5hcGkuYWNjb3VudC52MS5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5SZWNvdmVyeUNvZGVzUmVzcG9uc2USbQoWR2V0V2ViYXV0aG5DcmVkZW50aWFscxItLmFwaS5hY2NvdW50LnYxLkdldFdlYmF1dGhuQ3JlZGVudGlhbHNSZXF1ZXN0GiQuYXBpLmFjY291bnQudjEuV2ViYXV0aG5MaXN0UmVzcG9uc2USZQoQUmVnaXN0ZXJXZWJhdXRobhInLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXF1ZXN0GiguYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlc3BvbnNlEmcKGFJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLlJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmcKGERlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLkRlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnEKFUdldFRoaXJkcGFydHlCaW5kaW5ncxIsLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlCaW5kaW5nc1JlcXVlc3QaKi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5QmluZGluZ3NSZXNwb25zZRJXChBVbmJpbmRUaGlyZHBhcnR5EicuYXBpLmFjY291bnQudjEuVW5iaW5kVGhpcmRwYXJ0eVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmIKD1RoaXJkcGFydHlPYXV0aBImLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlcXVlc3QaJy5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXNwb25zZRJgChNHZXRUaGlyZHBhcnR5VGlja2V0EiouYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eVRpY2tldFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKCUdldEV2ZW50cxIgLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1JlcXVlc3QaIS5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXNwb25zZUIqWihhdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQvdjE7YWNjb3VudHYxYgZwcm90bzM", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_sso_v1_envelope]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTKhEQoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEksKClVuYmluZFRvdHASIS5hcGkuYWNjb3VudC52MS5VbmJpbmRUb3RwUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScAoXUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXMSLi5hcGkuYWNjb3VudC52MS5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5SZWNvdmVyeUNvZGVzUmVzcG9uc2USbQoWR2V0V2ViYXV0aG5DcmVkZW50aWFscxItLmFwaS5hY2NvdW50LnYxLkdldFdlYmF1dGhuQ3JlZGVudGlhbHNSZXF1ZXN0GiQuYXBpLmFjY291bnQudjEuV2ViYXV0aG5MaXN0UmVzcG9uc2USZQoQUmVnaXN0ZXJXZWJhdXRobhInLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXF1ZXN0GiguYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlc3BvbnNlEmcKGFJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLlJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmcKGERlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLkRlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnEKFUdldFRoaXJkcGFydHlCaW5kaW5ncxIsLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlCaW5kaW5nc1JlcXVlc3QaKi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5QmluZGluZ3NSZXNwb25zZRJXChBVbmJpbmRUaGlyZHBhcnR5EicuYXBpLmFjY291bnQudjEuVW5iaW5kVGhpcmRwYXJ0eVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmIKD1RoaXJkcGFydHlPYXV0aBImLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlcXVlc3QaJy5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXNwb25zZRJgChNHZXRUaGlyZHBhcnR5VGlja2V0EiouYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eVRpY2tldFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKCUdldEV2ZW50cxIgLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1JlcXVlc3QaIS5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXNwb25zZRJmChFTdGFydFZlcmlmaWNhdGlvbhInLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXF1ZXN0GiguYXBpLmNvbW1vbi52MS5TdGFydFZlcmlmaWNhdGlvblJlc3BvbnNlEmkKElN1Ym1pdFZlcmlmaWNhdGlvbhIoLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVxdWVzdBopLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVzcG9uc2VCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_common_v1_verification, file_api_sso_v1_envelope]);
 
 /**
  * AccountService 是 account 域的 Connect service（docs/接口文档.md §3，行 767-1040）。
@@ -37,6 +39,7 @@ export const file_api_account_v1_account: GenFile = /*@__PURE__*/
  *   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
  *   UnbindThirdparty           §3.7 行 937    ThirdpartyOauth          §3.7.1 A 行 938
  *   GetThirdpartyTicket        §3.7 行 939    GetEvents                §3.7 行 1038
+ *   StartVerification          §3.8 行 1227   SubmitVerification       §3.8 行 1228
  * 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0 行 64），不入本 service。
  * 空响应方法共用同包 OkResponse（空消息，§1.0 行 57 成功响应即消息本身），
  * 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
@@ -156,9 +159,8 @@ export const AccountService: GenService<{
     output: typeof BindTotpResponseSchema;
   },
   /**
-   * 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
-   * MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
-   * 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+   * 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+   * 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
    *
    * @generated from rpc api.account.v1.AccountService.UnbindTotp
    */
@@ -267,6 +269,26 @@ export const AccountService: GenService<{
     methodKind: "unary";
     input: typeof GetEventsRequestSchema;
     output: typeof GetEventsResponseSchema;
+  },
+  /**
+   * 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+   *
+   * @generated from rpc api.account.v1.AccountService.StartVerification
+   */
+  startVerification: {
+    methodKind: "unary";
+    input: typeof StartVerificationRequestSchema;
+    output: typeof StartVerificationResponseSchema;
+  },
+  /**
+   * 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
+   *
+   * @generated from rpc api.account.v1.AccountService.SubmitVerification
+   */
+  submitVerification: {
+    methodKind: "unary";
+    input: typeof SubmitVerificationRequestSchema;
+    output: typeof SubmitVerificationResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_api_account_v1_account, 0);

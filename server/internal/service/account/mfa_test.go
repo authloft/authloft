@@ -18,6 +18,8 @@ import (
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/security"
+	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
 
@@ -264,7 +266,7 @@ func TestMfaGetDetailRecoveryExhausted(t *testing.T) {
 	// 但行存在即已签发 → recoveryIssuedAt 非 0。
 	creds := &fakeMfaCreds{rows: []*model.UserCredential{
 		{ID: 9, UserID: 42, Kind: "recovery_code", IsEnabled: 1,
-			Meta: mfaCredMeta(t, &credentialpb.CredentialMeta{}),
+			Meta:      mfaCredMeta(t, &credentialpb.CredentialMeta{}),
 			CreatedAt: mfaNow, UpdatedAt: mfaNow},
 	}}
 	svc := newMfaService(mfaUser(), creds, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
@@ -351,8 +353,8 @@ func TestMfaSetMfaInvalidMethod(t *testing.T) {
 	creds := &fakeMfaCreds{}
 	svc := newMfaService(&model.User{ID: 42}, creds, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
 	for _, methods := range [][]string{
-		{"totp", "magic"},  // 未知因子
-		{"recovery_code"},  // 随 totp 投影，不可独立勾选
+		{"totp", "magic"}, // 未知因子
+		{"recovery_code"}, // 随 totp 投影，不可独立勾选
 	} {
 		if err := svc.SetMfa(context.Background(), 42, methods); !errors.Is(err, ErrMfaInvalidRequest) {
 			t.Errorf("SetMfa(%v) err = %v, want ErrMfaInvalidRequest", methods, err)
@@ -692,5 +694,150 @@ func TestMfaMaskAlgorithms(t *testing.T) {
 	}
 	if got := maskMfaEmail("no-at-sign"); got != "***" {
 		t.Errorf("maskMfaEmail(无@) = %q", got)
+	}
+}
+
+// fakeAssertions AssertionConsumer 的 fake：记录入参并回放结论。
+type fakeAssertions struct {
+	err   error
+	token string
+	want  verification.Want
+	calls int
+}
+
+func (f *fakeAssertions) ConsumeAssertion(_ context.Context, token string, want verification.Want) (verification.Assertion, error) {
+	f.calls++
+	f.token = token
+	f.want = want
+	return verification.Assertion{}, f.err
+}
+
+// TestUnbindTotpConsumesAssertionAndDeletes 覆盖 §3.5 / §16 的解绑口径：
+// 断言三重校验由消费出口负责，通过后删除 kind=totp 并作废恢复码；同一断言
+// 二次提交因凭据已删返回 verification_invalid（低风险不加 al:once）。
+func TestUnbindTotpConsumesAssertionAndDeletes(t *testing.T) {
+	creds := &fakeMfaCreds{rows: []*model.UserCredential{
+		{UserID: 42, Kind: kindTotp},
+		{UserID: 42, Kind: kindRecoveryCode},
+	}}
+	assertions := &fakeAssertions{}
+	svc := NewMfaService(MfaDeps{Creds: creds, Assertions: assertions})
+
+	if err := svc.UnbindTotp(context.Background(), 42, "vt-1"); err != nil {
+		t.Fatalf("UnbindTotp: %v", err)
+	}
+	if assertions.calls != 1 || assertions.token != "vt-1" {
+		t.Fatalf("断言消费入参 = token %q calls %d", assertions.token, assertions.calls)
+	}
+	want := assertions.want
+	if want.BizPurpose != verification.BizPurposeUnbindTOTP || want.Operation != "unbind_totp" ||
+		want.Subject != (verification.Subject{Kind: verification.SubjectKindUID, ID: "42"}) {
+		t.Fatalf("Want = %+v", want)
+	}
+	if len(creds.deletes) != 2 || creds.deletes[0] != (mfaCredDelete{uid: 42, kind: kindTotp}) ||
+		creds.deletes[1] != (mfaCredDelete{uid: 42, kind: kindRecoveryCode}) {
+		t.Fatalf("deletes = %+v", creds.deletes)
+	}
+	for _, r := range creds.rows {
+		if r.Kind == kindTotp || r.Kind == kindRecoveryCode {
+			t.Fatalf("凭据未删除: %+v", r)
+		}
+	}
+
+	// 同一断言二次使用：totp 行已删 → verification_invalid（可证伪）。
+	err := svc.UnbindTotp(context.Background(), 42, "vt-1")
+	var ve *verification.Error
+	if !errors.As(err, &ve) || ve.Code != "verification_invalid" {
+		t.Fatalf("二次使用 err = %v, want verification_invalid", err)
+	}
+}
+
+func TestUnbindTotpRejectsMissingAssertion(t *testing.T) {
+	creds := &fakeMfaCreds{}
+	svc := NewMfaService(MfaDeps{Creds: creds, Assertions: &fakeAssertions{}})
+	if err := svc.UnbindTotp(context.Background(), 42, ""); !isVerificationCode(err, "verification_required") {
+		t.Fatalf("缺断言 err = %v, want verification_required", err)
+	}
+	if err := svc.UnbindTotp(context.Background(), 0, "vt-1"); !errors.Is(err, ErrMfaUnauthenticated) {
+		t.Fatalf("无 uid err = %v, want ErrMfaUnauthenticated", err)
+	}
+	svc = NewMfaService(MfaDeps{Creds: creds})
+	if err := svc.UnbindTotp(context.Background(), 42, "vt-1"); !errors.Is(err, ErrMfaInternal) {
+		t.Fatalf("未装配断言消费 err = %v, want ErrMfaInternal", err)
+	}
+}
+
+func TestUnbindTotpPropagatesAssertionError(t *testing.T) {
+	creds := &fakeMfaCreds{rows: []*model.UserCredential{{UserID: 42, Kind: kindTotp}}}
+	assertions := &fakeAssertions{err: &verification.Error{Code: "verification_invalid"}}
+	svc := NewMfaService(MfaDeps{Creds: creds, Assertions: assertions})
+	err := svc.UnbindTotp(context.Background(), 42, "vt-1")
+	if !isVerificationCode(err, "verification_invalid") {
+		t.Fatalf("err = %v, want verification_invalid", err)
+	}
+	if len(creds.deletes) != 0 {
+		t.Fatalf("断言未通过不得删除凭据: %+v", creds.deletes)
+	}
+}
+
+func isVerificationCode(err error, code string) bool {
+	var ve *verification.Error
+	return errors.As(err, &ve) && ve.Code == code
+}
+
+// TestUnbindTotpWithRealAssertionService 端到端：真 AssertionCodec 签发断言、
+// 真 verification.Service 消费并做 biz_purpose/operation/subject 校验，再接
+// MfaService 删除凭据；同一断言二次使用因凭据已删被拒（可证伪）。
+func TestUnbindTotpWithRealAssertionService(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = 0x3C
+	}
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: key})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	codec := verification.NewAssertionCodec(security.NewCodec(ks), security.NewCodec(ks))
+	assertions := verification.NewService(verification.Deps{Codec: codec})
+
+	issue := func(operation string) string {
+		tok, err := codec.IssueAssertion(verification.Assertion{
+			BizPurpose: verification.BizPurposeUnbindTOTP,
+			Subject:    verification.Subject{Kind: verification.SubjectKindUID, ID: "42"},
+			Nonce:      "nonce-e2e",
+			AMR:        []string{"totp"},
+			Operation:  operation,
+		}, verification.AssertionTTL)
+		if err != nil {
+			t.Fatalf("IssueAssertion: %v", err)
+		}
+		return tok
+	}
+
+	// operation 不符：消费侧拒绝，凭据不得删除。
+	creds := &fakeMfaCreds{rows: []*model.UserCredential{
+		{UserID: 42, Kind: kindTotp},
+		{UserID: 42, Kind: kindRecoveryCode},
+	}}
+	svc := NewMfaService(MfaDeps{Creds: creds, Assertions: assertions})
+	if err := svc.UnbindTotp(context.Background(), 42, issue("other_operation")); !isVerificationCode(err, "verification_invalid") {
+		t.Fatalf("operation 不符 err = %v, want verification_invalid", err)
+	}
+	if len(creds.deletes) != 0 {
+		t.Fatalf("断言校验未过不得删除凭据: %+v", creds.deletes)
+	}
+
+	// 有效断言：解绑成功并删除 totp / recovery_code。
+	tok := issue("unbind_totp")
+	if err := svc.UnbindTotp(context.Background(), 42, tok); err != nil {
+		t.Fatalf("有效断言解绑: %v", err)
+	}
+	if len(creds.deletes) != 2 {
+		t.Fatalf("deletes = %+v, want totp + recovery_code", creds.deletes)
+	}
+
+	// 同一断言二次使用：凭据已删 → verification_invalid。
+	if err := svc.UnbindTotp(context.Background(), 42, tok); !isVerificationCode(err, "verification_invalid") {
+		t.Fatalf("二次使用 err = %v, want verification_invalid", err)
 	}
 }

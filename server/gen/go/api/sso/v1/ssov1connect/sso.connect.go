@@ -5,6 +5,7 @@
 package ssov1connect
 
 import (
+	v11 "authloft/gen/go/api/common/v1"
 	v1 "authloft/gen/go/api/sso/v1"
 	connect "connectrpc.com/connect"
 	context "context"
@@ -55,6 +56,12 @@ const (
 	// SsoServiceConfirmLoginTicketProcedure is the fully-qualified name of the SsoService's
 	// ConfirmLoginTicket RPC.
 	SsoServiceConfirmLoginTicketProcedure = "/api.sso.v1.SsoService/ConfirmLoginTicket"
+	// SsoServiceStartVerificationProcedure is the fully-qualified name of the SsoService's
+	// StartVerification RPC.
+	SsoServiceStartVerificationProcedure = "/api.sso.v1.SsoService/StartVerification"
+	// SsoServiceSubmitVerificationProcedure is the fully-qualified name of the SsoService's
+	// SubmitVerification RPC.
+	SsoServiceSubmitVerificationProcedure = "/api.sso.v1.SsoService/SubmitVerification"
 )
 
 // SsoServiceClient is a client for the api.sso.v1.SsoService service.
@@ -77,6 +84,10 @@ type SsoServiceClient interface {
 	GetLoginTicket(context.Context, *connect.Request[v1.GetLoginTicketRequest]) (*connect.Response[v1.LoginFlowResponse], error)
 	// 已登录一端写入授权结果（§2.8 行 735-748）。
 	ConfirmLoginTicket(context.Context, *connect.Request[v1.ConfirmLoginTicketRequest]) (*connect.Response[v1.TicketStatus], error)
+	// 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+	StartVerification(context.Context, *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error)
+	// 提交二次因子，返回登录流程结论（§3.8.1、§3.8.2、§7.3 步骤 7）。
+	SubmitVerification(context.Context, *connect.Request[v11.SubmitVerificationRequest]) (*connect.Response[v11.SubmitVerificationResponse], error)
 }
 
 // NewSsoServiceClient constructs a client for the api.sso.v1.SsoService service. By default, it
@@ -144,6 +155,18 @@ func NewSsoServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...
 			connect.WithSchema(ssoServiceMethods.ByName("ConfirmLoginTicket")),
 			connect.WithClientOptions(opts...),
 		),
+		startVerification: connect.NewClient[v11.StartVerificationRequest, v11.StartVerificationResponse](
+			httpClient,
+			baseURL+SsoServiceStartVerificationProcedure,
+			connect.WithSchema(ssoServiceMethods.ByName("StartVerification")),
+			connect.WithClientOptions(opts...),
+		),
+		submitVerification: connect.NewClient[v11.SubmitVerificationRequest, v11.SubmitVerificationResponse](
+			httpClient,
+			baseURL+SsoServiceSubmitVerificationProcedure,
+			connect.WithSchema(ssoServiceMethods.ByName("SubmitVerification")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -158,6 +181,8 @@ type ssoServiceClient struct {
 	createQrcode       *connect.Client[v1.CreateQrcodeRequest, v1.CreateQrcodeResponse]
 	getLoginTicket     *connect.Client[v1.GetLoginTicketRequest, v1.LoginFlowResponse]
 	confirmLoginTicket *connect.Client[v1.ConfirmLoginTicketRequest, v1.TicketStatus]
+	startVerification  *connect.Client[v11.StartVerificationRequest, v11.StartVerificationResponse]
+	submitVerification *connect.Client[v11.SubmitVerificationRequest, v11.SubmitVerificationResponse]
 }
 
 // LoginDefault calls api.sso.v1.SsoService.LoginDefault.
@@ -205,6 +230,16 @@ func (c *ssoServiceClient) ConfirmLoginTicket(ctx context.Context, req *connect.
 	return c.confirmLoginTicket.CallUnary(ctx, req)
 }
 
+// StartVerification calls api.sso.v1.SsoService.StartVerification.
+func (c *ssoServiceClient) StartVerification(ctx context.Context, req *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error) {
+	return c.startVerification.CallUnary(ctx, req)
+}
+
+// SubmitVerification calls api.sso.v1.SsoService.SubmitVerification.
+func (c *ssoServiceClient) SubmitVerification(ctx context.Context, req *connect.Request[v11.SubmitVerificationRequest]) (*connect.Response[v11.SubmitVerificationResponse], error) {
+	return c.submitVerification.CallUnary(ctx, req)
+}
+
 // SsoServiceHandler is an implementation of the api.sso.v1.SsoService service.
 type SsoServiceHandler interface {
 	// 统一提交端点，flow=login，除 thirdparty 外（§2.2 行 414-436）。
@@ -225,6 +260,10 @@ type SsoServiceHandler interface {
 	GetLoginTicket(context.Context, *connect.Request[v1.GetLoginTicketRequest]) (*connect.Response[v1.LoginFlowResponse], error)
 	// 已登录一端写入授权结果（§2.8 行 735-748）。
 	ConfirmLoginTicket(context.Context, *connect.Request[v1.ConfirmLoginTicketRequest]) (*connect.Response[v1.TicketStatus], error)
+	// 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+	StartVerification(context.Context, *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error)
+	// 提交二次因子，返回登录流程结论（§3.8.1、§3.8.2、§7.3 步骤 7）。
+	SubmitVerification(context.Context, *connect.Request[v11.SubmitVerificationRequest]) (*connect.Response[v11.SubmitVerificationResponse], error)
 }
 
 // NewSsoServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -288,6 +327,18 @@ func NewSsoServiceHandler(svc SsoServiceHandler, opts ...connect.HandlerOption) 
 		connect.WithSchema(ssoServiceMethods.ByName("ConfirmLoginTicket")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ssoServiceStartVerificationHandler := connect.NewUnaryHandler(
+		SsoServiceStartVerificationProcedure,
+		svc.StartVerification,
+		connect.WithSchema(ssoServiceMethods.ByName("StartVerification")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ssoServiceSubmitVerificationHandler := connect.NewUnaryHandler(
+		SsoServiceSubmitVerificationProcedure,
+		svc.SubmitVerification,
+		connect.WithSchema(ssoServiceMethods.ByName("SubmitVerification")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.sso.v1.SsoService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SsoServiceLoginDefaultProcedure:
@@ -308,6 +359,10 @@ func NewSsoServiceHandler(svc SsoServiceHandler, opts ...connect.HandlerOption) 
 			ssoServiceGetLoginTicketHandler.ServeHTTP(w, r)
 		case SsoServiceConfirmLoginTicketProcedure:
 			ssoServiceConfirmLoginTicketHandler.ServeHTTP(w, r)
+		case SsoServiceStartVerificationProcedure:
+			ssoServiceStartVerificationHandler.ServeHTTP(w, r)
+		case SsoServiceSubmitVerificationProcedure:
+			ssoServiceSubmitVerificationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -351,4 +406,12 @@ func (UnimplementedSsoServiceHandler) GetLoginTicket(context.Context, *connect.R
 
 func (UnimplementedSsoServiceHandler) ConfirmLoginTicket(context.Context, *connect.Request[v1.ConfirmLoginTicketRequest]) (*connect.Response[v1.TicketStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.sso.v1.SsoService.ConfirmLoginTicket is not implemented"))
+}
+
+func (UnimplementedSsoServiceHandler) StartVerification(context.Context, *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.sso.v1.SsoService.StartVerification is not implemented"))
+}
+
+func (UnimplementedSsoServiceHandler) SubmitVerification(context.Context, *connect.Request[v11.SubmitVerificationRequest]) (*connect.Response[v11.SubmitVerificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.sso.v1.SsoService.SubmitVerification is not implemented"))
 }

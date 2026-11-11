@@ -4,12 +4,13 @@
 // Register、ResetPassword、CreateCaptchaImage（接口文档 §2.2-§2.5）、
 // Authorize、LoginOauth（§2.7）与扫码三桩 CreateQrcode /
 // GetLoginTicket / ConfirmLoginTicket（§2.8——编排全部在
-// service.QRCode）。
+// service.QRCode）；§3.8 二次验证 Start/Submit 挂在登录 / 扫码链路。
 package sso
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"connectrpc.com/connect"
@@ -22,6 +23,7 @@ import (
 	"authloft/internal/dto"
 	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 )
 
@@ -51,16 +53,31 @@ type Handler struct {
 	// qrcode 扫码三桩 service；nil（测试 / 未装配）时三个扫码
 	// 方法返回 unimplemented。
 	qrcode Qrcode
+	// verification step-up 服务（§3.8）；nil（测试 / 未装配）时两个
+	// 二次验证方法返回 unimplemented。
+	verification Verification
+}
+
+// Verification step-up 服务窄接口（§20 依赖注入）：生产注入
+// *verification.Service，测试可传 fake。
+type Verification interface {
+	Start(ctx context.Context, in verification.StartInput) (*verification.StartResult, *captcha.Failure, error)
+	Submit(ctx context.Context, in verification.SubmitInput) (*verification.SubmitResult, error)
 }
 
 // New 构造 SsoService handler。images 为自绘图形码实现
 // （CreateCaptchaImage 用，装配层注入 captcha.NewImageCaptcha）；cookies 为
 // 会话 Cookie 属性构造器（登录终点建会话后经 Set-Cookie 下发
 // al_session，复用 session 包同一构造器）；thirdparty 为三方登录通道
-// service（oauth.go）；qrcode 为扫码三桩 service；测试 / 未装配时
-// 均传 nil（不下发 / unimplemented）。
-func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, thirdparty Thirdparty, qrcode Qrcode) *Handler {
-	return &Handler{engine: engine, images: images, cookies: cookies, thirdparty: thirdparty, qrcode: qrcode}
+// service（oauth.go）；qrcode 为扫码三桩 service；末尾可变参数 v 注入
+// step-up 服务（§3.8）。测试 / 未装配时均传 nil（不下发 / unimplemented），
+// 既有五参数装配点与测试桩保持不变。
+func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, thirdparty Thirdparty, qrcode Qrcode, v ...Verification) *Handler {
+	h := &Handler{engine: engine, images: images, cookies: cookies, thirdparty: thirdparty, qrcode: qrcode}
+	if len(v) > 0 {
+		h.verification = v[0]
+	}
+	return h
 }
 
 // withSessionTokenSink 注入登录终点的 session_token 写点：引擎仅
@@ -130,6 +147,130 @@ func encodeCaptchaFailure(f *captcha.Failure) error {
 		Type:        f.Config.Type,
 		SiteKey:     f.Config.SiteKey,
 	})
+}
+
+// errVerificationNotConfigured 未装配 step-up 服务（测试桩）。
+var errVerificationNotConfigured = errors.New("verification service not configured")
+
+// StartVerification（§3.8.1、§3.8.2，SsoService 组）：登录 / 扫码链路以
+// loginToken 或 mfaPendingId 推导主体，下发挑战令牌与可用因子。
+func (h *Handler) StartVerification(ctx context.Context, req *connect.Request[commonv1.StartVerificationRequest]) (*connect.Response[commonv1.StartVerificationResponse], error) {
+	if h.verification == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
+	}
+	res, failure, err := h.verification.Start(ctx, verification.StartInput{
+		Domain:       verification.DomainSSO,
+		BizPurpose:   verification.BizPurpose(req.Msg.GetBizPurpose()),
+		Method:       req.Msg.GetMethod(),
+		Operation:    req.Msg.GetOperation(),
+		LoginToken:   req.Msg.GetLoginToken(),
+		MFAPendingID: req.Msg.GetMfaPendingId(),
+		Captcha:      verification.ParseCaptchaSubmission(req.Msg.GetCaptcha()),
+	})
+	if err != nil {
+		return nil, mapVerificationError("sso", err)
+	}
+	if failure != nil {
+		return nil, encodeCaptchaFailure(failure)
+	}
+	return connect.NewResponse(startVerificationResponse(res)), nil
+}
+
+// SubmitVerification（§3.8.1、§3.8.2，SsoService 组）：提交二次因子；通过后
+// 复用登录终点收尾（建会话 + 多域名同步 / OIDC 跳转），成功返回
+// status=success + redirectTo + syncCookieUrl。因子类失败按登录流程信封
+// status 表达（HTTP 200），step-up 令牌类失败走 Connect 错误体（§3.8.5）。
+func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[commonv1.SubmitVerificationRequest]) (*connect.Response[commonv1.SubmitVerificationResponse], error) {
+	if h.verification == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
+	}
+	res, err := h.verification.Submit(h.withSessionTokenSink(ctx), verification.SubmitInput{
+		Domain:         verification.DomainSSO,
+		ChallengeToken: req.Msg.GetChallengeToken(),
+		Method:         req.Msg.GetMethod(),
+		Payload:        req.Msg.GetPayload(),
+		LoginToken:     req.Msg.GetLoginToken(),
+	})
+	if err != nil {
+		if status := verificationFlowStatus(err); status != "" {
+			return connect.NewResponse(&commonv1.SubmitVerificationResponse{Status: status}), nil
+		}
+		return nil, mapVerificationError("sso", err)
+	}
+	return connect.NewResponse(&commonv1.SubmitVerificationResponse{
+		Status:        res.Status,
+		RedirectTo:    res.RedirectTo,
+		SyncCookieUrl: res.SyncCookieURL,
+		Amr:           res.AMR,
+	}), nil
+}
+
+// verificationFlowStatus 判定因子类失败是否应以登录流程信封 status 表达
+// （§3.8.5）：OTP / TOTP / WebAuthn 因子失败沿用 §1.6 封闭集合；step-up
+// 令牌与主体凭证类失败仍走 Connect 错误体 + ErrorInfo.code。
+func verificationFlowStatus(err error) string {
+	var ve *verification.Error
+	if !errors.As(err, &ve) {
+		return ""
+	}
+	switch ve.Code {
+	case "invalid_code", "code_expired", "too_many_attempts", "method_disabled":
+		return ve.Code
+	}
+	return ""
+}
+
+// mapVerificationError 把 step-up 领域失败映射为 Connect 错误体 +
+// ErrorInfo（§1.5、§3.8.5）：verification_required / verification_invalid
+// 走 failed_precondition；限流走 resource_exhausted 并带 retry_after；
+// 其余走 invalid_argument；非领域错误原样上抛。
+func mapVerificationError(domain string, err error) error {
+	var ve *verification.Error
+	if !errors.As(err, &ve) {
+		return fmt.Errorf("sso handler: verification: %w", err)
+	}
+	connCode := connect.CodeInvalidArgument
+	switch ve.Code {
+	case "verification_required", "verification_invalid":
+		connCode = connect.CodeFailedPrecondition
+	case "too_many_requests":
+		connCode = connect.CodeResourceExhausted
+	}
+	info := internalconnect.NewErrorInfo(domain, ve.Code, ve.Code)
+	info.RetryAfter = ve.RetryAfter
+	return internalconnect.WithErrorInfo(
+		connect.NewError(connCode, errors.New(ve.Code)),
+		info,
+	)
+}
+
+// startVerificationResponse 领域结论 → §3.8.2 响应消息投影。
+func startVerificationResponse(res *verification.StartResult) *commonv1.StartVerificationResponse {
+	out := &commonv1.StartVerificationResponse{
+		ChallengeToken: res.ChallengeToken,
+		ExpiresIn:      res.ExpiresIn,
+	}
+	for i := range res.Methods {
+		m := &res.Methods[i]
+		out.Methods = append(out.Methods, &commonv1.VerificationMethod{
+			Method:          m.Method,
+			Usage:           m.Usage,
+			Steps:           m.Steps,
+			ChallengeFields: m.ChallengeFields,
+			CodeLength:      m.CodeLength,
+			ResendAfter:     m.ResendAfter,
+			ExpiresIn:       m.ExpiresIn,
+			Capability:      m.Capability,
+			Providers:       m.Providers,
+		})
+	}
+	if res.NextStepKind != "" {
+		out.NextStep = &commonv1.VerificationNextStep{
+			Kind:          res.NextStepKind,
+			ChallengeData: res.ChallengeData,
+		}
+	}
+	return out
 }
 
 // —— 三方登录通道（接口文档 §2.7.2 / §2.7.4）——

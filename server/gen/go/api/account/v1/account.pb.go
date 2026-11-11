@@ -7,7 +7,8 @@
 package accountv1
 
 import (
-	v1 "authloft/gen/go/api/sso/v1"
+	v1 "authloft/gen/go/api/common/v1"
+	v11 "authloft/gen/go/api/sso/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -25,7 +26,7 @@ var File_api_account_v1_account_proto protoreflect.FileDescriptor
 
 const file_api_account_v1_account_proto_rawDesc = "" +
 	"\n" +
-	"\x1capi/account/v1/account.proto\x12\x0eapi.account.v1\x1a\x1capi/account/v1/profile.proto\x1a\x1dapi/account/v1/security.proto\x1a\x18api/account/v1/mfa.proto\x1a\x1dapi/account/v1/webauthn.proto\x1a\x1fapi/account/v1/thirdparty.proto\x1a\x19api/sso/v1/envelope.proto2\xce\x0f\n" +
+	"\x1capi/account/v1/account.proto\x12\x0eapi.account.v1\x1a\x1capi/account/v1/profile.proto\x1a\x1dapi/account/v1/security.proto\x1a\x18api/account/v1/mfa.proto\x1a\x1dapi/account/v1/webauthn.proto\x1a\x1fapi/account/v1/thirdparty.proto\x1a api/common/v1/verification.proto\x1a\x19api/sso/v1/envelope.proto2\xa1\x11\n" +
 	"\x0eAccountService\x12T\n" +
 	"\tGetConfig\x12 .api.account.v1.GetConfigRequest\x1a%.api.account.v1.AccountConfigResponse\x12P\n" +
 	"\n" +
@@ -50,7 +51,9 @@ const file_api_account_v1_account_proto_rawDesc = "" +
 	"\x10UnbindThirdparty\x12'.api.account.v1.UnbindThirdpartyRequest\x1a\x1a.api.account.v1.OkResponse\x12b\n" +
 	"\x0fThirdpartyOauth\x12&.api.account.v1.ThirdpartyOauthRequest\x1a'.api.account.v1.ThirdpartyOauthResponse\x12`\n" +
 	"\x13GetThirdpartyTicket\x12*.api.account.v1.GetThirdpartyTicketRequest\x1a\x1d.api.sso.v1.LoginFlowResponse\x12P\n" +
-	"\tGetEvents\x12 .api.account.v1.GetEventsRequest\x1a!.api.account.v1.GetEventsResponseB*Z(authloft/gen/go/api/account/v1;accountv1b\x06proto3"
+	"\tGetEvents\x12 .api.account.v1.GetEventsRequest\x1a!.api.account.v1.GetEventsResponse\x12f\n" +
+	"\x11StartVerification\x12'.api.common.v1.StartVerificationRequest\x1a(.api.common.v1.StartVerificationResponse\x12i\n" +
+	"\x12SubmitVerification\x12(.api.common.v1.SubmitVerificationRequest\x1a).api.common.v1.SubmitVerificationResponseB*Z(authloft/gen/go/api/account/v1;accountv1b\x06proto3"
 
 var file_api_account_v1_account_proto_goTypes = []any{
 	(*GetConfigRequest)(nil),                // 0: api.account.v1.GetConfigRequest
@@ -75,20 +78,24 @@ var file_api_account_v1_account_proto_goTypes = []any{
 	(*ThirdpartyOauthRequest)(nil),          // 19: api.account.v1.ThirdpartyOauthRequest
 	(*GetThirdpartyTicketRequest)(nil),      // 20: api.account.v1.GetThirdpartyTicketRequest
 	(*GetEventsRequest)(nil),                // 21: api.account.v1.GetEventsRequest
-	(*AccountConfigResponse)(nil),           // 22: api.account.v1.AccountConfigResponse
-	(*ProfileResponse)(nil),                 // 23: api.account.v1.ProfileResponse
-	(*OkResponse)(nil),                      // 24: api.account.v1.OkResponse
-	(*AvatarPresignResponse)(nil),           // 25: api.account.v1.AvatarPresignResponse
-	(*AvatarResponse)(nil),                  // 26: api.account.v1.AvatarResponse
-	(*MfaResponse)(nil),                     // 27: api.account.v1.MfaResponse
-	(*BindTotpResponse)(nil),                // 28: api.account.v1.BindTotpResponse
-	(*RecoveryCodesResponse)(nil),           // 29: api.account.v1.RecoveryCodesResponse
-	(*WebauthnListResponse)(nil),            // 30: api.account.v1.WebauthnListResponse
-	(*RegisterWebauthnResponse)(nil),        // 31: api.account.v1.RegisterWebauthnResponse
-	(*ThirdpartyBindingsResponse)(nil),      // 32: api.account.v1.ThirdpartyBindingsResponse
-	(*ThirdpartyOauthResponse)(nil),         // 33: api.account.v1.ThirdpartyOauthResponse
-	(*v1.LoginFlowResponse)(nil),            // 34: api.sso.v1.LoginFlowResponse
-	(*GetEventsResponse)(nil),               // 35: api.account.v1.GetEventsResponse
+	(*v1.StartVerificationRequest)(nil),     // 22: api.common.v1.StartVerificationRequest
+	(*v1.SubmitVerificationRequest)(nil),    // 23: api.common.v1.SubmitVerificationRequest
+	(*AccountConfigResponse)(nil),           // 24: api.account.v1.AccountConfigResponse
+	(*ProfileResponse)(nil),                 // 25: api.account.v1.ProfileResponse
+	(*OkResponse)(nil),                      // 26: api.account.v1.OkResponse
+	(*AvatarPresignResponse)(nil),           // 27: api.account.v1.AvatarPresignResponse
+	(*AvatarResponse)(nil),                  // 28: api.account.v1.AvatarResponse
+	(*MfaResponse)(nil),                     // 29: api.account.v1.MfaResponse
+	(*BindTotpResponse)(nil),                // 30: api.account.v1.BindTotpResponse
+	(*RecoveryCodesResponse)(nil),           // 31: api.account.v1.RecoveryCodesResponse
+	(*WebauthnListResponse)(nil),            // 32: api.account.v1.WebauthnListResponse
+	(*RegisterWebauthnResponse)(nil),        // 33: api.account.v1.RegisterWebauthnResponse
+	(*ThirdpartyBindingsResponse)(nil),      // 34: api.account.v1.ThirdpartyBindingsResponse
+	(*ThirdpartyOauthResponse)(nil),         // 35: api.account.v1.ThirdpartyOauthResponse
+	(*v11.LoginFlowResponse)(nil),           // 36: api.sso.v1.LoginFlowResponse
+	(*GetEventsResponse)(nil),               // 37: api.account.v1.GetEventsResponse
+	(*v1.StartVerificationResponse)(nil),    // 38: api.common.v1.StartVerificationResponse
+	(*v1.SubmitVerificationResponse)(nil),   // 39: api.common.v1.SubmitVerificationResponse
 }
 var file_api_account_v1_account_proto_depIdxs = []int32{
 	0,  // 0: api.account.v1.AccountService.GetConfig:input_type -> api.account.v1.GetConfigRequest
@@ -113,30 +120,34 @@ var file_api_account_v1_account_proto_depIdxs = []int32{
 	19, // 19: api.account.v1.AccountService.ThirdpartyOauth:input_type -> api.account.v1.ThirdpartyOauthRequest
 	20, // 20: api.account.v1.AccountService.GetThirdpartyTicket:input_type -> api.account.v1.GetThirdpartyTicketRequest
 	21, // 21: api.account.v1.AccountService.GetEvents:input_type -> api.account.v1.GetEventsRequest
-	22, // 22: api.account.v1.AccountService.GetConfig:output_type -> api.account.v1.AccountConfigResponse
-	23, // 23: api.account.v1.AccountService.GetProfile:output_type -> api.account.v1.ProfileResponse
-	24, // 24: api.account.v1.AccountService.UpdateProfile:output_type -> api.account.v1.OkResponse
-	25, // 25: api.account.v1.AccountService.PresignAvatar:output_type -> api.account.v1.AvatarPresignResponse
-	26, // 26: api.account.v1.AccountService.CommitAvatar:output_type -> api.account.v1.AvatarResponse
-	24, // 27: api.account.v1.AccountService.ChangePassword:output_type -> api.account.v1.OkResponse
-	24, // 28: api.account.v1.AccountService.BindPhone:output_type -> api.account.v1.OkResponse
-	24, // 29: api.account.v1.AccountService.BindEmail:output_type -> api.account.v1.OkResponse
-	27, // 30: api.account.v1.AccountService.GetMfa:output_type -> api.account.v1.MfaResponse
-	24, // 31: api.account.v1.AccountService.SetMfa:output_type -> api.account.v1.OkResponse
-	28, // 32: api.account.v1.AccountService.BindTotp:output_type -> api.account.v1.BindTotpResponse
-	24, // 33: api.account.v1.AccountService.UnbindTotp:output_type -> api.account.v1.OkResponse
-	29, // 34: api.account.v1.AccountService.RegenerateRecoveryCodes:output_type -> api.account.v1.RecoveryCodesResponse
-	30, // 35: api.account.v1.AccountService.GetWebauthnCredentials:output_type -> api.account.v1.WebauthnListResponse
-	31, // 36: api.account.v1.AccountService.RegisterWebauthn:output_type -> api.account.v1.RegisterWebauthnResponse
-	24, // 37: api.account.v1.AccountService.RenameWebauthnCredential:output_type -> api.account.v1.OkResponse
-	24, // 38: api.account.v1.AccountService.DeleteWebauthnCredential:output_type -> api.account.v1.OkResponse
-	32, // 39: api.account.v1.AccountService.GetThirdpartyBindings:output_type -> api.account.v1.ThirdpartyBindingsResponse
-	24, // 40: api.account.v1.AccountService.UnbindThirdparty:output_type -> api.account.v1.OkResponse
-	33, // 41: api.account.v1.AccountService.ThirdpartyOauth:output_type -> api.account.v1.ThirdpartyOauthResponse
-	34, // 42: api.account.v1.AccountService.GetThirdpartyTicket:output_type -> api.sso.v1.LoginFlowResponse
-	35, // 43: api.account.v1.AccountService.GetEvents:output_type -> api.account.v1.GetEventsResponse
-	22, // [22:44] is the sub-list for method output_type
-	0,  // [0:22] is the sub-list for method input_type
+	22, // 22: api.account.v1.AccountService.StartVerification:input_type -> api.common.v1.StartVerificationRequest
+	23, // 23: api.account.v1.AccountService.SubmitVerification:input_type -> api.common.v1.SubmitVerificationRequest
+	24, // 24: api.account.v1.AccountService.GetConfig:output_type -> api.account.v1.AccountConfigResponse
+	25, // 25: api.account.v1.AccountService.GetProfile:output_type -> api.account.v1.ProfileResponse
+	26, // 26: api.account.v1.AccountService.UpdateProfile:output_type -> api.account.v1.OkResponse
+	27, // 27: api.account.v1.AccountService.PresignAvatar:output_type -> api.account.v1.AvatarPresignResponse
+	28, // 28: api.account.v1.AccountService.CommitAvatar:output_type -> api.account.v1.AvatarResponse
+	26, // 29: api.account.v1.AccountService.ChangePassword:output_type -> api.account.v1.OkResponse
+	26, // 30: api.account.v1.AccountService.BindPhone:output_type -> api.account.v1.OkResponse
+	26, // 31: api.account.v1.AccountService.BindEmail:output_type -> api.account.v1.OkResponse
+	29, // 32: api.account.v1.AccountService.GetMfa:output_type -> api.account.v1.MfaResponse
+	26, // 33: api.account.v1.AccountService.SetMfa:output_type -> api.account.v1.OkResponse
+	30, // 34: api.account.v1.AccountService.BindTotp:output_type -> api.account.v1.BindTotpResponse
+	26, // 35: api.account.v1.AccountService.UnbindTotp:output_type -> api.account.v1.OkResponse
+	31, // 36: api.account.v1.AccountService.RegenerateRecoveryCodes:output_type -> api.account.v1.RecoveryCodesResponse
+	32, // 37: api.account.v1.AccountService.GetWebauthnCredentials:output_type -> api.account.v1.WebauthnListResponse
+	33, // 38: api.account.v1.AccountService.RegisterWebauthn:output_type -> api.account.v1.RegisterWebauthnResponse
+	26, // 39: api.account.v1.AccountService.RenameWebauthnCredential:output_type -> api.account.v1.OkResponse
+	26, // 40: api.account.v1.AccountService.DeleteWebauthnCredential:output_type -> api.account.v1.OkResponse
+	34, // 41: api.account.v1.AccountService.GetThirdpartyBindings:output_type -> api.account.v1.ThirdpartyBindingsResponse
+	26, // 42: api.account.v1.AccountService.UnbindThirdparty:output_type -> api.account.v1.OkResponse
+	35, // 43: api.account.v1.AccountService.ThirdpartyOauth:output_type -> api.account.v1.ThirdpartyOauthResponse
+	36, // 44: api.account.v1.AccountService.GetThirdpartyTicket:output_type -> api.sso.v1.LoginFlowResponse
+	37, // 45: api.account.v1.AccountService.GetEvents:output_type -> api.account.v1.GetEventsResponse
+	38, // 46: api.account.v1.AccountService.StartVerification:output_type -> api.common.v1.StartVerificationResponse
+	39, // 47: api.account.v1.AccountService.SubmitVerification:output_type -> api.common.v1.SubmitVerificationResponse
+	24, // [24:48] is the sub-list for method output_type
+	0,  // [0:24] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

@@ -10,6 +10,9 @@ import "api/sso/v1/register.proto";
 import "api/sso/v1/reset.proto";
 import "api/sso/v1/oauth.proto";
 import "api/sso/v1/ticket.proto";
+// 敏感操作二次验证的四组消息单一结构源在 api.common.v1，方法挂本域
+// 与 AccountService，不新建业务域（§3.8、§12.9）。
+import "api/common/v1/verification.proto";
 
 // 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747）；Go 产物 authloft/gen/go/api/sso/v1（ssov1），
 // connect 产物（protoc-gen-connect-go）随 service 定义生成。
@@ -22,6 +25,7 @@ option go_package = "authloft/gen/go/api/sso/v1;ssov1";
 //   Authorize           §2.7.2 行 579  LoginOauth           §2.7.4 行 616
 //   CreateQrcode        §2.8 行 687    GetLoginTicket      §2.8 行 709
 //   ConfirmLoginTicket  §2.8 行 735
+//   StartVerification   §3.8 行 1225   SubmitVerification  §3.8 行 1226
 // 登录流程方法（LoginDefault / Register / ResetPassword / LoginOauth / GetLoginTicket）
 // 的响应共用 LoginFlowResponse（§1.3 行 104），故无 XxxResponse 命名
 //（buf 的 RPC_RESPONSE_STANDARD_NAME 规则与 §1.3 行 104 共用信封口径冲突，
@@ -45,4 +49,8 @@ service SsoService {
   rpc GetLoginTicket(GetLoginTicketRequest) returns (LoginFlowResponse);
   // 已登录一端写入授权结果（§2.8 行 735-748）。
   rpc ConfirmLoginTicket(ConfirmLoginTicketRequest) returns (TicketStatus);
+  // 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+  rpc StartVerification(api.common.v1.StartVerificationRequest) returns (api.common.v1.StartVerificationResponse);
+  // 提交二次因子，返回登录流程结论（§3.8.1、§3.8.2、§7.3 步骤 7）。
+  rpc SubmitVerification(api.common.v1.SubmitVerificationRequest) returns (api.common.v1.SubmitVerificationResponse);
 }

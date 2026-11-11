@@ -153,7 +153,13 @@ func TestTamperedRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
-	tampered := tok[:len(tok)-1] + "A"
+	// 改中间一个字符，确保与原文不同（末位替换可能恰好等于原值）。
+	mid := len(tok) / 2
+	repl := byte('A')
+	if tok[mid] == 'A' {
+		repl = 'B'
+	}
+	tampered := tok[:mid] + string(repl) + tok[mid+1:]
 	if _, err := c.ParseChallenge(tampered); !errors.Is(err, ErrInvalidChallenge) {
 		t.Fatalf("tampered challenge err = %v, want ErrInvalidChallenge", err)
 	}

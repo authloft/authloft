@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+// 位于 v1/ 子目录：buf STANDARD 的 PACKAGE_DIRECTORY_MATCH 规则要求文件
+// 目录与包名 api.common.v1 逐段一致（先例：同目录 captcha.proto / error_info.proto）。
+package api.common.v1;
+
+import "google/protobuf/struct.proto";
+
+// Go 产物：authloft/gen/go/api/common/v1（包名 commonv1）。本文件只定义消息、
+// 不定义 service：敏感操作二次验证的四组消息单一结构源在 api.common.v1，
+// 方法分别挂 SsoService / AccountService（docs/接口文档.md §3.8、§12.9）。
+option go_package = "authloft/gen/go/api/common/v1;commonv1";
+
+// VerificationMethod 是 StartVerificationResponse.methods[] 的单因子能力视图
+//（§3.8.2）：字段与 §2.1 注入快照的 method 条目同构，只含能力字段，不表达
+// 业务策略（不携带 §1.10.2 的策略数值）。
+message VerificationMethod {
+  // 认证方式（§1.10.1）。
+  string method = 1;
+  // 可承担用途：primary / secondary（§1.10.1）。
+  repeated string usage = 2;
+  // 步骤序列（kind，§1.4）。
+  repeated string steps = 3;
+  // 下发前需收集的字段；结构随因子变化，按 §12.9 用 Struct 原样承载。
+  repeated google.protobuf.Struct challenge_fields = 4;
+  // 验证码位数（§2.1）。
+  int64 code_length = 5;
+  // 重发冷却秒数（§2.1）。
+  int64 resend_after = 6;
+  // 验证码有效期秒数（§2.1）。
+  int64 expires_in = 7;
+  // 前端能力检测键（§2.1）。
+  string capability = 8;
+  // 第三方清单；结构随 Provider 变化，按 §12.9 用 Struct 原样承载。
+  repeated google.protobuf.Struct providers = 9;
+}
+
+// VerificationNextStep 是 StartVerificationResponse.next_step（§3.8.2）：
+// kind 语义同 §1.4；challenge_data 为原样透传的 WebAuthn options（§12.9）。
+message VerificationNextStep {
+  // 渲染侧 kind（§1.4）。
+  string kind = 1;
+  // WebAuthn options 对象，前端整体透传（§12.9）。
+  google.protobuf.Struct challenge_data = 2;
+}
+
+// StartVerificationRequest 是 StartVerification 的请求（§3.8.2）。
+message StartVerificationRequest {
+  // 业务用途，封闭取值见 §3.8.3（八值）。
+  string biz_purpose = 1;
+  // 空 = 只返回 methods[]，由前端选择因子；非空 = 选定本次下发的因子。
+  string method = 2;
+  // 仅 SsoService 且 biz_purpose=login 必填（§3.8.1）。
+  string login_token = 3;
+  // 仅扫码场景必填，取扫码票据 ticketId（§3.8.1）。
+  string mfa_pending_id = 4;
+  // 必填，写入挑战令牌，规则见 §3.8.4。
+  string operation = 5;
+  // 请求级人机校验凭据，是否需要按 §2.5 触发表判定；凭据结构见 §2.5。
+  // 以 Struct 承载避免 api.common.v1 → api.sso.v1 的包依赖循环：字段语义、
+  // 必填与约束仍由 §2.5 定义，服务端按该结构逐字段校验（§12.9 Struct 口径）。
+  google.protobuf.Struct captcha = 6;
+}
+
+// StartVerificationResponse 是 StartVerification 的响应（§3.8.2）。
+message StartVerificationResponse {
+  // 不透明挑战令牌，前端只透传。
+  string challenge_token = 1;
+  // 可用因子能力视图。
+  repeated VerificationMethod methods = 2;
+  // 挑战有效期（秒），取值见 §1.10.2。
+  int64 expires_in = 3;
+  // 下一步渲染信息（§1.4）。
+  VerificationNextStep next_step = 4;
+}
+
+// SubmitVerificationRequest 是 SubmitVerification 的请求（§3.8.2）。
+message SubmitVerificationRequest {
+  // 上一步下发的挑战令牌。
+  string challenge_token = 1;
+  // 本次提交的因子，须在挑战令牌记录的 methods 内。
+  string method = 2;
+  // 因子载荷，对照 §2.6；原样透传结构用 Struct（§12.9）。
+  google.protobuf.Struct payload = 3;
+  // 登录流程上下文恢复凭据（§3.8.1、§3.8.5）：仅 SsoService 组可携带，
+  // 用于恢复 oidc / tid / passed；只恢复上下文、不替代挑战令牌的主体判定，
+  // uid 必须与挑战令牌 subject 一致。AccountService 组传入一律拒绝。
+  string login_token = 4;
+}
+
+// SubmitVerificationResponse 是 SubmitVerification 的响应（§3.8.2）：
+// SsoService 组填登录流程结论，AccountService 组填断言，两组共用 amr。
+message SubmitVerificationResponse {
+  // 仅 SsoService 组；取值见 §1.6，成功为 success。
+  string status = 1;
+  // 仅 SsoService 组；终点跳转地址。
+  string redirect_to = 2;
+  // 仅 SsoService 组；多域名同步地址。
+  string sync_cookie_url = 3;
+  // 仅 AccountService 组；不透明断言令牌，交回发起该敏感操作的接口。
+  string verification_token = 4;
+  // 仅 AccountService 组；断言有效期（秒）。
+  int64 expires_in = 5;
+  // 两组共用；实际通过的因子，只由服务端写入，请求无该字段。
+  repeated string amr = 6;
+}

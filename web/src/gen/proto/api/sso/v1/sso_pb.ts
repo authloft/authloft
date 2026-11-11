@@ -16,12 +16,14 @@ import type { AuthorizeRequestSchema, AuthorizeResponseSchema, LoginOauthRequest
 import { file_api_sso_v1_oauth } from "./oauth_pb";
 import type { ConfirmLoginTicketRequestSchema, CreateQrcodeRequestSchema, CreateQrcodeResponseSchema, GetLoginTicketRequestSchema } from "./ticket_pb";
 import { file_api_sso_v1_ticket } from "./ticket_pb";
+import type { StartVerificationRequestSchema, StartVerificationResponseSchema, SubmitVerificationRequestSchema, SubmitVerificationResponseSchema } from "../../common/v1/verification_pb";
+import { file_api_common_v1_verification } from "../../common/v1/verification_pb";
 
 /**
  * Describes the file api/sso/v1/sso.proto.
  */
 export const file_api_sso_v1_sso: GenFile = /*@__PURE__*/
-  fileDesc("ChRhcGkvc3NvL3YxL3Nzby5wcm90bxIKYXBpLnNzby52MTLvBQoKU3NvU2VydmljZRJOCgxMb2dpbkRlZmF1bHQSHy5hcGkuc3NvLnYxLkxvZ2luRGVmYXVsdFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEkYKCFJlZ2lzdGVyEhsuYXBpLnNzby52MS5SZWdpc3RlclJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKDVJlc2V0UGFzc3dvcmQSIC5hcGkuc3NvLnYxLlJlc2V0UGFzc3dvcmRSZXF1ZXN0Gh0uYXBpLnNzby52MS5Mb2dpbkZsb3dSZXNwb25zZRJjChJDcmVhdGVDYXB0Y2hhSW1hZ2USJS5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlcXVlc3QaJi5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEkgKCUF1dGhvcml6ZRIcLmFwaS5zc28udjEuQXV0aG9yaXplUmVxdWVzdBodLmFwaS5zc28udjEuQXV0aG9yaXplUmVzcG9uc2USSgoKTG9naW5PYXV0aBIdLmFwaS5zc28udjEuTG9naW5PYXV0aFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElEKDENyZWF0ZVFyY29kZRIfLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVxdWVzdBogLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVzcG9uc2USUgoOR2V0TG9naW5UaWNrZXQSIS5hcGkuc3NvLnYxLkdldExvZ2luVGlja2V0UmVxdWVzdBodLmFwaS5zc28udjEuTG9naW5GbG93UmVzcG9uc2USVQoSQ29uZmlybUxvZ2luVGlja2V0EiUuYXBpLnNzby52MS5Db25maXJtTG9naW5UaWNrZXRSZXF1ZXN0GhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXNCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_api_sso_v1_envelope, file_api_sso_v1_login, file_api_sso_v1_register, file_api_sso_v1_reset, file_api_sso_v1_oauth, file_api_sso_v1_ticket]);
+  fileDesc("ChRhcGkvc3NvL3YxL3Nzby5wcm90bxIKYXBpLnNzby52MTLCBwoKU3NvU2VydmljZRJOCgxMb2dpbkRlZmF1bHQSHy5hcGkuc3NvLnYxLkxvZ2luRGVmYXVsdFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEkYKCFJlZ2lzdGVyEhsuYXBpLnNzby52MS5SZWdpc3RlclJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKDVJlc2V0UGFzc3dvcmQSIC5hcGkuc3NvLnYxLlJlc2V0UGFzc3dvcmRSZXF1ZXN0Gh0uYXBpLnNzby52MS5Mb2dpbkZsb3dSZXNwb25zZRJjChJDcmVhdGVDYXB0Y2hhSW1hZ2USJS5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlcXVlc3QaJi5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEkgKCUF1dGhvcml6ZRIcLmFwaS5zc28udjEuQXV0aG9yaXplUmVxdWVzdBodLmFwaS5zc28udjEuQXV0aG9yaXplUmVzcG9uc2USSgoKTG9naW5PYXV0aBIdLmFwaS5zc28udjEuTG9naW5PYXV0aFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElEKDENyZWF0ZVFyY29kZRIfLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVxdWVzdBogLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVzcG9uc2USUgoOR2V0TG9naW5UaWNrZXQSIS5hcGkuc3NvLnYxLkdldExvZ2luVGlja2V0UmVxdWVzdBodLmFwaS5zc28udjEuTG9naW5GbG93UmVzcG9uc2USVQoSQ29uZmlybUxvZ2luVGlja2V0EiUuYXBpLnNzby52MS5Db25maXJtTG9naW5UaWNrZXRSZXF1ZXN0GhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSZgoRU3RhcnRWZXJpZmljYXRpb24SJy5hcGkuY29tbW9uLnYxLlN0YXJ0VmVyaWZpY2F0aW9uUmVxdWVzdBooLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXNwb25zZRJpChJTdWJtaXRWZXJpZmljYXRpb24SKC5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlcXVlc3QaKS5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlc3BvbnNlQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_envelope, file_api_sso_v1_login, file_api_sso_v1_register, file_api_sso_v1_reset, file_api_sso_v1_oauth, file_api_sso_v1_ticket, file_api_common_v1_verification]);
 
 /**
  * SsoService 是 sso 域的 Connect service（docs/接口文档.md §2，行 356-765）。
@@ -31,6 +33,7 @@ export const file_api_sso_v1_sso: GenFile = /*@__PURE__*/
  *   Authorize           §2.7.2 行 579  LoginOauth           §2.7.4 行 616
  *   CreateQrcode        §2.8 行 687    GetLoginTicket      §2.8 行 709
  *   ConfirmLoginTicket  §2.8 行 735
+ *   StartVerification   §3.8 行 1225   SubmitVerification  §3.8 行 1226
  * 登录流程方法（LoginDefault / Register / ResetPassword / LoginOauth / GetLoginTicket）
  * 的响应共用 LoginFlowResponse（§1.3 行 104），故无 XxxResponse 命名
  * （buf 的 RPC_RESPONSE_STANDARD_NAME 规则与 §1.3 行 104 共用信封口径冲突，
@@ -128,6 +131,26 @@ export const SsoService: GenService<{
     methodKind: "unary";
     input: typeof ConfirmLoginTicketRequestSchema;
     output: typeof TicketStatusSchema;
+  },
+  /**
+   * 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+   *
+   * @generated from rpc api.sso.v1.SsoService.StartVerification
+   */
+  startVerification: {
+    methodKind: "unary";
+    input: typeof StartVerificationRequestSchema;
+    output: typeof StartVerificationResponseSchema;
+  },
+  /**
+   * 提交二次因子，返回登录流程结论（§3.8.1、§3.8.2、§7.3 步骤 7）。
+   *
+   * @generated from rpc api.sso.v1.SsoService.SubmitVerification
+   */
+  submitVerification: {
+    methodKind: "unary";
+    input: typeof SubmitVerificationRequestSchema;
+    output: typeof SubmitVerificationResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_api_sso_v1_sso, 0);

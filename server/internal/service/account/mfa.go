@@ -74,6 +74,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -84,6 +85,7 @@ import (
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
 
@@ -141,7 +143,7 @@ var (
 )
 
 // MfaUserStore user 表读取窄接口（§20）：*repo.UserRepo 天然满足
-//（factor.UserRepo 同构；SetMfa required 判定读 mfa_required 列、
+// （factor.UserRepo 同构；SetMfa required 判定读 mfa_required 列、
 // BindTotpChallenge 读 username 组 otpauth label）。
 type MfaUserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
@@ -189,6 +191,15 @@ type MfaDeps struct {
 	Now func() time.Time
 	// Rand 随机源注入（缺省 crypto/rand.Reader；TOTP secret 与恢复码生成）。
 	Rand io.Reader
+	// Assertions 敏感操作断言消费出口（§16 解绑 TOTP）；nil（未装配）时
+	// UnbindTotp 返回基础设施失败，不越过校验解绑。
+	Assertions AssertionConsumer
+}
+
+// AssertionConsumer 断言消费窄接口（§20 依赖注入）：生产注入
+// *verification.Service，测试可传 fake。
+type AssertionConsumer interface {
+	ConsumeAssertion(ctx context.Context, token string, want verification.Want) (verification.Assertion, error)
 }
 
 // MfaService account 域两步验证族业务层。
@@ -208,10 +219,10 @@ func NewMfaService(d MfaDeps) *MfaService {
 
 // compile 时断言生产实现满足各窄接口。
 var (
-	_ MfaUserStore        = (*repo.UserRepo)(nil)
-	_ MfaCredentialStore  = (*repo.CredentialRepo)(nil)
-	_ MfaWebauthnStore     = (*repo.WebauthnRepo)(nil)
-	_ MfaSettingsReader    = (*settings.Store)(nil)
+	_ MfaUserStore       = (*repo.UserRepo)(nil)
+	_ MfaCredentialStore = (*repo.CredentialRepo)(nil)
+	_ MfaWebauthnStore   = (*repo.WebauthnRepo)(nil)
+	_ MfaSettingsReader  = (*settings.Store)(nil)
 )
 
 // MfaFactorDetail GetMfa 单因子绑定明细（§3.5 行 907-913；不同 factor 只填
@@ -235,7 +246,7 @@ type MfaFactorDetail struct {
 }
 
 // MfaDetail GetMfa 响应明细（§3.5 行 905-915）：五因子序固定 mfa 明细序
-//（totp → otp_sms → otp_email → webauthn → recovery_code，dto.mfaFactorOrder
+// （totp → otp_sms → otp_email → webauthn → recovery_code，dto.mfaFactorOrder
 // 同序）+ recoveryIssuedAt。
 type MfaDetail struct {
 	Factors []MfaFactorDetail
@@ -259,7 +270,7 @@ type TotpChallenge struct {
 // RecoveryCodesResult RegenerateRecoveryCodes 响应（§3.5 行 925，
 // RecoveryCodesResponse proto 同构；与 BindTotp verify 的 recoveryCodes
 // 同格式）：codes 为展示形 xxxx-xxxx，createdAt 为签发时间
-//（kind=recovery_code 行 created_at）。
+// （kind=recovery_code 行 created_at）。
 type RecoveryCodesResult struct {
 	Codes     []string
 	CreatedAt int64
@@ -526,15 +537,15 @@ func (s *MfaService) BindTotpChallenge(ctx context.Context, uid int64) (*TotpCha
 		"?secret=" + secret +
 		"&issuer=" + url.QueryEscape(setMfaIssuer)
 	return &TotpChallenge{
-		Secret:         secret,
-		OtpauthUrl:     otpauth,
-		QrcodeContent:  otpauth,
+		Secret:        secret,
+		OtpauthUrl:    otpauth,
+		QrcodeContent: otpauth,
 	}, nil
 }
 
 // BindTotpVerify step=verify（§3.5 行 923）：RFC 6238 ±1 时间步校验 →
 // 通过即绑定生效（upsert kind=totp 行）+ 同一响应重签 10 条恢复码
-//（覆盖既有即全量作废旧码），返回展示形恢复码。
+// （覆盖既有即全量作废旧码），返回展示形恢复码。
 func (s *MfaService) BindTotpVerify(ctx context.Context, uid int64, secret, code string) ([]string, error) {
 	if uid <= 0 {
 		return nil, ErrMfaUnauthenticated
@@ -816,4 +827,48 @@ func encodeDetailMfaMethods(methods []string) []byte {
 		return nil
 	}
 	return b
+}
+
+// UnbindTotp 解除当前 TOTP 绑定（接口文档 §3.5、后端架构 §16）：先消费
+// 验证断言，按 biz_purpose=unbind_totp / subject=会话 uid /
+// operation=unbind_totp 三重校验（§16 行 1842、§11.6.7 行 1482）；通过后
+// 删除 kind=totp 凭据并作废恢复码。断言缺失直接返回 verification_required，
+// 断言无效 / 过期由消费方映射 verification_invalid，重放由凭据去重兜住
+// （§3.8.5）。
+func (s *MfaService) UnbindTotp(ctx context.Context, uid int64, token string) error {
+	if uid <= 0 {
+		return ErrMfaUnauthenticated
+	}
+	if token == "" {
+		return &verification.Error{Code: "verification_required"}
+	}
+	if s.deps.Assertions == nil {
+		return fmt.Errorf("%w: assertion consumer not configured", ErrMfaInternal)
+	}
+	_, err := s.deps.Assertions.ConsumeAssertion(ctx, token, verification.Want{
+		BizPurpose: verification.BizPurposeUnbindTOTP,
+		Operation:  "unbind_totp",
+		Subject:    verification.Subject{Kind: verification.SubjectKindUID, ID: strconv.FormatInt(uid, 10)},
+	})
+	if err != nil {
+		return err
+	}
+	// 未绑定检查（§3.5）：totp 行不存在即无可解绑。低风险 biz_purpose 按
+	// §11.6.7 不加 al:once，一次性由凭据去重保证——解绑成功即删除该行，
+	// 同一断言再次提交会命中此分支，按重放返回 verification_invalid
+	//（§3.8.5），不新造 Redis 状态键。
+	if _, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindTotp); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &verification.Error{Code: "verification_invalid"}
+		}
+		return fmt.Errorf("%w: load totp credential: %v", ErrMfaInternal, err)
+	}
+	if err := s.deps.Creds.DeleteByUserAndKind(ctx, uid, kindTotp); err != nil {
+		return fmt.Errorf("%w: delete totp credential: %v", ErrMfaInternal, err)
+	}
+	// 作废恢复码（§16 行 1842）：随 TOTP 绑定一并移除。
+	if err := s.deps.Creds.DeleteByUserAndKind(ctx, uid, kindRecoveryCode); err != nil {
+		return fmt.Errorf("%w: delete recovery codes: %v", ErrMfaInternal, err)
+	}
+	return nil
 }

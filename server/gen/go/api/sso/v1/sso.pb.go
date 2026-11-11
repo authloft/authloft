@@ -7,6 +7,7 @@
 package ssov1
 
 import (
+	v1 "authloft/gen/go/api/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -25,7 +26,7 @@ var File_api_sso_v1_sso_proto protoreflect.FileDescriptor
 const file_api_sso_v1_sso_proto_rawDesc = "" +
 	"\n" +
 	"\x14api/sso/v1/sso.proto\x12\n" +
-	"api.sso.v1\x1a\x19api/sso/v1/envelope.proto\x1a\x16api/sso/v1/login.proto\x1a\x19api/sso/v1/register.proto\x1a\x16api/sso/v1/reset.proto\x1a\x16api/sso/v1/oauth.proto\x1a\x17api/sso/v1/ticket.proto2\xef\x05\n" +
+	"api.sso.v1\x1a\x19api/sso/v1/envelope.proto\x1a\x16api/sso/v1/login.proto\x1a\x19api/sso/v1/register.proto\x1a\x16api/sso/v1/reset.proto\x1a\x16api/sso/v1/oauth.proto\x1a\x17api/sso/v1/ticket.proto\x1a api/common/v1/verification.proto2\xc2\a\n" +
 	"\n" +
 	"SsoService\x12N\n" +
 	"\fLoginDefault\x12\x1f.api.sso.v1.LoginDefaultRequest\x1a\x1d.api.sso.v1.LoginFlowResponse\x12F\n" +
@@ -37,23 +38,29 @@ const file_api_sso_v1_sso_proto_rawDesc = "" +
 	"LoginOauth\x12\x1d.api.sso.v1.LoginOauthRequest\x1a\x1d.api.sso.v1.LoginFlowResponse\x12Q\n" +
 	"\fCreateQrcode\x12\x1f.api.sso.v1.CreateQrcodeRequest\x1a .api.sso.v1.CreateQrcodeResponse\x12R\n" +
 	"\x0eGetLoginTicket\x12!.api.sso.v1.GetLoginTicketRequest\x1a\x1d.api.sso.v1.LoginFlowResponse\x12U\n" +
-	"\x12ConfirmLoginTicket\x12%.api.sso.v1.ConfirmLoginTicketRequest\x1a\x18.api.sso.v1.TicketStatusB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\x12ConfirmLoginTicket\x12%.api.sso.v1.ConfirmLoginTicketRequest\x1a\x18.api.sso.v1.TicketStatus\x12f\n" +
+	"\x11StartVerification\x12'.api.common.v1.StartVerificationRequest\x1a(.api.common.v1.StartVerificationResponse\x12i\n" +
+	"\x12SubmitVerification\x12(.api.common.v1.SubmitVerificationRequest\x1a).api.common.v1.SubmitVerificationResponseB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var file_api_sso_v1_sso_proto_goTypes = []any{
-	(*LoginDefaultRequest)(nil),        // 0: api.sso.v1.LoginDefaultRequest
-	(*RegisterRequest)(nil),            // 1: api.sso.v1.RegisterRequest
-	(*ResetPasswordRequest)(nil),       // 2: api.sso.v1.ResetPasswordRequest
-	(*CreateCaptchaImageRequest)(nil),  // 3: api.sso.v1.CreateCaptchaImageRequest
-	(*AuthorizeRequest)(nil),           // 4: api.sso.v1.AuthorizeRequest
-	(*LoginOauthRequest)(nil),          // 5: api.sso.v1.LoginOauthRequest
-	(*CreateQrcodeRequest)(nil),        // 6: api.sso.v1.CreateQrcodeRequest
-	(*GetLoginTicketRequest)(nil),      // 7: api.sso.v1.GetLoginTicketRequest
-	(*ConfirmLoginTicketRequest)(nil),  // 8: api.sso.v1.ConfirmLoginTicketRequest
-	(*LoginFlowResponse)(nil),          // 9: api.sso.v1.LoginFlowResponse
-	(*CreateCaptchaImageResponse)(nil), // 10: api.sso.v1.CreateCaptchaImageResponse
-	(*AuthorizeResponse)(nil),          // 11: api.sso.v1.AuthorizeResponse
-	(*CreateQrcodeResponse)(nil),       // 12: api.sso.v1.CreateQrcodeResponse
-	(*TicketStatus)(nil),               // 13: api.sso.v1.TicketStatus
+	(*LoginDefaultRequest)(nil),           // 0: api.sso.v1.LoginDefaultRequest
+	(*RegisterRequest)(nil),               // 1: api.sso.v1.RegisterRequest
+	(*ResetPasswordRequest)(nil),          // 2: api.sso.v1.ResetPasswordRequest
+	(*CreateCaptchaImageRequest)(nil),     // 3: api.sso.v1.CreateCaptchaImageRequest
+	(*AuthorizeRequest)(nil),              // 4: api.sso.v1.AuthorizeRequest
+	(*LoginOauthRequest)(nil),             // 5: api.sso.v1.LoginOauthRequest
+	(*CreateQrcodeRequest)(nil),           // 6: api.sso.v1.CreateQrcodeRequest
+	(*GetLoginTicketRequest)(nil),         // 7: api.sso.v1.GetLoginTicketRequest
+	(*ConfirmLoginTicketRequest)(nil),     // 8: api.sso.v1.ConfirmLoginTicketRequest
+	(*v1.StartVerificationRequest)(nil),   // 9: api.common.v1.StartVerificationRequest
+	(*v1.SubmitVerificationRequest)(nil),  // 10: api.common.v1.SubmitVerificationRequest
+	(*LoginFlowResponse)(nil),             // 11: api.sso.v1.LoginFlowResponse
+	(*CreateCaptchaImageResponse)(nil),    // 12: api.sso.v1.CreateCaptchaImageResponse
+	(*AuthorizeResponse)(nil),             // 13: api.sso.v1.AuthorizeResponse
+	(*CreateQrcodeResponse)(nil),          // 14: api.sso.v1.CreateQrcodeResponse
+	(*TicketStatus)(nil),                  // 15: api.sso.v1.TicketStatus
+	(*v1.StartVerificationResponse)(nil),  // 16: api.common.v1.StartVerificationResponse
+	(*v1.SubmitVerificationResponse)(nil), // 17: api.common.v1.SubmitVerificationResponse
 }
 var file_api_sso_v1_sso_proto_depIdxs = []int32{
 	0,  // 0: api.sso.v1.SsoService.LoginDefault:input_type -> api.sso.v1.LoginDefaultRequest
@@ -65,17 +72,21 @@ var file_api_sso_v1_sso_proto_depIdxs = []int32{
 	6,  // 6: api.sso.v1.SsoService.CreateQrcode:input_type -> api.sso.v1.CreateQrcodeRequest
 	7,  // 7: api.sso.v1.SsoService.GetLoginTicket:input_type -> api.sso.v1.GetLoginTicketRequest
 	8,  // 8: api.sso.v1.SsoService.ConfirmLoginTicket:input_type -> api.sso.v1.ConfirmLoginTicketRequest
-	9,  // 9: api.sso.v1.SsoService.LoginDefault:output_type -> api.sso.v1.LoginFlowResponse
-	9,  // 10: api.sso.v1.SsoService.Register:output_type -> api.sso.v1.LoginFlowResponse
-	9,  // 11: api.sso.v1.SsoService.ResetPassword:output_type -> api.sso.v1.LoginFlowResponse
-	10, // 12: api.sso.v1.SsoService.CreateCaptchaImage:output_type -> api.sso.v1.CreateCaptchaImageResponse
-	11, // 13: api.sso.v1.SsoService.Authorize:output_type -> api.sso.v1.AuthorizeResponse
-	9,  // 14: api.sso.v1.SsoService.LoginOauth:output_type -> api.sso.v1.LoginFlowResponse
-	12, // 15: api.sso.v1.SsoService.CreateQrcode:output_type -> api.sso.v1.CreateQrcodeResponse
-	9,  // 16: api.sso.v1.SsoService.GetLoginTicket:output_type -> api.sso.v1.LoginFlowResponse
-	13, // 17: api.sso.v1.SsoService.ConfirmLoginTicket:output_type -> api.sso.v1.TicketStatus
-	9,  // [9:18] is the sub-list for method output_type
-	0,  // [0:9] is the sub-list for method input_type
+	9,  // 9: api.sso.v1.SsoService.StartVerification:input_type -> api.common.v1.StartVerificationRequest
+	10, // 10: api.sso.v1.SsoService.SubmitVerification:input_type -> api.common.v1.SubmitVerificationRequest
+	11, // 11: api.sso.v1.SsoService.LoginDefault:output_type -> api.sso.v1.LoginFlowResponse
+	11, // 12: api.sso.v1.SsoService.Register:output_type -> api.sso.v1.LoginFlowResponse
+	11, // 13: api.sso.v1.SsoService.ResetPassword:output_type -> api.sso.v1.LoginFlowResponse
+	12, // 14: api.sso.v1.SsoService.CreateCaptchaImage:output_type -> api.sso.v1.CreateCaptchaImageResponse
+	13, // 15: api.sso.v1.SsoService.Authorize:output_type -> api.sso.v1.AuthorizeResponse
+	11, // 16: api.sso.v1.SsoService.LoginOauth:output_type -> api.sso.v1.LoginFlowResponse
+	14, // 17: api.sso.v1.SsoService.CreateQrcode:output_type -> api.sso.v1.CreateQrcodeResponse
+	11, // 18: api.sso.v1.SsoService.GetLoginTicket:output_type -> api.sso.v1.LoginFlowResponse
+	15, // 19: api.sso.v1.SsoService.ConfirmLoginTicket:output_type -> api.sso.v1.TicketStatus
+	16, // 20: api.sso.v1.SsoService.StartVerification:output_type -> api.common.v1.StartVerificationResponse
+	17, // 21: api.sso.v1.SsoService.SubmitVerification:output_type -> api.common.v1.SubmitVerificationResponse
+	11, // [11:22] is the sub-list for method output_type
+	0,  // [0:11] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

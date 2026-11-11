@@ -33,6 +33,7 @@ import (
 	"authloft/internal/security"
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -146,7 +147,7 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	}
 	_, h := accountv1connect.NewAccountServiceHandler(
 		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
-			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies),
+			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies, d.verification()),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -160,19 +161,20 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 // getConfigDeps GetConfig / 三方绑定族 / 通行密钥族 / UpdateProfile / 五族
 // 接线用例的依赖集（缺省字段取空 fake）。
 type getConfigDeps struct {
-	credsIn       CredentialReader
-	settingsIn    SettingsReader
-	providersIn   ProviderReader
-	captcha       CaptchaConfiger
-	thirdpartyIn  Thirdparty
-	webauthnIn    Webauthn
-	profileIn     ProfileUpdater
-	avatarIn      AvatarDirector
-	passwordIn    PasswordChanger
-	bindcontactIn ContactBinder
-	mfaIn         MfaManager
-	eventsIn      EventReader
-	cookies       *session.Cookie
+	credsIn        CredentialReader
+	settingsIn     SettingsReader
+	providersIn    ProviderReader
+	captcha        CaptchaConfiger
+	thirdpartyIn   Thirdparty
+	webauthnIn     Webauthn
+	profileIn      ProfileUpdater
+	avatarIn       AvatarDirector
+	passwordIn     PasswordChanger
+	bindcontactIn  ContactBinder
+	mfaIn          MfaManager
+	eventsIn       EventReader
+	cookies        *session.Cookie
+	verificationIn Verification
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -204,6 +206,7 @@ func (d *getConfigDeps) password() PasswordChanger  { return d.passwordIn }
 func (d *getConfigDeps) bindcontact() ContactBinder { return d.bindcontactIn }
 func (d *getConfigDeps) mfa() MfaManager            { return d.mfaIn }
 func (d *getConfigDeps) events() EventReader        { return d.eventsIn }
+func (d *getConfigDeps) verification() Verification { return d.verificationIn }
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -791,8 +794,8 @@ func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, uid int64, in *acc
 
 // TestUpdateProfileWithSession 有会话端到端：带有效 al_session Cookie 打
 // UpdateProfile → 200 空响应（§3.2 行 837）；service 收到会话 uid=10086
-//（仅本人——目标一律取 ctx 身份，不接受入参指定）与请求体原样透传
-//（proto3 optional 的 has 位解析归 service，handler 不做裁剪）。
+// （仅本人——目标一律取 ctx 身份，不接受入参指定）与请求体原样透传
+// （proto3 optional 的 has 位解析归 service，handler 不做裁剪）。
 func TestUpdateProfileWithSession(t *testing.T) {
 	fp := &fakeProfileUpdater{}
 	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
@@ -936,7 +939,7 @@ func TestUpdateProfileUserNotFound(t *testing.T) {
 
 // TestUpdateProfileBadBirthday service 回 ErrProfileInvalidRequest（birthday
 // 格式非法）→ 400 invalid_argument + ErrorInfo(account, invalid_request)
-//（§1.6 封闭集；文案同 rpc 域先例）。
+// （§1.6 封闭集；文案同 rpc 域先例）。
 func TestUpdateProfileBadBirthday(t *testing.T) {
 	fp := &fakeProfileUpdater{err: accountsvc.ErrProfileInvalidRequest}
 	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
@@ -1797,7 +1800,7 @@ func (f *fakePassword) ChangePassword(_ context.Context, uid int64, currentPassw
 }
 
 // TestChangePasswordConnect：成功空响应 + 透传 + Set-Cookie al_session 清除
-//（MaxAge=-1，§3.3 行 879 epoch 失效链的浏览器侧收尾）；password_weak /
+// （MaxAge=-1，§3.3 行 879 epoch 失效链的浏览器侧收尾）；password_weak /
 // invalid_credentials 两主要错误映射；无会话 401。
 func TestChangePasswordConnect(t *testing.T) {
 	fp := &fakePassword{}
@@ -1980,6 +1983,9 @@ type fakeMfa struct {
 	regen        *accountsvc.RecoveryCodesResult
 	regenErr     error
 	regenActions []string
+	unbindErr    error
+	unbindUIDs   []int64
+	unbindTokens []string
 }
 
 func (f *fakeMfa) GetMfa(_ context.Context, _ int64) (*accountsvc.MfaDetail, error) {
@@ -2005,6 +2011,13 @@ func (f *fakeMfa) BindTotpVerify(_ context.Context, uid int64, secret, code stri
 func (f *fakeMfa) RegenerateRecoveryCodes(_ context.Context, _ int64, action string) (*accountsvc.RecoveryCodesResult, error) {
 	f.regenActions = append(f.regenActions, action)
 	return f.regen, f.regenErr
+}
+
+// UnbindTotp 让 fakeMfa 满足 MfaUnbinder：记录会话 uid 与断言令牌。
+func (f *fakeMfa) UnbindTotp(_ context.Context, uid int64, token string) error {
+	f.unbindUIDs = append(f.unbindUIDs, uid)
+	f.unbindTokens = append(f.unbindTokens, token)
+	return f.unbindErr
 }
 
 // TestGetMfaConnect：五因子明细投影（factor/bound/target/remaining/
@@ -2134,24 +2147,46 @@ func TestBindTotpConnect(t *testing.T) {
 	}
 }
 
-// TestUnbindTotpContractPending：UnbindTotp 契约先行占位——解绑前须完成
-// 一次 MFA 验证（§3.5），验证流程此处不单独定义；实装前即便五族
-// service 均已装配也一律 unimplemented，且不返回业务错误信封。
-// 原 GetRecoveryCodes 已移除，不再有存量恢复码回显用例。
-func TestUnbindTotpContractPending(t *testing.T) {
+// TestUnbindTotpConnect：解绑须携带 §3.8 断言令牌，handler 把会话 uid 与
+// verification_token 透传给 service；成功为空响应。
+func TestUnbindTotpConnect(t *testing.T) {
+	m := &fakeMfa{}
 	code, raw, _ := postService(t, accountv1connect.AccountServiceUnbindTotpProcedure,
-		`{}`, &getConfigDeps{mfaIn: &fakeMfa{}})
-	if code == http.StatusOK {
-		t.Fatalf("status = 200，占位不应成功（body %s）", raw)
+		`{"verificationToken":"vt-1"}`, &getConfigDeps{mfaIn: m})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
 	}
-	var errBody struct {
-		Code string `json:"code"`
+	if len(m.unbindUIDs) != 1 || m.unbindUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]", m.unbindUIDs)
 	}
-	if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
-		t.Fatalf("decode error body %q: %v", raw, err)
+	if len(m.unbindTokens) != 1 || m.unbindTokens[0] != "vt-1" {
+		t.Errorf("service 收到 verificationToken = %v, want [vt-1]", m.unbindTokens)
 	}
-	if errBody.Code != "unimplemented" {
-		t.Errorf("code = %q, want unimplemented (body %s)", errBody.Code, raw)
+}
+
+// TestUnbindTotpVerificationCodes：缺断言 / 断言无效按 §3.8.5 只落在
+// ErrorInfo.code（verification_required / verification_invalid），HTTP 400。
+func TestUnbindTotpVerificationCodes(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"缺断言", &verification.Error{Code: "verification_required"}, "verification_required"},
+		{"断言无效 / 重放", &verification.Error{Code: "verification_invalid"}, "verification_invalid"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &fakeMfa{unbindErr: tc.err}
+			code, raw, _ := postService(t, accountv1connect.AccountServiceUnbindTotpProcedure,
+				`{"verificationToken":"vt-1"}`, &getConfigDeps{mfaIn: m})
+			if code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+			}
+			if info := decodeAccountErrorInfo(t, raw); info.GetCode() != tc.code {
+				t.Errorf("ErrorInfo code = %q, want %q", info.GetCode(), tc.code)
+			}
+		})
 	}
 }
 

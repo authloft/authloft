@@ -6,6 +6,7 @@ package accountv1connect
 
 import (
 	v1 "authloft/gen/go/api/account/v1"
+	v12 "authloft/gen/go/api/common/v1"
 	v11 "authloft/gen/go/api/sso/v1"
 	connect "connectrpc.com/connect"
 	context "context"
@@ -97,6 +98,12 @@ const (
 	// AccountServiceGetEventsProcedure is the fully-qualified name of the AccountService's GetEvents
 	// RPC.
 	AccountServiceGetEventsProcedure = "/api.account.v1.AccountService/GetEvents"
+	// AccountServiceStartVerificationProcedure is the fully-qualified name of the AccountService's
+	// StartVerification RPC.
+	AccountServiceStartVerificationProcedure = "/api.account.v1.AccountService/StartVerification"
+	// AccountServiceSubmitVerificationProcedure is the fully-qualified name of the AccountService's
+	// SubmitVerification RPC.
+	AccountServiceSubmitVerificationProcedure = "/api.account.v1.AccountService/SubmitVerification"
 )
 
 // AccountServiceClient is a client for the api.account.v1.AccountService service.
@@ -123,9 +130,8 @@ type AccountServiceClient interface {
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
 	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
-	// MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
-	// 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+	// 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
 	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
 	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
@@ -148,6 +154,10 @@ type AccountServiceClient interface {
 	GetThirdpartyTicket(context.Context, *connect.Request[v1.GetThirdpartyTicketRequest]) (*connect.Response[v11.LoginFlowResponse], error)
 	// 本人登录记录（仅成功记录，§3.7 行 1038）。
 	GetEvents(context.Context, *connect.Request[v1.GetEventsRequest]) (*connect.Response[v1.GetEventsResponse], error)
+	// 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)
+	// 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
+	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the api.account.v1.AccountService service. By
@@ -293,6 +303,18 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("GetEvents")),
 			connect.WithClientOptions(opts...),
 		),
+		startVerification: connect.NewClient[v12.StartVerificationRequest, v12.StartVerificationResponse](
+			httpClient,
+			baseURL+AccountServiceStartVerificationProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("StartVerification")),
+			connect.WithClientOptions(opts...),
+		),
+		submitVerification: connect.NewClient[v12.SubmitVerificationRequest, v12.SubmitVerificationResponse](
+			httpClient,
+			baseURL+AccountServiceSubmitVerificationProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("SubmitVerification")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -320,6 +342,8 @@ type accountServiceClient struct {
 	thirdpartyOauth          *connect.Client[v1.ThirdpartyOauthRequest, v1.ThirdpartyOauthResponse]
 	getThirdpartyTicket      *connect.Client[v1.GetThirdpartyTicketRequest, v11.LoginFlowResponse]
 	getEvents                *connect.Client[v1.GetEventsRequest, v1.GetEventsResponse]
+	startVerification        *connect.Client[v12.StartVerificationRequest, v12.StartVerificationResponse]
+	submitVerification       *connect.Client[v12.SubmitVerificationRequest, v12.SubmitVerificationResponse]
 }
 
 // GetConfig calls api.account.v1.AccountService.GetConfig.
@@ -432,6 +456,16 @@ func (c *accountServiceClient) GetEvents(ctx context.Context, req *connect.Reque
 	return c.getEvents.CallUnary(ctx, req)
 }
 
+// StartVerification calls api.account.v1.AccountService.StartVerification.
+func (c *accountServiceClient) StartVerification(ctx context.Context, req *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error) {
+	return c.startVerification.CallUnary(ctx, req)
+}
+
+// SubmitVerification calls api.account.v1.AccountService.SubmitVerification.
+func (c *accountServiceClient) SubmitVerification(ctx context.Context, req *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error) {
+	return c.submitVerification.CallUnary(ctx, req)
+}
+
 // AccountServiceHandler is an implementation of the api.account.v1.AccountService service.
 type AccountServiceHandler interface {
 	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2 行 818）。
@@ -456,9 +490,8 @@ type AccountServiceHandler interface {
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
 	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
-	// MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
-	// 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+	// 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
 	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
 	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
@@ -481,6 +514,10 @@ type AccountServiceHandler interface {
 	GetThirdpartyTicket(context.Context, *connect.Request[v1.GetThirdpartyTicketRequest]) (*connect.Response[v11.LoginFlowResponse], error)
 	// 本人登录记录（仅成功记录，§3.7 行 1038）。
 	GetEvents(context.Context, *connect.Request[v1.GetEventsRequest]) (*connect.Response[v1.GetEventsResponse], error)
+	// 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
+	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)
+	// 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
+	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -622,6 +659,18 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("GetEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accountServiceStartVerificationHandler := connect.NewUnaryHandler(
+		AccountServiceStartVerificationProcedure,
+		svc.StartVerification,
+		connect.WithSchema(accountServiceMethods.ByName("StartVerification")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accountServiceSubmitVerificationHandler := connect.NewUnaryHandler(
+		AccountServiceSubmitVerificationProcedure,
+		svc.SubmitVerification,
+		connect.WithSchema(accountServiceMethods.ByName("SubmitVerification")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.account.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccountServiceGetConfigProcedure:
@@ -668,6 +717,10 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceGetThirdpartyTicketHandler.ServeHTTP(w, r)
 		case AccountServiceGetEventsProcedure:
 			accountServiceGetEventsHandler.ServeHTTP(w, r)
+		case AccountServiceStartVerificationProcedure:
+			accountServiceStartVerificationHandler.ServeHTTP(w, r)
+		case AccountServiceSubmitVerificationProcedure:
+			accountServiceSubmitVerificationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -763,4 +816,12 @@ func (UnimplementedAccountServiceHandler) GetThirdpartyTicket(context.Context, *
 
 func (UnimplementedAccountServiceHandler) GetEvents(context.Context, *connect.Request[v1.GetEventsRequest]) (*connect.Response[v1.GetEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.GetEvents is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.StartVerification is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.SubmitVerification is not implemented"))
 }

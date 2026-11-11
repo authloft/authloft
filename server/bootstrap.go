@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -45,6 +46,7 @@ import (
 	adminv1connect "authloft/gen/go/api/admin/v1/adminv1connect"
 	rpcv1connect "authloft/gen/go/api/rpc/v1/rpcv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
+	"authloft/gen/go/token"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
@@ -103,6 +105,7 @@ import (
 	accountsvc "authloft/internal/service/account"
 	adminsvc "authloft/internal/service/admin"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 	"authloft/internal/setup"
@@ -155,6 +158,10 @@ type assembled struct {
 	queue    *asyncqueue.Queue
 	sink     *service.LoginEventWriter
 	engine   *orchestrator.Engine
+	// verification step-up 服务（§3.8）：buildEngine 内用挑战 / 断言两把
+	// 独立密钥装配，registerSSO / registerAccount 注入两个域的 handler，
+	// 并作为 UnbindTotp 的断言消费出口。
+	verification *verification.Service
 
 	// provider 链（§3.9 / §15.3 / §13.0）：Loader 供后续 thirdparty
 	// 登录卡按 provider_key 取实例；Whitelist 是 origin 中间件 Referer 白
@@ -601,6 +608,31 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
 
+	// step-up 服务（§3.8）：挑战 / 断言两把独立密钥在此接线——挑战令牌走
+	// PurposeChallenge + sign_key.challenge，断言走 PurposeVerification +
+	// sign_key.verification（§11.6.7）。captcha 守卫复用既有唯一 Gate，
+	// 新增调用方不经登录引擎的人机校验失败写点，失败由服务层显式返回
+	// 错误码与当前生效配置，不静默回落、不丢错误码与配置。
+	var verifGate verification.CaptchaGate
+	if deps.gate != nil {
+		verifGate = deps.gate
+	}
+	var verifOnce verification.OnceStore
+	if deps.rdb != nil {
+		verifOnce = onceStore{rdb: deps.rdb}
+	}
+	deps.verification = verification.NewService(verification.Deps{
+		Codec:       verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
+		Policy:      verification.DefaultPolicy(),
+		Gate:        verifGate,
+		Once:        verifOnce,
+		Bound:       boundFactorReader{users: users, creds: creds},
+		Verifier:    stepUpVerifier{registry: registry, users: users, creds: creds},
+		Starter:     stepUpVerifier{registry: registry, users: users, creds: creds},
+		LoginTokens: loginTokenReader{state: loginState},
+		Login:       loginCompleter{terminal: terminal, state: loginState},
+	})
+
 	// account 域五族 service 构造（接口文档 §3.2-§3.7）：四族
 	// 单实例直挂 deps；换绑族双渠道各一实例（见 bindContactPair）。审计统一
 	// 走 eventlog.Writer 延迟队列（accountThirdparty / accountWebauthn 同款
@@ -623,12 +655,13 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
 	deps.accountMfa = accountsvc.NewMfaService(accountsvc.MfaDeps{
-		Users:    users,
-		Creds:    creds,
-		Webauthn: webauthnRepo,
-		Settings: deps.settings,
-		Audit:    eventlog.NewWriter(deps.queue),
-		Rand:     rand.Reader,
+		Users:      users,
+		Creds:      creds,
+		Webauthn:   webauthnRepo,
+		Settings:   deps.settings,
+		Audit:      eventlog.NewWriter(deps.queue),
+		Rand:       rand.Reader,
+		Assertions: deps.verification,
 	})
 	deps.accountEvents = accountsvc.NewEventsService(repo.NewEventLogRepo(deps.db))
 
@@ -682,6 +715,317 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		},
 	})
 	return engine, terminal, registry, nil
+}
+
+// loginTokenReader 把登录过程态编解码器适配为 step-up 主体推导出口
+// （§3.8.1：uid != 0 且 passed 非空，防止绕过主因子）。
+type loginTokenReader struct {
+	state *orchestrator.State
+}
+
+func (r loginTokenReader) Read(_ context.Context, tok string) (int64, bool, error) {
+	p, err := r.state.Parse(tok)
+	if err != nil {
+		return 0, false, err
+	}
+	return p.GetUid(), len(p.GetPassed()) > 0, nil
+}
+
+// loginCompleter 把 step-up 的成功结论接回既有登录终点（§7.3 步骤 7）：
+// 复用同一个 orchestrator.Terminal 建会话、投递登录日志、拼多域名同步链
+// 与 OIDC 跳转；登录链路另附 loginToken 时恢复其 oidc / tid / passed，
+// uid 仍以挑战令牌主体为准（§3.8.5）。会话令牌经调用方注入的写点下发
+// （与 LoginDefault 同一 Set-Cookie 出口）。
+type loginCompleter struct {
+	terminal *orchestrator.Terminal
+	state    *orchestrator.State
+}
+
+func (c loginCompleter) Complete(ctx context.Context, subject verification.Subject, loginToken, method string) (verification.LoginSession, error) {
+	if c.terminal == nil {
+		return verification.LoginSession{}, fmt.Errorf("login completer: terminal not configured")
+	}
+	uid, err := strconv.ParseInt(subject.ID, 10, 64)
+	if err != nil || uid <= 0 {
+		return verification.LoginSession{}, fmt.Errorf("%w: subject uid %q", verification.ErrLoginContext, subject.ID)
+	}
+
+	var p *token.LoginTokenPayload
+	if loginToken != "" {
+		// 恢复原始流程上下文：保留 Oidc / Tid / Passed，只以挑战令牌主体
+		// 覆盖 Uid；解析失败或 uid 不一致按 §3.8.5 交由服务层判
+		// verification_invalid。
+		if c.state == nil {
+			return verification.LoginSession{}, fmt.Errorf("%w: login state not configured", verification.ErrLoginContext)
+		}
+		parsed, err := c.state.Parse(loginToken)
+		if err != nil {
+			return verification.LoginSession{}, fmt.Errorf("%w: %v", verification.ErrLoginContext, err)
+		}
+		if parsed.GetUid() != uid {
+			return verification.LoginSession{}, fmt.Errorf("%w: uid %d != challenge subject %d", verification.ErrLoginContext, parsed.GetUid(), uid)
+		}
+		p = parsed
+	} else {
+		// 无 loginToken（非 OIDC / 纯直登场景）：仅能构造最小载荷。
+		p = &token.LoginTokenPayload{Tid: subject.ID}
+	}
+	p.Uid = uid
+	// 会话 amr 取原 passed / amr 与本次二次因子的并集，不覆盖成单一因子。
+	p.Amr = mergeAMR(p.GetAmr(), p.GetPassed(), method)
+
+	success, err := c.terminal.Complete(ctx, p)
+	if err != nil {
+		return verification.LoginSession{}, err
+	}
+	if sink, ok := orchestrator.SessionTokenSinkFromContext(ctx); ok {
+		sink(success.SessionToken)
+	}
+	return verification.LoginSession{
+		RedirectTo:    success.RedirectTo,
+		SyncCookieURL: success.SyncCookieURL,
+	}, nil
+}
+
+// mergeAMR 按首次出现顺序合并认证方法，去掉空值与重复项。
+func mergeAMR(amr, passed []string, method string) []string {
+	out := make([]string, 0, len(amr)+len(passed)+1)
+	seen := map[string]bool{}
+	add := func(m string) {
+		if m == "" || seen[m] {
+			return
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	for _, m := range amr {
+		add(m)
+	}
+	for _, m := range passed {
+		add(m)
+	}
+	add(method)
+	return out
+}
+
+// onceStore 高风险断言消费的 al:once:{nonce} 去重（§5.1 行 880）。
+type onceStore struct {
+	rdb *redis.Client
+}
+
+func (s onceStore) SetNX(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	return s.rdb.SetNX(ctx, key, value, ttl).Result()
+}
+
+// boundFactorReader 按主体读已绑定 / 已启用因子，供策略表取交集
+// （§1.10.2 约束 1）；tid 主体（扫码）无绑定资料，返回候选全量。
+type boundFactorReader struct {
+	users *repo.UserRepo
+	creds *repo.CredentialRepo
+}
+
+func (r boundFactorReader) Bound(ctx context.Context, subject verification.Subject, candidates []string) ([]string, error) {
+	if subject.Kind != verification.SubjectKindUID {
+		return candidates, nil
+	}
+	uid, err := strconv.ParseInt(subject.ID, 10, 64)
+	if err != nil || uid <= 0 {
+		return nil, nil
+	}
+	enabled, err := r.enabledFactors(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	u, err := r.users.FindByID(ctx, uid)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		u = nil
+	}
+	// 策略强制（user.mfa_required=1）但用户未显式 SetMfa、无 mfa_setting 行时，
+	// 与登录侧 MFABuilder 口径一致：以全部已绑定因子为可用集合。
+	if len(enabled) == 0 && u != nil && u.MfaRequired == 1 {
+		for _, m := range candidates {
+			enabled[m] = true
+		}
+	}
+
+	out := make([]string, 0, len(candidates))
+	for _, m := range candidates {
+		if !enabled[m] {
+			continue
+		}
+		switch m {
+		case "totp", "recovery_code":
+			row, err := r.creds.FindByUserAndKind(ctx, uid, m)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			if row != nil && row.IsEnabled == 1 {
+				out = append(out, m)
+			}
+		case "webauthn":
+			rows, err := r.creds.ListByUser(ctx, uid)
+			if err != nil {
+				return nil, err
+			}
+			for i := range rows {
+				if rows[i].Kind == "webauthn" && rows[i].IsEnabled == 1 {
+					out = append(out, m)
+					break
+				}
+			}
+		case "otp_sms", "otp_email":
+			if u == nil {
+				continue
+			}
+			if (m == "otp_sms" && u.Phone != nil && *u.Phone != "") ||
+				(m == "otp_email" && u.Email != nil && *u.Email != "") {
+				out = append(out, m)
+			}
+		}
+	}
+	return out, nil
+}
+
+// enabledFactors 读 user_credential(kind=mfa_setting) 的 mfa_methods（§3.2：
+// 行存在即 enabled=true，is_enabled=0 按未启用兼容；recovery_code 随 totp
+// 投影，不单列）。
+func (r boundFactorReader) enabledFactors(ctx context.Context, uid int64) (map[string]bool, error) {
+	out := map[string]bool{}
+	row, err := r.creds.FindByUserAndKind(ctx, uid, "mfa_setting")
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return out, nil
+		}
+		return nil, err
+	}
+	if row == nil || row.IsEnabled != 1 {
+		return out, nil
+	}
+	meta, err := repo.UnmarshalCredentialMeta(row.Meta)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range meta.GetMfaMethods() {
+		out[m] = true
+		if m == "totp" {
+			out["recovery_code"] = true
+		}
+	}
+	return out, nil
+}
+
+// stepUpVerifier 把 step-up 的下发与提交适配到因子注册表（§6.3）：以挑战
+// 令牌的三元组构造 FactorContext，复用各因子的 Start / Verify 实现。
+type stepUpVerifier struct {
+	registry *factor.Registry
+	users    *repo.UserRepo
+	creds    *repo.CredentialRepo
+}
+
+// Start 适配因子下发：OTP 发码、WebAuthn 生成 options，其余单步因子返回
+// 渲染描述。返回的 nonce 取因子 Start 写入的值（WebAuthn 自生成 challenge），
+// 保证 options.challenge 与挑战令牌、断言校验同源。
+func (v stepUpVerifier) Start(ctx context.Context, in verification.FactorStartInput) (verification.FactorStartResult, error) {
+	f, err := v.registry.Get(factor.FactorKind(in.Method))
+	if err != nil {
+		return verification.FactorStartResult{Code: "method_disabled"}, nil
+	}
+	uid, _ := strconv.ParseInt(in.Subject.ID, 10, 64)
+	login := &token.LoginTokenPayload{
+		Tid:    verification.Owner(in.BizPurpose, in.Subject.ID, in.Nonce),
+		Uid:    uid,
+		Flow:   "mfa",
+		Passed: []string{"primary"},
+		Ch:     &token.Challenge{Purpose: "mfa", Nonce: in.Nonce},
+	}
+	step, err := f.Start(&factor.FactorContext{
+		Context:     ctx,
+		Login:       login,
+		Payload:     &factor.Payload{},
+		BizPurpose:  string(in.BizPurpose),
+		Subject:     in.Subject.ID,
+		ChallengeID: in.Nonce,
+		Users:       v.users,
+		Credentials: v.creds,
+	})
+	if err != nil {
+		return verification.FactorStartResult{}, err
+	}
+	out := verification.FactorStartResult{Nonce: login.GetCh().GetNonce()}
+	if out.Nonce == "" {
+		out.Nonce = in.Nonce
+	}
+	if step == nil {
+		return out, nil
+	}
+	if step.Status != "" {
+		out.Code = step.Status
+		out.RetryAfter = step.RetryAfter
+		return out, nil
+	}
+	out.Kind = string(step.Kind)
+	out.ChallengeData = step.ChallengeData
+	return out, nil
+}
+
+func (v stepUpVerifier) Verify(ctx context.Context, in verification.FactorVerifyInput) (verification.FactorVerifyResult, error) {
+	f, err := v.registry.Get(factor.FactorKind(in.Method))
+	if err != nil {
+		return verification.FactorVerifyResult{Code: "method_disabled"}, nil
+	}
+	p := &factor.Payload{}
+	if in.Payload != nil {
+		get := func(k string) string {
+			fv, ok := in.Payload.Fields[k]
+			if !ok || fv == nil {
+				return ""
+			}
+			return fv.GetStringValue()
+		}
+		p.Code = get("code")
+		p.Phone = get("phone")
+		p.Email = get("email")
+		if cv, ok := in.Payload.Fields["credential"]; ok && cv != nil {
+			p.Credential = cv.GetStructValue()
+		}
+	}
+	uid, _ := strconv.ParseInt(in.Subject.ID, 10, 64)
+	login := &token.LoginTokenPayload{
+		Tid:    verification.Owner(in.BizPurpose, in.Subject.ID, in.ChallengeID),
+		Uid:    uid,
+		Flow:   "mfa",
+		Passed: []string{"primary"},
+		Ch:     &token.Challenge{Purpose: "mfa", Nonce: in.ChallengeID},
+	}
+	res, err := f.Verify(&factor.FactorContext{
+		Context:     ctx,
+		Login:       login,
+		Payload:     p,
+		BizPurpose:  string(in.BizPurpose),
+		Subject:     in.Subject.ID,
+		ChallengeID: in.ChallengeID,
+		Users:       v.users,
+		Credentials: v.creds,
+	})
+	if err != nil {
+		return verification.FactorVerifyResult{}, err
+	}
+	if res.Passed {
+		return verification.FactorVerifyResult{Passed: true}, nil
+	}
+	code := res.Status
+	switch code {
+	case "invalid_code", "code_expired", "too_many_attempts", "method_disabled", "invalid_request":
+	default:
+		code = "invalid_code"
+	}
+	return verification.FactorVerifyResult{Code: code}, nil
 }
 
 // resetAuditSink 把重置密码审计事件投递到延迟队列（docs/后端架构.md §7.4
@@ -1196,7 +1540,7 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 		// 注入扫码三桩 service（CreateQrcode / GetLoginTicket /
 		// ConfirmLoginTicket，§2.8）：GetLoginTicket 命中建会话后的
 		// al_session 与登录终点同一写出出口。
-		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode),
+		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode, deps.verification),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
@@ -1239,6 +1583,7 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			deps.accountMfa,
 			deps.accountEvents,
 			newSessionCookie(cfg, deps),
+			deps.verification,
 		),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)

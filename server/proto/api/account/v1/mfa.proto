@@ -77,11 +77,14 @@ message BindTotpResponse {
   repeated string recovery_codes = 4;
 }
 
-// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
-// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
-// 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
-// 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
-message UnbindTotpRequest {}
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
+// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+// 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
+message UnbindTotpRequest {
+  // 敏感操作二次验证通过后的不透明断言令牌；缺失 → verification_required（§3.8.5）。
+  string verification_token = 1;
+}
 
 // RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
 //（§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
