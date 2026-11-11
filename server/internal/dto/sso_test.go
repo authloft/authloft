@@ -3,6 +3,8 @@ package dto
 import (
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
@@ -26,12 +28,12 @@ func TestLoginDefaultMapsRequestFields(t *testing.T) {
 			Credential: &structpb.Struct{Fields: map[string]*structpb.Value{
 				"id": structpb.NewStringValue("cred-1"),
 			}},
-			Captcha: &ssov1.CaptchaPayload{
-				ProviderKey: "builtin_image",
-				Token:       "token-1",
-				Id:          "cap-1",
-				Answer:      "1234",
-			},
+		},
+		Captcha: &ssov1.CaptchaPayload{
+			ProviderKey: "builtin_image",
+			Token:       "token-1",
+			Id:          "cap-1",
+			Answer:      "1234",
 		},
 	}
 
@@ -116,12 +118,12 @@ func TestRegisterMapsRequestFields(t *testing.T) {
 			Code:     "123456",
 			Username: "alice01",
 			Password: "secret",
-			Captcha: &ssov1.CaptchaPayload{
-				ProviderKey: "builtin_image",
-				Token:       "token-1",
-				Id:          "cap-1",
-				Answer:      "1234",
-			},
+		},
+		Captcha: &ssov1.CaptchaPayload{
+			ProviderKey: "builtin_image",
+			Token:       "token-1",
+			Id:          "cap-1",
+			Answer:      "1234",
 		},
 		Oidc: &structpb.Struct{Fields: map[string]*structpb.Value{
 			"client_id":    structpb.NewStringValue("client-1"),
@@ -170,11 +172,11 @@ func TestResetMapsRequestFields(t *testing.T) {
 			Phone:    "13800000000",
 			Code:     "123456",
 			Password: "new-secret",
-			Captcha: &ssov1.CaptchaPayload{
-				ProviderKey: "builtin_image",
-				Id:          "cap-1",
-				Answer:      "1234",
-			},
+		},
+		Captcha: &ssov1.CaptchaPayload{
+			ProviderKey: "builtin_image",
+			Id:          "cap-1",
+			Answer:      "1234",
 		},
 	}
 
@@ -204,5 +206,105 @@ func TestResetNil(t *testing.T) {
 	}
 	if got := Reset(&ssov1.ResetPasswordRequest{}); got.Payload != nil || got.Captcha != nil {
 		t.Fatalf("empty request = %+v", got)
+	}
+}
+
+// TestCaptchaReadFromRequestTopLevel 可证伪：三个入口的 captcha 只从请求
+// 顶层读取。顶层提交按 §2.5 逐字段映射进引擎入参；仅把凭据留在旧 payload
+// 位置的报文（未知字段被忽略）按「缺 captcha」处理，入参 Captcha 为 nil。
+// 断言反过来能失败：顶层若未映射、旧位置若仍被读取，用例立即报错。
+func TestCaptchaReadFromRequestTopLevel(t *testing.T) {
+	sub := &ssov1.CaptchaPayload{
+		ProviderKey: "cf_turnstile",
+		Token:       "tok-1",
+		Id:          "cap-1",
+		Answer:      "1234",
+	}
+	// 旧格式把 captcha 放在 payload 内；外提后它只是未知字段。
+	const legacyBody = `{"method":"otp_email","step":"challenge","payload":{"email":"a@b.com","captcha":{"providerKey":"cf_turnstile","token":"tok-1"}}}`
+
+	cases := []struct {
+		name     string
+		topLevel func() orchestrator.Request
+		legacy   func() orchestrator.Request
+	}{
+		{
+			name: "LoginDefault",
+			topLevel: func() orchestrator.Request {
+				return LoginDefault(&ssov1.LoginDefaultRequest{
+					Method: "otp_email", Step: "challenge",
+					Payload: &ssov1.LoginPayload{Email: "a@b.com"},
+					Captcha: sub,
+				})
+			},
+			legacy: func() orchestrator.Request {
+				var req ssov1.LoginDefaultRequest
+				unmarshalLegacy(t, legacyBody, &req)
+				if req.GetCaptcha() != nil {
+					t.Fatal("旧位置报文不应落入顶层 captcha")
+				}
+				return LoginDefault(&req)
+			},
+		},
+		{
+			name: "Register",
+			topLevel: func() orchestrator.Request {
+				return Register(&ssov1.RegisterRequest{
+					Method: "otp_email", Step: "challenge",
+					Payload: &ssov1.RegisterPayload{Email: "a@b.com"},
+					Captcha: sub,
+				})
+			},
+			legacy: func() orchestrator.Request {
+				var req ssov1.RegisterRequest
+				unmarshalLegacy(t, legacyBody, &req)
+				if req.GetCaptcha() != nil {
+					t.Fatal("旧位置报文不应落入顶层 captcha")
+				}
+				return Register(&req)
+			},
+		},
+		{
+			name: "ResetPassword",
+			topLevel: func() orchestrator.Request {
+				return Reset(&ssov1.ResetPasswordRequest{
+					Method: "otp_email", Step: "challenge",
+					Payload: &ssov1.ResetPayload{Email: "a@b.com"},
+					Captcha: sub,
+				})
+			},
+			legacy: func() orchestrator.Request {
+				var req ssov1.ResetPasswordRequest
+				unmarshalLegacy(t, legacyBody, &req)
+				if req.GetCaptcha() != nil {
+					t.Fatal("旧位置报文不应落入顶层 captcha")
+				}
+				return Reset(&req)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.topLevel()
+			if got.Captcha == nil {
+				t.Fatal("顶层 captcha 未映射进引擎入参")
+			}
+			if got.Captcha.ProviderKey != sub.GetProviderKey() || got.Captcha.Token != sub.GetToken() ||
+				got.Captcha.ID != sub.GetId() || got.Captcha.Answer != sub.GetAnswer() {
+				t.Fatalf("captcha = %+v, want %+v", got.Captcha, sub)
+			}
+			if legacy := tc.legacy(); legacy.Captcha != nil {
+				t.Fatalf("仅旧位置的报文应按缺 captcha 处理，Captcha = %+v", legacy.Captcha)
+			}
+		})
+	}
+}
+
+// unmarshalLegacy 按 connect-go 的 JSON 解码口径（DiscardUnknown）解析旧格式
+// 报文，模拟外提前只把 captcha 放在 payload 内的客户端请求。
+func unmarshalLegacy(t *testing.T, body string, m proto.Message) {
+	t.Helper()
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(body), m); err != nil {
+		t.Fatalf("decode legacy body: %v", err)
 	}
 }

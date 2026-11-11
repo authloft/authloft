@@ -21,7 +21,7 @@ import (
 // fakeEngine 记录 handler 传入的 flow 与引擎入参，返回固定信封——本用例
 // 只验证 handler 绑定 / 组装，不连真实 DB / Redis（自测要求）。
 // sinkToken 非空时模拟引擎契约：Submit 内经 ctx 写点回调一次
-//（真实引擎仅在 status=success 终点建会话后回调；失败态 / 中间态不回调）。
+// （真实引擎仅在 status=success 终点建会话后回调；失败态 / 中间态不回调）。
 type fakeEngine struct {
 	flow      string
 	req       orchestrator.Request
@@ -122,7 +122,7 @@ func TestRegisterConnect(t *testing.T) {
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
-	body := `{"method":"password","step":"set_password","payload":{"username":"alice01","password":"p","captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}}`
+	body := `{"method":"password","step":"set_password","payload":{"username":"alice01","password":"p"},"captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}`
 	resp, err := http.Post(srv.URL+ssov1connect.SsoServiceRegisterProcedure,
 		"application/json", strings.NewReader(body))
 	if err != nil {
@@ -214,7 +214,7 @@ func TestSuccessIssuesSessionCookie(t *testing.T) {
 		{
 			name:      "Register set_password成功",
 			procedure: ssov1connect.SsoServiceRegisterProcedure,
-			body:      `{"method":"password","step":"set_password","payload":{"username":"alice01","password":"p","captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}}`,
+			body:      `{"method":"password","step":"set_password","payload":{"username":"alice01","password":"p"},"captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}`,
 		},
 		{
 			name:      "ResetPassword成功",

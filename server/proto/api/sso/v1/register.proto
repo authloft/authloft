@@ -30,6 +30,10 @@ message RegisterRequest {
   // 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
   // google.protobuf.Struct，不逐字段建模。
   google.protobuf.Struct oidc = 5;
+  // 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+  // §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
+  // set_password 步必填，其余场景可省。
+  CaptchaPayload captcha = 6;
 }
 
 // RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 444-450）：
@@ -42,11 +46,8 @@ message RegisterPayload {
   string email = 1;
   // challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
   string phone = 2;
-  // 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-  // 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 446
-  // 「必须 captcha」）；用户名+密码直通入口从 set_password 直达（无 challenge / verify），
-  // 该步同样必填（§2.3 行 450）。
-  CaptchaPayload captcha = 3;
+  // 原 captcha 字段（编号 3）已上提为请求顶层字段，编号保留防复用（§12.8）。
+  reserved 3;
   // verify 步：register 用途的验证码（§2.3 行 447）。
   string code = 4;
   // set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。

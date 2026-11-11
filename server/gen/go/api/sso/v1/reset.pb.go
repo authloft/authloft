@@ -45,7 +45,11 @@ type ResetPasswordRequest struct {
 	// OIDC 授权上下文（§2.2 行 425，随同构引入，§2.4 行 460）：仅首次请求（尚无 login_token）
 	// 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
-	Oidc          *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步必填，
+	// 其余场景可省。
+	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -115,6 +119,13 @@ func (x *ResetPasswordRequest) GetOidc() *structpb.Struct {
 	return nil
 }
 
+func (x *ResetPasswordRequest) GetCaptcha() *CaptchaPayload {
+	if x != nil {
+		return x.Captcha
+	}
+	return nil
+}
+
 // ResetPayload 是 §2.4 重置各 step 的 payload 字段合集（行 462-466）：
 // 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
 // 字段集合与 LoginPayload（login.proto）不同（本消息无 username/credential，另有
@@ -127,10 +138,6 @@ type ResetPayload struct {
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	// challenge 步：目标手机号，须为已绑定且已验证的（§2.4 行 464）；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
-	// 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-	// 两类 Provider 统一，故复用不另建。challenge 步必填——重置的下发必须过 captcha
-	// （§2.5 行 528「注册 / 重置的下发：必须」，行 525「每次下发都要新的」）。
-	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
 	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
 	// set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。
@@ -183,13 +190,6 @@ func (x *ResetPayload) GetPhone() string {
 	return ""
 }
 
-func (x *ResetPayload) GetCaptcha() *CaptchaPayload {
-	if x != nil {
-		return x.Captcha
-	}
-	return nil
-}
-
 func (x *ResetPayload) GetCode() string {
 	if x != nil {
 		return x.Code
@@ -209,20 +209,20 @@ var File_api_sso_v1_reset_proto protoreflect.FileDescriptor
 const file_api_sso_v1_reset_proto_rawDesc = "" +
 	"\n" +
 	"\x16api/sso/v1/reset.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xc4\x01\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xfa\x01\n" +
 	"\x14ResetPasswordRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
 	"\apayload\x18\x04 \x01(\v2\x18.api.sso.v1.ResetPayloadR\apayload\x12+\n" +
-	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"\xa0\x01\n" +
+	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"p\n" +
 	"\fResetPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
-	"\x05phone\x18\x02 \x01(\tR\x05phone\x124\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x12\n" +
+	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x12\n" +
 	"\x04code\x18\x04 \x01(\tR\x04code\x12\x1a\n" +
-	"\bpassword\x18\x05 \x01(\tR\bpasswordB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\bpassword\x18\x05 \x01(\tR\bpasswordJ\x04\b\x03\x10\x04B\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_reset_proto_rawDescOnce sync.Once
@@ -246,7 +246,7 @@ var file_api_sso_v1_reset_proto_goTypes = []any{
 var file_api_sso_v1_reset_proto_depIdxs = []int32{
 	1, // 0: api.sso.v1.ResetPasswordRequest.payload:type_name -> api.sso.v1.ResetPayload
 	2, // 1: api.sso.v1.ResetPasswordRequest.oidc:type_name -> google.protobuf.Struct
-	3, // 2: api.sso.v1.ResetPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
+	3, // 2: api.sso.v1.ResetPasswordRequest.captcha:type_name -> api.sso.v1.CaptchaPayload
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name

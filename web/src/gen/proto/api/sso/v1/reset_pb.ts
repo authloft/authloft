@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/reset.proto.
  */
 export const file_api_sso_v1_reset: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL3Jlc2V0LnByb3RvEgphcGkuc3NvLnYxIpsBChRSZXNldFBhc3N3b3JkUmVxdWVzdBITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZtZXRob2QYAiABKAkSDAoEc3RlcBgDIAEoCRIpCgdwYXlsb2FkGAQgASgLMhguYXBpLnNzby52MS5SZXNldFBheWxvYWQSJQoEb2lkYxgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QieQoMUmVzZXRQYXlsb2FkEg0KBWVtYWlsGAEgASgJEg0KBXBob25lGAIgASgJEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkEgwKBGNvZGUYBCABKAkSEAoIcGFzc3dvcmQYBSABKAlCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_sso_v1_login]);
+  fileDesc("ChZhcGkvc3NvL3YxL3Jlc2V0LnByb3RvEgphcGkuc3NvLnYxIsgBChRSZXNldFBhc3N3b3JkUmVxdWVzdBITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZtZXRob2QYAiABKAkSDAoEc3RlcBgDIAEoCRIpCgdwYXlsb2FkGAQgASgLMhguYXBpLnNzby52MS5SZXNldFBheWxvYWQSJQoEb2lkYxgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKwoHY2FwdGNoYRgGIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQiUgoMUmVzZXRQYXlsb2FkEg0KBWVtYWlsGAEgASgJEg0KBXBob25lGAIgASgJEgwKBGNvZGUYBCABKAkSEAoIcGFzc3dvcmQYBSABKAlKBAgDEARCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_sso_v1_login]);
 
 /**
  * ResetPasswordRequest 是 SsoService/ResetPassword 的请求消息
@@ -66,6 +66,15 @@ export type ResetPasswordRequest = Message<"api.sso.v1.ResetPasswordRequest"> & 
    * @generated from field: google.protobuf.Struct oidc = 5;
    */
   oidc?: JsonObject | undefined;
+
+  /**
+   * 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+   * §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步必填，
+   * 其余场景可省。
+   *
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 6;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**
@@ -99,15 +108,6 @@ export type ResetPayload = Message<"api.sso.v1.ResetPayload"> & {
    * @generated from field: string phone = 2;
    */
   phone: string;
-
-  /**
-   * 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-   * 两类 Provider 统一，故复用不另建。challenge 步必填——重置的下发必须过 captcha
-   * （§2.5 行 528「注册 / 重置的下发：必须」，行 525「每次下发都要新的」）。
-   *
-   * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
-   */
-  captcha?: CaptchaPayload | undefined;
 
   /**
    * verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。

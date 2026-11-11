@@ -42,7 +42,11 @@ type RegisterRequest struct {
 	// OIDC 授权上下文（§2.2 行 425，随同构引入，§2.3 行 442）：仅首次请求（尚无 login_token）
 	// 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
-	Oidc          *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
+	// set_password 步必填，其余场景可省。
+	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,6 +116,13 @@ func (x *RegisterRequest) GetOidc() *structpb.Struct {
 	return nil
 }
 
+func (x *RegisterRequest) GetCaptcha() *CaptchaPayload {
+	if x != nil {
+		return x.Captcha
+	}
+	return nil
+}
+
 // RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 444-450）：
 // 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
 // 字段集合当前与 LoginPayload（login.proto，§2.6 行 540-549）部分重合，但口径来源不同
@@ -123,11 +134,6 @@ type RegisterPayload struct {
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	// challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
-	// 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-	// 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 446
-	// 「必须 captcha」）；用户名+密码直通入口从 set_password 直达（无 challenge / verify），
-	// 该步同样必填（§2.3 行 450）。
-	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// verify 步：register 用途的验证码（§2.3 行 447）。
 	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
 	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
@@ -183,13 +189,6 @@ func (x *RegisterPayload) GetPhone() string {
 	return ""
 }
 
-func (x *RegisterPayload) GetCaptcha() *CaptchaPayload {
-	if x != nil {
-		return x.Captcha
-	}
-	return nil
-}
-
 func (x *RegisterPayload) GetCode() string {
 	if x != nil {
 		return x.Code
@@ -216,21 +215,21 @@ var File_api_sso_v1_register_proto protoreflect.FileDescriptor
 const file_api_sso_v1_register_proto_rawDesc = "" +
 	"\n" +
 	"\x19api/sso/v1/register.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xc2\x01\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xf8\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x125\n" +
 	"\apayload\x18\x04 \x01(\v2\x1b.api.sso.v1.RegisterPayloadR\apayload\x12+\n" +
-	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"\xbf\x01\n" +
+	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\x8f\x01\n" +
 	"\x0fRegisterPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
-	"\x05phone\x18\x02 \x01(\tR\x05phone\x124\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x12\n" +
+	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x12\n" +
 	"\x04code\x18\x04 \x01(\tR\x04code\x12\x1a\n" +
 	"\busername\x18\x05 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x06 \x01(\tR\bpasswordB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\bpassword\x18\x06 \x01(\tR\bpasswordJ\x04\b\x03\x10\x04B\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_register_proto_rawDescOnce sync.Once
@@ -254,7 +253,7 @@ var file_api_sso_v1_register_proto_goTypes = []any{
 var file_api_sso_v1_register_proto_depIdxs = []int32{
 	1, // 0: api.sso.v1.RegisterRequest.payload:type_name -> api.sso.v1.RegisterPayload
 	2, // 1: api.sso.v1.RegisterRequest.oidc:type_name -> google.protobuf.Struct
-	3, // 2: api.sso.v1.RegisterPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
+	3, // 2: api.sso.v1.RegisterRequest.captcha:type_name -> api.sso.v1.CaptchaPayload
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name

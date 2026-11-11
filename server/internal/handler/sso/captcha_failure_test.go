@@ -14,9 +14,11 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	commonv1 "authloft/gen/go/api/common/v1"
+	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
@@ -185,4 +187,127 @@ func decodeDetailValue(t *testing.T, value string) []byte {
 	}
 	t.Fatalf("detail value 无法 base64 解码: %q", value)
 	return nil
+}
+
+// TestCaptchaTopLevelOnly 可证伪（真 engine + 真 gate + 生成的 Connect
+// handler + httptest）：三个入口中，只把凭据留在旧位置的请求按「缺 captcha」
+// 处理，返回非 200 的 Connect 错误体（ErrorInfo.code=captcha_required、
+// details 并列 CaptchaConfig）；请求顶层 captcha 正常通过，返回 HTTP 200
+// 登录流程信封（status=next）。两组断言互为反向：顶层若未被读取、旧位置若
+// 仍被读取，用例立即失败。
+func TestCaptchaTopLevelOnly(t *testing.T) {
+	cases := []struct {
+		name       string
+		procedure  string
+		legacyBody string
+		topBody    string
+	}{
+		{
+			name:       "LoginDefault",
+			procedure:  ssov1connect.SsoServiceLoginDefaultProcedure,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+		},
+		{
+			name:       "Register",
+			procedure:  ssov1connect.SsoServiceRegisterProcedure,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+		},
+		{
+			name:       "ResetPassword",
+			procedure:  ssov1connect.SsoServiceResetPasswordProcedure,
+			legacyBody: `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com","captcha":{"providerKey":"cf_turnstile","token":"tok-old"}}}`,
+			topBody:    `{"method":"otp_email","step":"challenge","payload":{"email":"alice@example.com"},"captcha":{"providerKey":"cf_turnstile","token":"tok-new"}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, handler := ssov1connect.NewSsoServiceHandler(New(newCaptchaChainEngine(t), nil, nil, nil, nil))
+			srv := httptest.NewServer(handler)
+			defer srv.Close()
+			url := srv.URL + tc.procedure
+
+			assertCaptchaRequired(t, url, tc.legacyBody)
+			assertCaptchaPassed(t, url, tc.topBody)
+		})
+	}
+}
+
+// assertCaptchaRequired 断言请求因缺 captcha 被拦为非 200 的 Connect
+// 错误体，ErrorInfo.code 与并列的 CaptchaConfig 均由真链路产出。
+func assertCaptchaRequired(t *testing.T, url, body string) {
+	t.Helper()
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("仅旧位置的 captcha 应按缺 captcha 处理（非 200）, got 200")
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d（invalid_argument → 400）", resp.StatusCode, http.StatusBadRequest)
+	}
+	var envelope struct {
+		Code    string `json:"code"`
+		Details []struct {
+			Type  string `json:"type"`
+			Value string `json:"value"`
+		} `json:"details"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if envelope.Code != "invalid_argument" {
+		t.Fatalf("error.code = %q, want invalid_argument", envelope.Code)
+	}
+	var info *commonv1.ErrorInfo
+	var cfg *commonv1.CaptchaConfig
+	for _, d := range envelope.Details {
+		raw := decodeDetailValue(t, d.Value)
+		switch d.Type {
+		case "api.common.v1.ErrorInfo":
+			m := &commonv1.ErrorInfo{}
+			if err := proto.Unmarshal(raw, m); err != nil {
+				t.Fatalf("unmarshal ErrorInfo: %v", err)
+			}
+			info = m
+		case "api.common.v1.CaptchaConfig":
+			m := &commonv1.CaptchaConfig{}
+			if err := proto.Unmarshal(raw, m); err != nil {
+				t.Fatalf("unmarshal CaptchaConfig: %v", err)
+			}
+			cfg = m
+		}
+	}
+	if info == nil || info.GetCode() != captcha.StatusRequired {
+		t.Fatalf("ErrorInfo = %+v, want code=%s", info, captcha.StatusRequired)
+	}
+	if cfg == nil {
+		t.Fatal("details 缺少 CaptchaConfig（captcha 配置未并列下发）")
+	}
+}
+
+// assertCaptchaPassed 断言请求顶层 captcha 经 gate 放行，返回 HTTP 200
+// 登录流程信封（status=next）。顶层若未被读取，gate 会拦成 captcha_required
+// 的非 200 错误体，本断言随即失败。
+func assertCaptchaPassed(t *testing.T, url, body string) {
+	t.Helper()
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	raw := readBody(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("顶层 captcha 应通过（HTTP 200 信封）, got %d (body %s)", resp.StatusCode, raw)
+	}
+	var got ssov1.LoginFlowResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetStatus() != "next" {
+		t.Fatalf("status = %q, want next（captcha 放行后进入因子 Start）", got.GetStatus())
+	}
 }

@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/login.proto.
  */
 export const file_api_sso_v1_login: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIpoBChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCK4AQoMTG9naW5QYXlsb2FkEhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkEg0KBXBob25lGAQgASgJEg0KBWVtYWlsGAUgASgJEgwKBGNvZGUYBiABKAkSKwoKY3JlZGVudGlhbBgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiUQoOQ2FwdGNoYVBheWxvYWQSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg0KBXRva2VuGAIgASgJEgoKAmlkGAMgASgJEg4KBmFuc3dlchgEIAEoCSIbChlDcmVhdGVDYXB0Y2hhSW1hZ2VSZXF1ZXN0IlIKGkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEgoKAmlkGAEgASgJEhQKDGltYWdlX2Jhc2U2NBgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIscBChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgdjYXB0Y2hhGAYgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCKRAQoMTG9naW5QYXlsb2FkEhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEg0KBXBob25lGAQgASgJEg0KBWVtYWlsGAUgASgJEgwKBGNvZGUYBiABKAkSKwoKY3JlZGVudGlhbBgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RKBAgDEAQiUQoOQ2FwdGNoYVBheWxvYWQSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg0KBXRva2VuGAIgASgJEgoKAmlkGAMgASgJEg4KBmFuc3dlchgEIAEoCSIbChlDcmVhdGVDYXB0Y2hhSW1hZ2VSZXF1ZXN0IlIKGkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEgoKAmlkGAEgASgJEhQKDGltYWdlX2Jhc2U2NBgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
 
 /**
  * LoginDefaultRequest 是 SsoService/LoginDefault 的请求消息
@@ -61,6 +61,15 @@ export type LoginDefaultRequest = Message<"api.sso.v1.LoginDefaultRequest"> & {
    * @generated from field: google.protobuf.Struct oidc = 5;
    */
   oidc?: JsonObject | undefined;
+
+  /**
+   * 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+   * §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
+   * 失败达阈值后必填，其余场景可省。
+   *
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 6;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**
@@ -92,14 +101,6 @@ export type LoginPayload = Message<"api.sso.v1.LoginPayload"> & {
    * @generated from field: string password = 2;
    */
   password: string;
-
-  /**
-   * 人机校验提交，结构见 CaptchaPayload（§2.5 行 499-510）；
-   * 密码登录失败≥阈值后必填（行 542）、otp challenge 步必填（行 543-544），其余场景可省。
-   *
-   * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
-   */
-  captcha?: CaptchaPayload | undefined;
 
   /**
    * otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。

@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/register.proto.
  */
 export const file_api_sso_v1_register: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIpkBCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Io4BCg9SZWdpc3RlclBheWxvYWQSDQoFZW1haWwYASABKAkSDQoFcGhvbmUYAiABKAkSKwoHY2FwdGNoYRgDIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQSDAoEY29kZRgEIAEoCRIQCgh1c2VybmFtZRgFIAEoCRIQCghwYXNzd29yZBgGIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_google_protobuf_struct, file_api_sso_v1_login]);
+  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIsYBCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKB2NhcHRjaGEYBiABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkImcKD1JlZ2lzdGVyUGF5bG9hZBINCgVlbWFpbBgBIAEoCRINCgVwaG9uZRgCIAEoCRIMCgRjb2RlGAQgASgJEhAKCHVzZXJuYW1lGAUgASgJEhAKCHBhc3N3b3JkGAYgASgJSgQIAxAEQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_sso_v1_login]);
 
 /**
  * RegisterRequest 是 SsoService/Register 的请求消息
@@ -63,6 +63,15 @@ export type RegisterRequest = Message<"api.sso.v1.RegisterRequest"> & {
    * @generated from field: google.protobuf.Struct oidc = 5;
    */
   oidc?: JsonObject | undefined;
+
+  /**
+   * 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+   * §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
+   * set_password 步必填，其余场景可省。
+   *
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 6;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**
@@ -95,16 +104,6 @@ export type RegisterPayload = Message<"api.sso.v1.RegisterPayload"> & {
    * @generated from field: string phone = 2;
    */
   phone: string;
-
-  /**
-   * 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-   * 两类 Provider 统一，故复用不另建。字段可选性口径：challenge 步必填（§2.3 行 446
-   * 「必须 captcha」）；用户名+密码直通入口从 set_password 直达（无 challenge / verify），
-   * 该步同样必填（§2.3 行 450）。
-   *
-   * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
-   */
-  captcha?: CaptchaPayload | undefined;
 
   /**
    * verify 步：register 用途的验证码（§2.3 行 447）。

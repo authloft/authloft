@@ -33,6 +33,10 @@ message ResetPasswordRequest {
   // 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
   // google.protobuf.Struct，不逐字段建模。
   google.protobuf.Struct oidc = 5;
+  // 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+  // §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步必填，
+  // 其余场景可省。
+  CaptchaPayload captcha = 6;
 }
 
 // ResetPayload 是 §2.4 重置各 step 的 payload 字段合集（行 462-466）：
@@ -46,10 +50,8 @@ message ResetPayload {
   string email = 1;
   // challenge 步：目标手机号，须为已绑定且已验证的（§2.4 行 464）；与 email 二选一。
   string phone = 2;
-  // 人机校验提交，结构见同包 CaptchaPayload（§2.5 行 499-510）：提交格式在 §2.5 单一定义、
-  // 两类 Provider 统一，故复用不另建。challenge 步必填——重置的下发必须过 captcha
-  // （§2.5 行 528「注册 / 重置的下发：必须」，行 525「每次下发都要新的」）。
-  CaptchaPayload captcha = 3;
+  // 原 captcha 字段（编号 3）已上提为请求顶层字段，编号保留防复用（§12.8）。
+  reserved 3;
   // verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
   string code = 4;
   // set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。

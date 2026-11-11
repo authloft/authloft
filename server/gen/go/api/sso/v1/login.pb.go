@@ -42,7 +42,11 @@ type LoginDefaultRequest struct {
 	// （尚无 login_token）时回传，服务端据此写入 login_token.oidc（§2.2 行 425）。
 	// 内容是 /auth/authorize 的 OIDC 原始参数按原样透传、前端不解析其内部字段，
 	// 故与 LoginFlowResponse.next_step.challenge_data 同口径用 google.protobuf.Struct，不逐字段建模。
-	Oidc          *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
+	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
+	// 失败达阈值后必填，其余场景可省。
+	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,6 +116,13 @@ func (x *LoginDefaultRequest) GetOidc() *structpb.Struct {
 	return nil
 }
 
+func (x *LoginDefaultRequest) GetCaptcha() *CaptchaPayload {
+	if x != nil {
+		return x.Captcha
+	}
+	return nil
+}
+
 // LoginPayload 是 §2.6 各因子 `payload` 对照表（行 540-549）的因子字段合集：
 // 单次请求只按 method / step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
 // thirdparty 不在本表内，按 §2.7 走独立端点，不进 payload。
@@ -122,9 +133,6 @@ type LoginPayload struct {
 	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
 	// password / verify：密码（§2.6 行 542）。
 	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	// 人机校验提交，结构见 CaptchaPayload（§2.5 行 499-510）；
-	// 密码登录失败≥阈值后必填（行 542）、otp challenge 步必填（行 543-544），其余场景可省。
-	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。
 	Phone string `protobuf:"bytes,4,opt,name=phone,proto3" json:"phone,omitempty"`
 	// otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 543）；MFA 场景不传（行 544）。
@@ -180,13 +188,6 @@ func (x *LoginPayload) GetPassword() string {
 		return x.Password
 	}
 	return ""
-}
-
-func (x *LoginPayload) GetCaptcha() *CaptchaPayload {
-	if x != nil {
-		return x.Captcha
-	}
-	return nil
 }
 
 func (x *LoginPayload) GetPhone() string {
@@ -402,24 +403,24 @@ var File_api_sso_v1_login_proto protoreflect.FileDescriptor
 const file_api_sso_v1_login_proto_rawDesc = "" +
 	"\n" +
 	"\x16api/sso/v1/login.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xc3\x01\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xf9\x01\n" +
 	"\x13LoginDefaultRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
 	"\apayload\x18\x04 \x01(\v2\x18.api.sso.v1.LoginPayloadR\apayload\x12+\n" +
-	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"\xf5\x01\n" +
+	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\xc5\x01\n" +
 	"\fLoginPayload\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\x124\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\x14\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +
 	"\x05phone\x18\x04 \x01(\tR\x05phone\x12\x14\n" +
 	"\x05email\x18\x05 \x01(\tR\x05email\x12\x12\n" +
 	"\x04code\x18\x06 \x01(\tR\x04code\x127\n" +
 	"\n" +
 	"credential\x18\a \x01(\v2\x17.google.protobuf.StructR\n" +
-	"credential\"q\n" +
+	"credentialJ\x04\b\x03\x10\x04\"q\n" +
 	"\x0eCaptchaPayload\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x0e\n" +
@@ -456,7 +457,7 @@ var file_api_sso_v1_login_proto_goTypes = []any{
 var file_api_sso_v1_login_proto_depIdxs = []int32{
 	1, // 0: api.sso.v1.LoginDefaultRequest.payload:type_name -> api.sso.v1.LoginPayload
 	5, // 1: api.sso.v1.LoginDefaultRequest.oidc:type_name -> google.protobuf.Struct
-	2, // 2: api.sso.v1.LoginPayload.captcha:type_name -> api.sso.v1.CaptchaPayload
+	2, // 2: api.sso.v1.LoginDefaultRequest.captcha:type_name -> api.sso.v1.CaptchaPayload
 	5, // 3: api.sso.v1.LoginPayload.credential:type_name -> google.protobuf.Struct
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type

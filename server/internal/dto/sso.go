@@ -27,7 +27,7 @@ func LoginDefault(req *ssov1.LoginDefaultRequest) orchestrator.Request {
 		Method:     req.GetMethod(),
 		Step:       req.GetStep(),
 		Payload:    payload(p),
-		Captcha:    captcha(p.GetCaptcha()),
+		Captcha:    captcha(req.GetCaptcha()),
 		OIDC:       oidc(req.GetOidc()),
 	}
 }
@@ -45,13 +45,14 @@ func Register(req *ssov1.RegisterRequest) orchestrator.Request {
 		Method:     req.GetMethod(),
 		Step:       req.GetStep(),
 		Payload:    registerPayload(p),
-		Captcha:    captcha(p.GetCaptcha()),
+		Captcha:    captcha(req.GetCaptcha()),
 		OIDC:       oidc(req.GetOidc()),
 	}
 }
 
 // registerPayload 映射 §2.3 行 446-450 的 RegisterPayload 字段
-//（email / phone / captcha / code / username / password）。
+// （email / phone / code / username / password）；captcha 为请求顶层字段，
+// 不在 payload 内，由 LoginDefault 同款读取。
 func registerPayload(p *ssov1.RegisterPayload) *factor.Payload {
 	if p == nil {
 		return nil
@@ -78,13 +79,14 @@ func Reset(req *ssov1.ResetPasswordRequest) orchestrator.Request {
 		Method:     req.GetMethod(),
 		Step:       req.GetStep(),
 		Payload:    resetPayload(p),
-		Captcha:    captcha(p.GetCaptcha()),
+		Captcha:    captcha(req.GetCaptcha()),
 		OIDC:       oidc(req.GetOidc()),
 	}
 }
 
 // resetPayload 映射 §2.4 行 464-466 的 ResetPayload 字段
-//（email / phone / captcha / code / password）。
+// （email / phone / code / password）；captcha 为请求顶层字段，不在 payload 内，
+// 由 LoginDefault 同款读取。
 func resetPayload(p *ssov1.ResetPayload) *factor.Payload {
 	if p == nil {
 		return nil
