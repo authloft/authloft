@@ -138,11 +138,12 @@ type fakeBindSettings struct{}
 
 func (fakeBindSettings) GetInt64(string) (int64, bool) { return 0, false }
 
-// fakeBindCatalog captcha.ProviderCatalog 的 fake：返回 nil 降级内置图形码
-//（gate.go 降级路径，gate_test.go 同款）。
-type fakeBindCatalog struct{}
+// fakeBindCatalog captcha.ProviderCatalog 的 fake：p 为 nil 时返回 nil 降级
+// 内置图形码（gate.go 降级路径，gate_test.go 同款）；非 nil 时回放指定
+// Provider，用于核对 captcha 失败错误载荷携带的配置与 gate 判定同源。
+type fakeBindCatalog struct{ p *captcha.Provider }
 
-func (fakeBindCatalog) Current(context.Context) (*captcha.Provider, error) { return nil, nil }
+func (f fakeBindCatalog) Current(context.Context) (*captcha.Provider, error) { return f.p, nil }
 
 // fakeBindCaptchaVerifier captcha.Verifier 的 fake：err 控制放行 / 无效 /
 // 基础设施错误。
@@ -303,6 +304,49 @@ func TestBindChallengeCaptcha(t *testing.T) {
 		}
 		bindNoSideEffects(t, env)
 	})
+}
+
+// TestBindChallengeCaptchaFailureCarriesGateConfig 可证伪：Gate.Evaluate
+// 返回的当前生效配置必须随哨兵错误透出（§9.1 同源），errors.Is 仍可判别
+// 原哨兵。断言取反（Config 不等于 gate 输出 / 错误不携带配置 / 三字段
+// 为空）即失败。
+func TestBindChallengeCaptchaFailureCarriesGateConfig(t *testing.T) {
+	catalog := fakeBindCatalog{p: &captcha.Provider{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}}
+	gate := captcha.NewGate(fakeBindSettings{}, catalog, &fakeBindCaptchaVerifier{})
+	want := gate.Config(context.Background())
+	svc := NewBindContactService(BindContactDeps{
+		Users:  &fakeBindUsers{self: bindTestUser(), occupied: map[string]*model.User{}},
+		OTP:    core.NewService(&fakeBindOTPStore{}, core.DefaultConfig()),
+		Sender: &fakeBindSender{},
+		Gate:   gate,
+		Config: core.DefaultConfig(),
+	})
+	cases := []struct {
+		name         string
+		in           BindPhoneInput
+		wantSentinel error
+	}{
+		{"required", BindPhoneInput{Step: bindStepChallenge, Target: "13800138000"}, ErrBindCaptchaRequired},
+		{"invalid", BindPhoneInput{Step: bindStepChallenge, Target: "13800138000", Captcha: &captcha.Submission{ProviderKey: "builtin_image"}}, ErrBindCaptchaInvalid},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.BindPhone(context.Background(), bindTestUID, tc.in)
+			if !errors.Is(err, tc.wantSentinel) {
+				t.Fatalf("err = %v, want %v", err, tc.wantSentinel)
+			}
+			var f *BindCaptchaFailure
+			if !errors.As(err, &f) {
+				t.Fatalf("err = %T, want *BindCaptchaFailure（配置未透出）", err)
+			}
+			if f.Config != want {
+				t.Fatalf("carried Config = %+v, want gate 输出 %+v", f.Config, want)
+			}
+			if f.Config.ProviderKey == "" || f.Config.Type == "" || f.Config.SiteKey == "" {
+				t.Fatalf("carried Config 三字段须非空: %+v", f.Config)
+			}
+		})
+	}
 }
 
 // TestBindChallengeTargetTaken 目标已占用于他人 → target_taken（§3.4

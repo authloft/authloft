@@ -13,7 +13,8 @@ import (
 )
 
 // 人机校验业务细分码（docs/接口文档.md §1.6）：仅作 ErrorInfo.code，
-// 不作登录流程态 status。此处是全仓唯一字面量定义，其余一律引用常量。
+// 不作登录流程态 status。两个码值仅在此处定义字面量，其余各处一律引用
+// 本包常量。
 const (
 	StatusRequired = "captcha_required"
 	StatusInvalid  = "captcha_invalid"

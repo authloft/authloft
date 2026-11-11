@@ -24,11 +24,11 @@
 //     bind_email（detail={target_masked}，§4.6 行 800，必须用掩码后的
 //     target；仅在 verify 成功写库后投递，challenge 不投）。
 //
-// 服务层不解析 proto / 会话（profile.go 边界惯例）：step / target /
-// captcha / code 由 handler〔拼装层〕从 PhoneBindPayload /
-// EmailBindPayload 与会话转换注入；成功返回 nil = 空响应（OkResponse，
-// §3.4 行 885）。错误哨兵与 §1.6 封闭集成员一一对应，handler 转 Connect
-// 错误体 + ErrorInfo，本层不自造 status 字面量。
+// 服务层不解析 proto / 会话（profile.go 边界惯例）：step / target / code
+// 由 handler〔拼装层〕从 PhoneBindPayload / EmailBindPayload、captcha 由
+// 请求顶层字段（与 payload 平级，§2.5）与会话转换注入；成功返回 nil =
+// 空响应（OkResponse，§3.4 行 885）。错误哨兵与 §1.6 封闭集成员一一对应，
+// handler 转 Connect 错误体 + ErrorInfo，本层不自造 status 字面量。
 package account
 
 import (
@@ -101,6 +101,19 @@ func (e *BindInvalidCodeError) Error() string {
 
 func (e *BindInvalidCodeError) Unwrap() error { return ErrBindInvalidCode }
 
+// BindCaptchaFailure 把 Gate.Evaluate 判定的当前生效 captcha 配置随可判别
+// 哨兵错误透出，供上层经 connect.WithCaptchaConfig 并列进错误体 details
+// （§2.5 / §9.1 同源）。Config 直接取自该次判定的 Outcome.Config——gate
+// 这一处单一出口，本层不重新读取配置、不另造第二份；cause 保留原哨兵，
+// errors.Is 仍可判别。
+type BindCaptchaFailure struct {
+	Config captcha.Config
+	cause  error
+}
+
+func (f *BindCaptchaFailure) Error() string { return f.cause.Error() }
+func (f *BindCaptchaFailure) Unwrap() error { return f.cause }
+
 // bindContactKind 绑定渠道：手机 / 邮箱（FindByX 占用查询、事件名、掩码
 // 函数按渠道分派；两渠道编排完全同构，§3.4 行 883「统一走」）。
 type bindContactKind int
@@ -167,15 +180,15 @@ func NewBindContactService(d BindContactDeps) *BindContactService {
 	return &BindContactService{deps: d, now: now}
 }
 
-// BindPhoneInput BindPhone 入参（handler 由 proto PhoneBindPayload
-// 转换，service 不解析 proto——qrcode.go Input 惯例）。
+// BindPhoneInput BindPhone 入参（handler 由 proto BindPhoneRequest 转换，
+// captcha 取请求顶层字段；service 不解析 proto——qrcode.go Input 惯例）。
 type BindPhoneInput struct {
 	// Step 取值 challenge｜verify（§3.4 行 887）。
 	Step string
 	// Target 目标手机号；verify 须回传与 challenge 相同的 target（§3.4
 	// 行 880）。
 	Target string
-	// Captcha challenge 必填（§3.4 行 896）；verify 步忽略。
+	// Captcha 请求顶层 captcha（§2.5）；challenge 必填（§3.4 行 896），verify 步忽略。
 	Captcha *captcha.Submission
 	// Code verify：purpose=bind 的验证码（§3.4 行 888）。
 	Code string
@@ -183,15 +196,16 @@ type BindPhoneInput struct {
 	IP string
 }
 
-// BindEmailInput BindEmail 入参（handler 由 proto EmailBindPayload 转换；
-// 字段与 BindPhoneInput 同构，仅 Target 语义为目标邮箱）。
+// BindEmailInput BindEmail 入参（handler 由 proto BindEmailRequest 转换，
+// captcha 取请求顶层字段；字段与 BindPhoneInput 同构，仅 Target 语义为
+// 目标邮箱）。
 type BindEmailInput struct {
 	// Step 取值 challenge｜verify（§3.4 行 889）。
 	Step string
 	// Target 目标邮箱；verify 须回传与 challenge 相同的 target（§3.4
 	// 行 880）。
 	Target string
-	// Captcha challenge 必填（§3.4 行 896）；verify 步忽略。
+	// Captcha 请求顶层 captcha（§2.5）；challenge 必填（§3.4 行 896），verify 步忽略。
 	Captcha *captcha.Submission
 	// Code verify：purpose=bind 的验证码（§3.4 行 890）。
 	Code string
@@ -237,9 +251,9 @@ func (s *BindContactService) bindChallenge(ctx context.Context, uid int64, kind 
 	}
 	switch out.Status {
 	case captcha.StatusRequired:
-		return ErrBindCaptchaRequired
+		return &BindCaptchaFailure{cause: ErrBindCaptchaRequired, Config: out.Config}
 	case captcha.StatusInvalid:
-		return ErrBindCaptchaInvalid
+		return &BindCaptchaFailure{cause: ErrBindCaptchaInvalid, Config: out.Config}
 	}
 
 	// ② target 非空（§1.6 行 246 参数缺失）。

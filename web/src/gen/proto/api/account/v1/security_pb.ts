@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/security.proto.
  */
 export const file_api_account_v1_security: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hcGkvYWNjb3VudC92MS9zZWN1cml0eS5wcm90bxIOYXBpLmFjY291bnQudjEiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIlwKEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSKwoHY2FwdGNoYRgCIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQSDAoEY29kZRgDIAEoCSJTChBCaW5kUGhvbmVSZXF1ZXN0EgwKBHN0ZXAYASABKAkSMQoHcGF5bG9hZBgCIAEoCzIgLmFwaS5hY2NvdW50LnYxLlBob25lQmluZFBheWxvYWQiXAoQRW1haWxCaW5kUGF5bG9hZBINCgVlbWFpbBgBIAEoCRIrCgdjYXB0Y2hhGAIgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIMCgRjb2RlGAMgASgJIlMKEEJpbmRFbWFpbFJlcXVlc3QSDAoEc3RlcBgBIAEoCRIxCgdwYXlsb2FkGAIgASgLMiAuYXBpLmFjY291bnQudjEuRW1haWxCaW5kUGF5bG9hZEIqWihhdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQvdjE7YWNjb3VudHYxYgZwcm90bzM", [file_api_sso_v1_login]);
+  fileDesc("Ch1hcGkvYWNjb3VudC92MS9zZWN1cml0eS5wcm90bxIOYXBpLmFjY291bnQudjEiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIjUKEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSDAoEY29kZRgDIAEoCUoECAIQAyKAAQoQQmluZFBob25lUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5QaG9uZUJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkIjUKEEVtYWlsQmluZFBheWxvYWQSDQoFZW1haWwYASABKAkSDAoEY29kZRgDIAEoCUoECAIQAyKAAQoQQmluZEVtYWlsUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5FbWFpbEJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_api_sso_v1_login]);
 
 /**
  * ChangePasswordRequest 是 AccountService/ChangePassword 的请求（§3.3 行 855-860）。
@@ -45,7 +45,8 @@ export const ChangePasswordRequestSchema: GenMessage<ChangePasswordRequest> = /*
 
 /**
  * PhoneBindPayload 是 AccountService/BindPhone 的 payload 字段（§3.4 行 870-871）：
- * challenge 用 {phone, captcha}，verify 用 {phone, code}，同一端点按 step 取用其中一部分。
+ * challenge 用 {phone}，verify 用 {phone, code}，同一端点按 step 取用其中一部分；
+ * captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
  *
  * @generated from message api.account.v1.PhoneBindPayload
  */
@@ -56,13 +57,6 @@ export type PhoneBindPayload = Message<"api.account.v1.PhoneBindPayload"> & {
    * @generated from field: string phone = 1;
    */
   phone: string;
-
-  /**
-   * 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 870）。
-   *
-   * @generated from field: api.sso.v1.CaptchaPayload captcha = 2;
-   */
-  captcha?: CaptchaPayload | undefined;
 
   /**
    * verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
@@ -100,6 +94,14 @@ export type BindPhoneRequest = Message<"api.account.v1.BindPhoneRequest"> & {
    * @generated from field: api.account.v1.PhoneBindPayload payload = 2;
    */
   payload?: PhoneBindPayload | undefined;
+
+  /**
+   * 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
+   * challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。
+   *
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**
@@ -111,6 +113,7 @@ export const BindPhoneRequestSchema: GenMessage<BindPhoneRequest> = /*@__PURE__*
 
 /**
  * EmailBindPayload 是 AccountService/BindEmail 的 payload 字段（§3.4 行 872-873）。
+ * captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
  *
  * @generated from message api.account.v1.EmailBindPayload
  */
@@ -121,13 +124,6 @@ export type EmailBindPayload = Message<"api.account.v1.EmailBindPayload"> & {
    * @generated from field: string email = 1;
    */
   email: string;
-
-  /**
-   * 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 872）。
-   *
-   * @generated from field: api.sso.v1.CaptchaPayload captcha = 2;
-   */
-  captcha?: CaptchaPayload | undefined;
 
   /**
    * verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
@@ -164,6 +160,14 @@ export type BindEmailRequest = Message<"api.account.v1.BindEmailRequest"> & {
    * @generated from field: api.account.v1.EmailBindPayload payload = 2;
    */
   payload?: EmailBindPayload | undefined;
+
+  /**
+   * 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
+   * challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。
+   *
+   * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
+   */
+  captcha?: CaptchaPayload | undefined;
 };
 
 /**

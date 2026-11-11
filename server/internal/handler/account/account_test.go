@@ -1874,7 +1874,7 @@ func (f *fakeBindContact) BindEmail(_ context.Context, uid int64, in accountsvc.
 func TestBindPhoneConnect(t *testing.T) {
 	bc := &fakeBindContact{}
 	code, raw, _ := postService(t, accountv1connect.AccountServiceBindPhoneProcedure,
-		`{"step":"challenge","payload":{"phone":"13900008000","captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}}`,
+		`{"step":"challenge","payload":{"phone":"13900008000"},"captcha":{"providerKey":"builtin_image","id":"cap-1","answer":"1234"}}`,
 		&getConfigDeps{bindcontactIn: bc})
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
@@ -1898,7 +1898,7 @@ func TestBindPhoneConnect(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"captcha_required", accountsvc.ErrBindCaptchaRequired, "captcha_required"},
+		{"required", accountsvc.ErrBindCaptchaRequired, captcha.StatusRequired},
 		{"target_taken", accountsvc.ErrBindTargetTaken, "target_taken"},
 		{"too_many_requests", accountsvc.ErrBindTooManyRequests, "too_many_requests"},
 		{"code_expired", accountsvc.ErrBindCodeExpired, "code_expired"},

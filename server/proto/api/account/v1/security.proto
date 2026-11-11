@@ -22,12 +22,13 @@ message ChangePasswordRequest {
 }
 
 // PhoneBindPayload 是 AccountService/BindPhone 的 payload 字段（§3.4 行 870-871）：
-// challenge 用 {phone, captcha}，verify 用 {phone, code}，同一端点按 step 取用其中一部分。
+// challenge 用 {phone}，verify 用 {phone, code}，同一端点按 step 取用其中一部分；
+// captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
 message PhoneBindPayload {
   // 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 870-871、行 880）。
   string phone = 1;
-  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 870）。
-  api.sso.v1.CaptchaPayload captcha = 2;
+  // 原 captcha 字段（编号 2）已上提为请求顶层字段，编号保留防复用（§12.8）。
+  reserved 2;
   // verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
   string code = 3;
 }
@@ -40,14 +41,18 @@ message BindPhoneRequest {
   string step = 1;
   // 该步骤用到的字段（§3.4 行 870-871）。
   PhoneBindPayload payload = 2;
+  // 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
+  // challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。
+  api.sso.v1.CaptchaPayload captcha = 3;
 }
 
 // EmailBindPayload 是 AccountService/BindEmail 的 payload 字段（§3.4 行 872-873）。
+// captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
 message EmailBindPayload {
   // 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 872-873、行 880）。
   string email = 1;
-  // 人机校验提交，跨包引用 api.sso.v1.CaptchaPayload（§2.5 行 499-510）；challenge 必填（§3.4 行 872）。
-  api.sso.v1.CaptchaPayload captcha = 2;
+  // 原 captcha 字段（编号 2）已上提为请求顶层字段，编号保留防复用（§12.8）。
+  reserved 2;
   // verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
   string code = 3;
 }
@@ -59,4 +64,7 @@ message BindEmailRequest {
   string step = 1;
   // 该步骤用到的字段（§3.4 行 872-873）。
   EmailBindPayload payload = 2;
+  // 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
+  // challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。
+  api.sso.v1.CaptchaPayload captcha = 3;
 }

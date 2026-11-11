@@ -947,7 +947,8 @@ func mapPasswordError(op string, err error) error {
 // 兜底），本层传空串由 service bindSourceIP 兜底，不自造 Header 解析。
 
 // BindPhone（§3.4 行 887）：手机号绑定 / 换绑两步同端点，由 step 区分
-//（challenge {phone, captcha} / verify {phone, code}）；成功为空响应。
+//（challenge 需请求顶层 captcha、payload {phone}；verify payload
+// {phone, code}）；成功为空响应。
 func (h *Handler) BindPhone(ctx context.Context, req *connect.Request[accountv1.BindPhoneRequest]) (*connect.Response[accountv1.OkResponse], error) {
 	if h.bindcontact == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errBindNotConfigured)
@@ -956,11 +957,10 @@ func (h *Handler) BindPhone(ctx context.Context, req *connect.Request[accountv1.
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	in := accountsvc.BindPhoneInput{Step: req.Msg.GetStep()}
+	in := accountsvc.BindPhoneInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha())}
 	if p := req.Msg.GetPayload(); p != nil {
 		in.Target = p.GetPhone()
 		in.Code = p.GetCode()
-		in.Captcha = captchaSubmission(p.GetCaptcha())
 	}
 	if err := h.bindcontact.BindPhone(ctx, uid, in); err != nil {
 		return nil, mapBindError("bind phone", err)
@@ -978,11 +978,10 @@ func (h *Handler) BindEmail(ctx context.Context, req *connect.Request[accountv1.
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	in := accountsvc.BindEmailInput{Step: req.Msg.GetStep()}
+	in := accountsvc.BindEmailInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha())}
 	if p := req.Msg.GetPayload(); p != nil {
 		in.Target = p.GetEmail()
 		in.Code = p.GetCode()
-		in.Captcha = captchaSubmission(p.GetCaptcha())
 	}
 	if err := h.bindcontact.BindEmail(ctx, uid, in); err != nil {
 		return nil, mapBindError("bind email", err)
@@ -992,8 +991,8 @@ func (h *Handler) BindEmail(ctx context.Context, req *connect.Request[accountv1.
 
 // captchaSubmission CaptchaPayload → captcha.Submission（§2.5 行 478-486
 // 统一提交格式）：与 dto/sso.go captchaSubmission 同名字段直映（跨包私有
-// 按既有分工各落一份——本包不为此扩大 dto 导出面）；nil payload 返回 nil
-// 交由 service 按 challenge 步判定缺失。
+// 按既有分工各落一份——本包不为此扩大 dto 导出面）；请求顶层未提交
+// captcha 时返回 nil，交由 service 按 challenge 步判定缺失。
 func captchaSubmission(c *ssov1.CaptchaPayload) *captcha.Submission {
 	if c == nil {
 		return nil
@@ -1012,7 +1011,9 @@ func captchaSubmission(c *ssov1.CaptchaPayload) *captcha.Submission {
 // 行 191 占用）；user_not_found → not_found（404，行 190 资源不存在）；
 // 限流 / 冷却 / 日限额 → resource_exhausted（429，行 192）；invalid_code
 // 经 errors.As 取 BindInvalidCodeError.AttemptsLeft 挂 ErrorInfo.attemptsLeft
-//（§1.5 行 222「剩余尝试次数」）；其余原样上抛由错误包装拦截器消毒。
+//（§1.5 行 222「剩余尝试次数」）；captcha 失败经 errors.As 取
+// BindCaptchaFailure.Config 并列 CaptchaConfig detail（§2.5）；其余原样
+// 上抛由错误包装拦截器消毒。
 func mapBindError(op string, err error) error {
 	switch {
 	case errors.Is(err, accountsvc.ErrBindInvalidRequest):
@@ -1021,15 +1022,17 @@ func mapBindError(op string, err error) error {
 			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
 		)
 	case errors.Is(err, accountsvc.ErrBindCaptchaRequired):
-		return internalconnect.WithErrorInfo(
+		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("account", "captcha_required", "captcha required"),
+			internalconnect.NewErrorInfo("account", captcha.StatusRequired, "captcha required"),
 		)
+		return withBindCaptchaConfig(err, coded)
 	case errors.Is(err, accountsvc.ErrBindCaptchaInvalid):
-		return internalconnect.WithErrorInfo(
+		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("account", "captcha_invalid", "captcha invalid"),
+			internalconnect.NewErrorInfo("account", captcha.StatusInvalid, "captcha invalid"),
 		)
+		return withBindCaptchaConfig(err, coded)
 	case errors.Is(err, accountsvc.ErrBindTargetTaken):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeAlreadyExists, err),
@@ -1073,6 +1076,22 @@ func mapBindError(op string, err error) error {
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
 	}
+}
+
+// withBindCaptchaConfig 把 service 透出的、与 gate 判定同源的当前生效配置
+// 并列进 captcha 失败错误体 details（与 SSO 域同一结构：ErrorInfo +
+// CaptchaConfig）。配置仅随哨兵错误载荷透传，本层不重新读取、不另造第二
+// 配置源（§9.1 同源）。
+func withBindCaptchaConfig(err error, coded *connect.Error) *connect.Error {
+	var f *accountsvc.BindCaptchaFailure
+	if errors.As(err, &f) {
+		return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
+			ProviderKey: f.Config.ProviderKey,
+			Type:        f.Config.Type,
+			SiteKey:     f.Config.SiteKey,
+		})
+	}
+	return coded
 }
 
 // —— 两步验证族四方法 + UnbindTotp 占位（接口文档 §3.5 行 900-925）——
