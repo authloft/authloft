@@ -24,5 +24,5 @@ define.fmt({
 define.staged({
   '*.{js,jsx,ts,tsx,cjs,mjs,cts,mts}': ['rs lint', 'rs fmt'],
   '*.{md,mdx,json,json5,yml,yaml,css,less,scss,html}': 'rs fmt',
-  '*.go': 'gofmt',
+  '*.go': 'gofmt -w',
 });
