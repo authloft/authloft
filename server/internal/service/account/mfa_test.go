@@ -1,6 +1,6 @@
 // mfa_test.go 单测：fake 依赖（不连真库，
 // webauthn_test.go 同款风格）覆盖 GetMfa 明细 / SetMfa 启用与关闭分支 /
-// BindTotp 两态（HMAC-SHA1 ±1 步真算）/ 恢复码读取与重生成。
+// BindTotp 两态（HMAC-SHA1 ±1 步真算）/ 恢复码重生成。
 package account
 
 import (
@@ -595,41 +595,6 @@ func TestMfaBindTotpVerifyFailures(t *testing.T) {
 	}
 }
 
-func TestMfaGetRecoveryCodes(t *testing.T) {
-	// 无行 → code_expired（§8.4 行 1083）。
-	svc := newMfaService(mfaUser(), &fakeMfaCreds{}, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
-	if _, err := svc.GetRecoveryCodes(context.Background(), 42); !errors.Is(err, ErrMfaCodeExpired) {
-		t.Errorf("no row err = %v, want ErrMfaCodeExpired", err)
-	}
-	// 有行 → 展示形 + createdAt。
-	creds := &fakeMfaCreds{rows: []*model.UserCredential{
-		{ID: 7, UserID: 42, Kind: "recovery_code", IsEnabled: 1,
-			Meta:      mfaCredMeta(t, &credentialpb.CredentialMeta{RecoveryCodes: []string{"0a1b2c3d", "4e5f6g7h"}}),
-			CreatedAt: mfaNow, UpdatedAt: mfaNow},
-	}}
-	svc2 := newMfaService(mfaUser(), creds, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
-	res, err := svc2.GetRecoveryCodes(context.Background(), 42)
-	if err != nil {
-		t.Fatalf("GetRecoveryCodes: %v", err)
-	}
-	if len(res.Codes) != 2 || res.Codes[0] != "0a1b-2c3d" || res.Codes[1] != "4e5f-6g7h" {
-		t.Errorf("codes = %v", res.Codes)
-	}
-	if res.CreatedAt != mfaNow.Unix() {
-		t.Errorf("createdAt = %d, want %d", res.CreatedAt, mfaNow.Unix())
-	}
-	// 未启用 / meta 空（消费尽）→ code_expired。
-	creds.rows[0].IsEnabled = 0
-	if _, err := svc2.GetRecoveryCodes(context.Background(), 42); !errors.Is(err, ErrMfaCodeExpired) {
-		t.Errorf("disabled row err = %v, want ErrMfaCodeExpired", err)
-	}
-	creds.rows[0].IsEnabled = 1
-	creds.rows[0].Meta = mfaCredMeta(t, &credentialpb.CredentialMeta{})
-	if _, err := svc2.GetRecoveryCodes(context.Background(), 42); !errors.Is(err, ErrMfaCodeExpired) {
-		t.Errorf("exhausted row err = %v, want ErrMfaCodeExpired", err)
-	}
-}
-
 func TestMfaRegenerateRecoveryCodes(t *testing.T) {
 	creds := &fakeMfaCreds{}
 	svc := newMfaService(mfaUser(), creds, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
@@ -691,9 +656,6 @@ func TestMfaUnauthenticatedAndUserMissing(t *testing.T) {
 	}
 	if _, err := svc.BindTotpVerify(ctx, 0, "JBSWY3DPEHPK3PXP", "123456"); !errors.Is(err, ErrMfaUnauthenticated) {
 		t.Errorf("BindTotpVerify(0) err = %v, want ErrMfaUnauthenticated", err)
-	}
-	if _, err := svc.GetRecoveryCodes(ctx, 0); !errors.Is(err, ErrMfaUnauthenticated) {
-		t.Errorf("GetRecoveryCodes(0) err = %v, want ErrMfaUnauthenticated", err)
 	}
 	if _, err := svc.RegenerateRecoveryCodes(ctx, 0, "regenerate"); !errors.Is(err, ErrMfaUnauthenticated) {
 		t.Errorf("RegenerateRecoveryCodes(0) err = %v, want ErrMfaUnauthenticated", err)

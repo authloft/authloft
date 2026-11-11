@@ -734,11 +734,12 @@ func TestGetConfigWithoutSession(t *testing.T) {
 }
 
 // TestServiceMethodsNotConfigured 未装配五族 service（avatar / password /
-// bindcontact / mfa / events，降级装配口径）时十一桩一律
+// bindcontact / mfa / events，降级装配口径）时十桩一律
 // unimplemented（TestThirdpartyMethodsNotConfigured /
 // TestWebauthnMethodsNotConfigured / TestUpdateProfileNotConfigured 同款）。
-// 至此 account 域 22 方法全部实装，桩清单测试（原 TestOtherMethodsUnimplemented）
-// 随十一桩移出而清空删除。
+// account 域 21 方法实装；UnbindTotp 为契约先行占位（恒 unimplemented，
+// 独立用例 TestUnbindTotpContractPending 覆盖），桩清单测试（原
+// TestOtherMethodsUnimplemented）随十桩移出而清空删除。
 func TestServiceMethodsNotConfigured(t *testing.T) {
 	_, _, h := newSessionHandler(t, &fakeUsers{})
 	cases := []string{
@@ -750,7 +751,6 @@ func TestServiceMethodsNotConfigured(t *testing.T) {
 		accountv1connect.AccountServiceGetMfaProcedure,
 		accountv1connect.AccountServiceSetMfaProcedure,
 		accountv1connect.AccountServiceBindTotpProcedure,
-		accountv1connect.AccountServiceGetRecoveryCodesProcedure,
 		accountv1connect.AccountServiceRegenerateRecoveryCodesProcedure,
 		accountv1connect.AccountServiceGetEventsProcedure,
 	}
@@ -1977,8 +1977,6 @@ type fakeMfa struct {
 	verifyUIDs   []int64
 	secrets      []string
 	codes        []string
-	recovery     *accountsvc.RecoveryCodesResult
-	recoveryErr  error
 	regen        *accountsvc.RecoveryCodesResult
 	regenErr     error
 	regenActions []string
@@ -2002,10 +2000,6 @@ func (f *fakeMfa) BindTotpVerify(_ context.Context, uid int64, secret, code stri
 	f.secrets = append(f.secrets, secret)
 	f.codes = append(f.codes, code)
 	return []string{"aaaa-bbbb", "cccc-dddd"}, f.verifyErr
-}
-
-func (f *fakeMfa) GetRecoveryCodes(_ context.Context, _ int64) (*accountsvc.RecoveryCodesResult, error) {
-	return f.recovery, f.recoveryErr
 }
 
 func (f *fakeMfa) RegenerateRecoveryCodes(_ context.Context, _ int64, action string) (*accountsvc.RecoveryCodesResult, error) {
@@ -2140,31 +2134,34 @@ func TestBindTotpConnect(t *testing.T) {
 	}
 }
 
-// TestGetRecoveryCodesConnect：成功 {codes, createdAt}；无签发 → 400
-// code_expired（§8.4 行 1083）。
-func TestGetRecoveryCodesConnect(t *testing.T) {
-	m := &fakeMfa{recovery: &accountsvc.RecoveryCodesResult{
-		Codes: []string{"aaaa-bbbb", "cccc-dddd"}, CreatedAt: 1761800000,
-	}}
-	code, raw, _ := postService(t, accountv1connect.AccountServiceGetRecoveryCodesProcedure, `{}`, &getConfigDeps{mfaIn: m})
-	if code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+// TestUnbindTotpContractPending：UnbindTotp 契约先行占位——解绑前须完成
+// 一次 MFA 验证（§3.5），验证流程此处不单独定义；实装前即便五族
+// service 均已装配也一律 unimplemented，且不返回业务错误信封。
+// 原 GetRecoveryCodes 已移除，不再有存量恢复码回显用例。
+func TestUnbindTotpContractPending(t *testing.T) {
+	code, raw, _ := postService(t, accountv1connect.AccountServiceUnbindTotpProcedure,
+		`{}`, &getConfigDeps{mfaIn: &fakeMfa{}})
+	if code == http.StatusOK {
+		t.Fatalf("status = 200，占位不应成功（body %s）", raw)
 	}
-	var got accountv1.RecoveryCodesResponse
-	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("decode response %q: %v", raw, err)
+	var errBody struct {
+		Code string `json:"code"`
 	}
-	if len(got.GetCodes()) != 2 || got.GetCreatedAt() != 1761800000 {
-		t.Errorf("recovery codes = %v createdAt=%d", got.GetCodes(), got.GetCreatedAt())
+	if err := json.Unmarshal([]byte(raw), &errBody); err != nil {
+		t.Fatalf("decode error body %q: %v", raw, err)
 	}
+	if errBody.Code != "unimplemented" {
+		t.Errorf("code = %q, want unimplemented (body %s)", errBody.Code, raw)
+	}
+}
 
-	m2 := &fakeMfa{recoveryErr: accountsvc.ErrMfaCodeExpired}
-	code, raw, _ = postService(t, accountv1connect.AccountServiceGetRecoveryCodesProcedure, `{}`, &getConfigDeps{mfaIn: m2})
-	if code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
-	}
-	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "code_expired" {
-		t.Errorf("ErrorInfo code = %q, want code_expired", info.GetCode())
+// TestGetRecoveryCodesRemoved：原端点已从 service 移除（存量恢复码不再
+// 回显），请求落到生成 handler 的 default 分支 → 404。
+func TestGetRecoveryCodesRemoved(t *testing.T) {
+	code, _, _ := postService(t, "/api.account.v1.AccountService/GetRecoveryCodes",
+		`{}`, &getConfigDeps{})
+	if code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", code)
 	}
 }
 

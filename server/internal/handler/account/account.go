@@ -7,11 +7,13 @@
 // 837，proto3 optional 口径——编排全部在 service/account.ProfileService，
 // 本层只做会话判定与错误映射）；落地剩余十一桩（PresignAvatar /
 // CommitAvatar §3.2 行 839-840、ChangePassword §3.3、BindPhone / BindEmail
-// §3.4、GetMfa / SetMfa / BindTotp / GetRecoveryCodes /
+// §3.4、GetMfa / SetMfa / BindTotp /
 // RegenerateRecoveryCodes §3.5、GetEvents §3.7 行 1057——五族 service
 // 已交付，本层做会话判定、proto ↔ 领域结构转换与错误映射），
-// 22 方法全部实装；未装配 service 的方法仍由生成的
-// UnimplementedAccountServiceHandler 语义返回 unimplemented（不自造错误信封）。
+// 21 方法实装；UnbindTotp（§3.5 解绑前须完成一次 MFA 验证，验证流程
+// 此处不单独定义）为契约先行占位，恒返回 unimplemented；
+// 未装配 service 的方法仍由生成的 UnimplementedAccountServiceHandler
+// 语义返回 unimplemented（不自造错误信封）。
 package account
 
 import (
@@ -134,7 +136,6 @@ type MfaManager interface {
 	SetMfa(ctx context.Context, uid int64, methods []string) error
 	BindTotpChallenge(ctx context.Context, uid int64) (*accountsvc.TotpChallenge, error)
 	BindTotpVerify(ctx context.Context, uid int64, secret, code string) ([]string, error)
-	GetRecoveryCodes(ctx context.Context, uid int64) (*accountsvc.RecoveryCodesResult, error)
 	RegenerateRecoveryCodes(ctx context.Context, uid int64, action string) (*accountsvc.RecoveryCodesResult, error)
 }
 
@@ -181,6 +182,9 @@ var (
 	errMfaInternal = errors.New("internal error")
 	// errMfaInvalidStep BindTotp step 取值非法。
 	errMfaInvalidStep = errors.New("invalid step")
+	// errUnbindTotpNotImplemented UnbindTotp 契约先行占位（解绑前的 MFA
+	// 验证流程未单独定义，实装前一律 unimplemented）。
+	errUnbindTotpNotImplemented = errors.New("unbind totp not implemented")
 	// errEventsNotConfigured 未装配事件日志 service（测试桩）。
 	errEventsNotConfigured = errors.New("events service not configured")
 )
@@ -1071,11 +1075,13 @@ func mapBindError(op string, err error) error {
 	}
 }
 
-// —— 两步验证族五方法（接口文档 §3.5 行 900-925）——
+// —— 两步验证族四方法 + UnbindTotp 占位（接口文档 §3.5 行 900-925）——
 //
 // 请求绑定（step 分派、MfaDetail → proto 投影）与错误映射归本层，明细
 // 聚合 / mfa_setting 写入 / TOTP 绑定 / 恢复码生成在
-// service/account.MfaService。五接口均需 al_session（§1.2 行 96）。
+// service/account.MfaService。本族接口均需 al_session（§1.2 行 96）。
+// 原 GetRecoveryCodes 已移除（存量恢复码不再回显）；新增 UnbindTotp
+// 为契约先行占位，实装前恒返回 unimplemented。
 
 // GetMfa（§3.5 行 920）：五因子绑定明细 + recoveryIssuedAt（摘要走 §3.2
 // mfaPolicy，本接口只出明细不重复）。
@@ -1163,28 +1169,16 @@ func (h *Handler) BindTotp(ctx context.Context, req *connect.Request[accountv1.B
 	}
 }
 
-// GetRecoveryCodes（§3.5 行 924）：存量恢复码一次性展示 {codes, createdAt}；
-// 无签发 → code_expired（§8.4 行 1083）。
-func (h *Handler) GetRecoveryCodes(ctx context.Context, req *connect.Request[accountv1.GetRecoveryCodesRequest]) (*connect.Response[accountv1.RecoveryCodesResponse], error) {
-	if h.mfa == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
-	}
-	uid, ok := session.UIDFromContext(ctx)
-	if !ok {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
-	}
-	res, err := h.mfa.GetRecoveryCodes(ctx, uid)
-	if err != nil {
-		return nil, mapMfaError("get recovery codes", err)
-	}
-	return connect.NewResponse(&accountv1.RecoveryCodesResponse{
-		Codes:     res.Codes,
-		CreatedAt: res.CreatedAt,
-	}), nil
+// UnbindTotp（§3.5 行 907）：解除当前 TOTP 绑定，成功为空响应。前置须
+// 完成一次 MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式），验证
+// 的具体流程与承载此处不单独定义。契约先行：通用验证落定前不实装，
+// 恒返回 unimplemented（不自造业务错误信封）。
+func (h *Handler) UnbindTotp(_ context.Context, _ *connect.Request[accountv1.UnbindTotpRequest]) (*connect.Response[accountv1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errUnbindTotpNotImplemented)
 }
 
 // RegenerateRecoveryCodes（§3.5 行 925）：重新生成即全量作废，{action:
-// "regenerate"}；出参同 GetRecoveryCodes 格式一次性下发新码。
+// "regenerate"}；出参与 BindTotp verify 的 recoveryCodes 同格式一次性下发新码。
 func (h *Handler) RegenerateRecoveryCodes(ctx context.Context, req *connect.Request[accountv1.RegenerateRecoveryCodesRequest]) (*connect.Response[accountv1.RecoveryCodesResponse], error) {
 	if h.mfa == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)

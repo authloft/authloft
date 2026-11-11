@@ -8,7 +8,7 @@ import type { AccountConfigResponseSchema, AvatarPresignResponseSchema, AvatarRe
 import { file_api_account_v1_profile } from "./profile_pb";
 import type { BindEmailRequestSchema, BindPhoneRequestSchema, ChangePasswordRequestSchema } from "./security_pb";
 import { file_api_account_v1_security } from "./security_pb";
-import type { BindTotpRequestSchema, BindTotpResponseSchema, GetMfaRequestSchema, GetRecoveryCodesRequestSchema, MfaResponseSchema, RecoveryCodesResponseSchema, RegenerateRecoveryCodesRequestSchema, SetMfaRequestSchema } from "./mfa_pb";
+import type { BindTotpRequestSchema, BindTotpResponseSchema, GetMfaRequestSchema, MfaResponseSchema, RecoveryCodesResponseSchema, RegenerateRecoveryCodesRequestSchema, SetMfaRequestSchema, UnbindTotpRequestSchema } from "./mfa_pb";
 import { file_api_account_v1_mfa } from "./mfa_pb";
 import type { DeleteWebauthnCredentialRequestSchema, GetWebauthnCredentialsRequestSchema, RegisterWebauthnRequestSchema, RegisterWebauthnResponseSchema, RenameWebauthnCredentialRequestSchema, WebauthnListResponseSchema } from "./webauthn_pb";
 import { file_api_account_v1_webauthn } from "./webauthn_pb";
@@ -21,7 +21,7 @@ import { file_api_sso_v1_envelope } from "../../sso/v1/envelope_pb";
  * Describes the file api/account/v1/account.proto.
  */
 export const file_api_account_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTLlDwoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEmIKEEdldFJlY292ZXJ5Q29kZXMSJy5hcGkuYWNjb3VudC52MS5HZXRSZWNvdmVyeUNvZGVzUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLlJlY292ZXJ5Q29kZXNSZXNwb25zZRJwChdSZWdlbmVyYXRlUmVjb3ZlcnlDb2RlcxIuLmFwaS5hY2NvdW50LnYxLlJlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLlJlY292ZXJ5Q29kZXNSZXNwb25zZRJtChZHZXRXZWJhdXRobkNyZWRlbnRpYWxzEi0uYXBpLmFjY291bnQudjEuR2V0V2ViYXV0aG5DcmVkZW50aWFsc1JlcXVlc3QaJC5hcGkuYWNjb3VudC52MS5XZWJhdXRobkxpc3RSZXNwb25zZRJlChBSZWdpc3RlcldlYmF1dGhuEicuYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlcXVlc3QaKC5hcGkuYWNjb3VudC52MS5SZWdpc3RlcldlYmF1dGhuUmVzcG9uc2USZwoYUmVuYW1lV2ViYXV0aG5DcmVkZW50aWFsEi8uYXBpLmFjY291bnQudjEuUmVuYW1lV2ViYXV0aG5DcmVkZW50aWFsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USZwoYRGVsZXRlV2ViYXV0aG5DcmVkZW50aWFsEi8uYXBpLmFjY291bnQudjEuRGVsZXRlV2ViYXV0aG5DcmVkZW50aWFsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScQoVR2V0VGhpcmRwYXJ0eUJpbmRpbmdzEiwuYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eUJpbmRpbmdzUmVxdWVzdBoqLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlCaW5kaW5nc1Jlc3BvbnNlElcKEFVuYmluZFRoaXJkcGFydHkSJy5hcGkuYWNjb3VudC52MS5VbmJpbmRUaGlyZHBhcnR5UmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USYgoPVGhpcmRwYXJ0eU9hdXRoEiYuYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eU9hdXRoUmVxdWVzdBonLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlc3BvbnNlEmAKE0dldFRoaXJkcGFydHlUaWNrZXQSKi5hcGkuYWNjb3VudC52MS5HZXRUaGlyZHBhcnR5VGlja2V0UmVxdWVzdBodLmFwaS5zc28udjEuTG9naW5GbG93UmVzcG9uc2USUAoJR2V0RXZlbnRzEiAuYXBpLmFjY291bnQudjEuR2V0RXZlbnRzUmVxdWVzdBohLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1Jlc3BvbnNlQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_sso_v1_envelope]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTLODwoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEksKClVuYmluZFRvdHASIS5hcGkuYWNjb3VudC52MS5VbmJpbmRUb3RwUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScAoXUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXMSLi5hcGkuYWNjb3VudC52MS5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5SZWNvdmVyeUNvZGVzUmVzcG9uc2USbQoWR2V0V2ViYXV0aG5DcmVkZW50aWFscxItLmFwaS5hY2NvdW50LnYxLkdldFdlYmF1dGhuQ3JlZGVudGlhbHNSZXF1ZXN0GiQuYXBpLmFjY291bnQudjEuV2ViYXV0aG5MaXN0UmVzcG9uc2USZQoQUmVnaXN0ZXJXZWJhdXRobhInLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXF1ZXN0GiguYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlc3BvbnNlEmcKGFJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLlJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmcKGERlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLkRlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnEKFUdldFRoaXJkcGFydHlCaW5kaW5ncxIsLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlCaW5kaW5nc1JlcXVlc3QaKi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5QmluZGluZ3NSZXNwb25zZRJXChBVbmJpbmRUaGlyZHBhcnR5EicuYXBpLmFjY291bnQudjEuVW5iaW5kVGhpcmRwYXJ0eVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmIKD1RoaXJkcGFydHlPYXV0aBImLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlcXVlc3QaJy5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXNwb25zZRJgChNHZXRUaGlyZHBhcnR5VGlja2V0EiouYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eVRpY2tldFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKCUdldEV2ZW50cxIgLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1JlcXVlc3QaIS5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXNwb25zZUIqWihhdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQvdjE7YWNjb3VudHYxYgZwcm90bzM", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_sso_v1_envelope]);
 
 /**
  * AccountService 是 account 域的 Connect service（docs/接口文档.md §3，行 767-1040）。
@@ -31,7 +31,7 @@ export const file_api_account_v1_account: GenFile = /*@__PURE__*/
  *   CommitAvatar               §3.2 行 823    ChangePassword           §3.3 行 855
  *   BindPhone                  §3.4 行 870    BindEmail                §3.4 行 872
  *   GetMfa                     §3.5 行 903    SetMfa                   §3.5 行 904
- *   BindTotp                   §3.5 行 905    GetRecoveryCodes         §3.5 行 907
+ *   BindTotp                   §3.5 行 905    UnbindTotp               §3.5 行 907
  *   RegenerateRecoveryCodes    §3.5 行 908    GetWebauthnCredentials   §3.6 行 914
  *   RegisterWebauthn           §3.6 行 915    RenameWebauthnCredential  §3.6 行 917
  *   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
@@ -156,14 +156,16 @@ export const AccountService: GenService<{
     output: typeof BindTotpResponseSchema;
   },
   /**
-   * 恢复码一次性展示（§3.5 行 907）。
+   * 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
+   * MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
+   * 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
    *
-   * @generated from rpc api.account.v1.AccountService.GetRecoveryCodes
+   * @generated from rpc api.account.v1.AccountService.UnbindTotp
    */
-  getRecoveryCodes: {
+  unbindTotp: {
     methodKind: "unary";
-    input: typeof GetRecoveryCodesRequestSchema;
-    output: typeof RecoveryCodesResponseSchema;
+    input: typeof UnbindTotpRequestSchema;
+    output: typeof OkResponseSchema;
   },
   /**
    * 重新生成即全量作废，同格式下发新码（§3.5 行 908）。

@@ -73,20 +73,23 @@ message BindTotpResponse {
   string otpauth_url = 2;
   // 二维码内容，前端绘制（challenge，§3.5 行 905）。
   string qrcode_content = 3;
-  // 10 个恢复码（verify），与 GetRecoveryCodes 同格式（§3.5 行 906）。
+  // 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
   repeated string recovery_codes = 4;
 }
 
-// GetRecoveryCodesRequest 是 AccountService/GetRecoveryCodes 的请求（§3.5 行 907 入参「—」）。
-message GetRecoveryCodesRequest {}
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
+// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
+// 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
+// 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
+message UnbindTotpRequest {}
 
-// RecoveryCodesResponse 是 AccountService/GetRecoveryCodes（§3.5 行 907）与
-// AccountService/RegenerateRecoveryCodes（行 908，与 GetRecoveryCodes 同格式、
-// 一次性下发新码）的共用响应。
+// RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
+//（§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+// step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
 message RecoveryCodesResponse {
-  // 恢复码列表，格式 xxxx-xxxx（§3.5 行 907、行 908）。
+  // 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
   repeated string codes = 1;
-  // 签发时间，Unix 秒（§3.5 行 907、行 908）。
+  // 签发时间，Unix 秒（§3.5 行 908）。
   int64 created_at = 2;
 }
 

@@ -346,7 +346,7 @@ type BindTotpResponse struct {
 	OtpauthUrl string `protobuf:"bytes,2,opt,name=otpauth_url,json=otpauthUrl,proto3" json:"otpauth_url,omitempty"`
 	// 二维码内容，前端绘制（challenge，§3.5 行 905）。
 	QrcodeContent string `protobuf:"bytes,3,opt,name=qrcode_content,json=qrcodeContent,proto3" json:"qrcode_content,omitempty"`
-	// 10 个恢复码（verify），与 GetRecoveryCodes 同格式（§3.5 行 906）。
+	// 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
 	RecoveryCodes []string `protobuf:"bytes,4,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -410,27 +410,30 @@ func (x *BindTotpResponse) GetRecoveryCodes() []string {
 	return nil
 }
 
-// GetRecoveryCodesRequest 是 AccountService/GetRecoveryCodes 的请求（§3.5 行 907 入参「—」）。
-type GetRecoveryCodesRequest struct {
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
+// 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
+// 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
+// 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
+type UnbindTotpRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetRecoveryCodesRequest) Reset() {
-	*x = GetRecoveryCodesRequest{}
+func (x *UnbindTotpRequest) Reset() {
+	*x = UnbindTotpRequest{}
 	mi := &file_api_account_v1_mfa_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetRecoveryCodesRequest) String() string {
+func (x *UnbindTotpRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetRecoveryCodesRequest) ProtoMessage() {}
+func (*UnbindTotpRequest) ProtoMessage() {}
 
-func (x *GetRecoveryCodesRequest) ProtoReflect() protoreflect.Message {
+func (x *UnbindTotpRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_api_account_v1_mfa_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -442,19 +445,19 @@ func (x *GetRecoveryCodesRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetRecoveryCodesRequest.ProtoReflect.Descriptor instead.
-func (*GetRecoveryCodesRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use UnbindTotpRequest.ProtoReflect.Descriptor instead.
+func (*UnbindTotpRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_mfa_proto_rawDescGZIP(), []int{6}
 }
 
-// RecoveryCodesResponse 是 AccountService/GetRecoveryCodes（§3.5 行 907）与
-// AccountService/RegenerateRecoveryCodes（行 908，与 GetRecoveryCodes 同格式、
-// 一次性下发新码）的共用响应。
+// RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
+// （§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+// step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
 type RecoveryCodesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 恢复码列表，格式 xxxx-xxxx（§3.5 行 907、行 908）。
+	// 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
 	Codes []string `protobuf:"bytes,1,rep,name=codes,proto3" json:"codes,omitempty"`
-	// 签发时间，Unix 秒（§3.5 行 907、行 908）。
+	// 签发时间，Unix 秒（§3.5 行 908）。
 	CreatedAt     int64 `protobuf:"varint,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -580,8 +583,8 @@ const file_api_account_v1_mfa_proto_rawDesc = "" +
 	"\votpauth_url\x18\x02 \x01(\tR\n" +
 	"otpauthUrl\x12%\n" +
 	"\x0eqrcode_content\x18\x03 \x01(\tR\rqrcodeContent\x12%\n" +
-	"\x0erecovery_codes\x18\x04 \x03(\tR\rrecoveryCodes\"\x19\n" +
-	"\x17GetRecoveryCodesRequest\"L\n" +
+	"\x0erecovery_codes\x18\x04 \x03(\tR\rrecoveryCodes\"\x13\n" +
+	"\x11UnbindTotpRequest\"L\n" +
 	"\x15RecoveryCodesResponse\x12\x14\n" +
 	"\x05codes\x18\x01 \x03(\tR\x05codes\x12\x1d\n" +
 	"\n" +
@@ -609,7 +612,7 @@ var file_api_account_v1_mfa_proto_goTypes = []any{
 	(*SetMfaRequest)(nil),                  // 3: api.account.v1.SetMfaRequest
 	(*BindTotpRequest)(nil),                // 4: api.account.v1.BindTotpRequest
 	(*BindTotpResponse)(nil),               // 5: api.account.v1.BindTotpResponse
-	(*GetRecoveryCodesRequest)(nil),        // 6: api.account.v1.GetRecoveryCodesRequest
+	(*UnbindTotpRequest)(nil),              // 6: api.account.v1.UnbindTotpRequest
 	(*RecoveryCodesResponse)(nil),          // 7: api.account.v1.RecoveryCodesResponse
 	(*RegenerateRecoveryCodesRequest)(nil), // 8: api.account.v1.RegenerateRecoveryCodesRequest
 }

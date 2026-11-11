@@ -27,7 +27,7 @@ option go_package = "authloft/gen/go/api/account/v1;accountv1";
 //   CommitAvatar               §3.2 行 823    ChangePassword           §3.3 行 855
 //   BindPhone                  §3.4 行 870    BindEmail                §3.4 行 872
 //   GetMfa                     §3.5 行 903    SetMfa                   §3.5 行 904
-//   BindTotp                   §3.5 行 905    GetRecoveryCodes         §3.5 行 907
+//   BindTotp                   §3.5 行 905    UnbindTotp               §3.5 行 907
 //   RegenerateRecoveryCodes    §3.5 行 908    GetWebauthnCredentials   §3.6 行 914
 //   RegisterWebauthn           §3.6 行 915    RenameWebauthnCredential  §3.6 行 917
 //   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
@@ -60,8 +60,10 @@ service AccountService {
   rpc SetMfa(SetMfaRequest) returns (OkResponse);
   // TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
   rpc BindTotp(BindTotpRequest) returns (BindTotpResponse);
-  // 恢复码一次性展示（§3.5 行 907）。
-  rpc GetRecoveryCodes(GetRecoveryCodesRequest) returns (RecoveryCodesResponse);
+  // 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
+  // MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
+  // 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+  rpc UnbindTotp(UnbindTotpRequest) returns (OkResponse);
   // 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
   rpc RegenerateRecoveryCodes(RegenerateRecoveryCodesRequest) returns (RecoveryCodesResponse);
   // 已绑定凭据列表（§3.6 行 914）。

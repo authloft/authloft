@@ -1,7 +1,7 @@
 // mfa.go account 域两步验证族业务层（docs/接口文档.md §3.5 行 900-927、
 // §3.2 行 844-864、docs/后端架构.md §8.4 行 1079-1084、§8.3 行 1071-1075）。
 //
-// 职责边界（五方法实装）：
+// 职责边界（四方法实装）：
 //   - GetMfa：五因子绑定明细（§3.5 行 907-915）+recoveryIssuedAt。数据源：
 //     totp / recovery_code 走 CredentialRepo.FindByUserAndKind（bound = 行存在
 //     且 is_enabled=1；recovery_code 另需 meta 余量非空——删空写回空数组等价
@@ -36,9 +36,8 @@
 //     kind=totp 行（明文 Base32 存 secret 列，§3.11 行 430 口径；meta 带
 //     totp_digits/totp_period，§12.2 kind=totp 段）+ 同一响应重签 10 条恢复码
 //     （覆盖即全量作废旧码）。
-//   - GetRecoveryCodes：存量明文一次性展示（行 924；恢复码明文存
-//     CredentialMeta.recovery_codes，§4.2 行 686），存储形转展示形 xxxx-xxxx；
-//     无行 / 未启用 / meta 空（消费尽）→ code_expired（§8.4 行 1083）。
+//   - 原 GetRecoveryCodes 已移除（§3.5）：存量恢复码不再提供回显接口；
+//     BindTotp verify 与 RegenerateRecoveryCodes 下发新码是唯一展示渠道。
 //   - RegenerateRecoveryCodes：{action:"regenerate"} 全量作废重新下发（行
 //     925）。生成/重生成归本层（factor/recovery 只管消费）；要求 recovery_code
 //     行存在（「重新生成」针对既有签发，首签归 BindTotp verify），无行 /
@@ -257,9 +256,10 @@ type TotpChallenge struct {
 	QrcodeContent string
 }
 
-// RecoveryCodesResult GetRecoveryCodes / RegenerateRecoveryCodes 共用响应
-//（§3.5 行 924-925，RecoveryCodesResponse proto 同构）：codes 为展示形
-// xxxx-xxxx，createdAt 为签发时间（kind=recovery_code 行 created_at）。
+// RecoveryCodesResult RegenerateRecoveryCodes 响应（§3.5 行 925，
+// RecoveryCodesResponse proto 同构；与 BindTotp verify 的 recoveryCodes
+// 同格式）：codes 为展示形 xxxx-xxxx，createdAt 为签发时间
+//（kind=recovery_code 行 created_at）。
 type RecoveryCodesResult struct {
 	Codes     []string
 	CreatedAt int64
@@ -632,37 +632,6 @@ func (s *MfaService) BindTotpVerify(ctx context.Context, uid int64, secret, code
 		codes[i] = formatRecoveryCode(c)
 	}
 	return codes, nil
-}
-
-// GetRecoveryCodes 存量恢复码一次性展示（§3.5 行 924）：无行 / 未启用 /
-// meta 空（消费尽）→ code_expired（§8.4 行 1083）。
-func (s *MfaService) GetRecoveryCodes(ctx context.Context, uid int64) (*RecoveryCodesResult, error) {
-	if uid <= 0 {
-		return nil, ErrMfaUnauthenticated
-	}
-	row, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindRecoveryCode)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrMfaCodeExpired
-		}
-		return nil, fmt.Errorf("%w: load recovery_code credential: %v", ErrMfaInternal, err)
-	}
-	if row == nil || row.IsEnabled != 1 {
-		return nil, ErrMfaCodeExpired
-	}
-	meta, err := repo.UnmarshalCredentialMeta(row.Meta)
-	if err != nil {
-		return nil, fmt.Errorf("%w: decode recovery_code meta: %v", ErrMfaInternal, err)
-	}
-	stored := meta.GetRecoveryCodes()
-	if len(stored) == 0 {
-		return nil, ErrMfaCodeExpired
-	}
-	codes := make([]string, len(stored))
-	for i, c := range stored {
-		codes[i] = formatRecoveryCode(c)
-	}
-	return &RecoveryCodesResult{Codes: codes, CreatedAt: row.CreatedAt.Unix()}, nil
 }
 
 // RegenerateRecoveryCodes 全量作废并重新下发（§3.5 行 925）：生成 / 重

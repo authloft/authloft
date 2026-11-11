@@ -64,9 +64,9 @@ const (
 	AccountServiceSetMfaProcedure = "/api.account.v1.AccountService/SetMfa"
 	// AccountServiceBindTotpProcedure is the fully-qualified name of the AccountService's BindTotp RPC.
 	AccountServiceBindTotpProcedure = "/api.account.v1.AccountService/BindTotp"
-	// AccountServiceGetRecoveryCodesProcedure is the fully-qualified name of the AccountService's
-	// GetRecoveryCodes RPC.
-	AccountServiceGetRecoveryCodesProcedure = "/api.account.v1.AccountService/GetRecoveryCodes"
+	// AccountServiceUnbindTotpProcedure is the fully-qualified name of the AccountService's UnbindTotp
+	// RPC.
+	AccountServiceUnbindTotpProcedure = "/api.account.v1.AccountService/UnbindTotp"
 	// AccountServiceRegenerateRecoveryCodesProcedure is the fully-qualified name of the
 	// AccountService's RegenerateRecoveryCodes RPC.
 	AccountServiceRegenerateRecoveryCodesProcedure = "/api.account.v1.AccountService/RegenerateRecoveryCodes"
@@ -123,8 +123,10 @@ type AccountServiceClient interface {
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
 	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 恢复码一次性展示（§3.5 行 907）。
-	GetRecoveryCodes(context.Context, *connect.Request[v1.GetRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
+	// MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
+	// 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
 	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
 	// 已绑定凭据列表（§3.6 行 914）。
@@ -225,10 +227,10 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("BindTotp")),
 			connect.WithClientOptions(opts...),
 		),
-		getRecoveryCodes: connect.NewClient[v1.GetRecoveryCodesRequest, v1.RecoveryCodesResponse](
+		unbindTotp: connect.NewClient[v1.UnbindTotpRequest, v1.OkResponse](
 			httpClient,
-			baseURL+AccountServiceGetRecoveryCodesProcedure,
-			connect.WithSchema(accountServiceMethods.ByName("GetRecoveryCodes")),
+			baseURL+AccountServiceUnbindTotpProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("UnbindTotp")),
 			connect.WithClientOptions(opts...),
 		),
 		regenerateRecoveryCodes: connect.NewClient[v1.RegenerateRecoveryCodesRequest, v1.RecoveryCodesResponse](
@@ -307,7 +309,7 @@ type accountServiceClient struct {
 	getMfa                   *connect.Client[v1.GetMfaRequest, v1.MfaResponse]
 	setMfa                   *connect.Client[v1.SetMfaRequest, v1.OkResponse]
 	bindTotp                 *connect.Client[v1.BindTotpRequest, v1.BindTotpResponse]
-	getRecoveryCodes         *connect.Client[v1.GetRecoveryCodesRequest, v1.RecoveryCodesResponse]
+	unbindTotp               *connect.Client[v1.UnbindTotpRequest, v1.OkResponse]
 	regenerateRecoveryCodes  *connect.Client[v1.RegenerateRecoveryCodesRequest, v1.RecoveryCodesResponse]
 	getWebauthnCredentials   *connect.Client[v1.GetWebauthnCredentialsRequest, v1.WebauthnListResponse]
 	registerWebauthn         *connect.Client[v1.RegisterWebauthnRequest, v1.RegisterWebauthnResponse]
@@ -375,9 +377,9 @@ func (c *accountServiceClient) BindTotp(ctx context.Context, req *connect.Reques
 	return c.bindTotp.CallUnary(ctx, req)
 }
 
-// GetRecoveryCodes calls api.account.v1.AccountService.GetRecoveryCodes.
-func (c *accountServiceClient) GetRecoveryCodes(ctx context.Context, req *connect.Request[v1.GetRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error) {
-	return c.getRecoveryCodes.CallUnary(ctx, req)
+// UnbindTotp calls api.account.v1.AccountService.UnbindTotp.
+func (c *accountServiceClient) UnbindTotp(ctx context.Context, req *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.unbindTotp.CallUnary(ctx, req)
 }
 
 // RegenerateRecoveryCodes calls api.account.v1.AccountService.RegenerateRecoveryCodes.
@@ -454,8 +456,10 @@ type AccountServiceHandler interface {
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
 	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 恢复码一次性展示（§3.5 行 907）。
-	GetRecoveryCodes(context.Context, *connect.Request[v1.GetRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先完成一次
+	// MFA 验证（WebAuthn / TOTP / 恢复码及其他当前可用方式，因子语义见 §1.10）；
+	// 验证的具体流程与承载此处不单独定义。契约先行，暂未实装。
+	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
 	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
 	// 已绑定凭据列表（§3.6 行 914）。
@@ -552,10 +556,10 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("BindTotp")),
 		connect.WithHandlerOptions(opts...),
 	)
-	accountServiceGetRecoveryCodesHandler := connect.NewUnaryHandler(
-		AccountServiceGetRecoveryCodesProcedure,
-		svc.GetRecoveryCodes,
-		connect.WithSchema(accountServiceMethods.ByName("GetRecoveryCodes")),
+	accountServiceUnbindTotpHandler := connect.NewUnaryHandler(
+		AccountServiceUnbindTotpProcedure,
+		svc.UnbindTotp,
+		connect.WithSchema(accountServiceMethods.ByName("UnbindTotp")),
 		connect.WithHandlerOptions(opts...),
 	)
 	accountServiceRegenerateRecoveryCodesHandler := connect.NewUnaryHandler(
@@ -642,8 +646,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceSetMfaHandler.ServeHTTP(w, r)
 		case AccountServiceBindTotpProcedure:
 			accountServiceBindTotpHandler.ServeHTTP(w, r)
-		case AccountServiceGetRecoveryCodesProcedure:
-			accountServiceGetRecoveryCodesHandler.ServeHTTP(w, r)
+		case AccountServiceUnbindTotpProcedure:
+			accountServiceUnbindTotpHandler.ServeHTTP(w, r)
 		case AccountServiceRegenerateRecoveryCodesProcedure:
 			accountServiceRegenerateRecoveryCodesHandler.ServeHTTP(w, r)
 		case AccountServiceGetWebauthnCredentialsProcedure:
@@ -717,8 +721,8 @@ func (UnimplementedAccountServiceHandler) BindTotp(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.BindTotp is not implemented"))
 }
 
-func (UnimplementedAccountServiceHandler) GetRecoveryCodes(context.Context, *connect.Request[v1.GetRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.GetRecoveryCodes is not implemented"))
+func (UnimplementedAccountServiceHandler) UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.UnbindTotp is not implemented"))
 }
 
 func (UnimplementedAccountServiceHandler) RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error) {

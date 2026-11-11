@@ -25,7 +25,7 @@ var File_api_account_v1_account_proto protoreflect.FileDescriptor
 
 const file_api_account_v1_account_proto_rawDesc = "" +
 	"\n" +
-	"\x1capi/account/v1/account.proto\x12\x0eapi.account.v1\x1a\x1capi/account/v1/profile.proto\x1a\x1dapi/account/v1/security.proto\x1a\x18api/account/v1/mfa.proto\x1a\x1dapi/account/v1/webauthn.proto\x1a\x1fapi/account/v1/thirdparty.proto\x1a\x19api/sso/v1/envelope.proto2\xe5\x0f\n" +
+	"\x1capi/account/v1/account.proto\x12\x0eapi.account.v1\x1a\x1capi/account/v1/profile.proto\x1a\x1dapi/account/v1/security.proto\x1a\x18api/account/v1/mfa.proto\x1a\x1dapi/account/v1/webauthn.proto\x1a\x1fapi/account/v1/thirdparty.proto\x1a\x19api/sso/v1/envelope.proto2\xce\x0f\n" +
 	"\x0eAccountService\x12T\n" +
 	"\tGetConfig\x12 .api.account.v1.GetConfigRequest\x1a%.api.account.v1.AccountConfigResponse\x12P\n" +
 	"\n" +
@@ -38,8 +38,9 @@ const file_api_account_v1_account_proto_rawDesc = "" +
 	"\tBindEmail\x12 .api.account.v1.BindEmailRequest\x1a\x1a.api.account.v1.OkResponse\x12D\n" +
 	"\x06GetMfa\x12\x1d.api.account.v1.GetMfaRequest\x1a\x1b.api.account.v1.MfaResponse\x12C\n" +
 	"\x06SetMfa\x12\x1d.api.account.v1.SetMfaRequest\x1a\x1a.api.account.v1.OkResponse\x12M\n" +
-	"\bBindTotp\x12\x1f.api.account.v1.BindTotpRequest\x1a .api.account.v1.BindTotpResponse\x12b\n" +
-	"\x10GetRecoveryCodes\x12'.api.account.v1.GetRecoveryCodesRequest\x1a%.api.account.v1.RecoveryCodesResponse\x12p\n" +
+	"\bBindTotp\x12\x1f.api.account.v1.BindTotpRequest\x1a .api.account.v1.BindTotpResponse\x12K\n" +
+	"\n" +
+	"UnbindTotp\x12!.api.account.v1.UnbindTotpRequest\x1a\x1a.api.account.v1.OkResponse\x12p\n" +
 	"\x17RegenerateRecoveryCodes\x12..api.account.v1.RegenerateRecoveryCodesRequest\x1a%.api.account.v1.RecoveryCodesResponse\x12m\n" +
 	"\x16GetWebauthnCredentials\x12-.api.account.v1.GetWebauthnCredentialsRequest\x1a$.api.account.v1.WebauthnListResponse\x12e\n" +
 	"\x10RegisterWebauthn\x12'.api.account.v1.RegisterWebauthnRequest\x1a(.api.account.v1.RegisterWebauthnResponse\x12g\n" +
@@ -63,7 +64,7 @@ var file_api_account_v1_account_proto_goTypes = []any{
 	(*GetMfaRequest)(nil),                   // 8: api.account.v1.GetMfaRequest
 	(*SetMfaRequest)(nil),                   // 9: api.account.v1.SetMfaRequest
 	(*BindTotpRequest)(nil),                 // 10: api.account.v1.BindTotpRequest
-	(*GetRecoveryCodesRequest)(nil),         // 11: api.account.v1.GetRecoveryCodesRequest
+	(*UnbindTotpRequest)(nil),               // 11: api.account.v1.UnbindTotpRequest
 	(*RegenerateRecoveryCodesRequest)(nil),  // 12: api.account.v1.RegenerateRecoveryCodesRequest
 	(*GetWebauthnCredentialsRequest)(nil),   // 13: api.account.v1.GetWebauthnCredentialsRequest
 	(*RegisterWebauthnRequest)(nil),         // 14: api.account.v1.RegisterWebauthnRequest
@@ -101,7 +102,7 @@ var file_api_account_v1_account_proto_depIdxs = []int32{
 	8,  // 8: api.account.v1.AccountService.GetMfa:input_type -> api.account.v1.GetMfaRequest
 	9,  // 9: api.account.v1.AccountService.SetMfa:input_type -> api.account.v1.SetMfaRequest
 	10, // 10: api.account.v1.AccountService.BindTotp:input_type -> api.account.v1.BindTotpRequest
-	11, // 11: api.account.v1.AccountService.GetRecoveryCodes:input_type -> api.account.v1.GetRecoveryCodesRequest
+	11, // 11: api.account.v1.AccountService.UnbindTotp:input_type -> api.account.v1.UnbindTotpRequest
 	12, // 12: api.account.v1.AccountService.RegenerateRecoveryCodes:input_type -> api.account.v1.RegenerateRecoveryCodesRequest
 	13, // 13: api.account.v1.AccountService.GetWebauthnCredentials:input_type -> api.account.v1.GetWebauthnCredentialsRequest
 	14, // 14: api.account.v1.AccountService.RegisterWebauthn:input_type -> api.account.v1.RegisterWebauthnRequest
@@ -123,7 +124,7 @@ var file_api_account_v1_account_proto_depIdxs = []int32{
 	27, // 30: api.account.v1.AccountService.GetMfa:output_type -> api.account.v1.MfaResponse
 	24, // 31: api.account.v1.AccountService.SetMfa:output_type -> api.account.v1.OkResponse
 	28, // 32: api.account.v1.AccountService.BindTotp:output_type -> api.account.v1.BindTotpResponse
-	29, // 33: api.account.v1.AccountService.GetRecoveryCodes:output_type -> api.account.v1.RecoveryCodesResponse
+	24, // 33: api.account.v1.AccountService.UnbindTotp:output_type -> api.account.v1.OkResponse
 	29, // 34: api.account.v1.AccountService.RegenerateRecoveryCodes:output_type -> api.account.v1.RecoveryCodesResponse
 	30, // 35: api.account.v1.AccountService.GetWebauthnCredentials:output_type -> api.account.v1.WebauthnListResponse
 	31, // 36: api.account.v1.AccountService.RegisterWebauthn:output_type -> api.account.v1.RegisterWebauthnResponse

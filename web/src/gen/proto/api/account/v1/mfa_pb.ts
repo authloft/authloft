@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/mfa.proto.
  */
 export const file_api_account_v1_mfa: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdtZXRob2RzGAEgAygJIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIhkKF0dldFJlY292ZXJ5Q29kZXNSZXF1ZXN0IjoKFVJlY292ZXJ5Q29kZXNSZXNwb25zZRINCgVjb2RlcxgBIAMoCRISCgpjcmVhdGVkX2F0GAIgASgDIjAKHlJlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzUmVxdWVzdBIOCgZhY3Rpb24YASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z");
+  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdtZXRob2RzGAEgAygJIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIhMKEVVuYmluZFRvdHBSZXF1ZXN0IjoKFVJlY292ZXJ5Q29kZXNSZXNwb25zZRINCgVjb2RlcxgBIAMoCRISCgpjcmVhdGVkX2F0GAIgASgDIjAKHlJlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzUmVxdWVzdBIOCgZhY3Rpb24YASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z");
 
 /**
  * GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
@@ -216,7 +216,7 @@ export type BindTotpResponse = Message<"api.account.v1.BindTotpResponse"> & {
   qrcodeContent: string;
 
   /**
-   * 10 个恢复码（verify），与 GetRecoveryCodes 同格式（§3.5 行 906）。
+   * 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
    *
    * @generated from field: repeated string recovery_codes = 4;
    */
@@ -231,37 +231,40 @@ export const BindTotpResponseSchema: GenMessage<BindTotpResponse> = /*@__PURE__*
   messageDesc(file_api_account_v1_mfa, 5);
 
 /**
- * GetRecoveryCodesRequest 是 AccountService/GetRecoveryCodes 的请求（§3.5 行 907 入参「—」）。
+ * UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907 入参「—」）：
+ * 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先完成一次 MFA 验证，
+ * 可用方式含 WebAuthn / TOTP / 恢复码及其他当前可用方式（因子语义见 §1.10）；
+ * 验证的具体流程与承载此处不单独定义，本消息不单独定义验证字段。
  *
- * @generated from message api.account.v1.GetRecoveryCodesRequest
+ * @generated from message api.account.v1.UnbindTotpRequest
  */
-export type GetRecoveryCodesRequest = Message<"api.account.v1.GetRecoveryCodesRequest"> & {
+export type UnbindTotpRequest = Message<"api.account.v1.UnbindTotpRequest"> & {
 };
 
 /**
- * Describes the message api.account.v1.GetRecoveryCodesRequest.
- * Use `create(GetRecoveryCodesRequestSchema)` to create a new message.
+ * Describes the message api.account.v1.UnbindTotpRequest.
+ * Use `create(UnbindTotpRequestSchema)` to create a new message.
  */
-export const GetRecoveryCodesRequestSchema: GenMessage<GetRecoveryCodesRequest> = /*@__PURE__*/
+export const UnbindTotpRequestSchema: GenMessage<UnbindTotpRequest> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 6);
 
 /**
- * RecoveryCodesResponse 是 AccountService/GetRecoveryCodes（§3.5 行 907）与
- * AccountService/RegenerateRecoveryCodes（行 908，与 GetRecoveryCodes 同格式、
- * 一次性下发新码）的共用响应。
+ * RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
+ * （§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+ * step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
  *
  * @generated from message api.account.v1.RecoveryCodesResponse
  */
 export type RecoveryCodesResponse = Message<"api.account.v1.RecoveryCodesResponse"> & {
   /**
-   * 恢复码列表，格式 xxxx-xxxx（§3.5 行 907、行 908）。
+   * 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
    *
    * @generated from field: repeated string codes = 1;
    */
   codes: string[];
 
   /**
-   * 签发时间，Unix 秒（§3.5 行 907、行 908）。
+   * 签发时间，Unix 秒（§3.5 行 908）。
    *
    * @generated from field: int64 created_at = 2;
    */
