@@ -442,7 +442,7 @@ func TestRegistrationRoundTrip(t *testing.T) {
 	// 载荷字段（后端架构 §8.3 末条 / §11.6.7）：biz_purpose=webauthn_enroll、
 	// operation=webauthn_register、subject_kind=uid、subject=会话 uid、
 	// methods 为空、exp 与挑战有效期一致（120s）。
-	payload, err := security.Open[token.ChallengeTokenPayload](codec, security.PurposeWebAuthn, ch.Token)
+	payload, err := security.Open[token.ChallengeTokenPayload](codec, security.PurposeChallenge, ch.Token)
 	if err != nil {
 		t.Fatalf("open challenge payload: %v", err)
 	}
@@ -575,7 +575,7 @@ func TestRegistrationTokenRejectsWrongPayloadPurpose(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := base()
 			tc.mut(p)
-			tok, err := codec.Seal(security.PurposeWebAuthn, p)
+			tok, err := codec.Seal(security.PurposeChallenge, p)
 			if err != nil {
 				t.Fatalf("Seal: %v", err)
 			}

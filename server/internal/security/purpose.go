@@ -15,10 +15,10 @@ const (
 	PurposeLogin = "login"
 	// PurposeTicket ticket 与 al:ticket 存储值加密（§11.6.5）。
 	PurposeTicket = "ticket"
-	// PurposeVerification 敏感操作二次验证的挑战与断言令牌（§11.6.7）。
+	// PurposeVerification 二次验证通过后的断言令牌（VerificationTokenPayload，§11.6.7）。
 	PurposeVerification = "verification"
-	// PurposeWebAuthn 通行密钥挑战令牌（§11.6.7、接口文档 §3.6）。
-	PurposeWebAuthn = "webauthn"
+	// PurposeChallenge 挑战令牌（webauthn_enroll 与 step-up 统一，§11.6.7、接口文档 §3.6）。
+	PurposeChallenge = "challenge"
 	// PurposeCookie al_login_state（接口文档 §2.7.2）。
 	PurposeCookie = "cookie"
 	// PurposeSyncPayload 多域名同步载荷（§11.2）。
@@ -34,7 +34,7 @@ var purposes = map[string]bool{
 	PurposeLogin:        true,
 	PurposeTicket:       true,
 	PurposeVerification: true,
-	PurposeWebAuthn:     true,
+	PurposeChallenge:    true,
 	PurposeCookie:       true,
 	PurposeSyncPayload:  true,
 	PurposeOidcCode:     true,

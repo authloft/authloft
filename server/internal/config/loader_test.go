@@ -76,7 +76,7 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 		"ticket":       cfg.SignKey.Ticket,
 		"cookie":       cfg.SignKey.Cookie,
 		"sync_payload": cfg.SignKey.SyncPayload,
-		"webauthn":     cfg.SignKey.WebAuthn,
+		"challenge":    cfg.SignKey.Challenge,
 		"verification": cfg.SignKey.Verification,
 	} {
 		raw, err := base64.StdEncoding.DecodeString(km.Key)
@@ -115,7 +115,7 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	t.Setenv("AUTHLOFT_REDIS_DB", "7")
 	t.Setenv("AUTHLOFT_SIGN_KEY_SESSION_KID", "2")
 	t.Setenv("AUTHLOFT_SIGN_KEY_TICKET_KEY", envKey)
-	t.Setenv("AUTHLOFT_SIGN_KEY_WEBAUTHN_KID", "3")
+	t.Setenv("AUTHLOFT_SIGN_KEY_CHALLENGE_KID", "3")
 	t.Setenv("AUTHLOFT_SIGN_KEY_VERIFICATION_KEY", envKey)
 	t.Setenv("AUTHLOFT_AUTHLOFT_RP_DISPLAY_NAME", "Env Corp SSO")
 
@@ -141,8 +141,8 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	if cfg.SignKey.Ticket.Key != envKey {
 		t.Errorf("ticket key not overridden by env")
 	}
-	if cfg.SignKey.WebAuthn.Kid != 3 {
-		t.Errorf("webauthn kid = %d, want 3 from env", cfg.SignKey.WebAuthn.Kid)
+	if cfg.SignKey.Challenge.Kid != 3 {
+		t.Errorf("challenge kid = %d, want 3 from env", cfg.SignKey.Challenge.Kid)
 	}
 	if cfg.SignKey.Verification.Key != envKey {
 		t.Errorf("verification key not overridden by env")
@@ -225,7 +225,7 @@ func TestLoadMissingSignKeyScenarioFailsNoRewrite(t *testing.T) {
 }
 
 // withoutSignKeyScenarios 从 YAML 文本中删掉指定 sign_key 场景行（模拟存量
-// 配置：升级前只有旧场景密钥，缺新增的 webauthn / verification）。
+// 配置：升级前只有旧场景密钥，缺新增的 challenge / verification）。
 func withoutSignKeyScenarios(yamlText string, scenarios ...string) string {
 	var kept []string
 	for _, line := range strings.Split(yamlText, "\n") {
@@ -244,12 +244,12 @@ func withoutSignKeyScenarios(yamlText string, scenarios ...string) string {
 	return strings.Join(kept, "\n")
 }
 
-// TestLoadLegacyConfigMissingNewKeysUpgradePath 存量配置缺 webauthn /
+// TestLoadLegacyConfigMissingNewKeysUpgradePath 存量配置缺 challenge /
 // verification 两把新密钥的升级路径（§3.2 约定 4 / §3.15 实现要点）：
 // 启动校验 fail-fast、不自动补写（文件原样未动）；由部署方补齐两把后
 // 重启（重新 Load）即可启动——不做运行期兜底、不静默生成。
 func TestLoadLegacyConfigMissingNewKeysUpgradePath(t *testing.T) {
-	legacy := withoutSignKeyScenarios(filledTestYAML(), "webauthn", "verification")
+	legacy := withoutSignKeyScenarios(filledTestYAML(), "challenge", "verification")
 	path := writeConfigFile(t, legacy)
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -257,9 +257,9 @@ func TestLoadLegacyConfigMissingNewKeysUpgradePath(t *testing.T) {
 	}
 	_, err = Load(path)
 	if err == nil {
-		t.Fatal("legacy config missing webauthn/verification keys must fail-fast")
+		t.Fatal("legacy config missing challenge/verification keys must fail-fast")
 	}
-	for _, field := range []string{"sign_key.webauthn.key", "sign_key.verification.key"} {
+	for _, field := range []string{"sign_key.challenge.key", "sign_key.verification.key"} {
 		if !strings.Contains(err.Error(), field) {
 			t.Errorf("want error containing %q, got %v", field, err)
 		}
@@ -280,8 +280,8 @@ func TestLoadLegacyConfigMissingNewKeysUpgradePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config completed by deployer must load: %v", err)
 	}
-	if cfg.SignKey.WebAuthn.Key == "" || cfg.SignKey.Verification.Key == "" {
-		t.Error("completed config must carry webauthn/verification keys")
+	if cfg.SignKey.Challenge.Key == "" || cfg.SignKey.Verification.Key == "" {
+		t.Error("completed config must carry challenge/verification keys")
 	}
 }
 

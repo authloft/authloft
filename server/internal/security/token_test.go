@@ -53,7 +53,7 @@ func TestSealOpenAllPurposes(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
 	for _, purpose := range []string{
 		PurposeSession, PurposeLogin, PurposeTicket, PurposeVerification,
-		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
+		PurposeChallenge, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		tok := sealOK(t, c, purpose, "payload-"+purpose)
 		got, err := openString(t, c, purpose, tok)
@@ -117,11 +117,11 @@ func TestChallengeTokenPayloadRoundTrip(t *testing.T) {
 		Iat:         1700000000,
 		Exp:         1700000120,
 	}
-	tok, err := c.Seal(PurposeWebAuthn, want)
+	tok, err := c.Seal(PurposeChallenge, want)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
-	got, err := Open[token.ChallengeTokenPayload](c, PurposeWebAuthn, tok)
+	got, err := Open[token.ChallengeTokenPayload](c, PurposeChallenge, tok)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestVerificationTokenPayloadRoundTrip(t *testing.T) {
 	if !proto.Equal(want, got) {
 		t.Fatalf("round trip mismatch:\n got %v\nwant %v", got, want)
 	}
-	for _, purpose := range []string{PurposeWebAuthn, PurposeLogin, PurposeSession} {
+	for _, purpose := range []string{PurposeChallenge, PurposeLogin, PurposeSession} {
 		if _, err := Open[token.VerificationTokenPayload](c, purpose, tok); err == nil {
 			t.Fatalf("cross purpose %q must fail", purpose)
 		}
@@ -220,7 +220,7 @@ func TestOpenCrossPurpose(t *testing.T) {
 	tok := sealOK(t, c, PurposeLogin, "state")
 	for _, purpose := range []string{
 		PurposeSession, PurposeTicket, PurposeVerification,
-		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
+		PurposeChallenge, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		if _, err := openString(t, c, purpose, tok); err == nil {
 			t.Fatalf("cross purpose %q must fail", purpose)
@@ -293,7 +293,7 @@ func TestOpenUnknownKid(t *testing.T) {
 }
 
 // TestOpenVersionMismatch 同 kid 同 key、不同 version 也解不开
-//（version 进 AAD → 防降级）。
+// （version 进 AAD → 防降级）。
 func TestOpenVersionMismatch(t *testing.T) {
 	v1 := newTestCodec(t, 1, 1, testKey(0xA1))
 	v2 := newTestCodec(t, 2, 1, testKey(0xA1)) // 同 key、版本升到 2

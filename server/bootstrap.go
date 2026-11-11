@@ -238,14 +238,14 @@ type assembled struct {
 }
 
 // codecs 七场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
-// cookie / sync_payload / webauthn / verification 各持一把密钥，互不复用。
+// cookie / sync_payload / challenge / verification 各持一把密钥，互不复用。
 type codecs struct {
 	Session      *security.Codec
 	Login        *security.Codec
 	Ticket       *security.Codec
 	Cookie       *security.Codec
 	SyncPayload  *security.Codec
-	WebAuthn     *security.Codec
+	Challenge    *security.Codec
 	Verification *security.Codec
 }
 
@@ -291,7 +291,7 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 	if c.SyncPayload, err = build("sign_key.sync_payload", cfg.SignKey.SyncPayload); err != nil {
 		return nil, err
 	}
-	if c.WebAuthn, err = build("sign_key.webauthn", cfg.SignKey.WebAuthn); err != nil {
+	if c.Challenge, err = build("sign_key.challenge", cfg.SignKey.Challenge); err != nil {
 		return nil, err
 	}
 	if c.Verification, err = build("sign_key.verification", cfg.SignKey.Verification); err != nil {
@@ -431,8 +431,8 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, pwIP, pwOpts)); err != nil {
 		return nil, nil, nil, err
 	}
-	// 注册挑战令牌用独立 sign_key.webauthn（§1.4 七把密钥、§11.6.7）：
-	// 载荷 ChallengeTokenPayload、AAD purpose=webauthn，与 login_token
+	// 注册挑战令牌用独立 sign_key.challenge（§1.4 七把密钥、§11.6.7）：
+	// 载荷 ChallengeTokenPayload、AAD purpose=challenge，与 login_token
 	// （sign_key.login / PurposeLogin）互不解。启动期初始化失败降级（§8.3 行
 	// 1069，2026-11-05 定稿）：rp_id 为 IP / 非法域名导致库 RPID
 	// 校验失败（must be a domain and not an IP）时禁用 webauthn 因子——
@@ -440,7 +440,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// dispatch 对未注册 kind 返回 method_disabled），打 WARN 日志（含失败
 	// 原因），程序不退出、其余功能可用；已绑定凭据的用户改走其余登录 /
 	// MFA 方式。AssertComplete 以降级清单显式放行该 kind。
-	wa, waErr := webauthn.New(deps.codecs.WebAuthn, webauthnRepo, deps.queue, webauthn.Options{
+	wa, waErr := webauthn.New(deps.codecs.Challenge, webauthnRepo, deps.queue, webauthn.Options{
 		RPID:          cfg.Authloft.RpID,
 		RPDisplayName: cfg.Authloft.RPDisplayName,
 		RPOrigins:     []string{cfg.Authloft.Root},
@@ -1009,7 +1009,7 @@ func setupMode(configPath string) bool {
 // §1.1 行 76）；无 deps 时仅组链（测试口径），正常模式走 buildRouterWithSSO
 // 注册域 handler（sso 域挂 session 拦截器，admin / rpc HMAC 拦截器随各自域
 // handler 注册注入）。setup 路由不在本链注册——仅 setup 模式的独立链路
-//（§3.15），正常模式下 /setup 与 /api.setup/** 一律 404（§13）。
+// （§3.15），正常模式下 /setup 与 /api.setup/** 一律 404（§13）。
 func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
 	return buildHandler(cfg, connect.NewServer(defaultReadMaxBytes))
 }
@@ -1104,7 +1104,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 // 是唯一能同时拿到 RemoteAddr 与头信息的层（connect 链 AnyRequest 只暴露
 // Header——session.RequestSignal 只采头、拿不到来源 IP 的先例），登录成功
 // 事件经 ctx 带到 orchestrator.Terminal.Complete，落 event_log.ip / ua
-//（§4.6 行 776-777）。所有 connect 域统一注入，消费点只有登录终点。
+// （§4.6 行 776-777）。所有 connect 域统一注入，消费点只有登录终点。
 func connectRequestInfo(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(w, r.WithContext(orchestrator.WithRequestInfo(r.Context(), orchestrator.RequestInfo{
@@ -1215,7 +1215,7 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // RegisterWebauthn 两态 / RenameWebauthnCredential /
 // DeleteWebauthnCredential，接口文档 §3.6）走 service/account.
 // WebauthnService（均 buildEngine 内构造的共享单例）；UpdateProfile
-//（接口文档 §3.2 行 837）走 service/account.ProfileService——单依赖
+// （接口文档 §3.2 行 837）走 service/account.ProfileService——单依赖
 // UserRepo，无跨 service 共享需求，本函数内就地构造（UserRepo 本就地
 // new，同款口径）。五族 service（avatar / password / bindcontact /
 // mfa / events，接口文档 §3.2-§3.7）经 NewWithServices 注入——buildEngine

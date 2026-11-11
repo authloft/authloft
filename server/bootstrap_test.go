@@ -1,5 +1,5 @@
 // bootstrap 正常模式装配链测试（§3.1 行 253）：装配顺序断言
-//（config → DB → migrate → Redis，用错误传播逐段证明）+ env-skip 真连
+// （config → DB → migrate → Redis，用错误传播逐段证明）+ env-skip 真连
 // 用例（DB 连通、migrate up 幂等、Redis PING）。清理口径沿用
 // 既有 DB 测试（migrate_test / setup_db_test）：用例开始清空全部表、结束后
 // 清空并自证零残留；跨二进制串行用 GET_LOCK 命名锁；
@@ -338,7 +338,7 @@ func testSignKeyConfig(t *testing.T) config.SignKeyConfig {
 		Ticket:       next(),
 		Cookie:       next(),
 		SyncPayload:  next(),
-		WebAuthn:     next(),
+		Challenge:    next(),
 		Verification: next(),
 	}
 }
@@ -353,7 +353,7 @@ func TestCodecsBuildSevenIndependent(t *testing.T) {
 	if c == nil {
 		t.Fatal("buildCodecs returned nil codecs")
 	}
-	all := []*security.Codec{c.Session, c.Login, c.Ticket, c.Cookie, c.SyncPayload, c.WebAuthn, c.Verification}
+	all := []*security.Codec{c.Session, c.Login, c.Ticket, c.Cookie, c.SyncPayload, c.Challenge, c.Verification}
 	for i, a := range all {
 		if a == nil {
 			t.Fatalf("codecs has nil field at index %d: %+v", i, c)
@@ -402,7 +402,7 @@ func TestCodecsBuildRejectsInvalidMaterial(t *testing.T) {
 		{"sign_key.ticket", func(s *config.SignKeyConfig) { s.Ticket.Key = shortKey }},
 		{"sign_key.cookie", func(s *config.SignKeyConfig) { s.Cookie.Key = shortKey }},
 		{"sign_key.sync_payload", func(s *config.SignKeyConfig) { s.SyncPayload.Key = shortKey }},
-		{"sign_key.webauthn", func(s *config.SignKeyConfig) { s.WebAuthn.Key = shortKey }},
+		{"sign_key.challenge", func(s *config.SignKeyConfig) { s.Challenge.Key = shortKey }},
 		{"sign_key.verification", func(s *config.SignKeyConfig) { s.Verification.Key = shortKey }},
 	}
 	for _, sc := range perScenario {
@@ -704,7 +704,7 @@ func TestAssembleRealChain(t *testing.T) {
 	// 步骤 5-8：七把密钥 / settings 快照与 watcher / 队列 / sink 均已装配。
 	if deps.codecs == nil || deps.codecs.Session == nil || deps.codecs.Login == nil ||
 		deps.codecs.Ticket == nil || deps.codecs.Cookie == nil || deps.codecs.SyncPayload == nil ||
-		deps.codecs.WebAuthn == nil || deps.codecs.Verification == nil {
+		deps.codecs.Challenge == nil || deps.codecs.Verification == nil {
 		t.Fatalf("七把密钥 codec 未装配完整: %+v", deps.codecs)
 	}
 	if deps.settings == nil {
@@ -1123,7 +1123,7 @@ func eventually(t *testing.T, what string, timeout time.Duration, cond func() er
 }
 
 // TestAssembleGatewaySettingsHotReload（env-skip 真连）：assemble 全链
-//（settings 预热 + watcher）后 deps.settings 即 registerGateway 的
+// （settings 预热 + watcher）后 deps.settings 即 registerGateway 的
 // gateway_tokens 动态源——默认 [] 拒绝；Store.Set 增配 tok-a 即对后续请求
 // 放行（200 + X-Session-Status: invalid，会话令牌缺省恒 200）；换配 tok-b 后
 // tok-a 失效 / tok-b 放行（每请求经 settings 快照读取，热更只对后续请求

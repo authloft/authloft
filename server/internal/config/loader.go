@@ -98,7 +98,7 @@ func DefaultConfig() (*Config, error) {
 		&c.SignKey.Ticket,
 		&c.SignKey.Cookie,
 		&c.SignKey.SyncPayload,
-		&c.SignKey.WebAuthn,
+		&c.SignKey.Challenge,
 		&c.SignKey.Verification,
 	} {
 		k, err := generateKeyMaterial()
@@ -215,8 +215,8 @@ var envBindings = slices.Concat(serverEnvBindings, []envBinding{
 	{"AUTHLOFT_SIGN_KEY_COOKIE_KID", setInt(func(c *Config, n int) { c.SignKey.Cookie.Kid = n })},
 	{"AUTHLOFT_SIGN_KEY_SYNC_PAYLOAD_KEY", func(c *Config, v string) error { c.SignKey.SyncPayload.Key = v; return nil }},
 	{"AUTHLOFT_SIGN_KEY_SYNC_PAYLOAD_KID", setInt(func(c *Config, n int) { c.SignKey.SyncPayload.Kid = n })},
-	{"AUTHLOFT_SIGN_KEY_WEBAUTHN_KEY", func(c *Config, v string) error { c.SignKey.WebAuthn.Key = v; return nil }},
-	{"AUTHLOFT_SIGN_KEY_WEBAUTHN_KID", setInt(func(c *Config, n int) { c.SignKey.WebAuthn.Kid = n })},
+	{"AUTHLOFT_SIGN_KEY_CHALLENGE_KEY", func(c *Config, v string) error { c.SignKey.Challenge.Key = v; return nil }},
+	{"AUTHLOFT_SIGN_KEY_CHALLENGE_KID", setInt(func(c *Config, n int) { c.SignKey.Challenge.Kid = n })},
 	{"AUTHLOFT_SIGN_KEY_VERIFICATION_KEY", func(c *Config, v string) error { c.SignKey.Verification.Key = v; return nil }},
 	{"AUTHLOFT_SIGN_KEY_VERIFICATION_KID", setInt(func(c *Config, n int) { c.SignKey.Verification.Kid = n })},
 

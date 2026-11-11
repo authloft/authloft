@@ -407,7 +407,7 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 	b.WriteString(fmt.Sprintf("redis: { addr: %q, password: \"\", db: 0, pool_size: 50 }\n", redisAddr))
 	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\", rp_display_name: \"Authloft\" }\n")
 	b.WriteString("sign_key:\n")
-	for _, sc := range []string{"session", "login", "ticket", "cookie", "sync_payload", "webauthn", "verification"} {
+	for _, sc := range []string{"session", "login", "ticket", "cookie", "sync_payload", "challenge", "verification"} {
 		fmt.Fprintf(&b, "  %s: { key: %q, kid: 1 }\n", sc, testKeyB64('A'))
 	}
 	b.WriteString("argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }\n")
@@ -451,10 +451,10 @@ log: { level: info, format: text }
 			// 去掉 ticket 一行（模拟缺一场景）。
 			return strings.Replace(text, "  ticket: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
-		{"missing webauthn key", func() string {
+		{"missing challenge key", func() string {
 			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
-			// 存量 config 缺新增的 webauthn 一把 → 配置不完整，直接拒绝（§3.15）。
-			return strings.Replace(text, "  webauthn: { key: \""+key+"\", kid: 1 }\n", "", 1)
+			// 存量 config 缺新增的 challenge 一把 → 配置不完整，直接拒绝（§3.15）。
+			return strings.Replace(text, "  challenge: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing verification key", func() string {
 			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
@@ -725,7 +725,7 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	// 字节、kid=1、七把互不相同。
 	signKeys := []config.KeyMaterial{
 		c.SignKey.Session, c.SignKey.Login, c.SignKey.Ticket, c.SignKey.Cookie,
-		c.SignKey.SyncPayload, c.SignKey.WebAuthn, c.SignKey.Verification,
+		c.SignKey.SyncPayload, c.SignKey.Challenge, c.SignKey.Verification,
 	}
 	seenKeys := make(map[string]bool, len(signKeys))
 	for i, km := range signKeys {

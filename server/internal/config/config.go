@@ -134,7 +134,7 @@ type SignKeyConfig struct {
 	Ticket       KeyMaterial `yaml:"ticket"`       // ticket（含 al:ticket 存储值，§11.4）
 	Cookie       KeyMaterial `yaml:"cookie"`       // al_login_state（§11.6.1）
 	SyncPayload  KeyMaterial `yaml:"sync_payload"` // 多域名同步载荷（§11.2）
-	WebAuthn     KeyMaterial `yaml:"webauthn"`     // 通行密钥挑战令牌（§11.6.7）
+	Challenge    KeyMaterial `yaml:"challenge"`    // 挑战令牌（webauthn_enroll 与 step-up 统一，§11.6.7）
 	Verification KeyMaterial `yaml:"verification"` // 敏感操作二次验证令牌（§11.6.7）
 }
 
@@ -302,7 +302,7 @@ func (r RedisConfig) validate() []error {
 // HTTPS。明文部署适用内网 / 测试 / 反代 TLS 终止后明文直连；公网明文
 // 部署存在会话令牌被窃听风险，由部署方自行负责（安全提示见 §1.1）。
 // 会话 Cookie 的 Secure 属性由 settings 键 https_deployment 驱动
-//（接口文档 §5.6 / §1.9），与本字段无耦合；HTTP→HTTPS 强制跳转与
+// （接口文档 §5.6 / §1.9），与本字段无耦合；HTTP→HTTPS 强制跳转与
 // HSTS 由网关层负责，Authloft 不提供（写死不做）。
 func (a AuthloftConfig) validate() []error {
 	var errs []error
@@ -331,7 +331,7 @@ func (s SignKeyConfig) validate() []error {
 		{"sign_key.ticket", s.Ticket},
 		{"sign_key.cookie", s.Cookie},
 		{"sign_key.sync_payload", s.SyncPayload},
-		{"sign_key.webauthn", s.WebAuthn},
+		{"sign_key.challenge", s.Challenge},
 		{"sign_key.verification", s.Verification},
 	}
 	var errs []error
