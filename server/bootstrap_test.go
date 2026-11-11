@@ -52,6 +52,7 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/security"
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
 	"authloft/internal/service/orchestrator"
@@ -237,7 +238,7 @@ func requireAllTables(t *testing.T, db *sql.DB) {
 }
 
 // assembleConfig 构造真连用例的自造 *config.Config（§3.2 约定 1 / §20）：
-// assemble 链消费 DB / Redis / sign_key 五键 / authloft（buildEngine 里
+// assemble 链消费 DB / Redis / sign_key 七键 / authloft（buildEngine 里
 // webauthn 的 RPID 与 RPOrigins）；oidc.jwt_keys 按 §3.2 约定 6（安装期
 // 写入后 Validate 必填）一并填齐，接线后夹具无需再改。测试内生成密钥，
 // fail-fast 校验是既定口径——修夹具不放宽校验。server / argon2 / log
@@ -320,8 +321,8 @@ func TestAssembleOrderDBBeforeMigrateRedis(t *testing.T) {
 	}
 }
 
-// testSignKeyConfig 生成五把互不相同的随机 AES-256 密钥（std base64，kid=1），
-// 仅供不连外部服务的装配单测（§1.4：五场景密钥必须独立）。
+// testSignKeyConfig 生成七把互不相同的随机 AES-256 密钥（std base64，kid=1），
+// 仅供不连外部服务的装配单测（§1.4：七场景密钥必须独立）。
 func testSignKeyConfig(t *testing.T) config.SignKeyConfig {
 	t.Helper()
 	next := func() config.KeyMaterial {
@@ -332,17 +333,19 @@ func testSignKeyConfig(t *testing.T) config.SignKeyConfig {
 		return config.KeyMaterial{Key: base64.StdEncoding.EncodeToString(buf), Kid: 1}
 	}
 	return config.SignKeyConfig{
-		Session:     next(),
-		Login:       next(),
-		Ticket:      next(),
-		Cookie:      next(),
-		SyncPayload: next(),
+		Session:      next(),
+		Login:        next(),
+		Ticket:       next(),
+		Cookie:       next(),
+		SyncPayload:  next(),
+		WebAuthn:     next(),
+		Verification: next(),
 	}
 }
 
-// TestCodecsBuildFiveIndependent：五把 sign_key 逐把构造 codec，五个字段均
+// TestCodecsBuildSevenIndependent：七把 sign_key 逐把构造 codec，七个字段均
 // 非 nil 且各自独立（不共用 KeyStore / Codec，§1.4 / §11.6.1）。
-func TestCodecsBuildFiveIndependent(t *testing.T) {
+func TestCodecsBuildSevenIndependent(t *testing.T) {
 	c, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
 	if err != nil {
 		t.Fatalf("buildCodecs: %v", err)
@@ -350,19 +353,22 @@ func TestCodecsBuildFiveIndependent(t *testing.T) {
 	if c == nil {
 		t.Fatal("buildCodecs returned nil codecs")
 	}
-	if c.Session == nil || c.Login == nil || c.Ticket == nil || c.Cookie == nil || c.SyncPayload == nil {
-		t.Fatalf("codecs has nil fields: %+v", c)
-	}
-	if c.Session == c.Login || c.Session == c.Ticket || c.Session == c.Cookie || c.Session == c.SyncPayload ||
-		c.Login == c.Ticket || c.Login == c.Cookie || c.Login == c.SyncPayload ||
-		c.Ticket == c.Cookie || c.Ticket == c.SyncPayload || c.Cookie == c.SyncPayload {
-		t.Error("five scenarios must use independent Codec instances, got duplicates")
+	all := []*security.Codec{c.Session, c.Login, c.Ticket, c.Cookie, c.SyncPayload, c.WebAuthn, c.Verification}
+	for i, a := range all {
+		if a == nil {
+			t.Fatalf("codecs has nil field at index %d: %+v", i, c)
+		}
+		for j, b := range all {
+			if i != j && a == b {
+				t.Errorf("seven scenarios must use independent Codec instances, got duplicates at %d/%d", i, j)
+			}
+		}
 	}
 }
 
 // TestCodecsBuildRejectsInvalidMaterial：base64 非法 / kid 越界 / 解码后长度
 // 非 32 字节一律 fail-fast（装配层保留错误上抛，§3.2 约定 4）；并逐把验证
-// 五场景密钥独立校验——任一场景非法都失败且错误定位到该字段名（§1.4 /
+// 七场景密钥独立校验——任一场景非法都失败且错误定位到该字段名（§1.4 /
 // §11.6.1）。
 func TestCodecsBuildRejectsInvalidMaterial(t *testing.T) {
 	shortKey := base64.StdEncoding.EncodeToString(make([]byte, 16))
@@ -386,7 +392,7 @@ func TestCodecsBuildRejectsInvalidMaterial(t *testing.T) {
 	}
 
 	// 逐把独立：同一非法形态施加到任意一把都必须 fail-fast，且错误定位到
-	// 该场景字段名（§1.4：五场景密钥独立，泄露一枚不殃及其余）。
+	// 该场景字段名（§1.4：七场景密钥独立，泄露一枚不殃及其余）。
 	perScenario := []struct {
 		field string
 		mut   func(*config.SignKeyConfig)
@@ -396,6 +402,8 @@ func TestCodecsBuildRejectsInvalidMaterial(t *testing.T) {
 		{"sign_key.ticket", func(s *config.SignKeyConfig) { s.Ticket.Key = shortKey }},
 		{"sign_key.cookie", func(s *config.SignKeyConfig) { s.Cookie.Key = shortKey }},
 		{"sign_key.sync_payload", func(s *config.SignKeyConfig) { s.SyncPayload.Key = shortKey }},
+		{"sign_key.webauthn", func(s *config.SignKeyConfig) { s.WebAuthn.Key = shortKey }},
+		{"sign_key.verification", func(s *config.SignKeyConfig) { s.Verification.Key = shortKey }},
 	}
 	for _, sc := range perScenario {
 		t.Run("per-scenario/"+sc.field, func(t *testing.T) {
@@ -693,10 +701,11 @@ func TestAssembleRealChain(t *testing.T) {
 	if err := deps.rdb.Ping(ctx).Err(); err != nil {
 		t.Fatalf("redis ping: %v", err)
 	}
-	// 步骤 5-8：五把密钥 / settings 快照与 watcher / 队列 / sink 均已装配。
+	// 步骤 5-8：七把密钥 / settings 快照与 watcher / 队列 / sink 均已装配。
 	if deps.codecs == nil || deps.codecs.Session == nil || deps.codecs.Login == nil ||
-		deps.codecs.Ticket == nil || deps.codecs.Cookie == nil || deps.codecs.SyncPayload == nil {
-		t.Fatalf("五把密钥 codec 未装配完整: %+v", deps.codecs)
+		deps.codecs.Ticket == nil || deps.codecs.Cookie == nil || deps.codecs.SyncPayload == nil ||
+		deps.codecs.WebAuthn == nil || deps.codecs.Verification == nil {
+		t.Fatalf("七把密钥 codec 未装配完整: %+v", deps.codecs)
 	}
 	if deps.settings == nil {
 		t.Error("settings.Store 未装配")

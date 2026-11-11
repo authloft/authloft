@@ -1,7 +1,7 @@
 // bootstrap.go 按 docs/后端架构.md §3.1 行 237 的固定顺序装配启动链：
 // config → DB → 迁移检查（migrate up，幂等）→ Redis → 密钥 → provider/factor
 // 注册表 → settings 预热 → 队列 worker → cron → router。已落地 config /
-// DB / migrate / Redis 四步，并接入五把密钥、settings 预热 + watcher、
+// DB / migrate / Redis 四步，并接入七把密钥、settings 预热 + watcher、
 // 队列 + 事件日志 sink 与优雅关闭；factor 注册表、Terminal 与登录单引擎
 // 已接入；provider 注册表与 cron 仍为 TODO。
 //
@@ -142,7 +142,7 @@ func run(configPath string) error {
 // 行 892：超时后不再等待在途请求 / 批次）。
 const shutdownTimeout = 10 * time.Second
 
-// assembled 正常模式装配产物（§3.1 行 237 启动链）：DB / Redis / 五把密钥编解码
+// assembled 正常模式装配产物（§3.1 行 237 启动链）：DB / Redis / 七把密钥编解码
 // / settings 快照与热更新 watcher / 延迟写入队列与事件日志 sink / 登录单引擎 /
 // provider 加载链与 Referer 白名单来源 / OIDC JWT 与共享单例。cron 仍为 TODO
 // （§3.12，随 cron 卡接入）。
@@ -237,17 +237,19 @@ type assembled struct {
 	accountBindContact accounthandler.ContactBinder
 }
 
-// codecs 五场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
-// cookie / sync_payload 各持一把密钥，互不复用。
+// codecs 七场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
+// cookie / sync_payload / webauthn / verification 各持一把密钥，互不复用。
 type codecs struct {
-	Session     *security.Codec
-	Login       *security.Codec
-	Ticket      *security.Codec
-	Cookie      *security.Codec
-	SyncPayload *security.Codec
+	Session      *security.Codec
+	Login        *security.Codec
+	Ticket       *security.Codec
+	Cookie       *security.Codec
+	SyncPayload  *security.Codec
+	WebAuthn     *security.Codec
+	Verification *security.Codec
 }
 
-// buildCodecs 把 cfg.SignKey 五把 KeyMaterial 逐把转成 security.Codec
+// buildCodecs 把 cfg.SignKey 七把 KeyMaterial 逐把转成 security.Codec
 // （§3.1 步骤 5、§1.4 / §11.6.1）。base64 解码与 kid 范围在任何一步非法即
 // 返回错误，由 serve 转 fail-fast；密钥长度由 security.NewKeyStore 校验
 // （AES-256 恰 32 字节）。每把独立构造 KeyStore，绝不共用。
@@ -287,6 +289,12 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 		return nil, err
 	}
 	if c.SyncPayload, err = build("sign_key.sync_payload", cfg.SignKey.SyncPayload); err != nil {
+		return nil, err
+	}
+	if c.WebAuthn, err = build("sign_key.webauthn", cfg.SignKey.WebAuthn); err != nil {
+		return nil, err
+	}
+	if c.Verification, err = build("sign_key.verification", cfg.SignKey.Verification); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -423,15 +431,16 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, pwIP, pwOpts)); err != nil {
 		return nil, nil, nil, err
 	}
-	// 注册令牌复用 login 域密钥（§1.4 五把密钥未单列 webauthn；purpose
-	// 作为 AAD 保证跨场景隔离，§11.6.1）。启动期初始化失败降级（§8.3 行
+	// 注册挑战令牌用独立 sign_key.webauthn（§1.4 七把密钥、§11.6.7）：
+	// 载荷 ChallengeTokenPayload、AAD purpose=webauthn，与 login_token
+	// （sign_key.login / PurposeLogin）互不解。启动期初始化失败降级（§8.3 行
 	// 1069，2026-11-05 定稿）：rp_id 为 IP / 非法域名导致库 RPID
 	// 校验失败（must be a domain and not an IP）时禁用 webauthn 因子——
 	// 不注册进注册表（登录方式列表与 MFA 开放集合随之不含 webauthn：
 	// dispatch 对未注册 kind 返回 method_disabled），打 WARN 日志（含失败
 	// 原因），程序不退出、其余功能可用；已绑定凭据的用户改走其余登录 /
 	// MFA 方式。AssertComplete 以降级清单显式放行该 kind。
-	wa, waErr := webauthn.New(deps.codecs.Login, webauthnRepo, deps.queue, webauthn.Options{
+	wa, waErr := webauthn.New(deps.codecs.WebAuthn, webauthnRepo, deps.queue, webauthn.Options{
 		RPID:          cfg.Authloft.RpID,
 		RPDisplayName: cfg.Authloft.RPDisplayName,
 		RPOrigins:     []string{cfg.Authloft.Root},
@@ -735,7 +744,7 @@ func otpParamsFromSettings(st *settings.Store) (core.Config, cache.CodeOptions) 
 
 // assemble 正常模式装配步骤 2-8（§3.1 行 237）：DB → 迁移检查（migrate up，
 // 幂等——版本已最新时只读版本表秒过，§3.16 行 553-555：连上 DB 之后、
-// settings 预热之前）→ Redis → 五把密钥 → settings 预热 + watcher → 队列
+// settings 预热之前）→ Redis → 七把密钥 → settings 预热 + watcher → 队列
 // worker 与事件日志 sink → factor 注册表 + Terminal + 登录单引擎。
 // provider 注册表（步骤 6）与 cron 仍为 TODO。
 // 任一步失败都先释放已建资源再原样上抛（serve 转 fail-fast）。
@@ -756,7 +765,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 
 	deps := &assembled{db: db, rdb: rdb}
 
-	// 步骤 5：五把 sign_key 逐把构造 KeyStore + Codec。
+	// 步骤 5：七把 sign_key 逐把构造 KeyStore + Codec。
 	if deps.codecs, err = buildCodecs(cfg); err != nil {
 		deps.closeInfra()
 		return nil, err

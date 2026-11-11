@@ -21,7 +21,7 @@ func writeConfigFile(t *testing.T, data string) string {
 	return path
 }
 
-// missingScenarioYAML 合法配置但 sign_key 只写了 session——其余四场景缺失，
+// missingScenarioYAML 合法配置但 sign_key 只写了 session——其余六场景缺失，
 // 用于验证「文件已存在但缺项 → fail-fast，不自动补写」（§3.2 约定 4）。
 const missingScenarioYAML = `
 server: { listen: ":8080", min_tls_version: "", cert_file: "", key_file: "" }
@@ -59,7 +59,7 @@ func TestLoadMissingFileReturnsErrNotExist(t *testing.T) {
 }
 
 // TestDefaultConfigValidAndKeysIndependent DefaultConfig（安装流程的默认值
-// 来源，§3.15 writer.go）：整体通过 Validate；sign_key 五场景独立、解码 32
+// 来源，§3.15 writer.go）：整体通过 Validate；sign_key 七场景独立、解码 32
 // 字节、kid=1；两次调用生成不同密钥（每次现场随机）。
 func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 	cfg, err := DefaultConfig()
@@ -69,13 +69,15 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config must pass Validate: %v", err)
 	}
-	seen := make(map[string]bool, 5)
+	seen := make(map[string]bool, 7)
 	for name, km := range map[string]KeyMaterial{
 		"session":      cfg.SignKey.Session,
 		"login":        cfg.SignKey.Login,
 		"ticket":       cfg.SignKey.Ticket,
 		"cookie":       cfg.SignKey.Cookie,
 		"sync_payload": cfg.SignKey.SyncPayload,
+		"webauthn":     cfg.SignKey.WebAuthn,
+		"verification": cfg.SignKey.Verification,
 	} {
 		raw, err := base64.StdEncoding.DecodeString(km.Key)
 		if err != nil {
@@ -89,7 +91,7 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 			t.Errorf("%s kid = %d, want 1", name, km.Kid)
 		}
 		if seen[km.Key] {
-			t.Errorf("duplicated %s key; five scenarios must be independent keys", name)
+			t.Errorf("duplicated %s key; seven scenarios must be independent keys", name)
 		}
 		seen[km.Key] = true
 	}
@@ -113,6 +115,8 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	t.Setenv("AUTHLOFT_REDIS_DB", "7")
 	t.Setenv("AUTHLOFT_SIGN_KEY_SESSION_KID", "2")
 	t.Setenv("AUTHLOFT_SIGN_KEY_TICKET_KEY", envKey)
+	t.Setenv("AUTHLOFT_SIGN_KEY_WEBAUTHN_KID", "3")
+	t.Setenv("AUTHLOFT_SIGN_KEY_VERIFICATION_KEY", envKey)
 	t.Setenv("AUTHLOFT_AUTHLOFT_RP_DISPLAY_NAME", "Env Corp SSO")
 
 	cfg, err := Load(path)
@@ -136,6 +140,12 @@ func TestLoadEnvOverridesFileValues(t *testing.T) {
 	}
 	if cfg.SignKey.Ticket.Key != envKey {
 		t.Errorf("ticket key not overridden by env")
+	}
+	if cfg.SignKey.WebAuthn.Kid != 3 {
+		t.Errorf("webauthn kid = %d, want 3 from env", cfg.SignKey.WebAuthn.Kid)
+	}
+	if cfg.SignKey.Verification.Key != envKey {
+		t.Errorf("verification key not overridden by env")
 	}
 	if cfg.Authloft.RPDisplayName != "Env Corp SSO" {
 		t.Errorf("rp_display_name = %q, want env value", cfg.Authloft.RPDisplayName)
@@ -211,6 +221,67 @@ func TestLoadMissingSignKeyScenarioFailsNoRewrite(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Error("existing file with missing key must not be rewritten")
+	}
+}
+
+// withoutSignKeyScenarios 从 YAML 文本中删掉指定 sign_key 场景行（模拟存量
+// 配置：升级前只有旧场景密钥，缺新增的 webauthn / verification）。
+func withoutSignKeyScenarios(yamlText string, scenarios ...string) string {
+	var kept []string
+	for _, line := range strings.Split(yamlText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		drop := false
+		for _, sc := range scenarios {
+			if strings.HasPrefix(trimmed, sc+":") {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+// TestLoadLegacyConfigMissingNewKeysUpgradePath 存量配置缺 webauthn /
+// verification 两把新密钥的升级路径（§3.2 约定 4 / §3.15 实现要点）：
+// 启动校验 fail-fast、不自动补写（文件原样未动）；由部署方补齐两把后
+// 重启（重新 Load）即可启动——不做运行期兜底、不静默生成。
+func TestLoadLegacyConfigMissingNewKeysUpgradePath(t *testing.T) {
+	legacy := withoutSignKeyScenarios(filledTestYAML(), "webauthn", "verification")
+	path := writeConfigFile(t, legacy)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Load(path)
+	if err == nil {
+		t.Fatal("legacy config missing webauthn/verification keys must fail-fast")
+	}
+	for _, field := range []string{"sign_key.webauthn.key", "sign_key.verification.key"} {
+		if !strings.Contains(err.Error(), field) {
+			t.Errorf("want error containing %q, got %v", field, err)
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("legacy config must not be auto-rewritten with generated keys")
+	}
+
+	// 部署方补齐两把密钥后重启：同一路径重新 Load 必须成功。
+	if err := os.WriteFile(path, []byte(filledTestYAML()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("config completed by deployer must load: %v", err)
+	}
+	if cfg.SignKey.WebAuthn.Key == "" || cfg.SignKey.Verification.Key == "" {
+		t.Error("completed config must carry webauthn/verification keys")
 	}
 }
 

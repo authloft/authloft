@@ -52,7 +52,7 @@ func openString(t *testing.T, c *Codec, purpose, tok string) (string, error) {
 func TestSealOpenAllPurposes(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
 	for _, purpose := range []string{
-		PurposeSession, PurposeLogin, PurposeTicket, PurposeBind,
+		PurposeSession, PurposeLogin, PurposeTicket, PurposeVerification,
 		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		tok := sealOK(t, c, purpose, "payload-"+purpose)
@@ -103,14 +103,104 @@ func TestOidcCodePayloadRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSealUnknownPurpose 表外 purpose 拒绝（封闭集合）。
+// TestChallengeTokenPayloadRoundTrip ChallengeTokenPayload 全字段 Seal→Open
+// 往返一致（§11.6.7）：webauthn 场景 AAD purpose=webauthn；跨 purpose
+// （verification / login）解同一令牌失败。
+func TestChallengeTokenPayloadRoundTrip(t *testing.T) {
+	c := newTestCodec(t, 1, 1, testKey(0xA1))
+	want := &token.ChallengeTokenPayload{
+		BizPurpose:  "webauthn_enroll",
+		SubjectKind: "uid",
+		Subject:     "42",
+		Nonce:       "challenge-nonce",
+		Operation:   "webauthn_register",
+		Iat:         1700000000,
+		Exp:         1700000120,
+	}
+	tok, err := c.Seal(PurposeWebAuthn, want)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	got, err := Open[token.ChallengeTokenPayload](c, PurposeWebAuthn, tok)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !proto.Equal(want, got) {
+		t.Fatalf("round trip mismatch:\n got %v\nwant %v", got, want)
+	}
+	for _, purpose := range []string{PurposeVerification, PurposeLogin, PurposeSession} {
+		if _, err := Open[token.ChallengeTokenPayload](c, purpose, tok); err == nil {
+			t.Fatalf("cross purpose %q must fail", purpose)
+		}
+	}
+	// step-up 形态：methods 因子快照 + verification 密钥场景往返。
+	stepUp := &token.ChallengeTokenPayload{
+		BizPurpose:  "unbind_totp",
+		SubjectKind: "uid",
+		Subject:     "42",
+		Nonce:       "step-up-nonce",
+		Operation:   "totp_unbind",
+		Methods:     []string{"totp", "otp_email"},
+		Iat:         1700000000,
+		Exp:         1700000300,
+	}
+	tok2, err := c.Seal(PurposeVerification, stepUp)
+	if err != nil {
+		t.Fatalf("Seal step-up: %v", err)
+	}
+	got2, err := Open[token.ChallengeTokenPayload](c, PurposeVerification, tok2)
+	if err != nil {
+		t.Fatalf("Open step-up: %v", err)
+	}
+	if !proto.Equal(stepUp, got2) {
+		t.Fatalf("step-up round trip mismatch:\n got %v\nwant %v", got2, stepUp)
+	}
+}
+
+// TestVerificationTokenPayloadRoundTrip VerificationTokenPayload 全字段
+// Seal→Open 往返一致（§11.6.7）：AAD purpose=verification；跨 purpose
+// （webauthn / login）解同一令牌失败。
+func TestVerificationTokenPayloadRoundTrip(t *testing.T) {
+	c := newTestCodec(t, 1, 1, testKey(0xA1))
+	want := &token.VerificationTokenPayload{
+		BizPurpose:  "change_password",
+		SubjectKind: "uid",
+		Subject:     "42",
+		Nonce:       "challenge-nonce",
+		Amr:         []string{"pwd", "totp"},
+		Operation:   "password_change",
+		Iat:         1700000000,
+		Exp:         1700000120,
+	}
+	tok, err := c.Seal(PurposeVerification, want)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	got, err := Open[token.VerificationTokenPayload](c, PurposeVerification, tok)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !proto.Equal(want, got) {
+		t.Fatalf("round trip mismatch:\n got %v\nwant %v", got, want)
+	}
+	for _, purpose := range []string{PurposeWebAuthn, PurposeLogin, PurposeSession} {
+		if _, err := Open[token.VerificationTokenPayload](c, purpose, tok); err == nil {
+			t.Fatalf("cross purpose %q must fail", purpose)
+		}
+	}
+}
+
+// TestSealUnknownPurpose 表外 purpose 拒绝（封闭集合）；bind 已删除，
+// 同样按表外值拒绝（§11.6.1 封闭集合不含 bind）。
 func TestSealUnknownPurpose(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
-	if _, err := c.Seal("bogus", wrapperspb.String("x")); err == nil {
-		t.Fatal("Seal with unknown purpose must fail")
-	}
-	if _, err := Open[wrapperspb.StringValue](c, "bogus", "whatever"); err == nil {
-		t.Fatal("Open with unknown purpose must fail")
+	for _, purpose := range []string{"bogus", "bind"} {
+		if _, err := c.Seal(purpose, wrapperspb.String("x")); err == nil {
+			t.Fatalf("Seal with unknown purpose %q must fail", purpose)
+		}
+		if _, err := Open[wrapperspb.StringValue](c, purpose, "whatever"); err == nil {
+			t.Fatalf("Open with unknown purpose %q must fail", purpose)
+		}
 	}
 }
 
@@ -129,7 +219,7 @@ func TestOpenCrossPurpose(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
 	tok := sealOK(t, c, PurposeLogin, "state")
 	for _, purpose := range []string{
-		PurposeSession, PurposeTicket, PurposeBind,
+		PurposeSession, PurposeTicket, PurposeVerification,
 		PurposeWebAuthn, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
 	} {
 		if _, err := openString(t, c, purpose, tok); err == nil {
@@ -196,8 +286,8 @@ func TestOpenMalformed(t *testing.T) {
 func TestOpenUnknownKid(t *testing.T) {
 	a := newTestCodec(t, 1, 1, testKey(0xA1))
 	b := newTestCodec(t, 1, 2, testKey(0xB2))
-	tok := sealOK(t, a, PurposeBind, "x")
-	if _, err := openString(t, b, PurposeBind, tok); err == nil {
+	tok := sealOK(t, a, PurposeVerification, "x")
+	if _, err := openString(t, b, PurposeVerification, tok); err == nil {
 		t.Fatal("token sealed by keystore A must not open in keystore B")
 	}
 }

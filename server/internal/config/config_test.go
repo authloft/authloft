@@ -46,6 +46,8 @@ sign_key:
   ticket:       { key: "<KEY>", kid: 1 }
   cookie:       { key: "<KEY>", kid: 1 }
   sync_payload: { key: "<KEY>", kid: 1 }
+  webauthn:     { key: "<KEY>", kid: 1 }
+  verification: { key: "<KEY>", kid: 1 }
 oidc:
   jwt_keys:
     - kid: "1"
@@ -239,6 +241,12 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"key wrong length", func(c *Config) { c.SignKey.Ticket.Key = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31)) }, "sign_key.ticket.key"},
 		{"kid zero", func(c *Config) { c.SignKey.Cookie.Kid = 0 }, "sign_key.cookie.kid"},
 		{"kid negative", func(c *Config) { c.SignKey.SyncPayload.Kid = -1 }, "sign_key.sync_payload.kid"},
+		{"webauthn key empty", func(c *Config) { c.SignKey.WebAuthn.Key = "" }, "sign_key.webauthn.key"},
+		{"webauthn kid zero", func(c *Config) { c.SignKey.WebAuthn.Kid = 0 }, "sign_key.webauthn.kid"},
+		{"verification key wrong length", func(c *Config) {
+			c.SignKey.Verification.Key = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31))
+		}, "sign_key.verification.key"},
+		{"verification kid negative", func(c *Config) { c.SignKey.Verification.Kid = -1 }, "sign_key.verification.kid"},
 
 		{"oidc keys missing", func(c *Config) { c.OIDC.JWTKeys = nil }, "oidc.jwt_keys"},
 		{"oidc keys empty", func(c *Config) { c.OIDC.JWTKeys = []OIDCKey{} }, "oidc.jwt_keys"},

@@ -127,13 +127,15 @@ type KeyMaterial struct {
 	Kid int    `yaml:"kid"`
 }
 
-// SignKeyConfig 五类令牌 / 载荷的独立密钥（§1.4）：互不复用，泄露一枚不殃及其余。
+// SignKeyConfig 七类令牌 / 载荷的独立密钥（§1.4）：互不复用，泄露一枚不殃及其余。
 type SignKeyConfig struct {
-	Session     KeyMaterial `yaml:"session"`      // session token
-	Login       KeyMaterial `yaml:"login"`        // login token
-	Ticket      KeyMaterial `yaml:"ticket"`       // ticket（含 al:ticket 存储值，§11.4）
-	Cookie      KeyMaterial `yaml:"cookie"`       // al_login_state（§11.6.1）
-	SyncPayload KeyMaterial `yaml:"sync_payload"` // 多域名同步载荷（§11.2）
+	Session      KeyMaterial `yaml:"session"`      // session token
+	Login        KeyMaterial `yaml:"login"`        // login token
+	Ticket       KeyMaterial `yaml:"ticket"`       // ticket（含 al:ticket 存储值，§11.4）
+	Cookie       KeyMaterial `yaml:"cookie"`       // al_login_state（§11.6.1）
+	SyncPayload  KeyMaterial `yaml:"sync_payload"` // 多域名同步载荷（§11.2）
+	WebAuthn     KeyMaterial `yaml:"webauthn"`     // 通行密钥挑战令牌（§11.6.7）
+	Verification KeyMaterial `yaml:"verification"` // 敏感操作二次验证令牌（§11.6.7）
 }
 
 // OIDCConfig OIDC RS256 签名密钥集（§3.2 约定 6 / §14.3）：与顶层 sign_key
@@ -329,6 +331,8 @@ func (s SignKeyConfig) validate() []error {
 		{"sign_key.ticket", s.Ticket},
 		{"sign_key.cookie", s.Cookie},
 		{"sign_key.sync_payload", s.SyncPayload},
+		{"sign_key.webauthn", s.WebAuthn},
+		{"sign_key.verification", s.Verification},
 	}
 	var errs []error
 	for _, sc := range scenarios {

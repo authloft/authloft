@@ -1,6 +1,7 @@
 // writer.go config 生成与原子写入（docs/后端架构.md §3.15 职责表）：
-// 写临时文件 → rename 覆盖，权限 0600；全新安装随机生成全部 sign_key
-// （config.DefaultConfig 单一默认值来源）与 oidc.jwt_keys（RSA 2048 位
+// 写临时文件 → rename 覆盖，权限 0600；全新安装随机生成全部 7 把 sign_key
+// （session / login / ticket / cookie / sync_payload / webauthn / verification，
+// config.DefaultConfig 单一默认值来源）与 oidc.jwt_keys（RSA 2048 位
 // PKCS#8，kid="1"）。密钥与密码不出现在日志与响应。
 package setup
 

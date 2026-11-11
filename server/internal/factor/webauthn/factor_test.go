@@ -439,6 +439,20 @@ func TestRegistrationRoundTrip(t *testing.T) {
 	if status != "" || challenge == "" {
 		t.Fatalf("parse token = (%q, %q), want valid", challenge, status)
 	}
+	// 载荷字段（后端架构 §8.3 末条 / §11.6.7）：biz_purpose=webauthn_enroll、
+	// operation=webauthn_register、subject_kind=uid、subject=会话 uid、
+	// methods 为空、exp 与挑战有效期一致（120s）。
+	payload, err := security.Open[token.ChallengeTokenPayload](codec, security.PurposeWebAuthn, ch.Token)
+	if err != nil {
+		t.Fatalf("open challenge payload: %v", err)
+	}
+	if payload.GetBizPurpose() != "webauthn_enroll" || payload.GetOperation() != "webauthn_register" ||
+		payload.GetSubjectKind() != "uid" || payload.GetSubject() != "42" || len(payload.GetMethods()) != 0 {
+		t.Fatalf("challenge payload fields = %+v", payload)
+	}
+	if payload.GetNonce() != challenge || payload.GetExp() != fixedNow.Add(120*time.Second).Unix() {
+		t.Fatalf("challenge payload nonce/exp = %q / %d", payload.GetNonce(), payload.GetExp())
+	}
 	cred := a.attestation(t, ceremonyFixture{challenge: challenge, origin: testOrigin, rpID: testRPID, counter: 0})
 	res := f.FinishRegistration(ch.Token, cred)
 	if res.Status != "" || res.UID != 42 || res.CredentialID != b64(a.credID) || len(res.PublicKey) == 0 {
@@ -517,23 +531,58 @@ func TestRegistrationTokenAADNotInterchangeableWithLoginToken(t *testing.T) {
 	if _, err := security.Open[token.LoginTokenPayload](codec, security.PurposeLogin, ch.Token); err == nil {
 		t.Fatal("webauthn token must not decrypt under login purpose (AAD隔离)")
 	}
+	// 反向：login_token 也冒充不了注册挑战令牌（AAD purpose 不同）。
+	loginTok, err := codec.Seal(security.PurposeLogin, &token.LoginTokenPayload{
+		Tid: "tid-1", Flow: "login", Uid: 42,
+		Iat: fixedNow.Unix(), Exp: fixedNow.Add(120 * time.Second).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("Seal login token: %v", err)
+	}
+	if _, _, status := parseRegistrationToken(codec, loginTok, fixedNow); status != StatusInvalidRequest {
+		t.Fatalf("login token as registration token status = %q, want invalid_request", status)
+	}
 }
 
+// TestRegistrationTokenRejectsWrongPayloadPurpose 载荷业务字段双重校验
+// （§11.6.7：消费方按 biz_purpose + operation 校验；subject_kind/subject
+// 必须匹配 uid 形态）：AAD purpose 正确但载荷字段不符 → invalid_request。
 func TestRegistrationTokenRejectsWrongPayloadPurpose(t *testing.T) {
 	codec := testCodec(t)
-	payload := &token.LoginTokenPayload{
-		Uid: 42,
-		Ch:  &token.Challenge{Purpose: "login", Nonce: randomChallenge(t)},
-		Iat: fixedNow.Unix(),
-		Exp: fixedNow.Add(120 * time.Second).Unix(),
+	base := func() *token.ChallengeTokenPayload {
+		return &token.ChallengeTokenPayload{
+			BizPurpose:  "webauthn_enroll",
+			SubjectKind: "uid",
+			Subject:     "42",
+			Nonce:       randomChallenge(t),
+			Operation:   "webauthn_register",
+			Iat:         fixedNow.Unix(),
+			Exp:         fixedNow.Add(120 * time.Second).Unix(),
+		}
 	}
-	tok, err := codec.Seal(security.PurposeWebAuthn, payload)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
+	cases := []struct {
+		name string
+		mut  func(*token.ChallengeTokenPayload)
+	}{
+		{"wrong biz_purpose", func(p *token.ChallengeTokenPayload) { p.BizPurpose = "mfa" }},
+		{"wrong operation", func(p *token.ChallengeTokenPayload) { p.Operation = "webauthn_login" }},
+		{"wrong subject_kind", func(p *token.ChallengeTokenPayload) { p.SubjectKind = "tid" }},
+		{"subject not uid", func(p *token.ChallengeTokenPayload) { p.Subject = "tid-1" }},
+		{"subject zero", func(p *token.ChallengeTokenPayload) { p.Subject = "0" }},
+		{"empty nonce", func(p *token.ChallengeTokenPayload) { p.Nonce = "" }},
 	}
-	_, _, status := parseRegistrationToken(codec, tok, fixedNow)
-	if status != StatusInvalidRequest {
-		t.Fatalf("status = %q, want invalid_request", status)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := base()
+			tc.mut(p)
+			tok, err := codec.Seal(security.PurposeWebAuthn, p)
+			if err != nil {
+				t.Fatalf("Seal: %v", err)
+			}
+			if _, _, status := parseRegistrationToken(codec, tok, fixedNow); status != StatusInvalidRequest {
+				t.Fatalf("status = %q, want invalid_request", status)
+			}
+		})
 	}
 }
 

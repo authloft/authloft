@@ -4,8 +4,9 @@
 package security
 
 // AAD purpose 常量（后端架构 §11.6.1，取值封闭为本文件八个常量）。
-// purpose 是存储加密的 AAD 前缀，与载荷内的 challenge.purpose
-//（login/register/reset/mfa 业务枚举）是两套概念、互不约束。
+// purpose 是存储加密的 AAD 前缀，只标记「哪个场景 / 哪把密钥」、不进载荷；
+// 载荷内业务用途字段统一叫 biz_purpose（挑战 / 验证令牌取值见 §11.6.7，
+// 登录过程态内取 login/register/reset/mfa），两套命名空间各自封闭、互不约束。
 // 跨 purpose 解令牌由 token.go 的 AAD 构造天然拒绝（token_test.go 验证）。
 const (
 	// PurposeSession session_token。
@@ -14,9 +15,9 @@ const (
 	PurposeLogin = "login"
 	// PurposeTicket ticket 与 al:ticket 存储值加密（§11.6.5）。
 	PurposeTicket = "ticket"
-	// PurposeBind 账号域绑定一次性 token（接口文档 §3.4）。
-	PurposeBind = "bind"
-	// PurposeWebAuthn 通行密钥注册一次性 token（接口文档 §3.6）。
+	// PurposeVerification 敏感操作二次验证的挑战与断言令牌（§11.6.7）。
+	PurposeVerification = "verification"
+	// PurposeWebAuthn 通行密钥挑战令牌（§11.6.7、接口文档 §3.6）。
 	PurposeWebAuthn = "webauthn"
 	// PurposeCookie al_login_state（接口文档 §2.7.2）。
 	PurposeCookie = "cookie"
@@ -29,14 +30,14 @@ const (
 // purposes 封闭集合：Seal/Open 均拒绝表外值，防调用方自造 purpose
 // 绕过隔离。新增取值需先改文档（§11.6.1）再改此表。
 var purposes = map[string]bool{
-	PurposeSession:     true,
-	PurposeLogin:       true,
-	PurposeTicket:      true,
-	PurposeBind:        true,
-	PurposeWebAuthn:    true,
-	PurposeCookie:      true,
-	PurposeSyncPayload: true,
-	PurposeOidcCode:    true,
+	PurposeSession:      true,
+	PurposeLogin:        true,
+	PurposeTicket:       true,
+	PurposeVerification: true,
+	PurposeWebAuthn:     true,
+	PurposeCookie:       true,
+	PurposeSyncPayload:  true,
+	PurposeOidcCode:     true,
 }
 
 // validPurpose purpose 是否属于 §11.6.1 封闭集合。

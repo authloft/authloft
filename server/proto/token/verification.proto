@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6）：由服务端签发、
+// 服务端解析，前端只当不透明串透传，用裸包名 token（docs/CODE_GUIDE.md §3.6
+// 存储模型口径）。生成到 gen/go/token/，Go 包名 token；整型一律 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// VerificationTokenPayload 是敏感操作二次验证通过后的断言载荷
+// （docs/后端架构.md §11.6.7）。复用 §11.6.1 封装与加解密实现；AAD purpose
+// 只取 verification、密钥只走 sign_key.verification，与 sign_key.login 互不解。
+// AAD purpose 不进载荷，载荷内业务用途统一叫 biz_purpose（封闭集合见
+// ChallengeTokenPayload），两套取值各自封闭、解出后分别断言。
+message VerificationTokenPayload {
+  // 业务用途，封闭集合同 ChallengeTokenPayload.biz_purpose。
+  string biz_purpose = 1;
+  // 主体类型：tid | uid。
+  string subject_kind = 2;
+  // 主体标识，对应 tid 或 uid。
+  string subject = 3;
+  // 与对应 ChallengeTokenPayload 的 nonce 一致。
+  string nonce = 4;
+  // 认证方法，服务端写入，禁止客户端传入。
+  repeated string amr = 5;
+  // 更细动作；消费方按 biz_purpose + operation 双重校验。
+  string operation = 6;
+  // 签发时间，Unix 秒。
+  int64 iat = 7;
+  // 过期时间，Unix 秒；断言有效期 120s，覆盖一次敏感操作的完成窗口。
+  int64 exp = 8;
+}
