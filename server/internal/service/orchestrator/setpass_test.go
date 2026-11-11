@@ -1,5 +1,5 @@
 // setpass_test.go 覆盖：直通注册（captcha 必经 +
-// captcha_invalid 拦截）、otp 注册全链、signup_disabled 四开关、
+// StatusInvalid 拦截）、otp 注册全链、signup_disabled 四开关、
 // username_taken / target_taken / password_weak / 用户名规则、建号同事务
 // credential 失败回滚、reset 全链（含 pwdep 递增与审计断言）、
 // reset_disabled、未验后直达拒绝、login 流 set_password 拒绝、无 password
@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
+	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -249,7 +250,9 @@ const (
 )
 
 // TestRegisterDirectCaptchaRequiredAndInvalid 直通入口 captcha 必经
-// （§2.3 行 450-451）：缺失 → captcha_required；渠道不符 → captcha_invalid。
+// （§2.3 行 450-451）：缺失 → StatusRequired；渠道不符 → StatusInvalid。
+// 两码仅作 ErrorInfo.code，经失败写点回传领域失败，引擎信封回落 failed，
+// 不再产出流程态 status（§1.5 / §1.6）。
 func TestRegisterDirectCaptchaRequiredAndInvalid(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	deps := newTestDeps(t, at)
@@ -258,25 +261,36 @@ func TestRegisterDirectCaptchaRequiredAndInvalid(t *testing.T) {
 	e := deps.engine(testState(t, at))
 	e.setpass = fk.deps(deps.settings)
 
-	got := e.Submit(context.Background(), "register", Request{
+	var failures []*captcha.Failure
+	ctx := WithCaptchaFailureSink(context.Background(), func(f *captcha.Failure) {
+		failures = append(failures, f)
+	})
+	got := e.Submit(ctx, "register", Request{
 		Method: "password", Step: "set_password",
 		Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword},
 	})
-	if got.Status != "captcha_required" {
-		t.Fatalf("status = %q, want captcha_required", got.Status)
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed（captcha 失败不套流程态）", got.Status)
 	}
-	if got.Captcha == nil || got.Captcha.ProviderKey != "builtin_image" {
-		t.Fatalf("captcha = %+v, want builtin_image config", got.Captcha)
+	if len(failures) != 1 || failures[0].Code != captcha.StatusRequired {
+		t.Fatalf("failures = %+v, want 一枚 StatusRequired", failures)
+	}
+	if failures[0].Config.ProviderKey != "builtin_image" {
+		t.Fatalf("failure.config = %+v, want builtin_image 同源配置", failures[0].Config)
 	}
 
+	failures = nil
 	bogus := captchaSubmission()
 	bogus.ProviderKey = "other"
-	got = e.Submit(context.Background(), "register", Request{
+	got = e.Submit(ctx, "register", Request{
 		Method: "password", Step: "set_password", Captcha: bogus,
 		Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword},
 	})
-	if got.Status != "captcha_invalid" {
-		t.Fatalf("status = %q, want captcha_invalid", got.Status)
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if len(failures) != 1 || failures[0].Code != captcha.StatusInvalid {
+		t.Fatalf("failures = %+v, want 一枚 StatusInvalid", failures)
 	}
 	if len(fk.users.created) != 0 {
 		t.Fatalf("created = %d, want 0（captcha 拦截不建号）", len(fk.users.created))

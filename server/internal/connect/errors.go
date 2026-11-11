@@ -48,3 +48,33 @@ func ErrorInfoOf(err error) (*commonv1.ErrorInfo, bool) {
 	}
 	return nil, false
 }
+
+// WithCaptchaConfig 把当前生效的 captcha 配置作为 detail 与 ErrorInfo 并列挂到
+// 错误体（§1.5 行 228：captcha 失败时 details 允许并列一个 CaptchaConfig 元素）。
+func WithCaptchaConfig(err *connect.Error, cfg *commonv1.CaptchaConfig) *connect.Error {
+	if cfg != nil {
+		if detail, derr := connect.NewErrorDetail(cfg); derr == nil {
+			err.AddDetail(detail)
+		}
+	}
+	return err
+}
+
+// CaptchaConfigOf 从 err 中读出第一枚 CaptchaConfig detail（测试与排障用）；
+// err 非 connect.Error 或无该类 detail 时返回 false。
+func CaptchaConfigOf(err error) (*commonv1.CaptchaConfig, bool) {
+	var coded *connect.Error
+	if !errors.As(err, &coded) {
+		return nil, false
+	}
+	for _, detail := range coded.Details() {
+		msg, verr := detail.Value()
+		if verr != nil {
+			continue
+		}
+		if cfg, ok := msg.(*commonv1.CaptchaConfig); ok {
+			return cfg, true
+		}
+	}
+	return nil, false
+}

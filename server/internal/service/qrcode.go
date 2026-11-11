@@ -87,6 +87,19 @@ var (
 	ErrQrcodeCaptchaInvalid = errors.New("qrcode: captcha invalid")
 )
 
+// QrcodeCaptchaFailure 把 Gate.Evaluate 判定的当前生效 captcha 配置随可判别
+// 哨兵错误透出，供上层经 connect.WithCaptchaConfig 并列进错误体 details
+// （§2.5 行 631 / §9.1 行 1128 同源）。Config 直接取自该次判定的
+// Outcome.Config——gate 这一处单一出口，本层不重新读取配置、不另造第二份；
+// cause 保留原哨兵，errors.Is 仍可判别。
+type QrcodeCaptchaFailure struct {
+	Config captcha.Config
+	cause  error
+}
+
+func (f *QrcodeCaptchaFailure) Error() string { return f.cause.Error() }
+func (f *QrcodeCaptchaFailure) Unwrap() error { return f.cause }
+
 // TicketStore al:ticket:{ticket_id} 读写窄接口（§20）：*cache.TicketStore
 // 天然满足；测试传 fake。
 type TicketStore interface {
@@ -196,9 +209,9 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	}
 	switch out.Status {
 	case captcha.StatusRequired:
-		return nil, ErrQrcodeCaptchaRequired
+		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaRequired, Config: out.Config}
 	case captcha.StatusInvalid:
-		return nil, ErrQrcodeCaptchaInvalid
+		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaInvalid, Config: out.Config}
 	}
 
 	// scene（§2.8 行 716）：login 默认｜bind 需 al_session，否则 401。

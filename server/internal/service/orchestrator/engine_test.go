@@ -373,19 +373,38 @@ func TestEngineCaptchaRequiredAndInvalid(t *testing.T) {
 	deps.registry.factors[factor.FactorOTPEmail] = otpEmailFactor()
 	e := deps.engine(testState(t, time.Unix(1_700_000_000, 0)))
 
-	got := e.Submit(context.Background(), "login", Request{Method: "otp_email", Step: "challenge"})
-	if got.Status != captcha.StatusRequired {
-		t.Fatalf("status = %q, want %q", got.Status, captcha.StatusRequired)
+	// captcha 失败不再产出流程态 status（§1.6）：引擎改为经 ctx 写点回传
+	// 领域失败，信封回落通用 failed，由调用方按错误码与同源配置构造
+	// 非 200 的 Connect 错误体（§1.5）。
+	var failures []*captcha.Failure
+	ctx := WithCaptchaFailureSink(context.Background(), func(f *captcha.Failure) {
+		failures = append(failures, f)
+	})
+
+	got := e.Submit(ctx, "login", Request{Method: "otp_email", Step: "challenge"})
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want %q（captcha 失败不套流程态）", got.Status, StatusFailed)
 	}
-	if got.Captcha == nil || got.Captcha.ProviderKey != "builtin_image" || got.Captcha.Type != "image" {
-		t.Fatalf("captcha = %+v", got.Captcha)
+	if len(failures) != 1 {
+		t.Fatalf("captcha 失败写点回调 = %d, want 1", len(failures))
+	}
+	if failures[0].Code != captcha.StatusRequired {
+		t.Fatalf("failure.code = %q, want %q", failures[0].Code, captcha.StatusRequired)
+	}
+	cfg := failures[0].Config
+	if cfg.ProviderKey != "builtin_image" || cfg.Type != "image" {
+		t.Fatalf("failure.config = %+v, want 同源 builtin_image/image", cfg)
 	}
 
+	failures = nil
 	bogus := captchaSubmission()
 	bogus.ProviderKey = "other"
-	got = e.Submit(context.Background(), "login", Request{Method: "otp_email", Step: "challenge", Captcha: bogus})
-	if got.Status != captcha.StatusInvalid {
-		t.Fatalf("status = %q, want %q", got.Status, captcha.StatusInvalid)
+	got = e.Submit(ctx, "login", Request{Method: "otp_email", Step: "challenge", Captcha: bogus})
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want %q", got.Status, StatusFailed)
+	}
+	if len(failures) != 1 || failures[0].Code != captcha.StatusInvalid {
+		t.Fatalf("failures = %+v, want 一枚 StatusInvalid", failures)
 	}
 }
 
@@ -395,11 +414,18 @@ func TestEnginePasswordCaptchaAfterFailures(t *testing.T) {
 	deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
 	e := deps.engine(testState(t, time.Unix(1_700_000_000, 0)))
 
-	got := e.Submit(context.Background(), "login", Request{
+	var failures []*captcha.Failure
+	ctx := WithCaptchaFailureSink(context.Background(), func(f *captcha.Failure) {
+		failures = append(failures, f)
+	})
+	got := e.Submit(ctx, "login", Request{
 		Method: "password", Step: "verify", Payload: &factor.Payload{Username: "u", Password: "p"},
 	})
-	if got.Status != captcha.StatusRequired {
-		t.Fatalf("status = %q, want captcha_required after 3 failures", got.Status)
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed after 3 failures（captcha 失败不套流程态）", got.Status)
+	}
+	if len(failures) != 1 || failures[0].Code != captcha.StatusRequired {
+		t.Fatalf("failures = %+v, want 一枚 StatusRequired", failures)
 	}
 }
 
@@ -992,9 +1018,9 @@ func TestEngineSessionInBodySuppressesSink(t *testing.T) {
 	}
 }
 
-// TestEngineSinkSilentOnNonSuccess 失败态 / 中间态写点零回调：
-// failed / next / mfa_required / captcha_required 均不触发——零 Set-Cookie、
-// 零 session_token 由引擎侧保证。
+// TestEngineSinkSilentOnNonSuccess 失败态 / 中间态 session_token 写点零
+// 回调：failed / next / mfa_required 与 captcha 失败均不触发——零 Set-Cookie、
+// 零 session_token 由引擎侧保证；captcha 失败另经 captcha 失败写点回传。
 func TestEngineSinkSilentOnNonSuccess(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 
@@ -1046,24 +1072,31 @@ func TestEngineSinkSilentOnNonSuccess(t *testing.T) {
 		}
 	})
 
-	// captcha_required 属中间态（失败 / 中间态零
-	// Set-Cookie、零 session_token；docs/接口文档.md §1.6、§2.5）：触发路径
-	// 同 TestEnginePasswordCaptchaAfterFailures——password verify 且当日已
-	// 3 次失败、未随请求提交 captcha → gate 拦在因子执行前，写点零回调。
-	t.Run("captcha_required", func(t *testing.T) {
+	// captcha 失败同样零 Set-Cookie、零 session_token（docs/接口文档.md
+	// §1.6、§2.5）：触发路径同 TestEnginePasswordCaptchaAfterFailures——
+	// password verify 且当日已 3 次失败、未随请求提交 captcha → gate 拦在
+	// 因子执行前；信封回落 failed，改由 captcha 失败写点回传领域失败。
+	t.Run("captcha failure", func(t *testing.T) {
 		deps := newTestDeps(t, at)
 		deps.failures = fakeFailures{n: 3}
 		deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
 		e := deps.engine(testState(t, at))
-		resp := e.Submit(sinkCtx(t), "login", Request{
+		var failures []*captcha.Failure
+		ctx := WithCaptchaFailureSink(sinkCtx(t), func(f *captcha.Failure) {
+			failures = append(failures, f)
+		})
+		resp := e.Submit(ctx, "login", Request{
 			Method: "password", Step: "verify",
 			Payload: &factor.Payload{Username: "u", Password: "p"},
 		})
-		if resp.Status != captcha.StatusRequired {
-			t.Fatalf("status = %q, want captcha_required", resp.Status)
+		if resp.Status != StatusFailed {
+			t.Fatalf("status = %q, want failed（captcha 失败不套流程态）", resp.Status)
+		}
+		if len(failures) != 1 || failures[0].Code != captcha.StatusRequired {
+			t.Fatalf("failures = %+v, want 一枚 StatusRequired", failures)
 		}
 		if resp.SessionToken != "" {
-			t.Fatalf("captcha_required 信封不得携带 session_token, got %q", resp.SessionToken)
+			t.Fatalf("captcha 失败信封不得携带 session_token, got %q", resp.SessionToken)
 		}
 	})
 }

@@ -12,7 +12,8 @@ import (
 	"authloft/internal/settings"
 )
 
-// 登录流程域的人机校验错误状态（docs/接口文档.md §1.6）。
+// 人机校验业务细分码（docs/接口文档.md §1.6）：仅作 ErrorInfo.code，
+// 不作登录流程态 status。此处是全仓唯一字面量定义，其余一律引用常量。
 const (
 	StatusRequired = "captcha_required"
 	StatusInvalid  = "captcha_invalid"
@@ -26,7 +27,7 @@ const (
 
 const defaultPwdFailCapture = 3
 
-// ErrInvalid 由 Verifier 返回，表示校验不通过或凭据已使用（→ captcha_invalid）。
+// ErrInvalid 由 Verifier 返回，表示校验不通过或凭据已使用（→ StatusInvalid）。
 // 其它错误一律视为基础设施错误，由调用方映射为 failed。
 var ErrInvalid = errors.New("captcha: invalid or used")
 
@@ -81,11 +82,28 @@ type Request struct {
 	Submission     *Submission
 }
 
-// Outcome 是判定结果：Status 为空 = 放行；否则为 captcha_required/captcha_invalid。
+// Outcome 是判定结果：Status 为空 = 放行；否则为 StatusRequired / StatusInvalid。
 type Outcome struct {
 	Required bool
 	Config   Config
 	Status   string
+}
+
+// Failure 是一次人机校验失败的领域错误：Code 仅作 ErrorInfo.code，Config 为
+// 与判定同源的当前生效配置（§1.5 / §9.1），不套登录流程信封、不作流程态。
+type Failure struct {
+	Code   string
+	Config Config
+}
+
+func (f *Failure) Error() string { return "captcha: " + f.Code }
+
+// FailureFrom 把判定结果转成领域错误；放行（Status 为空）时返回 nil。
+func FailureFrom(out Outcome) *Failure {
+	if out.Status == "" {
+		return nil
+	}
+	return &Failure{Code: out.Status, Config: out.Config}
 }
 
 // Gate 唯一拦截点。

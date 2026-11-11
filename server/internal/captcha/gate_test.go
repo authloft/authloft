@@ -71,7 +71,7 @@ func TestGateChallengeRequiresCaptcha(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	if !out.Required || out.Status != StatusRequired {
-		t.Fatalf("outcome = %+v, want captcha_required", out)
+		t.Fatalf("outcome = %+v, want StatusRequired", out)
 	}
 	if out.Config.ProviderKey != "turnstile-1" || out.Config.SiteKey != "site-1" {
 		t.Fatalf("config = %+v", out.Config)
@@ -107,7 +107,7 @@ func TestGateVerifyInvalid(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	if out.Status != StatusInvalid {
-		t.Fatalf("status = %q, want captcha_invalid", out.Status)
+		t.Fatalf("status = %q, want StatusInvalid", out.Status)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestGateProviderKeyMismatch(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 	if out.Status != StatusInvalid {
-		t.Fatalf("status = %q, want captcha_invalid", out.Status)
+		t.Fatalf("status = %q, want StatusInvalid", out.Status)
 	}
 	if len(v.calls) != 0 {
 		t.Fatalf("verifier should not be called, calls=%v", v.calls)
@@ -171,5 +171,32 @@ func TestGatePasswordDefaultThreshold(t *testing.T) {
 	}
 	if out, _ := g.Evaluate(context.Background(), Request{Password: true, FailedAttempts: 3}); !out.Required {
 		t.Fatal("default threshold 3 must trigger at 3")
+	}
+}
+
+// TestFailureFrom 判定结果转领域失败：放行（Status 为空）返回 nil；失败码与
+// 配置与判定同源，供错误体 details 并列下发（§1.5 / §9.1）。
+func TestFailureFrom(t *testing.T) {
+	if got := FailureFrom(Outcome{}); got != nil {
+		t.Fatalf("放行应返回 nil, got %+v", got)
+	}
+	if got := FailureFrom(Outcome{Required: true}); got != nil {
+		t.Fatalf("已提交合法凭据且判定放行应返回 nil, got %+v", got)
+	}
+	cfg := Config{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}
+	for _, status := range []string{StatusRequired, StatusInvalid} {
+		got := FailureFrom(Outcome{Required: true, Config: cfg, Status: status})
+		if got == nil {
+			t.Fatalf("status=%q 应返回领域失败", status)
+		}
+		if got.Code != status {
+			t.Fatalf("failure.code = %q, want %q", got.Code, status)
+		}
+		if got.Config != cfg {
+			t.Fatalf("failure.config = %+v, want 同源 %+v", got.Config, cfg)
+		}
+		if got.Error() == "" {
+			t.Fatal("Failure 应实现 error 接口且消息非空")
+		}
 	}
 }

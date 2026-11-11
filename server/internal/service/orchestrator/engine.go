@@ -10,7 +10,6 @@ import (
 	"errors"
 	"strings"
 
-	commonv1 "authloft/gen/go/api/common/v1"
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
@@ -98,6 +97,22 @@ func SessionTokenSinkFromContext(ctx context.Context) (func(string), bool) {
 	return sink, ok
 }
 
+// captchaFailureSinkKey 是人机校验失败写点的 ctx 注入键（与 session_token
+// 写点同构，私有类型，包外无法伪造同型键）。
+type captchaFailureSinkKey struct{}
+
+// WithCaptchaFailureSink 注入人机校验失败写点：引擎在因子执行前判定失败时
+// 以当前生效配置回调一次，供调用方按错误码与配置构造失败结果；放行时不回调。
+func WithCaptchaFailureSink(ctx context.Context, sink func(*captcha.Failure)) context.Context {
+	return context.WithValue(ctx, captchaFailureSinkKey{}, sink)
+}
+
+// CaptchaFailureSinkFromContext 读取写点；未注入返回 false。
+func CaptchaFailureSinkFromContext(ctx context.Context) (func(*captcha.Failure), bool) {
+	sink, ok := ctx.Value(captchaFailureSinkKey{}).(func(*captcha.Failure))
+	return sink, ok
+}
+
 // EngineDeps 构造引擎所需依赖。
 type EngineDeps struct {
 	State      *State
@@ -165,8 +180,12 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	if err != nil {
 		return failed()
 	}
-	if outcome.Status != "" {
-		return &ssov1.LoginFlowResponse{Status: outcome.Status, Captcha: captchaProto(outcome.Config)}
+	if failure := captcha.FailureFrom(outcome); failure != nil {
+		if sink, ok := CaptchaFailureSinkFromContext(ctx); ok {
+			sink(failure)
+		}
+		// 失败不套登录信封：由调用方按错误码与配置构造失败结果（§1.5）。
+		return failed()
 	}
 
 	fctx := &factor.FactorContext{
@@ -492,10 +511,6 @@ func fieldsProto(in []factor.Field) []*ssov1.Field {
 		})
 	}
 	return out
-}
-
-func captchaProto(c captcha.Config) *commonv1.CaptchaConfig {
-	return &commonv1.CaptchaConfig{ProviderKey: c.ProviderKey, Type: c.Type, SiteKey: c.SiteKey}
 }
 
 func verifyError(res *factor.VerifyResult) *ssov1.SsoError {

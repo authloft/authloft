@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	factorpassword "authloft/internal/factor/password"
 	"authloft/internal/repo/model"
@@ -82,7 +83,7 @@ func expectedUnknownUserRef(identifier, ip string) string {
 
 // TestEnginePasswordCaptchaKeyMatchesFactorWrite 真实链路（核心）：
 // 真实 password.Factor 失败写计数 ×3 → 第 4 次提交引擎读同一键计数 ≥3 →
-// captcha_required。两个变体分别覆盖「用户存在 → {userID}」与「用户不存在
+// 人机校验拦截（失败经写点回传、信封回落 failed）。两个变体分别覆盖「用户存在 → {userID}」与「用户不存在
 // → {ip}|{sha256(identifier)}」两种 user_ref 推导，并断言引擎读取键与因子
 // 写入键逐字一致。
 func TestEnginePasswordCaptchaKeyMatchesFactorWrite(t *testing.T) {
@@ -120,8 +121,8 @@ func TestEnginePasswordCaptchaKeyMatchesFactorWrite(t *testing.T) {
 			deps.registry.factors[factor.FactorPassword] = pw
 			e := deps.engine(testState(t, at))
 
-			submit := func() string {
-				resp := e.Submit(context.Background(), "login", Request{
+			submit := func(ctx context.Context) string {
+				resp := e.Submit(ctx, "login", Request{
 					Method: "password", Step: "verify",
 					Payload: &factor.Payload{Username: tc.identifier, Password: "wrong-password"},
 				})
@@ -131,13 +132,21 @@ func TestEnginePasswordCaptchaKeyMatchesFactorWrite(t *testing.T) {
 			// 3 次错误密码：每次读取计数 0/1/2（未达阈值 3）放行 → 因子
 			// 真实失败写入 1/2/3。凭据不存在 → invalid_credentials。
 			for i := 1; i <= 3; i++ {
-				if got := submit(); got != "invalid_credentials" {
+				if got := submit(context.Background()); got != "invalid_credentials" {
 					t.Fatalf("attempt %d status = %q, want invalid_credentials", i, got)
 				}
 			}
-			// 第 4 次：引擎读到同一键计数 3 → captcha_required（因子执行前拦截）。
-			if got := submit(); got != "captcha_required" {
-				t.Fatalf("attempt 4 status = %q, want captcha_required", got)
+			// 第 4 次：引擎读到同一键计数 3 → captcha 失败经写点回传；信封
+			// 回落 failed，不再产出 captcha_* 流程态 status（§1.5 / §1.6）。
+			var failures []*captcha.Failure
+			ctx := WithCaptchaFailureSink(context.Background(), func(f *captcha.Failure) {
+				failures = append(failures, f)
+			})
+			if got := submit(ctx); got != StatusFailed {
+				t.Fatalf("attempt 4 status = %q, want failed", got)
+			}
+			if len(failures) != 1 || failures[0].Code != captcha.StatusRequired {
+				t.Fatalf("attempt 4 failures = %+v, want 一枚 StatusRequired", failures)
 			}
 
 			// 键口径断言：因子写入键与引擎读取键全部等于期望 user_ref。

@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	commonv1 "authloft/gen/go/api/common/v1"
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/captcha"
@@ -82,25 +83,53 @@ func (h *Handler) withSessionTokenSink(ctx context.Context) context.Context {
 }
 
 // LoginDefault 统一提交端点（接口文档 §2.2 行 415-437）：把请求消息经 dto
-// 转换为引擎入参，直接返回登录流程信封（§1.3）；业务失败也走 HTTP 200 +
-// 信封 status，不经 Connect 错误体。
+// 转换为引擎入参，返回登录流程信封（§1.3）；业务失败走 HTTP 200 + 信封
+// status，人机校验失败按 §1.5 例外走非 200 的 Connect 错误体。
 func (h *Handler) LoginDefault(ctx context.Context, req *connect.Request[ssov1.LoginDefaultRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
-	resp := h.engine.Submit(h.withSessionTokenSink(ctx), loginFlow, dto.LoginDefault(req.Msg))
-	return connect.NewResponse(resp), nil
+	return h.submit(ctx, loginFlow, dto.LoginDefault(req.Msg))
 }
 
 // Register 注册端点（接口文档 §2.3 行 441-455）：与 LoginDefault 同构，
 // 仅 flow=register（引擎内走 challenge → verify → set_password）。
 func (h *Handler) Register(ctx context.Context, req *connect.Request[ssov1.RegisterRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
-	resp := h.engine.Submit(h.withSessionTokenSink(ctx), registerFlow, dto.Register(req.Msg))
-	return connect.NewResponse(resp), nil
+	return h.submit(ctx, registerFlow, dto.Register(req.Msg))
 }
 
 // ResetPassword 重置密码端点（接口文档 §2.4 行 459-471）：与 LoginDefault
 // 同构，仅 flow=reset。
 func (h *Handler) ResetPassword(ctx context.Context, req *connect.Request[ssov1.ResetPasswordRequest]) (*connect.Response[ssov1.LoginFlowResponse], error) {
-	resp := h.engine.Submit(h.withSessionTokenSink(ctx), resetFlow, dto.Reset(req.Msg))
+	return h.submit(ctx, resetFlow, dto.Reset(req.Msg))
+}
+
+// submit 三个登录端点的共用入口：注入人机校验失败写点后交给引擎；命中失败
+// 时不返回信封，改由 encodeCaptchaFailure 编码非 200 的 Connect 错误体（§1.5）。
+func (h *Handler) submit(ctx context.Context, flow string, in orchestrator.Request) (*connect.Response[ssov1.LoginFlowResponse], error) {
+	var failure *captcha.Failure
+	sinkCtx := orchestrator.WithCaptchaFailureSink(ctx, func(f *captcha.Failure) { failure = f })
+	resp := h.engine.Submit(h.withSessionTokenSink(sinkCtx), flow, in)
+	if failure != nil {
+		return nil, encodeCaptchaFailure(failure)
+	}
 	return connect.NewResponse(resp), nil
+}
+
+// encodeCaptchaFailure 把领域失败编码为 Connect 错误体：标准码
+// invalid_argument，ErrorInfo.code 取失败码，details 并列当前生效的
+// CaptchaConfig（§1.5 / §2.5）。
+func encodeCaptchaFailure(f *captcha.Failure) error {
+	message := "captcha required"
+	if f.Code == captcha.StatusInvalid {
+		message = "captcha invalid or used"
+	}
+	coded := internalconnect.WithErrorInfo(
+		connect.NewError(connect.CodeInvalidArgument, errors.New(message)),
+		internalconnect.NewErrorInfo("sso", f.Code, message),
+	)
+	return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
+		ProviderKey: f.Config.ProviderKey,
+		Type:        f.Config.Type,
+		SiteKey:     f.Config.SiteKey,
+	})
 }
 
 // —— 三方登录通道（接口文档 §2.7.2 / §2.7.4）——
@@ -271,21 +300,38 @@ func (h *Handler) ConfirmLoginTicket(ctx context.Context, req *connect.Request[s
 	return connect.NewResponse(st), nil
 }
 
+// withQrcodeCaptchaConfig 把 service 透出的、与 gate 判定同源的当前生效配置
+// 并列进 captcha 失败错误体 details（与登录/注册/重置域 encodeCaptchaFailure
+// 同一结构：ErrorInfo + CaptchaConfig）。配置仅随哨兵错误载荷透传，本层不
+// 重新读取、不另造第二配置源（§9.1 同源）。
+func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
+	var f *service.QrcodeCaptchaFailure
+	if errors.As(err, &f) {
+		return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
+			ProviderKey: f.Config.ProviderKey,
+			Type:        f.Config.Type,
+			SiteKey:     f.Config.SiteKey,
+		})
+	}
+	return coded
+}
+
 // mapQrcodeError 扫码域哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行
-// 197-210；code 取 §1.6 封闭集——captcha_required / captcha_invalid 均为
-// 成员）。
+// 197-210；code 取 §1.6 封闭集，人机校验两码一律引用 captcha 包常量）。
 func mapQrcodeError(err error) error {
 	switch {
 	case errors.Is(err, service.ErrQrcodeUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err)
 	case errors.Is(err, service.ErrQrcodeCaptchaRequired):
-		return internalconnect.WithErrorInfo(
+		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("sso", "captcha_required", "captcha required for qrcode"))
+			internalconnect.NewErrorInfo("sso", captcha.StatusRequired, "captcha required for qrcode"))
+		return withQrcodeCaptchaConfig(err, coded)
 	case errors.Is(err, service.ErrQrcodeCaptchaInvalid):
-		return internalconnect.WithErrorInfo(
+		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("sso", "captcha_invalid", "captcha invalid or used"))
+			internalconnect.NewErrorInfo("sso", captcha.StatusInvalid, "captcha invalid or used"))
+		return withQrcodeCaptchaConfig(err, coded)
 	case errors.Is(err, service.ErrQrcodeInvalidRequest):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
