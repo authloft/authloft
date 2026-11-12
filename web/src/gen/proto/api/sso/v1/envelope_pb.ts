@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/envelope.proto.
  */
 export const file_api_sso_v1_envelope: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvc3NvL3YxL2VudmVsb3BlLnByb3RvEgphcGkuc3NvLnYxIuEDChFMb2dpbkZsb3dSZXNwb25zZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJwoJbmV4dF9zdGVwGAMgASgLMhQuYXBpLnNzby52MS5OZXh0U3RlcBIcCgNtZmEYBCABKAsyDy5hcGkuc3NvLnYxLk1mYRIkCgdiaW5kaW5nGAUgASgLMhMuYXBpLnNzby52MS5CaW5kaW5nEiMKBWVycm9yGAYgASgLMhQuYXBpLnNzby52MS5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAcgASgJEhUKDXNlc3Npb25fdG9rZW4YCCABKAkSFwoPc3luY19jb29raWVfdXJsGAkgASgJEhMKC3JlZGlyZWN0X3RvGAogASgJEg8KB3VzZXJfaWQYCyABKAMSKAoGdGlja2V0GAwgASgLMhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSLAoFbG9naW4YDSABKAsyHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEiQKBGJpbmQYDiABKAsyFi5hcGkuc3NvLnYxLkJpbmRSZXN1bHQSLQoHY2FwdGNoYRgPIAEoCzIcLmFwaS5jb21tb24udjEuQ2FwdGNoYUNvbmZpZyK3AQoITmV4dFN0ZXASDAoEa2luZBgBIAEoCRIOCgZtZXRob2QYAiABKAkSEAoIZW5kcG9pbnQYAyABKAkSIQoGZmllbGRzGAQgAygLMhEuYXBpLnNzby52MS5GaWVsZBITCgtyZXRyeV9hZnRlchgFIAEoAxISCgpleHBpcmVzX2luGAYgASgDEi8KDmNoYWxsZW5nZV9kYXRhGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJqCgVGaWVsZBIMCgRuYW1lGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBHR5cGUYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgSDgoGbGVuZ3RoGAUgASgDEhQKDG1heF9hdHRlbXB0cxgGIAEoAyJBCgNNZmESEgoKZXhwaXJlc19pbhgBIAEoAxImCgdtZXRob2RzGAIgAygLMhUuYXBpLnNzby52MS5NZmFNZXRob2QinwEKCU1mYU1ldGhvZBIOCgZtZXRob2QYASABKAkSDQoFc3RlcHMYAiADKAkSIQoGZmllbGRzGAMgAygLMhEuYXBpLnNzby52MS5GaWVsZBIVCg1tYXNrZWRfdGFyZ2V0GAQgASgJEisKEGNoYWxsZW5nZV9maWVsZHMYBSADKAsyES5hcGkuc3NvLnYxLkZpZWxkEgwKBGhpbnQYBiABKAkicQoHQmluZGluZxIUCgxwcm92aWRlcl9rZXkYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEhQKDGFsbG93X3NpZ251cBgDIAEoCBIQCghuaWNrbmFtZRgEIAEoCRISCgphdmF0YXJfdXJsGAUgASgJIoQBCghTc29FcnJvchIUCgdtZXNzYWdlGAEgASgJSACIAQESGAoLcmV0cnlfYWZ0ZXIYAiABKANIAYgBARIaCg1hdHRlbXB0c19sZWZ0GAMgASgDSAKIAQFCCgoIX21lc3NhZ2VCDgoMX3JldHJ5X2FmdGVyQhAKDl9hdHRlbXB0c19sZWZ0IjEKDFRpY2tldFN0YXR1cxIOCgZzdGF0dXMYASABKAkSEQoJdGlja2V0X2lkGAIgASgJIkQKCkJpbmRSZXN1bHQSCgoCb2sYASABKAgSFAoMcHJvdmlkZXJfa2V5GAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_google_protobuf_struct, file_api_common_v1_captcha]);
+  fileDesc("ChlhcGkvc3NvL3YxL2VudmVsb3BlLnByb3RvEgphcGkuc3NvLnYxIskDChFMb2dpbkZsb3dSZXNwb25zZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJwoJbmV4dF9zdGVwGAMgASgLMhQuYXBpLnNzby52MS5OZXh0U3RlcBIkCgdiaW5kaW5nGAUgASgLMhMuYXBpLnNzby52MS5CaW5kaW5nEiMKBWVycm9yGAYgASgLMhQuYXBpLnNzby52MS5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAcgASgJEhUKDXNlc3Npb25fdG9rZW4YCCABKAkSFwoPc3luY19jb29raWVfdXJsGAkgASgJEhMKC3JlZGlyZWN0X3RvGAogASgJEg8KB3VzZXJfaWQYCyABKAMSKAoGdGlja2V0GAwgASgLMhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSLAoFbG9naW4YDSABKAsyHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEiQKBGJpbmQYDiABKAsyFi5hcGkuc3NvLnYxLkJpbmRSZXN1bHQSLQoHY2FwdGNoYRgPIAEoCzIcLmFwaS5jb21tb24udjEuQ2FwdGNoYUNvbmZpZ0oECAQQBSK3AQoITmV4dFN0ZXASDAoEa2luZBgBIAEoCRIOCgZtZXRob2QYAiABKAkSEAoIZW5kcG9pbnQYAyABKAkSIQoGZmllbGRzGAQgAygLMhEuYXBpLnNzby52MS5GaWVsZBITCgtyZXRyeV9hZnRlchgFIAEoAxISCgpleHBpcmVzX2luGAYgASgDEi8KDmNoYWxsZW5nZV9kYXRhGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJqCgVGaWVsZBIMCgRuYW1lGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBHR5cGUYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgSDgoGbGVuZ3RoGAUgASgDEhQKDG1heF9hdHRlbXB0cxgGIAEoAyJxCgdCaW5kaW5nEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSFAoMYWxsb3dfc2lnbnVwGAMgASgIEhAKCG5pY2tuYW1lGAQgASgJEhIKCmF2YXRhcl91cmwYBSABKAkihAEKCFNzb0Vycm9yEhQKB21lc3NhZ2UYASABKAlIAIgBARIYCgtyZXRyeV9hZnRlchgCIAEoA0gBiAEBEhoKDWF0dGVtcHRzX2xlZnQYAyABKANIAogBAUIKCghfbWVzc2FnZUIOCgxfcmV0cnlfYWZ0ZXJCEAoOX2F0dGVtcHRzX2xlZnQiMQoMVGlja2V0U3RhdHVzEg4KBnN0YXR1cxgBIAEoCRIRCgl0aWNrZXRfaWQYAiABKAkiRAoKQmluZFJlc3VsdBIKCgJvaxgBIAEoCBIUCgxwcm92aWRlcl9rZXkYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_common_v1_captcha]);
 
 /**
  * LoginFlowResponse 是登录流程响应（docs/接口文档.md §1.3，行 102-155）：
@@ -49,13 +49,6 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * @generated from field: api.sso.v1.NextStep next_step = 3;
    */
   nextStep?: NextStep | undefined;
-
-  /**
-   * status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
-   *
-   * @generated from field: api.sso.v1.Mfa mfa = 4;
-   */
-  mfa?: Mfa | undefined;
 
   /**
    * status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
@@ -274,90 +267,6 @@ export const FieldSchema: GenMessage<Field> = /*@__PURE__*/
   messageDesc(file_api_sso_v1_envelope, 2);
 
 /**
- * Mfa 是 status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
- *
- * @generated from message api.sso.v1.Mfa
- */
-export type Mfa = Message<"api.sso.v1.Mfa"> & {
-  /**
-   * 本次 MFA 挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 120、§1.12）。
-   *
-   * @generated from field: int64 expires_in = 1;
-   */
-  expiresIn: bigint;
-
-  /**
-   * 可选二次因子列表（§1.3 行 121）。
-   *
-   * @generated from field: repeated api.sso.v1.MfaMethod methods = 2;
-   */
-  methods: MfaMethod[];
-};
-
-/**
- * Describes the message api.sso.v1.Mfa.
- * Use `create(MfaSchema)` to create a new message.
- */
-export const MfaSchema: GenMessage<Mfa> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 3);
-
-/**
- * MfaMethod 是单个可选的二次因子（§1.3 行 122-127；步骤序列来源见 §1.10 行 298-316）。
- *
- * @generated from message api.sso.v1.MfaMethod
- */
-export type MfaMethod = Message<"api.sso.v1.MfaMethod"> & {
-  /**
-   * 认证方式，步骤序列见 §1.10 行 298-316。
-   *
-   * @generated from field: string method = 1;
-   */
-  method: string;
-
-  /**
-   * 该方式的渲染步骤序列，取值是 §1.4 行 157-179 的 kind 封闭集合（§1.10 行 298）。
-   *
-   * @generated from field: repeated string steps = 2;
-   */
-  steps: string[];
-
-  /**
-   * form 步骤需要渲染的字段（§1.3 行 122、126）。
-   *
-   * @generated from field: repeated api.sso.v1.Field fields = 3;
-   */
-  fields: Field[];
-
-  /**
-   * 已掩码的目标（手机号 / 邮箱）（§1.3 行 123-125）。
-   *
-   * @generated from field: string masked_target = 4;
-   */
-  maskedTarget: string;
-
-  /**
-   * challenge 步骤需要用户填写的字段（§1.3 行 123-125）。
-   *
-   * @generated from field: repeated api.sso.v1.Field challenge_fields = 5;
-   */
-  challengeFields: Field[];
-
-  /**
-   * 该方式的提示文案（§1.3 行 125）。
-   *
-   * @generated from field: string hint = 6;
-   */
-  hint: string;
-};
-
-/**
- * Describes the message api.sso.v1.MfaMethod.
- * Use `create(MfaMethodSchema)` to create a new message.
- */
-export const MfaMethodSchema: GenMessage<MfaMethod> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 4);
-
-/**
  * Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。
  *
  * @generated from message api.sso.v1.Binding
@@ -404,7 +313,7 @@ export type Binding = Message<"api.sso.v1.Binding"> & {
  * Use `create(BindingSchema)` to create a new message.
  */
 export const BindingSchema: GenMessage<Binding> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 5);
+  messageDesc(file_api_sso_v1_envelope, 3);
 
 /**
  * SsoError 是登录流程响应内层的失败展示信息（§1.3 行 133、字段说明行 147-151）；
@@ -442,7 +351,7 @@ export type SsoError = Message<"api.sso.v1.SsoError"> & {
  * Use `create(SsoErrorSchema)` to create a new message.
  */
 export const SsoErrorSchema: GenMessage<SsoError> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 6);
+  messageDesc(file_api_sso_v1_envelope, 4);
 
 /**
  * TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
@@ -473,7 +382,7 @@ export type TicketStatus = Message<"api.sso.v1.TicketStatus"> & {
  * Use `create(TicketStatusSchema)` to create a new message.
  */
 export const TicketStatusSchema: GenMessage<TicketStatus> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 7);
+  messageDesc(file_api_sso_v1_envelope, 5);
 
 /**
  * BindResult 是扫码绑定完成应答（§1.3 行 141、154；§3.7.1 B）。
@@ -508,5 +417,5 @@ export type BindResult = Message<"api.sso.v1.BindResult"> & {
  * Use `create(BindResultSchema)` to create a new message.
  */
 export const BindResultSchema: GenMessage<BindResult> = /*@__PURE__*/
-  messageDesc(file_api_sso_v1_envelope, 8);
+  messageDesc(file_api_sso_v1_envelope, 6);
 

@@ -14,6 +14,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -23,7 +24,6 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
-	"authloft/internal/factor"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -94,9 +94,18 @@ type tpUsers struct {
 	byID    map[int64]*model.User
 	byEmail map[string]*model.User
 	byPhone map[string]*model.User
+	// failsAt > 0 时，FindByID 从第 failsAt 次调用起返回 err（模拟依赖在
+	// 流程中途不可用）；finds 为累计调用次数。
+	failsAt int
+	finds   int
+	err     error
 }
 
 func (u *tpUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
+	u.finds++
+	if u.err != nil && u.failsAt > 0 && u.finds >= u.failsAt {
+		return nil, u.err
+	}
 	if m, ok := u.byID[id]; ok {
 		return m, nil
 	}
@@ -117,24 +126,17 @@ func (u *tpUsers) FindByPhone(_ context.Context, phone string) (*model.User, err
 	return nil, gorm.ErrRecordNotFound
 }
 
-// tpCreds orchestrator.MFACredentialReader 的 fake：按 kind 返回 totp 行。
+// tpCreds 用户凭据读取 fake：按 kind 返回预置行，未命中按 repo 口径返回
+// gorm.ErrRecordNotFound。
 type tpCreds struct {
-	totp     bool
-	webauthn bool
+	byKind map[string]*model.UserCredential
 }
 
 func (c *tpCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*model.UserCredential, error) {
-	if kind == "totp" && c.totp {
-		return &model.UserCredential{Kind: "totp", IsEnabled: 1}, nil
+	if m, ok := c.byKind[kind]; ok {
+		return m, nil
 	}
 	return nil, gorm.ErrRecordNotFound
-}
-
-func (c *tpCreds) ListWebauthn(_ context.Context, _ int64) ([]model.UserCredentialWebauthn, error) {
-	if c.webauthn {
-		return []model.UserCredentialWebauthn{{UserID: 9}}, nil
-	}
-	return nil, nil
 }
 
 // tpSessions orchestrator.SessionWriter 的 fake。
@@ -278,6 +280,7 @@ type tpEnv struct {
 	state    *orchestrator.State
 	sessions *tpSessions
 	settings *tpSettings
+	creds    *tpCreds
 	tickets  *tpTickets
 	payloads *tpTicketPayloads
 	svc      *Thirdparty
@@ -308,6 +311,7 @@ func newTPEnv(t *testing.T) *tpEnv {
 			},
 		},
 		sessions: &tpSessions{},
+		creds:    &tpCreds{byKind: map[string]*model.UserCredential{}},
 		tickets:  &tpTickets{results: map[string]*token.TicketResult{}},
 		payloads: &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}},
 		now:      at,
@@ -328,8 +332,9 @@ func newTPEnv(t *testing.T) *tpEnv {
 		Users:          env.users,
 		NewAdapter:     func(*provider.Provider) (provider.AuthAdapter, error) { return env.adapter, nil },
 		State:          env.state,
-		MFA:            orchestrator.NewMFABuilder(env.users, &tpCreds{}, st),
 		Terminal:       terminal,
+		Settings:       env.settings,
+		Credentials:    env.creds,
 		Tickets:        env.tickets,
 		TicketPayloads: env.payloads,
 		CookieCodec:    cookieCodec,
@@ -519,8 +524,9 @@ func TestAuthorizeLoginStateCookieHTTPSDeployment(t *testing.T) {
 				Users:       e.users,
 				NewAdapter:  func(*provider.Provider) (provider.AuthAdapter, error) { return e.adapter, nil },
 				State:       e.state,
-				MFA:         orchestrator.NewMFABuilder(e.users, &tpCreds{}, e.settings),
 				Terminal:    orchestrator.NewTerminal(e.sessions, nil, nil, nil, nil),
+				Settings:    e.settings,
+				Credentials: e.creds,
 				CookieCodec: e.svc.deps.CookieCodec,
 				HTTPSMode:   e.httpsMode,
 			})
@@ -987,22 +993,17 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 }
 
 // TestLoginOauthTicketMFA MFA×扫码（§2.8 行 750、§13.2 行 1607）：已绑定
-// 用户启用 MFA → mfa_required 信封（login_token + mfa，语义与非扫码路径
+// 用户启用 MFA → mfa_required 信封（login_token，语义与非扫码路径
 // 一致）、**不写 ticket**（PC 端轮询至 expired）。
 func TestLoginOauthTicketMFA(t *testing.T) {
 	ctx := context.Background()
 	e := newScanEnv(t, sceneLogin)
 	e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "wxscan", OpenID: "openid_1"}
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
-	// totp 凭证存在 → MFA required（凭证 fake 重建 builder）。
-	e.svc.deps.MFA = orchestrator.NewMFABuilder(e.users, &tpCreds{totp: true}, e.settings)
 
 	out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
 	if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
 		t.Fatalf("status = %q, want mfa_required", out.Envelope.GetStatus())
-	}
-	if m := out.Envelope.GetMfa(); m == nil || len(m.GetMethods()) == 0 {
-		t.Errorf("mfa = %+v", m)
 	}
 	if out.Envelope.GetLoginToken() == "" {
 		t.Error("mfa_required 信封应含 login_token（既有分支语义）")
@@ -1086,8 +1087,6 @@ func TestLoginOauthAutoBind(t *testing.T) {
 		if mfa {
 			e.users.byEmail["exist@example.com"] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
 			e.users.byID[9] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
-			// totp 凭证存在 → MFA required（凭证 fake 重建 builder）。
-			e.svc.deps.MFA = orchestrator.NewMFABuilder(e.users, &tpCreds{totp: true}, e.settings)
 		}
 		out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
 		return e, out
@@ -1125,7 +1124,6 @@ func TestLoginOauthAutoBind(t *testing.T) {
 
 	t.Run("命中且 MFA", func(t *testing.T) {
 		e, out := newCase(t, 1, true)
-		// totp 凭证存在 → MFA required（builder 需带凭证 fake 重建）。
 		if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
 			t.Fatalf("status = %q, want mfa_required", out.Envelope.GetStatus())
 		}
@@ -1133,51 +1131,7 @@ func TestLoginOauthAutoBind(t *testing.T) {
 		if len(e.binds.created) != 1 {
 			t.Errorf("MFA 前应已写绑定, got %d 行", len(e.binds.created))
 		}
-		if m := out.Envelope.GetMfa(); m == nil || len(m.GetMethods()) == 0 {
-			t.Errorf("mfa = %+v", m)
-		}
 	})
-}
-
-// tpDegradedRegistry 最小因子注册表 fake（orchestrator.FactorLookup）：
-// webauthn 恒未注册（启动降级窗口形态），其余 kind 一并未注册（Build 只
-// 查 webauthn，语义不受影响）。
-type tpDegradedRegistry struct{}
-
-func (tpDegradedRegistry) Get(factor.FactorKind) (factor.Factor, error) {
-	return nil, factor.ErrKindNotRegistered
-}
-
-// TestLoginOauthWebauthnDegradedFailClosed 三方登录路径的窗口期
-// fail-closed（§8.3 行 1069）：auto_bind 命中的
-// mfa_required 用户唯一可用因子为 webauthn、注册表因启动降级未注册 →
-// 不进终点（绝不 required=false 静默放行直通 success），信封
-// status=method_disabled + error.message 明示"通行密钥暂不可用"（与引擎
-// 路径同一 status / 文案）。
-func TestLoginOauthWebauthnDegradedFailClosed(t *testing.T) {
-	ctx := context.Background()
-	e := newTPEnv(t)
-	e.addProvider("qq", func(r *model.Provider) { r.AutoBind = 1 })
-	e.adapter.identity.Email = "exist@example.com"
-	e.users.byEmail["exist@example.com"] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
-	e.users.byID[9] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
-	// 已绑 webauthn（唯一可用因子）+ 降级注册表（webauthn 未注册）。
-	mfa := orchestrator.NewMFABuilder(e.users, &tpCreds{webauthn: true}, e.settings)
-	mfa.Factors = tpDegradedRegistry{}
-	e.svc.deps.MFA = mfa
-
-	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
-	if out.Envelope.GetStatus() != orchestrator.StatusMethodDisabled {
-		t.Fatalf("status = %q, want method_disabled (fail-closed), envelope %+v", out.Envelope.GetStatus(), out.Envelope)
-	}
-	if em := out.Envelope.GetError(); em == nil || em.GetMessage() != orchestrator.WebauthnDegradedMessage {
-		t.Fatalf("error = %+v, want message %q", em, orchestrator.WebauthnDegradedMessage)
-	}
-	// 不进终点：无会话写入、无绑定放行痕迹（auto_bind 绑定发生在 MFA 判定
-	// 之前，允许存在；但绝不得签发会话）。
-	if out.Envelope.GetSessionId() != "" || out.Envelope.GetUserId() != 0 {
-		t.Fatalf("fail-closed must not reach terminal: %+v", out.Envelope)
-	}
 }
 
 // TestLoginOauthUnionMerge Union 归并（§12.7 行 1549）：普通行未命中、
@@ -1213,8 +1167,6 @@ func TestLoginOauthMFAEnvelope(t *testing.T) {
 	e.addProvider("qq", nil)
 	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
-	// totp 凭证存在 → MFA required（凭证 fake 重建 builder）。
-	e.svc.deps.MFA = orchestrator.NewMFABuilder(e.users, &tpCreds{totp: true}, e.settings)
 
 	oidcCtx := &token.Oidc{ClientId: "cid-1", RedirectUri: "https://rp/cb", State: "s-1"}
 	in := e.oauthRequest(t, "l"+"x", 0)
@@ -1241,6 +1193,123 @@ func TestLoginOauthMFAEnvelope(t *testing.T) {
 	}
 	if p.GetOidc().GetClientId() != "cid-1" || p.GetOidc().GetState() != "s-1" {
 		t.Errorf("oidc 写入 = %+v", p.GetOidc())
+	}
+}
+
+// TestLoginOauthMFAUserEnabledBySettingRow 用户自选启用二次验证（mfa_setting
+// 行 is_enabled=1、user.mfa_required=0）经三方登录仍进入 mfa_required
+// （§1.6 行 250 / §7.3 行 1031），不跳过二次验证直接建会话。
+func TestLoginOauthMFAUserEnabledBySettingRow(t *testing.T) {
+	ctx := context.Background()
+	e := newTPEnv(t)
+	e.addProvider("qq", nil)
+	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
+	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 0}
+	e.creds.byKind["mfa_setting"] = &model.UserCredential{UserID: 3, Kind: "mfa_setting", IsEnabled: 1}
+
+	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
+	if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
+		t.Fatalf("status = %q, want mfa_required（自选启用行）", out.Envelope.GetStatus())
+	}
+	if e.sessions.gotUID != 0 {
+		t.Errorf("MFA 前不应建会话, uid=%d", e.sessions.gotUID)
+	}
+}
+
+// TestLoginOauthMFARequiredLookupFailure MFA 判定的用户查询故障必须
+// fail-closed：非「不存在」错误以 failed 信封拒绝（不建会话），不得把
+// 查询故障解释为「无需二次验证」而继续签发会话。两条调用路径（redirect
+// 通道 / 扫码 ticket）分别断言，ticket 侧同时写 failed 结果。
+func TestLoginOauthMFARequiredLookupFailure(t *testing.T) {
+	ctx := context.Background()
+	// 第一次 FindByID（已绑定用户的账号状态校验）成功，第二次（MFA 判定）
+	// 返回依赖故障。
+	seed := func(e *tpEnv, pk string) {
+		e.binds.rows[key(pk, "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: pk, OpenID: "openid_1"}
+		e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+		e.users.err = errors.New("user repo: connection refused")
+		e.users.failsAt = 2
+	}
+
+	t.Run("redirect 通道", func(t *testing.T) {
+		e := newTPEnv(t)
+		e.addProvider("qq", nil)
+		seed(e, "qq")
+
+		out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
+		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("status = %q, want failed（查询故障不得放行）", out.Envelope.GetStatus())
+		}
+		if e.sessions.gotUID != 0 {
+			t.Errorf("查询故障不得建会话, uid=%d", e.sessions.gotUID)
+		}
+		if out.Envelope.GetSessionToken() != "" || out.Envelope.GetLoginToken() != "" {
+			t.Errorf("failed 信封不得携带令牌: %+v", out.Envelope)
+		}
+	})
+
+	t.Run("扫码 ticket", func(t *testing.T) {
+		e := newScanEnv(t, sceneLogin)
+		seed(e, "wxscan")
+
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
+		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("status = %q, want failed（查询故障不得放行）", out.Envelope.GetStatus())
+		}
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != orchestrator.StatusFailed {
+			t.Fatalf("TicketResult.status = %q, want failed", res.GetStatus())
+		}
+		if tk := out.Envelope.GetTicket(); tk.GetStatus() != ticketStatusFailed {
+			t.Fatalf("ticket = %+v, want failed", tk)
+		}
+		if e.sessions.gotUID != 0 {
+			t.Errorf("查询故障不得建会话, uid=%d", e.sessions.gotUID)
+		}
+	})
+}
+
+// TestLoginOauthMFAUserLookupNotFound 用户查询返回包装过的 not-found
+// （仓储以 %w 包装 gorm.ErrRecordNotFound）时同样 fail-closed：用户行读不到
+// 不得被当成「无需二次验证」继续签发，返回失败信封且不建会话。
+func TestLoginOauthMFAUserLookupNotFound(t *testing.T) {
+	ctx := context.Background()
+	e := newTPEnv(t)
+	e.addProvider("qq", nil)
+	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
+	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	// 第一次 FindByID（账号状态校验）成功，第二次（MFA 判定）返回包装后的
+	// not-found。
+	e.users.err = fmt.Errorf("repo: find user: %w", gorm.ErrRecordNotFound)
+	e.users.failsAt = 2
+
+	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
+	if out.Envelope.GetStatus() != orchestrator.StatusFailed {
+		t.Fatalf("status = %q, want failed（用户查不到不得放行）", out.Envelope.GetStatus())
+	}
+	if e.sessions.gotUID != 0 {
+		t.Errorf("用户查不到不得建会话, uid=%d", e.sessions.gotUID)
+	}
+	if out.Envelope.GetSessionToken() != "" || out.Envelope.GetLoginToken() != "" {
+		t.Errorf("failed 信封不得携带令牌: %+v", out.Envelope)
+	}
+}
+
+// TestLoginOauthMFAGlobalSwitchOff 系统开关 mfa_enabled=false 时三方登录
+// 直通终点（§1.6 行 250），不进入 mfa_required。
+func TestLoginOauthMFAGlobalSwitchOff(t *testing.T) {
+	ctx := context.Background()
+	e := newTPEnv(t)
+	e.addProvider("qq", nil)
+	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
+	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	e.settings.bools[settings.KeyMfaEnabled] = false
+
+	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
+	if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
+		t.Fatalf("status = %q, want success（mfa_enabled=false）", out.Envelope.GetStatus())
+	}
+	if out.Envelope.GetUserId() != 3 {
+		t.Errorf("userId = %d, want 3", out.Envelope.GetUserId())
 	}
 }
 
@@ -1462,7 +1531,6 @@ func TestLoginOauthNonSuccessClearsStateCookie(t *testing.T) {
 		e.addProvider("qq", nil)
 		e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
 		e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
-		e.svc.deps.MFA = orchestrator.NewMFABuilder(e.users, &tpCreds{totp: true}, e.settings)
 		out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
 		if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
 			t.Fatalf("status = %q", out.Envelope.GetStatus())

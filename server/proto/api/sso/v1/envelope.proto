@@ -30,8 +30,8 @@ message LoginFlowResponse {
   string status = 2;
   // status=next 时的下一步渲染信息（§1.3 行 110-118）。
   NextStep next_step = 3;
-  // status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
-  Mfa mfa = 4;
+  // 原 mfa 字段（编号 4）随登录响应停用，编号保留防复用（§12.8）。
+  reserved 4;
   // status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
   Binding binding = 5;
   // 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
@@ -100,30 +100,6 @@ message Field {
   int64 length = 5;
   // 最大校验失败次数；JSON 为十进制字符串（§1.3 行 114、§1.12）。
   int64 max_attempts = 6;
-}
-
-// Mfa 是 status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
-message Mfa {
-  // 本次 MFA 挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 120、§1.12）。
-  int64 expires_in = 1;
-  // 可选二次因子列表（§1.3 行 121）。
-  repeated MfaMethod methods = 2;
-}
-
-// MfaMethod 是单个可选的二次因子（§1.3 行 122-127；步骤序列来源见 §1.10 行 298-316）。
-message MfaMethod {
-  // 认证方式，步骤序列见 §1.10 行 298-316。
-  string method = 1;
-  // 该方式的渲染步骤序列，取值是 §1.4 行 157-179 的 kind 封闭集合（§1.10 行 298）。
-  repeated string steps = 2;
-  // form 步骤需要渲染的字段（§1.3 行 122、126）。
-  repeated Field fields = 3;
-  // 已掩码的目标（手机号 / 邮箱）（§1.3 行 123-125）。
-  string masked_target = 4;
-  // challenge 步骤需要用户填写的字段（§1.3 行 123-125）。
-  repeated Field challenge_fields = 5;
-  // 该方式的提示文案（§1.3 行 125）。
-  string hint = 6;
 }
 
 // Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。

@@ -53,12 +53,14 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
+	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
+	"authloft/internal/settings"
 )
 
 // al_login_state Cookie 与 state 前缀常量（接口文档 §2.7.2 行 604-611、
@@ -132,8 +134,12 @@ type ThirdpartyDeps struct {
 	Users      ThirdpartyUserLookup
 	NewAdapter ThirdpartyAdapterFactory
 	State      *orchestrator.State
-	MFA        *orchestrator.MFABuilder
 	Terminal   *orchestrator.Terminal
+	// Settings 系统开关源，与引擎同源（§1.6 行 250 / §7.3 行 1031）；
+	// nil 时按缺省值判定。
+	Settings orchestrator.SettingsReader
+	// Credentials 读取用户自选启用二次验证的凭据行（mfa_setting）。
+	Credentials factor.CredentialRepo
 	// Tickets al:ticket:{ticket_id} 结果读写（§11.6.5；扫码 ticket
 	// 分支）。
 	Tickets TicketStore
@@ -396,11 +402,13 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		}})
 	}
 
-	// 已绑定 / Union 归并 / auto_bind 命中：MFA 判定（§2.7.4 行 652、
-	// §2.7.5 行 691——auto_bind 命中用户已启用 MFA 同样继续 mfa_required）。
-	mfa, required, mfaOut := s.mfaCheck(ctx, uid)
-	if mfaOut != nil {
-		return s.withStateCleared(ctx, channel, mfaOut)
+	// 已绑定 / Union 归并 / auto_bind 命中：该用户已启用 MFA →
+	// status=mfa_required（§2.7.4 行 785），后续走 §3.8 StartVerification；
+	// 不下发因子列表。
+	required, err := s.mfaRequired(ctx, uid)
+	if err != nil {
+		// 依赖读取故障按 fail-closed 收敛：不建会话、返回失败信封。
+		return s.oauthFail(ctx, channel, orchestrator.StatusFailed)
 	}
 	if required {
 		signed, err := s.deps.State.Issue(payload)
@@ -410,7 +418,6 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		return s.withStateCleared(ctx, channel, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status:     orchestrator.StatusMFARequired,
 			LoginToken: signed,
-			Mfa:        mfa,
 		}})
 	}
 
@@ -515,12 +522,14 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 		return s.ticketDone(ctx, id, s.newTicketResult(snap, "", &token.LoginResult{BindingRequired: true}, identity))
 	}
 
-	// 已绑定：MFA 判定。mfa_required 及其判定失败（degraded / 内部错误）
-	// 一律不写 ticket——授权结果未定，PC 端轮询至 expired（§2.8 行 750
-	// 「不写 ticket」口径，小程序端收到即止）。
-	mfa, required, mfaOut := s.mfaCheck(ctx, uid)
-	if mfaOut != nil {
-		return mfaOut
+	// 已绑定：该用户已启用 MFA → status=mfa_required、不写 ticket（§2.8
+	// 行 750）——授权结果未定，PC 端轮询至 expired，小程序端收到即止；
+	// 因子列表不下发，由 §3.8 StartVerification 提供。
+	required, err := s.mfaRequired(ctx, uid)
+	if err != nil {
+		// 依赖读取故障按 fail-closed 收敛：写 ticket failed，不返回
+		// mfa_required（不得把故障当成「无需二次验证」继续签发）。
+		return s.ticketFail(ctx, id, snap, orchestrator.StatusFailed)
 	}
 	if required {
 		signed, err := s.deps.State.Issue(&token.LoginTokenPayload{
@@ -537,7 +546,6 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 		return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status:     orchestrator.StatusMFARequired,
 			LoginToken: signed,
-			Mfa:        mfa,
 		}}
 	}
 
@@ -656,28 +664,54 @@ func (s *Thirdparty) resolveLoginUID(ctx context.Context, p *provider.Provider, 
 	return uid, ""
 }
 
-// mfaCheck MFA 判定（§2.7.4 行 652、§12.5）：deps.MFA 为 nil（未装配）直通。
-// 返回 required=true 时 mfa 为挑战件（调用方签 login_token 组 mfa_required
-// 信封）；out 非 nil 表示以该失败信封终止——窗口期 fail-closed（§8.3 行
-// 1069 + 2026-11-05 定稿）：webauthn 唯一可用因子因启动降级不可用 →
-// method_disabled + 固定文案（与引擎路径同一 status / 文案），绝不静默放行
-// 直通终点；其余判定故障 failed。
-func (s *Thirdparty) mfaCheck(ctx context.Context, uid int64) (mfa *ssov1.Mfa, required bool, out *OauthOutput) {
-	if s.deps.MFA == nil {
-		return nil, false, nil
+// mfaRequired 判定三方身份对应的用户是否需二次验证（§2.7.4 行 785、
+// §2.8 行 750）：与引擎同口径，依据系统开关与用户启用状态（策略强制列 ∨
+// 自选启用凭据行），不下发因子列表；因子视图由验证内核 StartVerification
+// 提供（§3.8）。
+//
+// 返回 error 表示依赖读取故障，调用方必须以失败信封拒绝本次登录：读取
+// 故障不得被解释为「无需二次验证」。用户行的任何读取错误都不得放行（仓储
+// 对 not-found 也按错误返回）；仅 mfa_setting 凭据行不存在属正常语义
+// （该用户未启用自选 MFA），返回 (false, nil)。
+func (s *Thirdparty) mfaRequired(ctx context.Context, uid int64) (bool, error) {
+	// uid=0 / 依赖未接入（单测裁剪装配）：无判定输入，按无需 MFA 处理。
+	if uid == 0 || s.deps.Users == nil {
+		return false, nil
 	}
-	mfa, required, err := s.deps.MFA.Build(ctx, uid)
-	if err != nil {
-		if errors.Is(err, orchestrator.ErrWebauthnDegraded) {
-			msg := orchestrator.WebauthnDegradedMessage
-			return nil, false, &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
-				Status: orchestrator.StatusMethodDisabled,
-				Error:  &ssov1.SsoError{Message: &msg},
-			}}
+	enabled := true
+	if s.deps.Settings != nil {
+		if v, ok := s.deps.Settings.GetBool(settings.KeyMfaEnabled); ok {
+			enabled = v
 		}
-		return nil, false, s.envelope(orchestrator.StatusFailed)
 	}
-	return mfa, required, nil
+	if !enabled {
+		return false, nil
+	}
+	user, err := s.deps.Users.FindByID(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+	if user.MfaRequired == 1 {
+		return true, nil
+	}
+	// 凭据仓储未接入与引擎同口径：装配裁剪而非运行期故障。
+	if s.deps.Credentials == nil {
+		return false, nil
+	}
+	c, err := s.deps.Credentials.FindByUserAndKind(ctx, uid, "mfa_setting")
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if c == nil {
+		return false, nil
+	}
+	return c.IsEnabled == 1, nil
 }
 
 // tpIdentity 三方身份 → TicketResult.thirdparty_identity（§11.6.5 行

@@ -347,24 +347,9 @@ func (c combinedExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task) 
 	}
 }
 
-// mfaCredentialReader 组合 credential / webauthn 两个 repo，满足编排层
-// MFACredentialReader（mfa.go 行 21-24）；不修改 repo 公共接口。
-type mfaCredentialReader struct {
-	creds    *repo.CredentialRepo
-	webauthn *repo.WebauthnRepo
-}
-
-func (r mfaCredentialReader) FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error) {
-	return r.creds.FindByUserAndKind(ctx, userID, kind)
-}
-
-func (r mfaCredentialReader) ListWebauthn(ctx context.Context, userID int64) ([]model.UserCredentialWebauthn, error) {
-	return r.webauthn.ListByUser(ctx, userID)
-}
-
 // captchaProviderSource 把 provider 表行转成 captcha 包窄投影
-// （captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；与
-// mfaCredentialReader 同款组合模式，不修改 repo 公共接口）。ext 编解码
+// （captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；组合
+// 模式，不修改 repo 公共接口）。ext 编解码
 // 唯一出口 repo.ParseProviderExt（§12.1：site_key=client_id、
 // secret=client_secret、endpoint=自定义校验地址）；未命中唯一键按
 // 「无此行」返回 nil,nil，其余错误原样上抛。
@@ -512,13 +497,8 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		deps.settings,
 	)
 	loginState := orchestrator.NewState(deps.codecs.Login)
-	mfa := orchestrator.NewMFABuilder(users, mfaCredentialReader{creds: creds, webauthn: webauthnRepo}, deps.settings)
-	// MFA 开放集合联动启动降级（§8.3 行 1069）——注入同一
-	// registry（与页面壳 Factors 同源；webauthn 降级未注册时 Build 的
-	// webauthn case 跳过注入 methods）。
-	mfa.Factors = registry
 
-	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State / MFA /
+	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State /
 	// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走
 	// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
 	// 目标匹配走 UserRepo；HTTPSMode 注入 https_deployment 三态源
@@ -535,8 +515,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Users:          users,
 		NewAdapter:     provider.NewAdapter,
 		State:          loginState,
-		MFA:            mfa,
 		Terminal:       terminal,
+		Settings:       deps.settings,
+		Credentials:    creds,
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
 		CookieCodec:    deps.codecs.Cookie,
@@ -691,7 +672,6 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		// captcha Gate（§9.3 行 1110 唯一拦截点）：装配层构造
 		// 真实 Gate；测试夹具未注入时为 nil，engine.go:209 对 nil 安全。
 		Gate:     deps.gate,
-		MFA:      mfa,
 		Terminal: terminal,
 		Failures: fails,
 		// 引擎读计数键经与因子写入侧同源的 user_ref 解析器（见上方
@@ -844,7 +824,7 @@ func (r boundFactorReader) Bound(ctx context.Context, subject verification.Subje
 		u = nil
 	}
 	// 策略强制（user.mfa_required=1）但用户未显式 SetMfa、无 mfa_setting 行时，
-	// 与登录侧 MFABuilder 口径一致：以全部已绑定因子为可用集合。
+	// 以全部已绑定因子为可用集合。
 	if len(enabled) == 0 && u != nil && u.MfaRequired == 1 {
 		for _, m := range candidates {
 			enabled[m] = true

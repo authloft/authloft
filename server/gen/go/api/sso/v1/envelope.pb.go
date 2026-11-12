@@ -40,8 +40,6 @@ type LoginFlowResponse struct {
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	// status=next 时的下一步渲染信息（§1.3 行 110-118）。
 	NextStep *NextStep `protobuf:"bytes,3,opt,name=next_step,json=nextStep,proto3" json:"next_step,omitempty"`
-	// status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
-	Mfa *Mfa `protobuf:"bytes,4,opt,name=mfa,proto3" json:"mfa,omitempty"`
 	// status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
 	Binding *Binding `protobuf:"bytes,5,opt,name=binding,proto3" json:"binding,omitempty"`
 	// 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
@@ -123,13 +121,6 @@ func (x *LoginFlowResponse) GetStatus() string {
 func (x *LoginFlowResponse) GetNextStep() *NextStep {
 	if x != nil {
 		return x.NextStep
-	}
-	return nil
-}
-
-func (x *LoginFlowResponse) GetMfa() *Mfa {
-	if x != nil {
-		return x.Mfa
 	}
 	return nil
 }
@@ -406,152 +397,6 @@ func (x *Field) GetMaxAttempts() int64 {
 	return 0
 }
 
-// Mfa 是 status=mfa_required 时的二次因子选择器（§1.3 行 119-128）。
-type Mfa struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// 本次 MFA 挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 120、§1.12）。
-	ExpiresIn int64 `protobuf:"varint,1,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
-	// 可选二次因子列表（§1.3 行 121）。
-	Methods       []*MfaMethod `protobuf:"bytes,2,rep,name=methods,proto3" json:"methods,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Mfa) Reset() {
-	*x = Mfa{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Mfa) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Mfa) ProtoMessage() {}
-
-func (x *Mfa) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Mfa.ProtoReflect.Descriptor instead.
-func (*Mfa) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *Mfa) GetExpiresIn() int64 {
-	if x != nil {
-		return x.ExpiresIn
-	}
-	return 0
-}
-
-func (x *Mfa) GetMethods() []*MfaMethod {
-	if x != nil {
-		return x.Methods
-	}
-	return nil
-}
-
-// MfaMethod 是单个可选的二次因子（§1.3 行 122-127；步骤序列来源见 §1.10 行 298-316）。
-type MfaMethod struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// 认证方式，步骤序列见 §1.10 行 298-316。
-	Method string `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
-	// 该方式的渲染步骤序列，取值是 §1.4 行 157-179 的 kind 封闭集合（§1.10 行 298）。
-	Steps []string `protobuf:"bytes,2,rep,name=steps,proto3" json:"steps,omitempty"`
-	// form 步骤需要渲染的字段（§1.3 行 122、126）。
-	Fields []*Field `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
-	// 已掩码的目标（手机号 / 邮箱）（§1.3 行 123-125）。
-	MaskedTarget string `protobuf:"bytes,4,opt,name=masked_target,json=maskedTarget,proto3" json:"masked_target,omitempty"`
-	// challenge 步骤需要用户填写的字段（§1.3 行 123-125）。
-	ChallengeFields []*Field `protobuf:"bytes,5,rep,name=challenge_fields,json=challengeFields,proto3" json:"challenge_fields,omitempty"`
-	// 该方式的提示文案（§1.3 行 125）。
-	Hint          string `protobuf:"bytes,6,opt,name=hint,proto3" json:"hint,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MfaMethod) Reset() {
-	*x = MfaMethod{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MfaMethod) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MfaMethod) ProtoMessage() {}
-
-func (x *MfaMethod) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MfaMethod.ProtoReflect.Descriptor instead.
-func (*MfaMethod) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *MfaMethod) GetMethod() string {
-	if x != nil {
-		return x.Method
-	}
-	return ""
-}
-
-func (x *MfaMethod) GetSteps() []string {
-	if x != nil {
-		return x.Steps
-	}
-	return nil
-}
-
-func (x *MfaMethod) GetFields() []*Field {
-	if x != nil {
-		return x.Fields
-	}
-	return nil
-}
-
-func (x *MfaMethod) GetMaskedTarget() string {
-	if x != nil {
-		return x.MaskedTarget
-	}
-	return ""
-}
-
-func (x *MfaMethod) GetChallengeFields() []*Field {
-	if x != nil {
-		return x.ChallengeFields
-	}
-	return nil
-}
-
-func (x *MfaMethod) GetHint() string {
-	if x != nil {
-		return x.Hint
-	}
-	return ""
-}
-
 // Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。
 type Binding struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -571,7 +416,7 @@ type Binding struct {
 
 func (x *Binding) Reset() {
 	*x = Binding{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[5]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +428,7 @@ func (x *Binding) String() string {
 func (*Binding) ProtoMessage() {}
 
 func (x *Binding) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[5]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +441,7 @@ func (x *Binding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Binding.ProtoReflect.Descriptor instead.
 func (*Binding) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{5}
+	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Binding) GetProviderKey() string {
@@ -652,7 +497,7 @@ type SsoError struct {
 
 func (x *SsoError) Reset() {
 	*x = SsoError{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[6]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -664,7 +509,7 @@ func (x *SsoError) String() string {
 func (*SsoError) ProtoMessage() {}
 
 func (x *SsoError) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[6]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -677,7 +522,7 @@ func (x *SsoError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SsoError.ProtoReflect.Descriptor instead.
 func (*SsoError) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{6}
+	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SsoError) GetMessage() string {
@@ -717,7 +562,7 @@ type TicketStatus struct {
 
 func (x *TicketStatus) Reset() {
 	*x = TicketStatus{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[7]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -729,7 +574,7 @@ func (x *TicketStatus) String() string {
 func (*TicketStatus) ProtoMessage() {}
 
 func (x *TicketStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[7]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -742,7 +587,7 @@ func (x *TicketStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketStatus.ProtoReflect.Descriptor instead.
 func (*TicketStatus) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{7}
+	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TicketStatus) GetStatus() string {
@@ -774,7 +619,7 @@ type BindResult struct {
 
 func (x *BindResult) Reset() {
 	*x = BindResult{}
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[8]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -786,7 +631,7 @@ func (x *BindResult) String() string {
 func (*BindResult) ProtoMessage() {}
 
 func (x *BindResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_sso_v1_envelope_proto_msgTypes[8]
+	mi := &file_api_sso_v1_envelope_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -799,7 +644,7 @@ func (x *BindResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BindResult.ProtoReflect.Descriptor instead.
 func (*BindResult) Descriptor() ([]byte, []int) {
-	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{8}
+	return file_api_sso_v1_envelope_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *BindResult) GetOk() bool {
@@ -828,13 +673,12 @@ var File_api_sso_v1_envelope_proto protoreflect.FileDescriptor
 const file_api_sso_v1_envelope_proto_rawDesc = "" +
 	"\n" +
 	"\x19api/sso/v1/envelope.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\xee\x04\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\xd1\x04\n" +
 	"\x11LoginFlowResponse\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x121\n" +
-	"\tnext_step\x18\x03 \x01(\v2\x14.api.sso.v1.NextStepR\bnextStep\x12!\n" +
-	"\x03mfa\x18\x04 \x01(\v2\x0f.api.sso.v1.MfaR\x03mfa\x12-\n" +
+	"\tnext_step\x18\x03 \x01(\v2\x14.api.sso.v1.NextStepR\bnextStep\x12-\n" +
 	"\abinding\x18\x05 \x01(\v2\x13.api.sso.v1.BindingR\abinding\x12*\n" +
 	"\x05error\x18\x06 \x01(\v2\x14.api.sso.v1.SsoErrorR\x05error\x12\x1d\n" +
 	"\n" +
@@ -848,7 +692,7 @@ const file_api_sso_v1_envelope_proto_rawDesc = "" +
 	"\x06ticket\x18\f \x01(\v2\x18.api.sso.v1.TicketStatusR\x06ticket\x123\n" +
 	"\x05login\x18\r \x01(\v2\x1d.api.sso.v1.LoginFlowResponseR\x05login\x12*\n" +
 	"\x04bind\x18\x0e \x01(\v2\x16.api.sso.v1.BindResultR\x04bind\x126\n" +
-	"\acaptcha\x18\x0f \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptcha\"\xfd\x01\n" +
+	"\acaptcha\x18\x0f \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptchaJ\x04\b\x04\x10\x05\"\xfd\x01\n" +
 	"\bNextStep\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1a\n" +
@@ -865,18 +709,7 @@ const file_api_sso_v1_envelope_proto_rawDesc = "" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x1a\n" +
 	"\brequired\x18\x04 \x01(\bR\brequired\x12\x16\n" +
 	"\x06length\x18\x05 \x01(\x03R\x06length\x12!\n" +
-	"\fmax_attempts\x18\x06 \x01(\x03R\vmaxAttempts\"U\n" +
-	"\x03Mfa\x12\x1d\n" +
-	"\n" +
-	"expires_in\x18\x01 \x01(\x03R\texpiresIn\x12/\n" +
-	"\amethods\x18\x02 \x03(\v2\x15.api.sso.v1.MfaMethodR\amethods\"\xdb\x01\n" +
-	"\tMfaMethod\x12\x16\n" +
-	"\x06method\x18\x01 \x01(\tR\x06method\x12\x14\n" +
-	"\x05steps\x18\x02 \x03(\tR\x05steps\x12)\n" +
-	"\x06fields\x18\x03 \x03(\v2\x11.api.sso.v1.FieldR\x06fields\x12#\n" +
-	"\rmasked_target\x18\x04 \x01(\tR\fmaskedTarget\x12<\n" +
-	"\x10challenge_fields\x18\x05 \x03(\v2\x11.api.sso.v1.FieldR\x0fchallengeFields\x12\x12\n" +
-	"\x04hint\x18\x06 \x01(\tR\x04hint\"\xad\x01\n" +
+	"\fmax_attempts\x18\x06 \x01(\x03R\vmaxAttempts\"\xad\x01\n" +
 	"\aBinding\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12!\n" +
@@ -914,39 +747,33 @@ func file_api_sso_v1_envelope_proto_rawDescGZIP() []byte {
 	return file_api_sso_v1_envelope_proto_rawDescData
 }
 
-var file_api_sso_v1_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_api_sso_v1_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_api_sso_v1_envelope_proto_goTypes = []any{
 	(*LoginFlowResponse)(nil), // 0: api.sso.v1.LoginFlowResponse
 	(*NextStep)(nil),          // 1: api.sso.v1.NextStep
 	(*Field)(nil),             // 2: api.sso.v1.Field
-	(*Mfa)(nil),               // 3: api.sso.v1.Mfa
-	(*MfaMethod)(nil),         // 4: api.sso.v1.MfaMethod
-	(*Binding)(nil),           // 5: api.sso.v1.Binding
-	(*SsoError)(nil),          // 6: api.sso.v1.SsoError
-	(*TicketStatus)(nil),      // 7: api.sso.v1.TicketStatus
-	(*BindResult)(nil),        // 8: api.sso.v1.BindResult
-	(*v1.CaptchaConfig)(nil),  // 9: api.common.v1.CaptchaConfig
-	(*structpb.Struct)(nil),   // 10: google.protobuf.Struct
+	(*Binding)(nil),           // 3: api.sso.v1.Binding
+	(*SsoError)(nil),          // 4: api.sso.v1.SsoError
+	(*TicketStatus)(nil),      // 5: api.sso.v1.TicketStatus
+	(*BindResult)(nil),        // 6: api.sso.v1.BindResult
+	(*v1.CaptchaConfig)(nil),  // 7: api.common.v1.CaptchaConfig
+	(*structpb.Struct)(nil),   // 8: google.protobuf.Struct
 }
 var file_api_sso_v1_envelope_proto_depIdxs = []int32{
-	1,  // 0: api.sso.v1.LoginFlowResponse.next_step:type_name -> api.sso.v1.NextStep
-	3,  // 1: api.sso.v1.LoginFlowResponse.mfa:type_name -> api.sso.v1.Mfa
-	5,  // 2: api.sso.v1.LoginFlowResponse.binding:type_name -> api.sso.v1.Binding
-	6,  // 3: api.sso.v1.LoginFlowResponse.error:type_name -> api.sso.v1.SsoError
-	7,  // 4: api.sso.v1.LoginFlowResponse.ticket:type_name -> api.sso.v1.TicketStatus
-	0,  // 5: api.sso.v1.LoginFlowResponse.login:type_name -> api.sso.v1.LoginFlowResponse
-	8,  // 6: api.sso.v1.LoginFlowResponse.bind:type_name -> api.sso.v1.BindResult
-	9,  // 7: api.sso.v1.LoginFlowResponse.captcha:type_name -> api.common.v1.CaptchaConfig
-	2,  // 8: api.sso.v1.NextStep.fields:type_name -> api.sso.v1.Field
-	10, // 9: api.sso.v1.NextStep.challenge_data:type_name -> google.protobuf.Struct
-	4,  // 10: api.sso.v1.Mfa.methods:type_name -> api.sso.v1.MfaMethod
-	2,  // 11: api.sso.v1.MfaMethod.fields:type_name -> api.sso.v1.Field
-	2,  // 12: api.sso.v1.MfaMethod.challenge_fields:type_name -> api.sso.v1.Field
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	1, // 0: api.sso.v1.LoginFlowResponse.next_step:type_name -> api.sso.v1.NextStep
+	3, // 1: api.sso.v1.LoginFlowResponse.binding:type_name -> api.sso.v1.Binding
+	4, // 2: api.sso.v1.LoginFlowResponse.error:type_name -> api.sso.v1.SsoError
+	5, // 3: api.sso.v1.LoginFlowResponse.ticket:type_name -> api.sso.v1.TicketStatus
+	0, // 4: api.sso.v1.LoginFlowResponse.login:type_name -> api.sso.v1.LoginFlowResponse
+	6, // 5: api.sso.v1.LoginFlowResponse.bind:type_name -> api.sso.v1.BindResult
+	7, // 6: api.sso.v1.LoginFlowResponse.captcha:type_name -> api.common.v1.CaptchaConfig
+	2, // 7: api.sso.v1.NextStep.fields:type_name -> api.sso.v1.Field
+	8, // 8: api.sso.v1.NextStep.challenge_data:type_name -> google.protobuf.Struct
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_api_sso_v1_envelope_proto_init() }
@@ -954,14 +781,14 @@ func file_api_sso_v1_envelope_proto_init() {
 	if File_api_sso_v1_envelope_proto != nil {
 		return
 	}
-	file_api_sso_v1_envelope_proto_msgTypes[6].OneofWrappers = []any{}
+	file_api_sso_v1_envelope_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_sso_v1_envelope_proto_rawDesc), len(file_api_sso_v1_envelope_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

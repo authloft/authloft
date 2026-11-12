@@ -15,6 +15,9 @@ import (
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/security"
+	"authloft/internal/settings"
+
+	"gorm.io/gorm"
 )
 
 // 登录流程域 status（docs/接口文档.md §1.6 行 228-273 的封闭集合子集）。
@@ -118,7 +121,6 @@ type EngineDeps struct {
 	State      *State
 	Dispatcher *Dispatcher
 	Gate       *captcha.Gate
-	MFA        *MFABuilder
 	Terminal   *Terminal
 	Failures   PasswordFailures
 	UserRef    UserRefResolver
@@ -132,7 +134,6 @@ type Engine struct {
 	state      *State
 	dispatcher *Dispatcher
 	gate       *captcha.Gate
-	mfa        *MFABuilder
 	terminal   *Terminal
 	failures   PasswordFailures
 	userRef    UserRefResolver
@@ -147,7 +148,6 @@ func NewEngine(d EngineDeps) *Engine {
 		state:      d.State,
 		dispatcher: d.Dispatcher,
 		gate:       d.Gate,
-		mfa:        d.MFA,
 		terminal:   d.Terminal,
 		failures:   d.Failures,
 		userRef:    d.UserRef,
@@ -417,31 +417,22 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		if p.Uid == 0 {
 			return failed()
 		}
-		if e.mfa != nil {
-			mfa, required, err := e.mfa.Build(ctx, p.Uid)
+		// 该用户已启用 MFA → status=mfa_required（§1.6 / §2.7.4 行 785）：
+		// 只依据系统开关与用户启用状态判定，不下发因子列表；因子视图由验证
+		// 内核 StartVerification 提供（§3.8）。
+		required, err := e.mfaRequired(ctx, p.Uid)
+		if err != nil {
+			// 依赖读取故障按 fail-closed 收敛：不得静默跳过二次验证。
+			return failed()
+		}
+		if required {
+			tok, err := e.state.Issue(p)
 			if err != nil {
-				// 窗口期 fail-closed（§8.3 行 1069）：
-				// webauthn 唯一可用因子因启动降级不可用 → 拒绝登录（§1.6
-				// 行 250 method_disabled + 行 272 明示文案），绝不静默放行。
-				if errors.Is(err, ErrWebauthnDegraded) {
-					msg := WebauthnDegradedMessage
-					return &ssov1.LoginFlowResponse{
-						Status: StatusMethodDisabled,
-						Error:  &ssov1.SsoError{Message: &msg},
-					}
-				}
 				return failed()
 			}
-			if required {
-				tok, err := e.state.Issue(p)
-				if err != nil {
-					return failed()
-				}
-				return &ssov1.LoginFlowResponse{
-					Status:     StatusMFARequired,
-					LoginToken: tok,
-					Mfa:        mfa,
-				}
+			return &ssov1.LoginFlowResponse{
+				Status:     StatusMFARequired,
+				LoginToken: tok,
 			}
 		}
 	}
@@ -450,6 +441,51 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		return failed()
 	}
 	return e.completeSuccess(ctx, req, p)
+}
+
+// mfaRequired 判定主因子通过后是否进入二次验证（§1.6 mfa_required、
+// §2.7.4 行 785）：只依据系统开关与用户启用状态，不下发因子列表；因子
+// 视图由验证内核 StartVerification 提供（§3.8）。
+//
+// 返回 error 表示依赖读取故障（连接失败 / 超时 / 用户查不到等），调用方
+// 必须拒绝登录：读取故障不得被解释为「无需二次验证」，否则启用 MFA 的用户
+// 会在故障窗口被跳过二次验证。用户行的任何读取错误都不得放行（仓储对
+// not-found 也按错误返回）；仅 mfa_setting 凭据行不存在属正常语义（该用户
+// 未启用自选 MFA），返回 (false, nil)。
+func (e *Engine) mfaRequired(ctx context.Context, uid int64) (bool, error) {
+	// uid=0 / 依赖未接入（单测裁剪装配）：无判定输入，按无需 MFA 处理。
+	if uid == 0 || e.repo.Users == nil {
+		return false, nil
+	}
+	if !boolSetting(e.dispatcher.Settings, settings.KeyMfaEnabled, true) {
+		return false, nil
+	}
+	user, err := e.repo.Users.FindByID(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, nil
+	}
+	if user.MfaRequired == 1 {
+		return true, nil
+	}
+	// 凭据仓储未接入与旧 builder 口径一致（hasCredential 返回 false, nil）：
+	// 属装配裁剪而非运行期故障，不得据此拒绝登录。
+	if e.repo.Credentials == nil {
+		return false, nil
+	}
+	c, err := e.repo.Credentials.FindByUserAndKind(ctx, uid, "mfa_setting")
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if c == nil {
+		return false, nil
+	}
+	return c.IsEnabled == 1, nil
 }
 
 // completeSuccess 组装 status=success 信封（verify 与 set_password 共用，

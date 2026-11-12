@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -199,7 +200,6 @@ type testEngineDeps struct {
 	settings *testSettings
 	registry *fakeRegistry
 	gate     *captcha.Gate
-	mfa      *MFABuilder
 	terminal *Terminal
 	users    *fakeUsers
 	creds    *fakeCredentials
@@ -226,7 +226,6 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 	gate := captcha.NewGate(s, catalog, verifier)
 	users := &fakeUsers{}
 	creds := &fakeCredentials{creds: map[string]*model.UserCredential{}}
-	mfa := NewMFABuilder(users, creds, s)
 	sessions := &fakeSessionWriter{sid: "sid-1", stok: "stok-1"}
 	oidc := &fakeOIDCIssuer{code: "code-1"}
 	events := &fakeEvents{}
@@ -235,7 +234,7 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 	terminal.Now = func() time.Time { return at }
 
 	return &testEngineDeps{
-		settings: s, registry: reg, gate: gate, mfa: mfa, terminal: terminal,
+		settings: s, registry: reg, gate: gate, terminal: terminal,
 		users: users, creds: creds, verifier: verifier,
 		// 默认固定引用解析器：失败计数用例不关心键推导（真实键口径
 		// 断言在 pwfailchain_test.go）。
@@ -250,7 +249,6 @@ func (d *testEngineDeps) engine(state *State) *Engine {
 		State:      state,
 		Dispatcher: dispatcher,
 		Gate:       d.gate,
-		MFA:        d.mfa,
 		Terminal:   d.terminal,
 		Failures:   d.failures,
 		UserRef:    d.userRef,
@@ -465,20 +463,8 @@ func TestEngineMFACaptchaSuccess(t *testing.T) {
 		LoginToken: resp.LoginToken, Method: "otp_email", Step: "verify",
 		Payload: &factor.Payload{Email: email, Code: "123456"},
 	})
-	if resp.Status != StatusMFARequired || resp.Mfa == nil {
+	if resp.Status != StatusMFARequired {
 		t.Fatalf("mfa resp = %+v", resp)
-	}
-	if len(resp.Mfa.Methods) < 3 {
-		t.Fatalf("mfa methods = %+v", resp.Mfa.Methods)
-	}
-	var masked string
-	for _, m := range resp.Mfa.Methods {
-		if m.Method == "otp_sms" {
-			masked = m.MaskedTarget
-		}
-	}
-	if masked != "138****8000" {
-		t.Fatalf("masked_target = %q, want from uid binding", masked)
 	}
 	p, err = state.Parse(resp.LoginToken)
 	if err != nil {
@@ -749,209 +735,97 @@ func TestBindingOverwritesThirdParty(t *testing.T) {
 	}
 }
 
-func TestMfaOnlyFromBoundProfile(t *testing.T) {
-	phone := "13900001111"
-	user := &model.User{ID: 9, Phone: &phone, PhoneVerified: 1, EmailVerified: 0, MfaRequired: 1}
-	creds := &fakeCredentials{creds: map[string]*model.UserCredential{
-		"totp": {UserID: 9, Kind: "totp", IsEnabled: 1},
-	}}
-	s := &testSettings{slices: map[string][]string{settings.KeyMfaMethods: {"totp", "otp_sms", "otp_email", "webauthn"}}}
-	b := NewMFABuilder(&fakeUsers{user: user}, creds, s)
+// TestEngineMFARequiredWithoutFactorList 主因子通过后，已启用 MFA 的用户
+// 进入 mfa_required 且不进终点、不下发因子列表（因子视图归 §3.8
+// StartVerification）；系统开关关闭时直通 success。
+func TestEngineMFARequiredWithoutFactorList(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
 
-	mfa, required, err := b.Build(context.Background(), 9)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
+	submit := func(deps *testEngineDeps) *ssov1.LoginFlowResponse {
+		t.Helper()
+		deps.registry.factors[factor.FactorPassword] = passwordFactor(42)
+		e := deps.engine(testState(t, at))
+		return e.Submit(context.Background(), "login", Request{
+			Method: "password", Step: "verify",
+			Payload: &factor.Payload{Username: "alice", Password: "p"},
+		})
 	}
-	if !required || mfa == nil {
-		t.Fatal("mfa should be required for mfa_required=1 user with enabled creds")
-	}
-	var otp *ssov1.MfaMethod
-	for _, m := range mfa.Methods {
-		if m.Method == "otp_sms" {
-			otp = m
+
+	t.Run("enabled user stops at mfa_required", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		resp := submit(deps)
+		if resp.Status != StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", resp.Status)
 		}
-	}
-	if otp == nil || otp.MaskedTarget != "139****1111" {
-		t.Fatalf("otp_sms method = %+v", otp)
-	}
-	for _, m := range mfa.Methods {
-		if m.Method == "otp_email" {
-			t.Fatal("unverified email must not be offered as MFA target")
+		if resp.LoginToken == "" {
+			t.Error("mfa_required 信封应含 login_token")
 		}
-	}
+		if resp.SessionId != "" || resp.UserId != 0 || resp.SessionToken != "" {
+			t.Fatalf("mfa_required 不得进终点: %+v", resp)
+		}
+	})
+
+	t.Run("global switch off passes through", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		deps.settings.bools[settings.KeyMfaEnabled] = false
+		resp := submit(deps)
+		if resp.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success（mfa_enabled=false）", resp.Status)
+		}
+	})
 }
 
-// TestMFABuilderWebauthnDegradedExcluded（§8.3 行 1069：webauthn
-// 启动降级后「MFA 开放集合随之不含 webauthn」）：Factors 注入注册表后，
-// webauthn 未注册（ErrKindNotRegistered）→ Build 不注入 webauthn method，
-// 用户不会在 mfa_required 信封选到 webauthn 才遭 dispatch 拒绝；
-// 其余因子不受影响；Factors=nil 不过滤（既有装配 / 单测行为零回归）。
-// fail-closed：用户唯一可用因子为 webauthn 且因
-// 降级被剔除（methods 空）→ ErrWebauthnDegraded 哨兵上抛，**不是**
-// required=false 静默放行；未绑定 webauthn 的用户与窗口无关，放行语义
-// 不变（「不影响范围」）。
-func TestMFABuilderWebauthnDegradedExcluded(t *testing.T) {
-	user := &model.User{ID: 9, MfaRequired: 1}
-	webauthnCreds := &fakeCredentials{webauthn: []model.UserCredentialWebauthn{{UserID: 9}}}
-	webauthnOnly := &testSettings{slices: map[string][]string{settings.KeyMfaMethods: {"webauthn"}}}
-	emptyRegistry := &fakeRegistry{factors: map[factor.FactorKind]factor.Factor{}}
-
-	// ① fail-closed：webauthn 未注册且为该用户唯一可用因子 →
-	// ErrWebauthnDegraded（绝不 required=false 静默放行 / 自动跳过 MFA）。
-	b := NewMFABuilder(&fakeUsers{user: user}, webauthnCreds, webauthnOnly)
-	b.Factors = emptyRegistry
-	mfa, required, err := b.Build(context.Background(), 9)
-	if !errors.Is(err, ErrWebauthnDegraded) {
-		t.Fatalf("degraded webauthn-only: err = %v, want ErrWebauthnDegraded (fail-closed)", err)
-	}
-	if required || mfa != nil {
-		t.Fatalf("degraded webauthn-only: required=%v mfa=%+v, want false/nil", required, mfa)
-	}
-
-	// ② 混合：totp（已绑）保留、webauthn（已绑但未注册）剔除。
-	creds := &fakeCredentials{
-		creds:    map[string]*model.UserCredential{"totp": {UserID: 9, Kind: "totp", IsEnabled: 1}},
-		webauthn: []model.UserCredentialWebauthn{{UserID: 9}},
-	}
-	s := &testSettings{slices: map[string][]string{settings.KeyMfaMethods: {"totp", "webauthn"}}}
-	b2 := NewMFABuilder(&fakeUsers{user: user}, creds, s)
-	b2.Factors = &fakeRegistry{factors: map[factor.FactorKind]factor.Factor{
-		factor.FactorTOTP: &fakeFactor{kind: factor.FactorTOTP},
-	}}
-	mfa2, required2, err := b2.Build(context.Background(), 9)
-	if err != nil {
-		t.Fatalf("Build (mixed): %v", err)
-	}
-	if !required2 || mfa2 == nil {
-		t.Fatalf("mixed: required=%v mfa=%+v, want required with totp remaining", required2, mfa2)
-	}
-	var hasTOTP, hasWebauthn bool
-	for _, m := range mfa2.Methods {
-		switch m.Method {
-		case "totp", "recovery_code":
-			hasTOTP = true // recovery_code 随 totp 生效（§5.6）
-		case "webauthn":
-			hasWebauthn = true
-		}
-	}
-	if !hasTOTP || hasWebauthn {
-		t.Fatalf("mixed methods = %v, want totp(+recovery) without webauthn", mfa2.Methods)
-	}
-
-	// ③ 对照：注册表含 webauthn → 注入（降级逻辑不误伤正常装配）。
-	b3 := NewMFABuilder(&fakeUsers{user: user}, webauthnCreds, webauthnOnly)
-	b3.Factors = &fakeRegistry{factors: map[factor.FactorKind]factor.Factor{
-		factor.FactorWebAuthn: &fakeFactor{kind: factor.FactorWebAuthn},
-	}}
-	mfa3, required3, err := b3.Build(context.Background(), 9)
-	if err != nil {
-		t.Fatalf("Build (registered): %v", err)
-	}
-	if !required3 || mfa3 == nil || len(mfa3.Methods) != 1 || mfa3.Methods[0].Method != "webauthn" {
-		t.Fatalf("registered webauthn: required=%v mfa=%+v, want webauthn offered", required3, mfa3)
-	}
-
-	// ④ Factors=nil 不过滤（既有装配行为零回归）。
-	b4 := NewMFABuilder(&fakeUsers{user: user}, webauthnCreds, webauthnOnly)
-	mfa4, required4, err := b4.Build(context.Background(), 9)
-	if err != nil {
-		t.Fatalf("Build (nil factors): %v", err)
-	}
-	if !required4 || mfa4 == nil || len(mfa4.Methods) != 1 || mfa4.Methods[0].Method != "webauthn" {
-		t.Fatalf("nil factors legacy: required=%v mfa=%+v, want webauthn unfiltered", required4, mfa4)
-	}
-
-	// ⑤ 注册表其他错误按 Build 既有口径上抛（不吞）。
-	b5 := NewMFABuilder(&fakeUsers{user: user}, webauthnCreds, webauthnOnly)
-	boom := errors.New("registry boom")
-	b5.Factors = &fakeRegistry{err: boom}
-	if _, _, err := b5.Build(context.Background(), 9); !errors.Is(err, boom) {
-		t.Fatalf("Build (registry error): err = %v, want propagated %v", err, boom)
-	}
-
-	// ⑥ 未绑定 webauthn 的用户不受窗口影响（「不影响范围」）：降级注册表
-	// 下剔除不产生 fail-closed，required=false 既有语义保持。
-	b6 := NewMFABuilder(&fakeUsers{user: user}, &fakeCredentials{}, webauthnOnly)
-	b6.Factors = emptyRegistry
-	mfa6, required6, err := b6.Build(context.Background(), 9)
-	if err != nil || required6 || mfa6 != nil {
-		t.Fatalf("unbound user: err=%v required=%v mfa=%+v, want nil/false/nil (window is irrelevant)", err, required6, mfa6)
-	}
-}
-
-// TestEngineMfaWebauthnDegradedFailClosed 引擎级 fail-closed（验收②④：
-// webauthn 相关操作被拒且错误码正确 / 无静默放行路径）：mfa_required 用户
-// 唯一可用因子为 webauthn、注册表因启动降级未注册 webauthn → 主因子
-// verify 通过后**不进终点**，信封 status=method_disabled + error.message
-// 明示"通行密钥暂不可用"（§1.6 行 250 / 272）。
-func TestEngineMfaWebauthnDegradedFailClosed(t *testing.T) {
+// TestEngineMFARequiredLookupFailure 依赖读取故障必须 fail-closed：MFA 判定
+// 的用户查询返回非「不存在」错误时，登录失败（不建会话、响应非 success），
+// 不得把查询故障解释为「无需二次验证」而放行。
+func TestEngineMFARequiredLookupFailure(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	deps := newTestDeps(t, at)
-	// 降级注册表：password 在、webauthn 未注册（启动降级形态）。
 	deps.registry.factors[factor.FactorPassword] = passwordFactor(42)
-	deps.mfa.Factors = deps.registry
-	// mfa_required 用户，已绑 webauthn（唯一可用因子）。
 	deps.users.user = &model.User{ID: 42, MfaRequired: 1}
-	deps.creds.webauthn = []model.UserCredentialWebauthn{{UserID: 42}}
+	deps.users.err = errors.New("user repo: connection refused")
 	e := deps.engine(testState(t, at))
 
 	resp := e.Submit(context.Background(), "login", Request{
 		Method: "password", Step: "verify",
 		Payload: &factor.Payload{Username: "alice", Password: "p"},
 	})
-	if resp.Status != StatusMethodDisabled {
-		t.Fatalf("status = %q, want method_disabled (fail-closed, resp %+v)", resp.Status, resp)
+	if resp.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed（查询故障不得放行）", resp.Status)
 	}
-	if resp.Error == nil || resp.Error.Message == nil || *resp.Error.Message != WebauthnDegradedMessage {
-		t.Fatalf("error.message = %+v, want %q", resp.Error, WebauthnDegradedMessage)
+	if deps.sessions.calls != 0 {
+		t.Errorf("查询故障不得建会话, calls=%d", deps.sessions.calls)
 	}
-	// 未进终点：无会话签发痕迹（sessionId / userId 为零值，session_token 不出）。
-	if resp.SessionId != "" || resp.UserId != 0 || resp.SessionToken != "" {
-		t.Fatalf("fail-closed must not reach terminal: %+v", resp)
-	}
-
-	// 验收②补充：窗口期直接提交 method=webauthn → dispatch 对未注册 kind
-	// 拒绝 method_disabled（复用既有错误码；逐次 WARN 见 dispatch.go），
-	// 同样不进终点。
-	resp = e.Submit(context.Background(), "login", Request{Method: "webauthn", Step: "challenge"})
-	if resp.Status != StatusMethodDisabled {
-		t.Fatalf("direct webauthn submit: status = %q, want method_disabled", resp.Status)
+	if resp.SessionId != "" || resp.SessionToken != "" || resp.UserId != 0 {
+		t.Fatalf("failed 信封不得携带会话信息: %+v", resp)
 	}
 }
 
-// TestEngineMfaWebauthnDegradedUnaffected 引擎级「不影响范围」（验收③）：
-// 降级窗口内，未绑定 webauthn 的 mfa_required 用户（绑定 totp）主因子
-// verify 后正常进 mfa_required 信封（totp 可用、webauthn 不出现），
-// 与正常行为一致——不因降级误伤无关账号。
-func TestEngineMfaWebauthnDegradedUnaffected(t *testing.T) {
+// TestEngineMFARequiredUserLookupNotFound 用户查询返回包装过的
+// not-found（仓储以 %w 包装 gorm.ErrRecordNotFound）时同样必须 fail-closed：
+// 用户行读不到不得被解释为「无需二次验证」而建会话，响应为失败且不进终点。
+func TestEngineMFARequiredUserLookupNotFound(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	deps := newTestDeps(t, at)
-	// 降级注册表：password / totp 在、webauthn 未注册。
 	deps.registry.factors[factor.FactorPassword] = passwordFactor(42)
-	deps.registry.factors[factor.FactorTOTP] = totpFactor()
-	deps.mfa.Factors = deps.registry
-	deps.users.user = &model.User{ID: 42, MfaRequired: 1}
-	deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
+	deps.users.user = nil
+	deps.users.err = fmt.Errorf("repo: find user: %w", gorm.ErrRecordNotFound)
 	e := deps.engine(testState(t, at))
 
 	resp := e.Submit(context.Background(), "login", Request{
 		Method: "password", Step: "verify",
 		Payload: &factor.Payload{Username: "alice", Password: "p"},
 	})
-	if resp.Status != StatusMFARequired || resp.Mfa == nil {
-		t.Fatalf("unaffected user: status=%q mfa=%+v, want mfa_required (normal flow)", resp.Status, resp.Mfa)
+	if resp.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed（用户查不到不得放行）", resp.Status)
 	}
-	var hasTOTP, hasWebauthn bool
-	for _, m := range resp.Mfa.Methods {
-		switch m.Method {
-		case "totp", "recovery_code":
-			hasTOTP = true
-		case "webauthn":
-			hasWebauthn = true
-		}
+	if deps.sessions.calls != 0 {
+		t.Errorf("用户查不到不得建会话, calls=%d", deps.sessions.calls)
 	}
-	if !hasTOTP || hasWebauthn {
-		t.Fatalf("unaffected user methods = %v, want totp(+recovery) without webauthn", resp.Mfa.Methods)
+	if resp.SessionId != "" || resp.SessionToken != "" || resp.UserId != 0 {
+		t.Fatalf("failed 信封不得携带会话信息: %+v", resp)
 	}
 }
 
@@ -1180,9 +1054,8 @@ func TestRegisterDirectAmrInLoginEvent(t *testing.T) {
 	}
 }
 
-// kindMfaSetting user_credential.kind=mfa_setting（方案 B：Build 读侧
-// 判定「用户自选启用」的数据源；kind 与 account/mfa.go:99 同值，跨包私有
-// 各落一份先例）。
+// kindMfaSetting user_credential.kind=mfa_setting（判定「用户自选启用」
+// 的数据源；kind 与 account/mfa.go:99 同值，跨包私有各落一份先例）。
 const kindMfaSetting = "mfa_setting"
 
 // TestEngineMfaUserEnabledBySettingRow（方案 B 真实链路）：用户自选
@@ -1210,17 +1083,8 @@ func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
 		deps.creds.creds[kindMfaSetting] = &model.UserCredential{UserID: 42, Kind: kindMfaSetting, IsEnabled: 1}
 		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
 		resp := submit(deps)
-		if resp.Status != StatusMFARequired || resp.Mfa == nil {
+		if resp.Status != StatusMFARequired {
 			t.Fatalf("status = %q, want mfa_required（用户自选启用行）", resp.Status)
-		}
-		var hasTOTP bool
-		for _, m := range resp.Mfa.Methods {
-			if m.Method == "totp" {
-				hasTOTP = true
-			}
-		}
-		if !hasTOTP {
-			t.Fatalf("methods = %v, want totp offered", resp.Mfa.Methods)
 		}
 	})
 
@@ -1239,7 +1103,7 @@ func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
 		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
 		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
 		resp := submit(deps)
-		if resp.Status != StatusMFARequired || resp.Mfa == nil {
+		if resp.Status != StatusMFARequired {
 			t.Fatalf("status = %q, want mfa_required（策略强制列）", resp.Status)
 		}
 	})

@@ -355,7 +355,6 @@ func newLoginHarness(t *testing.T, settingsKey, rowKey, rowType string, enabled 
 		State:      state,
 		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: st},
 		Gate:       nil, // §9 captcha gate 未接入；engine 对 nil 安全（跳过人机校验）
-		MFA:        orchestrator.NewMFABuilder(users, creds, st),
 		Terminal:   terminal,
 		Factor:     orchestrator.FactorDeps{Users: users, Credentials: creds},
 	})
@@ -593,7 +592,7 @@ func (f *fakeUsers) FindByEmail(context.Context, string) (*model.User, error) {
 	return f.user, nil
 }
 
-// fakeCreds 同时满足 factor.CredentialRepo 与 orchestrator.MFACredentialReader。
+// fakeCreds 满足 factor.CredentialRepo。
 type fakeCreds struct{}
 
 func (fakeCreds) FindByUserAndKind(context.Context, int64, string) (*model.UserCredential, error) {
