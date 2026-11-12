@@ -3,7 +3,7 @@
  * 本次交付 GetProfile（§3.2 行 819）与安全中心族：GetConfig /
  * ChangePassword / BindPhone / BindEmail / PresignAvatar / CommitAvatar +
  * proxy 直传（§3.2-§3.4 / §10.8）；追加 MFA + 通行密钥族：GetMfa /
- * SetMfa / BindTotp / GetRecoveryCodes / RegenerateRecoveryCodes /
+ * SetMfa / BindTotp / UnbindTotp / RegenerateRecoveryCodes /
  * GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
  * DeleteWebauthnCredential + 注册编排 registerWebauthnCredential（§3.5-§3.6）。
  * 追加三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
@@ -41,7 +41,7 @@
  * isUnauthenticatedError 供各页面 / 布局层消费，跳转目标 loginUrl
  * 见 ./bootstrap。
  */
-import { create, type JsonObject } from '@bufbuild/protobuf';
+import { create, toJson, type JsonObject } from '@bufbuild/protobuf';
 import {
   startRegistration,
   type PublicKeyCredentialCreationOptionsJSON,
@@ -75,12 +75,24 @@ import type {
   RecoveryCodesResponse,
   RegenerateRecoveryCodesRequest,
   SetMfaRequest,
+  UnbindTotpRequest,
 } from '../gen/proto/api/account/v1/mfa_pb';
 import {
   BindTotpRequestSchema,
   RegenerateRecoveryCodesRequestSchema,
   SetMfaRequestSchema,
+  UnbindTotpRequestSchema,
 } from '../gen/proto/api/account/v1/mfa_pb';
+import type {
+  StartVerificationRequest,
+  StartVerificationResponse,
+  SubmitVerificationRequest,
+  SubmitVerificationResponse,
+} from '../gen/proto/api/common/v1/verification_pb';
+import {
+  StartVerificationRequestSchema,
+  SubmitVerificationRequestSchema,
+} from '../gen/proto/api/common/v1/verification_pb';
 import type {
   DeleteWebauthnCredentialRequest,
   RegisterWebauthnRequest,
@@ -109,6 +121,7 @@ import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeRequest } from '../gen/proto/api/sso/v1/ticket_pb';
 import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
+import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
 import {
   MAX_POLL_SECONDS,
@@ -251,14 +264,16 @@ export function buildBindChallengeRequest(
         ok: true,
         request: create(BindPhoneRequestSchema, {
           step: 'challenge',
-          payload: { phone: target, captcha },
+          payload: { phone: target },
+          captcha,
         }),
       }
     : {
         ok: true,
         request: create(BindEmailRequestSchema, {
           step: 'challenge',
-          payload: { email: target, captcha },
+          payload: { email: target },
+          captcha,
         }),
       };
 }
@@ -338,9 +353,23 @@ export function bindTotp(request: BindTotpRequest): Promise<BindTotpResponse> {
   return accountClient.bindTotp(request);
 }
 
-/** 恢复码一次性展示（§3.5 行 907）。 */
-export function getRecoveryCodes(): Promise<RecoveryCodesResponse> {
-  return accountClient.getRecoveryCodes({});
+/** 解绑 TOTP（§3.5 行 1078）：必须携带 §3.8 取得的 verificationToken。 */
+export function unbindTotp(request: UnbindTotpRequest): Promise<OkResponse> {
+  return accountClient.unbindTotp(request);
+}
+
+/** 敏感操作二次验证 Start（§3.8.1，AccountService 组）：会话 uid 由服务端推导。 */
+export function startVerification(
+  request: StartVerificationRequest,
+): Promise<StartVerificationResponse> {
+  return accountClient.startVerification(request);
+}
+
+/** 敏感操作二次验证 Submit（§3.8.1，AccountService 组）：返回 verificationToken 与 amr。 */
+export function submitVerification(
+  request: SubmitVerificationRequest,
+): Promise<SubmitVerificationResponse> {
+  return accountClient.submitVerification(request);
 }
 
 /** 恢复码重新生成（§3.5 行 908）：全量作废后同格式一次性下发新码。 */
@@ -407,6 +436,47 @@ export function buildSetMfaRequest(
     return { ok: false, error: 'mfa_required_locked' };
   }
   return { ok: true, request: create(SetMfaRequestSchema, { methods: next }) };
+}
+
+/**
+ * StartVerification 请求（§3.8.2）：bizPurpose / operation 由调用入口固定；
+ * method 为空 = 只取 methods[] 由前端选择；选定因子时 captcha 按 §2.5 以
+ * 请求级字段提交（Struct 承载，序列化为标准 JSON 对象）。
+ */
+export function buildStartVerificationRequest(
+  bizPurpose: string,
+  operation: string,
+  method = '',
+  captcha?: CaptchaPayload,
+): StartVerificationRequest {
+  return create(StartVerificationRequestSchema, {
+    bizPurpose,
+    operation,
+    ...(method !== '' ? { method } : {}),
+    ...(captcha !== undefined
+      ? { captcha: toJson(CaptchaPayloadSchema, captcha) as JsonObject }
+      : {}),
+  });
+}
+
+/** SubmitVerification 请求（§3.8.2）：payload 为因子载荷，按 §2.6 组装。 */
+export function buildSubmitVerificationRequest(
+  challengeToken: string,
+  method: string,
+  payload: JsonObject,
+): SubmitVerificationRequest {
+  return create(SubmitVerificationRequestSchema, {
+    challengeToken,
+    method,
+    payload,
+  });
+}
+
+/** UnbindTotp 请求（§3.5 行 1078）：verificationToken 缺失时服务端回 verification_required。 */
+export function buildUnbindTotpRequest(
+  verificationToken: string,
+): UnbindTotpRequest {
+  return create(UnbindTotpRequestSchema, { verificationToken });
 }
 
 /** BindTotp challenge 请求（§3.5 行 905）：{step:challenge}，secret / code 零值省略。 */

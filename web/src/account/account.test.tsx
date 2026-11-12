@@ -80,7 +80,7 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  *   （uploadMod，被测对象移位、断言零改动）。
  * - MFA + 通行密钥族：GetMfa / SetMfa（buildSetMfaRequest：追加 /
  *   移除 / required 锁死）/ BindTotp 两步（challenge wire 省略零值 + verify
- *   回传 secret）/ GetRecoveryCodes / RegenerateRecoveryCodes（action=
+ *   回传 secret）/ RegenerateRecoveryCodes（action=
  *   regenerate）/ GetWebauthnCredentials 解码；registerWebauthnCredential
  *   三步编排（依赖注入：challengeData / credential 引用恒等透传、取消 /
  *   失败语义，§12.9 方案 A）；rename / delete wire；formatUnixTime /
@@ -137,7 +137,6 @@ const COMMIT_AVATAR_URL = `${BASE}/api.account.v1.AccountService/CommitAvatar`;
 const GET_MFA_URL = `${BASE}/api.account.v1.AccountService/GetMfa`;
 const SET_MFA_URL = `${BASE}/api.account.v1.AccountService/SetMfa`;
 const BIND_TOTP_URL = `${BASE}/api.account.v1.AccountService/BindTotp`;
-const GET_RECOVERY_CODES_URL = `${BASE}/api.account.v1.AccountService/GetRecoveryCodes`;
 const REGEN_RECOVERY_CODES_URL = `${BASE}/api.account.v1.AccountService/RegenerateRecoveryCodes`;
 const GET_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/GetWebauthnCredentials`;
 const RENAME_WEBAUTHN_URL = `${BASE}/api.account.v1.AccountService/RenameWebauthnCredential`;
@@ -582,7 +581,7 @@ describe('api.changePassword（§3.3 行 855-863）', () => {
 // ---------------------------------------------------------------------------
 
 describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
-  test('challenge：{step, payload:{phone, captcha}}——自绘 captcha 三元组零值省略 token（§2.5 行 503-506）', async () => {
+  test('challenge：{step, payload:{phone}, captcha}——凭据为请求级顶层字段（§3.4 行 1029）', async () => {
     let captured!: Request;
     server.use(
       http.post(BIND_PHONE_URL, ({ request }) => {
@@ -610,10 +609,8 @@ describe('api.bindPhone / bindEmail（§3.4 行 870-873）', () => {
 
     expect(await captured.json()).toEqual({
       step: 'challenge',
-      payload: {
-        phone: '13800138000',
-        captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '1234' },
-      },
+      payload: { phone: '13800138000' },
+      captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '1234' },
     });
   });
 
@@ -816,7 +813,7 @@ describe('buildBindChallengeRequest / buildBindVerifyRequest（§3.4，纯函数
     const request = built.request as BindPhoneRequest;
     expect(request.step).toBe('challenge');
     expect(request.payload?.phone).toBe('13800138000');
-    expect(request.payload?.captcha).toBe(captcha);
+    expect(request.captcha).toBe(captcha);
   });
 
   test('email challenge 就绪：payload.email', () => {
@@ -1319,19 +1316,13 @@ describe('api.bindTotp（§3.5 行 905-906）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）
+// api.regenerateRecoveryCodes（§3.5 行 908；存量码不可回显）
 // ---------------------------------------------------------------------------
 
-describe('api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）', () => {
-  test('查看解码 {codes, createdAt}；重新生成 wire {action:"regenerate"} → 新码同格式', async () => {
+describe('api.regenerateRecoveryCodes（§3.5 行 908）', () => {
+  test('wire {action:"regenerate"} → 一次性下发新码 + createdAt', async () => {
     let captured!: Request;
     server.use(
-      http.post(GET_RECOVERY_CODES_URL, () =>
-        HttpResponse.json({
-          codes: TEN_RECOVERY_CODES,
-          createdAt: '1761700000',
-        }),
-      ),
       http.post(REGEN_RECOVERY_CODES_URL, ({ request }) => {
         captured = request;
         return HttpResponse.json({
@@ -1340,10 +1331,6 @@ describe('api.getRecoveryCodes / regenerateRecoveryCodes（§3.5 行 907-908）'
         });
       }),
     );
-
-    const view = await apiMod.getRecoveryCodes();
-    expect(view.codes).toHaveLength(10);
-    expect(view.createdAt).toBe(BigInt(1761700000));
 
     const regen = await apiMod.regenerateRecoveryCodes(
       apiMod.buildRegenerateRecoveryCodesRequest(),

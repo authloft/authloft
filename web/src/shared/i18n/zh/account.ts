@@ -88,8 +88,23 @@ export const account = {
   'account.factorBoundTag': '已绑定',
   'account.factorUnboundTag': '未绑定',
   'account.mfaLocked': '策略要求开启两步验证，不可全部关闭',
+  'account.mfaDisableAction': '停用',
+  'account.mfaDisableConfirm':
+    '确定停用「{factor}」？停用后登录时将不再要求该因子验证；解除绑定请使用「解绑」。',
+  'account.mfaDisableSuccess': '已停用{factor}',
   'account.viewRecoveryCodes': '查看恢复码',
   'account.recoveryLoadFailed': '恢复码加载失败',
+  'account.recoveryNotViewable':
+    '存量恢复码不可回显，重新生成将作废全部旧码并下发新码。',
+
+  // ---- StepUpDialog（敏感操作二次验证，接口文档 §3.8）-----------------------
+  'account.stepUpTitle': '安全验证',
+  'account.stepUpHint': '为保护账号安全，请完成二次验证。',
+  'account.stepUpMethodLabel': '验证方式',
+  'account.stepUpNextAction': '下一步',
+  'account.stepUpVerifyAction': '验证',
+  'account.stepUpNoMethods': '当前没有可用的验证方式',
+  'account.stepUpInvalidResponse': '验证响应无效，请重试',
 
   // ---- WebauthnList------------------------------------------------------------
   'account.webauthnLabelPlaceholder': '为通行密钥命名（可选）',

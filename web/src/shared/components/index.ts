@@ -26,3 +26,13 @@ export {
 } from './ErrorBanner';
 export { CopyButton, type CopyButtonProps } from './CopyButton';
 export { Spinner, type SpinnerProps } from './Spinner';
+export {
+  StepUpDialog,
+  StepUpDialogView,
+  factorLabel,
+  stepUpFields,
+  stepUpPayload,
+  type StepUpDialogProps,
+  type StepUpDialogViewProps,
+  type StepUpPhase,
+} from './StepUpDialog';

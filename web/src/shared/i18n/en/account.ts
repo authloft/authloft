@@ -99,8 +99,25 @@ export const account: typeof zhAccount = {
   'account.factorUnboundTag': 'Not linked',
   'account.mfaLocked':
     'Policy requires two-step verification; it cannot be fully turned off',
+  'account.mfaDisableAction': 'Disable',
+  'account.mfaDisableConfirm':
+    'Disable "{factor}"? It will no longer be required when you sign in. Use Unlink to remove the binding.',
+  'account.mfaDisableSuccess': '{factor} disabled',
   'account.viewRecoveryCodes': 'View recovery codes',
   'account.recoveryLoadFailed': 'Failed to load recovery codes',
+  'account.recoveryNotViewable':
+    'Existing recovery codes cannot be shown again. Regenerating invalidates all old codes and issues new ones.',
+
+  // ---- StepUpDialog (sensitive-operation step-up, API doc §3.8) ------------
+  'account.stepUpTitle': 'Security Verification',
+  'account.stepUpHint':
+    'To protect your account, please complete the second verification.',
+  'account.stepUpMethodLabel': 'Verification method',
+  'account.stepUpNextAction': 'Next',
+  'account.stepUpVerifyAction': 'Verify',
+  'account.stepUpNoMethods': 'No verification method is available',
+  'account.stepUpInvalidResponse':
+    'The verification response is invalid. Please try again',
 
   // ---- WebauthnList ---------------------------------------------------------
   'account.webauthnLabelPlaceholder': 'Name this passkey (optional)',
