@@ -6,7 +6,9 @@
  *   不注自定义 codec；业务代码对缺失字段按零值兜底（§9 第 18 条）。
  * - 错误归一（§3.1「transport 与错误归一」）：非 2xx 由 connect-es 抛 ConnectError →
  *   findDetails(api.common.v1.ErrorInfo) 解出 {domain, code, message, retryAfter,
- *   attemptsLeft} → 抛 ApiError；无（有效）detail 时按 Connect 标准码兜底（接口文档
+ *   attemptsLeft} → 抛 ApiError；captcha 失败时 details 并列的
+ *   api.common.v1.CaptchaConfig 一并解出挂 ApiError.captcha（§1.5 行 228、§2.5）；
+ *   无（有效）detail 时按 Connect 标准码兜底（接口文档
  *   §1.5 行 226），未知码不透出 message 细节。登录流程域 200 的流程
  *   status 分支走业务层（reducer），不在 transport 拦截。
  * - multipart（REST 豁免端点，不用 transport）仍走 postForm：XHR 进度 + 同口径错误归一。
@@ -26,6 +28,10 @@ import {
   type MessageShape,
 } from '@bufbuild/protobuf';
 import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
+import {
+  CaptchaConfigSchema,
+  type CaptchaConfig,
+} from '../../gen/proto/api/common/v1/captcha_pb';
 import { SsoService } from '../../gen/proto/api/sso/v1/sso_pb';
 import { AccountService } from '../../gen/proto/api/account/v1/account_pb';
 import { AdminService } from '../../gen/proto/api/admin/v1/admin_pb';
@@ -136,7 +142,9 @@ function requestIdFrom(metadata: Headers): string {
  * ConnectError → ApiError（§3.1「transport 与错误归一」）：
  * findDetails 解 api.common.v1.ErrorInfo（§1.5 行 199-221）——业务码取 ErrorInfo.code、
  * 展示兜底取 ErrorInfo.message（行 202 / 219：i18n 优先，其次本字段）、retryAfter /
- * attemptsLeft 透传；无（有效）detail 按 Connect 标准码兜底（行 226），其 message 仅在
+ * attemptsLeft 透传；captcha 失败时 details 并列的 api.common.v1.CaptchaConfig
+ * 一并解出挂在 ApiError.captcha（§1.5 行 228、§2.5），供弹窗按权威配置渲染。
+ * 无（有效）detail 按 Connect 标准码兜底（行 226），其 message 仅在
  * 标准码属于 CODE_TABLE 封闭集时透出（行 202「其次本字段」），未知码不透出。
  */
 function toApiError(error: unknown): unknown {
@@ -144,6 +152,7 @@ function toApiError(error: unknown): unknown {
     return error;
   }
   const [info] = error.findDetails(ErrorInfoSchema);
+  const [captcha] = error.findDetails(CaptchaConfigSchema);
   if (info !== undefined && info.code !== '') {
     return new ApiError({
       httpStatus: CODE_HTTP_STATUS[error.code],
@@ -152,6 +161,7 @@ function toApiError(error: unknown): unknown {
       requestId: requestIdFrom(error.metadata),
       retryAfter: info.retryAfter,
       attemptsLeft: info.attemptsLeft,
+      captcha,
     });
   }
   const standardCode = CODE_STRING[error.code];
@@ -160,6 +170,7 @@ function toApiError(error: unknown): unknown {
     code: standardCode,
     message: isKnownCode(standardCode) ? error.rawMessage : '',
     requestId: requestIdFrom(error.metadata),
+    captcha,
   });
 }
 
@@ -333,7 +344,8 @@ interface ConnectErrorBody {
 
 /**
  * XHR 路径的 Connect 错误体 → ApiError（不经过 connect-es，手动同口径归一）：
- * details 的 api.common.v1.ErrorInfo 优先（§1.5 行 203-209）；无有效 detail 时
+ * details 的 api.common.v1.ErrorInfo 优先（§1.5 行 203-209）；captcha 失败时
+ * 并列的 api.common.v1.CaptchaConfig 一并解出（§1.5 行 228）。无有效 detail 时
  * code 取错误体顶层 code（缺省按 HTTP 状态映射，行 184-193），message 仅在
  * code 属于 CODE_TABLE 封闭集时透出（行 202），未知码不透出。
  */
@@ -352,6 +364,7 @@ function connectBodyToApiError(
     };
   }
   const info = body !== undefined ? errorInfoFromBody(body) : undefined;
+  const captcha = body !== undefined ? captchaConfigFromBody(body) : undefined;
   if (info !== undefined && info.code !== '') {
     return new ApiError({
       httpStatus,
@@ -360,6 +373,7 @@ function connectBodyToApiError(
       requestId,
       retryAfter: info.retryAfter,
       attemptsLeft: info.attemptsLeft,
+      captcha,
     });
   }
   const code =
@@ -368,7 +382,7 @@ function connectBodyToApiError(
       : httpFallbackCode(httpStatus);
   const message =
     typeof body?.message === 'string' && isKnownCode(code) ? body.message : '';
-  return new ApiError({ httpStatus, code, message, requestId });
+  return new ApiError({ httpStatus, code, message, requestId, captcha });
 }
 
 /**
@@ -394,6 +408,33 @@ function errorInfoFromBody(
       return fromBinary(ErrorInfoSchema, base64ToBytes(value));
     } catch {
       // §1.5 行 207：以 value 解码为准，解不出视同无 detail。
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从 Connect 错误体 details 解 captcha 失败并列的 api.common.v1.CaptchaConfig
+ * （§1.5 行 228、§2.5：type 匹配、value 为 base64 的 Protobuf 字节；解不出视同未携带）。
+ */
+function captchaConfigFromBody(
+  body: ConnectErrorBody,
+): CaptchaConfig | undefined {
+  if (!Array.isArray(body.details)) {
+    return undefined;
+  }
+  for (const detail of body.details) {
+    if (typeof detail !== 'object' || detail === null) {
+      continue;
+    }
+    const { type, value } = detail as { type?: unknown; value?: unknown };
+    if (type !== 'api.common.v1.CaptchaConfig' || typeof value !== 'string') {
+      continue;
+    }
+    try {
+      return fromBinary(CaptchaConfigSchema, base64ToBytes(value));
+    } catch {
+      // 以 value 解码为准，解不出视同未携带。
     }
   }
   return undefined;

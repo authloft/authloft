@@ -163,9 +163,9 @@ describe('登录字段文案契约（后端下发 login.field.* 键）', () => {
 });
 
 describe('与 shared/api/errors.ts 的 i18nKey 契约（§1.6 / §1.5，不造第二套）', () => {
-  test('FLOW_STATUS_TABLE（§1.6 全表 33 词）的 i18nKey 两套字典全部可译', () => {
+  test('FLOW_STATUS_TABLE（§1.6 流程态 31 词）的 i18nKey 两套字典全部可译', () => {
     const resolutions = Object.values(FLOW_STATUS_TABLE);
-    expect(resolutions).toHaveLength(33);
+    expect(resolutions).toHaveLength(31);
     for (const { i18nKey } of resolutions) {
       expect(hasKey(i18nKey)).toBe(true);
       setLocale('en-US');

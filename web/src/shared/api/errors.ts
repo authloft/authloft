@@ -1,13 +1,18 @@
 /**
  * 两层错误口径——「§1.6 词汇、两个位置」（docs/接口文档.md §1.6 行 267；docs/前端架构.md §3.1 errors.ts）：
  * ① 位置一（登录流程域，SsoService 登录流程方法，HTTP 200）：响应**顶层 `status`**，
- *    取值即 §1.6 封闭全量表（33 词），含流程态（next / mfa_required / success / failed…）
- *    → `{retryable, action, i18nKey}`，业务分支走 reducer，不经 transport 拦截；
+ *    取值即 §1.6 封闭全量表（33 词，其中 `captcha_required` / `captcha_invalid`
+ *    仅作 `ErrorInfo.code`、不作 `status`，故不进流程态表），含流程态
+ *    （next / mfa_required / success / failed…）→ `{retryable, action, i18nKey}`，
+ *    业务分支走 reducer，不经 transport 拦截；
  * ② 位置二（其余域）：非 200 Connect 错误体 details 的 **`ErrorInfo.code`**（§1.5 行 199-221）
- *    ——无 detail 时按 Connect 标准码（§1.5 行 184-193）兜底，统一拦截文案。
+ *    ——无 detail 时按 Connect 标准码（§1.5 行 184-193）兜底，统一拦截文案；
+ *    captcha 失败所需配置从同一错误体 details 的 `api.common.v1.CaptchaConfig` 读取
+ *    （§1.5 行 228、§2.5），不再依赖登录流程信封。
  * 未知 `status` / `code` 一律走兜底，不暴露内部信息；`ErrorInfo.message` /
  * `ConnectError.message` 只作展示兜底（§1.5 行 202：i18n 优先，其次本字段），不参与分支。
  */
+import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 
 // ---------------------------------------------------------------------------
 // ApiError：transport 错误归一的目标形态（http.ts 构造，docs/前端架构.md §3.1）
@@ -22,6 +27,8 @@ export interface ApiErrorInit {
   retryAfter?: bigint;
   /** ErrorInfo.attempts_left（§1.5 行 221）：剩余尝试次数。 */
   attemptsLeft?: bigint;
+  /** captcha 失败时错误体 details 并列的 `api.common.v1.CaptchaConfig`（§1.5 行 228、§2.5）。 */
+  captcha?: CaptchaConfig;
 }
 
 /** 统一错误体：非 200 Connect 错误体（ErrorInfo detail 或标准码兜底）与传输层失败的归一形态（docs/接口文档.md §1.5）。 */
@@ -38,6 +45,9 @@ export class ApiError extends Error {
   /** 剩余尝试次数（§1.5 行 221）；未携带或零值为 undefined。 */
   attemptsLeft?: bigint;
 
+  /** captcha 失败时错误体 details 携带的权威配置（§1.5 行 228、§2.5）；其余错误为 undefined。 */
+  captcha?: CaptchaConfig;
+
   constructor(init: ApiErrorInit) {
     super(init.message);
     this.name = 'ApiError';
@@ -52,6 +62,7 @@ export class ApiError extends Error {
       init.attemptsLeft !== undefined && init.attemptsLeft > BigInt(0)
         ? init.attemptsLeft
         : undefined;
+    this.captcha = init.captcha;
   }
 }
 
@@ -76,9 +87,9 @@ export type StatusAction =
   | 'stop_polling'
   /** step / token / state 类失败：回到第一步。 */
   | 'restart'
-  /** captcha_required：开 captcha 弹窗（配置取响应顶层 captcha），确认后重提。 */
+  /** captcha_required：打开 captcha 弹窗（配置取错误体 details 的 CaptchaConfig），确认后重提。 */
   | 'require_captcha'
-  /** captcha_invalid：弹窗不关，换新凭据后重提。 */
+  /** captcha_invalid：弹窗不关，按错误体 details 的 CaptchaConfig 换新凭据后重提。 */
   | 'reset_captcha'
   /** too_many_requests / locked：倒计时（retry_after）/ 展示剩余时长。 */
   | 'countdown'
@@ -100,8 +111,10 @@ export interface StatusResolution {
 }
 
 /**
- * §1.6 封闭全量表（docs/接口文档.md 行 230-261）——位置一（登录流程域 §1.3 顶层
- * status）的取值域；新增取值必须同步本模块映射（§1.6 行 270）。
+ * §1.6 封闭全量表（docs/接口文档.md 行 230-261）词汇全集（33 词）——登录流程域
+ * 顶层 `status` 与其余域 `ErrorInfo.code` 共用同一套词汇（§1.6 行 286）。
+ * `captcha_required` / `captcha_invalid` 仅作 `ErrorInfo.code`、不作 `status`
+ * （§1.6 行 286），故不在下方流程态表内。
  */
 export type FlowStatusKey =
   | 'next'
@@ -139,13 +152,23 @@ export type FlowStatusKey =
   | 'internal_error';
 
 /**
- * 流程态表（位置一）：登录流程域顶层 status（§1.6 全表）→ 处置口径（表驱动，
- * 逐项对照 docs/接口文档.md 行 230-261）。`failed` 的「可重试」文档标注「视 error」，
- * 需调用方结合信封 error 内容判断，表取保守值 false。
+ * 真正的流程态（位置一）：§1.6 词汇去掉仅作 `ErrorInfo.code` 的
+ * `captcha_required` / `captcha_invalid`（§1.6 行 286「四个码都不是 status」）。
  */
-export const FLOW_STATUS_TABLE: Readonly<
-  Record<FlowStatusKey, StatusResolution>
-> = {
+export type FlowStatus = Exclude<
+  FlowStatusKey,
+  'captcha_required' | 'captcha_invalid'
+>;
+
+/** 流程态表类型别名（保持声明行简短，避免格式化把整张表整体重排）。 */
+type FlowStatusTable = Readonly<Record<FlowStatus, StatusResolution>>;
+
+/**
+ * 流程态表（位置一）：登录流程域顶层 status（§1.6 全表去掉两个 code-only 词）
+ * → 处置口径（表驱动，逐项对照 docs/接口文档.md 行 230-261）。`failed` 的
+ * 「可重试」文档标注「视 error」，需调用方结合信封 error 内容判断，表取保守值 false。
+ */
+export const FLOW_STATUS_TABLE: FlowStatusTable = {
   next: {
     retryable: false,
     action: 'render_next_step',
@@ -185,16 +208,6 @@ export const FLOW_STATUS_TABLE: Readonly<
     retryable: false,
     action: 'message',
     i18nKey: 'errors.status.failed',
-  },
-  captcha_required: {
-    retryable: true,
-    action: 'require_captcha',
-    i18nKey: 'errors.status.captcha_required',
-  },
-  captcha_invalid: {
-    retryable: true,
-    action: 'reset_captcha',
-    i18nKey: 'errors.status.captcha_invalid',
   },
   too_many_requests: {
     retryable: false,
@@ -373,7 +386,8 @@ export type ConnectStandardCode =
 /**
  * §1.6 失败类词汇（docs/接口文档.md 行 230-261 中非纯流程态的全部，26 词）；
  * 纯流程态（next / mfa_required / binding_required / success / pending / scanned /
- * expired）只在位置一出现，不得混入本位置（§1.6 行 267「两个位置」）。
+ * expired）只在位置一出现，不得混入本位置（§1.6 行 267「两个位置」）；
+ * `captcha_required` / `captcha_invalid` 仅在本位置出现（§1.6 行 286）。
  * `internal_error` 是 §1.6 词汇，与 Connect 标准码 `internal` 分属两套拼法，各自入表。
  */
 export type BusinessCode =
@@ -416,17 +430,20 @@ export interface CodeResolution {
 }
 
 /**
- * 层② §1.6 失败词的处置：与层①同一张表派生（「一套词汇、两个位置」，§1.6 行 267），
- * 仅 i18n 键前缀不同（errors.status.<词> → errors.code.<词>）。
+ * 层② §1.6 失败词的处置：两个位置共有的词与层①同表派生；captcha 两码仅此
+ * 位置出现（§1.6 行 286），显式登记。i18n 键前缀统一为 errors.code.<词>。
  */
 const failureResolutions: Readonly<Record<BusinessCode, CodeResolution>> = {
   failed: { ...FLOW_STATUS_TABLE.failed, i18nKey: 'errors.code.failed' },
+  // captcha 两码仅作 ErrorInfo.code（§1.6 行 286），无对应流程态可派生，显式登记。
   captcha_required: {
-    ...FLOW_STATUS_TABLE.captcha_required,
+    retryable: true,
+    action: 'require_captcha',
     i18nKey: 'errors.code.captcha_required',
   },
   captcha_invalid: {
-    ...FLOW_STATUS_TABLE.captcha_invalid,
+    retryable: true,
+    action: 'reset_captcha',
     i18nKey: 'errors.code.captcha_invalid',
   },
   too_many_requests: {
@@ -570,8 +587,8 @@ const standardResolutions: Readonly<
 };
 
 /**
- * 错误码表（位置二）：§1.6 失败词（26，与层①同动作）+ §1.5 Connect 标准码（8），
- * 共 34 键；新增取值必须同步本模块映射（§1.6 行 270）。
+ * 错误码表（位置二）：§1.6 失败词（26，其中 captcha 两码仅此位置出现）+ §1.5
+ * Connect 标准码（8），共 34 键；新增取值必须同步本模块映射（§1.6 行 270）。
  */
 export const CODE_TABLE: Readonly<Record<ErrorCode, CodeResolution>> = {
   ...failureResolutions,

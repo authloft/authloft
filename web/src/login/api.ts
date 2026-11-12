@@ -21,6 +21,11 @@
  * 从那里拿 ssoClient、不自建 transport；请求状态语义归 ahooks useRequest +
  * shared/hooks/requestOptions（§3.2 定稿口径），本模块是薄封装。
  * 报文类型全部取自 src/gen/proto 生成物。
+ *
+ * captcha 提交位置（接口文档 §2.2 / §2.5）：作为**请求顶层 `captcha`**（与
+ * `payload` 平级）随入参透传，`payload` 不再承载 captcha；captcha 失败统一走
+ * 非 200 `ErrorInfo.code`（captcha_required / captcha_invalid），由 transport
+ * 归一为 ApiError 后交 shared/captcha 的 gate 吸收，本模块不解析错误体。
  */
 import type { JsonObject } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';
@@ -31,7 +36,11 @@ import type { LoginDefaultRequest } from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
 import type { LoginOauthRequest } from '../gen/proto/api/sso/v1/oauth_pb';
-import { clearLoginToken, getLoginToken, setLoginToken } from './loginTokenStore';
+import {
+  clearLoginToken,
+  getLoginToken,
+  setLoginToken,
+} from './loginTokenStore';
 import { loadOidcContext } from './oidcContext';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +53,7 @@ import { loadOidcContext } from './oidcContext';
  * authorize / createQrcode 的入参形状随函数一并归口 shared 侧。
  */
 
-/** 登录流程请求入参：再剔除托管字段 loginToken / oidc（由本模块统一注入）。 */
+/** 登录流程请求入参：再剔除托管字段 loginToken / oidc（由本模块统一注入）；captcha 保持请求顶层（§2.2 / §2.5）。 */
 type FlowInput<T extends { loginToken: string }> = Omit<
   MessageInput<T>,
   'loginToken' | 'oidc'
@@ -82,9 +91,10 @@ function storedOidc(): JsonObject | undefined {
  * oidc 仅首次请求（尚无 login_token）时回传（§2.2 行 425），源由调用方给定
  * （惰性求值：已有 token 时不读源）。
  */
-function flowTokenFields(
-  oidcSource: () => JsonObject | undefined,
-): { loginToken: string; oidc?: JsonObject } {
+function flowTokenFields(oidcSource: () => JsonObject | undefined): {
+  loginToken: string;
+  oidc?: JsonObject;
+} {
   const loginToken = getLoginToken();
   if (loginToken !== '') {
     return { loginToken };
@@ -124,9 +134,7 @@ export async function loginDefault(
 export type RegisterInput = FlowInput<RegisterRequest>;
 
 /** SsoService/Register（§2.3 行 440）：注册，flow=register。 */
-export async function register(
-  req: RegisterInput,
-): Promise<LoginFlowResponse> {
+export async function register(req: RegisterInput): Promise<LoginFlowResponse> {
   return applyEnvelope(
     await ssoClient.register({ ...req, ...flowTokenFields(snapshotOidc) }),
   );

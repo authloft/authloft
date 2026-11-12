@@ -39,7 +39,9 @@ export type FlowEvent =
 /**
  * 未知 status 一律映射为 failed（§1.6 行 272：登录流程域未知异常 → failed
  * + 兜底文案，不暴露内部信息）；封闭集合成员关系由 FLOW_STATUS_TABLE 判定
- * （shared/api/errors，§1.6 行 270 单一真相）。
+ * （shared/api/errors，§1.6 行 270 单一真相）。`captcha_required` /
+ * `captcha_invalid` 仅作 `ErrorInfo.code`、不在流程态表内（§1.6 行 286），
+ * 其弹窗由 shared/captcha 的统一 gate 驱动，不在本 reducer 产生分支。
  */
 function normalizeStatus(status: string): MachineStatus {
   return Object.prototype.hasOwnProperty.call(FLOW_STATUS_TABLE, status)

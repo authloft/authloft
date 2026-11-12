@@ -62,14 +62,21 @@ describe('machine 初始态（§4.1 状态机图 idle 起点）', () => {
 });
 
 describe('reducer status 迁移（§1.3 行 145：status 是唯一分支依据；§1.6 封闭全量表）', () => {
-  test('§1.6 全部 33 个 status 逐字镜像到 state.status', () => {
+  test('§1.6 全部 31 个流程态逐字镜像到 state.status', () => {
     const statuses = Object.keys(FLOW_STATUS_TABLE);
-    expect(statuses).toHaveLength(33); // 封闭集合规模锚点（§1.6 行 230-263）
+    expect(statuses).toHaveLength(31); // 流程态规模锚点（§1.6 行 230-263 去掉两个 code-only 词）
     for (const status of statuses) {
       const state = at(status);
       expect(state.status, `status=${status}`).toBe(status);
       expect(state.envelope?.status).toBe(status);
       expect(state.loading).toBe(false);
+    }
+  });
+
+  test('captcha_* 不作流程态：不进表、到达时按未知 status 兜底为 failed（§1.6 行 286）', () => {
+    for (const status of ['captcha_required', 'captcha_invalid']) {
+      expect(FLOW_STATUS_TABLE).not.toHaveProperty(status);
+      expect(at(status).status, `status=${status}`).toBe('failed');
     }
   });
 
@@ -107,8 +114,6 @@ describe('reducer status 迁移（§1.3 行 145：status 是唯一分支依据�
       'scanned',
       'expired',
       'failed',
-      'captcha_required',
-      'captcha_invalid',
       'too_many_requests',
       'locked',
       'invalid_credentials',
@@ -173,9 +178,7 @@ describe('reducer 事件迁移', () => {
   });
 
   test('request_cancelled：取消 captcha 弹窗只撤 loading，status / method / step / 信封原样保留', () => {
-    const before = at('invalid_credentials', {
-      captcha: { providerKey: 'builtin_image', type: 'image' },
-    });
+    const before = at('invalid_credentials');
     const pending = reduce(
       [{ type: 'request_started', step: 'challenge' }],
       before,
@@ -230,8 +233,6 @@ describe('selectors（§4.1 行 382：当前 step / method / 禁用提交）', (
       'next',
       'mfa_required',
       'binding_required',
-      'captcha_required',
-      'captcha_invalid',
       'pending',
       'scanned',
       'expired',

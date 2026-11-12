@@ -1,10 +1,23 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化落地后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import { clearLoginToken, getLoginToken, setLoginToken } from './loginTokenStore';
+import {
+  clearLoginToken,
+  getLoginToken,
+  setLoginToken,
+} from './loginTokenStore';
 import { saveOidcContext } from './oidcContext';
 
 /**
@@ -123,6 +136,32 @@ describe('loginDefault（§2.2）loginToken / oidc 注入与信封后处理（§
       method: 'otp_email',
       step: 'challenge',
       payload: { email: 'a@b.com' },
+    });
+  });
+
+  test('captcha 顶层透传：请求体 `captcha` 与 payload 平级、不进 payload（§2.2 / §2.5）', async () => {
+    setLoginToken('tok-1');
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+
+    await mod.loginDefault({
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+    });
+
+    expect(JSON.parse(raw)).toEqual({
+      loginToken: 'tok-1',
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
   });
 
@@ -255,7 +294,9 @@ describe('非信封方法（直通薄封装，无 loginToken 注入）', () => {
     server.use(
       http.post(AUTHORIZE, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ authorizeUrl: 'https://qq.example/auth?state=l-x' });
+        return HttpResponse.json({
+          authorizeUrl: 'https://qq.example/auth?state=l-x',
+        });
       }),
     );
     const response = await mod.authorize({ provider: 'qq' });

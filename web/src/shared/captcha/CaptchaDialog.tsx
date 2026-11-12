@@ -3,6 +3,8 @@
  * 并在确认时取 widget 凭据。窗体（脱体 / 遮罩 / 标题 / 两按钮 / 焦点 / Esc /
  * 滚动锁）全归注入实现——login 传 login/components/Modal，account / admin 传
  * shared/app-ui/Modal，本壳与纯内容因此零 UI 库依赖、零 DOM API。
+ * 开窗配置由 gate 从 captcha 失败错误体 details 的 CaptchaConfig 解出后注入
+ * （§1.5 行 228 / §2.5），本壳只按 session.config 渲染 widget。
  *
  * 凭据读取留在本壳而非 Modal：Modal 是 domain 通用窗体，不该认识 captcha。
  *

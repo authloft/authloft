@@ -81,14 +81,14 @@ describe('CaptchaDialogView 纯内容', () => {
   });
 
   test('凭据被判无效 → 内容内出「验证未通过」', () => {
-    const markup = renderContent({ errorKey: 'errors.status.captcha_invalid' });
+    const markup = renderContent({ errorKey: 'errors.code.captcha_invalid' });
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('验证未通过，请重试');
   });
 
   test('未作答即确认 → 内容内出「请完成验证」', () => {
     expect(
-      renderContent({ errorKey: 'errors.status.captcha_required' }),
+      renderContent({ errorKey: 'errors.code.captcha_required' }),
     ).toContain('请完成验证');
   });
 

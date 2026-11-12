@@ -4,6 +4,8 @@
  * 持开窗态（配置 / 第几次询问 / 在途 / 错误位）与一个待兑现的 Promise：
  * gate 每次询问 → 开窗并挂起，用户确认 → 取凭据兑现、gate 继续重提原请求，
  * 用户取消 → 兑现 undefined、gate 终止。终局（成功 / 逃逸 / 错误）一律关窗。
+ * 开窗配置由 gate 传入——captcha 失败时取自错误体 details 的 CaptchaConfig
+ * （§1.5 行 228 / §2.5），首屏配置只作提前量。
  *
  * 弹窗保持打开跨越 captcha_invalid 循环——确认后置 submitting，请求在途时
  * 禁用两个按钮防重复消费凭据；gate 再次询问才解禁并换新凭据。
@@ -50,7 +52,7 @@ export function useCaptchaGate(modal: ModalRenderer): CaptchaGate {
           config: next.config,
           attempt: next.attempt,
           submitting: false,
-          errorKey: next.invalid ? 'errors.status.captcha_invalid' : undefined,
+          errorKey: next.invalid ? 'errors.code.captcha_invalid' : undefined,
         });
       }),
     [],
@@ -79,7 +81,7 @@ export function useCaptchaGate(modal: ModalRenderer): CaptchaGate {
     setSession((prev) =>
       prev === undefined
         ? prev
-        : { ...prev, errorKey: 'errors.status.captcha_required' },
+        : { ...prev, errorKey: 'errors.code.captcha_required' },
     );
   }, []);
 

@@ -1,12 +1,21 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径；
 // 未改 tsconfig，故仅在测试文件放宽该 import 的类型解析。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { createClient } from '@connectrpc/connect';
 import { create, fromBinary, toBinary, toJson } from '@bufbuild/protobuf';
 import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
+import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
 import { LoginDefaultRequestSchema } from '../../gen/proto/api/sso/v1/login_pb';
 import { LoginFlowResponseSchema } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { SsoService } from '../../gen/proto/api/sso/v1/sso_pb';
@@ -156,9 +165,12 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
     server.use(
       http.post(SSO_LOGIN_DEFAULT, ({ request }) => {
         captured = request;
-        return new HttpResponse(toBinary(LoginFlowResponseSchema, flowResponse), {
-          headers: { 'content-type': 'application/proto' },
-        });
+        return new HttpResponse(
+          toBinary(LoginFlowResponseSchema, flowResponse),
+          {
+            headers: { 'content-type': 'application/proto' },
+          },
+        );
       }),
     );
 
@@ -204,7 +216,9 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
       SsoService,
       mod.createAuthloftTransport({ baseUrl: BASE }),
     );
-    const error = (await getRejection(client.loginDefault(loginRequest))) as ApiError;
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.code).toBe('too_many_attempts'); // 业务码取 ErrorInfo.code（行 226）
@@ -213,6 +227,85 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
     expect(error.requestId).toBe('req-1');
     expect(error.retryAfter).toBe(BigInt(60));
     expect(error.attemptsLeft).toBe(BigInt(2));
+  });
+
+  test('captcha 失败：details 并列的 CaptchaConfig 解出挂 ApiError.captcha（§1.5 行 228 / §2.5）', async () => {
+    const info = create(ErrorInfoSchema, {
+      domain: 'sso',
+      code: 'captcha_required',
+    });
+    const config = create(CaptchaConfigSchema, {
+      providerKey: 'builtin_image',
+      type: 'image',
+    });
+    server.use(
+      http.post(SSO_LOGIN_DEFAULT, () =>
+        HttpResponse.json(
+          {
+            code: 'invalid_argument',
+            message: 'captcha required',
+            details: [
+              {
+                type: 'api.common.v1.ErrorInfo',
+                value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+              },
+              {
+                type: 'api.common.v1.CaptchaConfig',
+                value: bytesToBase64(toBinary(CaptchaConfigSchema, config)),
+              },
+            ],
+          },
+          { status: 400, headers: { 'x-request-id': 'req-c1' } },
+        ),
+      ),
+    );
+
+    const client = createClient(
+      SsoService,
+      mod.createAuthloftTransport({ baseUrl: BASE }),
+    );
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.code).toBe('captcha_required'); // 业务码仍取 ErrorInfo.code
+    expect(error.httpStatus).toBe(400);
+    expect(error.captcha).toEqual(config);
+  });
+
+  test('captcha 失败：details 未并列配置时 ApiError.captcha 为 undefined', async () => {
+    const info = create(ErrorInfoSchema, {
+      domain: 'sso',
+      code: 'captcha_invalid',
+    });
+    server.use(
+      http.post(SSO_LOGIN_DEFAULT, () =>
+        HttpResponse.json(
+          {
+            code: 'invalid_argument',
+            details: [
+              {
+                type: 'api.common.v1.ErrorInfo',
+                value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+              },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const client = createClient(
+      SsoService,
+      mod.createAuthloftTransport({ baseUrl: BASE }),
+    );
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
+
+    expect(error.code).toBe('captcha_invalid');
+    expect(error.captcha).toBeUndefined();
   });
 
   test('无 detail：按 Connect 标准码兜底，表内码透出 message（§1.5 行 202 / 226）', async () => {
@@ -229,7 +322,9 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
       SsoService,
       mod.createAuthloftTransport({ baseUrl: BASE }),
     );
-    const error = (await getRejection(client.loginDefault(loginRequest))) as ApiError;
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.code).toBe('unavailable');
@@ -252,7 +347,9 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
       SsoService,
       mod.createAuthloftTransport({ baseUrl: BASE }),
     );
-    const error = (await getRejection(client.loginDefault(loginRequest))) as ApiError;
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.code).toBe('data_loss');
@@ -271,7 +368,9 @@ describe('shared/api/http transport/client（Connect 协议，§8.2 A ①②③�
       SsoService,
       mod.createAuthloftTransport({ baseUrl: BASE, defaultTimeoutMs: 40 }),
     );
-    const error = (await getRejection(client.loginDefault(loginRequest))) as ApiError;
+    const error = (await getRejection(
+      client.loginDefault(loginRequest),
+    )) as ApiError;
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error.code).toBe('deadline_exceeded');
@@ -374,6 +473,44 @@ describe('shared/api/http postForm（multipart，REST 豁免，§3.1）', () => 
     expect(error.message).toBe('文件超限');
     expect(error.httpStatus).toBe(413);
     expect(error.retryAfter).toBe(BigInt(30));
+  });
+
+  test('非 200 错误体并列 CaptchaConfig：postForm 同样归一出 error.captcha（§1.5 行 228）', async () => {
+    rs.stubGlobal('XMLHttpRequest', FakeXhr);
+    const info = create(ErrorInfoSchema, {
+      domain: 'account',
+      code: 'captcha_required',
+    });
+    const config = create(CaptchaConfigSchema, {
+      providerKey: 'cf_turnstile',
+      type: 'turnstile',
+      siteKey: '0x4AAA',
+    });
+    FakeXhr.respondWith(
+      400,
+      JSON.stringify({
+        code: 'invalid_argument',
+        details: [
+          {
+            type: 'api.common.v1.ErrorInfo',
+            value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+          },
+          {
+            type: 'api.common.v1.CaptchaConfig',
+            value: bytesToBase64(toBinary(CaptchaConfigSchema, config)),
+          },
+        ],
+      }),
+    );
+
+    const error = (await getRejection(
+      mod.postForm('/api/account/avatar', new FormData()),
+    )) as ApiError;
+
+    expect(error.code).toBe('captcha_required');
+    expect(error.captcha?.providerKey).toBe('cf_turnstile');
+    expect(error.captcha?.type).toBe('turnstile');
+    expect(error.captcha?.siteKey).toBe('0x4AAA');
   });
 
   test('非 200 非 Connect 错误体：按 HTTP 状态映射 Connect 标准码兜底（§1.5 行 184-193）', async () => {

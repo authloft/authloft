@@ -5,9 +5,10 @@
  *
  * 报文类型只从 src/gen/proto 生成物引用（§9 第 15 条，禁止手写 interface
  * 重复描述）：getToken 的返回即提交格式 api.sso.v1.CaptchaPayload（接口文档
- * §2.5 行 499-510）——自绘填 {providerKey, id, answer}（token 留零值，标准
- * protojson 序列化省略零值字段，提交体恰为 §2.5 行 503-506 的自绘三元组）；
- * 第三方 wrapper 填 {providerKey, token}。调用方原样放进请求的 payload.captcha。
+ * §2.5）——自绘填 {providerKey, id, answer}（token 留零值，标准
+ * protojson 序列化省略零值字段，提交体恰为 §2.5 的自绘三元组）；
+ * 第三方 wrapper 填 {providerKey, token}。调用方把凭据挂到**请求顶层
+ * `captcha`**（与 `payload` 平级），不再放进 `payload`。
  */
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';

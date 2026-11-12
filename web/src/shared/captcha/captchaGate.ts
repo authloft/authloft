@@ -11,9 +11,11 @@
  * - reactive：密码 verify 由当日失败计数阈值触发，前端无法预知 → 先发裸请求，
  *   命中 captcha_required 才问。
  *
- * 两种协议形态共用一个循环：登录流程域走 HTTP 200 信封顶层 status，扫码 /
- * 绑定域走非 200 的 ErrorInfo.code（已由 http.ts 归一为 ApiError）。判读一律
- * 经 errors.ts 的动作表（§1.6 一套词汇两个位置），本模块不自造状态常量。
+ * captcha 失败统一走非 200 Connect 错误体（`ErrorInfo.code` =
+ * captcha_required / captcha_invalid，已由 http.ts 归一为 ApiError）；
+ * 弹窗所需配置取自同一错误体 details 的 `api.common.v1.CaptchaConfig`
+ * （`ApiError.captcha`，§1.5 行 228 / §2.5），不再依赖登录流程信封。
+ * 判读一律经 errors.ts 的动作表（§1.6 一套词汇两个位置），本模块不自造状态常量。
  */
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
@@ -27,10 +29,10 @@ import {
 
 export type CaptchaGateMode = 'upfront' | 'reactive';
 
-/** 一次请求的 captcha 判读结果：动作取 §1.6 动作表，配置取响应顶层（权威）。 */
+/** 一次请求的 captcha 判读结果：动作取 §1.6 动作表，配置取错误体 details。 */
 export interface CaptchaOutcome {
   action: StatusAction;
-  /** 仅登录流程域信封携带；ErrorInfo 形态无此字段，沿用调用方注入的配置。 */
+  /** 仅错误体 details 携带（`ApiError.captcha`）；缺失时沿用调用方注入的配置。 */
   captcha?: CaptchaConfig;
 }
 
@@ -50,12 +52,12 @@ export type CaptchaGateResult<T> =
 
 export interface CaptchaGateOptions<T> {
   mode: CaptchaGateMode;
-  /** 首屏快照（login）/ GetConfig（account）注入的配置；响应顶层到达后被覆盖。 */
+  /** 首屏快照（login）/ GetConfig（account）注入的配置；错误体 details 到达后被覆盖。 */
   config?: CaptchaConfig;
-  /** 原请求；凭据由 gate 注入，调用方并入 payload.captcha 后重提同一请求。 */
+  /** 原请求；凭据由 gate 注入，调用方挂到请求顶层 `captcha`（与 payload 平级）后重提同一请求。 */
   request: (captcha?: CaptchaPayload) => Promise<T>;
   readOutcome: (result: T) => CaptchaOutcome;
-  /** 抛出形态的判读（扫码 / 绑定域）；非 captcha 动作或不可判读 → 原样交回错误。 */
+  /** 抛出形态的判读；缺省用 `errorCaptchaOutcome`（captcha 失败统一走 ErrorInfo.code）。 */
   readError?: (error: unknown) => CaptchaOutcome | undefined;
   /** 打开弹窗并等用户作答；确认 → 凭据，取消 → undefined。 */
   prompt: (prompt: CaptchaPrompt) => Promise<CaptchaPayload | undefined>;
@@ -66,22 +68,22 @@ function isCaptchaAction(action: StatusAction): boolean {
   return action === 'require_captcha' || action === 'reset_captcha';
 }
 
-/** 登录流程域判读（位置一：200 信封顶层 status + captcha）。 */
+/**
+ * 登录流程域判读（位置一：200 信封顶层 status）。captcha 失败已改为非 200
+ * 错误体，故此处只取 status 对应动作，不再读信封上的 captcha 字段。
+ */
 export function flowCaptchaOutcome(
   envelope: LoginFlowResponse,
 ): CaptchaOutcome {
-  return {
-    action: resolveFlowStatus(envelope.status).action,
-    captcha: envelope.captcha,
-  };
+  return { action: resolveFlowStatus(envelope.status).action };
 }
 
-/** 抛出形态判读（位置二：ApiError.code）；非 ApiError 不可判读。 */
+/** 抛出形态判读（位置二：ApiError.code + 错误体 details 的配置）；非 ApiError 不可判读。 */
 export function errorCaptchaOutcome(
   error: unknown,
 ): CaptchaOutcome | undefined {
   return error instanceof ApiError
-    ? { action: resolveCode(error).action }
+    ? { action: resolveCode(error).action, captcha: error.captcha }
     : undefined;
 }
 
@@ -95,6 +97,9 @@ export async function runCaptchaGate<T>(
   let config = options.config;
   let invalid = false;
   let attempt = 0;
+  // captcha 失败统一为 ErrorInfo.code（§1.5 / §1.6）；未注入 readError 时用默认判读，
+  // 登录 / 注册 / 重置 / 扫码 / 绑定各域共用同一条吸收路径。
+  const readError = options.readError ?? errorCaptchaOutcome;
 
   /** 发一次请求：终局 → 返回结果；仍需 captcha → 更新循环态并返回 undefined。 */
   const send = async (
@@ -108,13 +113,13 @@ export async function runCaptchaGate<T>(
         return { kind: 'result', result };
       }
     } catch (error) {
-      const mapped = options.readError?.(error);
+      const mapped = readError(error);
       if (mapped === undefined || !isCaptchaAction(mapped.action)) {
         return { kind: 'error', error };
       }
       outcome = mapped;
     }
-    // 权威配置以响应顶层为准（含服务端降级为 image，§2.5）；缺失沿用上一轮。
+    // 权威配置以错误体 details 为准（含服务端降级为 image，§2.5）；缺失沿用上一轮。
     config = outcome.captcha ?? config;
     invalid = outcome.action === 'reset_captcha';
     return undefined;

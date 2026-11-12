@@ -31,8 +31,19 @@ function makeCaptcha(init: {
   return create(CaptchaConfigSchema, init);
 }
 
-function envelope(status: string, captcha?: CaptchaConfig): LoginFlowResponse {
-  return create(LoginFlowResponseSchema, { status, captcha });
+function envelope(status: string): LoginFlowResponse {
+  return create(LoginFlowResponseSchema, { status });
+}
+
+/** captcha 失败统一为 ErrorInfo.code，配置来自同一错误体 details（§1.5 行 228 / §2.5）。 */
+function apiError(code: string, captcha?: CaptchaConfig): ApiError {
+  return new ApiError({
+    httpStatus: 400,
+    code,
+    message: '',
+    requestId: '',
+    captcha,
+  });
 }
 
 const IMAGE = makeCaptcha({ providerKey: 'builtin_image', type: 'image' });
@@ -128,19 +139,17 @@ describe('runCaptchaGate upfront（challenge 必经：先问再发，省一次�
 });
 
 describe('runCaptchaGate reactive（密码 verify：阈值前端不可预知，先探再问）', () => {
-  test('裸请求命中 captcha_required → 弹窗 → 带凭据重提 → 终局', async () => {
+  test('裸请求命中 captcha_required → 弹窗（配置取错误体 details）→ 带凭据重提 → 终局', async () => {
     const script = scriptedPrompt([token('a')]);
     const sent: (CaptchaPayload | undefined)[] = [];
     const result = await runCaptchaGate({
       mode: 'reactive',
-      config: IMAGE,
+      config: TURNSTILE,
       request: (captcha) => {
         sent.push(captcha);
-        return Promise.resolve(
-          captcha === undefined
-            ? envelope('captcha_required', IMAGE)
-            : envelope('success'),
-        );
+        return captcha === undefined
+          ? Promise.reject(apiError('captcha_required', IMAGE))
+          : Promise.resolve(envelope('success'));
       },
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
@@ -149,6 +158,8 @@ describe('runCaptchaGate reactive（密码 verify：阈值前端不可预知，�
     expect(result).toEqual({ kind: 'result', result: envelope('success') });
     expect(sent).toEqual([undefined, token('a')]);
     expect(script.prompts).toHaveLength(1);
+    // 服务端降级为 image：以错误体配置覆盖注入的首屏配置。
+    expect(script.prompts[0].config).toEqual(IMAGE);
   });
 
   test('裸请求直接终局（未达阈值）→ 不弹窗', async () => {
@@ -172,14 +183,12 @@ describe('captcha_invalid 弹窗内循环（§1.6 reset_captcha）', () => {
     const sent: (CaptchaPayload | undefined)[] = [];
     const result = await runCaptchaGate({
       mode: 'upfront',
-      config: IMAGE,
+      config: TURNSTILE,
       request: (captcha) => {
         sent.push(captcha);
-        return Promise.resolve(
-          captcha?.answer === 'b'
-            ? envelope('next')
-            : envelope('captcha_invalid', IMAGE),
-        );
+        return captcha?.answer === 'b'
+          ? Promise.resolve(envelope('next'))
+          : Promise.reject(apiError('captcha_invalid', IMAGE));
       },
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
@@ -192,32 +201,12 @@ describe('captcha_invalid 弹窗内循环（§1.6 reset_captcha）', () => {
     expect(script.prompts[0].attempt).toBe(0);
     expect(script.prompts[1].invalid).toBe(true);
     expect(script.prompts[1].attempt).toBe(1);
-  });
-
-  test('响应顶层 captcha 覆盖注入配置（服务端降级为 image）', async () => {
-    const script = scriptedPrompt([token('a'), token('b')]);
-    const seen: CaptchaConfig[] = [];
-    const result = await runCaptchaGate({
-      mode: 'upfront',
-      config: TURNSTILE,
-      request: () => {
-        seen.push(script.prompts[script.prompts.length - 1].config);
-        return Promise.resolve(
-          seen.length === 1
-            ? envelope('captcha_invalid', IMAGE)
-            : envelope('next'),
-        );
-      },
-      readOutcome: flowCaptchaOutcome,
-      prompt: script.prompt,
-    });
-
-    expect(result.kind).toBe('result');
+    // 错误体 details 的配置覆盖注入配置（服务端降级为 image）。
     expect(script.prompts[0].config).toEqual(TURNSTILE);
     expect(script.prompts[1].config).toEqual(IMAGE);
   });
 
-  test('响应未附 captcha → 沿用上一轮配置（ErrorInfo 形态无该字段）', async () => {
+  test('错误体未附 captcha → 沿用上一轮配置', async () => {
     const script = scriptedPrompt([token('a'), token('b')]);
     let calls = 0;
     await runCaptchaGate({
@@ -225,9 +214,9 @@ describe('captcha_invalid 弹窗内循环（§1.6 reset_captcha）', () => {
       config: IMAGE,
       request: () => {
         calls += 1;
-        return Promise.resolve(
-          calls === 1 ? envelope('captcha_invalid') : envelope('next'),
-        );
+        return calls === 1
+          ? Promise.reject(apiError('captcha_invalid'))
+          : Promise.resolve(envelope('next'));
       },
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
@@ -264,7 +253,7 @@ describe('取消（不清流程态，不再发请求）', () => {
       config: IMAGE,
       request: () => {
         calls += 1;
-        return Promise.resolve(envelope('captcha_required', IMAGE));
+        return Promise.reject(apiError('captcha_required', IMAGE));
       },
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
@@ -282,7 +271,7 @@ describe('取消（不清流程态，不再发请求）', () => {
       config: IMAGE,
       request: () => {
         calls += 1;
-        return Promise.resolve(envelope('captcha_invalid', IMAGE));
+        return Promise.reject(apiError('captcha_invalid', IMAGE));
       },
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
@@ -294,35 +283,25 @@ describe('取消（不清流程态，不再发请求）', () => {
   });
 });
 
-describe('抛出形态（扫码 / 绑定域：非 200 ErrorInfo.code）', () => {
-  test('ApiError code=captcha_required → 弹窗后带凭据重提', async () => {
+describe('抛出形态（ErrorInfo.code，默认判读吸收）', () => {
+  test('未注入 readError：captcha_required 仍被默认判读吸收，配置取错误体 details', async () => {
     const script = scriptedPrompt([token('a')]);
     const sent: (CaptchaPayload | undefined)[] = [];
     const result = await runCaptchaGate<string>({
       mode: 'reactive',
-      config: IMAGE,
+      config: TURNSTILE,
       request: (captcha) => {
         sent.push(captcha);
-        if (captcha === undefined) {
-          return Promise.reject(
-            new ApiError({
-              httpStatus: 400,
-              code: 'captcha_required',
-              message: '',
-              requestId: '',
-            }),
-          );
-        }
-        return Promise.resolve('ticket-1');
+        return captcha === undefined
+          ? Promise.reject(apiError('captcha_required', IMAGE))
+          : Promise.resolve('ticket-1');
       },
       readOutcome: () => ({ action: 'message' }),
-      readError: errorCaptchaOutcome,
       prompt: script.prompt,
     });
 
     expect(result).toEqual({ kind: 'result', result: 'ticket-1' });
     expect(sent).toEqual([undefined, token('a')]);
-    // ErrorInfo 不携带配置 → 沿用注入的快照配置。
     expect(script.prompts[0].config).toEqual(IMAGE);
   });
 
@@ -334,20 +313,11 @@ describe('抛出形态（扫码 / 绑定域：非 200 ErrorInfo.code）', () => 
       config: IMAGE,
       request: () => {
         calls += 1;
-        if (calls === 1) {
-          return Promise.reject(
-            new ApiError({
-              httpStatus: 400,
-              code: 'captcha_required',
-              message: '',
-              requestId: '',
-            }),
-          );
-        }
-        return Promise.resolve('ticket-1');
+        return calls === 1
+          ? Promise.reject(apiError('captcha_required', IMAGE))
+          : Promise.resolve('ticket-1');
       },
       readOutcome: () => ({ action: 'message' }),
-      readError: errorCaptchaOutcome,
       prompt: script.prompt,
     });
 
@@ -358,49 +328,14 @@ describe('抛出形态（扫码 / 绑定域：非 200 ErrorInfo.code）', () => 
     expect(script.prompts[1].invalid).toBe(false);
   });
 
-  test('captcha_invalid 抛出 → 弹窗内循环', async () => {
-    const script = scriptedPrompt([token('a'), token('b')]);
-    let calls = 0;
-    const result = await runCaptchaGate<string>({
-      mode: 'upfront',
-      config: IMAGE,
-      request: () => {
-        calls += 1;
-        if (calls < 2) {
-          return Promise.reject(
-            new ApiError({
-              httpStatus: 400,
-              code: 'captcha_invalid',
-              message: '',
-              requestId: '',
-            }),
-          );
-        }
-        return Promise.resolve('ticket-1');
-      },
-      readOutcome: () => ({ action: 'message' }),
-      readError: errorCaptchaOutcome,
-      prompt: script.prompt,
-    });
-
-    expect(result).toEqual({ kind: 'result', result: 'ticket-1' });
-    expect(script.prompts[1].invalid).toBe(true);
-  });
-
   test('非 captcha 的 ApiError → 原样交回，不弹窗', async () => {
     const script = scriptedPrompt([]);
-    const error = new ApiError({
-      httpStatus: 429,
-      code: 'too_many_requests',
-      message: '',
-      requestId: '',
-    });
+    const error = apiError('too_many_requests');
     const result = await runCaptchaGate<string>({
       mode: 'reactive',
       config: IMAGE,
       request: () => Promise.reject(error),
       readOutcome: () => ({ action: 'message' }),
-      readError: errorCaptchaOutcome,
       prompt: script.prompt,
     });
 
@@ -410,20 +345,6 @@ describe('抛出形态（扫码 / 绑定域：非 200 ErrorInfo.code）', () => 
 
   test('传输层异常（非 ApiError）→ 原样交回', async () => {
     const error = new Error('network down');
-    const result = await runCaptchaGate<string>({
-      mode: 'reactive',
-      config: IMAGE,
-      request: () => Promise.reject(error),
-      readOutcome: () => ({ action: 'message' }),
-      readError: errorCaptchaOutcome,
-      prompt: scriptedPrompt([]).prompt,
-    });
-
-    expect(result).toEqual({ kind: 'error', error });
-  });
-
-  test('未注入 readError → 抛出即终局', async () => {
-    const error = new Error('boom');
     const result = await runCaptchaGate<string>({
       mode: 'reactive',
       config: IMAGE,
@@ -441,7 +362,7 @@ describe('配置缺失防御（§2.5 服务端必附）', () => {
     const script = scriptedPrompt([token('a')]);
     const result = await runCaptchaGate({
       mode: 'reactive',
-      request: () => Promise.resolve(envelope('captcha_required')),
+      request: () => Promise.reject(apiError('captcha_required')),
       readOutcome: flowCaptchaOutcome,
       prompt: script.prompt,
     });
@@ -451,29 +372,22 @@ describe('配置缺失防御（§2.5 服务端必附）', () => {
   });
 });
 
-describe('判读helper（§1.6 一套词汇两个位置）', () => {
-  test('flowCaptchaOutcome 取信封顶层 status 动作与 captcha', () => {
-    expect(flowCaptchaOutcome(envelope('captcha_required', IMAGE))).toEqual({
-      action: 'require_captcha',
-      captcha: IMAGE,
-    });
-    expect(flowCaptchaOutcome(envelope('captcha_invalid')).action).toBe(
-      'reset_captcha',
-    );
+describe('判读 helper（§1.6 一套词汇两个位置）', () => {
+  test('flowCaptchaOutcome 只取信封 status 动作，不读信封上的 captcha 字段', () => {
     expect(flowCaptchaOutcome(envelope('success')).action).toBe('complete');
+    // captcha_* 已不是流程态：作 status 到达时按未知兜底，不走开窗动作。
+    expect(flowCaptchaOutcome(envelope('captcha_required')).action).toBe(
+      'message',
+    );
   });
 
-  test('errorCaptchaOutcome 只认 ApiError，取位置二动作', () => {
+  test('errorCaptchaOutcome 只认 ApiError，取位置二动作与错误体配置', () => {
     expect(
-      errorCaptchaOutcome(
-        new ApiError({
-          httpStatus: 400,
-          code: 'captcha_required',
-          message: '',
-          requestId: '',
-        }),
-      ),
-    ).toEqual({ action: 'require_captcha' });
+      errorCaptchaOutcome(apiError('captcha_required', TURNSTILE)),
+    ).toEqual({ action: 'require_captcha', captcha: TURNSTILE });
+    expect(errorCaptchaOutcome(apiError('captcha_invalid')).action).toBe(
+      'reset_captcha',
+    );
     expect(errorCaptchaOutcome(new Error('x'))).toBeUndefined();
     expect(errorCaptchaOutcome(undefined)).toBeUndefined();
   });
