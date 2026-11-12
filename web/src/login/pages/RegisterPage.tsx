@@ -8,8 +8,8 @@
  *   收到 status=signup_disabled 即提示并停止流程（不渲染注册表单）；
  * - username_taken / password_weak 等失败态按 §1.6 出动作（ErrorBanner + 表单
  *   保留原地重试）；captcha_required / captcha_invalid 由弹窗 gate 吸收
- *   （shared/captcha）：确认即重提、窗内换凭据循环，权威配置取响应顶层
- *   （§2.5 行 518）；用户取消不动流程态；restart 类回第一步；
+ *   （shared/captcha）：确认即重提、窗内换凭据循环，权威配置取错误体 details
+ *   （§1.5 / §2.5）；用户取消不动流程态；restart 类回第一步；
  * - set_password 步渲染 PasswordStrengthMeter（§5.6 同源规则，服务端权威）；
  *   注册成功 = 完成登录（§2.3 行 455），终点跳转 syncCookieUrl 优先（§1.3 行 136）。
  *

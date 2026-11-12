@@ -32,8 +32,6 @@ import {
 } from '../../gen/proto/api/account/v1/thirdparty_pb';
 import {
   LoginFlowResponseSchema,
-  MfaMethodSchema,
-  MfaSchema,
   type LoginFlowResponse,
 } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { ApiError } from '../../shared/api/errors';
@@ -512,30 +510,17 @@ describe('OAuthCallbackView 状态帧渲染', () => {
     expect(markup).not.toContain('正在处理');
   });
 
-  test('mfa_required 帧 → LoginContainer 完整编排：MfaSelector 因子按钮 + 未选方式引导（§1.6 行 233「就地渲染、不跳页」）', () => {
+  test('mfa_required 帧 → LoginContainer 完整编排（§1.6 行 233「就地渲染、不跳页」）', () => {
     const markup = renderView({
       status: 'mfa_required',
       envelope: envelope({
         status: 'mfa_required',
         loginToken: 'lt-1',
-        mfa: create(MfaSchema, {
-          methods: [
-            create(MfaMethodSchema, {
-              method: 'totp',
-              steps: ['form'],
-            }),
-            create(MfaMethodSchema, {
-              method: 'otp_sms',
-              steps: ['challenge', 'form'],
-              maskedTarget: '138****8000',
-            }),
-          ],
-        }),
       }),
     });
-    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
-    expect(markup).toContain('短信'); // factors.otp_sms
-    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式引导）
+    // 二次验证方式列表改由 StartVerification 异步填充；静态渲染下尚未就绪，
+    // 状态帧走零值兜底（§9 第 18 条），且不落回调页处理中帧。
+    expect(markup).toContain('请刷新重试');
     expect(markup).not.toContain('正在处理'); // 非处理中帧
   });
 

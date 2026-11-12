@@ -41,11 +41,8 @@ import {
   BindingSchema,
   FieldSchema,
   LoginFlowResponseSchema,
-  MfaMethodSchema,
-  MfaSchema,
   NextStepSchema,
   type LoginFlowResponse,
-  type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
 import {
   CaptchaPayloadSchema,
@@ -226,7 +223,19 @@ function envelope(init: Record<string, unknown>): LoginFlowResponse {
   return create(LoginFlowResponseSchema, init);
 }
 
-function renderView(state: FlowState, notice?: string): string {
+type LoginFlowViewProps = Parameters<typeof container.LoginFlowView>[0];
+type FactorView = NonNullable<LoginFlowViewProps['mfaMethods']>[number];
+
+/** 二次验证因子视图夹具（登录流程信封已停发 mfa 块，改由视图 props 注入）。 */
+function factor(init: FactorView): FactorView {
+  return init;
+}
+
+function renderView(
+  state: FlowState,
+  notice?: string,
+  mfaMethods?: LoginFlowViewProps['mfaMethods'],
+): string {
   return renderToStaticMarkup(
     createElement(container.LoginFlowView, {
       snapshot: SNAPSHOT,
@@ -234,6 +243,7 @@ function renderView(state: FlowState, notice?: string): string {
       notice,
       onSelect: () => {},
       onSubmit: () => {},
+      mfaMethods,
     }),
   );
 }
@@ -405,12 +415,7 @@ describe('首屏默认选中（primaryTabMethods / defaultMethodEvent / initialF
     expect(state.step).toBe('verify');
     expect(state.effects).toEqual([]);
 
-    const mfa = envelope({
-      status: 'mfa_required',
-      mfa: create(MfaSchema, {
-        methods: [create(MfaMethodSchema, { method: 'totp', steps: ['form'] })],
-      }),
-    });
+    const mfa = envelope({ status: 'mfa_required' });
     const callbackState = container.initialFlowState(SNAPSHOT, mfa);
     expect(callbackState.status).toBe('mfa_required');
     expect(callbackState.method).toBe(''); // 不被默认选中覆盖
@@ -496,14 +501,14 @@ describe('snapshotFieldToField / toPayloadInit（§2.1 快照 → 渲染 / 请�
 });
 
 describe('fieldsFor（纯函数：提交白名单字段源；§1.3 行 121-127 / §2.6 行 546）', () => {
-  const MFA_METHODS: MfaMethod[] = [
+  const MFA_METHODS = [
     // 后端 mfa.go 对 otp 系 mfa 条目不填 fields / challengeFields。
-    create(MfaMethodSchema, {
+    factor({
       method: 'otp_sms',
       steps: ['challenge', 'form'],
       maskedTarget: '138****8000',
     }),
-    create(MfaMethodSchema, {
+    factor({
       method: 'recovery_code',
       steps: ['form'],
       fields: [
@@ -1489,44 +1494,41 @@ describe('LoginFlowView 状态分支静态渲染', () => {
       stateWith({
         method: 'password',
         status: 'mfa_required',
-        envelope: envelope({
-          status: 'mfa_required',
-          mfa: create(MfaSchema, {
-            methods: [
-              create(MfaMethodSchema, {
-                method: 'totp',
-                steps: ['form'],
-                fields: [
-                  create(FieldSchema, {
-                    name: 'code',
-                    label: 'login.field.totpCode',
-                    type: 'totp',
-                    required: true,
-                    length: BigInt(6),
-                  }),
-                ],
-              }),
-              create(MfaMethodSchema, {
-                method: 'otp_sms',
-                steps: ['challenge', 'form'],
-                maskedTarget: '138****8000',
-              }),
-              create(MfaMethodSchema, {
-                method: 'recovery_code',
-                steps: ['form'],
-                fields: [
-                  create(FieldSchema, {
-                    name: 'code',
-                    label: 'login.field.recoveryCode',
-                    type: 'text',
-                    required: true,
-                  }),
-                ],
-              }),
-            ],
-          }),
-        }),
+        envelope: envelope({ status: 'mfa_required' }),
       }),
+      undefined,
+      [
+        factor({
+          method: 'totp',
+          steps: ['form'],
+          fields: [
+            create(FieldSchema, {
+              name: 'code',
+              label: 'login.field.totpCode',
+              type: 'totp',
+              required: true,
+              length: BigInt(6),
+            }),
+          ],
+        }),
+        factor({
+          method: 'otp_sms',
+          steps: ['challenge', 'form'],
+          maskedTarget: '138****8000',
+        }),
+        factor({
+          method: 'recovery_code',
+          steps: ['form'],
+          fields: [
+            create(FieldSchema, {
+              name: 'code',
+              label: 'login.field.recoveryCode',
+              type: 'text',
+              required: true,
+            }),
+          ],
+        }),
+      ],
     );
     expect(markup).toContain('请选择二次验证方式');
     expect(markup).toContain('动态口令'); // t('factors.totp')
@@ -1536,26 +1538,44 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
+  test('mfa_required：注入 StartVerification 的 methods[] → 就地渲染 MfaSelector 因子按钮（§1.6 行 251 / §4.1 行 492）', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'mfa_required',
+        envelope: envelope({ status: 'mfa_required' }),
+      }),
+      undefined,
+      [
+        factor({ method: 'totp', steps: ['form'] }),
+        factor({ method: 'otp_sms', steps: ['challenge', 'form'] }),
+      ],
+    );
+    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
+    expect(markup).toContain('短信'); // factors.otp_sms
+    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式引导）
+    // 编排覆盖：注入的方式列表被消费，不落零值兜底、不回主因子表单区。
+    expect(markup).not.toContain('请刷新重试');
+    expect(markup).not.toContain('请选择登录方式');
+  });
+
   test('mfa_required webauthn 条目 → 选择器显示 hint 提示文案（§1.3 行 125）', () => {
     const markup = renderView(
       stateWith({
         method: 'password',
         status: 'mfa_required',
-        envelope: envelope({
-          status: 'mfa_required',
-          mfa: create(MfaSchema, {
-            methods: [
-              // hint 零值（其余因子）：不渲染提示 span。
-              create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
-              create(MfaMethodSchema, {
-                method: 'webauthn',
-                steps: ['challenge', 'form'],
-                hint: '请触摸已绑定的通行密钥设备',
-              }),
-            ],
-          }),
-        }),
+        envelope: envelope({ status: 'mfa_required' }),
       }),
+      undefined,
+      [
+        // hint 零值（其余因子）：不渲染提示 span。
+        factor({ method: 'totp', steps: ['form'] }),
+        factor({
+          method: 'webauthn',
+          steps: ['challenge', 'form'],
+          hint: '请触摸已绑定的通行密钥设备',
+        }),
+      ],
     );
     expect(markup).toContain('通行密钥'); // t('factors.webauthn')
     expect(markup).toContain('请触摸已绑定的通行密钥设备'); // §1.3 行 125 hint
@@ -1778,8 +1798,8 @@ describe('P0-1「返回方式列表」入口（next / mfa 分支）', () => {
         onSubmit: () => {},
         onBackToMethods: withBack ? () => {} : undefined,
         mfaMethods: [
-          create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
-          create(MfaMethodSchema, {
+          factor({ method: 'totp', steps: ['form'] }),
+          factor({
             method: 'otp_sms',
             steps: ['challenge', 'form'],
           }),
@@ -1897,8 +1917,8 @@ describe('P1-4：ErrorBanner onRetry 接线 + 剩余次数去重', () => {
 // ---------------------------------------------------------------------------
 
 describe('LoginFlowView mfa 场景渲染（信封 mfa / 本地镜像 mfaMethods）', () => {
-  const MFA_METHODS: MfaMethod[] = [
-    create(MfaMethodSchema, {
+  const MFA_METHODS = [
+    factor({
       method: 'totp',
       steps: ['form'],
       fields: [
@@ -1911,12 +1931,12 @@ describe('LoginFlowView mfa 场景渲染（信封 mfa / 本地镜像 mfaMethods�
         }),
       ],
     }),
-    create(MfaMethodSchema, {
+    factor({
       method: 'otp_sms',
       steps: ['challenge', 'form'],
       maskedTarget: '138****8000',
     }),
-    create(MfaMethodSchema, {
+    factor({
       method: 'recovery_code',
       steps: ['form'],
       fields: [
@@ -2060,30 +2080,65 @@ describe('LoginContainer 静态 smoke', () => {
     expect(markup).not.toContain('请选择登录方式');
   });
 
-  // OAuth 回调 mfa_required 完整编排——初始信封直接进状态机。
-  test('initialEnvelope（mfa_required）→ 挂载即渲染 MfaSelector + 未选方式引导（§1.6 行 233 不跳页；信封 mfa.methods 驱动，静态渲染读信封不依赖 effect 镜像）', () => {
+  // OAuth 回调 mfa_required 初始信封直接进状态机（不跳页）；二次验证方式列表
+  // 改由 StartVerification 异步填充，静态渲染下尚未就绪 → 零值兜底（§9 第 18 条）。
+  test('initialEnvelope（mfa_required）→ 挂载即进 mfa 状态帧（§1.6 行 233 不跳页）', () => {
     const markup = renderContainer({
       snapshot: SNAPSHOT,
       initialEnvelope: envelope({
         status: 'mfa_required',
         loginToken: 'lt-mfa',
-        mfa: {
-          methods: [
-            create(MfaMethodSchema, { method: 'totp', steps: ['form'] }),
-            create(MfaMethodSchema, {
-              method: 'otp_sms',
-              steps: ['challenge', 'form'],
-              maskedTarget: '138****8000',
-            }),
-          ],
-        },
       }),
     });
-    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
-    expect(markup).toContain('短信'); // factors.otp_sms
-    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式）
+    expect(markup).toContain('请刷新重试');
     expect(markup).not.toContain('请选择登录方式'); // 不渲染主因子表单区
     expect(markup).not.toContain('正在处理'); // 非回调页处理中帧
+  });
+});
+
+// ---------------------------------------------------------------------------
+// method_disabled webauthn 降级窗口期（后端架构 §8.3 行 1090-1091 / 接口文档 §1.6 行 269）
+// ---------------------------------------------------------------------------
+
+describe('method_disabled webauthn 降级窗口期文案（§8.3 / §1.6 行 269）', () => {
+  const disabled = envelope({ status: 'method_disabled' });
+
+  test('当前选中主因子为 webauthn → 专属语义文案，不再只落通用错误', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'webauthn',
+        status: 'method_disabled',
+        envelope: disabled,
+      }),
+    );
+    expect(markup).toContain('通行密钥暂不可用，请联系管理员');
+    expect(markup).not.toContain('该登录方式未开放');
+  });
+
+  test('唯一可用二次因子为 webauthn → 专属语义文案', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'method_disabled',
+        envelope: disabled,
+      }),
+      undefined,
+      [factor({ method: 'webauthn', steps: ['challenge', 'form'] })],
+    );
+    expect(markup).toContain('通行密钥暂不可用，请联系管理员');
+    expect(markup).not.toContain('该登录方式未开放');
+  });
+
+  test('普通方式禁用（非 webauthn）→ 通用文案，不含窗口期专属文案', () => {
+    const markup = renderView(
+      stateWith({
+        method: 'password',
+        status: 'method_disabled',
+        envelope: disabled,
+      }),
+    );
+    expect(markup).toContain('该登录方式未开放');
+    expect(markup).not.toContain('通行密钥暂不可用');
   });
 });
 
@@ -2184,6 +2239,38 @@ function driveCapturedPanel(
     pollSeconds: wiring.panel.pollSeconds,
   });
 }
+
+describe('startLoginVerification 请求体直测（§3.8.1 / §4.1 行 492）', () => {
+  test('bizPurpose=login + operation=mfa_verify + loginToken 注入；method 空省略', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            StartVerificationResponseSchema,
+            create(StartVerificationResponseSchema, {
+              methods: [totpMethod()],
+              expiresIn: BigInt(300),
+            }),
+          ),
+        );
+      }),
+    );
+    setLoginToken('lt-main');
+    const response = await apiMod.startLoginVerification();
+    expect(response.methods[0]?.method).toBe('totp');
+    // 严格相等同时覆盖「无 method / 无 mfaPendingId」（§3.8.2 空值省略）。
+    expect(bodies[0]).toEqual({
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      loginToken: 'lt-main',
+    });
+    expect(Object.prototype.hasOwnProperty.call(bodies[0], 'method')).toBe(
+      false,
+    );
+  });
+});
 
 describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884）', () => {
   test('StartVerification：bizPurpose=login + operation=mfa_verify + mfaPendingId=ticketId；method 空省略', async () => {

@@ -214,6 +214,23 @@ export async function getLoginTicket(
 }
 
 // ---------------------------------------------------------------------------
+// 登录主路径 MFA（status=mfa_required，接口文档 §1.6 / 前端架构 §4.1）：以
+// loginToken 调 StartVerification（biz_purpose=login、operation=mfa_verify、
+// 不带 method）取可用因子能力视图 methods[]，交容器就地渲染选择器。登录流程
+// 信封不再下发 mfa 块，本域不消费该块。
+// ---------------------------------------------------------------------------
+
+/** 登录主路径 MFA 的因子能力视图请求（不带 method = 只取 methods[]，§3.8.2）。 */
+export function startLoginVerification(): Promise<StartVerificationResponse> {
+  const request = create(StartVerificationRequestSchema, {
+    bizPurpose: 'login',
+    operation: 'mfa_verify',
+    loginToken: getLoginToken(),
+  });
+  return ssoClient.startVerification(request);
+}
+
+// ---------------------------------------------------------------------------
 // 扫码 step-up（SsoService/StartVerification / SubmitVerification，接口文档 §2.8 / §3.8）
 //
 // 扫码登录命中 MFA 时轮询返回 needs_step_up（ticket.status 仍为 scanned）；PC 端以

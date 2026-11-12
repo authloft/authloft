@@ -84,6 +84,8 @@ export const enUS: I18nMessages = {
   'errors.status.code_expired':
     'The code has expired. Please request a new one',
   'errors.status.method_disabled': 'This sign-in method is disabled',
+  'errors.status.method_disabled_webauthn':
+    'Passkeys are temporarily unavailable. Please contact your administrator',
   'errors.status.step_invalid':
     'The current step is no longer valid. Please start over',
   'errors.status.token_invalid':

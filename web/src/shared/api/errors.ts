@@ -75,7 +75,7 @@ export class ApiError extends Error {
 export type StatusAction =
   /** next：按 next_step 继续渲染。 */
   | 'render_next_step'
-  /** mfa_required：就地渲染 mfa.methods 选择器，不跳页。 */
+  /** mfa_required：就地渲染二次验证方式选择器，不跳页。 */
   | 'render_mfa'
   /** binding_required：渲染绑定选择页（§2.7.5）。 */
   | 'render_binding'

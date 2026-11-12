@@ -8,7 +8,7 @@
  *   因子表单，不靠 effect 二次派发）；reset（回到第一步）后同款重选，避免
  *   「返回方式列表」/ restart / 传输失败回退退回未选中空态；有初始信封
  *   （OAuth 回调 mfa_required 等）时不覆盖信封语义；
- * - mfa_required **原地渲染**（不跳页、不新开流程，§4.1 行 407）：mfa.methods
+ * - mfa_required **原地渲染**（不跳页、不新开流程，§4.1 行 407）：二次验证方式
  *   选择器（因子名取 factors.* 字典 + webauthn 条目 hint 提示，§1.3 行 125）+
  *   选中方式的因子组件（select_method 清信封，方式列表由容器本地镜像保持）；
  * - status=next 按 next_step.kind 接 steps/StepDispatcher 分派（§4.2 行 423）：
@@ -51,7 +51,6 @@ import {
   FieldSchema,
   type Field,
   type LoginFlowResponse,
-  type MfaMethod,
 } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { CaptchaConfig } from '../gen/proto/api/common/v1/captcha_pb';
 import { resolveFlowStatus } from '../shared/api/errors';
@@ -69,7 +68,11 @@ import { t } from '../shared/i18n';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
 import type { MethodsSnapshot, SnapshotField } from '../shared/types/init';
 import { Modal } from './components/Modal';
-import { loginDefault, type LoginDefaultInput } from './api';
+import {
+  loginDefault,
+  startLoginVerification,
+  type LoginDefaultInput,
+} from './api';
 import { BindingPage } from './pages/BindingPage';
 import { OTPForm, isOtpForm } from './factors/OTPForm';
 import { WebAuthnButton, isWebAuthnForm } from './factors/WebAuthnButton';
@@ -94,6 +97,21 @@ type PayloadInit = NonNullable<LoginDefaultInput['payload']>;
 
 /** select_method 事件形状（首屏默认选中 / reset 重选共用）。 */
 type SelectMethodEvent = Extract<FlowEvent, { type: 'select_method' }>;
+
+/**
+ * 二次验证因子的前端视图模型（§4.1 就地渲染）：只服务方式选择器与因子组件。
+ * 登录流程信封已停发 mfa 块，本视图模型不再来自信封——由 StartVerification
+ * （biz_purpose=login）的 methods[] 能力视图映射，或由容器本地镜像 / 调用方注入。
+ * 字段可选：能力视图只保证 method / steps，其余按零值兜底（§9 第 18 条）。
+ */
+interface FactorOption {
+  method: string;
+  steps?: string[];
+  fields?: Field[];
+  challengeFields?: Field[];
+  hint?: string;
+  maskedTarget?: string;
+}
 
 // ---------------------------------------------------------------------------
 // 容器层纯函数（node 可测；编排 / 映射 / 终点语义的唯一落点）
@@ -238,7 +256,7 @@ export function fieldsFor(
   method: string,
   step: string,
   snapshot: MethodsSnapshot,
-  mfaMethods: MfaMethod[] | undefined,
+  mfaMethods: FactorOption[] | undefined,
 ): Field[] {
   const snapshotEntry = snapshot.methods.find((m) => m.method === method);
   const otp = isOtpForm(lookupFactor(method));
@@ -254,13 +272,10 @@ export function fieldsFor(
   const mfaEntry = mfaMethods?.find((m) => m.method === method);
   if (mfaEntry !== undefined) {
     if (step === 'challenge') {
-      return mfaEntry.challengeFields;
+      return mfaEntry.challengeFields ?? [];
     }
-    return mfaEntry.fields.length > 0
-      ? mfaEntry.fields
-      : otp
-        ? otpCodeField()
-        : [];
+    const entryFields = mfaEntry.fields ?? [];
+    return entryFields.length > 0 ? entryFields : otp ? otpCodeField() : [];
   }
 
   const fields = (
@@ -426,6 +441,28 @@ export function isErrorStatus(status: MachineStatus): boolean {
   return !NON_ERROR_STATUSES.has(status);
 }
 
+/**
+ * webauthn 降级窗口期判据（后端架构 §8.3 行 1090-1091 / 接口文档 §1.6 行 269）：
+ * 窗口期内「主因子选 webauthn」与「用户唯一可用 MFA 因子为 webauthn」一律拒绝，
+ * 后端统一返回 method_disabled、不再下发专属 message，由前端按 status 渲染。
+ * 故前端只能依自身上下文区分：当前选中因子为 webauthn，或唯一可用二次因子为
+ * webauthn；其余 method_disabled 属普通方式禁用，落通用文案。
+ */
+export function isWebauthnWindow(
+  state: FlowState,
+  mfaMethods?: FactorOption[],
+): boolean {
+  return (
+    state.method === 'webauthn' ||
+    (mfaMethods !== undefined &&
+      mfaMethods.length === 1 &&
+      mfaMethods[0].method === 'webauthn')
+  );
+}
+
+/** §8.3 窗口期专属文案键（method_disabled 的窗口期分支，区别于通用「方式未开放」）。 */
+const WEBAUTHN_WINDOW_KEY = 'errors.status.method_disabled_webauthn';
+
 // ---------------------------------------------------------------------------
 // 视图（状态分支渲染；静态可测——renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
@@ -438,7 +475,7 @@ export interface LoginFlowViewProps {
   /** restart / 传输失败的一次性提示（i18nKey；选择新方式时清空）。 */
   notice?: string;
   onSelect: (method: string) => void;
-  /** mfa 方式选择（§1.3 行 121 mfa.methods；容器推导首步后 dispatch select_method）。 */
+  /** 二次验证方式选择（§1.6 行 251；容器推导首步后 dispatch select_method）。 */
   onSelectMfa?: (method: string, firstStep: string) => void;
   onSubmit: (values: Readonly<Record<string, string>>) => void;
   /** OTP verify 段重发（容器以 step=challenge 重走，§1.10 challenge→form 序列）。 */
@@ -447,8 +484,8 @@ export interface LoginFlowViewProps {
   otpCode?: string;
   /** OTP verify 段输码变化上抛（与 otpCode 成对注入）。 */
   onOtpCodeChange?: (value: string) => void;
-  /** mfa 场景方式列表（select_method 清信封后由容器本地保持，§4.1 行 407 就地渲染）。 */
-  mfaMethods?: MfaMethod[];
+  /** 二次验证方式列表（select_method 清信封后由容器本地保持，§4.1 行 407 就地渲染）。 */
+  mfaMethods?: FactorOption[];
   /** webauthn verify 段断言上抛（容器组装 payload {credential}，§2.6 行 548）。 */
   onCredential?: (credential: JsonObject) => void;
   /** webauthn 最近一次下发的 options 容器镜像（失败态信封无 nextStep，容器持值注入）。 */
@@ -470,7 +507,7 @@ export interface LoginFlowViewProps {
 }
 
 /**
- * mfa 方式选择器（§4.1 行 407：mfa.methods 原地渲染、不跳页；§1.3 行 121-127）：
+ * 二次验证方式选择器（§4.1 行 407：原地渲染、不跳页；§1.3 行 121-127）：
  * 按钮即因子（factors.* 字典），点击上抛 method + 首步（容器 kind→step 映射后
  * dispatch select_method，与主因子方式切换同款语义）；webauthn 条目的 hint
  * 提示文案（§1.3 行 125，如「请触摸已绑定的通行密钥」）附在按钮下方展示
@@ -481,7 +518,7 @@ function MfaSelector({
   current,
   onSelect,
 }: {
-  methods: MfaMethod[];
+  methods: FactorOption[];
   current: string;
   onSelect?: (method: string, firstStep: string) => void;
 }) {
@@ -496,11 +533,13 @@ function MfaSelector({
                 m.method === current ? styles.mfaTabActive : styles.mfaTab
               }
               aria-current={m.method === current ? 'true' : undefined}
-              onClick={() => onSelect?.(m.method, firstStepFor(m.steps))}
+              onClick={() => onSelect?.(m.method, firstStepFor(m.steps ?? []))}
             >
               {t(`factors.${m.method}`)}
             </button>
-            {m.hint !== '' && <span className={styles.mfaHint}>{m.hint}</span>}
+            {(m.hint ?? '') !== '' && (
+              <span className={styles.mfaHint}>{m.hint}</span>
+            )}
           </li>
         ))}
       </ul>
@@ -553,6 +592,9 @@ export function LoginFlowView({
   const resolution = isErrorStatus(state.status)
     ? resolveFlowStatus(state.status)
     : undefined;
+  // method_disabled 落在 webauthn 降级窗口期 → 专属语义文案（§8.3 行 1091）
+  const webauthnWindow =
+    state.status === 'method_disabled' && isWebauthnWindow(state, mfaMethods);
 
   /**
    * 评审 P1-4：banner 公共接线——OTP 系因子的剩余次数由字段旁内联
@@ -629,13 +671,9 @@ export function LoginFlowView({
     return <Factor {...factorProps} />;
   };
 
-  // mfa 场景（§4.1 行 407：原地渲染选择器 + 因子组件，不跳页、不新开流程）：
-  // mfa_required 刚到达时读信封 mfa.methods；选择方式后（select_method 清信封）
-  // 读容器本地镜像 mfaMethods。
-  const mfaList =
-    state.status === 'mfa_required'
-      ? (state.envelope?.mfa?.methods ?? [])
-      : (mfaMethods ?? []);
+  // 二次验证方式列表只来自容器本地镜像（由 StartVerification 的 methods[] 填充
+  // 或调用方注入）；登录流程信封已停发 mfa 块，视图不读信封（§4.1 行 492）。
+  const mfaList = mfaMethods ?? [];
   if (state.status === 'mfa_required' || (mfaMethods?.length ?? 0) > 0) {
     if (mfaList.length === 0) {
       // 零值兜底（§9 第 18 条）：mfa_required 无可用方式（防御，后端必附）。
@@ -667,13 +705,13 @@ export function LoginFlowView({
         ) : (
           renderFactorNode(
             mfaEntry.method,
-            mfaEntry.fields,
+            mfaEntry.fields ?? [],
             mfaEntry.maskedTarget,
           )
         )}
         {resolution !== undefined && (
           <ErrorBanner
-            i18nKey={resolution.i18nKey}
+            i18nKey={webauthnWindow ? WEBAUTHN_WINDOW_KEY : resolution.i18nKey}
             fallbackMessage={error?.message}
             retryAfter={error?.retryAfter}
             retryable={resolution.retryable}
@@ -703,7 +741,7 @@ export function LoginFlowView({
         />
         {resolution !== undefined && (
           <ErrorBanner
-            i18nKey={resolution.i18nKey}
+            i18nKey={webauthnWindow ? WEBAUTHN_WINDOW_KEY : resolution.i18nKey}
             fallbackMessage={error?.message}
             retryAfter={error?.retryAfter}
             retryable={resolution.retryable}
@@ -744,7 +782,7 @@ export function LoginFlowView({
       )}
       {resolution !== undefined && (
         <ErrorBanner
-          i18nKey={resolution.i18nKey}
+          i18nKey={webauthnWindow ? WEBAUTHN_WINDOW_KEY : resolution.i18nKey}
           fallbackMessage={error?.message}
           retryAfter={error?.retryAfter}
           retryable={resolution.retryable}
@@ -765,7 +803,7 @@ export interface LoginContainerProps {
   /**
    * 初始信封（OAuth 回调 mfa_required 场景）：LoginOauth 响应直接
    * 进状态机（response 事件语义，挂载即生效）——mfa_required 就地渲染
-   * mfa.methods 选择器 + 因子组件（§1.6 行 233「不跳页」），MFA 提交走
+   * 二次验证方式选择器 + 因子组件（§1.6 行 233「不跳页」），MFA 提交走
    * SsoService/LoginDefault（loginToken 由 api 层 applyEnvelope 托管续接，
    * 页面不自管），success 终点跳转 executeEffects（§4.1 行 383）。
    */
@@ -795,7 +833,7 @@ export function LoginContainer({
   const captcha = useCaptchaGate(Modal);
   // mfa 场景方式列表本地镜像（§4.1 行 407 就地渲染）：select_method 清信封，
   // mfa_required 信封到达时镜像；restart / complete / 传输失败时清空退出 mfa 场景。
-  const [mfaMethods, setMfaMethods] = useState<MfaMethod[] | undefined>(
+  const [mfaMethods, setFactorOptions] = useState<FactorOption[] | undefined>(
     undefined,
   );
   // challenge 段表单值（重发时原目标重用，§4.3 行 436 重发倒计时）：OTPForm
@@ -840,7 +878,7 @@ export function LoginContainer({
     }
     if (failed) {
       // 传输层失败：回到第一步（reset 已派发）+ failed 兜底提示（§1.6 行 272）。
-      setMfaMethods(undefined);
+      setFactorOptions(undefined);
       setNotice('errors.status.failed');
     }
   };
@@ -865,7 +903,7 @@ export function LoginContainer({
       dispatch(event);
     }
     if (failed) {
-      setMfaMethods(undefined);
+      setFactorOptions(undefined);
       setNotice('errors.status.failed');
     }
   };
@@ -887,17 +925,36 @@ export function LoginContainer({
       dispatch(event);
     }
     if (failed) {
-      setMfaMethods(undefined);
+      setFactorOptions(undefined);
       setNotice('errors.status.failed');
     }
   };
 
-  // mfa_required 信封到达 → 本地镜像（§4.1 行 407：select_method 清信封后仍可渲染）。
+  // mfa_required 到达 → 以 loginToken 调 StartVerification（biz_purpose=login、
+  // operation=mfa_verify、不带 method）取 methods[] 能力视图，映射为就地渲染的
+  // 因子列表（§4.1 行 492）；登录流程信封已停发 mfa 块，不再从信封读取。
   useEffect(() => {
-    if (state.status === 'mfa_required' && state.envelope?.mfa !== undefined) {
-      setMfaMethods(state.envelope.mfa.methods);
+    if (state.status !== 'mfa_required') {
+      return;
     }
-  }, [state.status, state.envelope]);
+    let cancelled = false;
+    void startLoginVerification()
+      .then((response) => {
+        if (!cancelled) {
+          setFactorOptions(
+            response.methods.map((m) => ({ method: m.method, steps: m.steps })),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFactorOptions(undefined);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.status]);
 
   // next 态信封到达 → 镜像 nextStep.challengeData（§1.3 行 117）：webauthn 的
   // verify 段 options 持值（失败态重试复用）；其余因子该字段为 undefined，
@@ -919,12 +976,12 @@ export function LoginContainer({
       state.effects,
       {
         complete: (url) => {
-          setMfaMethods(undefined);
+          setFactorOptions(undefined);
           setChallengeData(undefined);
           location.replace(url);
         },
         restart: (status) => {
-          setMfaMethods(undefined);
+          setFactorOptions(undefined);
           setChallengeData(undefined);
           dispatch({ type: 'reset' });
           setNotice(resolveFlowStatus(status).i18nKey);
@@ -971,7 +1028,7 @@ export function LoginContainer({
   // （重选 OTP 方式时回填，P1-5 同款语义）。
   const backToMethods = () => {
     dispatch({ type: 'reset' });
-    setMfaMethods(undefined);
+    setFactorOptions(undefined);
     setChallengeData(undefined);
     setNotice(undefined);
   };

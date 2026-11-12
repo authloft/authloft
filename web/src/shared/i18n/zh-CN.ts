@@ -86,6 +86,7 @@ export const zhCN = {
   'errors.status.invalid_code': '验证码错误',
   'errors.status.code_expired': '验证码已过期，请重新获取',
   'errors.status.method_disabled': '该登录方式未开放',
+  'errors.status.method_disabled_webauthn': '通行密钥暂不可用，请联系管理员',
   'errors.status.step_invalid': '当前状态已失效，请重新操作',
   'errors.status.token_invalid': '登录状态无效，请重新登录',
   'errors.status.token_expired': '登录已超时，请重新登录',

@@ -16,7 +16,7 @@ import {
 /** 状态机事件。 */
 export type FlowEvent =
   /**
-   * 选择认证方式（主流程方式或 mfa.methods 之一，§4.1 行 407：mfa 就地渲染
+   * 选择认证方式（主流程方式或二次验证方式列表之一，§4.1 行 407：就地渲染
    * 选择器、不跳页）；firstStep 由调用方按注入快照 methods[].steps 的首个
    * kind 映射（challenge → 'challenge'，form → 'verify' / 'set_password'）。
    */

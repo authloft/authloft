@@ -20,7 +20,7 @@
  * - success → 终点跳转（flowTerminalUrl：syncCookieUrl 优先，§1.3 行 136）；
  * - binding_required → 原地渲染 BindingPage（§1.6 行 234「渲染绑定选择页」，
  *   LoginContainer binding 分支同款用法；建号 / 退出编排由其自带）；
- * - mfa_required → **完整编排**（§1.6 行 233「就地渲染 mfa.methods
+ * - mfa_required → **完整编排**（§1.6 行 233「就地渲染二次验证方式
  *   选择器 + 因子组件，不跳页」）：复用 LoginContainer 既有能力
  *   （initialEnvelope 进状态机；MFA 提交走 SsoService/LoginDefault，success
  *   终点跳转 executeEffects；loginToken 由 api 层托管续接，页面不自管）；
@@ -233,7 +233,7 @@ export function OAuthCallbackView({
           // §1.6 行 234：原地渲染绑定选择页（不跳路由；建号 / 退出编排自带）。
           <BindingPage binding={envelope?.binding} />
         ) : status === 'mfa_required' ? (
-          // §1.6 行 233 完整编排：就地渲染 mfa.methods 选择器 + 因子
+          // §1.6 行 233 完整编排：就地渲染二次验证方式选择器 + 因子
           // 组件（不跳页）——复用 LoginContainer 既有能力（信封进状态机；
           // MFA 提交走 LoginDefault，success 终点跳转 executeEffects；loginToken
           // 由 api 层托管续接，页面不自管）。
