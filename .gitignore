@@ -3,6 +3,7 @@
 authloft.yml
 ENV.md
 .workbuddy
+.workbuddy-ai
 *.exe
 review
 .agent-temp
