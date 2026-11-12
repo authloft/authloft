@@ -206,6 +206,10 @@ func (f *tpTickets) Take(_ context.Context, id string) (*token.TicketResult, err
 	return f.results[id], nil
 }
 
+func (f *tpTickets) Peek(_ context.Context, id string) (*token.TicketResult, error) {
+	return f.results[id], nil
+}
+
 func (f *tpTickets) Wait(_ context.Context, _ string, _ time.Duration) error {
 	return cache.ErrTicketWaitTimeout
 }

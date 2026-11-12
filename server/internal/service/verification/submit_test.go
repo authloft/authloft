@@ -200,16 +200,16 @@ func TestSubmitAccountRejectsLoginToken(t *testing.T) {
 	}
 }
 
-// TestSubmitSSOScanSkipsSession：主体为 tid 的扫码场景由票据链路收尾，
-// Submit 不直接建会话（不调用 LoginCompleter）。
+// TestSubmitSSOScanSkipsSession：扫码挑战（票据标识绑定在 nonce）由票据链路
+// 收尾，Submit 不建会话，回传 ticketID 供调用方写终态 TicketResult。
 func TestSubmitSSOScanSkipsSession(t *testing.T) {
 	verifier := &submitVerifier{res: FactorVerifyResult{Passed: true}}
 	login := &loginSessions{}
 	svc, codec := newSubmitService(t, func(d *Deps) { d.Verifier = verifier; d.Login = login })
 	chTok, err := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeLogin,
-		Subject:    Subject{Kind: SubjectKindTID, ID: "ticket-1"},
-		Nonce:      "nonce-scan",
+		Subject:    Subject{Kind: SubjectKindUID, ID: "42"},
+		Nonce:      scanNonce("ticket-1", "nonce-scan"),
 		Operation:  "mfa_verify",
 		Methods:    []string{"totp"},
 	}, ChallengeTTL)
@@ -224,6 +224,13 @@ func TestSubmitSSOScanSkipsSession(t *testing.T) {
 	}
 	if res.Status != "success" || login.calls != 0 || res.RedirectTo != "" || res.SyncCookieURL != "" {
 		t.Fatalf("res = %+v login.calls = %d", res, login.calls)
+	}
+	if res.TicketID != "ticket-1" {
+		t.Fatalf("TicketID = %q, want ticket-1", res.TicketID)
+	}
+	// 剥离票据前缀后交给因子校验，保证 owner / challenge 与下发阶段同源。
+	if verifier.got.ChallengeID != "nonce-scan" {
+		t.Fatalf("ChallengeID = %q, want nonce-scan", verifier.got.ChallengeID)
 	}
 }
 

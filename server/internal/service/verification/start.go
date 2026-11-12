@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -32,6 +33,24 @@ const (
 	DomainSSO     = "sso"
 	DomainAccount = "account"
 )
+
+// 扫码 step-up 的票据快照取值（§2.8 行 884、§11.6.5 行 1400）。验证内核只
+// 做契约校验、不读 Redis：场景与状态由持票域按快照填充。
+const (
+	scanSceneLogin       = "login"
+	scanStatusMFAPending = "mfa_pending"
+	scanNonceSep         = "|"
+)
+
+// MFAPendingClaim 扫码 step-up 的票据快照视图（§2.8 行 884、§3.8.1 行 1233）：
+// 由持票域（扫码 service）校验票据存在 / scene 后注入；验证内核据此拒绝
+// 不存在或 scene 不符的 mfaPendingId，并以其中的 uid 作为目标主体。
+type MFAPendingClaim struct {
+	TicketID string
+	Scene    string
+	Status   string
+	UID      int64
+}
 
 // Error 是 step-up 的业务失败：Code 只取接口文档 §1.6 封闭集合成员，由
 // handler 构造 Connect 错误体 + ErrorInfo（§3.8.5、§1.5）；RetryAfter 仅在
@@ -189,8 +208,10 @@ type StartInput struct {
 	Operation    string
 	LoginToken   string
 	MFAPendingID string
-	SessionUID   string
-	Captcha      *captcha.Submission
+	// MFAPending 扫码场景的票据快照（持票域注入）；MFAPendingID 非空时必填。
+	MFAPending *MFAPendingClaim
+	SessionUID string
+	Captcha    *captcha.Submission
 }
 
 // StartResult StartVerification 结论。
@@ -295,6 +316,13 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		data = sr.ChallengeData
 	}
 
+	// 扫码场景把 ticket_id 绑定进 nonce：终态票据的收尾需要 ticket_id，
+	// 而挑战令牌只携带 subject / nonce（§11.6.7）。前缀不改因子语义——
+	// 因子下发使用原始 nonce，Submit 侧剥离前缀后再交给因子校验。
+	if in.MFAPending != nil {
+		nonce = scanNonce(in.MFAPending.TicketID, nonce)
+	}
+
 	tok, err := s.d.Codec.IssueChallenge(Challenge{
 		BizPurpose: in.BizPurpose,
 		Subject:    subject,
@@ -342,7 +370,18 @@ func (s *Service) resolveSubject(ctx context.Context, in StartInput) (Subject, e
 			return Subject{Kind: SubjectKindUID, ID: fmt.Sprintf("%d", uid)}, nil
 		}
 		if in.MFAPendingID != "" {
-			return Subject{Kind: SubjectKindTID, ID: in.MFAPendingID}, nil
+			if in.MFAPending == nil || in.MFAPending.TicketID != in.MFAPendingID {
+				return Subject{}, failure("invalid_request", nil)
+			}
+			if in.MFAPending.Scene != scanSceneLogin {
+				return Subject{}, failure("invalid_request", nil)
+			}
+			if in.MFAPending.Status != scanStatusMFAPending || in.MFAPending.UID <= 0 {
+				return Subject{}, failure("token_invalid", nil)
+			}
+			// 目标主体取票据快照的 uid：因子下发 / 校验都要求 uid != 0（§7.3
+			// 校验点），扫码链路的第一因子已由小程序端完成。
+			return Subject{Kind: SubjectKindUID, ID: fmt.Sprintf("%d", in.MFAPending.UID)}, nil
 		}
 		return Subject{}, failure("invalid_request", nil)
 	case DomainAccount:
@@ -408,6 +447,21 @@ func ParseCaptchaSubmission(s *structpb.Struct) *captcha.Submission {
 		ID:          get("id"),
 		Answer:      get("answer"),
 	}
+}
+
+// scanNonce 把扫码票据标识绑定进挑战 nonce（内部编码，挑战令牌对前端不透明）。
+func scanNonce(ticketID, nonce string) string {
+	return ticketID + scanNonceSep + nonce
+}
+
+// splitScanNonce 拆出扫码票据标识与原始 nonce；非扫码挑战返回 ok=false。
+// 原始 nonce 是 base64url 随机串，不含分隔符。
+func splitScanNonce(nonce string) (ticketID, raw string, ok bool) {
+	i := strings.Index(nonce, scanNonceSep)
+	if i <= 0 {
+		return "", nonce, false
+	}
+	return nonce[:i], nonce[i+1:], true
 }
 
 func intersect(candidates, bound []string) []string {

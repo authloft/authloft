@@ -251,6 +251,34 @@ func TestTicketTakeOnce(t *testing.T) {
 	}
 }
 
+// TestTicketPeekNonConsuming Peek 只读不删除（mfa_pending 非终态，轮询只读
+// 快照、不 GETDEL，§11.6.5 行 1424）：可重复读到同值，键仍在；Take 才消费。
+func TestTicketPeekNonConsuming(t *testing.T) {
+	ctx, rdb, tok := t053RDB(t)
+	store := NewTicketStore(rdb, &fakeTicketSealer{}, TicketOptions{})
+	id := tok + "-peek"
+	seed := ticketSeed("mfa_pending", 1, 0)
+
+	if res, err := store.WriteComplete(ctx, id, seed); err != nil || res != TicketWriteOK {
+		t.Fatalf("WriteComplete = (%v, %v), want (TicketWriteOK, nil)", res, err)
+	}
+	for i := 0; i < 2; i++ {
+		got, err := store.Peek(ctx, id)
+		if err != nil || got == nil || !proto.Equal(got, seed) {
+			t.Fatalf("第 %d 次 Peek = (%v, %v), want (%v, nil)", i+1, got, err, seed)
+		}
+	}
+	if n, err := rdb.Exists(ctx, TicketKey(id)).Result(); err != nil || n != 1 {
+		t.Fatalf("Peek 后 exists = (%d, %v), want (1, nil)", n, err)
+	}
+	if _, err := store.Take(ctx, id); err != nil {
+		t.Fatalf("Take: %v", err)
+	}
+	if got, err := store.Peek(ctx, id); err != nil || got != nil {
+		t.Fatalf("消费后 Peek = (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
 // TestTicketTakeConcurrent：同一票据并发 100 次 Take 仅 1 次取到结果。
 func TestTicketTakeConcurrent(t *testing.T) {
 	ctx, rdb, tok := t053RDB(t)

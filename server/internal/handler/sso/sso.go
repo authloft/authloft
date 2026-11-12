@@ -21,6 +21,7 @@ import (
 	"authloft/internal/captcha"
 	internalconnect "authloft/internal/connect"
 	"authloft/internal/dto"
+	"authloft/internal/logx"
 	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/service/verification"
@@ -153,10 +154,28 @@ func encodeCaptchaFailure(f *captcha.Failure) error {
 var errVerificationNotConfigured = errors.New("verification service not configured")
 
 // StartVerification（§3.8.1、§3.8.2，SsoService 组）：登录 / 扫码链路以
-// loginToken 或 mfaPendingId 推导主体，下发挑战令牌与可用因子。
+// loginToken 或 mfaPendingId 推导主体，下发挑战令牌与可用因子。扫码场景的
+// mfaPendingId 是票据标识，由扫码 service 校验票据存在 / scene 并取目标 uid
+// 后注入验证内核（§2.8 行 884）；loginToken 与 mfaPendingId 二选一，前者优先。
 func (h *Handler) StartVerification(ctx context.Context, req *connect.Request[commonv1.StartVerificationRequest]) (*connect.Response[commonv1.StartVerificationResponse], error) {
 	if h.verification == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
+	}
+	var claim *verification.MFAPendingClaim
+	if id := req.Msg.GetMfaPendingId(); id != "" && req.Msg.GetLoginToken() == "" {
+		if h.qrcode == nil {
+			return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+		}
+		pending, err := h.qrcode.ResolveMFAPending(ctx, id)
+		if err != nil {
+			return nil, mapMFAPendingError(err)
+		}
+		claim = &verification.MFAPendingClaim{
+			TicketID: pending.TicketID,
+			Scene:    pending.Scene,
+			Status:   pending.Status,
+			UID:      pending.UID,
+		}
 	}
 	res, failure, err := h.verification.Start(ctx, verification.StartInput{
 		Domain:       verification.DomainSSO,
@@ -165,6 +184,7 @@ func (h *Handler) StartVerification(ctx context.Context, req *connect.Request[co
 		Operation:    req.Msg.GetOperation(),
 		LoginToken:   req.Msg.GetLoginToken(),
 		MFAPendingID: req.Msg.GetMfaPendingId(),
+		MFAPending:   claim,
 		Captcha:      verification.ParseCaptchaSubmission(req.Msg.GetCaptcha()),
 	})
 	if err != nil {
@@ -196,6 +216,16 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 			return connect.NewResponse(&commonv1.SubmitVerificationResponse{Status: status}), nil
 		}
 		return nil, mapVerificationError("sso", err)
+	}
+	// 扫码链路：step-up 通过后把票据快照改写为成功终态（§2.8 行 884），PC 端
+	// 下一次轮询进入 success 并拿到登录信封。
+	if res.TicketID != "" {
+		if h.qrcode == nil {
+			return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+		}
+		if err := h.qrcode.CompleteStepUp(ctx, res.TicketID); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+		}
 	}
 	return connect.NewResponse(&commonv1.SubmitVerificationResponse{
 		Status:        res.Status,
@@ -326,6 +356,14 @@ func (h *Handler) LoginOauth(ctx context.Context, req *connect.Request[ssov1.Log
 	in := dto.LoginOauth(req.Msg)
 	in.StateCookie = loginStateCookie(req)
 	out := h.thirdparty.LoginOauth(ctx, in)
+	// 扫码 + 已启用 MFA：小程序端返回 mfa_required 时把票据快照改写为
+	// mfa_pending（§2.8 行 884、§13.2 行 1680），PC 端轮询得 needs_step_up。
+	// 写入失败不改变本次响应，PC 端按票据过期兜底。
+	if in.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.qrcode != nil {
+		if err := h.qrcode.MarkMFAPending(ctx, in.TicketID, out.Envelope.GetLoginToken()); err != nil {
+			logx.Warn(ctx, "sso: mark qrcode mfa pending failed", "ticket_id", in.TicketID, "error", err)
+		}
+	}
 	if out.Cookie != nil {
 		internalconnect.AddSessionCookie(ctx, out.Cookie)
 	}
@@ -385,6 +423,12 @@ type Qrcode interface {
 	CreateQrcode(ctx context.Context, in service.CreateQrcodeInput) (*service.CreateQrcodeOutput, error)
 	GetLoginTicket(ctx context.Context, in service.GetLoginTicketInput) *service.GetLoginTicketOutput
 	ConfirmLoginTicket(ctx context.Context, in service.ConfirmLoginTicketInput) (*ssov1.TicketStatus, error)
+	// ResolveMFAPending / MarkMFAPending / CompleteStepUp 扫码 MFA 中间态
+	// （§2.8 行 884）：轮询 needs_step_up、StartVerification 取目标 uid、
+	// step-up 通过后写终态。
+	ResolveMFAPending(ctx context.Context, ticketID string) (*service.MFAPending, error)
+	MarkMFAPending(ctx context.Context, ticketID, loginToken string) error
+	CompleteStepUp(ctx context.Context, ticketID string) error
 }
 
 // errQrcodeNotConfigured 未装配扫码 service（测试桩）。
@@ -455,6 +499,24 @@ func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 		})
 	}
 	return coded
+}
+
+// mapMFAPendingError 扫码 step-up 的主体凭证错误映射（§3.8.5 行 1301）：
+// 票据不存在 / 已过期 / 非 mfa_pending → token_invalid；scene 不符 →
+// invalid_request；未知错误不暴露内部信息。
+func mapMFAPendingError(err error) error {
+	switch {
+	case errors.Is(err, service.ErrQrcodeTicketScene), errors.Is(err, service.ErrQrcodeInvalidRequest):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "invalid_request", "invalid mfa pending ticket"))
+	case errors.Is(err, service.ErrQrcodeTicketInvalid):
+		return internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, err),
+			internalconnect.NewErrorInfo("sso", "token_invalid", "mfa pending ticket invalid or expired"))
+	default:
+		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+	}
 }
 
 // mapQrcodeError 扫码域哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行

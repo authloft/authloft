@@ -197,10 +197,12 @@ func TestStartSSOLoginRequiresPassedPrimary(t *testing.T) {
 	}
 }
 
-func TestStartScanSubjectIsTicket(t *testing.T) {
+func TestStartScanSubjectIsTicketUID(t *testing.T) {
 	svc, codec := newStartService(t, nil)
 	res, _, err := svc.Start(context.Background(), StartInput{
-		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1",
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify",
+		MFAPendingID: "ticket-1",
+		MFAPending:   &MFAPendingClaim{TicketID: "ticket-1", Scene: scanSceneLogin, Status: scanStatusMFAPending, UID: 42},
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -209,8 +211,43 @@ func TestStartScanSubjectIsTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseChallenge: %v", err)
 	}
-	if ch.Subject != (Subject{Kind: SubjectKindTID, ID: "ticket-1"}) {
-		t.Fatalf("subject = %+v, want tid/ticket-1", ch.Subject)
+	// 主体取票据快照解析出的 uid（因子下发 / 校验都要求 uid != 0）。
+	if ch.Subject != (Subject{Kind: SubjectKindUID, ID: "42"}) {
+		t.Fatalf("subject = %+v, want uid/42", ch.Subject)
+	}
+	// 票据标识随挑战 nonce 绑定，供 Submit 侧票据收尾。
+	if ticketID, raw, ok := splitScanNonce(ch.Nonce); !ok || ticketID != "ticket-1" || raw == "" {
+		t.Fatalf("nonce = %q, want ticket-1|random", ch.Nonce)
+	}
+}
+
+// TestStartScanClaimValidation 扫码主体凭证校验（§3.8.5）：缺票据快照 /
+// scene 不符 → invalid_request；票据不存在 / 非 mfa_pending / uid 为 0 →
+// token_invalid（票据校验由持票域注入的快照承载）。
+func TestStartScanClaimValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		in   StartInput
+		code string
+	}{
+		{"缺票据快照", StartInput{Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1"}, "invalid_request"},
+		{"ticket_id 不一致", StartInput{Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1",
+			MFAPending: &MFAPendingClaim{TicketID: "ticket-2", Scene: scanSceneLogin, Status: scanStatusMFAPending, UID: 42}}, "invalid_request"},
+		{"scene 不符", StartInput{Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1",
+			MFAPending: &MFAPendingClaim{TicketID: "ticket-1", Scene: "bind", Status: scanStatusMFAPending, UID: 42}}, "invalid_request"},
+		{"非 mfa_pending", StartInput{Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1",
+			MFAPending: &MFAPendingClaim{TicketID: "ticket-1", Scene: scanSceneLogin, Status: "scanned", UID: 42}}, "token_invalid"},
+		{"uid 为零", StartInput{Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", MFAPendingID: "ticket-1",
+			MFAPending: &MFAPendingClaim{TicketID: "ticket-1", Scene: scanSceneLogin, Status: scanStatusMFAPending}}, "token_invalid"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := newStartService(t, nil)
+			_, _, err := svc.Start(context.Background(), tc.in)
+			if got := errorCode(t, err); got != tc.code {
+				t.Fatalf("code = %s, want %s", got, tc.code)
+			}
+		})
 	}
 }
 

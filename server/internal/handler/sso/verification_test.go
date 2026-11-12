@@ -15,6 +15,7 @@ import (
 	commonv1 "authloft/gen/go/api/common/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/captcha"
+	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -52,6 +53,96 @@ func (f *fakeVerification) Submit(ctx context.Context, in verification.SubmitInp
 func newVerificationHandler(f *fakeVerification) http.Handler {
 	_, h := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, session.NewCookie("al_session", "", time.Hour), nil, nil, f))
 	return h
+}
+
+func newVerificationHandlerWithQrcode(f *fakeVerification, qr Qrcode) http.Handler {
+	_, h := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, session.NewCookie("al_session", "", time.Hour), nil, qr, f))
+	return h
+}
+
+// TestSsoStartVerificationScanClaim 扫码场景（无 loginToken）：mfaPendingId 由
+// 扫码 service 校验票据并解析目标 uid 后注入验证内核（§2.8 行 884、§3.8.1）。
+func TestSsoStartVerificationScanClaim(t *testing.T) {
+	fake := &fakeVerification{startRes: &verification.StartResult{ChallengeToken: "ch-scan", ExpiresIn: 300}}
+	qr := &fakeQrcode{resolveOut: &service.MFAPending{
+		TicketID: "ticket-1", Scene: "login", Status: "mfa_pending", UID: 9,
+	}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceStartVerificationProcedure,
+		strings.NewReader(`{"bizPurpose":"login","method":"totp","operation":"mfa_verify","mfaPendingId":"ticket-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	newVerificationHandlerWithQrcode(fake, qr).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if qr.gotResolve != "ticket-1" {
+		t.Fatalf("ResolveMFAPending 入参 = %q, want ticket-1", qr.gotResolve)
+	}
+	claim := fake.startIn.MFAPending
+	if claim == nil || claim.TicketID != "ticket-1" || claim.Scene != "login" || claim.Status != "mfa_pending" || claim.UID != 9 {
+		t.Fatalf("MFAPending = %+v", claim)
+	}
+}
+
+// TestSsoStartVerificationScanErrors 票据不存在 / scene 不符按 §3.8.5 的主体
+// 凭证错误口径返回（token_invalid / invalid_request）。
+func TestSsoStartVerificationScanErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"票据不存在", service.ErrQrcodeTicketInvalid, "token_invalid"},
+		{"scene 不符", service.ErrQrcodeTicketScene, "invalid_request"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeVerification{}
+			qr := &fakeQrcode{resolveErr: tc.err}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceStartVerificationProcedure,
+				strings.NewReader(`{"bizPurpose":"login","method":"totp","operation":"mfa_verify","mfaPendingId":"ticket-1"}`))
+			req.Header.Set("Content-Type", "application/json")
+			newVerificationHandlerWithQrcode(fake, qr).ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body %s)", rec.Code, rec.Body.String())
+			}
+			info, _ := decodeSsoDetails(t, rec.Body.String())
+			if info.GetCode() != tc.code {
+				t.Fatalf("ErrorInfo.code = %q, want %q", info.GetCode(), tc.code)
+			}
+			if fake.startCalls != 0 {
+				t.Fatalf("票据校验失败不应进入 Start, calls = %d", fake.startCalls)
+			}
+		})
+	}
+}
+
+// TestSsoSubmitVerificationScanCompletesTicket 扫码 step-up 通过后由 handler
+// 触发票据终态收尾（§2.8 行 884），响应仍为 success。
+func TestSsoSubmitVerificationScanCompletesTicket(t *testing.T) {
+	fake := &fakeVerification{submitRes: &verification.SubmitResult{Status: "success", TicketID: "ticket-1", AMR: []string{"totp"}}}
+	qr := &fakeQrcode{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceSubmitVerificationProcedure,
+		strings.NewReader(`{"challengeToken":"ch-scan","method":"totp","payload":{"code":"123456"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	newVerificationHandlerWithQrcode(fake, qr).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if qr.gotComplete != "ticket-1" {
+		t.Fatalf("CompleteStepUp 入参 = %q, want ticket-1", qr.gotComplete)
+	}
+	var got commonv1.SubmitVerificationResponse
+	if err := protojson.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+	}
+	if got.GetStatus() != "success" {
+		t.Fatalf("status = %q, want success", got.GetStatus())
+	}
 }
 
 // TestSsoStartVerificationConnect：SsoService 组以 loginToken / mfaPendingId

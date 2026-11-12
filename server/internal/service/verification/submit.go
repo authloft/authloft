@@ -51,6 +51,9 @@ type SubmitResult struct {
 	VerificationToken string
 	ExpiresIn         int64
 	AMR               []string
+	// TicketID 扫码链路的票据标识（非空表示本次 step-up 属扫码场景，由调用方
+	// 票据链路收尾写终态 TicketResult，不在此建会话，§2.8 行 884）。
+	TicketID string
 }
 
 // Want 是消费方对断言的期望（§11.6.7:1482「biz_purpose + operation 双重
@@ -87,6 +90,16 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	if in.Domain == DomainAccount && ch.BizPurpose == BizPurposeLogin {
 		return nil, failure("verification_invalid", nil)
 	}
+	// 扫码挑战把 ticket_id 绑定在 nonce 前缀（Start 侧编码）：剥离后再交给
+	// 因子校验，保证 OTP owner / WebAuthn challenge 与下发阶段同源。
+	verifyNonce := ch.Nonce
+	scanTicket, rawNonce, isScan := splitScanNonce(ch.Nonce)
+	if isScan {
+		verifyNonce = rawNonce
+	} else if ch.Subject.Kind == SubjectKindTID {
+		// 兼容以票据标识直接作 subject 的扫码挑战。
+		scanTicket = ch.Subject.ID
+	}
 	// 未注入验证器时 fail-closed：任何情况都不得在未校验凭据的情况下签发断言。
 	if s.d.Verifier == nil {
 		return nil, failure("method_disabled", nil)
@@ -95,7 +108,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 		Method:      in.Method,
 		BizPurpose:  ch.BizPurpose,
 		Subject:     ch.Subject,
-		ChallengeID: ch.Nonce,
+		ChallengeID: verifyNonce,
 		Payload:     in.Payload,
 	})
 	if err != nil {
@@ -112,7 +125,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	tok, err := s.d.Codec.IssueAssertion(Assertion{
 		BizPurpose: ch.BizPurpose,
 		Subject:    ch.Subject,
-		Nonce:      ch.Nonce,
+		Nonce:      verifyNonce,
 		Operation:  ch.Operation,
 		AMR:        []string{in.Method},
 	}, AssertionTTL)
@@ -126,9 +139,18 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	}
 	if in.Domain == DomainSSO {
 		out.Status = "success"
-		// 登录 / 扫码链路的二次验证通过后走既有终点收尾：建会话（一次写）、
-		// 投递登录日志、拼多域名同步链与 OIDC 跳转（§7.3 步骤 7、§3.8.2）。
-		// 主体为 tid 的扫码场景由票据链路另行收尾，这里不做会话落盘。
+		if scanTicket != "" {
+			// 扫码链路（§2.8 行 884）：主体必须是票据快照解析出的 uid，收尾
+			// 由票据链路写终态 TicketResult，PC 端下一次轮询进入 success；
+			// 这里不建会话（PC 是轮询方，会话在轮询命中终态时创建）。
+			if ch.Subject.Kind != SubjectKindUID || ch.Subject.ID == "" {
+				return nil, failure("verification_invalid", nil)
+			}
+			out.TicketID = scanTicket
+			return out, nil
+		}
+		// 登录链路的二次验证通过后走既有终点收尾：建会话（一次写）、投递登录
+		// 日志、拼多域名同步链与 OIDC 跳转（§7.3 步骤 7、§3.8.2）。
 		if ch.Subject.Kind == SubjectKindUID {
 			if s.d.Login == nil {
 				return nil, failure("invalid_request", nil)

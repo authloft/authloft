@@ -9,7 +9,9 @@
 //     再以 Lua CAS（原值未变才替换）原子落库，避免并发写覆盖已成功票据。
 //
 // 读取语义（§11.6.5 行 1355）：Take 用 GETDEL 原子取走并解密，同一票据只有
-// 一个读取方能取到；Wait 只轮询键是否存在（200ms 退避，受 ctx 取消），不消费。
+// 一个读取方能取到（仅限 success / failed 终态）；Peek 读取并解密但不清除，
+// 供轮询读取 mfa_pending 等非终态快照；Wait 只轮询键是否存在（200ms 退避，
+// 受 ctx 取消），不消费。
 //
 // 加密实现不在本包：sealer 由装配方注入（purpose=ticket 固定在 sealer 实现内），
 // 本包不自造加密、不引 security 真密钥；测试用 Fake sealer。
@@ -189,6 +191,24 @@ func (s *TicketStore) currentValue(ctx context.Context, key string) (expected st
 		return "", true, nil
 	}
 	return raw, false, nil
+}
+
+// Peek 读取并解密票据结果但不清除（§11.6.5 行 1424：mfa_pending 为非终态，
+// 轮询只读快照、不 GETDEL）。nil / nil 表示键不存在（未就绪 / 已过期 /
+// 已被消费）。
+func (s *TicketStore) Peek(ctx context.Context, id string) (*token.TicketResult, error) {
+	raw, err := s.rdb.Get(ctx, TicketKey(id)).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("cache: get ticket: %w", err)
+	}
+	res, err := s.sealer.Open(raw)
+	if err != nil {
+		return nil, fmt.Errorf("cache: open ticket result: %w", err)
+	}
+	return res, nil
 }
 
 // Take 以 GETDEL 原子取走并解密（§11.6.5 行 1355）：同一票据仅一个读取方

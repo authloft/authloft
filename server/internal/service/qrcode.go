@@ -65,12 +65,18 @@ const (
 	// sceneLogin / sceneBind TicketPayload.scene 取值（§11.6.4 行 1328）。
 	sceneLogin = "login"
 	sceneBind  = "bind"
-	// ticketStatusScanned / ticketStatusSuccess / ticketStatusFailed
-	// TicketResult.status（§11.6.5 行 1353：scanned | success | failed——
-	// 失败类具体结论由写入方落本字段，轮询侧映射为 ticket 只报 failed）。
-	ticketStatusScanned = "scanned"
-	ticketStatusSuccess = "success"
-	ticketStatusFailed  = "failed"
+	// ticketStatusScanned / ticketStatusMFAPending / ticketStatusSuccess /
+	// ticketStatusFailed TicketResult.status（§11.6.5 行 1400：scanned |
+	// mfa_pending | success | failed——失败类具体结论由写入方落本字段，轮询侧
+	// 映射为 ticket 只报 failed；mfa_pending 为非终态，映射到轮询顶层
+	// needs_step_up 且 ticket.status 仍报 scanned）。
+	ticketStatusScanned    = "scanned"
+	ticketStatusMFAPending = "mfa_pending"
+	ticketStatusSuccess    = "success"
+	ticketStatusFailed     = "failed"
+	// statusNeedsStepUp 扫码轮询专属顶层 status（§1.6 行 282、§2.8 行 884）：
+	// 只出现在 GetLoginTicket 顶层，不进登录信封、不作 ticket.status 取值。
+	statusNeedsStepUp = "needs_step_up"
 )
 
 // 可判别哨兵错误（handler 转 Connect 错误体 + ErrorInfo，§1.6 封闭集成员）。
@@ -85,6 +91,11 @@ var (
 	ErrQrcodeCaptchaRequired = errors.New("qrcode: captcha required")
 	// ErrQrcodeCaptchaInvalid captcha 校验不通过 / 已使用。
 	ErrQrcodeCaptchaInvalid = errors.New("qrcode: captcha invalid")
+	// ErrQrcodeTicketInvalid 扫码票据不存在 / 已过期 / 状态不是 mfa_pending
+	// （扫码 step-up 的主体凭证失效，§3.8.5 行 1301 的 token_invalid 口径）。
+	ErrQrcodeTicketInvalid = errors.New("qrcode: ticket invalid")
+	// ErrQrcodeTicketScene 票据 scene 与本次用途不匹配（只服务 login，§11.6.5 行 1423）。
+	ErrQrcodeTicketScene = errors.New("qrcode: ticket scene mismatch")
 )
 
 // QrcodeCaptchaFailure 把 Gate.Evaluate 判定的当前生效 captcha 配置随可判别
@@ -105,6 +116,7 @@ func (f *QrcodeCaptchaFailure) Unwrap() error { return f.cause }
 type TicketStore interface {
 	WriteScanned(ctx context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error)
 	WriteComplete(ctx context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error)
+	Peek(ctx context.Context, id string) (*token.TicketResult, error)
 	Take(ctx context.Context, id string) (*token.TicketResult, error)
 	Wait(ctx context.Context, id string, timeout time.Duration) error
 }
@@ -373,8 +385,9 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{Status: orchestrator.StatusInvalidRequest}}
 	}
 
-	// 命中 GETDEL（§2.8 行 746：原子取走即删，一次性消费）。
-	res, err := s.deps.Tickets.Take(ctx, id)
+	// 先读快照（Peek 不删除）：mfa_pending 为非终态，轮询只读、不 GETDEL
+	// （§11.6.5 行 1424）；终态 success / failed 才在下方向下消费。
+	res, err := s.deps.Tickets.Peek(ctx, id)
 	if err != nil {
 		return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
 	}
@@ -389,7 +402,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 			wait = remain
 		}
 		if werr := s.deps.Tickets.Wait(ctx, id, wait); werr == nil {
-			res, err = s.deps.Tickets.Take(ctx, id)
+			res, err = s.deps.Tickets.Peek(ctx, id)
 			if err != nil {
 				return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
 			}
@@ -397,7 +410,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 	}
 	if res == nil {
 		// 未命中键：now > exp → expired；否则 pending（§2.8 行 748——已扫码
-		// 则同为 scanned：scanned 标记存在时上方 Take 已取到走 scanned 分支）。
+		// 则同为 scanned：scanned 标记存在时上方 Peek 已取到走 scanned 分支）。
 		if s.now().Unix() >= payload.GetExp() {
 			return envelope("expired", "expired", nil)
 		}
@@ -406,18 +419,33 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 
 	switch res.GetStatus() {
 	case ticketStatusScanned:
-		// 轮询消费了 scanned 标记：原样补写回（WriteScanned SETNX 幂等），
-		// 后续轮询仍见 scanned；complete 的 CAS 覆盖路径不受影响（键值替换
-		// 由 cache/lua/ticket_write.lua 保证原子）。
+		// 已扫码标记：原样补写回（WriteScanned SETNX 幂等），防中间态意外丢失，
+		// 不产生新状态、不算业务写入（§2.8 行 863）。
 		if _, werr := s.deps.Tickets.WriteScanned(ctx, id, res); werr != nil {
 			logx.Warn(ctx, "qrcode: rewrite scanned marker failed", "ticket_id", id, "error", werr)
 		}
 		return envelope(ticketStatusScanned, ticketStatusScanned, nil)
+	case ticketStatusMFAPending:
+		// 扫码 + 已启用 MFA 的中间态（§2.8 行 884、§13.2 行 1680）：顶层
+		// needs_step_up、ticket.status 仍报 scanned；非终态，不消费快照。
+		return envelope(statusNeedsStepUp, ticketStatusScanned, nil)
 	case ticketStatusSuccess:
-		return s.pollResult(ctx, payload, res)
+		// 终态一次性消费（§11.6.5 行 1424）：GETDEL 原子取走即删；并发下
+		// 被其他读取方先取走时，按键不存在得到 expired。
+		taken, terr := s.deps.Tickets.Take(ctx, id)
+		if terr != nil {
+			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+		}
+		if taken == nil {
+			return envelope("expired", "expired", nil)
+		}
+		return s.pollResult(ctx, payload, taken)
 	default:
-		// 失败类：结论在信封 status（§1.6 行 264——写入方把具体失败落
-		// TicketResult.status，本侧原样上抛），ticket 只报 failed。
+		// 失败类终态：结论在信封 status（§1.6 行 264——写入方把具体失败落
+		// TicketResult.status，本侧原样上抛），ticket 只报 failed；终态消费。
+		if _, terr := s.deps.Tickets.Take(ctx, id); terr != nil {
+			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+		}
 		return envelope(res.GetStatus(), ticketStatusFailed, nil)
 	}
 }
@@ -593,6 +621,124 @@ func (s *QRCode) ConfirmLoginTicket(ctx context.Context, in ConfirmLoginTicketIn
 	// 回显 {status:"success", ticket_id}（ticket.proto 行 72-73）；键上已
 	// 存 success 时不覆盖（WriteComplete 语义），重复确认幂等成功。
 	return &ssov1.TicketStatus{Status: ticketStatusSuccess, TicketId: in.TicketID}, nil
+}
+
+// MFAPending 扫码 step-up 的票据快照视图（§2.8 行 884、§3.8.1 行 1233）：
+// PC 端以 mfaPendingId=ticketId 调 StartVerification 时，由本服务校验票据
+// 存在、scene 匹配并取目标 uid；验证内核不直接读 Redis。
+type MFAPending struct {
+	TicketID string
+	Scene    string
+	Status   string
+	UID      int64
+}
+
+// ResolveMFAPending 校验扫码票据并取 step-up 目标 uid（§2.8 行 884）：票据
+// 不存在 / 已过期 / 非 mfa_pending → ErrQrcodeTicketInvalid；scene 不是
+// login → ErrQrcodeTicketScene。只读不消费（mfa_pending 非终态）。
+func (s *QRCode) ResolveMFAPending(ctx context.Context, ticketID string) (*MFAPending, error) {
+	if strings.TrimSpace(ticketID) == "" {
+		return nil, fmt.Errorf("%w: empty ticket_id", ErrQrcodeInvalidRequest)
+	}
+	res, err := s.deps.Tickets.Peek(ctx, ticketID)
+	if err != nil {
+		return nil, fmt.Errorf("qrcode: peek ticket: %w", err)
+	}
+	if res == nil {
+		return nil, fmt.Errorf("%w: %q not found", ErrQrcodeTicketInvalid, ticketID)
+	}
+	if res.GetScene() != sceneLogin {
+		return nil, fmt.Errorf("%w: %q scene %q", ErrQrcodeTicketScene, ticketID, res.GetScene())
+	}
+	if res.GetStatus() != ticketStatusMFAPending || res.GetLoginResult().GetUid() == 0 {
+		return nil, fmt.Errorf("%w: %q status %q", ErrQrcodeTicketInvalid, ticketID, res.GetStatus())
+	}
+	return &MFAPending{
+		TicketID: ticketID,
+		Scene:    res.GetScene(),
+		Status:   res.GetStatus(),
+		UID:      res.GetLoginResult().GetUid(),
+	}, nil
+}
+
+// MarkMFAPending 小程序端扫码完成且账号已启用 MFA 时，把 al:ticket:{ticket_id}
+// 快照改写为 mfa_pending（§2.8 行 884、§13.2 行 1680：复用既有键、不新增
+// Redis 键）。目标 uid 取自小程序端 mfa_required 信封携带的 login_token；
+// 写入 login_result.uid 供 PC 端 StartVerification 取目标 uid。非终态，轮询
+// 只读不消费；step-up 成功后由 CompleteStepUp 覆盖为 success。
+func (s *QRCode) MarkMFAPending(ctx context.Context, ticketID, loginToken string) error {
+	if strings.TrimSpace(ticketID) == "" || loginToken == "" {
+		return fmt.Errorf("%w: empty ticket_id / login_token", ErrQrcodeInvalidRequest)
+	}
+	if s.deps.State == nil {
+		return errors.New("qrcode: login state not configured")
+	}
+	p, err := s.deps.State.Parse(loginToken)
+	if err != nil || p.GetUid() == 0 {
+		return fmt.Errorf("%w: login token", ErrQrcodeTicketInvalid)
+	}
+	snap, err := s.deps.TicketPayloads.Read(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("qrcode: read ticket payload: %w", err)
+	}
+	if snap == nil || snap.GetTicketId() != ticketID || snap.GetScene() != sceneLogin {
+		return fmt.Errorf("%w: %q payload", ErrQrcodeTicketInvalid, ticketID)
+	}
+
+	res := &token.TicketResult{
+		V:           ticketResultV,
+		Scene:       sceneLogin,
+		Status:      ticketStatusMFAPending,
+		ProviderKey: snap.GetProviderKey(),
+		Channel:     channelQRCode,
+		CreatedAt:   s.now().Unix(),
+		ExpiresAt:   snap.GetExp(),
+		LoginResult: &token.LoginResult{Uid: p.GetUid()},
+	}
+	if _, err := s.deps.Tickets.WriteComplete(ctx, ticketID, res); err != nil {
+		return fmt.Errorf("qrcode: write mfa pending: %w", err)
+	}
+	return nil
+}
+
+// CompleteStepUp 扫码 step-up 通过后的票据收尾（§2.8 行 884、§11.6.5 行
+// 1424）：把 mfa_pending 覆盖为终态 success，保留原 login_result.uid 供 PC
+// 端轮询建会话。已是 success 时幂等成功。
+func (s *QRCode) CompleteStepUp(ctx context.Context, ticketID string) error {
+	if strings.TrimSpace(ticketID) == "" {
+		return fmt.Errorf("%w: empty ticket_id", ErrQrcodeInvalidRequest)
+	}
+	res, err := s.deps.Tickets.Peek(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("qrcode: peek ticket: %w", err)
+	}
+	if res == nil {
+		return fmt.Errorf("%w: %q not found", ErrQrcodeTicketInvalid, ticketID)
+	}
+	if res.GetStatus() == ticketStatusSuccess {
+		return nil
+	}
+	if res.GetScene() != sceneLogin {
+		return fmt.Errorf("%w: %q scene %q", ErrQrcodeTicketScene, ticketID, res.GetScene())
+	}
+	uid := res.GetLoginResult().GetUid()
+	if res.GetStatus() != ticketStatusMFAPending || uid == 0 {
+		return fmt.Errorf("%w: %q status %q", ErrQrcodeTicketInvalid, ticketID, res.GetStatus())
+	}
+	done := &token.TicketResult{
+		V:           ticketResultV,
+		Scene:       sceneLogin,
+		Status:      ticketStatusSuccess,
+		ProviderKey: res.GetProviderKey(),
+		Channel:     channelQRCode,
+		CreatedAt:   s.now().Unix(),
+		ExpiresAt:   res.GetExpiresAt(),
+		LoginResult: &token.LoginResult{Uid: uid},
+	}
+	if _, err := s.deps.Tickets.WriteComplete(ctx, ticketID, done); err != nil {
+		return fmt.Errorf("qrcode: write step-up result: %w", err)
+	}
+	return nil
 }
 
 // newTID login_token.tid 生成（缺省同引擎 security.RandomString(32)）。

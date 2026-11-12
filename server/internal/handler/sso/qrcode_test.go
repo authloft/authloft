@@ -42,6 +42,14 @@ type fakeQrcode struct {
 	confirmErr   error
 	gotConfirm   service.ConfirmLoginTicketInput
 	confirmCalls int
+
+	resolveOut  *service.MFAPending
+	resolveErr  error
+	gotResolve  string
+	markErr     error
+	gotMark     [2]string
+	completeErr error
+	gotComplete string
 }
 
 // ssov1CaptchaView 测试内联视图（避免直接引用 CaptchaPayload 生成类型的
@@ -71,6 +79,21 @@ func (f *fakeQrcode) ConfirmLoginTicket(_ context.Context, in service.ConfirmLog
 	f.confirmCalls++
 	f.gotConfirm = in
 	return f.confirmOut, f.confirmErr
+}
+
+func (f *fakeQrcode) ResolveMFAPending(_ context.Context, ticketID string) (*service.MFAPending, error) {
+	f.gotResolve = ticketID
+	return f.resolveOut, f.resolveErr
+}
+
+func (f *fakeQrcode) MarkMFAPending(_ context.Context, ticketID, loginToken string) error {
+	f.gotMark = [2]string{ticketID, loginToken}
+	return f.markErr
+}
+
+func (f *fakeQrcode) CompleteStepUp(_ context.Context, ticketID string) error {
+	f.gotComplete = ticketID
+	return f.completeErr
 }
 
 // TestCreateQrcodeConnect 200 透传 + captcha payload 映射 + bind 的 uid

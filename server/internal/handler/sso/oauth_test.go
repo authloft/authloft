@@ -1,5 +1,5 @@
 // oauth_test.go 覆盖三方登录通道的 handler 层用例：Authorize Connect 端到端
-//（URL + Set-Cookie: al_login_state）/ scene=bind 无会话 401 /
+// （URL + Set-Cookie: al_login_state）/ scene=bind 无会话 401 /
 // provider_disabled 错误体 + ErrorInfo / LoginOauth 信封透传 + Cookie 头
 // 解析 + api 通道 session_token / 未装配三方 service unimplemented。
 // 全部走 fake thirdparty，不连 DB / Redis。
@@ -22,6 +22,7 @@ import (
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/service"
+	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -62,7 +63,7 @@ func decodeEnvelope(t *testing.T, body string) *ssov1.LoginFlowResponse {
 }
 
 // TestAuthorizeConnect 端到端：URL 返回 + Set-Cookie: al_login_state 下发
-//（§2.7.2）+ scene=bind 的 uid 从 ctx 会话透传。
+// （§2.7.2）+ scene=bind 的 uid 从 ctx 会话透传。
 func TestAuthorizeConnect(t *testing.T) {
 	tp := &fakeThirdparty{authorizeOut: &service.AuthorizeOutput{
 		AuthorizeURL: "https://graph.qq.com/oauth2.0/authorize?state=labc",
@@ -117,8 +118,8 @@ func TestAuthorizeConnect(t *testing.T) {
 // provider_disabled 400 + ErrorInfo code、invalid_request 400。
 func TestAuthorizeErrorMapping(t *testing.T) {
 	cases := []struct {
-		name    string
-		err     error
+		name     string
+		err      error
 		wantHTTP int
 		wantCode string
 	}{
@@ -241,7 +242,7 @@ func TestLoginOauthConnect(t *testing.T) {
 
 	t.Run("浏览器终点下发 al_session", func(t *testing.T) {
 		tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
-			Envelope:    &ssov1.LoginFlowResponse{Status: "success", UserId: 7},
+			Envelope:     &ssov1.LoginFlowResponse{Status: "success", UserId: 7},
 			SessionToken: "stok-1",
 		}}
 		_, handler := ssov1connect.NewSsoServiceHandler(
@@ -296,7 +297,7 @@ func TestLoginOauthConnect(t *testing.T) {
 
 // TestLoginOauthSessionCookieHTTPSAutoInferred：浏览器终点的
 // al_session Set-Cookie 按 https_deployment=auto + 请求信号逐请求判定
-//（§1.9 行 306-309 全部下发点逐请求判定、后端架构 §11.1 行 1179 同一
+// （§1.9 行 306-309 全部下发点逐请求判定、后端架构 §11.1 行 1179 同一
 // 构造器）：请求带 X-Forwarded-Proto: https → Secure + SameSite=None。
 // 信号采集复刻装配层（connect.NewSessionInterceptor 入口把 req.Header 包
 // RequestSignal 注入 ctx；handler 直构测试无拦截链，挂同款最小拦截器）。
@@ -379,5 +380,31 @@ func TestLoginOauthErrorInternal(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("HTTP = %d, want 500", rec.Code)
+	}
+}
+
+// TestLoginOauthScanMFAPending 小程序端扫码 + 已启用 MFA：响应仍为
+// mfa_required，同时把票据快照改写为 mfa_pending（§2.8 行 884、§13.2）。
+func TestLoginOauthScanMFAPending(t *testing.T) {
+	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+		Status:     orchestrator.StatusMFARequired,
+		LoginToken: "lt-1",
+	}}}
+	qr := &fakeQrcode{}
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, qr))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceLoginOauthProcedure,
+		strings.NewReader(`{"providerKey":"wechat_mp_scan","code":"c","ticketId":"c7Kx9"}`))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if qr.gotMark != [2]string{"c7Kx9", "lt-1"} {
+		t.Fatalf("MarkMFAPending 入参 = %v, want [c7Kx9 lt-1]", qr.gotMark)
+	}
+	if got := decodeEnvelope(t, rec.Body.String()); got.GetStatus() != orchestrator.StatusMFARequired {
+		t.Fatalf("status = %q, want mfa_required", got.GetStatus())
 	}
 }
