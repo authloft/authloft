@@ -250,7 +250,7 @@ function renderView(
 
 /**
  * gate 替身：跑真 runCaptchaGate 循环、只把「弹窗询问」换成脚本化作答
- *（确认 → 凭据；用尽 / undefined → 取消），并记录每次询问的配置与轮次。
+ *（确认 → 凭据；用尽 / undefined → 取消），并记录每次询问的配置与次数。
  * 空脚本 = 不弹窗（非 captcha 链路用；真被问到会取消，用例随即失败暴露）。
  */
 function scriptedGate(answers: (CaptchaPayload | undefined)[] = []) {

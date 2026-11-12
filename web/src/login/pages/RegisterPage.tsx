@@ -64,7 +64,6 @@ import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
 import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
-import pageStyles from './BasePage.module.less';
 import styles from './RegisterPage.module.less';
 import { AppLayout } from '../components/AppLayout';
 import { Tabs } from '../components/Tabs';

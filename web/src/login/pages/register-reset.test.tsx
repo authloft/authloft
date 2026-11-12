@@ -277,7 +277,7 @@ function captchaError(
 
 /**
  * 固定 payload 的 runFlowStep 适配（既有链路用例只验请求体与信封，不随 gate
- * 轮次重建 payload）；需要验弹窗循环的用例直接调 pagesMod.runFlowStep。
+ * 逐次重建 payload）；需要验弹窗循环的用例直接调 pagesMod.runFlowStep。
  */
 function runStep<P extends object>(
   request: (input: {

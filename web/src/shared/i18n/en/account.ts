@@ -34,8 +34,6 @@ export const account: typeof zhAccount = {
   'account.bindPhoneTitle': 'Link Phone Number',
   'account.bindEmailTitle': 'Link Email',
   'account.mfaSectionTitle': 'Two-Factor Authentication',
-  'account.mfaUnbindConfirm':
-    'Unlink "{factor}"? It will no longer be required when you sign in.',
   'account.mfaUnbindSuccess': '{factor} unlinked',
   'account.webauthnBoundCount': '{count} linked',
   'account.webauthnViewBound': 'View linked',
@@ -103,8 +101,8 @@ export const account: typeof zhAccount = {
   'account.mfaDisableConfirm':
     'Disable "{factor}"? It will no longer be required when you sign in. Use Unlink to remove the binding.',
   'account.mfaDisableSuccess': '{factor} disabled',
-  'account.viewRecoveryCodes': 'View recovery codes',
-  'account.recoveryLoadFailed': 'Failed to load recovery codes',
+  'account.viewRecoveryCodes':
+    'Recovery codes are shown once and cannot be displayed again',
   'account.recoveryNotViewable':
     'Existing recovery codes cannot be shown again. Regenerating invalidates all old codes and issues new ones.',
 

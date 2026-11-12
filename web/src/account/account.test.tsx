@@ -2671,7 +2671,7 @@ describe('MfaSetting 静态渲染（MFA + 恢复码合并行）', () => {
     ]);
     expect(html).toContain('已绑定');
     expect(html).toContain('解绑');
-    expect(html).toContain('查看恢复码');
+    expect(html).toContain('恢复码仅一次性展示，不可回显');
   });
 
   test('totp 未绑定 → 「未绑定」+ 绑定按钮；弹窗条件渲染不挂载', () => {

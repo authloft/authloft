@@ -18,8 +18,8 @@ import styles from './RestartingPage.module.less';
 /** 两条路径共用的重启页：文案 + 轮询；完成跳 /sso/login，超时给「重新探测」。 */
 export default function RestartingPage({ alRoot }: { alRoot: string }) {
   const [timedOut, setTimedOut] = useState(false);
-  // 「重新探测」递增轮次 → effect 重跑 pollRestart，deadline 从新一轮
-  // 起点重算（pollRestart 在调用时刻取 now() + timeoutMs）。
+  // 「重新探测」递增计数 → effect 重跑 pollRestart，deadline 从新起点
+  // 重算（pollRestart 在调用时刻取 now() + timeoutMs）。
   const [round, setRound] = useState(0);
 
   useEffect(() => {
@@ -54,7 +54,10 @@ export default function RestartingPage({ alRoot }: { alRoot: string }) {
       </Typography.Paragraph>
       {timedOut ? (
         <>
-          <Banner type="warning" description={t('setup.restartTimeoutNotice')} />
+          <Banner
+            type="warning"
+            description={t('setup.restartTimeoutNotice')}
+          />
           <Button
             theme="solid"
             onClick={() => {

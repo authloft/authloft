@@ -49,7 +49,6 @@ import {
   ssoPath,
   type FlowStep,
 } from './RegisterPage';
-import pageStyles from './BasePage.module.less';
 import styles from './ResetPage.module.less';
 import { AppLayout } from '../components/AppLayout';
 import { Link } from '@modern-js/runtime/router';

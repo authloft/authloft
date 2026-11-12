@@ -32,8 +32,6 @@ export const account = {
   'account.bindPhoneTitle': '绑定手机号',
   'account.bindEmailTitle': '绑定邮箱',
   'account.mfaSectionTitle': '双因素认证',
-  'account.mfaUnbindConfirm':
-    '确定解绑「{factor}」？解绑后登录时将不再要求该因子验证。',
   'account.mfaUnbindSuccess': '已解绑{factor}',
   'account.webauthnBoundCount': '已绑定 {count} 个',
   'account.webauthnViewBound': '查看已绑定',
@@ -92,8 +90,7 @@ export const account = {
   'account.mfaDisableConfirm':
     '确定停用「{factor}」？停用后登录时将不再要求该因子验证；解除绑定请使用「解绑」。',
   'account.mfaDisableSuccess': '已停用{factor}',
-  'account.viewRecoveryCodes': '查看恢复码',
-  'account.recoveryLoadFailed': '恢复码加载失败',
+  'account.viewRecoveryCodes': '恢复码仅一次性展示，不可回显',
   'account.recoveryNotViewable':
     '存量恢复码不可回显，重新生成将作废全部旧码并下发新码。',
 
