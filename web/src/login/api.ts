@@ -28,6 +28,7 @@
  * 归一为 ApiError 后交 shared/captcha 的 gate 吸收，本模块不解析错误体。
  */
 import type { JsonObject } from '@bufbuild/protobuf';
+import { create } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';
 import type { MessageInput } from '../shared/api/sso';
 import { getInit, type OidcContext } from '../shared/types/init';
@@ -36,6 +37,15 @@ import type { LoginDefaultRequest } from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
 import type { LoginOauthRequest } from '../gen/proto/api/sso/v1/oauth_pb';
+import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
+import {
+  StartVerificationRequestSchema,
+  SubmitVerificationRequestSchema,
+  type StartVerificationRequest,
+  type StartVerificationResponse,
+  type SubmitVerificationRequest,
+  type SubmitVerificationResponse,
+} from '../gen/proto/api/common/v1/verification_pb';
 import {
   clearLoginToken,
   getLoginToken,
@@ -202,3 +212,73 @@ export async function getLoginTicket(
   }
   return response;
 }
+
+// ---------------------------------------------------------------------------
+// 扫码 step-up（SsoService/StartVerification / SubmitVerification，接口文档 §2.8 / §3.8）
+//
+// 扫码登录命中 MFA 时轮询返回 needs_step_up（ticket.status 仍为 scanned）；PC 端以
+// mfaPendingId=ticketId 调 StartVerification（bizPurpose=login、operation=mfa_verify）
+// 取 methods[] 与 challengeToken，SubmitVerification 提交因子载荷。扫码场景服务端以票据
+// 链路收尾（§3.8.1）：Submit 成功写终态 TicketResult、不直接建会话，PC 端下一次轮询
+// GetLoginTicket 进入 success 再走终点，故本域不消费 SubmitVerificationResponse.verificationToken。
+// ---------------------------------------------------------------------------
+
+/** CaptchaPayload → google.protobuf.Struct 的 JSON 形状（StartVerificationRequest.captcha 为 Struct，§12.9）。 */
+function captchaToStruct(captcha: CaptchaPayload): JsonObject {
+  const out: JsonObject = {};
+  for (const [key, value] of Object.entries(captcha)) {
+    if (typeof value === 'string') {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/** StartVerification 入参（扫码 step-up）：mfaPendingId 取 ticketId；captcha 走请求级 Struct 字段。 */
+export interface StartStepUpInput {
+  /** 扫码票据 ticketId（§3.8.1：扫码场景必填）。 */
+  mfaPendingId: string;
+  /** 空 = 只取 methods[] 由前端选择；非空 = 选定本次下发的因子。 */
+  method?: string;
+  /** 请求级人机校验凭据（§2.5 / §3.8.5）。 */
+  captcha?: CaptchaPayload;
+}
+
+/** SsoService/StartVerification（扫码 step-up）：bizPurpose=login、operation=mfa_verify 固定。 */
+export function startStepUp(
+  input: StartStepUpInput,
+): Promise<StartVerificationResponse> {
+  const request = create(StartVerificationRequestSchema, {
+    bizPurpose: 'login',
+    operation: 'mfa_verify',
+    mfaPendingId: input.mfaPendingId,
+    ...(input.method !== undefined && input.method !== ''
+      ? { method: input.method }
+      : {}),
+    ...(input.captcha !== undefined
+      ? { captcha: captchaToStruct(input.captcha) }
+      : {}),
+  });
+  return ssoClient.startVerification(request);
+}
+
+/** SsoService/SubmitVerification（扫码 step-up）：扫码以票据链路收尾，不消费 verificationToken。 */
+export function submitStepUp(
+  challengeToken: string,
+  method: string,
+  payload: JsonObject,
+): Promise<SubmitVerificationResponse> {
+  const request = create(SubmitVerificationRequestSchema, {
+    challengeToken,
+    method,
+    payload,
+  });
+  return ssoClient.submitVerification(request);
+}
+
+export type {
+  StartVerificationRequest,
+  StartVerificationResponse,
+  SubmitVerificationRequest,
+  SubmitVerificationResponse,
+};

@@ -20,9 +20,10 @@ export function selectCurrentMethod(state: FlowState): string {
 /**
  * 是否禁用提交：请求在途（§3.2：提交按钮按 loading 禁用）或已完成（success）
  * 或 §1.6「可重试 = 否」的失败态（如 too_many_requests / locked 倒计时）。
- * 流程中间态（next / mfa_required / binding_required / captcha_*）、轮询态
- * （pending / scanned 为进行中不作失败，expired 为提示刷新的终态，§4.1 行 395）
- * 与可重试失败（如 invalid_credentials）不禁用。
+ * 流程中间态（next / mfa_required / binding_required）、轮询态（pending /
+ * scanned 为进行中不作失败，expired 为提示刷新的终态，§4.1 行 395）与可重试
+ * 失败（如 invalid_credentials）不禁用。captcha 两码仅作 ErrorInfo.code、不进
+ * 流程态（§1.6 行 286），故不在此列——其编排由 shared/captcha 的 gate 承担。
  */
 export function selectSubmitDisabled(state: FlowState): boolean {
   if (state.loading || state.status === 'success') {
@@ -33,8 +34,6 @@ export function selectSubmitDisabled(state: FlowState): boolean {
     case 'next':
     case 'mfa_required':
     case 'binding_required':
-    case 'captcha_required':
-    case 'captcha_invalid':
     case 'pending':
     case 'scanned':
     case 'expired':

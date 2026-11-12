@@ -45,7 +45,7 @@ export interface ChallengeStepProps {
   disabled?: boolean;
   /**
    * 触发下发的裸请求：表单值 + captcha 凭据 → 信封（缺省无动作——防御分派
-   * 形态）。凭据由 gate 弹窗提供，调用方并入 payload.captcha（§1.11 skip：
+   * 形态）。凭据由 gate 弹窗提供，调用方挂到请求顶层 captcha（§1.11 skip：
    * 不经表单值通道）；本回调不做状态机分派，终局信封走 onResult。
    */
   onTrigger?: (

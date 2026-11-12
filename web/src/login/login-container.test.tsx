@@ -20,8 +20,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import { create } from '@bufbuild/protobuf';
-import { clearLoginToken, getLoginToken } from './loginTokenStore';
+import { create, toBinary, toJson } from '@bufbuild/protobuf';
+import { ErrorInfoSchema } from '../gen/proto/api/common/v1/error_info_pb';
+import {
+  clearLoginToken,
+  getLoginToken,
+  setLoginToken,
+} from './loginTokenStore';
 import { flowReducer } from './flow/reducer';
 import { INITIAL_FLOW_STATE, type FlowState } from './flow/machine';
 import { selectSubmitDisabled } from './flow/selectors';
@@ -56,6 +61,18 @@ import type {
   CaptchaGateRunOptions,
 } from '../shared/captcha/useCaptchaGate';
 import type { MethodsSnapshot, SnapshotProvider } from '../shared/types/init';
+import { CreateQrcodeResponseSchema } from '../gen/proto/api/sso/v1/ticket_pb';
+import {
+  StartVerificationResponseSchema,
+  SubmitVerificationResponseSchema,
+  VerificationMethodSchema,
+} from '../gen/proto/api/common/v1/verification_pb';
+import {
+  QRCodePanel,
+  createQRPanelController,
+  type QRPanelController,
+  type QRPanelPhase,
+} from '../shared/components/QRCodePanel';
 
 const { createElement } = React;
 
@@ -76,11 +93,17 @@ const server = setupServer();
 
 let container: typeof import('./LoginContainer');
 let apiMod: typeof import('./api');
+let qrStep: typeof import('./steps/QRCodeStep');
+// CaptchaDialog 经 CaptchaWidget → adapters/Image → shared/api/sso 拉起 transport
+// 单例，须与 api 同在 beforeAll（__AUTHLOFT_INIT__ 注入后）动态 import。
+let captchaDialogMod: typeof import('../shared/captcha/CaptchaDialog');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   container = await import('./LoginContainer');
   apiMod = await import('./api');
+  qrStep = await import('./steps/QRCodeStep');
+  captchaDialogMod = await import('../shared/captcha/CaptchaDialog');
 });
 
 beforeEach(() => {
@@ -244,6 +267,46 @@ function imageToken(id: string, answer: string): CaptchaPayload {
     id,
     answer,
   });
+}
+
+/** details.value 的 base64（Connect 错误体 detail 为 base64 的 Protobuf 字节，§1.5 行 207）。 */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+/**
+ * captcha 失败的非 200 Connect 错误体（§1.5 行 228 / §2.5 / §1.6 行 257-258）：
+ * ErrorInfo.code = captcha_required / captcha_invalid，details 并列 CaptchaConfig；
+ * gate 经 errorCaptchaOutcome 从 ApiError.captcha 取权威配置。
+ */
+function captchaError(
+  code: 'captcha_required' | 'captcha_invalid',
+  config: { providerKey: string; type?: string },
+): HttpResponse {
+  const info = create(ErrorInfoSchema, { domain: 'sso', code });
+  return HttpResponse.json(
+    {
+      code: 'invalid_argument',
+      message: code,
+      details: [
+        {
+          type: 'api.common.v1.ErrorInfo',
+          value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+        },
+        {
+          type: 'api.common.v1.CaptchaConfig',
+          value: bytesToBase64(
+            toBinary(CaptchaConfigSchema, create(CaptchaConfigSchema, config)),
+          ),
+        },
+      ],
+    },
+    { status: 400 },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +706,41 @@ describe('qrResultEvent（扫码结论分派，§2.8 行 739-743：登录结论�
   });
 });
 
+describe('stepUpTicketOf（扫码 needs_step_up → step-up 弹窗，§2.8 行 884）', () => {
+  const ticketEnvelope = (status: string, ticketId: string) =>
+    envelope({
+      status,
+      ticket: { status: 'scanned', ticketId },
+    });
+
+  test('needs_step_up + ticketId + 未处理过 → 返回 ticketId（mfaPendingId）', () => {
+    expect(
+      qrStep.stepUpTicketOf(
+        ticketEnvelope('needs_step_up', 'c7Kx9'),
+        undefined,
+      ),
+    ).toBe('c7Kx9');
+  });
+
+  test('非 needs_step_up / 缺 ticketId / 已处理过 → undefined（不再弹窗）', () => {
+    // 轮询进行中（scanned / pending）或终态（expired / success）不弹。
+    expect(
+      qrStep.stepUpTicketOf(ticketEnvelope('scanned', 'c7Kx9'), undefined),
+    ).toBeUndefined();
+    expect(
+      qrStep.stepUpTicketOf(ticketEnvelope('expired', 'c7Kx9'), undefined),
+    ).toBeUndefined();
+    // needs_step_up 但缺 ticketId（零值兜底）。
+    expect(
+      qrStep.stepUpTicketOf(ticketEnvelope('needs_step_up', ''), undefined),
+    ).toBeUndefined();
+    // 同一票据已处理过 → 不再弹窗。
+    expect(
+      qrStep.stepUpTicketOf(ticketEnvelope('needs_step_up', 'c7Kx9'), 'c7Kx9'),
+    ).toBeUndefined();
+  });
+});
+
 describe('isErrorStatus（§4.1 行 395：非 success 即失败，轮询进行中除外）', () => {
   test('流程 / 轮询 / captcha 中间态不作失败处理', () => {
     for (const status of [
@@ -871,10 +969,9 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
         bodies.push(await request.text());
         calls += 1;
         return calls === 1
-          ? HttpResponse.json({
-              status: 'captcha_required',
-              loginToken: 'tok-1',
-              captcha: { providerKey: 'builtin_image', type: 'image' },
+          ? captchaError('captcha_required', {
+              providerKey: 'builtin_image',
+              type: 'image',
             })
           : HttpResponse.json({
               status: 'success',
@@ -898,11 +995,11 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
       state,
       { username: 'alice', password: 'pw' },
       gate.run,
-      undefined, // 无首屏配置：裸探一次，配置取响应顶层（权威，§2.5 行 518）
+      undefined, // 无首屏配置：裸探一次，配置取错误体 details（权威，§1.5 行 228）
       apiMod.loginDefault,
     );
 
-    // 弹窗只问一次，拿到的是响应顶层的权威配置（不是首屏快照）。
+    // 弹窗只问一次，拿到的是错误体 details 的权威配置（不是首屏快照）。
     expect(gate.prompts).toHaveLength(1);
     expect(gate.prompts[0].config.providerKey).toBe('builtin_image');
     expect(gate.prompts[0].config.type).toBe('image');
@@ -914,22 +1011,18 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
     // captcha_required 被 gate 吸收、不落状态机：直接到终点。
     expect(state.status).toBe('success');
 
-    // 两次请求体：先裸（无 captcha），确认后并入 payload.captcha（§2.5 行 503-506）；
-    // loginToken 顶层注入（§1.8），首帧空为零值故 protojson 省略（§1.1）。
+    // 两次请求体：先裸（无 captcha），确认后 captcha 走请求顶层（§2.5 / §2.6 行 672）；
+    // captcha 失败为非 200 错误体、不携带 loginToken（§1.6 行 257），首帧空为零值故省略。
     expect(JSON.parse(bodies[0])).toEqual({
       method: 'password',
       step: 'verify',
       payload: { username: 'alice', password: 'pw' },
     });
     expect(JSON.parse(bodies[1])).toEqual({
-      loginToken: 'tok-1',
       method: 'password',
       step: 'verify',
-      payload: {
-        username: 'alice',
-        password: 'pw',
-        captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
-      },
+      payload: { username: 'alice', password: 'pw' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
 
     // 终点（§4.1 行 383）：complete 副作用 → syncCookieUrl 优先（首跳完整 URL）。
@@ -952,16 +1045,16 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
         bodies.push(await request.text());
         calls += 1;
         if (calls === 1) {
-          return HttpResponse.json({
-            status: 'captcha_required',
-            captcha: { providerKey: 'cf_turnstile', type: 'turnstile' },
+          return captchaError('captcha_required', {
+            providerKey: 'cf_turnstile',
+            type: 'turnstile',
           });
         }
         if (calls === 2) {
-          // 厂商不可用 → 服务端降级为自绘图形码（§2.5），新配置随响应下发。
-          return HttpResponse.json({
-            status: 'captcha_invalid',
-            captcha: { providerKey: 'builtin_image', type: 'image' },
+          // 厂商不可用 → 服务端降级为自绘图形码（§2.5），新配置随错误体下发。
+          return captchaError('captcha_invalid', {
+            providerKey: 'builtin_image',
+            type: 'image',
           });
         }
         return HttpResponse.json({
@@ -992,12 +1085,12 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
     expect(gate.prompts[0].config.type).toBe('turnstile');
     expect(gate.prompts[0].invalid).toBe(false);
     expect(gate.prompts[1].config.providerKey).toBe('builtin_image'); // 降级后的权威配置
-    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 241：窗内出错误文案
+    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 258：窗内出错误文案
     expect(gate.prompts[1].attempt).toBe(1); // widget key 换新 → 新凭据
     expect(result.failed).toBe(false);
     state = result.events.reduce(flowReducer, state);
     expect(state.status).toBe('success');
-    expect(JSON.parse(bodies[2]).payload.captcha).toEqual({
+    expect(JSON.parse(bodies[2]).captcha).toEqual({
       providerKey: 'builtin_image',
       id: 'id-2',
       answer: 'bbb',
@@ -1042,10 +1135,8 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
     expect(JSON.parse(bodies[0])).toEqual({
       method: 'otp_sms',
       step: 'challenge',
-      payload: {
-        phone: '13800000000',
-        captcha: { providerKey: 'builtin_image', id: 'up-1', answer: '42' },
-      },
+      payload: { phone: '13800000000' },
+      captcha: { providerKey: 'builtin_image', id: 'up-1', answer: '42' },
     });
     state = result.events.reduce(flowReducer, state);
     expect(state.status).toBe('next');
@@ -1055,13 +1146,14 @@ describe('runSubmit 编排全链（弹窗吸收 captcha → 确认即重提 → 
   test('用户取消弹窗：request_cancelled 只撤 loading，loginToken 与表单态原样保留', async () => {
     server.use(
       http.post(LOGIN_DEFAULT, () =>
-        HttpResponse.json({
-          status: 'captcha_required',
-          loginToken: 'tok-keep',
-          captcha: { providerKey: 'builtin_image', type: 'image' },
+        captchaError('captcha_required', {
+          providerKey: 'builtin_image',
+          type: 'image',
         }),
       ),
     );
+    // loginToken 由 api.ts 托管：预置一个内存值，验证取消不清它（弹窗层不触碰）。
+    setLoginToken('tok-keep');
     let state = flowReducer(INITIAL_FLOW_STATE, {
       type: 'select_method',
       method: 'password',
@@ -1992,5 +2084,488 @@ describe('LoginContainer 静态 smoke', () => {
     expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式）
     expect(markup).not.toContain('请选择登录方式'); // 不渲染主因子表单区
     expect(markup).not.toContain('正在处理'); // 非回调页处理中帧
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 扫码 step-up（needs_step_up）：请求体直测 + QRCodeStep 接线层全链
+// （§2.8 行 884 / §3.8；msw 拦截 api 层，沿 runSubmit / createQRPanelController
+// 可注入编排范式；§5.2 无 DOM、effects 不执行，接线经 SSR props 捕获驱动）
+// ---------------------------------------------------------------------------
+
+const CREATE_QRCODE = `${BASE}/api.sso.v1.SsoService/CreateQrcode`;
+const GET_TICKET = `${BASE}/api.sso.v1.SsoService/GetLoginTicket`;
+const START_VERIFICATION = `${BASE}/api.sso.v1.SsoService/StartVerification`;
+const SUBMIT_VERIFICATION = `${BASE}/api.sso.v1.SsoService/SubmitVerification`;
+
+/** 真实计时器条件等待（msw 请求推进为异步；轮询编排不引入 fake timers）。 */
+async function waitFor(
+  condition: () => boolean,
+  timeoutMs = 3000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: condition not met within timeout');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/** totp 因子能力视图（§3.8.2 methods[] 与 §2.1 快照条目同构）。 */
+function totpMethod() {
+  return create(VerificationMethodSchema, {
+    method: 'totp',
+    usage: ['secondary'],
+    steps: ['form'],
+    codeLength: BigInt(6),
+  });
+}
+
+/**
+ * SSR 接线捕获：以 classic JSX runtime 的全局 React.createElement 包装记录
+ * QRCodeStep 交给 QRCodePanel / CaptchaDialog 的**真实 props**（pollUrl /
+ * requestQR / onResult 即组件实际接线闭包，含 needs_step_up 检测与终点分派），
+ * 再按面板壳同构方式（createQRPanelController）驱动。渲染后全局 React 由
+ * afterEach unstubAllGlobals 复位，不影响其余用例。
+ */
+function renderCapturingQrWiring(
+  props: React.ComponentProps<typeof qrStep.QRCodeStep>,
+): {
+  panel: React.ComponentProps<typeof QRCodePanel>;
+  captcha: React.ComponentProps<typeof captchaDialogMod.CaptchaDialog>;
+} {
+  const panels: React.ComponentProps<typeof QRCodePanel>[] = [];
+  const captchas: React.ComponentProps<
+    typeof captchaDialogMod.CaptchaDialog
+  >[] = [];
+  const realCreateElement = React.createElement as (
+    type: unknown,
+    props: unknown,
+    ...children: unknown[]
+  ) => React.ReactElement;
+  rs.stubGlobal('React', {
+    ...React,
+    createElement: (type: unknown, props: unknown, ...children: unknown[]) => {
+      if (type === QRCodePanel) {
+        panels.push(props as React.ComponentProps<typeof QRCodePanel>);
+      }
+      if (type === captchaDialogMod.CaptchaDialog) {
+        captchas.push(
+          props as React.ComponentProps<typeof captchaDialogMod.CaptchaDialog>,
+        );
+      }
+      return realCreateElement(type, props, ...children);
+    },
+  });
+  renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ['/sso/login'] },
+      createElement(qrStep.QRCodeStep, props),
+    ),
+  );
+  // 首帧恰一个面板 + 一个拉码 gate 弹窗（stepUpGate 弹窗待 needs_step_up 才挂）。
+  expect(panels).toHaveLength(1);
+  expect(captchas).toHaveLength(1);
+  return { panel: panels[0]!, captcha: captchas[0]! };
+}
+
+/** 面板壳同构驱动（QRCodePanel 内部 propsRef 桥接同形）：捕获的接线闭包原样注入。 */
+function driveCapturedPanel(
+  wiring: { panel: React.ComponentProps<typeof QRCodePanel> },
+  phases: QRPanelPhase[],
+): QRPanelController {
+  return createQRPanelController({
+    requestQR: (signal) => wiring.panel.requestQR(signal),
+    pollUrl: (ticket, signal) => wiring.panel.pollUrl(ticket, signal),
+    onResult: (envelope) => wiring.panel.onResult(envelope),
+    onPhase: (phase) => phases.push(phase),
+    pollSeconds: wiring.panel.pollSeconds,
+  });
+}
+
+describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884）', () => {
+  test('StartVerification：bizPurpose=login + operation=mfa_verify + mfaPendingId=ticketId；method 空省略', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            StartVerificationResponseSchema,
+            create(StartVerificationResponseSchema, {
+              methods: [totpMethod()],
+              expiresIn: BigInt(300),
+            }),
+          ),
+        );
+      }),
+    );
+    const response = await apiMod.startStepUp({ mfaPendingId: 'tid-1' });
+    expect(response.methods[0]?.method).toBe('totp');
+    expect(bodies[0]).toEqual({
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      mfaPendingId: 'tid-1',
+    });
+  });
+
+  test('StartVerification 选定因子：method 承载、captcha 走请求顶层（§2.5 / §3.8.5）', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            StartVerificationResponseSchema,
+            create(StartVerificationResponseSchema, {
+              challengeToken: 'ct-1',
+              methods: [totpMethod()],
+              expiresIn: BigInt(300),
+            }),
+          ),
+        );
+      }),
+    );
+    const response = await apiMod.startStepUp({
+      mfaPendingId: 'tid-1',
+      method: 'totp',
+      captcha: imageToken('cap-9', '999'),
+    });
+    expect(response.challengeToken).toBe('ct-1');
+    // captcha 走请求顶层 Struct（§3.8.2）：凭据三元组就位即成立；Struct 由
+    // api.ts captchaToStruct 逐字符串字段拷贝（含消息 $typeName / 零值 token），
+    // 故按子集匹配，不钉死序列化副产物。
+    expect(bodies[0]).toMatchObject({
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      mfaPendingId: 'tid-1',
+      method: 'totp',
+      captcha: { providerKey: 'builtin_image', id: 'cap-9', answer: '999' },
+    });
+  });
+
+  test('SubmitVerification：challengeToken / method / payload 原样承载（§2.6 {code}）；扫码回 status', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(SUBMIT_VERIFICATION, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            SubmitVerificationResponseSchema,
+            create(SubmitVerificationResponseSchema, {
+              status: 'success',
+              amr: ['totp'],
+            }),
+          ),
+        );
+      }),
+    );
+    const response = await apiMod.submitStepUp('ct-1', 'totp', {
+      code: '123456',
+    });
+    expect(response.status).toBe('success');
+    expect(bodies[0]).toEqual({
+      challengeToken: 'ct-1',
+      method: 'totp',
+      payload: { code: '123456' },
+    });
+  });
+});
+
+describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终点；§2.8 行 884）', () => {
+  const scanCaptcha = () =>
+    create(CaptchaConfigSchema, {
+      providerKey: 'builtin_image',
+      type: 'image',
+    });
+
+  test('needs_step_up 不终止轮询 → mfaPendingId 完成 Start/Submit → 下一次轮询 success → completeLogin', async () => {
+    const qrBodies: unknown[] = [];
+    const pollBodies: unknown[] = [];
+    const startBodies: unknown[] = [];
+    const submitBodies: unknown[] = [];
+    let polls = 0;
+    let releasePoll: () => void = () => {};
+    const pollHeld = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+
+    server.use(
+      http.post(CREATE_QRCODE, async ({ request }) => {
+        qrBodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            CreateQrcodeResponseSchema,
+            create(CreateQrcodeResponseSchema, {
+              ticket: 'tk-1',
+              ticketId: 'tid-1',
+              qrcodeUrl: 'https://cdn.test/q1.jpg',
+              expiresIn: BigInt(600),
+            }),
+          ),
+        );
+      }),
+      http.post(GET_TICKET, async ({ request }) => {
+        pollBodies.push(await request.json());
+        polls += 1;
+        if (polls === 1) {
+          return HttpResponse.json(
+            toJson(
+              LoginFlowResponseSchema,
+              envelope({
+                status: 'pending',
+                ticket: { status: 'pending', ticketId: 'tid-1' },
+              }),
+            ),
+          );
+        }
+        if (polls === 2) {
+          return HttpResponse.json(
+            toJson(
+              LoginFlowResponseSchema,
+              envelope({
+                status: 'needs_step_up',
+                ticket: { status: 'scanned', ticketId: 'tid-1' },
+              }),
+            ),
+          );
+        }
+        // needs_step_up 之后的轮询挂起：Submit 成功才放行 success——
+        // 轮询若被 needs_step_up 终止，本请求根本不会发起。
+        await pollHeld;
+        return HttpResponse.json(
+          toJson(
+            LoginFlowResponseSchema,
+            envelope({
+              status: 'success',
+              ticket: { status: 'success', ticketId: 'tid-1' },
+              login: envelope({
+                status: 'success',
+                loginToken: 'lt-qr',
+                syncCookieUrl: 'https://sync.test/qr',
+                redirectTo: 'https://app.test/qr-home',
+              }),
+            }),
+          ),
+        );
+      }),
+      http.post(START_VERIFICATION, async ({ request }) => {
+        const body = (await request.json()) as { method?: string };
+        startBodies.push(body);
+        return HttpResponse.json(
+          toJson(
+            StartVerificationResponseSchema,
+            create(StartVerificationResponseSchema, {
+              ...(body.method === 'totp' ? { challengeToken: 'ct-qr' } : {}),
+              methods: [totpMethod()],
+              expiresIn: BigInt(300),
+            }),
+          ),
+        );
+      }),
+      http.post(SUBMIT_VERIFICATION, async ({ request }) => {
+        submitBodies.push(await request.json());
+        releasePoll();
+        return HttpResponse.json(
+          toJson(
+            SubmitVerificationResponseSchema,
+            create(SubmitVerificationResponseSchema, {
+              status: 'success',
+              amr: ['totp'],
+            }),
+          ),
+        );
+      }),
+    );
+
+    const phases: QRPanelPhase[] = [];
+    const navigations: string[] = [];
+    const wiring = renderCapturingQrWiring({
+      providerKey: 'scan',
+      captcha: scanCaptcha(),
+      pollSeconds: 15,
+      navigate: (url) => navigations.push(url),
+    });
+    const controller = driveCapturedPanel(wiring, phases);
+    try {
+      controller.refresh();
+      // upfront gate 先问凭据：经拉码弹窗 onConfirm 兑现（真实 useCaptchaGate 编排）。
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      wiring.captcha.onConfirm(imageToken('cap-1', '123'));
+
+      // 首次 needs_step_up：ticket.status=scanned → 面板继续轮询、不终止。
+      await waitFor(() =>
+        phases.some(
+          (phase) =>
+            phase.kind === 'active' && phase.ticketStatus === 'scanned',
+        ),
+      );
+      expect(polls).toBeGreaterThanOrEqual(2);
+      // needs_step_up 不终止轮询：第三轮轮询已发起（挂起待 Submit 放行）。
+      await waitFor(() => polls >= 3);
+      // poll 秒数取 pollSeconds（15），不得透传面板第二参 AbortSignal。
+      // 否则 BigInt 转换抛错会导致扫码轮询失效（回归防护）。
+      expect(pollBodies[0]).toEqual({ ticket: 'tk-1', poll: '15' });
+
+      // 与 StepUpDialog 编排同构：先取 methods[] → 选因子取挑战 → 提交因子载荷。
+      const methodsResponse = await apiMod.startStepUp({
+        mfaPendingId: 'tid-1',
+      });
+      const selected = methodsResponse.methods[0]?.method ?? '';
+      expect(selected).toBe('totp');
+      const challenge = await apiMod.startStepUp({
+        mfaPendingId: 'tid-1',
+        method: selected,
+      });
+      expect(challenge.challengeToken).toBe('ct-qr');
+      const submitted = await apiMod.submitStepUp(
+        challenge.challengeToken,
+        selected,
+        { code: '123456' },
+      );
+      expect(submitted.status).toBe('success');
+
+      // Submit 成功后下一次轮询 success → completeLogin 终点（syncCookieUrl 优先）。
+      await waitFor(() => navigations.length > 0);
+      expect(navigations).toEqual(['https://sync.test/qr']);
+      // success 终态：轮询恰三轮（pending / needs_step_up / success）后停止。
+      expect(polls).toBe(3);
+      expect(phases[phases.length - 1]).toEqual({ kind: 'success' });
+      expect(getLoginToken()).toBe(''); // 内层 success 清空（§1.3 行 145）
+
+      // Start 带 mfaPendingId=ticketId + bizPurpose + operation；Submit 带三件套。
+      expect(startBodies[0]).toEqual({
+        bizPurpose: 'login',
+        operation: 'mfa_verify',
+        mfaPendingId: 'tid-1',
+      });
+      expect(startBodies[1]).toEqual({
+        bizPurpose: 'login',
+        operation: 'mfa_verify',
+        mfaPendingId: 'tid-1',
+        method: 'totp',
+      });
+      expect(submitBodies[0]).toEqual({
+        challengeToken: 'ct-qr',
+        method: 'totp',
+        payload: { code: '123456' },
+      });
+      // 拉码 captcha 走请求顶层（§2.8 行 836 / §2.5）。
+      expect(qrBodies[0]).toEqual({
+        providerKey: 'scan',
+        captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '123' },
+      });
+    } finally {
+      releasePoll();
+      controller.dispose();
+    }
+  });
+
+  test('needs_step_up 后放弃验证 → 轮询至 expired 兜底：重试重拉新码（新 captcha，§2.8 行 874）', async () => {
+    const qrBodies: Array<{ captcha?: Record<string, unknown> }> = [];
+    let qrCalls = 0;
+    let polls = 0;
+    server.use(
+      http.post(CREATE_QRCODE, async ({ request }) => {
+        qrCalls += 1;
+        qrBodies.push(
+          (await request.json()) as { captcha?: Record<string, unknown> },
+        );
+        return HttpResponse.json(
+          toJson(
+            CreateQrcodeResponseSchema,
+            create(CreateQrcodeResponseSchema, {
+              ticket: `tk-${qrCalls}`,
+              ticketId: `tid-${qrCalls}`,
+              qrcodeUrl: `https://cdn.test/q${qrCalls}.jpg`,
+              expiresIn: BigInt(600),
+            }),
+          ),
+        );
+      }),
+      http.post(GET_TICKET, async () => {
+        polls += 1;
+        if (polls === 1) {
+          return HttpResponse.json(
+            toJson(
+              LoginFlowResponseSchema,
+              envelope({
+                status: 'needs_step_up',
+                ticket: { status: 'scanned', ticketId: 'tid-1' },
+              }),
+            ),
+          );
+        }
+        if (polls === 2) {
+          return HttpResponse.json(
+            toJson(
+              LoginFlowResponseSchema,
+              envelope({
+                status: 'expired',
+                ticket: { status: 'expired', ticketId: 'tid-1' },
+              }),
+            ),
+          );
+        }
+        // 新码轮询在途：节流防紧循环，用例结束 dispose 停止。
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return HttpResponse.json(
+          toJson(
+            LoginFlowResponseSchema,
+            envelope({
+              status: 'pending',
+              ticket: { status: 'pending', ticketId: 'tid-2' },
+            }),
+          ),
+        );
+      }),
+    );
+
+    const phases: QRPanelPhase[] = [];
+    const wiring = renderCapturingQrWiring({
+      providerKey: 'scan',
+      captcha: scanCaptcha(),
+    });
+    const controller = driveCapturedPanel(wiring, phases);
+    try {
+      controller.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      wiring.captcha.onConfirm(imageToken('cap-1', '111'));
+
+      // needs_step_up 不终止轮询 → 票据按 exp 过期 → expired 终态兜底。
+      await waitFor(() => phases.some((phase) => phase.kind === 'expired'));
+      // expired 终态：轮询恰两轮（needs_step_up / expired）后停止——
+      // 第二轮已发起即证明 needs_step_up 未终止轮询。
+      expect(polls).toBe(2);
+
+      // 面板「重试」动作：重拉新码，captcha 凭据必须换新（§2.5 一次性）。
+      controller.refresh();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      wiring.captcha.onConfirm(imageToken('cap-2', '222'));
+      await waitFor(() => qrCalls >= 2);
+      expect(qrBodies[1]?.captcha).toEqual({
+        providerKey: 'builtin_image',
+        id: 'cap-2',
+        answer: '222',
+      });
+      // 新 ticket 的轮询已发起（新 ticketId）。
+      await waitFor(() =>
+        phases.some(
+          (phase) =>
+            phase.kind === 'active' &&
+            phase.qrcodeUrl === 'https://cdn.test/q2.jpg',
+        ),
+      );
+      await waitFor(() => polls >= 3);
+      expect(phases[phases.length - 1]).toEqual({
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.test/q2.jpg',
+        ticketStatus: 'pending',
+      });
+    } finally {
+      controller.dispose();
+    }
   });
 });

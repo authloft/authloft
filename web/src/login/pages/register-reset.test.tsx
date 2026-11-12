@@ -21,9 +21,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import { create } from '@bufbuild/protobuf';
+import { create, toBinary } from '@bufbuild/protobuf';
 import { clearLoginToken, getLoginToken } from '../loginTokenStore';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
+import { ErrorInfoSchema } from '../../gen/proto/api/common/v1/error_info_pb';
 import {
   LoginFlowResponseSchema,
   NextStepSchema,
@@ -235,6 +236,45 @@ function scriptedGate(answers: (CaptchaPayload | undefined)[] = []) {
   return { run: gate, prompts };
 }
 
+/** details.value 的 base64（Connect 错误体 detail 为 base64 的 Protobuf 字节，§1.5 行 207）。 */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+/**
+ * captcha 失败的非 200 Connect 错误体（§1.5 行 228 / §2.5 / §1.6 行 257-258）：
+ * ErrorInfo.code = captcha_required / captcha_invalid，details 并列 CaptchaConfig。
+ */
+function captchaError(
+  code: 'captcha_required' | 'captcha_invalid',
+  config: { providerKey: string; type?: string },
+): HttpResponse {
+  const info = create(ErrorInfoSchema, { domain: 'sso', code });
+  return HttpResponse.json(
+    {
+      code: 'invalid_argument',
+      message: code,
+      details: [
+        {
+          type: 'api.common.v1.ErrorInfo',
+          value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+        },
+        {
+          type: 'api.common.v1.CaptchaConfig',
+          value: bytesToBase64(
+            toBinary(CaptchaConfigSchema, create(CaptchaConfigSchema, config)),
+          ),
+        },
+      ],
+    },
+    { status: 400 },
+  );
+}
+
 /**
  * 固定 payload 的 runFlowStep 适配（既有链路用例只验请求体与信封，不随 gate
  * 轮次重建 payload）；需要验弹窗循环的用例直接调 pagesMod.runFlowStep。
@@ -244,8 +284,14 @@ function runStep<P extends object>(
     method: string;
     step: string;
     payload: P;
+    captcha?: CaptchaPayload;
   }) => Promise<LoginFlowResponse>,
-  input: { method: string; step: string; payload: P },
+  input: {
+    method: string;
+    step: string;
+    payload: P;
+    captcha?: CaptchaPayload;
+  },
   mode: CaptchaGateMode = 'reactive',
 ) {
   return pagesMod.runFlowStep(
@@ -255,8 +301,13 @@ function runStep<P extends object>(
       step: input.step,
       payloadFor: () => input.payload,
     },
-    scriptedGate().run,
-    { mode },
+    // 预置凭据的 gate：captcha 走请求顶层（§2.5 / §2.6 行 672）。
+    input.captcha === undefined
+      ? scriptedGate().run
+      : scriptedGate([input.captcha]).run,
+    input.captcha === undefined
+      ? { mode }
+      : { mode: 'upfront', config: IMAGE_CAPTCHA },
   );
 }
 
@@ -314,26 +365,13 @@ describe('registerFirstStep / advanceAfterStep（§2.3 行 451 / §10.3-10.4 序
 });
 
 describe('registerPayloadFor / resetPayloadFor（§2.3 行 444-451 / §2.4 行 462-466）', () => {
-  test('注册 challenge：目标 + captcha（行 447 必须）；verify：{code}；set_password：{username, password}', () => {
-    const captcha = create(CaptchaPayloadSchema, {
-      providerKey: 'builtin_image',
-      id: 'b7f3',
-      answer: '123',
-    });
+  test('注册 challenge：目标（行 447 必须 captcha，走请求顶层）；verify：{code}；set_password：{username, password}', () => {
     expect(
-      pagesMod.registerPayloadFor('challenge', { email: 'a@b.com' }, captcha),
-    ).toEqual({ email: 'a@b.com', phone: '', captcha });
+      pagesMod.registerPayloadFor('challenge', { email: 'a@b.com' }),
+    ).toEqual({ email: 'a@b.com', phone: '' });
     expect(pagesMod.registerPayloadFor('verify', { code: '123456' })).toEqual({
       code: '123456',
     });
-    expect(
-      pagesMod.registerPayloadFor(
-        'set_password',
-        { username: 'alice', password: 'Abcdef12' },
-        captcha,
-      ),
-    ).toEqual({ username: 'alice', password: 'Abcdef12', captcha });
-    // otp 流程 set_password 不带 captcha（调用方不传）。
     expect(
       pagesMod.registerPayloadFor('set_password', {
         username: 'alice',
@@ -342,18 +380,13 @@ describe('registerPayloadFor / resetPayloadFor（§2.3 行 444-451 / §2.4 行 4
     ).toEqual({ username: 'alice', password: 'Abcdef12' });
   });
 
-  test('重置 set_password 只提交 password（§10.4 行 1532）；challenge 带 captcha', () => {
-    const captcha = create(CaptchaPayloadSchema, {
-      providerKey: 'builtin_image',
-      id: 'b7f3',
-      answer: '123',
-    });
+  test('重置 set_password 只提交 password（§10.4 行 1532）；challenge 只含目标（captcha 走请求顶层）', () => {
     expect(
       resetMod.resetPayloadFor('set_password', { password: 'NewAbc12' }),
     ).toEqual({ password: 'NewAbc12' });
     expect(
-      resetMod.resetPayloadFor('challenge', { phone: '13800000000' }, captcha),
-    ).toEqual({ email: '', phone: '13800000000', captcha });
+      resetMod.resetPayloadFor('challenge', { phone: '13800000000' }),
+    ).toEqual({ email: '', phone: '13800000000' });
   });
 });
 
@@ -905,25 +938,22 @@ describe('注册链路（msw 全链，§10.3）', () => {
     const result = await runStep(apiMod.register, {
       method: 'password',
       step: 'set_password',
-      payload: pagesMod.registerPayloadFor(
-        'set_password',
-        { username: 'alice', password: 'Abcdef12' },
-        create(CaptchaPayloadSchema, {
-          providerKey: 'builtin_image',
-          id: 'b7f3',
-          answer: '123',
-        }),
-      ),
+      payload: pagesMod.registerPayloadFor('set_password', {
+        username: 'alice',
+        password: 'Abcdef12',
+      }),
+      captcha: create(CaptchaPayloadSchema, {
+        providerKey: 'builtin_image',
+        id: 'b7f3',
+        answer: '123',
+      }),
     });
     expect(result.ok).toBe(true);
     expect(JSON.parse(raw)).toEqual({
       method: 'password',
       step: 'set_password',
-      payload: {
-        username: 'alice',
-        password: 'Abcdef12',
-        captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
-      },
+      payload: { username: 'alice', password: 'Abcdef12' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
   });
 
@@ -979,15 +1009,14 @@ describe('重置链路（msw 全链，§10.4）', () => {
     const first = await runStep(apiMod.resetPassword, {
       method: 'otp_email',
       step: 'challenge',
-      payload: resetMod.resetPayloadFor(
-        'challenge',
-        { email: 'alice@example.com' },
-        create(CaptchaPayloadSchema, {
-          providerKey: 'builtin_image',
-          id: 'c9d2',
-          answer: '456',
-        }),
-      ),
+      payload: resetMod.resetPayloadFor('challenge', {
+        email: 'alice@example.com',
+      }),
+      captcha: create(CaptchaPayloadSchema, {
+        providerKey: 'builtin_image',
+        id: 'c9d2',
+        answer: '456',
+      }),
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
@@ -995,10 +1024,8 @@ describe('重置链路（msw 全链，§10.4）', () => {
     expect(JSON.parse(raws[0])).toEqual({
       method: 'otp_email',
       step: 'challenge',
-      payload: {
-        email: 'alice@example.com',
-        captcha: { providerKey: 'builtin_image', id: 'c9d2', answer: '456' },
-      },
+      payload: { email: 'alice@example.com' },
+      captcha: { providerKey: 'builtin_image', id: 'c9d2', answer: '456' },
     });
 
     // 2. verify。
@@ -1103,12 +1130,8 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
       {
         method: 'otp_email',
         step: 'challenge',
-        payloadFor: (captcha) =>
-          pagesMod.registerPayloadFor(
-            'challenge',
-            { email: 'a@b.com' },
-            captcha,
-          ),
+        payloadFor: () =>
+          pagesMod.registerPayloadFor('challenge', { email: 'a@b.com' }),
       },
       gate.run,
       { mode: 'upfront', config: IMAGE_CAPTCHA },
@@ -1120,10 +1143,8 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
     expect(JSON.parse(raws[0])).toEqual({
       method: 'otp_email',
       step: 'challenge',
-      payload: {
-        email: 'a@b.com',
-        captcha: { providerKey: 'builtin_image', id: 'r1', answer: '123' },
-      },
+      payload: { email: 'a@b.com' },
+      captcha: { providerKey: 'builtin_image', id: 'r1', answer: '123' },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -1131,7 +1152,7 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
     expect(getLoginToken()).toBe('reg-tok-1');
   });
 
-  test('captcha_invalid：窗内换凭据循环（attempt 递增 + 响应顶层降级配置），不落页面状态', async () => {
+  test('captcha_invalid：窗内换凭据循环（attempt 递增 + 错误体降级配置），不落页面状态', async () => {
     const raws: string[] = [];
     let calls = 0;
     server.use(
@@ -1139,9 +1160,9 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
         raws.push(await request.text());
         calls += 1;
         if (calls === 1) {
-          return HttpResponse.json({
-            status: 'captcha_invalid',
-            captcha: { providerKey: 'builtin_image', type: 'image' },
+          return captchaError('captcha_invalid', {
+            providerKey: 'builtin_image',
+            type: 'image',
           });
         }
         return HttpResponse.json({ status: 'next', loginToken: 'reset-tok-1' });
@@ -1153,8 +1174,8 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
       {
         method: 'otp_email',
         step: 'challenge',
-        payloadFor: (captcha) =>
-          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }, captcha),
+        payloadFor: () =>
+          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }),
       },
       gate.run,
       { mode: 'upfront', config: IMAGE_CAPTCHA },
@@ -1162,9 +1183,9 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
 
     expect(gate.prompts).toHaveLength(2);
     expect(gate.prompts[0].invalid).toBe(false);
-    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 241：窗内出错误文案
+    expect(gate.prompts[1].invalid).toBe(true); // §1.6 行 258：窗内出错误文案
     expect(gate.prompts[1].attempt).toBe(1); // widget key 换新 → 新凭据
-    expect(JSON.parse(raws[1]).payload.captcha).toEqual({
+    expect(JSON.parse(raws[1]).captcha).toEqual({
       providerKey: 'builtin_image',
       id: 'c2',
       answer: 'bbb',
@@ -1188,12 +1209,8 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
       {
         method: 'otp_email',
         step: 'challenge',
-        payloadFor: (captcha) =>
-          pagesMod.registerPayloadFor(
-            'challenge',
-            { email: 'a@b.com' },
-            captcha,
-          ),
+        payloadFor: () =>
+          pagesMod.registerPayloadFor('challenge', { email: 'a@b.com' }),
       },
       gate.run,
       { mode: 'upfront', config: IMAGE_CAPTCHA },
@@ -1211,8 +1228,8 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
       {
         method: 'otp_email',
         step: 'challenge',
-        payloadFor: (captcha) =>
-          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }, captcha),
+        payloadFor: () =>
+          resetMod.resetPayloadFor('challenge', { email: 'a@b.com' }),
       },
       scriptedGate([token('c1', 'aaa')]).run,
       { mode: 'upfront', config: IMAGE_CAPTCHA },

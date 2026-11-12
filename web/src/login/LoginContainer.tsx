@@ -360,9 +360,10 @@ export function captchaModeFor(method: string, step: string): CaptchaGateMode {
 /**
  * 提交编排（纯逻辑，request 与 gate 均可注入）：request_started 由容器在调用
  * 前同步 dispatch（loading 立即反映 UI）；本函数只承担「gate → 事件映射」。
- * captcha 凭据由 gate 的弹窗提供并并入 payload.captcha（§2.5 行 503-510 提交
- * 格式），captcha_required / captcha_invalid 在 gate 内吸收循环、不产出事件；
- * 用户取消 → request_cancelled（只撤 loading，表单原样保留）。
+ * captcha 凭据由 gate 的弹窗提供，作为**请求顶层 `captcha`**（与 payload 平级，
+ * §2.5 / §2.6 行 672：captcha 不属于任何因子的 payload）；captcha_required /
+ * captcha_invalid 在 gate 内吸收循环、不产出事件；用户取消 → request_cancelled
+ * （只撤 loading，表单原样保留）。
  * 传输层异常（登录流程域业务态一律 HTTP 200，§1.5；非 200 / 网络失败经
  * http.ts 归一 ApiError 抛出）→ 回到第一步（reset）+ failed 兜底（§1.6 行
  * 272：不暴露内部信息），不伪造信封。
@@ -381,7 +382,8 @@ export async function runSubmit(
       request({
         method: state.method,
         step: state.step,
-        payload: captcha === undefined ? payload : { ...payload, captcha },
+        payload,
+        ...(captcha !== undefined ? { captcha } : {}),
       }),
     readOutcome: flowCaptchaOutcome,
   });

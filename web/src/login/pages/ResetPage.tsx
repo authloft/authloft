@@ -22,7 +22,6 @@
  */
 import { useState, type FormEvent } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
-import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
 import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
@@ -68,19 +67,18 @@ type ResetPayloadInit = NonNullable<ResetPasswordInput['payload']>;
 
 /**
  * 重置各 step 的 payload 组装（§2.4 行 462-466 字段表）：
- * challenge {email|phone, captcha} / verify {code} / set_password {password}
- * （最后一步只提交 password，§10.4 行 1532）。
+ * challenge {email|phone} / verify {code} / set_password {password}
+ * （最后一步只提交 password，§10.4 行 1532）。captcha 不在 payload 内
+ * （§2.6 行 672），由 runFlowStep 作为请求顶层字段传递。
  */
 export function resetPayloadFor(
   step: FlowStep,
   values: Readonly<Record<string, string>>,
-  captcha?: CaptchaPayload,
 ): ResetPayloadInit {
   if (step === 'challenge') {
     return {
       email: values.email ?? '',
       phone: values.phone ?? '',
-      ...(captcha !== undefined ? { captcha } : {}),
     };
   }
   if (step === 'verify') {
@@ -390,26 +388,26 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     if (step === 'challenge') {
       setChallengeValues(values);
     }
-    // captcha 凭据由 gate 弹窗注入（§2.5 行 528：重置的下发必须）：challenge
-    // 段后端恒拦截 → 先问再发；verify / set_password 的 payload 不含 captcha
-    // （§2.4 行 465-466，resetPayloadFor 按 step 决定），命中才问（reactive 防御）。
+    // captcha 凭据由 gate 弹窗注入，走请求顶层（§2.5 行 528：重置的下发必须、
+    // §2.6 行 672）：challenge 段后端恒拦截 → 先问再发；verify / set_password
+    // 的 payload 不含 captcha（§2.4 行 465-466），命中才问（reactive 防御）。
     const result = await runFlowStep(
       resetPassword,
       {
         method,
         step,
-        payloadFor: (token) =>
+        payloadFor: () =>
           resetPayloadFor(
             step,
             step === 'set_password' ? { password } : values,
-            token,
           ),
       },
       gate.run,
       {
         mode: step === 'challenge' ? 'upfront' : 'reactive',
-        // 权威配置（§2.5 行 518）：响应顶层优先，缺省回落快照首屏。
-        config: envelope?.captcha ?? snapshot.captcha,
+        // 首屏配置只作提前量（§2.5 / §1.5 行 228）：运行期权威配置取错误体 details，
+        // 不再消费 200 信封的 captcha 字段。
+        config: snapshot.captcha,
       },
     );
     setLoading(false);

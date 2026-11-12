@@ -19,13 +19,19 @@
  *   LoginContainer ↔ MethodTabs 循环依赖）；binding_required / 失败态经
  *   onResult 上抛交容器状态机分派（ProviderButtons → MethodTabs →
  *   LoginContainer 链，「LoginContainer 禁改」约束已解除）；
- *   mfa_required 不会出现（§2.8 行 750 MFA×扫码：PC 端轮询至 expired
- *   终态，扫码通道不在 PC 端续走 MFA）——不做分支。
+ * - needs_step_up（§2.8 行 884 MFA×扫码）：轮询顶层 status=needs_step_up
+ *   （ticket.status 仍为 scanned，面板按 scanned 继续轮询）时，以 mfaPendingId
+ *   = ticketId 弹出 shared/components/StepUpDialog 走 StartVerification →
+ *   SubmitVerification；扫码场景服务端以票据链路收尾（§3.8.1），Submit 成功写终态
+ *   TicketResult、不直接登录，本组件关窗后由面板下一次轮询进入 success 再走终点。
+ *   同一 ticket 只在首次 needs_step_up 时弹窗（完成 / 取消后不再自动重弹，
+ *   取消后由面板轮询至 expired 兜底、用户重拉码）。
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useSearchParams } from '@modern-js/runtime/router';
+import type { JsonObject } from '@bufbuild/protobuf';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
@@ -33,6 +39,7 @@ import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb'
 import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { errorCaptchaOutcome } from '../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
+import { StepUpDialog } from '../../shared/components/StepUpDialog';
 import {
   QRCodePanel,
   MAX_POLL_SECONDS,
@@ -144,6 +151,26 @@ export function dispatchQrResult(
   handlers.onResult?.(outer);
 }
 
+/**
+ * 扫码轮询 → step-up 弹窗决策（§2.8 行 884，纯函数 node 可测）：顶层
+ * status=needs_step_up 且票据带 ticketId、且该票据尚未处理过时，返回需弹窗的
+ * mfaPendingId（= ticketId）；其余（非 needs_step_up / 无 ticketId / 已处理过）
+ * 返回 undefined。ticket.status 仍为 scanned，面板按 scanned 继续轮询、不被终止。
+ */
+export function stepUpTicketOf(
+  envelope: LoginFlowResponse,
+  handledTicketId: string | undefined,
+): string | undefined {
+  if (envelope.status !== 'needs_step_up') {
+    return undefined;
+  }
+  const ticketId = envelope.ticket?.ticketId ?? '';
+  if (ticketId === '' || ticketId === handledTicketId) {
+    return undefined;
+  }
+  return ticketId;
+}
+
 export interface QRCodeStepProps {
   /** 扫码类 Provider 的 providerKey（§2.8 行 701）。 */
   providerKey: string;
@@ -186,6 +213,64 @@ export function QRCodeStep({
   const [panelKey, setPanelKey] = useState(0);
   // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
   const [searchParams] = useSearchParams();
+  // needs_step_up（§2.8 行 884）：mfaPendingId=ticketId 弹二次验证窗体；同一票据只弹一次。
+  const [stepUpTicket, setStepUpTicket] = useState<string | undefined>(
+    undefined,
+  );
+  const handledStepUpRef = useRef<string | undefined>(undefined);
+  // step-up 取因子时的人机校验 gate（StartVerification 选定因子按 §2.5 需要 captcha）。
+  const stepUpGate = useCaptchaGate(Modal);
+
+  // start / submit 必须引用稳定（useCallback）：StepUpDialog 的 loadMethods 以
+  // start 为 dep、useEffect 随 loadMethods 重跑——内联闭包每次渲染换新，会在
+  // captcha 弹窗触发重渲染时把验证中的窗体重置回 loading、清挑战令牌并重复
+  // StartVerification（§3.3）。deps 取 stepUpGate.run（其本身 useCallback([prompt])、
+  // 引用稳定），不依赖 stepUpGate 对象（每次渲染新建）。
+  const startStepUp = useCallback(
+    async (method: string) => {
+      const { startStepUp: startStepUpApi } = await import('../api');
+      if (method === '') {
+        return startStepUpApi({ mfaPendingId: stepUpTicket ?? '' });
+      }
+      const outcome = await stepUpGate.run({
+        mode: 'reactive',
+        request: (token) =>
+          startStepUpApi({
+            mfaPendingId: stepUpTicket ?? '',
+            method,
+            ...(token !== undefined ? { captcha: token } : {}),
+          }),
+        // StartVerification 响应无流程状态字段：captcha 结论只在 ApiError 一侧。
+        readOutcome: () => ({ action: 'message' }),
+        readError: errorCaptchaOutcome,
+      });
+      if (outcome.kind === 'result') {
+        return outcome.result;
+      }
+      if (outcome.kind === 'cancelled') {
+        return undefined;
+      }
+      throw outcome.error;
+    },
+    [stepUpTicket, stepUpGate.run],
+  );
+
+  // 不捕获任何响应式值（api 动态 import + 纯透传）：deps 空集即恒定引用。
+  const submitStepUp = useCallback(
+    async (
+      challengeToken: string,
+      method: string,
+      payload: JsonObject,
+    ): Promise<string> => {
+      const { submitStepUp: submitStepUpApi } = await import('../api');
+      // 扫码场景服务端以票据链路收尾、不回 verificationToken（§3.8.1）：Submit 成功
+      // 即视为完成，回传非空占位使 StepUpDialog 判成功并关窗；登录结论由后续轮询
+      // success 承担。
+      const response = await submitStepUpApi(challengeToken, method, payload);
+      return response.status === 'success' ? 'ok' : '';
+    },
+    [],
+  );
 
   if (providerKey === '') {
     // 零值兜底（§9 第 18 条）：信封驱动的防御分派形态无 provider（NextStep
@@ -216,6 +301,22 @@ export function QRCodeStep({
     throw outcome.error;
   };
 
+  // 轮询包装：顶层 status=needs_step_up 时以 mfaPendingId=ticketId 弹二次验证窗体。
+  // ticket.status 仍为 scanned → 面板按 scanned 继续轮询、不被 needs_step_up 终止；
+  // Submit 成功后票据转终态，下一次轮询即 success（§2.8 行 884）。
+  const pollAndDetectStepUp = async (
+    ticket: string,
+    seconds?: number,
+  ): Promise<LoginFlowResponse> => {
+    const response = await pollTicket(ticket, seconds);
+    const ticketId = stepUpTicketOf(response, handledStepUpRef.current);
+    if (ticketId !== undefined) {
+      handledStepUpRef.current = ticketId;
+      setStepUpTicket(ticketId);
+    }
+    return response;
+  };
+
   return (
     <div className={styles.panel}>
       {cancelled ? (
@@ -233,11 +334,12 @@ export function QRCodeStep({
         <QRCodePanel
           key={panelKey}
           requestQR={requestQR}
-          pollUrl={(ticket) => pollTicket(ticket, pollSeconds)}
+          // 面板第二参是 AbortSignal（api 薄封装不支持中断，signal 忽略）；
+          // poll 秒数取本组件 pollSeconds，与面板 pollTimeoutMs 同值（§2.8 上限 15）。
+          pollUrl={(ticket) => pollAndDetectStepUp(ticket, pollSeconds)}
           onResult={(outer) =>
             // 完整状态机分派：success 用内层信封终点跳转；
-            // binding_required / 失败态上抛交容器（mfa_required 不会出现，
-            // §2.8 行 750——MFA×扫码 PC 端轮询至 expired，不做分支）。
+            // binding_required / 失败态上抛交容器。
             dispatchQrResult(outer, {
               completeLogin: (login) =>
                 completeLogin(
@@ -252,6 +354,18 @@ export function QRCodeStep({
         />
       )}
       <CaptchaDialog {...gate.dialogProps} />
+      {stepUpTicket !== undefined ? (
+        <>
+          <StepUpDialog
+            modal={Modal}
+            start={startStepUp}
+            submit={submitStepUp}
+            onVerified={() => setStepUpTicket(undefined)}
+            onCancel={() => setStepUpTicket(undefined)}
+          />
+          <CaptchaDialog {...stepUpGate.dialogProps} />
+        </>
+      ) : null}
     </div>
   );
 }

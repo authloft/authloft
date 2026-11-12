@@ -150,21 +150,23 @@ export type FlowStepOutcome =
 
 /**
  * 流程步提交编排（纯逻辑，request 与 gate 均可注入；ResetPage 复用）：
- * captcha 凭据由 gate 弹窗提供，payloadFor 每轮重建（凭据一次性，服务端校验
- * 即失效，§2.5 行 520）；captcha_required / captcha_invalid 在 gate 内吸收
- * 循环、不落页面状态；传输层异常 → ok:false 不伪造信封（§1.6 行 272）。
+ * captcha 凭据由 gate 弹窗提供，作为**请求顶层 `captcha`**（与 payload 平级，
+ * §2.5 / §2.6 行 672：captcha 不属于任何因子的 payload）；payloadFor 每轮重建
+ * （不含 captcha）；captcha_required / captcha_invalid 在 gate 内吸收循环、不落
+ * 页面状态；传输层异常 → ok:false 不伪造信封（§1.6 行 272）。
  */
 export async function runFlowStep<P extends object>(
   request: (input: {
     method: string;
     step: string;
     payload: P;
+    captcha?: CaptchaPayload;
   }) => Promise<LoginFlowResponse>,
   input: {
     method: string;
     step: string;
-    /** 每轮重建 payload（gate 注入本轮新凭据；无 captcha 的 step 忽略入参）。 */
-    payloadFor: (captcha?: CaptchaPayload) => P;
+    /** 每轮重建 payload（不含 captcha；captcha 走请求顶层）。 */
+    payloadFor: () => P;
   },
   runGate: CaptchaGate['run'],
   captcha: { mode: CaptchaGateMode; config?: CaptchaConfig },
@@ -176,7 +178,8 @@ export async function runFlowStep<P extends object>(
       request({
         method: input.method,
         step: input.step,
-        payload: input.payloadFor(token),
+        payload: input.payloadFor(),
+        ...(token !== undefined ? { captcha: token } : {}),
       }),
     readOutcome: flowCaptchaOutcome,
   });
@@ -256,19 +259,18 @@ type RegisterPayloadInit = NonNullable<RegisterInput['payload']>;
 
 /**
  * 注册各 step 的 payload 组装（§2.3 行 444-451 字段表）：
- * challenge {email|phone, captcha} / verify {code} / set_password {username,
- * password, captcha?}（captcha 仅用户名 + 密码直入必填，由调用方判定传入）。
+ * challenge {email|phone} / verify {code} / set_password {username, password}。
+ * captcha 不在 payload 内（§2.6 行 672：captcha 不属于任何因子的 payload），
+ * 由 runFlowStep 作为请求顶层字段传递。
  */
 export function registerPayloadFor(
   step: FlowStep,
   values: Readonly<Record<string, string>>,
-  captcha?: CaptchaPayload,
 ): RegisterPayloadInit {
   if (step === 'challenge') {
     return {
       email: values.email ?? '',
       phone: values.phone ?? '',
-      ...(captcha !== undefined ? { captcha } : {}),
     };
   }
   if (step === 'verify') {
@@ -277,7 +279,6 @@ export function registerPayloadFor(
   return {
     username: values.username ?? '',
     password: values.password ?? '',
-    ...(captcha !== undefined ? { captcha } : {}),
   };
 }
 
@@ -692,22 +693,23 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     if (step === 'challenge') {
       setChallengeValues(values);
     }
-    // captcha 凭据由 gate 弹窗注入（§2.3 行 447/451）：otp challenge 与
-    // password 直入 set_password 先问再发；otp 流程 verify / set_password 的
-    // payload 本不含 captcha（registerPayloadFor 按 step 决定是否并入）。
+    // captcha 凭据由 gate 弹窗注入，走请求顶层（§2.3 行 447/451、§2.6 行 672）：
+    // otp challenge 与 password 直入 set_password 先问再发；otp 流程 verify /
+    // set_password 的 payload 本不含 captcha，命中才问（reactive 防御）。
     const source = step === 'set_password' ? { username, password } : values;
     const result = await runFlowStep(
       register,
       {
         method,
         step,
-        payloadFor: (token) => registerPayloadFor(step, source, token),
+        payloadFor: () => registerPayloadFor(step, source),
       },
       gate.run,
       {
         mode: registerCaptchaMode(step, method),
-        // 权威配置（§2.5 行 518）：响应顶层优先，缺省回落快照首屏。
-        config: envelope?.captcha ?? snapshot.captcha,
+        // 首屏配置只作提前量（§2.5 / §1.5 行 228）：运行期权威配置取错误体 details，
+        // 不再消费 200 信封的 captcha 字段。
+        config: snapshot.captcha,
       },
     );
     setLoading(false);
