@@ -265,6 +265,8 @@
 
 **验收方法论**：涉错误映射链（哨兵 → service → handler 转译）的验收，至少一条用例须走**真依赖组装**——fake 注入哨兵会掩盖真链路转译断点。
 
+- **连接层集成测试落地**：传输层（中间件、`ErrorInfo` 转译、`Content-Type` 协商、protojson 未知字段兼容、双编码等价）断言须落实到真路由集成测试（`net/http/httptest` + 真实 Gin / Connect 路由，不 mock 框架，见上表 HTTP 行），与 A 组 `connect`（框架编解码集成）用例同口径——覆盖 JSON / `application/proto` 双 `Content-Type` 解出等价消息（`proto.Equal`）与未知字段静默忽略。
+
 **各层测法**
 
 A. 纯单元（无 IO，占比最大）
