@@ -605,6 +605,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	deps.verification = verification.NewService(verification.Deps{
 		Codec:       verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
 		Policy:      verification.DefaultPolicy(),
+		Settings:    deps.settings,
 		Gate:        verifGate,
 		Once:        verifOnce,
 		Bound:       boundFactorReader{users: users, creds: creds},

@@ -10,10 +10,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
@@ -21,6 +23,7 @@ import (
 	commonv1 "authloft/gen/go/api/common/v1"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
+	internalconnect "authloft/internal/connect"
 	core "authloft/internal/otp"
 	"authloft/internal/repo/model"
 	accountsvc "authloft/internal/service/account"
@@ -156,6 +159,54 @@ var bindCaptchaEndpoints = []struct {
 }{
 	{"BindPhone", accountv1connect.AccountServiceBindPhoneProcedure, "phone", "13900008000"},
 	{"BindEmail", accountv1connect.AccountServiceBindEmailProcedure, "email", "new@example.com"},
+}
+
+// TestBindCaptchaFailureNilCause 可证伪：cause 缺失（零值 / nil 接收者）时
+// Error() 返回可读文案而非 panic——错误体编码会调用 Error()，nil cause 若
+// 直接解引用会在响应阶段崩掉整个请求。
+func TestBindCaptchaFailureNilCause(t *testing.T) {
+	f := &accountsvc.BindCaptchaFailure{}
+	if got := f.Error(); got == "" {
+		t.Fatal("nil cause 的 Error() 应返回可读文案")
+	}
+	var nilF *accountsvc.BindCaptchaFailure
+	if got := nilF.Error(); got == "" {
+		t.Fatal("nil 接收者的 Error() 应返回可读文案")
+	}
+	if nilF.Unwrap() != nil {
+		t.Fatal("nil 接收者的 Unwrap() 应为 nil")
+	}
+}
+
+// TestMapBindCaptchaErrorAlignedWithSso 可证伪：绑定族 captcha 失败的
+// Connect 形态与 sso 域同口径——invalid_argument + ErrorInfo.domain=account
+// + 固定 message，不把 service 内部文案漏进错误体。message / domain / code
+// 任一不符即失败。
+func TestMapBindCaptchaErrorAlignedWithSso(t *testing.T) {
+	cases := []struct {
+		err     error
+		code    string
+		message string
+	}{
+		{accountsvc.ErrBindCaptchaRequired, captcha.StatusRequired, "captcha required"},
+		{accountsvc.ErrBindCaptchaInvalid, captcha.StatusInvalid, "captcha invalid or used"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			out := mapBindError("bind phone", fmt.Errorf("wrap: %w", tc.err))
+			var coded *connect.Error
+			if !errors.As(out, &coded) {
+				t.Fatalf("err = %v, want *connect.Error", out)
+			}
+			if coded.Code() != connect.CodeInvalidArgument || coded.Message() != tc.message {
+				t.Fatalf("connect 形态 = %s/%q, want invalid_argument/%q", coded.Code(), coded.Message(), tc.message)
+			}
+			info, ok := internalconnect.ErrorInfoOf(out)
+			if !ok || info.GetDomain() != "account" || info.GetCode() != tc.code {
+				t.Fatalf("ErrorInfo = %+v (ok=%v), want account/%s", info, ok, tc.code)
+			}
+		})
+	}
 }
 
 // TestBindCaptchaFailureCarriesConfig 可证伪：两个绑定端点的 captcha 失败

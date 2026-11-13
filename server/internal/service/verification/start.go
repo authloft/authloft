@@ -16,17 +16,48 @@ import (
 
 	"authloft/internal/captcha"
 	"authloft/internal/security"
+	"authloft/internal/settings"
 )
 
 const (
-	// ChallengeTTL step-up 挑战有效期（§11.6.7、§1.10.2：与 otp_ttl 一致 300s）。
-	ChallengeTTL = 300 * time.Second
 	// AssertionTTL 断言有效期（§11.6.7、§3.8.2：120s）。
 	AssertionTTL = 120 * time.Second
 	// onceKeyPrefix / onceTTL（§5.1 行 880：al:once:{nonce}，TTL 120s）。
 	onceKeyPrefix = "al:once:"
 	onceTTL       = 120 * time.Second
 )
+
+// Settings 验证码有效期 / 重发冷却读取窄接口（§1.10.2、§5.6 表三）：
+// *settings.Store 天然满足；每次现读，热更新只对后续请求生效。
+type Settings interface {
+	GetInt64(key string) (int64, bool)
+}
+
+// intSetting 读 settings 键的当前值；未注入、键缺失或非正值时取该键的注册
+// 默认值（§5.6 表三：键名与默认值的唯一定义处），不在此另立数值。
+func intSetting(st Settings, key string) int64 {
+	if st != nil {
+		if v, ok := st.GetInt64(key); ok && v > 0 {
+			return v
+		}
+	}
+	if d, ok := settings.Lookup(key); ok {
+		if v, ok := d.Default.(int64); ok && v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+// otpTTL 挑战有效期（§11.6.7：step-up 与 al:code 一致，取 otp_ttl）。
+func (s *Service) otpTTL() time.Duration {
+	return time.Duration(intSetting(s.d.Settings, settings.KeyOtpTtl)) * time.Second
+}
+
+// resendAfter 同目标重发冷却（§1.10.2：取 otp_resend_interval）。
+func (s *Service) resendAfter() int64 {
+	return intSetting(s.d.Settings, settings.KeyOtpResendInterval)
+}
 
 // 方法组所在域（§3.8.1）：SsoService 只接受 login，AccountService 接受其余值。
 const (
@@ -147,6 +178,7 @@ type FactorVerifyResult struct {
 type Deps struct {
 	Codec       *AssertionCodec
 	Policy      *Policy
+	Settings    Settings
 	Gate        CaptchaGate
 	Once        OnceStore
 	Bound       BoundFactorReader
@@ -256,9 +288,13 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		return nil, nil, failure("invalid_request", nil)
 	}
 
-	// 选定因子即本次要下发挑战凭据，按 §2.5 触发表「两步验证阶段下发 必须」
-	// 过守卫；失败以领域错误透出，不套登录流程信封、不静默回落（§3.8.5）。
-	if in.Method != "" && s.d.Gate != nil {
+	// 选定因子即本次要下发挑战凭据：按 §2.5 触发表，只有一次性验证码下发
+	// （OTP 类因子）必须过守卫；WebAuthn 取 options、TOTP / 恢复码不产生
+	// 下发，均不触发（§2.5、§9.3）。守卫缺失时 fail-closed，不静默放行。
+	if sendsOneTimeCode(in.Method) {
+		if s.d.Gate == nil {
+			return nil, nil, fmt.Errorf("verification: captcha gate not injected")
+		}
 		outcome, err := s.d.Gate.Evaluate(ctx, captcha.Request{
 			Challenge:  true,
 			Submission: in.Captcha,
@@ -273,7 +309,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 
 	views := make([]MethodView, 0, len(candidates))
 	for _, m := range candidates {
-		views = append(views, methodView(m))
+		views = append(views, s.methodView(m))
 	}
 
 	// method 为空 = 只返回可用因子由前端选择，不签发挑战令牌
@@ -281,7 +317,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	if in.Method == "" {
 		return &StartResult{
 			Methods:   views,
-			ExpiresIn: int64(ChallengeTTL / time.Second),
+			ExpiresIn: int64(s.otpTTL() / time.Second),
 		}, nil, nil
 	}
 
@@ -289,7 +325,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	if err != nil {
 		return nil, nil, fmt.Errorf("verification: nonce: %w", err)
 	}
-	kind := lastStep(in.Method)
+	kind := s.lastStep(in.Method)
 	var data *structpb.Struct
 	// 下发阶段执行所选因子的 challenge 步（§7.3 步骤 6、§10.2 步骤 6）：
 	// OTP 发码、WebAuthn 生成 options；返回的 nonce 与 options.challenge
@@ -329,23 +365,35 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		Nonce:      nonce,
 		Operation:  in.Operation,
 		Methods:    append([]string(nil), candidates...),
-	}, ChallengeTTL)
+	}, s.otpTTL())
 	if err != nil {
 		return nil, nil, fmt.Errorf("verification: issue challenge: %w", err)
 	}
 	return &StartResult{
 		ChallengeToken: tok,
 		Methods:        views,
-		ExpiresIn:      int64(ChallengeTTL / time.Second),
+		ExpiresIn:      int64(s.otpTTL() / time.Second),
 		NextStepKind:   kind,
 		ChallengeData:  data,
 	}, nil, nil
 }
 
+// sendsOneTimeCode 该因子在下发阶段是否产生一次性验证码（§2.5 触发表：
+// 「任何一次性验证码下发 必须」；WebAuthn 取 options 不需要，TOTP /
+// 恢复码提交不产生下发）。
+func sendsOneTimeCode(method string) bool {
+	switch method {
+	case "otp_sms", "otp_email":
+		return true
+	default:
+		return false
+	}
+}
+
 // lastStep 返回该因子步骤序列的下一步渲染形态（§1.4）：step-up 选定因子
 // 后直接进入 form（OTP / WebAuthn 的 challenge 已在 Start 内完成下发）。
-func lastStep(method string) string {
-	v := methodView(method)
+func (s *Service) lastStep(method string) string {
+	v := s.methodView(method)
 	if len(v.Steps) == 0 {
 		return ""
 	}
@@ -400,14 +448,15 @@ func (s *Service) resolveSubject(ctx context.Context, in StartInput) (Subject, e
 }
 
 // methodView 因子能力视图，取值来自 §1.10.1 因子能力表与 §2.1 注入快照；
-// 只表达能力，业务用途与策略数值不进视图。
-func methodView(method string) MethodView {
+// 只表达能力，业务用途与策略数值不进视图。OTP 类的 resendAfter /
+// expiresIn 取现行 otp_resend_interval / otp_ttl（§3.8.2、§1.10.2）。
+func (s *Service) methodView(method string) MethodView {
 	switch method {
 	case "otp_sms", "otp_email":
 		return MethodView{
 			Method: method, Usage: []string{"primary", "secondary"},
 			Steps: []string{"challenge", "form"}, CodeLength: 6,
-			ResendAfter: 60, ExpiresIn: 300,
+			ResendAfter: s.resendAfter(), ExpiresIn: int64(s.otpTTL() / time.Second),
 		}
 	case "webauthn":
 		return MethodView{

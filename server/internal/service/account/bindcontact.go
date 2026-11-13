@@ -105,14 +105,25 @@ func (e *BindInvalidCodeError) Unwrap() error { return ErrBindInvalidCode }
 // 哨兵错误透出，供上层经 connect.WithCaptchaConfig 并列进错误体 details
 // （§2.5 / §9.1 同源）。Config 直接取自该次判定的 Outcome.Config——gate
 // 这一处单一出口，本层不重新读取配置、不另造第二份；cause 保留原哨兵，
-// errors.Is 仍可判别。
+// errors.Is 仍可判别。cause 缺失时 Error() 返回固定文案，不 panic。
 type BindCaptchaFailure struct {
 	Config captcha.Config
 	cause  error
 }
 
-func (f *BindCaptchaFailure) Error() string { return f.cause.Error() }
-func (f *BindCaptchaFailure) Unwrap() error { return f.cause }
+func (f *BindCaptchaFailure) Error() string {
+	if f == nil || f.cause == nil {
+		return "account bind: captcha failure"
+	}
+	return f.cause.Error()
+}
+
+func (f *BindCaptchaFailure) Unwrap() error {
+	if f == nil {
+		return nil
+	}
+	return f.cause
+}
 
 // bindContactKind 绑定渠道：手机 / 邮箱（FindByX 占用查询、事件名、掩码
 // 函数按渠道分派；两渠道编排完全同构，§3.4 行 883「统一走」）。

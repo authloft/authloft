@@ -119,11 +119,32 @@ func (h *Handler) ResetPassword(ctx context.Context, req *connect.Request[ssov1.
 	return h.submit(ctx, resetFlow, dto.Reset(req.Msg))
 }
 
+// errCaptchaSinkMissing 人机校验失败写点未注入：引擎在 captcha 失败时只会
+// 返回 status=failed，调用方无从判别（§1.5 要求 captcha 失败走非 200 的
+// Connect 错误体），故此处显式失败，不静默回落。
+var errCaptchaSinkMissing = errors.New("sso: captcha failure sink not injected")
+
+// captchaFailureSink 注入人机校验失败写点并回读校验：sink 为 nil 或写点
+// 未真正挂到 ctx 链上时返回 errCaptchaSinkMissing。
+func captchaFailureSink(ctx context.Context, sink func(*captcha.Failure)) (context.Context, error) {
+	if sink == nil {
+		return nil, errCaptchaSinkMissing
+	}
+	out := orchestrator.WithCaptchaFailureSink(ctx, sink)
+	if _, ok := orchestrator.CaptchaFailureSinkFromContext(out); !ok {
+		return nil, errCaptchaSinkMissing
+	}
+	return out, nil
+}
+
 // submit 三个登录端点的共用入口：注入人机校验失败写点后交给引擎；命中失败
 // 时不返回信封，改由 encodeCaptchaFailure 编码非 200 的 Connect 错误体（§1.5）。
 func (h *Handler) submit(ctx context.Context, flow string, in orchestrator.Request) (*connect.Response[ssov1.LoginFlowResponse], error) {
 	var failure *captcha.Failure
-	sinkCtx := orchestrator.WithCaptchaFailureSink(ctx, func(f *captcha.Failure) { failure = f })
+	sinkCtx, err := captchaFailureSink(ctx, func(f *captcha.Failure) { failure = f })
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 	resp := h.engine.Submit(h.withSessionTokenSink(sinkCtx), flow, in)
 	if failure != nil {
 		return nil, encodeCaptchaFailure(failure)

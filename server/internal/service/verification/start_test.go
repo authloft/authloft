@@ -9,7 +9,16 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"authloft/internal/captcha"
+	"authloft/internal/settings"
 )
+
+// startSettings Settings 的 fake：map 引用语义，持有句柄可热改值。
+type startSettings struct{ m map[string]int64 }
+
+func (s *startSettings) GetInt64(key string) (int64, bool) {
+	v, ok := s.m[key]
+	return v, ok
+}
 
 // startGate CaptchaGate 的 fake：回放一次判定结论。
 type startGate struct {
@@ -326,7 +335,10 @@ func TestStartMethodDisabledWhenNoBoundFactor(t *testing.T) {
 
 func TestStartStarterFailureCode(t *testing.T) {
 	starter := &startStarter{res: FactorStartResult{Code: "too_many_requests", RetryAfter: 42}}
-	svc, _ := newStartService(t, func(d *Deps) { d.Starter = starter })
+	svc, _ := newStartService(t, func(d *Deps) {
+		d.Starter = starter
+		d.Gate = &startGate{}
+	})
 	_, _, err := svc.Start(context.Background(), StartInput{
 		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
 	})
@@ -345,7 +357,7 @@ func TestStartCaptchaFailureSurfacesConfig(t *testing.T) {
 	svc, _ := newStartService(t, func(d *Deps) { d.Gate = gate })
 
 	res, failure, err := svc.Start(context.Background(), StartInput{
-		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "totp", Operation: "step_up", SessionUID: "42",
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
 	})
 	if err != nil || res != nil {
 		t.Fatalf("res=%v err=%v", res, err)
@@ -360,7 +372,7 @@ func TestStartCaptchaFailureSurfacesConfig(t *testing.T) {
 	invalid := &startGate{outcome: captcha.Outcome{Required: true, Status: captcha.StatusInvalid, Config: cfg}}
 	svc, _ = newStartService(t, func(d *Deps) { d.Gate = invalid })
 	if _, failure, _ := svc.Start(context.Background(), StartInput{
-		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "totp", Operation: "step_up", SessionUID: "42",
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_email", Operation: "step_up", SessionUID: "42",
 	}); failure == nil || failure.Code != captcha.StatusInvalid {
 		t.Fatalf("failure = %+v, want %s", failure, captcha.StatusInvalid)
 	}
@@ -368,7 +380,7 @@ func TestStartCaptchaFailureSurfacesConfig(t *testing.T) {
 	gateErr := &startGate{err: errors.New("gate down")}
 	svc, _ = newStartService(t, func(d *Deps) { d.Gate = gateErr })
 	if _, _, err := svc.Start(context.Background(), StartInput{
-		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "totp", Operation: "step_up", SessionUID: "42",
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
 	}); err == nil {
 		t.Fatal("gate 基础设施错误必须上抛，不得静默放行")
 	}
@@ -388,9 +400,10 @@ func TestStartDoesNotEvaluateCaptchaWithoutMethod(t *testing.T) {
 }
 
 func TestMethodViewCapabilities(t *testing.T) {
+	svc, _ := newStartService(t, nil)
 	views := map[string]MethodView{}
 	for _, m := range stepUpFactors {
-		views[m] = methodView(m)
+		views[m] = svc.methodView(m)
 	}
 	otp := views["otp_email"]
 	if otp.CodeLength != 6 || otp.ResendAfter != 60 || otp.ExpiresIn != 300 ||
@@ -402,5 +415,124 @@ func TestMethodViewCapabilities(t *testing.T) {
 	}
 	if tp := views["totp"]; len(tp.Usage) != 1 || tp.Usage[0] != "secondary" {
 		t.Fatalf("totp view = %+v", tp)
+	}
+}
+
+// TestStartReadsOtpSettingsPerRequest 可证伪：挑战有效期 / 响应 expiresIn /
+// OTP 方法视图的 resendAfter 与 expiresIn 均取现行 settings（§1.10.2、
+// §3.8.2、§5.6 表三），改设置后后续请求跟着变；挑战令牌的 exp 同步为
+// otp_ttl（§11.6.7）。返回值若仍写死 300 / 60，本用例立即失败。
+func TestStartReadsOtpSettingsPerRequest(t *testing.T) {
+	st := &startSettings{m: map[string]int64{
+		settings.KeyOtpTtl:            600,
+		settings.KeyOtpResendInterval: 90,
+	}}
+	gate := &startGate{}
+	svc, codec := newStartService(t, func(d *Deps) {
+		d.Settings = st
+		d.Gate = gate
+	})
+
+	// method 为空：只回因子视图，expiresIn 同样取 otp_ttl。
+	res, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.ExpiresIn != 600 {
+		t.Fatalf("expiresIn = %d, want 600（跟随 otp_ttl）", res.ExpiresIn)
+	}
+	otpView := findMethod(t, res.Methods, "otp_sms")
+	if otpView.ExpiresIn != 600 || otpView.ResendAfter != 90 {
+		t.Fatalf("otp_sms view = %+v, want expiresIn=600 resendAfter=90", otpView)
+	}
+
+	// 选定 OTP 因子：响应 expiresIn 与挑战令牌 exp 同步为 600s。
+	res, _, err = svc.Start(context.Background(), StartInput{
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up",
+		SessionUID: "42", Captcha: &captcha.Submission{ProviderKey: "cf_turnstile", Token: "tok"},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.ExpiresIn != 600 {
+		t.Fatalf("expiresIn = %d, want 600", res.ExpiresIn)
+	}
+	base := time.Unix(1_700_000_000, 0)
+	codec.now = func() time.Time { return base.Add(599 * time.Second) }
+	if _, err := codec.ParseChallenge(res.ChallengeToken); err != nil {
+		t.Fatalf("599s 时挑战令牌仍应有效（TTL 跟随 otp_ttl=600）: %v", err)
+	}
+	codec.now = func() time.Time { return base.Add(601 * time.Second) }
+	if _, err := codec.ParseChallenge(res.ChallengeToken); !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("601s 后应过期, err = %v", err)
+	}
+
+	// 热更新：改设置后下一次请求立即跟随。
+	st.m[settings.KeyOtpTtl] = 420
+	st.m[settings.KeyOtpResendInterval] = 30
+	res, _, err = svc.Start(context.Background(), StartInput{
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if res.ExpiresIn != 420 || findMethod(t, res.Methods, "otp_email").ResendAfter != 30 {
+		t.Fatalf("热更新未生效: expiresIn=%d view=%+v", res.ExpiresIn, findMethod(t, res.Methods, "otp_email"))
+	}
+}
+
+// findMethod 取方法视图；缺失即失败。
+func findMethod(t *testing.T, views []MethodView, method string) MethodView {
+	t.Helper()
+	for _, v := range views {
+		if v.Method == method {
+			return v
+		}
+	}
+	t.Fatalf("methods 缺少 %s: %+v", method, views)
+	return MethodView{}
+}
+
+// TestStartCaptchaScenarioTable 可证伪（§2.5 触发表 / §9.3）：只有一次性
+// 验证码下发（OTP 类因子）过 captcha 守卫；WebAuthn 取 options 与 TOTP /
+// 恢复码提交不触发。若仍按「选定任意因子即强制」判定，非 OTP 行的
+// gate.calls 断言立即失败。
+func TestStartCaptchaScenarioTable(t *testing.T) {
+	cases := []struct {
+		method    string
+		wantCalls int
+	}{
+		{"otp_sms", 1},
+		{"otp_email", 1},
+		{"webauthn", 0},
+		{"totp", 0},
+		{"recovery_code", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			gate := &startGate{}
+			svc, _ := newStartService(t, func(d *Deps) { d.Gate = gate })
+			if _, _, err := svc.Start(context.Background(), StartInput{
+				Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: tc.method, Operation: "step_up", SessionUID: "42",
+			}); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			if gate.calls != tc.wantCalls {
+				t.Fatalf("gate.calls = %d, want %d（§2.5 触发表）", gate.calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// TestStartCaptchaGateMissingFailsClosed 可证伪：OTP 下发场景未注入守卫时
+// 显式报错，不得静默放行（§2.5「任何一次性验证码下发 必须」）。
+func TestStartCaptchaGateMissingFailsClosed(t *testing.T) {
+	svc, _ := newStartService(t, nil)
+	if _, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
+	}); err == nil {
+		t.Fatal("OTP 下发场景缺 guard 应显式失败，不得静默放行")
 	}
 }

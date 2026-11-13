@@ -1046,17 +1046,9 @@ func mapBindError(op string, err error) error {
 			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
 		)
 	case errors.Is(err, accountsvc.ErrBindCaptchaRequired):
-		coded := internalconnect.WithErrorInfo(
-			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("account", captcha.StatusRequired, "captcha required"),
-		)
-		return withBindCaptchaConfig(err, coded)
+		return withBindCaptchaConfig(err, captcha.StatusRequired, "captcha required")
 	case errors.Is(err, accountsvc.ErrBindCaptchaInvalid):
-		coded := internalconnect.WithErrorInfo(
-			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("account", captcha.StatusInvalid, "captcha invalid"),
-		)
-		return withBindCaptchaConfig(err, coded)
+		return withBindCaptchaConfig(err, captcha.StatusInvalid, "captcha invalid or used")
 	case errors.Is(err, accountsvc.ErrBindTargetTaken):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeAlreadyExists, err),
@@ -1102,20 +1094,25 @@ func mapBindError(op string, err error) error {
 	}
 }
 
-// withBindCaptchaConfig 把 service 透出的、与 gate 判定同源的当前生效配置
-// 并列进 captcha 失败错误体 details（与 SSO 域同一结构：ErrorInfo +
-// CaptchaConfig）。配置仅随哨兵错误载荷透传，本层不重新读取、不另造第二
-// 配置源（§9.1 同源）。
-func withBindCaptchaConfig(err error, coded *connect.Error) *connect.Error {
+// withBindCaptchaConfig 构造绑定族 captcha 失败错误体，与 sso 域同一口径
+// （§2.5、§9.1）：ErrorInfo.domain 固定 account，code / message 取 captcha
+// 常量，CaptchaConfig 三字段取自与 gate 判定同源的失败载荷并与之并列。
+// 载荷缺失（非本域生产路径）时不臆造第二配置源，只省去 detail，错误码与
+// domain 仍完整下发。
+func withBindCaptchaConfig(err error, code, message string) error {
+	coded := internalconnect.WithErrorInfo(
+		connect.NewError(connect.CodeInvalidArgument, errors.New(message)),
+		internalconnect.NewErrorInfo("account", code, message),
+	)
 	var f *accountsvc.BindCaptchaFailure
-	if errors.As(err, &f) {
-		return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
-			ProviderKey: f.Config.ProviderKey,
-			Type:        f.Config.Type,
-			SiteKey:     f.Config.SiteKey,
-		})
+	if !errors.As(err, &f) {
+		return coded
 	}
-	return coded
+	return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
+		ProviderKey: f.Config.ProviderKey,
+		Type:        f.Config.Type,
+		SiteKey:     f.Config.SiteKey,
+	})
 }
 
 // —— 两步验证族四方法 + UnbindTotp（接口文档 §3.5 行 900-925）——

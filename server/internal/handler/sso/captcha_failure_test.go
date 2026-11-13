@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -281,11 +282,33 @@ func assertCaptchaRequired(t *testing.T, url, body string) {
 			cfg = m
 		}
 	}
-	if info == nil || info.GetCode() != captcha.StatusRequired {
-		t.Fatalf("ErrorInfo = %+v, want code=%s", info, captcha.StatusRequired)
+	if info == nil || info.GetDomain() != "sso" || info.GetCode() != captcha.StatusRequired {
+		t.Fatalf("ErrorInfo = %+v, want sso/%s", info, captcha.StatusRequired)
 	}
 	if cfg == nil {
 		t.Fatal("details 缺少 CaptchaConfig（captcha 配置未并列下发）")
+	}
+	// 三字段逐项断言：与 gate 单一出口的当前生效项一致（本文 fake 为
+	// cf_turnstile / turnstile / 0xSITE）；任一字段缺失或串位即失败。
+	if cfg.GetProviderKey() != "cf_turnstile" || cfg.GetType() != "turnstile" || cfg.GetSiteKey() != "0xSITE" {
+		t.Fatalf("CaptchaConfig = %+v, want cf_turnstile/turnstile/0xSITE", cfg)
+	}
+}
+
+// TestCaptchaFailureSinkRequiresInjection 可证伪：写点未注入（nil）时
+// captchaFailureSink 返回显式错误，不会把 nil 写点交给引擎——否则 captcha
+// 失败会被引擎静默回落成 status=failed（§1.5 要求非 200 错误体）；正常注入
+// 时回读必须命中，供 submit 使用。
+func TestCaptchaFailureSinkRequiresInjection(t *testing.T) {
+	if _, err := captchaFailureSink(context.Background(), nil); !errors.Is(err, errCaptchaSinkMissing) {
+		t.Fatalf("nil sink err = %v, want errCaptchaSinkMissing", err)
+	}
+	ctx, err := captchaFailureSink(context.Background(), func(*captcha.Failure) {})
+	if err != nil {
+		t.Fatalf("正常注入 err = %v", err)
+	}
+	if _, ok := orchestrator.CaptchaFailureSinkFromContext(ctx); !ok {
+		t.Fatal("注入后 ctx 应可回读到写点")
 	}
 }
 

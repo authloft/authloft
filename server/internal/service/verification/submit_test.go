@@ -10,6 +10,10 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// testChallengeTTL 测试内签发挑战令牌用的有效期；生产值由 start.go 按
+// settings 的 otp_ttl 现读。
+const testChallengeTTL = 300 * time.Second
+
 // submitVerifier FactorVerifier 的 fake：记录入参并回放结论。
 type submitVerifier struct {
 	res   FactorVerifyResult
@@ -88,7 +92,7 @@ func TestSubmitAccountIssuesAssertion(t *testing.T) {
 		Nonce:      "nonce-1",
 		Operation:  "unbind_totp",
 		Methods:    []string{"totp", "otp_sms"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
@@ -126,7 +130,7 @@ func TestSubmitSSOReturnsFlowStatus(t *testing.T) {
 		Nonce:      "nonce-2",
 		Operation:  "mfa_verify",
 		Methods:    []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
@@ -161,7 +165,7 @@ func TestSubmitSSOLoginContextMismatch(t *testing.T) {
 		Nonce:      "nonce-ctx",
 		Operation:  "mfa_verify",
 		Methods:    []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
@@ -185,7 +189,7 @@ func TestSubmitAccountRejectsLoginToken(t *testing.T) {
 		Nonce:      "nonce-account",
 		Operation:  "unbind_totp",
 		Methods:    []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
@@ -212,7 +216,7 @@ func TestSubmitSSOScanSkipsSession(t *testing.T) {
 		Nonce:      scanNonce("ticket-1", "nonce-scan"),
 		Operation:  "mfa_verify",
 		Methods:    []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if err != nil {
 		t.Fatalf("IssueChallenge: %v", err)
 	}
@@ -241,7 +245,7 @@ func TestSubmitRejectsCrossDomainChallenge(t *testing.T) {
 	loginTok, _ := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeLogin, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 		Nonce: "n-login", Operation: "mfa_verify", Methods: []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if _, err := svc.Submit(context.Background(), SubmitInput{
 		Domain: DomainAccount, ChallengeToken: loginTok, Method: "totp",
 	}); errorCode(t, err) != "verification_invalid" {
@@ -251,7 +255,7 @@ func TestSubmitRejectsCrossDomainChallenge(t *testing.T) {
 	accountTok, _ := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 		Nonce: "n-account", Operation: "step_up", Methods: []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if _, err := svc.Submit(context.Background(), SubmitInput{
 		Domain: DomainSSO, ChallengeToken: accountTok, Method: "totp",
 	}); errorCode(t, err) != "verification_invalid" {
@@ -275,7 +279,7 @@ func TestSubmitRejectsInvalidInput(t *testing.T) {
 	tok, _ := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 		Nonce: "n1", Operation: "step_up", Methods: []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if _, err := svc.Submit(context.Background(), SubmitInput{
 		Domain: DomainAccount, ChallengeToken: tok, Method: "otp_sms",
 	}); errorCode(t, err) != "verification_invalid" {
@@ -286,7 +290,7 @@ func TestSubmitRejectsInvalidInput(t *testing.T) {
 	ssoTok, _ := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeLogin, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 		Nonce: "n-sso", Operation: "mfa_verify", Methods: []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if _, err := svc.Submit(context.Background(), SubmitInput{
 		Domain: DomainSSO, ChallengeToken: ssoTok, Method: "totp",
 	}); errorCode(t, err) != "invalid_request" {
@@ -299,7 +303,7 @@ func TestSubmitFailClosedWithoutVerifier(t *testing.T) {
 	tok, _ := codec.IssueChallenge(Challenge{
 		BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 		Nonce: "n1", Operation: "step_up", Methods: []string{"totp"},
-	}, ChallengeTTL)
+	}, testChallengeTTL)
 	if _, err := svc.Submit(context.Background(), SubmitInput{
 		Domain: DomainAccount, ChallengeToken: tok, Method: "totp",
 	}); errorCode(t, err) != "method_disabled" {
@@ -323,7 +327,7 @@ func TestSubmitMapsFactorFailure(t *testing.T) {
 			tok, _ := codec.IssueChallenge(Challenge{
 				BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
 				Nonce: "n1", Operation: "step_up", Methods: []string{"totp"},
-			}, ChallengeTTL)
+			}, testChallengeTTL)
 			if _, err := svc.Submit(context.Background(), SubmitInput{
 				Domain: DomainAccount, ChallengeToken: tok, Method: "totp",
 			}); errorCode(t, err) != tc.code {
