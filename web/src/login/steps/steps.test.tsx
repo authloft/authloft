@@ -20,6 +20,7 @@ import {
   type CaptchaPayload,
 } from '../../gen/proto/api/sso/v1/login_pb';
 import { CreateQrcodeResponseSchema } from '../../gen/proto/api/sso/v1/ticket_pb';
+import { ApiError } from '../../shared/api/errors';
 import { ChallengeStep } from './ChallengeStep';
 import { FormStep } from './FormStep';
 import {
@@ -27,6 +28,9 @@ import {
   completeLogin,
   dispatchQrResult,
   qrcodeRequester,
+  stepUpHandledAfterDismiss,
+  stepUpSubmitError,
+  stepUpTicketOf,
 } from './QRCodeStep';
 import { RedirectStep, runRedirect } from './RedirectStep';
 import { StepDispatcher } from './StepDispatcher';
@@ -413,5 +417,36 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     dispatchQrResult(outer, { completeLogin: () => {} }); // onResult 缺省
     expect(completed).toBe(0);
     expect(raised).toEqual([outer]);
+  });
+
+  test('用户取消弹窗 → 重入标记清零，同一票据可再次弹窗；验证通过则保留标记', () => {
+    const needsStepUp = create(LoginFlowResponseSchema, {
+      status: 'needs_step_up',
+      ticket: { status: 'scanned', ticketId: 'tid-1' },
+    });
+    const opened = stepUpTicketOf(needsStepUp, undefined);
+    expect(opened).toBe('tid-1');
+    // 验证通过：已处理标记保留，同一票据不重复弹。
+    expect(
+      stepUpTicketOf(
+        needsStepUp,
+        stepUpHandledAfterDismiss(opened, 'verified'),
+      ),
+    ).toBeUndefined();
+    // 用户取消：标记清空，同一票据可重新打开弹窗。
+    expect(
+      stepUpTicketOf(
+        needsStepUp,
+        stepUpHandledAfterDismiss(opened, 'cancelled'),
+      ),
+    ).toBe('tid-1');
+  });
+
+  test('因子失败不再吞成空串：非 success status 抛错误码交弹窗展示（§1.6）', () => {
+    const failed = stepUpSubmitError('invalid_code');
+    expect(failed).toBeInstanceOf(ApiError);
+    expect(failed.code).toBe('invalid_code');
+    // 零值 status 兜底 failed，不抛空错误码。
+    expect(stepUpSubmitError('').code).toBe('failed');
   });
 });

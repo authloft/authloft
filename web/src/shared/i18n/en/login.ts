@@ -78,6 +78,10 @@ export const login: typeof zhLogin = {
   'login.routeNotFound': 'Page not found',
   'login.renderError':
     'This page hit an unexpected error. Please refresh and try again',
+  // ---- Step-up dialog used by the QR sign-in flow ---------------------------
+  'login.stepUpAttemptsLeft': '{message} ({count} attempts left)',
+  'login.stepUpFactorUnsupported':
+    'This verification method cannot be completed here. Please choose another method',
 
   // ---- Backend-supplied field copy (sso.v1.Field.label / snapshot labels) ----
   // The login flow only sends login.field.* keys; all wording lives here and is

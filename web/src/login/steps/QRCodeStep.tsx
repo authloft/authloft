@@ -24,8 +24,8 @@
  *   = ticketId 弹出 shared/components/StepUpDialog 走 StartVerification →
  *   SubmitVerification；扫码场景服务端以票据链路收尾（§3.8.1），Submit 成功写终态
  *   TicketResult、不直接登录，本组件关窗后由面板下一次轮询进入 success 再走终点。
- *   同一 ticket 只在首次 needs_step_up 时弹窗（完成 / 取消后不再自动重弹，
- *   取消后由面板轮询至 expired 兜底、用户重拉码）。
+ *   同一 ticket 首次 needs_step_up 时弹窗；通过后保留已处理标记不重复弹窗，
+ *   用户取消则清空标记，同一票据可再次弹窗（挑战令牌已丢弃，重开即重取）。
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
@@ -40,6 +40,7 @@ import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { errorCaptchaOutcome } from '../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { StepUpDialog } from '../../shared/components/StepUpDialog';
+import { ApiError } from '../../shared/api/errors';
 import {
   QRCodePanel,
   MAX_POLL_SECONDS,
@@ -171,6 +172,32 @@ export function stepUpTicketOf(
   return ticketId;
 }
 
+/**
+ * 弹窗关闭后的票据标记（§2.8 行 884，纯函数）：验证通过保留已处理票据，
+ * 等票据转终态、不重复弹窗；用户取消则清空标记，同一票据再次轮询到
+ * needs_step_up 时可重新打开弹窗（凭据 / 挑战令牌已随窗体丢弃，重开即重取）。
+ */
+export function stepUpHandledAfterDismiss(
+  handledTicketId: string | undefined,
+  dismissed: 'verified' | 'cancelled',
+): string | undefined {
+  return dismissed === 'verified' ? handledTicketId : undefined;
+}
+
+/**
+ * Submit 非 success → 窗内可展示的错误（§1.6「提示 + 剩余次数」）：把登录流程
+ * 信封的失败 status 归一为错误码，交 StepUpDialog 按 errors.code.* 文案展示，
+ * 不再落成空串被当成「响应无效」。attempts_left 由 transport 侧 ApiError 携带。
+ */
+export function stepUpSubmitError(status: string): ApiError {
+  return new ApiError({
+    httpStatus: 200,
+    code: status === '' ? 'failed' : status,
+    message: '',
+    requestId: '',
+  });
+}
+
 export interface QRCodeStepProps {
   /** 扫码类 Provider 的 providerKey（§2.8 行 701）。 */
   providerKey: string;
@@ -221,11 +248,11 @@ export function QRCodeStep({
   // step-up 取因子时的人机校验 gate（StartVerification 选定因子按 §2.5 需要 captcha）。
   const stepUpGate = useCaptchaGate(Modal);
 
-  // start / submit 必须引用稳定（useCallback）：StepUpDialog 的 loadMethods 以
-  // start 为 dep、useEffect 随 loadMethods 重跑——内联闭包每次渲染换新，会在
-  // captcha 弹窗触发重渲染时把验证中的窗体重置回 loading、清挑战令牌并重复
-  // StartVerification（§3.3）。deps 取 stepUpGate.run（其本身 useCallback([prompt])、
-  // 引用稳定），不依赖 stepUpGate 对象（每次渲染新建）。
+  // start / submit 保持引用稳定（useCallback）：窗体内部 ref 固定 start，
+  // 此 useCallback 仅为引用稳定——内联闭包每次渲染换新，captcha 弹窗触发的
+  // 重渲染会让 StepUpDialog 持续拿到新引用，与 ref 口径不一致。deps 取
+  // stepUpGate.run（其本身 useCallback([prompt])、引用稳定），不依赖
+  // stepUpGate 对象（每次渲染新建）。
   const startStepUp = useCallback(
     async (method: string) => {
       const { startStepUp: startStepUpApi } = await import('../api');
@@ -267,7 +294,11 @@ export function QRCodeStep({
       // 即视为完成，回传非空占位使 StepUpDialog 判成功并关窗；登录结论由后续轮询
       // success 承担。
       const response = await submitStepUpApi(challengeToken, method, payload);
-      return response.status === 'success' ? 'ok' : '';
+      if (response.status === 'success') {
+        return 'ok';
+      }
+      // 失败态按 §1.6 出提示（含剩余次数），不吞成空串走「响应无效」。
+      throw stepUpSubmitError(response.status);
     },
     [],
   );
@@ -360,8 +391,21 @@ export function QRCodeStep({
             modal={Modal}
             start={startStepUp}
             submit={submitStepUp}
-            onVerified={() => setStepUpTicket(undefined)}
-            onCancel={() => setStepUpTicket(undefined)}
+            onVerified={() => {
+              handledStepUpRef.current = stepUpHandledAfterDismiss(
+                handledStepUpRef.current,
+                'verified',
+              );
+              setStepUpTicket(undefined);
+            }}
+            onCancel={() => {
+              // 取消即清空已处理标记：同一票据的 needs_step_up 可重新弹窗。
+              handledStepUpRef.current = stepUpHandledAfterDismiss(
+                handledStepUpRef.current,
+                'cancelled',
+              );
+              setStepUpTicket(undefined);
+            }}
           />
           <CaptchaDialog {...stepUpGate.dialogProps} />
         </>

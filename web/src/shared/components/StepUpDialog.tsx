@@ -14,7 +14,13 @@
  * 失败不关窗：Submit 失败只更新窗内错误位，表单原地保留可重试；调用方
  * 的 onVerified 抛错同样留在窗内。
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { create, type JsonObject } from '@bufbuild/protobuf';
 import {
   FieldSchema,
@@ -26,6 +32,7 @@ import type {
 } from '../../gen/proto/api/common/v1/verification_pb';
 import { ApiError, resolveCode } from '../api/errors';
 import { t } from '../i18n';
+import { toDisplay } from '../utils/int';
 import { FieldRenderer } from './FieldRenderer';
 import type { ModalRenderer } from './modal';
 
@@ -55,15 +62,28 @@ function fieldFromStruct(raw: JsonObject): Field {
   });
 }
 
+/** 以 `code` 作为因子载荷的验证方式（§2.6 payload 表）。 */
+const CODE_METHODS: ReadonlySet<string> = new Set([
+  'otp_sms',
+  'otp_email',
+  'totp',
+  'recovery_code',
+]);
+
 /**
  * 因子表单字段：优先用 start 下发能力视图的 challengeFields；无字段的
  * 验证码类因子（TOTP / 恢复码等，§2.6 payload 恒 `{code}`）补一个 code 字段，
  * 位数由 codeLength 驱动，无位数时退回文本输入（恢复码格式）。
+ * 非 code 因子（如 webauthn 的 `{credential}`，§2.6）不得退化成 code 输入：
+ * 无能力字段即返回空表单，由视图给出提示。
  */
 export function stepUpFields(method: VerificationMethod): Field[] {
   const fields = method.challengeFields.map(fieldFromStruct);
   if (fields.length > 0) {
     return fields;
+  }
+  if (!CODE_METHODS.has(method.method)) {
+    return [];
   }
   return [
     create(FieldSchema, {
@@ -94,12 +114,45 @@ export function stepUpPayload(
   return payload;
 }
 
-/** 错误 → 窗内文案（§1.5 i18n 优先，未知异常兜底不透出内部信息）。 */
-function errorText(error: unknown): string {
+/**
+ * 错误 → 窗内文案（§1.5 i18n 优先，未知异常兜底不透出内部信息）。
+ * 验证码类失败按 §1.6「提示 + 剩余次数」拼接 attempts_left（有则展示）。
+ */
+export function stepUpErrorText(error: unknown): string {
   if (error instanceof ApiError) {
-    return t(resolveCode(error).i18nKey);
+    const base = t(resolveCode(error).i18nKey);
+    const attemptsLeft = error.attemptsLeft;
+    if (attemptsLeft === undefined) {
+      return base;
+    }
+    return t('login.stepUpAttemptsLeft', {
+      message: base,
+      count: toDisplay(attemptsLeft),
+    });
   }
   return t('errors.code.unknown');
+}
+
+/**
+ * 弹窗主按钮可用性（纯函数，静态可测）：在途 / 取方式中禁用；select 阶段
+ * 无可用因子、verify 阶段无可渲染字段时同样禁用——不留「点了没反应」的静默态。
+ */
+export function stepUpOkDisabled(
+  phase: StepUpPhase,
+  methods: readonly VerificationMethod[],
+  fields: readonly Field[],
+  busy: boolean,
+): boolean {
+  if (busy || phase === 'loading') {
+    return true;
+  }
+  if (phase === 'select') {
+    return methods.length === 0;
+  }
+  if (phase === 'verify') {
+    return fields.length === 0;
+  }
+  return false;
 }
 
 /** 弹窗正文（纯视图，静态渲染可测各阶段帧）。 */
@@ -144,12 +197,16 @@ export function StepUpDialogView(props: StepUpDialogViewProps): ReactNode {
         )
       ) : null}
       {props.phase === 'verify' ? (
-        <FieldRenderer
-          fields={props.fields}
-          values={props.values}
-          onChange={props.onChange ?? (() => undefined)}
-          idPrefix="stepup"
-        />
+        props.fields.length === 0 ? (
+          <p role="status">{t('login.stepUpFactorUnsupported')}</p>
+        ) : (
+          <FieldRenderer
+            fields={props.fields}
+            values={props.values}
+            onChange={props.onChange ?? (() => undefined)}
+            idPrefix="stepup"
+          />
+        )
       ) : null}
     </>
   );
@@ -188,6 +245,11 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
 
+  // start 放 ref：取因子的首屏 effect 只随挂载跑一次，调用方即使传内联闭包
+  // （每次渲染换新引用）也不会重跑 StartVerification、清掉在途挑战令牌。
+  const startRef = useRef(start);
+  startRef.current = start;
+
   const loadMethods = useCallback(async () => {
     setPhase('loading');
     setMessage(undefined);
@@ -197,7 +259,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
     setChallengeToken('');
     setValues({});
     try {
-      const response = await start('');
+      const response = await startRef.current('');
       if (response === undefined) {
         setMessage(t('account.stepUpInvalidResponse'));
         setPhase('error');
@@ -208,10 +270,10 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
       setSelectedMethod(first);
       setPhase('select');
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(stepUpErrorText(error));
       setPhase('error');
     }
-  }, [start]);
+  }, []);
 
   useEffect(() => {
     void loadMethods();
@@ -224,7 +286,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
     setBusy(true);
     setMessage(undefined);
     try {
-      const response = await start(selectedMethod);
+      const response = await startRef.current(selectedMethod);
       if (response === undefined) {
         return;
       }
@@ -242,11 +304,11 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
       setValues({});
       setPhase('verify');
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(stepUpErrorText(error));
     } finally {
       setBusy(false);
     }
-  }, [methods, selectedMethod, start]);
+  }, [methods, selectedMethod]);
 
   const submitForm = useCallback(async () => {
     if (activeMethod === undefined || challengeToken === '') {
@@ -267,7 +329,7 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
       }
       await onVerified(token);
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(stepUpErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -310,7 +372,9 @@ export function StepUpDialog(props: StepUpDialogProps): ReactNode {
         closable={!busy}
         closeOnEsc={!busy}
         maskClosable={false}
-        okButtonProps={{ disabled: busy || phase === 'loading' }}
+        okButtonProps={{
+          disabled: stepUpOkDisabled(phase, methods, fields, busy),
+        }}
         onOk={handleOk}
         onCancel={() => {
           if (!busy) {

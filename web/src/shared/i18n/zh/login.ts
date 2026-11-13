@@ -77,6 +77,11 @@ export const login = {
   'login.initMissing': '初始化数据缺失，请刷新重试',
   'login.routeNotFound': '页面不存在',
   'login.renderError': '页面出现异常，请刷新重试',
+  // ---- 扫码链路的二次验证弹窗（shared/components/StepUpDialog）------------
+  // 因子失败：错误提示 + 剩余尝试次数（接口文档 §1.6 invalid_code）。
+  'login.stepUpAttemptsLeft': '{message}（还可尝试 {count} 次）',
+  // 该因子无能力字段、且 verify 载荷不是 code（如 webauthn 的 credential）。
+  'login.stepUpFactorUnsupported': '暂不支持在此完成该验证方式，请选择其他方式',
 
   // ---- 后端下发字段文案（sso.v1.Field.label / 注入快照 SnapshotField.label）----
   // 登录流程的 factor.Field、pages.SnapshotField、orchestrator.FieldSnapshot

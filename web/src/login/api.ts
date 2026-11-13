@@ -240,13 +240,24 @@ export function startLoginVerification(): Promise<StartVerificationResponse> {
 // GetLoginTicket 进入 success 再走终点，故本域不消费 SubmitVerificationResponse.verificationToken。
 // ---------------------------------------------------------------------------
 
-/** CaptchaPayload → google.protobuf.Struct 的 JSON 形状（StartVerificationRequest.captcha 为 Struct，§12.9）。 */
-function captchaToStruct(captcha: CaptchaPayload): JsonObject {
+/**
+ * CaptchaPayload → google.protobuf.Struct 的 JSON 形状（StartVerificationRequest.captcha
+ * 为 Struct，§12.9）：只承载凭据字段（providerKey / id / answer / token），
+ * 不把消息自带的类型标识与零值字段写进 Struct（标准 protojson 省略零值）。
+ */
+export function captchaToStruct(captcha: CaptchaPayload): JsonObject {
   const out: JsonObject = {};
-  for (const [key, value] of Object.entries(captcha)) {
-    if (typeof value === 'string') {
-      out[key] = value;
-    }
+  if (captcha.providerKey !== '') {
+    out.providerKey = captcha.providerKey;
+  }
+  if (captcha.id !== '') {
+    out.id = captcha.id;
+  }
+  if (captcha.answer !== '') {
+    out.answer = captcha.answer;
+  }
+  if (captcha.token !== '') {
+    out.token = captcha.token;
   }
   return out;
 }

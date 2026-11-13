@@ -2321,9 +2321,9 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
       captcha: imageToken('cap-9', '999'),
     });
     expect(response.challengeToken).toBe('ct-1');
-    // captcha 走请求顶层 Struct（§3.8.2）：凭据三元组就位即成立；Struct 由
-    // api.ts captchaToStruct 逐字符串字段拷贝（含消息 $typeName / 零值 token），
-    // 故按子集匹配，不钉死序列化副产物。
+    // captcha 走请求顶层 Struct（§3.8.2）：凭据三元组就位即成立；api.ts
+    // captchaToStruct 按白名单仅拷非空凭据字段（零值省略），故按子集匹配，
+    // 不钉死序列化副产物。
     expect(bodies[0]).toMatchObject({
       bizPurpose: 'login',
       operation: 'mfa_verify',
