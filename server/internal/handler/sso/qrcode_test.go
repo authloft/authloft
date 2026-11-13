@@ -1,4 +1,4 @@
-// qrcode_test.go 覆盖扫码三桩的 handler 层用例：CreateQrcode 响应透传 +
+// qrcode_test.go 覆盖扫码拉码 / 轮询与统一写票的 handler 层用例：CreateQrcode 响应透传 +
 // 哨兵错误映射（captcha_required / captcha_invalid 带 ErrorInfo、bind 无
 // 会话 401、provider_disabled 400）；GetLoginTicket 信封透传 + 命中建会话
 // 后 Set-Cookie: al_session；ConfirmLoginTicket 的 uid 从 ctx 注入与
@@ -37,19 +37,6 @@ type fakeQrcode struct {
 	pollOut   *service.GetLoginTicketOutput
 	gotPoll   service.GetLoginTicketInput
 	pollCalls int
-
-	confirmOut   *ssov1.TicketStatus
-	confirmErr   error
-	gotConfirm   service.ConfirmLoginTicketInput
-	confirmCalls int
-
-	resolveOut  *service.MFAPending
-	resolveErr  error
-	gotResolve  string
-	markErr     error
-	gotMark     [2]string
-	completeErr error
-	gotComplete string
 }
 
 // ssov1CaptchaView 测试内联视图（避免直接引用 CaptchaPayload 生成类型的
@@ -75,25 +62,18 @@ func (f *fakeQrcode) GetLoginTicket(_ context.Context, in service.GetLoginTicket
 	return f.pollOut
 }
 
-func (f *fakeQrcode) ConfirmLoginTicket(_ context.Context, in service.ConfirmLoginTicketInput) (*ssov1.TicketStatus, error) {
-	f.confirmCalls++
-	f.gotConfirm = in
-	return f.confirmOut, f.confirmErr
+// fakeLoginTicket 统一写票 service 的 fake：记录入参、返回预置产物。
+type fakeLoginTicket struct {
+	out   *ssov1.TicketStatus
+	err   error
+	gotIn service.WriteTicketInput
+	calls int
 }
 
-func (f *fakeQrcode) ResolveMFAPending(_ context.Context, ticketID string) (*service.MFAPending, error) {
-	f.gotResolve = ticketID
-	return f.resolveOut, f.resolveErr
-}
-
-func (f *fakeQrcode) MarkMFAPending(_ context.Context, ticketID, loginToken string) error {
-	f.gotMark = [2]string{ticketID, loginToken}
-	return f.markErr
-}
-
-func (f *fakeQrcode) CompleteStepUp(_ context.Context, ticketID string) error {
-	f.gotComplete = ticketID
-	return f.completeErr
+func (f *fakeLoginTicket) WriteTicket(_ context.Context, in service.WriteTicketInput) (*ssov1.TicketStatus, error) {
+	f.calls++
+	f.gotIn = in
+	return f.out, f.err
 }
 
 // TestCreateQrcodeConnect 200 透传 + captcha payload 映射 + bind 的 uid
@@ -262,8 +242,8 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 	// 主体用例：ctx 带 uid=9（模拟会话拦截器注入），body session 缺省 →
 	// service 收到 SessionUID=9；同 uid 校验失败与无会话映射。
 	t.Run("ctx uid 注入 + 回显", func(t *testing.T) {
-		qr := &fakeQrcode{confirmOut: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"}}
-		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr),
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil).WithLoginTicket(lt),
 			connect.WithInterceptors(connect.UnaryInterceptorFunc(
 				func(next connect.UnaryFunc) connect.UnaryFunc {
 					return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -293,14 +273,14 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 		if got.Status != "success" || got.TicketID != "c7Kx9" {
 			t.Fatalf("body = %+v, want {success c7Kx9}", got)
 		}
-		if qr.gotConfirm.TicketID != "c7Kx9" || qr.gotConfirm.SessionUID != 9 || qr.gotConfirm.Session != "" {
-			t.Errorf("service 入参 = %+v, want SessionUID=9（ctx 注入）", qr.gotConfirm)
+		if lt.gotIn.TicketID != "c7Kx9" || lt.gotIn.SessionUID != 9 || lt.gotIn.Session != "" || lt.calls != 1 {
+			t.Errorf("写票入参 = %+v calls = %d, want SessionUID=9（ctx 注入）", lt.gotIn, lt.calls)
 		}
 	})
 
 	t.Run("body session 透传", func(t *testing.T) {
-		qr := &fakeQrcode{confirmOut: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"}}
-		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr))
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil).WithLoginTicket(lt))
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceConfirmLoginTicketProcedure,
 			strings.NewReader(`{"ticketId":"c7Kx9","session":"body-session-token"}`))
@@ -309,8 +289,8 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("HTTP = %d (body %s)", rec.Code, rec.Body.String())
 		}
-		if qr.gotConfirm.Session != "body-session-token" {
-			t.Errorf("body session = %q, want 透传", qr.gotConfirm.Session)
+		if lt.gotIn.Session != "body-session-token" {
+			t.Errorf("body session = %q, want 透传", lt.gotIn.Session)
 		}
 	})
 
@@ -325,8 +305,8 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				qr := &fakeQrcode{confirmErr: tc.err}
-				_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr))
+				lt := &fakeLoginTicket{err: tc.err}
+				_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil).WithLoginTicket(lt))
 				rec := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceConfirmLoginTicketProcedure,
 					strings.NewReader(`{"ticketId":"c7Kx9"}`))

@@ -51,9 +51,12 @@ type Handler struct {
 	// thirdparty 三方登录通道 service（oauth.go）；nil（测试 / 未装配）时
 	// Authorize / LoginOauth 返回 unimplemented。
 	thirdparty Thirdparty
-	// qrcode 扫码三桩 service；nil（测试 / 未装配）时三个扫码
+	// qrcode 扫码拉码与轮询 service；nil（测试 / 未装配）时两个扫码
 	// 方法返回 unimplemented。
 	qrcode Qrcode
+	// loginTicket 统一写票 service（ConfirmLoginTicket 与 LoginOauth 扫码
+	// 分支共用）；nil（测试 / 未装配）时相关方法返回 unimplemented。
+	loginTicket LoginTicketWriter
 	// verification step-up 服务（§3.8）；nil（测试 / 未装配）时两个
 	// 二次验证方法返回 unimplemented。
 	verification Verification
@@ -64,6 +67,13 @@ type Handler struct {
 type Verification interface {
 	Start(ctx context.Context, in verification.StartInput) (*verification.StartResult, *captcha.Failure, error)
 	Submit(ctx context.Context, in verification.SubmitInput) (*verification.SubmitResult, error)
+}
+
+// LoginTicketWriter 统一写票窄接口（§20 依赖注入）：生产注入
+// *service.LoginTicket，测试可传 fake；ConfirmLoginTicket 与 LoginOauth
+// 扫码分支共用同一写票入口。
+type LoginTicketWriter interface {
+	WriteTicket(ctx context.Context, in service.WriteTicketInput) (*ssov1.TicketStatus, error)
 }
 
 // New 构造 SsoService handler。images 为自绘图形码实现
@@ -78,6 +88,13 @@ func New(engine Engine, images *captcha.ImageCaptcha, cookies *session.Cookie, t
 	if len(v) > 0 {
 		h.verification = v[0]
 	}
+	return h
+}
+
+// WithLoginTicket 注入统一写票 service；与 New 的可变参数装配点解耦，
+// 既有装配点与测试桩保持不变。
+func (h *Handler) WithLoginTicket(w LoginTicketWriter) *Handler {
+	h.loginTicket = w
 	return h
 }
 
@@ -174,39 +191,20 @@ func encodeCaptchaFailure(f *captcha.Failure) error {
 // errVerificationNotConfigured 未装配 step-up 服务（测试桩）。
 var errVerificationNotConfigured = errors.New("verification service not configured")
 
-// StartVerification（§3.8.1、§3.8.2，SsoService 组）：登录 / 扫码链路以
-// loginToken 或 mfaPendingId 推导主体，下发挑战令牌与可用因子。扫码场景的
-// mfaPendingId 是票据标识，由扫码 service 校验票据存在 / scene 并取目标 uid
-// 后注入验证内核（§2.8 行 884）；loginToken 与 mfaPendingId 二选一，前者优先。
+// StartVerification（§3.8.1、§3.8.2，SsoService 组）：以 loginToken 为
+// 唯一的主体凭证推导主体，下发挑战令牌与可用因子；扫码 step-up 取
+// GetLoginTicket 在 needs_step_up 时下发的新 loginToken（§2.8）。
 func (h *Handler) StartVerification(ctx context.Context, req *connect.Request[commonv1.StartVerificationRequest]) (*connect.Response[commonv1.StartVerificationResponse], error) {
 	if h.verification == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errVerificationNotConfigured)
 	}
-	var claim *verification.MFAPendingClaim
-	if id := req.Msg.GetMfaPendingId(); id != "" && req.Msg.GetLoginToken() == "" {
-		if h.qrcode == nil {
-			return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
-		}
-		pending, err := h.qrcode.ResolveMFAPending(ctx, id)
-		if err != nil {
-			return nil, mapMFAPendingError(err)
-		}
-		claim = &verification.MFAPendingClaim{
-			TicketID: pending.TicketID,
-			Scene:    pending.Scene,
-			Status:   pending.Status,
-			UID:      pending.UID,
-		}
-	}
 	res, failure, err := h.verification.Start(ctx, verification.StartInput{
-		Domain:       verification.DomainSSO,
-		BizPurpose:   verification.BizPurpose(req.Msg.GetBizPurpose()),
-		Method:       req.Msg.GetMethod(),
-		Operation:    req.Msg.GetOperation(),
-		LoginToken:   req.Msg.GetLoginToken(),
-		MFAPendingID: req.Msg.GetMfaPendingId(),
-		MFAPending:   claim,
-		Captcha:      verification.ParseCaptchaSubmission(req.Msg.GetCaptcha()),
+		Domain:     verification.DomainSSO,
+		BizPurpose: verification.BizPurpose(req.Msg.GetBizPurpose()),
+		Method:     req.Msg.GetMethod(),
+		Operation:  req.Msg.GetOperation(),
+		LoginToken: req.Msg.GetLoginToken(),
+		Captcha:    verification.ParseCaptchaSubmission(req.Msg.GetCaptcha()),
 	})
 	if err != nil {
 		return nil, mapVerificationError("sso", err)
@@ -242,16 +240,6 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 			return connect.NewResponse(out), nil
 		}
 		return nil, mapVerificationError("sso", err)
-	}
-	// 扫码链路：step-up 通过后把票据快照改写为成功终态（§2.8 行 884），PC 端
-	// 下一次轮询进入 success 并拿到登录信封。
-	if res.TicketID != "" {
-		if h.qrcode == nil {
-			return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
-		}
-		if err := h.qrcode.CompleteStepUp(ctx, res.TicketID); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, errThirdpartyInternal)
-		}
 	}
 	return connect.NewResponse(&commonv1.SubmitVerificationResponse{
 		Status:        res.Status,
@@ -383,12 +371,17 @@ func (h *Handler) LoginOauth(ctx context.Context, req *connect.Request[ssov1.Log
 	in := dto.LoginOauth(req.Msg)
 	in.StateCookie = loginStateCookie(req)
 	out := h.thirdparty.LoginOauth(ctx, in)
-	// 扫码 + 已启用 MFA：小程序端返回 mfa_required 时把票据快照改写为
-	// mfa_pending（§2.8 行 884、§13.2 行 1680），PC 端轮询得 needs_step_up。
-	// 写入失败不改变本次响应，PC 端按票据过期兜底。
-	if in.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.qrcode != nil {
-		if err := h.qrcode.MarkMFAPending(ctx, in.TicketID, out.Envelope.GetLoginToken()); err != nil {
-			logx.Warn(ctx, "sso: mark qrcode mfa pending failed", "ticket_id", in.TicketID, "error", err)
+	// 扫码 + 已启用 MFA：小程序端返回 mfa_required 时经统一写票 service
+	// 写票（写入状态由该 service 按目标用户的二次验证启用状态自行判定，
+	// §2.8 行 884、§13.2 行 1680），PC 端轮询得 needs_step_up。目标 uid
+	// 由小程序端信封携带的 loginToken 经写票 service 校验恢复；写入失败
+	// 不改变本次响应，PC 端按票据过期兜底。
+	if in.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.loginTicket != nil {
+		if _, err := h.loginTicket.WriteTicket(ctx, service.WriteTicketInput{
+			TicketID:   in.TicketID,
+			LoginToken: out.Envelope.GetLoginToken(),
+		}); err != nil {
+			logx.Warn(ctx, "sso: write qrcode mfa pending failed", "ticket_id", in.TicketID, "error", err)
 		}
 	}
 	if out.Cookie != nil {
@@ -444,22 +437,18 @@ func mapThirdpartyError(err error) error {
 // 业务失败走可判别哨兵错误 → Connect 错误体 + ErrorInfo（CreateQrcode 是
 // 普通 RPC；GetLoginTicket 的轮询结论走 HTTP 200 信封域，§1.3 / §1.6）。
 
-// Qrcode 扫码三桩 service 窄接口（§20 依赖注入）：生产注入 *service.QRCode，
-// 测试可传 fake；nil 时三个方法返回 unimplemented。
+// Qrcode 扫码拉码与轮询 service 窄接口（§20 依赖注入）：生产注入
+// *service.QRCode，测试可传 fake；nil 时两个方法返回 unimplemented。
 type Qrcode interface {
 	CreateQrcode(ctx context.Context, in service.CreateQrcodeInput) (*service.CreateQrcodeOutput, error)
 	GetLoginTicket(ctx context.Context, in service.GetLoginTicketInput) *service.GetLoginTicketOutput
-	ConfirmLoginTicket(ctx context.Context, in service.ConfirmLoginTicketInput) (*ssov1.TicketStatus, error)
-	// ResolveMFAPending / MarkMFAPending / CompleteStepUp 扫码 MFA 中间态
-	// （§2.8 行 884）：轮询 needs_step_up、StartVerification 取目标 uid、
-	// step-up 通过后写终态。
-	ResolveMFAPending(ctx context.Context, ticketID string) (*service.MFAPending, error)
-	MarkMFAPending(ctx context.Context, ticketID, loginToken string) error
-	CompleteStepUp(ctx context.Context, ticketID string) error
 }
 
 // errQrcodeNotConfigured 未装配扫码 service（测试桩）。
 var errQrcodeNotConfigured = errors.New("qrcode service not configured")
+
+// errLoginTicketNotConfigured 未装配统一写票 service（测试桩）。
+var errLoginTicketNotConfigured = errors.New("login ticket service not configured")
 
 // CreateQrcode 拉取小程序码（接口文档 §2.8 行 702-719）：captcha 必检、
 // 登录与绑定共用靠 scene 区分；响应 {ticket, ticketId, qrcodeUrl,
@@ -496,16 +485,17 @@ func (h *Handler) GetLoginTicket(ctx context.Context, req *connect.Request[ssov1
 	return connect.NewResponse(out.Envelope), nil
 }
 
-// ConfirmLoginTicket 已登录一端写入授权结果（接口文档 §2.8 行 750-759）：
-// body session 与 Cookie al_session 并存以 body 为准（uid 一致性校验在
-// service）；Cookie 侧 uid 经 session 拦截器解出注入 ctx（无有效 Cookie
-// 会话为 0，service 判定）。响应回显 {status, ticket_id}。
+// ConfirmLoginTicket 已登录一端写入授权结果（接口文档 §2.8）：写点收敛到
+// 统一写票 service，由该 service 按目标用户的二次验证启用状态自行判定写
+// success / mfa_pending（§2.8、§11.6.5）；handler 只投影主体凭证，body
+// session 与 Cookie al_session 并存以 body 为准（uid 一致性校验在 service），
+// Cookie 侧 uid 经 session 拦截器解出注入 ctx。响应回显 {status, ticket_id}。
 func (h *Handler) ConfirmLoginTicket(ctx context.Context, req *connect.Request[ssov1.ConfirmLoginTicketRequest]) (*connect.Response[ssov1.TicketStatus], error) {
-	if h.qrcode == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
+	if h.loginTicket == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errLoginTicketNotConfigured)
 	}
 	uid, _ := session.UIDFromContext(ctx)
-	st, err := h.qrcode.ConfirmLoginTicket(ctx, dto.ConfirmLoginTicket(req.Msg, uid))
+	st, err := h.loginTicket.WriteTicket(ctx, dto.ConfirmLoginTicket(req.Msg, uid))
 	if err != nil {
 		return nil, mapQrcodeError(err)
 	}
@@ -526,24 +516,6 @@ func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 		})
 	}
 	return coded
-}
-
-// mapMFAPendingError 扫码 step-up 的主体凭证错误映射（§3.8.5 行 1301）：
-// 票据不存在 / 已过期 / 非 mfa_pending → token_invalid；scene 不符 →
-// invalid_request；未知错误不暴露内部信息。
-func mapMFAPendingError(err error) error {
-	switch {
-	case errors.Is(err, service.ErrQrcodeTicketScene), errors.Is(err, service.ErrQrcodeInvalidRequest):
-		return internalconnect.WithErrorInfo(
-			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("sso", "invalid_request", "invalid mfa pending ticket"))
-	case errors.Is(err, service.ErrQrcodeTicketInvalid):
-		return internalconnect.WithErrorInfo(
-			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("sso", "token_invalid", "mfa pending ticket invalid or expired"))
-	default:
-		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
-	}
 }
 
 // mapQrcodeError 扫码域哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行

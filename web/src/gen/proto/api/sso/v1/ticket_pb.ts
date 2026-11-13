@@ -6,13 +6,14 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { CaptchaPayload } from "./login_pb";
 import { file_api_sso_v1_login } from "./login_pb";
-import type { Message } from "@bufbuild/protobuf";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/sso/v1/ticket.proto.
  */
 export const file_api_sso_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJnChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCJhChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAyI1ChVHZXRMb2dpblRpY2tldFJlcXVlc3QSDgoGdGlja2V0GAEgASgJEgwKBHBvbGwYAiABKAMiPwoZQ29uZmlybUxvZ2luVGlja2V0UmVxdWVzdBIRCgl0aWNrZXRfaWQYASABKAkSDwoHc2Vzc2lvbhgCIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_api_sso_v1_login]);
+  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJnChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCJhChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAyJcChVHZXRMb2dpblRpY2tldFJlcXVlc3QSDgoGdGlja2V0GAEgASgJEgwKBHBvbGwYAiABKAMSJQoEb2lkYxgDIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiPwoZQ29uZmlybUxvZ2luVGlja2V0UmVxdWVzdBIRCgl0aWNrZXRfaWQYASABKAkSDwoHc2Vzc2lvbhgCIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_api_sso_v1_login, file_google_protobuf_struct]);
 
 /**
  * CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
@@ -118,6 +119,15 @@ export type GetLoginTicketRequest = Message<"api.sso.v1.GetLoginTicketRequest"> 
    * @generated from field: int64 poll = 2;
    */
   poll: bigint;
+
+  /**
+   * OIDC 上下文（§2.8 行 867、§2.7.2）：扫码 step-up 时回传给
+   * State.Issue 写入 login_token.oidc；非扫码场景不传。按 §12.8 顺延编号，
+   * 不改既有字段号与语义。
+   *
+   * @generated from field: google.protobuf.Struct oidc = 3;
+   */
+  oidc?: JsonObject | undefined;
 };
 
 /**

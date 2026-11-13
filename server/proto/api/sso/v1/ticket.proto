@@ -7,6 +7,7 @@ package api.sso.v1;
 // 定义在 envelope.proto，仅由 sso.proto 的 service 定义引用，本文件不直接使用，不 import
 //（避免 buf lint 的 unused import）。
 import "api/sso/v1/login.proto";
+import "google/protobuf/struct.proto";
 
 // 包名 api.sso.v1（docs/接口文档.md §12.9 行 1747）；Go 产物 authloft/gen/go/api/sso/v1（ssov1）。
 option go_package = "authloft/gen/go/api/sso/v1;ssov1";
@@ -47,6 +48,10 @@ message GetLoginTicketRequest {
   // 长轮询最长等待秒数，上限 15（本上限全文档唯一定义处，§2.8 行 714）；
   // 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
   int64 poll = 2;
+  // OIDC 上下文（§2.8 行 867、§2.7.2）：扫码 step-up 时回传给
+  // State.Issue 写入 login_token.oidc；非扫码场景不传。按 §12.8 顺延编号，
+  // 不改既有字段号与语义。
+  google.protobuf.Struct oidc = 3;
 }
 
 // GetLoginTicket 的响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含

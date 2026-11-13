@@ -384,14 +384,16 @@ func TestLoginOauthErrorInternal(t *testing.T) {
 }
 
 // TestLoginOauthScanMFAPending 小程序端扫码 + 已启用 MFA：响应仍为
-// mfa_required，同时把票据快照改写为 mfa_pending（§2.8 行 884、§13.2）。
+// mfa_required，同时经统一写票 service 把票据结果写为 mfa_pending
+// （§2.8 行 884、§13.2）；目标 uid 由 loginToken 校验恢复。
 func TestLoginOauthScanMFAPending(t *testing.T) {
 	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 		Status:     orchestrator.StatusMFARequired,
 		LoginToken: "lt-1",
 	}}}
-	qr := &fakeQrcode{}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, qr))
+	lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "mfa_pending", TicketId: "c7Kx9"}}
+	_, handler := ssov1connect.NewSsoServiceHandler(
+		New(&fakeEngine{}, nil, nil, tp, nil).WithLoginTicket(lt))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceLoginOauthProcedure,
 		strings.NewReader(`{"providerKey":"wechat_mp_scan","code":"c","ticketId":"c7Kx9"}`))
@@ -401,8 +403,8 @@ func TestLoginOauthScanMFAPending(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	if qr.gotMark != [2]string{"c7Kx9", "lt-1"} {
-		t.Fatalf("MarkMFAPending 入参 = %v, want [c7Kx9 lt-1]", qr.gotMark)
+	if lt.calls != 1 || lt.gotIn.TicketID != "c7Kx9" || lt.gotIn.LoginToken != "lt-1" {
+		t.Fatalf("写票入参 = %+v calls = %d, want {c7Kx9 lt-1}（状态由写票 service 自行判定）", lt.gotIn, lt.calls)
 	}
 	if got := decodeEnvelope(t, rec.Body.String()); got.GetStatus() != orchestrator.StatusMFARequired {
 		t.Fatalf("status = %q, want mfa_required", got.GetStatus())

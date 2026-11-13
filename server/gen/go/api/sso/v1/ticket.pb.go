@@ -9,6 +9,7 @@ package ssov1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -172,7 +173,11 @@ type GetLoginTicketRequest struct {
 	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	// 长轮询最长等待秒数，上限 15（本上限全文档唯一定义处，§2.8 行 714）；
 	// 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
-	Poll          int64 `protobuf:"varint,2,opt,name=poll,proto3" json:"poll,omitempty"`
+	Poll int64 `protobuf:"varint,2,opt,name=poll,proto3" json:"poll,omitempty"`
+	// OIDC 上下文（§2.8 行 867、§2.7.2）：扫码 step-up 时回传给
+	// State.Issue 写入 login_token.oidc；非扫码场景不传。按 §12.8 顺延编号，
+	// 不改既有字段号与语义。
+	Oidc          *structpb.Struct `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -219,6 +224,13 @@ func (x *GetLoginTicketRequest) GetPoll() int64 {
 		return x.Poll
 	}
 	return 0
+}
+
+func (x *GetLoginTicketRequest) GetOidc() *structpb.Struct {
+	if x != nil {
+		return x.Oidc
+	}
+	return nil
 }
 
 // ConfirmLoginTicketRequest 是 SsoService/ConfirmLoginTicket 的请求消息
@@ -286,7 +298,7 @@ var File_api_sso_v1_ticket_proto protoreflect.FileDescriptor
 const file_api_sso_v1_ticket_proto_rawDesc = "" +
 	"\n" +
 	"\x17api/sso/v1/ticket.proto\x12\n" +
-	"api.sso.v1\x1a\x16api/sso/v1/login.proto\"\x84\x01\n" +
+	"api.sso.v1\x1a\x16api/sso/v1/login.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x84\x01\n" +
 	"\x13CreateQrcodeRequest\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05scene\x18\x02 \x01(\tR\x05scene\x124\n" +
@@ -297,10 +309,11 @@ const file_api_sso_v1_ticket_proto_rawDesc = "" +
 	"\n" +
 	"qrcode_url\x18\x03 \x01(\tR\tqrcodeUrl\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x04 \x01(\x03R\texpiresIn\"C\n" +
+	"expires_in\x18\x04 \x01(\x03R\texpiresIn\"p\n" +
 	"\x15GetLoginTicketRequest\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x12\n" +
-	"\x04poll\x18\x02 \x01(\x03R\x04poll\"R\n" +
+	"\x04poll\x18\x02 \x01(\x03R\x04poll\x12+\n" +
+	"\x04oidc\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"R\n" +
 	"\x19ConfirmLoginTicketRequest\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x18\n" +
 	"\asession\x18\x02 \x01(\tR\asessionB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
@@ -324,14 +337,16 @@ var file_api_sso_v1_ticket_proto_goTypes = []any{
 	(*GetLoginTicketRequest)(nil),     // 2: api.sso.v1.GetLoginTicketRequest
 	(*ConfirmLoginTicketRequest)(nil), // 3: api.sso.v1.ConfirmLoginTicketRequest
 	(*CaptchaPayload)(nil),            // 4: api.sso.v1.CaptchaPayload
+	(*structpb.Struct)(nil),           // 5: google.protobuf.Struct
 }
 var file_api_sso_v1_ticket_proto_depIdxs = []int32{
 	4, // 0: api.sso.v1.CreateQrcodeRequest.captcha:type_name -> api.sso.v1.CaptchaPayload
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 1: api.sso.v1.GetLoginTicketRequest.oidc:type_name -> google.protobuf.Struct
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_api_sso_v1_ticket_proto_init() }

@@ -135,7 +135,8 @@ func CreateQrcode(req *ssov1.CreateQrcodeRequest) service.CreateQrcodeInput {
 }
 
 // GetLoginTicket 把 SsoService/GetLoginTicket 请求消息转换为扫码 service
-// 入参（docs/接口文档.md §2.8 行 724-729）：ticket / poll 直映。
+// 入参（docs/接口文档.md §2.8 行 724-729）：ticket / poll 直映；oidc 复用
+// LoginDefault 的映射（§2.8 行 867，扫码 step-up 时回传 OIDC 上下文）。
 func GetLoginTicket(req *ssov1.GetLoginTicketRequest) service.GetLoginTicketInput {
 	if req == nil {
 		return service.GetLoginTicketInput{}
@@ -143,17 +144,20 @@ func GetLoginTicket(req *ssov1.GetLoginTicketRequest) service.GetLoginTicketInpu
 	return service.GetLoginTicketInput{
 		Ticket: req.GetTicket(),
 		Poll:   req.GetPoll(),
+		OIDC:   oidc(req.GetOidc()),
 	}
 }
 
-// ConfirmLoginTicket 把 SsoService/ConfirmLoginTicket 请求消息转换为扫码
-// service 入参（docs/接口文档.md §2.8 行 750-757）：ticket_id / session 直映；
-// sessionUID 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。
-func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) service.ConfirmLoginTicketInput {
+// ConfirmLoginTicket 把 SsoService/ConfirmLoginTicket 请求消息转换为统一
+// 写票 service 入参（docs/接口文档.md §2.8）：ticket_id / session 直映；
+// sessionUID 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。写入状态
+// success / mfa_pending 不在此层决定，由写票 service 按目标用户的二次验证
+// 启用状态自行判定（§2.8、§11.6.5），本层只负责主体凭证投影。
+func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) service.WriteTicketInput {
 	if req == nil {
-		return service.ConfirmLoginTicketInput{}
+		return service.WriteTicketInput{}
 	}
-	return service.ConfirmLoginTicketInput{
+	return service.WriteTicketInput{
 		TicketID:   req.GetTicketId(),
 		Session:    req.GetSession(),
 		SessionUID: sessionUID,

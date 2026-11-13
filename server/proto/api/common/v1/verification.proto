@@ -52,8 +52,9 @@ message StartVerificationRequest {
   string method = 2;
   // 仅 SsoService 且 biz_purpose=login 必填（§3.8.1）。
   string login_token = 3;
-  // 仅扫码场景必填，取扫码票据 ticketId（§3.8.1）。
-  string mfa_pending_id = 4;
+  // 编号 4 原为扫码主体凭证，按 §12.8 弃用并保留编号、不再复用；
+  // 扫码 step-up 改由 GetLoginTicket 下发的 loginToken 作唯一主体凭证。
+  reserved 4;
   // 必填，写入挑战令牌，规则见 §3.8.4。
   string operation = 5;
   // 请求级人机校验凭据，是否需要按 §2.5 触发表判定；凭据结构见 §2.5。

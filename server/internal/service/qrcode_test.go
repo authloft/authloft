@@ -1,9 +1,10 @@
-// qrcode_test.go 覆盖扫码三桩 service 层用例：CreateQrcode（captcha
+// qrcode_test.go 覆盖扫码拉码与轮询 service 层用例：CreateQrcode（captcha
 // 必检 / scene 分派与 bind 401 / ticket 形态与加密 / 码图链与 storage 渲染
 // / 未配置拒绝）；GetLoginTicket 五态轮询（pending / scanned 补写 / expired
 // 终态不消费 / success 建会话 / binding_required 信封 / 失败类映射）+
-// poll 钳制 + 码图自动删除投递；ConfirmLoginTicket（body 与 Cookie 优先级、
-// 同 uid 校验、写入形态、幂等）；TicketResultSealer protojson 整值加密往返。
+// needs_step_up 下发带 OIDC 上下文的 loginToken + poll 钳制 +
+// 码图自动删除投递；TicketResultSealer protojson 整值加密往返。统一写票
+// service 的双分支与主体校验见 login_ticket_test.go。
 // 全部走 fake（TicketStore / Storage / Gate verifier / SessionVerifier），
 // 不连 DB / Redis；GETDEL 原子性由 cache 包 ticket_test.go 覆盖。
 package service
@@ -207,7 +208,6 @@ func newQrEnv(t *testing.T) *qrEnv {
 		TicketPayloads: env.payloads,
 		Storage:        env.resolver,
 		Queue:          env.queue,
-		Sessions:       env.sessions,
 		State:          env.state,
 		Terminal:       orchestrator.NewTerminal(env.writer, nil, nil, nil, nil),
 		NewTID:         func() (string, error) { return "tid-qr-1", nil },
@@ -503,7 +503,7 @@ func TestCreateQrcodeProviderFailures(t *testing.T) {
 		e.svc = NewQRCode(QRCodeDeps{
 			Loader: e.loader, NewAdapter: func(*provider.Provider) (provider.AuthAdapter, error) { return api, nil },
 			Gate: e.gate, TicketCodec: e.ticketC, Tickets: e.tickets, Storage: e.resolver,
-			Queue: e.queue, Sessions: e.sessions, State: e.state,
+			Queue: e.queue, State: e.state,
 			Terminal: orchestrator.NewTerminal(e.writer, nil, nil, nil, nil),
 			Now:      func() time.Time { return e.now },
 		})
@@ -766,69 +766,6 @@ func TestGetLoginTicketAutoDelete(t *testing.T) {
 	})
 }
 
-// —— ConfirmLoginTicket ——
-
-// TestConfirmLoginTicketSessionPriority body 与 Cookie 并存以 body 为准、
-// 同 uid 校验否则 invalid_request；缺省取 Cookie（§2.8 行 757）。
-func TestConfirmLoginTicketSessionPriority(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("body 优先 + 同 uid 成功", func(t *testing.T) {
-		e := newQrEnv(t)
-		st, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{
-			TicketID: "tid123", Session: "body-token", SessionUID: 9,
-		})
-		if err != nil {
-			t.Fatalf("Confirm: %v", err)
-		}
-		if st.GetStatus() != "success" || st.GetTicketId() != "tid123" {
-			t.Fatalf("status = %+v, want {success tid123}", st)
-		}
-		// 写入形态：scene=login、status=success、uid=9、v=1、channel=qrcode。
-		if len(e.tickets.compWrites) != 1 || e.tickets.compWrites[0] != "tid123" {
-			t.Fatalf("compWrites = %v", e.tickets.compWrites)
-		}
-	})
-	t.Run("body 与 Cookie uid 不一致", func(t *testing.T) {
-		e := newQrEnv(t)
-		_, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{
-			TicketID: "tid123", Session: "body-token", SessionUID: 8,
-		})
-		if !errors.Is(err, ErrQrcodeInvalidRequest) {
-			t.Fatalf("err = %v, want ErrQrcodeInvalidRequest", err)
-		}
-	})
-	t.Run("仅 Cookie 会话", func(t *testing.T) {
-		e := newQrEnv(t)
-		st, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{TicketID: "tid123", SessionUID: 9})
-		if err != nil || st.GetStatus() != "success" {
-			t.Fatalf("err = %v, st = %+v", err, st)
-		}
-	})
-	t.Run("无任何会话 401", func(t *testing.T) {
-		e := newQrEnv(t)
-		_, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{TicketID: "tid123"})
-		if !errors.Is(err, ErrQrcodeUnauthenticated) {
-			t.Fatalf("err = %v, want ErrQrcodeUnauthenticated", err)
-		}
-	})
-	t.Run("body 会话失效 401", func(t *testing.T) {
-		e := newQrEnv(t)
-		e.sessions.err = errors.New("invalid session token")
-		_, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{TicketID: "tid123", Session: "bad"})
-		if !errors.Is(err, ErrQrcodeUnauthenticated) {
-			t.Fatalf("err = %v, want ErrQrcodeUnauthenticated", err)
-		}
-	})
-	t.Run("空 ticketId", func(t *testing.T) {
-		e := newQrEnv(t)
-		_, err := e.svc.ConfirmLoginTicket(ctx, ConfirmLoginTicketInput{Session: "body-token"})
-		if !errors.Is(err, ErrQrcodeInvalidRequest) {
-			t.Fatalf("err = %v, want ErrQrcodeInvalidRequest", err)
-		}
-	})
-}
-
 // TestGetLoginTicketNoMFASuccessPath 反向证伪：未启用 MFA 的扫码不写
 // mfa_pending，轮询直接走原 success 路径（建会话、无 needs_step_up）。
 func TestGetLoginTicketNoMFASuccessPath(t *testing.T) {
@@ -857,8 +794,9 @@ func TestGetLoginTicketNoMFASuccessPath(t *testing.T) {
 // —— 扫码 MFA 中间态（needs_step_up / mfa_pending）——
 
 // TestGetLoginTicketNeedsStepUp 已启用 MFA 的扫码中间态：轮询顶层
-// needs_step_up、ticket.status 仍 scanned，且非终态不 GETDEL
-// （§2.8 行 884、§11.6.5 行 1400/1424）。
+// needs_step_up、ticket.status 仍 scanned，且非终态不 GETDEL；额外下发
+// 一枚新的 loginToken，载荷含 uid / passed / 本次回传的 oidc 上下文
+// （§2.8、§11.6.5 行 1400/1424、§11.6.2）。
 func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 	ctx := context.Background()
 	e := newQrEnv(t)
@@ -867,7 +805,9 @@ func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 		V: 1, Status: ticketStatusMFAPending, Scene: "login", ProviderKey: "scan",
 		LoginResult: &token.LoginResult{Uid: 9},
 	}
-	out := e.svc.GetLoginTicket(ctx, pollInput(t, e, 0, 0))
+	in := pollInput(t, e, 0, 0)
+	in.OIDC = &token.Oidc{ClientId: "client-1", RedirectUri: "https://rp.example/cb", State: "st-1"}
+	out := e.svc.GetLoginTicket(ctx, in)
 	if out.Envelope.GetStatus() != statusNeedsStepUp {
 		t.Fatalf("status = %q, want needs_step_up", out.Envelope.GetStatus())
 	}
@@ -880,145 +820,20 @@ func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 	if out.SessionToken != "" || e.writer.gotUID != 0 {
 		t.Fatalf("中间态不应建会话: token=%q uid=%d", out.SessionToken, e.writer.gotUID)
 	}
-}
-
-// TestQrcodeMFAPendingLifecycle 完整链路：小程序端 mfa_required 写 mfa_pending
-// （含目标 uid）→ PC 轮询 needs_step_up → StartVerification 取 uid →
-// step-up 通过写 success → 下一次轮询进入 success 并建会话。
-func TestQrcodeMFAPendingLifecycle(t *testing.T) {
-	ctx := context.Background()
-	e := newQrEnv(t)
-	p := e.addScanProvider("scan", nil)
-	if err := e.payloads.Write(ctx, &token.TicketPayload{
-		TicketId: "tid123", ProviderKey: p.Key, Scene: sceneLogin,
-		Iat: e.now.Unix(), Exp: e.now.Add(qrcodeTicketTTL).Unix(),
-	}); err != nil {
-		t.Fatalf("write snapshot: %v", err)
+	lt := out.Envelope.GetLoginToken()
+	if lt == "" {
+		t.Fatal("needs_step_up 应下发新的 loginToken")
 	}
-	lt, err := e.state.Issue(&token.LoginTokenPayload{Tid: "tid-1", Flow: "login", Uid: 9, Passed: []string{"thirdparty"}})
+	p, err := e.state.Parse(lt)
 	if err != nil {
-		t.Fatalf("issue login token: %v", err)
+		t.Fatalf("解析下发 loginToken: %v", err)
 	}
-
-	if err := e.svc.MarkMFAPending(ctx, "tid123", lt); err != nil {
-		t.Fatalf("MarkMFAPending: %v", err)
+	if p.GetUid() != 9 || len(p.GetPassed()) == 0 {
+		t.Fatalf("载荷 uid/passed = %d/%v, want 9 / 非空", p.GetUid(), p.GetPassed())
 	}
-	stored := e.tickets.res["tid123"]
-	if stored.GetStatus() != ticketStatusMFAPending || stored.GetLoginResult().GetUid() != 9 ||
-		stored.GetProviderKey() != p.Key || stored.GetExpiresAt() == 0 {
-		t.Fatalf("mfa_pending 快照 = %+v", stored)
-	}
-
-	pending, err := e.svc.ResolveMFAPending(ctx, "tid123")
-	if err != nil {
-		t.Fatalf("ResolveMFAPending: %v", err)
-	}
-	if pending.UID != 9 || pending.TicketID != "tid123" || pending.Scene != sceneLogin || pending.Status != ticketStatusMFAPending {
-		t.Fatalf("pending = %+v", pending)
-	}
-
-	// 轮询中间态：needs_step_up。
-	if out := e.svc.GetLoginTicket(ctx, pollInput(t, e, 0, 0)); out.Envelope.GetStatus() != statusNeedsStepUp {
-		t.Fatalf("status = %q, want needs_step_up", out.Envelope.GetStatus())
-	}
-
-	// step-up 通过后写成功终态，保留 uid。
-	if err := e.svc.CompleteStepUp(ctx, "tid123"); err != nil {
-		t.Fatalf("CompleteStepUp: %v", err)
-	}
-	if done := e.tickets.res["tid123"]; done.GetStatus() != ticketStatusSuccess || done.GetLoginResult().GetUid() != 9 {
-		t.Fatalf("success 快照 = %+v", done)
-	}
-	if err := e.svc.CompleteStepUp(ctx, "tid123"); err != nil {
-		t.Fatalf("CompleteStepUp 幂等: %v", err)
-	}
-
-	// 下一次轮询进入 success 并建会话（GETDEL 一次性消费）。
-	out := e.svc.GetLoginTicket(ctx, pollInput(t, e, 0, 0))
-	if out.Envelope.GetStatus() != ticketStatusSuccess || out.Envelope.GetTicket().GetStatus() != ticketStatusSuccess {
-		t.Fatalf("envelope = %+v", out.Envelope)
-	}
-	if out.Envelope.GetLogin().GetStatus() != orchestrator.StatusSuccess || e.writer.gotUID != 9 {
-		t.Fatalf("login = %+v uid = %d", out.Envelope.GetLogin(), e.writer.gotUID)
-	}
-	if len(e.tickets.takes) != 1 {
-		t.Fatalf("终态 Take 次数 = %d, want 1", len(e.tickets.takes))
-	}
-}
-
-// TestResolveMFAPendingErrors 主体凭证校验（§3.8.5）：不存在 / 非 mfa_pending
-// → ticket_invalid；scene 不是 login → scene mismatch。
-func TestResolveMFAPendingErrors(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("票据不存在", func(t *testing.T) {
-		e := newQrEnv(t)
-		if _, err := e.svc.ResolveMFAPending(ctx, "ghost"); !errors.Is(err, ErrQrcodeTicketInvalid) {
-			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
-		}
-	})
-	t.Run("scene 不符", func(t *testing.T) {
-		e := newQrEnv(t)
-		e.tickets.res["tid123"] = &token.TicketResult{V: 1, Status: ticketStatusMFAPending, Scene: sceneBind, LoginResult: &token.LoginResult{Uid: 9}}
-		if _, err := e.svc.ResolveMFAPending(ctx, "tid123"); !errors.Is(err, ErrQrcodeTicketScene) {
-			t.Fatalf("err = %v, want ErrQrcodeTicketScene", err)
-		}
-	})
-	t.Run("非 mfa_pending", func(t *testing.T) {
-		e := newQrEnv(t)
-		e.tickets.res["tid123"] = &token.TicketResult{V: 1, Status: ticketStatusScanned, Scene: sceneLogin}
-		if _, err := e.svc.ResolveMFAPending(ctx, "tid123"); !errors.Is(err, ErrQrcodeTicketInvalid) {
-			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
-		}
-	})
-}
-
-// TestMarkMFAPendingRejectsBindScene bind 票据不写 mfa_pending（只服务登录
-// 场景，§11.6.5 行 1423）。
-func TestMarkMFAPendingRejectsBindScene(t *testing.T) {
-	ctx := context.Background()
-	e := newQrEnv(t)
-	p := e.addScanProvider("scan", nil)
-	if err := e.payloads.Write(ctx, &token.TicketPayload{
-		TicketId: "tid123", ProviderKey: p.Key, Scene: sceneBind,
-		Iat: e.now.Unix(), Exp: e.now.Add(qrcodeTicketTTL).Unix(),
-	}); err != nil {
-		t.Fatalf("write snapshot: %v", err)
-	}
-	lt, err := e.state.Issue(&token.LoginTokenPayload{Tid: "tid-1", Flow: "login", Uid: 9, Passed: []string{"thirdparty"}})
-	if err != nil {
-		t.Fatalf("issue login token: %v", err)
-	}
-	if err := e.svc.MarkMFAPending(ctx, "tid123", lt); !errors.Is(err, ErrQrcodeTicketInvalid) {
-		t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
-	}
-	if _, ok := e.tickets.res["tid123"]; ok {
-		t.Fatalf("bind 票据不应写入 mfa_pending: %+v", e.tickets.res["tid123"])
-	}
-}
-
-// TestMarkMFAPendingRequiresPassedFactor login_token 的 passed 未含已通过
-// 主因子时拒绝把票据推进到 mfa_pending（§3.8.1 行 1236），且不写快照。
-func TestMarkMFAPendingRequiresPassedFactor(t *testing.T) {
-	ctx := context.Background()
-	e := newQrEnv(t)
-	p := e.addScanProvider("scan", nil)
-	if err := e.payloads.Write(ctx, &token.TicketPayload{
-		TicketId: "tid123", ProviderKey: p.Key, Scene: sceneLogin,
-		Iat: e.now.Unix(), Exp: e.now.Add(qrcodeTicketTTL).Unix(),
-	}); err != nil {
-		t.Fatalf("write snapshot: %v", err)
-	}
-	// passed 为空 = 无已通过主因子，不得绕过主因子直接进入 step-up。
-	lt, err := e.state.Issue(&token.LoginTokenPayload{Tid: "tid-1", Flow: "login", Uid: 9})
-	if err != nil {
-		t.Fatalf("issue login token: %v", err)
-	}
-	if err := e.svc.MarkMFAPending(ctx, "tid123", lt); !errors.Is(err, ErrQrcodeTicketInvalid) {
-		t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
-	}
-	if _, ok := e.tickets.res["tid123"]; ok {
-		t.Fatalf("passed 为空不得写入 mfa_pending: %+v", e.tickets.res["tid123"])
+	if p.GetOidc() == nil || p.GetOidc().GetClientId() != "client-1" ||
+		p.GetOidc().GetRedirectUri() != "https://rp.example/cb" || p.GetOidc().GetState() != "st-1" {
+		t.Fatalf("载荷 oidc = %+v, want 本次回传的 OIDC 上下文", p.GetOidc())
 	}
 }
 

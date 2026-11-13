@@ -205,11 +205,16 @@ type assembled struct {
 	// SsoService handler；SetPass.Thirdparty（免密建号）复用同一实例。
 	thirdparty *service.Thirdparty
 
-	// qrcode 扫码三桩 service（§3.9 / §13.2 / §2.8）：buildEngine 内
+	// qrcode 扫码拉码与轮询 service（§3.9 / §13.2 / §2.8）：buildEngine 内
 	// 构造（复用 State / Terminal / provider Loader / captcha Gate），经
 	// cache.TicketStore 读写 al:ticket（sealer = protojson 整值加密，
 	// §11.6.5），registerSSO 注入 SsoService handler。
 	qrcode *service.QRCode
+
+	// loginTicket 统一写票 service（§2.8）：ConfirmLoginTicket 与
+	// LoginOauth 扫码分支共用，复用同一 al:ticket 结果读写 / 快照 /
+	// 登录过程态 / 会话校验单例，registerSSO 注入 SsoService handler。
+	loginTicket *service.LoginTicket
 
 	// accountThirdparty account 域三方绑定族 service（§12.6 绑定内核 /
 	// 接口文档 §3.7）：buildEngine 内构造（复用 provider Loader / cache.TicketStore
@@ -545,9 +550,23 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		TicketPayloads: ticketPayloads,
 		Storage:        storage.NewResolver(deps.providerLoader),
 		Queue:          deps.queue,
-		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),
 		State:          loginState,
 		Terminal:       terminal,
+	})
+
+	// 统一写票 service（§2.8）：ConfirmLoginTicket 与 LoginOauth 扫码
+	// 分支共用，复用同一 al:ticket 结果读写、快照、登录过程态与会话校验
+	// 单例；按目标用户的二次验证启用状态自行判定写 success / mfa_pending。
+	// Users / Settings / Credentials 与三方登录共用同一用户 / 凭据 / 开关
+	// 源，判定口径一致（§2.8、§11.6.5）。
+	deps.loginTicket = service.NewLoginTicket(service.LoginTicketDeps{
+		Tickets:        tickets,
+		TicketPayloads: ticketPayloads,
+		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		State:          loginState,
+		Users:          users,
+		Settings:       deps.settings,
+		Credentials:    creds,
 	})
 
 	// account 域三方绑定族 service（§12.6 / 接口文档 §3.7）：绑定内核
@@ -731,25 +750,31 @@ func (c loginCompleter) Complete(ctx context.Context, subject verification.Subje
 		return verification.LoginSession{}, fmt.Errorf("%w: subject uid %q", verification.ErrLoginContext, subject.ID)
 	}
 
-	var p *token.LoginTokenPayload
+	// 默认最小载荷（纯直登场景）；携带 loginToken 时以解析结果整体覆盖，
+	// 恢复 Oidc / Tid / Passed，仅以挑战令牌主体覆盖 Uid。
+	p := &token.LoginTokenPayload{Tid: subject.ID}
 	if loginToken != "" {
-		// 恢复原始流程上下文：保留 Oidc / Tid / Passed，只以挑战令牌主体
-		// 覆盖 Uid；解析失败或 uid 不一致按 §3.8.5 交由服务层判
-		// verification_invalid。
 		if c.state == nil {
 			return verification.LoginSession{}, fmt.Errorf("%w: login state not configured", verification.ErrLoginContext)
 		}
 		parsed, err := c.state.Parse(loginToken)
 		if err != nil {
-			return verification.LoginSession{}, fmt.Errorf("%w: %v", verification.ErrLoginContext, err)
+			// 保留底层令牌错误的 errors.Is 链：按过期 / 篡改分别包装成
+			// 服务层可判别的主体凭证哨兵（§3.8.5 的 token_expired /
+			// token_invalid），ErrLoginContext 一并保留供未知失败收敛。
+			switch {
+			case errors.Is(err, orchestrator.ErrTokenExpired):
+				return verification.LoginSession{}, fmt.Errorf("%w: %w: %w", verification.ErrLoginContext, verification.ErrLoginTokenExpired, err)
+			case errors.Is(err, orchestrator.ErrTokenInvalid):
+				return verification.LoginSession{}, fmt.Errorf("%w: %w: %w", verification.ErrLoginContext, verification.ErrLoginTokenInvalid, err)
+			default:
+				return verification.LoginSession{}, fmt.Errorf("%w: %w", verification.ErrLoginContext, err)
+			}
 		}
 		if parsed.GetUid() != uid {
 			return verification.LoginSession{}, fmt.Errorf("%w: uid %d != challenge subject %d", verification.ErrLoginContext, parsed.GetUid(), uid)
 		}
 		p = parsed
-	} else {
-		// 无 loginToken（非 OIDC / 纯直登场景）：仅能构造最小载荷。
-		p = &token.LoginTokenPayload{Tid: subject.ID}
 	}
 	p.Uid = uid
 	// 会话 amr 取原 passed / amr 与本次二次因子的并集，不覆盖成单一因子。
@@ -1518,10 +1543,11 @@ func newSessionCookie(cfg *config.Config, deps *assembled) *session.Cookie {
 // al_login_state 的 Set-Cookie 与浏览器终点 al_session 共用 CallInfo 写头。
 func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := ssov1connect.NewSsoServiceHandler(
-		// 注入扫码三桩 service（CreateQrcode / GetLoginTicket /
-		// ConfirmLoginTicket，§2.8）：GetLoginTicket 命中建会话后的
-		// al_session 与登录终点同一写出出口。
-		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode, deps.verification),
+		// 注入扫码拉码与轮询 service（CreateQrcode / GetLoginTicket，
+		// §2.8）与统一写票 service（ConfirmLoginTicket / LoginOauth
+		// 扫码分支共用）：GetLoginTicket 命中建会话后的 al_session 与
+		// 登录终点同一写出出口。
+		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode, deps.verification).WithLoginTicket(deps.loginTicket),
 		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
 	)
 	csrv.Register(path, h)
