@@ -129,6 +129,11 @@ func (a *AssertionCodec) IssueAssertion(s Assertion, ttl time.Duration) (string,
 	if err := validateTarget(s.BizPurpose, s.Subject, s.Nonce, ttl); err != nil {
 		return "", err
 	}
+	// 断言主体严格比对会话 uid（§3.8.1、§3.8.4、§16 行 1842）：挑战
+	// 可兼容 tid 主体，断言只认 uid，不签出无法被消费主体校验的断言。
+	if s.Subject.Kind != SubjectKindUID {
+		return "", fmt.Errorf("verification: assertion subject must be uid")
+	}
 	now := a.nowTime()
 	payload := &token.VerificationTokenPayload{
 		BizPurpose:  string(s.BizPurpose),
@@ -156,7 +161,9 @@ func (a *AssertionCodec) ParseAssertion(tok string) (Assertion, error) {
 	}
 	bp := BizPurpose(payload.GetBizPurpose())
 	sub := Subject{Kind: SubjectKind(payload.GetSubjectKind()), ID: payload.GetSubject()}
-	if !bp.Valid() || !sub.Valid() || payload.GetNonce() == "" {
+	// 与签发端同源：断言主体按 uid 严格比对（§3.8.1、§3.8.4），非 uid
+	// 载荷即使 GCM 认证通过也判为无效断言。
+	if !bp.Valid() || !sub.Valid() || sub.Kind != SubjectKindUID || payload.GetNonce() == "" {
 		return Assertion{}, ErrInvalidAssertion
 	}
 	if payload.GetExp() <= a.nowTime().Unix() {

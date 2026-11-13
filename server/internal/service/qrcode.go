@@ -108,8 +108,20 @@ type QrcodeCaptchaFailure struct {
 	cause  error
 }
 
-func (f *QrcodeCaptchaFailure) Error() string { return f.cause.Error() }
-func (f *QrcodeCaptchaFailure) Unwrap() error { return f.cause }
+// Error 保留原哨兵文案；cause 缺失（含 nil 接收者）时返回固定文案，不 panic。
+func (f *QrcodeCaptchaFailure) Error() string {
+	if f == nil || f.cause == nil {
+		return "qrcode: captcha failure"
+	}
+	return f.cause.Error()
+}
+
+func (f *QrcodeCaptchaFailure) Unwrap() error {
+	if f == nil {
+		return nil
+	}
+	return f.cause
+}
 
 // TicketStore al:ticket:{ticket_id} 读写窄接口（§20）：*cache.TicketStore
 // 天然满足；测试传 fake。
@@ -674,7 +686,10 @@ func (s *QRCode) MarkMFAPending(ctx context.Context, ticketID, loginToken string
 		return errors.New("qrcode: login state not configured")
 	}
 	p, err := s.deps.State.Parse(loginToken)
-	if err != nil || p.GetUid() == 0 {
+	// 二次因子阶段要求 uid != 0 且 passed 含已通过的主因子（§3.8.1
+	// 行 1236）：缺主因子的 login_token 不得把票据推进到 mfa_pending，
+	// 防止绕过主因子直接进入 step-up。
+	if err != nil || p.GetUid() == 0 || len(p.GetPassed()) == 0 {
 		return fmt.Errorf("%w: login token", ErrQrcodeTicketInvalid)
 	}
 	snap, err := s.deps.TicketPayloads.Read(ctx, ticketID)

@@ -271,4 +271,64 @@ func TestCodecMissing(t *testing.T) {
 	if _, err := c.ParseAssertion("x"); !errors.Is(err, ErrCodecMissing) {
 		t.Fatalf("ParseAssertion err = %v, want ErrCodecMissing", err)
 	}
+
+	// 只注入 challenge codec：挑战侧往返可用，断言侧缺 codec 必须拒绝。
+	halfChallenge := NewAssertionCodec(testCodec(t, 0xA1), nil)
+	chTok, err := halfChallenge.IssueChallenge(sampleChallenge(), time.Minute)
+	if err != nil {
+		t.Fatalf("challenge codec 已注入, IssueChallenge err = %v", err)
+	}
+	if _, err := halfChallenge.ParseChallenge(chTok); err != nil {
+		t.Fatalf("challenge codec 已注入, ParseChallenge err = %v", err)
+	}
+	if _, err := halfChallenge.IssueAssertion(sampleAssertion(), time.Minute); !errors.Is(err, ErrCodecMissing) {
+		t.Fatalf("缺 verification codec, IssueAssertion err = %v, want ErrCodecMissing", err)
+	}
+	if _, err := halfChallenge.ParseAssertion("x"); !errors.Is(err, ErrCodecMissing) {
+		t.Fatalf("缺 verification codec, ParseAssertion err = %v, want ErrCodecMissing", err)
+	}
+
+	// 只注入 verification codec：断言侧往返可用，挑战侧缺 codec 必须拒绝。
+	halfVerification := NewAssertionCodec(nil, testCodec(t, 0xA2))
+	asTok, err := halfVerification.IssueAssertion(sampleAssertion(), time.Minute)
+	if err != nil {
+		t.Fatalf("verification codec 已注入, IssueAssertion err = %v", err)
+	}
+	if _, err := halfVerification.ParseAssertion(asTok); err != nil {
+		t.Fatalf("verification codec 已注入, ParseAssertion err = %v", err)
+	}
+	if _, err := halfVerification.IssueChallenge(sampleChallenge(), time.Minute); !errors.Is(err, ErrCodecMissing) {
+		t.Fatalf("缺 challenge codec, IssueChallenge err = %v, want ErrCodecMissing", err)
+	}
+	if _, err := halfVerification.ParseChallenge("x"); !errors.Is(err, ErrCodecMissing) {
+		t.Fatalf("缺 challenge codec, ParseChallenge err = %v, want ErrCodecMissing", err)
+	}
+}
+
+// TestAssertionRequiresUIDSubject 断言主体严格比对会话 uid（§3.8.1、
+// §3.8.4、§16 行 1842）：tid 主体不签出断言，已 GCM 认证的 tid 载荷
+// 也判为无效断言。
+func TestAssertionRequiresUIDSubject(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	c, _, verificationRaw := fixedCodec(t, at)
+
+	// 签发端拒绝非 uid 主体。
+	if _, err := c.IssueAssertion(Assertion{
+		BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindTID, ID: "tid-1"},
+		Nonce: "n", Operation: "step_up", AMR: []string{"totp"},
+	}, time.Minute); err == nil {
+		t.Fatal("tid 主体不得签发断言")
+	}
+
+	// 解析端：手工构造一枚经 GCM 认证的 tid 载荷，仍判无效断言。
+	tok, err := verificationRaw.Seal(security.PurposeVerification, &token.VerificationTokenPayload{
+		BizPurpose: "mfa", SubjectKind: "tid", Subject: "tid-1", Nonce: "n",
+		Iat: at.Unix(), Exp: at.Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("Seal(verification): %v", err)
+	}
+	if _, err := c.ParseAssertion(tok); !errors.Is(err, ErrInvalidAssertion) {
+		t.Fatalf("tid 主体断言 err = %v, want ErrInvalidAssertion", err)
+	}
 }

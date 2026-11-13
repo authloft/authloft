@@ -35,7 +35,11 @@ var bizPurposes = map[BizPurpose]bool{
 // Valid 是否属于 §11.6.7 封闭集合。
 func (p BizPurpose) Valid() bool { return bizPurposes[p] }
 
-// SubjectKind 主体类型（§11.6.7）：tid = 登录过程态 id，uid = 会话用户 id。
+// SubjectKind 主体类型（§11.6.7）：tid = 登录过程态标识，uid = 会话用户 id。
+// tid 取自 login_token.tid（§11.6.2），与扫码票据标识 ticket_id 是两个
+// 概念，不可互相顶替（接口文档 §2.8 行 857）：扫码票据只绑定在挑战 nonce
+// 前缀，不以主体承载。Start 现只签发 uid 主体（§3.8.1），tid 仅作历史
+// 挑战令牌的兼容取值保留，不再据此推导票据。
 type SubjectKind string
 
 const (

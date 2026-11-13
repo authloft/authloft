@@ -17,6 +17,14 @@ var ErrReplay = errors.New("verification: assertion replayed")
 // 适配器以 errors.Is 包装返回，服务层映射为 verification_invalid。
 var ErrLoginContext = errors.New("verification: login token context mismatch")
 
+// 主体凭证（login_token）失效的可判别哨兵（§1.6 行 271、§3.8.5）：
+// 由终点收尾适配器以 errors.Is 包装透出，服务层分别映射
+// token_expired / token_invalid，不再一律落 internal。
+var (
+	ErrLoginTokenExpired = errors.New("verification: login token expired")
+	ErrLoginTokenInvalid = errors.New("verification: login token invalid")
+)
+
 // LoginCompleter 登录终点收尾（§7.3 步骤 7）：建会话、投递登录日志、拼多域名
 // 同步链与 OIDC 跳转。生产注入基于 orchestrator.Terminal 的适配器；登录链路
 // 另附 loginToken 时用它恢复 oidc / tid / passed 等流程上下文。未注入时
@@ -81,6 +89,12 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	if err != nil {
 		return nil, failure("verification_invalid", err)
 	}
+	// 挑战主体严格比对会话 uid（§3.8.1、§3.8.4）：非 uid 主体（含历史
+	// tid 兼容载荷）一律 verification_invalid，且不进入因子校验，避免
+	// 主因子未过时消费验证码。
+	if ch.Subject.Kind != SubjectKindUID || ch.Subject.ID == "" {
+		return nil, failure("verification_invalid", nil)
+	}
 	if !contains(ch.Methods, in.Method) {
 		return nil, failure("verification_invalid", nil)
 	}
@@ -92,13 +106,12 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 	}
 	// 扫码挑战把 ticket_id 绑定在 nonce 前缀（Start 侧编码）：剥离后再交给
 	// 因子校验，保证 OTP owner / WebAuthn challenge 与下发阶段同源。
+	// ticket_id 与 login_token.tid 是两个概念（接口文档 §2.8 行 857），
+	// 不再从主体推导票据标识。
 	verifyNonce := ch.Nonce
 	scanTicket, rawNonce, isScan := splitScanNonce(ch.Nonce)
 	if isScan {
 		verifyNonce = rawNonce
-	} else if ch.Subject.Kind == SubjectKindTID {
-		// 兼容以票据标识直接作 subject 的扫码挑战。
-		scanTicket = ch.Subject.ID
 	}
 	// 未注入验证器时 fail-closed：任何情况都不得在未校验凭据的情况下签发断言。
 	if s.d.Verifier == nil {
@@ -130,7 +143,9 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 		AMR:        []string{in.Method},
 	}, AssertionTTL)
 	if err != nil {
-		return nil, fmt.Errorf("verification: issue assertion: %w", err)
+		// 断言签发失败按无效断言收敛为可判别业务失败，不静默吞错、
+		// 也不一律落 internal（§3.8.5 无效 / 过期 / 重放口径）。
+		return nil, failure("verification_invalid", err)
 	}
 	out := &SubmitResult{
 		VerificationToken: tok,
@@ -157,6 +172,15 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 			}
 			sess, err := s.d.Login.Complete(ctx, ch.Subject, in.LoginToken, in.Method)
 			if err != nil {
+				// 主体凭证（login_token）失效按 §1.6 行 271 分别映射
+				// token_expired / token_invalid，不再与其它收尾错误一并
+				// 落 internal；uid 与挑战主体不符仍判无效断言（§3.8.5）。
+				if errors.Is(err, ErrLoginTokenExpired) {
+					return nil, failure("token_expired", err)
+				}
+				if errors.Is(err, ErrLoginTokenInvalid) {
+					return nil, failure("token_invalid", err)
+				}
 				if errors.Is(err, ErrLoginContext) {
 					return nil, failure("verification_invalid", err)
 				}

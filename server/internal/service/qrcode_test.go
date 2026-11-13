@@ -997,6 +997,31 @@ func TestMarkMFAPendingRejectsBindScene(t *testing.T) {
 	}
 }
 
+// TestMarkMFAPendingRequiresPassedFactor login_token 的 passed 未含已通过
+// 主因子时拒绝把票据推进到 mfa_pending（§3.8.1 行 1236），且不写快照。
+func TestMarkMFAPendingRequiresPassedFactor(t *testing.T) {
+	ctx := context.Background()
+	e := newQrEnv(t)
+	p := e.addScanProvider("scan", nil)
+	if err := e.payloads.Write(ctx, &token.TicketPayload{
+		TicketId: "tid123", ProviderKey: p.Key, Scene: sceneLogin,
+		Iat: e.now.Unix(), Exp: e.now.Add(qrcodeTicketTTL).Unix(),
+	}); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+	// passed 为空 = 无已通过主因子，不得绕过主因子直接进入 step-up。
+	lt, err := e.state.Issue(&token.LoginTokenPayload{Tid: "tid-1", Flow: "login", Uid: 9})
+	if err != nil {
+		t.Fatalf("issue login token: %v", err)
+	}
+	if err := e.svc.MarkMFAPending(ctx, "tid123", lt); !errors.Is(err, ErrQrcodeTicketInvalid) {
+		t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
+	}
+	if _, ok := e.tickets.res["tid123"]; ok {
+		t.Fatalf("passed 为空不得写入 mfa_pending: %+v", e.tickets.res["tid123"])
+	}
+}
+
 // —— TicketResultSealer ——
 
 // TestTicketResultSealerRoundtrip protojson 整值加密往返 + 跨密钥拒绝 +

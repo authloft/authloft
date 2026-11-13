@@ -494,3 +494,91 @@ func mustAssertion(t *testing.T, codec *AssertionCodec, bp BizPurpose, operation
 	}
 	return tok
 }
+
+// TestSubmitRejectsNonUIDSubject 挑战主体严格比对会话 uid（§3.8.1、
+// §3.8.4）：tid（历史兼容取值）主体的挑战一律 verification_invalid，
+// 且不进入因子校验（因子凭据不被消费）。
+func TestSubmitRejectsNonUIDSubject(t *testing.T) {
+	verifier := &submitVerifier{res: FactorVerifyResult{Passed: true}}
+	svc, codec := newSubmitService(t, func(d *Deps) { d.Verifier = verifier })
+	tok, err := codec.IssueChallenge(Challenge{
+		BizPurpose: BizPurposeLogin,
+		Subject:    Subject{Kind: SubjectKindTID, ID: "tid-1"},
+		Nonce:      "nonce-tid",
+		Operation:  "mfa_verify",
+		Methods:    []string{"totp"},
+	}, testChallengeTTL)
+	if err != nil {
+		t.Fatalf("IssueChallenge: %v", err)
+	}
+	if _, err := svc.Submit(context.Background(), SubmitInput{
+		Domain: DomainSSO, ChallengeToken: tok, Method: "totp", LoginToken: "lt-1",
+	}); errorCode(t, err) != "verification_invalid" {
+		t.Fatalf("code = %s, want verification_invalid", errorCode(t, err))
+	}
+	if verifier.calls != 0 {
+		t.Fatalf("非 uid 主体不得消费因子: verifier.calls = %d", verifier.calls)
+	}
+}
+
+// TestSubmitExpiredChallengeDoesNotConsumeFactor 挑战令牌恰在提交时判为
+// 过期：判 verification_invalid，且因子凭据未被消费（可重新发起 step-up）。
+func TestSubmitExpiredChallengeDoesNotConsumeFactor(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	codec, _, _ := fixedCodec(t, at)
+	verifier := &submitVerifier{res: FactorVerifyResult{Passed: true}}
+	svc := NewService(Deps{Codec: codec, Verifier: verifier})
+	tok, err := codec.IssueChallenge(Challenge{
+		BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
+		Nonce: "nonce-exp", Operation: "step_up", Methods: []string{"totp"},
+	}, testChallengeTTL)
+	if err != nil {
+		t.Fatalf("IssueChallenge: %v", err)
+	}
+	// 时间推到 exp 边界：提交时挑战已过期（GetExp() <= now）。
+	codec.now = func() time.Time { return at.Add(testChallengeTTL) }
+	if _, err := svc.Submit(context.Background(), SubmitInput{
+		Domain: DomainAccount, ChallengeToken: tok, Method: "totp",
+	}); errorCode(t, err) != "verification_invalid" {
+		t.Fatalf("过期挑战 code = %s, want verification_invalid", errorCode(t, err))
+	}
+	if verifier.calls != 0 {
+		t.Fatalf("过期挑战不得消费因子: verifier.calls = %d", verifier.calls)
+	}
+}
+
+// TestSubmitMapsLoginTokenFailure 终点收尾适配器以哨兵包装透出的
+// login_token 过期 / 篡改，分别映射 token_expired / token_invalid
+// （§1.6 行 271、§3.8.5），不再一律落 internal。
+func TestSubmitMapsLoginTokenFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"过期", fmt.Errorf("state: %w", ErrLoginTokenExpired), "token_expired"},
+		{"篡改", fmt.Errorf("state: %w", ErrLoginTokenInvalid), "token_invalid"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			verifier := &submitVerifier{res: FactorVerifyResult{Passed: true}}
+			login := &loginSessions{err: tc.err}
+			svc, codec := newSubmitService(t, func(d *Deps) { d.Verifier = verifier; d.Login = login })
+			tok, err := codec.IssueChallenge(Challenge{
+				BizPurpose: BizPurposeLogin, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
+				Nonce: "nonce-lt", Operation: "mfa_verify", Methods: []string{"totp"},
+			}, testChallengeTTL)
+			if err != nil {
+				t.Fatalf("IssueChallenge: %v", err)
+			}
+			if _, err := svc.Submit(context.Background(), SubmitInput{
+				Domain: DomainSSO, ChallengeToken: tok, Method: "totp", LoginToken: "lt-1",
+			}); errorCode(t, err) != tc.code {
+				t.Fatalf("code = %s, want %s", errorCode(t, err), tc.code)
+			}
+			if login.calls != 1 {
+				t.Fatalf("终点收尾应被调用一次: calls = %d", login.calls)
+			}
+		})
+	}
+}
