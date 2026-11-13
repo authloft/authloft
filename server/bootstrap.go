@@ -1006,7 +1006,7 @@ func (v stepUpVerifier) Verify(ctx context.Context, in verification.FactorVerify
 	default:
 		code = "invalid_code"
 	}
-	return verification.FactorVerifyResult{Code: code}, nil
+	return verification.FactorVerifyResult{Code: code, AttemptsLeft: res.AttemptsLeft}, nil
 }
 
 // resetAuditSink 把重置密码审计事件投递到延迟队列（docs/后端架构.md §7.4

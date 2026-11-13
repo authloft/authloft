@@ -56,6 +56,7 @@ import (
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -478,6 +479,43 @@ func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
 // Engine（不连 DB / Redis）：断言 6 个已实现 kind（含 otp_sms /
 // otp_email）可解析、pending 2 条（thirdparty / device）不参与完整性断言、
 // Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
+// stubVerifyFactor 回放既定的因子校验结论，用于校验 step-up 适配层的投影。
+type stubVerifyFactor struct{ res *factor.VerifyResult }
+
+func (f *stubVerifyFactor) Kind() factor.FactorKind  { return factor.FactorTOTP }
+func (f *stubVerifyFactor) Usages() []factor.Usage   { return []factor.Usage{factor.UsageSecondary} }
+func (f *stubVerifyFactor) Steps() []factor.StepKind { return []factor.StepKind{factor.StepForm} }
+func (f *stubVerifyFactor) Start(*factor.FactorContext) (*factor.StepResult, error) {
+	return nil, nil
+}
+func (f *stubVerifyFactor) Verify(*factor.FactorContext) (*factor.VerifyResult, error) {
+	return f.res, nil
+}
+
+// TestStepUpVerifierCarriesAttemptsLeft 错码且键保留时把因子 VerifyResult 的
+// 剩余次数投影进领域结论（§3.8.5、§1.6）。
+func TestStepUpVerifierCarriesAttemptsLeft(t *testing.T) {
+	reg := factor.NewRegistry()
+	if err := reg.Register(factor.FactorTOTP, &stubVerifyFactor{
+		res: &factor.VerifyResult{Status: "invalid_code", AttemptsLeft: 3},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	v := stepUpVerifier{registry: reg}
+	got, err := v.Verify(context.Background(), verification.FactorVerifyInput{
+		Method:      "totp",
+		BizPurpose:  verification.BizPurposeMFA,
+		Subject:     verification.Subject{Kind: verification.SubjectKindUID, ID: "42"},
+		ChallengeID: "n1",
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got.Code != "invalid_code" || got.AttemptsLeft != 3 {
+		t.Fatalf("FactorVerifyResult = %+v, want invalid_code/3", got)
+	}
+}
+
 func TestAssembleEngineAndTerminal(t *testing.T) {
 	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
 	if err != nil {

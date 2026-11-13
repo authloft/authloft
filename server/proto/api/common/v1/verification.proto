@@ -103,4 +103,7 @@ message SubmitVerificationResponse {
   int64 expires_in = 5;
   // 两组共用；实际通过的因子，只由服务端写入，请求无该字段。
   repeated string amr = 6;
+  // 仅 SsoService 组 invalid_code 失败态携带剩余尝试次数（§3.8.2、§1.6）；
+  // 零值或缺失即不展示。AccountService 组走 ErrorInfo.attempts_left（§1.5）。
+  optional int64 attempts_left = 7;
 }

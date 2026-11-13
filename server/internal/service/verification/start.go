@@ -85,11 +85,14 @@ type MFAPendingClaim struct {
 
 // Error 是 step-up 的业务失败：Code 只取接口文档 §1.6 封闭集合成员，由
 // handler 构造 Connect 错误体 + ErrorInfo（§3.8.5、§1.5）；RetryAfter 仅在
-// 限流类失败（too_many_requests）时非零，供 ErrorInfo.retry_after 使用。
+// 限流类失败（too_many_requests）时非零，供 ErrorInfo.retry_after 使用；
+// AttemptsLeft 仅在 invalid_code 错码且键保留时非零，供两组响应按
+// 「零值或缺失即不展示」承载剩余次数（§3.8.5、§1.6）。
 type Error struct {
-	Code       string
-	RetryAfter int64
-	cause      error
+	Code         string
+	RetryAfter   int64
+	AttemptsLeft int64
+	cause        error
 }
 
 func (e *Error) Error() string { return "verification: " + e.Code }
@@ -100,6 +103,13 @@ func failure(code string, cause error) error {
 		cause = errors.New(code)
 	}
 	return &Error{Code: code, cause: cause}
+}
+
+// failureWithAttempts 构造携带剩余尝试次数的业务失败（§3.8.5、§1.6）：
+// 两组 invalid_code 失败态经此路径把 AttemptsLeft 透传到 handler，零值
+// 时不携带，由响应侧「零值或缺失即不展示」收敛。
+func failureWithAttempts(code string, attemptsLeft int64) error {
+	return &Error{Code: code, AttemptsLeft: attemptsLeft, cause: errors.New(code)}
 }
 
 func failureRetry(code string, retryAfter int64) error {
@@ -168,10 +178,12 @@ type FactorVerifyInput struct {
 	Payload     *structpb.Struct
 }
 
-// FactorVerifyResult 因子校验结论；Code 为失败时的 §1.6 细分码。
+// FactorVerifyResult 因子校验结论；Code 为失败时的 §1.6 细分码，
+// AttemptsLeft 为错码且键保留时的剩余尝试次数（§3.8.5、§1.6）。
 type FactorVerifyResult struct {
-	Passed bool
-	Code   string
+	Passed       bool
+	Code         string
+	AttemptsLeft int64
 }
 
 // Deps 服务依赖（§20 依赖注入）；装配方逐项注入，未注入的判定项走 fail-closed。

@@ -317,6 +317,39 @@ func TestSsoVerificationErrorMapping(t *testing.T) {
 	})
 }
 
+// TestSsoSubmitCarriesAttemptsLeft 错码且键保留时信封 attemptsLeft 携带
+// 剩余次数（§3.8.2、§3.8.5）；尝试超限与成功不携带。
+func TestSsoSubmitCarriesAttemptsLeft(t *testing.T) {
+	cases := []struct {
+		name string
+		fake *fakeVerification
+		want int64
+	}{
+		{"错码带剩余次数", &fakeVerification{submitErr: &verification.Error{Code: "invalid_code", AttemptsLeft: 3}}, 3},
+		{"尝试超限不携带", &fakeVerification{submitErr: &verification.Error{Code: "too_many_attempts", AttemptsLeft: 0}}, 0},
+		{"成功不携带", &fakeVerification{submitRes: &verification.SubmitResult{Status: "success", AMR: []string{"totp"}}}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceSubmitVerificationProcedure,
+				strings.NewReader(`{"challengeToken":"ch-1","method":"totp","payload":{"code":"000000"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			newVerificationHandler(tc.fake).ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+			}
+			var got commonv1.SubmitVerificationResponse
+			if err := protojson.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode response %q: %v", rec.Body.String(), err)
+			}
+			if got.GetAttemptsLeft() != tc.want {
+				t.Fatalf("attemptsLeft = %d, want %d", got.GetAttemptsLeft(), tc.want)
+			}
+		})
+	}
+}
+
 // decodeSsoDetails 解 Connect 错误体 details 里的 ErrorInfo 与 CaptchaConfig。
 func decodeSsoDetails(t *testing.T, raw string) (*commonv1.ErrorInfo, *commonv1.CaptchaConfig) {
 	t.Helper()

@@ -233,8 +233,13 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 		LoginToken:     req.Msg.GetLoginToken(),
 	})
 	if err != nil {
-		if status := verificationFlowStatus(err); status != "" {
-			return connect.NewResponse(&commonv1.SubmitVerificationResponse{Status: status}), nil
+		if status, attemptsLeft := verificationFlowStatus(err); status != "" {
+			out := &commonv1.SubmitVerificationResponse{Status: status}
+			if attemptsLeft > 0 {
+				v := attemptsLeft
+				out.AttemptsLeft = &v
+			}
+			return connect.NewResponse(out), nil
 		}
 		return nil, mapVerificationError("sso", err)
 	}
@@ -258,17 +263,18 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 
 // verificationFlowStatus 判定因子类失败是否应以登录流程信封 status 表达
 // （§3.8.5）：OTP / TOTP / WebAuthn 因子失败沿用 §1.6 封闭集合；step-up
-// 令牌与主体凭证类失败仍走 Connect 错误体 + ErrorInfo.code。
-func verificationFlowStatus(err error) string {
+// 令牌与主体凭证类失败仍走 Connect 错误体 + ErrorInfo.code。第二个返回值
+// 为错码且键保留时的剩余尝试次数（§3.8.2、§1.6），零值即不展示。
+func verificationFlowStatus(err error) (string, int64) {
 	var ve *verification.Error
 	if !errors.As(err, &ve) {
-		return ""
+		return "", 0
 	}
 	switch ve.Code {
 	case "invalid_code", "code_expired", "too_many_attempts", "method_disabled":
-		return ve.Code
+		return ve.Code, ve.AttemptsLeft
 	}
-	return ""
+	return "", 0
 }
 
 // mapVerificationError 把 step-up 领域失败映射为 Connect 错误体 +

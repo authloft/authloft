@@ -132,7 +132,7 @@ func (s *Service) Submit(ctx context.Context, in SubmitInput) (*SubmitResult, er
 		if code == "" {
 			code = "invalid_code"
 		}
-		return nil, failure(code, nil)
+		return nil, failureWithAttempts(code, res.AttemptsLeft)
 	}
 
 	tok, err := s.d.Codec.IssueAssertion(Assertion{

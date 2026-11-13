@@ -457,7 +457,10 @@ type SubmitVerificationResponse struct {
 	// 仅 AccountService 组；断言有效期（秒）。
 	ExpiresIn int64 `protobuf:"varint,5,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
 	// 两组共用；实际通过的因子，只由服务端写入，请求无该字段。
-	Amr           []string `protobuf:"bytes,6,rep,name=amr,proto3" json:"amr,omitempty"`
+	Amr []string `protobuf:"bytes,6,rep,name=amr,proto3" json:"amr,omitempty"`
+	// 仅 SsoService 组 invalid_code 失败态携带剩余尝试次数（§3.8.2、§1.6）；
+	// 零值或缺失即不展示。AccountService 组走 ErrorInfo.attempts_left（§1.5）。
+	AttemptsLeft  *int64 `protobuf:"varint,7,opt,name=attempts_left,json=attemptsLeft,proto3,oneof" json:"attempts_left,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -534,6 +537,13 @@ func (x *SubmitVerificationResponse) GetAmr() []string {
 	return nil
 }
 
+func (x *SubmitVerificationResponse) GetAttemptsLeft() int64 {
+	if x != nil && x.AttemptsLeft != nil {
+		return *x.AttemptsLeft
+	}
+	return 0
+}
+
 var File_api_common_v1_verification_proto protoreflect.FileDescriptor
 
 const file_api_common_v1_verification_proto_rawDesc = "" +
@@ -576,7 +586,7 @@ const file_api_common_v1_verification_proto_rawDesc = "" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x121\n" +
 	"\apayload\x18\x03 \x01(\v2\x17.google.protobuf.StructR\apayload\x12\x1f\n" +
 	"\vlogin_token\x18\x04 \x01(\tR\n" +
-	"loginToken\"\xdd\x01\n" +
+	"loginToken\"\x99\x02\n" +
 	"\x1aSubmitVerificationResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x1f\n" +
 	"\vredirect_to\x18\x02 \x01(\tR\n" +
@@ -585,7 +595,9 @@ const file_api_common_v1_verification_proto_rawDesc = "" +
 	"\x12verification_token\x18\x04 \x01(\tR\x11verificationToken\x12\x1d\n" +
 	"\n" +
 	"expires_in\x18\x05 \x01(\x03R\texpiresIn\x12\x10\n" +
-	"\x03amr\x18\x06 \x03(\tR\x03amrB(Z&authloft/gen/go/api/common/v1;commonv1b\x06proto3"
+	"\x03amr\x18\x06 \x03(\tR\x03amr\x12(\n" +
+	"\rattempts_left\x18\a \x01(\x03H\x00R\fattemptsLeft\x88\x01\x01B\x10\n" +
+	"\x0e_attempts_leftB(Z&authloft/gen/go/api/common/v1;commonv1b\x06proto3"
 
 var (
 	file_api_common_v1_verification_proto_rawDescOnce sync.Once
@@ -629,6 +641,7 @@ func file_api_common_v1_verification_proto_init() {
 	if File_api_common_v1_verification_proto != nil {
 		return
 	}
+	file_api_common_v1_verification_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

@@ -203,6 +203,34 @@ func TestAccountSubmitRejectsLoginToken(t *testing.T) {
 	}
 }
 
+// TestAccountSubmitCarriesAttemptsLeft 错码且键保留时 ErrorInfo.attempts_left
+// 携带剩余次数（§3.8.5、§1.6）；尝试超限不携带。
+func TestAccountSubmitCarriesAttemptsLeft(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int64
+	}{
+		{"错码带剩余次数", &verification.Error{Code: "invalid_code", AttemptsLeft: 3}, 3},
+		{"尝试超限不携带", &verification.Error{Code: "too_many_attempts", AttemptsLeft: 0}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeVerification{submitErr: tc.err}
+			code, raw, _ := postService(t, accountv1connect.AccountServiceSubmitVerificationProcedure,
+				`{"challengeToken":"ch-1","method":"totp","payload":{"code":"000000"}}`,
+				&getConfigDeps{verificationIn: fake})
+			if code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+			}
+			info, _ := decodeAccountDetails(t, raw)
+			if info.GetAttemptsLeft() != tc.want {
+				t.Fatalf("ErrorInfo.attemptsLeft = %d, want %d", info.GetAttemptsLeft(), tc.want)
+			}
+		})
+	}
+}
+
 // decodeAccountDetails 解 Connect 错误体 details 里的 ErrorInfo 与 CaptchaConfig
 // （base64 编码消息字节，标准 / 无填充 / URL variant 依次尝试）。
 func decodeAccountDetails(t *testing.T, raw string) (*commonv1.ErrorInfo, *commonv1.CaptchaConfig) {

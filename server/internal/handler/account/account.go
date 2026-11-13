@@ -1298,6 +1298,7 @@ func mapVerificationError(domain string, err error) error {
 	}
 	info := internalconnect.NewErrorInfo(domain, ve.Code, ve.Code)
 	info.RetryAfter = ve.RetryAfter
+	info.AttemptsLeft = ve.AttemptsLeft
 	return internalconnect.WithErrorInfo(
 		connect.NewError(connCode, errors.New(ve.Code)),
 		info,

@@ -337,6 +337,38 @@ func TestSubmitMapsFactorFailure(t *testing.T) {
 	}
 }
 
+// TestSubmitCarriesAttemptsLeft 错码且键保留时 FactorVerifyResult.AttemptsLeft
+// 透传到领域 Error，供两组响应承载剩余次数（§3.8.5、§1.6）。
+func TestSubmitCarriesAttemptsLeft(t *testing.T) {
+	cases := []struct {
+		name string
+		res  FactorVerifyResult
+		want int64
+	}{
+		{"错码带剩余次数", FactorVerifyResult{Code: "invalid_code", AttemptsLeft: 3}, 3},
+		{"尝试超限不携带", FactorVerifyResult{Code: "too_many_attempts", AttemptsLeft: 0}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, codec := newSubmitService(t, func(d *Deps) { d.Verifier = &submitVerifier{res: tc.res} })
+			tok, _ := codec.IssueChallenge(Challenge{
+				BizPurpose: BizPurposeMFA, Subject: Subject{Kind: SubjectKindUID, ID: "42"},
+				Nonce: "n1", Operation: "step_up", Methods: []string{"totp"},
+			}, testChallengeTTL)
+			_, err := svc.Submit(context.Background(), SubmitInput{
+				Domain: DomainAccount, ChallengeToken: tok, Method: "totp",
+			})
+			var ve *Error
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want *Error", err)
+			}
+			if ve.AttemptsLeft != tc.want {
+				t.Fatalf("Error.AttemptsLeft = %d, want %d", ve.AttemptsLeft, tc.want)
+			}
+		})
+	}
+}
+
 func TestConsumeAssertionRequiresToken(t *testing.T) {
 	svc, _ := newSubmitService(t, nil)
 	if _, err := svc.ConsumeAssertion(context.Background(), "", Want{}); errorCode(t, err) != "verification_required" {
