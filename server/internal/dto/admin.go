@@ -443,7 +443,8 @@ func AdminUser(row *model.User) *adminv1.AdminUser {
 	return u
 }
 
-// AdminCredentialSummary 凭证概览条目（secret 不透出）；含全部 kind，mfa_setting 行即 MFA 已开启。
+// AdminCredentialSummary 凭证概览条目（secret 不透出）；含全部 kind（行存在的
+// 凭证类型），两步验证开关由 user.mfa_required 承载。
 func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSummary {
 	if row == nil {
 		return &adminv1.UserCredentialSummary{}
@@ -495,17 +496,22 @@ func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []mod
 	}
 }
 
-// AdminUserMfa 用户详情的 MFA 绑定明细：五因子序同 mfaFactorOrder；bound 判定与
-// account handler mfaBound 同口径（凭证行 / phone / email 非空，target 掩码）。MFA
-// 开关与强制不在此重复（由凭证概览与 user.mfa_required 承载）。webauthn credentials
-// 计数需独立表（不在本实现依赖面），置零省略、待定。
+// adminMfaFactorOrder 管理员详情五因子序（与 account GetMfa 明细同序：
+// totp → otp_sms → otp_email → webauthn → recovery_code）。
+var adminMfaFactorOrder = [...]string{"totp", "otp_sms", "otp_email", "webauthn", "recovery_code"}
+
+// AdminUserMfa 用户详情的 MFA 绑定明细：五因子序同 adminMfaFactorOrder；
+// bound 判定与 account handler mfaBound 同口径（凭证行 / phone / email
+// 非空，target 掩码）。两步验证开关不在此重复投影（由 AdminUser.MfaRequired
+// 承载），此处只出各因子绑定态。webauthn credentials 计数需独立表（不在本
+// 实现依赖面），置零省略、待定。
 func AdminUserMfa(user *model.User, creds []model.UserCredential) *accountv1.MfaResponse {
 	rows := map[string]*model.UserCredential{}
 	for i := range creds {
 		rows[creds[i].Kind] = &creds[i] // webauthn 多行取首行（mfaBound 同款口径）
 	}
-	factors := make([]*accountv1.MfaFactor, 0, len(mfaFactorOrder))
-	for _, name := range mfaFactorOrder {
+	factors := make([]*accountv1.MfaFactor, 0, len(adminMfaFactorOrder))
+	for _, name := range adminMfaFactorOrder {
 		f := &accountv1.MfaFactor{Factor: name}
 		switch name {
 		case "totp", "webauthn":

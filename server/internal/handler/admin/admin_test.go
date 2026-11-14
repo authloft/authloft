@@ -1541,15 +1541,15 @@ func TestListUsersHandler(t *testing.T) {
 	}
 }
 
-// TestGetUserHandler：详情 = user 投影 + 凭证概览（kind/is_enabled，含
-// mfa_setting 行）+ 绑定列表 + mfa 五因子明细（otp_sms bound + 掩码 target）。
+// TestGetUserHandler：详情 = user 投影 + 凭证概览（kind/is_enabled）+
+// 绑定列表 + mfa 五因子明细（totp / otp_sms bound + 掩码 target）。
 func TestGetUserHandler(t *testing.T) {
 	now := time.Unix(1761700000, 0).UTC()
 	users := &fakeUserService{detail: &adminsvc.UserDetail{
 		User: adminUserRow(),
 		Credentials: []model.UserCredential{
 			{ID: 7, UserID: 42, Kind: "password", IsEnabled: 1, CreatedAt: now},
-			{ID: 8, UserID: 42, Kind: "mfa_setting", IsEnabled: 1, CreatedAt: now},
+			{ID: 8, UserID: 42, Kind: "totp", IsEnabled: 1, CreatedAt: now},
 		},
 		Bindings: []model.UserThirdpartyBind{
 			{ID: 9, UserID: 42, ProviderKey: "wechat_mp_1", OpenID: "oX-1", CreatedAt: now},
@@ -1570,7 +1570,7 @@ func TestGetUserHandler(t *testing.T) {
 		t.Fatalf("user 投影 = %+v", got.GetUser())
 	}
 	if len(got.GetCredentials()) != 2 || got.GetCredentials()[0].GetKind() != "password" ||
-		!got.GetCredentials()[0].GetIsEnabled() || got.GetCredentials()[1].GetKind() != "mfa_setting" {
+		!got.GetCredentials()[0].GetIsEnabled() || got.GetCredentials()[1].GetKind() != "totp" {
 		t.Fatalf("凭证概览 = %+v", got.GetCredentials())
 	}
 	if len(got.GetBindings()) != 1 || got.GetBindings()[0].GetProviderKey() != "wechat_mp_1" ||
@@ -1582,9 +1582,13 @@ func TestGetUserHandler(t *testing.T) {
 	}
 	for _, f := range got.GetMfa().GetFactors() {
 		switch f.GetFactor() {
-		case "totp", "webauthn", "recovery_code":
+		case "webauthn", "recovery_code":
 			if f.GetBound() {
 				t.Errorf("factor %q 未绑定应 false", f.GetFactor())
+			}
+		case "totp":
+			if !f.GetBound() || f.GetBoundAt() != now.Unix() {
+				t.Errorf("totp = (bound=%v boundAt=%d), want (true, %d)", f.GetBound(), f.GetBoundAt(), now.Unix())
 			}
 		case "otp_sms":
 			if !f.GetBound() || f.GetTarget() != "138****8000" {

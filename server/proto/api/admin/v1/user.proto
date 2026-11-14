@@ -39,7 +39,7 @@ message AdminUser {
   int64 email_verified = 8;
   // 账号状态：1 正常 0 禁用（§5.4 行 1248 {id, userStatus: 0 或 1}）。
   int64 user_status = 9;
-  // 系统强制启用两步验证（§3.1 行 788）。
+  // 用户自助两步验证开关（§3.1）。
   int64 mfa_required = 10;
   // 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1 行 789、《后端架构》§4.2）。
   int64 epoch = 11;

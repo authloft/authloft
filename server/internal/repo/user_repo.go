@@ -191,12 +191,12 @@ func (r *UserRepo) UpdateLastLogin(ctx context.Context, id int64, at time.Time) 
 }
 
 // UpdateProfileColumns 列级更新 user 表资料列 nickname / avatar_url
-//（接口文档 §3.2 UpdateProfile：可选字段部分更新——用户名 / 手机号 /
+// （接口文档 §3.2 UpdateProfile：可选字段部分更新——用户名 / 手机号 /
 // 邮箱不可改、未传字段不覆盖，§3.10 行 428 表-文件对应归 user_repo）。
 // nil = 该列未传、不写入；updated_at 一并刷新。用户不存在返回包装的
 // gorm.ErrRecordNotFound。MySQL 驱动默认 changed-rows 语义：同值 UPDATE
 // RowsAffected=0 与行不存在不可区分，故 rows=0 时补 SELECT 存在性判定
-//——行仍在则视为幂等成功，查无此行才报 ErrRecordNotFound（口径同
+// ——行仍在则视为幂等成功，查无此行才报 ErrRecordNotFound（口径同
 // UpdateLastLogin）。
 func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error {
 	cols := map[string]any{"updated_at": time.Now()}
@@ -234,7 +234,7 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 // phone_verified / email_verified 置 1；BindContactStore 窄接口契约）。
 // 指针语义 nil = 该列不写入（UpdateProfileColumns 惯例）；
 // updated_at 一并刷新。目标被他人抢占命中 uk_phone / uk_email 唯一键
-//（MySQL 1062）返回 errors.Is 可判别的 ErrUserDuplicate（UserRepo.Create
+// （MySQL 1062）返回 errors.Is 可判别的 ErrUserDuplicate（UserRepo.Create
 // 判别同源——challenge 拦截后 verify 落库前的 TOCTOU 占用由 service 层
 // 回补 target_taken，《后端架构》§10.2 行 1168）。用户不存在返回包装的
 // gorm.ErrRecordNotFound：MySQL 驱动默认 changed-rows 语义，rows=0 时补
@@ -284,7 +284,7 @@ func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, em
 // email / phone 四列做模糊匹配（默认口径：LIKE %q%，LIKE 通配
 // 符 %/_/\ 按 \ 转义保证字面匹配，待定）；分页按 §1.7（page 从
 // 1 开始、pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定
-//（§1.7 后端不做白名单强制校验）——repo 只做字符集防注入（非
+// （§1.7 后端不做白名单强制校验）——repo 只做字符集防注入（非
 // [a-z0-9_] 列名静默回落 id，order 非 asc 一律 desc），不拒绝请求。
 type UserListQuery struct {
 	UserStatus *int8
@@ -344,7 +344,7 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 }
 
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
-//（大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；
+// （大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；
 // 非 id 主序恒追加 id 次序保证分页全序稳定（同值行跨页不漂移，口径同
 // webauthn_repo.ListByUser）。
 func (q UserListQuery) orderClause() string {
@@ -391,6 +391,35 @@ func (r *UserRepo) UpdateUserStatus(ctx context.Context, id int64, userStatus in
 	return nil
 }
 
+// UpdateMfaRequired 列级更新 user 表两步验证开关（§3.5 SetMfa 唯一写入端）。
+// 只写 mfa_required 列：开关切换不改变登录凭据，不递增 epoch、不失效会话。
+// updated_at 一并刷新。用户不存在返回包装的 gorm.ErrRecordNotFound；同值
+// 重放幂等成功（changed-rows 语义下 rows=0 补 SELECT 存在性判定，口径同
+// UpdateUserStatus）。
+func (r *UserRepo) UpdateMfaRequired(ctx context.Context, id int64, mfaRequired int8) error {
+	res := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", id).
+		Updates(map[string]any{"mfa_required": mfaRequired, "updated_at": time.Now()})
+	if res.Error != nil {
+		return fmt.Errorf("user repo: update mfa required: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		var exists int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.User{}).
+			Select("COUNT(*)").
+			Where("id = ?", id).
+			Scan(&exists).Error; err != nil {
+			return fmt.Errorf("user repo: update mfa required: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
+		}
+	}
+	return nil
+}
+
 // normalize 分页参数归一（§1.7：page 1 起、pageSize 默认 20 上限 100）。
 func (q UserListQuery) normalize() (page, size int) {
 	page, size = q.Page, q.PageSize
@@ -411,8 +440,8 @@ func (q UserListQuery) normalize() (page, size int) {
 // handler）：user 表与 user_profile 表各一条 IN 语句、零循环单查——
 // handler 一次调用完成整批读取（N+1 禁止，§7.2 行 1462 理由）。
 // 结果顺序不保证（IN 无序），调用方按入参 ids 定位回填顺序自管
-//（§7.2 行 1464：响应顺序 = 入参去重后顺序）；缺失 id 的行自然缺席
-//（§7.2 行 1463 跳过不占位），缺失 profile 行由调用方以 nil 组装零值
+// （§7.2 行 1464：响应顺序 = 入参去重后顺序）；缺失 id 的行自然缺席
+// （§7.2 行 1463 跳过不占位），缺失 profile 行由调用方以 nil 组装零值
 // profile 消息（同 GetProfile 口径：行缺失不视为错误）。ids 为空时返回
 // 双 nil、不触库（空批量空集语义，§7.2 行 1467）。
 func (r *UserRepo) ListByIDs(ctx context.Context, ids []int64) ([]model.User, []model.UserProfile, error) {

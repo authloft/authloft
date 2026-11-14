@@ -242,61 +242,58 @@ func TestAccountAvatarUploadProjection(t *testing.T) {
 	}
 }
 
-// TestAccountMfaPolicyProjection §3.2 行 827-847 mfaPolicy 投影：五因子
-// 序、enabled 按集合（recovery_code 随 totp）、bound 投影、
-// trustedDeviceDays 恒 0、enabled 与集合独立（行存在但集合空）。
+// TestAccountMfaPolicyProjection §3.2 mfaPolicy 投影：enabled 取开关原值、
+// methods 由白名单驱动（顺序即渲染顺序）、bound 逐项投影、
+// trustedDeviceDays 恒 0；白名单为空时 methods 为空列表。
 func TestAccountMfaPolicyProjection(t *testing.T) {
 	got := AccountMfaPolicy(
 		true,
-		[]string{"totp", "otp_sms"},
-		true,
+		[]string{"totp", "otp_sms", "webauthn"},
 		MfaBound{Totp: true, OtpSms: true, OtpEmail: true, Webauthn: false, RecoveryCode: true},
 	)
 
-	if !got.GetEnabled() || !got.GetRequired() {
-		t.Errorf("enabled/required = (%v, %v), want (true, true)", got.GetEnabled(), got.GetRequired())
+	if !got.GetEnabled() {
+		t.Error("enabled = false, want true")
 	}
 	if got.GetTrustedDeviceDays() != 0 {
 		t.Errorf("trustedDeviceDays = %d, want 0（预留恒 0）", got.GetTrustedDeviceDays())
 	}
 	want := []struct {
-		factor  string
-		enabled bool
-		bound   bool
+		factor string
+		bound  bool
 	}{
-		{"totp", true, true},
-		{"otp_sms", true, true},
-		{"otp_email", false, true},
-		{"webauthn", false, false},
-		{"recovery_code", true, true}, // 随 totp，不单列
+		{"totp", true},
+		{"otp_sms", true},
+		{"webauthn", false},
 	}
 	methods := got.GetMethods()
 	if len(methods) != len(want) {
 		t.Fatalf("methods len = %d, want %d", len(methods), len(want))
 	}
 	for i, w := range want {
-		if methods[i].GetFactor() != w.factor || methods[i].GetEnabled() != w.enabled || methods[i].GetBound() != w.bound {
-			t.Errorf("methods[%d] = {%s %v %v}, want {%s %v %v}", i,
-				methods[i].GetFactor(), methods[i].GetEnabled(), methods[i].GetBound(),
-				w.factor, w.enabled, w.bound)
+		if methods[i].GetFactor() != w.factor || methods[i].GetBound() != w.bound {
+			t.Errorf("methods[%d] = {%s %v}, want {%s %v}", i,
+				methods[i].GetFactor(), methods[i].GetBound(), w.factor, w.bound)
 		}
 	}
 
-	// recovery_code 随 totp：集合无 totp 时即使集合写了 recovery_code 也不启用
-	//（§5.6：随 totp 生效不单列，投影端不信任集合里的单列值）。
-	noTotp := AccountMfaPolicy(true, []string{"recovery_code"}, false, MfaBound{})
-	if m := noTotp.GetMethods()[4]; m.GetEnabled() {
-		t.Errorf("recovery_code.enabled = true, want false（集合无 totp）")
+	// 白名单为空（系统未开放）：methods 为空列表，开关原值照常下发。
+	empty := AccountMfaPolicy(true, nil, MfaBound{Totp: true})
+	if !empty.GetEnabled() {
+		t.Error("enabled = false, want true（开关原值）")
+	}
+	if len(empty.GetMethods()) != 0 {
+		t.Errorf("methods = %v, want []", empty.GetMethods())
 	}
 
-	// 行存在但集合空：enabled=true、methods[].enabled 全 false（两态独立）。
-	emptySet := AccountMfaPolicy(true, nil, false, MfaBound{})
-	if !emptySet.GetEnabled() {
-		t.Error("enabled = false, want true（行存在）")
+	// 未绑定 / 未知因子：bound 恒 false，不因白名单出现而默认为 true。
+	unbound := AccountMfaPolicy(false, []string{"otp_email", "unknown"}, MfaBound{})
+	if unbound.GetEnabled() {
+		t.Error("enabled = true, want false")
 	}
-	for _, m := range emptySet.GetMethods() {
-		if m.GetEnabled() {
-			t.Errorf("methods[%s].enabled = true, want false（集合空）", m.GetFactor())
+	for _, m := range unbound.GetMethods() {
+		if m.GetBound() {
+			t.Errorf("methods[%s].bound = true, want false", m.GetFactor())
 		}
 	}
 }

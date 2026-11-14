@@ -58,6 +58,7 @@ import (
 	"authloft/internal/logx"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/mfapolicy"
 )
 
 // 域常量（字面量均为文档封闭集成员；跨包私有常量按后端架构 §3.5「各落
@@ -105,9 +106,12 @@ type WebauthnFactor interface {
 }
 
 // WebauthnUserStore 注册场景取 username 的窄接口（§20）：*repo.UserRepo
-// 天然满足。username 只从服务端 DB 取，不从会话 / 请求体透传。
+// 天然满足。username 只从服务端 DB 取，不从会话 / 请求体透传；
+// UpdateMfaRequired 供删除最后一个可用因子时回落两步验证开关（§3.5
+// 运行期兜底）。
 type WebauthnUserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
+	UpdateMfaRequired(ctx context.Context, id int64, mfaRequired int8) error
 }
 
 // WebauthnStore user_credential_webauthn 表读写窄接口（§20）：*repo.WebauthnRepo
@@ -121,8 +125,10 @@ type WebauthnStore interface {
 }
 
 // WebauthnCredentialStore user_credential 表读写窄接口（§20）：*repo.CredentialRepo
-// 天然满足（Rename 按 id+uid+kind 定位走 ListByUser，label 更新走 Update）。
+// 天然满足（Rename 按 id+uid+kind 定位走 ListByUser，label 更新走 Update；
+// FindByUserAndKind 供删除后的可用因子判定）。
 type WebauthnCredentialStore interface {
+	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
 	ListByUser(ctx context.Context, userID int64) ([]model.UserCredential, error)
 	Update(ctx context.Context, c *model.UserCredential) error
 }
@@ -137,7 +143,10 @@ type WebauthnDeps struct {
 	Creds WebauthnCredentialStore
 	// Users 注册 challenge 取 username（options.user.name / displayName）；
 	// 未注入即装配遗漏，BeginRegister 拒绝而非静默下发缺用户信息的选项。
+	// 删除凭据后回落两步验证开关亦经此接口。
 	Users WebauthnUserStore
+	// Settings 两步验证白名单 / 总开关读取（删除最后一个可用因子时回落开关）。
+	Settings mfapolicy.SettingsReader
 	// Audit webauthn_register 审计投递（nil = 跳过，测试用）。
 	Audit AuditSink
 	// Now 时钟注入（缺省 time.Now）。
@@ -413,6 +422,8 @@ func (s *WebauthnService) RenameCredential(ctx context.Context, uid int64, id in
 // 属他人统一 not_found，不泄露存在性）；成功投递 webauthn_delete 审计
 // （§4.6 行 790 枚举既有成员，detail={credential_id}——经 ListByUser 预查
 // 目标行取值；TOCTOU 无害：并发删除后 Delete 返回 not_found，不投审计）。
+// 删除成功后若用户已开启两步验证且已无可用因子，回落 mfa_required=0
+// （§3.5 运行期兜底；回落失败按基础设施故障返回，删除已生效不回滚）。
 func (s *WebauthnService) DeleteCredential(ctx context.Context, uid int64, id int64) error {
 	if uid <= 0 {
 		return ErrWebauthnUnauthenticated
@@ -457,6 +468,32 @@ func (s *WebauthnService) DeleteCredential(ctx context.Context, uid int64, id in
 			Detail:    encodeDetailWebauthn(credentialID),
 			CreatedAt: s.now(),
 		})
+	}
+	// 删除最后一个可用因子时回落两步验证开关（§3.5 运行期兜底，与
+	// UnbindTotp 同口径）；Users 未注入（单测裁剪装配）无法判定时跳过，
+	// 其余依赖缺失由 mfapolicy 报错（fail-closed）。
+	if s.deps.Users == nil {
+		return nil
+	}
+	user, err := s.deps.Users.FindByID(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("%w: load user for mfa fallback: %v", ErrWebauthnInternal, err)
+	}
+	if user == nil || user.MfaRequired != 1 {
+		return nil
+	}
+	factors, err := mfapolicy.UsableFactors(ctx, mfapolicy.Deps{
+		Users:    s.deps.Users,
+		Creds:    s.deps.Creds,
+		Settings: s.deps.Settings,
+	}, uid)
+	if err != nil {
+		return fmt.Errorf("%w: resolve usable mfa factors: %v", ErrWebauthnInternal, err)
+	}
+	if len(factors) == 0 {
+		if err := s.deps.Users.UpdateMfaRequired(ctx, uid, 0); err != nil {
+			return fmt.Errorf("%w: reset mfa_required: %v", ErrWebauthnInternal, err)
+		}
 	}
 	return nil
 }

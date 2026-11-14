@@ -594,7 +594,7 @@ func buildVerification(deps *assembled, registry *factor.Registry, users *repo.U
 		Settings:    deps.settings,
 		Gate:        verifGate,
 		Once:        verifOnce,
-		Bound:       verification.NewBoundFactorReader(users, creds),
+		Bound:       verification.NewBoundFactorReader(users, creds, deps.settings),
 		Verifier:    verification.NewStepUpVerifier(registry, users, creds),
 		Starter:     verification.NewStepUpVerifier(registry, users, creds),
 		LoginTokens: orchestrator.NewLoginTokenReader(core.state),
@@ -637,6 +637,7 @@ func buildAccountServices(deps *assembled, users *repo.UserRepo, creds *repo.Cre
 		Webauthn: webauthnRepo,
 		Creds:    creds,
 		Users:    users,
+		Settings: deps.settings,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
 

@@ -108,9 +108,9 @@ type SetSettingsRequest struct {
 	AllowSignupPhone *bool `protobuf:"varint,16,opt,name=allow_signup_phone,json=allowSignupPhone,proto3,oneof" json:"allow_signup_phone,omitempty"`
 	// 邮箱注册入口，默认 true（§5.6 行 1318）。
 	AllowSignupEmail *bool `protobuf:"varint,17,opt,name=allow_signup_email,json=allowSignupEmail,proto3,oneof" json:"allow_signup_email,omitempty"`
-	// 两步验证总开关，默认 true；关闭后 mfa_policy.required 恒为 false（§5.6 行 1319）。
+	// 两步验证系统总开关，默认 true；关闭后所有用户不再二次验证、用户开关不可用（§5.6）。
 	MfaEnabled *bool `protobuf:"varint,18,opt,name=mfa_enabled,json=mfaEnabled,proto3,oneof" json:"mfa_enabled,omitempty"`
-	// 系统开放的二次因子集合（recovery_code 随 totp 生效，不单列）（§5.6 行 1320）。
+	// 可用于两步验证的因子白名单（recovery_code 随 totp 生效，不单列）（§5.6）。
 	// has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasMfaMethods *bool    `protobuf:"varint,19,opt,name=has_mfa_methods,json=hasMfaMethods,proto3,oneof" json:"has_mfa_methods,omitempty"`
 	MfaMethods    []string `protobuf:"bytes,20,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
@@ -513,9 +513,9 @@ type SettingsResponse struct {
 	AllowSignupPhone bool `protobuf:"varint,15,opt,name=allow_signup_phone,json=allowSignupPhone,proto3" json:"allow_signup_phone,omitempty"`
 	// 邮箱注册入口，默认 true（§5.6 行 1318）。
 	AllowSignupEmail bool `protobuf:"varint,16,opt,name=allow_signup_email,json=allowSignupEmail,proto3" json:"allow_signup_email,omitempty"`
-	// 两步验证总开关，默认 true（§5.6 行 1319）。
+	// 两步验证系统总开关，默认 true（§5.6）。
 	MfaEnabled bool `protobuf:"varint,17,opt,name=mfa_enabled,json=mfaEnabled,proto3" json:"mfa_enabled,omitempty"`
-	// 系统开放的二次因子集合，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6 行 1320）。
+	// 可用于两步验证的因子白名单，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6）。
 	MfaMethods []string `protobuf:"bytes,18,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
 	// 密码错误人机校验阈值，默认 3（§5.6 行 1321）。
 	PwdFailCapture int64 `protobuf:"varint,19,opt,name=pwd_fail_capture,json=pwdFailCapture,proto3" json:"pwd_fail_capture,omitempty"`

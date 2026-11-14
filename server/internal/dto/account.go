@@ -239,32 +239,14 @@ type MfaBound struct {
 	RecoveryCode bool
 }
 
-// mfaFactorOrder 五因子序（§3.2 行 834-840：totp/otp_sms/otp_email/
-// webauthn/recovery_code，顺序即前端渲染顺序，行 845）。
-var mfaFactorOrder = [...]string{"totp", "otp_sms", "otp_email", "webauthn", "recovery_code"}
-
-// AccountMfaPolicy 组装 §3.2 行 827-847 的 mfaPolicy 摘要：
-// enabled=已开启（mfa_setting 行存在，行 846）；methods[].enabled =
-// factor ∈ enabledMethods（mfa_setting 行 CredentialMeta.mfa_methods，
-// 行 846）；recovery_code 随 totp 投影（行 846、§5.6：随 totp 生效
-// 不单列）；bound=绑定态投影；trustedDeviceDays 恒 0（行 847 预留字段，
-// 本期不提供「信任此设备」）。
-func AccountMfaPolicy(enabled bool, enabledMethods []string, required bool, bound MfaBound) *accountv1.MfaPolicy {
-	enabledSet := make(map[string]bool, len(enabledMethods))
-	for _, m := range enabledMethods {
-		enabledSet[m] = true
-	}
-	policy := &accountv1.MfaPolicy{
-		Enabled:           enabled,
-		Required:          required,
-		TrustedDeviceDays: 0,
-		Methods:           make([]*accountv1.MfaPolicyMethod, 0, len(mfaFactorOrder)),
-	}
-	for _, factor := range mfaFactorOrder {
-		m := &accountv1.MfaPolicyMethod{Factor: factor, Enabled: enabledSet[factor]}
-		if factor == "recovery_code" {
-			m.Enabled = enabledSet["totp"]
-		}
+// AccountMfaPolicy 组装 §3.2 的 mfaPolicy 摘要：enabled 取 user.mfa_required
+// 原值；methods 由管理员白名单驱动（顺序即前端渲染顺序），逐项投影绑定态，
+// 不再有用户级启用集合；trustedDeviceDays 恒 0（预留字段，本期不提供
+// 「信任此设备」）。白名单为空（系统未开放）时 methods 为空列表。
+func AccountMfaPolicy(enabled bool, methods []string, bound MfaBound) *accountv1.MfaPolicy {
+	out := make([]*accountv1.MfaPolicyMethod, 0, len(methods))
+	for _, factor := range methods {
+		m := &accountv1.MfaPolicyMethod{Factor: factor}
 		switch factor {
 		case "totp":
 			m.Bound = bound.Totp
@@ -274,12 +256,14 @@ func AccountMfaPolicy(enabled bool, enabledMethods []string, required bool, boun
 			m.Bound = bound.OtpEmail
 		case "webauthn":
 			m.Bound = bound.Webauthn
-		case "recovery_code":
-			m.Bound = bound.RecoveryCode
 		}
-		policy.Methods = append(policy.Methods, m)
+		out = append(out, m)
 	}
-	return policy
+	return &accountv1.MfaPolicy{
+		Enabled:           enabled,
+		TrustedDeviceDays: 0,
+		Methods:           out,
+	}
 }
 
 // AccountUserEventItem event_log 行 → 本人登录记录条目（§3.7 行 1057）：

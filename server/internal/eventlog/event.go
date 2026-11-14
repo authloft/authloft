@@ -67,15 +67,6 @@ func DetailTargetMasked(targetMasked string) []byte {
 	return encodeDetail(map[string]any{"target_masked": targetMasked})
 }
 
-// DetailMFAMethods 编码 enable_mfa / disable_mfa 的 detail（§4.6 行
-// 801）：{methods:[...]}。nil 归一为空数组，保证键值类型稳定。
-func DetailMFAMethods(methods []string) []byte {
-	if methods == nil {
-		methods = []string{}
-	}
-	return encodeDetail(map[string]any{"methods": methods})
-}
-
 // DetailThirdpartyBind 编码 thirdparty_bind / thirdparty_unbind 的 detail
 // （§4.6 行 802）：{provider_key, open_id}。
 func DetailThirdpartyBind(providerKey, openID string) []byte {

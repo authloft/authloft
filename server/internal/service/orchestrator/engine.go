@@ -16,9 +16,7 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/security"
-	"authloft/internal/settings"
-
-	"gorm.io/gorm"
+	"authloft/internal/service/mfapolicy"
 )
 
 // 登录流程域 status（docs/接口文档.md §1.6 行 228-273 的封闭集合子集）。
@@ -418,9 +416,9 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		if p.Uid == 0 {
 			return failed()
 		}
-		// 该用户已启用 MFA → status=mfa_required（§1.6 / §2.7.4 行 785）：
-		// 只依据系统开关与用户启用状态判定，不下发因子列表；因子视图由验证
-		// 内核 StartVerification 提供（§3.8）。
+		// 该用户已启用 MFA → status=mfa_required（§1.6 / §2.7.4）：
+		// 按系统开关、用户开关与可用因子判定，不下发因子列表；因子视图由
+		// 验证内核 StartVerification 提供（§3.8）。
 		required, err := e.mfaRequired(ctx, p.Uid)
 		if err != nil {
 			// 依赖读取故障按 fail-closed 收敛：不得静默跳过二次验证。
@@ -445,48 +443,18 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 }
 
 // mfaRequired 判定主因子通过后是否进入二次验证（§1.6 mfa_required、
-// §2.7.4 行 785）：只依据系统开关与用户启用状态，不下发因子列表；因子
-// 视图由验证内核 StartVerification 提供（§3.8）。
+// §2.7.4）：口径统一为「系统已开放 ∧ user.mfa_required=1 ∧ 存在可用因子」，
+// 判定实现归 mfapolicy（§3.7），本层不复制白名单与绑定态读取逻辑。
 //
 // 返回 error 表示依赖读取故障（连接失败 / 超时 / 用户查不到等），调用方
 // 必须拒绝登录：读取故障不得被解释为「无需二次验证」，否则启用 MFA 的用户
-// 会在故障窗口被跳过二次验证。用户行的任何读取错误都不得放行（仓储对
-// not-found 也按错误返回）；仅 mfa_setting 凭据行不存在属正常语义（该用户
-// 未启用自选 MFA），返回 (false, nil)。
+// 会在故障窗口被跳过二次验证。
 func (e *Engine) mfaRequired(ctx context.Context, uid int64) (bool, error) {
-	// uid=0 / 依赖未接入（单测裁剪装配）：无判定输入，按无需 MFA 处理。
-	if uid == 0 || e.repo.Users == nil {
-		return false, nil
-	}
-	if !boolSetting(e.dispatcher.Settings, settings.KeyMfaEnabled, true) {
-		return false, nil
-	}
-	user, err := e.repo.Users.FindByID(ctx, uid)
-	if err != nil {
-		return false, err
-	}
-	if user == nil {
-		return false, nil
-	}
-	if user.MfaRequired == 1 {
-		return true, nil
-	}
-	// 凭据仓储未接入与旧 builder 口径一致（hasCredential 返回 false, nil）：
-	// 属装配裁剪而非运行期故障，不得据此拒绝登录。
-	if e.repo.Credentials == nil {
-		return false, nil
-	}
-	c, err := e.repo.Credentials.FindByUserAndKind(ctx, uid, "mfa_setting")
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	if c == nil {
-		return false, nil
-	}
-	return c.IsEnabled == 1, nil
+	return mfapolicy.Required(ctx, mfapolicy.Deps{
+		Users:    e.repo.Users,
+		Creds:    e.repo.Credentials,
+		Settings: e.dispatcher.Settings,
+	}, uid)
 }
 
 // completeSuccess 组装 status=success 信封（verify 与 set_password 共用，

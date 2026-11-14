@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
-	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
 	credentialpb "authloft/gen/go/credential"
@@ -26,10 +25,11 @@ import (
 // mfaNow 固定时钟（loc 无关，Unix 秒口径）。
 var mfaNow = time.Unix(1761800000, 0).UTC()
 
-// fakeMfaUsers MfaUserStore 的 fake：单用户回放。
+// fakeMfaUsers MfaUserStore 的 fake：单用户回放 + mfa_required 写入记录。
 type fakeMfaUsers struct {
-	u   *model.User
-	err error
+	u       *model.User
+	err     error
+	updates []int8 // UpdateMfaRequired 入参序列
 }
 
 func (f *fakeMfaUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
@@ -40,6 +40,18 @@ func (f *fakeMfaUsers) FindByID(_ context.Context, id int64) (*model.User, error
 		return nil, fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
 	}
 	return f.u, nil
+}
+
+func (f *fakeMfaUsers) UpdateMfaRequired(_ context.Context, id int64, v int8) error {
+	if f.err != nil {
+		return f.err
+	}
+	if f.u == nil || f.u.ID != id {
+		return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
+	}
+	f.updates = append(f.updates, v)
+	f.u.MfaRequired = v
+	return nil
 }
 
 // fakeMfaCreds MfaCredentialStore 的 fake：kind 行内存存储 + 建库 / 更新 /
@@ -113,10 +125,12 @@ func (f *fakeMfaWebauthn) ListByUser(_ context.Context, userID int64) ([]model.U
 	return out, nil
 }
 
-// fakeMfaSettings MfaSettingsReader 的 fake：仅 mfa_enabled 键。
+// fakeMfaSettings MfaSettingsReader 的 fake：mfa_enabled 与 mfa_methods 两键。
 type fakeMfaSettings struct {
 	mfaEnabled bool
 	has        bool
+	methods    []string
+	methodsHas bool
 }
 
 func (f *fakeMfaSettings) GetBool(key string) (bool, bool) {
@@ -124,6 +138,13 @@ func (f *fakeMfaSettings) GetBool(key string) (bool, bool) {
 		return f.mfaEnabled, f.has
 	}
 	return false, false
+}
+
+func (f *fakeMfaSettings) GetStringSlice(key string) ([]string, bool) {
+	if key == settings.KeyMfaMethods {
+		return f.methods, f.methodsHas
+	}
+	return nil, false
 }
 
 // fakeMfaRand Rand 的 fake：xorshift32 确定性伪随机（恢复码生成带去重，
@@ -288,32 +309,44 @@ func TestMfaGetDetailRecoveryExhausted(t *testing.T) {
 	}
 }
 
-func TestMfaSetMfaEnable(t *testing.T) {
-	creds := &fakeMfaCreds{}
-	audit := &fakeAudit{}
-	// required=false（user.mfa_required=0）。
-	svc := newMfaService(&model.User{ID: 42, Username: "zhang_san"}, creds,
-		&fakeMfaWebauthn{}, &fakeMfaSettings{}, audit)
+// mfaSettingsOn mfa_enabled=true + 指定白名单的 settings fake。
+func mfaSettingsOn(methods ...string) *fakeMfaSettings {
+	return &fakeMfaSettings{mfaEnabled: true, has: true, methods: methods, methodsHas: true}
+}
 
-	if err := svc.SetMfa(context.Background(), 42, []string{"otp_sms", "totp"}); err != nil {
-		t.Fatalf("SetMfa: %v", err)
+// newMfaServiceWithUsers 需要断言 mfa_required 写入时显式持有 fakeMfaUsers。
+func newMfaServiceWithUsers(u *model.User, users *fakeMfaUsers, creds *fakeMfaCreds,
+	st *fakeMfaSettings, audit *fakeAudit) *MfaService {
+	return NewMfaService(MfaDeps{
+		Users:    users,
+		Creds:    creds,
+		Webauthn: &fakeMfaWebauthn{},
+		Settings: st,
+		Audit:    audit,
+		Now:      func() time.Time { return mfaNow },
+		Rand:     &fakeMfaRand{state: 0xAB},
+	})
+}
+
+func TestMfaSetMfaEnable(t *testing.T) {
+	// 白名单 totp + 已绑定 totp 行 → 允许开启，只写 user.mfa_required=1。
+	creds := &fakeMfaCreds{rows: []*model.UserCredential{
+		{ID: 1, UserID: 42, Kind: kindTotp, IsEnabled: 1},
+	}}
+	users := &fakeMfaUsers{u: &model.User{ID: 42, Username: "zhang_san"}}
+	audit := &fakeAudit{}
+	svc := newMfaServiceWithUsers(users.u, users, creds, mfaSettingsOn("totp", "webauthn"), audit)
+
+	if err := svc.SetMfa(context.Background(), 42, true); err != nil {
+		t.Fatalf("SetMfa(true): %v", err)
 	}
-	if len(creds.creates) != 1 {
-		t.Fatalf("creates = %d, want 1（首开建 mfa_setting 行）", len(creds.creates))
+	if len(users.updates) != 1 || users.updates[0] != 1 {
+		t.Fatalf("mfa_required updates = %v, want [1]", users.updates)
 	}
-	row := creds.creates[0]
-	if row.UserID != 42 || row.Kind != "mfa_setting" || row.IsEnabled != 1 {
-		t.Errorf("created row = %+v", row)
+	if len(creds.creates) != 0 || len(creds.updates) != 0 || len(creds.deletes) != 0 {
+		t.Errorf("开关切换不得触碰凭证: creates=%d updates=%d deletes=%d",
+			len(creds.creates), len(creds.updates), len(creds.deletes))
 	}
-	meta, err := repo.UnmarshalCredentialMeta(row.Meta)
-	if err != nil {
-		t.Fatalf("decode meta: %v", err)
-	}
-	// 归一序（totp → otp_sms），与 mfaOrder 一致。
-	if !proto.Equal(meta, &credentialpb.CredentialMeta{MfaMethods: []string{"totp", "otp_sms"}}) {
-		t.Errorf("mfa_methods = %v, want [totp otp_sms]", meta.GetMfaMethods())
-	}
-	// enable_mfa 审计 + detail={methods:[...]}（§4.6 行 821）。
 	if len(audit.events) != 1 {
 		t.Fatalf("audit events = %d, want 1", len(audit.events))
 	}
@@ -325,116 +358,63 @@ func TestMfaSetMfaEnable(t *testing.T) {
 	if err := msgpack.Unmarshal(ev.Detail, &detail); err != nil {
 		t.Fatalf("decode audit detail: %v", err)
 	}
-	methods, _ := detail["methods"].([]any)
-	if len(methods) != 2 || methods[0] != "totp" || methods[1] != "otp_sms" {
-		t.Errorf("audit detail methods = %v", detail["methods"])
-	}
-
-	// 再开 = Update 既有行（每用户至多一行）。
-	if err := svc.SetMfa(context.Background(), 42, []string{"webauthn"}); err != nil {
-		t.Fatalf("SetMfa again: %v", err)
-	}
-	if len(creds.creates) != 1 || len(creds.updates) != 1 {
-		t.Fatalf("creates=%d updates=%d, want 1/1（再开走 Update）", len(creds.creates), len(creds.updates))
-	}
-	meta, err = repo.UnmarshalCredentialMeta(creds.updates[0].Meta)
-	if err != nil {
-		t.Fatalf("decode updated meta: %v", err)
-	}
-	if len(meta.GetMfaMethods()) != 1 || meta.GetMfaMethods()[0] != "webauthn" {
-		t.Errorf("updated mfa_methods = %v", meta.GetMfaMethods())
-	}
-	if len(audit.events) != 2 {
-		t.Errorf("audit events = %d, want 2（每次启用一投）", len(audit.events))
+	if v, ok := detail["enabled"].(bool); !ok || !v {
+		t.Errorf("audit detail enabled = %#v, want true", detail["enabled"])
 	}
 }
 
-func TestMfaSetMfaInvalidMethod(t *testing.T) {
+func TestMfaSetMfaEnableRejected(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings *fakeMfaSettings
+		creds    *fakeMfaCreds
+	}{
+		{"白名单为空", &fakeMfaSettings{mfaEnabled: true, has: true}, &fakeMfaCreds{rows: []*model.UserCredential{
+			{UserID: 42, Kind: kindTotp, IsEnabled: 1},
+		}}},
+		{"白名单内因子未绑定", mfaSettingsOn("totp"), &fakeMfaCreds{}},
+		{"系统总开关关闭", &fakeMfaSettings{mfaEnabled: false, has: true, methods: []string{"totp"}, methodsHas: true},
+			&fakeMfaCreds{rows: []*model.UserCredential{{UserID: 42, Kind: kindTotp, IsEnabled: 1}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			users := &fakeMfaUsers{u: &model.User{ID: 42, Username: "zhang_san"}}
+			svc := newMfaServiceWithUsers(users.u, users, tc.creds, tc.settings, &fakeAudit{})
+			if err := svc.SetMfa(context.Background(), 42, true); !errors.Is(err, ErrMfaInvalidRequest) {
+				t.Fatalf("SetMfa(true) err = %v, want ErrMfaInvalidRequest", err)
+			}
+			if len(users.updates) != 0 {
+				t.Errorf("被拒不得写 mfa_required: %v", users.updates)
+			}
+		})
+	}
+}
+
+func TestMfaSetMfaDisable(t *testing.T) {
+	// 关闭不校验可用因子：即便白名单为空也直接写 0。
 	creds := &fakeMfaCreds{}
-	svc := newMfaService(&model.User{ID: 42}, creds, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
-	for _, methods := range [][]string{
-		{"totp", "magic"}, // 未知因子
-		{"recovery_code"}, // 随 totp 投影，不可独立勾选
-	} {
-		if err := svc.SetMfa(context.Background(), 42, methods); !errors.Is(err, ErrMfaInvalidRequest) {
-			t.Errorf("SetMfa(%v) err = %v, want ErrMfaInvalidRequest", methods, err)
-		}
-	}
-	if len(creds.creates) != 0 || len(creds.updates) != 0 {
-		t.Errorf("invalid input must not touch store: creates=%d updates=%d", len(creds.creates), len(creds.updates))
-	}
-}
-
-func TestMfaSetMfaRequiredReject(t *testing.T) {
-	// required=true（settings.mfa_enabled=true + user.mfa_required=1）时空数组
-	// = 关闭被拒（§3.2 行 849「true 时用户不可关闭」）。
-	svc := newMfaService(&model.User{ID: 42, MfaRequired: 1}, &fakeMfaCreds{},
-		&fakeMfaWebauthn{}, &fakeMfaSettings{mfaEnabled: true, has: true}, &fakeAudit{})
-	err := svc.SetMfa(context.Background(), 42, nil)
-	if !errors.Is(err, ErrMfaInvalidRequest) {
-		t.Errorf("close under required err = %v, want ErrMfaInvalidRequest", err)
-	}
-	// settings.mfa_enabled=false → required=false（口径与 orchestrator/handler 一致）。
-	svc2 := newMfaService(&model.User{ID: 42, MfaRequired: 1}, &fakeMfaCreds{},
-		&fakeMfaWebauthn{}, &fakeMfaSettings{mfaEnabled: false, has: true}, &fakeAudit{})
-	if err := svc2.SetMfa(context.Background(), 42, []string{"totp"}); err != nil {
-		t.Errorf("enable under mfa_enabled=false err = %v, want nil（启用不受 required 限制）", err)
-	}
-}
-
-func TestMfaSetMfaClose(t *testing.T) {
-	// 关闭 ⇔ 删除 mfa_setting 行（既定口径；行 862
-	//「行存在即顶层 enabled=true」）：先开再关 round-trip——行被删（非
-	// is_enabled=0）+ disable_mfa 审计已投（detail={methods:[]}）；已关闭态
-	// 再关 → 未命中幂等成功。
-	creds := &fakeMfaCreds{}
+	users := &fakeMfaUsers{u: &model.User{ID: 42, MfaRequired: 1}}
 	audit := &fakeAudit{}
-	svc := newMfaService(&model.User{ID: 42, MfaRequired: 0}, creds,
-		&fakeMfaWebauthn{}, &fakeMfaSettings{mfaEnabled: true, has: true}, audit)
-	// 预置：先开启（建 mfa_setting 行）。
-	if err := svc.SetMfa(context.Background(), 42, []string{"totp"}); err != nil {
-		t.Fatalf("pre-open: %v", err)
+	svc := newMfaServiceWithUsers(users.u, users, creds, &fakeMfaSettings{}, audit)
+
+	if err := svc.SetMfa(context.Background(), 42, false); err != nil {
+		t.Fatalf("SetMfa(false): %v", err)
 	}
-	if len(creds.rows) != 1 || creds.rows[0].Kind != "mfa_setting" {
-		t.Fatalf("pre-open rows = %+v, want 1 mfa_setting 行", creds.rows)
+	if len(users.updates) != 1 || users.updates[0] != 0 {
+		t.Fatalf("mfa_required updates = %v, want [0]", users.updates)
 	}
-	// 关闭：空数组。
-	if err := svc.SetMfa(context.Background(), 42, nil); err != nil {
-		t.Fatalf("close: %v", err)
+	if len(creds.deletes) != 0 {
+		t.Errorf("关闭不得删除凭证行: %+v", creds.deletes)
 	}
-	if len(creds.deletes) != 1 || creds.deletes[0].uid != 42 || creds.deletes[0].kind != "mfa_setting" {
-		t.Errorf("deletes = %+v, want one mfa_setting delete for uid 42", creds.deletes)
-	}
-	if len(creds.rows) != 0 {
-		t.Errorf("rows after close = %d, want 0（关闭=删行，非 is_enabled=0）", len(creds.rows))
-	}
-	if len(creds.creates) != 1 || len(creds.updates) != 0 {
-		t.Errorf("close must not create/update: creates=%d updates=%d", len(creds.creates), len(creds.updates))
-	}
-	// 审计：enable_mfa（开）→ disable_mfa（关，detail={methods:[]}）。
-	if len(audit.events) != 2 {
-		t.Fatalf("audit events = %d, want 2", len(audit.events))
-	}
-	if ev := audit.events[0]; ev.Event != "enable_mfa" {
-		t.Errorf("first event = %q, want enable_mfa", ev.Event)
-	}
-	ev := audit.events[1]
-	if ev.Event != "disable_mfa" || ev.ActorID != 42 || ev.UserID != 42 {
-		t.Errorf("disable event = %+v", ev)
+	if len(audit.events) != 1 || audit.events[0].Event != "disable_mfa" {
+		t.Fatalf("audit events = %+v, want disable_mfa", audit.events)
 	}
 	var detail map[string]any
-	if err := msgpack.Unmarshal(ev.Detail, &detail); err != nil {
+	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
 		t.Fatalf("decode disable detail: %v", err)
 	}
-	if m, ok := detail["methods"].([]any); !ok || len(m) != 0 {
-		t.Errorf("disable detail methods = %#v, want 空数组", detail["methods"])
-	}
-	// 已关闭态再关 → 行不存在幂等成功（Delete 未命中不放大为错误）。
-	if err := svc.SetMfa(context.Background(), 42, nil); err != nil {
-		t.Errorf("idempotent close: %v", err)
-	}
-	if len(creds.deletes) != 2 {
-		t.Errorf("deletes = %d, want 2（幂等关闭照调删行）", len(creds.deletes))
+	if v, ok := detail["enabled"].(bool); !ok || v {
+		t.Errorf("audit detail enabled = %#v, want false", detail["enabled"])
 	}
 }
 
@@ -650,7 +630,7 @@ func TestMfaUnauthenticatedAndUserMissing(t *testing.T) {
 	if _, err := svc.GetMfa(ctx, 0); !errors.Is(err, ErrMfaUnauthenticated) {
 		t.Errorf("GetMfa(0) err = %v, want ErrMfaUnauthenticated", err)
 	}
-	if err := svc.SetMfa(ctx, 0, []string{"totp"}); !errors.Is(err, ErrMfaUnauthenticated) {
+	if err := svc.SetMfa(ctx, 0, true); !errors.Is(err, ErrMfaUnauthenticated) {
 		t.Errorf("SetMfa(0) err = %v, want ErrMfaUnauthenticated", err)
 	}
 	if _, err := svc.BindTotpChallenge(ctx, 0); !errors.Is(err, ErrMfaUnauthenticated) {
@@ -667,7 +647,7 @@ func TestMfaUnauthenticatedAndUserMissing(t *testing.T) {
 	if _, err := svc2.GetMfa(ctx, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("GetMfa(missing user) err = %v, want gorm.ErrRecordNotFound", err)
 	}
-	if err := svc2.SetMfa(ctx, 42, []string{"totp"}); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc2.SetMfa(ctx, 42, true); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("SetMfa(missing user) err = %v, want gorm.ErrRecordNotFound", err)
 	}
 	if _, err := svc2.BindTotpChallenge(ctx, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -777,6 +757,49 @@ func TestUnbindTotpPropagatesAssertionError(t *testing.T) {
 	}
 	if len(creds.deletes) != 0 {
 		t.Fatalf("断言未通过不得删除凭据: %+v", creds.deletes)
+	}
+}
+
+// TestUnbindTotpResetsSwitchWhenLastFactorRemoved 解绑后无可用因子回落
+// mfa_required=0；仍有其他可用因子（如手机号）时保持原开关（§3.5 运行期兜底）。
+func TestUnbindTotpResetsSwitchWhenLastFactorRemoved(t *testing.T) {
+	phone := "13812348000"
+	cases := []struct {
+		name        string
+		methods     []string
+		user        *model.User
+		wantUpdates []int8
+	}{
+		{"无其他可用因子 → 回落", []string{"totp"}, &model.User{ID: 42, MfaRequired: 1}, []int8{0}},
+		{"手机号仍可用 → 保持", []string{"totp", "otp_sms"}, &model.User{ID: 42, MfaRequired: 1, Phone: &phone}, nil},
+		// 开关本来就是 0：删掉最后一个因子也不得回写（不刷 updated_at）。
+		{"开关本为 0 → 不写回", []string{"totp"}, &model.User{ID: 42, MfaRequired: 0}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			creds := &fakeMfaCreds{rows: []*model.UserCredential{
+				{UserID: 42, Kind: kindTotp, IsEnabled: 1},
+				{UserID: 42, Kind: kindRecoveryCode, IsEnabled: 1},
+			}}
+			users := &fakeMfaUsers{u: tc.user}
+			svc := NewMfaService(MfaDeps{
+				Users:      users,
+				Creds:      creds,
+				Settings:   mfaSettingsOn(tc.methods...),
+				Assertions: &fakeAssertions{},
+			})
+			if err := svc.UnbindTotp(context.Background(), 42, "vt-1"); err != nil {
+				t.Fatalf("UnbindTotp: %v", err)
+			}
+			if len(users.updates) != len(tc.wantUpdates) {
+				t.Fatalf("mfa_required updates = %v, want %v", users.updates, tc.wantUpdates)
+			}
+			for i, w := range tc.wantUpdates {
+				if users.updates[i] != w {
+					t.Errorf("updates[%d] = %d, want %d", i, users.updates[i], w)
+				}
+			}
+		})
 	}
 }
 

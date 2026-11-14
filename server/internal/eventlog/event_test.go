@@ -115,23 +115,6 @@ func TestDetailTargetMasked(t *testing.T) {
 	}
 }
 
-// TestDetailMFAMethods 校验 enable_mfa / disable_mfa（§4.6 行 801），并
-// 覆盖 nil 归一为空数组。
-func TestDetailMFAMethods(t *testing.T) {
-	type mfaDetail struct {
-		Methods []string `msgpack:"methods"`
-	}
-	got := decodeDetail[mfaDetail](t, DetailMFAMethods([]string{"totp", "webauthn"}))
-	if want := []string{"totp", "webauthn"}; !reflect.DeepEqual(got.Methods, want) {
-		t.Errorf("methods = %v, want %v", got.Methods, want)
-	}
-
-	empty := decodeDetail[mfaDetail](t, DetailMFAMethods(nil))
-	if len(empty.Methods) != 0 {
-		t.Errorf("nil methods = %v, want empty array", empty.Methods)
-	}
-}
-
 // TestDetailThirdpartyBind 校验 thirdparty_bind / thirdparty_unbind（§4.6
 // 行 802）。
 func TestDetailThirdpartyBind(t *testing.T) {

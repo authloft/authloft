@@ -237,7 +237,7 @@ func TestUserRepoEpochWraparound(t *testing.T) {
 
 // userTestSetStatus 直接置 user_status 列构造禁用态：GORM Create 的
 // default:1 语义下零值 0 被 tag 值 1 显式写入 INSERT 并回填 struct
-//（gorm@v1.31.2 callbacks/create.go:340-343），struct 插入落不了 0，
+// （gorm@v1.31.2 callbacks/create.go:340-343），struct 插入落不了 0，
 // 故用列级 UPDATE（与 admin 禁用路径 §5.4 UpdateUserStatus 同构）。
 func userTestSetStatus(t *testing.T, db *gorm.DB, id int64, v int8) {
 	t.Helper()
@@ -255,7 +255,7 @@ func userTestSetEpoch(t *testing.T, db *gorm.DB, id int64, v int16) {
 }
 
 // TestUserRepoUpdateLastLogin（env-skip）：last_login_at 写入与读回
-//（DATETIME 秒级精度，输入截断到秒）；最新值覆盖；同值二次更新幂等
+// （DATETIME 秒级精度，输入截断到秒）；最新值覆盖；同值二次更新幂等
 // 不误报（changed-rows 语义下 RowsAffected=0 但行存在）；不存在用户
 // 可判别。
 func TestUserRepoUpdateLastLogin(t *testing.T) {
@@ -434,7 +434,7 @@ func TestUserRepoUpdateContactColumns(t *testing.T) {
 }
 
 // TestUserRepoListUsers（env-skip）：user_status 过滤 + §1.7 分页参数
-//（page 1 起、pageSize 默认 20 上限 100）、id 降序全序稳定。
+// （page 1 起、pageSize 默认 20 上限 100）、id 降序全序稳定。
 func TestUserRepoListUsers(t *testing.T) {
 	rp, db := userTestSetup(t)
 	ctx := context.Background()
@@ -571,7 +571,7 @@ func TestUserProfileReadWrite(t *testing.T) {
 }
 
 // TestUserRepoListByIDs（env-skip）：GetUserProfiles 批量读的 repo 支撑
-//（接口文档 §7.2 行 1436）——user / user_profile 两表各一条 IN 语句：
+// （接口文档 §7.2 行 1436）——user / user_profile 两表各一条 IN 语句：
 // 命中行全量返回、缺失 id 自然缺席（跳过语义归 handler）；user_profile 行
 // 缺失的用户（u3）在 profiles 中无行；空 ids 双空零触库；全缺失 ids 返回
 // 空集不报错（空批量空集语义，§7.2 行 1467）。
@@ -647,7 +647,7 @@ func TestUserRepoListByIDs(t *testing.T) {
 
 // TestUserRepoListUsersSearchSort（env-skip）：q 对 username / nickname /
 // email / phone 四列模糊匹配（%q%，通配符转义为字面量）；sort / order 消费
-//（合法列名排序、缺省与字符集外回落 id、order 仅 asc 改向）。
+// （合法列名排序、缺省与字符集外回落 id、order 仅 asc 改向）。
 func TestUserRepoListUsersSearchSort(t *testing.T) {
 	rp, _ := userTestSetup(t)
 	ctx := context.Background()
@@ -724,7 +724,7 @@ func usernames(rows []model.User) []string {
 }
 
 // TestUserRepoUpdateUserStatus（env-skip）：列级 UPDATE 禁用 / 启用
-//（零值 0 落库——列级更新不受 default:1 tag 影响）；updated_at 刷新；同值
+// （零值 0 落库——列级更新不受 default:1 tag 影响）；updated_at 刷新；同值
 // 重放幂等成功；不存在 → ErrRecordNotFound。
 func TestUserRepoUpdateUserStatus(t *testing.T) {
 	rp, db := userTestSetup(t)
@@ -768,6 +768,57 @@ func TestUserRepoUpdateUserStatus(t *testing.T) {
 
 	// 不存在 → ErrRecordNotFound。
 	if err := rp.UpdateUserStatus(ctx, 404, 0); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
+	}
+}
+
+// TestUserRepoUpdateMfaRequired（env-skip）：列级 UPDATE 两步验证开关
+// （§3.5 SetMfa 唯一写入端）；updated_at 刷新、epoch 不受影响（开关切换
+// 不改变登录凭据）；同值重放幂等成功；不存在 → ErrRecordNotFound。
+func TestUserRepoUpdateMfaRequired(t *testing.T) {
+	rp, db := userTestSetup(t)
+	ctx := context.Background()
+
+	u := &model.User{Username: "alice"}
+	if err := rp.Create(ctx, u); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	before := time.Now().Add(-time.Minute).Truncate(time.Second)
+	if err := db.Model(&model.User{}).Where("id = ?", u.ID).Update("updated_at", before).Error; err != nil {
+		t.Fatalf("回拨 updated_at 失败: %v", err)
+	}
+	epochBefore := u.Epoch
+
+	// 开启：mfa_required 1 落库。
+	if err := rp.UpdateMfaRequired(ctx, u.ID, 1); err != nil {
+		t.Fatalf("开启失败: %v", err)
+	}
+	row, err := rp.FindByID(ctx, u.ID)
+	if err != nil || row.MfaRequired != 1 {
+		t.Fatalf("开启后 mfa_required = (%d, %v), want 1", row.MfaRequired, err)
+	}
+	if !row.UpdatedAt.After(before) {
+		t.Fatalf("updated_at 应刷新: before=%v after=%v", before, row.UpdatedAt)
+	}
+	if row.Epoch != epochBefore {
+		t.Fatalf("epoch 不应变化: before=%d after=%d", epochBefore, row.Epoch)
+	}
+
+	// 同值重放幂等成功（changed-rows=0 + 行在）。
+	if err := rp.UpdateMfaRequired(ctx, u.ID, 1); err != nil {
+		t.Fatalf("同值重放应幂等: %v", err)
+	}
+
+	// 关闭回 0。
+	if err := rp.UpdateMfaRequired(ctx, u.ID, 0); err != nil {
+		t.Fatalf("关闭失败: %v", err)
+	}
+	if row, err = rp.FindByID(ctx, u.ID); err != nil || row.MfaRequired != 0 {
+		t.Fatalf("关闭后 mfa_required = (%d, %v), want 0", row.MfaRequired, err)
+	}
+
+	// 不存在 → ErrRecordNotFound。
+	if err := rp.UpdateMfaRequired(ctx, 404, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
 	}
 }

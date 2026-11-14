@@ -1,7 +1,7 @@
 // user.go 实现 AdminService 用户管理族 8 方法（GetMe / ListUsers / GetUser /
 // UpdateUserStatus / ResetUserPassword / UnbindUserThirdparty / UnlockUser /
 // GetUserEvents，接口文档 §5.1 行 1162、§5.4 行 1249-1255）的业务层
-//（docs/后端架构.md §3.9 行 390、§18 行 1792 分层 handler →
+// （docs/后端架构.md §3.9 行 390、§18 行 1792 分层 handler →
 // service/admin/user.go → repo / cache）。
 //
 // 职责边界：会话身份来自 handler（session.UIDFromContext，管理员判定在
@@ -9,7 +9,7 @@
 // 仅 0|1、id>0、providerKey 非空）；写路径副作用编排——禁用 / 重置密码
 // 走 IncEpoch + al:pwdep 同步（既有会话全部失效，§11.1 行 1236、§5.1 行
 // 864「改密 / 重置 / 管理员禁用」三触发项）+ 审计投递；解绑走 Union 行连带
-//（§12.7 行 1548）；解锁清 uid 维度键 + 按当前 phone / email 重算「ip +
+// （§12.7 行 1548）；解锁清 uid 维度键 + 按当前 phone / email 重算「ip +
 // 账号哈希」维度键（§8.1 行 1041，ip 未知 → SCAN 模式匹配删除）。
 // Connect 错误形态映射归 handler；本层返回可判别哨兵错误（映射口径同
 // provider.go 包注释）：
@@ -51,7 +51,7 @@ const providerCategoryUnion = "union"
 const credentialKindPassword = "password"
 
 // UserStore user 表读写窄接口（§20 依赖注入）：*repo.UserRepo 天然满足
-//（FindByID / ListUsers / IncEpoch 既有 + UpdateUserStatus 列级最小增量），
+// （FindByID / ListUsers / IncEpoch 既有 + UpdateUserStatus 列级最小增量），
 // 测试可传 fake。
 type UserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
@@ -184,7 +184,7 @@ func (s *UserService) GetMe(ctx context.Context, uid int64) (*model.User, error)
 
 // ListUsersFilter ListUsers 入参（§5.4 行 1249：{q, userStatus} + §1.7 分页）。
 // UserStatus 非 nil 时仅 0|1 合法（列枚举）；Sort / Order 原样透传 repo
-//（§1.7 行 277 后端不做白名单强制校验，字符集防注入归 repo）。
+// （§1.7 行 277 后端不做白名单强制校验，字符集防注入归 repo）。
 type ListUsersFilter struct {
 	Q          string
 	UserStatus *int64
@@ -209,18 +209,18 @@ func (s *UserService) ListUsers(ctx context.Context, f ListUsersFilter) ([]model
 	return s.users.ListUsers(ctx, q)
 }
 
-// UserDetail GetUser 的聚合结果（§5.4 行 1250 详情：user 行 + 凭证概览 +
-// 三方绑定列表）；MFA 状态的输入（mfa_setting 行存在性 + user.mfa_required
-// 列）由 Credentials 列表（含 kind=mfa_setting 行）与 user 行投影承载。
+// UserDetail GetUser 的聚合结果（§5.4 详情：user 行 + 凭证概览 +
+// 三方绑定列表）；两步验证状态由 user.mfa_required 与凭证行 / 联系方式
+// 绑定态投影承载。
 type UserDetail struct {
 	User        *model.User
 	Credentials []model.UserCredential
 	Bindings    []model.UserThirdpartyBind
 }
 
-// GetUser（§5.4 行 1250）：{id} 详情——user 行（含 mfa_required
-// 列）+ 凭证概览（全部 kind 行，kind/is_enabled 投影在 dto，secret 不透出，
-// 含 mfa_setting 行即「行存在性」）+ 三方绑定列表（bind_repo.ListByUserID）。
+// GetUser（§5.4）：{id} 详情——user 行（含 mfa_required 开关列）+
+// 凭证概览（全部 kind 行，kind/is_enabled 投影在 dto，secret 不透出）+
+// 三方绑定列表（bind_repo.ListByUserID）。
 func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error) {
 	if id <= 0 {
 		return nil, ErrInvalidRequest
@@ -388,7 +388,7 @@ func (s *UserService) UnlockUser(ctx context.Context, id int64) error {
 }
 
 // GetUserEvents（§5.4 行 1255）：{id} + 分页的该用户登录记录
-//——event=login_success 过滤（「登录记录」视图，§5.4 行 1252；事件类型
+// ——event=login_success 过滤（「登录记录」视图，§5.4 行 1252；事件类型
 // 不在查询参数中重复，user.proto GetUserEventsRequest 注释）。用户 id 的
 // 存在性不校验（纯事件视图，无行返回空页，与 §5.6 ListEvents 的 userId
 // 过滤同语义，默认口径）。
@@ -404,7 +404,7 @@ func (s *UserService) GetUserEvents(ctx context.Context, id int64, page, pageSiz
 // invalidateSessions 禁用 / 重置密码的会话失效链（§11.1 行 1236、§5.1 行
 // 864）：IncEpoch 递增 user.epoch（回绕语义见 repo）→ EpochStore.Sync 同步
 // al:pwdep:{uid}（TTL 24h）——不同步则校验链最长 24h 读旧值，失效不生效
-//（setpass.go reset 同款链，返回递增后的新值供审计 detail）。
+// （setpass.go reset 同款链，返回递增后的新值供审计 detail）。
 func (s *UserService) invalidateSessions(ctx context.Context, id int64) (int16, error) {
 	epoch, err := s.users.IncEpoch(ctx, id)
 	if err != nil {

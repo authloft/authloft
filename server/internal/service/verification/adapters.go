@@ -13,13 +13,27 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/repo"
+	"authloft/internal/repo/model"
+	"authloft/internal/service/mfapolicy"
 )
 
-// boundFactorReader 按主体读已绑定 / 已启用因子，供策略表取交集
+// boundUserReader Bound 判定所需的用户读取窄接口（*repo.UserRepo 满足）。
+type boundUserReader interface {
+	FindByID(ctx context.Context, id int64) (*model.User, error)
+}
+
+// boundCredReader Bound 判定所需的凭证读取窄接口（*repo.CredentialRepo 满足）。
+type boundCredReader interface {
+	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
+	ListByUser(ctx context.Context, userID int64) ([]model.UserCredential, error)
+}
+
+// boundFactorReader 按主体读可用因子，供策略表取交集
 // （§1.10.2 约束 1）；tid 主体（扫码）无绑定资料，返回候选全量。
 type boundFactorReader struct {
-	users *repo.UserRepo
-	creds *repo.CredentialRepo
+	users  boundUserReader
+	creds  boundCredReader
+	policy mfapolicy.Deps
 }
 
 func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidates []string) ([]string, error) {
@@ -30,9 +44,15 @@ func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidate
 	if err != nil || uid <= 0 {
 		return nil, nil
 	}
-	enabled, err := r.enabledFactors(ctx, uid)
+	// 可用因子统一由 mfapolicy 给出（白名单 ∩ 已绑定，recovery_code 随 totp
+	// 生效）；本层只做候选交集与凭证行 / 联系方式复核。
+	usable, err := mfapolicy.UsableFactors(ctx, r.policy, uid)
 	if err != nil {
 		return nil, err
+	}
+	allowed := make(map[string]bool, len(usable))
+	for _, m := range usable {
+		allowed[m] = true
 	}
 	u, err := r.users.FindByID(ctx, uid)
 	if err != nil {
@@ -41,17 +61,10 @@ func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidate
 		}
 		u = nil
 	}
-	// 策略强制（user.mfa_required=1）但用户未显式 SetMfa、无 mfa_setting 行时，
-	// 以全部已绑定因子为可用集合。
-	if len(enabled) == 0 && u != nil && u.MfaRequired == 1 {
-		for _, m := range candidates {
-			enabled[m] = true
-		}
-	}
 
 	out := make([]string, 0, len(candidates))
 	for _, m := range candidates {
-		if !enabled[m] {
+		if !allowed[m] {
 			continue
 		}
 		switch m {
@@ -85,34 +98,6 @@ func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidate
 				(m == "otp_email" && u.Email != nil && *u.Email != "") {
 				out = append(out, m)
 			}
-		}
-	}
-	return out, nil
-}
-
-// enabledFactors 读 user_credential(kind=mfa_setting) 的 mfa_methods（§3.2：
-// 行存在即 enabled=true，is_enabled=0 按未启用兼容；recovery_code 随 totp
-// 投影，不单列）。
-func (r boundFactorReader) enabledFactors(ctx context.Context, uid int64) (map[string]bool, error) {
-	out := map[string]bool{}
-	row, err := r.creds.FindByUserAndKind(ctx, uid, "mfa_setting")
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return out, nil
-		}
-		return nil, err
-	}
-	if row == nil || row.IsEnabled != 1 {
-		return out, nil
-	}
-	meta, err := repo.UnmarshalCredentialMeta(row.Meta)
-	if err != nil {
-		return nil, err
-	}
-	for _, m := range meta.GetMfaMethods() {
-		out[m] = true
-		if m == "totp" {
-			out["recovery_code"] = true
 		}
 	}
 	return out, nil
@@ -232,9 +217,18 @@ func (v StepUpVerifier) Verify(ctx context.Context, in FactorVerifyInput) (Facto
 	return FactorVerifyResult{Code: code, AttemptsLeft: res.AttemptsLeft}, nil
 }
 
-// NewBoundFactorReader 注入用户 / 凭据仓储（装配层构造）。
-func NewBoundFactorReader(users *repo.UserRepo, creds *repo.CredentialRepo) BoundFactorReader {
-	return boundFactorReader{users: users, creds: creds}
+// NewBoundFactorReader 注入用户 / 凭据仓储与 settings 读取器（装配层构造）：
+// 可用因子判定走 mfapolicy，与登录侧同源。
+func NewBoundFactorReader(users *repo.UserRepo, creds *repo.CredentialRepo, settings mfapolicy.SettingsReader) BoundFactorReader {
+	return boundFactorReader{
+		users: users,
+		creds: creds,
+		policy: mfapolicy.Deps{
+			Users:    users,
+			Creds:    creds,
+			Settings: settings,
+		},
+	}
 }
 
 // NewStepUpVerifier 注入因子注册表与用户 / 凭据仓储（装配层构造）。

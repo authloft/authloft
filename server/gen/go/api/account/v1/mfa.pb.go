@@ -160,14 +160,13 @@ func (x *MfaFactor) GetRemaining() int64 {
 	return 0
 }
 
-// MfaResponse 是 AccountService/GetMfa 的响应（§3.5 行 887-898）：只出绑定明细；
-// 摘要（开关 / 策略强制 / trusted_device_days / 因子 enabled 与 bound）走 §3.2 mfa_policy，
-// 不在此重复（行 885）。
+// MfaResponse 是 AccountService/GetMfa 的响应（§3.5）：只出绑定明细；
+// 用户开关与系统开放的因子白名单走 §3.2 mfa_policy，不在此重复。
 type MfaResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 各因子的绑定明细（§3.5 行 890-895）。
+	// 各因子的绑定明细（§3.5）。
 	Factors []*MfaFactor `protobuf:"bytes,1,rep,name=factors,proto3" json:"factors,omitempty"`
-	// 恢复码签发时间，Unix 秒；未签发为 0（§3.5 行 897）。
+	// 恢复码签发时间，Unix 秒；未签发为 0（§3.5）。
 	RecoveryIssuedAt int64 `protobuf:"varint,2,opt,name=recovery_issued_at,json=recoveryIssuedAt,proto3" json:"recovery_issued_at,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -217,14 +216,13 @@ func (x *MfaResponse) GetRecoveryIssuedAt() int64 {
 	return 0
 }
 
-// SetMfaRequest 是 AccountService/SetMfa 的请求（§3.5 行 904）：
-// 勾选启用一项或多项；空数组 = 关闭（受 §3.2 mfa_policy.required 约束）。
-// 成功为空响应（OkResponse），不定义 SetMfaResponse。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 UpdateMfaRequest）。
+// SetMfaRequest 是 AccountService/SetMfa 的请求（§3.5）：
+// 用户自助切换两步验证开关；成功为空响应（OkResponse）。
+// 开启时服务端校验系统已开放且存在可用因子，不满足返回 invalid_request。
 type SetMfaRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 要启用的二次因子集合（§3.5 行 904）。
-	Methods       []string `protobuf:"bytes,1,rep,name=methods,proto3" json:"methods,omitempty"`
+	// true 开启 / false 关闭（§3.5）。
+	Enabled       bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -259,11 +257,11 @@ func (*SetMfaRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_mfa_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SetMfaRequest) GetMethods() []string {
+func (x *SetMfaRequest) GetEnabled() bool {
 	if x != nil {
-		return x.Methods
+		return x.Enabled
 	}
-	return nil
+	return false
 }
 
 // BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5 行 905-906）：
@@ -582,7 +580,7 @@ const file_api_account_v1_mfa_proto_rawDesc = "" +
 	"\afactors\x18\x01 \x03(\v2\x19.api.account.v1.MfaFactorR\afactors\x12,\n" +
 	"\x12recovery_issued_at\x18\x02 \x01(\x03R\x10recoveryIssuedAt\")\n" +
 	"\rSetMfaRequest\x12\x18\n" +
-	"\amethods\x18\x01 \x03(\tR\amethods\"Q\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\"Q\n" +
 	"\x0fBindTotpRequest\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x12\x16\n" +
 	"\x06secret\x18\x02 \x01(\tR\x06secret\x12\x12\n" +

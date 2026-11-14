@@ -64,9 +64,9 @@ message SetSettingsRequest {
   optional bool allow_signup_phone = 16;
   // 邮箱注册入口，默认 true（§5.6 行 1318）。
   optional bool allow_signup_email = 17;
-  // 两步验证总开关，默认 true；关闭后 mfa_policy.required 恒为 false（§5.6 行 1319）。
+  // 两步验证系统总开关，默认 true；关闭后所有用户不再二次验证、用户开关不可用（§5.6）。
   optional bool mfa_enabled = 18;
-  // 系统开放的二次因子集合（recovery_code 随 totp 生效，不单列）（§5.6 行 1320）。
+  // 可用于两步验证的因子白名单（recovery_code 随 totp 生效，不单列）（§5.6）。
   // has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
   optional bool has_mfa_methods = 19;
   repeated string mfa_methods = 20;
@@ -156,9 +156,9 @@ message SettingsResponse {
   bool allow_signup_phone = 15;
   // 邮箱注册入口，默认 true（§5.6 行 1318）。
   bool allow_signup_email = 16;
-  // 两步验证总开关，默认 true（§5.6 行 1319）。
+  // 两步验证系统总开关，默认 true（§5.6）。
   bool mfa_enabled = 17;
-  // 系统开放的二次因子集合，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6 行 1320）。
+  // 可用于两步验证的因子白名单，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6）。
   repeated string mfa_methods = 18;
   // 密码错误人机校验阈值，默认 3（§5.6 行 1321）。
   int64 pwd_fail_capture = 19;

@@ -59,10 +59,10 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
+	"authloft/internal/service/mfapolicy"
 	"authloft/internal/service/orchestrator"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
-	"authloft/internal/settings"
 )
 
 // al_login_state Cookie 与 state 前缀常量（接口文档 §2.7.2 行 604-611、
@@ -140,7 +140,7 @@ type ThirdpartyDeps struct {
 	// Settings 系统开关源，与引擎同源（§1.6 行 250 / §7.3 行 1031）；
 	// nil 时按缺省值判定。
 	Settings orchestrator.SettingsReader
-	// Credentials 读取用户自选启用二次验证的凭据行（mfa_setting）。
+	// Credentials 二次验证判定所需的凭证行读取（白名单 ∩ 已绑定）。
 	Credentials factor.CredentialRepo
 	// Tickets al:ticket:{ticket_id} 结果读写（§11.6.5；扫码 ticket
 	// 分支）。
@@ -677,54 +677,19 @@ func (s *Thirdparty) resolveLoginUID(ctx context.Context, p *provider.Provider, 
 	return uid, ""
 }
 
-// mfaRequired 判定三方身份对应的用户是否需二次验证（§2.7.4 行 785、
-// §2.8 行 750）：与引擎同口径，依据系统开关与用户启用状态（策略强制列 ∨
-// 自选启用凭据行），不下发因子列表；因子视图由验证内核 StartVerification
-// 提供（§3.8）。
+// mfaRequired 判定三方身份对应的用户是否需二次验证（§2.7.4、§2.8）：与
+// 登录引擎同口径，判定实现归 mfapolicy（§3.7）——系统已开放 ∧
+// user.mfa_required=1 ∧ 存在可用因子（白名单 ∩ 已绑定），不下发因子列表；
+// 因子视图由验证内核 StartVerification 提供（§3.8）。
 //
 // 返回 error 表示依赖读取故障，调用方必须以失败信封拒绝本次登录：读取
-// 故障不得被解释为「无需二次验证」。用户行的任何读取错误都不得放行（仓储
-// 对 not-found 也按错误返回）；仅 mfa_setting 凭据行不存在属正常语义
-// （该用户未启用自选 MFA），返回 (false, nil)。
+// 故障不得被解释为「无需二次验证」。
 func (s *Thirdparty) mfaRequired(ctx context.Context, uid int64) (bool, error) {
-	// uid=0 / 依赖未接入（单测裁剪装配）：无判定输入，按无需 MFA 处理。
-	if uid == 0 || s.deps.Users == nil {
-		return false, nil
-	}
-	enabled := true
-	if s.deps.Settings != nil {
-		if v, ok := s.deps.Settings.GetBool(settings.KeyMfaEnabled); ok {
-			enabled = v
-		}
-	}
-	if !enabled {
-		return false, nil
-	}
-	user, err := s.deps.Users.FindByID(ctx, uid)
-	if err != nil {
-		return false, err
-	}
-	if user == nil {
-		return false, nil
-	}
-	if user.MfaRequired == 1 {
-		return true, nil
-	}
-	// 凭据仓储未接入与引擎同口径：装配裁剪而非运行期故障。
-	if s.deps.Credentials == nil {
-		return false, nil
-	}
-	c, err := s.deps.Credentials.FindByUserAndKind(ctx, uid, "mfa_setting")
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	if c == nil {
-		return false, nil
-	}
-	return c.IsEnabled == 1, nil
+	return mfapolicy.Required(ctx, mfapolicy.Deps{
+		Users:    s.deps.Users,
+		Creds:    s.deps.Credentials,
+		Settings: s.deps.Settings,
+	}, uid)
 }
 
 // tpIdentity 三方身份 → TicketResult.thirdparty_identity（§11.6.5 行

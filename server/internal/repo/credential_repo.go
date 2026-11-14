@@ -3,7 +3,7 @@
 // kind 行读写最小集；事务边界在 service（§3.9）。「一行一种凭证」（行
 // 680-684：password / totp / recovery_code 各一行）由 service 先查后写
 // 保证，idx_user_kind 非唯一、表上无数据库级约束；secret 只存取不校验
-//（password=argon2id 串、totp=Base32 明文密钥，行 681-682，哈希与口令
+// （password=argon2id 串、totp=Base32 明文密钥，行 681-682，哈希与口令
 // 校验归 security 层）；meta 列的 CredentialMeta Protobuf 编解码封装在
 // 本文件，service 不直接拼 proto.Marshal。
 package repo
@@ -45,8 +45,8 @@ func (r *CredentialRepo) FindByUserAndKind(ctx context.Context, userID int64, ki
 }
 
 // ListByUser 按 idx_user_kind 取该用户全部凭证行（admin GetUser 凭证概览
-// 的数据源，接口文档 §5.4 行 1247）：含全部 kind（password / totp /
-// webauthn（每凭据一行）/ recovery_code / mfa_setting），id 正序保证列表
+// 的数据源，接口文档 §5.4）：含全部 kind（password / totp / webauthn
+// （每凭据一行）/ recovery_code），id 正序保证列表
 // 全序稳定（口径同 bind_repo.ListByUserID）；secret 恒在行内，由上层
 // 投影裁剪绝不透出（user.proto UserCredentialSummary 注释）。空集返回
 // 空切片。
@@ -109,10 +109,9 @@ func (r *CredentialRepo) Update(ctx context.Context, c *model.UserCredential) er
 	return nil
 }
 
-// SetEnabled 切换启用态（is_enabled 1/0，行 658；mfa_setting.go 用户
-// 自助停用 / 管理接口共用）。行不存在返回包装的 gorm.ErrRecordNotFound；
-// 同值切换幂等成功（changed-rows 语义下 rows=0 补存在性判定，口径同
-// Update / UpdateLastLogin）。
+// SetEnabled 切换启用态（is_enabled 1/0；管理接口共用）。行不存在返回包装的
+// gorm.ErrRecordNotFound；同值切换幂等成功（changed-rows 语义下 rows=0
+// 补存在性判定，口径同 Update / UpdateLastLogin）。
 func (r *CredentialRepo) SetEnabled(ctx context.Context, id int64, enabled bool) error {
 	v := int8(0)
 	if enabled {
@@ -142,10 +141,9 @@ func (r *CredentialRepo) SetEnabled(ctx context.Context, id int64, enabled bool)
 }
 
 // DeleteByUserAndKind 按 user_id + kind 定位删除凭证行（credential 职责
-// 含增删改查，§3 行 388 / 行 704；调用方：SetMfa 关闭 = 删除 mfa_setting
-// 行，接口文档 §3.2 行 862「行存在即顶层 enabled=true」⇒ 关闭 ⇔ 行不存在，
-// 既定口径）。「一行一种凭证」由 service 先查后写保证
-//（行 680-684，idx_user_kind 非唯一），本方法不做行数断言——多行命中
+// 含增删改查；调用方：UnbindTotp = 删除 kind=totp / recovery_code 行）。
+// 「一行一种凭证」由 service 先查后写保证
+// （idx_user_kind 非唯一），本方法不做行数断言——多行命中
 // 一并删除属脏数据防御，正常数据不发生；未命中返回包装的
 // gorm.ErrRecordNotFound（幂等语义归 service 判定）。
 func (r *CredentialRepo) DeleteByUserAndKind(ctx context.Context, userID int64, kind string) error {

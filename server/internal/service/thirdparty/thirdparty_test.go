@@ -1005,6 +1005,7 @@ func TestLoginOauthTicketMFA(t *testing.T) {
 	e := newScanEnv(t, ticketsvc.SceneLogin)
 	e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "wxscan", OpenID: "openid_1"}
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	e.creds.byKind["totp"] = &model.UserCredential{UserID: 3, Kind: "totp", IsEnabled: 1}
 
 	out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
 	if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
@@ -1092,6 +1093,7 @@ func TestLoginOauthAutoBind(t *testing.T) {
 		if mfa {
 			e.users.byEmail["exist@example.com"] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
 			e.users.byID[9] = &model.User{ID: 9, UserStatus: 1, MfaRequired: 1}
+			e.creds.byKind["totp"] = &model.UserCredential{UserID: 9, Kind: "totp", IsEnabled: 1}
 		}
 		out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
 		return e, out
@@ -1172,6 +1174,7 @@ func TestLoginOauthMFAEnvelope(t *testing.T) {
 	e.addProvider("qq", nil)
 	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	e.creds.byKind["totp"] = &model.UserCredential{UserID: 3, Kind: "totp", IsEnabled: 1}
 
 	oidcCtx := &token.Oidc{ClientId: "cid-1", RedirectUri: "https://rp/cb", State: "s-1"}
 	in := e.oauthRequest(t, "l"+"x", 0)
@@ -1201,23 +1204,23 @@ func TestLoginOauthMFAEnvelope(t *testing.T) {
 	}
 }
 
-// TestLoginOauthMFAUserEnabledBySettingRow 用户自选启用二次验证（mfa_setting
-// 行 is_enabled=1、user.mfa_required=0）经三方登录仍进入 mfa_required
-// （§1.6 行 250 / §7.3 行 1031），不跳过二次验证直接建会话。
-func TestLoginOauthMFAUserEnabledBySettingRow(t *testing.T) {
+// TestLoginOauthMFAWhitelistRemoval 白名单移除用户唯一已绑定因子（热更新）
+// → 可用因子为空，按未开启两步验证处理，直接建会话；不因开关仍为 1 锁死。
+func TestLoginOauthMFAWhitelistRemoval(t *testing.T) {
 	ctx := context.Background()
 	e := newTPEnv(t)
 	e.addProvider("qq", nil)
 	e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
-	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 0}
-	e.creds.byKind["mfa_setting"] = &model.UserCredential{UserID: 3, Kind: "mfa_setting", IsEnabled: 1}
+	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+	e.creds.byKind["totp"] = &model.UserCredential{UserID: 3, Kind: "totp", IsEnabled: 1}
+	e.settings.slices[settings.KeyMfaMethods] = []string{"otp_sms"}
 
 	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
-	if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
-		t.Fatalf("status = %q, want mfa_required（自选启用行）", out.Envelope.GetStatus())
+	if out.Envelope.GetStatus() != "success" {
+		t.Fatalf("status = %q, want success（无可用因子按未开启）", out.Envelope.GetStatus())
 	}
-	if e.sessions.gotUID != 0 {
-		t.Errorf("MFA 前不应建会话, uid=%d", e.sessions.gotUID)
+	if e.sessions.gotUID != 3 {
+		t.Errorf("应直接建会话, uid=%d", e.sessions.gotUID)
 	}
 }
 
@@ -1536,6 +1539,7 @@ func TestLoginOauthNonSuccessClearsStateCookie(t *testing.T) {
 		e.addProvider("qq", nil)
 		e.binds.rows[key("qq", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "qq", OpenID: "openid_1"}
 		e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+		e.creds.byKind["totp"] = &model.UserCredential{UserID: 3, Kind: "totp", IsEnabled: 1}
 		out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
 		if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
 			t.Fatalf("status = %q", out.Envelope.GetStatus())

@@ -13,16 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/mfapolicy"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
-	"authloft/internal/settings"
 )
 
 // MFAUserLookup 写票时按 uid 读取用户行，判定二次验证启用状态；
@@ -42,9 +40,9 @@ type LoginTicketDeps struct {
 	Sessions SessionVerifier
 	// State 扫码分支校验 login_token（§7.3：uid != 0 且 passed 非空）。
 	State *orchestrator.State
-	// Users / Settings / Credentials 自行判定二次验证启用状态（§2.8、
-	// §11.6.5）：系统开关缺省 true；命中 user.mfa_required=1 或自选
-	// 的 mfa_setting 凭据行启用即需 step-up。与三方登录同一判定口径。
+	// Users / Settings / Credentials 供二次验证判定（§2.8、§11.6.5）：
+	// 口径统一为「系统已开放 ∧ user.mfa_required=1 ∧ 存在可用因子」，
+	// 判定实现归 mfapolicy，与登录引擎 / 三方登录同源。
 	Users       MFAUserLookup
 	Settings    orchestrator.SettingsReader
 	Credentials factor.CredentialRepo
@@ -170,48 +168,14 @@ func (s *LoginTicket) resolveUID(ctx context.Context, in WriteTicketInput) (int6
 }
 
 // mfaRequired 判定目标用户是否需二次验证（§2.8、§11.6.5）：与登录引擎 /
-// 三方登录同口径——系统开关 mfa_enabled（缺省 true）∧（策略强制列
-// user.mfa_required=1 ∨ 自选启用的 mfa_setting 凭据行 is_enabled=1）。
+// 三方登录同口径，判定实现归 mfapolicy（§3.7）——系统已开放 ∧
+// user.mfa_required=1 ∧ 存在可用因子（白名单 ∩ 已绑定）。
 // 返回 error 表示依赖读取故障，调用方须 fail-closed 拒绝本次写票：查询
-// 故障不得被解释为「无需二次验证」。用户行 / 凭据行的读取错误一律上抛；
-// 仅 mfa_setting 行不存在属正常语义（该用户未启用自选二次验证）。
+// 故障不得被解释为「无需二次验证」。
 func (s *LoginTicket) mfaRequired(ctx context.Context, uid int64) (bool, error) {
-	// uid=0 / 依赖未接入（单测裁剪装配）：无判定输入，按无需二次验证处理。
-	if uid == 0 || s.deps.Users == nil {
-		return false, nil
-	}
-	enabled := true
-	if s.deps.Settings != nil {
-		if v, ok := s.deps.Settings.GetBool(settings.KeyMfaEnabled); ok {
-			enabled = v
-		}
-	}
-	if !enabled {
-		return false, nil
-	}
-	user, err := s.deps.Users.FindByID(ctx, uid)
-	if err != nil {
-		return false, err
-	}
-	if user == nil {
-		return false, nil
-	}
-	if user.MfaRequired == 1 {
-		return true, nil
-	}
-	// 凭据仓储未接入与引擎同口径：装配裁剪而非运行期故障。
-	if s.deps.Credentials == nil {
-		return false, nil
-	}
-	c, err := s.deps.Credentials.FindByUserAndKind(ctx, uid, "mfa_setting")
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	if c == nil {
-		return false, nil
-	}
-	return c.IsEnabled == 1, nil
+	return mfapolicy.Required(ctx, mfapolicy.Deps{
+		Users:    s.deps.Users,
+		Creds:    s.deps.Credentials,
+		Settings: s.deps.Settings,
+	}, uid)
 }

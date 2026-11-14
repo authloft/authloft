@@ -63,8 +63,8 @@ const (
 	KeyAllowSignupPassword   = "allow_signup_password"   // bool，默认 true
 	KeyAllowSignupPhone      = "allow_signup_phone"      // bool，默认 true
 	KeyAllowSignupEmail      = "allow_signup_email"      // bool，默认 true
-	KeyMfaEnabled            = "mfa_enabled"             // bool，默认 true
-	KeyMfaMethods            = "mfa_methods"             // []string
+	KeyMfaEnabled            = "mfa_enabled"             // bool，默认 true，系统两步验证总开关
+	KeyMfaMethods            = "mfa_methods"             // []string，可用于 MFA 的因子白名单
 	KeyPwdFailCapture        = "pwd_fail_capture"        // int64，默认 3 次
 	KeyPwdFailBan            = "pwd_fail_ban"            // int64，默认 6 次
 	KeyPwdBanTtl             = "pwd_ban_ttl"             // int64，默认 21600 秒

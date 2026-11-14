@@ -24,6 +24,7 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	accountsvc "authloft/internal/service/account"
+	"authloft/internal/service/mfapolicy"
 	thirdpartysvc "authloft/internal/service/thirdparty"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -45,6 +46,7 @@ type CredentialReader interface {
 type SettingsReader interface {
 	GetBool(key string) (bool, bool)
 	GetString(key string) (string, bool)
+	GetStringSlice(key string) ([]string, bool)
 }
 
 // ProviderReader provider 行读取窄接口（avatarUpload 查 storage 行）。
@@ -100,7 +102,7 @@ type ContactBinder interface {
 // MfaManager 两步验证族 service 窄接口；nil 时对应方法返回 unimplemented。
 type MfaManager interface {
 	GetMfa(ctx context.Context, uid int64) (*accountsvc.MfaDetail, error)
-	SetMfa(ctx context.Context, uid int64, methods []string) error
+	SetMfa(ctx context.Context, uid int64, enabled bool) error
 	BindTotpChallenge(ctx context.Context, uid int64) (*accountsvc.TotpChallenge, error)
 	BindTotpVerify(ctx context.Context, uid int64, secret, code string) ([]string, error)
 	RegenerateRecoveryCodes(ctx context.Context, uid int64, action string) (*accountsvc.RecoveryCodesResult, error)
@@ -320,51 +322,27 @@ func (h *Handler) avatarUpload(ctx context.Context) (*accountv1.AvatarUploadConf
 // providerCategoryStorage avatarUpload 只认 storage 行。
 const providerCategoryStorage = "storage"
 
-// credential kind 取值（password / totp / webauthn / recovery_code / mfa_setting）。
+// credential kind 取值（password / totp / webauthn / recovery_code）。
 const (
 	kindPassword     = "password"
 	kindTotp         = "totp"
 	kindWebauthn     = "webauthn"
 	kindRecoveryCode = "recovery_code"
-	kindMfaSetting   = "mfa_setting"
 )
 
-// mfaPolicy 组装 mfaPolicy 摘要：enabled = mfa_setting 行存在即 true（is_enabled 语义归
-// 写入端 SetMfa，本实现只读）；required = mfa_enabled && user.mfa_required==1
-// （mfa_enabled 缺失回落默认 true）；trustedDeviceDays 恒 0；methods[] 五因子序投影。
+// mfaPolicy 组装 mfaPolicy 摘要（§3.2）：enabled 取 user.mfa_required 原值；
+// methods 仅列管理员白名单（settings.mfa_methods）内因子并附绑定态，
+// 系统未开放或白名单为空时为 []；trustedDeviceDays 恒 0（预留字段）。
 func (h *Handler) mfaPolicy(ctx context.Context, uid int64, user *model.User) (*accountv1.MfaPolicy, error) {
-	mfaEnabled := true
-	if h.settings != nil {
-		if v, ok := h.settings.GetBool(settings.KeyMfaEnabled); ok {
-			mfaEnabled = v
-		}
+	var allowed []string
+	if mfapolicy.SystemEnabled(h.settings) {
+		allowed = mfapolicy.AllowedMethods(h.settings)
 	}
-	required := mfaEnabled && user.MfaRequired == 1
-
-	var (
-		enabled        bool
-		enabledMethods []string
-	)
-	row, err := h.creds.FindByUserAndKind(ctx, uid, kindMfaSetting)
-	switch {
-	case err == nil:
-		enabled = true
-		meta, err := repo.UnmarshalCredentialMeta(row.Meta)
-		if err != nil {
-			return nil, fmt.Errorf("account handler: decode mfa_setting meta: %w", err)
-		}
-		enabledMethods = meta.GetMfaMethods()
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		// 行不存在 = 未开启两步验证。
-	default:
-		return nil, fmt.Errorf("account handler: load mfa_setting: %w", err)
-	}
-
 	bound, err := h.mfaBound(ctx, uid, user)
 	if err != nil {
 		return nil, err
 	}
-	return dto.AccountMfaPolicy(enabled, enabledMethods, required, bound), nil
+	return dto.AccountMfaPolicy(user.MfaRequired == 1, allowed, bound), nil
 }
 
 // mfaBound 各因子绑定态：totp / webauthn / recovery_code 走凭证行（recovery_code 需
@@ -1021,7 +999,7 @@ func (h *Handler) GetMfa(ctx context.Context, req *connect.Request[accountv1.Get
 	}), nil
 }
 
-// SetMfa 勾选启用因子集合；空数组 = 关闭（受 mfaPolicy.required 约束），成功为空响应。
+// SetMfa 切换两步验证开关（§3.5），成功为空响应。
 func (h *Handler) SetMfa(ctx context.Context, req *connect.Request[accountv1.SetMfaRequest]) (*connect.Response[accountv1.OkResponse], error) {
 	if h.mfa == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errMfaNotConfigured)
@@ -1030,7 +1008,7 @@ func (h *Handler) SetMfa(ctx context.Context, req *connect.Request[accountv1.Set
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	if err := h.mfa.SetMfa(ctx, uid, req.Msg.GetMethods()); err != nil {
+	if err := h.mfa.SetMfa(ctx, uid, req.Msg.GetEnabled()); err != nil {
 		return nil, mapMfaError("set mfa", err)
 	}
 	return connect.NewResponse(&accountv1.OkResponse{}), nil

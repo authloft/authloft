@@ -18,8 +18,7 @@ import "time"
 // IsEnabled 的 default:1 忠实映射 DDL 的 DEFAULT 1：Create 时零值字段被
 // tag 值 1 显式写入 INSERT 并回填 struct（同 model.User 的 UserStatus
 // 口径，gorm@v1.31.2 callbacks/create.go:340-343）；停用入口
-//（mfa_setting.go 用户自助停用 / 管理接口）走列级 UPDATE，不受 default
-// tag 影响。
+// （管理接口）走列级 UPDATE，不受 default tag 影响。
 type UserCredential struct {
 	ID         int64      `gorm:"column:id;primaryKey;autoIncrement"`
 	UserID     int64      `gorm:"column:user_id;not null"`

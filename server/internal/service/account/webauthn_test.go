@@ -105,8 +105,16 @@ func (f *fakeWebauthnRows) Delete(_ context.Context, id, userID int64) error {
 type fakeWebauthnCredRows struct {
 	list      []model.UserCredential
 	listErr   error
+	byKind    map[string]*model.UserCredential
 	updated   []*model.UserCredential
 	updateErr error
+}
+
+func (f *fakeWebauthnCredRows) FindByUserAndKind(_ context.Context, _ int64, kind string) (*model.UserCredential, error) {
+	if c, ok := f.byKind[kind]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
 }
 
 func (f *fakeWebauthnCredRows) ListByUser(_ context.Context, _ int64) ([]model.UserCredential, error) {
@@ -127,11 +135,14 @@ func fmtNotFound() error {
 }
 
 // fakeUserStore WebauthnUserStore 的 fake：缺省回放 username=alice，可指定
-// 用户行 / 错误以覆盖空值、用户不存在与 DB 故障。
+// 用户行 / 错误以覆盖空值、用户不存在与 DB 故障；mfa_required 写入记录供
+// 删除凭据回落用例断言。
 type fakeUserStore struct {
-	user  *model.User
-	err   error
-	calls []int64
+	user      *model.User
+	err       error
+	updateErr error
+	calls     []int64
+	updates   []int8
 }
 
 func (s *fakeUserStore) FindByID(_ context.Context, id int64) (*model.User, error) {
@@ -143,6 +154,17 @@ func (s *fakeUserStore) FindByID(_ context.Context, id int64) (*model.User, erro
 		return s.user, nil
 	}
 	return &model.User{ID: id, Username: "alice"}, nil
+}
+
+func (s *fakeUserStore) UpdateMfaRequired(_ context.Context, id int64, v int8) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
+	if s.user != nil && s.user.ID == id {
+		s.user.MfaRequired = v
+	}
+	s.updates = append(s.updates, v)
+	return nil
 }
 
 // newWebauthnService 构造被测 service（factor 非 nil 正常态）。
@@ -514,5 +536,75 @@ func TestWebauthnDeleteCredential(t *testing.T) {
 	// id<=0 → invalid_request。
 	if err := s.DeleteCredential(ctx, 42, 0); !errors.Is(err, ErrWebauthnInvalidRequest) {
 		t.Errorf("id=0 err = %v, want ErrWebauthnInvalidRequest", err)
+	}
+}
+
+// TestWebauthnDeleteCredentialResetsMfaWhenLastFactorRemoved 删除通行密钥后
+// 若无其他可用因子则回落 mfa_required=0；仍有其他已绑定因子（如手机号）时
+// 保持原开关（§3.5 运行期兜底，与 UnbindTotp 同口径）。
+func TestWebauthnDeleteCredentialResetsMfaWhenLastFactorRemoved(t *testing.T) {
+	phone := "13800000000"
+	cases := []struct {
+		name        string
+		methods     []string
+		user        *model.User
+		wantUpdates []int8
+	}{
+		{"无其他可用因子 → 回落", []string{"totp", "webauthn"}, &model.User{ID: 42, MfaRequired: 1}, []int8{0}},
+		{"手机号仍可用 → 保持", []string{"totp", "webauthn", "otp_sms"},
+			&model.User{ID: 42, MfaRequired: 1, Phone: &phone}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := &fakeWebauthnRows{list: []model.UserCredentialWebauthn{
+				{ID: 11, UserID: 42, Kind: "webauthn", CredentialID: "cred-a"},
+			}}
+			credRows := &fakeWebauthnCredRows{byKind: map[string]*model.UserCredential{}}
+			users := &fakeUserStore{user: tc.user}
+			s := NewWebauthnService(WebauthnDeps{
+				Factor:   &fakeWebauthnFactor{},
+				Webauthn: rows,
+				Creds:    credRows,
+				Users:    users,
+				Settings: mfaSettingsOn(tc.methods...),
+			})
+			if err := s.DeleteCredential(context.Background(), 42, 11); err != nil {
+				t.Fatalf("DeleteCredential: %v", err)
+			}
+			if len(users.updates) != len(tc.wantUpdates) {
+				t.Fatalf("mfa_required updates = %v, want %v", users.updates, tc.wantUpdates)
+			}
+			for i, w := range tc.wantUpdates {
+				if users.updates[i] != w {
+					t.Errorf("updates[%d] = %d, want %d", i, users.updates[i], w)
+				}
+			}
+		})
+	}
+}
+
+// TestWebauthnDeleteCredentialMfaFallbackFailure 回落写入失败不得吞掉：
+// 删除已生效，回落故障按基础设施错误返回。
+func TestWebauthnDeleteCredentialMfaFallbackFailure(t *testing.T) {
+	rows := &fakeWebauthnRows{list: []model.UserCredentialWebauthn{
+		{ID: 11, UserID: 42, Kind: "webauthn", CredentialID: "cred-a"},
+	}}
+	users := &fakeUserStore{
+		user:      &model.User{ID: 42, MfaRequired: 1},
+		updateErr: errors.New("user repo: connection refused"),
+	}
+	s := NewWebauthnService(WebauthnDeps{
+		Factor:   &fakeWebauthnFactor{},
+		Webauthn: rows,
+		Creds:    &fakeWebauthnCredRows{byKind: map[string]*model.UserCredential{}},
+		Users:    users,
+		Settings: mfaSettingsOn("webauthn"),
+	})
+	err := s.DeleteCredential(context.Background(), 42, 11)
+	if !errors.Is(err, ErrWebauthnInternal) {
+		t.Fatalf("err = %v, want ErrWebauthnInternal（回落故障不得吞）", err)
+	}
+	if rows.deletedID != 11 {
+		t.Errorf("删除应已生效, deleted=%d", rows.deletedID)
 	}
 }

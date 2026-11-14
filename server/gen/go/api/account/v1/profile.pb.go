@@ -211,7 +211,7 @@ type ProfileResponse struct {
 	// 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
 	// （JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
-	// 系统强制启用两步验证（§3.1 行 788）。
+	// 用户自助两步验证开关（§3.1）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
 	// 安全版本号，便于调用方感知会话失效（§3.1 行 789）。
 	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`
@@ -542,16 +542,13 @@ func (x *AvatarUploadConfig) GetAllowedTypes() []string {
 	return nil
 }
 
-// MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2 行 834-840）。
+// MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2）。
 type MfaPolicyMethod struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-	// （§3.2 行 834-840）。
+	// 可用于两步验证的因子，由管理员在 settings.mfa_methods 配置。
 	Factor string `protobuf:"bytes,1,opt,name=factor,proto3" json:"factor,omitempty"`
-	// 该因子是否被纳入当前用户的两步验证（§3.2 行 845）。
-	Enabled bool `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// 是否已绑定该因子（§3.2 行 845）。
-	Bound         bool `protobuf:"varint,3,opt,name=bound,proto3" json:"bound,omitempty"`
+	// 用户是否已绑定该因子（§3.2）。
+	Bound         bool `protobuf:"varint,2,opt,name=bound,proto3" json:"bound,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -593,13 +590,6 @@ func (x *MfaPolicyMethod) GetFactor() string {
 	return ""
 }
 
-func (x *MfaPolicyMethod) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
 func (x *MfaPolicyMethod) GetBound() bool {
 	if x != nil {
 		return x.Bound
@@ -607,18 +597,16 @@ func (x *MfaPolicyMethod) GetBound() bool {
 	return false
 }
 
-// MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2 行 827-847）：
-// 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余（行 847）。
+// MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2）：
+// 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余。
 type MfaPolicy struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前用户是否已开启两步验证（§3.2 行 831）。
+	// 用户自助两步验证开关，取 user.mfa_required（§3.2）。
 	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// 策略层是否强制；true 时用户不可关闭（§3.2 行 832）。
-	Required bool `protobuf:"varint,2,opt,name=required,proto3" json:"required,omitempty"`
-	// 预留字段，本期恒为 0（§3.2 行 833、行 846）。
-	TrustedDeviceDays int64 `protobuf:"varint,3,opt,name=trusted_device_days,json=trustedDeviceDays,proto3" json:"trusted_device_days,omitempty"`
-	// 系统开放的全部二次因子，顺序即前端渲染顺序（§3.2 行 834-840）。
-	Methods       []*MfaPolicyMethod `protobuf:"bytes,4,rep,name=methods,proto3" json:"methods,omitempty"`
+	// 预留字段，本期恒为 0。
+	TrustedDeviceDays int64 `protobuf:"varint,2,opt,name=trusted_device_days,json=trustedDeviceDays,proto3" json:"trusted_device_days,omitempty"`
+	// 管理员开放的因子白名单及绑定态；系统未开放或白名单为空时为 []。
+	Methods       []*MfaPolicyMethod `protobuf:"bytes,3,rep,name=methods,proto3" json:"methods,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -656,13 +644,6 @@ func (*MfaPolicy) Descriptor() ([]byte, []int) {
 func (x *MfaPolicy) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
-	}
-	return false
-}
-
-func (x *MfaPolicy) GetRequired() bool {
-	if x != nil {
-		return x.Required
 	}
 	return false
 }
@@ -1041,16 +1022,14 @@ const file_api_account_v1_profile_proto_rawDesc = "" +
 	"\x12AvatarUploadConfig\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x19\n" +
 	"\bmax_size\x18\x02 \x01(\x03R\amaxSize\x12#\n" +
-	"\rallowed_types\x18\x03 \x03(\tR\fallowedTypes\"Y\n" +
+	"\rallowed_types\x18\x03 \x03(\tR\fallowedTypes\"?\n" +
 	"\x0fMfaPolicyMethod\x12\x16\n" +
-	"\x06factor\x18\x01 \x01(\tR\x06factor\x12\x18\n" +
-	"\aenabled\x18\x02 \x01(\bR\aenabled\x12\x14\n" +
-	"\x05bound\x18\x03 \x01(\bR\x05bound\"\xac\x01\n" +
+	"\x06factor\x18\x01 \x01(\tR\x06factor\x12\x14\n" +
+	"\x05bound\x18\x02 \x01(\bR\x05bound\"\x90\x01\n" +
 	"\tMfaPolicy\x12\x18\n" +
-	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
-	"\brequired\x18\x02 \x01(\bR\brequired\x12.\n" +
-	"\x13trusted_device_days\x18\x03 \x01(\x03R\x11trustedDeviceDays\x129\n" +
-	"\amethods\x18\x04 \x03(\v2\x1f.api.account.v1.MfaPolicyMethodR\amethods\"\xf5\x01\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12.\n" +
+	"\x13trusted_device_days\x18\x02 \x01(\x03R\x11trustedDeviceDays\x129\n" +
+	"\amethods\x18\x03 \x03(\v2\x1f.api.account.v1.MfaPolicyMethodR\amethods\"\xf5\x01\n" +
 	"\x15AccountConfigResponse\x12G\n" +
 	"\ravatar_upload\x18\x01 \x01(\v2\".api.account.v1.AvatarUploadConfigR\favatarUpload\x128\n" +
 	"\n" +

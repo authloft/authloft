@@ -1,6 +1,6 @@
 // credential / webauthn 表 repo 层测试：真实 MariaDB 测试实例经
 // UC_TEST_MYSQL_DSN env 注入，无 env 时 skip。表结构由 migrate.Up 建
-//（§3.16 DDL 唯一来源）；用例开始 drop 全表、结束 drop 全表 +
+// （§3.16 DDL 唯一来源）；用例开始 drop 全表、结束 drop 全表 +
 // assertNoTables 自证零残留（口径同 user_repo_test）。跨二进制互斥
 // 由 settings_repo_test.go 的 TestMain（GET_LOCK uc_test_db_slot）保证；
 // 共享辅助 dropAllTables / assertNoTables / dbTestConfig 在彼处与
@@ -71,7 +71,7 @@ func credentialTestSetup(t *testing.T) (*CredentialRepo, *WebauthnRepo, *gorm.DB
 
 // TestCredentialRepoKindRows（env-skip）：kind 行隔离——同 user 多 kind
 // 各一行、secret 按行存取不串；CredentialMeta 经 meta 列 round-trip
-//（totp 段 / recovery_code 段 / NULL 列空 meta）；改密 Update（§4.2 行
+// （totp 段 / recovery_code 段 / NULL 列空 meta）；改密 Update（§4.2 行
 // 681 = UPDATE 这一行）全列落库 + 同值重放幂等；SetEnabled 切换 + 同值
 // 幂等；未命中与不存在行均可判别。
 func TestCredentialRepoKindRows(t *testing.T) {
@@ -225,21 +225,21 @@ func TestCredentialRepoKindRows(t *testing.T) {
 }
 
 // TestCredentialRepoListByUser（env-skip）：按用户取全部凭证行
-//（admin GetUser 凭证概览数据源）——全部 kind 齐全（password / totp /
-// webauthn（经 WebauthnRepo.Create 每凭据一行）/ recovery_code / mfa_setting）、
+// （admin GetUser 凭证概览数据源）——全部 kind 齐全（password / totp /
+// webauthn（经 WebauthnRepo.Create 每凭据一行）/ recovery_code / 其他 kind）、
 // id ASC 全序稳定、跨用户不串行、空集返回空切片。
 func TestCredentialRepoListByUser(t *testing.T) {
 	rp, wa, _ := credentialTestSetup(t)
 	ctx := context.Background()
 	const uid, other = int64(201), int64(202)
 
-	// uid 的四类行：password / totp / recovery_code / mfa_setting + webauthn×2
+	// uid 的四类行：password / totp / recovery_code / extra_kind + webauthn×2
 	//（经 WebauthnRepo.Create 同事务建两行，模拟真实注册路径）。
 	for _, c := range []*model.UserCredential{
 		{UserID: uid, Kind: "password", Secret: []byte("h1")},
 		{UserID: uid, Kind: "totp", Secret: []byte("K1")},
 		{UserID: uid, Kind: "recovery_code", Secret: []byte{}, Meta: []byte{0x91}},
-		{UserID: uid, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x92}},
+		{UserID: uid, Kind: "extra_kind", Secret: []byte{}, Meta: []byte{0x92}},
 	} {
 		if err := rp.Create(ctx, c); err != nil {
 			t.Fatalf("Create %s 失败: %v", c.Kind, err)
@@ -262,7 +262,7 @@ func TestCredentialRepoListByUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListByUser 失败: %v", err)
 	}
-	// password(1) + totp(1) + recovery_code(1) + mfa_setting(1) + webauthn(2) = 6。
+	// password(1) + totp(1) + recovery_code(1) + extra_kind(1) + webauthn(2) = 6。
 	if len(got) != 6 {
 		t.Fatalf("ListByUser = %d 行, want 6（含 webauthn 每凭据一行）: %+v", len(got), got)
 	}
@@ -275,7 +275,7 @@ func TestCredentialRepoListByUser(t *testing.T) {
 	for _, r := range got {
 		kinds[r.Kind]++
 	}
-	for kind, want := range map[string]int{"password": 1, "totp": 1, "recovery_code": 1, "mfa_setting": 1, "webauthn": 2} {
+	for kind, want := range map[string]int{"password": 1, "totp": 1, "recovery_code": 1, "extra_kind": 1, "webauthn": 2} {
 		if kinds[kind] != want {
 			t.Errorf("kind %s = %d 行, want %d", kind, kinds[kind], want)
 		}
@@ -297,31 +297,31 @@ func TestCredentialRepoDeleteByUserAndKind(t *testing.T) {
 	const uid, other = int64(301), int64(302)
 
 	for _, c := range []*model.UserCredential{
-		{UserID: uid, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x92}},
+		{UserID: uid, Kind: "recovery_code", Secret: []byte{}, Meta: []byte{0x92}},
 		{UserID: uid, Kind: "password", Secret: []byte("h1")},
-		{UserID: other, Kind: "mfa_setting", Secret: []byte{}, Meta: []byte{0x93}},
+		{UserID: other, Kind: "recovery_code", Secret: []byte{}, Meta: []byte{0x93}},
 	} {
 		if err := rp.Create(ctx, c); err != nil {
 			t.Fatalf("Create %s 失败: %v", c.Kind, err)
 		}
 	}
 
-	// 删除 uid 的 mfa_setting 行（SetMfa 关闭路径的数据源动作）。
-	if err := rp.DeleteByUserAndKind(ctx, uid, "mfa_setting"); err != nil {
+	// 删除 uid 的 recovery_code 行（UnbindTotp 解绑路径的数据源动作）。
+	if err := rp.DeleteByUserAndKind(ctx, uid, "recovery_code"); err != nil {
 		t.Fatalf("DeleteByUserAndKind 失败: %v", err)
 	}
-	if _, err := rp.FindByUserAndKind(ctx, uid, "mfa_setting"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("删除后 Find 应 ErrRecordNotFound, got %v", err)
 	}
 	// 他行不受影响：同 user 其他 kind、同 kind 其他 user。
 	if got, err := rp.FindByUserAndKind(ctx, uid, "password"); err != nil || got.Kind != "password" {
 		t.Errorf("同 user 其他 kind 行不应受影响: (%v, %v)", got, err)
 	}
-	if got, err := rp.FindByUserAndKind(ctx, other, "mfa_setting"); err != nil || got.UserID != other {
+	if got, err := rp.FindByUserAndKind(ctx, other, "recovery_code"); err != nil || got.UserID != other {
 		t.Errorf("同 kind 其他 user 行不应受影响: (%v, %v)", got, err)
 	}
 	// 再次删除（行已不存在）→ ErrRecordNotFound 可判别。
-	if err := rp.DeleteByUserAndKind(ctx, uid, "mfa_setting"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.DeleteByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("未命中 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 }

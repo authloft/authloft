@@ -757,6 +757,7 @@ func TestEngineMFARequiredWithoutFactorList(t *testing.T) {
 	t.Run("enabled user stops at mfa_required", func(t *testing.T) {
 		deps := newTestDeps(t, at)
 		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
 		resp := submit(deps)
 		if resp.Status != StatusMFARequired {
 			t.Fatalf("status = %q, want mfa_required", resp.Status)
@@ -1057,16 +1058,11 @@ func TestRegisterDirectAmrInLoginEvent(t *testing.T) {
 	}
 }
 
-// kindMfaSetting user_credential.kind=mfa_setting（判定「用户自选启用」
-// 的数据源；kind 与 account/mfa.go:99 同值，跨包私有各落一份先例）。
-const kindMfaSetting = "mfa_setting"
-
-// TestEngineMfaUserEnabledBySettingRow（方案 B 真实链路）：用户自选
-// 启用（种 mfa_setting 行 is_enabled=1，user.mfa_required=0）→ 引擎 Submit
-// 主因子通过 → 返回 mfa_required 信封。覆盖三条边界：无行且列 0 → 不要求
-// （success）；列 1 无行 → 仍要求（策略强制）；行存在但 is_enabled=0 →
-// 不要求。关闭 = 删行 → 随读随消，SetMfa / 关闭守卫 / mfaPolicy 零改动。
-func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
+// TestEngineMfaUserSwitchWithUsableFactor：运行期判定口径为「系统已开放 ∧
+// user.mfa_required=1 ∧ 存在可用因子（白名单 ∩ 已绑定）」。覆盖：满足条件进入
+// mfa_required；开关关闭 / 无可用因子 / 白名单移除已绑定因子 / 系统总开关关闭
+// 均按未开启处理，不锁死登录。
+func TestEngineMfaUserSwitchWithUsableFactor(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 
 	submit := func(deps *testEngineDeps) *ssov1.LoginFlowResponse {
@@ -1079,46 +1075,49 @@ func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
 		})
 	}
 
-	t.Run("mfa_setting row enabled triggers mfa_required", func(t *testing.T) {
-		deps := newTestDeps(t, at)
-		// 列=0（用户自选，非策略强制）+ mfa_setting 行 + 可用因子 totp。
-		deps.users.user = &model.User{ID: 42, MfaRequired: 0}
-		deps.creds.creds[kindMfaSetting] = &model.UserCredential{UserID: 42, Kind: kindMfaSetting, IsEnabled: 1}
-		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
-		resp := submit(deps)
-		if resp.Status != StatusMFARequired {
-			t.Fatalf("status = %q, want mfa_required（用户自选启用行）", resp.Status)
-		}
-	})
-
-	t.Run("no row and column 0 passes through", func(t *testing.T) {
-		deps := newTestDeps(t, at)
-		deps.users.user = &model.User{ID: 42, MfaRequired: 0}
-		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
-		resp := submit(deps)
-		if resp.Status != StatusSuccess {
-			t.Fatalf("status = %q, want success（未启用不要求）", resp.Status)
-		}
-	})
-
-	t.Run("column 1 without row still requires", func(t *testing.T) {
+	t.Run("开关开启且有可用因子 → mfa_required", func(t *testing.T) {
 		deps := newTestDeps(t, at)
 		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
 		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
-		resp := submit(deps)
-		if resp.Status != StatusMFARequired {
-			t.Fatalf("status = %q, want mfa_required（策略强制列）", resp.Status)
+		if resp := submit(deps); resp.Status != StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", resp.Status)
 		}
 	})
 
-	t.Run("row present but is_enabled=0 passes through", func(t *testing.T) {
+	t.Run("开关关闭 → success", func(t *testing.T) {
 		deps := newTestDeps(t, at)
 		deps.users.user = &model.User{ID: 42, MfaRequired: 0}
-		deps.creds.creds[kindMfaSetting] = &model.UserCredential{UserID: 42, Kind: kindMfaSetting, IsEnabled: 0}
 		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
-		resp := submit(deps)
-		if resp.Status != StatusSuccess {
-			t.Fatalf("status = %q, want success（行存在但未启用不要求）", resp.Status)
+		if resp := submit(deps); resp.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success", resp.Status)
+		}
+	})
+
+	t.Run("开关开启但无可用因子 → success（兜底）", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		if resp := submit(deps); resp.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success（无可用因子按未开启）", resp.Status)
+		}
+	})
+
+	t.Run("白名单移除已绑定因子 → success（热更新兜底）", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
+		deps.settings.slices[settings.KeyMfaMethods] = []string{"otp_sms"}
+		if resp := submit(deps); resp.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success（白名单无可用因子）", resp.Status)
+		}
+	})
+
+	t.Run("系统总开关关闭 → success", func(t *testing.T) {
+		deps := newTestDeps(t, at)
+		deps.users.user = &model.User{ID: 42, MfaRequired: 1}
+		deps.creds.creds["totp"] = &model.UserCredential{UserID: 42, Kind: "totp", IsEnabled: 1}
+		deps.settings.bools[settings.KeyMfaEnabled] = false
+		if resp := submit(deps); resp.Status != StatusSuccess {
+			t.Fatalf("status = %q, want success（mfa_enabled=false）", resp.Status)
 		}
 	})
 }

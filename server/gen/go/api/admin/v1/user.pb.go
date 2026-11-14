@@ -49,7 +49,7 @@ type AdminUser struct {
 	EmailVerified int64 `protobuf:"varint,8,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
 	// 账号状态：1 正常 0 禁用（§5.4 行 1248 {id, userStatus: 0 或 1}）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
-	// 系统强制启用两步验证（§3.1 行 788）。
+	// 用户自助两步验证开关（§3.1）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
 	// 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1 行 789、《后端架构》§4.2）。
 	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`

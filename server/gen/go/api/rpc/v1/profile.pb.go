@@ -53,7 +53,7 @@ type ProfileResponse struct {
 	// 账号状态：1 正常 0 禁用（§3.1 行 784）；信封顶层 status 为保留字（§1.0），
 	// 业务字段用 user_status（同 §3.1 行 784 口径）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
-	// 系统强制启用两步验证（§3.1 行 785）。
+	// 用户自助两步验证开关（§3.1）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
 	// 安全版本号，便于调用方感知会话失效（§3.1 行 786）。
 	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`

@@ -64,7 +64,7 @@ message ProfileResponse {
   // 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
   //（JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
   int64 user_status = 9;
-  // 系统强制启用两步验证（§3.1 行 788）。
+  // 用户自助两步验证开关（§3.1）。
   int64 mfa_required = 10;
   // 安全版本号，便于调用方感知会话失效（§3.1 行 789）。
   int64 epoch = 11;
@@ -116,28 +116,23 @@ message AvatarUploadConfig {
   repeated string allowed_types = 3;
 }
 
-// MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2 行 834-840）。
+// MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2）。
 message MfaPolicyMethod {
-  // 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-  //（§3.2 行 834-840）。
+  // 可用于两步验证的因子，由管理员在 settings.mfa_methods 配置。
   string factor = 1;
-  // 该因子是否被纳入当前用户的两步验证（§3.2 行 845）。
-  bool enabled = 2;
-  // 是否已绑定该因子（§3.2 行 845）。
-  bool bound = 3;
+  // 用户是否已绑定该因子（§3.2）。
+  bool bound = 2;
 }
 
-// MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2 行 827-847）：
-// 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余（行 847）。
+// MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2）：
+// 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余。
 message MfaPolicy {
-  // 当前用户是否已开启两步验证（§3.2 行 831）。
+  // 用户自助两步验证开关，取 user.mfa_required（§3.2）。
   bool enabled = 1;
-  // 策略层是否强制；true 时用户不可关闭（§3.2 行 832）。
-  bool required = 2;
-  // 预留字段，本期恒为 0（§3.2 行 833、行 846）。
-  int64 trusted_device_days = 3;
-  // 系统开放的全部二次因子，顺序即前端渲染顺序（§3.2 行 834-840）。
-  repeated MfaPolicyMethod methods = 4;
+  // 预留字段，本期恒为 0。
+  int64 trusted_device_days = 2;
+  // 管理员开放的因子白名单及绑定态；系统未开放或白名单为空时为 []。
+  repeated MfaPolicyMethod methods = 3;
 }
 
 // AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2 行 818）。

@@ -81,8 +81,9 @@ func (f *fakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (
 
 // fakeSettings SettingsReader 的 fake。
 type fakeSettings struct {
-	b map[string]bool
-	s map[string]string
+	b  map[string]bool
+	s  map[string]string
+	ss map[string][]string
 }
 
 func (f *fakeSettings) GetBool(key string) (bool, bool) {
@@ -92,6 +93,11 @@ func (f *fakeSettings) GetBool(key string) (bool, bool) {
 
 func (f *fakeSettings) GetString(key string) (string, bool) {
 	v, ok := f.s[key]
+	return v, ok
+}
+
+func (f *fakeSettings) GetStringSlice(key string) ([]string, bool) {
+	v, ok := f.ss[key]
 	return v, ok
 }
 
@@ -434,16 +440,11 @@ func postGetConfig(t *testing.T, srvURL string, tokens *session.Tokens, epochs *
 }
 
 // wantConfigDeps 全量用例的依赖集：storage provider（s3 + direct + 限额）、
-// mfa_setting 行（totp/otp_sms）、password/totp/webauthn/recovery_code 行、
-// captcha 第三方配置、mfa_enabled=true。meta / ext 均经 repo 编码出口构造。
+// mfa 白名单（totp/otp_sms/otp_email/webauthn）、password/totp/webauthn/
+// recovery_code 行、captcha 第三方配置、mfa_enabled=true。meta / ext 均经
+// repo 编码出口构造。
 func wantConfigDeps(t *testing.T) *getConfigDeps {
 	t.Helper()
-	mfaMeta, err := repo.MarshalCredentialMeta(&credential.CredentialMeta{
-		MfaMethods: []string{"totp", "otp_sms"},
-	})
-	if err != nil {
-		t.Fatalf("marshal mfa meta: %v", err)
-	}
 	recoveryMeta, err := repo.MarshalCredentialMeta(&credential.CredentialMeta{
 		RecoveryCodes: []string{"abcdwxyz", "efghkmnp"},
 	})
@@ -464,11 +465,11 @@ func wantConfigDeps(t *testing.T) *getConfigDeps {
 			kindTotp:         {Kind: kindTotp, IsEnabled: 1},
 			kindWebauthn:     {Kind: kindWebauthn, IsEnabled: 1},
 			kindRecoveryCode: {Kind: kindRecoveryCode, IsEnabled: 1, Meta: recoveryMeta},
-			kindMfaSetting:   {Kind: kindMfaSetting, IsEnabled: 1, Meta: mfaMeta},
 		}},
 		settingsIn: &fakeSettings{
-			b: map[string]bool{settings.KeyMfaEnabled: true},
-			s: map[string]string{settings.KeyAvatarStorageProvider: "minio"},
+			b:  map[string]bool{settings.KeyMfaEnabled: true},
+			s:  map[string]string{settings.KeyAvatarStorageProvider: "minio"},
+			ss: map[string][]string{settings.KeyMfaMethods: {"totp", "otp_sms", "otp_email", "webauthn"}},
 		},
 		providersIn: &fakeProviders{rows: map[string]*model.Provider{
 			"minio": {ProviderKey: "minio", Category: "storage", Type: "s3", IsEnabled: 1, Ext: ext},
@@ -477,10 +478,10 @@ func wantConfigDeps(t *testing.T) *getConfigDeps {
 	}
 }
 
-// TestGetConfigWithSession 有会话端到端：四件全量下发逐项断言（§3.2 行
-// 818-847）——avatarUpload 投影（s3 direct）、mfaPolicy（行存在 + 集合 +
-// recovery_code 随 totp + required + trustedDeviceDays=0）、captcha 公开
-// 视图（无凭证字段）、hasPassword。
+// TestGetConfigWithSession 有会话端到端：四件全量下发逐项断言（§3.2）——
+// avatarUpload 投影（s3 direct）、mfaPolicy（开关原值 + 白名单顺序 +
+// bound 投影 + trustedDeviceDays=0）、captcha 公开视图（无凭证字段）、
+// hasPassword。
 func TestGetConfigWithSession(t *testing.T) {
 	user := wantUser()
 	user.MfaRequired = 1
@@ -506,35 +507,33 @@ func TestGetConfigWithSession(t *testing.T) {
 		t.Errorf("avatarUpload allowedTypes = %v, want [image/png image/jpeg]（逗号分隔 + 去空白）", types)
 	}
 
-	// ② mfaPolicy：enabled=行存在、required=mfa_enabled && mfa_required、
-	// trustedDeviceDays 恒 0、五因子序 + enabled 按集合 + bound 投影。
+	// ② mfaPolicy：enabled 取 user.mfa_required 原值、methods 按白名单顺序、
+	// trustedDeviceDays 恒 0、bound 逐项按绑定态投影。
 	mfa := got.GetMfaPolicy()
-	if !mfa.GetEnabled() || !mfa.GetRequired() {
-		t.Errorf("mfaPolicy enabled/required = (%v, %v), want (true, true)", mfa.GetEnabled(), mfa.GetRequired())
+	if !mfa.GetEnabled() {
+		t.Error("mfaPolicy enabled = false, want true（user.mfa_required=1）")
 	}
 	if mfa.GetTrustedDeviceDays() != 0 {
 		t.Errorf("mfaPolicy trustedDeviceDays = %d, want 0（预留恒 0）", mfa.GetTrustedDeviceDays())
 	}
 	methods := mfa.GetMethods()
-	if len(methods) != 5 {
-		t.Fatalf("mfaPolicy methods len = %d, want 5", len(methods))
+	if len(methods) != 4 {
+		t.Fatalf("mfaPolicy methods len = %d, want 4（白名单四项）", len(methods))
 	}
 	wantMethods := []struct {
-		factor  string
-		enabled bool
-		bound   bool
+		factor string
+		bound  bool
 	}{
-		{"totp", true, true},          // ∈ 集合；有 kind=totp 行
-		{"otp_sms", true, true},       // ∈ 集合；user.phone 非空
-		{"otp_email", false, true},    // ∉ 集合；user.email 非空（enabled/bound 独立）
-		{"webauthn", false, true},     // ∉ 集合；有 kind=webauthn 行
-		{"recovery_code", true, true}, // 随 totp 投影；余量非空
+		{"totp", true},      // 有 kind=totp 行
+		{"otp_sms", true},   // user.phone 非空
+		{"otp_email", true}, // user.email 非空
+		{"webauthn", true},  // 有 kind=webauthn 行
 	}
 	for i, w := range wantMethods {
 		m := methods[i]
-		if m.GetFactor() != w.factor || m.GetEnabled() != w.enabled || m.GetBound() != w.bound {
-			t.Errorf("methods[%d] = {%s enabled=%v bound=%v}, want {%s enabled=%v bound=%v}",
-				i, m.GetFactor(), m.GetEnabled(), m.GetBound(), w.factor, w.enabled, w.bound)
+		if m.GetFactor() != w.factor || m.GetBound() != w.bound {
+			t.Errorf("methods[%d] = {%s bound=%v}, want {%s bound=%v}",
+				i, m.GetFactor(), m.GetBound(), w.factor, w.bound)
 		}
 	}
 
@@ -639,36 +638,42 @@ func TestGetConfigAvatarUploadLocalDirect(t *testing.T) {
 	}
 }
 
-// TestGetConfigMfaSettingMissing 无 mfa_setting 行 → enabled=false、
-// methods[].enabled 全 false（recovery_code 亦 false：无 totp）；bound 照
-// 绑定态投影；required=false（user.mfa_required=0）。
-func TestGetConfigMfaSettingMissing(t *testing.T) {
-	deps := wantConfigDeps(t)
-	creds := deps.credsIn.(*fakeCreds)
-	delete(creds.rows, kindMfaSetting)
-	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, deps)
-	srv := httptest.NewServer(h)
-	defer srv.Close()
+// TestGetConfigMfaUnavailable 系统未开放或白名单为空 → methods=[]，
+// 开关仍下发 user.mfa_required 原值（不做兜底抑制）。
+func TestGetConfigMfaUnavailable(t *testing.T) {
+	cases := []struct {
+		name string
+		init func(*fakeSettings)
+	}{
+		{"系统总开关关闭", func(s *fakeSettings) { s.b[settings.KeyMfaEnabled] = false }},
+		{"白名单为空", func(s *fakeSettings) { delete(s.ss, settings.KeyMfaMethods) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := wantConfigDeps(t)
+			tc.init(deps.settingsIn.(*fakeSettings))
+			user := wantUser()
+			user.MfaRequired = 1
+			tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: user}, deps)
+			srv := httptest.NewServer(h)
+			defer srv.Close()
 
-	status, raw := postGetConfig(t, srv.URL, tokens, epochs)
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body %s)", status, raw)
-	}
-	var got accountv1.AccountConfigResponse
-	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("decode response %q: %v", raw, err)
-	}
-	mfa := got.GetMfaPolicy()
-	if mfa.GetEnabled() {
-		t.Error("mfaPolicy enabled = true, want false（无 mfa_setting 行）")
-	}
-	if mfa.GetRequired() {
-		t.Error("mfaPolicy required = true, want false（mfa_required=0）")
-	}
-	for _, m := range mfa.GetMethods() {
-		if m.GetEnabled() {
-			t.Errorf("methods[%s].enabled = true, want false（集合空）", m.GetFactor())
-		}
+			status, raw := postGetConfig(t, srv.URL, tokens, epochs)
+			if status != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+			}
+			var got accountv1.AccountConfigResponse
+			if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+				t.Fatalf("decode response %q: %v", raw, err)
+			}
+			mfa := got.GetMfaPolicy()
+			if !mfa.GetEnabled() {
+				t.Error("mfaPolicy enabled = false, want true（取开关原值）")
+			}
+			if len(mfa.GetMethods()) != 0 {
+				t.Errorf("mfaPolicy methods = %v, want []", mfa.GetMethods())
+			}
+		})
 	}
 }
 
@@ -1974,7 +1979,7 @@ type fakeMfa struct {
 	detail       *accountsvc.MfaDetail
 	detailErr    error
 	setErr       error
-	setCalls     [][]string
+	setCalls     []bool
 	challenge    *accountsvc.TotpChallenge
 	challengeErr error
 	verifyErr    error
@@ -1993,8 +1998,8 @@ func (f *fakeMfa) GetMfa(_ context.Context, _ int64) (*accountsvc.MfaDetail, err
 	return f.detail, f.detailErr
 }
 
-func (f *fakeMfa) SetMfa(_ context.Context, _ int64, methods []string) error {
-	f.setCalls = append(f.setCalls, methods)
+func (f *fakeMfa) SetMfa(_ context.Context, _ int64, enabled bool) error {
+	f.setCalls = append(f.setCalls, enabled)
 	return f.setErr
 }
 
@@ -2069,25 +2074,25 @@ func TestGetMfaConnect(t *testing.T) {
 	}
 }
 
-// TestSetMfaConnect：methods 透传 + 成功空响应；未知因子 → 400
+// TestSetMfaConnect：enabled 透传 + 成功空响应；无可用因子被拒 → 400
 // invalid_request。
 func TestSetMfaConnect(t *testing.T) {
 	m := &fakeMfa{}
 	code, raw, _ := postService(t, accountv1connect.AccountServiceSetMfaProcedure,
-		`{"methods":["totp","otp_sms"]}`, &getConfigDeps{mfaIn: m})
+		`{"enabled":true}`, &getConfigDeps{mfaIn: m})
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
 	}
 	if raw != "{}" {
 		t.Errorf("body = %q, want {}", raw)
 	}
-	if len(m.setCalls) != 1 || len(m.setCalls[0]) != 2 || m.setCalls[0][0] != "totp" || m.setCalls[0][1] != "otp_sms" {
-		t.Errorf("service 收到 methods = %v", m.setCalls)
+	if len(m.setCalls) != 1 || !m.setCalls[0] {
+		t.Errorf("service 收到 enabled = %v, want [true]", m.setCalls)
 	}
 
 	m2 := &fakeMfa{setErr: fmt.Errorf("wrap: %w", accountsvc.ErrMfaInvalidRequest)}
 	code, raw, _ = postService(t, accountv1connect.AccountServiceSetMfaProcedure,
-		`{"methods":["recovery_code"]}`, &getConfigDeps{mfaIn: m2})
+		`{"enabled":true}`, &getConfigDeps{mfaIn: m2})
 	if code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
 	}

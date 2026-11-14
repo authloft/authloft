@@ -79,9 +79,11 @@ type ltEnv struct {
 	svc         *LoginTicket
 }
 
-// enableMFA 把指定 uid 置为已启用二次验证（策略强制列）。
+// enableMFA 把指定 uid 置为已启用二次验证，并种一条已绑定 totp 凭证行
+// （白名单默认含 totp，构成可用因子）。
 func (e *ltEnv) enableMFA(uid int64) {
 	e.users.byID[uid] = &model.User{ID: uid, UserStatus: 1, MfaRequired: 1}
+	e.creds.byKind["totp"] = &model.UserCredential{UserID: uid, Kind: "totp", IsEnabled: 1}
 }
 
 func newLTEnv(t *testing.T) *ltEnv {
@@ -102,7 +104,10 @@ func newLTEnv(t *testing.T) *ltEnv {
 		42: {ID: 42, UserStatus: 1, MfaRequired: 0},
 	}}
 	creds := &ltCreds{byKind: map[string]*model.UserCredential{}}
-	mfaSettings := &tpSettings{bools: map[string]bool{settings.KeyMfaEnabled: true}}
+	mfaSettings := &tpSettings{
+		bools:  map[string]bool{settings.KeyMfaEnabled: true},
+		slices: map[string][]string{settings.KeyMfaMethods: {"totp", "otp_sms", "otp_email", "webauthn"}},
+	}
 	return &ltEnv{
 		tickets: tickets, payloads: payloads, sessions: sessions, state: st,
 		users: users, creds: creds, mfaSettings: mfaSettings,
@@ -230,20 +235,21 @@ func TestWriteTicketConfirmChainMFADisabledWritesSuccess(t *testing.T) {
 	}
 }
 
-// TestWriteTicketConfirmChainMFAEnabledBySettingRow 可证伪：用户策略强制列
-// 未启用，但自选 mfa_setting 凭据行 is_enabled=1 时仍需 step-up（复用
-// 三方登录同口径）。改坏凭据行分支即转红。
-func TestWriteTicketConfirmChainMFAEnabledBySettingRow(t *testing.T) {
+// TestWriteTicketConfirmChainMFAWhitelistRemoval 可证伪：白名单移除用户唯一
+// 已绑定因子（热更新）→ 可用因子为空，按未开启两步验证处理，写 success；
+// 不因开关仍为 1 而锁死登录。
+func TestWriteTicketConfirmChainMFAWhitelistRemoval(t *testing.T) {
 	e := newLTEnv(t)
-	e.creds.byKind["mfa_setting"] = &model.UserCredential{UserID: 9, Kind: "mfa_setting", IsEnabled: 1}
+	e.enableMFA(9)
+	e.mfaSettings.slices[settings.KeyMfaMethods] = []string{"otp_sms"}
 	st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
 		TicketID: "tid123", Session: "body-session", SessionUID: 9,
 	})
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != TicketStatusMFAPending {
-		t.Fatalf("status = %q, want mfa_pending（自选凭据行启用）", st.GetStatus())
+	if st.GetStatus() != TicketStatusSuccess {
+		t.Fatalf("status = %q, want success（无可用因子按未开启）", st.GetStatus())
 	}
 }
 
@@ -284,8 +290,9 @@ func TestWriteTicketConfirmChainMFALookupFailClosed(t *testing.T) {
 	})
 	t.Run("凭据行读取故障", func(t *testing.T) {
 		e := newLTEnv(t)
+		e.enableMFA(9)
 		e.creds.err = errors.New("credential repo: connection refused")
-		// 命中凭据行查询：策略强制列 0，需走到 FindByUserAndKind。
+		// 开关开启后读取可用因子：凭据读取故障必须 fail-closed。
 		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
 			TicketID: "tid123", Session: "body-session", SessionUID: 9,
 		})

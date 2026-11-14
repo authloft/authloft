@@ -44,7 +44,7 @@ message ProfileResponse {
   // 账号状态：1 正常 0 禁用（§3.1 行 784）；信封顶层 status 为保留字（§1.0），
   // 业务字段用 user_status（同 §3.1 行 784 口径）。
   int64 user_status = 9;
-  // 系统强制启用两步验证（§3.1 行 785）。
+  // 用户自助两步验证开关（§3.1）。
   int64 mfa_required = 10;
   // 安全版本号，便于调用方感知会话失效（§3.1 行 786）。
   int64 epoch = 11;

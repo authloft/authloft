@@ -21,10 +21,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// CredentialMeta 是凭证扩展元数据（docs/接口文档.md §12.2 行 1698-1718），
-// 对应 user_credential.meta 列（VARBINARY，§12.0 行 1627：结构固定走 Protobuf），
-// 按 kind 使用其中一段。消息名以文档行 1703 `message CredentialMeta` 为准。
-// 字段名 / 编号 / 类型 / 注释与行 1703-1717 的 protobuf 定义逐字一致。
+// CredentialMeta 是凭证扩展元数据（docs/接口文档.md §12.2），
+// 对应 user_credential.meta 列（VARBINARY，§12.0：结构固定走 Protobuf），
+// 按 kind 使用其中一段。字段名 / 编号 / 类型与 §12.2 的定义一致。
 type CredentialMeta struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// kind=webauthn
@@ -34,12 +33,10 @@ type CredentialMeta struct {
 	BackupEligible  bool     `protobuf:"varint,4,opt,name=backup_eligible,json=backupEligible,proto3" json:"backup_eligible,omitempty"`
 	BackupState     bool     `protobuf:"varint,5,opt,name=backup_state,json=backupState,proto3" json:"backup_state,omitempty"`
 	// kind=recovery_code
-	RecoveryCodes []string `protobuf:"bytes,10,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"` // 10 个恢复码明文（8 位 Crockford Base32 小写，展示形如 xxxx-xxxx）
+	RecoveryCodes []string `protobuf:"bytes,6,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"` // 10 个恢复码明文（8 位 Crockford Base32 小写，展示形如 xxxx-xxxx）
 	// kind=totp
-	TotpDigits int32 `protobuf:"varint,20,opt,name=totp_digits,json=totpDigits,proto3" json:"totp_digits,omitempty"` // 默认 6
-	TotpPeriod int32 `protobuf:"varint,21,opt,name=totp_period,json=totpPeriod,proto3" json:"totp_period,omitempty"` // 默认 30
-	// kind=mfa_setting
-	MfaMethods    []string `protobuf:"bytes,30,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"` // kind=mfa_setting 启用的二次因子集合
+	TotpDigits    int32 `protobuf:"varint,7,opt,name=totp_digits,json=totpDigits,proto3" json:"totp_digits,omitempty"` // 默认 6
+	TotpPeriod    int32 `protobuf:"varint,8,opt,name=totp_period,json=totpPeriod,proto3" json:"totp_period,omitempty"` // 默认 30
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -130,19 +127,12 @@ func (x *CredentialMeta) GetTotpPeriod() int32 {
 	return 0
 }
 
-func (x *CredentialMeta) GetMfaMethods() []string {
-	if x != nil {
-		return x.MfaMethods
-	}
-	return nil
-}
-
 var File_credential_meta_proto protoreflect.FileDescriptor
 
 const file_credential_meta_proto_rawDesc = "" +
 	"\n" +
 	"\x15credential/meta.proto\x12\n" +
-	"credential\"\xc9\x02\n" +
+	"credential\"\xa8\x02\n" +
 	"\x0eCredentialMeta\x12\x1e\n" +
 	"\n" +
 	"transports\x18\x01 \x03(\tR\n" +
@@ -151,14 +141,11 @@ const file_credential_meta_proto_rawDesc = "" +
 	"\x06aaguid\x18\x03 \x01(\tR\x06aaguid\x12'\n" +
 	"\x0fbackup_eligible\x18\x04 \x01(\bR\x0ebackupEligible\x12!\n" +
 	"\fbackup_state\x18\x05 \x01(\bR\vbackupState\x12%\n" +
-	"\x0erecovery_codes\x18\n" +
-	" \x03(\tR\rrecoveryCodes\x12\x1f\n" +
-	"\vtotp_digits\x18\x14 \x01(\x05R\n" +
+	"\x0erecovery_codes\x18\x06 \x03(\tR\rrecoveryCodes\x12\x1f\n" +
+	"\vtotp_digits\x18\a \x01(\x05R\n" +
 	"totpDigits\x12\x1f\n" +
-	"\vtotp_period\x18\x15 \x01(\x05R\n" +
-	"totpPeriod\x12\x1f\n" +
-	"\vmfa_methods\x18\x1e \x03(\tR\n" +
-	"mfaMethodsB'Z%authloft/gen/go/credential;credentialb\x06proto3"
+	"\vtotp_period\x18\b \x01(\x05R\n" +
+	"totpPeriodB'Z%authloft/gen/go/credential;credentialb\x06proto3"
 
 var (
 	file_credential_meta_proto_rawDescOnce sync.Once

@@ -13,16 +13,10 @@
 //     数据源恒 0）；webauthn 凭据数走 WebauthnRepo.ListByUser，boundAt /
 //     lastUsedAt 取 user_credential 行（webauthn 每凭据一行）最早 created_at /
 //     最大 last_used_at。
-//   - SetMfa：methods 数组勾选启用（行 921）。值域封闭四值 {totp,otp_sms,
-//     otp_email,webauthn}（recovery_code 随 totp 投影不可独立勾选，§3.2 行 862；
-//     未知值 → invalid_request）；落库 = mfa_setting 行 CredentialMeta.
-//     mfa_methods（既定口径：每用户至多一行，首开 Create / 再开 Update）；
-//     空数组 = 关闭，受 required 约束（required = settings.mfa_enabled
-//     （缺省 true）&& user.mfa_required==1，handler mfaPolicy / 引擎 mfaRequired
-//     同口径）；成功为空响应。关闭 = 删除 mfa_setting 行（既定口径：
-//     行 862「行存在即顶层 enabled=true」⇒ 关闭 ⇔ 行
-//     不存在），走 CredentialRepo.DeleteByUserAndKind；
-//     行本就不存在（已关闭态）→ 未命中幂等成功。
+//   - SetMfa：两步验证开关（§3.5）。user.mfa_required 是用户唯一开关列：
+//     true 要求系统已开放且存在可用因子（白名单 ∩ 已绑定，判定统一走
+//     service/mfapolicy），不满足返回 invalid_request；false 直接写 0。
+//     写入只更新 mfa_required 列，不触碰 epoch / 会话与凭据。
 //   - BindTotp 两态（行 922-923）：challenge 无状态生成 secret（10 字节
 //     crypto/rand → 16 字符 Base32，无填充，factor/totp decodeSecret 同款可
 //     解）+ otpauthUrl + qrcodeContent（= otpauthUrl 同串，前端 QrImage 直接
@@ -48,17 +42,10 @@
 // recovery 同款字符集），存 8 位存储形、下发展示形 xxxx-xxxx；命中即删不可
 // 复用、删空即失效均归 factor/recovery 登录链，本层只生成不消费。
 //
-// webauthn fail-closed（§8.3 降级窗口，既定口径）：六要素仅覆盖登录与通行密钥
-// 管理（绑定 / 解绑 / 管理），**不含 SetMfa 勾选**——SetMfa 勾选 webauthn 只是
-// 启用集偏好记录；降级窗口内登录链由 dispatch 对未注册 kind 返回 method_disabled
-// 兜住（本包通行密钥管理接口走 ErrWebauthnDegraded）。判定源（factor 注册表）
-// 不在本层依赖面，强行表达需新增依赖，按「无法一致表达就不做该判定」的既定
-// 原则处理。
-//
-// 审计：SetMfa 开启投 enable_mfa（detail={methods:[...]}）、关闭投
-// disable_mfa（detail={methods:[]}，形状对偶；§4.6 行 821 表）；BindTotp /
-// RegenerateRecoveryCodes 不投——§4.6 行 790 事件枚举无 totp_bind / 恢复码
-// 事件，不自造（webauthn_rename「无枚举成员不自造」同款先例）。
+// 审计：SetMfa 开启投 enable_mfa、关闭投 disable_mfa（detail={enabled:true|
+// false}，§4.6）；BindTotp / RegenerateRecoveryCodes 不投——§4.6 事件枚举无
+// totp_bind / 恢复码事件，不自造（webauthn_rename「无枚举成员不自造」同款
+// 先例）。
 package account
 
 import (
@@ -84,6 +71,7 @@ import (
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/mfapolicy"
 	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
@@ -92,11 +80,10 @@ const (
 	// totpStepChallenge / totpStepVerify BindTotp.step 取值（§3.5 行 922-923）。
 	totpStepChallenge = "challenge"
 	totpStepVerify    = "verify"
-	// kindTotp / kindRecoveryCode / kindMfaSetting user_credential.kind 取值
-	//（§4.2 行 667 枚举；handler/account 同值常量为该包私有，本包各落一份）。
+	// kindTotp / kindRecoveryCode user_credential.kind 取值（§4.2 枚举；
+	// handler/account 同值常量为该包私有，本包各落一份）。
 	kindTotp         = "totp"
 	kindRecoveryCode = "recovery_code"
-	kindMfaSetting   = "mfa_setting"
 	// regenerateAction RegenerateRecoveryCodes.action 固定取值（§3.5 行 925）。
 	regenerateAction = "regenerate"
 	// setMfaIssuer otpauth label / issuer 参数的产品名（Key URI 规范 issuer
@@ -129,7 +116,7 @@ const (
 var (
 	// ErrMfaUnauthenticated 无有效会话（401）。
 	ErrMfaUnauthenticated = errors.New("account mfa: authentication required")
-	// ErrMfaInvalidRequest 参数缺失 / step 非法 / methods 含未知因子 / 格式非法
+	// ErrMfaInvalidRequest 参数缺失 / step 非法 / 开启前置校验不满足 / 格式非法
 	//（§8.4 行 1083「格式非法」）。
 	ErrMfaInvalidRequest = errors.New("account mfa: invalid request")
 	// ErrMfaInvalidCode 码不匹配（§8.4 行 1083「码不匹配」）。
@@ -141,18 +128,18 @@ var (
 	ErrMfaInternal = errors.New("account mfa: failed")
 )
 
-// MfaUserStore user 表读取窄接口（§20）：*repo.UserRepo 天然满足
-// （factor.UserRepo 同构；SetMfa required 判定读 mfa_required 列、
-// BindTotpChallenge 读 username 组 otpauth label）。
+// MfaUserStore user 表读写窄接口（§20）：*repo.UserRepo 天然满足
+// （factor.UserRepo 同构；SetMfa 写 mfa_required 列、BindTotpChallenge 读
+// username 组 otpauth label）。
 type MfaUserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
+	UpdateMfaRequired(ctx context.Context, id int64, mfaRequired int8) error
 }
 
 // MfaCredentialStore user_credential 表读写窄接口（§20）：*repo.CredentialRepo
-// 天然满足（FindByUserAndKind / ListByUser / Create / Update 均既有；
-// DeleteByUserAndKind 为本层新增——SetMfa 关闭 = 删除 mfa_setting
-// 行；ListByUser 供 webauthn 因子 boundAt / lastUsedAt 投影，webauthn.go
-// 同款数据源）。
+// 天然满足（FindByUserAndKind / ListByUser / Create / Update /
+// DeleteByUserAndKind 均既有；ListByUser 供 webauthn 因子 boundAt /
+// lastUsedAt 投影，webauthn.go 同款数据源）。
 type MfaCredentialStore interface {
 	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
 	ListByUser(ctx context.Context, userID int64) ([]model.UserCredential, error)
@@ -168,21 +155,22 @@ type MfaWebauthnStore interface {
 }
 
 // MfaSettingsReader settings 热更新读取窄接口（§20）：*settings.Store 天然
-// 满足；nil / 键缺失按 mfa_enabled 默认 true（§5.6 行 1322，handler mfaPolicy
-// 同款防御读）。
+// 满足。未注入属装配缺陷：开启路径经 mfapolicy 判定时 fail-closed 返回
+// ErrMfaInternal；读取器已注入但键缺失时按 §5.6 默认值（mfa_enabled=true）。
 type MfaSettingsReader interface {
 	GetBool(key string) (bool, bool)
+	GetStringSlice(key string) ([]string, bool)
 }
 
 // MfaDeps 依赖注入（§20）；装配层构造（bootstrap 接线）。
 type MfaDeps struct {
-	// Users user 表读取（required 判定 / otpauth label）。
+	// Users user 表读写（mfa_required 开关 / otpauth label）。
 	Users MfaUserStore
-	// Creds user_credential 读写（totp / recovery_code / mfa_setting 行）。
+	// Creds user_credential 读写（totp / recovery_code 行）。
 	Creds MfaCredentialStore
 	// Webauthn user_credential_webauthn 读取（凭据计数）。
 	Webauthn MfaWebauthnStore
-	// Settings 热更新键读取（mfa_enabled）。
+	// Settings 热更新键读取（mfa_enabled 系统开关 / mfa_methods 白名单）。
 	Settings MfaSettingsReader
 	// Audit enable_mfa / disable_mfa 审计投递（nil = 跳过，测试用）。
 	Audit AuditSink
@@ -244,9 +232,9 @@ type MfaFactorDetail struct {
 	Remaining int64
 }
 
-// MfaDetail GetMfa 响应明细（§3.5 行 905-915）：五因子序固定 mfa 明细序
-// （totp → otp_sms → otp_email → webauthn → recovery_code，dto.mfaFactorOrder
-// 同序）+ recoveryIssuedAt。
+// MfaDetail GetMfa 响应明细（§3.5）：五因子序固定（totp → otp_sms →
+// otp_email → webauthn → recovery_code，与 admin 详情同一顺序）+
+// recoveryIssuedAt。
 type MfaDetail struct {
 	Factors []MfaFactorDetail
 	// RecoveryIssuedAt 恢复码签发时间，Unix 秒；未签发（无 kind=recovery_code
@@ -363,149 +351,68 @@ func (s *MfaService) GetMfa(ctx context.Context, uid int64) (*MfaDetail, error) 
 		}
 		recoveryIssuedAt = row.CreatedAt.Unix()
 	}
-	// 五因子序固定（totp → otp_sms → otp_email → webauthn → recovery_code，
-	// dto.mfaFactorOrder 同序）；rc 等明细值在组装前定值，避免 slice 值拷贝
-	// 与后续修改脱节。
+	// 五因子序固定（totp → otp_sms → otp_email → webauthn → recovery_code）；
+	// rc 等明细值在组装前定值，避免 slice 值拷贝与后续修改脱节。
 	return &MfaDetail{
 		Factors:          []MfaFactorDetail{totp, sms, email, wa, rc},
 		RecoveryIssuedAt: recoveryIssuedAt,
 	}, nil
 }
 
-// setMfaAllowedMethods SetMfa 可勾选因子的封闭值域（§3.2 行 862 启用因子集 +
-// recovery_code 随 totp 投影 → 四值；顺序即 mfaOrder，归一后按此序输出，
-// 与 mfa_setting 行 mfa_methods 存储序稳定一致）。
-var setMfaAllowedMethods = [...]string{"totp", "otp_sms", "otp_email", "webauthn"}
-
-// SetMfa 勾选启用 / 关闭两步验证（§3.5 行 921）：非空 = 启用集写入
-// mfa_setting 行 CredentialMeta.mfa_methods；空数组 = 关闭（受 §3.2
-// mfaPolicy.required 约束）。
-func (s *MfaService) SetMfa(ctx context.Context, uid int64, methods []string) error {
+// SetMfa 切换两步验证开关（§3.5）：true 要求系统已开放且存在可用因子
+// （白名单 ∩ 已绑定，判定统一走 mfapolicy），不满足按 invalid_request 拒绝；
+// false 直接关闭。写入只更新 user.mfa_required，不触碰会话与凭据。
+func (s *MfaService) SetMfa(ctx context.Context, uid int64, enabled bool) error {
 	if uid <= 0 {
 		return ErrMfaUnauthenticated
 	}
-	// 归一（去重、按封闭序输出）；未知值（含 recovery_code——随 totp 投影
-	// 不可独立勾选）→ invalid_request。
-	picked := make(map[string]bool, len(methods))
-	for _, m := range methods {
-		allowed := false
-		for _, a := range setMfaAllowedMethods {
-			if m == a {
-				allowed = true
-				break
+	if enabled {
+		if !mfapolicy.SystemEnabled(s.deps.Settings) {
+			return fmt.Errorf("%w: mfa is disabled by system policy", ErrMfaInvalidRequest)
+		}
+		factors, err := mfapolicy.UsableFactors(ctx, s.policyDeps(), uid)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
 			}
+			return fmt.Errorf("%w: resolve usable mfa factors: %v", ErrMfaInternal, err)
 		}
-		if !allowed {
-			return fmt.Errorf("%w: unknown mfa method %q", ErrMfaInvalidRequest, m)
-		}
-		picked[m] = true
-	}
-	ordered := make([]string, 0, len(picked))
-	for _, a := range setMfaAllowedMethods {
-		if picked[a] {
-			ordered = append(ordered, a)
+		if len(factors) == 0 {
+			return fmt.Errorf("%w: no usable mfa factor bound", ErrMfaInvalidRequest)
 		}
 	}
-
-	// required 口径：settings.mfa_enabled（缺省 true）&& user.mfa_required==1
-	//（§3.2 行 849；handler mfaPolicy / orchestrator Build 同源同口径）。
-	required, err := s.mfaRequired(ctx, uid)
-	if err != nil {
-		return err
+	var v int8
+	if enabled {
+		v = 1
 	}
-
-	if len(ordered) == 0 {
-		if required {
-			// 策略强制不可关闭（§3.2 行 849「true 时用户不可关闭」；
-			// §1.6 封闭集内 invalid_request 承载「参数在当前策略下非法」）。
-			return fmt.Errorf("%w: mfa required by policy, cannot disable", ErrMfaInvalidRequest)
+	if err := s.deps.Users.UpdateMfaRequired(ctx, uid, v); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
 		}
-		// 关闭 ⇔ 删除 mfa_setting 行（行 862「行存在即顶层 enabled=true」⇒
-		// 关闭 ⇔ 行不存在，既定口径）。行本就不存在
-		//（从未开启 / 已关闭态）→ 未命中视作幂等成功，不放大为错误。
-		if err := s.deps.Creds.DeleteByUserAndKind(ctx, uid, kindMfaSetting); err != nil &&
-			!errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: delete mfa_setting: %v", ErrMfaInternal, err)
-		}
-		// disable_mfa 审计（§4.6 行 821 表；detail={methods:[]}——关闭后
-		// 启用集为空，与 enable_mfa detail 形状对偶；已关闭态再关属用户
-		// 敏感操作重放，照投记录操作意图）。
-		if s.deps.Audit != nil {
-			s.deps.Audit.PushEvent(model.EventLog{
-				Event:     eventlog.EventDisableMFA,
-				ActorType: eventlog.ActorTypeUser,
-				ActorID:   uid,
-				UserID:    uid,
-				Detail:    encodeDetailMfaMethods([]string{}),
-				CreatedAt: s.now(),
-			})
-		}
-		return nil
+		return fmt.Errorf("%w: update mfa_required: %v", ErrMfaInternal, err)
 	}
-
-	now := s.now()
-	meta, err := repo.MarshalCredentialMeta(&credentialpb.CredentialMeta{MfaMethods: ordered})
-	if err != nil {
-		return fmt.Errorf("%w: marshal mfa_setting meta: %v", ErrMfaInternal, err)
+	event := eventlog.EventDisableMFA
+	if enabled {
+		event = eventlog.EventEnableMFA
 	}
-	row, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindMfaSetting)
-	switch {
-	case err == nil:
-		row.Meta = meta
-		row.IsEnabled = 1
-		row.UpdatedAt = now
-		if err := s.deps.Creds.Update(ctx, row); err != nil {
-			return fmt.Errorf("%w: update mfa_setting: %v", ErrMfaInternal, err)
-		}
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		c := &model.UserCredential{
-			UserID:    uid,
-			Kind:      kindMfaSetting,
-			Secret:    []byte{}, // 无口令语义（§4.2 行 674 webauthn 行同款空 secret 先例）
-			Meta:      meta,
-			IsEnabled: 1,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}
-		if err := s.deps.Creds.Create(ctx, c); err != nil {
-			return fmt.Errorf("%w: create mfa_setting: %v", ErrMfaInternal, err)
-		}
-	default:
-		return fmt.Errorf("%w: load mfa_setting: %v", ErrMfaInternal, err)
-	}
-
-	// enable_mfa 审计（§4.6 行 821：detail={methods:[...]}）。
+	// enable_mfa / disable_mfa 审计（§4.6）：detail={enabled:true|false}；
+	// 同值重放属用户敏感操作重放，照投记录操作意图。
 	if s.deps.Audit != nil {
 		s.deps.Audit.PushEvent(model.EventLog{
-			Event:     eventlog.EventEnableMFA,
+			Event:     event,
 			ActorType: eventlog.ActorTypeUser,
 			ActorID:   uid,
 			UserID:    uid,
-			Detail:    encodeDetailMfaMethods(ordered),
-			CreatedAt: now,
+			Detail:    encodeDetailMfaEnabled(enabled),
+			CreatedAt: s.now(),
 		})
 	}
 	return nil
 }
 
-// mfaRequired required 判定（§3.2 行 849）：settings.mfa_enabled（nil /
-// 键缺失缺省 true）&& user.mfa_required==1。user 不存在原样上抛
-// gorm.ErrRecordNotFound（handler 映射 not_found）。
-func (s *MfaService) mfaRequired(ctx context.Context, uid int64) (bool, error) {
-	user, err := s.deps.Users.FindByID(ctx, uid)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, err
-		}
-		return false, fmt.Errorf("%w: load user: %v", ErrMfaInternal, err)
-	}
-	enabled := true
-	if s.deps.Settings != nil {
-		if v, ok := s.deps.Settings.GetBool(settings.KeyMfaEnabled); ok {
-			enabled = v
-		}
-	}
-	return enabled && user.MfaRequired == 1, nil
+// policyDeps 组装运行期判定依赖，与登录侧共用同一 mfapolicy 口径。
+func (s *MfaService) policyDeps() mfapolicy.Deps {
+	return mfapolicy.Deps{Users: s.deps.Users, Creds: s.deps.Creds, Settings: s.deps.Settings}
 }
 
 // BindTotpChallenge step=challenge（§3.5 行 922）：无状态生成 secret +
@@ -817,11 +724,11 @@ func totpDigits(code string) bool {
 	return true
 }
 
-// encodeDetailMfaMethods 编码 enable_mfa / disable_mfa 审计 detail（§4.6
-// 行 821：{methods:[...]}，msgpack 透传——webauthn encodeDetailWebauthn 同款
+// encodeDetailMfaEnabled 编码 enable_mfa / disable_mfa 审计 detail（§4.6：
+// {enabled:true|false}，msgpack 透传——webauthn encodeDetailWebauthn 同款
 // 私有实现）。编码失败返回 nil（落 NULL），不影响主链路。
-func encodeDetailMfaMethods(methods []string) []byte {
-	b, err := msgpack.Marshal(map[string]any{"methods": methods})
+func encodeDetailMfaEnabled(enabled bool) []byte {
+	b, err := msgpack.Marshal(map[string]any{"enabled": enabled})
 	if err != nil {
 		return nil
 	}
@@ -830,10 +737,11 @@ func encodeDetailMfaMethods(methods []string) []byte {
 
 // UnbindTotp 解除当前 TOTP 绑定（接口文档 §3.5、后端架构 §16）：先消费
 // 验证断言，按 biz_purpose=unbind_totp / subject=会话 uid /
-// operation=unbind_totp 三重校验（§16 行 1842、§11.6.7 行 1482）；通过后
-// 删除 kind=totp 凭据并作废恢复码。断言缺失直接返回 verification_required，
-// 断言无效 / 过期由消费方映射 verification_invalid，重放由凭据去重兜住
-// （§3.8.5）。
+// operation=unbind_totp 三重校验（§16、§11.6.7）；通过后删除 kind=totp
+// 凭据并作废恢复码。断言缺失直接返回 verification_required，断言无效 /
+// 过期由消费方映射 verification_invalid，重放由凭据去重兜住（§3.8.5）。
+// 解绑后可用因子为空时回落 mfa_required=0，保证存储值与运行期判定一致
+// （§3.5 运行期兜底）。
 func (s *MfaService) UnbindTotp(ctx context.Context, uid int64, token string) error {
 	if uid <= 0 {
 		return ErrMfaUnauthenticated
@@ -865,9 +773,29 @@ func (s *MfaService) UnbindTotp(ctx context.Context, uid int64, token string) er
 	if err := s.deps.Creds.DeleteByUserAndKind(ctx, uid, kindTotp); err != nil {
 		return fmt.Errorf("%w: delete totp credential: %v", ErrMfaInternal, err)
 	}
-	// 作废恢复码（§16 行 1842）：随 TOTP 绑定一并移除。
+	// 作废恢复码（§16）：随 TOTP 绑定一并移除。
 	if err := s.deps.Creds.DeleteByUserAndKind(ctx, uid, kindRecoveryCode); err != nil {
 		return fmt.Errorf("%w: delete recovery codes: %v", ErrMfaInternal, err)
+	}
+	// 解绑后无可用因子时回落开关（§3.5 运行期兜底）：仅用户已开启时才重算，
+	// 开关本为 0 时不重复写库 / 刷 updated_at；仍有其他已绑定因子（如手机号）
+	// 则保持原开关。装配裁剪（Users 未注入）无法判定，跳过回落。
+	if s.deps.Users != nil {
+		user, err := s.deps.Users.FindByID(ctx, uid)
+		if err != nil {
+			return fmt.Errorf("%w: load user for mfa fallback: %v", ErrMfaInternal, err)
+		}
+		if user != nil && user.MfaRequired == 1 {
+			factors, err := mfapolicy.UsableFactors(ctx, s.policyDeps(), uid)
+			if err != nil {
+				return fmt.Errorf("%w: resolve usable mfa factors: %v", ErrMfaInternal, err)
+			}
+			if len(factors) == 0 {
+				if err := s.deps.Users.UpdateMfaRequired(ctx, uid, 0); err != nil {
+					return fmt.Errorf("%w: reset mfa_required: %v", ErrMfaInternal, err)
+				}
+			}
+		}
 	}
 	return nil
 }
