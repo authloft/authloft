@@ -6,31 +6,6 @@
 @import (reference) '../../shared/styles/tokens.less';
 @import (reference) '../../shared/styles/controls.less';
 
-// 全视口居中：页面底与卡片面分层（LoginPage 同款）。
-.page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: @spacing-xl @spacing-lg;
-  background-color: @color-page;
-}
-
-// 卡片外壳（LoginPage 同款；flex 列节奏承载状态文案 / 内嵌 BindingPage /
-// LoginContainer / 返回按钮）。
-.card {
-  width: 100%;
-  max-width: 26rem;
-  padding: 2.25rem 2rem;
-  background-color: @color-surface;
-  border: @border-width solid @color-border-subtle;
-  border-radius: @radius-lg;
-  box-shadow: @shadow-card;
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-lg;
-}
-
 .section {
   display: flex;
   flex-direction: column;
