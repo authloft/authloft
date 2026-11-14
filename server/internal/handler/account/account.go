@@ -1102,6 +1102,11 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 	if req.Msg.GetLoginToken() != "" {
 		return nil, mapVerificationError("account", &verification.Error{Code: "invalid_request"})
 	}
+	// 防御性校验：AccountService 组全接口以会话 uid 为主体（§3.8.1），
+	// 与 StartVerification 对齐；拦截器已注入，正常链路不改变行为。
+	if _, ok := session.UIDFromContext(ctx); !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
 	res, err := h.verification.Submit(ctx, verification.SubmitInput{
 		Domain:         verification.DomainAccount,
 		ChallengeToken: req.Msg.GetChallengeToken(),

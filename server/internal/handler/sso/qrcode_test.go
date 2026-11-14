@@ -135,6 +135,7 @@ func TestCreateQrcodeErrorMapping(t *testing.T) {
 		{"bind 无会话", ticketsvc.ErrQrcodeUnauthenticated, http.StatusUnauthorized, ""},
 		{"provider 未配置", qrcodesvc.ErrQrcodeProviderDisabled, http.StatusBadRequest, "provider_disabled"},
 		{"参数非法", ticketsvc.ErrQrcodeInvalidRequest, http.StatusBadRequest, "invalid_request"},
+		{"票据失效", ticketsvc.ErrQrcodeTicketInvalid, http.StatusBadRequest, "token_invalid"},
 		{"内部错误", context.DeadlineExceeded, http.StatusInternalServerError, ""},
 	}
 	for _, tc := range cases {

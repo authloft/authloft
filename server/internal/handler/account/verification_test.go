@@ -184,6 +184,23 @@ func TestAccountStartVerificationRequiresSession(t *testing.T) {
 	}
 }
 
+// TestAccountSubmitVerificationRequiresSession：无会话直接 401，不进入 service。
+func TestAccountSubmitVerificationRequiresSession(t *testing.T) {
+	fake := &fakeVerification{}
+	_, _, h := newSessionHandler(t, &fakeUsers{}, &getConfigDeps{verificationIn: fake})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, accountv1connect.AccountServiceSubmitVerificationProcedure,
+		strings.NewReader(`{"challengeToken":"ch-1","method":"totp","payload":{"code":"123456"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+	if fake.submitCalls != 0 {
+		t.Fatal("无会话不得进入 service")
+	}
+}
+
 // TestAccountSubmitRejectsLoginToken：loginToken 仅 SsoService 组可携带，
 // AccountService 组收到一律 invalid_request（§3.8.2、§3.8.5），且不进入
 // service。

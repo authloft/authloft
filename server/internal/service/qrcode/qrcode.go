@@ -71,8 +71,6 @@ var (
 	ErrQrcodeCaptchaRequired = errors.New("qrcode: captcha required")
 	// ErrQrcodeCaptchaInvalid captcha 校验不通过 / 已使用。
 	ErrQrcodeCaptchaInvalid = errors.New("qrcode: captcha invalid")
-	// ErrQrcodeTicketScene 票据 scene 与本次用途不匹配（只服务 login，§11.6.5 行 1423）。
-	ErrQrcodeTicketScene = errors.New("qrcode: ticket scene mismatch")
 )
 
 // QrcodeCaptchaFailure 把 Gate.Evaluate 判定的当前生效 captcha 配置随可判别
