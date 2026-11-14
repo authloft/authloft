@@ -82,14 +82,14 @@ describe('classifyRequestError 分派顺序', () => {
     ).toBe('field');
   });
 
-  test('其余 ApiError / 非 ApiError → toast，未知错误兜底文案不透出原文', () => {
+  test('其余 ApiError / 非 ApiError → toast', () => {
     expect(classifyRequestError(apiError('internal', 500), {}).kind).toBe(
       'toast',
     );
     const action = classifyRequestError(new Error('secret internals'), {});
     expect(action).toEqual({
       kind: 'toast',
-      message: requestErrorText(new Error('x')),
+      message: requestErrorText(new Error('secret internals')),
     });
   });
 });

@@ -4,7 +4,9 @@
  *   显示「请先设置密码」）、通行密钥（useWebauthnSetting：已绑定 X 个 +
  *   查看已绑定 / 新增）；
  * - 双因素认证：useMfaSetting（MFA + 恢复码合并单行）；
- * - 第三方账号：ThirdPartyList（redirect / qrcode 通道绑定 + 解绑置灰）。
+ * - 第三方账号：ThirdPartyList（全量账号行，已绑定 → 解绑 / 未绑定 → 绑定；
+ *   redirect / qrcode 通道绑定 + 解绑置灰）。本区块自带 SettingListSections
+ *   外壳（与上面两块同级），避免分区嵌套。
  *
  * 【redirect 绑定回调落地（§3.7.1 A 行 969-971）】OAuthCallbackPage b 分支
  * 完成后 location.replace('/account#/security?bind={success|ErrorInfo.code}')
@@ -145,15 +147,10 @@ export function SecurityPageView(props: {
             title: t('account.mfaSectionTitle'),
             fields: [mfaField],
           },
-          {
-            key: 'thirdparty',
-            title: t('account.thirdpartyCardTitle'),
-            children: (
-              <ThirdPartyList hasPassword={hasPassword} captcha={captcha} />
-            ),
-          },
         ]}
       />
+      {/* 第三方账号区块自带 SettingListSections：全量账号行（绑定 / 解绑）。 */}
+      <ThirdPartyList hasPassword={hasPassword} captcha={captcha} />
       <Modal
         visible={showPasswordModal}
         title={

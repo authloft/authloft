@@ -60,7 +60,6 @@ export function ProviderEdit(props: {
     : t('admin.createProviderTitle');
   // Form 托管全部字段值 / 错误；这里只留取测试目标与就地错误所需的 API。
   const formApi = useRef<FormApi | null>(null);
-  const [canSave, setCanSave] = useState(false);
 
   const submitReq = useRequest(
     editing
@@ -91,7 +90,6 @@ export function ProviderEdit(props: {
             htmlType="submit"
             loading={submitting}
             onClick={() => formApi.current?.submitForm()}
-            disabled={!canSave}
           >
             {t('admin.saveAction')}
           </Button>

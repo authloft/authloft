@@ -70,11 +70,14 @@ export const account: typeof zhAccount = {
     'No password is set and no other third-party account is linked. Unlinking this would leave you with no way to sign in. Set a password or link another account first',
   // unbind success feedback (P1-6, unified Semi Toast success channel).
   'account.unbindSuccess': 'Unlinked "{name}"',
-  'account.bindAction': 'Link',
+  'account.bindAction': 'Go to Link',
   'account.thirdpartyLoadFailed':
     'Failed to load third-party accounts. Please refresh and try again',
-  'account.thirdpartyEmpty': 'No third-party accounts linked yet',
-  'account.thirdpartyAvailableTitle': 'Available third-party accounts',
+  // Unified account rows: empty state / reason for channels without a bind entry.
+  'account.thirdpartyNone': 'No third-party accounts available',
+  'account.bindUnsupportedReason': 'This channel cannot be linked here',
+  'account.unionUnbindDisabledReason':
+    'Federated identities are managed with their primary binding and cannot be unlinked separately',
 
   // ---- RecoveryCodePanel ---------------------------------------------------
   'account.recoveryNotice':

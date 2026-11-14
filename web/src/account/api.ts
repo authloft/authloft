@@ -7,8 +7,8 @@
  * GetWebauthnCredentials / RegisterWebauthn / RenameWebauthnCredential /
  * DeleteWebauthnCredential + 注册编排 registerWebauthnCredential（§3.5-§3.6）。
  * 追加三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
- * GetThirdpartyTicket + 置灰判定 / Union 识别 / 请求构造 / redirect 分派 /
- * ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
+ * GetThirdpartyTicket + 置灰判定 / Union 识别 / 双列表合并 / 请求构造 /
+ * redirect 分派 / ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
  * 追加日志族：GetEvents + buildGetEventsRequest（§3.7 行 1041 本人
  * 登录记录分页；「仅成功记录」由服务端过滤，前端不发筛选参数）。
  * 头像族迁文档位：GetConfig / PresignAvatar / CommitAvatar / proxy
@@ -109,7 +109,9 @@ import type {
   GetEventsRequest,
   GetEventsResponse,
   GetThirdpartyTicketRequest,
+  ThirdpartyBinding,
   ThirdpartyBindingsResponse,
+  ThirdpartyOption,
   UnbindThirdpartyRequest,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
 import {
@@ -768,6 +770,59 @@ export function sortThirdpartyOptions<T extends { sortOrder: bigint }>(
   return [...options].sort((a, b) =>
     a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : 0,
   );
+}
+
+/**
+ * 全量第三方账号行（前端展示视图）：items 与 available 合并后每个账号恒一行，
+ * bound 驱动「解绑 / 绑定」入口；createdAt 仅已绑定行有值。
+ */
+export interface ThirdpartyAccountRow {
+  providerKey: string;
+  displayName: string;
+  type: string;
+  channel: string;
+  icon: string;
+  bound: boolean;
+  /** 绑定时间（Unix 秒；仅 bound=true）。 */
+  createdAt?: bigint;
+}
+
+/**
+ * 双列表 → 全量账号行（§3.7 行 936/942）：items 原序全保留（含 Union 行与
+ * 已停用 Provider 的历史绑定，行 947），available 按 sortOrder 升序追加；
+ * 按 providerKey 去重（已绑定优先，防后端重复下发 / 双列表重叠）。
+ * 「无论是否绑定均显示该账号」由本函数保证：不在 available 里的已绑定账号
+ * 仍出一行，不在 items 里的可绑定账号也出一行。
+ */
+export function mergeThirdpartyAccounts(
+  items: ThirdpartyBinding[],
+  available: ThirdpartyOption[],
+): ThirdpartyAccountRow[] {
+  const rows: ThirdpartyAccountRow[] = items.map((item) => ({
+    providerKey: item.providerKey,
+    displayName: item.displayName,
+    type: item.type,
+    channel: item.channel,
+    icon: item.icon,
+    bound: true,
+    createdAt: item.createdAt,
+  }));
+  const seen = new Set(items.map((item) => item.providerKey));
+  for (const option of sortThirdpartyOptions(available)) {
+    if (seen.has(option.providerKey)) {
+      continue;
+    }
+    seen.add(option.providerKey);
+    rows.push({
+      providerKey: option.providerKey,
+      displayName: option.displayName,
+      type: option.type,
+      channel: option.channel,
+      icon: option.icon,
+      bound: false,
+    });
+  }
+  return rows;
 }
 
 /** UnbindThirdparty 请求（§3.7 行 937）：{providerKey}。 */

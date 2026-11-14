@@ -1806,6 +1806,75 @@ describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯�
   });
 });
 
+describe('mergeThirdpartyAccounts（全量账号行：无论是否绑定均显示，纯函数）', () => {
+  const option = (over: {
+    providerKey: string;
+    sortOrder: bigint;
+    channel?: string;
+  }) =>
+    create(ThirdpartyOptionSchema, {
+      providerKey: over.providerKey,
+      displayName: over.providerKey,
+      type: over.providerKey,
+      channel: over.channel ?? 'redirect',
+      icon: '',
+      uiGroup: 'social',
+      sortOrder: over.sortOrder,
+    });
+
+  test('items 原序全保留（含 Union / 已停用 Provider），available 按 sortOrder 追加', () => {
+    const rows = apiMod.mergeThirdpartyAccounts(
+      [
+        bindingRow({ providerKey: 'qq' }),
+        bindingRow({ providerKey: 'wechat_union', type: 'union' }),
+      ],
+      [
+        option({ providerKey: 'github', sortOrder: BigInt(20) }),
+        option({
+          providerKey: 'google',
+          sortOrder: BigInt(10),
+          channel: 'api',
+        }),
+      ],
+    );
+    expect(rows.map((r) => r.providerKey)).toEqual([
+      'qq',
+      'wechat_union',
+      'google',
+      'github',
+    ]);
+    expect(rows.map((r) => r.bound)).toEqual([true, true, false, false]);
+    expect(rows[0].createdAt).toBe(BigInt(1761800000));
+    expect(rows[1].type).toBe('union');
+    expect(rows[2].channel).toBe('api');
+    expect(rows[2].createdAt).toBeUndefined();
+  });
+
+  test('双列表重叠 / available 内重复 → 按 providerKey 去重，已绑定优先', () => {
+    const rows = apiMod.mergeThirdpartyAccounts(
+      [bindingRow({ providerKey: 'qq' })],
+      [
+        option({ providerKey: 'qq', sortOrder: BigInt(1) }),
+        option({ providerKey: 'github', sortOrder: BigInt(2) }),
+        option({ providerKey: 'github', sortOrder: BigInt(3) }),
+      ],
+    );
+    expect(rows.map((r) => [r.providerKey, r.bound])).toEqual([
+      ['qq', true],
+      ['github', false],
+    ]);
+  });
+
+  test('items 为空 → 全部为未绑定行；两列表皆空 → 空数组', () => {
+    const rows = apiMod.mergeThirdpartyAccounts(
+      [],
+      [option({ providerKey: 'github', sortOrder: BigInt(2) })],
+    );
+    expect(rows.map((r) => r.bound)).toEqual([false]);
+    expect(apiMod.mergeThirdpartyAccounts([], [])).toEqual([]);
+  });
+});
+
 describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / buildUnbindThirdpartyRequest（§3.7.1 B，纯函数）', () => {
   test('CreateQrcode 请求：scene 固定 bind + captcha 透传（行 993 / §2.8 行 703）', () => {
     const captcha = create(CaptchaPayloadSchema, {

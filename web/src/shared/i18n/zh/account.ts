@@ -64,10 +64,12 @@ export const account = {
     '未设置密码，且没有其他已绑定的第三方账号；解绑后将没有可用的登录方式，请先设置密码或绑定其他账号',
   // 解绑成功反馈（P1-6，统一 Semi Toast 成功通道）。
   'account.unbindSuccess': '已解绑「{name}」',
-  'account.bindAction': '绑定',
+  'account.bindAction': '去绑定',
   'account.thirdpartyLoadFailed': '第三方账号加载失败，请刷新重试',
-  'account.thirdpartyEmpty': '尚未绑定第三方账号',
-  'account.thirdpartyAvailableTitle': '可绑定的第三方账号',
+  // 全量账号行：无任何 Provider 时的空态 / 无绑定入口渠道的置灰原因。
+  'account.thirdpartyNone': '暂无可用的第三方账号',
+  'account.bindUnsupportedReason': '该渠道不支持在此处绑定',
+  'account.unionUnbindDisabledReason': '联合身份随主绑定一并管理，不能单独解绑',
 
   // ---- RecoveryCodePanel ---------------------------------------------------
   'account.recoveryNotice': '恢复码仅展示一次，请复制保存到安全的地方',

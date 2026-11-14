@@ -139,6 +139,15 @@ import type {
 } from '../gen/proto/api/admin/v1/tools_pb';
 import { DecodeTokenRequestSchema } from '../gen/proto/api/admin/v1/tools_pb';
 
+// rslint-disable-next-line @typescript-eslint/no-explicit-any
+const removeUndefined = (value: any): any => {
+  if (typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(removeUndefined);
+  return Object.fromEntries(
+    Object.entries(value).filter(([_, val]) => val !== undefined),
+  );
+};
+
 /** 当前管理员信息（§5.1 行 1159）：`{id, username, nickname, avatarUrl, isAdmin:true}`，无入参。 */
 export function getMe(): Promise<MeResponse> {
   return adminClient.getMe({});
@@ -227,12 +236,16 @@ export function getProvider(
 
 /** 新建（§5.2 行 1169：请求体为 §5.3 schema 字段集合，JsonObject 平铺含 type）→ OkResponse。 */
 export function createProvider(values: JsonObject): Promise<OkResponse> {
-  return adminClient.createProvider(fromJson(StructSchema, values));
+  return adminClient.createProvider(
+    fromJson(StructSchema, removeUndefined(values)),
+  );
 }
 
 /** 编辑（§5.2 行 1171：提交体平铺含 provider_key 定位，缺省键保留）→ OkResponse。 */
 export function updateProvider(values: JsonObject): Promise<OkResponse> {
-  return adminClient.updateProvider(fromJson(StructSchema, values));
+  return adminClient.updateProvider(
+    fromJson(StructSchema, removeUndefined(values)),
+  );
 }
 
 /** 发送测试（§5.2 行 1177：{providerKey, target}，短信 / 邮件类）→ OkResponse。 */
