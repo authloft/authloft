@@ -7,6 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -862,5 +866,65 @@ func TestUnbindTotpWithRealAssertionService(t *testing.T) {
 	// 同一断言二次使用：凭据已删 → verification_invalid。
 	if err := svc.UnbindTotp(context.Background(), 42, tok); !isVerificationCode(err, "verification_invalid") {
 		t.Fatalf("二次使用 err = %v, want verification_invalid", err)
+	}
+}
+
+// TestVerificationProductionConstructorUnique 生产构造点唯一性位置断言：
+// step-up 服务的生产构造点只能有 buildVerification 一处，且必须注入
+// Deps.Settings；否则新增构造点会静默回落注册默认 otp_ttl（§4.7、§20）。
+// 本文件内的测试桩（_test.go）不属生产代码，扫描时排除。
+func TestVerificationProductionConstructorUnique(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller 取当前文件路径失败")
+	}
+	root := filepath.Join(filepath.Dir(thisFile), "../../..")
+	const ctor = "verification.NewService("
+	total := 0
+	var ctorFile string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "gen", ".git", ".agent-temp":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		b, e := os.ReadFile(path)
+		if e != nil {
+			return e
+		}
+		if n := strings.Count(string(b), ctor); n > 0 {
+			total += n
+			ctorFile = path
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("扫描生产源码失败: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("step-up 服务生产构造点应唯一，实测 %d 处", total)
+	}
+	// 唯一构造点必须注入 settings 快照源，否则 intSetting 静默回默认值。
+	b, err := os.ReadFile(ctorFile)
+	if err != nil {
+		t.Fatalf("读构造点文件失败: %v", err)
+	}
+	block := string(b)
+	if i := strings.Index(block, ctor); i >= 0 {
+		block = block[i:]
+		if j := strings.Index(block, "\n\t})"); j >= 0 {
+			block = block[:j]
+		}
+	}
+	if !strings.Contains(block, "Settings:") {
+		t.Fatal("唯一生产构造点未注入 Deps.Settings（会静默回默认 otp_ttl）")
 	}
 }

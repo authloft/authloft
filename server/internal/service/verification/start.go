@@ -58,6 +58,39 @@ func (s *Service) resendAfter() int64 {
 	return intSetting(s.d.Settings, settings.KeyOtpResendInterval)
 }
 
+// otpSnapshot 请求级 OTP 配置快照（§4.7、§7.3 步骤 6）：Start 入口把现行
+// otp_ttl / otp_resend_interval 各读一次固化，随后 methodView / ExpiresIn /
+// IssueChallenge 一律经该副本取值。settings 热更新只对后续请求生效，落在
+// 请求中途也不会让响应 expiresIn 与挑战令牌 exp 取自不同档位。实现
+// Settings 窄接口供只读注入，复用 intSetting 的回退口径。
+type otpSnapshot struct {
+	ttl    int64
+	resend int64
+}
+
+func (o otpSnapshot) GetInt64(key string) (int64, bool) {
+	switch key {
+	case settings.KeyOtpTtl:
+		return o.ttl, true
+	case settings.KeyOtpResendInterval:
+		return o.resend, true
+	default:
+		return 0, false
+	}
+}
+
+// snapshotOtp 取一次现行 OTP 配置，返回绑定该快照的服务副本与快照本身；
+// 副本的 d.Settings 已被替换为只读快照，本次请求不再触达真实 Store。
+func (s *Service) snapshotOtp() (*Service, otpSnapshot) {
+	snap := otpSnapshot{
+		ttl:    intSetting(s.d.Settings, settings.KeyOtpTtl),
+		resend: intSetting(s.d.Settings, settings.KeyOtpResendInterval),
+	}
+	d := s.d
+	d.Settings = snap
+	return &Service{d: d}, snap
+}
+
 // 方法组所在域（§3.8.1）：SsoService 只接受 login，AccountService 接受其余值。
 const (
 	DomainSSO     = "sso"
@@ -252,6 +285,11 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	if s.d.Codec == nil {
 		return nil, nil, fmt.Errorf("verification: codec not injected")
 	}
+	// 请求内只取一次 settings 快照：本次响应的 ExpiresIn、各因子视图与
+	// 挑战令牌有效期共用同一份 otp_ttl，热更新只对后续请求生效（§4.7）。
+	s, snap := s.snapshotOtp()
+	ttl := time.Duration(snap.ttl) * time.Second
+	expiresIn := snap.ttl
 	if !in.BizPurpose.Valid() || in.Operation == "" {
 		return nil, nil, failure("invalid_request", nil)
 	}
@@ -307,7 +345,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	if in.Method == "" {
 		return &StartResult{
 			Methods:   views,
-			ExpiresIn: int64(s.otpTTL() / time.Second),
+			ExpiresIn: expiresIn,
 		}, nil, nil
 	}
 
@@ -348,14 +386,14 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		Nonce:      nonce,
 		Operation:  in.Operation,
 		Methods:    append([]string(nil), candidates...),
-	}, s.otpTTL())
+	}, ttl)
 	if err != nil {
 		return nil, nil, fmt.Errorf("verification: issue challenge: %w", err)
 	}
 	return &StartResult{
 		ChallengeToken: tok,
 		Methods:        views,
-		ExpiresIn:      int64(s.otpTTL() / time.Second),
+		ExpiresIn:      expiresIn,
 		NextStepKind:   kind,
 		ChallengeData:  data,
 	}, nil, nil

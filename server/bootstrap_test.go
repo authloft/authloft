@@ -44,6 +44,7 @@ import (
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
+	"authloft/internal/captcha"
 	"authloft/internal/config"
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
@@ -56,6 +57,7 @@ import (
 	accountsvc "authloft/internal/service/account"
 	eventlogsvc "authloft/internal/service/eventlog"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -1965,5 +1967,121 @@ func TestProviderRegistryComplete(t *testing.T) {
 		if !found {
 			t.Errorf("provider 注册表缺 type %q——bootstrap.go 装配 import 可能被删（在册 %v）", w, got)
 		}
+	}
+}
+
+// allowStartGate 放行的 captcha 判定桩：OTP 下发守卫只认 Status 为空即放行，
+// 装配断言不触达真实校验器（§9.1）。
+type allowStartGate struct{}
+
+func (allowStartGate) Evaluate(context.Context, captcha.Request) (captcha.Outcome, error) {
+	return captcha.Outcome{}, nil
+}
+
+// TestAssembleVerificationSettingsExpiresIn（装配级）：deps.settings 是真实
+// *settings.Store（非 fake），把其 otp_ttl 注入 step-up 服务后，
+// StartVerification 响应 expiresIn 与 OTP 因子视图 expiresIn 均取该值；
+// 选定因子时挑战令牌按同一 ttl 签发（§4.7、§7.3 步骤 6、§11.6.7）。
+// 复用装配产物的真实 settings 与两把令牌密钥，不连外部库，断言始终执行。
+func TestAssembleVerificationSettingsExpiresIn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
+	deps := buildWiredDeps(t, cfg)
+	if deps.verification == nil {
+		t.Fatal("装配产物未构造 step-up 服务")
+	}
+	want, ok := deps.settings.GetInt64(settings.KeyOtpTtl)
+	if !ok || want <= 0 {
+		t.Fatalf("真实 settings.Store 读 otp_ttl 失败: %d, %v", want, ok)
+	}
+	// Bound 不注入（跳过查库），Gate 用放行桩，走通下发到签发的 service 链。
+	codec := verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification)
+	svc := verification.NewService(verification.Deps{
+		Codec:    codec,
+		Settings: deps.settings,
+		Gate:     allowStartGate{},
+	})
+	ctx := context.Background()
+
+	// method 为空：只回因子视图，expiresIn 取真实 Store 的 otp_ttl。
+	res, _, err := svc.Start(ctx, verification.StartInput{
+		Domain: verification.DomainAccount, BizPurpose: verification.BizPurposeMFA,
+		Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil {
+		t.Fatalf("Start(method 空): %v", err)
+	}
+	if res.ExpiresIn != want {
+		t.Errorf("响应 expiresIn = %d, want 真实 Store otp_ttl = %d", res.ExpiresIn, want)
+	}
+	for _, v := range res.Methods {
+		if (v.Method == "otp_sms" || v.Method == "otp_email") && v.ExpiresIn != want {
+			t.Errorf("%s 视图 expiresIn = %d, want %d", v.Method, v.ExpiresIn, want)
+		}
+	}
+
+	// 选定 OTP 因子：同一份 otp_ttl 既进响应 expiresIn 也用于签发挑战令牌。
+	res, _, err = svc.Start(ctx, verification.StartInput{
+		Domain: verification.DomainAccount, BizPurpose: verification.BizPurposeMFA,
+		Method: "otp_sms", Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil {
+		t.Fatalf("Start(otp_sms): %v", err)
+	}
+	if res.ExpiresIn != want {
+		t.Errorf("选定因子响应 expiresIn = %d, want %d", res.ExpiresIn, want)
+	}
+	if _, err := codec.ParseChallenge(res.ChallengeToken); err != nil {
+		t.Errorf("挑战令牌应按 otp_ttl 签发且可解析: %v", err)
+	}
+}
+
+// shiftingOtpSettings 每调用一次让 otp_ttl 递增：若 Start 在请求内多处现读
+// settings，同一响应的 expiresIn 与各因子视图会取自不同档位。
+type shiftingOtpSettings struct{ calls int }
+
+func (s *shiftingOtpSettings) GetInt64(key string) (int64, bool) {
+	s.calls++
+	if key == settings.KeyOtpTtl {
+		return int64(300 + s.calls), true
+	}
+	if key == settings.KeyOtpResendInterval {
+		return 60, true
+	}
+	return 0, false
+}
+
+// TestStartSettingsSnapshotOncePerRequest（可证伪）：一次 Start 只在入口读
+// 一次 settings（otp_ttl / otp_resend_interval 各一次），响应 expiresIn、
+// 全部 OTP 因子视图 expiresIn 与挑战令牌有效期共用同一份快照；热更新落在
+// 请求中途也不改变本次口径（§4.7、§7.3 步骤 6）。
+func TestStartSettingsSnapshotOncePerRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
+	deps := buildWiredDeps(t, cfg)
+	codec := verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification)
+	st := &shiftingOtpSettings{}
+	svc := verification.NewService(verification.Deps{
+		Codec: codec, Settings: st, Gate: allowStartGate{},
+	})
+
+	res, _, err := svc.Start(context.Background(), verification.StartInput{
+		Domain: verification.DomainAccount, BizPurpose: verification.BizPurposeMFA,
+		Method: "otp_sms", Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// 入口各读一次两个键；后续视图一律复用快照，不再触达 settings。
+	if st.calls != 2 {
+		t.Fatalf("settings 读取次数 = %d, want 2（一请求只取一次快照）", st.calls)
+	}
+	for _, v := range res.Methods {
+		if (v.Method == "otp_sms" || v.Method == "otp_email") && v.ExpiresIn != res.ExpiresIn {
+			t.Errorf("%s 视图 expiresIn = %d, 与响应 %d 不同档（快照未贯穿）", v.Method, v.ExpiresIn, res.ExpiresIn)
+		}
+	}
+	if _, err := codec.ParseChallenge(res.ChallengeToken); err != nil {
+		t.Errorf("挑战令牌应按同一份快照签发且可解析: %v", err)
 	}
 }
