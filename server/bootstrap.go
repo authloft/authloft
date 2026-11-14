@@ -67,7 +67,7 @@ import (
 	"authloft/internal/middleware"
 	"authloft/internal/migrate"
 	"authloft/internal/oidc"
-	core "authloft/internal/otp"
+	"authloft/internal/otp"
 	"authloft/internal/pages"
 	"authloft/internal/provider"
 	// §3.1 行 237：注册表导入在此处统一触发 init() 自注册——
@@ -97,7 +97,6 @@ import (
 	wechatmpscan "authloft/internal/provider/oauth/wechat_mp_scan"
 	"authloft/internal/qrcode"
 	"authloft/internal/repo"
-	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	accountsvc "authloft/internal/service/account"
 	adminsvc "authloft/internal/service/admin"
@@ -314,83 +313,6 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 	return &c, nil
 }
 
-// eventLogExecutor 延迟写入队列的执行器（§5.2 行 886）：把攒批后的任务落到
-// 已落地的 repo——model.EventLog 走 EventLogRepo.BatchInsert，last_login_at
-// 走 UserRepo.UpdateLastLogin。执行失败只记日志（队列骨架不重试、不影响登录
-// 主链路，§5.2 行 893）；真实重试策略归后续执行器卡。
-type eventLogExecutor struct {
-	logs  *repo.EventLogRepo
-	users *repo.UserRepo
-}
-
-func (e *eventLogExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task) {
-	var rows []model.EventLog
-	for _, task := range tasks {
-		switch v := task.Value.(type) {
-		case model.EventLog:
-			rows = append(rows, v)
-		case eventlog.LastLoginTask:
-			if err := e.users.UpdateLastLogin(ctx, v.UserID, v.At); err != nil {
-				slog.Warn("asyncqueue: update last_login_at failed", "user_id", v.UserID, "error", err)
-			}
-		}
-	}
-	if len(rows) == 0 {
-		return
-	}
-	if err := e.logs.BatchInsert(ctx, rows); err != nil {
-		slog.Warn("asyncqueue: batch insert event_log failed", "rows", len(rows), "error", err)
-	}
-}
-
-// combinedExecutor 把同一批任务分发给多个执行器：每个执行器只消费自己
-// 认识的任务类型（event_log / last_login 与 webauthn sign_count 互不干扰），
-// 满足 asyncqueue 单执行器构造口径（§5.2 行 872、§8.3 行 1049）。
-type combinedExecutor []asyncqueue.Executor
-
-func (c combinedExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task) {
-	for _, exec := range c {
-		exec.Execute(ctx, tasks)
-	}
-}
-
-// captchaProviderSource 把 provider 表行转成 captcha 包窄投影
-// （captcha.ProviderSource，§3.11 行 446：captcha 包不自持 DB 句柄；组合
-// 模式，不修改 repo 公共接口）。ext 编解码
-// 唯一出口 repo.ParseProviderExt（§12.1：site_key=client_id、
-// secret=client_secret、endpoint=自定义校验地址）；未命中唯一键按
-// 「无此行」返回 nil,nil，其余错误原样上抛。
-type captchaProviderSource struct {
-	providers *repo.ProviderRepo
-}
-
-func (s captchaProviderSource) Find(ctx context.Context, providerKey string) (*captcha.ProviderRecord, error) {
-	if providerKey == "" {
-		return nil, nil
-	}
-	row, err := s.providers.FindByKey(ctx, providerKey)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	ext, err := repo.ParseProviderExt(row.Ext)
-	if err != nil {
-		return nil, err
-	}
-	return &captcha.ProviderRecord{
-		ProviderKey: row.ProviderKey,
-		Category:    row.Category,
-		Type:        row.Type,
-		Enabled:     row.IsEnabled != 0,
-		SiteKey:     ext.GetClientId(),
-		Secret:      ext.GetClientSecret(),
-		VerifyURL:   ext.GetEndpoint(),
-	}, nil
-}
-
-// buildEngine 构造因子注册表（§3.8）、登录终点 Terminal（§7.3）与单引擎
 // Engine（§7.2-§7.4），供 assemble 注入。返回 terminal / registry 便于装配单测
 // 直接核对注入完整性，不进入 assembled 字段。
 func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
@@ -462,8 +384,8 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// ——启动期快照）；发送桥 = settings 键 → Loader → NewSender → asyncqueue
 	// 异步投递（provider/sender.go）。IPResolver 尚未落地（暂不并入），
 	// 传 nil 走 §8.2 的 "unknown" 兜底，与 password 因子 nil 先例一致。
-	otpCfg, codeOpts := otpParamsFromSettings(deps.settings)
-	otpSvc := core.NewService(cache.NewCodeStore(deps.rdb, codeOpts), otpCfg)
+	otpCfg, codeOpts := otp.FromSettings(deps.settings)
+	otpSvc := otp.NewService(cache.NewCodeStore(deps.rdb, codeOpts), otpCfg)
 	smsSender, err := provider.NewCodeBridge(deps.settings, deps.providerLoader, deps.queue,
 		settings.KeySmsProviderKey, provider.CategorySMS)
 	if err != nil {
@@ -711,70 +633,12 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 			Users:       users,
 			Credentials: creds,
 			Epoch:       deps.epochStore,
-			Audit:       resetAuditSink{logs: eventlog.NewWriter(deps.queue)},
+			Audit:       eventlog.NewResetAuditSink(eventlog.NewWriter(deps.queue)),
 			Settings:    deps.settings,
 			Thirdparty:  deps.thirdparty,
 		},
 	})
 	return engine, terminal, registry, nil
-}
-
-// resetAuditSink 把重置密码审计事件投递到延迟队列（docs/后端架构.md §7.4
-// 行 1026「异步写审计」）：事件形态复用 eventlog 既有任务——
-// EventResetPassword + DetailPwdEpoch（§4.6 行 770/799），实现
-// orchestrator.ResetAuditSink（装配接线）。
-type resetAuditSink struct {
-	logs *eventlog.Writer
-}
-
-// RecordReset 非阻塞投递；队列满 / 关闭由 eventlog.Writer 静默降级（§5.2
-// 行 893），不影响重置主链路。
-func (s resetAuditSink) RecordReset(_ context.Context, uid int64, epoch int16, amr []string) {
-	if s.logs == nil {
-		return
-	}
-	s.logs.PushEvent(model.EventLog{
-		Event:     eventlog.EventResetPassword,
-		ActorType: eventlog.ActorTypeUser,
-		ActorID:   uid,
-		UserID:    uid,
-		AMR:       strings.Join(amr, ","),
-		Detail:    eventlog.DetailPwdEpoch(int64(epoch)),
-		CreatedAt: time.Now(),
-	})
-}
-
-// otpParamsFromSettings 验证码五参数启动期快照（接口文档 §5.6 行 1303-1311
-// 为键名与默认值的唯一定义处）。core.Config 供因子 Judge 与表单渲染，
-// cache.CodeOptions 供 cache.CodeStore 限流判定；零值各自回落默认（两处
-// 默认值同源 §10.3，一致）。
-func otpParamsFromSettings(st *settings.Store) (core.Config, cache.CodeOptions) {
-	var cfg core.Config
-	if st == nil {
-		return cfg, cache.CodeOptions{}
-	}
-	if v, ok := st.GetInt64(settings.KeyOtpTtl); ok && v > 0 {
-		cfg.TTL = time.Duration(v) * time.Second
-	}
-	if v, ok := st.GetInt64(settings.KeyOtpResendInterval); ok && v > 0 {
-		cfg.Cooldown = time.Duration(v) * time.Second
-	}
-	if v, ok := st.GetInt64(settings.KeyOtpMaxAttempts); ok && v > 0 {
-		cfg.MaxAttempts = int(v)
-	}
-	if v, ok := st.GetInt64(settings.KeyOtpDailyLimitTarget); ok && v > 0 {
-		cfg.TargetDailyLimit = int(v)
-	}
-	if v, ok := st.GetInt64(settings.KeyOtpDailyLimitIP); ok && v > 0 {
-		cfg.IPDailyLimit = int(v)
-	}
-	return cfg, cache.CodeOptions{
-		TTL:              cfg.TTL,
-		Cooldown:         cfg.Cooldown,
-		TargetDailyLimit: cfg.TargetDailyLimit,
-		IPDailyLimit:     cfg.IPDailyLimit,
-		MaxAttempts:      cfg.MaxAttempts,
-	}
 }
 
 // assemble 正常模式装配步骤 2-8（§3.1 行 237）：DB → 迁移检查（migrate up，
@@ -841,7 +705,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	//——Gate 与 registerPages 的 CSP supporter 复用同一实例（§9.4 行
 	// 1134「CSP 贡献与下发配置、拦截校验同源」）。
 	captchaStore := cache.NewCaptchaStore(rdb)
-	captchaSrc := captchaProviderSource{providers: repo.NewProviderRepo(db)}
+	captchaSrc := captcha.NewProviderSource(repo.NewProviderRepo(db))
 	deps.captchaCatalog = captcha.NewCatalog(store, captchaSrc)
 	deps.gate = captcha.NewGate(store,
 		deps.captchaCatalog,
@@ -855,15 +719,15 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	users := repo.NewUserRepo(db)
 	creds := repo.NewCredentialRepo(db)
 	webauthnRepo := repo.NewWebauthnRepo(db)
-	deps.queue = asyncqueue.New(combinedExecutor{
-		&eventLogExecutor{logs: repo.NewEventLogRepo(db), users: users},
+	deps.queue = asyncqueue.New(asyncqueue.NewCombined(
+		eventlog.NewExecutor(repo.NewEventLogRepo(db), users),
 		webauthn.NewSignCountExecutor(webauthnRepo),
 		// otp_sms / otp_email 的消息投递（SendJob，§15.2 行 1726），
 		// 只消费 SendJob 任务，其余任务类型原样忽略。
 		provider.SendExecutor{},
 		// 码图自动删除（DeleteTask，§13.3）。
 		qrcode.NewDeleteExecutor(storage.NewResolver(deps.providerLoader)),
-	}, asyncqueue.DefaultOptions())
+	), asyncqueue.DefaultOptions())
 	deps.sink = eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
 
 	// 微信服务端 access_token 跨实例共享缓存
@@ -1127,46 +991,12 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 				middleware.HTTPMetrics(
 					// Connect 前缀链 origin 用动态白名单形态（与 gin 版同一
 					// 判定核心；静态 HTTPOrigin 保留兼容存量调用方）。
-					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, connectRequestInfo(rt.Handler)),
+					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, orchestrator.WithRequestInfoHandler(rt.Handler)),
 				),
 			),
 		))
 	}
 	return mux, apiGroup
-}
-
-// connectRequestInfo 给 connect 前缀链注入请求侧信息：http 挂载层
-// 是唯一能同时拿到 RemoteAddr 与头信息的层（connect 链 AnyRequest 只暴露
-// Header——session.RequestSignal 只采头、拿不到来源 IP 的先例），登录成功
-// 事件经 ctx 带到 orchestrator.Terminal.Complete，落 event_log.ip / ua
-// （§4.6 行 776-777）。所有 connect 域统一注入，消费点只有登录终点。
-func connectRequestInfo(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.ServeHTTP(w, r.WithContext(orchestrator.WithRequestInfo(r.Context(), orchestrator.RequestInfo{
-			IP: clientIPFromRequest(r),
-			UA: r.UserAgent(),
-		})))
-	})
-}
-
-// clientIPFromRequest 来源 IP（审计用途 event_log.ip，非安全判定依据）：
-// 反代链优先 X-Forwarded-For 首段，次选 X-Real-IP，直连回落 RemoteAddr
-// host 段。直连场景客户端可伪造 XFF / X-Real-IP，如实记录——部署方负责
-// 在反代清洗入站头（§1.1 明文部署风险自负的同款口径）。
-func clientIPFromRequest(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			xff = xff[:i]
-		}
-		return strings.TrimSpace(xff)
-	}
-	if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
-		return rip
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
 }
 
 // ssoSessionTTL session_ttl 键缺失 / 非法时的回落值（接口文档 §1.9、§5.6：

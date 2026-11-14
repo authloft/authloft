@@ -1895,7 +1895,7 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 	inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = orchestrator.RequestInfoFromContext(r.Context())
 	})
-	h := connectRequestInfo(inner)
+	h := orchestrator.WithRequestInfoHandler(inner)
 
 	do := func(remoteAddr string, hdr map[string]string) {
 		t.Helper()

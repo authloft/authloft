@@ -3,10 +3,10 @@
 // settings 键 captcha_provider_key（空串 = 内置，§5.6 行 1334）→ provider
 // 表 category=captcha 且 is_enabled=1 的生效行，每次现算不缓存。无可用项
 // （未配置 / 禁用 / 查不到）返回 nil,nil，降级语义归 Gate（builtin_image）。
-// 本包不自持 DB 句柄（gate.go 包口径）：provider 行经 ProviderSource 窄
-// 接口注入，装配层用 repo + ext 解析实现（§12.1：site_key=client_id、
-// secret=client_secret、endpoint=自定义校验地址），同 image.go Store 的
-// 依赖倒置模式。
+// 本包除 `provider_source.go` 外不持有 DB 句柄（gate.go 包口径）：provider
+// 行经 ProviderSource 窄接口取数，包内 `provider_source.go` 用 repo + ext
+// 解析实现（§12.1：site_key=client_id、secret=client_secret、endpoint=自定义
+// 校验地址），同 image.go Store 的依赖倒置模式。
 package captcha
 
 import (
@@ -57,7 +57,7 @@ func NewCatalog(keys KeyReader, source ProviderSource) *Catalog {
 }
 
 // Current 每次现算当前生效 captcha Provider（不缓存，§9.1 行 1094
-//「下发与拦截永远同源」）：键空串 / 键缺失 / 行不存在 / category≠captcha /
+// 「下发与拦截永远同源」）：键空串 / 键缺失 / 行不存在 / category≠captcha /
 // 未启用 → nil,nil；基础设施错误原样上抛。
 func (c *Catalog) Current(ctx context.Context) (*Provider, error) {
 	if c == nil || c.keys == nil || c.source == nil {
