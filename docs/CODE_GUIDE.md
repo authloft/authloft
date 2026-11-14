@@ -50,6 +50,8 @@
 
 - 依赖方向单向向下：`factor` 与 `provider` 不知道 HTTP 的存在；`service` 不依赖 Gin（handler 层把 `*gin.Context` 转成 `context.Context` + 输入结构后传入）。service 及其下层既不知道 JSON 也不知道 Protobuf。
 - rpc 域空 / 异常 procedure 一律按读路径处理（安全默认：读接口仍有三个签名头 + SecretLookup + 五项签名，非无鉴权）；写接口判定见 §3.2 第 23 条。
+- 业务接口的实现类住在「定义接口的包」或「消费该接口的包」，不写在 `main` 包；装配层只 `new` 出实现并注入。
+- 装配层（`server/bootstrap.go`）不承载业务判定：只做按序构造、注册 handler 与生命周期收口；业务规则 / 数据投影 / 错误映射 / 适配器实现一律下沉 service 子包。
 
 ### 3.2 编码约束清单（写进 lint / review checklist）
 
@@ -103,6 +105,8 @@
 4. 密钥可注入：`keystore` 从内存 map 构造，测试用固定 kid
 5. Redis 抽象为 `cache` 包接口，测试用内存实现；Lua 脚本仍走同一接口，行为一致
 6. 队列可同步化：`asyncqueue` 暴露 `FlushSync()` 与「直写模式」开关，测试关闭异步，断言落库结果
+7. 接口实现类与接口定义同包，或与消费方同包；`main` 包不得实现 `LoginCompleter`、`SessionWriter` 一类业务接口
+8. 请求元信息（IP/UA）与登录终点适配器放消费方 service 子包（`orchestrator/requestinfo.go`、`orchestrator/logincompleter.go`），装配层只透传
 
 ### 3.5 数据库与迁移
 
