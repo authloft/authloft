@@ -1,4 +1,4 @@
-package main
+package orchestrator
 
 import (
 	"context"
@@ -7,32 +7,31 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/security"
-	"authloft/internal/service/orchestrator"
 	"authloft/internal/service/verification"
 	"authloft/internal/settings"
 )
 
-// fakeSessionWriter Terminal 的会话写入 fake。
-type fakeSessionWriter struct {
+// lcSessionWriter Terminal 的会话写入 fake。
+type lcSessionWriter struct {
 	uid   int64
 	amr   []string
 	calls int
 }
 
-func (f *fakeSessionWriter) Write(_ context.Context, uid int64, amr []string) (string, string, error) {
+func (f *lcSessionWriter) Write(_ context.Context, uid int64, amr []string) (string, string, error) {
 	f.calls++
 	f.uid = uid
 	f.amr = append([]string(nil), amr...)
 	return "sid-1", "stok-1", nil
 }
 
-// fakeOIDCIssuer Terminal 的授权码签发 fake。
-type fakeOIDCIssuer struct {
-	in    orchestrator.OIDCIssue
+// lcOIDCIssuer Terminal 的授权码签发 fake。
+type lcOIDCIssuer struct {
+	in    OIDCIssue
 	calls int
 }
 
-func (f *fakeOIDCIssuer) Issue(_ context.Context, in orchestrator.OIDCIssue) (string, error) {
+func (f *lcOIDCIssuer) Issue(_ context.Context, in OIDCIssue) (string, error) {
 	f.calls++
 	f.in = in
 	return "code-1", nil
@@ -40,23 +39,23 @@ func (f *fakeOIDCIssuer) Issue(_ context.Context, in orchestrator.OIDCIssue) (st
 
 // fakeLoginEvents Terminal 的登录事件投递 fake。
 type fakeLoginEvents struct {
-	ev    orchestrator.LoginEvent
+	ev    LoginEvent
 	calls int
 }
 
-func (f *fakeLoginEvents) Record(_ context.Context, ev orchestrator.LoginEvent) error {
+func (f *fakeLoginEvents) Record(_ context.Context, ev LoginEvent) error {
 	f.calls++
 	f.ev = ev
 	return nil
 }
 
-// fakeSyncBuilder Terminal 的多域名同步链 fake。
-type fakeSyncBuilder struct {
+// lcSyncBuilder Terminal 的多域名同步链 fake。
+type lcSyncBuilder struct {
 	finalURL string
 	calls    int
 }
 
-func (f *fakeSyncBuilder) Build(_ context.Context, _, _, _ string, _ []string, finalURL string) (string, error) {
+func (f *lcSyncBuilder) Build(_ context.Context, _, _, _ string, _ []string, finalURL string) (string, error) {
 	f.calls++
 	f.finalURL = finalURL
 	return "https://sync.example/?x=1", nil
@@ -88,7 +87,7 @@ func (fakeTerminalSettings) GetStringSlice(key string) ([]string, bool) {
 	return nil, false
 }
 
-func newTestLoginState(t *testing.T) *orchestrator.State {
+func newTestLoginState(t *testing.T) *State {
 	t.Helper()
 	key := make([]byte, 32)
 	for i := range key {
@@ -98,10 +97,10 @@ func newTestLoginState(t *testing.T) *orchestrator.State {
 	if err != nil {
 		t.Fatalf("NewKeyStore: %v", err)
 	}
-	return orchestrator.NewState(security.NewCodec(ks))
+	return NewState(security.NewCodec(ks))
 }
 
-func issueLoginToken(t *testing.T, state *orchestrator.State) string {
+func issueLoginToken(t *testing.T, state *State) string {
 	t.Helper()
 	tok, err := state.Issue(&token.LoginTokenPayload{
 		Tid:    "tid-original",
@@ -123,12 +122,9 @@ func issueLoginToken(t *testing.T, state *orchestrator.State) string {
 	return tok
 }
 
-func newTestLoginCompleter(t *testing.T, state *orchestrator.State, sessions *fakeSessionWriter, oidc *fakeOIDCIssuer, events *fakeLoginEvents, sync *fakeSyncBuilder) loginCompleter {
+func newTestLoginCompleter(t *testing.T, state *State, sessions *lcSessionWriter, oidc *lcOIDCIssuer, events *fakeLoginEvents, sync *lcSyncBuilder) *LoginCompleter {
 	t.Helper()
-	return loginCompleter{
-		terminal: orchestrator.NewTerminal(sessions, oidc, events, sync, fakeTerminalSettings{}),
-		state:    state,
-	}
+	return NewLoginCompleter(NewTerminal(sessions, oidc, events, sync, fakeTerminalSettings{}), state)
 }
 
 // TestLoginCompleterRestoresOIDCContext：带 oidc 的 loginToken 恢复原流程
@@ -137,14 +133,14 @@ func newTestLoginCompleter(t *testing.T, state *orchestrator.State, sessions *fa
 func TestLoginCompleterRestoresOIDCContext(t *testing.T) {
 	state := newTestLoginState(t)
 	lt := issueLoginToken(t, state)
-	sessions := &fakeSessionWriter{}
-	oidc := &fakeOIDCIssuer{}
+	sessions := &lcSessionWriter{}
+	oidc := &lcOIDCIssuer{}
 	events := &fakeLoginEvents{}
-	sync := &fakeSyncBuilder{}
+	sync := &lcSyncBuilder{}
 	completer := newTestLoginCompleter(t, state, sessions, oidc, events, sync)
 
 	var sinkToken string
-	ctx := orchestrator.WithSessionTokenSink(context.Background(), func(tok string) { sinkToken = tok })
+	ctx := WithSessionTokenSink(context.Background(), func(tok string) { sinkToken = tok })
 
 	sess, err := completer.Complete(ctx, verification.Subject{Kind: verification.SubjectKindUID, ID: "42"}, lt, "totp")
 	if err != nil {
@@ -179,8 +175,8 @@ func TestLoginCompleterRejectsContextMismatch(t *testing.T) {
 	lt := issueLoginToken(t, state)
 
 	t.Run("uid 不一致", func(t *testing.T) {
-		sessions := &fakeSessionWriter{}
-		completer := newTestLoginCompleter(t, state, sessions, &fakeOIDCIssuer{}, &fakeLoginEvents{}, &fakeSyncBuilder{})
+		sessions := &lcSessionWriter{}
+		completer := newTestLoginCompleter(t, state, sessions, &lcOIDCIssuer{}, &fakeLoginEvents{}, &lcSyncBuilder{})
 		_, err := completer.Complete(context.Background(), verification.Subject{Kind: verification.SubjectKindUID, ID: "43"}, lt, "totp")
 		if !errors.Is(err, verification.ErrLoginContext) {
 			t.Fatalf("err = %v, want ErrLoginContext", err)
@@ -191,8 +187,8 @@ func TestLoginCompleterRejectsContextMismatch(t *testing.T) {
 	})
 
 	t.Run("解析失败", func(t *testing.T) {
-		sessions := &fakeSessionWriter{}
-		completer := newTestLoginCompleter(t, state, sessions, &fakeOIDCIssuer{}, &fakeLoginEvents{}, &fakeSyncBuilder{})
+		sessions := &lcSessionWriter{}
+		completer := newTestLoginCompleter(t, state, sessions, &lcOIDCIssuer{}, &fakeLoginEvents{}, &lcSyncBuilder{})
 		_, err := completer.Complete(context.Background(), verification.Subject{Kind: verification.SubjectKindUID, ID: "42"}, "garbage", "totp")
 		if !errors.Is(err, verification.ErrLoginContext) {
 			t.Fatalf("err = %v, want ErrLoginContext", err)
@@ -207,10 +203,10 @@ func TestLoginCompleterRejectsContextMismatch(t *testing.T) {
 // amr 只含本次二次因子。
 func TestLoginCompleterWithoutLoginToken(t *testing.T) {
 	state := newTestLoginState(t)
-	sessions := &fakeSessionWriter{}
-	oidc := &fakeOIDCIssuer{}
+	sessions := &lcSessionWriter{}
+	oidc := &lcOIDCIssuer{}
 	events := &fakeLoginEvents{}
-	sync := &fakeSyncBuilder{}
+	sync := &lcSyncBuilder{}
 	completer := newTestLoginCompleter(t, state, sessions, oidc, events, sync)
 
 	sess, err := completer.Complete(context.Background(), verification.Subject{Kind: verification.SubjectKindUID, ID: "42"}, "", "totp")
