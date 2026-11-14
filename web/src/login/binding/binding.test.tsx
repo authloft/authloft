@@ -205,7 +205,7 @@ describe('BindingPageView 状态帧', () => {
     expect(markup).not.toContain('disabled'); // 可重试 → 提交不禁用
   });
 
-  test('signup_disabled：提示注册已关闭 + 提交禁用（§1.6 行 257 服务端拒绝兜底）', () => {
+  test('signup_disabled：提示注册已关闭 + 表单保留可重试（§1.6 行 257 服务端拒绝兜底）', () => {
     const markup = renderView({
       choice: 'create',
       username: 'alice_01',
@@ -213,10 +213,13 @@ describe('BindingPageView 状态帧', () => {
       envelope: envelope({ status: 'signup_disabled' }),
     });
     expect(markup).toContain('注册未开放'); // t('errors.status.signup_disabled')
-    expect(markup).toContain('disabled'); // 不可重试 → 提交禁用
+    expect(markup).not.toContain('disabled'); // 失败态表单保留可重试：提交按钮仅由 loading 禁用
+    expect(renderView({ choice: 'create', loading: true })).toContain(
+      'disabled',
+    ); // 提交中 → 按钮禁用
   });
 
-  test('failed（服务端兜底信封）：兜底文案 + 表单保留 + 提交禁用（§1.6 行 272；表驱动不可重试）', () => {
+  test('failed（服务端兜底信封）：兜底文案 + 表单保留可重试（§1.6 行 272）', () => {
     const markup = renderView({
       choice: 'create',
       status: 'failed',
@@ -224,7 +227,10 @@ describe('BindingPageView 状态帧', () => {
     });
     expect(markup).toContain('操作失败，请重试'); // t('errors.status.failed')
     expect(markup).toContain('name="username"'); // 表单保留原地（不隐藏）
-    expect(markup).toContain('disabled'); // FLOW_STATUS_TABLE.failed 不可重试 → 提交禁用
+    expect(markup).not.toContain('disabled'); // 失败态表单保留可重试：提交按钮仅由 loading 禁用
+    expect(renderView({ choice: 'create', loading: true })).toContain(
+      'disabled',
+    ); // 提交中 → 按钮禁用
   });
 
   test('信封 binding 缺失：零值兜底提示 + 仅保留退出（§9 第 18 条）', () => {

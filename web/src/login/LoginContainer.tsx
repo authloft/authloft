@@ -71,6 +71,7 @@ import { Modal } from './components/Modal';
 import {
   loginDefault,
   startLoginVerification,
+  submitLoginFactor,
   type LoginDefaultInput,
 } from './api';
 import { BindingPage } from './pages/BindingPage';
@@ -804,7 +805,7 @@ export interface LoginContainerProps {
    * 初始信封（OAuth 回调 mfa_required 场景）：LoginOauth 响应直接
    * 进状态机（response 事件语义，挂载即生效）——mfa_required 就地渲染
    * 二次验证方式选择器 + 因子组件（§1.6 行 233「不跳页」），MFA 提交走
-   * SsoService/LoginDefault（loginToken 由 api 层 applyEnvelope 托管续接，
+   * SsoService/SubmitVerification（loginToken 由 api 层托管续接，
    * 页面不自管），success 终点跳转 executeEffects（§4.1 行 383）。
    */
   initialEnvelope?: LoginFlowResponse;
@@ -856,6 +857,12 @@ export function LoginContainer({
     Readonly<Record<string, string>> | undefined
   >(undefined);
 
+  // MFA 场景（本地方式镜像存在）的 challenge / verify 段提交改走
+  // SsoService/SubmitVerification（submitLoginFactor 携带 loginToken）；
+  // 主因子提交仍走 LoginDefault（前端架构 §4.1 行 498）。
+  const submitRequest =
+    mfaMethods !== undefined ? submitLoginFactor : loginDefault;
+
   const submit = async (values: Readonly<Record<string, string>>) => {
     // request_started 先于请求同步派发（loading 立即反映 UI）。
     dispatch({ type: 'request_started', step: state.step });
@@ -871,7 +878,7 @@ export function LoginContainer({
       ),
       captcha.run,
       snapshot.captcha,
-      loginDefault,
+      submitRequest,
     );
     for (const event of events) {
       dispatch(event);
@@ -897,7 +904,7 @@ export function LoginContainer({
       ),
       captcha.run,
       snapshot.captcha,
-      loginDefault,
+      submitRequest,
     );
     for (const event of events) {
       dispatch(event);
@@ -919,7 +926,7 @@ export function LoginContainer({
       payload,
       captcha.run,
       snapshot.captcha,
-      loginDefault,
+      submitRequest,
     );
     for (const event of events) {
       dispatch(event);

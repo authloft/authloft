@@ -40,6 +40,8 @@ const LOGIN_OAUTH = `${SSO}/LoginOauth`;
 const AUTHORIZE = `${SSO}/Authorize`;
 const QRCODE = `${SSO}/CreateQrcode`;
 const LOGIN_TICKET = `${SSO}/GetLoginTicket`;
+const START_VERIFICATION = `${SSO}/StartVerification`;
+const SUBMIT_VERIFICATION = `${SSO}/SubmitVerification`;
 
 const server = setupServer();
 
@@ -392,5 +394,116 @@ describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', ()
     const response = await mod.getLoginTicket('t-1');
     expect(response.login?.status).toBe('binding_required');
     expect(getLoginToken()).toBe('lt-bind'); // 内层信封托管（BindingPage 建号续接）
+  });
+});
+
+describe('submitLoginFactor（登录主路径 MFA 提交，§3.8 / §4.1 行 492/498）', () => {
+  test('StartVerification 第二段取 challengeToken → SubmitVerification 带 loginToken 提交；success 响应转信封并清空 loginToken', async () => {
+    const startBodies: unknown[] = [];
+    const submitBodies: unknown[] = [];
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        startBodies.push(await request.json());
+        return HttpResponse.json({
+          challengeToken: 'ct-mfa',
+          methods: [],
+          expiresIn: '300',
+        });
+      }),
+      http.post(SUBMIT_VERIFICATION, async ({ request }) => {
+        submitBodies.push(await request.json());
+        return HttpResponse.json({
+          status: 'success',
+          redirectTo: 'https://app.test/home',
+          syncCookieUrl: 'https://sync.test/first',
+        });
+      }),
+    );
+    setLoginToken('lt-mfa');
+    const response = await mod.submitLoginFactor({
+      method: 'totp',
+      step: 'verify',
+      payload: { code: '123456' },
+    });
+
+    // StartVerification 第二段：bizPurpose=login + operation=mfa_verify + loginToken + method。
+    expect(startBodies[0]).toEqual({
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      loginToken: 'lt-mfa',
+      method: 'totp',
+    });
+    // SubmitVerification：challengeToken / method / payload + loginToken（§3.8.2）。
+    expect(submitBodies[0]).toEqual({
+      challengeToken: 'ct-mfa',
+      method: 'totp',
+      payload: { code: '123456' },
+      loginToken: 'lt-mfa',
+    });
+    expect(response.status).toBe('success');
+    expect(response.redirectTo).toBe('https://app.test/home');
+    expect(response.syncCookieUrl).toBe('https://sync.test/first');
+    expect(getLoginToken()).toBe(''); // §1.3 五条之 3：success 清空
+  });
+
+  test('invalid_code 失败态：status 按 §1.6 转信封，attemptsLeft 落 error.attemptsLeft；失败态不清空 loginToken', async () => {
+    server.use(
+      http.post(START_VERIFICATION, () =>
+        HttpResponse.json({
+          challengeToken: 'ct-mfa',
+          methods: [],
+          expiresIn: '300',
+        }),
+      ),
+      http.post(SUBMIT_VERIFICATION, () =>
+        HttpResponse.json({ status: 'invalid_code', attemptsLeft: '3' }),
+      ),
+    );
+    setLoginToken('lt-mfa');
+    const response = await mod.submitLoginFactor({
+      method: 'otp_sms',
+      step: 'verify',
+      payload: { code: '000000' },
+    });
+
+    expect(response.status).toBe('invalid_code');
+    expect(response.error?.attemptsLeft).toBe(BigInt(3));
+    expect(getLoginToken()).toBe('lt-mfa'); // 失败态不清空
+  });
+
+  test('captcha 走 StartVerification 第二段请求顶层、不进因子 payload（§2.5 / §3.8.5）', async () => {
+    const startBodies: unknown[] = [];
+    const submitBodies: unknown[] = [];
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        startBodies.push(await request.json());
+        return HttpResponse.json({
+          challengeToken: 'ct-mfa',
+          methods: [],
+          expiresIn: '300',
+        });
+      }),
+      http.post(SUBMIT_VERIFICATION, async ({ request }) => {
+        submitBodies.push(await request.json());
+        return HttpResponse.json({ status: 'success' });
+      }),
+    );
+    await mod.submitLoginFactor({
+      method: 'otp_sms',
+      step: 'challenge',
+      payload: {},
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+    });
+
+    expect(startBodies[0]).toMatchObject({
+      method: 'otp_sms',
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+    });
+    // 因子载荷不含 captcha（§2.6 行 675）；SubmitVerification 不带 captcha 字段。
+    expect(submitBodies[0]).toMatchObject({
+      challengeToken: 'ct-mfa',
+      method: 'otp_sms',
+    });
+    expect(submitBodies[0]).not.toHaveProperty('captcha');
   });
 });

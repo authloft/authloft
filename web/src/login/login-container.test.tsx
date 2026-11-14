@@ -2670,3 +2670,77 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 登录主路径 MFA 提交编排（SsoService/SubmitVerification，接口文档 §3.8 /
+// 前端架构 §4.1 行 492/498）：runSubmit 换 request 后 captcha gate 与终点仍闭环
+// ---------------------------------------------------------------------------
+
+describe('登录主路径 MFA 提交（SubmitVerification，§3.8 / §4.1 行 498）', () => {
+  test('captcha gate 凭据重接到 StartVerification 第二段 → SubmitVerification → success 终点', async () => {
+    const startBodies: string[] = [];
+    const submitBodies: string[] = [];
+    let startCalls = 0;
+    server.use(
+      http.post(START_VERIFICATION, async ({ request }) => {
+        startBodies.push(await request.text());
+        startCalls += 1;
+        return startCalls === 1
+          ? captchaError('captcha_required', {
+              providerKey: 'builtin_image',
+              type: 'image',
+            })
+          : HttpResponse.json({
+              challengeToken: 'ct-mfa',
+              methods: [],
+              expiresIn: '300',
+            });
+      }),
+      http.post(SUBMIT_VERIFICATION, async ({ request }) => {
+        submitBodies.push(await request.text());
+        return HttpResponse.json({
+          status: 'success',
+          syncCookieUrl: 'https://sync.test/mfa',
+        });
+      }),
+    );
+
+    let state = flowReducer(INITIAL_FLOW_STATE, {
+      type: 'select_method',
+      method: 'totp',
+      firstStep: 'verify',
+    });
+    state = flowReducer(state, { type: 'request_started', step: 'verify' });
+    expect(container.captchaModeFor('totp', 'verify')).toBe('reactive');
+    const gate = scriptedGate([imageToken('b7f3', '123')]);
+    const result = await container.runSubmit(
+      state,
+      { code: '123456' },
+      gate.run,
+      undefined,
+      apiMod.submitLoginFactor,
+    );
+
+    // gate 吸收 captcha_required 一次，确认后重提同一 request（凭据落到 StartVerification 第二段）。
+    expect(gate.prompts).toHaveLength(1);
+    expect(result.failed).toBe(false);
+    state = result.events.reduce(flowReducer, state);
+    expect(state.status).toBe('success');
+    expect(JSON.parse(startBodies[1])).toMatchObject({
+      method: 'totp',
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+    });
+    expect(JSON.parse(submitBodies[0])).toMatchObject({
+      challengeToken: 'ct-mfa',
+      method: 'totp',
+      payload: { code: '123456' },
+    });
+
+    const redirects: string[] = [];
+    container.executeEffects(state.effects, {
+      complete: (url) => redirects.push(url),
+      restart: () => {},
+    });
+    expect(redirects).toEqual(['https://sync.test/mfa']);
+  });
+});

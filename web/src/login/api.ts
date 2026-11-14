@@ -32,12 +32,19 @@ import { create } from '@bufbuild/protobuf';
 import { ssoClient } from '../shared/api/http';
 import type { MessageInput } from '../shared/api/sso';
 import { getInit, type OidcContext } from '../shared/types/init';
-import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
-import type { LoginDefaultRequest } from '../gen/proto/api/sso/v1/login_pb';
+import {
+  LoginFlowResponseSchema,
+  SsoErrorSchema,
+  type LoginFlowResponse,
+} from '../gen/proto/api/sso/v1/envelope_pb';
+import {
+  CaptchaPayloadSchema,
+  type CaptchaPayload,
+  type LoginDefaultRequest,
+} from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
 import type { LoginOauthRequest } from '../gen/proto/api/sso/v1/oauth_pb';
-import type { CaptchaPayload } from '../gen/proto/api/sso/v1/login_pb';
 import {
   StartVerificationRequestSchema,
   SubmitVerificationRequestSchema,
@@ -291,6 +298,88 @@ export function submitStepUp(
     loginToken: getLoginToken(),
   });
   return ssoClient.submitVerification(request);
+}
+
+// ---------------------------------------------------------------------------
+// 登录主路径 MFA 提交（status=mfa_required 之后的 challenge / verify 段，
+// 接口文档 §3.8 / 前端架构 §4.1 行 492/498）
+// ---------------------------------------------------------------------------
+
+/**
+ * LoginPayload init → `SubmitVerificationRequest.payload` 的 Struct JSON
+ * （§2.6 / §12.9）：只拷非空字段，标准 protojson 省略零值（§1.1）；captcha 是
+ * 请求级字段、不进因子 payload（§2.6 行 675）。
+ */
+function loginPayloadToStruct(
+  payload: LoginDefaultInput['payload'],
+): JsonObject {
+  const out: JsonObject = {};
+  if (payload === undefined) {
+    return out;
+  }
+  for (const [name, raw] of Object.entries(payload)) {
+    const value: unknown = raw;
+    if (typeof value === 'string' && value !== '') {
+      out[name] = value;
+    } else if (value !== null && typeof value === 'object') {
+      out[name] = value as JsonObject;
+    }
+  }
+  return out;
+}
+
+/**
+ * `SubmitVerificationResponse` → 登录流程信封（§3.8.1 / §3.8.2「响应即登录
+ * 流程结论」、前端架构 §4.1 行 498 交回同一状态机终点处理）：结论只取
+ * `status` / `redirectTo` / `syncCookieUrl`；`invalid_code` 的剩余次数由响应
+ * `attemptsLeft` 落到信封 `error.attemptsLeft`（§1.6 / §2.6 行 679），
+ * 零值或缺失即不展示（§1.1）。
+ */
+function stepUpToEnvelope(
+  response: SubmitVerificationResponse,
+): LoginFlowResponse {
+  const { attemptsLeft } = response;
+  const error =
+    attemptsLeft !== undefined && attemptsLeft > BigInt(0)
+      ? create(SsoErrorSchema, { attemptsLeft })
+      : undefined;
+  return create(LoginFlowResponseSchema, {
+    status: response.status,
+    redirectTo: response.redirectTo,
+    syncCookieUrl: response.syncCookieUrl,
+    ...(error !== undefined ? { error } : {}),
+  });
+}
+
+/**
+ * 登录主路径二次因子提交（SsoService/SubmitVerification，接口文档 §3.8、
+ * 前端架构 §4.1 行 492/498）：保持 StartVerification 两段式——先带 `method`
+ * （及请求级 `captcha`，§2.5 / §3.8.5）取 `challengeToken`，再以
+ * `submitStepUp` 携带 `loginToken` 提交因子载荷；响应转信封交回状态机。
+ * `status=success` 清空内存 `loginToken`（§1.3 五条之 3）——登录主路径专用，
+ * 扫码分支由轮询内层信封自行清空，互不影响。
+ */
+export async function submitLoginFactor(
+  input: LoginDefaultInput,
+): Promise<LoginFlowResponse> {
+  // method 经 MessageInput 全字段 optional（§9 第 18 条零值兜底）；提交恒带
+  // state.method，空串仅作类型兜底、不改变两段式取挑战的语义。
+  const method = input.method ?? '';
+  const challenge = await startLoginVerification({
+    method,
+    ...(input.captcha !== undefined
+      ? { captcha: create(CaptchaPayloadSchema, input.captcha) }
+      : {}),
+  });
+  const response = await submitStepUp(
+    challenge.challengeToken,
+    method,
+    loginPayloadToStruct(input.payload),
+  );
+  if (response.status === 'success') {
+    clearLoginToken();
+  }
+  return stepUpToEnvelope(response);
 }
 
 export type {
