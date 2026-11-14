@@ -21,8 +21,8 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
-	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -34,20 +34,20 @@ func sessionCookieForTest() *session.Cookie {
 
 // fakeThirdparty service.Thirdparty 的 fake：记录入参、返回预置产物。
 type fakeThirdparty struct {
-	authorizeOut *service.AuthorizeOutput
+	authorizeOut *thirdpartysvc.AuthorizeOutput
 	authorizeErr error
-	gotAuthorize service.AuthorizeInput
+	gotAuthorize thirdpartysvc.AuthorizeInput
 
-	oauthOut *service.OauthOutput
-	gotOauth service.OauthInput
+	oauthOut *thirdpartysvc.OauthOutput
+	gotOauth thirdpartysvc.OauthInput
 }
 
-func (f *fakeThirdparty) Authorize(_ context.Context, in service.AuthorizeInput) (*service.AuthorizeOutput, error) {
+func (f *fakeThirdparty) Authorize(_ context.Context, in thirdpartysvc.AuthorizeInput) (*thirdpartysvc.AuthorizeOutput, error) {
 	f.gotAuthorize = in
 	return f.authorizeOut, f.authorizeErr
 }
 
-func (f *fakeThirdparty) LoginOauth(_ context.Context, in service.OauthInput) *service.OauthOutput {
+func (f *fakeThirdparty) LoginOauth(_ context.Context, in thirdpartysvc.OauthInput) *thirdpartysvc.OauthOutput {
 	f.gotOauth = in
 	return f.oauthOut
 }
@@ -65,7 +65,7 @@ func decodeEnvelope(t *testing.T, body string) *ssov1.LoginFlowResponse {
 // TestAuthorizeConnect 端到端：URL 返回 + Set-Cookie: al_login_state 下发
 // （§2.7.2）+ scene=bind 的 uid 从 ctx 会话透传。
 func TestAuthorizeConnect(t *testing.T) {
-	tp := &fakeThirdparty{authorizeOut: &service.AuthorizeOutput{
+	tp := &fakeThirdparty{authorizeOut: &thirdpartysvc.AuthorizeOutput{
 		AuthorizeURL: "https://graph.qq.com/oauth2.0/authorize?state=labc",
 		Cookie: &http.Cookie{
 			Name: "al_login_state", Value: "sealed", Path: "/",
@@ -123,9 +123,9 @@ func TestAuthorizeErrorMapping(t *testing.T) {
 		wantHTTP int
 		wantCode string
 	}{
-		{"bind 无会话", service.ErrThirdpartyUnauthenticated, http.StatusUnauthorized, "unauthenticated"},
-		{"provider 未启用", service.ErrThirdpartyProviderDisabled, http.StatusBadRequest, "invalid_argument"},
-		{"参数非法", service.ErrThirdpartyInvalidRequest, http.StatusBadRequest, "invalid_argument"},
+		{"bind 无会话", thirdpartysvc.ErrThirdpartyUnauthenticated, http.StatusUnauthorized, "unauthenticated"},
+		{"provider 未启用", thirdpartysvc.ErrThirdpartyProviderDisabled, http.StatusBadRequest, "invalid_argument"},
+		{"参数非法", thirdpartysvc.ErrThirdpartyInvalidRequest, http.StatusBadRequest, "invalid_argument"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestAuthorizeErrorMapping(t *testing.T) {
 // TestAuthorizeProviderDisabledErrorInfo provider_disabled 的 ErrorInfo
 // code 断言（decode details 的 debug 视图）。
 func TestAuthorizeProviderDisabledErrorInfo(t *testing.T) {
-	tp := &fakeThirdparty{authorizeErr: service.ErrThirdpartyProviderDisabled}
+	tp := &fakeThirdparty{authorizeErr: thirdpartysvc.ErrThirdpartyProviderDisabled}
 	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, tp, nil))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceAuthorizeProcedure,
@@ -192,7 +192,7 @@ func TestAuthorizeProviderDisabledErrorInfo(t *testing.T) {
 // 透传、state 校验失败的删 Cookie 下发、浏览器终点 al_session 下发。
 func TestLoginOauthConnect(t *testing.T) {
 	t.Run("state_mismatch 删 Cookie", func(t *testing.T) {
-		tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+		tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
 			Envelope: &ssov1.LoginFlowResponse{Status: "state_mismatch"},
 			Cookie: &http.Cookie{
 				Name: "al_login_state", Value: "", Path: "/", MaxAge: -1,
@@ -241,7 +241,7 @@ func TestLoginOauthConnect(t *testing.T) {
 	})
 
 	t.Run("浏览器终点下发 al_session", func(t *testing.T) {
-		tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+		tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
 			Envelope:     &ssov1.LoginFlowResponse{Status: "success", UserId: 7},
 			SessionToken: "stok-1",
 		}}
@@ -274,7 +274,7 @@ func TestLoginOauthConnect(t *testing.T) {
 	})
 
 	t.Run("api 通道 session_token 在信封", func(t *testing.T) {
-		tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+		tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
 			Envelope: &ssov1.LoginFlowResponse{Status: "success", SessionToken: "stok-2"},
 		}}
 		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, sessionCookieForTest(), tp, nil))
@@ -302,7 +302,7 @@ func TestLoginOauthConnect(t *testing.T) {
 // 信号采集复刻装配层（connect.NewSessionInterceptor 入口把 req.Header 包
 // RequestSignal 注入 ctx；handler 直构测试无拦截链，挂同款最小拦截器）。
 func TestLoginOauthSessionCookieHTTPSAutoInferred(t *testing.T) {
-	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+	tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
 		Envelope:     &ssov1.LoginFlowResponse{Status: "success", UserId: 7},
 		SessionToken: "stok-1",
 	}}
@@ -387,7 +387,7 @@ func TestLoginOauthErrorInternal(t *testing.T) {
 // mfa_required，同时经统一写票 service 把票据结果写为 mfa_pending
 // （§2.8 行 884、§13.2）；目标 uid 由 loginToken 校验恢复。
 func TestLoginOauthScanMFAPending(t *testing.T) {
-	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+	tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 		Status:     orchestrator.StatusMFARequired,
 		LoginToken: "lt-1",
 	}}}

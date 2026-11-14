@@ -101,13 +101,13 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
-	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
 	adminsvc "authloft/internal/service/admin"
 	eventlogsvc "authloft/internal/service/eventlog"
 	"authloft/internal/service/orchestrator"
 	qrcodesvc "authloft/internal/service/qrcode"
 	sessionsvc "authloft/internal/service/session"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -207,7 +207,7 @@ type assembled struct {
 	// thirdparty 三方登录通道 service（§3.9 / §12.4-§12.5）：buildEngine
 	// 内构造（复用 Terminal / MFA / State 共享 codec），registerSSO 注入
 	// SsoService handler；SetPass.Thirdparty（免密建号）复用同一实例。
-	thirdparty *service.Thirdparty
+	thirdparty *thirdpartysvc.Thirdparty
 
 	// qrcode 扫码拉码与轮询 service（§3.9 / §13.2 / §2.8）：buildEngine 内
 	// 构造（复用 State / Terminal / provider Loader / captcha Gate），经
@@ -518,7 +518,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// handler，SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
 	tickets := cache.NewTicketStore(deps.rdb, ticketsvc.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
 	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, ticketsvc.NewTicketPayloadSealer(deps.codecs.Ticket))
-	deps.thirdparty = service.NewThirdparty(service.ThirdpartyDeps{
+	deps.thirdparty = thirdpartysvc.NewThirdparty(thirdpartysvc.ThirdpartyDeps{
 		Loader:         deps.providerLoader,
 		Binds:          repo.NewBindRepo(deps.db),
 		Users:          users,

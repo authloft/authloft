@@ -4,7 +4,7 @@
 // （{root}/sso/oauth/callback/{key}，§2.7.3 行 614）与 scope（Ext.scopes，
 // 空则适配器渠道默认）；③ 实例化覆盖标准渠道（gitee）与通用兜底（oauth2）
 // 两形态（真实注册表链 provider.NewAdapter，不经 fake）。
-package service
+package thirdparty
 
 import (
 	"context"

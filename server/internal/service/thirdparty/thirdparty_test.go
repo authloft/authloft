@@ -9,7 +9,7 @@
 // extra 落 Raw / 非成功终态删 al_login_state。全部走 fake，不连 DB / Redis；
 // wechat_mp 渠道 code2session 的 httptest 拦截已由 provider/oauth/wechat_mp
 // 包内测试覆盖，此处 api 通道以 fake adapter 验证 service 编排语义。
-package service
+package thirdparty
 
 import (
 	"context"
@@ -33,8 +33,8 @@ import (
 	"authloft/internal/settings"
 )
 
-// qrcodeTicketTTL 与 qrcode 包内同值（test 侧自持：package service 的测试
-// 文件 import qrcode 会经 qrcode → service 成环）。
+// qrcodeTicketTTL 与 qrcode 包内同值（test 侧自持：package thirdparty 的测试
+// 文件 import qrcode 会经 qrcode → thirdpartysvc 成环）。
 const qrcodeTicketTTL = 600 * time.Second
 
 // —— fake 全家 ——

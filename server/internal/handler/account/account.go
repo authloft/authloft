@@ -36,8 +36,8 @@ import (
 	"authloft/internal/factor/webauthn"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
-	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
@@ -638,7 +638,7 @@ func loginStateCookie(req *connect.Request[accountv1.ThirdpartyOauthRequest]) st
 		return ""
 	}
 	for _, ck := range cookies {
-		if ck.Name == service.LoginStateCookieName {
+		if ck.Name == thirdpartysvc.LoginStateCookieName {
 			return ck.Value
 		}
 	}

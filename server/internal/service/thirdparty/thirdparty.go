@@ -37,7 +37,7 @@
 // 省略；auto 按请求信号推断——判定复用 session.ResolveHTTPS 唯一判定
 // 点，与 al_session 同源联动；信号经 ctx 由 connect 装配层注入，connect
 // 链 AnyRequest 只暴露 Header）。
-package service
+package thirdparty
 
 import (
 	"context"

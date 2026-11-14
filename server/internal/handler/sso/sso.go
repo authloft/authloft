@@ -4,7 +4,7 @@
 // Register、ResetPassword、CreateCaptchaImage（接口文档 §2.2-§2.5）、
 // Authorize、LoginOauth（§2.7）与扫码三桩 CreateQrcode /
 // GetLoginTicket / ConfirmLoginTicket（§2.8——编排全部在
-// service.QRCode）；§3.8 二次验证 Start/Submit 挂在登录 / 扫码链路。
+// qrcodesvc.QRCode）；§3.8 二次验证 Start/Submit 挂在登录 / 扫码链路。
 package sso
 
 import (
@@ -22,9 +22,9 @@ import (
 	internalconnect "authloft/internal/connect"
 	"authloft/internal/dto"
 	"authloft/internal/logx"
-	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
 	qrcodesvc "authloft/internal/service/qrcode"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -329,8 +329,8 @@ func startVerificationResponse(res *verification.StartResult) *commonv1.StartVer
 // Thirdparty 三方登录通道 service 窄接口（§20 依赖注入）：生产注入
 // *service.Thirdparty，测试可传 fake。
 type Thirdparty interface {
-	Authorize(ctx context.Context, in service.AuthorizeInput) (*service.AuthorizeOutput, error)
-	LoginOauth(ctx context.Context, in service.OauthInput) *service.OauthOutput
+	Authorize(ctx context.Context, in thirdpartysvc.AuthorizeInput) (*thirdpartysvc.AuthorizeOutput, error)
+	LoginOauth(ctx context.Context, in thirdpartysvc.OauthInput) *thirdpartysvc.OauthOutput
 }
 
 // errThirdpartyNotConfigured 未装配三方 service（测试桩）。
@@ -348,7 +348,7 @@ func (h *Handler) Authorize(ctx context.Context, req *connect.Request[ssov1.Auth
 		return nil, connect.NewError(connect.CodeUnimplemented, errThirdpartyNotConfigured)
 	}
 	uid, _ := session.UIDFromContext(ctx)
-	out, err := h.thirdparty.Authorize(ctx, service.AuthorizeInput{
+	out, err := h.thirdparty.Authorize(ctx, thirdpartysvc.AuthorizeInput{
 		Provider: req.Msg.GetProvider(),
 		Scene:    req.Msg.GetScene(),
 		UID:      uid,
@@ -408,7 +408,7 @@ func loginStateCookie(req *connect.Request[ssov1.LoginOauthRequest]) string {
 		return ""
 	}
 	for _, ck := range cookies {
-		if ck.Name == service.LoginStateCookieName {
+		if ck.Name == thirdpartysvc.LoginStateCookieName {
 			return ck.Value
 		}
 	}
@@ -419,13 +419,13 @@ func loginStateCookie(req *connect.Request[ssov1.LoginOauthRequest]) string {
 // ErrorInfo（§1.5 行 197-210；code 取 §1.6 封闭集）。
 func mapThirdpartyError(err error) error {
 	switch {
-	case errors.Is(err, service.ErrThirdpartyUnauthenticated):
+	case errors.Is(err, thirdpartysvc.ErrThirdpartyUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err)
-	case errors.Is(err, service.ErrThirdpartyInvalidRequest):
+	case errors.Is(err, thirdpartysvc.ErrThirdpartyInvalidRequest):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "invalid_request", "invalid authorize request"))
-	case errors.Is(err, service.ErrThirdpartyProviderDisabled):
+	case errors.Is(err, thirdpartysvc.ErrThirdpartyProviderDisabled):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for signin"))
@@ -435,12 +435,12 @@ func mapThirdpartyError(err error) error {
 }
 
 // —— 扫码三桩（接口文档 §2.8）——
-// 请求绑定与信封 / TicketStatus 应答归本层，编排全部在 service.QRCode；
+// 请求绑定与信封 / TicketStatus 应答归本层，编排全部在 qrcodesvc.QRCode；
 // 业务失败走可判别哨兵错误 → Connect 错误体 + ErrorInfo（CreateQrcode 是
 // 普通 RPC；GetLoginTicket 的轮询结论走 HTTP 200 信封域，§1.3 / §1.6）。
 
 // Qrcode 扫码拉码与轮询 service 窄接口（§20 依赖注入）：生产注入
-// *service.QRCode，测试可传 fake；nil 时两个方法返回 unimplemented。
+// *qrcodesvc.QRCode，测试可传 fake；nil 时两个方法返回 unimplemented。
 type Qrcode interface {
 	CreateQrcode(ctx context.Context, in qrcodesvc.CreateQrcodeInput) (*qrcodesvc.CreateQrcodeOutput, error)
 	GetLoginTicket(ctx context.Context, in qrcodesvc.GetLoginTicketInput) *qrcodesvc.GetLoginTicketOutput

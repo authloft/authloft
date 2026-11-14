@@ -31,8 +31,8 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
-	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
@@ -1316,7 +1316,7 @@ func TestGetThirdpartyTicketConnect(t *testing.T) {
 // 通用会话机制，随全部鉴权 RPC 同等发生，不在本断言范围）。
 func hasLoginStateCookie(resp *http.Response) bool {
 	for _, c := range resp.Header.Values("Set-Cookie") {
-		if strings.HasPrefix(c, service.LoginStateCookieName+"=") {
+		if strings.HasPrefix(c, thirdpartysvc.LoginStateCookieName+"=") {
 			return true
 		}
 	}

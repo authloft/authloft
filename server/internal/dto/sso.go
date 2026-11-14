@@ -10,9 +10,9 @@ import (
 	"authloft/gen/go/token"
 	internalcaptcha "authloft/internal/captcha"
 	"authloft/internal/factor"
-	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
 	qrcodesvc "authloft/internal/service/qrcode"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 )
 
@@ -106,11 +106,11 @@ func resetPayload(p *ssov1.ResetPayload) *factor.Payload {
 // 对应；oidc 复用 LoginDefault 的映射（§2.7.4 行 642：localStorage 读回后
 // 回传，服务端据此写入 login_token.oidc）。StateCookie 由 handler 从请求
 // Cookie 头解析后填入（dto 不读 HTTP 头）。
-func LoginOauth(req *ssov1.LoginOauthRequest) service.OauthInput {
+func LoginOauth(req *ssov1.LoginOauthRequest) thirdpartysvc.OauthInput {
 	if req == nil {
-		return service.OauthInput{}
+		return thirdpartysvc.OauthInput{}
 	}
-	return service.OauthInput{
+	return thirdpartysvc.OauthInput{
 		ProviderKey: req.GetProviderKey(),
 		Code:        req.GetCode(),
 		State:       req.GetState(),

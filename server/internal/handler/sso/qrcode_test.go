@@ -22,8 +22,8 @@ import (
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/gen/go/token"
 	"authloft/internal/middleware"
-	"authloft/internal/service"
 	qrcodesvc "authloft/internal/service/qrcode"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 )
@@ -354,7 +354,7 @@ func TestQrcodeNotConfigured(t *testing.T) {
 // Referer 不在白名单 → 403。allowlist 即 bootstrap 注入的
 // providerWhitelist.AppIDs 形态（复用既有链路，此处实证）。
 func TestQrcodeRefererWhitelistWiring(t *testing.T) {
-	tp := &fakeThirdparty{oauthOut: &service.OauthOutput{
+	tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
 		Envelope: &ssov1.LoginFlowResponse{Status: "success", SessionToken: "stok-mini"},
 	}}
 	_, handler := ssov1connect.NewSsoServiceHandler(

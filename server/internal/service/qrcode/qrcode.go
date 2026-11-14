@@ -43,8 +43,8 @@ import (
 	"authloft/internal/provider"
 	qrcodepkg "authloft/internal/qrcode"
 	"authloft/internal/security"
-	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/storage"
 )
@@ -114,8 +114,8 @@ type QueuePusher interface {
 
 // QRCodeDeps 依赖注入（§20）；装配层构造（bootstrap buildEngine）。
 type QRCodeDeps struct {
-	Loader     service.ThirdpartyLoader
-	NewAdapter service.ThirdpartyAdapterFactory
+	Loader     thirdpartysvc.ThirdpartyLoader
+	NewAdapter thirdpartysvc.ThirdpartyAdapterFactory
 	// Gate captcha 唯一拦截点（§9.3 行 1110；Challenge 恒触发）。
 	Gate *captcha.Gate
 	// TicketCodec sign_key.ticket（§11.6.4：ticket 加密串）。
@@ -404,8 +404,8 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 			Tid:    s.newTID(),
 			Flow:   "login",
 			Uid:    uid,
-			Passed: []string{service.AMRThirdParty},
-			Amr:    []string{service.AMRThirdParty},
+			Passed: []string{thirdpartysvc.AMRThirdParty},
+			Amr:    []string{thirdpartysvc.AMRThirdParty},
 			Oidc:   in.OIDC,
 		})
 		if err != nil {
@@ -457,8 +457,8 @@ func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, r
 		Tid:    s.newTID(),
 		Flow:   "login",
 		Uid:    lr.GetUid(),
-		Passed: []string{service.AMRThirdParty},
-		Amr:    []string{service.AMRThirdParty},
+		Passed: []string{thirdpartysvc.AMRThirdParty},
+		Amr:    []string{thirdpartysvc.AMRThirdParty},
 	})
 	if err != nil {
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
@@ -495,13 +495,13 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	}
 	p, err := s.deps.Loader.Get(ctx, pk)
 	if err != nil {
-		return &ssov1.LoginFlowResponse{Status: service.StatusProviderDisabled}
+		return &ssov1.LoginFlowResponse{Status: thirdpartysvc.StatusProviderDisabled}
 	}
 	lt := &token.LoginTokenPayload{
 		Tid:    s.newTID(),
 		Flow:   "login",
-		Passed: []string{service.AMRThirdParty},
-		Amr:    []string{service.AMRThirdParty},
+		Passed: []string{thirdpartysvc.AMRThirdParty},
+		Amr:    []string{thirdpartysvc.AMRThirdParty},
 		Tp: &token.ThirdParty{
 			ProviderKey: pk,
 			OpenId:      id.GetOpenId(),
