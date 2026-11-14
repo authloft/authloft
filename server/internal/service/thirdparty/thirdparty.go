@@ -27,7 +27,8 @@
 //     scene 分派写 TicketResult（§13.2b：login → login_result；bind →
 //     thirdparty_identity，不建会话 / 不查绑定 / 不写绑定关系）→
 //     {status:"success", ticketId}；失败类 ticket failed + 信封 status；
-//     MFA×扫码（行 653 / 750）：mfa_required 信封、不写 ticket。
+//     MFA×扫码（行 653 / 750）：mfa_required 信封 + 重签 login_token；本侧不写票，
+//     票据由 handler 侧统一写票 service 落 mfa_pending（PC 轮询转 step-up）。
 //
 // 业务失败在登录流程信封域（LoginOauth）一律走信封 status（§1.6 封闭集，
 // 零自造）；Authorize 是普通 RPC，可判别哨兵错误由 handler 转 Connect
@@ -128,7 +129,7 @@ type ThirdpartyUserLookup interface {
 // 单独注入便于测试传 fake adapter，不经全局注册表）。
 type ThirdpartyAdapterFactory func(p *provider.Provider) (provider.AuthAdapter, error)
 
-// ThirdpartyDeps 依赖注入（§20）；装配层构造（bootstrap buildEngine）。
+// ThirdpartyDeps 依赖注入（§20）；装配层构造（bootstrap.buildDomains）。
 type ThirdpartyDeps struct {
 	Loader     ThirdpartyLoader
 	Binds      ThirdpartyBindStore
@@ -489,7 +490,8 @@ func (s *Thirdparty) loginOauthScanned(ctx context.Context, in OauthInput) *Oaut
 // 成功返回 {status:"success", ticketId}；失败类结论落 TicketResult.status
 // 整体覆盖（§13.2 行 1603），信封 status 同步、ticket 只报 failed（§2.8 行
 // 743 同构）。MFA×扫码（§2.8 行 750、§13.2 行 1607）：用户已启用 MFA →
-// mfa_required 信封、**不写 ticket**（授权结果不落键，PC 端轮询至 expired）。
+// mfa_required 信封 + 重签 login_token，本侧不写票；handler 侧统一写票
+// service 落 mfa_pending（PC 轮询据此转 step-up）。
 func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *provider.Provider, adapter provider.AuthAdapter) *OauthOutput {
 	snap, bad := s.ticketSnapshot(ctx, in)
 	if bad != "" {
@@ -523,9 +525,9 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 		return s.ticketDone(ctx, id, s.newTicketResult(snap, "", &token.LoginResult{BindingRequired: true}, identity))
 	}
 
-	// 已绑定：该用户已启用 MFA → status=mfa_required、不写 ticket（§2.8
-	// 行 750）——授权结果未定，PC 端轮询至 expired，小程序端收到即止；
-	// 因子列表不下发，由 §3.8 StartVerification 提供。
+	// 已绑定：该用户已启用 MFA → status=mfa_required + 重签 login_token（§2.8
+	// 行 750）；本侧不写票，由 handler 侧统一写票 service 落 mfa_pending，
+	// 小程序端收到即止。因子列表不下发，由 §3.8 StartVerification 提供。
 	required, err := s.mfaRequired(ctx, uid)
 	if err != nil {
 		// 依赖读取故障按 fail-closed 收敛：写 ticket failed，不返回

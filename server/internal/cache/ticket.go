@@ -41,8 +41,9 @@ const (
 	ticketCASMaxAttempts = 3
 )
 
-// ticketStatusSuccess TicketResult.status 的成功终态（§11.6.5 行 1333：
-// scanned | success | failed），用于 complete 阶段「已存在 success 不覆盖」。
+// ticketStatusSuccess TicketResult.status 的成功终态（§11.6.5：scanned |
+// mfa_pending | success | failed；mfa_pending 为非终态），用于 complete
+// 阶段「已存在 success 不覆盖」。
 const ticketStatusSuccess = "success"
 
 // ErrTicketWaitTimeout Wait 在超时窗口内未等到键出现。可判别结果，区别于

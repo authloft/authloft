@@ -8,7 +8,7 @@
 //     该 kind 不可用，后端架构 §4.2 行 697，与 handler mfaBound 同口径）；otp_sms /
 //     otp_email 走 user 资料（bound = phone/email 非空，与 handler GetConfig
 //     §3.2 摘要 bound 同口径——摘要与明细是同一绑定概念的两处投影，取值必须
-//     一致；掩码算法与 orchestrator.maskPhone/maskEmail 同款，跨包私有按
+//     一致；掩码算法与 dto / oidc 同名实现同款，跨包私有按
 //     §3.5「各落一份」先例本包各落一份；OTP 因子无凭证行 → lastUsedAt 无
 //     数据源恒 0）；webauthn 凭据数走 WebauthnRepo.ListByUser，boundAt /
 //     lastUsedAt 取 user_credential 行（webauthn 每凭据一行）最早 created_at /
@@ -18,8 +18,8 @@
 //     未知值 → invalid_request）；落库 = mfa_setting 行 CredentialMeta.
 //     mfa_methods（既定口径：每用户至多一行，首开 Create / 再开 Update）；
 //     空数组 = 关闭，受 required 约束（required = settings.mfa_enabled
-//     （缺省 true）&& user.mfa_required==1，handler mfaPolicy / orchestrator
-//     Build 同口径）；成功为空响应。关闭 = 删除 mfa_setting 行（既定口径：
+//     （缺省 true）&& user.mfa_required==1，handler mfaPolicy / 引擎 mfaRequired
+//     同口径）；成功为空响应。关闭 = 删除 mfa_setting 行（既定口径：
 //     行 862「行存在即顶层 enabled=true」⇒ 关闭 ⇔ 行
 //     不存在），走 CredentialRepo.DeleteByUserAndKind；
 //     行本就不存在（已关闭态）→ 未命中幂等成功。
@@ -48,13 +48,12 @@
 // recovery 同款字符集），存 8 位存储形、下发展示形 xxxx-xxxx；命中即删不可
 // 复用、删空即失效均归 factor/recovery 登录链，本层只生成不消费。
 //
-// webauthn fail-closed（§8.3 行 1071-1075 窗口期六要素，既定口径）：六要素
-// 仅覆盖登录（主因子拒绝 / 唯一可用因子拒绝）与通行密钥管理（绑定 / 解绑 /
-// 管理），**不含 SetMfa 勾选**——SetMfa 勾选 webauthn 是启用集偏好记录，
-// 窗口期勾选后的登录链 fail-closed 已由 orchestrator.ErrWebauthnDegraded
-// 哨兵兜住，故本层不做 webauthn 可用性判定（与哨兵语义一致的判定源——
-// factor 注册表——不在本层依赖面，强行表达需新增依赖，按「无法一致
-// 表达就不做该判定」的既定原则处理）。
+// webauthn fail-closed（§8.3 降级窗口，既定口径）：六要素仅覆盖登录与通行密钥
+// 管理（绑定 / 解绑 / 管理），**不含 SetMfa 勾选**——SetMfa 勾选 webauthn 只是
+// 启用集偏好记录；降级窗口内登录链由 dispatch 对未注册 kind 返回 method_disabled
+// 兜住（本包通行密钥管理接口走 ErrWebauthnDegraded）。判定源（factor 注册表）
+// 不在本层依赖面，强行表达需新增依赖，按「无法一致表达就不做该判定」的既定
+// 原则处理。
 //
 // 审计：SetMfa 开启投 enable_mfa（detail={methods:[...]}）、关闭投
 // disable_mfa（detail={methods:[]}，形状对偶；§4.6 行 821 表）；BindTotp /
@@ -688,8 +687,8 @@ func (s *MfaService) RegenerateRecoveryCodes(ctx context.Context, uid int64, act
 	return &RecoveryCodesResult{Codes: codes, CreatedAt: row.CreatedAt.Unix()}, nil
 }
 
-// maskMfaPhone 手机号掩码（§3.5 行 909 示例「138****8000」；算法与
-// orchestrator.maskPhone 同款，跨包私有按 §3.5「各落一份」先例）。
+// maskMfaPhone 手机号掩码（§3.5 行 909 示例「138****8000」；算法与 dto / oidc
+// 同名实现同款，跨包私有按 §3.5「各落一份」先例）。
 func maskMfaPhone(phone string) string {
 	if len(phone) >= 7 {
 		return phone[:3] + "****" + phone[len(phone)-4:]
@@ -697,7 +696,7 @@ func maskMfaPhone(phone string) string {
 	return "****"
 }
 
-// maskMfaEmail 邮箱掩码（算法与 orchestrator.maskEmail 同款，跨包私有按
+// maskMfaEmail 邮箱掩码（算法与 dto / oidc 同名实现同款，跨包私有按
 // §3.5「各落一份」先例：保本地段首字符 + 域名全显）。
 func maskMfaEmail(email string) string {
 	at := strings.LastIndex(email, "@")
