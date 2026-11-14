@@ -60,6 +60,23 @@ func WithCaptchaConfig(err *connect.Error, cfg *commonv1.CaptchaConfig) *connect
 	return err
 }
 
+// InternalError 把服务端原始错误包装成线上固定文案 "internal error"：
+// 客户端只见通用文案（§1.5 消毒口径），根因经 Unwrap 保留，供
+// NewErrorLogInterceptor 记录完整链文本、供服务端 errors.Is / As 回溯。
+//
+// 各 handler 的「未知异常 / 基础设施故障」分支应统一用本函数，而不是各造
+// 一个 errXxxInternal = errors.New("internal error") 把原始 err 丢掉——后者
+// 会让统一错误日志只剩 "internal error"。与
+// interceptors.go 的 sanitizedError 同源，不新增第二套机制。
+//
+// err == nil 时回落固定文案本身（无根因可保留）。
+func InternalError(err error) error {
+	if err == nil {
+		return errInternal
+	}
+	return sanitizedError{err: err}
+}
+
 // CaptchaConfigOf 从 err 中读出第一枚 CaptchaConfig detail（测试与排障用）；
 // err 非 connect.Error 或无该类 detail 时返回 false。
 func CaptchaConfigOf(err error) (*commonv1.CaptchaConfig, bool) {

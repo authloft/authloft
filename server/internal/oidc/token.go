@@ -28,6 +28,8 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
+
+	"gorm.io/gorm"
 )
 
 // RFC 6749 §5.2 错误码。
@@ -186,6 +188,13 @@ func (s *TokenService) refreshToken(ctx context.Context, in TokenInput) (*oidcap
 	}
 	row, err := s.Tokens.FindByTokenHash(ctx, hashToken(in.RefreshToken))
 	if err != nil {
+		// 未命中行属业务预期（invalid_grant）；DB / Redis 故障被压成
+		// 400 会无痕，须单独记。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logx.Error(ctx, "oidc: refresh token lookup failed",
+				"grant", "refresh_token", "step", "find_token",
+				"error", logx.RedactText(err.Error()))
+		}
 		return nil, newOAuthError(400, ErrorInvalidGrant, "refresh token is invalid")
 	}
 	if row.RevokedAt != nil || !row.ExpiresAt.After(s.now()) {
@@ -204,6 +213,8 @@ func (s *TokenService) refreshToken(ctx context.Context, in TokenInput) (*oidcap
 func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid int64, scope string, amr []string, nonce, refresh string) (*oidcapi.TokenResponse, *OAuthError) {
 	epoch, err := s.Epoch.Current(ctx, uid)
 	if err != nil {
+		logx.Error(ctx, "oidc: token issue failed",
+			"step", "read_epoch", "error", logx.RedactText(err.Error()))
 		return nil, newOAuthError(500, ErrorServerError, "cannot read user epoch")
 	}
 	accessTTL := secondsOrDefault(client.AccessTokenTTL, defaultAccessTokenTTL)
@@ -213,18 +224,24 @@ func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid 
 		UID: uid, ClientID: client.ClientID, Scope: scope, AMR: amr, Epoch: epoch, TTL: accessTTL,
 	})
 	if err != nil {
+		logx.Error(ctx, "oidc: token issue failed",
+			"step", "sign_access_token", "error", logx.RedactText(err.Error()))
 		return nil, newOAuthError(500, ErrorServerError, "cannot sign access token")
 	}
 	idToken, err := s.JWT.SignIDToken(IDTokenInput{
 		UID: uid, ClientID: client.ClientID, Nonce: nonce, AMR: amr, Epoch: epoch, TTL: accessTTL,
 	})
 	if err != nil {
+		logx.Error(ctx, "oidc: token issue failed",
+			"step", "sign_id_token", "error", logx.RedactText(err.Error()))
 		return nil, newOAuthError(500, ErrorServerError, "cannot sign id token")
 	}
 
 	if refresh == "" {
 		raw, err := randomToken(s.random())
 		if err != nil {
+			logx.Error(ctx, "oidc: token issue failed",
+				"step", "generate_refresh_token", "error", logx.RedactText(err.Error()))
 			return nil, newOAuthError(500, ErrorServerError, "cannot generate refresh token")
 		}
 		refresh = raw
@@ -238,6 +255,8 @@ func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid 
 			ExpiresAt: now.Add(refreshTTL),
 			CreatedAt: now,
 		}); err != nil {
+			logx.Error(ctx, "oidc: token issue failed",
+				"step", "persist_refresh_token", "error", logx.RedactText(err.Error()))
 			return nil, newOAuthError(500, ErrorServerError, "cannot persist refresh token")
 		}
 	}
@@ -259,7 +278,15 @@ func (s *TokenService) findClient(ctx context.Context, clientID string) (*model.
 		return nil, newOAuthError(400, ErrorInvalidRequest, "client_id is required")
 	}
 	c, err := s.Clients.FindOidcClientByClientID(ctx, clientID)
-	if err != nil || c == nil || c.IsEnabled == 0 {
+	if err != nil {
+		// 未注册 client 属业务预期；DB 故障被压成 400 不得无痕。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logx.Error(ctx, "oidc: client lookup failed",
+				"step", "find_client", "error", logx.RedactText(err.Error()))
+		}
+		return nil, newOAuthError(400, ErrorInvalidClient, "unknown or disabled client")
+	}
+	if c == nil || c.IsEnabled == 0 {
 		return nil, newOAuthError(400, ErrorInvalidClient, "unknown or disabled client")
 	}
 	return c, nil

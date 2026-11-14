@@ -15,17 +15,20 @@ import (
 	"connectrpc.com/connect"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
+	internalconnect "authloft/internal/connect"
 )
 
 // CreateCaptchaImage 新建自绘图形码。存储故障等按 Connect internal 错误
 // 返回；本端点无业务失败分支（生成即成功）。
 func (h *Handler) CreateCaptchaImage(ctx context.Context, req *connect.Request[ssov1.CreateCaptchaImageRequest]) (*connect.Response[ssov1.CreateCaptchaImageResponse], error) {
 	if h.images == nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("sso: captcha image not configured"))
+		return nil, connect.NewError(connect.CodeInternal,
+			internalconnect.InternalError(errors.New("sso: captcha image not configured")))
 	}
 	ch, err := h.images.Generate(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("sso: generate captcha image: %w", err))
+		return nil, connect.NewError(connect.CodeInternal,
+			internalconnect.InternalError(fmt.Errorf("sso: generate captcha image: %w", err)))
 	}
 	return connect.NewResponse(&ssov1.CreateCaptchaImageResponse{
 		Id:          ch.ID,

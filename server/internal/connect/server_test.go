@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -236,5 +237,82 @@ func TestRecoverToInternalLogsPanicWithoutValue(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret-panic-value") {
 		t.Error("panic value leaked into error")
+	}
+}
+
+// ⑫ 错误日志保留完整链上下文：service 用 %w:...%v 把根因写在最外层文本、
+// Unwrap 链只指向哨兵时，日志仍要带上根因与中间上下文。
+func TestErrorDetailKeepsWrappedContext(t *testing.T) {
+	sentinel := errors.New("account mfa: failed")
+	cause := errors.New("dial tcp 127.0.0.1:3306: connect: connection refused")
+	wrapped := fmt.Errorf("%w: load user: %v", sentinel, cause)
+	coded := connect.NewError(connect.CodeInternal, InternalError(wrapped))
+
+	detail := errorDetail(coded)
+	for _, want := range []string{"load user", "connection refused"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("errorDetail = %q, missing %q", detail, want)
+		}
+	}
+	if strings.Contains(detail, "internal error") {
+		t.Errorf("errorDetail = %q, 不应含固定消毒文案", detail)
+	}
+
+	buf := withCapturedLogs(t)
+	next := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		return nil, coded
+	})
+	if _, err := NewErrorLogInterceptor()(next)(context.Background(), newAnyRequest()); err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(buf.String(), "connection refused") {
+		t.Errorf("统一错误日志丢了根因: %q", buf.String())
+	}
+}
+
+// ⑬ InternalError 线上文案固定，根因仍可回溯。
+func TestInternalErrorSanitizesAndKeepsCause(t *testing.T) {
+	cause := errors.New("db connection refused")
+	e := InternalError(cause)
+	if e.Error() != "internal error" {
+		t.Errorf("message = %q, want internal error", e.Error())
+	}
+	if !errors.Is(e, cause) {
+		t.Error("根因无法通过 errors.Is 回溯")
+	}
+	coded := connect.NewError(connect.CodeInternal, InternalError(cause))
+	if coded.Message() != "internal error" {
+		t.Errorf("coded.Message() = %q, want internal error", coded.Message())
+	}
+	if !errors.Is(coded, cause) {
+		t.Error("connect.Error 链上的根因无法回溯")
+	}
+	if got := InternalError(nil).Error(); got != "internal error" {
+		t.Errorf("nil 入参 message = %q, want internal error", got)
+	}
+}
+
+// ⑭ 装配层漏挂原始请求体捕获时，rpc 域 fail-closed 也要留痕。
+func TestRPCHMACMissingRawBodyLogs(t *testing.T) {
+	buf := withCapturedLogs(t)
+	lookup := func(context.Context, string) (string, bool) { return "secret", true }
+	interceptor := NewRPCHMACInterceptor(nil, lookup)
+	req := connect.NewRequest(&emptypb.Empty{})
+	req.Header().Set(rpcHeaderClientID, "client-1")
+	req.Header().Set(rpcHeaderNonceID, "nonce-1")
+	req.Header().Set(rpcHeaderSignature, strings.Repeat("00", 32))
+	next := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		t.Fatal("请求不应放行到 handler")
+		return nil, nil
+	})
+	_, err := interceptor(next)(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Errorf("code = %v, want internal", connect.CodeOf(err))
+	}
+	if !strings.Contains(buf.String(), "rpc raw body missing") {
+		t.Errorf("装配故障未留痕: %q", buf.String())
 	}
 }

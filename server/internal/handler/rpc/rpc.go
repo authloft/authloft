@@ -2,9 +2,9 @@
 // §7 行 1366-1393）：UserService（GetUserProfile / UpdateUserProfile，资料读写）
 // 与 TokenService（DecodeSession，会话解码 + 续期重签）。鉴权（HMAC 三头 +
 // 写接口 nonce 去重 + 五项签名）为 Connect interceptor，由装配层挂载
-//（bootstrap registerRPC → connect.NewRPCHMACInterceptor，必须经
+// （bootstrap registerRPC → connect.NewRPCHMACInterceptor，必须经
 // connect.Server.RegisterRPC 强制包 CaptureRawBody）；session 步归端点自身
-//（§7 行 1387 校验顺序：读接口签名 → session、写接口 nonce 去重 → 签名 →
+// （§7 行 1387 校验顺序：读接口签名 → session、写接口 nonce 去重 → 签名 →
 // session），故本包不依赖会话拦截器注入的 ctx 身份，用户目标一律取请求体
 // uid、会话令牌一律取请求体 sessionToken。
 //
@@ -35,7 +35,7 @@ import (
 )
 
 // UserStore rpc 域用户数据面窄接口（§20 依赖注入）：生产注入 *repo.UserRepo
-//（FindByID / GetProfile / SaveProfile / UpdateProfileColumns /
+// （FindByID / GetProfile / SaveProfile / UpdateProfileColumns /
 // ListByIDs 均为 UserRepo 既有方法，不扩公共接口），测试注入 fake。
 type UserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
@@ -50,11 +50,10 @@ type UserStore interface {
 const maxBatchProfileIDs = 100
 
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
-//（口径同 internal/connect interceptors.go、handler/account）。
+// （口径同 internal/connect interceptors.go、handler/account）。
 var (
 	errAuthRequired = errors.New("authentication required")
 	errNotFound     = errors.New("not found")
-	errInternal     = errors.New("internal error")
 	errBadBirthday  = errors.New("invalid birthday")
 	errTooManyIDs   = errors.New("too many ids")
 )
@@ -92,7 +91,7 @@ func (h *UserHandler) GetUserProfile(ctx context.Context, req *connect.Request[r
 }
 
 // GetUserProfiles（§7.2 行 1436）：GetUserProfile 的批量版，批量语义四项口径
-//（行 1462-1465）逐条落地：
+// （行 1462-1465）逐条落地：
 //   - 上限①：ids 按入参列表长度计、**去重前** > 100 → 整单失败 400
 //     invalid_argument + ErrorInfo(rpc, invalid_request)（§1.6 既有码，
 //     不新增词汇），无部分返回、不许截断；
@@ -217,7 +216,7 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 // 子字段（§3.2 行 837：gender?/birthday?/locale?/timezone?/extra?），
 // 合并本体共享 dto.MergeUserProfile（account 域 UpdateProfile 同一出口，
 // §12.9 行 1748「同一结构只定义一次」先例）：未设置 = 不修改，显式设值
-//（含 0 / 空串）= 覆盖——gender 可显式改回 0、birthday / locale / timezone
+// （含 0 / 空串）= 覆盖——gender 可显式改回 0、birthday / locale / timezone
 // 可显式清空；现行行缺失从零值行起（UserID 补 uid）。changed = 是否存在
 // 任一 has 子字段（全未设置则调用方跳过写库）。birthday 格式非法 →
 // 400 invalid_argument + ErrorInfo(rpc, invalid_request)（§1.6；先例
@@ -280,7 +279,7 @@ func NewTokenHandler(verify *session.Verifier, renew *session.Renewer, users Use
 // 不变（校验先于用户读取，include_user_info 不改变失败分支，失败路径
 // 亦零用户查询）。校验已通过而 FindByID 落 NotFound 的防御分支（真实链
 // epoch 比对已触达 user 行，理论不可达）按 internal 拒绝：不与未登录
-//（401）/ 用户不存在（404）混同，口径同 verify.go 行 27-29 基础设施错误。
+// （401）/ 用户不存在（404）混同，口径同 verify.go 行 27-29 基础设施错误。
 // GetProfile 行缺失输出零值 profile 消息，不视为错误（同 GetUserProfile）。
 func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[rpcv1.DecodeSessionRequest]) (*connect.Response[rpcv1.SessionResponse], error) {
 	p, err := h.verify.Verify(ctx, req.Msg.GetSessionToken())
@@ -288,18 +287,19 @@ func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[r
 		if errors.Is(err, session.ErrNotAuthenticated) || errors.Is(err, session.ErrSessionStale) {
 			return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 		}
-		return nil, connect.NewError(connect.CodeInternal, errInternal)
+		return nil, connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	}
 	fresh, renewed, rerr := h.renew.Renew(p)
 	if rerr != nil {
-		return nil, connect.NewError(connect.CodeInternal, errInternal)
+		return nil, connect.NewError(connect.CodeInternal, internalconnect.InternalError(rerr))
 	}
 	resp := dto.RPCSession(fresh, renewed)
 	if req.Msg.GetIncludeUserInfo() {
 		user, err := h.users.FindByID(ctx, fresh.GetId())
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, connect.NewError(connect.CodeInternal, errInternal)
+				return nil, connect.NewError(connect.CodeInternal,
+					internalconnect.InternalError(fmt.Errorf("rpc handler: session uid missing user row: %w", err)))
 			}
 			return nil, fmt.Errorf("rpc handler: load user: %w", err)
 		}

@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 )
 
 const (
@@ -106,7 +107,10 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 
 	secret, err := decodeSecret(string(cred.Secret))
 	if err != nil {
-		// 密钥损坏等同于该因子不可用，按错码处理，不暴露内部细节。
+		// 密钥由服务端写入存储，损坏属服务端数据问题（不是用户输入错误）：
+		// 按错码收敛但须留痕。只记错误类别文本，不记密钥内容。
+		logx.Warn(ctx.Context, "totp: stored secret corrupted",
+			"step", "decode_secret", "error", logx.RedactText(err.Error()))
 		return &factor.VerifyResult{Status: StatusInvalidCode}, nil
 	}
 	if !valid(secret, code, f.clock()) {

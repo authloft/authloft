@@ -1,9 +1,11 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
@@ -1118,4 +1121,27 @@ func TestEngineMfaUserEnabledBySettingRow(t *testing.T) {
 			t.Fatalf("status = %q, want success（行存在但未启用不要求）", resp.Status)
 		}
 	})
+}
+
+// 登录主链路内部故障：信封仍是 failed，但必须留下带 flow / step 的日志。
+func TestFailWithLogsStepFailure(t *testing.T) {
+	buf := &bytes.Buffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(logx.NewHandler(buf, "debug", "json")))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	ctx := logx.WithRequestID(context.Background(), "req-login-001")
+	resp := failWith(ctx, "login", "verify:factor_verify", errors.New("redis: connection refused"))
+	if resp.GetStatus() != StatusFailed {
+		t.Errorf("status = %q, want failed", resp.GetStatus())
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"orchestrator: login step failed", "req-login-001",
+		"login", "verify:factor_verify", "connection refused",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log %q missing %q", got, want)
+		}
+	}
 }

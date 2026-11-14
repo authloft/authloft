@@ -354,6 +354,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 	// （§11.6.5 行 1424）；终态 success / failed 才在下方向下消费。
 	res, err := s.deps.Tickets.Peek(ctx, id)
 	if err != nil {
+		logTicketFailure(ctx, id, "peek", err)
 		return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 	}
 	// 长轮询（§2.8 行 729：poll ≤15，服务端钳制；等待窗口不超过票据剩余
@@ -369,8 +370,14 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		if werr := s.deps.Tickets.Wait(ctx, id, wait); werr == nil {
 			res, err = s.deps.Tickets.Peek(ctx, id)
 			if err != nil {
+				logTicketFailure(ctx, id, "poll_peek", err)
 				return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 			}
+		} else {
+			// 长轮询等待失败降级为立即返回，不能无痕。
+			logx.Warn(ctx, "qrcode: long poll wait failed",
+				"ticket_id", id, "step", "long_poll_wait",
+				"error", logx.RedactText(werr.Error()))
 		}
 	}
 	if res == nil {
@@ -409,6 +416,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 			Oidc:   in.OIDC,
 		})
 		if err != nil {
+			logTicketFailure(ctx, id, "issue_login_token", err)
 			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
@@ -421,6 +429,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		// 被其他读取方先取走时，按键不存在得到 expired。
 		taken, terr := s.deps.Tickets.Take(ctx, id)
 		if terr != nil {
+			logTicketFailure(ctx, id, "consume_success_ticket", terr)
 			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		if taken == nil {
@@ -431,6 +440,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		// 失败类终态：结论在信封 status（§1.6 行 264——写入方把具体失败落
 		// TicketResult.status，本侧原样上抛），ticket 只报 failed；终态消费。
 		if _, terr := s.deps.Tickets.Take(ctx, id); terr != nil {
+			logTicketFailure(ctx, id, "consume_terminal_ticket", terr)
 			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		return envelope(res.GetStatus(), ticketsvc.TicketStatusFailed, nil)
@@ -461,6 +471,7 @@ func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, r
 		Amr:    []string{thirdpartysvc.AMRThirdParty},
 	})
 	if err != nil {
+		logTicketFailure(ctx, id, "terminal_complete", err)
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status: orchestrator.StatusFailed, Ticket: &ssov1.TicketStatus{Status: ticketsvc.TicketStatusFailed, TicketId: id},
 		}}
@@ -495,6 +506,11 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	}
 	p, err := s.deps.Loader.Get(ctx, pk)
 	if err != nil {
+		// 未注册 provider 属业务预期；DB / Redis 故障被压成
+		// provider_disabled 会无痕，须单独记。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logTicketFailure(ctx, payload.GetTicketId(), "poll_binding:load_provider", err)
+		}
 		return &ssov1.LoginFlowResponse{Status: thirdpartysvc.StatusProviderDisabled}
 	}
 	lt := &token.LoginTokenPayload{
@@ -512,6 +528,7 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	}
 	signed, err := s.deps.State.Issue(lt)
 	if err != nil {
+		logTicketFailure(ctx, payload.GetTicketId(), "poll_binding:issue_login_token", err)
 		return &ssov1.LoginFlowResponse{Status: orchestrator.StatusFailed}
 	}
 	allowSignup := p.Row != nil && p.Row.EnableSignup == 1
@@ -579,4 +596,20 @@ func (s *QRCode) newTID() string {
 		return ""
 	}
 	return tid
+}
+
+// logTicketFailure 是扫码票据主链路「基础设施故障 → failed 信封」的统一
+// 记录点：GetLoginTicket / pollResult / pollBinding 返回 HTTP 200 信封、不向
+// handler 抛 error，Connect 的 NewErrorLogInterceptor 看不到，必须就地记一次
+// 只记 ticket_id 与脱敏错误文本，不记票据值 / 载荷 / 会话令牌；
+// 无 error 的业务终态（expired / pending / 客户端脏票据）不记。
+func logTicketFailure(ctx context.Context, ticketID, step string, err error) {
+	if err == nil {
+		return
+	}
+	logx.Error(ctx, "qrcode: ticket step failed",
+		"ticket_id", ticketID,
+		"step", step,
+		"error", logx.RedactText(err.Error()),
+	)
 }

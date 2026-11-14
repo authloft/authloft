@@ -501,6 +501,9 @@ func (s *ThirdpartyService) GetThirdpartyTicket(ctx context.Context, in TicketIn
 	// 命中 GETDEL：原子取走即删，一次性消费。
 	res, err := s.deps.Tickets.Take(ctx, id)
 	if err != nil {
+		logx.Error(ctx, "account: bind ticket take failed",
+			"ticket_id", id, "step", "take",
+			"error", logx.RedactText(err.Error()))
 		return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil, nil)
 	}
 	// 长轮询：poll ≤15 服务端钳制，等待窗口不超过票据剩余寿命。
@@ -515,8 +518,15 @@ func (s *ThirdpartyService) GetThirdpartyTicket(ctx context.Context, in TicketIn
 		if werr := s.deps.Tickets.Wait(ctx, id, wait); werr == nil {
 			res, err = s.deps.Tickets.Take(ctx, id)
 			if err != nil {
+				logx.Error(ctx, "account: bind ticket take failed",
+					"ticket_id", id, "step", "poll_take",
+					"error", logx.RedactText(err.Error()))
 				return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil, nil)
 			}
+		} else {
+			logx.Warn(ctx, "account: bind ticket long poll wait failed",
+				"ticket_id", id, "step", "long_poll_wait",
+				"error", logx.RedactText(werr.Error()))
 		}
 	}
 	if res == nil {

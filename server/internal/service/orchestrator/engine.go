@@ -14,6 +14,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/security"
 	"authloft/internal/settings"
 
@@ -164,7 +165,7 @@ func NewEngine(d EngineDeps) *Engine {
 // Submit 推进一次登录请求。业务失败一律以信封 status 表达（§2.2 行 430-437），
 // 未知异常在登录流程域映射为 failed + 兜底文案，不向 handler 抛错误。
 func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.LoginFlowResponse {
-	p, status := e.loadPayload(flow, &req)
+	p, status := e.loadPayload(ctx, flow, &req)
 	if status != "" {
 		return &ssov1.LoginFlowResponse{Status: status}
 	}
@@ -178,7 +179,7 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	// challenge 步与密码登录统一过 captcha gate（§2.2 第 4 步、§2.5）。
 	outcome, err := e.evaluateCaptcha(ctx, d, req, p)
 	if err != nil {
-		return failed()
+		return failWith(ctx, flow, "captcha_gate", err)
 	}
 	if failure := captcha.FailureFrom(outcome); failure != nil {
 		if sink, ok := CaptchaFailureSinkFromContext(ctx); ok {
@@ -219,7 +220,7 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 
 // loadPayload 对应 §7.2 第 1 步：首次请求建状态，否则解析并校验 flow。
 // 带 login_token 时 method 可省略，回退 login_token.factor（§2.2 行 421）。
-func (e *Engine) loadPayload(flow string, req *Request) (*token.LoginTokenPayload, string) {
+func (e *Engine) loadPayload(ctx context.Context, flow string, req *Request) (*token.LoginTokenPayload, string) {
 	if flow != "login" && flow != "register" && flow != "reset" {
 		return nil, StatusInvalidRequest
 	}
@@ -250,7 +251,7 @@ func (e *Engine) loadPayload(flow string, req *Request) (*token.LoginTokenPayloa
 	}
 	tid, err := e.newTID()
 	if err != nil {
-		return nil, StatusFailed
+		return nil, failStatus(ctx, flow, "load_payload:new_tid", err)
 	}
 	return &token.LoginTokenPayload{Tid: tid, Flow: flow, Oidc: req.OIDC}, ""
 }
@@ -334,7 +335,7 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.LoginTokenPayload, d *Dispatched, fctx *factor.FactorContext) *ssov1.LoginFlowResponse {
 	step, err := d.Factor.Start(fctx)
 	if err != nil {
-		return failed()
+		return failWith(ctx, flow, "challenge:factor_start", err)
 	}
 	// 因子可直接以 status 终止（如 user_not_found / too_many_requests），
 	// 此时不签发 login_token；重试建议回填信封 error.retryAfter（§1.6 行 242）。
@@ -348,7 +349,7 @@ func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.L
 	}
 	nonce, err := security.RandomString(challengeNonce)
 	if err != nil {
-		return failed()
+		return failWith(ctx, flow, "challenge:random_nonce", err)
 	}
 	purpose := flowPurpose(flow, d.Usage)
 	target := targetOf(req.Payload)
@@ -360,7 +361,7 @@ func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.L
 
 	tok, err := e.state.Issue(p)
 	if err != nil {
-		return failed()
+		return failWith(ctx, flow, "challenge:issue_token", err)
 	}
 	return &ssov1.LoginFlowResponse{
 		Status:     StatusNext,
@@ -374,7 +375,7 @@ func (e *Engine) start(ctx context.Context, flow string, req Request, p *token.L
 func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.LoginTokenPayload, d *Dispatched, fctx *factor.FactorContext) *ssov1.LoginFlowResponse {
 	res, err := d.Factor.Verify(fctx)
 	if err != nil {
-		return failed()
+		return failWith(ctx, flow, "verify:factor_verify", err)
 	}
 	if !res.Passed {
 		status := res.Status
@@ -406,7 +407,7 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		if flow == "register" || flow == "reset" {
 			tok, err := e.state.Issue(p)
 			if err != nil {
-				return failed()
+				return failWith(ctx, flow, "verify:issue_token_register", err)
 			}
 			return &ssov1.LoginFlowResponse{
 				Status:     StatusNext,
@@ -423,12 +424,12 @@ func (e *Engine) verify(ctx context.Context, flow string, req Request, p *token.
 		required, err := e.mfaRequired(ctx, p.Uid)
 		if err != nil {
 			// 依赖读取故障按 fail-closed 收敛：不得静默跳过二次验证。
-			return failed()
+			return failWith(ctx, flow, "verify:mfa_required", err)
 		}
 		if required {
 			tok, err := e.state.Issue(p)
 			if err != nil {
-				return failed()
+				return failWith(ctx, flow, "verify:issue_token_mfa", err)
 			}
 			return &ssov1.LoginFlowResponse{
 				Status:     StatusMFARequired,
@@ -493,7 +494,7 @@ func (e *Engine) mfaRequired(ctx context.Context, uid int64) (bool, error) {
 func (e *Engine) completeSuccess(ctx context.Context, req Request, p *token.LoginTokenPayload) *ssov1.LoginFlowResponse {
 	success, err := e.terminal.Complete(ctx, p)
 	if err != nil {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "terminal:complete", err)
 	}
 	resp := &ssov1.LoginFlowResponse{
 		Status:        StatusSuccess,
@@ -567,6 +568,33 @@ func verifyError(res *factor.VerifyResult) *ssov1.SsoError {
 
 func failed() *ssov1.LoginFlowResponse {
 	return &ssov1.LoginFlowResponse{Status: StatusFailed}
+}
+
+// failed 的信封语义不变。下面三个 helper 是「HTTP 200 + status=failed」
+// 信封的内部故障出口：Engine.Submit 按契约不向 handler 返回 error，Connect
+// 的 NewErrorLogInterceptor 只在 err != nil 时记录，这类故障若不就地记日志
+// 就完全无痕。一次请求只记一条：内部函数
+// （evaluateCaptcha / mfaRequired / terminal.Complete）返回 err 后由调用点
+// 统一记录，不在内部重复。step 只描述阶段，不含凭据 / 令牌 / 手机号邮箱。
+func logStepFailure(ctx context.Context, flow, step string, err error) {
+	if err == nil {
+		return
+	}
+	logx.Error(ctx, "orchestrator: login step failed",
+		"flow", flow,
+		"step", step,
+		"error", logx.RedactText(err.Error()),
+	)
+}
+
+func failWith(ctx context.Context, flow, step string, err error) *ssov1.LoginFlowResponse {
+	logStepFailure(ctx, flow, step, err)
+	return failed()
+}
+
+func failStatus(ctx context.Context, flow, step string, err error) string {
+	logStepFailure(ctx, flow, step, err)
+	return StatusFailed
 }
 
 func targetOf(p *factor.Payload) string {

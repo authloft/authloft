@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	"authloft/internal/logx"
 	"authloft/internal/oidc"
 )
 
@@ -68,6 +69,8 @@ func (h *handler) discovery(c *gin.Context) {
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
+		logx.Error(c.Request.Context(), "oidc: encode discovery failed",
+			"step", "marshal_discovery", "error", logx.RedactText(err.Error()))
 		writeError(c, http.StatusInternalServerError, "server_error", "cannot encode discovery document")
 		return
 	}
@@ -78,6 +81,8 @@ func (h *handler) discovery(c *gin.Context) {
 func (h *handler) jwks(c *gin.Context) {
 	raw, err := json.Marshal(h.deps.JWT.JWKS())
 	if err != nil {
+		logx.Error(c.Request.Context(), "oidc: encode jwks failed",
+			"step", "marshal_jwks", "error", logx.RedactText(err.Error()))
 		writeError(c, http.StatusInternalServerError, "server_error", "cannot encode jwks")
 		return
 	}
@@ -162,6 +167,8 @@ func (h *handler) userinfo(c *gin.Context) {
 	}
 	raw, err := oidcJSON.Marshal(resp)
 	if err != nil {
+		logx.Error(c.Request.Context(), "oidc: encode userinfo failed",
+			"step", "marshal_userinfo", "error", logx.RedactText(err.Error()))
 		writeInvalidToken(c, "cannot encode userinfo")
 		return
 	}
@@ -182,6 +189,8 @@ func (h *handler) getUserInfo(c *gin.Context) {
 	}
 	raw, err := protojson.Marshal(resp)
 	if err != nil {
+		logx.Error(c.Request.Context(), "oidc: encode get_user_info failed",
+			"step", "marshal_get_user_info", "error", logx.RedactText(err.Error()))
 		writeInvalidToken(c, "cannot encode user info")
 		return
 	}
@@ -232,6 +241,9 @@ func writeError(c *gin.Context, status int, code, description string) {
 func writeJSON(c *gin.Context, status int, body any) {
 	raw, err := json.Marshal(body)
 	if err != nil {
+		// OIDC REST 域无 Connect 错误日志拦截器，5xx 摘要只有 path/status。
+		logx.Error(c.Request.Context(), "oidc: encode error response failed",
+			"step", "write_json", "error", logx.RedactText(err.Error()))
 		c.Status(http.StatusInternalServerError)
 		return
 	}

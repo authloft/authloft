@@ -1,11 +1,12 @@
 // account 域的内部模型 → proto 报文转换（docs/接口文档.md §3.1 行
 // 774-813）：AccountService/GetProfile 响应的字段映射、phone / email
 // 服务端掩码与 user_profile.extra 的 msgpack 解码均以本文件为唯一出口
-//（docs/后端架构.md §3.5：本层只做转换与裁剪，不定义新的跨端结构）。
+// （docs/后端架构.md §3.5：本层只做转换与裁剪，不定义新的跨端结构）。
 // GetConfig 的 avatarUpload / mfaPolicy 投影（§3.2 行 818-847）同此。
 package dto
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -17,10 +18,10 @@ import (
 )
 
 // AccountProfile 把 user + user_profile 行组装为 §3.1 的 ProfileResponse
-//（行 775：各端点响应即下列字段、无信封包裹）。掩码在服务端完成（行 802：
+// （行 775：各端点响应即下列字段、无信封包裹）。掩码在服务端完成（行 802：
 // 前端不二次处理），account 域自助接口默认掩码（行 806）。profile 行缺失
-//（p == nil）时输出零值 profile 消息，不视为错误；u == nil 时返回空响应
-//（调用方契约下不可达的防御分支，口径同 internal/oidc 的 user 判空）。
+// （p == nil）时输出零值 profile 消息，不视为错误；u == nil 时返回空响应
+// （调用方契约下不可达的防御分支，口径同 internal/oidc 的 user 判空）。
 func AccountProfile(u *model.User, p *model.UserProfile) *accountv1.ProfileResponse {
 	if u == nil {
 		return &accountv1.ProfileResponse{}
@@ -92,7 +93,7 @@ func accountUserProfile(p *model.UserProfile) *accountv1.UserProfile {
 // 返回合并后整行与 changed（是否存在任一 has 字段——全未设置由调用方
 // 跳过写库）。birthday 格式非法返回 ParseRPCProfileBirthday 原错误，
 // 由调用方按 invalid_request 拒绝（§1.6）；updated_at 刷新归调用方
-//（仅 changed 时）。
+// （仅 changed 时）。
 func MergeUserProfile(uid int64, existing *model.UserProfile, in *accountv1.UserProfile) (*model.UserProfile, bool, error) {
 	merged := &model.UserProfile{UserID: uid}
 	if existing != nil {
@@ -144,17 +145,20 @@ func decodeProfileExtra(raw []byte) *structpb.Struct {
 	}
 	var m map[string]interface{}
 	if err := msgpack.Unmarshal(raw, &m); err != nil {
+		// 存储行里的 extra 损坏属服务端数据问题；降级为空值但须留痕。
+		slog.Warn("dto: decode profile extra failed", "step", "msgpack", "error", err)
 		return nil
 	}
 	out, err := structpb.NewStruct(m)
 	if err != nil {
+		slog.Warn("dto: build profile extra struct failed", "step", "structpb", "error", err)
 		return nil
 	}
 	return out
 }
 
 // maskPhone 固定掩码格式：前 3 + "****" + 后 4（§3.1 行 813）；不足 8 位
-//（掩码后无意义）整体 "****"。
+// （掩码后无意义）整体 "****"。
 func maskPhone(phone string) string {
 	if len(phone) <= 7 {
 		return "****"
@@ -183,7 +187,7 @@ const avatarUploadDefaultMaxSize = 2 << 20
 // AccountAvatarUpload 把 storage Provider 行投影为 §3.2 行 818 的
 // AvatarUploadConfig。providerType 为该行 type（s3/local）；providerType
 // 空串 = 未配置 → 零值投影 {mode:"proxy", maxSize:0, allowedTypes:[]}
-//（接口文档行 826：mode 值域保持 proxy/direct 闭合，不新增
+// （接口文档行 826：mode 值域保持 proxy/direct 闭合，不新增
 // 枚举，前端据零值隐藏上传入口）。local 配置 direct 回退 proxy（行 825、
 // 后端架构 §15.1：local 无预签名能力）；maxSize / allowedTypes 取
 // Ext.max_size / Ext.allowed_types（§12.1 行 1704-1705），maxSize 零值

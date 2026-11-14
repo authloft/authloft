@@ -123,18 +123,15 @@ type EventReader interface {
 }
 
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息。
+// 内部故障一律经 internalconnect.InternalError 消毒：响应固定
+// "internal error"，根因留在 Unwrap 链供统一错误日志回溯。
 var (
 	errAuthRequired = errors.New("authentication required")
 	errNotFound     = errors.New("not found")
 	// errThirdpartyNotConfigured 未装配三方绑定 service（测试桩）。
 	errThirdpartyNotConfigured = errors.New("thirdparty service not configured")
-	// errThirdpartyInternal 未知异常的固定文案（不暴露内部信息，
-	// internal 无 ErrorInfo）。
-	errThirdpartyInternal = errors.New("internal error")
 	// errWebauthnNotConfigured 未装配通行密钥 service（测试桩）。
 	errWebauthnNotConfigured = errors.New("webauthn service not configured")
-	// errWebauthnInternal 未知异常的固定文案（同 errThirdpartyInternal 口径）。
-	errWebauthnInternal = errors.New("internal error")
 	// errWebauthnDuplicate 重复注册的固定文案（重复绑定）。
 	errWebauthnDuplicate = errors.New("credential already exists")
 	// errWebauthnInvalidStep step 取值非法。
@@ -143,18 +140,12 @@ var (
 	errProfileNotConfigured = errors.New("profile service not configured")
 	// errAvatarNotConfigured 未装配头像直传 service（测试桩）。
 	errAvatarNotConfigured = errors.New("avatar service not configured")
-	// errAvatarInternal 头像直传未知异常的固定文案（internal 无
-	// ErrorInfo；未配置 / 非 direct 模式同口径）。
-	errAvatarInternal = errors.New("internal error")
 	// errPasswordNotConfigured 未装配改密 service（测试桩）。
 	errPasswordNotConfigured = errors.New("password service not configured")
 	// errBindNotConfigured 未装配换绑 service（测试桩）。
 	errBindNotConfigured = errors.New("bind contact service not configured")
 	// errMfaNotConfigured 未装配两步验证 service（测试桩）。
 	errMfaNotConfigured = errors.New("mfa service not configured")
-	// errMfaInternal 两步验证族未知异常的固定文案（ErrMfaInternal 映射，
-	// internal 无 ErrorInfo）。
-	errMfaInternal = errors.New("internal error")
 	// errMfaInvalidStep BindTotp step 取值非法。
 	errMfaInvalidStep = errors.New("invalid step")
 	// errVerificationNotConfigured 未装配 step-up 服务（测试桩）。
@@ -594,7 +585,7 @@ func mapThirdpartyError(op string, err error) error {
 			internalconnect.NewErrorInfo("account", "target_taken", "该账号已被其他账号绑定"),
 		)
 	case errors.Is(err, accountsvc.ErrFailed):
-		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
@@ -730,7 +721,7 @@ func mapWebauthnError(op string, err error) error {
 	case errors.Is(err, accountsvc.ErrWebauthnDuplicate):
 		return connect.NewError(connect.CodeAlreadyExists, errWebauthnDuplicate)
 	case errors.Is(err, accountsvc.ErrWebauthnInternal):
-		return connect.NewError(connect.CodeInternal, errWebauthnInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
@@ -783,7 +774,7 @@ func (h *Handler) CommitAvatar(ctx context.Context, req *connect.Request[account
 func mapAvatarError(op string, err error) error {
 	switch {
 	case errors.Is(err, accountsvc.ErrAvatarNotConfigured), errors.Is(err, accountsvc.ErrAvatarPresignUnavailable):
-		return connect.NewError(connect.CodeInternal, errAvatarInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	case errors.Is(err, accountsvc.ErrAvatarFileTypeNotAllowed):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
@@ -1269,7 +1260,7 @@ func mapMfaError(op string, err error) error {
 			internalconnect.NewErrorInfo("account", "code_expired", "recovery codes not available"),
 		)
 	case errors.Is(err, accountsvc.ErrMfaInternal):
-		return connect.NewError(connect.CodeInternal, errMfaInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:

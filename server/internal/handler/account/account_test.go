@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -2314,5 +2315,42 @@ func TestGetEventsConnect(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("no session: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// internal 映射分支：线上文案固定为通用文案，原始错误仍留在链上供日志回溯。
+func TestInternalErrorMappingsKeepRootCause(t *testing.T) {
+	cases := []struct {
+		name     string
+		call     func(error) error
+		sentinel error
+	}{
+		{"thirdparty", func(e error) error { return mapThirdpartyError("bind", e) }, accountsvc.ErrFailed},
+		{"webauthn", func(e error) error { return mapWebauthnError("bind", e) }, accountsvc.ErrWebauthnInternal},
+		{"avatar", func(e error) error { return mapAvatarError("presign", e) }, accountsvc.ErrAvatarNotConfigured},
+		{"mfa", func(e error) error { return mapMfaError("set", e) }, accountsvc.ErrMfaInternal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cause := fmt.Errorf("%w: load user: db down", tc.sentinel)
+			err := tc.call(cause)
+			var coded *connect.Error
+			if !errors.As(err, &coded) || coded.Code() != connect.CodeInternal {
+				t.Fatalf("err = %v, want CodeInternal", err)
+			}
+			if coded.Message() != "internal error" {
+				t.Errorf("Message = %q, want internal error", coded.Message())
+			}
+			if !errors.Is(err, tc.sentinel) {
+				t.Error("根因哨兵无法回溯")
+			}
+			var texts []string
+			for e := err; e != nil; e = errors.Unwrap(e) {
+				texts = append(texts, e.Error())
+			}
+			if !strings.Contains(strings.Join(texts, " | "), "db down") {
+				t.Errorf("错误链丢失根因文本: %v", texts)
+			}
+		})
 	}
 }

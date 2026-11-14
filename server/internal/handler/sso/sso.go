@@ -162,7 +162,7 @@ func (h *Handler) submit(ctx context.Context, flow string, in orchestrator.Reque
 	var failure *captcha.Failure
 	sinkCtx, err := captchaFailureSink(ctx, func(f *captcha.Failure) { failure = f })
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	}
 	resp := h.engine.Submit(h.withSessionTokenSink(sinkCtx), flow, in)
 	if failure != nil {
@@ -336,9 +336,6 @@ type Thirdparty interface {
 // errThirdpartyNotConfigured 未装配三方 service（测试桩）。
 var errThirdpartyNotConfigured = errors.New("thirdparty service not configured")
 
-// errThirdpartyInternal 未知异常的固定文案（§1.5：不暴露内部信息）。
-var errThirdpartyInternal = errors.New("internal error")
-
 // Authorize 取第三方授权 URL（接口文档 §2.7.2 行 593-613）：scene=bind 时
 // 从 ctx 取会话 uid（session 拦截器注入；无会话由 service 判 401）；
 // 成功时经 CallInfo 写点下发 Set-Cookie: al_login_state（与 session
@@ -430,7 +427,7 @@ func mapThirdpartyError(err error) error {
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for signin"))
 	default:
-		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	}
 }
 
@@ -545,6 +542,6 @@ func mapQrcodeError(err error) error {
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for qrcode"))
 	default:
-		return connect.NewError(connect.CodeInternal, errThirdpartyInternal)
+		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	}
 }

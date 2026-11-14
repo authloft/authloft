@@ -6,6 +6,7 @@ package dto
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -71,17 +72,20 @@ func AdminProviderDetail(row *model.Provider, ext *providerpb.Ext) *adminv1.Admi
 }
 
 // AdminProviderExt provider.Ext → Struct 明文透出：nil / 空 Ext 输出空 Struct，
-// 字段恒存在便于表单绑定。两条错误分支只回空值、不落日志（输出是明文凭证）。
+// 字段恒存在便于表单绑定。两条错误分支只回空值并记一条 Warn；输出是明文
+// 凭证，日志只记错误类别、不记 err 文本或任何字段内容。
 func AdminProviderExt(ext *providerpb.Ext) *structpb.Struct {
 	if ext == nil {
 		ext = &providerpb.Ext{}
 	}
 	raw, err := extJSON.Marshal(ext)
 	if err != nil {
+		slog.Warn("dto: encode admin provider ext failed", "step", "marshal_ext")
 		return &structpb.Struct{}
 	}
 	out := &structpb.Struct{}
 	if err := protojson.Unmarshal(raw, out); err != nil {
+		slog.Warn("dto: decode admin provider ext failed", "step", "unmarshal_ext")
 		return &structpb.Struct{}
 	}
 	return out

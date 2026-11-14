@@ -131,7 +131,7 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
 		return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:find_username", err)
 	}
 
 	// 注册目标来自 challenge 的 ch.target（otp 注册把 email / phone 建进
@@ -151,14 +151,14 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 		if _, err := sp.Users.FindByEmail(ctx, email); err == nil {
 			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return failed()
+			return failWith(ctx, p.GetFlow(), "set_password:find_email", err)
 		}
 	}
 	if phone != "" {
 		if _, err := sp.Users.FindByPhone(ctx, phone); err == nil {
 			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return failed()
+			return failWith(ctx, p.GetFlow(), "set_password:find_phone", err)
 		}
 	}
 
@@ -179,7 +179,7 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	// 两条 INSERT 单事务，credential 失败整体回滚，不留无凭证 user 行。
 	cred, err := sp.passwordCredential(password)
 	if err != nil {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:hash_password", err)
 	}
 	if err := sp.Users.CreateWithCredential(ctx, u, cred); err != nil {
 		// 预查与建号之间的竞态窗口由唯一键兜底（§4.2 uk_username /
@@ -187,7 +187,7 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 		if errors.Is(err, repo.ErrUserDuplicate) {
 			return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
 		}
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:create_user", err)
 	}
 
 	// 成功 → 直接登录写 Cookie（§10.3 行 1527；amr 补记本步因子——直通入口
@@ -225,7 +225,7 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
 		return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:find_username", err)
 	}
 
 	// provider enable_signup=1 才允许建号（§12.5 行 1504；provider 不存在 /
@@ -233,7 +233,7 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 	// 管理端禁用后的在途 token 走此口径收敛）。
 	state, err := sp.Thirdparty.SignupState(ctx, tp.GetProviderKey())
 	if err != nil {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:signup_state", err)
 	}
 	if !state.Enabled {
 		return &ssov1.LoginFlowResponse{Status: StatusSignupDisabled}
@@ -246,7 +246,7 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 		if errors.Is(err, repo.ErrUserDuplicate) {
 			return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
 		}
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:create_user", err)
 	}
 
 	// 写绑定（+ Union 行同事务）；失败时 tp 仍在 login_token，前端可带
@@ -262,7 +262,7 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 		if errors.Is(err, repo.ErrBindDuplicate) {
 			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
 		}
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:create_bind", err)
 	}
 
 	// 成功 → 直接登录（§10.3 行 1527 同构；amr 已含 thirdparty）。
@@ -289,7 +289,7 @@ func (e *Engine) setPassReset(ctx context.Context, sp *SetPassDeps, req Request,
 	}
 	user, err := sp.Users.FindByID(ctx, uid)
 	if err != nil {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:reset:find_user", err)
 	}
 	email := ""
 	if user.Email != nil {
@@ -307,25 +307,25 @@ func (e *Engine) setPassReset(ctx context.Context, sp *SetPassDeps, req Request,
 	switch {
 	case err == nil:
 		if err := sp.writeCredential(ctx, uid, password, cred); err != nil {
-			return failed()
+			return failWith(ctx, p.GetFlow(), "set_password:reset:write_credential", err)
 		}
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		if err := sp.writeCredential(ctx, uid, password, nil); err != nil {
-			return failed()
+			return failWith(ctx, p.GetFlow(), "set_password:reset:create_credential", err)
 		}
 	default:
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:reset:find_credential", err)
 	}
 
 	// epoch 递增 + al:pwdep:{uid} 同步（§10.4 行 1532：全部会话与已颁发
 	// 令牌失效；§5.1 行 850）。同步失败即 failed（DB 密码已改，重试幂等）。
 	epoch, err := sp.Users.IncEpoch(ctx, uid)
 	if err != nil {
-		return failed()
+		return failWith(ctx, p.GetFlow(), "set_password:reset:inc_epoch", err)
 	}
 	if sp.Epoch != nil {
 		if err := sp.Epoch.Sync(ctx, uid, epoch); err != nil {
-			return failed()
+			return failWith(ctx, p.GetFlow(), "set_password:reset:sync_epoch", err)
 		}
 	}
 	// 异步审计（§7.4 行 1026），不阻塞响应。

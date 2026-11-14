@@ -9,7 +9,12 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"gorm.io/gorm"
+
+	"authloft/internal/logx"
 )
 
 // RevokeStore 单令牌吊销窄接口；*repo.OidcTokenRepo 天然满足。
@@ -42,13 +47,23 @@ func (r *Revoker) Revoke(ctx context.Context, clientID, clientSecret, tokenValue
 		return newOAuthError(401, ErrorInvalidClient, "client authentication failed")
 	}
 	c, err := r.Clients.FindOidcClientByClientID(ctx, clientID)
-	if err != nil || c == nil || c.IsEnabled == 0 {
+	if err != nil {
+		// 未注册 client 属业务预期；DB 故障被压成 401 不得无痕。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logx.Error(ctx, "oidc: revoke client lookup failed",
+				"step", "find_client", "error", logx.RedactText(err.Error()))
+		}
+		return newOAuthError(401, ErrorInvalidClient, "unknown or disabled client")
+	}
+	if c == nil || c.IsEnabled == 0 {
 		return newOAuthError(401, ErrorInvalidClient, "unknown or disabled client")
 	}
 	if clientSecret == "" || !secretEqual(clientSecret, c.ClientSecret) {
 		return newOAuthError(401, ErrorInvalidClient, "client authentication failed")
 	}
 	if _, err := r.Tokens.RevokeByTokenHash(ctx, hashToken(tokenValue), r.now()); err != nil {
+		logx.Error(ctx, "oidc: revoke token failed",
+			"step", "revoke_by_hash", "error", logx.RedactText(err.Error()))
 		return newOAuthError(500, ErrorServerError, "cannot revoke token")
 	}
 	return nil

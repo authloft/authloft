@@ -9,14 +9,18 @@ package oidc
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	oidcapi "authloft/gen/go/api/oidc"
 	rpcv1 "authloft/gen/go/api/rpc/v1"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 )
 
@@ -142,12 +146,26 @@ func (s *UserInfoService) load(ctx context.Context, accessToken string) (*model.
 		return nil, nil, newOAuthError(401, "invalid_token", "access token is invalid or expired")
 	}
 	epoch, err := s.Epoch.Current(ctx, claims.Sub)
-	if err != nil || epoch != claims.Epoch {
-		// epoch 不一致 = 改密 / 重置 / 禁用后旧令牌失效（§4.7）。
+	if err != nil {
+		// epoch 读取链故障被压成 401，不得无痕（REST 域无 Connect 拦截链）。
+		logx.Error(ctx, "oidc: userinfo epoch read failed",
+			"step", "read_epoch", "error", logx.RedactText(err.Error()))
+		return nil, nil, newOAuthError(401, "invalid_token", "access token epoch is stale")
+	}
+	if epoch != claims.Epoch {
+		// epoch 不一致 = 改密 / 重置 / 禁用后旧令牌失效（§4.7，业务预期）。
 		return nil, nil, newOAuthError(401, "invalid_token", "access token epoch is stale")
 	}
 	user, err := s.Users.FindByID(ctx, claims.Sub)
-	if err != nil || user == nil {
+	if err != nil {
+		// 未命中行属业务预期；DB 故障被压成 401 须单独记。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logx.Error(ctx, "oidc: userinfo user lookup failed",
+				"step", "find_user", "error", logx.RedactText(err.Error()))
+		}
+		return nil, nil, newOAuthError(401, "invalid_token", "user not found")
+	}
+	if user == nil {
 		return nil, nil, newOAuthError(401, "invalid_token", "user not found")
 	}
 	return user, claims, nil
@@ -192,10 +210,12 @@ func decodeExtra(raw []byte) *structpb.Struct {
 	}
 	var m map[string]interface{}
 	if err := msgpack.Unmarshal(raw, &m); err != nil {
+		slog.Warn("oidc: decode extra failed", "step", "msgpack", "error", err)
 		return nil
 	}
 	out, err := structpb.NewStruct(m)
 	if err != nil {
+		slog.Warn("oidc: build extra struct failed", "step", "structpb", "error", err)
 		return nil
 	}
 	return out

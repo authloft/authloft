@@ -7,7 +7,7 @@
 //
 // 解码 / 校验复用 session.Tokens.Parse + Verifier.Verify（§11.1 四步，
 // 不新造第二套）；令牌取值优先级 X-Authloft-Token Header → Cookie
-//（取值顺序而非失败回退，口径同 connect 会话拦截器 §1.2 行 120）。
+// （取值顺序而非失败回退，口径同 connect 会话拦截器 §1.2 行 120）。
 package gateway
 
 import (
@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"authloft/internal/logx"
 	"authloft/internal/session"
 )
 
@@ -29,11 +30,11 @@ const sessionTokenHeader = "X-Authloft-Token"
 // X-Session-* 响应头（§6 行 1354-1359「部分字段例，详见
 // SessionTokenPayload」；头名 = X-Session- + payload 字段名大写，SDK-init
 // §4.1 行 62：id = 用户 ID、sid = 会话 ID）。HTTP 字段名大小写不敏感
-//（RFC 9110 §5.1），net/http 写出时按 canonical MIME 形式呈现（如
+// （RFC 9110 §5.1），net/http 写出时按 canonical MIME 形式呈现（如
 // X-Session-AMR → X-Session-Amr），消费方按大小写不敏感读取（SDK 即如此）。
 const (
 	headerStatus = "X-Session-Status" // valid / invalid（§6 行 1356）
-	headerID     = "X-Session-ID"    // payload.id（用户 ID）
+	headerID     = "X-Session-ID"     // payload.id（用户 ID）
 	headerEpoch  = "X-Session-Epoch"  // payload.epoch（用户安全版本号）
 	headerAMR    = "X-Session-AMR"    // payload.amr（逗号分隔，§6 行 1359）
 	headerSID    = "X-Session-SID"    // payload.sid（会话 ID）
@@ -77,7 +78,7 @@ type handler struct {
 // decode `ANY /api/gateway/decode`（§6 行 1350-1361）：恒 200、纯响应头、
 // 无响应体。无 / 篡改 / 过期 / epoch 不一致的令牌一律 X-Session-Status:
 // invalid，不携带其余字段头；唯一非 200 出口是 epoch 读取链基础设施故障
-//（verify.go 行 27-29 口径：不得与未登录混同）→ 500 空体。
+// （verify.go 行 27-29 口径：不得与未登录混同）→ 500 空体。
 func (h *handler) decode(c *gin.Context) {
 	tok := h.pickToken(c)
 	if tok == "" {
@@ -95,7 +96,11 @@ func (h *handler) decode(c *gin.Context) {
 	default:
 		// epoch 读取链故障（Redis 与回源均失败，verify.go 行 64-67）：
 		// 基础设施错误不得误判为登出态，按豁免端点原生最小形态 500 空体
-		// 拒绝（口径同 connect 会话拦截器 internal 错误分支）。
+		// 拒绝（口径同 connect 会话拦截器 internal 错误分支）。本域是 gin
+		// REST 端点、不在 Connect 错误日志拦截链内，且响应无错误体，必须
+		// 就地留痕；只记错误文本，不记令牌串。
+		logx.Error(c.Request.Context(), "gateway: session verify infra failure",
+			"step", "verify", "error", logx.RedactText(err.Error()))
 		c.Status(http.StatusInternalServerError)
 		return
 	}

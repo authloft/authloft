@@ -30,6 +30,10 @@ const jpegQuality = 75
 func CompressJPEG(body []byte) ([]byte, error) {
 	img, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
+		// 上游下发的不是可解码图片（压缩降级为原样透传，不改变拉码成败）；
+		// 降级本身要留痕，否则上游格式异常无任何痕迹。
+		slog.Warn("qrcode: decode image failed, skip compression",
+			"step", "decode_image", "error", err)
 		return body, nil
 	}
 	var out bytes.Buffer

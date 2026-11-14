@@ -342,6 +342,14 @@ func NewRPCHMACInterceptor(nonces NonceStorer, lookup SecretLookup) connect.Unar
 			}
 			raw, ok := ctx.Value(rawBodyKey{}).([]byte)
 			if !ok {
+				// 装配层漏挂 CaptureRawBody：属装配 / 配置故障，不是客户端错误，
+				// 且没有原始 err 可挂进错误链——统一日志拦截器只能看到
+				// "internal error"，必须在此单独留痕。只记 procedure / client_id。
+				logx.Error(ctx, "connect: rpc raw body missing",
+					"procedure", req.Spec().Procedure,
+					"client_id", clientID,
+					"error", "raw request body not captured (CaptureRawBody not mounted)",
+				)
 				return nil, connect.NewError(connect.CodeInternal, errInternal)
 			}
 			mac := hmac.New(sha256.New, []byte(secret))
@@ -422,7 +430,7 @@ func NewErrorLogInterceptor() connect.UnaryInterceptorFunc {
 				logx.Error(ctx, "connect: request failed",
 					"procedure", req.Spec().Procedure,
 					"code", code.String(),
-					"error", logx.RedactText(rootCause(err).Error()),
+					"error", logx.RedactText(errorDetail(err)),
 				)
 			}
 			return resp, err
@@ -430,15 +438,46 @@ func NewErrorLogInterceptor() connect.UnaryInterceptorFunc {
 	}
 }
 
-// rootCause 沿 Unwrap 链取最内层错误：connect.Error 与 sanitizedError 的在线
-// 文案都是固定的 "internal error"，原始错误只留在链里（connect-go
-// error.go:216 的 Error.Unwrap 返回 underlying error）。
-func rootCause(err error) error {
-	for {
-		next := errors.Unwrap(err)
-		if next == nil {
-			return err
-		}
-		err = next
+// errorDetail 沿 Unwrap 链收集各层错误文本，拼成可排障的错误详情。
+//
+// 为什么不能只取最内层（旧 rootCause 做法）：
+//   - connect.Error 的 Error() 是 "internal: internal error"，sanitizedError
+//     是固定的 "internal error"，两者都无信息量；
+//   - service 层大量使用 fmt.Errorf("%w: ...: %v", Sentinel, err)，
+//     真根因只写在**最外层文本**里，Unwrap 链却指向哨兵
+//     （如 "account mfa: failed"）——取最内层会把 DB / Redis 故障丢干净；
+//   - 取最外层又可能漏掉链上独立的上下文。故收集全链文本，剔除被更长的
+//     文本包含的冗余项后再拼接；对多 %w 包装（Unwrap() []error）链只有一层，
+//     其 Error() 本身已含全部信息。
+//
+// 本函数只用于服务端日志，与响应体消毒无关；调用方仍须经 logx.RedactText。
+func errorDetail(err error) string {
+	if err == nil {
+		return ""
 	}
+	var parts []string
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		s := strings.TrimSpace(e.Error())
+		if s == "" || s == errInternal.Error() || s == "internal: "+errInternal.Error() {
+			continue
+		}
+		parts = append(parts, s)
+	}
+	var kept []string
+	for i, s := range parts {
+		covered := false
+		for j, t := range parts {
+			if i != j && len(t) > len(s) && strings.Contains(t, s) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			kept = append(kept, s)
+		}
+	}
+	if len(kept) == 0 {
+		return err.Error()
+	}
+	return strings.Join(kept, " <- ")
 }
