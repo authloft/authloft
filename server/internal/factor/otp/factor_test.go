@@ -485,3 +485,43 @@ func TestVerifyRegisterNoUserLookup(t *testing.T) {
 		t.Fatalf("Verify = %+v, want passed with uid=0（register 未建号）", res)
 	}
 }
+
+// TestVerifyExhaustedIgnoresUpstreamAttemptsLeft 上游 cache 层误带非零
+// AttemptsLeft 时，尝试超限态仍不携带剩余次数：以同一非零输入设错码对照，
+// 证明「不带」来自失败口径本身（otp/factor.go:218、otp/code.go:187），
+// 而非输入恰好为零值。
+func TestVerifyExhaustedIgnoresUpstreamAttemptsLeft(t *testing.T) {
+	const misreported int64 = 5
+	cases := []struct {
+		name     string
+		outcome  cache.VerifyResult
+		wantStat string
+		wantLeft int64
+	}{
+		{"尝试超限：上游误带 5 仍不携带", cache.VerifyExhausted, StatusTooManyAttempts, 0},
+		{"错码对照：同一上游 5 必须携带", cache.VerifyMismatch, StatusInvalidCode, misreported},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, st, _ := newFactor(t, factor.FactorOTPSMS)
+			st.verifyResult = tc.outcome
+			st.attemptsLeft = misreported
+			ctx := &factor.FactorContext{
+				Context: context.Background(),
+				Login: &token.LoginTokenPayload{
+					Tid: "sess-1", Flow: "login", Passed: []string{"password"},
+					Ch: &token.Challenge{Purpose: "login", Target: "13800000000"},
+				},
+				Payload: &factor.Payload{Code: "123456"},
+				Users:   fakeUsers{byPhone: &model.User{ID: 7}},
+			}
+			res, err := f.Verify(ctx)
+			if err != nil {
+				t.Fatalf("Verify: %v", err)
+			}
+			if res.Status != tc.wantStat || res.AttemptsLeft != tc.wantLeft {
+				t.Fatalf("Verify = %+v, want %s/%d", res, tc.wantStat, tc.wantLeft)
+			}
+		})
+	}
+}

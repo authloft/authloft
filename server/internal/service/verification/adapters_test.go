@@ -3,11 +3,13 @@ package verification
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gorm.io/gorm"
 
 	"authloft/internal/factor"
+	factorotp "authloft/internal/factor/otp"
 	"authloft/internal/repo/model"
 	"authloft/internal/service/mfapolicy"
 )
@@ -104,5 +106,69 @@ func TestBoundWhitelistRecoveryCodeOnlyYieldsNoCandidates(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("候选集 = %v, want 空（白名单只写 recovery_code 不得放行）", got)
+	}
+}
+
+// TestStepUpVerifierAlignsUpstreamFailureCodes 把上游因子层失败口径与二次
+// 验证透传逐项对齐：
+//   - 上游 otp/factor.go:216 CheckMismatch → invalid_code 且携带 >0 剩余次数；
+//     :218 CheckExhausted → too_many_attempts 且不带剩余次数。
+//   - verification/adapters.go:211-217 把 Status 投影成 Code（白名单即 §1.6
+//     封闭集成员）并原样透传 AttemptsLeft；submit.go:126 再透传到领域 Error；
+//     orchestrator/engine.go:530 以 >0 判定是否携带响应字段。
+//
+// 断言上游「仅 invalid_code 携带剩余次数」的口径经投影后不变形；上游状态
+// 常量一旦脱离封闭集，白名单核对即不成立。
+func TestStepUpVerifierAlignsUpstreamFailureCodes(t *testing.T) {
+	whitelist := map[string]bool{
+		"invalid_code":      true,
+		"code_expired":      true,
+		"too_many_attempts": true,
+		"method_disabled":   true,
+		"invalid_request":   true,
+	}
+	cases := []struct {
+		name           string
+		upstreamStatus string
+		upstreamLeft   int64
+		wantCode       string
+		wantLeft       int64
+	}{
+		{"CheckMismatch：invalid_code 携带次数", factorotp.StatusInvalidCode, 3, "invalid_code", 3},
+		{"CheckExhausted：too_many_attempts 不带次数", factorotp.StatusTooManyAttempts, 0, "too_many_attempts", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !whitelist[tc.upstreamStatus] {
+				t.Fatalf("上游状态 %q 不在投影白名单，口径会变形", tc.upstreamStatus)
+			}
+			reg := factor.NewRegistry()
+			if err := reg.Register(factor.FactorTOTP, &stubVerifyFactor{
+				res: &factor.VerifyResult{Status: tc.upstreamStatus, AttemptsLeft: tc.upstreamLeft},
+			}); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			got, err := NewStepUpVerifier(reg, nil, nil).Verify(context.Background(), FactorVerifyInput{
+				Method: "totp", BizPurpose: BizPurposeMFA,
+				Subject: Subject{Kind: SubjectKindUID, ID: "42"}, ChallengeID: "n1",
+			})
+			if err != nil {
+				t.Fatalf("Verify: %v", err)
+			}
+			if got.Code != tc.wantCode || got.AttemptsLeft != tc.wantLeft {
+				t.Fatalf("投影结论 = %+v, want %s/%d（与上游口径失配）", got, tc.wantCode, tc.wantLeft)
+			}
+			if (got.AttemptsLeft > 0) != (got.Code == factorotp.StatusInvalidCode) {
+				t.Fatalf("携带口径变形：Code=%s AttemptsLeft=%d", got.Code, got.AttemptsLeft)
+			}
+			wrapped := failureWithAttempts(got.Code, got.AttemptsLeft)
+			var ve *Error
+			if !errors.As(wrapped, &ve) {
+				t.Fatalf("透传错误 = %v, want *Error", wrapped)
+			}
+			if ve.Code != got.Code || ve.AttemptsLeft != got.AttemptsLeft {
+				t.Fatalf("Error = %+v, 与投影结论不一致", ve)
+			}
+		})
 	}
 }

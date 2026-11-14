@@ -580,3 +580,68 @@ func TestSubmitMapsLoginTokenFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestFailureCauseShapesKeepCodeContract 核对 failure 链在 cause 被包装或
+// 保留时，§1.6 错误码封闭集与调用方按 Code 映射的行为均不变：cause 只
+// 参与 errors.Is / Unwrap 链，不参与 Code，也不渗入调用方可见的 Error() 文本。
+func TestFailureCauseShapesKeepCodeContract(t *testing.T) {
+	closed := map[string]bool{
+		"invalid_code":          true,
+		"code_expired":          true,
+		"too_many_attempts":     true,
+		"too_many_requests":     true,
+		"method_disabled":       true,
+		"verification_required": true,
+		"verification_invalid":  true,
+		"invalid_request":       true,
+		"token_invalid":         true,
+		"token_expired":         true,
+	}
+	sentinel := errors.New("upstream cause")
+	cases := []struct {
+		name   string
+		build  func() error
+		code   string
+		wantIs bool
+	}{
+		{"cause 为 nil（errors.New(code)）", func() error {
+			return failure("invalid_code", nil)
+		}, "invalid_code", false},
+		{"cause 被 fmt.Errorf 包装并保留", func() error {
+			return failure("invalid_code", fmt.Errorf("wrap: %w", sentinel))
+		}, "invalid_code", true},
+		{"failureWithAttempts 自带 cause", func() error {
+			return failureWithAttempts("invalid_code", 3)
+		}, "invalid_code", false},
+		{"failureRetry 自带 cause", func() error {
+			return failureRetry("too_many_requests", 60)
+		}, "too_many_requests", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !closed[tc.code] {
+				t.Fatalf("基准码 %q 不在 §1.6 封闭集", tc.code)
+			}
+			err := tc.build()
+			var ve *Error
+			if !errors.As(err, &ve) {
+				t.Fatalf("err = %v, want *Error", err)
+			}
+			if ve.Code != tc.code {
+				t.Fatalf("Code = %s, want %s（cause 不得改写错误码）", ve.Code, tc.code)
+			}
+			if !closed[ve.Code] {
+				t.Fatalf("Code = %s 越出 §1.6 封闭集", ve.Code)
+			}
+			if got := errorCode(t, err); got != tc.code {
+				t.Fatalf("errorCode = %s, want %s", got, tc.code)
+			}
+			if want, got := "verification: "+tc.code, err.Error(); got != want {
+				t.Fatalf("Error() = %q, want %q（cause 不得渗入调用方可见文本）", got, want)
+			}
+			if got := errors.Is(err, sentinel); got != tc.wantIs {
+				t.Fatalf("errors.Is(sentinel) = %v, want %v", got, tc.wantIs)
+			}
+		})
+	}
+}
