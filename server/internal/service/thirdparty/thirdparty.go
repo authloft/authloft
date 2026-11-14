@@ -506,7 +506,10 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 	}
 	id := in.TicketID
 
-	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
+	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{
+		Code:        in.Code,
+		RedirectURI: s.redirectURI(in.ProviderKey),
+	})
 	if err != nil {
 		return s.ticketFail(ctx, id, snap, orchestrator.StatusFailed)
 	}

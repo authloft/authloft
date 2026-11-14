@@ -381,3 +381,38 @@ func TestProviderErrorNoCredential(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestExchangePostFormRedirectURI 覆盖所有委托 ExchangePostForm 的渠道：
+// 授权请求携带回调地址时，令牌交换表单必须携带同值；未携带时不得凭空补出。
+func TestExchangePostFormRedirectURI(t *testing.T) {
+	const want = "https://app.example.com/sso/oauth/callback/gitee"
+	var gotForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse form: %v", err)
+		}
+		gotForm = r.Form
+		fmt.Fprint(w, `{"access_token":"at-1","expires_in":3600}`)
+	}))
+	defer srv.Close()
+
+	if _, err := ExchangePostForm(context.Background(), nil, srv.URL, "cid", "secret",
+		provider.ExchangeInput{Code: "c-1", RedirectURI: want}, nil, nil); err != nil {
+		t.Fatalf("ExchangePostForm: %v", err)
+	}
+	if gotForm.Get("redirect_uri") != want {
+		t.Errorf("form redirect_uri = %q, want %q", gotForm.Get("redirect_uri"), want)
+	}
+	if gotForm.Get("grant_type") != "authorization_code" || gotForm.Get("code") != "c-1" {
+		t.Errorf("form = %v", gotForm)
+	}
+
+	gotForm = nil
+	if _, err := ExchangePostForm(context.Background(), nil, srv.URL, "cid", "secret",
+		provider.ExchangeInput{Code: "c-1"}, nil, nil); err != nil {
+		t.Fatalf("ExchangePostForm (no redirect): %v", err)
+	}
+	if gotForm.Has("redirect_uri") {
+		t.Errorf("未传 RedirectURI 时不应携带该字段, form = %v", gotForm)
+	}
+}

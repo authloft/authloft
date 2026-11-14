@@ -608,6 +608,7 @@ func buildVerification(deps *assembled, registry *factor.Registry, users *repo.U
 func buildAccountServices(deps *assembled, users *repo.UserRepo, creds *repo.CredentialRepo,
 	webauthnRepo *repo.WebauthnRepo, env *factorEnv,
 	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+	rootOrigin string,
 ) {
 	// account 域三方绑定族 service（§12.6 / §3.7）：绑定内核两通道共用，ticket
 	// 结果读写与 thirdparty / qrcode 共用同一 TicketStore 实例。
@@ -621,6 +622,7 @@ func buildAccountServices(deps *assembled, users *repo.UserRepo, creds *repo.Cre
 		TicketCodec: deps.codecs.Ticket,
 		CookieCodec: deps.codecs.Cookie,
 		Audit:       eventlog.NewWriter(deps.queue),
+		RootOrigin:  rootOrigin,
 	})
 
 	// account 域通行密钥族 service（§3.6 / §8.3）：注册内核复用 webauthn 因子同一实例。
@@ -707,7 +709,8 @@ func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	deps.qrcode = buildQRCode(deps, core, tickets, ticketPayloads)
 	deps.loginTicket = buildLoginTicket(deps, users, creds, core, tickets, ticketPayloads)
 	deps.verification = buildVerification(deps, env.registry, users, creds, core)
-	buildAccountServices(deps, users, creds, webauthnRepo, env, tickets, ticketPayloads)
+	buildAccountServices(deps, users, creds, webauthnRepo, env, tickets, ticketPayloads,
+		cfg.Authloft.Root)
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
 		State:      core.state,

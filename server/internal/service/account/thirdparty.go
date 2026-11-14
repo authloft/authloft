@@ -122,6 +122,9 @@ type Deps struct {
 	Audit AuditSink
 	// Metas 渠道注册表枚举（available 数据源）；nil = 全局注册表（各渠道 init 自注册）。
 	Metas func() []provider.Meta
+	// RootOrigin 回调地址拼装基准 {root}/sso/oauth/callback/{provider_key}，
+	// 与授权请求 BuildAuthURL 使用的基准同源。未注入时令牌交换不携带该参数。
+	RootOrigin string
 	// Now 时钟注入（缺省 time.Now）。
 	Now func() time.Time
 }
@@ -139,6 +142,16 @@ func NewThirdpartyService(d Deps) *ThirdpartyService {
 		now = time.Now
 	}
 	return &ThirdpartyService{deps: d, now: now}
+}
+
+// redirectURI 令牌交换携带的回调地址，必须与授权请求里的逐字一致：
+// OAuth 规范以此为校验项，Gitee 等渠道缺该参数会直接返回 401
+// invalid_request。root 去尾斜杠归一，与授权 URL 的拼装保持同源。
+func (s *ThirdpartyService) redirectURI(providerKey string) string {
+	if s.deps.RootOrigin == "" {
+		return ""
+	}
+	return strings.TrimSuffix(s.deps.RootOrigin, "/") + "/sso/oauth/callback/" + providerKey
 }
 
 // compile 时断言生产实现满足各窄接口（签名漂移在编译期暴露）。
@@ -442,7 +455,10 @@ func (s *ThirdpartyService) ThirdpartyOauth(ctx context.Context, in OauthInput) 
 	}
 
 	// ③现算身份（Exchange / FetchUser）；上游故障 ErrFailed 由 handler 映射 internal。
-	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{Code: in.Code})
+	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{
+		Code:        in.Code,
+		RedirectURI: s.redirectURI(in.ProviderKey),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: exchange: %w", ErrFailed, err)
 	}

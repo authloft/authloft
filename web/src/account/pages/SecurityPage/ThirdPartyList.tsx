@@ -138,7 +138,7 @@ function UnbindAction(props: {
       title={t('account.unbindConfirm', { name: row.displayName })}
       onConfirm={() => props.onUnbind(row.providerKey, row.displayName)}
     >
-      <Button size="small" type="danger" loading={unbinding}>
+      <Button type="danger" loading={unbinding}>
         {t('account.unbindAction')}
       </Button>
     </Popconfirm>

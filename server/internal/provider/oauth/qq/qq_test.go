@@ -41,7 +41,8 @@ func TestExchange(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("client_id") != "qq-id" || q.Get("client_secret") != "qq-secret" ||
-			q.Get("code") != "qq-code" || q.Get("grant_type") != "authorization_code" {
+			q.Get("code") != "qq-code" || q.Get("grant_type") != "authorization_code" ||
+			q.Get("redirect_uri") != "https://app/cb" {
 			t.Errorf("query = %v", q)
 		}
 		fmt.Fprint(w, "access_token=qq-at&expires_in=7776000&refresh_token=qq-rt")

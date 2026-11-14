@@ -204,6 +204,7 @@ type fakeAdapter struct {
 	channel     provider.ThirdPartyChannel
 	identity    *provider.ExternalIdentity
 	exchangeErr error
+	exchangeIn  provider.ExchangeInput
 }
 
 func (a *fakeAdapter) Channel() provider.ThirdPartyChannel { return a.channel }
@@ -212,7 +213,8 @@ func (a *fakeAdapter) BuildAuthURL(*provider.AuthContext) (string, error) {
 	return "", errors.New("not supported")
 }
 
-func (a *fakeAdapter) Exchange(context.Context, provider.ExchangeInput) (*provider.Token, error) {
+func (a *fakeAdapter) Exchange(_ context.Context, in provider.ExchangeInput) (*provider.Token, error) {
+	a.exchangeIn = in
 	if a.exchangeErr != nil {
 		return nil, a.exchangeErr
 	}
@@ -330,6 +332,7 @@ func newEnv(t *testing.T) *env {
 		Audit:       e.audit,
 		Metas:       e.metas,
 		Now:         func() time.Time { return e.now },
+		RootOrigin:  "https://auth.example",
 	})
 	return e
 }
@@ -921,5 +924,38 @@ func TestBindToCurrentUser(t *testing.T) {
 	e.binds.findErr = errors.New("db down")
 	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity); out != nil || fail != orchestrator.StatusFailed {
 		t.Errorf("查询故障 → (%+v, %q), want failed", out, fail)
+	}
+}
+
+// 绑定通道令牌交换必须携带与授权请求一致的回调地址，否则 Gitee 等渠道
+// 会以 401 invalid_request 拒绝。
+func TestThirdpartyOauthPassesRedirectURI(t *testing.T) {
+	const uid = 10086
+	state := "b" + "0123456789abcdef0123456789abcdef"
+	e := newEnv(t)
+	in := OauthInput{
+		ProviderKey: "qq",
+		Code:        "code-1",
+		State:       state,
+		StateCookie: e.sealLoginState(t, state, uid),
+		UID:         uid,
+	}
+	if _, err := e.svc.ThirdpartyOauth(context.Background(), in); err != nil {
+		t.Fatalf("ThirdpartyOauth: %v", err)
+	}
+	if want := "https://auth.example/sso/oauth/callback/qq"; e.adapter.exchangeIn.RedirectURI != want {
+		t.Errorf("ExchangeInput.RedirectURI = %q, want %q", e.adapter.exchangeIn.RedirectURI, want)
+	}
+	if got := e.adapter.exchangeIn.Code; got != "code-1" {
+		t.Errorf("ExchangeInput.Code = %q, want code-1", got)
+	}
+
+	// root 未注入时不携带该字段，保持装配裁剪场景的既有行为。
+	e.svc.deps.RootOrigin = ""
+	if _, err := e.svc.ThirdpartyOauth(context.Background(), in); err != nil {
+		t.Fatalf("ThirdpartyOauth (no root): %v", err)
+	}
+	if got := e.adapter.exchangeIn.RedirectURI; got != "" {
+		t.Errorf("root 未注入时 RedirectURI = %q, want empty", got)
 	}
 }

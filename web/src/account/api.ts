@@ -606,6 +606,7 @@ export async function registerWebauthnCredential(
     );
     return { ok: true };
   } catch (err) {
+    console.error(err);
     return {
       ok: false,
       cancelled: err instanceof DOMException && err.name === 'NotAllowedError',
