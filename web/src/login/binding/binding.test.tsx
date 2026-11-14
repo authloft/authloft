@@ -1,7 +1,16 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, rs, test } from 'rstack/test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  rs,
+  test,
+} from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 login-container.test.tsx / register-reset.test.tsx
@@ -11,7 +20,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { create } from '@bufbuild/protobuf';
-import { clearLoginToken, getLoginToken, setLoginToken } from '../loginTokenStore';
+import {
+  clearLoginToken,
+  getLoginToken,
+  setLoginToken,
+} from '../loginTokenStore';
 import {
   BindingSchema,
   LoginFlowResponseSchema,
@@ -76,21 +89,22 @@ function envelope(init: Record<string, unknown>): LoginFlowResponse {
 
 function renderChoice(allowSignup: boolean, displayName = 'QQ'): string {
   return renderToStaticMarkup(
-    createElement(
-      choiceMod.BindingChoice,
-      {
-        displayName,
-        allowSignup,
-        onCreateAccount: () => {},
-        onExit: () => {},
-      } as never,
-    ),
+    createElement(choiceMod.BindingChoice, {
+      displayName,
+      allowSignup,
+      onCreateAccount: () => {},
+      onExit: () => {},
+    } as never),
   );
 }
 
 function viewProps(init: Record<string, unknown>): Record<string, unknown> {
   return {
-    binding: binding({ providerKey: 'qq', displayName: 'QQ', allowSignup: true }),
+    binding: binding({
+      providerKey: 'qq',
+      displayName: 'QQ',
+      allowSignup: true,
+    }),
     choice: 'choice',
     username: '',
     loading: false,
@@ -167,7 +181,10 @@ describe('BindingPageView 状态帧', () => {
   test('success 帧：建号完成跳转中文案（§10.3 行 1547）', () => {
     const markup = renderView({
       status: 'success',
-      envelope: envelope({ status: 'success', redirectTo: 'https://app.test/home' }),
+      envelope: envelope({
+        status: 'success',
+        redirectTo: 'https://app.test/home',
+      }),
     });
     expect(markup).toContain('账号创建成功，正在跳转');
   });
@@ -251,8 +268,8 @@ describe('createAccountPayload / BINDING_REGISTER_METHOD（§2.7.5 行 660-672�
     expect('password' in payload).toBe(false);
   });
 
-  test('method 取登录域三方方式名 thirdparty（见 BindingPage 文件头）', () => {
-    expect(pagesMod.BINDING_REGISTER_METHOD).toBe('thirdparty');
+  test('method 取注册方式名 password（见 BindingPage 文件头）', () => {
+    expect(pagesMod.BINDING_REGISTER_METHOD).toBe('password');
   });
 });
 
@@ -289,7 +306,7 @@ describe('免密建号 wire 契约（msw 拦截 SsoService/Register）', () => {
     });
     expect(env.status).toBe('success');
     expect(JSON.parse(raw)).toEqual({
-      method: 'thirdparty',
+      method: 'password',
       step: 'set_password',
       payload: { username: 'alice_01' },
       loginToken: 'lt-bind',

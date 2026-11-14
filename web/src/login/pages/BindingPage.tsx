@@ -17,9 +17,9 @@
  *   location.replace 到 /sso/login（§2.7.5 行 661，exitBinding）。
  *
  * 信封 binding 的 nickname / avatarUrl 本实现不渲染（§4.4 行 466-468 未规定
- * 用场，视觉完善归后续样式实现）。免密建号请求的 method 取值文档未显式规定
- * （§2.3 方式白名单不覆盖三方路径），取登录域三方方式名 'thirdparty'
- * （服务端按 login_token.tp 判定免密建号，§2.7.5 行 667-672）。
+ * 用场，视觉完善归后续样式实现）。免密建号请求的 method 取 'password'：
+ * 仍走 SsoService/Register 的 set_password 步（§2.3 注册方式），与三方来源
+ * 无关；服务端按 login_token.tp 判定免密建号、忽略请求中的 password（§2.7.5）。
  *
  * 文案：绑定页专属（身份行 / 按钮名 / 成功提示）经 i18n 字典 login.* 键取用。
  */
@@ -52,11 +52,11 @@ import styles from './BindingPage.module.less';
 // ---------------------------------------------------------------------------
 
 /**
- * 免密建号请求的 method 取值（见文件头）：绑定中间态由三方
- * 登录进入（信封 binding.providerKey 标识来源），登录域方式名为 thirdparty；
- * 服务端按 login_token.tp 判定免密建号（§2.7.5 行 667-672）。
+ * 免密建号请求的 method 取值（见文件头）：复用注册链路的 password 方式名，
+ * 与三方来源无关；服务端按 login_token.tp 判定免密建号、忽略请求中的
+ * password（§2.7.5）。
  */
-export const BINDING_REGISTER_METHOD = 'thirdparty';
+export const BINDING_REGISTER_METHOD = 'password';
 
 /** RegisterPayload 的 init 形状（login/api.ts 的 RegisterInput.payload）。 */
 type RegisterPayloadInit = NonNullable<RegisterInput['payload']>;
@@ -148,13 +148,11 @@ export function BindingPageView({
   const resolution = isFlowErrorStatus(status)
     ? resolveFlowStatus(status)
     : undefined;
-  // §1.6「可重试 = 否」的失败态禁用提交（表单保留原地，不隐藏）。
-  const submitDisabled = resolution !== undefined && !resolution.retryable;
   const error = envelope?.error;
 
   const submitCreate = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!loading && !submitDisabled) {
+    if (!loading) {
       onSubmitAccount();
     }
   };
@@ -181,11 +179,7 @@ export function BindingPageView({
               </p>
             )}
           </div>
-          <button
-            type="submit"
-            disabled={loading || submitDisabled}
-            className={styles.submit}
-          >
+          <button type="submit" disabled={loading} className={styles.submit}>
             {t('login.createAccount')}
           </button>
         </form>
