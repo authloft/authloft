@@ -2,7 +2,7 @@
 // Gate.Evaluate 返回的当前生效配置必须随哨兵错误透出（§9.1 同源），且
 // errors.Is 仍可判别原哨兵。把断言取反（Config 不等于 gate 输出 / 错误
 // 不携带配置 / 三字段为空）即可失败。
-package service
+package qrcode
 
 import (
 	"context"

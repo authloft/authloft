@@ -12,6 +12,8 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	qrcodesvc "authloft/internal/service/qrcode"
+	ticketsvc "authloft/internal/service/ticket"
 )
 
 // LoginDefault 把 SsoService/LoginDefault 请求消息转换为编排引擎入参
@@ -123,11 +125,11 @@ func LoginOauth(req *ssov1.LoginOauthRequest) service.OauthInput {
 // （docs/接口文档.md §2.8 行 707-717）：provider_key / scene 直映；captcha
 // 转 captcha.Submission（§2.5 统一提交格式，与引擎侧 CaptchaPayload 字段
 // 同名）。UID 由 handler 从会话 ctx 取（bind 场景），dto 不读 HTTP 层。
-func CreateQrcode(req *ssov1.CreateQrcodeRequest) service.CreateQrcodeInput {
+func CreateQrcode(req *ssov1.CreateQrcodeRequest) qrcodesvc.CreateQrcodeInput {
 	if req == nil {
-		return service.CreateQrcodeInput{}
+		return qrcodesvc.CreateQrcodeInput{}
 	}
-	return service.CreateQrcodeInput{
+	return qrcodesvc.CreateQrcodeInput{
 		ProviderKey: req.GetProviderKey(),
 		Scene:       req.GetScene(),
 		Captcha:     captchaSubmission(req.GetCaptcha()),
@@ -137,11 +139,11 @@ func CreateQrcode(req *ssov1.CreateQrcodeRequest) service.CreateQrcodeInput {
 // GetLoginTicket 把 SsoService/GetLoginTicket 请求消息转换为扫码 service
 // 入参（docs/接口文档.md §2.8 行 724-729）：ticket / poll 直映；oidc 复用
 // LoginDefault 的映射（§2.8 行 867，扫码 step-up 时回传 OIDC 上下文）。
-func GetLoginTicket(req *ssov1.GetLoginTicketRequest) service.GetLoginTicketInput {
+func GetLoginTicket(req *ssov1.GetLoginTicketRequest) qrcodesvc.GetLoginTicketInput {
 	if req == nil {
-		return service.GetLoginTicketInput{}
+		return qrcodesvc.GetLoginTicketInput{}
 	}
-	return service.GetLoginTicketInput{
+	return qrcodesvc.GetLoginTicketInput{
 		Ticket: req.GetTicket(),
 		Poll:   req.GetPoll(),
 		OIDC:   oidc(req.GetOidc()),
@@ -153,11 +155,11 @@ func GetLoginTicket(req *ssov1.GetLoginTicketRequest) service.GetLoginTicketInpu
 // sessionUID 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。写入状态
 // success / mfa_pending 不在此层决定，由写票 service 按目标用户的二次验证
 // 启用状态自行判定（§2.8、§11.6.5），本层只负责主体凭证投影。
-func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) service.WriteTicketInput {
+func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) ticketsvc.WriteTicketInput {
 	if req == nil {
-		return service.WriteTicketInput{}
+		return ticketsvc.WriteTicketInput{}
 	}
-	return service.WriteTicketInput{
+	return ticketsvc.WriteTicketInput{
 		TicketID:   req.GetTicketId(),
 		Session:    req.GetSession(),
 		SessionUID: sessionUID,

@@ -106,7 +106,9 @@ import (
 	adminsvc "authloft/internal/service/admin"
 	eventlogsvc "authloft/internal/service/eventlog"
 	"authloft/internal/service/orchestrator"
+	qrcodesvc "authloft/internal/service/qrcode"
 	sessionsvc "authloft/internal/service/session"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
@@ -211,12 +213,12 @@ type assembled struct {
 	// 构造（复用 State / Terminal / provider Loader / captcha Gate），经
 	// cache.TicketStore 读写 al:ticket（sealer = protojson 整值加密，
 	// §11.6.5），registerSSO 注入 SsoService handler。
-	qrcode *service.QRCode
+	qrcode *qrcodesvc.QRCode
 
 	// loginTicket 统一写票 service（§2.8）：ConfirmLoginTicket 与
 	// LoginOauth 扫码分支共用，复用同一 al:ticket 结果读写 / 快照 /
 	// 登录过程态 / 会话校验单例，registerSSO 注入 SsoService handler。
-	loginTicket *service.LoginTicket
+	loginTicket *ticketsvc.LoginTicket
 
 	// accountThirdparty account 域三方绑定族 service（§12.6 绑定内核 /
 	// 接口文档 §3.7）：buildEngine 内构造（复用 provider Loader / cache.TicketStore
@@ -514,8 +516,8 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	//（al:ticket:payload 快照）与下方扫码域共用同一实例（同一
 	// sign_key.ticket 密钥与封装）。挂入 assembled 供 registerSSO 注入
 	// handler，SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
-	tickets := cache.NewTicketStore(deps.rdb, service.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
-	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, service.NewTicketPayloadSealer(deps.codecs.Ticket))
+	tickets := cache.NewTicketStore(deps.rdb, ticketsvc.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
+	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, ticketsvc.NewTicketPayloadSealer(deps.codecs.Ticket))
 	deps.thirdparty = service.NewThirdparty(service.ThirdpartyDeps{
 		Loader:         deps.providerLoader,
 		Binds:          repo.NewBindRepo(deps.db),
@@ -543,7 +545,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// combinedExecutor，§13.3）；Confirm 会话校验复用共享单例
 	// sessionTokens / epochStore（与 sso 拦截器同源）。挂入 assembled 供
 	// registerSSO 注入 handler。
-	deps.qrcode = service.NewQRCode(service.QRCodeDeps{
+	deps.qrcode = qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{
 		Loader:         deps.providerLoader,
 		NewAdapter:     provider.NewAdapter,
 		Gate:           deps.gate,
@@ -561,7 +563,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// 单例；按目标用户的二次验证启用状态自行判定写 success / mfa_pending。
 	// Users / Settings / Credentials 与三方登录共用同一用户 / 凭据 / 开关
 	// 源，判定口径一致（§2.8、§11.6.5）。
-	deps.loginTicket = service.NewLoginTicket(service.LoginTicketDeps{
+	deps.loginTicket = ticketsvc.NewLoginTicket(ticketsvc.LoginTicketDeps{
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
 		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),

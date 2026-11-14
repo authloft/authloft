@@ -4,7 +4,7 @@
 // 主体校验、票据快照校验、写票失败与 MFA 判定依赖故障 fail-closed。
 // 全部走 fake，不连 DB / Redis；loginToken 的签发 / 解析与生产同源，共用
 // 同一 State；MFA 判定复用与三方登录同口径的用户 / 凭据 / 开关 fake。
-package service
+package ticket
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func newLTEnv(t *testing.T) *ltEnv {
 	payloads := &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}}
 	// 一份合法 login-scene 快照（CreateQrcode 写入的形态，§11.6.4）。
 	payloads.snapshots["tid123"] = &token.TicketPayload{
-		TicketId: "tid123", ProviderKey: "scan", Scene: sceneLogin,
+		TicketId: "tid123", ProviderKey: "scan", Scene: SceneLogin,
 		Iat: 1_700_000_000, Exp: 1_700_000_600,
 	}
 	sessions := &qrSessions{uid: 9}
@@ -140,8 +140,8 @@ func TestWriteTicketStatusBranches(t *testing.T) {
 		enable bool
 		want   string
 	}{
-		{"未启用 MFA → success", false, ticketStatusSuccess},
-		{"启用 MFA → mfa_pending", true, ticketStatusMFAPending},
+		{"未启用 MFA → success", false, TicketStatusSuccess},
+		{"启用 MFA → mfa_pending", true, TicketStatusMFAPending},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,8 +165,8 @@ func TestWriteTicketStatusBranches(t *testing.T) {
 			if got.GetStatus() != tc.want {
 				t.Fatalf("TicketResult.status = %q, want %q", got.GetStatus(), tc.want)
 			}
-			if got.GetV() != ticketResultV || got.GetScene() != sceneLogin ||
-				got.GetChannel() != channelQRCode || got.GetProviderKey() != "scan" {
+			if got.GetV() != TicketResultV || got.GetScene() != SceneLogin ||
+				got.GetChannel() != ChannelQRCode || got.GetProviderKey() != "scan" {
 				t.Fatalf("TicketResult 头字段 = %+v", got)
 			}
 			if got.GetExpiresAt() != 1_700_000_600 || got.GetCreatedAt() != 1_700_000_100 {
@@ -197,11 +197,11 @@ func TestWriteTicketConfirmChainMFAEnabledWritesPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != ticketStatusMFAPending {
+	if st.GetStatus() != TicketStatusMFAPending {
 		t.Fatalf("回显 status = %q, want mfa_pending（启用 MFA 不得恒写 success）", st.GetStatus())
 	}
 	got := e.tickets.res["tid123"]
-	if got == nil || got.GetStatus() != ticketStatusMFAPending {
+	if got == nil || got.GetStatus() != TicketStatusMFAPending {
 		t.Fatalf("TicketResult.status = %+v, want mfa_pending", got.GetStatus())
 	}
 	if got.GetLoginResult().GetUid() != 9 {
@@ -222,10 +222,10 @@ func TestWriteTicketConfirmChainMFADisabledWritesSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != ticketStatusSuccess {
+	if st.GetStatus() != TicketStatusSuccess {
 		t.Fatalf("回显 status = %q, want success（未启用 MFA 不应写 mfa_pending）", st.GetStatus())
 	}
-	if got := e.tickets.res["tid123"]; got == nil || got.GetStatus() != ticketStatusSuccess {
+	if got := e.tickets.res["tid123"]; got == nil || got.GetStatus() != TicketStatusSuccess {
 		t.Fatalf("TicketResult.status = %+v, want success", got.GetStatus())
 	}
 }
@@ -242,7 +242,7 @@ func TestWriteTicketConfirmChainMFAEnabledBySettingRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != ticketStatusMFAPending {
+	if st.GetStatus() != TicketStatusMFAPending {
 		t.Fatalf("status = %q, want mfa_pending（自选凭据行启用）", st.GetStatus())
 	}
 }
@@ -259,7 +259,7 @@ func TestWriteTicketConfirmChainGlobalSwitchOff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != ticketStatusSuccess {
+	if st.GetStatus() != TicketStatusSuccess {
 		t.Fatalf("status = %q, want success（开关关闭）", st.GetStatus())
 	}
 }
@@ -302,7 +302,7 @@ func TestWriteTicketConfirmChainMFALookupFailClosed(t *testing.T) {
 		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
 			TicketID: "tid123", Session: "body-session", SessionUID: 9,
 		})
-		if err != nil || st.GetStatus() != ticketStatusSuccess {
+		if err != nil || st.GetStatus() != TicketStatusSuccess {
 			t.Fatalf("(status, err) = (%q, %v), want (success, nil)", st.GetStatus(), err)
 		}
 	})
@@ -326,7 +326,7 @@ func TestWriteTicketScanBranchRestoresUID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteTicket: %v", err)
 	}
-	if st.GetStatus() != ticketStatusMFAPending {
+	if st.GetStatus() != TicketStatusMFAPending {
 		t.Fatalf("status = %q, want mfa_pending", st.GetStatus())
 	}
 	got := e.tickets.res["tid123"]
@@ -406,7 +406,7 @@ func TestWriteTicketSessionSubject(t *testing.T) {
 			if err != nil {
 				t.Fatalf("WriteTicket: %v", err)
 			}
-			if st.GetStatus() != ticketStatusSuccess {
+			if st.GetStatus() != TicketStatusSuccess {
 				t.Fatalf("status = %q, want success", st.GetStatus())
 			}
 			if got := e.tickets.res["tid123"].GetLoginResult().GetUid(); got != tc.wantUID {
@@ -437,7 +437,7 @@ func TestWriteTicketPayloadAndWriteGuards(t *testing.T) {
 	})
 	t.Run("scene 非 login", func(t *testing.T) {
 		e := newLTEnv(t)
-		e.payloads.snapshots["tid123"].Scene = sceneBind
+		e.payloads.snapshots["tid123"].Scene = SceneBind
 		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{TicketID: "tid123", SessionUID: 9})
 		if !errors.Is(err, ErrQrcodeTicketInvalid) {
 			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)

@@ -7,7 +7,7 @@
 // service 的双分支与主体校验见 login_ticket_test.go。
 // 全部走 fake（TicketStore / Storage / Gate verifier / SessionVerifier），
 // 不连 DB / Redis；GETDEL 原子性由 cache 包 ticket_test.go 覆盖。
-package service
+package qrcode
 
 import (
 	"context"
@@ -21,10 +21,11 @@ import (
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
 	"authloft/internal/provider"
-	"authloft/internal/qrcode"
+	qrcodepkg "authloft/internal/qrcode"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/storage"
 )
 
@@ -71,7 +72,7 @@ func (f *qrTickets) WriteScanned(_ context.Context, id string, _ *token.TicketRe
 }
 func (f *qrTickets) WriteComplete(_ context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error) {
 	f.compWrites = append(f.compWrites, id)
-	if prev, ok := f.res[id]; ok && prev.GetStatus() == ticketStatusSuccess {
+	if prev, ok := f.res[id]; ok && prev.GetStatus() == ticketsvc.TicketStatusSuccess {
 		return cache.TicketWriteSkipped, nil
 	}
 	f.res[id] = res
@@ -299,16 +300,16 @@ func TestCreateQrcodeScenes(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Scene: "bind", Captcha: validCaptcha()})
-		if !errors.Is(err, ErrQrcodeUnauthenticated) {
-			t.Fatalf("err = %v, want ErrQrcodeUnauthenticated", err)
+		if !errors.Is(err, ticketsvc.ErrQrcodeUnauthenticated) {
+			t.Fatalf("err = %v, want ticketsvc.ErrQrcodeUnauthenticated", err)
 		}
 	})
 	t.Run("非法 scene", func(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Scene: "other", Captcha: validCaptcha()})
-		if !errors.Is(err, ErrQrcodeInvalidRequest) {
-			t.Fatalf("err = %v, want ErrQrcodeInvalidRequest", err)
+		if !errors.Is(err, ticketsvc.ErrQrcodeInvalidRequest) {
+			t.Fatalf("err = %v, want ticketsvc.ErrQrcodeInvalidRequest", err)
 		}
 	})
 	t.Run("bind 带会话 scene 落 ticket", func(t *testing.T) {
@@ -390,7 +391,7 @@ func TestCreateQrcodeSnapshotWrite(t *testing.T) {
 			snap.GetScene() != got.GetScene() || snap.GetIat() != got.GetIat() || snap.GetExp() != got.GetExp() {
 			t.Fatalf("快照与 ticket 不同源: snap=%+v ticket=%+v", snap, got)
 		}
-		if snap.GetScene() != sceneLogin || snap.GetTicketId() != out.TicketID {
+		if snap.GetScene() != ticketsvc.SceneLogin || snap.GetTicketId() != out.TicketID {
 			t.Fatalf("快照形态 = %+v", snap)
 		}
 	})
@@ -406,7 +407,7 @@ func TestCreateQrcodeSnapshotWrite(t *testing.T) {
 		if err != nil || snap == nil {
 			t.Fatalf("快照: (%+v, %v)", snap, err)
 		}
-		if snap.GetScene() != sceneBind {
+		if snap.GetScene() != ticketsvc.SceneBind {
 			t.Fatalf("scene = %q, want bind", snap.GetScene())
 		}
 	})
@@ -508,8 +509,8 @@ func TestCreateQrcodeProviderFailures(t *testing.T) {
 			Now:      func() time.Time { return e.now },
 		})
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
-		if !errors.Is(err, ErrQrcodeInvalidRequest) {
-			t.Fatalf("err = %v, want ErrQrcodeInvalidRequest", err)
+		if !errors.Is(err, ticketsvc.ErrQrcodeInvalidRequest) {
+			t.Fatalf("err = %v, want ticketsvc.ErrQrcodeInvalidRequest", err)
 		}
 	})
 }
@@ -756,9 +757,9 @@ func TestGetLoginTicketAutoDelete(t *testing.T) {
 		if len(e.queue.tasks) != 1 {
 			t.Fatalf("queue = %v, want 1 个任务", e.queue.tasks)
 		}
-		del, ok := e.queue.tasks[0].Value.(qrcode.DeleteTask)
+		del, ok := e.queue.tasks[0].Value.(qrcodepkg.DeleteTask)
 		if !ok {
-			t.Fatalf("task value = %T, want qrcode.DeleteTask", e.queue.tasks[0].Value)
+			t.Fatalf("task value = %T, want qrcodepkg.DeleteTask", e.queue.tasks[0].Value)
 		}
 		if del.StorageKey != "files" || del.ObjectKey != "qrcodes_tid123.jpg" {
 			t.Fatalf("task = %+v, want {files qrcodes_tid123.jpg}", del)
@@ -774,13 +775,13 @@ func TestGetLoginTicketNoMFASuccessPath(t *testing.T) {
 	e.addScanProvider("scan", nil)
 	// 小程序端 stage=complete 命中未启用 MFA：直接写 success + uid。
 	if _, err := e.svc.deps.Tickets.WriteComplete(ctx, "tid123", &token.TicketResult{
-		V: 1, Status: ticketStatusSuccess, Scene: sceneLogin, ProviderKey: "scan",
+		V: 1, Status: ticketsvc.TicketStatusSuccess, Scene: ticketsvc.SceneLogin, ProviderKey: "scan",
 		LoginResult: &token.LoginResult{Uid: 9},
 	}); err != nil {
 		t.Fatalf("WriteComplete: %v", err)
 	}
 	out := e.svc.GetLoginTicket(ctx, pollInput(t, e, 0, 0))
-	if out.Envelope.GetStatus() != ticketStatusSuccess || out.Envelope.GetTicket().GetStatus() != ticketStatusSuccess {
+	if out.Envelope.GetStatus() != ticketsvc.TicketStatusSuccess || out.Envelope.GetTicket().GetStatus() != ticketsvc.TicketStatusSuccess {
 		t.Fatalf("envelope = %+v, want success", out.Envelope)
 	}
 	if out.Envelope.GetLogin().GetStatus() != orchestrator.StatusSuccess || e.writer.gotUID != 9 {
@@ -802,7 +803,7 @@ func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 	e := newQrEnv(t)
 	e.addScanProvider("scan", nil)
 	e.tickets.res["tid123"] = &token.TicketResult{
-		V: 1, Status: ticketStatusMFAPending, Scene: "login", ProviderKey: "scan",
+		V: 1, Status: ticketsvc.TicketStatusMFAPending, Scene: "login", ProviderKey: "scan",
 		LoginResult: &token.LoginResult{Uid: 9},
 	}
 	in := pollInput(t, e, 0, 0)
@@ -811,7 +812,7 @@ func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 	if out.Envelope.GetStatus() != statusNeedsStepUp {
 		t.Fatalf("status = %q, want needs_step_up", out.Envelope.GetStatus())
 	}
-	if out.Envelope.GetTicket().GetStatus() != ticketStatusScanned {
+	if out.Envelope.GetTicket().GetStatus() != ticketsvc.TicketStatusScanned {
 		t.Fatalf("ticket.status = %q, want scanned", out.Envelope.GetTicket().GetStatus())
 	}
 	if len(e.tickets.takes) != 0 {
@@ -834,42 +835,5 @@ func TestGetLoginTicketNeedsStepUp(t *testing.T) {
 	if p.GetOidc() == nil || p.GetOidc().GetClientId() != "client-1" ||
 		p.GetOidc().GetRedirectUri() != "https://rp.example/cb" || p.GetOidc().GetState() != "st-1" {
 		t.Fatalf("载荷 oidc = %+v, want 本次回传的 OIDC 上下文", p.GetOidc())
-	}
-}
-
-// —— TicketResultSealer ——
-
-// TestTicketResultSealerRoundtrip protojson 整值加密往返 + 跨密钥拒绝 +
-// 未知版本按失败处理（§11.6.5 行 1347 / 1351）。
-func TestTicketResultSealerRoundtrip(t *testing.T) {
-	codec := tpCodec(t, 0x50)
-	sealer := NewTicketResultSealer(codec)
-	res := &token.TicketResult{
-		V: 1, Scene: "login", Status: "success", ProviderKey: "scan", Channel: "qrcode",
-		LoginResult: &token.LoginResult{Uid: 9},
-	}
-	sealed, err := sealer.Seal(res)
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	got, err := sealer.Open(sealed)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if got.GetV() != 1 || got.GetScene() != "login" || got.GetStatus() != "success" ||
-		got.GetLoginResult().GetUid() != 9 || got.GetChannel() != "qrcode" {
-		t.Fatalf("roundtrip = %+v", got)
-	}
-	// 跨密钥不可解。
-	if _, err := NewTicketResultSealer(tpCodec(t, 0x51)).Open(sealed); err == nil {
-		t.Fatalf("跨密钥不应解 开")
-	}
-	// 未知版本按失败处理（§11.6.5 行 1351）。
-	bad, err := sealer.Seal(&token.TicketResult{V: 99, Status: "success"})
-	if err != nil {
-		t.Fatalf("Seal v99: %v", err)
-	}
-	if _, err := sealer.Open(bad); err == nil {
-		t.Fatalf("未知版本应按失败处理")
 	}
 }

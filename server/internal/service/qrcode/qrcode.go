@@ -25,7 +25,7 @@
 // 小程序端提交仅携带 ticket_id，服务端取本文件写入的快照键
 // al:ticket:payload:{ticket_id}（§5.1 行 863、§11.6.4 行 1350）校验 scene /
 // expiry / provider_key 后按 scene 分派写 al:ticket 结果（§13.2b）。
-package service
+package qrcode
 
 import (
 	"context"
@@ -33,20 +33,19 @@ import (
 	"fmt"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 	"gorm.io/gorm"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
 	"authloft/internal/asyncqueue"
-	"authloft/internal/cache"
 	"authloft/internal/captcha"
 	"authloft/internal/logx"
 	"authloft/internal/provider"
 	qrcodepkg "authloft/internal/qrcode"
 	"authloft/internal/security"
+	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/storage"
 )
 
@@ -59,22 +58,6 @@ const (
 	qrcodeTicketTTL = 600 * time.Second
 	// qrcodeMaxPoll 长轮询上限（§2.8 行 729：poll ≤15 秒，全文档唯一定义处）。
 	qrcodeMaxPoll = 15 * time.Second
-	// ticketResultV TicketResult 结构版本（§11.6.5 行 1351：v=1）。
-	ticketResultV = 1
-	// channelQRCode TicketResult.channel（§11.6.5 行 1353：当前仅 qrcode）。
-	channelQRCode = "qrcode"
-	// sceneLogin / sceneBind TicketPayload.scene 取值（§11.6.4 行 1328）。
-	sceneLogin = "login"
-	sceneBind  = "bind"
-	// ticketStatusScanned / ticketStatusMFAPending / ticketStatusSuccess /
-	// ticketStatusFailed TicketResult.status（§11.6.5 行 1400：scanned |
-	// mfa_pending | success | failed——失败类具体结论由写入方落本字段，轮询侧
-	// 映射为 ticket 只报 failed；mfa_pending 为非终态，映射到轮询顶层
-	// needs_step_up 且 ticket.status 仍报 scanned）。
-	ticketStatusScanned    = "scanned"
-	ticketStatusMFAPending = "mfa_pending"
-	ticketStatusSuccess    = "success"
-	ticketStatusFailed     = "failed"
 	// statusNeedsStepUp 扫码轮询专属顶层 status（§1.6 行 282、§2.8 行 884）：
 	// 只出现在 GetLoginTicket 顶层，不进登录信封、不作 ticket.status 取值。
 	statusNeedsStepUp = "needs_step_up"
@@ -82,19 +65,12 @@ const (
 
 // 可判别哨兵错误（handler 转 Connect 错误体 + ErrorInfo，§1.6 封闭集成员）。
 var (
-	// ErrQrcodeInvalidRequest 参数缺失 / scene 非法 / 通道不支持。
-	ErrQrcodeInvalidRequest = errors.New("qrcode: invalid request")
 	// ErrQrcodeProviderDisabled 提供商未启用 / 不允许登录 / 未配置 / 拉码链故障。
 	ErrQrcodeProviderDisabled = errors.New("qrcode: provider disabled")
-	// ErrQrcodeUnauthenticated scene=bind 需要会话 / Confirm 会话缺失失效（401）。
-	ErrQrcodeUnauthenticated = errors.New("qrcode: authentication required")
 	// ErrQrcodeCaptchaRequired 拉码未携带 captcha（§2.8 行 703：每次拉码都要新的）。
 	ErrQrcodeCaptchaRequired = errors.New("qrcode: captcha required")
 	// ErrQrcodeCaptchaInvalid captcha 校验不通过 / 已使用。
 	ErrQrcodeCaptchaInvalid = errors.New("qrcode: captcha invalid")
-	// ErrQrcodeTicketInvalid 扫码票据不存在 / 已过期 / 状态不是 mfa_pending
-	// （扫码 step-up 的主体凭证失效，§3.8.5 行 1301 的 token_invalid 口径）。
-	ErrQrcodeTicketInvalid = errors.New("qrcode: ticket invalid")
 	// ErrQrcodeTicketScene 票据 scene 与本次用途不匹配（只服务 login，§11.6.5 行 1423）。
 	ErrQrcodeTicketScene = errors.New("qrcode: ticket scene mismatch")
 )
@@ -124,26 +100,6 @@ func (f *QrcodeCaptchaFailure) Unwrap() error {
 	return f.cause
 }
 
-// TicketStore al:ticket:{ticket_id} 读写窄接口（§20）：*cache.TicketStore
-// 天然满足；测试传 fake。
-type TicketStore interface {
-	WriteScanned(ctx context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error)
-	WriteComplete(ctx context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error)
-	Peek(ctx context.Context, id string) (*token.TicketResult, error)
-	Take(ctx context.Context, id string) (*token.TicketResult, error)
-	Wait(ctx context.Context, id string, timeout time.Duration) error
-}
-
-// TicketPayloadStore al:ticket:payload:{ticket_id} 快照读写窄接口（§5.1 行
-// 863、§11.6.4 行 1350）：*cache.TicketPayloadStore 天然满足；测试传
-// fake。CreateQrcode 写（1 次、TTL = exp − iat），LoginOauth 扫码分支读。
-type TicketPayloadStore interface {
-	// Write 写快照（CreateQrcode 1 次，TTL = exp − iat，默认 600s）。
-	Write(ctx context.Context, payload *token.TicketPayload) error
-	// Read 读快照；缺失（不存在 / 已过期）返回 (nil, nil)。
-	Read(ctx context.Context, ticketID string) (*token.TicketPayload, error)
-}
-
 // QRCodeStorageResolver 按 storage provider key 解析 Storage；
 // *storage.Resolver 天然满足。
 type QRCodeStorageResolver interface {
@@ -156,25 +112,19 @@ type QueuePusher interface {
 	Push(task asyncqueue.Task) bool
 }
 
-// SessionVerifier 会话校验器（ConfirmLoginTicket 用，§11.1 四步）；
-// *session.Verifier 天然满足。
-type SessionVerifier interface {
-	Verify(ctx context.Context, sessionToken string) (*token.SessionTokenPayload, error)
-}
-
 // QRCodeDeps 依赖注入（§20）；装配层构造（bootstrap buildEngine）。
 type QRCodeDeps struct {
-	Loader     ThirdpartyLoader
-	NewAdapter ThirdpartyAdapterFactory
+	Loader     service.ThirdpartyLoader
+	NewAdapter service.ThirdpartyAdapterFactory
 	// Gate captcha 唯一拦截点（§9.3 行 1110；Challenge 恒触发）。
 	Gate *captcha.Gate
 	// TicketCodec sign_key.ticket（§11.6.4：ticket 加密串）。
 	TicketCodec *security.Codec
 	// Tickets al:ticket 结果读写（§11.6.5）。
-	Tickets TicketStore
+	Tickets ticketsvc.TicketStore
 	// TicketPayloads al:ticket:payload 快照读写（§5.1 行 863、§11.6.4 行
 	// 1350）：CreateQrcode 1 次写入，TTL = exp − iat。
-	TicketPayloads TicketPayloadStore
+	TicketPayloads ticketsvc.TicketPayloadStore
 	// Storage storage provider 解析（§15.1）。
 	Storage QRCodeStorageResolver
 	// Queue 码图自动删除投递（§13.3；nil = 跳过）。
@@ -241,13 +191,13 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	// scene（§2.8 行 716）：login 默认｜bind 需 al_session，否则 401。
 	scene := in.Scene
 	if scene == "" {
-		scene = sceneLogin
+		scene = ticketsvc.SceneLogin
 	}
-	if scene != sceneLogin && scene != sceneBind {
-		return nil, fmt.Errorf("%w: scene %q", ErrQrcodeInvalidRequest, in.Scene)
+	if scene != ticketsvc.SceneLogin && scene != ticketsvc.SceneBind {
+		return nil, fmt.Errorf("%w: scene %q", ticketsvc.ErrQrcodeInvalidRequest, in.Scene)
 	}
-	if scene == sceneBind && in.UID == 0 {
-		return nil, ErrQrcodeUnauthenticated
+	if scene == ticketsvc.SceneBind && in.UID == 0 {
+		return nil, ticketsvc.ErrQrcodeUnauthenticated
 	}
 
 	// provider（§13.0：未配置 / 未启用按失败处理；channel 必 qrcode）。
@@ -266,7 +216,7 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		return nil, fmt.Errorf("%w: %q: %v", ErrQrcodeProviderDisabled, in.ProviderKey, err)
 	}
 	if adapter.Channel() != provider.ChannelQRCode {
-		return nil, fmt.Errorf("%w: channel %q", ErrQrcodeInvalidRequest, adapter.Channel())
+		return nil, fmt.Errorf("%w: channel %q", ticketsvc.ErrQrcodeInvalidRequest, adapter.Channel())
 	}
 	fetcher, ok := adapter.(provider.QRCodeSupporter)
 	if !ok {
@@ -396,7 +346,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 	}
 	// bind 票据轮询走 AccountService/GetThirdpartyTicket（§13.2b 行 1607），
 	// 本端点只服务 scene=login。
-	if payload.GetScene() != sceneLogin {
+	if payload.GetScene() != ticketsvc.SceneLogin {
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{Status: orchestrator.StatusInvalidRequest}}
 	}
 
@@ -404,7 +354,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 	// （§11.6.5 行 1424）；终态 success / failed 才在下方向下消费。
 	res, err := s.deps.Tickets.Peek(ctx, id)
 	if err != nil {
-		return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+		return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 	}
 	// 长轮询（§2.8 行 729：poll ≤15，服务端钳制；等待窗口不超过票据剩余
 	// 寿命，超后由 expired 终态表达）。
@@ -419,7 +369,7 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		if werr := s.deps.Tickets.Wait(ctx, id, wait); werr == nil {
 			res, err = s.deps.Tickets.Peek(ctx, id)
 			if err != nil {
-				return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+				return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 			}
 		}
 	}
@@ -433,14 +383,14 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 	}
 
 	switch res.GetStatus() {
-	case ticketStatusScanned:
+	case ticketsvc.TicketStatusScanned:
 		// 已扫码标记：原样补写回（WriteScanned SETNX 幂等），防中间态意外丢失，
 		// 不产生新状态、不算业务写入（§2.8 行 863）。
 		if _, werr := s.deps.Tickets.WriteScanned(ctx, id, res); werr != nil {
 			logx.Warn(ctx, "qrcode: rewrite scanned marker failed", "ticket_id", id, "error", werr)
 		}
-		return envelope(ticketStatusScanned, ticketStatusScanned, nil)
-	case ticketStatusMFAPending:
+		return envelope(ticketsvc.TicketStatusScanned, ticketsvc.TicketStatusScanned, nil)
+	case ticketsvc.TicketStatusMFAPending:
 		// 扫码 + 已启用 MFA 的中间态（§2.8 行 884、§13.2 行 1680）：顶层
 		// needs_step_up、ticket.status 仍报 scanned；非终态，不消费快照。
 		// 额外下发一枚新的 loginToken（载荷含 OIDC 上下文、uid、passed），
@@ -448,30 +398,30 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		// §3.8.1）；OIDC 不落 TicketResult，由本请求回传的 oidc 入参提供。
 		uid := res.GetLoginResult().GetUid()
 		if s.deps.State == nil || uid == 0 {
-			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		signed, err := s.deps.State.Issue(&token.LoginTokenPayload{
 			Tid:    s.newTID(),
 			Flow:   "login",
 			Uid:    uid,
-			Passed: []string{amrThirdParty},
-			Amr:    []string{amrThirdParty},
+			Passed: []string{service.AMRThirdParty},
+			Amr:    []string{service.AMRThirdParty},
 			Oidc:   in.OIDC,
 		})
 		if err != nil {
-			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status:     statusNeedsStepUp,
-			Ticket:     echo(ticketStatusScanned),
+			Ticket:     echo(ticketsvc.TicketStatusScanned),
 			LoginToken: signed,
 		}}
-	case ticketStatusSuccess:
+	case ticketsvc.TicketStatusSuccess:
 		// 终态一次性消费（§11.6.5 行 1424）：GETDEL 原子取走即删；并发下
 		// 被其他读取方先取走时，按键不存在得到 expired。
 		taken, terr := s.deps.Tickets.Take(ctx, id)
 		if terr != nil {
-			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
 		if taken == nil {
 			return envelope("expired", "expired", nil)
@@ -481,9 +431,9 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 		// 失败类终态：结论在信封 status（§1.6 行 264——写入方把具体失败落
 		// TicketResult.status，本侧原样上抛），ticket 只报 failed；终态消费。
 		if _, terr := s.deps.Tickets.Take(ctx, id); terr != nil {
-			return envelope(orchestrator.StatusFailed, ticketStatusFailed, nil)
+			return envelope(orchestrator.StatusFailed, ticketsvc.TicketStatusFailed, nil)
 		}
-		return envelope(res.GetStatus(), ticketStatusFailed, nil)
+		return envelope(res.GetStatus(), ticketsvc.TicketStatusFailed, nil)
 	}
 }
 
@@ -492,12 +442,12 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 // login_token）；已绑定 → Terminal.Complete 建会话（§2.8 行 746）。
 func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, res *token.TicketResult) *GetLoginTicketOutput {
 	id := payload.GetTicketId()
-	echo := &ssov1.TicketStatus{Status: ticketStatusSuccess, TicketId: id}
+	echo := &ssov1.TicketStatus{Status: ticketsvc.TicketStatusSuccess, TicketId: id}
 	lr := res.GetLoginResult()
 	if lr.GetBindingRequired() || lr.GetUid() == 0 {
 		inner := s.pollBinding(ctx, payload, res)
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
-			Status: ticketStatusSuccess, Ticket: echo, Login: inner,
+			Status: ticketsvc.TicketStatusSuccess, Ticket: echo, Login: inner,
 		}}
 	}
 
@@ -507,12 +457,12 @@ func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, r
 		Tid:    s.newTID(),
 		Flow:   "login",
 		Uid:    lr.GetUid(),
-		Passed: []string{amrThirdParty},
-		Amr:    []string{amrThirdParty},
+		Passed: []string{service.AMRThirdParty},
+		Amr:    []string{service.AMRThirdParty},
 	})
 	if err != nil {
 		return &GetLoginTicketOutput{Envelope: &ssov1.LoginFlowResponse{
-			Status: orchestrator.StatusFailed, Ticket: &ssov1.TicketStatus{Status: ticketStatusFailed, TicketId: id},
+			Status: orchestrator.StatusFailed, Ticket: &ssov1.TicketStatus{Status: ticketsvc.TicketStatusFailed, TicketId: id},
 		}}
 	}
 	inner := &ssov1.LoginFlowResponse{
@@ -524,7 +474,7 @@ func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, r
 	}
 	s.enqueueAutoDelete(ctx, payload)
 	return &GetLoginTicketOutput{
-		Envelope:     &ssov1.LoginFlowResponse{Status: ticketStatusSuccess, Ticket: echo, Login: inner},
+		Envelope:     &ssov1.LoginFlowResponse{Status: ticketsvc.TicketStatusSuccess, Ticket: echo, Login: inner},
 		SessionToken: success.SessionToken,
 	}
 }
@@ -545,13 +495,13 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	}
 	p, err := s.deps.Loader.Get(ctx, pk)
 	if err != nil {
-		return &ssov1.LoginFlowResponse{Status: statusProviderDisabled}
+		return &ssov1.LoginFlowResponse{Status: service.StatusProviderDisabled}
 	}
 	lt := &token.LoginTokenPayload{
 		Tid:    s.newTID(),
 		Flow:   "login",
-		Passed: []string{amrThirdParty},
-		Amr:    []string{amrThirdParty},
+		Passed: []string{service.AMRThirdParty},
+		Amr:    []string{service.AMRThirdParty},
 		Tp: &token.ThirdParty{
 			ProviderKey: pk,
 			OpenId:      id.GetOpenId(),
@@ -613,81 +563,4 @@ func (s *QRCode) newTID() string {
 		return ""
 	}
 	return tid
-}
-
-// NewTicketResultSealer 构造生产 TicketSealer（cache.TicketSealer 实现，
-// 装配层注入 cache.NewTicketStore）：TicketResult 按 protojson（§1.6 行
-// 86 MarshalOptions）序列化后整值加密（复用 §11.6.1 封装、purpose=ticket，
-// §11.6.5 行 1347——Redis 内不留明文）；读取方遇未知结构版本按失败处理
-// （§11.6.5 行 1351）。protojson 字节经 BytesValue 包封进 §11.6.1 封装
-// （该封装以 protobuf 消息为载荷单位，BytesValue 是服务端内部的字节
-// 载体，不新增对外结构）。
-func NewTicketResultSealer(codec *security.Codec) cache.TicketSealer {
-	return &ticketResultSealer{codec: codec}
-}
-
-type ticketResultSealer struct {
-	codec *security.Codec
-}
-
-// Seal protojson → 整值加密。
-func (s *ticketResultSealer) Seal(res *token.TicketResult) (string, error) {
-	if res == nil {
-		return "", errors.New("qrcode: seal ticket result: nil result")
-	}
-	raw, err := protojson.Marshal(res)
-	if err != nil {
-		return "", fmt.Errorf("qrcode: marshal ticket result: %w", err)
-	}
-	sealed, err := s.codec.Seal(security.PurposeTicket, &wrapperspb.BytesValue{Value: raw})
-	if err != nil {
-		return "", fmt.Errorf("qrcode: seal ticket result: %w", err)
-	}
-	return sealed, nil
-}
-
-// Open 解密 → protojson → 版本校验（未知版本按失败处理）。
-func (s *ticketResultSealer) Open(sealed string) (*token.TicketResult, error) {
-	w, err := security.Open[wrapperspb.BytesValue](s.codec, security.PurposeTicket, sealed)
-	if err != nil {
-		return nil, fmt.Errorf("qrcode: open ticket result: %w", err)
-	}
-	res := &token.TicketResult{}
-	if err := protojson.Unmarshal(w.GetValue(), res); err != nil {
-		return nil, fmt.Errorf("qrcode: unmarshal ticket result: %w", err)
-	}
-	if res.GetV() != ticketResultV {
-		return nil, fmt.Errorf("qrcode: unknown ticket result version %d", res.GetV())
-	}
-	return res, nil
-}
-
-// NewTicketPayloadSealer 构造快照 sealer（cache.TicketPayloadSealer 实现，
-// 装配层注入 cache.NewTicketPayloadStore）：TicketPayload 全标量
-// 字段，直接经 §11.6.1 封装整值加密（purpose=ticket，与 ticket 串同一
-// 封装路径——§5.1 行 863「TicketPayload 加密快照」，无需 protojson +
-// BytesValue 包封）。
-func NewTicketPayloadSealer(codec *security.Codec) cache.TicketPayloadSealer {
-	return &ticketPayloadSealer{codec: codec}
-}
-
-type ticketPayloadSealer struct {
-	codec *security.Codec
-}
-
-// Seal 整值加密。
-func (s *ticketPayloadSealer) Seal(p *token.TicketPayload) (string, error) {
-	if p == nil {
-		return "", errors.New("qrcode: seal ticket payload: nil payload")
-	}
-	return s.codec.Seal(security.PurposeTicket, p)
-}
-
-// Open 解密（§11.6.1 封装自带认证，篡改 / 跨 purpose 不可解）。
-func (s *ticketPayloadSealer) Open(sealed string) (*token.TicketPayload, error) {
-	p, err := security.Open[token.TicketPayload](s.codec, security.PurposeTicket, sealed)
-	if err != nil {
-		return nil, fmt.Errorf("qrcode: open ticket payload: %w", err)
-	}
-	return p, nil
 }

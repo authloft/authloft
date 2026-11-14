@@ -24,6 +24,8 @@ import (
 	"authloft/internal/logx"
 	"authloft/internal/service"
 	"authloft/internal/service/orchestrator"
+	qrcodesvc "authloft/internal/service/qrcode"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
 )
@@ -73,7 +75,7 @@ type Verification interface {
 // *service.LoginTicket，测试可传 fake；ConfirmLoginTicket 与 LoginOauth
 // 扫码分支共用同一写票入口。
 type LoginTicketWriter interface {
-	WriteTicket(ctx context.Context, in service.WriteTicketInput) (*ssov1.TicketStatus, error)
+	WriteTicket(ctx context.Context, in ticketsvc.WriteTicketInput) (*ssov1.TicketStatus, error)
 }
 
 // New 构造 SsoService handler。images 为自绘图形码实现
@@ -377,7 +379,7 @@ func (h *Handler) LoginOauth(ctx context.Context, req *connect.Request[ssov1.Log
 	// 由小程序端信封携带的 loginToken 经写票 service 校验恢复；写入失败
 	// 不改变本次响应，PC 端按票据过期兜底。
 	if in.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.loginTicket != nil {
-		if _, err := h.loginTicket.WriteTicket(ctx, service.WriteTicketInput{
+		if _, err := h.loginTicket.WriteTicket(ctx, ticketsvc.WriteTicketInput{
 			TicketID:   in.TicketID,
 			LoginToken: out.Envelope.GetLoginToken(),
 		}); err != nil {
@@ -440,8 +442,8 @@ func mapThirdpartyError(err error) error {
 // Qrcode 扫码拉码与轮询 service 窄接口（§20 依赖注入）：生产注入
 // *service.QRCode，测试可传 fake；nil 时两个方法返回 unimplemented。
 type Qrcode interface {
-	CreateQrcode(ctx context.Context, in service.CreateQrcodeInput) (*service.CreateQrcodeOutput, error)
-	GetLoginTicket(ctx context.Context, in service.GetLoginTicketInput) *service.GetLoginTicketOutput
+	CreateQrcode(ctx context.Context, in qrcodesvc.CreateQrcodeInput) (*qrcodesvc.CreateQrcodeOutput, error)
+	GetLoginTicket(ctx context.Context, in qrcodesvc.GetLoginTicketInput) *qrcodesvc.GetLoginTicketOutput
 }
 
 // errQrcodeNotConfigured 未装配扫码 service（测试桩）。
@@ -507,7 +509,7 @@ func (h *Handler) ConfirmLoginTicket(ctx context.Context, req *connect.Request[s
 // 同一结构：ErrorInfo + CaptchaConfig）。配置仅随哨兵错误载荷透传，本层不
 // 重新读取、不另造第二配置源（§9.1 同源）。
 func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
-	var f *service.QrcodeCaptchaFailure
+	var f *qrcodesvc.QrcodeCaptchaFailure
 	if errors.As(err, &f) {
 		return internalconnect.WithCaptchaConfig(coded, &commonv1.CaptchaConfig{
 			ProviderKey: f.Config.ProviderKey,
@@ -522,23 +524,23 @@ func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 // 197-210；code 取 §1.6 封闭集，人机校验两码一律引用 captcha 包常量）。
 func mapQrcodeError(err error) error {
 	switch {
-	case errors.Is(err, service.ErrQrcodeUnauthenticated):
+	case errors.Is(err, ticketsvc.ErrQrcodeUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err)
-	case errors.Is(err, service.ErrQrcodeCaptchaRequired):
+	case errors.Is(err, qrcodesvc.ErrQrcodeCaptchaRequired):
 		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", captcha.StatusRequired, "captcha required for qrcode"))
 		return withQrcodeCaptchaConfig(err, coded)
-	case errors.Is(err, service.ErrQrcodeCaptchaInvalid):
+	case errors.Is(err, qrcodesvc.ErrQrcodeCaptchaInvalid):
 		coded := internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", captcha.StatusInvalid, "captcha invalid or used"))
 		return withQrcodeCaptchaConfig(err, coded)
-	case errors.Is(err, service.ErrQrcodeInvalidRequest):
+	case errors.Is(err, ticketsvc.ErrQrcodeInvalidRequest):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "invalid_request", "invalid qrcode request"))
-	case errors.Is(err, service.ErrQrcodeProviderDisabled):
+	case errors.Is(err, qrcodesvc.ErrQrcodeProviderDisabled):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("sso", "provider_disabled", "provider not available for qrcode"))

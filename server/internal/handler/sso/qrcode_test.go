@@ -23,19 +23,21 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/middleware"
 	"authloft/internal/service"
+	qrcodesvc "authloft/internal/service/qrcode"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 )
 
-// fakeQrcode service.QRCode 的 fake：记录入参、返回预置产物。
+// fakeQrcode qrcodesvc.QRCode 的 fake：记录入参、返回预置产物。
 type fakeQrcode struct {
-	createOut   *service.CreateQrcodeOutput
+	createOut   *qrcodesvc.CreateQrcodeOutput
 	createErr   error
-	gotCreate   service.CreateQrcodeInput
+	gotCreate   qrcodesvc.CreateQrcodeInput
 	captchaSet  bool
 	captchaSeen *ssov1CaptchaView
 
-	pollOut   *service.GetLoginTicketOutput
-	gotPoll   service.GetLoginTicketInput
+	pollOut   *qrcodesvc.GetLoginTicketOutput
+	gotPoll   qrcodesvc.GetLoginTicketInput
 	pollCalls int
 }
 
@@ -47,7 +49,7 @@ type ssov1CaptchaView struct {
 	Answer      string
 }
 
-func (f *fakeQrcode) CreateQrcode(_ context.Context, in service.CreateQrcodeInput) (*service.CreateQrcodeOutput, error) {
+func (f *fakeQrcode) CreateQrcode(_ context.Context, in qrcodesvc.CreateQrcodeInput) (*qrcodesvc.CreateQrcodeOutput, error) {
 	f.gotCreate = in
 	if in.Captcha != nil {
 		f.captchaSet = true
@@ -56,7 +58,7 @@ func (f *fakeQrcode) CreateQrcode(_ context.Context, in service.CreateQrcodeInpu
 	return f.createOut, f.createErr
 }
 
-func (f *fakeQrcode) GetLoginTicket(_ context.Context, in service.GetLoginTicketInput) *service.GetLoginTicketOutput {
+func (f *fakeQrcode) GetLoginTicket(_ context.Context, in qrcodesvc.GetLoginTicketInput) *qrcodesvc.GetLoginTicketOutput {
 	f.pollCalls++
 	f.gotPoll = in
 	return f.pollOut
@@ -66,11 +68,11 @@ func (f *fakeQrcode) GetLoginTicket(_ context.Context, in service.GetLoginTicket
 type fakeLoginTicket struct {
 	out   *ssov1.TicketStatus
 	err   error
-	gotIn service.WriteTicketInput
+	gotIn ticketsvc.WriteTicketInput
 	calls int
 }
 
-func (f *fakeLoginTicket) WriteTicket(_ context.Context, in service.WriteTicketInput) (*ssov1.TicketStatus, error) {
+func (f *fakeLoginTicket) WriteTicket(_ context.Context, in ticketsvc.WriteTicketInput) (*ssov1.TicketStatus, error) {
 	f.calls++
 	f.gotIn = in
 	return f.out, f.err
@@ -79,7 +81,7 @@ func (f *fakeLoginTicket) WriteTicket(_ context.Context, in service.WriteTicketI
 // TestCreateQrcodeConnect 200 透传 + captcha payload 映射 + bind 的 uid
 // 从 ctx 注入。
 func TestCreateQrcodeConnect(t *testing.T) {
-	qr := &fakeQrcode{createOut: &service.CreateQrcodeOutput{
+	qr := &fakeQrcode{createOut: &qrcodesvc.CreateQrcodeOutput{
 		Ticket: "sealed-ticket", TicketID: "c7Kx9", QrcodeURL: "https://cdn.example.com/qr/c7Kx9.jpg", ExpiresIn: 600,
 	}}
 	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr))
@@ -128,11 +130,11 @@ func TestCreateQrcodeErrorMapping(t *testing.T) {
 		wantHTTP   int
 		wantDetail string
 	}{
-		{"captcha 缺失", service.ErrQrcodeCaptchaRequired, http.StatusBadRequest, "captcha_required"},
-		{"captcha 无效", service.ErrQrcodeCaptchaInvalid, http.StatusBadRequest, "captcha_invalid"},
-		{"bind 无会话", service.ErrQrcodeUnauthenticated, http.StatusUnauthorized, ""},
-		{"provider 未配置", service.ErrQrcodeProviderDisabled, http.StatusBadRequest, "provider_disabled"},
-		{"参数非法", service.ErrQrcodeInvalidRequest, http.StatusBadRequest, "invalid_request"},
+		{"captcha 缺失", qrcodesvc.ErrQrcodeCaptchaRequired, http.StatusBadRequest, "captcha_required"},
+		{"captcha 无效", qrcodesvc.ErrQrcodeCaptchaInvalid, http.StatusBadRequest, "captcha_invalid"},
+		{"bind 无会话", ticketsvc.ErrQrcodeUnauthenticated, http.StatusUnauthorized, ""},
+		{"provider 未配置", qrcodesvc.ErrQrcodeProviderDisabled, http.StatusBadRequest, "provider_disabled"},
+		{"参数非法", ticketsvc.ErrQrcodeInvalidRequest, http.StatusBadRequest, "invalid_request"},
 		{"内部错误", context.DeadlineExceeded, http.StatusInternalServerError, ""},
 	}
 	for _, tc := range cases {
@@ -166,7 +168,7 @@ func TestCreateQrcodeErrorMapping(t *testing.T) {
 // TestGetLoginTicketConnect 信封透传 + SessionToken 下发 al_session（§1.9
 // 行 288 与 LoginOauth redirect 同一构造器与属性）。
 func TestGetLoginTicketConnect(t *testing.T) {
-	qr := &fakeQrcode{pollOut: &service.GetLoginTicketOutput{
+	qr := &fakeQrcode{pollOut: &qrcodesvc.GetLoginTicketOutput{
 		Envelope: &ssov1.LoginFlowResponse{
 			Status: "success",
 			Ticket: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"},
@@ -210,7 +212,7 @@ func TestGetLoginTicketConnect(t *testing.T) {
 // TestGetLoginTicketNoSessionTokenNoCookie 非 success 轮询（pending）零
 // Set-Cookie、信封透传。
 func TestGetLoginTicketNoSessionTokenNoCookie(t *testing.T) {
-	qr := &fakeQrcode{pollOut: &service.GetLoginTicketOutput{
+	qr := &fakeQrcode{pollOut: &qrcodesvc.GetLoginTicketOutput{
 		Envelope: &ssov1.LoginFlowResponse{
 			Status: "pending", Ticket: &ssov1.TicketStatus{Status: "pending", TicketId: "c7Kx9"},
 		},
@@ -300,8 +302,8 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 			err      error
 			wantHTTP int
 		}{
-			{"uid 不一致", service.ErrQrcodeInvalidRequest, http.StatusBadRequest},
-			{"无会话", service.ErrQrcodeUnauthenticated, http.StatusUnauthorized},
+			{"uid 不一致", ticketsvc.ErrQrcodeInvalidRequest, http.StatusBadRequest},
+			{"无会话", ticketsvc.ErrQrcodeUnauthenticated, http.StatusUnauthorized},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {

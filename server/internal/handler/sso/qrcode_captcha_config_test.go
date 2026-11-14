@@ -1,5 +1,5 @@
 // qrcode_captcha_config_test.go 覆盖扫码域 captcha 失败的错误体：CreateQrcode
-// 经真 Gate.Evaluate → 真 service.QRCode → 真 mapQrcodeError 的端到端链路，
+// 经真 Gate.Evaluate → 真 qrcodesvc.QRCode → 真 mapQrcodeError 的端到端链路，
 // 断言 captcha_required / captcha_invalid 两码的 details 并列当前生效且与
 // gate 判定同源的 CaptchaConfig（§2.5 行 631 / §9.1 行 1128 / §13.2 行
 // 1679）。把断言（detail 存在 / 三字段逐项等于 gate 输出）取反即可失败。
@@ -18,7 +18,7 @@ import (
 	commonv1 "authloft/gen/go/api/common/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/internal/captcha"
-	"authloft/internal/service"
+	qrcodesvc "authloft/internal/service/qrcode"
 )
 
 // newQrcodeCaptchaChainHandler 组装真 Gate + 真 QRCode + 真 handler：captcha
@@ -28,7 +28,7 @@ import (
 func newQrcodeCaptchaChainHandler(t *testing.T) http.Handler {
 	t.Helper()
 	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainVerifier{})
-	svc := service.NewQRCode(service.QRCodeDeps{Gate: gate})
+	svc := qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{Gate: gate})
 	_, handler := ssov1connect.NewSsoServiceHandler(New(nil, nil, nil, nil, svc))
 	return handler
 }

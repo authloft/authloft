@@ -4,7 +4,7 @@
 // 二次验证启用状态判定，把 al:ticket:{ticket_id} 写为 success 或
 // mfa_pending；写票不改变任何登录态（不建会话、不签 token），OIDC 上下文
 // 不落本结构。
-package service
+package ticket
 
 import (
 	"context"
@@ -96,7 +96,7 @@ func (s *LoginTicket) WriteTicket(ctx context.Context, in WriteTicketInput) (*ss
 	if err != nil {
 		return nil, fmt.Errorf("login ticket: read ticket payload: %w", err)
 	}
-	if snap == nil || snap.GetTicketId() != in.TicketID || snap.GetScene() != sceneLogin {
+	if snap == nil || snap.GetTicketId() != in.TicketID || snap.GetScene() != SceneLogin {
 		return nil, fmt.Errorf("%w: %q payload", ErrQrcodeTicketInvalid, in.TicketID)
 	}
 
@@ -104,16 +104,16 @@ func (s *LoginTicket) WriteTicket(ctx context.Context, in WriteTicketInput) (*ss
 	if err != nil {
 		return nil, fmt.Errorf("login ticket: mfa required: %w", err)
 	}
-	status := ticketStatusSuccess
+	status := TicketStatusSuccess
 	if required {
-		status = ticketStatusMFAPending
+		status = TicketStatusMFAPending
 	}
 	res := &token.TicketResult{
-		V:           ticketResultV,
-		Scene:       sceneLogin,
+		V:           TicketResultV,
+		Scene:       SceneLogin,
 		Status:      status,
 		ProviderKey: snap.GetProviderKey(),
-		Channel:     channelQRCode,
+		Channel:     ChannelQRCode,
 		CreatedAt:   s.now().Unix(),
 		ExpiresAt:   snap.GetExp(),
 		LoginResult: &token.LoginResult{Uid: uid},

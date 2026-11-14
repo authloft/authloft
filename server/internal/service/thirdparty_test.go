@@ -28,9 +28,14 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
+
+// qrcodeTicketTTL 与 qrcode 包内同值（test 侧自持：package service 的测试
+// 文件 import qrcode 会经 qrcode → service 成环）。
+const qrcodeTicketTTL = 600 * time.Second
 
 // —— fake 全家 ——
 
@@ -197,7 +202,7 @@ func (f *tpTickets) WriteScanned(_ context.Context, id string, res *token.Ticket
 
 func (f *tpTickets) WriteComplete(_ context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error) {
 	f.compWrites = append(f.compWrites, id)
-	if prev, ok := f.results[id]; ok && prev.GetStatus() == ticketStatusSuccess {
+	if prev, ok := f.results[id]; ok && prev.GetStatus() == ticketsvc.TicketStatusSuccess {
 		return cache.TicketWriteSkipped, nil
 	}
 	f.results[id] = res
@@ -601,7 +606,7 @@ func TestLoginOauthRedirectFullChain(t *testing.T) {
 	if e.sessions.gotUID != 7 {
 		t.Errorf("会话 uid = %d, want 7", e.sessions.gotUID)
 	}
-	if len(e.sessions.gotAMR) != 1 || e.sessions.gotAMR[0] != amrThirdParty {
+	if len(e.sessions.gotAMR) != 1 || e.sessions.gotAMR[0] != AMRThirdParty {
 		t.Errorf("会话 amr = %v, want [thirdparty]", e.sessions.gotAMR)
 	}
 }
@@ -702,7 +707,7 @@ func TestLoginOauthRejects(t *testing.T) {
 		e := newTPEnv(t)
 		e.addProvider("qq", func(r *model.Provider) { r.EnableSignin = 0 })
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "qq", Code: "c"})
-		if out.Envelope.GetStatus() != statusProviderDisabled {
+		if out.Envelope.GetStatus() != StatusProviderDisabled {
 			t.Fatalf("status = %q, want provider_disabled", out.Envelope.GetStatus())
 		}
 	})
@@ -742,9 +747,9 @@ func TestLoginOauthScanned(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("正向写入", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
-		if out.Envelope.GetStatus() != ticketStatusScanned {
+		if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
 			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
 		}
 		if out.Envelope.GetTicket() != nil {
@@ -754,9 +759,9 @@ func TestLoginOauthScanned(t *testing.T) {
 			t.Fatalf("WriteScanned = %v, want [tid-1]", e.tickets.scanWrites)
 		}
 		res := e.tickets.results["tid-1"]
-		if res.GetStatus() != ticketStatusScanned || res.GetScene() != sceneLogin ||
-			res.GetProviderKey() != "wxscan" || res.GetChannel() != channelQRCode ||
-			res.GetV() != ticketResultV {
+		if res.GetStatus() != ticketsvc.TicketStatusScanned || res.GetScene() != ticketsvc.SceneLogin ||
+			res.GetProviderKey() != "wxscan" || res.GetChannel() != ticketsvc.ChannelQRCode ||
+			res.GetV() != ticketsvc.TicketResultV {
 			t.Fatalf("TicketResult = %+v", res)
 		}
 		if res.GetExpiresAt() != e.payloads.snapshots["tid-1"].GetExp() {
@@ -772,56 +777,56 @@ func TestLoginOauthScanned(t *testing.T) {
 	})
 
 	t.Run("幂等：重复上报不覆盖", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		for i := 0; i < 2; i++ {
 			out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
-			if out.Envelope.GetStatus() != ticketStatusScanned {
+			if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
 				t.Fatalf("第 %d 次上报 status = %q, want scanned", i+1, out.Envelope.GetStatus())
 			}
 		}
 		if len(e.tickets.scanWrites) != 2 {
 			t.Fatalf("两次上报应各调一次 WriteScanned, got %v", e.tickets.scanWrites)
 		}
-		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketStatusScanned {
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketsvc.TicketStatusScanned {
 			t.Fatalf("结果应为 scanned, got %q", res.GetStatus())
 		}
 	})
 
 	t.Run("已存在 success 不覆盖", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
-		e.tickets.results["tid-1"] = &token.TicketResult{V: ticketResultV, Status: ticketStatusSuccess}
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		e.tickets.results["tid-1"] = &token.TicketResult{V: ticketsvc.TicketResultV, Status: ticketsvc.TicketStatusSuccess}
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
-		if out.Envelope.GetStatus() != ticketStatusScanned {
+		if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
 			t.Fatalf("status = %q, want scanned（上报幂等成功）", out.Envelope.GetStatus())
 		}
-		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketStatusSuccess {
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketsvc.TicketStatusSuccess {
 			t.Fatalf("success 被覆盖为 %q", res.GetStatus())
 		}
 	})
 
 	t.Run("快照校验链拒绝", func(t *testing.T) {
 		// 缺失（不存在 / 已过期）。
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-none"})
 		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 			t.Fatalf("快照缺失: status = %q, want invalid_request", out.Envelope.GetStatus())
 		}
 		// scene 非法（与本次扫码用途不一致）。
-		e2 := newScanEnv(t, sceneLogin)
+		e2 := newScanEnv(t, ticketsvc.SceneLogin)
 		e2.seedSnapshot("tid-2", "wxscan", "other")
 		out2 := e2.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-2"})
 		if out2.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 			t.Fatalf("scene 不匹配: status = %q, want invalid_request", out2.Envelope.GetStatus())
 		}
 		// providerKey 不匹配。
-		e3 := newScanEnv(t, sceneLogin)
+		e3 := newScanEnv(t, ticketsvc.SceneLogin)
 		out3 := e3.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxother", Stage: stageScanned, TicketID: "tid-1"})
 		if out3.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 			t.Fatalf("providerKey 不匹配: status = %q, want invalid_request", out3.Envelope.GetStatus())
 		}
 		// 快照过期（键 TTL 与 ticket 同寿命的防御性复判）。
-		e4 := newScanEnv(t, sceneLogin)
-		e4.seedSnapshot("tid-3", "wxscan", sceneLogin).Exp = e4.now.Unix()
+		e4 := newScanEnv(t, ticketsvc.SceneLogin)
+		e4.seedSnapshot("tid-3", "wxscan", ticketsvc.SceneLogin).Exp = e4.now.Unix()
 		out4 := e4.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-3"})
 		if out4.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 			t.Fatalf("快照过期: status = %q, want invalid_request", out4.Envelope.GetStatus())
@@ -835,18 +840,18 @@ func TestLoginOauthScanned(t *testing.T) {
 	})
 
 	t.Run("bind 场景同样支持 scanned 中间态", func(t *testing.T) {
-		e := newScanEnv(t, sceneBind)
+		e := newScanEnv(t, ticketsvc.SceneBind)
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
-		if out.Envelope.GetStatus() != ticketStatusScanned {
+		if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
 			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
 		}
-		if res := e.tickets.results["tid-1"]; res.GetScene() != sceneBind {
+		if res := e.tickets.results["tid-1"]; res.GetScene() != ticketsvc.SceneBind {
 			t.Fatalf("scene = %q, want bind", res.GetScene())
 		}
 	})
 
 	t.Run("快照读取 infra 故障 → failed", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		e.payloads.err = errors.New("redis down")
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
 		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
@@ -865,14 +870,14 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 	}
 
 	t.Run("login 已绑定 → login_result", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 7, ProviderKey: "wxscan", OpenID: "openid_1"}
 		e.users.byID[7] = &model.User{ID: 7, UserStatus: 1, MfaRequired: 0}
 		out := submit(e)
 		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
 			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
 		}
-		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketStatusSuccess || tk.GetTicketId() != "tid-1" {
+		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketsvc.TicketStatusSuccess || tk.GetTicketId() != "tid-1" {
 			t.Fatalf("ticket = %+v, want {success, tid-1}", tk)
 		}
 		res := e.tickets.results["tid-1"]
@@ -893,7 +898,7 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 	})
 
 	t.Run("login 未绑定 → binding_required + thirdparty_identity", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		out := submit(e)
 		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
 			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
@@ -915,7 +920,7 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 	})
 
 	t.Run("bind → thirdparty_identity，不建会话不查绑定不写绑定关系", func(t *testing.T) {
-		e := newScanEnv(t, sceneBind)
+		e := newScanEnv(t, ticketsvc.SceneBind)
 		e.adapter.identity.UnionID = "union_1"
 		e.adapter.identity.Raw = map[string]any{"session_key": "sk-1"}
 		out := submit(e)
@@ -923,7 +928,7 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
 		}
 		res := e.tickets.results["tid-1"]
-		if res.GetScene() != sceneBind || res.GetLoginResult() != nil {
+		if res.GetScene() != ticketsvc.SceneBind || res.GetLoginResult() != nil {
 			t.Fatalf("bind 结果 = %+v（无 login_result）", res)
 		}
 		idn := res.GetThirdpartyIdentity()
@@ -935,7 +940,7 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 			t.Errorf("raw = %+v, want 含 session_key（绑定要落 extra）", idn.GetRaw())
 		}
 		// 不查绑定（预置普通行也不归并）、不写绑定、不建会话（§13.2b）。
-		e2 := newScanEnv(t, sceneBind)
+		e2 := newScanEnv(t, ticketsvc.SceneBind)
 		e2.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 7, ProviderKey: "wxscan", OpenID: "openid_1"}
 		e2.users.byID[7] = &model.User{ID: 7, UserStatus: 1}
 		out2 := submit(e2)
@@ -952,20 +957,20 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 
 	t.Run("失败类 → ticket failed + 信封 status", func(t *testing.T) {
 		// Exchange 失败。
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		e.adapter.exchangeErr = errors.New("upstream 500")
 		out := submit(e)
 		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
 			t.Fatalf("Exchange 失败: status = %q, want failed", out.Envelope.GetStatus())
 		}
-		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketStatusFailed || tk.GetTicketId() != "tid-1" {
+		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetStatus() != ticketsvc.TicketStatusFailed || tk.GetTicketId() != "tid-1" {
 			t.Fatalf("ticket = %+v, want {failed, tid-1}", tk)
 		}
 		if res := e.tickets.results["tid-1"]; res.GetStatus() != orchestrator.StatusFailed {
 			t.Fatalf("TicketResult.status = %q, want failed（结论落结果）", res.GetStatus())
 		}
 		// 用户禁用（§1.6 行 253）。
-		e2 := newScanEnv(t, sceneLogin)
+		e2 := newScanEnv(t, ticketsvc.SceneLogin)
 		e2.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 8, ProviderKey: "wxscan", OpenID: "openid_1"}
 		e2.users.byID[8] = &model.User{ID: 8, UserStatus: 2}
 		out2 := submit(e2)
@@ -975,13 +980,13 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 		if res := e2.tickets.results["tid-1"]; res.GetStatus() != statusUserDisabled {
 			t.Fatalf("TicketResult.status = %q, want user_disabled", res.GetStatus())
 		}
-		if tk := out2.Envelope.GetTicket(); tk.GetStatus() != ticketStatusFailed {
+		if tk := out2.Envelope.GetTicket(); tk.GetStatus() != ticketsvc.TicketStatusFailed {
 			t.Fatalf("ticket = %+v, want failed", tk)
 		}
 	})
 
 	t.Run("快照校验拒绝 → 不写 ticket", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-none"})
 		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
 			t.Fatalf("status = %q, want invalid_request", out.Envelope.GetStatus())
@@ -997,7 +1002,7 @@ func TestLoginOauthTicketComplete(t *testing.T) {
 // 一致）、**不写 ticket**（PC 端轮询至 expired）。
 func TestLoginOauthTicketMFA(t *testing.T) {
 	ctx := context.Background()
-	e := newScanEnv(t, sceneLogin)
+	e := newScanEnv(t, ticketsvc.SceneLogin)
 	e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "wxscan", OpenID: "openid_1"}
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
 
@@ -1185,10 +1190,10 @@ func TestLoginOauthMFAEnvelope(t *testing.T) {
 	if p.GetUid() != 3 {
 		t.Errorf("uid = %d, want 3", p.GetUid())
 	}
-	if len(p.GetPassed()) != 1 || p.GetPassed()[0] != amrThirdParty {
+	if len(p.GetPassed()) != 1 || p.GetPassed()[0] != AMRThirdParty {
 		t.Errorf("passed = %v, want [thirdparty]", p.GetPassed())
 	}
-	if len(p.GetAmr()) != 1 || p.GetAmr()[0] != amrThirdParty {
+	if len(p.GetAmr()) != 1 || p.GetAmr()[0] != AMRThirdParty {
 		t.Errorf("amr = %v, want [thirdparty]", p.GetAmr())
 	}
 	if p.GetOidc().GetClientId() != "cid-1" || p.GetOidc().GetState() != "s-1" {
@@ -1249,7 +1254,7 @@ func TestLoginOauthMFARequiredLookupFailure(t *testing.T) {
 	})
 
 	t.Run("扫码 ticket", func(t *testing.T) {
-		e := newScanEnv(t, sceneLogin)
+		e := newScanEnv(t, ticketsvc.SceneLogin)
 		seed(e, "wxscan")
 
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", TicketID: "tid-1"})
@@ -1259,7 +1264,7 @@ func TestLoginOauthMFARequiredLookupFailure(t *testing.T) {
 		if res := e.tickets.results["tid-1"]; res.GetStatus() != orchestrator.StatusFailed {
 			t.Fatalf("TicketResult.status = %q, want failed", res.GetStatus())
 		}
-		if tk := out.Envelope.GetTicket(); tk.GetStatus() != ticketStatusFailed {
+		if tk := out.Envelope.GetTicket(); tk.GetStatus() != ticketsvc.TicketStatusFailed {
 			t.Fatalf("ticket = %+v, want failed", tk)
 		}
 		if e.sessions.gotUID != 0 {

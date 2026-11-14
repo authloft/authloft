@@ -59,6 +59,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -77,8 +78,8 @@ const (
 	loginStateTTL = 10 * time.Minute
 	// stateRandomLen state 随机段长度（前缀 + 32 随机字符）。
 	stateRandomLen = 32
-	// amrThirdParty 三方登录的认证方法引用（§12.5：MFA 信封 amr）。
-	amrThirdParty = "thirdparty"
+	// AMRThirdParty 三方登录的认证方法引用（§12.5：MFA 信封 amr）。
+	AMRThirdParty = "thirdparty"
 	// stageScanned LoginOauth.stage 的 scanned 取值（§2.7.4 行 640：complete
 	// 默认｜scanned 仅上报已扫码；其余取值按 complete 默认处理，跨版本可新增）。
 	stageScanned = "scanned"
@@ -142,10 +143,10 @@ type ThirdpartyDeps struct {
 	Credentials factor.CredentialRepo
 	// Tickets al:ticket:{ticket_id} 结果读写（§11.6.5；扫码 ticket
 	// 分支）。
-	Tickets TicketStore
+	Tickets ticketsvc.TicketStore
 	// TicketPayloads al:ticket:payload:{ticket_id} 快照读取（§5.1 行 863、
 	// §11.6.4 行 1350；扫码 ticket 分支——CreateQrcode 写、此处读）。
-	TicketPayloads TicketPayloadStore
+	TicketPayloads ticketsvc.TicketPayloadStore
 	// CookieCodec sign_key.cookie（§12.4 行 1487），al_login_state 加解密。
 	CookieCodec *security.Codec
 	// RootOrigin {al_root}（authloft.root，接口文档 §1.1 行 76）：redirect_uri
@@ -305,16 +306,16 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	p, err := s.deps.Loader.Get(ctx, in.ProviderKey)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return s.envelope(statusProviderDisabled)
+			return s.envelope(StatusProviderDisabled)
 		}
 		return s.envelope(orchestrator.StatusFailed)
 	}
 	if !p.Enabled() || p.Row == nil || p.Row.EnableSignin != 1 {
-		return s.envelope(statusProviderDisabled)
+		return s.envelope(StatusProviderDisabled)
 	}
 	adapter, err := s.deps.NewAdapter(p)
 	if err != nil {
-		return s.envelope(statusProviderDisabled)
+		return s.envelope(StatusProviderDisabled)
 	}
 	channel := adapter.Channel()
 	// 通道判定（§13.2）：扫码提交（带 ticketId）必为 qrcode 通道（快照由
@@ -373,8 +374,8 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		Tid:    s.newTID(),
 		Flow:   "login",
 		Uid:    uid,
-		Passed: []string{amrThirdParty},
-		Amr:    []string{amrThirdParty},
+		Passed: []string{AMRThirdParty},
+		Amr:    []string{AMRThirdParty},
 		Oidc:   in.OIDC,
 	}
 
@@ -461,18 +462,18 @@ func (s *Thirdparty) loginOauthScanned(ctx context.Context, in OauthInput) *Oaut
 		return s.envelope(bad)
 	}
 	res := &token.TicketResult{
-		V:           ticketResultV,
+		V:           ticketsvc.TicketResultV,
 		Scene:       payload.GetScene(),
-		Status:      ticketStatusScanned,
+		Status:      ticketsvc.TicketStatusScanned,
 		ProviderKey: payload.GetProviderKey(),
-		Channel:     channelQRCode,
+		Channel:     ticketsvc.ChannelQRCode,
 		CreatedAt:   s.now().Unix(),
 		ExpiresAt:   payload.GetExp(),
 	}
 	if _, err := s.deps.Tickets.WriteScanned(ctx, in.TicketID, res); err != nil {
 		return s.envelope(orchestrator.StatusFailed)
 	}
-	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{Status: ticketStatusScanned}}
+	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{Status: ticketsvc.TicketStatusScanned}}
 }
 
 // loginOauthTicket stage=complete 带 ticketId 分支（§2.7.4 行 649 / 659、
@@ -506,7 +507,7 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 	}
 
 	// scene=bind（§13.2b 行 1616）：不经 uid 解析链，无 MFA / 会话语义。
-	if snap.GetScene() == sceneBind {
+	if snap.GetScene() == ticketsvc.SceneBind {
 		return s.ticketDone(ctx, id, s.newTicketResult(snap, "", nil, identity))
 	}
 
@@ -536,8 +537,8 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 			Tid:    s.newTID(),
 			Flow:   "login",
 			Uid:    uid,
-			Passed: []string{amrThirdParty},
-			Amr:    []string{amrThirdParty},
+			Passed: []string{AMRThirdParty},
+			Amr:    []string{AMRThirdParty},
 			Oidc:   in.OIDC,
 		})
 		if err != nil {
@@ -567,7 +568,7 @@ func (s *Thirdparty) ticketSnapshot(ctx context.Context, in OauthInput) (*token.
 	}
 	if payload == nil ||
 		payload.GetTicketId() != in.TicketID ||
-		(payload.GetScene() != sceneLogin && payload.GetScene() != sceneBind) ||
+		(payload.GetScene() != ticketsvc.SceneLogin && payload.GetScene() != ticketsvc.SceneBind) ||
 		payload.GetProviderKey() != in.ProviderKey ||
 		s.now().Unix() >= payload.GetExp() {
 		return nil, orchestrator.StatusInvalidRequest
@@ -581,21 +582,21 @@ func (s *Thirdparty) ticketSnapshot(ctx context.Context, in OauthInput) (*token.
 // lr 为 nil 且 identity 为 nil 的空结果仅 scanned 分支自组装。
 func (s *Thirdparty) newTicketResult(snap *token.TicketPayload, status string, lr *token.LoginResult, identity *provider.ExternalIdentity) *token.TicketResult {
 	if status == "" {
-		status = ticketStatusSuccess
+		status = ticketsvc.TicketStatusSuccess
 	}
 	res := &token.TicketResult{
-		V:           ticketResultV,
+		V:           ticketsvc.TicketResultV,
 		Scene:       snap.GetScene(),
 		Status:      status,
 		ProviderKey: snap.GetProviderKey(),
-		Channel:     channelQRCode,
+		Channel:     ticketsvc.ChannelQRCode,
 		CreatedAt:   s.now().Unix(),
 		ExpiresAt:   snap.GetExp(),
 		LoginResult: lr,
 	}
 	// thirdparty_identity：bind 场景（绑定要落 extra，含 raw）与 login
 	// binding_required=true 共用（§11.6.5 行 1372）；已绑定登录不填。
-	if snap.GetScene() == sceneBind || (lr != nil && lr.GetBindingRequired()) {
+	if snap.GetScene() == ticketsvc.SceneBind || (lr != nil && lr.GetBindingRequired()) {
 		res.ThirdpartyIdentity = tpIdentity(identity)
 	}
 	return res
@@ -611,7 +612,7 @@ func (s *Thirdparty) ticketDone(ctx context.Context, id string, res *token.Ticke
 	}
 	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 		Status: orchestrator.StatusSuccess,
-		Ticket: &ssov1.TicketStatus{Status: ticketStatusSuccess, TicketId: id},
+		Ticket: &ssov1.TicketStatus{Status: ticketsvc.TicketStatusSuccess, TicketId: id},
 	}}
 }
 
@@ -624,7 +625,7 @@ func (s *Thirdparty) ticketFail(ctx context.Context, id string, snap *token.Tick
 	}
 	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 		Status: status,
-		Ticket: &ssov1.TicketStatus{Status: ticketStatusFailed, TicketId: id},
+		Ticket: &ssov1.TicketStatus{Status: ticketsvc.TicketStatusFailed, TicketId: id},
 	}}
 }
 
@@ -757,7 +758,7 @@ func encodeExtra(raw map[string]any) []byte {
 // user_disabled 行 253）。
 const (
 	statusStateMismatch    = "state_mismatch"
-	statusProviderDisabled = "provider_disabled"
+	StatusProviderDisabled = "provider_disabled"
 	statusUserDisabled     = "user_disabled"
 )
 
