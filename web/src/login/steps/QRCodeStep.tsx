@@ -20,8 +20,9 @@
  *   onResult 上抛交容器状态机分派（ProviderButtons → MethodTabs →
  *   LoginContainer 链，「LoginContainer 禁改」约束已解除）；
  * - needs_step_up（§2.8 行 884 MFA×扫码）：轮询顶层 status=needs_step_up
- *   （ticket.status 仍为 scanned，面板按 scanned 继续轮询）时，以 mfaPendingId
- *   = ticketId 弹出 shared/components/StepUpDialog 走 StartVerification →
+ *   （ticket.status 仍为 scanned，面板按 scanned 继续轮询）时，信封同时下发
+ *   loginToken；本组件把它存入 loginTokenStore 后弹出 StepUpDialog，复用登录主路径
+ *   的 startLoginVerification / submitStepUp（以 loginToken 为主体凭证）→
  *   SubmitVerification；扫码场景服务端以票据链路收尾（§3.8.1），Submit 成功写终态
  *   TicketResult、不直接登录，本组件关窗后由面板下一次轮询进入 success 再走终点。
  *   同一 ticket 首次 needs_step_up 时弹窗；通过后保留已处理标记不重复弹窗，
@@ -48,6 +49,7 @@ import {
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
+import { setLoginToken } from '../loginTokenStore';
 import { Modal } from '../components/Modal';
 import { defaultNavigate } from './RedirectStep';
 import styles from './QRCodeStep.module.less';
@@ -154,15 +156,19 @@ export function dispatchQrResult(
 
 /**
  * 扫码轮询 → step-up 弹窗决策（§2.8 行 884，纯函数 node 可测）：顶层
- * status=needs_step_up 且票据带 ticketId、且该票据尚未处理过时，返回需弹窗的
- * mfaPendingId（= ticketId）；其余（非 needs_step_up / 无 ticketId / 已处理过）
- * 返回 undefined。ticket.status 仍为 scanned，面板按 scanned 继续轮询、不被终止。
+ * status=needs_step_up 且信封下发 loginToken、票据带 ticketId、该票据尚未处理过时，
+ * 返回需弹窗的票据标记；其余（非 needs_step_up / 无 loginToken / 无 ticketId /
+ * 已处理过）返回 undefined。ticket.status 仍为 scanned，面板按 scanned 继续轮询、
+ * 不被终止。loginToken 缺省时不弹窗（§2.8 行 872：主体凭证随信封下发）。
  */
 export function stepUpTicketOf(
   envelope: LoginFlowResponse,
   handledTicketId: string | undefined,
 ): string | undefined {
   if (envelope.status !== 'needs_step_up') {
+    return undefined;
+  }
+  if (envelope.loginToken === '') {
     return undefined;
   }
   const ticketId = envelope.ticket?.ticketId ?? '';
@@ -187,14 +193,20 @@ export function stepUpHandledAfterDismiss(
 /**
  * Submit 非 success → 窗内可展示的错误（§1.6「提示 + 剩余次数」）：把登录流程
  * 信封的失败 status 归一为错误码，交 StepUpDialog 按 errors.code.* 文案展示，
- * 不再落成空串被当成「响应无效」。attempts_left 由 transport 侧 ApiError 携带。
+ * 不再落成空串被当成「响应无效」。attemptsLeft 取自 SubmitVerificationResponse
+ * 响应字段（§3.8.2），经本函数写入 ApiError init，不是 transport 侧错误体的
+ * attempts_left；零值 / 缺失即不展示剩余次数（§1.6 行 290）。
  */
-export function stepUpSubmitError(status: string): ApiError {
+export function stepUpSubmitError(
+  status: string,
+  attemptsLeft?: bigint,
+): ApiError {
   return new ApiError({
     httpStatus: 200,
     code: status === '' ? 'failed' : status,
     message: '',
     requestId: '',
+    attemptsLeft,
   });
 }
 
@@ -240,7 +252,8 @@ export function QRCodeStep({
   const [panelKey, setPanelKey] = useState(0);
   // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
   const [searchParams] = useSearchParams();
-  // needs_step_up（§2.8 行 884）：mfaPendingId=ticketId 弹二次验证窗体；同一票据只弹一次。
+  // needs_step_up（§2.8 行 884）：票据标记弹二次验证窗体（主体凭证取信封 loginToken）；
+  // 同一票据只弹一次。
   const [stepUpTicket, setStepUpTicket] = useState<string | undefined>(
     undefined,
   );
@@ -252,18 +265,18 @@ export function QRCodeStep({
   // 此 useCallback 仅为引用稳定——内联闭包每次渲染换新，captcha 弹窗触发的
   // 重渲染会让 StepUpDialog 持续拿到新引用，与 ref 口径不一致。deps 取
   // stepUpGate.run（其本身 useCallback([prompt])、引用稳定），不依赖
-  // stepUpGate 对象（每次渲染新建）。
+  // stepUpGate 对象（每次渲染新建）。主体凭证 loginToken 由 loginTokenStore
+  // 托管（needs_step_up 时轮询写入），不在闭包内捕获。
   const startStepUp = useCallback(
     async (method: string) => {
-      const { startStepUp: startStepUpApi } = await import('../api');
+      const { startLoginVerification } = await import('../api');
       if (method === '') {
-        return startStepUpApi({ mfaPendingId: stepUpTicket ?? '' });
+        return startLoginVerification();
       }
       const outcome = await stepUpGate.run({
         mode: 'reactive',
         request: (token) =>
-          startStepUpApi({
-            mfaPendingId: stepUpTicket ?? '',
+          startLoginVerification({
             method,
             ...(token !== undefined ? { captcha: token } : {}),
           }),
@@ -279,7 +292,7 @@ export function QRCodeStep({
       }
       throw outcome.error;
     },
-    [stepUpTicket, stepUpGate.run],
+    [stepUpGate.run],
   );
 
   // 不捕获任何响应式值（api 动态 import + 纯透传）：deps 空集即恒定引用。
@@ -298,7 +311,7 @@ export function QRCodeStep({
         return 'ok';
       }
       // 失败态按 §1.6 出提示（含剩余次数），不吞成空串走「响应无效」。
-      throw stepUpSubmitError(response.status);
+      throw stepUpSubmitError(response.status, response.attemptsLeft);
     },
     [],
   );
@@ -332,7 +345,8 @@ export function QRCodeStep({
     throw outcome.error;
   };
 
-  // 轮询包装：顶层 status=needs_step_up 时以 mfaPendingId=ticketId 弹二次验证窗体。
+  // 轮询包装：顶层 status=needs_step_up 且信封下发 loginToken 时，把该 token
+  // 存入 loginTokenStore 后弹二次验证窗体（start/submit 复用登录主路径编排）。
   // ticket.status 仍为 scanned → 面板按 scanned 继续轮询、不被 needs_step_up 终止；
   // Submit 成功后票据转终态，下一次轮询即 success（§2.8 行 884）。
   const pollAndDetectStepUp = async (
@@ -342,6 +356,7 @@ export function QRCodeStep({
     const response = await pollTicket(ticket, seconds);
     const ticketId = stepUpTicketOf(response, handledStepUpRef.current);
     if (ticketId !== undefined) {
+      setLoginToken(response.loginToken);
       handledStepUpRef.current = ticketId;
       setStepUpTicket(ticketId);
     }

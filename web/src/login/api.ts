@@ -201,9 +201,11 @@ export async function getLoginTicket(
   ticket: string,
   pollSeconds?: number,
 ): Promise<LoginFlowResponse> {
+  const oidc = snapshotOidc();
   const response = await ssoClient.getLoginTicket({
     ticket,
     poll: BigInt(pollSeconds ?? 0),
+    ...(oidc !== undefined ? { oidc } : {}),
   });
   if (response.login !== undefined) {
     applyEnvelope(response.login);
@@ -214,30 +216,44 @@ export async function getLoginTicket(
 }
 
 // ---------------------------------------------------------------------------
-// 登录主路径 MFA（status=mfa_required，接口文档 §1.6 / 前端架构 §4.1）：以
-// loginToken 调 StartVerification（biz_purpose=login、operation=mfa_verify、
-// 不带 method）取可用因子能力视图 methods[]，交容器就地渲染选择器。登录流程
-// 信封不再下发 mfa 块，本域不消费该块。
+// 登录主路径 MFA 与扫码 step-up 共用（status=mfa_required / needs_step_up，
+// 接口文档 §1.6 / §2.8 / §3.8、前端架构 §4.1）：以 loginToken 调
+// StartVerification（biz_purpose=login、operation=mfa_verify）取因子能力视图。
+// 首次不带 method 取 methods[]，选定因子后带 method 取 challengeToken（§4.1 行 492）。
 // ---------------------------------------------------------------------------
 
-/** 登录主路径 MFA 的因子能力视图请求（不带 method = 只取 methods[]，§3.8.2）。 */
-export function startLoginVerification(): Promise<StartVerificationResponse> {
+/** StartVerification 入参：method 空 / 缺省 = 只取 methods[]；非空 = 取 challengeToken。 */
+export interface LoginVerificationInput {
+  /** 空 / 缺省 = 只取 methods[] 由前端选择；非空 = 选定本次下发的因子。 */
+  method?: string;
+  /** 请求级人机校验凭据（§2.5 / §3.8.5）。 */
+  captcha?: CaptchaPayload;
+}
+
+/** 登录二次验证的 StartVerification：loginToken 主体凭证 + 两段式 method（§3.8.2）。 */
+export function startLoginVerification(
+  input: LoginVerificationInput = {},
+): Promise<StartVerificationResponse> {
   const request = create(StartVerificationRequestSchema, {
     bizPurpose: 'login',
     operation: 'mfa_verify',
     loginToken: getLoginToken(),
+    ...(input.method !== undefined && input.method !== ''
+      ? { method: input.method }
+      : {}),
+    ...(input.captcha !== undefined
+      ? { captcha: captchaToStruct(input.captcha) }
+      : {}),
   });
   return ssoClient.startVerification(request);
 }
 
 // ---------------------------------------------------------------------------
-// 扫码 step-up（SsoService/StartVerification / SubmitVerification，接口文档 §2.8 / §3.8）
+// 扫码 step-up（SsoService/SubmitVerification，接口文档 §2.8 / §3.8）
 //
-// 扫码登录命中 MFA 时轮询返回 needs_step_up（ticket.status 仍为 scanned）；PC 端以
-// mfaPendingId=ticketId 调 StartVerification（bizPurpose=login、operation=mfa_verify）
-// 取 methods[] 与 challengeToken，SubmitVerification 提交因子载荷。扫码场景服务端以票据
-// 链路收尾（§3.8.1）：Submit 成功写终态 TicketResult、不直接建会话，PC 端下一次轮询
-// GetLoginTicket 进入 success 再走终点，故本域不消费 SubmitVerificationResponse.verificationToken。
+// 扫码登录命中 MFA 时轮询返回 needs_step_up 并下发 loginToken；PC 端把该 token
+// 存入 loginTokenStore 后复用登录主路径的 startLoginVerification / submitStepUp。
+// Submit 成功写终态 TicketResult、PC 端下一次轮询 GetLoginTicket 进入 success 再走终点。
 // ---------------------------------------------------------------------------
 
 /**
@@ -262,35 +278,7 @@ export function captchaToStruct(captcha: CaptchaPayload): JsonObject {
   return out;
 }
 
-/** StartVerification 入参（扫码 step-up）：mfaPendingId 取 ticketId；captcha 走请求级 Struct 字段。 */
-export interface StartStepUpInput {
-  /** 扫码票据 ticketId（§3.8.1：扫码场景必填）。 */
-  mfaPendingId: string;
-  /** 空 = 只取 methods[] 由前端选择；非空 = 选定本次下发的因子。 */
-  method?: string;
-  /** 请求级人机校验凭据（§2.5 / §3.8.5）。 */
-  captcha?: CaptchaPayload;
-}
-
-/** SsoService/StartVerification（扫码 step-up）：bizPurpose=login、operation=mfa_verify 固定。 */
-export function startStepUp(
-  input: StartStepUpInput,
-): Promise<StartVerificationResponse> {
-  const request = create(StartVerificationRequestSchema, {
-    bizPurpose: 'login',
-    operation: 'mfa_verify',
-    mfaPendingId: input.mfaPendingId,
-    ...(input.method !== undefined && input.method !== ''
-      ? { method: input.method }
-      : {}),
-    ...(input.captcha !== undefined
-      ? { captcha: captchaToStruct(input.captcha) }
-      : {}),
-  });
-  return ssoClient.startVerification(request);
-}
-
-/** SsoService/SubmitVerification（扫码 step-up）：扫码以票据链路收尾，不消费 verificationToken。 */
+/** SsoService/SubmitVerification（登录二次验证）：带 loginToken 恢复登录流程上下文（§3.8.1 / §3.8.5）。 */
 export function submitStepUp(
   challengeToken: string,
   method: string,
@@ -300,6 +288,7 @@ export function submitStepUp(
     challengeToken,
     method,
     payload,
+    loginToken: getLoginToken(),
   });
   return ssoClient.submitVerification(request);
 }

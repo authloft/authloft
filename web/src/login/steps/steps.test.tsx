@@ -21,6 +21,7 @@ import {
 } from '../../gen/proto/api/sso/v1/login_pb';
 import { CreateQrcodeResponseSchema } from '../../gen/proto/api/sso/v1/ticket_pb';
 import { ApiError } from '../../shared/api/errors';
+import { stepUpErrorText } from '../../shared/components/StepUpDialog';
 import { ChallengeStep } from './ChallengeStep';
 import { FormStep } from './FormStep';
 import {
@@ -422,6 +423,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
   test('用户取消弹窗 → 重入标记清零，同一票据可再次弹窗；验证通过则保留标记', () => {
     const needsStepUp = create(LoginFlowResponseSchema, {
       status: 'needs_step_up',
+      loginToken: 'lt-qr',
       ticket: { status: 'scanned', ticketId: 'tid-1' },
     });
     const opened = stepUpTicketOf(needsStepUp, undefined);
@@ -440,6 +442,46 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
         stepUpHandledAfterDismiss(opened, 'cancelled'),
       ),
     ).toBe('tid-1');
+  });
+
+  test('needs_step_up 带 loginToken 才弹窗；token 缺省不展示（可反向证伪）', () => {
+    const withToken = create(LoginFlowResponseSchema, {
+      status: 'needs_step_up',
+      loginToken: 'lt-qr',
+      ticket: { status: 'scanned', ticketId: 'tid-1' },
+    });
+    expect(stepUpTicketOf(withToken, undefined)).toBe('tid-1');
+    // 反向：信封未下发 loginToken → 不弹窗（主体凭证缺省不展示）。
+    const withoutToken = create(LoginFlowResponseSchema, {
+      status: 'needs_step_up',
+      ticket: { status: 'scanned', ticketId: 'tid-1' },
+    });
+    expect(stepUpTicketOf(withoutToken, undefined)).toBeUndefined();
+    // 反向：非 needs_step_up 即使带 token 也不弹窗。
+    expect(
+      stepUpTicketOf(
+        create(LoginFlowResponseSchema, {
+          status: 'scanned',
+          loginToken: 'lt-qr',
+          ticket: { status: 'scanned', ticketId: 'tid-1' },
+        }),
+        undefined,
+      ),
+    ).toBeUndefined();
+  });
+
+  test('stepUpSubmitError 携带 attemptsLeft → 文案拼接剩余次数；缺省不展示（可反向证伪）', () => {
+    const withAttempts = stepUpSubmitError('invalid_code', BigInt(3));
+    expect(withAttempts).toBeInstanceOf(ApiError);
+    expect(withAttempts.code).toBe('invalid_code');
+    expect(stepUpErrorText(withAttempts)).toContain('还可尝试 3 次');
+    // 反向：缺省 / 零值不展示剩余次数（§1.6「零值或缺失即不展示」）。
+    expect(stepUpErrorText(stepUpSubmitError('invalid_code'))).toBe(
+      '验证码错误',
+    );
+    expect(stepUpErrorText(stepUpSubmitError('invalid_code', BigInt(0)))).toBe(
+      '验证码错误',
+    );
   });
 
   test('因子失败不再吞成空串：非 success status 抛错误码交弹窗展示（§1.6）', () => {

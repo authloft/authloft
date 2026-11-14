@@ -332,7 +332,7 @@ describe('非信封方法（直通薄封装，无 loginToken 注入）', () => {
 });
 
 describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', () => {
-  test('请求体 ticket + poll（int64 十进制字符串，§1.12）；响应后处理同信封', async () => {
+  test('请求体 ticket + poll + oidc（int64 十进制字符串，§1.12 / §2.8 行 867）；响应后处理同信封', async () => {
     let raw = '';
     server.use(
       http.post(LOGIN_TICKET, async ({ request }) => {
@@ -344,7 +344,11 @@ describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', ()
       }),
     );
     const response = await mod.getLoginTicket('t-1', 10);
-    expect(JSON.parse(raw)).toEqual({ ticket: 't-1', poll: '10' });
+    expect(JSON.parse(raw)).toEqual({
+      ticket: 't-1',
+      poll: '10',
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
+    });
     expect(response.status).toBe('pending');
     expect(response.ticket?.ticketId).toBe('c7Kx9');
     expect(getLoginToken()).toBe('');

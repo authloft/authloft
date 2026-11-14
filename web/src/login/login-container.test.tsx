@@ -715,10 +715,11 @@ describe('stepUpTicketOf（扫码 needs_step_up → step-up 弹窗，§2.8 行 8
   const ticketEnvelope = (status: string, ticketId: string) =>
     envelope({
       status,
+      loginToken: 'lt-qr',
       ticket: { status: 'scanned', ticketId },
     });
 
-  test('needs_step_up + ticketId + 未处理过 → 返回 ticketId（mfaPendingId）', () => {
+  test('needs_step_up + loginToken + ticketId + 未处理过 → 返回 ticketId', () => {
     expect(
       qrStep.stepUpTicketOf(
         ticketEnvelope('needs_step_up', 'c7Kx9'),
@@ -727,7 +728,7 @@ describe('stepUpTicketOf（扫码 needs_step_up → step-up 弹窗，§2.8 行 8
     ).toBe('c7Kx9');
   });
 
-  test('非 needs_step_up / 缺 ticketId / 已处理过 → undefined（不再弹窗）', () => {
+  test('非 needs_step_up / 缺 ticketId / 缺 loginToken / 已处理过 → undefined（不再弹窗）', () => {
     // 轮询进行中（scanned / pending）或终态（expired / success）不弹。
     expect(
       qrStep.stepUpTicketOf(ticketEnvelope('scanned', 'c7Kx9'), undefined),
@@ -738,6 +739,16 @@ describe('stepUpTicketOf（扫码 needs_step_up → step-up 弹窗，§2.8 行 8
     // needs_step_up 但缺 ticketId（零值兜底）。
     expect(
       qrStep.stepUpTicketOf(ticketEnvelope('needs_step_up', ''), undefined),
+    ).toBeUndefined();
+    // needs_step_up 但信封未下发 loginToken（主体凭证缺省不展示）。
+    expect(
+      qrStep.stepUpTicketOf(
+        envelope({
+          status: 'needs_step_up',
+          ticket: { status: 'scanned', ticketId: 'c7Kx9' },
+        }),
+        undefined,
+      ),
     ).toBeUndefined();
     // 同一票据已处理过 → 不再弹窗。
     expect(
@@ -2260,7 +2271,7 @@ describe('startLoginVerification 请求体直测（§3.8.1 / §4.1 行 492）', 
     setLoginToken('lt-main');
     const response = await apiMod.startLoginVerification();
     expect(response.methods[0]?.method).toBe('totp');
-    // 严格相等同时覆盖「无 method / 无 mfaPendingId」（§3.8.2 空值省略）。
+    // 严格相等同时覆盖「无 method / 无 captcha」（§3.8.2 空值省略）。
     expect(bodies[0]).toEqual({
       bizPurpose: 'login',
       operation: 'mfa_verify',
@@ -2272,8 +2283,8 @@ describe('startLoginVerification 请求体直测（§3.8.1 / §4.1 行 492）', 
   });
 });
 
-describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884）', () => {
-  test('StartVerification：bizPurpose=login + operation=mfa_verify + mfaPendingId=ticketId；method 空省略', async () => {
+describe('startLoginVerification / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884）', () => {
+  test('StartVerification：bizPurpose=login + operation=mfa_verify + loginToken；method 空省略', async () => {
     const bodies: unknown[] = [];
     server.use(
       http.post(START_VERIFICATION, async ({ request }) => {
@@ -2289,12 +2300,13 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
         );
       }),
     );
-    const response = await apiMod.startStepUp({ mfaPendingId: 'tid-1' });
+    setLoginToken('lt-1');
+    const response = await apiMod.startLoginVerification();
     expect(response.methods[0]?.method).toBe('totp');
     expect(bodies[0]).toEqual({
       bizPurpose: 'login',
       operation: 'mfa_verify',
-      mfaPendingId: 'tid-1',
+      loginToken: 'lt-1',
     });
   });
 
@@ -2315,8 +2327,8 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
         );
       }),
     );
-    const response = await apiMod.startStepUp({
-      mfaPendingId: 'tid-1',
+    setLoginToken('lt-1');
+    const response = await apiMod.startLoginVerification({
       method: 'totp',
       captcha: imageToken('cap-9', '999'),
     });
@@ -2327,13 +2339,13 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
     expect(bodies[0]).toMatchObject({
       bizPurpose: 'login',
       operation: 'mfa_verify',
-      mfaPendingId: 'tid-1',
+      loginToken: 'lt-1',
       method: 'totp',
       captcha: { providerKey: 'builtin_image', id: 'cap-9', answer: '999' },
     });
   });
 
-  test('SubmitVerification：challengeToken / method / payload 原样承载（§2.6 {code}）；扫码回 status', async () => {
+  test('SubmitVerification：challengeToken / method / payload + loginToken 承载（§2.6 {code}）；扫码回 status', async () => {
     const bodies: unknown[] = [];
     server.use(
       http.post(SUBMIT_VERIFICATION, async ({ request }) => {
@@ -2349,6 +2361,7 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
         );
       }),
     );
+    setLoginToken('lt-1');
     const response = await apiMod.submitStepUp('ct-1', 'totp', {
       code: '123456',
     });
@@ -2357,6 +2370,7 @@ describe('startStepUp / submitStepUp 请求体直测（§3.8.2 / §2.8 行 884�
       challengeToken: 'ct-1',
       method: 'totp',
       payload: { code: '123456' },
+      loginToken: 'lt-1',
     });
   });
 });
@@ -2368,7 +2382,7 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       type: 'image',
     });
 
-  test('needs_step_up 不终止轮询 → mfaPendingId 完成 Start/Submit → 下一次轮询 success → completeLogin', async () => {
+  test('needs_step_up 不终止轮询 → loginToken 完成 Start/Submit → 下一次轮询 success → completeLogin', async () => {
     const qrBodies: unknown[] = [];
     const pollBodies: unknown[] = [];
     const startBodies: unknown[] = [];
@@ -2414,6 +2428,7 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
               LoginFlowResponseSchema,
               envelope({
                 status: 'needs_step_up',
+                loginToken: 'lt-qr',
                 ticket: { status: 'scanned', ticketId: 'tid-1' },
               }),
             ),
@@ -2497,13 +2512,11 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       expect(pollBodies[0]).toEqual({ ticket: 'tk-1', poll: '15' });
 
       // 与 StepUpDialog 编排同构：先取 methods[] → 选因子取挑战 → 提交因子载荷。
-      const methodsResponse = await apiMod.startStepUp({
-        mfaPendingId: 'tid-1',
-      });
+      setLoginToken('lt-qr');
+      const methodsResponse = await apiMod.startLoginVerification();
       const selected = methodsResponse.methods[0]?.method ?? '';
       expect(selected).toBe('totp');
-      const challenge = await apiMod.startStepUp({
-        mfaPendingId: 'tid-1',
+      const challenge = await apiMod.startLoginVerification({
         method: selected,
       });
       expect(challenge.challengeToken).toBe('ct-qr');
@@ -2522,22 +2535,23 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       expect(phases[phases.length - 1]).toEqual({ kind: 'success' });
       expect(getLoginToken()).toBe(''); // 内层 success 清空（§1.3 行 145）
 
-      // Start 带 mfaPendingId=ticketId + bizPurpose + operation；Submit 带三件套。
+      // Start 带 loginToken + bizPurpose + operation（二次 Start 补 method）；Submit 带 loginToken。
       expect(startBodies[0]).toEqual({
         bizPurpose: 'login',
         operation: 'mfa_verify',
-        mfaPendingId: 'tid-1',
+        loginToken: 'lt-qr',
       });
       expect(startBodies[1]).toEqual({
         bizPurpose: 'login',
         operation: 'mfa_verify',
-        mfaPendingId: 'tid-1',
+        loginToken: 'lt-qr',
         method: 'totp',
       });
       expect(submitBodies[0]).toEqual({
         challengeToken: 'ct-qr',
         method: 'totp',
         payload: { code: '123456' },
+        loginToken: 'lt-qr',
       });
       // 拉码 captcha 走请求顶层（§2.8 行 836 / §2.5）。
       expect(qrBodies[0]).toEqual({
