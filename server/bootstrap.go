@@ -248,6 +248,145 @@ type assembled struct {
 	// BindCodeSender「装配方按渠道注入」的落地）；handler 侧 ContactBinder
 	// 单注入位由 bindContactPair 适配，registerAccount 注入。
 	accountBindContact accounthandler.ContactBinder
+
+	// repos 全进程共享仓储（assemble 经 newRepoSet 构造一次；repo 只持
+	// *gorm.DB、无状态）：buildDomains 消费 Users / Creds / Webauthn /
+	// Binds / Providers / EventLogs，register* 消费 Clients / OidcTokens 等。
+	repos *repoSet
+
+	// admin admin 域四族 service（wireSharedServices 构造，
+	// registerAdmin 注入 handler）。
+	admin *adminSet
+
+	// sessionSvc 会话校验 / 重签 / Cookie / 域级拦截器 / 同步首跳构造器
+	//（wireSharedServices 构造，registerSSO / Account / Admin / RPC /
+	// Gateway / Pages 共用同一实例）。
+	sessionSvc *sessionSet
+
+	// infra 基础设施小件（wireSharedServices 构造）：事件 Writer 单例
+	//（admin / pages 审计共用）、RPC nonce 去重、密码失败计数、
+	// RPC HMAC 拦截器。
+	infra *infraSet
+
+	// accountProfile account 域资料族 service（wireSharedServices 构造，
+	// registerAccount 注入 handler）。
+	accountProfile *accountsvc.ProfileService
+}
+
+// repoSet 装配层共享仓储（newRepoSet 构造）：repo 只持 *gorm.DB、无状态，
+// 全进程同一实例与多处 new 等价，仅消除重复构造。
+type repoSet struct {
+	Users      *repo.UserRepo
+	Creds      *repo.CredentialRepo
+	Webauthn   *repo.WebauthnRepo
+	Binds      *repo.BindRepo
+	Providers  *repo.ProviderRepo
+	EventLogs  *repo.EventLogRepo
+	Clients    *repo.ClientRepo
+	OidcTokens *repo.OidcTokenRepo
+}
+
+// adminSet admin 域四族 service（wireSharedServices 构造）。
+type adminSet struct {
+	Providers *adminsvc.Service
+	Users     *adminsvc.UserService
+	Clients   *adminsvc.ClientService
+	Settings  *adminsvc.SettingsService
+}
+
+// sessionSet 会话侧共享产物（wireSharedServices 构造）：Verifier / Renewer
+// 复用 assemble 的 sessionTokens / epochStore，Cookie 与域级拦截器同源。
+type sessionSet struct {
+	Verifier    *session.Verifier
+	Renewer     *session.Renewer
+	Cookie      *session.Cookie
+	Interceptor connectrpc.UnaryInterceptorFunc
+	Sync        *sessionsvc.SyncCookieURLBuilder
+}
+
+// infraSet 基础设施小件（wireSharedServices 构造）。
+type infraSet struct {
+	Events *eventlog.Writer
+	Nonce  *cache.NonceStore
+	PwFail *cache.PwFailStore
+	HMAC   connectrpc.UnaryInterceptorFunc
+}
+
+// newRepoSet 构造共享仓储集合（装配层一次）。
+func newRepoSet(db *gorm.DB) *repoSet {
+	return &repoSet{
+		Users:      repo.NewUserRepo(db),
+		Creds:      repo.NewCredentialRepo(db),
+		Webauthn:   repo.NewWebauthnRepo(db),
+		Binds:      repo.NewBindRepo(db),
+		Providers:  repo.NewProviderRepo(db),
+		EventLogs:  repo.NewEventLogRepo(db),
+		Clients:    repo.NewClientRepo(db),
+		OidcTokens: repo.NewOidcTokenRepo(db),
+	}
+}
+
+// wireSharedServices 构造 register* 消费的共享产物（会话拦截器 / Cookie /
+// 同步首跳 / 事件 Writer / nonce / HMAC / admin 四族 / 资料族），全部挂 deps。
+// 须在 sessionTokens / epochStore / settings / queue 就绪后调用；构造顺序与
+// 行为同 assemble 原就地构造口径。
+func wireSharedServices(cfg *config.Config, deps *assembled) {
+	deps.infra = &infraSet{
+		Events: eventlog.NewWriter(deps.queue),
+		Nonce:  cache.NewNonceStore(deps.rdb),
+		PwFail: cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{}),
+	}
+	// SecretLookup（§7 行 1376：X-Client-ID → sso_client.client_secret）：
+	// 未命中 / 已禁用（is_enabled=0）/ 查询失败统一 ok=false——与签名错误
+	// 同响应 403，不区分以防探测（拦截器既有口径，interceptors.go 行
+	// 298-301）；禁用判定对齐 oidc findClient 先例（oidc/token.go 行
+	// 243-254）。SecretLookup 签名无错误通道，查询故障只能并入未注册口径。
+	clients := deps.repos.Clients
+	deps.infra.HMAC = connect.NewRPCHMACInterceptor(deps.infra.Nonce,
+		func(ctx context.Context, clientID string) (string, bool) {
+			c, err := clients.FindSsoClientByClientID(ctx, clientID)
+			if err != nil || c == nil || c.IsEnabled == 0 {
+				return "", false
+			}
+			return c.ClientSecret, true
+		})
+
+	deps.sessionSvc = &sessionSet{
+		Verifier:    session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		Renewer:     session.NewRenewer(deps.sessionTokens, ssoSessionTTLRaw(deps.settings)),
+		Cookie:      newSessionCookie(cfg, deps),
+		Interceptor: newDomainSessionInterceptor(cfg, deps),
+		Sync:        sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+	}
+
+	deps.accountProfile = accountsvc.NewProfileService(deps.repos.Users)
+
+	deps.admin = &adminSet{
+		Providers: adminsvc.NewService(deps.repos.Providers, deps.providerCache),
+		Users: adminsvc.NewUserService(
+			deps.repos.Users,
+			deps.repos.Creds,
+			deps.repos.Binds,
+			deps.repos.Providers,
+			deps.repos.EventLogs,
+			deps.epochStore,
+			deps.infra.PwFail,
+			deps.infra.Events,
+			deps.settings,
+		),
+		Clients: adminsvc.NewClientService(deps.repos.Clients),
+		Settings: adminsvc.NewSettingsService(
+			deps.settings,
+			deps.repos.EventLogs,
+			deps.infra.Events,
+			adminsvc.TokenCodecs{
+				Session: deps.codecs.Session,
+				Login:   deps.codecs.Login,
+				Cookie:  deps.codecs.Cookie,
+			},
+			deps.queue,
+		),
+	}
 }
 
 // codecs 七场景独立编解码器（§1.4 / §11.6.1）：session / login / ticket /
@@ -313,20 +452,50 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 	return &c, nil
 }
 
-// Engine（§7.2-§7.4），供 assemble 注入。返回 terminal / registry 便于装配单测
-// 直接核对注入完整性，不进入 assembled 字段。
-func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
-	creds *repo.CredentialRepo, webauthnRepo *repo.WebauthnRepo,
-) (*orchestrator.Engine, *orchestrator.Terminal, *factor.Registry, error) {
-	// sessionTokens / epochStore / codeIssuer 由 assemble 构造为共享
-	// 单例（registerSSO 与 OIDC 端点复用同一实例，不再各自构造第二份）。
-	// otp 因子的发送桥还需 providerLoader（settings 键 → Loader →
-	// NewSender，§15.3 行 1735）。
-	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil ||
-		deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil || deps.providerLoader == nil {
-		return nil, nil, nil, errors.New("bootstrap: engine deps not fully assembled")
-	}
+// loginCore 登录链共享单例（buildLoginCore 构造）：terminal / state
+// 由三方、扫码、写票、step-up 各域复用同一实例（同一 login 密钥与终点链路）。
+type loginCore struct {
+	terminal *orchestrator.Terminal
+	state    *orchestrator.State
+}
 
+// factorEnv 因子侧产物（buildFactors 构造）：注册表、webauthn 实例（降级时为
+// nil）、密码失败计数存储、otp service 与两条码值发送桥。
+type factorEnv struct {
+	registry *factor.Registry
+	webauthn *webauthn.Factor
+	fails    *cache.PwFailStore
+	userRef  factorpassword.UserRefResolver
+	otpSvc   *otp.Service
+	otpCfg   otp.Config
+	sms      *provider.CodeBridge
+	email    *provider.CodeBridge
+}
+
+// buildLoginCore 构造会话写入适配器、登录终点 Terminal 与登录过程态 State。
+// sessionTokens / epochStore / codeIssuer 由 assemble 构造为共享单例
+// （registerSSO 与 OIDC 端点复用同一实例，不再各自构造第二份）。
+func buildLoginCore(deps *assembled) *loginCore {
+	sessions := sessionsvc.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
+	terminal := orchestrator.NewTerminal(
+		sessions,
+		deps.codeIssuer,
+		deps.sink,
+		sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		deps.settings,
+	)
+	return &loginCore{
+		terminal: terminal,
+		state:    orchestrator.NewState(deps.codecs.Login),
+	}
+}
+
+// buildFactors 构造六因子注册表（password / webauthn / totp / recovery /
+// otp_sms / otp_email，§3.8）与因子共享依赖。otp 因子的发送桥还需
+// providerLoader（settings 键 → Loader → NewSender，§15.3 行 1735）。
+func buildFactors(cfg *config.Config, deps *assembled, users *repo.UserRepo,
+	creds *repo.CredentialRepo, webauthnRepo *repo.WebauthnRepo,
+) (*factorEnv, error) {
 	pwOpts := factorpassword.DefaultOptions()
 	if v, ok := deps.settings.GetInt64(settings.KeyPwdFailCapture); ok && v > 0 {
 		pwOpts.Capture = v
@@ -350,7 +519,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	registry := factor.NewRegistry()
 	// password.New 对 ResetQueue nil 安全（跳过清零 / user_ref 回退 "unknown"）。
 	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, pwIP, pwOpts)); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	// 注册挑战令牌用独立 sign_key.challenge（§1.4 七把密钥、§11.6.7）：
 	// 载荷 ChallengeTokenPayload、AAD purpose=challenge，与 login_token
@@ -371,13 +540,13 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		slog.Warn("bootstrap: webauthn factor disabled (init failed, degrading; webauthn login/mfa unavailable, other factors continue)", "err", waErr)
 		degraded = append(degraded, factor.FactorWebAuthn)
 	} else if err := registry.Register(factor.FactorWebAuthn, wa); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := registry.Register(factor.FactorTOTP, totp.New()); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := registry.Register(factor.FactorRecovery, recovery.New()); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	// OTP 发送（§8.2 行 1051 / §15.2）：otp_sms / otp_email 共用因子实现，验证码
 	// 参数按 settings 快照注入（§5.6 行 1303-1311，热更新口径同 password 先例
@@ -389,62 +558,61 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	smsSender, err := provider.NewCodeBridge(deps.settings, deps.providerLoader, deps.queue,
 		settings.KeySmsProviderKey, provider.CategorySMS)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	emailSender, err := provider.NewCodeBridge(deps.settings, deps.providerLoader, deps.queue,
 		settings.KeyEmailProviderKey, provider.CategoryEmail)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	otpSMS, err := factorotp.New(factor.FactorOTPSMS, otpSvc, smsSender, nil, otpCfg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	otpEmail, err := factorotp.New(factor.FactorOTPEmail, otpSvc, emailSender, nil, otpCfg)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := registry.Register(factor.FactorOTPSMS, otpSMS); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := registry.Register(factor.FactorOTPEmail, otpEmail); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := registry.AssertComplete(degraded...); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
+	return &factorEnv{
+		registry: registry,
+		webauthn: wa,
+		fails:    fails,
+		userRef:  pwUserRef,
+		otpSvc:   otpSvc,
+		otpCfg:   otpCfg,
+		sms:      smsSender,
+		email:    emailSender,
+	}, nil
+}
 
-	// 会话 / epoch / 授权码共享单例（assemble 构造，消除冗余）：
-	// Terminal 的 SessionWriter 与 sso 会话拦截器、OIDC token 端点各自复用，
-	// 不再构造第二份 EpochStore / Tokens / CodeIssuer。
-	sessions := sessionsvc.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
-	terminal := orchestrator.NewTerminal(
-		sessions,
-		deps.codeIssuer,
-		deps.sink,
-		sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
-		deps.settings,
-	)
-	loginState := orchestrator.NewState(deps.codecs.Login)
-
-	// 三方登录通道 service（§3.9 / §12.4-§12.5）：State /
-	// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走
-	// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
-	// 目标匹配走 UserRepo；HTTPSMode 注入 https_deployment 三态源
-	// （al_login_state 的 Secure 属性随驱动，与 newSessionCookie 同一源）；
-	// 扫码 ticket 分支：Tickets（al:ticket 结果读写）与 TicketPayloads
-	//（al:ticket:payload 快照）与下方扫码域共用同一实例（同一
-	// sign_key.ticket 密钥与封装）。挂入 assembled 供 registerSSO 注入
-	// handler，SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
-	tickets := cache.NewTicketStore(deps.rdb, ticketsvc.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
-	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, ticketsvc.NewTicketPayloadSealer(deps.codecs.Ticket))
-	deps.thirdparty = thirdpartysvc.NewThirdparty(thirdpartysvc.ThirdpartyDeps{
+// buildThirdparty 构造三方登录通道 service（§3.9 / §12.4-§12.5）：State /
+// Terminal 复用引擎同一实例（同一 login 密钥与终点链路），绑定写入走
+// BindRepo.CreateWithUnion（§12.7 行 1548 创建方向同事务），auto_bind
+// 目标匹配走 UserRepo；HTTPSMode 注入 https_deployment 三态源
+// （al_login_state 的 Secure 属性随驱动，与 newSessionCookie 同一源）；
+// 扫码 ticket 分支：Tickets（al:ticket 结果读写）与 TicketPayloads
+// （al:ticket:payload 快照）与扫码域共用同一实例（同一 sign_key.ticket
+// 密钥与封装）。SetPass.Thirdparty（免密建号 §12.5 行 1501）复用同一实例。
+func buildThirdparty(cfg *config.Config, deps *assembled, users *repo.UserRepo,
+	creds *repo.CredentialRepo, core *loginCore,
+	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+) *thirdpartysvc.Thirdparty {
+	return thirdpartysvc.NewThirdparty(thirdpartysvc.ThirdpartyDeps{
 		Loader:         deps.providerLoader,
-		Binds:          repo.NewBindRepo(deps.db),
+		Binds:          deps.repos.Binds,
 		Users:          users,
 		NewAdapter:     provider.NewAdapter,
-		State:          loginState,
-		Terminal:       terminal,
+		State:          core.state,
+		Terminal:       core.terminal,
 		Settings:       deps.settings,
 		Credentials:    creds,
 		Tickets:        tickets,
@@ -455,17 +623,19 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		RootOrigin: cfg.Authloft.Root,
 		HTTPSMode:  ssoHTTPSMode(deps),
 	})
+}
 
-	// 扫码三桩 service（§13.2 / §2.8）：State / Terminal 复用引擎同一
-	// 实例（同一 login 密钥与终点链路）；al:ticket 读写走 cache.TicketStore
-	//（sealer = protojson 整值加密 + purpose=ticket，§11.6.5）；拉码
-	// 同步写快照键 al:ticket:payload（cache.TicketPayloadStore，§5.1 行 863），
-	// 与 Thirdparty 侧读取共用同一实例；storage 解析走 internal/storage
-	// Resolver（§15.1）；码图自动删除投递复用延迟队列（执行器挂
-	// combinedExecutor，§13.3）；Confirm 会话校验复用共享单例
-	// sessionTokens / epochStore（与 sso 拦截器同源）。挂入 assembled 供
-	// registerSSO 注入 handler。
-	deps.qrcode = qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{
+// buildQRCode 构造扫码三桩 service（§13.2 / §2.8）：State / Terminal 复用
+// 引擎同一实例（同一 login 密钥与终点链路）；al:ticket 读写走
+// cache.TicketStore（sealer = protojson 整值加密 + purpose=ticket，§11.6.5）；
+// 拉码同步写快照键 al:ticket:payload（cache.TicketPayloadStore，§5.1 行 863），
+// 与 Thirdparty 侧读取共用同一实例；storage 解析走 internal/storage
+// Resolver（§15.1）；码图自动删除投递复用延迟队列（执行器挂
+// combinedExecutor，§13.3）。
+func buildQRCode(deps *assembled, core *loginCore,
+	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+) *qrcodesvc.QRCode {
+	return qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{
 		Loader:         deps.providerLoader,
 		NewAdapter:     provider.NewAdapter,
 		Gate:           deps.gate,
@@ -474,25 +644,71 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		TicketPayloads: ticketPayloads,
 		Storage:        storage.NewResolver(deps.providerLoader),
 		Queue:          deps.queue,
-		State:          loginState,
-		Terminal:       terminal,
+		State:          core.state,
+		Terminal:       core.terminal,
 	})
+}
 
-	// 统一写票 service（§2.8）：ConfirmLoginTicket 与 LoginOauth 扫码
-	// 分支共用，复用同一 al:ticket 结果读写、快照、登录过程态与会话校验
-	// 单例；按目标用户的二次验证启用状态自行判定写 success / mfa_pending。
-	// Users / Settings / Credentials 与三方登录共用同一用户 / 凭据 / 开关
-	// 源，判定口径一致（§2.8、§11.6.5）。
-	deps.loginTicket = ticketsvc.NewLoginTicket(ticketsvc.LoginTicketDeps{
+// buildLoginTicket 构造统一写票 service（§2.8）：ConfirmLoginTicket 与
+// LoginOauth 扫码分支共用，复用同一 al:ticket 结果读写、快照、登录过程态与
+// 会话校验单例；按目标用户的二次验证启用状态自行判定写 success / mfa_pending。
+// Users / Settings / Credentials 与三方登录共用同一用户 / 凭据 / 开关源，
+// 判定口径一致（§2.8、§11.6.5）。
+func buildLoginTicket(deps *assembled, users *repo.UserRepo, creds *repo.CredentialRepo,
+	core *loginCore, tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+) *ticketsvc.LoginTicket {
+	return ticketsvc.NewLoginTicket(ticketsvc.LoginTicketDeps{
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
 		Sessions:       session.NewVerifier(deps.sessionTokens, deps.epochStore),
-		State:          loginState,
+		State:          core.state,
 		Users:          users,
 		Settings:       deps.settings,
 		Credentials:    creds,
 	})
+}
 
+// buildVerification 构造 step-up 服务（§3.8）：挑战 / 断言两把独立密钥在此
+// 接线——挑战令牌走 PurposeChallenge + sign_key.challenge，断言走
+// PurposeVerification + sign_key.verification（§11.6.7）。captcha 守卫复用
+// 既有唯一 Gate，新增调用方不经登录引擎的人机校验失败写点，失败由服务层
+// 显式返回错误码与当前生效配置，不静默回落、不丢错误码与配置。
+func buildVerification(deps *assembled, registry *factor.Registry, users *repo.UserRepo,
+	creds *repo.CredentialRepo, core *loginCore,
+) *verification.Service {
+	var verifGate verification.CaptchaGate
+	if deps.gate != nil {
+		verifGate = deps.gate
+	}
+	var verifOnce verification.OnceStore
+	if deps.rdb != nil {
+		verifOnce = cache.NewOnceStore(deps.rdb)
+	}
+	return verification.NewService(verification.Deps{
+		Codec:       verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
+		Policy:      verification.DefaultPolicy(),
+		Settings:    deps.settings,
+		Gate:        verifGate,
+		Once:        verifOnce,
+		Bound:       verification.NewBoundFactorReader(users, creds),
+		Verifier:    verification.NewStepUpVerifier(registry, users, creds),
+		Starter:     verification.NewStepUpVerifier(registry, users, creds),
+		LoginTokens: orchestrator.NewLoginTokenReader(core.state),
+		Login:       orchestrator.NewLoginCompleter(core.terminal, core.state),
+	})
+}
+
+// buildAccountServices 构造 account 域七族 service（接口文档 §3.2-§3.7）：
+// 三方绑定族与通行密钥族在此接线；五族（avatar / password / mfa / events /
+// bindcontact）随后由本函数一并构造并挂 deps，registerAccount 仅注入 handler。
+// 审计统一走 eventlog.Writer 延迟队列（accountThirdparty / accountWebauthn
+// 同款链）；Now / Rand 缺省（time.Now / crypto/rand.Reader，service 构造内
+// 落回）。mfa 的 Rand 显式注入 crypto/rand.Reader（MfaDeps 字段语义，
+// 与缺省同值——留显式注入便于阅读）。
+func buildAccountServices(deps *assembled, users *repo.UserRepo, creds *repo.CredentialRepo,
+	webauthnRepo *repo.WebauthnRepo, env *factorEnv,
+	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+) {
 	// account 域三方绑定族 service（§12.6 / 接口文档 §3.7）：绑定内核
 	// 两通道共用（redirect 解 al_login_state 用 codecs.Cookie；扫码轮询解
 	// ticket 用 codecs.Ticket、结果读写与 thirdparty / qrcode 共用同一
@@ -502,9 +718,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// 注入 handler。
 	deps.accountThirdparty = accountsvc.NewThirdpartyService(accountsvc.Deps{
 		Loader:      deps.providerLoader,
-		Providers:   repo.NewProviderRepo(deps.db),
-		Binds:       repo.NewBindRepo(deps.db),
-		Creds:       repo.NewCredentialRepo(deps.db),
+		Providers:   deps.repos.Providers,
+		Binds:       deps.repos.Binds,
+		Creds:       deps.repos.Creds,
 		NewAdapter:  provider.NewAdapter,
 		Tickets:     tickets,
 		TicketCodec: deps.codecs.Ticket,
@@ -513,16 +729,16 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	})
 
 	// account 域通行密钥族 service（接口文档 §3.6 / 后端架构 §8.3
-	// 行 1070-1075）：注册两态内核复用上方 webauthn 因子同一实例（同一
+	// 行 1070-1075）：注册两态内核复用 webauthn 因子同一实例（同一
 	// RPID / origins / 独立原子 token 密钥——login 域密钥 + AAD purpose
 	// 隔离）；user_credential / user_credential_webauthn 读写注入两 repo；
 	// webauthn_register 审计走 eventlog 延迟队列。**fail-closed 关键**：
-	// wa 为 nil（启动初始化失败降级，上方 waErr 分支）时必须注入 nil 接口
-	// 而非 nil *webauthn.Factor（typed-nil 会绕过 Factor==nil 判定），
+	// wa 为 nil（启动初始化失败降级，buildFactors 的 waErr 分支）时必须注入
+	// nil 接口而非 nil *webauthn.Factor（typed-nil 会绕过 Factor==nil 判定），
 	// service 四方法据此一律 method_disabled（§8.3 行 1071-1075）。
 	var accountWebauthnFactor accountsvc.WebauthnFactor
-	if wa != nil {
-		accountWebauthnFactor = wa
+	if env.webauthn != nil {
+		accountWebauthnFactor = env.webauthn
 	}
 	deps.accountWebauthn = accountsvc.NewWebauthnService(accountsvc.WebauthnDeps{
 		Factor:   accountWebauthnFactor,
@@ -532,41 +748,9 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Audit:    eventlog.NewWriter(deps.queue),
 	})
 
-	// step-up 服务（§3.8）：挑战 / 断言两把独立密钥在此接线——挑战令牌走
-	// PurposeChallenge + sign_key.challenge，断言走 PurposeVerification +
-	// sign_key.verification（§11.6.7）。captcha 守卫复用既有唯一 Gate，
-	// 新增调用方不经登录引擎的人机校验失败写点，失败由服务层显式返回
-	// 错误码与当前生效配置，不静默回落、不丢错误码与配置。
-	var verifGate verification.CaptchaGate
-	if deps.gate != nil {
-		verifGate = deps.gate
-	}
-	var verifOnce verification.OnceStore
-	if deps.rdb != nil {
-		verifOnce = cache.NewOnceStore(deps.rdb)
-	}
-	deps.verification = verification.NewService(verification.Deps{
-		Codec:       verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
-		Policy:      verification.DefaultPolicy(),
-		Settings:    deps.settings,
-		Gate:        verifGate,
-		Once:        verifOnce,
-		Bound:       verification.NewBoundFactorReader(users, creds),
-		Verifier:    verification.NewStepUpVerifier(registry, users, creds),
-		Starter:     verification.NewStepUpVerifier(registry, users, creds),
-		LoginTokens: orchestrator.NewLoginTokenReader(loginState),
-		Login:       orchestrator.NewLoginCompleter(terminal, loginState),
-	})
-
-	// account 域五族 service 构造（接口文档 §3.2-§3.7）：四族
-	// 单实例直挂 deps；换绑族双渠道各一实例（见 bindContactPair）。审计统一
-	// 走 eventlog.Writer 延迟队列（accountThirdparty / accountWebauthn 同款
-	// 链）；Now / Rand 缺省（time.Now / crypto/rand.Reader，service 构造内
-	// 落回）。mfa 的 Rand 显式注入 crypto/rand.Reader（MfaDeps 字段语义，
-	// 与缺省同值——留显式注入便于阅读）。
 	deps.accountAvatar = accountsvc.NewAvatarService(accountsvc.AvatarDeps{
 		Settings:  deps.settings,
-		Providers: repo.NewProviderRepo(deps.db),
+		Providers: deps.repos.Providers,
 		Users:     users,
 		// storage Resolver 与扫码域（deps.qrcode）同源同构造的装配
 		// 惯例，presign / commit 共用 provider Loader 行缓存。
@@ -588,39 +772,68 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Rand:       rand.Reader,
 		Assertions: deps.verification,
 	})
-	deps.accountEvents = accountsvc.NewEventsService(repo.NewEventLogRepo(deps.db))
+	deps.accountEvents = accountsvc.NewEventsService(deps.repos.EventLogs)
 
 	// 换绑族双渠道（§3.4）：两实例共用同一 OTP 单例（purpose=bind
 	// 键空间与登录因子隔离，§10.1）/ captcha Gate / 限流 Config（与 factor/
-	// otp 双注入同值，otpParamsFromSettings 启动期快照）——仅 Sender 分渠道
+	// otp 双注入同值，otp.FromSettings 启动期快照）——仅 Sender 分渠道
 	//（BindCodeSender「装配方按渠道注入」）。
 	bindContactBase := accountsvc.BindContactDeps{
 		Users:  users,
-		OTP:    otpSvc,
+		OTP:    env.otpSvc,
 		Gate:   deps.gate,
-		Config: otpCfg,
+		Config: env.otpCfg,
 		Audit:  eventlog.NewWriter(deps.queue),
 	}
 	bindPhoneDeps := bindContactBase
-	bindPhoneDeps.Sender = smsSender
+	bindPhoneDeps.Sender = env.sms
 	bindEmailDeps := bindContactBase
-	bindEmailDeps.Sender = emailSender
+	bindEmailDeps.Sender = env.email
 	deps.accountBindContact = bindContactPair{
 		phone: accountsvc.NewBindContactService(bindPhoneDeps),
 		email: accountsvc.NewBindContactService(bindEmailDeps),
 	}
+}
+
+// buildDomains 按域顺序装配引擎依赖并返回 engine / terminal / registry：
+// core → factors → thirdparty / qrcode / loginTicket → verification →
+// account → engine。register* 只消费本函数与 assemble 落在 deps 上的产物。
+func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
+	creds *repo.CredentialRepo, webauthnRepo *repo.WebauthnRepo,
+) (*orchestrator.Engine, *orchestrator.Terminal, *factor.Registry, error) {
+	if deps == nil || deps.codecs == nil || deps.settings == nil || deps.queue == nil || deps.sink == nil ||
+		deps.sessionTokens == nil || deps.epochStore == nil || deps.codeIssuer == nil || deps.providerLoader == nil {
+		return nil, nil, nil, errors.New("bootstrap: engine deps not fully assembled")
+	}
+
+	core := buildLoginCore(deps)
+	env, err := buildFactors(cfg, deps, users, creds, webauthnRepo)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// al:ticket 结果读写与快照：三方登录 / 扫码 / 写票三域共用同一实例
+	//（同一 sign_key.ticket 密钥与封装）。
+	tickets := cache.NewTicketStore(deps.rdb, ticketsvc.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
+	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, ticketsvc.NewTicketPayloadSealer(deps.codecs.Ticket))
+
+	deps.thirdparty = buildThirdparty(cfg, deps, users, creds, core, tickets, ticketPayloads)
+	deps.qrcode = buildQRCode(deps, core, tickets, ticketPayloads)
+	deps.loginTicket = buildLoginTicket(deps, users, creds, core, tickets, ticketPayloads)
+	deps.verification = buildVerification(deps, env.registry, users, creds, core)
+	buildAccountServices(deps, users, creds, webauthnRepo, env, tickets, ticketPayloads)
 
 	engine := orchestrator.NewEngine(orchestrator.EngineDeps{
-		State:      loginState,
-		Dispatcher: &orchestrator.Dispatcher{Registry: registry, Settings: deps.settings},
+		State:      core.state,
+		Dispatcher: &orchestrator.Dispatcher{Registry: env.registry, Settings: deps.settings},
 		// captcha Gate（§9.3 行 1110 唯一拦截点）：装配层构造
 		// 真实 Gate；测试夹具未注入时为 nil，engine.go:209 对 nil 安全。
 		Gate:     deps.gate,
-		Terminal: terminal,
-		Failures: fails,
+		Terminal: core.terminal,
+		Failures: env.fails,
 		// 引擎读计数键经与因子写入侧同源的 user_ref 解析器（见上方
-		// pwUserRef 装配注释）。
-		UserRef: pwUserRef,
+		// buildFactors 装配注释）。
+		UserRef: env.userRef,
 		Factor: orchestrator.FactorDeps{
 			Users:       users,
 			Credentials: creds,
@@ -638,7 +851,7 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 			Thirdparty:  deps.thirdparty,
 		},
 	})
-	return engine, terminal, registry, nil
+	return engine, core.terminal, env.registry, nil
 }
 
 // assemble 正常模式装配步骤 2-8（§3.1 行 237）：DB → 迁移检查（migrate up，
@@ -663,6 +876,8 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	}
 
 	deps := &assembled{db: db, rdb: rdb}
+	// 共享仓储一次构造（repo 无状态，register* 与 buildDomains 复用同一实例）。
+	deps.repos = newRepoSet(db)
 
 	// 步骤 5：七把 sign_key 逐把构造 KeyStore + Codec。
 	if deps.codecs, err = buildCodecs(cfg); err != nil {
@@ -679,7 +894,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// providerCache 同实例挂入 assembled（admin 写路径写后失效用）。
 	deps.providerCache = cache.NewProviderCache(rdb)
 	deps.providerLoader = provider.NewLoader(
-		repo.NewProviderRepo(db), deps.providerCache, provider.LoaderOptions{})
+		deps.repos.Providers, deps.providerCache, provider.LoaderOptions{})
 	deps.providerWhitelist = provider.NewWhitelist(deps.providerLoader)
 
 	// 步骤 7：settings 全量预热（缺失键补齐，fail-fast）→ watcher 订阅热更新。
@@ -705,7 +920,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	//——Gate 与 registerPages 的 CSP supporter 复用同一实例（§9.4 行
 	// 1134「CSP 贡献与下发配置、拦截校验同源」）。
 	captchaStore := cache.NewCaptchaStore(rdb)
-	captchaSrc := captcha.NewProviderSource(repo.NewProviderRepo(db))
+	captchaSrc := captcha.NewProviderSource(deps.repos.Providers)
 	deps.captchaCatalog = captcha.NewCatalog(store, captchaSrc)
 	deps.gate = captcha.NewGate(store,
 		deps.captchaCatalog,
@@ -716,11 +931,11 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// 消费 event_log / last_login 与 webauthn sign_count（合并且取最大值）；
 	// 增码图自动删除执行器（§13.3：消费 qrcode.DeleteTask，失败只
 	// WARN，不影响登录）。
-	users := repo.NewUserRepo(db)
-	creds := repo.NewCredentialRepo(db)
-	webauthnRepo := repo.NewWebauthnRepo(db)
+	users := deps.repos.Users
+	creds := deps.repos.Creds
+	webauthnRepo := deps.repos.Webauthn
 	deps.queue = asyncqueue.New(asyncqueue.NewCombined(
-		eventlog.NewExecutor(repo.NewEventLogRepo(db), users),
+		eventlog.NewExecutor(deps.repos.EventLogs, users),
 		webauthn.NewSignCountExecutor(webauthnRepo),
 		// otp_sms / otp_email 的消息投递（SendJob，§15.2 行 1726），
 		// 只消费 SendJob 任务，其余任务类型原样忽略。
@@ -749,12 +964,16 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	})
 	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
 
+	// 共享产物（会话拦截器 / Cookie / 同步首跳 / 事件 Writer / HMAC /
+	// admin 四族 / 资料族）一次构造，register* 只注入不构造。
+	wireSharedServices(cfg, deps)
+
 	// 步骤 6（factor 半步）：factor 注册表（password / webauthn / totp /
 	// recovery / otp_sms / otp_email，§3.8）+ Terminal + 单引擎（§7）。
 	// pendingKinds 内的 thirdparty / device 尚无装配依赖，由
 	// registry.AssertComplete 显式排除。注册表挂入 assembled，
 	// 供页面壳 methods 快照按 login_methods 过滤读取（§2.1）。
-	engine, _, registry, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
+	engine, _, registry, err := buildDomains(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())
 		return nil, err
@@ -1062,8 +1281,8 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 		// §2.8）与统一写票 service（ConfirmLoginTicket / LoginOauth
 		// 扫码分支共用）：GetLoginTicket 命中建会话后的 al_session 与
 		// 登录终点同一写出出口。
-		ssohandler.New(deps.engine, deps.imageCaptcha, newSessionCookie(cfg, deps), deps.thirdparty, deps.qrcode, deps.verification).WithLoginTicket(deps.loginTicket),
-		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
+		ssohandler.New(deps.engine, deps.imageCaptcha, deps.sessionSvc.Cookie, deps.thirdparty, deps.qrcode, deps.verification).WithLoginTicket(deps.loginTicket),
+		csrv.HandlerOptions(deps.sessionSvc.Interceptor)...,
 	)
 	csrv.Register(path, h)
 }
@@ -1091,23 +1310,23 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	path, h := accountv1connect.NewAccountServiceHandler(
 		accounthandler.NewWithServices(
-			repo.NewUserRepo(deps.db),
-			repo.NewCredentialRepo(deps.db),
+			deps.repos.Users,
+			deps.repos.Creds,
 			deps.settings,
-			repo.NewProviderRepo(deps.db),
+			deps.repos.Providers,
 			deps.gate,
 			deps.accountThirdparty,
 			deps.accountWebauthn,
-			accountsvc.NewProfileService(repo.NewUserRepo(deps.db)),
+			deps.accountProfile,
 			deps.accountAvatar,
 			deps.accountPassword,
 			deps.accountBindContact,
 			deps.accountMfa,
 			deps.accountEvents,
-			newSessionCookie(cfg, deps),
+			deps.sessionSvc.Cookie,
 			deps.verification,
 		),
-		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps))...,
+		csrv.HandlerOptions(deps.sessionSvc.Interceptor)...,
 	)
 	csrv.Register(path, h)
 }
@@ -1149,37 +1368,15 @@ func (p bindContactPair) BindEmail(ctx context.Context, uid int64, in accountsvc
 // GetStatus 读 deps.queue 三指标；审计同走 eventlog.Writer → deps.queue），
 // 33 方法全部实装。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
-	providers := repo.NewProviderRepo(deps.db)
-	clients := repo.NewClientRepo(deps.db)
 	path, h := adminv1connect.NewAdminServiceHandler(
 		adminhandler.New(
-			providers,
-			adminsvc.NewService(providers, deps.providerCache),
-			adminsvc.NewUserService(
-				repo.NewUserRepo(deps.db),
-				repo.NewCredentialRepo(deps.db),
-				repo.NewBindRepo(deps.db),
-				providers,
-				repo.NewEventLogRepo(deps.db),
-				deps.epochStore,
-				cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{}),
-				eventlog.NewWriter(deps.queue),
-				deps.settings,
-			),
-			adminsvc.NewClientService(clients),
-			adminsvc.NewSettingsService(
-				deps.settings,
-				repo.NewEventLogRepo(deps.db),
-				eventlog.NewWriter(deps.queue),
-				adminsvc.TokenCodecs{
-					Session: deps.codecs.Session,
-					Login:   deps.codecs.Login,
-					Cookie:  deps.codecs.Cookie,
-				},
-				deps.queue,
-			),
+			deps.repos.Providers,
+			deps.admin.Providers,
+			deps.admin.Users,
+			deps.admin.Clients,
+			deps.admin.Settings,
 		),
-		csrv.HandlerOptions(newDomainSessionInterceptor(cfg, deps), connect.NewAdminInterceptor())...,
+		csrv.HandlerOptions(deps.sessionSvc.Interceptor, connect.NewAdminInterceptor())...,
 	)
 	csrv.Register(path, h)
 }
@@ -1193,37 +1390,23 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // assemble 共享单例（sessionTokens / epochStore，口径不新造第二套）；
 // TTL 与会话拦截器同源（settings 键 session_ttl，缺失回落 7 天）。
 func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
-	// SecretLookup（§7 行 1376：X-Client-ID → sso_client.client_secret）：
-	// 未命中 / 已禁用（is_enabled=0）/ 查询失败统一 ok=false——与签名错误
-	// 同响应 403，不区分以防探测（拦截器既有口径，interceptors.go 行
-	// 298-301）；禁用判定对齐 oidc findClient 先例（oidc/token.go 行
-	// 243-254）。SecretLookup 签名无错误通道，查询故障只能并入未注册口径。
-	clients := repo.NewClientRepo(deps.db)
-	lookup := func(ctx context.Context, clientID string) (string, bool) {
-		c, err := clients.FindSsoClientByClientID(ctx, clientID)
-		if err != nil || c == nil || c.IsEnabled == 0 {
-			return "", false
-		}
-		return c.ClientSecret, true
-	}
-	hmac := connect.NewRPCHMACInterceptor(cache.NewNonceStore(deps.rdb), lookup)
-
 	// rpc 域两 service 共享同一 UserRepo 实例（GetUserProfiles 批量读
-	// 与 DecodeSession include_user_info 单读走同一数据面，不重复构造）。
-	users := repo.NewUserRepo(deps.db)
+	// 与 DecodeSession include_user_info 单读走同一数据面，不重复构造）；
+	// HMAC 拦截器（nonce 去重 + SecretLookup）由 wireSharedServices 构造。
+	users := deps.repos.Users
 	path, h := rpcv1connect.NewUserServiceHandler(
 		rpchandler.NewUserHandler(users),
-		csrv.HandlerOptions(hmac)...,
+		csrv.HandlerOptions(deps.infra.HMAC)...,
 	)
 	csrv.RegisterRPC(path, h)
 
 	path, h = rpcv1connect.NewTokenServiceHandler(
 		rpchandler.NewTokenHandler(
-			session.NewVerifier(deps.sessionTokens, deps.epochStore),
-			session.NewRenewer(deps.sessionTokens, ssoSessionTTLRaw(deps.settings)),
+			deps.sessionSvc.Verifier,
+			deps.sessionSvc.Renewer,
 			users,
 		),
-		csrv.HandlerOptions(hmac)...,
+		csrv.HandlerOptions(deps.infra.HMAC)...,
 	)
 	csrv.RegisterRPC(path, h)
 }
@@ -1237,9 +1420,9 @@ func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // 源，均不构造第二份；Clients / Tokens / Users / Profiles 为 repo 无状态
 // wrapper，按端点就近构造。
 func registerOIDC(r gin.IRouter, deps *assembled) {
-	clients := repo.NewClientRepo(deps.db)
-	refreshTokens := repo.NewOidcTokenRepo(deps.db)
-	users := repo.NewUserRepo(deps.db)
+	clients := deps.repos.Clients
+	refreshTokens := deps.repos.OidcTokens
+	users := deps.repos.Users
 	oidchandler.Register(r, oidchandler.Deps{
 		JWT: deps.oidcJWT,
 		Tokens: &oidc.TokenService{
@@ -1276,7 +1459,7 @@ func registerGateway(api gin.IRouter, deps *assembled) {
 	gw := api.Group("/gateway")
 	gw.Use(middleware.Gateway(gatewayTokensSource(deps.settings)))
 	gatewayhandler.Register(gw, gatewayhandler.Deps{
-		Verify: session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		Verify: deps.sessionSvc.Verifier,
 		CookieName: func() string {
 			v, _ := deps.settings.GetString(settings.KeyCookieName)
 			return v
@@ -1344,13 +1527,13 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Loader:     deps.providerLoader,
 		Factors:    deps.factors,
 		Gate:       deps.gate,
-		Sync:       sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		Sync:       deps.sessionSvc.Sync,
 		Codec:      deps.codecs.SyncPayload,
 		JWT:        deps.oidcJWT,
-		Clients:    repo.NewClientRepo(deps.db),
-		Sessions:   session.NewVerifier(deps.sessionTokens, deps.epochStore),
+		Clients:    deps.repos.Clients,
+		Sessions:   deps.sessionSvc.Verifier,
 		Codes:      deps.codeIssuer,
-		Audit:      eventlog.NewWriter(deps.queue),
+		Audit:      deps.infra.Events,
 	})
 }
 

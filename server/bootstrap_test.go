@@ -508,6 +508,8 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
+	// register* 消费的共享仓储与生产同一构造口径（db 为 nil，repo 无状态）。
+	deps.repos = newRepoSet(deps.db)
 	cfg := &config.Config{
 		Authloft: config.AuthloftConfig{Root: "https://authloft.example.com", RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}
@@ -515,7 +517,7 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 	creds := repo.NewCredentialRepo(nil)
 	webauthnRepo := repo.NewWebauthnRepo(nil)
 
-	engine, terminal, registry, err := buildEngine(cfg, deps, users, creds, webauthnRepo)
+	engine, terminal, registry, err := buildDomains(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		t.Fatalf("buildEngine: %v", err)
 	}
@@ -583,12 +585,14 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
+	// register* 消费的共享仓储与生产同一构造口径（db 为 nil，repo 无状态）。
+	deps.repos = newRepoSet(deps.db)
 	// rp_id 为 IP：go-webauthn 库校验拒绝（must be a domain and not an IP）。
 	cfg := &config.Config{
 		Authloft: config.AuthloftConfig{Root: "https://192.168.10.2:8080", RpID: "192.168.10.2", RPDisplayName: config.DefaultRPDisplayName},
 	}
 
-	engine, terminal, registry, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
+	engine, terminal, registry, err := buildDomains(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
 	if err != nil {
 		t.Fatalf("buildEngine must degrade instead of failing (D6): %v", err)
 	}
@@ -776,11 +780,15 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
 	}
-	engine, _, _, err := buildEngine(cfg, deps, repo.NewUserRepo(nil), repo.NewCredentialRepo(nil), repo.NewWebauthnRepo(nil))
+	// register* 与 buildDomains 消费的共享产物（仓储 / 会话 / 基础设施 /
+	// admin / 资料族）与生产 assemble 同一构造口径。
+	deps.repos = newRepoSet(deps.db)
+	engine, _, _, err := buildDomains(cfg, deps, deps.repos.Users, deps.repos.Creds, deps.repos.Webauthn)
 	if err != nil {
-		t.Fatalf("buildEngine: %v", err)
+		t.Fatalf("buildDomains: %v", err)
 	}
 	deps.engine = engine
+	wireSharedServices(cfg, deps)
 	// iss = authloft.root（§14.1 行 1626 与 discovery 逐字相同）。
 	deps.oidcJWT, err = oidc.NewJWT([]config.OIDCKey{{Kid: "1", PrivateKeyPEM: testOIDCKeyPEM()}}, cfg.Authloft.Root)
 	if err != nil {
