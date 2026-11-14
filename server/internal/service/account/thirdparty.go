@@ -91,7 +91,7 @@ type CredentialReader interface {
 	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
 }
 
-// TicketStore al:ticket 读写窄接口（Take / Wait / WriteScanned，与 service.QRCode 同一实例）。
+// TicketStore al:ticket 读写窄接口（Take / Wait / WriteScanned，与 qrcode 子包共用同一实例）。
 type TicketStore interface {
 	WriteScanned(ctx context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error)
 	Take(ctx context.Context, id string) (*token.TicketResult, error)

@@ -169,7 +169,7 @@ type fixture struct {
 
 // newFixture 基线夹具：默认 settings（login_methods 全量 + 开关全开）、
 // 空 loader、假 captcha、可注入 JWT / 客户端、真实 codec 与
-// service.SyncCookieURLBuilder（链路级测试用）。
+// session 子包的同步跳转链构造器（链路级测试用）。
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	codec := testCodec(t)

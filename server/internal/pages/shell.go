@@ -64,7 +64,7 @@ type CaptchaConfiger interface {
 }
 
 // SyncBuilder 多域名同步首跳 URL 构造（§11.2 发起端）：
-// *service.SyncCookieURLBuilder 天然满足（与 orchestrator 同一签名）。
+// session 子包的同步跳转链构造器天然满足（与 orchestrator 同一签名）。
 type SyncBuilder interface {
 	Build(ctx context.Context, cookieName, cookieValue, cookieTTL string, domains []string, finalURL string) (string, error)
 }

@@ -253,7 +253,7 @@ export function startLoginVerification(
 //
 // 扫码登录命中 MFA 时轮询返回 needs_step_up 并下发 loginToken；PC 端把该 token
 // 存入 loginTokenStore 后复用登录主路径的 startLoginVerification / submitStepUp。
-// Submit 成功写终态 TicketResult、PC 端下一次轮询 GetLoginTicket 进入 success 再走终点。
+// SubmitVerification 响应即 §2.8 / §3.8.1 的登录流程结论，票据不写终态、不依赖下次轮询。
 // ---------------------------------------------------------------------------
 
 /**

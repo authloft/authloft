@@ -1,6 +1,6 @@
 // logout.go GET /sso/logout（接口文档 §2.9 行 753-765、后端架构 §11.2）：
 // 清本域 al_session（session 包 Cookie.Clear 经 Set-Cookie）→ 按 settings
-// sso_domains 跳转式同步登出（复用 service.SyncCookieURLBuilder 载荷构造，
+// sso_domains 跳转式同步登出（复用 session 子包的同步跳转链载荷构造，
 // 登出载荷 Cookie 值空、TTL="0"，接收端写入即等价清除）→ post_logout_
 // redirect_uri 白名单。白名单来源 docs 未定义，默认两分支：
 //   - 有 id_token_hint：oidcJWT 验签解析 aud=client_id → 该 OIDC 客户端

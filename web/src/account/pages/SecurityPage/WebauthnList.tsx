@@ -41,7 +41,7 @@ export function WebauthnList(props: {
     requestOptions({ toast: false, returnTo }),
   );
   // 重命名 / 删除（手动）：错误行内呈现；成功链走 onSuccess（重取列表 +
-  // 翻转上抛，删除会翻转 mfaPolicy.webauthn.bound）。
+  // 删除再经 onChanged 上抛父级；绑定态取 mfaPolicy.methods[].bound）。
   const rename = useRequest(renameWebauthnCredential, {
     manual: true,
     ...requestOptions({ toast: false, returnTo }),

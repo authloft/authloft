@@ -22,7 +22,7 @@
  *   LoginContainer binding 分支同款用法；建号 / 退出编排由其自带）；
  * - mfa_required → **完整编排**（§1.6 行 233「就地渲染二次验证方式
  *   选择器 + 因子组件，不跳页」）：复用 LoginContainer 既有能力
- *   （initialEnvelope 进状态机；MFA 提交走 SsoService/LoginDefault，success
+ *   （initialEnvelope 进状态机；MFA 提交走 StartVerification / SubmitVerification，success
  *   终点跳转 executeEffects；loginToken 由 api 层托管续接，页面不自管）；
  * - 失败态 → ErrorBanner（§1.6 表驱动文案）+ 返回登录：回调页无表单，字段级
  *   提示无处着落，「回到第一步」类动作统一为回 /sso/login。
@@ -235,8 +235,8 @@ export function OAuthCallbackView({
       ) : status === 'mfa_required' ? (
         // §1.6 行 233 完整编排：就地渲染二次验证方式选择器 + 因子
         // 组件（不跳页）——复用 LoginContainer 既有能力（信封进状态机；
-        // MFA 提交走 LoginDefault，success 终点跳转 executeEffects；loginToken
-        // 由 api 层托管续接，页面不自管）。
+        // mfa_required 调 StartVerification、提交调 SubmitVerification（带 loginToken），
+        // success 终点跳转 executeEffects；loginToken 由 api 层托管续接，页面不自管）。
         <LoginContainer snapshot={snapshot} initialEnvelope={envelope} />
       ) : resolution !== undefined ? (
         // 失败态（§1.6 表驱动文案）：回调页无表单，字段级提示无处着落，

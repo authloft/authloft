@@ -31,7 +31,7 @@ var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 const credentialKindPassword = "password"
 
 // ThirdpartySignup 三方免密建号步的 provider 状态查询与绑定写入子集
-// （§12.5 行 1504；实现方 service.Thirdparty，装配层注入——thirdparty 域
+// （§12.5 行 1504；实现方 thirdparty 子包，装配层注入——thirdparty 域
 // 单一写入口，与 LoginOauth 的 auto_bind 写入共用 CreateBind）。
 type ThirdpartySignup interface {
 	// SignupState 返回 provider 的 enable_signup（建号开关，§2.7.5 行 678

@@ -278,9 +278,9 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		return nil, nil, failure("invalid_request", nil)
 	}
 
-	// 选定因子即本次要下发挑战凭据：按 §2.5 触发表，只有一次性验证码下发
-	// （OTP 类因子）必须过守卫；WebAuthn 取 options、TOTP / 恢复码不产生
-	// 下发，均不触发（§2.5、§9.3）。守卫缺失时 fail-closed，不静默放行。
+	// 仅当选定的因子属于一次性验证码（OTP 类）时才产生下发、须过守卫：按 §2.5
+	// 触发表，WebAuthn 取 options、TOTP / 恢复码不产生下发，均不触发（§2.5、§9.3）。
+	// 守卫缺失时 fail-closed，不静默放行。
 	if sendsOneTimeCode(in.Method) {
 		if s.d.Gate == nil {
 			return nil, nil, fmt.Errorf("verification: captcha gate not injected")

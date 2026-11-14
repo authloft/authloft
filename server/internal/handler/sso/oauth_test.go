@@ -32,7 +32,7 @@ func sessionCookieForTest() *session.Cookie {
 	return session.NewCookie("al_session", "", 7*24*time.Hour)
 }
 
-// fakeThirdparty service.Thirdparty 的 fake：记录入参、返回预置产物。
+// fakeThirdparty 三方登录通道的 fake：记录入参、返回预置产物。
 type fakeThirdparty struct {
 	authorizeOut *thirdpartysvc.AuthorizeOutput
 	authorizeErr error

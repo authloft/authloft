@@ -721,7 +721,7 @@ func TestAssembleRealChain(t *testing.T) {
 		t.Error("asyncqueue.Queue 未装配")
 	}
 	if deps.sink == nil {
-		t.Error("service.LoginEventWriter 未装配")
+		t.Error("登录事件写入器未装配")
 	}
 
 	// 幂等：复跑整条 assemble（migrate up 版本已最新时秒过，§3.16）。

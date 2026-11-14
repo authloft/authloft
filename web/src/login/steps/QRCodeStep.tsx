@@ -23,8 +23,8 @@
  *   （ticket.status 仍为 scanned，面板按 scanned 继续轮询）时，信封同时下发
  *   loginToken；本组件把它存入 loginTokenStore 后弹出 StepUpDialog，复用登录主路径
  *   的 startLoginVerification / submitStepUp（以 loginToken 为主体凭证）→
- *   SubmitVerification；扫码场景服务端以票据链路收尾（§3.8.1），Submit 成功写终态
- *   TicketResult、不直接登录，本组件关窗后由面板下一次轮询进入 success 再走终点。
+ *   SubmitVerification；按 §2.8 / §3.8.1，SubmitVerification 响应即登录流程结论，
+ *   票据不写终态、不依赖下次轮询。
  *   同一 ticket 首次 needs_step_up 时弹窗；通过后保留已处理标记不重复弹窗，
  *   用户取消则清空标记，同一票据可再次弹窗（挑战令牌已丢弃，重开即重取）。
  *
@@ -303,9 +303,9 @@ export function QRCodeStep({
       payload: JsonObject,
     ): Promise<string> => {
       const { submitStepUp: submitStepUpApi } = await import('../api');
-      // 扫码场景服务端以票据链路收尾、不回 verificationToken（§3.8.1）：Submit 成功
-      // 即视为完成，回传非空占位使 StepUpDialog 判成功并关窗；登录结论由后续轮询
-      // success 承担。
+      // 扫码场景服务端不回 verificationToken（§3.8.1）：SubmitVerification 响应
+      // 即登录流程结论，以 status=success 判完成，回传非空占位使 StepUpDialog
+      // 判成功并关窗。
       const response = await submitStepUpApi(challengeToken, method, payload);
       if (response.status === 'success') {
         return 'ok';
@@ -348,7 +348,7 @@ export function QRCodeStep({
   // 轮询包装：顶层 status=needs_step_up 且信封下发 loginToken 时，把该 token
   // 存入 loginTokenStore 后弹二次验证窗体（start/submit 复用登录主路径编排）。
   // ticket.status 仍为 scanned → 面板按 scanned 继续轮询、不被 needs_step_up 终止；
-  // Submit 成功后票据转终态，下一次轮询即 success（§2.8 行 884）。
+  // SubmitVerification 响应即登录流程结论（§2.8 / §3.8.1），票据不写终态、不依赖下次轮询。
   const pollAndDetectStepUp = async (
     ticket: string,
     seconds?: number,

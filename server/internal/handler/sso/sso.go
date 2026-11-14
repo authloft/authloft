@@ -72,7 +72,7 @@ type Verification interface {
 }
 
 // LoginTicketWriter 统一写票窄接口（§20 依赖注入）：生产注入
-// *service.LoginTicket，测试可传 fake；ConfirmLoginTicket 与 LoginOauth
+// ticket 子包的写票实现，测试可传 fake；ConfirmLoginTicket 与 LoginOauth
 // 扫码分支共用同一写票入口。
 type LoginTicketWriter interface {
 	WriteTicket(ctx context.Context, in ticketsvc.WriteTicketInput) (*ssov1.TicketStatus, error)
@@ -322,12 +322,12 @@ func startVerificationResponse(res *verification.StartResult) *commonv1.StartVer
 
 // —— 三方登录通道（接口文档 §2.7.2 / §2.7.4）——
 // 请求绑定、Cookie 头解析与 Set-Cookie 下发归本层，三方通道编排全部在
-// service.Thirdparty。LoginOauth 的业务失败走登录流程信封 status（HTTP
+// thirdparty 子包。LoginOauth 的业务失败走登录流程信封 status（HTTP
 // 200，§1.3 / §1.6）；Authorize 是普通 RPC，可判别哨兵错误转 Connect
 // 错误体 + ErrorInfo。
 
 // Thirdparty 三方登录通道 service 窄接口（§20 依赖注入）：生产注入
-// *service.Thirdparty，测试可传 fake。
+// thirdparty 子包实现，测试可传 fake。
 type Thirdparty interface {
 	Authorize(ctx context.Context, in thirdpartysvc.AuthorizeInput) (*thirdpartysvc.AuthorizeOutput, error)
 	LoginOauth(ctx context.Context, in thirdpartysvc.OauthInput) *thirdpartysvc.OauthOutput
