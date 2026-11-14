@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/envelope.proto.
  */
 export const file_api_sso_v1_envelope: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvc3NvL3YxL2VudmVsb3BlLnByb3RvEgphcGkuc3NvLnYxIskDChFMb2dpbkZsb3dSZXNwb25zZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJwoJbmV4dF9zdGVwGAMgASgLMhQuYXBpLnNzby52MS5OZXh0U3RlcBIkCgdiaW5kaW5nGAUgASgLMhMuYXBpLnNzby52MS5CaW5kaW5nEiMKBWVycm9yGAYgASgLMhQuYXBpLnNzby52MS5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAcgASgJEhUKDXNlc3Npb25fdG9rZW4YCCABKAkSFwoPc3luY19jb29raWVfdXJsGAkgASgJEhMKC3JlZGlyZWN0X3RvGAogASgJEg8KB3VzZXJfaWQYCyABKAMSKAoGdGlja2V0GAwgASgLMhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSLAoFbG9naW4YDSABKAsyHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEiQKBGJpbmQYDiABKAsyFi5hcGkuc3NvLnYxLkJpbmRSZXN1bHQSLQoHY2FwdGNoYRgPIAEoCzIcLmFwaS5jb21tb24udjEuQ2FwdGNoYUNvbmZpZ0oECAQQBSK3AQoITmV4dFN0ZXASDAoEa2luZBgBIAEoCRIOCgZtZXRob2QYAiABKAkSEAoIZW5kcG9pbnQYAyABKAkSIQoGZmllbGRzGAQgAygLMhEuYXBpLnNzby52MS5GaWVsZBITCgtyZXRyeV9hZnRlchgFIAEoAxISCgpleHBpcmVzX2luGAYgASgDEi8KDmNoYWxsZW5nZV9kYXRhGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJqCgVGaWVsZBIMCgRuYW1lGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBHR5cGUYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgSDgoGbGVuZ3RoGAUgASgDEhQKDG1heF9hdHRlbXB0cxgGIAEoAyJxCgdCaW5kaW5nEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSFAoMYWxsb3dfc2lnbnVwGAMgASgIEhAKCG5pY2tuYW1lGAQgASgJEhIKCmF2YXRhcl91cmwYBSABKAkihAEKCFNzb0Vycm9yEhQKB21lc3NhZ2UYASABKAlIAIgBARIYCgtyZXRyeV9hZnRlchgCIAEoA0gBiAEBEhoKDWF0dGVtcHRzX2xlZnQYAyABKANIAogBAUIKCghfbWVzc2FnZUIOCgxfcmV0cnlfYWZ0ZXJCEAoOX2F0dGVtcHRzX2xlZnQiMQoMVGlja2V0U3RhdHVzEg4KBnN0YXR1cxgBIAEoCRIRCgl0aWNrZXRfaWQYAiABKAkiRAoKQmluZFJlc3VsdBIKCgJvaxgBIAEoCBIUCgxwcm92aWRlcl9rZXkYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_common_v1_captcha]);
+  fileDesc("ChlhcGkvc3NvL3YxL2VudmVsb3BlLnByb3RvEgphcGkuc3NvLnYxIsMDChFMb2dpbkZsb3dSZXNwb25zZRITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZzdGF0dXMYAiABKAkSJwoJbmV4dF9zdGVwGAMgASgLMhQuYXBpLnNzby52MS5OZXh0U3RlcBIkCgdiaW5kaW5nGAQgASgLMhMuYXBpLnNzby52MS5CaW5kaW5nEiMKBWVycm9yGAUgASgLMhQuYXBpLnNzby52MS5Tc29FcnJvchISCgpzZXNzaW9uX2lkGAYgASgJEhUKDXNlc3Npb25fdG9rZW4YByABKAkSFwoPc3luY19jb29raWVfdXJsGAggASgJEhMKC3JlZGlyZWN0X3RvGAkgASgJEg8KB3VzZXJfaWQYCiABKAMSKAoGdGlja2V0GAsgASgLMhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSLAoFbG9naW4YDCABKAsyHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEiQKBGJpbmQYDSABKAsyFi5hcGkuc3NvLnYxLkJpbmRSZXN1bHQSLQoHY2FwdGNoYRgOIAEoCzIcLmFwaS5jb21tb24udjEuQ2FwdGNoYUNvbmZpZyK3AQoITmV4dFN0ZXASDAoEa2luZBgBIAEoCRIOCgZtZXRob2QYAiABKAkSEAoIZW5kcG9pbnQYAyABKAkSIQoGZmllbGRzGAQgAygLMhEuYXBpLnNzby52MS5GaWVsZBITCgtyZXRyeV9hZnRlchgFIAEoAxISCgpleHBpcmVzX2luGAYgASgDEi8KDmNoYWxsZW5nZV9kYXRhGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJqCgVGaWVsZBIMCgRuYW1lGAEgASgJEg0KBWxhYmVsGAIgASgJEgwKBHR5cGUYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgSDgoGbGVuZ3RoGAUgASgDEhQKDG1heF9hdHRlbXB0cxgGIAEoAyJxCgdCaW5kaW5nEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSFAoMYWxsb3dfc2lnbnVwGAMgASgIEhAKCG5pY2tuYW1lGAQgASgJEhIKCmF2YXRhcl91cmwYBSABKAkihAEKCFNzb0Vycm9yEhQKB21lc3NhZ2UYASABKAlIAIgBARIYCgtyZXRyeV9hZnRlchgCIAEoA0gBiAEBEhoKDWF0dGVtcHRzX2xlZnQYAyABKANIAogBAUIKCghfbWVzc2FnZUIOCgxfcmV0cnlfYWZ0ZXJCEAoOX2F0dGVtcHRzX2xlZnQiMQoMVGlja2V0U3RhdHVzEg4KBnN0YXR1cxgBIAEoCRIRCgl0aWNrZXRfaWQYAiABKAkiRAoKQmluZFJlc3VsdBIKCgJvaxgBIAEoCBIUCgxwcm92aWRlcl9rZXkYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_common_v1_captcha]);
 
 /**
  * LoginFlowResponse 是登录流程响应（docs/接口文档.md §1.3，行 102-155）：
@@ -53,7 +53,7 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
   /**
    * status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
    *
-   * @generated from field: api.sso.v1.Binding binding = 5;
+   * @generated from field: api.sso.v1.Binding binding = 4;
    */
   binding?: Binding | undefined;
 
@@ -62,42 +62,42 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * 业务分支只看 status（行 145）；非 200 走 Connect 错误体 + ErrorInfo（§1.5 行 197-211），
    * 与本字段无涉。
    *
-   * @generated from field: api.sso.v1.SsoError error = 6;
+   * @generated from field: api.sso.v1.SsoError error = 5;
    */
   error?: SsoError | undefined;
 
   /**
    * status=success 时的会话 ID（§1.3 行 134）。
    *
-   * @generated from field: string session_id = 7;
+   * @generated from field: string session_id = 6;
    */
   sessionId: string;
 
   /**
    * status=success 且无 Cookie 场景（小程序）返回（§1.3 行 135）。
    *
-   * @generated from field: string session_token = 8;
+   * @generated from field: string session_token = 7;
    */
   sessionToken: string;
 
   /**
    * status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 136、§2.9）。
    *
-   * @generated from field: string sync_cookie_url = 9;
+   * @generated from field: string sync_cookie_url = 8;
    */
   syncCookieUrl: string;
 
   /**
    * status=success 时的最终跳转地址（§1.3 行 137）。
    *
-   * @generated from field: string redirect_to = 10;
+   * @generated from field: string redirect_to = 9;
    */
   redirectTo: string;
 
   /**
    * 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 138、§12.9 行 1751、§1.12）。
    *
-   * @generated from field: int64 user_id = 11;
+   * @generated from field: int64 user_id = 10;
    */
   userId: bigint;
 
@@ -105,7 +105,7 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * 可选。仅两条扫码轮询 RPC（SsoService/GetLoginTicket、AccountService/GetThirdpartyTicket）
    * 出现，结构为 {status, ticket_id}（§1.3 行 139、152）。
    *
-   * @generated from field: api.sso.v1.TicketStatus ticket = 12;
+   * @generated from field: api.sso.v1.TicketStatus ticket = 11;
    */
   ticket?: TicketStatus | undefined;
 
@@ -113,7 +113,7 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * 可选。仅 SsoService/GetLoginTicket（scene=login）结果就绪（status=success）时出现，
    * 值为本节同一消息（§1.3 行 140、153）。
    *
-   * @generated from field: api.sso.v1.LoginFlowResponse login = 13;
+   * @generated from field: api.sso.v1.LoginFlowResponse login = 12;
    */
   login?: LoginFlowResponse | undefined;
 
@@ -121,7 +121,7 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * 可选。仅 AccountService/GetThirdpartyTicket 绑定完成时出现
    * （{provider_key, display_name}，§1.3 行 141、154、§3.7.1 B）。
    *
-   * @generated from field: api.sso.v1.BindResult bind = 14;
+   * @generated from field: api.sso.v1.BindResult bind = 13;
    */
   bind?: BindResult | undefined;
 
@@ -129,9 +129,9 @@ export type LoginFlowResponse = Message<"api.sso.v1.LoginFlowResponse"> & {
    * 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 478-486 的
    * captcha 配置对象（§1.3 行 155），与注入快照 / AccountService GetConfig 三处
    * 同结构同字段名（§2.5 行 476）；跨包引用 api.common.v1.CaptchaConfig
-   * （配置视图单一结构源），字段编号 15 不变（§12.8）。
+   * （配置视图单一结构源）。
    *
-   * @generated from field: api.common.v1.CaptchaConfig captcha = 15;
+   * @generated from field: api.common.v1.CaptchaConfig captcha = 14;
    */
   captcha?: CaptchaConfig | undefined;
 };

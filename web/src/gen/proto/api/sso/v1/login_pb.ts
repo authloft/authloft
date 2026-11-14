@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/login.proto.
  */
 export const file_api_sso_v1_login: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIscBChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgdjYXB0Y2hhGAYgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCKRAQoMTG9naW5QYXlsb2FkEhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEg0KBXBob25lGAQgASgJEg0KBWVtYWlsGAUgASgJEgwKBGNvZGUYBiABKAkSKwoKY3JlZGVudGlhbBgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RKBAgDEAQiUQoOQ2FwdGNoYVBheWxvYWQSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg0KBXRva2VuGAIgASgJEgoKAmlkGAMgASgJEg4KBmFuc3dlchgEIAEoCSIbChlDcmVhdGVDYXB0Y2hhSW1hZ2VSZXF1ZXN0IlIKGkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEgoKAmlkGAEgASgJEhQKDGltYWdlX2Jhc2U2NBgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIscBChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgdjYXB0Y2hhGAYgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCKLAQoMTG9naW5QYXlsb2FkEhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEg0KBXBob25lGAMgASgJEg0KBWVtYWlsGAQgASgJEgwKBGNvZGUYBSABKAkSKwoKY3JlZGVudGlhbBgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiUQoOQ2FwdGNoYVBheWxvYWQSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg0KBXRva2VuGAIgASgJEgoKAmlkGAMgASgJEg4KBmFuc3dlchgEIAEoCSIbChlDcmVhdGVDYXB0Y2hhSW1hZ2VSZXF1ZXN0IlIKGkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEgoKAmlkGAEgASgJEhQKDGltYWdlX2Jhc2U2NBgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
 
 /**
  * LoginDefaultRequest 是 SsoService/LoginDefault 的请求消息
@@ -105,14 +105,14 @@ export type LoginPayload = Message<"api.sso.v1.LoginPayload"> & {
   /**
    * otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。
    *
-   * @generated from field: string phone = 4;
+   * @generated from field: string phone = 3;
    */
   phone: string;
 
   /**
    * otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 543）；MFA 场景不传（行 544）。
    *
-   * @generated from field: string email = 5;
+   * @generated from field: string email = 4;
    */
   email: string;
 
@@ -120,14 +120,14 @@ export type LoginPayload = Message<"api.sso.v1.LoginPayload"> & {
    * otp_*\/verify 的 6 位验证码（§2.6 行 545）、totp/verify 的 TOTP 码（行 548）、
    * recovery_code/verify 的 `xxxx-xxxx` 恢复码（行 549）。
    *
-   * @generated from field: string code = 6;
+   * @generated from field: string code = 5;
    */
   code: string;
 
   /**
    * webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6 行 547），为任意 JSON 对象。
    *
-   * @generated from field: google.protobuf.Struct credential = 7;
+   * @generated from field: google.protobuf.Struct credential = 6;
    */
   credential?: JsonObject | undefined;
 };

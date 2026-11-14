@@ -50,10 +50,8 @@ message ResetPayload {
   string email = 1;
   // challenge 步：目标手机号，须为已绑定且已验证的（§2.4 行 464）；与 email 二选一。
   string phone = 2;
-  // 原 captcha 字段（编号 3）已上提为请求顶层字段，编号保留防复用（§12.8）。
-  reserved 3;
   // verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
-  string code = 4;
+  string code = 3;
   // set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。
-  string password = 5;
+  string password = 4;
 }

@@ -30,38 +30,36 @@ message LoginFlowResponse {
   string status = 2;
   // status=next 时的下一步渲染信息（§1.3 行 110-118）。
   NextStep next_step = 3;
-  // 原 mfa 字段（编号 4）随登录响应停用，编号保留防复用（§12.8）。
-  reserved 4;
   // status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
-  Binding binding = 5;
+  Binding binding = 4;
   // 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
   // 业务分支只看 status（行 145）；非 200 走 Connect 错误体 + ErrorInfo（§1.5 行 197-211），
   // 与本字段无涉。
-  SsoError error = 6;
+  SsoError error = 5;
   // status=success 时的会话 ID（§1.3 行 134）。
-  string session_id = 7;
+  string session_id = 6;
   // status=success 且无 Cookie 场景（小程序）返回（§1.3 行 135）。
-  string session_token = 8;
+  string session_token = 7;
   // status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 136、§2.9）。
-  string sync_cookie_url = 9;
+  string sync_cookie_url = 8;
   // status=success 时的最终跳转地址（§1.3 行 137）。
-  string redirect_to = 10;
+  string redirect_to = 9;
   // 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 138、§12.9 行 1751、§1.12）。
-  int64 user_id = 11;
+  int64 user_id = 10;
   // 可选。仅两条扫码轮询 RPC（SsoService/GetLoginTicket、AccountService/GetThirdpartyTicket）
   // 出现，结构为 {status, ticket_id}（§1.3 行 139、152）。
-  TicketStatus ticket = 12;
+  TicketStatus ticket = 11;
   // 可选。仅 SsoService/GetLoginTicket（scene=login）结果就绪（status=success）时出现，
   // 值为本节同一消息（§1.3 行 140、153）。
-  LoginFlowResponse login = 13;
+  LoginFlowResponse login = 12;
   // 可选。仅 AccountService/GetThirdpartyTicket 绑定完成时出现
   // （{provider_key, display_name}，§1.3 行 141、154、§3.7.1 B）。
-  BindResult bind = 14;
+  BindResult bind = 13;
   // 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 478-486 的
   // captcha 配置对象（§1.3 行 155），与注入快照 / AccountService GetConfig 三处
   // 同结构同字段名（§2.5 行 476）；跨包引用 api.common.v1.CaptchaConfig
-  // （配置视图单一结构源），字段编号 15 不变（§12.8）。
-  api.common.v1.CaptchaConfig captcha = 15;
+  // （配置视图单一结构源）。
+  api.common.v1.CaptchaConfig captcha = 14;
 }
 
 // NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 110-118）。

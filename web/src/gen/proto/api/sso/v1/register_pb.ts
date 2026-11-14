@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/register.proto.
  */
 export const file_api_sso_v1_register: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIsYBCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKB2NhcHRjaGEYBiABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkImcKD1JlZ2lzdGVyUGF5bG9hZBINCgVlbWFpbBgBIAEoCRINCgVwaG9uZRgCIAEoCRIMCgRjb2RlGAQgASgJEhAKCHVzZXJuYW1lGAUgASgJEhAKCHBhc3N3b3JkGAYgASgJSgQIAxAEQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_sso_v1_login]);
+  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIsYBCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKB2NhcHRjaGEYBiABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkImEKD1JlZ2lzdGVyUGF5bG9hZBINCgVlbWFpbBgBIAEoCRINCgVwaG9uZRgCIAEoCRIMCgRjb2RlGAMgASgJEhAKCHVzZXJuYW1lGAQgASgJEhAKCHBhc3N3b3JkGAUgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_sso_v1_login]);
 
 /**
  * RegisterRequest 是 SsoService/Register 的请求消息
@@ -108,14 +108,14 @@ export type RegisterPayload = Message<"api.sso.v1.RegisterPayload"> & {
   /**
    * verify 步：register 用途的验证码（§2.3 行 447）。
    *
-   * @generated from field: string code = 4;
+   * @generated from field: string code = 3;
    */
   code: string;
 
   /**
    * set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
    *
-   * @generated from field: string username = 5;
+   * @generated from field: string username = 4;
    */
   username: string;
 
@@ -123,7 +123,7 @@ export type RegisterPayload = Message<"api.sso.v1.RegisterPayload"> & {
    * set_password 步：密码，须满足密码策略（§2.3 行 448、§5.6）；
    * 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5 行 666-671）。
    *
-   * @generated from field: string password = 6;
+   * @generated from field: string password = 5;
    */
   password: string;
 };

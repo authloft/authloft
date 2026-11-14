@@ -135,12 +135,12 @@ type RegisterPayload struct {
 	// challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
 	// verify 步：register 用途的验证码（§2.3 行 447）。
-	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
+	Code string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
-	Username string `protobuf:"bytes,5,opt,name=username,proto3" json:"username,omitempty"`
+	Username string `protobuf:"bytes,4,opt,name=username,proto3" json:"username,omitempty"`
 	// set_password 步：密码，须满足密码策略（§2.3 行 448、§5.6）；
 	// 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5 行 666-671）。
-	Password      string `protobuf:"bytes,6,opt,name=password,proto3" json:"password,omitempty"`
+	Password      string `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -223,13 +223,13 @@ const file_api_sso_v1_register_proto_rawDesc = "" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x125\n" +
 	"\apayload\x18\x04 \x01(\v2\x1b.api.sso.v1.RegisterPayloadR\apayload\x12+\n" +
 	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\x8f\x01\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\x89\x01\n" +
 	"\x0fRegisterPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
 	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x12\n" +
-	"\x04code\x18\x04 \x01(\tR\x04code\x12\x1a\n" +
-	"\busername\x18\x05 \x01(\tR\busername\x12\x1a\n" +
-	"\bpassword\x18\x06 \x01(\tR\bpasswordJ\x04\b\x03\x10\x04B\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\x04code\x18\x03 \x01(\tR\x04code\x12\x1a\n" +
+	"\busername\x18\x04 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x05 \x01(\tR\bpasswordB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_register_proto_rawDescOnce sync.Once

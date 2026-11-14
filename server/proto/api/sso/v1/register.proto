@@ -46,13 +46,11 @@ message RegisterPayload {
   string email = 1;
   // challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
   string phone = 2;
-  // 原 captcha 字段（编号 3）已上提为请求顶层字段，编号保留防复用（§12.8）。
-  reserved 3;
   // verify 步：register 用途的验证码（§2.3 行 447）。
-  string code = 4;
+  string code = 3;
   // set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
-  string username = 5;
+  string username = 4;
   // set_password 步：密码，须满足密码策略（§2.3 行 448、§5.6）；
   // 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5 行 666-671）。
-  string password = 6;
+  string password = 5;
 }

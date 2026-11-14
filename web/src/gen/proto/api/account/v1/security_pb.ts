@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/security.proto.
  */
 export const file_api_account_v1_security: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hcGkvYWNjb3VudC92MS9zZWN1cml0eS5wcm90bxIOYXBpLmFjY291bnQudjEiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIjUKEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSDAoEY29kZRgDIAEoCUoECAIQAyKAAQoQQmluZFBob25lUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5QaG9uZUJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkIjUKEEVtYWlsQmluZFBheWxvYWQSDQoFZW1haWwYASABKAkSDAoEY29kZRgDIAEoCUoECAIQAyKAAQoQQmluZEVtYWlsUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5FbWFpbEJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_api_sso_v1_login]);
+  fileDesc("Ch1hcGkvYWNjb3VudC92MS9zZWN1cml0eS5wcm90bxIOYXBpLmFjY291bnQudjEiRwoVQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0EhgKEGN1cnJlbnRfcGFzc3dvcmQYASABKAkSFAoMbmV3X3Bhc3N3b3JkGAIgASgJIi8KEFBob25lQmluZFBheWxvYWQSDQoFcGhvbmUYASABKAkSDAoEY29kZRgCIAEoCSKAAQoQQmluZFBob25lUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5QaG9uZUJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkIi8KEEVtYWlsQmluZFBheWxvYWQSDQoFZW1haWwYASABKAkSDAoEY29kZRgCIAEoCSKAAQoQQmluZEVtYWlsUmVxdWVzdBIMCgRzdGVwGAEgASgJEjEKB3BheWxvYWQYAiABKAsyIC5hcGkuYWNjb3VudC52MS5FbWFpbEJpbmRQYXlsb2FkEisKB2NhcHRjaGEYAyABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_api_sso_v1_login]);
 
 /**
  * ChangePasswordRequest 是 AccountService/ChangePassword 的请求（§3.3 行 855-860）。
@@ -61,7 +61,7 @@ export type PhoneBindPayload = Message<"api.account.v1.PhoneBindPayload"> & {
   /**
    * verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
    *
-   * @generated from field: string code = 3;
+   * @generated from field: string code = 2;
    */
   code: string;
 };
@@ -128,7 +128,7 @@ export type EmailBindPayload = Message<"api.account.v1.EmailBindPayload"> & {
   /**
    * verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
    *
-   * @generated from field: string code = 3;
+   * @generated from field: string code = 2;
    */
   code: string;
 };

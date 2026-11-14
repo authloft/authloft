@@ -211,11 +211,11 @@ type StartVerificationRequest struct {
 	// 仅 SsoService 且 biz_purpose=login 必填（§3.8.1）。
 	LoginToken string `protobuf:"bytes,3,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
 	// 必填，写入挑战令牌，规则见 §3.8.4。
-	Operation string `protobuf:"bytes,5,opt,name=operation,proto3" json:"operation,omitempty"`
+	Operation string `protobuf:"bytes,4,opt,name=operation,proto3" json:"operation,omitempty"`
 	// 请求级人机校验凭据，是否需要按 §2.5 触发表判定；凭据结构见 §2.5。
 	// 以 Struct 承载避免 api.common.v1 → api.sso.v1 的包依赖循环：字段语义、
 	// 必填与约束仍由 §2.5 定义，服务端按该结构逐字段校验（§12.9 Struct 口径）。
-	Captcha       *structpb.Struct `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	Captcha       *structpb.Struct `protobuf:"bytes,5,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -556,15 +556,15 @@ const file_api_common_v1_verification_proto_rawDesc = "" +
 	"\tproviders\x18\t \x03(\v2\x17.google.protobuf.StructR\tproviders\"j\n" +
 	"\x14VerificationNextStep\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12>\n" +
-	"\x0echallenge_data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\rchallengeData\"\xcb\x01\n" +
+	"\x0echallenge_data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\rchallengeData\"\xc5\x01\n" +
 	"\x18StartVerificationRequest\x12\x1f\n" +
 	"\vbiz_purpose\x18\x01 \x01(\tR\n" +
 	"bizPurpose\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1f\n" +
 	"\vlogin_token\x18\x03 \x01(\tR\n" +
 	"loginToken\x12\x1c\n" +
-	"\toperation\x18\x05 \x01(\tR\toperation\x121\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x17.google.protobuf.StructR\acaptchaJ\x04\b\x04\x10\x05\"\xe2\x01\n" +
+	"\toperation\x18\x04 \x01(\tR\toperation\x121\n" +
+	"\acaptcha\x18\x05 \x01(\v2\x17.google.protobuf.StructR\acaptcha\"\xe2\x01\n" +
 	"\x19StartVerificationResponse\x12'\n" +
 	"\x0fchallenge_token\x18\x01 \x01(\tR\x0echallengeToken\x12;\n" +
 	"\amethods\x18\x02 \x03(\v2!.api.common.v1.VerificationMethodR\amethods\x12\x1d\n" +

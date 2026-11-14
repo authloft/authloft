@@ -139,9 +139,9 @@ type ResetPayload struct {
 	// challenge 步：目标手机号，须为已绑定且已验证的（§2.4 行 464）；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
 	// verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
-	Code string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
+	Code string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	// set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。
-	Password      string `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
+	Password      string `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,12 +217,12 @@ const file_api_sso_v1_reset_proto_rawDesc = "" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
 	"\apayload\x18\x04 \x01(\v2\x18.api.sso.v1.ResetPayloadR\apayload\x12+\n" +
 	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"p\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"j\n" +
 	"\fResetPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
 	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x12\n" +
-	"\x04code\x18\x04 \x01(\tR\x04code\x12\x1a\n" +
-	"\bpassword\x18\x05 \x01(\tR\bpasswordJ\x04\b\x03\x10\x04B\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\x04code\x18\x03 \x01(\tR\x04code\x12\x1a\n" +
+	"\bpassword\x18\x04 \x01(\tR\bpasswordB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_reset_proto_rawDescOnce sync.Once

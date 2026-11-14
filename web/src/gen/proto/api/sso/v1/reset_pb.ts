@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/reset.proto.
  */
 export const file_api_sso_v1_reset: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL3Jlc2V0LnByb3RvEgphcGkuc3NvLnYxIsgBChRSZXNldFBhc3N3b3JkUmVxdWVzdBITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZtZXRob2QYAiABKAkSDAoEc3RlcBgDIAEoCRIpCgdwYXlsb2FkGAQgASgLMhguYXBpLnNzby52MS5SZXNldFBheWxvYWQSJQoEb2lkYxgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKwoHY2FwdGNoYRgGIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQiUgoMUmVzZXRQYXlsb2FkEg0KBWVtYWlsGAEgASgJEg0KBXBob25lGAIgASgJEgwKBGNvZGUYBCABKAkSEAoIcGFzc3dvcmQYBSABKAlKBAgDEARCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_sso_v1_login]);
+  fileDesc("ChZhcGkvc3NvL3YxL3Jlc2V0LnByb3RvEgphcGkuc3NvLnYxIsgBChRSZXNldFBhc3N3b3JkUmVxdWVzdBITCgtsb2dpbl90b2tlbhgBIAEoCRIOCgZtZXRob2QYAiABKAkSDAoEc3RlcBgDIAEoCRIpCgdwYXlsb2FkGAQgASgLMhguYXBpLnNzby52MS5SZXNldFBheWxvYWQSJQoEb2lkYxgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKwoHY2FwdGNoYRgGIAEoCzIaLmFwaS5zc28udjEuQ2FwdGNoYVBheWxvYWQiTAoMUmVzZXRQYXlsb2FkEg0KBWVtYWlsGAEgASgJEg0KBXBob25lGAIgASgJEgwKBGNvZGUYAyABKAkSEAoIcGFzc3dvcmQYBCABKAlCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_sso_v1_login]);
 
 /**
  * ResetPasswordRequest 是 SsoService/ResetPassword 的请求消息
@@ -112,14 +112,14 @@ export type ResetPayload = Message<"api.sso.v1.ResetPayload"> & {
   /**
    * verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
    *
-   * @generated from field: string code = 4;
+   * @generated from field: string code = 3;
    */
   code: string;
 
   /**
    * set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。
    *
-   * @generated from field: string password = 5;
+   * @generated from field: string password = 4;
    */
   password: string;
 };

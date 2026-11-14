@@ -41,35 +41,35 @@ type LoginFlowResponse struct {
 	// status=next 时的下一步渲染信息（§1.3 行 110-118）。
 	NextStep *NextStep `protobuf:"bytes,3,opt,name=next_step,json=nextStep,proto3" json:"next_step,omitempty"`
 	// status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
-	Binding *Binding `protobuf:"bytes,5,opt,name=binding,proto3" json:"binding,omitempty"`
+	Binding *Binding `protobuf:"bytes,4,opt,name=binding,proto3" json:"binding,omitempty"`
 	// 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
 	// 业务分支只看 status（行 145）；非 200 走 Connect 错误体 + ErrorInfo（§1.5 行 197-211），
 	// 与本字段无涉。
-	Error *SsoError `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	Error *SsoError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
 	// status=success 时的会话 ID（§1.3 行 134）。
-	SessionId string `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId string `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// status=success 且无 Cookie 场景（小程序）返回（§1.3 行 135）。
-	SessionToken string `protobuf:"bytes,8,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
+	SessionToken string `protobuf:"bytes,7,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	// status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 136、§2.9）。
-	SyncCookieUrl string `protobuf:"bytes,9,opt,name=sync_cookie_url,json=syncCookieUrl,proto3" json:"sync_cookie_url,omitempty"`
+	SyncCookieUrl string `protobuf:"bytes,8,opt,name=sync_cookie_url,json=syncCookieUrl,proto3" json:"sync_cookie_url,omitempty"`
 	// status=success 时的最终跳转地址（§1.3 行 137）。
-	RedirectTo string `protobuf:"bytes,10,opt,name=redirect_to,json=redirectTo,proto3" json:"redirect_to,omitempty"`
+	RedirectTo string `protobuf:"bytes,9,opt,name=redirect_to,json=redirectTo,proto3" json:"redirect_to,omitempty"`
 	// 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 138、§12.9 行 1751、§1.12）。
-	UserId int64 `protobuf:"varint,11,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	UserId int64 `protobuf:"varint,10,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	// 可选。仅两条扫码轮询 RPC（SsoService/GetLoginTicket、AccountService/GetThirdpartyTicket）
 	// 出现，结构为 {status, ticket_id}（§1.3 行 139、152）。
-	Ticket *TicketStatus `protobuf:"bytes,12,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	Ticket *TicketStatus `protobuf:"bytes,11,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	// 可选。仅 SsoService/GetLoginTicket（scene=login）结果就绪（status=success）时出现，
 	// 值为本节同一消息（§1.3 行 140、153）。
-	Login *LoginFlowResponse `protobuf:"bytes,13,opt,name=login,proto3" json:"login,omitempty"`
+	Login *LoginFlowResponse `protobuf:"bytes,12,opt,name=login,proto3" json:"login,omitempty"`
 	// 可选。仅 AccountService/GetThirdpartyTicket 绑定完成时出现
 	// （{provider_key, display_name}，§1.3 行 141、154、§3.7.1 B）。
-	Bind *BindResult `protobuf:"bytes,14,opt,name=bind,proto3" json:"bind,omitempty"`
+	Bind *BindResult `protobuf:"bytes,13,opt,name=bind,proto3" json:"bind,omitempty"`
 	// 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 478-486 的
 	// captcha 配置对象（§1.3 行 155），与注入快照 / AccountService GetConfig 三处
 	// 同结构同字段名（§2.5 行 476）；跨包引用 api.common.v1.CaptchaConfig
-	// （配置视图单一结构源），字段编号 15 不变（§12.8）。
-	Captcha       *v1.CaptchaConfig `protobuf:"bytes,15,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// （配置视图单一结构源）。
+	Captcha       *v1.CaptchaConfig `protobuf:"bytes,14,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -673,26 +673,26 @@ var File_api_sso_v1_envelope_proto protoreflect.FileDescriptor
 const file_api_sso_v1_envelope_proto_rawDesc = "" +
 	"\n" +
 	"\x19api/sso/v1/envelope.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\xd1\x04\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/common/v1/captcha.proto\"\xcb\x04\n" +
 	"\x11LoginFlowResponse\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x121\n" +
 	"\tnext_step\x18\x03 \x01(\v2\x14.api.sso.v1.NextStepR\bnextStep\x12-\n" +
-	"\abinding\x18\x05 \x01(\v2\x13.api.sso.v1.BindingR\abinding\x12*\n" +
-	"\x05error\x18\x06 \x01(\v2\x14.api.sso.v1.SsoErrorR\x05error\x12\x1d\n" +
+	"\abinding\x18\x04 \x01(\v2\x13.api.sso.v1.BindingR\abinding\x12*\n" +
+	"\x05error\x18\x05 \x01(\v2\x14.api.sso.v1.SsoErrorR\x05error\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\a \x01(\tR\tsessionId\x12#\n" +
-	"\rsession_token\x18\b \x01(\tR\fsessionToken\x12&\n" +
-	"\x0fsync_cookie_url\x18\t \x01(\tR\rsyncCookieUrl\x12\x1f\n" +
-	"\vredirect_to\x18\n" +
-	" \x01(\tR\n" +
+	"session_id\x18\x06 \x01(\tR\tsessionId\x12#\n" +
+	"\rsession_token\x18\a \x01(\tR\fsessionToken\x12&\n" +
+	"\x0fsync_cookie_url\x18\b \x01(\tR\rsyncCookieUrl\x12\x1f\n" +
+	"\vredirect_to\x18\t \x01(\tR\n" +
 	"redirectTo\x12\x17\n" +
-	"\auser_id\x18\v \x01(\x03R\x06userId\x120\n" +
-	"\x06ticket\x18\f \x01(\v2\x18.api.sso.v1.TicketStatusR\x06ticket\x123\n" +
-	"\x05login\x18\r \x01(\v2\x1d.api.sso.v1.LoginFlowResponseR\x05login\x12*\n" +
-	"\x04bind\x18\x0e \x01(\v2\x16.api.sso.v1.BindResultR\x04bind\x126\n" +
-	"\acaptcha\x18\x0f \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptchaJ\x04\b\x04\x10\x05\"\xfd\x01\n" +
+	"\auser_id\x18\n" +
+	" \x01(\x03R\x06userId\x120\n" +
+	"\x06ticket\x18\v \x01(\v2\x18.api.sso.v1.TicketStatusR\x06ticket\x123\n" +
+	"\x05login\x18\f \x01(\v2\x1d.api.sso.v1.LoginFlowResponseR\x05login\x12*\n" +
+	"\x04bind\x18\r \x01(\v2\x16.api.sso.v1.BindResultR\x04bind\x126\n" +
+	"\acaptcha\x18\x0e \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptcha\"\xfd\x01\n" +
 	"\bNextStep\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
 	"\x06method\x18\x02 \x01(\tR\x06method\x12\x1a\n" +

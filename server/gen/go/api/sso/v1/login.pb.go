@@ -134,14 +134,14 @@ type LoginPayload struct {
 	// password / verify：密码（§2.6 行 542）。
 	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	// otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。
-	Phone string `protobuf:"bytes,4,opt,name=phone,proto3" json:"phone,omitempty"`
+	Phone string `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
 	// otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 543）；MFA 场景不传（行 544）。
-	Email string `protobuf:"bytes,5,opt,name=email,proto3" json:"email,omitempty"`
+	Email string `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
 	// otp_*/verify 的 6 位验证码（§2.6 行 545）、totp/verify 的 TOTP 码（行 548）、
 	// recovery_code/verify 的 `xxxx-xxxx` 恢复码（行 549）。
-	Code string `protobuf:"bytes,6,opt,name=code,proto3" json:"code,omitempty"`
+	Code string `protobuf:"bytes,5,opt,name=code,proto3" json:"code,omitempty"`
 	// webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6 行 547），为任意 JSON 对象。
-	Credential    *structpb.Struct `protobuf:"bytes,7,opt,name=credential,proto3" json:"credential,omitempty"`
+	Credential    *structpb.Struct `protobuf:"bytes,6,opt,name=credential,proto3" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -411,16 +411,16 @@ const file_api_sso_v1_login_proto_rawDesc = "" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
 	"\apayload\x18\x04 \x01(\v2\x18.api.sso.v1.LoginPayloadR\apayload\x12+\n" +
 	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\xc5\x01\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\xbf\x01\n" +
 	"\fLoginPayload\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +
-	"\x05phone\x18\x04 \x01(\tR\x05phone\x12\x14\n" +
-	"\x05email\x18\x05 \x01(\tR\x05email\x12\x12\n" +
-	"\x04code\x18\x06 \x01(\tR\x04code\x127\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x14\n" +
+	"\x05email\x18\x04 \x01(\tR\x05email\x12\x12\n" +
+	"\x04code\x18\x05 \x01(\tR\x04code\x127\n" +
 	"\n" +
-	"credential\x18\a \x01(\v2\x17.google.protobuf.StructR\n" +
-	"credentialJ\x04\b\x03\x10\x04\"q\n" +
+	"credential\x18\x06 \x01(\v2\x17.google.protobuf.StructR\n" +
+	"credential\"q\n" +
 	"\x0eCaptchaPayload\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x0e\n" +

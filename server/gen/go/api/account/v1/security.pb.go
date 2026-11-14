@@ -86,7 +86,7 @@ type PhoneBindPayload struct {
 	// 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 870-871、行 880）。
 	Phone string `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
 	// verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
-	Code          string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
+	Code          string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -209,7 +209,7 @@ type EmailBindPayload struct {
 	// 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 872-873、行 880）。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
 	// verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
-	Code          string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
+	Code          string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -331,17 +331,17 @@ const file_api_account_v1_security_proto_rawDesc = "" +
 	"\x1dapi/account/v1/security.proto\x12\x0eapi.account.v1\x1a\x16api/sso/v1/login.proto\"e\n" +
 	"\x15ChangePasswordRequest\x12)\n" +
 	"\x10current_password\x18\x01 \x01(\tR\x0fcurrentPassword\x12!\n" +
-	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"B\n" +
+	"\fnew_password\x18\x02 \x01(\tR\vnewPassword\"<\n" +
 	"\x10PhoneBindPayload\x12\x14\n" +
 	"\x05phone\x18\x01 \x01(\tR\x05phone\x12\x12\n" +
-	"\x04code\x18\x03 \x01(\tR\x04codeJ\x04\b\x02\x10\x03\"\x98\x01\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"\x98\x01\n" +
 	"\x10BindPhoneRequest\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x12:\n" +
 	"\apayload\x18\x02 \x01(\v2 .api.account.v1.PhoneBindPayloadR\apayload\x124\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"B\n" +
+	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"<\n" +
 	"\x10EmailBindPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
-	"\x04code\x18\x03 \x01(\tR\x04codeJ\x04\b\x02\x10\x03\"\x98\x01\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"\x98\x01\n" +
 	"\x10BindEmailRequest\x12\x12\n" +
 	"\x04step\x18\x01 \x01(\tR\x04step\x12:\n" +
 	"\apayload\x18\x02 \x01(\v2 .api.account.v1.EmailBindPayloadR\apayload\x124\n" +

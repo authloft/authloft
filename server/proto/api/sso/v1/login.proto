@@ -42,17 +42,15 @@ message LoginPayload {
   string username = 1;
   // password / verify：密码（§2.6 行 542）。
   string password = 2;
-  // 原 captcha 字段（编号 3）已上提为请求顶层字段，编号保留防复用（§12.8）。
-  reserved 3;
   // otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。
-  string phone = 4;
+  string phone = 3;
   // otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 543）；MFA 场景不传（行 544）。
-  string email = 5;
+  string email = 4;
   // otp_*/verify 的 6 位验证码（§2.6 行 545）、totp/verify 的 TOTP 码（行 548）、
   // recovery_code/verify 的 `xxxx-xxxx` 恢复码（行 549）。
-  string code = 6;
+  string code = 5;
   // webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6 行 547），为任意 JSON 对象。
-  google.protobuf.Struct credential = 7;
+  google.protobuf.Struct credential = 6;
 }
 
 // CaptchaPayload 是人机校验的统一提交格式（§2.5 行 499-510，第三方与自绘两类 Provider 共用）。
