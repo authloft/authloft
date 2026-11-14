@@ -2,7 +2,7 @@
 // §11.5 行 1228-1230）：实现 orchestrator.SessionWriter，一次 Write 完成
 // sid 生成、epoch 读取与 session_token 签发。会话令牌自包含、不落盘，
 // 本文件不写 DB / Redis；epoch 只经注入的 EpochReader 读取。
-package service
+package session
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/security"
-	"authloft/internal/session"
+	sessionpkg "authloft/internal/session"
 	"authloft/internal/settings"
 )
 
@@ -35,7 +35,7 @@ type SessionSettings interface {
 // SessionWriter 会话写入适配器：生成 sid、读 epoch、签发 session_token。
 // 满足 orchestrator.SessionWriter 签名（terminal.go 行 18-21）。
 type SessionWriter struct {
-	Tokens   *session.Tokens
+	Tokens   *sessionpkg.Tokens
 	Epochs   EpochReader
 	Settings SessionSettings
 	// Now 可注入时钟；为空时使用 time.Now。
@@ -43,7 +43,7 @@ type SessionWriter struct {
 }
 
 // NewSessionWriter 注入依赖；Now 为空时使用 time.Now。
-func NewSessionWriter(tokens *session.Tokens, epochs EpochReader, cfg SessionSettings) *SessionWriter {
+func NewSessionWriter(tokens *sessionpkg.Tokens, epochs EpochReader, cfg SessionSettings) *SessionWriter {
 	return &SessionWriter{Tokens: tokens, Epochs: epochs, Settings: cfg}
 }
 

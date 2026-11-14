@@ -1,4 +1,4 @@
-package service
+package session
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"authloft/internal/security"
-	"authloft/internal/session"
+	sessionpkg "authloft/internal/session"
 	"authloft/internal/settings"
 )
 
@@ -34,7 +34,7 @@ func (f fakeSettings) GetInt64(key string) (int64, bool) {
 }
 
 // testTokens 构造可签发 / 解析的会话令牌入口（固定 32 字节 AES-256 密钥）。
-func testTokens(t *testing.T) *session.Tokens {
+func testTokens(t *testing.T) *sessionpkg.Tokens {
 	t.Helper()
 	key := make([]byte, 32)
 	for i := range key {
@@ -47,7 +47,7 @@ func testTokens(t *testing.T) *session.Tokens {
 	if err != nil {
 		t.Fatalf("NewKeyStore: %v", err)
 	}
-	return session.NewTokens(security.NewCodec(ks))
+	return sessionpkg.NewTokens(security.NewCodec(ks))
 }
 
 func fixedNow() time.Time { return time.Unix(1700000000, 0) }

@@ -3,7 +3,7 @@
 // 以报文视图 SessionResponse 平铺载荷 + renewed_token。
 // 校验失败不重签、零存储写入；错误语义（未登录 / 会话失效）由 session 包
 // 原样上抛，HTTP 401 映射归 handler 批，本层不引 connect 包。
-package service
+package token
 
 import (
 	"context"

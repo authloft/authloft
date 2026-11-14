@@ -1,4 +1,4 @@
-package service
+package eventlog
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"authloft/internal/asyncqueue"
-	"authloft/internal/eventlog"
+	eventlogpkg "authloft/internal/eventlog"
 	"authloft/internal/repo/model"
 	"authloft/internal/service/orchestrator"
 )
@@ -42,7 +42,7 @@ func newLoginEventWriter() (*LoginEventWriter, *loginEventCapture, *asyncqueue.Q
 		BatchSize:     100,
 		FlushInterval: time.Hour,
 	})
-	return NewLoginEventWriter(eventlog.NewWriter(q)), exec, q
+	return NewLoginEventWriter(eventlogpkg.NewWriter(q)), exec, q
 }
 
 func closeLoginEventQueue(t *testing.T, q *asyncqueue.Queue) {
@@ -64,7 +64,7 @@ type loginDetail struct {
 
 // TestLoginEventWriterRecordMapsFields 校验 LoginEvent → login_success 行
 // 的字段映射（actor/user/client/amr/ip/ua/detail）与 last_login 任务
-//（§4.6 行 774-775、776-777、798、806；ip/ua/session_id 落库）。
+// （§4.6 行 774-775、776-777、798、806；ip/ua/session_id 落库）。
 func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 	w, exec, q := newLoginEventWriter()
 	const authTime = int64(1700000000)
@@ -92,14 +92,14 @@ func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 		row     model.EventLog
 		hasRow  bool
 		lastKey string
-		last    eventlog.LastLoginTask
+		last    eventlogpkg.LastLoginTask
 		hasLast bool
 	)
 	for _, task := range tasks {
 		switch v := task.Value.(type) {
 		case model.EventLog:
 			row, hasRow = v, true
-		case eventlog.LastLoginTask:
+		case eventlogpkg.LastLoginTask:
 			lastKey, last, hasLast = task.Key, v, true
 		default:
 			t.Fatalf("unexpected task value type %T", task.Value)
@@ -109,11 +109,11 @@ func TestLoginEventWriterRecordMapsFields(t *testing.T) {
 		t.Fatalf("hasRow=%v hasLast=%v, want both", hasRow, hasLast)
 	}
 
-	if row.Event != eventlog.EventLoginSuccess {
-		t.Errorf("event = %q, want %q", row.Event, eventlog.EventLoginSuccess)
+	if row.Event != eventlogpkg.EventLoginSuccess {
+		t.Errorf("event = %q, want %q", row.Event, eventlogpkg.EventLoginSuccess)
 	}
-	if row.ActorType != eventlog.ActorTypeUser {
-		t.Errorf("actor_type = %q, want %q", row.ActorType, eventlog.ActorTypeUser)
+	if row.ActorType != eventlogpkg.ActorTypeUser {
+		t.Errorf("actor_type = %q, want %q", row.ActorType, eventlogpkg.ActorTypeUser)
 	}
 	if row.ActorID != 42 || row.UserID != 42 {
 		t.Errorf("actor_id/user_id = %d/%d, want 42/42", row.ActorID, row.UserID)
@@ -180,13 +180,13 @@ func TestLoginEventWriterLastLoginMergeByUserID(t *testing.T) {
 
 	var (
 		eventRows int
-		lastByUID = map[int64]eventlog.LastLoginTask{}
+		lastByUID = map[int64]eventlogpkg.LastLoginTask{}
 	)
 	for _, task := range exec.all() {
 		switch v := task.Value.(type) {
 		case model.EventLog:
 			eventRows++
-		case eventlog.LastLoginTask:
+		case eventlogpkg.LastLoginTask:
 			lastByUID[v.UserID] = v
 		}
 	}

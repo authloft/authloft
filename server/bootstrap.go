@@ -104,7 +104,9 @@ import (
 	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
 	adminsvc "authloft/internal/service/admin"
+	eventlogsvc "authloft/internal/service/eventlog"
 	"authloft/internal/service/orchestrator"
+	sessionsvc "authloft/internal/service/session"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
 	"authloft/internal/settings"
@@ -156,7 +158,7 @@ type assembled struct {
 	settings *settings.Store
 	watcher  *settings.Watcher
 	queue    *asyncqueue.Queue
-	sink     *service.LoginEventWriter
+	sink     *eventlogsvc.LoginEventWriter
 	engine   *orchestrator.Engine
 	// verification step-up 服务（§3.8）：buildEngine 内用挑战 / 断言两把
 	// 独立密钥装配，registerSSO / registerAccount 注入两个域的 handler，
@@ -493,12 +495,12 @@ func buildEngine(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	// 会话 / epoch / 授权码共享单例（assemble 构造，消除冗余）：
 	// Terminal 的 SessionWriter 与 sso 会话拦截器、OIDC token 端点各自复用，
 	// 不再构造第二份 EpochStore / Tokens / CodeIssuer。
-	sessions := service.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
+	sessions := sessionsvc.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
 	terminal := orchestrator.NewTerminal(
 		sessions,
 		deps.codeIssuer,
 		deps.sink,
-		service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
 		deps.settings,
 	)
 	loginState := orchestrator.NewState(deps.codecs.Login)
@@ -1179,7 +1181,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		// 码图自动删除（DeleteTask，§13.3）。
 		qrcode.NewDeleteExecutor(storage.NewResolver(deps.providerLoader)),
 	}, asyncqueue.DefaultOptions())
-	deps.sink = service.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
+	deps.sink = eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
 
 	// 微信服务端 access_token 跨实例共享缓存
 	// （cache/wxacode，键 al:wxacode:*）注入 wechat_mp_scan 适配器——
@@ -1829,7 +1831,7 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Loader:     deps.providerLoader,
 		Factors:    deps.factors,
 		Gate:       deps.gate,
-		Sync:       service.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
+		Sync:       sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
 		Codec:      deps.codecs.SyncPayload,
 		JWT:        deps.oidcJWT,
 		Clients:    repo.NewClientRepo(deps.db),

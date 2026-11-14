@@ -2,7 +2,7 @@
 // 接口文档 §1.9 行 290-296）：实现 orchestrator.SyncCookieURLBuilder，
 // 由登录终点 / 登出共用同一段代码生成跳转链首跳 URL。链路状态全部装在
 // security.Codec 加密的 SyncCookiePayload 里，不落存储；本文件不读写 DB / Redis。
-package service
+package session
 
 import (
 	"context"

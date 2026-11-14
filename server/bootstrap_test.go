@@ -53,8 +53,8 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
-	"authloft/internal/service"
 	accountsvc "authloft/internal/service/account"
+	eventlogsvc "authloft/internal/service/eventlog"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -537,7 +537,7 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		codecs:   codecs,
 		settings: settings.NewStore(nil, nil),
 		queue:    q,
-		sink:     service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		sink:     eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
 		// 共享单例由调用方构造注入（不连外部服务，rdb / repo 传
 		// nil 与生产 assemble 注入真源同构）；otp 发送桥还需要
 		// providerLoader（settings 键 → Loader → NewSender）。
@@ -615,7 +615,7 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 		codecs:         codecs,
 		settings:       settings.NewStore(nil, nil),
 		queue:          q,
-		sink:           service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
 		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
@@ -808,7 +808,7 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 		codecs:         codecs,
 		settings:       settings.NewStore(nil, nil),
 		queue:          q,
-		sink:           service.NewLoginEventWriter(eventlog.NewWriter(q)),
+		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
 		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),

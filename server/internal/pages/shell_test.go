@@ -23,7 +23,7 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
-	"authloft/internal/service"
+	sessionsvc "authloft/internal/service/session"
 	"authloft/internal/settings"
 )
 
@@ -199,7 +199,7 @@ func newFixture(t *testing.T) *fixture {
 		Loader:     loader,
 		Factors:    defaultFactors(),
 		Gate:       fakeCaptcha{cfg: captcha.Config{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0x4AAA"}},
-		Sync:       service.NewSyncCookieURLBuilder(codec),
+		Sync:       sessionsvc.NewSyncCookieURLBuilder(codec),
 		Codec:      codec,
 		JWT:        jw,
 		Clients:    fakeClients{},

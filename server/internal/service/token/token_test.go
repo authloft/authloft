@@ -1,9 +1,9 @@
 // token_test.go 覆盖 TokenService/DecodeSession 的续期重签与失败语义
 // （docs/接口文档.md §7.1、docs/后端架构.md §17 行 1737）：Fake EpochReader +
-// 真实 security.Codec（复用 session_test.go 的 testTokens）。Renewer 无存储
+// 真实 security.Codec（自带 testTokens，与 session 包测试同口径）。Renewer 无存储
 // 依赖，Fake EpochReader 只有只读 Current 接口（无写方法），故"零存储写入"
 // 由结构天然成立；额外断言 epoch 读取次数佐证。
-package service
+package token
 
 import (
 	"context"
@@ -13,9 +13,27 @@ import (
 	"time"
 
 	rpcv1 "authloft/gen/go/api/rpc/v1"
-	"authloft/gen/go/token"
+	tokenpkg "authloft/gen/go/token"
+	"authloft/internal/security"
 	"authloft/internal/session"
 )
+
+// testTokens 构造可签发 / 解析的会话令牌入口（固定 32 字节 AES-256 密钥）。
+func testTokens(t *testing.T) *session.Tokens {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	ks, err := security.NewKeyStore(security.KeyEntry{
+		ID:  security.KeyID{Version: 1, Kid: 1},
+		Key: key,
+	})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	return session.NewTokens(security.NewCodec(ks))
+}
 
 // countingEpochReader 只读 Fake EpochReader：记录调用次数，无任何写接口。
 type countingEpochReader struct {
@@ -37,7 +55,7 @@ func newTokenService(t *testing.T, epoch int64, ttl time.Duration) (*TokenServic
 }
 
 // signPayload 用真实 Codec 签发指定载荷并返回令牌串。
-func signPayload(t *testing.T, tokens *session.Tokens, p *token.SessionTokenPayload) string {
+func signPayload(t *testing.T, tokens *session.Tokens, p *tokenpkg.SessionTokenPayload) string {
 	t.Helper()
 	tok, err := tokens.Sign(p)
 	if err != nil {
@@ -65,7 +83,7 @@ func TestDecodeSessionRenewsToken(t *testing.T) {
 	svc, tokens, epochs := newTokenService(t, 7, ttl)
 
 	now := time.Now().Unix()
-	old := &token.SessionTokenPayload{
+	old := &tokenpkg.SessionTokenPayload{
 		Id:    42,
 		Epoch: 7,
 		Amr:   []string{"pwd", "otp"},
@@ -119,7 +137,7 @@ func TestDecodeSessionRenewsToken(t *testing.T) {
 func TestDecodeSessionBadToken(t *testing.T) {
 	svc, tokens, epochs := newTokenService(t, 7, 7*24*time.Hour)
 	now := time.Now().Unix()
-	valid := signPayload(t, tokens, &token.SessionTokenPayload{
+	valid := signPayload(t, tokens, &tokenpkg.SessionTokenPayload{
 		Id: 42, Epoch: 7, Amr: []string{"pwd"}, Sid: "sid-0001",
 		Iat: now, Exp: now + 3600,
 	})
@@ -146,7 +164,7 @@ func TestDecodeSessionBadToken(t *testing.T) {
 func TestDecodeSessionExpired(t *testing.T) {
 	svc, tokens, epochs := newTokenService(t, 7, 7*24*time.Hour)
 	now := time.Now().Unix()
-	tok := signPayload(t, tokens, &token.SessionTokenPayload{
+	tok := signPayload(t, tokens, &tokenpkg.SessionTokenPayload{
 		Id: 42, Epoch: 7, Amr: []string{"pwd"}, Sid: "sid-0001",
 		Iat: now - 7200, Exp: now - 60,
 	})
@@ -163,7 +181,7 @@ func TestDecodeSessionExpired(t *testing.T) {
 func TestDecodeSessionEpochMismatch(t *testing.T) {
 	svc, tokens, epochs := newTokenService(t, 8, 7*24*time.Hour) // 已改密 → 当前 8
 	now := time.Now().Unix()
-	tok := signPayload(t, tokens, &token.SessionTokenPayload{
+	tok := signPayload(t, tokens, &tokenpkg.SessionTokenPayload{
 		Id: 42, Epoch: 7, Amr: []string{"pwd"}, Sid: "sid-0001",
 		Iat: now, Exp: now + 3600,
 	})

@@ -2,14 +2,14 @@
 // 806、§5.2 行 858-894）：实现 orchestrator.LoginEventSink（terminal.go
 // 行 52-55），把一次成功登录映射为 login_success 事件 + user.last_login_at
 // 更新，全部走 eventlog.Writer 的延迟队列，登录主链路零同步写库。
-package service
+package eventlog
 
 import (
 	"context"
 	"strings"
 	"time"
 
-	"authloft/internal/eventlog"
+	eventlogpkg "authloft/internal/eventlog"
 	"authloft/internal/repo/model"
 	"authloft/internal/service/orchestrator"
 )
@@ -17,11 +17,11 @@ import (
 // LoginEventWriter 登录事件投递适配器。满足 orchestrator.LoginEventSink
 // 签名（terminal.go 行 52-55）。
 type LoginEventWriter struct {
-	Logs *eventlog.Writer
+	Logs *eventlogpkg.Writer
 }
 
 // NewLoginEventWriter 注入事件投递器。
-func NewLoginEventWriter(logs *eventlog.Writer) *LoginEventWriter {
+func NewLoginEventWriter(logs *eventlogpkg.Writer) *LoginEventWriter {
 	return &LoginEventWriter{Logs: logs}
 }
 
@@ -48,15 +48,15 @@ func (w *LoginEventWriter) Record(_ context.Context, ev orchestrator.LoginEvent)
 
 	factor, mfaFactor := loginFactors(ev.AMR)
 	w.Logs.PushEvent(model.EventLog{
-		Event:     eventlog.EventLoginSuccess,
-		ActorType: eventlog.ActorTypeUser,
+		Event:     eventlogpkg.EventLoginSuccess,
+		ActorType: eventlogpkg.ActorTypeUser,
 		ActorID:   ev.UID,
 		UserID:    ev.UID,
 		ClientID:  ev.ClientID,
 		AMR:       strings.Join(ev.AMR, ","),
 		IP:        ev.IP,
 		UA:        ev.UA,
-		Detail:    eventlog.DetailLoginSuccess(factor, mfaFactor, ev.SessionID, ""),
+		Detail:    eventlogpkg.DetailLoginSuccess(factor, mfaFactor, ev.SessionID, ""),
 		CreatedAt: at,
 	})
 	w.Logs.PushLastLogin(ev.UID, at)
