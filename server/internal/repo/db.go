@@ -7,10 +7,15 @@ package repo
 
 import (
 	"fmt"
+	"io"
+	"log"
+	"os"
+	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"authloft/internal/config"
 )
@@ -27,6 +32,7 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	}
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
+		Logger:                                   newGORMLogger(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("db: open: %w", err)
@@ -41,8 +47,28 @@ func Open(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
+// newGORMLogger 装配 GORM 的 SQL 日志。默认 logger 会把单行查询
+// （Take / First）查无行时的 ErrRecordNotFound 连同调用文件行号打到 stderr；
+// 凭证、资料、绑定等可选行在默认态本就不存在，这类 record not found 是
+// 业务预期而非故障，需要静默。真实 SQL 错误与慢查询仍按 Warn 记录。
+func newGORMLogger() logger.Interface {
+	return gormLogger(os.Stderr)
+}
+
+func gormLogger(w io.Writer) logger.Interface {
+	return logger.New(
+		log.New(w, "", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
+}
+
 // normalizeDSN 规范化 DSN：强制 parseTime=true，与 migrate 包 openDB 同口径
-//（驱动未开 parseTime 时时间列扫描进 time.Time 失败）。只补参数不改语义。
+// （驱动未开 parseTime 时时间列扫描进 time.Time 失败）。只补参数不改语义。
 func normalizeDSN(dsn string) (string, error) {
 	c, err := mysqldriver.ParseDSN(dsn)
 	if err != nil {

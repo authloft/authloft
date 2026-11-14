@@ -203,7 +203,7 @@ func (s *WebauthnService) ListCredentials(ctx context.Context, uid int64) ([]Web
 	}
 	creds, err := s.deps.Creds.ListByUser(ctx, uid)
 	if err != nil {
-		logx.Error(ctx, "list credential rows failed", err)
+		logx.Error(ctx, "list credential rows failed", "error", logx.RedactText(err.Error()))
 		return nil, fmt.Errorf("%w: list credential rows: %v", ErrWebauthnInternal, err)
 	}
 	byID := make(map[int64]model.UserCredential, len(creds))

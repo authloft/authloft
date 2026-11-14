@@ -4,10 +4,15 @@
 package repo
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 
 	"authloft/internal/config"
 )
@@ -68,4 +73,22 @@ func TestOpenReal(t *testing.T) {
 	}
 	// MaxIdleConns / ConnMaxLifetime 无运行期 getter（*sql.DB 只写不读），
 	// 由 Open 的 Set 调用与代码审阅保证，不在运行期断言。
+}
+
+// TestGORMLoggerIgnoresRecordNotFound：可选单行查询查无行属业务预期，
+// 不得产生日志；真实 SQL 错误仍须记录。
+func TestGORMLoggerIgnoresRecordNotFound(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := gormLogger(buf)
+	fc := func() (string, int64) { return "SELECT * FROM user_credential LIMIT 1", 0 }
+
+	l.Trace(context.Background(), time.Now(), fc, gorm.ErrRecordNotFound)
+	if buf.Len() != 0 {
+		t.Errorf("查无行不应输出日志, got %q", buf.String())
+	}
+
+	l.Trace(context.Background(), time.Now(), fc, errors.New("dial tcp: connection refused"))
+	if !strings.Contains(buf.String(), "connection refused") {
+		t.Errorf("真实 SQL 错误应记录, got %q", buf.String())
+	}
 }
