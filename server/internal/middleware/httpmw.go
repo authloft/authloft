@@ -62,7 +62,7 @@ func HTTPOrigin(rootOrigin string, refererAllowlist []string, next http.Handler)
 // 形态，Connect 域等效）：字段口径与 gin 版 Logger 完全一致——共用
 // 同包 logAccess（request_id / method / path / status / latency，无
 // body / query / 头读取）；request_id 取 HTTPRequestID 注入的 ctx 值
-//（RequestIDFromContext，须挂在其内层才非空）。
+// （RequestIDFromContext，须挂在其内层才非空）。
 //
 // 最终状态码经 statusWriter 捕获：net/http 的 ResponseWriter 没有状态
 // 读取出口（gin.ResponseWriter 自带 Status()，故 gin 版不包装 writer），
@@ -72,7 +72,12 @@ func HTTPOrigin(rootOrigin string, refererAllowlist []string, next http.Handler)
 // panic 语义与 gin 版一致：本层不用 defer，handler panic 时访问日志不
 // 输出（unwind 只触发 HTTPMetrics 的 defer 计数）；Connect 域的 panic
 // 恢复由 connect-go WithRecover 在 handler 内归一为正常返回
-//（internal/connect/server.go），彼时本层照常输出访问日志。
+// （internal/connect/server.go），彼时本层照常输出访问日志。
+//
+// 5xx 另补一条摘要：协议级错误（解码失败、超限）与 WithRecover 归一后的
+// 500 都在错误日志拦截器之外，只有本层能从状态码看到它们。摘要只带
+// path / status，错误详情由拦截器的 Error 日志承担，靠 request_id 串联；
+// 同一次 5xx 可能出现两条日志，属预期。不改 logAccess 五字段口径。
 func HTTPLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -81,6 +86,13 @@ func HTTPLogger(next http.Handler) http.Handler {
 		status := sw.status
 		if status == 0 {
 			status = http.StatusOK // handler 未写任何响应 → 标准库隐式 200
+		}
+		if status >= http.StatusInternalServerError {
+			// logx.Warn(ctx, ...) 自动注入 request_id；不记 body / query / header。
+			logx.Warn(r.Context(), "connect: 5xx response",
+				"path", r.URL.Path,
+				"status", status,
+			)
 		}
 		logAccess(RequestIDFromContext(r.Context()), r.Method, r.URL.Path, status, time.Since(start))
 	})
@@ -112,7 +124,7 @@ func HTTPMetrics(next http.Handler) http.Handler {
 // Flush 必须显式转发：connect-go 对 server 流式 RPC 断言 w 实现
 // http.Flusher（connect v1.21.1 protocol.go checkServerStreamsCanFlush），
 // 内嵌接口不会动态透传底层的 Flusher 能力，缺显式转发会误伤流式 RPC
-//（当前各域均 unary，属前瞻保真）。
+// （当前各域均 unary，属前瞻保真）。
 type statusWriter struct {
 	http.ResponseWriter
 	status int // 首次 WriteHeader 的状态码；Write 隐式 200；0 = 未写过

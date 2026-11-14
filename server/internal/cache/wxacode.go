@@ -10,9 +10,12 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"authloft/internal/logx"
 )
 
 // wxacodeRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
@@ -40,16 +43,28 @@ func NewWxacodeStore(rdb wxacodeRedis) *WxacodeStore {
 func (s *WxacodeStore) Get(ctx context.Context, key string) (string, bool) {
 	v, err := s.rdb.Get(ctx, wxacodeKeyPrefix+key).Result()
 	if err != nil {
+		// redis.Nil 是正常未命中；其余为 Redis 故障，降级回源但不能无痕。
+		// logx.Warn(ctx, ...) 自动带 request_id；不记 access_token 值。
+		if !errors.Is(err, redis.Nil) {
+			logx.Warn(ctx, "cache: wxacode access_token get failed",
+				"error", logx.RedactText(err.Error()),
+			)
+		}
 		return "", false
 	}
 	return v, true
 }
 
 // Set 写入 access_token。ttl <= 0 / 空值不写（无效凭证不落缓存）；写
-// 失败静默——缓存层故障不影响主链路，下次拉码回源微信即可。
+// 失败记 Warn 但不影响主链路，下次拉码回源微信即可。
 func (s *WxacodeStore) Set(ctx context.Context, key, val string, ttl time.Duration) {
 	if ttl <= 0 || val == "" {
 		return
 	}
-	_ = s.rdb.Set(ctx, wxacodeKeyPrefix+key, val, ttl).Err()
+	// 不记 val（access_token 属敏感凭据）；logx.Warn 自动带 request_id。
+	if err := s.rdb.Set(ctx, wxacodeKeyPrefix+key, val, ttl).Err(); err != nil {
+		logx.Warn(ctx, "cache: wxacode access_token set failed",
+			"error", logx.RedactText(err.Error()),
+		)
+	}
 }

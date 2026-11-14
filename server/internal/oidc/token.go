@@ -18,6 +18,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 
 	oidcapi "authloft/gen/go/api/oidc"
 	"authloft/gen/go/token"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 )
 
@@ -141,6 +143,15 @@ func (s *TokenService) authorizationCode(ctx context.Context, in TokenInput) (*o
 	}
 	payload, err := s.Codes.Consume(ctx, in.Code)
 	if err != nil {
+		// 未命中 / 过期属业务预期；其余（Redis 故障、解码失败 / 篡改、
+		// 未装配）在 OIDC REST 端点不经过 Connect 错误日志拦截器，必须
+		// 单独记录。不记 code 值（授权码属敏感凭据）。
+		if !errors.Is(err, ErrCodeNotFound) && !errors.Is(err, ErrCodeExpired) {
+			logx.Warn(ctx, "oidc: consume authorization code failed",
+				"client_id", in.ClientID,
+				"error", logx.RedactText(err.Error()),
+			)
+		}
 		// 未命中 / 已消费 / 过期 / 篡改均为 invalid_grant（RFC 6749 §5.2）。
 		return nil, newOAuthError(400, ErrorInvalidGrant, "authorization code is invalid or expired")
 	}

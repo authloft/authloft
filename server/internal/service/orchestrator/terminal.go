@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"authloft/gen/go/token"
+	"authloft/internal/logx"
 	"authloft/internal/settings"
 )
 
@@ -172,16 +173,25 @@ func (t *Terminal) Complete(ctx context.Context, p *token.LoginTokenPayload) (*S
 	// 取刚建会话的 sid（session_id 与 device_hint 归 detail，§4.6 行 798）。
 	if t.Events != nil {
 		info := RequestInfoFromContext(ctx)
-		_ = t.Events.Record(ctx, LoginEvent{
-			UID:      p.Uid,
-			TID:      p.Tid,
-			ClientID: clientID,
-			AMR:      append([]string(nil), p.Amr...),
-			AuthTime: at,
-			IP:       info.IP,
-			UA:       info.UA,
+		// 投递失败按设计不回滚登录，但不能无痕：logx.Warn(ctx, ...) 自动带
+		// request_id；不记 IP / UA 等用户资料。
+		if err := t.Events.Record(ctx, LoginEvent{
+			UID:       p.Uid,
+			TID:       p.Tid,
+			ClientID:  clientID,
+			AMR:       append([]string(nil), p.Amr...),
+			AuthTime:  at,
+			IP:        info.IP,
+			UA:        info.UA,
 			SessionID: sid,
-		})
+		}); err != nil {
+			logx.Warn(ctx, "orchestrator: login event delivery failed",
+				"uid", p.Uid,
+				"tid", p.Tid,
+				"client_id", clientID,
+				"error", logx.RedactText(err.Error()),
+			)
+		}
 	}
 
 	if t.Sync != nil {

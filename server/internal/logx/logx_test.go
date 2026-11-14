@@ -156,6 +156,19 @@ func TestSetupTakesEffect(t *testing.T) {
 
 // 测试里若用 slog.SetDefault 换成裸 handler，便捷函数仍须带 request_id
 // （logger() 的显式 With 兜底，不依赖装配顺序）。
+func TestRedactText(t *testing.T) {
+	got := RedactText("dial tcp mysql://admin:s3cr3t@db:3306/app: connection refused")
+	if strings.Contains(got, "s3cr3t") {
+		t.Errorf("DSN 密码泄漏: %q", got)
+	}
+	if !strings.Contains(got, "connection refused") {
+		t.Errorf("错误细节丢失: %q", got)
+	}
+	if r := []rune(RedactText(strings.Repeat("x", 600))); len(r) > 515 {
+		t.Errorf("超长文本未截断: %d runes", len(r))
+	}
+}
+
 func TestConvenienceFuncsWithForeignHandler(t *testing.T) {
 	buf := &bytes.Buffer{}
 	withDefault(t, slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))

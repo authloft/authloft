@@ -143,7 +143,7 @@
 
 ### 3.8 日志与链路 ID
 
-- **唯一落点**：日志库为标准库 `log/slog`（结构化、零第三方依赖）。全局 logger 只由 `bootstrap.run()` 经 `internal/logx.Setup(cfg.Log.Level, cfg.Log.Format)` 装配一次；`log.level`（debug|info|warn|error）与 `log.format`（json|text）属 YAML 启动项，启动期只读、不热更新（《后端架构》§3.2）。业务代码不得自行 `slog.SetDefault`、不得自建 logger、不得引入第三方日志库；setup 模式与配置加载失败路径走默认 info/json。
+- **唯一落点**：日志库为标准库 `log/slog`（结构化、零第三方依赖）。全局 logger 只由 `bootstrap.run()` 经 `internal/logx.Setup(cfg.Log.Level, cfg.Log.Format)` 装配一次；`log.level`（debug|info|warn|error）与 `log.format`（json|text）属 YAML 启动项，启动期只读、不热更新（《后端架构》§3.2）。业务代码不得自行 `slog.SetDefault`、不得自建 logger、不得引入第三方日志库；setup 模式与配置加载失败路径经 `logx.Setup("", "")` 走默认 info/text（`format` 空串由 `logx.NewHandler` 回落 TextHandler）。
 - **链路 ID 从哪来**：gin 域 `middleware.RequestID` 与 Connect 域 `middleware.HTTPRequestID` 生成 16B hex 后统一经 `logx.WithRequestID` 写进标准 `context.Context`；`logx` 的 Handler 包装在 `Handle` 时自动补 `request_id` 字段。`internal/logx` 不依赖 gin / net/http，service 不得 import `middleware` 取链路 ID，也不得生成、透传入站 `X-Request-Id` 或手写 `"request_id"` 字段。
 - **业务层写法**（service / handler，请求链路内的日志）：
 

@@ -5,9 +5,11 @@ package webauthn
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 
 	"authloft/internal/asyncqueue"
+	"authloft/internal/logx"
 )
 
 // SignCountUpdate 延迟队列任务载荷（标准类型，不含库类型）。
@@ -52,8 +54,10 @@ func NewSignCountExecutor(sink SignCountSink) *SignCountExecutor {
 	return &SignCountExecutor{sink: sink}
 }
 
-// Execute 实现 asyncqueue.Executor。错误由具体 sink 内部承担，骨架不重试、
-// 不告警；取最大值后逐个落库。
+// Execute 实现 asyncqueue.Executor。取最大值后逐个落库；写回失败不重试
+// （骨架无重试），但必须留痕——sign_count 静默丢失会导致后续断言失败。
+// worker 传的是 context.Background()，无请求 ctx，按 CODE_GUIDE §3.8
+// 用包级 slog，不伪造 request_id。
 func (e *SignCountExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task) {
 	if e == nil || e.sink == nil {
 		return
@@ -69,6 +73,11 @@ func (e *SignCountExecutor) Execute(ctx context.Context, tasks []asyncqueue.Task
 		}
 	}
 	for id, count := range maxByID {
-		_ = e.sink.UpdateSignCount(ctx, id, count)
+		if err := e.sink.UpdateSignCount(ctx, id, count); err != nil {
+			slog.Warn("webauthn: update sign_count failed",
+				"credential_id", id,
+				"error", logx.RedactText(err.Error()),
+			)
+		}
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -103,8 +104,8 @@ const defaultReadMaxBytes = 1 << 20
 // run 装配并阻塞运行 HTTP 服务。错误原样上抛由 main 转 exit 非 0（fail-fast）；
 // setup 模式安装完成的退出走 Run 的 nil 返回（exit 0，由部署环境拉起）。
 func run(configPath string) error {
-	// 先按默认 info/json 接管 slog，保证 setup 模式与 config 加载失败的
-	// fail-fast 日志也结构化；读到配置后在下方覆盖。
+	// 先按默认 info/text 接管 slog（format 空串回落 TextHandler），保证
+	// setup 模式与 config 加载失败的 fail-fast 日志也结构化；读到配置后覆盖。
 	logx.Setup("", "")
 	if setupMode(configPath) {
 		return setup.NewServer(configPath).Run()
@@ -271,7 +272,18 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 	deps.infra.HMAC = connect.NewRPCHMACInterceptor(deps.infra.Nonce,
 		func(ctx context.Context, clientID string) (string, bool) {
 			c, err := clients.FindSsoClientByClientID(ctx, clientID)
-			if err != nil || c == nil || c.IsEnabled == 0 {
+			if err != nil {
+				// DB 查询故障此前并入 ok=false，对外表现"客户端未注册"且排障
+				// 无痕；此处在请求链路内，logx.Error 自动带 request_id。
+				// 只记 client_id，不记 secret / 签名。
+				logx.Error(ctx, "bootstrap: rpc secret lookup failed",
+					"client_id", clientID,
+					"error", logx.RedactText(err.Error()),
+				)
+				return "", false
+			}
+			// 未注册 / 已禁用属业务预期，与签名错误同响应，不记日志。
+			if c == nil || c.IsEnabled == 0 {
 				return "", false
 			}
 			return c.ClientSecret, true
@@ -724,21 +736,36 @@ func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	return engine, core.terminal, env.registry, nil
 }
 
+// assembleStep 记录启动装配失败的具体步骤后原样上抛：启动期无请求上下文，
+// 按 CODE_GUIDE §3.8 用包级 slog；err 可能含 DSN 密码，先经 RedactText 脱敏。
+// 此前只有 main.go 一条汇总日志，看不出挂在 DB / migrate / Redis / settings
+// 哪一步。
+func assembleStep(step string, err error) error {
+	if err == nil {
+		return nil
+	}
+	slog.Error("bootstrap: assemble step failed",
+		"step", step,
+		"error", logx.RedactText(err.Error()),
+	)
+	return err
+}
+
 // assemble 正常模式装配步骤 2-8（§3.1 固定顺序）；任一步失败先释放已建资源
 // 再原样上抛（serve 转 fail-fast）。provider 注册表与 cron 仍为 TODO。
 func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	db, err := repo.Open(cfg)
 	if err != nil {
-		return nil, err
+		return nil, assembleStep("repo.Open", err)
 	}
 	if err := migrate.Up(ctx, cfg.DB.DSN); err != nil {
 		closeSQLDB(db)
-		return nil, err
+		return nil, assembleStep("migrate.Up", err)
 	}
 	rdb, err := cache.NewClient(ctx, cfg)
 	if err != nil {
 		closeSQLDB(db)
-		return nil, err
+		return nil, assembleStep("cache.NewClient", err)
 	}
 
 	deps := &assembled{db: db, rdb: rdb}
@@ -748,7 +775,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// 步骤 5：七把 sign_key 逐把构造 KeyStore + Codec。
 	if deps.codecs, err = buildCodecs(cfg); err != nil {
 		deps.closeInfra()
-		return nil, err
+		return nil, assembleStep("buildCodecs", err)
 	}
 
 	// 步骤 6（provider 半步，§3.1 / §3.9）：repo 行源 + Redis 整行缓存（版本失效）
@@ -763,12 +790,12 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	store := settings.NewStore(repo.NewSettingsRepo(db), rdb)
 	if err := store.Preload(ctx); err != nil {
 		deps.closeInfra()
-		return nil, err
+		return nil, assembleStep("settings.Preload", err)
 	}
 	watcher := settings.NewWatcher(rdb, store)
 	if err := watcher.Start(ctx); err != nil {
 		deps.closeInfra()
-		return nil, err
+		return nil, assembleStep("settings.Watcher.Start", err)
 	}
 	deps.settings = store
 	deps.watcher = watcher
@@ -823,7 +850,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	engine, _, registry, err := buildDomains(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())
-		return nil, err
+		return nil, assembleStep("buildDomains", err)
 	}
 	deps.engine = engine
 	deps.factors = registry
@@ -831,10 +858,22 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// 步骤 6（OIDC 半步，§14.3）：启动期一次性解析 config.oidc.jwt_keys，非法 / 缺失 fail-fast。
 	if deps.oidcJWT, err = oidc.NewJWT(cfg.OIDC.JWTKeys, strings.TrimSuffix(cfg.Authloft.Root, "/")); err != nil {
 		deps.close(context.Background())
-		return nil, fmt.Errorf("bootstrap: oidc jwt keys: %w", err)
+		return nil, assembleStep("oidc.NewJWT", fmt.Errorf("bootstrap: oidc jwt keys: %w", err))
 	}
 
 	return deps, nil
+}
+
+// closeWarn 资源释放失败只告警、不中断退出流程（此时已无法回滚）。
+// 关闭期无请求上下文，按 CODE_GUIDE §3.8 用包级 slog；错误文本先脱敏。
+func closeWarn(resource string, err error) {
+	if err == nil {
+		return
+	}
+	slog.Warn("bootstrap: resource close failed",
+		"resource", resource,
+		"error", logx.RedactText(err.Error()),
+	)
 }
 
 // stopBackground 停止后台协程：先关 watcher，再优雅关闭队列（内部先 flush 再
@@ -844,11 +883,11 @@ func (a *assembled) stopBackground(ctx context.Context) {
 		return
 	}
 	if a.watcher != nil {
-		_ = a.watcher.Close()
+		closeWarn("settings.watcher", a.watcher.Close())
 		a.watcher = nil
 	}
 	if a.queue != nil {
-		_ = a.queue.Close(ctx)
+		closeWarn("asyncqueue", a.queue.Close(ctx))
 		a.queue = nil
 	}
 }
@@ -863,7 +902,7 @@ func (a *assembled) closeInfra() {
 		a.db = nil
 	}
 	if a.rdb != nil {
-		_ = a.rdb.Close()
+		closeWarn("redis", a.rdb.Close())
 		a.rdb = nil
 	}
 }
@@ -874,14 +913,31 @@ func (a *assembled) close(ctx context.Context) {
 	a.closeInfra()
 }
 
-// closeSQLDB 关闭 GORM 底层 *sql.DB（取不到时静默跳过）。
+// closeSQLDB 关闭 GORM 底层 *sql.DB；取不到或关闭失败均告警，不再静默跳过。
 func closeSQLDB(db *gorm.DB) {
 	if db == nil {
 		return
 	}
-	if sqlDB, err := db.DB(); err == nil {
-		_ = sqlDB.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		closeWarn("sql.DB()", err)
+		return
 	}
+	closeWarn("sql.DB.Close", sqlDB.Close())
+}
+
+// serveErr 运行期致命错误带阶段标识后原样上抛：main.go 只有一条汇总日志，
+// 不标阶段分不清是建 server / 监听 / Serve / 关闭哪一步。无请求上下文，
+// 按 CODE_GUIDE §3.8 用包级 slog；错误文本先脱敏。
+func serveErr(phase string, err error) error {
+	if err == nil {
+		return nil
+	}
+	slog.Error("authloft: serve failed",
+		"phase", phase,
+		"error", logx.RedactText(err.Error()),
+	)
+	return err
 }
 
 // serve 完成监听与优雅关闭：signal → 停 watcher / 队列（先 flush）→
@@ -902,7 +958,7 @@ func serve(cfg *config.Config) error {
 	srv, err := newHTTPServer(cfg, handler)
 	if err != nil {
 		deps.close(context.Background())
-		return err
+		return serveErr("newHTTPServer", err)
 	}
 
 	errCh := make(chan error, 1)
@@ -915,7 +971,7 @@ func serve(cfg *config.Config) error {
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return err
+		return serveErr("listenAndServe", err)
 	case <-ctx.Done():
 		// 收到 SIGINT / SIGTERM：先停后台协程（watcher / 队列 worker，队列
 		// Close 内部先 flush 剩余任务），再停止接收并等待在途请求，最后
@@ -928,7 +984,7 @@ func serve(cfg *config.Config) error {
 		}
 		deps.closeInfra()
 		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
+			return serveErr("shutdown", err)
 		}
 		return nil
 	}
@@ -981,9 +1037,20 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 	// deps == nil（测试口径）→ 来源为 nil，等效空表。
 	var refererAllowlist middleware.AllowlistFunc
 	if deps != nil && deps.providerWhitelist != nil {
+		// 查询失败在每请求的 Origin 链上都会触发：首次必记、之后每 100 次
+		// 记一条并带累计值，避免 DB 故障期间刷屏；logx.Warn(ctx, ...) 自动
+		// 带 request_id。
+		var allowlistFailures atomic.Uint64
 		refererAllowlist = func(ctx context.Context) []string {
 			ids, err := deps.providerWhitelist.AppIDs(ctx)
 			if err != nil {
+				n := allowlistFailures.Add(1)
+				if n == 1 || n%100 == 0 {
+					logx.Warn(ctx, "bootstrap: referer allowlist lookup failed",
+						"failures", n,
+						"error", logx.RedactText(err.Error()),
+					)
+				}
 				return nil
 			}
 			return ids

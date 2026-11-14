@@ -20,6 +20,7 @@ import (
 	"time"
 
 	providerpb "authloft/gen/go/provider"
+	"authloft/internal/logx"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -252,8 +253,19 @@ func (l *Loader) loadRow(ctx context.Context, providerKey string) (*model.Provid
 		return nil, fmt.Errorf("provider: find %q: %w", providerKey, err)
 	}
 	if l.redis != nil {
-		if raw, err := json.Marshal(row); err == nil {
-			_ = l.redis.SetRow(ctx, providerKey, raw) // 回写失败不影响本次读取
+		// 编码 / 回写失败按设计不阻断本次读取，但 Redis 故障不能无痕；
+		// logx.Warn(ctx, ...) 自动带 request_id。
+		raw, err := json.Marshal(row)
+		if err != nil {
+			logx.Warn(ctx, "provider: cache row encode failed",
+				"provider_key", providerKey,
+				"error", logx.RedactText(err.Error()),
+			)
+		} else if err := l.redis.SetRow(ctx, providerKey, raw); err != nil {
+			logx.Warn(ctx, "provider: cache row writeback failed",
+				"provider_key", providerKey,
+				"error", logx.RedactText(err.Error()),
+			)
 		}
 	}
 	return row, nil

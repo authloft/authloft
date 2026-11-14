@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 )
 
 // requestIDField 日志中链路 ID 的统一字段名（与 middleware/logger.go 的
@@ -138,4 +139,19 @@ func Warn(ctx context.Context, msg string, args ...any) {
 
 func Error(ctx context.Context, msg string, args ...any) {
 	logger(ctx).ErrorContext(ctx, msg, args...)
+}
+
+// passwordInURLRe 匹配 URL / DSN 的 userinfo 密码段（与 setup 的脱敏口径同）。
+var passwordInURLRe = regexp.MustCompile(`(://[^:/@\s]+:)[^@\s]+(@)`)
+
+// RedactText 把错误文本转成可安全落盘的形式：剥离 URL / DSN 中的密码段、
+// 限制长度（超长截断，避免单条日志被异常文本撑爆）。各层在把 err 文本写进
+// 日志字段前统一调用；日志仍不得打印 body / query / header / cookie 与令牌、
+// 验证码、密钥、完整手机号邮箱（docs/CODE_GUIDE.md §3.8）。
+func RedactText(s string) string {
+	s = passwordInURLRe.ReplaceAllString(s, "${1}***${2}")
+	if r := []rune(s); len(r) > 512 {
+		s = string(r[:512]) + "..."
+	}
+	return s
 }

@@ -535,21 +535,37 @@ func (s *QRCode) enqueueAutoDelete(ctx context.Context, payload *token.TicketPay
 		return
 	}
 	p, err := s.deps.Loader.Get(ctx, payload.GetProviderKey())
-	if err != nil || p == nil || p.Ext == nil || !p.Ext.GetQrcodeAutoDelete() {
+	if err != nil {
+		// provider 加载失败（DB / Redis 故障）会让码图永不删除，此前静默
+		// return；logx.Warn(ctx, ...) 自动带 request_id。
+		logx.Warn(ctx, "qrcode: auto delete: load provider failed",
+			"ticket_id", payload.GetTicketId(),
+			"provider_key", payload.GetProviderKey(),
+			"error", logx.RedactText(err.Error()),
+		)
 		return
+	}
+	if p == nil || p.Ext == nil || !p.Ext.GetQrcodeAutoDelete() {
+		return // 未开启自动删除，业务预期
 	}
 	key, err := storage.RenderKey(p.Ext.GetStoragePath(), payload.GetTicketId(), payload.GetIat())
 	if err != nil {
 		logx.Warn(ctx, "qrcode: auto delete: render key failed", "ticket_id", payload.GetTicketId(), "error", err)
 		return
 	}
-	s.deps.Queue.Push(asyncqueue.Task{
+	if !s.deps.Queue.Push(asyncqueue.Task{
 		Key: "qrcode-delete:" + key,
 		Value: qrcodepkg.DeleteTask{
 			StorageKey: p.Ext.GetStorageProvider(),
 			ObjectKey:  key,
 		},
-	})
+	}) {
+		// 队列层的节流 Warn 只给全局计数，这里补具体是哪张码图没被删。
+		logx.Warn(ctx, "qrcode: auto delete enqueue dropped",
+			"ticket_id", payload.GetTicketId(),
+			"object_key", key,
+		)
+	}
 }
 
 // newTID login_token.tid 生成（缺省同引擎 security.RandomString(32)）。

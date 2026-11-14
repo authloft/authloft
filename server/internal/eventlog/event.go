@@ -4,7 +4,13 @@
 // （map[string]any）序列化为 VARBINARY；本包只编码、不读写 DB。
 package eventlog
 
-import "github.com/vmihailenco/msgpack/v5"
+import (
+	"log/slog"
+
+	"github.com/vmihailenco/msgpack/v5"
+
+	"authloft/internal/logx"
+)
 
 // 事件名常量，与 §4.6 行 770 的 event 枚举一一对应；末尾
 // oidc_authorize_no_state 是 §4.6 行 792 定义的 system 事件（接口文档
@@ -117,6 +123,11 @@ func DetailSettingsUpdate(keys []string, before, after map[string]any) []byte {
 func encodeDetail(detail map[string]any) []byte {
 	b, err := msgpack.Marshal(detail)
 	if err != nil {
+		// 降级为 NULL 但不能无痕：不记 detail 内容（可能含敏感值），只记
+		// 脱敏后的错误文本。本函数无 ctx，按 CODE_GUIDE §3.8 用包级 slog。
+		slog.Warn("eventlog: encode detail failed, storing NULL",
+			"error", logx.RedactText(err.Error()),
+		)
 		return nil
 	}
 	return b

@@ -11,6 +11,7 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/repo"
 )
 
@@ -131,6 +132,12 @@ type StepUpVerifier struct {
 func (v StepUpVerifier) Start(ctx context.Context, in FactorStartInput) (FactorStartResult, error) {
 	f, err := v.registry.Get(factor.FactorKind(in.Method))
 	if err != nil {
+		// 因子未注册 / 注册表降级：返回"方式禁用"且 error=nil，错误日志
+		// 拦截器完全看不到；logx.Warn(ctx, ...) 自动带 request_id。
+		logx.Warn(ctx, "verification: factor lookup failed",
+			"method", in.Method,
+			"error", logx.RedactText(err.Error()),
+		)
 		return FactorStartResult{Code: "method_disabled"}, nil
 	}
 	uid, _ := strconv.ParseInt(in.Subject.ID, 10, 64)

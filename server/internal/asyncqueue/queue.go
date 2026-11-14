@@ -7,6 +7,7 @@ package asyncqueue
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,11 +97,21 @@ func (q *Queue) start() {
 // Push 非阻塞写入固定容量 ring buffer（§5.2 行 878、891）。队列已满或已
 // 关闭时直接丢弃、累加 dropped 计数并返回 false，绝不阻塞调用方（§5.2
 // 行 893：绝不因队列失败影响登录主链路）。返回 true 表示已入队。
+//
+// 丢弃此前只有 Dropped() 计数、无日志：首次必记、之后每 100 次记一条并
+// 带累计值，避免故障期间刷屏。本层拿不到请求 ctx（任务已异步），按
+// CODE_GUIDE §3.8 用包级 slog，不伪造 request_id。
 func (q *Queue) Push(task Task) bool {
 	q.mu.Lock()
 	if q.closed || q.count == len(q.buf) {
 		q.mu.Unlock()
-		q.dropped.Add(1)
+		n := q.dropped.Add(1)
+		if n == 1 || n%100 == 0 {
+			slog.Warn("asyncqueue: task dropped, queue full or closed",
+				"dropped_total", n,
+				"queue_len", q.Len(),
+			)
+		}
 		return false
 	}
 	q.buf[q.tail] = task

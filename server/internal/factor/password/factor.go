@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 )
@@ -194,9 +195,15 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 		return nil, err
 	}
 
-	// 成功：投递清零任务（§8.1 行 1029）。队列满允许丢弃，不影响本次登录。
+	// 成功：投递清零任务（§8.1 行 1029）。失败不影响本次登录，但不能无痕：
+	// 计数不清零会导致后续密码失败锁定误判。ctx.Context 来自请求链路，
+	// logx.Warn 自动带 request_id。
 	if f.reset != nil {
-		_ = f.reset.ResetPasswordFailures(ctx.Context, ref)
+		if err := f.reset.ResetPasswordFailures(ctx.Context, ref); err != nil {
+			logx.Warn(ctx.Context, "password: reset failure counter failed",
+				"error", logx.RedactText(err.Error()),
+			)
+		}
 	}
 	return &factor.VerifyResult{Passed: true, UID: user.ID}, nil
 }

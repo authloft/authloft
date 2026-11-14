@@ -21,6 +21,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"authloft/internal/logx"
 	"authloft/internal/session"
 )
 
@@ -75,7 +76,7 @@ const defaultSessionCookieName = "al_session"
 // req.Header() 包成 RequestSignal 注入 ctx（session.WithRequestSignal），
 // 下游（sso 登录终点写点、thirdparty al_login_state）经
 // session.RequestSignalFromContext 读取做 https_deployment auto 推断
-//（§1.9 行 306-309：逐请求判定；connect 链 AnyRequest 只暴露 Header，
+// （§1.9 行 306-309：逐请求判定；connect 链 AnyRequest 只暴露 Header，
 // TLS 信号不可得，头缺省走兜底）。拦截器自身的 Set/Clear 直接传 sig。
 func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer, cookie *session.Cookie, cookieName func() string) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
@@ -97,18 +98,29 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 				AddSessionCookie(ctx, cookie.Clear(sig))
 				return next(ctx, req)
 			default:
-				// epoch 读取链故障：基础设施错误，按 internal 拒绝。
-				return nil, connect.NewError(connect.CodeInternal, errInternal)
+				// epoch 读取链故障：基础设施错误，按 internal 拒绝。此前错误被
+				// 丢弃、Redis 故障与"未登录"无法区分；原始 err 进日志并经
+				// sanitizedError 留在错误链供外层错误日志拦截器回溯，响应仍消毒。
+				logx.Error(ctx, "connect: session verify failed",
+					"procedure", req.Spec().Procedure,
+					"error", logx.RedactText(err.Error()),
+				)
+				return nil, connect.NewError(connect.CodeInternal, sanitizedError{err: err})
 			}
 			// 校验通过：载荷值注入 ctx（不含令牌串），重签失败（Seal 为内存
-			// 操作，实际不可达）不拒绝已验证请求、仅不下发新令牌。
+			// 操作，实际不可达）不拒绝已验证请求、仅不下发新令牌——降级须
+			// 留痕，否则续期异常无任何痕迹。
 			ctx = session.WithSessionContext(ctx, p)
-			if _, renewed, rerr := renewer.Renew(p); rerr == nil {
-				if fromHeader {
-					setResponseHeader(ctx, sessionTokenHeader, renewed)
-				} else {
-					AddSessionCookie(ctx, cookie.Set(renewed, sig))
-				}
+			_, renewed, rerr := renewer.Renew(p)
+			if rerr != nil {
+				logx.Warn(ctx, "connect: session renew failed",
+					"procedure", req.Spec().Procedure,
+					"error", logx.RedactText(rerr.Error()),
+				)
+			} else if fromHeader {
+				setResponseHeader(ctx, sessionTokenHeader, renewed)
+			} else {
+				AddSessionCookie(ctx, cookie.Set(renewed, sig))
 			}
 			return next(ctx, req)
 		}
@@ -204,7 +216,7 @@ type NonceStorer interface {
 type SecretLookup func(ctx context.Context, clientID string) (string, bool)
 
 // rpcWriteMethodPrefixes 写接口方法名前缀集合（docs/接口文档.md §7 行 1366
-//「命名决定校验」长期口径；后端 §22 第 23 条）：方法名以 Update / Delete /
+// 「命名决定校验」长期口径；后端 §22 第 23 条）：方法名以 Update / Delete /
 // Set / Create / Revoke 任一前缀开头 = 写接口（nonce 去重），其余方法名 =
 // 读接口（不去重）。该判据适用于本域全部现有与未来方法；新增写接口若不
 // 属于上述前缀语义，必须显式申请扩展本集合（走契约变更评审），不得静默
@@ -249,6 +261,12 @@ func CaptureRawBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
+			// 发生在 connect handler 之前，不进错误日志拦截器；logx.Error(ctx, ...)
+			// 自动带 request_id。只记错误文本，不记 body / header。
+			logx.Error(r.Context(), "connect: read raw body failed",
+				"path", r.URL.Path,
+				"error", logx.RedactText(err.Error()),
+			)
 			http.Error(w, errInternal.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -304,7 +322,15 @@ func NewRPCHMACInterceptor(nonces NonceStorer, lookup SecretLookup) connect.Unar
 			if isRPCWriteProcedure(req.Spec().Procedure) {
 				first, err := nonces.Store(ctx, clientID, nonce)
 				if err != nil {
-					return nil, connect.NewError(connect.CodeInternal, errInternal)
+					// nonce 存储故障 → internal fail-closed；Redis 故障必须可见，
+					// 且经 sanitizedError 把根因留在错误链供统一日志回溯。
+					// 只记 client_id，不记 nonce / 签名 / secret。
+					logx.Error(ctx, "connect: rpc nonce store failed",
+						"procedure", req.Spec().Procedure,
+						"client_id", clientID,
+						"error", logx.RedactText(err.Error()),
+					)
+					return nil, connect.NewError(connect.CodeInternal, sanitizedError{err: err})
 				}
 				if !first {
 					return nil, connect.NewError(connect.CodePermissionDenied, errNonceReplay)
@@ -365,3 +391,54 @@ type sanitizedError struct{ err error }
 func (s sanitizedError) Error() string { return errInternal.Error() }
 
 func (s sanitizedError) Unwrap() error { return s.err }
+
+// NewErrorLogInterceptor 返回 Connect 域统一的错误记录拦截器，装配时挂在
+// HandlerOptions 链首（域拦截器之外）：记录服务端故障级错误的 procedure /
+// code / 根因文本，业务预期错误（4xx）不记，避免攻击流量刷满日志。
+//
+// 位置约束：错误包装 interceptor 在最内层，看不到外层 session / admin /
+// rpc HMAC 拦截器的 short-circuit 错误；WithRecover 又在整条链最外层，panic
+// 归一后的错误不回流。故只能挂在链首才覆盖全链错误，panic 与协议级错误
+// 另由 recoverToInternal / HTTPLogger 兜底。
+//
+// 记录走 logx.Error(ctx, ...)：connect-go 的 handler ctx 由 context.WithValue
+// 派生，HTTPRequestID 注入的 request_id 会透传，由 requestIDHandler 自动补入
+// 日志字段，与 access 日志同口径、可用 X-Request-Id 串联。
+func NewErrorLogInterceptor() connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			resp, err := next(ctx, req)
+			if err == nil {
+				return resp, nil
+			}
+			var coded *connect.Error
+			code := connect.CodeUnknown
+			if errors.As(err, &coded) {
+				code = coded.Code()
+			}
+			switch code {
+			case connect.CodeInternal, connect.CodeUnknown, connect.CodeUnavailable,
+				connect.CodeDataLoss, connect.CodeDeadlineExceeded:
+				logx.Error(ctx, "connect: request failed",
+					"procedure", req.Spec().Procedure,
+					"code", code.String(),
+					"error", logx.RedactText(rootCause(err).Error()),
+				)
+			}
+			return resp, err
+		}
+	}
+}
+
+// rootCause 沿 Unwrap 链取最内层错误：connect.Error 与 sanitizedError 的在线
+// 文案都是固定的 "internal error"，原始错误只留在链里（connect-go
+// error.go:216 的 Error.Unwrap 返回 underlying error）。
+func rootCause(err error) error {
+	for {
+		next := errors.Unwrap(err)
+		if next == nil {
+			return err
+		}
+		err = next
+	}
+}

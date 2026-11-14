@@ -309,6 +309,13 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return s.envelope(StatusProviderDisabled)
 		}
+		// DB / Redis 故障被压成 HTTP 200 的失败信封：Connect 层 err=nil，
+		// 统一错误日志拦截器不会触发，必须在此记录。logx.Error(ctx, ...)
+		// 自动带 request_id；不记 code / token 等回调参数。
+		logx.Error(ctx, "thirdparty: load provider failed",
+			"provider_key", in.ProviderKey,
+			"error", logx.RedactText(err.Error()),
+		)
 		return s.envelope(orchestrator.StatusFailed)
 	}
 	if !p.Enabled() || p.Row == nil || p.Row.EnableSignin != 1 {

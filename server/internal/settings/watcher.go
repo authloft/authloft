@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"authloft/internal/cache"
+	"authloft/internal/logx"
 )
 
 // reloadTimeout 单次重载的兜底超时；DB 拥塞时放弃本次（数据未变坏，
@@ -43,7 +44,13 @@ func NewWatcher(rdb *redis.Client, st *Store) *Watcher {
 func (w *Watcher) Start(ctx context.Context) error {
 	sub := w.rdb.Subscribe(ctx, cache.SettingsChgKey())
 	if _, err := sub.Receive(ctx); err != nil {
-		_ = sub.Close()
+		// 订阅失败原错误上抛（fail-fast）；Close 失败单独留痕，避免资源
+		// 泄漏无痕。启动期无请求 ctx，按 CODE_GUIDE §3.8 用包级 slog。
+		if cerr := sub.Close(); cerr != nil {
+			slog.Warn("settings: subscribe cleanup failed",
+				"error", logx.RedactText(cerr.Error()),
+			)
+		}
 		return fmt.Errorf("settings: subscribe %s: %w", cache.SettingsChgKey(), err)
 	}
 	w.sub = sub

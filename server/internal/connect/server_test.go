@@ -8,13 +8,18 @@ package connect
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"authloft/internal/logx"
 )
 
 // newTestServer 构造测试装配（默认上限）。
@@ -132,12 +137,102 @@ func TestHandlerOptionsNonEmpty(t *testing.T) {
 // 挂接 WithRecover，此处用最小 connect handler 等效验证 recoverToInternal
 // 的行为契约（panic → internal 错误体，不透出 panic 值）。
 func TestRecoverToInternalDoesNotLeakPanicValue(t *testing.T) {
+	_ = withCapturedLogs(t) // panic 日志不污染测试输出
 	err := recoverToInternal(context.Background(), connect.Spec{}, nil, "secret-panic-value")
 	if err == nil {
 		t.Fatal("recoverToInternal must return an error")
 	}
 	if !strings.Contains(err.Error(), "internal") {
 		t.Errorf("error %q should map to internal", err.Error())
+	}
+	if strings.Contains(err.Error(), "secret-panic-value") {
+		t.Error("panic value leaked into error")
+	}
+}
+
+// withCapturedLogs 把全局 logger 换成写入 buf 的 logx handler（自动注入
+// request_id），测试结束恢复——CODE_GUIDE §3.8「改动全局 logger 的用例须
+// t.Cleanup 恢复」。
+func withCapturedLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(logx.NewHandler(buf, "debug", "json")))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return buf
+}
+
+func newAnyRequest() connect.AnyRequest { return connect.NewRequest(&emptypb.Empty{}) }
+
+// ⑧ 服务端故障错误：记 procedure / code / 根因，并自动带 request_id。
+func TestErrorLogInterceptorLogsServerFault(t *testing.T) {
+	buf := withCapturedLogs(t)
+	ctx := logx.WithRequestID(context.Background(), "req-test-001")
+	next := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		return nil, errors.New("handler: load user: db connection refused")
+	})
+	if _, err := NewErrorLogInterceptor()(next)(ctx, newAnyRequest()); err == nil {
+		t.Fatal("expected error")
+	}
+	got := buf.String()
+	for _, want := range []string{"connect: request failed", "req-test-001", "unknown", "db connection refused"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log %q missing %q", got, want)
+		}
+	}
+}
+
+// ⑨ 业务预期 4xx 不产生错误日志（防攻击流量刷屏）。
+func TestErrorLogInterceptorSkipsExpectedClientErrors(t *testing.T) {
+	buf := withCapturedLogs(t)
+	next := connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("bad input"))
+	})
+	if _, err := NewErrorLogInterceptor()(next)(context.Background(), newAnyRequest()); err == nil {
+		t.Fatal("expected error")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("业务 4xx 不应产生错误日志, got %q", buf.String())
+	}
+}
+
+// ⑩ 外层域拦截器 short-circuit 的错误也记录在案，且 sanitizedError 的
+// 根因能沿 Unwrap 链回溯（否则日志只剩 "internal error"）。
+func TestErrorLogInterceptorCoversDomainShortCircuit(t *testing.T) {
+	buf := withCapturedLogs(t)
+	domain := connect.UnaryInterceptorFunc(func(connect.UnaryFunc) connect.UnaryFunc {
+		return func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+			return nil, connect.NewError(connect.CodeInternal,
+				sanitizedError{err: errors.New("redis epoch read failed")})
+		}
+	})
+	inner := domain(connect.UnaryFunc(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		return nil, nil
+	}))
+	if _, err := NewErrorLogInterceptor()(inner)(context.Background(), newAnyRequest()); err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(buf.String(), "redis epoch read failed") {
+		t.Errorf("域拦截器 short-circuit 的根因未进日志: %q", buf.String())
+	}
+}
+
+// ⑪ panic 归一：堆栈与 request_id 入日志，panic 原始值不落盘、不进错误。
+func TestRecoverToInternalLogsPanicWithoutValue(t *testing.T) {
+	buf := withCapturedLogs(t)
+	ctx := logx.WithRequestID(context.Background(), "req-panic-002")
+	err := recoverToInternal(ctx, connect.Spec{}, nil, "secret-panic-value")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got := buf.String()
+	for _, want := range []string{"connect: panic recovered", "req-panic-002", "stack"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "secret-panic-value") {
+		t.Error("panic value leaked into log")
 	}
 	if strings.Contains(err.Error(), "secret-panic-value") {
 		t.Error("panic value leaked into error")

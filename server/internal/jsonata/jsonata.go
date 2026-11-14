@@ -10,8 +10,8 @@
 //     ErrInvalidExpression（保存预校验映射 admin 域 invalid_request）；
 //     运行期求值失败 → ErrEvaluate（登录链路映射 §1.6 既有兜底）；结果
 //     非字符串（含 undefined 空值 / 数字 / 对象等）→ ErrNotString。三类
-//     均为内部哨兵，**不透出 gnata 原始错误**——库原始错误仅进 DEBUG
-//     日志供排查。
+//     均为内部哨兵，**不透出 gnata 原始错误**——库原始错误仅进日志供
+//     排查。默认 log.level=info 下 Debug 不输出，故用 Warn（见 L-08）。
 //   - gnata 不支持的 JSONata 语法在本包维护不支持清单（Unsupported
 //     变量 + 摸底测试），如实记录、不以自研补齐，随库升级同步更新
 //     （升级须重跑本包测试基线，§1.5 版本策略）。
@@ -28,6 +28,8 @@ import (
 	"log/slog"
 
 	gnata "github.com/recolabs/gnata"
+
+	"authloft/internal/logx"
 )
 
 // 归一哨兵错误（接口文档 §5.3：调用方按所在域既有错误码映射，本包不
@@ -69,7 +71,10 @@ func Evaluate(expr string, vars map[string]string) (string, error) {
 	}
 	compiled, err := gnata.Compile(expr)
 	if err != nil {
-		slog.Debug("jsonata: gnata compile failed", "err", err.Error())
+		// 默认 info 级别下 Debug 永不输出，等于无日志；表达式由系统配置
+		// 提供，编译失败属需运维介入的配置问题，用 Warn 暴露。
+		// 本函数无 ctx，按 CODE_GUIDE §3.8 用包级 slog；错误文本先脱敏。
+		slog.Warn("jsonata: gnata compile failed", "err", logx.RedactText(err.Error()))
 		return "", fmt.Errorf("%w", ErrInvalidExpression)
 	}
 	// vars → 输入数据（$ 绑定）：map[string]any 形态，$.<name> 逐键访问。
@@ -79,7 +84,7 @@ func Evaluate(expr string, vars map[string]string) (string, error) {
 	}
 	result, err := compiled.Eval(context.Background(), data)
 	if err != nil {
-		slog.Debug("jsonata: gnata eval failed", "err", err.Error())
+		slog.Warn("jsonata: gnata eval failed", "err", logx.RedactText(err.Error()))
 		return "", fmt.Errorf("%w", ErrEvaluate)
 	}
 	// undefined 结果（如 $.missing）gnata 返回 (nil, nil)——归一为

@@ -18,8 +18,10 @@ import (
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
+	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/session"
 	"authloft/internal/settings"
 )
 
@@ -146,6 +148,14 @@ func (s *LoginTicket) resolveUID(ctx context.Context, in WriteTicketInput) (int6
 		}
 		p, err := s.deps.Sessions.Verify(ctx, in.Session)
 		if err != nil {
+			// 解不开 / 过期 / epoch 不一致属预期未登录；epoch 读取链故障
+			// （Redis / DB）被一并压成 ErrQrcodeUnauthenticated，且该哨兵
+			// 不是 internal，统一错误日志也不触发，必须在此单独记录。
+			if !errors.Is(err, session.ErrNotAuthenticated) && !errors.Is(err, session.ErrSessionStale) {
+				logx.Error(ctx, "ticket: session verify failed",
+					"error", logx.RedactText(err.Error()),
+				)
+			}
 			return 0, ErrQrcodeUnauthenticated
 		}
 		if in.SessionUID != 0 && in.SessionUID != p.GetId() {

@@ -13,9 +13,13 @@ package connect
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"runtime/debug"
 
 	"connectrpc.com/connect"
+
+	"authloft/internal/logx"
 )
 
 // defaultReadMaxBytes 请求体上限默认值（§1.6 行 86：1 MiB；超限由框架返回
@@ -63,21 +67,35 @@ func (s *Server) Routes() []Route { return s.routes }
 //
 // interceptors 按外→内传入（connect-go WithInterceptors 保持同序、先传的
 // 在外层）：session 应在最外（interceptors.go 行 67 口径）、admin 在其内；
-// 错误包装由本函数固定补在最内层——§3.14 行 473「错误包装 interceptor
-// （最内层）……先看到 handler 的错误」，使 handler 返回的裸错误先被消毒
-// 成 internal、外层域拦截器只可能见到 connect.Error。
+// 错误日志由本函数固定挂在业务链首（比传入的域拦截器更外，同时覆盖 handler
+// 错误与域拦截器 short-circuit 错误），错误包装固定补在最内层——§3.14 行
+// 473「错误包装 interceptor（最内层）……先看到 handler 的错误」，使 handler
+// 返回的裸错误先被消毒成 internal、外层域拦截器只可能见到 connect.Error。
+// WithRecover 先注册，故 panic 恢复在整条链最外层（option.go:614-628），
+// 归一后的错误不回流到错误日志拦截器，由 recoverToInternal 自行记录。
 func (s *Server) HandlerOptions(interceptors ...connect.Interceptor) []connect.HandlerOption {
+	chain := make([]connect.Interceptor, 0, len(interceptors)+2)
+	chain = append(chain, NewErrorLogInterceptor())
+	chain = append(chain, interceptors...)
+	chain = append(chain, NewErrorWrapperInterceptor())
 	return []connect.HandlerOption{
 		connect.WithReadMaxBytes(s.readMaxBytes),
 		connect.WithRecover(recoverToInternal),
-		connect.WithInterceptors(append(interceptors, NewErrorWrapperInterceptor())...),
+		connect.WithInterceptors(chain...),
 	}
 }
 
 // recoverToInternal handler / 拦截器 panic 的归一出口（WithRecover 的
 // handle，connect@v1.21.1 option.go 行 153）：转 internal 错误，错误消息
-// 为固定安全文案——panic 值可能携带敏感数据，不进错误也不落日志。
-func recoverToInternal(context.Context, connect.Spec, http.Header, any) error {
+// 为固定安全文案——panic 值可能携带敏感数据，故只落堆栈与类型、不落值。
+// WithRecover 位于整条拦截链最外层，归一后的错误不回流到错误日志拦截器，
+// 必须在此单独记录；logx.Error(ctx, ...) 自动带 request_id。
+func recoverToInternal(ctx context.Context, spec connect.Spec, _ http.Header, r any) error {
+	logx.Error(ctx, "connect: panic recovered",
+		"procedure", spec.Procedure,
+		"panic_type", fmt.Sprintf("%T", r),
+		"stack", string(debug.Stack()),
+	)
 	return connect.NewError(connect.CodeInternal, errors.New("internal error"))
 }
 
