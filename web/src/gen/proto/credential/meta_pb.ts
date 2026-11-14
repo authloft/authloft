@@ -10,13 +10,12 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file credential/meta.proto.
  */
 export const file_credential_meta: GenFile = /*@__PURE__*/
-  fileDesc("ChVjcmVkZW50aWFsL21ldGEucHJvdG8SCmNyZWRlbnRpYWwi1AEKDkNyZWRlbnRpYWxNZXRhEhIKCnRyYW5zcG9ydHMYASADKAkSGAoQYXR0ZXN0YXRpb25fdHlwZRgCIAEoCRIOCgZhYWd1aWQYAyABKAkSFwoPYmFja3VwX2VsaWdpYmxlGAQgASgIEhQKDGJhY2t1cF9zdGF0ZRgFIAEoCBIWCg5yZWNvdmVyeV9jb2RlcxgKIAMoCRITCgt0b3RwX2RpZ2l0cxgUIAEoBRITCgt0b3RwX3BlcmlvZBgVIAEoBRITCgttZmFfbWV0aG9kcxgeIAMoCUInWiVhdXRobG9mdC9nZW4vZ28vY3JlZGVudGlhbDtjcmVkZW50aWFsYgZwcm90bzM");
+  fileDesc("ChVjcmVkZW50aWFsL21ldGEucHJvdG8SCmNyZWRlbnRpYWwivwEKDkNyZWRlbnRpYWxNZXRhEhIKCnRyYW5zcG9ydHMYASADKAkSGAoQYXR0ZXN0YXRpb25fdHlwZRgCIAEoCRIOCgZhYWd1aWQYAyABKAkSFwoPYmFja3VwX2VsaWdpYmxlGAQgASgIEhQKDGJhY2t1cF9zdGF0ZRgFIAEoCBIWCg5yZWNvdmVyeV9jb2RlcxgGIAMoCRITCgt0b3RwX2RpZ2l0cxgHIAEoBRITCgt0b3RwX3BlcmlvZBgIIAEoBUInWiVhdXRobG9mdC9nZW4vZ28vY3JlZGVudGlhbDtjcmVkZW50aWFsYgZwcm90bzM");
 
 /**
- * CredentialMeta 是凭证扩展元数据（docs/接口文档.md §12.2 行 1698-1718），
- * 对应 user_credential.meta 列（VARBINARY，§12.0 行 1627：结构固定走 Protobuf），
- * 按 kind 使用其中一段。消息名以文档行 1703 `message CredentialMeta` 为准。
- * 字段名 / 编号 / 类型 / 注释与行 1703-1717 的 protobuf 定义逐字一致。
+ * CredentialMeta 是凭证扩展元数据（docs/接口文档.md §12.2），
+ * 对应 user_credential.meta 列（VARBINARY，§12.0：结构固定走 Protobuf），
+ * 按 kind 使用其中一段。字段名 / 编号 / 类型与 §12.2 的定义一致。
  *
  * @generated from message credential.CredentialMeta
  */
@@ -57,7 +56,7 @@ export type CredentialMeta = Message<"credential.CredentialMeta"> & {
    *
    * 10 个恢复码明文（8 位 Crockford Base32 小写，展示形如 xxxx-xxxx）
    *
-   * @generated from field: repeated string recovery_codes = 10;
+   * @generated from field: repeated string recovery_codes = 6;
    */
   recoveryCodes: string[];
 
@@ -66,25 +65,16 @@ export type CredentialMeta = Message<"credential.CredentialMeta"> & {
    *
    * 默认 6
    *
-   * @generated from field: int32 totp_digits = 20;
+   * @generated from field: int32 totp_digits = 7;
    */
   totpDigits: number;
 
   /**
    * 默认 30
    *
-   * @generated from field: int32 totp_period = 21;
+   * @generated from field: int32 totp_period = 8;
    */
   totpPeriod: number;
-
-  /**
-   * kind=mfa_setting
-   *
-   * kind=mfa_setting 启用的二次因子集合
-   *
-   * @generated from field: repeated string mfa_methods = 30;
-   */
-  mfaMethods: string[];
 };
 
 /**

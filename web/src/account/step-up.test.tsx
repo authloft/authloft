@@ -19,7 +19,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { create, toBinary, toJson } from '@bufbuild/protobuf';
-import { MfaPolicyMethodSchema } from '../gen/proto/api/account/v1/profile_pb';
 import { UnbindTotpRequestSchema } from '../gen/proto/api/account/v1/mfa_pb';
 import {
   StartVerificationRequestSchema,
@@ -39,7 +38,6 @@ const BASE = 'https://uc.test';
 const START_URL = `${BASE}/api.account.v1.AccountService/StartVerification`;
 const SUBMIT_URL = `${BASE}/api.account.v1.AccountService/SubmitVerification`;
 const UNBIND_TOTP_URL = `${BASE}/api.account.v1.AccountService/UnbindTotp`;
-const SET_MFA_URL = `${BASE}/api.account.v1.AccountService/SetMfa`;
 
 const server = setupServer();
 
@@ -400,38 +398,5 @@ describe('解绑 TOTP 全链（§3.5 行 1078、§3.8）', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('动态口令错误');
     expect(html).toContain('<input');
-  });
-});
-
-describe('停用入口保持 SetMfa（§3.5 行 1075）', () => {
-  test('停用 totp：SetMfa 全量集合替换移除该因子，payload 与改造前一致', async () => {
-    let captured: unknown;
-    server.use(
-      http.post(SET_MFA_URL, async ({ request }) => {
-        captured = await request.json();
-        return HttpResponse.json({});
-      }),
-    );
-
-    const methods = [
-      create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: true,
-        bound: true,
-      }),
-      create(MfaPolicyMethodSchema, {
-        factor: 'otp_sms',
-        enabled: true,
-        bound: true,
-      }),
-    ];
-    const built = apiMod.buildSetMfaRequest(methods, 'totp', false, false);
-    expect(built.ok).toBe(true);
-    if (!built.ok) {
-      throw new Error('unreachable');
-    }
-    await apiMod.setMfa(built.request);
-
-    expect(captured).toEqual({ methods: ['otp_sms'] });
   });
 });

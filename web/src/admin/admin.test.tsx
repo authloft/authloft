@@ -1193,14 +1193,14 @@ describe('initialCreateValues（新建 category 预填注册表权威值，死�
       fields: SCHEMA_FIELDS,
     });
     const values = initialCreateValues(schema);
-    // R1 核心：category 不再是零值 ''（applySchemaDefaults 死锁源）。
+    // 核心：category 不再是零值 ''（applySchemaDefaults 死锁源）。
     expect(values.category).toBe('oauth');
     expect(values.provider_key).toBe('');
     expect(values.ui_group).toBe('social');
     expect(values.is_enabled).toBe(true);
   });
 
-  test('R1 死锁回归锚点：预填值经 validateSchemaValues 后 category 键无 issue（required 通过）', () => {
+  test('死锁回归锚点：预填值经 validateSchemaValues 后 category 键无 issue（required 通过）', () => {
     const schema = create(SchemaResponseSchema, {
       type: 'wechat_mp',
       category: 'oauth',
@@ -2146,8 +2146,6 @@ describe('credentialKindLabel / mfaFactorLabel（kind / factor 值域 + 新增�
     expect(apiMod.credentialKindLabel('totp')).toBe('动态口令');
     expect(apiMod.credentialKindLabel('webauthn')).toBe('通行密钥');
     expect(apiMod.credentialKindLabel('recovery_code')).toBe('恢复码');
-    // §4.3 行 669 五值域第五值：GetUser 凭证概览含 mfa_setting 行。
-    expect(apiMod.credentialKindLabel('mfa_setting')).toBe('MFA 开关');
     expect(apiMod.credentialKindLabel('passkey_v2')).toBe('passkey_v2');
   });
 
@@ -3108,7 +3106,6 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
     expect(getHttpsDeploymentOptions()[0].label).toBe('Auto-detect');
     // USER_CREDENTIAL_KIND_LABELS 表（键映射 + credentialKindLabel 调用期 t()）。
     expect(apiMod.credentialKindLabel('password')).toBe('Password');
-    expect(apiMod.credentialKindLabel('mfa_setting')).toBe('MFA switch');
     // EVENT_TYPE_LABELS 表（经 eventTypeLabel）。
     expect(apiMod.eventTypeLabel('login_success')).toBe('Signed in');
     // SECTION_TITLES（schemaLogic，textKey 形态渲染处 t()）。

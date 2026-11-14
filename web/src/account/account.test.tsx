@@ -78,10 +78,11 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  *   薄封装经 account/api 转发自 shared/api/account（getConfig
  *   等仍走 apiMod）；上传编排 / 预校验直引新落位 shared/hooks/useUpload
  *   （uploadMod，被测对象移位、断言零改动）。
- * - MFA + 通行密钥族：GetMfa / SetMfa（buildSetMfaRequest：追加 /
- *   移除 / required 锁死）/ BindTotp 两步（challenge wire 省略零值 + verify
- *   回传 secret）/ RegenerateRecoveryCodes（action=
- *   regenerate）/ GetWebauthnCredentials 解码；registerWebauthnCredential
+ * - MFA + 通行密钥族：GetMfa / SetMfa（buildSetMfaRequest：{enabled} 开关）
+ *   / deriveMfaToggleView（开关可用性 / 禁用原因 / 无可用因子兜底）/
+ *   BindTotp 两步（challenge wire 省略零值 + verify 回传 secret）/
+ *   RegenerateRecoveryCodes（action=regenerate）/ GetWebauthnCredentials
+ *   解码；registerWebauthnCredential
  *   三步编排（依赖注入：challengeData / credential 引用恒等透传、取消 /
  *   失败语义，§12.9 方案 A）；rename / delete wire；formatUnixTime /
  *   mfaFactorDetail 展示纯函数。
@@ -467,11 +468,10 @@ describe('api.getConfig（§3.2 行 819）', () => {
           },
           mfaPolicy: {
             enabled: true,
-            required: false,
             trustedDeviceDays: '0',
             methods: [
-              { factor: 'totp', enabled: true, bound: true },
-              { factor: 'otp_email', enabled: false, bound: false },
+              { factor: 'totp', bound: true },
+              { factor: 'otp_email', bound: false },
             ],
           },
           captcha: { providerKey: 'builtin_image', type: 'image' },
@@ -489,12 +489,11 @@ describe('api.getConfig（§3.2 行 819）', () => {
       'image/jpeg',
     ]);
     expect(config.mfaPolicy?.enabled).toBe(true);
-    expect(config.mfaPolicy?.required).toBe(false);
-    expect(config.mfaPolicy?.trustedDeviceDays).toBe(BigInt(0)); // 预留恒 0（§3.2 行 847）
+    expect(config.mfaPolicy?.trustedDeviceDays).toBe(BigInt(0)); // 预留恒 0（§3.2）
     expect(config.mfaPolicy?.methods[0]?.factor).toBe('totp');
-    expect(config.mfaPolicy?.methods[0]?.enabled).toBe(true);
     expect(config.mfaPolicy?.methods[0]?.bound).toBe(true);
     expect(config.mfaPolicy?.methods[1]?.factor).toBe('otp_email');
+    expect(config.mfaPolicy?.methods[1]?.bound).toBe(false);
     expect(config.captcha?.providerKey).toBe('builtin_image');
     expect(config.captcha?.type).toBe('image');
     expect(config.captcha?.siteKey).toBe('');
@@ -1135,30 +1134,11 @@ describe('api.getMfa（§3.5 行 890-898）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// api.setMfa + buildSetMfaRequest（§3.5 行 904 / §3.2 行 833）
+// api.setMfa + buildSetMfaRequest + deriveMfaToggleView（§3.5 / 两步验证开关）
 // ---------------------------------------------------------------------------
 
-describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
-  /** 摘要样例：totp 启用已绑、otp_sms 未启用已绑、otp_email 均否。 */
-  const methods = [
-    create(MfaPolicyMethodSchema, {
-      factor: 'totp',
-      enabled: true,
-      bound: true,
-    }),
-    create(MfaPolicyMethodSchema, {
-      factor: 'otp_sms',
-      enabled: false,
-      bound: true,
-    }),
-    create(MfaPolicyMethodSchema, {
-      factor: 'otp_email',
-      enabled: false,
-      bound: false,
-    }),
-  ];
-
-  test('勾选启用 → 追加到启用集尾（保持其余因子既有顺序，行 904 勾选启用一项或多项）', async () => {
+describe('api.setMfa / buildSetMfaRequest（§3.5）', () => {
+  test('开启：buildSetMfaRequest(true) → wire {enabled:true}，setMfa 成功空响应', async () => {
     let captured!: Request;
     server.use(
       http.post(SET_MFA_URL, ({ request }) => {
@@ -1167,18 +1147,15 @@ describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
       }),
     );
 
-    const built = apiMod.buildSetMfaRequest(methods, 'otp_sms', true, false);
-    expect(built.ok).toBe(true);
-    if (!built.ok) {
-      throw new Error('unreachable');
-    }
+    const request = apiMod.buildSetMfaRequest(true);
+    expect(request.enabled).toBe(true);
 
-    await apiMod.setMfa(built.request);
+    await apiMod.setMfa(request);
 
-    expect(await captured.json()).toEqual({ methods: ['totp', 'otp_sms'] });
+    expect(await captured.json()).toEqual({ enabled: true });
   });
 
-  test('取消最后一个启用因子（required=false）→ 空数组=关闭：wire 省略零值输出 {}', async () => {
+  test('关闭：buildSetMfaRequest(false) → bool 零值省略，wire 输出 {}', async () => {
     let captured!: Request;
     server.use(
       http.post(SET_MFA_URL, ({ request }) => {
@@ -1187,66 +1164,60 @@ describe('api.setMfa / buildSetMfaRequest（§3.5 行 904）', () => {
       }),
     );
 
-    const single = [
-      create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: true,
-        bound: true,
-      }),
-    ];
-    const built = apiMod.buildSetMfaRequest(single, 'totp', false, false);
-    expect(built.ok).toBe(true);
-    if (!built.ok) {
-      throw new Error('unreachable');
-    }
+    const request = apiMod.buildSetMfaRequest(false);
+    expect(request.enabled).toBe(false);
 
-    await apiMod.setMfa(built.request);
+    await apiMod.setMfa(request);
 
-    // protojson 省略空 repeated（§12.9 行 1752）→ 空数组=关闭在 wire 上即 {}。
+    // protojson 省略 bool 零值（§12.9）→ 关闭在 wire 上即 {}。
     expect(await captured.json()).toEqual({});
-    expect(built.request.methods).toEqual([]);
   });
+});
 
-  test('required=true：结果为空 → 本地拒绝不发包（§3.2 行 833 不可关闭）；结果非空 → 放行', () => {
-    const single = [
+describe('deriveMfaToggleView（开关可用性 / 禁用原因 / 兜底）', () => {
+  /** 构造白名单因子（bound 态按需）；新契约 MfaPolicyMethod 仅 factor / bound。 */
+  const methods = (...bound: boolean[]): MfaPolicyMethod[] =>
+    bound.map((state, i) =>
       create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: true,
-        bound: true,
+        factor: ['totp', 'otp_sms', 'otp_email', 'webauthn'][i] ?? `f${i}`,
+        bound: state,
       }),
-    ];
-    expect(apiMod.buildSetMfaRequest(single, 'totp', false, true)).toEqual({
-      ok: false,
-      error: 'mfa_required_locked',
+    );
+
+  test('methods 为空 → 禁用 + 管理员未启用提示', () => {
+    expect(apiMod.deriveMfaToggleView(false, [])).toEqual({
+      disabled: true,
+      helpKey: 'account.mfaToggleNoMethods',
     });
-    // required 下换因子（先启用 otp_sms 再关 totp 的第一步）：结果非空 → 放行
-    const two = [
-      create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: true,
-        bound: true,
-      }),
-      create(MfaPolicyMethodSchema, {
-        factor: 'otp_sms',
-        enabled: false,
-        bound: true,
-      }),
-    ];
-    const swap = apiMod.buildSetMfaRequest(two, 'otp_sms', true, true);
-    expect(swap.ok).toBe(true);
-    if (!swap.ok) {
-      throw new Error('unreachable');
-    }
-    expect(swap.request.methods).toEqual(['totp', 'otp_sms']);
   });
 
-  test('重复启用 → 启用集不重复', () => {
-    const built = apiMod.buildSetMfaRequest(methods, 'totp', true, false);
-    expect(built.ok).toBe(true);
-    if (!built.ok) {
-      throw new Error('unreachable');
-    }
-    expect(built.request.methods).toEqual(['totp']);
+  test('因子全未绑定 → 禁用 + 请先绑定提示', () => {
+    expect(apiMod.deriveMfaToggleView(false, methods(false, false))).toEqual({
+      disabled: true,
+      helpKey: 'account.mfaToggleNoBound',
+    });
+  });
+
+  test('存在可用因子：关闭 → 关闭态说明；开启 → 开启态说明（均可切换）', () => {
+    expect(apiMod.deriveMfaToggleView(false, methods(true, false))).toEqual({
+      disabled: false,
+      helpKey: 'account.mfaToggleOffHint',
+    });
+    expect(apiMod.deriveMfaToggleView(true, methods(true, false))).toEqual({
+      disabled: false,
+      helpKey: 'account.mfaToggleOnHint',
+    });
+  });
+
+  test('开关已开但无可用因子（兜底边界）→ 保持可关闭 + 暂不生效提示', () => {
+    expect(apiMod.deriveMfaToggleView(true, [])).toEqual({
+      disabled: false,
+      helpKey: 'account.mfaToggleFallback',
+    });
+    expect(apiMod.deriveMfaToggleView(true, methods(false, false))).toEqual({
+      disabled: false,
+      helpKey: 'account.mfaToggleFallback',
+    });
   });
 });
 
@@ -2706,62 +2677,55 @@ describe('isRecoveryLow / RECOVERY_LOW_THRESHOLD（纯函数）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// MfaSetting 静态渲染（MFA + 恢复码合并行：已绑定 → 解绑 / 查看恢复码；
-// 未绑定 → 绑定；弹窗条件渲染不挂载）
+// MfaSetting 静态渲染（两步验证开关行 + TOTP 因子行：已绑定 → 解绑 /
+// 恢复码查看；未绑定 → 绑定；弹窗条件渲染不挂载）
 // ---------------------------------------------------------------------------
 
-describe('MfaSetting 静态渲染（MFA + 恢复码合并行）', () => {
+describe('MfaSetting 静态渲染（开关行 + TOTP 因子行）', () => {
   const noop = () => {};
   // 组件经 useLocation 取 401 returnTo（集中 onError），静态渲染须包
   // MemoryRouter（HashRouter 下 useLocation 即 hash 内 location）。
-  function MfaRow(props: { methods: MfaPolicyMethod[]; required: boolean }) {
+  function MfaRow(props: { methods: MfaPolicyMethod[] }) {
     return createElement(SettingList, {
       fields: [
+        mfaSettingMod.useMfaToggleField({
+          enabled: false,
+          methods: props.methods,
+          onPolicyRefresh: noop,
+        }),
         mfaSettingMod.useMfaSetting({ ...props, onPolicyRefresh: noop }),
       ],
     });
   }
-  const renderRow = (methods: MfaPolicyMethod[], required = false): string =>
+  const renderRow = (methods: MfaPolicyMethod[]): string =>
     renderToStaticMarkup(
-      createElement(
-        MemoryRouter,
-        {},
-        createElement(MfaRow, { methods, required }),
-      ),
+      createElement(MemoryRouter, {}, createElement(MfaRow, { methods })),
     );
+  const totp = (bound: boolean): MfaPolicyMethod =>
+    create(MfaPolicyMethodSchema, { factor: 'totp', bound });
 
-  test('totp 已绑定 → 「已绑定」+ 解绑 / 查看恢复码按钮', () => {
-    const html = renderRow([
-      create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: true,
-        bound: true,
-      }),
-    ]);
+  test('totp 已绑定 → 开关行标题 + 「已绑定」+ 解绑 / 恢复码查看', () => {
+    const html = renderRow([totp(true)]);
+    expect(html).toContain('两步验证');
     expect(html).toContain('已绑定');
     expect(html).toContain('解绑');
     expect(html).toContain('恢复码仅一次性展示，不可回显');
   });
 
-  test('totp 未绑定 → 「未绑定」+ 绑定按钮；弹窗条件渲染不挂载', () => {
-    const html = renderRow([
-      create(MfaPolicyMethodSchema, {
-        factor: 'totp',
-        enabled: false,
-        bound: false,
-      }),
-    ]);
+  test('totp 未绑定 → 「未绑定」+ 去绑定；不展示恢复码入口与绑定弹窗，开关行禁用提示渲染', () => {
+    const html = renderRow([totp(false)]);
     expect(html).toContain('未绑定');
-    expect(html).toContain('绑定');
-    expect(html).not.toContain('查看恢复码');
-    // 「重开无旧错误残留」的结构性断言：TotpBindDialog / 恢复码 Modal 父级
-    // 条件渲染——未打开不挂载（打开即新实例，hook 态天然全新）。
+    expect(html).toContain('去绑定');
+    expect(html).toContain('请先绑定至少一个可用的验证方式');
+    expect(html).not.toContain('恢复码仅一次性展示，不可回显');
+    // 结构性断言：TotpBindDialog / 恢复码 Modal 父级条件渲染——未打开不挂载。
     expect(html).not.toContain('绑定 TOTP 动态码');
   });
 
-  test('methods 无 totp 条目 → 按未绑定兜底', () => {
+  test('methods 无 totp 条目 → 因子行按未绑定兜底，开关行系统未开放提示渲染', () => {
     const html = renderRow([]);
     expect(html).toContain('未绑定');
-    expect(html).not.toContain('查看恢复码');
+    expect(html).toContain('管理员未启用两步验证');
+    expect(html).not.toContain('恢复码仅一次性展示，不可回显');
   });
 });

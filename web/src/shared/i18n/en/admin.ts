@@ -52,10 +52,10 @@ export const admin: typeof zhAdmin = {
     'Controls sign-in only, not sign-up; methods not listed are rejected at sign-in',
   'admin.mfaEnabledLabel': 'Two-factor verification master switch',
   'admin.mfaEnabledHint':
-    'When off, users are no longer asked for second verification',
-  'admin.mfaMethodsLabel': 'Available second factors',
+    'When off, two-step verification has no effect and the user toggle is unavailable',
+  'admin.mfaMethodsLabel': 'Factors for two-step verification',
   'admin.mfaMethodsHint':
-    'Recovery codes are enabled with TOTP and are not listed separately',
+    'Users can use a factor after binding one from the allowlist; recovery codes come with TOTP and are not listed separately',
   'admin.pwdFailCaptureLabel':
     'Daily password failures before captcha is required',
   'admin.pwdFailCaptureHint':
@@ -129,7 +129,6 @@ export const admin: typeof zhAdmin = {
   'admin.displayNameFallback': 'Administrator',
   'admin.userStatusEnabled': 'Active',
   'admin.userStatusDisabled': 'Disabled',
-  'admin.credentialKindMfaSetting': 'MFA switch',
   'admin.redirectUrisIssue':
     'Redirect URIs must be * or start with http:// or https://',
   'admin.scopesIssue':
@@ -415,12 +414,12 @@ export const admin: typeof zhAdmin = {
     'Failed to load the user details; please refresh and try again',
   'admin.basicInfoSection': 'Basic Information',
   'admin.noUserData': 'No user data',
-  'admin.mfaRequiredLabel': 'Required Two-Step Verification',
+  'admin.mfaRequiredLabel': 'Two-Step Verification',
   'admin.verifiedTag': '(verified)',
   'admin.yesText': 'Yes',
   'admin.noText': 'No',
   'admin.mfaStatusSection': 'MFA Status',
-  'admin.mfaRequiredNotice': 'Two-step verification is enforced by the system',
+  'admin.mfaRequiredNotice': 'The user has enabled two-step verification',
   'admin.mfaBoundSummary': 'Bound: {factors}',
   'admin.mfaNoneBound': 'No second factors bound',
   'admin.credentialsSection': 'Credentials',

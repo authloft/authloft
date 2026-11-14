@@ -211,8 +211,9 @@ export function getLoginMethodOptions(): {
 }
 
 /**
- * 系统开放的二次因子选项（§5.6 行 1336 值域：recovery_code 随 totp 生效、
- * 不单列，故不入选项）。因子名文案复用 factors.* 既有键（求值时机同上）。
+ * 可用于两步验证的因子选项（§5.6 值域：管理员白名单候选；recovery_code
+ * 随 totp 生效、不单列，故不入选项）。因子名文案复用 factors.* 既有键
+ * （求值时机同上）。
  */
 export function getMfaMethodOptions(): {
   value: string;

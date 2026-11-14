@@ -264,7 +264,7 @@ export function ContactBindForm(props: {
       : bindEmail(request);
   const location = useLocation();
   const returnTo = () => accountReturnTo(location.pathname, location.search);
-  // challenge（手动）：错误行内呈现（toast:false）。竞态说明（§5.2/R3）：
+  // challenge（手动）：错误行内呈现（toast:false）。竞态说明（§5.2）：
   // 同实例并发提交不可达——发送按钮按 loading 禁用，challenge / verify 各持
   // 独立实例，旧响应落地仅影响本实例 state。
   const challenge = useRequest(call, {

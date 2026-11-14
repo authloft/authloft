@@ -1,15 +1,17 @@
 /**
- * 双因素认证行（MFA + 恢复码合并）：totp 已绑定 → 行内「已绑定」+
- * 解绑 / 停用 / 恢复码；未绑定 → 绑定（TotpBindDialog）。
- * 解绑走二次验证（docs/接口文档.md §3.5 行 1078）：StepUpDialog 取得
- * verificationToken 后调 UnbindTotp；停用是 SetMfa 的全量集合替换语义
- * （从启用集合移除该因子，不等于解绑），required=true 时本地拒绝不发包。
- * 存量恢复码不可回显（§3.5 行 1079）：弹窗只提供重新生成，成功后以新码为准。
+ * 双因素认证区（两步验证开关行 + TOTP 因子行）：
+ * - 开关行（useMfaToggleField）：Semi Switch 由 mfaPolicy.{enabled, methods[].bound}
+ *   推导可用性，onChange 调 SetMfa({enabled})，成功后重取 GetConfig + Toast；
+ * - 因子行（useMfaSetting）：totp 已绑定 → 行内「已绑定」+ 解绑 / 恢复码；
+ *   未绑定 → 绑定（TotpBindDialog）。解绑走二次验证
+ *   （docs/接口文档.md §3.5）：StepUpDialog 取得 verificationToken 后调
+ *   UnbindTotp；因子集合的启用集语义随 SetMfa 改为开关后一并下线。
+ * 存量恢复码不可回显（§3.5）：弹窗只提供重新生成，成功后以新码为准。
  */
 import { useCallback, useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Modal, Popconfirm, Toast } from '@douyinfe/semi-ui';
+import { Button, Modal, Popconfirm, Switch, Toast } from '@douyinfe/semi-ui';
 import { CaptchaDialog } from '@/shared/captcha/CaptchaDialog';
 import { useCaptchaGate } from '@/shared/captcha/useCaptchaGate';
 import type { MfaPolicyMethod } from '@/gen/proto/api/account/v1/profile_pb';
@@ -26,6 +28,7 @@ import {
   buildStartVerificationRequest,
   buildSubmitVerificationRequest,
   buildUnbindTotpRequest,
+  deriveMfaToggleView,
   regenerateRecoveryCodes,
   setMfa,
   startVerification,
@@ -87,12 +90,48 @@ function RecoveryCodesModalBody(): ReactNode {
   );
 }
 
-/** MFA 行（SettingList field）：totp 绑定态驱动 help 与动作按钮。 */
+/**
+ * 两步验证开关行（SettingList field）：checked = mfaPolicy.enabled，
+ * 可用性与 help 由 deriveMfaToggleView 推导；onChange 调 SetMfa({enabled})，
+ * 成功后父级重取 GetConfig 刷新 mfaPolicy + Toast。
+ */
+export function useMfaToggleField(props: {
+  /** 用户自助开关原值（mfaPolicy.enabled）。 */
+  enabled: boolean;
+  /** 管理员开放的因子白名单及绑定态（mfaPolicy.methods）。 */
+  methods: MfaPolicyMethod[];
+  /** 切换成功：父级重取 GetConfig 刷新 mfaPolicy。 */
+  onPolicyRefresh: () => void;
+}): ListItemProps {
+  const location = useLocation();
+  const returnTo = () => accountReturnTo(location.pathname, location.search);
+  const { run } = useRequest(setMfa, {
+    manual: true,
+    ...requestOptions({ returnTo }),
+    onSuccess: () => {
+      Toast.success(t('account.mfaEnabledSuccess'));
+      props.onPolicyRefresh();
+    },
+  });
+  const view = deriveMfaToggleView(props.enabled, props.methods);
+  return {
+    key: 'mfaToggle',
+    title: t('account.mfaToggleTitle'),
+    help: <span className={styles.toggleHelp}>{t(view.helpKey)}</span>,
+    extra: (
+      <Switch
+        checked={props.enabled}
+        onChange={(checked: boolean) => run(buildSetMfaRequest(checked))}
+        disabled={view.disabled}
+      />
+    ),
+  };
+}
+
+/** MFA 因子行（SettingList field）：totp 绑定态驱动 help 与动作按钮。 */
 export function useMfaSetting(props: {
   /** 系统开放因子摘要（GetConfig mfaPolicy.methods）。 */
   methods: MfaPolicyMethod[];
-  /** 策略强制（true 时不可解绑）。 */
-  required: boolean;
   /** 解绑 / 绑定成功：父级重取 GetConfig 刷新 mfaPolicy。 */
   onPolicyRefresh: () => void;
 }): ListItemProps {
@@ -137,31 +176,6 @@ export function useMfaSetting(props: {
     [runCaptchaGate],
   );
 
-  const { loading: disabling, run: runDisable } = useRequest(setMfa, {
-    manual: true,
-    ...requestOptions({ returnTo }),
-    onSuccess: () => {
-      Toast.success(
-        t('account.mfaDisableSuccess', { factor: t('account.factorTotp') }),
-      );
-      props.onPolicyRefresh();
-    },
-  });
-
-  const handleDisable = () => {
-    const built = buildSetMfaRequest(
-      props.methods,
-      'totp',
-      false,
-      props.required,
-    );
-    if (!built.ok) {
-      Toast.error(t('account.mfaLocked'));
-      return;
-    }
-    runDisable(built.request);
-  };
-
   const { runAsync: runUnbind } = useRequest(unbindTotp, {
     manual: true,
     ...requestOptions({ toast: false, returnTo }),
@@ -191,16 +205,6 @@ export function useMfaSetting(props: {
             <Button type="danger" onClick={() => setStepUpOpen(true)}>
               {t('account.unbindAction')}
             </Button>
-            <Popconfirm
-              title={t('account.mfaDisableConfirm', {
-                factor: t('account.factorTotp'),
-              })}
-              onConfirm={handleDisable}
-            >
-              <Button type="tertiary" loading={disabling}>
-                {t('account.mfaDisableAction')}
-              </Button>
-            </Popconfirm>
             <Button type="tertiary" onClick={() => setRecoveryOpen(true)}>
               {t('account.viewRecoveryCodes')}
             </Button>
@@ -215,11 +219,7 @@ export function useMfaSetting(props: {
             onCancel={() => setTotpOpen(false)}
             onDone={() => {
               setTotpOpen(false);
-              Toast.success(
-                t('account.mfaEnabledSuccess', {
-                  factor: t('account.factorTotp'),
-                }),
-              );
+              Toast.success(t('account.totpBindSuccess'));
               props.onPolicyRefresh();
             }}
           />

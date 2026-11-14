@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/mfa.proto.
  */
 export const file_api_account_v1_mfa: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdtZXRob2RzGAEgAygJIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIi8KEVVuYmluZFRvdHBSZXF1ZXN0EhoKEnZlcmlmaWNhdGlvbl90b2tlbhgBIAEoCSI6ChVSZWNvdmVyeUNvZGVzUmVzcG9uc2USDQoFY29kZXMYASADKAkSEgoKY3JlYXRlZF9hdBgCIAEoAyIwCh5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QSDgoGYWN0aW9uGAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw");
+  fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdlbmFibGVkGAEgASgIIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIi8KEVVuYmluZFRvdHBSZXF1ZXN0EhoKEnZlcmlmaWNhdGlvbl90b2tlbhgBIAEoCSI6ChVSZWNvdmVyeUNvZGVzUmVzcG9uc2USDQoFY29kZXMYASADKAkSEgoKY3JlYXRlZF9hdBgCIAEoAyIwCh5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QSDgoGYWN0aW9uGAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw");
 
 /**
  * GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
@@ -93,22 +93,21 @@ export const MfaFactorSchema: GenMessage<MfaFactor> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 1);
 
 /**
- * MfaResponse 是 AccountService/GetMfa 的响应（§3.5 行 887-898）：只出绑定明细；
- * 摘要（开关 / 策略强制 / trusted_device_days / 因子 enabled 与 bound）走 §3.2 mfa_policy，
- * 不在此重复（行 885）。
+ * MfaResponse 是 AccountService/GetMfa 的响应（§3.5）：只出绑定明细；
+ * 用户开关与系统开放的因子白名单走 §3.2 mfa_policy，不在此重复。
  *
  * @generated from message api.account.v1.MfaResponse
  */
 export type MfaResponse = Message<"api.account.v1.MfaResponse"> & {
   /**
-   * 各因子的绑定明细（§3.5 行 890-895）。
+   * 各因子的绑定明细（§3.5）。
    *
    * @generated from field: repeated api.account.v1.MfaFactor factors = 1;
    */
   factors: MfaFactor[];
 
   /**
-   * 恢复码签发时间，Unix 秒；未签发为 0（§3.5 行 897）。
+   * 恢复码签发时间，Unix 秒；未签发为 0（§3.5）。
    *
    * @generated from field: int64 recovery_issued_at = 2;
    */
@@ -123,20 +122,19 @@ export const MfaResponseSchema: GenMessage<MfaResponse> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 2);
 
 /**
- * SetMfaRequest 是 AccountService/SetMfa 的请求（§3.5 行 904）：
- * 勾选启用一项或多项；空数组 = 关闭（受 §3.2 mfa_policy.required 约束）。
- * 成功为空响应（OkResponse），不定义 SetMfaResponse。
- * 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 UpdateMfaRequest）。
+ * SetMfaRequest 是 AccountService/SetMfa 的请求（§3.5）：
+ * 用户自助切换两步验证开关；成功为空响应（OkResponse）。
+ * 开启时服务端校验系统已开放且存在可用因子，不满足返回 invalid_request。
  *
  * @generated from message api.account.v1.SetMfaRequest
  */
 export type SetMfaRequest = Message<"api.account.v1.SetMfaRequest"> & {
   /**
-   * 要启用的二次因子集合（§3.5 行 904）。
+   * true 开启 / false 关闭（§3.5）。
    *
-   * @generated from field: repeated string methods = 1;
+   * @generated from field: bool enabled = 1;
    */
-  methods: string[];
+  enabled: boolean;
 };
 
 /**

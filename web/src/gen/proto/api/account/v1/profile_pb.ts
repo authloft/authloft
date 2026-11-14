@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/profile.proto.
  */
 export const file_api_account_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9wcm9maWxlLnByb3RvEg5hcGkuYWNjb3VudC52MSISChBHZXRDb25maWdSZXF1ZXN0IhMKEUdldFByb2ZpbGVSZXF1ZXN0IswBCgtVc2VyUHJvZmlsZRITCgZnZW5kZXIYASABKANIAIgBARIVCghiaXJ0aGRheRgCIAEoCUgBiAEBEhMKBmxvY2FsZRgDIAEoCUgCiAEBEhUKCHRpbWV6b25lGAQgASgJSAOIAQESKwoFZXh0cmEYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0SASIAQFCCQoHX2dlbmRlckILCglfYmlydGhkYXlCCQoHX2xvY2FsZUILCglfdGltZXpvbmVCCAoGX2V4dHJhIsoCCg9Qcm9maWxlUmVzcG9uc2USCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIpABChRVcGRhdGVQcm9maWxlUmVxdWVzdBIVCghuaWNrbmFtZRgBIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAiABKAlIAYgBARIsCgdwcm9maWxlGAMgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiSwoSQXZhdGFyVXBsb2FkQ29uZmlnEgwKBG1vZGUYASABKAkSEAoIbWF4X3NpemUYAiABKAMSFQoNYWxsb3dlZF90eXBlcxgDIAMoCSJBCg9NZmFQb2xpY3lNZXRob2QSDgoGZmFjdG9yGAEgASgJEg8KB2VuYWJsZWQYAiABKAgSDQoFYm91bmQYAyABKAgifQoJTWZhUG9saWN5Eg8KB2VuYWJsZWQYASABKAgSEAoIcmVxdWlyZWQYAiABKAgSGwoTdHJ1c3RlZF9kZXZpY2VfZGF5cxgDIAEoAxIwCgdtZXRob2RzGAQgAygLMh8uYXBpLmFjY291bnQudjEuTWZhUG9saWN5TWV0aG9kIsYBChVBY2NvdW50Q29uZmlnUmVzcG9uc2USOQoNYXZhdGFyX3VwbG9hZBgBIAEoCzIiLmFwaS5hY2NvdW50LnYxLkF2YXRhclVwbG9hZENvbmZpZxItCgptZmFfcG9saWN5GAIgASgLMhkuYXBpLmFjY291bnQudjEuTWZhUG9saWN5Ei0KB2NhcHRjaGEYAyABKAsyHC5hcGkuY29tbW9uLnYxLkNhcHRjaGFDb25maWcSFAoMaGFzX3Bhc3N3b3JkGAQgASgIIh0KDkF2YXRhclJlc3BvbnNlEgsKA3VybBgBIAEoCSJMChRQcmVzaWduQXZhdGFyUmVxdWVzdBIQCghmaWxlbmFtZRgBIAEoCRIUCgxjb250ZW50X3R5cGUYAiABKAkSDAoEc2l6ZRgDIAEoAyLBAQoVQXZhdGFyUHJlc2lnblJlc3BvbnNlEgsKA2tleRgBIAEoCRISCgp1cGxvYWRfdXJsGAIgASgJEkMKB2hlYWRlcnMYAyADKAsyMi5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2UuSGVhZGVyc0VudHJ5EhIKCmV4cGlyZXNfaW4YBCABKAMaLgoMSGVhZGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiIgoTQ29tbWl0QXZhdGFyUmVxdWVzdBILCgNrZXkYASABKAlCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_google_protobuf_struct, file_api_common_v1_captcha]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9wcm9maWxlLnByb3RvEg5hcGkuYWNjb3VudC52MSISChBHZXRDb25maWdSZXF1ZXN0IhMKEUdldFByb2ZpbGVSZXF1ZXN0IswBCgtVc2VyUHJvZmlsZRITCgZnZW5kZXIYASABKANIAIgBARIVCghiaXJ0aGRheRgCIAEoCUgBiAEBEhMKBmxvY2FsZRgDIAEoCUgCiAEBEhUKCHRpbWV6b25lGAQgASgJSAOIAQESKwoFZXh0cmEYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0SASIAQFCCQoHX2dlbmRlckILCglfYmlydGhkYXlCCQoHX2xvY2FsZUILCglfdGltZXpvbmVCCAoGX2V4dHJhIsoCCg9Qcm9maWxlUmVzcG9uc2USCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIpABChRVcGRhdGVQcm9maWxlUmVxdWVzdBIVCghuaWNrbmFtZRgBIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAiABKAlIAYgBARIsCgdwcm9maWxlGAMgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiSwoSQXZhdGFyVXBsb2FkQ29uZmlnEgwKBG1vZGUYASABKAkSEAoIbWF4X3NpemUYAiABKAMSFQoNYWxsb3dlZF90eXBlcxgDIAMoCSIwCg9NZmFQb2xpY3lNZXRob2QSDgoGZmFjdG9yGAEgASgJEg0KBWJvdW5kGAIgASgIImsKCU1mYVBvbGljeRIPCgdlbmFibGVkGAEgASgIEhsKE3RydXN0ZWRfZGV2aWNlX2RheXMYAiABKAMSMAoHbWV0aG9kcxgDIAMoCzIfLmFwaS5hY2NvdW50LnYxLk1mYVBvbGljeU1ldGhvZCLGAQoVQWNjb3VudENvbmZpZ1Jlc3BvbnNlEjkKDWF2YXRhcl91cGxvYWQYASABKAsyIi5hcGkuYWNjb3VudC52MS5BdmF0YXJVcGxvYWRDb25maWcSLQoKbWZhX3BvbGljeRgCIAEoCzIZLmFwaS5hY2NvdW50LnYxLk1mYVBvbGljeRItCgdjYXB0Y2hhGAMgASgLMhwuYXBpLmNvbW1vbi52MS5DYXB0Y2hhQ29uZmlnEhQKDGhhc19wYXNzd29yZBgEIAEoCCIdCg5BdmF0YXJSZXNwb25zZRILCgN1cmwYASABKAkiTAoUUHJlc2lnbkF2YXRhclJlcXVlc3QSEAoIZmlsZW5hbWUYASABKAkSFAoMY29udGVudF90eXBlGAIgASgJEgwKBHNpemUYAyABKAMiwQEKFUF2YXRhclByZXNpZ25SZXNwb25zZRILCgNrZXkYASABKAkSEgoKdXBsb2FkX3VybBgCIAEoCRJDCgdoZWFkZXJzGAMgAygLMjIuYXBpLmFjY291bnQudjEuQXZhdGFyUHJlc2lnblJlc3BvbnNlLkhlYWRlcnNFbnRyeRISCgpleHBpcmVzX2luGAQgASgDGi4KDEhlYWRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIiIKE0NvbW1pdEF2YXRhclJlcXVlc3QSCwoDa2V5GAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_google_protobuf_struct, file_api_common_v1_captcha]);
 
 /**
  * GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 行 818 入参「—」）。
@@ -175,7 +175,7 @@ export type ProfileResponse = Message<"api.account.v1.ProfileResponse"> & {
   userStatus: bigint;
 
   /**
-   * 系统强制启用两步验证（§3.1 行 788）。
+   * 用户自助两步验证开关（§3.1）。
    *
    * @generated from field: int64 mfa_required = 10;
    */
@@ -325,30 +325,22 @@ export const AvatarUploadConfigSchema: GenMessage<AvatarUploadConfig> = /*@__PUR
   messageDesc(file_api_account_v1_profile, 6);
 
 /**
- * MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2 行 834-840）。
+ * MfaPolicyMethod 是 mfa_policy.methods 的单个二次因子投影（§3.2）。
  *
  * @generated from message api.account.v1.MfaPolicyMethod
  */
 export type MfaPolicyMethod = Message<"api.account.v1.MfaPolicyMethod"> & {
   /**
-   * 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-   * （§3.2 行 834-840）。
+   * 可用于两步验证的因子，由管理员在 settings.mfa_methods 配置。
    *
    * @generated from field: string factor = 1;
    */
   factor: string;
 
   /**
-   * 该因子是否被纳入当前用户的两步验证（§3.2 行 845）。
+   * 用户是否已绑定该因子（§3.2）。
    *
-   * @generated from field: bool enabled = 2;
-   */
-  enabled: boolean;
-
-  /**
-   * 是否已绑定该因子（§3.2 行 845）。
-   *
-   * @generated from field: bool bound = 3;
+   * @generated from field: bool bound = 2;
    */
   bound: boolean;
 };
@@ -361,37 +353,30 @@ export const MfaPolicyMethodSchema: GenMessage<MfaPolicyMethod> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 7);
 
 /**
- * MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2 行 827-847）：
- * 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余（行 847）。
+ * MfaPolicy 是 GetConfig 响应的 mfa_policy 摘要（§3.2）：
+ * 只出摘要，不返回绑定明细 / 凭据数量 / 恢复码剩余。
  *
  * @generated from message api.account.v1.MfaPolicy
  */
 export type MfaPolicy = Message<"api.account.v1.MfaPolicy"> & {
   /**
-   * 当前用户是否已开启两步验证（§3.2 行 831）。
+   * 用户自助两步验证开关，取 user.mfa_required（§3.2）。
    *
    * @generated from field: bool enabled = 1;
    */
   enabled: boolean;
 
   /**
-   * 策略层是否强制；true 时用户不可关闭（§3.2 行 832）。
+   * 预留字段，本期恒为 0。
    *
-   * @generated from field: bool required = 2;
-   */
-  required: boolean;
-
-  /**
-   * 预留字段，本期恒为 0（§3.2 行 833、行 846）。
-   *
-   * @generated from field: int64 trusted_device_days = 3;
+   * @generated from field: int64 trusted_device_days = 2;
    */
   trustedDeviceDays: bigint;
 
   /**
-   * 系统开放的全部二次因子，顺序即前端渲染顺序（§3.2 行 834-840）。
+   * 管理员开放的因子白名单及绑定态；系统未开放或白名单为空时为 []。
    *
-   * @generated from field: repeated api.account.v1.MfaPolicyMethod methods = 4;
+   * @generated from field: repeated api.account.v1.MfaPolicyMethod methods = 3;
    */
   methods: MfaPolicyMethod[];
 };

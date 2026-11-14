@@ -535,9 +535,8 @@ export function userStatusLabel(userStatus: bigint): string {
 }
 
 /**
- * 凭证类型 kind → i18n 键（《后端架构》§4.3 行 669 kind 五值域：password|
- * totp|webauthn|recovery_code|mfa_setting——GetUser 凭证概览含
- * mfa_setting 行；跨版本新增原样兜底）。表存键不存文案（模块级
+ * 凭证类型 kind → i18n 键（《后端架构》§4.3 行 669 kind 四值域：password|
+ * totp|webauthn|recovery_code；未知值原样兜底）。表存键不存文案（模块级
  * 求值会冻结 locale），credentialKindLabel 调用期 t()。
  */
 const USER_CREDENTIAL_KIND_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
@@ -545,7 +544,6 @@ const USER_CREDENTIAL_KIND_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   totp: 'factors.totp',
   webauthn: 'factors.webauthn',
   recovery_code: 'factors.recovery_code',
-  mfa_setting: 'admin.credentialKindMfaSetting',
 };
 
 /** 凭证类型 kind → 展示文案（§5.4 行 1250 凭证概览；未知值原样兜底）。 */

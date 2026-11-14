@@ -133,7 +133,7 @@ import { ApiError, resolveCode } from '../shared/api/errors';
 import { accountClient } from '../shared/api/http';
 import { authorize } from '../shared/api/sso';
 import type { TableQueryState } from '../shared/app-ui/dataTableLogic';
-import { t } from '../shared/i18n';
+import { t, type I18nKey } from '../shared/i18n';
 import { toCount } from '../shared/utils/int';
 import {
   isValidEmail,
@@ -340,12 +340,12 @@ export function apiErrorText(
 // MFA + 通行密钥族封装（§3.5 / §3.6）
 // ---------------------------------------------------------------------------
 
-/** MFA 绑定明细（§3.5 行 903）：factors 与 mfaPolicy.methods 同集合，数组序即渲染序。 */
+/** MFA 绑定明细（§3.5）：factors 为各因子绑定详情，数组序即渲染序；开关与因子白名单见 mfaPolicy（§3.2）。 */
 export function getMfa(): Promise<MfaResponse> {
   return accountClient.getMfa({});
 }
 
-/** 勾选启用因子集合（§3.5 行 904）：空数组=关闭（受 mfaPolicy.required 约束）；成功空响应。 */
+/** 切换两步验证开关（§3.5）：{enabled} 开启 / 关闭；成功空响应。 */
 export function setMfa(request: SetMfaRequest): Promise<OkResponse> {
   return accountClient.setMfa(request);
 }
@@ -411,33 +411,41 @@ export function deleteWebauthnCredential(
 // MFA + 通行密钥纯逻辑（node 可测；落位说明见文件头）
 // ---------------------------------------------------------------------------
 
-/** SetMfa 本地拒绝形态（§3.5 行 904 空数组=关闭 × §3.2 行 833 required 不可关闭）。 */
-export type SetMfaDenyReason = 'mfa_required_locked';
+/**
+ * SetMfa 请求构造（§3.5）：两步验证开关，{enabled} 即开关目标值。开启时
+ * 服务端校验「系统已开放 && 存在可用因子」，不满足返回 invalid_request；
+ * 本地可用性先由 deriveMfaToggleView 推导置灰，服务端权威兜底。
+ */
+export function buildSetMfaRequest(enabled: boolean): SetMfaRequest {
+  return create(SetMfaRequestSchema, { enabled });
+}
 
 /**
- * SetMfa 请求构造（§3.5 行 904）：以 GetConfig 摘要 methods 推导下一启用集——
- * 勾选 → 追加到启用集尾（保持其余因子既有顺序）；取消 → 从启用集移除；
- * required=true 且结果为空 → 本地拒绝不发包（策略强制不可关闭，§3.2 行 833；
- * 服务端同口径兜底），其余交给服务端权威。
+ * 两步验证开关视图推导：由 mfaPolicy 的 enabled 与 methods[].bound 推导
+ * 开关禁用态与 help 文案键，供安全中心开关行消费（零 Semi 依赖、node 可测）。
+ * 判定顺序：开关已开但无可用因子（兜底边界）→ 保持可关闭 + 暂不生效提示；
+ * methods 为空 → 系统未开放，禁用；因子全未绑定 → 禁用；其余 → 可用 +
+ * 开启 / 关闭态说明。
  */
-export function buildSetMfaRequest(
+export function deriveMfaToggleView(
+  enabled: boolean,
   methods: MfaPolicyMethod[],
-  factor: string,
-  enable: boolean,
-  required: boolean,
-):
-  | { ok: true; request: SetMfaRequest }
-  | { ok: false; error: SetMfaDenyReason } {
-  const enabled = methods.filter((m) => m.enabled).map((m) => m.factor);
-  const next = enable
-    ? enabled.includes(factor)
-      ? enabled
-      : [...enabled, factor]
-    : enabled.filter((f) => f !== factor);
-  if (next.length === 0 && required) {
-    return { ok: false, error: 'mfa_required_locked' };
+): { disabled: boolean; helpKey: I18nKey } {
+  const noUsableFactor =
+    methods.length === 0 || methods.every((method) => !method.bound);
+  if (enabled && noUsableFactor) {
+    return { disabled: false, helpKey: 'account.mfaToggleFallback' };
   }
-  return { ok: true, request: create(SetMfaRequestSchema, { methods: next }) };
+  if (methods.length === 0) {
+    return { disabled: true, helpKey: 'account.mfaToggleNoMethods' };
+  }
+  if (methods.every((method) => !method.bound)) {
+    return { disabled: true, helpKey: 'account.mfaToggleNoBound' };
+  }
+  return {
+    disabled: false,
+    helpKey: enabled ? 'account.mfaToggleOnHint' : 'account.mfaToggleOffHint',
+  };
 }
 
 /**

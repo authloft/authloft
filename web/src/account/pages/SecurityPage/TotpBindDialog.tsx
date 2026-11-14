@@ -53,7 +53,7 @@ const CODE_INPUT_FIRST_ID = 'totp-bind-code-input';
 /**
  * TOTP 绑定状态壳（父级条件渲染，打开才挂载——每次打开新实例，本地态
  * 与 hook 态天然全新，替代自研 reset 语义，review/frontend-request-layer.md
- * R4 处置）：
+ * 处置）：
  * 挂载即自动发起 challenge（行 905：入参空串）；verify 成功 → 恢复码帧。
  * Modal 的 X / 遮罩关闭在恢复码帧路由到 onDone（绑定已生效，父级仍需刷新）。
  */

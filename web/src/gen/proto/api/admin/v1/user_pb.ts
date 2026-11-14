@@ -92,7 +92,7 @@ export type AdminUser = Message<"api.admin.v1.AdminUser"> & {
   userStatus: bigint;
 
   /**
-   * 系统强制启用两步验证（§3.1 行 788）。
+   * 用户自助两步验证开关（§3.1）。
    *
    * @generated from field: int64 mfa_required = 10;
    */

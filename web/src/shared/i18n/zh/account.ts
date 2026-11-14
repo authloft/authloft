@@ -80,18 +80,20 @@ export const account = {
   // 下载为文本（P2-3，纯前端 Blob 下载）。
   'account.recoveryDownload': '下载为文本',
 
-  // ---- MfaSetting（MFA + 恢复码合并行；因子名复用 factors.*，「恢复码」
-  //      弹窗题复用 factors.recovery_code，「绑定」按钮复用 account.bindAction）--
-  'account.mfaEnabledSuccess': '已启用{factor}',
+  // ---- MfaSetting（两步验证开关行 + TOTP 因子行；因子名复用 factors.*，
+  //      「恢复码」弹窗题复用 factors.recovery_code，「绑定」按钮复用
+  //      account.bindAction）------------------------------------------------
+  'account.mfaToggleTitle': '两步验证',
+  'account.mfaToggleOnHint': '登录时需完成二次验证',
+  'account.mfaToggleOffHint': '登录时无需二次验证',
+  'account.mfaToggleNoMethods': '管理员未启用两步验证',
+  'account.mfaToggleNoBound': '请先绑定至少一个可用的验证方式',
+  'account.mfaToggleFallback': '当前无可用验证方式，两步验证暂不生效',
+  'account.mfaEnabledSuccess': '两步验证设置已保存',
   'account.recoveryRegenerateSuccess': '恢复码已重新生成，旧码全部作废',
   'account.factorTotp': 'TOTP 动态码',
   'account.factorBoundTag': '已绑定',
   'account.factorUnboundTag': '未绑定',
-  'account.mfaLocked': '策略要求开启两步验证，不可全部关闭',
-  'account.mfaDisableAction': '停用',
-  'account.mfaDisableConfirm':
-    '确定停用「{factor}」？停用后登录时将不再要求该因子验证；解除绑定请使用「解绑」。',
-  'account.mfaDisableSuccess': '已停用{factor}',
   'account.viewRecoveryCodes': '恢复码仅一次性展示，不可回显',
   'account.recoveryNotViewable':
     '存量恢复码不可回显，重新生成将作废全部旧码并下发新码。',

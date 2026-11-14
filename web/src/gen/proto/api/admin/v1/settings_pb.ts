@@ -165,14 +165,14 @@ export type SetSettingsRequest = Message<"api.admin.v1.SetSettingsRequest"> & {
   allowSignupEmail?: boolean | undefined;
 
   /**
-   * 两步验证总开关，默认 true；关闭后 mfa_policy.required 恒为 false（§5.6 行 1319）。
+   * 两步验证系统总开关，默认 true；关闭后所有用户不再二次验证、用户开关不可用（§5.6）。
    *
    * @generated from field: optional bool mfa_enabled = 18;
    */
   mfaEnabled?: boolean | undefined;
 
   /**
-   * 系统开放的二次因子集合（recovery_code 随 totp 生效，不单列）（§5.6 行 1320）。
+   * 可用于两步验证的因子白名单（recovery_code 随 totp 生效，不单列）（§5.6）。
    * has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
    *
    * @generated from field: optional bool has_mfa_methods = 19;
@@ -459,14 +459,14 @@ export type SettingsResponse = Message<"api.admin.v1.SettingsResponse"> & {
   allowSignupEmail: boolean;
 
   /**
-   * 两步验证总开关，默认 true（§5.6 行 1319）。
+   * 两步验证系统总开关，默认 true（§5.6）。
    *
    * @generated from field: bool mfa_enabled = 17;
    */
   mfaEnabled: boolean;
 
   /**
-   * 系统开放的二次因子集合，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6 行 1320）。
+   * 可用于两步验证的因子白名单，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6）。
    *
    * @generated from field: repeated string mfa_methods = 18;
    */

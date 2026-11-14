@@ -89,21 +89,24 @@ export const account: typeof zhAccount = {
   // download as text (P2-3, pure frontend Blob download).
   'account.recoveryDownload': 'Download as text',
 
-  // ---- MfaSetting (merged MFA + recovery-code row; factor names reuse
-  //      factors.*, the recovery-code modal title reuses
+  // ---- MfaSetting (two-step verification toggle row + TOTP factor row;
+  //      factor names reuse factors.*, the recovery-code modal title reuses
   //      factors.recovery_code, the bind button reuses account.bindAction) ---
-  'account.mfaEnabledSuccess': '{factor} enabled',
+  'account.mfaToggleTitle': 'Two-Step Verification',
+  'account.mfaToggleOnHint': 'Second verification is required at sign-in',
+  'account.mfaToggleOffHint': 'Second verification is not required at sign-in',
+  'account.mfaToggleNoMethods':
+    'The administrator has not enabled two-step verification',
+  'account.mfaToggleNoBound':
+    'Bind at least one available verification method first',
+  'account.mfaToggleFallback':
+    'No verification method is currently available; two-step verification is temporarily inactive',
+  'account.mfaEnabledSuccess': 'Two-step verification settings saved',
   'account.recoveryRegenerateSuccess':
     'Recovery codes regenerated; all old codes are void',
   'account.factorTotp': 'TOTP authenticator code',
   'account.factorBoundTag': 'Linked',
   'account.factorUnboundTag': 'Not linked',
-  'account.mfaLocked':
-    'Policy requires two-step verification; it cannot be fully turned off',
-  'account.mfaDisableAction': 'Disable',
-  'account.mfaDisableConfirm':
-    'Disable "{factor}"? It will no longer be required when you sign in. Use Unlink to remove the binding.',
-  'account.mfaDisableSuccess': '{factor} disabled',
   'account.viewRecoveryCodes':
     'Recovery codes are shown once and cannot be displayed again',
   'account.recoveryNotViewable':

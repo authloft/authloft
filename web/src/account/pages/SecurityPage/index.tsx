@@ -3,7 +3,8 @@
  * - 登录方式：密码（hasPassword 区分设置 / 修改）、手机号 / 邮箱（未设密码
  *   显示「请先设置密码」）、通行密钥（useWebauthnSetting：已绑定 X 个 +
  *   查看已绑定 / 新增）；
- * - 双因素认证：useMfaSetting（MFA + 恢复码合并单行）；
+ * - 双因素认证：两步验证开关行（useMfaToggleField）+ TOTP 因子行
+ *   （useMfaSetting，MFA + 恢复码合并）；
  * - 第三方账号：ThirdPartyList（全量账号行，已绑定 → 解绑 / 未绑定 → 绑定；
  *   redirect / qrcode 通道绑定 + 解绑置灰）。本区块自带 SettingListSections
  *   外壳（与上面两块同级），避免分区嵌套。
@@ -45,7 +46,7 @@ import {
   readBindParam,
 } from '../../api';
 import { ContactBindForm } from './ContactBindForm';
-import { useMfaSetting } from './MfaSetting';
+import { useMfaSetting, useMfaToggleField } from './MfaSetting';
 import { PasswordChangeForm } from './PasswordChangeForm';
 import { ThirdPartyList } from './ThirdPartyList';
 import { useWebauthnSetting } from './WebauthnSetting';
@@ -71,9 +72,13 @@ export function SecurityPageView(props: {
   const [showBindEmailModal, setShowBindEmailModal] = useState(false);
   const { config, error } = props;
   const policy = config?.mfaPolicy ?? ZERO_MFA_POLICY;
+  const mfaToggleField = useMfaToggleField({
+    enabled: policy.enabled,
+    methods: policy.methods,
+    onPolicyRefresh: props.onRefreshConfig,
+  });
   const mfaField = useMfaSetting({
     methods: policy.methods,
-    required: policy.required,
     onPolicyRefresh: props.onRefreshConfig,
   });
   const webauthnField = useWebauthnSetting();
@@ -145,7 +150,7 @@ export function SecurityPageView(props: {
           {
             key: 'mfa',
             title: t('account.mfaSectionTitle'),
-            fields: [mfaField],
+            fields: [mfaToggleField, mfaField],
           },
         ]}
       />
