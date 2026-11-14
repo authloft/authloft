@@ -1,12 +1,6 @@
-// admin 域的内部模型 → proto 报文转换（docs/接口文档.md §5.2 行 1168/1170、
-// §5.3 行 1181-1244）：Provider 行 → 列表项 / 管理详情视图、provider.Ext →
-// google.protobuf.Struct 明文透出、注册表 meta → SchemaField 的映射均以本文件
-// 为唯一出口（docs/后端架构.md §3.5：本层只做转换与裁剪，不定义新的跨端结构）。
-//
-// 明文口径（§5.2 行 1170、§12.1 行 1719）：AdminProvider.ext 是全站唯一明文
-// 凭证出口，仅管理员会话可见（鉴权由 admin 拦截器保证）；本层不做二次脱敏，
-// 也不落任何日志。列表项 Provider 消息没有 ext 字段——凭证只存在于 Admin 视图
-// 消息，泄露靠类型系统拦住（§3.5 view.go 口径）。
+// admin 域内部模型 → proto 报文转换的唯一出口：本层只做转换与裁剪，不定义跨端结构。
+// AdminProvider.ext 是全站唯一明文凭证出口，仅管理员会话可见（鉴权由 admin 拦截器保证）；
+// 本层不做二次脱敏、不落日志；列表消息不含 ext 字段，凭证泄露靠类型系统拦住。
 package dto
 
 import (
@@ -27,15 +21,11 @@ import (
 	"authloft/internal/settings"
 )
 
-// extJSON Ext → Struct 的中间 JSON 编码（§12.9 行 1779：AdminProvider.ext 用
-// Struct 承载 provider.Ext 明文透出）：UseProtoNames 使键与 §5.3 schema 的
-// key 同源（Ext 字段名，snake_case——提交体即 {"<key>": <value>}，§5.3 行 1183），
-// 与 internal/oidc 的 oidcJSON 同口径；零值标量按 §12.9 行 1775 省略。
+// extJSON Ext → Struct 中间编码：UseProtoNames 使键与 schema key 同源（Ext 字段名
+// snake_case），与 internal/oidc 的 oidcJSON 同口径；零值标量省略。
 var extJSON = protojson.MarshalOptions{UseProtoNames: true}
 
-// AdminProviderListEntry 把 provider 行组装为 §5.2 行 1168 的列表项
-// （列：显示名 / provider_key / 类别 / 类型 / 状态 / 策略标签 / 排序）。
-// 列表消息没有 ext 字段（provider.proto），不触碰任何凭证。
+// AdminProviderListEntry provider 行 → 列表项；列表消息没有 ext 字段，不触碰凭证。
 func AdminProviderListEntry(row *model.Provider) *adminv1.Provider {
 	if row == nil {
 		return &adminv1.Provider{}
@@ -53,10 +43,8 @@ func AdminProviderListEntry(row *model.Provider) *adminv1.Provider {
 	}
 }
 
-// AdminProviderDetail 把 provider 行 + 解析后的 Ext 组装为 §5.2 行 1170 的
-// 管理详情（返回明文凭证，需管理员会话）：provider 表列 typed 透出，ext 按
-// §12.9 行 1779 用 Struct 明文透出（键 = Ext 字段名）。行缺失的防御分支输出
-// 空消息（调用方契约下不可达，口径同 AccountProfile）。
+// AdminProviderDetail provider 行 + Ext → 管理详情（返回明文凭证，需管理员会话）：
+// ext 用 Struct 明文透出；行缺失防御分支输出空消息（调用方契约下不可达）。
 func AdminProviderDetail(row *model.Provider, ext *providerpb.Ext) *adminv1.AdminProvider {
 	if row == nil {
 		return &adminv1.AdminProvider{}
@@ -82,11 +70,8 @@ func AdminProviderDetail(row *model.Provider, ext *providerpb.Ext) *adminv1.Admi
 	}
 }
 
-// AdminProviderExt provider.Ext → Struct 明文透出（§12.9 行 1779）：经 protojson
-// （UseProtoNames，snake_case 键）往返保持 Ext 字段名与 §5.3 schema key 逐字一致；
-// int64 按 §1.12 输出十进制字符串、int32 为数字。nil / 空 Ext 输出空 Struct
-// （protojson 视图 {}，字段恒存在便于管理表单绑定）。两条错误分支均只回空值、
-// 不落日志——本函数输出是明文凭证，任何路径都不得进日志。
+// AdminProviderExt provider.Ext → Struct 明文透出：nil / 空 Ext 输出空 Struct，
+// 字段恒存在便于表单绑定。两条错误分支只回空值、不落日志（输出是明文凭证）。
 func AdminProviderExt(ext *providerpb.Ext) *structpb.Struct {
 	if ext == nil {
 		ext = &providerpb.Ext{}
@@ -102,7 +87,7 @@ func AdminProviderExt(ext *providerpb.Ext) *structpb.Struct {
 	return out
 }
 
-// §5.3 行 1185 的五区块取值（封闭集合）。
+// 五区块取值（封闭集合）。
 const (
 	sectionBasic      = "basic"
 	sectionCredential = "credential"
@@ -111,28 +96,11 @@ const (
 	sectionPolicy     = "policy"
 )
 
-// AdminSchema 组装 §5.3 行 1181-1227 的动态表单 schema：
-//
-//   - type / category：由类型 meta 按 type 决定（行 1190、1192，《后端架构》
-//     §15.3 行 1731：meta 是 /schema 唯一数据源）；
-//   - fields[]：provider 表列基线（§5.3 示例即契约——行 1192-1225 逐字：
-//     key / label / type / section / required / default / options / pattern /
-//     advanced / help）+ Ext 字段逐项来自 meta 声明（§15.3 行 1731），并按
-//     category 裁剪表列基线（见 AdminProviderColumnKeysFor）；
-//   - label / help 不再是展示文案，而是前端 i18n 键（admin.schemaField.*，
-//     文案在 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期
-//     t() 解析）。后端不持有任何语言文案；options 仍是 wire 取值（如
-//     ui_group 的 social / enterprise / dev / other、union Provider 的
-//     provider_key），前端只翻译其显示名、提交值不变。缺键时 t() 回显键
-//     本身（i18n 既有口径），旧版本下发的中文字面量也按原文显示，不崩；
-//   - 顺序：basic 基线 → meta 声明的 Ext 字段（声明序）→ display / policy
-//     基线，即 §5.3 示例的区块排列；前端按 section 分组、区块内沿用 fields[]
-//     数组顺序（行 1185），不做二次排序。空区块（如 sms / email 的 policy 只剩
-//     is_enabled；union 的 policy 整块为空，虚拟 Provider 无启用开关）由前端
-//     分组自行跳过。
-//
-// unionProviderKeys 是 union_provider 字段的 options 数据源（行 1197：仅列
-// category=union 的 Provider），由调用方（handler）在 oauth 类别时查库注入。
+// AdminSchema 动态表单 schema：type / category 由类型 meta 决定；fields[] = 表列基线
+// （示例即契约）+ meta 声明的 Ext 字段，按 category 裁剪（见 AdminProviderColumnKeysFor）。
+// label / help 是前端 i18n 键、后端不持有语言文案；options 仍是 wire 取值，前端只翻译
+// 显示名、提交值不变。区块顺序 basic → Ext 声明序 → display / policy，前端按 section
+// 分组不二次排序。unionProviderKeys 由 handler 在 oauth 类别查库注入。
 func AdminSchema(providerType, category string, extFields []provider.FieldMeta, unionProviderKeys []string) *adminv1.SchemaResponse {
 	allowed := schemaColumnKeySet(category)
 	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
@@ -155,9 +123,8 @@ func AdminSchema(providerType, category string, extFields []provider.FieldMeta, 
 	return resp
 }
 
-// schemaColumnKeySet 该类别允许出现在 schema 的表列键（含只读的
-// provider_key / category——它们不进可写白名单但必须渲染）。数据源恒为
-// AdminProviderColumnKeysFor，保证 schema 与写入 / 校验口径同源。
+// schemaColumnKeySet 该类别允许出现在 schema 的表列键（含只读的 provider_key / category）；
+// 数据源恒为 AdminProviderColumnKeysFor，保证 schema 与写入 / 校验口径同源。
 func schemaColumnKeySet(category string) map[string]bool {
 	allowed := map[string]bool{"provider_key": true, "category": true}
 	for _, key := range AdminProviderColumnKeysFor(category) {
@@ -166,10 +133,7 @@ func schemaColumnKeySet(category string) map[string]bool {
 	return allowed
 }
 
-// schemaBaselineBasic §5.3 基础信息区块基线（行 1192-1198）：category 只读
-// 字段已由页面级类型下拉取代，不再进 fields[]；union_provider 的 options
-// 为 union 类 Provider 的 provider_key 列表（行 1197）。label / help 全是
-// admin.schemaField.* i18n 键（见 AdminSchema 头注），不含中文展示文案。
+// schemaBaselineBasic 基础信息区块基线（category 只读字段不进 fields[]；label / help 全是 i18n 键）。
 func schemaBaselineBasic(unionProviderKeys []string) []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
 		{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: sectionBasic, Required: true,
@@ -182,9 +146,7 @@ func schemaBaselineBasic(unionProviderKeys []string) []*adminv1.SchemaField {
 	}
 }
 
-// schemaBaselineDisplay §5.3 展示与排序区块基线（行 1213-1217）。
-// ui_group 的 options 是写库取值，不改成 i18n 键；前端按
-// admin.schemaOption.<fieldKey>.<value> 翻译显示名后仍提交原值。
+// schemaBaselineDisplay 展示与排序区块基线；ui_group 的 options 是写库取值，不改成 i18n 键。
 func schemaBaselineDisplay() []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
 		{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: sectionDisplay,
@@ -199,7 +161,7 @@ func schemaBaselineDisplay() []*adminv1.SchemaField {
 	}
 }
 
-// schemaBaselinePolicy §5.3 策略开关区块基线（行 1219-1225）。
+// schemaBaselinePolicy 策略开关区块基线。
 func schemaBaselinePolicy() []*adminv1.SchemaField {
 	return []*adminv1.SchemaField{
 		{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: sectionPolicy,
@@ -217,12 +179,9 @@ func schemaBaselinePolicy() []*adminv1.SchemaField {
 	}
 }
 
-// schemaFieldsFromMeta 注册表 meta 声明的 Ext 字段 → SchemaField（§15.3 行
-// 1731：标签 / 渲染类型 / 默认值由适配器声明；§5.3 行 1243：section 亦由 meta
-// 声明），保持声明顺序（区块内顺序沿用 fields[] 数组顺序，§5.3 行 1185）。
-// FieldMeta 无 options / pattern（当前 Ext 字段渲染类型只有 text / secret /
-// checkbox / number / json 声明集），对应字段保持零值。meta 里的 Label / Help
-// 同样是 i18n 键（见 provider.FieldMeta 契约），本函数只做透传不翻译。
+// schemaFieldsFromMeta meta 声明的 Ext 字段 → SchemaField，保持声明顺序；FieldMeta
+// 无 options / pattern，对应字段零值。Label / Help 是 i18n 键（见 provider.FieldMeta 契约），
+// 本函数只透传不翻译。
 func schemaFieldsFromMeta(fields []provider.FieldMeta) []*adminv1.SchemaField {
 	out := make([]*adminv1.SchemaField, 0, len(fields))
 	for _, f := range fields {
@@ -240,10 +199,8 @@ func schemaFieldsFromMeta(fields []provider.FieldMeta) []*adminv1.SchemaField {
 	return out
 }
 
-// schemaDefaultValue FieldMeta.Default（string）→ 任意 JSON 默认值（§5.3 行
-// 1190：default 取值如 "social" / 0 / true）：先按 JSON 标量解析（number /
-// bool / string / null 及对象数组），解析失败按原文作字符串默认值；空串无
-// 默认值（nil，protojson 省略，§12.9 行 1775）。
+// schemaDefaultValue FieldMeta.Default（string）→ JSON 默认值：先按 JSON 标量解析，
+// 失败按原文作字符串；空串无默认值（nil，protojson 省略）。
 func schemaDefaultValue(s string) *structpb.Value {
 	if s == "" {
 		return nil
@@ -257,29 +214,20 @@ func schemaDefaultValue(s string) *structpb.Value {
 	return structpb.NewStringValue(s)
 }
 
-// extUnmarshal 提交体 → provider.Ext 的 protojson 解析选项（protojson 解析
-// 同时接受 proto 字段名与 lowerCamelCase 两种键形，§5.3 行 1183 的提交体键
-// 即 Ext 字段名 snake_case，无需选项切换）；DiscardUnknown 保险——合法键集
-// 已在 service 校验，此处仅防御注册表未声明却与 Ext 字段同名的残余键。类型
-// 不符（bool 列收到字符串等）由 protojson 报错，service 映射 invalid_request。
+// extUnmarshal 提交体 → provider.Ext 解析选项：DiscardUnknown 保险——合法键集已在
+// service 校验，此处仅防御未声明却与 Ext 同名的残余键；类型不符由 protojson 报错。
 var extUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
 
-// AdminProviderColumnKeys provider 表列中可经提交体写入的**全量**基线键集
-// （§5.3 行 1192-1225 示例即契约：display / policy 区块 + basic 区块的
-// display_name / union_provider）。不含 provider_key（service 单独校验「创建后
-// 不可改」）、category 与 type（由类型 meta 按 type 决定，只读）。
-// 消费方一律走 AdminProviderColumnKeysFor(category)，不要直接遍历本变量。
+// AdminProviderColumnKeys 可写入表列的全量基线键集（示例即契约）：不含 provider_key
+// （创建后不可改）、category 与 type（只读）。消费方一律走 AdminProviderColumnKeysFor。
 var AdminProviderColumnKeys = []string{
 	"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark",
 	"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 }
 
-// oauthOnlyProviderColumns 仅 oauth 类别可读写的表列：union_provider 承载
-// Union ID 归属，四个开关承载三方登录 / 建号 / 自动绑定策略（消费点在
-// service/thirdparty.go、account/thirdparty.go、qrcode.go）。sms / email
-// 能否注册登录由 §5.6 设置项 login_methods / allow_registration /
-// allow_signup_phone / allow_signup_email 决定，不是 provider 级；虚拟
-// Union Provider 更无登录入口。故非 oauth 类别全部裁掉。
+// oauthOnlyProviderColumns 仅 oauth 类别可读写：union_provider 与登录 / 建号 /
+// 自动绑定开关是三方 Provider 专属；sms / email 能否登录由设置项决定、虚拟 Union
+// Provider 无登录入口，故非 oauth 类别全部裁掉。
 var oauthOnlyProviderColumns = map[string]struct{}{
 	"union_provider":   {},
 	"enable_signin":    {},
@@ -288,23 +236,16 @@ var oauthOnlyProviderColumns = map[string]struct{}{
 	"auto_bind_fields": {},
 }
 
-// virtualOmittedProviderColumns 虚拟类别（category=union）连通用列也要裁掉
-// 的表列：is_enabled。虚拟 Provider 无 adapter / sender、无登录入口、不产生
-// 任何 HTTP 交互（provider/virtual.go 头注），没有任何「启用 / 停用」可开关
-// 的行为，行值恒取 DDL 默认 1；表单呈现一个改了也不生效的开关只会误导管理
-// 员。sms / email 的 is_enabled 仍需保留（消息发送链按行启用态判定）。
-// 注意：§5.2 行 1195 SetProviderEnabled 是独立的行内开关端点，不经本键集。
+// virtualOmittedProviderColumns 虚拟类别（union）连 is_enabled 也裁掉：虚拟 Provider
+// 无 adapter / sender、无登录入口，没有启用 / 停用行为，行值恒取 DDL 默认 1，表单
+// 呈现改了也不生效的开关只会误导管理员。SetProviderEnabled 是独立端点，不经本键集。
 var virtualOmittedProviderColumns = map[string]struct{}{
 	"is_enabled": {},
 }
 
-// AdminProviderColumnKeysFor 按 category 返回可写 / 可展示的表列键集（唯一
-// 真相：AdminSchema 字段过滤、ApplyProviderColumns 写入、validateSchemaKeys
-// 白名单三处共用，防止显示层与写入层漂移）。oauth 返回全量；sms / email 及
-// 任何非 oauth 类别只留通用列（display_name / icon_url / ui_group /
-// sort_order / remark / is_enabled）；union（虚拟）再裁掉 is_enabled，只剩
-// display_name / icon_url / ui_group / sort_order / remark。返回值是副本，
-// 调用方可安全持有。
+// AdminProviderColumnKeysFor 按 category 返回可写 / 可展示键集（唯一真相：schema 过滤、
+// 写入、校验白名单三处共用，防显示层与写入层漂移）。oauth 全量；非 oauth 只留通用列；
+// union 再裁 is_enabled。返回值是副本，调用方可安全持有。
 func AdminProviderColumnKeysFor(category string) []string {
 	out := make([]string, 0, len(AdminProviderColumnKeys))
 	for _, key := range AdminProviderColumnKeys {
@@ -319,13 +260,9 @@ func AdminProviderColumnKeysFor(category string) []string {
 	return out
 }
 
-// ApplyProviderColumns 把提交体中的表列基线键（按 row.Category 裁剪，见
-// AdminProviderColumnKeysFor）应用到 row（写路径：Create 从零值行起、
-// Update 从 FindByKey 读回的完整行上——未提交的键不动即「缺省键保留原值」，
-// PATCH over schema 键集。该缺省语义 docs 未明说，按默认口径处理）。
-// provider_key / category / type 不经本函数（service 层按 §5.2 行 1171
-// 「创建后不可改」与类型 meta 只读口径单独校验）。值类型不符返回错误
-// （service 映射 invalid_request）；显式 null 按清零语义落列默认值。
+// ApplyProviderColumns 把提交体表列键（按 row.Category 裁剪）应用到 row：未提交的键
+// 不动即缺省保留原值（PATCH over schema 键集）。provider_key / category / type 不经
+// 本函数（创建后不可改、只读）；值类型不符返回错误，显式 null 按清零落列默认值。
 func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value) error {
 	if row == nil {
 		return fmt.Errorf("dto: apply provider columns: nil row")
@@ -367,12 +304,9 @@ func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value
 	return nil
 }
 
-// MergeProviderExt 把提交体中属于 Ext 键集（extKeys，注册表 meta.Fields 声明
-// 的字段名集合）的值合并进原 Ext（protojson 往返：原 Ext 按 UseProtoNames 序
-// 列化为键值 map，提交值覆盖同名键，再整体解析回 provider.Ext——未提交的
-// Ext 字段保留原值，PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起
-// 点即可。类型不符由 protojson 报错（service 映射 invalid_request）。orig 为
-// nil 时按空 Ext 起点（与 ParseProviderExt 的非 nil 语义一致）。
+// MergeProviderExt 把 Ext 键集的值合并进原 Ext（protojson 往返：未提交字段保留原值，
+// PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起点，orig 为 nil 时按空 Ext；
+// 类型不符由 protojson 报错。
 func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, extKeys []string) (*providerpb.Ext, error) {
 	if orig == nil {
 		orig = &providerpb.Ext{}
@@ -403,7 +337,7 @@ func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, e
 	return out, nil
 }
 
-// columnString 表列 string 值（§1.11 text 渲染）；null 清零、非 string 报错。
+// columnString 表列 string 值；null 清零、非 string 报错。
 func columnString(v *structpb.Value) (string, error) {
 	if v == nil {
 		return "", nil
@@ -418,7 +352,7 @@ func columnString(v *structpb.Value) (string, error) {
 	}
 }
 
-// columnInt32 表列 int32 值（§1.11 number 渲染）；null 清零、非 number 报错。
+// columnInt32 表列 int32 值；null 清零、非 number 报错。
 func columnInt32(v *structpb.Value) (int32, error) {
 	if v == nil {
 		return 0, nil
@@ -437,8 +371,7 @@ func columnInt32(v *structpb.Value) (int32, error) {
 	}
 }
 
-// columnInt8Bool 表列 tinyint 开关（§1.11 checkbox 渲染，§12.9 行 1749 用 bool
-// 承载）；null 清零、非 bool 报错。
+// columnInt8Bool 表列 tinyint 开关（用 bool 承载）；null 清零、非 bool 报错。
 func columnInt8Bool(v *structpb.Value) (int8, error) {
 	if v == nil {
 		return 0, nil
@@ -456,10 +389,9 @@ func columnInt8Bool(v *structpb.Value) (int8, error) {
 	}
 }
 
-// —— 用户管理族（§5.1 行 1162、§5.4 行 1249-1255）——
+// —— 用户管理族 ——
 
-// adminStr 可空列读值（nil / 空串归一空串；admin 域 phone / email 明文——
-// §5.4 未要求掩码且管理端需真实值，掩码仅 account 域自助视图，§3.1 行 806）。
+// adminStr 可空列读值（nil / 空串归一空串；admin 域 phone / email 明文，掩码仅 account 自助视图）。
 func adminStr(p *string) string {
 	if p == nil {
 		return ""
@@ -467,9 +399,7 @@ func adminStr(p *string) string {
 	return *p
 }
 
-// AdminMe 当前管理员视图（§5.1 行 1162）：{id, username, nickname,
-// avatarUrl, isAdmin:true}——isAdmin 恒 true（非管理员在 admin 拦截器即被
-// 拦下，不会走到 handler）。
+// AdminMe 当前管理员视图；isAdmin 恒 true（非管理员在 admin 拦截器即被拦下）。
 func AdminMe(row *model.User) *adminv1.MeResponse {
 	if row == nil {
 		return &adminv1.MeResponse{}
@@ -483,8 +413,7 @@ func AdminMe(row *model.User) *adminv1.MeResponse {
 	}
 }
 
-// AdminUser user 行 → AdminUser 视图（§5.4 行 1249 列表 / 行 1250 详情内
-// 嵌套共用；字段集为 user 表列投影，user.proto 注释）。
+// AdminUser user 行 → AdminUser 视图（列表 / 详情嵌套共用，字段集为表列投影）。
 func AdminUser(row *model.User) *adminv1.AdminUser {
 	if row == nil {
 		return &adminv1.AdminUser{}
@@ -510,9 +439,7 @@ func AdminUser(row *model.User) *adminv1.AdminUser {
 	return u
 }
 
-// AdminCredentialSummary user_credential 行 → 凭证概览条目（§5.4 行 1250
-// 「凭证概览」：kind / is_enabled；secret 不透出，UserCredentialSummary 无该
-// 字段）。含全部 kind（mfa_setting 行即「MFA 已开启」的行存在性投影）。
+// AdminCredentialSummary 凭证概览条目（secret 不透出）；含全部 kind，mfa_setting 行即 MFA 已开启。
 func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSummary {
 	if row == nil {
 		return &adminv1.UserCredentialSummary{}
@@ -530,10 +457,8 @@ func AdminCredentialSummary(row *model.UserCredential) *adminv1.UserCredentialSu
 	return s
 }
 
-// AdminThirdpartyBinding user_thirdparty_bind 行 → 绑定条目（§5.4 行 1250
-// 「绑定」）。union_id 恒零值（protojson 省略）：§12.7 行 1543 普通行不存
-// unionid，Union 行的 unionid 即其 open_id 已在列表可见——union_id 字段
-// 留给未来跨行归并视图，不在本投影内拼装（默认口径，待定）。
+// AdminThirdpartyBinding 绑定条目；union_id 恒零值（protojson 省略）：普通行不存
+// unionid、Union 行的 unionid 即 open_id 已可见，该字段留给未来跨行归并视图。
 func AdminThirdpartyBinding(row *model.UserThirdpartyBind) *adminv1.UserThirdpartyBinding {
 	if row == nil {
 		return &adminv1.UserThirdpartyBinding{}
@@ -548,10 +473,7 @@ func AdminThirdpartyBinding(row *model.UserThirdpartyBind) *adminv1.UserThirdpar
 	}
 }
 
-// AdminUserDetail GetUser 详情组装（§5.4 行 1250 详情含凭证概览、绑定、
-// MFA 状态）：user 投影（含 mfa_required 列）+ 凭证概览（含 mfa_setting
-// 行存在性）+ 绑定列表 + mfa 五因子绑定明细（§3.5 行 887-898 既有视图，
-// AdminUserMfa）。
+// AdminUserDetail GetUser 详情组装：user 投影 + 凭证概览 + 绑定列表 + MFA 五因子明细。
 func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []model.UserThirdpartyBind) *adminv1.UserDetailResponse {
 	items := make([]*adminv1.UserCredentialSummary, len(creds))
 	for i := range creds {
@@ -569,16 +491,10 @@ func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []mod
 	}
 }
 
-// AdminUserMfa 用户详情的 MFA 绑定明细（§5.4 行 1250「MFA 状态」的数据
-// 面，§3.5 行 887-898 跨包既有视图）：五因子序同 mfaFactorOrder；bound
-// 判定与 account handler mfaBound 同口径（totp / webauthn / recovery_code
-// 走 user_credential 行存在且 is_enabled=1，recovery_code 另需 meta 余量
-// 非空；otp_sms / otp_email 走 phone / email 非空，target 掩码）；MFA
-// 开关（mfa_setting 行存在性）与强制（user.mfa_required 列）不在此重复
-// （§3.5 行 885：摘要走 §3.2 mfaPolicy——admin 侧由凭证概览的 mfa_setting
-// 行与 user.mfa_required 承载，默认口径）。webauthn 的 credentials
-// 计数需 user_credential_webauthn 表（WebauthnRepo，不在本实现依赖面），
-// 置零由 protojson 省略（§12.9 行 1752），待定。
+// AdminUserMfa 用户详情的 MFA 绑定明细：五因子序同 mfaFactorOrder；bound 判定与
+// account handler mfaBound 同口径（凭证行 / phone / email 非空，target 掩码）。MFA
+// 开关与强制不在此重复（由凭证概览与 user.mfa_required 承载）。webauthn credentials
+// 计数需独立表（不在本实现依赖面），置零省略、待定。
 func AdminUserMfa(user *model.User, creds []model.UserCredential) *accountv1.MfaResponse {
 	rows := map[string]*model.UserCredential{}
 	for i := range creds {
@@ -626,11 +542,8 @@ func AdminUserMfa(user *model.User, creds []model.UserCredential) *accountv1.Mfa
 	return resp
 }
 
-// AdminEventItem event_log 行 → 事件条目（§5.4 行 1255 用户登录记录 /
-// §5.6 行 1272 统一事件视图共用，EventItem 注释）：detail 为 msgpack 字节
-// → JSON 对象透出（§12.1 行 1629），解码失败按 nil 处理（附加信息缺失
-// 不影响主字段，复用 account.go decodeProfileExtra 同款口径——同为
-// msgpack map 透传，§3.1 extra 与 §12.0 detail 同源约定）。
+// AdminEventItem event_log 行 → 事件条目；detail 为 msgpack → JSON 对象，解码失败
+// 按 nil 处理（附加信息缺失不影响主字段，同 account.go decodeProfileExtra 口径）。
 func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
 	if row == nil {
 		return &adminv1.EventItem{}
@@ -651,13 +564,9 @@ func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
 	}
 }
 
-// AdminSsoClient sso_client 行 → SsoClient 消息（§5.5 行 1262 列表项与
-// GetSsoClient 详情共用，client.proto：一个消息两用）。client_secret 按
-// §5.2 行 1170 Provider 凭证明文口径透出（列表与详情同消息，仅 admin 会话
-// 可达——admin 拦截器保证，本文件不做二次脱敏也不落日志）。redirect_uris
-// 由 service 经 repo.ParseClientRedirectUris（§12.3 编解码唯一出口）解析后
-// 以 []string 传入；nil / 空切片按 proto3 空 repeated 序列化省略（空页
-// items 省略同理由，§1.7 行 278）。
+// AdminSsoClient sso_client 行 → SsoClient 消息（列表 / 详情两用）；client_secret
+// 明文透出，仅 admin 会话可达，本文件不做二次脱敏也不落日志。redirect_uris 由
+// service 解析后传入；nil / 空切片按 proto3 空 repeated 省略。
 func AdminSsoClient(row *model.SsoClient, uris []string) *adminv1.SsoClient {
 	if row == nil {
 		return &adminv1.SsoClient{}
@@ -673,10 +582,7 @@ func AdminSsoClient(row *model.SsoClient, uris []string) *adminv1.SsoClient {
 	}
 }
 
-// AdminOidcClient oidc_client 行 → OidcClient 消息（§5.5 行 1264 列表项与
-// GetOidcClient 详情共用）：SSO 字段基线 + scopes[] / accessTokenTtl /
-// refreshTokenTtl（§5.5 行 1264「额外」逐字）。uris / scopes 由 service
-// 解码 / 拆分后传入（scopes[] ↔ 逗号串转换归 service，model 注释）。
+// AdminOidcClient oidc_client 行 → OidcClient 消息（列表 / 详情两用）；uris / scopes 由 service 解码后传入。
 func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.OidcClient {
 	if row == nil {
 		return &adminv1.OidcClient{}
@@ -695,14 +601,9 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 	}
 }
 
-// AdminSettings settings 快照 → SettingsResponse 全键投影（§5.6 行 1274：
-// 字段集合 = §5.6 四张表之和；键名经 internal/settings 常量逐键对齐、零
-// 自造）。快照值恒为注册类型（string / int64 / bool / []string，经
-// settings.DecodeValue 解码），类型断言失败（不可达）按零值投影——proto
-// 消息 36 字段全部赋值；线上 JSON 零值省略是标准 protojson 行为
-// （§12.9 行 1779），前端以 GET 结果 + 默认底稿合并后整体回写；服务端
-// 按 §5.6 SetSettings 的 optional has 位 + repeated 伴生标志做部分更新
-// （PATCH；Response 不含伴生标志）。
+// AdminSettings settings 快照 → SettingsResponse 全键投影；键名经 settings 常量逐键
+// 对齐、零自造。类型断言失败按零值投影；线上 JSON 零值省略是标准 protojson 行为，
+// 前端以 GET 结果 + 默认底稿合并后整体回写（服务端按 has 位做部分更新）。
 func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 	toInt := func(k string) int64 { v, _ := snap[k].(int64); return v }
 	toBool := func(k string) bool { v, _ := snap[k].(bool); return v }
@@ -747,25 +648,18 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 	}
 }
 
-// toSlice 快照 []string 键的取值 helper（断言失败即 nil，proto3 空
-// repeated 序列化省略——settings.proto SettingsResponse 头注的恒存在
-// 口径由 protojson 输出层保证，空列表即省略）。
+// toSlice 快照 []string 键取值（断言失败即 nil，proto3 空 repeated 省略）。
 func toSlice(k string, snap map[string]any) []string {
 	v, _ := snap[k].([]string)
 	return v
 }
 
-// decodePayloadJSON DecodeToken 载荷 → Struct 的 protojson 编码（§5.6 行
-// 1276）：字段名为标准 protojson lowerCamelCase 映射（§12.9 行 1776），
-// EmitUnpopulated 使零值字段恒可见（排障视图需要完整字段集，默认）。
-// int64 按 protojson 标准编码为十进制字符串。
+// decodePayloadJSON DecodeToken 载荷 → Struct 编码：EmitUnpopulated 使零值字段恒
+// 可见（排障视图需要完整字段集）；int64 按 protojson 编码为十进制字符串。
 var decodePayloadJSON = protojson.MarshalOptions{EmitUnpopulated: true}
 
-// AdminDecodePayload DecodeToken 解出的内部载荷 → google.protobuf.Struct
-// 原样透传（tools.proto：oidc/credential 同口径，前端不解析）。
-// 载荷含敏感内容（session uid/sid、login_token ch 等）：本函数只做转换、
-// 不落日志；编码失败（不可达——载荷是已成功 unmarshal 的 proto 消息）按
-// 错误上抛，由调用方消毒为 internal。
+// AdminDecodePayload 内部载荷 → Struct 原样透传（前端不解析）。载荷含敏感内容，
+// 本函数只做转换、不落日志；编码失败（不可达）按错误上抛由调用方消毒为 internal。
 func AdminDecodePayload(msg proto.Message) (*structpb.Struct, error) {
 	b, err := decodePayloadJSON.Marshal(msg)
 	if err != nil {
