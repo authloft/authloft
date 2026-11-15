@@ -16,8 +16,8 @@ export const file_api_account_v1_profile: GenFile = /*@__PURE__*/
   fileDesc("ChxhcGkvYWNjb3VudC92MS9wcm9maWxlLnByb3RvEg5hcGkuYWNjb3VudC52MSISChBHZXRDb25maWdSZXF1ZXN0IhMKEUdldFByb2ZpbGVSZXF1ZXN0IswBCgtVc2VyUHJvZmlsZRITCgZnZW5kZXIYASABKANIAIgBARIVCghiaXJ0aGRheRgCIAEoCUgBiAEBEhMKBmxvY2FsZRgDIAEoCUgCiAEBEhUKCHRpbWV6b25lGAQgASgJSAOIAQESKwoFZXh0cmEYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0SASIAQFCCQoHX2dlbmRlckILCglfYmlydGhkYXlCCQoHX2xvY2FsZUILCglfdGltZXpvbmVCCAoGX2V4dHJhIsoCCg9Qcm9maWxlUmVzcG9uc2USCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlIpABChRVcGRhdGVQcm9maWxlUmVxdWVzdBIVCghuaWNrbmFtZRgBIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAiABKAlIAYgBARIsCgdwcm9maWxlGAMgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiSwoSQXZhdGFyVXBsb2FkQ29uZmlnEgwKBG1vZGUYASABKAkSEAoIbWF4X3NpemUYAiABKAMSFQoNYWxsb3dlZF90eXBlcxgDIAMoCSIwCg9NZmFQb2xpY3lNZXRob2QSDgoGZmFjdG9yGAEgASgJEg0KBWJvdW5kGAIgASgIImsKCU1mYVBvbGljeRIPCgdlbmFibGVkGAEgASgIEhsKE3RydXN0ZWRfZGV2aWNlX2RheXMYAiABKAMSMAoHbWV0aG9kcxgDIAMoCzIfLmFwaS5hY2NvdW50LnYxLk1mYVBvbGljeU1ldGhvZCLGAQoVQWNjb3VudENvbmZpZ1Jlc3BvbnNlEjkKDWF2YXRhcl91cGxvYWQYASABKAsyIi5hcGkuYWNjb3VudC52MS5BdmF0YXJVcGxvYWRDb25maWcSLQoKbWZhX3BvbGljeRgCIAEoCzIZLmFwaS5hY2NvdW50LnYxLk1mYVBvbGljeRItCgdjYXB0Y2hhGAMgASgLMhwuYXBpLmNvbW1vbi52MS5DYXB0Y2hhQ29uZmlnEhQKDGhhc19wYXNzd29yZBgEIAEoCCIdCg5BdmF0YXJSZXNwb25zZRILCgN1cmwYASABKAkiTAoUUHJlc2lnbkF2YXRhclJlcXVlc3QSEAoIZmlsZW5hbWUYASABKAkSFAoMY29udGVudF90eXBlGAIgASgJEgwKBHNpemUYAyABKAMiwQEKFUF2YXRhclByZXNpZ25SZXNwb25zZRILCgNrZXkYASABKAkSEgoKdXBsb2FkX3VybBgCIAEoCRJDCgdoZWFkZXJzGAMgAygLMjIuYXBpLmFjY291bnQudjEuQXZhdGFyUHJlc2lnblJlc3BvbnNlLkhlYWRlcnNFbnRyeRISCgpleHBpcmVzX2luGAQgASgDGi4KDEhlYWRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIiIKE0NvbW1pdEF2YXRhclJlcXVlc3QSCwoDa2V5GAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw", [file_google_protobuf_struct, file_api_common_v1_captcha]);
 
 /**
- * GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 行 818 入参「—」）。
- * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+ * GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 入参「—」）。
+ * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 请求 XxxRequest）。
  *
  * @generated from message api.account.v1.GetConfigRequest
  */
@@ -32,7 +32,7 @@ export const GetConfigRequestSchema: GenMessage<GetConfigRequest> = /*@__PURE__*
   messageDesc(file_api_account_v1_profile, 0);
 
 /**
- * GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 行 819 入参「—」）。
+ * GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 入参「—」）。
  *
  * @generated from message api.account.v1.GetProfileRequest
  */
@@ -47,47 +47,47 @@ export const GetProfileRequestSchema: GenMessage<GetProfileRequest> = /*@__PURE_
   messageDesc(file_api_account_v1_profile, 1);
 
 /**
- * UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
+ * UserProfile 是 §3.1 的嵌套 profile 结构（对应 user_profile 表）：
  * 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
- * 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+ * 请求的 profile 载荷（§3.2）。全字段 proto3 optional（2026-11-06
  * 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
  * 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
  * 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
- * wire 兼容，§12.9 行 1749 / §12.8）。
+ * wire 兼容，§12.9 / §12.8）。
  *
  * @generated from message api.account.v1.UserProfile
  */
 export type UserProfile = Message<"api.account.v1.UserProfile"> & {
   /**
-   * 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
+   * 性别（§3.1）：0/1/2 = 保密/男/女（ISO 5218，§3.2）。
    *
    * @generated from field: optional int64 gender = 1;
    */
   gender?: bigint | undefined;
 
   /**
-   * 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
+   * 生日，YYYY-MM-DD（§3.1）；显式空串 = 清空（§3.2）。
    *
    * @generated from field: optional string birthday = 2;
    */
   birthday?: string | undefined;
 
   /**
-   * 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+   * 语言区域，如 zh-CN（§3.1）；显式空串 = 清空（§3.2）。
    *
    * @generated from field: optional string locale = 3;
    */
   locale?: string | undefined;
 
   /**
-   * 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+   * 时区，如 Asia/Shanghai（§3.1）；显式空串 = 清空（§3.2）。
    *
    * @generated from field: optional string timezone = 4;
    */
   timezone?: string | undefined;
 
   /**
-   * user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
+   * user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1、§12.9）。
    *
    * @generated from field: optional google.protobuf.Struct extra = 5;
    */
@@ -102,72 +102,72 @@ export const UserProfileSchema: GenMessage<UserProfile> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 2);
 
 /**
- * ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 行 775-798 的
- * Authloft 用户信息结构（各端点响应即下列字段，无信封包裹，行 775）。
- * 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9 行 1749、行 1751）。
- * phone / email 的掩码在服务端完成（§3.1 行 801-812），响应不区分调用方。
+ * ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 的
+ * Authloft 用户信息结构。
+ * 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9、）。
+ * phone / email 的掩码在服务端完成（§3.1），响应不区分调用方。
  *
  * @generated from message api.account.v1.ProfileResponse
  */
 export type ProfileResponse = Message<"api.account.v1.ProfileResponse"> & {
   /**
-   * 用户 ID（§3.1 行 779）。
+   * 用户 ID（§3.1）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 登录名，只读（§3.1 行 780、§3.2 行 820）。
+   * 登录名，只读（§3.1、§3.2）。
    *
    * @generated from field: string username = 2;
    */
   username: string;
 
   /**
-   * 昵称（§3.1 行 781）。
+   * 昵称（§3.1）。
    *
    * @generated from field: string nickname = 3;
    */
   nickname: string;
 
   /**
-   * 头像地址（§3.1 行 782）。
+   * 头像地址（§3.1）。
    *
    * @generated from field: string avatar_url = 4;
    */
   avatarUrl: string;
 
   /**
-   * 手机号，自助接口返回掩码（§3.1 行 783、行 805）。
+   * 手机号，自助接口返回掩码（§3.1、）。
    *
    * @generated from field: string phone = 5;
    */
   phone: string;
 
   /**
-   * 手机号是否已验证，JSON 示例为 1/0（§3.1 行 784）。
+   * 手机号是否已验证，JSON 示例为 1/0（§3.1）。
    *
    * @generated from field: int64 phone_verified = 6;
    */
   phoneVerified: bigint;
 
   /**
-   * 邮箱，自助接口返回掩码（§3.1 行 785、行 805）。
+   * 邮箱，自助接口返回掩码（§3.1、）。
    *
    * @generated from field: string email = 7;
    */
   email: string;
 
   /**
-   * 邮箱是否已验证，JSON 示例为 1/0（§3.1 行 786）。
+   * 邮箱是否已验证，JSON 示例为 1/0（§3.1）。
    *
    * @generated from field: int64 email_verified = 8;
    */
   emailVerified: bigint;
 
   /**
-   * 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
+   * 账号状态：1 正常 0 禁用（§3.1）。业务字段名 user_status
    * （JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
    *
    * @generated from field: int64 user_status = 9;
@@ -182,35 +182,35 @@ export type ProfileResponse = Message<"api.account.v1.ProfileResponse"> & {
   mfaRequired: bigint;
 
   /**
-   * 安全版本号，便于调用方感知会话失效（§3.1 行 789）。
+   * 安全版本号，便于调用方感知会话失效（§3.1）。
    *
    * @generated from field: int64 epoch = 11;
    */
   epoch: bigint;
 
   /**
-   * 最后登录时间，Unix 秒（§3.1 行 790）。
+   * 最后登录时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 last_login_at = 12;
    */
   lastLoginAt: bigint;
 
   /**
-   * 创建时间，Unix 秒（§3.1 行 791）。
+   * 创建时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 created_at = 13;
    */
   createdAt: bigint;
 
   /**
-   * 更新时间，Unix 秒（§3.1 行 792）。
+   * 更新时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 updated_at = 14;
    */
   updatedAt: bigint;
 
   /**
-   * user_profile 表结构（§3.1 行 793-797）。
+   * user_profile 表结构（§3.1）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 15;
    */
@@ -225,33 +225,33 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 3);
 
 /**
- * UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+ * UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2）：
  * {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
  * 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
  * 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
  * 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
- * 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
- * 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
+ * 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改。成功为空
+ * 响应，返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
  *
  * @generated from message api.account.v1.UpdateProfileRequest
  */
 export type UpdateProfileRequest = Message<"api.account.v1.UpdateProfileRequest"> & {
   /**
-   * 昵称，可选（§3.2 行 837）；显式空串 = 清空。
+   * 昵称，可选（§3.2）；显式空串 = 清空。
    *
    * @generated from field: optional string nickname = 1;
    */
   nickname?: string | undefined;
 
   /**
-   * 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
+   * 头像地址，可选（§3.2）；显式空串 = 清空。
    *
    * @generated from field: optional string avatar_url = 2;
    */
   avatarUrl?: string | undefined;
 
   /**
-   * 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
+   * 用户资料，可选（§3.2，字段见 §3.1）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 3;
    */
@@ -266,12 +266,12 @@ export const UpdateProfileRequestSchema: GenMessage<UpdateProfileRequest> = /*@_
   messageDesc(file_api_account_v1_profile, 4);
 
 /**
- * OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0 行 57
+ * OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0
  * 「成功响应即 RPC 响应消息」；空消息 protojson 输出 {}）。共用方法：
- * UpdateProfile（§3.2 行 820）、ChangePassword（§3.3 行 862）、BindPhone / BindEmail
- * （§3.4 行 870-873）、SetMfa（§3.5 行 904）、RegisterWebauthn step=verify（§3.6 行 916）、
- * RenameWebauthnCredential / DeleteWebauthnCredential（§3.6 行 917-918）、
- * UnbindThirdparty（§3.7 行 937）。
+ * UpdateProfile（§3.2）、ChangePassword（§3.3）、BindPhone / BindEmail
+ * （§3.4）、SetMfa（§3.5）、RegisterWebauthn step=verify（§3.6）、
+ * RenameWebauthnCredential / DeleteWebauthnCredential（§3.6）、
+ * UnbindThirdparty（§3.7）。
  * 无 status 字段：信封顶层 status 为保留字，旧版 {ok:true} 遗留
  * 已按既定口径删除；多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE
  * 豁免（buf.yaml except，沿用既有豁免）。
@@ -289,28 +289,28 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 5);
 
 /**
- * AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2 行 818）：
- * 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy（行 825）。
+ * AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2）：
+ * 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy。
  *
  * @generated from message api.account.v1.AvatarUploadConfig
  */
 export type AvatarUploadConfig = Message<"api.account.v1.AvatarUploadConfig"> & {
   /**
-   * 上传模式：proxy｜direct（§3.2 行 818）。
+   * 上传模式：proxy｜direct（§3.2）。
    *
    * @generated from field: string mode = 1;
    */
   mode: string;
 
   /**
-   * 单文件上限（字节）（§3.2 行 818、行 851）。
+   * 单文件上限（字节）（§3.2、）。
    *
    * @generated from field: int64 max_size = 2;
    */
   maxSize: bigint;
 
   /**
-   * 允许的 MIME 白名单（§3.2 行 818、行 851）。
+   * 允许的 MIME 白名单（§3.2、）。
    *
    * @generated from field: repeated string allowed_types = 3;
    */
@@ -389,27 +389,27 @@ export const MfaPolicySchema: GenMessage<MfaPolicy> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 8);
 
 /**
- * AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2 行 818）。
+ * AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2）。
  *
  * @generated from message api.account.v1.AccountConfigResponse
  */
 export type AccountConfigResponse = Message<"api.account.v1.AccountConfigResponse"> & {
   /**
-   * 头像上传配置（§3.2 行 818）。
+   * 头像上传配置（§3.2）。
    *
    * @generated from field: api.account.v1.AvatarUploadConfig avatar_upload = 1;
    */
   avatarUpload?: AvatarUploadConfig | undefined;
 
   /**
-   * 两步验证摘要（§3.2 行 818、行 827-847）。
+   * 两步验证摘要（§3.2、）。
    *
    * @generated from field: api.account.v1.MfaPolicy mfa_policy = 2;
    */
   mfaPolicy?: MfaPolicy | undefined;
 
   /**
-   * account entry 的 captcha 配置读取处（§3.2 行 818、§2.5）；
+   * account entry 的 captcha 配置读取处（§3.2、§2.5）；
    * 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
    *
    * @generated from field: api.common.v1.CaptchaConfig captcha = 3;
@@ -417,7 +417,7 @@ export type AccountConfigResponse = Message<"api.account.v1.AccountConfigRespons
   captcha?: CaptchaConfig | undefined;
 
   /**
-   * 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2 行 818）。
+   * 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2）。
    *
    * @generated from field: bool has_password = 4;
    */
@@ -432,15 +432,15 @@ export const AccountConfigResponseSchema: GenMessage<AccountConfigResponse> = /*
   messageDesc(file_api_account_v1_profile, 9);
 
 /**
- * AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2 行 821）与
- * AccountService/CommitAvatar（行 823）的共用响应 {url}；
- * 同一结构只定义一次（§12.9 行 1748）。
+ * AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2）与
+ * AccountService/CommitAvatar的共用响应 {url}；
+ * 同一结构只定义一次（§12.9）。
  *
  * @generated from message api.account.v1.AvatarResponse
  */
 export type AvatarResponse = Message<"api.account.v1.AvatarResponse"> & {
   /**
-   * 头像地址（§3.2 行 821、行 823）。
+   * 头像地址（§3.2、）。
    *
    * @generated from field: string url = 1;
    */
@@ -455,29 +455,29 @@ export const AvatarResponseSchema: GenMessage<AvatarResponse> = /*@__PURE__*/
   messageDesc(file_api_account_v1_profile, 10);
 
 /**
- * PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2 行 822）。
- * 消息名随方法名（§12.9 行 1747「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
+ * PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2）。
+ * 消息名随方法名（§12.9「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
  * AvatarPresignRequest，Connect 化时更名）。
  *
  * @generated from message api.account.v1.PresignAvatarRequest
  */
 export type PresignAvatarRequest = Message<"api.account.v1.PresignAvatarRequest"> & {
   /**
-   * 原始文件名（§3.2 行 822）。
+   * 原始文件名（§3.2）。
    *
    * @generated from field: string filename = 1;
    */
   filename: string;
 
   /**
-   * 文件 MIME 类型，须在 allowed_types 内（§3.2 行 822、行 851）。
+   * 文件 MIME 类型，须在 allowed_types 内（§3.2、）。
    *
    * @generated from field: string content_type = 2;
    */
   contentType: string;
 
   /**
-   * 文件大小，须 ≤ max_size（§3.2 行 822、行 851）。
+   * 文件大小，须 ≤ max_size（§3.2、）。
    *
    * @generated from field: int64 size = 3;
    */
@@ -492,14 +492,14 @@ export const PresignAvatarRequestSchema: GenMessage<PresignAvatarRequest> = /*@_
   messageDesc(file_api_account_v1_profile, 11);
 
 /**
- * AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2 行 822）：
- * key 由服务端生成，前端无法覆盖（行 822）。
+ * AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2）：
+ * key 由服务端生成，前端无法覆盖。
  *
  * @generated from message api.account.v1.AvatarPresignResponse
  */
 export type AvatarPresignResponse = Message<"api.account.v1.AvatarPresignResponse"> & {
   /**
-   * 服务端生成的对象 key（§3.2 行 822）。
+   * 服务端生成的对象 key（§3.2）。
    *
    * @generated from field: string key = 1;
    */
@@ -513,14 +513,14 @@ export type AvatarPresignResponse = Message<"api.account.v1.AvatarPresignRespons
   uploadUrl: string;
 
   /**
-   * 直传时需携带的请求头，如 Content-Type（§3.2 行 822）。
+   * 直传时需携带的请求头，如 Content-Type（§3.2）。
    *
    * @generated from field: map<string, string> headers = 3;
    */
   headers: { [key: string]: string };
 
   /**
-   * 预签名有效期（秒），即 presign_ttl（§3.2 行 822、《后端架构》§15.1）。
+   * 预签名有效期（秒），即 presign_ttl（§3.2、《后端架构》§15.1）。
    *
    * @generated from field: int64 expires_in = 4;
    */
@@ -535,14 +535,14 @@ export const AvatarPresignResponseSchema: GenMessage<AvatarPresignResponse> = /*
   messageDesc(file_api_account_v1_profile, 12);
 
 /**
- * CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2 行 823）：
- * 仅记录已上传，不回读校验（行 823、行 851）。消息名随方法名（§12.9 行 1747）。
+ * CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2）：
+ * 仅记录已上传，不回读校验。消息名随方法名（§12.9）。
  *
  * @generated from message api.account.v1.CommitAvatarRequest
  */
 export type CommitAvatarRequest = Message<"api.account.v1.CommitAvatarRequest"> & {
   /**
-   * presign 阶段下发的对象 key（§3.2 行 823）。
+   * presign 阶段下发的对象 key（§3.2）。
    *
    * @generated from field: string key = 1;
    */

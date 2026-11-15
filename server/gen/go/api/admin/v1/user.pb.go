@@ -22,42 +22,42 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// AdminUser 是管理端的用户视图（§5.4 行 1246）：字段集为 user 表列投影
-// （《后端架构》§4.2），与 §3.1 行 775-798 统一用户信息结构的非嵌套字段同名同义，
+// AdminUser 是管理端的用户视图（§5.4）：字段集为 user 表列投影
+// （《后端架构》§4.2），与 §3.1 统一用户信息结构的非嵌套字段同名同义，
 // 不含 user_profile 嵌套（§5.4 未要求）。
-// 用户状态字段一律 user_status（§5.4 行 1246-1248）。
+// 用户状态字段一律 user_status（§5.4）。
 // 不跨包引用 api.account.v1.ProfileResponse：两者结构虽已同名同义（account 域
 // status=9 已改名 user_status），但 admin 视图为独立投影、允许与自助视图
 // 独立演进；如需切换为复用，另行定夺。
 type AdminUser struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 用户 ID（§3.1 行 779）。
+	// 用户 ID（§3.1）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 登录名（§3.1 行 780）。
+	// 登录名（§3.1）。
 	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	// 昵称（§3.1 行 781）。
+	// 昵称（§3.1）。
 	Nickname string `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 头像地址（§3.1 行 782）。
+	// 头像地址（§3.1）。
 	AvatarUrl string `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	// 手机号（《后端架构》§4.2）。
 	Phone string `protobuf:"bytes,5,opt,name=phone,proto3" json:"phone,omitempty"`
 	// 邮箱（《后端架构》§4.2）。
 	Email string `protobuf:"bytes,6,opt,name=email,proto3" json:"email,omitempty"`
-	// 手机号是否已验证，JSON 为 1/0（§3.1 行 784）。
+	// 手机号是否已验证，JSON 为 1/0（§3.1）。
 	PhoneVerified int64 `protobuf:"varint,7,opt,name=phone_verified,json=phoneVerified,proto3" json:"phone_verified,omitempty"`
-	// 邮箱是否已验证，JSON 为 1/0（§3.1 行 786）。
+	// 邮箱是否已验证，JSON 为 1/0（§3.1）。
 	EmailVerified int64 `protobuf:"varint,8,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
-	// 账号状态：1 正常 0 禁用（§5.4 行 1248 {id, userStatus: 0 或 1}）。
+	// 账号状态：1 正常 0 禁用（§5.4 {id, userStatus: 0 或 1}）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
 	// 用户自助两步验证开关（§3.1）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
-	// 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1 行 789、《后端架构》§4.2）。
+	// 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1、《后端架构》§4.2）。
 	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// 最后登录时间，Unix 秒（§3.1 行 790）。
+	// 最后登录时间，Unix 秒（§3.1）。
 	LastLoginAt int64 `protobuf:"varint,12,opt,name=last_login_at,json=lastLoginAt,proto3" json:"last_login_at,omitempty"`
-	// 创建时间，Unix 秒（§3.1 行 791）。
+	// 创建时间，Unix 秒（§3.1）。
 	CreatedAt int64 `protobuf:"varint,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// 更新时间，Unix 秒（§3.1 行 792）。
+	// 更新时间，Unix 秒（§3.1）。
 	UpdatedAt     int64 `protobuf:"varint,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -191,24 +191,24 @@ func (x *AdminUser) GetUpdatedAt() int64 {
 	return 0
 }
 
-// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4 行 1246：
-// 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5 行 1153）。
-// 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名 UserListRequest，
+// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：
+// 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5）。
+// 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional。
+// 消息名随方法名（§12.9；pre-connect 时代按资源命名 UserListRequest，
 // Connect 化时更名）。
 type ListUsersRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 搜索词（§5.4 行 1246）。
+	// 搜索词（§5.4）。
 	Q *string `protobuf:"bytes,1,opt,name=q,proto3,oneof" json:"q,omitempty"`
-	// 按账号状态过滤：1 正常 0 禁用（§5.4 行 1246）。
+	// 按账号状态过滤：1 正常 0 禁用（§5.4）。
 	UserStatus *int64 `protobuf:"varint,2,opt,name=user_status,json=userStatus,proto3,oneof" json:"user_status,omitempty"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,3,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,5,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,6,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -286,17 +286,17 @@ func (x *ListUsersRequest) GetOrder() string {
 	return ""
 }
 
-// UserListResponse 是 AdminService/ListUsers 的响应（§5.4 行 1246、§1.7 行 278）。
+// UserListResponse 是 AdminService/ListUsers 的响应（§5.4、§1.7）。
 // 响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type UserListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*AdminUser `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -360,12 +360,12 @@ func (x *UserListResponse) GetPageSize() int64 {
 	return 0
 }
 
-// GetUserRequest 是 AdminService/GetUser 的请求（§5.4 行 1247：{id} 详情）。
+// GetUserRequest 是 AdminService/GetUser 的请求（§5.4：{id} 详情）。
 // pre-connect 时代 id 在 REST 路径 /users/{id} 中，Connect 化后路径参数进请求消息
-// （§1.7 行 277 同口径）。
+// （§1.7 同口径）。
 type GetUserRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1247）。
+	// 目标用户 ID（§5.4）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -408,14 +408,14 @@ func (x *GetUserRequest) GetId() int64 {
 	return 0
 }
 
-// UserCredentialSummary 是用户详情的凭证概览条目（§5.4 行 1247「含凭证概览」）：
+// UserCredentialSummary 是用户详情的凭证概览条目（§5.4「含凭证概览」）：
 // user_credential 行的管理端投影（《后端架构》§4.3），secret 永不透出。
 type UserCredentialSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 凭证 ID（《后端架构》§4.3）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	// 凭证类型 password|totp|webauthn|recovery_code（《后端架构》§4.3）；
-	// 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// 跨版本可能新增，用 string 承载（§12.9）。
 	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// 用户自定义名称（《后端架构》§4.3）。
 	Label string `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
@@ -501,7 +501,7 @@ func (x *UserCredentialSummary) GetCreatedAt() int64 {
 	return 0
 }
 
-// UserThirdpartyBinding 是用户详情的第三方绑定条目（§5.4 行 1247「绑定」、行 1250）：
+// UserThirdpartyBinding 是用户详情的第三方绑定条目（§5.4「绑定」、）：
 // user_thirdparty_bind 行的投影（《后端架构》§4.3）；
 // extra 为 msgpack 原始资料、仅排查用，不透出（§12.1）。
 type UserThirdpartyBinding struct {
@@ -603,17 +603,17 @@ func (x *UserThirdpartyBinding) GetCreatedAt() int64 {
 	return 0
 }
 
-// UserDetailResponse 是 AdminService/GetUser 的响应（§5.4 行 1247
+// UserDetailResponse 是 AdminService/GetUser 的响应（§5.4
 // 「详情（含凭证概览、绑定、MFA 状态）」）。
 type UserDetailResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 用户基础视图（user 表列投影）。
 	User *AdminUser `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	// 凭证概览，secret 不透出（§5.4 行 1247）。
+	// 凭证概览，secret 不透出（§5.4）。
 	Credentials []*UserCredentialSummary `protobuf:"bytes,2,rep,name=credentials,proto3" json:"credentials,omitempty"`
-	// 已绑定的第三方身份（§5.4 行 1247、行 1250）。
+	// 已绑定的第三方身份（§5.4、）。
 	Bindings []*UserThirdpartyBinding `protobuf:"bytes,3,rep,name=bindings,proto3" json:"bindings,omitempty"`
-	// MFA 绑定明细，跨包引用 §3.5 行 887-898 的既有视图，不复制同构消息（§12.9 行 1748）。
+	// MFA 绑定明细，跨包引用 §3.5 的既有视图，不复制同构消息（§12.9）。
 	Mfa           *v1.MfaResponse `protobuf:"bytes,4,opt,name=mfa,proto3" json:"mfa,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -677,16 +677,16 @@ func (x *UserDetailResponse) GetMfa() *v1.MfaResponse {
 	return nil
 }
 
-// UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4 行 1248：
+// UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
 // {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
-// pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留），
-// Connect 化后 id 进请求消息，字段顺序同 §5.4 行 1248 示例；
-// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+// pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
+// Connect 化后 id 进请求消息，字段顺序同 §5.4 示例；
+// 消息名随方法名（§12.9）。成功返回 OkResponse。
 type UpdateUserStatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1248）。
+	// 目标用户 ID（§5.4）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 目标状态：1 启用 0 禁用（§5.4 行 1248）。
+	// 目标状态：1 启用 0 禁用（§5.4）。
 	UserStatus    int64 `protobuf:"varint,2,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -737,14 +737,14 @@ func (x *UpdateUserStatusRequest) GetUserStatus() int64 {
 }
 
 // ResetUserPasswordRequest 是 AdminService/ResetUserPassword 的请求
-// （§5.4 行 1249：{id, password} 管理员重置）。须满足 §5.6 密码策略；
+// （§5.4：{id, password} 管理员重置）。须满足 §5.6 密码策略；
 // id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
-// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+// 消息名随方法名（§12.9）。成功返回 OkResponse。
 type ResetUserPasswordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1249）。
+	// 目标用户 ID（§5.4）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 新密码，按 §5.6 密码策略校验（§5.4 行 1249）。
+	// 新密码，按 §5.6 密码策略校验（§5.4）。
 	Password      string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -795,14 +795,14 @@ func (x *ResetUserPasswordRequest) GetPassword() string {
 }
 
 // UnbindUserThirdpartyRequest 是 AdminService/UnbindUserThirdparty 的请求
-// （§5.4 行 1250：{id, providerKey} 解绑第三方）。pre-connect 时代两个参数都在
+// （§5.4：{id, providerKey} 解绑第三方）。pre-connect 时代两个参数都在
 // REST 路径 /users/{id}/thirdparty/{provider_key} 中，Connect 化后进请求消息。
 // 成功返回 OkResponse。
 type UnbindUserThirdpartyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1250）。
+	// 目标用户 ID（§5.4）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 要解绑的第三方渠道标识（§5.4 行 1250）。
+	// 要解绑的第三方渠道标识（§5.4）。
 	ProviderKey   string `protobuf:"bytes,2,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -852,12 +852,12 @@ func (x *UnbindUserThirdpartyRequest) GetProviderKey() string {
 	return ""
 }
 
-// UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4 行 1251：{id} 解除登录限制）：
+// UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4：{id} 解除登录限制）：
 // 清 al:pwf / al:pwban 的 uid 维度键，并按该用户当前手机号 / 邮箱重算
 // IP + 账号 维度的键一并清除（后端 §8.1）。成功返回 OkResponse。
 type UnlockUserRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1251）。
+	// 目标用户 ID（§5.4）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -900,21 +900,21 @@ func (x *UnlockUserRequest) GetId() int64 {
 	return 0
 }
 
-// GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4 行 1252：
+// GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4：
 // {id} + 分页，该用户登录记录）；记录范围为登录相关事件，事件类型不在查询参数中重复。
 // id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
-// 消息名随方法名（§12.9 行 1747）。
+// 消息名随方法名（§12.9）。
 type GetUserEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标用户 ID（§5.4 行 1252）。
+	// 目标用户 ID（§5.4）。
 	Id *int64 `protobuf:"varint,1,opt,name=id,proto3,oneof" json:"id,omitempty"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,2,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,4,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,5,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -985,18 +985,18 @@ func (x *GetUserEventsRequest) GetOrder() string {
 	return ""
 }
 
-// UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4 行 1252、§1.7 行 278）；
-// 条目复用本域 events.proto 的 EventItem（§5.6 行 1272 同一事件模型，
+// UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4、§1.7）；
+// 条目复用本域 events.proto 的 EventItem（§5.6 同一事件模型，
 // 管理员与本人两种视图共用一张表）。响应名沿用资源式命名（buf 豁免同上）。
 type UserEventsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*EventItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

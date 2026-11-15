@@ -22,28 +22,28 @@ const (
 )
 
 // TokenRequest 是 `POST /api/oidc/token` 的请求参数集
-// （docs/接口文档.md §4.3，行 1091-1096）。
-// 传输形态为 application/x-www-form-urlencoded（OIDC 标准，全站唯一例外，行 1089）；
-// /api/oidc/** 恒 JSON、不参与 §1.1.1 的 Protobuf body 协商（行 104），
-// 本消息作为 Go 结构体的单一结构源（§12.9 行 1747「只从 .proto 生成」）。
-// 两种 grant_type（行 1093-1094）按取值使用其中一部分字段，全字段并集建模。
+// （docs/接口文档.md §4.3）。
+// 传输形态为 application/x-www-form-urlencoded（OIDC 标准，全站唯一例外）；
+// /api/oidc/** 恒 JSON、不参与 §1.1.1 的 Protobuf body 协商，
+// 本消息作为 Go 结构体的单一结构源（§12.9「只从 .proto 生成」）。
+// 两种 grant_type按取值使用其中一部分字段，全字段并集建模。
 type TokenRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 授权类型：authorization_code｜refresh_token（行 1093-1094）；固定支持这两种、
-	// 全部客户端一致（行 1096），其他取值返回 error=unsupported_grant_type；
-	// 封闭集合用 string 承载（§12.9 行 1752）。
+	// 授权类型：authorization_code｜refresh_token；固定支持这两种、
+	// 全部客户端一致，其他取值返回 error=unsupported_grant_type；
+	// 封闭集合用 string 承载（§12.9）。
 	GrantType string `protobuf:"bytes,1,opt,name=grant_type,json=grantType,proto3" json:"grant_type,omitempty"`
-	// authorization_code：一次性授权码（§4.2 行 1079，TTL 120 秒，GETDEL 消费）。
+	// authorization_code：一次性授权码（§4.2，TTL 120 秒，GETDEL 消费）。
 	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
-	// authorization_code：回调地址，须与签发授权码时一致（《后端架构》§14.2 行 1589）。
+	// authorization_code：回调地址，须与签发授权码时一致（《后端架构》§14.2）。
 	RedirectUri string `protobuf:"bytes,3,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
-	// 两种 grant_type 均必带（行 1093-1094）。
+	// 两种 grant_type 均必带。
 	ClientId string `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 两种 grant_type 均必带（行 1093-1094；或 PKCE 场景 §4.1 行 1050）。
+	// 两种 grant_type 均必带（或 PKCE 场景 §4.1）。
 	ClientSecret string `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// authorization_code + PKCE：校验码（§4.2 行 1064，仅 S256）。
+	// authorization_code + PKCE：校验码（§4.2，仅 S256）。
 	CodeVerifier string `protobuf:"bytes,6,opt,name=code_verifier,json=codeVerifier,proto3" json:"code_verifier,omitempty"`
-	// refresh_token：待刷新令牌（行 1094）。
+	// refresh_token：待刷新令牌。
 	RefreshToken  string `protobuf:"bytes,7,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -128,22 +128,22 @@ func (x *TokenRequest) GetRefreshToken() string {
 	return ""
 }
 
-// TokenResponse 是 `POST /api/oidc/token` 的响应（行 1093：两种 grant_type 响应同构）。
-// OIDC 标准端点按 OAuth2/OIDC RFC 格式平铺、豁免 §1.0 统一信封（§1.0 行 64），
-// 顶层无 status 字段，本消息即完整响应体；字段名与行 1093 示例逐字一致（§12.9 行 1748）。
+// TokenResponse 是 `POST /api/oidc/token` 的响应（两种 grant_type 响应同构）。
+// OIDC 标准端点按 OAuth2/OIDC RFC 格式平铺、豁免 §1.0 统一信封（§1.0），
+// 顶层无 status 字段，本消息即完整响应体；字段名与 示例逐字一致（§12.9）。
 type TokenResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 访问令牌，JWT RS256、含 epoch（§4.7 行 1131）。
+	// 访问令牌，JWT RS256、含 epoch（§4.7）。
 	AccessToken string `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
-	// 恒为 "Bearer"（行 1093）。
+	// 恒为 "Bearer"。
 	TokenType string `protobuf:"bytes,2,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"`
-	// 有效期（秒），默认 3600（行 1093、§4.7 行 1130-1131）；整型一律 int64（§12.9 行 1750）。
+	// 有效期（秒），默认 3600（§4.7）；整型一律 int64（§12.9）。
 	ExpiresIn int64 `protobuf:"varint,3,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
-	// 刷新令牌，opaque、sha256 落库（§4.7 行 1132）；Refresh Token 轮换可选（行 1094）。
+	// 刷新令牌，opaque、sha256 落库（§4.7）；Refresh Token 轮换可选。
 	RefreshToken string `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
-	// 身份令牌，JWT RS256，含 iss/sub/aud/exp/iat/nonce/amr/epoch（§4.7 行 1130）。
+	// 身份令牌，JWT RS256，含 iss/sub/aud/exp/iat/nonce/amr/epoch（§4.7）。
 	IdToken string `protobuf:"bytes,5,opt,name=id_token,json=idToken,proto3" json:"id_token,omitempty"`
-	// 实际授权的 scope，空格分隔（行 1093）。
+	// 实际授权的 scope，空格分隔。
 	Scope         string `protobuf:"bytes,6,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -221,15 +221,15 @@ func (x *TokenResponse) GetScope() string {
 	return ""
 }
 
-// RevokeRequest 是 `POST /api/oidc/revoke` 的请求（§4.4 行 1100：
+// RevokeRequest 是 `POST /api/oidc/revoke` 的请求（§4.4：
 // {token, token_type_hint:"refresh_token"}）。RFC 7009 标准端点、豁免 §1.0 信封
-// （§1.0 行 64）；成功为 HTTP 200 空响应体（行 1100），无响应消息可建；
-// 仅影响该令牌、不影响 SSO 会话（行 1100）。
+// （§1.0）；成功为 HTTP 200 空响应体，无响应消息可建；
+// 仅影响该令牌、不影响 SSO 会话。
 type RevokeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 待吊销令牌（行 1100）。
+	// 待吊销令牌。
 	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
-	// 令牌类型提示，取值 refresh_token（行 1100）。
+	// 令牌类型提示，取值 refresh_token。
 	TokenTypeHint string `protobuf:"bytes,2,opt,name=token_type_hint,json=tokenTypeHint,proto3" json:"token_type_hint,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

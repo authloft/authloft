@@ -14,21 +14,21 @@ export const file_token_sync_cookie: GenFile = /*@__PURE__*/
 
 /**
  * SyncCookiePayload 是多域名会话同步载荷——跳转链状态（docs/后端架构.md
- * §11.2 行 1199-1206）。前端不解析，服务端加密后拼进跳转 URL 的 query；
- * 字段名 / 编号 / 类型与行 1200-1205 的 protobuf 定义逐字一致。
+ * §11.2）。前端不解析，服务端加密后拼进跳转 URL 的 query；
+ * 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
  *
  * @generated from message token.SyncCookiePayload
  */
 export type SyncCookiePayload = Message<"token.SyncCookiePayload"> & {
   /**
-   * 会话 Cookie 名称（行 1200）。
+   * 会话 Cookie 名称。
    *
    * @generated from field: string cookie_name = 1;
    */
   cookieName: string;
 
   /**
-   * 会话 Cookie 值；登出场景为空串（行 1201）。
+   * 会话 Cookie 值；登出场景为空串。
    *
    * @generated from field: string cookie_value = 2;
    */
@@ -36,28 +36,28 @@ export type SyncCookiePayload = Message<"token.SyncCookiePayload"> & {
 
   /**
    * 会话 Cookie 有效期；登出场景为 "0"；接收端原样透传给 Set-Cookie，
-   * 不解析数值（行 1202）。
+   * 不解析数值。
    *
    * @generated from field: string cookie_ttl = 3;
    */
   cookieTtl: string;
 
   /**
-   * 剩余未跳转的同步地址，不含本次首跳（行 1203）。
+   * 剩余未跳转的同步地址，不含本次首跳。
    *
    * @generated from field: repeated string remaining = 4;
    */
   remaining: string[];
 
   /**
-   * 最终跳转地址，不带载荷、不会再被本端点处理（行 1204）。
+   * 最终跳转地址，不带载荷、不会再被本端点处理。
    *
    * @generated from field: string final_url = 5;
    */
   finalUrl: string;
 
   /**
-   * 载荷过期时间，Unix 秒（行 1205）。
+   * 载荷过期时间，Unix 秒。
    *
    * @generated from field: int64 exp = 6;
    */

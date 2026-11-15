@@ -14,7 +14,7 @@ export const file_api_admin_v1_client: GenFile = /*@__PURE__*/
 
 /**
  * SsoClient 是 AdminService/ListSsoClients 的列表项，也是 GetSsoClient 的详情响应：
- * 字段 client_id、client_secret、name、redirectUris[]（支持 *）取自 §5.5 行 1258 逐字，
+ * 字段 client_id、client_secret、name、redirectUris[]（支持 *）取自 §5.5 逐字，
  * id / created_at / updated_at 为《后端架构》§4.4 的行投影（§5.5 未列出，列表与详情
  * 按行透出）。sso_client.is_enabled 无对应端点行为，不在报文中出现。
  *
@@ -23,35 +23,35 @@ export const file_api_admin_v1_client: GenFile = /*@__PURE__*/
 export type SsoClient = Message<"api.admin.v1.SsoClient"> & {
   /**
    * 数据库自增 ID，GetSsoClient / UpdateSsoClient / DeleteSsoClient 的目标 id
-   * （§5.5 行 1259、《后端架构》§4.4）。
+   * （§5.5、《后端架构》§4.4）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 客户端标识，全局唯一（§5.5 行 1258、《后端架构》§4.4）。
+   * 客户端标识，全局唯一（§5.5、《后端架构》§4.4）。
    *
    * @generated from field: string client_id = 2;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1258、《后端架构》§4.4）。
+   * 客户端密钥（§5.5、《后端架构》§4.4）。
    *
    * @generated from field: string client_secret = 3;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1258、《后端架构》§4.4）。
+   * 展示名（§5.5、《后端架构》§4.4）。
    *
    * @generated from field: string name = 4;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配、整段匹配（§5.5 行 1258、§12.3）。
+   * 回调白名单，支持 * 通配、整段匹配（§5.5、§12.3）。
    *
    * @generated from field: repeated string redirect_uris = 5;
    */
@@ -80,37 +80,37 @@ export const SsoClientSchema: GenMessage<SsoClient> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_client, 0);
 
 /**
- * ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5 行 1258）；
- * 所有列表支持 §1.7 分页（§5 行 1153）。分页与排序字段进请求消息（§1.7 行 277），
- * 缺省即服务端默认分页，一律 optional。消息名随方法名（§12.9 行 1747；
+ * ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5）；
+ * 所有列表支持 §1.7 分页（§5）。分页与排序字段进请求消息（§1.7）
+ * 缺省即服务端默认分页，一律 optional。消息名随方法名（§12.9；
  * pre-connect 时代按资源命名 SsoClientListRequest，Connect 化时更名）。
  *
  * @generated from message api.admin.v1.ListSsoClientsRequest
  */
 export type ListSsoClientsRequest = Message<"api.admin.v1.ListSsoClientsRequest"> & {
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 1;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 2;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 3;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 4;
    */
@@ -125,35 +125,35 @@ export const ListSsoClientsRequestSchema: GenMessage<ListSsoClientsRequest> = /*
   messageDesc(file_api_admin_v1_client, 1);
 
 /**
- * SsoClientListResponse 是 AdminService/ListSsoClients 的响应（§5.5 行 1258、§1.7 行 278）。
+ * SsoClientListResponse 是 AdminService/ListSsoClients 的响应（§5.5、§1.7）。
  * 响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
  *
  * @generated from message api.admin.v1.SsoClientListResponse
  */
 export type SsoClientListResponse = Message<"api.admin.v1.SsoClientListResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.SsoClient items = 1;
    */
   items: SsoClient[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */
@@ -168,37 +168,37 @@ export const SsoClientListResponseSchema: GenMessage<SsoClientListResponse> = /*
   messageDesc(file_api_admin_v1_client, 2);
 
 /**
- * CreateSsoClientRequest 是 AdminService/CreateSsoClient 的请求（§5.5 行 1258 新建）：
+ * CreateSsoClientRequest 是 AdminService/CreateSsoClient 的请求（§5.5 新建）：
  * id 由服务端分配，不进请求体。成功返回 OkResponse。
  * pre-connect 时代与编辑共用 SsoClientSaveRequest，Connect 化后随方法名分立
- * （编辑须携带路径参数 id，消息名随方法名，§12.9 行 1747）。
+ * （编辑须携带路径参数 id，消息名随方法名，§12.9）。
  *
  * @generated from message api.admin.v1.CreateSsoClientRequest
  */
 export type CreateSsoClientRequest = Message<"api.admin.v1.CreateSsoClientRequest"> & {
   /**
-   * 客户端标识（§5.5 行 1258）。
+   * 客户端标识（§5.5）。
    *
    * @generated from field: string client_id = 1;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1258）。
+   * 客户端密钥（§5.5）。
    *
    * @generated from field: string client_secret = 2;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1258）。
+   * 展示名（§5.5）。
    *
    * @generated from field: string name = 3;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配（§5.5 行 1258）。
+   * 回调白名单，支持 * 通配（§5.5）。
    *
    * @generated from field: repeated string redirect_uris = 4;
    */
@@ -213,14 +213,14 @@ export const CreateSsoClientRequestSchema: GenMessage<CreateSsoClientRequest> = 
   messageDesc(file_api_admin_v1_client, 3);
 
 /**
- * GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5 行 1259）。
+ * GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5）。
  * id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
  *
  * @generated from message api.admin.v1.GetSsoClientRequest
  */
 export type GetSsoClientRequest = Message<"api.admin.v1.GetSsoClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1259）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */
@@ -235,43 +235,43 @@ export const GetSsoClientRequestSchema: GenMessage<GetSsoClientRequest> = /*@__P
   messageDesc(file_api_admin_v1_client, 4);
 
 /**
- * UpdateSsoClientRequest 是 AdminService/UpdateSsoClient 的请求（§5.5 行 1259 编辑）：
- * 字段同 §5.5 行 1258，另携带目标 id（pre-connect 时代的 REST 路径参数）。
+ * UpdateSsoClientRequest 是 AdminService/UpdateSsoClient 的请求（§5.5 编辑）：
+ * 字段同 §5.5，另携带目标 id（pre-connect 时代的 REST 路径参数）。
  * 成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.UpdateSsoClientRequest
  */
 export type UpdateSsoClientRequest = Message<"api.admin.v1.UpdateSsoClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1259）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 客户端标识（§5.5 行 1258）。
+   * 客户端标识（§5.5）。
    *
    * @generated from field: string client_id = 2;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1258）。
+   * 客户端密钥（§5.5）。
    *
    * @generated from field: string client_secret = 3;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1258）。
+   * 展示名（§5.5）。
    *
    * @generated from field: string name = 4;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配（§5.5 行 1258）。
+   * 回调白名单，支持 * 通配（§5.5）。
    *
    * @generated from field: repeated string redirect_uris = 5;
    */
@@ -286,14 +286,14 @@ export const UpdateSsoClientRequestSchema: GenMessage<UpdateSsoClientRequest> = 
   messageDesc(file_api_admin_v1_client, 5);
 
 /**
- * DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5 行 1259）。
+ * DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5）。
  * 成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.DeleteSsoClientRequest
  */
 export type DeleteSsoClientRequest = Message<"api.admin.v1.DeleteSsoClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1259）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */
@@ -310,63 +310,63 @@ export const DeleteSsoClientRequestSchema: GenMessage<DeleteSsoClientRequest> = 
 /**
  * OidcClient 是 AdminService/ListOidcClients 的列表项，也是 GetOidcClient 的详情响应：
  * 在 SSO 字段基线上额外增加 scopes[]、accessTokenTtl、refreshTokenTtl
- * （§5.5 行 1261「额外」逐字），id / created_at / updated_at 为《后端架构》§4.5 的行投影。
+ * （§5.5「额外」逐字），id / created_at / updated_at 为《后端架构》§4.5 的行投影。
  *
  * @generated from message api.admin.v1.OidcClient
  */
 export type OidcClient = Message<"api.admin.v1.OidcClient"> & {
   /**
    * 数据库自增 ID，GetOidcClient / UpdateOidcClient / DeleteOidcClient 的目标 id
-   * （§5.5 行 1261、《后端架构》§4.5）。
+   * （§5.5、《后端架构》§4.5）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 客户端标识，全局唯一（§5.5 行 1260、《后端架构》§4.5）。
+   * 客户端标识，全局唯一（§5.5、《后端架构》§4.5）。
    *
    * @generated from field: string client_id = 2;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1260、《后端架构》§4.5）。
+   * 客户端密钥（§5.5、《后端架构》§4.5）。
    *
    * @generated from field: string client_secret = 3;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1260、《后端架构》§4.5）。
+   * 展示名（§5.5、《后端架构》§4.5）。
    *
    * @generated from field: string name = 4;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配、整段匹配（§5.5 行 1260、§12.3）。
+   * 回调白名单，支持 * 通配、整段匹配（§5.5、§12.3）。
    *
    * @generated from field: repeated string redirect_uris = 5;
    */
   redirectUris: string[];
 
   /**
-   * 授权范围（§5.5 行 1260）；库内逗号分隔存储，报文按数组承载（§12.9 行 1749）。
+   * 授权范围（§5.5）；库内逗号分隔存储，报文按数组承载（§12.9）。
    *
    * @generated from field: repeated string scopes = 6;
    */
   scopes: string[];
 
   /**
-   * 访问令牌有效期（秒），默认 3600（§5.5 行 1260、《后端架构》§4.5）。
+   * 访问令牌有效期（秒），默认 3600（§5.5、《后端架构》§4.5）。
    *
    * @generated from field: int64 access_token_ttl = 7;
    */
   accessTokenTtl: bigint;
 
   /**
-   * 刷新令牌有效期（秒），默认 2592000（§5.5 行 1260、《后端架构》§4.5）。
+   * 刷新令牌有效期（秒），默认 2592000（§5.5、《后端架构》§4.5）。
    *
    * @generated from field: int64 refresh_token_ttl = 8;
    */
@@ -395,35 +395,35 @@ export const OidcClientSchema: GenMessage<OidcClient> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_client, 7);
 
 /**
- * ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5 行 1260）；
- * 所有列表支持 §1.7 分页（§5 行 1153）。消息名随方法名（§12.9 行 1747）。
+ * ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5）；
+ * 所有列表支持 §1.7 分页（§5）。消息名随方法名（§12.9）。
  *
  * @generated from message api.admin.v1.ListOidcClientsRequest
  */
 export type ListOidcClientsRequest = Message<"api.admin.v1.ListOidcClientsRequest"> & {
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 1;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 2;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 3;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 4;
    */
@@ -438,35 +438,35 @@ export const ListOidcClientsRequestSchema: GenMessage<ListOidcClientsRequest> = 
   messageDesc(file_api_admin_v1_client, 8);
 
 /**
- * OidcClientListResponse 是 AdminService/ListOidcClients 的响应（§5.5 行 1260、§1.7 行 278）。
+ * OidcClientListResponse 是 AdminService/ListOidcClients 的响应（§5.5、§1.7）。
  * 响应名沿用资源式命名（buf 豁免同上）。
  *
  * @generated from message api.admin.v1.OidcClientListResponse
  */
 export type OidcClientListResponse = Message<"api.admin.v1.OidcClientListResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.OidcClient items = 1;
    */
   items: OidcClient[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */
@@ -481,7 +481,7 @@ export const OidcClientListResponseSchema: GenMessage<OidcClientListResponse> = 
   messageDesc(file_api_admin_v1_client, 9);
 
 /**
- * CreateOidcClientRequest 是 AdminService/CreateOidcClient 的请求（§5.5 行 1260 新建）：
+ * CreateOidcClientRequest 是 AdminService/CreateOidcClient 的请求（§5.5 新建）：
  * id 由服务端分配，不进请求体。成功返回 OkResponse。
  * pre-connect 时代与编辑共用 OidcClientSaveRequest，Connect 化后随方法名分立。
  *
@@ -489,49 +489,49 @@ export const OidcClientListResponseSchema: GenMessage<OidcClientListResponse> = 
  */
 export type CreateOidcClientRequest = Message<"api.admin.v1.CreateOidcClientRequest"> & {
   /**
-   * 客户端标识（§5.5 行 1260）。
+   * 客户端标识（§5.5）。
    *
    * @generated from field: string client_id = 1;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1260）。
+   * 客户端密钥（§5.5）。
    *
    * @generated from field: string client_secret = 2;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1260）。
+   * 展示名（§5.5）。
    *
    * @generated from field: string name = 3;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配（§5.5 行 1260）。
+   * 回调白名单，支持 * 通配（§5.5）。
    *
    * @generated from field: repeated string redirect_uris = 4;
    */
   redirectUris: string[];
 
   /**
-   * 授权范围（§5.5 行 1260）。
+   * 授权范围（§5.5）。
    *
    * @generated from field: repeated string scopes = 5;
    */
   scopes: string[];
 
   /**
-   * 访问令牌有效期（秒）（§5.5 行 1260）。
+   * 访问令牌有效期（秒）（§5.5）。
    *
    * @generated from field: int64 access_token_ttl = 6;
    */
   accessTokenTtl: bigint;
 
   /**
-   * 刷新令牌有效期（秒）（§5.5 行 1260）。
+   * 刷新令牌有效期（秒）（§5.5）。
    *
    * @generated from field: int64 refresh_token_ttl = 7;
    */
@@ -546,14 +546,14 @@ export const CreateOidcClientRequestSchema: GenMessage<CreateOidcClientRequest> 
   messageDesc(file_api_admin_v1_client, 10);
 
 /**
- * GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5 行 1261）。
+ * GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5）。
  * id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
  *
  * @generated from message api.admin.v1.GetOidcClientRequest
  */
 export type GetOidcClientRequest = Message<"api.admin.v1.GetOidcClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1261）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */
@@ -568,63 +568,63 @@ export const GetOidcClientRequestSchema: GenMessage<GetOidcClientRequest> = /*@_
   messageDesc(file_api_admin_v1_client, 11);
 
 /**
- * UpdateOidcClientRequest 是 AdminService/UpdateOidcClient 的请求（§5.5 行 1261 编辑）：
- * 字段同 §5.5 行 1260，另携带目标 id。成功返回 OkResponse。
+ * UpdateOidcClientRequest 是 AdminService/UpdateOidcClient 的请求（§5.5 编辑）：
+ * 字段同 §5.5，另携带目标 id。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.UpdateOidcClientRequest
  */
 export type UpdateOidcClientRequest = Message<"api.admin.v1.UpdateOidcClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1261）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 客户端标识（§5.5 行 1260）。
+   * 客户端标识（§5.5）。
    *
    * @generated from field: string client_id = 2;
    */
   clientId: string;
 
   /**
-   * 客户端密钥（§5.5 行 1260）。
+   * 客户端密钥（§5.5）。
    *
    * @generated from field: string client_secret = 3;
    */
   clientSecret: string;
 
   /**
-   * 展示名（§5.5 行 1260）。
+   * 展示名（§5.5）。
    *
    * @generated from field: string name = 4;
    */
   name: string;
 
   /**
-   * 回调白名单，支持 * 通配（§5.5 行 1260）。
+   * 回调白名单，支持 * 通配（§5.5）。
    *
    * @generated from field: repeated string redirect_uris = 5;
    */
   redirectUris: string[];
 
   /**
-   * 授权范围（§5.5 行 1260）。
+   * 授权范围（§5.5）。
    *
    * @generated from field: repeated string scopes = 6;
    */
   scopes: string[];
 
   /**
-   * 访问令牌有效期（秒）（§5.5 行 1260）。
+   * 访问令牌有效期（秒）（§5.5）。
    *
    * @generated from field: int64 access_token_ttl = 7;
    */
   accessTokenTtl: bigint;
 
   /**
-   * 刷新令牌有效期（秒）（§5.5 行 1260）。
+   * 刷新令牌有效期（秒）（§5.5）。
    *
    * @generated from field: int64 refresh_token_ttl = 8;
    */
@@ -639,14 +639,14 @@ export const UpdateOidcClientRequestSchema: GenMessage<UpdateOidcClientRequest> 
   messageDesc(file_api_admin_v1_client, 12);
 
 /**
- * DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5 行 1261）。
+ * DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5）。
  * 成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.DeleteOidcClientRequest
  */
 export type DeleteOidcClientRequest = Message<"api.admin.v1.DeleteOidcClientRequest"> & {
   /**
-   * 目标客户端 ID（§5.5 行 1261）。
+   * 目标客户端 ID（§5.5）。
    *
    * @generated from field: int64 id = 1;
    */

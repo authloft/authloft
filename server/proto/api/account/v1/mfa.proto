@@ -2,30 +2,30 @@ syntax = "proto3";
 
 package api.account.v1;
 
-// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 包名 api.account.v1（docs/接口文档.md §12.9「包名 api.<域>.v1」）
 // 目录 api/account/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/account/v1（accountv1）。
 option go_package = "authloft/gen/go/api/account/v1;accountv1";
 
-// GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
+// GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 入参「—」）。
 message GetMfaRequest {}
 
-// MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5 行 890-896）；
+// MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5）；
 // 不同 factor 只填各自相关字段，零值表示该因子不适用 / 未绑定。
 message MfaFactor {
   // 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-  //（§3.5 行 891-895）。
+  //（§3.5）。
   string factor = 1;
-  // 是否已绑定（§3.5 行 891-895）。
+  // 是否已绑定（§3.5）。
   bool bound = 2;
-  // 绑定时间，Unix 秒；totp 示例（§3.5 行 891）。
+  // 绑定时间，Unix 秒；totp 示例（§3.5）。
   int64 bound_at = 3;
-  // 最近使用时间，Unix 秒（§3.5 行 891-894）。
+  // 最近使用时间，Unix 秒（§3.5）。
   int64 last_used_at = 4;
-  // otp_sms / otp_email 的掩码目标（§3.5 行 892-893）。
+  // otp_sms / otp_email 的掩码目标（§3.5）。
   string target = 5;
-  // webauthn 凭据数量（§3.5 行 894）。
+  // webauthn 凭据数量（§3.5）。
   int64 credentials = 6;
-  // recovery_code 剩余数量（§3.5 行 895）。
+  // recovery_code 剩余数量（§3.5）。
   int64 remaining = 7;
 }
 
@@ -46,38 +46,38 @@ message SetMfaRequest {
   bool enabled = 1;
 }
 
-// BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5 行 905-906）：
+// BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5）：
 // step=challenge 时为空串，step=verify 时带 secret 与 code。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 TotpRequest）。
+// 消息名随方法名（§12.9；pre-connect 时代按旧 URL 命名 TotpRequest）。
 message BindTotpRequest {
-  // 取值 challenge｜verify（§3.5 行 905-906）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+  // 取值 challenge｜verify（§3.5）；跨版本可新增，用 string 承载（§12.9）。
   string step = 1;
-  // verify：challenge 下发的密钥（§3.5 行 906）。
+  // verify：challenge 下发的密钥（§3.5）。
   string secret = 2;
-  // verify：TOTP 码（§3.5 行 906）。
+  // verify：TOTP 码（§3.5）。
   string code = 3;
 }
 
-// BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5 行 905-906）：
+// BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5）：
 // 两 step 共用一个 rpc，challenge 填 {secret, otpauthUrl, qrcodeContent}、
 // verify 填 {recoveryCodes}（验证一次后生效，同一响应下发 10 个恢复码，一次性展示）；
-// 未用到的字段为零值，protojson 省略零值（§12.9 行 1752）后 JSON 形状与两行示例逐字一致。
-// 消息名随方法名（§12.9 行 1747 响应 XxxResponse；pre-connect 时代按旧 URL 拆
+// 未用到的字段为零值，protojson 省略零值（§12.9）后 JSON 形状与两行示例逐字一致。
+// 消息名随方法名（§12.9 响应 XxxResponse；pre-connect 时代按旧 URL 拆
 // TotpChallengeResponse / TotpVerifyResponse 两消息，Connect 化时合并更名）。
 message BindTotpResponse {
-  // TOTP 密钥（challenge，§3.5 行 905）。
+  // TOTP 密钥（challenge，§3.5）。
   string secret = 1;
-  // otpauth:// 地址（challenge，§3.5 行 905）。
+  // otpauth:// 地址（challenge，§3.5）。
   string otpauth_url = 2;
-  // 二维码内容，前端绘制（challenge，§3.5 行 905）。
+  // 二维码内容，前端绘制（challenge，§3.5）。
   string qrcode_content = 3;
-  // 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
+  // 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5）。
   repeated string recovery_codes = 4;
 }
 
-// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5）：
 // 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
-// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp）
 // 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
 message UnbindTotpRequest {
   // 敏感操作二次验证通过后的不透明断言令牌；缺失 → verification_required（§3.8.5）。
@@ -85,18 +85,18 @@ message UnbindTotpRequest {
 }
 
 // RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
-//（§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+//（§3.5）：重新生成即全量作废，一次性下发新码；与 BindTotp
 // step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
 message RecoveryCodesResponse {
-  // 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
+  // 恢复码列表，格式 xxxx-xxxx（§3.5、）。
   repeated string codes = 1;
-  // 签发时间，Unix 秒（§3.5 行 908）。
+  // 签发时间，Unix 秒（§3.5）。
   int64 created_at = 2;
 }
 
 // RegenerateRecoveryCodesRequest 是 AccountService/RegenerateRecoveryCodes 的请求
-//（§3.5 行 908）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
+//（§3.5）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
 message RegenerateRecoveryCodesRequest {
-  // 取值 regenerate（§3.5 行 908）。
+  // 取值 regenerate（§3.5）。
   string action = 1;
 }

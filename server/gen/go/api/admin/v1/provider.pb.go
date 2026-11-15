@@ -22,22 +22,22 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Provider 是 AdminService/ListProviders 的列表项（§5.2 行 1165）：
+// Provider 是 AdminService/ListProviders 的列表项（§5.2）：
 // 列表列「显示名 / provider_key / 类别 / 类型 / 状态 / 策略标签 / 排序」。
-// 「状态」即 provider.is_enabled（§5.3 行 1216 同键），「策略标签」即登录 / 注册 /
-// 自动绑定三个策略开关（《后端架构》§4.1）；开关类字段按 §12.9 行 1749 用 bool 承载。
+// 「状态」即 provider.is_enabled（§5.3 同键），「策略标签」即登录 / 注册 /
+// 自动绑定三个策略开关（《后端架构》§4.1）；开关类字段按 §12.9 用 bool 承载。
 type Provider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 全局唯一标识，创建后不可改（§5.3 行 1189）。
+	// 全局唯一标识，创建后不可改（§5.3）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 展示名（§5.2 行 1165、《后端架构》§4.1）。
+	// 展示名（§5.2、《后端架构》§4.1）。
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// 类别，取值 oauth|captcha|sms|email|storage|notify|union（《后端架构》§4.1）；
-	// 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// 跨版本可能新增，用 string 承载（§12.9）。
 	Category string `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
-	// 类型，取值来自注册表 metas（§5.2 行 1172、《后端架构》§15.3）。
+	// 类型，取值来自注册表 metas（§5.2、《后端架构》§15.3）。
 	Type string `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
-	// 「状态」列：是否启用（§5.2 行 1169、§5.3 行 1216）。
+	// 「状态」列：是否启用（§5.2、§5.3）。
 	IsEnabled bool `protobuf:"varint,5,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
 	// 策略标签：允许用于登录（《后端架构》§4.1）。
 	EnableSignin bool `protobuf:"varint,6,opt,name=enable_signin,json=enableSignin,proto3" json:"enable_signin,omitempty"`
@@ -45,7 +45,7 @@ type Provider struct {
 	EnableSignup bool `protobuf:"varint,7,opt,name=enable_signup,json=enableSignup,proto3" json:"enable_signup,omitempty"`
 	// 策略标签：按联系方式自动绑定（《后端架构》§4.1）。
 	AutoBind bool `protobuf:"varint,8,opt,name=auto_bind,json=autoBind,proto3" json:"auto_bind,omitempty"`
-	// 排序（《后端架构》§4.1）；整型一律 int64（§12.9 行 1751）。
+	// 排序（《后端架构》§4.1）；整型一律 int64（§12.9）。
 	SortOrder     int64 `protobuf:"varint,9,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -144,26 +144,26 @@ func (x *Provider) GetSortOrder() int64 {
 	return 0
 }
 
-// ListProvidersRequest 是 AdminService/ListProviders 的请求（§5.2 行 1165：
-// 筛选入参 {category, type, isEnabled}）；所有列表支持 §1.7 分页（§5 行 1153）。
-// 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional
-// 以区分「未传」与零值。消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名
+// ListProvidersRequest 是 AdminService/ListProviders 的请求（§5.2：
+// 筛选入参 {category, type, isEnabled}）；所有列表支持 §1.7 分页（§5）。
+// 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional
+// 以区分「未传」与零值。消息名随方法名（§12.9；pre-connect 时代按资源命名
 // ProviderListRequest，Connect 化时更名）。
 type ListProvidersRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 按类别过滤（§5.2 行 1165）。
+	// 按类别过滤（§5.2）。
 	Category *string `protobuf:"bytes,1,opt,name=category,proto3,oneof" json:"category,omitempty"`
-	// 按类型过滤（§5.2 行 1165）。
+	// 按类型过滤（§5.2）。
 	Type *string `protobuf:"bytes,2,opt,name=type,proto3,oneof" json:"type,omitempty"`
-	// 按启用状态过滤（§5.2 行 1165）。
+	// 按启用状态过滤（§5.2）。
 	IsEnabled *bool `protobuf:"varint,3,opt,name=is_enabled,json=isEnabled,proto3,oneof" json:"is_enabled,omitempty"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,4,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,6,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,7,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -248,18 +248,18 @@ func (x *ListProvidersRequest) GetOrder() string {
 	return ""
 }
 
-// ProviderListResponse 是 AdminService/ListProviders 的响应（§5.2 行 1165、§1.7 行 278：
+// ProviderListResponse 是 AdminService/ListProviders 的响应（§5.2、§1.7：
 // {items, total, page, pageSize}）。
 // 响应名不随方法名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type ProviderListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*Provider `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -323,12 +323,12 @@ func (x *ProviderListResponse) GetPageSize() int64 {
 	return 0
 }
 
-// GetProviderRequest 是 AdminService/GetProvider 的请求（§5.2 行 1167：
+// GetProviderRequest 是 AdminService/GetProvider 的请求（§5.2：
 // {providerKey} 详情，返回明文凭证）。pre-connect 时代 provider_key 在 REST 路径中，
-// Connect 化后路径参数进请求消息（§1.7 行 277 同口径）。
+// Connect 化后路径参数进请求消息（§1.7 同口径）。
 type GetProviderRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标 Provider（§5.2 行 1167）。
+	// 目标 Provider（§5.2）。
 	ProviderKey   string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -371,16 +371,16 @@ func (x *GetProviderRequest) GetProviderKey() string {
 	return ""
 }
 
-// AdminProvider 是 AdminService/GetProvider 的响应（§5.2 行 1167「返回明文凭证，
-// 需管理员会话」），即 §12.9 行 1753 所指的 AdminProvider 管理视图：
+// AdminProvider 是 AdminService/GetProvider 的响应（§5.2「返回明文凭证，
+// 需管理员会话」），即 §12.9 所指的 AdminProvider 管理视图：
 // 全站唯一明文凭证出口——注入快照与前台接口永不返回 ext 中任何凭证字段（§12.1）。
 // provider 表列是封闭集，typed 透出；ext 是开放扩展（§12.1「凭证 / 端点 / 存储配置 /
 // 厂商长尾全部进此结构」），按既定口径用 google.protobuf.Struct 明文透出。
 type AdminProvider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 全局唯一标识（§5.3 行 1189）。
+	// 全局唯一标识（§5.3）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 联合登录归属 Provider，仅列 category=union 的取值（§5.3 行 1194、《后端架构》§4.1）。
+	// 联合登录归属 Provider，仅列 category=union 的取值（§5.3、《后端架构》§4.1）。
 	UnionProvider string `protobuf:"bytes,2,opt,name=union_provider,json=unionProvider,proto3" json:"union_provider,omitempty"`
 	// 展示名（《后端架构》§4.1）。
 	DisplayName string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
@@ -398,15 +398,15 @@ type AdminProvider struct {
 	AutoBindFields string `protobuf:"bytes,9,opt,name=auto_bind_fields,json=autoBindFields,proto3" json:"auto_bind_fields,omitempty"`
 	// 是否启用（《后端架构》§4.1）。
 	IsEnabled bool `protobuf:"varint,10,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
-	// 展示分组 social|enterprise|dev|other（§5.3 行 1212）。
+	// 展示分组 social|enterprise|dev|other（§5.3）。
 	UiGroup string `protobuf:"bytes,11,opt,name=ui_group,json=uiGroup,proto3" json:"ui_group,omitempty"`
 	// 排序（《后端架构》§4.1）。
 	SortOrder int64 `protobuf:"varint,12,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
-	// 图标 URL，绝对地址（§5.3 行 1210）。
+	// 图标 URL，绝对地址（§5.3）。
 	IconUrl string `protobuf:"bytes,13,opt,name=icon_url,json=iconUrl,proto3" json:"icon_url,omitempty"`
-	// 备注（§5.3 行 1214）。
+	// 备注（§5.3）。
 	Remark string `protobuf:"bytes,14,opt,name=remark,proto3" json:"remark,omitempty"`
-	// provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3 行 1180）。
+	// provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3）。
 	Ext *structpb.Struct `protobuf:"bytes,15,opt,name=ext,proto3" json:"ext,omitempty"`
 	// 创建时间，Unix 秒（《后端架构》§4.1）。
 	CreatedAt int64 `protobuf:"varint,16,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -565,11 +565,11 @@ func (x *AdminProvider) GetUpdatedAt() int64 {
 	return 0
 }
 
-// DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2 行 1169：
+// DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2：
 // {providerKey} 删除）。成功返回 OkResponse。
 type DeleteProviderRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标 Provider（§5.2 行 1169）。
+	// 目标 Provider（§5.2）。
 	ProviderKey   string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -613,14 +613,14 @@ func (x *DeleteProviderRequest) GetProviderKey() string {
 }
 
 // SetProviderEnabledRequest 是 AdminService/SetProviderEnabled 的请求
-// （§5.2 行 1170：{providerKey, isEnabled} 行内开关）。pre-connect 时代 provider_key
-// 在 REST 路径中，Connect 化后路径参数进请求消息；字段顺序同 §5.2 行 1170 示例；
-// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+// （§5.2：{providerKey, isEnabled} 行内开关）。pre-connect 时代 provider_key
+// 在 REST 路径中，Connect 化后路径参数进请求消息；字段顺序同 §5.2 示例；
+// 消息名随方法名（§12.9）。成功返回 OkResponse。
 type SetProviderEnabledRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标 Provider（§5.2 行 1170）。
+	// 目标 Provider（§5.2）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 行内开关目标态（§5.2 行 1170）。
+	// 行内开关目标态（§5.2）。
 	IsEnabled     bool `protobuf:"varint,2,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -670,12 +670,12 @@ func (x *SetProviderEnabledRequest) GetIsEnabled() bool {
 	return false
 }
 
-// ProviderSortItem 是拖拽排序的单个条目（§5.2 行 1171：{items:[{providerKey, sortOrder}]}）。
+// ProviderSortItem 是拖拽排序的单个条目（§5.2：{items:[{providerKey, sortOrder}]}）。
 type ProviderSortItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 要排序的 Provider（§5.2 行 1171）。
+	// 要排序的 Provider（§5.2）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 目标排序值（§5.2 行 1171）。
+	// 目标排序值（§5.2）。
 	SortOrder     int64 `protobuf:"varint,2,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -725,11 +725,11 @@ func (x *ProviderSortItem) GetSortOrder() int64 {
 	return 0
 }
 
-// SortProvidersRequest 是 AdminService/SortProviders 的请求（§5.2 行 1171）。
-// 成功返回 OkResponse。消息名随方法名（§12.9 行 1747）。
+// SortProvidersRequest 是 AdminService/SortProviders 的请求（§5.2）。
+// 成功返回 OkResponse。消息名随方法名（§12.9）。
 type SortProvidersRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 拖拽排序后的条目集合（§5.2 行 1171）。
+	// 拖拽排序后的条目集合（§5.2）。
 	Items         []*ProviderSortItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -772,15 +772,15 @@ func (x *SortProvidersRequest) GetItems() []*ProviderSortItem {
 	return nil
 }
 
-// TestProviderRequest 是 AdminService/TestProvider 的请求（§5.2 行 1174：
+// TestProviderRequest 是 AdminService/TestProvider 的请求（§5.2：
 // {providerKey}，短信 / 邮件 Provider 的「发送测试」）。
 // §5.2 未定义请求体：发送测试必须有接收目标（《后端架构》§15.2 Sender.Send(to,…) 的
 // 首参），故按最小必填报文定义 target（待 handler 验证）；
 // provider_key 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
-// 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+// 消息名随方法名（§12.9）。成功返回 OkResponse。
 type TestProviderRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标 Provider（§5.2 行 1174）。
+	// 目标 Provider（§5.2）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
 	// 测试接收目标：短信 Provider 为手机号、邮件 Provider 为邮箱（《后端架构》§15.2）。
 	Target        string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`

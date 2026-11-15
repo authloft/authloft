@@ -14,7 +14,7 @@ export const file_api_setup_v1_setup: GenFile = /*@__PURE__*/
 
 /**
  * GetStatusRequest 是 SetupService/GetStatus 的请求（§13.1 无入参）。
- * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747
+ * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9
  * 请求 XxxRequest；先例 api/account/v1/profile.proto 的 GetConfigRequest）。
  *
  * @generated from message api.setup.v1.GetStatusRequest
@@ -30,7 +30,7 @@ export const GetStatusRequestSchema: GenMessage<GetStatusRequest> = /*@__PURE__*
   messageDesc(file_api_setup_v1_setup, 0);
 
 /**
- * GetStatusResponse 是 SetupService/GetStatus 的响应（§13.1 行 1765）：
+ * GetStatusResponse 是 SetupService/GetStatus 的响应（§13.1）：
  * `{"mode":"setup"}`——正常返回即处于 setup 模式；**连接被拒 / 404 = 已处于
  * 正常模式**（该语义同时用于安装完成后的重启轮询，§13.4）。
  *
@@ -53,13 +53,13 @@ export const GetStatusResponseSchema: GenMessage<GetStatusResponse> = /*@__PURE_
   messageDesc(file_api_setup_v1_setup, 1);
 
 /**
- * UploadConfigRequest 是 SetupService/UploadConfig 的请求（§13.2 行 1769-1771）。
+ * UploadConfigRequest 是 SetupService/UploadConfig 的请求（§13.2）。
  *
  * @generated from message api.setup.v1.UploadConfigRequest
  */
 export type UploadConfigRequest = Message<"api.setup.v1.UploadConfigRequest"> & {
   /**
-   * `config.yaml` 全文（字符串，必填，§13.2 行 1771）。
+   * `config.yaml` 全文（字符串，必填，§13.2）。
    *
    * @generated from field: string config = 1;
    */
@@ -74,15 +74,15 @@ export const UploadConfigRequestSchema: GenMessage<UploadConfigRequest> = /*@__P
   messageDesc(file_api_setup_v1_setup, 2);
 
 /**
- * RestartingResponse 是 UploadConfig / Install 共用的成功响应（§13.2 行 1773、
- * §13.3 行 1787「成功响应 {"restarting":true}」）；两方法共用同一响应依赖
+ * RestartingResponse 是 UploadConfig / Install 共用的成功响应（§13.2、
+ * §13.3「成功响应 {"restarting":true}」）；两方法共用同一响应依赖
  * buf 的 RPC_REQUEST_RESPONSE_UNIQUE 豁免（buf.yaml except，沿用既有豁免）。
  *
  * @generated from message api.setup.v1.RestartingResponse
  */
 export type RestartingResponse = Message<"api.setup.v1.RestartingResponse"> & {
   /**
-   * 固定 true（§13.4 行 1791：两条路径成功后进程退出 exit 0，由部署环境拉起）。
+   * 固定 true（§13.4：两条路径成功后进程退出 exit 0，由部署环境拉起）。
    *
    * @generated from field: bool restarting = 1;
    */
@@ -97,41 +97,41 @@ export const RestartingResponseSchema: GenMessage<RestartingResponse> = /*@__PUR
   messageDesc(file_api_setup_v1_setup, 3);
 
 /**
- * InstallRequest 是 SetupService/Install 的请求（§13.3 行 1777-1785）。
+ * InstallRequest 是 SetupService/Install 的请求（§13.3）。
  *
  * @generated from message api.setup.v1.InstallRequest
  */
 export type InstallRequest = Message<"api.setup.v1.InstallRequest"> & {
   /**
-   * 数据库连接串，必填（§13.3 行 1779）。
+   * 数据库连接串，必填（§13.3）。
    *
    * @generated from field: string db_dsn = 1;
    */
   dbDsn: string;
 
   /**
-   * Redis 地址，必填（§13.3 行 1780）。
+   * Redis 地址，必填（§13.3）。
    *
    * @generated from field: string redis_addr = 2;
    */
   redisAddr: string;
 
   /**
-   * Redis 密码，默认空（§13.3 行 1781）。
+   * Redis 密码，默认空（§13.3）。
    *
    * @generated from field: string redis_password = 3;
    */
   redisPassword: string;
 
   /**
-   * Redis 库号，默认 0（§13.3 行 1781；整型一律 int64，§12.9 行 1751）。
+   * Redis 库号，默认 0（§13.3；整型一律 int64，§12.9）。
    *
    * @generated from field: int64 redis_db = 4;
    */
   redisDb: bigint;
 
   /**
-   * 主域名；缺省自动读取当前请求 Host（§13.3 行 1782）。
+   * 主域名；缺省自动读取当前请求 Host（§13.3）。
    *
    * @generated from field: string root = 5;
    */
@@ -139,21 +139,21 @@ export type InstallRequest = Message<"api.setup.v1.InstallRequest"> & {
 
   /**
    * WebAuthn RP ID；缺省取当前请求 Host 去掉端口（IP / 内网同样适用），
-   * 可显式覆盖（§13.3 行 1783）。
+   * 可显式覆盖（§13.3）。
    *
    * @generated from field: string rp_id = 6;
    */
   rpId: string;
 
   /**
-   * 管理员用户名，必填（规则同 §2.3，§13.3 行 1784）。
+   * 管理员用户名，必填（规则同 §2.3，§13.3）。
    *
    * @generated from field: string admin_username = 7;
    */
   adminUsername: string;
 
   /**
-   * 管理员密码，必填（策略同 §5.6，§13.3 行 1785；§13.5：不回显、不入日志）。
+   * 管理员密码，必填（策略同 §5.6，§13.3；§13.5：不回显、不入日志）。
    *
    * @generated from field: string admin_password = 8;
    */
@@ -177,14 +177,14 @@ export const InstallRequestSchema: GenMessage<InstallRequest> = /*@__PURE__*/
   messageDesc(file_api_setup_v1_setup, 4);
 
 /**
- * SetupService 是 setup 域的 Connect service（docs/接口文档.md §13，行 1759-1802）。
+ * SetupService 是 setup 域的 Connect service（docs/接口文档.md §13）。
  * Connect 路径 = /api.setup.v1.SetupService/<Method>；方法清单与 §13 逐一对应：
- *   GetStatus      §13.1 行 1763
- *   UploadConfig   §13.2 行 1767
- *   Install        §13.3 行 1775
- * 仅 setup 模式注册（§13 行 1761：正常模式下路由不注册，请求一律 404）；
+ *   GetStatus      §13.1
+ *   UploadConfig   §13.2
+ *   Install        §13.3
+ * 仅 setup 模式注册（§13：正常模式下路由不注册，请求一律 404）；
  * 成功响应即消息本身（§1.0），业务失败为 Connect 错误体 + ErrorInfo detail
- * （§13 行 1761 域码：config_invalid / db_unreachable / redis_unreachable /
+ * （§13 域码：config_invalid / db_unreachable / redis_unreachable /
  * migration_failed / admin_missing / username_invalid 与 §1.6 既有值 password_weak）。
  *
  * @generated from service api.setup.v1.SetupService

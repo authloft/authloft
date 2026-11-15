@@ -14,44 +14,44 @@ export const file_token_ticket: GenFile = /*@__PURE__*/
   fileDesc("ChJ0b2tlbi90aWNrZXQucHJvdG8SBXRva2VuImEKDVRpY2tldFBheWxvYWQSEQoJdGlja2V0X2lkGAEgASgJEhQKDHByb3ZpZGVyX2tleRgCIAEoCRINCgVzY2VuZRgDIAEoCRILCgNpYXQYBCABKAMSCwoDZXhwGAUgASgDIvsBCgxUaWNrZXRSZXN1bHQSCQoBdhgBIAEoAxINCgVzY2VuZRgCIAEoCRIOCgZzdGF0dXMYAyABKAkSFAoMcHJvdmlkZXJfa2V5GAQgASgJEg8KB2NoYW5uZWwYBSABKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgpleHBpcmVzX2F0GAcgASgDEhAKCGNvbnN1bWVkGAggASgIEigKDGxvZ2luX3Jlc3VsdBgJIAEoCzISLnRva2VuLkxvZ2luUmVzdWx0EjYKE3RoaXJkcGFydHlfaWRlbnRpdHkYCiABKAsyGS50b2tlbi5UaGlyZHBhcnR5SWRlbnRpdHkiNAoLTG9naW5SZXN1bHQSCwoDdWlkGAEgASgDEhgKEGJpbmRpbmdfcmVxdWlyZWQYAiABKAgigwEKElRoaXJkcGFydHlJZGVudGl0eRIPCgdvcGVuX2lkGAEgASgJEhAKCHVuaW9uX2lkGAIgASgJEhAKCG5pY2tuYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSJAoDcmF3GAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdEIdWhthdXRobG9mdC9nZW4vZ28vdG9rZW47dG9rZW5iBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
- * TicketPayload 是扫码票据 ticket 的加密前载荷（docs/后端架构.md §11.6.4 行 1322-1336）。
- * ticket 加密串本身即状态载体：过期由服务端解 ticket 判断，无需存储（行 1334）；
- * 授权结果写 al:ticket:{ticket_id}，TTL 与 exp 对齐（行 1336）。
- * 字段名 / 编号 / 类型与行 1325-1331 的 protobuf 定义逐字一致。
+ * TicketPayload 是扫码票据 ticket 的加密前载荷（docs/后端架构.md §11.6.4）。
+ * ticket 加密串本身即状态载体：过期由服务端解 ticket 判断，无需存储；
+ * 授权结果写 al:ticket:{ticket_id}，TTL 与 exp 对齐。
+ * 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
  *
  * @generated from message token.TicketPayload
  */
 export type TicketPayload = Message<"token.TicketPayload"> & {
   /**
-   * 全链路统一名：响应字段 / Redis 键 / 轮询回传；控制在 24 字符以内（行 1326、1335）。
+   * 全链路统一名：响应字段 / Redis 键 / 轮询回传；控制在 24 字符以内。
    *
    * @generated from field: string ticket_id = 1;
    */
   ticketId: string;
 
   /**
-   * 扫码类 Provider 标识（行 1327）。
+   * 扫码类 Provider 标识。
    *
    * @generated from field: string provider_key = 2;
    */
   providerKey: string;
 
   /**
-   * login（默认）| bind，决定小程序端写什么、PC 端走哪条轮询（接口文档 §3.7.1）（行 1328）。
+   * login（默认）| bind，决定小程序端写什么、PC 端走哪条轮询（接口文档 §3.7.1）。
    *
    * @generated from field: string scene = 3;
    */
   scene: string;
 
   /**
-   * 签发时间，Unix 秒（行 1329）。
+   * 签发时间，Unix 秒。
    *
    * @generated from field: int64 iat = 4;
    */
   iat: bigint;
 
   /**
-   * 过期时间，Unix 秒；默认 600s（行 1330）。
+   * 过期时间，Unix 秒；默认 600s。
    *
    * @generated from field: int64 exp = 5;
    */
@@ -66,80 +66,80 @@ export const TicketPayloadSchema: GenMessage<TicketPayload> = /*@__PURE__*/
   messageDesc(file_token_ticket, 0);
 
 /**
- * TicketResult 是 `al:ticket:{ticket_id}` 的存储值（docs/后端架构.md §11.6.5 行 1338-1369）。
- * 按 protojson（§1.6 行 86 MarshalOptions）序列化为 JSON 后整值加密（复用 §11.6.1
+ * TicketResult 是 `al:ticket:{ticket_id}` 的存储值（docs/后端架构.md §11.6.5）。
+ * 按 protojson（§1.6 MarshalOptions）序列化为 JSON 后整值加密（复用 §11.6.1
  * 封装、purpose=ticket）写入 Redis，Redis 内不留明文；读取方 GETDEL 后解密。
- * 字段名与行 1342-1363 的 JSON 结构一致；JSON 未给编号，按出现顺序从 1 起连续
- * （编号约定沿用接口文档 §12.9 行 1749 先例）。
+ * 字段名与 JSON 结构一致；JSON 未给编号，按出现顺序从 1 起连续
+ * （编号约定沿用接口文档 §12.9 先例）。
  *
  * @generated from message token.TicketResult
  */
 export type TicketResult = Message<"token.TicketResult"> & {
   /**
-   * 结构版本，读取方遇未知版本按失败处理（行 1344）。
+   * 结构版本，读取方遇未知版本按失败处理。
    *
    * @generated from field: int64 v = 1;
    */
   v: bigint;
 
   /**
-   * login | bind，取自 TicketPayload.scene，不由客户端指定（行 1345）。
+   * login | bind，取自 TicketPayload.scene，不由客户端指定。
    *
    * @generated from field: string scene = 2;
    */
   scene: string;
 
   /**
-   * scanned | success | failed，映射到轮询的 ticket.status（接口文档 §1.6）（行 1346）。
+   * scanned | success | failed，映射到轮询的 ticket.status（接口文档 §1.6）。
    *
    * @generated from field: string status = 3;
    */
   status: string;
 
   /**
-   * Provider 标识（行 1347）。
+   * Provider 标识。
    *
    * @generated from field: string provider_key = 4;
    */
   providerKey: string;
 
   /**
-   * 写入通道，当前仅 qrcode（行 1348）。
+   * 写入通道，当前仅 qrcode。
    *
    * @generated from field: string channel = 5;
    */
   channel: string;
 
   /**
-   * 写入时间，Unix 秒（行 1349）。
+   * 写入时间，Unix 秒。
    *
    * @generated from field: int64 created_at = 6;
    */
   createdAt: bigint;
 
   /**
-   * 过期时间，Unix 秒；与 ticket.exp 一致（行 1350）。
+   * 过期时间，Unix 秒；与 ticket.exp 一致。
    *
    * @generated from field: int64 expires_at = 7;
    */
   expiresAt: bigint;
 
   /**
-   * false = 就绪待消费；消费方 GETDEL 原子取走即视为已消费，无需二次写（行 1351、1368）。
+   * false = 就绪待消费；消费方 GETDEL 原子取走即视为已消费，无需二次写。
    *
    * @generated from field: bool consumed = 8;
    */
   consumed: boolean;
 
   /**
-   * 仅 scene=login 时填充（行 1352）。
+   * 仅 scene=login 时填充。
    *
    * @generated from field: token.LoginResult login_result = 9;
    */
   loginResult?: LoginResult | undefined;
 
   /**
-   * login（binding_required=true 时）与 bind 场景共用的三方身份（行 1356-1362）。
+   * login（binding_required=true 时）与 bind 场景共用的三方身份。
    *
    * @generated from field: token.ThirdpartyIdentity thirdparty_identity = 10;
    */
@@ -155,14 +155,14 @@ export const TicketResultSchema: GenMessage<TicketResult> = /*@__PURE__*/
 
 /**
  * LoginResult 是轮询方「建会话或签 login_token」的最小输入
- * （§11.6.5 行 1352-1355、1369：TicketResult 除 thirdparty_identity 外
+ * （§11.6.5、1369：TicketResult 除 thirdparty_identity 外
  * 不含任何凭证 / 令牌，不回传登录流程信封本身）。
  *
  * @generated from message token.LoginResult
  */
 export type LoginResult = Message<"token.LoginResult"> & {
   /**
-   * 命中的本地账号；未绑定为 0（行 1353）。
+   * 命中的本地账号；未绑定为 0。
    *
    * @generated from field: int64 uid = 1;
    */
@@ -170,7 +170,7 @@ export type LoginResult = Message<"token.LoginResult"> & {
 
   /**
    * true 时轮询方用 thirdparty_identity 签发 login_token 并返回 binding_required
-   * 信封（行 1354）。
+   * 信封。
    *
    * @generated from field: bool binding_required = 2;
    */
@@ -185,43 +185,43 @@ export const LoginResultSchema: GenMessage<LoginResult> = /*@__PURE__*/
   messageDesc(file_token_ticket, 2);
 
 /**
- * ThirdpartyIdentity 是 TicketResult 内的三方身份（§11.6.5 行 1356-1362）；
+ * ThirdpartyIdentity 是 TicketResult 内的三方身份（§11.6.5）；
  * 消息名取自 JSON 字段 thirdparty_identity，与 §11.6.2 的 ThirdParty
- * （不含 raw）是两个结构。绑定场景原始资料落 user_thirdparty_bind.extra（行 1361）。
+ * （不含 raw）是两个结构。绑定场景原始资料落 user_thirdparty_bind.extra。
  *
  * @generated from message token.ThirdpartyIdentity
  */
 export type ThirdpartyIdentity = Message<"token.ThirdpartyIdentity"> & {
   /**
-   * 三方 open_id（行 1357）。
+   * 三方 open_id。
    *
    * @generated from field: string open_id = 1;
    */
   openId: string;
 
   /**
-   * 三方 union_id；无则空串（行 1358）。
+   * 三方 union_id；无则空串。
    *
    * @generated from field: string union_id = 2;
    */
   unionId: string;
 
   /**
-   * 三方昵称（行 1359）。
+   * 三方昵称。
    *
    * @generated from field: string nickname = 3;
    */
   nickname: string;
 
   /**
-   * 三方头像（行 1360）。
+   * 三方头像。
    *
    * @generated from field: string avatar_url = 4;
    */
   avatarUrl: string;
 
   /**
-   * 第三方原始资料，任意 JSON（行 1361）；按仓库先例（oidc/credential）
+   * 第三方原始资料，任意 JSON；按仓库先例（oidc/credential）
    * 用 google.protobuf.Struct 承载，不逐字段建模。
    *
    * @generated from field: google.protobuf.Struct raw = 5;

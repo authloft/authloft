@@ -3,116 +3,116 @@ syntax = "proto3";
 package api.account.v1;
 
 import "google/protobuf/struct.proto";
-// captcha 配置对象在 api.common.v1（全仓单一结构源，§12.9 行 1748），本文件只引用不复制；
+// captcha 配置对象在 api.common.v1（全仓单一结构源，§12.9），本文件只引用不复制；
 // common.v1 是叶子包，不 import sso / account，无循环依赖（包名升级随迁）。
 import "api/common/v1/captcha.proto";
 
-// 包名 api.account.v1（docs/接口文档.md §12.9 行 1747「包名 api.<域>.v1」），
+// 包名 api.account.v1（docs/接口文档.md §12.9「包名 api.<域>.v1」）
 // 目录 api/account/v1 与包名逐段一致（buf STANDARD PACKAGE_DIRECTORY_MATCH）。
 // Go 产物：authloft/gen/go/api/account/v1（包名 accountv1）；connect 侧产物由
 // protoc-gen-connect-go 按本包 service 定义生成（buf.gen.yaml，account.proto）。
 option go_package = "authloft/gen/go/api/account/v1;accountv1";
 
-// GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 行 818 入参「—」）。
-// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+// GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 入参「—」）。
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 请求 XxxRequest）。
 message GetConfigRequest {}
 
-// GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 行 819 入参「—」）。
+// GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 入参「—」）。
 message GetProfileRequest {}
 
-// UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
+// UserProfile 是 §3.1 的嵌套 profile 结构（对应 user_profile 表）：
 // 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
-// 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+// 请求的 profile 载荷（§3.2）。全字段 proto3 optional（2026-11-06
 // 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
 // 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
 // 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
-// wire 兼容，§12.9 行 1749 / §12.8）。
+// wire 兼容，§12.9 / §12.8）。
 message UserProfile {
-  // 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
+  // 性别（§3.1）：0/1/2 = 保密/男/女（ISO 5218，§3.2）。
   optional int64 gender = 1;
-  // 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
+  // 生日，YYYY-MM-DD（§3.1）；显式空串 = 清空（§3.2）。
   optional string birthday = 2;
-  // 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+  // 语言区域，如 zh-CN（§3.1）；显式空串 = 清空（§3.2）。
   optional string locale = 3;
-  // 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+  // 时区，如 Asia/Shanghai（§3.1）；显式空串 = 清空（§3.2）。
   optional string timezone = 4;
-  // user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
+  // user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1、§12.9）。
   optional google.protobuf.Struct extra = 5;
 }
 
-// ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 行 775-798 的
-// Authloft 用户信息结构（各端点响应即下列字段，无信封包裹，行 775）。
-// 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9 行 1749、行 1751）。
-// phone / email 的掩码在服务端完成（§3.1 行 801-812），响应不区分调用方。
+// ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 的
+// Authloft 用户信息结构。
+// 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9、）。
+// phone / email 的掩码在服务端完成（§3.1），响应不区分调用方。
 message ProfileResponse {
-  // 用户 ID（§3.1 行 779）。
+  // 用户 ID（§3.1）。
   int64 id = 1;
-  // 登录名，只读（§3.1 行 780、§3.2 行 820）。
+  // 登录名，只读（§3.1、§3.2）。
   string username = 2;
-  // 昵称（§3.1 行 781）。
+  // 昵称（§3.1）。
   string nickname = 3;
-  // 头像地址（§3.1 行 782）。
+  // 头像地址（§3.1）。
   string avatar_url = 4;
-  // 手机号，自助接口返回掩码（§3.1 行 783、行 805）。
+  // 手机号，自助接口返回掩码（§3.1、）。
   string phone = 5;
-  // 手机号是否已验证，JSON 示例为 1/0（§3.1 行 784）。
+  // 手机号是否已验证，JSON 示例为 1/0（§3.1）。
   int64 phone_verified = 6;
-  // 邮箱，自助接口返回掩码（§3.1 行 785、行 805）。
+  // 邮箱，自助接口返回掩码（§3.1、）。
   string email = 7;
-  // 邮箱是否已验证，JSON 示例为 1/0（§3.1 行 786）。
+  // 邮箱是否已验证，JSON 示例为 1/0（§3.1）。
   int64 email_verified = 8;
-  // 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
+  // 账号状态：1 正常 0 禁用（§3.1）。业务字段名 user_status
   //（JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
   int64 user_status = 9;
   // 用户自助两步验证开关（§3.1）。
   int64 mfa_required = 10;
-  // 安全版本号，便于调用方感知会话失效（§3.1 行 789）。
+  // 安全版本号，便于调用方感知会话失效（§3.1）。
   int64 epoch = 11;
-  // 最后登录时间，Unix 秒（§3.1 行 790）。
+  // 最后登录时间，Unix 秒（§3.1）。
   int64 last_login_at = 12;
-  // 创建时间，Unix 秒（§3.1 行 791）。
+  // 创建时间，Unix 秒（§3.1）。
   int64 created_at = 13;
-  // 更新时间，Unix 秒（§3.1 行 792）。
+  // 更新时间，Unix 秒（§3.1）。
   int64 updated_at = 14;
-  // user_profile 表结构（§3.1 行 793-797）。
+  // user_profile 表结构（§3.1）。
   UserProfile profile = 15;
 }
 
-// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2）：
 // {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
 // 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
 // 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
 // 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
-// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
-// 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
+// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改。成功为空
+// 响应，返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
 message UpdateProfileRequest {
-  // 昵称，可选（§3.2 行 837）；显式空串 = 清空。
+  // 昵称，可选（§3.2）；显式空串 = 清空。
   optional string nickname = 1;
-  // 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
+  // 头像地址，可选（§3.2）；显式空串 = 清空。
   optional string avatar_url = 2;
-  // 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
+  // 用户资料，可选（§3.2，字段见 §3.1）。
   UserProfile profile = 3;
 }
 
-// OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0 行 57
+// OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0
 //「成功响应即 RPC 响应消息」；空消息 protojson 输出 {}）。共用方法：
-// UpdateProfile（§3.2 行 820）、ChangePassword（§3.3 行 862）、BindPhone / BindEmail
-//（§3.4 行 870-873）、SetMfa（§3.5 行 904）、RegisterWebauthn step=verify（§3.6 行 916）、
-// RenameWebauthnCredential / DeleteWebauthnCredential（§3.6 行 917-918）、
-// UnbindThirdparty（§3.7 行 937）。
+// UpdateProfile（§3.2）、ChangePassword（§3.3）、BindPhone / BindEmail
+//（§3.4）、SetMfa（§3.5）、RegisterWebauthn step=verify（§3.6）、
+// RenameWebauthnCredential / DeleteWebauthnCredential（§3.6）、
+// UnbindThirdparty（§3.7）。
 // 无 status 字段：信封顶层 status 为保留字，旧版 {ok:true} 遗留
 // 已按既定口径删除；多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE
 // 豁免（buf.yaml except，沿用既有豁免）。
 message OkResponse {}
 
-// AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2 行 818）：
-// 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy（行 825）。
+// AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2）：
+// 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy。
 message AvatarUploadConfig {
-  // 上传模式：proxy｜direct（§3.2 行 818）。
+  // 上传模式：proxy｜direct（§3.2）。
   string mode = 1;
-  // 单文件上限（字节）（§3.2 行 818、行 851）。
+  // 单文件上限（字节）（§3.2、）。
   int64 max_size = 2;
-  // 允许的 MIME 白名单（§3.2 行 818、行 851）。
+  // 允许的 MIME 白名单（§3.2、）。
   repeated string allowed_types = 3;
 }
 
@@ -135,55 +135,55 @@ message MfaPolicy {
   repeated MfaPolicyMethod methods = 3;
 }
 
-// AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2 行 818）。
+// AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2）。
 message AccountConfigResponse {
-  // 头像上传配置（§3.2 行 818）。
+  // 头像上传配置（§3.2）。
   AvatarUploadConfig avatar_upload = 1;
-  // 两步验证摘要（§3.2 行 818、行 827-847）。
+  // 两步验证摘要（§3.2、）。
   MfaPolicy mfa_policy = 2;
-  // account entry 的 captcha 配置读取处（§3.2 行 818、§2.5）；
+  // account entry 的 captcha 配置读取处（§3.2、§2.5）；
   // 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
   api.common.v1.CaptchaConfig captcha = 3;
-  // 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2 行 818）。
+  // 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2）。
   bool has_password = 4;
 }
 
-// AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2 行 821）与
-// AccountService/CommitAvatar（行 823）的共用响应 {url}；
-// 同一结构只定义一次（§12.9 行 1748）。
+// AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2）与
+// AccountService/CommitAvatar的共用响应 {url}；
+// 同一结构只定义一次（§12.9）。
 message AvatarResponse {
-  // 头像地址（§3.2 行 821、行 823）。
+  // 头像地址（§3.2、）。
   string url = 1;
 }
 
-// PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2 行 822）。
-// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
+// PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2）。
+// 消息名随方法名（§12.9「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
 // AvatarPresignRequest，Connect 化时更名）。
 message PresignAvatarRequest {
-  // 原始文件名（§3.2 行 822）。
+  // 原始文件名（§3.2）。
   string filename = 1;
-  // 文件 MIME 类型，须在 allowed_types 内（§3.2 行 822、行 851）。
+  // 文件 MIME 类型，须在 allowed_types 内（§3.2、）。
   string content_type = 2;
-  // 文件大小，须 ≤ max_size（§3.2 行 822、行 851）。
+  // 文件大小，须 ≤ max_size（§3.2、）。
   int64 size = 3;
 }
 
-// AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2 行 822）：
-// key 由服务端生成，前端无法覆盖（行 822）。
+// AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2）：
+// key 由服务端生成，前端无法覆盖。
 message AvatarPresignResponse {
-  // 服务端生成的对象 key（§3.2 行 822）。
+  // 服务端生成的对象 key（§3.2）。
   string key = 1;
   // 有时效的 PUT 预签名 URL（《后端架构》§15.1）。
   string upload_url = 2;
-  // 直传时需携带的请求头，如 Content-Type（§3.2 行 822）。
+  // 直传时需携带的请求头，如 Content-Type（§3.2）。
   map<string, string> headers = 3;
-  // 预签名有效期（秒），即 presign_ttl（§3.2 行 822、《后端架构》§15.1）。
+  // 预签名有效期（秒），即 presign_ttl（§3.2、《后端架构》§15.1）。
   int64 expires_in = 4;
 }
 
-// CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2 行 823）：
-// 仅记录已上传，不回读校验（行 823、行 851）。消息名随方法名（§12.9 行 1747）。
+// CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2）：
+// 仅记录已上传，不回读校验。消息名随方法名（§12.9）。
 message CommitAvatarRequest {
-  // presign 阶段下发的对象 key（§3.2 行 823）。
+  // presign 阶段下发的对象 key（§3.2）。
   string key = 1;
 }

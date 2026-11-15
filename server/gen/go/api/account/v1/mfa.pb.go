@@ -21,7 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
+// GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 入参「—」）。
 type GetMfaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -58,24 +58,24 @@ func (*GetMfaRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_mfa_proto_rawDescGZIP(), []int{0}
 }
 
-// MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5 行 890-896）；
+// MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5）；
 // 不同 factor 只填各自相关字段，零值表示该因子不适用 / 未绑定。
 type MfaFactor struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-	// （§3.5 行 891-895）。
+	// （§3.5）。
 	Factor string `protobuf:"bytes,1,opt,name=factor,proto3" json:"factor,omitempty"`
-	// 是否已绑定（§3.5 行 891-895）。
+	// 是否已绑定（§3.5）。
 	Bound bool `protobuf:"varint,2,opt,name=bound,proto3" json:"bound,omitempty"`
-	// 绑定时间，Unix 秒；totp 示例（§3.5 行 891）。
+	// 绑定时间，Unix 秒；totp 示例（§3.5）。
 	BoundAt int64 `protobuf:"varint,3,opt,name=bound_at,json=boundAt,proto3" json:"bound_at,omitempty"`
-	// 最近使用时间，Unix 秒（§3.5 行 891-894）。
+	// 最近使用时间，Unix 秒（§3.5）。
 	LastUsedAt int64 `protobuf:"varint,4,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
-	// otp_sms / otp_email 的掩码目标（§3.5 行 892-893）。
+	// otp_sms / otp_email 的掩码目标（§3.5）。
 	Target string `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
-	// webauthn 凭据数量（§3.5 行 894）。
+	// webauthn 凭据数量（§3.5）。
 	Credentials int64 `protobuf:"varint,6,opt,name=credentials,proto3" json:"credentials,omitempty"`
-	// recovery_code 剩余数量（§3.5 行 895）。
+	// recovery_code 剩余数量（§3.5）。
 	Remaining     int64 `protobuf:"varint,7,opt,name=remaining,proto3" json:"remaining,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -264,16 +264,16 @@ func (x *SetMfaRequest) GetEnabled() bool {
 	return false
 }
 
-// BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5 行 905-906）：
+// BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5）：
 // step=challenge 时为空串，step=verify 时带 secret 与 code。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 TotpRequest）。
+// 消息名随方法名（§12.9；pre-connect 时代按旧 URL 命名 TotpRequest）。
 type BindTotpRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 取值 challenge｜verify（§3.5 行 905-906）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify（§3.5）；跨版本可新增，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
-	// verify：challenge 下发的密钥（§3.5 行 906）。
+	// verify：challenge 下发的密钥（§3.5）。
 	Secret string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
-	// verify：TOTP 码（§3.5 行 906）。
+	// verify：TOTP 码（§3.5）。
 	Code          string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -330,21 +330,21 @@ func (x *BindTotpRequest) GetCode() string {
 	return ""
 }
 
-// BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5 行 905-906）：
+// BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5）：
 // 两 step 共用一个 rpc，challenge 填 {secret, otpauthUrl, qrcodeContent}、
 // verify 填 {recoveryCodes}（验证一次后生效，同一响应下发 10 个恢复码，一次性展示）；
-// 未用到的字段为零值，protojson 省略零值（§12.9 行 1752）后 JSON 形状与两行示例逐字一致。
-// 消息名随方法名（§12.9 行 1747 响应 XxxResponse；pre-connect 时代按旧 URL 拆
+// 未用到的字段为零值，protojson 省略零值（§12.9）后 JSON 形状与两行示例逐字一致。
+// 消息名随方法名（§12.9 响应 XxxResponse；pre-connect 时代按旧 URL 拆
 // TotpChallengeResponse / TotpVerifyResponse 两消息，Connect 化时合并更名）。
 type BindTotpResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// TOTP 密钥（challenge，§3.5 行 905）。
+	// TOTP 密钥（challenge，§3.5）。
 	Secret string `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
-	// otpauth:// 地址（challenge，§3.5 行 905）。
+	// otpauth:// 地址（challenge，§3.5）。
 	OtpauthUrl string `protobuf:"bytes,2,opt,name=otpauth_url,json=otpauthUrl,proto3" json:"otpauth_url,omitempty"`
-	// 二维码内容，前端绘制（challenge，§3.5 行 905）。
+	// 二维码内容，前端绘制（challenge，§3.5）。
 	QrcodeContent string `protobuf:"bytes,3,opt,name=qrcode_content,json=qrcodeContent,proto3" json:"qrcode_content,omitempty"`
-	// 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
+	// 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5）。
 	RecoveryCodes []string `protobuf:"bytes,4,rep,name=recovery_codes,json=recoveryCodes,proto3" json:"recovery_codes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -408,9 +408,9 @@ func (x *BindTotpResponse) GetRecoveryCodes() []string {
 	return nil
 }
 
-// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+// UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5）：
 // 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
-// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+// verificationToken（biz_purpose=unbind_totp、operation=unbind_totp）
 // 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
 type UnbindTotpRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -458,13 +458,13 @@ func (x *UnbindTotpRequest) GetVerificationToken() string {
 }
 
 // RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
-// （§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+// （§3.5）：重新生成即全量作废，一次性下发新码；与 BindTotp
 // step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
 type RecoveryCodesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
+	// 恢复码列表，格式 xxxx-xxxx（§3.5、）。
 	Codes []string `protobuf:"bytes,1,rep,name=codes,proto3" json:"codes,omitempty"`
-	// 签发时间，Unix 秒（§3.5 行 908）。
+	// 签发时间，Unix 秒（§3.5）。
 	CreatedAt     int64 `protobuf:"varint,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -515,10 +515,10 @@ func (x *RecoveryCodesResponse) GetCreatedAt() int64 {
 }
 
 // RegenerateRecoveryCodesRequest 是 AccountService/RegenerateRecoveryCodes 的请求
-// （§3.5 行 908）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
+// （§3.5）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
 type RegenerateRecoveryCodesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 取值 regenerate（§3.5 行 908）。
+	// 取值 regenerate（§3.5）。
 	Action        string `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

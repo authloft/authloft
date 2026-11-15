@@ -22,7 +22,7 @@ const (
 )
 
 // GetStatusRequest 是 SetupService/GetStatus 的请求（§13.1 无入参）。
-// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9
 // 请求 XxxRequest；先例 api/account/v1/profile.proto 的 GetConfigRequest）。
 type GetStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -60,7 +60,7 @@ func (*GetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_api_setup_v1_setup_proto_rawDescGZIP(), []int{0}
 }
 
-// GetStatusResponse 是 SetupService/GetStatus 的响应（§13.1 行 1765）：
+// GetStatusResponse 是 SetupService/GetStatus 的响应（§13.1）：
 // `{"mode":"setup"}`——正常返回即处于 setup 模式；**连接被拒 / 404 = 已处于
 // 正常模式**（该语义同时用于安装完成后的重启轮询，§13.4）。
 type GetStatusResponse struct {
@@ -108,10 +108,10 @@ func (x *GetStatusResponse) GetMode() string {
 	return ""
 }
 
-// UploadConfigRequest 是 SetupService/UploadConfig 的请求（§13.2 行 1769-1771）。
+// UploadConfigRequest 是 SetupService/UploadConfig 的请求（§13.2）。
 type UploadConfigRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `config.yaml` 全文（字符串，必填，§13.2 行 1771）。
+	// `config.yaml` 全文（字符串，必填，§13.2）。
 	Config        string `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -154,12 +154,12 @@ func (x *UploadConfigRequest) GetConfig() string {
 	return ""
 }
 
-// RestartingResponse 是 UploadConfig / Install 共用的成功响应（§13.2 行 1773、
-// §13.3 行 1787「成功响应 {"restarting":true}」）；两方法共用同一响应依赖
+// RestartingResponse 是 UploadConfig / Install 共用的成功响应（§13.2、
+// §13.3「成功响应 {"restarting":true}」）；两方法共用同一响应依赖
 // buf 的 RPC_REQUEST_RESPONSE_UNIQUE 豁免（buf.yaml except，沿用既有豁免）。
 type RestartingResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 固定 true（§13.4 行 1791：两条路径成功后进程退出 exit 0，由部署环境拉起）。
+	// 固定 true（§13.4：两条路径成功后进程退出 exit 0，由部署环境拉起）。
 	Restarting    bool `protobuf:"varint,1,opt,name=restarting,proto3" json:"restarting,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -202,25 +202,25 @@ func (x *RestartingResponse) GetRestarting() bool {
 	return false
 }
 
-// InstallRequest 是 SetupService/Install 的请求（§13.3 行 1777-1785）。
+// InstallRequest 是 SetupService/Install 的请求（§13.3）。
 type InstallRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 数据库连接串，必填（§13.3 行 1779）。
+	// 数据库连接串，必填（§13.3）。
 	DbDsn string `protobuf:"bytes,1,opt,name=db_dsn,json=dbDsn,proto3" json:"db_dsn,omitempty"`
-	// Redis 地址，必填（§13.3 行 1780）。
+	// Redis 地址，必填（§13.3）。
 	RedisAddr string `protobuf:"bytes,2,opt,name=redis_addr,json=redisAddr,proto3" json:"redis_addr,omitempty"`
-	// Redis 密码，默认空（§13.3 行 1781）。
+	// Redis 密码，默认空（§13.3）。
 	RedisPassword string `protobuf:"bytes,3,opt,name=redis_password,json=redisPassword,proto3" json:"redis_password,omitempty"`
-	// Redis 库号，默认 0（§13.3 行 1781；整型一律 int64，§12.9 行 1751）。
+	// Redis 库号，默认 0（§13.3；整型一律 int64，§12.9）。
 	RedisDb int64 `protobuf:"varint,4,opt,name=redis_db,json=redisDb,proto3" json:"redis_db,omitempty"`
-	// 主域名；缺省自动读取当前请求 Host（§13.3 行 1782）。
+	// 主域名；缺省自动读取当前请求 Host（§13.3）。
 	Root string `protobuf:"bytes,5,opt,name=root,proto3" json:"root,omitempty"`
 	// WebAuthn RP ID；缺省取当前请求 Host 去掉端口（IP / 内网同样适用），
-	// 可显式覆盖（§13.3 行 1783）。
+	// 可显式覆盖（§13.3）。
 	RpId string `protobuf:"bytes,6,opt,name=rp_id,json=rpId,proto3" json:"rp_id,omitempty"`
-	// 管理员用户名，必填（规则同 §2.3，§13.3 行 1784）。
+	// 管理员用户名，必填（规则同 §2.3，§13.3）。
 	AdminUsername string `protobuf:"bytes,7,opt,name=admin_username,json=adminUsername,proto3" json:"admin_username,omitempty"`
-	// 管理员密码，必填（策略同 §5.6，§13.3 行 1785；§13.5：不回显、不入日志）。
+	// 管理员密码，必填（策略同 §5.6，§13.3；§13.5：不回显、不入日志）。
 	AdminPassword string `protobuf:"bytes,8,opt,name=admin_password,json=adminPassword,proto3" json:"admin_password,omitempty"`
 	// WebAuthn RP 展示名（写入 config 的 authloft.rp_display_name）。
 	// go-webauthn 生成注册选项时要求非空，缺省由安装表单预填 "Authloft"，

@@ -22,16 +22,16 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// DecodeTokenRequest 是 AdminService/DecodeToken 的请求（§5.6 行 1273：
+// DecodeTokenRequest 是 AdminService/DecodeToken 的请求（§5.6：
 // {token, purpose:"login"｜"session"｜"cookie"}），排障用。
-// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」；pre-connect 时代按旧 URL
+// 消息名随方法名（§12.9「请求 XxxRequest」；pre-connect 时代按旧 URL
 // 命名 DecodeRequest，Connect 化时更名）。
 type DecodeTokenRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 待解码令牌（§5.6 行 1273）。
+	// 待解码令牌（§5.6）。
 	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	// 解码口径 login|session|cookie：cookie 解 al_login_state（《后端架构》§11.6.1 的
-	// purpose 口径）；随令牌类型演进可能新增，用 string 承载（§12.9 行 1754）。
+	// purpose 口径）；随令牌类型演进可能新增，用 string 承载（§12.9）。
 	Purpose       string `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -81,12 +81,12 @@ func (x *DecodeTokenRequest) GetPurpose() string {
 	return ""
 }
 
-// DecodeResponse 是 AdminService/DecodeToken 的响应（§5.6 行 1273「解码内容，排障用」）：
-// 令牌与内部载荷定义在《后端架构》§11.6（§12.4 指向，前端不解析），
+// DecodeResponse 是 AdminService/DecodeToken 的响应（§5.6「解码内容，排障用」）：
+// 令牌与内部载荷定义在《后端架构》§11.6（§12.4 指向，前端不解析）
 // 各 purpose 结构不同且不为前台消费，按既定口径用 google.protobuf.Struct 原样透传。
 type DecodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 解码出的载荷字段（§5.6 行 1273）。
+	// 解码出的载荷字段（§5.6）。
 	Payload       *structpb.Struct `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -129,7 +129,7 @@ func (x *DecodeResponse) GetPayload() *structpb.Struct {
 	return nil
 }
 
-// GetStatusRequest 是 AdminService/GetStatus 的请求（§5.6 行 1274，无入参）。
+// GetStatusRequest 是 AdminService/GetStatus 的请求（§5.6，无入参）。
 type GetStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -166,7 +166,7 @@ func (*GetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_api_admin_v1_tools_proto_rawDescGZIP(), []int{2}
 }
 
-// StatusResponse 是 AdminService/GetStatus 的响应（§5.6 行 1274
+// StatusResponse 是 AdminService/GetStatus 的响应（§5.6
 // 「监控：队列长度 / dropped / flush 耗时」；《后端架构》§16）。
 // 不含会话活跃数——该指标无数据来源，已删除且不另起计数。
 type StatusResponse struct {
@@ -175,7 +175,7 @@ type StatusResponse struct {
 	QueueLength int64 `protobuf:"varint,1,opt,name=queue_length,json=queueLength,proto3" json:"queue_length,omitempty"`
 	// 累计丢弃条数（《后端架构》§16）。
 	Dropped int64 `protobuf:"varint,2,opt,name=dropped,proto3" json:"dropped,omitempty"`
-	// 最近一次 flush 耗时（毫秒）；与设置项 queue_flush_ms（攒批时间窗，§5.6 行 1330）
+	// 最近一次 flush 耗时（毫秒）；与设置项 queue_flush_ms（攒批时间窗，§5.6）
 	// 不同名不同义。
 	FlushMs       int64 `protobuf:"varint,3,opt,name=flush_ms,json=flushMs,proto3" json:"flush_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields

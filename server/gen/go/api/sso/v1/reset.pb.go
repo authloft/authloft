@@ -23,31 +23,31 @@ const (
 )
 
 // ResetPasswordRequest 是 SsoService/ResetPassword 的请求消息
-// （docs/接口文档.md §2.4，行 458-470）。消息名随方法名（§12.9 行 1747
+// （docs/接口文档.md §2.4）。消息名随方法名（§12.9
 // 「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作 ResetRequest，Connect 化时更名）。
-// 顶层与 §2.2 同构（行 460「与 2.2 同构，flow=reset」），字段名与 §2.2 字段表
-// 逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
-// 响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含 ResetPassword），
+// 顶层与 §2.2 同构（「与 2.2 同构，flow=reset」），字段名与 §2.2 字段表
+// 逐字一致且 snake_case，编号从 1 起连续（§12.9）。
+// 响应复用本包 LoginFlowResponse（§1.3 的共用清单含 ResetPassword），
 // 故不定义 ResetPasswordResponse；status=reset_disabled 等状态只体现在响应 status 上
-// （§2.4 行 470），本请求体不设重复的状态字段。
+// （§2.4），本请求体不设重复的状态字段。
 type ResetPasswordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 首次不带；后续必须带（内存变量回传）（§2.2 行 420，随「与 2.2 同构」引入，§2.4 行 460）。
+	// 首次不带；后续必须带（内存变量回传）（§2.2，随「与 2.2 同构」引入，§2.4）。
 	LoginToken string `protobuf:"bytes,1,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
-	// 无 login_token 时必须带（§2.2 行 421，随同构引入，§2.4 行 460）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 无 login_token 时必须带（§2.2，随同构引入，§2.4）；
+	// 跨版本可新增，用 string 承载（§12.9）。
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// 取值 challenge｜verify｜set_password（§2.4 行 462-466；§2.2 行 422 已预留 set_password）；
-	// 同为跨版本可新增的取值，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify｜set_password（§2.4；§2.2 已预留 set_password）；
+	// 同为跨版本可新增的取值，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,3,opt,name=step,proto3" json:"step,omitempty"`
-	// 重置各 step 的字段，见 ResetPayload（§2.4 行 462-466）。
+	// 重置各 step 的字段，见 ResetPayload（§2.4）。
 	Payload *ResetPayload `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
-	// OIDC 授权上下文（§2.2 行 425，随同构引入，§2.4 行 460）：仅首次请求（尚无 login_token）
+	// OIDC 授权上下文（§2.2，随同构引入，§2.4）：仅首次请求（尚无 login_token）
 	// 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
 	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
-	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
-	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步必填，
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2、§2.5 提交格式、
+	// §2.6「captcha 不属于任何因子的 payload」）；challenge 步必填，
 	// 其余场景可省。
 	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -126,21 +126,21 @@ func (x *ResetPasswordRequest) GetCaptcha() *CaptchaPayload {
 	return nil
 }
 
-// ResetPayload 是 §2.4 重置各 step 的 payload 字段合集（行 462-466）：
-// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
+// ResetPayload 是 §2.4 重置各 step 的 payload 字段合集：
+// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9）。
 // 字段集合与 LoginPayload（login.proto）不同（本消息无 username/credential，另有
 // set_password 的 password），且口径来源不同（本消息以 §2.4 为准），故在本文件各建：
 // 按 §12.8 / §12.9 只增不改，重置后续若需新增字段直接在本文件加号，不动已验收的
 // login.proto / register.proto。
 type ResetPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// challenge 步：目标邮箱，须为已绑定且已验证的（§2.4 行 464）；与 phone 二选一。
+	// challenge 步：目标邮箱，须为已绑定且已验证的（§2.4）；与 phone 二选一。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	// challenge 步：目标手机号，须为已绑定且已验证的（§2.4 行 464）；与 email 二选一。
+	// challenge 步：目标手机号，须为已绑定且已验证的（§2.4）；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
-	// verify 步：验证码，purpose=reset（§2.4 行 465；6 位口径见 §2.6 行 545）。
+	// verify 步：验证码，purpose=reset（§2.4；6 位口径见 §2.6）。
 	Code string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
-	// set_password 步：新密码，需满足强度策略（§2.4 行 466、§5.6）。
+	// set_password 步：新密码，需满足强度策略（§2.4、§5.6）。
 	Password      string `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

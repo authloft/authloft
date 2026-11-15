@@ -23,18 +23,18 @@ const (
 )
 
 // CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
-// （docs/接口文档.md §2.8，行 687-708）；登录与绑定共用，靠 scene 区分（行 685、689）。
-// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
+// （docs/接口文档.md §2.8）；登录与绑定共用，靠 scene 区分（689）。
+// 消息名随方法名（§12.9「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
 // QrcodeRequest，Connect 化时更名）。
-// 字段名与行 693-702 的 JSON 示例 / 字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+// 字段名与 JSON 示例 / 字段表逐字一致，编号从 1 起连续（§12.9）。
 type CreateQrcodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 扫码类 Provider（§2.8 行 700）。
+	// 扫码类 Provider（§2.8）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// login（默认）｜bind（需 al_session，否则 401）（§2.8 行 701；§1.5 行 187）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// login（默认）｜bind（需 al_session，否则 401）（§2.8；§1.5）；
+	// 跨版本可新增，用 string 承载（§12.9）。
 	Scene string `protobuf:"bytes,2,opt,name=scene,proto3" json:"scene,omitempty"`
-	// 每次拉码都要新的，结构见 §2.5（§2.8 行 702、§2.5 行 499-510）。
+	// 每次拉码都要新的，结构见 §2.5（§2.8、§2.5）。
 	Captcha       *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -91,16 +91,16 @@ func (x *CreateQrcodeRequest) GetCaptcha() *CaptchaPayload {
 	return nil
 }
 
-// CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8 行 694-695）。
+// CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8）。
 type CreateQrcodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 服务端加密的 TicketPayload，客户端不可篡改（§2.8 行 694、704、706）。
+	// 服务端加密的 TicketPayload，客户端不可篡改（§2.8、704、706）。
 	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	// 拉码时下发的票据标识，全链路统一用这一个名字（§2.8 行 695、707）。
+	// 拉码时下发的票据标识，全链路统一用这一个名字（§2.8、707）。
 	TicketId string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	// 小程序码图片地址（§2.8 行 695）。
+	// 小程序码图片地址（§2.8）。
 	QrcodeUrl string `protobuf:"bytes,3,opt,name=qrcode_url,json=qrcodeUrl,proto3" json:"qrcode_url,omitempty"`
-	// 票据有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.8 行 695、§12.9 行 1751）。
+	// 票据有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.8、§12.9）。
 	ExpiresIn     int64 `protobuf:"varint,4,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -165,16 +165,16 @@ func (x *CreateQrcodeResponse) GetExpiresIn() int64 {
 }
 
 // GetLoginTicketRequest 是 SsoService/GetLoginTicket 的请求消息
-// （docs/接口文档.md §2.8，行 709-733；查询 / 长轮询 / 完成登录）。
-// 字段名与行 711-714 的字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+// （docs/接口文档.md §2.8；查询 / 长轮询 / 完成登录）。
+// 字段名与字段表逐字一致，编号从 1 起连续（§12.9）。
 type GetLoginTicketRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 拉码时下发的加密票据（§2.8 行 713）。
+	// 拉码时下发的加密票据（§2.8）。
 	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	// 长轮询最长等待秒数，上限 15（本上限全文档唯一定义处，§2.8 行 714）；
-	// 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
+	// 长轮询最长等待秒数，上限 15（本上限全文档唯一定义处，§2.8）；
+	// 整型一律 int64，JSON 输出十进制字符串（§12.9）。
 	Poll int64 `protobuf:"varint,2,opt,name=poll,proto3" json:"poll,omitempty"`
-	// OIDC 上下文（§2.8 行 867、§2.7.2）：扫码 step-up 时回传给
+	// OIDC 上下文（§2.8、§2.7.2）：扫码 step-up 时回传给
 	// State.Issue 写入 login_token.oidc；非扫码场景不传。按 §12.8 顺延编号，
 	// 不改既有字段号与语义。
 	Oidc          *structpb.Struct `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
@@ -234,16 +234,16 @@ func (x *GetLoginTicketRequest) GetOidc() *structpb.Struct {
 }
 
 // ConfirmLoginTicketRequest 是 SsoService/ConfirmLoginTicket 的请求消息
-// （docs/接口文档.md §2.8，行 735-748）：已登录一端写入授权结果。
-// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
+// （docs/接口文档.md §2.8）：已登录一端写入授权结果。
+// 消息名随方法名（§12.9「请求 XxxRequest」，pre-connect 时代按旧 URL 命名作
 // LoginTicketRequest，Connect 化时更名）。
-// 字段名与行 739-742 的字段表逐字一致，编号从 1 起连续（§12.9 行 1749）。
+// 字段名与字段表逐字一致，编号从 1 起连续（§12.9）。
 type ConfirmLoginTicketRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 拉码时下发的 ticket_id（§2.8 行 741）。
+	// 拉码时下发的 ticket_id（§2.8）。
 	TicketId string `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
 	// 当前已登录设备的 session_token（§1.2）；缺省时取 Cookie al_session，
-	// 两者同时存在时以请求体为准且必须与 Cookie 属同一 uid，否则 invalid_request（§2.8 行 742）。
+	// 两者同时存在时以请求体为准且必须与 Cookie 属同一 uid，否则 invalid_request（§2.8）。
 	Session       string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

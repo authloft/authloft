@@ -15,25 +15,25 @@ export const file_api_rpc_v1_session: GenFile = /*@__PURE__*/
   fileDesc("ChhhcGkvcnBjL3YxL3Nlc3Npb24ucHJvdG8SCmFwaS5ycGMudjEiSAoURGVjb2RlU2Vzc2lvblJlcXVlc3QSFQoNc2Vzc2lvbl90b2tlbhgBIAEoCRIZChFpbmNsdWRlX3VzZXJfaW5mbxgCIAEoCCKnAQoPU2Vzc2lvblJlc3BvbnNlEgoKAmlkGAEgASgDEg0KBWVwb2NoGAIgASgDEgsKA2FtchgDIAMoCRILCgNzaWQYBCABKAkSCwoDaWF0GAUgASgDEgsKA2V4cBgGIAEoAxIVCg1yZW5ld2VkX3Rva2VuGAcgASgJEi4KCXVzZXJfaW5mbxgIIAEoCzIbLmFwaS5ycGMudjEuUHJvZmlsZVJlc3BvbnNlQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvcnBjL3YxO3JwY3YxYgZwcm90bzM", [file_api_rpc_v1_profile]);
 
 /**
- * DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7 行 1389「传入
+ * DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7「传入
  * Session Token（请求体字段 `session_token`）进行解码」）。字段名已由
- * 文档转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
+ * 文档转正（术语 §1.2、《后端架构》§11.6.3）。
  *
  * @generated from message api.rpc.v1.DecodeSessionRequest
  */
 export type DecodeSessionRequest = Message<"api.rpc.v1.DecodeSessionRequest"> & {
   /**
-   * 待解码的会话令牌（§7 行 1386）。
+   * 待解码的会话令牌（§7）。
    *
    * @generated from field: string session_token = 1;
    */
   sessionToken: string;
 
   /**
-   * 是否额外携带用户信息（接口文档 §7.1 行 1419/1434）：true 且
+   * 是否额外携带用户信息（接口文档 §7.1）：true 且
    * 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
    * 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
-   * unauthenticated（行 1433），本字段不改变失败分支。
+   * unauthenticated，本字段不改变失败分支。
    *
    * @generated from field: bool include_user_info = 2;
    */
@@ -48,68 +48,68 @@ export const DecodeSessionRequestSchema: GenMessage<DecodeSessionRequest> = /*@_
   messageDesc(file_api_rpc_v1_session, 0);
 
 /**
- * SessionResponse 是 TokenService/DecodeSession 的响应（§7 行 1389「返回
- * SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
- * 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
- * 内部载荷与接口报文不得混用（§12.9 行 1745），故在 api.rpc.v1 定义报文视图消息；
- * 字段名与 §11.6.3 逐字一致（§12.9 行 1749），整型一律 int64（行 1751）。
+ * SessionResponse 是 TokenService/DecodeSession 的响应（§7「返回
+ * SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3），
+ * 按 §1.0 成功响应即消息本身平铺（§7，Connect 化后无信封）。
+ * 内部载荷与接口报文不得混用（§12.9），故在 api.rpc.v1 定义报文视图消息；
+ * 字段名与 §11.6.3 逐字一致（§12.9），整型一律 int64。
  *
  * @generated from message api.rpc.v1.SessionResponse
  */
 export type SessionResponse = Message<"api.rpc.v1.SessionResponse"> & {
   /**
-   * 用户 ID（《后端架构》§11.6.3 行 1310）。
+   * 用户 ID（《后端架构》§11.6.3）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效（§11.6.3 行 1311、1319）。
+   * 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效（§11.6.3、1319）。
    *
    * @generated from field: int64 epoch = 2;
    */
   epoch: bigint;
 
   /**
-   * 认证方法数组，如 ["pwd","otp"]（§11.6.3 行 1312）。
+   * 认证方法数组，如 ["pwd","otp"]（§11.6.3）。
    *
    * @generated from field: repeated string amr = 3;
    */
   amr: string[];
 
   /**
-   * 会话 ID（§11.6.3 行 1313）。
+   * 会话 ID（§11.6.3）。
    *
    * @generated from field: string sid = 4;
    */
   sid: string;
 
   /**
-   * 签发时间，Unix 秒（§11.6.3 行 1314）。
+   * 签发时间，Unix 秒（§11.6.3）。
    *
    * @generated from field: int64 iat = 5;
    */
   iat: bigint;
 
   /**
-   * 过期时间，Unix 秒（§11.6.3 行 1315）。
+   * 过期时间，Unix 秒（§11.6.3）。
    *
    * @generated from field: int64 exp = 6;
    */
   exp: bigint;
 
   /**
-   * 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
+   * 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1）。
    *
    * @generated from field: string renewed_token = 7;
    */
   renewedToken: string;
 
   /**
-   * 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1 行 1427）；
+   * 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1）；
    * 与 UserService/GetUserProfile 响应同构，复用同包 ProfileResponse
-   * （行 1434；§3.1 Authloft 结构，本文件不复制定义）。
+   * （§3.1 Authloft 结构，本文件不复制定义）。
    *
    * @generated from field: api.rpc.v1.ProfileResponse user_info = 8;
    */

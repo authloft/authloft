@@ -108,51 +108,51 @@ const (
 
 // AccountServiceClient is a client for the api.account.v1.AccountService service.
 type AccountServiceClient interface {
-	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2 行 818）。
+	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2）。
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.AccountConfigResponse], error)
-	// §3.1 统一用户信息结构（§3.2 行 819）。
+	// §3.1 统一用户信息结构（§3.2）。
 	GetProfile(context.Context, *connect.Request[v1.GetProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
-	// 修改资料，成功为空响应（§3.2 行 820）。
+	// 修改资料，成功为空响应（§3.2）。
 	UpdateProfile(context.Context, *connect.Request[v1.UpdateProfileRequest]) (*connect.Response[v1.OkResponse], error)
-	// direct 模式取预签名（§3.2 行 822）。
+	// direct 模式取预签名（§3.2）。
 	PresignAvatar(context.Context, *connect.Request[v1.PresignAvatarRequest]) (*connect.Response[v1.AvatarPresignResponse], error)
-	// direct 模式确认上传，仅记录不回读（§3.2 行 823）。
+	// direct 模式确认上传，仅记录不回读（§3.2）。
 	CommitAvatar(context.Context, *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
-	// 改密，成功为空响应并递增 epoch（§3.3 行 855-862）。
+	// 改密，成功为空响应并递增 epoch（§3.3）。
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.OkResponse], error)
-	// 手机号绑定 / 换绑两步，由 step 区分（§3.4 行 870-871），成功为空响应。
+	// 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
 	BindPhone(context.Context, *connect.Request[v1.BindPhoneRequest]) (*connect.Response[v1.OkResponse], error)
-	// 邮箱绑定 / 换绑两步，由 step 区分（§3.4 行 872-873），成功为空响应。
+	// 邮箱绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
 	BindEmail(context.Context, *connect.Request[v1.BindEmailRequest]) (*connect.Response[v1.OkResponse], error)
-	// MFA 绑定明细（§3.5 行 903）。
+	// MFA 绑定明细（§3.5）。
 	GetMfa(context.Context, *connect.Request[v1.GetMfaRequest]) (*connect.Response[v1.MfaResponse], error)
-	// 勾选启用因子集合，成功为空响应（§3.5 行 904）。
+	// 勾选启用因子集合，成功为空响应（§3.5）。
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
-	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
+	// TOTP 绑定两步，由 step 区分（§3.5）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5）。前置：须先经 §3.8
 	// 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
 	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
-	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
+	// 重新生成即全量作废，同格式下发新码（§3.5）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
-	// 已绑定凭据列表（§3.6 行 914）。
+	// 已绑定凭据列表（§3.6）。
 	GetWebauthnCredentials(context.Context, *connect.Request[v1.GetWebauthnCredentialsRequest]) (*connect.Response[v1.WebauthnListResponse], error)
-	// 注册两步，由 step 区分；challenge 要求 resident key（§3.6 行 915-916）。
+	// 注册两步，由 step 区分；challenge 要求 resident key（§3.6）。
 	RegisterWebauthn(context.Context, *connect.Request[v1.RegisterWebauthnRequest]) (*connect.Response[v1.RegisterWebauthnResponse], error)
-	// 凭据重命名，成功为空响应（§3.6 行 917）。
+	// 凭据重命名，成功为空响应（§3.6）。
 	RenameWebauthnCredential(context.Context, *connect.Request[v1.RenameWebauthnCredentialRequest]) (*connect.Response[v1.OkResponse], error)
-	// 凭据删除，成功为空响应（§3.6 行 918）。
+	// 凭据删除，成功为空响应（§3.6）。
 	DeleteWebauthnCredential(context.Context, *connect.Request[v1.DeleteWebauthnCredentialRequest]) (*connect.Response[v1.OkResponse], error)
-	// 已绑定与可绑定的第三方列表（§3.7 行 936）。
+	// 已绑定与可绑定的第三方列表（§3.7）。
 	GetThirdpartyBindings(context.Context, *connect.Request[v1.GetThirdpartyBindingsRequest]) (*connect.Response[v1.ThirdpartyBindingsResponse], error)
-	// 解绑，成功为空响应（§3.7 行 937）。
+	// 解绑，成功为空响应（§3.7）。
 	UnbindThirdparty(context.Context, *connect.Request[v1.UnbindThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
-	// channel=redirect 的绑定回调落地（§3.7 行 938、§3.7.1 A 行 971-977）。
+	// channel=redirect 的绑定回调落地（§3.7、§3.7.1 A）。
 	ThirdpartyOauth(context.Context, *connect.Request[v1.ThirdpartyOauthRequest]) (*connect.Response[v1.ThirdpartyOauthResponse], error)
-	// channel=qrcode 的绑定长轮询（§3.7 行 939、§3.7.1 B 行 1008-1026），
-	// 响应复用登录流程信封（§1.3 行 152-154）。
+	// channel=qrcode 的绑定长轮询（§3.7、§3.7.1 B）
+	// 响应复用登录流程信封（§1.3）。
 	GetThirdpartyTicket(context.Context, *connect.Request[v1.GetThirdpartyTicketRequest]) (*connect.Response[v11.LoginFlowResponse], error)
-	// 本人登录记录（仅成功记录，§3.7 行 1038）。
+	// 本人登录记录（仅成功记录，§3.7）。
 	GetEvents(context.Context, *connect.Request[v1.GetEventsRequest]) (*connect.Response[v1.GetEventsResponse], error)
 	// 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
 	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)
@@ -468,51 +468,51 @@ func (c *accountServiceClient) SubmitVerification(ctx context.Context, req *conn
 
 // AccountServiceHandler is an implementation of the api.account.v1.AccountService service.
 type AccountServiceHandler interface {
-	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2 行 818）。
+	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2）。
 	GetConfig(context.Context, *connect.Request[v1.GetConfigRequest]) (*connect.Response[v1.AccountConfigResponse], error)
-	// §3.1 统一用户信息结构（§3.2 行 819）。
+	// §3.1 统一用户信息结构（§3.2）。
 	GetProfile(context.Context, *connect.Request[v1.GetProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
-	// 修改资料，成功为空响应（§3.2 行 820）。
+	// 修改资料，成功为空响应（§3.2）。
 	UpdateProfile(context.Context, *connect.Request[v1.UpdateProfileRequest]) (*connect.Response[v1.OkResponse], error)
-	// direct 模式取预签名（§3.2 行 822）。
+	// direct 模式取预签名（§3.2）。
 	PresignAvatar(context.Context, *connect.Request[v1.PresignAvatarRequest]) (*connect.Response[v1.AvatarPresignResponse], error)
-	// direct 模式确认上传，仅记录不回读（§3.2 行 823）。
+	// direct 模式确认上传，仅记录不回读（§3.2）。
 	CommitAvatar(context.Context, *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
-	// 改密，成功为空响应并递增 epoch（§3.3 行 855-862）。
+	// 改密，成功为空响应并递增 epoch（§3.3）。
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.OkResponse], error)
-	// 手机号绑定 / 换绑两步，由 step 区分（§3.4 行 870-871），成功为空响应。
+	// 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
 	BindPhone(context.Context, *connect.Request[v1.BindPhoneRequest]) (*connect.Response[v1.OkResponse], error)
-	// 邮箱绑定 / 换绑两步，由 step 区分（§3.4 行 872-873），成功为空响应。
+	// 邮箱绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
 	BindEmail(context.Context, *connect.Request[v1.BindEmailRequest]) (*connect.Response[v1.OkResponse], error)
-	// MFA 绑定明细（§3.5 行 903）。
+	// MFA 绑定明细（§3.5）。
 	GetMfa(context.Context, *connect.Request[v1.GetMfaRequest]) (*connect.Response[v1.MfaResponse], error)
-	// 勾选启用因子集合，成功为空响应（§3.5 行 904）。
+	// 勾选启用因子集合，成功为空响应（§3.5）。
 	SetMfa(context.Context, *connect.Request[v1.SetMfaRequest]) (*connect.Response[v1.OkResponse], error)
-	// TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
+	// TOTP 绑定两步，由 step 区分（§3.5）。
 	BindTotp(context.Context, *connect.Request[v1.BindTotpRequest]) (*connect.Response[v1.BindTotpResponse], error)
-	// 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+	// 解除当前 TOTP 绑定，成功为空响应（§3.5）。前置：须先经 §3.8
 	// 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
 	UnbindTotp(context.Context, *connect.Request[v1.UnbindTotpRequest]) (*connect.Response[v1.OkResponse], error)
-	// 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
+	// 重新生成即全量作废，同格式下发新码（§3.5）。
 	RegenerateRecoveryCodes(context.Context, *connect.Request[v1.RegenerateRecoveryCodesRequest]) (*connect.Response[v1.RecoveryCodesResponse], error)
-	// 已绑定凭据列表（§3.6 行 914）。
+	// 已绑定凭据列表（§3.6）。
 	GetWebauthnCredentials(context.Context, *connect.Request[v1.GetWebauthnCredentialsRequest]) (*connect.Response[v1.WebauthnListResponse], error)
-	// 注册两步，由 step 区分；challenge 要求 resident key（§3.6 行 915-916）。
+	// 注册两步，由 step 区分；challenge 要求 resident key（§3.6）。
 	RegisterWebauthn(context.Context, *connect.Request[v1.RegisterWebauthnRequest]) (*connect.Response[v1.RegisterWebauthnResponse], error)
-	// 凭据重命名，成功为空响应（§3.6 行 917）。
+	// 凭据重命名，成功为空响应（§3.6）。
 	RenameWebauthnCredential(context.Context, *connect.Request[v1.RenameWebauthnCredentialRequest]) (*connect.Response[v1.OkResponse], error)
-	// 凭据删除，成功为空响应（§3.6 行 918）。
+	// 凭据删除，成功为空响应（§3.6）。
 	DeleteWebauthnCredential(context.Context, *connect.Request[v1.DeleteWebauthnCredentialRequest]) (*connect.Response[v1.OkResponse], error)
-	// 已绑定与可绑定的第三方列表（§3.7 行 936）。
+	// 已绑定与可绑定的第三方列表（§3.7）。
 	GetThirdpartyBindings(context.Context, *connect.Request[v1.GetThirdpartyBindingsRequest]) (*connect.Response[v1.ThirdpartyBindingsResponse], error)
-	// 解绑，成功为空响应（§3.7 行 937）。
+	// 解绑，成功为空响应（§3.7）。
 	UnbindThirdparty(context.Context, *connect.Request[v1.UnbindThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
-	// channel=redirect 的绑定回调落地（§3.7 行 938、§3.7.1 A 行 971-977）。
+	// channel=redirect 的绑定回调落地（§3.7、§3.7.1 A）。
 	ThirdpartyOauth(context.Context, *connect.Request[v1.ThirdpartyOauthRequest]) (*connect.Response[v1.ThirdpartyOauthResponse], error)
-	// channel=qrcode 的绑定长轮询（§3.7 行 939、§3.7.1 B 行 1008-1026），
-	// 响应复用登录流程信封（§1.3 行 152-154）。
+	// channel=qrcode 的绑定长轮询（§3.7、§3.7.1 B）
+	// 响应复用登录流程信封（§1.3）。
 	GetThirdpartyTicket(context.Context, *connect.Request[v1.GetThirdpartyTicketRequest]) (*connect.Response[v11.LoginFlowResponse], error)
-	// 本人登录记录（仅成功记录，§3.7 行 1038）。
+	// 本人登录记录（仅成功记录，§3.7）。
 	GetEvents(context.Context, *connect.Request[v1.GetEventsRequest]) (*connect.Response[v1.GetEventsResponse], error)
 	// 已登录会话域取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
 	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)

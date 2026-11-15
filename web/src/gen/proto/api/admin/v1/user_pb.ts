@@ -17,10 +17,10 @@ export const file_api_admin_v1_user: GenFile = /*@__PURE__*/
   fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDItYBChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZSI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_admin_v1_events]);
 
 /**
- * AdminUser 是管理端的用户视图（§5.4 行 1246）：字段集为 user 表列投影
- * （《后端架构》§4.2），与 §3.1 行 775-798 统一用户信息结构的非嵌套字段同名同义，
+ * AdminUser 是管理端的用户视图（§5.4）：字段集为 user 表列投影
+ * （《后端架构》§4.2），与 §3.1 统一用户信息结构的非嵌套字段同名同义，
  * 不含 user_profile 嵌套（§5.4 未要求）。
- * 用户状态字段一律 user_status（§5.4 行 1246-1248）。
+ * 用户状态字段一律 user_status（§5.4）。
  * 不跨包引用 api.account.v1.ProfileResponse：两者结构虽已同名同义（account 域
  * status=9 已改名 user_status），但 admin 视图为独立投影、允许与自助视图
  * 独立演进；如需切换为复用，另行定夺。
@@ -29,28 +29,28 @@ export const file_api_admin_v1_user: GenFile = /*@__PURE__*/
  */
 export type AdminUser = Message<"api.admin.v1.AdminUser"> & {
   /**
-   * 用户 ID（§3.1 行 779）。
+   * 用户 ID（§3.1）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 登录名（§3.1 行 780）。
+   * 登录名（§3.1）。
    *
    * @generated from field: string username = 2;
    */
   username: string;
 
   /**
-   * 昵称（§3.1 行 781）。
+   * 昵称（§3.1）。
    *
    * @generated from field: string nickname = 3;
    */
   nickname: string;
 
   /**
-   * 头像地址（§3.1 行 782）。
+   * 头像地址（§3.1）。
    *
    * @generated from field: string avatar_url = 4;
    */
@@ -71,21 +71,21 @@ export type AdminUser = Message<"api.admin.v1.AdminUser"> & {
   email: string;
 
   /**
-   * 手机号是否已验证，JSON 为 1/0（§3.1 行 784）。
+   * 手机号是否已验证，JSON 为 1/0（§3.1）。
    *
    * @generated from field: int64 phone_verified = 7;
    */
   phoneVerified: bigint;
 
   /**
-   * 邮箱是否已验证，JSON 为 1/0（§3.1 行 786）。
+   * 邮箱是否已验证，JSON 为 1/0（§3.1）。
    *
    * @generated from field: int64 email_verified = 8;
    */
   emailVerified: bigint;
 
   /**
-   * 账号状态：1 正常 0 禁用（§5.4 行 1248 {id, userStatus: 0 或 1}）。
+   * 账号状态：1 正常 0 禁用（§5.4 {id, userStatus: 0 或 1}）。
    *
    * @generated from field: int64 user_status = 9;
    */
@@ -99,28 +99,28 @@ export type AdminUser = Message<"api.admin.v1.AdminUser"> & {
   mfaRequired: bigint;
 
   /**
-   * 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1 行 789、《后端架构》§4.2）。
+   * 安全版本号，改密 / 重置 / 管理员禁用时递增（§3.1、《后端架构》§4.2）。
    *
    * @generated from field: int64 epoch = 11;
    */
   epoch: bigint;
 
   /**
-   * 最后登录时间，Unix 秒（§3.1 行 790）。
+   * 最后登录时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 last_login_at = 12;
    */
   lastLoginAt: bigint;
 
   /**
-   * 创建时间，Unix 秒（§3.1 行 791）。
+   * 创建时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 created_at = 13;
    */
   createdAt: bigint;
 
   /**
-   * 更新时间，Unix 秒（§3.1 行 792）。
+   * 更新时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 updated_at = 14;
    */
@@ -135,52 +135,52 @@ export const AdminUserSchema: GenMessage<AdminUser> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_user, 0);
 
 /**
- * ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4 行 1246：
- * 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5 行 1153）。
- * 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional。
- * 消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名 UserListRequest，
+ * ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：
+ * 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5）。
+ * 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional。
+ * 消息名随方法名（§12.9；pre-connect 时代按资源命名 UserListRequest，
  * Connect 化时更名）。
  *
  * @generated from message api.admin.v1.ListUsersRequest
  */
 export type ListUsersRequest = Message<"api.admin.v1.ListUsersRequest"> & {
   /**
-   * 搜索词（§5.4 行 1246）。
+   * 搜索词（§5.4）。
    *
    * @generated from field: optional string q = 1;
    */
   q?: string | undefined;
 
   /**
-   * 按账号状态过滤：1 正常 0 禁用（§5.4 行 1246）。
+   * 按账号状态过滤：1 正常 0 禁用（§5.4）。
    *
    * @generated from field: optional int64 user_status = 2;
    */
   userStatus?: bigint | undefined;
 
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 3;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 4;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 5;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 6;
    */
@@ -195,35 +195,35 @@ export const ListUsersRequestSchema: GenMessage<ListUsersRequest> = /*@__PURE__*
   messageDesc(file_api_admin_v1_user, 1);
 
 /**
- * UserListResponse 是 AdminService/ListUsers 的响应（§5.4 行 1246、§1.7 行 278）。
+ * UserListResponse 是 AdminService/ListUsers 的响应（§5.4、§1.7）。
  * 响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
  *
  * @generated from message api.admin.v1.UserListResponse
  */
 export type UserListResponse = Message<"api.admin.v1.UserListResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.AdminUser items = 1;
    */
   items: AdminUser[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */
@@ -238,15 +238,15 @@ export const UserListResponseSchema: GenMessage<UserListResponse> = /*@__PURE__*
   messageDesc(file_api_admin_v1_user, 2);
 
 /**
- * GetUserRequest 是 AdminService/GetUser 的请求（§5.4 行 1247：{id} 详情）。
+ * GetUserRequest 是 AdminService/GetUser 的请求（§5.4：{id} 详情）。
  * pre-connect 时代 id 在 REST 路径 /users/{id} 中，Connect 化后路径参数进请求消息
- * （§1.7 行 277 同口径）。
+ * （§1.7 同口径）。
  *
  * @generated from message api.admin.v1.GetUserRequest
  */
 export type GetUserRequest = Message<"api.admin.v1.GetUserRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1247）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: int64 id = 1;
    */
@@ -261,7 +261,7 @@ export const GetUserRequestSchema: GenMessage<GetUserRequest> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_user, 3);
 
 /**
- * UserCredentialSummary 是用户详情的凭证概览条目（§5.4 行 1247「含凭证概览」）：
+ * UserCredentialSummary 是用户详情的凭证概览条目（§5.4「含凭证概览」）：
  * user_credential 行的管理端投影（《后端架构》§4.3），secret 永不透出。
  *
  * @generated from message api.admin.v1.UserCredentialSummary
@@ -276,7 +276,7 @@ export type UserCredentialSummary = Message<"api.admin.v1.UserCredentialSummary"
 
   /**
    * 凭证类型 password|totp|webauthn|recovery_code（《后端架构》§4.3）；
-   * 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+   * 跨版本可能新增，用 string 承载（§12.9）。
    *
    * @generated from field: string kind = 2;
    */
@@ -319,7 +319,7 @@ export const UserCredentialSummarySchema: GenMessage<UserCredentialSummary> = /*
   messageDesc(file_api_admin_v1_user, 4);
 
 /**
- * UserThirdpartyBinding 是用户详情的第三方绑定条目（§5.4 行 1247「绑定」、行 1250）：
+ * UserThirdpartyBinding 是用户详情的第三方绑定条目（§5.4「绑定」、）：
  * user_thirdparty_bind 行的投影（《后端架构》§4.3）；
  * extra 为 msgpack 原始资料、仅排查用，不透出（§12.1）。
  *
@@ -384,7 +384,7 @@ export const UserThirdpartyBindingSchema: GenMessage<UserThirdpartyBinding> = /*
   messageDesc(file_api_admin_v1_user, 5);
 
 /**
- * UserDetailResponse 是 AdminService/GetUser 的响应（§5.4 行 1247
+ * UserDetailResponse 是 AdminService/GetUser 的响应（§5.4
  * 「详情（含凭证概览、绑定、MFA 状态）」）。
  *
  * @generated from message api.admin.v1.UserDetailResponse
@@ -398,21 +398,21 @@ export type UserDetailResponse = Message<"api.admin.v1.UserDetailResponse"> & {
   user?: AdminUser | undefined;
 
   /**
-   * 凭证概览，secret 不透出（§5.4 行 1247）。
+   * 凭证概览，secret 不透出（§5.4）。
    *
    * @generated from field: repeated api.admin.v1.UserCredentialSummary credentials = 2;
    */
   credentials: UserCredentialSummary[];
 
   /**
-   * 已绑定的第三方身份（§5.4 行 1247、行 1250）。
+   * 已绑定的第三方身份（§5.4、）。
    *
    * @generated from field: repeated api.admin.v1.UserThirdpartyBinding bindings = 3;
    */
   bindings: UserThirdpartyBinding[];
 
   /**
-   * MFA 绑定明细，跨包引用 §3.5 行 887-898 的既有视图，不复制同构消息（§12.9 行 1748）。
+   * MFA 绑定明细，跨包引用 §3.5 的既有视图，不复制同构消息（§12.9）。
    *
    * @generated from field: api.account.v1.MfaResponse mfa = 4;
    */
@@ -427,24 +427,24 @@ export const UserDetailResponseSchema: GenMessage<UserDetailResponse> = /*@__PUR
   messageDesc(file_api_admin_v1_user, 6);
 
 /**
- * UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4 行 1248：
+ * UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
  * {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
- * pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留），
- * Connect 化后 id 进请求消息，字段顺序同 §5.4 行 1248 示例；
- * 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+ * pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
+ * Connect 化后 id 进请求消息，字段顺序同 §5.4 示例；
+ * 消息名随方法名（§12.9）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.UpdateUserStatusRequest
  */
 export type UpdateUserStatusRequest = Message<"api.admin.v1.UpdateUserStatusRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1248）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 目标状态：1 启用 0 禁用（§5.4 行 1248）。
+   * 目标状态：1 启用 0 禁用（§5.4）。
    *
    * @generated from field: int64 user_status = 2;
    */
@@ -460,22 +460,22 @@ export const UpdateUserStatusRequestSchema: GenMessage<UpdateUserStatusRequest> 
 
 /**
  * ResetUserPasswordRequest 是 AdminService/ResetUserPassword 的请求
- * （§5.4 行 1249：{id, password} 管理员重置）。须满足 §5.6 密码策略；
+ * （§5.4：{id, password} 管理员重置）。须满足 §5.6 密码策略；
  * id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
- * 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+ * 消息名随方法名（§12.9）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.ResetUserPasswordRequest
  */
 export type ResetUserPasswordRequest = Message<"api.admin.v1.ResetUserPasswordRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1249）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 新密码，按 §5.6 密码策略校验（§5.4 行 1249）。
+   * 新密码，按 §5.6 密码策略校验（§5.4）。
    *
    * @generated from field: string password = 2;
    */
@@ -491,7 +491,7 @@ export const ResetUserPasswordRequestSchema: GenMessage<ResetUserPasswordRequest
 
 /**
  * UnbindUserThirdpartyRequest 是 AdminService/UnbindUserThirdparty 的请求
- * （§5.4 行 1250：{id, providerKey} 解绑第三方）。pre-connect 时代两个参数都在
+ * （§5.4：{id, providerKey} 解绑第三方）。pre-connect 时代两个参数都在
  * REST 路径 /users/{id}/thirdparty/{provider_key} 中，Connect 化后进请求消息。
  * 成功返回 OkResponse。
  *
@@ -499,14 +499,14 @@ export const ResetUserPasswordRequestSchema: GenMessage<ResetUserPasswordRequest
  */
 export type UnbindUserThirdpartyRequest = Message<"api.admin.v1.UnbindUserThirdpartyRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1250）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 要解绑的第三方渠道标识（§5.4 行 1250）。
+   * 要解绑的第三方渠道标识（§5.4）。
    *
    * @generated from field: string provider_key = 2;
    */
@@ -521,7 +521,7 @@ export const UnbindUserThirdpartyRequestSchema: GenMessage<UnbindUserThirdpartyR
   messageDesc(file_api_admin_v1_user, 9);
 
 /**
- * UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4 行 1251：{id} 解除登录限制）：
+ * UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4：{id} 解除登录限制）：
  * 清 al:pwf / al:pwban 的 uid 维度键，并按该用户当前手机号 / 邮箱重算
  * IP + 账号 维度的键一并清除（后端 §8.1）。成功返回 OkResponse。
  *
@@ -529,7 +529,7 @@ export const UnbindUserThirdpartyRequestSchema: GenMessage<UnbindUserThirdpartyR
  */
 export type UnlockUserRequest = Message<"api.admin.v1.UnlockUserRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1251）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: int64 id = 1;
    */
@@ -544,44 +544,44 @@ export const UnlockUserRequestSchema: GenMessage<UnlockUserRequest> = /*@__PURE_
   messageDesc(file_api_admin_v1_user, 10);
 
 /**
- * GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4 行 1252：
+ * GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4：
  * {id} + 分页，该用户登录记录）；记录范围为登录相关事件，事件类型不在查询参数中重复。
  * id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
- * 消息名随方法名（§12.9 行 1747）。
+ * 消息名随方法名（§12.9）。
  *
  * @generated from message api.admin.v1.GetUserEventsRequest
  */
 export type GetUserEventsRequest = Message<"api.admin.v1.GetUserEventsRequest"> & {
   /**
-   * 目标用户 ID（§5.4 行 1252）。
+   * 目标用户 ID（§5.4）。
    *
    * @generated from field: optional int64 id = 1;
    */
   id?: bigint | undefined;
 
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 2;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 3;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 4;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 5;
    */
@@ -596,36 +596,36 @@ export const GetUserEventsRequestSchema: GenMessage<GetUserEventsRequest> = /*@_
   messageDesc(file_api_admin_v1_user, 11);
 
 /**
- * UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4 行 1252、§1.7 行 278）；
- * 条目复用本域 events.proto 的 EventItem（§5.6 行 1272 同一事件模型，
+ * UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4、§1.7）；
+ * 条目复用本域 events.proto 的 EventItem（§5.6 同一事件模型，
  * 管理员与本人两种视图共用一张表）。响应名沿用资源式命名（buf 豁免同上）。
  *
  * @generated from message api.admin.v1.UserEventsResponse
  */
 export type UserEventsResponse = Message<"api.admin.v1.UserEventsResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.EventItem items = 1;
    */
   items: EventItem[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */

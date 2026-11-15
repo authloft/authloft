@@ -23,28 +23,28 @@ const (
 )
 
 // LoginDefaultRequest 是 SsoService/LoginDefault 的请求消息
-// （docs/接口文档.md §2.2，行 414-436）。
-// 字段名与 §2.2 字段表（行 418-425）逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
-// 响应复用本包 LoginFlowResponse（§1.3 行 104），故不定义 LoginDefaultResponse。
+// （docs/接口文档.md §2.2）。
+// 字段名与 §2.2 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9）。
+// 响应复用本包 LoginFlowResponse（§1.3），故不定义 LoginDefaultResponse。
 type LoginDefaultRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 首次不带；后续必须带（内存变量回传）（§2.2 行 420）。
+	// 首次不带；后续必须带（内存变量回传）（§2.2）。
 	LoginToken string `protobuf:"bytes,1,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
 	// 无 login_token 时必须带。取值：password｜otp_sms｜otp_email｜webauthn｜totp｜recovery_code
-	// （§2.2 行 421）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// （§2.2）；跨版本可新增，用 string 承载（§12.9）。
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// 取值 challenge｜verify（注册 / 重置端点另有 set_password，见 §2.3 / §2.4）（§2.2 行 422）；
-	// 同为跨版本可新增的取值，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify（注册 / 重置端点另有 set_password，见 §2.3 / §2.4）（§2.2）；
+	// 同为跨版本可新增的取值，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,3,opt,name=step,proto3" json:"step,omitempty"`
-	// 各因子字段，见 §2.6 对照表（行 540-549）（§2.2 行 423）。
+	// 各因子字段，见 §2.6 对照表（§2.2）。
 	Payload *LoginPayload `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
 	// OIDC 授权上下文，取自 `__AUTHLOFT_INIT__.oidc`（§8、§4.2），仅在首次请求
-	// （尚无 login_token）时回传，服务端据此写入 login_token.oidc（§2.2 行 425）。
+	// （尚无 login_token）时回传，服务端据此写入 login_token.oidc（§2.2）。
 	// 内容是 /auth/authorize 的 OIDC 原始参数按原样透传、前端不解析其内部字段，
 	// 故与 LoginFlowResponse.next_step.challenge_data 同口径用 google.protobuf.Struct，不逐字段建模。
 	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
-	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
-	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2、§2.5 提交格式、
+	// §2.6「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
 	// 失败达阈值后必填，其余场景可省。
 	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -123,24 +123,24 @@ func (x *LoginDefaultRequest) GetCaptcha() *CaptchaPayload {
 	return nil
 }
 
-// LoginPayload 是 §2.6 各因子 `payload` 对照表（行 540-549）的因子字段合集：
-// 单次请求只按 method / step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
+// LoginPayload 是 §2.6 各因子 `payload` 对照表的因子字段合集：
+// 单次请求只按 method / step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9）。
 // thirdparty 不在本表内，按 §2.7 走独立端点，不进 payload。
-// webauthn/challenge 的 payload 为 `{}`（行 546），即本消息各字段全零值。
+// webauthn/challenge 的 payload 为 `{}`，即本消息各字段全零值。
 type LoginPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// password / verify：登录名（§2.6 行 542）。
+	// password / verify：登录名（§2.6）。
 	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
-	// password / verify：密码（§2.6 行 542）。
+	// password / verify：密码（§2.6）。
 	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	// otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6 行 543）；MFA 场景不传（行 544）。
+	// otp_sms / otp_email 的 challenge 步主因子场景目标手机号（§2.6）；MFA 场景不传。
 	Phone string `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
-	// otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6 行 543）；MFA 场景不传（行 544）。
+	// otp_sms / otp_email 的 challenge 步主因子场景目标邮箱（§2.6）；MFA 场景不传。
 	Email string `protobuf:"bytes,4,opt,name=email,proto3" json:"email,omitempty"`
-	// otp_*/verify 的 6 位验证码（§2.6 行 545）、totp/verify 的 TOTP 码（行 548）、
-	// recovery_code/verify 的 `xxxx-xxxx` 恢复码（行 549）。
+	// otp_*/verify 的 6 位验证码（§2.6）、totp/verify 的 TOTP 码、
+	// recovery_code/verify 的 `xxxx-xxxx` 恢复码。
 	Code string `protobuf:"bytes,5,opt,name=code,proto3" json:"code,omitempty"`
-	// webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6 行 547），为任意 JSON 对象。
+	// webauthn / verify：@simplewebauthn 断言对象原样提交（§2.6），为任意 JSON 对象。
 	Credential    *structpb.Struct `protobuf:"bytes,6,opt,name=credential,proto3" json:"credential,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -218,17 +218,17 @@ func (x *LoginPayload) GetCredential() *structpb.Struct {
 	return nil
 }
 
-// CaptchaPayload 是人机校验的统一提交格式（§2.5 行 499-510，第三方与自绘两类 Provider 共用）。
-// 字段名与该 JSON 示例（行 501-508）逐字一致（§12.9 行 1749）。
+// CaptchaPayload 是人机校验的统一提交格式（§2.5，第三方与自绘两类 Provider 共用）。
+// 字段名与该 JSON 示例逐字一致（§12.9）。
 type CaptchaPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 两类都必须带，取自当前 captcha 对象的 provider_key；降级时为 builtin_image（§2.5 行 502、514）。
+	// 两类都必须带，取自当前 captcha 对象的 provider_key；降级时为 builtin_image（§2.5、514）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 第三方 Provider：厂商 token（§2.5 行 503）。
+	// 第三方 Provider：厂商 token（§2.5）。
 	Token string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
-	// 自绘图形码：图形码 id（§2.5 行 504）。
+	// 自绘图形码：图形码 id（§2.5）。
 	Id string `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
-	// 自绘图形码：用户输入（§2.5 行 505）。
+	// 自绘图形码：用户输入（§2.5）。
 	Answer        string `protobuf:"bytes,4,opt,name=answer,proto3" json:"answer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -293,8 +293,8 @@ func (x *CaptchaPayload) GetAnswer() string {
 }
 
 // CreateCaptchaImageRequest 是 SsoService/CreateCaptchaImage 的请求消息
-// （§2.5 行 490-497）。该端点无请求参数（全局仅一个 captcha Provider，服务端自行
-// 判定降级），故为空消息；Connect unary 方法必须有请求消息（§12.9 行 1747）。
+// （§2.5）。该端点无请求参数（全局仅一个 captcha Provider，服务端自行
+// 判定降级），故为空消息；Connect unary 方法必须有请求消息（§12.9）。
 type CreateCaptchaImageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -332,16 +332,16 @@ func (*CreateCaptchaImageRequest) Descriptor() ([]byte, []int) {
 }
 
 // CreateCaptchaImageResponse 是 SsoService/CreateCaptchaImage 的响应
-// （§2.5 行 490-497）。自绘图形码直接返回图，前端用
-// `data:image/png;base64,{image_base64}` 渲染，不再二次请求图片（行 497）。
-// 字段名与行 492-494 的 JSON 示例逐字一致（§12.9 行 1749）。
+// （§2.5）。自绘图形码直接返回图，前端用
+// `data:image/png;base64,{image_base64}` 渲染，不再二次请求图片。
+// 字段名与 JSON 示例逐字一致（§12.9）。
 type CreateCaptchaImageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 图形码标识，提交时回传 CaptchaPayload.id，对应后端 al:cap:{id}（§2.5 行 494、510）。
+	// 图形码标识，提交时回传 CaptchaPayload.id，对应后端 al:cap:{id}（§2.5、510）。
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 图片的 base64（PNG）（§2.5 行 494）。
+	// 图片的 base64（PNG）（§2.5）。
 	ImageBase64 string `protobuf:"bytes,2,opt,name=image_base64,json=imageBase64,proto3" json:"image_base64,omitempty"`
-	// 图形码有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.5 行 494、§12.9 行 1751）。
+	// 图形码有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.5、§12.9）。
 	ExpiresIn     int64 `protobuf:"varint,3,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

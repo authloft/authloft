@@ -21,7 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6 行 1271，无入参）。
+// GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6，无入参）。
 type GetSettingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -58,55 +58,55 @@ func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
 	return file_api_admin_v1_settings_proto_rawDescGZIP(), []int{0}
 }
 
-// SetSettingsRequest 是 AdminService/SetSettings 的请求（§5.6 行 1271「全部系统配置」）：
+// SetSettingsRequest 是 AdminService/SetSettings 的请求（§5.6「全部系统配置」）：
 // 部分更新（PATCH）：标量全字段 proto3 optional，未设置 = 不修改（保留现值）、
 // 显式设值 = 覆盖（含 0 / false / 空串，如 pwd_ban_ttl 调 0）；四个 repeated
 // 键各带 has_* 伴生标志（repeated 无 has 位、protojson 下 [] 与缺省同为 nil）：
 // 标志取 true = 列表在场，按数组整组替换，空数组 / 缺省数组 = 清空该列表；
 // 标志缺省 / 显式 false = 不修改。前端以 GET 结果为底稿整体回写仍兼容（须
-// 一并下发四个标志）；严格模式拒绝未知字段（行 1271），后端仅校验键名与值
-// 类型（行 1339），交叉约束由前端设置页与管理员自律保证；改动热更新、只对
-// 后续请求生效（行 1339）。消息名随方法名（§12.9 行 1747；pre-connect 时代
+// 一并下发四个标志）；严格模式拒绝未知字段，后端仅校验键名与值
+// 类型，交叉约束由前端设置页与管理员自律保证；改动热更新、只对
+// 后续请求生效。消息名随方法名（§12.9；pre-connect 时代
 // 按资源命名 SettingsRequest，Connect 化时更名）。成功返回 OkResponse。
 type SetSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// —— 密码策略（§5.6 行 1276-1291，键名与默认值的唯一定义处）——
-	// 最小长度，默认 8（§5.6 行 1280）。
+	// —— 密码策略（§5.6，键名与默认值的唯一定义处）——
+	// 最小长度，默认 8（§5.6）。
 	PwdMinLength *int64 `protobuf:"varint,1,opt,name=pwd_min_length,json=pwdMinLength,proto3,oneof" json:"pwd_min_length,omitempty"`
-	// 最大长度，默认 64；可调低不可调高，服务端硬上限 64（§5.6 行 1281）。
+	// 最大长度，默认 64；可调低不可调高，服务端硬上限 64（§5.6）。
 	PwdMaxLength *int64 `protobuf:"varint,2,opt,name=pwd_max_length,json=pwdMaxLength,proto3,oneof" json:"pwd_max_length,omitempty"`
-	// 须满足的字符类数（1-3），字符类 = 大写 / 小写 / 数字（§5.6 行 1282）。
+	// 须满足的字符类数（1-3），字符类 = 大写 / 小写 / 数字（§5.6）。
 	PwdRequireClasses *int64 `protobuf:"varint,3,opt,name=pwd_require_classes,json=pwdRequireClasses,proto3,oneof" json:"pwd_require_classes,omitempty"`
-	// 禁止密码包含用户名，默认 true（§5.6 行 1283）。
+	// 禁止密码包含用户名，默认 true（§5.6）。
 	PwdDisallowUsername *bool `protobuf:"varint,4,opt,name=pwd_disallow_username,json=pwdDisallowUsername,proto3,oneof" json:"pwd_disallow_username,omitempty"`
-	// 禁止命中弱口令字典，默认 true（§5.6 行 1284）。
+	// 禁止命中弱口令字典，默认 true（§5.6）。
 	PwdDisallowCommon *bool `protobuf:"varint,5,opt,name=pwd_disallow_common,json=pwdDisallowCommon,proto3,oneof" json:"pwd_disallow_common,omitempty"`
-	// —— 账号策略（§5.6 行 1294-1298）——
-	// 是否开放自助重置密码，默认 true；false 时 §2.4 一律 status=reset_disabled（§5.6 行 1298）。
+	// —— 账号策略（§5.6）——
+	// 是否开放自助重置密码，默认 true；false 时 §2.4 一律 status=reset_disabled（§5.6）。
 	AllowPasswordReset *bool `protobuf:"varint,6,opt,name=allow_password_reset,json=allowPasswordReset,proto3,oneof" json:"allow_password_reset,omitempty"`
-	// —— 验证码限流（§5.6 行 1300-1308）——
-	// 同目标重发冷却（秒），默认 60（§5.6 行 1304）。
+	// —— 验证码限流（§5.6）——
+	// 同目标重发冷却（秒），默认 60（§5.6）。
 	OtpResendInterval *int64 `protobuf:"varint,7,opt,name=otp_resend_interval,json=otpResendInterval,proto3,oneof" json:"otp_resend_interval,omitempty"`
-	// 验证码有效期（秒），默认 300（§5.6 行 1305）。
+	// 验证码有效期（秒），默认 300（§5.6）。
 	OtpTtl *int64 `protobuf:"varint,8,opt,name=otp_ttl,json=otpTtl,proto3,oneof" json:"otp_ttl,omitempty"`
-	// 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6 行 1306）。
+	// 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6）。
 	OtpMaxAttempts *int64 `protobuf:"varint,9,opt,name=otp_max_attempts,json=otpMaxAttempts,proto3,oneof" json:"otp_max_attempts,omitempty"`
-	// 单目标每日发送上限（次），默认 10（§5.6 行 1307）。
+	// 单目标每日发送上限（次），默认 10（§5.6）。
 	OtpDailyLimitTarget *int64 `protobuf:"varint,10,opt,name=otp_daily_limit_target,json=otpDailyLimitTarget,proto3,oneof" json:"otp_daily_limit_target,omitempty"`
-	// 单 IP 每日发送上限（次），默认 50（§5.6 行 1308）。
+	// 单 IP 每日发送上限（次），默认 50（§5.6）。
 	OtpDailyLimitIp *int64 `protobuf:"varint,11,opt,name=otp_daily_limit_ip,json=otpDailyLimitIp,proto3,oneof" json:"otp_daily_limit_ip,omitempty"`
-	// —— 其余设置项（§5.6 行 1310-1337）——
-	// 已启用的登录方式（因子名 / thirdparty），只控登录，默认全开（§5.6 行 1314）。
+	// —— 其余设置项（§5.6）——
+	// 已启用的登录方式（因子名 / thirdparty），只控登录，默认全开（§5.6）。
 	// has 位：true = login_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasLoginMethods *bool    `protobuf:"varint,12,opt,name=has_login_methods,json=hasLoginMethods,proto3,oneof" json:"has_login_methods,omitempty"`
 	LoginMethods    []string `protobuf:"bytes,13,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
-	// 注册总开关，默认 true；false 时 §2.3 一律 status=signup_disabled（§5.6 行 1315）。
+	// 注册总开关，默认 true；false 时 §2.3 一律 status=signup_disabled（§5.6）。
 	AllowRegistration *bool `protobuf:"varint,14,opt,name=allow_registration,json=allowRegistration,proto3,oneof" json:"allow_registration,omitempty"`
-	// 用户名 + 密码注册入口，默认 true（§5.6 行 1316）。
+	// 用户名 + 密码注册入口，默认 true（§5.6）。
 	AllowSignupPassword *bool `protobuf:"varint,15,opt,name=allow_signup_password,json=allowSignupPassword,proto3,oneof" json:"allow_signup_password,omitempty"`
-	// 手机号注册入口，默认 true（§5.6 行 1317）。
+	// 手机号注册入口，默认 true（§5.6）。
 	AllowSignupPhone *bool `protobuf:"varint,16,opt,name=allow_signup_phone,json=allowSignupPhone,proto3,oneof" json:"allow_signup_phone,omitempty"`
-	// 邮箱注册入口，默认 true（§5.6 行 1318）。
+	// 邮箱注册入口，默认 true（§5.6）。
 	AllowSignupEmail *bool `protobuf:"varint,17,opt,name=allow_signup_email,json=allowSignupEmail,proto3,oneof" json:"allow_signup_email,omitempty"`
 	// 两步验证系统总开关，默认 true；关闭后所有用户不再二次验证、用户开关不可用（§5.6）。
 	MfaEnabled *bool `protobuf:"varint,18,opt,name=mfa_enabled,json=mfaEnabled,proto3,oneof" json:"mfa_enabled,omitempty"`
@@ -114,47 +114,47 @@ type SetSettingsRequest struct {
 	// has 位：true = mfa_methods 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasMfaMethods *bool    `protobuf:"varint,19,opt,name=has_mfa_methods,json=hasMfaMethods,proto3,oneof" json:"has_mfa_methods,omitempty"`
 	MfaMethods    []string `protobuf:"bytes,20,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
-	// 同一账号当日密码错误达此次数后登录必须携带人机校验，默认 3（§5.6 行 1321）。
+	// 同一账号当日密码错误达此次数后登录必须携带人机校验，默认 3（§5.6）。
 	PwdFailCapture *int64 `protobuf:"varint,21,opt,name=pwd_fail_capture,json=pwdFailCapture,proto3,oneof" json:"pwd_fail_capture,omitempty"`
-	// 累计失败达此次数后禁止密码登录，默认 6（§5.6 行 1322）。
+	// 累计失败达此次数后禁止密码登录，默认 6（§5.6）。
 	PwdFailBan *int64 `protobuf:"varint,22,opt,name=pwd_fail_ban,json=pwdFailBan,proto3,oneof" json:"pwd_fail_ban,omitempty"`
-	// 禁止密码登录时长（秒），默认 21600 即 6 小时（§5.6 行 1323）。
+	// 禁止密码登录时长（秒），默认 21600 即 6 小时（§5.6）。
 	PwdBanTtl *int64 `protobuf:"varint,23,opt,name=pwd_ban_ttl,json=pwdBanTtl,proto3,oneof" json:"pwd_ban_ttl,omitempty"`
-	// 会话与 Cookie 有效期（秒），默认 604800 即 7 天（§5.6 行 1324）。
+	// 会话与 Cookie 有效期（秒），默认 604800 即 7 天（§5.6）。
 	SessionTtl *int64 `protobuf:"varint,24,opt,name=session_ttl,json=sessionTtl,proto3,oneof" json:"session_ttl,omitempty"`
-	// 会话 Cookie 名，默认 al_session（§5.6 行 1325）。
+	// 会话 Cookie 名，默认 al_session（§5.6）。
 	CookieName *string `protobuf:"bytes,25,opt,name=cookie_name,json=cookieName,proto3,oneof" json:"cookie_name,omitempty"`
-	// 多根域名同步列表，登录 / 登出时逐个同步（§5.6 行 1326、§2.9）。
+	// 多根域名同步列表，登录 / 登出时逐个同步（§5.6、§2.9）。
 	// has 位：true = sso_domains 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasSsoDomains *bool    `protobuf:"varint,26,opt,name=has_sso_domains,json=hasSsoDomains,proto3,oneof" json:"has_sso_domains,omitempty"`
 	SsoDomains    []string `protobuf:"bytes,27,rep,name=sso_domains,json=ssoDomains,proto3" json:"sso_domains,omitempty"`
-	// 延迟写入队列 worker 数，默认 4（§5.6 行 1327）。
+	// 延迟写入队列 worker 数，默认 4（§5.6）。
 	QueueWorkers *int64 `protobuf:"varint,28,opt,name=queue_workers,json=queueWorkers,proto3,oneof" json:"queue_workers,omitempty"`
-	// 队列长度（ring buffer），默认 8192（§5.6 行 1328）。
+	// 队列长度（ring buffer），默认 8192（§5.6）。
 	QueueCapacity *int64 `protobuf:"varint,29,opt,name=queue_capacity,json=queueCapacity,proto3,oneof" json:"queue_capacity,omitempty"`
-	// 攒批条数阈值，默认 200（§5.6 行 1329）。
+	// 攒批条数阈值，默认 200（§5.6）。
 	QueueBatch *int64 `protobuf:"varint,30,opt,name=queue_batch,json=queueBatch,proto3,oneof" json:"queue_batch,omitempty"`
-	// 攒批时间窗（毫秒），默认 2000（§5.6 行 1330）。
+	// 攒批时间窗（毫秒），默认 2000（§5.6）。
 	QueueFlushMs *int64 `protobuf:"varint,31,opt,name=queue_flush_ms,json=queueFlushMs,proto3,oneof" json:"queue_flush_ms,omitempty"`
-	// 当前生效的 captcha Provider；空串 = 内置图形码 builtin_image（§5.6 行 1331）。
+	// 当前生效的 captcha Provider；空串 = 内置图形码 builtin_image（§5.6）。
 	CaptchaProviderKey *string `protobuf:"bytes,32,opt,name=captcha_provider_key,json=captchaProviderKey,proto3,oneof" json:"captcha_provider_key,omitempty"`
-	// 当前生效的短信 Provider（§5.6 行 1332）。
+	// 当前生效的短信 Provider（§5.6）。
 	SmsProviderKey *string `protobuf:"bytes,33,opt,name=sms_provider_key,json=smsProviderKey,proto3,oneof" json:"sms_provider_key,omitempty"`
-	// 当前生效的邮件 Provider（§5.6 行 1333）。
+	// 当前生效的邮件 Provider（§5.6）。
 	EmailProviderKey *string `protobuf:"bytes,34,opt,name=email_provider_key,json=emailProviderKey,proto3,oneof" json:"email_provider_key,omitempty"`
-	// 头像 / 渠道图标使用的 Storage Provider（§5.6 行 1334）。
+	// 头像 / 渠道图标使用的 Storage Provider（§5.6）。
 	AvatarStorageProvider *string `protobuf:"bytes,35,opt,name=avatar_storage_provider,json=avatarStorageProvider,proto3,oneof" json:"avatar_storage_provider,omitempty"`
-	// 网关 Token 列表，可多个（§5.6 行 1335、§6）。
+	// 网关 Token 列表，可多个（§5.6、§6）。
 	// has 位：true = gateway_tokens 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasGatewayTokens *bool    `protobuf:"varint,36,opt,name=has_gateway_tokens,json=hasGatewayTokens,proto3,oneof" json:"has_gateway_tokens,omitempty"`
 	GatewayTokens    []string `protobuf:"bytes,37,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
-	// 事件日志保留天数，默认 180（§5.6 行 1336）。
+	// 事件日志保留天数，默认 180（§5.6）。
 	EventlogRetentionDays *int64 `protobuf:"varint,38,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3,oneof" json:"eventlog_retention_days,omitempty"`
-	// 静态资源基址（CDN），改后需刷新页面生效（§5.6 行 1337、§8）。
+	// 静态资源基址（CDN），改后需刷新页面生效（§5.6、§8）。
 	StaticBase *string `protobuf:"bytes,39,opt,name=static_base,json=staticBase,proto3,oneof" json:"static_base,omitempty"`
-	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
-	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request（行 1361）。
+	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
 	HttpsDeployment *string `protobuf:"bytes,40,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -470,88 +470,88 @@ func (x *SetSettingsRequest) GetHttpsDeployment() string {
 	return ""
 }
 
-// SettingsResponse 是 AdminService/GetSettings 的响应（§5.6 行 1271）：
+// SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
 // 键集合 / 键名与 SetSettingsRequest 的 36 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
-// 标量与列表字段按 §12.9 行 1752 恒存在口径输出（零值 / 空串 / false /
+// 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type SettingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// —— 密码策略（§5.6 行 1276-1291）——
-	// 最小长度，默认 8（§5.6 行 1280）。
+	// —— 密码策略（§5.6）——
+	// 最小长度，默认 8（§5.6）。
 	PwdMinLength int64 `protobuf:"varint,1,opt,name=pwd_min_length,json=pwdMinLength,proto3" json:"pwd_min_length,omitempty"`
-	// 最大长度，默认 64（§5.6 行 1281）。
+	// 最大长度，默认 64（§5.6）。
 	PwdMaxLength int64 `protobuf:"varint,2,opt,name=pwd_max_length,json=pwdMaxLength,proto3" json:"pwd_max_length,omitempty"`
-	// 须满足的字符类数（1-3），默认 3（§5.6 行 1282）。
+	// 须满足的字符类数（1-3），默认 3（§5.6）。
 	PwdRequireClasses int64 `protobuf:"varint,3,opt,name=pwd_require_classes,json=pwdRequireClasses,proto3" json:"pwd_require_classes,omitempty"`
-	// 禁止密码包含用户名，默认 true（§5.6 行 1283）。
+	// 禁止密码包含用户名，默认 true（§5.6）。
 	PwdDisallowUsername bool `protobuf:"varint,4,opt,name=pwd_disallow_username,json=pwdDisallowUsername,proto3" json:"pwd_disallow_username,omitempty"`
-	// 禁止命中弱口令字典，默认 true（§5.6 行 1284）。
+	// 禁止命中弱口令字典，默认 true（§5.6）。
 	PwdDisallowCommon bool `protobuf:"varint,5,opt,name=pwd_disallow_common,json=pwdDisallowCommon,proto3" json:"pwd_disallow_common,omitempty"`
-	// —— 账号策略（§5.6 行 1294-1298）——
-	// 是否开放自助重置密码，默认 true（§5.6 行 1298）。
+	// —— 账号策略（§5.6）——
+	// 是否开放自助重置密码，默认 true（§5.6）。
 	AllowPasswordReset bool `protobuf:"varint,6,opt,name=allow_password_reset,json=allowPasswordReset,proto3" json:"allow_password_reset,omitempty"`
-	// —— 验证码限流（§5.6 行 1300-1308）——
-	// 同目标重发冷却（秒），默认 60（§5.6 行 1304）。
+	// —— 验证码限流（§5.6）——
+	// 同目标重发冷却（秒），默认 60（§5.6）。
 	OtpResendInterval int64 `protobuf:"varint,7,opt,name=otp_resend_interval,json=otpResendInterval,proto3" json:"otp_resend_interval,omitempty"`
-	// 验证码有效期（秒），默认 300（§5.6 行 1305）。
+	// 验证码有效期（秒），默认 300（§5.6）。
 	OtpTtl int64 `protobuf:"varint,8,opt,name=otp_ttl,json=otpTtl,proto3" json:"otp_ttl,omitempty"`
-	// 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6 行 1306）。
+	// 单条验证码最大校验失败次数，超限即作废，默认 5（§5.6）。
 	OtpMaxAttempts int64 `protobuf:"varint,9,opt,name=otp_max_attempts,json=otpMaxAttempts,proto3" json:"otp_max_attempts,omitempty"`
-	// 单目标每日发送上限（次），默认 10（§5.6 行 1307）。
+	// 单目标每日发送上限（次），默认 10（§5.6）。
 	OtpDailyLimitTarget int64 `protobuf:"varint,10,opt,name=otp_daily_limit_target,json=otpDailyLimitTarget,proto3" json:"otp_daily_limit_target,omitempty"`
-	// 单 IP 每日发送上限（次），默认 50（§5.6 行 1308）。
+	// 单 IP 每日发送上限（次），默认 50（§5.6）。
 	OtpDailyLimitIp int64 `protobuf:"varint,11,opt,name=otp_daily_limit_ip,json=otpDailyLimitIp,proto3" json:"otp_daily_limit_ip,omitempty"`
-	// —— 其余设置项（§5.6 行 1310-1337）——
-	// 已启用的登录方式，默认 ["password","otp_sms","otp_email","webauthn","thirdparty"]（§5.6 行 1314）。
+	// —— 其余设置项（§5.6）——
+	// 已启用的登录方式，默认 ["password","otp_sms","otp_email","webauthn","thirdparty"]（§5.6）。
 	LoginMethods []string `protobuf:"bytes,12,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
-	// 注册总开关，默认 true（§5.6 行 1315）。
+	// 注册总开关，默认 true（§5.6）。
 	AllowRegistration bool `protobuf:"varint,13,opt,name=allow_registration,json=allowRegistration,proto3" json:"allow_registration,omitempty"`
-	// 用户名 + 密码注册入口，默认 true（§5.6 行 1316）。
+	// 用户名 + 密码注册入口，默认 true（§5.6）。
 	AllowSignupPassword bool `protobuf:"varint,14,opt,name=allow_signup_password,json=allowSignupPassword,proto3" json:"allow_signup_password,omitempty"`
-	// 手机号注册入口，默认 true（§5.6 行 1317）。
+	// 手机号注册入口，默认 true（§5.6）。
 	AllowSignupPhone bool `protobuf:"varint,15,opt,name=allow_signup_phone,json=allowSignupPhone,proto3" json:"allow_signup_phone,omitempty"`
-	// 邮箱注册入口，默认 true（§5.6 行 1318）。
+	// 邮箱注册入口，默认 true（§5.6）。
 	AllowSignupEmail bool `protobuf:"varint,16,opt,name=allow_signup_email,json=allowSignupEmail,proto3" json:"allow_signup_email,omitempty"`
 	// 两步验证系统总开关，默认 true（§5.6）。
 	MfaEnabled bool `protobuf:"varint,17,opt,name=mfa_enabled,json=mfaEnabled,proto3" json:"mfa_enabled,omitempty"`
 	// 可用于两步验证的因子白名单，默认 ["totp","otp_sms","otp_email","webauthn"]（§5.6）。
 	MfaMethods []string `protobuf:"bytes,18,rep,name=mfa_methods,json=mfaMethods,proto3" json:"mfa_methods,omitempty"`
-	// 密码错误人机校验阈值，默认 3（§5.6 行 1321）。
+	// 密码错误人机校验阈值，默认 3（§5.6）。
 	PwdFailCapture int64 `protobuf:"varint,19,opt,name=pwd_fail_capture,json=pwdFailCapture,proto3" json:"pwd_fail_capture,omitempty"`
-	// 密码登录禁止阈值，默认 6（§5.6 行 1322）。
+	// 密码登录禁止阈值，默认 6（§5.6）。
 	PwdFailBan int64 `protobuf:"varint,20,opt,name=pwd_fail_ban,json=pwdFailBan,proto3" json:"pwd_fail_ban,omitempty"`
-	// 禁止密码登录时长（秒），默认 21600（§5.6 行 1323）。
+	// 禁止密码登录时长（秒），默认 21600（§5.6）。
 	PwdBanTtl int64 `protobuf:"varint,21,opt,name=pwd_ban_ttl,json=pwdBanTtl,proto3" json:"pwd_ban_ttl,omitempty"`
-	// 会话与 Cookie 有效期（秒），默认 604800（§5.6 行 1324）。
+	// 会话与 Cookie 有效期（秒），默认 604800（§5.6）。
 	SessionTtl int64 `protobuf:"varint,22,opt,name=session_ttl,json=sessionTtl,proto3" json:"session_ttl,omitempty"`
-	// 会话 Cookie 名，默认 al_session（§5.6 行 1325）。
+	// 会话 Cookie 名，默认 al_session（§5.6）。
 	CookieName string `protobuf:"bytes,23,opt,name=cookie_name,json=cookieName,proto3" json:"cookie_name,omitempty"`
-	// 多根域名同步列表，默认 []（§5.6 行 1326）。
+	// 多根域名同步列表，默认 []（§5.6）。
 	SsoDomains []string `protobuf:"bytes,24,rep,name=sso_domains,json=ssoDomains,proto3" json:"sso_domains,omitempty"`
-	// 延迟写入队列 worker 数，默认 4（§5.6 行 1327）。
+	// 延迟写入队列 worker 数，默认 4（§5.6）。
 	QueueWorkers int64 `protobuf:"varint,25,opt,name=queue_workers,json=queueWorkers,proto3" json:"queue_workers,omitempty"`
-	// 队列长度（ring buffer），默认 8192（§5.6 行 1328）。
+	// 队列长度（ring buffer），默认 8192（§5.6）。
 	QueueCapacity int64 `protobuf:"varint,26,opt,name=queue_capacity,json=queueCapacity,proto3" json:"queue_capacity,omitempty"`
-	// 攒批条数阈值，默认 200（§5.6 行 1329）。
+	// 攒批条数阈值，默认 200（§5.6）。
 	QueueBatch int64 `protobuf:"varint,27,opt,name=queue_batch,json=queueBatch,proto3" json:"queue_batch,omitempty"`
-	// 攒批时间窗（毫秒），默认 2000（§5.6 行 1330）。
+	// 攒批时间窗（毫秒），默认 2000（§5.6）。
 	QueueFlushMs int64 `protobuf:"varint,28,opt,name=queue_flush_ms,json=queueFlushMs,proto3" json:"queue_flush_ms,omitempty"`
-	// 当前生效的 captcha Provider，默认空串（§5.6 行 1331）。
+	// 当前生效的 captcha Provider，默认空串（§5.6）。
 	CaptchaProviderKey string `protobuf:"bytes,29,opt,name=captcha_provider_key,json=captchaProviderKey,proto3" json:"captcha_provider_key,omitempty"`
-	// 当前生效的短信 Provider，默认空串（§5.6 行 1332）。
+	// 当前生效的短信 Provider，默认空串（§5.6）。
 	SmsProviderKey string `protobuf:"bytes,30,opt,name=sms_provider_key,json=smsProviderKey,proto3" json:"sms_provider_key,omitempty"`
-	// 当前生效的邮件 Provider，默认空串（§5.6 行 1333）。
+	// 当前生效的邮件 Provider，默认空串（§5.6）。
 	EmailProviderKey string `protobuf:"bytes,31,opt,name=email_provider_key,json=emailProviderKey,proto3" json:"email_provider_key,omitempty"`
-	// 头像 / 渠道图标使用的 Storage Provider，默认空串（§5.6 行 1334）。
+	// 头像 / 渠道图标使用的 Storage Provider，默认空串（§5.6）。
 	AvatarStorageProvider string `protobuf:"bytes,32,opt,name=avatar_storage_provider,json=avatarStorageProvider,proto3" json:"avatar_storage_provider,omitempty"`
-	// 网关 Token 列表，默认 []（§5.6 行 1335）。
+	// 网关 Token 列表，默认 []（§5.6）。
 	GatewayTokens []string `protobuf:"bytes,33,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
-	// 事件日志保留天数，默认 180（§5.6 行 1336）。
+	// 事件日志保留天数，默认 180（§5.6）。
 	EventlogRetentionDays int64 `protobuf:"varint,34,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3" json:"eventlog_retention_days,omitempty"`
-	// 静态资源基址（CDN），默认 /assets（§5.6 行 1337）。
+	// 静态资源基址（CDN），默认 /assets（§5.6）。
 	StaticBase string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
-	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6 行 1354）。
+	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
 	// （§1.9 驱动口径）。
 	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`

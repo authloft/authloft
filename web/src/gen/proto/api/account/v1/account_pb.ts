@@ -26,22 +26,22 @@ export const file_api_account_v1_account: GenFile = /*@__PURE__*/
   fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTKhEQoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEksKClVuYmluZFRvdHASIS5hcGkuYWNjb3VudC52MS5VbmJpbmRUb3RwUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScAoXUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXMSLi5hcGkuYWNjb3VudC52MS5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5SZWNvdmVyeUNvZGVzUmVzcG9uc2USbQoWR2V0V2ViYXV0aG5DcmVkZW50aWFscxItLmFwaS5hY2NvdW50LnYxLkdldFdlYmF1dGhuQ3JlZGVudGlhbHNSZXF1ZXN0GiQuYXBpLmFjY291bnQudjEuV2ViYXV0aG5MaXN0UmVzcG9uc2USZQoQUmVnaXN0ZXJXZWJhdXRobhInLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXF1ZXN0GiguYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlc3BvbnNlEmcKGFJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLlJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmcKGERlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLkRlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnEKFUdldFRoaXJkcGFydHlCaW5kaW5ncxIsLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlCaW5kaW5nc1JlcXVlc3QaKi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5QmluZGluZ3NSZXNwb25zZRJXChBVbmJpbmRUaGlyZHBhcnR5EicuYXBpLmFjY291bnQudjEuVW5iaW5kVGhpcmRwYXJ0eVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmIKD1RoaXJkcGFydHlPYXV0aBImLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlcXVlc3QaJy5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXNwb25zZRJgChNHZXRUaGlyZHBhcnR5VGlja2V0EiouYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eVRpY2tldFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKCUdldEV2ZW50cxIgLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1JlcXVlc3QaIS5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXNwb25zZRJmChFTdGFydFZlcmlmaWNhdGlvbhInLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXF1ZXN0GiguYXBpLmNvbW1vbi52MS5TdGFydFZlcmlmaWNhdGlvblJlc3BvbnNlEmkKElN1Ym1pdFZlcmlmaWNhdGlvbhIoLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVxdWVzdBopLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVzcG9uc2VCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_common_v1_verification, file_api_sso_v1_envelope]);
 
 /**
- * AccountService 是 account 域的 Connect service（docs/接口文档.md §3，行 767-1040）。
+ * AccountService 是 account 域的 Connect service。
  * Connect 路径 = /api.account.v1.AccountService/<Method>；方法清单与 §3 各节逐一对应：
- *   GetConfig                  §3.2 行 818    GetProfile               §3.2 行 819
- *   UpdateProfile              §3.2 行 820    PresignAvatar            §3.2 行 822
- *   CommitAvatar               §3.2 行 823    ChangePassword           §3.3 行 855
- *   BindPhone                  §3.4 行 870    BindEmail                §3.4 行 872
- *   GetMfa                     §3.5 行 903    SetMfa                   §3.5 行 904
- *   BindTotp                   §3.5 行 905    UnbindTotp               §3.5 行 907
- *   RegenerateRecoveryCodes    §3.5 行 908    GetWebauthnCredentials   §3.6 行 914
- *   RegisterWebauthn           §3.6 行 915    RenameWebauthnCredential  §3.6 行 917
- *   DeleteWebauthnCredential   §3.6 行 918    GetThirdpartyBindings    §3.7 行 936
- *   UnbindThirdparty           §3.7 行 937    ThirdpartyOauth          §3.7.1 A 行 938
- *   GetThirdpartyTicket        §3.7 行 939    GetEvents                §3.7 行 1038
- *   StartVerification          §3.8 行 1227   SubmitVerification       §3.8 行 1228
- * 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0 行 64），不入本 service。
- * 空响应方法共用同包 OkResponse（空消息，§1.0 行 57 成功响应即消息本身），
+ *   GetConfig                  §3.2    GetProfile               §3.2
+ *   UpdateProfile              §3.2    PresignAvatar            §3.2
+ *   CommitAvatar               §3.2    ChangePassword           §3.3
+ *   BindPhone                  §3.4    BindEmail                §3.4
+ *   GetMfa                     §3.5    SetMfa                   §3.5
+ *   BindTotp                   §3.5    UnbindTotp               §3.5
+ *   RegenerateRecoveryCodes    §3.5    GetWebauthnCredentials   §3.6
+ *   RegisterWebauthn           §3.6    RenameWebauthnCredential  §3.6
+ *   DeleteWebauthnCredential   §3.6    GetThirdpartyBindings    §3.7
+ *   UnbindThirdparty           §3.7    ThirdpartyOauth          §3.7.1 A
+ *   GetThirdpartyTicket        §3.7    GetEvents                §3.7
+ *   StartVerification          §3.8   SubmitVerification       §3.8
+ * 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
+ * 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
  * 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
  * 与共用响应口径冲突，按「文档优先」在 buf.yaml except 豁免）。
  *
@@ -49,7 +49,7 @@ export const file_api_account_v1_account: GenFile = /*@__PURE__*/
  */
 export const AccountService: GenService<{
   /**
-   * 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2 行 818）。
+   * 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2）。
    *
    * @generated from rpc api.account.v1.AccountService.GetConfig
    */
@@ -59,7 +59,7 @@ export const AccountService: GenService<{
     output: typeof AccountConfigResponseSchema;
   },
   /**
-   * §3.1 统一用户信息结构（§3.2 行 819）。
+   * §3.1 统一用户信息结构（§3.2）。
    *
    * @generated from rpc api.account.v1.AccountService.GetProfile
    */
@@ -69,7 +69,7 @@ export const AccountService: GenService<{
     output: typeof ProfileResponseSchema;
   },
   /**
-   * 修改资料，成功为空响应（§3.2 行 820）。
+   * 修改资料，成功为空响应（§3.2）。
    *
    * @generated from rpc api.account.v1.AccountService.UpdateProfile
    */
@@ -79,7 +79,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * direct 模式取预签名（§3.2 行 822）。
+   * direct 模式取预签名（§3.2）。
    *
    * @generated from rpc api.account.v1.AccountService.PresignAvatar
    */
@@ -89,7 +89,7 @@ export const AccountService: GenService<{
     output: typeof AvatarPresignResponseSchema;
   },
   /**
-   * direct 模式确认上传，仅记录不回读（§3.2 行 823）。
+   * direct 模式确认上传，仅记录不回读（§3.2）。
    *
    * @generated from rpc api.account.v1.AccountService.CommitAvatar
    */
@@ -99,7 +99,7 @@ export const AccountService: GenService<{
     output: typeof AvatarResponseSchema;
   },
   /**
-   * 改密，成功为空响应并递增 epoch（§3.3 行 855-862）。
+   * 改密，成功为空响应并递增 epoch（§3.3）。
    *
    * @generated from rpc api.account.v1.AccountService.ChangePassword
    */
@@ -109,7 +109,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 手机号绑定 / 换绑两步，由 step 区分（§3.4 行 870-871），成功为空响应。
+   * 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
    *
    * @generated from rpc api.account.v1.AccountService.BindPhone
    */
@@ -119,7 +119,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 邮箱绑定 / 换绑两步，由 step 区分（§3.4 行 872-873），成功为空响应。
+   * 邮箱绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
    *
    * @generated from rpc api.account.v1.AccountService.BindEmail
    */
@@ -129,7 +129,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * MFA 绑定明细（§3.5 行 903）。
+   * MFA 绑定明细（§3.5）。
    *
    * @generated from rpc api.account.v1.AccountService.GetMfa
    */
@@ -139,7 +139,7 @@ export const AccountService: GenService<{
     output: typeof MfaResponseSchema;
   },
   /**
-   * 勾选启用因子集合，成功为空响应（§3.5 行 904）。
+   * 勾选启用因子集合，成功为空响应（§3.5）。
    *
    * @generated from rpc api.account.v1.AccountService.SetMfa
    */
@@ -149,7 +149,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * TOTP 绑定两步，由 step 区分（§3.5 行 905-906）。
+   * TOTP 绑定两步，由 step 区分（§3.5）。
    *
    * @generated from rpc api.account.v1.AccountService.BindTotp
    */
@@ -159,7 +159,7 @@ export const AccountService: GenService<{
     output: typeof BindTotpResponseSchema;
   },
   /**
-   * 解除当前 TOTP 绑定，成功为空响应（§3.5 行 907）。前置：须先经 §3.8
+   * 解除当前 TOTP 绑定，成功为空响应（§3.5）。前置：须先经 §3.8
    * 取得 verificationToken（biz_purpose=unbind_totp），由本请求携带。
    *
    * @generated from rpc api.account.v1.AccountService.UnbindTotp
@@ -170,7 +170,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 重新生成即全量作废，同格式下发新码（§3.5 行 908）。
+   * 重新生成即全量作废，同格式下发新码（§3.5）。
    *
    * @generated from rpc api.account.v1.AccountService.RegenerateRecoveryCodes
    */
@@ -180,7 +180,7 @@ export const AccountService: GenService<{
     output: typeof RecoveryCodesResponseSchema;
   },
   /**
-   * 已绑定凭据列表（§3.6 行 914）。
+   * 已绑定凭据列表（§3.6）。
    *
    * @generated from rpc api.account.v1.AccountService.GetWebauthnCredentials
    */
@@ -190,7 +190,7 @@ export const AccountService: GenService<{
     output: typeof WebauthnListResponseSchema;
   },
   /**
-   * 注册两步，由 step 区分；challenge 要求 resident key（§3.6 行 915-916）。
+   * 注册两步，由 step 区分；challenge 要求 resident key（§3.6）。
    *
    * @generated from rpc api.account.v1.AccountService.RegisterWebauthn
    */
@@ -200,7 +200,7 @@ export const AccountService: GenService<{
     output: typeof RegisterWebauthnResponseSchema;
   },
   /**
-   * 凭据重命名，成功为空响应（§3.6 行 917）。
+   * 凭据重命名，成功为空响应（§3.6）。
    *
    * @generated from rpc api.account.v1.AccountService.RenameWebauthnCredential
    */
@@ -210,7 +210,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 凭据删除，成功为空响应（§3.6 行 918）。
+   * 凭据删除，成功为空响应（§3.6）。
    *
    * @generated from rpc api.account.v1.AccountService.DeleteWebauthnCredential
    */
@@ -220,7 +220,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 已绑定与可绑定的第三方列表（§3.7 行 936）。
+   * 已绑定与可绑定的第三方列表（§3.7）。
    *
    * @generated from rpc api.account.v1.AccountService.GetThirdpartyBindings
    */
@@ -230,7 +230,7 @@ export const AccountService: GenService<{
     output: typeof ThirdpartyBindingsResponseSchema;
   },
   /**
-   * 解绑，成功为空响应（§3.7 行 937）。
+   * 解绑，成功为空响应（§3.7）。
    *
    * @generated from rpc api.account.v1.AccountService.UnbindThirdparty
    */
@@ -240,7 +240,7 @@ export const AccountService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * channel=redirect 的绑定回调落地（§3.7 行 938、§3.7.1 A 行 971-977）。
+   * channel=redirect 的绑定回调落地（§3.7、§3.7.1 A）。
    *
    * @generated from rpc api.account.v1.AccountService.ThirdpartyOauth
    */
@@ -250,8 +250,8 @@ export const AccountService: GenService<{
     output: typeof ThirdpartyOauthResponseSchema;
   },
   /**
-   * channel=qrcode 的绑定长轮询（§3.7 行 939、§3.7.1 B 行 1008-1026），
-   * 响应复用登录流程信封（§1.3 行 152-154）。
+   * channel=qrcode 的绑定长轮询（§3.7、§3.7.1 B）
+   * 响应复用登录流程信封（§1.3）。
    *
    * @generated from rpc api.account.v1.AccountService.GetThirdpartyTicket
    */
@@ -261,7 +261,7 @@ export const AccountService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 本人登录记录（仅成功记录，§3.7 行 1038）。
+   * 本人登录记录（仅成功记录，§3.7）。
    *
    * @generated from rpc api.account.v1.AccountService.GetEvents
    */

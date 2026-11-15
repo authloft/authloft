@@ -22,22 +22,22 @@ const (
 )
 
 // SyncCookiePayload 是多域名会话同步载荷——跳转链状态（docs/后端架构.md
-// §11.2 行 1199-1206）。前端不解析，服务端加密后拼进跳转 URL 的 query；
-// 字段名 / 编号 / 类型与行 1200-1205 的 protobuf 定义逐字一致。
+// §11.2）。前端不解析，服务端加密后拼进跳转 URL 的 query；
+// 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
 type SyncCookiePayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 会话 Cookie 名称（行 1200）。
+	// 会话 Cookie 名称。
 	CookieName string `protobuf:"bytes,1,opt,name=cookie_name,json=cookieName,proto3" json:"cookie_name,omitempty"`
-	// 会话 Cookie 值；登出场景为空串（行 1201）。
+	// 会话 Cookie 值；登出场景为空串。
 	CookieValue string `protobuf:"bytes,2,opt,name=cookie_value,json=cookieValue,proto3" json:"cookie_value,omitempty"`
 	// 会话 Cookie 有效期；登出场景为 "0"；接收端原样透传给 Set-Cookie，
-	// 不解析数值（行 1202）。
+	// 不解析数值。
 	CookieTtl string `protobuf:"bytes,3,opt,name=cookie_ttl,json=cookieTtl,proto3" json:"cookie_ttl,omitempty"`
-	// 剩余未跳转的同步地址，不含本次首跳（行 1203）。
+	// 剩余未跳转的同步地址，不含本次首跳。
 	Remaining []string `protobuf:"bytes,4,rep,name=remaining,proto3" json:"remaining,omitempty"`
-	// 最终跳转地址，不带载荷、不会再被本端点处理（行 1204）。
+	// 最终跳转地址，不带载荷、不会再被本端点处理。
 	FinalUrl string `protobuf:"bytes,5,opt,name=final_url,json=finalUrl,proto3" json:"final_url,omitempty"`
-	// 载荷过期时间，Unix 秒（行 1205）。
+	// 载荷过期时间，Unix 秒。
 	Exp           int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

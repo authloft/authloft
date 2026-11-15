@@ -24,20 +24,20 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// CaptchaConfig 是 §2.5 行 478-486 的 captcha 配置对象：注入快照、
+// CaptchaConfig 是 §2.5 的 captcha 配置对象：注入快照、
 // AccountService/GetConfig 的 captcha、触发 captcha 的响应顶层 captcha
-// 三处同结构同字段名（§2.5 行 476）。
-// 它是公开配置视图（不含凭证），与提交格式 api.sso.v1.CaptchaPayload（§2.5 行 499-510）
+// 三处同结构同字段名（§2.5）。
+// 它是公开配置视图（不含凭证），与提交格式 api.sso.v1.CaptchaPayload（§2.5）
 // 字段不同，故不能复用 CaptchaPayload；放 api.common.v1 作全仓单一结构源
-// （§12.9 行 1748），captcha 提交格式仍由 api.sso.v1.CaptchaPayload 承载，不复制。
+// （§12.9），captcha 提交格式仍由 api.sso.v1.CaptchaPayload 承载，不复制。
 // 本包是叶子包：不 import sso / account 等业务包，防止 import 环。
 type CaptchaConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5 行 484、514）。
+	// 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5、514）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5 行 485）；image = 内置自绘图形码（含降级态）。
+	// 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5）；image = 内置自绘图形码（含降级态）。
 	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	// 第三方站点 key；type=image 时为空串（§2.5 行 486）。
+	// 第三方站点 key；type=image 时为空串（§2.5）。
 	SiteKey       string `protobuf:"bytes,3,opt,name=site_key,json=siteKey,proto3" json:"site_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

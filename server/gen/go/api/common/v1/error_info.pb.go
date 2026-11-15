@@ -26,23 +26,23 @@ const (
 )
 
 // ErrorInfo 是 Connect 错误体 details 中承载业务细分码的消息
-// （docs/接口文档.md §1.5 行 199-221、§12.9 行 1750）。
-// 字段约定（docs/接口文档.md §12.9 行 1749）：
+// （docs/接口文档.md §1.5、§12.9）。
+// 字段约定（docs/接口文档.md §12.9）：
 //   - snake_case、编号从 1 起连续、只增字段不改字段号（§12.8）
 //   - 整型一律 int64（§1.12；retry_after / attempts_left 可选，零值省略）
-//   - request_id 不在错误体内（§1.5 行 223：统一走 X-Request-Id 响应头），
+//   - request_id 不在错误体内（§1.5：统一走 X-Request-Id 响应头），
 //     故不定义该字段
 type ErrorInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 业务域：sso / account / admin / rpc / setup（§1.5 行 217）。
+	// 业务域：sso / account / admin / rpc / setup（§1.5）。
 	Domain string `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
-	// 业务细分码，封闭集合即 §1.6 词汇表（§1.5 行 218）。
+	// 业务细分码，封闭集合即 §1.6 词汇表（§1.5）。
 	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
-	// 可选兜底文案（i18n 之后的最终展示，§1.5 行 219）。
+	// 可选兜底文案（i18n 之后的最终展示，§1.5）。
 	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	// 可选：冷却 / 封禁剩余秒数，驱动倒计时（§1.5 行 220）。
+	// 可选：冷却 / 封禁剩余秒数，驱动倒计时（§1.5）。
 	RetryAfter int64 `protobuf:"varint,4,opt,name=retry_after,json=retryAfter,proto3" json:"retry_after,omitempty"`
-	// 可选：剩余尝试次数（§1.5 行 221）。
+	// 可选：剩余尝试次数（§1.5）。
 	AttemptsLeft  int64 `protobuf:"varint,5,opt,name=attempts_left,json=attemptsLeft,proto3" json:"attempts_left,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

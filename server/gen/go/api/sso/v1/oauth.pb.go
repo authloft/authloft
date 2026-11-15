@@ -23,17 +23,17 @@ const (
 )
 
 // AuthorizeRequest 是 SsoService/Authorize 的请求消息
-// （docs/接口文档.md §2.7.2，行 579-599）。
+// （docs/接口文档.md §2.7.2）。
 // 该接口是 RPC（非 302），query 参数进请求消息；client_id、scope、nonce、
 // code_challenge、code_challenge_method 等 OIDC 上下文由前端落 localStorage，
-// 不带进接口（行 584），故不建模。
+// 不带进接口，故不建模。
 type AuthorizeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 必填，providerKey（§2.7.2 行 582）。
+	// 必填，providerKey（§2.7.2）。
 	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	// 非必填：login（默认）｜bind（已登录用户从安全中心发起绑定，需 al_session，
-	// 否则 401 unauthenticated）（§2.7.2 行 583；§1.5 行 187）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 否则 401 unauthenticated）（§2.7.2；§1.5）；
+	// 跨版本可新增，用 string 承载（§12.9）。
 	Scene         string `protobuf:"bytes,2,opt,name=scene,proto3" json:"scene,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -84,11 +84,11 @@ func (x *AuthorizeRequest) GetScene() string {
 }
 
 // AuthorizeResponse 是 SsoService/Authorize 的响应
-// （docs/接口文档.md §2.7.2，行 586）。
-// 该接口是普通 RPC（非 302），响应只有 authorize_url 一个字段（行 586）。
+// （docs/接口文档.md §2.7.2）。
+// 该接口是普通 RPC（非 302），响应只有 authorize_url 一个字段。
 type AuthorizeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 带前缀 state 的三方授权 URL，由前端 location.replace 跳转（§2.7.2 行 586、588）。
+	// 带前缀 state 的三方授权 URL，由前端 location.replace 跳转（§2.7.2、588）。
 	AuthorizeUrl  string `protobuf:"bytes,1,opt,name=authorize_url,json=authorizeUrl,proto3" json:"authorize_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -132,29 +132,29 @@ func (x *AuthorizeResponse) GetAuthorizeUrl() string {
 }
 
 // LoginOauthRequest 是 SsoService/LoginOauth 的请求消息
-// （docs/接口文档.md §2.7.4，行 616-651；小程序扫码提交同端点）。
-// 字段名与 §2.7.4 字段表（行 620-628）逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
-// 响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含 LoginOauth），故不定义
+// （docs/接口文档.md §2.7.4；小程序扫码提交同端点）。
+// 字段名与 §2.7.4 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9）。
+// 响应复用本包 LoginFlowResponse（§1.3 的共用清单含 LoginOauth），故不定义
 // LoginOauthResponse：浏览器 / 小程序（无 ticket_id）场景为登录流程响应；
-// stage=scanned 应答 { "status": "scanned" } 与带 ticket_id 写入应答（行 634、643-651）
+// stage=scanned 应答 { "status": "scanned" } 与带 ticket_id 写入应答（643-651）
 // 同由 LoginFlowResponse 的 status / ticket 字段承载（零值省略后 JSON 形状与该行示例一致）。
 type LoginOauthRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 必填（§2.7.4 行 622）。
+	// 必填（§2.7.4）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 第三方授权码 / wx.login() 的 code；stage=complete（默认）时必填，stage=scanned 时不带（§2.7.4 行 623）。
+	// 第三方授权码 / wx.login() 的 code；stage=complete（默认）时必填，stage=scanned 时不带（§2.7.4）。
 	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	// redirect 通道必填，与 al_login_state Cookie 比对（必须是 l 前缀）；stage=scanned 时不带
-	// （§2.7.4 行 624、594）。
+	// （§2.7.4、594）。
 	State string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
-	// complete（默认）｜scanned（仅上报已扫码，写 ticket.status=scanned 空结果）（§2.7.4 行 625）；
-	// 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// complete（默认）｜scanned（仅上报已扫码，写 ticket.status=scanned 空结果）（§2.7.4）；
+	// 跨版本可能新增，用 string 承载（§12.9）。
 	Stage string `protobuf:"bytes,4,opt,name=stage,proto3" json:"stage,omitempty"`
-	// 扫码场景：结果写入该 ticket；stage=scanned 时必填（§2.7.4 行 626）。
+	// 扫码场景：结果写入该 ticket；stage=scanned 时必填（§2.7.4）。
 	TicketId string `protobuf:"bytes,5,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	// 小程序 api 通道 / 绑定中间态时回传（§2.7.4 行 627）。
+	// 小程序 api 通道 / 绑定中间态时回传（§2.7.4）。
 	LoginToken string `protobuf:"bytes,6,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
-	// OIDC 上下文，取自跳转前落 localStorage 的 __AUTHLOFT_INIT__.oidc（§2.7.2 行 599、§2.7.4 行 628）；
+	// OIDC 上下文，取自跳转前落 localStorage 的 __AUTHLOFT_INIT__.oidc（§2.7.2、§2.7.4）；
 	// 前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
 	Oidc          *structpb.Struct `protobuf:"bytes,7,opt,name=oidc,proto3" json:"oidc,omitempty"`

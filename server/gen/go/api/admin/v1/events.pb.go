@@ -23,15 +23,15 @@ const (
 )
 
 // EventItem 是事件条目（《后端架构》§4.6 event_log 行投影）：
-// 管理后台统一事件视图（§5.6 行 1272）与用户登录记录（§5.4 行 1252）共用同一模型——
+// 管理后台统一事件视图（§5.6）与用户登录记录（§5.4）共用同一模型——
 // 管理员与本人两种视图共用一张表（《后端架构》§16）。
 type EventItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 事件 ID（《后端架构》§4.6）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	// 事件类型 login_success|change_password|…（《后端架构》§4.6）；
-	// 前端预设视图「登录记录」「敏感操作」即按 event 筛选（§5.6 行 1272）；
-	// 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// 前端预设视图「登录记录」「敏感操作」即按 event 筛选（§5.6）；
+	// 跨版本可能新增，用 string 承载（§12.9）。
 	Event string `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
 	// 操作者类型 user|admin|system（《后端架构》§4.6）。
 	ActorType string `protobuf:"bytes,3,opt,name=actor_type,json=actorType,proto3" json:"actor_type,omitempty"`
@@ -171,32 +171,32 @@ func (x *EventItem) GetCreatedAt() int64 {
 	return 0
 }
 
-// ListEventsRequest 是 AdminService/ListEvents 的请求（§5.6 行 1272：
+// ListEventsRequest 是 AdminService/ListEvents 的请求（§5.6：
 // 筛选入参 {event, actorType, actorId, userId, from, to}）；所有列表支持 §1.7 分页
-// （§5 行 1153）。分页与排序字段进请求消息（§1.7 行 277）；
-// 查询参数缺省即不过滤，一律 optional。消息名随方法名（§12.9 行 1747；
+// （§5）。分页与排序字段进请求消息（§1.7）；
+// 查询参数缺省即不过滤，一律 optional。消息名随方法名（§12.9；
 // pre-connect 时代按资源命名 EventListRequest，Connect 化时更名）。
 type ListEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 按事件类型过滤（§5.6 行 1272）。
+	// 按事件类型过滤（§5.6）。
 	Event *string `protobuf:"bytes,1,opt,name=event,proto3,oneof" json:"event,omitempty"`
-	// 按操作者类型过滤 user|admin|system（§5.6 行 1272）。
+	// 按操作者类型过滤 user|admin|system（§5.6）。
 	ActorType *string `protobuf:"bytes,2,opt,name=actor_type,json=actorType,proto3,oneof" json:"actor_type,omitempty"`
-	// 按操作者 ID 过滤（§5.6 行 1272）。
+	// 按操作者 ID 过滤（§5.6）。
 	ActorId *int64 `protobuf:"varint,3,opt,name=actor_id,json=actorId,proto3,oneof" json:"actor_id,omitempty"`
-	// 按被操作对象 ID 过滤（§5.6 行 1272）。
+	// 按被操作对象 ID 过滤（§5.6）。
 	UserId *int64 `protobuf:"varint,4,opt,name=user_id,json=userId,proto3,oneof" json:"user_id,omitempty"`
-	// 起始时间，Unix 秒（§5.6 行 1272；§12.9 行 1751 时间口径）。
+	// 起始时间，Unix 秒（§5.6；§12.9 时间口径）。
 	From *int64 `protobuf:"varint,5,opt,name=from,proto3,oneof" json:"from,omitempty"`
-	// 结束时间，Unix 秒（§5.6 行 1272；§12.9 行 1751 时间口径）。
+	// 结束时间，Unix 秒（§5.6；§12.9 时间口径）。
 	To *int64 `protobuf:"varint,6,opt,name=to,proto3,oneof" json:"to,omitempty"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,7,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,8,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,9,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,10,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -302,17 +302,17 @@ func (x *ListEventsRequest) GetOrder() string {
 	return ""
 }
 
-// EventListResponse 是 AdminService/ListEvents 的响应（§5.6 行 1272「统一事件视图」、
-// §1.7 行 278）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+// EventListResponse 是 AdminService/ListEvents 的响应（§5.6「统一事件视图」、
+// §1.7）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type EventListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*EventItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

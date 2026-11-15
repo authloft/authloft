@@ -15,7 +15,7 @@ export const file_api_account_v1_webauthn: GenFile = /*@__PURE__*/
 
 /**
  * GetWebauthnCredentialsRequest 是 AccountService/GetWebauthnCredentials 的请求
- * （§3.6 行 914，无入参）。
+ * （§3.6，无入参）。
  *
  * @generated from message api.account.v1.GetWebauthnCredentialsRequest
  */
@@ -30,49 +30,49 @@ export const GetWebauthnCredentialsRequestSchema: GenMessage<GetWebauthnCredenti
   messageDesc(file_api_account_v1_webauthn, 0);
 
 /**
- * WebauthnCredential 是 AccountService/GetWebauthnCredentials 的列表项（§3.6 行 914）。
+ * WebauthnCredential 是 AccountService/GetWebauthnCredentials 的列表项（§3.6）。
  *
  * @generated from message api.account.v1.WebauthnCredential
  */
 export type WebauthnCredential = Message<"api.account.v1.WebauthnCredential"> & {
   /**
-   * 凭据记录主键，对应 user_credential_webauthn.id（《后端架构》§4 行 599）；
-   * RenameWebauthnCredential / DeleteWebauthnCredential 的目标 id（§3.6 行 917-918）。
+   * 凭据记录主键，对应 user_credential_webauthn.id（《后端架构》§4）；
+   * RenameWebauthnCredential / DeleteWebauthnCredential 的目标 id（§3.6）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 凭据展示名（§3.6 行 914）。
+   * 凭据展示名（§3.6）。
    *
    * @generated from field: string label = 2;
    */
   label: string;
 
   /**
-   * 创建时间，Unix 秒（§3.6 行 914）。
+   * 创建时间，Unix 秒（§3.6）。
    *
    * @generated from field: int64 created_at = 3;
    */
   createdAt: bigint;
 
   /**
-   * 最近使用时间，Unix 秒（§3.6 行 914）。
+   * 最近使用时间，Unix 秒（§3.6）。
    *
    * @generated from field: int64 last_used_at = 4;
    */
   lastUsedAt: bigint;
 
   /**
-   * 传输方式列表，如 internal｜hybrid（§3.6 行 914）。
+   * 传输方式列表，如 internal｜hybrid（§3.6）。
    *
    * @generated from field: repeated string transports = 5;
    */
   transports: string[];
 
   /**
-   * 认证器 AAGUID（§3.6 行 914）。
+   * 认证器 AAGUID（§3.6）。
    *
    * @generated from field: string aaguid = 6;
    */
@@ -87,7 +87,7 @@ export const WebauthnCredentialSchema: GenMessage<WebauthnCredential> = /*@__PUR
   messageDesc(file_api_account_v1_webauthn, 1);
 
 /**
- * WebauthnListResponse 是 AccountService/GetWebauthnCredentials 的响应（§3.6 行 914）。
+ * WebauthnListResponse 是 AccountService/GetWebauthnCredentials 的响应（§3.6）。
  *
  * @generated from message api.account.v1.WebauthnListResponse
  */
@@ -106,36 +106,36 @@ export const WebauthnListResponseSchema: GenMessage<WebauthnListResponse> = /*@_
   messageDesc(file_api_account_v1_webauthn, 2);
 
 /**
- * RegisterWebauthnRequest 是 AccountService/RegisterWebauthn 的请求（§3.6 行 915-916）：
+ * RegisterWebauthnRequest 是 AccountService/RegisterWebauthn 的请求（§3.6）：
  * step=challenge 要求 resident key / 可发现凭据；step=verify 提交 {token, credential, label}。
- * 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 WebauthnRegisterRequest）。
+ * 消息名随方法名（§12.9；pre-connect 时代按旧 URL 命名 WebauthnRegisterRequest）。
  *
  * @generated from message api.account.v1.RegisterWebauthnRequest
  */
 export type RegisterWebauthnRequest = Message<"api.account.v1.RegisterWebauthnRequest"> & {
   /**
-   * 取值 challenge｜verify（§3.6 行 915-916）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+   * 取值 challenge｜verify（§3.6）；跨版本可新增，用 string 承载（§12.9）。
    *
    * @generated from field: string step = 1;
    */
   step: string;
 
   /**
-   * verify：challenge 下发的独立原子 token（§3.6 行 916、行 924、行 930）。
+   * verify：challenge 下发的独立原子 token（§3.6、、）。
    *
    * @generated from field: string token = 2;
    */
   token: string;
 
   /**
-   * verify：断言对象原样提交，为任意 JSON 对象（§3.6 行 916）。
+   * verify：断言对象原样提交，为任意 JSON 对象（§3.6）。
    *
    * @generated from field: google.protobuf.Struct credential = 3;
    */
   credential?: JsonObject | undefined;
 
   /**
-   * verify：凭据展示名（§3.6 行 916）。
+   * verify：凭据展示名（§3.6）。
    *
    * @generated from field: string label = 4;
    */
@@ -151,23 +151,23 @@ export const RegisterWebauthnRequestSchema: GenMessage<RegisterWebauthnRequest> 
 
 /**
  * RegisterWebauthnResponse 是 AccountService/RegisterWebauthn 的响应：
- * 两 step 共用一个 rpc，challenge 填 {token, challengeData, expiresIn}（§3.6 行 920-928）、
- * verify 注册成功为空响应（行 916）——返回零值消息，protojson 省略零值（§12.9 行 1752）
- * 后 JSON 输出 {}，与「空响应」口径一致。消息名随方法名（§12.9 行 1747 响应 XxxResponse；
+ * 两 step 共用一个 rpc，challenge 填 {token, challengeData, expiresIn}（§3.6）、
+ * verify 注册成功为空响应——返回零值消息，protojson 省略零值（§12.9）
+ * 后 JSON 输出 {}，与「空响应」口径一致。消息名随方法名（§12.9 响应 XxxResponse；
  * pre-connect 时代按旧 URL 命名 WebauthnChallengeResponse，Connect 化时更名）。
  *
  * @generated from message api.account.v1.RegisterWebauthnResponse
  */
 export type RegisterWebauthnResponse = Message<"api.account.v1.RegisterWebauthnResponse"> & {
   /**
-   * 一次性 token；复用 login_token 结构签发，但不可用于登录流程（§3.6 行 924、行 930）。
+   * 一次性 token；复用 login_token 结构签发，但不可用于登录流程（§3.6、）。
    *
    * @generated from field: string token = 1;
    */
   token: string;
 
   /**
-   * PublicKeyCredentialCreationOptions，任意 JSON 对象（§3.6 行 925）；
+   * PublicKeyCredentialCreationOptions，任意 JSON 对象（§3.6）；
    * 暂按 google.protobuf.Struct 实现，类型口径待定。
    *
    * @generated from field: google.protobuf.Struct challenge_data = 2;
@@ -175,7 +175,7 @@ export type RegisterWebauthnResponse = Message<"api.account.v1.RegisterWebauthnR
   challengeData?: JsonObject | undefined;
 
   /**
-   * 当前挑战有效期（秒），默认 120（§3.6 行 926、行 930）。
+   * 当前挑战有效期（秒），默认 120（§3.6、）。
    *
    * @generated from field: int64 expires_in = 3;
    */
@@ -191,22 +191,22 @@ export const RegisterWebauthnResponseSchema: GenMessage<RegisterWebauthnResponse
 
 /**
  * RenameWebauthnCredentialRequest 是 AccountService/RenameWebauthnCredential 的请求
- * （§3.6 行 917：{id, label} 重命名）。pre-connect 时代 id 在 REST 路径 /webauthn/{id} 中，
- * Connect 化后路径参数进请求消息（§1.7 行 277 同口径）；消息名随方法名（§12.9 行 1747）；
+ * （§3.6：{id, label} 重命名）。pre-connect 时代 id 在 REST 路径 /webauthn/{id} 中，
+ * Connect 化后路径参数进请求消息（§1.7 同口径）；消息名随方法名（§12.9）；
  * 成功为空响应（OkResponse）。
  *
  * @generated from message api.account.v1.RenameWebauthnCredentialRequest
  */
 export type RenameWebauthnCredentialRequest = Message<"api.account.v1.RenameWebauthnCredentialRequest"> & {
   /**
-   * 目标凭据 ID（§3.6 行 917）。
+   * 目标凭据 ID（§3.6）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 新展示名（§3.6 行 917）。
+   * 新展示名（§3.6）。
    *
    * @generated from field: string label = 2;
    */
@@ -222,13 +222,13 @@ export const RenameWebauthnCredentialRequestSchema: GenMessage<RenameWebauthnCre
 
 /**
  * DeleteWebauthnCredentialRequest 是 AccountService/DeleteWebauthnCredential 的请求
- * （§3.6 行 918：{id} 删除）。成功为空响应（OkResponse）。
+ * （§3.6：{id} 删除）。成功为空响应（OkResponse）。
  *
  * @generated from message api.account.v1.DeleteWebauthnCredentialRequest
  */
 export type DeleteWebauthnCredentialRequest = Message<"api.account.v1.DeleteWebauthnCredentialRequest"> & {
   /**
-   * 目标凭据 ID（§3.6 行 918）。
+   * 目标凭据 ID（§3.6）。
    *
    * @generated from field: int64 id = 1;
    */

@@ -15,23 +15,23 @@ export const file_token_login_state: GenFile = /*@__PURE__*/
 /**
  * LoginStatePayload 是 al_login_state Cookie 的加密前载荷（docs/后端架构.md
  * §12.4 跳转场景的状态传递）。Cookie 只含 state（带前缀）与 b 场景的 uid，
- * 不含 scene、不含 OIDC 上下文（行 1485）；加密复用 §11.6.1 通用封装——
+ * 不含 scene、不含 OIDC 上下文；加密复用 §11.6.1 通用封装——
  * ciphertext 即本 protobuf 载荷，AAD purpose=cookie、密钥 sign_key.cookie
- * （行 1487、§11.6.1 行 1255-1272）。
+ * （§11.6.1）。
  *
  * @generated from message token.LoginStatePayload
  */
 export type LoginStatePayload = Message<"token.LoginStatePayload"> & {
   /**
-   * 带前缀的随机 state：l = 登录、b = 绑定（行 1477、1485）；回调按首字母分派
-   * （l → /api/sso/login/oauth，b → /api/account/thirdparty/oauth，行 1492）。
+   * 带前缀的随机 state：l = 登录、b = 绑定；回调按首字母分派
+   * （l → /api/sso/login/oauth，b → /api/account/thirdparty/oauth）。
    *
    * @generated from field: string state = 1;
    */
   state: string;
 
   /**
-   * 绑定场景（前缀 b）携带的目标用户 ID；登录场景（前缀 l）缺省为 0（行 1485）。
+   * 绑定场景（前缀 b）携带的目标用户 ID；登录场景（前缀 l）缺省为 0。
    *
    * @generated from field: int64 uid = 2;
    */
@@ -45,7 +45,7 @@ export type LoginStatePayload = Message<"token.LoginStatePayload"> & {
   iat: bigint;
 
   /**
-   * 过期时间，Unix 秒；内嵌 10 分钟过期兜底（行 1485）。
+   * 过期时间，Unix 秒；内嵌 10 分钟过期兜底。
    *
    * @generated from field: int64 exp = 4;
    */

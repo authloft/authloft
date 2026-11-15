@@ -14,23 +14,23 @@ export const file_api_rpc_v1_user: GenFile = /*@__PURE__*/
   fileDesc("ChVhcGkvcnBjL3YxL3VzZXIucHJvdG8SCmFwaS5ycGMudjEyjgIKC1VzZXJTZXJ2aWNlElAKDkdldFVzZXJQcm9maWxlEiEuYXBpLnJwYy52MS5HZXRVc2VyUHJvZmlsZVJlcXVlc3QaGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZRJRChFVcGRhdGVVc2VyUHJvZmlsZRIkLmFwaS5ycGMudjEuVXBkYXRlVXNlclByb2ZpbGVSZXF1ZXN0GhYuYXBpLnJwYy52MS5Pa1Jlc3BvbnNlEloKD0dldFVzZXJQcm9maWxlcxIiLmFwaS5ycGMudjEuR2V0VXNlclByb2ZpbGVzUmVxdWVzdBojLmFwaS5ycGMudjEuR2V0VXNlclByb2ZpbGVzUmVzcG9uc2VCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw", [file_api_rpc_v1_profile]);
 
 /**
- * UserService 是 rpc 域的资料读写 service（docs/接口文档.md §7 行 1362/1364）。
- * Connect 路径 = /api.rpc.v1.UserService/<Method>（签名串 path 段取值，§7 行 1378）；
+ * UserService 是 rpc 域的资料读写 service（docs/接口文档.md §7）。
+ * Connect 路径 = /api.rpc.v1.UserService/<Method>（签名串 path 段取值，§7）；
  * 方法清单与 §7 逐一对应：
- *   GetUserProfile      §7 行 1387（读接口：Get 前缀，不去重）
- *   UpdateUserProfile   §7 行 1388（写接口：Update 前缀，nonce 去重）
- *   GetUserProfiles     §7.2 行 1436（读接口：批量读资料，定稿，不校验 nonce）
- * 鉴权（写接口 nonce 去重 → 五项签名；读接口仅五项签名，校验顺序 §7 行 1383）
+ *   GetUserProfile      §7（读接口：Get 前缀，不去重）
+ *   UpdateUserProfile   §7（写接口：Update 前缀，nonce 去重）
+ *   GetUserProfiles     §7.2（读接口：批量读资料，定稿，不校验 nonce）
+ * 鉴权（写接口 nonce 去重 → 五项签名；读接口仅五项签名，校验顺序 §7）
  * 为 Connect interceptor（后端 §3.14 interceptors.go 按「命名决定校验」分流，
- * §7 行 1366），装配必须经 internal/connect 的 RegisterRPC（强制包
- * CaptureRawBody——§7 行 1379 body 段取原始请求体字节，漏挂 fail-closed）；
- * session 步归端点自身（§7 行 1383）。本实现只定契约，业务 handler 留待后续实现。
+ * §7），装配必须经 internal/connect 的 RegisterRPC（强制包
+ * CaptureRawBody——§7 body 段取原始请求体字节，漏挂 fail-closed）；
+ * session 步归端点自身（§7）。本实现只定契约，业务 handler 留待后续实现。
  *
  * @generated from service api.rpc.v1.UserService
  */
 export const UserService: GenService<{
   /**
-   * 读用户资料，响应为 §3.1 的 Authloft 结构（§7 行 1387）。
+   * 读用户资料，响应为 §3.1 的 Authloft 结构（§7）。
    *
    * @generated from rpc api.rpc.v1.UserService.GetUserProfile
    */
@@ -40,7 +40,7 @@ export const UserService: GenService<{
     output: typeof ProfileResponseSchema;
   },
   /**
-   * 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1388）。
+   * 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7）。
    *
    * @generated from rpc api.rpc.v1.UserService.UpdateUserProfile
    */
@@ -50,12 +50,12 @@ export const UserService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 批量读用户资料（接口文档 §7.2 行 1436）：响应条目与 GetUserProfile 同构，
+   * 批量读用户资料（接口文档 §7.2）：响应条目与 GetUserProfile 同构，
    * 请求/响应消息定义在同包 profile.proto（GetUserProfilesRequest /
-   * GetUserProfilesResponse，§7.2 proto 变更条款行 1471）。读接口不校验 nonce：
+   * GetUserProfilesResponse，§7.2 proto 变更条款）。读接口不校验 nonce：
    * 方法名不含 Update / Delete / Set / Create / Revoke 任一前缀，按 §7 前言
    * 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
-   * （§7.2 行 1440 命名分流口径）。
+   * （§7.2 命名分流口径）。
    *
    * @generated from rpc api.rpc.v1.UserService.GetUserProfiles
    */

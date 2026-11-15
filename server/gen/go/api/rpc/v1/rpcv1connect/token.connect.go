@@ -40,7 +40,7 @@ const (
 
 // TokenServiceClient is a client for the api.rpc.v1.TokenService service.
 type TokenServiceClient interface {
-	// 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7 行 1389）。
+	// 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7）。
 	DecodeSession(context.Context, *connect.Request[v1.DecodeSessionRequest]) (*connect.Response[v1.SessionResponse], error)
 }
 
@@ -76,7 +76,7 @@ func (c *tokenServiceClient) DecodeSession(ctx context.Context, req *connect.Req
 
 // TokenServiceHandler is an implementation of the api.rpc.v1.TokenService service.
 type TokenServiceHandler interface {
-	// 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7 行 1389）。
+	// 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7）。
 	DecodeSession(context.Context, *connect.Request[v1.DecodeSessionRequest]) (*connect.Response[v1.SessionResponse], error)
 }
 

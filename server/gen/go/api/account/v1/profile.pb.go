@@ -23,8 +23,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 行 818 入参「—」）。
-// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+// GetConfigRequest 是 AccountService/GetConfig 的请求（§3.2 入参「—」）。
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 请求 XxxRequest）。
 type GetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -61,7 +61,7 @@ func (*GetConfigRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_profile_proto_rawDescGZIP(), []int{0}
 }
 
-// GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 行 819 入参「—」）。
+// GetProfileRequest 是 AccountService/GetProfile 的请求（§3.2 入参「—」）。
 type GetProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -98,24 +98,24 @@ func (*GetProfileRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_profile_proto_rawDescGZIP(), []int{1}
 }
 
-// UserProfile 是 §3.1 行 793-797 的嵌套 profile 结构（对应 user_profile 表）：
+// UserProfile 是 §3.1 的嵌套 profile 结构（对应 user_profile 表）：
 // 既作 GetProfile 响应的 profile 字段，也作 UpdateProfile / UpdateUserProfile
-// 请求的 profile 载荷（§3.2 行 837）。全字段 proto3 optional（2026-11-06
+// 请求的 profile 载荷（§3.2）。全字段 proto3 optional（2026-11-06
 // 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」——含显式
 // 置 0 / 空串均可表达（gender 可显式改回 0=保密、字符串字段可显式清空）；
 // 字段名与 JSON 示例逐字一致，编号从 1 起连续且不变（纯加 optional，
-// wire 兼容，§12.9 行 1749 / §12.8）。
+// wire 兼容，§12.9 / §12.8）。
 type UserProfile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 性别（§3.1 行 794）：0/1/2 = 保密/男/女（ISO 5218，§3.2 行 837）。
+	// 性别（§3.1）：0/1/2 = 保密/男/女（ISO 5218，§3.2）。
 	Gender *int64 `protobuf:"varint,1,opt,name=gender,proto3,oneof" json:"gender,omitempty"`
-	// 生日，YYYY-MM-DD（§3.1 行 794）；显式空串 = 清空（§3.2 行 837）。
+	// 生日，YYYY-MM-DD（§3.1）；显式空串 = 清空（§3.2）。
 	Birthday *string `protobuf:"bytes,2,opt,name=birthday,proto3,oneof" json:"birthday,omitempty"`
-	// 语言区域，如 zh-CN（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+	// 语言区域，如 zh-CN（§3.1）；显式空串 = 清空（§3.2）。
 	Locale *string `protobuf:"bytes,3,opt,name=locale,proto3,oneof" json:"locale,omitempty"`
-	// 时区，如 Asia/Shanghai（§3.1 行 795）；显式空串 = 清空（§3.2 行 837）。
+	// 时区，如 Asia/Shanghai（§3.1）；显式空串 = 清空（§3.2）。
 	Timezone *string `protobuf:"bytes,4,opt,name=timezone,proto3,oneof" json:"timezone,omitempty"`
-	// user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1 行 796、§12.9 行 1749）。
+	// user_profile.extra 为 msgpack 透传字段，接口以 JSON 对象透出（§3.1、§12.9）。
 	Extra         *structpb.Struct `protobuf:"bytes,5,opt,name=extra,proto3,oneof" json:"extra,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -186,42 +186,42 @@ func (x *UserProfile) GetExtra() *structpb.Struct {
 	return nil
 }
 
-// ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 行 775-798 的
-// Authloft 用户信息结构（各端点响应即下列字段，无信封包裹，行 775）。
-// 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9 行 1749、行 1751）。
-// phone / email 的掩码在服务端完成（§3.1 行 801-812），响应不区分调用方。
+// ProfileResponse 是 AccountService/GetProfile 的响应，即 §3.1 的
+// Authloft 用户信息结构。
+// 字段名与 JSON 示例逐字一致，编号从 1 起连续；整型一律 int64（§12.9、）。
+// phone / email 的掩码在服务端完成（§3.1），响应不区分调用方。
 type ProfileResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 用户 ID（§3.1 行 779）。
+	// 用户 ID（§3.1）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 登录名，只读（§3.1 行 780、§3.2 行 820）。
+	// 登录名，只读（§3.1、§3.2）。
 	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	// 昵称（§3.1 行 781）。
+	// 昵称（§3.1）。
 	Nickname string `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 头像地址（§3.1 行 782）。
+	// 头像地址（§3.1）。
 	AvatarUrl string `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	// 手机号，自助接口返回掩码（§3.1 行 783、行 805）。
+	// 手机号，自助接口返回掩码（§3.1、）。
 	Phone string `protobuf:"bytes,5,opt,name=phone,proto3" json:"phone,omitempty"`
-	// 手机号是否已验证，JSON 示例为 1/0（§3.1 行 784）。
+	// 手机号是否已验证，JSON 示例为 1/0（§3.1）。
 	PhoneVerified int64 `protobuf:"varint,6,opt,name=phone_verified,json=phoneVerified,proto3" json:"phone_verified,omitempty"`
-	// 邮箱，自助接口返回掩码（§3.1 行 785、行 805）。
+	// 邮箱，自助接口返回掩码（§3.1、）。
 	Email string `protobuf:"bytes,7,opt,name=email,proto3" json:"email,omitempty"`
-	// 邮箱是否已验证，JSON 示例为 1/0（§3.1 行 786）。
+	// 邮箱是否已验证，JSON 示例为 1/0（§3.1）。
 	EmailVerified int64 `protobuf:"varint,8,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
-	// 账号状态：1 正常 0 禁用（§3.1 行 787）。业务字段名 user_status
+	// 账号状态：1 正常 0 禁用（§3.1）。业务字段名 user_status
 	// （JSON 单键不可与信封保留字 status 共存；语义为 user 表账户状态）；编号 9 不变（§12.8）。
 	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
 	// 用户自助两步验证开关（§3.1）。
 	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
-	// 安全版本号，便于调用方感知会话失效（§3.1 行 789）。
+	// 安全版本号，便于调用方感知会话失效（§3.1）。
 	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// 最后登录时间，Unix 秒（§3.1 行 790）。
+	// 最后登录时间，Unix 秒（§3.1）。
 	LastLoginAt int64 `protobuf:"varint,12,opt,name=last_login_at,json=lastLoginAt,proto3" json:"last_login_at,omitempty"`
-	// 创建时间，Unix 秒（§3.1 行 791）。
+	// 创建时间，Unix 秒（§3.1）。
 	CreatedAt int64 `protobuf:"varint,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// 更新时间，Unix 秒（§3.1 行 792）。
+	// 更新时间，Unix 秒（§3.1）。
 	UpdatedAt int64 `protobuf:"varint,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	// user_profile 表结构（§3.1 行 793-797）。
+	// user_profile 表结构（§3.1）。
 	Profile       *UserProfile `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -362,20 +362,20 @@ func (x *ProfileResponse) GetProfile() *UserProfile {
 	return nil
 }
 
-// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2 行 837）：
+// UpdateProfileRequest 是 AccountService/UpdateProfile 的请求（§3.2）：
 // {nickname?, avatarUrl?, profile:{gender?,birthday?,locale?,timezone?,extra?}}。
 // 标量字段 proto3 optional（2026-11-06 定稿）：未设置 = 不修改、显式设值 =
 // 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
 // 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
-// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改（行 837）。成功为空
-// 响应（行 837），返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
+// 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改。成功为空
+// 响应，返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
 type UpdateProfileRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 昵称，可选（§3.2 行 837）；显式空串 = 清空。
+	// 昵称，可选（§3.2）；显式空串 = 清空。
 	Nickname *string `protobuf:"bytes,1,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
-	// 头像地址，可选（§3.2 行 837）；显式空串 = 清空。
+	// 头像地址，可选（§3.2）；显式空串 = 清空。
 	AvatarUrl *string `protobuf:"bytes,2,opt,name=avatar_url,json=avatarUrl,proto3,oneof" json:"avatar_url,omitempty"`
-	// 用户资料，可选（§3.2 行 837，字段见 §3.1 行 793-797）。
+	// 用户资料，可选（§3.2，字段见 §3.1）。
 	Profile       *UserProfile `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -432,12 +432,12 @@ func (x *UpdateProfileRequest) GetProfile() *UserProfile {
 	return nil
 }
 
-// OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0 行 57
+// OkResponse 是 account 域文档定义「成功为空响应」的写方法共用应答（§1.0
 // 「成功响应即 RPC 响应消息」；空消息 protojson 输出 {}）。共用方法：
-// UpdateProfile（§3.2 行 820）、ChangePassword（§3.3 行 862）、BindPhone / BindEmail
-// （§3.4 行 870-873）、SetMfa（§3.5 行 904）、RegisterWebauthn step=verify（§3.6 行 916）、
-// RenameWebauthnCredential / DeleteWebauthnCredential（§3.6 行 917-918）、
-// UnbindThirdparty（§3.7 行 937）。
+// UpdateProfile（§3.2）、ChangePassword（§3.3）、BindPhone / BindEmail
+// （§3.4）、SetMfa（§3.5）、RegisterWebauthn step=verify（§3.6）、
+// RenameWebauthnCredential / DeleteWebauthnCredential（§3.6）、
+// UnbindThirdparty（§3.7）。
 // 无 status 字段：信封顶层 status 为保留字，旧版 {ok:true} 遗留
 // 已按既定口径删除；多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE
 // 豁免（buf.yaml except，沿用既有豁免）。
@@ -477,15 +477,15 @@ func (*OkResponse) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_profile_proto_rawDescGZIP(), []int{5}
 }
 
-// AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2 行 818）：
-// 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy（行 825）。
+// AvatarUploadConfig 是 GetConfig 响应的 avatar_upload（§3.2）：
+// 供 useUpload 在 proxy / direct 间切换；local 存储配置 direct 时服务端回退 proxy。
 type AvatarUploadConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 上传模式：proxy｜direct（§3.2 行 818）。
+	// 上传模式：proxy｜direct（§3.2）。
 	Mode string `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
-	// 单文件上限（字节）（§3.2 行 818、行 851）。
+	// 单文件上限（字节）（§3.2、）。
 	MaxSize int64 `protobuf:"varint,2,opt,name=max_size,json=maxSize,proto3" json:"max_size,omitempty"`
-	// 允许的 MIME 白名单（§3.2 行 818、行 851）。
+	// 允许的 MIME 白名单（§3.2、）。
 	AllowedTypes  []string `protobuf:"bytes,3,rep,name=allowed_types,json=allowedTypes,proto3" json:"allowed_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -662,17 +662,17 @@ func (x *MfaPolicy) GetMethods() []*MfaPolicyMethod {
 	return nil
 }
 
-// AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2 行 818）。
+// AccountConfigResponse 是 AccountService/GetConfig 的响应（§3.2）。
 type AccountConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 头像上传配置（§3.2 行 818）。
+	// 头像上传配置（§3.2）。
 	AvatarUpload *AvatarUploadConfig `protobuf:"bytes,1,opt,name=avatar_upload,json=avatarUpload,proto3" json:"avatar_upload,omitempty"`
-	// 两步验证摘要（§3.2 行 818、行 827-847）。
+	// 两步验证摘要（§3.2、）。
 	MfaPolicy *MfaPolicy `protobuf:"bytes,2,opt,name=mfa_policy,json=mfaPolicy,proto3" json:"mfa_policy,omitempty"`
-	// account entry 的 captcha 配置读取处（§3.2 行 818、§2.5）；
+	// account entry 的 captcha 配置读取处（§3.2、§2.5）；
 	// 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
 	Captcha *v1.CaptchaConfig `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
-	// 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2 行 818）。
+	// 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2）。
 	HasPassword   bool `protobuf:"varint,4,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -736,12 +736,12 @@ func (x *AccountConfigResponse) GetHasPassword() bool {
 	return false
 }
 
-// AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2 行 821）与
-// AccountService/CommitAvatar（行 823）的共用响应 {url}；
-// 同一结构只定义一次（§12.9 行 1748）。
+// AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2）与
+// AccountService/CommitAvatar的共用响应 {url}；
+// 同一结构只定义一次（§12.9）。
 type AvatarResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 头像地址（§3.2 行 821、行 823）。
+	// 头像地址（§3.2、）。
 	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -784,16 +784,16 @@ func (x *AvatarResponse) GetUrl() string {
 	return ""
 }
 
-// PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2 行 822）。
-// 消息名随方法名（§12.9 行 1747「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
+// PresignAvatarRequest 是 AccountService/PresignAvatar 的请求（§3.2）。
+// 消息名随方法名（§12.9「请求 XxxRequest」；pre-connect 时代按旧 URL 命名
 // AvatarPresignRequest，Connect 化时更名）。
 type PresignAvatarRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 原始文件名（§3.2 行 822）。
+	// 原始文件名（§3.2）。
 	Filename string `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
-	// 文件 MIME 类型，须在 allowed_types 内（§3.2 行 822、行 851）。
+	// 文件 MIME 类型，须在 allowed_types 内（§3.2、）。
 	ContentType string `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	// 文件大小，须 ≤ max_size（§3.2 行 822、行 851）。
+	// 文件大小，须 ≤ max_size（§3.2、）。
 	Size          int64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -850,17 +850,17 @@ func (x *PresignAvatarRequest) GetSize() int64 {
 	return 0
 }
 
-// AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2 行 822）：
-// key 由服务端生成，前端无法覆盖（行 822）。
+// AvatarPresignResponse 是 AccountService/PresignAvatar 的响应（§3.2）：
+// key 由服务端生成，前端无法覆盖。
 type AvatarPresignResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 服务端生成的对象 key（§3.2 行 822）。
+	// 服务端生成的对象 key（§3.2）。
 	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	// 有时效的 PUT 预签名 URL（《后端架构》§15.1）。
 	UploadUrl string `protobuf:"bytes,2,opt,name=upload_url,json=uploadUrl,proto3" json:"upload_url,omitempty"`
-	// 直传时需携带的请求头，如 Content-Type（§3.2 行 822）。
+	// 直传时需携带的请求头，如 Content-Type（§3.2）。
 	Headers map[string]string `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// 预签名有效期（秒），即 presign_ttl（§3.2 行 822、《后端架构》§15.1）。
+	// 预签名有效期（秒），即 presign_ttl（§3.2、《后端架构》§15.1）。
 	ExpiresIn     int64 `protobuf:"varint,4,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -924,11 +924,11 @@ func (x *AvatarPresignResponse) GetExpiresIn() int64 {
 	return 0
 }
 
-// CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2 行 823）：
-// 仅记录已上传，不回读校验（行 823、行 851）。消息名随方法名（§12.9 行 1747）。
+// CommitAvatarRequest 是 AccountService/CommitAvatar 的请求（§3.2）：
+// 仅记录已上传，不回读校验。消息名随方法名（§12.9）。
 type CommitAvatarRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// presign 阶段下发的对象 key（§3.2 行 823）。
+	// presign 阶段下发的对象 key（§3.2）。
 	Key           string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

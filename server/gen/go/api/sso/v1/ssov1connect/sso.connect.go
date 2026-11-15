@@ -66,23 +66,23 @@ const (
 
 // SsoServiceClient is a client for the api.sso.v1.SsoService service.
 type SsoServiceClient interface {
-	// 统一提交端点，flow=login，除 thirdparty 外（§2.2 行 414-436）。
+	// 统一提交端点，flow=login，除 thirdparty 外（§2.2）。
 	LoginDefault(context.Context, *connect.Request[v1.LoginDefaultRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 注册，flow=register（§2.3 行 440-454）。
+	// 注册，flow=register（§2.3）。
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 重置密码，flow=reset（§2.4 行 458-470）。
+	// 重置密码，flow=reset（§2.4）。
 	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 新建自绘图形码，直接返回图（§2.5 行 490-497）。
+	// 新建自绘图形码，直接返回图（§2.5）。
 	CreateCaptchaImage(context.Context, *connect.Request[v1.CreateCaptchaImageRequest]) (*connect.Response[v1.CreateCaptchaImageResponse], error)
-	// 取第三方授权 URL，RPC 非 302（§2.7.2 行 579-599）。
+	// 取第三方授权 URL，RPC 非 302（§2.7.2）。
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
-	// 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4 行 616-651）。
+	// 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4）。
 	LoginOauth(context.Context, *connect.Request[v1.LoginOauthRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8 行 687-708）。
+	// 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8）。
 	CreateQrcode(context.Context, *connect.Request[v1.CreateQrcodeRequest]) (*connect.Response[v1.CreateQrcodeResponse], error)
-	// 查询 / 长轮询 / 完成登录（§2.8 行 709-733）。
+	// 查询 / 长轮询 / 完成登录（§2.8）。
 	GetLoginTicket(context.Context, *connect.Request[v1.GetLoginTicketRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 已登录一端写入授权结果（§2.8 行 735-748）。
+	// 已登录一端写入授权结果（§2.8）。
 	ConfirmLoginTicket(context.Context, *connect.Request[v1.ConfirmLoginTicketRequest]) (*connect.Response[v1.TicketStatus], error)
 	// 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
 	StartVerification(context.Context, *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error)
@@ -242,23 +242,23 @@ func (c *ssoServiceClient) SubmitVerification(ctx context.Context, req *connect.
 
 // SsoServiceHandler is an implementation of the api.sso.v1.SsoService service.
 type SsoServiceHandler interface {
-	// 统一提交端点，flow=login，除 thirdparty 外（§2.2 行 414-436）。
+	// 统一提交端点，flow=login，除 thirdparty 外（§2.2）。
 	LoginDefault(context.Context, *connect.Request[v1.LoginDefaultRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 注册，flow=register（§2.3 行 440-454）。
+	// 注册，flow=register（§2.3）。
 	Register(context.Context, *connect.Request[v1.RegisterRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 重置密码，flow=reset（§2.4 行 458-470）。
+	// 重置密码，flow=reset（§2.4）。
 	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 新建自绘图形码，直接返回图（§2.5 行 490-497）。
+	// 新建自绘图形码，直接返回图（§2.5）。
 	CreateCaptchaImage(context.Context, *connect.Request[v1.CreateCaptchaImageRequest]) (*connect.Response[v1.CreateCaptchaImageResponse], error)
-	// 取第三方授权 URL，RPC 非 302（§2.7.2 行 579-599）。
+	// 取第三方授权 URL，RPC 非 302（§2.7.2）。
 	Authorize(context.Context, *connect.Request[v1.AuthorizeRequest]) (*connect.Response[v1.AuthorizeResponse], error)
-	// 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4 行 616-651）。
+	// 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4）。
 	LoginOauth(context.Context, *connect.Request[v1.LoginOauthRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8 行 687-708）。
+	// 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8）。
 	CreateQrcode(context.Context, *connect.Request[v1.CreateQrcodeRequest]) (*connect.Response[v1.CreateQrcodeResponse], error)
-	// 查询 / 长轮询 / 完成登录（§2.8 行 709-733）。
+	// 查询 / 长轮询 / 完成登录（§2.8）。
 	GetLoginTicket(context.Context, *connect.Request[v1.GetLoginTicketRequest]) (*connect.Response[v1.LoginFlowResponse], error)
-	// 已登录一端写入授权结果（§2.8 行 735-748）。
+	// 已登录一端写入授权结果（§2.8）。
 	ConfirmLoginTicket(context.Context, *connect.Request[v1.ConfirmLoginTicketRequest]) (*connect.Response[v1.TicketStatus], error)
 	// 登录 / 扫码链路取得挑战令牌与可用因子（§3.8.1、§3.8.2）。
 	StartVerification(context.Context, *connect.Request[v11.StartVerificationRequest]) (*connect.Response[v11.StartVerificationResponse], error)

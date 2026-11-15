@@ -21,33 +21,33 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// UserinfoResponse 是 `GET /api/oidc/userinfo` 的响应（§4.5 行 1102-1118）：
-// OIDC 标准 Claims，按 RFC 格式平铺、豁免 §1.0 统一信封（§1.0 行 64），
+// UserinfoResponse 是 `GET /api/oidc/userinfo` 的响应（§4.5）：
+// OIDC 标准 Claims，按 RFC 格式平铺、豁免 §1.0 统一信封（§1.0），
 // 顶层无 status 字段，本消息即完整响应体。
-// 字段名与行 1106-1113 的 Claims 表及行 1115-1118 JSON 示例逐字一致（§12.9 行 1748）；
-// Claim 语义在 §4.5 唯一定义，取值来源映射见《后端架构》§14.4 行 1609-1616。
+// 字段名与 Claims 表及 JSON 示例逐字一致（§12.9）；
+// Claim 语义在 §4.5 唯一定义，取值来源映射见《后端架构》§14.4。
 type UserinfoResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 用户 ID（user.id，行 1108）；整型一律 int64，JSON 输出十进制字符串，
-	// 与示例 "10086" 一致（§12.9 行 1750、§1.12）。
+	// 用户 ID（user.id）；整型一律 int64，JSON 输出十进制字符串，
+	// 与示例 "10086" 一致（§12.9、§1.12）。
 	Sub int64 `protobuf:"varint,1,opt,name=sub,proto3" json:"sub,omitempty"`
-	// 昵称（user.nickname，行 1109）。
+	// 昵称（user.nickname）。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// 邮箱（user.email，行 1110）；默认掩码，仅当 Access Token 的 scope 含
-	// email_plain 时明文（行 1120），掩码矩阵见 §3.1 行 804、807-809。
+	// 邮箱（user.email）；默认掩码，仅当 Access Token 的 scope 含
+	// email_plain 时明文，掩码矩阵见 §3.1、807-809。
 	Email string `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
-	// 邮箱验证状态，取库内 email_verified 标志（行 1110）；JSON 为 true/false（行 1116），
-	// 不受掩码影响（行 1120）。
+	// 邮箱验证状态，取库内 email_verified 标志；JSON 为 true/false，
+	// 不受掩码影响。
 	EmailVerified bool `protobuf:"varint,4,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
-	// 手机号（user.phone，行 1111）；默认掩码，仅当 scope 含 phone_plain 时明文（行 1120），
-	// 掩码矩阵见 §3.1 行 804、807-809。
+	// 手机号（user.phone）；默认掩码，仅当 scope 含 phone_plain 时明文，
+	// 掩码矩阵见 §3.1、807-809。
 	PhoneNumber string `protobuf:"bytes,5,opt,name=phone_number,json=phoneNumber,proto3" json:"phone_number,omitempty"`
-	// 手机号验证状态，取库内 phone_verified 标志（行 1111）；JSON 为 true/false（行 1117），
-	// 不受掩码影响（行 1120）。
+	// 手机号验证状态，取库内 phone_verified 标志；JSON 为 true/false，
+	// 不受掩码影响。
 	PhoneNumberVerified bool `protobuf:"varint,6,opt,name=phone_number_verified,json=phoneNumberVerified,proto3" json:"phone_number_verified,omitempty"`
-	// 头像 URL（user.avatar_url，行 1112）。
+	// 头像 URL（user.avatar_url）。
 	Picture string `protobuf:"bytes,7,opt,name=picture,proto3" json:"picture,omitempty"`
-	// 登录链路中实际通过的认证方法数组（行 1113），如 ["pwd","otp"]（行 1117）。
+	// 登录链路中实际通过的认证方法数组，如 ["pwd","otp"]。
 	Amr           []string `protobuf:"bytes,8,rep,name=amr,proto3" json:"amr,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

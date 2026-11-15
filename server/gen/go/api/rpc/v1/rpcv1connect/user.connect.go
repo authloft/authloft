@@ -46,16 +46,16 @@ const (
 
 // UserServiceClient is a client for the api.rpc.v1.UserService service.
 type UserServiceClient interface {
-	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7 行 1387）。
+	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7）。
 	GetUserProfile(context.Context, *connect.Request[v1.GetUserProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
-	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1388）。
+	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7）。
 	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
-	// 批量读用户资料（接口文档 §7.2 行 1436）：响应条目与 GetUserProfile 同构，
+	// 批量读用户资料（接口文档 §7.2）：响应条目与 GetUserProfile 同构，
 	// 请求/响应消息定义在同包 profile.proto（GetUserProfilesRequest /
-	// GetUserProfilesResponse，§7.2 proto 变更条款行 1471）。读接口不校验 nonce：
+	// GetUserProfilesResponse，§7.2 proto 变更条款）。读接口不校验 nonce：
 	// 方法名不含 Update / Delete / Set / Create / Revoke 任一前缀，按 §7 前言
 	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
-	// （§7.2 行 1440 命名分流口径）。
+	// （§7.2 命名分流口径）。
 	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
 }
 
@@ -115,16 +115,16 @@ func (c *userServiceClient) GetUserProfiles(ctx context.Context, req *connect.Re
 
 // UserServiceHandler is an implementation of the api.rpc.v1.UserService service.
 type UserServiceHandler interface {
-	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7 行 1387）。
+	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7）。
 	GetUserProfile(context.Context, *connect.Request[v1.GetUserProfileRequest]) (*connect.Response[v1.ProfileResponse], error)
-	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7 行 1388）。
+	// 改资料，入参同 §3.2 的 AccountService/UpdateProfile，成功为空响应（§7）。
 	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
-	// 批量读用户资料（接口文档 §7.2 行 1436）：响应条目与 GetUserProfile 同构，
+	// 批量读用户资料（接口文档 §7.2）：响应条目与 GetUserProfile 同构，
 	// 请求/响应消息定义在同包 profile.proto（GetUserProfilesRequest /
-	// GetUserProfilesResponse，§7.2 proto 变更条款行 1471）。读接口不校验 nonce：
+	// GetUserProfilesResponse，§7.2 proto 变更条款）。读接口不校验 nonce：
 	// 方法名不含 Update / Delete / Set / Create / Revoke 任一前缀，按 §7 前言
 	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
-	// （§7.2 行 1440 命名分流口径）。
+	// （§7.2 命名分流口径）。
 	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
 }
 

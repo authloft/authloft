@@ -14,23 +14,23 @@ export const file_api_admin_v1_provider: GenFile = /*@__PURE__*/
   fileDesc("ChthcGkvYWRtaW4vdjEvcHJvdmlkZXIucHJvdG8SDGFwaS5hZG1pbi52MSK/AQoIUHJvdmlkZXISFAoMcHJvdmlkZXJfa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghjYXRlZ29yeRgDIAEoCRIMCgR0eXBlGAQgASgJEhIKCmlzX2VuYWJsZWQYBSABKAgSFQoNZW5hYmxlX3NpZ25pbhgGIAEoCBIVCg1lbmFibGVfc2lnbnVwGAcgASgIEhEKCWF1dG9fYmluZBgIIAEoCBISCgpzb3J0X29yZGVyGAkgASgDIvoBChRMaXN0UHJvdmlkZXJzUmVxdWVzdBIVCghjYXRlZ29yeRgBIAEoCUgAiAEBEhEKBHR5cGUYAiABKAlIAYgBARIXCgppc19lbmFibGVkGAMgASgISAKIAQESEQoEcGFnZRgEIAEoA0gDiAEBEhYKCXBhZ2Vfc2l6ZRgFIAEoA0gEiAEBEhEKBHNvcnQYBiABKAlIBYgBARISCgVvcmRlchgHIAEoCUgGiAEBQgsKCV9jYXRlZ29yeUIHCgVfdHlwZUINCgtfaXNfZW5hYmxlZEIHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJtChRQcm92aWRlckxpc3RSZXNwb25zZRIlCgVpdGVtcxgBIAMoCzIWLmFwaS5hZG1pbi52MS5Qcm92aWRlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIqChJHZXRQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIvgCCg1BZG1pblByb3ZpZGVyEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIWCg51bmlvbl9wcm92aWRlchgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSDAoEdHlwZRgFIAEoCRIVCg1lbmFibGVfc2lnbmluGAYgASgIEhUKDWVuYWJsZV9zaWdudXAYByABKAgSEQoJYXV0b19iaW5kGAggASgIEhgKEGF1dG9fYmluZF9maWVsZHMYCSABKAkSEgoKaXNfZW5hYmxlZBgKIAEoCBIQCgh1aV9ncm91cBgLIAEoCRISCgpzb3J0X29yZGVyGAwgASgDEhAKCGljb25fdXJsGA0gASgJEg4KBnJlbWFyaxgOIAEoCRIkCgNleHQYDyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhIKCmNyZWF0ZWRfYXQYECABKAMSEgoKdXBkYXRlZF9hdBgRIAEoAyItChVEZWxldGVQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIkUKGVNldFByb3ZpZGVyRW5hYmxlZFJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEhIKCmlzX2VuYWJsZWQYAiABKAgiPAoQUHJvdmlkZXJTb3J0SXRlbRIUCgxwcm92aWRlcl9rZXkYASABKAkSEgoKc29ydF9vcmRlchgCIAEoAyJFChRTb3J0UHJvdmlkZXJzUmVxdWVzdBItCgVpdGVtcxgBIAMoCzIeLmFwaS5hZG1pbi52MS5Qcm92aWRlclNvcnRJdGVtIjsKE1Rlc3RQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg4KBnRhcmdldBgCIAEoCUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
- * Provider 是 AdminService/ListProviders 的列表项（§5.2 行 1165）：
+ * Provider 是 AdminService/ListProviders 的列表项（§5.2）：
  * 列表列「显示名 / provider_key / 类别 / 类型 / 状态 / 策略标签 / 排序」。
- * 「状态」即 provider.is_enabled（§5.3 行 1216 同键），「策略标签」即登录 / 注册 /
- * 自动绑定三个策略开关（《后端架构》§4.1）；开关类字段按 §12.9 行 1749 用 bool 承载。
+ * 「状态」即 provider.is_enabled（§5.3 同键），「策略标签」即登录 / 注册 /
+ * 自动绑定三个策略开关（《后端架构》§4.1）；开关类字段按 §12.9 用 bool 承载。
  *
  * @generated from message api.admin.v1.Provider
  */
 export type Provider = Message<"api.admin.v1.Provider"> & {
   /**
-   * 全局唯一标识，创建后不可改（§5.3 行 1189）。
+   * 全局唯一标识，创建后不可改（§5.3）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 展示名（§5.2 行 1165、《后端架构》§4.1）。
+   * 展示名（§5.2、《后端架构》§4.1）。
    *
    * @generated from field: string display_name = 2;
    */
@@ -38,21 +38,21 @@ export type Provider = Message<"api.admin.v1.Provider"> & {
 
   /**
    * 类别，取值 oauth|captcha|sms|email|storage|notify|union（《后端架构》§4.1）；
-   * 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+   * 跨版本可能新增，用 string 承载（§12.9）。
    *
    * @generated from field: string category = 3;
    */
   category: string;
 
   /**
-   * 类型，取值来自注册表 metas（§5.2 行 1172、《后端架构》§15.3）。
+   * 类型，取值来自注册表 metas（§5.2、《后端架构》§15.3）。
    *
    * @generated from field: string type = 4;
    */
   type: string;
 
   /**
-   * 「状态」列：是否启用（§5.2 行 1169、§5.3 行 1216）。
+   * 「状态」列：是否启用（§5.2、§5.3）。
    *
    * @generated from field: bool is_enabled = 5;
    */
@@ -80,7 +80,7 @@ export type Provider = Message<"api.admin.v1.Provider"> & {
   autoBind: boolean;
 
   /**
-   * 排序（《后端架构》§4.1）；整型一律 int64（§12.9 行 1751）。
+   * 排序（《后端架构》§4.1）；整型一律 int64（§12.9）。
    *
    * @generated from field: int64 sort_order = 9;
    */
@@ -95,59 +95,59 @@ export const ProviderSchema: GenMessage<Provider> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_provider, 0);
 
 /**
- * ListProvidersRequest 是 AdminService/ListProviders 的请求（§5.2 行 1165：
- * 筛选入参 {category, type, isEnabled}）；所有列表支持 §1.7 分页（§5 行 1153）。
- * 分页与排序字段进请求消息（§1.7 行 277）；查询参数缺省即不过滤，一律 optional
- * 以区分「未传」与零值。消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名
+ * ListProvidersRequest 是 AdminService/ListProviders 的请求（§5.2：
+ * 筛选入参 {category, type, isEnabled}）；所有列表支持 §1.7 分页（§5）。
+ * 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional
+ * 以区分「未传」与零值。消息名随方法名（§12.9；pre-connect 时代按资源命名
  * ProviderListRequest，Connect 化时更名）。
  *
  * @generated from message api.admin.v1.ListProvidersRequest
  */
 export type ListProvidersRequest = Message<"api.admin.v1.ListProvidersRequest"> & {
   /**
-   * 按类别过滤（§5.2 行 1165）。
+   * 按类别过滤（§5.2）。
    *
    * @generated from field: optional string category = 1;
    */
   category?: string | undefined;
 
   /**
-   * 按类型过滤（§5.2 行 1165）。
+   * 按类型过滤（§5.2）。
    *
    * @generated from field: optional string type = 2;
    */
   type?: string | undefined;
 
   /**
-   * 按启用状态过滤（§5.2 行 1165）。
+   * 按启用状态过滤（§5.2）。
    *
    * @generated from field: optional bool is_enabled = 3;
    */
   isEnabled?: boolean | undefined;
 
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 4;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 5;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 6;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 7;
    */
@@ -162,7 +162,7 @@ export const ListProvidersRequestSchema: GenMessage<ListProvidersRequest> = /*@_
   messageDesc(file_api_admin_v1_provider, 1);
 
 /**
- * ProviderListResponse 是 AdminService/ListProviders 的响应（§5.2 行 1165、§1.7 行 278：
+ * ProviderListResponse 是 AdminService/ListProviders 的响应（§5.2、§1.7：
  * {items, total, page, pageSize}）。
  * 响应名不随方法名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
  *
@@ -170,28 +170,28 @@ export const ListProvidersRequestSchema: GenMessage<ListProvidersRequest> = /*@_
  */
 export type ProviderListResponse = Message<"api.admin.v1.ProviderListResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.Provider items = 1;
    */
   items: Provider[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */
@@ -206,15 +206,15 @@ export const ProviderListResponseSchema: GenMessage<ProviderListResponse> = /*@_
   messageDesc(file_api_admin_v1_provider, 2);
 
 /**
- * GetProviderRequest 是 AdminService/GetProvider 的请求（§5.2 行 1167：
+ * GetProviderRequest 是 AdminService/GetProvider 的请求（§5.2：
  * {providerKey} 详情，返回明文凭证）。pre-connect 时代 provider_key 在 REST 路径中，
- * Connect 化后路径参数进请求消息（§1.7 行 277 同口径）。
+ * Connect 化后路径参数进请求消息（§1.7 同口径）。
  *
  * @generated from message api.admin.v1.GetProviderRequest
  */
 export type GetProviderRequest = Message<"api.admin.v1.GetProviderRequest"> & {
   /**
-   * 目标 Provider（§5.2 行 1167）。
+   * 目标 Provider（§5.2）。
    *
    * @generated from field: string provider_key = 1;
    */
@@ -229,8 +229,8 @@ export const GetProviderRequestSchema: GenMessage<GetProviderRequest> = /*@__PUR
   messageDesc(file_api_admin_v1_provider, 3);
 
 /**
- * AdminProvider 是 AdminService/GetProvider 的响应（§5.2 行 1167「返回明文凭证，
- * 需管理员会话」），即 §12.9 行 1753 所指的 AdminProvider 管理视图：
+ * AdminProvider 是 AdminService/GetProvider 的响应（§5.2「返回明文凭证，
+ * 需管理员会话」），即 §12.9 所指的 AdminProvider 管理视图：
  * 全站唯一明文凭证出口——注入快照与前台接口永不返回 ext 中任何凭证字段（§12.1）。
  * provider 表列是封闭集，typed 透出；ext 是开放扩展（§12.1「凭证 / 端点 / 存储配置 /
  * 厂商长尾全部进此结构」），按既定口径用 google.protobuf.Struct 明文透出。
@@ -239,14 +239,14 @@ export const GetProviderRequestSchema: GenMessage<GetProviderRequest> = /*@__PUR
  */
 export type AdminProvider = Message<"api.admin.v1.AdminProvider"> & {
   /**
-   * 全局唯一标识（§5.3 行 1189）。
+   * 全局唯一标识（§5.3）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 联合登录归属 Provider，仅列 category=union 的取值（§5.3 行 1194、《后端架构》§4.1）。
+   * 联合登录归属 Provider，仅列 category=union 的取值（§5.3、《后端架构》§4.1）。
    *
    * @generated from field: string union_provider = 2;
    */
@@ -309,7 +309,7 @@ export type AdminProvider = Message<"api.admin.v1.AdminProvider"> & {
   isEnabled: boolean;
 
   /**
-   * 展示分组 social|enterprise|dev|other（§5.3 行 1212）。
+   * 展示分组 social|enterprise|dev|other（§5.3）。
    *
    * @generated from field: string ui_group = 11;
    */
@@ -323,21 +323,21 @@ export type AdminProvider = Message<"api.admin.v1.AdminProvider"> & {
   sortOrder: bigint;
 
   /**
-   * 图标 URL，绝对地址（§5.3 行 1210）。
+   * 图标 URL，绝对地址（§5.3）。
    *
    * @generated from field: string icon_url = 13;
    */
   iconUrl: string;
 
   /**
-   * 备注（§5.3 行 1214）。
+   * 备注（§5.3）。
    *
    * @generated from field: string remark = 14;
    */
   remark: string;
 
   /**
-   * provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3 行 1180）。
+   * provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3）。
    *
    * @generated from field: google.protobuf.Struct ext = 15;
    */
@@ -366,14 +366,14 @@ export const AdminProviderSchema: GenMessage<AdminProvider> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_provider, 4);
 
 /**
- * DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2 行 1169：
+ * DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2：
  * {providerKey} 删除）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.DeleteProviderRequest
  */
 export type DeleteProviderRequest = Message<"api.admin.v1.DeleteProviderRequest"> & {
   /**
-   * 目标 Provider（§5.2 行 1169）。
+   * 目标 Provider（§5.2）。
    *
    * @generated from field: string provider_key = 1;
    */
@@ -389,22 +389,22 @@ export const DeleteProviderRequestSchema: GenMessage<DeleteProviderRequest> = /*
 
 /**
  * SetProviderEnabledRequest 是 AdminService/SetProviderEnabled 的请求
- * （§5.2 行 1170：{providerKey, isEnabled} 行内开关）。pre-connect 时代 provider_key
- * 在 REST 路径中，Connect 化后路径参数进请求消息；字段顺序同 §5.2 行 1170 示例；
- * 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+ * （§5.2：{providerKey, isEnabled} 行内开关）。pre-connect 时代 provider_key
+ * 在 REST 路径中，Connect 化后路径参数进请求消息；字段顺序同 §5.2 示例；
+ * 消息名随方法名（§12.9）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.SetProviderEnabledRequest
  */
 export type SetProviderEnabledRequest = Message<"api.admin.v1.SetProviderEnabledRequest"> & {
   /**
-   * 目标 Provider（§5.2 行 1170）。
+   * 目标 Provider（§5.2）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 行内开关目标态（§5.2 行 1170）。
+   * 行内开关目标态（§5.2）。
    *
    * @generated from field: bool is_enabled = 2;
    */
@@ -419,20 +419,20 @@ export const SetProviderEnabledRequestSchema: GenMessage<SetProviderEnabledReque
   messageDesc(file_api_admin_v1_provider, 6);
 
 /**
- * ProviderSortItem 是拖拽排序的单个条目（§5.2 行 1171：{items:[{providerKey, sortOrder}]}）。
+ * ProviderSortItem 是拖拽排序的单个条目（§5.2：{items:[{providerKey, sortOrder}]}）。
  *
  * @generated from message api.admin.v1.ProviderSortItem
  */
 export type ProviderSortItem = Message<"api.admin.v1.ProviderSortItem"> & {
   /**
-   * 要排序的 Provider（§5.2 行 1171）。
+   * 要排序的 Provider（§5.2）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 目标排序值（§5.2 行 1171）。
+   * 目标排序值（§5.2）。
    *
    * @generated from field: int64 sort_order = 2;
    */
@@ -447,14 +447,14 @@ export const ProviderSortItemSchema: GenMessage<ProviderSortItem> = /*@__PURE__*
   messageDesc(file_api_admin_v1_provider, 7);
 
 /**
- * SortProvidersRequest 是 AdminService/SortProviders 的请求（§5.2 行 1171）。
- * 成功返回 OkResponse。消息名随方法名（§12.9 行 1747）。
+ * SortProvidersRequest 是 AdminService/SortProviders 的请求（§5.2）。
+ * 成功返回 OkResponse。消息名随方法名（§12.9）。
  *
  * @generated from message api.admin.v1.SortProvidersRequest
  */
 export type SortProvidersRequest = Message<"api.admin.v1.SortProvidersRequest"> & {
   /**
-   * 拖拽排序后的条目集合（§5.2 行 1171）。
+   * 拖拽排序后的条目集合（§5.2）。
    *
    * @generated from field: repeated api.admin.v1.ProviderSortItem items = 1;
    */
@@ -469,18 +469,18 @@ export const SortProvidersRequestSchema: GenMessage<SortProvidersRequest> = /*@_
   messageDesc(file_api_admin_v1_provider, 8);
 
 /**
- * TestProviderRequest 是 AdminService/TestProvider 的请求（§5.2 行 1174：
+ * TestProviderRequest 是 AdminService/TestProvider 的请求（§5.2：
  * {providerKey}，短信 / 邮件 Provider 的「发送测试」）。
  * §5.2 未定义请求体：发送测试必须有接收目标（《后端架构》§15.2 Sender.Send(to,…) 的
  * 首参），故按最小必填报文定义 target（待 handler 验证）；
  * provider_key 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息；
- * 消息名随方法名（§12.9 行 1747）。成功返回 OkResponse。
+ * 消息名随方法名（§12.9）。成功返回 OkResponse。
  *
  * @generated from message api.admin.v1.TestProviderRequest
  */
 export type TestProviderRequest = Message<"api.admin.v1.TestProviderRequest"> & {
   /**
-   * 目标 Provider（§5.2 行 1174）。
+   * 目标 Provider（§5.2）。
    *
    * @generated from field: string provider_key = 1;
    */

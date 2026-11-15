@@ -22,34 +22,34 @@ const (
 )
 
 // LoginTokenPayload 是 login_token 的加密前载荷——登录过程态
-// （docs/后端架构.md §11.6.2 行 1270-1304）。加密后经响应体下发、前端存内存变量、
-// 后续在请求体顶层回传（接口文档 §1.8）；令牌共用封装见 §11.6.1（行 1249-1268）。
-// 字段名 / 编号 / 类型与行 1275-1287 的 protobuf 定义逐字一致。
+// （docs/后端架构.md §11.6.2）。加密后经响应体下发、前端存内存变量、
+// 后续在请求体顶层回传（接口文档 §1.8）；令牌共用封装见 §11.6.1。
+// 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
 type LoginTokenPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 会话标识，用于绑定验证码 / 日志关联（行 1276）。
+	// 会话标识，用于绑定验证码 / 日志关联。
 	Tid string `protobuf:"bytes,1,opt,name=tid,proto3" json:"tid,omitempty"`
-	// login|register|reset（行 1277）。
+	// login|register|reset。
 	Flow string `protobuf:"bytes,2,opt,name=flow,proto3" json:"flow,omitempty"`
-	// 当前因子（行 1278）。
+	// 当前因子。
 	Factor string `protobuf:"bytes,3,opt,name=factor,proto3" json:"factor,omitempty"`
-	// 已通过因子（行 1279）。
+	// 已通过因子。
 	Passed []string `protobuf:"bytes,4,rep,name=passed,proto3" json:"passed,omitempty"`
-	// pending user_id，0 = 主因子未通过（行 1280）。
+	// pending user_id，0 = 主因子未通过。
 	Uid int64 `protobuf:"varint,5,opt,name=uid,proto3" json:"uid,omitempty"`
-	// 进行中的挑战；nil = 无进行中的挑战（行 1281）。
+	// 进行中的挑战；nil = 无进行中的挑战。
 	Ch *Challenge `protobuf:"bytes,6,opt,name=ch,proto3" json:"ch,omitempty"`
-	// 精简三方身份（不含 Raw——三方原始资料落 user_thirdparty_bind.extra，行 1302）；
-	// nil = 非三方流程（行 1282）。
+	// 精简三方身份（不含 Raw——三方原始资料落 user_thirdparty_bind.extra）；
+	// nil = 非三方流程。
 	Tp *ThirdParty `protobuf:"bytes,7,opt,name=tp,proto3" json:"tp,omitempty"`
-	// /auth/authorize 的原始参数，登录成功后生成授权码的唯一来源（行 1303）；
-	// nil = 非 OIDC 流程（行 1283）。
+	// /auth/authorize 的原始参数，登录成功后生成授权码的唯一来源；
+	// nil = 非 OIDC 流程。
 	Oidc *Oidc `protobuf:"bytes,8,opt,name=oidc,proto3" json:"oidc,omitempty"`
-	// 认证方法（行 1284）。
+	// 认证方法。
 	Amr []string `protobuf:"bytes,9,rep,name=amr,proto3" json:"amr,omitempty"`
-	// 签发时间，Unix 秒（行 1285）。
+	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,10,opt,name=iat,proto3" json:"iat,omitempty"`
-	// 过期时间，Unix 秒；固定 10 分钟（行 1286）。
+	// 过期时间，Unix 秒；固定 10 分钟。
 	Exp           int64 `protobuf:"varint,11,opt,name=exp,proto3" json:"exp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -162,16 +162,16 @@ func (x *LoginTokenPayload) GetExp() int64 {
 	return 0
 }
 
-// Challenge 是 login_token 内进行中的一次挑战（§11.6.2 行 1289）。
+// Challenge 是 login_token 内进行中的一次挑战（§11.6.2）。
 type Challenge struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目的，枚举 login / register / reset / mfa（行 1299）；bind / webauthn
-	// 保留于本枚举命名空间（行 1300）但不属于 login_token 的合法取值，
+	// 目的，枚举 login / register / reset / mfa；bind / webauthn
+	// 保留于本枚举命名空间但不属于 login_token 的合法取值，
 	// login 校验时见到即拒绝。
 	Purpose string `protobuf:"bytes,1,opt,name=purpose,proto3" json:"purpose,omitempty"`
-	// 挑战目标（行 1289）。
+	// 挑战目标。
 	Target string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
-	// 一次性随机数（行 1289）。
+	// 一次性随机数。
 	Nonce         string `protobuf:"bytes,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -228,20 +228,20 @@ func (x *Challenge) GetNonce() string {
 	return ""
 }
 
-// ThirdParty 是 login_token 内携带的精简三方身份（§11.6.2 行 1290、1302）：
+// ThirdParty 是 login_token 内携带的精简三方身份（§11.6.2、1302）：
 // 只存精简三方身份、去掉 Raw，三方原始资料落 user_thirdparty_bind.extra；
 // 每次三方成功都覆盖 tp，保证「仅最后一次可绑定」。
 type ThirdParty struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Provider 标识（行 1290）。
+	// Provider 标识。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 三方 open_id（行 1290）。
+	// 三方 open_id。
 	OpenId string `protobuf:"bytes,2,opt,name=open_id,json=openId,proto3" json:"open_id,omitempty"`
-	// 三方 union_id（行 1290）。
+	// 三方 union_id。
 	UnionId string `protobuf:"bytes,3,opt,name=union_id,json=unionId,proto3" json:"union_id,omitempty"`
-	// 三方昵称（行 1290）。
+	// 三方昵称。
 	Nickname string `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 三方头像（行 1290）。
+	// 三方头像。
 	AvatarUrl     string `protobuf:"bytes,5,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -312,22 +312,22 @@ func (x *ThirdParty) GetAvatarUrl() string {
 	return ""
 }
 
-// Oidc 是 /auth/authorize 原始参数的快照（§11.6.2 行 1292-1294）。
+// Oidc 是 /auth/authorize 原始参数的快照（§11.6.2）。
 type Oidc struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// OIDC client_id（行 1292）。
+	// OIDC client_id。
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// OIDC redirect_uri（行 1292）。
+	// OIDC redirect_uri。
 	RedirectUri string `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
-	// OIDC scope（行 1292）。
+	// OIDC scope。
 	Scope string `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
-	// OIDC nonce（行 1292）。
+	// OIDC nonce。
 	Nonce string `protobuf:"bytes,4,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	// PKCE code_challenge（行 1293）。
+	// PKCE code_challenge。
 	CodeChallenge string `protobuf:"bytes,5,opt,name=code_challenge,json=codeChallenge,proto3" json:"code_challenge,omitempty"`
-	// PKCE code_challenge_method（行 1293）。
+	// PKCE code_challenge_method。
 	CodeChallengeMethod string `protobuf:"bytes,6,opt,name=code_challenge_method,json=codeChallengeMethod,proto3" json:"code_challenge_method,omitempty"`
-	// OIDC state（行 1294）。
+	// OIDC state。
 	State         string `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -22,8 +22,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// GetMeRequest 是 AdminService/GetMe 的请求（§5.1 行 1159，无入参）。
-// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+// GetMeRequest 是 AdminService/GetMe 的请求（§5.1，无入参）。
+// Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 请求 XxxRequest）。
 type GetMeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -60,22 +60,22 @@ func (*GetMeRequest) Descriptor() ([]byte, []int) {
 	return file_api_admin_v1_admin_proto_rawDescGZIP(), []int{0}
 }
 
-// MeResponse 是 AdminService/GetMe 的响应（§5.1 行 1159）：
-// 前端获取管理员信息的唯一来源——仅根映射 /admin 空壳页不注入 admin 字段，子路径走前端 hash 路由（§5 行 1147，路由收窄）。
-// 字段名与 §5.1 行 1159 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
-// 编号从 1 起连续（§12.9 行 1749）。
+// MeResponse 是 AdminService/GetMe 的响应（§5.1）：
+// 前端获取管理员信息的唯一来源——仅根映射 /admin 空壳页不注入 admin 字段，子路径走前端 hash 路由（§5，路由收窄）。
+// 字段名与 §5.1 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
+// 编号从 1 起连续（§12.9）。
 type MeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 管理员固定为安装时创建的 user.id = 1 账号（§5 行 1144、§13）。
+	// 管理员固定为安装时创建的 user.id = 1 账号（§5、§13）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 登录名（§5.1 行 1159）。
+	// 登录名（§5.1）。
 	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	// 昵称（§5.1 行 1159）。
+	// 昵称（§5.1）。
 	Nickname string `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 头像地址（§5.1 行 1159）。
+	// 头像地址（§5.1）。
 	AvatarUrl string `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
-	// 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护），
-	// 不会走到这里（§5.1 行 1159、§5 行 1146）。
+	// 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护）
+	// 不会走到这里（§5.1、§5）。
 	IsAdmin       bool `protobuf:"varint,5,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -148,7 +148,7 @@ func (x *MeResponse) GetIsAdmin() bool {
 
 // OkResponse 是 admin 域文档未定义出参的写方法共用空应答
 // （provider 删除/开关/排序/测试，用户状态切换/重置密码/解绑/解锁，客户端写，SetSettings）：
-// 空消息，protojson 输出 {}（§1.0 行 57 成功响应即消息本身，无 status 信封字段）；
+// 空消息，protojson 输出 {}（§1.0 成功响应即消息本身，无 status 信封字段）；
 // 旧版 codec WriteSuccess 注入顶层 status 已随 codec 删除一并作废，
 // 消息本身无字段可加（信封顶层 status 为保留字）。
 // 多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE 豁免（沿用既有豁免）。

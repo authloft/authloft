@@ -15,7 +15,7 @@ export const file_api_admin_v1_events: GenFile = /*@__PURE__*/
 
 /**
  * EventItem 是事件条目（《后端架构》§4.6 event_log 行投影）：
- * 管理后台统一事件视图（§5.6 行 1272）与用户登录记录（§5.4 行 1252）共用同一模型——
+ * 管理后台统一事件视图（§5.6）与用户登录记录（§5.4）共用同一模型——
  * 管理员与本人两种视图共用一张表（《后端架构》§16）。
  *
  * @generated from message api.admin.v1.EventItem
@@ -30,8 +30,8 @@ export type EventItem = Message<"api.admin.v1.EventItem"> & {
 
   /**
    * 事件类型 login_success|change_password|…（《后端架构》§4.6）；
-   * 前端预设视图「登录记录」「敏感操作」即按 event 筛选（§5.6 行 1272）；
-   * 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+   * 前端预设视图「登录记录」「敏感操作」即按 event 筛选（§5.6）；
+   * 跨版本可能新增，用 string 承载（§12.9）。
    *
    * @generated from field: string event = 2;
    */
@@ -116,80 +116,80 @@ export const EventItemSchema: GenMessage<EventItem> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_events, 0);
 
 /**
- * ListEventsRequest 是 AdminService/ListEvents 的请求（§5.6 行 1272：
+ * ListEventsRequest 是 AdminService/ListEvents 的请求（§5.6：
  * 筛选入参 {event, actorType, actorId, userId, from, to}）；所有列表支持 §1.7 分页
- * （§5 行 1153）。分页与排序字段进请求消息（§1.7 行 277）；
- * 查询参数缺省即不过滤，一律 optional。消息名随方法名（§12.9 行 1747；
+ * （§5）。分页与排序字段进请求消息（§1.7）；
+ * 查询参数缺省即不过滤，一律 optional。消息名随方法名（§12.9；
  * pre-connect 时代按资源命名 EventListRequest，Connect 化时更名）。
  *
  * @generated from message api.admin.v1.ListEventsRequest
  */
 export type ListEventsRequest = Message<"api.admin.v1.ListEventsRequest"> & {
   /**
-   * 按事件类型过滤（§5.6 行 1272）。
+   * 按事件类型过滤（§5.6）。
    *
    * @generated from field: optional string event = 1;
    */
   event?: string | undefined;
 
   /**
-   * 按操作者类型过滤 user|admin|system（§5.6 行 1272）。
+   * 按操作者类型过滤 user|admin|system（§5.6）。
    *
    * @generated from field: optional string actor_type = 2;
    */
   actorType?: string | undefined;
 
   /**
-   * 按操作者 ID 过滤（§5.6 行 1272）。
+   * 按操作者 ID 过滤（§5.6）。
    *
    * @generated from field: optional int64 actor_id = 3;
    */
   actorId?: bigint | undefined;
 
   /**
-   * 按被操作对象 ID 过滤（§5.6 行 1272）。
+   * 按被操作对象 ID 过滤（§5.6）。
    *
    * @generated from field: optional int64 user_id = 4;
    */
   userId?: bigint | undefined;
 
   /**
-   * 起始时间，Unix 秒（§5.6 行 1272；§12.9 行 1751 时间口径）。
+   * 起始时间，Unix 秒（§5.6；§12.9 时间口径）。
    *
    * @generated from field: optional int64 from = 5;
    */
   from?: bigint | undefined;
 
   /**
-   * 结束时间，Unix 秒（§5.6 行 1272；§12.9 行 1751 时间口径）。
+   * 结束时间，Unix 秒（§5.6；§12.9 时间口径）。
    *
    * @generated from field: optional int64 to = 6;
    */
   to?: bigint | undefined;
 
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 7;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 8;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 9;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 10;
    */
@@ -204,35 +204,35 @@ export const ListEventsRequestSchema: GenMessage<ListEventsRequest> = /*@__PURE_
   messageDesc(file_api_admin_v1_events, 1);
 
 /**
- * EventListResponse 是 AdminService/ListEvents 的响应（§5.6 行 1272「统一事件视图」、
- * §1.7 行 278）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
+ * EventListResponse 是 AdminService/ListEvents 的响应（§5.6「统一事件视图」、
+ * §1.7）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
  *
  * @generated from message api.admin.v1.EventListResponse
  */
 export type EventListResponse = Message<"api.admin.v1.EventListResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.admin.v1.EventItem items = 1;
    */
   items: EventItem[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */

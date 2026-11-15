@@ -13,7 +13,7 @@ export const file_api_account_v1_mfa: GenFile = /*@__PURE__*/
   fileDesc("ChhhcGkvYWNjb3VudC92MS9tZmEucHJvdG8SDmFwaS5hY2NvdW50LnYxIg8KDUdldE1mYVJlcXVlc3QiigEKCU1mYUZhY3RvchIOCgZmYWN0b3IYASABKAkSDQoFYm91bmQYAiABKAgSEAoIYm91bmRfYXQYAyABKAMSFAoMbGFzdF91c2VkX2F0GAQgASgDEg4KBnRhcmdldBgFIAEoCRITCgtjcmVkZW50aWFscxgGIAEoAxIRCglyZW1haW5pbmcYByABKAMiVQoLTWZhUmVzcG9uc2USKgoHZmFjdG9ycxgBIAMoCzIZLmFwaS5hY2NvdW50LnYxLk1mYUZhY3RvchIaChJyZWNvdmVyeV9pc3N1ZWRfYXQYAiABKAMiIAoNU2V0TWZhUmVxdWVzdBIPCgdlbmFibGVkGAEgASgIIj0KD0JpbmRUb3RwUmVxdWVzdBIMCgRzdGVwGAEgASgJEg4KBnNlY3JldBgCIAEoCRIMCgRjb2RlGAMgASgJImcKEEJpbmRUb3RwUmVzcG9uc2USDgoGc2VjcmV0GAEgASgJEhMKC290cGF1dGhfdXJsGAIgASgJEhYKDnFyY29kZV9jb250ZW50GAMgASgJEhYKDnJlY292ZXJ5X2NvZGVzGAQgAygJIi8KEVVuYmluZFRvdHBSZXF1ZXN0EhoKEnZlcmlmaWNhdGlvbl90b2tlbhgBIAEoCSI6ChVSZWNvdmVyeUNvZGVzUmVzcG9uc2USDQoFY29kZXMYASADKAkSEgoKY3JlYXRlZF9hdBgCIAEoAyIwCh5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QSDgoGYWN0aW9uGAEgASgJQipaKGF1dGhsb2Z0L2dlbi9nby9hcGkvYWNjb3VudC92MTthY2NvdW50djFiBnByb3RvMw");
 
 /**
- * GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 行 903 入参「—」）。
+ * GetMfaRequest 是 AccountService/GetMfa 的请求（§3.5 入参「—」）。
  *
  * @generated from message api.account.v1.GetMfaRequest
  */
@@ -28,7 +28,7 @@ export const GetMfaRequestSchema: GenMessage<GetMfaRequest> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 0);
 
 /**
- * MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5 行 890-896）；
+ * MfaFactor 是 AccountService/GetMfa 响应中单个二次因子的绑定明细（§3.5）；
  * 不同 factor 只填各自相关字段，零值表示该因子不适用 / 未绑定。
  *
  * @generated from message api.account.v1.MfaFactor
@@ -36,49 +36,49 @@ export const GetMfaRequestSchema: GenMessage<GetMfaRequest> = /*@__PURE__*/
 export type MfaFactor = Message<"api.account.v1.MfaFactor"> & {
   /**
    * 二次因子，取值见 §1.10（totp｜otp_sms｜otp_email｜webauthn｜recovery_code）
-   * （§3.5 行 891-895）。
+   * （§3.5）。
    *
    * @generated from field: string factor = 1;
    */
   factor: string;
 
   /**
-   * 是否已绑定（§3.5 行 891-895）。
+   * 是否已绑定（§3.5）。
    *
    * @generated from field: bool bound = 2;
    */
   bound: boolean;
 
   /**
-   * 绑定时间，Unix 秒；totp 示例（§3.5 行 891）。
+   * 绑定时间，Unix 秒；totp 示例（§3.5）。
    *
    * @generated from field: int64 bound_at = 3;
    */
   boundAt: bigint;
 
   /**
-   * 最近使用时间，Unix 秒（§3.5 行 891-894）。
+   * 最近使用时间，Unix 秒（§3.5）。
    *
    * @generated from field: int64 last_used_at = 4;
    */
   lastUsedAt: bigint;
 
   /**
-   * otp_sms / otp_email 的掩码目标（§3.5 行 892-893）。
+   * otp_sms / otp_email 的掩码目标（§3.5）。
    *
    * @generated from field: string target = 5;
    */
   target: string;
 
   /**
-   * webauthn 凭据数量（§3.5 行 894）。
+   * webauthn 凭据数量（§3.5）。
    *
    * @generated from field: int64 credentials = 6;
    */
   credentials: bigint;
 
   /**
-   * recovery_code 剩余数量（§3.5 行 895）。
+   * recovery_code 剩余数量（§3.5）。
    *
    * @generated from field: int64 remaining = 7;
    */
@@ -145,29 +145,29 @@ export const SetMfaRequestSchema: GenMessage<SetMfaRequest> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 3);
 
 /**
- * BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5 行 905-906）：
+ * BindTotpRequest 是 AccountService/BindTotp 的请求（§3.5）：
  * step=challenge 时为空串，step=verify 时带 secret 与 code。
- * 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 TotpRequest）。
+ * 消息名随方法名（§12.9；pre-connect 时代按旧 URL 命名 TotpRequest）。
  *
  * @generated from message api.account.v1.BindTotpRequest
  */
 export type BindTotpRequest = Message<"api.account.v1.BindTotpRequest"> & {
   /**
-   * 取值 challenge｜verify（§3.5 行 905-906）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+   * 取值 challenge｜verify（§3.5）；跨版本可新增，用 string 承载（§12.9）。
    *
    * @generated from field: string step = 1;
    */
   step: string;
 
   /**
-   * verify：challenge 下发的密钥（§3.5 行 906）。
+   * verify：challenge 下发的密钥（§3.5）。
    *
    * @generated from field: string secret = 2;
    */
   secret: string;
 
   /**
-   * verify：TOTP 码（§3.5 行 906）。
+   * verify：TOTP 码（§3.5）。
    *
    * @generated from field: string code = 3;
    */
@@ -182,39 +182,39 @@ export const BindTotpRequestSchema: GenMessage<BindTotpRequest> = /*@__PURE__*/
   messageDesc(file_api_account_v1_mfa, 4);
 
 /**
- * BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5 行 905-906）：
+ * BindTotpResponse 是 AccountService/BindTotp 的响应（§3.5）：
  * 两 step 共用一个 rpc，challenge 填 {secret, otpauthUrl, qrcodeContent}、
  * verify 填 {recoveryCodes}（验证一次后生效，同一响应下发 10 个恢复码，一次性展示）；
- * 未用到的字段为零值，protojson 省略零值（§12.9 行 1752）后 JSON 形状与两行示例逐字一致。
- * 消息名随方法名（§12.9 行 1747 响应 XxxResponse；pre-connect 时代按旧 URL 拆
+ * 未用到的字段为零值，protojson 省略零值（§12.9）后 JSON 形状与两行示例逐字一致。
+ * 消息名随方法名（§12.9 响应 XxxResponse；pre-connect 时代按旧 URL 拆
  * TotpChallengeResponse / TotpVerifyResponse 两消息，Connect 化时合并更名）。
  *
  * @generated from message api.account.v1.BindTotpResponse
  */
 export type BindTotpResponse = Message<"api.account.v1.BindTotpResponse"> & {
   /**
-   * TOTP 密钥（challenge，§3.5 行 905）。
+   * TOTP 密钥（challenge，§3.5）。
    *
    * @generated from field: string secret = 1;
    */
   secret: string;
 
   /**
-   * otpauth:// 地址（challenge，§3.5 行 905）。
+   * otpauth:// 地址（challenge，§3.5）。
    *
    * @generated from field: string otpauth_url = 2;
    */
   otpauthUrl: string;
 
   /**
-   * 二维码内容，前端绘制（challenge，§3.5 行 905）。
+   * 二维码内容，前端绘制（challenge，§3.5）。
    *
    * @generated from field: string qrcode_content = 3;
    */
   qrcodeContent: string;
 
   /**
-   * 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5 行 906）。
+   * 10 个恢复码（verify），与 RegenerateRecoveryCodes 的 codes 同格式（§3.5）。
    *
    * @generated from field: repeated string recovery_codes = 4;
    */
@@ -229,9 +229,9 @@ export const BindTotpResponseSchema: GenMessage<BindTotpResponse> = /*@__PURE__*
   messageDesc(file_api_account_v1_mfa, 5);
 
 /**
- * UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5 行 907）：
+ * UnbindTotpRequest 是 AccountService/UnbindTotp 的请求（§3.5）：
  * 解除当前 TOTP 绑定，成功为空响应（OkResponse）。前置：须先经 §3.8 取得
- * verificationToken（biz_purpose=unbind_totp、operation=unbind_totp），
+ * verificationToken（biz_purpose=unbind_totp、operation=unbind_totp）
  * 服务端按 §11.6.7 / §16 校验后删除 kind=totp 凭据并作废恢复码。
  *
  * @generated from message api.account.v1.UnbindTotpRequest
@@ -254,21 +254,21 @@ export const UnbindTotpRequestSchema: GenMessage<UnbindTotpRequest> = /*@__PURE_
 
 /**
  * RecoveryCodesResponse 是 AccountService/RegenerateRecoveryCodes 的响应
- * （§3.5 行 908）：重新生成即全量作废，一次性下发新码；与 BindTotp
+ * （§3.5）：重新生成即全量作废，一次性下发新码；与 BindTotp
  * step=verify 的 recovery_codes 同格式。存量恢复码不再提供回显接口。
  *
  * @generated from message api.account.v1.RecoveryCodesResponse
  */
 export type RecoveryCodesResponse = Message<"api.account.v1.RecoveryCodesResponse"> & {
   /**
-   * 恢复码列表，格式 xxxx-xxxx（§3.5 行 906、行 908）。
+   * 恢复码列表，格式 xxxx-xxxx（§3.5、）。
    *
    * @generated from field: repeated string codes = 1;
    */
   codes: string[];
 
   /**
-   * 签发时间，Unix 秒（§3.5 行 908）。
+   * 签发时间，Unix 秒（§3.5）。
    *
    * @generated from field: int64 created_at = 2;
    */
@@ -284,13 +284,13 @@ export const RecoveryCodesResponseSchema: GenMessage<RecoveryCodesResponse> = /*
 
 /**
  * RegenerateRecoveryCodesRequest 是 AccountService/RegenerateRecoveryCodes 的请求
- * （§3.5 行 908）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
+ * （§3.5）：重新生成即全量作废；响应复用 RecoveryCodesResponse。
  *
  * @generated from message api.account.v1.RegenerateRecoveryCodesRequest
  */
 export type RegenerateRecoveryCodesRequest = Message<"api.account.v1.RegenerateRecoveryCodesRequest"> & {
   /**
-   * 取值 regenerate（§3.5 行 908）。
+   * 取值 regenerate（§3.5）。
    *
    * @generated from field: string action = 1;
    */

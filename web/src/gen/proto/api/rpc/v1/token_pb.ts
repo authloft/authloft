@@ -14,21 +14,21 @@ export const file_api_rpc_v1_token: GenFile = /*@__PURE__*/
   fileDesc("ChZhcGkvcnBjL3YxL3Rva2VuLnByb3RvEgphcGkucnBjLnYxMl4KDFRva2VuU2VydmljZRJOCg1EZWNvZGVTZXNzaW9uEiAuYXBpLnJwYy52MS5EZWNvZGVTZXNzaW9uUmVxdWVzdBobLmFwaS5ycGMudjEuU2Vzc2lvblJlc3BvbnNlQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvcnBjL3YxO3JwY3YxYgZwcm90bzM", [file_api_rpc_v1_session]);
 
 /**
- * TokenService 是 rpc 域的会话解码 service（docs/接口文档.md §7 行 1362/1364）。
- * Connect 路径 = /api.rpc.v1.TokenService/<Method>（签名串 path 段取值，§7 行 1378）；
+ * TokenService 是 rpc 域的会话解码 service（docs/接口文档.md §7）。
+ * Connect 路径 = /api.rpc.v1.TokenService/<Method>（签名串 path 段取值，§7）；
  * 方法清单与 §7 逐一对应：
- *   DecodeSession       §7 行 1389（读接口：Decode 非写前缀，不去重）
- * 鉴权（读接口仅五项签名，nonce 参与签名但不去重；校验顺序 §7 行 1383）
+ *   DecodeSession       §7（读接口：Decode 非写前缀，不去重）
+ * 鉴权（读接口仅五项签名，nonce 参与签名但不去重；校验顺序 §7）
  * 为 Connect interceptor（后端 §3.14 interceptors.go 按「命名决定校验」分流，
- * §7 行 1366），装配必须经 internal/connect 的 RegisterRPC（强制包
- * CaptureRawBody——§7 行 1379 body 段取原始请求体字节，漏挂 fail-closed）；
- * session 步归端点自身（§7 行 1383）。本实现只定契约，业务 handler 留待后续实现。
+ * §7），装配必须经 internal/connect 的 RegisterRPC（强制包
+ * CaptureRawBody——§7 body 段取原始请求体字节，漏挂 fail-closed）；
+ * session 步归端点自身（§7）。本实现只定契约，业务 handler 留待后续实现。
  *
  * @generated from service api.rpc.v1.TokenService
  */
 export const TokenService: GenService<{
   /**
-   * 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7 行 1389）。
+   * 传入 Session Token 解码，返回 SessionTokenPayload 报文视图（§7）。
    *
    * @generated from rpc api.rpc.v1.TokenService.DecodeSession
    */

@@ -15,7 +15,7 @@ export const file_api_account_v1_thirdparty: GenFile = /*@__PURE__*/
 
 /**
  * GetThirdpartyBindingsRequest 是 AccountService/GetThirdpartyBindings 的请求
- * （§3.7 行 936，无入参）。
+ * （§3.7，无入参）。
  *
  * @generated from message api.account.v1.GetThirdpartyBindingsRequest
  */
@@ -30,50 +30,50 @@ export const GetThirdpartyBindingsRequestSchema: GenMessage<GetThirdpartyBinding
   messageDesc(file_api_account_v1_thirdparty, 0);
 
 /**
- * ThirdpartyBinding 是 GetThirdpartyBindings 响应的已绑定条目（§3.7 行 936）：
+ * ThirdpartyBinding 是 GetThirdpartyBindings 响应的已绑定条目（§3.7）：
  * {providerKey, displayName, type, channel, icon, createdAt}。
  *
  * @generated from message api.account.v1.ThirdpartyBinding
  */
 export type ThirdpartyBinding = Message<"api.account.v1.ThirdpartyBinding"> & {
   /**
-   * 第三方渠道标识（§3.7 行 936）。
+   * 第三方渠道标识（§3.7）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 展示名（§3.7 行 936）。
+   * 展示名（§3.7）。
    *
    * @generated from field: string display_name = 2;
    */
   displayName: string;
 
   /**
-   * 渠道类型（§3.7 行 936）。
+   * 渠道类型（§3.7）。
    *
    * @generated from field: string type = 3;
    */
   type: string;
 
   /**
-   * 交互通道，取值与 §2.7.1 登录快照完全一致：redirect｜qrcode｜api（§3.7 行 936、行 942）；
-   * 跨版本可新增，用 string 承载（§12.9 行 1754）。
+   * 交互通道，取值与 §2.7.1 登录快照完全一致：redirect｜qrcode｜api（§3.7、）；
+   * 跨版本可新增，用 string 承载（§12.9）。
    *
    * @generated from field: string channel = 4;
    */
   channel: string;
 
   /**
-   * 图标地址（§3.7 行 936）。
+   * 图标地址（§3.7）。
    *
    * @generated from field: string icon = 5;
    */
   icon: string;
 
   /**
-   * 绑定时间，Unix 秒（§3.7 行 936）。
+   * 绑定时间，Unix 秒（§3.7）。
    *
    * @generated from field: int64 created_at = 6;
    */
@@ -88,57 +88,57 @@ export const ThirdpartyBindingSchema: GenMessage<ThirdpartyBinding> = /*@__PURE_
   messageDesc(file_api_account_v1_thirdparty, 1);
 
 /**
- * ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7 行 936）：
+ * ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7）：
  * {providerKey, displayName, type, channel, icon, uiGroup, sortOrder}；
- * 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现（行 941）。
+ * 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现。
  *
  * @generated from message api.account.v1.ThirdpartyOption
  */
 export type ThirdpartyOption = Message<"api.account.v1.ThirdpartyOption"> & {
   /**
-   * 第三方渠道标识（§3.7 行 936）。
+   * 第三方渠道标识（§3.7）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 展示名（§3.7 行 936）。
+   * 展示名（§3.7）。
    *
    * @generated from field: string display_name = 2;
    */
   displayName: string;
 
   /**
-   * 渠道类型（§3.7 行 936）。
+   * 渠道类型（§3.7）。
    *
    * @generated from field: string type = 3;
    */
   type: string;
 
   /**
-   * 交互通道，取值同 ThirdpartyBinding.channel（§3.7 行 936）。
+   * 交互通道，取值同 ThirdpartyBinding.channel（§3.7）。
    *
    * @generated from field: string channel = 4;
    */
   channel: string;
 
   /**
-   * 图标地址（§3.7 行 936）。
+   * 图标地址（§3.7）。
    *
    * @generated from field: string icon = 5;
    */
   icon: string;
 
   /**
-   * 展示分组（§3.7 行 936）。
+   * 展示分组（§3.7）。
    *
    * @generated from field: string ui_group = 6;
    */
   uiGroup: string;
 
   /**
-   * 排序（§3.7 行 936）。
+   * 排序（§3.7）。
    *
    * @generated from field: int64 sort_order = 7;
    */
@@ -154,20 +154,20 @@ export const ThirdpartyOptionSchema: GenMessage<ThirdpartyOption> = /*@__PURE__*
 
 /**
  * ThirdpartyBindingsResponse 是 AccountService/GetThirdpartyBindings 的响应
- * （§3.7 行 936）：items = 已绑定，available = 可绑定。
+ * （§3.7）：items = 已绑定，available = 可绑定。
  *
  * @generated from message api.account.v1.ThirdpartyBindingsResponse
  */
 export type ThirdpartyBindingsResponse = Message<"api.account.v1.ThirdpartyBindingsResponse"> & {
   /**
-   * 已绑定的第三方身份（§3.7 行 936）。
+   * 已绑定的第三方身份（§3.7）。
    *
    * @generated from field: repeated api.account.v1.ThirdpartyBinding items = 1;
    */
   items: ThirdpartyBinding[];
 
   /**
-   * 可绑定的 Provider（§3.7 行 936）。
+   * 可绑定的 Provider（§3.7）。
    *
    * @generated from field: repeated api.account.v1.ThirdpartyOption available = 2;
    */
@@ -182,14 +182,14 @@ export const ThirdpartyBindingsResponseSchema: GenMessage<ThirdpartyBindingsResp
   messageDesc(file_api_account_v1_thirdparty, 3);
 
 /**
- * UnbindThirdpartyRequest 是 AccountService/UnbindThirdparty 的请求（§3.7 行 937：
- * {providerKey} 解绑）。允许条件见行 944；成功为空响应（OkResponse）。
+ * UnbindThirdpartyRequest 是 AccountService/UnbindThirdparty 的请求（§3.7：
+ * {providerKey} 解绑）。允许条件见；成功为空响应（OkResponse）。
  *
  * @generated from message api.account.v1.UnbindThirdpartyRequest
  */
 export type UnbindThirdpartyRequest = Message<"api.account.v1.UnbindThirdpartyRequest"> & {
   /**
-   * 要解绑的第三方渠道标识（§3.7 行 937）。
+   * 要解绑的第三方渠道标识（§3.7）。
    *
    * @generated from field: string provider_key = 1;
    */
@@ -205,27 +205,27 @@ export const UnbindThirdpartyRequestSchema: GenMessage<UnbindThirdpartyRequest> 
 
 /**
  * ThirdpartyOauthRequest 是 AccountService/ThirdpartyOauth 的请求
- * （§3.7.1 A 行 971-975）：channel=redirect 的三方回调落地接口（需 al_session）。
+ * （§3.7.1 A）：channel=redirect 的三方回调落地接口（需 al_session）。
  *
  * @generated from message api.account.v1.ThirdpartyOauthRequest
  */
 export type ThirdpartyOauthRequest = Message<"api.account.v1.ThirdpartyOauthRequest"> & {
   /**
-   * 第三方渠道标识（§3.7.1 A 行 973）。
+   * 第三方渠道标识（§3.7.1 A）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 第三方授权码（§3.7.1 A 行 974）。
+   * 第三方授权码（§3.7.1 A）。
    *
    * @generated from field: string code = 2;
    */
   code: string;
 
   /**
-   * 必须为 b 前缀，与 al_login_state Cookie 比对（§3.7.1 A 行 975）。
+   * 必须为 b 前缀，与 al_login_state Cookie 比对（§3.7.1 A）。
    *
    * @generated from field: string state = 3;
    */
@@ -241,20 +241,20 @@ export const ThirdpartyOauthRequestSchema: GenMessage<ThirdpartyOauthRequest> = 
 
 /**
  * ThirdpartyOauthResponse 是 AccountService/ThirdpartyOauth 的响应
- * （§3.7.1 A 行 977）：成功 { "providerKey": "qq", "displayName": "QQ" }。
+ * （§3.7.1 A）：成功 { "providerKey": "qq", "displayName": "QQ" }。
  *
  * @generated from message api.account.v1.ThirdpartyOauthResponse
  */
 export type ThirdpartyOauthResponse = Message<"api.account.v1.ThirdpartyOauthResponse"> & {
   /**
-   * 绑定完成的渠道标识（§3.7.1 A 行 977）。
+   * 绑定完成的渠道标识（§3.7.1 A）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * Provider 展示名（§3.7.1 A 行 977）。
+   * Provider 展示名（§3.7.1 A）。
    *
    * @generated from field: string display_name = 2;
    */
@@ -270,21 +270,21 @@ export const ThirdpartyOauthResponseSchema: GenMessage<ThirdpartyOauthResponse> 
 
 /**
  * GetThirdpartyTicketRequest 是 AccountService/GetThirdpartyTicket 的请求
- * （§3.7.1 B 行 1008-1013）：扫码绑定的长轮询（channel=qrcode，需 al_session）。
+ * （§3.7.1 B）：扫码绑定的长轮询（channel=qrcode，需 al_session）。
  *
  * @generated from message api.account.v1.GetThirdpartyTicketRequest
  */
 export type GetThirdpartyTicketRequest = Message<"api.account.v1.GetThirdpartyTicketRequest"> & {
   /**
-   * 拉码时下发的加密票据（§3.7.1 B 行 1012）。
+   * 拉码时下发的加密票据（§3.7.1 B）。
    *
    * @generated from field: string ticket = 1;
    */
   ticket: string;
 
   /**
-   * 长轮询最长等待秒数，上限见 §2.8（§3.7.1 B 行 1013）；
-   * 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
+   * 长轮询最长等待秒数，上限见 §2.8（§3.7.1 B）；
+   * 整型一律 int64，JSON 输出十进制字符串（§12.9）。
    *
    * @generated from field: int64 poll = 2;
    */
@@ -299,42 +299,42 @@ export const GetThirdpartyTicketRequestSchema: GenMessage<GetThirdpartyTicketReq
   messageDesc(file_api_account_v1_thirdparty, 7);
 
 /**
- * GetEventsRequest 是 AccountService/GetEvents 的请求（§3.7 行 1038：
+ * GetEventsRequest 是 AccountService/GetEvents 的请求（§3.7：
  * {event, page, pageSize, …}，分页见 §1.7）。查询参数缺省即不过滤，一律 optional。
  *
  * @generated from message api.account.v1.GetEventsRequest
  */
 export type GetEventsRequest = Message<"api.account.v1.GetEventsRequest"> & {
   /**
-   * 按事件类型过滤，仅成功登录记录（§3.7 行 1038）。
+   * 按事件类型过滤，仅成功登录记录（§3.7）。
    *
    * @generated from field: optional string event = 1;
    */
   event?: string | undefined;
 
   /**
-   * 页码，从 1 开始（§1.7 行 277）。
+   * 页码，从 1 开始（§1.7）。
    *
    * @generated from field: optional int64 page = 2;
    */
   page?: bigint | undefined;
 
   /**
-   * 每页条数，默认 20、上限 100（§1.7 行 277）。
+   * 每页条数，默认 20、上限 100（§1.7）。
    *
    * @generated from field: optional int64 page_size = 3;
    */
   pageSize?: bigint | undefined;
 
   /**
-   * 排序字段，取值由前端限定（§1.7 行 277）。
+   * 排序字段，取值由前端限定（§1.7）。
    *
    * @generated from field: optional string sort = 4;
    */
   sort?: string | undefined;
 
   /**
-   * 排序方向 asc/desc（§1.7 行 277）。
+   * 排序方向 asc/desc（§1.7）。
    *
    * @generated from field: optional string order = 5;
    */
@@ -349,8 +349,8 @@ export const GetEventsRequestSchema: GenMessage<GetEventsRequest> = /*@__PURE__*
   messageDesc(file_api_account_v1_thirdparty, 8);
 
 /**
- * UserEventItem 是 AccountService/GetEvents 的本人登录记录条目（§3.7 行 1038）：
- * {event, createdAt, ip, ua, amr, clientId, detail}——§12.9 行 1753 的裁剪视图，
+ * UserEventItem 是 AccountService/GetEvents 的本人登录记录条目（§3.7）：
+ * {event, createdAt, ip, ua, amr, clientId, detail}——§12.9 的裁剪视图，
  * 与 admin 域 EventItem（《后端架构》§4.6 行投影，含 actor / target 等管理视图字段）
  * 非同一视图，独立定义、不跨包引用（依赖方向 admin → account 单向，避免环）。
  *
@@ -358,49 +358,49 @@ export const GetEventsRequestSchema: GenMessage<GetEventsRequest> = /*@__PURE__*
  */
 export type UserEventItem = Message<"api.account.v1.UserEventItem"> & {
   /**
-   * 事件类型（§3.7 行 1038）；跨版本可能新增，用 string 承载（§12.9 行 1754）。
+   * 事件类型（§3.7）；跨版本可能新增，用 string 承载（§12.9）。
    *
    * @generated from field: string event = 1;
    */
   event: string;
 
   /**
-   * 发生时间，Unix 秒（§3.7 行 1038）。
+   * 发生时间，Unix 秒（§3.7）。
    *
    * @generated from field: int64 created_at = 2;
    */
   createdAt: bigint;
 
   /**
-   * 来源 IP（§3.7 行 1038）。
+   * 来源 IP（§3.7）。
    *
    * @generated from field: string ip = 3;
    */
   ip: string;
 
   /**
-   * User-Agent（§3.7 行 1038）。
+   * User-Agent（§3.7）。
    *
    * @generated from field: string ua = 4;
    */
   ua: string;
 
   /**
-   * 通过的认证方法，如 pwd,otp,mfa（§3.7 行 1038）。
+   * 通过的认证方法，如 pwd,otp,mfa（§3.7）。
    *
    * @generated from field: string amr = 5;
    */
   amr: string;
 
   /**
-   * OIDC 客户端（§3.7 行 1038）。
+   * OIDC 客户端（§3.7）。
    *
    * @generated from field: string client_id = 6;
    */
   clientId: string;
 
   /**
-   * 附加信息，msgpack 透传、以 JSON 对象透出（§3.7 行 1038）。
+   * 附加信息，msgpack 透传、以 JSON 对象透出（§3.7）。
    *
    * @generated from field: google.protobuf.Struct detail = 7;
    */
@@ -415,35 +415,35 @@ export const UserEventItemSchema: GenMessage<UserEventItem> = /*@__PURE__*/
   messageDesc(file_api_account_v1_thirdparty, 9);
 
 /**
- * GetEventsResponse 是 AccountService/GetEvents 的响应（§3.7 行 1038、§1.7 行 278：
+ * GetEventsResponse 是 AccountService/GetEvents 的响应（§3.7、§1.7：
  * {items, total, page, pageSize}）。
  *
  * @generated from message api.account.v1.GetEventsResponse
  */
 export type GetEventsResponse = Message<"api.account.v1.GetEventsResponse"> & {
   /**
-   * 当前页数据（§1.7 行 278）。
+   * 当前页数据（§1.7）。
    *
    * @generated from field: repeated api.account.v1.UserEventItem items = 1;
    */
   items: UserEventItem[];
 
   /**
-   * 总条数（§1.7 行 278）。
+   * 总条数（§1.7）。
    *
    * @generated from field: int64 total = 2;
    */
   total: bigint;
 
   /**
-   * 页码（§1.7 行 278）。
+   * 页码（§1.7）。
    *
    * @generated from field: int64 page = 3;
    */
   page: bigint;
 
   /**
-   * 每页条数（§1.7 行 278）。
+   * 每页条数（§1.7）。
    *
    * @generated from field: int64 page_size = 4;
    */

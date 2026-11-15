@@ -23,12 +23,12 @@ const (
 )
 
 // GetProviderSchemaRequest 是 AdminService/GetProviderSchema 的请求
-// （§5.2 行 1173、§5.3 行 1178：{type}，如 wechat_mp）。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按资源命名 SchemaRequest，
+// （§5.2、§5.3：{type}，如 wechat_mp）。
+// 消息名随方法名（§12.9；pre-connect 时代按资源命名 SchemaRequest，
 // Connect 化时更名）。
 type GetProviderSchemaRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Provider 类型，必填（§5.3 行 1183）。
+	// Provider 类型，必填（§5.3）。
 	Type          string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -71,40 +71,40 @@ func (x *GetProviderSchemaRequest) GetType() string {
 	return ""
 }
 
-// SchemaField 是动态表单 schema 的单个字段（§5.3 行 1180）：
+// SchemaField 是动态表单 schema 的单个字段（§5.3）：
 // { "key", "label", "type", "section", "required", "default", "options", "pattern",
-// "advanced", "help" }，字段名与该列表逐字一致，编号按列表顺序从 1 起连续（§12.9 行 1749）。
+// "advanced", "help" }，字段名与该列表逐字一致，编号按列表顺序从 1 起连续（§12.9）。
 type SchemaField struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 恒等于 provider 表列名或 provider.Ext 字段名，提交体即 { "<key>": <value> }（§5.3 行 1180）。
+	// 恒等于 provider 表列名或 provider.Ext 字段名，提交体即 { "<key>": <value> }（§5.3）。
 	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	// 展示文案的 i18n 键，如 admin.schemaField.providerKeyLabel（§5.3 行 1189）；
+	// 展示文案的 i18n 键，如 admin.schemaField.providerKeyLabel（§5.3）；
 	// 语言包在前端 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期 t() 解析。
 	// 后端不持有任何语言文案；缺键时前端回显键本身（可见、可排查）。
 	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
-	// 渲染类型，取值是 §5.3 行 1226 的六个：text|secret|checkbox|number|select|json；
-	// §12.9 行 1754 明确 fields[].type 跨版本可能新增，用 string 承载。
+	// 渲染类型，取值是 §5.3 的六个：text|secret|checkbox|number|select|json；
+	// §12.9 明确 fields[].type 跨版本可能新增，用 string 承载。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	// 表单区块，取值封闭：basic|credential|endpoint|display|policy（§5.3 行 1182）；
-	// 每个字段都必须带 section，前端不维护 key → 区块映射表（行 1182）；
-	// 新增区块须双端同步，沿用 string 承载（§12.9 行 1754）。
+	// 表单区块，取值封闭：basic|credential|endpoint|display|policy（§5.3）；
+	// 每个字段都必须带 section，前端不维护 key → 区块映射表；
+	// 新增区块须双端同步，沿用 string 承载（§12.9）。
 	Section string `protobuf:"bytes,4,opt,name=section,proto3" json:"section,omitempty"`
-	// 是否必填（§5.3 行 1189）。
+	// 是否必填（§5.3）。
 	Required bool `protobuf:"varint,5,opt,name=required,proto3" json:"required,omitempty"`
-	// 默认值，任意 JSON 值（§5.3 行 1212-1216）；未设置时 JSON 视图为 null
-	// （§12.9 行 1752 口径由生成侧保证）。
+	// 默认值，任意 JSON 值（§5.3）；未设置时 JSON 视图为 null
+	// （§12.9 口径由生成侧保证）。
 	Default *structpb.Value `protobuf:"bytes,6,opt,name=default,proto3" json:"default,omitempty"`
-	// select 类型的取值集合，与 §1.11 同名同义（§5.3 行 1226）。恒为 wire 取值
+	// select 类型的取值集合，与 §1.11 同名同义（§5.3）。恒为 wire 取值
 	// （如 ui_group 的 social / enterprise / dev / other、union_provider 的
 	// provider_key），不是 i18n 键；前端仅按 admin.schemaOption.<fieldKey>.<value>
-	// 翻译显示名（按字段命名空间，避免自定义 provider_key 撞上通用枚举值），
+	// 翻译显示名（按字段命名空间，避免自定义 provider_key 撞上通用枚举值）
 	// 未定义键时原样显示并提交原值。
 	Options []string `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
-	// 校验正则，如 ^[a-z0-9_]+$（§5.3 行 1190）。
+	// 校验正则，如 ^[a-z0-9_]+$（§5.3）。
 	Pattern string `protobuf:"bytes,8,opt,name=pattern,proto3" json:"pattern,omitempty"`
-	// 区块内是否折叠（§5.3 行 1226：advanced 只管单个字段在区块内是否折叠）。
+	// 区块内是否折叠（§5.3：advanced 只管单个字段在区块内是否折叠）。
 	Advanced bool `protobuf:"varint,9,opt,name=advanced,proto3" json:"advanced,omitempty"`
-	// 帮助文案的 i18n 键（§5.3 行 1190）；语义同 label，空串表示无帮助文案。
+	// 帮助文案的 i18n 键（§5.3）；语义同 label，空串表示无帮助文案。
 	Help          string `protobuf:"bytes,10,opt,name=help,proto3" json:"help,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -210,15 +210,15 @@ func (x *SchemaField) GetHelp() string {
 	return ""
 }
 
-// SchemaResponse 是 AdminService/GetProviderSchema 的响应（§5.3 行 1180）：
+// SchemaResponse 是 AdminService/GetProviderSchema 的响应（§5.3）：
 // 输出结构固定为 { "type": "…", "category": "…", "fields": [ … ] }。
 type SchemaResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Provider 类型（§5.3 行 1187）。
+	// Provider 类型（§5.3）。
 	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	// 类别，由注册表按 type 决定（§5.3 行 1192）。
+	// 类别，由注册表按 type 决定（§5.3）。
 	Category string `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`
-	// 字段集合，同一字段在五区块中的顺序沿用 fields[] 数组顺序（§5.3 行 1182）。
+	// 字段集合，同一字段在五区块中的顺序沿用 fields[] 数组顺序（§5.3）。
 	Fields        []*SchemaField `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -276,7 +276,7 @@ func (x *SchemaResponse) GetFields() []*SchemaField {
 }
 
 // GetProviderTypesRequest 是 AdminService/GetProviderTypes 的请求
-// （§5.2 行 1172，无入参）。
+// （§5.2，无入参）。
 type GetProviderTypesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -313,13 +313,13 @@ func (*GetProviderTypesRequest) Descriptor() ([]byte, []int) {
 	return file_api_admin_v1_schema_proto_rawDescGZIP(), []int{3}
 }
 
-// ProviderType 是 AdminService/GetProviderTypes 的下拉条目（§5.2 行 1172
+// ProviderType 是 AdminService/GetProviderTypes 的下拉条目（§5.2
 // 「Provider type 下拉数据源（来自注册表 metas）」，《后端架构》§15.3）。
 // display_name 文档未定义，按下拉数据源三要素（值 / 分组 / 展示名）最小定义，
 // 待 handler 验证。
 type ProviderType struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 类型，即 AdminService/GetProviderSchema 的 type 入参（§5.2 行 1173）。
+	// 类型，即 AdminService/GetProviderSchema 的 type 入参（§5.2）。
 	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
 	// 类别，由注册表 meta 声明（《后端架构》§15.3）。
 	Category string `protobuf:"bytes,2,opt,name=category,proto3" json:"category,omitempty"`
@@ -380,11 +380,11 @@ func (x *ProviderType) GetDisplayName() string {
 	return ""
 }
 
-// ProviderTypesResponse 是 AdminService/GetProviderTypes 的响应（§5.2 行 1172）。
-// 注册表条目为有限集（下拉数据源），不分页（§1.7 行 275 仅约束管理后台 / 日志类列表）。
+// ProviderTypesResponse 是 AdminService/GetProviderTypes 的响应（§5.2）。
+// 注册表条目为有限集（下拉数据源），不分页（§1.7 仅约束管理后台 / 日志类列表）。
 type ProviderTypesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 全部已注册类型（§5.2 行 1172）。
+	// 全部已注册类型（§5.2）。
 	Items         []*ProviderType `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

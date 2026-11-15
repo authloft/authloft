@@ -29,8 +29,8 @@ export const file_api_admin_v1_admin: GenFile = /*@__PURE__*/
   fileDesc("ChhhcGkvYWRtaW4vdjEvYWRtaW4ucHJvdG8SDGFwaS5hZG1pbi52MSIOCgxHZXRNZVJlcXVlc3QiYgoKTWVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEhAKCGlzX2FkbWluGAUgASgIIgwKCk9rUmVzcG9uc2UylBUKDEFkbWluU2VydmljZRI9CgVHZXRNZRIaLmFwaS5hZG1pbi52MS5HZXRNZVJlcXVlc3QaGC5hcGkuYWRtaW4udjEuTWVSZXNwb25zZRJXCg1MaXN0UHJvdmlkZXJzEiIuYXBpLmFkbWluLnYxLkxpc3RQcm92aWRlcnNSZXF1ZXN0GiIuYXBpLmFkbWluLnYxLlByb3ZpZGVyTGlzdFJlc3BvbnNlEkMKDkNyZWF0ZVByb3ZpZGVyEhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlEkwKC0dldFByb3ZpZGVyEiAuYXBpLmFkbWluLnYxLkdldFByb3ZpZGVyUmVxdWVzdBobLmFwaS5hZG1pbi52MS5BZG1pblByb3ZpZGVyEkMKDlVwZGF0ZVByb3ZpZGVyEhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlEk8KDkRlbGV0ZVByb3ZpZGVyEiMuYXBpLmFkbWluLnYxLkRlbGV0ZVByb3ZpZGVyUmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlElcKElNldFByb3ZpZGVyRW5hYmxlZBInLmFwaS5hZG1pbi52MS5TZXRQcm92aWRlckVuYWJsZWRSZXF1ZXN0GhguYXBpLmFkbWluLnYxLk9rUmVzcG9uc2USTQoNU29ydFByb3ZpZGVycxIiLmFwaS5hZG1pbi52MS5Tb3J0UHJvdmlkZXJzUmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlEl4KEEdldFByb3ZpZGVyVHlwZXMSJS5hcGkuYWRtaW4udjEuR2V0UHJvdmlkZXJUeXBlc1JlcXVlc3QaIy5hcGkuYWRtaW4udjEuUHJvdmlkZXJUeXBlc1Jlc3BvbnNlElkKEUdldFByb3ZpZGVyU2NoZW1hEiYuYXBpLmFkbWluLnYxLkdldFByb3ZpZGVyU2NoZW1hUmVxdWVzdBocLmFwaS5hZG1pbi52MS5TY2hlbWFSZXNwb25zZRJLCgxUZXN0UHJvdmlkZXISIS5hcGkuYWRtaW4udjEuVGVzdFByb3ZpZGVyUmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlEksKCUxpc3RVc2VycxIeLmFwaS5hZG1pbi52MS5MaXN0VXNlcnNSZXF1ZXN0Gh4uYXBpLmFkbWluLnYxLlVzZXJMaXN0UmVzcG9uc2USSQoHR2V0VXNlchIcLmFwaS5hZG1pbi52MS5HZXRVc2VyUmVxdWVzdBogLmFwaS5hZG1pbi52MS5Vc2VyRGV0YWlsUmVzcG9uc2USUwoQVXBkYXRlVXNlclN0YXR1cxIlLmFwaS5hZG1pbi52MS5VcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlElUKEVJlc2V0VXNlclBhc3N3b3JkEiYuYXBpLmFkbWluLnYxLlJlc2V0VXNlclBhc3N3b3JkUmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlElsKFFVuYmluZFVzZXJUaGlyZHBhcnR5EikuYXBpLmFkbWluLnYxLlVuYmluZFVzZXJUaGlyZHBhcnR5UmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlEkcKClVubG9ja1VzZXISHy5hcGkuYWRtaW4udjEuVW5sb2NrVXNlclJlcXVlc3QaGC5hcGkuYWRtaW4udjEuT2tSZXNwb25zZRJVCg1HZXRVc2VyRXZlbnRzEiIuYXBpLmFkbWluLnYxLkdldFVzZXJFdmVudHNSZXF1ZXN0GiAuYXBpLmFkbWluLnYxLlVzZXJFdmVudHNSZXNwb25zZRJaCg5MaXN0U3NvQ2xpZW50cxIjLmFwaS5hZG1pbi52MS5MaXN0U3NvQ2xpZW50c1JlcXVlc3QaIy5hcGkuYWRtaW4udjEuU3NvQ2xpZW50TGlzdFJlc3BvbnNlElEKD0NyZWF0ZVNzb0NsaWVudBIkLmFwaS5hZG1pbi52MS5DcmVhdGVTc29DbGllbnRSZXF1ZXN0GhguYXBpLmFkbWluLnYxLk9rUmVzcG9uc2USSgoMR2V0U3NvQ2xpZW50EiEuYXBpLmFkbWluLnYxLkdldFNzb0NsaWVudFJlcXVlc3QaFy5hcGkuYWRtaW4udjEuU3NvQ2xpZW50ElEKD1VwZGF0ZVNzb0NsaWVudBIkLmFwaS5hZG1pbi52MS5VcGRhdGVTc29DbGllbnRSZXF1ZXN0GhguYXBpLmFkbWluLnYxLk9rUmVzcG9uc2USUQoPRGVsZXRlU3NvQ2xpZW50EiQuYXBpLmFkbWluLnYxLkRlbGV0ZVNzb0NsaWVudFJlcXVlc3QaGC5hcGkuYWRtaW4udjEuT2tSZXNwb25zZRJdCg9MaXN0T2lkY0NsaWVudHMSJC5hcGkuYWRtaW4udjEuTGlzdE9pZGNDbGllbnRzUmVxdWVzdBokLmFwaS5hZG1pbi52MS5PaWRjQ2xpZW50TGlzdFJlc3BvbnNlElMKEENyZWF0ZU9pZGNDbGllbnQSJS5hcGkuYWRtaW4udjEuQ3JlYXRlT2lkY0NsaWVudFJlcXVlc3QaGC5hcGkuYWRtaW4udjEuT2tSZXNwb25zZRJNCg1HZXRPaWRjQ2xpZW50EiIuYXBpLmFkbWluLnYxLkdldE9pZGNDbGllbnRSZXF1ZXN0GhguYXBpLmFkbWluLnYxLk9pZGNDbGllbnQSUwoQVXBkYXRlT2lkY0NsaWVudBIlLmFwaS5hZG1pbi52MS5VcGRhdGVPaWRjQ2xpZW50UmVxdWVzdBoYLmFwaS5hZG1pbi52MS5Pa1Jlc3BvbnNlElMKEERlbGV0ZU9pZGNDbGllbnQSJS5hcGkuYWRtaW4udjEuRGVsZXRlT2lkY0NsaWVudFJlcXVlc3QaGC5hcGkuYWRtaW4udjEuT2tSZXNwb25zZRJPCgtHZXRTZXR0aW5ncxIgLmFwaS5hZG1pbi52MS5HZXRTZXR0aW5nc1JlcXVlc3QaHi5hcGkuYWRtaW4udjEuU2V0dGluZ3NSZXNwb25zZRJJCgtTZXRTZXR0aW5ncxIgLmFwaS5hZG1pbi52MS5TZXRTZXR0aW5nc1JlcXVlc3QaGC5hcGkuYWRtaW4udjEuT2tSZXNwb25zZRJOCgpMaXN0RXZlbnRzEh8uYXBpLmFkbWluLnYxLkxpc3RFdmVudHNSZXF1ZXN0Gh8uYXBpLmFkbWluLnYxLkV2ZW50TGlzdFJlc3BvbnNlEk0KC0RlY29kZVRva2VuEiAuYXBpLmFkbWluLnYxLkRlY29kZVRva2VuUmVxdWVzdBocLmFwaS5hZG1pbi52MS5EZWNvZGVSZXNwb25zZRJJCglHZXRTdGF0dXMSHi5hcGkuYWRtaW4udjEuR2V0U3RhdHVzUmVxdWVzdBocLmFwaS5hZG1pbi52MS5TdGF0dXNSZXNwb25zZUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_admin_v1_provider, file_api_admin_v1_schema, file_api_admin_v1_user, file_api_admin_v1_client, file_api_admin_v1_settings, file_api_admin_v1_events, file_api_admin_v1_tools]);
 
 /**
- * GetMeRequest 是 AdminService/GetMe 的请求（§5.1 行 1159，无入参）。
- * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 行 1747 请求 XxxRequest）。
+ * GetMeRequest 是 AdminService/GetMe 的请求（§5.1，无入参）。
+ * Connect unary 必须有请求消息，无入参方法以空消息承载（§12.9 请求 XxxRequest）。
  *
  * @generated from message api.admin.v1.GetMeRequest
  */
@@ -45,45 +45,45 @@ export const GetMeRequestSchema: GenMessage<GetMeRequest> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_admin, 0);
 
 /**
- * MeResponse 是 AdminService/GetMe 的响应（§5.1 行 1159）：
- * 前端获取管理员信息的唯一来源——仅根映射 /admin 空壳页不注入 admin 字段，子路径走前端 hash 路由（§5 行 1147，路由收窄）。
- * 字段名与 §5.1 行 1159 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
- * 编号从 1 起连续（§12.9 行 1749）。
+ * MeResponse 是 AdminService/GetMe 的响应（§5.1）：
+ * 前端获取管理员信息的唯一来源——仅根映射 /admin 空壳页不注入 admin 字段，子路径走前端 hash 路由（§5，路由收窄）。
+ * 字段名与 §5.1 的 {id, username, nickname, avatarUrl, isAdmin:true} 逐字一致，
+ * 编号从 1 起连续（§12.9）。
  *
  * @generated from message api.admin.v1.MeResponse
  */
 export type MeResponse = Message<"api.admin.v1.MeResponse"> & {
   /**
-   * 管理员固定为安装时创建的 user.id = 1 账号（§5 行 1144、§13）。
+   * 管理员固定为安装时创建的 user.id = 1 账号（§5、§13）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 登录名（§5.1 行 1159）。
+   * 登录名（§5.1）。
    *
    * @generated from field: string username = 2;
    */
   username: string;
 
   /**
-   * 昵称（§5.1 行 1159）。
+   * 昵称（§5.1）。
    *
    * @generated from field: string nickname = 3;
    */
   nickname: string;
 
   /**
-   * 头像地址（§5.1 行 1159）。
+   * 头像地址（§5.1）。
    *
    * @generated from field: string avatar_url = 4;
    */
   avatarUrl: string;
 
   /**
-   * 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护），
-   * 不会走到这里（§5.1 行 1159、§5 行 1146）。
+   * 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护）
+   * 不会走到这里（§5.1、§5）。
    *
    * @generated from field: bool is_admin = 5;
    */
@@ -100,7 +100,7 @@ export const MeResponseSchema: GenMessage<MeResponse> = /*@__PURE__*/
 /**
  * OkResponse 是 admin 域文档未定义出参的写方法共用空应答
  * （provider 删除/开关/排序/测试，用户状态切换/重置密码/解绑/解锁，客户端写，SetSettings）：
- * 空消息，protojson 输出 {}（§1.0 行 57 成功响应即消息本身，无 status 信封字段）；
+ * 空消息，protojson 输出 {}（§1.0 成功响应即消息本身，无 status 信封字段）；
  * 旧版 codec WriteSuccess 注入顶层 status 已随 codec 删除一并作废，
  * 消息本身无字段可加（信封顶层 status 为保留字）。
  * 多方法共用同一响应依赖 buf RPC_REQUEST_RESPONSE_UNIQUE 豁免（沿用既有豁免）。
@@ -118,31 +118,31 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_admin, 2);
 
 /**
- * AdminService 是 admin 域的 Connect service（docs/接口文档.md §5，行 1140-1341）。
+ * AdminService 是 admin 域的 Connect service。
  * Connect 路径 = /api.admin.v1.AdminService/<Method>；方法清单与 §5 各节逐一对应：
- *   —— §5.1 管理员自身（行 1155-1159）——
- *   GetMe                 §5.1 行 1159
- *   —— §5.2 提供商（行 1161-1176）——
- *   ListProviders          §5.2 行 1165    CreateProvider      §5.2 行 1166
- *   GetProvider            §5.2 行 1167    UpdateProvider      §5.2 行 1168
- *   DeleteProvider         §5.2 行 1169    SetProviderEnabled  §5.2 行 1170
- *   SortProviders          §5.2 行 1171    GetProviderTypes    §5.2 行 1172
- *   GetProviderSchema      §5.2 行 1173    TestProvider        §5.2 行 1174
- *   —— §5.4 用户管理（行 1242-1252）——
- *   ListUsers              §5.4 行 1246    GetUser              §5.4 行 1247
- *   UpdateUserStatus       §5.4 行 1248    ResetUserPassword    §5.4 行 1249
- *   UnbindUserThirdparty   §5.4 行 1250    UnlockUser           §5.4 行 1251
- *   GetUserEvents          §5.4 行 1252
- *   —— §5.5 客户端管理（行 1254-1265）——
- *   ListSsoClients         §5.5 行 1258    CreateSsoClient      §5.5 行 1258
- *   GetSsoClient           §5.5 行 1259    UpdateSsoClient      §5.5 行 1259
- *   DeleteSsoClient        §5.5 行 1259    ListOidcClients      §5.5 行 1260
- *   CreateOidcClient       §5.5 行 1260    GetOidcClient        §5.5 行 1261
- *   UpdateOidcClient       §5.5 行 1261    DeleteOidcClient      §5.5 行 1261
- *   —— §5.6 系统配置、日志与工具（行 1267-1339）——
- *   GetSettings            §5.6 行 1271    SetSettings           §5.6 行 1271
- *   ListEvents             §5.6 行 1272    DecodeToken           §5.6 行 1273
- *   GetStatus              §5.6 行 1274
+ *   —— §5.1 管理员自身——
+ *   GetMe                 §5.1
+ *   —— §5.2 提供商——
+ *   ListProviders          §5.2    CreateProvider      §5.2
+ *   GetProvider            §5.2    UpdateProvider      §5.2
+ *   DeleteProvider         §5.2    SetProviderEnabled  §5.2
+ *   SortProviders          §5.2    GetProviderTypes    §5.2
+ *   GetProviderSchema      §5.2    TestProvider        §5.2
+ *   —— §5.4 用户管理——
+ *   ListUsers              §5.4    GetUser              §5.4
+ *   UpdateUserStatus       §5.4    ResetUserPassword    §5.4
+ *   UnbindUserThirdparty   §5.4    UnlockUser           §5.4
+ *   GetUserEvents          §5.4
+ *   —— §5.5 客户端管理——
+ *   ListSsoClients         §5.5    CreateSsoClient      §5.5
+ *   GetSsoClient           §5.5    UpdateSsoClient      §5.5
+ *   DeleteSsoClient        §5.5    ListOidcClients      §5.5
+ *   CreateOidcClient       §5.5    GetOidcClient        §5.5
+ *   UpdateOidcClient       §5.5    DeleteOidcClient      §5.5
+ *   —— §5.6 系统配置、日志与工具——
+ *   GetSettings            §5.6    SetSettings           §5.6
+ *   ListEvents             §5.6    DecodeToken           §5.6
+ *   GetStatus              §5.6
  * 空响应方法共用同包 OkResponse（buf RPC_RESPONSE_STANDARD_NAME /
  * RPC_REQUEST_RESPONSE_UNIQUE 豁免，沿用既有豁免）。
  *
@@ -150,7 +150,7 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
  */
 export const AdminService: GenService<{
   /**
-   * 当前管理员信息，前端唯一来源（§5.1 行 1159）。
+   * 当前管理员信息，前端唯一来源（§5.1）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetMe
    */
@@ -160,7 +160,7 @@ export const AdminService: GenService<{
     output: typeof MeResponseSchema;
   },
   /**
-   * 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2 行 1165）。
+   * 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.ListProviders
    */
@@ -170,7 +170,7 @@ export const AdminService: GenService<{
     output: typeof ProviderListResponseSchema;
   },
   /**
-   * 新建：请求体为 §5.3 行 1180 的动态键集合（提交体即 {"<key>": <value>}），
+   * 新建：请求体为 §5.3 的动态键集合（提交体即 {"<key>": <value>}）
    * 固定消息无法建模，不包装 Request（既定口径）。
    *
    * @generated from rpc api.admin.v1.AdminService.CreateProvider
@@ -181,7 +181,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 详情：返回明文凭证（§5.2 行 1167）。
+   * 详情：返回明文凭证（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetProvider
    */
@@ -191,7 +191,7 @@ export const AdminService: GenService<{
     output: typeof AdminProviderSchema;
   },
   /**
-   * 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2 行 1168）。
+   * 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.UpdateProvider
    */
@@ -201,7 +201,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 删除（§5.2 行 1169）。
+   * 删除（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.DeleteProvider
    */
@@ -211,7 +211,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 行内开关（§5.2 行 1170）。
+   * 行内开关（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.SetProviderEnabled
    */
@@ -221,7 +221,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 拖拽排序（§5.2 行 1171）。
+   * 拖拽排序（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.SortProviders
    */
@@ -231,7 +231,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * Provider type 下拉数据源，来自注册表 metas（§5.2 行 1172）。
+   * Provider type 下拉数据源，来自注册表 metas（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetProviderTypes
    */
@@ -241,7 +241,7 @@ export const AdminService: GenService<{
     output: typeof ProviderTypesResponseSchema;
   },
   /**
-   * 动态表单 schema（§5.2 行 1173、§5.3）。
+   * 动态表单 schema（§5.2、§5.3）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetProviderSchema
    */
@@ -251,7 +251,7 @@ export const AdminService: GenService<{
     output: typeof SchemaResponseSchema;
   },
   /**
-   * 短信 / 邮件 Provider 的「发送测试」（§5.2 行 1174）。
+   * 短信 / 邮件 Provider 的「发送测试」（§5.2）。
    *
    * @generated from rpc api.admin.v1.AdminService.TestProvider
    */
@@ -261,7 +261,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 用户列表（§5.4 行 1246）。
+   * 用户列表（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.ListUsers
    */
@@ -271,7 +271,7 @@ export const AdminService: GenService<{
     output: typeof UserListResponseSchema;
   },
   /**
-   * 用户详情：凭证概览、绑定、MFA 状态（§5.4 行 1247）。
+   * 用户详情：凭证概览、绑定、MFA 状态（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetUser
    */
@@ -281,7 +281,7 @@ export const AdminService: GenService<{
     output: typeof UserDetailResponseSchema;
   },
   /**
-   * 禁用 / 启用（§5.4 行 1248，字段名与 §3.1 视图一致）。
+   * 禁用 / 启用（§5.4，字段名与 §3.1 视图一致）。
    *
    * @generated from rpc api.admin.v1.AdminService.UpdateUserStatus
    */
@@ -291,7 +291,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 管理员重置密码（§5.4 行 1249）。
+   * 管理员重置密码（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.ResetUserPassword
    */
@@ -301,7 +301,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 解绑第三方（§5.4 行 1250）。
+   * 解绑第三方（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.UnbindUserThirdparty
    */
@@ -311,7 +311,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 解除登录限制（§5.4 行 1251）。
+   * 解除登录限制（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.UnlockUser
    */
@@ -321,7 +321,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 该用户登录记录（§5.4 行 1252）。
+   * 该用户登录记录（§5.4）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetUserEvents
    */
@@ -331,7 +331,7 @@ export const AdminService: GenService<{
     output: typeof UserEventsResponseSchema;
   },
   /**
-   * SSO 客户端列表（§5.5 行 1258）。
+   * SSO 客户端列表（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.ListSsoClients
    */
@@ -341,7 +341,7 @@ export const AdminService: GenService<{
     output: typeof SsoClientListResponseSchema;
   },
   /**
-   * SSO 客户端新建，仅后台手动创建（§5.5 行 1258）。
+   * SSO 客户端新建，仅后台手动创建（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.CreateSsoClient
    */
@@ -351,7 +351,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * SSO 客户端详情（§5.5 行 1259）。
+   * SSO 客户端详情（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetSsoClient
    */
@@ -361,7 +361,7 @@ export const AdminService: GenService<{
     output: typeof SsoClientSchema;
   },
   /**
-   * SSO 客户端编辑（§5.5 行 1259）。
+   * SSO 客户端编辑（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.UpdateSsoClient
    */
@@ -371,7 +371,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * SSO 客户端删除（§5.5 行 1259）。
+   * SSO 客户端删除（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.DeleteSsoClient
    */
@@ -381,7 +381,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * OIDC 客户端列表（§5.5 行 1260）。
+   * OIDC 客户端列表（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.ListOidcClients
    */
@@ -391,7 +391,7 @@ export const AdminService: GenService<{
     output: typeof OidcClientListResponseSchema;
   },
   /**
-   * OIDC 客户端新建（§5.5 行 1260）。
+   * OIDC 客户端新建（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.CreateOidcClient
    */
@@ -401,7 +401,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * OIDC 客户端详情（§5.5 行 1261）。
+   * OIDC 客户端详情（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetOidcClient
    */
@@ -411,7 +411,7 @@ export const AdminService: GenService<{
     output: typeof OidcClientSchema;
   },
   /**
-   * OIDC 客户端编辑（§5.5 行 1261）。
+   * OIDC 客户端编辑（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.UpdateOidcClient
    */
@@ -421,7 +421,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * OIDC 客户端删除（§5.5 行 1261）。
+   * OIDC 客户端删除（§5.5）。
    *
    * @generated from rpc api.admin.v1.AdminService.DeleteOidcClient
    */
@@ -431,7 +431,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 全部系统配置（§5.6 行 1271）。
+   * 全部系统配置（§5.6）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetSettings
    */
@@ -441,7 +441,7 @@ export const AdminService: GenService<{
     output: typeof SettingsResponseSchema;
   },
   /**
-   * 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
+   * 部分更新（PATCH）系统配置（§5.6；optional has 位口径见 settings.proto 头注）。
    *
    * @generated from rpc api.admin.v1.AdminService.SetSettings
    */
@@ -451,7 +451,7 @@ export const AdminService: GenService<{
     output: typeof OkResponseSchema;
   },
   /**
-   * 统一事件视图（§5.6 行 1272）。
+   * 统一事件视图（§5.6）。
    *
    * @generated from rpc api.admin.v1.AdminService.ListEvents
    */
@@ -461,7 +461,7 @@ export const AdminService: GenService<{
     output: typeof EventListResponseSchema;
   },
   /**
-   * 令牌解码，排障用（§5.6 行 1273）。
+   * 令牌解码，排障用（§5.6）。
    *
    * @generated from rpc api.admin.v1.AdminService.DecodeToken
    */
@@ -471,7 +471,7 @@ export const AdminService: GenService<{
     output: typeof DecodeResponseSchema;
   },
   /**
-   * 监控：队列长度 / dropped / flush 耗时（§5.6 行 1274）。
+   * 监控：队列长度 / dropped / flush 耗时（§5.6）。
    *
    * @generated from rpc api.admin.v1.AdminService.GetStatus
    */

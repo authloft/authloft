@@ -21,13 +21,13 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Ext 是外部服务扩展字段（docs/接口文档.md §12.1 行 1636-1690），对应
-// provider.ext 列（VARBINARY，§12.0 行 1627：结构固定走 Protobuf）。跨类型共有
+// Ext 是外部服务扩展字段（docs/接口文档.md §12.1），对应
+// provider.ext 列（VARBINARY，§12.0：结构固定走 Protobuf）。跨类型共有
 // 属性作真实列（用于筛选、排序、索引），凭证 / 端点 / 存储配置 / 厂商长尾全部
-// 进此结构。敏感字段不做二次加密，访问控制靠接口边界（行 1696：前台接口与
+// 进此结构。敏感字段不做二次加密，访问控制靠接口边界（前台接口与
 // __AUTHLOFT_INIT__.methods 永不返回 ext 中任何凭证字段，仅 /api/admin/providers/**
 // 可返回明文且必须校验管理员会话 uid==1）。字段名 / 编号 / 类型 / 注释与
-// 行 1644-1690 的 protobuf 定义逐字一致。
+// protobuf 定义逐字一致。
 type Ext struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// ---- 凭证 ----

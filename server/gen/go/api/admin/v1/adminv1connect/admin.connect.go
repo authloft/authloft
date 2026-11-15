@@ -131,72 +131,72 @@ const (
 
 // AdminServiceClient is a client for the api.admin.v1.AdminService service.
 type AdminServiceClient interface {
-	// 当前管理员信息，前端唯一来源（§5.1 行 1159）。
+	// 当前管理员信息，前端唯一来源（§5.1）。
 	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.MeResponse], error)
-	// 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2 行 1165）。
+	// 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2）。
 	ListProviders(context.Context, *connect.Request[v1.ListProvidersRequest]) (*connect.Response[v1.ProviderListResponse], error)
-	// 新建：请求体为 §5.3 行 1180 的动态键集合（提交体即 {"<key>": <value>}），
+	// 新建：请求体为 §5.3 的动态键集合（提交体即 {"<key>": <value>}）
 	// 固定消息无法建模，不包装 Request（既定口径）。
 	CreateProvider(context.Context, *connect.Request[structpb.Struct]) (*connect.Response[v1.OkResponse], error)
-	// 详情：返回明文凭证（§5.2 行 1167）。
+	// 详情：返回明文凭证（§5.2）。
 	GetProvider(context.Context, *connect.Request[v1.GetProviderRequest]) (*connect.Response[v1.AdminProvider], error)
-	// 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2 行 1168）。
+	// 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2）。
 	UpdateProvider(context.Context, *connect.Request[structpb.Struct]) (*connect.Response[v1.OkResponse], error)
-	// 删除（§5.2 行 1169）。
+	// 删除（§5.2）。
 	DeleteProvider(context.Context, *connect.Request[v1.DeleteProviderRequest]) (*connect.Response[v1.OkResponse], error)
-	// 行内开关（§5.2 行 1170）。
+	// 行内开关（§5.2）。
 	SetProviderEnabled(context.Context, *connect.Request[v1.SetProviderEnabledRequest]) (*connect.Response[v1.OkResponse], error)
-	// 拖拽排序（§5.2 行 1171）。
+	// 拖拽排序（§5.2）。
 	SortProviders(context.Context, *connect.Request[v1.SortProvidersRequest]) (*connect.Response[v1.OkResponse], error)
-	// Provider type 下拉数据源，来自注册表 metas（§5.2 行 1172）。
+	// Provider type 下拉数据源，来自注册表 metas（§5.2）。
 	GetProviderTypes(context.Context, *connect.Request[v1.GetProviderTypesRequest]) (*connect.Response[v1.ProviderTypesResponse], error)
-	// 动态表单 schema（§5.2 行 1173、§5.3）。
+	// 动态表单 schema（§5.2、§5.3）。
 	GetProviderSchema(context.Context, *connect.Request[v1.GetProviderSchemaRequest]) (*connect.Response[v1.SchemaResponse], error)
-	// 短信 / 邮件 Provider 的「发送测试」（§5.2 行 1174）。
+	// 短信 / 邮件 Provider 的「发送测试」（§5.2）。
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
-	// 用户列表（§5.4 行 1246）。
+	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
-	// 用户详情：凭证概览、绑定、MFA 状态（§5.4 行 1247）。
+	// 用户详情：凭证概览、绑定、MFA 状态（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
-	// 禁用 / 启用（§5.4 行 1248，字段名与 §3.1 视图一致）。
+	// 禁用 / 启用（§5.4，字段名与 §3.1 视图一致）。
 	UpdateUserStatus(context.Context, *connect.Request[v1.UpdateUserStatusRequest]) (*connect.Response[v1.OkResponse], error)
-	// 管理员重置密码（§5.4 行 1249）。
+	// 管理员重置密码（§5.4）。
 	ResetUserPassword(context.Context, *connect.Request[v1.ResetUserPasswordRequest]) (*connect.Response[v1.OkResponse], error)
-	// 解绑第三方（§5.4 行 1250）。
+	// 解绑第三方（§5.4）。
 	UnbindUserThirdparty(context.Context, *connect.Request[v1.UnbindUserThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
-	// 解除登录限制（§5.4 行 1251）。
+	// 解除登录限制（§5.4）。
 	UnlockUser(context.Context, *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error)
-	// 该用户登录记录（§5.4 行 1252）。
+	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
-	// SSO 客户端列表（§5.5 行 1258）。
+	// SSO 客户端列表（§5.5）。
 	ListSsoClients(context.Context, *connect.Request[v1.ListSsoClientsRequest]) (*connect.Response[v1.SsoClientListResponse], error)
-	// SSO 客户端新建，仅后台手动创建（§5.5 行 1258）。
+	// SSO 客户端新建，仅后台手动创建（§5.5）。
 	CreateSsoClient(context.Context, *connect.Request[v1.CreateSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// SSO 客户端详情（§5.5 行 1259）。
+	// SSO 客户端详情（§5.5）。
 	GetSsoClient(context.Context, *connect.Request[v1.GetSsoClientRequest]) (*connect.Response[v1.SsoClient], error)
-	// SSO 客户端编辑（§5.5 行 1259）。
+	// SSO 客户端编辑（§5.5）。
 	UpdateSsoClient(context.Context, *connect.Request[v1.UpdateSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// SSO 客户端删除（§5.5 行 1259）。
+	// SSO 客户端删除（§5.5）。
 	DeleteSsoClient(context.Context, *connect.Request[v1.DeleteSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端列表（§5.5 行 1260）。
+	// OIDC 客户端列表（§5.5）。
 	ListOidcClients(context.Context, *connect.Request[v1.ListOidcClientsRequest]) (*connect.Response[v1.OidcClientListResponse], error)
-	// OIDC 客户端新建（§5.5 行 1260）。
+	// OIDC 客户端新建（§5.5）。
 	CreateOidcClient(context.Context, *connect.Request[v1.CreateOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端详情（§5.5 行 1261）。
+	// OIDC 客户端详情（§5.5）。
 	GetOidcClient(context.Context, *connect.Request[v1.GetOidcClientRequest]) (*connect.Response[v1.OidcClient], error)
-	// OIDC 客户端编辑（§5.5 行 1261）。
+	// OIDC 客户端编辑（§5.5）。
 	UpdateOidcClient(context.Context, *connect.Request[v1.UpdateOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端删除（§5.5 行 1261）。
+	// OIDC 客户端删除（§5.5）。
 	DeleteOidcClient(context.Context, *connect.Request[v1.DeleteOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// 全部系统配置（§5.6 行 1271）。
+	// 全部系统配置（§5.6）。
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.SettingsResponse], error)
-	// 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
+	// 部分更新（PATCH）系统配置（§5.6；optional has 位口径见 settings.proto 头注）。
 	SetSettings(context.Context, *connect.Request[v1.SetSettingsRequest]) (*connect.Response[v1.OkResponse], error)
-	// 统一事件视图（§5.6 行 1272）。
+	// 统一事件视图（§5.6）。
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.EventListResponse], error)
-	// 令牌解码，排障用（§5.6 行 1273）。
+	// 令牌解码，排障用（§5.6）。
 	DecodeToken(context.Context, *connect.Request[v1.DecodeTokenRequest]) (*connect.Response[v1.DecodeResponse], error)
-	// 监控：队列长度 / dropped / flush 耗时（§5.6 行 1274）。
+	// 监控：队列长度 / dropped / flush 耗时（§5.6）。
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.StatusResponse], error)
 }
 
@@ -616,72 +616,72 @@ func (c *adminServiceClient) GetStatus(ctx context.Context, req *connect.Request
 
 // AdminServiceHandler is an implementation of the api.admin.v1.AdminService service.
 type AdminServiceHandler interface {
-	// 当前管理员信息，前端唯一来源（§5.1 行 1159）。
+	// 当前管理员信息，前端唯一来源（§5.1）。
 	GetMe(context.Context, *connect.Request[v1.GetMeRequest]) (*connect.Response[v1.MeResponse], error)
-	// 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2 行 1165）。
+	// 列表：显示名 / providerKey / 类别 / 类型 / 状态 / 策略标签 / 排序（§5.2）。
 	ListProviders(context.Context, *connect.Request[v1.ListProvidersRequest]) (*connect.Response[v1.ProviderListResponse], error)
-	// 新建：请求体为 §5.3 行 1180 的动态键集合（提交体即 {"<key>": <value>}），
+	// 新建：请求体为 §5.3 的动态键集合（提交体即 {"<key>": <value>}）
 	// 固定消息无法建模，不包装 Request（既定口径）。
 	CreateProvider(context.Context, *connect.Request[structpb.Struct]) (*connect.Response[v1.OkResponse], error)
-	// 详情：返回明文凭证（§5.2 行 1167）。
+	// 详情：返回明文凭证（§5.2）。
 	GetProvider(context.Context, *connect.Request[v1.GetProviderRequest]) (*connect.Response[v1.AdminProvider], error)
-	// 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2 行 1168）。
+	// 编辑：provider_key 创建后不可改，提交体平铺含 provider_key（§5.2）。
 	UpdateProvider(context.Context, *connect.Request[structpb.Struct]) (*connect.Response[v1.OkResponse], error)
-	// 删除（§5.2 行 1169）。
+	// 删除（§5.2）。
 	DeleteProvider(context.Context, *connect.Request[v1.DeleteProviderRequest]) (*connect.Response[v1.OkResponse], error)
-	// 行内开关（§5.2 行 1170）。
+	// 行内开关（§5.2）。
 	SetProviderEnabled(context.Context, *connect.Request[v1.SetProviderEnabledRequest]) (*connect.Response[v1.OkResponse], error)
-	// 拖拽排序（§5.2 行 1171）。
+	// 拖拽排序（§5.2）。
 	SortProviders(context.Context, *connect.Request[v1.SortProvidersRequest]) (*connect.Response[v1.OkResponse], error)
-	// Provider type 下拉数据源，来自注册表 metas（§5.2 行 1172）。
+	// Provider type 下拉数据源，来自注册表 metas（§5.2）。
 	GetProviderTypes(context.Context, *connect.Request[v1.GetProviderTypesRequest]) (*connect.Response[v1.ProviderTypesResponse], error)
-	// 动态表单 schema（§5.2 行 1173、§5.3）。
+	// 动态表单 schema（§5.2、§5.3）。
 	GetProviderSchema(context.Context, *connect.Request[v1.GetProviderSchemaRequest]) (*connect.Response[v1.SchemaResponse], error)
-	// 短信 / 邮件 Provider 的「发送测试」（§5.2 行 1174）。
+	// 短信 / 邮件 Provider 的「发送测试」（§5.2）。
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
-	// 用户列表（§5.4 行 1246）。
+	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
-	// 用户详情：凭证概览、绑定、MFA 状态（§5.4 行 1247）。
+	// 用户详情：凭证概览、绑定、MFA 状态（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
-	// 禁用 / 启用（§5.4 行 1248，字段名与 §3.1 视图一致）。
+	// 禁用 / 启用（§5.4，字段名与 §3.1 视图一致）。
 	UpdateUserStatus(context.Context, *connect.Request[v1.UpdateUserStatusRequest]) (*connect.Response[v1.OkResponse], error)
-	// 管理员重置密码（§5.4 行 1249）。
+	// 管理员重置密码（§5.4）。
 	ResetUserPassword(context.Context, *connect.Request[v1.ResetUserPasswordRequest]) (*connect.Response[v1.OkResponse], error)
-	// 解绑第三方（§5.4 行 1250）。
+	// 解绑第三方（§5.4）。
 	UnbindUserThirdparty(context.Context, *connect.Request[v1.UnbindUserThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
-	// 解除登录限制（§5.4 行 1251）。
+	// 解除登录限制（§5.4）。
 	UnlockUser(context.Context, *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error)
-	// 该用户登录记录（§5.4 行 1252）。
+	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
-	// SSO 客户端列表（§5.5 行 1258）。
+	// SSO 客户端列表（§5.5）。
 	ListSsoClients(context.Context, *connect.Request[v1.ListSsoClientsRequest]) (*connect.Response[v1.SsoClientListResponse], error)
-	// SSO 客户端新建，仅后台手动创建（§5.5 行 1258）。
+	// SSO 客户端新建，仅后台手动创建（§5.5）。
 	CreateSsoClient(context.Context, *connect.Request[v1.CreateSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// SSO 客户端详情（§5.5 行 1259）。
+	// SSO 客户端详情（§5.5）。
 	GetSsoClient(context.Context, *connect.Request[v1.GetSsoClientRequest]) (*connect.Response[v1.SsoClient], error)
-	// SSO 客户端编辑（§5.5 行 1259）。
+	// SSO 客户端编辑（§5.5）。
 	UpdateSsoClient(context.Context, *connect.Request[v1.UpdateSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// SSO 客户端删除（§5.5 行 1259）。
+	// SSO 客户端删除（§5.5）。
 	DeleteSsoClient(context.Context, *connect.Request[v1.DeleteSsoClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端列表（§5.5 行 1260）。
+	// OIDC 客户端列表（§5.5）。
 	ListOidcClients(context.Context, *connect.Request[v1.ListOidcClientsRequest]) (*connect.Response[v1.OidcClientListResponse], error)
-	// OIDC 客户端新建（§5.5 行 1260）。
+	// OIDC 客户端新建（§5.5）。
 	CreateOidcClient(context.Context, *connect.Request[v1.CreateOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端详情（§5.5 行 1261）。
+	// OIDC 客户端详情（§5.5）。
 	GetOidcClient(context.Context, *connect.Request[v1.GetOidcClientRequest]) (*connect.Response[v1.OidcClient], error)
-	// OIDC 客户端编辑（§5.5 行 1261）。
+	// OIDC 客户端编辑（§5.5）。
 	UpdateOidcClient(context.Context, *connect.Request[v1.UpdateOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// OIDC 客户端删除（§5.5 行 1261）。
+	// OIDC 客户端删除（§5.5）。
 	DeleteOidcClient(context.Context, *connect.Request[v1.DeleteOidcClientRequest]) (*connect.Response[v1.OkResponse], error)
-	// 全部系统配置（§5.6 行 1271）。
+	// 全部系统配置（§5.6）。
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.SettingsResponse], error)
-	// 部分更新（PATCH）系统配置（§5.6 行 1271；optional has 位口径见 settings.proto 头注）。
+	// 部分更新（PATCH）系统配置（§5.6；optional has 位口径见 settings.proto 头注）。
 	SetSettings(context.Context, *connect.Request[v1.SetSettingsRequest]) (*connect.Response[v1.OkResponse], error)
-	// 统一事件视图（§5.6 行 1272）。
+	// 统一事件视图（§5.6）。
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.EventListResponse], error)
-	// 令牌解码，排障用（§5.6 行 1273）。
+	// 令牌解码，排障用（§5.6）。
 	DecodeToken(context.Context, *connect.Request[v1.DecodeTokenRequest]) (*connect.Response[v1.DecodeResponse], error)
-	// 监控：队列长度 / dropped / flush 耗时（§5.6 行 1274）。
+	// 监控：队列长度 / dropped / flush 耗时（§5.6）。
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.StatusResponse], error)
 }
 

@@ -23,28 +23,28 @@ const (
 )
 
 // RegisterRequest 是 SsoService/Register 的请求消息
-// （docs/接口文档.md §2.3，行 440-454）。
-// 顶层字段与 §2.2 同构（行 442「与 2.2 同构，仅 flow=register」），字段名与 §2.2
-// 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9 行 1749）。
-// 响应复用本包 LoginFlowResponse（§1.3 行 104 的共用清单含 Register），故不定义 RegisterResponse。
+// （docs/接口文档.md §2.3）。
+// 顶层字段与 §2.2 同构（「与 2.2 同构，仅 flow=register」），字段名与 §2.2
+// 字段表逐字一致且 snake_case，编号从 1 起连续（§12.9）。
+// 响应复用本包 LoginFlowResponse（§1.3 的共用清单含 Register），故不定义 RegisterResponse。
 type RegisterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 首次不带；后续必须带（内存变量回传）（§2.2 行 420，随「与 2.2 同构」引入，§2.3 行 442）。
+	// 首次不带；后续必须带（内存变量回传）（§2.2，随「与 2.2 同构」引入，§2.3）。
 	LoginToken string `protobuf:"bytes,1,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
-	// 无 login_token 时必须带（§2.2 行 421，随同构引入，§2.3 行 442）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 无 login_token 时必须带（§2.2，随同构引入，§2.3）；
+	// 跨版本可新增，用 string 承载（§12.9）。
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// 取值 challenge｜verify｜set_password（§2.3 行 444-450；§2.2 行 422 已预留 set_password）；
-	// 同为跨版本可新增的取值，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify｜set_password（§2.3；§2.2 已预留 set_password）；
+	// 同为跨版本可新增的取值，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,3,opt,name=step,proto3" json:"step,omitempty"`
-	// 注册各 step 的字段，见 RegisterPayload（§2.3 行 444-450）。
+	// 注册各 step 的字段，见 RegisterPayload（§2.3）。
 	Payload *RegisterPayload `protobuf:"bytes,4,opt,name=payload,proto3" json:"payload,omitempty"`
-	// OIDC 授权上下文（§2.2 行 425，随同构引入，§2.3 行 442）：仅首次请求（尚无 login_token）
+	// OIDC 授权上下文（§2.2，随同构引入，§2.3）：仅首次请求（尚无 login_token）
 	// 时回传；前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
 	Oidc *structpb.Struct `protobuf:"bytes,5,opt,name=oidc,proto3" json:"oidc,omitempty"`
-	// 人机校验提交，请求级字段（与 payload 平级，§2.2 行 535、§2.5 提交格式、
-	// §2.6 行 672「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
+	// 人机校验提交，请求级字段（与 payload 平级，§2.2、§2.5 提交格式、
+	// §2.6「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
 	// set_password 步必填，其余场景可省。
 	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -123,23 +123,23 @@ func (x *RegisterRequest) GetCaptcha() *CaptchaPayload {
 	return nil
 }
 
-// RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集（行 444-450）：
-// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9 行 1749）。
-// 字段集合当前与 LoginPayload（login.proto，§2.6 行 540-549）部分重合，但口径来源不同
+// RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集：
+// 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9）。
+// 字段集合当前与 LoginPayload（login.proto，§2.6）部分重合，但口径来源不同
 // （本消息以 §2.3 为准），故在本文件各建：按 §12.8 / §12.9 只增不改，
 // 注册后续若需新增字段直接在本文件加号，不动已验收的 login.proto。
 type RegisterPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// challenge 步：目标邮箱（§2.3 行 446），受 allow_signup_email 控制；与 phone 二选一。
+	// challenge 步：目标邮箱（§2.3），受 allow_signup_email 控制；与 phone 二选一。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	// challenge 步：目标手机号（§2.3 行 446），受 allow_signup_phone 控制；与 email 二选一。
+	// challenge 步：目标手机号（§2.3），受 allow_signup_phone 控制；与 email 二选一。
 	Phone string `protobuf:"bytes,2,opt,name=phone,proto3" json:"phone,omitempty"`
-	// verify 步：register 用途的验证码（§2.3 行 447）。
+	// verify 步：register 用途的验证码（§2.3）。
 	Code string `protobuf:"bytes,3,opt,name=code,proto3" json:"code,omitempty"`
-	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 行 448 唯一定义处），设置后不可改。
+	// set_password 步：用户名，规则 ^[A-Za-z0-9_]{5,20}$（§2.3 唯一定义处），设置后不可改。
 	Username string `protobuf:"bytes,4,opt,name=username,proto3" json:"username,omitempty"`
-	// set_password 步：密码，须满足密码策略（§2.3 行 448、§5.6）；
-	// 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5 行 666-671）。
+	// set_password 步：密码，须满足密码策略（§2.3、§5.6）；
+	// 三方免密建号（login_token.tp 非空）时仅提交 username，服务端忽略本字段（§2.7.5）。
 	Password      string `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

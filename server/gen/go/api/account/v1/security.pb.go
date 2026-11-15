@@ -22,13 +22,13 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ChangePasswordRequest 是 AccountService/ChangePassword 的请求（§3.3 行 855-860）。
-// 成功为空响应（行 862），不定义 ChangePasswordResponse。
+// ChangePasswordRequest 是 AccountService/ChangePassword 的请求（§3.3）。
+// 成功为空响应，不定义 ChangePasswordResponse。
 type ChangePasswordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 已设置密码时必填（§3.3 行 859）。
+	// 已设置密码时必填（§3.3）。
 	CurrentPassword string `protobuf:"bytes,1,opt,name=current_password,json=currentPassword,proto3" json:"current_password,omitempty"`
-	// 须满足密码策略（§3.3 行 860、§5.6）；不满足返回 password_weak（行 862）。
+	// 须满足密码策略（§3.3、§5.6）；不满足返回 password_weak。
 	NewPassword   string `protobuf:"bytes,2,opt,name=new_password,json=newPassword,proto3" json:"new_password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -78,14 +78,14 @@ func (x *ChangePasswordRequest) GetNewPassword() string {
 	return ""
 }
 
-// PhoneBindPayload 是 AccountService/BindPhone 的 payload 字段（§3.4 行 870-871）：
+// PhoneBindPayload 是 AccountService/BindPhone 的 payload 字段（§3.4）：
 // challenge 用 {phone}，verify 用 {phone, code}，同一端点按 step 取用其中一部分；
 // captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
 type PhoneBindPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标手机号；verify 回传与 challenge 相同的 target（§3.4 行 870-871、行 880）。
+	// 目标手机号；verify 回传与 challenge 相同的 target（§3.4、）。
 	Phone string `protobuf:"bytes,1,opt,name=phone,proto3" json:"phone,omitempty"`
-	// verify：purpose=bind 的验证码（§3.4 行 871、行 880）。
+	// verify：purpose=bind 的验证码（§3.4、）。
 	Code          string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -135,14 +135,14 @@ func (x *PhoneBindPayload) GetCode() string {
 	return ""
 }
 
-// BindPhoneRequest 是 AccountService/BindPhone 的请求（§3.4 行 870-871）：
+// BindPhoneRequest 是 AccountService/BindPhone 的请求（§3.4）：
 // 两步同端点，由 step 区分；成功为空响应（OkResponse）。
-// 消息名随方法名（§12.9 行 1747；pre-connect 时代按旧 URL 命名 PhoneBindRequest）。
+// 消息名随方法名（§12.9；pre-connect 时代按旧 URL 命名 PhoneBindRequest）。
 type BindPhoneRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 取值 challenge｜verify（§3.4 行 870-871）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify（§3.4）；跨版本可新增，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
-	// 该步骤用到的字段（§3.4 行 870-871）。
+	// 该步骤用到的字段（§3.4）。
 	Payload *PhoneBindPayload `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	// 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
 	// challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。
@@ -202,13 +202,13 @@ func (x *BindPhoneRequest) GetCaptcha() *v1.CaptchaPayload {
 	return nil
 }
 
-// EmailBindPayload 是 AccountService/BindEmail 的 payload 字段（§3.4 行 872-873）。
+// EmailBindPayload 是 AccountService/BindEmail 的 payload 字段（§3.4）。
 // captcha 为请求顶层字段，与 payload 平级（§2.5 提交格式、§3.4）。
 type EmailBindPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标邮箱；verify 回传与 challenge 相同的 target（§3.4 行 872-873、行 880）。
+	// 目标邮箱；verify 回传与 challenge 相同的 target（§3.4、）。
 	Email string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	// verify：purpose=bind 的验证码（§3.4 行 873、行 880）。
+	// verify：purpose=bind 的验证码（§3.4、）。
 	Code          string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -258,13 +258,13 @@ func (x *EmailBindPayload) GetCode() string {
 	return ""
 }
 
-// BindEmailRequest 是 AccountService/BindEmail 的请求（§3.4 行 872-873）：
-// 两步同端点，由 step 区分；成功为空响应（OkResponse）。消息名随方法名（§12.9 行 1747）。
+// BindEmailRequest 是 AccountService/BindEmail 的请求（§3.4）：
+// 两步同端点，由 step 区分；成功为空响应（OkResponse）。消息名随方法名（§12.9）。
 type BindEmailRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 取值 challenge｜verify（§3.4 行 872-873）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 取值 challenge｜verify（§3.4）；跨版本可新增，用 string 承载（§12.9）。
 	Step string `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
-	// 该步骤用到的字段（§3.4 行 872-873）。
+	// 该步骤用到的字段（§3.4）。
 	Payload *EmailBindPayload `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	// 人机校验提交，请求级字段（与 payload 平级，§2.5 提交格式、§3.4）；
 	// challenge 步必填，verify 步忽略。跨包引用 api.sso.v1.CaptchaPayload。

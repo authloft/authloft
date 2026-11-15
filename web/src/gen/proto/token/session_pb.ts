@@ -14,15 +14,15 @@ export const file_token_session: GenFile = /*@__PURE__*/
 
 /**
  * SessionTokenPayload 是 session_token / al_session 的加密前载荷——会话令牌
- * （docs/后端架构.md §11.6.3 行 1306-1320）。浏览器写 Cookie al_session
+ * （docs/后端架构.md §11.6.3）。浏览器写 Cookie al_session
  * （接口文档 §1.9）；小程序 / 宿主环境由响应体下发、用 Header X-Authloft-Token
- * 回传（接口文档 §1.2）。字段名 / 编号 / 类型与行 1309-1316 的 protobuf 定义逐字一致。
+ * 回传（接口文档 §1.2）。字段名 / 编号 / 类型与 protobuf 定义逐字一致。
  *
  * @generated from message token.SessionTokenPayload
  */
 export type SessionTokenPayload = Message<"token.SessionTokenPayload"> & {
   /**
-   * UID（行 1310）。
+   * UID。
    *
    * @generated from field: int64 id = 1;
    */
@@ -30,35 +30,35 @@ export type SessionTokenPayload = Message<"token.SessionTokenPayload"> & {
 
   /**
    * 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效；改密 / 重置 /
-   * 管理员禁用递增（登出不递增）；递增到 > 30000 回绕为 1、不回到 0（行 1311、1319）。
+   * 管理员禁用递增（登出不递增）；递增到 > 30000 回绕为 1、不回到 0。
    *
    * @generated from field: int64 epoch = 2;
    */
   epoch: bigint;
 
   /**
-   * 认证方法，如 ["pwd","otp"]（行 1312）。
+   * 认证方法，如 ["pwd","otp"]。
    *
    * @generated from field: repeated string amr = 3;
    */
   amr: string[];
 
   /**
-   * Session ID（行 1313）。
+   * Session ID。
    *
    * @generated from field: string sid = 4;
    */
   sid: string;
 
   /**
-   * 签发时间，Unix 秒（行 1314）。
+   * 签发时间，Unix 秒。
    *
    * @generated from field: int64 iat = 5;
    */
   iat: bigint;
 
   /**
-   * 过期时间，Unix 秒（行 1315）。
+   * 过期时间，Unix 秒。
    *
    * @generated from field: int64 exp = 6;
    */

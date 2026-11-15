@@ -21,17 +21,17 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7 行 1389「传入
+// DecodeSessionRequest 是 TokenService/DecodeSession 的请求（§7「传入
 // Session Token（请求体字段 `session_token`）进行解码」）。字段名已由
-// 文档转正（术语 §1.2 行 120、《后端架构》§11.6.3 行 1306）。
+// 文档转正（术语 §1.2、《后端架构》§11.6.3）。
 type DecodeSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 待解码的会话令牌（§7 行 1386）。
+	// 待解码的会话令牌（§7）。
 	SessionToken string `protobuf:"bytes,1,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	// 是否额外携带用户信息（接口文档 §7.1 行 1419/1434）：true 且
+	// 是否额外携带用户信息（接口文档 §7.1）：true 且
 	// 会话校验通过 → 响应额外携带 user_info；false / 缺省 → 响应与现行完全一致，
 	// 服务端零额外查询（不触用户资料读取）。session 无效 / 过期仍 401
-	// unauthenticated（行 1433），本字段不改变失败分支。
+	// unauthenticated，本字段不改变失败分支。
 	IncludeUserInfo bool `protobuf:"varint,2,opt,name=include_user_info,json=includeUserInfo,proto3" json:"include_user_info,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -81,30 +81,30 @@ func (x *DecodeSessionRequest) GetIncludeUserInfo() bool {
 	return false
 }
 
-// SessionResponse 是 TokenService/DecodeSession 的响应（§7 行 1389「返回
-// SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3 行 1309-1316），
-// 按 §1.0 成功响应即消息本身平铺（§7 行 1380，Connect 化后无信封）。
-// 内部载荷与接口报文不得混用（§12.9 行 1745），故在 api.rpc.v1 定义报文视图消息；
-// 字段名与 §11.6.3 逐字一致（§12.9 行 1749），整型一律 int64（行 1751）。
+// SessionResponse 是 TokenService/DecodeSession 的响应（§7「返回
+// SessionTokenPayload」，其字段唯一定义于《后端架构》§11.6.3），
+// 按 §1.0 成功响应即消息本身平铺（§7，Connect 化后无信封）。
+// 内部载荷与接口报文不得混用（§12.9），故在 api.rpc.v1 定义报文视图消息；
+// 字段名与 §11.6.3 逐字一致（§12.9），整型一律 int64。
 type SessionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 用户 ID（《后端架构》§11.6.3 行 1310）。
+	// 用户 ID（《后端架构》§11.6.3）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效（§11.6.3 行 1311、1319）。
+	// 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效（§11.6.3、1319）。
 	Epoch int64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// 认证方法数组，如 ["pwd","otp"]（§11.6.3 行 1312）。
+	// 认证方法数组，如 ["pwd","otp"]（§11.6.3）。
 	Amr []string `protobuf:"bytes,3,rep,name=amr,proto3" json:"amr,omitempty"`
-	// 会话 ID（§11.6.3 行 1313）。
+	// 会话 ID（§11.6.3）。
 	Sid string `protobuf:"bytes,4,opt,name=sid,proto3" json:"sid,omitempty"`
-	// 签发时间，Unix 秒（§11.6.3 行 1314）。
+	// 签发时间，Unix 秒（§11.6.3）。
 	Iat int64 `protobuf:"varint,5,opt,name=iat,proto3" json:"iat,omitempty"`
-	// 过期时间，Unix 秒（§11.6.3 行 1315）。
+	// 过期时间，Unix 秒（§11.6.3）。
 	Exp int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
-	// 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1 行 1401/1406）。
+	// 本次续期重签得到的新 session_token，仅会话校验通过时返回（接口文档 §7.1）。
 	RenewedToken string `protobuf:"bytes,7,opt,name=renewed_token,json=renewedToken,proto3" json:"renewed_token,omitempty"`
-	// 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1 行 1427）；
+	// 用户信息，仅 include_user_info=true 且会话校验通过时返回（§7.1）；
 	// 与 UserService/GetUserProfile 响应同构，复用同包 ProfileResponse
-	// （行 1434；§3.1 Authloft 结构，本文件不复制定义）。
+	// （§3.1 Authloft 结构，本文件不复制定义）。
 	UserInfo      *ProfileResponse `protobuf:"bytes,8,opt,name=user_info,json=userInfo,proto3" json:"user_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

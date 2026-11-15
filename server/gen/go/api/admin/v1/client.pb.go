@@ -22,21 +22,21 @@ const (
 )
 
 // SsoClient 是 AdminService/ListSsoClients 的列表项，也是 GetSsoClient 的详情响应：
-// 字段 client_id、client_secret、name、redirectUris[]（支持 *）取自 §5.5 行 1258 逐字，
+// 字段 client_id、client_secret、name、redirectUris[]（支持 *）取自 §5.5 逐字，
 // id / created_at / updated_at 为《后端架构》§4.4 的行投影（§5.5 未列出，列表与详情
 // 按行透出）。sso_client.is_enabled 无对应端点行为，不在报文中出现。
 type SsoClient struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 数据库自增 ID，GetSsoClient / UpdateSsoClient / DeleteSsoClient 的目标 id
-	// （§5.5 行 1259、《后端架构》§4.4）。
+	// （§5.5、《后端架构》§4.4）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 客户端标识，全局唯一（§5.5 行 1258、《后端架构》§4.4）。
+	// 客户端标识，全局唯一（§5.5、《后端架构》§4.4）。
 	ClientId string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1258、《后端架构》§4.4）。
+	// 客户端密钥（§5.5、《后端架构》§4.4）。
 	ClientSecret string `protobuf:"bytes,3,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1258、《后端架构》§4.4）。
+	// 展示名（§5.5、《后端架构》§4.4）。
 	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配、整段匹配（§5.5 行 1258、§12.3）。
+	// 回调白名单，支持 * 通配、整段匹配（§5.5、§12.3）。
 	RedirectUris []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
 	// 创建时间，Unix 秒（《后端架构》§4.4）。
 	CreatedAt int64 `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -125,19 +125,19 @@ func (x *SsoClient) GetUpdatedAt() int64 {
 	return 0
 }
 
-// ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5 行 1258）；
-// 所有列表支持 §1.7 分页（§5 行 1153）。分页与排序字段进请求消息（§1.7 行 277），
-// 缺省即服务端默认分页，一律 optional。消息名随方法名（§12.9 行 1747；
+// ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5）；
+// 所有列表支持 §1.7 分页（§5）。分页与排序字段进请求消息（§1.7）
+// 缺省即服务端默认分页，一律 optional。消息名随方法名（§12.9；
 // pre-connect 时代按资源命名 SsoClientListRequest，Connect 化时更名）。
 type ListSsoClientsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,1,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,3,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,4,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -201,17 +201,17 @@ func (x *ListSsoClientsRequest) GetOrder() string {
 	return ""
 }
 
-// SsoClientListResponse 是 AdminService/ListSsoClients 的响应（§5.5 行 1258、§1.7 行 278）。
+// SsoClientListResponse 是 AdminService/ListSsoClients 的响应（§5.5、§1.7）。
 // 响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
 type SsoClientListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*SsoClient `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -275,19 +275,19 @@ func (x *SsoClientListResponse) GetPageSize() int64 {
 	return 0
 }
 
-// CreateSsoClientRequest 是 AdminService/CreateSsoClient 的请求（§5.5 行 1258 新建）：
+// CreateSsoClientRequest 是 AdminService/CreateSsoClient 的请求（§5.5 新建）：
 // id 由服务端分配，不进请求体。成功返回 OkResponse。
 // pre-connect 时代与编辑共用 SsoClientSaveRequest，Connect 化后随方法名分立
-// （编辑须携带路径参数 id，消息名随方法名，§12.9 行 1747）。
+// （编辑须携带路径参数 id，消息名随方法名，§12.9）。
 type CreateSsoClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 客户端标识（§5.5 行 1258）。
+	// 客户端标识（§5.5）。
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1258）。
+	// 客户端密钥（§5.5）。
 	ClientSecret string `protobuf:"bytes,2,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1258）。
+	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配（§5.5 行 1258）。
+	// 回调白名单，支持 * 通配（§5.5）。
 	RedirectUris  []string `protobuf:"bytes,4,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -351,11 +351,11 @@ func (x *CreateSsoClientRequest) GetRedirectUris() []string {
 	return nil
 }
 
-// GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5 行 1259）。
+// GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5）。
 // id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
 type GetSsoClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1259）。
+	// 目标客户端 ID（§5.5）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -398,20 +398,20 @@ func (x *GetSsoClientRequest) GetId() int64 {
 	return 0
 }
 
-// UpdateSsoClientRequest 是 AdminService/UpdateSsoClient 的请求（§5.5 行 1259 编辑）：
-// 字段同 §5.5 行 1258，另携带目标 id（pre-connect 时代的 REST 路径参数）。
+// UpdateSsoClientRequest 是 AdminService/UpdateSsoClient 的请求（§5.5 编辑）：
+// 字段同 §5.5，另携带目标 id（pre-connect 时代的 REST 路径参数）。
 // 成功返回 OkResponse。
 type UpdateSsoClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1259）。
+	// 目标客户端 ID（§5.5）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 客户端标识（§5.5 行 1258）。
+	// 客户端标识（§5.5）。
 	ClientId string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1258）。
+	// 客户端密钥（§5.5）。
 	ClientSecret string `protobuf:"bytes,3,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1258）。
+	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配（§5.5 行 1258）。
+	// 回调白名单，支持 * 通配（§5.5）。
 	RedirectUris  []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -482,11 +482,11 @@ func (x *UpdateSsoClientRequest) GetRedirectUris() []string {
 	return nil
 }
 
-// DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5 行 1259）。
+// DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5）。
 // 成功返回 OkResponse。
 type DeleteSsoClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1259）。
+	// 目标客户端 ID（§5.5）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -531,25 +531,25 @@ func (x *DeleteSsoClientRequest) GetId() int64 {
 
 // OidcClient 是 AdminService/ListOidcClients 的列表项，也是 GetOidcClient 的详情响应：
 // 在 SSO 字段基线上额外增加 scopes[]、accessTokenTtl、refreshTokenTtl
-// （§5.5 行 1261「额外」逐字），id / created_at / updated_at 为《后端架构》§4.5 的行投影。
+// （§5.5「额外」逐字），id / created_at / updated_at 为《后端架构》§4.5 的行投影。
 type OidcClient struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 数据库自增 ID，GetOidcClient / UpdateOidcClient / DeleteOidcClient 的目标 id
-	// （§5.5 行 1261、《后端架构》§4.5）。
+	// （§5.5、《后端架构》§4.5）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 客户端标识，全局唯一（§5.5 行 1260、《后端架构》§4.5）。
+	// 客户端标识，全局唯一（§5.5、《后端架构》§4.5）。
 	ClientId string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1260、《后端架构》§4.5）。
+	// 客户端密钥（§5.5、《后端架构》§4.5）。
 	ClientSecret string `protobuf:"bytes,3,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1260、《后端架构》§4.5）。
+	// 展示名（§5.5、《后端架构》§4.5）。
 	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配、整段匹配（§5.5 行 1260、§12.3）。
+	// 回调白名单，支持 * 通配、整段匹配（§5.5、§12.3）。
 	RedirectUris []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
-	// 授权范围（§5.5 行 1260）；库内逗号分隔存储，报文按数组承载（§12.9 行 1749）。
+	// 授权范围（§5.5）；库内逗号分隔存储，报文按数组承载（§12.9）。
 	Scopes []string `protobuf:"bytes,6,rep,name=scopes,proto3" json:"scopes,omitempty"`
-	// 访问令牌有效期（秒），默认 3600（§5.5 行 1260、《后端架构》§4.5）。
+	// 访问令牌有效期（秒），默认 3600（§5.5、《后端架构》§4.5）。
 	AccessTokenTtl int64 `protobuf:"varint,7,opt,name=access_token_ttl,json=accessTokenTtl,proto3" json:"access_token_ttl,omitempty"`
-	// 刷新令牌有效期（秒），默认 2592000（§5.5 行 1260、《后端架构》§4.5）。
+	// 刷新令牌有效期（秒），默认 2592000（§5.5、《后端架构》§4.5）。
 	RefreshTokenTtl int64 `protobuf:"varint,8,opt,name=refresh_token_ttl,json=refreshTokenTtl,proto3" json:"refresh_token_ttl,omitempty"`
 	// 创建时间，Unix 秒（《后端架构》§4.5）。
 	CreatedAt int64 `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -659,17 +659,17 @@ func (x *OidcClient) GetUpdatedAt() int64 {
 	return 0
 }
 
-// ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5 行 1260）；
-// 所有列表支持 §1.7 分页（§5 行 1153）。消息名随方法名（§12.9 行 1747）。
+// ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5）；
+// 所有列表支持 §1.7 分页（§5）。消息名随方法名（§12.9）。
 type ListOidcClientsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,1,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,3,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,4,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -733,17 +733,17 @@ func (x *ListOidcClientsRequest) GetOrder() string {
 	return ""
 }
 
-// OidcClientListResponse 是 AdminService/ListOidcClients 的响应（§5.5 行 1260、§1.7 行 278）。
+// OidcClientListResponse 是 AdminService/ListOidcClients 的响应（§5.5、§1.7）。
 // 响应名沿用资源式命名（buf 豁免同上）。
 type OidcClientListResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*OidcClient `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -807,24 +807,24 @@ func (x *OidcClientListResponse) GetPageSize() int64 {
 	return 0
 }
 
-// CreateOidcClientRequest 是 AdminService/CreateOidcClient 的请求（§5.5 行 1260 新建）：
+// CreateOidcClientRequest 是 AdminService/CreateOidcClient 的请求（§5.5 新建）：
 // id 由服务端分配，不进请求体。成功返回 OkResponse。
 // pre-connect 时代与编辑共用 OidcClientSaveRequest，Connect 化后随方法名分立。
 type CreateOidcClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 客户端标识（§5.5 行 1260）。
+	// 客户端标识（§5.5）。
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1260）。
+	// 客户端密钥（§5.5）。
 	ClientSecret string `protobuf:"bytes,2,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1260）。
+	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配（§5.5 行 1260）。
+	// 回调白名单，支持 * 通配（§5.5）。
 	RedirectUris []string `protobuf:"bytes,4,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
-	// 授权范围（§5.5 行 1260）。
+	// 授权范围（§5.5）。
 	Scopes []string `protobuf:"bytes,5,rep,name=scopes,proto3" json:"scopes,omitempty"`
-	// 访问令牌有效期（秒）（§5.5 行 1260）。
+	// 访问令牌有效期（秒）（§5.5）。
 	AccessTokenTtl int64 `protobuf:"varint,6,opt,name=access_token_ttl,json=accessTokenTtl,proto3" json:"access_token_ttl,omitempty"`
-	// 刷新令牌有效期（秒）（§5.5 行 1260）。
+	// 刷新令牌有效期（秒）（§5.5）。
 	RefreshTokenTtl int64 `protobuf:"varint,7,opt,name=refresh_token_ttl,json=refreshTokenTtl,proto3" json:"refresh_token_ttl,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -909,11 +909,11 @@ func (x *CreateOidcClientRequest) GetRefreshTokenTtl() int64 {
 	return 0
 }
 
-// GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5 行 1261）。
+// GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5）。
 // id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
 type GetOidcClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1261）。
+	// 目标客户端 ID（§5.5）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -956,25 +956,25 @@ func (x *GetOidcClientRequest) GetId() int64 {
 	return 0
 }
 
-// UpdateOidcClientRequest 是 AdminService/UpdateOidcClient 的请求（§5.5 行 1261 编辑）：
-// 字段同 §5.5 行 1260，另携带目标 id。成功返回 OkResponse。
+// UpdateOidcClientRequest 是 AdminService/UpdateOidcClient 的请求（§5.5 编辑）：
+// 字段同 §5.5，另携带目标 id。成功返回 OkResponse。
 type UpdateOidcClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1261）。
+	// 目标客户端 ID（§5.5）。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	// 客户端标识（§5.5 行 1260）。
+	// 客户端标识（§5.5）。
 	ClientId string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 客户端密钥（§5.5 行 1260）。
+	// 客户端密钥（§5.5）。
 	ClientSecret string `protobuf:"bytes,3,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	// 展示名（§5.5 行 1260）。
+	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
-	// 回调白名单，支持 * 通配（§5.5 行 1260）。
+	// 回调白名单，支持 * 通配（§5.5）。
 	RedirectUris []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
-	// 授权范围（§5.5 行 1260）。
+	// 授权范围（§5.5）。
 	Scopes []string `protobuf:"bytes,6,rep,name=scopes,proto3" json:"scopes,omitempty"`
-	// 访问令牌有效期（秒）（§5.5 行 1260）。
+	// 访问令牌有效期（秒）（§5.5）。
 	AccessTokenTtl int64 `protobuf:"varint,7,opt,name=access_token_ttl,json=accessTokenTtl,proto3" json:"access_token_ttl,omitempty"`
-	// 刷新令牌有效期（秒）（§5.5 行 1260）。
+	// 刷新令牌有效期（秒）（§5.5）。
 	RefreshTokenTtl int64 `protobuf:"varint,8,opt,name=refresh_token_ttl,json=refreshTokenTtl,proto3" json:"refresh_token_ttl,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -1066,11 +1066,11 @@ func (x *UpdateOidcClientRequest) GetRefreshTokenTtl() int64 {
 	return 0
 }
 
-// DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5 行 1261）。
+// DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5）。
 // 成功返回 OkResponse。
 type DeleteOidcClientRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 目标客户端 ID（§5.5 行 1261）。
+	// 目标客户端 ID（§5.5）。
 	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

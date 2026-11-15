@@ -26,24 +26,24 @@ export const file_api_sso_v1_sso: GenFile = /*@__PURE__*/
   fileDesc("ChRhcGkvc3NvL3YxL3Nzby5wcm90bxIKYXBpLnNzby52MTLCBwoKU3NvU2VydmljZRJOCgxMb2dpbkRlZmF1bHQSHy5hcGkuc3NvLnYxLkxvZ2luRGVmYXVsdFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlEkYKCFJlZ2lzdGVyEhsuYXBpLnNzby52MS5SZWdpc3RlclJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKDVJlc2V0UGFzc3dvcmQSIC5hcGkuc3NvLnYxLlJlc2V0UGFzc3dvcmRSZXF1ZXN0Gh0uYXBpLnNzby52MS5Mb2dpbkZsb3dSZXNwb25zZRJjChJDcmVhdGVDYXB0Y2hhSW1hZ2USJS5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlcXVlc3QaJi5hcGkuc3NvLnYxLkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEkgKCUF1dGhvcml6ZRIcLmFwaS5zc28udjEuQXV0aG9yaXplUmVxdWVzdBodLmFwaS5zc28udjEuQXV0aG9yaXplUmVzcG9uc2USSgoKTG9naW5PYXV0aBIdLmFwaS5zc28udjEuTG9naW5PYXV0aFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElEKDENyZWF0ZVFyY29kZRIfLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVxdWVzdBogLmFwaS5zc28udjEuQ3JlYXRlUXJjb2RlUmVzcG9uc2USUgoOR2V0TG9naW5UaWNrZXQSIS5hcGkuc3NvLnYxLkdldExvZ2luVGlja2V0UmVxdWVzdBodLmFwaS5zc28udjEuTG9naW5GbG93UmVzcG9uc2USVQoSQ29uZmlybUxvZ2luVGlja2V0EiUuYXBpLnNzby52MS5Db25maXJtTG9naW5UaWNrZXRSZXF1ZXN0GhguYXBpLnNzby52MS5UaWNrZXRTdGF0dXMSZgoRU3RhcnRWZXJpZmljYXRpb24SJy5hcGkuY29tbW9uLnYxLlN0YXJ0VmVyaWZpY2F0aW9uUmVxdWVzdBooLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXNwb25zZRJpChJTdWJtaXRWZXJpZmljYXRpb24SKC5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlcXVlc3QaKS5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlc3BvbnNlQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_envelope, file_api_sso_v1_login, file_api_sso_v1_register, file_api_sso_v1_reset, file_api_sso_v1_oauth, file_api_sso_v1_ticket, file_api_common_v1_verification]);
 
 /**
- * SsoService 是 sso 域的 Connect service（docs/接口文档.md §2，行 356-765）。
+ * SsoService 是 sso 域的 Connect service（docs/接口文档.md §2）。
  * Connect 路径 = /api.sso.v1.SsoService/<Method>；方法清单与 §2 各节逐一对应：
- *   LoginDefault        §2.2 行 414    Register            §2.3 行 440
- *   ResetPassword       §2.4 行 458    CreateCaptchaImage  §2.5 行 490
- *   Authorize           §2.7.2 行 579  LoginOauth           §2.7.4 行 616
- *   CreateQrcode        §2.8 行 687    GetLoginTicket      §2.8 行 709
- *   ConfirmLoginTicket  §2.8 行 735
- *   StartVerification   §3.8 行 1225   SubmitVerification  §3.8 行 1226
+ *   LoginDefault        §2.2    Register            §2.3
+ *   ResetPassword       §2.4    CreateCaptchaImage  §2.5
+ *   Authorize           §2.7.2  LoginOauth           §2.7.4
+ *   CreateQrcode        §2.8    GetLoginTicket      §2.8
+ *   ConfirmLoginTicket  §2.8
+ *   StartVerification   §3.8   SubmitVerification  §3.8
  * 登录流程方法（LoginDefault / Register / ResetPassword / LoginOauth / GetLoginTicket）
- * 的响应共用 LoginFlowResponse（§1.3 行 104），故无 XxxResponse 命名
- * （buf 的 RPC_RESPONSE_STANDARD_NAME 规则与 §1.3 行 104 共用信封口径冲突，
+ * 的响应共用 LoginFlowResponse（§1.3），故无 XxxResponse 命名
+ * （buf 的 RPC_RESPONSE_STANDARD_NAME 规则与 §1.3 共用信封口径冲突，
  * 按「文档优先」在 buf.yaml except 豁免该规则）。
  *
  * @generated from service api.sso.v1.SsoService
  */
 export const SsoService: GenService<{
   /**
-   * 统一提交端点，flow=login，除 thirdparty 外（§2.2 行 414-436）。
+   * 统一提交端点，flow=login，除 thirdparty 外（§2.2）。
    *
    * @generated from rpc api.sso.v1.SsoService.LoginDefault
    */
@@ -53,7 +53,7 @@ export const SsoService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 注册，flow=register（§2.3 行 440-454）。
+   * 注册，flow=register（§2.3）。
    *
    * @generated from rpc api.sso.v1.SsoService.Register
    */
@@ -63,7 +63,7 @@ export const SsoService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 重置密码，flow=reset（§2.4 行 458-470）。
+   * 重置密码，flow=reset（§2.4）。
    *
    * @generated from rpc api.sso.v1.SsoService.ResetPassword
    */
@@ -73,7 +73,7 @@ export const SsoService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 新建自绘图形码，直接返回图（§2.5 行 490-497）。
+   * 新建自绘图形码，直接返回图（§2.5）。
    *
    * @generated from rpc api.sso.v1.SsoService.CreateCaptchaImage
    */
@@ -83,7 +83,7 @@ export const SsoService: GenService<{
     output: typeof CreateCaptchaImageResponseSchema;
   },
   /**
-   * 取第三方授权 URL，RPC 非 302（§2.7.2 行 579-599）。
+   * 取第三方授权 URL，RPC 非 302（§2.7.2）。
    *
    * @generated from rpc api.sso.v1.SsoService.Authorize
    */
@@ -93,7 +93,7 @@ export const SsoService: GenService<{
     output: typeof AuthorizeResponseSchema;
   },
   /**
-   * 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4 行 616-651）。
+   * 三方登录统一入口：跳转回调与小程序提交合并（§2.7.4）。
    *
    * @generated from rpc api.sso.v1.SsoService.LoginOauth
    */
@@ -103,7 +103,7 @@ export const SsoService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8 行 687-708）。
+   * 拉取小程序码，登录与绑定共用靠 scene 区分（§2.8）。
    *
    * @generated from rpc api.sso.v1.SsoService.CreateQrcode
    */
@@ -113,7 +113,7 @@ export const SsoService: GenService<{
     output: typeof CreateQrcodeResponseSchema;
   },
   /**
-   * 查询 / 长轮询 / 完成登录（§2.8 行 709-733）。
+   * 查询 / 长轮询 / 完成登录（§2.8）。
    *
    * @generated from rpc api.sso.v1.SsoService.GetLoginTicket
    */
@@ -123,7 +123,7 @@ export const SsoService: GenService<{
     output: typeof LoginFlowResponseSchema;
   },
   /**
-   * 已登录一端写入授权结果（§2.8 行 735-748）。
+   * 已登录一端写入授权结果（§2.8）。
    *
    * @generated from rpc api.sso.v1.SsoService.ConfirmLoginTicket
    */

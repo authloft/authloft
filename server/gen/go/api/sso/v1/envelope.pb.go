@@ -23,51 +23,51 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// LoginFlowResponse 是登录流程响应（docs/接口文档.md §1.3，行 102-155）：
+// LoginFlowResponse 是登录流程响应（docs/接口文档.md §1.3）：
 // SsoService/LoginDefault、Register、ResetPassword、LoginOauth、GetLoginTicket
-// （完成登录时）共用同一响应消息（行 104）。登录流程的业务态（流程态，含失败态）
-// 一律 HTTP 200，由顶层 status 单独表达（§1.5 行 182）；无 success/error 二元信封
-// （§1.0 已废），非 success 即失败，error 只承载展示信息，动作见 §1.6（行 145）。
-// 字段名与 §1.3 行 106-142 JSON 示例的 camelCase 线上表示逐字对应（proto 一律
-// snake_case，§12.9 行 1749），编号从 1 起连续（行 1749）；
+// （完成登录时）共用同一响应消息。登录流程的业务态（流程态，含失败态）
+// 一律 HTTP 200，由顶层 status 单独表达（§1.5）；无 success/error 二元信封
+// （§1.0 已废），非 success 即失败，error 只承载展示信息，动作见 §1.6。
+// 字段名与 §1.3 JSON 示例的 camelCase 线上表示逐字对应（proto 一律
+// snake_case，§12.9），编号从 1 起连续；
 // 既有字段与编号不变（§12.8 只增不改）。
 type LoginFlowResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3 行 108）。
+	// 每次重签都返回新值，前端替换内存变量，success 时不再返回（§1.3）。
 	LoginToken string `protobuf:"bytes,1,opt,name=login_token,json=loginToken,proto3" json:"login_token,omitempty"`
-	// 唯一业务态，取值即 §1.6 行 230-261 的封闭集合（33 词）与行 263 的轮询三态
-	// （pending / scanned / expired）；跨版本可新增，故用 string 承载（§12.9 行 1754）。
+	// 唯一业务态，取值即 §1.6 的封闭集合（33 词）与轮询三态
+	// （pending / scanned / expired）；跨版本可新增，故用 string 承载（§12.9）。
 	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	// status=next 时的下一步渲染信息（§1.3 行 110-118）。
+	// status=next 时的下一步渲染信息（§1.3）。
 	NextStep *NextStep `protobuf:"bytes,3,opt,name=next_step,json=nextStep,proto3" json:"next_step,omitempty"`
-	// status=binding_required 时的三方绑定信息（§1.3 行 129-132）。
+	// status=binding_required 时的三方绑定信息（§1.3）。
 	Binding *Binding `protobuf:"bytes,4,opt,name=binding,proto3" json:"binding,omitempty"`
-	// 仅失败态出现，字段均可省略（§1.3 行 133、147-151）；只承载展示信息，
-	// 业务分支只看 status（行 145）；非 200 走 Connect 错误体 + ErrorInfo（§1.5 行 197-211），
+	// 仅失败态出现，字段均可省略（§1.3、147-151）；只承载展示信息，
+	// 业务分支只看 status；非 200 走 Connect 错误体 + ErrorInfo（§1.5），
 	// 与本字段无涉。
 	Error *SsoError `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
-	// status=success 时的会话 ID（§1.3 行 134）。
+	// status=success 时的会话 ID（§1.3）。
 	SessionId string `protobuf:"bytes,6,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	// status=success 且无 Cookie 场景（小程序）返回（§1.3 行 135）。
+	// status=success 且无 Cookie 场景（小程序）返回（§1.3）。
 	SessionToken string `protobuf:"bytes,7,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
-	// status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3 行 136、§2.9）。
+	// status=success 时多域名同步的首跳地址，sso_domains 为空时省略（§1.3、§2.9）。
 	SyncCookieUrl string `protobuf:"bytes,8,opt,name=sync_cookie_url,json=syncCookieUrl,proto3" json:"sync_cookie_url,omitempty"`
-	// status=success 时的最终跳转地址（§1.3 行 137）。
+	// status=success 时的最终跳转地址（§1.3）。
 	RedirectTo string `protobuf:"bytes,9,opt,name=redirect_to,json=redirectTo,proto3" json:"redirect_to,omitempty"`
-	// 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3 行 138、§12.9 行 1751、§1.12）。
+	// 用户 ID；整型一律 int64，JSON 输出十进制字符串（§1.3、§12.9、§1.12）。
 	UserId int64 `protobuf:"varint,10,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	// 可选。仅两条扫码轮询 RPC（SsoService/GetLoginTicket、AccountService/GetThirdpartyTicket）
-	// 出现，结构为 {status, ticket_id}（§1.3 行 139、152）。
+	// 出现，结构为 {status, ticket_id}（§1.3、152）。
 	Ticket *TicketStatus `protobuf:"bytes,11,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	// 可选。仅 SsoService/GetLoginTicket（scene=login）结果就绪（status=success）时出现，
-	// 值为本节同一消息（§1.3 行 140、153）。
+	// 值为本节同一消息（§1.3、153）。
 	Login *LoginFlowResponse `protobuf:"bytes,12,opt,name=login,proto3" json:"login,omitempty"`
 	// 可选。仅 AccountService/GetThirdpartyTicket 绑定完成时出现
-	// （{provider_key, display_name}，§1.3 行 141、154、§3.7.1 B）。
+	// （{provider_key, display_name}，§1.3、154、§3.7.1 B）。
 	Bind *BindResult `protobuf:"bytes,13,opt,name=bind,proto3" json:"bind,omitempty"`
-	// 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 行 478-486 的
-	// captcha 配置对象（§1.3 行 155），与注入快照 / AccountService GetConfig 三处
-	// 同结构同字段名（§2.5 行 476）；跨包引用 api.common.v1.CaptchaConfig
+	// 可选。仅 status=captcha_required / captcha_invalid 出现，为 §2.5 的
+	// captcha 配置对象（§1.3），与注入快照 / AccountService GetConfig 三处
+	// 同结构同字段名（§2.5）；跨包引用 api.common.v1.CaptchaConfig
 	// （配置视图单一结构源）。
 	Captcha       *v1.CaptchaConfig `protobuf:"bytes,14,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -202,23 +202,23 @@ func (x *LoginFlowResponse) GetCaptcha() *v1.CaptchaConfig {
 	return nil
 }
 
-// NextStep 描述 status=next 时前端下一步怎么渲染（§1.3 行 110-118）。
+// NextStep 描述 status=next 时前端下一步怎么渲染（§1.3）。
 type NextStep struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 渲染形态，取值是 §1.4 行 157-179 的封闭集合（form/challenge/redirect/external/qrcode/poll，
-	// §1.3 行 111）；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 渲染形态，取值是 §1.4 的封闭集合（form/challenge/redirect/external/qrcode/poll，
+	// §1.3）；跨版本可新增，用 string 承载（§12.9）。
 	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	// 当前认证方式，取值与步骤序列见 §1.10 行 298-316。
+	// 当前认证方式，取值与步骤序列见 §1.10。
 	Method string `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	// 下一步的提交地址（§1.3 行 113）。
+	// 下一步的提交地址（§1.3）。
 	Endpoint string `protobuf:"bytes,3,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
-	// 需要渲染的输入字段，类型取值见 §1.11 行 317-335（§1.3 行 114）。
+	// 需要渲染的输入字段，类型取值见 §1.11（§1.3）。
 	Fields []*Field `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty"`
-	// 重发冷却（秒）；JSON 为十进制字符串（§1.3 行 115、§1.12）。
+	// 重发冷却（秒）；JSON 为十进制字符串（§1.3、§1.12）。
 	RetryAfter int64 `protobuf:"varint,5,opt,name=retry_after,json=retryAfter,proto3" json:"retry_after,omitempty"`
-	// 当前挑战有效期（秒）；JSON 为十进制字符串（§1.3 行 116、§1.12）。
+	// 当前挑战有效期（秒）；JSON 为十进制字符串（§1.3、§1.12）。
 	ExpiresIn int64 `protobuf:"varint,6,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
-	// WebAuthn 挑战时为 PublicKeyCredentialRequestOptions，即任意 JSON 对象（§1.3 行 117）。
+	// WebAuthn 挑战时为 PublicKeyCredentialRequestOptions，即任意 JSON 对象（§1.3）。
 	ChallengeData *structpb.Struct `protobuf:"bytes,7,opt,name=challenge_data,json=challengeData,proto3" json:"challenge_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -303,23 +303,23 @@ func (x *NextStep) GetChallengeData() *structpb.Struct {
 	return nil
 }
 
-// Field 是渲染侧输入字段描述（§1.3 行 114、§1.11 行 317-335、§2.2 注入快照行 382-396）。
+// Field 是渲染侧输入字段描述（§1.3、§1.11、§2.2 注入快照）。
 type Field struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 字段名，与请求体字段一致（§1.3 行 114）。
+	// 字段名，与请求体字段一致（§1.3）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// 展示文案的前端 i18n 键，如 login.field.password（§1.3 行 114）；
+	// 展示文案的前端 i18n 键，如 login.field.password（§1.3）；
 	// 语言包在 web/src/shared/i18n/{zh,en}/login.ts，由 shared/components/
 	// FieldRenderer 渲染期 t() 解析。后端不持有任何语言文案；缺键时前端回显
 	// 键本身（可见、可排查），旧版本下发的中文字面量也按原文显示。
 	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
-	// 渲染类型，取值是 §1.11 行 317-335 的封闭集合；跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 渲染类型，取值是 §1.11 的封闭集合；跨版本可新增，用 string 承载（§12.9）。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	// 是否必填（§2.2 行 384-386 fields[].required）。
+	// 是否必填（§2.2 fields[].required）。
 	Required bool `protobuf:"varint,4,opt,name=required,proto3" json:"required,omitempty"`
-	// 输入长度（如验证码位数）；JSON 为十进制字符串（§1.3 行 114、§1.12）。
+	// 输入长度（如验证码位数）；JSON 为十进制字符串（§1.3、§1.12）。
 	Length int64 `protobuf:"varint,5,opt,name=length,proto3" json:"length,omitempty"`
-	// 最大校验失败次数；JSON 为十进制字符串（§1.3 行 114、§1.12）。
+	// 最大校验失败次数；JSON 为十进制字符串（§1.3、§1.12）。
 	MaxAttempts   int64 `protobuf:"varint,6,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -397,18 +397,18 @@ func (x *Field) GetMaxAttempts() int64 {
 	return 0
 }
 
-// Binding 是 status=binding_required 时的三方身份绑定信息（§1.3 行 129-132）。
+// Binding 是 status=binding_required 时的三方身份绑定信息（§1.3）。
 type Binding struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 提供商标识（§1.3 行 130）。
+	// 提供商标识（§1.3）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 提供商展示名（§1.3 行 130）。
+	// 提供商展示名（§1.3）。
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// 是否允许免密建号，由 Provider 的 enable_signup 映射（§1.3 行 129-130、§2.7.5 行 664）。
+	// 是否允许免密建号，由 Provider 的 enable_signup 映射（§1.3、§2.7.5）。
 	AllowSignup bool `protobuf:"varint,3,opt,name=allow_signup,json=allowSignup,proto3" json:"allow_signup,omitempty"`
-	// 三方昵称（§1.3 行 131）。
+	// 三方昵称（§1.3）。
 	Nickname string `protobuf:"bytes,4,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	// 三方头像地址（§1.3 行 131）。
+	// 三方头像地址（§1.3）。
 	AvatarUrl     string `protobuf:"bytes,5,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -479,17 +479,17 @@ func (x *Binding) GetAvatarUrl() string {
 	return ""
 }
 
-// SsoError 是登录流程响应内层的失败展示信息（§1.3 行 133、字段说明行 147-151）；
-// 只承载展示信息，业务分支只看 status（行 145）。登录流程域的失败态走 HTTP 200 +
-// 本字段（§1.6 行 267），与 Connect 错误体（§1.5）分属两处，不得混用；
-// 字段均可省略（行 147-151），故用 optional。
+// SsoError 是登录流程响应内层的失败展示信息（§1.3、字段说明）；
+// 只承载展示信息，业务分支只看 status。登录流程域的失败态走 HTTP 200 +
+// 本字段（§1.6），与 Connect 错误体（§1.5）分属两处，不得混用；
+// 字段均可省略，故用 optional。
 type SsoError struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 服务端下发的兜底文案，可省略（§1.3 行 149）。
+	// 服务端下发的兜底文案，可省略（§1.3）。
 	Message *string `protobuf:"bytes,1,opt,name=message,proto3,oneof" json:"message,omitempty"`
-	// 冷却 / 解封剩余秒数，可省略；JSON 为十进制字符串（§1.3 行 150、§1.12）。
+	// 冷却 / 解封剩余秒数，可省略；JSON 为十进制字符串（§1.3、§1.12）。
 	RetryAfter *int64 `protobuf:"varint,2,opt,name=retry_after,json=retryAfter,proto3,oneof" json:"retry_after,omitempty"`
-	// 验证码剩余尝试次数，可省略；JSON 为十进制字符串（§1.3 行 151、§1.12）。
+	// 验证码剩余尝试次数，可省略；JSON 为十进制字符串（§1.3、§1.12）。
 	AttemptsLeft  *int64 `protobuf:"varint,3,opt,name=attempts_left,json=attemptsLeft,proto3,oneof" json:"attempts_left,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -548,13 +548,13 @@ func (x *SsoError) GetAttemptsLeft() int64 {
 
 // TicketStatus 是票据状态对象 / 应答（{status, ticket_id}），
 // 用于 LoginFlowResponse.ticket、ConfirmLoginTicket 的响应与带 ticket_id 的写入应答
-// （§1.3 行 139、152；§2.7.4 行 634、643-651；§2.8 行 716-729）。
+// （§1.3、152；§2.7.4、643-651；§2.8）。
 type TicketStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 票据状态，取值 pending｜scanned｜success｜expired｜failed（§1.6 行 263、§2.8 行 716）；
-	// 跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// 票据状态，取值 pending｜scanned｜success｜expired｜failed（§1.6、§2.8）；
+	// 跨版本可能新增，用 string 承载（§12.9）。
 	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
-	// 拉码时下发的 ticket_id（§1.3 行 152、§2.8 行 695-707）。
+	// 拉码时下发的 ticket_id（§1.3、§2.8）。
 	TicketId      string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -604,14 +604,14 @@ func (x *TicketStatus) GetTicketId() string {
 	return ""
 }
 
-// BindResult 是扫码绑定完成应答（§1.3 行 141、154；§3.7.1 B）。
+// BindResult 是扫码绑定完成应答（§1.3、154；§3.7.1 B）。
 type BindResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 绑定成功标记（§1.3 行 141）。
+	// 绑定成功标记（§1.3）。
 	Ok bool `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
-	// 扫码类 Provider 标识（§1.3 行 141）。
+	// 扫码类 Provider 标识（§1.3）。
 	ProviderKey string `protobuf:"bytes,2,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// Provider 展示名（§1.3 行 141）。
+	// Provider 展示名（§1.3）。
 	DisplayName   string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

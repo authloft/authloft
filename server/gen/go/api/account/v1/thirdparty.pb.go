@@ -23,7 +23,7 @@ const (
 )
 
 // GetThirdpartyBindingsRequest 是 AccountService/GetThirdpartyBindings 的请求
-// （§3.7 行 936，无入参）。
+// （§3.7，无入参）。
 type GetThirdpartyBindingsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -60,22 +60,22 @@ func (*GetThirdpartyBindingsRequest) Descriptor() ([]byte, []int) {
 	return file_api_account_v1_thirdparty_proto_rawDescGZIP(), []int{0}
 }
 
-// ThirdpartyBinding 是 GetThirdpartyBindings 响应的已绑定条目（§3.7 行 936）：
+// ThirdpartyBinding 是 GetThirdpartyBindings 响应的已绑定条目（§3.7）：
 // {providerKey, displayName, type, channel, icon, createdAt}。
 type ThirdpartyBinding struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 第三方渠道标识（§3.7 行 936）。
+	// 第三方渠道标识（§3.7）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 展示名（§3.7 行 936）。
+	// 展示名（§3.7）。
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// 渠道类型（§3.7 行 936）。
+	// 渠道类型（§3.7）。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	// 交互通道，取值与 §2.7.1 登录快照完全一致：redirect｜qrcode｜api（§3.7 行 936、行 942）；
-	// 跨版本可新增，用 string 承载（§12.9 行 1754）。
+	// 交互通道，取值与 §2.7.1 登录快照完全一致：redirect｜qrcode｜api（§3.7、）；
+	// 跨版本可新增，用 string 承载（§12.9）。
 	Channel string `protobuf:"bytes,4,opt,name=channel,proto3" json:"channel,omitempty"`
-	// 图标地址（§3.7 行 936）。
+	// 图标地址（§3.7）。
 	Icon string `protobuf:"bytes,5,opt,name=icon,proto3" json:"icon,omitempty"`
-	// 绑定时间，Unix 秒（§3.7 行 936）。
+	// 绑定时间，Unix 秒（§3.7）。
 	CreatedAt     int64 `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -153,24 +153,24 @@ func (x *ThirdpartyBinding) GetCreatedAt() int64 {
 	return 0
 }
 
-// ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7 行 936）：
+// ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7）：
 // {providerKey, displayName, type, channel, icon, uiGroup, sortOrder}；
-// 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现（行 941）。
+// 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现。
 type ThirdpartyOption struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 第三方渠道标识（§3.7 行 936）。
+	// 第三方渠道标识（§3.7）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 展示名（§3.7 行 936）。
+	// 展示名（§3.7）。
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// 渠道类型（§3.7 行 936）。
+	// 渠道类型（§3.7）。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	// 交互通道，取值同 ThirdpartyBinding.channel（§3.7 行 936）。
+	// 交互通道，取值同 ThirdpartyBinding.channel（§3.7）。
 	Channel string `protobuf:"bytes,4,opt,name=channel,proto3" json:"channel,omitempty"`
-	// 图标地址（§3.7 行 936）。
+	// 图标地址（§3.7）。
 	Icon string `protobuf:"bytes,5,opt,name=icon,proto3" json:"icon,omitempty"`
-	// 展示分组（§3.7 行 936）。
+	// 展示分组（§3.7）。
 	UiGroup string `protobuf:"bytes,6,opt,name=ui_group,json=uiGroup,proto3" json:"ui_group,omitempty"`
-	// 排序（§3.7 行 936）。
+	// 排序（§3.7）。
 	SortOrder     int64 `protobuf:"varint,7,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -256,12 +256,12 @@ func (x *ThirdpartyOption) GetSortOrder() int64 {
 }
 
 // ThirdpartyBindingsResponse 是 AccountService/GetThirdpartyBindings 的响应
-// （§3.7 行 936）：items = 已绑定，available = 可绑定。
+// （§3.7）：items = 已绑定，available = 可绑定。
 type ThirdpartyBindingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 已绑定的第三方身份（§3.7 行 936）。
+	// 已绑定的第三方身份（§3.7）。
 	Items []*ThirdpartyBinding `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 可绑定的 Provider（§3.7 行 936）。
+	// 可绑定的 Provider（§3.7）。
 	Available     []*ThirdpartyOption `protobuf:"bytes,2,rep,name=available,proto3" json:"available,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -311,11 +311,11 @@ func (x *ThirdpartyBindingsResponse) GetAvailable() []*ThirdpartyOption {
 	return nil
 }
 
-// UnbindThirdpartyRequest 是 AccountService/UnbindThirdparty 的请求（§3.7 行 937：
-// {providerKey} 解绑）。允许条件见行 944；成功为空响应（OkResponse）。
+// UnbindThirdpartyRequest 是 AccountService/UnbindThirdparty 的请求（§3.7：
+// {providerKey} 解绑）。允许条件见；成功为空响应（OkResponse）。
 type UnbindThirdpartyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 要解绑的第三方渠道标识（§3.7 行 937）。
+	// 要解绑的第三方渠道标识（§3.7）。
 	ProviderKey   string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -359,14 +359,14 @@ func (x *UnbindThirdpartyRequest) GetProviderKey() string {
 }
 
 // ThirdpartyOauthRequest 是 AccountService/ThirdpartyOauth 的请求
-// （§3.7.1 A 行 971-975）：channel=redirect 的三方回调落地接口（需 al_session）。
+// （§3.7.1 A）：channel=redirect 的三方回调落地接口（需 al_session）。
 type ThirdpartyOauthRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 第三方渠道标识（§3.7.1 A 行 973）。
+	// 第三方渠道标识（§3.7.1 A）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// 第三方授权码（§3.7.1 A 行 974）。
+	// 第三方授权码（§3.7.1 A）。
 	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
-	// 必须为 b 前缀，与 al_login_state Cookie 比对（§3.7.1 A 行 975）。
+	// 必须为 b 前缀，与 al_login_state Cookie 比对（§3.7.1 A）。
 	State         string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -424,12 +424,12 @@ func (x *ThirdpartyOauthRequest) GetState() string {
 }
 
 // ThirdpartyOauthResponse 是 AccountService/ThirdpartyOauth 的响应
-// （§3.7.1 A 行 977）：成功 { "providerKey": "qq", "displayName": "QQ" }。
+// （§3.7.1 A）：成功 { "providerKey": "qq", "displayName": "QQ" }。
 type ThirdpartyOauthResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 绑定完成的渠道标识（§3.7.1 A 行 977）。
+	// 绑定完成的渠道标识（§3.7.1 A）。
 	ProviderKey string `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
-	// Provider 展示名（§3.7.1 A 行 977）。
+	// Provider 展示名（§3.7.1 A）。
 	DisplayName   string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -480,13 +480,13 @@ func (x *ThirdpartyOauthResponse) GetDisplayName() string {
 }
 
 // GetThirdpartyTicketRequest 是 AccountService/GetThirdpartyTicket 的请求
-// （§3.7.1 B 行 1008-1013）：扫码绑定的长轮询（channel=qrcode，需 al_session）。
+// （§3.7.1 B）：扫码绑定的长轮询（channel=qrcode，需 al_session）。
 type GetThirdpartyTicketRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 拉码时下发的加密票据（§3.7.1 B 行 1012）。
+	// 拉码时下发的加密票据（§3.7.1 B）。
 	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	// 长轮询最长等待秒数，上限见 §2.8（§3.7.1 B 行 1013）；
-	// 整型一律 int64，JSON 输出十进制字符串（§12.9 行 1751）。
+	// 长轮询最长等待秒数，上限见 §2.8（§3.7.1 B）；
+	// 整型一律 int64，JSON 输出十进制字符串（§12.9）。
 	Poll          int64 `protobuf:"varint,2,opt,name=poll,proto3" json:"poll,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -536,19 +536,19 @@ func (x *GetThirdpartyTicketRequest) GetPoll() int64 {
 	return 0
 }
 
-// GetEventsRequest 是 AccountService/GetEvents 的请求（§3.7 行 1038：
+// GetEventsRequest 是 AccountService/GetEvents 的请求（§3.7：
 // {event, page, pageSize, …}，分页见 §1.7）。查询参数缺省即不过滤，一律 optional。
 type GetEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 按事件类型过滤，仅成功登录记录（§3.7 行 1038）。
+	// 按事件类型过滤，仅成功登录记录（§3.7）。
 	Event *string `protobuf:"bytes,1,opt,name=event,proto3,oneof" json:"event,omitempty"`
-	// 页码，从 1 开始（§1.7 行 277）。
+	// 页码，从 1 开始（§1.7）。
 	Page *int64 `protobuf:"varint,2,opt,name=page,proto3,oneof" json:"page,omitempty"`
-	// 每页条数，默认 20、上限 100（§1.7 行 277）。
+	// 每页条数，默认 20、上限 100（§1.7）。
 	PageSize *int64 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3,oneof" json:"page_size,omitempty"`
-	// 排序字段，取值由前端限定（§1.7 行 277）。
+	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,4,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
-	// 排序方向 asc/desc（§1.7 行 277）。
+	// 排序方向 asc/desc（§1.7）。
 	Order         *string `protobuf:"bytes,5,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -619,25 +619,25 @@ func (x *GetEventsRequest) GetOrder() string {
 	return ""
 }
 
-// UserEventItem 是 AccountService/GetEvents 的本人登录记录条目（§3.7 行 1038）：
-// {event, createdAt, ip, ua, amr, clientId, detail}——§12.9 行 1753 的裁剪视图，
+// UserEventItem 是 AccountService/GetEvents 的本人登录记录条目（§3.7）：
+// {event, createdAt, ip, ua, amr, clientId, detail}——§12.9 的裁剪视图，
 // 与 admin 域 EventItem（《后端架构》§4.6 行投影，含 actor / target 等管理视图字段）
 // 非同一视图，独立定义、不跨包引用（依赖方向 admin → account 单向，避免环）。
 type UserEventItem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 事件类型（§3.7 行 1038）；跨版本可能新增，用 string 承载（§12.9 行 1754）。
+	// 事件类型（§3.7）；跨版本可能新增，用 string 承载（§12.9）。
 	Event string `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
-	// 发生时间，Unix 秒（§3.7 行 1038）。
+	// 发生时间，Unix 秒（§3.7）。
 	CreatedAt int64 `protobuf:"varint,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	// 来源 IP（§3.7 行 1038）。
+	// 来源 IP（§3.7）。
 	Ip string `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
-	// User-Agent（§3.7 行 1038）。
+	// User-Agent（§3.7）。
 	Ua string `protobuf:"bytes,4,opt,name=ua,proto3" json:"ua,omitempty"`
-	// 通过的认证方法，如 pwd,otp,mfa（§3.7 行 1038）。
+	// 通过的认证方法，如 pwd,otp,mfa（§3.7）。
 	Amr string `protobuf:"bytes,5,opt,name=amr,proto3" json:"amr,omitempty"`
-	// OIDC 客户端（§3.7 行 1038）。
+	// OIDC 客户端（§3.7）。
 	ClientId string `protobuf:"bytes,6,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 附加信息，msgpack 透传、以 JSON 对象透出（§3.7 行 1038）。
+	// 附加信息，msgpack 透传、以 JSON 对象透出（§3.7）。
 	Detail        *structpb.Struct `protobuf:"bytes,7,opt,name=detail,proto3" json:"detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -722,17 +722,17 @@ func (x *UserEventItem) GetDetail() *structpb.Struct {
 	return nil
 }
 
-// GetEventsResponse 是 AccountService/GetEvents 的响应（§3.7 行 1038、§1.7 行 278：
+// GetEventsResponse 是 AccountService/GetEvents 的响应（§3.7、§1.7：
 // {items, total, page, pageSize}）。
 type GetEventsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 当前页数据（§1.7 行 278）。
+	// 当前页数据（§1.7）。
 	Items []*UserEventItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	// 总条数（§1.7 行 278）。
+	// 总条数（§1.7）。
 	Total int64 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
-	// 页码（§1.7 行 278）。
+	// 页码（§1.7）。
 	Page int64 `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
-	// 每页条数（§1.7 行 278）。
+	// 每页条数（§1.7）。
 	PageSize      int64 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

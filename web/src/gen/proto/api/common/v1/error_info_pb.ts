@@ -18,46 +18,46 @@ export const file_api_common_v1_error_info: GenFile = /*@__PURE__*/
 
 /**
  * ErrorInfo 是 Connect 错误体 details 中承载业务细分码的消息
- * （docs/接口文档.md §1.5 行 199-221、§12.9 行 1750）。
- * 字段约定（docs/接口文档.md §12.9 行 1749）：
+ * （docs/接口文档.md §1.5、§12.9）。
+ * 字段约定（docs/接口文档.md §12.9）：
  *   - snake_case、编号从 1 起连续、只增字段不改字段号（§12.8）
  *   - 整型一律 int64（§1.12；retry_after / attempts_left 可选，零值省略）
- *   - request_id 不在错误体内（§1.5 行 223：统一走 X-Request-Id 响应头），
+ *   - request_id 不在错误体内（§1.5：统一走 X-Request-Id 响应头），
  *     故不定义该字段
  *
  * @generated from message api.common.v1.ErrorInfo
  */
 export type ErrorInfo = Message<"api.common.v1.ErrorInfo"> & {
   /**
-   * 业务域：sso / account / admin / rpc / setup（§1.5 行 217）。
+   * 业务域：sso / account / admin / rpc / setup（§1.5）。
    *
    * @generated from field: string domain = 1;
    */
   domain: string;
 
   /**
-   * 业务细分码，封闭集合即 §1.6 词汇表（§1.5 行 218）。
+   * 业务细分码，封闭集合即 §1.6 词汇表（§1.5）。
    *
    * @generated from field: string code = 2;
    */
   code: string;
 
   /**
-   * 可选兜底文案（i18n 之后的最终展示，§1.5 行 219）。
+   * 可选兜底文案（i18n 之后的最终展示，§1.5）。
    *
    * @generated from field: string message = 3;
    */
   message: string;
 
   /**
-   * 可选：冷却 / 封禁剩余秒数，驱动倒计时（§1.5 行 220）。
+   * 可选：冷却 / 封禁剩余秒数，驱动倒计时（§1.5）。
    *
    * @generated from field: int64 retry_after = 4;
    */
   retryAfter: bigint;
 
   /**
-   * 可选：剩余尝试次数（§1.5 行 221）。
+   * 可选：剩余尝试次数（§1.5）。
    *
    * @generated from field: int64 attempts_left = 5;
    */

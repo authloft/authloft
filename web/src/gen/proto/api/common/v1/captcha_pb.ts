@@ -16,33 +16,33 @@ export const file_api_common_v1_captcha: GenFile = /*@__PURE__*/
   fileDesc("ChthcGkvY29tbW9uL3YxL2NhcHRjaGEucHJvdG8SDWFwaS5jb21tb24udjEiRQoNQ2FwdGNoYUNvbmZpZxIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEdHlwZRgCIAEoCRIQCghzaXRlX2tleRgDIAEoCUIoWiZhdXRobG9mdC9nZW4vZ28vYXBpL2NvbW1vbi92MTtjb21tb252MWIGcHJvdG8z");
 
 /**
- * CaptchaConfig 是 §2.5 行 478-486 的 captcha 配置对象：注入快照、
+ * CaptchaConfig 是 §2.5 的 captcha 配置对象：注入快照、
  * AccountService/GetConfig 的 captcha、触发 captcha 的响应顶层 captcha
- * 三处同结构同字段名（§2.5 行 476）。
- * 它是公开配置视图（不含凭证），与提交格式 api.sso.v1.CaptchaPayload（§2.5 行 499-510）
+ * 三处同结构同字段名（§2.5）。
+ * 它是公开配置视图（不含凭证），与提交格式 api.sso.v1.CaptchaPayload（§2.5）
  * 字段不同，故不能复用 CaptchaPayload；放 api.common.v1 作全仓单一结构源
- * （§12.9 行 1748），captcha 提交格式仍由 api.sso.v1.CaptchaPayload 承载，不复制。
+ * （§12.9），captcha 提交格式仍由 api.sso.v1.CaptchaPayload 承载，不复制。
  * 本包是叶子包：不 import sso / account 等业务包，防止 import 环。
  *
  * @generated from message api.common.v1.CaptchaConfig
  */
 export type CaptchaConfig = Message<"api.common.v1.CaptchaConfig"> & {
   /**
-   * 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5 行 484、514）。
+   * 当前生效的 captcha Provider；内置自绘回退固定为 builtin_image（§2.5、514）。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5 行 485）；image = 内置自绘图形码（含降级态）。
+   * 渲染类型：image｜turnstile｜recaptcha｜hcaptcha（§2.5）；image = 内置自绘图形码（含降级态）。
    *
    * @generated from field: string type = 2;
    */
   type: string;
 
   /**
-   * 第三方站点 key；type=image 时为空串（§2.5 行 486）。
+   * 第三方站点 key；type=image 时为空串（§2.5）。
    *
    * @generated from field: string site_key = 3;
    */

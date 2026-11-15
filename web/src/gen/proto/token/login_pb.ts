@@ -14,87 +14,87 @@ export const file_token_login: GenFile = /*@__PURE__*/
 
 /**
  * LoginTokenPayload 是 login_token 的加密前载荷——登录过程态
- * （docs/后端架构.md §11.6.2 行 1270-1304）。加密后经响应体下发、前端存内存变量、
- * 后续在请求体顶层回传（接口文档 §1.8）；令牌共用封装见 §11.6.1（行 1249-1268）。
- * 字段名 / 编号 / 类型与行 1275-1287 的 protobuf 定义逐字一致。
+ * （docs/后端架构.md §11.6.2）。加密后经响应体下发、前端存内存变量、
+ * 后续在请求体顶层回传（接口文档 §1.8）；令牌共用封装见 §11.6.1。
+ * 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
  *
  * @generated from message token.LoginTokenPayload
  */
 export type LoginTokenPayload = Message<"token.LoginTokenPayload"> & {
   /**
-   * 会话标识，用于绑定验证码 / 日志关联（行 1276）。
+   * 会话标识，用于绑定验证码 / 日志关联。
    *
    * @generated from field: string tid = 1;
    */
   tid: string;
 
   /**
-   * login|register|reset（行 1277）。
+   * login|register|reset。
    *
    * @generated from field: string flow = 2;
    */
   flow: string;
 
   /**
-   * 当前因子（行 1278）。
+   * 当前因子。
    *
    * @generated from field: string factor = 3;
    */
   factor: string;
 
   /**
-   * 已通过因子（行 1279）。
+   * 已通过因子。
    *
    * @generated from field: repeated string passed = 4;
    */
   passed: string[];
 
   /**
-   * pending user_id，0 = 主因子未通过（行 1280）。
+   * pending user_id，0 = 主因子未通过。
    *
    * @generated from field: int64 uid = 5;
    */
   uid: bigint;
 
   /**
-   * 进行中的挑战；nil = 无进行中的挑战（行 1281）。
+   * 进行中的挑战；nil = 无进行中的挑战。
    *
    * @generated from field: token.Challenge ch = 6;
    */
   ch?: Challenge | undefined;
 
   /**
-   * 精简三方身份（不含 Raw——三方原始资料落 user_thirdparty_bind.extra，行 1302）；
-   * nil = 非三方流程（行 1282）。
+   * 精简三方身份（不含 Raw——三方原始资料落 user_thirdparty_bind.extra）；
+   * nil = 非三方流程。
    *
    * @generated from field: token.ThirdParty tp = 7;
    */
   tp?: ThirdParty | undefined;
 
   /**
-   * /auth/authorize 的原始参数，登录成功后生成授权码的唯一来源（行 1303）；
-   * nil = 非 OIDC 流程（行 1283）。
+   * /auth/authorize 的原始参数，登录成功后生成授权码的唯一来源；
+   * nil = 非 OIDC 流程。
    *
    * @generated from field: token.Oidc oidc = 8;
    */
   oidc?: Oidc | undefined;
 
   /**
-   * 认证方法（行 1284）。
+   * 认证方法。
    *
    * @generated from field: repeated string amr = 9;
    */
   amr: string[];
 
   /**
-   * 签发时间，Unix 秒（行 1285）。
+   * 签发时间，Unix 秒。
    *
    * @generated from field: int64 iat = 10;
    */
   iat: bigint;
 
   /**
-   * 过期时间，Unix 秒；固定 10 分钟（行 1286）。
+   * 过期时间，Unix 秒；固定 10 分钟。
    *
    * @generated from field: int64 exp = 11;
    */
@@ -109,14 +109,14 @@ export const LoginTokenPayloadSchema: GenMessage<LoginTokenPayload> = /*@__PURE_
   messageDesc(file_token_login, 0);
 
 /**
- * Challenge 是 login_token 内进行中的一次挑战（§11.6.2 行 1289）。
+ * Challenge 是 login_token 内进行中的一次挑战（§11.6.2）。
  *
  * @generated from message token.Challenge
  */
 export type Challenge = Message<"token.Challenge"> & {
   /**
-   * 目的，枚举 login / register / reset / mfa（行 1299）；bind / webauthn
-   * 保留于本枚举命名空间（行 1300）但不属于 login_token 的合法取值，
+   * 目的，枚举 login / register / reset / mfa；bind / webauthn
+   * 保留于本枚举命名空间但不属于 login_token 的合法取值，
    * login 校验时见到即拒绝。
    *
    * @generated from field: string purpose = 1;
@@ -124,14 +124,14 @@ export type Challenge = Message<"token.Challenge"> & {
   purpose: string;
 
   /**
-   * 挑战目标（行 1289）。
+   * 挑战目标。
    *
    * @generated from field: string target = 2;
    */
   target: string;
 
   /**
-   * 一次性随机数（行 1289）。
+   * 一次性随机数。
    *
    * @generated from field: string nonce = 3;
    */
@@ -146,7 +146,7 @@ export const ChallengeSchema: GenMessage<Challenge> = /*@__PURE__*/
   messageDesc(file_token_login, 1);
 
 /**
- * ThirdParty 是 login_token 内携带的精简三方身份（§11.6.2 行 1290、1302）：
+ * ThirdParty 是 login_token 内携带的精简三方身份（§11.6.2、1302）：
  * 只存精简三方身份、去掉 Raw，三方原始资料落 user_thirdparty_bind.extra；
  * 每次三方成功都覆盖 tp，保证「仅最后一次可绑定」。
  *
@@ -154,35 +154,35 @@ export const ChallengeSchema: GenMessage<Challenge> = /*@__PURE__*/
  */
 export type ThirdParty = Message<"token.ThirdParty"> & {
   /**
-   * Provider 标识（行 1290）。
+   * Provider 标识。
    *
    * @generated from field: string provider_key = 1;
    */
   providerKey: string;
 
   /**
-   * 三方 open_id（行 1290）。
+   * 三方 open_id。
    *
    * @generated from field: string open_id = 2;
    */
   openId: string;
 
   /**
-   * 三方 union_id（行 1290）。
+   * 三方 union_id。
    *
    * @generated from field: string union_id = 3;
    */
   unionId: string;
 
   /**
-   * 三方昵称（行 1290）。
+   * 三方昵称。
    *
    * @generated from field: string nickname = 4;
    */
   nickname: string;
 
   /**
-   * 三方头像（行 1290）。
+   * 三方头像。
    *
    * @generated from field: string avatar_url = 5;
    */
@@ -197,55 +197,55 @@ export const ThirdPartySchema: GenMessage<ThirdParty> = /*@__PURE__*/
   messageDesc(file_token_login, 2);
 
 /**
- * Oidc 是 /auth/authorize 原始参数的快照（§11.6.2 行 1292-1294）。
+ * Oidc 是 /auth/authorize 原始参数的快照（§11.6.2）。
  *
  * @generated from message token.Oidc
  */
 export type Oidc = Message<"token.Oidc"> & {
   /**
-   * OIDC client_id（行 1292）。
+   * OIDC client_id。
    *
    * @generated from field: string client_id = 1;
    */
   clientId: string;
 
   /**
-   * OIDC redirect_uri（行 1292）。
+   * OIDC redirect_uri。
    *
    * @generated from field: string redirect_uri = 2;
    */
   redirectUri: string;
 
   /**
-   * OIDC scope（行 1292）。
+   * OIDC scope。
    *
    * @generated from field: string scope = 3;
    */
   scope: string;
 
   /**
-   * OIDC nonce（行 1292）。
+   * OIDC nonce。
    *
    * @generated from field: string nonce = 4;
    */
   nonce: string;
 
   /**
-   * PKCE code_challenge（行 1293）。
+   * PKCE code_challenge。
    *
    * @generated from field: string code_challenge = 5;
    */
   codeChallenge: string;
 
   /**
-   * PKCE code_challenge_method（行 1293）。
+   * PKCE code_challenge_method。
    *
    * @generated from field: string code_challenge_method = 6;
    */
   codeChallengeMethod: string;
 
   /**
-   * OIDC state（行 1294）。
+   * OIDC state。
    *
    * @generated from field: string state = 7;
    */

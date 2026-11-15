@@ -22,32 +22,32 @@ const (
 )
 
 // OidcCodePayload 是 OIDC 授权码 al:oidc:code:{code} 的加密前载荷
-// （docs/后端架构.md §11.6.6 行 1359-1377、接口文档 §4.2 行 1080）。
+// （docs/后端架构.md §11.6.6、接口文档 §4.2）。
 // 复用 §11.6.1 封装（AAD purpose=oidc_code）；对客户端是不透明串。
-// 字段名 / 编号 / 类型与行 1364-1376 的 protobuf 定义逐字一致。
+// 字段名 / 编号 / 类型与 protobuf 定义逐字一致。
 type OidcCodePayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 签发该码的客户端 ID（行 1365）。
+	// 签发该码的客户端 ID。
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// 授权请求原始 redirect_uri（行 1366）。
+	// 授权请求原始 redirect_uri。
 	RedirectUri string `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
-	// 授权通过的用户 ID（行 1367）。
+	// 授权通过的用户 ID。
 	Uid int64 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
-	// 生效 scope，缺省 openid profile email（行 1368）。
+	// 生效 scope，缺省 openid profile email。
 	Scope string `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
-	// 授权请求原始 nonce，写入 ID Token（行 1369）。
+	// 授权请求原始 nonce，写入 ID Token。
 	Nonce string `protobuf:"bytes,5,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	// PKCE code_challenge，未启用时为空串（行 1370）。
+	// PKCE code_challenge，未启用时为空串。
 	CodeChallenge string `protobuf:"bytes,6,opt,name=code_challenge,json=codeChallenge,proto3" json:"code_challenge,omitempty"`
-	// PKCE code_challenge_method，仅 S256，未启用时为空串（行 1371）。
+	// PKCE code_challenge_method，仅 S256，未启用时为空串。
 	CodeChallengeMethod string `protobuf:"bytes,7,opt,name=code_challenge_method,json=codeChallengeMethod,proto3" json:"code_challenge_method,omitempty"`
-	// 授权时实际通过的认证方法（行 1372）。
+	// 授权时实际通过的认证方法。
 	Amr []string `protobuf:"bytes,8,rep,name=amr,proto3" json:"amr,omitempty"`
-	// 认证完成时间，Unix 秒（行 1373）。
+	// 认证完成时间，Unix 秒。
 	AuthTime int64 `protobuf:"varint,9,opt,name=auth_time,json=authTime,proto3" json:"auth_time,omitempty"`
-	// 授权码签发时间，Unix 秒（行 1374）。
+	// 授权码签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,10,opt,name=iat,proto3" json:"iat,omitempty"`
-	// 过期时间 = iat + 120s，与 Redis TTL 一致（行 1375）。
+	// 过期时间 = iat + 120s，与 Redis TTL 一致。
 	Exp           int64 `protobuf:"varint,11,opt,name=exp,proto3" json:"exp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

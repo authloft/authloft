@@ -21,9 +21,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ClientRedirectUris 是客户端回调白名单（docs/接口文档.md §12.3 行 1720-1728），
-// 对应 oidc_client.redirect_uris 列（VARBINARY，§12.0 行 1627：结构固定走
-// Protobuf；SSO 客户端同源）。字段名 / 编号 / 类型 / 注释与行 1725-1727 的
+// ClientRedirectUris 是客户端回调白名单（docs/接口文档.md §12.3），
+// 对应 oidc_client.redirect_uris 列（VARBINARY，§12.0：结构固定走
+// Protobuf；SSO 客户端同源）。字段名 / 编号 / 类型 / 注释的
 // protobuf 定义逐字一致。
 type ClientRedirectUris struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`

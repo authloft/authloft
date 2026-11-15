@@ -15,79 +15,79 @@ export const file_api_rpc_v1_profile: GenFile = /*@__PURE__*/
   fileDesc("ChhhcGkvcnBjL3YxL3Byb2ZpbGUucHJvdG8SCmFwaS5ycGMudjEiygIKD1Byb2ZpbGVSZXNwb25zZRIKCgJpZBgBIAEoAxIQCgh1c2VybmFtZRgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEg0KBXBob25lGAUgASgJEhYKDnBob25lX3ZlcmlmaWVkGAYgASgDEg0KBWVtYWlsGAcgASgJEhYKDmVtYWlsX3ZlcmlmaWVkGAggASgDEhMKC3VzZXJfc3RhdHVzGAkgASgDEhQKDG1mYV9yZXF1aXJlZBgKIAEoAxINCgVlcG9jaBgLIAEoAxIVCg1sYXN0X2xvZ2luX2F0GAwgASgDEhIKCmNyZWF0ZWRfYXQYDSABKAMSEgoKdXBkYXRlZF9hdBgOIAEoAxIsCgdwcm9maWxlGA8gASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUiJAoVR2V0VXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAyKhAQoYVXBkYXRlVXNlclByb2ZpbGVSZXF1ZXN0EgsKA3VpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsIgwKCk9rUmVzcG9uc2UiJQoWR2V0VXNlclByb2ZpbGVzUmVxdWVzdBILCgNpZHMYASADKAMiSAoXR2V0VXNlclByb2ZpbGVzUmVzcG9uc2USLQoIcHJvZmlsZXMYASADKAsyGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3JwYy92MTtycGN2MWIGcHJvdG8z", [file_api_account_v1_profile]);
 
 /**
- * ProfileResponse 是 UserService/GetUserProfile 的响应（§7 行 1387）：
- * §3.1 行 773-795 的 Authloft 用户信息结构；本域响应遵循 §1.0 成功响应即消息
- * 本身（§7 行 1380，Connect 化后无 status:"success" 信封——旧信封形态已随 codec 删除）。
+ * ProfileResponse 是 UserService/GetUserProfile 的响应（§7）：
+ * §3.1 的 Authloft 用户信息结构；本域响应遵循 §1.0 成功响应即消息
+ * 本身（§7，Connect 化后无 status:"success" 信封——旧信封形态已随 codec 删除）。
  * 不跨包引用 api.account.v1.ProfileResponse：两者同构（AdminUser 与本消息
  * 两度先例），account 侧改名落地后是否合并另行定夺。
- * 本消息亦承载 `GET /api/oidc/get_user_info` 的响应结构（§4.6 行 1122-1124、
- * 《后端架构》§14.4 行 1618「共用同一结构」；见 api/oidc/userinfo.proto 尾注，不重复定义）。
- * 字段名与 §3.1 JSON 示例逐字一致（§12.9 行 1749）；整型一律 int64（行 1751）。
- * 掩码口径：rpc 域 phone / email 明文（§3.1 掩码矩阵行 805，已由 X-Signature 鉴权）；
- * oidc 侧默认掩码（行 803），差异由服务端取值决定，不构成结构差异。
+ * 本消息亦承载 `GET /api/oidc/get_user_info` 的响应结构（§4.6
+ * 《后端架构》§14.4「共用同一结构」；见 api/oidc/userinfo.proto 尾注，不重复定义）。
+ * 字段名与 §3.1 JSON 示例逐字一致（§12.9）；整型一律 int64。
+ * 掩码口径：rpc 域 phone / email 明文（§3.1 掩码矩阵，已由 X-Signature 鉴权）；
+ * oidc 侧默认掩码，差异由服务端取值决定，不构成结构差异。
  *
  * @generated from message api.rpc.v1.ProfileResponse
  */
 export type ProfileResponse = Message<"api.rpc.v1.ProfileResponse"> & {
   /**
-   * 用户 ID（§3.1 行 776）。
+   * 用户 ID（§3.1）。
    *
    * @generated from field: int64 id = 1;
    */
   id: bigint;
 
   /**
-   * 登录名（§3.1 行 777）。
+   * 登录名（§3.1）。
    *
    * @generated from field: string username = 2;
    */
   username: string;
 
   /**
-   * 昵称（§3.1 行 778）。
+   * 昵称（§3.1）。
    *
    * @generated from field: string nickname = 3;
    */
   nickname: string;
 
   /**
-   * 头像地址（§3.1 行 779）。
+   * 头像地址（§3.1）。
    *
    * @generated from field: string avatar_url = 4;
    */
   avatarUrl: string;
 
   /**
-   * 手机号；rpc 域明文（§3.1 行 780、行 805）。
+   * 手机号；rpc 域明文（§3.1）。
    *
    * @generated from field: string phone = 5;
    */
   phone: string;
 
   /**
-   * 手机号是否已验证，JSON 为 1/0（§3.1 行 781）。
+   * 手机号是否已验证，JSON 为 1/0（§3.1）。
    *
    * @generated from field: int64 phone_verified = 6;
    */
   phoneVerified: bigint;
 
   /**
-   * 邮箱；rpc 域明文（§3.1 行 782、行 805）。
+   * 邮箱；rpc 域明文（§3.1）。
    *
    * @generated from field: string email = 7;
    */
   email: string;
 
   /**
-   * 邮箱是否已验证，JSON 为 1/0（§3.1 行 783）。
+   * 邮箱是否已验证，JSON 为 1/0（§3.1）。
    *
    * @generated from field: int64 email_verified = 8;
    */
   emailVerified: bigint;
 
   /**
-   * 账号状态：1 正常 0 禁用（§3.1 行 784）；信封顶层 status 为保留字（§1.0），
-   * 业务字段用 user_status（同 §3.1 行 784 口径）。
+   * 账号状态：1 正常 0 禁用（§3.1）；信封顶层 status 为保留字（§1.0），
+   * 业务字段用 user_status（同 §3.1 口径）。
    *
    * @generated from field: int64 user_status = 9;
    */
@@ -101,35 +101,35 @@ export type ProfileResponse = Message<"api.rpc.v1.ProfileResponse"> & {
   mfaRequired: bigint;
 
   /**
-   * 安全版本号，便于调用方感知会话失效（§3.1 行 786）。
+   * 安全版本号，便于调用方感知会话失效（§3.1）。
    *
    * @generated from field: int64 epoch = 11;
    */
   epoch: bigint;
 
   /**
-   * 最后登录时间，Unix 秒（§3.1 行 787）。
+   * 最后登录时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 last_login_at = 12;
    */
   lastLoginAt: bigint;
 
   /**
-   * 创建时间，Unix 秒（§3.1 行 788）。
+   * 创建时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 created_at = 13;
    */
   createdAt: bigint;
 
   /**
-   * 更新时间，Unix 秒（§3.1 行 789）。
+   * 更新时间，Unix 秒（§3.1）。
    *
    * @generated from field: int64 updated_at = 14;
    */
   updatedAt: bigint;
 
   /**
-   * user_profile 表结构（§3.1 行 790-794）；跨包引用 account 域既有消息
+   * user_profile 表结构（§3.1）；跨包引用 account 域既有消息
    * （api/account/v1/profile.proto 的 UserProfile，§3.1 / §3.2 同源）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 15;
@@ -145,14 +145,14 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
   messageDesc(file_api_rpc_v1_profile, 0);
 
 /**
- * GetUserProfileRequest 是 UserService/GetUserProfile 的请求（§7 行 1387 `{uid}`）。
+ * GetUserProfileRequest 是 UserService/GetUserProfile 的请求（§7 `{uid}`）。
  * Connect 化把原 REST 路径参数 {uid} 转为请求字段（Connect 无路径参数）。
  *
  * @generated from message api.rpc.v1.GetUserProfileRequest
  */
 export type GetUserProfileRequest = Message<"api.rpc.v1.GetUserProfileRequest"> & {
   /**
-   * 目标用户 ID（§7 行 1384）。
+   * 目标用户 ID（§7）。
    *
    * @generated from field: int64 uid = 1;
    */
@@ -167,43 +167,43 @@ export const GetUserProfileRequestSchema: GenMessage<GetUserProfileRequest> = /*
   messageDesc(file_api_rpc_v1_profile, 1);
 
 /**
- * UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7 行 1423
+ * UpdateUserProfileRequest 是 UserService/UpdateUserProfile 的请求（§7
  * `{uid, …}`，入参同 §3.2 的 AccountService/UpdateProfile）：uid 承载原路径参数，
- * 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2 行 837：nickname /
+ * 其余字段与 api.account.v1.UpdateProfileRequest 同源（§3.2：nickname /
  * avatar_url / profile 三项，用户名 / 手机号 / 邮箱不可由此修改）并一并继承
  * proto3 optional 口径（2026-11-06 定稿）：未设置 = 不修改、显式设值（含
  * 0 / 空串）= 覆盖（gender 可显式改回 0=保密）；uid 为必填定位键不加
  * optional；profile 为消息字段自带 presence（nil = 未传），子字段 optional
  * 口径见 api.account.v1.UserProfile；嵌套 profile 结构跨包复用
- * api.account.v1.UserProfile（同一结构只定义一次，§12.9 行 1748）。字段编号
+ * api.account.v1.UserProfile（同一结构只定义一次，§12.9）。字段编号
  * 不变（纯加 optional，wire 兼容）。
  *
  * @generated from message api.rpc.v1.UpdateUserProfileRequest
  */
 export type UpdateUserProfileRequest = Message<"api.rpc.v1.UpdateUserProfileRequest"> & {
   /**
-   * 目标用户 ID（§7 行 1385）；必填定位键，不加 optional。
+   * 目标用户 ID（§7）；必填定位键，不加 optional。
    *
    * @generated from field: int64 uid = 1;
    */
   uid: bigint;
 
   /**
-   * 昵称，可选（§3.2 行 837 同构）；显式空串 = 清空。
+   * 昵称，可选（§3.2 同构）；显式空串 = 清空。
    *
    * @generated from field: optional string nickname = 2;
    */
   nickname?: string | undefined;
 
   /**
-   * 头像地址，可选（§3.2 行 837 同构）；显式空串 = 清空。
+   * 头像地址，可选（§3.2 同构）；显式空串 = 清空。
    *
    * @generated from field: optional string avatar_url = 3;
    */
   avatarUrl?: string | undefined;
 
   /**
-   * 用户资料，可选（§3.2 行 837 同构，字段见 §3.1 行 793-797）。
+   * 用户资料，可选（§3.2 同构，字段见 §3.1）。
    *
    * @generated from field: api.account.v1.UserProfile profile = 4;
    */
@@ -218,9 +218,9 @@ export const UpdateUserProfileRequestSchema: GenMessage<UpdateUserProfileRequest
   messageDesc(file_api_rpc_v1_profile, 2);
 
 /**
- * OkResponse 是 UserService/UpdateUserProfile 的空应答：§7 行 1388 仅约束入参，
- * 出参沿用同端点 §3.2 行 820 的口径「成功为空响应」——空消息 protojson 输出 {}
- * （§1.0 行 57「成功响应即 RPC 响应消息」；先例 api/account/v1/profile.proto 的
+ * OkResponse 是 UserService/UpdateUserProfile 的空应答：§7 仅约束入参，
+ * 出参沿用同端点 §3.2 的口径「成功为空响应」——空消息 protojson 输出 {}
+ * （§1.0「成功响应即 RPC 响应消息」；先例 api/account/v1/profile.proto 的
  * 空 OkResponse，共用响应依赖 buf RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
  * 豁免，buf.yaml except，沿用既有豁免）。
  *
@@ -238,15 +238,15 @@ export const OkResponseSchema: GenMessage<OkResponse> = /*@__PURE__*/
 
 /**
  * GetUserProfilesRequest 是 UserService/GetUserProfiles 的请求（接口文档 §7.2
- * 行 1442-1446，定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
- * 缺省或空列表 → 返回空 profiles、不报错（行 1467，空批量是合法的空集语义）。
+ * 定稿）。ids 为 repeated int64，JSON 十进制字符串（§1.12）；
+ * 缺省或空列表 → 返回空 profiles、不报错（空批量是合法的空集语义）。
  *
  * @generated from message api.rpc.v1.GetUserProfilesRequest
  */
 export type GetUserProfilesRequest = Message<"api.rpc.v1.GetUserProfilesRequest"> & {
   /**
    * 目标用户 ID 列表；单次上限 100——按入参列表长度计、去重前，超出整单失败
-   * invalid_request、无部分返回（§7.2 批量语义①行 1462）。
+   * invalid_request、无部分返回（§7.2 批量语义①）。
    *
    * @generated from field: repeated int64 ids = 1;
    */
@@ -261,11 +261,11 @@ export const GetUserProfilesRequestSchema: GenMessage<GetUserProfilesRequest> = 
   messageDesc(file_api_rpc_v1_profile, 4);
 
 /**
- * GetUserProfilesResponse 是 UserService/GetUserProfiles 的响应（§7.2 行 1448）：
+ * GetUserProfilesResponse 是 UserService/GetUserProfiles 的响应（§7.2）：
  * 每条 profiles[] 复用本文件既有 ProfileResponse（§3.1 Authloft 结构全量字段，
  * 与 GetUserProfile 响应同构，§7.2 不复制定义）。缺失 id 跳过、不占位、不报错
- * （批量语义②行 1463）；条目顺序与入参 ids 去重后的顺序一致（③行 1464）；
- * 重复 id 按首次出现位置去重，同一 id 至多返回一条（④行 1465）。
+ * （批量语义②）；条目顺序与入参 ids 去重后的顺序一致（③）；
+ * 重复 id 按首次出现位置去重，同一 id 至多返回一条（④）。
  *
  * @generated from message api.rpc.v1.GetUserProfilesResponse
  */

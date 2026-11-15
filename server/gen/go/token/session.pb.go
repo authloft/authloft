@@ -22,23 +22,23 @@ const (
 )
 
 // SessionTokenPayload 是 session_token / al_session 的加密前载荷——会话令牌
-// （docs/后端架构.md §11.6.3 行 1306-1320）。浏览器写 Cookie al_session
+// （docs/后端架构.md §11.6.3）。浏览器写 Cookie al_session
 // （接口文档 §1.9）；小程序 / 宿主环境由响应体下发、用 Header X-Authloft-Token
-// 回传（接口文档 §1.2）。字段名 / 编号 / 类型与行 1309-1316 的 protobuf 定义逐字一致。
+// 回传（接口文档 §1.2）。字段名 / 编号 / 类型与 protobuf 定义逐字一致。
 type SessionTokenPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// UID（行 1310）。
+	// UID。
 	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	// 用户安全版本号，与 al:pwdep:{uid} 比对，不一致即会话失效；改密 / 重置 /
-	// 管理员禁用递增（登出不递增）；递增到 > 30000 回绕为 1、不回到 0（行 1311、1319）。
+	// 管理员禁用递增（登出不递增）；递增到 > 30000 回绕为 1、不回到 0。
 	Epoch int64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// 认证方法，如 ["pwd","otp"]（行 1312）。
+	// 认证方法，如 ["pwd","otp"]。
 	Amr []string `protobuf:"bytes,3,rep,name=amr,proto3" json:"amr,omitempty"`
-	// Session ID（行 1313）。
+	// Session ID。
 	Sid string `protobuf:"bytes,4,opt,name=sid,proto3" json:"sid,omitempty"`
-	// 签发时间，Unix 秒（行 1314）。
+	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,5,opt,name=iat,proto3" json:"iat,omitempty"`
-	// 过期时间，Unix 秒（行 1315）。
+	// 过期时间，Unix 秒。
 	Exp           int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
