@@ -171,8 +171,9 @@ func AddSessionCookie(ctx context.Context, ck *http.Cookie) {
 // （§3.14、§3.7）。「至少一个权限点」的语义由 service/admin 定义（§4.8）。
 type PermissionLookup func(ctx context.Context, uid int64) (bool, error)
 
-// NewAdminInterceptor 须挂在 session 拦截器之内，依赖其注入的会话身份。
-// 无权限点一律返回 not_found 以掩护管理面存在；探针故障则必须 fail-closed
+// NewAdminInterceptor 须挂在 session 拦截器之内，依赖其注入的会话身份与
+// 权限标记。标记 false 的会话在登录签发时即无管理权限，直接 not_found、
+// 不查库；标记 true 才二次查库调用注入的探针，探针故障须 fail-closed
 // 返回 internal、绝不回落 not_found，否则基础设施故障会被读成「无权限」
 // （§3.14、§4.8）。判定只此一处，避免散落；错误不进业务词汇表。
 func NewAdminInterceptor(lookup PermissionLookup) connect.UnaryInterceptorFunc {
@@ -181,6 +182,9 @@ func NewAdminInterceptor(lookup PermissionLookup) connect.UnaryInterceptorFunc {
 			uid, ok := session.UIDFromContext(ctx)
 			if !ok {
 				return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+			}
+			if !session.HasAnyPermissionFromContext(ctx) {
+				return nil, connect.NewError(connect.CodeNotFound, errNotFound)
 			}
 			has, err := lookup(ctx, uid)
 			if err != nil {

@@ -94,16 +94,18 @@ const providerListPageSize = 100
 // Handler AdminService 服务实现；内嵌 Unimplemented 基类以兼容生成接口的前向演进。
 type Handler struct {
 	adminv1connect.UnimplementedAdminServiceHandler
-	providers ProviderReader
-	svc       ProviderService
-	users     UserService
-	clients   ClientService
-	settings  SettingsService
+	providers       ProviderReader
+	svc             ProviderService
+	users           UserService
+	clients         ClientService
+	settings        SettingsService
+	listPermissions func(context.Context, int64) ([]string, error)
 }
 
-// New 构造 AdminService handler（读路径 / 写族 / 用户 / 客户端 / 配置五组依赖）。
-func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService, settings SettingsService) *Handler {
-	return &Handler{providers: providers, svc: svc, users: users, clients: clients, settings: settings}
+// New 构造 AdminService handler（读路径 / 写族 / 用户 / 客户端 / 配置五组依赖
+// 与当前用户权限点列表查询）。
+func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService, settings SettingsService, listPermissions func(context.Context, int64) ([]string, error)) *Handler {
+	return &Handler{providers: providers, svc: svc, users: users, clients: clients, settings: settings, listPermissions: listPermissions}
 }
 
 // ListProviders 筛选 + 分页的 provider 列表；列表列不含 ext 凭证字段。
@@ -322,7 +324,11 @@ func (h *Handler) GetMe(ctx context.Context, _ *connectrpc.Request[adminv1.GetMe
 		}
 		return nil, fmt.Errorf("admin handler: get me: %w", err)
 	}
-	return connectrpc.NewResponse(dto.AdminMe(row)), nil
+	perms, err := h.listPermissions(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("admin handler: get me: list permissions: %w", err)
+	}
+	return connectrpc.NewResponse(dto.AdminMe(row, perms)), nil
 }
 
 // ListUsers 筛选 + 分页的用户列表；sort / order 透传 service（后端不做白名单强制校验，

@@ -39,9 +39,12 @@ type SessionTokenPayload struct {
 	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,5,opt,name=iat,proto3" json:"iat,omitempty"`
 	// 过期时间，Unix 秒。
-	Exp           int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Exp int64 `protobuf:"varint,6,opt,name=exp,proto3" json:"exp,omitempty"`
+	// 登录签发时写入：是否持有任意管理权限，供请求期决定是否二次查库；
+	// 续期重签原样透传、不重新判定（§11.5、接口文档 §1.9）。
+	HasAnyPermission bool `protobuf:"varint,7,opt,name=has_any_permission,json=hasAnyPermission,proto3" json:"has_any_permission,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SessionTokenPayload) Reset() {
@@ -116,18 +119,26 @@ func (x *SessionTokenPayload) GetExp() int64 {
 	return 0
 }
 
+func (x *SessionTokenPayload) GetHasAnyPermission() bool {
+	if x != nil {
+		return x.HasAnyPermission
+	}
+	return false
+}
+
 var File_token_session_proto protoreflect.FileDescriptor
 
 const file_token_session_proto_rawDesc = "" +
 	"\n" +
-	"\x13token/session.proto\x12\x05token\"\x83\x01\n" +
+	"\x13token/session.proto\x12\x05token\"\xb1\x01\n" +
 	"\x13SessionTokenPayload\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05epoch\x18\x02 \x01(\x03R\x05epoch\x12\x10\n" +
 	"\x03amr\x18\x03 \x03(\tR\x03amr\x12\x10\n" +
 	"\x03sid\x18\x04 \x01(\tR\x03sid\x12\x10\n" +
 	"\x03iat\x18\x05 \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\x06 \x01(\x03R\x03expB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
+	"\x03exp\x18\x06 \x01(\x03R\x03exp\x12,\n" +
+	"\x12has_any_permission\x18\a \x01(\bR\x10hasAnyPermissionB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
 
 var (
 	file_token_session_proto_rawDescOnce sync.Once

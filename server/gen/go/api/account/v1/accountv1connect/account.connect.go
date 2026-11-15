@@ -104,6 +104,9 @@ const (
 	// AccountServiceSubmitVerificationProcedure is the fully-qualified name of the AccountService's
 	// SubmitVerification RPC.
 	AccountServiceSubmitVerificationProcedure = "/api.account.v1.AccountService/SubmitVerification"
+	// AccountServiceGetMyPermissionsProcedure is the fully-qualified name of the AccountService's
+	// GetMyPermissions RPC.
+	AccountServiceGetMyPermissionsProcedure = "/api.account.v1.AccountService/GetMyPermissions"
 )
 
 // AccountServiceClient is a client for the api.account.v1.AccountService service.
@@ -158,6 +161,8 @@ type AccountServiceClient interface {
 	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)
 	// 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
 	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
+	// 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
+	GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the api.account.v1.AccountService service. By
@@ -315,6 +320,12 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("SubmitVerification")),
 			connect.WithClientOptions(opts...),
 		),
+		getMyPermissions: connect.NewClient[v1.GetMyPermissionsRequest, v1.GetMyPermissionsResponse](
+			httpClient,
+			baseURL+AccountServiceGetMyPermissionsProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("GetMyPermissions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -344,6 +355,7 @@ type accountServiceClient struct {
 	getEvents                *connect.Client[v1.GetEventsRequest, v1.GetEventsResponse]
 	startVerification        *connect.Client[v12.StartVerificationRequest, v12.StartVerificationResponse]
 	submitVerification       *connect.Client[v12.SubmitVerificationRequest, v12.SubmitVerificationResponse]
+	getMyPermissions         *connect.Client[v1.GetMyPermissionsRequest, v1.GetMyPermissionsResponse]
 }
 
 // GetConfig calls api.account.v1.AccountService.GetConfig.
@@ -466,6 +478,11 @@ func (c *accountServiceClient) SubmitVerification(ctx context.Context, req *conn
 	return c.submitVerification.CallUnary(ctx, req)
 }
 
+// GetMyPermissions calls api.account.v1.AccountService.GetMyPermissions.
+func (c *accountServiceClient) GetMyPermissions(ctx context.Context, req *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error) {
+	return c.getMyPermissions.CallUnary(ctx, req)
+}
+
 // AccountServiceHandler is an implementation of the api.account.v1.AccountService service.
 type AccountServiceHandler interface {
 	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2）。
@@ -518,6 +535,8 @@ type AccountServiceHandler interface {
 	StartVerification(context.Context, *connect.Request[v12.StartVerificationRequest]) (*connect.Response[v12.StartVerificationResponse], error)
 	// 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
 	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
+	// 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
+	GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -671,6 +690,12 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("SubmitVerification")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accountServiceGetMyPermissionsHandler := connect.NewUnaryHandler(
+		AccountServiceGetMyPermissionsProcedure,
+		svc.GetMyPermissions,
+		connect.WithSchema(accountServiceMethods.ByName("GetMyPermissions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.account.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccountServiceGetConfigProcedure:
@@ -721,6 +746,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceStartVerificationHandler.ServeHTTP(w, r)
 		case AccountServiceSubmitVerificationProcedure:
 			accountServiceSubmitVerificationHandler.ServeHTTP(w, r)
+		case AccountServiceGetMyPermissionsProcedure:
+			accountServiceGetMyPermissionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -824,4 +851,8 @@ func (UnimplementedAccountServiceHandler) StartVerification(context.Context, *co
 
 func (UnimplementedAccountServiceHandler) SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.SubmitVerification is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.GetMyPermissions is not implemented"))
 }

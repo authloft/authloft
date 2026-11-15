@@ -25,4 +25,7 @@ message SessionTokenPayload {
   int64 iat = 5;
   // 过期时间，Unix 秒。
   int64 exp = 6;
+  // 登录签发时写入：是否持有任意管理权限，供请求期决定是否二次查库；
+  // 续期重签原样透传、不重新判定（§11.5、接口文档 §1.9）。
+  bool has_any_permission = 7;
 }

@@ -414,7 +414,9 @@ func assembleAdminHandler(t *testing.T, providers ProviderReader, writer Provide
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers, writer, user, clients, settings),
+		New(providers, writer, user, clients, settings, func(context.Context, int64) ([]string, error) {
+			return []string{"superadmin"}, nil
+		}),
 		connectrpc.WithInterceptors(
 			internalconnect.NewSessionInterceptor(
 				session.NewVerifier(tokens, epochs),
@@ -434,12 +436,13 @@ func assembleAdminHandler(t *testing.T, providers ProviderReader, writer Provide
 func adminCookie(t *testing.T, tokens *session.Tokens, epochs *fakeEpochReader, uid int64) string {
 	t.Helper()
 	p := &token.SessionTokenPayload{
-		Id:    uid,
-		Epoch: 3,
-		Amr:   []string{"pwd"},
-		Sid:   "sid-admin",
-		Iat:   time.Now().Add(-time.Minute).Unix(),
-		Exp:   time.Now().Add(time.Hour).Unix(),
+		Id:               uid,
+		Epoch:            3,
+		Amr:              []string{"pwd"},
+		Sid:              "sid-admin",
+		Iat:              time.Now().Add(-time.Minute).Unix(),
+		Exp:              time.Now().Add(time.Hour).Unix(),
+		HasAnyPermission: true,
 	}
 	epochs.values[uid] = p.Epoch
 	tok, err := tokens.Sign(p)
@@ -1498,6 +1501,9 @@ func TestGetMeHandler(t *testing.T) {
 	if got.GetId() != 42 || got.GetUsername() != "alice" || got.GetNickname() != "Alice" ||
 		got.GetAvatarUrl() != "https://cdn.example.com/a.png" || !got.GetIsAdmin() {
 		t.Fatalf("GetMe = %+v, want 四字段 + isAdmin=true", &got)
+	}
+	if perms := got.GetPermissions(); len(perms) != 1 || perms[0] != "superadmin" {
+		t.Fatalf("GetMe.permissions = %v, want [superadmin]", perms)
 	}
 	if users.gotMeUID != 1 {
 		t.Errorf("uid 透传 = %d, want 1（session ctx）", users.gotMeUID)

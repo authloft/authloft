@@ -83,4 +83,29 @@ func TestPermissionRepoHasPermission(t *testing.T) {
 	if ok, err := rp.HasAnyPermission(ctx, 2); err != nil || ok {
 		t.Errorf("HasAnyPermission(2) = (%v, %v), want (false, nil)", ok, err)
 	}
+
+	// ListPermissions 返回该 uid 的全部权限点，ListAdminUIDs 返回去重的持有者集合。
+	if points, err := rp.ListPermissions(ctx, 1); err != nil || len(points) != 1 || points[0] != "superadmin" {
+		t.Errorf("ListPermissions(1) = (%v, %v), want ([superadmin], nil)", points, err)
+	}
+	if points, err := rp.ListPermissions(ctx, 2); err != nil || len(points) != 0 {
+		t.Errorf("ListPermissions(2) = (%v, %v), want (empty, nil)", points, err)
+	}
+	if uids, err := rp.ListAdminUIDs(ctx); err != nil || len(uids) != 1 || uids[0] != 1 {
+		t.Errorf("ListAdminUIDs = (%v, %v), want ([1], nil)", uids, err)
+	}
+
+	// 同一 uid 多个权限点、多个 uid 持有权限：列表全量、uid 集合去重。
+	if err := db.WithContext(ctx).Create(&model.UserPermission{UserID: 1, Point: "other"}).Error; err != nil {
+		t.Fatalf("插入第二权限点失败: %v", err)
+	}
+	if err := db.WithContext(ctx).Create(&model.UserPermission{UserID: 2, Point: "superadmin"}).Error; err != nil {
+		t.Fatalf("插入第二持有者失败: %v", err)
+	}
+	if points, err := rp.ListPermissions(ctx, 1); err != nil || len(points) != 2 {
+		t.Errorf("ListPermissions(1) 多点 = (%v, %v), want len 2", points, err)
+	}
+	if uids, err := rp.ListAdminUIDs(ctx); err != nil || len(uids) != 2 {
+		t.Errorf("ListAdminUIDs 多持有者 = (%v, %v), want len 2（DISTINCT）", uids, err)
+	}
 }

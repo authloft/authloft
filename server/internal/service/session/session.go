@@ -1,7 +1,7 @@
 // session.go 建会话适配器（docs/后端架构.md §3.7 行 364、§11.1 行 1160、
 // §11.5 行 1228-1230）：实现 orchestrator.SessionWriter，一次 Write 完成
 // sid 生成、epoch 读取与 session_token 签发。会话令牌自包含、不落盘，
-// 本文件不写 DB / Redis；epoch 只经注入的 EpochReader 读取。
+// 本文件不写 DB / Redis；epoch 经注入的 EpochReader 读取、权限标记经注入的探针现算，保持签发链路零存储依赖。
 package session
 
 import (
@@ -38,13 +38,16 @@ type SessionWriter struct {
 	Tokens   *sessionpkg.Tokens
 	Epochs   EpochReader
 	Settings SessionSettings
+	// PermissionProbe 登录签发侧判定「是否持有任意管理权限」，由装配层注入
+	// 缓存封装；本层不感知 Redis / DB，判定值写进载荷供请求期使用。
+	PermissionProbe func(ctx context.Context, uid int64) (bool, error)
 	// Now 可注入时钟；为空时使用 time.Now。
 	Now func() time.Time
 }
 
 // NewSessionWriter 注入依赖；Now 为空时使用 time.Now。
-func NewSessionWriter(tokens *sessionpkg.Tokens, epochs EpochReader, cfg SessionSettings) *SessionWriter {
-	return &SessionWriter{Tokens: tokens, Epochs: epochs, Settings: cfg}
+func NewSessionWriter(tokens *sessionpkg.Tokens, epochs EpochReader, cfg SessionSettings, probe func(ctx context.Context, uid int64) (bool, error)) *SessionWriter {
+	return &SessionWriter{Tokens: tokens, Epochs: epochs, Settings: cfg, PermissionProbe: probe}
 }
 
 // Write 建会话（§7.3 行 995）：生成 sid → 读 epoch → 组装载荷 → 签发令牌，
@@ -58,18 +61,23 @@ func (w *SessionWriter) Write(ctx context.Context, uid int64, amr []string) (str
 	if err != nil {
 		return "", "", err
 	}
+	hasAny, err := w.PermissionProbe(ctx, uid)
+	if err != nil {
+		return "", "", err
+	}
 	now := time.Now
 	if w.Now != nil {
 		now = w.Now
 	}
 	t := now()
 	p := &token.SessionTokenPayload{
-		Id:    uid,
-		Epoch: epoch,
-		Amr:   append([]string(nil), amr...),
-		Sid:   sid,
-		Iat:   t.Unix(),
-		Exp:   t.Add(time.Duration(w.sessionTTL()) * time.Second).Unix(),
+		Id:               uid,
+		Epoch:            epoch,
+		Amr:              append([]string(nil), amr...),
+		Sid:              sid,
+		Iat:              t.Unix(),
+		Exp:              t.Add(time.Duration(w.sessionTTL()) * time.Second).Unix(),
+		HasAnyPermission: hasAny,
 	}
 	tok, err := w.Tokens.Sign(p)
 	if err != nil {

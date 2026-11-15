@@ -23,6 +23,16 @@ import "api/sso/v1/envelope.proto";
 // connect 产物（protoc-gen-connect-go）随 service 定义生成。
 option go_package = "authloft/gen/go/api/account/v1;accountv1";
 
+// GetMyPermissionsRequest 无字段：主体固定取会话 uid，不接受入参 uid 以免
+// 越权查他人权限（§3.9）。Connect unary 须有请求消息，空消息承载。
+message GetMyPermissionsRequest {}
+
+// GetMyPermissionsResponse 当前用户的全部权限点；无任何权限点时为空列表
+//（标准 protojson 省略空 repeated，调用方按「零值或缺失即空列表」处理，§3.9）。
+message GetMyPermissionsResponse {
+  repeated string permissions = 1;
+}
+
 // AccountService 是 account 域的 Connect service。
 // Connect 路径 = /api.account.v1.AccountService/<Method>；方法清单与 §3 各节逐一对应：
 //   GetConfig                  §3.2    GetProfile               §3.2
@@ -37,6 +47,7 @@ option go_package = "authloft/gen/go/api/account/v1;accountv1";
 //   UnbindThirdparty           §3.7    ThirdpartyOauth          §3.7.1 A
 //   GetThirdpartyTicket        §3.7    GetEvents                §3.7
 //   StartVerification          §3.8   SubmitVerification       §3.8
+//   GetMyPermissions           §3.9
 // 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
 // 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
 // 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
@@ -92,4 +103,6 @@ service AccountService {
   rpc StartVerification(api.common.v1.StartVerificationRequest) returns (api.common.v1.StartVerificationResponse);
   // 提交二次因子，返回不透明断言令牌交回敏感操作（§3.8.1、§3.8.2）。
   rpc SubmitVerification(api.common.v1.SubmitVerificationRequest) returns (api.common.v1.SubmitVerificationResponse);
+  // 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
+  rpc GetMyPermissions(GetMyPermissionsRequest) returns (GetMyPermissionsResponse);
 }

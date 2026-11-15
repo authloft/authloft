@@ -132,6 +132,14 @@ func ProviderVersionKey() string { return "al:prov:ver" }
 // PUBLISH 侧（admin 写入路径）与 Subscribe 侧（各实例 watcher）共用本函数。
 func ProviderChgKey() string { return "al:prov:chg" }
 
+// permAdminsKey 持有任意管理权限的 uid 集合（§5.1：SET、无 TTL、正常模式
+// 启动预热写入一次、登录签发侧只读）。
+const permAdminsKey = "al:perm:admins"
+
+// PermissionAdminsKey 返回 al:perm:admins 集合键；键名唯一出处，业务代码
+// 禁止裸拼字符串。
+func PermissionAdminsKey() string { return permAdminsKey }
+
 // dayStamp 返回服务器本地日期 yyyymmdd（§5.1 行 837-838 键名的日期段）。
 func dayStamp(t time.Time) string {
 	return t.Format("20060102")

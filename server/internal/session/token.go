@@ -23,15 +23,17 @@ const (
 	ctxKeyUID ctxKey = iota
 	ctxKeyAMR
 	ctxKeySID
+	ctxKeyHasAnyPermission
 )
 
-// WithSessionContext 把会话身份（uid/amr/sid）注入 ctx（§11.1 步骤 4：
+// WithSessionContext 把会话载荷值（身份与权限标记）注入 ctx（§11.1 步骤 4：
 // 校验通过后直接可用，RPC / OIDC 无需再查存储）。middleware 在校验
 // 通过后调用；注入的是载荷值本身，不携带令牌串。
 func WithSessionContext(ctx context.Context, p *token.SessionTokenPayload) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyUID, p.GetId())
 	ctx = context.WithValue(ctx, ctxKeyAMR, p.GetAmr())
 	ctx = context.WithValue(ctx, ctxKeySID, p.GetSid())
+	ctx = context.WithValue(ctx, ctxKeyHasAnyPermission, p.GetHasAnyPermission())
 	return ctx
 }
 
@@ -51,6 +53,13 @@ func AMRFromContext(ctx context.Context) ([]string, bool) {
 func SIDFromContext(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(ctxKeySID).(string)
 	return v, ok
+}
+
+// HasAnyPermissionFromContext 读取登录签发时写入的管理权限标记；未注入按
+// false，使下游据此跳过二次查库（§11.6.3）。
+func HasAnyPermissionFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxKeyHasAnyPermission).(bool)
+	return v
 }
 
 // Tokens 会话令牌签发 / 解析入口（security.Codec 的会话域薄封装）：

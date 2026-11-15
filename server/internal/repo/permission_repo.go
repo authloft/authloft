@@ -44,3 +44,28 @@ func (r *PermissionRepo) HasAnyPermission(ctx context.Context, uid int64) (bool,
 	}
 	return exists == 1, nil
 }
+
+// ListPermissions 返回 uid 持有的全部权限点；查询故障原样上抛（§3.10、§4.8）。
+func (r *PermissionRepo) ListPermissions(ctx context.Context, uid int64) ([]string, error) {
+	var points []string
+	err := r.db.WithContext(ctx).Raw(
+		"SELECT point FROM user_permission WHERE user_id = ?",
+		uid,
+	).Scan(&points).Error
+	if err != nil {
+		return nil, fmt.Errorf("permission repo: list permissions: %w", err)
+	}
+	return points, nil
+}
+
+// ListAdminUIDs 返回持有任意权限点的全部 uid，供启动预热重建集合（§5.1）。
+func (r *PermissionRepo) ListAdminUIDs(ctx context.Context) ([]int64, error) {
+	var uids []int64
+	err := r.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT user_id FROM user_permission",
+	).Scan(&uids).Error
+	if err != nil {
+		return nil, fmt.Errorf("permission repo: list admin uids: %w", err)
+	}
+	return uids, nil
+}

@@ -26,18 +26,20 @@ func NewRenewer(tokens *Tokens, ttl time.Duration) *Renewer {
 }
 
 // Renew 重签载荷：新 iat = now、exp = now + ttl，id / epoch / amr / sid
-// 原样保留；返回（新载荷, 新令牌串）。不触碰 epoch 存储与任何队列
+// 与 has_any_permission 原样保留（标记沿用登录签发值、不重新判定）；
+// 返回（新载荷, 新令牌串）。不触碰 epoch 存储与任何队列
 // （§21.2 D：断言零存储写入——Renewer 无存储依赖，测试以 fake redis
 // 调用计数佐证）。
 func (r *Renewer) Renew(p *token.SessionTokenPayload) (*token.SessionTokenPayload, string, error) {
 	now := r.now()
 	fresh := &token.SessionTokenPayload{
-		Id:    p.GetId(),
-		Epoch: p.GetEpoch(),
-		Amr:   p.GetAmr(),
-		Sid:   p.GetSid(),
-		Iat:   now.Unix(),
-		Exp:   now.Add(r.ttl).Unix(),
+		Id:               p.GetId(),
+		Epoch:            p.GetEpoch(),
+		Amr:              p.GetAmr(),
+		Sid:              p.GetSid(),
+		Iat:              now.Unix(),
+		Exp:              now.Add(r.ttl).Unix(),
+		HasAnyPermission: p.GetHasAnyPermission(),
 	}
 	tok, err := r.tokens.Sign(fresh)
 	if err != nil {

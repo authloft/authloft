@@ -52,12 +52,13 @@ func decodeConnectError(t *testing.T, resp *http.Response) map[string]string {
 // adminPayload 构造指定 uid 的有效会话载荷（epoch 同步放行）。
 func adminPayload(env *sessionEnv, uid int64) *token.SessionTokenPayload {
 	p := &token.SessionTokenPayload{
-		Id:    uid,
-		Epoch: 7,
-		Amr:   []string{"pwd"},
-		Sid:   "sid-admin",
-		Iat:   time.Now().Add(-time.Minute).Unix(),
-		Exp:   time.Now().Add(time.Hour).Unix(),
+		Id:               uid,
+		Epoch:            7,
+		Amr:              []string{"pwd"},
+		Sid:              "sid-admin",
+		Iat:              time.Now().Add(-time.Minute).Unix(),
+		Exp:              time.Now().Add(time.Hour).Unix(),
+		HasAnyPermission: true,
 	}
 	env.epochs.values[p.Id] = p.Epoch
 	return p
@@ -182,6 +183,31 @@ func TestAdminLookupErrorReturns500(t *testing.T) {
 	}
 	if errObj := decodeConnectError(t, resp); errObj["code"] != "internal" {
 		t.Errorf("error.code = %q, want %q", errObj["code"], "internal")
+	}
+}
+
+// 登录签发时即无管理权限的会话（标记 false）直接 404，且不触达权限探针，
+// 普通用户请求因而不产生权限表查询。
+func TestAdminMarkerFalseSkipsLookup(t *testing.T) {
+	env := newSessionEnv(t)
+	p := adminPayload(env, 42)
+	p.HasAnyPermission = false
+	tok := env.sign(t, p)
+	srv, captured := newAdminServer(t, env, func(context.Context, int64) (bool, error) {
+		t.Error("标记 false 不应触发探针")
+		return true, nil
+	})
+
+	resp := doAdminRPC(t, srv, tok)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	if captured.ok {
+		t.Errorf("handler 被触达（uid=%d），want 拒绝", captured.uid)
+	}
+	if errObj := decodeConnectError(t, resp); errObj["code"] != "not_found" || errObj["message"] != "not found" {
+		t.Errorf("error = %v, want not_found / not found", errObj)
 	}
 }
 

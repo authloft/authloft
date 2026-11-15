@@ -76,7 +76,10 @@ type MeResponse struct {
 	AvatarUrl string `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
 	// 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护）
 	// 不会走到这里（§5.1、§5）。
-	IsAdmin       bool `protobuf:"varint,5,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
+	IsAdmin bool `protobuf:"varint,5,opt,name=is_admin,json=isAdmin,proto3" json:"is_admin,omitempty"`
+	// 当前管理员持有的全部权限点；与 AccountService/GetMyPermissions 同源同义
+	// （§5.1、§3.9），因已通过统一入口「至少一个权限点」校验而必非空。
+	Permissions   []string `protobuf:"bytes,6,rep,name=permissions,proto3" json:"permissions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -146,6 +149,13 @@ func (x *MeResponse) GetIsAdmin() bool {
 	return false
 }
 
+func (x *MeResponse) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
 // OkResponse 是 admin 域文档未定义出参的写方法共用空应答
 // （provider 删除/开关/排序/测试，用户状态切换/重置密码/解绑/解锁，客户端写，SetSettings）：
 // 空消息，protojson 输出 {}（§1.0 成功响应即消息本身，无 status 信封字段）；
@@ -193,7 +203,7 @@ var File_api_admin_v1_admin_proto protoreflect.FileDescriptor
 const file_api_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"\x18api/admin/v1/admin.proto\x12\fapi.admin.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/admin/v1/provider.proto\x1a\x19api/admin/v1/schema.proto\x1a\x17api/admin/v1/user.proto\x1a\x19api/admin/v1/client.proto\x1a\x1bapi/admin/v1/settings.proto\x1a\x19api/admin/v1/events.proto\x1a\x18api/admin/v1/tools.proto\"\x0e\n" +
-	"\fGetMeRequest\"\x8e\x01\n" +
+	"\fGetMeRequest\"\xb0\x01\n" +
 	"\n" +
 	"MeResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
@@ -201,7 +211,8 @@ const file_api_admin_v1_admin_proto_rawDesc = "" +
 	"\bnickname\x18\x03 \x01(\tR\bnickname\x12\x1d\n" +
 	"\n" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12\x19\n" +
-	"\bis_admin\x18\x05 \x01(\bR\aisAdmin\"\f\n" +
+	"\bis_admin\x18\x05 \x01(\bR\aisAdmin\x12 \n" +
+	"\vpermissions\x18\x06 \x03(\tR\vpermissions\"\f\n" +
 	"\n" +
 	"OkResponse2\x94\x15\n" +
 	"\fAdminService\x12=\n" +

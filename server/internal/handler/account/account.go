@@ -179,17 +179,20 @@ type Handler struct {
 	// verification step-up 服务；nil（测试 / 未装配）时两个
 	// 二次验证方法返回 unimplemented。
 	verification Verification
+	// listPermissions 当前用户权限点列表查询（GetMyPermissions 用）；窄函数
+	// 注入，避免本层依赖具体仓储类型。
+	listPermissions func(context.Context, int64) ([]string, error)
 }
 
 // NewWithServices 全依赖构造；末尾可变参数 v 注入 step-up 服务，省略时该族方法返回
 // unimplemented。各 service 可为 nil（对应方法返回 unimplemented，测试 / 降级装配用）；
 // cookies 为 nil 时跳过 Cookie 清除。session.Cookie 属性构造器与拦截器同源。
-func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie, v ...Verification) *Handler {
+func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie, listPermissions func(context.Context, int64) ([]string, error), v ...Verification) *Handler {
 	h := &Handler{
 		users: users, creds: creds, settings: settings, providers: providers,
 		captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile,
 		avatar: avatar, password: password, bindcontact: bindcontact, mfa: mfa,
-		events: events, cookies: cookies,
+		events: events, cookies: cookies, listPermissions: listPermissions,
 	}
 	if len(v) > 0 {
 		h.verification = v[0]
@@ -217,6 +220,21 @@ func (h *Handler) GetProfile(ctx context.Context, req *connect.Request[accountv1
 		return nil, fmt.Errorf("account handler: load profile: %w", err)
 	}
 	return connect.NewResponse(dto.AccountProfile(user, profile)), nil
+}
+
+// GetMyPermissions 当前登录用户的全部权限点；主体固定取会话 uid，不接受
+// 入参 uid 以免越权查他人权限（§3.9）。无权限点返回空列表（protojson
+// 省略空 repeated，调用方按「零值或缺失即空列表」处理）。
+func (h *Handler) GetMyPermissions(ctx context.Context, _ *connect.Request[accountv1.GetMyPermissionsRequest]) (*connect.Response[accountv1.GetMyPermissionsResponse], error) {
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	perms, err := h.listPermissions(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("account handler: list permissions: %w", err)
+	}
+	return connect.NewResponse(&accountv1.GetMyPermissionsResponse{Permissions: perms}), nil
 }
 
 // UpdateProfile 当前用户资料部分更新：proto3 optional has 位，未设置 = 不修改、

@@ -154,7 +154,7 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	}
 	_, h := accountv1connect.NewAccountServiceHandler(
 		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
-			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies, d.verification()),
+			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies, d.permissionLister(), d.verification()),
 		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
 			session.NewVerifier(tokens, epochs),
 			session.NewRenewer(tokens, time.Hour),
@@ -182,6 +182,8 @@ type getConfigDeps struct {
 	eventsIn       EventReader
 	cookies        *session.Cookie
 	verificationIn Verification
+	permsIn        []string
+	permsErr       error
 }
 
 func (d *getConfigDeps) creds() CredentialReader {
@@ -214,6 +216,11 @@ func (d *getConfigDeps) bindcontact() ContactBinder { return d.bindcontactIn }
 func (d *getConfigDeps) mfa() MfaManager            { return d.mfaIn }
 func (d *getConfigDeps) events() EventReader        { return d.eventsIn }
 func (d *getConfigDeps) verification() Verification { return d.verificationIn }
+
+// permissionLister GetMyPermissions 用例经 permsIn / permsErr 控制返回。
+func (d *getConfigDeps) permissionLister() func(context.Context, int64) ([]string, error) {
+	return func(context.Context, int64) ([]string, error) { return d.permsIn, d.permsErr }
+}
 
 // sessionCookie 签发 uid=10086 epoch=3 的有效会话令牌（exp 1 小时后），
 // epoch 读取链同步放行。
@@ -256,6 +263,81 @@ func wantProfile(t *testing.T) *model.UserProfile {
 	return &model.UserProfile{
 		UserID: 10086, Gender: 1, Birthday: &birthday,
 		Locale: "zh-CN", Timezone: "Asia/Shanghai", Extra: extra,
+	}
+}
+
+// TestGetMyPermissions 普通用户会话即可达（不要求权限点）、返回本人全部
+// 权限点；无权限点为空列表，查询故障经错误包装消毒为 internal。
+func TestGetMyPermissions(t *testing.T) {
+	cases := []struct {
+		name       string
+		perms      []string
+		err        error
+		wantStatus int
+		wantLen    int
+	}{
+		{"持有权限点", []string{"superadmin"}, nil, http.StatusOK, 1},
+		{"无权限点空列表", nil, nil, http.StatusOK, 0},
+		{"查询故障", nil, errors.New("db down"), http.StatusInternalServerError, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			users := &fakeUsers{user: wantUser()}
+			tokens, epochs, h := newSessionHandler(t, users, &getConfigDeps{permsIn: tc.perms, permsErr: tc.err})
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodPost,
+				srv.URL+accountv1connect.AccountServiceGetMyPermissionsProcedure, strings.NewReader(`{}`))
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("POST GetMyPermissions: %v", err)
+			}
+			defer resp.Body.Close()
+			raw := readBody(t, resp.Body)
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body %s)", resp.StatusCode, tc.wantStatus, raw)
+			}
+			if tc.wantStatus != http.StatusOK {
+				return
+			}
+			var got accountv1.GetMyPermissionsResponse
+			if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+				t.Fatalf("decode response %q: %v", raw, err)
+			}
+			if len(got.GetPermissions()) != tc.wantLen {
+				t.Fatalf("permissions = %v, want len %d", got.GetPermissions(), tc.wantLen)
+			}
+		})
+	}
+}
+
+// TestGetMyPermissionsNoSession 无有效会话 → 401；主体固定取会话 uid，
+// 匿名不得查询任何权限点。
+func TestGetMyPermissionsNoSession(t *testing.T) {
+	users := &fakeUsers{user: wantUser()}
+	_, _, h := newSessionHandler(t, users)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost,
+		srv.URL+accountv1connect.AccountServiceGetMyPermissionsProcedure, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST GetMyPermissions: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
 

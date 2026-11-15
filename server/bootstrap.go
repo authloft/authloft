@@ -151,6 +151,10 @@ type assembled struct {
 	epochStore    *cache.EpochStore
 	codeIssuer    *oidc.CodeIssuer
 
+	// permissionProbe 登录签发侧「是否持有任意管理权限」探针：启动预热重建
+	// 权限集合后构造，注入会话签发器；只读缓存、miss / 故障回源 DB。
+	permissionProbe func(context.Context, int64) (bool, error)
+
 	// oidcJWT OIDC RS256 签名密钥集（§14.3）：启动期一次解析，首项签发、全列表发 JWKS。
 	oidcJWT *oidc.JWT
 
@@ -413,7 +417,7 @@ type factorEnv struct {
 
 // buildLoginCore 构造会话写入适配器、Terminal 与 State；共享单例由 assemble 构造后传入。
 func buildLoginCore(deps *assembled) *loginCore {
-	sessions := sessionsvc.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings)
+	sessions := sessionsvc.NewSessionWriter(deps.sessionTokens, deps.epochStore, deps.settings, deps.permissionProbe)
 	terminal := orchestrator.NewTerminal(
 		sessions,
 		deps.codeIssuer,
@@ -850,6 +854,21 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	})
 	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
 
+	// 权限集合启动预热（§5.1）：全量重建 al:perm:admins，登录签发侧只读；
+	// 失败即 fail-fast，避免集合长期落后于 user_permission（回源兜底只覆盖单次判定）。
+	permAdmins := cache.NewPermissionAdminsStore(rdb)
+	adminUIDs, err := deps.repos.Permissions.ListAdminUIDs(ctx)
+	if err != nil {
+		deps.closeInfra()
+		return nil, assembleStep("permission.ListAdminUIDs", err)
+	}
+	if err := permAdmins.Rebuild(ctx, adminUIDs); err != nil {
+		deps.closeInfra()
+		return nil, assembleStep("permissionAdmins.Rebuild", err)
+	}
+	deps.permissionProbe = adminsvc.NewIssuingPermissionProbe(
+		permAdmins, deps.repos.Permissions.HasAnyPermission).Probe
+
 	// 共享产物一次构造，register* 只注入不构造。
 	wireSharedServices(cfg, deps)
 
@@ -1166,6 +1185,7 @@ func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) 
 			deps.accountMfa,
 			deps.accountEvents,
 			deps.sessionSvc.Cookie,
+			deps.admin.Permission.ListPermissions,
 			deps.verification,
 		),
 		csrv.HandlerOptions(deps.sessionSvc.Interceptor)...,
@@ -1200,6 +1220,7 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 			deps.admin.Users,
 			deps.admin.Clients,
 			deps.admin.Settings,
+			deps.admin.Permission.ListPermissions,
 		),
 		csrv.HandlerOptions(deps.sessionSvc.Interceptor, connect.NewAdminInterceptor(deps.admin.Permission.HasAnyPermission))...,
 	)

@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -33,6 +34,11 @@ func (f fakeSettings) GetInt64(key string) (int64, bool) {
 	return f.ttl, f.ok
 }
 
+// staticProbe 登录签发侧探针 fake：固定返回 hasAny / err。
+func staticProbe(hasAny bool, err error) func(context.Context, int64) (bool, error) {
+	return func(context.Context, int64) (bool, error) { return hasAny, err }
+}
+
 // testTokens 构造可签发 / 解析的会话令牌入口（固定 32 字节 AES-256 密钥）。
 func testTokens(t *testing.T) *sessionpkg.Tokens {
 	t.Helper()
@@ -54,7 +60,7 @@ func fixedNow() time.Time { return time.Unix(1700000000, 0) }
 
 func TestWriteRoundTrip(t *testing.T) {
 	tokens := testTokens(t)
-	w := NewSessionWriter(tokens, fakeEpoch{epoch: 7}, nil)
+	w := NewSessionWriter(tokens, fakeEpoch{epoch: 7}, nil, staticProbe(false, nil))
 	w.Now = fixedNow
 
 	sid, tok, err := w.Write(context.Background(), 42, []string{"pwd", "otp"})
@@ -90,7 +96,7 @@ func TestWriteRoundTrip(t *testing.T) {
 }
 
 func TestWriteTTLFromSettings(t *testing.T) {
-	w := NewSessionWriter(testTokens(t), fakeEpoch{}, fakeSettings{ttl: 3600, ok: true})
+	w := NewSessionWriter(testTokens(t), fakeEpoch{}, fakeSettings{ttl: 3600, ok: true}, staticProbe(false, nil))
 	w.Now = fixedNow
 
 	_, tok, err := w.Write(context.Background(), 1, nil)
@@ -118,7 +124,7 @@ func TestWriteTTLFallback(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			w := NewSessionWriter(testTokens(t), fakeEpoch{}, tc.cfg)
+			w := NewSessionWriter(testTokens(t), fakeEpoch{}, tc.cfg, staticProbe(false, nil))
 			w.Now = fixedNow
 			_, tok, err := w.Write(context.Background(), 1, nil)
 			if err != nil {
@@ -136,7 +142,7 @@ func TestWriteTTLFallback(t *testing.T) {
 }
 
 func TestWriteSIDUnique(t *testing.T) {
-	w := NewSessionWriter(testTokens(t), fakeEpoch{}, nil)
+	w := NewSessionWriter(testTokens(t), fakeEpoch{}, nil, staticProbe(false, nil))
 	w.Now = fixedNow
 
 	sid1, _, err := w.Write(context.Background(), 1, nil)
@@ -154,10 +160,56 @@ func TestWriteSIDUnique(t *testing.T) {
 
 func TestWriteEpochErrorPropagates(t *testing.T) {
 	sentinel := errors.New("epoch unavailable")
-	w := NewSessionWriter(testTokens(t), fakeEpoch{err: sentinel}, nil)
+	w := NewSessionWriter(testTokens(t), fakeEpoch{err: sentinel}, nil, staticProbe(false, nil))
 
 	_, _, err := w.Write(context.Background(), 1, nil)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want sentinel", err)
+	}
+}
+
+// TestWritePermissionProbe 登录签发侧探针的现算结果写进会话载荷（路径 A）。
+func TestWritePermissionProbe(t *testing.T) {
+	for _, hasAny := range []bool{false, true} {
+		t.Run(fmt.Sprintf("hasAny=%v", hasAny), func(t *testing.T) {
+			tokens := testTokens(t)
+			w := NewSessionWriter(tokens, fakeEpoch{epoch: 7}, nil, staticProbe(hasAny, nil))
+			w.Now = fixedNow
+			_, tok, err := w.Write(context.Background(), 42, []string{"pwd"})
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			p, err := tokens.Parse(tok)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if p.GetHasAnyPermission() != hasAny {
+				t.Fatalf("HasAnyPermission = %v, want %v", p.GetHasAnyPermission(), hasAny)
+			}
+		})
+	}
+}
+
+// TestWriteProbeErrorPropagates 探针故障与 epoch 读取对称：原样上抛，不签发会话。
+func TestWriteProbeErrorPropagates(t *testing.T) {
+	sentinel := errors.New("permission probe unavailable")
+	w := NewSessionWriter(testTokens(t), fakeEpoch{}, nil, staticProbe(false, sentinel))
+
+	_, _, err := w.Write(context.Background(), 1, nil)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want sentinel", err)
+	}
+}
+
+// TestWriteProbeUIDForward 探针收到 Write 的 uid，避免误用他人身份判定。
+func TestWriteProbeUIDForward(t *testing.T) {
+	var gotUID int64
+	probe := func(_ context.Context, uid int64) (bool, error) { gotUID = uid; return true, nil }
+	w := NewSessionWriter(testTokens(t), fakeEpoch{}, nil, probe)
+	if _, _, err := w.Write(context.Background(), 99, nil); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if gotUID != 99 {
+		t.Fatalf("probe uid = %d, want 99", gotUID)
 	}
 }

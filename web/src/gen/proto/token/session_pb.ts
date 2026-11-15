@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file token/session.proto.
  */
 export const file_token_session: GenFile = /*@__PURE__*/
-  fileDesc("ChN0b2tlbi9zZXNzaW9uLnByb3RvEgV0b2tlbiJkChNTZXNzaW9uVG9rZW5QYXlsb2FkEgoKAmlkGAEgASgDEg0KBWVwb2NoGAIgASgDEgsKA2FtchgDIAMoCRILCgNzaWQYBCABKAkSCwoDaWF0GAUgASgDEgsKA2V4cBgGIAEoA0IdWhthdXRobG9mdC9nZW4vZ28vdG9rZW47dG9rZW5iBnByb3RvMw");
+  fileDesc("ChN0b2tlbi9zZXNzaW9uLnByb3RvEgV0b2tlbiKAAQoTU2Vzc2lvblRva2VuUGF5bG9hZBIKCgJpZBgBIAEoAxINCgVlcG9jaBgCIAEoAxILCgNhbXIYAyADKAkSCwoDc2lkGAQgASgJEgsKA2lhdBgFIAEoAxILCgNleHAYBiABKAMSGgoSaGFzX2FueV9wZXJtaXNzaW9uGAcgASgIQh1aG2F1dGhsb2Z0L2dlbi9nby90b2tlbjt0b2tlbmIGcHJvdG8z");
 
 /**
  * SessionTokenPayload 是 session_token / al_session 的加密前载荷——会话令牌
@@ -63,6 +63,14 @@ export type SessionTokenPayload = Message<"token.SessionTokenPayload"> & {
    * @generated from field: int64 exp = 6;
    */
   exp: bigint;
+
+  /**
+   * 登录签发时写入：是否持有任意管理权限，供请求期决定是否二次查库；
+   * 续期重签原样透传、不重新判定（§11.5、接口文档 §1.9）。
+   *
+   * @generated from field: bool has_any_permission = 7;
+   */
+  hasAnyPermission: boolean;
 };
 
 /**

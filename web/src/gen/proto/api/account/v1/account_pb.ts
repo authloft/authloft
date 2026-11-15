@@ -2,8 +2,8 @@
 // @generated from file api/account/v1/account.proto (package api.account.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { AccountConfigResponseSchema, AvatarPresignResponseSchema, AvatarResponseSchema, CommitAvatarRequestSchema, GetConfigRequestSchema, GetProfileRequestSchema, OkResponseSchema, PresignAvatarRequestSchema, ProfileResponseSchema, UpdateProfileRequestSchema } from "./profile_pb";
 import { file_api_account_v1_profile } from "./profile_pb";
 import type { BindEmailRequestSchema, BindPhoneRequestSchema, ChangePasswordRequestSchema } from "./security_pb";
@@ -18,12 +18,49 @@ import type { StartVerificationRequestSchema, StartVerificationResponseSchema, S
 import { file_api_common_v1_verification } from "../../common/v1/verification_pb";
 import type { LoginFlowResponseSchema } from "../../sso/v1/envelope_pb";
 import { file_api_sso_v1_envelope } from "../../sso/v1/envelope_pb";
+import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/account/v1/account.proto.
  */
 export const file_api_account_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MTKhEQoOQWNjb3VudFNlcnZpY2USVAoJR2V0Q29uZmlnEiAuYXBpLmFjY291bnQudjEuR2V0Q29uZmlnUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLkFjY291bnRDb25maWdSZXNwb25zZRJQCgpHZXRQcm9maWxlEiEuYXBpLmFjY291bnQudjEuR2V0UHJvZmlsZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Qcm9maWxlUmVzcG9uc2USUQoNVXBkYXRlUHJvZmlsZRIkLmFwaS5hY2NvdW50LnYxLlVwZGF0ZVByb2ZpbGVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJcCg1QcmVzaWduQXZhdGFyEiQuYXBpLmFjY291bnQudjEuUHJlc2lnbkF2YXRhclJlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BdmF0YXJQcmVzaWduUmVzcG9uc2USUwoMQ29tbWl0QXZhdGFyEiMuYXBpLmFjY291bnQudjEuQ29tbWl0QXZhdGFyUmVxdWVzdBoeLmFwaS5hY2NvdW50LnYxLkF2YXRhclJlc3BvbnNlElMKDkNoYW5nZVBhc3N3b3JkEiUuYXBpLmFjY291bnQudjEuQ2hhbmdlUGFzc3dvcmRSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kUGhvbmUSIC5hcGkuYWNjb3VudC52MS5CaW5kUGhvbmVSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJJCglCaW5kRW1haWwSIC5hcGkuYWNjb3VudC52MS5CaW5kRW1haWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJECgZHZXRNZmESHS5hcGkuYWNjb3VudC52MS5HZXRNZmFSZXF1ZXN0GhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USQwoGU2V0TWZhEh0uYXBpLmFjY291bnQudjEuU2V0TWZhUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USTQoIQmluZFRvdHASHy5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlcXVlc3QaIC5hcGkuYWNjb3VudC52MS5CaW5kVG90cFJlc3BvbnNlEksKClVuYmluZFRvdHASIS5hcGkuYWNjb3VudC52MS5VbmJpbmRUb3RwUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScAoXUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXMSLi5hcGkuYWNjb3VudC52MS5SZWdlbmVyYXRlUmVjb3ZlcnlDb2Rlc1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5SZWNvdmVyeUNvZGVzUmVzcG9uc2USbQoWR2V0V2ViYXV0aG5DcmVkZW50aWFscxItLmFwaS5hY2NvdW50LnYxLkdldFdlYmF1dGhuQ3JlZGVudGlhbHNSZXF1ZXN0GiQuYXBpLmFjY291bnQudjEuV2ViYXV0aG5MaXN0UmVzcG9uc2USZQoQUmVnaXN0ZXJXZWJhdXRobhInLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXF1ZXN0GiguYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlc3BvbnNlEmcKGFJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLlJlbmFtZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmcKGERlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbBIvLmFwaS5hY2NvdW50LnYxLkRlbGV0ZVdlYmF1dGhuQ3JlZGVudGlhbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnEKFUdldFRoaXJkcGFydHlCaW5kaW5ncxIsLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlCaW5kaW5nc1JlcXVlc3QaKi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5QmluZGluZ3NSZXNwb25zZRJXChBVbmJpbmRUaGlyZHBhcnR5EicuYXBpLmFjY291bnQudjEuVW5iaW5kVGhpcmRwYXJ0eVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEmIKD1RoaXJkcGFydHlPYXV0aBImLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlcXVlc3QaJy5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXNwb25zZRJgChNHZXRUaGlyZHBhcnR5VGlja2V0EiouYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eVRpY2tldFJlcXVlc3QaHS5hcGkuc3NvLnYxLkxvZ2luRmxvd1Jlc3BvbnNlElAKCUdldEV2ZW50cxIgLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1JlcXVlc3QaIS5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXNwb25zZRJmChFTdGFydFZlcmlmaWNhdGlvbhInLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXF1ZXN0GiguYXBpLmNvbW1vbi52MS5TdGFydFZlcmlmaWNhdGlvblJlc3BvbnNlEmkKElN1Ym1pdFZlcmlmaWNhdGlvbhIoLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVxdWVzdBopLmFwaS5jb21tb24udjEuU3VibWl0VmVyaWZpY2F0aW9uUmVzcG9uc2VCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_common_v1_verification, file_api_sso_v1_envelope]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MSIZChdHZXRNeVBlcm1pc3Npb25zUmVxdWVzdCIvChhHZXRNeVBlcm1pc3Npb25zUmVzcG9uc2USEwoLcGVybWlzc2lvbnMYASADKAkyiBIKDkFjY291bnRTZXJ2aWNlElQKCUdldENvbmZpZxIgLmFwaS5hY2NvdW50LnYxLkdldENvbmZpZ1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BY2NvdW50Q29uZmlnUmVzcG9uc2USUAoKR2V0UHJvZmlsZRIhLmFwaS5hY2NvdW50LnYxLkdldFByb2ZpbGVSZXF1ZXN0Gh8uYXBpLmFjY291bnQudjEuUHJvZmlsZVJlc3BvbnNlElEKDVVwZGF0ZVByb2ZpbGUSJC5hcGkuYWNjb3VudC52MS5VcGRhdGVQcm9maWxlUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USXAoNUHJlc2lnbkF2YXRhchIkLmFwaS5hY2NvdW50LnYxLlByZXNpZ25BdmF0YXJSZXF1ZXN0GiUuYXBpLmFjY291bnQudjEuQXZhdGFyUHJlc2lnblJlc3BvbnNlElMKDENvbW1pdEF2YXRhchIjLmFwaS5hY2NvdW50LnYxLkNvbW1pdEF2YXRhclJlcXVlc3QaHi5hcGkuYWNjb3VudC52MS5BdmF0YXJSZXNwb25zZRJTCg5DaGFuZ2VQYXNzd29yZBIlLmFwaS5hY2NvdW50LnYxLkNoYW5nZVBhc3N3b3JkUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USSQoJQmluZFBob25lEiAuYXBpLmFjY291bnQudjEuQmluZFBob25lUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USSQoJQmluZEVtYWlsEiAuYXBpLmFjY291bnQudjEuQmluZEVtYWlsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USRAoGR2V0TWZhEh0uYXBpLmFjY291bnQudjEuR2V0TWZhUmVxdWVzdBobLmFwaS5hY2NvdW50LnYxLk1mYVJlc3BvbnNlEkMKBlNldE1mYRIdLmFwaS5hY2NvdW50LnYxLlNldE1mYVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEk0KCEJpbmRUb3RwEh8uYXBpLmFjY291bnQudjEuQmluZFRvdHBSZXF1ZXN0GiAuYXBpLmFjY291bnQudjEuQmluZFRvdHBSZXNwb25zZRJLCgpVbmJpbmRUb3RwEiEuYXBpLmFjY291bnQudjEuVW5iaW5kVG90cFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnAKF1JlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzEi4uYXBpLmFjY291bnQudjEuUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXNSZXF1ZXN0GiUuYXBpLmFjY291bnQudjEuUmVjb3ZlcnlDb2Rlc1Jlc3BvbnNlEm0KFkdldFdlYmF1dGhuQ3JlZGVudGlhbHMSLS5hcGkuYWNjb3VudC52MS5HZXRXZWJhdXRobkNyZWRlbnRpYWxzUmVxdWVzdBokLmFwaS5hY2NvdW50LnYxLldlYmF1dGhuTGlzdFJlc3BvbnNlEmUKEFJlZ2lzdGVyV2ViYXV0aG4SJy5hcGkuYWNjb3VudC52MS5SZWdpc3RlcldlYmF1dGhuUmVxdWVzdBooLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXNwb25zZRJnChhSZW5hbWVXZWJhdXRobkNyZWRlbnRpYWwSLy5hcGkuYWNjb3VudC52MS5SZW5hbWVXZWJhdXRobkNyZWRlbnRpYWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJnChhEZWxldGVXZWJhdXRobkNyZWRlbnRpYWwSLy5hcGkuYWNjb3VudC52MS5EZWxldGVXZWJhdXRobkNyZWRlbnRpYWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJxChVHZXRUaGlyZHBhcnR5QmluZGluZ3MSLC5hcGkuYWNjb3VudC52MS5HZXRUaGlyZHBhcnR5QmluZGluZ3NSZXF1ZXN0GiouYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eUJpbmRpbmdzUmVzcG9uc2USVwoQVW5iaW5kVGhpcmRwYXJ0eRInLmFwaS5hY2NvdW50LnYxLlVuYmluZFRoaXJkcGFydHlSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJiCg9UaGlyZHBhcnR5T2F1dGgSJi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXF1ZXN0GicuYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eU9hdXRoUmVzcG9uc2USYAoTR2V0VGhpcmRwYXJ0eVRpY2tldBIqLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlUaWNrZXRSZXF1ZXN0Gh0uYXBpLnNzby52MS5Mb2dpbkZsb3dSZXNwb25zZRJQCglHZXRFdmVudHMSIC5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXF1ZXN0GiEuYXBpLmFjY291bnQudjEuR2V0RXZlbnRzUmVzcG9uc2USZgoRU3RhcnRWZXJpZmljYXRpb24SJy5hcGkuY29tbW9uLnYxLlN0YXJ0VmVyaWZpY2F0aW9uUmVxdWVzdBooLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXNwb25zZRJpChJTdWJtaXRWZXJpZmljYXRpb24SKC5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlcXVlc3QaKS5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlc3BvbnNlEmUKEEdldE15UGVybWlzc2lvbnMSJy5hcGkuYWNjb3VudC52MS5HZXRNeVBlcm1pc3Npb25zUmVxdWVzdBooLmFwaS5hY2NvdW50LnYxLkdldE15UGVybWlzc2lvbnNSZXNwb25zZUIqWihhdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQvdjE7YWNjb3VudHYxYgZwcm90bzM", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_common_v1_verification, file_api_sso_v1_envelope]);
+
+/**
+ * GetMyPermissionsRequest 无字段：主体固定取会话 uid，不接受入参 uid 以免
+ * 越权查他人权限（§3.9）。Connect unary 须有请求消息，空消息承载。
+ *
+ * @generated from message api.account.v1.GetMyPermissionsRequest
+ */
+export type GetMyPermissionsRequest = Message<"api.account.v1.GetMyPermissionsRequest"> & {
+};
+
+/**
+ * Describes the message api.account.v1.GetMyPermissionsRequest.
+ * Use `create(GetMyPermissionsRequestSchema)` to create a new message.
+ */
+export const GetMyPermissionsRequestSchema: GenMessage<GetMyPermissionsRequest> = /*@__PURE__*/
+  messageDesc(file_api_account_v1_account, 0);
+
+/**
+ * GetMyPermissionsResponse 当前用户的全部权限点；无任何权限点时为空列表
+ * （标准 protojson 省略空 repeated，调用方按「零值或缺失即空列表」处理，§3.9）。
+ *
+ * @generated from message api.account.v1.GetMyPermissionsResponse
+ */
+export type GetMyPermissionsResponse = Message<"api.account.v1.GetMyPermissionsResponse"> & {
+  /**
+   * @generated from field: repeated string permissions = 1;
+   */
+  permissions: string[];
+};
+
+/**
+ * Describes the message api.account.v1.GetMyPermissionsResponse.
+ * Use `create(GetMyPermissionsResponseSchema)` to create a new message.
+ */
+export const GetMyPermissionsResponseSchema: GenMessage<GetMyPermissionsResponse> = /*@__PURE__*/
+  messageDesc(file_api_account_v1_account, 1);
 
 /**
  * AccountService 是 account 域的 Connect service。
@@ -40,6 +77,7 @@ export const file_api_account_v1_account: GenFile = /*@__PURE__*/
  *   UnbindThirdparty           §3.7    ThirdpartyOauth          §3.7.1 A
  *   GetThirdpartyTicket        §3.7    GetEvents                §3.7
  *   StartVerification          §3.8   SubmitVerification       §3.8
+ *   GetMyPermissions           §3.9
  * 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
  * 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
  * 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
@@ -289,6 +327,16 @@ export const AccountService: GenService<{
     methodKind: "unary";
     input: typeof SubmitVerificationRequestSchema;
     output: typeof SubmitVerificationResponseSchema;
+  },
+  /**
+   * 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
+   *
+   * @generated from rpc api.account.v1.AccountService.GetMyPermissions
+   */
+  getMyPermissions: {
+    methodKind: "unary";
+    input: typeof GetMyPermissionsRequestSchema;
+    output: typeof GetMyPermissionsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_api_account_v1_account, 0);

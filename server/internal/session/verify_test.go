@@ -217,7 +217,9 @@ func TestTokensParseGarbage(t *testing.T) {
 // TestContextHelpers WithSessionContext 注入后三项 FromContext 可读；
 // 空 ctx 全部 false。
 func TestContextHelpers(t *testing.T) {
-	ctx := WithSessionContext(context.Background(), testPayload())
+	p := testPayload()
+	p.HasAnyPermission = true
+	ctx := WithSessionContext(context.Background(), p)
 	if uid, ok := UIDFromContext(ctx); !ok || uid != 42 {
 		t.Fatalf("UIDFromContext = (%d, %v), want (42, true)", uid, ok)
 	}
@@ -227,6 +229,9 @@ func TestContextHelpers(t *testing.T) {
 	}
 	if sid, ok := SIDFromContext(ctx); !ok || sid != "sid-0001" {
 		t.Fatalf("SIDFromContext = (%q, %v), want (sid-0001, true)", sid, ok)
+	}
+	if !HasAnyPermissionFromContext(ctx) {
+		t.Fatal("HasAnyPermissionFromContext = false, want true（标记随载荷注入）")
 	}
 
 	plain := context.Background()
@@ -238,6 +243,14 @@ func TestContextHelpers(t *testing.T) {
 	}
 	if _, ok := SIDFromContext(plain); ok {
 		t.Fatal("SIDFromContext on plain ctx must be false")
+	}
+	if HasAnyPermissionFromContext(plain) {
+		t.Fatal("HasAnyPermissionFromContext on plain ctx must be false")
+	}
+
+	falseMarker := WithSessionContext(context.Background(), testPayload())
+	if HasAnyPermissionFromContext(falseMarker) {
+		t.Fatal("HasAnyPermissionFromContext on false marker must be false")
 	}
 }
 

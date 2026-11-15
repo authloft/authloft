@@ -39,6 +39,9 @@ message MeResponse {
   // 恒为 true：非管理员在 admin 域 Connect interceptor 即被拦下（uid≠1 → 404 掩护）
   // 不会走到这里（§5.1、§5）。
   bool is_admin = 5;
+  // 当前管理员持有的全部权限点；与 AccountService/GetMyPermissions 同源同义
+  // （§5.1、§3.9），因已通过统一入口「至少一个权限点」校验而必非空。
+  repeated string permissions = 6;
 }
 
 // OkResponse 是 admin 域文档未定义出参的写方法共用空应答

@@ -404,16 +404,17 @@ func adminStr(p *string) string {
 }
 
 // AdminMe 当前管理员视图；isAdmin 恒 true（非管理员在 admin 拦截器即被拦下）。
-func AdminMe(row *model.User) *adminv1.MeResponse {
+func AdminMe(row *model.User, permissions []string) *adminv1.MeResponse {
 	if row == nil {
 		return &adminv1.MeResponse{}
 	}
 	return &adminv1.MeResponse{
-		Id:        row.ID,
-		Username:  row.Username,
-		Nickname:  row.Nickname,
-		AvatarUrl: row.AvatarURL,
-		IsAdmin:   true,
+		Id:          row.ID,
+		Username:    row.Username,
+		Nickname:    row.Nickname,
+		AvatarUrl:   row.AvatarURL,
+		IsAdmin:     true,
+		Permissions: permissions,
 	}
 }
 

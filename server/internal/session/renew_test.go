@@ -157,3 +157,30 @@ func TestRenewTTLZeroEdge(t *testing.T) {
 		t.Fatalf("iat/exp = %d/%d, want 5000/5000", fresh.GetIat(), fresh.GetExp())
 	}
 }
+
+// TestRenewPreservesHasAnyPermission 续期重签原样透传登录签发时的标记：
+// 漏传会让 proto3 零值在首次续期即把 true 丢成 false（§11.5）。
+func TestRenewPreservesHasAnyPermission(t *testing.T) {
+	tokens := NewTokens(newTestCodec(t))
+	renewer := NewRenewer(tokens, 7*24*time.Hour)
+	renewer.now = func() time.Time { return time.Unix(5000, 0) }
+
+	for _, want := range []bool{true, false} {
+		old := testPayload()
+		old.HasAnyPermission = want
+		fresh, newTok, err := renewer.Renew(old)
+		if err != nil {
+			t.Fatalf("Renew: %v", err)
+		}
+		if fresh.GetHasAnyPermission() != want {
+			t.Fatalf("fresh.HasAnyPermission = %v, want %v", fresh.GetHasAnyPermission(), want)
+		}
+		got, err := tokens.Parse(newTok)
+		if err != nil {
+			t.Fatalf("Parse renewed: %v", err)
+		}
+		if got.GetHasAnyPermission() != want {
+			t.Fatalf("renewed token HasAnyPermission = %v, want %v（重签后不得丢标记）", got.GetHasAnyPermission(), want)
+		}
+	}
+}
