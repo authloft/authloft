@@ -285,8 +285,12 @@ export function captchaToStruct(captcha: CaptchaPayload): JsonObject {
   return out;
 }
 
-/** SsoService/SubmitVerification（登录二次验证）：带 loginToken 恢复登录流程上下文（§3.8.1 / §3.8.5）。 */
-export function submitStepUp(
+/**
+ * SsoService/SubmitVerification（登录二次验证）：带 loginToken 恢复登录流程上下文
+ * （§3.8.1 / §3.8.5）。响应即登录流程结论（§2.8 / §3.8.1）：success 即完成登录，
+ * 内存 loginToken 不再保留；失败态保留以便原地重试。
+ */
+export async function submitStepUp(
   challengeToken: string,
   method: string,
   payload: JsonObject,
@@ -297,7 +301,11 @@ export function submitStepUp(
     payload,
     loginToken: getLoginToken(),
   });
-  return ssoClient.submitVerification(request);
+  const response = await ssoClient.submitVerification(request);
+  if (response.status === 'success') {
+    clearLoginToken();
+  }
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,8 +364,8 @@ function stepUpToEnvelope(
  * 前端架构 §4.1 行 492/498）：保持 StartVerification 两段式——先带 `method`
  * （及请求级 `captcha`，§2.5 / §3.8.5）取 `challengeToken`，再以
  * `submitStepUp` 携带 `loginToken` 提交因子载荷；响应转信封交回状态机。
- * `status=success` 清空内存 `loginToken`（§1.3 五条之 3）——登录主路径专用，
- * 扫码分支由轮询内层信封自行清空，互不影响。
+ * `status=success` 清空内存 `loginToken`（§1.3 五条之 3）——扫码 step-up 由
+ * `submitStepUp` 自身在 success 时清空。
  */
 export async function submitLoginFactor(
   input: LoginDefaultInput,

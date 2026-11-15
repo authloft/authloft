@@ -24,9 +24,10 @@
  *   loginToken；本组件把它存入 loginTokenStore 后弹出 StepUpDialog，复用登录主路径
  *   的 startLoginVerification / submitStepUp（以 loginToken 为主体凭证）→
  *   SubmitVerification；按 §2.8 / §3.8.1，SubmitVerification 响应即登录流程结论，
- *   票据不写终态、不依赖下次轮询。
- *   同一 ticket 首次 needs_step_up 时弹窗；通过后保留已处理标记不重复弹窗，
- *   用户取消则清空标记，同一票据可再次弹窗（挑战令牌已丢弃，重开即重取）。
+ *   就地交登录终点跳转，票据不写终态、不依赖下次轮询。
+ *   同一 ticket 首次 needs_step_up 时弹窗；无论通过还是取消都保留已处理标记，
+ *   轮询不再自动重弹。取消后由面板区域的「重新验证」入口显式重开（挑战令牌已
+ *   随窗体丢弃，重开即重取；loginToken 仍随每轮 needs_step_up 刷新）。
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
  */
@@ -34,6 +35,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useSearchParams } from '@modern-js/runtime/router';
 import type { JsonObject } from '@bufbuild/protobuf';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
+import type { SubmitVerificationResponse } from '../../gen/proto/api/common/v1/verification_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
@@ -45,6 +47,7 @@ import { ApiError } from '../../shared/api/errors';
 import {
   QRCodePanel,
   MAX_POLL_SECONDS,
+  ticketPhaseOf,
 } from '../../shared/components/QRCodePanel';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
@@ -59,6 +62,12 @@ function initCaptcha(): CaptchaConfig | undefined {
   return getInit()?.methods?.captcha;
 }
 
+/** 登录终点跳转所需字段（§1.3 行 158-162；登录信封与 SubmitVerification 成功响应同形）。 */
+export type LoginTerminal = Pick<
+  LoginFlowResponse,
+  'syncCookieUrl' | 'redirectTo'
+>;
+
 /**
  * 扫码登录终点（§1.3 行 158-162 定稿 + returnTo 消费，与
  * LoginContainer.terminalUrl 同口径：syncCookieUrl 是后端拼好的多域名同步
@@ -67,7 +76,7 @@ function initCaptcha(): CaptchaConfig | undefined {
  * 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页）。
  */
 export function completeLogin(
-  envelope: LoginFlowResponse,
+  envelope: LoginTerminal,
   navigate: (url: string) => void = defaultNavigate,
   returnTo?: string,
 ): void {
@@ -179,15 +188,51 @@ export function stepUpTicketOf(
 }
 
 /**
- * 弹窗关闭后的票据标记（§2.8 行 884，纯函数）：验证通过保留已处理票据，
- * 等票据转终态、不重复弹窗；用户取消则清空标记，同一票据再次轮询到
- * needs_step_up 时可重新打开弹窗（凭据 / 挑战令牌已随窗体丢弃，重开即重取）。
+ * 轮询响应 → step-up 动作（§2.8 行 884，纯函数）：needs_step_up 每轮都会下发
+ * 新的 loginToken，即使不自动弹窗（同一票据已处理 / 已取消）也要刷新主体凭证，
+ * 否则显式重开会拿到丢弃前的旧凭证；票据进入终态（expired / failed）后显式
+ * 重开入口随之失效。
  */
-export function stepUpHandledAfterDismiss(
+export interface StepUpPollAction {
+  /** 需要写入 loginTokenStore 的主体凭证（非 needs_step_up → 空串）。 */
+  loginToken: string;
+  /** 需要自动弹窗的票据（已处理 / 非 needs_step_up → undefined）。 */
+  openTicketId: string | undefined;
+  /** 票据已进入终态（expired / failed）。 */
+  terminal: boolean;
+}
+
+export function stepUpPollAction(
+  envelope: LoginFlowResponse,
   handledTicketId: string | undefined,
+): StepUpPollAction {
+  const phase = ticketPhaseOf(envelope);
+  return {
+    loginToken: envelope.status === 'needs_step_up' ? envelope.loginToken : '',
+    openTicketId: stepUpTicketOf(envelope, handledTicketId),
+    terminal: phase === 'expired' || phase === 'failed',
+  };
+}
+
+/**
+ * 弹窗关闭后的票据标记与重开入口（§2.8 行 884，纯函数）：无论验证通过还是
+ * 用户取消都保留已处理标记，同一票据的后续轮询不得自动重弹——取消只给出
+ * 显式重开入口（返回 reopenTicketId），由用户点击再次打开弹窗。验证通过则
+ * 不提供入口（结论已交登录终点，等票据转终态）。
+ */
+export interface StepUpDismissState {
+  handledTicketId: string | undefined;
+  reopenTicketId: string | undefined;
+}
+
+export function stepUpDismissState(
+  ticketId: string | undefined,
   dismissed: 'verified' | 'cancelled',
-): string | undefined {
-  return dismissed === 'verified' ? handledTicketId : undefined;
+): StepUpDismissState {
+  return {
+    handledTicketId: ticketId,
+    reopenTicketId: dismissed === 'cancelled' ? ticketId : undefined,
+  };
 }
 
 /**
@@ -208,6 +253,23 @@ export function stepUpSubmitError(
     requestId: '',
     attemptsLeft,
   });
+}
+
+/**
+ * SubmitVerification 响应 → 登录结论（§3.8.1 成功返回登录流程结论，§2.8 行 872
+ * 票据不写终态、不依赖下次轮询，纯函数）：成功即把响应当登录终点交
+ * completeLogin 跳转，并回传非空占位让 StepUpDialog 判成功关窗；失败态抛窗内
+ * 错误，不跳转。
+ */
+export function completeStepUpSubmit(
+  response: SubmitVerificationResponse,
+  complete: (terminal: LoginTerminal) => void,
+): string {
+  if (response.status !== 'success') {
+    throw stepUpSubmitError(response.status, response.attemptsLeft);
+  }
+  complete(response);
+  return 'ok';
 }
 
 export interface QRCodeStepProps {
@@ -252,9 +314,14 @@ export function QRCodeStep({
   const [panelKey, setPanelKey] = useState(0);
   // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
   const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo') ?? undefined;
   // needs_step_up（§2.8 行 884）：票据标记弹二次验证窗体（主体凭证取信封 loginToken）；
   // 同一票据只弹一次。
   const [stepUpTicket, setStepUpTicket] = useState<string | undefined>(
+    undefined,
+  );
+  // 取消后不自动重弹：改由该状态承载用户可见的显式重开入口（票据 id）。
+  const [stepUpReopen, setStepUpReopen] = useState<string | undefined>(
     undefined,
   );
   const handledStepUpRef = useRef<string | undefined>(undefined);
@@ -295,7 +362,9 @@ export function QRCodeStep({
     [stepUpGate.run],
   );
 
-  // 不捕获任何响应式值（api 动态 import + 纯透传）：deps 空集即恒定引用。
+  // Submit 成功后就地交登录终点跳转（deps 只有 navigate 与 returnTo 两个原始值，
+  // StepUpDialog 的 start 引用稳定不受影响）。主体凭证 loginToken 由
+  // loginTokenStore 托管（每轮 needs_step_up 写入），不在闭包内捕获。
   const submitStepUp = useCallback(
     async (
       challengeToken: string,
@@ -303,17 +372,12 @@ export function QRCodeStep({
       payload: JsonObject,
     ): Promise<string> => {
       const { submitStepUp: submitStepUpApi } = await import('../api');
-      // 扫码场景服务端不回 verificationToken（§3.8.1）：SubmitVerification 响应
-      // 即登录流程结论，以 status=success 判完成，回传非空占位使 StepUpDialog
-      // 判成功并关窗。
       const response = await submitStepUpApi(challengeToken, method, payload);
-      if (response.status === 'success') {
-        return 'ok';
-      }
-      // 失败态按 §1.6 出提示（含剩余次数），不吞成空串走「响应无效」。
-      throw stepUpSubmitError(response.status, response.attemptsLeft);
+      return completeStepUpSubmit(response, (terminal) =>
+        completeLogin(terminal, navigate, returnTo),
+      );
     },
-    [],
+    [navigate, returnTo],
   );
 
   if (providerKey === '') {
@@ -345,22 +409,34 @@ export function QRCodeStep({
     throw outcome.error;
   };
 
-  // 轮询包装：顶层 status=needs_step_up 且信封下发 loginToken 时，把该 token
-  // 存入 loginTokenStore 后弹二次验证窗体（start/submit 复用登录主路径编排）。
-  // ticket.status 仍为 scanned → 面板按 scanned 继续轮询、不被 needs_step_up 终止；
-  // SubmitVerification 响应即登录流程结论（§2.8 / §3.8.1），票据不写终态、不依赖下次轮询。
+  // 轮询包装：needs_step_up 时刷新主体凭证并弹二次验证窗体（start/submit 复用
+  // 登录主路径编排）。ticket.status 仍为 scanned → 面板按 scanned 继续轮询、不被
+  // needs_step_up 终止；SubmitVerification 响应即登录流程结论（§2.8 / §3.8.1），
+  // 票据不写终态、不依赖下次轮询。
   const pollAndDetectStepUp = async (
     ticket: string,
     seconds?: number,
   ): Promise<LoginFlowResponse> => {
     const response = await pollTicket(ticket, seconds);
-    const ticketId = stepUpTicketOf(response, handledStepUpRef.current);
-    if (ticketId !== undefined) {
-      setLoginToken(response.loginToken);
-      handledStepUpRef.current = ticketId;
-      setStepUpTicket(ticketId);
+    const action = stepUpPollAction(response, handledStepUpRef.current);
+    if (action.loginToken !== '') {
+      setLoginToken(action.loginToken);
+    }
+    if (action.openTicketId !== undefined) {
+      handledStepUpRef.current = action.openTicketId;
+      setStepUpTicket(action.openTicketId);
+    }
+    if (action.openTicketId !== undefined || action.terminal) {
+      setStepUpReopen(undefined);
     }
     return response;
+  };
+
+  const dismissStepUp = (dismissed: 'verified' | 'cancelled') => {
+    const state = stepUpDismissState(handledStepUpRef.current, dismissed);
+    handledStepUpRef.current = state.handledTicketId;
+    setStepUpTicket(undefined);
+    setStepUpReopen(state.reopenTicketId);
   };
 
   return (
@@ -388,11 +464,7 @@ export function QRCodeStep({
             // binding_required / 失败态上抛交容器。
             dispatchQrResult(outer, {
               completeLogin: (login) =>
-                completeLogin(
-                  login,
-                  navigate,
-                  searchParams.get('returnTo') ?? undefined,
-                ),
+                completeLogin(login, navigate, returnTo),
               onResult,
             })
           }
@@ -400,27 +472,26 @@ export function QRCodeStep({
         />
       )}
       <CaptchaDialog {...gate.dialogProps} />
+      {stepUpReopen !== undefined && stepUpTicket === undefined ? (
+        <button
+          type="button"
+          className={styles.fetchButton}
+          onClick={() => {
+            setStepUpTicket(stepUpReopen);
+            setStepUpReopen(undefined);
+          }}
+        >
+          {t('login.stepUpReopen')}
+        </button>
+      ) : null}
       {stepUpTicket !== undefined ? (
         <>
           <StepUpDialog
             modal={Modal}
             start={startStepUp}
             submit={submitStepUp}
-            onVerified={() => {
-              handledStepUpRef.current = stepUpHandledAfterDismiss(
-                handledStepUpRef.current,
-                'verified',
-              );
-              setStepUpTicket(undefined);
-            }}
-            onCancel={() => {
-              // 取消即清空已处理标记：同一票据的 needs_step_up 可重新弹窗。
-              handledStepUpRef.current = stepUpHandledAfterDismiss(
-                handledStepUpRef.current,
-                'cancelled',
-              );
-              setStepUpTicket(undefined);
-            }}
+            onVerified={() => dismissStepUp('verified')}
+            onCancel={() => dismissStepUp('cancelled')}
           />
           <CaptchaDialog {...stepUpGate.dialogProps} />
         </>

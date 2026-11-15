@@ -82,6 +82,8 @@ export const login = {
   'login.stepUpAttemptsLeft': '{message}（还可尝试 {count} 次）',
   // 该因子无能力字段、且 verify 载荷不是 code（如 webauthn 的 credential）。
   'login.stepUpFactorUnsupported': '暂不支持在此完成该验证方式，请选择其他方式',
+  // 取消二次验证后，扫码面板区域提供的显式重开入口。
+  'login.stepUpReopen': '重新验证',
 
   // ---- 后端下发字段文案（sso.v1.Field.label / 注入快照 SnapshotField.label）----
   // 登录流程的 factor.Field、pages.SnapshotField、orchestrator.FieldSnapshot

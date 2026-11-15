@@ -82,6 +82,8 @@ export const login: typeof zhLogin = {
   'login.stepUpAttemptsLeft': '{message} ({count} attempts left)',
   'login.stepUpFactorUnsupported':
     'This verification method cannot be completed here. Please choose another method',
+  // Explicit re-entry offered on the QR panel after cancelling step-up.
+  'login.stepUpReopen': 'Verify again',
 
   // ---- Backend-supplied field copy (sso.v1.Field.label / snapshot labels) ----
   // The login flow only sends login.field.* keys; all wording lives here and is

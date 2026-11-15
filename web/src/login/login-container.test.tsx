@@ -2382,12 +2382,13 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       type: 'image',
     });
 
-  test('needs_step_up 不终止轮询 → loginToken 完成 Start/Submit → 下一次轮询 success → completeLogin', async () => {
+  test('needs_step_up 不终止轮询 → Submit 响应即登录终点（不依赖下一次轮询 success）', async () => {
     const qrBodies: unknown[] = [];
     const pollBodies: unknown[] = [];
     const startBodies: unknown[] = [];
     const submitBodies: unknown[] = [];
     let polls = 0;
+    let thirdPollReturned = false;
     let releasePoll: () => void = () => {};
     const pollHeld = new Promise<void>((resolve) => {
       releasePoll = resolve;
@@ -2434,9 +2435,10 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
             ),
           );
         }
-        // needs_step_up 之后的轮询挂起：Submit 成功才放行 success——
+        // needs_step_up 之后的轮询挂起：Submit 成功后不再依赖它返回终态——
         // 轮询若被 needs_step_up 终止，本请求根本不会发起。
         await pollHeld;
+        thirdPollReturned = true;
         return HttpResponse.json(
           toJson(
             LoginFlowResponseSchema,
@@ -2446,7 +2448,7 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
               login: envelope({
                 status: 'success',
                 loginToken: 'lt-qr',
-                syncCookieUrl: 'https://sync.test/qr',
+                syncCookieUrl: 'https://sync.test/qr-poll',
                 redirectTo: 'https://app.test/qr-home',
               }),
             }),
@@ -2469,12 +2471,13 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       }),
       http.post(SUBMIT_VERIFICATION, async ({ request }) => {
         submitBodies.push(await request.json());
-        releasePoll();
         return HttpResponse.json(
           toJson(
             SubmitVerificationResponseSchema,
             create(SubmitVerificationResponseSchema, {
               status: 'success',
+              syncCookieUrl: 'https://sync.test/step-up',
+              redirectTo: 'https://app.test/step-up-home',
               amr: ['totp'],
             }),
           ),
@@ -2527,13 +2530,22 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       );
       expect(submitted.status).toBe('success');
 
-      // Submit 成功后下一次轮询 success → completeLogin 终点（syncCookieUrl 优先）。
-      await waitFor(() => navigations.length > 0);
-      expect(navigations).toEqual(['https://sync.test/qr']);
-      // success 终态：轮询恰三轮（pending / needs_step_up / success）后停止。
+      // Submit 响应即登录结论：就地交登录终点（syncCookieUrl 优先），
+      // 不再依赖下一次轮询命中 success 才跳转（§3.8.1 / §2.8 行 872）。
+      const completed = qrStep.completeStepUpSubmit(submitted, (terminal) =>
+        qrStep.completeLogin(terminal, (url) => navigations.push(url)),
+      );
+      expect(completed).toBe('ok');
+      expect(navigations).toEqual(['https://sync.test/step-up']);
+      // 此刻第三轮轮询仍挂起未返回：跳转与轮询 success 无因果。
+      expect(thirdPollReturned).toBe(false);
       expect(polls).toBe(3);
-      expect(phases[phases.length - 1]).toEqual({ kind: 'success' });
-      expect(getLoginToken()).toBe(''); // 内层 success 清空（§1.3 行 145）
+      // 面板保持轮询中（needs_step_up 未终止）；跳转后组件卸载即 dispose。
+      expect(phases[phases.length - 1]).toEqual({
+        kind: 'active',
+        qrcodeUrl: 'https://cdn.test/q1.jpg',
+        ticketStatus: 'scanned',
+      });
 
       // Start 带 loginToken + bizPurpose + operation（二次 Start 补 method）；Submit 带 loginToken。
       expect(startBodies[0]).toEqual({
@@ -2559,8 +2571,8 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
         captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '123' },
       });
     } finally {
-      releasePoll();
       controller.dispose();
+      releasePoll();
     }
   });
 

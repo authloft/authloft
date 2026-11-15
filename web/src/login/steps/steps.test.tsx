@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
 import { create } from '@bufbuild/protobuf';
 import { CaptchaConfigSchema } from '../../gen/proto/api/common/v1/captcha_pb';
+import { SubmitVerificationResponseSchema } from '../../gen/proto/api/common/v1/verification_pb';
 import {
   FieldSchema,
   LoginFlowResponseSchema,
@@ -27,9 +28,11 @@ import { FormStep } from './FormStep';
 import {
   QRCodeStep,
   completeLogin,
+  completeStepUpSubmit,
   dispatchQrResult,
   qrcodeRequester,
-  stepUpHandledAfterDismiss,
+  stepUpDismissState,
+  stepUpPollAction,
   stepUpSubmitError,
   stepUpTicketOf,
 } from './QRCodeStep';
@@ -420,7 +423,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(raised).toEqual([outer]);
   });
 
-  test('用户取消弹窗 → 重入标记清零，同一票据可再次弹窗；验证通过则保留标记', () => {
+  test('取消不自动重弹：已处理标记保留 + 改由显式重开入口承接；验证通过不提供入口', () => {
     const needsStepUp = create(LoginFlowResponseSchema, {
       status: 'needs_step_up',
       loginToken: 'lt-qr',
@@ -428,20 +431,106 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     });
     const opened = stepUpTicketOf(needsStepUp, undefined);
     expect(opened).toBe('tid-1');
-    // 验证通过：已处理标记保留，同一票据不重复弹。
+    // 验证通过：标记保留、无重开入口，同一票据不重复弹。
+    const verified = stepUpDismissState(opened, 'verified');
+    expect(verified.handledTicketId).toBe('tid-1');
+    expect(verified.reopenTicketId).toBeUndefined();
     expect(
-      stepUpTicketOf(
-        needsStepUp,
-        stepUpHandledAfterDismiss(opened, 'verified'),
-      ),
+      stepUpTicketOf(needsStepUp, verified.handledTicketId),
     ).toBeUndefined();
-    // 用户取消：标记清空，同一票据可重新打开弹窗。
+    // 用户取消：标记同样保留 → 下一轮轮询同一票据绝不自动重弹（可证伪：
+    // 若清空标记，这里会再次返回 tid-1）。
+    const cancelled = stepUpDismissState(opened, 'cancelled');
+    expect(cancelled.handledTicketId).toBe('tid-1');
     expect(
-      stepUpTicketOf(
-        needsStepUp,
-        stepUpHandledAfterDismiss(opened, 'cancelled'),
+      stepUpTicketOf(needsStepUp, cancelled.handledTicketId),
+    ).toBeUndefined();
+    // 取消只提供用户可见的显式重开入口（同一票据），由点击触发重开。
+    expect(cancelled.reopenTicketId).toBe('tid-1');
+    // 显式重开不改写标记：此后轮询仍不自动重弹。
+    expect(
+      stepUpTicketOf(needsStepUp, cancelled.handledTicketId),
+    ).toBeUndefined();
+  });
+
+  test('stepUpPollAction：needs_step_up 每轮刷新 loginToken；已处理票据不自动弹；终态关闭重开入口', () => {
+    const fresh = create(LoginFlowResponseSchema, {
+      status: 'needs_step_up',
+      loginToken: 'lt-new',
+      ticket: { status: 'scanned', ticketId: 'tid-1' },
+    });
+    // 首次：弹窗 + 写入主体凭证。
+    expect(stepUpPollAction(fresh, undefined)).toEqual({
+      loginToken: 'lt-new',
+      openTicketId: 'tid-1',
+      terminal: false,
+    });
+    // 已处理（取消后）：不自动弹窗，但仍刷新为最新 loginToken —— 显式重开
+    // 拿到的不是丢弃前的旧凭证。
+    expect(stepUpPollAction(fresh, 'tid-1')).toEqual({
+      loginToken: 'lt-new',
+      openTicketId: undefined,
+      terminal: false,
+    });
+    // 终态：重开入口失效（expired 兜底重拉新码）。
+    expect(
+      stepUpPollAction(
+        create(LoginFlowResponseSchema, {
+          status: 'expired',
+          ticket: { status: 'expired', ticketId: 'tid-1' },
+        }),
+        'tid-1',
       ),
-    ).toBe('tid-1');
+    ).toEqual({ loginToken: '', openTicketId: undefined, terminal: true });
+    // 非 needs_step_up 不写凭证。
+    expect(
+      stepUpPollAction(
+        create(LoginFlowResponseSchema, {
+          status: 'scanned',
+          ticket: { status: 'scanned', ticketId: 'tid-1' },
+        }),
+        undefined,
+      ),
+    ).toEqual({ loginToken: '', openTicketId: undefined, terminal: false });
+  });
+
+  test('Submit 成功响应即登录结论：直接交终点跳转（不等轮询 success）；失败不跳转', () => {
+    const calls: string[] = [];
+    const nav = (url: string) => calls.push(url);
+    // 成功：响应里的 syncCookieUrl / redirectTo 直接按 completeLogin 优先级落点。
+    const placeholder = completeStepUpSubmit(
+      create(SubmitVerificationResponseSchema, {
+        status: 'success',
+        syncCookieUrl: 'https://sync.test/step-up',
+        redirectTo: 'https://app.test/step-up',
+      }),
+      (terminal) => completeLogin(terminal, nav),
+    );
+    expect(placeholder).toBe('ok');
+    expect(calls).toEqual(['https://sync.test/step-up']);
+    // 仅 redirectTo：回退到 redirectTo（可证伪：不再依赖下一次轮询的 login 信封）。
+    completeStepUpSubmit(
+      create(SubmitVerificationResponseSchema, {
+        status: 'success',
+        redirectTo: 'https://app.test/step-up',
+      }),
+      (terminal) => completeLogin(terminal, nav),
+    );
+    expect(calls).toEqual([
+      'https://sync.test/step-up',
+      'https://app.test/step-up',
+    ]);
+    // 失败：抛窗内错误、不跳转（含剩余次数）。
+    expect(() =>
+      completeStepUpSubmit(
+        create(SubmitVerificationResponseSchema, {
+          status: 'invalid_code',
+          attemptsLeft: BigInt(2),
+        }),
+        (terminal) => completeLogin(terminal, nav),
+      ),
+    ).toThrow();
+    expect(calls).toHaveLength(2);
   });
 
   test('needs_step_up 带 loginToken 才弹窗；token 缺省不展示（可反向证伪）', () => {

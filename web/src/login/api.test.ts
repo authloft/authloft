@@ -507,3 +507,37 @@ describe('submitLoginFactor（登录主路径 MFA 提交，§3.8 / §4.1 行 492
     expect(submitBodies[0]).not.toHaveProperty('captcha');
   });
 });
+
+describe('submitStepUp（扫码 step-up，§2.8 / §3.8.1）', () => {
+  test('success 即登录结论：清空内存 loginToken（不再依赖轮询信封清空）', async () => {
+    server.use(
+      http.post(SUBMIT_VERIFICATION, () =>
+        HttpResponse.json({
+          status: 'success',
+          redirectTo: 'https://app.test/home',
+          syncCookieUrl: 'https://sync.test/first',
+        }),
+      ),
+    );
+    setLoginToken('lt-x');
+    const response = await mod.submitStepUp('ct-x', 'totp', {
+      code: '123456',
+    });
+    expect(response.status).toBe('success');
+    expect(getLoginToken()).toBe('');
+  });
+
+  test('失败态不清空 loginToken（原地重试仍带主体凭证，可反向证伪）', async () => {
+    server.use(
+      http.post(SUBMIT_VERIFICATION, () =>
+        HttpResponse.json({ status: 'invalid_code', attemptsLeft: '2' }),
+      ),
+    );
+    setLoginToken('lt-x');
+    const response = await mod.submitStepUp('ct-x', 'totp', {
+      code: '000000',
+    });
+    expect(response.status).toBe('invalid_code');
+    expect(getLoginToken()).toBe('lt-x');
+  });
+});
