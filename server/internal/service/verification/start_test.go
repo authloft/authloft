@@ -20,17 +20,22 @@ func (s *startSettings) GetInt64(key string) (int64, bool) {
 	return v, ok
 }
 
-// startGate CaptchaGate 的 fake：回放一次判定结论。
+// startGate CaptchaGate 的 fake：回放一次判定结论，并记录调用次数与场景。
 type startGate struct {
 	outcome captcha.Outcome
 	err     error
 	calls   int
+	scene   string
 }
 
-func (g *startGate) Evaluate(context.Context, captcha.Request) (captcha.Outcome, error) {
+func (g *startGate) Evaluate(_ context.Context, req captcha.Request) (captcha.Outcome, error) {
 	g.calls++
+	g.scene = req.Scene
 	return g.outcome, g.err
 }
+
+// passGate 放行全部场景的守卫 fake（不参与场景判定的用例使用）。
+func passGate() *startGate { return &startGate{} }
 
 // startBound BoundFactorReader 的 fake：factors 为 nil 表示不限制（返回候选全量）。
 type startBound struct {
@@ -136,7 +141,10 @@ func TestStartEnforcesDomainPurpose(t *testing.T) {
 
 func TestStartSSOLoginSubject(t *testing.T) {
 	tokens := &startLoginTokens{uid: 42, passed: true}
-	svc, codec := newStartService(t, func(d *Deps) { d.LoginTokens = tokens })
+	svc, codec := newStartService(t, func(d *Deps) {
+		d.LoginTokens = tokens
+		d.Gate = passGate()
+	})
 
 	// method 为空：只返回 methods[]，不签发挑战令牌（§10.2 步骤 5）。
 	res, failure, err := svc.Start(context.Background(), StartInput{
@@ -208,7 +216,11 @@ func TestStartSSOLoginRequiresPassedPrimary(t *testing.T) {
 
 func TestStartMethodEmptySkipsStarter(t *testing.T) {
 	starter := &startStarter{}
-	svc, _ := newStartService(t, func(d *Deps) { d.Starter = starter })
+	gate := passGate()
+	svc, _ := newStartService(t, func(d *Deps) {
+		d.Starter = starter
+		d.Gate = gate
+	})
 	res, _, err := svc.Start(context.Background(), StartInput{
 		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
 	})
@@ -230,6 +242,7 @@ func TestStartMethodSelectionUsesStarterNonceAndData(t *testing.T) {
 	svc, codec := newStartService(t, func(d *Deps) {
 		d.Starter = starter
 		d.Bound = bound
+		d.Gate = passGate()
 	})
 
 	res, _, err := svc.Start(context.Background(), StartInput{
@@ -332,16 +345,16 @@ func TestStartCaptchaFailureSurfacesConfig(t *testing.T) {
 	}
 }
 
-func TestStartDoesNotEvaluateCaptchaWithoutMethod(t *testing.T) {
-	gate := &startGate{outcome: captcha.Outcome{Status: captcha.StatusRequired}}
+func TestStartUsesNoDispatchSceneForNonOtpMethods(t *testing.T) {
+	gate := passGate()
 	svc, _ := newStartService(t, func(d *Deps) { d.Gate = gate })
 	if _, failure, err := svc.Start(context.Background(), StartInput{
 		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
 	}); err != nil || failure != nil {
 		t.Fatalf("err=%v failure=%+v", err, failure)
 	}
-	if gate.calls != 0 {
-		t.Fatalf("未选因子不应触发 captcha，calls = %d", gate.calls)
+	if gate.scene != captcha.SceneNoDispatch {
+		t.Fatalf("未选因子应给出无下发场景，scene = %q", gate.scene)
 	}
 }
 
@@ -441,32 +454,67 @@ func findMethod(t *testing.T, views []MethodView, method string) MethodView {
 	return MethodView{}
 }
 
-// TestStartCaptchaScenarioTable 可证伪（§2.5 触发表 / §9.3）：只有一次性
-// 验证码下发（OTP 类因子）过 captcha 守卫；WebAuthn 取 options 与 TOTP /
-// 恢复码提交不触发。若仍按「选定任意因子即强制」判定，非 OTP 行的
-// gate.calls 断言立即失败。
-func TestStartCaptchaScenarioTable(t *testing.T) {
+// TestStartCaptchaSceneTable 可证伪（§2.5 触发表 / §9.3）：调用方只按所选因子
+// 给出场景——OTP 类是一次性验证码下发，WebAuthn 只是取 options，TOTP 取挑战与
+// 恢复码本环节无下发。若仍按「选定任意因子即强制」判定，场景断言立即失败。
+func TestStartCaptchaSceneTable(t *testing.T) {
 	cases := []struct {
-		method    string
-		wantCalls int
+		method string
+		scene  string
 	}{
-		{"otp_sms", 1},
-		{"otp_email", 1},
-		{"webauthn", 0},
-		{"totp", 0},
-		{"recovery_code", 0},
+		{"otp_sms", captcha.SceneOtpDispatch},
+		{"otp_email", captcha.SceneOtpDispatch},
+		{"webauthn", captcha.SceneWebAuthnOptions},
+		{"totp", captcha.SceneNoDispatch},
+		{"recovery_code", captcha.SceneNoDispatch},
+		{"", captcha.SceneNoDispatch},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
-			gate := &startGate{}
+			gate := passGate()
 			svc, _ := newStartService(t, func(d *Deps) { d.Gate = gate })
 			if _, _, err := svc.Start(context.Background(), StartInput{
 				Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: tc.method, Operation: "step_up", SessionUID: "42",
 			}); err != nil {
 				t.Fatalf("Start: %v", err)
 			}
-			if gate.calls != tc.wantCalls {
-				t.Fatalf("gate.calls = %d, want %d（§2.5 触发表）", gate.calls, tc.wantCalls)
+			if gate.calls != 1 || gate.scene != tc.scene {
+				t.Fatalf("gate calls=%d scene=%q, want 1 / %q", gate.calls, gate.scene, tc.scene)
+			}
+		})
+	}
+}
+
+// TestStartCaptchaRealGateOnlyOtpRequired 真实 Gate 下的行为等价：仅 OTP 下发
+// 拦截，WebAuthn 取 options、TOTP 取挑战、恢复码继续放行（§2.5 触发表）。
+func TestStartCaptchaRealGateOnlyOtpRequired(t *testing.T) {
+	cases := []struct {
+		method  string
+		blocked bool
+	}{
+		{"otp_sms", true},
+		{"otp_email", true},
+		{"webauthn", false},
+		{"totp", false},
+		{"recovery_code", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			svc, _ := newStartService(t, func(d *Deps) { d.Gate = captcha.NewGate(nil, nil, nil) })
+			_, failure, err := svc.Start(context.Background(), StartInput{
+				Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: tc.method, Operation: "step_up", SessionUID: "42",
+			})
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			if tc.blocked {
+				if failure == nil || failure.Code != captcha.StatusRequired {
+					t.Fatalf("failure = %+v, want %s", failure, captcha.StatusRequired)
+				}
+				return
+			}
+			if failure != nil {
+				t.Fatalf("failure = %+v, want 放行", failure)
 			}
 		})
 	}

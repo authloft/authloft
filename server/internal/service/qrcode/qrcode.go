@@ -1,7 +1,8 @@
 // qrcode.go 扫码拉码与轮询的业务层（docs/后端架构.md §3.9 行 406、
 // §13.2-§13.3、§11.6.4-§11.6.5；docs/接口文档.md §2.8）：
 //
-//   - CreateQrcode：captcha 必检（Gate Challenge 恒触发）→ scene 分派
+//   - CreateQrcode：captcha 必检（场景「拉取小程序码」，§2.5 触发表第 7 行）
+//     → scene 分派
 //     （bind 需 al_session，否则 401）→ ticket_id ≤24（§11.6.4）→
 //     TicketPayload 经 sign_key.ticket 加密（purpose=ticket）→
 //     GetwxacodeUnlimit（adapter 的 QRCodeSupporter）→ JPEG 75% 压缩
@@ -114,7 +115,7 @@ type QueuePusher interface {
 type QRCodeDeps struct {
 	Loader     thirdpartysvc.ThirdpartyLoader
 	NewAdapter thirdpartysvc.ThirdpartyAdapterFactory
-	// Gate captcha 唯一拦截点（§9.3 行 1110；Challenge 恒触发）。
+	// Gate captcha 唯一拦截点（§9.3；按场景查 §2.5 触发表判定）。
 	Gate *captcha.Gate
 	// TicketCodec sign_key.ticket（§11.6.4：ticket 加密串）。
 	TicketCodec *security.Codec
@@ -174,8 +175,9 @@ type CreateQrcodeOutput struct {
 // CreateQrcode 拉取小程序码（§2.8 行 702-719）。业务失败走可判别哨兵
 // 错误（handler 转 Connect 错误体 + ErrorInfo）。
 func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*CreateQrcodeOutput, error) {
-	// captcha 必检（§2.8 行 703：必须携带；Challenge 恒触发，无阈值参与）。
-	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{Challenge: true, Submission: in.Captcha})
+	// captcha 必检（§2.5 触发表第 7 行：拉取小程序码；§2.8 行 703 必须携带，
+	// 无阈值参与）。
+	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{Scene: captcha.SceneQrcodeFetch, Submission: in.Captcha})
 	if err != nil {
 		return nil, fmt.Errorf("qrcode: gate: %w", err)
 	}

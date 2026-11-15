@@ -4,8 +4,8 @@
 //
 // 职责：AccountService/BindPhone、BindEmail 的换绑编排——统一走验证码
 // （purpose=bind）+ captcha 两步（§3.4 行 883）：
-//   - challenge {target, captcha}：captcha 必过（Gate Challenge 恒触发，
-//     §3.4 行 896）→ target 非空 → 存在性先判（uid 用户行不存在 →
+//   - challenge {target, captcha}：captcha 必过（场景「绑定 / 换绑联系方式」，
+//     §2.5 触发表第 6 行、§3.4 行 896）→ target 非空 → 存在性先判（uid 用户行不存在 →
 //     user_not_found 口径哨兵，同 profile.go 先于任何写操作）→ 占用判定
 //     （§3.4 行 892：新号码必须未被他人占用——已占他人 → target_taken；
 //     已绑自己 → 幂等成功零动作〔不写码 / 不发信 / 不投审计，既有幂等
@@ -165,7 +165,7 @@ type BindContactDeps struct {
 	OTP *core.Service
 	// Sender 码值投递（短信 / 邮件渠道）。
 	Sender BindCodeSender
-	// Gate captcha 唯一拦截点（§9.3 行 1110；Challenge 恒触发）。
+	// Gate captcha 唯一拦截点（§9.3；按场景查 §2.5 触发表判定）。
 	Gate *captcha.Gate
 	// Config 发码限流判定参数（core.Judge 用；*otp.Service 构造自带一份，
 	// 此处独立注入同值，factor/otp Factor 同款双注入）。
@@ -253,10 +253,10 @@ func (s *BindContactService) bindContact(ctx context.Context, uid int64, kind bi
 // ①captcha 必过 → ②target 非空 → ③存在性先判 → ④占用判定 → ⑤写码 +
 // 限流判定 → ⑥投递。
 func (s *BindContactService) bindChallenge(ctx context.Context, uid int64, kind bindContactKind, target string, sub *captcha.Submission, ip string) error {
-	// ① captcha 必检（Challenge 恒触发，无阈值参与；service/qrcode.go
-	// CreateQrcode 同款）。基础设施错误透传（handler 映射 internal，
-	// §1.6 行 273）。
-	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{Challenge: true, Submission: sub})
+	// ① captcha 必检（§2.5 触发表第 6 行：绑定 / 换绑联系方式；无阈值参与，
+	// service/qrcode.go CreateQrcode 同款）。基础设施错误透传（handler 映射
+	// internal，§1.6 行 273）。
+	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{Scene: captcha.SceneContactBind, Submission: sub})
 	if err != nil {
 		return fmt.Errorf("account bind: gate: %w", err)
 	}

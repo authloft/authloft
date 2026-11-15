@@ -316,23 +316,21 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		return nil, nil, failure("invalid_request", nil)
 	}
 
-	// 仅当选定的因子属于一次性验证码（OTP 类）时才产生下发、须过守卫：按 §2.5
-	// 触发表，WebAuthn 取 options、TOTP / 恢复码不产生下发，均不触发（§2.5、§9.3）。
-	// 守卫缺失时 fail-closed，不静默放行。
-	if sendsOneTimeCode(in.Method) {
-		if s.d.Gate == nil {
-			return nil, nil, fmt.Errorf("verification: captcha gate not injected")
-		}
-		outcome, err := s.d.Gate.Evaluate(ctx, captcha.Request{
-			Challenge:  true,
-			Submission: in.Captcha,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("verification: captcha gate: %w", err)
-		}
-		if f := captcha.FailureFrom(outcome); f != nil {
-			return nil, f, nil
-		}
+	// 场景守卫：本次下发所选因子决定场景，是否需要 captcha 由 Gate 按 §2.5
+	// 触发表判定（§9.3）——OTP 类下发须过守卫，WebAuthn 只取 options、TOTP
+	// 绑定与恢复码不下发，场景查表即「不需要」。守卫缺失时 fail-closed。
+	if s.d.Gate == nil {
+		return nil, nil, fmt.Errorf("verification: captcha gate not injected")
+	}
+	outcome, err := s.d.Gate.Evaluate(ctx, captcha.Request{
+		Scene:      captchaScene(in.Method),
+		Submission: in.Captcha,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("verification: captcha gate: %w", err)
+	}
+	if f := captcha.FailureFrom(outcome); f != nil {
+		return nil, f, nil
 	}
 
 	views := make([]MethodView, 0, len(candidates))
@@ -399,15 +397,18 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	}, nil, nil
 }
 
-// sendsOneTimeCode 该因子在下发阶段是否产生一次性验证码（§2.5 触发表：
-// 「任何一次性验证码下发 必须」；WebAuthn 取 options 不需要，TOTP /
-// 恢复码提交不产生下发）。
-func sendsOneTimeCode(method string) bool {
+// captchaScene 把本次下发所选因子翻译成 captcha 场景（§2.5 触发表）：OTP 类
+// 产生一次性验证码下发（第 1 行）；WebAuthn 只取 options（第 2 行）；TOTP 取
+// 挑战与恢复码本环节均无下发，同归无下发场景（TOTP 绑定在 account 域，不经本
+// 入口）。
+func captchaScene(method string) string {
 	switch method {
 	case "otp_sms", "otp_email":
-		return true
+		return captcha.SceneOtpDispatch
+	case "webauthn":
+		return captcha.SceneWebAuthnOptions
 	default:
-		return false
+		return captcha.SceneNoDispatch
 	}
 }
 

@@ -1,7 +1,7 @@
-// Package captcha 是人机校验的唯一拦截点（docs/后端架构.md §9，
-// docs/接口文档.md §2.5）。所有 challenge 步与密码登录都经 Gate 判定；
-// 触发阈值每次从注入的 settings 读取（不缓存配置），校验一律委托
-// 注入的 Verifier，本包不自造图形码算法、不读 DB/Redis。
+// Package captcha 是人机校验的唯一拦截点（docs/后端架构.md §9.3，
+// docs/接口文档.md §2.5）。是否需要人机校验一律由 Gate 按场景查表判定，
+// 调用方只提供本次请求所属场景；触发阈值每次从注入的 settings 读取（不缓存
+// 配置），校验一律委托注入的 Verifier，本包不自造图形码算法、不读 DB/Redis。
 package captcha
 
 import (
@@ -25,6 +25,57 @@ const (
 	BuiltinProviderKey = "builtin_image"
 	TypeImage          = "image"
 )
+
+// 场景（scene）是「是否需要 captcha」的唯一判定维度（docs/后端架构.md §9.3）：
+// 场景取值与 docs/接口文档.md §2.5 触发表的行对齐，由调用入口按当前业务环节
+// 确定、不经请求传入；与验证内核的 biz_purpose 正交，不得互相引用取值。
+const (
+	// SceneOtpDispatch 任何一次性验证码下发（触发表第 1 行）。
+	SceneOtpDispatch = "otp_dispatch"
+	// SceneWebAuthnOptions WebAuthn 取 options（第 2 行）。
+	SceneWebAuthnOptions = "webauthn_options"
+	// ScenePasswordLogin 密码登录（第 3 行）：按同账号当日失败计数判定。
+	ScenePasswordLogin = "password_login"
+	// SceneSignupResetDispatch 注册 / 重置的下发（第 4 行）。
+	SceneSignupResetDispatch = "signup_reset_dispatch"
+	// SceneMfaDispatch 两步验证阶段下发（第 5 行）。
+	SceneMfaDispatch = "mfa_dispatch"
+	// SceneContactBind 绑定 / 换绑手机号、邮箱（第 6 行）。
+	SceneContactBind = "contact_bind"
+	// SceneQrcodeFetch 拉取小程序码（第 7 行）。
+	SceneQrcodeFetch = "qrcode_fetch"
+	// SceneNoDispatch 不含下发的环节——已下发后的校验 / 提交、三方免密建号
+	// （只提交用户名）——统一用本场景，对应触发表「不需要、本环节无下发」一行。
+	SceneNoDispatch = "no_dispatch"
+)
+
+// rule 是触发表一行的判定规则。
+type rule uint8
+
+const (
+	// ruleRequired 必须（也是未知场景的兜底结论）。
+	ruleRequired rule = iota
+	// ruleNotRequired 不需要。
+	ruleNotRequired
+	// rulePasswordThreshold 按密码登录失败计数与阈值比较得出。
+	rulePasswordThreshold
+)
+
+// sceneRules 与 docs/接口文档.md §2.5 触发表的行对齐：表内 7 个场景
+// （第 1-7 行）+ SceneNoDispatch（「不需要、本环节无下发」）；新增场景只加行，
+// 不改判定逻辑。
+// §2.5 触发表第 8 行（TOTP 绑定）当前无 gate 调用点——绑定链路由 account 域
+// 承担且本就不触发 captcha；若日后绑定改走 gate，再按该行新增场景。
+var sceneRules = map[string]rule{
+	SceneOtpDispatch:         ruleRequired,          // 第 1 行 任何一次性验证码下发
+	SceneWebAuthnOptions:     ruleNotRequired,       // 第 2 行 WebAuthn 取 options
+	ScenePasswordLogin:       rulePasswordThreshold, // 第 3 行 密码登录
+	SceneSignupResetDispatch: ruleRequired,          // 第 4 行 注册 / 重置的下发
+	SceneMfaDispatch:         ruleRequired,          // 第 5 行 两步验证阶段下发
+	SceneContactBind:         ruleRequired,          // 第 6 行 绑定 / 换绑联系方式
+	SceneQrcodeFetch:         ruleRequired,          // 第 7 行 拉取小程序码
+	SceneNoDispatch:          ruleNotRequired,       // 无下发环节（表「不需要」一行）
+}
 
 const defaultPwdFailCapture = 3
 
@@ -73,12 +124,11 @@ type Settings interface {
 	GetInt64(key string) (int64, bool)
 }
 
-// Request 描述一次拦截判定。
-// Challenge 覆盖所有 challenge 步（验证码下发、MFA 挑战、三方二维码拉取等）；
-// Password 覆盖密码登录，FailedAttempts 为同账号当日失败次数。
+// Request 描述一次拦截判定。Scene 由调用入口按当前业务环节给出（取值见本包
+// 场景常量），调用方不自行判定是否触发；FailedAttempts 只由密码登录场景消费，
+// 为同账号当日失败次数。
 type Request struct {
-	Challenge      bool
-	Password       bool
+	Scene          string
 	FailedAttempts int64
 	Submission     *Submission
 }
@@ -132,14 +182,11 @@ func (g *Gate) Config(ctx context.Context) Config {
 	return normalize(p)
 }
 
-// Evaluate 判定本次请求是否需要人机校验，并（在提供 Submission 时）执行校验。
-// 返回基础设施错误时由调用方映射为 failed；业务失败通过 Outcome.Status 表达。
+// Evaluate 据场景查表判定本次请求是否需要人机校验，并（在提供 Submission 时）
+// 执行校验。返回基础设施错误时由调用方映射为 failed；业务失败通过
+// Outcome.Status 表达。
 func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
-	required := req.Challenge
-	if req.Password && req.FailedAttempts >= g.threshold() {
-		required = true
-	}
-	if !required {
+	if !g.requires(req.Scene, req.FailedAttempts) {
 		return Outcome{}, nil
 	}
 
@@ -165,6 +212,19 @@ func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
 		return out, nil
 	}
 	return out, err
+}
+
+// requires 查触发表得出本次是否必须人机校验。未登记场景（含空串）一律按
+// 「必须」处理：宁可多校验一次，也不因调用方漏写场景而静默放行。
+func (g *Gate) requires(scene string, failedAttempts int64) bool {
+	switch sceneRules[scene] {
+	case ruleNotRequired:
+		return false
+	case rulePasswordThreshold:
+		return failedAttempts >= g.threshold()
+	default:
+		return true
+	}
 }
 
 // threshold 每次从 settings 读 pwd_fail_capture，未配置或非法时取默认 3。

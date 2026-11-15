@@ -62,11 +62,11 @@ func TestGateConfigUsesCurrentProvider(t *testing.T) {
 	}
 }
 
-func TestGateChallengeRequiresCaptcha(t *testing.T) {
+func TestGateRequiredSceneNeedsCaptcha(t *testing.T) {
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{
 		ProviderKey: "turnstile-1", Type: "turnstile", SiteKey: "site-1",
 	}}, &fakeVerifier{})
-	out, err := g.Evaluate(context.Background(), Request{Challenge: true})
+	out, err := g.Evaluate(context.Background(), Request{Scene: SceneOtpDispatch})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -78,11 +78,67 @@ func TestGateChallengeRequiresCaptcha(t *testing.T) {
 	}
 }
 
+// TestSceneTable 按 §2.5 触发表核对场景结论：表内 7 个场景 + 无下发场景，
+// 未知场景 fail-closed（按「必须」处理）。
+func TestSceneTable(t *testing.T) {
+	cases := []struct {
+		scene string
+		want  bool
+	}{
+		{SceneOtpDispatch, true},         // 第 1 行 任何一次性验证码下发
+		{SceneWebAuthnOptions, false},    // 第 2 行 WebAuthn 取 options
+		{ScenePasswordLogin, false},      // 第 3 行 密码登录：0 次失败不触发
+		{SceneSignupResetDispatch, true}, // 第 4 行 注册 / 重置的下发
+		{SceneMfaDispatch, true},         // 第 5 行 两步验证阶段下发
+		{SceneContactBind, true},         // 第 6 行 绑定 / 换绑联系方式
+		{SceneQrcodeFetch, true},         // 第 7 行 拉取小程序码
+		{SceneNoDispatch, false},         // 无下发环节
+		{"", true},                       // 未登记 → fail-closed
+		{"no_such_scene", true},          // 未登记 → fail-closed
+	}
+	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, &fakeVerifier{})
+	for _, tc := range cases {
+		t.Run(tc.scene, func(t *testing.T) {
+			out, err := g.Evaluate(context.Background(), Request{Scene: tc.scene})
+			if err != nil {
+				t.Fatalf("Evaluate: %v", err)
+			}
+			if out.Required != tc.want {
+				t.Fatalf("scene=%q required=%v, want %v", tc.scene, out.Required, tc.want)
+			}
+			if tc.want && out.Status != StatusRequired {
+				t.Fatalf("scene=%q status=%q, want %q", tc.scene, out.Status, StatusRequired)
+			}
+		})
+	}
+}
+
+// TestNotRequiredScenesSkipVerifier 不需要的场景既不校验凭据也不调用 Verifier。
+func TestNotRequiredScenesSkipVerifier(t *testing.T) {
+	v := &fakeVerifier{}
+	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, v)
+	for _, scene := range []string{SceneWebAuthnOptions, SceneNoDispatch} {
+		out, err := g.Evaluate(context.Background(), Request{
+			Scene:      scene,
+			Submission: &Submission{ProviderKey: "builtin_image", ID: "id", Answer: "1234"},
+		})
+		if err != nil {
+			t.Fatalf("scene=%q Evaluate: %v", scene, err)
+		}
+		if out.Required || out.Status != "" {
+			t.Fatalf("scene=%q outcome = %+v, want 放行", scene, out)
+		}
+	}
+	if len(v.calls) != 0 {
+		t.Fatalf("不需要 captcha 的场景不应校验凭据，calls = %v", v.calls)
+	}
+}
+
 func TestGateChallengeVerifyPass(t *testing.T) {
 	v := &fakeVerifier{}
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, v)
 	out, err := g.Evaluate(context.Background(), Request{
-		Challenge:  true,
+		Scene:      SceneOtpDispatch,
 		Submission: &Submission{ProviderKey: "builtin_image", ID: "id", Answer: "1234"},
 	})
 	if err != nil {
@@ -100,7 +156,7 @@ func TestGateVerifyInvalid(t *testing.T) {
 	v := &fakeVerifier{result: ErrInvalid}
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, v)
 	out, err := g.Evaluate(context.Background(), Request{
-		Challenge:  true,
+		Scene:      SceneOtpDispatch,
 		Submission: &Submission{ProviderKey: "builtin_image", ID: "id", Answer: "bad"},
 	})
 	if err != nil {
@@ -115,7 +171,7 @@ func TestGateVerifyInfraError(t *testing.T) {
 	v := &fakeVerifier{result: errors.New("redis down")}
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, v)
 	_, err := g.Evaluate(context.Background(), Request{
-		Challenge:  true,
+		Scene:      SceneOtpDispatch,
 		Submission: &Submission{ProviderKey: "builtin_image", ID: "id", Answer: "x"},
 	})
 	if err == nil {
@@ -127,7 +183,7 @@ func TestGateProviderKeyMismatch(t *testing.T) {
 	v := &fakeVerifier{}
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "turnstile-1", Type: "turnstile", SiteKey: "site"}}, v)
 	out, err := g.Evaluate(context.Background(), Request{
-		Challenge:  true,
+		Scene:      SceneOtpDispatch,
 		Submission: &Submission{ProviderKey: "other", Token: "t"},
 	})
 	if err != nil {
@@ -145,7 +201,7 @@ func TestGatePasswordThresholdIsRuntime(t *testing.T) {
 	settings := mapSettings{"pwd_fail_capture": 3}
 	g := NewGate(settings, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, &fakeVerifier{})
 
-	out, err := g.Evaluate(context.Background(), Request{Password: true, FailedAttempts: 2})
+	out, err := g.Evaluate(context.Background(), Request{Scene: ScenePasswordLogin, FailedAttempts: 2})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -155,7 +211,7 @@ func TestGatePasswordThresholdIsRuntime(t *testing.T) {
 
 	// 运行时改阈值，不重新构造 Gate，证明不缓存配置。
 	settings["pwd_fail_capture"] = 2
-	out, err = g.Evaluate(context.Background(), Request{Password: true, FailedAttempts: 2})
+	out, err = g.Evaluate(context.Background(), Request{Scene: ScenePasswordLogin, FailedAttempts: 2})
 	if err != nil {
 		t.Fatalf("Evaluate: %v", err)
 	}
@@ -166,10 +222,10 @@ func TestGatePasswordThresholdIsRuntime(t *testing.T) {
 
 func TestGatePasswordDefaultThreshold(t *testing.T) {
 	g := NewGate(mapSettings{}, fakeCatalog{p: &Provider{ProviderKey: "builtin_image", Type: "image"}}, &fakeVerifier{})
-	if out, _ := g.Evaluate(context.Background(), Request{Password: true, FailedAttempts: 2}); out.Required {
+	if out, _ := g.Evaluate(context.Background(), Request{Scene: ScenePasswordLogin, FailedAttempts: 2}); out.Required {
 		t.Fatal("default threshold 3 must not trigger at 2")
 	}
-	if out, _ := g.Evaluate(context.Background(), Request{Password: true, FailedAttempts: 3}); !out.Required {
+	if out, _ := g.Evaluate(context.Background(), Request{Scene: ScenePasswordLogin, FailedAttempts: 3}); !out.Required {
 		t.Fatal("default threshold 3 must trigger at 3")
 	}
 }

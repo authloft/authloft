@@ -257,7 +257,7 @@ func (e *qrEnv) sealTicket(t *testing.T, p *token.TicketPayload) string {
 // —— CreateQrcode ——
 
 // TestCreateQrcodeCaptcha 必检：缺 captcha → captcha_required；校验失败 →
-// captcha_invalid；合法 → 放行（§2.8 行 703、§9.3 Challenge 恒触发）。
+// captcha_invalid；合法 → 放行（§2.8 行 703、§2.5 触发表第 7 行）。
 func TestCreateQrcodeCaptcha(t *testing.T) {
 	ctx := context.Background()
 

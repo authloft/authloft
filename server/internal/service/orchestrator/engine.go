@@ -174,7 +174,7 @@ func (e *Engine) Submit(ctx context.Context, flow string, req Request) *ssov1.Lo
 	}
 	p.Factor = string(d.Kind)
 
-	// challenge 步与密码登录统一过 captcha gate（§2.2 第 4 步、§2.5）。
+	// 按本次业务环节的场景统一过 captcha gate（§2.2 第 4 步、§2.5 触发表）。
 	outcome, err := e.evaluateCaptcha(ctx, d, req, p)
 	if err != nil {
 		return failWith(ctx, flow, "captcha_gate", err)
@@ -278,29 +278,13 @@ func flowPurpose(flow string, usage factor.Usage) string {
 	return flow
 }
 
-// evaluateCaptcha 在 Start 之前完成拦截（§2.2 第 4 步）。
-// WebAuthn 取 options（challenge 步）不需要人机校验（§2.5 行 526）。
-// 三方免密建号（tp 非空 + flow=login 的 set_password）同样不经
-// captcha：该分支由 LoginOauth 已验证的三方身份背书，请求只提交 username
-// （§2.7.5 行 685「仅提交用户名」——此处默认口径，待复核）。
+// evaluateCaptcha 在 Start 之前完成拦截（§2.2 第 4 步、§9.3）：只把本次请求
+// 所属业务环节翻译成场景，是否触发由 Gate 按 §2.5 触发表判定。
 func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request, p *token.LoginTokenPayload) (captcha.Outcome, error) {
 	if e.gate == nil {
 		return captcha.Outcome{}, nil
 	}
-	if d.Kind == factor.FactorWebAuthn && req.Step == "challenge" {
-		return captcha.Outcome{}, nil
-	}
-	// register 直通入口（method=password、step=set_password）captcha 必经
-	// （§2.3 行 450-451「captcha 必填」）。到达这里的 password + set_password
-	// 只可能是 register 流（login 流被 dispatch 拒、reset 流被方式开关拒；
-	// tp 免密建号除外——见上），复用 gate 的 Challenge 必经通道——docs 未
-	// 明说 set_password 的 gate Request 形态，默认口径，待复核。
-	direct := d.Kind == factor.FactorPassword && req.Step == stepSetPassword &&
-		!(p.GetTp() != nil && p.GetFlow() == "login")
-	r := captcha.Request{
-		Challenge: req.Step == "challenge" || direct,
-		Password:  d.Kind == factor.FactorPassword && req.Step == "verify",
-	}
+	r := captcha.Request{Scene: captchaScene(d, req, p)}
 	if req.Captcha != nil {
 		r.Submission = &captcha.Submission{
 			ProviderKey: req.Captcha.ProviderKey,
@@ -312,7 +296,7 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 	// 密码登录读当日失败计数：user_ref 经注入的解析器按因子写入侧
 	// 同款口径推导（用户存在 → "{userID}"；不存在 → "{ip}|{sha256}"），禁止
 	// 直接拿 username 原文当键（键口径漂移 → 计数恒 0，渐进式保护失效）。
-	if r.Password && e.failures != nil && e.userRef != nil && req.Payload != nil {
+	if r.Scene == captcha.ScenePasswordLogin && e.failures != nil && e.userRef != nil && req.Payload != nil {
 		if identifier := strings.TrimSpace(req.Payload.Username); identifier != "" {
 			ref, err := e.userRef.UserRef(ctx, identifier)
 			if err != nil {
@@ -326,6 +310,37 @@ func (e *Engine) evaluateCaptcha(ctx context.Context, d *Dispatched, req Request
 		}
 	}
 	return e.gate.Evaluate(ctx, r)
+}
+
+// captchaScene 把本次请求所属业务环节翻译成 captcha 场景（§2.5 触发表）：
+// 只陈述业务事实（下发 / 取 options / 密码登录 / 建号），不判断是否触发。
+// 触发表未列「已下发后的校验 / 提交」与三方免密建号，二者均无下发。
+func captchaScene(d *Dispatched, req Request, p *token.LoginTokenPayload) string {
+	switch {
+	case req.Step == "challenge":
+		switch {
+		case d.Kind == factor.FactorWebAuthn:
+			return captcha.SceneWebAuthnOptions // 表第 2 行：只取 options
+		case d.Usage == factor.UsageSecondary:
+			return captcha.SceneMfaDispatch // 表第 5 行
+		case p.GetFlow() == "register" || p.GetFlow() == "reset":
+			return captcha.SceneSignupResetDispatch // 表第 4 行
+		default:
+			return captcha.SceneOtpDispatch // 表第 1 行
+		}
+	case req.Step == stepSetPassword:
+		// 用户名 + 密码注册从 set_password 直接进入、captcha 必填（docs/接口文档.md
+		// §2.3、§2.5 触发时机）；三方免密建号只提交用户名、由已验证的三方身份
+		// 背书，不下发验证码（§2.7.5）。
+		if d.Kind == factor.FactorPassword && !(p.GetTp() != nil && p.GetFlow() == "login") {
+			return captcha.SceneSignupResetDispatch
+		}
+		return captcha.SceneNoDispatch
+	case d.Kind == factor.FactorPassword:
+		return captcha.ScenePasswordLogin // 表第 3 行
+	default:
+		return captcha.SceneNoDispatch
+	}
 }
 
 // start 对应 §2.2 第 5 步的 challenge 分支：执行因子 Start，重签 login_token，

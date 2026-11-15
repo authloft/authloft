@@ -430,6 +430,29 @@ func TestEnginePasswordCaptchaAfterFailures(t *testing.T) {
 	}
 }
 
+// TestEnginePasswordCaptchaBelowThreshold 失败计数未达阈值时继续登录（§2.5
+// 触发表第 3 行：默认阈值 3，2 次失败提交密码不弹 captcha）。
+func TestEnginePasswordCaptchaBelowThreshold(t *testing.T) {
+	deps := newTestDeps(t, time.Unix(1_700_000_000, 0))
+	deps.failures = fakeFailures{n: 2}
+	deps.registry.factors[factor.FactorPassword] = passwordFactor(7)
+	e := deps.engine(testState(t, time.Unix(1_700_000_000, 0)))
+
+	var failures []*captcha.Failure
+	ctx := WithCaptchaFailureSink(context.Background(), func(f *captcha.Failure) {
+		failures = append(failures, f)
+	})
+	got := e.Submit(ctx, "login", Request{
+		Method: "password", Step: "verify", Payload: &factor.Payload{Username: "u", Password: "p"},
+	})
+	if len(failures) != 0 {
+		t.Fatalf("failures = %+v, want 0（未达阈值不得拦截）", failures)
+	}
+	if got.Status != StatusSuccess {
+		t.Fatalf("status = %q, want %q", got.Status, StatusSuccess)
+	}
+}
+
 func TestEngineMFACaptchaSuccess(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	state := testState(t, at)
