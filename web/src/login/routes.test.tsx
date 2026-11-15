@@ -80,11 +80,29 @@ const PASSWORD_METHOD = {
   ],
 };
 
-function makeSnapshot(flags?: {
-  passwordReset?: boolean;
-  registration?: boolean;
-}): MethodsSnapshot {
-  return { flags, methods: [PASSWORD_METHOD] };
+const THIRDPARTY_METHOD = {
+  method: 'thirdparty',
+  usage: ['primary'],
+  providers: [
+    {
+      providerKey: 'qq',
+      displayName: 'QQ',
+      type: 'qq',
+      channel: 'redirect',
+      uiGroup: 'social',
+      sortOrder: '10',
+    },
+  ],
+};
+
+function makeSnapshot(
+  flags?: {
+    passwordReset?: boolean;
+    registration?: boolean;
+  },
+  methods: MethodsSnapshot['methods'] = [PASSWORD_METHOD],
+): MethodsSnapshot {
+  return { flags, methods };
 }
 
 /** stub window（注入块；§8 白名单字段。路由路径由 MemoryRouter 注入，不再经 location.pathname）。 */
@@ -296,10 +314,13 @@ describe('LoginApp：bootstrap 错误态与路由分派（§4.1 行 374-376）',
 // ---------------------------------------------------------------------------
 
 describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性（§2.1）', () => {
-  function renderPage(flags?: {
-    passwordReset?: boolean;
-    registration?: boolean;
-  }): string {
+  function renderPage(
+    flags?: {
+      passwordReset?: boolean;
+      registration?: boolean;
+    },
+    methods?: MethodsSnapshot['methods'],
+  ): string {
     // LoginPage 纯组装（不读 window）；LoginContainer 消费 useSearchParams，
     // 直接渲染需 MemoryRouter 包裹（与生产 BrowserRouter 模式无关）。
     stubWindow(undefined);
@@ -307,7 +328,9 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
       createElement(
         MemoryRouter,
         { initialEntries: ['/sso/login'] },
-        createElement(pagesMod.LoginPage, { snapshot: makeSnapshot(flags) }),
+        createElement(pagesMod.LoginPage, {
+          snapshot: makeSnapshot(flags, methods),
+        }),
       ),
     );
   }
@@ -337,5 +360,50 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
     // 入口是 <a href>（原禁用占位按钮已激活，§4.4 行 463）。
     expect(html).toContain('href="/sso/reset"');
     expect(html).toContain('href="/sso/register"');
+  });
+
+  test('第三方图标墙位于入口导航下方（忘记密码先于图标墙出现）', () => {
+    const html = renderPage({ passwordReset: true, registration: true }, [
+      PASSWORD_METHOD,
+      THIRDPARTY_METHOD,
+    ]);
+    const entry = html.indexOf('忘记密码');
+    const wall = html.indexOf('data-group="social"');
+    expect(entry).toBeGreaterThan(-1);
+    expect(wall).toBeGreaterThan(entry);
+    expect(html).toContain('QQ');
+  });
+
+  test('flags 全 false → 入口不渲染，第三方图标墙仍按其自身可见性渲染', () => {
+    const html = renderPage({ passwordReset: false, registration: false }, [
+      PASSWORD_METHOD,
+      THIRDPARTY_METHOD,
+    ]);
+    expect(html).not.toContain('忘记密码');
+    expect(html).not.toContain('注册');
+    expect(html).toContain('data-group="social"');
+    expect(html).toContain('QQ');
+  });
+
+  test('thirdparty 条目缺失或 providers 为空 → 不渲染图标墙', () => {
+    const missingEntry = renderPage(
+      { passwordReset: true, registration: true },
+      [PASSWORD_METHOD],
+    );
+    expect(missingEntry).not.toContain('data-group=');
+
+    const emptyProviders = renderPage(
+      { passwordReset: true, registration: true },
+      [{ method: 'thirdparty', usage: ['primary'], providers: [] }],
+    );
+    expect(emptyProviders).not.toContain('data-group=');
+  });
+
+  test('空态：主因子 tab 与第三方 providers 均缺失才出现「暂无可用登录方式」', () => {
+    expect(renderPage(undefined, [])).toContain('暂无可用登录方式');
+
+    const providersOnly = renderPage(undefined, [THIRDPARTY_METHOD]);
+    expect(providersOnly).not.toContain('暂无可用登录方式');
+    expect(providersOnly).toContain('QQ');
   });
 });

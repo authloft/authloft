@@ -1,7 +1,8 @@
 /**
- * 登录页外壳（docs/前端架构.md §4.4 行 463）：组装 LoginContainer——
- * 「MethodTabs + LoginContainer」的组装关系由容器视图 LoginFlowView
- * 内嵌 MethodTabs 满足（既有交付结构），此处不重复渲染防双份。
+ * 登录页外壳（docs/前端架构.md §4.4 行 463）：组装 LoginContainer + 入口
+ * 导航 + 第三方图标墙——「MethodTabs + LoginContainer」的组装关系由容器视图
+ * LoginFlowView 内嵌 MethodTabs 满足，此处不重复渲染防双份；图标墙在入口
+ * 导航下方独立渲染（thirdparty providers 由 factors/ProviderButtons 承载）。
  *
  * - `/auth/authorize` 的已登录直达由后端 302 处理（§4.4），前端只渲染
  *   无会话空壳；登录成功后的终点跳转（syncCookieUrl / redirectTo）在
@@ -9,7 +10,8 @@
  * - 「忘记密码」「注册」入口可见性取注入快照 `methods.flags`（接口文档
  *   §2.1 行 374-377：镜像 allow_password_reset / allow_registration），
  *   不另发请求；入口激活为真链接（/sso/reset、/sso/register，Go 渲染
- *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）。
+ *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）；
+ * - 扫码结论经受控 state 注入容器，回到同一状态机分派（不引入全局事件）。
  *
  * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用。
  *
@@ -20,7 +22,9 @@
  */
 import { useState } from 'react';
 import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
+import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { LoginContainer } from '../LoginContainer';
+import { ProviderButtons } from '../factors/ProviderButtons';
 import type { MethodsSnapshot } from '../../shared/types/init';
 import styles from './LoginPage.module.less';
 import { Link } from '@modern-js/runtime/router';
@@ -40,6 +44,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const showRegister = flags?.registration === true;
   // 内存内语言切换（持久化口径待定）；state 驱动重渲染使 t() 生效。
   const [locale, setLocaleState] = useState<Locale>(getLocale);
+  // 第三方图标墙数据与扫码结论：结论经受控 prop 注入容器，避免全局事件。
+  const thirdparty = snapshot.methods.find((m) => m.method === 'thirdparty');
+  const providers = thirdparty?.providers ?? [];
+  const [qrResult, setQrResult] = useState<LoginFlowResponse | undefined>(
+    undefined,
+  );
   const switchLocale = (next: Locale) => {
     setLocale(next);
     setLocaleState(next);
@@ -72,7 +82,7 @@ export function LoginPage({ snapshot }: LoginPageProps) {
         </>
       }
     >
-      <LoginContainer snapshot={snapshot} />
+      <LoginContainer snapshot={snapshot} qrResult={qrResult} />
 
       {(showForgot || showRegister) && (
         <nav className={styles.entryNav}>
@@ -87,6 +97,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
             </Link>
           )}
         </nav>
+      )}
+
+      {providers.length > 0 && (
+        <div className={styles.providerWall}>
+          <ProviderButtons providers={providers} onQrResult={setQrResult} />
+        </div>
       )}
     </AppLayout>
   );

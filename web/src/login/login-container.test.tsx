@@ -900,18 +900,36 @@ describe('MethodTabs 静态渲染', () => {
     expect(renderTabs()).toContain('通行密钥');
   });
 
-  test('图标墙：channel=api 不渲染、uiGroup 分组、组内 sortOrder 排序、icon 渲染', () => {
+  test('不再渲染第三方图标墙：data-group / provider 名不出现', () => {
     const markup = renderTabs();
-    expect(markup).not.toContain('微信</span>'); // wechat_mp（channel=api）不渲染
-    expect(markup.indexOf('data-group="enterprise"')).toBeLessThan(
-      markup.indexOf('data-group="social"'),
-    );
-    expect(markup.indexOf('QQ')).toBeLessThan(markup.indexOf('微信扫码')); // 组内 10 < 20
-    expect(markup).toContain('src="https://ex.test/qq.png"');
+    expect(markup).not.toContain('data-group=');
+    expect(markup).not.toContain('QQ');
+    expect(markup).not.toContain('微信扫码');
   });
 
-  test('空列表 → 空状态提示（§8.2 行 582）', () => {
+  test('空态：无主因子 tab 且无 thirdparty providers → 暂无可用登录方式（§8.2 行 582）', () => {
     expect(renderTabs([])).toContain('暂无可用登录方式');
+    expect(
+      renderTabs([{ method: 'thirdparty', usage: ['primary'], providers: [] }]),
+    ).toContain('暂无可用登录方式');
+  });
+
+  test('仅有 thirdparty providers → 不出现无可用方式空态（图标墙由登录页渲染）', () => {
+    const markup = renderTabs([
+      {
+        method: 'thirdparty',
+        usage: ['primary'],
+        providers: [
+          {
+            providerKey: 'qq',
+            displayName: 'QQ',
+            type: 'qq',
+            channel: 'redirect',
+          },
+        ],
+      },
+    ]);
+    expect(markup).not.toContain('暂无可用登录方式');
   });
 });
 

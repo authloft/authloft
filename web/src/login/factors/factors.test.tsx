@@ -73,7 +73,7 @@ describe('lookupFactor / isOtpForm（§4.3 映射表三态）', () => {
     expect(isOtpForm(undefined)).toBe(false);
   });
 
-  test('缺映射 → undefined（thirdparty 由 MethodTabs 链路接入，不进 registry，不静默回退）', () => {
+  test('缺映射 → undefined（thirdparty 由登录页独立渲染图标墙，不进 registry，不静默回退）', () => {
     expect(lookupFactor('thirdparty')).toBeUndefined();
     expect(lookupFactor('')).toBeUndefined();
   });

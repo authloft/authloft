@@ -42,6 +42,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -492,11 +493,6 @@ export interface LoginFlowViewProps {
   /** webauthn 最近一次下发的 options 容器镜像（失败态信封无 nextStep，容器持值注入）。 */
   challengeData?: JsonObject;
   /**
-   * 扫码登录结论（§2.8 行 739-743）：透传 MethodTabs → ProviderButtons
-   * → QRCodeStep 上抛——binding_required / 失败态经容器 qrResultEvent 分派。
-   */
-  onQrResult?: (envelope: LoginFlowResponse) => void;
-  /**
    * 「返回方式列表」入口（评审 P0-1）：next / mfa 分支渲染次级链接，
    * 容器 dispatch reset 回第一步（reducer「换方式 = 全新流程」语义）。
    */
@@ -562,7 +558,6 @@ export function LoginFlowView({
   mfaMethods,
   onCredential,
   challengeData,
-  onQrResult,
   onBackToMethods,
   onRetry,
   challengeValues,
@@ -772,7 +767,6 @@ export function LoginFlowView({
         methods={snapshot.methods}
         current={state.method}
         onSelect={onSelect}
-        onQrResult={onQrResult}
       />
       {/* 空态兜底（§9 第 18 条）：无可用主因子 tab（如 capability 全部不满足）
           仍显示引导；正常首屏 state.method 已由容器默认选中，不走此分支。 */}
@@ -809,11 +803,17 @@ export interface LoginContainerProps {
    * 页面不自管），success 终点跳转 executeEffects（§4.1 行 383）。
    */
   initialEnvelope?: LoginFlowResponse;
+  /**
+   * 扫码登录结论（§2.8 行 739-743）：图标墙由登录页在入口导航下方渲染，
+   * 结论经本 prop 注入——binding_required / 失败态经 qrResultEvent 分派。
+   */
+  qrResult?: LoginFlowResponse;
 }
 
 export function LoginContainer({
   snapshot,
   initialEnvelope,
+  qrResult,
 }: LoginContainerProps) {
   // 首屏默认选中项（与 MethodTabs 可见 tab 口径一致；快照页面存活期内不刷新，§2.1）。
   const defaultEvent = useMemo(() => defaultMethodEvent(snapshot), [snapshot]);
@@ -1021,13 +1021,19 @@ export function LoginContainer({
   // 扫码登录结论（§2.8 行 739-743）：内层非 success 信封进状态机
   // 分派（binding_required → 原地 BindingPage；失败态 → 表单区 + ErrorBanner，
   // 图标墙可重新拉码 = 重试）；success / 内层缺失不动作（终点跳转已由
-  // QRCodeStep completeLogin 完成）。
-  const onQrResult = (outer: LoginFlowResponse) => {
-    const event = qrResultEvent(outer);
+  // QRCodeStep completeLogin 完成）。引用记录已消费结论，父级重渲染注入
+  // 同一对象时不重复分派。
+  const consumedQrResult = useRef<LoginFlowResponse | undefined>(undefined);
+  useEffect(() => {
+    if (qrResult === undefined || qrResult === consumedQrResult.current) {
+      return;
+    }
+    consumedQrResult.current = qrResult;
+    const event = qrResultEvent(qrResult);
     if (event !== undefined) {
       dispatch(event);
     }
-  };
+  }, [qrResult]);
 
   // 评审 P0-1：「返回方式列表」= 回第一步（reducer「换方式 = 全新
   // 流程」语义的 reset 落地；flowReducerWithDefault 令 reset 后重选默认 tab）；
@@ -1063,7 +1069,6 @@ export function LoginContainer({
         mfaMethods={mfaMethods}
         onCredential={submitCredential}
         challengeData={challengeData}
-        onQrResult={onQrResult}
         onBackToMethods={backToMethods}
         onRetry={retrySubmit}
         challengeValues={challengeValues}

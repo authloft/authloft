@@ -1,7 +1,7 @@
 /**
  * 第三方渠道图标墙 + 点击分派（docs/前端架构.md §4.3 行 454）：
- * thirdparty 因子的主方式渲染入口——由 MethodTabs 消费链路接入（图标墙
- * 渲染归本组件、MethodTabs 不再重复渲染 thirdparty 图标，防双份渲染）。
+ * thirdparty 因子的主方式渲染入口——由登录页 LoginPage 在入口导航下方
+ * 渲染（图标墙唯一实现，防双份渲染）。
  *
  * - 按 channel 分派（§2.7.1 行 576）：redirect → 先调 SsoService/Authorize
  *   取 authorize_url（§2.7.2：RPC 非 302，不得 <a href> 直跳——该路径返回
@@ -101,7 +101,7 @@ export interface RedirectDeps {
 
 /**
  * 缺省取授权 URL：login/api.ts authorize（scene 缺省即 login，§2.7.2 行 584）。
- * 运行时动态 import——MethodTabs 静态 import 本组件（图标墙链路），顶层引入
+ * 运行时动态 import——登录页静态 import 本组件（图标墙链路），顶层引入
  * api 会连带 transport 单例在测试全局 __AUTHLOFT_INIT__ 注入前求值（login-
  * container.test 模式），故按需加载。
  */
@@ -217,7 +217,7 @@ export function ProviderButtons({
 
   /**
    * qrcode 渠道点击：原地打开扫码面板（不新开页面，§4.3 行 454）。QRCodeStep
-   * 运行时动态加载——MethodTabs 静态 import 本组件（图标墙链路），而 QRCodeStep
+   * 运行时动态加载——登录页静态 import 本组件（图标墙链路），而 QRCodeStep
    * → shared/captcha → shared/api/http 会连带 transport 单例在测试全局
    * __AUTHLOFT_INIT__ 注入前求值（login-container.test 静态/动态 import 时序），
    * 故图标墙静态链保持零 http 依赖，面板组件按需加载。
