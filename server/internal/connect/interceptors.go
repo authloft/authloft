@@ -167,29 +167,27 @@ func AddSessionCookie(ctx context.Context, ck *http.Cookie) {
 	}
 }
 
-// adminUID 管理员固定 UID：安装时创建的 user.id = 1 账号，不设角色表、
-// 不加 is_admin 列（docs/接口文档.md §5 行 1143）。ctx uid 的读取经
-// session.UIDFromContext 与 Gin 链路共用同一实现（§3.14 行 473 约束）。
-const adminUID int64 = 1
+// PermissionLookup 由装配层注入，connect 包只持函数值、不反向依赖 service
+// （§3.14、§3.7）。「至少一个权限点」的语义由 service/admin 定义（§4.8）。
+type PermissionLookup func(ctx context.Context, uid int64) (bool, error)
 
-// NewAdminInterceptor 返回管理员会话校验拦截器（§5 行 1145、§3.14 行 473），
-// 装配时挂在 session 拦截器之内（依赖其注入的会话身份）：
-//   - ctx 无 uid（未携带有效会话 / session 拦截器放行的未登录请求）→
-//     unauthenticated（HTTP 401）；
-//   - uid 有但 != 1 → not_found（HTTP 404，掩护管理面存在，§1.5 行 189）；
-//   - uid == 1 放行。
-//
-// 两错误由拦截层产生、不进 §1.6 业务词汇（行 273），不挂 ErrorInfo detail
-// （标准码语义）。管理员判定仅此处与 Gin 链路各一份（§3.14 禁止散落），
-// 判定依据（uid==1）唯一定义于文档。
-func NewAdminInterceptor() connect.UnaryInterceptorFunc {
+// NewAdminInterceptor 须挂在 session 拦截器之内，依赖其注入的会话身份。
+// 无权限点一律返回 not_found 以掩护管理面存在；探针故障则必须 fail-closed
+// 返回 internal、绝不回落 not_found，否则基础设施故障会被读成「无权限」
+// （§3.14、§4.8）。判定只此一处，避免散落；错误不进业务词汇表。
+func NewAdminInterceptor(lookup PermissionLookup) connect.UnaryInterceptorFunc {
 	return func(next connect.UnaryFunc) connect.UnaryFunc {
 		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			uid, ok := session.UIDFromContext(ctx)
 			if !ok {
 				return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 			}
-			if uid != adminUID {
+			has, err := lookup(ctx, uid)
+			if err != nil {
+				// 故障须 fail-closed：根因留错误链供日志回溯，线上文本仍消毒。
+				return nil, connect.NewError(connect.CodeInternal, sanitizedError{err: err})
+			}
+			if !has {
 				// 文案与普通资源 404 一致，不透露「路径存在但无权」。
 				return nil, connect.NewError(connect.CodeNotFound, errNotFound)
 			}

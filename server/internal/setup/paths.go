@@ -234,9 +234,9 @@ func requireAdmin(ctx context.Context, dsn string) error {
 	return nil
 }
 
-// installAdmin 路径 B 步骤 ③：用户名 / 密码校验后插入管理员（固定 ID=1，
-// §4.2；已存在则跳过——幂等，不覆盖既有密码）。user 行与 password 凭证行
-// 同一事务写出。
+// installAdmin 管理员行与权限行的「已存在则跳过」必须各自独立判定：管理员
+// 已存在但权限行缺失时仍要补写，否则重装后管理员会永久失去权限（§3.15）。
+// 三行同事务写出，任一步失败整套回滚，避免留下可登录却无权限的半初始化态。
 func installAdmin(ctx context.Context, dsn, username, password string) error {
 	if err := validateUsername(username); err != nil {
 		return err
@@ -253,35 +253,53 @@ func installAdmin(ctx context.Context, dsn, username, password string) error {
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user WHERE id = 1").Scan(&existing); err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
-	if existing > 0 {
-		slog.Info("setup: admin (id=1) already exists, skip creating")
-		return nil
-	}
-	hash, err := hashPasswordArgon2id(password)
-	if err != nil {
-		return fmt.Errorf("setup: hash admin password: %w", err)
+	var hash string
+	if existing == 0 {
+		h, err := hashPasswordArgon2id(password)
+		if err != nil {
+			return fmt.Errorf("setup: hash admin password: %w", err)
+		}
+		hash = h
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO user (id, username, user_status, created_at, updated_at) VALUES (1, ?, 1, NOW(), NOW())",
-		username,
-	); err != nil {
-		return bizErr(CodeDBUnreachable, "cannot create admin user", err)
+	if existing == 0 {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO user (id, username, user_status, created_at, updated_at) VALUES (1, ?, 1, NOW(), NOW())",
+			username,
+		); err != nil {
+			return bizErr(CodeDBUnreachable, "cannot create admin user", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO user_credential (user_id, kind, secret, is_enabled, created_at, updated_at) VALUES (1, 'password', ?, 1, NOW(), NOW())",
+			hash,
+		); err != nil {
+			return bizErr(CodeDBUnreachable, "cannot create admin credential", err)
+		}
+	} else {
+		slog.Info("setup: admin (id=1) already exists, skip creating")
 	}
-	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO user_credential (user_id, kind, secret, is_enabled, created_at, updated_at) VALUES (1, 'password', ?, 1, NOW(), NOW())",
-		hash,
-	); err != nil {
-		return bizErr(CodeDBUnreachable, "cannot create admin credential", err)
+	// 权限行单独判存在性，不复用管理员行的判定结果。
+	var permExists int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_permission WHERE user_id = 1 AND point = 'superadmin'",
+	).Scan(&permExists); err != nil {
+		return bizErr(CodeDBUnreachable, "cannot check superadmin permission", err)
+	}
+	if permExists == 0 {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO user_permission (user_id, point) VALUES (1, 'superadmin')",
+		); err != nil {
+			return bizErr(CodeDBUnreachable, "cannot grant superadmin permission", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return bizErr(CodeDBUnreachable, "cannot commit admin creation", err)
 	}
-	slog.Info("setup: admin (id=1) created")
+	slog.Info("setup: admin (id=1) ensured with superadmin permission")
 	return nil
 }
 

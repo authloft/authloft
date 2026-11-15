@@ -209,22 +209,24 @@ type assembled struct {
 
 // repoSet 装配层共享仓储（repo 只持 *gorm.DB、无状态，全进程同一实例与多处 new 等价）。
 type repoSet struct {
-	Users      *repo.UserRepo
-	Creds      *repo.CredentialRepo
-	Webauthn   *repo.WebauthnRepo
-	Binds      *repo.BindRepo
-	Providers  *repo.ProviderRepo
-	EventLogs  *repo.EventLogRepo
-	Clients    *repo.ClientRepo
-	OidcTokens *repo.OidcTokenRepo
+	Users       *repo.UserRepo
+	Creds       *repo.CredentialRepo
+	Webauthn    *repo.WebauthnRepo
+	Binds       *repo.BindRepo
+	Providers   *repo.ProviderRepo
+	EventLogs   *repo.EventLogRepo
+	Clients     *repo.ClientRepo
+	OidcTokens  *repo.OidcTokenRepo
+	Permissions *repo.PermissionRepo
 }
 
 // adminSet admin 域四族 service（wireSharedServices 构造）。
 type adminSet struct {
-	Providers *adminsvc.Service
-	Users     *adminsvc.UserService
-	Clients   *adminsvc.ClientService
-	Settings  *adminsvc.SettingsService
+	Providers  *adminsvc.Service
+	Users      *adminsvc.UserService
+	Clients    *adminsvc.ClientService
+	Settings   *adminsvc.SettingsService
+	Permission *adminsvc.PermissionService
 }
 
 // sessionSet 会话侧共享产物：Verifier / Renewer 复用共享 sessionTokens / epochStore，Cookie 与域级拦截器同源。
@@ -247,14 +249,15 @@ type infraSet struct {
 // newRepoSet 构造共享仓储集合（装配层一次）。
 func newRepoSet(db *gorm.DB) *repoSet {
 	return &repoSet{
-		Users:      repo.NewUserRepo(db),
-		Creds:      repo.NewCredentialRepo(db),
-		Webauthn:   repo.NewWebauthnRepo(db),
-		Binds:      repo.NewBindRepo(db),
-		Providers:  repo.NewProviderRepo(db),
-		EventLogs:  repo.NewEventLogRepo(db),
-		Clients:    repo.NewClientRepo(db),
-		OidcTokens: repo.NewOidcTokenRepo(db),
+		Users:       repo.NewUserRepo(db),
+		Creds:       repo.NewCredentialRepo(db),
+		Webauthn:    repo.NewWebauthnRepo(db),
+		Binds:       repo.NewBindRepo(db),
+		Providers:   repo.NewProviderRepo(db),
+		EventLogs:   repo.NewEventLogRepo(db),
+		Clients:     repo.NewClientRepo(db),
+		OidcTokens:  repo.NewOidcTokenRepo(db),
+		Permissions: repo.NewPermissionRepo(db),
 	}
 }
 
@@ -324,6 +327,7 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 			},
 			deps.queue,
 		),
+		Permission: adminsvc.NewPermissionService(deps.repos.Permissions),
 	}
 }
 
@@ -1185,7 +1189,7 @@ func (p bindContactPair) BindEmail(ctx context.Context, uid int64, in accountsvc
 }
 
 // registerAdmin 注册 AdminService handler：session 拦截器在外、admin 拦截器在内
-// （uid==1 判定，无会话 401 / 非管理员 404 掩护），错误包装由 HandlerOptions 补最内层。
+// 权限探针故障须 fail-closed，不回落 404（§3.14）；错误包装挂链最内层。
 // 读路径直连 ProviderRepo；写族 / 用户 / 客户端 / 系统配置各族走 service/admin，
 // epoch / settings / 审计 / 编解码器复用共享单例。
 func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
@@ -1197,7 +1201,7 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 			deps.admin.Clients,
 			deps.admin.Settings,
 		),
-		csrv.HandlerOptions(deps.sessionSvc.Interceptor, connect.NewAdminInterceptor())...,
+		csrv.HandlerOptions(deps.sessionSvc.Interceptor, connect.NewAdminInterceptor(deps.admin.Permission.HasAnyPermission))...,
 	)
 	csrv.Register(path, h)
 }

@@ -11,8 +11,8 @@ import "time"
 // 保留字 status，接口文档 §1.0 既定口径）；epoch
 // SMALLINT 安全版本号（§11.1：改密 / 重置 / 管理员禁用时递增，递增结果
 // > 30000 回绕为 1 跳过 0，由后端逻辑控制、不由 DB 控制）；last_login_at
-// 由延迟写入队列合并更新（§5.2）。管理员 = user.id = 1 的固定账号
-// （§4.2 行 687），无 is_admin 列、不设角色表。
+// 由延迟写入队列合并更新（§5.2）。管理员 = 持有权限点的账号，
+// user.id = 1 为安装时创建的账号（§4.2）。
 //
 // UserStatus 的 default:1 忠实映射 DDL 的 DEFAULT 1：Create 时零值字段
 // 被 tag 值 1 显式写入 INSERT 并回填 struct（gorm@v1.31.2 callbacks/

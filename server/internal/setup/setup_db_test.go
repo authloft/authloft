@@ -322,6 +322,14 @@ func TestInstallFreshEndToEnd(t *testing.T) {
 	if !strings.HasPrefix(secret, "$argon2id$") {
 		t.Errorf("credential secret not argon2id PHC: %q", secret)
 	}
+	// 权限行是安装事务的一部分，须与管理员行同时落库（§3.15、§4.8）。
+	var point string
+	if err := db.QueryRow("SELECT point FROM user_permission WHERE user_id = 1").Scan(&point); err != nil {
+		t.Fatalf("query admin permission: %v", err)
+	}
+	if point != "superadmin" {
+		t.Errorf("admin permission point = %q, want superadmin", point)
+	}
 }
 
 // TestInstallIdempotentRetry 幂等与失败重试（§3.15：setup 状态不落盘，
@@ -344,6 +352,12 @@ func TestInstallIdempotentRetry(t *testing.T) {
 		t.Fatalf("first install: HTTP %d (body %s)", first.Code, first.Body.String())
 	}
 
+	// 管理员已存在但权限行缺失时仍须补写，两个存在性判定互不替代（§3.15）。
+	preDB := openSetupTestDB(t, dsn)
+	if _, err := preDB.Exec("DELETE FROM user_permission WHERE user_id = 1"); err != nil {
+		t.Fatalf("delete permission row: %v", err)
+	}
+
 	// 第二次（换用户名）：管理员已存在 → 跳过插入，既有行不变。
 	//（密码不含新用户名子串，避免 pwd_disallow_username 拦截——那不是本用例目标。）
 	second := postInstallJSON(s, map[string]any{
@@ -363,6 +377,14 @@ func TestInstallIdempotentRetry(t *testing.T) {
 	var users int
 	if err := db.QueryRow("SELECT COUNT(*) FROM user WHERE id = 1").Scan(&users); err != nil || users != 1 {
 		t.Errorf("admin rows = %d (err %v), want exactly 1", users, err)
+	}
+	// 重复安装不得产生第二行权限记录。
+	var permRows int
+	if err := db.QueryRow("SELECT COUNT(*) FROM user_permission WHERE user_id = 1 AND point = 'superadmin'").Scan(&permRows); err != nil {
+		t.Fatalf("query permission rows: %v", err)
+	}
+	if permRows != 1 {
+		t.Errorf("superadmin permission rows = %d, want 1", permRows)
 	}
 
 	// 失败重试：坏 Redis → redis_unreachable（Connect 错误体，unavailable +

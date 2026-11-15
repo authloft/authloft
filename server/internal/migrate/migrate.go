@@ -83,8 +83,9 @@ func gooseUp(ctx context.Context, db *sql.DB) error {
 }
 
 // installed 判据内部实现：①迁移版本表最新（goose GetVersions 的 current
-// 达到 target，空库 current=0）；②管理员 ID=1 存在（§4.2：管理员 = 安装时
-// 创建的固定 ID 账号，无 is_admin 列，判定不在此处做角色展开）。
+// 达到 target，空库 current=0）；②user.id = 1 存在（§4.2：该行为安装时
+// 创建的账号，其存在代表已完成安装；管理员身份由 user_permission 的
+// superadmin 权限点表达，本判据仅按安装账号存在性判定，不在此处查权限点）。
 func installed(ctx context.Context, db *sql.DB) (bool, error) {
 	p, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS)
 	if err != nil {

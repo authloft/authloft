@@ -1,6 +1,6 @@
 // admin 拦截器、错误包装拦截器、CaptureRawBody 装配助手与 ErrorInfo 助手的
 // 单测。admin 按 §5 行 1145 口径挂 session 拦截器之内（链序同装配）全栈验证
-// 401/404/放行三态与线上错误体；错误包装双覆盖：全栈验线上文本消毒，直调验
+// 鉴权结果与线上错误体；错误包装双覆盖：全栈验线上文本消毒，直调验
 // 类型化断言（connect.Error code / detail / Unwrap 链）。
 package connect
 
@@ -28,8 +28,8 @@ import (
 const adminEchoProcedure = "/api.admin.v1.AdminService/GetSettings"
 
 // decodeConnectErrorBody 从 io.Reader 解码 Connect 协议错误体 JSON
-//（§1.5 行 197-211：{"code","message"}），返回 code / message
-//（session_test / rpc_test 共用；http.Response 与 Recorder 两类入口同核心）。
+// （§1.5：{"code","message"}），返回 code / message
+// （session_test / rpc_test 共用；http.Response 与 Recorder 两类入口同核心）。
 func decodeConnectErrorBody(t *testing.T, r io.Reader) map[string]string {
 	t.Helper()
 	var body struct {
@@ -65,7 +65,7 @@ func adminPayload(env *sessionEnv, uid int64) *token.SessionTokenPayload {
 
 // newAdminServer 挂载 session + admin 拦截链（session 在外层注入 ctx 身份），
 // 返回服务器与捕获器。
-func newAdminServer(t *testing.T, env *sessionEnv) (*httptest.Server, *sessionCapture) {
+func newAdminServer(t *testing.T, env *sessionEnv, lookup PermissionLookup) (*httptest.Server, *sessionCapture) {
 	t.Helper()
 	captured := &sessionCapture{}
 	handler := connect.NewUnaryHandler(adminEchoProcedure,
@@ -75,7 +75,7 @@ func newAdminServer(t *testing.T, env *sessionEnv) (*httptest.Server, *sessionCa
 		},
 		connect.WithInterceptors(
 			NewSessionInterceptor(env.verifier, env.renewer, env.cookie, nil),
-			NewAdminInterceptor(),
+			NewAdminInterceptor(lookup),
 		),
 	)
 	srv := httptest.NewServer(handler)
@@ -94,10 +94,13 @@ func doAdminRPC(t *testing.T, srv *httptest.Server, token string) *http.Response
 	return resp
 }
 
-// ① 无会话（session 放行匿名）→ 401 unauthenticated（§1.5 行 187）。
+// 未登录请求不得触达权限探针，避免匿名流量被误当作管理面探测。
 func TestAdminNoSessionReturns401(t *testing.T) {
 	env := newSessionEnv(t)
-	srv, captured := newAdminServer(t, env)
+	srv, captured := newAdminServer(t, env, func(context.Context, int64) (bool, error) {
+		t.Error("无会话时探针不应被调用")
+		return false, nil
+	})
 
 	resp := doAdminRPC(t, srv, "")
 	defer resp.Body.Close()
@@ -112,11 +115,16 @@ func TestAdminNoSessionReturns401(t *testing.T) {
 	}
 }
 
-// ② uid 有但 != 1 → 404 not_found（掩护管理面存在，§1.5 行 189）。
-func TestAdminNonAdminUIDReturns404(t *testing.T) {
+// 无权限点须与普通资源 404 同文案，避免暴露管理面存在。
+func TestAdminNoPermissionReturns404(t *testing.T) {
 	env := newSessionEnv(t)
 	tok := env.sign(t, adminPayload(env, 42))
-	srv, captured := newAdminServer(t, env)
+	srv, captured := newAdminServer(t, env, func(_ context.Context, uid int64) (bool, error) {
+		if uid != 42 {
+			t.Errorf("探针 uid = %d, want 42", uid)
+		}
+		return false, nil
+	})
 
 	resp := doAdminRPC(t, srv, tok)
 	defer resp.Body.Close()
@@ -135,23 +143,49 @@ func TestAdminNonAdminUIDReturns404(t *testing.T) {
 	}
 }
 
-// ③ uid == 1 → 放行，handler 触达。
-func TestAdminUID1Passes(t *testing.T) {
+// 放行取决于权限点而非固定 uid，故用非安装账号验证（§4.8）。
+func TestAdminWithPermissionPasses(t *testing.T) {
 	env := newSessionEnv(t)
-	tok := env.sign(t, adminPayload(env, 1))
-	srv, captured := newAdminServer(t, env)
+	tok := env.sign(t, adminPayload(env, 42))
+	srv, captured := newAdminServer(t, env, func(_ context.Context, uid int64) (bool, error) {
+		if uid != 42 {
+			t.Errorf("探针 uid = %d, want 42", uid)
+		}
+		return true, nil
+	})
 
 	resp := doAdminRPC(t, srv, tok)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	if !captured.ok || captured.uid != 1 {
-		t.Errorf("ctx uid = (%d, %v), want (1, true)", captured.uid, captured.ok)
+	if !captured.ok || captured.uid != 42 {
+		t.Errorf("ctx uid = (%d, %v), want (42, true)", captured.uid, captured.ok)
 	}
 }
 
-// ④ 错误包装全栈：handler 返回普通 error → HTTP 500 + 错误体 code=internal +
+// 探针故障须 fail-closed，不回落 404，否则故障被读成无权限（§3.14）。
+func TestAdminLookupErrorReturns500(t *testing.T) {
+	env := newSessionEnv(t)
+	tok := env.sign(t, adminPayload(env, 42))
+	srv, captured := newAdminServer(t, env, func(context.Context, int64) (bool, error) {
+		return false, errors.New("permission store unavailable")
+	})
+
+	resp := doAdminRPC(t, srv, tok)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+	if captured.ok {
+		t.Errorf("handler 被触达（uid=%d），want 拒绝", captured.uid)
+	}
+	if errObj := decodeConnectError(t, resp); errObj["code"] != "internal" {
+		t.Errorf("error.code = %q, want %q", errObj["code"], "internal")
+	}
+}
+
+// ⑤ 错误包装全栈：handler 返回普通 error → HTTP 500 + 错误体 code=internal +
 // 线上文本消毒为 internal error（原文 "boom" 属内部信息，不得透出）。
 func TestErrorWrapperSanitizesPlainErrorOnWire(t *testing.T) {
 	handler := connect.NewUnaryHandler(adminEchoProcedure,
@@ -189,7 +223,7 @@ func TestErrorWrapperSanitizesPlainErrorOnWire(t *testing.T) {
 	}
 }
 
-// ⑤ 错误包装直调：普通 error → connect.CodeInternal、无 ErrorInfo detail
+// ⑥ 错误包装直调：普通 error → connect.CodeInternal、无 ErrorInfo detail
 // （§3.14 行 479 internal 兜底不挂）+ Message 消毒 + Unwrap 链保留原错误。
 func TestErrorWrapperWrapsPlainErrorWithoutDetail(t *testing.T) {
 	original := errors.New("boom: secret")
@@ -220,7 +254,7 @@ func TestErrorWrapperWrapsPlainErrorWithoutDetail(t *testing.T) {
 	}
 }
 
-// ⑥ 错误包装直调：connect.Error 原样透传（同一实例、不追加 detail）。
+// ⑦ 错误包装直调：connect.Error 原样透传（同一实例、不追加 detail）。
 func TestErrorWrapperPassesThroughConnectError(t *testing.T) {
 	coded := connect.NewError(connect.CodeNotFound, errors.New("nope"))
 	passed := false
@@ -242,7 +276,7 @@ func TestErrorWrapperPassesThroughConnectError(t *testing.T) {
 	}
 }
 
-// ⑦ NewErrorInfo / WithErrorInfo / ErrorInfoOf 助手往返。
+// ⑧ NewErrorInfo / WithErrorInfo / ErrorInfoOf 助手往返。
 func TestErrorInfoHelpers(t *testing.T) {
 	info := NewErrorInfo("sso", "password_weak", "密码强度不足")
 	if info.Domain != "sso" || info.Code != "password_weak" || info.Message != "密码强度不足" {
@@ -267,7 +301,7 @@ func TestErrorInfoHelpers(t *testing.T) {
 	}
 }
 
-// ⑧ CaptureRawBody：读出-回填-入 ctx 三语义。body 可重复读、ctx 原始字节
+// ⑨ CaptureRawBody：读出-回填-入 ctx 三语义。body 可重复读、ctx 原始字节
 // 与线上一致；读失败 → 500（fail-closed）。
 func TestCaptureRawBody(t *testing.T) {
 	var gotBody, gotStash string
@@ -314,7 +348,7 @@ type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("read failure") }
 
-// ⑨ proto 序列化确定性（rpc 测试的前置假设）：同一消息两次 marshal 字节一致，
+// ⑩ proto 序列化确定性（rpc 测试的前置假设）：同一消息两次 marshal 字节一致，
 // 测试端可预计算被签名的线上字节。
 func TestProtoMarshalDeterministic(t *testing.T) {
 	msg := &commonv1.ErrorInfo{Code: "x", Message: "m"}

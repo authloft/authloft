@@ -1,4 +1,4 @@
--- 首版迁移：后端架构 §4 全部 11 张表（§3.16）。
+-- 首版迁移：后端架构 §4 全部 12 张表（§3.16）。
 -- 单文件注解格式（Up / Down 两段）：goose v3 Provider 将每个 .sql 文件
 -- 视为一条迁移，不支持 .up.sql/.down.sql 成对命名（成对文件同版本会报
 -- duplicate migration version）。
@@ -179,10 +179,18 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_by BIGINT       NOT NULL DEFAULT 0 COMMENT '操作管理员 uid'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 用户权限点映射（§4.8）：行存在即持有，首版仅 superadmin（安装时授予）。
+CREATE TABLE IF NOT EXISTS user_permission (
+  user_id BIGINT      NOT NULL COMMENT '用户 ID，引用 user.id',
+  point   VARCHAR(32) NOT NULL COMMENT '权限点标识；首版仅 superadmin（安装时自动授予）',
+  PRIMARY KEY (user_id, point)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- +goose Down
 
 -- 回退脚本（§3.16：down 按工具标准提供，日常升级不使用；数据备份责任
--- 归部署方，执行迁移前自行备份）。倒序删除 §4 全部 11 张表。
+-- 归部署方，执行迁移前自行备份）。倒序删除 §4 全部 12 张表。
+DROP TABLE IF EXISTS user_permission;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS event_log;
 DROP TABLE IF EXISTS oidc_refresh_token;

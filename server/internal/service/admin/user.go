@@ -171,10 +171,11 @@ func NewUserService(
 	}
 }
 
-// GetMe（§5.1 行 1162）：session ctx uid → 用户行投影
+// GetMe（§5.1）：管理员视图仅对通过统一入口鉴权的会话开放。
 // {id, username, nickname, avatarUrl, isAdmin:true}（isAdmin 由 handler 恒
-// 置 true——非管理员在拦截器即被拦下）。uid 来自会话载荷（管理员固定
-// user.id=1，§5 行 1147），行缺失返回包装的 gorm.ErrRecordNotFound。
+// 置 true——无权限点的会话在 admin 拦截器即被拦下）。uid 来自会话载荷
+// （管理员 = 持有权限点的账号，安装时创建 user.id = 1，§5），
+// 安装账号被删时按资源不存在处理。
 func (s *UserService) GetMe(ctx context.Context, uid int64) (*model.User, error) {
 	if uid <= 0 {
 		return nil, ErrInvalidRequest

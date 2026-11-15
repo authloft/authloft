@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// wantTables §4 全部 11 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
+// wantTables §4 全部 12 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
 var wantTables = []string{
 	"provider",
 	"user",
@@ -23,6 +23,7 @@ var wantTables = []string{
 	"oidc_refresh_token",
 	"event_log",
 	"settings",
+	"user_permission",
 }
 
 // testDBLockName 测试库互斥锁名（与 settings / repo / setup / main 的
@@ -200,7 +201,7 @@ func assertNoTables(db *sql.DB) error {
 	return nil
 }
 
-// requireAllTables 断言测试库中 §4 全部 11 张表存在。
+// requireAllTables 断言测试库中 §4 全部 12 张表存在。
 func requireAllTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, tbl := range wantTables {
@@ -246,7 +247,7 @@ func appliedRows(t *testing.T, db *sql.DB) int {
 }
 
 // TestG1EmptyUpToLatest §21.2 G 组①：空库一步 migrate up 到最新，
-// §4 全部 11 张表建立、版本表记录最新版本。
+// §4 全部 12 张表建立、版本表记录最新版本。
 func TestG1EmptyUpToLatest(t *testing.T) {
 	db, dsn := newTestDB(t)
 	if err := Up(context.Background(), dsn); err != nil {

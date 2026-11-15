@@ -422,7 +422,9 @@ func assembleAdminHandler(t *testing.T, providers ProviderReader, writer Provide
 				session.NewCookie("al_session", "", time.Hour),
 				nil,
 			),
-			internalconnect.NewAdminInterceptor(),
+			internalconnect.NewAdminInterceptor(func(_ context.Context, uid int64) (bool, error) {
+				return uid == 1, nil
+			}),
 		),
 	)
 	return tokens, epochs, h
