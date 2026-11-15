@@ -66,7 +66,7 @@
 9. Protobuf 结构变更必须保持向下兼容（《接口文档》§12.8），`ext` 反序列化失败要能回退；`.proto` 变更必须过 `buf breaking`
 10. 会话续期按《后端架构》§11.5 每次请求重签
 11. 业务结果的表达：登录流程域用响应顶层 `status`（HTTP 200 数据，《接口文档》§1.3）；其余域业务失败用 `ErrorInfo.code`（Connect 错误体 details，《接口文档》§1.5）——两处取值都必须落在《接口文档》§1.6 的封闭集合内；禁止新增该集合外的常量、禁止塞第二个分支字段；兜底文案走 `ErrorInfo.message` / 流程态 `error.message`
-12. 管理员判定只有 `uid == 1` 一处（仅 `internal/connect` 的 admin interceptor），禁止在 service / handler 里重复判断
+12. 管理员判定只有「至少一个权限点」一处（仅 `internal/connect` 的 admin interceptor；判定探针由装配层注入，实现见《后端架构》§3.14 / §3.7），禁止在 service / handler 里重复判断，也不得在各子功能另设权限点分支（本期不分权限点）
 13. 验证码归属标识按场景固定：登录 / 注册 / 重置 / MFA 用 `tid`，账号域 bind 用 `uid`；禁止跨场景混用（《后端架构》§10.1）
 14. 三方 state 前缀即场景：`l` = 登录、`b` = 绑定已有账号；两个入口各自只接受自己前缀的 state，绑定接口不得签发 `login_token` 或重建会话（《后端架构》§12.4、§12.6）
 15. ticket 的 `scene` 即扫码场景：`login` / `bind` 各自只被对应的轮询接口接受；小程序端只写 ticket，绑定判定只能在持有会话的 PC 端完成（《后端架构》§13.2b）
