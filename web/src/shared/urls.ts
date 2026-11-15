@@ -18,6 +18,9 @@ export const OAUTH_CALLBACK_PREFIX = '/sso/oauth/callback/';
 /** account 域默认落点（混合路由形态：path 在 hash 内）。 */
 export const DEFAULT_ACCOUNT_HOME = '/account#/profile';
 
+/** admin 域默认落点（混合路由形态：path 在 hash 内）。 */
+export const DEFAULT_ADMIN_HOME = '/admin#/status';
+
 /**
  * al_root 归一：string 校验 → trim → 去尾斜杠；缺省回落当前站点源；
  * 非浏览器环境（单测 node）为空串（与 shared/api/http.ts 的 resolveBaseUrl
@@ -60,4 +63,20 @@ export function loginUrl(alRoot: string, returnTo?: string): string {
 /** 登出地址（§8 行 1420）：`{alRoot}/sso/logout`。 */
 export function logoutUrl(alRoot: string): string {
   return `${alRoot}${LOGOUT_PATH}`;
+}
+
+/** 跨端切换的落点枚举（封闭集，不接受任意 URL 入参）。 */
+export type ContextSwitchTarget = 'account' | 'admin';
+
+/**
+ * 跨端切换 URL（防开放重定向）：target 为封闭枚举，只映射两个固定站内
+ * 落点，不接受任意 URL 入参；alRoot 先经 normalizeAlRoot 归一。非法
+ * target（含站外 URL 字符串）一律回落到 account 默认落点，绝不产出站外跳转。
+ */
+export function contextSwitchUrl(
+  alRoot: unknown,
+  target: ContextSwitchTarget,
+): string {
+  const home = target === 'admin' ? DEFAULT_ADMIN_HOME : DEFAULT_ACCOUNT_HOME;
+  return `${normalizeAlRoot(alRoot)}${home}`;
 }

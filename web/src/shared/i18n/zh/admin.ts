@@ -273,6 +273,7 @@ export const admin = {
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
   'admin.appTitle': 'Authloft 管理',
   'admin.rootTitle': '管理后台',
+  'admin.switchToAccount': '切换到个人中心',
   'admin.navProviders': '提供商',
   'admin.navUsers': '用户',
   'admin.navClients': '客户端',

@@ -198,3 +198,14 @@ describe('与 shared/api/errors.ts 的 i18nKey 契约（§1.6 / §1.5，不造�
     expect(t('errors.code.unknown')).toBe('操作失败，请稍后重试');
   });
 });
+
+describe('跨端切换专键（zh / en 键集全量对齐）', () => {
+  test('account.switchToAdmin / admin.switchToAccount 两套字典均可译', () => {
+    expect(t('account.switchToAdmin')).toBe('切换到管理后台');
+    expect(t('admin.switchToAccount')).toBe('切换到个人中心');
+    setLocale('en-US');
+    expect(t('account.switchToAdmin')).toBe('Switch to Admin Console');
+    expect(t('admin.switchToAccount')).toBe('Switch to Account Center');
+    setLocale('zh-CN');
+  });
+});

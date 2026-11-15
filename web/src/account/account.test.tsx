@@ -2729,3 +2729,85 @@ describe('MfaSetting 静态渲染（开关行 + TOTP 因子行）', () => {
     expect(html).not.toContain('恢复码仅一次性展示，不可回显');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 跨端切换：权限点可见性 / 菜单构造纯函数 + 纯视图 SSR
+// ---------------------------------------------------------------------------
+
+describe('跨端切换（权限点可见性 + 菜单构造，零 Semi 纯函数）', () => {
+  test('canSwitchToAdmin：permissions.length > 0；空 / 缺省为 false；判定不用 isAdmin', () => {
+    expect(apiMod.canSwitchToAdmin([])).toBe(false);
+    expect(apiMod.canSwitchToAdmin(undefined)).toBe(false);
+    expect(apiMod.canSwitchToAdmin(['superadmin'])).toBe(true);
+    // 若实现误读 isAdmin 布尔标记，此用例变红。
+    expect(
+      apiMod.canSwitchToAdmin({ isAdmin: true } as unknown as string[]),
+    ).toBe(false);
+  });
+
+  test('buildAccountHeaderMenu：空权限 → 仅登出；非空 → 含切换项', () => {
+    const empty = apiMod.buildAccountHeaderMenu(
+      'https://uc.test',
+      [],
+      () => {},
+    );
+    expect(empty).toHaveLength(1);
+    expect(empty[0].name).toBe('退出登录');
+    const full = apiMod.buildAccountHeaderMenu(
+      'https://uc.test',
+      ['perm'],
+      () => {},
+    );
+    expect(full).toHaveLength(2);
+    expect(full[1].name).toBe('切换到管理后台');
+  });
+
+  test('跳转动作经注入记录函数：目标 URL 正确且未跳站外', () => {
+    const recorded: string[] = [];
+    const redirect = (url: string): void => {
+      recorded.push(url);
+    };
+    const items = apiMod.buildAccountHeaderMenu(
+      'https://uc.test',
+      ['perm'],
+      redirect,
+    );
+    items[0].onClick();
+    items[1].onClick();
+    expect(recorded).toEqual([
+      'https://uc.test/sso/logout',
+      'https://uc.test/admin#/status',
+    ]);
+    expect(recorded.every((url) => !url.includes('evil.example.com'))).toBe(
+      true,
+    );
+  });
+});
+
+describe('跨端切换纯视图 SSR（不对真实 Layout 做 DOM 点击断言）', () => {
+  function HeaderMenuView(props: { items: { name: string }[] }) {
+    return createElement(
+      'ul',
+      null,
+      ...props.items.map((item) =>
+        createElement('li', { key: item.name }, item.name),
+      ),
+    );
+  }
+
+  test('切换文案随 permissions 出现 / 不出现', () => {
+    const withPerm = renderToStaticMarkup(
+      createElement(HeaderMenuView, {
+        items: apiMod.buildAccountHeaderMenu('', ['perm'], () => {}),
+      }),
+    );
+    expect(withPerm).toContain('切换到管理后台');
+    const noPerm = renderToStaticMarkup(
+      createElement(HeaderMenuView, {
+        items: apiMod.buildAccountHeaderMenu('', [], () => {}),
+      }),
+    );
+    expect(noPerm).not.toContain('切换到管理后台');
+    expect(noPerm).toContain('退出登录');
+  });
+});

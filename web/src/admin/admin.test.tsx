@@ -42,6 +42,7 @@ import {
 import { ApiError } from '../shared/api/errors';
 import { setLocale, t } from '../shared/i18n';
 import {
+  contextSwitchUrl,
   DEFAULT_ACCOUNT_HOME,
   loginUrl,
   sanitizeReturnTo,
@@ -3957,5 +3958,45 @@ describe('adminReturnTo（401 跳登录 returnTo 白名单形态，纯函数）'
       DEFAULT_ACCOUNT_HOME,
     );
     expect(sanitizeReturnTo('/admin/providers')).toBe(DEFAULT_ACCOUNT_HOME);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 跨端切换落点（admin → account）：专键 / 封闭枚举 URL + 透明壳 mock 不回归
+// ---------------------------------------------------------------------------
+
+describe('跨端切换落点（admin → account）', () => {
+  test('contextSwitchUrl 封闭枚举产出 /account#/profile，alRoot 归一', () => {
+    expect(contextSwitchUrl('', 'account')).toBe(DEFAULT_ACCOUNT_HOME);
+    expect(contextSwitchUrl('https://uc.test/', 'account')).toBe(
+      'https://uc.test/account#/profile',
+    );
+    expect(contextSwitchUrl('  https://uc.test//  ', 'account')).toBe(
+      'https://uc.test/account#/profile',
+    );
+  });
+
+  test('admin.switchToAccount 专键 zh / en 均可译', () => {
+    expect(t('admin.switchToAccount')).toBe('切换到个人中心');
+    setLocale('en-US');
+    expect(t('admin.switchToAccount')).toBe('Switch to Account Center');
+    setLocale('zh-CN');
+  });
+
+  test('透明壳 mock 不回归：兜底路由仍经布局壳挂载', () => {
+    rs.stubGlobal('window', {
+      location: { pathname: '/admin' },
+      __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
+        .__AUTHLOFT_INIT__,
+    });
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/does-not-exist'] },
+        createElement(routesMod.AdminApp),
+      ),
+    );
+    expect(html).toContain('__ADMIN_LAYOUT_STUB__');
+    expect(html).toContain('页面不存在');
   });
 });

@@ -1,5 +1,5 @@
 /**
- * account 路由（docs/前端架构.md §5 行 504）：HashRouter 路由表——
+ * account 路由（docs/前端架构.md §5）：HashRouter 路由表——
  * `/account#/profile` → AppLayout 包 ProfilePage；`/account#/security` →
  * SecurityPage；`/account#/audit` → AuditPage；`path:'*'` → 兜底不存在页
  *（形态直迁：Semi Empty + 返回链接，链接改为 hash 内 `#/profile`）。
@@ -12,16 +12,26 @@
  */
 import { Empty } from '@douyinfe/semi-ui';
 import { Route, Routes } from '@modern-js/runtime/router';
+import { useRequest } from 'ahooks';
+import { requestOptions } from '../shared/hooks/requestOptions';
 import { t } from '../shared/i18n';
+import { getMyPermissions } from './api';
 import { loadAccountBootstrap } from './bootstrap';
 import { AppLayout } from './layout/AppLayout';
 import { AuditPage } from './pages/AuditPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SecurityPage } from './pages/SecurityPage';
 
-/** account 应用根：bootstrap 读注入变量 → 路由表渲染（HashRouter 在 entry）。 */
+/** account 应用根：bootstrap 读注入变量 → 取自身权限点 → 路由表渲染（HashRouter 在 entry）。 */
 export function AccountApp() {
   const boot = loadAccountBootstrap();
+  // 自身权限点只决定右上跨端入口可见性（接口文档 §3.9）；401 由集中
+  // onError 跳登录，不在此另写分流（前端架构 §5）。
+  const { data } = useRequest(
+    getMyPermissions,
+    requestOptions({ toast: false }),
+  );
+  const permissions = data?.permissions;
   return (
     <Routes>
       <Route
@@ -29,6 +39,7 @@ export function AccountApp() {
         element={
           <AppLayout
             alRoot={boot.alRoot}
+            permissions={permissions}
             breadcrumb={[
               t('account.personalCenter'),
               t('account.profileTitle'),
@@ -43,6 +54,7 @@ export function AccountApp() {
         element={
           <AppLayout
             alRoot={boot.alRoot}
+            permissions={permissions}
             breadcrumb={[
               t('account.personalCenter'),
               t('account.securityTitle'),
@@ -57,6 +69,7 @@ export function AccountApp() {
         element={
           <AppLayout
             alRoot={boot.alRoot}
+            permissions={permissions}
             breadcrumb={[t('account.personalCenter'), t('account.auditTitle')]}
           >
             <AuditPage />
@@ -68,6 +81,7 @@ export function AccountApp() {
         element={
           <AppLayout
             alRoot={boot.alRoot}
+            permissions={permissions}
             breadcrumb={[t('account.personalCenter')]}
           >
             <Empty description={t('account.routeNotFound')}>

@@ -1,60 +1,47 @@
 /**
- * account 端应用布局（docs/前端架构.md §5 行 480/504）：侧边栏 + 顶栏 +
- * 面包屑 + LogoutLink；未登录（401）统一跳登录由各页面消费 ./api 的
- * isUnauthenticatedError + ./bootstrap 的 loginUrl 实现（AppLayout 自身
- * 不发请求；shared/api/http 的错误归一层只产出 ApiError、无统一跳转，
- * 职责落在本 entry，后续页面复用同一对工具函数）。
- *
- * Semi UI 组件（§1.3 行 111：account 端用 Semi UI）：Layout / Nav /
- * Breadcrumb；登出跳 `{al_root}/sso/logout`（接口文档 §8 行 1420：Go
- * 处理，非 SPA），整页跳转走 <a href> 由浏览器原生完成。
- *
- * Nav 项与高亮由 ACCOUNT_NAV_ROUTES 派生
- *（shared/app-ui/nav-routes.ts 单一来源，禁第二份路径字面量）；点击经
- * useNavigate 走 hash 内 SPA 导航（不再整页跳转，§9 第 24 条）；高亮由
- * useLocation 的 hash 内 pathname 经 matchActivePath 匹配（详情页前缀段
- * 归列表项）。401/登出链路不变（location.replace 整页跳，不经 router）。
- *
- * 样式（§1.7）：同目录同名 module.less，类名 camelCase；Semi 组件样式
- * 随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
- * _base/base.css 引入（见 entry.tsx 注释）。
+ * account 端布局包装层（docs/前端架构.md §5）：消费上层注入的自身权限点，
+ * 构造右上 Dropdown 菜单（登出 + 条件跨端入口），与 NAV 项、面包屑、
+ * Nav 标题、trigger 显示内容一并经 props 传入 shared/app-ui/ManageLayout
+ * 基础布局壳；包装层自身不渲染 Sider/Header/Content、不发请求。
+ * 登出跳 `{al_root}/sso/logout`（Go 处理，前端不发 fetch、不自行清 Cookie）。
  */
 import { type ReactNode } from 'react';
-// 大包命名导入（§1.6 行 112/113 硬性口径：唯一包 @douyinfe/semi-ui，
-// 一律大包入口、禁子路径——此前 lib/es 子路径裁量已废止）。
-// 组件样式随组件 JS 内部 css import 自动打包，主题变量由大包入口自带的
-// _base/base.css 引入（见 entry.tsx 注释）。
-import { ManageLayout } from '@/shared/components/ManageLayout';
+import { ManageLayout, type HeaderMenu } from '@/shared/app-ui/ManageLayout';
 import { ACCOUNT_NAV_ROUTES, toNavItems } from '../../shared/app-ui/nav-routes';
 import { t } from '../../shared/i18n';
-import { logoutUrl } from '../bootstrap';
+import { buildAccountHeaderMenu } from '../api';
 import styles from './AppLayout.module.less';
-
-/** 登出链接（§5 行 480）：跳 `{al_root}/sso/logout`，Go 处理（接口文档 §8 行 1420）。 */
-function LogoutLink({ alRoot }: { alRoot: string }) {
-  return (
-    <a className={styles.logoutLink} href={logoutUrl(alRoot)}>
-      {t('account.logout')}
-    </a>
-  );
-}
 
 const navItems = [...toNavItems(ACCOUNT_NAV_ROUTES)];
 
-/** account 布局壳（§5 行 480）：Sider(Nav) + Header(面包屑 + 登出) + Content。 */
+/** account 布局包装层：只构造 props，渲染委托共用基础布局壳。 */
 export function AppLayout(props: {
-  /** 归一后 al_root（登出跳转前缀，见 ./bootstrap）。 */
+  /** 归一后 al_root（登出 / 跨端跳转前缀，见 ./bootstrap）。 */
   alRoot: string;
   /** 顶栏面包屑层级（当前页标题链）。 */
   breadcrumb: string[];
   children: ReactNode;
+  /** 上层注入的自身权限点：非空才显示跨端入口；取值由调用方提供，本层不发请求。 */
+  permissions?: string[];
 }) {
+  // 渲染期构造（CODE_GUIDE §4.6：模块级 t() 会冻结 locale）。
+  // 菜单项由纯函数给出文案与注入的整页跳转动作，此处只补 Semi 需要的
+  // node 形态；跨端切换经 location.replace，不经 Router。
+  const headerMenu: HeaderMenu = buildAccountHeaderMenu(
+    props.alRoot,
+    props.permissions,
+    (url) => window.location.replace(url),
+  ).map(({ name, onClick }) => ({ node: 'item' as const, name, onClick }));
   return (
     <ManageLayout
-      {...props}
+      breadcrumb={props.breadcrumb}
       navItems={navItems}
       baseNavRoutes={ACCOUNT_NAV_ROUTES}
-      headerExtra={<LogoutLink alRoot={props.alRoot} />}
+      navHeader={t('account.appTitle')}
+      headerLabel={
+        <span className={styles.me}>{t('account.personalCenter')}</span>
+      }
+      headerMenu={headerMenu}
     >
       {props.children}
     </ManageLayout>

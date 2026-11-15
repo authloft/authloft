@@ -1,5 +1,5 @@
 /**
- * AccountService client 方法封装（docs/前端架构.md §5 行 479；docs/接口文档.md §3）。
+ * AccountService client 方法封装（docs/前端架构.md §5；docs/接口文档.md §3）。
  * 本次交付 GetProfile（§3.2 行 819）与安全中心族：GetConfig /
  * ChangePassword / BindPhone / BindEmail / PresignAvatar / CommitAvatar +
  * proxy 直传（§3.2-§3.4 / §10.8）；追加 MFA + 通行密钥族：GetMfa /
@@ -119,6 +119,7 @@ import {
   GetThirdpartyTicketRequestSchema,
   UnbindThirdpartyRequestSchema,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
+import type { GetMyPermissionsResponse } from '../gen/proto/api/account/v1/account_pb';
 import type { LoginFlowResponse } from '../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeRequest } from '../gen/proto/api/sso/v1/ticket_pb';
 import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
@@ -134,6 +135,7 @@ import { accountClient } from '../shared/api/http';
 import { authorize } from '../shared/api/sso';
 import type { TableQueryState } from '../shared/app-ui/dataTableLogic';
 import { t, type I18nKey } from '../shared/i18n';
+import { contextSwitchUrl, logoutUrl } from '../shared/urls';
 import { toCount } from '../shared/utils/int';
 import {
   isValidEmail,
@@ -1147,4 +1149,55 @@ export function profileGenderText(gender: bigint): string {
     default:
       return gender.toString();
   }
+}
+
+// ---------------------------------------------------------------------------
+// 跨端切换（接口文档 §3.9 GetMyPermissions + 前端架构 §5 布局职责）
+// ---------------------------------------------------------------------------
+
+/** 当前用户权限点列表（§3.9）：无字段请求，主体取会话 uid。 */
+export function getMyPermissions(): Promise<GetMyPermissionsResponse> {
+  return accountClient.getMyPermissions({});
+}
+
+/**
+ * 右上「切换到管理后台」入口可见性（接口文档 §3.9）：仅按当前用户权限点
+ * 列表是否非空判定（零值或缺失即空列表）；会话载荷里的 isAdmin 布尔标记
+ * 与权限点列表语义、数据源均不同，不相互替代，故不用它判定。
+ */
+export function canSwitchToAdmin(
+  permissions: readonly string[] | undefined,
+): boolean {
+  return (permissions?.length ?? 0) > 0;
+}
+
+/** 右上 Dropdown 菜单项视图（零 Semi 依赖）：文案 + 点击动作。 */
+export interface HeaderMenuItemView {
+  name: string;
+  onClick: () => void;
+}
+
+/**
+ * 构造 account 端右上 Dropdown 菜单（登出 + 条件跨端入口）：
+ * - 登出跳 logoutUrl(alRoot)；
+ * - 权限点非空才加「切换到管理后台」，落点经 contextSwitchUrl(alRoot,
+ *   'admin') 的封闭枚举站内构造，防开放重定向；
+ * - redirect 由调用方注入（与 requestOptions.redirect 同形态），便于断言
+ *   目标 URL；本函数零 Semi 依赖、node 可测（前端架构 §8 纯逻辑落位口径）。
+ */
+export function buildAccountHeaderMenu(
+  alRoot: string,
+  permissions: readonly string[] | undefined,
+  redirect: (url: string) => void,
+): HeaderMenuItemView[] {
+  const items: HeaderMenuItemView[] = [
+    { name: t('account.logout'), onClick: () => redirect(logoutUrl(alRoot)) },
+  ];
+  if (canSwitchToAdmin(permissions)) {
+    items.push({
+      name: t('account.switchToAdmin'),
+      onClick: () => redirect(contextSwitchUrl(alRoot, 'admin')),
+    });
+  }
+  return items;
 }
