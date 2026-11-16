@@ -300,6 +300,7 @@ export const admin: typeof zhAdmin = {
   'admin.navClients': 'Clients',
   'admin.navSsoClients': 'SSO Clients',
   'admin.navOidcClients': 'OIDC Clients',
+  'admin.navTemplates': 'Templates',
   'admin.navSettings': 'Settings',
   'admin.navAudit': 'Event Logs',
   'admin.navStatus': 'Monitoring',
@@ -381,6 +382,48 @@ export const admin: typeof zhAdmin = {
   'admin.ttlPlaceholder': 'Default {value}',
   'admin.ttlRangeHint': '1-{max}; leave empty to use the default {value}',
   'admin.ttlKeepHint': '1-{max}; leave empty to keep the previous value',
+
+  // ---- api.ts template validation / dropdown labels ----
+  'admin.templateKeyRequired': 'Template key is required',
+  'admin.templateKeyTooLong': 'Template key cannot exceed {max} characters',
+  'admin.templateKeyBuiltinConflict':
+    'Template key must not match a built-in template',
+  'admin.templateKeyTaken':
+    'Template key is already taken; please choose another',
+  'admin.templateVarsIssue': 'Template variables must be a valid JSON object',
+  'admin.templateUnspecified': 'Unspecified (default file shell)',
+
+  // ---- pages/TemplatesPage.tsx ----
+  'admin.templateKeyLabel': 'Template key',
+  'admin.templateNameLabel': 'Display name',
+  'admin.templateContentLabel': 'Template content (raw HTML)',
+  'admin.templateKeyPlaceholder': 'e.g. my_login_theme',
+  'admin.templateNamePlaceholder': 'Template display name',
+  'admin.templateContentHint':
+    'Saved as raw HTML (not a rich-text editor); the template key cannot be changed after creation',
+  'admin.templateKeyImmutable': 'Cannot be changed after creation',
+  'admin.templatesLoadFailed':
+    'Failed to load the template list; please refresh and try again',
+  'admin.noTemplates': 'No custom templates yet',
+  'admin.createTemplateAction': 'New Template',
+  'admin.createTemplateTitle': 'New Template',
+  'admin.editTemplateTitle': 'Edit Template "{name}"',
+  'admin.templateDeleteConfirm':
+    'Delete template "{name}"? This cannot be undone',
+  'admin.templateCreateSuccess': 'Template created',
+  'admin.templateUpdateSuccess': 'Template "{name}" updated',
+  'admin.templateDeleteSuccess': 'Template "{name}" deleted',
+  'admin.templateSearchPlaceholder': 'Search templates by display name',
+  'admin.templateSearchAriaLabel': 'Search templates',
+
+  // ---- pages/{SsoClientsPage,OidcClientsPage}.tsx template form ----
+  'admin.templateLabel': 'Template',
+  'admin.templateVarsLabel': 'Template variables',
+  'admin.templateVarsPlaceholder': '{"key": "value"}',
+  'admin.templateVarsHint':
+    'Enter a JSON object; left empty it is injected as {}',
+  'admin.templateSelectHint':
+    'Built-in login or a custom template; leave unspecified to use the default file shell',
 
   // ---- pages/{UsersPage,UserDetailPage}.tsx 用户族----------------
   'admin.usernameLabel': 'Username',

@@ -209,3 +209,34 @@ describe('跨端切换专键（zh / en 键集全量对齐）', () => {
     setLocale('zh-CN');
   });
 });
+
+describe('模板管理文案契约（zh / en 键集对齐）', () => {
+  const templateKeys = Object.keys(zhCN).filter(
+    (key) => key.startsWith('admin.template') || key === 'admin.navTemplates',
+  );
+
+  test('新增模板键在两套字典均可译（不回显键）', () => {
+    expect(templateKeys.length).toBeGreaterThan(0);
+    for (const key of templateKeys) {
+      expect(t(key)).not.toBe(key);
+      setLocale('en-US');
+      expect(t(key)).not.toBe(key);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('插值占位符 zh / en 逐字对齐（{max} / {name}）', () => {
+    expect(t('admin.templateKeyTooLong', { max: 64 })).toBe(
+      '模板 key 不能超过 64 个字符',
+    );
+    expect(t('admin.editTemplateTitle', { name: 'A' })).toBe('编辑模板「A」');
+    setLocale('en-US');
+    expect(t('admin.templateKeyTooLong', { max: 64 })).toBe(
+      'Template key cannot exceed 64 characters',
+    );
+    expect(t('admin.editTemplateTitle', { name: 'A' })).toBe(
+      'Edit Template "A"',
+    );
+    setLocale('zh-CN');
+  });
+});

@@ -73,6 +73,7 @@ import {
   validateSchemaValues,
 } from './pages/ProvidersPage/edit/schema/schemaLogic';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
+import { TemplateSchema } from '../gen/proto/api/admin/v1/template_pb';
 import {
   DEFAULT_SETTINGS,
   getHttpsDeploymentOptions,
@@ -256,6 +257,11 @@ const SET_SETTINGS_URL = `${BASE}/api.admin.v1.AdminService/SetSettings`;
 const LIST_EVENTS_URL = `${BASE}/api.admin.v1.AdminService/ListEvents`;
 const DECODE_TOKEN_URL = `${BASE}/api.admin.v1.AdminService/DecodeToken`;
 const GET_STATUS_URL = `${BASE}/api.admin.v1.AdminService/GetStatus`;
+const LIST_TEMPLATES_URL = `${BASE}/api.admin.v1.AdminService/ListTemplates`;
+const CREATE_TEMPLATE_URL = `${BASE}/api.admin.v1.AdminService/CreateTemplate`;
+const GET_TEMPLATE_URL = `${BASE}/api.admin.v1.AdminService/GetTemplate`;
+const UPDATE_TEMPLATE_URL = `${BASE}/api.admin.v1.AdminService/UpdateTemplate`;
+const DELETE_TEMPLATE_URL = `${BASE}/api.admin.v1.AdminService/DeleteTemplate`;
 
 // rstest 对 .tsx 采用 classic JSX runtime，本文件渲染断言经 createElement
 // 显式引用（不走 JSX 字面量，免全局 React stub；components.test.ts 头注口径）。
@@ -3998,5 +4004,282 @@ describe('跨端切换落点（admin → account）', () => {
     );
     expect(html).toContain('__ADMIN_LAYOUT_STUB__');
     expect(html).toContain('页面不存在');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 模板管理族 + 客户端模板字段（接口文档 §5.7 / §5.5；前端架构 §6 行 605）
+// ---------------------------------------------------------------------------
+
+describe('api 模板五方法（msw 真实 transport 链）', () => {
+  test('listTemplates：q / 分页 / 排序 wire → ListTemplatesResponse 解码（int64 → bigint，content 原文）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(LIST_TEMPLATES_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              id: '1',
+              templateKey: 'custom_a',
+              name: '模板 A',
+              content: '<b>x</b>\n',
+              createdAt: '1700000000',
+              updatedAt: '1700000001',
+            },
+          ],
+          total: '1',
+          page: '1',
+          pageSize: '20',
+        });
+      }),
+    );
+    const query: TableQueryState = {
+      ...initialTableQuery(),
+      sort: 'name',
+      order: 'asc',
+    };
+    const res = await apiMod.listTemplates(
+      apiMod.buildListTemplatesRequest('  A  ', query),
+    );
+    expect(requestBody).toEqual({
+      q: 'A',
+      page: '1',
+      pageSize: '20',
+      sort: 'name',
+      order: 'asc',
+    });
+    expect(res.total).toBe(BigInt(1));
+    expect(res.items[0].id).toBe(BigInt(1));
+    expect(res.items[0].templateKey).toBe('custom_a');
+    expect(res.items[0].content).toBe('<b>x</b>\n');
+    expect(res.items[0].createdAt).toBe(BigInt(1700000000));
+  });
+
+  test('create / get / update / delete 请求体 wire：content 原文、编辑 key 不下发、id 十进制', async () => {
+    let createBody: unknown;
+    let getBody: unknown;
+    let updateBody: unknown;
+    let deleteBody: unknown;
+    server.use(
+      http.post(CREATE_TEMPLATE_URL, async ({ request }) => {
+        createBody = await request.json();
+        return HttpResponse.json({});
+      }),
+      http.post(GET_TEMPLATE_URL, async ({ request }) => {
+        getBody = await request.json();
+        return HttpResponse.json({
+          id: '7',
+          templateKey: 'custom_a',
+          name: '模板 A',
+          content: '<b>x</b>',
+        });
+      }),
+      http.post(UPDATE_TEMPLATE_URL, async ({ request }) => {
+        updateBody = await request.json();
+        return HttpResponse.json({});
+      }),
+      http.post(DELETE_TEMPLATE_URL, async ({ request }) => {
+        deleteBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+
+    await apiMod.createTemplate(
+      apiMod.buildCreateTemplateRequest({
+        templateKey: '  custom_a  ',
+        name: ' 模板 A ',
+        content: '  <div>原文</div> ',
+      }),
+    );
+    const detail = await apiMod.getTemplate(
+      apiMod.buildGetTemplateRequest(BigInt(7)),
+    );
+    await apiMod.updateTemplate(
+      apiMod.buildUpdateTemplateRequest(BigInt(7), {
+        templateKey: 'custom_a',
+        name: '新名',
+        content: '<b>新</b>',
+      }),
+    );
+    await apiMod.deleteTemplate(apiMod.buildDeleteTemplateRequest(BigInt(7)));
+
+    expect(createBody).toEqual({
+      templateKey: 'custom_a',
+      name: '模板 A',
+      content: '  <div>原文</div> ',
+    });
+    expect(getBody).toEqual({ id: '7' });
+    expect(detail.content).toBe('<b>x</b>');
+    // 编辑只读 key → optional 字段不下发（PATCH 保留原值）。
+    expect(updateBody).toEqual({ id: '7', name: '新名', content: '<b>新</b>' });
+    expect(deleteBody).toEqual({ id: '7' });
+  });
+});
+
+describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
+  test('五个 build*TemplateRequest：字段逐字映射 + content 原文 + q 空省略 / 排序仅 order 非空', () => {
+    const query: TableQueryState = {
+      ...initialTableQuery(),
+      page: 3,
+      pageSize: 10,
+      sort: 'name',
+      order: 'desc',
+    };
+    const listReq = apiMod.buildListTemplatesRequest('  theme  ', query);
+    expect(listReq.q).toBe('theme');
+    expect(listReq.page).toBe(BigInt(3));
+    expect(listReq.pageSize).toBe(BigInt(10));
+    expect(listReq.sort).toBe('name');
+    expect(listReq.order).toBe('desc');
+    const filtered = apiMod.buildListTemplatesRequest('  ', {
+      ...query,
+      order: '',
+    });
+    expect(filtered.q).toBeUndefined();
+    expect(filtered.sort).toBeUndefined();
+    expect(filtered.order).toBeUndefined();
+
+    const createReq = apiMod.buildCreateTemplateRequest({
+      templateKey: '  k  ',
+      name: ' 名 ',
+      content: ' <div>原文</div> ',
+    });
+    expect(createReq.templateKey).toBe('k');
+    expect(createReq.name).toBe('名');
+    expect(createReq.content).toBe(' <div>原文</div> ');
+
+    expect(apiMod.buildGetTemplateRequest(BigInt(9)).id).toBe(BigInt(9));
+    const updateReq = apiMod.buildUpdateTemplateRequest(BigInt(9), {
+      templateKey: 'k',
+      name: ' 新名 ',
+      content: '<b>x</b>',
+    });
+    expect(updateReq.id).toBe(BigInt(9));
+    expect(updateReq.name).toBe('新名');
+    expect(updateReq.content).toBe('<b>x</b>');
+    expect(updateReq.templateKey).toBeUndefined();
+    expect(apiMod.buildDeleteTemplateRequest(BigInt(9)).id).toBe(BigInt(9));
+  });
+
+  test('templateKeyIssue：空 / 超长 / 内置 / 既有自定义冲突 / 合法', () => {
+    setLocale('zh-CN');
+    expect(apiMod.templateKeyIssue('   ')).toBe('模板 key 不能为空');
+    expect(apiMod.templateKeyIssue('x'.repeat(65))).toBe(
+      '模板 key 不能超过 64 个字符',
+    );
+    expect(apiMod.templateKeyIssue('login')).toBe(
+      '模板 key 不能与内置模板同名',
+    );
+    expect(apiMod.templateKeyIssue('custom_a', ['custom_a'])).toBe(
+      '模板 key 已被占用，请换一个',
+    );
+    expect(apiMod.templateKeyIssue(' my_key ', ['custom_a'])).toBeNull();
+  });
+
+  test('templateVarsIssue：空白 / 合法对象 / 非法 JSON / 非对象 / 数组 + en 文案', () => {
+    setLocale('zh-CN');
+    expect(apiMod.templateVarsIssue('')).toBeNull();
+    expect(apiMod.templateVarsIssue('   ')).toBeNull();
+    expect(apiMod.templateVarsIssue('{ "a": 1 }')).toBeNull();
+    const issue = '模板变量须为合法的 JSON 对象';
+    expect(apiMod.templateVarsIssue('{oops')).toBe(issue);
+    expect(apiMod.templateVarsIssue('[1,2]')).toBe(issue);
+    expect(apiMod.templateVarsIssue('null')).toBe(issue);
+    expect(apiMod.templateVarsIssue('"str"')).toBe(issue);
+    setLocale('en-US');
+    expect(apiMod.templateVarsIssue('{oops')).toBe(
+      'Template variables must be a valid JSON object',
+    );
+    setLocale('zh-CN');
+  });
+
+  test('templateSelectOptions：内置 login + 自定义项 + 不指定空项（本期前端展示策略）', () => {
+    expect(apiMod.BUILTIN_TEMPLATE_KEYS).toEqual(['login']);
+    expect(apiMod.templateSelectOptions(['custom_a', 'custom_b'])).toEqual([
+      { value: 'login', label: 'login' },
+      { value: 'custom_a', label: 'custom_a' },
+      { value: 'custom_b', label: 'custom_b' },
+      { value: '', label: '不指定（默认文件壳）' },
+    ]);
+    // 与内置重名的自定义项去重（后端不会下发，前端防重复选项）。
+    expect(
+      apiMod
+        .templateSelectOptions(['login', 'c'])
+        .map((option) => option.value),
+    ).toEqual(['login', 'c', '']);
+    setLocale('en-US');
+    expect(apiMod.templateSelectOptions([])[1].label).toBe(
+      'Unspecified (default file shell)',
+    );
+    setLocale('zh-CN');
+  });
+
+  test('客户端四 build 携带模板两字段 + 草稿回填（原文不改、空白视为未配置）', () => {
+    const ssoCreate = apiMod.buildCreateSsoClientRequest({
+      clientId: 'app',
+      name: 'App',
+      redirectUris: ['*'],
+      templateKey: 'login',
+      templateVars: '{ "a": 1 }',
+    });
+    expect(ssoCreate.templateKey).toBe('login');
+    expect(ssoCreate.templateVars).toBe('{ "a": 1 }');
+
+    const ssoUpdate = apiMod.buildUpdateSsoClientRequest(BigInt(1), {
+      newSecret: '',
+      name: 'App',
+      redirectUris: ['*'],
+      templateKey: 'custom_a',
+      templateVars: '{"b":2}',
+    });
+    expect(ssoUpdate.templateKey).toBe('custom_a');
+    expect(ssoUpdate.templateVars).toBe('{"b":2}');
+
+    const oidcCreate = apiMod.buildCreateOidcClientRequest({
+      clientId: 'oidc',
+      name: 'OIDC',
+      redirectUris: ['*'],
+      scopes: ['openid'],
+      accessTokenTtl: 3600,
+      refreshTokenTtl: 2592000,
+      templateKey: 'custom_a',
+      templateVars: '   ',
+    });
+    expect(oidcCreate.templateKey).toBe('custom_a');
+    expect(oidcCreate.templateVars).toBe('');
+
+    const oidcUpdate = apiMod.buildUpdateOidcClientRequest(BigInt(2), {
+      newSecret: 's',
+      name: 'OIDC',
+      redirectUris: ['*'],
+      scopes: ['openid'],
+      accessTokenTtl: 0,
+      refreshTokenTtl: 0,
+      templateKey: '',
+      templateVars: '{"c":3}',
+    });
+    expect(oidcUpdate.templateKey).toBe('');
+    expect(oidcUpdate.templateVars).toBe('{"c":3}');
+
+    // 模板行 → 编辑草稿：content 原文回填。
+    const row = create(TemplateSchema, {
+      id: BigInt(7),
+      templateKey: 'custom_a',
+      name: '模板 A',
+      content: '<b>x</b>\n',
+    });
+    expect(apiMod.templateDraftFromRow(row)).toEqual({
+      templateKey: 'custom_a',
+      name: '模板 A',
+      content: '<b>x</b>\n',
+    });
+    // 客户端行 → 模板两字段回填（查看 / 编辑共用）。
+    expect(
+      apiMod.clientTemplateDraft({
+        templateKey: 'login',
+        templateVars: '{"x":1}',
+      }),
+    ).toEqual({ templateKey: 'login', templateVars: '{"x":1}' });
   });
 });

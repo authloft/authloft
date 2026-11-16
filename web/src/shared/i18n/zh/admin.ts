@@ -279,6 +279,7 @@ export const admin = {
   'admin.navClients': '客户端',
   'admin.navSsoClients': 'SSO 客户端',
   'admin.navOidcClients': 'OIDC 客户端',
+  'admin.navTemplates': '模板管理',
   'admin.navSettings': '设置',
   'admin.navAudit': '事件日志',
   'admin.navStatus': '监控',
@@ -349,6 +350,43 @@ export const admin = {
   'admin.ttlPlaceholder': '默认 {value}',
   'admin.ttlRangeHint': '1-{max}，留空使用默认 {value}',
   'admin.ttlKeepHint': '1-{max}，留空保存将保留原值',
+
+  // ---- api.ts 模板校验 / 下拉展示--------------------------------------
+  'admin.templateKeyRequired': '模板 key 不能为空',
+  'admin.templateKeyTooLong': '模板 key 不能超过 {max} 个字符',
+  'admin.templateKeyBuiltinConflict': '模板 key 不能与内置模板同名',
+  'admin.templateKeyTaken': '模板 key 已被占用，请换一个',
+  'admin.templateVarsIssue': '模板变量须为合法的 JSON 对象',
+  'admin.templateUnspecified': '不指定（默认文件壳）',
+
+  // ---- pages/TemplatesPage.tsx 模板管理-------------------------------
+  'admin.templateKeyLabel': '模板 key',
+  'admin.templateNameLabel': '显示名',
+  'admin.templateContentLabel': '模板内容（HTML 原文）',
+  'admin.templateKeyPlaceholder': '如 my_login_theme',
+  'admin.templateNamePlaceholder': '模板显示名',
+  'admin.templateContentHint':
+    '按 HTML 原文保存，非富文本编辑器；创建后模板 key 不可修改',
+  'admin.templateKeyImmutable': '创建后不可修改',
+  'admin.templatesLoadFailed': '模板列表加载失败，请刷新重试',
+  'admin.noTemplates': '暂无自定义模板',
+  'admin.createTemplateAction': '新建模板',
+  'admin.createTemplateTitle': '新建模板',
+  'admin.editTemplateTitle': '编辑模板「{name}」',
+  'admin.templateDeleteConfirm': '确定删除模板「{name}」？删除后不可恢复',
+  'admin.templateCreateSuccess': '模板创建成功',
+  'admin.templateUpdateSuccess': '模板「{name}」已更新',
+  'admin.templateDeleteSuccess': '模板「{name}」已删除',
+  'admin.templateSearchPlaceholder': '搜索模板显示名',
+  'admin.templateSearchAriaLabel': '搜索模板',
+
+  // ---- pages/{SsoClientsPage,OidcClientsPage}.tsx 模板表单------------
+  'admin.templateLabel': '模板',
+  'admin.templateVarsLabel': '模板变量',
+  'admin.templateVarsPlaceholder': '{"key": "value"}',
+  'admin.templateVarsHint': '填写 JSON 对象文本；留空按空对象 {} 注入',
+  'admin.templateSelectHint':
+    '可选内置 login 或自定义模板；不指定则使用默认文件壳',
 
   // ---- pages/{UsersPage,UserDetailPage}.tsx 用户族----------------
   'admin.usernameLabel': '用户名',

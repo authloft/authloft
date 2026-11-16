@@ -26,7 +26,9 @@ import {
   Empty,
   Input,
   Modal,
+  Select,
   Spin,
+  TextArea,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -34,6 +36,7 @@ import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
   initialTableQuery,
+  MAX_PAGE_SIZE,
   type TableQueryState,
 } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
@@ -58,18 +61,23 @@ import {
   buildDeleteOidcClientRequest,
   buildGetOidcClientRequest,
   buildListOidcClientsRequest,
+  buildListTemplatesRequest,
   buildUpdateOidcClientRequest,
   cleanStringList,
+  clientTemplateDraft,
   createOidcClient,
   deleteOidcClient,
   formatUnixTime,
   getOidcClient,
   isUnauthenticatedError,
   listOidcClients,
+  listTemplates,
   parseTtlField,
   redirectUrisIssue,
   scopesIssue,
   summarizeList,
+  templateSelectOptions,
+  templateVarsIssue,
   tokenTtlSummary,
   ttlDetailText,
   updateOidcClient,
@@ -92,6 +100,8 @@ interface OidcCreateForm {
   scopes: string[];
   accessTokenTtl: string;
   refreshTokenTtl: string;
+  templateKey: string;
+  templateVars: string;
 }
 
 /** OIDC 编辑表单态（clientId 只读展示不编辑，TTL 文本态）。 */
@@ -102,6 +112,8 @@ interface OidcEditForm {
   scopes: string[];
   accessTokenTtl: string;
   refreshTokenTtl: string;
+  templateKey: string;
+  templateVars: string;
 }
 
 /** 新建表单初值：TTL 预填库端默认（§4.5：3600 / 2592000）。 */
@@ -113,6 +125,8 @@ function initialCreateForm(): OidcCreateForm {
     scopes: [],
     accessTokenTtl: String(OIDC_ACCESS_TTL_DEFAULT),
     refreshTokenTtl: String(OIDC_REFRESH_TTL_DEFAULT),
+    templateKey: '',
+    templateVars: '',
   };
 }
 
@@ -136,6 +150,26 @@ export function OidcClientsPage(_props: {
         returnTo: () => adminReturnTo(location.pathname, location.search),
       }),
     },
+  );
+  // 模板下拉数据源：ListTemplates 只返回 DB 自定义模板（内置仅前端常量
+  // login），一页取满；401 走集中 onError。
+  const templateReq = useRequest(
+    () =>
+      listTemplates(
+        buildListTemplatesRequest('', {
+          ...initialTableQuery(),
+          pageSize: MAX_PAGE_SIZE,
+        }),
+      ),
+    {
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const templateOptions = templateSelectOptions(
+    (templateReq.data?.items ?? []).map((item) => item.templateKey),
   );
   // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError，
   // 与 SsoClientsPage 新建同口径）；弹窗内不再自持错误态。
@@ -165,6 +199,8 @@ export function OidcClientsPage(_props: {
     scopes: [],
     accessTokenTtl: '',
     refreshTokenTtl: '',
+    templateKey: '',
+    templateVars: '',
   });
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
   const [editBaseline, setEditBaseline] = useState<OidcEditForm | null>(null);
@@ -231,6 +267,10 @@ export function OidcClientsPage(_props: {
     if (scopeIssue !== null) {
       return { error: scopeIssue, accessTokenTtl: 0, refreshTokenTtl: 0 };
     }
+    const varsIssue = templateVarsIssue(createForm.templateVars);
+    if (varsIssue !== null) {
+      return { error: varsIssue, accessTokenTtl: 0, refreshTokenTtl: 0 };
+    }
     const accessTokenTtl = parseTtlField(
       createForm.accessTokenTtl,
       OIDC_ACCESS_TTL_MAX,
@@ -274,6 +314,8 @@ export function OidcClientsPage(_props: {
           scopes: cleanStringList(createForm.scopes),
           accessTokenTtl: resolved.accessTokenTtl,
           refreshTokenTtl: resolved.refreshTokenTtl,
+          templateKey: createForm.templateKey,
+          templateVars: createForm.templateVars,
         }),
       );
       setCreateOpen(false);
@@ -307,6 +349,7 @@ export function OidcClientsPage(_props: {
       scopes: [...row.scopes],
       accessTokenTtl: toCount(row.accessTokenTtl).toString(),
       refreshTokenTtl: toCount(row.refreshTokenTtl).toString(),
+      ...clientTemplateDraft(row),
     };
     setEditTarget(row);
     setEditForm(baseline);
@@ -336,6 +379,10 @@ export function OidcClientsPage(_props: {
       if (scopeIssue !== null) {
         throw new Error(scopeIssue);
       }
+      const varsIssue = templateVarsIssue(editForm.templateVars);
+      if (varsIssue !== null) {
+        throw new Error(varsIssue);
+      }
       const accessTokenTtl = parseTtlField(
         editForm.accessTokenTtl,
         OIDC_ACCESS_TTL_MAX,
@@ -362,6 +409,8 @@ export function OidcClientsPage(_props: {
           scopes,
           accessTokenTtl,
           refreshTokenTtl,
+          templateKey: editForm.templateKey,
+          templateVars: editForm.templateVars,
         }),
       );
       return target.clientId;
@@ -623,6 +672,45 @@ export function OidcClientsPage(_props: {
               </span>
             </div>
           </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateSelectHint')}
+            </span>
+            <Select
+              value={createForm.templateKey}
+              onChange={(value) =>
+                setCreateForm({
+                  ...createForm,
+                  templateKey: typeof value === 'string' ? value : '',
+                })
+              }
+              optionList={templateOptions}
+              placeholder={t('admin.templateUnspecified')}
+              aria-label={t('admin.templateLabel')}
+              disabled={createSubmitting}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateVarsLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateVarsHint')}
+            </span>
+            <TextArea
+              value={createForm.templateVars}
+              onChange={(value) =>
+                setCreateForm({ ...createForm, templateVars: value })
+              }
+              placeholder={t('admin.templateVarsPlaceholder')}
+              aria-label={t('admin.templateVarsLabel')}
+              autosize={{ minRows: 3, maxRows: 10 }}
+              disabled={createSubmitting}
+            />
+          </div>
         </div>
       </Modal>
       <Modal
@@ -679,6 +767,10 @@ export function OidcClientsPage(_props: {
                 ? viewReq.data.scopes.join(', ')
                 : EMPTY_TEXT}
             </dd>
+            <dt>{t('admin.templateLabel')}</dt>
+            <dd>{viewReq.data.templateKey || EMPTY_TEXT}</dd>
+            <dt>{t('admin.templateVarsLabel')}</dt>
+            <dd>{viewReq.data.templateVars || EMPTY_TEXT}</dd>
             <dt>{t('admin.accessTokenTtlLabel')}</dt>
             <dd>{ttlDetailText(viewReq.data.accessTokenTtl)}</dd>
             <dt>{t('admin.refreshTokenTtlLabel')}</dt>
@@ -820,6 +912,45 @@ export function OidcClientsPage(_props: {
                 {t('admin.ttlKeepHint', { max: OIDC_REFRESH_TTL_MAX })}
               </span>
             </div>
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateSelectHint')}
+            </span>
+            <Select
+              value={editForm.templateKey}
+              onChange={(value) =>
+                setEditForm({
+                  ...editForm,
+                  templateKey: typeof value === 'string' ? value : '',
+                })
+              }
+              optionList={templateOptions}
+              placeholder={t('admin.templateUnspecified')}
+              aria-label={t('admin.templateLabel')}
+              disabled={editSubmitting}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateVarsLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateVarsHint')}
+            </span>
+            <TextArea
+              value={editForm.templateVars}
+              onChange={(value) =>
+                setEditForm({ ...editForm, templateVars: value })
+              }
+              placeholder={t('admin.templateVarsPlaceholder')}
+              aria-label={t('admin.templateVarsLabel')}
+              autosize={{ minRows: 3, maxRows: 10 }}
+              disabled={editSubmitting}
+            />
           </div>
         </div>
       </Modal>

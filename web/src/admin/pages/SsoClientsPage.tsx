@@ -28,8 +28,10 @@ import {
   Empty,
   Input,
   Modal,
+  Select,
   SideSheet,
   Spin,
+  TextArea,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -37,6 +39,7 @@ import { CopyButton } from '../../shared/components/CopyButton';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
   initialTableQuery,
+  MAX_PAGE_SIZE,
   type TableQueryState,
 } from '../../shared/app-ui/dataTableLogic';
 import { useLocation } from '@modern-js/runtime/router';
@@ -57,16 +60,21 @@ import {
   buildDeleteSsoClientRequest,
   buildGetSsoClientRequest,
   buildListSsoClientsRequest,
+  buildListTemplatesRequest,
   buildUpdateSsoClientRequest,
   cleanStringList,
+  clientTemplateDraft,
   createSsoClient,
   deleteSsoClient,
   formatUnixTime,
   getSsoClient,
   isUnauthenticatedError,
   listSsoClients,
+  listTemplates,
   redirectUrisIssue,
   summarizeList,
+  templateSelectOptions,
+  templateVarsIssue,
   updateSsoClient,
   type SsoClientDraft,
   type SsoClientPatchDraft,
@@ -102,6 +110,26 @@ export function SsoClientsPage(_props: {
       }),
     },
   );
+  // 模板下拉数据源：ListTemplates 只返回 DB 自定义模板（内置仅前端常量
+  // login），一页取满（模板规模远小于 100）；401 走集中 onError。
+  const templateReq = useRequest(
+    () =>
+      listTemplates(
+        buildListTemplatesRequest('', {
+          ...initialTableQuery(),
+          pageSize: MAX_PAGE_SIZE,
+        }),
+      ),
+    {
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const templateOptions = templateSelectOptions(
+    (templateReq.data?.items ?? []).map((item) => item.templateKey),
+  );
   // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError）；
   // 弹窗内不再自持错误态。
   // 新建弹窗（§5.5 行 1261：clientSecret 服务端生成，表单无密钥项）。
@@ -110,6 +138,8 @@ export function SsoClientsPage(_props: {
     clientId: '',
     name: '',
     redirectUris: [],
+    templateKey: '',
+    templateVars: '',
   });
   // 查看弹窗（GetSsoClient 明文密钥的唯一展示位）。
   const [viewId, setViewId] = useState<bigint | null>(null);
@@ -130,6 +160,8 @@ export function SsoClientsPage(_props: {
     newSecret: '',
     name: '',
     redirectUris: [],
+    templateKey: '',
+    templateVars: '',
   });
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
   const [editBaseline, setEditBaseline] = useState<SsoClientPatchDraft | null>(
@@ -143,7 +175,13 @@ export function SsoClientsPage(_props: {
 
   /** 打开新建弹窗：清空上次草稿。 */
   function openCreate(): void {
-    setCreateDraft({ clientId: '', name: '', redirectUris: [] });
+    setCreateDraft({
+      clientId: '',
+      name: '',
+      redirectUris: [],
+      templateKey: '',
+      templateVars: '',
+    });
     setCreateOpen(true);
   }
 
@@ -168,7 +206,13 @@ export function SsoClientsPage(_props: {
   function closeCreate(): void {
     confirmCloseIfDirty(
       JSON.stringify(createDraft) !==
-        JSON.stringify({ clientId: '', name: '', redirectUris: [] }),
+        JSON.stringify({
+          clientId: '',
+          name: '',
+          redirectUris: [],
+          templateKey: '',
+          templateVars: '',
+        }),
       () => setCreateOpen(false),
     );
   }
@@ -188,6 +232,10 @@ export function SsoClientsPage(_props: {
       const issue = redirectUrisIssue(createDraft.redirectUris);
       if (issue !== null) {
         throw new Error(issue);
+      }
+      const varsIssue = templateVarsIssue(createDraft.templateVars);
+      if (varsIssue !== null) {
+        throw new Error(varsIssue);
       }
       await createSsoClient(buildCreateSsoClientRequest(createDraft));
       setCreateOpen(false);
@@ -218,6 +266,7 @@ export function SsoClientsPage(_props: {
       newSecret: '',
       name: row.name,
       redirectUris: [...row.redirectUris],
+      ...clientTemplateDraft(row),
     };
     setEditTarget(row);
     setEditDraft(baseline);
@@ -238,6 +287,10 @@ export function SsoClientsPage(_props: {
       const issue = redirectUrisIssue(uris);
       if (issue !== null) {
         throw new Error(issue);
+      }
+      const varsIssue = templateVarsIssue(editDraft.templateVars);
+      if (varsIssue !== null) {
+        throw new Error(varsIssue);
       }
       await updateSsoClient(
         buildUpdateSsoClientRequest(target.id, {
@@ -443,6 +496,45 @@ export function SsoClientsPage(_props: {
               emptyHint={t('admin.noRedirectUrisHint')}
             />
           </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateSelectHint')}
+            </span>
+            <Select
+              value={createDraft.templateKey}
+              onChange={(value) =>
+                setCreateDraft({
+                  ...createDraft,
+                  templateKey: typeof value === 'string' ? value : '',
+                })
+              }
+              optionList={templateOptions}
+              placeholder={t('admin.templateUnspecified')}
+              aria-label={t('admin.templateLabel')}
+              disabled={createSubmitting}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateVarsLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateVarsHint')}
+            </span>
+            <TextArea
+              value={createDraft.templateVars}
+              onChange={(value) =>
+                setCreateDraft({ ...createDraft, templateVars: value })
+              }
+              placeholder={t('admin.templateVarsPlaceholder')}
+              aria-label={t('admin.templateVarsLabel')}
+              autosize={{ minRows: 3, maxRows: 10 }}
+              disabled={createSubmitting}
+            />
+          </div>
         </div>
       </SideSheet>
       <Modal
@@ -493,6 +585,10 @@ export function SsoClientsPage(_props: {
                 EMPTY_TEXT
               )}
             </dd>
+            <dt>{t('admin.templateLabel')}</dt>
+            <dd>{viewReq.data.templateKey || EMPTY_TEXT}</dd>
+            <dt>{t('admin.templateVarsLabel')}</dt>
+            <dd>{viewReq.data.templateVars || EMPTY_TEXT}</dd>
             <dt>{t('admin.createdAtLabel')}</dt>
             <dd>{formatUnixTime(viewReq.data.createdAt)}</dd>
             <dt>{t('admin.updatedAtLabel')}</dt>
@@ -581,6 +677,45 @@ export function SsoClientsPage(_props: {
               ariaLabel={t('admin.redirectUriAriaLabel')}
               addText={t('admin.addRedirectUri')}
               placeholder={t('admin.redirectUriPlaceholder')}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateSelectHint')}
+            </span>
+            <Select
+              value={editDraft.templateKey}
+              onChange={(value) =>
+                setEditDraft({
+                  ...editDraft,
+                  templateKey: typeof value === 'string' ? value : '',
+                })
+              }
+              optionList={templateOptions}
+              placeholder={t('admin.templateUnspecified')}
+              aria-label={t('admin.templateLabel')}
+              disabled={editSubmitting}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.templateVarsLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.templateVarsHint')}
+            </span>
+            <TextArea
+              value={editDraft.templateVars}
+              onChange={(value) =>
+                setEditDraft({ ...editDraft, templateVars: value })
+              }
+              placeholder={t('admin.templateVarsPlaceholder')}
+              aria-label={t('admin.templateVarsLabel')}
+              autosize={{ minRows: 3, maxRows: 10 }}
+              disabled={editSubmitting}
             />
           </div>
         </div>

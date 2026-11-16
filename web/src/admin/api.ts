@@ -81,6 +81,22 @@ import {
   UpdateSsoClientRequestSchema,
 } from '../gen/proto/api/admin/v1/client_pb';
 import type {
+  CreateTemplateRequest,
+  DeleteTemplateRequest,
+  GetTemplateRequest,
+  ListTemplatesRequest,
+  ListTemplatesResponse,
+  Template,
+  UpdateTemplateRequest,
+} from '../gen/proto/api/admin/v1/template_pb';
+import {
+  CreateTemplateRequestSchema,
+  DeleteTemplateRequestSchema,
+  GetTemplateRequestSchema,
+  ListTemplatesRequestSchema,
+  UpdateTemplateRequestSchema,
+} from '../gen/proto/api/admin/v1/template_pb';
+import type {
   GetUserEventsRequest,
   GetUserRequest,
   ListUsersRequest,
@@ -760,11 +776,23 @@ export function parseTtlField(raw: string, max: number): number | null {
   return value;
 }
 
+/**
+ * 模板变量提交形态（§5.5「按原文字符串提交」）：空白视为未配置（'' →
+ * 服务端按 {} 注入）；非空一律保留原文，不重排、不改写 JSON 内容。
+ */
+function wireTemplateVars(raw: string): string {
+  return raw.trim() === '' ? '' : raw;
+}
+
 /** SSO 客户端表单草稿（新建与编辑共用字段形态；clientId 仅新建消费——创建后不可改）。 */
 export interface SsoClientDraft {
   clientId: string;
   name: string;
   redirectUris: string[];
+  /** 渲染空壳模板 key（空 = 回落默认文件壳，§5.5）。 */
+  templateKey: string;
+  /** 模板变量 JSON 对象文本（空 = 服务端按 {} 注入，§5.5）。 */
+  templateVars: string;
 }
 
 /** SSO 客户端编辑草稿（clientId 不编辑；newSecret 留空保留原密钥、非空轮换）。 */
@@ -772,6 +800,8 @@ export interface SsoClientPatchDraft {
   newSecret: string;
   name: string;
   redirectUris: string[];
+  templateKey: string;
+  templateVars: string;
 }
 
 /** OIDC 客户端表单草稿：SSO 基线 + scopes / TTL（秒；0 = 缺省/保留）。 */
@@ -834,6 +864,8 @@ export function buildCreateSsoClientRequest(
     clientId: draft.clientId.trim(),
     name: draft.name.trim(),
     redirectUris: cleanStringList(draft.redirectUris),
+    templateKey: (draft.templateKey ?? '').trim(),
+    templateVars: wireTemplateVars(draft.templateVars ?? ''),
   });
 }
 
@@ -848,6 +880,8 @@ export function buildCreateOidcClientRequest(
     scopes: cleanStringList(draft.scopes),
     accessTokenTtl: BigInt(draft.accessTokenTtl),
     refreshTokenTtl: BigInt(draft.refreshTokenTtl),
+    templateKey: (draft.templateKey ?? '').trim(),
+    templateVars: wireTemplateVars(draft.templateVars ?? ''),
   });
 }
 
@@ -865,6 +899,8 @@ export function buildUpdateSsoClientRequest(
     clientSecret: draft.newSecret.trim(),
     name: draft.name.trim(),
     redirectUris: cleanStringList(draft.redirectUris),
+    templateKey: (draft.templateKey ?? '').trim(),
+    templateVars: wireTemplateVars(draft.templateVars ?? ''),
   });
 }
 
@@ -881,6 +917,8 @@ export function buildUpdateOidcClientRequest(
     scopes: cleanStringList(draft.scopes),
     accessTokenTtl: BigInt(draft.accessTokenTtl),
     refreshTokenTtl: BigInt(draft.refreshTokenTtl),
+    templateKey: (draft.templateKey ?? '').trim(),
+    templateVars: wireTemplateVars(draft.templateVars ?? ''),
   });
 }
 
@@ -948,6 +986,209 @@ export function ttlDetailText(ttl: bigint): string {
     duration: humanizeTtlSeconds(seconds),
     seconds,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 模板管理族（§5.7 行 1802-1827）+ 客户端模板选择（§5.5「客户端模板字段」/
+// 前端架构 §6 行 605）：模板五方法全真调。ListTemplates 只返回 DB 自定义
+// 模板行，不含内置模板——内置由后端启动扫描全集常驻内存、不设白名单
+// （《后端架构》§3.13）；前端展示层下拉本期仅呈现 login 属产品策略，不是
+// 后端能力边界。content 按 HTML 原文提交（不解析、不转义）；template_vars
+// 只在客户端 Create / Update 出现，模板端点不接收。请求构造 / 校验纯函数
+// 落本段，零 Semi 依赖、node 可测（页面壳导入 Semi 不可测见 admin.test.tsx 头注）。
+// ---------------------------------------------------------------------------
+
+/** 模板 key 长度上限（DB template_key VARCHAR(64) 同值）。 */
+export const TEMPLATE_KEY_MAX_LEN = 64;
+
+/**
+ * 前端展示层本期仅呈现的内置模板 key —— 产品策略，不是后端能力边界：
+ * 后端按启动扫描全集提供全部内置模板且不设白名单，服务端 Resolve 对全部
+ * 内置 key 照常返回内容（§5.7 / 前端架构 §6 / 后端架构 §3.13）。
+ */
+export const BUILTIN_TEMPLATE_KEYS: readonly string[] = ['login'];
+
+/** 模板管理草稿（新建 / 编辑共用字段形态；templateKey 编辑只读）。 */
+export interface TemplateDraft {
+  templateKey: string;
+  name: string;
+  content: string;
+}
+
+/** 列表行 → 编辑草稿：content 原文回填，不做 HTML 解析 / 转义。 */
+export function templateDraftFromRow(row: Template): TemplateDraft {
+  return { templateKey: row.templateKey, name: row.name, content: row.content };
+}
+
+/** 客户端行 → 模板两字段（查看 / 编辑回填共用；零 Semi 依赖 node 可测）。 */
+export function clientTemplateDraft(row: {
+  templateKey: string;
+  templateVars: string;
+}): { templateKey: string; templateVars: string } {
+  return { templateKey: row.templateKey, templateVars: row.templateVars };
+}
+
+/** ListTemplates（§5.7：分页 §1.7 + 可选 q 按 name 模糊筛选）。 */
+export function listTemplates(
+  request: ListTemplatesRequest,
+): Promise<ListTemplatesResponse> {
+  return adminClient.listTemplates(request);
+}
+
+/** CreateTemplate（§5.7：{template_key, name, content}）→ OkResponse。 */
+export function createTemplate(
+  request: CreateTemplateRequest,
+): Promise<OkResponse> {
+  return adminClient.createTemplate(request);
+}
+
+/** GetTemplate（§5.7：{id} 详情，含 content）。 */
+export function getTemplate(request: GetTemplateRequest): Promise<Template> {
+  return adminClient.getTemplate(request);
+}
+
+/** UpdateTemplate（§5.7：PATCH 缺省保留）→ OkResponse。 */
+export function updateTemplate(
+  request: UpdateTemplateRequest,
+): Promise<OkResponse> {
+  return adminClient.updateTemplate(request);
+}
+
+/** DeleteTemplate（§5.7：{id} 硬删）→ OkResponse。 */
+export function deleteTemplate(
+  request: DeleteTemplateRequest,
+): Promise<OkResponse> {
+  return adminClient.deleteTemplate(request);
+}
+
+/**
+ * ListTemplates 请求构造（§5.7 + §1.7）：q 去首尾空白，空即不过滤；
+ * 分页直映射；排序仅 order 非空时下发（同 buildListUsersRequest）。
+ */
+export function buildListTemplatesRequest(
+  q: string,
+  query: TableQueryState,
+): ListTemplatesRequest {
+  const trimmed = q.trim();
+  return create(ListTemplatesRequestSchema, {
+    q: trimmed === '' ? undefined : trimmed,
+    page: BigInt(query.page),
+    pageSize: BigInt(query.pageSize),
+    sort: query.order === '' ? undefined : query.sort,
+    order: query.order === '' ? undefined : query.order,
+  });
+}
+
+/** CreateTemplate 请求构造：key / name 去空白，content 原文直传。 */
+export function buildCreateTemplateRequest(
+  draft: TemplateDraft,
+): CreateTemplateRequest {
+  return create(CreateTemplateRequestSchema, {
+    templateKey: draft.templateKey.trim(),
+    name: draft.name.trim(),
+    content: draft.content,
+  });
+}
+
+/** GetTemplate 请求构造（§5.7：{id}）。 */
+export function buildGetTemplateRequest(id: bigint): GetTemplateRequest {
+  return create(GetTemplateRequestSchema, { id });
+}
+
+/**
+ * UpdateTemplate 请求构造（PATCH）：template_key 创建后不可改（编辑只读），
+ * 故不下发该 optional 字段，服务端保留原值；name 去空白、content 原文。
+ */
+export function buildUpdateTemplateRequest(
+  id: bigint,
+  draft: TemplateDraft,
+): UpdateTemplateRequest {
+  return create(UpdateTemplateRequestSchema, {
+    id,
+    name: draft.name.trim(),
+    content: draft.content,
+  });
+}
+
+/** DeleteTemplate 请求构造（§5.7：{id}）。 */
+export function buildDeleteTemplateRequest(id: bigint): DeleteTemplateRequest {
+  return create(DeleteTemplateRequestSchema, { id });
+}
+
+/** 模板 key 校验（§5.7：非空 ≤64、不与内置 key / 既有自定义 key 同名）。 */
+export function templateKeyIssue(
+  key: string,
+  customKeys: readonly string[] = [],
+): string | null {
+  const trimmed = key.trim();
+  if (trimmed === '') {
+    return t('admin.templateKeyRequired');
+  }
+  if (trimmed.length > TEMPLATE_KEY_MAX_LEN) {
+    return t('admin.templateKeyTooLong', { max: TEMPLATE_KEY_MAX_LEN });
+  }
+  if (BUILTIN_TEMPLATE_KEYS.includes(trimmed)) {
+    return t('admin.templateKeyBuiltinConflict');
+  }
+  if (customKeys.includes(trimmed)) {
+    return t('admin.templateKeyTaken');
+  }
+  return null;
+}
+
+/** 模板变量校验失败文案键（模块级只存键，调用期 t() 取当前语言）。 */
+export const TEMPLATE_VARS_ISSUE_TEXT_KEY: I18nKey = 'admin.templateVarsIssue';
+
+/**
+ * 模板变量校验（§5.5：原文字符串，前端只校验可解析为 JSON 对象、不改内容）：
+ * 空白 = 未配置 → null；合法 JSON 对象 → null；非法 JSON / 非对象（含数组、
+ * null、标量）→ 文案。后端在客户端 Create / Update 做权威校验。
+ */
+export function templateVarsIssue(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
+      return t(TEMPLATE_VARS_ISSUE_TEXT_KEY);
+    }
+  } catch {
+    return t(TEMPLATE_VARS_ISSUE_TEXT_KEY);
+  }
+  return null;
+}
+
+/** 客户端表单模板下拉项（value 即 wire key；label 渲染期已求值）。 */
+export interface TemplateSelectOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * 模板下拉选项合并：内置常量（本期仅 login）+ ListTemplates 自定义项 +
+ * 「不指定」空项。后端按全集提供不裁剪，仅下拉本期不呈现其余内置文件壳；
+ * 与内置 key 重名的自定义项（后端不会下发）去重防重复选项。
+ */
+export function templateSelectOptions(
+  customKeys: readonly string[],
+): TemplateSelectOption[] {
+  const options: TemplateSelectOption[] = BUILTIN_TEMPLATE_KEYS.map((key) => ({
+    value: key,
+    label: key,
+  }));
+  for (const key of customKeys) {
+    if (!options.some((option) => option.value === key)) {
+      options.push({ value: key, label: key });
+    }
+  }
+  options.push({ value: '', label: t('admin.templateUnspecified') });
+  return options;
 }
 
 // ---------------------------------------------------------------------------

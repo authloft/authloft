@@ -36,6 +36,7 @@ import { ProvidersPage } from './pages/ProvidersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SsoClientsPage } from './pages/SsoClientsPage';
 import { StatusPage } from './pages/StatusPage';
+import { TemplatesPage } from './pages/TemplatesPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
 import { adminNavPath } from './paths';
@@ -138,6 +139,17 @@ export function AdminApp(): ReactNode {
           ]}
         >
           <OidcClientsPage alRoot={alRoot} />
+        </AdminLayout>
+      ),
+    },
+    {
+      path: adminNavPath('admin.navTemplates'),
+      element: (
+        <AdminLayout
+          alRoot={alRoot}
+          breadcrumb={[rootTitle, t('admin.navTemplates')]}
+        >
+          <TemplatesPage alRoot={alRoot} />
         </AdminLayout>
       ),
     },

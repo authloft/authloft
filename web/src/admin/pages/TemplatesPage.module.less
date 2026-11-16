@@ -1,0 +1,59 @@
+// 模板管理页自定义样式（前端架构 §1.7）：同目录同名 module less，类名 camelCase。
+// DataTable 自带表格 / 分页样式（Semi），此处承载工具条 / 表单弹窗布局。
+@import (reference) '../../shared/styles/tokens.less';
+
+.page {
+  display: block;
+}
+
+// 工具条：搜索区靠左，新建按钮靠右。
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  margin-bottom: @spacing-md;
+}
+
+.searchInput {
+  width: 260px;
+}
+
+.actions {
+  display: inline-flex;
+  gap: @spacing-xs;
+  white-space: nowrap;
+}
+
+.idCode {
+  font-size: @font-size-sm;
+  word-break: break-all;
+}
+
+.formBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.fieldHint {
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+// HTML 原文编辑：等宽字体便于阅读标签 / 占位符，非富文本。
+.contentArea {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: @font-size-sm;
+  line-height: @line-height-body;
+}

@@ -29,6 +29,7 @@ export const ADMIN_NAV_ROUTES: AppRoute[] = [
   { path: '/users', textKey: 'admin.navUsers' },
   { path: '/clients/sso', textKey: 'admin.navSsoClients' },
   { path: '/clients/oidc', textKey: 'admin.navOidcClients' },
+  { path: '/templates', textKey: 'admin.navTemplates' },
   { path: '/providers', textKey: 'admin.navProviders' },
   { path: '/settings', textKey: 'admin.navSettings' },
   { path: '/audit', textKey: 'admin.navAudit' },
