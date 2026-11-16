@@ -59,6 +59,7 @@ import (
 	"authloft/internal/otp"
 	"authloft/internal/pages"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	// 注册表导入统一触发 init() 自注册：内置渠道适配器与 smtp / aliyun_sms
 	// 消息 Sender 在此登记工厂（§3.1 / §12.2 / §15.2）。
 	_ "authloft/internal/provider/email/smtp"
@@ -803,12 +804,15 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		return nil, assembleStep("buildCodecs", err)
 	}
 
-	// 步骤 6（provider 半步，§3.1 / §3.9）：repo 行源 + Redis 整行缓存（版本失效）
+	// 步骤 6（provider 半步，§3.1 / §3.9 / §15.4）：repo 行源 + Redis 整行缓存（版本失效）
 	// → Loader（本地 LRU + singleflight）→ Whitelist（Referer 白名单热更新）。
 	// providerCache 同实例挂入 assembled，admin 写路径写后失效用。
+	// 出站连接池注册表（§15.4）进程级单例：显式构造、显式注入各装配点，本步
+	// 先注入 Loader；captcha / admin 装配点复用同一实例。
 	deps.providerCache = cache.NewProviderCache(rdb)
+	pools := proxyclient.NewPoolSet()
 	deps.providerLoader = provider.NewLoader(
-		deps.repos.Providers, deps.providerCache, provider.LoaderOptions{})
+		deps.repos.Providers, deps.providerCache, pools, provider.LoaderOptions{})
 	deps.providerWhitelist = provider.NewWhitelist(deps.providerLoader)
 
 	// 步骤 7：settings 全量预热（缺失键补齐，fail-fast）→ watcher 订阅热更新。

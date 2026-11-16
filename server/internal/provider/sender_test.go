@@ -23,6 +23,7 @@ import (
 	factorotp "authloft/internal/factor/otp"
 	coreotp "authloft/internal/otp"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -207,7 +208,7 @@ func TestNewCodeBridgeValidation(t *testing.T) {
 	if _, err := provider.NewCodeBridge(nil, nil, nil, "k", provider.CategorySMS); err == nil {
 		t.Fatal("nil deps must fail")
 	}
-	loader := provider.NewLoader(fakeRowSource{}, nil, provider.LoaderOptions{})
+	loader := provider.NewLoader(fakeRowSource{}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
 	q := asyncqueue.New(provider.SendExecutor{}, asyncqueue.Options{
 		Capacity: 4, Workers: 1, BatchSize: 4, FlushInterval: time.Hour,
 	})
@@ -310,7 +311,7 @@ func newLoginHarness(t *testing.T, settingsKey, rowKey, rowType string, enabled 
 			Type: rowType, IsEnabled: int8(enabled), Ext: ext,
 		}
 	}
-	loader := provider.NewLoader(fakeRowSource{row: row}, nil, provider.LoaderOptions{})
+	loader := provider.NewLoader(fakeRowSource{row: row}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
 	q := asyncqueue.New(provider.SendExecutor{}, asyncqueue.Options{
 		Capacity: 16, Workers: 1, BatchSize: 8, FlushInterval: 5 * time.Millisecond,
 	})
@@ -376,7 +377,7 @@ func newEmailBridgeForTest(t *testing.T, st *fakeSettings, rowKey, rowType strin
 	loader := provider.NewLoader(fakeRowSource{row: &model.Provider{
 		ProviderKey: rowKey, DisplayName: "Test Email", Category: provider.CategoryEmail,
 		Type: rowType, IsEnabled: int8(enabled), Ext: ext,
-	}}, nil, provider.LoaderOptions{})
+	}}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
 	q := asyncqueue.New(provider.SendExecutor{}, asyncqueue.Options{
 		Capacity: 16, Workers: 1, BatchSize: 8, FlushInterval: flush,
 	})

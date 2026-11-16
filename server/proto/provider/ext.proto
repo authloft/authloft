@@ -62,6 +62,14 @@ message Ext {
   string sign_name     = 41;
   string template_code = 42;  // 国内短信模板 ID
 
+  // ---- 出站代理（category=proxy 生效；与 host(14)/port(15) 配对构成代理地址）----
+  string scheme   = 43;  // 代理协议，封闭集 socks5/http/https
+  string user     = 44;  // 代理用户名，可空；原文存储，出站构造时由服务端按 RFC 3986 编码
+  string password = 45;  // 代理密码，可空，须伴随 user；明文存于 ext 内（同 client_secret 口径）
+
+  // ---- 出站代理引用（服务型 Provider 经引用键指向 category=proxy 行）----
+  string proxy_provider_key = 46;  // 引用 proxy 行的 provider_key，空 = 直连；见 §5.3 代理提供商与出站代理引用约定 / 后端架构 §15.4
+
   // ---- 长尾 ----
   map<string, string> metadata = 50;  // 支付宝 sign_type、飞书 app_ticket、S3 acl/storage_class ...
 }

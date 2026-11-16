@@ -21,6 +21,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/logx"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -54,6 +55,12 @@ type Provider struct {
 	Type string
 	Row  *model.Provider
 	Ext  *providerpb.Ext
+
+	// Pools 进程级出站连接池注册表（NewLoader 注入，后端架构 §15.4），工厂
+	// 免改签名即可经 Get 取池；Outbound 引用解析出的连接池（proxy_provider_key
+	// 指向的 proxy 行），nil = 直连，装配期固化、运行期不回读。
+	Pools    *proxyclient.PoolSet
+	Outbound *proxyclient.Pool
 }
 
 // Enabled 是否已启用（is_enabled=1，§13.0 白名单只取已启用实例）。
@@ -65,6 +72,7 @@ func (p *Provider) Enabled() bool {
 type Loader struct {
 	src   RowSource
 	redis RowCache
+	pools *proxyclient.PoolSet
 	opts  LoaderOptions
 	now   func() time.Time
 
@@ -101,16 +109,22 @@ func (o LoaderOptions) withDefaults() LoaderOptions {
 	return o
 }
 
-// NewLoader 构造 Provider 加载器。src 必填；rowCache 可为 nil（不使用
-// Redis 整行缓存）。opts 零值字段按文档默认值回落。
-func NewLoader(src RowSource, rowCache RowCache, opts LoaderOptions) *Loader {
+// NewLoader 构造 Provider 加载器。src 与 pools 必填；rowCache 可为 nil（不
+// 使用 Redis 整行缓存）。pools 是进程级池注册表（bootstrap 构造一次显式注入，
+// 后端架构 §15.4），挂载到每个加载出的实例供工厂取池，测试各传独立实例。
+// opts 零值字段按文档默认值回落。
+func NewLoader(src RowSource, rowCache RowCache, pools *proxyclient.PoolSet, opts LoaderOptions) *Loader {
 	if src == nil {
 		panic("provider: NewLoader: nil RowSource")
+	}
+	if pools == nil {
+		panic("provider: NewLoader: nil PoolSet")
 	}
 	opts = opts.withDefaults()
 	return &Loader{
 		src:   src,
 		redis: rowCache,
+		pools: pools,
 		opts:  opts,
 		now:   opts.Now,
 		local: newLRUCache(opts.LocalCapacity, opts.LocalTTL, opts.Now),
@@ -146,6 +160,9 @@ func (l *Loader) Get(ctx context.Context, providerKey string) (*Provider, error)
 		}
 		p, err := toProvider(row)
 		if err != nil {
+			return nil, err
+		}
+		if err := l.resolveOutbound(ctx, p); err != nil {
 			return nil, err
 		}
 		l.local.set(localKey, p)
@@ -287,6 +304,9 @@ func (l *Loader) loadList(ctx context.Context, providerType string) ([]*Provider
 		for i := range rows {
 			p, err := toProvider(&rows[i])
 			if err != nil {
+				return nil, err
+			}
+			if err := l.resolveOutbound(ctx, p); err != nil {
 				return nil, err
 			}
 			out = append(out, p)

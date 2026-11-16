@@ -68,6 +68,12 @@ type Ext struct {
 	From         string `protobuf:"bytes,40,opt,name=from,proto3" json:"from,omitempty"` // 邮件发件人 / 短信签名
 	SignName     string `protobuf:"bytes,41,opt,name=sign_name,json=signName,proto3" json:"sign_name,omitempty"`
 	TemplateCode string `protobuf:"bytes,42,opt,name=template_code,json=templateCode,proto3" json:"template_code,omitempty"` // 国内短信模板 ID
+	// ---- 出站代理（category=proxy 生效；与 host(14)/port(15) 配对构成代理地址）----
+	Scheme   string `protobuf:"bytes,43,opt,name=scheme,proto3" json:"scheme,omitempty"`     // 代理协议，封闭集 socks5/http/https
+	User     string `protobuf:"bytes,44,opt,name=user,proto3" json:"user,omitempty"`         // 代理用户名，可空；原文存储，出站构造时由服务端按 RFC 3986 编码
+	Password string `protobuf:"bytes,45,opt,name=password,proto3" json:"password,omitempty"` // 代理密码，可空，须伴随 user；明文存于 ext 内（同 client_secret 口径）
+	// ---- 出站代理引用（服务型 Provider 经引用键指向 category=proxy 行）----
+	ProxyProviderKey string `protobuf:"bytes,46,opt,name=proxy_provider_key,json=proxyProviderKey,proto3" json:"proxy_provider_key,omitempty"` // 引用 proxy 行的 provider_key，空 = 直连；见 §5.3 代理提供商与出站代理引用约定 / 后端架构 §15.4
 	// ---- 长尾 ----
 	Metadata      map[string]string `protobuf:"bytes,50,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // 支付宝 sign_type、飞书 app_ticket、S3 acl/storage_class ...
 	unknownFields protoimpl.UnknownFields
@@ -328,6 +334,34 @@ func (x *Ext) GetTemplateCode() string {
 	return ""
 }
 
+func (x *Ext) GetScheme() string {
+	if x != nil {
+		return x.Scheme
+	}
+	return ""
+}
+
+func (x *Ext) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *Ext) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *Ext) GetProxyProviderKey() string {
+	if x != nil {
+		return x.ProxyProviderKey
+	}
+	return ""
+}
+
 func (x *Ext) GetMetadata() map[string]string {
 	if x != nil {
 		return x.Metadata
@@ -339,7 +373,8 @@ var File_provider_ext_proto protoreflect.FileDescriptor
 
 const file_provider_ext_proto_rawDesc = "" +
 	"\n" +
-	"\x12provider/ext.proto\x12\bprovider\"\xda\t\n" +
+	"\x12provider/ext.proto\x12\bprovider\"\xd0\n" +
+	"\n" +
 	"\x03Ext\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x15\n" +
@@ -379,7 +414,11 @@ const file_provider_ext_proto_rawDesc = "" +
 	"\rallowed_types\x18& \x01(\tR\fallowedTypes\x12\x12\n" +
 	"\x04from\x18( \x01(\tR\x04from\x12\x1b\n" +
 	"\tsign_name\x18) \x01(\tR\bsignName\x12#\n" +
-	"\rtemplate_code\x18* \x01(\tR\ftemplateCode\x127\n" +
+	"\rtemplate_code\x18* \x01(\tR\ftemplateCode\x12\x16\n" +
+	"\x06scheme\x18+ \x01(\tR\x06scheme\x12\x12\n" +
+	"\x04user\x18, \x01(\tR\x04user\x12\x1a\n" +
+	"\bpassword\x18- \x01(\tR\bpassword\x12,\n" +
+	"\x12proxy_provider_key\x18. \x01(\tR\x10proxyProviderKey\x127\n" +
 	"\bmetadata\x182 \x03(\v2\x1b.provider.Ext.MetadataEntryR\bmetadata\x1a>\n" +
 	"\x10UserMappingEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +

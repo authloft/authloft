@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	providerpb "authloft/gen/go/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -187,7 +188,7 @@ func TestLoaderGetLocalTTL(t *testing.T) {
 	clock := newFakeClock()
 	row := makeRow(t, "wx_a", "wechat_mp", "app-a", "secret-a", 1)
 	src := newFakeSource(row)
-	loader := NewLoader(src, nil, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, nil, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 
 	ctx := context.Background()
 	if p, err := loader.Get(ctx, "wx_a"); err != nil || p.Ext.GetAppId() != "app-a" {
@@ -219,7 +220,7 @@ func TestLoaderVersionInvalidates(t *testing.T) {
 	oldRow := makeRow(t, "wx_a", "wechat_mp", "app-old", "secret-old", 1)
 	src := newFakeSource(oldRow)
 	rowCache := &fakeRowCache{version: 1}
-	loader := NewLoader(src, rowCache, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, rowCache, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 
 	ctx := context.Background()
 	if _, err := loader.Get(ctx, "wx_a"); err != nil {
@@ -251,7 +252,7 @@ func TestLoaderRedisRowCache(t *testing.T) {
 	rowCache := &fakeRowCache{version: 1}
 	rowCache.cacheRow("wx_a", row)
 
-	loader := NewLoader(src, rowCache, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, rowCache, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 	p, err := loader.Get(context.Background(), "wx_a")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -270,7 +271,7 @@ func TestLoaderRedisFailureDegrades(t *testing.T) {
 	row := makeRow(t, "wx_a", "wechat_mp", "app-a", "secret-a", 1)
 	src := newFakeSource(row)
 	rowCache := &fakeRowCache{getErr: errors.New("redis down")}
-	loader := NewLoader(src, rowCache, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, rowCache, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 
 	p, err := loader.Get(context.Background(), "wx_a")
 	if err != nil || p.Ext.GetAppId() != "app-a" {
@@ -285,7 +286,7 @@ func TestLoaderListByType(t *testing.T) {
 	b := makeRow(t, "wx_b", "wechat_mp", "app-b", "sb", 0)
 	other := makeRow(t, "wx_c", "wechat_mp_scan", "app-c", "sc", 1)
 	src := newFakeSource(a, b, other)
-	loader := NewLoader(src, nil, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, nil, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 
 	ps, err := loader.ListByType(context.Background(), "wechat_mp")
 	if err != nil {
@@ -315,7 +316,7 @@ func TestWhitelistFiltersEnabledAndAppID(t *testing.T) {
 		makeRow(t, "mp5", "wechat_mp_scan", "wx1", "s6", 1),
 	}
 	src := newFakeSource(rows...)
-	loader := NewLoader(src, nil, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, nil, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 	wl := newWhitelist(loader, 60*time.Second, clock.now)
 
 	ids, err := wl.AppIDs(context.Background())
@@ -340,7 +341,7 @@ func TestWhitelistVersionInvalidates(t *testing.T) {
 	row := makeRow(t, "mp1", "wechat_mp", "wx1", "s1", 1)
 	src := newFakeSource(row)
 	rowCache := &fakeRowCache{version: 1}
-	loader := NewLoader(src, rowCache, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, rowCache, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 	wl := newWhitelist(loader, 60*time.Second, clock.now)
 
 	if ids, err := wl.AppIDs(context.Background()); err != nil || len(ids) != 1 || ids[0] != "wx1" {
@@ -366,7 +367,7 @@ func TestWhitelistVersionErrorUsesCache(t *testing.T) {
 	row := makeRow(t, "mp1", "wechat_mp", "wx1", "s1", 1)
 	src := newFakeSource(row)
 	rowCache := &fakeRowCache{version: 1}
-	loader := NewLoader(src, rowCache, providerOptions(clock, 60*time.Second, 5*time.Second))
+	loader := NewLoader(src, rowCache, proxyclient.NewPoolSet(), providerOptions(clock, 60*time.Second, 5*time.Second))
 	wl := newWhitelist(loader, 60*time.Second, clock.now)
 
 	if _, err := wl.AppIDs(context.Background()); err != nil {

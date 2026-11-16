@@ -51,6 +51,7 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/oidc"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -505,7 +506,7 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 		// 共享单例由调用方构造注入（不连外部服务，rdb / repo 传
 		// nil 与生产 assemble 注入真源同构）；otp 发送桥还需要
 		// providerLoader（settings 键 → Loader → NewSender）。
-		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, proxyclient.NewPoolSet(), provider.LoaderOptions{}),
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
@@ -582,7 +583,7 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 		settings:       settings.NewStore(nil, nil),
 		queue:          q,
 		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
-		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, proxyclient.NewPoolSet(), provider.LoaderOptions{}),
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
@@ -777,7 +778,7 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 		settings:       settings.NewStore(nil, nil),
 		queue:          q,
 		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
-		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, provider.LoaderOptions{}),
+		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, proxyclient.NewPoolSet(), provider.LoaderOptions{}),
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
