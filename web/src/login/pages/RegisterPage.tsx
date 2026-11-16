@@ -51,7 +51,11 @@ import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
 import { isValidUsername } from '../../shared/utils/validate';
-import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
+import {
+  DEFAULT_ACCOUNT_HOME,
+  isValidReturnTo,
+  sanitizeReturnTo,
+} from '../../shared/urls';
 import {
   getInit,
   type LoginMethodEntry,
@@ -59,6 +63,7 @@ import {
   type SnapshotField,
 } from '../../shared/types/init';
 import { Modal } from '../components/Modal';
+import { hasOidcContext } from '../oidcContext';
 import { register, type RegisterInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
@@ -118,12 +123,15 @@ export function advanceAfterStep(
 }
 
 /**
- * 终点 URL（§1.3 行 158-162 定稿 + returnTo 消费）：syncCookieUrl
- * 非空优先（后端拼好的首跳完整 URL），否则 redirectTo；双空（直登场景）→
- * query `returnTo` 经 sanitizeReturnTo 白名单校验（调用方已解码，
- * 本函数不二次 decode），非法 / 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME（禁止
- * 停留提示页）。与 LoginContainer.terminalUrl 同款逻辑，此处不复用它以免
- * 本页静态拉入整个 login flow 模块链。
+ * 终点 URL（§1.3 定稿 + returnTo 消费）：syncCookieUrl
+ * 非空优先（后端拼好的首跳完整 URL，同步链 returnTo 不生效）；否则按流程
+ * 分派——OIDC 流（oidc 上下文在场，§1.3）redirectTo 优先
+ * （fail-closed）；非 OIDC 流 returnTo（白名单校验通过）优先——显式指定
+ * 落点时不做应用默认回跳，非法 / 缺失再取 redirectTo；皆空（直登场景）→
+ * 默认落点 DEFAULT_ACCOUNT_HOME（禁止停留提示页）。returnTo 由调用方
+ * useSearchParams 取值（已解码，本函数不二次 decode）。与
+ * LoginContainer.terminalUrl 同款逻辑，此处不复用它以免本页静态拉入整个
+ * login flow 模块链。
  */
 export function flowTerminalUrl(
   envelope: LoginFlowResponse,
@@ -132,12 +140,21 @@ export function flowTerminalUrl(
   if (envelope.syncCookieUrl !== '') {
     return envelope.syncCookieUrl;
   }
+  if (hasOidcContext()) {
+    if (envelope.redirectTo !== '') {
+      return envelope.redirectTo;
+    }
+    return returnTo === undefined
+      ? DEFAULT_ACCOUNT_HOME
+      : sanitizeReturnTo(returnTo);
+  }
+  if (returnTo !== undefined && isValidReturnTo(returnTo)) {
+    return returnTo;
+  }
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return returnTo === undefined
-    ? DEFAULT_ACCOUNT_HOME
-    : sanitizeReturnTo(returnTo);
+  return DEFAULT_ACCOUNT_HOME;
 }
 
 /**

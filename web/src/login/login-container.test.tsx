@@ -86,6 +86,25 @@ const BASE = 'https://uc.test';
 
 const LOGIN_DEFAULT = `${BASE}/api.sso.v1.SsoService/LoginDefault`;
 
+/** 内存版 Storage 桩（终点 OIDC 分支判据 al_oidc_ctx 在场用例的目标）。 */
+function fakeStorage(): Storage {
+  const map = new Map<string, string>();
+  return {
+    get length() {
+      return map.size;
+    },
+    clear: () => map.clear(),
+    getItem: (key: string) => map.get(key) ?? null,
+    key: (index: number) => [...map.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      map.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
+  };
+}
+
 const server = setupServer();
 
 let container: typeof import('./LoginContainer');
@@ -607,7 +626,8 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     expect(container.terminalUrl(envelope({}))).toBe('/account#/profile');
   });
 
-  test('returnTo 消费：双空时合法值放行、站外值拒绝回落；redirectTo / syncCookieUrl 优先于 returnTo', () => {
+  test('returnTo 消费（非 OIDC 流）：双空时合法值放行、站外值拒绝回落', () => {
+    // 本文件测试环境无 oidc 注入（window 未 stub）→ 非 OIDC 分支。
     // 合法 returnTo（/account# 前缀白名单）→ 放行。
     expect(container.terminalUrl(envelope({}), '/account#/security')).toBe(
       '/account#/security',
@@ -622,19 +642,73 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     expect(container.terminalUrl(envelope({}), '/sso/login')).toBe(
       '/account#/profile',
     );
-    // 信封终点字段优先于 returnTo（§1.3 三级优先级不被 query 覆盖）。
+  });
+
+  test('非 OIDC 流：合法 returnTo 优先于 redirectTo（§1.3：显式落点不做应用默认回跳）', () => {
     expect(
       container.terminalUrl(
         envelope({ redirectTo: 'https://app.test/home' }),
         '/account#/security',
       ),
-    ).toBe('https://app.test/home');
+    ).toBe('/account#/security');
+    // syncCookieUrl 仍最优先（同步链 returnTo 不生效）。
     expect(
       container.terminalUrl(
         envelope({ syncCookieUrl: 'https://sync.test/first' }),
         '/account#/security',
       ),
     ).toBe('https://sync.test/first');
+  });
+
+  test('非 OIDC 流：非法 returnTo 不拦应用默认回跳（白名单校验通过才优先，§1.3）', () => {
+    expect(
+      container.terminalUrl(
+        envelope({ redirectTo: 'https://app.test/home' }),
+        'https://evil.example.com/x',
+      ),
+    ).toBe('https://app.test/home');
+    expect(
+      container.terminalUrl(envelope({ redirectTo: 'https://app.test/home' })),
+    ).toBe('https://app.test/home');
+  });
+
+  test('OIDC 流（oidc 上下文在场）：redirectTo 优先于 returnTo（fail-closed，§1.3）', () => {
+    rs.stubGlobal('window', {
+      localStorage: fakeStorage(),
+      __AUTHLOFT_INIT__: {
+        al_root: `${BASE}/`,
+        oidc: { client_id: 'cid', redirect_uri: 'https://app/cb' },
+      },
+    });
+    expect(
+      container.terminalUrl(
+        envelope({ redirectTo: 'https://app.test/oidc-cb' }),
+        '/account#/security',
+      ),
+    ).toBe('https://app.test/oidc-cb');
+    // redirectTo 空 → returnTo 兜底（OIDC 分支内次序不变）。
+    expect(container.terminalUrl(envelope({}), '/account#/security')).toBe(
+      '/account#/security',
+    );
+    expect(container.terminalUrl(envelope({}))).toBe('/account#/profile');
+  });
+
+  test('OIDC 流判据含落盘 al_oidc_ctx（三方回调链路，§2.7.2）', () => {
+    const storage = fakeStorage();
+    storage.setItem(
+      'al_oidc_ctx',
+      JSON.stringify({ client_id: 'cid', redirect_uri: 'https://app/cb' }),
+    );
+    rs.stubGlobal('window', {
+      localStorage: storage,
+      __AUTHLOFT_INIT__: { al_root: `${BASE}/` },
+    });
+    expect(
+      container.terminalUrl(
+        envelope({ redirectTo: 'https://app.test/oidc-cb' }),
+        '/account#/security',
+      ),
+    ).toBe('https://app.test/oidc-cb');
   });
 
   test('complete → 跳转回调（双空 → 默认落点）；restart → 回第一步回调', () => {

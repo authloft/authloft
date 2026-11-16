@@ -50,7 +50,12 @@ import {
 } from '../../shared/components/QRCodePanel';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
-import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../../shared/urls';
+import {
+  DEFAULT_ACCOUNT_HOME,
+  isValidReturnTo,
+  sanitizeReturnTo,
+} from '../../shared/urls';
+import { hasOidcContext } from '../oidcContext';
 import { setLoginToken } from '../loginTokenStore';
 import { Modal } from '../components/Modal';
 import { defaultNavigate } from './RedirectStep';
@@ -68,25 +73,37 @@ export type LoginTerminal = Pick<
 >;
 
 /**
- * 扫码登录终点（§1.3 行 158-162 定稿 + returnTo 消费，与
+ * 扫码登录终点（§1.3 定稿 + returnTo 消费，与
  * LoginContainer.terminalUrl 同口径：syncCookieUrl 是后端拼好的多域名同步
- * 首跳完整 URL → 优先；否则 redirectTo；皆空（直登场景）→ query `returnTo`
- * 经 sanitizeReturnTo 白名单校验（调用方已解码，不二次 decode），非法 /
- * 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页）。
+ * 首跳完整 URL → 优先（同步链 returnTo 不生效）；否则按流程分派——OIDC 流
+ * （oidc 上下文在场，§1.3）redirectTo 优先（fail-closed），非 OIDC
+ * 流 returnTo（白名单校验通过）优先——显式落点不做应用默认回跳，非法 /
+ * 缺失再取 redirectTo；皆空（直登场景）→ 默认落点 DEFAULT_ACCOUNT_HOME，
+ * 禁止停留提示页。returnTo 由调用方 useSearchParams 取值（已解码，不二次
+ * decode）。
  */
 export function completeLogin(
   envelope: LoginTerminal,
   navigate: (url: string) => void = defaultNavigate,
   returnTo?: string,
 ): void {
-  const url =
-    envelope.syncCookieUrl !== ''
-      ? envelope.syncCookieUrl
-      : envelope.redirectTo !== ''
+  let url: string;
+  if (envelope.syncCookieUrl !== '') {
+    url = envelope.syncCookieUrl;
+  } else if (hasOidcContext()) {
+    url =
+      envelope.redirectTo !== ''
         ? envelope.redirectTo
         : returnTo === undefined
           ? DEFAULT_ACCOUNT_HOME
           : sanitizeReturnTo(returnTo);
+  } else if (returnTo !== undefined && isValidReturnTo(returnTo)) {
+    url = returnTo;
+  } else if (envelope.redirectTo !== '') {
+    url = envelope.redirectTo;
+  } else {
+    url = DEFAULT_ACCOUNT_HOME;
+  }
   if (url !== '') {
     navigate(url);
   }

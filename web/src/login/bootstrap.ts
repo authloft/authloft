@@ -7,6 +7,10 @@
  * - 取出可选 `oidc`（§8：`/auth/authorize` 渲染空壳时注入）：首次请求的
  *   原样回传已由 api.ts 的 snapshotOidc 直接读注入实现（§2.2 行
  *   425），此处随引导结果带出，供页面层后续消费；
+ * - 取出可选 `sso`（§2.1：client_id 命中 sso_client 行时注入，
+ *   OIDC authorize 入口不注入）：缺席不阻塞（直登行为不变）；首签请求的
+ *   ssoClientId 回传由 api.ts 直接读注入实现（§2.2），此处随引导结果带出
+ *   供页面层后续消费（如应用名展示）；
  * - `static_base` 归一化（entry 首行赋 `__webpack_public_path__` 用，
  *   §1.5 行 99）：与 setup/bootstrap.ts 同口径；login 不跨 entry
  *   import setup 模块（三端 entry 独立演进）。
@@ -15,6 +19,7 @@ import {
   getInit,
   type MethodsSnapshot,
   type OidcContext,
+  type SsoContext,
 } from '../shared/types/init';
 
 /** static_base 缺省回落值（接口文档 §8 行 1428：默认 /assets）。 */
@@ -38,10 +43,11 @@ export type LoginBootstrapResult =
       ok: true;
       snapshot: MethodsSnapshot;
       oidc?: OidcContext;
+      sso?: SsoContext;
     }
   | { ok: false };
 
-/** 读注入快照（§8：methods 必需、oidc 可选）；同步纯读取，不阻塞渲染。 */
+/** 读注入快照（§8：methods 必需、oidc / sso 可选）；同步纯读取，不阻塞渲染。 */
 export function loadLoginBootstrap(): LoginBootstrapResult {
   const init = getInit();
   const snapshot = init?.methods;
@@ -49,7 +55,11 @@ export function loadLoginBootstrap(): LoginBootstrapResult {
     return { ok: false };
   }
   const oidc = init?.oidc;
-  return oidc === undefined
-    ? { ok: true, snapshot }
-    : { ok: true, snapshot, oidc };
+  const sso = init?.sso;
+  return {
+    ok: true,
+    snapshot,
+    ...(oidc !== undefined ? { oidc } : {}),
+    ...(sso !== undefined ? { sso } : {}),
+  };
 }

@@ -472,7 +472,8 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
     expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account#/profile');
   });
 
-  test('returnTo 消费：双空时合法值放行、站外值拒绝回落；信封终点字段优先', () => {
+  test('returnTo 消费（非 OIDC 流）：双空时合法值放行、站外值拒绝回落；合法值优先于 redirectTo（§1.3）', () => {
+    // 本文件测试环境无 oidc 注入（window 未 stub）→ 非 OIDC 分支。
     // 合法 returnTo（/account# 前缀白名单）→ 放行。
     expect(pagesMod.flowTerminalUrl(envelope({}), '/account#/security')).toBe(
       '/account#/security',
@@ -481,7 +482,29 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
     expect(
       pagesMod.flowTerminalUrl(envelope({}), 'https://evil.example.com/x'),
     ).toBe('/account#/profile');
-    // redirectTo / syncCookieUrl 优先于 returnTo（§1.3 三级优先级）。
+    // 非 OIDC 流：合法 returnTo 优先于 redirectTo——显式落点不做应用默认回跳。
+    expect(
+      pagesMod.flowTerminalUrl(
+        envelope({ redirectTo: 'https://app.test/home' }),
+        '/account#/security',
+      ),
+    ).toBe('/account#/security');
+    // syncCookieUrl 仍最优先（同步链 returnTo 不生效）。
+    expect(
+      pagesMod.flowTerminalUrl(
+        envelope({ syncCookieUrl: 'https://sync.test/first' }),
+        '/account#/security',
+      ),
+    ).toBe('https://sync.test/first');
+  });
+
+  test('flowTerminalUrl：OIDC 流 redirectTo 优先于 returnTo（oidc 上下文在场，fail-closed，§1.3）', () => {
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: {
+        al_root: `${BASE}/`,
+        oidc: { client_id: 'cid', redirect_uri: 'https://app/cb' },
+      },
+    });
     expect(
       pagesMod.flowTerminalUrl(
         envelope({ redirectTo: 'https://app.test/home' }),

@@ -6,10 +6,26 @@
  * oidc（al_oidc_ctx 一个键）；login_token / session_token 严格内存态，绝不写入
  * 本键（§2.7.2 行 600）。
  */
-import type { OidcContext } from '../shared/types/init';
+import { getInit, type OidcContext } from '../shared/types/init';
 
 /** localStorage 键（§2.7.2 行 600 唯一定义）。 */
 const OIDC_CTX_KEY = 'al_oidc_ctx';
+
+/**
+ * OIDC 上下文是否在场（接口文档 §1.3 终点分派判据）：/auth/authorize
+ * 入口的注入快照（init.oidc），或三方跳转前落盘、尚未被 LoginOauth 消费的
+ * al_oidc_ctx。只读不消费（不清键，与 loadOidcContext 的读出即清区分）；
+ * 非浏览器环境视为不在场（服务端渲染 / node 单测走非 OIDC 分支）。
+ */
+export function hasOidcContext(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return (
+    getInit()?.oidc !== undefined ||
+    window.localStorage.getItem(OIDC_CTX_KEY) !== null
+  );
+}
 
 /** 落盘 OIDC 上下文（跳转第三方前调用）；只写 al_oidc_ctx 一个键。非浏览器环境无操作。 */
 export function saveOidcContext(ctx: OidcContext): void {

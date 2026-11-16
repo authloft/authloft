@@ -4,9 +4,9 @@
  * LoginOauth（§2.7.4）、CreateQrcode（§2.8）、GetLoginTicket（§2.8 轮询）。
  * ConfirmLoginTicket 由宿主 / 第三方客户端调用，本工程不实现（接口文档 §2.8 行
  * 749）；CreateCaptchaImage 已归口 shared/api/sso.ts（跨 entry 共用，
- * 本实现删除本模块同名函数）；Authorize /
- * CreateQrcode 亦已归口该模块（登录与 account 绑定共用，本模块
- * re-export 保持消费方 ../api import 路径不变）。
+ * 本实现删除本模块同名函数）；Authorize / CreateQrcode 报文归口该模块
+ * （登录与 account 绑定共用），本模块保留 login 域包装注入 ssoClientId，
+ * 消费方 ../api import 路径不变。
  *
  * login_token 传递（接口文档 §1.8 / §1.3 行 145 唯一定义；前端架构 §4.1
  * 行 397-403 五条不可打折）：
@@ -14,6 +14,12 @@
  * - 首次请求（尚无 login_token）额外带上 oidc——LoginDefault / Register /
  *   ResetPassword 取注入快照 __AUTHLOFT_INIT__.oidc（§2.2 行 425）；LoginOauth
  *   取跳转前落盘的 al_oidc_ctx（§2.7.2 行 599-600，读出即清）；
+ * - SSO 应用上下文（接口文档 §2.1 / 前端架构 §1.5 首签回传条目）：首签请求
+ *   （尚无 login_token）随顶层 ssoClientId 回传 __AUTHLOFT_INIT__.sso.clientId
+ *   （§2.2 / §2.3；reset 不带——不建会话、无应用回跳语义）；Authorize /
+ *   CreateQrcode 按 scene 分派携带（login 携带、bind 不带，§2.7.2 / §2.8）。
+ *   上下文只存注入快照（页面内存），不新增 localStorage 键；续步请求不带
+ *   （服务端按首签口径装载快照后随 login_token 保留，§2.2 首签口径）；
  * - 响应含 loginToken 则无条件覆盖内存变量（后端每次重签，旧值立即作废）；
  *   status=success 时清空。
  *
@@ -44,7 +50,15 @@ import {
 } from '../gen/proto/api/sso/v1/login_pb';
 import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
 import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
-import type { LoginOauthRequest } from '../gen/proto/api/sso/v1/oauth_pb';
+import type {
+  AuthorizeRequest,
+  AuthorizeResponse,
+  LoginOauthRequest,
+} from '../gen/proto/api/sso/v1/oauth_pb';
+import type {
+  CreateQrcodeRequest,
+  CreateQrcodeResponse,
+} from '../gen/proto/api/sso/v1/ticket_pb';
 import {
   StartVerificationRequestSchema,
   SubmitVerificationRequestSchema,
@@ -66,18 +80,20 @@ import { loadOidcContext } from './oidcContext';
 
 /**
  * 生成物消息 → init 形状的入参工具类型（MessageInput / MessageField）唯一定义
- * 在 shared/api/sso.ts（本模块原有同构手写已删除），此处引用；
- * authorize / createQrcode 的入参形状随函数一并归口 shared 侧。
+ * 在 shared/api/sso.ts（本模块原有同构手写已删除），此处引用。
  */
 
-/** 登录流程请求入参：再剔除托管字段 loginToken / oidc（由本模块统一注入）；captcha 保持请求顶层（§2.2 / §2.5）。 */
+/**
+ * 登录流程请求入参：再剔除托管字段 loginToken / oidc / ssoClientId（由本模块
+ * 统一注入）；captcha 保持请求顶层（§2.2 / §2.5）。
+ */
 type FlowInput<T extends { loginToken: string }> = Omit<
   MessageInput<T>,
-  'loginToken' | 'oidc'
+  'loginToken' | 'oidc' | 'ssoClientId'
 >;
 
 // ---------------------------------------------------------------------------
-// loginToken / oidc 注入与信封响应后处理（§1.8 / §1.3 行 145）
+// loginToken / oidc / ssoClientId 注入与信封响应后处理（§1.8 / §1.3 行 145）
 // ---------------------------------------------------------------------------
 
 /** OidcContext → google.protobuf.Struct 的 JSON 形状（原样透传，前端不解析，§2.2 行 425）。 */
@@ -97,6 +113,16 @@ function snapshotOidc(): JsonObject | undefined {
   return ctx === undefined ? undefined : oidcToStruct(ctx);
 }
 
+/**
+ * 注入快照的 SSO 应用标识（__AUTHLOFT_INIT__.sso.clientId，接口文档 §2.1）；
+ * 未注入 / 空串 → undefined（直登场景自然不带，行为与现状一致）。
+ * 上下文只存页面内存（注入快照），不落盘。
+ */
+function snapshotSsoClientId(): string | undefined {
+  const clientId = getInit()?.sso?.clientId;
+  return clientId === undefined || clientId === '' ? undefined : clientId;
+}
+
 /** 跳转前落盘的 oidc（al_oidc_ctx，§2.7.2 行 599-600）；无值 undefined（读出即清）。 */
 function storedOidc(): JsonObject | undefined {
   const ctx = loadOidcContext();
@@ -105,19 +131,30 @@ function storedOidc(): JsonObject | undefined {
 
 /**
  * 登录流程请求的托管字段：loginToken 恒注入（§1.8 常规传递：请求体顶层）；
- * oidc 仅首次请求（尚无 login_token）时回传（§2.2 行 425），源由调用方给定
- * （惰性求值：已有 token 时不读源）。
+ * oidc 与 ssoClientId 仅首次请求（尚无 login_token）时回传（§2.2），oidc 源
+ * 由调用方给定（惰性求值：已有 token 时不读源）；ssoClientId 按 withSso 开关
+ * 注入——LoginDefault / Register 首签装载应用快照（§2.2 / §2.3），ResetPassword
+ * 不带（不建会话，§2.1 注册首签回传、reset 不带）。
  */
-function flowTokenFields(oidcSource: () => JsonObject | undefined): {
+function flowTokenFields(
+  oidcSource: () => JsonObject | undefined,
+  withSso = false,
+): {
   loginToken: string;
   oidc?: JsonObject;
+  ssoClientId?: string;
 } {
   const loginToken = getLoginToken();
   if (loginToken !== '') {
     return { loginToken };
   }
   const oidc = oidcSource();
-  return oidc === undefined ? { loginToken } : { loginToken, oidc };
+  const ssoClientId = withSso ? snapshotSsoClientId() : undefined;
+  return {
+    loginToken,
+    ...(oidc !== undefined ? { oidc } : {}),
+    ...(ssoClientId !== undefined ? { ssoClientId } : {}),
+  };
 }
 
 /** 信封响应后处理（§1.3 行 145）：含 loginToken 无条件覆盖；status=success 清空。 */
@@ -135,7 +172,10 @@ function applyEnvelope(response: LoginFlowResponse): LoginFlowResponse {
 // 登录流程方法（响应共用 LoginFlowResponse，§1.3 行 104）
 // ---------------------------------------------------------------------------
 
-/** LoginDefault 入参（§2.2 字段表；loginToken / oidc 由本模块托管，不对外）。 */
+/**
+ * LoginDefault 入参（§2.2 字段表；loginToken / oidc / ssoClientId 由本模块
+ * 托管，不对外）。
+ */
 export type LoginDefaultInput = FlowInput<LoginDefaultRequest>;
 
 /** SsoService/LoginDefault（§2.2 行 414）：统一提交端点，flow=login，除 thirdparty 外。 */
@@ -143,21 +183,30 @@ export async function loginDefault(
   req: LoginDefaultInput,
 ): Promise<LoginFlowResponse> {
   return applyEnvelope(
-    await ssoClient.loginDefault({ ...req, ...flowTokenFields(snapshotOidc) }),
+    await ssoClient.loginDefault({
+      ...req,
+      ...flowTokenFields(snapshotOidc, true),
+    }),
   );
 }
 
-/** Register 入参（§2.3；loginToken / oidc 托管）。 */
+/** Register 入参（§2.3；loginToken / oidc / ssoClientId 托管）。 */
 export type RegisterInput = FlowInput<RegisterRequest>;
 
-/** SsoService/Register（§2.3 行 440）：注册，flow=register。 */
+/** SsoService/Register（§2.3 行 440）：注册，flow=register；首签携带 ssoClientId（§2.3）。 */
 export async function register(req: RegisterInput): Promise<LoginFlowResponse> {
   return applyEnvelope(
-    await ssoClient.register({ ...req, ...flowTokenFields(snapshotOidc) }),
+    await ssoClient.register({
+      ...req,
+      ...flowTokenFields(snapshotOidc, true),
+    }),
   );
 }
 
-/** ResetPassword 入参（§2.4；loginToken / oidc 托管）。 */
+/**
+ * ResetPassword 入参（§2.4；loginToken / oidc 托管；不带 ssoClientId——
+ * 重置不建会话，应用默认回跳无承载点，§2.1 reset 不回传）。
+ */
 export type ResetPasswordInput = FlowInput<ResetPasswordRequest>;
 
 /** SsoService/ResetPassword（§2.4 行 458）：重置密码，flow=reset。 */
@@ -186,13 +235,43 @@ export async function loginOauth(
 // ---------------------------------------------------------------------------
 
 /**
- * SsoService/Authorize（§2.7.2 行 580，取第三方授权 URL，跳转由调用方
- * location.replace）与 SsoService/CreateQrcode（§2.8 行 688，拉取小程序码，
- * captcha 必带、登录与绑定共用靠 scene 区分）已归口 shared/api/sso.ts
- * （登录与 account 绑定共用）；本模块 re-export 承载 login 域
- * 既有 ../api import 路径，消费方零改动。
+ * scene=bind（绑定流程不读应用配置，接口文档 §2.7.2 / §2.8）
+ * → 原样透传；其余（login 缺省 / 显式 login）→ 注入 __AUTHLOFT_INIT__.sso
+ * 的 clientId（三方链路应用上下文唯一入口，§2.7.2）。account entry
+ * 从 shared/api/sso 直取、不经本包装，bind 请求自然不带。
  */
-export { authorize, createQrcode } from '../shared/api/sso';
+function withLoginSso<T extends { scene?: string }>(
+  req: T,
+): T & { ssoClientId?: string } {
+  if (req.scene === 'bind') {
+    return req;
+  }
+  const ssoClientId = snapshotSsoClientId();
+  return ssoClientId === undefined ? req : { ...req, ssoClientId };
+}
+
+/**
+ * SsoService/Authorize（§2.7.2 行 580，取第三方授权 URL，跳转由调用方
+ * location.replace）：报文归口 shared/api/sso.ts（登录与 account 绑定共用），
+ * 本模块包装 login 域入口注入 ssoClientId（scene=bind 不带），承载既有
+ * ../api import 路径，消费方零改动。
+ */
+export async function authorize(
+  req: MessageInput<AuthorizeRequest>,
+): Promise<AuthorizeResponse> {
+  return ssoClient.authorize(withLoginSso(req));
+}
+
+/**
+ * SsoService/CreateQrcode（§2.8 行 688，拉取小程序码，captcha 必带、登录与
+ * 绑定共用靠 scene 区分）：报文归口 shared/api/sso.ts，本模块包装 login 域
+ * 入口注入 ssoClientId（仅 scene=login 携带，§2.8）。
+ */
+export async function createQrcode(
+  req: MessageInput<CreateQrcodeRequest>,
+): Promise<CreateQrcodeResponse> {
+  return ssoClient.createQrcode(withLoginSso(req));
+}
 
 /**
  * SsoService/GetLoginTicket（§2.8 行 710）：查询 / 长轮询 / 完成登录；pollSeconds

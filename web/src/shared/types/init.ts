@@ -92,8 +92,18 @@ export interface OidcContext {
 }
 
 /**
+ * SSO 应用上下文（接口文档 §2.1：client_id 命中 sso_client 行时
+ * 注入；OIDC authorize 入口不注入）。clientId 供首签请求回传 ssoClientId
+ * （§2.2 / §2.7.2 / §2.8）；name 仅供前端展示、不参与任何判定。
+ */
+export interface SsoContext {
+  clientId: string;
+  name?: string;
+}
+
+/**
  * 注入白名单（接口文档 §8 唯一定义）：al_root / static_base（三端）、
- * methods（login 必填，缺失即服务端故障）、oidc（login 可选）。
+ * methods（login 必填，缺失即服务端故障）、oidc / sso（login 可选）。
  * 转义、no-store、CSP nonce 由后端保证（前端架构 §1.5 行 104），前端不做二次信任。
  */
 export interface AuthloftInit {
@@ -101,6 +111,7 @@ export interface AuthloftInit {
   static_base: string;
   methods?: MethodsSnapshot;
   oidc?: OidcContext;
+  sso?: SsoContext;
 }
 
 declare global {

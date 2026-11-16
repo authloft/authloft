@@ -36,15 +36,22 @@ export function normalizeAlRoot(alRoot: unknown): string {
 }
 
 /**
+ * returnTo 前缀白名单命中判定（防开放重定向）：仅 `/account#` /
+ * `/admin#` 前缀的站内值放行。白名单规则唯一定义处——sanitizeReturnTo 与
+ * 登录终点「白名单校验通过的 returnTo 优先」（接口文档 §1.3）共用，
+ * 不复判、不双份手写。
+ */
+export function isValidReturnTo(value: string): boolean {
+  return value.startsWith('/account#') || value.startsWith('/admin#');
+}
+
+/**
  * returnTo 前缀白名单校验（防开放重定向）：仅放行 `/account#` /
  * `/admin#` 前缀的站内值；其余（站外 URL、其他站内路径、空串）一律回落
  * 默认落点。
  */
 export function sanitizeReturnTo(value: string): string {
-  if (value.startsWith('/account#') || value.startsWith('/admin#')) {
-    return value;
-  }
-  return DEFAULT_ACCOUNT_HOME;
+  return isValidReturnTo(value) ? value : DEFAULT_ACCOUNT_HOME;
 }
 
 /**

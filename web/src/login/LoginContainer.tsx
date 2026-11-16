@@ -19,9 +19,11 @@
  *   next_step.kind=form 时 advance 推进请求侧 step 到 verify（runSubmit 内）；
  *   verify 段重发 = 容器以 step=challenge 重走（onResend，主因子场景带原目标、
  *   MFA 场景空 payload，§2.6 行 544-545）；
- * - 终点（§4.1 行 383；§1.3 行 158-162 三级优先级）：syncCookieUrl
- *   是后端拼好的多域名同步首跳完整 URL（§1.3 行 137、§2.9）→ location.replace
- *   它（跳转链由各域页面接力，最终回 redirectTo）；省略时直接 replace(redirectTo)；
+ * - 终点（§4.1 行 383；§1.3 按流程分派）：syncCookieUrl
+ *   是后端拼好的多域名同步首跳完整 URL（§1.3、§2.9）→ location.replace
+ *   它（跳转链由各域页面接力，最终回 redirectTo）；省略时 OIDC 流直接
+ *   replace(redirectTo)（授权码跳转 fail-closed），非 OIDC 流 returnTo
+ *   （白名单校验通过）优先——显式落点不做应用默认回跳（§1.3）；
  *   皆空（直登场景）→ 默认落点 DEFAULT_ACCOUNT_HOME，禁止停留提示页——移动端用
  *   replace 防回退死循环（§4.2 行 426 RedirectStep 同款语义）；
  * - captcha_required / captcha_invalid **弹窗承接**（shared/captcha 的
@@ -66,9 +68,14 @@ import {
 } from '../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../shared/components';
 import { t } from '../shared/i18n';
-import { DEFAULT_ACCOUNT_HOME, sanitizeReturnTo } from '../shared/urls';
+import {
+  DEFAULT_ACCOUNT_HOME,
+  isValidReturnTo,
+  sanitizeReturnTo,
+} from '../shared/urls';
 import type { MethodsSnapshot, SnapshotField } from '../shared/types/init';
 import { Modal } from './components/Modal';
+import { hasOidcContext } from './oidcContext';
 import {
   loginDefault,
   startLoginVerification,
@@ -292,12 +299,15 @@ export function fieldsFor(
 }
 
 /**
- * 终点 URL（§4.1 行 383；§1.3 行 158-162 定稿 + returnTo 消费）：
- * syncCookieUrl 非空 → 它（后端拼好的首跳完整 URL，§1.3 行 137）；否则
- * redirectTo；两者皆空（直登场景）→ query `returnTo` 经 sanitizeReturnTo
- * 白名单校验（防开放重定向；调用方以 useSearchParams 取值，已解码，
- * 本函数不二次 decode），非法 / 缺失 → 默认落点 DEFAULT_ACCOUNT_HOME（三级
- * 互斥完备；禁止停留「登录成功」提示页）。
+ * 终点 URL（§4.1 行 383；§1.3 定稿 + returnTo 消费）：
+ * syncCookieUrl 非空 → 它（后端拼好的首跳完整 URL，同步链
+ * returnTo 不生效）；否则按流程分派——OIDC 流（oidc 上下文在场，§1.3：
+ * 注入快照或跳转前落盘的 al_oidc_ctx）redirectTo 优先（授权码跳转
+ * 不被 returnTo 覆盖，fail-closed）；非 OIDC 流 returnTo（白名单校验通过，
+ * 防开放重定向）优先——显式指定落点时不做应用默认回跳，非法 / 缺失再取
+ * redirectTo；皆空（直登场景）→ 默认落点 DEFAULT_ACCOUNT_HOME（互斥完备；
+ * 禁止停留「登录成功」提示页）。returnTo 由调用方以 useSearchParams 取值
+ * （已解码，本函数不二次 decode）。
  */
 export function terminalUrl(
   envelope: LoginFlowResponse,
@@ -306,12 +316,21 @@ export function terminalUrl(
   if (envelope.syncCookieUrl !== '') {
     return envelope.syncCookieUrl;
   }
+  if (hasOidcContext()) {
+    if (envelope.redirectTo !== '') {
+      return envelope.redirectTo;
+    }
+    return returnTo === undefined
+      ? DEFAULT_ACCOUNT_HOME
+      : sanitizeReturnTo(returnTo);
+  }
+  if (returnTo !== undefined && isValidReturnTo(returnTo)) {
+    return returnTo;
+  }
   if (envelope.redirectTo !== '') {
     return envelope.redirectTo;
   }
-  return returnTo === undefined
-    ? DEFAULT_ACCOUNT_HOME
-    : sanitizeReturnTo(returnTo);
+  return DEFAULT_ACCOUNT_HOME;
 }
 
 /**

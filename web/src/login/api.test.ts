@@ -333,6 +333,161 @@ describe('非信封方法（直通薄封装，无 loginToken 注入）', () => {
   });
 });
 
+describe('ssoClientId 首签注入（§2.1 / §2.2 / §2.7.2 / §2.8）', () => {
+  /** sso 用例专用 window 桩（模块级 init 无 sso，避免泄漏进既有用例；afterEach 统一 unstub）。 */
+  function stubWindowWithSso(): void {
+    rs.stubGlobal('window', {
+      localStorage: fakeStorage(),
+      __AUTHLOFT_INIT__: {
+        al_root: `${BASE}/`,
+        sso: { clientId: 'app-1', name: '示例应用' },
+      },
+    });
+  }
+
+  test('loginDefault 首次请求带 ssoClientId，续步不带（首签口径，§2.2）', async () => {
+    stubWindowWithSso();
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next', loginToken: 'tok-s1' });
+      }),
+    );
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: 'app-1' });
+
+    let resumed = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        resumed = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(resumed)).toEqual({
+      loginToken: 'tok-s1',
+      method: 'password',
+      step: 'verify',
+      payload: {},
+    }); // 续步：上下文已随 login_token 快照保留，不再回传
+  });
+
+  test('register 首签带 ssoClientId（§2.3：与 §2.2 同构携带）', async () => {
+    stubWindowWithSso();
+    let raw = '';
+    server.use(
+      http.post(REGISTER, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'success' });
+      }),
+    );
+    await mod.register({
+      step: 'set_password',
+      payload: { username: 'alice', password: 'pw' },
+    });
+    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: 'app-1' });
+  });
+
+  test('resetPassword 不带 ssoClientId（注册首签回传、reset 不带，§2.1）', async () => {
+    stubWindowWithSso();
+    let raw = '';
+    server.use(
+      http.post(RESET_PASSWORD, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.resetPassword({
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+    });
+    expect(JSON.parse(raw)).toEqual({
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+    });
+  });
+
+  test('authorize：scene 缺省（login）带 ssoClientId（§2.7.2 唯一入口），scene=bind 不带', async () => {
+    stubWindowWithSso();
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(AUTHORIZE, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ authorizeUrl: 'https://qq.example/auth' });
+      }),
+    );
+    await mod.authorize({ provider: 'qq' });
+    await mod.authorize({ provider: 'qq', scene: 'bind' });
+    expect(bodies[0]).toEqual({ provider: 'qq', ssoClientId: 'app-1' });
+    expect(bodies[1]).toEqual({ provider: 'qq', scene: 'bind' }); // 绑定流程不读应用配置
+  });
+
+  test('createQrcode：scene=login（含缺省）携带 ssoClientId（§2.8），scene=bind 不带', async () => {
+    stubWindowWithSso();
+    const bodies: unknown[] = [];
+    const captcha = { providerKey: 'cf_turnstile', token: '0.xxx' };
+    server.use(
+      http.post(QRCODE, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({
+          ticket: 't-1',
+          ticketId: 'c7Kx9',
+          qrcodeUrl: 'https://cdn/q.jpg',
+          expiresIn: '600',
+        });
+      }),
+    );
+    await mod.createQrcode({
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
+      captcha,
+    });
+    await mod.createQrcode({
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
+      captcha,
+    });
+    expect(bodies[0]).toEqual({
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
+      captcha,
+      ssoClientId: 'app-1',
+    });
+    expect(bodies[1]).toEqual({
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
+      captcha,
+    });
+  });
+
+  test('注入缺席（直登）不带 ssoClientId，行为与现状一致（§2.2）', async () => {
+    // beforeEach 的 window 桩用模块级 init（无 sso）。
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(raw)).not.toHaveProperty('ssoClientId');
+  });
+
+  test('loginOauth 不带 ssoClientId（三方上下文随 al_login_state Cookie，请求不加字段，§2.7.4）', async () => {
+    stubWindowWithSso();
+    let raw = '';
+    server.use(
+      http.post(LOGIN_OAUTH, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.loginOauth({ providerKey: 'qq', code: 'c-1', state: 'l-state' });
+    expect(JSON.parse(raw)).not.toHaveProperty('ssoClientId');
+  });
+});
+
 describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', () => {
   test('请求体 ticket + poll + oidc（int64 十进制字符串，§1.12 / §2.8 行 867）；响应后处理同信封', async () => {
     let raw = '';

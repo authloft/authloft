@@ -336,9 +336,10 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     ]);
   });
 
-  test('completeLogin returnTo 消费：皆空时合法值放行 / 站外值拒绝回落；信封字段优先', () => {
+  test('completeLogin returnTo 消费（非 OIDC 流）：皆空时合法值放行 / 站外值拒绝回落；合法值优先于 redirectTo（§1.3）', () => {
     const calls: string[] = [];
     const nav = (url: string) => calls.push(url);
+    // 本文件测试环境无 oidc 注入（window 未 stub）→ 非 OIDC 分支。
     // 合法 returnTo（/account# 前缀白名单）→ 放行。
     completeLogin(
       create(LoginFlowResponseSchema, {}),
@@ -351,7 +352,7 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
       nav,
       'https://evil.example.com/x',
     );
-    // 信封 redirectTo 优先于 returnTo（§1.3 三级优先级）。
+    // 非 OIDC 流：合法 returnTo 优先于 redirectTo——显式落点不做应用默认回跳。
     completeLogin(
       create(LoginFlowResponseSchema, { redirectTo: 'https://app.test/done' }),
       nav,
@@ -360,8 +361,27 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(calls).toEqual([
       '/account#/security',
       '/account#/profile',
-      'https://app.test/done',
+      '/account#/security',
     ]);
+  });
+
+  test('completeLogin：OIDC 流 redirectTo 优先于 returnTo（oidc 上下文在场，fail-closed，§1.3）', () => {
+    const calls: string[] = [];
+    const nav = (url: string) => calls.push(url);
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: {
+        al_root: 'https://uc.test/',
+        oidc: { client_id: 'cid', redirect_uri: 'https://app/cb' },
+      },
+    });
+    completeLogin(
+      create(LoginFlowResponseSchema, { redirectTo: 'https://app.test/done' }),
+      nav,
+      '/account#/security',
+    );
+    expect(calls).toEqual(['https://app.test/done']);
+    // 本文件无 afterEach：显式还原，防 window 桩泄漏进后续用例。
+    rs.unstubAllGlobals();
   });
 
   // onResult 完整状态机（§2.8 行 739-743——登录结论在内层 login 信封）。
