@@ -215,6 +215,13 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.autoBindFieldsLabel': 'Auto-bind fields',
   'admin.schemaField.autoBindFieldsHelp': 'Applies when auto_bind is enabled',
 
+  // Common Ext baseline field (proxy_url, §5.3 proxy field convention): sent by
+  // the schema into the endpoint section as advanced; no front-end structure
+  // change, only these two copy keys are added.
+  'admin.schemaField.proxyUrlLabel': 'Outbound proxy URL',
+  'admin.schemaField.proxyUrlHelp':
+    'URL format <scheme>://[USER:PASSWORD@]HOST:PORT (scheme: socks5 / http / https); leave empty to connect directly',
+
   // OAuth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
   'admin.schemaField.clientIdLabel': 'App ID',
   'admin.schemaField.clientSecretLabel': 'App Secret',

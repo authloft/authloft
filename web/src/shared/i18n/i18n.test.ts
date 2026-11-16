@@ -240,3 +240,35 @@ describe('模板管理文案契约（zh / en 键集对齐）', () => {
     setLocale('zh-CN');
   });
 });
+
+describe('代理字段文案契约（proxy_url：schema 下发的 label / help 键，zh / en 齐备）', () => {
+  const labelKey = 'admin.schemaField.proxyUrlLabel';
+  const helpKey = 'admin.schemaField.proxyUrlHelp';
+
+  test('两个代理文案键在 zh / en 两套字典齐备且可译（不回显键）', () => {
+    for (const key of [labelKey, helpKey]) {
+      expect(hasKey(key)).toBe(true);
+      expect(t(key)).not.toBe(key);
+      setLocale('en-US');
+      expect(hasKey(key)).toBe(true);
+      expect(t(key)).not.toBe(key);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('help 写明 URL 格式示例与「留空直连」语义（zh / en 语义对应）', () => {
+    expect(t(helpKey)).toContain('<scheme>://[USER:PASSWORD@]HOST:PORT');
+    expect(t(helpKey)).toContain('留空直连');
+    setLocale('en-US');
+    expect(t(helpKey)).toContain('<scheme>://[USER:PASSWORD@]HOST:PORT');
+    expect(t(helpKey)).toMatch(/direct/i);
+    setLocale('zh-CN');
+  });
+
+  test('label / help 逐字锚定：删任一键或改文案即变红', () => {
+    expect(t(labelKey)).toBe('出站代理地址');
+    setLocale('en-US');
+    expect(t(labelKey)).toBe('Outbound proxy URL');
+    setLocale('zh-CN');
+  });
+});

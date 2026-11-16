@@ -72,6 +72,10 @@ import {
   isProviderKeyTaken,
   validateSchemaValues,
 } from './pages/ProvidersPage/edit/schema/schemaLogic';
+import { Form } from '@douyinfe/semi-ui';
+import { resolveFieldRenderer } from './pages/ProvidersPage/edit/schema/FieldRegistry';
+import { TextField } from './pages/ProvidersPage/edit/schema/fields/FieldRenderers';
+import { SchemaForm } from './pages/ProvidersPage/edit/schema/SchemaForm';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import { TemplateSchema } from '../gen/proto/api/admin/v1/template_pb';
 import {
@@ -4281,5 +4285,64 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
         templateVars: '{"x":1}',
       }),
     ).toEqual({ templateKey: 'login', templateVars: '{"x":1}' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// proxy_url 动态表单呈现（§5.3 代理字段约定）：schema 下发即渲染，前端不维护
+// key → 区块映射表、不改表单结构；本卡仅补 zh / en 两个文案键，这里验证
+// 文案键经渲染期 t() 解析落到 TextField 且 endpoint / advanced 折叠语义不回归。
+// ---------------------------------------------------------------------------
+
+describe('proxy_url 动态表单呈现（schema 下发 → endpoint 折叠区块 → TextField）', () => {
+  test('text → TextField 分派现成（FieldRegistry 零改动）', () => {
+    expect(resolveFieldRenderer('text')).toBe(TextField);
+  });
+
+  test('schema 含 proxy_url：端点区块 + 高级选项折叠 + TextField + label/help 文案解析', () => {
+    setLocale('zh-CN');
+    const proxyField = schemaField({
+      key: 'proxy_url',
+      label: 'admin.schemaField.proxyUrlLabel',
+      help: 'admin.schemaField.proxyUrlHelp',
+      type: 'text',
+      section: 'endpoint',
+      advanced: true,
+    });
+    const schema = create(SchemaResponseSchema, {
+      type: 'qq',
+      category: 'oauth',
+      fields: [proxyField],
+    });
+
+    // 分组逻辑：proxy_url 落入 endpoint（SECTION_ORDER index 2），advanced 修饰保留。
+    const groups = groupFieldsBySection(schema.fields);
+    expect(groups[2].map((field) => field.key)).toEqual(['proxy_url']);
+    expect(groups[2][0].advanced).toBe(true);
+
+    // 真实渲染 SchemaForm（外层 Semi Form 提供字段上下文，静态渲染不引入 act）。
+    const html = renderToStaticMarkup(
+      createElement(
+        Form,
+        null,
+        createElement(SchemaForm, { schema, lockedKeys: [] }),
+      ),
+    );
+
+    // endpoint 区块标题 + advanced 折叠语义（高级选项 Collapse）。
+    expect(html).toContain('端点');
+    expect(html).toContain('高级选项');
+    expect(html).toContain('semi-collapse');
+    // text → TextField（semi-input 输入框，x-field-id 即 schema key）。
+    expect(html).toContain('x-field-id="proxy_url"');
+    expect(html).toContain('semi-input');
+    // label / help 在渲染期由 t() 解析为文案，不回显 i18n 键。
+    expect(html).toContain('出站代理地址');
+    expect(html).toContain('留空直连');
+    // HTML 转义后的 URL 格式示例（&lt;scheme&gt; = <scheme>）。
+    expect(html).toContain('&lt;scheme&gt;://[USER:PASSWORD@]HOST:PORT');
+    expect(html).not.toContain('admin.schemaField.proxyUrlLabel');
+    expect(html).not.toContain('admin.schemaField.proxyUrlHelp');
+    setLocale('zh-CN');
   });
 });

@@ -198,6 +198,12 @@ export const admin = {
   'admin.schemaField.autoBindFieldsLabel': '自动绑定字段',
   'admin.schemaField.autoBindFieldsHelp': 'auto_bind 开启时生效',
 
+  // 通用 Ext 基线字段（proxy_url，§5.3 代理字段约定）：schema 统一下发到
+  // endpoint 区块、advanced 折叠；前端零结构改动，仅补这两个文案键。
+  'admin.schemaField.proxyUrlLabel': '出站代理地址',
+  'admin.schemaField.proxyUrlHelp':
+    'URL 格式 <scheme>://[USER:PASSWORD@]HOST:PORT（scheme 为 socks5 / http / https）；留空直连，不使用代理',
+
   // oauth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
   'admin.schemaField.clientIdLabel': 'AppID',
   'admin.schemaField.clientSecretLabel': 'AppSecret',
