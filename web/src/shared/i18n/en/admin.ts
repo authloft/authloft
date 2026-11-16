@@ -557,6 +557,11 @@ export const admin: typeof zhAdmin = {
   'admin.providerEnableSuccess': 'Enabled "{name}"',
   'admin.providerDisableSuccess': 'Disabled "{name}"',
   'admin.providerSortSuccess': 'Provider order saved',
+  'admin.providerDeleteConfirm':
+    'Delete provider "{name}"? This cannot be undone',
+  'admin.providerDeleteSuccess': 'Deleted provider "{name}"',
+  'admin.providerSortAction': 'Sort',
+  'admin.providerSortTitle': 'Provider order',
   'admin.createProviderAction': 'New Provider',
   'admin.providerKeyTaken':
     'The key is already taken; please choose another one',

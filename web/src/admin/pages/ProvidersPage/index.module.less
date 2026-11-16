@@ -1,59 +1,23 @@
 // 提供商列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// 表头与行共用同一 grid 列模板对齐（SortableList 只包拖拽壳与手柄，行内容
-// 列布局归本页）。列序（§6 行 515）：显示名 / 标识 / 类别 / 类型 / 状态 /
-// 策略标签 / 排序；首列手柄由 SortableList 渲染（不在本模板内）。
+// 主列表改 Semi Table 自带列布局，本页仅保留工具栏、单元格内容排布与排序
+// SideSheet 内拖拽行的少量自定义样式。
 @import (reference) '../../../shared/styles/tokens.less';
-
-// 七列 + 排序值列：显示名 1.4 / 标识 1.6 / 类别 0.8 / 类型 1.2 / 状态 72px /
-// 策略标签 1.6 / 排序 56px。
-@providers-columns: 1.4fr 1.6fr 0.8fr 1.2fr 72px 1.6fr 56px;
 
 .page {
   display: block;
 }
 
-// 新建入口工具栏（对照 OidcClientsPage.toolbar 右对齐）。
+// 工具栏（对照 OidcClientsPage.toolbar 右对齐）。
 .toolbar {
   display: flex;
   justify-content: flex-end;
   margin-bottom: @spacing-md;
 }
 
-.headerRow {
-  display: grid;
-  grid-template-columns: @providers-columns;
-  gap: @spacing-sm;
-  padding: 0 @spacing-md @spacing-xs;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-}
-
-// 行内容：撑满拖拽壳 li 的剩余宽度后按列模板排布。
-.row {
-  display: grid;
-  grid-template-columns: @providers-columns;
-  gap: @spacing-sm;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  font-size: @font-size-sm;
-}
-
-.cellName,
-.cellKey,
-.cellCategory,
-.cellType,
-.cellTags {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cellKey,
-.cellType,
-.cellStatus,
-.cellTags {
+// 表格单元格内容：标识（code + 复制）/ 类型（图标 + 文字）/ 操作（编辑 + 删除）。
+.keyCell,
+.typeCell,
+.actions {
   display: inline-flex;
   align-items: center;
   gap: @spacing-xs;
@@ -63,27 +27,36 @@
   color: @color-text;
 }
 
-// 编辑链接自绘主色（.editLink）随 Semi 回归删除——交互色交 Semi 默认。
+// 排序 SideSheet 拖拽行：名称 + 标识 + 排序值（手柄由 SortableList 渲染）。
+.sortRow {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: @spacing-sm;
+  min-width: 0;
+  font-size: @font-size-sm;
+}
 
-.cellOrder {
+.sortName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sortKey {
+  color: @color-text-muted;
+}
+
+.sortOrder {
+  width: 40px;
   color: @color-text-muted;
   text-align: right;
 }
-
-// 自绘策略标签徽章（.tag）换 Semi Tag，规则删除。
 
 .dragNote {
   margin: 0 0 @spacing-sm;
   color: @color-text-muted;
   font-size: @font-size-sm;
-}
-
-// 写操作失败自绘文字（.actionError）改走 Toast、页级错误（.loadError）
-// 换 Semi Banner、空态（.empty）换 Semi Empty，原规则随替换删除。
-
-// 整页加载态（Semi Spin 居中容器，StatusPage 同形态）。
-.stateCenter {
-  display: flex;
-  justify-content: center;
-  padding: @spacing-xl 0;
 }

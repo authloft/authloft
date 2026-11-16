@@ -120,6 +120,7 @@ import {
 import type { MfaResponse } from '../gen/proto/api/account/v1/mfa_pb';
 import type {
   AdminProvider,
+  DeleteProviderRequest,
   GetProviderRequest,
   ListProvidersRequest,
   Provider,
@@ -129,6 +130,7 @@ import type {
   TestProviderRequest,
 } from '../gen/proto/api/admin/v1/provider_pb';
 import {
+  DeleteProviderRequestSchema,
   ListProvidersRequestSchema,
   SortProvidersRequestSchema,
 } from '../gen/proto/api/admin/v1/provider_pb';
@@ -195,6 +197,13 @@ export function sortProviders(
   return adminClient.sortProviders(request);
 }
 
+/** 删除（§5.2：`{providerKey}`）→ OkResponse；列表页删除动作经此持久化。 */
+export function deleteProvider(
+  request: DeleteProviderRequest,
+): Promise<OkResponse> {
+  return adminClient.deleteProvider(request);
+}
+
 /**
  * 列表请求构造：第 1 页 × pageSize 100（§1.7 行 277 上限）。**全量取数**是
  * 拖拽排序的前提——SortProviders 按行集整体重排 sort_order（见
@@ -222,6 +231,13 @@ export function buildSortProvidersRequest(
       sortOrder: BigInt(index + 1),
     })),
   });
+}
+
+/** 删除请求构造（§5.2）：定位键不可变，只读入参生成独立消息。 */
+export function buildDeleteProviderRequest(
+  providerKey: string,
+): DeleteProviderRequest {
+  return create(DeleteProviderRequestSchema, { providerKey });
 }
 
 // ---------------------------------------------------------------------------

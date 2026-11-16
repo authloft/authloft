@@ -23,6 +23,7 @@ import { create, fromJson, type JsonObject } from '@bufbuild/protobuf';
 import { MeResponseSchema } from '../gen/proto/api/admin/v1/admin_pb';
 import {
   AdminProviderSchema,
+  DeleteProviderRequestSchema,
   GetProviderRequestSchema,
   ProviderSchema,
   SetProviderEnabledRequestSchema,
@@ -233,6 +234,7 @@ const GET_ME_URL = `${BASE}/api.admin.v1.AdminService/GetMe`;
 const LIST_PROVIDERS_URL = `${BASE}/api.admin.v1.AdminService/ListProviders`;
 const SET_PROVIDER_ENABLED_URL = `${BASE}/api.admin.v1.AdminService/SetProviderEnabled`;
 const SORT_PROVIDERS_URL = `${BASE}/api.admin.v1.AdminService/SortProviders`;
+const DELETE_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/DeleteProvider`;
 const GET_PROVIDER_TYPES_URL = `${BASE}/api.admin.v1.AdminService/GetProviderTypes`;
 const GET_PROVIDER_SCHEMA_URL = `${BASE}/api.admin.v1.AdminService/GetProviderSchema`;
 const GET_PROVIDER_URL = `${BASE}/api.admin.v1.AdminService/GetProvider`;
@@ -853,6 +855,42 @@ describe('api.sortProviders（§5.2 行 1174 拖拽排序 → OkResponse）', ()
   });
 });
 
+describe('api.deleteProvider（§5.2 删除 → OkResponse）', () => {
+  test('请求体 {providerKey} wire 校验 + 成功解码 OkResponse', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(DELETE_PROVIDER_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.deleteProvider(
+      apiMod.buildDeleteProviderRequest('qq'),
+    );
+    expect(requestBody).toEqual({ providerKey: 'qq' });
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('500 reject → ApiError（ConfirmActionButton 失败 Toast 触发链）', async () => {
+    server.use(
+      http.post(
+        DELETE_PROVIDER_URL,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    let caught: unknown;
+    try {
+      await apiMod.deleteProvider(
+        create(DeleteProviderRequestSchema, { providerKey: 'qq' }),
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).httpStatus).toBe(500);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 请求构造 / 展示纯函数（落位 api.ts，adminDisplayName 同口径）
 // ---------------------------------------------------------------------------
@@ -894,6 +932,10 @@ describe('buildListProvidersRequest / buildSortProvidersRequest（请求构造�
       'eml_main',
     ]);
     expect(rows[0].sortOrder).toBe(BigInt(30));
+  });
+
+  test('buildDeleteProviderRequest：定位键原样带入（§5.2）', () => {
+    expect(apiMod.buildDeleteProviderRequest('qq').providerKey).toBe('qq');
   });
 });
 
