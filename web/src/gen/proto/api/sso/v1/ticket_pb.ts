@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/ticket.proto.
  */
 export const file_api_sso_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJnChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCJhChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAyJcChVHZXRMb2dpblRpY2tldFJlcXVlc3QSDgoGdGlja2V0GAEgASgJEgwKBHBvbGwYAiABKAMSJQoEb2lkYxgDIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiPwoZQ29uZmlybUxvZ2luVGlja2V0UmVxdWVzdBIRCgl0aWNrZXRfaWQYASABKAkSDwoHc2Vzc2lvbhgCIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_api_sso_v1_login, file_google_protobuf_struct]);
+  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJ+ChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAQgASgJImEKFENyZWF0ZVFyY29kZVJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIRCgl0aWNrZXRfaWQYAiABKAkSEgoKcXJjb2RlX3VybBgDIAEoCRISCgpleHBpcmVzX2luGAQgASgDIlwKFUdldExvZ2luVGlja2V0UmVxdWVzdBIOCgZ0aWNrZXQYASABKAkSDAoEcG9sbBgCIAEoAxIlCgRvaWRjGAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCI/ChlDb25maXJtTG9naW5UaWNrZXRSZXF1ZXN0EhEKCXRpY2tldF9pZBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_login, file_google_protobuf_struct]);
 
 /**
  * CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
@@ -46,6 +46,17 @@ export type CreateQrcodeRequest = Message<"api.sso.v1.CreateQrcodeRequest"> & {
    * @generated from field: api.sso.v1.CaptchaPayload captcha = 3;
    */
   captcha?: CaptchaPayload | undefined;
+
+  /**
+   * 非必填：SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1），仅
+   * scene=login 携带；服务端按首签口径解析快照（§2.2）并校验 provider_key
+   * ∈ 快照 oauthProviders（不在 → 既有 provider_disabled，§1.6 不新增取值），
+   * 快照随 TicketPayload.sso 进票据、GetLoginTicket 完成登录时写入
+   * login_token.sso（§2.8）；缺省行为与现状一致。
+   *
+   * @generated from field: string sso_client_id = 4;
+   */
+  ssoClientId: string;
 };
 
 /**

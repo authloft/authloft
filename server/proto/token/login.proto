@@ -38,6 +38,9 @@ message LoginTokenPayload {
   int64 iat = 10;
   // 过期时间，Unix 秒；固定 10 分钟。
   int64 exp = 11;
+  // SSO 应用上下文（接口文档 §12.4）；nil = 直登 / OIDC 流程，非 nil =
+  // SSO 应用流程首签时已与全局配置取过交集的生效快照（§11.6.2）。
+  Sso sso = 12;
 }
 
 // Challenge 是 login_token 内进行中的一次挑战（§11.6.2）。
@@ -84,4 +87,20 @@ message Oidc {
   string code_challenge_method = 6;
   // OIDC state。
   string state = 7;
+}
+
+// Sso 是 SSO 应用上下文的首签快照（§11.6.2；首签口径见接口文档 §2.2，
+// 交集判定见 §2.1）：首签（尚无 login_token）按请求 sso_client_id 读一次
+// sso_client 行 + 全局 settings 算好生效快照写入，methods / providers 已含
+// 交集结果，后续步骤与终点回跳只消费快照、续步重签原样保留。前端不解析，
+// 随载荷整体透传（接口文档 §12.4）；ticket 载荷复用本消息（§11.6.4）。
+message Sso {
+  // SSO 应用标识。
+  string client_id = 1;
+  // 已与全局取过交集的登录方式快照。
+  repeated string methods = 2;
+  // 已与全局取过交集的三方 Provider 快照。
+  repeated string providers = 3;
+  // 登录完成默认回跳地址；空 = 未配置。
+  string default_redirect_uri = 4;
 }

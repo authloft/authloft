@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file token/login_state.proto.
  */
 export const file_token_login_state: GenFile = /*@__PURE__*/
-  fileDesc("Chd0b2tlbi9sb2dpbl9zdGF0ZS5wcm90bxIFdG9rZW4iSQoRTG9naW5TdGF0ZVBheWxvYWQSDQoFc3RhdGUYASABKAkSCwoDdWlkGAIgASgDEgsKA2lhdBgDIAEoAxILCgNleHAYBCABKANCHVobYXV0aGxvZnQvZ2VuL2dvL3Rva2VuO3Rva2VuYgZwcm90bzM");
+  fileDesc("Chd0b2tlbi9sb2dpbl9zdGF0ZS5wcm90bxIFdG9rZW4iYAoRTG9naW5TdGF0ZVBheWxvYWQSDQoFc3RhdGUYASABKAkSCwoDdWlkGAIgASgDEgsKA2lhdBgDIAEoAxILCgNleHAYBCABKAMSFQoNc3NvX2NsaWVudF9pZBgFIAEoCUIdWhthdXRobG9mdC9nZW4vZ28vdG9rZW47dG9rZW5iBnByb3RvMw");
 
 /**
  * LoginStatePayload 是 al_login_state Cookie 的加密前载荷（docs/后端架构.md
@@ -50,6 +50,14 @@ export type LoginStatePayload = Message<"token.LoginStatePayload"> & {
    * @generated from field: int64 exp = 4;
    */
   exp: bigint;
+
+  /**
+   * 三方跳转链路携带的 SSO 应用标识（接口文档 §2.7.2）；Cookie 服务端加密、
+   * 客户端不可篡改。空 = 直登 / 绑定链路。
+   *
+   * @generated from field: string sso_client_id = 5;
+   */
+  ssoClientId: string;
 };
 
 /**

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file token/login.proto.
  */
 export const file_token_login: GenFile = /*@__PURE__*/
-  fileDesc("ChF0b2tlbi9sb2dpbi5wcm90bxIFdG9rZW4i2gEKEUxvZ2luVG9rZW5QYXlsb2FkEgsKA3RpZBgBIAEoCRIMCgRmbG93GAIgASgJEg4KBmZhY3RvchgDIAEoCRIOCgZwYXNzZWQYBCADKAkSCwoDdWlkGAUgASgDEhwKAmNoGAYgASgLMhAudG9rZW4uQ2hhbGxlbmdlEh0KAnRwGAcgASgLMhEudG9rZW4uVGhpcmRQYXJ0eRIZCgRvaWRjGAggASgLMgsudG9rZW4uT2lkYxILCgNhbXIYCSADKAkSCwoDaWF0GAogASgDEgsKA2V4cBgLIAEoAyI7CglDaGFsbGVuZ2USDwoHcHVycG9zZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSDQoFbm9uY2UYAyABKAkiawoKVGhpcmRQYXJ0eRIUCgxwcm92aWRlcl9rZXkYASABKAkSDwoHb3Blbl9pZBgCIAEoCRIQCgh1bmlvbl9pZBgDIAEoCRIQCghuaWNrbmFtZRgEIAEoCRISCgphdmF0YXJfdXJsGAUgASgJIpMBCgRPaWRjEhEKCWNsaWVudF9pZBgBIAEoCRIUCgxyZWRpcmVjdF91cmkYAiABKAkSDQoFc2NvcGUYAyABKAkSDQoFbm9uY2UYBCABKAkSFgoOY29kZV9jaGFsbGVuZ2UYBSABKAkSHQoVY29kZV9jaGFsbGVuZ2VfbWV0aG9kGAYgASgJEg0KBXN0YXRlGAcgASgJQh1aG2F1dGhsb2Z0L2dlbi9nby90b2tlbjt0b2tlbmIGcHJvdG8z");
+  fileDesc("ChF0b2tlbi9sb2dpbi5wcm90bxIFdG9rZW4i8wEKEUxvZ2luVG9rZW5QYXlsb2FkEgsKA3RpZBgBIAEoCRIMCgRmbG93GAIgASgJEg4KBmZhY3RvchgDIAEoCRIOCgZwYXNzZWQYBCADKAkSCwoDdWlkGAUgASgDEhwKAmNoGAYgASgLMhAudG9rZW4uQ2hhbGxlbmdlEh0KAnRwGAcgASgLMhEudG9rZW4uVGhpcmRQYXJ0eRIZCgRvaWRjGAggASgLMgsudG9rZW4uT2lkYxILCgNhbXIYCSADKAkSCwoDaWF0GAogASgDEgsKA2V4cBgLIAEoAxIXCgNzc28YDCABKAsyCi50b2tlbi5Tc28iOwoJQ2hhbGxlbmdlEg8KB3B1cnBvc2UYASABKAkSDgoGdGFyZ2V0GAIgASgJEg0KBW5vbmNlGAMgASgJImsKClRoaXJkUGFydHkSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg8KB29wZW5faWQYAiABKAkSEAoIdW5pb25faWQYAyABKAkSEAoIbmlja25hbWUYBCABKAkSEgoKYXZhdGFyX3VybBgFIAEoCSKTAQoET2lkYxIRCgljbGllbnRfaWQYASABKAkSFAoMcmVkaXJlY3RfdXJpGAIgASgJEg0KBXNjb3BlGAMgASgJEg0KBW5vbmNlGAQgASgJEhYKDmNvZGVfY2hhbGxlbmdlGAUgASgJEh0KFWNvZGVfY2hhbGxlbmdlX21ldGhvZBgGIAEoCRINCgVzdGF0ZRgHIAEoCSJaCgNTc28SEQoJY2xpZW50X2lkGAEgASgJEg8KB21ldGhvZHMYAiADKAkSEQoJcHJvdmlkZXJzGAMgAygJEhwKFGRlZmF1bHRfcmVkaXJlY3RfdXJpGAQgASgJQh1aG2F1dGhsb2Z0L2dlbi9nby90b2tlbjt0b2tlbmIGcHJvdG8z");
 
 /**
  * LoginTokenPayload 是 login_token 的加密前载荷——登录过程态
@@ -99,6 +99,14 @@ export type LoginTokenPayload = Message<"token.LoginTokenPayload"> & {
    * @generated from field: int64 exp = 11;
    */
   exp: bigint;
+
+  /**
+   * SSO 应用上下文（接口文档 §12.4）；nil = 直登 / OIDC 流程，非 nil =
+   * SSO 应用流程首签时已与全局配置取过交集的生效快照（§11.6.2）。
+   *
+   * @generated from field: token.Sso sso = 12;
+   */
+  sso?: Sso | undefined;
 };
 
 /**
@@ -258,4 +266,50 @@ export type Oidc = Message<"token.Oidc"> & {
  */
 export const OidcSchema: GenMessage<Oidc> = /*@__PURE__*/
   messageDesc(file_token_login, 3);
+
+/**
+ * Sso 是 SSO 应用上下文的首签快照（§11.6.2；首签口径见接口文档 §2.2，
+ * 交集判定见 §2.1）：首签（尚无 login_token）按请求 sso_client_id 读一次
+ * sso_client 行 + 全局 settings 算好生效快照写入，methods / providers 已含
+ * 交集结果，后续步骤与终点回跳只消费快照、续步重签原样保留。前端不解析，
+ * 随载荷整体透传（接口文档 §12.4）；ticket 载荷复用本消息（§11.6.4）。
+ *
+ * @generated from message token.Sso
+ */
+export type Sso = Message<"token.Sso"> & {
+  /**
+   * SSO 应用标识。
+   *
+   * @generated from field: string client_id = 1;
+   */
+  clientId: string;
+
+  /**
+   * 已与全局取过交集的登录方式快照。
+   *
+   * @generated from field: repeated string methods = 2;
+   */
+  methods: string[];
+
+  /**
+   * 已与全局取过交集的三方 Provider 快照。
+   *
+   * @generated from field: repeated string providers = 3;
+   */
+  providers: string[];
+
+  /**
+   * 登录完成默认回跳地址；空 = 未配置。
+   *
+   * @generated from field: string default_redirect_uri = 4;
+   */
+  defaultRedirectUri: string;
+};
+
+/**
+ * Describes the message token.Sso.
+ * Use `create(SsoSchema)` to create a new message.
+ */
+export const SsoSchema: GenMessage<Sso> = /*@__PURE__*/
+  messageDesc(file_token_login, 4);
 

@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/login.proto.
  */
 export const file_api_sso_v1_login: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIscBChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgdjYXB0Y2hhGAYgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZCKLAQoMTG9naW5QYXlsb2FkEhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEg0KBXBob25lGAMgASgJEg0KBWVtYWlsGAQgASgJEgwKBGNvZGUYBSABKAkSKwoKY3JlZGVudGlhbBgGIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiUQoOQ2FwdGNoYVBheWxvYWQSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg0KBXRva2VuGAIgASgJEgoKAmlkGAMgASgJEg4KBmFuc3dlchgEIAEoCSIbChlDcmVhdGVDYXB0Y2hhSW1hZ2VSZXF1ZXN0IlIKGkNyZWF0ZUNhcHRjaGFJbWFnZVJlc3BvbnNlEgoKAmlkGAEgASgJEhQKDGltYWdlX2Jhc2U2NBgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL3YxL2xvZ2luLnByb3RvEgphcGkuc3NvLnYxIt4BChNMb2dpbkRlZmF1bHRSZXF1ZXN0EhMKC2xvZ2luX3Rva2VuGAEgASgJEg4KBm1ldGhvZBgCIAEoCRIMCgRzdGVwGAMgASgJEikKB3BheWxvYWQYBCABKAsyGC5hcGkuc3NvLnYxLkxvZ2luUGF5bG9hZBIlCgRvaWRjGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgdjYXB0Y2hhGAYgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAcgASgJIosBCgxMb2dpblBheWxvYWQSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSDQoFcGhvbmUYAyABKAkSDQoFZW1haWwYBCABKAkSDAoEY29kZRgFIAEoCRIrCgpjcmVkZW50aWFsGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJRCg5DYXB0Y2hhUGF5bG9hZBIUCgxwcm92aWRlcl9rZXkYASABKAkSDQoFdG9rZW4YAiABKAkSCgoCaWQYAyABKAkSDgoGYW5zd2VyGAQgASgJIhsKGUNyZWF0ZUNhcHRjaGFJbWFnZVJlcXVlc3QiUgoaQ3JlYXRlQ2FwdGNoYUltYWdlUmVzcG9uc2USCgoCaWQYASABKAkSFAoMaW1hZ2VfYmFzZTY0GAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKANCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
  * LoginDefaultRequest 是 SsoService/LoginDefault 的请求消息
@@ -70,6 +70,15 @@ export type LoginDefaultRequest = Message<"api.sso.v1.LoginDefaultRequest"> & {
    * @generated from field: api.sso.v1.CaptchaPayload captcha = 6;
    */
   captcha?: CaptchaPayload | undefined;
+
+  /**
+   * SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1）：仅首次请求
+   * （尚无 login_token）时回传并按首签口径装载应用快照（§2.2），续步忽略；
+   * 查无行 / 行不可用 → invalid_request，不静默降级为直登（§2.2）。
+   *
+   * @generated from field: string sso_client_id = 7;
+   */
+  ssoClientId: string;
 };
 
 /**

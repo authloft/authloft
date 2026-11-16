@@ -35,7 +35,13 @@ type CreateQrcodeRequest struct {
 	// 跨版本可新增，用 string 承载（§12.9）。
 	Scene string `protobuf:"bytes,2,opt,name=scene,proto3" json:"scene,omitempty"`
 	// 每次拉码都要新的，结构见 §2.5（§2.8、§2.5）。
-	Captcha       *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// 非必填：SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1），仅
+	// scene=login 携带；服务端按首签口径解析快照（§2.2）并校验 provider_key
+	// ∈ 快照 oauthProviders（不在 → 既有 provider_disabled，§1.6 不新增取值），
+	// 快照随 TicketPayload.sso 进票据、GetLoginTicket 完成登录时写入
+	// login_token.sso（§2.8）；缺省行为与现状一致。
+	SsoClientId   string `protobuf:"bytes,4,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -89,6 +95,13 @@ func (x *CreateQrcodeRequest) GetCaptcha() *CaptchaPayload {
 		return x.Captcha
 	}
 	return nil
+}
+
+func (x *CreateQrcodeRequest) GetSsoClientId() string {
+	if x != nil {
+		return x.SsoClientId
+	}
+	return ""
 }
 
 // CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8）。
@@ -298,11 +311,12 @@ var File_api_sso_v1_ticket_proto protoreflect.FileDescriptor
 const file_api_sso_v1_ticket_proto_rawDesc = "" +
 	"\n" +
 	"\x17api/sso/v1/ticket.proto\x12\n" +
-	"api.sso.v1\x1a\x16api/sso/v1/login.proto\x1a\x1cgoogle/protobuf/struct.proto\"\x84\x01\n" +
+	"api.sso.v1\x1a\x16api/sso/v1/login.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xa8\x01\n" +
 	"\x13CreateQrcodeRequest\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05scene\x18\x02 \x01(\tR\x05scene\x124\n" +
-	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\x89\x01\n" +
+	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\"\n" +
+	"\rsso_client_id\x18\x04 \x01(\tR\vssoClientId\"\x89\x01\n" +
 	"\x14CreateQrcodeResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1b\n" +
 	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12\x1d\n" +

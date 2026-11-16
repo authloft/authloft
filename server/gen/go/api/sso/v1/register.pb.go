@@ -46,7 +46,11 @@ type RegisterRequest struct {
 	// 人机校验提交，请求级字段（与 payload 平级，§2.2、§2.5 提交格式、
 	// §2.6「captcha 不属于任何因子的 payload」）；challenge 步与注册直达
 	// set_password 步必填，其余场景可省。
-	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	Captcha *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// SSO 应用标识（§2.2，随「与 2.2 同构」引入，§2.3）：仅首次请求（尚无
+	// login_token）时回传并按首签口径装载应用快照，续步忽略；注册方式选项
+	// 不读应用级配置（镜像全局口径，§2.3）。
+	SsoClientId   string `protobuf:"bytes,7,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -121,6 +125,13 @@ func (x *RegisterRequest) GetCaptcha() *CaptchaPayload {
 		return x.Captcha
 	}
 	return nil
+}
+
+func (x *RegisterRequest) GetSsoClientId() string {
+	if x != nil {
+		return x.SsoClientId
+	}
+	return ""
 }
 
 // RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集：
@@ -215,7 +226,7 @@ var File_api_sso_v1_register_proto protoreflect.FileDescriptor
 const file_api_sso_v1_register_proto_rawDesc = "" +
 	"\n" +
 	"\x19api/sso/v1/register.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\xf8\x01\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x16api/sso/v1/login.proto\"\x9c\x02\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
@@ -223,7 +234,8 @@ const file_api_sso_v1_register_proto_rawDesc = "" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x125\n" +
 	"\apayload\x18\x04 \x01(\v2\x1b.api.sso.v1.RegisterPayloadR\apayload\x12+\n" +
 	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\x89\x01\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\"\n" +
+	"\rsso_client_id\x18\a \x01(\tR\vssoClientId\"\x89\x01\n" +
 	"\x0fRegisterPayload\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x14\n" +
 	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x12\n" +

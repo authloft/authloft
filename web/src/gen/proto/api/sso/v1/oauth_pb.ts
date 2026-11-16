@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/oauth.proto.
  */
 export const file_api_sso_v1_oauth: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL29hdXRoLnByb3RvEgphcGkuc3NvLnYxIjMKEEF1dGhvcml6ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSDQoFc2NlbmUYAiABKAkiKgoRQXV0aG9yaXplUmVzcG9uc2USFQoNYXV0aG9yaXplX3VybBgBIAEoCSKkAQoRTG9naW5PYXV0aFJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEgwKBGNvZGUYAiABKAkSDQoFc3RhdGUYAyABKAkSDQoFc3RhZ2UYBCABKAkSEQoJdGlja2V0X2lkGAUgASgJEhMKC2xvZ2luX3Rva2VuGAYgASgJEiUKBG9pZGMYByABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0QiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL3YxL29hdXRoLnByb3RvEgphcGkuc3NvLnYxIkoKEEF1dGhvcml6ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSDQoFc2NlbmUYAiABKAkSFQoNc3NvX2NsaWVudF9pZBgDIAEoCSIqChFBdXRob3JpemVSZXNwb25zZRIVCg1hdXRob3JpemVfdXJsGAEgASgJIqQBChFMb2dpbk9hdXRoUmVxdWVzdBIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEY29kZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRINCgVzdGFnZRgEIAEoCRIRCgl0aWNrZXRfaWQYBSABKAkSEwoLbG9naW5fdG9rZW4YBiABKAkSJQoEb2lkYxgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
  * AuthorizeRequest 是 SsoService/Authorize 的请求消息
@@ -38,6 +38,16 @@ export type AuthorizeRequest = Message<"api.sso.v1.AuthorizeRequest"> & {
    * @generated from field: string scene = 2;
    */
   scene: string;
+
+  /**
+   * 非必填：SSO 应用标识，登录页从 `__AUTHLOFT_INIT__.sso.clientId` 取得（§2.1）；
+   * 三方链路应用上下文的唯一入口——服务端装入 al_login_state Cookie 随链路传递
+   * （§2.7.2），LoginOauth 从 Cookie 解出（§2.7.4）；scene=bind 不携带
+   * （绑定流程不读应用配置，§2.7.2）。
+   *
+   * @generated from field: string sso_client_id = 3;
+   */
+  ssoClientId: string;
 };
 
 /**

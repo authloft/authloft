@@ -36,7 +36,10 @@ type LoginStatePayload struct {
 	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,3,opt,name=iat,proto3" json:"iat,omitempty"`
 	// 过期时间，Unix 秒；内嵌 10 分钟过期兜底。
-	Exp           int64 `protobuf:"varint,4,opt,name=exp,proto3" json:"exp,omitempty"`
+	Exp int64 `protobuf:"varint,4,opt,name=exp,proto3" json:"exp,omitempty"`
+	// 三方跳转链路携带的 SSO 应用标识（接口文档 §2.7.2）；Cookie 服务端加密、
+	// 客户端不可篡改。空 = 直登 / 绑定链路。
+	SsoClientId   string `protobuf:"bytes,5,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -99,16 +102,24 @@ func (x *LoginStatePayload) GetExp() int64 {
 	return 0
 }
 
+func (x *LoginStatePayload) GetSsoClientId() string {
+	if x != nil {
+		return x.SsoClientId
+	}
+	return ""
+}
+
 var File_token_login_state_proto protoreflect.FileDescriptor
 
 const file_token_login_state_proto_rawDesc = "" +
 	"\n" +
-	"\x17token/login_state.proto\x12\x05token\"_\n" +
+	"\x17token/login_state.proto\x12\x05token\"\x83\x01\n" +
 	"\x11LoginStatePayload\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x10\n" +
 	"\x03uid\x18\x02 \x01(\x03R\x03uid\x12\x10\n" +
 	"\x03iat\x18\x03 \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\x04 \x01(\x03R\x03expB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
+	"\x03exp\x18\x04 \x01(\x03R\x03exp\x12\"\n" +
+	"\rsso_client_id\x18\x05 \x01(\tR\vssoClientIdB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
 
 var (
 	file_token_login_state_proto_rawDescOnce sync.Once

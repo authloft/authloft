@@ -3,6 +3,8 @@ syntax = "proto3";
 package token;
 
 import "google/protobuf/struct.proto";
+// Sso 定义在 token/login.proto（§11.6.2），本文件只引用不复制（§12.9 单一结构源）。
+import "token/login.proto";
 
 // 本包是服务端内部令牌载荷（docs/后端架构.md §11.6），用裸包名 token
 // （存储模型先例：docs/接口文档.md §12.1）。生成到 gen/go/token/，
@@ -24,6 +26,10 @@ message TicketPayload {
   int64 iat = 4;
   // 过期时间，Unix 秒；默认 600s。
   int64 exp = 5;
+  // SSO 应用快照（结构同 §11.6.2 的 Sso）：仅 scene=login 且拉码带
+  // sso_client_id 时填充（接口文档 §2.8），GetLoginTicket 完成登录时
+  // 原样写入 login_token.sso（§11.6.2）；scene=bind / 未携带时无此字段。
+  Sso sso = 6;
 }
 
 // TicketResult 是 `al:ticket:{ticket_id}` 的存储值（docs/后端架构.md §11.6.5）。

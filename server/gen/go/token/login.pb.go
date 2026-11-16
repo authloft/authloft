@@ -50,7 +50,10 @@ type LoginTokenPayload struct {
 	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,10,opt,name=iat,proto3" json:"iat,omitempty"`
 	// 过期时间，Unix 秒；固定 10 分钟。
-	Exp           int64 `protobuf:"varint,11,opt,name=exp,proto3" json:"exp,omitempty"`
+	Exp int64 `protobuf:"varint,11,opt,name=exp,proto3" json:"exp,omitempty"`
+	// SSO 应用上下文（接口文档 §12.4）；nil = 直登 / OIDC 流程，非 nil =
+	// SSO 应用流程首签时已与全局配置取过交集的生效快照（§11.6.2）。
+	Sso           *Sso `protobuf:"bytes,12,opt,name=sso,proto3" json:"sso,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -160,6 +163,13 @@ func (x *LoginTokenPayload) GetExp() int64 {
 		return x.Exp
 	}
 	return 0
+}
+
+func (x *LoginTokenPayload) GetSso() *Sso {
+	if x != nil {
+		return x.Sso
+	}
+	return nil
 }
 
 // Challenge 是 login_token 内进行中的一次挑战（§11.6.2）。
@@ -412,11 +422,88 @@ func (x *Oidc) GetState() string {
 	return ""
 }
 
+// Sso 是 SSO 应用上下文的首签快照（§11.6.2；首签口径见接口文档 §2.2，
+// 交集判定见 §2.1）：首签（尚无 login_token）按请求 sso_client_id 读一次
+// sso_client 行 + 全局 settings 算好生效快照写入，methods / providers 已含
+// 交集结果，后续步骤与终点回跳只消费快照、续步重签原样保留。前端不解析，
+// 随载荷整体透传（接口文档 §12.4）；ticket 载荷复用本消息（§11.6.4）。
+type Sso struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// SSO 应用标识。
+	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// 已与全局取过交集的登录方式快照。
+	Methods []string `protobuf:"bytes,2,rep,name=methods,proto3" json:"methods,omitempty"`
+	// 已与全局取过交集的三方 Provider 快照。
+	Providers []string `protobuf:"bytes,3,rep,name=providers,proto3" json:"providers,omitempty"`
+	// 登录完成默认回跳地址；空 = 未配置。
+	DefaultRedirectUri string `protobuf:"bytes,4,opt,name=default_redirect_uri,json=defaultRedirectUri,proto3" json:"default_redirect_uri,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Sso) Reset() {
+	*x = Sso{}
+	mi := &file_token_login_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Sso) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Sso) ProtoMessage() {}
+
+func (x *Sso) ProtoReflect() protoreflect.Message {
+	mi := &file_token_login_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Sso.ProtoReflect.Descriptor instead.
+func (*Sso) Descriptor() ([]byte, []int) {
+	return file_token_login_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Sso) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *Sso) GetMethods() []string {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+func (x *Sso) GetProviders() []string {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
+func (x *Sso) GetDefaultRedirectUri() string {
+	if x != nil {
+		return x.DefaultRedirectUri
+	}
+	return ""
+}
+
 var File_token_login_proto protoreflect.FileDescriptor
 
 const file_token_login_proto_rawDesc = "" +
 	"\n" +
-	"\x11token/login.proto\x12\x05token\"\x97\x02\n" +
+	"\x11token/login.proto\x12\x05token\"\xb5\x02\n" +
 	"\x11LoginTokenPayload\x12\x10\n" +
 	"\x03tid\x18\x01 \x01(\tR\x03tid\x12\x12\n" +
 	"\x04flow\x18\x02 \x01(\tR\x04flow\x12\x16\n" +
@@ -429,7 +516,9 @@ const file_token_login_proto_rawDesc = "" +
 	"\x03amr\x18\t \x03(\tR\x03amr\x12\x10\n" +
 	"\x03iat\x18\n" +
 	" \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\v \x01(\x03R\x03exp\"S\n" +
+	"\x03exp\x18\v \x01(\x03R\x03exp\x12\x1c\n" +
+	"\x03sso\x18\f \x01(\v2\n" +
+	".token.SsoR\x03sso\"S\n" +
 	"\tChallenge\x12\x18\n" +
 	"\apurpose\x18\x01 \x01(\tR\apurpose\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x14\n" +
@@ -449,7 +538,12 @@ const file_token_login_proto_rawDesc = "" +
 	"\x05nonce\x18\x04 \x01(\tR\x05nonce\x12%\n" +
 	"\x0ecode_challenge\x18\x05 \x01(\tR\rcodeChallenge\x122\n" +
 	"\x15code_challenge_method\x18\x06 \x01(\tR\x13codeChallengeMethod\x12\x14\n" +
-	"\x05state\x18\a \x01(\tR\x05stateB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
+	"\x05state\x18\a \x01(\tR\x05state\"\x8c\x01\n" +
+	"\x03Sso\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x18\n" +
+	"\amethods\x18\x02 \x03(\tR\amethods\x12\x1c\n" +
+	"\tproviders\x18\x03 \x03(\tR\tproviders\x120\n" +
+	"\x14default_redirect_uri\x18\x04 \x01(\tR\x12defaultRedirectUriB\x1dZ\x1bauthloft/gen/go/token;tokenb\x06proto3"
 
 var (
 	file_token_login_proto_rawDescOnce sync.Once
@@ -463,22 +557,24 @@ func file_token_login_proto_rawDescGZIP() []byte {
 	return file_token_login_proto_rawDescData
 }
 
-var file_token_login_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_token_login_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_token_login_proto_goTypes = []any{
 	(*LoginTokenPayload)(nil), // 0: token.LoginTokenPayload
 	(*Challenge)(nil),         // 1: token.Challenge
 	(*ThirdParty)(nil),        // 2: token.ThirdParty
 	(*Oidc)(nil),              // 3: token.Oidc
+	(*Sso)(nil),               // 4: token.Sso
 }
 var file_token_login_proto_depIdxs = []int32{
 	1, // 0: token.LoginTokenPayload.ch:type_name -> token.Challenge
 	2, // 1: token.LoginTokenPayload.tp:type_name -> token.ThirdParty
 	3, // 2: token.LoginTokenPayload.oidc:type_name -> token.Oidc
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 3: token.LoginTokenPayload.sso:type_name -> token.Sso
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_token_login_proto_init() }
@@ -492,7 +588,7 @@ func file_token_login_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_token_login_proto_rawDesc), len(file_token_login_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

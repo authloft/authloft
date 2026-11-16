@@ -22,4 +22,7 @@ message LoginStatePayload {
   int64 iat = 3;
   // 过期时间，Unix 秒；内嵌 10 分钟过期兜底。
   int64 exp = 4;
+  // 三方跳转链路携带的 SSO 应用标识（接口文档 §2.7.2）；Cookie 服务端加密、
+  // 客户端不可篡改。空 = 直登 / 绑定链路。
+  string sso_client_id = 5;
 }

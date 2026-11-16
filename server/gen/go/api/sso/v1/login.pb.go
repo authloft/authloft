@@ -46,7 +46,11 @@ type LoginDefaultRequest struct {
 	// 人机校验提交，请求级字段（与 payload 平级，§2.2、§2.5 提交格式、
 	// §2.6「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
 	// 失败达阈值后必填，其余场景可省。
-	Captcha       *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	Captcha *CaptchaPayload `protobuf:"bytes,6,opt,name=captcha,proto3" json:"captcha,omitempty"`
+	// SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1）：仅首次请求
+	// （尚无 login_token）时回传并按首签口径装载应用快照（§2.2），续步忽略；
+	// 查无行 / 行不可用 → invalid_request，不静默降级为直登（§2.2）。
+	SsoClientId   string `protobuf:"bytes,7,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -121,6 +125,13 @@ func (x *LoginDefaultRequest) GetCaptcha() *CaptchaPayload {
 		return x.Captcha
 	}
 	return nil
+}
+
+func (x *LoginDefaultRequest) GetSsoClientId() string {
+	if x != nil {
+		return x.SsoClientId
+	}
+	return ""
 }
 
 // LoginPayload 是 §2.6 各因子 `payload` 对照表的因子字段合集：
@@ -403,7 +414,7 @@ var File_api_sso_v1_login_proto protoreflect.FileDescriptor
 const file_api_sso_v1_login_proto_rawDesc = "" +
 	"\n" +
 	"\x16api/sso/v1/login.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"\xf9\x01\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"\x9d\x02\n" +
 	"\x13LoginDefaultRequest\x12\x1f\n" +
 	"\vlogin_token\x18\x01 \x01(\tR\n" +
 	"loginToken\x12\x16\n" +
@@ -411,7 +422,8 @@ const file_api_sso_v1_login_proto_rawDesc = "" +
 	"\x04step\x18\x03 \x01(\tR\x04step\x122\n" +
 	"\apayload\x18\x04 \x01(\v2\x18.api.sso.v1.LoginPayloadR\apayload\x12+\n" +
 	"\x04oidc\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x04oidc\x124\n" +
-	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\"\xbf\x01\n" +
+	"\acaptcha\x18\x06 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\"\n" +
+	"\rsso_client_id\x18\a \x01(\tR\vssoClientId\"\xbf\x01\n" +
 	"\fLoginPayload\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x14\n" +

@@ -5,13 +5,15 @@
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
+import type { Sso } from "./login_pb";
+import { file_token_login } from "./login_pb";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file token/ticket.proto.
  */
 export const file_token_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChJ0b2tlbi90aWNrZXQucHJvdG8SBXRva2VuImEKDVRpY2tldFBheWxvYWQSEQoJdGlja2V0X2lkGAEgASgJEhQKDHByb3ZpZGVyX2tleRgCIAEoCRINCgVzY2VuZRgDIAEoCRILCgNpYXQYBCABKAMSCwoDZXhwGAUgASgDIvsBCgxUaWNrZXRSZXN1bHQSCQoBdhgBIAEoAxINCgVzY2VuZRgCIAEoCRIOCgZzdGF0dXMYAyABKAkSFAoMcHJvdmlkZXJfa2V5GAQgASgJEg8KB2NoYW5uZWwYBSABKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgpleHBpcmVzX2F0GAcgASgDEhAKCGNvbnN1bWVkGAggASgIEigKDGxvZ2luX3Jlc3VsdBgJIAEoCzISLnRva2VuLkxvZ2luUmVzdWx0EjYKE3RoaXJkcGFydHlfaWRlbnRpdHkYCiABKAsyGS50b2tlbi5UaGlyZHBhcnR5SWRlbnRpdHkiNAoLTG9naW5SZXN1bHQSCwoDdWlkGAEgASgDEhgKEGJpbmRpbmdfcmVxdWlyZWQYAiABKAgigwEKElRoaXJkcGFydHlJZGVudGl0eRIPCgdvcGVuX2lkGAEgASgJEhAKCHVuaW9uX2lkGAIgASgJEhAKCG5pY2tuYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSJAoDcmF3GAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdEIdWhthdXRobG9mdC9nZW4vZ28vdG9rZW47dG9rZW5iBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("ChJ0b2tlbi90aWNrZXQucHJvdG8SBXRva2VuInoKDVRpY2tldFBheWxvYWQSEQoJdGlja2V0X2lkGAEgASgJEhQKDHByb3ZpZGVyX2tleRgCIAEoCRINCgVzY2VuZRgDIAEoCRILCgNpYXQYBCABKAMSCwoDZXhwGAUgASgDEhcKA3NzbxgGIAEoCzIKLnRva2VuLlNzbyL7AQoMVGlja2V0UmVzdWx0EgkKAXYYASABKAMSDQoFc2NlbmUYAiABKAkSDgoGc3RhdHVzGAMgASgJEhQKDHByb3ZpZGVyX2tleRgEIAEoCRIPCgdjaGFubmVsGAUgASgJEhIKCmNyZWF0ZWRfYXQYBiABKAMSEgoKZXhwaXJlc19hdBgHIAEoAxIQCghjb25zdW1lZBgIIAEoCBIoCgxsb2dpbl9yZXN1bHQYCSABKAsyEi50b2tlbi5Mb2dpblJlc3VsdBI2ChN0aGlyZHBhcnR5X2lkZW50aXR5GAogASgLMhkudG9rZW4uVGhpcmRwYXJ0eUlkZW50aXR5IjQKC0xvZ2luUmVzdWx0EgsKA3VpZBgBIAEoAxIYChBiaW5kaW5nX3JlcXVpcmVkGAIgASgIIoMBChJUaGlyZHBhcnR5SWRlbnRpdHkSDwoHb3Blbl9pZBgBIAEoCRIQCgh1bmlvbl9pZBgCIAEoCRIQCghuaWNrbmFtZRgDIAEoCRISCgphdmF0YXJfdXJsGAQgASgJEiQKA3JhdxgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RCHVobYXV0aGxvZnQvZ2VuL2dvL3Rva2VuO3Rva2VuYgZwcm90bzM", [file_google_protobuf_struct, file_token_login]);
 
 /**
  * TicketPayload 是扫码票据 ticket 的加密前载荷（docs/后端架构.md §11.6.4）。
@@ -56,6 +58,15 @@ export type TicketPayload = Message<"token.TicketPayload"> & {
    * @generated from field: int64 exp = 5;
    */
   exp: bigint;
+
+  /**
+   * SSO 应用快照（结构同 §11.6.2 的 Sso）：仅 scene=login 且拉码带
+   * sso_client_id 时填充（接口文档 §2.8），GetLoginTicket 完成登录时
+   * 原样写入 login_token.sso（§11.6.2）；scene=bind / 未携带时无此字段。
+   *
+   * @generated from field: token.Sso sso = 6;
+   */
+  sso?: Sso | undefined;
 };
 
 /**

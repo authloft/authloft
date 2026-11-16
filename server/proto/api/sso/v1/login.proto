@@ -31,6 +31,10 @@ message LoginDefaultRequest {
   // §2.6「captcha 不属于任何因子的 payload」）；challenge 步与密码登录
   // 失败达阈值后必填，其余场景可省。
   CaptchaPayload captcha = 6;
+  // SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1）：仅首次请求
+  //（尚无 login_token）时回传并按首签口径装载应用快照（§2.2），续步忽略；
+  // 查无行 / 行不可用 → invalid_request，不静默降级为直登（§2.2）。
+  string sso_client_id = 7;
 }
 
 // LoginPayload 是 §2.6 各因子 `payload` 对照表的因子字段合集：

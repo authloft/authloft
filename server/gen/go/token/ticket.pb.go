@@ -37,7 +37,11 @@ type TicketPayload struct {
 	// 签发时间，Unix 秒。
 	Iat int64 `protobuf:"varint,4,opt,name=iat,proto3" json:"iat,omitempty"`
 	// 过期时间，Unix 秒；默认 600s。
-	Exp           int64 `protobuf:"varint,5,opt,name=exp,proto3" json:"exp,omitempty"`
+	Exp int64 `protobuf:"varint,5,opt,name=exp,proto3" json:"exp,omitempty"`
+	// SSO 应用快照（结构同 §11.6.2 的 Sso）：仅 scene=login 且拉码带
+	// sso_client_id 时填充（接口文档 §2.8），GetLoginTicket 完成登录时
+	// 原样写入 login_token.sso（§11.6.2）；scene=bind / 未携带时无此字段。
+	Sso           *Sso `protobuf:"bytes,6,opt,name=sso,proto3" json:"sso,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -105,6 +109,13 @@ func (x *TicketPayload) GetExp() int64 {
 		return x.Exp
 	}
 	return 0
+}
+
+func (x *TicketPayload) GetSso() *Sso {
+	if x != nil {
+		return x.Sso
+	}
+	return nil
 }
 
 // TicketResult 是 `al:ticket:{ticket_id}` 的存储值（docs/后端架构.md §11.6.5）。
@@ -385,13 +396,15 @@ var File_token_ticket_proto protoreflect.FileDescriptor
 
 const file_token_ticket_proto_rawDesc = "" +
 	"\n" +
-	"\x12token/ticket.proto\x12\x05token\x1a\x1cgoogle/protobuf/struct.proto\"\x89\x01\n" +
+	"\x12token/ticket.proto\x12\x05token\x1a\x1cgoogle/protobuf/struct.proto\x1a\x11token/login.proto\"\xa7\x01\n" +
 	"\rTicketPayload\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12!\n" +
 	"\fprovider_key\x18\x02 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05scene\x18\x03 \x01(\tR\x05scene\x12\x10\n" +
 	"\x03iat\x18\x04 \x01(\x03R\x03iat\x12\x10\n" +
-	"\x03exp\x18\x05 \x01(\x03R\x03exp\"\xe4\x02\n" +
+	"\x03exp\x18\x05 \x01(\x03R\x03exp\x12\x1c\n" +
+	"\x03sso\x18\x06 \x01(\v2\n" +
+	".token.SsoR\x03sso\"\xe4\x02\n" +
 	"\fTicketResult\x12\f\n" +
 	"\x01v\x18\x01 \x01(\x03R\x01v\x12\x14\n" +
 	"\x05scene\x18\x02 \x01(\tR\x05scene\x12\x16\n" +
@@ -435,17 +448,19 @@ var file_token_ticket_proto_goTypes = []any{
 	(*TicketResult)(nil),       // 1: token.TicketResult
 	(*LoginResult)(nil),        // 2: token.LoginResult
 	(*ThirdpartyIdentity)(nil), // 3: token.ThirdpartyIdentity
-	(*structpb.Struct)(nil),    // 4: google.protobuf.Struct
+	(*Sso)(nil),                // 4: token.Sso
+	(*structpb.Struct)(nil),    // 5: google.protobuf.Struct
 }
 var file_token_ticket_proto_depIdxs = []int32{
-	2, // 0: token.TicketResult.login_result:type_name -> token.LoginResult
-	3, // 1: token.TicketResult.thirdparty_identity:type_name -> token.ThirdpartyIdentity
-	4, // 2: token.ThirdpartyIdentity.raw:type_name -> google.protobuf.Struct
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: token.TicketPayload.sso:type_name -> token.Sso
+	2, // 1: token.TicketResult.login_result:type_name -> token.LoginResult
+	3, // 2: token.TicketResult.thirdparty_identity:type_name -> token.ThirdpartyIdentity
+	5, // 3: token.ThirdpartyIdentity.raw:type_name -> google.protobuf.Struct
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_token_ticket_proto_init() }
@@ -453,6 +468,7 @@ func file_token_ticket_proto_init() {
 	if File_token_ticket_proto != nil {
 		return
 	}
+	file_token_login_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

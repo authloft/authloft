@@ -19,6 +19,11 @@ message AuthorizeRequest {
   // 否则 401 unauthenticated）（§2.7.2；§1.5）；
   // 跨版本可新增，用 string 承载（§12.9）。
   string scene = 2;
+  // 非必填：SSO 应用标识，登录页从 `__AUTHLOFT_INIT__.sso.clientId` 取得（§2.1）；
+  // 三方链路应用上下文的唯一入口——服务端装入 al_login_state Cookie 随链路传递
+  //（§2.7.2），LoginOauth 从 Cookie 解出（§2.7.4）；scene=bind 不携带
+  //（绑定流程不读应用配置，§2.7.2）。
+  string sso_client_id = 3;
 }
 
 // AuthorizeResponse 是 SsoService/Authorize 的响应

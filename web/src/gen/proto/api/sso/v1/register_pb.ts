@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/register.proto.
  */
 export const file_api_sso_v1_register: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIsYBCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKB2NhcHRjaGEYBiABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkImEKD1JlZ2lzdGVyUGF5bG9hZBINCgVlbWFpbBgBIAEoCRINCgVwaG9uZRgCIAEoCRIMCgRjb2RlGAMgASgJEhAKCHVzZXJuYW1lGAQgASgJEhAKCHBhc3N3b3JkGAUgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct, file_api_sso_v1_login]);
+  fileDesc("ChlhcGkvc3NvL3YxL3JlZ2lzdGVyLnByb3RvEgphcGkuc3NvLnYxIt0BCg9SZWdpc3RlclJlcXVlc3QSEwoLbG9naW5fdG9rZW4YASABKAkSDgoGbWV0aG9kGAIgASgJEgwKBHN0ZXAYAyABKAkSLAoHcGF5bG9hZBgEIAEoCzIbLmFwaS5zc28udjEuUmVnaXN0ZXJQYXlsb2FkEiUKBG9pZGMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKB2NhcHRjaGEYBiABKAsyGi5hcGkuc3NvLnYxLkNhcHRjaGFQYXlsb2FkEhUKDXNzb19jbGllbnRfaWQYByABKAkiYQoPUmVnaXN0ZXJQYXlsb2FkEg0KBWVtYWlsGAEgASgJEg0KBXBob25lGAIgASgJEgwKBGNvZGUYAyABKAkSEAoIdXNlcm5hbWUYBCABKAkSEAoIcGFzc3dvcmQYBSABKAlCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct, file_api_sso_v1_login]);
 
 /**
  * RegisterRequest 是 SsoService/Register 的请求消息
@@ -72,6 +72,15 @@ export type RegisterRequest = Message<"api.sso.v1.RegisterRequest"> & {
    * @generated from field: api.sso.v1.CaptchaPayload captcha = 6;
    */
   captcha?: CaptchaPayload | undefined;
+
+  /**
+   * SSO 应用标识（§2.2，随「与 2.2 同构」引入，§2.3）：仅首次请求（尚无
+   * login_token）时回传并按首签口径装载应用快照，续步忽略；注册方式选项
+   * 不读应用级配置（镜像全局口径，§2.3）。
+   *
+   * @generated from field: string sso_client_id = 7;
+   */
+  ssoClientId: string;
 };
 
 /**

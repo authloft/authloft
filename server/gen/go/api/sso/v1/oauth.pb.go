@@ -34,7 +34,12 @@ type AuthorizeRequest struct {
 	// 非必填：login（默认）｜bind（已登录用户从安全中心发起绑定，需 al_session，
 	// 否则 401 unauthenticated）（§2.7.2；§1.5）；
 	// 跨版本可新增，用 string 承载（§12.9）。
-	Scene         string `protobuf:"bytes,2,opt,name=scene,proto3" json:"scene,omitempty"`
+	Scene string `protobuf:"bytes,2,opt,name=scene,proto3" json:"scene,omitempty"`
+	// 非必填：SSO 应用标识，登录页从 `__AUTHLOFT_INIT__.sso.clientId` 取得（§2.1）；
+	// 三方链路应用上下文的唯一入口——服务端装入 al_login_state Cookie 随链路传递
+	// （§2.7.2），LoginOauth 从 Cookie 解出（§2.7.4）；scene=bind 不携带
+	// （绑定流程不读应用配置，§2.7.2）。
+	SsoClientId   string `protobuf:"bytes,3,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -79,6 +84,13 @@ func (x *AuthorizeRequest) GetProvider() string {
 func (x *AuthorizeRequest) GetScene() string {
 	if x != nil {
 		return x.Scene
+	}
+	return ""
+}
+
+func (x *AuthorizeRequest) GetSsoClientId() string {
+	if x != nil {
+		return x.SsoClientId
 	}
 	return ""
 }
@@ -246,10 +258,11 @@ var File_api_sso_v1_oauth_proto protoreflect.FileDescriptor
 const file_api_sso_v1_oauth_proto_rawDesc = "" +
 	"\n" +
 	"\x16api/sso/v1/oauth.proto\x12\n" +
-	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"D\n" +
+	"api.sso.v1\x1a\x1cgoogle/protobuf/struct.proto\"h\n" +
 	"\x10AuthorizeRequest\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
-	"\x05scene\x18\x02 \x01(\tR\x05scene\"8\n" +
+	"\x05scene\x18\x02 \x01(\tR\x05scene\x12\"\n" +
+	"\rsso_client_id\x18\x03 \x01(\tR\vssoClientId\"8\n" +
 	"\x11AuthorizeResponse\x12#\n" +
 	"\rauthorize_url\x18\x01 \x01(\tR\fauthorizeUrl\"\xe1\x01\n" +
 	"\x11LoginOauthRequest\x12!\n" +
