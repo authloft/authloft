@@ -28,30 +28,33 @@ const (
 	StorageTypeLocal     = "local"
 )
 
-// serviceMetas 服务型类型静态表。Fields 是该类型消费的 Ext 字段声明，管理后台
-// 表单按此渲染（接口文档 §5.3）：captcha 三家统一用 client_id 作 site_key、
-// client_secret 作密钥、endpoint 作自定义校验地址（captcha.ProviderSource 的
-// 投影口径）；local 用 bucket 作本地目录、domain 作公开域名、path_prefix 作 key
-// 前缀（storage.NewLocal 的必填口径）。proxy_url 是通用 Ext 基线，由 dto 按
-// category/type 裁剪统一下发，不在各类型 Fields 内重复声明。
+// serviceMetas 服务型类型静态表。Schema 是 /schema 的完整声明形态（表列 + Ext，
+// 接口文档 §5.3）：captcha 三家统一用 client_id 作 site_key、client_secret 作
+// 密钥、endpoint 作自定义校验地址（captcha.ProviderSource 的投影口径），且类别
+// 呈现 proxy_url；local 用 bucket 作本地目录、domain 作公开域名、path_prefix 作
+// key 前缀（storage.NewLocal 的必填口径），仅本地磁盘无网络外呼、不声明
+// proxy_url。Fields 为迁移期数据源（仅 Ext 声明），消费方翻转前二者并存。
 var serviceMetas = map[string]TypeMeta{
 	CaptchaTypeTurnstile: {
 		Type:        CaptchaTypeTurnstile,
 		DisplayName: "Cloudflare Turnstile",
 		Category:    CategoryCaptcha,
 		Fields:      captchaFields(),
+		Schema:      captchaSchema,
 	},
 	CaptchaTypeRecaptcha: {
 		Type:        CaptchaTypeRecaptcha,
 		DisplayName: "Google reCAPTCHA",
 		Category:    CategoryCaptcha,
 		Fields:      captchaFields(),
+		Schema:      captchaSchema,
 	},
 	CaptchaTypeHcaptcha: {
 		Type:        CaptchaTypeHcaptcha,
 		DisplayName: "hCaptcha",
 		Category:    CategoryCaptcha,
 		Fields:      captchaFields(),
+		Schema:      captchaSchema,
 	},
 	StorageTypeLocal: {
 		Type:        StorageTypeLocal,
@@ -62,6 +65,7 @@ var serviceMetas = map[string]TypeMeta{
 			{Key: "domain", Label: "admin.schemaField.storageDomainLabel", Type: "text", Section: "endpoint", Required: true},
 			{Key: "path_prefix", Label: "admin.schemaField.storagePathPrefixLabel", Type: "text", Section: "endpoint", Advanced: true},
 		},
+		Schema: storageLocalSchema,
 	},
 }
 
@@ -73,4 +77,57 @@ func captchaFields() []FieldMeta {
 		{Key: "client_secret", Label: "admin.schemaField.captchaSecretLabel", Type: "secret", Section: "credential", Required: true},
 		{Key: "endpoint", Label: "admin.schemaField.captchaEndpointLabel", Type: "text", Section: "endpoint", Advanced: true},
 	}
+}
+
+// captchaSchema 三家 captcha 共用的完整字段声明（表列 + Ext + proxy_url，接口
+// 文档 §5.3），每次调用返回新切片。Ext 复用 captchaFields 单一来源并补 Storage
+// 落点，防两份声明漂移；is_enabled 单独声明——登录 / 建号 / 自动绑定开关是
+// oauth 专属，captcha 类别不下发。
+func captchaSchema() []FieldMeta {
+	fields := make([]FieldMeta, 0, 11)
+	fields = append(fields,
+		FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
+			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: StorageColumn},
+		FieldMeta{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: "basic", Required: true, Storage: StorageColumn},
+	)
+	ext := captchaFields()
+	for i := range ext {
+		ext[i].Storage = StorageExt
+	}
+	fields = append(fields, ext...)
+	fields = append(fields,
+		FieldMeta{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: "display",
+			Pattern: "^https?://", Help: "admin.schemaField.iconUrlHelp", Storage: StorageColumn},
+		FieldMeta{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
+			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: StorageColumn},
+		FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: StorageColumn},
+		FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: StorageColumn},
+		FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: StorageColumn},
+		FieldMeta{Key: "proxy_url", Label: "admin.schemaField.proxyUrlLabel", Type: "text", Section: "endpoint", Advanced: true,
+			Help: "admin.schemaField.proxyUrlHelp", Storage: StorageExt},
+	)
+	return fields
+}
+
+// storageLocalSchema storage/local 的完整字段声明（表列 + Ext，接口文档 §5.3）。
+// local 仅本地磁盘、无网络外呼，与 union 同样不声明 proxy_url（§5.3 类别裁剪）；
+// oauth 专属的登录建号开关亦不出现。
+func storageLocalSchema() []FieldMeta {
+	fields := make([]FieldMeta, 0, 10)
+	fields = append(fields,
+		FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
+			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: StorageColumn},
+		FieldMeta{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: "basic", Required: true, Storage: StorageColumn},
+		FieldMeta{Key: "bucket", Label: "admin.schemaField.storageBucketLabel", Type: "text", Section: "endpoint", Required: true, Storage: StorageExt},
+		FieldMeta{Key: "domain", Label: "admin.schemaField.storageDomainLabel", Type: "text", Section: "endpoint", Required: true, Storage: StorageExt},
+		FieldMeta{Key: "path_prefix", Label: "admin.schemaField.storagePathPrefixLabel", Type: "text", Section: "endpoint", Advanced: true, Storage: StorageExt},
+		FieldMeta{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: "display",
+			Pattern: "^https?://", Help: "admin.schemaField.iconUrlHelp", Storage: StorageColumn},
+		FieldMeta{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
+			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: StorageColumn},
+		FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: StorageColumn},
+		FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: StorageColumn},
+		FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: StorageColumn},
+	)
+	return fields
 }

@@ -10,7 +10,8 @@ import (
 )
 
 // TestLookupTypeMetaUnion 第三源：LookupTypeMeta 命中虚拟 Union meta，
-// 类别为 union、无 Ext 字段；两张带 factory 的注册表都查不到它。
+// 类别为 union、Fields（迁移期 Ext 数据源）为空而 Schema 为完整表列声明；
+// 两张带 factory 的注册表都查不到它。
 func TestLookupTypeMetaUnion(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta(provider.UnionProviderType)
 	if !ok {
@@ -19,6 +20,31 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 	if meta.Type != provider.UnionProviderType || meta.Category != provider.CategoryUnion ||
 		meta.DisplayName == "" || len(meta.Fields) != 0 {
 		t.Errorf("union meta = %+v", meta)
+	}
+	schema := meta.Schema()
+	if len(schema) == 0 {
+		t.Fatal("union meta.Schema() 为空，应为完整表列声明")
+	}
+	want := map[string]bool{
+		"provider_key": true, "display_name": true, "icon_url": true,
+		"ui_group": true, "sort_order": true, "remark": true,
+	}
+	// union_provider / 登录建号开关 / is_enabled / proxy_url 在 union 类别整体裁剪。
+	banned := map[string]bool{
+		"union_provider": true, "enable_signin": true, "enable_signup": true,
+		"auto_bind": true, "auto_bind_fields": true, "is_enabled": true, "proxy_url": true,
+	}
+	for _, f := range schema {
+		if banned[f.Key] {
+			t.Errorf("union Schema() 不应含字段 %q", f.Key)
+			continue
+		}
+		if !want[f.Key] {
+			t.Errorf("union Schema() 出现意外字段 %q", f.Key)
+		}
+		if (f.Key == "provider_key" || f.Key == "display_name") && f.Storage != provider.StorageColumn {
+			t.Errorf("union %q Storage = %q, want column", f.Key, f.Storage)
+		}
 	}
 	if _, ok := provider.Lookup(provider.UnionProviderType); ok {
 		t.Error("unionid 不应进 oauth 适配器注册表")

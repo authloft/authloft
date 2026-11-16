@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/schemafield"
 	"authloft/internal/proxyclient"
 )
 
@@ -64,6 +65,22 @@ func init() {
 			{Key: "intranet_endpoint", Label: "admin.schemaField.aliyunIntranetEndpointLabel", Type: "text", Section: "endpoint", Advanced: true},
 			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
 				Help: "admin.schemaField.aliyunMetadataHelp"},
+		},
+		// Schema 是 /schema 的完整声明形态（表列 + Ext，接口文档 §5.3），属性
+		// 与 wire 输出逐字段一致；Fields 为迁移期数据源，消费方翻转前二者并存。
+		Schema: func() []provider.FieldMeta {
+			fields := make([]provider.FieldMeta, 0, 14)
+			fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
+			fields = append(fields, schemafield.SMSFields()...)
+			fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
+			// sms 类别只下发 is_enabled：登录 / 建号 / 自动绑定开关是 oauth 专属。
+			for _, f := range schemafield.EnableFlags() {
+				if f.Key == "is_enabled" {
+					fields = append(fields, f)
+				}
+			}
+			fields = append(fields, schemafield.ProxyURL())
+			return fields
 		},
 	}, newSender)
 }

@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/schemafield"
 	"authloft/internal/proxyclient"
 )
 
@@ -70,7 +71,36 @@ func init() {
 			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
 				Help: "admin.schemaField.smtpMetadataHelp"},
 		},
+		Schema: smtpSchema,
 	}, newSender)
+}
+
+// smtpSchema /schema 完整字段声明（表列 + Ext，接口文档 §5.3），属性与 wire
+// 输出逐字段一致；Ext 部分就地声明而非复用 schemafield.Metadata——metadata 的
+// Help 是 SMTP 专属语义（认证凭证 + 按模板键覆盖标题 / 正文）。Fields 为迁移
+// 期数据源，消费方翻转前二者并存。
+func smtpSchema() []provider.FieldMeta {
+	fields := make([]provider.FieldMeta, 0, 13)
+	fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
+	fields = append(fields,
+		provider.FieldMeta{Key: "host", Label: "admin.schemaField.smtpHostLabel", Type: "text", Section: "endpoint", Required: true, Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "port", Label: "admin.schemaField.smtpPortLabel", Type: "number", Section: "endpoint", Default: "587",
+			Help: "admin.schemaField.smtpPortHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "from", Label: "admin.schemaField.smtpFromLabel", Type: "text", Section: "basic", Required: true, Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "disable_ssl", Label: "admin.schemaField.smtpDisableSslLabel", Type: "checkbox", Section: "policy",
+			Help: "admin.schemaField.smtpDisableSslHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
+			Help: "admin.schemaField.smtpMetadataHelp", Storage: provider.StorageExt},
+	)
+	fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
+	// email 类别只下发 is_enabled：登录 / 建号 / 自动绑定开关是 oauth 专属。
+	for _, f := range schemafield.EnableFlags() {
+		if f.Key == "is_enabled" {
+			fields = append(fields, f)
+		}
+	}
+	fields = append(fields, schemafield.ProxyURL())
+	return fields
 }
 
 // Sender SMTP 客户端（装配期固化连接参数与凭证，运行期只发信）。

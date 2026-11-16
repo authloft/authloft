@@ -274,8 +274,12 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 	if meta.Category != provider.CategoryEmail {
 		t.Fatalf("category = %q, want email", meta.Category)
 	}
-	var hasHost, hasPort, hasMetadata bool
-	for _, f := range meta.Fields {
+	schema := meta.Schema()
+	if len(schema) == 0 {
+		t.Fatal("meta.Schema() must declare full field schema for /schema")
+	}
+	var hasHost, hasPort, hasMetadata, hasIsEnabled, hasProxyURL bool
+	for _, f := range schema {
 		switch f.Key {
 		case "host":
 			hasHost = f.Section == "endpoint" && f.Required
@@ -283,10 +287,31 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 			hasPort = f.Section == "endpoint"
 		case "metadata":
 			hasMetadata = f.Section == "credential"
+		case "is_enabled":
+			hasIsEnabled = true
+		case "proxy_url":
+			hasProxyURL = true
 		}
 	}
 	if !hasHost || !hasPort || !hasMetadata {
-		t.Fatalf("meta.Fields incomplete for /schema: host=%v port=%v metadata=%v", hasHost, hasPort, hasMetadata)
+		t.Fatalf("meta.Schema() Ext fields incomplete: host=%v port=%v metadata=%v", hasHost, hasPort, hasMetadata)
+	}
+	if !hasIsEnabled || !hasProxyURL {
+		t.Fatalf("meta.Schema() missing is_enabled=%v / proxy_url=%v", hasIsEnabled, hasProxyURL)
+	}
+	// union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，email 类别不下发。
+	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+		for _, f := range schema {
+			if f.Key == key {
+				t.Errorf("meta.Schema() must not contain oauth-only key %q", key)
+			}
+		}
+	}
+	// 每次调用返回独立切片，调用方改动不得污染后续调用。
+	mutated := meta.Schema()
+	mutated[0].Key = "mutated"
+	if meta.Schema()[0].Key == "mutated" {
+		t.Error("meta.Schema() returns a shared slice")
 	}
 }
 

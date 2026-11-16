@@ -37,13 +37,33 @@ type TypeMeta struct {
 	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
 }
 
-// virtualMetas 虚拟类型表（当前仅 Union ID 归并；Fields 为空 = 无 Ext 字段，
-// 表单只有通用表列基线）。
+// unionSchema 虚拟 Union 类型的完整字段声明（接口文档 §5.3）：仅通用表列基线，
+// 无任何 Ext 字段。union_provider / 登录建号开关 / is_enabled / proxy_url 在
+// union 类别被列集与代理裁剪规则整体排除（虚拟类型无 adapter / sender、无启用
+// 行为、无网络外呼），故不在此声明。每次调用返回新切片，调用方改动互不污染。
+func unionSchema() []FieldMeta {
+	return []FieldMeta{
+		{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
+			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: StorageColumn},
+		{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: "basic", Required: true, Storage: StorageColumn},
+		{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: "display",
+			Pattern: "^https?://", Help: "admin.schemaField.iconUrlHelp", Storage: StorageColumn},
+		{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
+			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: StorageColumn},
+		{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: StorageColumn},
+		{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: StorageColumn},
+	}
+}
+
+// virtualMetas 虚拟类型表（当前仅 Union ID 归并）：Schema 是 /schema 的完整
+// 声明形态（见接口文档 §5.3 union 裁剪口径），Fields 为迁移期数据源——虚拟
+// 类型无 Ext 字段、恒为空，消费方翻转前二者并存。
 var virtualMetas = map[string]TypeMeta{
 	UnionProviderType: {
 		Type:        UnionProviderType,
 		DisplayName: "Union ID 归并（虚拟）",
 		Category:    CategoryUnion,
+		Schema:      unionSchema,
 	},
 }
 

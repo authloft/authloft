@@ -264,8 +264,8 @@ func TestBuildNilExt(t *testing.T) {
 	}
 }
 
-// TestInitRegistersAsSMSVendor init() 已按 §15.3 注册（category=sms，meta
-// 声明 Ext 字段口径供 /schema 渲染）。
+// TestInitRegistersAsSMSVendor init() 已按 §15.3 注册（category=sms，Schema
+// 声明完整字段口径供 /schema 渲染）。
 func TestInitRegistersAsSMSVendor(t *testing.T) {
 	meta, ok := provider.LookupSenderMeta(Type)
 	if !ok {
@@ -274,17 +274,43 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 	if meta.Category != provider.CategorySMS {
 		t.Fatalf("category = %q, want sms", meta.Category)
 	}
-	if len(meta.Fields) == 0 {
-		t.Fatal("meta.Fields must declare Ext field schema for /schema")
+	schema := meta.Schema()
+	if len(schema) == 0 {
+		t.Fatal("meta.Schema() must declare full field schema for /schema")
 	}
 	var hasTemplateCode bool
-	for _, f := range meta.Fields {
+	for _, f := range schema {
 		if f.Key == "template_code" && f.Section == "credential" {
 			hasTemplateCode = true
 		}
 	}
 	if !hasTemplateCode {
-		t.Fatal("meta.Fields must include template_code (credential)")
+		t.Fatal("meta.Schema() must include template_code (credential)")
+	}
+	for _, key := range []string{"provider_key", "display_name", "is_enabled", "proxy_url"} {
+		found := false
+		for _, f := range schema {
+			if f.Key == key {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("meta.Schema() missing %q", key)
+		}
+	}
+	// union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，sms 类别不下发。
+	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+		for _, f := range schema {
+			if f.Key == key {
+				t.Errorf("meta.Schema() must not contain oauth-only key %q", key)
+			}
+		}
+	}
+	// 每次调用返回独立切片，调用方改动不得污染后续调用。
+	mutated := meta.Schema()
+	mutated[0].Key = "mutated"
+	if meta.Schema()[0].Key == "mutated" {
+		t.Error("meta.Schema() returns a shared slice")
 	}
 }
 
