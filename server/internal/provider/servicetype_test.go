@@ -1,6 +1,6 @@
 // 服务型 Provider 静态 meta 单测：captcha / storage 类型并入 LookupTypeMeta
-// 与 TypeMetas（admin 下拉 / schema / 写路径数据源），category 与 Ext 字段声明
-// 正确；它们不进两张带 factory 的注册表，NewAdapter / NewSender 仍查不到。
+// 与 TypeMetas（admin 下拉 / schema / 写路径数据源），category 与 Schema 字段
+// 声明正确；它们不进两张带 factory 的注册表，NewAdapter / NewSender 仍查不到。
 package provider_test
 
 import (
@@ -26,7 +26,7 @@ func TestServiceTypeConstantsMatchRuntime(t *testing.T) {
 }
 
 // TestLookupTypeMetaServiceTypes 第四源：三家 captcha 与 storage/local 命中，
-// category 正确、Ext 字段已声明；两张 factory 注册表均查不到。
+// category 正确、Ext 字段经 Schema() 完整声明；两张 factory 注册表均查不到。
 func TestLookupTypeMetaServiceTypes(t *testing.T) {
 	for _, tc := range []struct {
 		typ         string
@@ -47,18 +47,6 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		}
 		if meta.Type != tc.typ || meta.Category != tc.category || meta.DisplayName != tc.displayName {
 			t.Errorf("%q meta = %+v", tc.typ, meta)
-		}
-		keys := map[string]bool{}
-		for _, f := range meta.Fields {
-			keys[f.Key] = true
-			if f.Label == "" || f.Type == "" || f.Section == "" {
-				t.Errorf("%q 字段 %q label/type/section 不完整: %+v", tc.typ, f.Key, f)
-			}
-		}
-		for _, k := range tc.fieldKeys {
-			if !keys[k] {
-				t.Errorf("%q 缺少 Ext 字段 %q: %+v", tc.typ, k, meta.Fields)
-			}
 		}
 		// Schema = 完整声明形态：基础两列 + Ext + display 四项 + is_enabled，
 		// proxy_url 按 type 有无；oauth 专属键在两类别均不下发。

@@ -33,7 +33,7 @@ func wantProviderRow() *model.Provider {
 	}
 }
 
-// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，未迁移类型为 nil）。
+// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，nil = 无声明）。
 func schemaFieldsOf(schema func() []provider.FieldMeta) []provider.FieldMeta {
 	if schema == nil {
 		return nil

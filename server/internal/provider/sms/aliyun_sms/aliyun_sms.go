@@ -57,17 +57,8 @@ func init() {
 		Type:        Type,
 		DisplayName: "阿里云短信",
 		Category:    provider.CategorySMS,
-		Fields: []provider.FieldMeta{
-			{Key: "client_id", Label: "admin.schemaField.aliyunAccessKeyIdLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "client_secret", Label: "admin.schemaField.aliyunAccessKeySecretLabel", Type: "secret", Section: "credential", Required: true},
-			{Key: "sign_name", Label: "admin.schemaField.aliyunSignNameLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "template_code", Label: "admin.schemaField.aliyunTemplateCodeLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "intranet_endpoint", Label: "admin.schemaField.aliyunIntranetEndpointLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
-				Help: "admin.schemaField.aliyunMetadataHelp"},
-		},
-		// Schema 是 /schema 的完整声明形态（表列 + Ext，接口文档 §5.3），属性
-		// 与 wire 输出逐字段一致；Fields 为迁移期数据源，消费方翻转前二者并存。
+		// Schema 是 /schema 的唯一数据源（表列 + Ext，接口文档 §5.3），属性
+		// 与 wire 输出逐字段一致。
 		Schema: func() []provider.FieldMeta {
 			fields := make([]provider.FieldMeta, 0, 14)
 			fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())

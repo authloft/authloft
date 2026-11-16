@@ -10,7 +10,7 @@ import (
 )
 
 // TestLookupTypeMetaUnion 第三源：LookupTypeMeta 命中虚拟 Union meta，
-// 类别为 union、Fields（迁移期 Ext 数据源）为空而 Schema 为完整表列声明；
+// 类别为 union、Schema 为完整表列声明（虚拟类型无 Ext 字段）；
 // 两张带 factory 的注册表都查不到它。
 func TestLookupTypeMetaUnion(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta(provider.UnionProviderType)
@@ -18,7 +18,7 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 		t.Fatalf("LookupTypeMeta(%q) 未命中", provider.UnionProviderType)
 	}
 	if meta.Type != provider.UnionProviderType || meta.Category != provider.CategoryUnion ||
-		meta.DisplayName == "" || len(meta.Fields) != 0 {
+		meta.DisplayName == "" {
 		t.Errorf("union meta = %+v", meta)
 	}
 	schema := meta.Schema()

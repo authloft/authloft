@@ -337,8 +337,8 @@ func TestDiscoverOIDC(t *testing.T) {
 	}
 }
 
-// TestNewMetaBaseline oauth 基线：Fields 仍仅含 11 Ext 字段（§5.3 行 1257
-// oauth 追加 + 行 1261 metadata，dto 过渡期消费），Schema 声明完整清单
+// TestNewMetaBaseline oauth 基线：Fields 含 11 个 Ext 字段（§5.3 oauth 追加
+// 字段 + metadata，渠道包构造与就地改写的输入），Schema 声明完整清单
 // basic(3)+ext(11)+display(4)+policy(5)+proxy_url(1)=24，顺序对齐 wire。
 func TestNewMetaBaseline(t *testing.T) {
 	m := NewMeta("test_oauth", "测试", provider.ChannelRedirect)

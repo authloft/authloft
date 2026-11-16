@@ -61,24 +61,13 @@ func init() {
 		Type:        Type,
 		DisplayName: "SMTP（通用）",
 		Category:    provider.CategoryEmail,
-		Fields: []provider.FieldMeta{
-			{Key: "host", Label: "admin.schemaField.smtpHostLabel", Type: "text", Section: "endpoint", Required: true},
-			{Key: "port", Label: "admin.schemaField.smtpPortLabel", Type: "number", Section: "endpoint", Default: "587",
-				Help: "admin.schemaField.smtpPortHelp"},
-			{Key: "from", Label: "admin.schemaField.smtpFromLabel", Type: "text", Section: "basic", Required: true},
-			{Key: "disable_ssl", Label: "admin.schemaField.smtpDisableSslLabel", Type: "checkbox", Section: "policy",
-				Help: "admin.schemaField.smtpDisableSslHelp"},
-			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
-				Help: "admin.schemaField.smtpMetadataHelp"},
-		},
-		Schema: smtpSchema,
+		Schema:      smtpSchema,
 	}, newSender)
 }
 
-// smtpSchema /schema 完整字段声明（表列 + Ext，接口文档 §5.3），属性与 wire
-// 输出逐字段一致；Ext 部分就地声明而非复用 schemafield.Metadata——metadata 的
-// Help 是 SMTP 专属语义（认证凭证 + 按模板键覆盖标题 / 正文）。Fields 为迁移
-// 期数据源，消费方翻转前二者并存。
+// smtpSchema /schema 唯一数据源：完整字段声明（表列 + Ext，接口文档 §5.3），
+// 属性与 wire 输出逐字段一致；Ext 部分就地声明而非复用 schemafield.Metadata——
+// metadata 的 Help 是 SMTP 专属语义（认证凭证 + 按模板键覆盖标题 / 正文）。
 func smtpSchema() []provider.FieldMeta {
 	fields := make([]provider.FieldMeta, 0, 13)
 	fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())

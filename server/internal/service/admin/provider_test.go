@@ -29,7 +29,7 @@ import (
 	_ "authloft/internal/provider/sms/aliyun_sms"
 )
 
-// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，未迁移类型为 nil）。
+// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，nil = 无声明）。
 func schemaFieldsOf(schema func() []provider.FieldMeta) []provider.FieldMeta {
 	if schema == nil {
 		return nil
@@ -62,7 +62,6 @@ func (f *fakeSender) Send(_ context.Context, to, tpl string, params map[string]s
 func init() {
 	provider.RegisterSender(testAdminSenderType, provider.SenderMeta{
 		Type: testAdminSenderType, DisplayName: "测试厂商", Category: provider.CategoryEmail,
-		Fields: []provider.FieldMeta{{Key: "host", Label: "服务器", Type: "text", Section: "endpoint", Required: true}},
 	}, func(*provider.Provider) (provider.Sender, error) { return testAdminSender, nil })
 }
 

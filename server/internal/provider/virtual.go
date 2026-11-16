@@ -33,8 +33,7 @@ type TypeMeta struct {
 	Type        string
 	DisplayName string
 	Category    string
-	Fields      []FieldMeta
-	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
+	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 无声明
 }
 
 // unionSchema 虚拟 Union 类型的完整字段声明（接口文档 §5.3）：仅通用表列基线，
@@ -55,9 +54,8 @@ func unionSchema() []FieldMeta {
 	}
 }
 
-// virtualMetas 虚拟类型表（当前仅 Union ID 归并）：Schema 是 /schema 的完整
-// 声明形态（见接口文档 §5.3 union 裁剪口径），Fields 为迁移期数据源——虚拟
-// 类型无 Ext 字段、恒为空，消费方翻转前二者并存。
+// virtualMetas 虚拟类型表（当前仅 Union ID 归并）：Schema 是 /schema 的唯一
+// 数据源（见接口文档 §5.3 union 裁剪口径——虚拟类型无 Ext 字段，仅表列基线）。
 var virtualMetas = map[string]TypeMeta{
 	UnionProviderType: {
 		Type:        UnionProviderType,
@@ -75,13 +73,13 @@ func LookupTypeMeta(providerType string) (TypeMeta, bool) {
 	if meta, ok := Lookup(providerType); ok {
 		return TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
+			Category: meta.Category, Schema: meta.Schema,
 		}, true
 	}
 	if meta, ok := LookupSenderMeta(providerType); ok {
 		return TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
+			Category: meta.Category, Schema: meta.Schema,
 		}, true
 	}
 	if meta, ok := virtualMetas[providerType]; ok {
@@ -99,14 +97,14 @@ func TypeMetas() []TypeMeta {
 		if meta, ok := Lookup(t); ok {
 			out = append(out, TypeMeta{
 				Type: meta.Type, DisplayName: meta.DisplayName,
-				Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
+				Category: meta.Category, Schema: meta.Schema,
 			})
 		}
 	}
 	for _, meta := range SenderTypes() {
 		out = append(out, TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
+			Category: meta.Category, Schema: meta.Schema,
 		})
 	}
 	for _, meta := range virtualMetas {

@@ -72,13 +72,12 @@ type FieldMeta struct {
 }
 
 // SenderMeta 消息域渠道元信息（§15.3：meta 同时是管理后台 /schema 的数据源，
-// Fields 声明该厂商消费的 Ext 字段，admin 表单按 schema 渲染，不硬编码）。
+// admin 表单按 Schema 渲染，不硬编码）。
 type SenderMeta struct {
 	Type        string
 	DisplayName string
-	Category    string // CategorySMS / CategoryEmail
-	Fields      []FieldMeta
-	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
+	Category    string             // CategorySMS / CategoryEmail
+	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 无声明
 }
 
 var senderRegistry = struct {

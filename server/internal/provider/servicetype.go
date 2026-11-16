@@ -28,49 +28,42 @@ const (
 	StorageTypeLocal     = "local"
 )
 
-// serviceMetas 服务型类型静态表。Schema 是 /schema 的完整声明形态（表列 + Ext，
+// serviceMetas 服务型类型静态表。Schema 是 /schema 的唯一数据源（表列 + Ext，
 // 接口文档 §5.3）：captcha 三家统一用 client_id 作 site_key、client_secret 作
 // 密钥、endpoint 作自定义校验地址（captcha.ProviderSource 的投影口径），且类别
 // 呈现 proxy_url；local 用 bucket 作本地目录、domain 作公开域名、path_prefix 作
 // key 前缀（storage.NewLocal 的必填口径），仅本地磁盘无网络外呼、不声明
-// proxy_url。Fields 为迁移期数据源（仅 Ext 声明），消费方翻转前二者并存。
+// proxy_url。
 var serviceMetas = map[string]TypeMeta{
 	CaptchaTypeTurnstile: {
 		Type:        CaptchaTypeTurnstile,
 		DisplayName: "Cloudflare Turnstile",
 		Category:    CategoryCaptcha,
-		Fields:      captchaFields(),
 		Schema:      captchaSchema,
 	},
 	CaptchaTypeRecaptcha: {
 		Type:        CaptchaTypeRecaptcha,
 		DisplayName: "Google reCAPTCHA",
 		Category:    CategoryCaptcha,
-		Fields:      captchaFields(),
 		Schema:      captchaSchema,
 	},
 	CaptchaTypeHcaptcha: {
 		Type:        CaptchaTypeHcaptcha,
 		DisplayName: "hCaptcha",
 		Category:    CategoryCaptcha,
-		Fields:      captchaFields(),
 		Schema:      captchaSchema,
 	},
 	StorageTypeLocal: {
 		Type:        StorageTypeLocal,
 		DisplayName: "本地存储（local）",
 		Category:    CategoryStorage,
-		Fields: []FieldMeta{
-			{Key: "bucket", Label: "admin.schemaField.storageBucketLabel", Type: "text", Section: "endpoint", Required: true},
-			{Key: "domain", Label: "admin.schemaField.storageDomainLabel", Type: "text", Section: "endpoint", Required: true},
-			{Key: "path_prefix", Label: "admin.schemaField.storagePathPrefixLabel", Type: "text", Section: "endpoint", Advanced: true},
-		},
-		Schema: storageLocalSchema,
+		Schema:      storageLocalSchema,
 	},
 }
 
-// captchaFields 三家 captcha 共用的 Ext 字段声明（site_key / secret / 自定义
-// 校验地址），每家返回独立切片避免调用方改动污染其他条目。
+// captchaFields 三家 captcha Ext 字段的单一来源（site_key / secret / 自定义
+// 校验地址），供 captchaSchema 组装完整声明；每次返回独立切片，调用方补
+// Storage 落点不会污染其他调用。
 func captchaFields() []FieldMeta {
 	return []FieldMeta{
 		{Key: "client_id", Label: "admin.schemaField.captchaSiteKeyLabel", Type: "text", Section: "credential", Required: true},

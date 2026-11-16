@@ -111,8 +111,9 @@ func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 // oauth 基线 10 字段 + 行 1261 metadata（与 wechat_mp / wechat_mp_scan
 // 同款基线，label / type / section 逐字一致）。渠道包可在
 // 返回值上就地改 Label / Required / Help（如 alipay 语义化凭证标签、
-// 通用兜底把端点置必填）后再 Register。Fields 仍仅含 Ext（dto 过渡期
-// 消费），Schema 同步声明完整清单，供后续任务翻转消费方。
+// 通用兜底把端点置必填）后再 Register；就地改写与 Schema 闭包共享同一
+// 底层数组，故 Label 调整天然同步。Fields 是渠道包构造与就地改写的输入，
+// 管理后台消费的完整声明以 Schema 为准。
 func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Meta {
 	// Label / Help 均为前端 i18n 键（provider.FieldMeta 契约），不写下发文案。
 	// 复用 schemafield 基线：属性与此处原有 11 个字面量逐字一致，且每项自带
