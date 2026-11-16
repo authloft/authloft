@@ -54,6 +54,9 @@ importers:
       '@modern-js/tsconfig':
         specifier: 3.11.0
         version: 3.11.0
+      '@rslint/core':
+        specifier: 0.9.5
+        version: 0.9.5(jiti@2.7.0)
       '@types/lodash-es':
         specifier: ^4.17.12
         version: 4.17.12
