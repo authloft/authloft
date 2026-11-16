@@ -88,7 +88,7 @@ func smtpSchema() []provider.FieldMeta {
 			fields = append(fields, f)
 		}
 	}
-	fields = append(fields, schemafield.ProxyURL())
+	fields = append(fields, schemafield.ProxyRef())
 	return fields
 }
 

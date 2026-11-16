@@ -154,29 +154,30 @@ func TestAdminProviderDetailEmptyInputs(t *testing.T) {
 }
 
 // TestAdminSchemaOauthBaseline oauth 类型（wechat_mp）以完整 Schema 声明转换为
-// wire：3 个 basic 表列 + 11 个 Ext + 4 个 display + 5 个 policy + proxy_url = 24 项，
-// 顺序即 §5.3 区块声明序；union_provider 的 options 由 dynamicOptions 按 DynamicKey 注入。
-// 这是对"表列基线 + Ext + proxy_url"旧 wire 的逐字段保真回归。
+// wire：3 个 basic 表列 + 11 个 Ext + 4 个 display + 5 个 policy + 引用键 = 24 项，
+// 顺序即 §5.3 区块声明序；union_provider 与 proxy_provider_key 的 options 由
+// dynamicOptions 按 DynamicKey 注入。这是对"表列基线 + Ext + 引用键"wire 的
+// 逐字段保真回归。
 func TestAdminSchemaOauthBaseline(t *testing.T) {
 	meta, ok := provider.Lookup("wechat_mp")
 	if !ok || meta.Category != "oauth" {
 		t.Fatalf("Lookup(wechat_mp) = (%+v, %v), want category=oauth", meta, ok)
 	}
 	resp := AdminSchema("wechat_mp", meta.Category, schemaFieldsOf(meta.Schema),
-		map[string][]string{"union_provider_keys": {"union_a"}})
+		map[string][]string{"union_provider_keys": {"union_a"}, provider.ProxyRefDynamicKey: {"proxy_a"}})
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
 	if len(resp.GetFields()) != 24 {
-		t.Fatalf("字段数 = %d, want 24（3 basic + 11 Ext + 4 display + 5 policy + proxy_url）", len(resp.GetFields()))
+		t.Fatalf("字段数 = %d, want 24（3 basic + 11 Ext + 4 display + 5 policy + 引用键）", len(resp.GetFields()))
 	}
-	// 顺序即 §5.3 示例排列（表列基线 → Ext 声明序 → display / policy → proxy_url）。
+	// 顺序即 §5.3 示例排列（表列基线 → Ext 声明序 → display / policy → 引用键）。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"client_id", "client_secret", "app_id", "cert", "scopes", "provider_url",
 		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
-		ProxyURLFieldKey}
+		provider.ProxyRefKey}
 	for i, key := range wantOrder {
 		if resp.GetFields()[i].GetKey() != key {
 			t.Fatalf("fields[%d].key = %q, want %q", i, resp.GetFields()[i].GetKey(), key)
@@ -195,6 +196,14 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	f = schemaFieldByKey(t, resp, "union_provider")
 	if f.GetType() != "select" || len(f.GetOptions()) != 1 || f.GetOptions()[0] != "union_a" {
 		t.Errorf("union_provider = %+v（options 应为 union Provider 键列表）", f)
+	}
+	// 出站代理引用键随 schema 统一下发（endpoint / select，§5.3 引用键声明）：
+	// options 由 dynamicOptions 按 DynamicKey 注入（查库候选，含未启用实例由
+	// handler 侧负责）。
+	f = schemaFieldByKey(t, resp, provider.ProxyRefKey)
+	if f.GetType() != "select" || f.GetSection() != "endpoint" || f.GetRequired() || f.GetAdvanced() ||
+		len(f.GetOptions()) != 1 || f.GetOptions()[0] != "proxy_a" {
+		t.Errorf("proxy_provider_key = %+v（options 应为 proxy 行键列表）", f)
 	}
 	f = schemaFieldByKey(t, resp, "icon_url")
 	if f.GetPattern() != "^https?://" || f.GetSection() != "display" {
@@ -229,11 +238,10 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if f.GetDefault().GetStringValue() != "email,phone" || f.GetHelp() != "admin.schemaField.autoBindFieldsHelp" {
 		t.Errorf("auto_bind_fields = %+v", f)
 	}
-	// 通用 Ext 基线 proxy_url 随 schema 统一下发（endpoint / advanced / text）。
-	f = schemaFieldByKey(t, resp, ProxyURLFieldKey)
-	if f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetType() != "text" ||
-		f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" {
-		t.Errorf("proxy_url = %+v", f)
+	// 引用键 label / help 为前端 i18n 键。
+	f = schemaFieldByKey(t, resp, provider.ProxyRefKey)
+	if f.GetLabel() != "admin.schemaField.proxyProviderKeyLabel" || f.GetHelp() != "admin.schemaField.proxyProviderKeyHelp" {
+		t.Errorf("proxy_provider_key label/help = (%q, %q)", f.GetLabel(), f.GetHelp())
 	}
 }
 
@@ -253,7 +261,7 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	if len(resp.GetFields()) != len(schemaFields) {
 		t.Fatalf("字段数 = %d, want %d（完整 Schema 声明逐项转换）", len(resp.GetFields()), len(schemaFields))
 	}
-	schemaFieldByKey(t, resp, ProxyURLFieldKey) // 完整 Schema 声明含 proxy_url（email 呈现）
+	schemaFieldByKey(t, resp, provider.ProxyRefKey) // 完整 Schema 声明含引用键（email 呈现）
 	// 每个字段逐项对齐声明（key/label/type/section/required/advanced/help/default/options/pattern）。
 	for i, mf := range schemaFields {
 		got := resp.GetFields()[i] // 转换保真：wire 顺序 = 声明顺序
@@ -329,6 +337,7 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{provider.ProxyType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, append([]string{"is_enabled"}, oauthOnlyTestKeys...)},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
@@ -354,8 +363,8 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 			}
 		})
 	}
-	// 完整 Schema 纯转换：union 声明不含 is_enabled 与 proxy_url；local 不含 proxy_url。
-	// 键集裁剪已下沉到各 provider.Schema()，AdminSchema 只做纯转换。
+	// 完整 Schema 纯转换：union 声明不含 is_enabled 与引用键；local / proxy 行
+	// 自身不含引用键。键集裁剪已下沉到各 provider.Schema()，AdminSchema 只做纯转换。
 	unionMeta, _ := provider.LookupTypeMeta(provider.UnionProviderType)
 	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, schemaFieldsOf(unionMeta.Schema), nil)
 	if len(unionSchema.GetFields()) != len(schemaFieldsOf(unionMeta.Schema)) {
@@ -365,31 +374,37 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 	if f, ok := schemaFieldMaybe(unionSchema, "is_enabled"); ok {
 		t.Errorf("union schema 不应含启用开关: %+v", f)
 	}
-	if f, ok := schemaFieldMaybe(unionSchema, ProxyURLFieldKey); ok {
-		t.Errorf("union（无外呼）schema 不应含 proxy_url: %+v", f)
+	if f, ok := schemaFieldMaybe(unionSchema, provider.ProxyRefKey); ok {
+		t.Errorf("union（无外呼）schema 不应含引用键: %+v", f)
 	}
 	localMeta, _ := provider.LookupTypeMeta("local")
 	localSchema := AdminSchema("local", "storage", schemaFieldsOf(localMeta.Schema), nil)
-	if f, ok := schemaFieldMaybe(localSchema, ProxyURLFieldKey); ok {
-		t.Errorf("storage/local schema 不应含 proxy_url: %+v", f)
+	if f, ok := schemaFieldMaybe(localSchema, provider.ProxyRefKey); ok {
+		t.Errorf("storage/local schema 不应含引用键: %+v", f)
+	}
+	proxyMeta, _ := provider.LookupTypeMeta(provider.ProxyType)
+	proxySchema := AdminSchema(provider.ProxyType, provider.CategoryProxy, schemaFieldsOf(proxyMeta.Schema), nil)
+	if f, ok := schemaFieldMaybe(proxySchema, provider.ProxyRefKey); ok {
+		t.Errorf("proxy 行自身 schema 不应含引用键: %+v", f)
 	}
 }
 
-// TestProxyURLSchemaField proxy_url 的完整契约：由 AdminSchema 从 Schema 声明转换
-// 出的 proxy_url 字段形态（endpoint / advanced / text / i18n 键 / 无默认值 / 非必填）。
-// proxy_url 的呈现/可写完全由各 provider Schema 是否声明该字段决定（union /
-// storage-local 的 Schema 不声明，自然不呈现也不接受提交）。
-func TestProxyURLSchemaField(t *testing.T) {
+// TestProxyRefSchemaField 引用键的完整契约：由 AdminSchema 从 Schema 声明转换
+// 出的 proxy_provider_key 字段形态（endpoint / select / dynamic / i18n 键 /
+// 无默认值 / 非必填）。呈现/可写完全由各 provider Schema 是否声明该字段决定
+// （union / storage-local / proxy 行自身的 Schema 不声明，自然不呈现也不接受
+// 提交）。
+func TestProxyRefSchemaField(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta("wechat_mp")
 	if !ok {
 		t.Fatal("wechat_mp meta 缺失")
 	}
 	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
-	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
-	if f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" ||
-		f.GetType() != "text" || f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetRequired() ||
+	f := schemaFieldByKey(t, resp, provider.ProxyRefKey)
+	if f.GetLabel() != "admin.schemaField.proxyProviderKeyLabel" || f.GetHelp() != "admin.schemaField.proxyProviderKeyHelp" ||
+		f.GetType() != "select" || f.GetSection() != "endpoint" || f.GetAdvanced() || f.GetRequired() ||
 		f.GetDefault() != nil {
-		t.Errorf("proxy_url 字段契约 = %+v", f)
+		t.Errorf("proxy_provider_key 字段契约 = %+v", f)
 	}
 }
 

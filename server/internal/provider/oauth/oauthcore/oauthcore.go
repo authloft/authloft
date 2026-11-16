@@ -80,11 +80,11 @@ func AsProviderError(err error) (*ProviderError, bool) {
 }
 
 // SchemaFor 由渠道「最终 Ext 字段清单」构造完整 Schema 声明闭包：
-// 表列 basic(3) → ext → 展示 display(4) → 策略 policy(5) → proxy_url(1)，
+// 表列 basic(3) → ext → 展示 display(4) → 策略 policy(5) → 引用键(1)，
 // 顺序对齐现有 wire。闭包捕获传入切片（同一底层数组），故就地改 label
 // （alipay / microsoft）无需重设；整体重赋 Fields 的渠道（oauth2 / oidc /
 // wechat_mp_scan）须在改完后再次调用本函数重设 Schema，保证 Ext 段与
-// 最终 Fields 一致。
+// 最终 Fields 一致。oauth 全渠道经此漏斗单点声明出站代理引用键。
 func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 	return func() []provider.FieldMeta {
 		fields := make([]provider.FieldMeta, 0, 3+len(ext)+4+5+1)
@@ -101,7 +101,7 @@ func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 			schemafield.Remark(),
 		)
 		fields = append(fields, schemafield.EnableFlags()...)
-		fields = append(fields, schemafield.ProxyURL())
+		fields = append(fields, schemafield.ProxyRef())
 		return fields
 	}
 }

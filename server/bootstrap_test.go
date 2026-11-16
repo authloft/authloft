@@ -584,6 +584,7 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 		queue:          q,
 		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
 		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, proxyclient.NewPoolSet(), provider.LoaderOptions{}),
+		pools:          proxyclient.NewPoolSet(), // admin TestProvider 引用解析装配点（§15.4）
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),
@@ -779,6 +780,7 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 		queue:          q,
 		sink:           eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(q)),
 		providerLoader: provider.NewLoader(repo.NewProviderRepo(nil), nil, proxyclient.NewPoolSet(), provider.LoaderOptions{}),
+		pools:          proxyclient.NewPoolSet(), // admin TestProvider 引用解析装配点（§15.4）
 		sessionTokens:  session.NewTokens(codecs.Session),
 		epochStore:     cache.NewEpochStore(nil, nil),
 		codeIssuer:     oidc.NewCodeIssuer(cache.NewOIDCCodeStore(nil), codecs.Ticket),

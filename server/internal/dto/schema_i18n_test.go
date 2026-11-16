@@ -104,9 +104,11 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 	for _, meta := range metas {
 		resp := AdminSchema(meta.Type, meta.Category, schemaFieldsOf(meta.Schema), nil)
 		for _, f := range resp.GetFields() {
-			if f.GetKey() == ProxyURLFieldKey {
-				// proxy_url 的文案键由前端语言包提供；这里只钉键名与形态，
-				// 见 TestProxyURLSchemaI18nContract，不在此要求字典已落地。
+			// proxy 系列新键（引用键 + proxy 行五字段，键名统一 admin.schemaField.
+			// proxy* 前缀）的文案落地随前端语言包进行；此处先钉键名与形态（见
+			// TestProxyRefSchemaI18nContract），暂不要求字典已落地，避免后端契约
+			// 与前端落地顺序耦合——前端补齐后应收紧此豁免。
+			if strings.HasPrefix(f.GetLabel(), "admin.schemaField.proxy") {
 				continue
 			}
 			checkKey(meta.Type, f.GetKey(), "label", f.GetLabel())
@@ -126,29 +128,29 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 	}
 }
 
-// TestProxyURLSchemaI18nContract proxy_url 后端只下发 i18n 键名（不持有文案）：
-// 精确断言键名与形态；前端 zh/en 字典的实际落地由前端语言包负责，故此处不断言
-// 字典存在（否则后端契约会与前端实现的落地顺序耦合）。
-func TestProxyURLSchemaI18nContract(t *testing.T) {
+// TestProxyRefSchemaI18nContract proxy_provider_key 引用键后端只下发 i18n 键名
+// （不持有文案）：精确断言键名与形态；前端 zh/en 字典的实际落地由前端语言包
+// 负责，故此处不断言字典存在（否则后端契约会与前端实现的落地顺序耦合）。
+func TestProxyRefSchemaI18nContract(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta("wechat_mp")
 	if !ok {
 		t.Fatal("wechat_mp meta 缺失")
 	}
 	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
-	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
+	f := schemaFieldByKey(t, resp, provider.ProxyRefKey)
 	for _, tc := range []struct{ kind, key, want string }{
-		{"label", f.GetLabel(), "admin.schemaField.proxyUrlLabel"},
-		{"help", f.GetHelp(), "admin.schemaField.proxyUrlHelp"},
+		{"label", f.GetLabel(), "admin.schemaField.proxyProviderKeyLabel"},
+		{"help", f.GetHelp(), "admin.schemaField.proxyProviderKeyHelp"},
 	} {
 		if tc.key != tc.want {
-			t.Errorf("proxy_url %s = %q, want %q", tc.kind, tc.key, tc.want)
+			t.Errorf("proxy ref %s = %q, want %q", tc.kind, tc.key, tc.want)
 		}
 		if !strings.HasPrefix(tc.key, schemaI18nPrefix) {
-			t.Errorf("proxy_url %s = %q，不是 %s* i18n 键", tc.kind, tc.key, schemaI18nPrefix)
+			t.Errorf("proxy ref %s = %q，不是 %s* i18n 键", tc.kind, tc.key, schemaI18nPrefix)
 		}
 		for _, r := range tc.key {
 			if r > 127 {
-				t.Errorf("proxy_url %s = %q，含非 ASCII 字符", tc.kind, tc.key)
+				t.Errorf("proxy ref %s = %q，含非 ASCII 字符", tc.kind, tc.key)
 				break
 			}
 		}

@@ -32,7 +32,7 @@ func TestAttributeAlignment(t *testing.T) {
 	}{
 		{"ProviderKey", ProviderKey(), "provider_key", provider.StorageColumn, "^[a-z0-9_]+$"},
 		{"IconURL", IconURL(), "icon_url", provider.StorageColumn, "^https?://"},
-		{"ProxyURL", ProxyURL(), "proxy_url", provider.StorageExt, ""},
+		{"ProxyRef", ProxyRef(), provider.ProxyRefKey, provider.StorageExt, ""},
 	}
 	for _, tc := range cases {
 		if tc.field.Key != tc.key || tc.field.Storage != tc.storage || tc.field.Pattern != tc.pattern {
@@ -46,6 +46,17 @@ func TestAttributeAlignment(t *testing.T) {
 	}
 	if u.Options != nil {
 		t.Errorf("UnionProvider 不应内置 options: %v", u.Options)
+	}
+
+	// ProxyRef 引用声明形态同 UnionProvider 先例：Kind=FieldDynamicOptions +
+	// DynamicKey 查库注入（键名引声明侧常量），构造器不下发候选值。
+	r := ProxyRef()
+	if r.Kind != provider.FieldDynamicOptions || r.DynamicKey != provider.ProxyRefDynamicKey ||
+		r.Storage != provider.StorageExt || r.Section != "endpoint" || r.Type != "select" || r.Required {
+		t.Errorf("ProxyRef 动态属性错位: %+v", r)
+	}
+	if r.Options != nil {
+		t.Errorf("ProxyRef 不应内置 options: %v", r.Options)
 	}
 
 	if got := UiGroup(); got.Default != "social" || len(got.Options) != 4 {

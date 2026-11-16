@@ -5,11 +5,12 @@
 // service/admin/provider.go → repo → cache/provider）。
 //
 // 职责边界：schema 键集校验（完整 Schema 声明，含表列与 Ext，§5.3
-// 「提交体即 {"<key>": <value>}」）、provider_key 字符集与「创建后不可改」
-// （§12.1）、category 由 meta 按 type 决定只读、meta required 字段齐
-// （仅 Create；Update 按缺省键保留原值的 PATCH 口径不强制）、写后缓存失效
-// （§15.3 固定三步，经 cache.ProviderCache.Invalidate 唯一出口）。
-// Connect 错误形态映射归 handler；本层返回可判别哨兵错误：
+// 「提交体即 {"<key>": <value>}」）、provider_key 与出站代理引用键字符集、
+// proxy 行五字段组合校验（单一来源 proxyclient.NewConfig，§5.3）、
+// provider_key「创建后不可改」（§12.1）、category 由 meta 按 type 决定只读、
+// meta required 字段齐（仅 Create；Update 按缺省键保留原值的 PATCH 口径
+// 不强制）、写后缓存失效（§15.3 固定三步，经 cache.ProviderCache.Invalidate
+// 唯一出口）。Connect 错误形态映射归 handler；本层返回可判别哨兵错误：
 //   - ErrInvalidRequest 参数 / 校验类（handler 映射 §1.5 invalid_argument +
 //     ErrorInfo domain=admin code=invalid_request，§1.6 封闭集合）；
 //   - ErrDuplicateKey 唯一键 uk_provider_key 冲突（handler 映射 §1.5
@@ -24,10 +25,12 @@ import (
 	"fmt"
 	"google.golang.org/protobuf/types/known/structpb"
 	"regexp"
+	"strings"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/dto"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -35,8 +38,8 @@ import (
 // 可判别哨兵错误（映射口径见包注释）。
 var (
 	// ErrInvalidRequest 参数 / 校验类失败（键集外未知键、字符集不合法、required
-	// 缺失、类型不符、改 provider_key / type / category、非 sms/email 类别
-	// TestProvider 等）。
+	// 缺失、类型不符、改 provider_key / type / category、proxy 行字段组合非法、
+	// 引用键不可解析、非 sms/email 类别 TestProvider 等）。
 	ErrInvalidRequest = errors.New("admin service: invalid request")
 	// ErrDuplicateKey Create 命中 uk_provider_key（repo.ErrProviderDuplicate 的
 	// service 层转译）。
@@ -79,18 +82,23 @@ type ProviderInvalidator interface {
 type Service struct {
 	store ProviderStore
 	cache ProviderInvalidator
+	pools *proxyclient.PoolSet
 }
 
-// NewService 构造；store / invalidator 为装配依赖，任一为 nil 属程序错误
-// （fail-fast，口径同 provider.NewLoader）。
-func NewService(store ProviderStore, invalidator ProviderInvalidator) *Service {
+// NewService 构造；store / invalidator / pools 为装配依赖，任一为 nil 属程序
+// 错误（fail-fast，口径同 provider.NewLoader）。pools 是进程级出站连接池注册
+// 表（bootstrap 构造一次显式注入，§15.4），仅 TestProvider 的引用解析使用。
+func NewService(store ProviderStore, invalidator ProviderInvalidator, pools *proxyclient.PoolSet) *Service {
 	if store == nil {
 		panic("admin service: NewService: nil ProviderStore")
 	}
 	if invalidator == nil {
 		panic("admin service: NewService: nil ProviderInvalidator")
 	}
-	return &Service{store: store, cache: invalidator}
+	if pools == nil {
+		panic("admin service: NewService: nil PoolSet")
+	}
+	return &Service{store: store, cache: invalidator, pools: pools}
 }
 
 // CreateProvider（§5.2，OUTCOME ①）：提交体为 §5.3 schema 的字段集合
@@ -111,7 +119,7 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := validateSchemaKeys(fields, meta); err != nil {
 		return err
 	}
-	if err := validateProxyURL(fields); err != nil {
+	if err := validateProxyRef(fields); err != nil {
 		return err
 	}
 	providerKey, err := requireProviderKey(fields)
@@ -138,6 +146,9 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	ext, err := dto.MergeProviderExt(&providerpb.Ext{}, fields, metaFieldKeys(meta))
 	if err != nil {
 		return ErrInvalidRequest // 类型不符
+	}
+	if err := validateProxyConfig(row, ext); err != nil {
+		return err
 	}
 	if row.Ext, err = repo.MarshalProviderExt(ext); err != nil {
 		return ErrInvalidRequest // 超 1 MiB 业务上限（§4.1）
@@ -217,7 +228,7 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := validateSchemaKeys(fields, meta); err != nil {
 		return err
 	}
-	if err := validateProxyURL(fields); err != nil {
+	if err := validateProxyRef(fields); err != nil {
 		return err
 	}
 
@@ -231,6 +242,9 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 	ext, err := dto.MergeProviderExt(origExt, fields, metaFieldKeys(meta))
 	if err != nil {
 		return ErrInvalidRequest // 类型不符
+	}
+	if err := validateProxyConfig(row, ext); err != nil {
+		return err
 	}
 	if row.Ext, err = repo.MarshalProviderExt(ext); err != nil {
 		return ErrInvalidRequest // 超 1 MiB 业务上限
@@ -334,10 +348,12 @@ func (s *Service) ProviderTypes() []ProviderTypeInfo {
 // TestProvider（§5.2，OUTCOME ⑦）：{providerKey, target} 发送测试。
 // FindByKey 现构 provider.Provider{Key, Type, Row, Ext}——**不经 Loader**
 // （本地 LRU TTL 60s 会让「改完配置点测试」打到旧值，§15.3 加载链）→
+// ResolveOutbound 解析出站代理引用（与 Loader 装配期同一语义，§15.4）→
 // NewSender(p, category) → **同步** Send（管理员即时反馈，不走 asyncqueue，
-// §15.2 的异步化仅约束验证码链路）。非 sms/email 类别 / Ext 配置
-// 缺失（NewSender ErrChannelNotConfigured）→ invalid_request；厂商 Send 失败
-// 原样上抛（链路故障，错误包装拦截器按 internal 消毒）。tpl/params 口径见
+// §15.2 的异步化仅约束验证码链路）。非 sms/email 类别 / 引用不可解析
+// （fail-closed 不降级直连）/ Ext 配置缺失（NewSender
+// ErrChannelNotConfigured）→ invalid_request；厂商 Send 失败原样上抛
+// （链路故障，错误包装拦截器按 internal 消毒）。tpl/params 口径见
 // testProviderTpl 常量注释（docs 未细化，待定）。
 func (s *Service) TestProvider(ctx context.Context, providerKey, target string) error {
 	if providerKey == "" || target == "" {
@@ -354,7 +370,13 @@ func (s *Service) TestProvider(ctx context.Context, providerKey, target string) 
 	if err != nil {
 		return fmt.Errorf("admin service: parse ext %q: %w", providerKey, err)
 	}
-	p := &provider.Provider{Key: row.ProviderKey, Type: row.Type, Row: row, Ext: ext}
+	pool, err := provider.ResolveOutbound(ctx, s.pools, s.store, row, ext)
+	if err != nil {
+		// 引用键不可解析（缺失 / 未启用 / 类别不符 / 组合非法）= 配置状态类，
+		// 与 NewSender 失败同映射 invalid_request（错误串只含引用键，§12.1）。
+		return ErrInvalidRequest
+	}
+	p := &provider.Provider{Key: row.ProviderKey, Type: row.Type, Row: row, Ext: ext, Outbound: pool}
 	sender, err := provider.NewSender(p, row.Category)
 	if err != nil {
 		// Ext 缺必填项（厂商构造失败）：配置状态属校验类，docs 未细化该
@@ -410,8 +432,8 @@ func lookupSchemaByType(providerType string) (schemaMeta, bool) {
 // validateSchemaKeys 未知键拒绝：提交体键集 ⊆ {type, category, provider_key} ∪
 // Schema 全集（所有 f.Key，不再按 Storage 区分列/Ext——分流由 ApplyProviderColumns
 // / MergeProviderExt 各自完成，§4.4）。key 恒等于 provider 表列名或 provider.Ext
-// 字段名，表单外的键一律 invalid_request（§5.3）；union / local 的 Schema 未声明
-// 登录开关 / proxy_url 等键即自动拒绝。type / provider_key 的「创建后不可改」
+// 字段名，表单外的键一律 invalid_request（§5.3）；union / local / proxy 的 Schema
+// 未声明登录开关 / 引用键等键即自动拒绝。type / provider_key 的「创建后不可改」
 // 逐键同值校验保留在 CreateProvider / UpdateProvider，不走白名单。Create 的
 // category 一致性校验在此（类型 meta 决定、只读）。
 func validateSchemaKeys(fields map[string]*structpb.Value, meta schemaMeta) error {
@@ -490,8 +512,8 @@ func explicitFalse(fields map[string]*structpb.Value, key string) bool {
 
 // metaFieldKeys Schema 中落 Ext 的字段名集合（Storage == StorageExt），作为
 // MergeProviderExt 的 extKeys。所有 provider 的 Ext 字段均已在 Schema 声明中
-// 标注 StorageExt（含 oauthcore 基线与 wechat_mp_scan 扫码追加字段），proxy_url
-// 同理；union / storage-local 的 Schema 无 Ext 字段即自动排除（§5.3）。
+// 标注 StorageExt（含 oauthcore 基线、wechat_mp_scan 扫码追加字段与 proxy 行
+// 五字段）；union / storage-local 的 Schema 无 Ext 字段即自动排除（§5.3）。
 func metaFieldKeys(meta schemaMeta) []string {
 	keys := make([]string, 0, len(meta.Schema))
 	for _, f := range meta.Schema {
@@ -502,10 +524,49 @@ func metaFieldKeys(meta schemaMeta) []string {
 	return keys
 }
 
-// validateProxyURL proxy_url 已随 proto 字段下线：提交值不再校验、合并落库时
-// 被静默丢弃；proxy_provider_key 引用键的保存期校验随管理面改造另行接线，
-// 接线前恒放行。
-func validateProxyURL(fields map[string]*structpb.Value) error {
+// validateProxyRef 出站代理引用键的保存期校验（§5.3 代理提供商与出站代理引用
+// 约定）：proxy_provider_key 仅在 Schema 声明了该键的类型可提交（键集白名单
+// validateSchemaKeys 已拦未声明类型），提交时仅校字符集 ^[a-z0-9_]+$、不校
+// 存在性（允许先引用后建行）；空（trim 后）= 直连，放行。键名引声明侧常量
+// provider.ProxyRefKey，不另立字面量。
+func validateProxyRef(fields map[string]*structpb.Value) error {
+	v, ok := fields[provider.ProxyRefKey]
+	if !ok {
+		return nil
+	}
+	s, err := structpbString(v)
+	if err != nil {
+		return ErrInvalidRequest
+	}
+	if key := strings.TrimSpace(s); key != "" && !providerKeyPattern.MatchString(key) {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
+// validateProxyConfig proxy 行五字段组合校验（§5.3：字段组合校验唯一写在
+// proxyclient.NewConfig，保存期与运行期引用解析共用同一函数、无第二套规则）：
+// 对 category=proxy 行在 MergeProviderExt 合并后的 Ext 上执行，scheme / host /
+// user / password trim 后写回（不保留首尾空白，port 原值），PATCH 部分提交
+// （只改端口、只改密码）合法、未提交字段保留原值；组合非法（scheme 封闭集外、
+// host 缺失或含禁用字符、port 越界、password 无 user、拼串超限）→
+// ErrInvalidRequest。非 proxy 行不做组合校验（smtp 等同名字段语义不同）。
+// 错误与日志不含字段值（§12.1 凭据读写约定）。
+func validateProxyConfig(row *model.Provider, ext *providerpb.Ext) error {
+	if row == nil || row.Category != provider.CategoryProxy {
+		return nil
+	}
+	cfg, err := proxyclient.NewConfig(
+		strings.TrimSpace(ext.GetScheme()), strings.TrimSpace(ext.GetHost()),
+		ext.GetPort(), strings.TrimSpace(ext.GetUser()), strings.TrimSpace(ext.GetPassword()),
+	)
+	if err != nil {
+		return ErrInvalidRequest
+	}
+	ext.Scheme = cfg.Scheme
+	ext.Host = cfg.Host
+	ext.User = cfg.User
+	ext.Password = cfg.Password
 	return nil
 }
 

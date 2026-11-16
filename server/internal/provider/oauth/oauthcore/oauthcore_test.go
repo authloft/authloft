@@ -338,7 +338,7 @@ func TestDiscoverOIDC(t *testing.T) {
 
 // TestNewMetaBaseline oauth 基线：Fields 含 11 个 Ext 字段（§5.3 oauth 追加
 // 字段 + metadata，渠道包构造与就地改写的输入），Schema 声明完整清单
-// basic(3)+ext(11)+display(4)+policy(5)+proxy_url(1)=24，顺序对齐 wire。
+// basic(3)+ext(11)+display(4)+policy(5)+引用键(1)=24，顺序对齐 wire。
 func TestNewMetaBaseline(t *testing.T) {
 	m := NewMeta("test_oauth", "测试", provider.ChannelRedirect)
 	if m.Type != "test_oauth" || m.DisplayName != "测试" || m.Category != "oauth" || m.Channel != provider.ChannelRedirect {
@@ -363,7 +363,7 @@ func TestNewMetaBaseline(t *testing.T) {
 				i, k, m.Fields[i].Storage)
 		}
 	}
-	// Schema 完整清单：basic(3) + ext(11) + display(4) + policy(5) + proxy_url(1)。
+	// Schema 完整清单：basic(3) + ext(11) + display(4) + policy(5) + 引用键(1)。
 	if m.Schema == nil {
 		t.Fatal("Schema 未声明（nil）")
 	}
@@ -374,7 +374,7 @@ func TestNewMetaBaseline(t *testing.T) {
 		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
-		"proxy_url",
+		provider.ProxyRefKey,
 	}
 	if len(full) != len(wantFull) {
 		t.Fatalf("schema fields = %d, want %d", len(full), len(wantFull))
@@ -391,7 +391,7 @@ func TestNewMetaBaseline(t *testing.T) {
 		}
 	}
 	// 落点完整性：写入侧白名单/列键/Ext 键全部按 Storage 派生——表列段必须
-	// StorageColumn，Ext 段与 proxy_url 必须 StorageExt，任何零值都会让该键
+	// StorageColumn，Ext 段与引用键必须 StorageExt，任何零值都会让该键
 	// 从 Ext 写入键集丢失（配置保存即丢凭证）。
 	for i, f := range full {
 		want := provider.StorageExt

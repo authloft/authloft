@@ -92,14 +92,15 @@ func EnableFlags() []provider.FieldMeta {
 	}
 }
 
-// ProxyURL 通用 Ext 基线字段 proxy_url（endpoint/advanced/text）。
-func ProxyURL() provider.FieldMeta {
-	return provider.FieldMeta{
-		Key: "proxy_url", Label: "admin.schemaField.proxyUrlLabel",
-		Type: "text", Section: "endpoint", Advanced: true,
-		Help:    "admin.schemaField.proxyUrlHelp",
-		Storage: provider.StorageExt,
-	}
+// ProxyRef 出站代理引用键 proxy_provider_key（endpoint/select，非必填）：
+// 形态同 UnionProvider——Kind=FieldDynamicOptions + DynamicKey，options 运行时
+// 由 handler 查库注入 category=proxy 行的 provider_key（含未启用实例），构造器
+// 不下发候选值。呈现范围由各 provider 的 Schema() 是否声明决定（storage /
+// union / proxy 行自身不声明）。真实声明在 provider.ProxyRef——本包 import
+// provider，反向引用会成环，委托保持 oauthcore / smtp / sms 渠道漏斗的单一
+// 取用入口。
+func ProxyRef() provider.FieldMeta {
+	return provider.ProxyRef()
 }
 
 // Metadata 各 Ext 通用尾字段 metadata（json/advanced）；section 为空按 basic。

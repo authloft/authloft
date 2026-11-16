@@ -48,8 +48,8 @@ func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
 	return f.values[uid], nil
 }
 
-// fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union 查询固定
-// 返回一行，其余返回 rows/total），key 透传到闭包；全部查询入参留档断言。
+// fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union / proxy 查询
+// 各固定返回一行，其余返回 rows/total），key 透传到闭包；全部查询入参留档断言。
 type fakeProviders struct {
 	rows     []model.Provider
 	total    int64
@@ -59,6 +59,7 @@ type fakeProviders struct {
 	queries  []repo.ProviderListQuery
 	gotKeys  []string
 	unionRow model.Provider
+	proxyRow model.Provider // category=proxy 查询的固定返回（options 注入断言）
 }
 
 func (f *fakeProviders) FindByKey(_ context.Context, providerKey string) (*model.Provider, error) {
@@ -70,6 +71,12 @@ func (f *fakeProviders) ListProviders(_ context.Context, q repo.ProviderListQuer
 	f.queries = append(f.queries, q)
 	if q.Category != nil && *q.Category == "union" {
 		return []model.Provider{f.unionRow}, 1, nil
+	}
+	if q.Category != nil && *q.Category == "proxy" {
+		if f.proxyRow.ProviderKey == "" {
+			return nil, 0, f.listErr
+		}
+		return []model.Provider{f.proxyRow}, 1, nil
 	}
 	return f.rows, f.total, f.listErr
 }
@@ -705,8 +712,8 @@ func TestGetProviderNotFound(t *testing.T) {
 
 // TestGetProviderSchemaSenderMeta 消息域 schema（smtp）与注册表 Schema() 逐项
 // 一致（§15.3：/schema 唯一数据源）：category=email 由 meta 决定；表列基线与
-// Ext 字段逐项等于 LookupSenderMeta().Schema()。smtp 未声明 dynamic 字段，
-// 打 schema 不得触发 ListProviders 查库（声明驱动，非类别硬编码）。
+// Ext 字段逐项等于 LookupSenderMeta().Schema()。smtp 声明了引用键 dynamic 字段：
+// 恰触发一次 proxy 查库、不触发 union 查库（声明驱动，非类别硬编码）。
 func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"}}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -757,9 +764,15 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 			t.Errorf("email schema 不应含 oauth 专属字段 %q", key)
 		}
 	}
-	// smtp 的 Schema 未声明 dynamic 字段：不查库（声明驱动，非类别判断）。
-	if len(fakes.queries) != 0 {
-		t.Errorf("email schema 不应触发 union 查询, got %+v", fakes.queries)
+	// smtp 的 Schema 仅声明引用键 dynamic 字段：恰一次 proxy 查库（声明驱动），
+	// 不触发 union 查库。
+	if len(fakes.queries) != 1 {
+		t.Errorf("email schema 查库次数 = %d, want 1, got %+v", len(fakes.queries), fakes.queries)
+	} else if fakes.queries[0].Category == nil || *fakes.queries[0].Category != provider.CategoryProxy {
+		t.Errorf("email schema 查库类别 = %v, want proxy", fakes.queries[0].Category)
+	}
+	if f, ok := byKey[provider.ProxyRefKey]; !ok || f.GetType() != "select" || f.GetSection() != "endpoint" {
+		t.Errorf("email schema 引用键 = %+v (ok=%v), want endpoint/select", f, ok)
 	}
 }
 
@@ -794,22 +807,26 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 	}
 }
 
-// TestGetProviderSchemaServiceMeta 服务型 Provider schema（captcha / storage）：
-// 由第四源静态 meta 命中，Ext 字段由 Schema() 声明下发；category 非 oauth →
-// 无 oauth 专属列。proxy_url 呈现与否由 Schema 声明决定：captcha 声明了该
-// 字段、local 不声明（provider/servicetype.go）。验证 GetProviderTypes →
-// GetProviderSchema 全链路的下发形态。
+// TestGetProviderSchemaServiceMeta 服务型 Provider schema（captcha / storage /
+// proxy）：由第四源静态 meta 命中，Ext 字段由 Schema() 声明下发；category 非
+// oauth → 无 oauth 专属列。引用键呈现与否由 Schema 声明决定：captcha 声明了该
+// 字段、local（本地磁盘）与 proxy 行自身（不自引）不声明
+// （provider/servicetype.go）。验证 GetProviderTypes → GetProviderSchema 全链路
+// 的下发形态。
 func TestGetProviderSchemaServiceMeta(t *testing.T) {
 	for _, tc := range []struct {
-		typ       string
-		category  string
-		extKeys   []string
-		wantProxy bool
+		typ         string
+		category    string
+		extKeys     []string
+		wantRef     bool
+		wantQueries int // 声明了 dynamic 引用键 = 1 次 proxy 查库，否则 0
 	}{
 		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha,
-			[]string{"client_id", "client_secret", "endpoint"}, true},
+			[]string{"client_id", "client_secret", "endpoint"}, true, 1},
 		{provider.StorageTypeLocal, provider.CategoryStorage,
-			[]string{"bucket", "domain", "path_prefix"}, false},
+			[]string{"bucket", "domain", "path_prefix"}, false, 0},
+		{provider.ProxyType, provider.CategoryProxy,
+			[]string{"scheme", "host", "port", "user", "password"}, false, 0},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			fakes := &fakeProviders{}
@@ -829,29 +846,80 @@ func TestGetProviderSchemaServiceMeta(t *testing.T) {
 					t.Errorf("service schema 缺少 Ext 字段 %q: %+v", key, byKey)
 				}
 			}
-			if hasProxy := byKey["proxy_url"]; hasProxy != tc.wantProxy {
-				t.Errorf("proxy_url 呈现 = %v, want %v", hasProxy, tc.wantProxy)
+			if hasRef := byKey[provider.ProxyRefKey]; hasRef != tc.wantRef {
+				t.Errorf("引用键 %q 呈现 = %v, want %v", provider.ProxyRefKey, hasRef, tc.wantRef)
 			}
 			for _, key := range []string{"union_provider", "enable_signin", "auto_bind"} {
 				if byKey[key] {
 					t.Errorf("service schema 不应含 oauth 专属列 %q", key)
 				}
 			}
-			// Schema 未声明 dynamic 字段：不查库（声明驱动，非类别判断）。
-			if len(fakes.queries) != 0 {
-				t.Errorf("%s schema 不应触发 union 查询, got %+v", tc.typ, fakes.queries)
+			// dynamic 字段的查库由声明驱动（非类别判断）：声明引用键 → 恰一次
+			// proxy 查库；未声明 → 不查库。
+			if len(fakes.queries) != tc.wantQueries {
+				t.Errorf("%s schema 查库次数 = %d, want %d, got %+v", tc.typ, len(fakes.queries), tc.wantQueries, fakes.queries)
 			}
 		})
 	}
 }
 
+// TestGetProviderSchemaProxyMeta 服务型 proxy schema（type=proxy）：五真实代理
+// 字段（§5.3 代理提供商与出站代理引用约定）+ 通用表列 + is_enabled；proxy 行
+// 自身不自引——不声明引用键、无 dynamic 字段，不触发查库。scheme 的 options
+// 为 wire 取值封闭集（前端按 admin.schemaOption.scheme.<value> 翻译显示名）。
+func TestGetProviderSchemaProxyMeta(t *testing.T) {
+	fakes := &fakeProviders{}
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	got := schemaOf(t, h, provider.ProxyType, cookie)
+	if got.GetType() != provider.ProxyType || got.GetCategory() != provider.CategoryProxy {
+		t.Fatalf("type/category = (%q, %q), want (proxy, proxy)", got.GetType(), got.GetCategory())
+	}
+	if len(got.GetFields()) != 12 {
+		t.Fatalf("字段数 = %d, want 12（basic 2 + 五真实字段 + display 4 + is_enabled）", len(got.GetFields()))
+	}
+	byKey := map[string]*adminv1.SchemaField{}
+	for _, f := range got.GetFields() {
+		byKey[f.GetKey()] = f
+	}
+	if f := byKey["scheme"]; f == nil || f.GetType() != "select" || !f.GetRequired() ||
+		!reflect.DeepEqual(f.GetOptions(), []string{"socks5", "http", "https"}) {
+		t.Errorf("scheme = %+v（封闭集 socks5/http/https）", f)
+	}
+	if f := byKey["host"]; f == nil || f.GetType() != "text" || !f.GetRequired() || f.GetPattern() == "" {
+		t.Errorf("host = %+v（必填 + 禁字符集 pattern）", f)
+	}
+	if f := byKey["port"]; f == nil || f.GetType() != "number" || f.GetRequired() {
+		t.Errorf("port = %+v（number 非必填：范围由保存期 NewConfig 兜底）", f)
+	}
+	if f := byKey["user"]; f == nil || f.GetType() != "text" || f.GetRequired() || !f.GetAdvanced() {
+		t.Errorf("user = %+v（可选 advanced）", f)
+	}
+	if f := byKey["password"]; f == nil || f.GetType() != "secret" || f.GetRequired() || !f.GetAdvanced() {
+		t.Errorf("password = %+v（可选 advanced secret）", f)
+	}
+	for _, key := range []string{provider.ProxyRefKey, "union_provider", "enable_signin", "enable_signup", "auto_bind"} {
+		if _, ok := byKey[key]; ok {
+			t.Errorf("proxy schema 不应含字段 %q（不自引 / oauth 专属）", key)
+		}
+	}
+	if len(fakes.queries) != 0 {
+		t.Errorf("proxy schema 不应触发查库, got %+v", fakes.queries)
+	}
+}
+
 // TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
 // 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
-// + 全类 metadata + proxy_url 通用基线 = 24 项。追加字段 label / help 是前端
+// + 全类 metadata + 引用键 = 24 项。追加字段 label / help 是前端
 // i18n 键，type / section / required / advanced 与 §5.3 示例逐字一致，
 // 且与注册表 Schema() 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
-	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
+	fakes := &fakeProviders{
+		unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"},
+		// 未启用 proxy 行：引用键候选含未启用实例（§5.3，允许先引用后启用）。
+		proxyRow: model.Provider{ProviderKey: "proxy_a", Category: "proxy", Type: "proxy", IsEnabled: 0},
+	}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
@@ -863,9 +931,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
-	// 12 表列基线 + 10 oauth 追加 + 全类 metadata + proxy_url 通用基线。
+	// 12 表列基线 + 10 oauth 追加 + 全类 metadata + 引用键基线。
 	if len(got.GetFields()) != 24 {
-		t.Fatalf("字段数 = %d, want 24（12 表列基线 + 10 oauth 追加 + metadata + proxy_url 通用基线）", len(got.GetFields()))
+		t.Fatalf("字段数 = %d, want 24（12 表列基线 + 10 oauth 追加 + metadata + 引用键基线）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -877,15 +945,19 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("%s section = %q, 非法（不在五区块封闭集合）", f.GetKey(), f.GetSection())
 		}
 	}
-	// proxy_url 通用字段：由 provider 的完整 Schema 声明经 AdminSchema 纯转换下发。
-	if f, ok := byKey["proxy_url"]; !ok {
-		t.Error("schema 缺少通用基线字段 proxy_url")
+	// 出站代理引用键：由 provider 的完整 Schema 声明经 AdminSchema 纯转换下发
+	// （endpoint / select，options 查库注入，候选含未启用实例）。
+	if f, ok := byKey[provider.ProxyRefKey]; !ok {
+		t.Errorf("schema 缺少引用键字段 %q", provider.ProxyRefKey)
 	} else {
-		if f.GetSection() != "endpoint" || !f.GetAdvanced() {
-			t.Errorf("proxy_url section/advanced = (%q, %v), want (endpoint, true)", f.GetSection(), f.GetAdvanced())
+		if f.GetSection() != "endpoint" || f.GetAdvanced() || f.GetType() != "select" {
+			t.Errorf("proxy_provider_key section/advanced/type = (%q, %v, %q), want (endpoint, false, select)", f.GetSection(), f.GetAdvanced(), f.GetType())
 		}
-		if f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" {
-			t.Errorf("proxy_url label/help = (%q, %q), want (admin.schemaField.proxyUrlLabel, admin.schemaField.proxyUrlHelp)", f.GetLabel(), f.GetHelp())
+		if f.GetLabel() != "admin.schemaField.proxyProviderKeyLabel" || f.GetHelp() != "admin.schemaField.proxyProviderKeyHelp" {
+			t.Errorf("proxy_provider_key label/help = (%q, %q), want i18n 键", f.GetLabel(), f.GetHelp())
+		}
+		if opts := f.GetOptions(); len(opts) != 1 || opts[0] != "proxy_a" {
+			t.Errorf("proxy_provider_key options = %v, want [proxy_a]（含未启用实例）", opts)
 		}
 	}
 	// 表列基线 12 项仍在（category 只读字段由页面级类型下拉承载）。
@@ -950,13 +1022,19 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("Schema Ext[%d] = %+v, want %+v（§5.3 示例）", i, mf, want)
 		}
 	}
-	// union_provider 是 wechat_mp Schema 中唯一的 dynamic 字段：恰触发一次
-	// union 查库，options 注入成功（category 只读字段不再进 schema）。
+	// union_provider 与引用键是 wechat_mp Schema 中仅有的 dynamic 字段：各恰
+	// 触发一次查库（union 行 / proxy 行），options 注入成功（category 只读字段
+	// 不再进 schema）。
 	if opts := byKey["union_provider"].GetOptions(); len(opts) != 1 || opts[0] != "union_b" {
 		t.Errorf("union_provider options = %v, want [union_b]", opts)
 	}
-	if len(fakes.queries) != 1 {
-		t.Errorf("union 查询次数 = %d, want 1（声明驱动：仅该 Schema 声明了 dynamic 字段）", len(fakes.queries))
+	if len(fakes.queries) != 2 {
+		t.Errorf("查库次数 = %d, want 2（声明驱动：Schema 声明了两个 dynamic 字段）", len(fakes.queries))
+	} else {
+		if fakes.queries[0].Category == nil || *fakes.queries[0].Category != provider.CategoryUnion ||
+			fakes.queries[1].Category == nil || *fakes.queries[1].Category != provider.CategoryProxy {
+			t.Errorf("查库类别序 = (%v, %v), want (union, proxy)", fakes.queries[0].Category, fakes.queries[1].Category)
+		}
 	}
 }
 

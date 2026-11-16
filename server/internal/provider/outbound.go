@@ -21,12 +21,6 @@ import (
 // ErrChannelNotConfigured 同类），不降级直连（§15.4）。
 var ErrProxyRefUnresolvable = errors.New("provider: proxy reference unresolvable")
 
-// categoryProxy proxy 行类别字面量（接口文档 §5.3：category=proxy 承载代理
-// 配置，自身不声明引用键）。导出常量随 proxy 类型静态 meta 登记一并落
-// servicetype.go，此前以未导出常量供解析链做自引防护判定，届时合并、勿留
-// 两份。
-const categoryProxy = "proxy"
-
 // KeySource 引用解析的窄行源：只含按 key 取行。*repo.ProviderRepo 天然满足；
 // admin 侧行仓库同形态。独立于 RowSource，避免把列表能力拖进签名。
 type KeySource interface {
@@ -47,7 +41,7 @@ func refUnresolvable(refKey string) error {
 // 的连接池。错误原样上抛（Loader 既有 fail 语义）。
 func (l *Loader) resolveOutbound(ctx context.Context, p *Provider) error {
 	p.Pools = l.pools
-	if p.Row == nil || p.Row.Category == categoryProxy {
+	if p.Row == nil || p.Row.Category == CategoryProxy {
 		return nil // proxy 行自身不解析引用（自引防护，防环，接口文档 §5.3）
 	}
 	key := strings.TrimSpace(p.Ext.GetProxyProviderKey())
@@ -77,7 +71,7 @@ func ResolveOutbound(ctx context.Context, pools *proxyclient.PoolSet, src KeySou
 	if pools == nil {
 		panic("provider: ResolveOutbound: nil PoolSet")
 	}
-	if row == nil || row.Category == categoryProxy {
+	if row == nil || row.Category == CategoryProxy {
 		return nil, nil
 	}
 	key := strings.TrimSpace(ext.GetProxyProviderKey())
@@ -105,7 +99,7 @@ func outboundPool(pools *proxyclient.PoolSet, refKey string, refRow *model.Provi
 	if refRow == nil || refRow.IsEnabled != 1 {
 		return nil, refUnresolvable(refKey)
 	}
-	if refRow.Category != categoryProxy {
+	if refRow.Category != CategoryProxy {
 		return nil, refUnresolvable(refKey)
 	}
 	cfg, err := proxyclient.NewConfig(refExt.GetScheme(), refExt.GetHost(), refExt.GetPort(), refExt.GetUser(), refExt.GetPassword())

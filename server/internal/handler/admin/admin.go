@@ -98,11 +98,12 @@ var (
 	errPermissionDenied = errors.New("permission denied")
 )
 
-// providerListPageSize 管理列表分页上限（同时是 union_provider options 查询页大小）。
+// providerListPageSize 管理列表分页上限（同时是 dynamic 字段 options 查询页大小）。
 const providerListPageSize = 100
 
 // dynamicKeyUnionProviderKeys union_provider 字段 Schema 声明的 DynamicKey
-// （provider/schemafield.UnionProvider）：本层唯一查库注入的动态键。
+// （provider/schemafield.UnionProvider）：本层查库注入的动态键之一。引用键的
+// DynamicKey（provider.ProxyRefDynamicKey）随声明侧常量取用，不另立字面量。
 const dynamicKeyUnionProviderKeys = "union_provider_keys"
 
 // Handler AdminService 服务实现；内嵌 Unimplemented 基类以兼容生成接口的前向演进。
@@ -170,7 +171,7 @@ func (h *Handler) GetProvider(ctx context.Context, req *connectrpc.Request[admin
 
 // GetProviderSchema 由类型 meta 声明的完整 Schema 驱动动态表单（meta 是 /schema
 // 唯一数据源）：dto 把 []FieldMeta 按序转为 wire SchemaField，不在此裁剪。字段的
-// 取舍 / proxy_url 是否呈现 / dynamic 字段是否查库，完全由 provider.Schema()
+// 取舍 / 引用键是否呈现 / dynamic 字段是否查库，完全由 provider.Schema()
 // 声明决定。未注册 / 空 type → invalid_argument + ErrorInfo(admin, invalid_request)。
 func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderSchemaRequest]) (*connectrpc.Response[adminv1.SchemaResponse], error) {
 	providerType := req.Msg.GetType()
@@ -182,23 +183,31 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 		)
 	}
 	// dynamic 字段的查库由声明驱动：类别只是注册表事实，Schema 声明才是表单
-	// 意图，谁声明 Kind=FieldDynamicOptions 谁触发（接口文档 §5.3）。
-	// 当前唯一查库来源是 union_provider_keys；出现未知 DynamicKey 时不注入、
-	// options 留空（经 dto 自然为 nil，前端渲染空候选）——本层只认得已声明的
-	// 这一个来源，宁空勿猜，不为新键伪造数据。
+	// 意图，谁声明 Kind=FieldDynamicOptions 谁触发（接口文档 §5.3）。当前两个
+	// 查库来源：union_provider_keys（union 行键集）与 proxy_provider_keys
+	// （proxy 行键集，含未启用实例——允许先引用后启用）；出现未知 DynamicKey
+	// 时不注入、options 留空（经 dto 自然为 nil，前端渲染空候选）——本层只认得
+	// 已声明的来源，宁空勿猜，不为新键伪造数据。
 	dynamicKeys := make(map[string]bool)
 	for _, f := range fields {
 		if f.Kind == provider.FieldDynamicOptions {
 			dynamicKeys[f.DynamicKey] = true
 		}
 	}
-	var dynamicOptions map[string][]string
+	dynamicOptions := make(map[string][]string)
 	if dynamicKeys[dynamicKeyUnionProviderKeys] {
-		keys, err := h.unionProviderKeys(ctx)
+		keys, err := h.providerKeysByCategory(ctx, provider.CategoryUnion)
 		if err != nil {
 			return nil, fmt.Errorf("admin handler: list union providers: %w", err)
 		}
-		dynamicOptions = map[string][]string{dynamicKeyUnionProviderKeys: keys}
+		dynamicOptions[dynamicKeyUnionProviderKeys] = keys
+	}
+	if dynamicKeys[provider.ProxyRefDynamicKey] {
+		keys, err := h.providerKeysByCategory(ctx, provider.CategoryProxy)
+		if err != nil {
+			return nil, fmt.Errorf("admin handler: list proxy providers: %w", err)
+		}
+		dynamicOptions[provider.ProxyRefDynamicKey] = keys
 	}
 	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, fields, dynamicOptions)), nil
 }
@@ -215,9 +224,11 @@ func lookupProviderType(providerType string) (category string, fields []provider
 	return meta.Category, fields, true
 }
 
-// unionProviderKeys 分页读完全部 category=union 的 provider_key（取满 total 即止）。
-func (h *Handler) unionProviderKeys(ctx context.Context) ([]string, error) {
-	category := provider.CategoryUnion
+// providerKeysByCategory 分页读完全部指定类别行的 provider_key（取满 total
+// 即止）：union_provider 与 proxy_provider_key 两个 dynamic 字段共用的 options
+// 查库源；不过滤 is_enabled——引用键候选含未启用实例（§5.3，允许先引用后
+// 启用，运行期 fail-closed 兜底）。
+func (h *Handler) providerKeysByCategory(ctx context.Context, category string) ([]string, error) {
 	var keys []string
 	for page := 1; ; page++ {
 		rows, total, err := h.providers.ListProviders(ctx, repo.ProviderListQuery{

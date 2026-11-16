@@ -4,7 +4,9 @@
 // 专用消息厂商（TestProvider 断言 Send 入参）。覆盖以下用例清单：
 // key 字符集拒绝、required 缺失拒绝、未知键处置、create 唯一键冲突、
 // update 改 key 拒绝 + 缺省键保留、delete/enabled 不存在 404、sort 批量
-// 落库、types 两域并集、test 非 sms/email 拒绝、写后 Invalidate 被调。
+// 落库、types 两域并集、test 非 sms/email 拒绝、写后 Invalidate 被调、
+// proxy 行五字段组合校验与 trim 回写、引用键字符集与呈现范围（键集白名单）、
+// TestProvider 引用解析直连 / 代理两路径。
 package admin_test
 
 import (
@@ -19,6 +21,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	adminsvc "authloft/internal/service/admin"
@@ -43,11 +46,12 @@ const testAdminSenderType = "admin_test_sender"
 var testAdminSender = &fakeSender{}
 
 type fakeSender struct {
-	mu     sync.Mutex
-	calls  int
-	lastTo string
-	lastTp string
-	params map[string]string
+	mu       sync.Mutex
+	calls    int
+	lastTo   string
+	lastTp   string
+	params   map[string]string
+	lastProv *provider.Provider // 工厂收到的实例（TestProvider 引用解析断言用）
 }
 
 func (f *fakeSender) Send(_ context.Context, to, tpl string, params map[string]string) error {
@@ -61,7 +65,12 @@ func (f *fakeSender) Send(_ context.Context, to, tpl string, params map[string]s
 func init() {
 	provider.RegisterSender(testAdminSenderType, provider.SenderMeta{
 		Type: testAdminSenderType, DisplayName: "测试厂商", Category: provider.CategoryEmail,
-	}, func(*provider.Provider) (provider.Sender, error) { return testAdminSender, nil })
+	}, func(p *provider.Provider) (provider.Sender, error) {
+		testAdminSender.mu.Lock()
+		testAdminSender.lastProv = p
+		testAdminSender.mu.Unlock()
+		return testAdminSender, nil
+	})
 }
 
 // —— fake ProviderStore / fake ProviderInvalidator ——
@@ -230,7 +239,7 @@ func TestCreateProviderValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newFakeStore()
 			inv := &fakeInvalidator{}
-			svc := adminsvc.NewService(store, inv)
+			svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 			var body *structpb.Struct
 			if tc.body != nil {
 				body = structBody(t, tc.body)
@@ -252,7 +261,7 @@ func TestCreateProviderValidation(t *testing.T) {
 func TestCreateProviderSuccess(t *testing.T) {
 	store := newFakeStore()
 	inv := &fakeInvalidator{}
-	svc := adminsvc.NewService(store, inv)
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 
 	if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, nil)); err != nil {
 		t.Fatalf("CreateProvider: %v", err)
@@ -296,7 +305,7 @@ func TestCreateProviderSuccess(t *testing.T) {
 func TestCreateProviderNoExplicitCheckboxDefault(t *testing.T) {
 	store := newFakeStore()
 	inv := &fakeInvalidator{}
-	svc := adminsvc.NewService(store, inv)
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 
 	body := wechatMpCreateBody(t, map[string]any{"is_enabled": nil}) // 移除显式 is_enabled
 	if err := svc.CreateProvider(context.Background(), body); err != nil {
@@ -316,7 +325,7 @@ func TestCreateProviderDuplicateKey(t *testing.T) {
 	store := newFakeStore()
 	store.createErr = fmt.Errorf("provider repo: create: %w: boom", repo.ErrProviderDuplicate)
 	inv := &fakeInvalidator{}
-	svc := adminsvc.NewService(store, inv)
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 
 	if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, nil)); !errors.Is(err, adminsvc.ErrDuplicateKey) {
 		t.Fatalf("err = %v, want ErrDuplicateKey", err)
@@ -378,7 +387,7 @@ func TestUpdateProviderValidation(t *testing.T) {
 				tc.setup(store)
 			}
 			inv := &fakeInvalidator{}
-			svc := adminsvc.NewService(store, inv)
+			svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 			if err := svc.UpdateProvider(context.Background(), structBody(t, tc.body)); tc.wantID == "invalid" && !errors.Is(err, adminsvc.ErrInvalidRequest) {
 				t.Fatalf("err = %v, want ErrInvalidRequest", err)
 			} else if tc.wantID == "notfound" && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -398,7 +407,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 	orig := wantRowOf(t)
 	store := newFakeStore(orig)
 	inv := &fakeInvalidator{}
-	svc := adminsvc.NewService(store, inv)
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 
 	// 仅改 display_name + 追加 Ext 键：未提交列保留原值。
 	body := map[string]any{
@@ -440,7 +449,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 // 的同值提交不算修改）。
 func TestUpdateProviderTypeSameAsCurrent(t *testing.T) {
 	store := newFakeStore(wantRowOf(t))
-	svc := adminsvc.NewService(store, &fakeInvalidator{})
+	svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 	body := map[string]any{"provider_key": "wx_exist", "type": "wechat_mp", "category": "oauth", "display_name": "新名"}
 	if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
 		t.Fatalf("同值只读键提交应放行: %v", err)
@@ -451,7 +460,7 @@ func TestUpdateProviderTypeSameAsCurrent(t *testing.T) {
 // → invalid_request（protojson 类型校验）。
 func TestUpdateProviderExtTypeMismatch(t *testing.T) {
 	store := newFakeStore(wantRowOf(t))
-	svc := adminsvc.NewService(store, &fakeInvalidator{})
+	svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 	// wechat_mp Ext 声明集无 bool 键，借表列校验（disable_ssl 是 smtp 的键，
 	// 不在 wechat_mp 键集 → 未知键拒绝）；此处用合法键但错型：user_mapping
 	// 是 map 字段，提交字符串 → protojson 报错。
@@ -467,7 +476,7 @@ func TestDeleteProvider(t *testing.T) {
 	t.Run("成功", func(t *testing.T) {
 		store := newFakeStore(wantRowOf(t))
 		inv := &fakeInvalidator{}
-		svc := adminsvc.NewService(store, inv)
+		svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 		if err := svc.DeleteProvider(ctx, "wx_exist"); err != nil {
 			t.Fatalf("DeleteProvider: %v", err)
 		}
@@ -479,13 +488,13 @@ func TestDeleteProvider(t *testing.T) {
 		}
 	})
 	t.Run("不存在 404", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.DeleteProvider(ctx, "missing"); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
 		}
 	})
 	t.Run("空 key", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.DeleteProvider(ctx, ""); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest", err)
 		}
@@ -499,7 +508,7 @@ func TestSetProviderEnabled(t *testing.T) {
 	t.Run("禁用 false", func(t *testing.T) {
 		store := newFakeStore(wantRowOf(t))
 		inv := &fakeInvalidator{}
-		svc := adminsvc.NewService(store, inv)
+		svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 		if err := svc.SetProviderEnabled(ctx, "wx_exist", false); err != nil {
 			t.Fatalf("SetProviderEnabled: %v", err)
 		}
@@ -512,7 +521,7 @@ func TestSetProviderEnabled(t *testing.T) {
 	})
 	t.Run("启用 true", func(t *testing.T) {
 		store := newFakeStore(wantRowOf(t))
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.SetProviderEnabled(ctx, "wx_exist", true); err != nil {
 			t.Fatalf("SetProviderEnabled: %v", err)
 		}
@@ -521,7 +530,7 @@ func TestSetProviderEnabled(t *testing.T) {
 		}
 	})
 	t.Run("不存在 404", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.SetProviderEnabled(ctx, "missing", true); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
 		}
@@ -533,13 +542,13 @@ func TestSetProviderEnabled(t *testing.T) {
 func TestSortProviders(t *testing.T) {
 	ctx := context.Background()
 	t.Run("空 items", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.SortProviders(ctx, nil); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest", err)
 		}
 	})
 	t.Run("非法 key", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.SortProviders(ctx, []adminsvc.SortItem{{ProviderKey: "Bad-Key", SortOrder: 1}}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest", err)
 		}
@@ -547,7 +556,7 @@ func TestSortProviders(t *testing.T) {
 	t.Run("批量落库 + 逐 key 失效", func(t *testing.T) {
 		store := newFakeStore(wantRowOf(t))
 		inv := &fakeInvalidator{}
-		svc := adminsvc.NewService(store, inv)
+		svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 		items := []adminsvc.SortItem{
 			{ProviderKey: "wx_exist", SortOrder: 30},
 			{ProviderKey: "smtp_exist", SortOrder: 10},
@@ -567,7 +576,7 @@ func TestSortProviders(t *testing.T) {
 	t.Run("不存在 key 透传 not found", func(t *testing.T) {
 		store := newFakeStore()
 		store.sortErr = fmt.Errorf("provider repo: update sort orders: key %q: %w", "missing", gorm.ErrRecordNotFound)
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		err := svc.SortProviders(ctx, []adminsvc.SortItem{{ProviderKey: "missing", SortOrder: 1}})
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
@@ -579,7 +588,7 @@ func TestSortProviders(t *testing.T) {
 // aliyun_sms + 虚拟 Union + 服务型 captcha/storage 全部出现，type 稳定升序，
 // category 由 meta 决定。
 func TestProviderTypes(t *testing.T) {
-	svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+	svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 	got := svc.ProviderTypes()
 
 	byType := map[string]adminsvc.ProviderTypeInfo{}
@@ -619,7 +628,7 @@ func TestProviderTypes(t *testing.T) {
 func TestCreateUnionProvider(t *testing.T) {
 	store := newFakeStore()
 	inv := &fakeInvalidator{}
-	svc := adminsvc.NewService(store, inv)
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 	body := structBody(t, map[string]any{
 		"type":         provider.UnionProviderType,
 		"provider_key": "wechat_union",
@@ -686,7 +695,7 @@ func TestCreateServiceProvider(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newFakeStore()
 			inv := &fakeInvalidator{}
-			svc := adminsvc.NewService(store, inv)
+			svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 			if err := svc.CreateProvider(context.Background(), structBody(t, tc.body)); err != nil {
 				t.Fatalf("CreateProvider: %v", err)
 			}
@@ -719,7 +728,7 @@ func TestCreateServiceProviderRequired(t *testing.T) {
 			"display_name": "S", "bucket": "/data"},
 	} {
 		store := newFakeStore()
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.CreateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Errorf("缺失 required: err = %v, want ErrInvalidRequest (body %v)", err, body)
 		}
@@ -743,7 +752,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 	for _, key := range oauthOnly {
 		t.Run("email 拒绝 "+key, func(t *testing.T) {
 			store := newFakeStore()
-			svc := adminsvc.NewService(store, &fakeInvalidator{})
+			svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 			body := map[string]any{}
 			for k, v := range smtpBody {
 				body[k] = v
@@ -759,7 +768,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 	}
 	t.Run("union 拒绝 oauth 专属列", func(t *testing.T) {
 		store := newFakeStore()
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		body := structBody(t, map[string]any{
 			"type": provider.UnionProviderType, "provider_key": "u1",
 			"category": provider.CategoryUnion, "display_name": "U", "enable_signin": true,
@@ -772,7 +781,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 		// 虚拟 Provider 无 adapter / 无登录入口，启用开关没有可开关的行为：
 		// schema 不下发、提交即未知键（与「表单外键一律 invalid_request」同口径）。
 		store := newFakeStore()
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		body := structBody(t, map[string]any{
 			"type": provider.UnionProviderType, "provider_key": "u1",
 			"category": provider.CategoryUnion, "display_name": "U", "is_enabled": false,
@@ -787,7 +796,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 	t.Run("email 仍接受 is_enabled", func(t *testing.T) {
 		// 裁剪只针对虚拟类别：sms / email 的消息发送链按行启用态判定，开关保留。
 		store := newFakeStore()
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		body := map[string]any{}
 		for k, v := range smtpBody {
 			body[k] = v
@@ -799,7 +808,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 	})
 	t.Run("oauth 允许 oauth 专属列", func(t *testing.T) {
 		store := newFakeStore()
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		overrides := map[string]any{"auto_bind": true, "union_provider": "wechat_union"}
 		if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, overrides)); err != nil {
 			t.Fatalf("oauth 提交 oauth 专属列应通过: %v", err)
@@ -818,7 +827,7 @@ func TestUpdateUnionProvider(t *testing.T) {
 		Category: provider.CategoryUnion, Type: provider.UnionProviderType, IsEnabled: 1,
 	}
 	store := newFakeStore(row)
-	svc := adminsvc.NewService(store, &fakeInvalidator{})
+	svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 	if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
 		"provider_key": "wechat_union", "display_name": "新名",
 	})); err != nil {
@@ -848,19 +857,19 @@ func TestTestProvider(t *testing.T) {
 
 	t.Run("非 sms/email 类别拒绝", func(t *testing.T) {
 		store := newFakeStore(wantRowOf(t)) // category=oauth
-		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "wx_exist", "alice@example.com"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest（oauth 类别不可测试发送）", err)
 		}
 	})
 	t.Run("空 target 拒绝", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(emailRow), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(emailRow), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "smtp_exist", ""); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest", err)
 		}
 	})
 	t.Run("不存在 404", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "missing", "a@b.c"); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
 		}
@@ -869,13 +878,13 @@ func TestTestProvider(t *testing.T) {
 		// 行 type 未注册为消息厂商（oauth 渠道名 + email 类别脏数据）→
 		// NewSender ErrChannelNotConfigured → invalid_request。
 		dirty := &model.Provider{ID: 10, ProviderKey: "dirty", Category: "email", Type: "wechat_mp", IsEnabled: 1}
-		svc := adminsvc.NewService(newFakeStore(dirty), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(dirty), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "dirty", "a@b.c"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest（厂商构造失败 = 配置状态）", err)
 		}
 	})
 	t.Run("同步 Send 收到测试模板入参", func(t *testing.T) {
-		svc := adminsvc.NewService(newFakeStore(emailRow), &fakeInvalidator{})
+		svc := adminsvc.NewService(newFakeStore(emailRow), &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "smtp_exist", "alice@example.com"); err != nil {
 			t.Fatalf("TestProvider: %v", err)
 		}
@@ -902,10 +911,279 @@ func TestNewServiceFailFast(t *testing.T) {
 		}()
 		fn()
 	}
-	mustPanic("nil store", func() { adminsvc.NewService(nil, &fakeInvalidator{}) })
-	mustPanic("nil invalidator", func() { adminsvc.NewService(newFakeStore(), nil) })
+	mustPanic("nil store", func() { adminsvc.NewService(nil, &fakeInvalidator{}, proxyclient.NewPoolSet()) })
+	mustPanic("nil invalidator", func() { adminsvc.NewService(newFakeStore(), nil, proxyclient.NewPoolSet()) })
+	mustPanic("nil pools", func() { adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, nil) })
 }
 
-// proxy_url 保存链用例（写入 / 校验 / 键集同源）已随 Ext.proxy_url 字段删除
-// 而移除；引用键 proxy_provider_key 与 proxy 类型行的保存链用例随管理面改造
-// 另行补齐。
+// proxyRowOf 测试用 category=proxy 行：socks5 固定 host，按 port / 凭据区分场景。
+func proxyRowOf(t *testing.T, key string, enabled int8) *model.Provider {
+	t.Helper()
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{Scheme: "socks5", Host: "10.0.0.8", Port: 1080})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	return &model.Provider{ID: 20, ProviderKey: key, Category: provider.CategoryProxy, Type: provider.ProxyType,
+		IsEnabled: enabled, Ext: ext}
+}
+
+// emailRowWithRef email 测试行：ext 携带 proxy_provider_key（TestProvider 引用解析）。
+func emailRowWithRef(t *testing.T, key, ref string) *model.Provider {
+	t.Helper()
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{Host: "smtp.example.com", ProxyProviderKey: ref})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	return &model.Provider{ID: 21, ProviderKey: key, Category: "email", Type: testAdminSenderType,
+		IsEnabled: 1, Ext: ext}
+}
+
+// proxyCreateBody type=proxy 合法新建提交体基线（overrides 覆盖 / nil 删除）。
+func proxyCreateBody(t *testing.T, overrides map[string]any) *structpb.Struct {
+	t.Helper()
+	body := map[string]any{
+		"type": provider.ProxyType, "provider_key": "pxy_new",
+		"category": provider.CategoryProxy, "display_name": "出站代理",
+		"scheme": "socks5", "host": " 127.0.0.1 ", "port": 1080.0,
+		"user": " u1 ", "password": " p1 ",
+	}
+	for k, v := range overrides {
+		if v == nil {
+			delete(body, k)
+		} else {
+			body[k] = v
+		}
+	}
+	return structBody(t, body)
+}
+
+// TestCreateProviderProxyRow proxy 行合法保存：五真实字段落 Ext，scheme / host /
+// user / password trim 回写（不保留首尾空白，§5.3），port 原值；写后失效触发。
+func TestCreateProviderProxyRow(t *testing.T) {
+	store := newFakeStore()
+	inv := &fakeInvalidator{}
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
+	if err := svc.CreateProvider(context.Background(), proxyCreateBody(t, nil)); err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+	if len(store.created) != 1 {
+		t.Fatalf("created = %d, want 1", len(store.created))
+	}
+	row := store.created[0]
+	if row.Category != provider.CategoryProxy || row.Type != provider.ProxyType {
+		t.Errorf("落行 = (%q, %q), want (proxy, proxy)", row.Category, row.Type)
+	}
+	ext, err := repo.ParseProviderExt(row.Ext)
+	if err != nil {
+		t.Fatalf("ParseProviderExt: %v", err)
+	}
+	if ext.GetScheme() != "socks5" || ext.GetHost() != "127.0.0.1" || ext.GetPort() != 1080 ||
+		ext.GetUser() != "u1" || ext.GetPassword() != "p1" {
+		t.Errorf("ext trim 回写 = %+v", ext)
+	}
+	if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "pxy_new" {
+		t.Errorf("invalidate = %v, want [pxy_new]", keys)
+	}
+}
+
+// TestCreateProviderProxyInvalidCombos proxy 行组合非法拒绝（§5.3：校验单一来源
+// proxyclient.NewConfig，保存期对合并后的 Ext 统一执行）：scheme 封闭集外 / host
+// 缺失或含禁用字符 / port 越界 / password 无 user，一律 ErrInvalidRequest 且零落库；
+// 缺 port（number 非必填，组合校验兜底）同拒。
+func TestCreateProviderProxyInvalidCombos(t *testing.T) {
+	cases := []struct {
+		name      string
+		overrides map[string]any
+	}{
+		{"scheme 封闭集外", map[string]any{"scheme": "ftp"}},
+		{"scheme 大小写", map[string]any{"scheme": "SOCKS5"}},
+		{"host 缺失", map[string]any{"host": nil}},
+		{"host 含斜杠", map[string]any{"host": "10.0.0.8/path"}},
+		{"host 含空白", map[string]any{"host": "10.0.0.8 0"}},
+		{"port 缺失", map[string]any{"port": nil}},
+		{"port 越界 0", map[string]any{"port": 0.0}},
+		{"port 越界 70000", map[string]any{"port": 70000.0}},
+		{"password 无 user", map[string]any{"user": nil}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+			if err := svc.CreateProvider(context.Background(), proxyCreateBody(t, tc.overrides)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+				t.Fatalf("err = %v, want ErrInvalidRequest", err)
+			}
+			if len(store.created) != 0 {
+				t.Fatal("非法请求不得落库")
+			}
+		})
+	}
+}
+
+// TestUpdateProviderProxyPatch proxy 行 PATCH：部分提交（只改端口）未提交字段
+// 保留原值且 trim 回写；清 user 留 password → 组合非法拒绝（ErrInvalidUserinfo
+// 同源拦截，不落库）。
+func TestUpdateProviderProxyPatch(t *testing.T) {
+	orig := proxyRowOf(t, "pxy_exist", 1)
+	// 行内预置首尾空白（模拟历史脏数据）：PATCH 只改端口时其余字段 trim 回写。
+	origExt, err := repo.MarshalProviderExt(&providerpb.Ext{Scheme: "socks5", Host: " 10.0.0.8 ",
+		Port: 1080, User: " u1 ", Password: " p1 "})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	orig.Ext = origExt
+	store := newFakeStore(orig)
+	inv := &fakeInvalidator{}
+	svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
+
+	if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+		"provider_key": "pxy_exist", "port": 2080.0,
+	})); err != nil {
+		t.Fatalf("UpdateProvider: %v", err)
+	}
+	if len(store.updated) != 1 {
+		t.Fatalf("updated = %d, want 1", len(store.updated))
+	}
+	ext, err := repo.ParseProviderExt(store.updated[0].Ext)
+	if err != nil {
+		t.Fatalf("ParseProviderExt: %v", err)
+	}
+	if ext.GetScheme() != "socks5" || ext.GetHost() != "10.0.0.8" || ext.GetPort() != 2080 ||
+		ext.GetUser() != "u1" || ext.GetPassword() != "p1" {
+		t.Errorf("PATCH 后 ext = %+v（port 更新、其余保留并 trim）", ext)
+	}
+
+	// 清 user 留 password：合并后组合非法，拒绝且不落库不失效。
+	if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+		"provider_key": "pxy_exist", "user": nil,
+	})); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("err = %v, want ErrInvalidRequest（清 user 留 password）", err)
+	}
+	if len(store.updated) != 1 || len(inv.snapshot()) != 1 {
+		t.Fatalf("非法请求不得落库 / 失效: updated=%d invalidated=%v", len(store.updated), inv.snapshot())
+	}
+}
+
+// TestProxyRefKeyCharset 引用键保存期仅校字符集 ^[a-z0-9_]+$、不校存在性（§5.3，
+// 允许先引用后建行）：非法字符集拒绝、合法键（含尚未建行的键）放行。
+func TestProxyRefKeyCharset(t *testing.T) {
+	for _, tc := range []struct {
+		ref  string
+		want error
+	}{
+		{"Bad-Ref", adminsvc.ErrInvalidRequest},
+		{"含 空格", adminsvc.ErrInvalidRequest},
+		{"not_yet_created", nil}, // 存在性不校验：允许先引用后建行
+	} {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		body := wechatMpCreateBody(t, map[string]any{provider.ProxyRefKey: tc.ref})
+		err := svc.CreateProvider(context.Background(), body)
+		if tc.want == nil && err != nil {
+			t.Errorf("ref %q: err = %v, want 放行", tc.ref, err)
+		}
+		if tc.want != nil && !errors.Is(err, tc.want) {
+			t.Errorf("ref %q: err = %v, want ErrInvalidRequest", tc.ref, err)
+		}
+	}
+}
+
+// TestProxyRefKeyScope 引用键呈现范围的写入侧（键集白名单由 Schema 声明派生，
+// §5.3）：oauth / smtp / captcha 接受提交，union / storage-local / proxy 行自身
+// 提交一律 invalid_request（声明驱动，dto 不按类别裁剪）。
+func TestProxyRefKeyScope(t *testing.T) {
+	accepted := []map[string]any{
+		{"type": "wechat_mp", "provider_key": "wx_ref", "category": "oauth", "display_name": "W",
+			"client_id": "a", "client_secret": "b", provider.ProxyRefKey: "pxy_new"},
+		{"type": "smtp", "provider_key": "smtp_ref", "category": provider.CategoryEmail,
+			"display_name": "S", "host": "smtp.example.com", "from": "n@example.com", provider.ProxyRefKey: "pxy_new"},
+		{"type": provider.CaptchaTypeTurnstile, "provider_key": "cap_ref", "category": provider.CategoryCaptcha,
+			"display_name": "C", "client_id": "site", "client_secret": "sec", provider.ProxyRefKey: "pxy_new"},
+	}
+	for _, body := range accepted {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		if err := svc.CreateProvider(context.Background(), structBody(t, body)); err != nil {
+			t.Errorf("type %q 提交引用键应通过: %v", body["type"], err)
+		}
+		ext, err := repo.ParseProviderExt(store.created[0].Ext)
+		if err != nil || ext.GetProxyProviderKey() != "pxy_new" {
+			t.Errorf("type %q ext 引用键 = %v (ext %+v)", body["type"], err, ext)
+		}
+	}
+	rejected := []map[string]any{
+		{"type": provider.UnionProviderType, "provider_key": "u_ref", "category": provider.CategoryUnion,
+			"display_name": "U", provider.ProxyRefKey: "pxy_new"},
+		{"type": provider.StorageTypeLocal, "provider_key": "local_ref", "category": provider.CategoryStorage,
+			"display_name": "L", "bucket": "/data", "domain": "https://cdn.example.com", provider.ProxyRefKey: "pxy_new"},
+		{"type": provider.ProxyType, "provider_key": "pxy_selfref", "category": provider.CategoryProxy,
+			"display_name": "P", "scheme": "socks5", "host": "10.0.0.8", "port": 1080.0,
+			provider.ProxyRefKey: "pxy_new"},
+	}
+	for _, body := range rejected {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		if err := svc.CreateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Errorf("type %q 提交引用键应拒绝: err = %v", body["type"], err)
+		}
+		if len(store.created) != 0 {
+			t.Errorf("type %q 非法请求不得落库", body["type"])
+		}
+	}
+}
+
+// TestTestProviderProxyResolution TestProvider 引用解析两路径（§15.4：不经
+// Loader，与装配期同一 ResolveOutbound 语义）：无引用 = 直连（Outbound nil）、
+// 有效引用 = 固化按 proxy 行 key 键控的池；引用不可解析（缺失 / 未启用）
+// fail-closed → invalid_request，不降级直连。
+func TestTestProviderProxyResolution(t *testing.T) {
+	ctx := context.Background()
+	proxyRow := proxyRowOf(t, "pxy_a", 1)
+	proxyOff := proxyRowOf(t, "pxy_off", 0)
+
+	t.Run("无引用直连", func(t *testing.T) {
+		row := emailRowWithRef(t, "smtp_direct", "")
+		svc := adminsvc.NewService(newFakeStore(row, proxyRow), &fakeInvalidator{}, proxyclient.NewPoolSet())
+		if err := svc.TestProvider(ctx, "smtp_direct", "a@b.c"); err != nil {
+			t.Fatalf("TestProvider: %v", err)
+		}
+		testAdminSender.mu.Lock()
+		defer testAdminSender.mu.Unlock()
+		if testAdminSender.lastProv == nil || testAdminSender.lastProv.Outbound != nil {
+			t.Errorf("Outbound = %v, want nil（key 空 = 直连）", testAdminSender.lastProv.Outbound)
+		}
+	})
+	t.Run("有效引用出池", func(t *testing.T) {
+		row := emailRowWithRef(t, "smtp_ref", "pxy_a")
+		svc := adminsvc.NewService(newFakeStore(row, proxyRow), &fakeInvalidator{}, proxyclient.NewPoolSet())
+		if err := svc.TestProvider(ctx, "smtp_ref", "a@b.c"); err != nil {
+			t.Fatalf("TestProvider: %v", err)
+		}
+		testAdminSender.mu.Lock()
+		defer testAdminSender.mu.Unlock()
+		if testAdminSender.lastProv == nil || testAdminSender.lastProv.Outbound == nil {
+			t.Fatal("Outbound = nil, want 非 nil（引用解析出池）")
+		}
+		wantCfg, err := proxyclient.NewConfig("socks5", "10.0.0.8", 1080, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !testAdminSender.lastProv.Outbound.Config().Equal(wantCfg) {
+			t.Errorf("池配置 = %+v, want %+v", testAdminSender.lastProv.Outbound.Config(), wantCfg)
+		}
+	})
+	for _, tc := range []struct {
+		name string
+		ref  string
+	}{
+		{"引用缺失 fail-closed", "missing_ref"},
+		{"引用未启用 fail-closed", "pxy_off"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row := emailRowWithRef(t, "smtp_ref", tc.ref)
+			svc := adminsvc.NewService(newFakeStore(row, proxyRow, proxyOff), &fakeInvalidator{}, proxyclient.NewPoolSet())
+			if err := svc.TestProvider(ctx, "smtp_ref", "a@b.c"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+				t.Fatalf("err = %v, want ErrInvalidRequest（不降级直连）", err)
+			}
+		})
+	}
+}

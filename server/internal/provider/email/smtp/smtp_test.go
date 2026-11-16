@@ -279,7 +279,7 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 	if len(schema) == 0 {
 		t.Fatal("meta.Schema() must declare full field schema for /schema")
 	}
-	var hasHost, hasPort, hasMetadata, hasIsEnabled, hasProxyURL bool
+	var hasHost, hasPort, hasMetadata, hasIsEnabled, hasProxyRef bool
 	for _, f := range schema {
 		switch f.Key {
 		case "host":
@@ -290,15 +290,16 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 			hasMetadata = f.Section == "credential"
 		case "is_enabled":
 			hasIsEnabled = true
-		case "proxy_url":
-			hasProxyURL = true
+		case provider.ProxyRefKey:
+			hasProxyRef = f.Section == "endpoint" && f.Storage == provider.StorageExt &&
+				f.Kind == provider.FieldDynamicOptions && f.DynamicKey == provider.ProxyRefDynamicKey
 		}
 	}
 	if !hasHost || !hasPort || !hasMetadata {
 		t.Fatalf("meta.Schema() Ext fields incomplete: host=%v port=%v metadata=%v", hasHost, hasPort, hasMetadata)
 	}
-	if !hasIsEnabled || !hasProxyURL {
-		t.Fatalf("meta.Schema() missing is_enabled=%v / proxy_url=%v", hasIsEnabled, hasProxyURL)
+	if !hasIsEnabled || !hasProxyRef {
+		t.Fatalf("meta.Schema() missing is_enabled=%v / proxy ref=%v", hasIsEnabled, hasProxyRef)
 	}
 	// union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，email 类别不下发。
 	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {

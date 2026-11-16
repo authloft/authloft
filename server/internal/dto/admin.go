@@ -96,7 +96,7 @@ func AdminProviderExt(ext *providerpb.Ext) *structpb.Struct {
 // Kind=FieldDynamicOptions 的字段从 dynamicOptions[DynamicKey] 注入 options，其余
 // 字段用自身 Options；Storage / Kind / DynamicKey 不进 wire（proto 无对应字段）。
 // label / help 是前端 i18n 键，本层不持有文案；type / category 仅作顶层响应字段。
-// 字段裁剪（哪些表列 / Ext / proxy_url 出现）完全由调用方传入的 fields 决定。
+// 字段裁剪（哪些表列 / Ext / 引用键出现）完全由调用方传入的 fields 决定。
 func AdminSchema(providerType, category string, fields []provider.FieldMeta, dynamicOptions map[string][]string) *adminv1.SchemaResponse {
 	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
 	for _, f := range fields {
@@ -120,10 +120,6 @@ func AdminSchema(providerType, category string, fields []provider.FieldMeta, dyn
 	}
 	return resp
 }
-
-// ProxyURLFieldKey 通用 Ext 字段 proxy_url 的 schema key（接口文档 §5.3 代理
-// 字段约定）：由 provider 的完整 Schema 声明下发，本常量供写入 / 校验侧复用。
-const ProxyURLFieldKey = "proxy_url"
 
 // schemaDefaultValue FieldMeta.Default（string）→ JSON 默认值：先按 JSON 标量解析，
 // 失败按原文作字符串；空串无默认值（nil，protojson 省略）。
@@ -206,8 +202,8 @@ func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value
 // MergeProviderExt 把 Ext 键集的值合并进原 Ext（protojson 往返：未提交字段保留原值，
 // PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起点，orig 为 nil 时按空 Ext；
 // 类型不符由 protojson 报错。extKeys 须由写入侧从 Schema 的 Ext 字段派生
-// （service.metaFieldKeys）——proxy_url 按 Schema 声明是否含该字段自动纳入，
-// 与 schema 下发键集一致。
+// （service.metaFieldKeys）——proxy_provider_key 引用键按 Schema 声明是否含该字段
+// 自动纳入，与 schema 下发键集一致。
 func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, extKeys []string) (*providerpb.Ext, error) {
 	if orig == nil {
 		orig = &providerpb.Ext{}

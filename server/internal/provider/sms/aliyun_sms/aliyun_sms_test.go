@@ -289,7 +289,7 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 	if !hasTemplateCode {
 		t.Fatal("meta.Schema() must include template_code (credential)")
 	}
-	for _, key := range []string{"provider_key", "display_name", "is_enabled", "proxy_url"} {
+	for _, key := range []string{"provider_key", "display_name", "is_enabled", provider.ProxyRefKey} {
 		found := false
 		for _, f := range schema {
 			if f.Key == key {

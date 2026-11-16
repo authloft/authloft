@@ -29,10 +29,11 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 		"provider_key": true, "display_name": true, "icon_url": true,
 		"ui_group": true, "sort_order": true, "remark": true,
 	}
-	// union_provider / 登录建号开关 / is_enabled / proxy_url 在 union 类别整体裁剪。
+	// union_provider / 登录建号开关 / is_enabled / 引用键在 union 类别整体裁剪
+	//（虚拟类型无外呼，§5.3 引用键呈现范围不含 union）。
 	banned := map[string]bool{
 		"union_provider": true, "enable_signin": true, "enable_signup": true,
-		"auto_bind": true, "auto_bind_fields": true, "is_enabled": true, "proxy_url": true,
+		"auto_bind": true, "auto_bind_fields": true, "is_enabled": true, provider.ProxyRefKey: true,
 	}
 	for _, f := range schema {
 		if banned[f.Key] {

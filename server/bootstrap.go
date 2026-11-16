@@ -149,6 +149,9 @@ type assembled struct {
 	providerLoader    *provider.Loader
 	providerWhitelist *provider.Whitelist
 	providerCache     *cache.ProviderCache
+	// pools 出站连接池注册表（§15.4）进程级单例：Loader / captcha / admin
+	// （TestProvider 引用解析）三个装配点复用同一实例。
+	pools *proxyclient.PoolSet
 
 	// 会话 / 令牌共享单例：各只构造一份——sessionTokens 供 sso 拦截器与 Terminal
 	// 共用，epochStore 供会话校验与 OIDC 令牌共用，codeIssuer 供 Terminal 与
@@ -316,7 +319,7 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 	deps.accountProfile = accountsvc.NewProfileService(deps.repos.Users)
 
 	deps.admin = &adminSet{
-		Providers: adminsvc.NewService(deps.repos.Providers, deps.providerCache),
+		Providers: adminsvc.NewService(deps.repos.Providers, deps.providerCache, deps.pools),
 		Users: adminsvc.NewUserService(
 			deps.repos.Users,
 			deps.repos.Creds,
@@ -808,9 +811,10 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// → Loader（本地 LRU + singleflight）→ Whitelist（Referer 白名单热更新）。
 	// providerCache 同实例挂入 assembled，admin 写路径写后失效用。
 	// 出站连接池注册表（§15.4）进程级单例：显式构造、显式注入各装配点，本步
-	// 先注入 Loader；captcha / admin 装配点复用同一实例。
+	// 先注入 Loader；captcha / admin 装配点复用同一实例（挂入 assembled）。
 	deps.providerCache = cache.NewProviderCache(rdb)
 	pools := proxyclient.NewPoolSet()
+	deps.pools = pools
 	deps.providerLoader = provider.NewLoader(
 		deps.repos.Providers, deps.providerCache, pools, provider.LoaderOptions{})
 	deps.providerWhitelist = provider.NewWhitelist(deps.providerLoader)
