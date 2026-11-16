@@ -518,3 +518,32 @@ func TestAdminSettingsSiteName(t *testing.T) {
 		t.Errorf("缺失键 SiteName = %q, want 空串（零值投影）", got)
 	}
 }
+
+// TestAdminSsoClientLoginOptions 应用级登录配置三字段的视图投影（§5.5）：
+// login_methods / oauth_providers 由 service 解析后传入、default_redirect_uri
+// 直取行值；nil 行 → 空消息；nil / 空切片按 proto3 空 repeated 省略。
+func TestAdminSsoClientLoginOptions(t *testing.T) {
+	now := time.Unix(1761700000, 0).UTC()
+	row := &model.SsoClient{
+		ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户",
+		DefaultRedirectURI: "https://app.example.com/cb",
+		CreatedAt:          now, UpdatedAt: now,
+	}
+	got := AdminSsoClient(row, []string{"*"}, []string{"password", "thirdparty"}, []string{"wx_mp"})
+	if strings.Join(got.GetLoginMethods(), ",") != "password,thirdparty" ||
+		strings.Join(got.GetOauthProviders(), ",") != "wx_mp" ||
+		got.GetDefaultRedirectUri() != "https://app.example.com/cb" {
+		t.Errorf("投影 = (methods=%v providers=%v default=%q)", got.GetLoginMethods(), got.GetOauthProviders(), got.GetDefaultRedirectUri())
+	}
+
+	// 空切片：proto3 空 repeated 省略；default 直取行值（未配置行为空串）。
+	plainRow := &model.SsoClient{ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户", CreatedAt: now, UpdatedAt: now}
+	empty := AdminSsoClient(plainRow, nil, nil, nil)
+	if len(empty.GetLoginMethods()) != 0 || len(empty.GetOauthProviders()) != 0 || empty.GetDefaultRedirectUri() != "" {
+		t.Errorf("空输入投影 = (methods=%v providers=%v default=%q)", empty.GetLoginMethods(), empty.GetOauthProviders(), empty.GetDefaultRedirectUri())
+	}
+
+	if m := AdminSsoClient(nil, nil, nil, nil); len(m.GetLoginMethods()) != 0 {
+		t.Errorf("nil 行应返回空消息")
+	}
+}

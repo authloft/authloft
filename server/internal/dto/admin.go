@@ -469,22 +469,27 @@ func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
 }
 
 // AdminSsoClient sso_client 行 → SsoClient 消息（列表 / 详情两用）；client_secret
-// 明文透出，仅 admin 会话可达，本文件不做二次脱敏也不落日志。redirect_uris 由
-// service 解析后传入；nil / 空切片按 proto3 空 repeated 省略。
-func AdminSsoClient(row *model.SsoClient, uris []string) *adminv1.SsoClient {
+// 明文透出，仅 admin 会话可达，本文件不做二次脱敏也不落日志。redirect_uris /
+// login_methods / oauth_providers 由 service 经 §12.3 编解码唯一出口解析后
+// 传入；default_redirect_uri 直取行值（空串 = 未配置）；nil / 空切片按 proto3
+// 空 repeated 省略。
+func AdminSsoClient(row *model.SsoClient, uris, loginMethods, oauthProviders []string) *adminv1.SsoClient {
 	if row == nil {
 		return &adminv1.SsoClient{}
 	}
 	return &adminv1.SsoClient{
-		Id:           row.ID,
-		ClientId:     row.ClientID,
-		ClientSecret: row.ClientSecret,
-		Name:         row.Name,
-		RedirectUris: uris,
-		TemplateKey:  row.TemplateKey,
-		TemplateVars: row.TemplateVars,
-		CreatedAt:    row.CreatedAt.Unix(),
-		UpdatedAt:    row.UpdatedAt.Unix(),
+		Id:                 row.ID,
+		ClientId:           row.ClientID,
+		ClientSecret:       row.ClientSecret,
+		Name:               row.Name,
+		RedirectUris:       uris,
+		LoginMethods:       loginMethods,
+		OauthProviders:     oauthProviders,
+		DefaultRedirectUri: row.DefaultRedirectURI,
+		TemplateKey:        row.TemplateKey,
+		TemplateVars:       row.TemplateVars,
+		CreatedAt:          row.CreatedAt.Unix(),
+		UpdatedAt:          row.UpdatedAt.Unix(),
 	}
 }
 

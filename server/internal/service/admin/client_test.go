@@ -2,7 +2,8 @@
 // 双类型 CRUD 全链（Create 生成 secret 非空 / Get 明文 / Update 缺省保留 /
 // client_id 不可改 / Delete 后 Get 404）、redirect_uris `*` 与 ^https?://
 // 校验、uk 冲突 already_exists 转译（repo.ErrClientDuplicate → ErrDuplicateKey）、
-// OIDC scopes 逗号串与 TTL 值域、分页透传。store 用内存 fake（*repo.ClientRepo
+// OIDC scopes 逗号串与 TTL 值域、分页透传、应用级登录配置三校验与 has 位
+// PATCH 语义。store 用内存 fake（*repo.ClientRepo
 // 的真库用例在 repo/client_repo_test.go，本文件不重复建库）。
 package admin
 
@@ -136,6 +137,26 @@ func (f *fakeClientStore) DeleteOidcClient(_ context.Context, id int64) error {
 	return nil
 }
 
+// fakeProviderKeys ProviderKeyFinder 的内存 fake：existing 为存在的 provider
+// key 集合（nil map = 无 provider），未命中返回包装的 gorm.ErrRecordNotFound，
+// 语义镜像 *repo.ProviderRepo.FindByKey；lookupKeys 记录查询轨迹供断言。
+type fakeProviderKeys struct {
+	existing   map[string]bool
+	lookupKeys []string
+}
+
+func (f *fakeProviderKeys) FindByKey(_ context.Context, providerKey string) (*model.Provider, error) {
+	f.lookupKeys = append(f.lookupKeys, providerKey)
+	if f.existing[providerKey] {
+		return &model.Provider{ProviderKey: providerKey}, nil
+	}
+	return nil, fmt.Errorf("fake: find provider by key: %w", gorm.ErrRecordNotFound)
+}
+
+// existingProviderKeys 多数用例共用的存在 key 集（不提交 oauth_providers 的
+// 用例不触达存在性查询）。
+var existingProviderKeys = map[string]bool{"wx_mp": true, "github": true}
+
 // TestClientServiceCreateSso SSO 新建：secret 服务端生成（非空 64 字符）、
 // client_id 空 → 生成 / 非空用提交值、uk 冲突 → ErrDuplicateKey、
 // redirect_uris 条目校验（`*` / ^https?:// / 非法形态）、uris round-trip。
@@ -144,7 +165,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 
 	t.Run("生成与指定 client_id", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{Name: "门户"}); err != nil {
 			t.Fatalf("Create（生成 client_id）: %v", err)
 		}
@@ -161,7 +182,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 	})
 	t.Run("提交 client_id 用提交值", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{ClientID: "portal-main", Name: "门户"}); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -171,7 +192,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 	})
 	t.Run("uk 冲突转译 already_exists 哨兵", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{ClientID: "dup-key"}); err != nil {
 			t.Fatalf("首次 Create: %v", err)
 		}
@@ -198,7 +219,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 		}
 		for _, tc := range cases {
 			store := newFakeClientStore()
-			svc := NewClientService(store)
+			svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 			err := svc.CreateSsoClient(ctx, SsoClientInput{RedirectURIs: tc.uris})
 			if tc.want && err != nil {
 				t.Errorf("%s: 不应拒绝, got %v", tc.desc, err)
@@ -210,7 +231,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 	})
 	t.Run("redirect_uris round-trip", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		want := []string{"https://app.example.com/cb", "*"}
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{RedirectURIs: want}); err != nil {
 			t.Fatalf("Create: %v", err)
@@ -225,7 +246,7 @@ func TestClientServiceCreateSso(t *testing.T) {
 	})
 	t.Run("空 uris 允许（先建后补）", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{Name: "占位"}); err != nil {
 			t.Fatalf("Create 无 uris: %v", err)
 		}
@@ -246,7 +267,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 
 	t.Run("scopes 逗号串与拆分", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateOidcClient(ctx, OidcClientInput{
 			Scopes: []string{"openid", "profile", "email"},
 		}); err != nil {
@@ -265,7 +286,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 	})
 	t.Run("TTL 零值原样传库（落 DDL 默认由真库用例覆盖）", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateOidcClient(ctx, OidcClientInput{}); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -290,7 +311,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 			{3600, -1, false},
 		} {
 			store := newFakeClientStore()
-			svc := NewClientService(store)
+			svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 			err := svc.CreateOidcClient(ctx, OidcClientInput{AccessTokenTTL: tc.access, RefreshTokenTTL: tc.refresh})
 			if tc.want && err != nil {
 				t.Errorf("TTL(%d,%d): 不应拒绝, got %v", tc.access, tc.refresh, err)
@@ -303,7 +324,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 	t.Run("scope 条目校验", func(t *testing.T) {
 		for _, scopes := range [][]string{{"openid", ""}, {"open,id"}} {
 			store := newFakeClientStore()
-			svc := NewClientService(store)
+			svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 			err := svc.CreateOidcClient(ctx, OidcClientInput{Scopes: scopes})
 			if !errors.Is(err, ErrInvalidRequest) {
 				t.Errorf("scopes %v: err = %v, want ErrInvalidRequest", scopes, err)
@@ -312,7 +333,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 	})
 	t.Run("uk 冲突转译", func(t *testing.T) {
 		store := newFakeClientStore()
-		svc := NewClientService(store)
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateOidcClient(ctx, OidcClientInput{ClientID: "oidc-dup"}); err != nil {
 			t.Fatalf("首次 Create: %v", err)
 		}
@@ -328,7 +349,7 @@ func TestClientServiceCreateOidc(t *testing.T) {
 func TestClientServiceSsoLifecycle(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeClientStore()
-	svc := NewClientService(store)
+	svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 
 	if err := svc.CreateSsoClient(ctx, SsoClientInput{
 		ClientID:     "portal-main",
@@ -416,7 +437,7 @@ func TestClientServiceSsoLifecycle(t *testing.T) {
 func TestClientServiceOidcLifecycle(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeClientStore()
-	svc := NewClientService(store)
+	svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 
 	if err := svc.CreateOidcClient(ctx, OidcClientInput{
 		ClientID:        "oidc-app",
@@ -483,7 +504,7 @@ func TestClientServiceOidcLifecycle(t *testing.T) {
 func TestClientServiceList(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeClientStore()
-	svc := NewClientService(store)
+	svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 
 	if err := svc.CreateSsoClient(ctx, SsoClientInput{ClientID: "c1", RedirectURIs: []string{"*"}}); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -514,3 +535,245 @@ func TestClientServiceList(t *testing.T) {
 		t.Fatalf("List oidc detail = %+v", orows)
 	}
 }
+
+// TestClientServiceSsoLoginOptions 应用级登录配置（§5.5）：login_methods
+// 封闭集、oauth_providers key 存在性、default_redirect_uri 白名单命中与
+// 列宽防御、has 位整组替换 / 空数组跟随全局、optional 清空、无 has 位回归、
+// default 对合并后白名单校验。
+func TestClientServiceSsoLoginOptions(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Create login_methods 封闭集", func(t *testing.T) {
+		for _, tc := range []struct {
+			methods []string
+			want    bool
+			desc    string
+		}{
+			{nil, true, "未配置跟随全局"},
+			{[]string{"password"}, true, "单因子"},
+			{[]string{"password", "otp_sms", "otp_email", "webauthn", "thirdparty"}, true, "全封闭集含 thirdparty"},
+			{[]string{"totp"}, false, "totp 不在集合域"},
+			{[]string{"recovery_code"}, false, "recovery_code 不在集合域"},
+			{[]string{"password", "bogus"}, false, "越界取值"},
+			{[]string{""}, false, "空条目"},
+		} {
+			store := newFakeClientStore()
+			svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+			err := svc.CreateSsoClient(ctx, SsoClientInput{LoginMethods: tc.methods})
+			if tc.want && err != nil {
+				t.Errorf("%s: 不应拒绝, got %v", tc.desc, err)
+			}
+			if !tc.want && !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("%s: err = %v, want ErrInvalidRequest", tc.desc, err)
+			}
+		}
+	})
+
+	t.Run("Create oauth_providers key 存在性", func(t *testing.T) {
+		store := newFakeClientStore()
+		keys := &fakeProviderKeys{existing: existingProviderKeys}
+		svc := NewClientService(store, keys)
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{OauthProviders: []string{"wx_mp", "github"}}); err != nil {
+			t.Fatalf("存在的 key 不应拒绝: %v", err)
+		}
+		if len(keys.lookupKeys) != 2 {
+			t.Errorf("应逐 key 查询存在性, got %v", keys.lookupKeys)
+		}
+		err := svc.CreateSsoClient(ctx, SsoClientInput{OauthProviders: []string{"wx_mp", "ghost"}})
+		if !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("不存在的 key err = %v, want ErrInvalidRequest", err)
+		}
+	})
+
+	t.Run("Create default_redirect_uri 白名单与列宽", func(t *testing.T) {
+		for _, tc := range []struct {
+			uris []string
+			def  string
+			want bool
+			desc string
+		}{
+			{[]string{"https://app.example.com/cb"}, "https://app.example.com/cb", true, "字面命中"},
+			{[]string{"*"}, "https://anything.example.org/x", true, "整段通配命中"},
+			{[]string{"https://*.example.com/cb"}, "https://a.example.com/cb", true, "段通配命中"},
+			{[]string{"https://app.example.com/cb"}, "https://other.example.com/cb", false, "不命中"},
+			{nil, "https://app.example.com/cb", false, "白名单为空不命中"},
+			{[]string{"https://app.example.com/cb"}, "https://" + strings.Repeat("a", 1100), false, "超 VARCHAR(1024) 列宽"},
+			{[]string{"https://app.example.com/cb"}, "", true, "空 = 未配置"},
+		} {
+			store := newFakeClientStore()
+			svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+			err := svc.CreateSsoClient(ctx, SsoClientInput{RedirectURIs: tc.uris, DefaultRedirectURI: tc.def})
+			if tc.want && err != nil {
+				t.Errorf("%s: 不应拒绝, got %v", tc.desc, err)
+			}
+			if !tc.want && !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("%s: err = %v, want ErrInvalidRequest", tc.desc, err)
+			}
+		}
+	})
+
+	t.Run("Create 三字段 round-trip", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		in := SsoClientInput{
+			RedirectURIs:       []string{"https://*.example.com/cb"},
+			LoginMethods:       []string{"password", "thirdparty"},
+			OauthProviders:     []string{"wx_mp"},
+			DefaultRedirectURI: "https://app.example.com/cb",
+		}
+		if err := svc.CreateSsoClient(ctx, in); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		d, err := svc.GetSsoClient(ctx, 1)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if strings.Join(d.LoginMethods, "|") != "password|thirdparty" {
+			t.Errorf("login_methods round-trip = %v", d.LoginMethods)
+		}
+		if strings.Join(d.OauthProviders, "|") != "wx_mp" {
+			t.Errorf("oauth_providers round-trip = %v", d.OauthProviders)
+		}
+		if d.Row.DefaultRedirectURI != "https://app.example.com/cb" {
+			t.Errorf("default_redirect_uri = %q", d.Row.DefaultRedirectURI)
+		}
+	})
+
+	t.Run("Update has 位整组替换与空数组跟随全局", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{
+			ClientID:       "portal",
+			RedirectURIs:   []string{"https://*.example.com/cb"},
+			LoginMethods:   []string{"password"},
+			OauthProviders: []string{"wx_mp"},
+		}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasLoginMethods: true, LoginMethods: []string{"otp_sms", "thirdparty"}}); err != nil {
+			t.Fatalf("Update login_methods: %v", err)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasOauthProviders: true, OauthProviders: []string{"github"}}); err != nil {
+			t.Fatalf("Update oauth_providers: %v", err)
+		}
+		d, err := svc.GetSsoClient(ctx, 1)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if strings.Join(d.LoginMethods, "|") != "otp_sms|thirdparty" {
+			t.Errorf("has=true 应整组替换, got %v", d.LoginMethods)
+		}
+		if strings.Join(d.OauthProviders, "|") != "github" {
+			t.Errorf("has=true 应整组替换, got %v", d.OauthProviders)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasLoginMethods: true, LoginMethods: nil}); err != nil {
+			t.Fatalf("Update 空数组: %v", err)
+		}
+		d, err = svc.GetSsoClient(ctx, 1)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if len(d.LoginMethods) != 0 {
+			t.Errorf("has=true 空数组应清空为跟随全局, got %v", d.LoginMethods)
+		}
+		if len(d.OauthProviders) != 1 || d.OauthProviders[0] != "github" {
+			t.Errorf("未提交的 oauth_providers 应保留, got %v", d.OauthProviders)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasOauthProviders: true, OauthProviders: []string{"ghost"}}); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("不存在的 key err = %v, want ErrInvalidRequest", err)
+		}
+		d, _ = svc.GetSsoClient(ctx, 1)
+		if len(d.OauthProviders) != 1 || d.OauthProviders[0] != "github" {
+			t.Errorf("校验失败不应改库, got %v", d.OauthProviders)
+		}
+	})
+
+	t.Run("Update 无 has 位回归", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{
+			ClientID:     "portal",
+			RedirectURIs: []string{"https://app.example.com/cb"},
+			LoginMethods: []string{"password"},
+		}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{
+			Name:           "改名",
+			LoginMethods:   []string{"webauthn"},
+			OauthProviders: []string{"wx_mp"},
+		}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		d, err := svc.GetSsoClient(ctx, 1)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if strings.Join(d.LoginMethods, "|") != "password" {
+			t.Errorf("无 has 位应保留原值, got %v", d.LoginMethods)
+		}
+		if len(d.OauthProviders) != 0 {
+			t.Errorf("无 has 位应保留原值, got %v", d.OauthProviders)
+		}
+		if d.Row.DefaultRedirectURI != "" {
+			t.Errorf("default 未提交应保留原值, got %q", d.Row.DefaultRedirectURI)
+		}
+	})
+
+	t.Run("Update default_redirect_uri 清空与合并白名单", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{
+			ClientID:           "portal",
+			RedirectURIs:       []string{"https://app.example.com/cb"},
+			DefaultRedirectURI: "https://app.example.com/cb",
+		}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{DefaultRedirectURI: strPtr("")}); err != nil {
+			t.Fatalf("Update 清空: %v", err)
+		}
+		d, err := svc.GetSsoClient(ctx, 1)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if d.Row.DefaultRedirectURI != "" {
+			t.Errorf("非 nil 空串应清空, got %q", d.Row.DefaultRedirectURI)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{
+			RedirectURIs:       []string{"https://new.example.com/cb"},
+			DefaultRedirectURI: strPtr("https://app.example.com/cb"),
+		}); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("对合并后白名单不命中 err = %v, want ErrInvalidRequest", err)
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{
+			RedirectURIs:       []string{"https://new.example.com/cb"},
+			DefaultRedirectURI: strPtr("https://new.example.com/cb"),
+		}); err != nil {
+			t.Fatalf("命中合并后白名单不应拒绝: %v", err)
+		}
+		d, _ = svc.GetSsoClient(ctx, 1)
+		if d.Row.DefaultRedirectURI != "https://new.example.com/cb" {
+			t.Errorf("default_redirect_uri = %q", d.Row.DefaultRedirectURI)
+		}
+	})
+
+	t.Run("Update 列宽防御", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{ClientID: "portal"}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		big := make([]string, 90)
+		for i := range big {
+			big[i] = "thirdparty"
+		}
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasLoginMethods: true, LoginMethods: big}); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("超 VARBINARY(1024) err = %v, want ErrInvalidRequest", err)
+		}
+	})
+}
+
+// strPtr 测试辅助：构造 optional string 的指针入参（nil = 不动 / 非 nil =
+// 提交，空串 = 清空）。
+func strPtr(s string) *string { return &s }

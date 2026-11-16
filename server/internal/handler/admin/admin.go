@@ -482,7 +482,7 @@ func (h *Handler) ListSsoClients(ctx context.Context, req *connectrpc.Request[ad
 	}
 	items := make([]*adminv1.SsoClient, len(rows))
 	for i := range rows {
-		items[i] = dto.AdminSsoClient(rows[i].Row, rows[i].RedirectURIs)
+		items[i] = dto.AdminSsoClient(rows[i].Row, rows[i].RedirectURIs, rows[i].LoginMethods, rows[i].OauthProviders)
 	}
 	return connectrpc.NewResponse(&adminv1.SsoClientListResponse{
 		Items:    items,
@@ -496,11 +496,14 @@ func (h *Handler) ListSsoClients(ctx context.Context, req *connectrpc.Request[ad
 // 管理员经 GetSsoClient 明文查看。成功返回 OkResponse。
 func (h *Handler) CreateSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.CreateSsoClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	if err := h.clients.CreateSsoClient(ctx, adminsvc.SsoClientInput{
-		ClientID:     req.Msg.GetClientId(),
-		Name:         req.Msg.GetName(),
-		RedirectURIs: req.Msg.GetRedirectUris(),
-		TemplateKey:  req.Msg.GetTemplateKey(),
-		TemplateVars: req.Msg.GetTemplateVars(),
+		ClientID:           req.Msg.GetClientId(),
+		Name:               req.Msg.GetName(),
+		RedirectURIs:       req.Msg.GetRedirectUris(),
+		LoginMethods:       req.Msg.GetLoginMethods(),
+		OauthProviders:     req.Msg.GetOauthProviders(),
+		DefaultRedirectURI: req.Msg.GetDefaultRedirectUri(),
+		TemplateKey:        req.Msg.GetTemplateKey(),
+		TemplateVars:       req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("create sso client", err)
 	}
@@ -513,18 +516,25 @@ func (h *Handler) GetSsoClient(ctx context.Context, req *connectrpc.Request[admi
 	if err != nil {
 		return nil, mapWriteError("get sso client", err)
 	}
-	return connectrpc.NewResponse(dto.AdminSsoClient(d.Row, d.RedirectURIs)), nil
+	return connectrpc.NewResponse(dto.AdminSsoClient(d.Row, d.RedirectURIs, d.LoginMethods, d.OauthProviders)), nil
 }
 
 // UpdateSsoClient 缺省键保留原值（PATCH）；client_id 不可改（改 → invalid_request）。
+// 应用级登录配置按 §5.5 has 位语义传递：has_* 伴生标志与 optional
+// default_redirect_uri 的指针在场性原样透传 service。
 func (h *Handler) UpdateSsoClient(ctx context.Context, req *connectrpc.Request[adminv1.UpdateSsoClientRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
 	if err := h.clients.UpdateSsoClient(ctx, req.Msg.GetId(), adminsvc.SsoClientPatch{
-		ClientID:     req.Msg.GetClientId(),
-		ClientSecret: req.Msg.GetClientSecret(),
-		Name:         req.Msg.GetName(),
-		RedirectURIs: req.Msg.GetRedirectUris(),
-		TemplateKey:  req.Msg.GetTemplateKey(),
-		TemplateVars: req.Msg.GetTemplateVars(),
+		ClientID:           req.Msg.GetClientId(),
+		ClientSecret:       req.Msg.GetClientSecret(),
+		Name:               req.Msg.GetName(),
+		RedirectURIs:       req.Msg.GetRedirectUris(),
+		LoginMethods:       req.Msg.GetLoginMethods(),
+		HasLoginMethods:    req.Msg.GetHasLoginMethods(),
+		OauthProviders:     req.Msg.GetOauthProviders(),
+		HasOauthProviders:  req.Msg.GetHasOauthProviders(),
+		DefaultRedirectURI: req.Msg.DefaultRedirectUri,
+		TemplateKey:        req.Msg.GetTemplateKey(),
+		TemplateVars:       req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("update sso client", err)
 	}

@@ -1921,7 +1921,8 @@ func TestClientListHandlers(t *testing.T) {
 	now := time.Unix(1761700000, 0).UTC()
 	ssoRow := &model.SsoClient{
 		ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户",
-		CreatedAt: now, UpdatedAt: now,
+		DefaultRedirectURI: "https://app.example.com/cb",
+		CreatedAt:          now, UpdatedAt: now,
 	}
 	oidcRow := &model.OidcClient{
 		ID: 8, ClientID: "oidc-app", ClientSecret: "oidc-sec-64", Name: "OIDC",
@@ -1931,8 +1932,11 @@ func TestClientListHandlers(t *testing.T) {
 
 	t.Run("SSO 分页归一与投影", func(t *testing.T) {
 		clients := &fakeClientService{
-			ssoRows: []adminsvc.SsoClientDetail{{Row: ssoRow, RedirectURIs: []string{"*"}}},
-			total:   1,
+			ssoRows: []adminsvc.SsoClientDetail{{
+				Row: ssoRow, RedirectURIs: []string{"*"},
+				LoginMethods: []string{"password", "thirdparty"}, OauthProviders: []string{"wx_mp"},
+			}},
+			total: 1,
 		}
 		tokens, epochs, h := newAdminHandlerClients(t, clients)
 		cookie := adminCookie(t, tokens, epochs, 1)
@@ -1950,7 +1954,10 @@ func TestClientListHandlers(t *testing.T) {
 		}
 		item := got.GetItems()[0]
 		if item.GetId() != 7 || item.GetClientId() != "portal-main" || item.GetClientSecret() != "sec-plain-64" ||
-			item.GetName() != "门户" || len(item.GetRedirectUris()) != 1 || item.GetRedirectUris()[0] != "*" {
+			item.GetName() != "门户" || len(item.GetRedirectUris()) != 1 || item.GetRedirectUris()[0] != "*" ||
+			strings.Join(item.GetLoginMethods(), ",") != "password,thirdparty" ||
+			strings.Join(item.GetOauthProviders(), ",") != "wx_mp" ||
+			item.GetDefaultRedirectUri() != "https://app.example.com/cb" {
 			t.Fatalf("列表项 = %+v", item)
 		}
 		if clients.gotSsoList != (adminsvcClientListCall{page: 1, pageSize: 100, sort: "created_at", order: "desc"}) {
@@ -2025,7 +2032,11 @@ func TestClientGetHandlers(t *testing.T) {
 
 	t.Run("SSO 详情含明文 secret", func(t *testing.T) {
 		clients := &fakeClientService{
-			ssoDetail: &adminsvc.SsoClientDetail{Row: ssoRow, RedirectURIs: []string{"https://app.example.com/cb"}},
+			ssoDetail: &adminsvc.SsoClientDetail{
+				Row:          ssoRow,
+				RedirectURIs: []string{"https://app.example.com/cb"},
+				LoginMethods: []string{"webauthn"}, OauthProviders: []string{"github"},
+			},
 		}
 		tokens, epochs, h := newAdminHandlerClients(t, clients)
 		cookie := adminCookie(t, tokens, epochs, 1)
@@ -2038,7 +2049,9 @@ func TestClientGetHandlers(t *testing.T) {
 			t.Fatalf("decode response %q: %v", raw, err)
 		}
 		if got.GetId() != 7 || got.GetClientId() != "portal-main" || got.GetClientSecret() != "sec-plain-64" ||
-			len(got.GetRedirectUris()) != 1 || got.GetRedirectUris()[0] != "https://app.example.com/cb" {
+			len(got.GetRedirectUris()) != 1 || got.GetRedirectUris()[0] != "https://app.example.com/cb" ||
+			strings.Join(got.GetLoginMethods(), ",") != "webauthn" ||
+			strings.Join(got.GetOauthProviders(), ",") != "github" {
 			t.Fatalf("详情 = %+v", &got)
 		}
 		if clients.gotGetSsoID != 7 {
@@ -2090,8 +2103,8 @@ func TestClientGetHandlers(t *testing.T) {
 // 字段，服务端生成口径由类型系统挡住）+ OkResponse 空应答 + 错误三态映射
 // （invalid_request 400+ErrorInfo / already_exists 409 / not_found 404）。
 func TestClientWriteHandlers(t *testing.T) {
-	const reqCreateSso = `{"clientId":"portal-x","clientSecret":"should-be-ignored","name":"门户","redirectUris":["*"]}`
-	const reqUpdateSso = `{"id":7,"clientId":"portal-x","clientSecret":"rotated-sec","name":"新名","redirectUris":["https://app.example.com/cb"]}`
+	const reqCreateSso = `{"clientId":"portal-x","clientSecret":"should-be-ignored","name":"门户","redirectUris":["*"],"loginMethods":["password","thirdparty"],"oauthProviders":["wx_mp"],"defaultRedirectUri":"https://a.example.com/cb"}`
+	const reqUpdateSso = `{"id":7,"clientId":"portal-x","clientSecret":"rotated-sec","name":"新名","redirectUris":["https://app.example.com/cb"],"loginMethods":["otp_sms"],"hasLoginMethods":true,"oauthProviders":["github"],"hasOauthProviders":true,"defaultRedirectUri":""}`
 	const reqDeleteSso = `{"id":7}`
 	const reqCreateOidc = `{"clientId":"oidc-x","clientSecret":"should-be-ignored","name":"OIDC","redirectUris":["https://a.example.com/cb"],"scopes":["openid","profile"],"accessTokenTtl":1800,"refreshTokenTtl":864000}`
 	const reqUpdateOidc = `{"id":8,"name":"改名","scopes":["openid"],"accessTokenTtl":7200,"refreshTokenTtl":2592000}`
@@ -2116,12 +2129,18 @@ func TestClientWriteHandlers(t *testing.T) {
 			}
 		}
 		cs := clients.gotCreateSso
-		if cs.ClientID != "portal-x" || cs.Name != "门户" || len(cs.RedirectURIs) != 1 || cs.RedirectURIs[0] != "*" {
+		if cs.ClientID != "portal-x" || cs.Name != "门户" || len(cs.RedirectURIs) != 1 || cs.RedirectURIs[0] != "*" ||
+			strings.Join(cs.LoginMethods, ",") != "password,thirdparty" ||
+			strings.Join(cs.OauthProviders, ",") != "wx_mp" ||
+			cs.DefaultRedirectURI != "https://a.example.com/cb" {
 			t.Errorf("create sso 透传 = %+v", cs)
 		}
 		us := clients.gotUpdateSso
 		if us.id != 7 || us.p.ClientID != "portal-x" || us.p.ClientSecret != "rotated-sec" ||
-			us.p.Name != "新名" || len(us.p.RedirectURIs) != 1 || us.p.RedirectURIs[0] != "https://app.example.com/cb" {
+			us.p.Name != "新名" || len(us.p.RedirectURIs) != 1 || us.p.RedirectURIs[0] != "https://app.example.com/cb" ||
+			!us.p.HasLoginMethods || strings.Join(us.p.LoginMethods, ",") != "otp_sms" ||
+			!us.p.HasOauthProviders || strings.Join(us.p.OauthProviders, ",") != "github" ||
+			us.p.DefaultRedirectURI == nil || *us.p.DefaultRedirectURI != "" {
 			t.Errorf("update sso 透传 = %+v", us)
 		}
 		if clients.gotDeleteSsoID != 7 {

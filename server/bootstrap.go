@@ -332,7 +332,7 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 			deps.settings,
 			deps.repos.Permissions,
 		),
-		Clients: adminsvc.NewClientService(deps.repos.Clients),
+		Clients: adminsvc.NewClientService(deps.repos.Clients, deps.repos.Providers),
 		Templates: adminsvc.NewTemplateService(
 			deps.repos.Templates,
 			cache.NewTemplateCache(deps.rdb),

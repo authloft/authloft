@@ -11,7 +11,10 @@
 // 非空用提交值、空则服务端生成（proto 普通 string 空串即未指定；docs 未
 // 明说，默认口径，待定）；uk_client_id 冲突转译 ErrDuplicateKey；
 // redirect_uris 条目校验（字面 * 或 ^https?:// 前缀，默认）+
-// VARBINARY(2048) 列宽防御；OIDC scopes[] ↔ 逗号串转换（model 注释归
+// VARBINARY(2048) 列宽防御；应用级登录配置（§5.5）三校验——login_methods
+// 封闭集、oauth_providers key 经 ProviderKeyFinder 存在性、
+// default_redirect_uri 命中 §12.3 回调白名单——与 has 位 PATCH 语义；OIDC
+// scopes[] ↔ 逗号串转换（model 注释归
 // service）与 TTL 值域 [1, 86400] / [1, 2592000]（docs 未定义上限，默认
 // 即默认值量级，待定）；Update 按缺省键保留原值（PATCH，沿
 // provider.go UpdateProvider 先例）；client_id 创建后不可改（改 →
@@ -33,6 +36,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
 	clientpb "authloft/gen/go/client"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -52,7 +57,23 @@ const (
 	oidcScopesMaxRunes  = 512
 	oidcAccessTTLMax    = 86400
 	oidcRefreshTTLMax   = 2592000
+	// 应用级登录配置两列 VARBINARY(1024) 与 default_redirect_uri
+	// VARCHAR(1024) 的列宽防御（§4.4 DDL 硬约束，口径同 redirectURIsMaxByte）。
+	loginMethodsMaxByte   = 1024
+	oauthProvidersMaxByte = 1024
+	defaultRedirectURIMax = 1024
 )
+
+// clientLoginMethodSet 应用级登录方式封闭集（§5.5）：password / otp_sms /
+// otp_email / webauthn / thirdparty。thirdparty 是 OAuth Provider 的整体
+// 开关；totp / recovery_code 只随全局 MFA 配置，不在集合域。
+var clientLoginMethodSet = map[string]struct{}{
+	"password":   {},
+	"otp_sms":    {},
+	"otp_email":  {},
+	"webauthn":   {},
+	"thirdparty": {},
+}
 
 // redirectURISchemePattern redirect_uris[] 条目格式（§5.5 行 1262「支持 *」
 // + 默认 ^https?:// 前缀校验，待定）。
@@ -80,11 +101,14 @@ type ClientStore interface {
 // 无 ClientSecret 字段：client_secret 服务端生成，请求中的同名字段被
 // 明确忽略（类型系统挡住误用，口径同 Provider 列表无 ext）。
 type SsoClientInput struct {
-	ClientID     string // 空 → 服务端生成（默认）
-	Name         string
-	RedirectURIs []string
-	TemplateKey  string // 空 / 未设置 → 回落默认文件壳（§5.5 / §8.1）
-	TemplateVars string // 模板变量 JSON 原文，空按 {} 注入（§5.5）
+	ClientID           string // 空 → 服务端生成（默认）
+	Name               string
+	RedirectURIs       []string
+	LoginMethods       []string // 应用级登录方式（§5.5）：Create 全量提交，空 = 未配置 = 跟随全局
+	OauthProviders     []string // OAuth Provider key 白名单（§5.5）：key 必须存在于 provider 表
+	DefaultRedirectURI string   // 默认回跳地址（§5.5）：非空须命中提交的 redirect_uris 白名单
+	TemplateKey        string   // 空 / 未设置 → 回落默认文件壳（§5.5 / §8.1）
+	TemplateVars       string   // 模板变量 JSON 原文，空按 {} 注入（§5.5）
 }
 
 // OidcClientInput CreateOidcClient 入参（proto CreateOidcClientRequest 拆解）：
@@ -103,14 +127,23 @@ type OidcClientInput struct {
 
 // SsoClientPatch UpdateSsoClient 入参（proto UpdateSsoClientRequest 拆解）：
 // 缺省键保留原值（PATCH，沿 UpdateProvider 先例）——string 空串 / 切片
-// len==0 即未提交（proto3 可空性），覆盖语义见各字段。
+// len==0 即未提交（proto3 可空性），覆盖语义见各字段。应用级登录配置三
+// 字段（§5.5 PATCH 语义，先例同 §5.6 settings 的 has_* 写入口径）：两个
+// repeated 无 has 位、各配伴生 bool——true = 整组替换（空数组 = 清空为
+// 跟随全局），缺省 / false = 不动；default_redirect_uri 为 proto3 optional
+// string——指针非 nil 且空串 = 清空，非空 = 覆盖，nil = 不动。
 type SsoClientPatch struct {
-	ClientID     string   // 非空且与行现值不同 → invalid_request（创建后不可改）；相同放行
-	ClientSecret string   // 非空 → 覆盖为提交值（PATCH；服务端生成仅约束 Create）
-	Name         string   // 非空 → 覆盖
-	RedirectURIs []string // len>0 → 校验后整组覆盖；==0 → 保留原值
-	TemplateKey  string   // 非空 → 覆盖；空 → 保留原值
-	TemplateVars string   // 非空 → 覆盖；空 → 保留原值
+	ClientID           string   // 非空且与行现值不同 → invalid_request（创建后不可改）；相同放行
+	ClientSecret       string   // 非空 → 覆盖为提交值（PATCH；服务端生成仅约束 Create）
+	Name               string   // 非空 → 覆盖
+	RedirectURIs       []string // len>0 → 校验后整组覆盖；==0 → 保留原值（既有口径不动）
+	LoginMethods       []string // HasLoginMethods=true → 校验后整组替换（空数组 = 清空为跟随全局）；false → 不动
+	HasLoginMethods    bool
+	OauthProviders     []string // HasOauthProviders=true → key 存在性校验后整组替换（空数组 = 清空为跟随全局）；false → 不动
+	HasOauthProviders  bool
+	DefaultRedirectURI *string // nil=不动；非 nil 空串=清空为未配置；非空=覆盖（须命中合并后的回调白名单）
+	TemplateKey        string  // 非空 → 覆盖；空 → 保留原值
+	TemplateVars       string  // 非空 → 覆盖；空 → 保留原值
 }
 
 // OidcClientPatch UpdateOidcClient 入参：SSO 基线 + OIDC 专属，缺省保留。
@@ -126,12 +159,40 @@ type OidcClientPatch struct {
 	TemplateVars    string   // 非空 → 覆盖；空 → 保留原值
 }
 
-// SsoClientDetail GetSsoClient 的聚合结果：行 + 解析后的回调白名单
-// （repo.ParseClientRedirectUris 是 §12.3 编解码唯一出口，由本层调用，
-// dto 只收 []string）。
+// SsoClientDetail GetSsoClient 的聚合结果：行 + 解析后的回调白名单与应用级
+// 登录配置（repo.ParseClientRedirectUris / ParseClientLoginMethods /
+// ParseClientOauthProviders 是 §12.3 编解码唯一出口，由本层调用，dto 只收
+// []string）。
 type SsoClientDetail struct {
-	Row          *model.SsoClient
-	RedirectURIs []string
+	Row            *model.SsoClient
+	RedirectURIs   []string
+	LoginMethods   []string
+	OauthProviders []string
+}
+
+// ProviderKeyFinder oauth_providers key 存在性校验（§5.5）依赖的窄接口
+// （消费方定义，*repo.ProviderRepo 天然满足）：FindByKey 未命中返回包装的
+// gorm.ErrRecordNotFound。
+type ProviderKeyFinder interface {
+	FindByKey(ctx context.Context, providerKey string) (*model.Provider, error)
+}
+
+// ClientService admin 域客户端管理族业务层。
+type ClientService struct {
+	store     ClientStore
+	providers ProviderKeyFinder
+}
+
+// NewClientService 构造；任一依赖为 nil 属程序错误（fail-fast，口径同
+// NewService / NewUserService）。
+func NewClientService(store ClientStore, providers ProviderKeyFinder) *ClientService {
+	if store == nil {
+		panic("admin service: NewClientService: nil ClientStore")
+	}
+	if providers == nil {
+		panic("admin service: NewClientService: nil ProviderKeyFinder")
+	}
+	return &ClientService{store: store, providers: providers}
 }
 
 // OidcClientDetail GetOidcClient 的聚合结果：行 + 白名单 + 拆分后的 scopes
@@ -140,20 +201,6 @@ type OidcClientDetail struct {
 	Row          *model.OidcClient
 	RedirectURIs []string
 	Scopes       []string
-}
-
-// ClientService admin 域客户端管理族业务层。
-type ClientService struct {
-	store ClientStore
-}
-
-// NewClientService 构造；store 为 nil 属程序错误（fail-fast，口径同
-// NewService / NewUserService）。
-func NewClientService(store ClientStore) *ClientService {
-	if store == nil {
-		panic("admin service: NewClientService: nil ClientStore")
-	}
-	return &ClientService{store: store}
 }
 
 // ListSsoClients（§5.5 行 1258）：§1.7 分页列表，逐行经
@@ -170,11 +217,11 @@ func (s *ClientService) ListSsoClients(ctx context.Context, page, pageSize int, 
 	}
 	items := make([]SsoClientDetail, len(rows))
 	for i := range rows {
-		uris, err := repo.ParseClientRedirectUris(rows[i].RedirectURIs)
+		uris, methods, providers, err := parseSsoClientLoginConfig(&rows[i])
 		if err != nil {
-			return nil, 0, fmt.Errorf("admin service: parse sso client %d redirect uris: %w", rows[i].ID, err)
+			return nil, 0, err
 		}
-		items[i] = SsoClientDetail{Row: &rows[i], RedirectURIs: uris.Uris}
+		items[i] = SsoClientDetail{Row: &rows[i], RedirectURIs: uris, LoginMethods: methods, OauthProviders: providers}
 	}
 	return items, total, nil
 }
@@ -214,13 +261,36 @@ func (s *ClientService) CreateSsoClient(ctx context.Context, in SsoClientInput) 
 	if err != nil {
 		return err
 	}
+	// 应用级登录配置（§5.5，Create / Update 同口径）：三校验 + 编解码出口
+	// 落字节（空消息 = 未配置 = 跟随全局）。
+	if err := validateLoginMethods(in.LoginMethods); err != nil {
+		return err
+	}
+	if err := s.validateOauthProviderKeys(ctx, in.OauthProviders); err != nil {
+		return err
+	}
+	methods, err := marshalLoginMethods(in.LoginMethods)
+	if err != nil {
+		return err
+	}
+	providerKeys, err := marshalOauthProviders(in.OauthProviders)
+	if err != nil {
+		return err
+	}
+	defaultURI, err := validateDefaultRedirectURI(in.DefaultRedirectURI, in.RedirectURIs)
+	if err != nil {
+		return err
+	}
 	row := &model.SsoClient{
-		ClientID:     clientID,
-		ClientSecret: secret,
-		Name:         in.Name,
-		RedirectURIs: uris,
-		TemplateKey:  in.TemplateKey,
-		TemplateVars: in.TemplateVars,
+		ClientID:           clientID,
+		ClientSecret:       secret,
+		Name:               in.Name,
+		RedirectURIs:       uris,
+		LoginMethods:       methods,
+		OauthProviders:     providerKeys,
+		DefaultRedirectURI: defaultURI,
+		TemplateKey:        in.TemplateKey,
+		TemplateVars:       in.TemplateVars,
 	}
 	if err := s.store.CreateSsoClient(ctx, row); err != nil {
 		if errors.Is(err, repo.ErrClientDuplicate) {
@@ -289,11 +359,11 @@ func (s *ClientService) GetSsoClient(ctx context.Context, id int64) (*SsoClientD
 	if err != nil {
 		return nil, err // 含 gorm.ErrRecordNotFound → 404
 	}
-	uris, err := repo.ParseClientRedirectUris(row.RedirectURIs)
+	uris, methods, providers, err := parseSsoClientLoginConfig(row)
 	if err != nil {
-		return nil, fmt.Errorf("admin service: parse sso client %d redirect uris: %w", id, err)
+		return nil, err
 	}
-	return &SsoClientDetail{Row: row, RedirectURIs: uris.Uris}, nil
+	return &SsoClientDetail{Row: row, RedirectURIs: uris, LoginMethods: methods, OauthProviders: providers}, nil
 }
 
 // GetOidcClient（§5.5 行 1261）：口径同 GetSsoClient，另拆
@@ -315,9 +385,12 @@ func (s *ClientService) GetOidcClient(ctx context.Context, id int64) (*OidcClien
 
 // UpdateSsoClient（§5.5 行 1259）：FindByID 取回完整行 → 缺省
 // 键保留原值（PATCH）→ repo 整行 UPDATE。client_id 提交非空且与行现值
-// 不同 → invalid_request（创建后不可改）；相同值放行（幂等重放）。uk 冲突
-// 分支在生产 client_id 不可改语义下不可达，保留给脏数据场景（防御同
-// UpdateProvider 的 provider_key 分支）。
+// 不同 → invalid_request（创建后不可改）；相同值放行（幂等重放）。应用级
+// 登录配置走 has 位语义（§5.5：has_* true = 整组替换、空数组 = 清空为跟随
+// 全局，false / 缺省 = 不动；default_redirect_uri optional：nil = 不动、空串
+// = 清空、非空 = 覆盖），default_redirect_uri 非空时对本 PATCH 合并后的
+// 回调白名单校验。uk 冲突分支在生产 client_id 不可改语义下不可达，保留给
+// 脏数据场景（防御同 UpdateProvider 的 provider_key 分支）。
 func (s *ClientService) UpdateSsoClient(ctx context.Context, id int64, p SsoClientPatch) error {
 	if id <= 0 {
 		return ErrInvalidRequest
@@ -341,6 +414,39 @@ func (s *ClientService) UpdateSsoClient(ctx context.Context, id int64, p SsoClie
 			return err
 		}
 		row.RedirectURIs = data
+	}
+	if p.HasLoginMethods {
+		if err := validateLoginMethods(p.LoginMethods); err != nil {
+			return err
+		}
+		data, err := marshalLoginMethods(p.LoginMethods)
+		if err != nil {
+			return err
+		}
+		row.LoginMethods = data
+	}
+	if p.HasOauthProviders {
+		if err := s.validateOauthProviderKeys(ctx, p.OauthProviders); err != nil {
+			return err
+		}
+		data, err := marshalOauthProviders(p.OauthProviders)
+		if err != nil {
+			return err
+		}
+		row.OauthProviders = data
+	}
+	if p.DefaultRedirectURI != nil {
+		v := *p.DefaultRedirectURI
+		if v != "" {
+			uris, err := repo.ParseClientRedirectUris(row.RedirectURIs)
+			if err != nil {
+				return fmt.Errorf("admin service: parse sso client %d redirect uris: %w", id, err)
+			}
+			if _, err := validateDefaultRedirectURI(v, uris.Uris); err != nil {
+				return err
+			}
+		}
+		row.DefaultRedirectURI = v
 	}
 	if p.TemplateKey != "" {
 		row.TemplateKey = p.TemplateKey
@@ -504,5 +610,139 @@ func validateTTL(ttl, max int64) error {
 	return nil
 }
 
-// compile 时断言 *repo.ClientRepo 满足 ClientStore（签名漂移在编译期暴露）。
-var _ ClientStore = (*repo.ClientRepo)(nil)
+// parseSsoClientLoginConfig 行三列 → 视图切片：redirect_uris 与应用级登录
+// 配置两列均经 repo 唯一编解码出口（§12.3），空 / NULL 列返回空切片非 nil。
+// 行内字节损坏属脏数据，包装后上抛（消毒为 internal，fail-closed）。
+func parseSsoClientLoginConfig(row *model.SsoClient) (uris, methods, providers []string, err error) {
+	pu, err := repo.ParseClientRedirectUris(row.RedirectURIs)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d redirect uris: %w", row.ID, err)
+	}
+	pm, err := repo.ParseClientLoginMethods(row.LoginMethods)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d login methods: %w", row.ID, err)
+	}
+	pp, err := repo.ParseClientOauthProviders(row.OauthProviders)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d oauth providers: %w", row.ID, err)
+	}
+	return pu.Uris, pm.Methods, pp.Providers, nil
+}
+
+// validateLoginMethods 应用级登录方式封闭集校验（§5.5，Create / Update 同
+// 口径）：每个取值 ∈ clientLoginMethodSet；空数组 = 未配置 = 跟随全局，
+// 合法。越界取值 → invalid_request。
+func validateLoginMethods(methods []string) error {
+	for _, m := range methods {
+		if _, ok := clientLoginMethodSet[m]; !ok {
+			return ErrInvalidRequest
+		}
+	}
+	return nil
+}
+
+// validateOauthProviderKeys oauth_providers key 存在性校验（§5.5）：每个 key
+// 必须存在于 provider 表——复用 ProviderKeyFinder.FindByKey 既有查询逐 key
+// 确认（管理端提交量小，逐条查询可接受），未命中 → invalid_request；其余
+// 查询错误原样包装上抛。
+func (s *ClientService) validateOauthProviderKeys(ctx context.Context, keys []string) error {
+	for _, k := range keys {
+		_, err := s.providers.FindByKey(ctx, k)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInvalidRequest
+			}
+			return fmt.Errorf("admin service: check oauth provider key %q: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// validateDefaultRedirectURI 默认回跳地址校验（§5.5）：空 = 未配置 = 维持
+// 默认落点，原样放行；非空须命中回调白名单（§12.3 整段匹配 / * 通配）且不
+// 超 VARCHAR(1024) 列宽，越界 → invalid_request。
+func validateDefaultRedirectURI(uri string, whitelist []string) (string, error) {
+	if uri == "" {
+		return uri, nil
+	}
+	if utf8.RuneCountInString(uri) > defaultRedirectURIMax {
+		return "", ErrInvalidRequest
+	}
+	if !redirectURIHit(whitelist, uri) {
+		return "", ErrInvalidRequest
+	}
+	return uri, nil
+}
+
+// marshalLoginMethods / marshalOauthProviders 经 repo 唯一编解码出口落字节，
+// 超 VARBINARY(1024) 列宽 → invalid_request（DDL 硬约束的防御转译，口径同
+// marshalRedirectURIs）。
+func marshalLoginMethods(methods []string) ([]byte, error) {
+	data, err := repo.MarshalClientLoginMethods(&clientpb.ClientLoginMethods{Methods: methods})
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > loginMethodsMaxByte {
+		return nil, ErrInvalidRequest
+	}
+	return data, nil
+}
+
+func marshalOauthProviders(providers []string) ([]byte, error) {
+	data, err := repo.MarshalClientOauthProviders(&clientpb.ClientOauthProviders{Providers: providers})
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > oauthProvidersMaxByte {
+		return nil, ErrInvalidRequest
+	}
+	return data, nil
+}
+
+// matchRedirectURI 回调白名单条目整段匹配（§12.3：支持 * 通配、整段匹配防
+// 子域名陷阱）：字面相等，或按 * 切段后前缀 / 中段 / 后缀依序匹配。与登出
+// 页白名单（internal/pages）是同一规则的两处实现，改规则须两处同步。
+func matchRedirectURI(pattern, target string) bool {
+	if pattern == target {
+		return true
+	}
+	if !strings.Contains(pattern, "*") {
+		return false
+	}
+	parts := strings.Split(pattern, "*")
+	if !strings.HasPrefix(target, parts[0]) {
+		return false
+	}
+	rest := target[len(parts[0]):]
+	for i := 1; i < len(parts); i++ {
+		if i == len(parts)-1 {
+			if len(rest) < len(parts[i]) || !strings.HasSuffix(rest, parts[i]) {
+				return false
+			}
+		} else {
+			idx := strings.Index(rest, parts[i])
+			if idx < 0 {
+				return false
+			}
+			rest = rest[idx+len(parts[i]):]
+		}
+	}
+	return true
+}
+
+// redirectURIHit target 是否命中白名单任一条目。
+func redirectURIHit(patterns []string, target string) bool {
+	for _, p := range patterns {
+		if matchRedirectURI(p, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// compile 时断言 *repo.ClientRepo 满足 ClientStore、*repo.ProviderRepo 满足
+// ProviderKeyFinder（签名漂移在编译期暴露）。
+var (
+	_ ClientStore       = (*repo.ClientRepo)(nil)
+	_ ProviderKeyFinder = (*repo.ProviderRepo)(nil)
+)
