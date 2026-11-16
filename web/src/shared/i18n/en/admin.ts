@@ -403,6 +403,23 @@ export const admin: typeof zhAdmin = {
   'admin.createAction': 'Create',
   'admin.createSsoClientTitle': 'New SSO Client',
 
+  // ---- pages/SsoClientsPage.tsx 应用级登录配置（编辑 SideSheet；§5.5）----
+  'admin.ssoLoginMethodsLabel': 'Login methods',
+  'admin.ssoLoginMethodsHint':
+    'Controls which sign-in methods this app allows; leave all unchecked to follow the global configuration',
+  'admin.ssoMfaRiskHint':
+    'Warning: some MFA-capable factors (SMS / email code / passkey) are disabled; users bound only to those factors cannot sign in to this app',
+  'admin.ssoOauthProvidersLabel': 'OAuth providers',
+  'admin.ssoOauthProvidersHint':
+    'Fine-grained allowlist for third-party sign-in; leave all unchecked to follow the global configuration',
+  'admin.ssoOauthProvidersPlaceholder':
+    'Select OAuth providers allowed for this app',
+  'admin.ssoDefaultRedirectUriLabel': 'Default redirect URI',
+  'admin.ssoDefaultRedirectUriPlaceholder':
+    'https://example.com/callback (must be in the redirect allowlist)',
+  'admin.ssoDefaultRedirectUriHint':
+    'Must match the client redirect allowlist (* wildcard supported); used only when sign-in completes without a returnTo',
+
   // ---- pages/OidcClientsPage.tsx（OIDC 增量）------------------------------
   'admin.createOidcClientTitle': 'New OIDC Client',
   'admin.tokenTtlLabel': 'Token Lifetime',

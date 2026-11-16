@@ -7,7 +7,9 @@
  * GetProviderTypes / GetProviderSchema / GetProvider / Create / Update /
  * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
- * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数；并追加
+ * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数（含 SSO
+ * 应用级登录配置三字段 §5.5：编辑整组提交带 has_* 伴生标志、OAuth
+ * Provider 选项过滤、MFA 风险提示判定）；并追加
  * settings 族 GetSettings / SetSettings（§5.6 行 1287；服务端按 optional
  * has 位 + repeated 伴生标志部分更新、设置页分 Tab 只提交改动键）+ 全量 /
  * 部分请求构造纯函数；
@@ -820,6 +822,39 @@ export interface SsoClientPatchDraft {
   templateVars: string;
 }
 
+/** SSO 应用可用登录方式封闭集（§5.5；totp / recovery_code 不在集合域，只随全局 MFA 配置）。 */
+export const SSO_LOGIN_METHODS = [
+  'password',
+  'otp_sms',
+  'otp_email',
+  'webauthn',
+  'thirdparty',
+] as const;
+
+/** 可为两步验证候选的方式（§2.1：三者可主可次，应用关闭后 MFA 候选交集可能为空）。 */
+export const SSO_MFA_CAPABLE_METHODS = [
+  'otp_sms',
+  'otp_email',
+  'webauthn',
+] as const;
+
+/**
+ * SSO 应用级登录配置草稿（仅 SSO 客户端，OIDC 客户端不加字段 §5.5）。
+ * 编辑 SideSheet 保存整组提交：repeated 两字段恒带 has_* 伴生标志 true
+ * （空数组 = 清空为跟随全局，§5.5 PATCH 语义）；defaultRedirectUri 恒
+ * 显式下发（proto3 optional：空串 = 清空回落默认落点，非空 = 覆盖，
+ * 白名单匹配由服务端校验 §12.3）。
+ */
+export interface SsoClientLoginOptionsDraft {
+  loginMethods: string[];
+  oauthProviders: string[];
+  defaultRedirectUri: string;
+}
+
+/** SSO 客户端编辑草稿全集（基础字段 + 应用级登录配置）。 */
+export type SsoClientEditDraft = SsoClientPatchDraft &
+  SsoClientLoginOptionsDraft;
+
 /** OIDC 客户端表单草稿：SSO 基线 + scopes / TTL（秒；0 = 缺省/保留）。 */
 export interface OidcClientDraft extends SsoClientDraft {
   scopes: string[];
@@ -904,11 +939,15 @@ export function buildCreateOidcClientRequest(
 /**
  * UpdateSsoClient 请求构造（PATCH 缺省保留）：clientId 不发（创建后不可改，
  * 零值省略 → 后端保留分支）；newSecret 留空 → clientSecret 零值省略即保留
- * 原密钥、非空覆盖轮换；name 空串保留原值。
+ * 原密钥、非空覆盖轮换；name 空串保留原值。应用级登录配置整组提交（§5.5
+ * PATCH 语义）：repeated 无 has 位，恒带 has_login_methods / has_oauth_providers
+ * 伴生标志 true（编辑表单整组替换；wire 上空 repeated 数组自身省略，
+ * 标志在场 + 空数组 = 清空为跟随全局）；defaultRedirectUri 系 proto3 optional，
+ * create 显式赋值（含空串）即置 has 位 → 空串 = 清空、非空 = 覆盖。
  */
 export function buildUpdateSsoClientRequest(
   id: bigint,
-  draft: SsoClientPatchDraft,
+  draft: SsoClientEditDraft,
 ): UpdateSsoClientRequest {
   return create(UpdateSsoClientRequestSchema, {
     id,
@@ -917,6 +956,11 @@ export function buildUpdateSsoClientRequest(
     redirectUris: cleanStringList(draft.redirectUris),
     templateKey: (draft.templateKey ?? '').trim(),
     templateVars: wireTemplateVars(draft.templateVars ?? ''),
+    loginMethods: draft.loginMethods,
+    hasLoginMethods: true,
+    oauthProviders: draft.oauthProviders,
+    hasOauthProviders: true,
+    defaultRedirectUri: draft.defaultRedirectUri.trim(),
   });
 }
 
@@ -1042,6 +1086,45 @@ export function clientTemplateDraft(row: {
   templateVars: string;
 }): { templateKey: string; templateVars: string } {
   return { templateKey: row.templateKey, templateVars: row.templateVars };
+}
+
+/**
+ * OAuth Provider 多选选项（§5.9 前端：数据源复用 ProvidersPage 同源列表
+ * ListProviders，仅取 category=oauth 行；标签用展示名、缺省回退
+ * provider_key；value = provider_key 即白名单提交值）。
+ */
+export function oauthProviderSelectOptions(
+  rows: Provider[],
+): { label: string; value: string }[] {
+  return rows
+    .filter((row) => row.category === 'oauth')
+    .map((row) => ({
+      label: row.displayName || row.providerKey,
+      value: row.providerKey,
+    }));
+}
+
+/**
+ * 「关闭 MFA 可用因子影响登录」风险提示判定（§5.5 保存提示；§2.1 MFA
+ * 候选交集硬生效）：应用配置非空且未含任一可主可次因子（otp_sms /
+ * otp_email / webauthn）→ 仅绑定这些因子的用户无法登录该应用。
+ * 全不选 = 跟随全局（无应用级限制）→ 不提示。
+ */
+export function showsMfaRiskHint(loginMethods: string[]): boolean {
+  if (loginMethods.length === 0) {
+    return false;
+  }
+  return SSO_MFA_CAPABLE_METHODS.some(
+    (method) => !loginMethods.includes(method),
+  );
+}
+
+/**
+ * 默认回跳「须命中回调白名单」提示判定（§5.5：白名单匹配校验在服务端，
+ * 前端只提示不拦截）：非空即提示。
+ */
+export function showsDefaultRedirectHint(defaultRedirectUri: string): boolean {
+  return defaultRedirectUri.trim() !== '';
 }
 
 /** ListTemplates（§5.7：分页 §1.7 + 可选 q 按 name 模糊筛选）。 */

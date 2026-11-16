@@ -370,6 +370,22 @@ export const admin = {
   'admin.createAction': '创建',
   'admin.createSsoClientTitle': '新建 SSO 客户端',
 
+  // ---- pages/SsoClientsPage.tsx 应用级登录配置（编辑 SideSheet；§5.5）----
+  'admin.ssoLoginMethodsLabel': '登录方式',
+  'admin.ssoLoginMethodsHint':
+    '控制该应用可用的登录方式；全部不选 = 跟随全局配置',
+  'admin.ssoMfaRiskHint':
+    '注意：已关闭部分两步验证可用因子（短信 / 邮箱验证码 / 通行密钥），仅绑定这些因子的用户将无法登录该应用',
+  'admin.ssoOauthProvidersLabel': 'OAuth Provider',
+  'admin.ssoOauthProvidersHint':
+    '细化第三方登录可用渠道；全部不选 = 跟随全局配置',
+  'admin.ssoOauthProvidersPlaceholder': '选择该应用可用的 OAuth Provider',
+  'admin.ssoDefaultRedirectUriLabel': '默认回跳地址',
+  'admin.ssoDefaultRedirectUriPlaceholder':
+    'https://example.com/callback（须在回调白名单内）',
+  'admin.ssoDefaultRedirectUriHint':
+    '该地址须命中本客户端回调白名单（支持 * 通配）；仅在登录未携带回跳地址时使用',
+
   // ---- pages/OidcClientsPage.tsx（OIDC 增量）------------------------------
   'admin.createOidcClientTitle': '新建 OIDC 客户端',
   'admin.tokenTtlLabel': '令牌有效期',

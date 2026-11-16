@@ -161,6 +161,18 @@ import {
  *   不可变编排纯函数（moveItem 同口径）。
  * SsoClientsPage / OidcClientsPage 渲染不可测（同上 Blocker）。
  *
+ * 客户端管理族追加（SSO 应用级登录配置三字段，接口文档 §5.5）：
+ * - listSsoClients 解码追加 login_methods / oauth_providers /
+ *   default_redirect_uri 三字段透出断言（编辑 SideSheet 回填数据面）；
+ * - buildUpdateSsoClientRequest 整组提交 wire：repeated 两字段恒带
+ *   has_login_methods / has_oauth_providers 伴生标志 true（空数组 wire
+ *   省略 = 清空跟随全局）、default_redirect_uri proto3 optional 显式
+ *   空串 wire 下发 "" = 清空 / 非空 trim 下发 = 覆盖；
+ * - 纯函数：SSO_LOGIN_METHODS 封闭集 / oauthProviderSelectOptions
+ *   （ProvidersPage 同源列表过滤 category=oauth）/ showsMfaRiskHint
+ *   （MFA 候选交集硬生效的保存提示判定）/ showsDefaultRedirectHint
+ *   （非空即提示须命中回调白名单）。
+ *
  * 追加 settings 族测试（接口文档 §5.6 行 1287-1363 settings 族；后端已实装
  * 全量投影 / 部分更新，读路径真调语义 → msw 走真实 transport 归一链）：
  * - api.getSettings msw：SettingsResponse 读路径解码（int64 十进制字符串 →
@@ -2268,6 +2280,9 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
               clientSecret: 's-plaintext',
               name: '门户站',
               redirectUris: ['https://portal.test/cb', '*'],
+              loginMethods: ['password', 'thirdparty'],
+              oauthProviders: ['qq', 'github'],
+              defaultRedirectUri: 'https://portal.test/home',
               createdAt: '1720000000',
               updatedAt: '1720000100',
             },
@@ -2300,6 +2315,10 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
     // 明文 secret 随列表行透出（后端投影口径）。
     expect(res.items[0].clientSecret).toBe('s-plaintext');
     expect(res.items[0].redirectUris).toEqual(['https://portal.test/cb', '*']);
+    // 应用级登录配置三字段随行透出（编辑 SideSheet 回填数据面，§5.5）。
+    expect(res.items[0].loginMethods).toEqual(['password', 'thirdparty']);
+    expect(res.items[0].oauthProviders).toEqual(['qq', 'github']);
+    expect(res.items[0].defaultRedirectUri).toBe('https://portal.test/home');
     expect(res.items[0].createdAt).toBe(BigInt(1720000000));
 
     // 清除排序（order=''）→ sort / order 不下发（dataTableLogic 受控口径）。
@@ -2432,7 +2451,7 @@ describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端�
   });
 });
 
-describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留）', () => {
+describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级登录配置整组提交）', () => {
   test('clientId 不下发（创建后不可改）；clientSecret 留空省略=保留 / 非空下发=轮换；name 空串 / 空组省略=保留', async () => {
     const bodies: unknown[] = [];
     server.use(
@@ -2447,12 +2466,23 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留）', () => {
         newSecret: '',
         name: '门户站 v2',
         redirectUris: ['https://portal.test/cb'],
+        loginMethods: ['password', 'thirdparty'],
+        oauthProviders: [],
+        defaultRedirectUri: '',
       }),
     );
     expect(bodies[0]).toEqual({
       id: '1',
       name: '门户站 v2',
       redirectUris: ['https://portal.test/cb'],
+      // 应用级登录配置整组提交（编辑表单口径，§5.5 PATCH 语义）：
+      // repeated 恒带 has_* = true；空 repeated 数组 wire 省略，标志在
+      // 场 + 空数组 = 清空为跟随全局；proto3 optional 显式空串 wire 下发
+      // "" = 清空回落默认落点。
+      loginMethods: ['password', 'thirdparty'],
+      hasLoginMethods: true,
+      hasOauthProviders: true,
+      defaultRedirectUri: '',
     });
     expect(keep.$typeName).toBe('api.admin.v1.OkResponse');
 
@@ -2462,10 +2492,79 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留）', () => {
         newSecret: ' new-secret ',
         name: '',
         redirectUris: [],
+        loginMethods: [],
+        oauthProviders: [],
+        defaultRedirectUri: '',
       }),
     );
-    expect(bodies[1]).toEqual({ id: '2', clientSecret: 'new-secret' });
+    expect(bodies[1]).toEqual({
+      id: '2',
+      clientSecret: 'new-secret',
+      hasLoginMethods: true,
+      hasOauthProviders: true,
+      defaultRedirectUri: '',
+    });
     expect(rotate.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+
+  test('应用级登录配置勾选整组提交：登录方式 / Provider 数组 + has_* = true；defaultRedirectUri 非空 trim 下发（§5.5）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(UPDATE_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.updateSsoClient(
+      apiMod.buildUpdateSsoClientRequest(BigInt(7), {
+        newSecret: '',
+        name: '门户站 v3',
+        redirectUris: ['https://portal.test/cb'],
+        loginMethods: ['otp_sms', 'webauthn'],
+        oauthProviders: ['qq', 'github'],
+        defaultRedirectUri: '  https://portal.test/home  ',
+      }),
+    );
+    expect(requestBody).toEqual({
+      id: '7',
+      name: '门户站 v3',
+      redirectUris: ['https://portal.test/cb'],
+      loginMethods: ['otp_sms', 'webauthn'],
+      oauthProviders: ['qq', 'github'],
+      hasLoginMethods: true,
+      hasOauthProviders: true,
+      defaultRedirectUri: 'https://portal.test/home',
+    });
+  });
+
+  test('全不选 = 清空跟随全局：has_* = true 在场、空 repeated 数组 wire 省略（§5.5 PATCH 语义）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(UPDATE_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.updateSsoClient(
+      apiMod.buildUpdateSsoClientRequest(BigInt(9), {
+        newSecret: '',
+        name: 'x',
+        redirectUris: ['https://portal.test/cb'],
+        loginMethods: [],
+        oauthProviders: [],
+        defaultRedirectUri: '',
+      }),
+    );
+    expect(requestBody).toEqual({
+      id: '9',
+      name: 'x',
+      redirectUris: ['https://portal.test/cb'],
+      hasLoginMethods: true,
+      hasOauthProviders: true,
+      defaultRedirectUri: '',
+    });
+    expect('loginMethods' in (requestBody as object)).toBe(false);
+    expect('oauthProviders' in (requestBody as object)).toBe(false);
   });
 });
 
@@ -2483,6 +2582,83 @@ describe('api.deleteSsoClient（§5.5 行 1262：{id} 硬删 → OkResponse）',
     );
     expect(requestBody).toEqual({ id: '3' });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+describe('SSO 应用级登录配置纯函数（§5.5 / §5.9 前端）', () => {
+  test('SSO_LOGIN_METHODS 封闭集：password / otp_sms / otp_email / webauthn / thirdparty（totp / recovery_code 不在集合域）', () => {
+    expect([...apiMod.SSO_LOGIN_METHODS]).toEqual([
+      'password',
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+      'thirdparty',
+    ]);
+    expect([...apiMod.SSO_MFA_CAPABLE_METHODS]).toEqual([
+      'otp_sms',
+      'otp_email',
+      'webauthn',
+    ]);
+  });
+
+  test('oauthProviderSelectOptions：数据源复用 ProvidersPage 同源列表过滤 category=oauth；标签展示名缺省回退 provider_key', () => {
+    const rows = [
+      create(ProviderSchema, {
+        providerKey: 'qq',
+        displayName: 'QQ 登录',
+        category: 'oauth',
+        type: 'qq',
+      }),
+      create(ProviderSchema, {
+        providerKey: 'bare_oauth',
+        category: 'oauth',
+        type: 'oauth2',
+      }),
+      create(ProviderSchema, {
+        providerKey: 'aliyun_sms',
+        displayName: '阿里云短信',
+        category: 'sms',
+        type: 'aliyun_sms',
+      }),
+      create(ProviderSchema, {
+        providerKey: 'geetest',
+        displayName: '极验',
+        category: 'captcha',
+        type: 'geetest',
+      }),
+    ];
+    expect(apiMod.oauthProviderSelectOptions(rows)).toEqual([
+      { label: 'QQ 登录', value: 'qq' },
+      { label: 'bare_oauth', value: 'bare_oauth' },
+    ]);
+    expect(apiMod.oauthProviderSelectOptions([])).toEqual([]);
+  });
+
+  test('showsMfaRiskHint：配置非空且缺任一可主可次因子 → 提示；全不选 = 跟随全局 / 全勾选 → 不提示（§2.1 MFA 候选交集）', () => {
+    expect(apiMod.showsMfaRiskHint([])).toBe(false);
+    expect(
+      apiMod.showsMfaRiskHint([
+        'password',
+        'otp_sms',
+        'otp_email',
+        'webauthn',
+        'thirdparty',
+      ]),
+    ).toBe(false);
+    expect(apiMod.showsMfaRiskHint(['password'])).toBe(true);
+    expect(apiMod.showsMfaRiskHint(['password', 'otp_sms'])).toBe(true);
+    expect(apiMod.showsMfaRiskHint(['thirdparty'])).toBe(true);
+    expect(
+      apiMod.showsMfaRiskHint(['password', 'otp_sms', 'otp_email', 'webauthn']),
+    ).toBe(false);
+  });
+
+  test('showsDefaultRedirectHint：非空即提示须命中回调白名单（匹配校验在服务端，前端提示不拦截）', () => {
+    expect(apiMod.showsDefaultRedirectHint('')).toBe(false);
+    expect(apiMod.showsDefaultRedirectHint('   ')).toBe(false);
+    expect(apiMod.showsDefaultRedirectHint('https://portal.test/home')).toBe(
+      true,
+    );
   });
 });
 
@@ -4290,9 +4466,18 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
       redirectUris: ['*'],
       templateKey: 'custom_a',
       templateVars: '{"b":2}',
+      loginMethods: [],
+      oauthProviders: [],
+      defaultRedirectUri: '',
     });
     expect(ssoUpdate.templateKey).toBe('custom_a');
     expect(ssoUpdate.templateVars).toBe('{"b":2}');
+    // 应用级登录配置整组提交（SSO 编辑草稿必带三字段，§5.5）。
+    expect(ssoUpdate.loginMethods).toEqual([]);
+    expect(ssoUpdate.hasLoginMethods).toBe(true);
+    expect(ssoUpdate.oauthProviders).toEqual([]);
+    expect(ssoUpdate.hasOauthProviders).toBe(true);
+    expect(ssoUpdate.defaultRedirectUri).toBe('');
 
     const oidcCreate = apiMod.buildCreateOidcClientRequest({
       clientId: 'oidc',

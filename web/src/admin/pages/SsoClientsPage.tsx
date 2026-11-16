@@ -12,6 +12,13 @@
  *   全站唯一明文出口），详情弹窗内 CopyButton 可复制；
  * - 编辑：PATCH 缺省保留——clientId 创建后不可改（只读展示）、新密钥留空
  *   保留 / 非空轮换、回调白名单空组 = 保留原值（前端阻断防误解）；
+ * - 应用级登录配置（编辑 SideSheet，§5.5）：登录方式复选组（封闭集
+ *   password / otp_sms / otp_email / webauthn / thirdparty，全不选 = 跟随
+ *   全局）+ OAuth Provider 多选（数据源复用 ProvidersPage 同源列表，
+ *   过滤 category=oauth）+ 默认回跳输入框（须命中回调白名单，匹配校验
+ *   在服务端，前端提示不拦截）；保存整组提交（repeated 两字段恒带
+ *   has_* 伴生标志 true，空数组 = 清空跟随全局；default_redirect_uri
+ *   proto3 optional 显式空串 = 清空）；MFA 可用因子被关闭时给风险提示。
  * - 删除：Popconfirm 确认，硬删不可恢复。
  *
  * 401 统一跳登录（§6 行 501，UsersPage 同模式；详情读取同口径）；404 掩护
@@ -25,6 +32,7 @@ import { useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
+  CheckboxGroup,
   Empty,
   Input,
   Modal,
@@ -59,6 +67,7 @@ import {
   buildCreateSsoClientRequest,
   buildDeleteSsoClientRequest,
   buildGetSsoClientRequest,
+  buildListProvidersRequest,
   buildListSsoClientsRequest,
   buildListTemplatesRequest,
   buildUpdateSsoClientRequest,
@@ -69,15 +78,20 @@ import {
   formatUnixTime,
   getSsoClient,
   isUnauthenticatedError,
+  listProviders,
   listSsoClients,
   listTemplates,
+  oauthProviderSelectOptions,
   redirectUrisIssue,
+  showsDefaultRedirectHint,
+  showsMfaRiskHint,
+  SSO_LOGIN_METHODS,
   summarizeList,
   templateSelectOptions,
   templateVarsIssue,
   updateSsoClient,
   type SsoClientDraft,
-  type SsoClientPatchDraft,
+  type SsoClientEditDraft,
 } from '../api';
 import styles from './SsoClientsPage.module.less';
 
@@ -130,6 +144,28 @@ export function SsoClientsPage(_props: {
   const templateOptions = templateSelectOptions(
     (templateReq.data?.items ?? []).map((item) => item.templateKey),
   );
+  // OAuth Provider 多选数据源（§5.9 前端）：复用 ProvidersPage 同源列表
+  // （全量取数 buildListProvidersRequest），过滤 category=oauth；401 走
+  // 集中 onError，其余错误静默——选项为空仍可保存，key 存在性由服务端
+  // 校验（§5.5）。
+  const providerReq = useRequest(
+    () => listProviders(buildListProvidersRequest()),
+    {
+      ...requestOptions({
+        toast: false,
+        returnTo: () => adminReturnTo(location.pathname, location.search),
+      }),
+    },
+  );
+  const oauthProviderOptions = oauthProviderSelectOptions(
+    providerReq.data?.items ?? [],
+  );
+  // 登录方式复选组选项（§5.5 封闭集）：标签复用基础字典 factors.*，与
+  // 设置页登录方式下拉同源同文案。
+  const loginMethodOptions = SSO_LOGIN_METHODS.map((method) => ({
+    value: method,
+    label: t(`factors.${method}`),
+  }));
   // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError）；
   // 弹窗内不再自持错误态。
   // 新建弹窗（§5.5 行 1261：clientSecret 服务端生成，表单无密钥项）。
@@ -154,17 +190,20 @@ export function SsoClientsPage(_props: {
       returnTo: () => adminReturnTo(location.pathname, location.search),
     }),
   });
-  // 编辑弹窗（§5.5 行 1262 PATCH 缺省保留）。
+  // 编辑弹窗（§5.5 行 1262 PATCH 缺省保留；应用级登录配置整组提交）。
   const [editTarget, setEditTarget] = useState<SsoClient | null>(null);
-  const [editDraft, setEditDraft] = useState<SsoClientPatchDraft>({
+  const [editDraft, setEditDraft] = useState<SsoClientEditDraft>({
     newSecret: '',
     name: '',
     redirectUris: [],
     templateKey: '',
     templateVars: '',
+    loginMethods: [],
+    oauthProviders: [],
+    defaultRedirectUri: '',
   });
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
-  const [editBaseline, setEditBaseline] = useState<SsoClientPatchDraft | null>(
+  const [editBaseline, setEditBaseline] = useState<SsoClientEditDraft | null>(
     null,
   );
 
@@ -262,11 +301,14 @@ export function SsoClientsPage(_props: {
 
   /** 打开编辑弹窗：clientId 只读展示（创建后不可改），草稿按行现值回填。 */
   function openEdit(row: SsoClient): void {
-    const baseline: SsoClientPatchDraft = {
+    const baseline: SsoClientEditDraft = {
       newSecret: '',
       name: row.name,
       redirectUris: [...row.redirectUris],
       ...clientTemplateDraft(row),
+      loginMethods: [...row.loginMethods],
+      oauthProviders: [...row.oauthProviders],
+      defaultRedirectUri: row.defaultRedirectUri,
     };
     setEditTarget(row);
     setEditDraft(baseline);
@@ -697,6 +739,75 @@ export function SsoClientsPage(_props: {
               addText={t('admin.addRedirectUri')}
               placeholder={t('admin.redirectUriPlaceholder')}
             />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.ssoLoginMethodsLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.ssoLoginMethodsHint')}
+            </span>
+            <CheckboxGroup
+              value={editDraft.loginMethods}
+              onChange={(value) =>
+                setEditDraft({
+                  ...editDraft,
+                  loginMethods: value.map(String),
+                })
+              }
+              options={loginMethodOptions}
+              aria-label={t('admin.ssoLoginMethodsLabel')}
+              disabled={editSubmitting}
+            />
+            {showsMfaRiskHint(editDraft.loginMethods) ? (
+              <Banner
+                type="warning"
+                fullMode={false}
+                closeIcon={null}
+                description={t('admin.ssoMfaRiskHint')}
+              />
+            ) : null}
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.ssoOauthProvidersLabel')}
+            </span>
+            <span className={styles.fieldHint}>
+              {t('admin.ssoOauthProvidersHint')}
+            </span>
+            <Select
+              multiple
+              value={editDraft.oauthProviders}
+              onChange={(value) =>
+                setEditDraft({
+                  ...editDraft,
+                  oauthProviders: Array.isArray(value) ? value.map(String) : [],
+                })
+              }
+              optionList={oauthProviderOptions}
+              placeholder={t('admin.ssoOauthProvidersPlaceholder')}
+              aria-label={t('admin.ssoOauthProvidersLabel')}
+              disabled={editSubmitting}
+            />
+          </div>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>
+              {t('admin.ssoDefaultRedirectUriLabel')}
+            </span>
+            <Input
+              value={editDraft.defaultRedirectUri}
+              onChange={(value) =>
+                setEditDraft({ ...editDraft, defaultRedirectUri: value })
+              }
+              placeholder={t('admin.ssoDefaultRedirectUriPlaceholder')}
+              aria-label={t('admin.ssoDefaultRedirectUriLabel')}
+              disabled={editSubmitting}
+            />
+            {showsDefaultRedirectHint(editDraft.defaultRedirectUri) ? (
+              <span className={styles.fieldHint}>
+                {t('admin.ssoDefaultRedirectUriHint')}
+              </span>
+            ) : null}
           </div>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>
