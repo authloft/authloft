@@ -230,6 +230,16 @@ export const admin = {
   'admin.schemaField.storagePathHelp':
     "JSONata 表达式，内置变量 ticket_id / timestamp，如 'qrcodes_' & $.ticket_id & '.jpg'",
 
+  // captcha / storage 服务型 Provider 字段（captcha 用 client_id 作站点密钥、
+  // client_secret 作密钥、endpoint 作自定义校验地址；storage/local 用 bucket 作
+  // 本地目录、domain 作公开域名、path_prefix 作 key 前缀）。
+  'admin.schemaField.captchaSiteKeyLabel': '站点密钥（Site Key）',
+  'admin.schemaField.captchaSecretLabel': '密钥（Secret Key）',
+  'admin.schemaField.captchaEndpointLabel': '自定义校验地址',
+  'admin.schemaField.storageBucketLabel': '本地目录',
+  'admin.schemaField.storageDomainLabel': '公开访问域名',
+  'admin.schemaField.storagePathPrefixLabel': '对象键前缀',
+
   // 渠道语义化覆盖（alipay / microsoft）。
   'admin.schemaField.alipayPrivateKeyLabel': '应用私钥（PEM）',
   'admin.schemaField.alipayPrivateKeyHelp':

@@ -367,7 +367,7 @@ func (f *fakeSettingsService) GetStatus() adminsvc.QueueStatus {
 }
 
 // newAdminHandler 构造挂真实 session + admin 拦截链（链序同装配：session
-// 在外注入身份、admin 在内判 uid，§3.14 行 494）的生成 handler，返回签发
+// 在外注入身份、admin 在内判 uid，§3.14）的生成 handler，返回签发
 // 助手与 http.Handler（口径同 handler/account/account_test.go）。writer 传
 // nil 时用 no-op fake（读路径用例不触写族）；users 为用户族 fake
 // （variadic——既有用例零改动，缺省 no-op）；clients 为
@@ -504,7 +504,7 @@ func readBody(t *testing.T, r io.Reader) string {
 	return string(b)
 }
 
-// decodeErrorCode 从 Connect 错误体解出顶层 code（§1.5 行 197-211）。
+// decodeErrorCode 从 Connect 错误体解出顶层 code（§1.5）。
 func decodeErrorCode(t *testing.T, raw string) string {
 	t.Helper()
 	var body struct {
@@ -517,7 +517,7 @@ func decodeErrorCode(t *testing.T, raw string) string {
 }
 
 // decodeErrorInfo 从 Connect 错误体 details 解出 ErrorInfo（base64 value →
-// proto 解码，§1.5 行 203-210），断言 domain / code 在 §1.6 封闭集合内。
+// proto 解码，§1.5），断言 domain / code 在 §1.6 封闭集合内。
 func decodeErrorInfo(t *testing.T, raw string) *commonv1.ErrorInfo {
 	t.Helper()
 	var body struct {
@@ -563,9 +563,9 @@ func schemaOf(t *testing.T, h http.Handler, providerType, cookie string) *adminv
 	return &got
 }
 
-// TestListProvidersAdminSession 管理员会话（uid=1）列表：200；§5.2 行 1168
+// TestListProvidersAdminSession 管理员会话（uid=1）列表：200；§5.2
 // 列表列逐项；筛选 / 分页入参按 §1.7 透传（归一后回显）；响应无任何 ext
-// 凭证字段（明文仅在 GetProvider，§12.1 行 1719）。
+// 凭证字段（明文仅在 GetProvider，§12.1）。
 func TestListProvidersAdminSession(t *testing.T) {
 	fakes := &fakeProviders{
 		rows:     []model.Provider{*wantRow(t)},
@@ -632,7 +632,7 @@ func TestListProvidersAdminSession(t *testing.T) {
 	}
 }
 
-// TestGetProviderAdminSession 管理员会话详情：200；§5.2 行 1170 全列 + ext
+// TestGetProviderAdminSession 管理员会话详情：200；§5.2 全列 + ext
 // Struct 明文（全站唯一明文出口，键 = Ext 字段名 snake_case）。
 func TestGetProviderAdminSession(t *testing.T) {
 	fakes := &fakeProviders{keyRow: wantRow(t)}
@@ -659,7 +659,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 	if got.GetCreatedAt() != 1761700000 || got.GetUpdatedAt() != 1761800000 {
 		t.Errorf("timestamps = (%d, %d)", got.GetCreatedAt(), got.GetUpdatedAt())
 	}
-	// ext 明文逐项（§5.2 行 1170：返回明文凭证，需管理员会话）。
+	// ext 明文逐项（§5.2：返回明文凭证，需管理员会话）。
 	ext := got.GetExt().GetFields()
 	if v := ext["client_id"].GetStringValue(); v != "wx-123" {
 		t.Errorf("ext.client_id = %q, want wx-123（明文）", v)
@@ -675,7 +675,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 	}
 }
 
-// TestGetProviderNotFound 详情目标不存在 → 404 not_found（§1.5 行 189
+// TestGetProviderNotFound 详情目标不存在 → 404 not_found（§1.5
 // 管理后台单资源）。
 func TestGetProviderNotFound(t *testing.T) {
 	fakes := &fakeProviders{keyErr: fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)}
@@ -745,7 +745,7 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 			t.Errorf("email schema 不应含 oauth 专属字段 %q", key)
 		}
 	}
-	// 非 oauth 不需要 union_provider options，故不查库（§5.3 行 1197）。
+	// 非 oauth 不需要 union_provider options，故不查库（§5.3）。
 	if len(fakes.queries) != 0 {
 		t.Errorf("email schema 不应触发 union 查询, got %+v", fakes.queries)
 	}
@@ -782,11 +782,56 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 	}
 }
 
+// TestGetProviderSchemaServiceMeta 服务型 Provider schema（captcha / storage）：
+// 由第四源静态 meta 命中，Ext 字段逐项来自 Fields 声明；category 非 oauth →
+// 无 oauth 专属列。proxy_url 按 ProxyURLFieldEnabled 裁剪：captcha 呈现、local
+// 不呈现。验证 GetProviderTypes → GetProviderSchema 全链路的下发形态。
+func TestGetProviderSchemaServiceMeta(t *testing.T) {
+	for _, tc := range []struct {
+		typ       string
+		category  string
+		extKeys   []string
+		wantProxy bool
+	}{
+		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha,
+			[]string{"client_id", "client_secret", "endpoint"}, true},
+		{provider.StorageTypeLocal, provider.CategoryStorage,
+			[]string{"bucket", "domain", "path_prefix"}, false},
+	} {
+		t.Run(tc.typ, func(t *testing.T) {
+			tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
+			cookie := adminCookie(t, tokens, epochs, 1)
+			got := schemaOf(t, h, tc.typ, cookie)
+			if got.GetType() != tc.typ || got.GetCategory() != tc.category {
+				t.Fatalf("type/category = (%q, %q), want (%q, %q)",
+					got.GetType(), got.GetCategory(), tc.typ, tc.category)
+			}
+			byKey := map[string]bool{}
+			for _, f := range got.GetFields() {
+				byKey[f.GetKey()] = true
+			}
+			for _, key := range tc.extKeys {
+				if !byKey[key] {
+					t.Errorf("service schema 缺少 Ext 字段 %q: %+v", key, byKey)
+				}
+			}
+			if hasProxy := byKey["proxy_url"]; hasProxy != tc.wantProxy {
+				t.Errorf("proxy_url 呈现 = %v, want %v", hasProxy, tc.wantProxy)
+			}
+			for _, key := range []string{"union_provider", "enable_signin", "auto_bind"} {
+				if byKey[key] {
+					t.Errorf("service schema 不应含 oauth 专属列 %q", key)
+				}
+			}
+		})
+	}
+}
+
 // TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
 // 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
 // + 全类 metadata + proxy_url 通用基线 = 24 项。追加字段 label / help 是前端
-// i18n 键，type / section / required / advanced 与 §5.3 示例（行 1187-1226）
-// 逐字一致，且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
+// i18n 键，type / section / required / advanced 与 §5.3 示例逐字一致，
+// 且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -807,7 +852,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
 		byKey[f.GetKey()] = f
-		// 每字段必须带合法 section（§5.3 行 1185 封闭五区块）。
+		// 每字段必须带合法 section（§5.3 封闭五区块）。
 		switch f.GetSection() {
 		case "basic", "credential", "endpoint", "display", "policy":
 		default:
@@ -833,9 +878,8 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("schema 缺少表列基线字段 %q", key)
 		}
 	}
-	// 追加字段逐字对照 §5.3 示例（行 1200-1211）+ 行 1239 metadata（json，
-	// 行 1243 约定「其余按语义归 basic」）；声明序即渲染序（行 1185），
-	// Ext 区块夹在 basic / display 基线之间。
+	// 追加字段逐字对照 §5.3 示例 + metadata 的 json 类型与「其余按语义归
+	// basic」约定；声明序即渲染序，Ext 区块夹在 basic / display 基线之间。
 	wantExt := []provider.FieldMeta{
 		{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
 		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
@@ -855,7 +899,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	}
 	for i, want := range wantExt {
 		if meta.Fields[i] != want {
-			t.Errorf("meta.Fields[%d] = %+v, want %+v（§5.3 行 1187-1226）", i, meta.Fields[i], want)
+			t.Errorf("meta.Fields[%d] = %+v, want %+v（§5.3 示例）", i, meta.Fields[i], want)
 		}
 		f := got.GetFields()[3+i] // basic 基线 3 项之后即 Ext 区块（声明序）。
 		if f.GetKey() != want.Key {
@@ -894,7 +938,7 @@ func TestGetProviderSchemaUnknownType(t *testing.T) {
 }
 
 // TestListProvidersWithoutSession 无会话：session 拦截器放行匿名（既定语义），
-// admin 拦截器拦下 → 401 unauthenticated（§5 行 1145，与 account 域
+// admin 拦截器拦下 → 401 unauthenticated（§5，与 account 域
 // handler 自判 401 的路径不同——admin 域在拦截器层）。
 func TestListProvidersWithoutSession(t *testing.T) {
 	_, _, h := newAdminHandler(t, &fakeProviders{}, nil)
@@ -909,7 +953,7 @@ func TestListProvidersWithoutSession(t *testing.T) {
 }
 
 // TestNonAdminReturns404 会话有效但 uid≠1 → 404 not_found，文案与普通 404
-// 一致（掩护管理面存在，§1.5 行 189 / wrapper_test 口径）。
+// 一致（掩护管理面存在，§1.5 / wrapper_test 口径）。
 func TestNonAdminReturns404(t *testing.T) {
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
 	cookie := adminCookie(t, tokens, epochs, 42)
@@ -1037,7 +1081,7 @@ func TestSetSettingsHandler(t *testing.T) {
 // 既有用例以 fake 注入哨兵掩盖真链路：真 Store 的 Validate 裸错误经 service
 // 透传后 handler errors.Is 不命中、误落 500。本组用真 settings.NewStore +
 // 真 adminsvc.SettingsService 组装，断言非法 https_deployment 端到端
-// 400 + ErrorInfo(admin, invalid_request)（接口文档 §5.6 行 1361）。
+// 400 + ErrorInfo(admin, invalid_request)（接口文档 §5.6）。
 
 // realChainEvents / realChainAudit / realChainQueue 真 SettingsService 组装
 // 所需最小依赖：SetSettings 校验失败路径不触 events / codecs；audit 仅
@@ -1071,7 +1115,7 @@ func realSettingsService() (*adminsvc.SettingsService, *realChainAudit) {
 
 // TestSetSettingsRealChainInvalidValue：真 Store
 // 链路 httpsDeployment="maybe" → 400 + ErrorInfo(admin, invalid_request)
-// （§5.6 行 1361），不再只靠 fake 注入哨兵；同批其余键零值均为合法默认形态，
+// （§5.6），不再只靠 fake 注入哨兵；同批其余键零值均为合法默认形态，
 // 拒绝发生在 https_deployment 值域校验（Validate 先于落库，nil repo 的
 // NewStore 不触 UpsertAll）——不落库、零审计。合法提交由既有 fake 用例
 // 覆盖（真 Store 正例会触达 nil repo，handler 测试不重复 service 侧已验
@@ -1246,7 +1290,7 @@ func sealToken(t *testing.T, c *security.Codec, purpose string, msg proto.Messag
 // —— 写族 7 方法（handler 层：Connect 形态映射 + 入参透传）——
 
 // TestCreateProviderHandler 管理员会话新建：合法提交体原样平铺透传到
-// service（Struct 不包装）；uk 冲突 → 409 already_exists（§1.5 行 190，无
+// service（Struct 不包装）；uk 冲突 → 409 already_exists（§1.5，无
 // ErrorInfo，§1.6 无对应业务细分码）；校验失败 → 400 + ErrorInfo
 // (admin, invalid_request)（同 GetProviderSchema 先例）。
 func TestCreateProviderHandler(t *testing.T) {
@@ -1277,7 +1321,7 @@ func TestCreateProviderHandler(t *testing.T) {
 		if code := decodeErrorCode(t, raw); code != "already_exists" {
 			t.Errorf("code = %q, want already_exists (body %s)", code, raw)
 		}
-		// §1.6 封闭集合无 provider 冲突业务码 → 不挂 ErrorInfo，前端按标准码兜底（行 226）。
+		// §1.6 封闭集合无 provider 冲突业务码 → 不挂 ErrorInfo，前端按标准码兜底。
 		if strings.Contains(raw, "api.common.v1.ErrorInfo") {
 			t.Errorf("冲突响应不应携带 ErrorInfo detail: %s", raw)
 		}
@@ -1336,7 +1380,7 @@ func TestUpdateProviderHandler(t *testing.T) {
 }
 
 // TestDeleteAndEnableHandler 删除 / 行内开关：入参透传；不存在 → 404
-// not_found（§1.5 行 189 管理后台单资源）。
+// not_found（§1.5 管理后台单资源）。
 func TestDeleteAndEnableHandler(t *testing.T) {
 	t.Run("delete 透传", func(t *testing.T) {
 		writer := &fakeWriter{}
@@ -1481,7 +1525,7 @@ func TestTestProviderHandler(t *testing.T) {
 	})
 }
 
-// —— 用户管理族 handler 用例（§5.1 行 1162、§5.4 行 1249-1255）——
+// —— 用户管理族 handler 用例（§5.1、§5.4）——
 
 // adminUserRow 用户族用例的 user 行（phone / email / 时间齐备）。
 func adminUserRow() *model.User {
@@ -1494,7 +1538,7 @@ func adminUserRow() *model.User {
 	}
 }
 
-// TestGetMeHandler 覆盖清单：GetMe 四字段 + isAdmin 恒 true（§5.1 行 1162）；
+// TestGetMeHandler 覆盖清单：GetMe 四字段 + isAdmin 恒 true（§5.1）；
 // uid 从 session ctx 取（= cookie uid）；行缺失 404。
 func TestGetMeHandler(t *testing.T) {
 	users := &fakeUserService{meRow: adminUserRow()}
@@ -1749,7 +1793,7 @@ func TestGetUserEventsHandler(t *testing.T) {
 
 // TestClientListHandlers：§1.7 分页归一（page=0 → 1、pageSize=200 → 100）+
 // 列表投影（明文 secret、redirect_uris、OIDC scopes/TTL）+ 空页 items 省略
-// （§1.7 行 278，proto3 空 repeated 不输出）；sort / order 接收但透传面无此
+// （§1.7，proto3 空 repeated 不输出）；sort / order 接收但透传面无此
 // 参数（repo 固定 ORDER BY id ASC，默认）。
 func TestClientListHandlers(t *testing.T) {
 	now := time.Unix(1761700000, 0).UTC()
@@ -1800,7 +1844,7 @@ func TestClientListHandlers(t *testing.T) {
 			t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
 		}
 		if strings.Contains(raw, `"items"`) {
-			t.Errorf("空页 items 应省略（§1.7 行 278）, raw = %s", raw)
+			t.Errorf("空页 items 应省略（§1.7）, raw = %s", raw)
 		}
 		var got adminv1.SsoClientListResponse
 		if err := protojson.Unmarshal([]byte(raw), &got); err != nil {

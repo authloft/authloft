@@ -249,6 +249,17 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.storagePathHelp':
     "JSONata expression with built-in variables ticket_id / timestamp, e.g. 'qrcodes_' & $.ticket_id & '.jpg'",
 
+  // captcha / storage service-type Provider fields (captcha uses client_id as
+  // the site key, client_secret as the secret, endpoint as a custom verify URL;
+  // storage/local uses bucket as the local directory, domain as the public URL,
+  // path_prefix as the object key prefix).
+  'admin.schemaField.captchaSiteKeyLabel': 'Site Key',
+  'admin.schemaField.captchaSecretLabel': 'Secret Key',
+  'admin.schemaField.captchaEndpointLabel': 'Custom Verify URL',
+  'admin.schemaField.storageBucketLabel': 'Local Directory',
+  'admin.schemaField.storageDomainLabel': 'Public Domain',
+  'admin.schemaField.storagePathPrefixLabel': 'Object Key Prefix',
+
   // Provider-specific overrides (alipay / microsoft).
   'admin.schemaField.alipayPrivateKeyLabel': 'App Private Key (PEM)',
   'admin.schemaField.alipayPrivateKeyHelp':

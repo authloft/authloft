@@ -569,8 +569,9 @@ func TestSortProviders(t *testing.T) {
 	})
 }
 
-// TestProviderTypes 三源并集：oauth 域 wechat_mp + 消息域 smtp /
-// aliyun_sms + 虚拟 Union meta 全部出现，type 稳定升序，category 由 meta 决定。
+// TestProviderTypes 静态源并集：oauth 域 wechat_mp + 消息域 smtp /
+// aliyun_sms + 虚拟 Union + 服务型 captcha/storage 全部出现，type 稳定升序，
+// category 由 meta 决定。
 func TestProviderTypes(t *testing.T) {
 	svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{})
 	got := svc.ProviderTypes()
@@ -583,8 +584,13 @@ func TestProviderTypes(t *testing.T) {
 		{Type: "wechat_mp", Category: "oauth", DisplayName: "微信小程序"},
 		{Type: "smtp", Category: "email", DisplayName: "SMTP（通用）"},
 		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
-		// 虚拟 Union 类型：静态 meta-only 第三源，管理后台新建下拉可见。
+		// 虚拟 Union 类型：静态 meta-only 源，管理后台新建下拉可见。
 		{Type: provider.UnionProviderType, Category: provider.CategoryUnion, DisplayName: "Union ID 归并（虚拟）"},
+		// 服务型类型：captcha / storage 静态 meta，同样进下拉。
+		{Type: provider.CaptchaTypeTurnstile, Category: provider.CategoryCaptcha, DisplayName: "Cloudflare Turnstile"},
+		{Type: provider.CaptchaTypeRecaptcha, Category: provider.CategoryCaptcha, DisplayName: "Google reCAPTCHA"},
+		{Type: provider.CaptchaTypeHcaptcha, Category: provider.CategoryCaptcha, DisplayName: "hCaptcha"},
+		{Type: provider.StorageTypeLocal, Category: provider.CategoryStorage, DisplayName: "本地存储（local）"},
 	} {
 		g, ok := byType[want.Type]
 		if !ok {
@@ -627,6 +633,93 @@ func TestCreateUnionProvider(t *testing.T) {
 	}
 	if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "wechat_union" {
 		t.Errorf("失效 key = %v, want [wechat_union]", keys)
+	}
+}
+
+// TestCreateServiceProvider 管理后台可新建服务型 Provider：captcha / storage
+// 的 type 由第四源静态 meta 命中，落行 category 正确、Ext 字段按 meta 声明
+// 落库、写后缓存失效触发。这是 GetProviderTypes → GetProviderSchema → Create
+// 全链路打通的核心回归点。
+func TestCreateServiceProvider(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      map[string]any
+		wantCat   string
+		wantType  string
+		assertExt func(t *testing.T, ext *providerpb.Ext)
+	}{
+		{
+			name: "captcha turnstile",
+			body: map[string]any{
+				"type": provider.CaptchaTypeTurnstile, "provider_key": "cap_turn",
+				"category": provider.CategoryCaptcha, "display_name": "Turnstile",
+				"client_id": "site-1", "client_secret": "sec-1",
+			},
+			wantCat: provider.CategoryCaptcha, wantType: provider.CaptchaTypeTurnstile,
+			assertExt: func(t *testing.T, ext *providerpb.Ext) {
+				if ext.GetClientId() != "site-1" || ext.GetClientSecret() != "sec-1" {
+					t.Errorf("captcha ext = %+v", ext)
+				}
+			},
+		},
+		{
+			name: "storage local",
+			body: map[string]any{
+				"type": provider.StorageTypeLocal, "provider_key": "store_local",
+				"category": provider.CategoryStorage, "display_name": "本地存储",
+				"bucket": "/data/authloft", "domain": "https://cdn.example.com",
+			},
+			wantCat: provider.CategoryStorage, wantType: provider.StorageTypeLocal,
+			assertExt: func(t *testing.T, ext *providerpb.Ext) {
+				if ext.GetBucket() != "/data/authloft" || ext.GetDomain() != "https://cdn.example.com" {
+					t.Errorf("storage ext = %+v", ext)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			inv := &fakeInvalidator{}
+			svc := adminsvc.NewService(store, inv)
+			if err := svc.CreateProvider(context.Background(), structBody(t, tc.body)); err != nil {
+				t.Fatalf("CreateProvider: %v", err)
+			}
+			if len(store.created) != 1 {
+				t.Fatalf("created = %d, want 1", len(store.created))
+			}
+			row := store.created[0]
+			if row.Type != tc.wantType || row.Category != tc.wantCat {
+				t.Errorf("落行 = %+v, want type=%q category=%q", row, tc.wantType, tc.wantCat)
+			}
+			ext, err := repo.ParseProviderExt(row.Ext)
+			if err != nil {
+				t.Fatalf("ParseProviderExt: %v", err)
+			}
+			tc.assertExt(t, ext)
+			if keys := inv.snapshot(); len(keys) != 1 || keys[0] != tc.body["provider_key"] {
+				t.Errorf("失效 key = %v", keys)
+			}
+		})
+	}
+}
+
+// TestCreateServiceProviderRequired 服务型 meta 的 required 字段缺失拒绝：
+// captcha 缺 client_secret、storage/local 缺 domain 均不得落库。
+func TestCreateServiceProviderRequired(t *testing.T) {
+	for _, body := range []map[string]any{
+		{"type": provider.CaptchaTypeTurnstile, "provider_key": "cap", "category": provider.CategoryCaptcha,
+			"display_name": "C", "client_id": "site"},
+		{"type": provider.StorageTypeLocal, "provider_key": "store", "category": provider.CategoryStorage,
+			"display_name": "S", "bucket": "/data"},
+	} {
+		store := newFakeStore()
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		if err := svc.CreateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Errorf("缺失 required: err = %v, want ErrInvalidRequest (body %v)", err, body)
+		}
+		if len(store.created) != 0 {
+			t.Errorf("非法请求不得落库: %v", body)
+		}
 	}
 }
 

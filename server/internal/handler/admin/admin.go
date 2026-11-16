@@ -187,7 +187,7 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, extFields, unionKeys)), nil
 }
 
-// lookupProviderType 按 type 查三源统一 meta（Ext 字段逐项来自 Fields 声明）。
+// lookupProviderType 按 type 查静态源统一 meta（Ext 字段逐项来自 Fields 声明）。
 func lookupProviderType(providerType string) (category string, extFields []provider.FieldMeta, ok bool) {
 	meta, found := provider.LookupTypeMeta(providerType)
 	if !found {
@@ -290,7 +290,7 @@ func (h *Handler) SortProviders(ctx context.Context, req *connectrpc.Request[adm
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
 }
 
-// GetProviderTypes Provider type 下拉数据源（来自两域注册表 metas，type 稳定排序）。
+// GetProviderTypes Provider type 下拉数据源（来自静态类型 metas，type 稳定排序）。
 func (h *Handler) GetProviderTypes(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderTypesRequest]) (*connectrpc.Response[adminv1.ProviderTypesResponse], error) {
 	infos := h.svc.ProviderTypes()
 	items := make([]*adminv1.ProviderType, len(infos))
