@@ -59,7 +59,13 @@ type Adapter struct {
 }
 
 // newAdapter 注册表工厂。build 仅供测试注入 http.Client。
-func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) { return build(p, nil) }
+func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
+	hc, err := oauthcore.ClientFor(p)
+	if err != nil {
+		return nil, err
+	}
+	return build(p, hc)
+}
 
 func build(p *provider.Provider, hc *http.Client) (*Adapter, error) {
 	if p == nil || p.Ext == nil {

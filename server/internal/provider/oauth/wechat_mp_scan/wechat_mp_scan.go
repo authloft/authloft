@@ -26,6 +26,7 @@ import (
 	"github.com/medivhzhan/weapp/v3/request"
 
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 )
 
 // Type 渠道类型（§12.2 内置清单：wechat_mp_scan）。
@@ -127,15 +128,26 @@ type Adapter struct {
 	providerKey string
 	client      loginClient
 	qrcode      wxacodeClient
+	hc          *http.Client // 包内测试钩子：记录注入 SDK 的出站 client
 }
 
-// newAdapter 注册表工厂：从 Provider 实例取凭证并构造 SDK 客户端。
+// newAdapter 注册表工厂：从 Provider 实例取凭证并构造 SDK 客户端。出站
+// client 在构造期按 proxy_url 一次性固化（§15.4）；空串走直连 client，
+// 非法配置返回可判别错误、不降级直连。测试注入走 build，不经此工厂。
 func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
-	return build(p, nil)
+	if p == nil || p.Ext == nil {
+		return build(p, nil)
+	}
+	hc, err := proxyclient.HTTPClient(p.Ext.GetProxyUrl(), 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("wechat_mp_scan: build proxy client: %w", err)
+	}
+	return build(p, hc)
 }
 
-// build 可注入 http.Client 的构造函数（仅供本包测试用 httptest 拦截微信
-// 请求；生产 newAdapter 传 nil 走 SDK 默认客户端）。共享 access_token
+// build 可注入 http.Client 的构造函数（测试用 httptest 拦截微信请求；
+// 生产 newAdapter 传入按 proxy_url 构造的 client）。hc 非空时经
+// weapp.WithHttpClient 注入 SDK，SDK 日志静默始终保留。共享 access_token
 // 缓存注入（SetAccessTokenCache）后按请求生效——适配器按请求构造，
 // 每次构造都读当前注入值（bootstrap 装配期先 Set 后服务，无竞态窗口）。
 func build(p *provider.Provider, hc *http.Client) (*Adapter, error) {
@@ -163,6 +175,7 @@ func build(p *provider.Provider, hc *http.Client) (*Adapter, error) {
 		providerKey: p.Key,
 		client:      client,
 		qrcode:      client,
+		hc:          hc,
 	}, nil
 }
 

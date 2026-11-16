@@ -17,6 +17,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 )
 
 // rewriteTransport 把 SDK 的 api.weixin.qq.com 请求改写到 httptest 服务器。
@@ -229,5 +230,79 @@ func TestRegisteredInRegistry(t *testing.T) {
 	}
 	if a.Channel() != provider.ChannelAPI {
 		t.Fatalf("Channel = %q, want api", a.Channel())
+	}
+}
+
+// TestNewAdapterProxyTransport 验证构造期按 proxy_url 固化出站 client，
+// 经 WithHttpClient 注入 SDK 的 client 持有代理 Transport（§15.4）。
+// 经包内 hc 钩子读取注入的 client，不新增生产导出。
+func TestNewAdapterProxyTransport(t *testing.T) {
+	cases := []struct {
+		name      string
+		proxyURL  string
+		wantProxy bool
+		wantErr   error
+	}{
+		{name: "http proxy", proxyURL: "http://user:pass@127.0.0.1:8080", wantProxy: true},
+		{name: "https proxy", proxyURL: "https://127.0.0.1:8443", wantProxy: true},
+		{name: "socks5 proxy", proxyURL: "socks5://127.0.0.1:1080", wantProxy: true},
+		{name: "empty direct", proxyURL: "", wantProxy: false},
+		{name: "blank direct", proxyURL: "  \t ", wantProxy: false},
+		{name: "unsupported scheme", proxyURL: "ftp://127.0.0.1:21", wantErr: proxyclient.ErrUnsupportedScheme},
+		{name: "missing port", proxyURL: "http://127.0.0.1", wantErr: proxyclient.ErrInvalidPort},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testProvider("mp", "wx-app", "wx-secret")
+			p.Ext.ProxyUrl = tc.proxyURL
+			a, err := newAdapter(p)
+			if tc.wantErr != nil {
+				if err == nil || !errors.Is(err, tc.wantErr) {
+					t.Fatalf("newAdapter err = %v, want errors.Is(%v)", err, tc.wantErr)
+				}
+				if a != nil {
+					t.Fatalf("newAdapter adapter = %+v on error, want nil (no degrade)", a)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("newAdapter: %v", err)
+			}
+			adapter, ok := a.(*Adapter)
+			if !ok || adapter == nil {
+				t.Fatalf("adapter = %T, want *Adapter", a)
+			}
+			if adapter.hc == nil {
+				t.Fatal("injected client is nil, want client constructed at build time")
+			}
+			if !tc.wantProxy {
+				if adapter.hc.Transport != nil {
+					t.Fatalf("direct transport = %T, want nil", adapter.hc.Transport)
+				}
+				return
+			}
+			tr, ok := adapter.hc.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("proxy transport = %T, want *http.Transport", adapter.hc.Transport)
+			}
+			if tr.Proxy == nil && tr.DialContext == nil {
+				t.Fatal("proxy transport has neither Proxy (http/https) nor DialContext (socks5)")
+			}
+		})
+	}
+}
+
+// TestBuildInjectedClientPriority 验证测试经 build 注入的 client 优先于
+// proxy_url 配置，测试注入口径保持不变。
+func TestBuildInjectedClientPriority(t *testing.T) {
+	injected := &http.Client{}
+	p := testProvider("mp", "wx-app", "wx-secret")
+	p.Ext.ProxyUrl = "http://127.0.0.1:8080"
+	a, err := build(p, injected)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if a.hc != injected {
+		t.Fatalf("injected client = %p, want %p (test injection must win over proxy config)", a.hc, injected)
 	}
 }
