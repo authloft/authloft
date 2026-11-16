@@ -75,7 +75,12 @@ import {
 } from './pages/ProvidersPage/edit/schema/schemaLogic';
 import { Form } from '@douyinfe/semi-ui';
 import { resolveFieldRenderer } from './pages/ProvidersPage/edit/schema/FieldRegistry';
-import { TextField } from './pages/ProvidersPage/edit/schema/fields/FieldRenderers';
+import {
+  NumberField,
+  SecretField,
+  SelectField,
+  TextField,
+} from './pages/ProvidersPage/edit/schema/fields/FieldRenderers';
 import { SchemaForm } from './pages/ProvidersPage/edit/schema/SchemaForm';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import { TemplateSchema } from '../gen/proto/api/admin/v1/template_pb';
@@ -4338,36 +4343,110 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// proxy_url 动态表单呈现（§5.3 代理字段约定）：schema 下发即渲染，前端不维护
-// key → 区块映射表、不改表单结构；本卡仅补 zh / en 两个文案键，这里验证
-// 文案键经渲染期 t() 解析落到 TextField 且 endpoint / advanced 折叠语义不回归。
+// proxy 提供商动态表单（§5.3 代理提供商与出站代理引用约定）：五真实 Ext 字段
+// （scheme 封闭集 select / host text / port number / user text advanced /
+// password secret advanced）与引用键 proxy_provider_key（select，options 由
+// handler 查库注入，wire 无 kind 字段、形态同 union_provider）全部 schema
+// 下发即渲染；提交体 = {"<key>": <value>} 平铺，PATCH 部分提交未带键保留原值。
 // ---------------------------------------------------------------------------
 
-describe('proxy_url 动态表单呈现（schema 下发 → endpoint 折叠区块 → TextField）', () => {
-  test('text → TextField 分派现成（FieldRegistry 零改动）', () => {
+/** 后端 proxySchema 的 wire 形态（label / help 为前端 i18n 键）。 */
+const PROXY_FIELDS = [
+  schemaField({
+    key: 'provider_key',
+    label: 'admin.schemaField.providerKeyLabel',
+    type: 'text',
+    section: 'basic',
+    required: true,
+    pattern: '^[a-z0-9_]+$',
+    help: 'admin.schemaField.providerKeyHelp',
+  }),
+  schemaField({
+    key: 'display_name',
+    label: 'admin.schemaField.displayNameLabel',
+    type: 'text',
+    section: 'basic',
+    required: true,
+  }),
+  schemaField({
+    key: 'scheme',
+    label: 'admin.schemaField.proxySchemeLabel',
+    type: 'select',
+    section: 'endpoint',
+    required: true,
+    options: ['socks5', 'http', 'https'],
+    help: 'admin.schemaField.proxySchemeHelp',
+  }),
+  schemaField({
+    key: 'host',
+    label: 'admin.schemaField.proxyHostLabel',
+    type: 'text',
+    section: 'endpoint',
+    required: true,
+    pattern: '^[^\\s/?#@\\[\\]]+$',
+    help: 'admin.schemaField.proxyHostHelp',
+  }),
+  schemaField({
+    key: 'port',
+    label: 'admin.schemaField.proxyPortLabel',
+    type: 'number',
+    section: 'endpoint',
+    help: 'admin.schemaField.proxyPortHelp',
+  }),
+  schemaField({
+    key: 'user',
+    label: 'admin.schemaField.proxyUserLabel',
+    type: 'text',
+    section: 'endpoint',
+    advanced: true,
+    help: 'admin.schemaField.proxyUserHelp',
+  }),
+  schemaField({
+    key: 'password',
+    label: 'admin.schemaField.proxyPasswordLabel',
+    type: 'secret',
+    section: 'endpoint',
+    advanced: true,
+    help: 'admin.schemaField.proxyPasswordHelp',
+  }),
+  // 引用键：options 运行时由 handler 查库注入（含未启用实例），此处
+  // 直接摆注入后的 wire 形态。
+  schemaField({
+    key: 'proxy_provider_key',
+    label: 'admin.schemaField.proxyProviderKeyLabel',
+    type: 'select',
+    section: 'endpoint',
+    options: ['proxy_main', 'proxy_standby'],
+    help: 'admin.schemaField.proxyProviderKeyHelp',
+  }),
+];
+
+describe('proxy 提供商动态表单（五真实字段 + 引用键：渲染 / 提交体 / PATCH 部分提交）', () => {
+  test('类型分派：select / secret / number / text → 对应渲染器（FieldRegistry 现成零改动）', () => {
+    expect(resolveFieldRenderer('select')).toBe(SelectField);
+    expect(resolveFieldRenderer('secret')).toBe(SecretField);
+    expect(resolveFieldRenderer('number')).toBe(NumberField);
     expect(resolveFieldRenderer('text')).toBe(TextField);
   });
 
-  test('schema 含 proxy_url：端点区块 + 高级选项折叠 + TextField + label/help 文案解析', () => {
+  test('schema 渲染：五真实键 + 引用键落 endpoint 区块，secret / select 分派与 label/help 解析', () => {
     setLocale('zh-CN');
-    const proxyField = schemaField({
-      key: 'proxy_url',
-      label: 'admin.schemaField.proxyUrlLabel',
-      help: 'admin.schemaField.proxyUrlHelp',
-      type: 'text',
-      section: 'endpoint',
-      advanced: true,
-    });
     const schema = create(SchemaResponseSchema, {
-      type: 'qq',
-      category: 'oauth',
-      fields: [proxyField],
+      type: 'proxy',
+      category: 'proxy',
+      fields: PROXY_FIELDS,
     });
 
-    // 分组逻辑：proxy_url 落入 endpoint（SECTION_ORDER index 2），advanced 修饰保留。
+    // 分组逻辑：endpoint（SECTION_ORDER index 2）收全部 proxy 键，顺序同下发。
     const groups = groupFieldsBySection(schema.fields);
-    expect(groups[2].map((field) => field.key)).toEqual(['proxy_url']);
-    expect(groups[2][0].advanced).toBe(true);
+    expect(groups[2].map((field) => field.key)).toEqual([
+      'scheme',
+      'host',
+      'port',
+      'user',
+      'password',
+      'proxy_provider_key',
+    ]);
 
     // 真实渲染 SchemaForm（外层 Semi Form 提供字段上下文，静态渲染不引入 act）。
     const html = renderToStaticMarkup(
@@ -4378,20 +4457,101 @@ describe('proxy_url 动态表单呈现（schema 下发 → endpoint 折叠区块
       ),
     );
 
-    // endpoint 区块标题 + advanced 折叠语义（高级选项 Collapse）。
+    // endpoint 区块标题 + advanced 折叠语义（user / password 收进高级选项）。
     expect(html).toContain('端点');
     expect(html).toContain('高级选项');
     expect(html).toContain('semi-collapse');
-    // text → TextField（semi-input 输入框，x-field-id 即 schema key）。
-    expect(html).toContain('x-field-id="proxy_url"');
-    expect(html).toContain('semi-input');
+    // 每个真实键与引用键都渲染（x-field-id 即 schema key）。
+    for (const key of [
+      'scheme',
+      'host',
+      'port',
+      'user',
+      'password',
+      'proxy_provider_key',
+    ]) {
+      expect(html).toContain(`x-field-id="${key}"`);
+    }
+    // secret → 密码态输入框。
+    expect(html).toMatch(/type="password"/);
     // label / help 在渲染期由 t() 解析为文案，不回显 i18n 键。
-    expect(html).toContain('出站代理地址');
-    expect(html).toContain('留空直连');
-    // HTML 转义后的 URL 格式示例（&lt;scheme&gt; = <scheme>）。
-    expect(html).toContain('&lt;scheme&gt;://[USER:PASSWORD@]HOST:PORT');
-    expect(html).not.toContain('admin.schemaField.proxyUrlLabel');
-    expect(html).not.toContain('admin.schemaField.proxyUrlHelp');
+    expect(html).toContain('代理协议');
+    expect(html).toContain('代理地址');
+    expect(html).toContain('代理端口');
+    expect(html).toContain('代理用户名');
+    expect(html).toContain('代理密码');
+    expect(html).toContain('出站代理');
+    expect(html).toContain('三选一');
+    // 旧复合字段 proxy_url 已从生成物删除，不再出现在任何 schema 渲染里。
+    expect(html).not.toContain('proxy_url');
+    expect(html).not.toContain('admin.schemaField.proxy');
     setLocale('zh-CN');
+  });
+
+  test('五真实键提交体：{"<key>": <value>} 平铺，port 保持 number、引用键空串原样', () => {
+    const struct = buildProviderStruct('proxy', PROXY_FIELDS, {
+      provider_key: 'proxy_main',
+      display_name: '主出站代理',
+      scheme: 'socks5',
+      host: '192.168.1.10',
+      port: 843,
+      user: 'ops',
+      password: 'secret',
+      proxy_provider_key: '',
+    });
+    expect(struct).toEqual({
+      type: 'proxy',
+      provider_key: 'proxy_main',
+      display_name: '主出站代理',
+      scheme: 'socks5',
+      host: '192.168.1.10',
+      port: 843,
+      user: 'ops',
+      password: 'secret',
+      proxy_provider_key: '',
+    });
+  });
+
+  test('引用键提交：select 显示名翻译不改 wire 值（渠道行原样提交 proxy_provider_key）', () => {
+    const refField = schemaField({
+      key: 'proxy_provider_key',
+      label: 'admin.schemaField.proxyProviderKeyLabel',
+      type: 'select',
+      section: 'endpoint',
+      options: ['proxy_main'],
+    });
+    const struct = buildProviderStruct('aliyun_sms', [refField], {
+      proxy_provider_key: 'proxy_main',
+    });
+    expect(struct).toEqual({
+      type: 'aliyun_sms',
+      proxy_provider_key: 'proxy_main',
+    });
+  });
+
+  test('PATCH「只改端口」部分提交：未带键不出现在 wire 体（后端保留原值）', async () => {
+    let updateBody: unknown;
+    server.use(
+      http.post(UPDATE_PROVIDER_URL, async ({ request }) => {
+        updateBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.updateProvider({
+      type: 'proxy',
+      provider_key: 'proxy_main',
+      port: 843,
+    });
+    expect(updateBody).toEqual({
+      type: 'proxy',
+      provider_key: 'proxy_main',
+      port: 843,
+    });
+    // scheme / host / user / password 未提交 → wire 体不含，后端保留原值。
+    expect('scheme' in (updateBody as object)).toBe(false);
+    expect('host' in (updateBody as object)).toBe(false);
+    expect('user' in (updateBody as object)).toBe(false);
+    expect('password' in (updateBody as object)).toBe(false);
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
   });
 });

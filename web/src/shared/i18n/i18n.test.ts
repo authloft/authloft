@@ -241,12 +241,35 @@ describe('模板管理文案契约（zh / en 键集对齐）', () => {
   });
 });
 
-describe('代理字段文案契约（proxy_url：schema 下发的 label / help 键，zh / en 齐备）', () => {
-  const labelKey = 'admin.schemaField.proxyUrlLabel';
-  const helpKey = 'admin.schemaField.proxyUrlHelp';
+describe('代理提供商文案契约（五真实字段 + 引用键 + 展示名，zh / en 齐备）', () => {
+  // 键清单与后端声明逐字对齐（servicetype.go / schemafield.go 的 Label / Help
+  // 字面量即契约来源，缺任一键后端跨端契约测试即红）。
+  const fieldKeys = [
+    'admin.schemaField.proxySchemeLabel',
+    'admin.schemaField.proxySchemeHelp',
+    'admin.schemaField.proxyHostLabel',
+    'admin.schemaField.proxyHostHelp',
+    'admin.schemaField.proxyPortLabel',
+    'admin.schemaField.proxyPortHelp',
+    'admin.schemaField.proxyUserLabel',
+    'admin.schemaField.proxyUserHelp',
+    'admin.schemaField.proxyPasswordLabel',
+    'admin.schemaField.proxyPasswordHelp',
+    'admin.schemaField.proxyProviderKeyLabel',
+    'admin.schemaField.proxyProviderKeyHelp',
+  ];
+  const optionKeys = [
+    'admin.schemaOption.scheme.socks5',
+    'admin.schemaOption.scheme.http',
+    'admin.schemaOption.scheme.https',
+  ];
+  const displayKeys = [
+    'admin.providerType.proxy',
+    'admin.providerCategory.proxy',
+  ];
 
-  test('两个代理文案键在 zh / en 两套字典齐备且可译（不回显键）', () => {
-    for (const key of [labelKey, helpKey]) {
+  test('五字段 / 引用键 label / help 键在 zh / en 两套字典齐备且可译（不回显键）', () => {
+    for (const key of fieldKeys) {
       expect(hasKey(key)).toBe(true);
       expect(t(key)).not.toBe(key);
       setLocale('en-US');
@@ -256,19 +279,40 @@ describe('代理字段文案契约（proxy_url：schema 下发的 label / help �
     }
   });
 
-  test('help 写明 URL 格式示例与「留空直连」语义（zh / en 语义对应）', () => {
-    expect(t(helpKey)).toContain('<scheme>://[USER:PASSWORD@]HOST:PORT');
-    expect(t(helpKey)).toContain('留空直连');
+  test('scheme 三 option 显示名在 zh / en 齐备；type / category=proxy 展示名齐备', () => {
+    for (const key of [...optionKeys, ...displayKeys]) {
+      expect(hasKey(key)).toBe(true);
+      setLocale('en-US');
+      expect(hasKey(key)).toBe(true);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('help 写明引用键「留空 = 直连」与 host 字符集语义（zh / en 语义对应）', () => {
+    expect(t('admin.schemaField.proxyProviderKeyHelp')).toContain('直连');
+    expect(t('admin.schemaField.proxyHostHelp')).toContain('IPv6');
     setLocale('en-US');
-    expect(t(helpKey)).toContain('<scheme>://[USER:PASSWORD@]HOST:PORT');
-    expect(t(helpKey)).toMatch(/direct/i);
+    expect(t('admin.schemaField.proxyProviderKeyHelp')).toMatch(/direct/i);
+    expect(t('admin.schemaField.proxyHostHelp')).toMatch(/IPv6/i);
     setLocale('zh-CN');
   });
 
-  test('label / help 逐字锚定：删任一键或改文案即变红', () => {
-    expect(t(labelKey)).toBe('出站代理地址');
+  test('label 逐字锚定：删任一键或改文案即变红', () => {
+    expect(t('admin.schemaField.proxySchemeLabel')).toBe('代理协议');
+    expect(t('admin.schemaField.proxyHostLabel')).toBe('代理地址');
+    expect(t('admin.schemaField.proxyPortLabel')).toBe('代理端口');
+    expect(t('admin.schemaField.proxyUserLabel')).toBe('代理用户名');
+    expect(t('admin.schemaField.proxyPasswordLabel')).toBe('代理密码');
+    expect(t('admin.schemaField.proxyProviderKeyLabel')).toBe('出站代理');
+    expect(t('admin.providerType.proxy')).toBe('出站代理');
     setLocale('en-US');
-    expect(t(labelKey)).toBe('Outbound proxy URL');
+    expect(t('admin.schemaField.proxySchemeLabel')).toBe('Proxy scheme');
+    expect(t('admin.schemaField.proxyHostLabel')).toBe('Proxy host');
+    expect(t('admin.schemaField.proxyPortLabel')).toBe('Proxy port');
+    expect(t('admin.schemaField.proxyUserLabel')).toBe('Proxy username');
+    expect(t('admin.schemaField.proxyPasswordLabel')).toBe('Proxy password');
+    expect(t('admin.schemaField.proxyProviderKeyLabel')).toBe('Outbound proxy');
+    expect(t('admin.providerType.proxy')).toBe('Outbound proxy');
     setLocale('zh-CN');
   });
 });

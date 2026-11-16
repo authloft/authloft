@@ -201,11 +201,26 @@ export const admin = {
   'admin.schemaField.autoBindFieldsLabel': '自动绑定字段',
   'admin.schemaField.autoBindFieldsHelp': 'auto_bind 开启时生效',
 
-  // 通用 Ext 基线字段（proxy_url，§5.3 代理字段约定）：schema 统一下发到
-  // endpoint 区块、advanced 折叠；前端零结构改动，仅补这两个文案键。
-  'admin.schemaField.proxyUrlLabel': '出站代理地址',
-  'admin.schemaField.proxyUrlHelp':
-    'URL 格式 <scheme>://[USER:PASSWORD@]HOST:PORT（scheme 为 socks5 / http / https）；留空直连，不使用代理',
+  // proxy 提供商五真实字段（§5.3 代理提供商与出站代理引用约定）：scheme 封闭集
+  // select、host 禁空白与 /?#@[]、port number、user / password 可选折叠；
+  // host / port 与 smtp 行共用字段名、标签键独立（proxy 行内语义为代理地址）。
+  'admin.schemaField.proxySchemeLabel': '代理协议',
+  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https 三选一（全小写）',
+  'admin.schemaField.proxyHostLabel': '代理地址',
+  'admin.schemaField.proxyHostHelp':
+    '主机名 / IPv4 / IPv6 字面量；禁空白与 /?#@[]；IPv6 直接写 ::1 形态（不带括号）',
+  'admin.schemaField.proxyPortLabel': '代理端口',
+  'admin.schemaField.proxyPortHelp': '1 ≤ port ≤ 65535',
+  'admin.schemaField.proxyUserLabel': '代理用户名',
+  'admin.schemaField.proxyUserHelp':
+    '原文存储；出站构造时由服务端按 RFC 3986 编码，无需手工编码',
+  'admin.schemaField.proxyPasswordLabel': '代理密码',
+  'admin.schemaField.proxyPasswordHelp':
+    '明文存储（同 client_secret 口径）；填写密码必须同时填写用户名',
+  // 引用键 proxy_provider_key（§5.3）：候选 = category=proxy 行（含未启用实例）。
+  'admin.schemaField.proxyProviderKeyLabel': '出站代理',
+  'admin.schemaField.proxyProviderKeyHelp':
+    '指向 proxy 提供商行的标识；留空 = 直连，唯一「不代理」表示',
 
   // oauth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
   'admin.schemaField.clientIdLabel': 'AppID',
@@ -282,6 +297,10 @@ export const admin = {
   'admin.schemaOption.ui_group.enterprise': '企业',
   'admin.schemaOption.ui_group.dev': '开发',
   'admin.schemaOption.ui_group.other': '其他',
+  // scheme 封闭集（§5.3 代理提供商与出站代理引用约定）：协议名通用，zh / en 同文。
+  'admin.schemaOption.scheme.socks5': 'SOCKS5',
+  'admin.schemaOption.scheme.http': 'HTTP',
+  'admin.schemaOption.scheme.https': 'HTTPS',
 
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': '删除',
@@ -501,6 +520,9 @@ export const admin = {
   'admin.providerColumnKey': '标识',
   'admin.providerColumnCategory': '类别',
   'admin.providerColumnType': '类型',
+  // type=proxy / category=proxy 展示名（§5.3 代理提供商与出站代理引用约定）。
+  'admin.providerType.proxy': '出站代理',
+  'admin.providerCategory.proxy': '出站代理',
   'admin.providerColumnPolicyTags': '策略标签',
   'admin.providerColumnSortOrder': '排序',
   'admin.providersLoadFailed': '提供商列表加载失败，请刷新重试',

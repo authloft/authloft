@@ -218,12 +218,30 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.autoBindFieldsLabel': 'Auto-bind fields',
   'admin.schemaField.autoBindFieldsHelp': 'Applies when auto_bind is enabled',
 
-  // Common Ext baseline field (proxy_url, §5.3 proxy field convention): sent by
-  // the schema into the endpoint section as advanced; no front-end structure
-  // change, only these two copy keys are added.
-  'admin.schemaField.proxyUrlLabel': 'Outbound proxy URL',
-  'admin.schemaField.proxyUrlHelp':
-    'URL format <scheme>://[USER:PASSWORD@]HOST:PORT (scheme: socks5 / http / https); leave empty to connect directly',
+  // Proxy provider five real fields (§5.3 proxy provider and outbound proxy
+  // reference convention): closed-set scheme select, host forbids whitespace
+  // and /?#@[], port number, user / password optional and collapsed; host /
+  // port share field names with the smtp row but carry independent label keys
+  // (proxy-row semantics: proxy address).
+  'admin.schemaField.proxySchemeLabel': 'Proxy scheme',
+  'admin.schemaField.proxySchemeHelp':
+    'One of socks5 / http / https (lowercase)',
+  'admin.schemaField.proxyHostLabel': 'Proxy host',
+  'admin.schemaField.proxyHostHelp':
+    'Hostname / IPv4 / IPv6 literal; whitespace and /?#@[] forbidden; write IPv6 bare (e.g. ::1, without brackets)',
+  'admin.schemaField.proxyPortLabel': 'Proxy port',
+  'admin.schemaField.proxyPortHelp': '1 ≤ port ≤ 65535',
+  'admin.schemaField.proxyUserLabel': 'Proxy username',
+  'admin.schemaField.proxyUserHelp':
+    'Stored as-is; encoded per RFC 3986 by the server on outbound construction, no manual encoding needed',
+  'admin.schemaField.proxyPasswordLabel': 'Proxy password',
+  'admin.schemaField.proxyPasswordHelp':
+    'Stored in plain text (same as client_secret); a password requires a username',
+  // Reference key proxy_provider_key (§5.3): candidates = category=proxy rows
+  // (including disabled instances).
+  'admin.schemaField.proxyProviderKeyLabel': 'Outbound proxy',
+  'admin.schemaField.proxyProviderKeyHelp':
+    'Provider key of a proxy row to route through; leave empty for direct connection (the only "no proxy" form)',
 
   // OAuth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
   'admin.schemaField.clientIdLabel': 'App ID',
@@ -304,6 +322,11 @@ export const admin: typeof zhAdmin = {
   'admin.schemaOption.ui_group.enterprise': 'Enterprise',
   'admin.schemaOption.ui_group.dev': 'Developer',
   'admin.schemaOption.ui_group.other': 'Other',
+  // scheme closed set (§5.3 proxy provider and outbound proxy reference
+  // convention): protocol names are universal, zh / en identical.
+  'admin.schemaOption.scheme.socks5': 'SOCKS5',
+  'admin.schemaOption.scheme.http': 'HTTP',
+  'admin.schemaOption.scheme.https': 'HTTPS',
 
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': 'Delete',
@@ -546,6 +569,10 @@ export const admin: typeof zhAdmin = {
   'admin.providerColumnKey': 'Key',
   'admin.providerColumnCategory': 'Category',
   'admin.providerColumnType': 'Type',
+  // type=proxy / category=proxy display names (§5.3 proxy provider and
+  // outbound proxy reference convention).
+  'admin.providerType.proxy': 'Outbound proxy',
+  'admin.providerCategory.proxy': 'Outbound proxy',
   'admin.providerColumnPolicyTags': 'Policy Tags',
   'admin.providerColumnSortOrder': 'Sort',
   'admin.providersLoadFailed':
