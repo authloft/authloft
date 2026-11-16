@@ -224,36 +224,42 @@ func TestTemplateVarsInjectEscape(t *testing.T) {
 // TestResolveClientTemplateFallback 回落各分支：无 client_id / Templates nil
 // （setup 模式）/ SsoClients nil / 查无行 / template_key 空 / Resolve miss
 // 一律 ok=false、varsJSON 为空、err 为 nil；命中时 html 与转义后 varsJSON
-// 正确返回。
+// 正确返回。sso_client 行命中即随返回（ssoRow 非 nil）且不受模板回落影响
+// （§2.1 sso 注入与 methods 过滤以行命中为条件）；查无行 / 授权入口 ssoRow
+// 为 nil。
 func TestResolveClientTemplateFallback(t *testing.T) {
 	const custom = `<html>{{AUTHLOFT_TEMPLATE_VARS}}</html>`
 	resolver := &fakeTplResolver{content: map[string]string{"k": custom}}
 	sso := &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app":   {TemplateKey: "k", TemplateVars: `{"a":"<x>"}`},
-		"nokey": {TemplateKey: "", TemplateVars: ""},
+		"app":   {ClientID: "app", TemplateKey: "k", TemplateVars: `{"a":"<x>"}`},
+		"nokey": {ClientID: "nokey", TemplateKey: "", TemplateVars: ""},
 	}}
 	cases := []struct {
 		name     string
 		deps     Deps
 		clientID string
 		wantOK   bool
+		wantRow  bool
 	}{
-		{"no client id", Deps{Templates: resolver, SsoClients: sso}, "", false},
-		{"templates nil setup", Deps{SsoClients: sso}, "app", false},
-		{"sso clients nil", Deps{Templates: resolver}, "app", false},
-		{"row not found", Deps{Templates: resolver, SsoClients: sso}, "missing", false},
-		{"template key empty", Deps{Templates: resolver, SsoClients: sso}, "nokey", false},
-		{"resolve miss", Deps{Templates: &fakeTplResolver{content: map[string]string{}}, SsoClients: sso}, "app", false},
-		{"sso hit", Deps{Templates: resolver, SsoClients: sso}, "app", true},
+		{"no client id", Deps{Templates: resolver, SsoClients: sso}, "", false, false},
+		{"templates nil setup", Deps{SsoClients: sso}, "app", false, true},
+		{"sso clients nil", Deps{Templates: resolver}, "app", false, false},
+		{"row not found", Deps{Templates: resolver, SsoClients: sso}, "missing", false, false},
+		{"template key empty", Deps{Templates: resolver, SsoClients: sso}, "nokey", false, true},
+		{"resolve miss", Deps{Templates: &fakeTplResolver{content: map[string]string{}}, SsoClients: sso}, "app", false, true},
+		{"sso hit", Deps{Templates: resolver, SsoClients: sso}, "app", true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			html, vars, ok, err := resolveClientTemplate(context.Background(), tc.deps, tc.clientID, false)
+			html, vars, row, ok, err := resolveClientTemplate(context.Background(), tc.deps, tc.clientID, false)
 			if err != nil {
 				t.Fatalf("err = %v, want nil", err)
 			}
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v (html=%q vars=%q)", ok, tc.wantOK, html, vars)
+			}
+			if (row != nil) != tc.wantRow {
+				t.Fatalf("ssoRow = %v, wantRow = %v（行命中不受模板回落影响）", row, tc.wantRow)
 			}
 			if tc.wantOK {
 				if html != custom {
@@ -270,28 +276,33 @@ func TestResolveClientTemplateFallback(t *testing.T) {
 }
 
 // TestResolveClientTemplateOIDC 授权入口用 oidc_client（Deps.Clients）：即使
-// SsoClients 未装配也能命中，验证两族分流与 oidc 客户端 template_vars 转义。
+// SsoClients 未装配也能命中，验证两族分流与 oidc 客户端 template_vars 转义；
+// 授权入口 ssoRow 恒 nil（§2.1 authorize 不注入 sso）。
 func TestResolveClientTemplateOIDC(t *testing.T) {
 	const custom = `<html>{{AUTHLOFT_TEMPLATE_VARS}}</html>`
 	d := Deps{
 		Templates: &fakeTplResolver{content: map[string]string{"oidc-k": custom}},
 		Clients:   &fakeClients{c: &model.OidcClient{TemplateKey: "oidc-k", TemplateVars: `{"b":"&"}`}},
 	}
-	html, vars, ok, err := resolveClientTemplate(context.Background(), d, "oidc-app", true)
+	html, vars, row, ok, err := resolveClientTemplate(context.Background(), d, "oidc-app", true)
 	if err != nil || !ok {
 		t.Fatalf("resolveClientTemplate(oidc): ok=%v err=%v", ok, err)
 	}
 	if html != custom || vars != `{"b":"\u0026"}` {
 		t.Errorf("oidc html=%q vars=%q", html, vars)
 	}
+	if row != nil {
+		t.Errorf("oidc 入口 ssoRow = %v, want nil", row)
+	}
 	// oidc=false 时 SsoClients 未装配必须回落（不会误用 Clients）。
-	if _, _, ok, _ := resolveClientTemplate(context.Background(), d, "oidc-app", false); ok {
+	if _, _, _, ok, _ := resolveClientTemplate(context.Background(), d, "oidc-app", false); ok {
 		t.Error("sso 分支在无 SsoClients 时不应命中")
 	}
 }
 
 // TestLoginShellCustomTemplate 端到端：sso_client 指定 template_key 且模板含
-// 模板变量占位符 → 自定义模板生效（变量转义后注入、四占位符全替换）。
+// 模板变量占位符 → 自定义模板生效（变量转义后注入、四占位符全替换）；
+// 行命中时 INIT 同时追加 sso 键（§2.1）。
 func TestLoginShellCustomTemplate(t *testing.T) {
 	f := newFixture(t)
 	const custom = `<html><head><script nonce="` + phCSPNonce + `">` +
@@ -300,7 +311,7 @@ func TestLoginShellCustomTemplate(t *testing.T) {
 		`<link href="` + phStaticBase + `/x.css"></head><body id="root">custom</body></html>`
 	f.deps.Templates = &fakeTplResolver{content: map[string]string{"tpl-login": custom}}
 	f.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app-1": {TemplateKey: "tpl-login", TemplateVars: `{"brand":"<b>&` + "\u2028" + `"}`},
+		"app-1": {ClientID: "app-1", Name: "示例应用", TemplateKey: "tpl-login", TemplateVars: `{"brand":"<b>&` + "\u2028" + `"}`},
 	}}
 
 	rec := doGet(t, fixedNonceEngine(t, f.deps), "/sso/login?client_id=app-1")
@@ -315,6 +326,7 @@ func TestLoginShellCustomTemplate(t *testing.T) {
 		`nonce="FIXED-NONCE"`,
 		`href="/assets/x.css"`,
 		`window.__AUTHLOFT_INIT__={"al_root"`,
+		`"sso":{"clientId":"app-1","name":"示例应用"}`,
 		`window.__AUTHLOFT_TEMPLATE_VARS__={"brand":"\u003cb\u003e\u0026\u2028"}`,
 		`id="root">custom`,
 	} {
@@ -327,34 +339,50 @@ func TestLoginShellCustomTemplate(t *testing.T) {
 	}
 }
 
-// TestLoginShellFallbackByteIdentical 端到端逐字一致：未指定 client_id、
-// Resolve miss、setup（Templates nil）三种回落，body 与不带 client_id 的
-// 文件壳逐字相同，且不含模板变量注入痕迹。
+// TestLoginShellFallbackByteIdentical 端到端逐字一致：未指定 client_id 与
+// client_id 查无行两种回落，body 与基线（无 client_id 文件壳）逐字相同——
+// 查无行回落壳不注入 sso（§2.1）、不含模板变量注入痕迹；行命中但模板回落
+// （Resolve miss / setup Templates nil）时文件壳本体不变、仅 INIT JSON 追加
+// sso 键（行命中与模板解析正交，§2.1）。
 func TestLoginShellFallbackByteIdentical(t *testing.T) {
 	baseline := newFixture(t)
 	baselineBody := doGet(t, fixedNonceEngine(t, baseline.deps), "/sso/login").Body.String()
 
-	// Resolve miss：有 client_id + template_key，但 Resolve 未命中。
+	// 查无行回落：与基线逐字一致（回落壳不注入 sso）。
+	ghost := newFixture(t)
+	ghost.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{}}
+	ghostBody := doGet(t, fixedNonceEngine(t, ghost.deps), "/sso/login?client_id=ghost").Body.String()
+
+	// Resolve miss：行命中 + template_key，但 Resolve 未命中 → sso 照注入。
 	miss := newFixture(t)
 	miss.deps.Templates = &fakeTplResolver{content: map[string]string{}}
 	miss.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app": {TemplateKey: "absent"},
+		"app": {ClientID: "app", TemplateKey: "absent"},
 	}}
 	missBody := doGet(t, fixedNonceEngine(t, miss.deps), "/sso/login?client_id=app").Body.String()
 
-	// setup 模式：Templates 为 nil（Deps 未装配模板解析源）。
+	// setup 模式：Templates 为 nil（Deps 未装配模板解析源）→ sso 照注入。
 	setup := newFixture(t)
 	setup.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app": {TemplateKey: "k"},
+		"app": {ClientID: "app", TemplateKey: "k"},
 	}}
 	setupBody := doGet(t, fixedNonceEngine(t, setup.deps), "/sso/login?client_id=app").Body.String()
 
+	if ghostBody != baselineBody {
+		t.Errorf("查无行回落 body 与基线不一致（长度 got=%d baseline=%d）", len(ghostBody), len(baselineBody))
+	}
+	if strings.Contains(ghostBody, `"_TV_`) || strings.Contains(ghostBody, "AUTHLOFT_TEMPLATE_VARS") {
+		t.Errorf("查无行回落 body 含模板变量注入痕迹")
+	}
 	for name, body := range map[string]string{"resolve miss": missBody, "setup nil": setupBody} {
-		if body != baselineBody {
-			t.Errorf("%s 回落 body 与基线不一致（长度 got=%d baseline=%d）", name, len(body), len(baselineBody))
+		if !strings.Contains(body, `"sso":{"clientId":"app","name":""}`) {
+			t.Errorf("%s 行命中回落应注入 sso 键:\n%s", name, body)
 		}
 		if strings.Contains(body, `"_TV_`) || strings.Contains(body, "AUTHLOFT_TEMPLATE_VARS") {
 			t.Errorf("%s 回落 body 含模板变量注入痕迹", name)
+		}
+		if body == baselineBody {
+			t.Errorf("%s 行命中回落 body 不应与基线逐字一致（INIT 应多 sso 键）", name)
 		}
 	}
 }

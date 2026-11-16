@@ -2,9 +2,10 @@
 // 后端架构 §12.3 行 1460-1466）：flags 镜像 settings 两开关、captcha 取 Gate
 // 现算配置（§2.5 三处同结构出口之一）、methods 按 flow 过滤——login 读
 // settings.login_methods 过滤因子注册表（usage / steps 取因子实现，即 §1.10
-// 渠道序列的四处取值来源之一）；thirdparty 走 provider Loader（is_enabled=1
-// 且 enable_signin=1，公开视图零凭证字段）。数值字段一律十进制字符串
-// （§1.12 行 339-346：JSON 不出现裸数字）。
+// 渠道序列的四处取值来源之一），命中 sso_client 行时再按应用级配置做交集
+// （§2.1 应用级过滤：应用开关 ∩ 全局开关，仅 flow=login 消费）；thirdparty
+// 走 provider Loader（is_enabled=1 且 enable_signin=1，公开视图零凭证字段）。
+// 数值字段一律十进制字符串（§1.12 行 339-346：JSON 不出现裸数字）。
 package pages
 
 import (
@@ -17,6 +18,8 @@ import (
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/provider"
+	"authloft/internal/repo"
+	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
 
@@ -81,9 +84,74 @@ type MethodsSnapshot struct {
 	Methods []MethodEntry  `json:"methods"`
 }
 
+// ssoMethodScope sso_client 行的应用级登录方式维度（§2.1 应用级过滤）：
+// methods / providers 两集合独立生效，nil / 空集 = 未配置 = 跟随全局。
+// 仅 flow=login 消费（register / reset 镜像全局口径，不读应用配置）。
+type ssoMethodScope struct {
+	methods   map[string]bool // 应用 login_methods（含 thirdparty 整体开关）
+	providers map[string]bool // 应用 oauth_providers（provider key 明细白名单）
+}
+
+// ssoScopeFromRow sso_client 行 → 应用级维度：两列均为 proto 序列化（§12.0，
+// 编解码出口 repo.ParseClientLoginMethods / ParseClientOauthProviders），
+// 空列 = 未配置 = 对应集合为空。row 为 nil（client_id 未命中行 / 授权入口）
+// → nil scope、零查询。列解码失败 = 服务端故障（渲染层转 500，同
+// login_methods 缺键口径），不静默降级为跟随全局。
+func ssoScopeFromRow(row *model.SsoClient) (*ssoMethodScope, error) {
+	if row == nil {
+		return nil, nil
+	}
+	ms, err := repo.ParseClientLoginMethods(row.LoginMethods)
+	if err != nil {
+		return nil, fmt.Errorf("pages: parse sso login_methods: %w", err)
+	}
+	ps, err := repo.ParseClientOauthProviders(row.OauthProviders)
+	if err != nil {
+		return nil, fmt.Errorf("pages: parse sso oauth_providers: %w", err)
+	}
+	return &ssoMethodScope{
+		methods:   stringSet(ms.GetMethods()),
+		providers: stringSet(ps.GetProviders()),
+	}, nil
+}
+
+// stringSet []string → 成员集合（nil 输入 → 空集合）。
+func stringSet(vs []string) map[string]bool {
+	out := make(map[string]bool, len(vs))
+	for _, v := range vs {
+		out[v] = true
+	}
+	return out
+}
+
+// allowsMethod 应用是否放行某方式（§2.1 交集口径前两行）：应用未配置
+// （nil / 空集）= 跟随全局；已配置按成员判定——thirdparty 整体开关与因子
+// 方式同处应用 login_methods 一个集合，全局序不因应用配置改变。
+func (s *ssoMethodScope) allowsMethod(m string) bool {
+	if s == nil || len(s.methods) == 0 {
+		return true
+	}
+	return s.methods[m]
+}
+
+// allowedProviders 应用 oauth_providers 白名单（§2.1 交集口径第三行的过滤
+// 入参）：nil / 空 = 未配置 = 跟随全局（无应用限制）。
+func (s *ssoMethodScope) allowedProviders() map[string]bool {
+	if s == nil {
+		return nil
+	}
+	return s.providers
+}
+
 // buildMethods 组装快照。login 流读不到 login_methods（settings 缺键）即
-// 服务端故障（§8 行 1436），返回错误由渲染层转 500。
-func (h *Handler) buildMethods(ctx context.Context, flow string) (*MethodsSnapshot, error) {
+// 服务端故障（§8 行 1436），返回错误由渲染层转 500。sso 为可变参的
+// sso_client 行应用级维度（§2.1）：仅登录端入口传入，授权入口恒缺省；
+// 仅 flow=login 消费做交集过滤，register / reset 镜像全局口径不读应用配置。
+func (h *Handler) buildMethods(ctx context.Context, flow string, sso ...*ssoMethodScope) (*MethodsSnapshot, error) {
+	var scope *ssoMethodScope
+	if len(sso) > 0 {
+		scope = sso[0]
+	}
 	snap := &MethodsSnapshot{
 		Flags: snapshotFlags{
 			PasswordReset: h.boolSetting(settings.KeyAllowPasswordReset, true),
@@ -102,7 +170,7 @@ func (h *Handler) buildMethods(ctx context.Context, flow string) (*MethodsSnapsh
 	case flowReset:
 		methods, err = h.resetMethods()
 	default: // login 默认（§2.1 行 368）
-		methods, err = h.loginMethods()
+		methods, err = h.loginMethods(scope)
 	}
 	if err != nil {
 		return nil, err
@@ -115,25 +183,31 @@ func (h *Handler) buildMethods(ctx context.Context, flow string) (*MethodsSnapsh
 }
 
 // loginMethods flow=login（§2.1 默认）：settings.login_methods 顺序过滤因子
-// 注册表；thirdparty 合成条目走 provider Loader；device 不出现（§2.1 行
-// 406）；未注册 / 拼错的方式跳过不注入。login_methods 缺键 → 错误（500）。
-func (h *Handler) loginMethods() ([]MethodEntry, error) {
+// 注册表，应用开关未放行的方式先被剔除（§2.1 应用级交集：同时开启才算
+// 开启）；thirdparty 合成条目走 provider Loader（is_enabled=1 且
+// enable_signin=1，§12.3 行 1464）并按应用 oauth_providers 白名单再过滤；
+// device 不出现（§2.1 行 406）；未注册 / 拼错的方式跳过不注入。
+// login_methods 缺键 → 错误（500）。
+func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
 	enabled, ok := h.sliceSetting(settings.KeyLoginMethods)
 	if !ok {
 		return nil, errors.New("pages: login_methods missing from settings")
 	}
 	methods := []MethodEntry{}
 	for _, m := range enabled {
+		if !sso.allowsMethod(m) {
+			continue // 应用 login_methods 未放行（§2.1 应用级过滤）
+		}
 		kind := factor.FactorKind(m)
 		switch kind {
 		case factor.FactorDevice:
 			continue // §2.1 行 406：device 因子不出现
 		case factor.FactorThirdParty:
-			entry, err := h.thirdpartyEntry()
+			entry, err := h.thirdpartyEntry(sso.allowedProviders())
 			if err != nil {
 				return nil, err
 			}
-			if entry != nil { // 零可用 Provider 时不注入（未启用口径）
+			if entry != nil { // 过滤后零可用 Provider 时不注入（未启用口径）
 				methods = append(methods, *entry)
 			}
 		default:
@@ -227,11 +301,13 @@ func (h *Handler) factorEntry(f factor.Factor) MethodEntry {
 
 // thirdpartyEntry 合成 thirdparty 条目（§2.7.1）：枚举 provider 渠道注册表
 // 中 category=oauth 的 type，经 Loader 列行，过滤 is_enabled=1 且
-// enable_signin=1（§12.3 行 1464）；零可用项返回 nil（不注入）。
+// enable_signin=1（§12.3 行 1464），再按 allowed（应用 oauth_providers
+// 白名单，nil / 空 = 未配置 = 跟随全局，§2.1 应用级过滤第三行）过滤；
+// 过滤后零可用项返回 nil（不注入）。
 // steps 为所辖渠道首 kind 的并集（§2.7.1 行 576：redirect / external /
 // qrcode 分别是 redirect / api / qrcode 渠道的首个 kind），按 §1.10 表序。
 // type 未在渠道注册表登记的 Provider 不参与（无适配器即无法登录）。
-func (h *Handler) thirdpartyEntry() (*MethodEntry, error) {
+func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error) {
 	if h.loader == nil {
 		return nil, nil
 	}
@@ -248,6 +324,9 @@ func (h *Handler) thirdpartyEntry() (*MethodEntry, error) {
 		for _, p := range ps {
 			if !p.Enabled() || p.Row == nil || p.Row.EnableSignin != 1 {
 				continue
+			}
+			if len(allowed) > 0 && !allowed[p.Key] {
+				continue // 应用 oauth_providers 白名单未放行（§2.1）
 			}
 			providers = append(providers, SnapshotProvider{
 				ProviderKey: p.Key,

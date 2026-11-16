@@ -41,51 +41,67 @@ type clientTemplate struct {
 // （ok=false），不抛 500、不改变 setup / account / admin 壳。oidc 为 true
 // 取 oidc_client（授权入口，client_id 已由 OIDC 校验层确认），false 取
 // sso_client（登录端入口）。err 恒为 nil——所有解析失败均按回落处理。
-func resolveClientTemplate(ctx context.Context, deps Deps, clientID string, oidc bool) (html, varsJSON string, ok bool, err error) {
-	if clientID == "" || deps.Templates == nil {
-		return "", "", false, nil
+// ssoRow 为登录端入口查得的 sso_client 行：行命中即非 nil 且不受模板回落
+// 影响（§2.1 sso 注入与 methods 应用级过滤以行命中为条件、与模板解析正交
+// ——无自定义模板是常态，绑定模板解析会令无模板应用的 sso 上下文失效）；
+// 授权入口与行未命中恒 nil。
+func resolveClientTemplate(ctx context.Context, deps Deps, clientID string, oidc bool) (html, varsJSON string, ssoRow *model.SsoClient, ok bool, err error) {
+	if clientID == "" {
+		return "", "", nil, false, nil
 	}
 
 	var templateKey, templateVars string
 	if oidc {
 		if deps.Clients == nil {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		row, e := deps.Clients.FindOidcClientByClientID(ctx, clientID)
 		if e != nil || row == nil {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		templateKey, templateVars = row.TemplateKey, row.TemplateVars
 	} else {
 		if deps.SsoClients == nil {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
 		row, e := deps.SsoClients.FindSsoClientByClientID(ctx, clientID)
 		if e != nil || row == nil {
-			return "", "", false, nil
+			return "", "", nil, false, nil
 		}
-		templateKey, templateVars = row.TemplateKey, row.TemplateVars
+		ssoRow, templateKey, templateVars = row, row.TemplateKey, row.TemplateVars
 	}
 
-	if templateKey == "" {
-		return "", "", false, nil
+	if deps.Templates == nil || templateKey == "" {
+		return "", "", ssoRow, false, nil
 	}
 	content, e := deps.Templates.Resolve(ctx, templateKey)
 	if e != nil || content == "" {
-		return "", "", false, nil
+		return "", "", ssoRow, false, nil
 	}
-	return content, templateVarsInject(templateVars), true, nil
+	return content, templateVarsInject(templateVars), ssoRow, true, nil
 }
 
 // resolveClientTpl Handler 侧薄封装：解析成功返回模板内容，失败（含 setup
 // 模式 Templates 为 nil）返回 nil——renderShell 据此走文件壳回落。oidc 区分
-// 客户端族。
+// 客户端族；授权入口不消费 sso_client 行（§2.1 authorize 不注入 sso），行
+// 返回值忽略。
 func (h *Handler) resolveClientTpl(ctx context.Context, clientID string, oidc bool) *clientTemplate {
-	html, varsJSON, ok, err := resolveClientTemplate(ctx, h.deps, clientID, oidc)
+	html, varsJSON, _, ok, err := resolveClientTemplate(ctx, h.deps, clientID, oidc)
 	if err != nil || !ok {
 		return nil
 	}
 	return &clientTemplate{html: html, varsJSON: varsJSON}
+}
+
+// resolveLoginClientTpl Handler 侧薄封装（登录端入口用）：除模板内容外同时
+// 返回查得的 sso_client 行——调用方据行命中注入 __AUTHLOFT_INIT__.sso 并把
+// 应用级维度传入 methods 组装（§2.1）。oidc 恒 false（两族分列）。
+func (h *Handler) resolveLoginClientTpl(ctx context.Context, clientID string) (*clientTemplate, *model.SsoClient) {
+	html, varsJSON, row, ok, err := resolveClientTemplate(ctx, h.deps, clientID, false)
+	if err != nil || !ok {
+		return nil, row
+	}
+	return &clientTemplate{html: html, varsJSON: varsJSON}, row
 }
 
 // templateVarsInject 构造 {{AUTHLOFT_TEMPLATE_VARS}} 注入值（§8.1）：template

@@ -6,11 +6,12 @@
 //
 // 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
 // templates）+ 五占位符纯字符串全量替换，注入 window.__AUTHLOFT_INIT__
-// （四键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
+// （五键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
 // no-store、CSP nonce、不注入任何凭证（CSP 终稿：基线 =
 // middleware/csp.go + cdnOrigin 追加，setup 壳同基线）。注入键白名单
 // （§8 行 1534-1541）：al_root / static_base 三端，methods（login 必填，
-// 缺失即服务端故障）、oidc（login 可选，/auth/authorize 渲染空壳时注入）。
+// 缺失即服务端故障）、oidc（login 可选，/auth/authorize 渲染空壳时注入）、
+// sso（login 可选，登录端入口命中 sso_client 行时注入，§2.1）。
 package pages
 
 import (
@@ -135,8 +136,10 @@ type Deps struct {
 	// Templates 自定义模板解析源（§8.1）：admin 侧 TemplateService 天然满足。
 	// nil（setup 模式 / 未装配）时一律回落默认文件壳，本包零 DB / Redis 依赖。
 	Templates TemplateResolver
-	// SsoClients sso_client 行源（§8.1 登录端入口选模板用）；nil 时登录端
-	// 回落默认文件壳。OIDC 入口沿用 Clients（OidcClientReader）。
+	// SsoClients sso_client 行源（§8.1 登录端入口选模板用；行命中同时是
+	// __AUTHLOFT_INIT__.sso 注入与 methods 应用级过滤的依据，§2.1）；nil 时
+	// 登录端回落默认文件壳且不注入 sso。OIDC 入口沿用 Clients
+	// （OidcClientReader），两族分列。
 	SsoClients SsoClientReader
 	// Metas provider 渠道注册表枚举（type → category/channel）；nil 用
 	// provider 全局注册表（Types + Lookup）。测试注入用。
@@ -146,14 +149,27 @@ type Deps struct {
 }
 
 // initPayload window.__AUTHLOFT_INIT__ 注入体：字段即 §8 注入白名单
-// （al_root / static_base 三端，methods login 必填，oidc login 可选）。
+// （al_root / static_base 三端，methods login 必填，oidc / sso login 可选）。
 // oidc 为 json.RawMessage 注入位——/auth/authorize 渲染登录空壳时填充
-// （authorize.go，§4.2 行 1081），其余路由不注入（nil 时 omitted）。
+// （authorize.go，§4.2 行 1081），其余路由不注入（nil 时 omitted）。sso 为
+// SSO 应用上下文（§2.1）——登录端入口命中 sso_client 行时填充（loginPage），
+// authorize 入口不注入（nil 时 omitted）。
 type initPayload struct {
 	ALRoot     string           `json:"al_root"`
 	StaticBase string           `json:"static_base"`
 	Methods    *MethodsSnapshot `json:"methods,omitempty"`
 	OIDC       json.RawMessage  `json:"oidc,omitempty"`
+	SSO        *ssoContext      `json:"sso,omitempty"`
+}
+
+// ssoContext __AUTHLOFT_INIT__.sso 注入体（§2.1 注入结构）：clientId 供前端
+// 首签请求回传（§2.2 / §2.7.2 / §2.8），name 仅供前端展示、不参与任何判定。
+// 不含过滤结果——应用级过滤直接体现在 methods 快照，避免双份快照（§2.1）。
+// 值随 INIT_JSON 走 json.Marshal 既有转义（<>& 与 \u2028/\u2029，§8），无
+// 新增转义面。
+type ssoContext struct {
+	ClientID string `json:"clientId"`
+	Name     string `json:"name"`
 }
 
 // Handler 页面壳处理器。
@@ -235,18 +251,31 @@ func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 // /sso/oauth/callback/*）：注入 al_root / static_base / methods（必填）。
 // flow 按 §2.1 行 363-368 取页面 URL query（login 默认）；三页各自带路径
 // 缺省（前端入口链接不带 query，routes.tsx 行 67 依赖按页过滤的快照）。
-// client_id 用于按 §8.1 选客户端自定义模板（SSO 登录入口查 sso_client），
-// 未指定 / 解析失败一律回落默认文件壳；不参与 methods 过滤（无数据模型
-// 支撑、默认不实现）。组装失败 → 空体 500（§8 行 1436「缺失即服务端故障」，
-// §1.5 行 225 豁免端点按 HTTP 语义）。
+// client_id 按 §8.1 选客户端自定义模板（SSO 登录入口查 sso_client），行
+// 命中状态传入 methods 组装——命中 sso_client 行时应用级交集仅 flow=login
+// 消费（register / reset 镜像全局口径，§2.1），并同时注入
+// __AUTHLOFT_INIT__.sso（§2.1 注入结构：clientId / name，转义走 INIT_JSON
+// 既有口径）；行命中与模板解析正交——模板回落（含无自定义模板的常态）仍
+// 注入 sso，查无行回落壳才不注入。应用配置列解码失败 → 空体 500（§8 行
+// 1436「缺失即服务端故障」，§1.5 行 225 豁免端点按 HTTP 语义）。
 func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		flow := defaultFlow
 		if q := c.Query("flow"); q == flowLogin || q == flowRegister || q == flowReset {
 			flow = q
 		}
-		tpl := h.resolveClientTpl(c.Request.Context(), c.Query("client_id"), false)
-		snapshot, err := h.buildMethods(c.Request.Context(), flow)
+		tpl, ssoRow := h.resolveLoginClientTpl(c.Request.Context(), c.Query("client_id"))
+		scope, err := ssoScopeFromRow(ssoRow)
+		if err != nil {
+			slog.Error("pages: parse sso client config", "err", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		var ssoCtx *ssoContext
+		if ssoRow != nil {
+			ssoCtx = &ssoContext{ClientID: ssoRow.ClientID, Name: ssoRow.Name}
+		}
+		snapshot, err := h.buildMethods(c.Request.Context(), flow, scope)
 		if err != nil {
 			slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -256,6 +285,7 @@ func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 			ALRoot:     h.root,
 			StaticBase: h.staticBase(),
 			Methods:    snapshot,
+			SSO:        ssoCtx,
 		}, tpl)
 	}
 }
