@@ -564,6 +564,16 @@ func schemaOf(t *testing.T, h http.Handler, providerType, cookie string) *adminv
 	return &got
 }
 
+// jsonScalar 把 Schema 声明的 string 默认值解析为 JSON 标量（解析失败按原文），
+// 与 dto 侧 wire 转换同口径，供 default 值比对。
+func jsonScalar(s string) any {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	return v
+}
+
 // TestListProvidersAdminSession 管理员会话（uid=1）列表：200；§5.2
 // 列表列逐项；筛选 / 分页入参按 §1.7 透传（归一后回显）；响应无任何 ext
 // 凭证字段（明文仅在 GetProvider，§12.1）。
@@ -785,9 +795,10 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 }
 
 // TestGetProviderSchemaServiceMeta 服务型 Provider schema（captcha / storage）：
-// 由第四源静态 meta 命中，Ext 字段逐项来自 Fields 声明；category 非 oauth →
-// 无 oauth 专属列。proxy_url 按 provider Schema 声明裁剪：captcha 呈现、local
-// 不呈现。验证 GetProviderTypes → GetProviderSchema 全链路的下发形态。
+// 由第四源静态 meta 命中，Ext 字段由 Schema() 声明下发；category 非 oauth →
+// 无 oauth 专属列。proxy_url 呈现与否由 Schema 声明决定：captcha 声明了该
+// 字段、local 不声明（provider/servicetype.go）。验证 GetProviderTypes →
+// GetProviderSchema 全链路的下发形态。
 func TestGetProviderSchemaServiceMeta(t *testing.T) {
 	for _, tc := range []struct {
 		typ       string
@@ -801,7 +812,8 @@ func TestGetProviderSchemaServiceMeta(t *testing.T) {
 			[]string{"bucket", "domain", "path_prefix"}, false},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
-			tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil)
+			fakes := &fakeProviders{}
+			tokens, epochs, h := newAdminHandler(t, fakes, nil)
 			cookie := adminCookie(t, tokens, epochs, 1)
 			got := schemaOf(t, h, tc.typ, cookie)
 			if got.GetType() != tc.typ || got.GetCategory() != tc.category {
@@ -825,6 +837,10 @@ func TestGetProviderSchemaServiceMeta(t *testing.T) {
 					t.Errorf("service schema 不应含 oauth 专属列 %q", key)
 				}
 			}
+			// Schema 未声明 dynamic 字段：不查库（声明驱动，非类别判断）。
+			if len(fakes.queries) != 0 {
+				t.Errorf("%s schema 不应触发 union 查询, got %+v", tc.typ, fakes.queries)
+			}
 		})
 	}
 }
@@ -833,7 +849,7 @@ func TestGetProviderSchemaServiceMeta(t *testing.T) {
 // 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
 // + 全类 metadata + proxy_url 通用基线 = 24 项。追加字段 label / help 是前端
 // i18n 键，type / section / required / advanced 与 §5.3 示例逐字一致，
-// 且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
+// 且与注册表 Schema() 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"}}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -896,25 +912,51 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			Help: "admin.schemaField.userMappingHelp"},
 		{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
 	}
-	if len(meta.Fields) != len(wantExt) {
-		t.Fatalf("注册表 meta.Fields 数 = %d, want %d", len(meta.Fields), len(wantExt))
+	schema := meta.Schema()
+	if len(schema) != len(got.GetFields()) {
+		t.Fatalf("注册表 Schema() 字段数 = %d, wire 字段数 = %d", len(schema), len(got.GetFields()))
 	}
+	// 声明序即渲染序：wire 与注册表 Schema() 逐项对照。default / pattern 全量
+	// 透传；options 按 Kind 分流，dynamic 字段由查库注入（union_provider 在
+	// 下方单独断言）。
+	for i, mf := range schema {
+		f := got.GetFields()[i]
+		if f.GetKey() != mf.Key || f.GetLabel() != mf.Label || f.GetType() != mf.Type ||
+			f.GetSection() != mf.Section || f.GetRequired() != mf.Required ||
+			f.GetAdvanced() != mf.Advanced || f.GetHelp() != mf.Help || f.GetPattern() != mf.Pattern {
+			t.Errorf("fields[%d] 与注册表 Schema() 不一致: wire=%+v schema=%+v", i, f, mf)
+		}
+		if mf.Default == "" {
+			if f.GetDefault() != nil {
+				t.Errorf("%s default = %+v, want nil（Schema 未声明默认值）", mf.Key, f.GetDefault())
+			}
+		} else if v := f.GetDefault().AsInterface(); !reflect.DeepEqual(v, jsonScalar(mf.Default)) {
+			t.Errorf("%s default = %v, want %v", mf.Key, v, mf.Default)
+		}
+		if mf.Kind == provider.FieldDynamicOptions {
+			continue
+		}
+		if !reflect.DeepEqual(f.GetOptions(), mf.Options) {
+			t.Errorf("%s options = %v, want %v（Schema 自身声明）", mf.Key, f.GetOptions(), mf.Options)
+		}
+	}
+	// Ext 追加字段声明逐字对照 §5.3 示例 + metadata 的 json 类型与「其余按语义
+	// 归 basic」约定；basic 基线 3 项之后即 Ext 区块（声明序）。
 	for i, want := range wantExt {
-		if !reflect.DeepEqual(meta.Fields[i], want) {
-			t.Errorf("meta.Fields[%d] = %+v, want %+v（§5.3 示例）", i, meta.Fields[i], want)
-		}
-		f := got.GetFields()[3+i] // basic 基线 3 项之后即 Ext 区块（声明序）。
-		if f.GetKey() != want.Key {
-			t.Errorf("fields[%d].key = %q, want %q（Ext 区块按 meta 声明序）", 3+i, f.GetKey(), want.Key)
-		}
-		if f.GetLabel() != want.Label || f.GetType() != want.Type || f.GetSection() != want.Section ||
-			f.GetRequired() != want.Required || f.GetAdvanced() != want.Advanced || f.GetHelp() != want.Help {
-			t.Errorf("%s 与 §5.3 示例不一致: schema=%+v", want.Key, f)
+		mf := schema[3+i]
+		if mf.Key != want.Key || mf.Label != want.Label || mf.Type != want.Type ||
+			mf.Section != want.Section || mf.Required != want.Required ||
+			mf.Advanced != want.Advanced || mf.Help != want.Help {
+			t.Errorf("Schema Ext[%d] = %+v, want %+v（§5.3 示例）", i, mf, want)
 		}
 	}
-	// union_provider options 仍由 union 查询驱动（category 只读字段不再进 schema）。
+	// union_provider 是 wechat_mp Schema 中唯一的 dynamic 字段：恰触发一次
+	// union 查库，options 注入成功（category 只读字段不再进 schema）。
 	if opts := byKey["union_provider"].GetOptions(); len(opts) != 1 || opts[0] != "union_b" {
 		t.Errorf("union_provider options = %v, want [union_b]", opts)
+	}
+	if len(fakes.queries) != 1 {
+		t.Errorf("union 查询次数 = %d, want 1（声明驱动：仅该 Schema 声明了 dynamic 字段）", len(fakes.queries))
 	}
 }
 
