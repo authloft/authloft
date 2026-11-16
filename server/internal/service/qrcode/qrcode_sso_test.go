@@ -266,6 +266,38 @@ func TestGetLoginTicketSsoIntoLoginToken(t *testing.T) {
 	})
 }
 
+// TestGetLoginTicketSsoReachesTerminalComplete 建会话出口载荷 Sso 的可观测
+// 断言：票据快照配置默认回跳时，pollResult 传入 Terminal.Complete 的载荷
+// 携带 Sso，终点据此填 redirectTo（接口文档 §1.3）；Sso 未随行时 redirectTo
+// 为空，断言必红。
+func TestGetLoginTicketSsoReachesTerminalComplete(t *testing.T) {
+	ctx := context.Background()
+	e := newQrEnv(t)
+	e.addScanProvider("scan", nil)
+	e.tickets.res["tid123"] = &token.TicketResult{
+		V: 1, Status: ticketsvc.TicketStatusSuccess, Scene: "login", ProviderKey: "scan",
+		LoginResult: &token.LoginResult{Uid: 9},
+	}
+	snap := ssoApp()
+	snap.DefaultRedirectUri = "https://app.example/after"
+	ticket := e.sealTicket(t, &token.TicketPayload{
+		TicketId:    "tid123",
+		ProviderKey: "scan",
+		Scene:       "login",
+		Iat:         e.now.Unix(),
+		Exp:         e.now.Add(600 * time.Second).Unix(),
+		Sso:         snap,
+	})
+	out := e.svc.GetLoginTicket(ctx, GetLoginTicketInput{Ticket: ticket})
+	inner := out.Envelope.GetLogin()
+	if inner == nil || inner.GetStatus() != orchestrator.StatusSuccess {
+		t.Fatalf("login = %+v, want success", inner)
+	}
+	if inner.GetRedirectTo() != "https://app.example/after" {
+		t.Fatalf("redirectTo = %q, want 应用默认回跳地址（pollResult 载荷 Sso 未随行）", inner.GetRedirectTo())
+	}
+}
+
 // pollInputSso 轮询入参变体：签一枚携带应用快照的 ticket（形态同
 // pollInput，多装 sso——CreateQrcode 携带 sso_client_id 时的载荷形态）。
 func pollInputSso(t *testing.T, e *qrEnv) GetLoginTicketInput {

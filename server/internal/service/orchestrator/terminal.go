@@ -166,6 +166,11 @@ func (t *Terminal) Complete(ctx context.Context, p *token.LoginTokenPayload) (*S
 		if err != nil {
 			return nil, err
 		}
+	} else if uri := p.GetSso().GetDefaultRedirectUri(); uri != "" {
+		// 无 OIDC 上下文时的应用默认回跳（§1.3 终点处理）：快照缺省或未配置
+		// 默认回跳维持空（前端落默认 /account#/profile）；多域名同步链的
+		// finalURL 取本值，随下方 Sync.Build 自动随行。
+		success.RedirectTo = uri
 	}
 
 	// 日志 + last_login 走注入的投递接口；投递失败不回滚登录（主链路零同步写库）。

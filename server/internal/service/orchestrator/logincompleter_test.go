@@ -221,6 +221,35 @@ func TestLoginCompleterWithoutLoginToken(t *testing.T) {
 	}
 }
 
+// TestLoginCompleterDefaultRedirectFromSnapshot：step-up 成功结论接回终点
+// 与 LoginDefault 消费同一 Terminal.Complete（无第二份终点实现），载荷快照
+// 同口径生效——loginToken 带 Sso 快照且无 OIDC 上下文 → redirectTo =
+// 应用默认回跳地址。
+func TestLoginCompleterDefaultRedirectFromSnapshot(t *testing.T) {
+	state := newTestLoginState(t)
+	lt, err := state.Issue(&token.LoginTokenPayload{
+		Tid: "tid-original", Flow: "login", Factor: "otp_email",
+		Passed: []string{"otp_email"}, Amr: []string{"otp_email"}, Uid: 42,
+		Sso: &token.Sso{ClientId: "app-1", DefaultRedirectUri: "https://app.example/after"},
+	})
+	if err != nil {
+		t.Fatalf("Issue login token: %v", err)
+	}
+	oidc := &lcOIDCIssuer{}
+	completer := newTestLoginCompleter(t, state, &lcSessionWriter{}, oidc, &fakeLoginEvents{}, &lcSyncBuilder{})
+
+	sess, err := completer.Complete(context.Background(), verification.Subject{Kind: verification.SubjectKindUID, ID: "42"}, lt, "totp")
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if sess.RedirectTo != "https://app.example/after" {
+		t.Fatalf("redirectTo = %q, want 应用默认回跳地址", sess.RedirectTo)
+	}
+	if oidc.calls != 0 {
+		t.Fatalf("oidc issuer calls = %d, want 0", oidc.calls)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
