@@ -82,7 +82,7 @@ export function ProviderEdit(props: {
       visible={props.visible}
       maskClosable={false}
       onCancel={props.onClose}
-      width={600}
+      size="medium"
       footer={
         <Space>
           <Button

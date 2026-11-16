@@ -310,6 +310,7 @@ export function TemplatesPage(_props: {
         visible={createOpen}
         onCancel={closeCreate}
         maskClosable={false}
+        size="large"
         footer={
           <div className={styles.formFooter}>
             <Button

@@ -553,6 +553,7 @@ export function OidcClientsPage(_props: {
         visible={createOpen}
         onCancel={closeCreate}
         maskClosable={false}
+        size="medium"
         footer={
           <div className={styles.formFooter}>
             <Button

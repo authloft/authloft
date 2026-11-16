@@ -424,6 +424,7 @@ export function SsoClientsPage(_props: {
         visible={createOpen}
         onCancel={closeCreate}
         maskClosable={false}
+        size="medium"
         footer={
           <div className={styles.formFooter}>
             <Button

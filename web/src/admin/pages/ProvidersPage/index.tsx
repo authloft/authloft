@@ -221,13 +221,17 @@ export function ProvidersPage(props: {
       dataIndex: 'policyTags',
       render: (_text: unknown, row: Provider) => {
         const tags = policyTags(row);
-        return tags.length > 0
-          ? tags.map((tag) => (
+        return tags.length > 0 ? (
+          <Space>
+            {tags.map((tag) => (
               <Tag key={tag} size="small">
                 {tag}
               </Tag>
-            ))
-          : EMPTY_TEXT;
+            ))}
+          </Space>
+        ) : (
+          EMPTY_TEXT
+        );
       },
     },
     {
@@ -241,9 +245,7 @@ export function ProvidersPage(props: {
       dataIndex: 'actions',
       render: (_text: unknown, row: Provider) => (
         <span className={styles.actions}>
-          <Button size="small" onClick={() => openEdit(row)}>
-            {t('admin.editAction')}
-          </Button>
+          <Button onClick={() => openEdit(row)}>{t('admin.editAction')}</Button>
           <ConfirmActionButton
             title={t('admin.providerDeleteConfirm', {
               name: row.displayName || row.providerKey,
@@ -314,7 +316,7 @@ export function ProvidersPage(props: {
         title={t('admin.providerSortTitle')}
         visible={showSort}
         onCancel={() => setShowSort(false)}
-        width={520}
+        size="small"
       >
         {!canDrag && total > 0 ? (
           <p className={styles.dragNote}>

@@ -47,7 +47,7 @@ export function ConfirmActionButton({
         run();
       }}
     >
-      <Button size="small" loading={loading} disabled={loading}>
+      <Button loading={loading} disabled={loading}>
         {children}
       </Button>
     </Popconfirm>

@@ -23,6 +23,7 @@ import styles from './AdminLayout.module.less';
 import {
   IconBox,
   IconConnectionPoint1,
+  IconCustomize,
   IconGlobe,
   IconHome,
   IconSafe,
@@ -40,6 +41,7 @@ const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
   '/settings': <IconSetting />,
   '/audit': <IconSafe />,
   '/decode': <IconWrench />,
+  '/templates': <IconCustomize />,
 });
 
 /** admin 布局包装层：数据门留在此处，渲染委托共用基础布局壳。 */
