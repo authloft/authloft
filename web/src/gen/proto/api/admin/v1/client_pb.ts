@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/client.proto.
  */
 export const file_api_admin_v1_client: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvYWRtaW4vdjEvY2xpZW50LnByb3RvEgxhcGkuYWRtaW4udjEijgEKCVNzb0NsaWVudBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgp1cGRhdGVkX2F0GAcgASgDIpMBChVMaXN0U3NvQ2xpZW50c1JlcXVlc3QSEQoEcGFnZRgBIAEoA0gAiAEBEhYKCXBhZ2Vfc2l6ZRgCIAEoA0gBiAEBEhEKBHNvcnQYAyABKAlIAogBARISCgVvcmRlchgEIAEoCUgDiAEBQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyIm8KFVNzb0NsaWVudExpc3RSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5Tc29DbGllbnQSDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKAMiZwoWQ3JlYXRlU3NvQ2xpZW50UmVxdWVzdBIRCgljbGllbnRfaWQYASABKAkSFQoNY2xpZW50X3NlY3JldBgCIAEoCRIMCgRuYW1lGAMgASgJEhUKDXJlZGlyZWN0X3VyaXMYBCADKAkiIQoTR2V0U3NvQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoAyJzChZVcGRhdGVTc29DbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDEhEKCWNsaWVudF9pZBgCIAEoCRIVCg1jbGllbnRfc2VjcmV0GAMgASgJEgwKBG5hbWUYBCABKAkSFQoNcmVkaXJlY3RfdXJpcxgFIAMoCSIkChZEZWxldGVTc29DbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDItQBCgpPaWRjQ2xpZW50EgoKAmlkGAEgASgDEhEKCWNsaWVudF9pZBgCIAEoCRIVCg1jbGllbnRfc2VjcmV0GAMgASgJEgwKBG5hbWUYBCABKAkSFQoNcmVkaXJlY3RfdXJpcxgFIAMoCRIOCgZzY29wZXMYBiADKAkSGAoQYWNjZXNzX3Rva2VuX3R0bBgHIAEoAxIZChFyZWZyZXNoX3Rva2VuX3R0bBgIIAEoAxISCgpjcmVhdGVkX2F0GAkgASgDEhIKCnVwZGF0ZWRfYXQYCiABKAMilAEKFkxpc3RPaWRjQ2xpZW50c1JlcXVlc3QSEQoEcGFnZRgBIAEoA0gAiAEBEhYKCXBhZ2Vfc2l6ZRgCIAEoA0gBiAEBEhEKBHNvcnQYAyABKAlIAogBARISCgVvcmRlchgEIAEoCUgDiAEBQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyInEKFk9pZGNDbGllbnRMaXN0UmVzcG9uc2USJwoFaXRlbXMYASADKAsyGC5hcGkuYWRtaW4udjEuT2lkY0NsaWVudBINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyKtAQoXQ3JlYXRlT2lkY0NsaWVudFJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDAoEbmFtZRgDIAEoCRIVCg1yZWRpcmVjdF91cmlzGAQgAygJEg4KBnNjb3BlcxgFIAMoCRIYChBhY2Nlc3NfdG9rZW5fdHRsGAYgASgDEhkKEXJlZnJlc2hfdG9rZW5fdHRsGAcgASgDIiIKFEdldE9pZGNDbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDIrkBChdVcGRhdGVPaWRjQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSDgoGc2NvcGVzGAYgAygJEhgKEGFjY2Vzc190b2tlbl90dGwYByABKAMSGQoRcmVmcmVzaF90b2tlbl90dGwYCCABKAMiJQoXRGVsZXRlT2lkY0NsaWVudFJlcXVlc3QSCgoCaWQYASABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM");
+  fileDesc("ChlhcGkvYWRtaW4vdjEvY2xpZW50LnByb3RvEgxhcGkuYWRtaW4udjEiuwEKCVNzb0NsaWVudBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgp1cGRhdGVkX2F0GAcgASgDEhQKDHRlbXBsYXRlX2tleRgIIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAkgASgJIpMBChVMaXN0U3NvQ2xpZW50c1JlcXVlc3QSEQoEcGFnZRgBIAEoA0gAiAEBEhYKCXBhZ2Vfc2l6ZRgCIAEoA0gBiAEBEhEKBHNvcnQYAyABKAlIAogBARISCgVvcmRlchgEIAEoCUgDiAEBQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyIm8KFVNzb0NsaWVudExpc3RSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5Tc29DbGllbnQSDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKAMilAEKFkNyZWF0ZVNzb0NsaWVudFJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDAoEbmFtZRgDIAEoCRIVCg1yZWRpcmVjdF91cmlzGAQgAygJEhQKDHRlbXBsYXRlX2tleRgFIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAYgASgJIiEKE0dldFNzb0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMioAEKFlVwZGF0ZVNzb0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMSEQoJY2xpZW50X2lkGAIgASgJEhUKDWNsaWVudF9zZWNyZXQYAyABKAkSDAoEbmFtZRgEIAEoCRIVCg1yZWRpcmVjdF91cmlzGAUgAygJEhQKDHRlbXBsYXRlX2tleRgGIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAcgASgJIiQKFkRlbGV0ZVNzb0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMigQIKCk9pZGNDbGllbnQSCgoCaWQYASABKAMSEQoJY2xpZW50X2lkGAIgASgJEhUKDWNsaWVudF9zZWNyZXQYAyABKAkSDAoEbmFtZRgEIAEoCRIVCg1yZWRpcmVjdF91cmlzGAUgAygJEg4KBnNjb3BlcxgGIAMoCRIYChBhY2Nlc3NfdG9rZW5fdHRsGAcgASgDEhkKEXJlZnJlc2hfdG9rZW5fdHRsGAggASgDEhIKCmNyZWF0ZWRfYXQYCSABKAMSEgoKdXBkYXRlZF9hdBgKIAEoAxIUCgx0ZW1wbGF0ZV9rZXkYCyABKAkSFQoNdGVtcGxhdGVfdmFycxgMIAEoCSKUAQoWTGlzdE9pZGNDbGllbnRzUmVxdWVzdBIRCgRwYWdlGAEgASgDSACIAQESFgoJcGFnZV9zaXplGAIgASgDSAGIAQESEQoEc29ydBgDIAEoCUgCiAEBEhIKBW9yZGVyGAQgASgJSAOIAQFCBwoFX3BhZ2VCDAoKX3BhZ2Vfc2l6ZUIHCgVfc29ydEIICgZfb3JkZXIicQoWT2lkY0NsaWVudExpc3RSZXNwb25zZRInCgVpdGVtcxgBIAMoCzIYLmFwaS5hZG1pbi52MS5PaWRjQ2xpZW50Eg0KBXRvdGFsGAIgASgDEgwKBHBhZ2UYAyABKAMSEQoJcGFnZV9zaXplGAQgASgDItoBChdDcmVhdGVPaWRjQ2xpZW50UmVxdWVzdBIRCgljbGllbnRfaWQYASABKAkSFQoNY2xpZW50X3NlY3JldBgCIAEoCRIMCgRuYW1lGAMgASgJEhUKDXJlZGlyZWN0X3VyaXMYBCADKAkSDgoGc2NvcGVzGAUgAygJEhgKEGFjY2Vzc190b2tlbl90dGwYBiABKAMSGQoRcmVmcmVzaF90b2tlbl90dGwYByABKAMSFAoMdGVtcGxhdGVfa2V5GAggASgJEhUKDXRlbXBsYXRlX3ZhcnMYCSABKAkiIgoUR2V0T2lkY0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMi5gEKF1VwZGF0ZU9pZGNDbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDEhEKCWNsaWVudF9pZBgCIAEoCRIVCg1jbGllbnRfc2VjcmV0GAMgASgJEgwKBG5hbWUYBCABKAkSFQoNcmVkaXJlY3RfdXJpcxgFIAMoCRIOCgZzY29wZXMYBiADKAkSGAoQYWNjZXNzX3Rva2VuX3R0bBgHIAEoAxIZChFyZWZyZXNoX3Rva2VuX3R0bBgIIAEoAxIUCgx0ZW1wbGF0ZV9rZXkYCSABKAkSFQoNdGVtcGxhdGVfdmFycxgKIAEoCSIlChdEZWxldGVPaWRjQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoA0ImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw");
 
 /**
  * SsoClient 是 AdminService/ListSsoClients 的列表项，也是 GetSsoClient 的详情响应：
@@ -70,6 +70,22 @@ export type SsoClient = Message<"api.admin.v1.SsoClient"> & {
    * @generated from field: int64 updated_at = 7;
    */
   updatedAt: bigint;
+
+  /**
+   * 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+   * 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 8;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+   * 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 9;
+   */
+  templateVars: string;
 };
 
 /**
@@ -203,6 +219,20 @@ export type CreateSsoClientRequest = Message<"api.admin.v1.CreateSsoClientReques
    * @generated from field: repeated string redirect_uris = 4;
    */
   redirectUris: string[];
+
+  /**
+   * 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 5;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 6;
+   */
+  templateVars: string;
 };
 
 /**
@@ -276,6 +306,20 @@ export type UpdateSsoClientRequest = Message<"api.admin.v1.UpdateSsoClientReques
    * @generated from field: repeated string redirect_uris = 5;
    */
   redirectUris: string[];
+
+  /**
+   * 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 6;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 7;
+   */
+  templateVars: string;
 };
 
 /**
@@ -385,6 +429,22 @@ export type OidcClient = Message<"api.admin.v1.OidcClient"> & {
    * @generated from field: int64 updated_at = 10;
    */
   updatedAt: bigint;
+
+  /**
+   * 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+   * 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 11;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+   * 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 12;
+   */
+  templateVars: string;
 };
 
 /**
@@ -536,6 +596,20 @@ export type CreateOidcClientRequest = Message<"api.admin.v1.CreateOidcClientRequ
    * @generated from field: int64 refresh_token_ttl = 7;
    */
   refreshTokenTtl: bigint;
+
+  /**
+   * 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 8;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 9;
+   */
+  templateVars: string;
 };
 
 /**
@@ -629,6 +703,20 @@ export type UpdateOidcClientRequest = Message<"api.admin.v1.UpdateOidcClientRequ
    * @generated from field: int64 refresh_token_ttl = 8;
    */
   refreshTokenTtl: bigint;
+
+  /**
+   * 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_key = 9;
+   */
+  templateKey: string;
+
+  /**
+   * 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+   *
+   * @generated from field: string template_vars = 10;
+   */
+  templateVars: string;
 };
 
 /**

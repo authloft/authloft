@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package api.admin.v1;
+
+// 包名 api.admin.v1（docs/接口文档.md §12.9「包名 api.<域>.v1」）
+// 目录 api/admin/v1 与包名逐段一致。Go 产物：authloft/gen/go/api/admin/v1（adminv1）。
+option go_package = "authloft/gen/go/api/admin/v1;adminv1";
+
+// DB 自定义模板与内置模板双轨共存：内置模板由后端启动扫描全集常驻内存、只读，
+// 不进 DB 与 Redis、不设白名单（§5.7、《后端架构》§3.13）；本文件消息只管理 DB
+// template 表行（《后端架构》§4.9），内置模板不进 ListTemplates。
+// Template 是 AdminService/ListTemplates 的列表项，也是 GetTemplate 的详情响应（§5.7）。
+message Template {
+  // 数据库自增 ID，GetTemplate / UpdateTemplate / DeleteTemplate 的目标 id（§5.7）。
+  int64 id = 1;
+  // 模板 key，全表唯一（UK），不得与任一内置模板 key 同名（§5.7、《后端架构》§3.13）。
+  string template_key = 2;
+  // 显示名（§5.7）。
+  string name = 3;
+  // 模板 HTML 原文，库内 MEDIUMTEXT（§5.7）。
+  string content = 4;
+  // 创建时间，Unix 秒，由服务端维护（§5.7）。
+  int64 created_at = 5;
+  // 更新时间，Unix 秒，由服务端维护（§5.7）。
+  int64 updated_at = 6;
+}
+
+// ListTemplatesRequest 是 AdminService/ListTemplates 的请求（§5.7）：
+// 分页字段对齐 ListSsoClientsRequest（§1.7），另带可选 q 按 name 模糊筛选（§5.7）；
+// 缺省即不过滤、走服务端默认分页，一律 optional。消息名随方法名（§12.9）。
+message ListTemplatesRequest {
+  // 页码，从 1 开始（§1.7）。
+  optional int64 page = 1;
+  // 每页条数，默认 20、上限 100（§1.7）。
+  optional int64 page_size = 2;
+  // 排序字段，取值由前端限定（§1.7）。
+  optional string sort = 3;
+  // 排序方向 asc/desc（§1.7）。
+  optional string order = 4;
+  // 按显示名模糊筛选（§5.7）。
+  optional string q = 5;
+}
+
+// ListTemplatesResponse 是 AdminService/ListTemplates 的响应（§5.7、§1.7）：
+// 字段对齐 SsoClientListResponse，只返回 DB 自定义模板行、不含内置模板（§5.7）。
+message ListTemplatesResponse {
+  // 当前页数据（§1.7）。
+  repeated Template items = 1;
+  // 总条数（§1.7）。
+  int64 total = 2;
+  // 页码（§1.7）。
+  int64 page = 3;
+  // 每页条数（§1.7）。
+  int64 page_size = 4;
+}
+
+// CreateTemplateRequest 是 AdminService/CreateTemplate 的请求（§5.7 新建）：
+// id 与时间戳由服务端维护，不进请求体。成功返回 OkResponse。
+message CreateTemplateRequest {
+  // 模板 key，全表唯一且不与内置模板 key 同名（§5.7）。
+  string template_key = 1;
+  // 显示名（§5.7）。
+  string name = 2;
+  // 模板 HTML 原文（§5.7）。
+  string content = 3;
+}
+
+// GetTemplateRequest 是 AdminService/GetTemplate 的请求（§5.7：{id} 详情）。
+// id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
+message GetTemplateRequest {
+  // 目标模板 ID（§5.7）。
+  int64 id = 1;
+}
+
+// UpdateTemplateRequest 是 AdminService/UpdateTemplate 的请求（§5.7 部分更新）：
+// template_key / name / content 均 optional，缺省保留原值（PATCH 语义，§5.7）；
+// 另携带目标 id。改 template_key 时新旧 key 缓存双失效（§5.7、§8.1）。
+// 成功返回 OkResponse。
+message UpdateTemplateRequest {
+  // 目标模板 ID（§5.7）。
+  int64 id = 1;
+  // 新模板 key，缺省保留原值（§5.7 PATCH）。
+  optional string template_key = 2;
+  // 新显示名，缺省保留原值（§5.7 PATCH）。
+  optional string name = 3;
+  // 新模板 HTML 原文，缺省保留原值（§5.7 PATCH）。
+  optional string content = 4;
+}
+
+// DeleteTemplateRequest 是 AdminService/DeleteTemplate 的请求（§5.7）：
+// 成功后失效该行 template_key 对应缓存（§5.7、§8.1）。成功返回 OkResponse。
+message DeleteTemplateRequest {
+  // 目标模板 ID（§5.7）。
+  int64 id = 1;
+}

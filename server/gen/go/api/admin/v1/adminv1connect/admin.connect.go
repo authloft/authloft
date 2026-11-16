@@ -127,6 +127,21 @@ const (
 	AdminServiceDecodeTokenProcedure = "/api.admin.v1.AdminService/DecodeToken"
 	// AdminServiceGetStatusProcedure is the fully-qualified name of the AdminService's GetStatus RPC.
 	AdminServiceGetStatusProcedure = "/api.admin.v1.AdminService/GetStatus"
+	// AdminServiceListTemplatesProcedure is the fully-qualified name of the AdminService's
+	// ListTemplates RPC.
+	AdminServiceListTemplatesProcedure = "/api.admin.v1.AdminService/ListTemplates"
+	// AdminServiceCreateTemplateProcedure is the fully-qualified name of the AdminService's
+	// CreateTemplate RPC.
+	AdminServiceCreateTemplateProcedure = "/api.admin.v1.AdminService/CreateTemplate"
+	// AdminServiceGetTemplateProcedure is the fully-qualified name of the AdminService's GetTemplate
+	// RPC.
+	AdminServiceGetTemplateProcedure = "/api.admin.v1.AdminService/GetTemplate"
+	// AdminServiceUpdateTemplateProcedure is the fully-qualified name of the AdminService's
+	// UpdateTemplate RPC.
+	AdminServiceUpdateTemplateProcedure = "/api.admin.v1.AdminService/UpdateTemplate"
+	// AdminServiceDeleteTemplateProcedure is the fully-qualified name of the AdminService's
+	// DeleteTemplate RPC.
+	AdminServiceDeleteTemplateProcedure = "/api.admin.v1.AdminService/DeleteTemplate"
 )
 
 // AdminServiceClient is a client for the api.admin.v1.AdminService service.
@@ -198,6 +213,16 @@ type AdminServiceClient interface {
 	DecodeToken(context.Context, *connect.Request[v1.DecodeTokenRequest]) (*connect.Response[v1.DecodeResponse], error)
 	// 监控：队列长度 / dropped / flush 耗时（§5.6）。
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	// 自定义模板列表，只返回 DB 自定义模板行（§5.7）。
+	ListTemplates(context.Context, *connect.Request[v1.ListTemplatesRequest]) (*connect.Response[v1.ListTemplatesResponse], error)
+	// 自定义模板新建（§5.7）。
+	CreateTemplate(context.Context, *connect.Request[v1.CreateTemplateRequest]) (*connect.Response[v1.OkResponse], error)
+	// 自定义模板详情，含 content（§5.7）。
+	GetTemplate(context.Context, *connect.Request[v1.GetTemplateRequest]) (*connect.Response[v1.Template], error)
+	// 自定义模板部分更新（§5.7 PATCH）。
+	UpdateTemplate(context.Context, *connect.Request[v1.UpdateTemplateRequest]) (*connect.Response[v1.OkResponse], error)
+	// 自定义模板删除（§5.7）。
+	DeleteTemplate(context.Context, *connect.Request[v1.DeleteTemplateRequest]) (*connect.Response[v1.OkResponse], error)
 }
 
 // NewAdminServiceClient constructs a client for the api.admin.v1.AdminService service. By default,
@@ -409,6 +434,36 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(adminServiceMethods.ByName("GetStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		listTemplates: connect.NewClient[v1.ListTemplatesRequest, v1.ListTemplatesResponse](
+			httpClient,
+			baseURL+AdminServiceListTemplatesProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("ListTemplates")),
+			connect.WithClientOptions(opts...),
+		),
+		createTemplate: connect.NewClient[v1.CreateTemplateRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceCreateTemplateProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("CreateTemplate")),
+			connect.WithClientOptions(opts...),
+		),
+		getTemplate: connect.NewClient[v1.GetTemplateRequest, v1.Template](
+			httpClient,
+			baseURL+AdminServiceGetTemplateProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("GetTemplate")),
+			connect.WithClientOptions(opts...),
+		),
+		updateTemplate: connect.NewClient[v1.UpdateTemplateRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceUpdateTemplateProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("UpdateTemplate")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteTemplate: connect.NewClient[v1.DeleteTemplateRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceDeleteTemplateProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("DeleteTemplate")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -447,6 +502,11 @@ type adminServiceClient struct {
 	listEvents           *connect.Client[v1.ListEventsRequest, v1.EventListResponse]
 	decodeToken          *connect.Client[v1.DecodeTokenRequest, v1.DecodeResponse]
 	getStatus            *connect.Client[v1.GetStatusRequest, v1.StatusResponse]
+	listTemplates        *connect.Client[v1.ListTemplatesRequest, v1.ListTemplatesResponse]
+	createTemplate       *connect.Client[v1.CreateTemplateRequest, v1.OkResponse]
+	getTemplate          *connect.Client[v1.GetTemplateRequest, v1.Template]
+	updateTemplate       *connect.Client[v1.UpdateTemplateRequest, v1.OkResponse]
+	deleteTemplate       *connect.Client[v1.DeleteTemplateRequest, v1.OkResponse]
 }
 
 // GetMe calls api.admin.v1.AdminService.GetMe.
@@ -614,6 +674,31 @@ func (c *adminServiceClient) GetStatus(ctx context.Context, req *connect.Request
 	return c.getStatus.CallUnary(ctx, req)
 }
 
+// ListTemplates calls api.admin.v1.AdminService.ListTemplates.
+func (c *adminServiceClient) ListTemplates(ctx context.Context, req *connect.Request[v1.ListTemplatesRequest]) (*connect.Response[v1.ListTemplatesResponse], error) {
+	return c.listTemplates.CallUnary(ctx, req)
+}
+
+// CreateTemplate calls api.admin.v1.AdminService.CreateTemplate.
+func (c *adminServiceClient) CreateTemplate(ctx context.Context, req *connect.Request[v1.CreateTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.createTemplate.CallUnary(ctx, req)
+}
+
+// GetTemplate calls api.admin.v1.AdminService.GetTemplate.
+func (c *adminServiceClient) GetTemplate(ctx context.Context, req *connect.Request[v1.GetTemplateRequest]) (*connect.Response[v1.Template], error) {
+	return c.getTemplate.CallUnary(ctx, req)
+}
+
+// UpdateTemplate calls api.admin.v1.AdminService.UpdateTemplate.
+func (c *adminServiceClient) UpdateTemplate(ctx context.Context, req *connect.Request[v1.UpdateTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.updateTemplate.CallUnary(ctx, req)
+}
+
+// DeleteTemplate calls api.admin.v1.AdminService.DeleteTemplate.
+func (c *adminServiceClient) DeleteTemplate(ctx context.Context, req *connect.Request[v1.DeleteTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.deleteTemplate.CallUnary(ctx, req)
+}
+
 // AdminServiceHandler is an implementation of the api.admin.v1.AdminService service.
 type AdminServiceHandler interface {
 	// 当前管理员信息，前端唯一来源（§5.1）。
@@ -683,6 +768,16 @@ type AdminServiceHandler interface {
 	DecodeToken(context.Context, *connect.Request[v1.DecodeTokenRequest]) (*connect.Response[v1.DecodeResponse], error)
 	// 监控：队列长度 / dropped / flush 耗时（§5.6）。
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.StatusResponse], error)
+	// 自定义模板列表，只返回 DB 自定义模板行（§5.7）。
+	ListTemplates(context.Context, *connect.Request[v1.ListTemplatesRequest]) (*connect.Response[v1.ListTemplatesResponse], error)
+	// 自定义模板新建（§5.7）。
+	CreateTemplate(context.Context, *connect.Request[v1.CreateTemplateRequest]) (*connect.Response[v1.OkResponse], error)
+	// 自定义模板详情，含 content（§5.7）。
+	GetTemplate(context.Context, *connect.Request[v1.GetTemplateRequest]) (*connect.Response[v1.Template], error)
+	// 自定义模板部分更新（§5.7 PATCH）。
+	UpdateTemplate(context.Context, *connect.Request[v1.UpdateTemplateRequest]) (*connect.Response[v1.OkResponse], error)
+	// 自定义模板删除（§5.7）。
+	DeleteTemplate(context.Context, *connect.Request[v1.DeleteTemplateRequest]) (*connect.Response[v1.OkResponse], error)
 }
 
 // NewAdminServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -890,6 +985,36 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(adminServiceMethods.ByName("GetStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	adminServiceListTemplatesHandler := connect.NewUnaryHandler(
+		AdminServiceListTemplatesProcedure,
+		svc.ListTemplates,
+		connect.WithSchema(adminServiceMethods.ByName("ListTemplates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceCreateTemplateHandler := connect.NewUnaryHandler(
+		AdminServiceCreateTemplateProcedure,
+		svc.CreateTemplate,
+		connect.WithSchema(adminServiceMethods.ByName("CreateTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceGetTemplateHandler := connect.NewUnaryHandler(
+		AdminServiceGetTemplateProcedure,
+		svc.GetTemplate,
+		connect.WithSchema(adminServiceMethods.ByName("GetTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceUpdateTemplateHandler := connect.NewUnaryHandler(
+		AdminServiceUpdateTemplateProcedure,
+		svc.UpdateTemplate,
+		connect.WithSchema(adminServiceMethods.ByName("UpdateTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceDeleteTemplateHandler := connect.NewUnaryHandler(
+		AdminServiceDeleteTemplateProcedure,
+		svc.DeleteTemplate,
+		connect.WithSchema(adminServiceMethods.ByName("DeleteTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.admin.v1.AdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AdminServiceGetMeProcedure:
@@ -958,6 +1083,16 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 			adminServiceDecodeTokenHandler.ServeHTTP(w, r)
 		case AdminServiceGetStatusProcedure:
 			adminServiceGetStatusHandler.ServeHTTP(w, r)
+		case AdminServiceListTemplatesProcedure:
+			adminServiceListTemplatesHandler.ServeHTTP(w, r)
+		case AdminServiceCreateTemplateProcedure:
+			adminServiceCreateTemplateHandler.ServeHTTP(w, r)
+		case AdminServiceGetTemplateProcedure:
+			adminServiceGetTemplateHandler.ServeHTTP(w, r)
+		case AdminServiceUpdateTemplateProcedure:
+			adminServiceUpdateTemplateHandler.ServeHTTP(w, r)
+		case AdminServiceDeleteTemplateProcedure:
+			adminServiceDeleteTemplateHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1097,4 +1232,24 @@ func (UnimplementedAdminServiceHandler) DecodeToken(context.Context, *connect.Re
 
 func (UnimplementedAdminServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.StatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.GetStatus is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) ListTemplates(context.Context, *connect.Request[v1.ListTemplatesRequest]) (*connect.Response[v1.ListTemplatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.ListTemplates is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) CreateTemplate(context.Context, *connect.Request[v1.CreateTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.CreateTemplate is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) GetTemplate(context.Context, *connect.Request[v1.GetTemplateRequest]) (*connect.Response[v1.Template], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.GetTemplate is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) UpdateTemplate(context.Context, *connect.Request[v1.UpdateTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.UpdateTemplate is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) DeleteTemplate(context.Context, *connect.Request[v1.DeleteTemplateRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.DeleteTemplate is not implemented"))
 }

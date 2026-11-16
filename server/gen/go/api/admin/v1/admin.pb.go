@@ -202,7 +202,7 @@ var File_api_admin_v1_admin_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x18api/admin/v1/admin.proto\x12\fapi.admin.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/admin/v1/provider.proto\x1a\x19api/admin/v1/schema.proto\x1a\x17api/admin/v1/user.proto\x1a\x19api/admin/v1/client.proto\x1a\x1bapi/admin/v1/settings.proto\x1a\x19api/admin/v1/events.proto\x1a\x18api/admin/v1/tools.proto\"\x0e\n" +
+	"\x18api/admin/v1/admin.proto\x12\fapi.admin.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1bapi/admin/v1/provider.proto\x1a\x19api/admin/v1/schema.proto\x1a\x17api/admin/v1/user.proto\x1a\x19api/admin/v1/client.proto\x1a\x1bapi/admin/v1/template.proto\x1a\x1bapi/admin/v1/settings.proto\x1a\x19api/admin/v1/events.proto\x1a\x18api/admin/v1/tools.proto\"\x0e\n" +
 	"\fGetMeRequest\"\xb0\x01\n" +
 	"\n" +
 	"MeResponse\x12\x0e\n" +
@@ -214,7 +214,7 @@ const file_api_admin_v1_admin_proto_rawDesc = "" +
 	"\bis_admin\x18\x05 \x01(\bR\aisAdmin\x12 \n" +
 	"\vpermissions\x18\x06 \x03(\tR\vpermissions\"\f\n" +
 	"\n" +
-	"OkResponse2\x94\x15\n" +
+	"OkResponse2\xaa\x18\n" +
 	"\fAdminService\x12=\n" +
 	"\x05GetMe\x12\x1a.api.admin.v1.GetMeRequest\x1a\x18.api.admin.v1.MeResponse\x12W\n" +
 	"\rListProviders\x12\".api.admin.v1.ListProvidersRequest\x1a\".api.admin.v1.ProviderListResponse\x12C\n" +
@@ -250,7 +250,12 @@ const file_api_admin_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"ListEvents\x12\x1f.api.admin.v1.ListEventsRequest\x1a\x1f.api.admin.v1.EventListResponse\x12M\n" +
 	"\vDecodeToken\x12 .api.admin.v1.DecodeTokenRequest\x1a\x1c.api.admin.v1.DecodeResponse\x12I\n" +
-	"\tGetStatus\x12\x1e.api.admin.v1.GetStatusRequest\x1a\x1c.api.admin.v1.StatusResponseB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"\tGetStatus\x12\x1e.api.admin.v1.GetStatusRequest\x1a\x1c.api.admin.v1.StatusResponse\x12X\n" +
+	"\rListTemplates\x12\".api.admin.v1.ListTemplatesRequest\x1a#.api.admin.v1.ListTemplatesResponse\x12O\n" +
+	"\x0eCreateTemplate\x12#.api.admin.v1.CreateTemplateRequest\x1a\x18.api.admin.v1.OkResponse\x12G\n" +
+	"\vGetTemplate\x12 .api.admin.v1.GetTemplateRequest\x1a\x16.api.admin.v1.Template\x12O\n" +
+	"\x0eUpdateTemplate\x12#.api.admin.v1.UpdateTemplateRequest\x1a\x18.api.admin.v1.OkResponse\x12O\n" +
+	"\x0eDeleteTemplate\x12#.api.admin.v1.DeleteTemplateRequest\x1a\x18.api.admin.v1.OkResponseB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_admin_proto_rawDescOnce sync.Once
@@ -300,21 +305,28 @@ var file_api_admin_v1_admin_proto_goTypes = []any{
 	(*ListEventsRequest)(nil),           // 31: api.admin.v1.ListEventsRequest
 	(*DecodeTokenRequest)(nil),          // 32: api.admin.v1.DecodeTokenRequest
 	(*GetStatusRequest)(nil),            // 33: api.admin.v1.GetStatusRequest
-	(*ProviderListResponse)(nil),        // 34: api.admin.v1.ProviderListResponse
-	(*AdminProvider)(nil),               // 35: api.admin.v1.AdminProvider
-	(*ProviderTypesResponse)(nil),       // 36: api.admin.v1.ProviderTypesResponse
-	(*SchemaResponse)(nil),              // 37: api.admin.v1.SchemaResponse
-	(*UserListResponse)(nil),            // 38: api.admin.v1.UserListResponse
-	(*UserDetailResponse)(nil),          // 39: api.admin.v1.UserDetailResponse
-	(*UserEventsResponse)(nil),          // 40: api.admin.v1.UserEventsResponse
-	(*SsoClientListResponse)(nil),       // 41: api.admin.v1.SsoClientListResponse
-	(*SsoClient)(nil),                   // 42: api.admin.v1.SsoClient
-	(*OidcClientListResponse)(nil),      // 43: api.admin.v1.OidcClientListResponse
-	(*OidcClient)(nil),                  // 44: api.admin.v1.OidcClient
-	(*SettingsResponse)(nil),            // 45: api.admin.v1.SettingsResponse
-	(*EventListResponse)(nil),           // 46: api.admin.v1.EventListResponse
-	(*DecodeResponse)(nil),              // 47: api.admin.v1.DecodeResponse
-	(*StatusResponse)(nil),              // 48: api.admin.v1.StatusResponse
+	(*ListTemplatesRequest)(nil),        // 34: api.admin.v1.ListTemplatesRequest
+	(*CreateTemplateRequest)(nil),       // 35: api.admin.v1.CreateTemplateRequest
+	(*GetTemplateRequest)(nil),          // 36: api.admin.v1.GetTemplateRequest
+	(*UpdateTemplateRequest)(nil),       // 37: api.admin.v1.UpdateTemplateRequest
+	(*DeleteTemplateRequest)(nil),       // 38: api.admin.v1.DeleteTemplateRequest
+	(*ProviderListResponse)(nil),        // 39: api.admin.v1.ProviderListResponse
+	(*AdminProvider)(nil),               // 40: api.admin.v1.AdminProvider
+	(*ProviderTypesResponse)(nil),       // 41: api.admin.v1.ProviderTypesResponse
+	(*SchemaResponse)(nil),              // 42: api.admin.v1.SchemaResponse
+	(*UserListResponse)(nil),            // 43: api.admin.v1.UserListResponse
+	(*UserDetailResponse)(nil),          // 44: api.admin.v1.UserDetailResponse
+	(*UserEventsResponse)(nil),          // 45: api.admin.v1.UserEventsResponse
+	(*SsoClientListResponse)(nil),       // 46: api.admin.v1.SsoClientListResponse
+	(*SsoClient)(nil),                   // 47: api.admin.v1.SsoClient
+	(*OidcClientListResponse)(nil),      // 48: api.admin.v1.OidcClientListResponse
+	(*OidcClient)(nil),                  // 49: api.admin.v1.OidcClient
+	(*SettingsResponse)(nil),            // 50: api.admin.v1.SettingsResponse
+	(*EventListResponse)(nil),           // 51: api.admin.v1.EventListResponse
+	(*DecodeResponse)(nil),              // 52: api.admin.v1.DecodeResponse
+	(*StatusResponse)(nil),              // 53: api.admin.v1.StatusResponse
+	(*ListTemplatesResponse)(nil),       // 54: api.admin.v1.ListTemplatesResponse
+	(*Template)(nil),                    // 55: api.admin.v1.Template
 }
 var file_api_admin_v1_admin_proto_depIdxs = []int32{
 	0,  // 0: api.admin.v1.AdminService.GetMe:input_type -> api.admin.v1.GetMeRequest
@@ -350,41 +362,51 @@ var file_api_admin_v1_admin_proto_depIdxs = []int32{
 	31, // 30: api.admin.v1.AdminService.ListEvents:input_type -> api.admin.v1.ListEventsRequest
 	32, // 31: api.admin.v1.AdminService.DecodeToken:input_type -> api.admin.v1.DecodeTokenRequest
 	33, // 32: api.admin.v1.AdminService.GetStatus:input_type -> api.admin.v1.GetStatusRequest
-	1,  // 33: api.admin.v1.AdminService.GetMe:output_type -> api.admin.v1.MeResponse
-	34, // 34: api.admin.v1.AdminService.ListProviders:output_type -> api.admin.v1.ProviderListResponse
-	2,  // 35: api.admin.v1.AdminService.CreateProvider:output_type -> api.admin.v1.OkResponse
-	35, // 36: api.admin.v1.AdminService.GetProvider:output_type -> api.admin.v1.AdminProvider
-	2,  // 37: api.admin.v1.AdminService.UpdateProvider:output_type -> api.admin.v1.OkResponse
-	2,  // 38: api.admin.v1.AdminService.DeleteProvider:output_type -> api.admin.v1.OkResponse
-	2,  // 39: api.admin.v1.AdminService.SetProviderEnabled:output_type -> api.admin.v1.OkResponse
-	2,  // 40: api.admin.v1.AdminService.SortProviders:output_type -> api.admin.v1.OkResponse
-	36, // 41: api.admin.v1.AdminService.GetProviderTypes:output_type -> api.admin.v1.ProviderTypesResponse
-	37, // 42: api.admin.v1.AdminService.GetProviderSchema:output_type -> api.admin.v1.SchemaResponse
-	2,  // 43: api.admin.v1.AdminService.TestProvider:output_type -> api.admin.v1.OkResponse
-	38, // 44: api.admin.v1.AdminService.ListUsers:output_type -> api.admin.v1.UserListResponse
-	39, // 45: api.admin.v1.AdminService.GetUser:output_type -> api.admin.v1.UserDetailResponse
-	2,  // 46: api.admin.v1.AdminService.UpdateUserStatus:output_type -> api.admin.v1.OkResponse
-	2,  // 47: api.admin.v1.AdminService.ResetUserPassword:output_type -> api.admin.v1.OkResponse
-	2,  // 48: api.admin.v1.AdminService.UnbindUserThirdparty:output_type -> api.admin.v1.OkResponse
-	2,  // 49: api.admin.v1.AdminService.UnlockUser:output_type -> api.admin.v1.OkResponse
-	40, // 50: api.admin.v1.AdminService.GetUserEvents:output_type -> api.admin.v1.UserEventsResponse
-	41, // 51: api.admin.v1.AdminService.ListSsoClients:output_type -> api.admin.v1.SsoClientListResponse
-	2,  // 52: api.admin.v1.AdminService.CreateSsoClient:output_type -> api.admin.v1.OkResponse
-	42, // 53: api.admin.v1.AdminService.GetSsoClient:output_type -> api.admin.v1.SsoClient
-	2,  // 54: api.admin.v1.AdminService.UpdateSsoClient:output_type -> api.admin.v1.OkResponse
-	2,  // 55: api.admin.v1.AdminService.DeleteSsoClient:output_type -> api.admin.v1.OkResponse
-	43, // 56: api.admin.v1.AdminService.ListOidcClients:output_type -> api.admin.v1.OidcClientListResponse
-	2,  // 57: api.admin.v1.AdminService.CreateOidcClient:output_type -> api.admin.v1.OkResponse
-	44, // 58: api.admin.v1.AdminService.GetOidcClient:output_type -> api.admin.v1.OidcClient
-	2,  // 59: api.admin.v1.AdminService.UpdateOidcClient:output_type -> api.admin.v1.OkResponse
-	2,  // 60: api.admin.v1.AdminService.DeleteOidcClient:output_type -> api.admin.v1.OkResponse
-	45, // 61: api.admin.v1.AdminService.GetSettings:output_type -> api.admin.v1.SettingsResponse
-	2,  // 62: api.admin.v1.AdminService.SetSettings:output_type -> api.admin.v1.OkResponse
-	46, // 63: api.admin.v1.AdminService.ListEvents:output_type -> api.admin.v1.EventListResponse
-	47, // 64: api.admin.v1.AdminService.DecodeToken:output_type -> api.admin.v1.DecodeResponse
-	48, // 65: api.admin.v1.AdminService.GetStatus:output_type -> api.admin.v1.StatusResponse
-	33, // [33:66] is the sub-list for method output_type
-	0,  // [0:33] is the sub-list for method input_type
+	34, // 33: api.admin.v1.AdminService.ListTemplates:input_type -> api.admin.v1.ListTemplatesRequest
+	35, // 34: api.admin.v1.AdminService.CreateTemplate:input_type -> api.admin.v1.CreateTemplateRequest
+	36, // 35: api.admin.v1.AdminService.GetTemplate:input_type -> api.admin.v1.GetTemplateRequest
+	37, // 36: api.admin.v1.AdminService.UpdateTemplate:input_type -> api.admin.v1.UpdateTemplateRequest
+	38, // 37: api.admin.v1.AdminService.DeleteTemplate:input_type -> api.admin.v1.DeleteTemplateRequest
+	1,  // 38: api.admin.v1.AdminService.GetMe:output_type -> api.admin.v1.MeResponse
+	39, // 39: api.admin.v1.AdminService.ListProviders:output_type -> api.admin.v1.ProviderListResponse
+	2,  // 40: api.admin.v1.AdminService.CreateProvider:output_type -> api.admin.v1.OkResponse
+	40, // 41: api.admin.v1.AdminService.GetProvider:output_type -> api.admin.v1.AdminProvider
+	2,  // 42: api.admin.v1.AdminService.UpdateProvider:output_type -> api.admin.v1.OkResponse
+	2,  // 43: api.admin.v1.AdminService.DeleteProvider:output_type -> api.admin.v1.OkResponse
+	2,  // 44: api.admin.v1.AdminService.SetProviderEnabled:output_type -> api.admin.v1.OkResponse
+	2,  // 45: api.admin.v1.AdminService.SortProviders:output_type -> api.admin.v1.OkResponse
+	41, // 46: api.admin.v1.AdminService.GetProviderTypes:output_type -> api.admin.v1.ProviderTypesResponse
+	42, // 47: api.admin.v1.AdminService.GetProviderSchema:output_type -> api.admin.v1.SchemaResponse
+	2,  // 48: api.admin.v1.AdminService.TestProvider:output_type -> api.admin.v1.OkResponse
+	43, // 49: api.admin.v1.AdminService.ListUsers:output_type -> api.admin.v1.UserListResponse
+	44, // 50: api.admin.v1.AdminService.GetUser:output_type -> api.admin.v1.UserDetailResponse
+	2,  // 51: api.admin.v1.AdminService.UpdateUserStatus:output_type -> api.admin.v1.OkResponse
+	2,  // 52: api.admin.v1.AdminService.ResetUserPassword:output_type -> api.admin.v1.OkResponse
+	2,  // 53: api.admin.v1.AdminService.UnbindUserThirdparty:output_type -> api.admin.v1.OkResponse
+	2,  // 54: api.admin.v1.AdminService.UnlockUser:output_type -> api.admin.v1.OkResponse
+	45, // 55: api.admin.v1.AdminService.GetUserEvents:output_type -> api.admin.v1.UserEventsResponse
+	46, // 56: api.admin.v1.AdminService.ListSsoClients:output_type -> api.admin.v1.SsoClientListResponse
+	2,  // 57: api.admin.v1.AdminService.CreateSsoClient:output_type -> api.admin.v1.OkResponse
+	47, // 58: api.admin.v1.AdminService.GetSsoClient:output_type -> api.admin.v1.SsoClient
+	2,  // 59: api.admin.v1.AdminService.UpdateSsoClient:output_type -> api.admin.v1.OkResponse
+	2,  // 60: api.admin.v1.AdminService.DeleteSsoClient:output_type -> api.admin.v1.OkResponse
+	48, // 61: api.admin.v1.AdminService.ListOidcClients:output_type -> api.admin.v1.OidcClientListResponse
+	2,  // 62: api.admin.v1.AdminService.CreateOidcClient:output_type -> api.admin.v1.OkResponse
+	49, // 63: api.admin.v1.AdminService.GetOidcClient:output_type -> api.admin.v1.OidcClient
+	2,  // 64: api.admin.v1.AdminService.UpdateOidcClient:output_type -> api.admin.v1.OkResponse
+	2,  // 65: api.admin.v1.AdminService.DeleteOidcClient:output_type -> api.admin.v1.OkResponse
+	50, // 66: api.admin.v1.AdminService.GetSettings:output_type -> api.admin.v1.SettingsResponse
+	2,  // 67: api.admin.v1.AdminService.SetSettings:output_type -> api.admin.v1.OkResponse
+	51, // 68: api.admin.v1.AdminService.ListEvents:output_type -> api.admin.v1.EventListResponse
+	52, // 69: api.admin.v1.AdminService.DecodeToken:output_type -> api.admin.v1.DecodeResponse
+	53, // 70: api.admin.v1.AdminService.GetStatus:output_type -> api.admin.v1.StatusResponse
+	54, // 71: api.admin.v1.AdminService.ListTemplates:output_type -> api.admin.v1.ListTemplatesResponse
+	2,  // 72: api.admin.v1.AdminService.CreateTemplate:output_type -> api.admin.v1.OkResponse
+	55, // 73: api.admin.v1.AdminService.GetTemplate:output_type -> api.admin.v1.Template
+	2,  // 74: api.admin.v1.AdminService.UpdateTemplate:output_type -> api.admin.v1.OkResponse
+	2,  // 75: api.admin.v1.AdminService.DeleteTemplate:output_type -> api.admin.v1.OkResponse
+	38, // [38:76] is the sub-list for method output_type
+	0,  // [0:38] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -399,6 +421,7 @@ func file_api_admin_v1_admin_proto_init() {
 	file_api_admin_v1_schema_proto_init()
 	file_api_admin_v1_user_proto_init()
 	file_api_admin_v1_client_proto_init()
+	file_api_admin_v1_template_proto_init()
 	file_api_admin_v1_settings_proto_init()
 	file_api_admin_v1_events_proto_init()
 	file_api_admin_v1_tools_proto_init()

@@ -10,6 +10,7 @@ import "api/admin/v1/provider.proto";
 import "api/admin/v1/schema.proto";
 import "api/admin/v1/user.proto";
 import "api/admin/v1/client.proto";
+import "api/admin/v1/template.proto";
 import "api/admin/v1/settings.proto";
 import "api/admin/v1/events.proto";
 import "api/admin/v1/tools.proto";
@@ -77,6 +78,10 @@ message OkResponse {}
 //   GetSettings            §5.6    SetSettings           §5.6
 //   ListEvents             §5.6    DecodeToken           §5.6
 //   GetStatus              §5.6
+//   —— §5.7 模板管理——
+//   ListTemplates          §5.7    CreateTemplate       §5.7
+//   GetTemplate            §5.7    UpdateTemplate       §5.7
+//   DeleteTemplate         §5.7
 // 空响应方法共用同包 OkResponse（buf RPC_RESPONSE_STANDARD_NAME /
 // RPC_REQUEST_RESPONSE_UNIQUE 豁免，沿用既有豁免）。
 service AdminService {
@@ -147,4 +152,14 @@ service AdminService {
   rpc DecodeToken(DecodeTokenRequest) returns (DecodeResponse);
   // 监控：队列长度 / dropped / flush 耗时（§5.6）。
   rpc GetStatus(GetStatusRequest) returns (StatusResponse);
+  // 自定义模板列表，只返回 DB 自定义模板行（§5.7）。
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  // 自定义模板新建（§5.7）。
+  rpc CreateTemplate(CreateTemplateRequest) returns (OkResponse);
+  // 自定义模板详情，含 content（§5.7）。
+  rpc GetTemplate(GetTemplateRequest) returns (Template);
+  // 自定义模板部分更新（§5.7 PATCH）。
+  rpc UpdateTemplate(UpdateTemplateRequest) returns (OkResponse);
+  // 自定义模板删除（§5.7）。
+  rpc DeleteTemplate(DeleteTemplateRequest) returns (OkResponse);
 }

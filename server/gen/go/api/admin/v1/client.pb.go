@@ -41,7 +41,13 @@ type SsoClient struct {
 	// 创建时间，Unix 秒（《后端架构》§4.4）。
 	CreatedAt int64 `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// 更新时间，Unix 秒（《后端架构》§4.4）。
-	UpdatedAt     int64 `protobuf:"varint,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt int64 `protobuf:"varint,7,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+	// 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,8,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+	// 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,9,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,6 +129,20 @@ func (x *SsoClient) GetUpdatedAt() int64 {
 		return x.UpdatedAt
 	}
 	return 0
+}
+
+func (x *SsoClient) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *SsoClient) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
 }
 
 // ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5）；
@@ -288,7 +308,11 @@ type CreateSsoClientRequest struct {
 	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	// 回调白名单，支持 * 通配（§5.5）。
-	RedirectUris  []string `protobuf:"bytes,4,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
+	RedirectUris []string `protobuf:"bytes,4,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
+	// 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,5,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,6,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -349,6 +373,20 @@ func (x *CreateSsoClientRequest) GetRedirectUris() []string {
 		return x.RedirectUris
 	}
 	return nil
+}
+
+func (x *CreateSsoClientRequest) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *CreateSsoClientRequest) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
 }
 
 // GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5）。
@@ -412,7 +450,11 @@ type UpdateSsoClientRequest struct {
 	// 展示名（§5.5）。
 	Name string `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`
 	// 回调白名单，支持 * 通配（§5.5）。
-	RedirectUris  []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
+	RedirectUris []string `protobuf:"bytes,5,rep,name=redirect_uris,json=redirectUris,proto3" json:"redirect_uris,omitempty"`
+	// 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,6,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,7,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -480,6 +522,20 @@ func (x *UpdateSsoClientRequest) GetRedirectUris() []string {
 		return x.RedirectUris
 	}
 	return nil
+}
+
+func (x *UpdateSsoClientRequest) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *UpdateSsoClientRequest) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
 }
 
 // DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5）。
@@ -554,7 +610,13 @@ type OidcClient struct {
 	// 创建时间，Unix 秒（《后端架构》§4.5）。
 	CreatedAt int64 `protobuf:"varint,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// 更新时间，Unix 秒（《后端架构》§4.5）。
-	UpdatedAt     int64 `protobuf:"varint,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt int64 `protobuf:"varint,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+	// 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,11,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+	// 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,12,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -657,6 +719,20 @@ func (x *OidcClient) GetUpdatedAt() int64 {
 		return x.UpdatedAt
 	}
 	return 0
+}
+
+func (x *OidcClient) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *OidcClient) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
 }
 
 // ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5）；
@@ -826,8 +902,12 @@ type CreateOidcClientRequest struct {
 	AccessTokenTtl int64 `protobuf:"varint,6,opt,name=access_token_ttl,json=accessTokenTtl,proto3" json:"access_token_ttl,omitempty"`
 	// 刷新令牌有效期（秒）（§5.5）。
 	RefreshTokenTtl int64 `protobuf:"varint,7,opt,name=refresh_token_ttl,json=refreshTokenTtl,proto3" json:"refresh_token_ttl,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,8,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,9,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateOidcClientRequest) Reset() {
@@ -909,6 +989,20 @@ func (x *CreateOidcClientRequest) GetRefreshTokenTtl() int64 {
 	return 0
 }
 
+func (x *CreateOidcClientRequest) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *CreateOidcClientRequest) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
+}
+
 // GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5）。
 // id 为 pre-connect 时代的 REST 路径参数，Connect 化后进请求消息。
 type GetOidcClientRequest struct {
@@ -976,8 +1070,12 @@ type UpdateOidcClientRequest struct {
 	AccessTokenTtl int64 `protobuf:"varint,7,opt,name=access_token_ttl,json=accessTokenTtl,proto3" json:"access_token_ttl,omitempty"`
 	// 刷新令牌有效期（秒）（§5.5）。
 	RefreshTokenTtl int64 `protobuf:"varint,8,opt,name=refresh_token_ttl,json=refreshTokenTtl,proto3" json:"refresh_token_ttl,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+	TemplateKey string `protobuf:"bytes,9,opt,name=template_key,json=templateKey,proto3" json:"template_key,omitempty"`
+	// 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+	TemplateVars  string `protobuf:"bytes,10,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateOidcClientRequest) Reset() {
@@ -1066,6 +1164,20 @@ func (x *UpdateOidcClientRequest) GetRefreshTokenTtl() int64 {
 	return 0
 }
 
+func (x *UpdateOidcClientRequest) GetTemplateKey() string {
+	if x != nil {
+		return x.TemplateKey
+	}
+	return ""
+}
+
+func (x *UpdateOidcClientRequest) GetTemplateVars() string {
+	if x != nil {
+		return x.TemplateVars
+	}
+	return ""
+}
+
 // DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5）。
 // 成功返回 OkResponse。
 type DeleteOidcClientRequest struct {
@@ -1117,7 +1229,7 @@ var File_api_admin_v1_client_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/admin/v1/client.proto\x12\fapi.admin.v1\"\xd4\x01\n" +
+	"\x19api/admin/v1/client.proto\x12\fapi.admin.v1\"\x9c\x02\n" +
 	"\tSsoClient\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12#\n" +
@@ -1127,7 +1239,9 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\a \x01(\x03R\tupdatedAt\"\xb0\x01\n" +
+	"updated_at\x18\a \x01(\x03R\tupdatedAt\x12!\n" +
+	"\ftemplate_key\x18\b \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\t \x01(\tR\ftemplateVars\"\xb0\x01\n" +
 	"\x15ListSsoClientsRequest\x12\x17\n" +
 	"\x04page\x18\x01 \x01(\x03H\x00R\x04page\x88\x01\x01\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x03H\x01R\bpageSize\x88\x01\x01\x12\x17\n" +
@@ -1142,22 +1256,26 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x17.api.admin.v1.SsoClientR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x03R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\x93\x01\n" +
+	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\xdb\x01\n" +
 	"\x16CreateSsoClientRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12#\n" +
-	"\rredirect_uris\x18\x04 \x03(\tR\fredirectUris\"%\n" +
+	"\rredirect_uris\x18\x04 \x03(\tR\fredirectUris\x12!\n" +
+	"\ftemplate_key\x18\x05 \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\x06 \x01(\tR\ftemplateVars\"%\n" +
 	"\x13GetSsoClientRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\xa3\x01\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\xeb\x01\n" +
 	"\x16UpdateSsoClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x03 \x01(\tR\fclientSecret\x12\x12\n" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12#\n" +
-	"\rredirect_uris\x18\x05 \x03(\tR\fredirectUris\"(\n" +
+	"\rredirect_uris\x18\x05 \x03(\tR\fredirectUris\x12!\n" +
+	"\ftemplate_key\x18\x06 \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\a \x01(\tR\ftemplateVars\"(\n" +
 	"\x16DeleteSsoClientRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\xc3\x02\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\x8b\x03\n" +
 	"\n" +
 	"OidcClient\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
@@ -1172,7 +1290,9 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\x03R\tupdatedAt\"\xb1\x01\n" +
+	" \x01(\x03R\tupdatedAt\x12!\n" +
+	"\ftemplate_key\x18\v \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\f \x01(\tR\ftemplateVars\"\xb1\x01\n" +
 	"\x16ListOidcClientsRequest\x12\x17\n" +
 	"\x04page\x18\x01 \x01(\x03H\x00R\x04page\x88\x01\x01\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x03H\x01R\bpageSize\x88\x01\x01\x12\x17\n" +
@@ -1187,7 +1307,7 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x18.api.admin.v1.OidcClientR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x03R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\x82\x02\n" +
+	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\xca\x02\n" +
 	"\x17CreateOidcClientRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x12\n" +
@@ -1195,9 +1315,11 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\rredirect_uris\x18\x04 \x03(\tR\fredirectUris\x12\x16\n" +
 	"\x06scopes\x18\x05 \x03(\tR\x06scopes\x12(\n" +
 	"\x10access_token_ttl\x18\x06 \x01(\x03R\x0eaccessTokenTtl\x12*\n" +
-	"\x11refresh_token_ttl\x18\a \x01(\x03R\x0frefreshTokenTtl\"&\n" +
+	"\x11refresh_token_ttl\x18\a \x01(\x03R\x0frefreshTokenTtl\x12!\n" +
+	"\ftemplate_key\x18\b \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\t \x01(\tR\ftemplateVars\"&\n" +
 	"\x14GetOidcClientRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\x92\x02\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\xda\x02\n" +
 	"\x17UpdateOidcClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12#\n" +
@@ -1206,7 +1328,10 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\rredirect_uris\x18\x05 \x03(\tR\fredirectUris\x12\x16\n" +
 	"\x06scopes\x18\x06 \x03(\tR\x06scopes\x12(\n" +
 	"\x10access_token_ttl\x18\a \x01(\x03R\x0eaccessTokenTtl\x12*\n" +
-	"\x11refresh_token_ttl\x18\b \x01(\x03R\x0frefreshTokenTtl\")\n" +
+	"\x11refresh_token_ttl\x18\b \x01(\x03R\x0frefreshTokenTtl\x12!\n" +
+	"\ftemplate_key\x18\t \x01(\tR\vtemplateKey\x12#\n" +
+	"\rtemplate_vars\x18\n" +
+	" \x01(\tR\ftemplateVars\")\n" +
 	"\x17DeleteOidcClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02idB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 

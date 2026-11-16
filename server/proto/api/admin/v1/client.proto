@@ -30,6 +30,12 @@ message SsoClient {
   int64 created_at = 6;
   // 更新时间，Unix 秒（《后端架构》§4.4）。
   int64 updated_at = 7;
+  // 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+  // 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 8;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+  // 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+  string template_vars = 9;
 }
 
 // ListSsoClientsRequest 是 AdminService/ListSsoClients 的请求（§5.5）；
@@ -73,6 +79,10 @@ message CreateSsoClientRequest {
   string name = 3;
   // 回调白名单，支持 * 通配（§5.5）。
   repeated string redirect_uris = 4;
+  // 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 5;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+  string template_vars = 6;
 }
 
 // GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5）。
@@ -96,6 +106,10 @@ message UpdateSsoClientRequest {
   string name = 4;
   // 回调白名单，支持 * 通配（§5.5）。
   repeated string redirect_uris = 5;
+  // 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 6;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+  string template_vars = 7;
 }
 
 // DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5）。
@@ -130,6 +144,12 @@ message OidcClient {
   int64 created_at = 9;
   // 更新时间，Unix 秒（《后端架构》§4.5）。
   int64 updated_at = 10;
+  // 渲染空壳使用的模板 key（内置 key 或 DB 自定义模板 template_key）；
+  // 空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 11;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入；
+  // 只影响页面壳渲染、不参与 OIDC 协议校验（§5.5「客户端模板字段」）。
+  string template_vars = 12;
 }
 
 // ListOidcClientsRequest 是 AdminService/ListOidcClients 的请求（§5.5）；
@@ -176,6 +196,10 @@ message CreateOidcClientRequest {
   int64 access_token_ttl = 6;
   // 刷新令牌有效期（秒）（§5.5）。
   int64 refresh_token_ttl = 7;
+  // 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 8;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+  string template_vars = 9;
 }
 
 // GetOidcClientRequest 是 AdminService/GetOidcClient 的请求（§5.5）。
@@ -204,6 +228,10 @@ message UpdateOidcClientRequest {
   int64 access_token_ttl = 7;
   // 刷新令牌有效期（秒）（§5.5）。
   int64 refresh_token_ttl = 8;
+  // 渲染空壳使用的模板 key，空 / 未设置回落默认文件壳（§5.5「客户端模板字段」）。
+  string template_key = 9;
+  // 模板变量的 JSON 对象文本，未配置按空对象 {} 注入（§5.5「客户端模板字段」）。
+  string template_vars = 10;
 }
 
 // DeleteOidcClientRequest 是 AdminService/DeleteOidcClient 的请求（§5.5）。
