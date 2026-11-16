@@ -94,7 +94,7 @@ export default defineConfig({
           {
             tag: 'script',
             attrs: { nonce: CSP_NONCE },
-            children: `window.__AUTHLOFT_INIT__ = ${IS_DEV ? DEV_INIT_JSON : INIT_JSON};`,
+            children: `window.__AUTHLOFT_SITE_NAME__ = '${SITE_NAME}'; window.__AUTHLOFT_INIT__ = ${IS_DEV ? DEV_INIT_JSON : INIT_JSON};`,
             head: true,
             append: false,
           },

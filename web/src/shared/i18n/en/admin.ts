@@ -313,7 +313,6 @@ export const admin: typeof zhAdmin = {
     'OIDC provider callbacks must match exactly',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
-  'admin.appTitle': 'Authloft Admin Console',
   'admin.rootTitle': 'Admin Console',
   'admin.switchToAccount': 'Switch to Account Center',
   'admin.navProviders': 'Providers',

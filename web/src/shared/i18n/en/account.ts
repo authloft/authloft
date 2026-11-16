@@ -13,7 +13,6 @@ export const account: typeof zhAccount = {
   'account.auditTitle': 'Sign-in History',
   'account.logout': 'Sign out',
   'account.switchToAdmin': 'Switch to Admin Console',
-  'account.appTitle': 'Authloft User Center',
   'account.routeNotFound': 'Page not found',
   // back link on the not-found fallback page.
   'account.backToHome': 'Back to account home',

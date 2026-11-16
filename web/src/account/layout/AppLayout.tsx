@@ -16,6 +16,7 @@ import { ACCOUNT_NAV_ROUTES, toNavItems } from '../../shared/app-ui/nav-routes';
 import { t } from '../../shared/i18n';
 import { buildAccountHeaderMenu } from '../api';
 import styles from './AppLayout.module.less';
+import { getSiteName } from '@/shared/types/init';
 
 const navItems = [...toNavItems(ACCOUNT_NAV_ROUTES)];
 
@@ -55,7 +56,7 @@ export function AppLayout(props: {
       breadcrumb={breadcrumb}
       navItems={navItems}
       baseNavRoutes={ACCOUNT_NAV_ROUTES}
-      navHeader={t('account.appTitle')}
+      navHeader={getSiteName()}
       headerLabel={
         <span className={styles.me}>{t('account.personalCenter')}</span>
       }

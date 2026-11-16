@@ -106,7 +106,12 @@ export interface AuthloftInit {
 declare global {
   interface Window {
     __AUTHLOFT_INIT__?: AuthloftInit;
+    __AUTHLOFT_SITE_NAME__?: string;
   }
+}
+
+export function getSiteName(): string {
+  return window.__AUTHLOFT_SITE_NAME__ || 'Authloft';
 }
 
 /**

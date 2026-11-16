@@ -35,6 +35,7 @@ import {
   IconUserList,
   IconWrench,
 } from '@douyinfe/semi-icons';
+import { getSiteName } from '@/shared/types/init';
 
 const adminNavItems = toNavItems(ADMIN_NAV_ROUTES, {
   '/status': <IconHome />,
@@ -115,7 +116,7 @@ export function AdminLayout(props: {
       breadcrumb={breadcrumb}
       navItems={adminNavItems}
       baseNavRoutes={ADMIN_NAV_ROUTES}
-      navHeader={t('admin.appTitle')}
+      navHeader={getSiteName()}
       headerLabel={
         <span className={styles.me}>
           <Typography.Text className={styles.meName}>

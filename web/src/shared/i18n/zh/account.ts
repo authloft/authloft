@@ -13,7 +13,6 @@ export const account = {
   'account.auditTitle': '登录日志',
   'account.logout': '退出登录',
   'account.switchToAdmin': '切换到管理后台',
-  'account.appTitle': 'Authloft 用户中心',
   'account.routeNotFound': '页面不存在',
   // 未知路径兜底页的返回链接。
   'account.backToHome': '返回个人中心',
