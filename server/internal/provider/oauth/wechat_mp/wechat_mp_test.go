@@ -234,6 +234,60 @@ func TestRegisteredInRegistry(t *testing.T) {
 	}
 }
 
+// TestSchemaKeepSet keep 集收敛回归（§5.3 keep 集表 oauth 行，声明即运行期
+// 实际消费）：Schema 的 Ext 段恰为 app_id / client_secret（声明序同 §5.3 示例、
+// 均必填），引用键 proxy_provider_key 仍由漏斗统一追加；keep 外死字段
+// （client_id / cert / scopes / user_mapping / metadata 等）不再下发。
+func TestSchemaKeepSet(t *testing.T) {
+	meta, ok := provider.Lookup(Type)
+	if !ok {
+		t.Fatalf("Lookup(%q) 未注册", Type)
+	}
+	full := meta.Schema()
+	// 声明序即渲染序：basic(3) → Ext(2，app_id 在前) → display(4) → policy(5)
+	// → 引用键(1)。
+	wantOrder := []string{"provider_key", "display_name", "union_provider",
+		"app_id", "client_secret",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		provider.ProxyRefKey}
+	if len(full) != len(wantOrder) {
+		t.Fatalf("schema fields = %d, want %d（3+2+4+5+1）", len(full), len(wantOrder))
+	}
+	byKey := make(map[string]provider.FieldMeta, len(wantOrder))
+	for i, f := range full {
+		if f.Key != wantOrder[i] {
+			t.Fatalf("schema[%d].Key = %q, want %q（声明序）", i, f.Key, wantOrder[i])
+		}
+		byKey[f.Key] = f
+	}
+	for _, k := range []string{"app_id", "client_secret"} {
+		f := byKey[k]
+		if !f.Required {
+			t.Errorf("%s required = false, want true（凭证缺失即构造失败）", k)
+		}
+		if f.Storage != provider.StorageExt {
+			t.Errorf("%s Storage = %q, want ext（写入键集按 Storage 派生）", k, f.Storage)
+		}
+	}
+	if f := byKey["app_id"]; f.Advanced {
+		t.Errorf("app_id advanced = true, want false（必填主凭证不折叠）")
+	}
+	// 死字段不再下发。
+	for _, dead := range []string{"client_id", "cert", "scopes", "provider_url",
+		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata"} {
+		if f, ok := byKey[dead]; ok {
+			t.Errorf("死字段 %q 仍在 Schema: %+v", dead, f)
+		}
+	}
+	// 引用键由 SchemaFor 漏斗追加：末位、endpoint / select / dynamic。
+	ref := full[len(full)-1]
+	if ref.Key != provider.ProxyRefKey || ref.Section != "endpoint" ||
+		ref.Type != "select" || ref.Kind != provider.FieldDynamicOptions {
+		t.Fatalf("引用键 = %+v, want 末位 endpoint/select/dynamic %q", ref, provider.ProxyRefKey)
+	}
+}
+
 // proxyPool 按结构化字段构造单池（测试取池入口，PoolSet 键任意）。
 func proxyPool(t *testing.T, scheme, host string, port int32, user, pass string) *proxyclient.Pool {
 	t.Helper()

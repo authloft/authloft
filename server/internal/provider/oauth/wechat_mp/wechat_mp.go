@@ -41,9 +41,24 @@ var (
 )
 
 func init() {
-	// 复用 oauth 基线（11 Ext 字段 + 完整 Schema），仅 Channel 为 api；
-	// label / type / section / required / advanced / help 与基线逐字一致。
-	provider.Register(Type, oauthcore.NewMeta(Type, "微信小程序", provider.ChannelAPI), newAdapter)
+	// §5.3 keep 集表 oauth 行（声明即运行期实际消费）：本渠道只消费
+	// app_id / client_secret 两个 Ext 键，keep 外死字段不再下发、写入白名单
+	// 不再接受；引用键 proxy_provider_key 由 SchemaFor 漏斗统一追加。凭证段
+	// 声明序按 §5.3 示例置 app_id 在前（keep 收敛保持基线序，故按声明序重挑）；
+	// app_id 基线属性为可选凭证（advanced），渠道语义为必填主凭证——并置
+	// required、撤 advanced。
+	m := oauthcore.KeepFields(oauthcore.NewMeta(Type, "微信小程序", provider.ChannelAPI), "app_id", "client_secret")
+	byKey := make(map[string]provider.FieldMeta, 2)
+	for _, f := range m.Fields {
+		byKey[f.Key] = f
+	}
+	appID := byKey["app_id"]
+	appID.Required = true
+	appID.Advanced = false
+	// 整体重赋 Fields，重设 Schema 使 Ext 段与最终 Fields 一致。
+	m.Fields = []provider.FieldMeta{appID, byKey["client_secret"]}
+	m.Schema = oauthcore.SchemaFor(m.Fields)
+	provider.Register(Type, m, newAdapter)
 }
 
 // loginClient 本包用到的 SDK 窄接口（*weapp.Client 天然满足；便于测试注入
@@ -76,7 +91,7 @@ func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
 }
 
 // build 可注入 http.Client 的构造函数（测试用 httptest 拦截微信请求；
-// 生产 newAdapter 传入按 proxy_url 构造的 client）。hc 非空时经
+// 生产 newAdapter 传入按装配期固化出站代理池构造的 client）。hc 非空时经
 // weapp.WithHttpClient 注入 SDK，SDK 日志静默始终保留。
 func build(p *provider.Provider, hc *http.Client) (*Adapter, error) {
 	if p == nil || p.Ext == nil {

@@ -103,8 +103,14 @@ const providerListPageSize = 100
 
 // dynamicKeyUnionProviderKeys union_provider 字段 Schema 声明的 DynamicKey
 // （provider/schemafield.UnionProvider）：本层查库注入的动态键之一。引用键的
-// DynamicKey（provider.ProxyRefDynamicKey）随声明侧常量取用，不另立字面量。
+// DynamicKey（provider.ProxyRefDynamicKey）随声明侧常量取用，不另立字面量；
+// storage_provider 的 DynamicKey 由声明侧（wechat_mp_scan 渠道包）持有，
+// 与 union_provider_keys 同为字面量，两键一致性由 schema 注入断言回归兜底。
 const dynamicKeyUnionProviderKeys = "union_provider_keys"
+
+// dynamicKeyStorageProviderKeys storage_provider 字段 Schema 声明的 DynamicKey
+// （wechat_mp_scan 渠道声明）：storage 类行键集的查库注入键。
+const dynamicKeyStorageProviderKeys = "storage_provider_keys"
 
 // Handler AdminService 服务实现；内嵌 Unimplemented 基类以兼容生成接口的前向演进。
 type Handler struct {
@@ -183,11 +189,12 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 		)
 	}
 	// dynamic 字段的查库由声明驱动：类别只是注册表事实，Schema 声明才是表单
-	// 意图，谁声明 Kind=FieldDynamicOptions 谁触发（接口文档 §5.3）。当前两个
-	// 查库来源：union_provider_keys（union 行键集）与 proxy_provider_keys
-	// （proxy 行键集，含未启用实例——允许先引用后启用）；出现未知 DynamicKey
-	// 时不注入、options 留空（经 dto 自然为 nil，前端渲染空候选）——本层只认得
-	// 已声明的来源，宁空勿猜，不为新键伪造数据。
+	// 意图，谁声明 Kind=FieldDynamicOptions 谁触发（接口文档 §5.3）。当前三个
+	// 查库来源：union_provider_keys（union 行键集）、proxy_provider_keys
+	// （proxy 行键集）与 storage_provider_keys（storage 行键集），均含未启用
+	// 实例——允许先引用后启用；出现未知 DynamicKey 时不注入、options 留空
+	// （经 dto 自然为 nil，前端渲染空候选）——本层只认得已声明的来源，宁空
+	// 勿猜，不为新键伪造数据。
 	dynamicKeys := make(map[string]bool)
 	for _, f := range fields {
 		if f.Kind == provider.FieldDynamicOptions {
@@ -209,6 +216,13 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 		}
 		dynamicOptions[provider.ProxyRefDynamicKey] = keys
 	}
+	if dynamicKeys[dynamicKeyStorageProviderKeys] {
+		keys, err := h.providerKeysByCategory(ctx, provider.CategoryStorage)
+		if err != nil {
+			return nil, fmt.Errorf("admin handler: list storage providers: %w", err)
+		}
+		dynamicOptions[dynamicKeyStorageProviderKeys] = keys
+	}
 	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, fields, dynamicOptions)), nil
 }
 
@@ -225,9 +239,9 @@ func lookupProviderType(providerType string) (category string, fields []provider
 }
 
 // providerKeysByCategory 分页读完全部指定类别行的 provider_key（取满 total
-// 即止）：union_provider 与 proxy_provider_key 两个 dynamic 字段共用的 options
-// 查库源；不过滤 is_enabled——引用键候选含未启用实例（§5.3，允许先引用后
-// 启用，运行期 fail-closed 兜底）。
+// 即止）：union_provider / proxy_provider_key / storage_provider 三个 dynamic
+// 字段共用的 options 查库源；不过滤 is_enabled——引用键候选含未启用实例
+// （§5.3，允许先引用后启用，运行期 fail-closed 兜底）。
 func (h *Handler) providerKeysByCategory(ctx context.Context, category string) ([]string, error) {
 	var keys []string
 	for page := 1; ; page++ {

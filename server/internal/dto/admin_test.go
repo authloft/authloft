@@ -154,10 +154,10 @@ func TestAdminProviderDetailEmptyInputs(t *testing.T) {
 }
 
 // TestAdminSchemaOauthBaseline oauth 类型（wechat_mp）以完整 Schema 声明转换为
-// wire：3 个 basic 表列 + 11 个 Ext + 4 个 display + 5 个 policy + 引用键 = 24 项，
-// 顺序即 §5.3 区块声明序；union_provider 与 proxy_provider_key 的 options 由
-// dynamicOptions 按 DynamicKey 注入。这是对"表列基线 + Ext + 引用键"wire 的
-// 逐字段保真回归。
+// wire：3 个 basic 表列 + 2 个 Ext（keep 集收敛：app_id / client_secret）+
+// 4 个 display + 5 个 policy + 引用键 = 15 项，顺序即 §5.3 区块声明序；
+// union_provider 与 proxy_provider_key 的 options 由 dynamicOptions 按
+// DynamicKey 注入。这是对"表列基线 + Ext + 引用键"wire 的逐字段保真回归。
 func TestAdminSchemaOauthBaseline(t *testing.T) {
 	meta, ok := provider.Lookup("wechat_mp")
 	if !ok || meta.Category != "oauth" {
@@ -168,13 +168,12 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
-	if len(resp.GetFields()) != 24 {
-		t.Fatalf("字段数 = %d, want 24（3 basic + 11 Ext + 4 display + 5 policy + 引用键）", len(resp.GetFields()))
+	if len(resp.GetFields()) != 15 {
+		t.Fatalf("字段数 = %d, want 15（3 basic + 2 Ext + 4 display + 5 policy + 引用键）", len(resp.GetFields()))
 	}
 	// 顺序即 §5.3 示例排列（表列基线 → Ext 声明序 → display / policy → 引用键）。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
-		"client_id", "client_secret", "app_id", "cert", "scopes", "provider_url",
-		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
+		"app_id", "client_secret",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey}
@@ -183,8 +182,16 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 			t.Fatalf("fields[%d].key = %q, want %q", i, resp.GetFields()[i].GetKey(), key)
 		}
 	}
+	// 凭证字段必填（声明即运行期实际消费，凭证缺失即构造失败）；app_id 不折叠。
+	f := schemaFieldByKey(t, resp, "app_id")
+	if !f.GetRequired() || f.GetAdvanced() || f.GetSection() != "credential" {
+		t.Errorf("app_id = %+v, want required / 非 advanced / credential", f)
+	}
+	if f := schemaFieldByKey(t, resp, "client_secret"); !f.GetRequired() || f.GetType() != "secret" {
+		t.Errorf("client_secret = %+v, want required / secret", f)
+	}
 	// 逐项对 §5.3 行 1192-1225；label / help 是前端 i18n 键，不是展示文案。
-	f := schemaFieldByKey(t, resp, "provider_key")
+	f = schemaFieldByKey(t, resp, "provider_key")
 	if f.GetLabel() != "admin.schemaField.providerKeyLabel" || f.GetType() != "text" || f.GetSection() != "basic" ||
 		!f.GetRequired() || f.GetPattern() != "^[a-z0-9_]+$" ||
 		f.GetHelp() != "admin.schemaField.providerKeyHelp" {

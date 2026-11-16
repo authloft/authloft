@@ -49,7 +49,8 @@ func testProvider(key, appID, appSecret string) *provider.Provider {
 }
 
 // TestRegistryRegistered 注册表形态：channel=qrcode、category=oauth、
-// 扫码三追加字段在 /schema meta 中。
+// Schema 按 keep 集收敛为五键（凭证两键 + 扫码三字段，后者随 metadata 撤除
+// 移至 Ext 段尾、相对顺序不变）；storage_provider 为动态 select。
 func TestRegistryRegistered(t *testing.T) {
 	meta, ok := provider.Lookup(Type)
 	if !ok {
@@ -58,16 +59,62 @@ func TestRegistryRegistered(t *testing.T) {
 	if meta.Channel != provider.ChannelQRCode || meta.Category != "oauth" {
 		t.Fatalf("meta = %+v, want qrcode/oauth", meta)
 	}
-	storageOf := map[string]provider.FieldStorage{}
-	for _, f := range meta.Schema() {
-		storageOf[f.Key] = f.Storage
+	full := meta.Schema()
+	// 声明序即渲染序：basic(3) → Ext(5，凭证两键 + 扫码三字段在段尾、相对顺序
+	// 不变) → display(4) → policy(5) → 引用键(1)。
+	wantOrder := []string{"provider_key", "display_name", "union_provider",
+		"app_id", "client_secret", "qrcode_auto_delete", "storage_provider", "storage_path",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		provider.ProxyRefKey}
+	if len(full) != len(wantOrder) {
+		t.Fatalf("schema fields = %d, want %d（3+5+4+5+1）", len(full), len(wantOrder))
 	}
-	for _, want := range []string{"qrcode_auto_delete", "storage_provider", "storage_path"} {
-		if _, ok := storageOf[want]; !ok {
-			t.Errorf("Fields 缺少 %q", want)
-		} else if storageOf[want] != provider.StorageExt {
-			t.Errorf("扫码字段 %q Storage = %q, want ext（Ext 写入键集按 Storage 派生）", want, storageOf[want])
+	byKey := make(map[string]provider.FieldMeta, len(wantOrder))
+	for i, f := range full {
+		if f.Key != wantOrder[i] {
+			t.Fatalf("schema[%d].Key = %q, want %q（声明序、扫码三字段在段尾且相对顺序不变）", i, f.Key, wantOrder[i])
 		}
+		byKey[f.Key] = f
+	}
+	for _, k := range []string{"app_id", "client_secret"} {
+		f := byKey[k]
+		if !f.Required {
+			t.Errorf("%s required = false, want true（凭证缺失即构造失败）", k)
+		}
+		if f.Storage != provider.StorageExt {
+			t.Errorf("%s Storage = %q, want ext", k, f.Storage)
+		}
+	}
+	if f := byKey["app_id"]; f.Advanced {
+		t.Errorf("app_id advanced = true, want false（必填主凭证不折叠）")
+	}
+	// storage_provider 动态 select：候选 storage 类 provider_key 由 handler
+	// 按此 DynamicKey 查库注入，声明侧不下发候选值。
+	sp := byKey["storage_provider"]
+	if sp.Type != "select" || sp.Kind != provider.FieldDynamicOptions ||
+		sp.DynamicKey != "storage_provider_keys" {
+		t.Fatalf("storage_provider = %+v, want select + dynamic + DynamicKey=storage_provider_keys", sp)
+	}
+	if len(sp.Options) != 0 {
+		t.Errorf("storage_provider options = %v, want 空（候选运行时注入）", sp.Options)
+	}
+	for _, k := range []string{"qrcode_auto_delete", "storage_path"} {
+		if f := byKey[k]; f.Storage != provider.StorageExt {
+			t.Errorf("扫码字段 %q Storage = %q, want ext（Ext 写入键集按 Storage 派生）", k, f.Storage)
+		}
+	}
+	// 死字段不再下发（metadata 等 keep 外键）。
+	for _, dead := range []string{"client_id", "cert", "scopes", "provider_url",
+		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata"} {
+		if f, ok := byKey[dead]; ok {
+			t.Errorf("死字段 %q 仍在 Schema: %+v", dead, f)
+		}
+	}
+	// 引用键由 SchemaFor 漏斗追加：末位、endpoint / select / dynamic。
+	if ref := full[len(full)-1]; ref.Key != provider.ProxyRefKey ||
+		ref.Section != "endpoint" || ref.Kind != provider.FieldDynamicOptions {
+		t.Fatalf("引用键 = %+v, want 末位 endpoint/dynamic", ref)
 	}
 	a, err := provider.NewAdapter(testProvider("scan", "wx-app", "wx-secret"))
 	if err != nil {

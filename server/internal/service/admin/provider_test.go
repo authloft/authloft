@@ -1,7 +1,7 @@
 // provider_test.go：admin Provider 写族 service 层单测。fake store /
 // fake invalidator 进程内隔离（不连 DB / Redis），注册表用真实两域渠道
-// （wechat_mp / smtp / aliyun_sms 经 _ import 触发自注册，§15.3）+ 一个测试
-// 专用消息厂商（TestProvider 断言 Send 入参）。覆盖以下用例清单：
+// （wechat_mp / wechat_mp_scan / smtp / aliyun_sms 经 _ import 触发自注册，
+// §15.3）+ 一个测试专用消息厂商（TestProvider 断言 Send 入参）。覆盖以下用例清单：
 // key 字符集拒绝、required 缺失拒绝、未知键处置、create 唯一键冲突、
 // update 改 key 拒绝 + 缺省键保留、delete/enabled 不存在 404、sort 批量
 // 落库、types 两域并集、test 非 sms/email 拒绝、写后 Invalidate 被调、
@@ -28,6 +28,7 @@ import (
 	// 注册表数据源（§15.3）：两域真实注册项驱动 schema 键集与 types 断言。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 )
 
@@ -188,8 +189,8 @@ func structBody(t *testing.T, kv map[string]any) *structpb.Struct {
 	return s
 }
 
-// wechatMpCreateBody 合法的 wechat_mp 新建提交体（§5.3 键集：表列 + oauth
-// 追加字段）。
+// wechatMpCreateBody 合法的 wechat_mp 新建提交体（§5.3 keep 集表：表列 +
+// app_id / client_secret 凭证键集）。
 func wechatMpCreateBody(t *testing.T, overrides map[string]any) *structpb.Struct {
 	t.Helper()
 	body := map[string]any{
@@ -197,7 +198,7 @@ func wechatMpCreateBody(t *testing.T, overrides map[string]any) *structpb.Struct
 		"provider_key":  "wx_new",
 		"category":      "oauth",
 		"display_name":  "微信小程序",
-		"client_id":     "wx-appid",
+		"app_id":        "wx-appid",
 		"client_secret": "wx-secret",
 		"is_enabled":    false, // 列级 bool → is_enabled=0
 		"sort_order":    30.0,
@@ -224,16 +225,17 @@ func TestCreateProviderValidation(t *testing.T) {
 		{"空提交体", nil},
 		{"缺 type", map[string]any{"provider_key": "k1", "display_name": "n"}},
 		{"未注册 type", map[string]any{"type": "no_such", "provider_key": "k1", "display_name": "n"}},
-		{"缺 provider_key", map[string]any{"type": "wechat_mp", "display_name": "n", "client_id": "a", "client_secret": "b"}},
-		{"key 字符集大写", map[string]any{"type": "wechat_mp", "provider_key": "BadKey", "display_name": "n", "client_id": "a", "client_secret": "b"}},
-		{"key 字符集连字符", map[string]any{"type": "wechat_mp", "provider_key": "bad-key", "display_name": "n", "client_id": "a", "client_secret": "b"}},
-		{"key 类型错", map[string]any{"type": "wechat_mp", "provider_key": 123, "display_name": "n", "client_id": "a", "client_secret": "b"}},
-		{"缺 display_name", map[string]any{"type": "wechat_mp", "provider_key": "k1", "client_id": "a", "client_secret": "b"}},
-		{"required client_id 缺失", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "client_secret": "b"}},
-		{"required client_id 空串", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "client_id": "", "client_secret": "b"}},
-		{"未知键拒绝", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "client_id": "a", "client_secret": "b", "foo": "bar"}},
-		{"category 与注册表不一致", map[string]any{"type": "wechat_mp", "provider_key": "k1", "category": "sms", "display_name": "n", "client_id": "a", "client_secret": "b"}},
-		{"列类型不符（checkbox 收字符串）", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "client_id": "a", "client_secret": "b", "auto_bind": "yes"}},
+		{"缺 provider_key", map[string]any{"type": "wechat_mp", "display_name": "n", "app_id": "a", "client_secret": "b"}},
+		{"key 字符集大写", map[string]any{"type": "wechat_mp", "provider_key": "BadKey", "display_name": "n", "app_id": "a", "client_secret": "b"}},
+		{"key 字符集连字符", map[string]any{"type": "wechat_mp", "provider_key": "bad-key", "display_name": "n", "app_id": "a", "client_secret": "b"}},
+		{"key 类型错", map[string]any{"type": "wechat_mp", "provider_key": 123, "display_name": "n", "app_id": "a", "client_secret": "b"}},
+		{"缺 display_name", map[string]any{"type": "wechat_mp", "provider_key": "k1", "app_id": "a", "client_secret": "b"}},
+		{"required app_id 缺失", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "client_secret": "b"}},
+		{"required app_id 空串", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "app_id": "", "client_secret": "b"}},
+		{"未知键拒绝", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "app_id": "a", "client_secret": "b", "foo": "bar"}},
+		{"category 与注册表不一致", map[string]any{"type": "wechat_mp", "provider_key": "k1", "category": "sms", "display_name": "n", "app_id": "a", "client_secret": "b"}},
+		{"列类型不符（checkbox 收字符串）", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "app_id": "a", "client_secret": "b", "auto_bind": "yes"}},
+		{"死键拒绝（client_id 已收敛出键集）", map[string]any{"type": "wechat_mp", "provider_key": "k1", "display_name": "n", "app_id": "a", "client_secret": "b", "client_id": "dead"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -292,8 +294,8 @@ func TestCreateProviderSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseProviderExt: %v", err)
 	}
-	if ext.GetClientId() != "wx-appid" || ext.GetClientSecret() != "wx-secret" {
-		t.Errorf("ext 凭证 = (%q, %q)", ext.GetClientId(), ext.GetClientSecret())
+	if ext.GetAppId() != "wx-appid" || ext.GetClientSecret() != "wx-secret" {
+		t.Errorf("ext 凭证 = (%q, %q)", ext.GetAppId(), ext.GetClientSecret())
 	}
 	if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "wx_new" {
 		t.Errorf("invalidate = %v, want [wx_new]", keys)
@@ -335,10 +337,10 @@ func TestCreateProviderDuplicateKey(t *testing.T) {
 	}
 }
 
-// wantRowOf service 测试共用行：wechat_mp、含 Ext client_id 原值。
+// wantRowOf service 测试共用行：wechat_mp、含 Ext app_id 原值。
 func wantRowOf(t *testing.T) *model.Provider {
 	t.Helper()
-	ext, err := repo.MarshalProviderExt(&providerpb.Ext{ClientId: "orig-id", ClientSecret: "orig-secret"})
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{AppId: "orig-id", ClientSecret: "orig-secret"})
 	if err != nil {
 		t.Fatalf("MarshalProviderExt: %v", err)
 	}
@@ -413,7 +415,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 	body := map[string]any{
 		"provider_key": "wx_exist",
 		"display_name": "新名",
-		"scopes":       "snsapi_login", // Ext 键（oauth meta 声明）
+		"app_id":       "new-app-id", // Ext 键（wechat_mp 声明集）
 		"auto_bind":    true,
 	}
 	if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
@@ -437,8 +439,8 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseProviderExt: %v", err)
 	}
-	if ext.GetClientId() != "orig-id" || ext.GetClientSecret() != "orig-secret" || ext.GetScopes() != "snsapi_login" {
-		t.Errorf("Ext 合并 = (client_id=%q secret=%q scopes=%q), want 原值保留 + 新键合并", ext.GetClientId(), ext.GetClientSecret(), ext.GetScopes())
+	if ext.GetAppId() != "new-app-id" || ext.GetClientSecret() != "orig-secret" {
+		t.Errorf("Ext 合并 = (app_id=%q secret=%q), want 新键合并 + 原值保留", ext.GetAppId(), ext.GetClientSecret())
 	}
 	if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "wx_exist" {
 		t.Errorf("invalidate = %v, want [wx_exist]", keys)
@@ -459,12 +461,18 @@ func TestUpdateProviderTypeSameAsCurrent(t *testing.T) {
 // TestUpdateProviderExtTypeMismatch Ext 键类型不符（checkbox 字段收字符串）
 // → invalid_request（protojson 类型校验）。
 func TestUpdateProviderExtTypeMismatch(t *testing.T) {
-	store := newFakeStore(wantRowOf(t))
+	// wechat_mp 收敛后 Ext 声明集全为字符串键；bool Ext 键取 wechat_mp_scan 的
+	// qrcode_auto_delete：提交字符串 → protojson 报错。
+	row := wantRowOf(t)
+	row.Type = "wechat_mp_scan"
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{AppId: "orig-id", ClientSecret: "orig-secret"})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	row.Ext = ext
+	store := newFakeStore(row)
 	svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
-	// wechat_mp Ext 声明集无 bool 键，借表列校验（disable_ssl 是 smtp 的键，
-	// 不在 wechat_mp 键集 → 未知键拒绝）；此处用合法键但错型：user_mapping
-	// 是 map 字段，提交字符串 → protojson 报错。
-	body := map[string]any{"provider_key": "wx_exist", "user_mapping": "not-an-object"}
+	body := map[string]any{"provider_key": "wx_exist", "qrcode_auto_delete": "not-a-bool"}
 	if err := svc.UpdateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("err = %v, want ErrInvalidRequest", err)
 	}
@@ -1094,7 +1102,7 @@ func TestProxyRefKeyCharset(t *testing.T) {
 func TestProxyRefKeyScope(t *testing.T) {
 	accepted := []map[string]any{
 		{"type": "wechat_mp", "provider_key": "wx_ref", "category": "oauth", "display_name": "W",
-			"client_id": "a", "client_secret": "b", provider.ProxyRefKey: "pxy_new"},
+			"app_id": "a", "client_secret": "b", provider.ProxyRefKey: "pxy_new"},
 		{"type": "smtp", "provider_key": "smtp_ref", "category": provider.CategoryEmail,
 			"display_name": "S", "host": "smtp.example.com", "from": "n@example.com", provider.ProxyRefKey: "pxy_new"},
 		{"type": provider.CaptchaTypeTurnstile, "provider_key": "cap_ref", "category": provider.CategoryCaptcha,

@@ -32,6 +32,11 @@ import (
 // Type 渠道类型（§12.2 内置清单：wechat_mp_scan）。
 const Type = "wechat_mp_scan"
 
+// dynamicKeyStorageProviderKeys storage_provider 字段 Schema 声明的 DynamicKey：
+// 候选为 storage 类 provider_key，由管理面按此键查库注入（§5.3，声明形态同
+// union_provider / proxy_provider_key 动态先例，构造器不下发候选值）。
+const dynamicKeyStorageProviderKeys = "storage_provider_keys"
+
 // 可判别错误。
 var (
 	// ErrNotConfigured app_id / client_secret 缺失（§13.0：视为未配置）。
@@ -82,22 +87,28 @@ func (c sdkCache) Set(key string, val interface{}, timeout time.Duration) {
 }
 
 func init() {
-	m := oauthcore.NewMeta(Type, "微信小程序扫码", provider.ChannelQRCode)
-	// §5.3 行 1252：扫码渠道在 user_mapping 之后、metadata 之前追加三字段
-	//（开关归 policy、路径/存储引用归 endpoint）；保持 wire 顺序逐字不变。
-	fields := make([]provider.FieldMeta, 0, len(m.Fields)+3)
+	// §5.3 keep 集表 oauth 行与 type=wechat_mp_scan 行（声明即运行期实际
+	// 消费）：凭证收敛至 app_id / client_secret（必填主凭证，并置 required、
+	// 撤 advanced，声明序按 §5.3 示例置 app_id 在前），keep 外死字段（metadata
+	// 等）不再下发；扫码三字段随 metadata 撤除移至 Ext 段尾、相对顺序不变。
+	// storage_provider 为动态 select（Kind=FieldDynamicOptions + DynamicKey），
+	// 候选 storage 类 provider_key 由 handler 查库注入，声明形态同
+	// union_provider / proxy_provider_key 先例，构造器不下发候选值。
+	m := oauthcore.KeepFields(oauthcore.NewMeta(Type, "微信小程序扫码", provider.ChannelQRCode), "app_id", "client_secret")
+	byKey := make(map[string]provider.FieldMeta, 2)
 	for _, f := range m.Fields {
-		if f.Key == "metadata" {
-			fields = append(fields,
-				provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy", Storage: provider.StorageExt},
-				provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "text", Section: "endpoint", Storage: provider.StorageExt},
-				provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
-					Help: "admin.schemaField.storagePathHelp", Storage: provider.StorageExt},
-			)
-		}
-		fields = append(fields, f)
+		byKey[f.Key] = f
 	}
-	m.Fields = fields
+	appID := byKey["app_id"]
+	appID.Required = true
+	appID.Advanced = false
+	m.Fields = append([]provider.FieldMeta{appID, byKey["client_secret"]},
+		provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "select", Section: "endpoint",
+			Storage: provider.StorageExt, Kind: provider.FieldDynamicOptions, DynamicKey: dynamicKeyStorageProviderKeys},
+		provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
+			Help: "admin.schemaField.storagePathHelp", Storage: provider.StorageExt},
+	)
 	// Fields 整体重赋，重设 Schema 使 Ext 段与最终 Fields 一致。
 	m.Schema = oauthcore.SchemaFor(m.Fields)
 	provider.Register(Type, m, newAdapter)
@@ -139,7 +150,7 @@ func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
 }
 
 // build 可注入 http.Client 的构造函数（测试用 httptest 拦截微信请求；
-// 生产 newAdapter 传入按 proxy_url 构造的 client）。hc 非空时经
+// 生产 newAdapter 传入按装配期固化出站代理池构造的 client）。hc 非空时经
 // weapp.WithHttpClient 注入 SDK，SDK 日志静默始终保留。共享 access_token
 // 缓存注入（SetAccessTokenCache）后按请求生效——适配器按请求构造，
 // 每次构造都读当前注入值（bootstrap 装配期先 Set 后服务，无竞态窗口）。

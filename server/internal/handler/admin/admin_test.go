@@ -38,6 +38,7 @@ import (
 	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 )
 
@@ -48,18 +49,20 @@ func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
 	return f.values[uid], nil
 }
 
-// fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union / proxy 查询
-// 各固定返回一行，其余返回 rows/total），key 透传到闭包；全部查询入参留档断言。
+// fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union / proxy /
+// storage 查询各固定返回一行，其余返回 rows/total），key 透传到闭包；全部查询
+// 入参留档断言。
 type fakeProviders struct {
-	rows     []model.Provider
-	total    int64
-	listErr  error
-	keyRow   *model.Provider
-	keyErr   error
-	queries  []repo.ProviderListQuery
-	gotKeys  []string
-	unionRow model.Provider
-	proxyRow model.Provider // category=proxy 查询的固定返回（options 注入断言）
+	rows       []model.Provider
+	total      int64
+	listErr    error
+	keyRow     *model.Provider
+	keyErr     error
+	queries    []repo.ProviderListQuery
+	gotKeys    []string
+	unionRow   model.Provider
+	proxyRow   model.Provider // category=proxy 查询的固定返回（options 注入断言）
+	storageRow model.Provider // category=storage 查询的固定返回（options 注入断言）
 }
 
 func (f *fakeProviders) FindByKey(_ context.Context, providerKey string) (*model.Provider, error) {
@@ -77,6 +80,12 @@ func (f *fakeProviders) ListProviders(_ context.Context, q repo.ProviderListQuer
 			return nil, 0, f.listErr
 		}
 		return []model.Provider{f.proxyRow}, 1, nil
+	}
+	if q.Category != nil && *q.Category == provider.CategoryStorage {
+		if f.storageRow.ProviderKey == "" {
+			return nil, 0, f.listErr
+		}
+		return []model.Provider{f.storageRow}, 1, nil
 	}
 	return f.rows, f.total, f.listErr
 }
@@ -931,9 +940,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
-	// 12 表列基线 + 10 oauth 追加 + 全类 metadata + 引用键基线。
-	if len(got.GetFields()) != 24 {
-		t.Fatalf("字段数 = %d, want 24（12 表列基线 + 10 oauth 追加 + metadata + 引用键基线）", len(got.GetFields()))
+	// 12 表列基线 + keep 集收敛后的 2 个凭证 Ext + 引用键基线（§5.3 keep 集表）。
+	if len(got.GetFields()) != 15 {
+		t.Fatalf("字段数 = %d, want 15（12 表列基线 + app_id/client_secret + 引用键基线）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -968,21 +977,11 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("schema 缺少表列基线字段 %q", key)
 		}
 	}
-	// 追加字段逐字对照 §5.3 示例 + metadata 的 json 类型与「其余按语义归
-	// basic」约定；声明序即渲染序，Ext 区块夹在 basic / display 基线之间。
+	// keep 集收敛后的 Ext 字段逐字对照 §5.3 示例（app_id 在前、均必填）；
+	// 声明序即渲染序，Ext 区块夹在 basic / display 基线之间。
 	wantExt := []provider.FieldMeta{
-		{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
+		{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Required: true},
 		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
-		{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
-		{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
-		{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
-		{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
-			Help: "admin.schemaField.userMappingHelp"},
-		{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
 	}
 	schema := meta.Schema()
 	if len(schema) != len(got.GetFields()) {
@@ -1034,6 +1033,48 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 		if fakes.queries[0].Category == nil || *fakes.queries[0].Category != provider.CategoryUnion ||
 			fakes.queries[1].Category == nil || *fakes.queries[1].Category != provider.CategoryProxy {
 			t.Errorf("查库类别序 = (%v, %v), want (union, proxy)", fakes.queries[0].Category, fakes.queries[1].Category)
+		}
+	}
+}
+
+// TestGetProviderSchemaStorageProviderDynamic storage_provider 动态注入
+// （§5.3 type=wechat_mp_scan 行）：候选为 storage 类 provider_key，含未启用
+// 实例（允许先引用后启用，运行期 fail-closed 兜底）；注入由 Schema 声明驱动，
+// 查库类别序 = union / proxy / storage（声明序），宁空勿猜——未声明该键的
+// 类型不触发 storage 查库。
+func TestGetProviderSchemaStorageProviderDynamic(t *testing.T) {
+	fakes := &fakeProviders{
+		unionRow: model.Provider{ProviderKey: "union_b", Category: "union", Type: "unionid"},
+		proxyRow: model.Provider{ProviderKey: "proxy_a", Category: "proxy", Type: "proxy"},
+		// 未启用 storage 行：候选含未启用实例（同 proxy_provider_keys 口径）。
+		storageRow: model.Provider{ProviderKey: "stor_local", Category: provider.CategoryStorage, Type: provider.StorageTypeLocal, IsEnabled: 0},
+	}
+	tokens, epochs, h := newAdminHandler(t, fakes, nil)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	got := schemaOf(t, h, "wechat_mp_scan", cookie)
+	var sp *adminv1.SchemaField
+	for _, f := range got.GetFields() {
+		if f.GetKey() == "storage_provider" {
+			sp = f
+			break
+		}
+	}
+	if sp == nil {
+		t.Fatal("wechat_mp_scan schema 缺少 storage_provider 字段")
+	}
+	if sp.GetType() != "select" || sp.GetSection() != "endpoint" {
+		t.Errorf("storage_provider type/section = (%q, %q), want (select, endpoint)", sp.GetType(), sp.GetSection())
+	}
+	if opts := sp.GetOptions(); len(opts) != 1 || opts[0] != "stor_local" {
+		t.Errorf("storage_provider options = %v, want [stor_local]（storage 行键集，含未启用实例）", opts)
+	}
+	if n := len(fakes.queries); n != 3 {
+		t.Fatalf("查库次数 = %d, want 3（声明驱动：union / proxy / storage 三个 dynamic 键）", n)
+	}
+	for i, wantCat := range []string{provider.CategoryUnion, provider.CategoryProxy, provider.CategoryStorage} {
+		if fakes.queries[i].Category == nil || *fakes.queries[i].Category != wantCat {
+			t.Errorf("查库类别[%d] = %v, want %q", i, fakes.queries[i].Category, wantCat)
 		}
 	}
 }
