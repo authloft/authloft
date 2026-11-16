@@ -631,6 +631,8 @@ func AdminSsoClient(row *model.SsoClient, uris []string) *adminv1.SsoClient {
 		ClientSecret: row.ClientSecret,
 		Name:         row.Name,
 		RedirectUris: uris,
+		TemplateKey:  row.TemplateKey,
+		TemplateVars: row.TemplateVars,
 		CreatedAt:    row.CreatedAt.Unix(),
 		UpdatedAt:    row.UpdatedAt.Unix(),
 	}
@@ -650,6 +652,8 @@ func AdminOidcClient(row *model.OidcClient, uris, scopes []string) *adminv1.Oidc
 		Scopes:          scopes,
 		AccessTokenTtl:  int64(row.AccessTokenTTL),
 		RefreshTokenTtl: int64(row.RefreshTokenTTL),
+		TemplateKey:     row.TemplateKey,
+		TemplateVars:    row.TemplateVars,
 		CreatedAt:       row.CreatedAt.Unix(),
 		UpdatedAt:       row.UpdatedAt.Unix(),
 	}

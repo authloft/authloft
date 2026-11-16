@@ -27,6 +27,8 @@ type OidcClient struct {
 	AccessTokenTTL  int32     `gorm:"column:access_token_ttl;not null;default:3600"`                  // 秒
 	RefreshTokenTTL int32     `gorm:"column:refresh_token_ttl;not null;default:2592000"`              // 秒
 	IsEnabled       int8      `gorm:"column:is_enabled;not null;default:1"`
+	TemplateKey     string    `gorm:"column:template_key;size:64;not null;default:''"` // 绑定的模板 key；空回落默认壳（§4.5 / §8.1）
+	TemplateVars    string    `gorm:"column:template_vars;type:text"`                  // 模板变量 JSON 原文，空按 {} 注入
 	CreatedAt       time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;not null"`
 }

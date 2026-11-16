@@ -83,6 +83,8 @@ type SsoClientInput struct {
 	ClientID     string // 空 → 服务端生成（默认）
 	Name         string
 	RedirectURIs []string
+	TemplateKey  string // 空 / 未设置 → 回落默认文件壳（§5.5 / §8.1）
+	TemplateVars string // 模板变量 JSON 原文，空按 {} 注入（§5.5）
 }
 
 // OidcClientInput CreateOidcClient 入参（proto CreateOidcClientRequest 拆解）：
@@ -95,6 +97,8 @@ type OidcClientInput struct {
 	Scopes          []string
 	AccessTokenTTL  int64
 	RefreshTokenTTL int64
+	TemplateKey     string
+	TemplateVars    string
 }
 
 // SsoClientPatch UpdateSsoClient 入参（proto UpdateSsoClientRequest 拆解）：
@@ -105,6 +109,8 @@ type SsoClientPatch struct {
 	ClientSecret string   // 非空 → 覆盖为提交值（PATCH；服务端生成仅约束 Create）
 	Name         string   // 非空 → 覆盖
 	RedirectURIs []string // len>0 → 校验后整组覆盖；==0 → 保留原值
+	TemplateKey  string   // 非空 → 覆盖；空 → 保留原值
+	TemplateVars string   // 非空 → 覆盖；空 → 保留原值
 }
 
 // OidcClientPatch UpdateOidcClient 入参：SSO 基线 + OIDC 专属，缺省保留。
@@ -116,6 +122,8 @@ type OidcClientPatch struct {
 	Scopes          []string // len>0 → 校验后覆盖；==0 → 保留
 	AccessTokenTTL  int64    // 0 保留原值；非 0 须在 [1, 86400]
 	RefreshTokenTTL int64    // 0 保留原值；非 0 须在 [1, 2592000]
+	TemplateKey     string   // 非空 → 覆盖；空 → 保留原值
+	TemplateVars    string   // 非空 → 覆盖；空 → 保留原值
 }
 
 // SsoClientDetail GetSsoClient 的聚合结果：行 + 解析后的回调白名单
@@ -211,6 +219,8 @@ func (s *ClientService) CreateSsoClient(ctx context.Context, in SsoClientInput) 
 		ClientSecret: secret,
 		Name:         in.Name,
 		RedirectURIs: uris,
+		TemplateKey:  in.TemplateKey,
+		TemplateVars: in.TemplateVars,
 	}
 	if err := s.store.CreateSsoClient(ctx, row); err != nil {
 		if errors.Is(err, repo.ErrClientDuplicate) {
@@ -256,6 +266,8 @@ func (s *ClientService) CreateOidcClient(ctx context.Context, in OidcClientInput
 		Scopes:          scopes,
 		AccessTokenTTL:  int32(in.AccessTokenTTL),
 		RefreshTokenTTL: int32(in.RefreshTokenTTL),
+		TemplateKey:     in.TemplateKey,
+		TemplateVars:    in.TemplateVars,
 	}
 	if err := s.store.CreateOidcClient(ctx, row); err != nil {
 		if errors.Is(err, repo.ErrClientDuplicate) {
@@ -330,6 +342,12 @@ func (s *ClientService) UpdateSsoClient(ctx context.Context, id int64, p SsoClie
 		}
 		row.RedirectURIs = data
 	}
+	if p.TemplateKey != "" {
+		row.TemplateKey = p.TemplateKey
+	}
+	if p.TemplateVars != "" {
+		row.TemplateVars = p.TemplateVars
+	}
 	if err := s.store.UpdateSsoClient(ctx, row); err != nil {
 		if errors.Is(err, repo.ErrClientDuplicate) {
 			return ErrDuplicateKey
@@ -383,6 +401,12 @@ func (s *ClientService) UpdateOidcClient(ctx context.Context, id int64, p OidcCl
 			return err
 		}
 		row.RefreshTokenTTL = int32(p.RefreshTokenTTL)
+	}
+	if p.TemplateKey != "" {
+		row.TemplateKey = p.TemplateKey
+	}
+	if p.TemplateVars != "" {
+		row.TemplateVars = p.TemplateVars
 	}
 	if err := s.store.UpdateOidcClient(ctx, row); err != nil {
 		if errors.Is(err, repo.ErrClientDuplicate) {

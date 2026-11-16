@@ -69,6 +69,15 @@ type ClientService interface {
 	DeleteOidcClient(ctx context.Context, id int64) error
 }
 
+// TemplateService 模板管理族窄接口（生产注入 *adminsvc.TemplateService）。
+type TemplateService interface {
+	List(ctx context.Context, page, pageSize int, q string) ([]model.Template, int64, error)
+	Create(ctx context.Context, key, name, content string) error
+	Get(ctx context.Context, id int64) (*model.Template, error)
+	Update(ctx context.Context, id int64, key, name, content *string) error
+	Delete(ctx context.Context, id int64) error
+}
+
 // SettingsService 系统配置 / 事件 / 工具族窄接口（生产注入 *adminsvc.SettingsService）。
 type SettingsService interface {
 	GetSettings() map[string]any
@@ -98,14 +107,15 @@ type Handler struct {
 	svc             ProviderService
 	users           UserService
 	clients         ClientService
+	templates       TemplateService
 	settings        SettingsService
 	listPermissions func(context.Context, int64) ([]string, error)
 }
 
-// New 构造 AdminService handler（读路径 / 写族 / 用户 / 客户端 / 配置五组依赖
-// 与当前用户权限点列表查询）。
-func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService, settings SettingsService, listPermissions func(context.Context, int64) ([]string, error)) *Handler {
-	return &Handler{providers: providers, svc: svc, users: users, clients: clients, settings: settings, listPermissions: listPermissions}
+// New 构造 AdminService handler（读路径 / 写族 / 用户 / 客户端 / 模板 / 配置
+// 六组依赖与当前用户权限点列表查询）。
+func New(providers ProviderReader, svc ProviderService, users UserService, clients ClientService, templates TemplateService, settings SettingsService, listPermissions func(context.Context, int64) ([]string, error)) *Handler {
+	return &Handler{providers: providers, svc: svc, users: users, clients: clients, templates: templates, settings: settings, listPermissions: listPermissions}
 }
 
 // ListProviders 筛选 + 分页的 provider 列表；列表列不含 ext 凭证字段。
@@ -459,6 +469,8 @@ func (h *Handler) CreateSsoClient(ctx context.Context, req *connectrpc.Request[a
 		ClientID:     req.Msg.GetClientId(),
 		Name:         req.Msg.GetName(),
 		RedirectURIs: req.Msg.GetRedirectUris(),
+		TemplateKey:  req.Msg.GetTemplateKey(),
+		TemplateVars: req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("create sso client", err)
 	}
@@ -481,6 +493,8 @@ func (h *Handler) UpdateSsoClient(ctx context.Context, req *connectrpc.Request[a
 		ClientSecret: req.Msg.GetClientSecret(),
 		Name:         req.Msg.GetName(),
 		RedirectURIs: req.Msg.GetRedirectUris(),
+		TemplateKey:  req.Msg.GetTemplateKey(),
+		TemplateVars: req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("update sso client", err)
 	}
@@ -524,6 +538,8 @@ func (h *Handler) CreateOidcClient(ctx context.Context, req *connectrpc.Request[
 		Scopes:          req.Msg.GetScopes(),
 		AccessTokenTTL:  req.Msg.GetAccessTokenTtl(),
 		RefreshTokenTTL: req.Msg.GetRefreshTokenTtl(),
+		TemplateKey:     req.Msg.GetTemplateKey(),
+		TemplateVars:    req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("create oidc client", err)
 	}
@@ -549,6 +565,8 @@ func (h *Handler) UpdateOidcClient(ctx context.Context, req *connectrpc.Request[
 		Scopes:          req.Msg.GetScopes(),
 		AccessTokenTTL:  req.Msg.GetAccessTokenTtl(),
 		RefreshTokenTTL: req.Msg.GetRefreshTokenTtl(),
+		TemplateKey:     req.Msg.GetTemplateKey(),
+		TemplateVars:    req.Msg.GetTemplateVars(),
 	}); err != nil {
 		return nil, mapWriteError("update oidc client", err)
 	}

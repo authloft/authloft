@@ -414,7 +414,7 @@ func assembleAdminHandler(t *testing.T, providers ProviderReader, writer Provide
 	tokens := session.NewTokens(security.NewCodec(ks))
 	epochs := &fakeEpochReader{values: map[int64]int64{}}
 	_, h := adminv1connect.NewAdminServiceHandler(
-		New(providers, writer, user, clients, settings, func(context.Context, int64) ([]string, error) {
+		New(providers, writer, user, clients, nil, settings, func(context.Context, int64) ([]string, error) {
 			return []string{"superadmin"}, nil
 		}),
 		connectrpc.WithInterceptors(

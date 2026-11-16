@@ -222,13 +222,15 @@ type repoSet struct {
 	Clients     *repo.ClientRepo
 	OidcTokens  *repo.OidcTokenRepo
 	Permissions *repo.PermissionRepo
+	Templates   *repo.TemplateRepo
 }
 
-// adminSet admin 域四族 service（wireSharedServices 构造）。
+// adminSet admin 域五族 service（wireSharedServices 构造）。
 type adminSet struct {
 	Providers  *adminsvc.Service
 	Users      *adminsvc.UserService
 	Clients    *adminsvc.ClientService
+	Templates  *adminsvc.TemplateService
 	Settings   *adminsvc.SettingsService
 	Permission *adminsvc.PermissionService
 }
@@ -262,6 +264,7 @@ func newRepoSet(db *gorm.DB) *repoSet {
 		Clients:     repo.NewClientRepo(db),
 		OidcTokens:  repo.NewOidcTokenRepo(db),
 		Permissions: repo.NewPermissionRepo(db),
+		Templates:   repo.NewTemplateRepo(db),
 	}
 }
 
@@ -320,6 +323,10 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 			deps.settings,
 		),
 		Clients: adminsvc.NewClientService(deps.repos.Clients),
+		Templates: adminsvc.NewTemplateService(
+			deps.repos.Templates,
+			cache.NewTemplateCache(deps.rdb),
+		),
 		Settings: adminsvc.NewSettingsService(
 			deps.settings,
 			deps.repos.EventLogs,
@@ -1219,6 +1226,7 @@ func registerAdmin(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 			deps.admin.Providers,
 			deps.admin.Users,
 			deps.admin.Clients,
+			deps.admin.Templates,
 			deps.admin.Settings,
 			deps.admin.Permission.ListPermissions,
 		),

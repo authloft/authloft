@@ -22,6 +22,8 @@ type SsoClient struct {
 	Name         string    `gorm:"column:name;size:128;not null;default:''"`           // 展示名
 	RedirectURIs []byte    `gorm:"column:redirect_uris;type:varbinary(2048);not null"` // client.RedirectUris 序列化后
 	IsEnabled    int8      `gorm:"column:is_enabled;not null;default:1"`               // 启用态
+	TemplateKey  string    `gorm:"column:template_key;size:64;not null;default:''"`    // 绑定的模板 key；空回落默认壳（§4.4 / §8.1）
+	TemplateVars string    `gorm:"column:template_vars;type:text"`                     // 模板变量 JSON 原文，空按 {} 注入
 	CreatedAt    time.Time `gorm:"column:created_at;not null"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
 }
