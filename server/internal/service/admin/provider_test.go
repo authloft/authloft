@@ -1093,3 +1093,47 @@ func TestProxyURLKeysetSameSource(t *testing.T) {
 		t.Error("union 非法提交不得落库")
 	}
 }
+
+// TestProxyURLKeysetBySchemaType 写入键集由各 type 的 Schema 声明派生：proxy_url
+// 仅在 Schema 声明该字段的 type（oauth / sms / email / captcha）可写且落 Ext；
+// 未声明的 type（union 虚拟、storage/local 无网络外呼）提交即拒绝。逐型对比
+// 裁剪口径，锁住「Schema 声明 ≡ 旧 category 裁剪」的等价性。
+func TestProxyURLKeysetBySchemaType(t *testing.T) {
+	for _, tc := range []struct {
+		name, typ, category, key string
+		base                     map[string]any
+		wantAccept               bool
+	}{
+		{"oauth", "wechat_mp", "oauth", "pk_oauth", map[string]any{"display_name": "W", "client_id": "id", "client_secret": "sec"}, true},
+		{"sms", "aliyun_sms", "sms", "pk_sms", map[string]any{"display_name": "S", "client_id": "id", "client_secret": "sec", "sign_name": "sig", "template_code": "code"}, true},
+		{"email", "smtp", "email", "pk_email", map[string]any{"display_name": "E", "host": "h", "from": "a@b.c"}, true},
+		{"captcha", "turnstile", "captcha", "pk_captcha", map[string]any{"display_name": "C", "client_id": "id", "client_secret": "sec"}, true},
+		{"storage/local", "local", "storage", "pk_local", map[string]any{"display_name": "L", "bucket": "/d", "domain": "d"}, false},
+		{"union", "unionid", "union", "pk_union", map[string]any{"display_name": "U"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{
+				"type": tc.typ, "provider_key": tc.key, "category": tc.category,
+				"proxy_url": "http://h:8080",
+			}
+			for k, v := range tc.base {
+				body[k] = v
+			}
+			store := newFakeStore()
+			err := adminsvc.NewService(store, &fakeInvalidator{}).CreateProvider(context.Background(), structBody(t, body))
+			if !tc.wantAccept {
+				if !errors.Is(err, adminsvc.ErrInvalidRequest) || len(store.created) != 0 {
+					t.Fatalf("应拒绝 proxy_url: err=%v created=%d", err, len(store.created))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("应接受 proxy_url: %v", err)
+			}
+			ext, err := repo.ParseProviderExt(store.created[0].Ext)
+			if err != nil || ext.GetProxyUrl() != "http://h:8080" {
+				t.Fatalf("proxy_url 未落 Ext: ext=%+v err=%v", ext, err)
+			}
+		})
+	}
+}

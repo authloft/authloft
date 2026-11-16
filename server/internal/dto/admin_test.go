@@ -298,8 +298,8 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	}
 }
 
-// oauthOnlyTestKeys 仅 oauth 类别可读写的 5 个表列（dto 侧断言与
-// oauthOnlyProviderColumns 同源口径）。
+// oauthOnlyTestKeys 仅 oauth 类别声明的 5 个表列（dto 侧断言与 provider Schema
+// 声明口径同源：sms/email/captcha/storage/union 的 Schema 均不含这些键）。
 var oauthOnlyTestKeys = []string{
 	"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 }
@@ -314,54 +314,48 @@ func schemaFieldMaybe(resp *adminv1.SchemaResponse, key string) (*adminv1.Schema
 	return nil, false
 }
 
-// TestAdminProviderColumnKeysForCategory 三个类别的可写表列键集：oauth 全量
-// 11 键；sms / email / unknown 裁掉 5 个 oauth 专属键、剩 6 个通用键；union
-// （虚拟）再裁掉 is_enabled，只剩 5 键（无启用开关可关）。此函数是 schema /
-// 写入 / 校验三处共用的唯一真相。
-func TestAdminProviderColumnKeysForCategory(t *testing.T) {
-	oauth := AdminProviderColumnKeysFor(provider.CategoryOAuth)
-	if len(oauth) != len(AdminProviderColumnKeys) {
-		t.Fatalf("oauth 键数 = %d, want %d（全量）", len(oauth), len(AdminProviderColumnKeys))
-	}
-	for _, category := range []string{provider.CategorySMS, provider.CategoryEmail, "unknown"} {
-		got := AdminProviderColumnKeysFor(category)
-		if len(got) != 6 {
-			t.Errorf("category=%q 键数 = %d, want 6: %v", category, len(got), got)
-		}
-		for _, key := range oauthOnlyTestKeys {
-			for _, k := range got {
-				if k == key {
-					t.Errorf("category=%q 不应含 oauth 专属键 %q", category, key)
+// TestProviderColumnKeysFromSchema 可写表列键集由完整 Schema 派生（Storage==column
+// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/local 6 列（无 oauth
+// 专属登录/建号/自动绑定列）；union 再裁 is_enabled，只剩 5 列。provider_key 在
+// 任何类型都不进列键（更新时作定位键，不得被 ApplyProviderColumns 改动）。
+func TestProviderColumnKeysFromSchema(t *testing.T) {
+	for _, tc := range []struct {
+		typ      string
+		wantCols []string
+		wantOmit []string
+	}{
+		{"wechat_mp", []string{"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark", "is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}, nil},
+		{"aliyun_sms", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, append([]string{"is_enabled"}, oauthOnlyTestKeys...)},
+	} {
+		t.Run(tc.typ, func(t *testing.T) {
+			meta, ok := provider.LookupTypeMeta(tc.typ)
+			if !ok {
+				t.Fatalf("%s meta 缺失", tc.typ)
+			}
+			got := ProviderColumnKeys(schemaFieldsOf(meta.Schema))
+			if len(got) != len(tc.wantCols) {
+				t.Fatalf("列键 = %v, want %v", got, tc.wantCols)
+			}
+			for i := range got {
+				if got[i] != tc.wantCols[i] {
+					t.Errorf("列键[%d] = %q, want %q（全序 %v）", i, got[i], tc.wantCols[i], got)
 				}
 			}
-		}
+			for _, k := range append(tc.wantOmit, "provider_key") {
+				for _, g := range got {
+					if g == k {
+						t.Errorf("列键不应含 %q: %v", k, got)
+					}
+				}
+			}
+		})
 	}
-	// union（虚拟）：通用列里再少 is_enabled——虚拟 Provider 无 adapter /
-	// 无登录入口，启用开关无可开关的行为。
-	union := AdminProviderColumnKeysFor(provider.CategoryUnion)
-	if len(union) != 5 {
-		t.Errorf("category=union 键数 = %d, want 5（虚拟类别无 is_enabled）: %v", len(union), union)
-	}
-	for _, k := range union {
-		if k == "is_enabled" {
-			t.Errorf("category=union 不应含 is_enabled: %v", union)
-		}
-	}
-	// 返回值是副本，调用方改动不得污染全量常量。
-	got := AdminProviderColumnKeysFor(provider.CategoryOAuth)
-	got[0] = "tampered"
-	if AdminProviderColumnKeys[0] == "tampered" {
-		t.Fatal("AdminProviderColumnKeysFor 应返回副本")
-	}
-	// 完整 Schema 转换：oauth 全量声明（含 union_provider / 5 开关 / proxy_url）；
-	// union 声明不含 is_enabled 与 proxy_url；storage/local 声明不含 proxy_url。
+	// 完整 Schema 纯转换：union 声明不含 is_enabled 与 proxy_url；local 不含 proxy_url。
 	// 键集裁剪已下沉到各 provider.Schema()，AdminSchema 只做纯转换。
-	oauthMeta, _ := provider.LookupTypeMeta("wechat_mp")
-	oauthSchema := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(oauthMeta.Schema), nil)
-	if len(oauthSchema.GetFields()) != len(schemaFieldsOf(oauthMeta.Schema)) {
-		t.Errorf("oauth schema 字段数 = %d, want %d（完整 Schema 声明）",
-			len(oauthSchema.GetFields()), len(schemaFieldsOf(oauthMeta.Schema)))
-	}
 	unionMeta, _ := provider.LookupTypeMeta(provider.UnionProviderType)
 	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, schemaFieldsOf(unionMeta.Schema), nil)
 	if len(unionSchema.GetFields()) != len(schemaFieldsOf(unionMeta.Schema)) {
@@ -374,7 +368,6 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 	if f, ok := schemaFieldMaybe(unionSchema, ProxyURLFieldKey); ok {
 		t.Errorf("union（无外呼）schema 不应含 proxy_url: %+v", f)
 	}
-	// storage/local 声明不含 proxy_url（无网络外呼）。
 	localMeta, _ := provider.LookupTypeMeta("local")
 	localSchema := AdminSchema("local", "storage", schemaFieldsOf(localMeta.Schema), nil)
 	if f, ok := schemaFieldMaybe(localSchema, ProxyURLFieldKey); ok {
@@ -384,7 +377,8 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 
 // TestProxyURLSchemaField proxy_url 的完整契约：由 AdminSchema 从 Schema 声明转换
 // 出的 proxy_url 字段形态（endpoint / advanced / text / i18n 键 / 无默认值 / 非必填）。
-// 另钉 ProxyURLFieldEnabled 的裁剪判定：union 与 storage/local 不呈现，其余呈现。
+// proxy_url 的呈现/可写完全由各 provider Schema 是否声明该字段决定（union /
+// storage-local 的 Schema 不声明，自然不呈现也不接受提交）。
 func TestProxyURLSchemaField(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta("wechat_mp")
 	if !ok {
@@ -396,22 +390,6 @@ func TestProxyURLSchemaField(t *testing.T) {
 		f.GetType() != "text" || f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetRequired() ||
 		f.GetDefault() != nil {
 		t.Errorf("proxy_url 字段契约 = %+v", f)
-	}
-	for _, tc := range []struct {
-		category, typ string
-		want          bool
-	}{
-		{provider.CategoryOAuth, "wechat_mp", true},
-		{provider.CategorySMS, "aliyun_sms", true},
-		{provider.CategoryEmail, "smtp", true},
-		{"captcha", "turnstile", true},
-		{provider.CategoryUnion, provider.UnionProviderType, false},
-		{"storage", "local", false},
-		{"storage", "s3", true}, // 有网络外呼的未来存储实现按 §15.4 纳入
-	} {
-		if got := ProxyURLFieldEnabled(tc.category, tc.typ); got != tc.want {
-			t.Errorf("ProxyURLFieldEnabled(%q,%q) = %v, want %v", tc.category, tc.typ, got, tc.want)
-		}
 	}
 }
 

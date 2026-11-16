@@ -4,7 +4,7 @@
 // （docs/后端架构.md §3.9「Provider CRUD + 缓存失效」、§18 分层 handler →
 // service/admin/provider.go → repo → cache/provider）。
 //
-// 职责边界：schema 键集校验（表列 ∪ 静态源 meta 声明的 Ext 字段，§5.3
+// 职责边界：schema 键集校验（完整 Schema 声明，含表列与 Ext，§5.3
 // 「提交体即 {"<key>": <value>}」）、provider_key 字符集与「创建后不可改」
 // （§12.1）、category 由 meta 按 type 决定只读、meta required 字段齐
 // （仅 Create；Update 按缺省键保留原值的 PATCH 口径不强制）、写后缓存失效
@@ -121,12 +121,12 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	if err != nil {
 		return err
 	}
-	if name, _ := structFieldString(fields, "display_name"); name == "" {
-		return ErrInvalidRequest // §5.3 required
-	}
-	// Create 的 meta required 字段必须齐且非空（Ext 走 Proto 消息后由厂商
-	// 构造兜底，此处先给管理员即时反馈）。
-	for _, f := range meta.Fields {
+	// Create 的 required 字段必须齐且非空（完整 Schema 声明：表列的
+	// provider_key / display_name 与厂商 Ext 必填项一并覆盖；Ext 走 Proto 消息
+	// 后由厂商构造兜底，此处先给管理员即时反馈）。display_name 原独立校验删除，
+	// 由本循环统一补位（二者都是 Create-only，语义不变；Update 为 PATCH 缺省保留，
+	// 不得加 required 校验）。
+	for _, f := range meta.Schema {
 		if f.Required {
 			if v, ok := fields[f.Key]; !ok || v.GetStringValue() == "" {
 				return ErrInvalidRequest
@@ -135,7 +135,7 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	}
 
 	row := &model.Provider{ProviderKey: providerKey, Category: meta.Category, Type: providerType}
-	if err := dto.ApplyProviderColumns(row, fields); err != nil {
+	if err := dto.ApplyProviderColumns(row, fields, dto.ProviderColumnKeys(meta.Schema)); err != nil {
 		return ErrInvalidRequest
 	}
 	ext, err := dto.MergeProviderExt(&providerpb.Ext{}, fields, metaFieldKeys(meta))
@@ -224,7 +224,7 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 		return err
 	}
 
-	if err := dto.ApplyProviderColumns(row, fields); err != nil {
+	if err := dto.ApplyProviderColumns(row, fields, dto.ProviderColumnKeys(meta.Schema)); err != nil {
 		return ErrInvalidRequest
 	}
 	origExt, err := repo.ParseProviderExt(row.Ext)
@@ -367,12 +367,13 @@ func (s *Service) TestProvider(ctx context.Context, providerKey, target string) 
 	return sender.Send(ctx, target, testProviderTpl, map[string]string{"code": testProviderCode})
 }
 
-// schemaMeta 提交体键集的 schema 元信息（静态源 meta 同构投影：category 由
-// type 决定只读，Fields 是 Ext 字段级声明，§15.3）。
+// schemaMeta 提交体键集的 schema 元信息（完整字段声明投影：category 由 type
+// 决定只读，Schema 是含表列与 Ext 的全量字段清单——白名单、列键、Ext 键、
+// required 四处均从这一份声明派生，§4.4）。
 type schemaMeta struct {
 	Type     string
 	Category string
-	Fields   []provider.FieldMeta
+	Schema   []provider.FieldMeta
 }
 
 // lookupSchema 从提交体取 type 并查静态源 meta（统一经 provider.LookupTypeMeta，
@@ -395,34 +396,31 @@ func lookupSchema(fields map[string]*structpb.Value) (string, schemaMeta, bool) 
 }
 
 // lookupSchemaByType 按 type 查静态源统一 meta（oauth / 消息 / 虚拟 / 服务型，
-// provider.LookupTypeMeta），schema 只取类别与 Ext 字段声明。
+// provider.LookupTypeMeta），取类别与完整 Schema 声明（Schema 为 func 字段，
+// 调用得到全量清单；nil 视为空切片避免 panic）。
 func lookupSchemaByType(providerType string) (schemaMeta, bool) {
 	meta, ok := provider.LookupTypeMeta(providerType)
 	if !ok {
 		return schemaMeta{}, false
 	}
-	return schemaMeta{Type: meta.Type, Category: meta.Category, Fields: meta.Fields}, true
+	var schema []provider.FieldMeta
+	if meta.Schema != nil {
+		schema = meta.Schema()
+	}
+	return schemaMeta{Type: meta.Type, Category: meta.Category, Schema: schema}, true
 }
 
 // validateSchemaKeys 未知键拒绝：提交体键集 ⊆ {type, category, provider_key} ∪
-// dto.AdminProviderColumnKeysFor(meta.Category) ∪ meta.Fields（§5.3：
-// key 恒等于 provider 表列名或 provider.Ext 字段名——表单外的键一律
-// invalid_request，防止管理员提交表单不可见字段）。表列白名单按 category 裁
-// 剪：union_provider / enable_signin / enable_signup / auto_bind /
-// auto_bind_fields 仅 oauth 可提交（sms/email 的注册登录开关在 §5.6 设置项）。
-// 通用 Ext 基线字段 proxy_url 按 dto.ProxyURLFieldEnabled 同源裁剪（§5.3），
-// 与 schema 下发 / extKeys 三处一致。Create 的 category 一致性校验亦在此（类型
-// meta 决定、只读）。
+// Schema 全集（所有 f.Key，不再按 Storage 区分列/Ext——分流由 ApplyProviderColumns
+// / MergeProviderExt 各自完成，§4.4）。key 恒等于 provider 表列名或 provider.Ext
+// 字段名，表单外的键一律 invalid_request（§5.3）；union / local 的 Schema 未声明
+// 登录开关 / proxy_url 等键即自动拒绝。type / provider_key 的「创建后不可改」
+// 逐键同值校验保留在 CreateProvider / UpdateProvider，不走白名单。Create 的
+// category 一致性校验在此（类型 meta 决定、只读）。
 func validateSchemaKeys(fields map[string]*structpb.Value, meta schemaMeta) error {
 	valid := map[string]bool{"type": true, "category": true, "provider_key": true}
-	for _, k := range dto.AdminProviderColumnKeysFor(meta.Category) {
-		valid[k] = true
-	}
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema {
 		valid[f.Key] = true
-	}
-	if dto.ProxyURLFieldEnabled(meta.Category, meta.Type) {
-		valid[dto.ProxyURLFieldKey] = true
 	}
 	for k := range fields {
 		if !valid[k] {
@@ -493,16 +491,17 @@ func explicitFalse(fields map[string]*structpb.Value, key string) bool {
 	}
 }
 
-// metaFieldKeys 注册表 meta.Fields 的 Ext 字段名集合 + 通用基线字段 proxy_url
-// （按 dto.ProxyURLFieldEnabled 同源裁剪）：作为 MergeProviderExt 的 extKeys，
-// 与 schema 下发 / validateSchemaKeys 三处键集同源（§5.3 代理字段约定）。
+// metaFieldKeys Schema 中落 Ext 的字段名集合，作为 MergeProviderExt 的 extKeys。
+// 落 Ext 判定为「非表列字段」（Storage != StorageColumn）：显式声明 StorageExt
+// 的字段与 oauthcore 基线 Ext 字段（Storage 为零值）均归入 Ext，与迁移前
+// meta.Fields 口径一致。proxy_url 由 Schema 声明——union / storage-local 的
+// Schema 无该字段即自动排除（§5.3），不再另调 category 裁剪函数。
 func metaFieldKeys(meta schemaMeta) []string {
-	keys := make([]string, 0, len(meta.Fields)+1)
-	for _, f := range meta.Fields {
-		keys = append(keys, f.Key)
-	}
-	if dto.ProxyURLFieldEnabled(meta.Category, meta.Type) {
-		keys = append(keys, dto.ProxyURLFieldKey)
+	keys := make([]string, 0, len(meta.Schema))
+	for _, f := range meta.Schema {
+		if f.Storage != provider.StorageColumn {
+			keys = append(keys, f.Key)
+		}
 	}
 	return keys
 }
@@ -513,6 +512,9 @@ func metaFieldKeys(meta schemaMeta) []string {
 // URL 与凭据；本层不包装其文本，避免泄漏（handler 映射 invalid_argument +
 // ErrorInfo{admin, invalid_request}）。
 func validateProxyURL(fields map[string]*structpb.Value) error {
+	if _, ok := fields[dto.ProxyURLFieldKey]; !ok {
+		return nil // 未声明 proxy_url 的 provider（union / local）无键可校验
+	}
 	raw, err := structFieldString(fields, dto.ProxyURLFieldKey)
 	if err != nil {
 		return ErrInvalidRequest // 非 string 值

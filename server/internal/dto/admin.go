@@ -125,26 +125,6 @@ func AdminSchema(providerType, category string, fields []provider.FieldMeta, dyn
 // 字段约定）：由 provider 的完整 Schema 声明下发，本常量供写入 / 校验侧复用。
 const ProxyURLFieldKey = "proxy_url"
 
-// proxyURL 裁剪常量：category=storage 且 type=local 仅本地磁盘、无网络外呼，
-// 与 union（虚拟、无 adapter/sender）同样不呈现 proxy_url（§5.3 类别裁剪）。
-const (
-	proxyURLCategoryStorage = "storage"
-	proxyURLTypeLocal       = "local"
-)
-
-// ProxyURLFieldEnabled 三处键集共用的唯一裁剪判定：schema 下发、Create/Update
-// 写入白名单、MergeProviderExt 的 extKeys 三处都调用本函数，保证「呈现 ≡ 可写」；
-// 缺任一处即保存拒绝该字段（接口文档 §5.3 通用基线口径）。
-func ProxyURLFieldEnabled(category, providerType string) bool {
-	if category == provider.CategoryUnion {
-		return false
-	}
-	if category == proxyURLCategoryStorage && providerType == proxyURLTypeLocal {
-		return false
-	}
-	return true
-}
-
 // schemaDefaultValue FieldMeta.Default（string）→ JSON 默认值：先按 JSON 标量解析，
 // 失败按原文作字符串；空串无默认值（nil，protojson 省略）。
 func schemaDefaultValue(s string) *structpb.Value {
@@ -164,56 +144,29 @@ func schemaDefaultValue(s string) *structpb.Value {
 // service 校验，此处仅防御未声明却与 Ext 同名的残余键；类型不符由 protojson 报错。
 var extUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
 
-// AdminProviderColumnKeys 可写入表列的全量基线键集（示例即契约）：不含 provider_key
-// （创建后不可改）、category 与 type（只读）。消费方一律走 AdminProviderColumnKeysFor。
-var AdminProviderColumnKeys = []string{
-	"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark",
-	"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
-}
-
-// oauthOnlyProviderColumns 仅 oauth 类别可读写：union_provider 与登录 / 建号 /
-// 自动绑定开关是三方 Provider 专属；sms / email 能否登录由设置项决定、虚拟 Union
-// Provider 无登录入口，故非 oauth 类别全部裁掉。
-var oauthOnlyProviderColumns = map[string]struct{}{
-	"union_provider":   {},
-	"enable_signin":    {},
-	"enable_signup":    {},
-	"auto_bind":        {},
-	"auto_bind_fields": {},
-}
-
-// virtualOmittedProviderColumns 虚拟类别（union）连 is_enabled 也裁掉：虚拟 Provider
-// 无 adapter / sender、无登录入口，没有启用 / 停用行为，行值恒取 DDL 默认 1，表单
-// 呈现改了也不生效的开关只会误导管理员。SetProviderEnabled 是独立端点，不经本键集。
-var virtualOmittedProviderColumns = map[string]struct{}{
-	"is_enabled": {},
-}
-
-// AdminProviderColumnKeysFor 按 category 返回可写 / 可展示键集（唯一真相：schema 过滤、
-// 写入、校验白名单三处共用，防显示层与写入层漂移）。oauth 全量；非 oauth 只留通用列；
-// union 再裁 is_enabled。返回值是副本，调用方可安全持有。
-func AdminProviderColumnKeysFor(category string) []string {
-	out := make([]string, 0, len(AdminProviderColumnKeys))
-	for _, key := range AdminProviderColumnKeys {
-		if _, oauthOnly := oauthOnlyProviderColumns[key]; oauthOnly && category != provider.CategoryOAuth {
-			continue
+// ProviderColumnKeys 从完整 Schema 声明派生可写表列键集：Storage == StorageColumn
+// 且排除 provider_key（仅创建时写、更新时作定位键，不得进 ApplyProviderColumns，
+// 否则 Update 可能改动主键）。返回值是独立切片，供写入侧经 ApplyProviderColumns
+// 逐键赋值（§4.4）。
+func ProviderColumnKeys(fields []provider.FieldMeta) []string {
+	keys := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f.Storage == provider.StorageColumn && f.Key != "provider_key" {
+			keys = append(keys, f.Key)
 		}
-		if _, omitted := virtualOmittedProviderColumns[key]; omitted && category == provider.CategoryUnion {
-			continue
-		}
-		out = append(out, key)
 	}
-	return out
+	return keys
 }
 
-// ApplyProviderColumns 把提交体表列键（按 row.Category 裁剪）应用到 row：未提交的键
-// 不动即缺省保留原值（PATCH over schema 键集）。provider_key / category / type 不经
-// 本函数（创建后不可改、只读）；值类型不符返回错误，显式 null 按清零落列默认值。
-func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value) error {
+// ApplyProviderColumns 把 columnKeys 指定的表列键应用到 row：未提交的键不动即缺省
+// 保留原值（PATCH over schema 键集）。columnKeys 由写入侧经 ProviderColumnKeys 从
+// Schema 派生，已排除 provider_key / category / type（创建后不可改、只读）；值类型
+// 不符返回错误，显式 null 按清零落列默认值。
+func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value, columnKeys []string) error {
 	if row == nil {
 		return fmt.Errorf("dto: apply provider columns: nil row")
 	}
-	for _, key := range AdminProviderColumnKeysFor(row.Category) {
+	for _, key := range columnKeys {
 		v, ok := fields[key]
 		if !ok {
 			continue // 缺省保留原值（PATCH）
@@ -252,8 +205,9 @@ func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value
 
 // MergeProviderExt 把 Ext 键集的值合并进原 Ext（protojson 往返：未提交字段保留原值，
 // PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起点，orig 为 nil 时按空 Ext；
-// 类型不符由 protojson 报错。extKeys 须由写入侧经 metaFieldKeys 构造——已含通用
-// 基线字段 proxy_url（ProxyURLFieldEnabled 同源裁剪），与 schema 下发键集一致。
+// 类型不符由 protojson 报错。extKeys 须由写入侧从 Schema 的 Ext 字段派生
+// （service.metaFieldKeys）——proxy_url 按 Schema 声明是否含该字段自动纳入，
+// 与 schema 下发键集一致。
 func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, extKeys []string) (*providerpb.Ext, error) {
 	if orig == nil {
 		orig = &providerpb.Ext{}

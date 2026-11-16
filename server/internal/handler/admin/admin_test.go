@@ -693,9 +693,10 @@ func TestGetProviderNotFound(t *testing.T) {
 	}
 }
 
-// TestGetProviderSchemaSenderMeta 消息域 schema（smtp）与注册表 meta 逐项
-// 一致（§15.3：/schema 唯一数据源）：category=email 由 meta 决定；Ext 字段
-// 逐项等于 LookupSenderMeta；基线字段同在；union options 来自 union 查询。
+// TestGetProviderSchemaSenderMeta 消息域 schema（smtp）与注册表 Schema() 逐项
+// 一致（§15.3：/schema 唯一数据源）：category=email 由 meta 决定；表列基线与
+// Ext 字段逐项等于 LookupSenderMeta().Schema()。smtp 未声明 dynamic 字段，
+// 打 schema 不得触发 ListProviders 查库（声明驱动，非类别硬编码）。
 func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	fakes := &fakeProviders{unionRow: model.Provider{ProviderKey: "union_a", Category: "union", Type: "unionid"}}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -713,7 +714,7 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	for _, f := range got.GetFields() {
 		byKey[f.GetKey()] = f
 	}
-	for _, mf := range meta.Fields {
+	for _, mf := range meta.Schema() {
 		f, ok := byKey[mf.Key]
 		if !ok {
 			t.Fatalf("schema 缺少 meta 声明字段 %q", mf.Key)
@@ -746,7 +747,7 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 			t.Errorf("email schema 不应含 oauth 专属字段 %q", key)
 		}
 	}
-	// 非 oauth 不需要 union_provider options，故不查库（§5.3）。
+	// smtp 的 Schema 未声明 dynamic 字段：不查库（声明驱动，非类别判断）。
 	if len(fakes.queries) != 0 {
 		t.Errorf("email schema 不应触发 union 查询, got %+v", fakes.queries)
 	}
@@ -785,7 +786,7 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 
 // TestGetProviderSchemaServiceMeta 服务型 Provider schema（captcha / storage）：
 // 由第四源静态 meta 命中，Ext 字段逐项来自 Fields 声明；category 非 oauth →
-// 无 oauth 专属列。proxy_url 按 ProxyURLFieldEnabled 裁剪：captcha 呈现、local
+// 无 oauth 专属列。proxy_url 按 provider Schema 声明裁剪：captcha 呈现、local
 // 不呈现。验证 GetProviderTypes → GetProviderSchema 全链路的下发形态。
 func TestGetProviderSchemaServiceMeta(t *testing.T) {
 	for _, tc := range []struct {
