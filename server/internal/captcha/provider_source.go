@@ -9,7 +9,9 @@ import (
 
 	"gorm.io/gorm"
 
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/repo"
+	"authloft/internal/repo/model"
 )
 
 // providerSource 把 provider 表行转成 captcha 包窄投影（ProviderSource，
@@ -37,6 +39,12 @@ func (s providerSource) Find(ctx context.Context, providerKey string) (*Provider
 	if err != nil {
 		return nil, err
 	}
+	return projectProviderRecord(row, ext), nil
+}
+
+// projectProviderRecord 把 provider 表行与已解析的 Ext 投影成 captcha 窄记录；
+// ProxyURL 来自 Ext.proxy_url（§15.4，出站代理在构造期固化）。
+func projectProviderRecord(row *model.Provider, ext *providerpb.Ext) *ProviderRecord {
 	return &ProviderRecord{
 		ProviderKey: row.ProviderKey,
 		Category:    row.Category,
@@ -45,7 +53,8 @@ func (s providerSource) Find(ctx context.Context, providerKey string) (*Provider
 		SiteKey:     ext.GetClientId(),
 		Secret:      ext.GetClientSecret(),
 		VerifyURL:   ext.GetEndpoint(),
-	}, nil
+		ProxyURL:    ext.GetProxyUrl(),
+	}
 }
 
 // NewProviderSource 注入 provider 仓储（装配层构造）。

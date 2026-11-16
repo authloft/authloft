@@ -37,6 +37,7 @@ type ProviderRecord struct {
 	SiteKey     string // ext.client_id（§9.1 行 1083）
 	Secret      string // ext.client_secret
 	VerifyURL   string // ext.endpoint，自定义校验地址（空 = 厂商默认）
+	ProxyURL    string // ext.proxy_url，出站代理（空 = 直连，§15.4）
 }
 
 // ProviderSource 按 provider_key 取 provider 行投影；nil,nil = 无此行，

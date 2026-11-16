@@ -287,3 +287,70 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 		t.Fatal("meta.Fields must include template_code (credential)")
 	}
 }
+
+// TestSendViaHTTPProxy http 代理桩实证：短信请求经代理而非直连——目标与代理
+// 各自记录命中，代理命中且目标零命中即证流量经代理（§15.4 全 scheme）。
+func TestSendViaHTTPProxy(t *testing.T) {
+	var directHits, proxyHits int
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		directHits++
+		_, _ = w.Write([]byte(`{"Code":"OK"}`))
+	}))
+	defer target.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits++
+		_, _ = w.Write([]byte(`{"Code":"OK"}`))
+	}))
+	defer proxy.Close()
+
+	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+		e.IntranetEndpoint = target.URL
+		e.ProxyUrl = proxy.URL
+	}))
+	if err != nil {
+		t.Fatalf("newSender: %v", err)
+	}
+	if err := s.Send(context.Background(), "13800138000", "otp", map[string]string{"code": "246810"}); err != nil {
+		t.Fatalf("Send via proxy: %v", err)
+	}
+	if proxyHits != 1 {
+		t.Fatalf("代理命中 = %d, want 1（流量须经代理）", proxyHits)
+	}
+	if directHits != 0 {
+		t.Fatalf("直连命中 = %d, want 0（不得绕过代理）", directHits)
+	}
+}
+
+// TestInjectedClientOverridesProxy 测试注入的 hc 优先于代理配置：代理指向
+// 不可达端口时仍可经注入 client 成功发送。
+func TestInjectedClientOverridesProxy(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"Code":"OK"}`))
+	}))
+	defer target.Close()
+
+	s, err := build(testProvider(t, func(e *providerpb.Ext) {
+		e.IntranetEndpoint = target.URL
+		e.ProxyUrl = "http://127.0.0.1:1" // 不可达，须被注入 client 覆盖
+	}), target.Client())
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if err := s.Send(context.Background(), "13800138000", "otp", map[string]string{"code": "246810"}); err != nil {
+		t.Fatalf("注入 client 应覆盖代理配置: %v", err)
+	}
+}
+
+// TestBuildProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且
+// 错误串不含完整 URL 与凭据（§15.4 脱敏）。
+func TestBuildProxyErrorNotSwallowed(t *testing.T) {
+	_, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+		e.ProxyUrl = "ftp://user:s3cr3t@proxy.example:21"
+	}))
+	if err == nil {
+		t.Fatal("非法 scheme 须构造期报错、不降级直连")
+	}
+	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
+		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
+	}
+}

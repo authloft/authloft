@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 )
 
 // Type 渠道类型（§15.2 行 1724 内置清单）。
@@ -82,7 +83,8 @@ type Sender struct {
 	password    string
 	subjects    map[string]string                                                 // metadata["subject."+tpl]
 	bodies      map[string]string                                                 // metadata["body."+tpl]
-	dialContext func(ctx context.Context, network, addr string) (net.Conn, error) // 测试注入
+	dialContext func(ctx context.Context, network, addr string) (net.Conn, error) // 测试注入（优先）
+	proxyDial   proxyclient.ContextDialer                                         // 构造期固化；仅 socks5 生效
 }
 
 // newSender 注册表工厂：从 Provider 实例取 Ext 构造客户端。
@@ -99,6 +101,13 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 		username:   meta["username"],
 		password:   meta["password"],
 	}
+	// 构造期固化代理拨号器：仅 socks5 生效；http/https 与空串由 proxyclient
+	// 静默按直连拨号（§15.4）。错误不吞，错误串不含 URL 凭据。
+	d, err := proxyclient.Dialer(p.Ext.GetProxyUrl())
+	if err != nil {
+		return nil, fmt.Errorf("smtp: build proxy dialer: %w", err)
+	}
+	s.proxyDial = d
 	for k, v := range meta {
 		if tpl, ok := strings.CutPrefix(k, "subject."); ok {
 			if s.subjects == nil {
@@ -177,14 +186,27 @@ func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[str
 	return cl.Quit()
 }
 
-// dial 生产连接：465 隐式 TLS，其余明文（STARTTLS 由扩展协商）。
+// dial 生产连接：底层用构造期固化的代理拨号器（socks5 生效，http/https 与
+// 空串静默直连）；465 在拨号后包一层隐式 TLS（ServerName=host、严格验证），
+// 其余明文，STARTTLS 由扩展协商。测试注入的 dialContext 优先（见 Send）。
 func (s *Sender) dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	if s.port == tlsPort {
-		d := &tls.Dialer{NetDialer: &net.Dialer{}, Config: &tls.Config{ServerName: s.host}}
-		return d.DialContext(ctx, network, addr)
+	d := s.proxyDial
+	if d == nil {
+		d = &net.Dialer{}
 	}
-	var d net.Dialer
-	return d.DialContext(ctx, network, addr)
+	raw, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	if s.port == tlsPort {
+		tc := tls.Client(raw, &tls.Config{ServerName: s.host})
+		if err := tc.HandshakeContext(ctx); err != nil {
+			_ = raw.Close()
+			return nil, err
+		}
+		return tc, nil
+	}
+	return raw, nil
 }
 
 // render 取模板并替换变量（§15.2 行 1725 最小实现）。

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/redis/go-redis/v9"
@@ -152,7 +153,7 @@ func newSiteverifyServer(t *testing.T) *siteverifyRecorder {
 }
 
 // TestVerifierRemoteFormAndSuccess 三家第三方逐 type 断言请求形态
-//（POST + application/x-www-form-urlencoded + 恰好 secret/response 两字段）
+// （POST + application/x-www-form-urlencoded + 恰好 secret/response 两字段）
 // 与 success 判定（§9.1 行 1088-1090；httptest 假端点，不打真实厂商）。
 func TestVerifierRemoteFormAndSuccess(t *testing.T) {
 	for _, typ := range []string{TypeTurnstile, TypeRecaptcha, TypeHcaptcha} {
@@ -216,7 +217,7 @@ func TestVerifierRemoteFailures(t *testing.T) {
 }
 
 // TestVerifierEndpointPrecedence 地址优先级：注入覆盖 > Ext.endpoint
-//（§9.1 行 1083 自定义校验地址）> 厂商默认。
+// （§9.1 行 1083 自定义校验地址）> 厂商默认。
 func TestVerifierEndpointPrecedence(t *testing.T) {
 	ext := newSiteverifyServer(t)
 	injected := newSiteverifyServer(t)
@@ -249,7 +250,7 @@ func TestVerifierEndpointPrecedence(t *testing.T) {
 
 // TestVerifierImageOnceSemanticsRealRedis（env-skip）：真连 Redis +
 // cache.CaptchaStore，实证 image 路径经真实 Lua GETDEL 的一次性语义
-//（首次正确通过 → 键已删 → 再校验 ErrInvalid，§9.2 行 1101）。清理口径
+// （首次正确通过 → 键已删 → 再校验 ErrInvalid，§9.2 行 1101）。清理口径
 // 同 cache/captcha_test.go：测后删除用例键自证零残留。
 func TestVerifierImageOnceSemanticsRealRedis(t *testing.T) {
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
@@ -278,5 +279,73 @@ func TestVerifierImageOnceSemanticsRealRedis(t *testing.T) {
 	}
 	if err := v.Verify(ctx, BuiltinProviderKey, Submission{ID: id, Answer: answer}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("GETDEL 后再校验 = %v, want ErrInvalid（真实一次性语义）", err)
+	}
+}
+
+// TestVerifierRemoteViaHTTPProxy http 代理桩实证：siteverify 流量经代理而非
+// 直连——代理命中且目标零命中即证 per-request client 按 ProxyURL 构造（§15.4
+// 全 scheme）。
+func TestVerifierRemoteViaHTTPProxy(t *testing.T) {
+	target := newSiteverifyServer(t)
+	var proxyHits int
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits++
+		_ = r.ParseForm()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer proxy.Close()
+
+	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
+		"pk": {
+			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
+			Secret: "sec-1", VerifyURL: target.server.URL, ProxyURL: proxy.URL,
+		},
+	}}, newFakeCaptchaStore(), VerifierOptions{})
+	if err := v.Verify(context.Background(), "pk", Submission{Token: "tok-1"}); err != nil {
+		t.Fatalf("经代理校验 = %v, want nil", err)
+	}
+	if proxyHits != 1 {
+		t.Fatalf("代理命中 = %d, want 1（流量须经代理）", proxyHits)
+	}
+	if target.hitCount != 0 {
+		t.Fatalf("直连目标命中 = %d, want 0（不得绕过代理）", target.hitCount)
+	}
+}
+
+// TestVerifierInjectedHTTPClientOverridesProxy 构造注入的 HTTPClient 优先于
+// 记录里的 ProxyURL：代理指向不可达端口仍可经注入 client 直连成功（既有用例
+// 口径不变，§15.4 测试注入优先级）。
+func TestVerifierInjectedHTTPClientOverridesProxy(t *testing.T) {
+	target := newSiteverifyServer(t)
+	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
+		"pk": {
+			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
+			Secret: "sec-1", VerifyURL: target.server.URL, ProxyURL: "http://127.0.0.1:1",
+		},
+	}}, newFakeCaptchaStore(), VerifierOptions{HTTPClient: target.server.Client()})
+	if err := v.Verify(context.Background(), "pk", Submission{Token: "tok-2"}); err != nil {
+		t.Fatalf("注入 client 应覆盖代理配置: %v", err)
+	}
+	if target.hitCount != 1 {
+		t.Fatalf("直连目标命中 = %d, want 1", target.hitCount)
+	}
+}
+
+// TestVerifierProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且错误
+// 串不含完整 URL 与凭据（§15.4 脱敏）；错误为基础设施错误，不映射 ErrInvalid。
+func TestVerifierProxyErrorNotSwallowed(t *testing.T) {
+	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
+		"pk": {
+			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
+			Secret: "s", ProxyURL: "ftp://user:s3cr3t@proxy.example:21",
+		},
+	}}, newFakeCaptchaStore(), VerifierOptions{})
+	err := v.Verify(context.Background(), "pk", Submission{Token: "t"})
+	if err == nil || errors.Is(err, ErrInvalid) {
+		t.Fatalf("非法代理 err = %v, want 基础设施错误（非 ErrInvalid）", err)
+	}
+	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
+		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
 	}
 }

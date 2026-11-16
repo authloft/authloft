@@ -12,7 +12,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"io"
 	"math/big"
 	"net"
 	"strconv"
@@ -596,5 +598,195 @@ func TestSendAuthPlainCredentials(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("fake SMTP server did not capture a session")
+	}
+}
+
+// socks5SMTPStub 最小 SOCKS5 桩：握手后读 CONNECT 目标并回成功，随后把隧道
+// 双向桥接到 dialTarget（真实 fake SMTP server），使 SMTP 对话完整经代理完成。
+// 观测到 CONNECT 目标即证流量经 socks5 代理（§15.4）。
+func socks5SMTPStub(t *testing.T, dialTarget func() (net.Conn, error)) (addr string, dstCh chan string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	dstCh = make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		r := bufio.NewReader(conn)
+		hdr := make([]byte, 2)
+		if _, err := io.ReadFull(r, hdr); err != nil || hdr[0] != 0x05 {
+			return
+		}
+		methods := make([]byte, hdr[1])
+		if _, err := io.ReadFull(r, methods); err != nil {
+			return
+		}
+		method := byte(0x00)
+		for _, m := range methods {
+			if m == 0x02 {
+				method = 0x02
+			}
+		}
+		if _, err := conn.Write([]byte{0x05, method}); err != nil {
+			return
+		}
+		if method == 0x02 {
+			ah := make([]byte, 2)
+			if _, err := io.ReadFull(r, ah); err != nil {
+				return
+			}
+			u := make([]byte, ah[1])
+			if _, err := io.ReadFull(r, u); err != nil {
+				return
+			}
+			pl := make([]byte, 1)
+			if _, err := io.ReadFull(r, pl); err != nil {
+				return
+			}
+			p := make([]byte, pl[0])
+			if _, err := io.ReadFull(r, p); err != nil {
+				return
+			}
+			if _, err := conn.Write([]byte{0x01, 0x00}); err != nil {
+				return
+			}
+		}
+		req := make([]byte, 4)
+		if _, err := io.ReadFull(r, req); err != nil || req[0] != 0x05 || req[1] != 0x01 {
+			return
+		}
+		var host string
+		switch req[3] {
+		case 0x01:
+			b := make([]byte, 4)
+			if _, err := io.ReadFull(r, b); err != nil {
+				return
+			}
+			host = net.IP(b).String()
+		case 0x03:
+			l := make([]byte, 1)
+			if _, err := io.ReadFull(r, l); err != nil {
+				return
+			}
+			b := make([]byte, l[0])
+			if _, err := io.ReadFull(r, b); err != nil {
+				return
+			}
+			host = string(b)
+		case 0x04:
+			b := make([]byte, 16)
+			if _, err := io.ReadFull(r, b); err != nil {
+				return
+			}
+			host = net.IP(b).String()
+		}
+		port := make([]byte, 2)
+		if _, err := io.ReadFull(r, port); err != nil {
+			return
+		}
+		dstCh <- net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(port))))
+		upstream, err := dialTarget()
+		if err != nil {
+			_, _ = conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+			return
+		}
+		defer upstream.Close()
+		if _, err := conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0}); err != nil {
+			return
+		}
+		go func() { _, _ = io.Copy(upstream, r); _ = upstream.Close() }()
+		_, _ = io.Copy(conn, upstream)
+	}()
+	return ln.Addr().String(), dstCh
+}
+
+// TestSendViaSOCKS5Proxy socks5 代理桩实证：代理观测到 CONNECT 目标为 SMTP
+// 服务器地址，且 fake server 捕获完整会话，证明流量经 socks5 代理（仅 socks5
+// 生效，§15.4）。
+func TestSendViaSOCKS5Proxy(t *testing.T) {
+	addr, captured := fakeSMTPServer(t)
+	_, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+	proxyAddr, dstCh := socks5SMTPStub(t, func() (net.Conn, error) { return net.Dial("tcp", addr) })
+
+	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+		e.Host = "127.0.0.1"
+		e.Port = int32(port)
+		e.ProxyUrl = "socks5://" + proxyAddr
+	}))
+	if err != nil {
+		t.Fatalf("newSender: %v", err)
+	}
+	if err := s.Send(context.Background(), "proxy@example.com", "otp", map[string]string{"code": "246810"}); err != nil {
+		t.Fatalf("Send via socks5: %v", err)
+	}
+
+	select {
+	case dst := <-dstCh:
+		if dst != addr {
+			t.Fatalf("CONNECT 目标 = %q, want %q", dst, addr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("socks5 桩未观测到 CONNECT（流量未走代理）")
+	}
+	select {
+	case got := <-captured:
+		if got.rcptTo != "proxy@example.com" {
+			t.Errorf("RCPT TO = %q", got.rcptTo)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("经代理的 SMTP 会话未被捕获")
+	}
+}
+
+// TestSendHTTPProxyConfigSilentlyDirect http/https 代理配置对 SMTP 静默失效：
+// 代理指向不可达端口仍可直连成功（不报错、不提示、按直连拨号，§15.4）。
+func TestSendHTTPProxyConfigSilentlyDirect(t *testing.T) {
+	for _, proxyURL := range []string{"http://127.0.0.1:1", "https://127.0.0.1:1"} {
+		t.Run(proxyURL, func(t *testing.T) {
+			addr, captured := fakeSMTPServer(t)
+			_, portStr, _ := net.SplitHostPort(addr)
+			port, _ := strconv.Atoi(portStr)
+			s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+				e.Host = "127.0.0.1"
+				e.Port = int32(port)
+				e.ProxyUrl = proxyURL // 不可达代理：若被误用则 Send 必失败
+			}))
+			if err != nil {
+				t.Fatalf("newSender: %v", err)
+			}
+			if err := s.Send(context.Background(), "direct@example.com", "otp", map[string]string{"code": "135790"}); err != nil {
+				t.Fatalf("http/https 代理须静默失效按直连: %v", err)
+			}
+			select {
+			case got := <-captured:
+				if got.rcptTo != "direct@example.com" {
+					t.Errorf("RCPT TO = %q", got.rcptTo)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("直连 SMTP 会话未被捕获")
+			}
+		})
+	}
+}
+
+// TestBuildProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且错误串
+// 不含完整 URL 与凭据（§15.4 脱敏）。
+func TestBuildProxyErrorNotSwallowed(t *testing.T) {
+	_, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+		e.ProxyUrl = "ftp://user:s3cr3t@proxy.example:21"
+	}))
+	if err == nil {
+		t.Fatal("非法 scheme 须构造期报错、不降级直连")
+	}
+	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
+		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
 	}
 }

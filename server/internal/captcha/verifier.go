@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"authloft/internal/proxyclient"
 )
 
 // 第三方渠道 type 与 siteverify 默认端点（§9.1 行 1088-1090；type 封闭
@@ -46,10 +48,11 @@ type VerifierOptions struct {
 // ServiceVerifier Verifier 实装：不自持 DB / Redis 句柄，行源与图形码
 // 存储均经构造注入。
 type ServiceVerifier struct {
-	source ProviderSource
-	images Store
-	hc     *http.Client
-	urls   map[string]string
+	source     ProviderSource
+	images     Store
+	hc         *http.Client
+	urls       map[string]string
+	hcInjected bool // 构造期是否注入 HTTPClient：注入则优先于代理配置
 }
 
 // NewVerifier 注入 provider 行源（取 type / secret / endpoint）与图形码
@@ -63,7 +66,7 @@ func NewVerifier(source ProviderSource, images Store, opts VerifierOptions) *Ser
 	if urls == nil {
 		urls = map[string]string{}
 	}
-	return &ServiceVerifier{source: source, images: images, hc: hc, urls: urls}
+	return &ServiceVerifier{source: source, images: images, hc: hc, urls: urls, hcInjected: opts.HTTPClient != nil}
 }
 
 // Verify 按 providerKey 分派（gate.go 已保证 providerKey 为当前生效
@@ -116,7 +119,9 @@ func (v *ServiceVerifier) verifyImage(ctx context.Context, sub Submission) error
 }
 
 // verifyRemote 第三方路径：secret + response 表单 POST 到 siteverify，
-// JSON success 判定（三家厂商同一形态，§9.1 行 1088-1090）。
+// JSON success 判定（三家厂商同一形态，§9.1 行 1088-1090）。代理按本次记录
+// 的 ProxyURL 构造 per-request client；注入的 HTTPClient 优先于代理配置，
+// 空 ProxyURL 沿用既有 10s 默认客户端（§15.4）。
 func (v *ServiceVerifier) verifyRemote(ctx context.Context, rec *ProviderRecord, sub Submission) error {
 	if sub.Token == "" {
 		return fmt.Errorf("%w: empty captcha token", ErrInvalid)
@@ -129,7 +134,16 @@ func (v *ServiceVerifier) verifyRemote(ctx context.Context, rec *ProviderRecord,
 		return fmt.Errorf("captcha: build siteverify request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := v.hc.Do(req)
+	hc := v.hc
+	if !v.hcInjected && rec.ProxyURL != "" {
+		var err error
+		hc, err = proxyclient.HTTPClient(rec.ProxyURL, 10*time.Second)
+		if err != nil {
+			return fmt.Errorf("captcha: build proxy client: %w", err)
+		}
+		defer hc.CloseIdleConnections()
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("captcha: post siteverify: %w", err)
 	}
