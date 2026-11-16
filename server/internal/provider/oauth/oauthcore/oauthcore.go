@@ -30,6 +30,7 @@ import (
 
 	"authloft/internal/jsonata"
 	"authloft/internal/provider"
+	"authloft/internal/provider/schemafield"
 	"authloft/internal/proxyclient"
 )
 
@@ -79,32 +80,62 @@ func AsProviderError(err error) (*ProviderError, bool) {
 	return nil, false
 }
 
+// SchemaFor 由渠道「最终 Ext 字段清单」构造完整 Schema 声明闭包：
+// 表列 basic(3) → ext → 展示 display(4) → 策略 policy(5) → proxy_url(1)，
+// 顺序对齐现有 wire。闭包捕获传入切片（同一底层数组），故就地改 label
+// （alipay / microsoft）无需重设；整体重赋 Fields 的渠道（oauth2 / oidc /
+// wechat_mp_scan）须在改完后再次调用本函数重设 Schema，保证 Ext 段与
+// 最终 Fields 一致。
+func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
+	return func() []provider.FieldMeta {
+		fields := make([]provider.FieldMeta, 0, 3+len(ext)+4+5+1)
+		fields = append(fields,
+			schemafield.ProviderKey(),
+			schemafield.DisplayName(),
+			schemafield.UnionProvider(),
+		)
+		fields = append(fields, ext...)
+		fields = append(fields,
+			schemafield.IconURL(),
+			schemafield.UiGroup(),
+			schemafield.SortOrder(),
+			schemafield.Remark(),
+		)
+		fields = append(fields, schemafield.EnableFlags()...)
+		fields = append(fields, schemafield.ProxyURL())
+		return fields
+	}
+}
+
 // NewMeta 组装 oauth 类渠道 Meta：Ext 追加字段为接口文档 §5.3 行 1257 的
 // oauth 基线 10 字段 + 行 1261 metadata（与 wechat_mp / wechat_mp_scan
 // 同款基线，label / type / section 逐字一致）。渠道包可在
 // 返回值上就地改 Label / Required / Help（如 alipay 语义化凭证标签、
-// 通用兜底把端点置必填）后再 Register。
+// 通用兜底把端点置必填）后再 Register。Fields 仍仅含 Ext（dto 过渡期
+// 消费），Schema 同步声明完整清单，供后续任务翻转消费方。
 func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Meta {
+	// Label / Help 均为前端 i18n 键（provider.FieldMeta 契约），不写下发文案。
+	ext := []provider.FieldMeta{
+		{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
+		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
+		{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
+		{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
+		{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
+		{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
+		{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
+			Help: "admin.schemaField.userMappingHelp"},
+		{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
+	}
 	return provider.Meta{
 		Type:        typ,
 		DisplayName: displayName,
 		Category:    "oauth",
 		Channel:     ch,
-		// Label / Help 均为前端 i18n 键（provider.FieldMeta 契约），不写下发文案。
-		Fields: []provider.FieldMeta{
-			{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
-			{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
-			{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
-				Help: "admin.schemaField.userMappingHelp"},
-			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
-		},
+		Fields:      ext,
+		Schema:      SchemaFor(ext),
 	}
 }
 

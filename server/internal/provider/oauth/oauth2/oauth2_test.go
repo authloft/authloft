@@ -132,7 +132,7 @@ func TestRegistrySchema(t *testing.T) {
 		t.Fatalf("meta = %+v ok=%v", meta, ok)
 	}
 	required := map[string]bool{}
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema() {
 		if strings.HasPrefix(f.Key, "custom_") || f.Key == "user_mapping" {
 			required[f.Key] = f.Required
 		}

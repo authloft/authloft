@@ -115,7 +115,7 @@ func TestRegistry(t *testing.T) {
 	}
 	// provider_url 标签改写为 Tenant 的 i18n 键（文案在前端语言包）。
 	found := false
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema() {
 		if f.Key == "provider_url" {
 			found = f.Label == "admin.schemaField.microsoftTenantLabel" &&
 				f.Help == "admin.schemaField.microsoftTenantHelp"

@@ -44,6 +44,8 @@ func init() {
 		fields = append(fields, f)
 	}
 	m.Fields = fields
+	// Fields 整体重赋（过滤 custom_*、provider_url 置必填），旧闭包捕获的切片已失效，重设。
+	m.Schema = oauthcore.SchemaFor(m.Fields)
 	provider.Register(Type, m, newAdapter)
 }
 

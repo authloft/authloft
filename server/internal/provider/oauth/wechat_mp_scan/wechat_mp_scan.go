@@ -26,6 +26,7 @@ import (
 	"github.com/medivhzhan/weapp/v3/request"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/oauth/oauthcore"
 	"authloft/internal/proxyclient"
 )
 
@@ -82,34 +83,25 @@ func (c sdkCache) Set(key string, val interface{}, timeout time.Duration) {
 }
 
 func init() {
-	provider.Register(Type, provider.Meta{
-		Type:        Type,
-		DisplayName: "微信小程序扫码",
-		Category:    "oauth",
-		Channel:     provider.ChannelQRCode,
-		// Fields §5.3 行 1249 oauth 类追加字段 + 行 1252 type=wechat_mp_scan
-		// 追加三字段；section 约定行 1257：开关类归 policy、路径 / 存储引用
-		// 类归 endpoint、密钥 / AppID 类归 credential、其余按语义归 basic
-		//（metadata）。与 wechat_mp 同款基线。
-		Fields: []provider.FieldMeta{
-			{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
-			{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
-			{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
-				Help: "admin.schemaField.userMappingHelp"},
-			{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy"},
-			{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "text", Section: "endpoint"},
-			{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
-				Help: "admin.schemaField.storagePathHelp"},
-			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
-		},
-	}, newAdapter)
+	m := oauthcore.NewMeta(Type, "微信小程序扫码", provider.ChannelQRCode)
+	// §5.3 行 1252：扫码渠道在 user_mapping 之后、metadata 之前追加三字段
+	//（开关归 policy、路径/存储引用归 endpoint）；保持 wire 顺序逐字不变。
+	fields := make([]provider.FieldMeta, 0, len(m.Fields)+3)
+	for _, f := range m.Fields {
+		if f.Key == "metadata" {
+			fields = append(fields,
+				provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy"},
+				provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "text", Section: "endpoint"},
+				provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
+					Help: "admin.schemaField.storagePathHelp"},
+			)
+		}
+		fields = append(fields, f)
+	}
+	m.Fields = fields
+	// Fields 整体重赋，重设 Schema 使 Ext 段与最终 Fields 一致。
+	m.Schema = oauthcore.SchemaFor(m.Fields)
+	provider.Register(Type, m, newAdapter)
 }
 
 // loginClient 本包用到的 SDK 窄接口（*weapp.Client 天然满足；便于测试注入

@@ -131,7 +131,7 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("meta = %+v ok=%v", meta, ok)
 	}
 	// custom_* 手工端点已从 schema 移除；provider_url 必填。
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema() {
 		switch f.Key {
 		case "custom_auth_url", "custom_token_url", "custom_user_info_url":
 			t.Fatalf("custom 端点 %q 不应出现在 oidc schema", f.Key)

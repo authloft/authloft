@@ -19,6 +19,7 @@ import (
 	"github.com/medivhzhan/weapp/v3/logger"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/oauth/oauthcore"
 	"authloft/internal/proxyclient"
 )
 
@@ -41,30 +42,9 @@ var (
 )
 
 func init() {
-	provider.Register(Type, provider.Meta{
-		Type:        Type,
-		DisplayName: "微信小程序",
-		Category:    "oauth",
-		Channel:     provider.ChannelAPI,
-		// Fields §5.3 行 1235 oauth 追加 10 字段 + 行 1239 全类 metadata；
-		// label / type / section / required / advanced / help 与 §5.3 示例
-		// （行 1187-1226）逐字一致：user_mapping 在示例端点区块内 → endpoint，
-		// metadata 按行 1243 约定「其余按语义归 basic」。
-		Fields: []provider.FieldMeta{
-			{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
-			{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
-			{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
-			{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
-			{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-			{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
-				Help: "admin.schemaField.userMappingHelp"},
-			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
-		},
-	}, newAdapter)
+	// 复用 oauth 基线（11 Ext 字段 + 完整 Schema），仅 Channel 为 api；
+	// label / type / section / required / advanced / help 与基线逐字一致。
+	provider.Register(Type, oauthcore.NewMeta(Type, "微信小程序", provider.ChannelAPI), newAdapter)
 }
 
 // loginClient 本包用到的 SDK 窄接口（*weapp.Client 天然满足；便于测试注入

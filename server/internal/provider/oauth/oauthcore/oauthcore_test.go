@@ -337,8 +337,9 @@ func TestDiscoverOIDC(t *testing.T) {
 	}
 }
 
-// TestNewMetaBaseline oauth 基线 11 字段（§5.3 行 1257 oauth 追加 + 行
-// 1261 metadata），section 归属与 wechat_mp 同款。
+// TestNewMetaBaseline oauth 基线：Fields 仍仅含 11 Ext 字段（§5.3 行 1257
+// oauth 追加 + 行 1261 metadata，dto 过渡期消费），Schema 声明完整清单
+// basic(3)+ext(11)+display(4)+policy(5)+proxy_url(1)=24，顺序对齐 wire。
 func TestNewMetaBaseline(t *testing.T) {
 	m := NewMeta("test_oauth", "测试", provider.ChannelRedirect)
 	if m.Type != "test_oauth" || m.DisplayName != "测试" || m.Category != "oauth" || m.Channel != provider.ChannelRedirect {
@@ -357,6 +358,33 @@ func TestNewMetaBaseline(t *testing.T) {
 		}
 		if m.Fields[i].Section == "" {
 			t.Fatalf("fields[%d].Section 为空（每个字段都必须带 section）", i)
+		}
+	}
+	// Schema 完整清单：basic(3) + ext(11) + display(4) + policy(5) + proxy_url(1)。
+	if m.Schema == nil {
+		t.Fatal("Schema 未声明（nil）")
+	}
+	full := m.Schema()
+	wantFull := []string{
+		"provider_key", "display_name", "union_provider",
+		"client_id", "client_secret", "app_id", "cert", "scopes", "provider_url",
+		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		"proxy_url",
+	}
+	if len(full) != len(wantFull) {
+		t.Fatalf("schema fields = %d, want %d", len(full), len(wantFull))
+	}
+	for i, k := range wantFull {
+		if full[i].Key != k {
+			t.Fatalf("schema[%d].Key = %q, want %q", i, full[i].Key, k)
+		}
+	}
+	// Ext 段（下标 3..）与 Fields 同值：就地改 label 后 Schema 同步可见。
+	for i, f := range m.Fields {
+		if full[3+i].Key != f.Key || full[3+i].Label != f.Label {
+			t.Fatalf("schema ext[%d] = %+v, want %+v", i, full[3+i], f)
 		}
 	}
 }

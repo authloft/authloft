@@ -59,7 +59,7 @@ func TestRegistryRegistered(t *testing.T) {
 		t.Fatalf("meta = %+v, want qrcode/oauth", meta)
 	}
 	keys := map[string]bool{}
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema() {
 		keys[f.Key] = true
 	}
 	for _, want := range []string{"qrcode_auto_delete", "storage_provider", "storage_path"} {

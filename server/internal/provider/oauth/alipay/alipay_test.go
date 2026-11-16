@@ -310,7 +310,7 @@ func TestRegistry(t *testing.T) {
 	}
 	// 凭证标签语义化。
 	labels := map[string]string{}
-	for _, f := range meta.Fields {
+	for _, f := range meta.Schema() {
 		labels[f.Key] = f.Label
 	}
 	if labels["client_secret"] != "admin.schemaField.alipayPrivateKeyLabel" ||
