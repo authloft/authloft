@@ -19,12 +19,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
 	"authloft/internal/provider/oauth/oauthcore"
+	"authloft/internal/provider/schemafield"
 )
 
 // keyset 测试密钥对：app = 应用侧（client_secret 私钥 / 服务端验签公钥），
@@ -320,5 +322,58 @@ func TestRegistry(t *testing.T) {
 	}
 	if _, err := provider.NewAdapter(testProvider(ks, "https://gw")); err != nil {
 		t.Fatalf("NewAdapter: %v", err)
+	}
+}
+
+// TestSchemaKeepSet Schema 键集收敛（接口文档 §5.3 keep 集表 oauth 行）：注册表
+// Schema() 恰为表列基线 + keep 集（标准四件套 + cert / provider_url（网关），
+// 基线序）+ 引用键 proxy_provider_key，keep 外键（app_id / custom_* / metadata）
+// 不再下发；改写项凭证标签语义化，其余字段属性与 schemafield 基线逐项一致
+// （裁剪只删键不改属性），声明序即 wire 序。
+func TestSchemaKeepSet(t *testing.T) {
+	meta, ok := provider.Lookup(Type)
+	if !ok {
+		t.Fatalf("type %q 未注册", Type)
+	}
+	schema := meta.Schema()
+	wantKeys := []string{
+		"provider_key", "display_name", "union_provider",
+		"client_id", "client_secret", "cert", "scopes", "provider_url", "user_mapping",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		provider.ProxyRefKey,
+	}
+	if len(schema) != len(wantKeys) {
+		var got []string
+		for _, f := range schema {
+			got = append(got, f.Key)
+		}
+		t.Fatalf("schema keys = %v, want %v", got, wantKeys)
+	}
+	for i, k := range wantKeys {
+		if schema[i].Key != k {
+			t.Fatalf("schema[%d].Key = %q, want %q（声明序即 wire 序）", i, schema[i].Key, k)
+		}
+	}
+	// 凭证标签语义化改写（cert = 支付宝公钥、provider_url = 网关）。
+	wantOverride := map[string]string{
+		"client_secret": "admin.schemaField.alipayPrivateKeyLabel",
+		"cert":          "admin.schemaField.alipayPublicKeyLabel",
+		"provider_url":  "admin.schemaField.alipayGatewayLabel",
+	}
+	baseline := map[string]provider.FieldMeta{}
+	for _, f := range schemafield.OAuthCredentials() {
+		baseline[f.Key] = f
+	}
+	for _, f := range schema {
+		if lbl, ok := wantOverride[f.Key]; ok {
+			if f.Label != lbl {
+				t.Errorf("字段 %q Label = %q, want %q", f.Key, f.Label, lbl)
+			}
+			continue
+		}
+		if b, ok := baseline[f.Key]; ok && !reflect.DeepEqual(f, b) {
+			t.Errorf("字段 %q = %+v, want 基线 %+v（裁剪只删键不改属性）", f.Key, f, b)
+		}
 	}
 }

@@ -40,7 +40,10 @@ func init() {
 			m.Fields[i].Help = "admin.schemaField.microsoftTenantHelp"
 		}
 	}
-	provider.Register(Type, m, newAdapter)
+	// keep 集 = 标准四件套 + provider_url（tenant），接口文档 §5.3 keep 集表：
+	// 声明即运行期实际消费，裁剪只删键不改属性。
+	provider.Register(Type, oauthcore.KeepFields(m,
+		append(oauthcore.StdKeepFields, "provider_url")...), newAdapter)
 }
 
 // Adapter Microsoft 适配器（channel=redirect）。

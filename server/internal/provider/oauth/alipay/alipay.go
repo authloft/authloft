@@ -78,7 +78,11 @@ func init() {
 			m.Fields[i].Help = "admin.schemaField.alipayGatewayHelp"
 		}
 	}
-	provider.Register(Type, m, newAdapter)
+	// keep 集 = 标准四件套 + cert（支付宝公钥）/ provider_url（网关），
+	// 接口文档 §5.3 keep 集表：声明即运行期实际消费，裁剪只删键不改属性，
+	// label 改写随字段值带入裁剪结果。
+	provider.Register(Type, oauthcore.KeepFields(m,
+		append(oauthcore.StdKeepFields, "cert", "provider_url")...), newAdapter)
 }
 
 // Adapter 支付宝适配器（channel=redirect）。

@@ -30,23 +30,21 @@ var (
 
 func init() {
 	m := oauthcore.NewMeta(Type, "OAuth2（标准协议）", provider.ChannelRedirect)
-	fields := make([]provider.FieldMeta, 0, len(m.Fields))
-	for _, f := range m.Fields {
+	// 三端点与 user_mapping 无渠道缺省知识，置必填；就地改写随字段值进入
+	// 裁剪结果。
+	for i, f := range m.Fields {
 		switch f.Key {
-		case "provider_url":
-			continue // oauth2 不做 discovery，服务地址不消费
 		case "custom_auth_url", "custom_token_url", "custom_user_info_url":
-			f.Required = true
+			m.Fields[i].Required = true
 		case "user_mapping":
-			f.Required = true
-			f.Help = "admin.schemaField.oauth2UserMappingHelp"
+			m.Fields[i].Required = true
+			m.Fields[i].Help = "admin.schemaField.oauth2UserMappingHelp"
 		}
-		fields = append(fields, f)
 	}
-	m.Fields = fields
-	// Fields 整体重赋（过滤 provider_url 等），旧闭包捕获的切片已失效，重设。
-	m.Schema = oauthcore.SchemaFor(m.Fields)
-	provider.Register(Type, m, newAdapter)
+	// keep 集 = 标准四件套 + 三端点，接口文档 §5.3 keep 集表：声明即运行期
+	// 实际消费——不做 discovery，provider_url 与 metadata 等死字段不下发。
+	provider.Register(Type, oauthcore.KeepFields(m, append(oauthcore.StdKeepFields,
+		"custom_auth_url", "custom_token_url", "custom_user_info_url")...), newAdapter)
 }
 
 // Adapter 通用 OAuth2 适配器（channel=redirect）。

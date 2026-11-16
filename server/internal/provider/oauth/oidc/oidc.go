@@ -31,22 +31,18 @@ var ErrNotConfigured = errors.New("oidc: provider not configured")
 
 func init() {
 	m := oauthcore.NewMeta(Type, "OIDC（标准协议）", provider.ChannelRedirect)
-	// oidc 走 discovery，custom_* 手工端点不消费——从 schema 移除防误导。
-	fields := make([]provider.FieldMeta, 0, len(m.Fields))
-	for _, f := range m.Fields {
-		switch f.Key {
-		case "custom_auth_url", "custom_token_url", "custom_user_info_url":
-			continue
-		case "provider_url":
-			f.Required = true
-			f.Help = "admin.schemaField.oidcProviderUrlHelp"
+	// provider_url 是 discovery 唯一入口，置必填；就地改写随字段值进入裁剪结果。
+	for i, f := range m.Fields {
+		if f.Key == "provider_url" {
+			m.Fields[i].Required = true
+			m.Fields[i].Help = "admin.schemaField.oidcProviderUrlHelp"
 		}
-		fields = append(fields, f)
 	}
-	m.Fields = fields
-	// Fields 整体重赋（过滤 custom_*、provider_url 置必填），旧闭包捕获的切片已失效，重设。
-	m.Schema = oauthcore.SchemaFor(m.Fields)
-	provider.Register(Type, m, newAdapter)
+	// keep 集 = 标准四件套 + provider_url，接口文档 §5.3 keep 集表：声明即
+	// 运行期实际消费——走 discovery，custom_* 手工端点与 metadata 等死字段
+	// 不下发防误导。
+	provider.Register(Type, oauthcore.KeepFields(m,
+		append(oauthcore.StdKeepFields, "provider_url")...), newAdapter)
 }
 
 // Adapter 通用 OIDC 适配器（channel=redirect）。
