@@ -451,7 +451,7 @@ export function TemplatesPage(_props: {
               onChange={(value) =>
                 setEditDraft({ ...editDraft, content: value })
               }
-              autosize={{ minRows: 8, maxRows: 24 }}
+              autosize={{ minRows: 12, maxRows: 32 }}
               aria-label={t('admin.templateContentLabel')}
               disabled={editSubmitting}
             />

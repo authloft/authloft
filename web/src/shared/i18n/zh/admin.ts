@@ -378,11 +378,10 @@ export const admin = {
   // ---- pages/TemplatesPage.tsx 模板管理-------------------------------
   'admin.templateKeyLabel': '模板 key',
   'admin.templateNameLabel': '显示名',
-  'admin.templateContentLabel': '模板内容（HTML 原文）',
+  'admin.templateContentLabel': '模板内容',
   'admin.templateKeyPlaceholder': '如 my_login_theme',
   'admin.templateNamePlaceholder': '模板显示名',
-  'admin.templateContentHint':
-    '按 HTML 原文保存，非富文本编辑器；创建后模板 key 不可修改',
+  'admin.templateContentHint': '创建后模板 key 不可修改',
   'admin.templateKeyImmutable': '创建后不可修改',
   'admin.templatesLoadFailed': '模板列表加载失败，请刷新重试',
   'admin.noTemplates': '暂无自定义模板',

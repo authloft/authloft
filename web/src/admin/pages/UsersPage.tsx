@@ -25,7 +25,15 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Banner, Button, Empty, Input, Modal, Toast } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Toast,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import {
   DataTable,
@@ -209,14 +217,17 @@ export function UsersPage(props: {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
       render: (_text: unknown, row: AdminUser) => (
-        <Button
-          theme="borderless"
+        <Typography.Text
           type="primary"
           size="small"
-          onClick={() => openDetail(row)}
+          link={{ href: '#' }}
+          onClick={(e) => {
+            e.preventDefault();
+            openDetail(row);
+          }}
         >
           {row.username}
-        </Button>
+        </Typography.Text>
       ),
     },
     {
@@ -265,7 +276,7 @@ export function UsersPage(props: {
       title: t('admin.actionsLabel'),
       render: (_text: unknown, row: AdminUser) => (
         <span className={styles.actions}>
-          <Button size="small" onClick={() => openReset(row)}>
+          <Button onClick={() => openReset(row)}>
             {t('admin.resetPasswordAction')}
           </Button>
           <ConfirmActionButton

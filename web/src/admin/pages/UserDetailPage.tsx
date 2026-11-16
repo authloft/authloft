@@ -29,6 +29,7 @@ import {
   Spin,
   Tag,
   Toast,
+  Typography,
 } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
@@ -88,25 +89,30 @@ function getEventsColumns(): DataTableColumn<EventItem>[] {
     {
       dataIndex: 'event',
       title: t('admin.eventColumn'),
-      width: 160,
+      width: 120,
       render: (_text: unknown, row: EventItem) => row.event || EMPTY_TEXT,
     },
     {
       dataIndex: 'amr',
       title: t('admin.methodColumn'),
-      width: 140,
+      width: 120,
       render: (_text: unknown, row: EventItem) => row.amr || EMPTY_TEXT,
     },
     {
       dataIndex: 'ip',
       title: 'IP',
-      width: 160,
+      width: 120,
       render: (_text: unknown, row: EventItem) => row.ip || EMPTY_TEXT,
     },
     {
       dataIndex: 'ua',
       title: t('admin.deviceUaColumn'),
-      render: (_text: unknown, row: EventItem) => row.ua || EMPTY_TEXT,
+      width: 160,
+      render: (_text: unknown, row: EventItem) => (
+        <Typography.Paragraph ellipsis={{ rows: 2, showTooltip: true }}>
+          {row.ua || EMPTY_TEXT}
+        </Typography.Paragraph>
+      ),
     },
   ];
 }

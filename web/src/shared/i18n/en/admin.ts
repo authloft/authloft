@@ -414,11 +414,11 @@ export const admin: typeof zhAdmin = {
   // ---- pages/TemplatesPage.tsx ----
   'admin.templateKeyLabel': 'Template key',
   'admin.templateNameLabel': 'Display name',
-  'admin.templateContentLabel': 'Template content (raw HTML)',
+  'admin.templateContentLabel': 'Template content',
   'admin.templateKeyPlaceholder': 'e.g. my_login_theme',
   'admin.templateNamePlaceholder': 'Template display name',
   'admin.templateContentHint':
-    'Saved as raw HTML (not a rich-text editor); the template key cannot be changed after creation',
+    'The template key cannot be changed after creation',
   'admin.templateKeyImmutable': 'Cannot be changed after creation',
   'admin.templatesLoadFailed':
     'Failed to load the template list; please refresh and try again',
