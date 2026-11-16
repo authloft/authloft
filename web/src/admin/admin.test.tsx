@@ -137,7 +137,7 @@ import {
  *   buildXxxRequest；
  * - 展示纯函数：userStatusLabel / credentialKindLabel / mfaFactorLabel /
  *   boundMfaFactors（mfa 缺省防御）/ formatUnixTime（时区无关断言）。
- * UsersPage / UserDetailPage 渲染不可测（同上 Blocker），DataTable 分页 /
+ * UsersPage / 用户详情抽屉渲染不可测（同上 Blocker），DataTable 分页 /
  * 排序 / 筛选 / 行内开关编排已由 shared/app-ui 四约束测试覆盖。
  *
  * 客户端管理族追加（接口文档 §5.5 行 1257-1268；后端已
@@ -3181,8 +3181,8 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
 });
 
 // ---------------------------------------------------------------------------
-// routes：HashRouter 路由表（path:'*' 兜底 + 参数页 useParams 解析；
-// MemoryRouter 注入 hash 内路径——模式无关）
+// routes：HashRouter 路由表（path:'*' 兜底；参数页 useParams 解析仅余
+// provider 编辑；MemoryRouter 注入 hash 内路径——模式无关）
 // ---------------------------------------------------------------------------
 
 describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
@@ -3212,15 +3212,14 @@ describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
     expect(html).toContain('semi-empty');
   });
 
-  test('参数页 /users/123 → UserDetailPage 解析（数据未落地 Spin 帧，非兜底页）', () => {
+  test('旧详情路径 /users/123 → 详情 URL 已移除，落兜底页', () => {
     const html = renderAdminApp('/users/123');
     expect(html).toContain('__ADMIN_LAYOUT_STUB__');
-    expect(html).not.toContain('页面不存在');
-    // effects 不执行 → UserDetailPage 停在数据未落地的 Spin 帧。
-    expect(html).toContain('semi-spin');
+    expect(html).toContain('页面不存在');
+    expect(html).not.toContain('semi-spin');
   });
 
-  test('参数页 /users/abc（非十进制）→ 段内数字校验落兜底页（原 \\d+ 正则口径迁移）', () => {
+  test('旧详情路径 /users/abc → 详情 URL 已移除，落兜底页', () => {
     const html = renderAdminApp('/users/abc');
     expect(html).toContain('页面不存在');
   });

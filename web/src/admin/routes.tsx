@@ -8,8 +8,8 @@
  * - 列表八页：路径取自 ADMIN_NAV_ROUTES 单一来源（adminNavPath 按键取用，
  *   与侧边栏 Nav 高亮同源，§9 第 24 条）；
  * - 参数页：`/providers/:key/edit`（ProviderEditPage，useParams 取 key——
- *   react-router 参数已解码，等价原 decodeURIComponent）、`/users/:id`
- *   （UserDetailPage，id 为 int64，段内限定十进制数字，非数字落兜底）；
+ *   react-router 参数已解码，等价原 decodeURIComponent）；用户详情已改为
+ *   列表页内 SideSheet，不再有独立 URL；
  * - 新建页 `/providers/new`（PROVIDER_NEW_PATH，paths.ts 唯一常量）；
  * - `path:'*'` 兜底：带布局 Semi Empty + 返回首页 Link
  *   （SPA 内跳转，不再整页刷新）。
@@ -19,12 +19,7 @@
  * bootstrap 无 methods 必需校验（§8：methods 仅 login 必填），路由层不发请求。
  */
 import { Empty } from '@douyinfe/semi-ui';
-import {
-  Link,
-  useParams,
-  useRoutes,
-  type RouteObject,
-} from '@modern-js/runtime/router';
+import { Link, useRoutes, type RouteObject } from '@modern-js/runtime/router';
 import type { ReactNode } from 'react';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
@@ -37,12 +32,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SsoClientsPage } from './pages/SsoClientsPage';
 import { StatusPage } from './pages/StatusPage';
 import { TemplatesPage } from './pages/TemplatesPage';
-import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
 import { adminNavPath } from './paths';
-
-/** 用户详情路由模式（§6 行 518；段内数字校验在 UserDetailRoute，见下）。 */
-const USER_DETAIL_ROUTE = '/users/:id';
 
 /** 兜底页：Semi Empty + 返回管理首页（SPA 内 Link）。 */
 function NotFoundPage(): ReactNode {
@@ -52,30 +43,6 @@ function NotFoundPage(): ReactNode {
         {t('admin.backToHome')}
       </Link>
     </Empty>
-  );
-}
-
-/** 用户详情路由（useParams 取 id；非十进制数字段落兜底页——原 \d+ 正则口径）。 */
-function UserDetailRoute(props: { alRoot: string }): ReactNode {
-  const { id } = useParams();
-  if (id === undefined || !/^\d+$/.test(id)) {
-    return (
-      <AdminLayout alRoot={props.alRoot} breadcrumb={[t('admin.rootTitle')]}>
-        <NotFoundPage />
-      </AdminLayout>
-    );
-  }
-  return (
-    <AdminLayout
-      alRoot={props.alRoot}
-      breadcrumb={[
-        t('admin.rootTitle'),
-        t('admin.navUsers'),
-        t('admin.userDetailTitle'),
-      ]}
-    >
-      <UserDetailPage alRoot={props.alRoot} userId={BigInt(id)} />
-    </AdminLayout>
   );
 }
 
@@ -108,7 +75,6 @@ export function AdminApp(): ReactNode {
         </AdminLayout>
       ),
     },
-    { path: USER_DETAIL_ROUTE, element: <UserDetailRoute alRoot={alRoot} /> },
     {
       path: adminNavPath('admin.navSsoClients'),
       element: (

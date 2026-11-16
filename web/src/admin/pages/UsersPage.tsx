@@ -16,8 +16,8 @@
  * draft / applied 两态——生效即回第 1 页（§1.7 服务端分页语义）。
  * 重置密码（§5.4 行 1252）：Modal 输入新密码 → ResetUserPassword → 仅成功
  * （OkResponse），新密码由管理员转交该用户；解除登录限制（§5.4 行 1254）：
- * UnlockUser，Popconfirm 确认。用户名 → /admin#/users/{id} 详情入口
- * （SPA 内 Link）。
+ * UnlockUser，Popconfirm 确认。点击用户名打开详情抽屉（SideSheet），
+ * 不再有独立详情 URL。
  *
  * 401 统一跳登录（§6 行 501，ProvidersPage 同模式）；404 掩护等其余错误走
  * 页面错误态。组件壳 import Semi 后不可在 node 测试（工具链 blocker），
@@ -26,7 +26,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Input, Modal, Toast } from '@douyinfe/semi-ui';
-import { Link, useLocation } from '@modern-js/runtime/router';
+import { useLocation } from '@modern-js/runtime/router';
 import {
   DataTable,
   type DataTableColumn,
@@ -64,7 +64,7 @@ import {
   updateUserStatus,
   userStatusLabel,
 } from '../api';
-import { userDetailPath } from '../paths';
+import { UserDetail } from './UserDetailPage';
 import styles from './UsersPage.module.less';
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
@@ -76,8 +76,8 @@ function userRowKey(row: AdminUser): string {
 }
 
 /** 用户列表页：搜索 + DataTable（状态筛选 / 行内禁用启停 / 排序 / 分页）+ 行内操作。 */
-export function UsersPage(_props: {
-  /** 归一后 al_root（路由传参保留；401 跳登录收敛集中 onError，本页不再消费）。 */
+export function UsersPage(props: {
+  /** 归一后 al_root（透传给详情抽屉，保持与路由参数一致）。 */
   alRoot: string;
 }): ReactNode {
   // §1.7 受控查询状态：分页 / 排序 / 筛选全部由 DataTable 上报更新。
@@ -87,6 +87,12 @@ export function UsersPage(_props: {
   const [appliedQ, setAppliedQ] = useState('');
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
+  // 用户详情抽屉：保留选中 id（关闭期间不清空，避免关闭动画闪空），仅切显隐。
+  const [detailUserId, setDetailUserId] = useState<bigint | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  // 打开次数作 key：每次开抽屉 remount 以重置日志分页 / 排序与详情 data，
+  // 等价原独立路由「每次进详情新 mount」；关闭不增次，内容不闪空。
+  const [detailSession, setDetailSession] = useState(0);
   // 列表取数改 ahooks 自动请求 + refreshDeps（query / appliedQ 变更
   // 重取，同原 effect 依赖）；401 由集中 onError 跳登录，其余错误走页面
   // 错误帧（toast:false 静默防双报）。
@@ -112,6 +118,13 @@ export function UsersPage(_props: {
   function applySearch(): void {
     setAppliedQ(qDraft.trim());
     setQuery((prev) => ({ ...prev, page: 1 }));
+  }
+
+  /** 打开详情抽屉：换 key 触发 remount（重置日志分页 / 详情 data），记录 id 并显隐。 */
+  function openDetail(row: AdminUser): void {
+    setDetailUserId(row.id);
+    setDetailSession((n) => n + 1);
+    setShowDetail(true);
   }
 
   /**
@@ -188,17 +201,22 @@ export function UsersPage(_props: {
     runReset(resetTarget);
   }
 
-  // 列口径（§6 行 517 用户列表）：用户名（详情链接）/ 昵称 / 手机号 / 邮箱 /
-  // 状态（筛选下拉 + 文案）/ 最后登录 / 创建时间 / 操作；可排序列 dataIndex
-  // 即 wire 字段名（§1.7 sort 前端限定，见 ./api USER_STATUS_DATA_INDEX 注）。
+  // 列口径（§6 行 517 用户列表）：用户名（点击打开详情抽屉）/ 昵称 / 手机号 /
+  // 邮箱 / 状态（筛选下拉 + 文案）/ 最后登录 / 创建时间 / 操作；可排序列
+  // dataIndex 即 wire 字段名（§1.7 sort 前端限定，见 ./api USER_STATUS_DATA_INDEX 注）。
   const columns: DataTableColumn<AdminUser>[] = [
     {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
       render: (_text: unknown, row: AdminUser) => (
-        // 去自绘主色装饰；改 SPA 内 Link（userDetailPath 构造，
-        // 取代模板字符串直拼 /admin/users/{id}）。
-        <Link to={userDetailPath(row.id)}>{row.username}</Link>
+        <Button
+          theme="borderless"
+          type="primary"
+          size="small"
+          onClick={() => openDetail(row)}
+        >
+          {row.username}
+        </Button>
       ),
     },
     {
@@ -385,6 +403,14 @@ export function UsersPage(_props: {
           ) : null}
         </div>
       </Modal>
+      {/* key 随每次打开自增 → remount 重置详情与日志状态；关闭仅切 visible。 */}
+      <UserDetail
+        key={detailSession}
+        alRoot={props.alRoot}
+        userId={detailUserId}
+        visible={showDetail}
+        onClose={() => setShowDetail(false)}
+      />
     </PageLayout>
   );
 }
