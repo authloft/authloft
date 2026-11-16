@@ -45,7 +45,7 @@ var (
 )
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "QQ", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "QQ", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter QQ 适配器（channel=redirect）。

@@ -32,7 +32,7 @@ const defaultScopes = "openid profile email"
 var ErrNotConfigured = errors.New("google: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "Google", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "Google", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter Google 适配器（channel=redirect）。

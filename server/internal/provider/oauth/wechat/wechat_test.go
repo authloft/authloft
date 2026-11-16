@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
 	"authloft/internal/provider/oauth/oauthcore"
+	"authloft/internal/provider/schemafield"
 )
 
 func testProvider(id, secret string) *provider.Provider {
@@ -118,5 +120,46 @@ func TestRegistry(t *testing.T) {
 	}
 	if _, err := provider.NewAdapter(testProvider("id", "s")); err != nil {
 		t.Fatalf("NewAdapter: %v", err)
+	}
+}
+
+// TestSchemaKeepSet Schema 键集收敛（接口文档 §5.3 keep 集表 oauth 行）：注册表
+// Schema() 恰为表列基线 + keep 集（client_id / client_secret / scopes /
+// user_mapping，基线序）+ 引用键 proxy_provider_key，keep 外键（app_id / cert /
+// provider_url / custom_* / metadata）不再下发；保留字段属性与 schemafield
+// 基线逐项一致（裁剪只删键不改属性），声明序即 wire 序。
+func TestSchemaKeepSet(t *testing.T) {
+	meta, ok := provider.Lookup(Type)
+	if !ok {
+		t.Fatalf("type %q 未注册", Type)
+	}
+	schema := meta.Schema()
+	wantKeys := []string{
+		"provider_key", "display_name", "union_provider",
+		"client_id", "client_secret", "scopes", "user_mapping",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		provider.ProxyRefKey,
+	}
+	if len(schema) != len(wantKeys) {
+		var got []string
+		for _, f := range schema {
+			got = append(got, f.Key)
+		}
+		t.Fatalf("schema keys = %v, want %v", got, wantKeys)
+	}
+	for i, k := range wantKeys {
+		if schema[i].Key != k {
+			t.Fatalf("schema[%d].Key = %q, want %q（声明序即 wire 序）", i, schema[i].Key, k)
+		}
+	}
+	baseline := map[string]provider.FieldMeta{}
+	for _, f := range schemafield.OAuthCredentials() {
+		baseline[f.Key] = f
+	}
+	for _, f := range schema {
+		if b, ok := baseline[f.Key]; ok && !reflect.DeepEqual(f, b) {
+			t.Errorf("字段 %q = %+v, want 基线 %+v（裁剪只删键不改属性）", f.Key, f, b)
+		}
 	}
 }

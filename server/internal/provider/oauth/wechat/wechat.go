@@ -39,7 +39,7 @@ const defaultScopes = "snsapi_login"
 var ErrNotConfigured = errors.New("wechat: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "微信开放平台", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "微信开放平台", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter 微信开放平台适配器（channel=redirect）。

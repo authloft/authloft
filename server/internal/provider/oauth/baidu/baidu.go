@@ -41,7 +41,7 @@ const avatarPrefix = "https://himg.bdimg.com/sys/portrait/item/"
 var ErrNotConfigured = errors.New("baidu: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "百度", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "百度", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter 百度适配器（channel=redirect）。

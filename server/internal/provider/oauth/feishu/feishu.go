@@ -31,7 +31,7 @@ const (
 var ErrNotConfigured = errors.New("feishu: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "飞书", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "飞书", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter 飞书适配器（channel=redirect）。

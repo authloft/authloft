@@ -106,8 +106,8 @@ func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 	}
 }
 
-// NewMeta 组装 oauth 类渠道 Meta：Ext 追加字段为接口文档 §5.3 行 1257 的
-// oauth 基线 10 字段 + 行 1261 metadata（与 wechat_mp / wechat_mp_scan
+// NewMeta 组装 oauth 类渠道 Meta：Ext 追加字段为接口文档 §5.3 的 oauth
+// 基线 10 字段 + metadata（与 wechat_mp / wechat_mp_scan
 // 同款基线，label / type / section 逐字一致）。渠道包可在
 // 返回值上就地改 Label / Required / Help（如 alipay 语义化凭证标签、
 // 通用兜底把端点置必填）后再 Register；就地改写与 Schema 闭包共享同一
@@ -126,6 +126,39 @@ func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Me
 		Fields:      ext,
 		Schema:      SchemaFor(ext),
 	}
+}
+
+// StdKeepFields 标准派渠道（接口文档 §5.3 keep 集表 oauth 行）的保留键集：
+// client_id / client_secret / scopes / user_mapping；引用键 proxy_provider_key
+// 由 SchemaFor 漏斗统一追加，不在此列。
+var StdKeepFields = []string{"client_id", "client_secret", "scopes", "user_mapping"}
+
+// NewStandardMeta 标准派渠道注册入口（baidu / feishu / gitee / github /
+// google / qq / wechat / weibo 共用）：NewMeta 全量基线按 StdKeepFields 收敛
+// 后返回（§5.3 声明口径 = 各渠道声明即其运行期实际消费）。
+func NewStandardMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Meta {
+	return KeepFields(NewMeta(typ, displayName, ch), StdKeepFields...)
+}
+
+// KeepFields 按 keep 键集裁剪渠道 Ext 字段并重设 Schema 的共用后处理：从
+// meta.Fields 中保留 Key ∈ keep 的字段（原相对顺序与 section / advanced /
+// required 等属性原样不动，keep 中未命中的键忽略），整体重赋 Fields 后以
+// SchemaFor 重设闭包（旧闭包捕获的切片失效，须重设）。只删键不改属性；
+// NewMeta 基线保持全量口径，裁剪仅发生在渠道侧。
+func KeepFields(m provider.Meta, keep ...string) provider.Meta {
+	wanted := make(map[string]bool, len(keep))
+	for _, k := range keep {
+		wanted[k] = true
+	}
+	kept := make([]provider.FieldMeta, 0, len(keep))
+	for _, f := range m.Fields {
+		if wanted[f.Key] {
+			kept = append(kept, f)
+		}
+	}
+	m.Fields = kept
+	m.Schema = SchemaFor(kept)
+	return m
 }
 
 // ClientFor 取装配期固化的出站连接池对应的 client（§15.4 Provider 出站代理），

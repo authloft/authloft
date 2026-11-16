@@ -31,7 +31,7 @@ const (
 var ErrNotConfigured = errors.New("weibo: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "微博", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "微博", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter 微博适配器（channel=redirect）。

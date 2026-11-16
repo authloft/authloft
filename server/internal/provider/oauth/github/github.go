@@ -32,7 +32,7 @@ const defaultScopes = "read:user user:email"
 var ErrNotConfigured = errors.New("github: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "GitHub", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "GitHub", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter GitHub 适配器（channel=redirect）。

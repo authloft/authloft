@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
 	"authloft/internal/provider"
+	"authloft/internal/provider/schemafield"
 	"authloft/internal/proxyclient"
 )
 
@@ -401,6 +403,92 @@ func TestNewMetaBaseline(t *testing.T) {
 		if f.Storage != want {
 			t.Errorf("schema[%d](%s).Storage = %q, want %q", i, f.Key, f.Storage, want)
 		}
+	}
+}
+
+// TestNewStandardMeta 标准派渠道收敛（§5.3 keep 集表 oauth 行）：NewMeta 全量
+// 基线按 StdKeepFields 收敛后，Schema 的 Ext 段恰为 keep 集（基线序）+ 引用键，
+// keep 外键不再下发；保留字段属性与 schemafield 基线逐项一致（裁剪只删键不改
+// 属性），basic / display / policy / 引用键各段与全基线口径相同。
+func TestNewStandardMeta(t *testing.T) {
+	m := NewStandardMeta("test_oauth_std", "测试", provider.ChannelRedirect)
+	full := m.Schema()
+	wantKeys := []string{
+		"provider_key", "display_name", "union_provider",
+		"client_id", "client_secret", "scopes", "user_mapping",
+		"icon_url", "ui_group", "sort_order", "remark",
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		provider.ProxyRefKey,
+	}
+	if len(full) != len(wantKeys) {
+		t.Fatalf("schema fields = %d, want %d", len(full), len(wantKeys))
+	}
+	for i, k := range wantKeys {
+		if full[i].Key != k {
+			t.Fatalf("schema[%d].Key = %q, want %q", i, full[i].Key, k)
+		}
+	}
+	// Ext 段与 keep 键集同值同序：挑选取决于基线序，不受 keep 入参序影响。
+	for i, k := range StdKeepFields {
+		if full[3+i].Key != k {
+			t.Fatalf("schema ext[%d].Key = %q, want %q（基线序）", i, full[3+i].Key, k)
+		}
+	}
+	// 引用键仍在漏斗末位（endpoint / dynamic，声明即呈现）。
+	if ref := full[len(full)-1]; ref.Key != provider.ProxyRefKey ||
+		ref.Section != "endpoint" || ref.Kind != provider.FieldDynamicOptions {
+		t.Fatalf("引用键 = %+v, want endpoint / dynamic", ref)
+	}
+	// 保留字段属性与基线逐项一致：只删键，不改 section / advanced / required /
+	// label / type / storage 等任何属性。
+	baseline := map[string]provider.FieldMeta{}
+	for _, f := range schemafield.OAuthCredentials() {
+		baseline[f.Key] = f
+	}
+	for _, f := range m.Fields {
+		if b, ok := baseline[f.Key]; !ok {
+			t.Errorf("Fields 含 keep 集外键 %q", f.Key)
+		} else if !reflect.DeepEqual(f, b) {
+			t.Errorf("字段 %q = %+v, want 基线 %+v（裁剪只删键不改属性）", f.Key, f, b)
+		}
+	}
+}
+
+// TestKeepFields 裁剪助手挑选语义：按 keep 键集从 Fields 挑选（基线序）、
+// 未知键忽略、重复键不重复出现；Schema 闭包重设后与裁剪后 Fields 一致。
+func TestKeepFields(t *testing.T) {
+	m := NewMeta("test_keep", "测试", provider.ChannelRedirect)
+	// 未知键忽略 + keep 入参乱序 + 重复键：挑选仍按基线序、每键一项。
+	kept := KeepFields(m, "user_mapping", "no_such_key", "client_id", "scopes",
+		"client_secret", "client_id")
+	var gotKeys []string
+	for _, f := range kept.Fields {
+		gotKeys = append(gotKeys, f.Key)
+	}
+	wantKeys := []string{"client_id", "client_secret", "scopes", "user_mapping"}
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Fatalf("kept keys = %v, want %v（基线序、未知键忽略、无重复）", gotKeys, wantKeys)
+	}
+	// Schema 闭包重设且与 Fields 一致：ext 段逐项同值同序，末位引用键在列。
+	full := kept.Schema()
+	if len(full) != 3+len(kept.Fields)+4+5+1 {
+		t.Fatalf("schema fields = %d, want %d", len(full), 3+len(kept.Fields)+4+5+1)
+	}
+	for i, f := range kept.Fields {
+		if !reflect.DeepEqual(full[3+i], f) {
+			t.Fatalf("schema ext[%d] = %+v, want %+v", i, full[3+i], f)
+		}
+	}
+	if full[len(full)-1].Key != provider.ProxyRefKey {
+		t.Fatalf("末位 = %q, want 引用键", full[len(full)-1].Key)
+	}
+	// keep 全部未命中 → Fields 空、Schema 仅表列与引用键，不 panic。
+	empty := KeepFields(NewMeta("test_keep_empty", "测试", provider.ChannelRedirect), "no_such_key")
+	if len(empty.Fields) != 0 {
+		t.Fatalf("fields = %d, want 0", len(empty.Fields))
+	}
+	if n := len(empty.Schema()); n != 3+4+5+1 {
+		t.Fatalf("schema fields = %d, want %d", n, 3+4+5+1)
 	}
 }
 

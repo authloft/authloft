@@ -32,7 +32,7 @@ const defaultScopes = "user_info"
 var ErrNotConfigured = errors.New("gitee: provider not configured")
 
 func init() {
-	provider.Register(Type, oauthcore.NewMeta(Type, "Gitee", provider.ChannelRedirect), newAdapter)
+	provider.Register(Type, oauthcore.NewStandardMeta(Type, "Gitee", provider.ChannelRedirect), newAdapter)
 }
 
 // Adapter Gitee 适配器（channel=redirect）。
