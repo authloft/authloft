@@ -491,15 +491,14 @@ func explicitFalse(fields map[string]*structpb.Value, key string) bool {
 	}
 }
 
-// metaFieldKeys Schema 中落 Ext 的字段名集合，作为 MergeProviderExt 的 extKeys。
-// 落 Ext 判定为「非表列字段」（Storage != StorageColumn）：显式声明 StorageExt
-// 的字段与 oauthcore 基线 Ext 字段（Storage 为零值）均归入 Ext，与迁移前
-// meta.Fields 口径一致。proxy_url 由 Schema 声明——union / storage-local 的
-// Schema 无该字段即自动排除（§5.3），不再另调 category 裁剪函数。
+// metaFieldKeys Schema 中落 Ext 的字段名集合（Storage == StorageExt），作为
+// MergeProviderExt 的 extKeys。所有 provider 的 Ext 字段均已在 Schema 声明中
+// 标注 StorageExt（含 oauthcore 基线与 wechat_mp_scan 扫码追加字段），proxy_url
+// 同理；union / storage-local 的 Schema 无 Ext 字段即自动排除（§5.3）。
 func metaFieldKeys(meta schemaMeta) []string {
 	keys := make([]string, 0, len(meta.Schema))
 	for _, f := range meta.Schema {
-		if f.Storage != provider.StorageColumn {
+		if f.Storage == provider.StorageExt {
 			keys = append(keys, f.Key)
 		}
 	}

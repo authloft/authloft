@@ -90,10 +90,10 @@ func init() {
 	for _, f := range m.Fields {
 		if f.Key == "metadata" {
 			fields = append(fields,
-				provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy"},
-				provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "text", Section: "endpoint"},
+				provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy", Storage: provider.StorageExt},
+				provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "text", Section: "endpoint", Storage: provider.StorageExt},
 				provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
-					Help: "admin.schemaField.storagePathHelp"},
+					Help: "admin.schemaField.storagePathHelp", Storage: provider.StorageExt},
 			)
 		}
 		fields = append(fields, f)

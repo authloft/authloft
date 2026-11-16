@@ -359,6 +359,10 @@ func TestNewMetaBaseline(t *testing.T) {
 		if m.Fields[i].Section == "" {
 			t.Fatalf("fields[%d].Section 为空（每个字段都必须带 section）", i)
 		}
+		if m.Fields[i].Storage != provider.StorageExt {
+			t.Errorf("fields[%d](%s).Storage = %q, want ext（写入侧按 Storage 派生 Ext 键集）",
+				i, k, m.Fields[i].Storage)
+		}
 	}
 	// Schema 完整清单：basic(3) + ext(11) + display(4) + policy(5) + proxy_url(1)。
 	if m.Schema == nil {
@@ -385,6 +389,18 @@ func TestNewMetaBaseline(t *testing.T) {
 	for i, f := range m.Fields {
 		if full[3+i].Key != f.Key || full[3+i].Label != f.Label {
 			t.Fatalf("schema ext[%d] = %+v, want %+v", i, full[3+i], f)
+		}
+	}
+	// 落点完整性：写入侧白名单/列键/Ext 键全部按 Storage 派生——表列段必须
+	// StorageColumn，Ext 段与 proxy_url 必须 StorageExt，任何零值都会让该键
+	// 从 Ext 写入键集丢失（配置保存即丢凭证）。
+	for i, f := range full {
+		want := provider.StorageExt
+		if i < 3 || (i >= 14 && i <= 22) { // basic(3) + display/policy(9) 表列
+			want = provider.StorageColumn
+		}
+		if f.Storage != want {
+			t.Errorf("schema[%d](%s).Storage = %q, want %q", i, f.Key, f.Storage, want)
 		}
 	}
 }

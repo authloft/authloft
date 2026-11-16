@@ -58,13 +58,15 @@ func TestRegistryRegistered(t *testing.T) {
 	if meta.Channel != provider.ChannelQRCode || meta.Category != "oauth" {
 		t.Fatalf("meta = %+v, want qrcode/oauth", meta)
 	}
-	keys := map[string]bool{}
+	storageOf := map[string]provider.FieldStorage{}
 	for _, f := range meta.Schema() {
-		keys[f.Key] = true
+		storageOf[f.Key] = f.Storage
 	}
 	for _, want := range []string{"qrcode_auto_delete", "storage_provider", "storage_path"} {
-		if !keys[want] {
+		if _, ok := storageOf[want]; !ok {
 			t.Errorf("Fields 缺少 %q", want)
+		} else if storageOf[want] != provider.StorageExt {
+			t.Errorf("扫码字段 %q Storage = %q, want ext（Ext 写入键集按 Storage 派生）", want, storageOf[want])
 		}
 	}
 	a, err := provider.NewAdapter(testProvider("scan", "wx-app", "wx-secret"))

@@ -115,20 +115,9 @@ func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 // 消费），Schema 同步声明完整清单，供后续任务翻转消费方。
 func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Meta {
 	// Label / Help 均为前端 i18n 键（provider.FieldMeta 契约），不写下发文案。
-	ext := []provider.FieldMeta{
-		{Key: "client_id", Label: "admin.schemaField.clientIdLabel", Type: "text", Section: "credential", Required: true},
-		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential", Required: true},
-		{Key: "app_id", Label: "admin.schemaField.appIdLabel", Type: "text", Section: "credential", Advanced: true},
-		{Key: "cert", Label: "admin.schemaField.certLabel", Type: "secret", Section: "credential", Advanced: true},
-		{Key: "scopes", Label: "admin.schemaField.scopesLabel", Type: "text", Section: "credential", Advanced: true},
-		{Key: "provider_url", Label: "admin.schemaField.providerUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_auth_url", Label: "admin.schemaField.customAuthUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_token_url", Label: "admin.schemaField.customTokenUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "custom_user_info_url", Label: "admin.schemaField.customUserInfoUrlLabel", Type: "text", Section: "endpoint", Advanced: true},
-		{Key: "user_mapping", Label: "admin.schemaField.userMappingLabel", Type: "json", Section: "endpoint", Advanced: true,
-			Help: "admin.schemaField.userMappingHelp"},
-		{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
-	}
+	// 复用 schemafield 基线：属性与此处原有 11 个字面量逐字一致，且每项自带
+	// StorageExt 落点——写入侧按 Storage==StorageExt 派生 Ext 键集的前提。
+	ext := schemafield.OAuthCredentials()
 	return provider.Meta{
 		Type:        typ,
 		DisplayName: displayName,
