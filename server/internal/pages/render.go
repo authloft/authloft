@@ -159,3 +159,46 @@ func (s staticBaseCSP) CSP() string {
 	}
 	return "script-src " + origin + "; style-src " + origin + "; font-src " + origin
 }
+
+// builtinTemplates 内置模板常驻内存表（§3.13）：由 InitBuiltinTemplates
+// 扫描 templatesFS 下全部 .html 注册（文件名去扩展名为 key、全文为 value），
+// 启动期一次性写入后只读；与 DB 自定义模板双轨共存，Resolve 顺序内置 →
+// Redis → DB。后端不设白名单、不做可选集合过滤，扫描到的每个 key 均注册。
+var builtinTemplates map[string]string
+
+// InitBuiltinTemplates 扫描嵌入的 templates 目录，把全部 .html 文件注册进
+// builtinTemplates（§3.13）。非 .html 文件忽略；返回 err 仅因 ReadDir /
+// ReadFile 失败（嵌入 FS 正常不会发生）。启动调用点归装配层，本包不挂调用。
+func InitBuiltinTemplates() error {
+	entries, err := templatesFS.ReadDir("templates")
+	if err != nil {
+		return fmt.Errorf("pages: read templates dir: %w", err)
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".html") {
+			continue
+		}
+		key := strings.TrimSuffix(name, ".html")
+		content, err := templatesFS.ReadFile("templates/" + name)
+		if err != nil {
+			return fmt.Errorf("pages: read template %q: %w", key, err)
+		}
+		m[key] = string(content)
+	}
+	builtinTemplates = m
+	return nil
+}
+
+// IsBuiltinTemplate 报告 key 是否为内置模板（§3.13）；扫描全集内均 true。
+func IsBuiltinTemplate(key string) bool {
+	_, ok := builtinTemplates[key]
+	return ok
+}
+
+// GetBuiltinTemplate 取内置模板全文（§3.13）；ok=false 表示非内置 key。
+func GetBuiltinTemplate(key string) (string, bool) {
+	content, ok := builtinTemplates[key]
+	return content, ok
+}

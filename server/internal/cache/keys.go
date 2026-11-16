@@ -132,6 +132,15 @@ func ProviderVersionKey() string { return "al:prov:ver" }
 // PUBLISH 侧（admin 写入路径）与 Subscribe 侧（各实例 watcher）共用本函数。
 func ProviderChgKey() string { return "al:prov:chg" }
 
+// templateRowKeyPrefix 模板 content 缓存键前缀（§5.1：al:tpl:v:{key}）。
+const templateRowKeyPrefix = "al:tpl:v:"
+
+// TemplateRowKey 返回模板 content 缓存键（§5.1，String、TTL 600s、只存
+// content 原文；内置模板常驻内存，不进此键）。
+func TemplateRowKey(key string) string {
+	return templateRowKeyPrefix + key
+}
+
 // permAdminsKey 持有任意管理权限的 uid 集合（§5.1：SET、无 TTL、正常模式
 // 启动预热写入一次、登录签发侧只读）。
 const permAdminsKey = "al:perm:admins"

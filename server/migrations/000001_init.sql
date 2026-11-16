@@ -1,4 +1,4 @@
--- 首版迁移：后端架构 §4 全部 12 张表（§3.16）。
+-- 首版迁移：后端架构 §4 全部 13 张表（§3.16）。
 -- 单文件注解格式（Up / Down 两段）：goose v3 Provider 将每个 .sql 文件
 -- 视为一条迁移，不支持 .up.sql/.down.sql 成对命名（成对文件同版本会报
 -- duplicate migration version）。
@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS sso_client (
   client_secret CHAR(64) NOT NULL,
   name          VARCHAR(128) NOT NULL DEFAULT '',
   redirect_uris VARBINARY(2048) NOT NULL COMMENT 'client.RedirectUris 的 Protobuf 序列化',
+  template_key  VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '绑定的自定义模板 key',
+  template_vars TEXT         COMMENT '模板变量 JSON',
   is_enabled    TINYINT(1) NOT NULL DEFAULT 1,
   created_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL,
@@ -131,10 +133,24 @@ CREATE TABLE IF NOT EXISTS oidc_client (
   scopes        VARCHAR(512) NOT NULL DEFAULT 'openid,profile,email',
   access_token_ttl  INT NOT NULL DEFAULT 3600,
   refresh_token_ttl INT NOT NULL DEFAULT 2592000,
+  template_key  VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '绑定的自定义模板 key',
+  template_vars TEXT         COMMENT '模板变量 JSON',
   is_enabled    TINYINT(1) NOT NULL DEFAULT 1,
   created_at    DATETIME NOT NULL,
   updated_at    DATETIME NOT NULL,
   UNIQUE KEY uk_client_id (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 自定义模板（§4.9）：DB 自定义模板，与常驻内存的内置模板双轨共存
+-- （§3.13）；无版本号、无内置标记列，缓存失效靠写路径 DEL（§5.1）。
+CREATE TABLE IF NOT EXISTS template (
+  id           BIGINT       PRIMARY KEY AUTO_INCREMENT,
+  template_key VARCHAR(64)  NOT NULL COMMENT '模板 key；不得与内置模板 key 同名',
+  name         VARCHAR(128) NOT NULL DEFAULT '',
+  content      MEDIUMTEXT   NOT NULL COMMENT '模板 HTML 原文',
+  created_at   DATETIME     NOT NULL,
+  updated_at   DATETIME     NOT NULL,
+  UNIQUE KEY uk_template_key (template_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 刷新令牌存库：需要可吊销、可列表、有效期长
@@ -189,11 +205,12 @@ CREATE TABLE IF NOT EXISTS user_permission (
 -- +goose Down
 
 -- 回退脚本（§3.16：down 按工具标准提供，日常升级不使用；数据备份责任
--- 归部署方，执行迁移前自行备份）。倒序删除 §4 全部 12 张表。
+-- 归部署方，执行迁移前自行备份）。倒序删除 §4 全部 13 张表。
 DROP TABLE IF EXISTS user_permission;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS event_log;
 DROP TABLE IF EXISTS oidc_refresh_token;
+DROP TABLE IF EXISTS template;
 DROP TABLE IF EXISTS oidc_client;
 DROP TABLE IF EXISTS sso_client;
 DROP TABLE IF EXISTS user_thirdparty_bind;
