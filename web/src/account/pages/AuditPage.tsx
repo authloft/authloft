@@ -5,17 +5,15 @@
  * 文案经 shared/i18n（复用 account.auditTitle）。
  */
 import type { ReactNode } from 'react';
-import { Typography } from '@douyinfe/semi-ui';
+import { PageLayout } from '@/shared/components/PageLayout';
 import { EventLogTable } from '../components/EventLogTable';
 import { t } from '../../shared/i18n';
-import styles from './AuditPage.module.less';
 
 /** 登录日志页：标题 + 本人登录记录表（仅成功记录，服务端过滤）。 */
 export function AuditPage(): ReactNode {
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3}>{t('account.auditTitle')}</Typography.Title>
+    <PageLayout title={t('account.auditTitle')}>
       <EventLogTable />
-    </section>
+    </PageLayout>
   );
 }

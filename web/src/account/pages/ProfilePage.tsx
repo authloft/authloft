@@ -52,6 +52,7 @@ import {
 } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
+import { PageLayout } from '@/shared/components/PageLayout';
 import { AvatarUploader } from '../components/AvatarUploader';
 import {
   accountReturnTo,
@@ -274,82 +275,83 @@ export function ProfilePageView(props: {
   const username = profile.username;
   const avatarUrl = props.avatarOverride ?? profile.avatarUrl;
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3}>
-        {t('account.profileTitle')}
-      </Typography.Title>
-      <div className={styles.avatarRow}>
-        <Avatar
-          size="large"
-          src={avatarUrl || undefined}
-          alt={t('account.avatarAlt')}
-        >
-          {username.charAt(0)}
-        </Avatar>
-        <Typography.Text type="secondary">{username}</Typography.Text>
-      </div>
-      <AvatarUploader
-        currentUrl={avatarUrl}
-        onUploaded={props.onAvatarUploaded}
-      />
-      {props.avatarPersistFailed ? (
-        <p role="alert" className={styles.error}>
-          {t('errors.status.failed')}
-        </p>
-      ) : null}
-      {props.editing && props.draft !== undefined ? (
-        <ProfileEditView
-          profile={profile}
-          draft={props.draft}
-          status={props.editStatus}
-          fieldError={props.fieldError}
-          error={props.editError}
-          onDraftChange={props.onDraftChange}
-          onSave={props.onSaveEdit}
-          onCancel={props.onCancelEdit}
+    <PageLayout title={t('account.profileTitle')}>
+      <div className={styles.pageContent}>
+        <div className={styles.avatarRow}>
+          <Avatar
+            size="large"
+            src={avatarUrl || undefined}
+            alt={t('account.avatarAlt')}
+          >
+            {username.charAt(0)}
+          </Avatar>
+          <Typography.Text type="secondary">{username}</Typography.Text>
+        </div>
+        <AvatarUploader
+          currentUrl={avatarUrl}
+          onUploaded={props.onAvatarUploaded}
         />
-      ) : (
-        <>
-          <Descriptions
-            data={[
-              { key: t('account.usernameLabel'), value: username },
-              {
-                key: t('account.nicknameLabel'),
-                value: profile.nickname || EMPTY_PLACEHOLDER,
-              },
-              // 掩码服务端完成（§3.1 行 818-829），前端零处理直接展示。
-              {
-                key: t('account.phoneLabel'),
-                value: profile.phone || EMPTY_PLACEHOLDER,
-              },
-              {
-                key: t('account.emailLabel'),
-                value: profile.email || EMPTY_PLACEHOLDER,
-              },
-              {
-                key: t('account.genderLabel'),
-                value: profileGenderText(profile.profile?.gender ?? BigInt(0)),
-              },
-              {
-                key: t('account.birthdayLabel'),
-                value: profile.profile?.birthday || EMPTY_PLACEHOLDER,
-              },
-              {
-                key: t('account.localeLabel'),
-                value: profile.profile?.locale || EMPTY_PLACEHOLDER,
-              },
-              {
-                key: t('account.timezoneLabel'),
-                value: profile.profile?.timezone || EMPTY_PLACEHOLDER,
-              },
-            ]}
+        {props.avatarPersistFailed ? (
+          <p role="alert" className={styles.error}>
+            {t('errors.status.failed')}
+          </p>
+        ) : null}
+        {props.editing && props.draft !== undefined ? (
+          <ProfileEditView
+            profile={profile}
+            draft={props.draft}
+            status={props.editStatus}
+            fieldError={props.fieldError}
+            error={props.editError}
+            onDraftChange={props.onDraftChange}
+            onSave={props.onSaveEdit}
+            onCancel={props.onCancelEdit}
           />
-          <Button onClick={props.onEdit}>
-            {t('account.profileEditAction')}
-          </Button>
-        </>
-      )}
-    </section>
+        ) : (
+          <>
+            <Descriptions
+              data={[
+                { key: t('account.usernameLabel'), value: username },
+                {
+                  key: t('account.nicknameLabel'),
+                  value: profile.nickname || EMPTY_PLACEHOLDER,
+                },
+                // 掩码服务端完成（§3.1 行 818-829），前端零处理直接展示。
+                {
+                  key: t('account.phoneLabel'),
+                  value: profile.phone || EMPTY_PLACEHOLDER,
+                },
+                {
+                  key: t('account.emailLabel'),
+                  value: profile.email || EMPTY_PLACEHOLDER,
+                },
+                {
+                  key: t('account.genderLabel'),
+                  value: profileGenderText(
+                    profile.profile?.gender ?? BigInt(0),
+                  ),
+                },
+                {
+                  key: t('account.birthdayLabel'),
+                  value: profile.profile?.birthday || EMPTY_PLACEHOLDER,
+                },
+                {
+                  key: t('account.localeLabel'),
+                  value: profile.profile?.locale || EMPTY_PLACEHOLDER,
+                },
+                {
+                  key: t('account.timezoneLabel'),
+                  value: profile.profile?.timezone || EMPTY_PLACEHOLDER,
+                },
+              ]}
+            />
+            <Button onClick={props.onEdit}>
+              {t('account.profileEditAction')}
+            </Button>
+          </>
+        )}
+      </div>
+    </PageLayout>
   );
 }
 
