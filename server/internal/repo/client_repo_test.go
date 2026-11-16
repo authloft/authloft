@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
+	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/client"
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
@@ -128,8 +129,161 @@ func TestClientRepoRedirectUrisRoundTrip(t *testing.T) {
 	}
 }
 
+// TestClientRepoLoginConfigRoundTrip（纯函数，无 env 本地可跑）：
+// sso_client 两新列（login_methods / oauth_providers）Marshal 与 Parse
+// 互逆（proto.Equal 逐字段）；nil / 空输入边界（空 = 未配置 = 跟随全局，
+// 接口文档 §5.5 / §2.1）；坏字节解析报错；样例与贴列宽 VARBINARY(1024)
+// （《后端架构》§4.4）的边界长度序列化均落在列宽内且可逆——列宽强制
+// 归上层（repo 拿到什么存什么）。
+func TestClientRepoLoginConfigRoundTrip(t *testing.T) {
+	// nil → 非 nil 零长字节（列 NOT NULL，不能写 NULL）→ Parse 回非 nil
+	// 空消息；NULL / 空 / 零长同口径。
+	data, err := MarshalClientLoginMethods(nil)
+	if err != nil || data == nil || len(data) != 0 {
+		t.Fatalf("Marshal(nil) = %v(len %d), %v; want 非 nil 零长字节, nil", data, len(data), err)
+	}
+	got, err := ParseClientLoginMethods(data)
+	if err != nil || got == nil || len(got.Methods) != 0 {
+		t.Fatalf("Parse(Marshal(nil)) = %v, %v; want 非 nil 空消息, nil", got, err)
+	}
+	got, err = ParseClientLoginMethods(nil)
+	if err != nil || got == nil || len(got.Methods) != 0 {
+		t.Fatalf("Parse(nil) = %v, %v; want 非 nil 空消息, nil", got, err)
+	}
+
+	// 封闭集全取值 round-trip（§5.5：password / otp_sms / otp_email /
+	// webauthn / thirdparty；封闭集本身即该列实际上限形态）。
+	src := &client.ClientLoginMethods{Methods: []string{
+		"password", "otp_sms", "otp_email", "webauthn", "thirdparty",
+	}}
+	data, err = MarshalClientLoginMethods(src)
+	if err != nil {
+		t.Fatalf("Marshal 失败: %v", err)
+	}
+	if len(data) == 0 || len(data) > 1024 {
+		t.Fatalf("样例序列化长度 %d 越出 VARBINARY(1024) 列宽", len(data))
+	}
+	got, err = ParseClientLoginMethods(data)
+	if err != nil {
+		t.Fatalf("Parse 失败: %v", err)
+	}
+	if !proto.Equal(src, got) {
+		t.Errorf("round-trip 后消息不一致:\nsrc = %v\ngot = %v", src, got)
+	}
+
+	// 坏字节解析报错（非 Protobuf 线格式）。
+	if _, err := ParseClientLoginMethods([]byte{0xff, 0xff, 0xff}); err == nil {
+		t.Error("坏字节解析应报错, got nil error")
+	}
+
+	// oauth_providers 同口径：nil / 空输入边界 + round-trip + 坏字节。
+	data, err = MarshalClientOauthProviders(nil)
+	if err != nil || data == nil || len(data) != 0 {
+		t.Fatalf("Providers Marshal(nil) = %v(len %d), %v; want 非 nil 零长字节, nil", data, len(data), err)
+	}
+	pgot, err := ParseClientOauthProviders(data)
+	if err != nil || pgot == nil || len(pgot.Providers) != 0 {
+		t.Fatalf("Providers Parse(Marshal(nil)) = %v, %v; want 非 nil 空消息, nil", pgot, err)
+	}
+	pgot, err = ParseClientOauthProviders(nil)
+	if err != nil || pgot == nil || len(pgot.Providers) != 0 {
+		t.Fatalf("Providers Parse(nil) = %v, %v; want 非 nil 空消息, nil", pgot, err)
+	}
+	psrc := &client.ClientOauthProviders{Providers: []string{
+		"weixin_mp", "alipay", "feishu", "github",
+	}}
+	data, err = MarshalClientOauthProviders(psrc)
+	if err != nil {
+		t.Fatalf("Providers Marshal 失败: %v", err)
+	}
+	pgot, err = ParseClientOauthProviders(data)
+	if err != nil {
+		t.Fatalf("Providers Parse 失败: %v", err)
+	}
+	if !proto.Equal(psrc, pgot) {
+		t.Errorf("Providers round-trip 后消息不一致:\nsrc = %v\ngot = %v", psrc, pgot)
+	}
+	if _, err := ParseClientOauthProviders([]byte{0xff, 0xff, 0xff}); err == nil {
+		t.Error("Providers 坏字节解析应报错, got nil error")
+	}
+
+	// 边界长度：19 个 50 字符 key 的线格式 = 19×(1 tag + 1 len + 50) =
+	// 988 字节，贴 VARBINARY(1024) 上限；须可逆且不越列宽。
+	longKey := strings.Repeat("k", 50)
+	psrc = &client.ClientOauthProviders{Providers: make([]string, 0, 19)}
+	for i := 0; i < 19; i++ {
+		psrc.Providers = append(psrc.Providers, longKey)
+	}
+	data, err = MarshalClientOauthProviders(psrc)
+	if err != nil {
+		t.Fatalf("边界样例 Marshal 失败: %v", err)
+	}
+	if len(data) > 1024 {
+		t.Fatalf("边界样例序列化长度 %d 越出 VARBINARY(1024) 列宽", len(data))
+	}
+	pgot, err = ParseClientOauthProviders(data)
+	if err != nil {
+		t.Fatalf("边界样例 Parse 失败: %v", err)
+	}
+	if !proto.Equal(psrc, pgot) {
+		t.Error("边界样例 round-trip 后消息不一致")
+	}
+}
+
+// TestClientRepoSsoClientRequestOptionalSemantics（纯函数）：锁定
+// CreateSsoClientRequest / UpdateSsoClientRequest 新字段的生成代码 has 位
+// 语义（接口文档 §5.5）——default_redirect_uri 为 proto3 optional，须能
+// 区分「缺省（不动）/ 显式空串（清空为跟随现状）/ 非空（覆盖）」；普通
+// proto3 标量剥默认值、无法表达显式空串，此处是契约点。has_login_methods
+// / has_oauth_providers 为 optional bool 伴生标志：缺省（nil）= 不动、
+// true = 整组替换（空数组 = 清空为跟随全局）。
+func TestClientRepoSsoClientRequestOptionalSemantics(t *testing.T) {
+	req := &adminv1.UpdateSsoClientRequest{}
+	if req.DefaultRedirectUri != nil || req.GetDefaultRedirectUri() != "" {
+		t.Fatalf("缺省 default_redirect_uri 应为 nil + 空串, got %v", req.DefaultRedirectUri)
+	}
+	if req.HasLoginMethods != nil || req.HasOauthProviders != nil {
+		t.Fatalf("缺省 has_* 伴生标志应为 nil, got %v / %v", req.HasLoginMethods, req.HasOauthProviders)
+	}
+
+	// 显式空串 = 清空（§5.5）：proto3 optional 下在场状态与缺省可区分。
+	req.DefaultRedirectUri = proto.String("")
+	if req.DefaultRedirectUri == nil || *req.DefaultRedirectUri != "" {
+		t.Fatalf("显式空串应保留在场状态, got %v", req.DefaultRedirectUri)
+	}
+	// 非空 = 覆盖。
+	req.DefaultRedirectUri = proto.String("https://app.example.com/callback")
+	if req.GetDefaultRedirectUri() != "https://app.example.com/callback" {
+		t.Fatalf("非空覆盖应保留值, got %q", req.GetDefaultRedirectUri())
+	}
+	// has 标志：true = 整组替换；显式 false 与缺省同义（不动，§5.5）但
+	// 在场状态仍可区分（optional bool 有 has 位）。
+	req.HasLoginMethods = proto.Bool(true)
+	req.HasOauthProviders = proto.Bool(false)
+	if !req.GetHasLoginMethods() || req.GetHasOauthProviders() {
+		t.Fatalf("has 标志取值不符: %v / %v", req.HasLoginMethods, req.HasOauthProviders)
+	}
+	if req.HasOauthProviders == nil {
+		t.Fatal("显式 false 应保留在场状态")
+	}
+
+	// Create 请求同构（Create 全量提交，has 标志主要服务 Update，§5.5）。
+	creq := &adminv1.CreateSsoClientRequest{}
+	if creq.DefaultRedirectUri != nil || creq.HasLoginMethods != nil || creq.HasOauthProviders != nil {
+		t.Fatal("Create 请求缺省 has 位应为 nil")
+	}
+	creq.LoginMethods = []string{"password", "otp_email"}
+	creq.OauthProviders = []string{"weixin_mp"}
+	creq.DefaultRedirectUri = proto.String("https://app.example.com/callback")
+	if len(creq.GetLoginMethods()) != 2 || len(creq.GetOauthProviders()) != 1 ||
+		creq.GetDefaultRedirectUri() != "https://app.example.com/callback" {
+		t.Fatal("Create 请求新字段赋值后状态不符")
+	}
+}
+
 // TestClientRepoSsoClientCRUD（env-skip）：Create 默认值回填 → 按
-// client_id 命中与字段一致（redirect_uris 落库读回 round-trip）→
+// client_id 命中与字段一致（redirect_uris / login_methods / oauth_providers
+// 落库读回 round-trip 与 default_redirect_uri）→
 // uk_client_id 冲突判别与不入库 → Update 覆盖、同值幂等、不存在报
 // not found → Delete 与重复 Delete。
 func TestClientRepoSsoClientCRUD(t *testing.T) {
@@ -140,11 +294,27 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
 	}
+	loginSrc := &client.ClientLoginMethods{Methods: []string{
+		"password", "otp_email", "thirdparty",
+	}}
+	methodsData, err := MarshalClientLoginMethods(loginSrc)
+	if err != nil {
+		t.Fatalf("MarshalClientLoginMethods 失败: %v", err)
+	}
+	providersSrc := &client.ClientOauthProviders{Providers: []string{
+		"weixin_mp", "github",
+	}}
+	providersData, err := MarshalClientOauthProviders(providersSrc)
+	if err != nil {
+		t.Fatalf("MarshalClientOauthProviders 失败: %v", err)
+	}
 	c := &model.SsoClient{
 		ClientID:     "sso_app",
 		ClientSecret: strings.Repeat("s", 64),
 		Name:         "SSO 应用",
 		RedirectURIs: urisData,
+		LoginMethods: methodsData, OauthProviders: providersData,
+		DefaultRedirectURI: "https://app.example.com/callback",
 	}
 	if err := rp.CreateSsoClient(ctx, c); err != nil {
 		t.Fatalf("CreateSsoClient 失败: %v", err)
@@ -179,16 +349,33 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	if !proto.Equal(clientTestUris(), urisParsed) {
 		t.Error("redirect_uris 落库读回 round-trip 不一致")
 	}
+	// login_methods / oauth_providers 落库读回：Parse 后 proto 相等；
+	// default_redirect_uri 原样读回。
+	methodsParsed, err := ParseClientLoginMethods(got.LoginMethods)
+	if err != nil {
+		t.Fatalf("ParseClientLoginMethods(落库值) 失败: %v", err)
+	}
+	providersParsed, err := ParseClientOauthProviders(got.OauthProviders)
+	if err != nil {
+		t.Fatalf("ParseClientOauthProviders(落库值) 失败: %v", err)
+	}
+	if !proto.Equal(loginSrc, methodsParsed) || !proto.Equal(providersSrc, providersParsed) {
+		t.Error("login_methods / oauth_providers 落库读回 round-trip 不一致")
+	}
+	if got.DefaultRedirectURI != "https://app.example.com/callback" {
+		t.Errorf("default_redirect_uri 落库读回 = %q", got.DefaultRedirectURI)
+	}
 
 	// 未命中。
 	if _, err := rp.FindSsoClientByClientID(ctx, "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 
-	// uk_client_id 冲突：同 client_id 再建 → ErrClientDuplicate，不入库。
+	// uk_client_id 冲突：同 client_id 再建 → ErrClientDuplicate，不入库
+	//（NOT NULL 新列带非 nil 字节，确保 1062 先于 1048 触发）。
 	if err := rp.CreateSsoClient(ctx, &model.SsoClient{
 		ClientID: "sso_app", ClientSecret: strings.Repeat("x", 64),
-		RedirectURIs: urisData,
+		RedirectURIs: urisData, LoginMethods: methodsData, OauthProviders: providersData,
 	}); !errors.Is(err, ErrClientDuplicate) {
 		t.Errorf("同 client_id 冲突应 ErrClientDuplicate, got %v", err)
 	}
@@ -197,7 +384,8 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	}
 
 	// Update：改 name / 置 is_enabled=0（列级 UPDATE 落 0，default tag 只
-	// 影响 Create）/ 换 redirect_uris。
+	// 影响 Create）/ 换 redirect_uris / 换 login_methods、oauth_providers /
+	// 清空 default_redirect_uri（空串 = 未配置，§5.5）。
 	got.Name = "SSO 应用改名"
 	got.IsEnabled = 0
 	newUris, err := MarshalClientRedirectUris(&client.ClientRedirectUris{Uris: []string{"https://new.example.com/cb"}})
@@ -205,6 +393,17 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 		t.Fatalf("MarshalClientRedirectUris 二次失败: %v", err)
 	}
 	got.RedirectURIs = newUris
+	newMethods, err := MarshalClientLoginMethods(&client.ClientLoginMethods{Methods: []string{"webauthn"}})
+	if err != nil {
+		t.Fatalf("MarshalClientLoginMethods 二次失败: %v", err)
+	}
+	newProviders, err := MarshalClientOauthProviders(&client.ClientOauthProviders{})
+	if err != nil {
+		t.Fatalf("MarshalClientOauthProviders(空) 失败: %v", err)
+	}
+	got.LoginMethods = newMethods
+	got.OauthProviders = newProviders
+	got.DefaultRedirectURI = ""
 	if err := rp.UpdateSsoClient(ctx, got); err != nil {
 		t.Fatalf("UpdateSsoClient 失败: %v", err)
 	}
@@ -219,6 +418,17 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	if err != nil || len(urisAfter.Uris) != 1 || urisAfter.Uris[0] != "https://new.example.com/cb" {
 		t.Errorf("Update 后 redirect_uris 不一致: %v, %v", urisAfter, err)
 	}
+	methodsAfter, err := ParseClientLoginMethods(after.LoginMethods)
+	if err != nil || len(methodsAfter.Methods) != 1 || methodsAfter.Methods[0] != "webauthn" {
+		t.Errorf("Update 后 login_methods 不一致: %v, %v", methodsAfter, err)
+	}
+	providersAfter, err := ParseClientOauthProviders(after.OauthProviders)
+	if err != nil || len(providersAfter.Providers) != 0 {
+		t.Errorf("Update 后 oauth_providers 应为空消息（跟随全局）: %v, %v", providersAfter, err)
+	}
+	if after.DefaultRedirectURI != "" {
+		t.Errorf("Update 后 default_redirect_uri 应为空串, got %q", after.DefaultRedirectURI)
+	}
 	// 同值二次 Update：changed-rows 语义 rows=0 但行存在 → 幂等成功。
 	if err := rp.UpdateSsoClient(ctx, after); err != nil {
 		t.Errorf("同值二次 Update 应幂等成功: %v", err)
@@ -228,7 +438,8 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	ghostAt := time.Now().Truncate(time.Second)
 	ghost := &model.SsoClient{
 		ID: 404, ClientID: "ghost", ClientSecret: strings.Repeat("g", 64),
-		RedirectURIs: urisData, CreatedAt: ghostAt, UpdatedAt: ghostAt,
+		RedirectURIs: urisData, LoginMethods: methodsData, OauthProviders: providersData,
+		CreatedAt: ghostAt, UpdatedAt: ghostAt,
 	}
 	if err := rp.UpdateSsoClient(ctx, ghost); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("Update 不存在的行应 ErrRecordNotFound, got %v", err)
@@ -245,25 +456,42 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 		t.Errorf("重复 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 
-	// redirect_uris 列 NOT NULL：nil 入参编码为非 nil 零长字节，可直接
-	// Create 落库（证明不触发 MySQL 1048）；读回 Parse 为空消息。
+	// 三列 NOT NULL：nil 入参编码为非 nil 零长字节，可直接 Create 落库
+	//（证明不触发 MySQL 1048）；读回 Parse 为空消息 = 未配置 = 跟随全局。
 	emptyData, err := MarshalClientRedirectUris(nil)
 	if err != nil {
 		t.Fatalf("MarshalClientRedirectUris(nil) 失败: %v", err)
 	}
+	emptyMethods, err := MarshalClientLoginMethods(nil)
+	if err != nil {
+		t.Fatalf("MarshalClientLoginMethods(nil) 失败: %v", err)
+	}
+	emptyProviders, err := MarshalClientOauthProviders(nil)
+	if err != nil {
+		t.Fatalf("MarshalClientOauthProviders(nil) 失败: %v", err)
+	}
 	empty := &model.SsoClient{
 		ClientID: "sso_empty_uris", ClientSecret: strings.Repeat("e", 64), RedirectURIs: emptyData,
+		LoginMethods: emptyMethods, OauthProviders: emptyProviders,
 	}
 	if err := rp.CreateSsoClient(ctx, empty); err != nil {
-		t.Fatalf("redirect_uris 空值 Create 应成功（NOT NULL 不得写 NULL）, got %v", err)
+		t.Fatalf("空值 Create 应成功（NOT NULL 不得写 NULL）, got %v", err)
 	}
 	gotEmpty, err := rp.FindSsoClientByClientID(ctx, "sso_empty_uris")
 	if err != nil {
-		t.Fatalf("空 redirect_uris 行 Find 失败: %v", err)
+		t.Fatalf("空值行 Find 失败: %v", err)
 	}
 	emptyParsed, err := ParseClientRedirectUris(gotEmpty.RedirectURIs)
 	if err != nil || len(emptyParsed.Uris) != 0 {
 		t.Errorf("空 redirect_uris 读回 = %v, %v; want 空消息, nil", emptyParsed, err)
+	}
+	emptyMethodsParsed, err := ParseClientLoginMethods(gotEmpty.LoginMethods)
+	if err != nil || len(emptyMethodsParsed.Methods) != 0 {
+		t.Errorf("空 login_methods 读回 = %v, %v; want 空消息, nil", emptyMethodsParsed, err)
+	}
+	emptyProvidersParsed, err := ParseClientOauthProviders(gotEmpty.OauthProviders)
+	if err != nil || len(emptyProvidersParsed.Providers) != 0 {
+		t.Errorf("空 oauth_providers 读回 = %v, %v; want 空消息, nil", emptyProvidersParsed, err)
 	}
 }
 

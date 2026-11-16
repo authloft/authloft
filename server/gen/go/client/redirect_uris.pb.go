@@ -69,13 +69,113 @@ func (x *ClientRedirectUris) GetUris() []string {
 	return nil
 }
 
+// ClientLoginMethods 是 SSO 应用可用的登录方式集合（docs/接口文档.md §12.3、
+// §5.5「SSO 应用级登录配置」），对应 sso_client.login_methods 列（VARBINARY，
+// 《后端架构》§4.4；§12.0：结构固定走 Protobuf）。空 = 未配置 = 跟随全局，
+// 交集判定见接口文档 §2.1。
+type ClientLoginMethods struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Methods       []string               `protobuf:"bytes,1,rep,name=methods,proto3" json:"methods,omitempty"` // 封闭集：password | otp_sms | otp_email | webauthn | thirdparty
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientLoginMethods) Reset() {
+	*x = ClientLoginMethods{}
+	mi := &file_client_redirect_uris_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientLoginMethods) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientLoginMethods) ProtoMessage() {}
+
+func (x *ClientLoginMethods) ProtoReflect() protoreflect.Message {
+	mi := &file_client_redirect_uris_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientLoginMethods.ProtoReflect.Descriptor instead.
+func (*ClientLoginMethods) Descriptor() ([]byte, []int) {
+	return file_client_redirect_uris_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ClientLoginMethods) GetMethods() []string {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+// ClientOauthProviders 是 SSO 应用可用的 OAuth Provider key 白名单
+// （docs/接口文档.md §12.3、§5.5），对应 sso_client.oauth_providers 列
+// （VARBINARY，《后端架构》§4.4）。thirdparty 为 OAuth Provider 的整体开关，
+// 明细由本集合控制。空 = 未配置 = 跟随全局。
+type ClientOauthProviders struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Providers     []string               `protobuf:"bytes,1,rep,name=providers,proto3" json:"providers,omitempty"` // OAuth Provider key 白名单
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientOauthProviders) Reset() {
+	*x = ClientOauthProviders{}
+	mi := &file_client_redirect_uris_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientOauthProviders) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientOauthProviders) ProtoMessage() {}
+
+func (x *ClientOauthProviders) ProtoReflect() protoreflect.Message {
+	mi := &file_client_redirect_uris_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientOauthProviders.ProtoReflect.Descriptor instead.
+func (*ClientOauthProviders) Descriptor() ([]byte, []int) {
+	return file_client_redirect_uris_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ClientOauthProviders) GetProviders() []string {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
 var File_client_redirect_uris_proto protoreflect.FileDescriptor
 
 const file_client_redirect_uris_proto_rawDesc = "" +
 	"\n" +
 	"\x1aclient/redirect_uris.proto\x12\x06client\"(\n" +
 	"\x12ClientRedirectUris\x12\x12\n" +
-	"\x04uris\x18\x01 \x03(\tR\x04urisB\x1fZ\x1dauthloft/gen/go/client;clientb\x06proto3"
+	"\x04uris\x18\x01 \x03(\tR\x04uris\".\n" +
+	"\x12ClientLoginMethods\x12\x18\n" +
+	"\amethods\x18\x01 \x03(\tR\amethods\"4\n" +
+	"\x14ClientOauthProviders\x12\x1c\n" +
+	"\tproviders\x18\x01 \x03(\tR\tprovidersB\x1fZ\x1dauthloft/gen/go/client;clientb\x06proto3"
 
 var (
 	file_client_redirect_uris_proto_rawDescOnce sync.Once
@@ -89,9 +189,11 @@ func file_client_redirect_uris_proto_rawDescGZIP() []byte {
 	return file_client_redirect_uris_proto_rawDescData
 }
 
-var file_client_redirect_uris_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_client_redirect_uris_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_client_redirect_uris_proto_goTypes = []any{
-	(*ClientRedirectUris)(nil), // 0: client.ClientRedirectUris
+	(*ClientRedirectUris)(nil),   // 0: client.ClientRedirectUris
+	(*ClientLoginMethods)(nil),   // 1: client.ClientLoginMethods
+	(*ClientOauthProviders)(nil), // 2: client.ClientOauthProviders
 }
 var file_client_redirect_uris_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -112,7 +214,7 @@ func file_client_redirect_uris_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_client_redirect_uris_proto_rawDesc), len(file_client_redirect_uris_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

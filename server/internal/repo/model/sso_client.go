@@ -16,16 +16,28 @@ import "time"
 // 340-343，与 user.go / provider.go 同口径）——struct 插入无法显式写
 // is_enabled=0，禁用入口走列级 UPDATE（Update）。
 type SsoClient struct {
-	ID           int64     `gorm:"column:id;primaryKey;autoIncrement"`
-	ClientID     string    `gorm:"column:client_id;size:64;not null"`                  // 唯一对外标识（uk_client_id）
-	ClientSecret string    `gorm:"column:client_secret;size:64;not null"`              // 密钥；生成策略归 service
-	Name         string    `gorm:"column:name;size:128;not null;default:''"`           // 展示名
-	RedirectURIs []byte    `gorm:"column:redirect_uris;type:varbinary(2048);not null"` // client.RedirectUris 序列化后
-	IsEnabled    int8      `gorm:"column:is_enabled;not null;default:1"`               // 启用态
-	TemplateKey  string    `gorm:"column:template_key;size:64;not null;default:''"`    // 绑定的模板 key；空回落默认壳（§4.4 / §8.1）
-	TemplateVars string    `gorm:"column:template_vars;type:text"`                     // 模板变量 JSON 原文，空按 {} 注入
-	CreatedAt    time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+	ID           int64  `gorm:"column:id;primaryKey;autoIncrement"`
+	ClientID     string `gorm:"column:client_id;size:64;not null"`                  // 唯一对外标识（uk_client_id）
+	ClientSecret string `gorm:"column:client_secret;size:64;not null"`              // 密钥；生成策略归 service
+	Name         string `gorm:"column:name;size:128;not null;default:''"`           // 展示名
+	RedirectURIs []byte `gorm:"column:redirect_uris;type:varbinary(2048);not null"` // client.RedirectUris 序列化后
+	// 应用级登录配置（接口文档 §5.5）：login_methods / oauth_providers 分别
+	// 为 client.ClientLoginMethods / ClientOauthProviders 的 Protobuf 序列化
+	//（编解码出口 repo.MarshalClientLoginMethods / ParseClientLoginMethods
+	// 与 repo.MarshalClientOauthProviders / ParseClientOauthProviders）；
+	// 空 = 未配置 = 跟随全局（§2.1）。列 NOT NULL 无默认值：Create 前须经
+	// repo 编解码出口取非 nil 字节，nil 会被 GORM 写成 NULL 触发 MySQL 1048
+	//（同 RedirectURIs 口径）。
+	LoginMethods   []byte `gorm:"column:login_methods;type:varbinary(1024);not null"`
+	OauthProviders []byte `gorm:"column:oauth_providers;type:varbinary(1024);not null"`
+	// 登录完成且未传回跳地址时的默认回跳地址（§5.5）；空串 = 未配置，维持
+	// 默认落点。
+	DefaultRedirectURI string    `gorm:"column:default_redirect_uri;size:1024;not null;default:''"`
+	IsEnabled          int8      `gorm:"column:is_enabled;not null;default:1"`            // 启用态
+	TemplateKey        string    `gorm:"column:template_key;size:64;not null;default:''"` // 绑定的模板 key；空回落默认壳（§4.4 / §8.1）
+	TemplateVars       string    `gorm:"column:template_vars;type:text"`                  // 模板变量 JSON 原文，空按 {} 注入
+	CreatedAt          time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;not null"`
 }
 
 // TableName 固定表名 sso_client（§4.4）。

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file client/redirect_uris.proto.
  */
 export const file_client_redirect_uris: GenFile = /*@__PURE__*/
-  fileDesc("ChpjbGllbnQvcmVkaXJlY3RfdXJpcy5wcm90bxIGY2xpZW50IiIKEkNsaWVudFJlZGlyZWN0VXJpcxIMCgR1cmlzGAEgAygJQh9aHWF1dGhsb2Z0L2dlbi9nby9jbGllbnQ7Y2xpZW50YgZwcm90bzM");
+  fileDesc("ChpjbGllbnQvcmVkaXJlY3RfdXJpcy5wcm90bxIGY2xpZW50IiIKEkNsaWVudFJlZGlyZWN0VXJpcxIMCgR1cmlzGAEgAygJIiUKEkNsaWVudExvZ2luTWV0aG9kcxIPCgdtZXRob2RzGAEgAygJIikKFENsaWVudE9hdXRoUHJvdmlkZXJzEhEKCXByb3ZpZGVycxgBIAMoCUIfWh1hdXRobG9mdC9nZW4vZ28vY2xpZW50O2NsaWVudGIGcHJvdG8z");
 
 /**
  * ClientRedirectUris 是客户端回调白名单（docs/接口文档.md §12.3），
@@ -35,4 +35,52 @@ export type ClientRedirectUris = Message<"client.ClientRedirectUris"> & {
  */
 export const ClientRedirectUrisSchema: GenMessage<ClientRedirectUris> = /*@__PURE__*/
   messageDesc(file_client_redirect_uris, 0);
+
+/**
+ * ClientLoginMethods 是 SSO 应用可用的登录方式集合（docs/接口文档.md §12.3、
+ * §5.5「SSO 应用级登录配置」），对应 sso_client.login_methods 列（VARBINARY，
+ * 《后端架构》§4.4；§12.0：结构固定走 Protobuf）。空 = 未配置 = 跟随全局，
+ * 交集判定见接口文档 §2.1。
+ *
+ * @generated from message client.ClientLoginMethods
+ */
+export type ClientLoginMethods = Message<"client.ClientLoginMethods"> & {
+  /**
+   * 封闭集：password | otp_sms | otp_email | webauthn | thirdparty
+   *
+   * @generated from field: repeated string methods = 1;
+   */
+  methods: string[];
+};
+
+/**
+ * Describes the message client.ClientLoginMethods.
+ * Use `create(ClientLoginMethodsSchema)` to create a new message.
+ */
+export const ClientLoginMethodsSchema: GenMessage<ClientLoginMethods> = /*@__PURE__*/
+  messageDesc(file_client_redirect_uris, 1);
+
+/**
+ * ClientOauthProviders 是 SSO 应用可用的 OAuth Provider key 白名单
+ * （docs/接口文档.md §12.3、§5.5），对应 sso_client.oauth_providers 列
+ * （VARBINARY，《后端架构》§4.4）。thirdparty 为 OAuth Provider 的整体开关，
+ * 明细由本集合控制。空 = 未配置 = 跟随全局。
+ *
+ * @generated from message client.ClientOauthProviders
+ */
+export type ClientOauthProviders = Message<"client.ClientOauthProviders"> & {
+  /**
+   * OAuth Provider key 白名单
+   *
+   * @generated from field: repeated string providers = 1;
+   */
+  providers: string[];
+};
+
+/**
+ * Describes the message client.ClientOauthProviders.
+ * Use `create(ClientOauthProvidersSchema)` to create a new message.
+ */
+export const ClientOauthProvidersSchema: GenMessage<ClientOauthProviders> = /*@__PURE__*/
+  messageDesc(file_client_redirect_uris, 2);
 

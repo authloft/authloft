@@ -1,10 +1,9 @@
 // sso_client / oidc_client 表读写（后端架构 §3.10 行 415：client →
 // client_repo.go；§4.4 行 713-724 / §4.5 行 729-742 DDL）。DDL 归
 // migrations/（§3.16），本文件只做行级读写、分页与唯一键冲突判别；事务
-// 边界在 service（§3.10）。redirect_uris 列的 client.RedirectUris proto
-// 编解码唯一出口在本文件 MarshalClientRedirectUris /
-// ParseClientRedirectUris（接口文档 §12.3 行 1723-1730），service 不直接
-// 拼 proto.Marshal。client_secret 生成策略、scopes[] ↔ 逗号串转换、
+// 边界在 service（§3.10）。redirect_uris / login_methods / oauth_providers
+// 列的结构化 proto 编解码唯一出口在本文件（接口文档 §12.3），service 不
+// 直接拼 proto.Marshal。client_secret 生成策略、scopes[] ↔ 逗号串转换、
 // redirect_uris 通配匹配规则均归上层，repo 拿到什么存什么。
 package repo
 
@@ -100,7 +99,7 @@ var clientSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 const clientDefaultSortColumn = "id"
 
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
-//（大小写不敏感，其余含缺省一律 desc）；非 id 主序恒追加 id 次序保证分页
+// （大小写不敏感，其余含缺省一律 desc）；非 id 主序恒追加 id 次序保证分页
 // 全序稳定（同值行跨页不漂移，口径同 user_repo.orderClause /
 // webauthn_repo.ListByUser）。
 func (q ClientListQuery) orderClause() string {
@@ -329,6 +328,74 @@ func ParseClientRedirectUris(data []byte) (*client.ClientRedirectUris, error) {
 		return nil, fmt.Errorf("client repo: parse redirect uris: %w", err)
 	}
 	return uris, nil
+}
+
+// MarshalClientLoginMethods 将 client.ClientLoginMethods（接口文档 §12.3、
+// §5.5）序列化为 sso_client.login_methods 列字节（§12.0：结构固定走
+// Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
+// VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被 GORM 写成 NULL
+// 触发 MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。登录方式封闭集校验
+// 归 service，repo 只做编解码。
+func MarshalClientLoginMethods(methods *client.ClientLoginMethods) ([]byte, error) {
+	if methods == nil {
+		methods = &client.ClientLoginMethods{}
+	}
+	data, err := proto.Marshal(methods)
+	if err != nil {
+		return nil, fmt.Errorf("client repo: marshal login methods: %w", err)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	return data, nil
+}
+
+// ParseClientLoginMethods 将 login_methods 列字节反序列化为
+// client.ClientLoginMethods。空 / NULL 列返回空消息（非 nil），调用方无需
+// 判空；解码错误原样包装。与 MarshalClientLoginMethods 互为逆运算。
+func ParseClientLoginMethods(data []byte) (*client.ClientLoginMethods, error) {
+	methods := &client.ClientLoginMethods{}
+	if len(data) == 0 {
+		return methods, nil
+	}
+	if err := proto.Unmarshal(data, methods); err != nil {
+		return nil, fmt.Errorf("client repo: parse login methods: %w", err)
+	}
+	return methods, nil
+}
+
+// MarshalClientOauthProviders 将 client.ClientOauthProviders（接口文档
+// §12.3、§5.5）序列化为 sso_client.oauth_providers 列字节（§12.0：结构
+// 固定走 Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列
+// 定义为 VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被 GORM 写成
+// NULL 触发 MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。provider key
+// 存在性校验归 service，repo 只做编解码。
+func MarshalClientOauthProviders(providers *client.ClientOauthProviders) ([]byte, error) {
+	if providers == nil {
+		providers = &client.ClientOauthProviders{}
+	}
+	data, err := proto.Marshal(providers)
+	if err != nil {
+		return nil, fmt.Errorf("client repo: marshal oauth providers: %w", err)
+	}
+	if data == nil {
+		data = []byte{}
+	}
+	return data, nil
+}
+
+// ParseClientOauthProviders 将 oauth_providers 列字节反序列化为
+// client.ClientOauthProviders。空 / NULL 列返回空消息（非 nil），调用方
+// 无需判空；解码错误原样包装。与 MarshalClientOauthProviders 互为逆运算。
+func ParseClientOauthProviders(data []byte) (*client.ClientOauthProviders, error) {
+	providers := &client.ClientOauthProviders{}
+	if len(data) == 0 {
+		return providers, nil
+	}
+	if err := proto.Unmarshal(data, providers); err != nil {
+		return nil, fmt.Errorf("client repo: parse oauth providers: %w", err)
+	}
+	return providers, nil
 }
 
 // isClientDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
