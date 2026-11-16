@@ -33,6 +33,7 @@ import (
 	authloftconnect "authloft/internal/connect"
 	"authloft/internal/middleware"
 	"authloft/internal/pages"
+	"authloft/internal/settings"
 )
 
 // 监听（§3.1 行 247 / §3.15）：setup 模式同样读 server 段
@@ -140,7 +141,7 @@ type Server struct {
 // 仅注册 SetupService」）：connect.NewServer 注入请求体上限，HandlerOptions
 // 固定补 WithRecover + 错误包装 interceptor；本域无 session / admin / rpc
 // HMAC 域拦截器（安装期不初始化 DB / Redis 业务链路）。顶层分流
-//（§3.1 行 243）：Connect 前缀链挂 http 版 requestid（Connect 域等效——
+// （§3.1 行 243）：Connect 前缀链挂 http 版 requestid（Connect 域等效——
 // 不经 gin 全局链，middleware/httpmw.go；origin 同 gin 侧不挂）；其余
 // 全部 mux.Handle("/", ginEngine)——未注册路径 gin 原生 404 兜底
 // （不再经 gin.NoRoute 桥，connect 成功响应直接由
@@ -316,9 +317,10 @@ type setupInit struct {
 }
 
 // handleSetupPage GET /setup：渲染安装页空壳——复用 pages.RenderGinShell
-// 统一渲染入口（阶段 C：读嵌入模板 templates/setup.html + 三
+// 统一渲染入口（阶段 C：读嵌入模板 templates/setup.html + 五
 // 占位符纯字符串全量替换；CSP 头与 nonce 由 gin 链上的 middleware.CSP
-// 输出，setup 壳与正常模式同基线，§8 行 1521）。
+// 输出，setup 壳与正常模式同基线，§8 行 1521）。site_name 走默认 Authloft
+// ——setup 模式无 settings 表，不引入 DB / Redis 依赖（pages 纯渲染包）。
 //
 // al_root 数据源（如实报告不粉饰）：setup 模式无 config.yaml
 // （root 必填要等安装表单提交才落 config），后端无 al_root 数据
@@ -328,5 +330,5 @@ type setupInit struct {
 // 与读 Host 等价且由浏览器自身判定（优于服务端 XFP→TLS→明文推测）。
 // 若改判（如恢复读 Host），只动本函数一处。
 func (s *Server) handleSetupPage(c *gin.Context) {
-	pages.RenderGinShell(c, "setup", setupInit{StaticBase: setupStaticBase}, setupStaticBase)
+	pages.RenderGinShell(c, "setup", setupInit{StaticBase: setupStaticBase}, setupStaticBase, settings.DefaultSiteName)
 }

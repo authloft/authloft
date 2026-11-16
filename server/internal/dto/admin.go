@@ -703,6 +703,7 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 		EventlogRetentionDays: toInt(settings.KeyEventlogRetentionDays),
 		StaticBase:            toStr(settings.KeyStaticBase),
 		HttpsDeployment:       toStr(settings.KeyHttpsDeployment),
+		SiteName:              toStr(settings.KeySiteName),
 	}
 }
 

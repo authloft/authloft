@@ -5,7 +5,7 @@
 // 外加 /sso/logout（§2.9）与 /sso/sync_cookie 中转（§11.2 接收端）。
 //
 // 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
-// templates）+ 三占位符纯字符串全量替换，注入 window.__AUTHLOFT_INIT__
+// templates）+ 五占位符纯字符串全量替换，注入 window.__AUTHLOFT_INIT__
 // （四键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
 // no-store、CSP nonce、不注入任何凭证（CSP 终稿：基线 =
 // middleware/csp.go + cdnOrigin 追加，setup 壳同基线）。注入键白名单
@@ -263,14 +263,16 @@ func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 // renderShell 渲染 SPA 空壳：tpl 非 nil（客户端模板解析成功）走
 // RenderClientShell 用自定义内容渲染，否则回落 RenderGinShell 读默认文件壳
 // （§8.1 第 6 步）。两条路径共用 nonce 消费 / CSP 头 / no-store / 500 语义；
-// static_base 取 settings 快照（nil 回落默认 /assets）。
+// static_base 取 settings 快照（nil 回落默认 /assets），site_name 同理（nil /
+// 缺失 / 空回落默认 Authloft）。
 func (h *Handler) renderShell(c *gin.Context, entry string, init *initPayload, tpl *clientTemplate) {
 	staticBase := h.staticBase()
+	siteName := h.siteName()
 	if tpl != nil {
-		RenderClientShell(c, tpl.html, init, staticBase, tpl.varsJSON)
+		RenderClientShell(c, tpl.html, init, staticBase, tpl.varsJSON, siteName)
 		return
 	}
-	RenderGinShell(c, entry, init, staticBase)
+	RenderGinShell(c, entry, init, staticBase, siteName)
 }
 
 // staticBase settings 键 static_base（§5.6 默认 /assets，可为 CDN 绝对
@@ -282,6 +284,18 @@ func (h *Handler) staticBase() string {
 		}
 	}
 	return "/assets"
+}
+
+// siteName settings 键 site_name（§5.6 默认 Authloft，页面标题）；缺失 / 空 /
+// 无 settings 时回落默认。值为管理员配置（不可信），HTML 文本上下文转义在
+// renderHTML 构造注入值时完成（§8.1），本层只取原值。
+func (h *Handler) siteName() string {
+	if h.settings != nil {
+		if v, ok := h.settings.GetString(settings.KeySiteName); ok && v != "" {
+			return v
+		}
+	}
+	return settings.DefaultSiteName
 }
 
 // genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url，22 字符）：

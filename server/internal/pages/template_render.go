@@ -1,6 +1,6 @@
 // template_render.go 客户端自定义模板的解析与渲染（接口文档 §8.1 模板渲染
 // 链路）：按 client_id 查客户端行取 template_key / template_vars，经窄接口
-// Resolve 取模板内容，再交 renderHTML 做四占位符替换。本包仍为零 DB / Redis
+// Resolve 取模板内容，再交 renderHTML 做五占位符替换。本包仍为零 DB / Redis
 // 运行期依赖的纯渲染包——行读取与模板解析全部经 Deps 注入的窄接口完成，
 // 未装配（setup / 测试）一律回落默认文件壳。
 package pages
@@ -119,15 +119,16 @@ func templateVarsInject(raw string) string {
 }
 
 // RenderClientShell 以已解析的自定义模板内容渲染 SPA 壳（§8.1 第 5 步）：
-// renderHTML 一次完成四占位符替换后交 writeShell 输出，响应头 / no-store /
+// renderHTML 一次完成五占位符替换后交 writeShell 输出，响应头 / no-store /
 // 500 语义与 RenderGinShell 完全一致。html 与 varsJSON 须来自
-// resolveClientTemplate 的成功结果。
-func RenderClientShell(c *gin.Context, html string, init any, staticBase, varsJSON string) {
+// resolveClientTemplate 的成功结果；siteName 由 Handler.siteName() 取
+// settings.site_name（setup 直调传默认 Authloft）。
+func RenderClientShell(c *gin.Context, html string, init any, staticBase, varsJSON, siteName string) {
 	nonce, ok := shellNonce(c, staticBase)
 	if !ok {
 		return
 	}
-	body, err := renderHTML(html, init, staticBase, nonce, varsJSON)
+	body, err := renderHTML(html, init, staticBase, nonce, varsJSON, siteName)
 	if err != nil {
 		slog.Error("pages: render client shell", "err", err)
 		c.AbortWithStatus(http.StatusInternalServerError)

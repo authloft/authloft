@@ -288,6 +288,10 @@ func TestSetupPageShell(t *testing.T) {
 	if !strings.Contains(body, `"static_base":"/assets"`) {
 		t.Errorf("static_base must default to /assets, body:\n%s", body)
 	}
+	// setup 模式无 settings：站点名走默认 Authloft，<title> 占位符被替换。
+	if !strings.Contains(body, "<title>Authloft</title>") {
+		t.Errorf("title must default to Authloft, body:\n%s", body)
+	}
 	// 占位符全量替换：无残留、产物引用走归一后的 static_base 前缀。
 	if strings.Contains(body, "{{AUTHLOFT_") {
 		t.Errorf("body has residual placeholder, body:\n%s", body)

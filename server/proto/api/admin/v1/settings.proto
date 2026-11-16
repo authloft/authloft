@@ -10,7 +10,7 @@ option go_package = "authloft/gen/go/api/admin/v1;adminv1";
 // 报文字段集合 = §5.6 四张表之和，键名不得另起别名
 // 编号按「密码策略 → 账号策略 → 验证码限流 → 其余」的表序与行序从 1 起连续（§12.9）。
 // Request 为部分更新：另带四个 has_* 伴生标志（非 settings 键），数据键编号与
-// Response 不同；Response 恒输出 36 数据键、不含伴生标志（§12.8 双端独立演进）。
+// Response 不同；Response 恒输出 37 数据键、不含伴生标志（§12.8 双端独立演进）。
 
 // GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6，无入参）。
 message GetSettingsRequest {}
@@ -112,10 +112,12 @@ message SetSettingsRequest {
   // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
   //（§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
   optional string https_deployment = 40;
+  // 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
+  optional string site_name = 41;
 }
 
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
-// 键集合 / 键名与 SetSettingsRequest 的 36 个数据键一致，编号按表序从 1 起
+// 键集合 / 键名与 SetSettingsRequest 的 37 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
 // 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -198,4 +200,6 @@ message SettingsResponse {
   // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
   //（§1.9 驱动口径）。
   string https_deployment = 36;
+  // 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
+  string site_name = 37;
 }

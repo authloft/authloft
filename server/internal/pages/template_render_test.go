@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"strings"
 	"testing"
@@ -50,13 +51,18 @@ func (f *fakeSsoClients) FindSsoClientByClientID(_ context.Context, id string) (
 	return c, nil
 }
 
-// legacyRender 改动前的 renderTemplate 三步替换（去掉模板变量占位符这一
-// 新增步），作为「回落文件壳逐字一致」的独立 oracle。
-func legacyRender(htmlText string, init any, staticBase, nonce string) string {
+// legacyRender 改动前的 renderTemplate 三步替换（去掉模板变量 / 站点名这两
+// 新增步），作为「回落文件壳逐字一致」的独立 oracle。site_name 与实现同口径
+// 转义注入，保证第五占位符在场时两路输出仍逐字相等。
+func legacyRender(htmlText string, init any, staticBase, nonce, siteName string) string {
 	initJSON, _ := json.Marshal(init)
+	if siteName == "" {
+		siteName = "Authloft"
+	}
 	h := strings.ReplaceAll(htmlText, phCSPNonce, nonce)
 	h = strings.ReplaceAll(h, phStaticBase, strings.TrimRight(staticBase, "/"))
 	h = strings.ReplaceAll(h, phInitJSON, string(initJSON))
+	h = strings.ReplaceAll(h, phSiteName, html.EscapeString(siteName))
 	return h
 }
 
@@ -74,30 +80,31 @@ func fixedNonceEngine(t *testing.T, d Deps) *gin.Engine {
 	return r
 }
 
-// TestRenderHTMLFourPlaceholders 自定义模板含四占位符 + 非保留 {{…}}：
-// 四占位符全量替换（非保留按字面输出、不报错），模板变量 JSON 原文注入、
-// 不被重组；static_base 尾斜杠归一；init JSON 正常替换。
-func TestRenderHTMLFourPlaceholders(t *testing.T) {
-	const custom = `<html><script nonce="` + phCSPNonce + `">` +
+// TestRenderHTMLFivePlaceholders 自定义模板含五占位符 + 非保留 {{…}}：
+// 五占位符全量替换（非保留按字面输出、不报错），模板变量 JSON 原文注入、
+// 不被重组；站点名替换到 <title>；static_base 尾斜杠归一；init JSON 正常替换。
+func TestRenderHTMLFivePlaceholders(t *testing.T) {
+	const custom = `<html><head><title>` + phSiteName + `</title><script nonce="` + phCSPNonce + `">` +
 		`window.__AUTHLOFT_INIT__=` + phInitJSON + `;` +
 		`window.TV=` + TemplateVarsPlaceholder + `;</script>` +
-		`<link href="` + phStaticBase + `/x.css"><p>{{brand}}</p></html>`
+		`<link href="` + phStaticBase + `/x.css"><p>{{brand}}</p></head></html>`
 	init := struct {
 		Foo string `json:"foo"`
 	}{Foo: "bar"}
 	varsJSON := `{"color":"blue","lt":"<>&"}`
 
-	got, err := renderHTML(custom, init, "https://cdn.example.com/assets/", "NONCE123", varsJSON)
+	got, err := renderHTML(custom, init, "https://cdn.example.com/assets/", "NONCE123", varsJSON, "My Site")
 	if err != nil {
 		t.Fatalf("renderHTML: %v", err)
 	}
 	body := string(got)
-	for _, ph := range []string{phCSPNonce, phStaticBase, phInitJSON, TemplateVarsPlaceholder} {
+	for _, ph := range []string{phCSPNonce, phStaticBase, phInitJSON, phSiteName, TemplateVarsPlaceholder} {
 		if strings.Contains(body, ph) {
 			t.Errorf("残留占位符 %q:\n%s", ph, body)
 		}
 	}
 	for _, want := range []string{
+		`<title>My Site</title>`,
 		`nonce="NONCE123"`,
 		`https://cdn.example.com/assets/x.css`,
 		`window.__AUTHLOFT_INIT__={"foo":"bar"}`,
@@ -117,7 +124,7 @@ func TestRenderHTMLFourPlaceholders(t *testing.T) {
 // {} 替换；空值归一由 templateVarsInject 负责（另测）。
 func TestRenderHTMLVarsEmpty(t *testing.T) {
 	const custom = `<script>window.TV=` + TemplateVarsPlaceholder + `;</script>`
-	got, err := renderHTML(custom, struct{}{}, "/assets", "N", "{}")
+	got, err := renderHTML(custom, struct{}{}, "/assets", "N", "{}", "Authloft")
 	if err != nil {
 		t.Fatalf("renderHTML: %v", err)
 	}
@@ -126,9 +133,10 @@ func TestRenderHTMLVarsEmpty(t *testing.T) {
 	}
 }
 
-// TestRenderHTMLBuiltinShellNoop 内置文件壳无模板变量占位符：新增的第四
-// 占位符替换必须是空操作，renderHTML 输出与改动前 legacyRender 逐字一致。
-func TestRenderHTMLBuiltinShellNoop(t *testing.T) {
+// TestRenderHTMLBuiltinShellPlaceholders 内置文件壳：无模板变量占位符（第五
+// 占位符注入对其为空操作），但含站点名占位符需被替换；renderHTML 输出与
+// legacyRender 逐字一致。
+func TestRenderHTMLBuiltinShellPlaceholders(t *testing.T) {
 	init := &initPayload{ALRoot: "https://uc.example.com", StaticBase: "/assets"}
 	for _, entry := range []string{"login", "account", "admin", "setup"} {
 		tpl, err := templatesFS.ReadFile("templates/" + entry + ".html")
@@ -138,14 +146,56 @@ func TestRenderHTMLBuiltinShellNoop(t *testing.T) {
 		if strings.Contains(string(tpl), TemplateVarsPlaceholder) {
 			t.Fatalf("%s 内置壳不应含模板变量占位符", entry)
 		}
-		got, err := renderHTML(string(tpl), init, "/assets/", "FIXED", `{"x":"<>&"}`)
+		if !strings.Contains(string(tpl), phSiteName) {
+			t.Fatalf("%s 内置壳应含站点名占位符（构建期注入 <title>）", entry)
+		}
+		got, err := renderHTML(string(tpl), init, "/assets/", "FIXED", `{"x":"<>&"}`, "Authloft")
 		if err != nil {
 			t.Fatalf("%s renderHTML: %v", entry, err)
 		}
-		want := legacyRender(string(tpl), init, "/assets/", "FIXED")
+		want := legacyRender(string(tpl), init, "/assets/", "FIXED", "Authloft")
 		if string(got) != want {
-			t.Errorf("%s 回落文件壳与改动前不一致（长度 got=%d want=%d）", entry, len(got), len(want))
+			t.Errorf("%s 回落文件壳与 legacyRender 不一致（长度 got=%d want=%d）", entry, len(got), len(want))
 		}
+	}
+}
+
+// TestRenderHTMLSiteNameEscapeAndFallback 第五占位符的注入值安全口径（§8.1：
+// 转义在构造注入值时完成）：HTML 文本上下文转义防 </title><script> 注入；
+// 空串 / 缺失回落 settings.DefaultSiteName。
+func TestRenderHTMLSiteNameEscapeAndFallback(t *testing.T) {
+	const custom = `<html><head><title>` + phSiteName + `</title></head></html>`
+	cases := []struct {
+		name     string
+		siteName string
+		want     string
+	}{
+		{"normal", "My Site", "<title>My Site</title>"},
+		{"ampersand", "A & B", "<title>A &amp; B</title>"},
+		{"injection", "</title><script>alert(1)</script>", "<title>&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;</title>"},
+		{"empty falls back", "", "<title>Authloft</title>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := renderHTML(custom, struct{}{}, "/assets", "N", "{}", tc.siteName)
+			if err != nil {
+				t.Fatalf("renderHTML: %v", err)
+			}
+			if !strings.Contains(string(got), tc.want) {
+				t.Errorf("body = %s, want 含 %q", got, tc.want)
+			}
+			if strings.Contains(string(got), phSiteName) {
+				t.Errorf("残留站点名占位符: %s", got)
+			}
+		})
+	}
+	// 注入攻击串不得原样出现在输出中。
+	got, err := renderHTML(custom, struct{}{}, "/assets", "N", "{}", "</title><script>alert(1)</script>")
+	if err != nil {
+		t.Fatalf("renderHTML: %v", err)
+	}
+	if strings.Contains(string(got), "</title><script>") {
+		t.Errorf("注入串未转义:\n%s", got)
 	}
 }
 

@@ -13,9 +13,9 @@
  * 不再整体覆盖。全量构造函数 api.buildSetSettingsRequest 仍保留，供
  * 兼容场景与键集测试使用。
  *
- * 键集 = 36 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
- * https_deployment（=36，行 1354/1360 proto 变更条款）。server proto 与
- * web 生成物已同步刷入 36——文档 / proto /
+ * 键集 = 37 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
+ * https_deployment 与 site_name（站点名称，注入模板 <title> 占位符
+ * {{AUTHLOFT_SITE_NAME}}）。server proto 与 web 生成物已同步刷入 37——文档 / proto /
  * 生成物三处一致，照常建键；行 1361「取值非 true / false / auto →
  * invalid_request」由 settingsDraftIssue 前端自律拦截（三态外的值一旦
  * 被选并提交即被后端拒收）。
@@ -69,6 +69,7 @@ export type SettingsBoolKey =
   | 'mfaEnabled';
 
 export type SettingsTextKey =
+  | 'siteName'
   | 'cookieName'
   | 'captchaProviderKey'
   | 'smsProviderKey'
@@ -104,6 +105,7 @@ export type SettingsDraft = Readonly<{
  * 兜底（后端 GetSettings 全键投影，落库值即真值）。
  */
 export const DEFAULT_SETTINGS: SettingsDraft = {
+  siteName: 'Authloft',
   pwdMinLength: 8,
   pwdMaxLength: 64,
   pwdRequireClasses: 3,
@@ -143,12 +145,13 @@ export const DEFAULT_SETTINGS: SettingsDraft = {
 };
 
 /**
- * GetSettings 响应 → 表单草稿（36 键全量直映射；int64 bigint → number 经
+ * GetSettings 响应 → 表单草稿（37 键全量直映射；int64 bigint → number 经
  * toCount 收窄）。零值即真值（全量替换语义的对称面：后端读出的零值 = 管理
  * 员明确设置或默认值本身为零值，如 captcha_provider_key 空串 = 内置图形码）。
  */
 export function draftFromSettings(response: SettingsResponse): SettingsDraft {
   return {
+    siteName: response.siteName,
     pwdMinLength: toCount(response.pwdMinLength),
     pwdMaxLength: toCount(response.pwdMaxLength),
     pwdRequireClasses: toCount(response.pwdRequireClasses),
@@ -312,7 +315,7 @@ export type SettingsSectionKey =
   | 'providerAndGateway'
   | 'logAndStatic';
 
-/** 表单分区（§5.6 四张表的展示归组；36 键全覆盖、无重复）。 */
+/** 表单分区（§5.6 四张表的展示归组；37 键全覆盖、无重复）。 */
 export interface SettingsSectionMeta {
   /** 稳定标识（Tab 分组引用点，不随语言变化）。 */
   key: SettingsSectionKey;
@@ -321,7 +324,7 @@ export interface SettingsSectionMeta {
 }
 
 /**
- * 设置页 Tab（§5.6 四张表按主题归组；36 键在 4 个 Tab 间全覆盖、无重复）。
+ * 设置页 Tab（§5.6 四张表按主题归组；37 键在 4 个 Tab 间全覆盖、无重复）。
  * keys = 该 Tab 全部字段键，供「脏标记 / 仅保存本页签 / 提交键集」共用。
  */
 export interface SettingsTabMeta {
@@ -335,7 +338,7 @@ export interface SettingsTabMeta {
 /**
  * 设置表单分区清单（渲染数据源）：按 §5.6 四张表归组为 9 区——密码策略 /
  * 账号与注册 / 验证码限流 / 登录方式与 MFA / 密码失败保护 / 会话 Cookie 多
- * 域名与 HTTPS 部署 / 队列参数 / Provider 与网关 / 日志与静态资源；36 键
+ * 域名与 HTTPS 部署 / 队列参数 / Provider 与网关 / 日志与静态资源；37 键
  * 全覆盖、无重复。函数调用期求值（消费方组件渲染期调用），label /
  * hint / unit / addText / placeholder 经 t() 取当前语言文案——模块级常量
  * 求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
@@ -617,6 +620,12 @@ export function getSettingsSections(): SettingsSectionMeta[] {
         },
         {
           kind: 'text',
+          key: 'siteName',
+          label: t('admin.siteNameLabel'),
+          hint: t('admin.siteNameHint'),
+        },
+        {
+          kind: 'text',
           key: 'staticBase',
           label: t('admin.staticBaseLabel'),
           hint: t('admin.staticBaseHint'),
@@ -628,7 +637,7 @@ export function getSettingsSections(): SettingsSectionMeta[] {
 
 /**
  * 设置页 Tab 清单（渲染 / 保存作用域的唯一数据源）：9 个分区按主题归
- * 4 组——账号与密码 / 登录与验证 / 会话与域名 / 系统与集成，36 键在
+ * 4 组——账号与密码 / 登录与验证 / 会话与域名 / 系统与集成，37 键在
  * 四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平（不另
  * 手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug 引用，
  * 标题走 t() 调用期求值（locale 切换不冻结）。

@@ -578,7 +578,7 @@ func TestRenderTemplatePlaceholderExhaustive(t *testing.T) {
 	for _, entry := range []string{"login", "account", "admin", "setup"} {
 		// static_base 传带尾斜杠值：占位符替换须归一为 /assets（INIT 内原值
 		// 用不同字符串，避免干扰 /assets/ 计数）。
-		body, err := renderTemplate(entry, init, "/assets/", nonce)
+		body, err := renderTemplate(entry, init, "/assets/", nonce, "Authloft")
 		if err != nil {
 			t.Fatalf("%s: renderTemplate: %v", entry, err)
 		}

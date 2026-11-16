@@ -1,6 +1,6 @@
 // render.go 壳层统一渲染入口（阶段 C，接口文档 §8 行 1500 壳层模板契约：
 // 模板唯一来源 = 前端构建产物 sync-templates.mjs 原样落位，本包以
-// //go:embed 嵌入、缺失即编译失败〔防漏构建〕；渲染 = 读模板 + 三占位符
+// //go:embed 嵌入、缺失即编译失败〔防漏构建〕；渲染 = 读模板 + 五占位符
 // 纯字符串全量替换，不解析 HTML、不假设固定结构、不自行注入属性）。
 // 三端空壳（login / account / admin）、/auth/authorize 登录壳与 setup 壳
 // （internal/setup 复用同一入口——本包零 DB / Redis 运行期依赖，setup
@@ -11,6 +11,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	htmlutil "html"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -28,13 +29,14 @@ import (
 //go:embed templates
 var templatesFS embed.FS
 
-// 四占位符（§8 运行期占位符清单，全部由后端渲染期替换；模板内其他
-// {{…}} 一律按字面输出，不报错）。前三者由前端构建期注入构建产物，
-// TemplateVarsPlaceholder 为四占位符之一、所有模板均可包含、注入口径见 §8.1。
+// 五占位符（§8 运行期占位符清单，全部由后端渲染期替换；模板内其他
+// {{…}} 一律按字面输出，不报错）。前四者由前端构建期注入构建产物，
+// TemplateVarsPlaceholder 为五占位符之一、所有模板均可包含、注入口径见 §8.1。
 const (
 	phStaticBase            = "{{AUTHLOFT_STATIC_BASE}}"
 	phCSPNonce              = "{{AUTHLOFT_CSP_NONCE}}"
 	phInitJSON              = "{{AUTHLOFT_INIT_JSON}}"
+	phSiteName              = "{{AUTHLOFT_SITE_NAME}}"
 	TemplateVarsPlaceholder = "{{AUTHLOFT_TEMPLATE_VARS}}"
 )
 
@@ -46,12 +48,12 @@ const (
 // 同终稿基线响应头（含 CDN 追加，cspDirectives）。模板读 / INIT marshal
 // 失败 → 空体 500（§1.5 行 225 豁免端点按 HTTP 语义）；no-store（§8 行
 // 1498）。
-func RenderGinShell(c *gin.Context, entry string, init any, staticBase string) {
+func RenderGinShell(c *gin.Context, entry string, init any, staticBase, siteName string) {
 	nonce, ok := shellNonce(c, staticBase)
 	if !ok {
 		return
 	}
-	body, err := renderTemplate(entry, init, staticBase, nonce)
+	body, err := renderTemplate(entry, init, staticBase, nonce, siteName)
 	if err != nil {
 		slog.Error("pages: render shell", "entry", entry, "err", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -85,32 +87,39 @@ func writeShell(c *gin.Context, body []byte) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", body)
 }
 
-// renderTemplate 读嵌入模板 templates/{entry}.html 后交 renderHTML 做四
+// renderTemplate 读嵌入模板 templates/{entry}.html 后交 renderHTML 做五
 // 占位符替换；文件壳无客户端 template_vars 上下文，varsJSON 传空对象 `{}`。
-func renderTemplate(entry string, init any, staticBase, nonce string) ([]byte, error) {
+func renderTemplate(entry string, init any, staticBase, nonce, siteName string) ([]byte, error) {
 	tpl, err := templatesFS.ReadFile("templates/" + entry + ".html")
 	if err != nil {
 		return nil, fmt.Errorf("read template %s: %w", entry, err)
 	}
-	return renderHTML(string(tpl), init, staticBase, nonce, "{}")
+	return renderHTML(string(tpl), init, staticBase, nonce, "{}", siteName)
 }
 
-// renderHTML 对给定 HTML 文本做四占位符纯字符串全量替换（硬约束 2：出现
+// renderHTML 对给定 HTML 文本做五占位符纯字符串全量替换（硬约束 2：出现
 // 几次替换几次——nonce 一模板十几处，漏一处页面即挂；替换基于字面量，
 // 不分析标签、不依赖占位符位置或存在性）。顺序 nonce → static_base →
-// init → template_vars，四占位符互不为前缀，顺序不影响结果。INIT JSON 由
-// json.Marshal 编码：默认 <>& HTML 转义 + \u2028/\u2029 转义（§8）；模板
-// 变量 JSON 文本由调用方按同口径转义后经 varsJSON 传入（§8.1）；未配置 /
-// 为空时传 "{}"。static_base 尾斜杠归一后再替换（防 CDN 绝对地址 + /chunk.js
-// 出现 //）。模板内未识别的 {{…}} 按字面输出、不报错。
-func renderHTML(html string, init any, staticBase, nonce, varsJSON string) ([]byte, error) {
+// init → site_name → template_vars，五占位符互不为前缀，顺序不影响结果。
+// INIT JSON 由 json.Marshal 编码：默认 <>& HTML 转义 + \u2028/\u2029 转义（§8）；
+// 模板变量 JSON 文本由调用方按同口径转义后经 varsJSON 传入（§8.1）；未配置 / 为空
+// 时传 "{}"。site_name 为管理员配置值（不可信），注入点是 <title> 文本节点，
+// 故在构造注入值时按 HTML 文本上下文 html.EscapeString 转义（§8.1），防
+// </title><script> 注入；缺失 / 空串回落 settings.DefaultSiteName。
+// static_base 尾斜杠归一后再替换（防 CDN 绝对地址 + /chunk.js 出现 //）。
+// 模板内未识别的 {{…}} 按字面输出、不报错。
+func renderHTML(html string, init any, staticBase, nonce, varsJSON, siteName string) ([]byte, error) {
 	initJSON, err := json.Marshal(init)
 	if err != nil {
 		return nil, fmt.Errorf("marshal init: %w", err)
 	}
+	if siteName == "" {
+		siteName = settings.DefaultSiteName
+	}
 	html = strings.ReplaceAll(html, phCSPNonce, nonce)
 	html = strings.ReplaceAll(html, phStaticBase, strings.TrimRight(staticBase, "/"))
 	html = strings.ReplaceAll(html, phInitJSON, string(initJSON))
+	html = strings.ReplaceAll(html, phSiteName, htmlutil.EscapeString(siteName))
 	html = strings.ReplaceAll(html, TemplateVarsPlaceholder, varsJSON)
 	return []byte(html), nil
 }

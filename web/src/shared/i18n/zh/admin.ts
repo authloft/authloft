@@ -88,6 +88,9 @@ export const admin = {
   'admin.gatewayTokensHint': '可多个',
   'admin.eventlogRetentionDaysLabel': '事件日志保留天数',
   'admin.eventlogRetentionDaysHint': '默认 180',
+  'admin.siteNameLabel': '站点名称',
+  'admin.siteNameHint':
+    '页面标题，注入模板 <title> 占位符；留空则显示默认名称 Authloft',
   'admin.staticBaseLabel': '静态资源基址（CDN）',
   'admin.staticBaseHint':
     '决定空壳页面脚本 / 样式 URL 前缀；改后需刷新页面生效',

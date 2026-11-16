@@ -9,7 +9,7 @@
  * ① <script（内联 + 外链，含 init script）数 + <style 数 + link[rel=stylesheet] 数
  *    三类合计 = {{AUTHLOFT_CSP_NONCE}} 出现次数（init script 的 nonce 也计入，等式恰好成立；
  *    漏挂任意一个标签即整页被 CSP 拦）；
- * ② 三占位符（CSP_NONCE / STATIC_BASE / INIT_JSON）各 ≥1 次在场；
+ * ② 四占位符（CSP_NONCE / STATIC_BASE / INIT_JSON / SITE_NAME）各 ≥1 次在场；
  * ③ src="/assets 与 href="/assets 零命中（无写死前缀残留，前缀只允许占位符）。
  *
  * 仅用 node 内置模块（fs / path / url），零新增依赖；任何失败以非零 exit code 结束，
@@ -33,11 +33,19 @@ const ENTRIES = ['login', 'account', 'admin', 'setup'];
 const CSP_NONCE = '{{AUTHLOFT_CSP_NONCE}}';
 const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
 const INIT_JSON = '{{AUTHLOFT_INIT_JSON}}';
+const SITE_NAME = '{{AUTHLOFT_SITE_NAME}}';
 
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distHtmlDir = path.join(webDir, 'dist', 'html');
 /** 写入边界（§1.5）：对 server/ 的写权限仅限这四个落位产物文件，覆盖式写入。 */
-const outputDir = path.join(webDir, '..', 'server', 'internal', 'pages', 'templates');
+const outputDir = path.join(
+  webDir,
+  '..',
+  'server',
+  'internal',
+  'pages',
+  'templates',
+);
 
 /** 统计正则命中数。 */
 function countMatches(text, regex) {
@@ -53,11 +61,18 @@ function countOccurrences(text, needle) {
 function reconcile(html) {
   const scriptCount = countMatches(html, /<script\b/g);
   const styleCount = countMatches(html, /<style\b/g);
-  const stylesheetCount = countMatches(html, /<link\b[^>]*\brel\s*=\s*"stylesheet"[^>]*>/g);
+  const stylesheetCount = countMatches(
+    html,
+    /<link\b[^>]*\brel\s*=\s*"stylesheet"[^>]*>/g,
+  );
   const nonceCount = countOccurrences(html, CSP_NONCE);
   const staticBaseCount = countOccurrences(html, STATIC_BASE);
   const initJsonCount = countOccurrences(html, INIT_JSON);
-  const hardcodedPrefixCount = countMatches(html, /\s(?:src|href)\s*=\s*"\/assets/g);
+  const siteNameCount = countOccurrences(html, SITE_NAME);
+  const hardcodedPrefixCount = countMatches(
+    html,
+    /\s(?:src|href)\s*=\s*"\/assets/g,
+  );
 
   const problems = [];
   // ① 三类标签合计 = nonce 出现次数（等式恰好成立，多算 = preload 漏网、少算 = 有标签裸奔）。
@@ -66,17 +81,26 @@ function reconcile(html) {
       `nonce 对账不过：script(${scriptCount}) + style(${styleCount}) + link[stylesheet](${stylesheetCount}) = ${scriptCount + styleCount + stylesheetCount} ≠ nonce 出现次数(${nonceCount})`,
     );
   }
-  // ② 三占位符各 ≥1 次在场。
+  // ② 四占位符各 ≥1 次在场。
   if (nonceCount < 1) problems.push(`缺 ${CSP_NONCE}`);
   if (staticBaseCount < 1) problems.push(`缺 ${STATIC_BASE}`);
   if (initJsonCount < 1) problems.push(`缺 ${INIT_JSON}`);
+  if (siteNameCount < 1) problems.push(`缺 ${SITE_NAME}`);
   // ③ 写死前缀零残留。
   if (hardcodedPrefixCount > 0) {
     problems.push(`写死 src/href="/assets 前缀残留 ${hardcodedPrefixCount} 处`);
   }
 
   return {
-    stats: { scriptCount, styleCount, stylesheetCount, nonceCount, staticBaseCount, initJsonCount },
+    stats: {
+      scriptCount,
+      styleCount,
+      stylesheetCount,
+      nonceCount,
+      staticBaseCount,
+      initJsonCount,
+      siteNameCount,
+    },
     problems,
   };
 }
@@ -89,7 +113,9 @@ let failed = false;
 for (const entry of ENTRIES) {
   const distHtmlPath = path.join(distHtmlDir, entry, 'index.html');
   if (!fs.existsSync(distHtmlPath)) {
-    console.error(`[sync-templates] ${entry}：dist/html/${entry}/index.html 缺失，请先执行 modern build`);
+    console.error(
+      `[sync-templates] ${entry}：dist/html/${entry}/index.html 缺失，请先执行 modern build`,
+    );
     failed = true;
     continue;
   }
@@ -98,7 +124,7 @@ for (const entry of ENTRIES) {
   fs.writeFileSync(path.join(outputDir, `${entry}.html`), htmlBuf);
   const { stats, problems } = reconcile(htmlBuf.toString('utf8'));
   tableRows.push(
-    `${entry}: script=${stats.scriptCount} style=${stats.styleCount} link[stylesheet]=${stats.stylesheetCount} nonce=${stats.nonceCount} static_base=${stats.staticBaseCount} init_json=${stats.initJsonCount}`,
+    `${entry}: script=${stats.scriptCount} style=${stats.styleCount} link[stylesheet]=${stats.stylesheetCount} nonce=${stats.nonceCount} static_base=${stats.staticBaseCount} init_json=${stats.initJsonCount} site_name=${stats.siteNameCount}`,
   );
   for (const problem of problems) {
     console.error(`[sync-templates] ${entry}：对账不过——${problem}`);
@@ -106,15 +132,21 @@ for (const entry of ENTRIES) {
   }
 }
 
-console.log('[sync-templates] 对账数字表（script 内联+外链 / style / link[stylesheet] / nonce / STATIC_BASE / INIT_JSON）：');
+console.log(
+  '[sync-templates] 对账数字表（script 内联+外链 / style / link[stylesheet] / nonce / STATIC_BASE / INIT_JSON / SITE_NAME）：',
+);
 for (const row of tableRows) console.log(`  ${row}`);
 
 if (failed) {
-  console.error('[sync-templates] 同步失败：对账未全部通过（复制已完成，修复构建配置后重跑）');
+  console.error(
+    '[sync-templates] 同步失败：对账未全部通过（复制已完成，修复构建配置后重跑）',
+  );
   process.exit(1);
 }
 
-console.log(`[sync-templates] 完成：${ENTRIES.length} 份壳层模板对账通过，已同步到 server/internal/pages/templates/`);
+console.log(
+  `[sync-templates] 完成：${ENTRIES.length} 份壳层模板对账通过，已同步到 server/internal/pages/templates/`,
+);
 
 // ---------- 前端产物复制段（docs/后端架构.md §3.13 口径）----------
 /** 产物源（web/dist 根）与目标（后端 assets 包 embed 根）。 */
@@ -128,7 +160,8 @@ function collectFiles(dir, prefix = '') {
   const files = [];
   for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
     const rel = prefix ? `${prefix}/${item.name}` : item.name;
-    if (item.isDirectory()) files.push(...collectFiles(path.join(dir, item.name), rel));
+    if (item.isDirectory())
+      files.push(...collectFiles(path.join(dir, item.name), rel));
     else if (item.isFile()) files.push(rel);
   }
   return files;
@@ -147,12 +180,16 @@ function isExcluded(rel) {
 try {
   // 源校验先行：缺失/为空直接非零退出，不做任何清理/复制（不产出半份产物）。
   if (!fs.existsSync(distRootDir)) {
-    console.error('[sync-templates] web/dist 不存在，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制');
+    console.error(
+      '[sync-templates] web/dist 不存在，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制',
+    );
     process.exit(1);
   }
   const allFiles = collectFiles(distRootDir);
   if (allFiles.length === 0) {
-    console.error('[sync-templates] web/dist 为空目录，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制');
+    console.error(
+      '[sync-templates] web/dist 为空目录，请先执行 modern build（如 pnpm build）；本次未做资产清理/复制',
+    );
     process.exit(1);
   }
 
@@ -163,7 +200,10 @@ try {
   fs.mkdirSync(assetsDistDir, { recursive: true });
   for (const item of fs.readdirSync(assetsDistDir, { withFileTypes: true })) {
     if (item.name === KEEP_FILE) continue;
-    fs.rmSync(path.join(assetsDistDir, item.name), { recursive: true, force: true });
+    fs.rmSync(path.join(assetsDistDir, item.name), {
+      recursive: true,
+      force: true,
+    });
   }
 
   for (const rel of copyFiles) {

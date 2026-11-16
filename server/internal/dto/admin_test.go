@@ -11,6 +11,7 @@ import (
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
 	"authloft/internal/repo/model"
+	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，测试
 	// 断言「schema 与注册表 meta 逐项一致」需两域真实 meta。
 	_ "authloft/internal/provider/email/smtp"
@@ -440,5 +441,25 @@ func TestSchemaDefaultValue(t *testing.T) {
 		case tc.want != nil && !proto.Equal(got, tc.want):
 			t.Errorf("schemaDefaultValue(%q) = %+v, want %+v", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestAdminSettingsSiteName AdminSettings 全键投影含 site_name（第 37 键）：
+// 快照有值原样投影；缺失 / 非 string 按零值投影（protojson 省略）。
+func TestAdminSettingsSiteName(t *testing.T) {
+	snap := settings.Defaults()
+	snap[settings.KeySiteName] = "Authloft Docs"
+	if got := AdminSettings(snap).GetSiteName(); got != "Authloft Docs" {
+		t.Errorf("SiteName = %q, want Authloft Docs", got)
+	}
+
+	snap[settings.KeySiteName] = "Authloft"
+	if got := AdminSettings(snap).GetSiteName(); got != "Authloft" {
+		t.Errorf("SiteName = %q, want Authloft（默认值）", got)
+	}
+
+	delete(snap, settings.KeySiteName)
+	if got := AdminSettings(snap).GetSiteName(); got != "" {
+		t.Errorf("缺失键 SiteName = %q, want 空串（零值投影）", got)
 	}
 }

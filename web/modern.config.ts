@@ -7,6 +7,7 @@ import { appTools, defineConfig } from '@modern-js/app-tools';
 const CSP_NONCE = '{{AUTHLOFT_CSP_NONCE}}';
 const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
 const INIT_JSON = '{{AUTHLOFT_INIT_JSON}}';
+const SITE_NAME = '{{AUTHLOFT_SITE_NAME}}';
 
 const IS_DEV = process.env.NODE_ENV === 'development';
 const DEV_INIT_JSON =
@@ -47,9 +48,9 @@ export default defineConfig({
       },
     },
   },
-  // ── 壳层模板三个运行期占位符的构建期注入（docs/前端架构.md §1.5 定稿）──
+  // ── 壳层模板四个运行期占位符的构建期注入（docs/前端架构.md §1.5 定稿）──
   // 壳层模板 = dist/html/{entry}/index.html 原样复制（scripts/sync-templates.mjs 仅复制
-  // + 对账校验，零改写）；三占位符全部在此构建期注入产物，框架产物是模板唯一真相源。
+  // + 对账校验，零改写）；四占位符全部在此构建期注入产物，框架产物是模板唯一真相源。
   security: {
     // ① nonce 统一挂（§1.5 ①）：Rsbuild 内建，在标签生成阶段给 script（外链 + 内联，
     //    含框架自动注入的 runtime / route manifest 脚本）、<style>、
@@ -68,6 +69,9 @@ export default defineConfig({
     },
   },
   html: {
+    // ④ 站点名 <title>（§1.5）：dev 直出可读标题供 dev server 阅读；生产注入运行期占位符，
+    //    由后端按 settings.site_name 在渲染期替换并作 HTML 文本转义。
+    title: IS_DEV ? 'Authloft' : SITE_NAME,
     // ③ init script 前插 + link[rel=stylesheet] nonce 补挂（§1.5 ③）。
     //    Handler 收到全量 head / body 标签并写回；children 原样输出不转义，
     //    {{…}} 不匹配模板语法，minify 后占位符存活（已实证）。

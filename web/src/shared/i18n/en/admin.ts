@@ -95,6 +95,9 @@ export const admin: typeof zhAdmin = {
   'admin.gatewayTokensHint': 'Multiple values allowed',
   'admin.eventlogRetentionDaysLabel': 'Event log retention days',
   'admin.eventlogRetentionDaysHint': 'Default 180',
+  'admin.siteNameLabel': 'Site name',
+  'admin.siteNameHint':
+    'Page title, injected into the template <title> placeholder; empty falls back to the default name Authloft',
   'admin.staticBaseLabel': 'Static asset base URL (CDN)',
   'admin.staticBaseHint':
     'URL prefix for shell page scripts / styles; refresh the page after changes take effect',

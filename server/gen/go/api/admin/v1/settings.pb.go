@@ -156,8 +156,10 @@ type SetSettingsRequest struct {
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
 	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
 	HttpsDeployment *string `protobuf:"bytes,40,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
+	SiteName      *string `protobuf:"bytes,41,opt,name=site_name,json=siteName,proto3,oneof" json:"site_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetSettingsRequest) Reset() {
@@ -470,8 +472,15 @@ func (x *SetSettingsRequest) GetHttpsDeployment() string {
 	return ""
 }
 
+func (x *SetSettingsRequest) GetSiteName() string {
+	if x != nil && x.SiteName != nil {
+		return *x.SiteName
+	}
+	return ""
+}
+
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
-// 键集合 / 键名与 SetSettingsRequest 的 36 个数据键一致，编号按表序从 1 起
+// 键集合 / 键名与 SetSettingsRequest 的 37 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
 // 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -555,8 +564,10 @@ type SettingsResponse struct {
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
 	// （§1.9 驱动口径）。
 	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
+	SiteName      string `protobuf:"bytes,37,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SettingsResponse) Reset() {
@@ -841,12 +852,19 @@ func (x *SettingsResponse) GetHttpsDeployment() string {
 	return ""
 }
 
+func (x *SettingsResponse) GetSiteName() string {
+	if x != nil {
+		return x.SiteName
+	}
+	return ""
+}
+
 var File_api_admin_v1_settings_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1bapi/admin/v1/settings.proto\x12\fapi.admin.v1\"\x14\n" +
-	"\x12GetSettingsRequest\"\xc6\x14\n" +
+	"\x12GetSettingsRequest\"\xf6\x14\n" +
 	"\x12SetSettingsRequest\x12)\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03H\x00R\fpwdMinLength\x88\x01\x01\x12)\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03H\x01R\fpwdMaxLength\x88\x01\x01\x123\n" +
@@ -897,7 +915,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x17eventlog_retention_days\x18& \x01(\x03H!R\x15eventlogRetentionDays\x88\x01\x01\x12$\n" +
 	"\vstatic_base\x18' \x01(\tH\"R\n" +
 	"staticBase\x88\x01\x01\x12.\n" +
-	"\x10https_deployment\x18( \x01(\tH#R\x0fhttpsDeployment\x88\x01\x01B\x11\n" +
+	"\x10https_deployment\x18( \x01(\tH#R\x0fhttpsDeployment\x88\x01\x01\x12 \n" +
+	"\tsite_name\x18) \x01(\tH$R\bsiteName\x88\x01\x01B\x11\n" +
 	"\x0f_pwd_min_lengthB\x11\n" +
 	"\x0f_pwd_max_lengthB\x16\n" +
 	"\x14_pwd_require_classesB\x18\n" +
@@ -934,7 +953,9 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x13_has_gateway_tokensB\x1a\n" +
 	"\x18_eventlog_retention_daysB\x0e\n" +
 	"\f_static_baseB\x13\n" +
-	"\x11_https_deployment\"\xee\v\n" +
+	"\x11_https_deploymentB\f\n" +
+	"\n" +
+	"_site_name\"\x8b\f\n" +
 	"\x10SettingsResponse\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -980,7 +1001,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x17eventlog_retention_days\x18\" \x01(\x03R\x15eventlogRetentionDays\x12\x1f\n" +
 	"\vstatic_base\x18# \x01(\tR\n" +
 	"staticBase\x12)\n" +
-	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeploymentB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeployment\x12\x1b\n" +
+	"\tsite_name\x18% \x01(\tR\bsiteNameB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_settings_proto_rawDescOnce sync.Once
