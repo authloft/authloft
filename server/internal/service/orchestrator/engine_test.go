@@ -213,6 +213,7 @@ type testEngineDeps struct {
 	oidc     *fakeOIDCIssuer
 	events   *fakeEvents
 	sync     *fakeSyncBuilder
+	ssoApp   *fakeSsoResolver
 }
 
 func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
@@ -248,7 +249,7 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 
 func (d *testEngineDeps) engine(state *State) *Engine {
 	dispatcher := &Dispatcher{Registry: d.registry, Settings: d.settings}
-	return NewEngine(EngineDeps{
+	deps := EngineDeps{
 		State:      state,
 		Dispatcher: dispatcher,
 		Gate:       d.gate,
@@ -260,7 +261,12 @@ func (d *testEngineDeps) engine(state *State) *Engine {
 			Credentials: d.creds,
 		},
 		NewTID: func() (string, error) { return "tid-1", nil },
-	})
+	}
+	// ssoApp 未装配的用例保持 nil（typed nil 指针不进接口），验证 fail-closed。
+	if d.ssoApp != nil {
+		deps.SsoApp = d.ssoApp
+	}
+	return NewEngine(deps)
 }
 
 func otpEmailFactor() *fakeFactor {

@@ -148,6 +148,8 @@ func setPasswordAccepts(flow string, kind factor.FactorKind, p *token.LoginToken
 }
 
 // methodStatus 按 flow 判定方式是否启用（§2.2 第 2 步、§2.3、§2.4）。
+// login 流程装载了应用快照（login_token.sso 非 nil）时放行只看快照成员
+// （§2.1 交集口径，快照已含全局交集），nil 快照走全局 login_methods。
 // 二次因子阶段不看 login_methods，改用 mfa_methods（recovery_code 随 totp 生效）。
 // tp 免密建号（login_token.tp 非空 + flow=login）跳过
 // allow_signup_password——三方建号开关唯一归 provider enable_signup
@@ -168,6 +170,15 @@ func methodStatus(flow string, kind factor.FactorKind, usage factor.Usage, s Set
 	tpSignup := p != nil && p.GetTp() != nil && p.GetFlow() == "login"
 	switch flow {
 	case "login":
+		// SSO 应用快照在场（§2.2 首签口径）：放行只看首签快照成员——快照已
+		// 与全局取过交集，配置中途变更对已签发令牌不生效（有效期封顶）；
+		// nil 快照（直登 / 应用未配置）走全局，行为与现状一致。
+		if snap := p.GetSso(); snap != nil {
+			if sliceContains(snap.GetMethods(), string(kind)) {
+				return ""
+			}
+			return StatusMethodDisabled
+		}
 		if !sliceContains(stringSlice(s, settings.KeyLoginMethods), string(kind)) {
 			return StatusMethodDisabled
 		}

@@ -105,6 +105,31 @@ func TestLoginDefaultNilAndEmpty(t *testing.T) {
 	}
 }
 
+// TestLoginDefaultAndRegisterInjectSsoClientID 校验 ssoClientId 注入透传
+// （§2.2 / §2.3 首签口径）：仅 LoginDefault / Register 携带，Reset 无此字段，
+// 缺省请求透传空串（直登链路零影响）。
+func TestLoginDefaultAndRegisterInjectSsoClientID(t *testing.T) {
+	got := LoginDefault(&ssov1.LoginDefaultRequest{SsoClientId: "app-1"})
+	if got.SSOClientID != "app-1" {
+		t.Fatalf("LoginDefault SSOClientID = %q, want %q", got.SSOClientID, "app-1")
+	}
+	if got := LoginDefault(&ssov1.LoginDefaultRequest{}); got.SSOClientID != "" {
+		t.Fatalf("LoginDefault 缺省 SSOClientID = %q, want 空串", got.SSOClientID)
+	}
+
+	got = Register(&ssov1.RegisterRequest{SsoClientId: "app-2"})
+	if got.SSOClientID != "app-2" {
+		t.Fatalf("Register SSOClientID = %q, want %q", got.SSOClientID, "app-2")
+	}
+	if got := Register(&ssov1.RegisterRequest{}); got.SSOClientID != "" {
+		t.Fatalf("Register 缺省 SSOClientID = %q, want 空串", got.SSOClientID)
+	}
+
+	if got := Reset(&ssov1.ResetPasswordRequest{}); got.SSOClientID != "" {
+		t.Fatalf("Reset SSOClientID = %q, want 恒空（重置不建会话）", got.SSOClientID)
+	}
+}
+
 // TestRegisterMapsRequestFields 校验 §2.3 行 440-450 Register 请求字段到
 // 引擎入参的逐项映射（RegisterPayload 无 credential）。
 func TestRegisterMapsRequestFields(t *testing.T) {

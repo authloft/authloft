@@ -89,6 +89,7 @@ import (
 	"authloft/internal/service/orchestrator"
 	qrcodesvc "authloft/internal/service/qrcode"
 	sessionsvc "authloft/internal/service/session"
+	ssoappsvc "authloft/internal/service/ssoapp"
 	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/service/verification"
@@ -751,6 +752,9 @@ func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 			Users:       users,
 			Credentials: creds,
 		},
+		// SSO 应用快照解析器（§2.2 首签口径）：查行 + 交集 + 组装，
+		// orchestrator / thirdparty / qrcode 消费同一实现。
+		SsoApp: ssoappsvc.NewResolver(deps.repos.Clients, deps.settings),
 		// set_password 步写入依赖（§7.4）：窄接口由 repo 天然满足；epoch 复用共享
 		// 单例；审计经 resetAuditSink 走延迟队列；Thirdparty 复用 deps.thirdparty。
 		SetPass: &orchestrator.SetPassDeps{

@@ -18,37 +18,42 @@ import (
 
 // LoginDefault 把 SsoService/LoginDefault 请求消息转换为编排引擎入参
 // （docs/接口文档.md §2.2 行 419-426）：登录流程的状态机由 orchestrator
-// 承担，handler 只经本函数做一次字段映射。
+// 承担，handler 只经本函数做一次字段映射。ssoClientId 仅首签生效（§2.2
+// 首签口径），续步由引擎忽略。
 func LoginDefault(req *ssov1.LoginDefaultRequest) orchestrator.Request {
 	if req == nil {
 		return orchestrator.Request{}
 	}
 	p := req.GetPayload()
 	return orchestrator.Request{
-		LoginToken: req.GetLoginToken(),
-		Method:     req.GetMethod(),
-		Step:       req.GetStep(),
-		Payload:    payload(p),
-		Captcha:    captcha(req.GetCaptcha()),
-		OIDC:       oidc(req.GetOidc()),
+		LoginToken:  req.GetLoginToken(),
+		Method:      req.GetMethod(),
+		Step:        req.GetStep(),
+		Payload:     payload(p),
+		Captcha:     captcha(req.GetCaptcha()),
+		OIDC:        oidc(req.GetOidc()),
+		SSOClientID: req.GetSsoClientId(),
 	}
 }
 
 // Register 把 SsoService/Register 请求消息转换为引擎入参（docs/接口文档.md
 // §2.3 行 440-454：顶层与 §2.2 同构，仅 flow=register）。RegisterPayload 与
-// LoginPayload 字段部分重合（无 credential），映射口径同 payload()。
+// LoginPayload 字段部分重合（无 credential），映射口径同 payload()。注册不读
+// 应用级方式开关（§2.1 / §2.3），ssoClientId 随首签入载荷仅作回跳用途
+// （§2.3 首签口径）。
 func Register(req *ssov1.RegisterRequest) orchestrator.Request {
 	if req == nil {
 		return orchestrator.Request{}
 	}
 	p := req.GetPayload()
 	return orchestrator.Request{
-		LoginToken: req.GetLoginToken(),
-		Method:     req.GetMethod(),
-		Step:       req.GetStep(),
-		Payload:    registerPayload(p),
-		Captcha:    captcha(req.GetCaptcha()),
-		OIDC:       oidc(req.GetOidc()),
+		LoginToken:  req.GetLoginToken(),
+		Method:      req.GetMethod(),
+		Step:        req.GetStep(),
+		Payload:     registerPayload(p),
+		Captcha:     captcha(req.GetCaptcha()),
+		OIDC:        oidc(req.GetOidc()),
+		SSOClientID: req.GetSsoClientId(),
 	}
 }
 

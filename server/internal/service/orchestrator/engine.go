@@ -17,6 +17,7 @@ import (
 	"authloft/internal/logx"
 	"authloft/internal/security"
 	"authloft/internal/service/mfapolicy"
+	"authloft/internal/service/ssoapp"
 )
 
 // 登录流程域 status（docs/接口文档.md §1.6 行 228-273 的封闭集合子集）。
@@ -75,8 +76,19 @@ type Request struct {
 	Payload    *factor.Payload
 	Captcha    *factor.CaptchaInput
 	OIDC       *token.Oidc
+	// SSOClientID SSO 应用标识（§2.2）：仅首签（尚无 login_token）生效，解析
+	// 应用快照入载荷；续步忽略、续签原样保留。空串 = 直登 / OIDC 链路，
+	// 行为与现状完全一致。
+	SSOClientID string
 	// SessionInBody 对应无 Cookie 场景（小程序）：success 时返回 session_token（§2.7.4）。
 	SessionInBody bool
+}
+
+// SsoSnapshotResolver SSO 应用登录快照解析窄接口（§2.2 首签口径）：生产注入
+// ssoapp.Resolver；nil 且请求携带 sso_client_id 时 fail-closed 转
+// invalid_request，不降级直登。
+type SsoSnapshotResolver interface {
+	Snapshot(ctx context.Context, ssoClientID string) (*token.Sso, error)
 }
 
 // sessionTokenSinkKey 浏览器 Cookie 场景 session_token 写点的 ctx 注入键
@@ -125,7 +137,10 @@ type EngineDeps struct {
 	UserRef    UserRefResolver
 	Factor     FactorDeps
 	SetPass    *SetPassDeps
-	NewTID     func() (string, error)
+	// SsoApp SSO 应用快照解析器（§2.2 首签口径）；nil 时携带 sso_client_id
+	// 的首签请求 fail-closed。
+	SsoApp SsoSnapshotResolver
+	NewTID func() (string, error)
 }
 
 // Engine 单引擎。
@@ -138,6 +153,7 @@ type Engine struct {
 	userRef    UserRefResolver
 	repo       FactorDeps
 	setpass    *SetPassDeps
+	ssoApp     SsoSnapshotResolver
 	newTID     func() (string, error)
 }
 
@@ -152,6 +168,7 @@ func NewEngine(d EngineDeps) *Engine {
 		userRef:    d.UserRef,
 		repo:       d.Factor,
 		setpass:    d.SetPass,
+		ssoApp:     d.SsoApp,
 		newTID:     d.NewTID,
 	}
 	if e.newTID == nil {
@@ -251,7 +268,36 @@ func (e *Engine) loadPayload(ctx context.Context, flow string, req *Request) (*t
 	if err != nil {
 		return nil, failStatus(ctx, flow, "load_payload:new_tid", err)
 	}
-	return &token.LoginTokenPayload{Tid: tid, Flow: flow, Oidc: req.OIDC}, ""
+	p := &token.LoginTokenPayload{Tid: tid, Flow: flow, Oidc: req.OIDC}
+	// SSO 应用首签（§2.2）：首签请求携带 sso_client_id 时读一次应用配置算
+	// 快照入载荷，查无行 / 行不可用 → invalid_request 信封，不降级直登（防
+	// 拼接请求绕过应用限制）；续步重签经 Renew 的载荷保留逻辑原样延续，
+	// sso_client_id 续步忽略。快照 nil（应用未配置）= 无快照链路，与直登一致。
+	if req.SSOClientID != "" {
+		snap, status := e.resolveSsoSnapshot(ctx, flow, req.SSOClientID)
+		if status != "" {
+			return nil, status
+		}
+		p.Sso = snap
+	}
+	return p, ""
+}
+
+// resolveSsoSnapshot 解析应用快照：查无行 / 行不可用 → invalid_request（§2.2
+// 首签口径）；解析器缺位属装配缺陷，同样 fail-closed 不放行无快照的 SSO 流程；
+// 其余故障按内部失败出口记日志走 failed。
+func (e *Engine) resolveSsoSnapshot(ctx context.Context, flow, clientID string) (*token.Sso, string) {
+	if e.ssoApp == nil {
+		return nil, StatusInvalidRequest
+	}
+	snap, err := e.ssoApp.Snapshot(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, ssoapp.ErrClientNotFound) || errors.Is(err, ssoapp.ErrClientDisabled) {
+			return nil, StatusInvalidRequest
+		}
+		return nil, failStatus(ctx, flow, "load_payload:sso_snapshot", err)
+	}
+	return snap, ""
 }
 
 // flowAccepts register 接受 login/register 两个 flow（§7.4 行 1006-1013）；
