@@ -19,7 +19,12 @@
  * bootstrap 无 methods 必需校验（§8：methods 仅 login 必填），路由层不发请求。
  */
 import { Empty } from '@douyinfe/semi-ui';
-import { Link, useRoutes, type RouteObject } from '@modern-js/runtime/router';
+import {
+  Link,
+  Outlet,
+  useRoutes,
+  type RouteObject,
+} from '@modern-js/runtime/router';
 import type { ReactNode } from 'react';
 import { t } from '../shared/i18n';
 import { loadAdminBootstrap } from './bootstrap';
@@ -52,122 +57,82 @@ export function AdminApp(): ReactNode {
   const alRoot = boot.alRoot;
   const rootTitle = t('admin.rootTitle');
   // 列表页面包屑二级（SSO/OIDC 客户端三级，中间层 admin.navClients 沿用原口径）。
+  // 子路由只声明页面 + handle.breadcrumb；布局只在下方父路由声明一次。
+  // 非 data router 下 useMatches 不可用：把子路由表交给布局按 location 读
+  // handle.breadcrumb；getRoutes 延迟求值，规避路由表构造期引用自身的 TDZ。
+  const getRoutes = () => routes;
   const routes: RouteObject[] = [
     {
-      path: adminNavPath('admin.navProviders'),
       element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navProviders')]}
-        >
-          <ProvidersPage alRoot={alRoot} />
+        <AdminLayout alRoot={alRoot} getRoutes={getRoutes}>
+          <Outlet />
         </AdminLayout>
       ),
-    },
-    {
-      path: adminNavPath('admin.navUsers'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navUsers')]}
-        >
-          <UsersPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navSsoClients'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[
-            rootTitle,
-            t('admin.navClients'),
-            t('admin.navSsoClients'),
-          ]}
-        >
-          <SsoClientsPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navOidcClients'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[
-            rootTitle,
-            t('admin.navClients'),
-            t('admin.navOidcClients'),
-          ]}
-        >
-          <OidcClientsPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navTemplates'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navTemplates')]}
-        >
-          <TemplatesPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navSettings'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navSettings')]}
-        >
-          <SettingsPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navAudit'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navAudit')]}
-        >
-          <AuditPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navStatus'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navStatus')]}
-        >
-          <StatusPage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    {
-      path: adminNavPath('admin.navDecode'),
-      element: (
-        <AdminLayout
-          alRoot={alRoot}
-          breadcrumb={[rootTitle, t('admin.navDecode')]}
-        >
-          <DecodePage alRoot={alRoot} />
-        </AdminLayout>
-      ),
-    },
-    // path:'*' 兜底（带布局的不存在页）。
-    {
-      path: '*',
-      element: (
-        <AdminLayout alRoot={alRoot} breadcrumb={[rootTitle]}>
-          <NotFoundPage />
-        </AdminLayout>
-      ),
+      children: [
+        {
+          path: adminNavPath('admin.navProviders'),
+          element: <ProvidersPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navProviders')] },
+        },
+        {
+          path: adminNavPath('admin.navUsers'),
+          element: <UsersPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navUsers')] },
+        },
+        {
+          path: adminNavPath('admin.navSsoClients'),
+          element: <SsoClientsPage alRoot={alRoot} />,
+          handle: {
+            breadcrumb: [
+              rootTitle,
+              t('admin.navClients'),
+              t('admin.navSsoClients'),
+            ],
+          },
+        },
+        {
+          path: adminNavPath('admin.navOidcClients'),
+          element: <OidcClientsPage alRoot={alRoot} />,
+          handle: {
+            breadcrumb: [
+              rootTitle,
+              t('admin.navClients'),
+              t('admin.navOidcClients'),
+            ],
+          },
+        },
+        {
+          path: adminNavPath('admin.navTemplates'),
+          element: <TemplatesPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navTemplates')] },
+        },
+        {
+          path: adminNavPath('admin.navSettings'),
+          element: <SettingsPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navSettings')] },
+        },
+        {
+          path: adminNavPath('admin.navAudit'),
+          element: <AuditPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navAudit')] },
+        },
+        {
+          path: adminNavPath('admin.navStatus'),
+          element: <StatusPage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navStatus')] },
+        },
+        {
+          path: adminNavPath('admin.navDecode'),
+          element: <DecodePage alRoot={alRoot} />,
+          handle: { breadcrumb: [rootTitle, t('admin.navDecode')] },
+        },
+        // path:'*' 兜底（带布局的不存在页）。
+        {
+          path: '*',
+          element: <NotFoundPage />,
+          handle: { breadcrumb: [rootTitle] },
+        },
+      ],
     },
   ];
   return useRoutes(routes);
