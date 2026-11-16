@@ -35,8 +35,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
-  Card,
-  Checkbox,
   Input,
   InputNumber,
   List,
@@ -52,6 +50,7 @@ import {
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { requestOptions } from '../../shared/hooks/requestOptions';
+import { PageLayout } from '../../shared/components/PageLayout';
 import { t } from '../../shared/i18n';
 import { StringListEditor } from '../components/StringListEditor';
 import {
@@ -73,8 +72,6 @@ import {
 } from '../settingsLogic';
 import { loginUrl } from '../bootstrap';
 import styles from './SettingsPage.module.less';
-
-const { Group: CheckboxGroup } = Checkbox;
 
 /**
  * 单字段渲染（判别联合按 kind 收窄 → key 类型随之收窄，零类型断言）。
@@ -411,10 +408,7 @@ export function SettingsPage(props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.settingsTitle')}
-      </Typography.Title>
+    <PageLayout title={t('admin.settingsTitle')}>
       <Tabs
         className={styles.tabs}
         type="line"
@@ -519,6 +513,6 @@ export function SettingsPage(props: {
           )}
         />
       </Modal>
-    </section>
+    </PageLayout>
   );
 }

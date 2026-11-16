@@ -1,18 +1,7 @@
 // SSO 客户端列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// DataTable 自带表格 / 分页样式（Semi），此处承载工具条 / 反馈文案 / 表单
-// 弹窗 / 详情弹窗的页内布局。
+// DataTable 自带表格 / 分页样式（Semi），页壳（title / 右侧新建）由 PageLayout
+// 统一承载；此处承载反馈文案 / 表单弹窗 / 详情弹窗的页内布局。
 @import (reference) '../../shared/styles/tokens.less';
-
-.page {
-  display: block;
-}
-
-// 工具条：新建按钮靠右（无搜索入参，§5.5 ListSsoClients 仅分页 / 排序）。
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: @spacing-md;
-}
 
 .actions {
   display: inline-flex;

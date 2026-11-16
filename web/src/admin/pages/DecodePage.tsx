@@ -16,12 +16,13 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import { Button, Select, TextArea, Typography } from '@douyinfe/semi-ui';
+import { Button, Select, TextArea } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import type { JsonObject } from '@bufbuild/protobuf';
 import { t, type I18nKey } from '../../shared/i18n';
 import { requestOptions } from '../../shared/hooks/requestOptions';
+import { PageLayout } from '../../shared/components/PageLayout';
 import {
   adminReturnTo,
   buildDecodeTokenRequest,
@@ -78,48 +79,47 @@ export function DecodePage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navDecode')}
-      </Typography.Title>
-      <div className={styles.form}>
-        <Select
-          className={styles.purposeSelect}
-          value={purpose}
-          onChange={(value) => {
-            setPurpose(typeof value === 'string' ? value : 'login');
-          }}
-          optionList={PURPOSE_OPTIONS.map((option) => ({
-            value: option.value,
-            label: t(option.textKey),
-          }))}
-          aria-label={t('admin.decodePurposeAriaLabel')}
-        />
-        <TextArea
-          className={styles.tokenInput}
-          value={token}
-          onChange={(value) => setToken(value)}
-          rows={3}
-          placeholder={t('admin.decodeTokenPlaceholder')}
-          aria-label={t('admin.decodeTokenAriaLabel')}
-        />
-        <div className={styles.formFooter}>
-          <Button
-            theme="solid"
-            disabled={token.trim() === ''}
-            loading={decodeReq.loading}
-            onClick={submit}
-          >
-            {t('admin.decodeAction')}
-          </Button>
+    <PageLayout title={t('admin.navDecode')}>
+      <div className={styles.content}>
+        <div className={styles.form}>
+          <Select
+            className={styles.purposeSelect}
+            value={purpose}
+            onChange={(value) => {
+              setPurpose(typeof value === 'string' ? value : 'login');
+            }}
+            optionList={PURPOSE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.textKey),
+            }))}
+            aria-label={t('admin.decodePurposeAriaLabel')}
+          />
+          <TextArea
+            className={styles.tokenInput}
+            value={token}
+            onChange={(value) => setToken(value)}
+            rows={3}
+            placeholder={t('admin.decodeTokenPlaceholder')}
+            aria-label={t('admin.decodeTokenAriaLabel')}
+          />
+          <div className={styles.formFooter}>
+            <Button
+              theme="solid"
+              disabled={token.trim() === ''}
+              loading={decodeReq.loading}
+              onClick={submit}
+            >
+              {t('admin.decodeAction')}
+            </Button>
+          </div>
         </div>
+        {payload !== undefined ? (
+          <div className={styles.resultBlock}>
+            <p className={styles.resultHint}>{t('admin.decodeResultHint')}</p>
+            <pre className={styles.result}>{decodePayloadText(payload)}</pre>
+          </div>
+        ) : null}
       </div>
-      {payload !== undefined ? (
-        <div className={styles.resultBlock}>
-          <p className={styles.resultHint}>{t('admin.decodeResultHint')}</p>
-          <pre className={styles.result}>{decodePayloadText(payload)}</pre>
-        </div>
-      ) : null}
-    </section>
+    </PageLayout>
   );
 }

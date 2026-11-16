@@ -1,9 +1,10 @@
 // 解码工具页样式（§1.7）：同目录同名 module less；类名 camelCase。
-// 表单控件自带 Semi 样式，此处承载表单纵排 / 结果区代码块。
+// 表单控件自带 Semi 样式，页壳 title 由 PageLayout 统一承载；
+// 此处承载表单纵排 / 结果区代码块。
 @import (reference) '../../shared/styles/tokens.less';
 
-.page {
-  display: block;
+// 原 .page 的 max-width 改由 children 内容容器承载（PageLayout 页壳通宽）。
+.content {
   max-width: 720px;
 }
 

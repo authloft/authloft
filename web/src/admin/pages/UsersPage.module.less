@@ -1,20 +1,9 @@
 // 用户列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// DataTable 自带表格 / 分页样式（Semi），此处只承载页内布局：工具条 / 反馈
-// 文案 / 操作列按钮排布 / 重置密码弹窗内容。
+// DataTable 自带表格 / 分页样式（Semi），页壳（title / 工具条）由 PageLayout
+// 统一承载；此处只承载搜索框宽度 / 反馈文案 / 操作列按钮 / 重置弹窗内容。
 @import (reference) '../../shared/styles/tokens.less';
 
-.page {
-  display: block;
-}
-
-// 搜索工具条：输入框自适应 + 触发按钮定宽。
-.toolbar {
-  display: flex;
-  gap: @spacing-sm;
-  align-items: center;
-  margin-bottom: @spacing-md;
-}
-
+// 搜索框宽度（PageLayout .filter 负责横排 + 间距）。
 .searchInput {
   max-width: 360px;
 }

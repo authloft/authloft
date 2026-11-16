@@ -39,9 +39,9 @@ import {
   InputNumber,
   RadioGroup,
   Select,
-  Typography,
 } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
+import { PageLayout } from '../../shared/components/PageLayout';
 import {
   initialTableQuery,
   type TableQueryState,
@@ -294,91 +294,94 @@ export function AuditPage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navAudit')}
-      </Typography.Title>
-      <div className={styles.filterBar}>
-        <RadioGroup
-          type="button"
-          value={preset}
-          onChange={(event) => changePreset(event.target.value as AuditPreset)}
-          options={PRESET_OPTIONS.map((option) => ({
-            value: option.value,
-            label: t(option.textKey),
-          }))}
-        />
-        <Select
-          className={styles.filterSelect}
-          value={eventFilter}
-          onChange={(value) =>
-            changeEventFilter(typeof value === 'string' ? value : '')
-          }
-          placeholder={t('admin.eventFilterPlaceholder')}
-          showClear
-          optionList={eventTypeFilterOptions(preset).map((option) => ({
-            value: option.value,
-            // FILTERS 存 textKey，渲染期 t() 取当前语言。
-            label: t(option.textKey),
-          }))}
-          disabled={preset === 'login_records'}
-          aria-label={t('admin.eventFilterAriaLabel')}
-        />
-        <Select
-          className={styles.filterSelect}
-          value={actorTypeFilter}
-          onChange={(value) =>
-            changeActorTypeFilter(typeof value === 'string' ? value : '')
-          }
-          placeholder={t('admin.actorFilterPlaceholder')}
-          showClear
-          optionList={ACTOR_TYPE_FILTERS.map((option) => ({
-            value: option.value,
-            label: t(option.textKey),
-          }))}
-          aria-label={t('admin.actorFilterAriaLabel')}
-        />
-        <InputNumber
-          className={styles.filterInput}
-          value={actorIdFilter}
-          onChange={(value) => changeActorIdFilter(value)}
-          placeholder={t('admin.actorIdFilterPlaceholder')}
-          min={0}
-          precision={0}
-          showClear
-          aria-label={t('admin.actorIdFilterAriaLabel')}
-        />
-        <InputNumber
-          className={styles.filterInput}
-          value={userIdFilter}
-          onChange={(value) => changeUserIdFilter(value)}
-          placeholder={t('admin.userIdFilterPlaceholder')}
-          min={0}
-          precision={0}
-          showClear
-          aria-label={t('admin.userIdFilterAriaLabel')}
-        />
-        <DatePicker
-          className={styles.filterDate}
-          type="dateTime"
-          value={fromFilter}
-          onChange={(date) =>
-            changeFromFilter(date instanceof Date ? date : undefined)
-          }
-          placeholder={t('admin.fromFilterPlaceholder')}
-          showClear
-        />
-        <DatePicker
-          className={styles.filterDate}
-          type="dateTime"
-          value={toFilter}
-          onChange={(date) =>
-            changeToFilter(date instanceof Date ? date : undefined)
-          }
-          placeholder={t('admin.toFilterPlaceholder')}
-          showClear
-        />
-      </div>
+    <PageLayout
+      title={t('admin.navAudit')}
+      filter={
+        <>
+          <RadioGroup
+            type="button"
+            value={preset}
+            onChange={(event) =>
+              changePreset(event.target.value as AuditPreset)
+            }
+            options={PRESET_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.textKey),
+            }))}
+          />
+          <Select
+            className={styles.filterSelect}
+            value={eventFilter}
+            onChange={(value) =>
+              changeEventFilter(typeof value === 'string' ? value : '')
+            }
+            placeholder={t('admin.eventFilterPlaceholder')}
+            showClear
+            optionList={eventTypeFilterOptions(preset).map((option) => ({
+              value: option.value,
+              // FILTERS 存 textKey，渲染期 t() 取当前语言。
+              label: t(option.textKey),
+            }))}
+            disabled={preset === 'login_records'}
+            aria-label={t('admin.eventFilterAriaLabel')}
+          />
+          <Select
+            className={styles.filterSelect}
+            value={actorTypeFilter}
+            onChange={(value) =>
+              changeActorTypeFilter(typeof value === 'string' ? value : '')
+            }
+            placeholder={t('admin.actorFilterPlaceholder')}
+            showClear
+            optionList={ACTOR_TYPE_FILTERS.map((option) => ({
+              value: option.value,
+              label: t(option.textKey),
+            }))}
+            aria-label={t('admin.actorFilterAriaLabel')}
+          />
+          <InputNumber
+            className={styles.filterInput}
+            value={actorIdFilter}
+            onChange={(value) => changeActorIdFilter(value)}
+            placeholder={t('admin.actorIdFilterPlaceholder')}
+            min={0}
+            precision={0}
+            showClear
+            aria-label={t('admin.actorIdFilterAriaLabel')}
+          />
+          <InputNumber
+            className={styles.filterInput}
+            value={userIdFilter}
+            onChange={(value) => changeUserIdFilter(value)}
+            placeholder={t('admin.userIdFilterPlaceholder')}
+            min={0}
+            precision={0}
+            showClear
+            aria-label={t('admin.userIdFilterAriaLabel')}
+          />
+          <DatePicker
+            className={styles.filterDate}
+            type="dateTime"
+            value={fromFilter}
+            onChange={(date) =>
+              changeFromFilter(date instanceof Date ? date : undefined)
+            }
+            placeholder={t('admin.fromFilterPlaceholder')}
+            showClear
+          />
+          <DatePicker
+            className={styles.filterDate}
+            type="dateTime"
+            value={toFilter}
+            onChange={(date) =>
+              changeToFilter(date instanceof Date ? date : undefined)
+            }
+            placeholder={t('admin.toFilterPlaceholder')}
+            showClear
+          />
+        </>
+      }
+    >
       {preset === 'sensitive_records' ? (
         <p className={styles.presetHint}>
           {t('admin.auditPresetSensitiveHint')}
@@ -400,6 +403,6 @@ export function AuditPage(_props: {
           ) : undefined
         }
       />
-    </section>
+    </PageLayout>
   );
 }

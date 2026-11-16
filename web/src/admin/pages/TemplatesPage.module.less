@@ -1,18 +1,7 @@
 // 模板管理页自定义样式（前端架构 §1.7）：同目录同名 module less，类名 camelCase。
-// DataTable 自带表格 / 分页样式（Semi），此处承载工具条 / 表单弹窗布局。
+// DataTable 自带表格 / 分页样式（Semi），页壳（title / 工具条 / 右侧新建）由
+// PageLayout 统一承载；此处承载搜索框宽度 / 表单弹窗布局。
 @import (reference) '../../shared/styles/tokens.less';
-
-.page {
-  display: block;
-}
-
-// 工具条：搜索区靠左，新建按钮靠右。
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: @spacing-sm;
-  margin-bottom: @spacing-md;
-}
 
 .searchInput {
   width: 260px;

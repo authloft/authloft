@@ -25,15 +25,7 @@
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
-import {
-  Banner,
-  Button,
-  Empty,
-  Input,
-  Modal,
-  Toast,
-  Typography,
-} from '@douyinfe/semi-ui';
+import { Banner, Button, Empty, Input, Modal, Toast } from '@douyinfe/semi-ui';
 import { Link, useLocation } from '@modern-js/runtime/router';
 import {
   DataTable,
@@ -44,6 +36,7 @@ import {
   initialTableQuery,
   type TableQueryState,
 } from '../../shared/app-ui/dataTableLogic';
+import { PageLayout } from '../../shared/components/PageLayout';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { ConfirmActionButton } from '../components/ConfirmActionButton';
 import { useRequest } from 'ahooks';
@@ -300,23 +293,24 @@ export function UsersPage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navUsers')}
-      </Typography.Title>
-      <div className={styles.toolbar}>
-        <Input
-          className={styles.searchInput}
-          value={qDraft}
-          onChange={(value) => setQDraft(value)}
-          onEnterPress={applySearch}
-          placeholder={t('admin.userSearchPlaceholder')}
-          aria-label={t('admin.userSearchAriaLabel')}
-        />
-        <Button theme="solid" onClick={applySearch}>
-          {t('admin.searchAction')}
-        </Button>
-      </div>
+    <PageLayout
+      title={t('admin.navUsers')}
+      filter={
+        <>
+          <Input
+            className={styles.searchInput}
+            value={qDraft}
+            onChange={(value) => setQDraft(value)}
+            onEnterPress={applySearch}
+            placeholder={t('admin.userSearchPlaceholder')}
+            aria-label={t('admin.userSearchAriaLabel')}
+          />
+          <Button theme="solid" onClick={applySearch}>
+            {t('admin.searchAction')}
+          </Button>
+        </>
+      }
+    >
       <DataTable<AdminUser>
         columns={columns}
         rows={data?.items ?? []}
@@ -391,6 +385,6 @@ export function UsersPage(_props: {
           ) : null}
         </div>
       </Modal>
-    </section>
+    </PageLayout>
   );
 }

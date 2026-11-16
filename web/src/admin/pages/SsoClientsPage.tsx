@@ -33,9 +33,9 @@ import {
   Spin,
   TextArea,
   Toast,
-  Typography,
 } from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
+import { PageLayout } from '../../shared/components/PageLayout';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
   initialTableQuery,
@@ -392,15 +392,14 @@ export function SsoClientsPage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navSsoClients')}
-      </Typography.Title>
-      <div className={styles.toolbar}>
+    <PageLayout
+      title={t('admin.navSsoClients')}
+      actions={
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createClientAction')}
         </Button>
-      </div>
+      }
+    >
       <DataTable<SsoClient>
         columns={columns}
         rows={data?.items ?? []}
@@ -740,6 +739,6 @@ export function SsoClientsPage(_props: {
           </div>
         </div>
       </SideSheet>
-    </section>
+    </PageLayout>
   );
 }

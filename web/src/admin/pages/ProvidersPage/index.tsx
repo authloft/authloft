@@ -40,7 +40,6 @@ import {
   Table,
   Tag,
   Toast,
-  Typography,
 } from '@douyinfe/semi-ui';
 // ColumnProps 类型导入例外（CODE_GUIDE §4.1 第 21 条）：仅类型导入
 // （编译期擦除、零运行时痕迹）+ 子路径在包 exports 白名单 + 大包入口确未
@@ -50,6 +49,7 @@ import { useLocation } from '@modern-js/runtime/router';
 import { patchRowByKey } from '../../../shared/app-ui/dataTableLogic';
 import { CopyButton } from '../../../shared/components/CopyButton';
 import { ProviderIcon } from '../../../shared/components/ProviderIcon';
+import { PageLayout } from '../../../shared/components/PageLayout';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../../shared/hooks/requestOptions';
@@ -282,11 +282,9 @@ export function ProvidersPage(props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navProviders')}
-      </Typography.Title>
-      <div className={styles.toolbar}>
+    <PageLayout
+      title={t('admin.navProviders')}
+      actions={
         <Space>
           <Button onClick={() => setShowSort(true)}>
             {t('admin.providerSortAction')}
@@ -295,7 +293,8 @@ export function ProvidersPage(props: {
             {t('admin.createProviderAction')}
           </Button>
         </Space>
-      </div>
+      }
+    >
       <Table<Provider>
         columns={columns}
         dataSource={rows}
@@ -350,6 +349,6 @@ export function ProvidersPage(props: {
         visible={showEdit}
         onClose={() => setShowEdit(false)}
       />
-    </section>
+    </PageLayout>
   );
 }

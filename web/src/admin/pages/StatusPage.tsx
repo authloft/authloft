@@ -17,6 +17,7 @@ import { Banner, Button, Card, Spin, Typography } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { requestOptions } from '../../shared/hooks/requestOptions';
+import { PageLayout } from '../../shared/components/PageLayout';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { adminReturnTo, getStatus, isUnauthenticatedError } from '../api';
@@ -61,10 +62,7 @@ export function StatusPage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navStatus')}
-      </Typography.Title>
+    <PageLayout title={t('admin.navStatus')}>
       <div className={styles.stats}>
         <Card className={styles.statCard} title={t('admin.statusQueueLength')}>
           <Typography.Text className={styles.statValue}>
@@ -92,6 +90,6 @@ export function StatusPage(_props: {
       >
         {t('admin.refreshAction')}
       </Button>
-    </section>
+    </PageLayout>
   );
 }

@@ -22,11 +22,11 @@ import {
   SideSheet,
   TextArea,
   Toast,
-  Typography,
 } from '@douyinfe/semi-ui';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
+import { PageLayout } from '../../shared/components/PageLayout';
 import {
   initialTableQuery,
   type TableQueryState,
@@ -270,27 +270,30 @@ export function TemplatesPage(_props: {
   }
 
   return (
-    <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
-        {t('admin.navTemplates')}
-      </Typography.Title>
-      <div className={styles.toolbar}>
-        <Input
-          className={styles.searchInput}
-          value={qDraft}
-          onChange={setQDraft}
-          onEnterPress={applySearch}
-          placeholder={t('admin.templateSearchPlaceholder')}
-          aria-label={t('admin.templateSearchAriaLabel')}
-          disabled={loading}
-        />
-        <Button onClick={applySearch} disabled={loading}>
-          {t('admin.searchAction')}
-        </Button>
+    <PageLayout
+      title={t('admin.navTemplates')}
+      filter={
+        <>
+          <Input
+            className={styles.searchInput}
+            value={qDraft}
+            onChange={setQDraft}
+            onEnterPress={applySearch}
+            placeholder={t('admin.templateSearchPlaceholder')}
+            aria-label={t('admin.templateSearchAriaLabel')}
+            disabled={loading}
+          />
+          <Button onClick={applySearch} disabled={loading}>
+            {t('admin.searchAction')}
+          </Button>
+        </>
+      }
+      actions={
         <Button theme="solid" onClick={openCreate}>
           {t('admin.createTemplateAction')}
         </Button>
-      </div>
+      }
+    >
       <DataTable<Template>
         columns={columns}
         rows={data?.items ?? []}
@@ -455,6 +458,6 @@ export function TemplatesPage(_props: {
           </div>
         </div>
       </SideSheet>
-    </section>
+    </PageLayout>
   );
 }
