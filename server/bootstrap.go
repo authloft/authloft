@@ -117,6 +117,11 @@ func run(configPath string) error {
 		return err
 	}
 	logx.Setup(cfg.Log.Level, cfg.Log.Format)
+	// 内置模板常驻内存（§3.13 / §8.1）：启动期扫描嵌入的 templatesFS 注册，
+	// 失败即 fail-fast——Resolve 依赖该表命中内置模板。
+	if err := pages.InitBuiltinTemplates(); err != nil {
+		return err
+	}
 	return serve(cfg)
 }
 
@@ -1344,6 +1349,8 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Sessions:   deps.sessionSvc.Verifier,
 		Codes:      deps.codeIssuer,
 		Audit:      deps.infra.Events,
+		Templates:  deps.admin.Templates,
+		SsoClients: deps.repos.Clients,
 	})
 }
 

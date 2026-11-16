@@ -132,6 +132,12 @@ type Deps struct {
 	// Audit 审计事件投递（oidc_authorize_no_state，§4.2 行 1074）；nil
 	// 静默跳过（不阻断授权主链路）。
 	Audit AuditSink
+	// Templates 自定义模板解析源（§8.1）：admin 侧 TemplateService 天然满足。
+	// nil（setup 模式 / 未装配）时一律回落默认文件壳，本包零 DB / Redis 依赖。
+	Templates TemplateResolver
+	// SsoClients sso_client 行源（§8.1 登录端入口选模板用）；nil 时登录端
+	// 回落默认文件壳。OIDC 入口沿用 Clients（OidcClientReader）。
+	SsoClients SsoClientReader
 	// Metas provider 渠道注册表枚举（type → category/channel）；nil 用
 	// provider 全局注册表（Types + Lookup）。测试注入用。
 	Metas func() []provider.Meta
@@ -167,6 +173,8 @@ type Handler struct {
 	audit      AuditSink
 	metas      func() []provider.Meta
 	now        func() time.Time
+	// deps 保存装配期窄接口集合，供 resolveClientTpl 复用（§8.1）。
+	deps Deps
 }
 
 // Register 挂全部页面路由（§8 路由表 + §2.9 logout / sync_cookie + §4.2
@@ -189,6 +197,7 @@ func Register(r gin.IRouter, d Deps) *Handler {
 		audit:      d.Audit,
 		metas:      d.Metas,
 		now:        d.Now,
+		deps:       d,
 	}
 	if h.now == nil {
 		h.now = time.Now
@@ -211,13 +220,14 @@ func Register(r gin.IRouter, d Deps) *Handler {
 }
 
 // entryPage account / admin entry 空壳：仅注入 al_root / static_base
-// （§8 白名单，methods 是 login 必填项、account 无）。
+// （§8 白名单，methods 是 login 必填项、account 无）。account / admin 不参与
+// 客户端模板选壳（§8.1 仅 SSO 登录入口 / OIDC 授权入口），恒走文件壳。
 func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h.renderShell(c, entry, &initPayload{
 			ALRoot:     h.root,
 			StaticBase: h.staticBase(),
-		})
+		}, nil)
 	}
 }
 
@@ -225,16 +235,17 @@ func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 // /sso/oauth/callback/*）：注入 al_root / static_base / methods（必填）。
 // flow 按 §2.1 行 363-368 取页面 URL query（login 默认）；三页各自带路径
 // 缺省（前端入口链接不带 query，routes.tsx 行 67 依赖按页过滤的快照）。
-// client_id 参数读取但不参与过滤（§2.1 行 367「过滤该客户端可用方式」无
-// 数据模型支撑，默认不实现）。组装失败 → 空体 500（§8 行 1436
-// 「缺失即服务端故障」，§1.5 行 225 豁免端点按 HTTP 语义）。
+// client_id 用于按 §8.1 选客户端自定义模板（SSO 登录入口查 sso_client），
+// 未指定 / 解析失败一律回落默认文件壳；不参与 methods 过滤（无数据模型
+// 支撑、默认不实现）。组装失败 → 空体 500（§8 行 1436「缺失即服务端故障」，
+// §1.5 行 225 豁免端点按 HTTP 语义）。
 func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		flow := defaultFlow
 		if q := c.Query("flow"); q == flowLogin || q == flowRegister || q == flowReset {
 			flow = q
 		}
-		_ = c.Query("client_id") // 读取占位：无过滤数据模型（见上）
+		tpl := h.resolveClientTpl(c.Request.Context(), c.Query("client_id"), false)
 		snapshot, err := h.buildMethods(c.Request.Context(), flow)
 		if err != nil {
 			slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
@@ -245,16 +256,21 @@ func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
 			ALRoot:     h.root,
 			StaticBase: h.staticBase(),
 			Methods:    snapshot,
-		})
+		}, tpl)
 	}
 }
 
-// renderShell 渲染 SPA 空壳：委托 render.go RenderGinShell 统一渲染出口
-// （阶段 C：读嵌入模板 + 三占位符全量替换；nonce 消费 / CSP 头 / no-store
-// / 500 语义见其注释，三端壳、authorize login 壳与 setup 壳共用）。
+// renderShell 渲染 SPA 空壳：tpl 非 nil（客户端模板解析成功）走
+// RenderClientShell 用自定义内容渲染，否则回落 RenderGinShell 读默认文件壳
+// （§8.1 第 6 步）。两条路径共用 nonce 消费 / CSP 头 / no-store / 500 语义；
 // static_base 取 settings 快照（nil 回落默认 /assets）。
-func (h *Handler) renderShell(c *gin.Context, entry string, init *initPayload) {
-	RenderGinShell(c, entry, init, h.staticBase())
+func (h *Handler) renderShell(c *gin.Context, entry string, init *initPayload, tpl *clientTemplate) {
+	staticBase := h.staticBase()
+	if tpl != nil {
+		RenderClientShell(c, tpl.html, init, staticBase, tpl.varsJSON)
+		return
+	}
+	RenderGinShell(c, entry, init, staticBase)
 }
 
 // staticBase settings 键 static_base（§5.6 默认 /assets，可为 CDN 绝对

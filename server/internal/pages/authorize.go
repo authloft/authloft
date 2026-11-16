@@ -163,12 +163,16 @@ func (h *Handler) authorize(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	// client_id 已由上方 OIDC 校验层确认（§8.1 第 1 步）：复用同一解析入口
+	// 按 oidc_client 选模板；未指定 / 解析失败回落默认文件壳，有会话 302
+	// 路径不受影响。
+	tpl := h.resolveClientTpl(c.Request.Context(), clientID, true)
 	h.renderShell(c, "login", &initPayload{
 		ALRoot:     h.root,
 		StaticBase: h.staticBase(),
 		Methods:    snapshot,
 		OIDC:       oidcInit,
-	})
+	}, tpl)
 }
 
 // authorizeSession al_session 校验（§11.1 四步）：无 Cookie / 未登录 / 会话

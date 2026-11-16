@@ -28,12 +28,14 @@ import (
 //go:embed templates
 var templatesFS embed.FS
 
-// 三占位符（§8 行 1504-1508 运行期占位符清单，全部由后端渲染期替换；
-// 模板内其他 {{…}} 一律按字面输出，不报错）。
+// 四占位符（§8 运行期占位符清单，全部由后端渲染期替换；模板内其他
+// {{…}} 一律按字面输出，不报错）。前三者由前端构建期注入构建产物，
+// TemplateVarsPlaceholder 仅 DB 自定义模板可包含、注入口径见 §8.1。
 const (
-	phStaticBase = "{{AUTHLOFT_STATIC_BASE}}"
-	phCSPNonce   = "{{AUTHLOFT_CSP_NONCE}}"
-	phInitJSON   = "{{AUTHLOFT_INIT_JSON}}"
+	phStaticBase            = "{{AUTHLOFT_STATIC_BASE}}"
+	phCSPNonce              = "{{AUTHLOFT_CSP_NONCE}}"
+	phInitJSON              = "{{AUTHLOFT_INIT_JSON}}"
+	TemplateVarsPlaceholder = "{{AUTHLOFT_TEMPLATE_VARS}}"
 )
 
 // RenderGinShell 渲染 {entry} 壳层响应（三端壳 / authorize login 壳 /
@@ -45,18 +47,9 @@ const (
 // 失败 → 空体 500（§1.5 行 225 豁免端点按 HTTP 语义）；no-store（§8 行
 // 1498）。
 func RenderGinShell(c *gin.Context, entry string, init any, staticBase string) {
-	nonce := ""
-	if v, ok := c.Get(middleware.CSPNonceKey); ok {
-		nonce, _ = v.(string)
-	}
-	if nonce == "" {
-		var err error
-		if nonce, err = genNonce(); err != nil {
-			slog.Error("pages: gen nonce", "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		c.Header("Content-Security-Policy", cspDirectives(nonce, staticBase))
+	nonce, ok := shellNonce(c, staticBase)
+	if !ok {
+		return
 	}
 	body, err := renderTemplate(entry, init, staticBase, nonce)
 	if err != nil {
@@ -64,30 +57,61 @@ func RenderGinShell(c *gin.Context, entry string, init any, staticBase string) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	writeShell(c, body)
+}
+
+// shellNonce 取 CSP nonce：优先消费 CSP 中间件写入 ctx 的值；未经中间件
+// （测试 / 未来挂载点 / nonce 生成失败降级）时自生成并自设同终稿基线响应头
+// （含 CDN 追加）。第二个返回值为 false 表示生成失败、调用方应终止渲染。
+func shellNonce(c *gin.Context, staticBase string) (string, bool) {
+	if v, ok := c.Get(middleware.CSPNonceKey); ok {
+		if nonce, _ := v.(string); nonce != "" {
+			return nonce, true
+		}
+	}
+	nonce, err := genNonce()
+	if err != nil {
+		slog.Error("pages: gen nonce", "err", err)
+		return "", false
+	}
+	c.Header("Content-Security-Policy", cspDirectives(nonce, staticBase))
+	return nonce, true
+}
+
+// writeShell 写壳层 HTML 响应头与正文（no-store，§8）：RenderGinShell 与
+// RenderClientShell 共用，保证自定义模板壳与文件壳行为一致。
+func writeShell(c *gin.Context, body []byte) {
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", body)
 }
 
-// renderTemplate 读嵌入模板 templates/{entry}.html 并做三占位符纯字符串
-// 全量替换（硬约束 2：出现几次替换几次——nonce 一模板十几处，漏一处页面
-// 即挂；替换基于字面量，不分析标签、不依赖占位符位置或存在性）。INIT
-// JSON 由 json.Marshal 编码：默认 <>& HTML 转义 + \u2028/\u2029 转义
-// （§8 行 1498）；static_base 尾斜杠归一后再替换（防 CDN 绝对地址 +
-// /chunk.js 出现 //）。替换顺序 nonce → static_base → init，三占位符
-// 互不为前缀，顺序不影响结果。
+// renderTemplate 读嵌入模板 templates/{entry}.html 后交 renderHTML 做四
+// 占位符替换；文件壳无模板变量占位符，varsJSON 传空对象即空操作。
 func renderTemplate(entry string, init any, staticBase, nonce string) ([]byte, error) {
 	tpl, err := templatesFS.ReadFile("templates/" + entry + ".html")
 	if err != nil {
 		return nil, fmt.Errorf("read template %s: %w", entry, err)
 	}
+	return renderHTML(string(tpl), init, staticBase, nonce, "{}")
+}
+
+// renderHTML 对给定 HTML 文本做四占位符纯字符串全量替换（硬约束 2：出现
+// 几次替换几次——nonce 一模板十几处，漏一处页面即挂；替换基于字面量，
+// 不分析标签、不依赖占位符位置或存在性）。顺序 nonce → static_base →
+// init → template_vars，四占位符互不为前缀，顺序不影响结果。INIT JSON 由
+// json.Marshal 编码：默认 <>& HTML 转义 + \u2028/\u2029 转义（§8）；模板
+// 变量 JSON 文本由调用方按同口径转义后经 varsJSON 传入（§8.1）；未配置 /
+// 为空时传 "{}"。static_base 尾斜杠归一后再替换（防 CDN 绝对地址 + /chunk.js
+// 出现 //）。模板内未识别的 {{…}} 按字面输出、不报错。
+func renderHTML(html string, init any, staticBase, nonce, varsJSON string) ([]byte, error) {
 	initJSON, err := json.Marshal(init)
 	if err != nil {
 		return nil, fmt.Errorf("marshal init: %w", err)
 	}
-	html := string(tpl)
 	html = strings.ReplaceAll(html, phCSPNonce, nonce)
 	html = strings.ReplaceAll(html, phStaticBase, strings.TrimRight(staticBase, "/"))
 	html = strings.ReplaceAll(html, phInitJSON, string(initJSON))
+	html = strings.ReplaceAll(html, TemplateVarsPlaceholder, varsJSON)
 	return []byte(html), nil
 }
 
