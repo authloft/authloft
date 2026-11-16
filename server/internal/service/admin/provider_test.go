@@ -29,6 +29,14 @@ import (
 	_ "authloft/internal/provider/sms/aliyun_sms"
 )
 
+// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，未迁移类型为 nil）。
+func schemaFieldsOf(schema func() []provider.FieldMeta) []provider.FieldMeta {
+	if schema == nil {
+		return nil
+	}
+	return schema()
+}
+
 // —— 测试专用消息厂商（TestProvider 的同步 Send 断言）——
 
 const testAdminSenderType = "admin_test_sender"
@@ -1039,8 +1047,8 @@ func TestProxyURLKeysetSameSource(t *testing.T) {
 	if !ok {
 		t.Fatal("wechat_mp meta 缺失")
 	}
-	// ① schema 下发
-	schema := dto.AdminSchema("wechat_mp", provider.CategoryOAuth, meta.Fields, nil)
+	// ① schema 下发（完整 Schema 声明纯转换，含 proxy_url）
+	schema := dto.AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
 	found := false
 	for _, f := range schema.GetFields() {
 		if f.GetKey() == dto.ProxyURLFieldKey {
@@ -1062,8 +1070,12 @@ func TestProxyURLKeysetSameSource(t *testing.T) {
 	if err != nil || ext.GetProxyUrl() != "http://h:8080" {
 		t.Fatalf("Ext 未落 proxy_url: ext=%+v err=%v（extKeys 缺失）", ext, err)
 	}
-	// union 裁剪：schema 不含 + 提交被拒。
-	unionSchema := dto.AdminSchema(provider.UnionProviderType, provider.CategoryUnion, nil, nil)
+	// union 裁剪：schema 不含 + 提交被拒（Schema 声明本身不含 proxy_url）。
+	unionMeta, ok := provider.LookupTypeMeta(provider.UnionProviderType)
+	if !ok {
+		t.Fatal("union meta 缺失")
+	}
+	unionSchema := dto.AdminSchema(provider.UnionProviderType, provider.CategoryUnion, schemaFieldsOf(unionMeta.Schema), nil)
 	for _, f := range unionSchema.GetFields() {
 		if f.GetKey() == dto.ProxyURLFieldKey {
 			t.Error("union schema 不应含 proxy_url")

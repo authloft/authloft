@@ -860,7 +860,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("%s section = %q, 非法（不在五区块封闭集合）", f.GetKey(), f.GetSection())
 		}
 	}
-	// proxy_url 通用 Ext 基线字段：由 schema 统一下发，形态与 ProxyURLSchemaField 一致。
+	// proxy_url 通用字段：由 provider 的完整 Schema 声明经 AdminSchema 纯转换下发。
 	if f, ok := byKey["proxy_url"]; !ok {
 		t.Error("schema 缺少通用基线字段 proxy_url")
 	} else {

@@ -91,17 +91,38 @@ func AdminProviderExt(ext *providerpb.Ext) *structpb.Struct {
 	return out
 }
 
-// 五区块取值（封闭集合）。
-const (
-	sectionBasic      = "basic"
-	sectionCredential = "credential"
-	sectionEndpoint   = "endpoint"
-	sectionDisplay    = "display"
-	sectionPolicy     = "policy"
-)
+// AdminSchema 把类型 meta 声明的完整 []FieldMeta 按序转换为 wire SchemaField：
+// 每个字段的 key/label/type/section/required/default/advanced/help/pattern 逐项透传；
+// Kind=FieldDynamicOptions 的字段从 dynamicOptions[DynamicKey] 注入 options，其余
+// 字段用自身 Options；Storage / Kind / DynamicKey 不进 wire（proto 无对应字段）。
+// label / help 是前端 i18n 键，本层不持有文案；type / category 仅作顶层响应字段。
+// 字段裁剪（哪些表列 / Ext / proxy_url 出现）完全由调用方传入的 fields 决定。
+func AdminSchema(providerType, category string, fields []provider.FieldMeta, dynamicOptions map[string][]string) *adminv1.SchemaResponse {
+	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
+	for _, f := range fields {
+		sf := &adminv1.SchemaField{
+			Key:      f.Key,
+			Label:    f.Label,
+			Type:     f.Type,
+			Section:  f.Section,
+			Required: f.Required,
+			Default:  schemaDefaultValue(f.Default),
+			Advanced: f.Advanced,
+			Help:     f.Help,
+			Pattern:  f.Pattern,
+		}
+		if f.Kind == provider.FieldDynamicOptions {
+			sf.Options = dynamicOptions[f.DynamicKey]
+		} else {
+			sf.Options = f.Options
+		}
+		resp.Fields = append(resp.Fields, sf)
+	}
+	return resp
+}
 
-// ProxyURLFieldKey 通用 Ext 基线字段 proxy_url 的 schema key（接口文档 §5.3
-// 代理字段约定）：不随各渠道 FieldMeta 逐项声明，由 schema 基线统一下发。
+// ProxyURLFieldKey 通用 Ext 字段 proxy_url 的 schema key（接口文档 §5.3 代理
+// 字段约定）：由 provider 的完整 Schema 声明下发，本常量供写入 / 校验侧复用。
 const ProxyURLFieldKey = "proxy_url"
 
 // proxyURL 裁剪常量：category=storage 且 type=local 仅本地磁盘、无网络外呼，
@@ -122,127 +143,6 @@ func ProxyURLFieldEnabled(category, providerType string) bool {
 		return false
 	}
 	return true
-}
-
-// ProxyURLSchemaField proxy_url 的 schema 字段声明：endpoint / advanced / text，
-// label 与 help 下发前端 i18n 键名（本层不持有文案，语言包由前端提供）。
-func ProxyURLSchemaField() *adminv1.SchemaField {
-	return &adminv1.SchemaField{
-		Key:      ProxyURLFieldKey,
-		Label:    "admin.schemaField.proxyUrlLabel",
-		Type:     "text",
-		Section:  sectionEndpoint,
-		Advanced: true,
-		Help:     "admin.schemaField.proxyUrlHelp",
-	}
-}
-
-// AdminSchema 动态表单 schema：type / category 由类型 meta 决定；fields[] = 表列基线
-// （示例即契约）+ meta 声明的 Ext 字段，按 category 裁剪（见 AdminProviderColumnKeysFor）。
-// label / help 是前端 i18n 键、后端不持有语言文案；options 仍是 wire 取值，前端只翻译
-// 显示名、提交值不变。区块顺序 basic → Ext 声明序 → display / policy，前端按 section
-// 分组不二次排序。unionProviderKeys 由 handler 在 oauth 类别查库注入。
-func AdminSchema(providerType, category string, extFields []provider.FieldMeta, unionProviderKeys []string) *adminv1.SchemaResponse {
-	allowed := schemaColumnKeySet(category)
-	resp := &adminv1.SchemaResponse{Type: providerType, Category: category}
-	for _, f := range schemaBaselineBasic(unionProviderKeys) {
-		if allowed[f.GetKey()] {
-			resp.Fields = append(resp.Fields, f)
-		}
-	}
-	resp.Fields = append(resp.Fields, schemaFieldsFromMeta(extFields)...)
-	for _, f := range schemaBaselineDisplay() {
-		if allowed[f.GetKey()] {
-			resp.Fields = append(resp.Fields, f)
-		}
-	}
-	for _, f := range schemaBaselinePolicy() {
-		if allowed[f.GetKey()] {
-			resp.Fields = append(resp.Fields, f)
-		}
-	}
-	// 通用 Ext 基线字段 proxy_url：按类别 / 类型裁剪，与写入白名单、extKeys 同源
-	// （§5.3 代理字段约定；union 与 storage/local 不呈现）。
-	if ProxyURLFieldEnabled(category, providerType) {
-		resp.Fields = append(resp.Fields, ProxyURLSchemaField())
-	}
-	return resp
-}
-
-// schemaColumnKeySet 该类别允许出现在 schema 的表列键（含只读的 provider_key / category）；
-// 数据源恒为 AdminProviderColumnKeysFor，保证 schema 与写入 / 校验口径同源。
-func schemaColumnKeySet(category string) map[string]bool {
-	allowed := map[string]bool{"provider_key": true, "category": true}
-	for _, key := range AdminProviderColumnKeysFor(category) {
-		allowed[key] = true
-	}
-	return allowed
-}
-
-// schemaBaselineBasic 基础信息区块基线（category 只读字段不进 fields[]；label / help 全是 i18n 键）。
-func schemaBaselineBasic(unionProviderKeys []string) []*adminv1.SchemaField {
-	return []*adminv1.SchemaField{
-		{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: sectionBasic, Required: true,
-			Pattern: "^[a-z0-9_]+$",
-			Help:    "admin.schemaField.providerKeyHelp"},
-		{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: sectionBasic, Required: true},
-		{Key: "union_provider", Label: "admin.schemaField.unionProviderLabel", Type: "select", Section: sectionBasic,
-			Options: unionProviderKeys,
-			Help:    "admin.schemaField.unionProviderHelp"},
-	}
-}
-
-// schemaBaselineDisplay 展示与排序区块基线；ui_group 的 options 是写库取值，不改成 i18n 键。
-func schemaBaselineDisplay() []*adminv1.SchemaField {
-	return []*adminv1.SchemaField{
-		{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: sectionDisplay,
-			Pattern: "^https?://",
-			Help:    "admin.schemaField.iconUrlHelp"},
-		{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: sectionDisplay,
-			Options: []string{"social", "enterprise", "dev", "other"},
-			Default: structpb.NewStringValue("social")},
-		{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: sectionDisplay,
-			Default: structpb.NewNumberValue(0)},
-		{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: sectionDisplay, Advanced: true},
-	}
-}
-
-// schemaBaselinePolicy 策略开关区块基线。
-func schemaBaselinePolicy() []*adminv1.SchemaField {
-	return []*adminv1.SchemaField{
-		{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: sectionPolicy,
-			Default: structpb.NewBoolValue(true)},
-		{Key: "enable_signin", Label: "admin.schemaField.enableSigninLabel", Type: "checkbox", Section: sectionPolicy,
-			Default: structpb.NewBoolValue(true)},
-		{Key: "enable_signup", Label: "admin.schemaField.enableSignupLabel", Type: "checkbox", Section: sectionPolicy,
-			Default: structpb.NewBoolValue(true),
-			Help:    "admin.schemaField.enableSignupHelp"},
-		{Key: "auto_bind", Label: "admin.schemaField.autoBindLabel", Type: "checkbox", Section: sectionPolicy,
-			Default: structpb.NewBoolValue(false)},
-		{Key: "auto_bind_fields", Label: "admin.schemaField.autoBindFieldsLabel", Type: "text", Section: sectionPolicy,
-			Default: structpb.NewStringValue("email,phone"),
-			Help:    "admin.schemaField.autoBindFieldsHelp"},
-	}
-}
-
-// schemaFieldsFromMeta meta 声明的 Ext 字段 → SchemaField，保持声明顺序；FieldMeta
-// 无 options / pattern，对应字段零值。Label / Help 是 i18n 键（见 provider.FieldMeta 契约），
-// 本函数只透传不翻译。
-func schemaFieldsFromMeta(fields []provider.FieldMeta) []*adminv1.SchemaField {
-	out := make([]*adminv1.SchemaField, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, &adminv1.SchemaField{
-			Key:      f.Key,
-			Label:    f.Label,
-			Type:     f.Type,
-			Section:  f.Section,
-			Required: f.Required,
-			Default:  schemaDefaultValue(f.Default),
-			Advanced: f.Advanced,
-			Help:     f.Help,
-		})
-	}
-	return out
 }
 
 // schemaDefaultValue FieldMeta.Default（string）→ JSON 默认值：先按 JSON 标量解析，

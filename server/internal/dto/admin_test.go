@@ -1,9 +1,11 @@
 package dto
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -29,6 +31,14 @@ func wantProviderRow() *model.Provider {
 		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
 		CreatedAt: time.Unix(1761700000, 0).UTC(), UpdatedAt: time.Unix(1761800000, 0).UTC(),
 	}
+}
+
+// schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，未迁移类型为 nil）。
+func schemaFieldsOf(schema func() []provider.FieldMeta) []provider.FieldMeta {
+	if schema == nil {
+		return nil
+	}
+	return schema()
 }
 
 // schemaFieldByKey 从 schema 响应中取指定 key 的字段（重复 key 直接报错）。
@@ -143,26 +153,30 @@ func TestAdminProviderDetailEmptyInputs(t *testing.T) {
 	}
 }
 
-// TestAdminSchemaOauthBaseline oauth 类型（wechat_mp，注册表 meta 无 Ext 字段
-// 声明）：schema 仅含 12 个表列基线字段（§5.3 示例的表列部分，category 只读
-// 字段已改由页面级类型下拉承载、不进 fields[]），逐项对行 1192-1225；
-// union_provider 的 options 由调用方注入。
+// TestAdminSchemaOauthBaseline oauth 类型（wechat_mp）以完整 Schema 声明转换为
+// wire：3 个 basic 表列 + 11 个 Ext + 4 个 display + 5 个 policy + proxy_url = 24 项，
+// 顺序即 §5.3 区块声明序；union_provider 的 options 由 dynamicOptions 按 DynamicKey 注入。
+// 这是对"表列基线 + Ext + proxy_url"旧 wire 的逐字段保真回归。
 func TestAdminSchemaOauthBaseline(t *testing.T) {
 	meta, ok := provider.Lookup("wechat_mp")
 	if !ok || meta.Category != "oauth" {
 		t.Fatalf("Lookup(wechat_mp) = (%+v, %v), want category=oauth", meta, ok)
 	}
-	resp := AdminSchema("wechat_mp", meta.Category, nil, []string{"union_a"})
+	resp := AdminSchema("wechat_mp", meta.Category, schemaFieldsOf(meta.Schema),
+		map[string][]string{"union_provider_keys": {"union_a"}})
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
-	if len(resp.GetFields()) != 13 {
-		t.Fatalf("基线字段数 = %d, want 13（12 表列基线 + 通用 proxy_url，oauth meta 无字段声明）", len(resp.GetFields()))
+	if len(resp.GetFields()) != 24 {
+		t.Fatalf("字段数 = %d, want 24（3 basic + 11 Ext + 4 display + 5 policy + proxy_url）", len(resp.GetFields()))
 	}
-	// 顺序即 §5.3 示例排列。
+	// 顺序即 §5.3 示例排列（表列基线 → Ext 声明序 → display / policy → proxy_url）。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
+		"client_id", "client_secret", "app_id", "cert", "scopes", "provider_url",
+		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
 		"icon_url", "ui_group", "sort_order", "remark",
-		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}
+		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+		ProxyURLFieldKey}
 	for i, key := range wantOrder {
 		if resp.GetFields()[i].GetKey() != key {
 			t.Fatalf("fields[%d].key = %q, want %q", i, resp.GetFields()[i].GetKey(), key)
@@ -223,30 +237,31 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	}
 }
 
-// TestAdminSchemaSenderMetaFields 消息域（smtp）类型：Ext 字段与注册表
-// SenderMeta.Fields 逐项一致（§15.3：meta 是 /schema 唯一数据源）。表列基线
-// 按 category 裁剪后为 7 项（只留通用列，见 AdminProviderColumnKeysFor），
-// 加 meta 5 共 12 个字段；meta 字段顺序保持声明序。
+// TestAdminSchemaSenderMetaFields 消息域（smtp）以完整 Schema 声明逐字段转换为
+// wire（§15.3：meta 是 /schema 唯一数据源）：属性与 schema 声明逐项一致，顺序保持
+// 声明序；仅 oauth 的 5 列不在此声明里、自然不出现。
 func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	meta, ok := provider.LookupSenderMeta("smtp")
 	if !ok || meta.Category != provider.CategoryEmail {
 		t.Fatalf("LookupSenderMeta(smtp) = (%+v, %v)", meta, ok)
 	}
-	resp := AdminSchema("smtp", meta.Category, meta.Fields, nil)
+	schemaFields := schemaFieldsOf(meta.Schema)
+	resp := AdminSchema("smtp", meta.Category, schemaFields, nil)
 	if resp.GetCategory() != "email" {
 		t.Errorf("category = %q, want email（注册表 meta 决定）", resp.GetCategory())
 	}
-	const commonBaseline = 8 // basic 2 + display 4 + policy 1 + 通用 proxy_url（非 oauth 裁剪后）
-	if len(resp.GetFields()) != commonBaseline+len(meta.Fields) {
-		t.Fatalf("字段数 = %d, want %d 基线 + %d meta 声明", len(resp.GetFields()), commonBaseline, len(meta.Fields))
+	if len(resp.GetFields()) != len(schemaFields) {
+		t.Fatalf("字段数 = %d, want %d（完整 Schema 声明逐项转换）", len(resp.GetFields()), len(schemaFields))
 	}
-	schemaFieldByKey(t, resp, ProxyURLFieldKey) // 通用基线字段（email 呈现）
-	// Ext 字段逐项对注册表 meta（key/label/type/section/required/advanced/help）。
-	for _, mf := range meta.Fields {
-		got := schemaFieldByKey(t, resp, mf.Key)
-		if got.GetLabel() != mf.Label || got.GetType() != mf.Type || got.GetSection() != mf.Section ||
-			got.GetRequired() != mf.Required || got.GetAdvanced() != mf.Advanced || got.GetHelp() != mf.Help {
-			t.Errorf("%s 与注册表 meta 不一致: schema=%+v meta=%+v", mf.Key, got, mf)
+	schemaFieldByKey(t, resp, ProxyURLFieldKey) // 完整 Schema 声明含 proxy_url（email 呈现）
+	// 每个字段逐项对齐声明（key/label/type/section/required/advanced/help/default/options/pattern）。
+	for i, mf := range schemaFields {
+		got := resp.GetFields()[i] // 转换保真：wire 顺序 = 声明顺序
+		if got.GetKey() != mf.Key || got.GetLabel() != mf.Label || got.GetType() != mf.Type ||
+			got.GetSection() != mf.Section || got.GetRequired() != mf.Required ||
+			got.GetAdvanced() != mf.Advanced || got.GetHelp() != mf.Help ||
+			got.GetPattern() != mf.Pattern {
+			t.Errorf("fields[%d] 与 Schema 声明不一致: wire=%+v meta=%+v", i, got, mf)
 		}
 		switch mf.Key {
 		case "port":
@@ -271,15 +286,11 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 			}
 		}
 	}
-	// 顺序：basic 基线 2 项后即 meta 声明序（§5.3 行 1185 区块内沿用数组序）。
-	if resp.GetFields()[2].GetKey() != meta.Fields[0].Key {
-		t.Errorf("fields[2].key = %q, want %q（meta 首个声明字段）", resp.GetFields()[2].GetKey(), meta.Fields[0].Key)
-	}
-	// 通用基线在 meta 字段之后仍在（display 4 + policy 的 is_enabled）。
-	for _, key := range []string{"icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
+	// 表列基线 + display + is_enabled 由完整 Schema 声明覆盖，顺序即声明序。
+	for _, key := range []string{"provider_key", "display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
 		schemaFieldByKey(t, resp, key)
 	}
-	// 仅 oauth 的 5 列不得出现在 email schema（§5.3 按类别裁剪）。
+	// 仅 oauth 的 5 列不在 smtp 声明里，wire 不得出现。
 	for _, key := range oauthOnlyTestKeys {
 		if f, ok := schemaFieldMaybe(resp, key); ok {
 			t.Errorf("email schema 不应含 %q: %+v", key, f)
@@ -342,17 +353,20 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 	if AdminProviderColumnKeys[0] == "tampered" {
 		t.Fatal("AdminProviderColumnKeysFor 应返回副本")
 	}
-	// schema 字段集与可写键集同源（oauth 12 表列字段 = 11 可写 + 只读 provider_key；
-	// category 已改由页面级类型下拉承载，不再占一个 field）。
-	oauthSchema := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
-	if len(oauthSchema.GetFields()) != len(oauth)+2 {
-		t.Errorf("oauth schema 字段数 = %d, want %d（可写键集 + provider_key + proxy_url）",
-			len(oauthSchema.GetFields()), len(oauth)+2)
+	// 完整 Schema 转换：oauth 全量声明（含 union_provider / 5 开关 / proxy_url）；
+	// union 声明不含 is_enabled 与 proxy_url；storage/local 声明不含 proxy_url。
+	// 键集裁剪已下沉到各 provider.Schema()，AdminSchema 只做纯转换。
+	oauthMeta, _ := provider.LookupTypeMeta("wechat_mp")
+	oauthSchema := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(oauthMeta.Schema), nil)
+	if len(oauthSchema.GetFields()) != len(schemaFieldsOf(oauthMeta.Schema)) {
+		t.Errorf("oauth schema 字段数 = %d, want %d（完整 Schema 声明）",
+			len(oauthSchema.GetFields()), len(schemaFieldsOf(oauthMeta.Schema)))
 	}
-	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, nil, nil)
-	if len(unionSchema.GetFields()) != len(union)+1 {
-		t.Errorf("union schema 字段数 = %d, want %d（可写键集 + provider_key；proxy_url 裁剪）",
-			len(unionSchema.GetFields()), len(union)+1)
+	unionMeta, _ := provider.LookupTypeMeta(provider.UnionProviderType)
+	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, schemaFieldsOf(unionMeta.Schema), nil)
+	if len(unionSchema.GetFields()) != len(schemaFieldsOf(unionMeta.Schema)) {
+		t.Errorf("union schema 字段数 = %d, want %d（完整 Schema 声明）",
+			len(unionSchema.GetFields()), len(schemaFieldsOf(unionMeta.Schema)))
 	}
 	if f, ok := schemaFieldMaybe(unionSchema, "is_enabled"); ok {
 		t.Errorf("union schema 不应含启用开关: %+v", f)
@@ -360,17 +374,23 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 	if f, ok := schemaFieldMaybe(unionSchema, ProxyURLFieldKey); ok {
 		t.Errorf("union（无外呼）schema 不应含 proxy_url: %+v", f)
 	}
-	// storage/local 裁剪：无网络外呼，不呈现 proxy_url。
-	localSchema := AdminSchema("local", "storage", nil, nil)
+	// storage/local 声明不含 proxy_url（无网络外呼）。
+	localMeta, _ := provider.LookupTypeMeta("local")
+	localSchema := AdminSchema("local", "storage", schemaFieldsOf(localMeta.Schema), nil)
 	if f, ok := schemaFieldMaybe(localSchema, ProxyURLFieldKey); ok {
 		t.Errorf("storage/local schema 不应含 proxy_url: %+v", f)
 	}
 }
 
-// TestProxyURLSchemaField 通用基线字段的精确契约与裁剪判定：section=endpoint /
-// advanced=true / text / i18n 键名；union 与 storage/local 裁剪、其余类别呈现。
+// TestProxyURLSchemaField proxy_url 的完整契约：由 AdminSchema 从 Schema 声明转换
+// 出的 proxy_url 字段形态（endpoint / advanced / text / i18n 键 / 无默认值 / 非必填）。
+// 另钉 ProxyURLFieldEnabled 的裁剪判定：union 与 storage/local 不呈现，其余呈现。
 func TestProxyURLSchemaField(t *testing.T) {
-	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
+	meta, ok := provider.LookupTypeMeta("wechat_mp")
+	if !ok {
+		t.Fatal("wechat_mp meta 缺失")
+	}
+	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
 	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
 	if f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" ||
 		f.GetType() != "text" || f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetRequired() ||
@@ -391,6 +411,71 @@ func TestProxyURLSchemaField(t *testing.T) {
 	} {
 		if got := ProxyURLFieldEnabled(tc.category, tc.typ); got != tc.want {
 			t.Errorf("ProxyURLFieldEnabled(%q,%q) = %v, want %v", tc.category, tc.typ, got, tc.want)
+		}
+	}
+}
+
+// TestAdminSchemaConversionFidelity 纯转换保真：给定混合字段声明（表列 / Ext /
+// dynamic / pattern / default / options / i18n 键），wire 逐字段、逐属性对齐声明；
+// 顺序即声明序；dynamic 字段 options 来自 dynamicOptions[DynamicKey]（未命中为空），
+// 普通字段 options 来自自身 Options；Storage / Kind / DynamicKey 不进 wire。
+func TestAdminSchemaConversionFidelity(t *testing.T) {
+	fields := []provider.FieldMeta{
+		{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic",
+			Required: true, Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp",
+			Storage: provider.StorageColumn},
+		{Key: "union_provider", Label: "admin.schemaField.unionProviderLabel", Type: "select", Section: "basic",
+			Help: "admin.schemaField.unionProviderHelp", Storage: provider.StorageColumn,
+			Kind: provider.FieldDynamicOptions, DynamicKey: "union_provider_keys"},
+		{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
+			Options: []string{"social", "enterprise"}, Default: "social", Storage: provider.StorageColumn},
+		{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy",
+			Default: "true", Storage: provider.StorageColumn},
+		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential",
+			Required: true, Help: "admin.schemaField.clientSecretHelp", Storage: provider.StorageExt},
+		{Key: "missing_dyn", Label: "admin.schemaField.missingDynLabel", Type: "select", Section: "basic",
+			Storage: provider.StorageExt, Kind: provider.FieldDynamicOptions, DynamicKey: "not_provided"},
+	}
+	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, fields,
+		map[string][]string{"union_provider_keys": {"union_a", "union_b"}})
+	if resp.GetType() != "wechat_mp" || resp.GetCategory() != provider.CategoryOAuth {
+		t.Errorf("type/category = (%q,%q)", resp.GetType(), resp.GetCategory())
+	}
+	if len(resp.GetFields()) != len(fields) {
+		t.Fatalf("字段数 = %d, want %d", len(resp.GetFields()), len(fields))
+	}
+	for i, mf := range fields {
+		got := resp.GetFields()[i]
+		if got.GetKey() != mf.Key {
+			t.Errorf("fields[%d].key = %q, want %q（顺序即声明序）", i, got.GetKey(), mf.Key)
+		}
+		if got.GetLabel() != mf.Label || got.GetType() != mf.Type || got.GetSection() != mf.Section ||
+			got.GetRequired() != mf.Required || got.GetAdvanced() != mf.Advanced ||
+			got.GetHelp() != mf.Help || got.GetPattern() != mf.Pattern {
+			t.Errorf("fields[%d](%s) 属性与声明不一致: wire=%+v meta=%+v", i, mf.Key, got, mf)
+		}
+		if !proto.Equal(got.GetDefault(), schemaDefaultValue(mf.Default)) {
+			t.Errorf("fields[%d](%s) default = %v, want %v", i, mf.Key, got.GetDefault(), schemaDefaultValue(mf.Default))
+		}
+	}
+	// dynamic 字段 options 来自 map；未命中为空。普通字段 options 来自自身 Options。
+	if opts := resp.GetFields()[1].GetOptions(); len(opts) != 2 || opts[0] != "union_a" || opts[1] != "union_b" {
+		t.Errorf("union_provider options = %v, want [union_a union_b]（dynamic 注入）", opts)
+	}
+	if opts := resp.GetFields()[5].GetOptions(); len(opts) != 0 {
+		t.Errorf("missing_dyn options = %v, want 空（dynamic key 未命中）", opts)
+	}
+	if opts := resp.GetFields()[2].GetOptions(); len(opts) != 2 || opts[0] != "social" || opts[1] != "enterprise" {
+		t.Errorf("ui_group options = %v, want [social enterprise]（自身声明）", opts)
+	}
+	// Storage / Kind / DynamicKey 无 wire 对应字段：protojson 视图不得出现这些键。
+	raw, err := protojson.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"\"storage\"", "\"kind\"", "\"dynamicKey\"", "\"dynamic_key\""} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("wire 不应含 %s: %s", forbidden, raw)
 		}
 	}
 }

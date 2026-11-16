@@ -102,7 +102,7 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 		t.Fatal("注册表为空（_ import 缺失）")
 	}
 	for _, meta := range metas {
-		resp := AdminSchema(meta.Type, meta.Category, meta.Fields, nil)
+		resp := AdminSchema(meta.Type, meta.Category, schemaFieldsOf(meta.Schema), nil)
 		for _, f := range resp.GetFields() {
 			if f.GetKey() == ProxyURLFieldKey {
 				// proxy_url 的文案键由前端语言包提供；这里只钉键名与形态，
@@ -130,7 +130,11 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 // 精确断言键名与形态；前端 zh/en 字典的实际落地由前端语言包负责，故此处不断言
 // 字典存在（否则后端契约会与前端实现的落地顺序耦合）。
 func TestProxyURLSchemaI18nContract(t *testing.T) {
-	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
+	meta, ok := provider.LookupTypeMeta("wechat_mp")
+	if !ok {
+		t.Fatal("wechat_mp meta 缺失")
+	}
+	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
 	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
 	for _, tc := range []struct{ kind, key, want string }{
 		{"label", f.GetLabel(), "admin.schemaField.proxyUrlLabel"},

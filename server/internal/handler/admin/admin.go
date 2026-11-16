@@ -164,12 +164,13 @@ func (h *Handler) GetProvider(ctx context.Context, req *connectrpc.Request[admin
 	return connectrpc.NewResponse(dto.AdminProviderDetail(row, ext)), nil
 }
 
-// GetProviderSchema 由类型 meta 驱动的动态表单 schema（meta 是 /schema 唯一数据源）。
-// 表列基线按 category 裁剪（union_provider 与三方开关仅 oauth 出现）；Ext 字段逐项来自
-// meta 声明、不硬编码。未注册 / 空 type → invalid_argument + ErrorInfo(admin, invalid_request)。
+// GetProviderSchema 由类型 meta 声明的完整 Schema 驱动动态表单（meta 是 /schema
+// 唯一数据源）：dto 把 []FieldMeta 按序转为 wire SchemaField，不在此裁剪。字段的
+// 取舍 / proxy_url 是否呈现完全由 provider.Schema() 声明决定。未注册 / 空 type →
+// invalid_argument + ErrorInfo(admin, invalid_request)。
 func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderSchemaRequest]) (*connectrpc.Response[adminv1.SchemaResponse], error) {
 	providerType := req.Msg.GetType()
-	category, extFields, ok := lookupProviderType(providerType)
+	category, fields, ok := lookupProviderType(providerType)
 	if providerType == "" || !ok {
 		return nil, connect.WithErrorInfo(
 			connectrpc.NewError(connectrpc.CodeInvalidArgument, errUnknownProvType),
@@ -177,24 +178,27 @@ func (h *Handler) GetProviderSchema(ctx context.Context, req *connectrpc.Request
 		)
 	}
 	// union_provider 字段仅 oauth 类别出现；options 需查 category=union，非 oauth 不必查库。
-	var unionKeys []string
+	var dynamicOptions map[string][]string
 	if category == provider.CategoryOAuth {
 		keys, err := h.unionProviderKeys(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("admin handler: list union providers: %w", err)
 		}
-		unionKeys = keys
+		dynamicOptions = map[string][]string{"union_provider_keys": keys}
 	}
-	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, extFields, unionKeys)), nil
+	return connectrpc.NewResponse(dto.AdminSchema(providerType, category, fields, dynamicOptions)), nil
 }
 
-// lookupProviderType 按 type 查静态源统一 meta（Ext 字段逐项来自 Fields 声明）。
-func lookupProviderType(providerType string) (category string, extFields []provider.FieldMeta, ok bool) {
+// lookupProviderType 按 type 查静态源统一 meta，返回完整字段声明的快照。
+func lookupProviderType(providerType string) (category string, fields []provider.FieldMeta, ok bool) {
 	meta, found := provider.LookupTypeMeta(providerType)
 	if !found {
 		return "", nil, false
 	}
-	return meta.Category, meta.Fields, true
+	if meta.Schema != nil {
+		fields = meta.Schema()
+	}
+	return meta.Category, fields, true
 }
 
 // unionProviderKeys 分页读完全部 category=union 的 provider_key（取满 total 即止）。
