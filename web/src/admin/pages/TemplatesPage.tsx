@@ -19,6 +19,7 @@ import {
   Empty,
   Input,
   Modal,
+  SideSheet,
   TextArea,
   Toast,
   Typography,
@@ -304,18 +305,32 @@ export function TemplatesPage(_props: {
           ) : undefined
         }
       />
-      <Modal
+      <SideSheet
         title={t('admin.createTemplateTitle')}
         visible={createOpen}
         onCancel={closeCreate}
-        onOk={() => {
-          submitCreate();
-        }}
-        okText={t('admin.createAction')}
-        cancelText={t('admin.cancelAction')}
-        confirmLoading={createSubmitting}
-        cancelButtonProps={{ disabled: createSubmitting }}
         maskClosable={false}
+        footer={
+          <div className={styles.formFooter}>
+            <Button
+              type="tertiary"
+              onClick={closeCreate}
+              disabled={createSubmitting}
+            >
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              loading={createSubmitting}
+              disabled={createSubmitting}
+              onClick={() => {
+                submitCreate();
+              }}
+            >
+              {t('admin.createAction')}
+            </Button>
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -366,21 +381,35 @@ export function TemplatesPage(_props: {
             />
           </div>
         </div>
-      </Modal>
-      <Modal
+      </SideSheet>
+      <SideSheet
         title={t('admin.editTemplateTitle', {
           name: editTarget?.name ?? EMPTY_TEXT,
         })}
         visible={editTarget !== null}
         onCancel={closeEdit}
-        onOk={() => {
-          submitEdit();
-        }}
-        okText={t('admin.saveAction')}
-        cancelText={t('admin.cancelAction')}
-        confirmLoading={editSubmitting}
-        cancelButtonProps={{ disabled: editSubmitting }}
         maskClosable={false}
+        footer={
+          <div className={styles.formFooter}>
+            <Button
+              type="tertiary"
+              onClick={closeEdit}
+              disabled={editSubmitting}
+            >
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              loading={editSubmitting}
+              disabled={editSubmitting}
+              onClick={() => {
+                submitEdit();
+              }}
+            >
+              {t('admin.saveAction')}
+            </Button>
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -424,7 +453,7 @@ export function TemplatesPage(_props: {
             />
           </div>
         </div>
-      </Modal>
+      </SideSheet>
     </section>
   );
 }

@@ -27,6 +27,7 @@ import {
   Input,
   Modal,
   Select,
+  SideSheet,
   Spin,
   TextArea,
   Toast,
@@ -547,18 +548,32 @@ export function OidcClientsPage(_props: {
           ) : undefined
         }
       />
-      <Modal
+      <SideSheet
         title={t('admin.createOidcClientTitle')}
         visible={createOpen}
         onCancel={closeCreate}
-        onOk={() => {
-          submitCreate();
-        }}
-        okText={t('admin.createAction')}
-        cancelText={t('admin.cancelAction')}
-        confirmLoading={createSubmitting}
-        cancelButtonProps={{ disabled: createSubmitting }}
         maskClosable={false}
+        footer={
+          <div className={styles.formFooter}>
+            <Button
+              type="tertiary"
+              onClick={closeCreate}
+              disabled={createSubmitting}
+            >
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              loading={createSubmitting}
+              disabled={createSubmitting}
+              onClick={() => {
+                submitCreate();
+              }}
+            >
+              {t('admin.createAction')}
+            </Button>
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -712,13 +727,18 @@ export function OidcClientsPage(_props: {
             />
           </div>
         </div>
-      </Modal>
-      <Modal
+      </SideSheet>
+      <SideSheet
         title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
-        okButtonProps={{ style: { display: 'none' } }}
-        cancelText={t('admin.cancelAction')}
+        footer={
+          <div className={styles.formFooter}>
+            <Button type="tertiary" onClick={() => setViewId(null)}>
+              {t('admin.cancelAction')}
+            </Button>
+          </div>
+        }
       >
         {/* 三态帧：错误行内（非在途时）→ 加载 / 跨行重开旧数据
             残留兜 Spin（loading 或 data 非当前 viewId）→ 详情。 */}
@@ -781,8 +801,8 @@ export function OidcClientsPage(_props: {
             <dd>{formatUnixTime(viewReq.data.updatedAt)}</dd>
           </dl>
         )}
-      </Modal>
-      <Modal
+      </SideSheet>
+      <SideSheet
         title={
           editTarget !== null
             ? t('admin.editClientTitle', { clientId: editTarget.clientId })
@@ -790,16 +810,30 @@ export function OidcClientsPage(_props: {
         }
         visible={editTarget !== null}
         onCancel={closeEdit}
-        onOk={() => {
-          if (editTarget !== null) {
-            submitEdit(editTarget);
-          }
-        }}
-        okText={t('admin.saveAction')}
-        cancelText={t('admin.cancelAction')}
-        confirmLoading={editSubmitting}
-        cancelButtonProps={{ disabled: editSubmitting }}
         maskClosable={false}
+        footer={
+          <div className={styles.formFooter}>
+            <Button
+              type="tertiary"
+              onClick={closeEdit}
+              disabled={editSubmitting}
+            >
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              loading={editSubmitting}
+              disabled={editSubmitting}
+              onClick={() => {
+                if (editTarget !== null) {
+                  submitEdit(editTarget);
+                }
+              }}
+            >
+              {t('admin.saveAction')}
+            </Button>
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -953,7 +987,7 @@ export function OidcClientsPage(_props: {
             />
           </div>
         </div>
-      </Modal>
+      </SideSheet>
     </section>
   );
 }

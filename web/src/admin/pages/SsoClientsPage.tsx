@@ -537,12 +537,17 @@ export function SsoClientsPage(_props: {
           </div>
         </div>
       </SideSheet>
-      <Modal
+      <SideSheet
         title={t('admin.clientDetailTitle')}
         visible={viewId !== null}
         onCancel={() => setViewId(null)}
-        okButtonProps={{ style: { display: 'none' } }}
-        cancelText={t('admin.cancelAction')}
+        footer={
+          <div className={styles.formFooter}>
+            <Button type="tertiary" onClick={() => setViewId(null)}>
+              {t('admin.cancelAction')}
+            </Button>
+          </div>
+        }
       >
         {/* 三态帧：错误行内（非在途时）→ 加载 / 跨行重开旧数据
             残留兜 Spin（loading 或 data 非当前 viewId）→ 详情。 */}
@@ -595,8 +600,8 @@ export function SsoClientsPage(_props: {
             <dd>{formatUnixTime(viewReq.data.updatedAt)}</dd>
           </dl>
         )}
-      </Modal>
-      <Modal
+      </SideSheet>
+      <SideSheet
         title={
           editTarget !== null
             ? t('admin.editClientTitle', { clientId: editTarget.clientId })
@@ -604,16 +609,30 @@ export function SsoClientsPage(_props: {
         }
         visible={editTarget !== null}
         onCancel={closeEdit}
-        onOk={() => {
-          if (editTarget !== null) {
-            submitEdit(editTarget);
-          }
-        }}
-        okText={t('admin.saveAction')}
-        cancelText={t('admin.cancelAction')}
-        confirmLoading={editSubmitting}
-        cancelButtonProps={{ disabled: editSubmitting }}
         maskClosable={false}
+        footer={
+          <div className={styles.formFooter}>
+            <Button
+              type="tertiary"
+              onClick={closeEdit}
+              disabled={editSubmitting}
+            >
+              {t('admin.cancelAction')}
+            </Button>
+            <Button
+              theme="solid"
+              loading={editSubmitting}
+              disabled={editSubmitting}
+              onClick={() => {
+                if (editTarget !== null) {
+                  submitEdit(editTarget);
+                }
+              }}
+            >
+              {t('admin.saveAction')}
+            </Button>
+          </div>
+        }
       >
         <div className={styles.formBody}>
           <div className={styles.field}>
@@ -719,7 +738,7 @@ export function SsoClientsPage(_props: {
             />
           </div>
         </div>
-      </Modal>
+      </SideSheet>
     </section>
   );
 }

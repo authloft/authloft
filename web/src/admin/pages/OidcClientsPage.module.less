@@ -48,11 +48,18 @@
   padding: @spacing-xl 0;
 }
 
-// 表单弹窗内容（提交 / 取消钮由 Modal footer 承担）。
+// 表单抽屉内容（提交 / 取消钮由 SideSheet footer 自管）。
 .formBody {
   display: flex;
   flex-direction: column;
   gap: @spacing-md;
+}
+
+// SideSheet 自管按钮区（SideSheet 只有 footer?: ReactNode）。
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: @spacing-sm;
 }
 
 .field {
