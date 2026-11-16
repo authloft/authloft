@@ -100,6 +100,43 @@ const (
 	sectionPolicy     = "policy"
 )
 
+// ProxyURLFieldKey 通用 Ext 基线字段 proxy_url 的 schema key（接口文档 §5.3
+// 代理字段约定）：不随各渠道 FieldMeta 逐项声明，由 schema 基线统一下发。
+const ProxyURLFieldKey = "proxy_url"
+
+// proxyURL 裁剪常量：category=storage 且 type=local 仅本地磁盘、无网络外呼，
+// 与 union（虚拟、无 adapter/sender）同样不呈现 proxy_url（§5.3 类别裁剪）。
+const (
+	proxyURLCategoryStorage = "storage"
+	proxyURLTypeLocal       = "local"
+)
+
+// ProxyURLFieldEnabled 三处键集共用的唯一裁剪判定：schema 下发、Create/Update
+// 写入白名单、MergeProviderExt 的 extKeys 三处都调用本函数，保证「呈现 ≡ 可写」；
+// 缺任一处即保存拒绝该字段（接口文档 §5.3 通用基线口径）。
+func ProxyURLFieldEnabled(category, providerType string) bool {
+	if category == provider.CategoryUnion {
+		return false
+	}
+	if category == proxyURLCategoryStorage && providerType == proxyURLTypeLocal {
+		return false
+	}
+	return true
+}
+
+// ProxyURLSchemaField proxy_url 的 schema 字段声明：endpoint / advanced / text，
+// label 与 help 下发前端 i18n 键名（本层不持有文案，语言包由前端提供）。
+func ProxyURLSchemaField() *adminv1.SchemaField {
+	return &adminv1.SchemaField{
+		Key:      ProxyURLFieldKey,
+		Label:    "admin.schemaField.proxyUrlLabel",
+		Type:     "text",
+		Section:  sectionEndpoint,
+		Advanced: true,
+		Help:     "admin.schemaField.proxyUrlHelp",
+	}
+}
+
 // AdminSchema 动态表单 schema：type / category 由类型 meta 决定；fields[] = 表列基线
 // （示例即契约）+ meta 声明的 Ext 字段，按 category 裁剪（见 AdminProviderColumnKeysFor）。
 // label / help 是前端 i18n 键、后端不持有语言文案；options 仍是 wire 取值，前端只翻译
@@ -123,6 +160,11 @@ func AdminSchema(providerType, category string, extFields []provider.FieldMeta, 
 		if allowed[f.GetKey()] {
 			resp.Fields = append(resp.Fields, f)
 		}
+	}
+	// 通用 Ext 基线字段 proxy_url：按类别 / 类型裁剪，与写入白名单、extKeys 同源
+	// （§5.3 代理字段约定；union 与 storage/local 不呈现）。
+	if ProxyURLFieldEnabled(category, providerType) {
+		resp.Fields = append(resp.Fields, ProxyURLSchemaField())
 	}
 	return resp
 }
@@ -310,7 +352,8 @@ func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value
 
 // MergeProviderExt 把 Ext 键集的值合并进原 Ext（protojson 往返：未提交字段保留原值，
 // PATCH 语义同 ApplyProviderColumns）。Create 传空 Ext 起点，orig 为 nil 时按空 Ext；
-// 类型不符由 protojson 报错。
+// 类型不符由 protojson 报错。extKeys 须由写入侧经 metaFieldKeys 构造——已含通用
+// 基线字段 proxy_url（ProxyURLFieldEnabled 同源裁剪），与 schema 下发键集一致。
 func MergeProviderExt(orig *providerpb.Ext, fields map[string]*structpb.Value, extKeys []string) (*providerpb.Ext, error) {
 	if orig == nil {
 		orig = &providerpb.Ext{}

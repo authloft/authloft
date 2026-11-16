@@ -35,6 +35,7 @@ message Ext {
   int32  port                   = 15;
   bool   disable_ssl            = 16;  // 内网自签场景
   string intranet_endpoint      = 17;  // 服务端回源优先使用
+  string proxy_url              = 18;  // 出站代理，留空直连，见接口文档 §5.3 代理字段约定 / 后端架构 §15.4
 
   // ---- 存储（category=storage 生效）----
   string bucket        = 20;

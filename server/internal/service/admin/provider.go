@@ -23,12 +23,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/dto"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -112,6 +114,9 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := validateSchemaKeys(fields, meta); err != nil {
 		return err
 	}
+	if err := validateProxyURL(fields); err != nil {
+		return err
+	}
 	providerKey, err := requireProviderKey(fields)
 	if err != nil {
 		return err
@@ -133,7 +138,7 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := dto.ApplyProviderColumns(row, fields); err != nil {
 		return ErrInvalidRequest
 	}
-	ext, err := dto.MergeProviderExt(&providerpb.Ext{}, fields, metaFieldKeys(meta.Fields))
+	ext, err := dto.MergeProviderExt(&providerpb.Ext{}, fields, metaFieldKeys(meta))
 	if err != nil {
 		return ErrInvalidRequest // 类型不符
 	}
@@ -215,6 +220,9 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := validateSchemaKeys(fields, meta); err != nil {
 		return err
 	}
+	if err := validateProxyURL(fields); err != nil {
+		return err
+	}
 
 	if err := dto.ApplyProviderColumns(row, fields); err != nil {
 		return ErrInvalidRequest
@@ -223,7 +231,7 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 	if err != nil {
 		return fmt.Errorf("admin service: parse ext %q: %w", providerKey, err)
 	}
-	ext, err := dto.MergeProviderExt(origExt, fields, metaFieldKeys(meta.Fields))
+	ext, err := dto.MergeProviderExt(origExt, fields, metaFieldKeys(meta))
 	if err != nil {
 		return ErrInvalidRequest // 类型不符
 	}
@@ -361,6 +369,7 @@ func (s *Service) TestProvider(ctx context.Context, providerKey, target string) 
 // schemaMeta 提交体键集的 schema 元信息（两域注册表同构投影：category 由
 // type 决定只读，Fields 是 Ext 字段级声明，§15.3 行 1732）。
 type schemaMeta struct {
+	Type     string
 	Category string
 	Fields   []provider.FieldMeta
 }
@@ -391,7 +400,7 @@ func lookupSchemaByType(providerType string) (schemaMeta, bool) {
 	if !ok {
 		return schemaMeta{}, false
 	}
-	return schemaMeta{Category: meta.Category, Fields: meta.Fields}, true
+	return schemaMeta{Type: meta.Type, Category: meta.Category, Fields: meta.Fields}, true
 }
 
 // validateSchemaKeys 未知键拒绝：提交体键集 ⊆ {type, category, provider_key} ∪
@@ -400,7 +409,9 @@ func lookupSchemaByType(providerType string) (schemaMeta, bool) {
 // invalid_request，防止管理员提交表单不可见字段）。表列白名单按 category 裁
 // 剪：union_provider / enable_signin / enable_signup / auto_bind /
 // auto_bind_fields 仅 oauth 可提交（sms/email 的注册登录开关在 §5.6 设置项）。
-// Create 的 category 一致性校验亦在此（类型 meta 决定、只读）。
+// 通用 Ext 基线字段 proxy_url 按 dto.ProxyURLFieldEnabled 同源裁剪（§5.3），
+// 与 schema 下发 / extKeys 三处一致。Create 的 category 一致性校验亦在此（类型
+// meta 决定、只读）。
 func validateSchemaKeys(fields map[string]*structpb.Value, meta schemaMeta) error {
 	valid := map[string]bool{"type": true, "category": true, "provider_key": true}
 	for _, k := range dto.AdminProviderColumnKeysFor(meta.Category) {
@@ -408,6 +419,9 @@ func validateSchemaKeys(fields map[string]*structpb.Value, meta schemaMeta) erro
 	}
 	for _, f := range meta.Fields {
 		valid[f.Key] = true
+	}
+	if dto.ProxyURLFieldEnabled(meta.Category, meta.Type) {
+		valid[dto.ProxyURLFieldKey] = true
 	}
 	for k := range fields {
 		if !valid[k] {
@@ -478,13 +492,37 @@ func explicitFalse(fields map[string]*structpb.Value, key string) bool {
 	}
 }
 
-// metaFieldKeys 注册表 meta.Fields 的 Ext 字段名集合。
-func metaFieldKeys(fields []provider.FieldMeta) []string {
-	keys := make([]string, len(fields))
-	for i := range fields {
-		keys[i] = fields[i].Key
+// metaFieldKeys 注册表 meta.Fields 的 Ext 字段名集合 + 通用基线字段 proxy_url
+// （按 dto.ProxyURLFieldEnabled 同源裁剪）：作为 MergeProviderExt 的 extKeys，
+// 与 schema 下发 / validateSchemaKeys 三处键集同源（§5.3 代理字段约定）。
+func metaFieldKeys(meta schemaMeta) []string {
+	keys := make([]string, 0, len(meta.Fields)+1)
+	for _, f := range meta.Fields {
+		keys = append(keys, f.Key)
+	}
+	if dto.ProxyURLFieldEnabled(meta.Category, meta.Type) {
+		keys = append(keys, dto.ProxyURLFieldKey)
 	}
 	return keys
+}
+
+// validateProxyURL 保存前按 §5.3 代理字段约定预校验 proxy_url：合法 / 空串
+// （直连）放行并把 trim 后的值写回提交体（服务端不保留首尾空白）；非法一律
+// ErrInvalidRequest。proxyclient.Parse 只返回可判别类别哨兵，错误串不含完整
+// URL 与凭据；本层不包装其文本，避免泄漏（handler 映射 invalid_argument +
+// ErrorInfo{admin, invalid_request}）。
+func validateProxyURL(fields map[string]*structpb.Value) error {
+	raw, err := structFieldString(fields, dto.ProxyURLFieldKey)
+	if err != nil {
+		return ErrInvalidRequest // 非 string 值
+	}
+	if _, err := proxyclient.Parse(raw); err != nil {
+		return ErrInvalidRequest
+	}
+	if trimmed := strings.TrimSpace(raw); trimmed != raw {
+		fields[dto.ProxyURLFieldKey] = structpb.NewStringValue(trimmed)
+	}
+	return nil
 }
 
 // invalidate 写后缓存失效（§15.3 行 1734 固定三步的唯一出口）；失败上抛

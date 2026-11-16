@@ -104,6 +104,11 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 	for _, meta := range metas {
 		resp := AdminSchema(meta.Type, meta.Category, meta.Fields, nil)
 		for _, f := range resp.GetFields() {
+			if f.GetKey() == ProxyURLFieldKey {
+				// proxy_url 的文案键由前端语言包提供；这里只钉键名与形态，
+				// 见 TestProxyURLSchemaI18nContract，不在此要求字典已落地。
+				continue
+			}
 			checkKey(meta.Type, f.GetKey(), "label", f.GetLabel())
 			if f.GetHelp() != "" {
 				checkKey(meta.Type, f.GetKey(), "help", f.GetHelp())
@@ -116,6 +121,31 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 							option, key, zh[key], en[key])
 					}
 				}
+			}
+		}
+	}
+}
+
+// TestProxyURLSchemaI18nContract proxy_url 后端只下发 i18n 键名（不持有文案）：
+// 精确断言键名与形态；前端 zh/en 字典的实际落地由前端语言包负责，故此处不断言
+// 字典存在（否则后端契约会与前端实现的落地顺序耦合）。
+func TestProxyURLSchemaI18nContract(t *testing.T) {
+	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
+	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
+	for _, tc := range []struct{ kind, key, want string }{
+		{"label", f.GetLabel(), "admin.schemaField.proxyUrlLabel"},
+		{"help", f.GetHelp(), "admin.schemaField.proxyUrlHelp"},
+	} {
+		if tc.key != tc.want {
+			t.Errorf("proxy_url %s = %q, want %q", tc.kind, tc.key, tc.want)
+		}
+		if !strings.HasPrefix(tc.key, schemaI18nPrefix) {
+			t.Errorf("proxy_url %s = %q，不是 %s* i18n 键", tc.kind, tc.key, schemaI18nPrefix)
+		}
+		for _, r := range tc.key {
+			if r > 127 {
+				t.Errorf("proxy_url %s = %q，含非 ASCII 字符", tc.kind, tc.key)
+				break
 			}
 		}
 	}

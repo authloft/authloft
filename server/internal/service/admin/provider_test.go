@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	providerpb "authloft/gen/go/provider"
+	"authloft/internal/dto"
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -804,4 +805,186 @@ func TestNewServiceFailFast(t *testing.T) {
 	}
 	mustPanic("nil store", func() { adminsvc.NewService(nil, &fakeInvalidator{}) })
 	mustPanic("nil invalidator", func() { adminsvc.NewService(newFakeStore(), nil) })
+}
+
+// TestCreateProviderProxyURL 合法 proxy_url 经 Create 落库：http/https/socks5
+// （含 userinfo）逐条落 Ext；空串与首尾空白按「留空直连」保存为 trim 后的空串。
+// 这条链同时验证 validateSchemaKeys 白名单与 MergeProviderExt 的 extKeys 都含
+// proxy_url（缺任一则字段被拒或丢失）。
+func TestCreateProviderProxyURL(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+	}{
+		{"http", "http://proxy.example.com:8080", "http://proxy.example.com:8080"},
+		{"https", "https://proxy.example.com:8443", "https://proxy.example.com:8443"},
+		{"socks5 带凭据", "socks5://alice:s3cr3t@127.0.0.1:1080", "socks5://alice:s3cr3t@127.0.0.1:1080"},
+		{"空串直连", "", ""},
+		{"trim 后保存", "   http://h:8080   ", "http://h:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			svc := adminsvc.NewService(store, &fakeInvalidator{})
+			if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, map[string]any{"proxy_url": tc.raw})); err != nil {
+				t.Fatalf("CreateProvider: %v", err)
+			}
+			if len(store.created) != 1 {
+				t.Fatalf("created = %d", len(store.created))
+			}
+			ext, err := repo.ParseProviderExt(store.created[0].Ext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := ext.GetProxyUrl(); got != tc.want {
+				t.Errorf("ext.proxy_url = %q, want %q", got, tc.want)
+			}
+			if ext.GetClientId() != "wx-appid" {
+				t.Errorf("其它 Ext 字段被误改: client_id = %q", ext.GetClientId())
+			}
+		})
+	}
+}
+
+// TestCreateProviderProxyURLInvalid 非法 URL 逐条拒绝为 ErrInvalidRequest，
+// 且不触库 / 不失效（错误串脱敏由 proxyclient 单测覆盖）。
+func TestCreateProviderProxyURLInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{"ftp scheme", "ftp://h:21"},
+		{"socks5h scheme", "socks5h://h:1080"},
+		{"缺 port", "http://h"},
+		{"port 越界", "http://h:65536"},
+		{"含 path", "http://h:8080/path"},
+		{"非法百分号", "http://u%zz@h:8080"},
+		{"非字符串", 123},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			inv := &fakeInvalidator{}
+			svc := adminsvc.NewService(store, inv)
+			err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, map[string]any{"proxy_url": tc.value}))
+			if !errors.Is(err, adminsvc.ErrInvalidRequest) {
+				t.Fatalf("err = %v, want ErrInvalidRequest", err)
+			}
+			if len(store.created) != 0 || len(inv.snapshot()) != 0 {
+				t.Fatalf("非法请求不得落库 / 失效: created=%d invalidated=%v", len(store.created), inv.snapshot())
+			}
+		})
+	}
+}
+
+// TestUpdateProviderProxyURL 编辑链：合法写入、非法拒绝；PATCH 缺省保留原 Ext
+// 的 proxy_url（protojson 往返合并）。
+func TestUpdateProviderProxyURL(t *testing.T) {
+	extWithProxy, err := repo.MarshalProviderExt(&providerpb.Ext{ClientId: "orig-id", ProxyUrl: "http://old:8080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowWithProxy := wantRowOf(t)
+	rowWithProxy.Ext = extWithProxy
+
+	t.Run("合法写入", func(t *testing.T) {
+		store := newFakeStore(wantRowOf(t))
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+			"provider_key": "wx_exist", "proxy_url": "socks5://127.0.0.1:1080",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		if len(store.updated) != 1 {
+			t.Fatalf("updated = %d", len(store.updated))
+		}
+		ext, err := repo.ParseProviderExt(store.updated[0].Ext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ext.GetProxyUrl() != "socks5://127.0.0.1:1080" || ext.GetClientId() != "orig-id" {
+			t.Errorf("Ext = %+v", ext)
+		}
+	})
+
+	t.Run("非法拒绝", func(t *testing.T) {
+		store := newFakeStore(wantRowOf(t))
+		inv := &fakeInvalidator{}
+		svc := adminsvc.NewService(store, inv)
+		err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+			"provider_key": "wx_exist", "proxy_url": "http://h:8080/path",
+		}))
+		if !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+		if len(store.updated) != 0 || len(inv.snapshot()) != 0 {
+			t.Fatalf("非法请求不得落库 / 失效")
+		}
+	})
+
+	t.Run("PATCH 保留原值", func(t *testing.T) {
+		store := newFakeStore(rowWithProxy)
+		svc := adminsvc.NewService(store, &fakeInvalidator{})
+		if err := svc.UpdateProvider(context.Background(), structBody(t, map[string]any{
+			"provider_key": "wx_exist", "display_name": "只改名",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		ext, err := repo.ParseProviderExt(store.updated[0].Ext)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ext.GetProxyUrl() != "http://old:8080" {
+			t.Errorf("未提交 proxy_url 应保留原值, got %q", ext.GetProxyUrl())
+		}
+	})
+}
+
+// TestProxyURLKeysetSameSource 三处键集同源的可证伪断言（黑盒）：
+// ① schema 下发含 proxy_url；② validateSchemaKeys 接受该键（Create 成功）；
+// ③ MergeProviderExt 的 extKeys 含该键（落库 Ext 有值）。union（无外呼）三处
+// 一致裁剪：schema 不含、提交被拒（ErrInvalidRequest）。
+func TestProxyURLKeysetSameSource(t *testing.T) {
+	meta, ok := provider.LookupTypeMeta("wechat_mp")
+	if !ok {
+		t.Fatal("wechat_mp meta 缺失")
+	}
+	// ① schema 下发
+	schema := dto.AdminSchema("wechat_mp", provider.CategoryOAuth, meta.Fields, nil)
+	found := false
+	for _, f := range schema.GetFields() {
+		if f.GetKey() == dto.ProxyURLFieldKey {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("schema 未下发 proxy_url（第一处键集缺失）")
+	}
+	// ②③ Create 成功且 Ext 落值：白名单 + extKeys 均含。
+	store := newFakeStore()
+	svc := adminsvc.NewService(store, &fakeInvalidator{})
+	if err := svc.CreateProvider(context.Background(), wechatMpCreateBody(t, map[string]any{
+		"proxy_url": "http://h:8080",
+	})); err != nil {
+		t.Fatalf("Create 应接受 proxy_url: %v（白名单或 extKeys 缺失）", err)
+	}
+	ext, err := repo.ParseProviderExt(store.created[0].Ext)
+	if err != nil || ext.GetProxyUrl() != "http://h:8080" {
+		t.Fatalf("Ext 未落 proxy_url: ext=%+v err=%v（extKeys 缺失）", ext, err)
+	}
+	// union 裁剪：schema 不含 + 提交被拒。
+	unionSchema := dto.AdminSchema(provider.UnionProviderType, provider.CategoryUnion, nil, nil)
+	for _, f := range unionSchema.GetFields() {
+		if f.GetKey() == dto.ProxyURLFieldKey {
+			t.Error("union schema 不应含 proxy_url")
+		}
+	}
+	unionBody := structBody(t, map[string]any{
+		"type": provider.UnionProviderType, "provider_key": "u1", "display_name": "union",
+		"proxy_url": "http://h:8080",
+	})
+	ustore := newFakeStore()
+	if err := adminsvc.NewService(ustore, &fakeInvalidator{}).CreateProvider(context.Background(), unionBody); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("union 提交 proxy_url err = %v, want ErrInvalidRequest", err)
+	}
+	if len(ustore.created) != 0 {
+		t.Error("union 非法提交不得落库")
+	}
 }

@@ -155,8 +155,8 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
-	if len(resp.GetFields()) != 12 {
-		t.Fatalf("基线字段数 = %d, want 12（表列基线，oauth meta 无字段声明）", len(resp.GetFields()))
+	if len(resp.GetFields()) != 13 {
+		t.Fatalf("基线字段数 = %d, want 13（12 表列基线 + 通用 proxy_url，oauth meta 无字段声明）", len(resp.GetFields()))
 	}
 	// 顺序即 §5.3 示例排列。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
@@ -214,6 +214,12 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if f.GetDefault().GetStringValue() != "email,phone" || f.GetHelp() != "admin.schemaField.autoBindFieldsHelp" {
 		t.Errorf("auto_bind_fields = %+v", f)
 	}
+	// 通用 Ext 基线 proxy_url 随 schema 统一下发（endpoint / advanced / text）。
+	f = schemaFieldByKey(t, resp, ProxyURLFieldKey)
+	if f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetType() != "text" ||
+		f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" {
+		t.Errorf("proxy_url = %+v", f)
+	}
 }
 
 // TestAdminSchemaSenderMetaFields 消息域（smtp）类型：Ext 字段与注册表
@@ -229,10 +235,11 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	if resp.GetCategory() != "email" {
 		t.Errorf("category = %q, want email（注册表 meta 决定）", resp.GetCategory())
 	}
-	const commonBaseline = 7 // basic 2 + display 4 + policy 1（非 oauth 裁剪后）
+	const commonBaseline = 8 // basic 2 + display 4 + policy 1 + 通用 proxy_url（非 oauth 裁剪后）
 	if len(resp.GetFields()) != commonBaseline+len(meta.Fields) {
 		t.Fatalf("字段数 = %d, want %d 基线 + %d meta 声明", len(resp.GetFields()), commonBaseline, len(meta.Fields))
 	}
+	schemaFieldByKey(t, resp, ProxyURLFieldKey) // 通用基线字段（email 呈现）
 	// Ext 字段逐项对注册表 meta（key/label/type/section/required/advanced/help）。
 	for _, mf := range meta.Fields {
 		got := schemaFieldByKey(t, resp, mf.Key)
@@ -337,16 +344,76 @@ func TestAdminProviderColumnKeysForCategory(t *testing.T) {
 	// schema 字段集与可写键集同源（oauth 12 表列字段 = 11 可写 + 只读 provider_key；
 	// category 已改由页面级类型下拉承载，不再占一个 field）。
 	oauthSchema := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
-	if len(oauthSchema.GetFields()) != len(oauth)+1 {
-		t.Errorf("oauth schema 字段数 = %d, want %d", len(oauthSchema.GetFields()), len(oauth)+1)
+	if len(oauthSchema.GetFields()) != len(oauth)+2 {
+		t.Errorf("oauth schema 字段数 = %d, want %d（可写键集 + provider_key + proxy_url）",
+			len(oauthSchema.GetFields()), len(oauth)+2)
 	}
 	unionSchema := AdminSchema(provider.UnionProviderType, provider.CategoryUnion, nil, nil)
 	if len(unionSchema.GetFields()) != len(union)+1 {
-		t.Errorf("union schema 字段数 = %d, want %d（可写键集 + provider_key）",
+		t.Errorf("union schema 字段数 = %d, want %d（可写键集 + provider_key；proxy_url 裁剪）",
 			len(unionSchema.GetFields()), len(union)+1)
 	}
 	if f, ok := schemaFieldMaybe(unionSchema, "is_enabled"); ok {
 		t.Errorf("union schema 不应含启用开关: %+v", f)
+	}
+	if f, ok := schemaFieldMaybe(unionSchema, ProxyURLFieldKey); ok {
+		t.Errorf("union（无外呼）schema 不应含 proxy_url: %+v", f)
+	}
+	// storage/local 裁剪：无网络外呼，不呈现 proxy_url。
+	localSchema := AdminSchema("local", "storage", nil, nil)
+	if f, ok := schemaFieldMaybe(localSchema, ProxyURLFieldKey); ok {
+		t.Errorf("storage/local schema 不应含 proxy_url: %+v", f)
+	}
+}
+
+// TestProxyURLSchemaField 通用基线字段的精确契约与裁剪判定：section=endpoint /
+// advanced=true / text / i18n 键名；union 与 storage/local 裁剪、其余类别呈现。
+func TestProxyURLSchemaField(t *testing.T) {
+	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, nil, nil)
+	f := schemaFieldByKey(t, resp, ProxyURLFieldKey)
+	if f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" ||
+		f.GetType() != "text" || f.GetSection() != "endpoint" || !f.GetAdvanced() || f.GetRequired() ||
+		f.GetDefault() != nil {
+		t.Errorf("proxy_url 字段契约 = %+v", f)
+	}
+	for _, tc := range []struct {
+		category, typ string
+		want          bool
+	}{
+		{provider.CategoryOAuth, "wechat_mp", true},
+		{provider.CategorySMS, "aliyun_sms", true},
+		{provider.CategoryEmail, "smtp", true},
+		{"captcha", "turnstile", true},
+		{provider.CategoryUnion, provider.UnionProviderType, false},
+		{"storage", "local", false},
+		{"storage", "s3", true}, // 有网络外呼的未来存储实现按 §15.4 纳入
+	} {
+		if got := ProxyURLFieldEnabled(tc.category, tc.typ); got != tc.want {
+			t.Errorf("ProxyURLFieldEnabled(%q,%q) = %v, want %v", tc.category, tc.typ, got, tc.want)
+		}
+	}
+}
+
+// TestMergeProviderExtProxyURL extKeys 含 proxy_url 时落库、PATCH 缺省保留原值。
+func TestMergeProviderExtProxyURL(t *testing.T) {
+	fields := map[string]*structpb.Value{
+		ProxyURLFieldKey: structpb.NewStringValue("socks5://alice:pw@127.0.0.1:1080"),
+	}
+	ext, err := MergeProviderExt(&providerpb.Ext{}, fields, []string{ProxyURLFieldKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ext.GetProxyUrl(); got != "socks5://alice:pw@127.0.0.1:1080" {
+		t.Errorf("ext.proxy_url = %q", got)
+	}
+	// PATCH：原值保留、未提交的 Ext 键不动。
+	orig := &providerpb.Ext{ProxyUrl: "http://old:8080", ClientId: "id"}
+	merged, err := MergeProviderExt(orig, map[string]*structpb.Value{}, []string{ProxyURLFieldKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.GetProxyUrl() != "http://old:8080" || merged.GetClientId() != "id" {
+		t.Errorf("PATCH 结果 = %+v", merged)
 	}
 }
 
