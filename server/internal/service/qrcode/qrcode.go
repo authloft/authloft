@@ -3,7 +3,9 @@
 //
 //   - CreateQrcode：captcha 必检（场景「拉取小程序码」，§2.5 触发表第 7 行）
 //     → scene 分派
-//     （bind 需 al_session，否则 401）→ ticket_id ≤24（§11.6.4）→
+//     （bind 需 al_session，否则 401）→ sso_client_id 携带时按首签口径解析
+//     应用快照并校验 Provider 放行（§2.8，快照装 TicketPayload.sso）→
+//     ticket_id ≤24（§11.6.4）→
 //     TicketPayload 经 sign_key.ticket 加密（purpose=ticket）→
 //     GetwxacodeUnlimit（adapter 的 QRCodeSupporter）→ JPEG 75% 压缩
 //     （internal/qrcode）→ Storage.Put（中转模式，storage_path JSONata
@@ -45,6 +47,7 @@ import (
 	qrcodepkg "authloft/internal/qrcode"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/ssoapp"
 	thirdpartysvc "authloft/internal/service/thirdparty"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/storage"
@@ -62,6 +65,9 @@ const (
 	// statusNeedsStepUp 扫码轮询专属顶层 status（§1.6 行 282、§2.8 行 884）：
 	// 只出现在 GetLoginTicket 顶层，不进登录信封、不作 ticket.status 取值。
 	statusNeedsStepUp = "needs_step_up"
+	// thirdpartyMethod login_methods 内的三方整体开关取值（§2.1 交集口径，
+	// ssoapp 同名常量同口径；快照放行判定用）。
+	thirdpartyMethod = "thirdparty"
 )
 
 // 可判别哨兵错误（handler 转 Connect 错误体 + ErrorInfo，§1.6 封闭集成员）。
@@ -105,6 +111,13 @@ type QRCodeStorageResolver interface {
 	Resolve(ctx context.Context, storageProviderKey string) (storage.Storage, error)
 }
 
+// QRCodeSsoResolver SSO 应用快照解析窄接口（§2.2 首签口径）：*
+// ssoapp.Resolver 天然满足，装配层注入与引擎 / 三方域同一实例；nil 时携带
+// sso_client_id 的请求按装配缺陷 fail-closed（不降级直登）。
+type QRCodeSsoResolver interface {
+	Snapshot(ctx context.Context, ssoClientID string) (*token.Sso, error)
+}
+
 // QueuePusher 延迟写入队列（码图自动删除投递，§13.3）；*asyncqueue.Queue
 // 天然满足。nil = 未装配（跳过投递）。
 type QueuePusher interface {
@@ -124,6 +137,10 @@ type QRCodeDeps struct {
 	// TicketPayloads al:ticket:payload 快照读写（§5.1 行 863、§11.6.4 行
 	// 1350）：CreateQrcode 1 次写入，TTL = exp − iat。
 	TicketPayloads ticketsvc.TicketPayloadStore
+	// SsoApps SSO 应用快照解析器（§2.2 首签口径；扫码链路应用上下文随
+	// TicketPayload.sso 进票据，§2.8 / §11.6.4）。与引擎 / 三方域注入同一
+	// 实例；nil 时携带 sso_client_id 的请求按装配缺陷 fail-closed。
+	SsoApps QRCodeSsoResolver
 	// Storage storage provider 解析（§15.1）。
 	Storage QRCodeStorageResolver
 	// Queue 码图自动删除投递（§13.3；nil = 跳过）。
@@ -162,6 +179,12 @@ type CreateQrcodeInput struct {
 	UID int64
 	// Captcha 每次拉码都要新的（§2.5 统一提交格式）。
 	Captcha *captcha.Submission
+	// SsoClientID SSO 应用标识（proto 字段 sso_client_id，编号 4）：仅
+	// scene=login 携带——按首签口径解析快照（§2.2）并校验 Provider ∈ 快照
+	// （不在 → 既有 provider_disabled），快照随 TicketPayload.sso 进票据
+	// （§11.6.4），GetLoginTicket 完成登录写入 login_token.sso；缺省行为
+	// 与现状一致。scene=bind 不携带（绑定流程不读应用配置）。
+	SsoClientID string
 }
 
 // CreateQrcodeOutput CreateQrcode 产物（§2.8 行 710）。
@@ -206,6 +229,11 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: %q not found", ErrQrcodeProviderDisabled, in.ProviderKey)
 		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值。
+		if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+			return nil, fmt.Errorf("%w: %q proxy ref unresolvable", ErrQrcodeProviderDisabled, in.ProviderKey)
+		}
 		return nil, fmt.Errorf("qrcode: load provider: %w", err)
 	}
 	if !p.Enabled() || p.Row == nil || p.Row.EnableSignin != 1 {
@@ -223,6 +251,27 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		return nil, fmt.Errorf("%w: %q has no qrcode support", ErrQrcodeProviderDisabled, in.ProviderKey)
 	}
 
+	// 应用上下文（§2.8）：仅 scene=login 携带 sso_client_id（bind 不携带——
+	// 绑定流程不读应用配置）。非空时按首签口径解析快照（§2.2）并按 §2.1
+	// 应用级过滤表校验 Provider 放行；缺省（直登 / 应用未配置）行为与现状
+	// 一致。快照随 TicketPayload.sso 进票据，GetLoginTicket 完成登录写入
+	// login_token.sso（§11.6.4）。
+	ssoClientID := in.SsoClientID
+	if scene == ticketsvc.SceneBind {
+		ssoClientID = ""
+	}
+	var ssoSnap *token.Sso
+	if ssoClientID != "" {
+		snap, err := s.resolveSsoSnapshot(ctx, ssoClientID)
+		if err != nil {
+			return nil, err
+		}
+		if !ssoAllowsProvider(snap, in.ProviderKey) {
+			return nil, fmt.Errorf("%w: %q", ErrQrcodeProviderDisabled, in.ProviderKey)
+		}
+		ssoSnap = snap
+	}
+
 	// ticket（§11.6.4：ticket_id ≤24、exp 600s、sign_key.ticket 加密）。
 	ticketID, err := security.RandomString(qrcodeTicketIDLen)
 	if err != nil {
@@ -235,6 +284,9 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		Scene:       scene,
 		Iat:         now.Unix(),
 		Exp:         now.Add(qrcodeTicketTTL).Unix(),
+		// SSO 应用快照（§11.6.4：仅 scene=login 且拉码带 sso_client_id 时
+		// 填充；nil = 直登 / 应用未配置，无快照链路与现状一致）。
+		Sso: ssoSnap,
 	}
 	ticket, err := s.deps.TicketCodec.Seal(security.PurposeTicket, payload)
 	if err != nil {
@@ -278,6 +330,52 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		QrcodeURL: url,
 		ExpiresIn: int64(qrcodeTicketTTL / time.Second),
 	}, nil
+}
+
+// resolveSsoSnapshot 解析应用快照（§2.2 首签口径）：解析器缺位属装配缺陷，
+// 与查无行 / 行不可用同样 fail-closed（invalid_request，不降级直登——防拼
+// 接请求绕过应用限制）；其余故障按内部错误上抛（handler 转 CodeInternal）。
+func (s *QRCode) resolveSsoSnapshot(ctx context.Context, clientID string) (*token.Sso, error) {
+	if s.deps.SsoApps == nil {
+		return nil, fmt.Errorf("%w: sso snapshot resolver not wired", ticketsvc.ErrQrcodeInvalidRequest)
+	}
+	snap, err := s.deps.SsoApps.Snapshot(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, ssoapp.ErrClientNotFound) || errors.Is(err, ssoapp.ErrClientDisabled) {
+			return nil, fmt.Errorf("%w: sso client %q", ticketsvc.ErrQrcodeInvalidRequest, clientID)
+		}
+		return nil, fmt.Errorf("qrcode: resolve sso snapshot: %w", err)
+	}
+	return snap, nil
+}
+
+// ssoAllowsProvider 应用快照对三方 Provider 的放行判定（§2.1 应用级过滤表，
+// 三方 / 扫码 Provider 校验同表执行）：快照 nil = 直登 / 应用未配置全放行；
+// thirdparty 整体开关看快照 methods 冻结集（已含全局 ∧ 应用交集）；providers
+// nil = 应用未配置白名单跟随全局（行级可用性由调用方现查现判），空集 =
+// 全局 thirdparty 关（整体拒绝），非空 = 应用白名单成员判定。
+func ssoAllowsProvider(snap *token.Sso, providerKey string) bool {
+	if snap == nil {
+		return true
+	}
+	if !sliceContains(snap.GetMethods(), thirdpartyMethod) {
+		return false
+	}
+	providers := snap.GetProviders()
+	if providers == nil {
+		return true
+	}
+	return sliceContains(providers, providerKey)
+}
+
+// sliceContains 成员判定。
+func sliceContains(list []string, v string) bool {
+	for _, item := range list {
+		if item == v {
+			return true
+		}
+	}
+	return false
 }
 
 // storageFor 解析码图存储（§15.1：wechat_mp_scan 的 Ext.storage_provider
@@ -414,6 +512,9 @@ func (s *QRCode) GetLoginTicket(ctx context.Context, in GetLoginTicketInput) *Ge
 			Passed: []string{thirdpartysvc.AMRThirdParty},
 			Amr:    []string{thirdpartysvc.AMRThirdParty},
 			Oidc:   in.OIDC,
+			// 票据载荷内的应用快照原样首签（§11.6.4：MFA 下发过滤与终点
+			// 回跳随之生效）；nil = 无快照链路。
+			Sso: payload.GetSso(),
 		})
 		if err != nil {
 			logTicketFailure(ctx, id, "issue_login_token", err)
@@ -462,13 +563,15 @@ func (s *QRCode) pollResult(ctx context.Context, payload *token.TicketPayload, r
 	}
 
 	// 建会话（1 次写，§2.8 行 746）：uid 的用户状态由写入方在 complete /
-	// confirm 时校验（同口径），票据寿命（600s）内不重复校验。
+	// confirm 时校验（同口径），票据寿命（600s）内不重复校验。应用快照
+	// 原样入载荷（§11.6.4：终点回跳随之生效）。
 	success, err := s.deps.Terminal.Complete(ctx, &token.LoginTokenPayload{
 		Tid:    s.newTID(),
 		Flow:   "login",
 		Uid:    lr.GetUid(),
 		Passed: []string{thirdpartysvc.AMRThirdParty},
 		Amr:    []string{thirdpartysvc.AMRThirdParty},
+		Sso:    payload.GetSso(),
 	})
 	if err != nil {
 		logTicketFailure(ctx, id, "terminal_complete", err)
@@ -518,6 +621,9 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 		Flow:   "login",
 		Passed: []string{thirdpartysvc.AMRThirdParty},
 		Amr:    []string{thirdpartysvc.AMRThirdParty},
+		// 票据载荷内的应用快照原样首签（§11.6.4）：binding_required 中间态
+		// 经免密建号完成登录时快照延续；nil = 无快照链路。
+		Sso: payload.GetSso(),
 		Tp: &token.ThirdParty{
 			ProviderKey: pk,
 			OpenId:      id.GetOpenId(),

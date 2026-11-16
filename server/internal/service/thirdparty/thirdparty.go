@@ -61,6 +61,7 @@ import (
 	"authloft/internal/security"
 	"authloft/internal/service/mfapolicy"
 	"authloft/internal/service/orchestrator"
+	"authloft/internal/service/ssoapp"
 	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 )
@@ -90,6 +91,9 @@ const (
 	// extraMaxBytes extra 列业务上限 1 MiB（§4.3 行 708：超限整条丢弃降级，
 	// 不参与任何业务判定）。
 	extraMaxBytes = 1 << 20
+	// thirdpartyMethod login_methods 内的三方整体开关取值（§2.1 交集口径，
+	// ssoapp 同名常量同口径；快照放行判定用）。
+	thirdpartyMethod = "thirdparty"
 )
 
 // 可判别哨兵错误（Authorize；handler 转 Connect 错误体 + ErrorInfo，
@@ -107,6 +111,13 @@ var (
 // 天然满足，测试可传 fake。
 type ThirdpartyLoader interface {
 	Get(ctx context.Context, providerKey string) (*provider.Provider, error)
+}
+
+// ThirdpartySsoResolver SSO 应用快照解析窄接口（§2.2 首签口径）：*
+// ssoapp.Resolver 天然满足，装配层注入与引擎 / 扫码域同一实例；nil 时携带
+// sso_client_id 的请求按装配缺陷 fail-closed（不降级直登）。
+type ThirdpartySsoResolver interface {
+	Snapshot(ctx context.Context, ssoClientID string) (*token.Sso, error)
 }
 
 // ThirdpartyBindStore 绑定行读写窄接口：*repo.BindRepo 天然满足
@@ -148,6 +159,10 @@ type ThirdpartyDeps struct {
 	// TicketPayloads al:ticket:payload:{ticket_id} 快照读取（§5.1 行 863、
 	// §11.6.4 行 1350；扫码 ticket 分支——CreateQrcode 写、此处读）。
 	TicketPayloads ticketsvc.TicketPayloadStore
+	// SsoApps SSO 应用快照解析器（§2.2 首签口径；三方链路应用上下文随
+	// al_login_state Cookie 传递，§2.7.2 / §2.7.4）。与引擎 / 扫码域注入
+	// 同一实例；nil 时携带 sso_client_id 的请求按装配缺陷 fail-closed。
+	SsoApps ThirdpartySsoResolver
 	// CookieCodec sign_key.cookie（§12.4 行 1487），al_login_state 加解密。
 	CookieCodec *security.Codec
 	// RootOrigin {al_root}（authloft.root，接口文档 §1.1 行 76）：redirect_uri
@@ -186,6 +201,11 @@ type AuthorizeInput struct {
 	Scene    string // 空 / login / bind
 	// UID scene=bind 时的当前会话 uid（handler 从 ctx 取；0 = 无会话）。
 	UID int64
+	// SsoClientID SSO 应用标识（proto 字段 sso_client_id，编号 3）：三方链路
+	// 应用上下文的唯一入口——装入 al_login_state Cookie 随链路传递，
+	// LoginOauth 从 Cookie 解出（§2.7.2 / §2.7.4）。仅登录场景携带，
+	// scene=bind 不入 Cookie（绑定流程不读应用配置）。
+	SsoClientID string
 }
 
 // AuthorizeOutput Authorize 产物；Cookie 为需下发的 al_login_state
@@ -217,6 +237,11 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: %q not found", ErrThirdpartyProviderDisabled, in.Provider)
+		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值。
+		if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+			return nil, fmt.Errorf("%w: %q proxy ref unresolvable", ErrThirdpartyProviderDisabled, in.Provider)
 		}
 		return nil, fmt.Errorf("thirdparty: load provider: %w", err)
 	}
@@ -250,7 +275,13 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 		return nil, fmt.Errorf("thirdparty: build auth url: %w", err)
 	}
 
-	ck, err := s.sealStateCookie(ctx, state, in.UID)
+	// sso_client_id 只随登录场景入 Cookie（§2.7.2：bind 不携带——绑定流程
+	// 不读应用配置，前端也不下发该字段）。
+	ssoClientID := in.SsoClientID
+	if scene == "bind" {
+		ssoClientID = ""
+	}
+	ck, err := s.sealStateCookie(ctx, state, in.UID, ssoClientID)
 	if err != nil {
 		return nil, fmt.Errorf("thirdparty: seal login state: %w", err)
 	}
@@ -309,6 +340,15 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return s.envelope(StatusProviderDisabled)
 		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值；HTTP 200 信封无痕，记日志。
+		if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+			logx.Warn(ctx, "thirdparty: provider proxy ref unresolvable",
+				"provider_key", in.ProviderKey,
+				"error", logx.RedactText(err.Error()),
+			)
+			return s.envelope(StatusProviderDisabled)
+		}
 		// DB / Redis 故障被压成 HTTP 200 的失败信封：Connect 层 err=nil，
 		// 统一错误日志拦截器不会触发，必须在此记录。logx.Error(ctx, ...)
 		// 自动带 request_id；不记 code / token 等回调参数。
@@ -342,13 +382,29 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	// 处理（§2.7.4 行 653），统一并入 state_mismatch。扫码提交（qrcode
 	// 通道）无 Cookie 语境不校验（小程序端无 Origin，Referer 白名单归
 	// HTTP 层，§13.2 行 1606）。
+	var statePayload *token.LoginStatePayload
 	if channel == provider.ChannelRedirect {
-		if !s.verifyLoginState(in.State, in.StateCookie) {
+		statePayload = s.openLoginState(in.State, in.StateCookie)
+		if statePayload == nil {
 			return &OauthOutput{
 				Envelope: &ssov1.LoginFlowResponse{Status: statusStateMismatch},
 				Cookie:   s.clearStateCookie(ctx),
 			}
 		}
+	}
+
+	// 应用上下文（§2.7.4）：三方链路快照随 al_login_state Cookie 传递（本
+	// 接口不加字段）——非空时按首签口径解析快照并按 §2.1 应用级过滤表校验
+	// Provider 放行；Cookie 无该字段（直登 / 既有客户端链路）行为与现状
+	// 一致。扫码提交（带 ticketId）的上下文已在票据载荷内（CreateQrcode 时
+	// 校验并装载，§2.8），不读 Cookie。
+	var ssoSnap *token.Sso
+	if in.TicketID == "" {
+		snap, ssoStatus := s.loginSsoSnapshot(ctx, statePayload, in.ProviderKey)
+		if ssoStatus != "" {
+			return s.oauthFail(ctx, channel, ssoStatus)
+		}
+		ssoSnap = snap
 	}
 
 	// 扫码 stage=complete（带 ticketId，§2.7.4 行 649 / 659）：快照校验 →
@@ -385,6 +441,9 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		Passed: []string{AMRThirdParty},
 		Amr:    []string{AMRThirdParty},
 		Oidc:   in.OIDC,
+		// 应用快照首签（§2.2 / §2.7.4）：nil = 直登 / 应用未配置，无快照
+		// 链路与现状一致；非 nil 时 MFA 下发过滤与终点回跳消费快照。
+		Sso: ssoSnap,
 	}
 
 	// 未绑定（uid=0）→ 绑定中间态（§12.5 行 1501）：重签 login_token 精简
@@ -552,6 +611,9 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 			Passed: []string{AMRThirdParty},
 			Amr:    []string{AMRThirdParty},
 			Oidc:   in.OIDC,
+			// 票据载荷内的应用快照原样首签（§2.7.4：CreateQrcode 已校验
+			// Provider ∈ 快照，票据加密不可篡改）。
+			Sso: snap.GetSso(),
 		})
 		if err != nil {
 			return s.envelope(orchestrator.StatusFailed)
@@ -836,18 +898,19 @@ func (s *Thirdparty) newState(scene string) (string, error) {
 }
 
 // sealStateCookie 签发 al_login_state（LoginStatePayload：state 带前缀、
-// b 场景 uid、10 分钟 exp 兜底；§12.4 行 1485——不含 scene、不含 OIDC
-// 上下文）。属性（§1.9 行 303）：HttpOnly; SameSite=Lax; Path=/ 会话级
-// 恒定；Secure 受 https_deployment 驱动——判定为真 → 带 Secure；
-// 判定为假 → 省略。判定走 session.ResolveHTTPS 唯一判定点（与 al_session
-// 同源联动），auto 信号经 ctx（connect 装配层注入请求头）。
-func (s *Thirdparty) sealStateCookie(ctx context.Context, state string, uid int64) (*http.Cookie, error) {
+// b 场景 uid、登录场景请求携带的 sso_client_id、10 分钟 exp 兜底；§12.4
+// 行 1485——不含 scene、不含 OIDC 上下文）。属性（§1.9 行 303）：HttpOnly;
+// SameSite=Lax; Path=/ 会话级恒定；Secure 受 https_deployment 驱动——判定
+// 为真 → 带 Secure；判定为假 → 省略。判定走 session.ResolveHTTPS 唯一判定点
+// （与 al_session 同源联动），auto 信号经 ctx（connect 装配层注入请求头）。
+func (s *Thirdparty) sealStateCookie(ctx context.Context, state string, uid int64, ssoClientID string) (*http.Cookie, error) {
 	now := s.now()
 	payload := &token.LoginStatePayload{
-		State: state,
-		Uid:   uid,
-		Iat:   now.Unix(),
-		Exp:   now.Add(loginStateTTL).Unix(),
+		State:       state,
+		Uid:         uid,
+		Iat:         now.Unix(),
+		Exp:         now.Add(loginStateTTL).Unix(),
+		SsoClientId: ssoClientID,
 	}
 	value, err := s.deps.CookieCodec.Seal(security.PurposeCookie, payload)
 	if err != nil {
@@ -885,20 +948,94 @@ func (s *Thirdparty) stateSecure(ctx context.Context) bool {
 	return session.ResolveHTTPS(s.deps.HTTPSMode, session.RequestSignalFromContext(ctx))
 }
 
-// verifyLoginState 校验 redirect 通道的 state（§12.4 行 1493）：请求 state
-// 必须为 l 前缀非空、与 Cookie 解出的载荷一致且未过期。
-func (s *Thirdparty) verifyLoginState(state, cookieValue string) bool {
+// openLoginState 校验并解出 redirect 通道的 al_login_state 载荷（§12.4 行
+// 1493）：请求 state 必须为 l 前缀非空、与 Cookie 解出的载荷一致且未过期。
+// 返回 nil = 校验失败（state_mismatch）；解出的载荷供应用上下文取
+// sso_client_id（§2.7.4）。
+func (s *Thirdparty) openLoginState(state, cookieValue string) *token.LoginStatePayload {
 	if state == "" || !strings.HasPrefix(state, StatePrefixLogin) || cookieValue == "" {
-		return false
+		return nil
 	}
 	payload, err := security.Open[token.LoginStatePayload](s.deps.CookieCodec, security.PurposeCookie, cookieValue)
 	if err != nil {
-		return false
+		return nil
 	}
 	if payload.GetState() != state || payload.GetState() == "" {
+		return nil
+	}
+	if s.now().Unix() >= payload.GetExp() {
+		return nil
+	}
+	return payload
+}
+
+// loginSsoSnapshot 三方登录（非扫码提交）的应用上下文解析与 Provider 放行
+// 判定（§2.7.4、§2.1 应用级过滤表）：redirect 通道从 al_login_state 载荷解出
+// sso_client_id；api 通道无 Cookie 语境、载荷无该字段（直登 / 既有客户端
+// 链路）→ 行为与现状一致。快照非 nil 时按首签快照成员判定 thirdparty 整体
+// 开关与 Provider 白名单，provider 行级可用性由调用方现查现判（§2.1 单
+// Provider 行）。返回 status 非空表示以该信封状态拒绝。
+func (s *Thirdparty) loginSsoSnapshot(ctx context.Context, statePayload *token.LoginStatePayload, providerKey string) (*token.Sso, string) {
+	if statePayload == nil {
+		return nil, ""
+	}
+	return s.resolveSsoSnapshot(ctx, statePayload.GetSsoClientId(), providerKey)
+}
+
+// resolveSsoSnapshot 解析应用快照并校验 Provider 放行（§2.2 首签口径）：
+// sso_client_id 为空 = 直登链路（nil, ""）零查询；查无行 / 行不可用 →
+// invalid_request，不降级直登（防拼接请求绕过应用限制）；解析器缺位属装配
+// 缺陷，同样 fail-closed；其余故障按内部失败出口记日志走 failed。
+func (s *Thirdparty) resolveSsoSnapshot(ctx context.Context, clientID, providerKey string) (*token.Sso, string) {
+	if clientID == "" {
+		return nil, ""
+	}
+	if s.deps.SsoApps == nil {
+		return nil, orchestrator.StatusInvalidRequest
+	}
+	snap, err := s.deps.SsoApps.Snapshot(ctx, clientID)
+	if err != nil {
+		if errors.Is(err, ssoapp.ErrClientNotFound) || errors.Is(err, ssoapp.ErrClientDisabled) {
+			return nil, orchestrator.StatusInvalidRequest
+		}
+		logx.Error(ctx, "thirdparty: resolve sso snapshot failed",
+			"error", logx.RedactText(err.Error()),
+		)
+		return nil, orchestrator.StatusFailed
+	}
+	if !ssoAllowsProvider(snap, providerKey) {
+		return nil, StatusProviderDisabled
+	}
+	return snap, ""
+}
+
+// ssoAllowsProvider 应用快照对三方 Provider 的放行判定（§2.1 应用级过滤表，
+// 三方 / 扫码 Provider 校验同表执行）：快照 nil = 直登 / 应用未配置全放行；
+// thirdparty 整体开关看快照 methods 冻结集（已含全局 ∧ 应用交集）；providers
+// nil = 应用未配置白名单跟随全局（行级可用性由调用方现查现判），空集 =
+// 全局 thirdparty 关（整体拒绝），非空 = 应用白名单成员判定。
+func ssoAllowsProvider(snap *token.Sso, providerKey string) bool {
+	if snap == nil {
+		return true
+	}
+	if !sliceContains(snap.GetMethods(), thirdpartyMethod) {
 		return false
 	}
-	return s.now().Unix() < payload.GetExp()
+	providers := snap.GetProviders()
+	if providers == nil {
+		return true
+	}
+	return sliceContains(providers, providerKey)
+}
+
+// sliceContains 成员判定。
+func sliceContains(list []string, v string) bool {
+	for _, item := range list {
+		if item == v {
+			return true
+		}
+	}
+	return false
 }
 
 // newTID login_token.tid 生成（缺省同引擎 security.RandomString(32)）。

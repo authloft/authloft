@@ -278,11 +278,14 @@ func tpCodec(t *testing.T, seed byte) *security.Codec {
 
 // tpEnv 汇总一套全 fake 的三方 service 依赖。
 type tpEnv struct {
-	loader   *tpLoader
-	binds    *tpBinds
-	users    *tpUsers
-	adapter  *tpAdapter
-	state    *orchestrator.State
+	loader  *tpLoader
+	binds   *tpBinds
+	users   *tpUsers
+	adapter *tpAdapter
+	state   *orchestrator.State
+	// loginC 与 env.state 同源的 login_token codec（测试侧解签发 token 验
+	// 载荷；生产侧 codec 收敛在 orchestrator.State 内）。
+	loginC   *security.Codec
 	sessions *tpSessions
 	settings *tpSettings
 	creds    *tpCreds
@@ -324,6 +327,7 @@ func newTPEnv(t *testing.T) *tpEnv {
 	loginCodec := tpCodec(t, 0x10)
 	cookieCodec := tpCodec(t, 0x20)
 	env.state = orchestrator.NewState(loginCodec)
+	env.loginC = loginCodec
 
 	st := &tpSettings{
 		bools:  map[string]bool{settings.KeyMfaEnabled: true},

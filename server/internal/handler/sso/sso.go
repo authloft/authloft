@@ -338,17 +338,20 @@ var errThirdpartyNotConfigured = errors.New("thirdparty service not configured")
 
 // Authorize 取第三方授权 URL（接口文档 §2.7.2 行 593-613）：scene=bind 时
 // 从 ctx 取会话 uid（session 拦截器注入；无会话由 service 判 401）；
-// 成功时经 CallInfo 写点下发 Set-Cookie: al_login_state（与 session
-// Cookie 同一写出出口，interceptors.go 行 141「禁止另造第二套」）。
+// sso_client_id 从请求透传（三方链路应用上下文唯一入口，§2.7.2——service
+// 装入 al_login_state 随链路传递，bind 场景由 service 剥离）；成功时经
+// CallInfo 写点下发 Set-Cookie: al_login_state（与 session Cookie 同一写出
+// 出口，interceptors.go 行 141「禁止另造第二套」）。
 func (h *Handler) Authorize(ctx context.Context, req *connect.Request[ssov1.AuthorizeRequest]) (*connect.Response[ssov1.AuthorizeResponse], error) {
 	if h.thirdparty == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errThirdpartyNotConfigured)
 	}
 	uid, _ := session.UIDFromContext(ctx)
 	out, err := h.thirdparty.Authorize(ctx, thirdpartysvc.AuthorizeInput{
-		Provider: req.Msg.GetProvider(),
-		Scene:    req.Msg.GetScene(),
-		UID:      uid,
+		Provider:    req.Msg.GetProvider(),
+		Scene:       req.Msg.GetScene(),
+		UID:         uid,
+		SsoClientID: req.Msg.GetSsoClientId(),
 	})
 	if err != nil {
 		return nil, mapThirdpartyError(err)

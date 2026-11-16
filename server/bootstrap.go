@@ -34,6 +34,7 @@ import (
 	adminv1connect "authloft/gen/go/api/admin/v1/adminv1connect"
 	rpcv1connect "authloft/gen/go/api/rpc/v1/rpcv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
+	"authloft/gen/go/token"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
@@ -543,10 +544,12 @@ func buildFactors(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 
 // buildThirdparty 构造三方登录通道 service（§3.9）：State / Terminal 复用引擎同一
 // 实例；al:ticket 结果读写与快照与扫码域共用同一实例（同一 sign_key.ticket）；
-// HTTPSMode 与 newSessionCookie 同一三态源。
+// HTTPSMode 与 newSessionCookie 同一三态源；sso 快照解析器与引擎 / 扫码域
+// 同一实例（§2.2 首签口径）。
 func buildThirdparty(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	creds *repo.CredentialRepo, core *loginCore,
 	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+	ssoApps thirdpartysvc.ThirdpartySsoResolver,
 ) *thirdpartysvc.Thirdparty {
 	return thirdpartysvc.NewThirdparty(thirdpartysvc.ThirdpartyDeps{
 		Loader:         deps.providerLoader,
@@ -559,6 +562,7 @@ func buildThirdparty(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		Credentials:    creds,
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
+		SsoApps:        ssoApps,
 		CookieCodec:    deps.codecs.Cookie,
 		// RootOrigin：redirect_uri 拼装基准 {root}/sso/oauth/callback/{key}。
 		RootOrigin: cfg.Authloft.Root,
@@ -567,9 +571,11 @@ func buildThirdparty(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 }
 
 // buildQRCode 构造扫码 service（§2.8 / §13.2）：State / Terminal / Loader / Gate
-// 复用引擎实例；al:ticket 读写与 Thirdparty 共用同一实例；码图删除走延迟队列。
+// 复用引擎实例；al:ticket 读写与 Thirdparty 共用同一实例；sso 快照解析器与
+// 引擎 / 三方域同一实例（§2.2 首签口径）；码图删除走延迟队列。
 func buildQRCode(deps *assembled, core *loginCore,
 	tickets *cache.TicketStore, ticketPayloads *cache.TicketPayloadStore,
+	ssoApps qrcodesvc.QRCodeSsoResolver,
 ) *qrcodesvc.QRCode {
 	return qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{
 		Loader:         deps.providerLoader,
@@ -578,6 +584,7 @@ func buildQRCode(deps *assembled, core *loginCore,
 		TicketCodec:    deps.codecs.Ticket,
 		Tickets:        tickets,
 		TicketPayloads: ticketPayloads,
+		SsoApps:        ssoApps,
 		Storage:        storage.NewResolver(deps.providerLoader),
 		Queue:          deps.queue,
 		State:          core.state,
@@ -624,7 +631,16 @@ func buildVerification(deps *assembled, registry *factor.Registry, users *repo.U
 		Verifier:    verification.NewStepUpVerifier(registry, users, creds),
 		Starter:     verification.NewStepUpVerifier(registry, users, creds),
 		LoginTokens: orchestrator.NewLoginTokenReader(core.state),
-		Login:       orchestrator.NewLoginCompleter(core.terminal, core.state),
+		// sso 应用快照读出口（接口文档 §2.1 交集口径 MFA 行）：与 LoginTokens 同一
+		// 令牌解析器出第二个只读口，快照供二次验证候选按应用开关过滤。
+		LoginSso: func(_ context.Context, tok string) (*token.Sso, error) {
+			p, err := core.state.Parse(tok)
+			if err != nil {
+				return nil, err
+			}
+			return p.GetSso(), nil
+		},
+		Login: orchestrator.NewLoginCompleter(core.terminal, core.state),
 	})
 }
 
@@ -732,8 +748,12 @@ func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	tickets := cache.NewTicketStore(deps.rdb, ticketsvc.NewTicketResultSealer(deps.codecs.Ticket), cache.TicketOptions{})
 	ticketPayloads := cache.NewTicketPayloadStore(deps.rdb, ticketsvc.NewTicketPayloadSealer(deps.codecs.Ticket))
 
-	deps.thirdparty = buildThirdparty(cfg, deps, users, creds, core, tickets, ticketPayloads)
-	deps.qrcode = buildQRCode(deps, core, tickets, ticketPayloads)
+	// SSO 应用快照解析器（§2.2 首签口径）：查行 + 交集 + 组装；engine /
+	// thirdparty / qrcode 复用同一实例（无状态，同一 sources）。
+	ssoApps := ssoappsvc.NewResolver(deps.repos.Clients, deps.settings)
+
+	deps.thirdparty = buildThirdparty(cfg, deps, users, creds, core, tickets, ticketPayloads, ssoApps)
+	deps.qrcode = buildQRCode(deps, core, tickets, ticketPayloads, ssoApps)
 	deps.loginTicket = buildLoginTicket(deps, users, creds, core, tickets, ticketPayloads)
 	deps.verification = buildVerification(deps, env.registry, users, creds, core)
 	buildAccountServices(deps, users, creds, webauthnRepo, env, tickets, ticketPayloads,
@@ -754,7 +774,7 @@ func buildDomains(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		},
 		// SSO 应用快照解析器（§2.2 首签口径）：查行 + 交集 + 组装，
 		// orchestrator / thirdparty / qrcode 消费同一实现。
-		SsoApp: ssoappsvc.NewResolver(deps.repos.Clients, deps.settings),
+		SsoApp: ssoApps,
 		// set_password 步写入依赖（§7.4）：窄接口由 repo 天然满足；epoch 复用共享
 		// 单例；审计经 resetAuditSink 走延迟队列；Thirdparty 复用 deps.thirdparty。
 		SetPass: &orchestrator.SetPassDeps{
