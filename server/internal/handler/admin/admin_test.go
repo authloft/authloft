@@ -890,8 +890,8 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	if f := byKey["host"]; f == nil || f.GetType() != "text" || !f.GetRequired() || f.GetPattern() == "" {
 		t.Errorf("host = %+v（必填 + 禁字符集 pattern）", f)
 	}
-	if f := byKey["port"]; f == nil || f.GetType() != "number" || f.GetRequired() {
-		t.Errorf("port = %+v（number 非必填：范围由保存期 NewConfig 兜底）", f)
+	if f := byKey["port"]; f == nil || f.GetType() != "number" || !f.GetRequired() {
+		t.Errorf("port = %+v（必填 number，§5.3 五字段表）", f)
 	}
 	if f := byKey["user"]; f == nil || f.GetType() != "text" || f.GetRequired() || !f.GetAdvanced() {
 		t.Errorf("user = %+v（可选 advanced）", f)

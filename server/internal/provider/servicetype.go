@@ -139,10 +139,10 @@ func captchaSchema() []FieldMeta {
 
 // proxySchema type=proxy 的完整字段声明（表列 + 五真实 Ext 字段，接口文档
 // §5.3 代理提供商与出站代理引用约定）：scheme 封闭集 socks5/http/https、host
-// 禁空白与 /?#@[]、port 1..65535（必填语义由保存期组合校验兜底——number 字段
-// 的 required 走 GetStringValue 无法判数）、user / password 可选且 password 须
-// 伴随 user；五行 section=endpoint。proxy 行自身不声明引用键（不自引）、无
-// oauth 登录建号开关；字段组合合法性单一来源在 proxyclient.NewConfig（保存期
+// 禁空白与 /?#@[]、port 1..65535 且必填（required 经 Create 的 number-aware
+// 缺省判定生效）、user / password 可选且 password 须伴随 user；五行
+// section=endpoint。proxy 行自身不声明引用键（不自引）、无 oauth 登录建号
+// 开关；字段组合合法性单一来源在 proxyclient.NewConfig（保存期
 // CreateProvider / UpdateProvider 调用），本声明只管表单呈现。每次调用返回
 // 新切片。
 func proxySchema() []FieldMeta {
@@ -155,7 +155,7 @@ func proxySchema() []FieldMeta {
 			Options: []string{"socks5", "http", "https"}, Help: "admin.schemaField.proxySchemeHelp", Storage: StorageExt},
 		FieldMeta{Key: "host", Label: "admin.schemaField.proxyHostLabel", Type: "text", Section: "endpoint", Required: true,
 			Pattern: "^[^\\s/?#@\\[\\]]+$", Help: "admin.schemaField.proxyHostHelp", Storage: StorageExt},
-		FieldMeta{Key: "port", Label: "admin.schemaField.proxyPortLabel", Type: "number", Section: "endpoint",
+		FieldMeta{Key: "port", Label: "admin.schemaField.proxyPortLabel", Type: "number", Section: "endpoint", Required: true,
 			Help: "admin.schemaField.proxyPortHelp", Storage: StorageExt},
 		FieldMeta{Key: "user", Label: "admin.schemaField.proxyUserLabel", Type: "text", Section: "endpoint", Advanced: true,
 			Help: "admin.schemaField.proxyUserHelp", Storage: StorageExt},

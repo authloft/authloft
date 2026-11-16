@@ -989,7 +989,8 @@ func TestCreateProviderProxyRow(t *testing.T) {
 // TestCreateProviderProxyInvalidCombos proxy 行组合非法拒绝（§5.3：校验单一来源
 // proxyclient.NewConfig，保存期对合并后的 Ext 统一执行）：scheme 封闭集外 / host
 // 缺失或含禁用字符 / port 越界 / password 无 user，一律 ErrInvalidRequest 且零落库；
-// 缺 port（number 非必填，组合校验兜底）同拒。
+// port 缺失与 port=0 由 required 校验的 number-aware 缺省判定拒绝（§5.3 五字段表
+// port 必填），70000 由组合校验拒绝。
 func TestCreateProviderProxyInvalidCombos(t *testing.T) {
 	cases := []struct {
 		name      string

@@ -130,10 +130,13 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	// provider_key / display_name 与厂商 Ext 必填项一并覆盖；Ext 走 Proto 消息
 	// 后由厂商构造兜底，此处先给管理员即时反馈）。display_name 原独立校验删除，
 	// 由本循环统一补位（二者都是 Create-only，语义不变；Update 为 PATCH 缺省保留，
-	// 不得加 required 校验）。
+	// 不得加 required 校验）。缺省判定 number-aware（§5.3 五字段表 port 必填）：
+	// number 标量经 GetStringValue 恒为空串，须兼看 GetNumberValue，0 视为缺省
+	//（port=0 同被保存期组合校验拒绝，两道闸一致）；string 型 GetNumberValue
+	// 恒为 0，行为与原口径不变。
 	for _, f := range meta.Schema {
 		if f.Required {
-			if v, ok := fields[f.Key]; !ok || v.GetStringValue() == "" {
+			if v, ok := fields[f.Key]; !ok || (v.GetStringValue() == "" && v.GetNumberValue() == 0) {
 				return ErrInvalidRequest
 			}
 		}

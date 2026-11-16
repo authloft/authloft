@@ -151,8 +151,8 @@ func assertProxyRowFields(t *testing.T, schema []provider.FieldMeta) {
 		t.Errorf("host 声明漂移: %+v (ok=%v)", f, ok)
 	}
 	f, ok = byKey["port"]
-	if !ok || f.Type != "number" || f.Required {
-		t.Errorf("port 声明漂移: %+v (ok=%v)", f, ok)
+	if !ok || f.Type != "number" || !f.Required {
+		t.Errorf("port 声明漂移（必填 number，§5.3 五字段表）: %+v (ok=%v)", f, ok)
 	}
 	f, ok = byKey["user"]
 	if !ok || f.Type != "text" || f.Required || !f.Advanced {
