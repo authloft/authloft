@@ -85,17 +85,18 @@
 
 ### 3.3 扩展开发（新增渠道 / 因子 / 接口 / 事件）
 
-| 新增内容                   | 改动                                                                                      | 不改动                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| 一个第三方渠道             | `internal/provider/oauth/<type>/` 新包（`init()` 自注册）                                 | handler、service、前端均不改                      |
-| 一个短信 / 邮件 / 存储厂商 | 对应 category 目录下新包                                                                  | 同上                                              |
-| 一个 captcha 厂商          | `internal/provider/captcha/<type>/` 新包 + 前端一个 adapter                               | 后端其余不改；自绘图形码仍必须带 `provider_key`   |
-| 一个认证因子               | `internal/factor/<name>/` 新包 + 一行注册 + 前端一个组件                                  | 引擎不改                                          |
-| 一个 StepKind              | `factor.go` 加常量 + 对应因子 `Steps()`                                                   | 引擎按 `Steps()` 通用处理                         |
-| 一个事件类型               | `eventlog/event.go` 加常量与 detail 构造                                                  | 写入路径不改                                      |
-| 一个接口 / 一个字段        | `proto/api/<域>/*.proto` 加消息或字段（或加 service 方法）→ `buf generate` → handler 装配 | `internal/connect`、中间件、前端 transport 均不改 |
-| 改某个接口的响应形状       | 只改 `.proto` + `dto/view.go`                                                             | 不新增「编码分支」，JSON 与 Protobuf 同步生效     |
+| 新增内容                   | 改动                                                                                      | 不改动                                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 一个第三方渠道             | `internal/provider/oauth/<type>/` 新包（`init()` 自注册，`Schema()` 声明完整字段清单）    | handler、service、前端均不改；schema 字段增改只动 provider 的 `Schema()` / `schemafield` 构造器 |
+| 一个短信 / 邮件 / 存储厂商 | 对应 category 目录下新包                                                                  | 同上                                                                                            |
+| 一个 captcha 厂商          | `internal/provider/captcha/<type>/` 新包 + 前端一个 adapter                               | 后端其余不改；自绘图形码仍必须带 `provider_key`                                                 |
+| 一个认证因子               | `internal/factor/<name>/` 新包 + 一行注册 + 前端一个组件                                  | 引擎不改                                                                                        |
+| 一个 StepKind              | `factor.go` 加常量 + 对应因子 `Steps()`                                                   | 引擎按 `Steps()` 通用处理                                                                       |
+| 一个事件类型               | `eventlog/event.go` 加常量与 detail 构造                                                  | 写入路径不改                                                                                    |
+| 一个接口 / 一个字段        | `proto/api/<域>/*.proto` 加消息或字段（或加 service 方法）→ `buf generate` → handler 装配 | `internal/connect`、中间件、前端 transport 均不改                                               |
+| 改某个接口的响应形状       | 只改 `.proto` + `dto/view.go`                                                             | 不新增「编码分支」，JSON 与 Protobuf 同步生效                                                   |
 
+- schema 字段增改的边界：调整字段标签 / 类型 / section / 去留（挑不挑 `schemafield` 构造器）只在 provider 的 `Schema()` 中完成，dto / handler / service 零改动；但新增 Ext 键仍须改 `provider/ext.proto` 并双端生成，新增表列仍须改 `repo/model` 与 `migrations/`（接口文档 §5.3、后端架构 §3.9）。
 - 判定是否满足「可插拔」的验收标准：新增渠道的 diff 不应出现在 `handler/`、`service/orchestrator/`、`dto/` 中；新增接口的 diff 不应出现在 `internal/connect/`、`middleware/` 中。
 - 新增三方渠道时，必须同步 `bootstrap` 注册表完整性门禁的渠道清单（`TestProviderRegistryComplete` 断言 ⊇《后端架构》§12.2 全量 type），防「漏 import → 生产静默 provider_disabled」。
 
