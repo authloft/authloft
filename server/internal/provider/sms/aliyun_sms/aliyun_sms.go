@@ -34,7 +34,6 @@ import (
 
 	"authloft/internal/provider"
 	"authloft/internal/provider/schemafield"
-	"authloft/internal/proxyclient"
 )
 
 // Type 渠道类型（§15.2 行 1723 内置清单）。
@@ -94,18 +93,19 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 	return build(p, nil)
 }
 
-// build 可注入 http.Client 的构造（生产传 nil 走 proxyclient；测试用
-// httptest 拦截请求，不打真实外部服务）。测试注入的 hc 优先于代理配置；
-// 空串代理交由 proxyclient 走既有 10s 默认客户端（§15.4）。
+// build 可注入 http.Client 的构造（生产传 nil 走默认出站 client；测试用
+// httptest 拦截请求，不打真实外部服务）。测试注入的 hc 优先；hc 为 nil 时
+// Outbound 非 nil 用池化 client（Transport 共享，§15.4），nil（引用键空 =
+// 直连）沿用既有 10s 默认直连客户端。引用不可解析在 Loader 装配期已 fail，
+// 本层无代理失败路径。
 func build(p *provider.Provider, hc *http.Client) (*Sender, error) {
 	if p == nil || p.Ext == nil {
 		return nil, provider.ErrNilProvider
 	}
 	if hc == nil {
-		var err error
-		hc, err = proxyclient.HTTPClient(p.Ext.GetProxyUrl(), 10*time.Second)
-		if err != nil {
-			return nil, fmt.Errorf("aliyun_sms: build proxy client: %w", err)
+		hc = &http.Client{Timeout: 10 * time.Second}
+		if p.Outbound != nil {
+			hc = p.Outbound.HTTPClient(10 * time.Second)
 		}
 	}
 	s := &Sender{

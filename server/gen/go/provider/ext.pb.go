@@ -46,7 +46,6 @@ type Ext struct {
 	Port              int32  `protobuf:"varint,15,opt,name=port,proto3" json:"port,omitempty"`
 	DisableSsl        bool   `protobuf:"varint,16,opt,name=disable_ssl,json=disableSsl,proto3" json:"disable_ssl,omitempty"`                  // 内网自签场景
 	IntranetEndpoint  string `protobuf:"bytes,17,opt,name=intranet_endpoint,json=intranetEndpoint,proto3" json:"intranet_endpoint,omitempty"` // 服务端回源优先使用
-	ProxyUrl          string `protobuf:"bytes,18,opt,name=proxy_url,json=proxyUrl,proto3" json:"proxy_url,omitempty"`                         // 出站代理，留空直连，见接口文档 §5.3 代理字段约定 / 后端架构 §15.4
 	// ---- 存储（category=storage 生效）----
 	Bucket     string `protobuf:"bytes,20,opt,name=bucket,proto3" json:"bucket,omitempty"`
 	RegionId   string `protobuf:"bytes,21,opt,name=region_id,json=regionId,proto3" json:"region_id,omitempty"`
@@ -204,13 +203,6 @@ func (x *Ext) GetDisableSsl() bool {
 func (x *Ext) GetIntranetEndpoint() string {
 	if x != nil {
 		return x.IntranetEndpoint
-	}
-	return ""
-}
-
-func (x *Ext) GetProxyUrl() string {
-	if x != nil {
-		return x.ProxyUrl
 	}
 	return ""
 }
@@ -373,7 +365,7 @@ var File_provider_ext_proto protoreflect.FileDescriptor
 
 const file_provider_ext_proto_rawDesc = "" +
 	"\n" +
-	"\x12provider/ext.proto\x12\bprovider\"\xd0\n" +
+	"\x12provider/ext.proto\x12\bprovider\"\xb3\n" +
 	"\n" +
 	"\x03Ext\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
@@ -391,8 +383,7 @@ const file_provider_ext_proto_rawDesc = "" +
 	"\x04port\x18\x0f \x01(\x05R\x04port\x12\x1f\n" +
 	"\vdisable_ssl\x18\x10 \x01(\bR\n" +
 	"disableSsl\x12+\n" +
-	"\x11intranet_endpoint\x18\x11 \x01(\tR\x10intranetEndpoint\x12\x1b\n" +
-	"\tproxy_url\x18\x12 \x01(\tR\bproxyUrl\x12\x16\n" +
+	"\x11intranet_endpoint\x18\x11 \x01(\tR\x10intranetEndpoint\x12\x16\n" +
 	"\x06bucket\x18\x14 \x01(\tR\x06bucket\x12\x1b\n" +
 	"\tregion_id\x18\x15 \x01(\tR\bregionId\x12\x1f\n" +
 	"\vpath_prefix\x18\x16 \x01(\tR\n" +

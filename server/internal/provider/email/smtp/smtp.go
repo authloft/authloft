@@ -120,13 +120,14 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 		username:   meta["username"],
 		password:   meta["password"],
 	}
-	// 构造期固化代理拨号器：仅 socks5 生效；http/https 与空串由 proxyclient
-	// 静默按直连拨号（§15.4）。错误不吞，错误串不含 URL 凭据。
-	d, err := proxyclient.Dialer(p.Ext.GetProxyUrl())
-	if err != nil {
-		return nil, fmt.Errorf("smtp: build proxy dialer: %w", err)
+	// 构造期固化代理拨号器：Outbound 非 nil 时按池的 scheme 分流（仅 socks5
+	// 生效；http/https 由池静默按直连拨号，§15.4）；nil（proxy_provider_key
+	// 空 = 直连）沿用直连拨号器。引用不可解析在 Loader 装配期已 fail，本层
+	// 无代理失败路径。
+	s.proxyDial = &net.Dialer{}
+	if p.Outbound != nil {
+		s.proxyDial = p.Outbound.Dialer()
 	}
-	s.proxyDial = d
 	for k, v := range meta {
 		if tpl, ok := strings.CutPrefix(k, "subject."); ok {
 			if s.subjects == nil {

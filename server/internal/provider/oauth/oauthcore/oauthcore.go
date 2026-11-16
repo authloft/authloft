@@ -31,7 +31,6 @@ import (
 	"authloft/internal/jsonata"
 	"authloft/internal/provider"
 	"authloft/internal/provider/schemafield"
-	"authloft/internal/proxyclient"
 )
 
 // 出站请求默认超时与响应体上限（防异常端点拖垮登录链路 / 日志爆量）。
@@ -129,19 +128,16 @@ func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Me
 	}
 }
 
-// ClientFor 在工厂构造期按 p.Ext.proxy_url 一次性构造出站 client（§15.4
-// Provider 出站代理），固化进适配器实例；运行期不回读 Ext。空串（含纯空白）
-// 返回 nil，调用方沿用 do 的默认客户端直连；非法配置返回 proxyclient 的可
-// 判别错误，不吞错、不降级直连。timeout 沿用本包默认值。
+// ClientFor 取装配期固化的出站连接池对应的 client（§15.4 Provider 出站代理），
+// 固化进适配器实例，运行期不回读：Outbound 非 nil（引用了 proxy 行）返回池化
+// client（Transport 共享、连接复用），nil（proxy_provider_key 空 = 直连）返回
+// nil，调用方沿用 do 的默认客户端直连。引用不可解析在 Loader 装配期已 fail
+// （ErrProxyRefUnresolvable），本层无代理失败路径。timeout 沿用本包默认值。
 func ClientFor(p *provider.Provider) (*http.Client, error) {
-	if p == nil || p.Ext == nil {
+	if p == nil || p.Outbound == nil {
 		return nil, nil
 	}
-	raw := p.Ext.GetProxyUrl()
-	if strings.TrimSpace(raw) == "" {
-		return nil, nil
-	}
-	return proxyclient.HTTPClient(raw, defaultTimeout)
+	return p.Outbound.HTTPClient(defaultTimeout), nil
 }
 
 // BuildAuthURL 组装标准 authorization code 跳转授权 URL：response_type=code

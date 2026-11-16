@@ -24,6 +24,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -732,20 +733,34 @@ func socks5SMTPStub(t *testing.T, dialTarget func() (net.Conn, error)) (addr str
 	return ln.Addr().String(), dstCh
 }
 
-// TestSendViaSOCKS5Proxy socks5 代理桩实证：代理观测到 CONNECT 目标为 SMTP
-// 服务器地址，且 fake server 捕获完整会话，证明流量经 socks5 代理（仅 socks5
-// 生效，§15.4）。
-func TestSendViaSOCKS5Proxy(t *testing.T) {
+// proxyPool 按结构化字段构造单池（测试取池入口，PoolSet 键任意）。
+func proxyPool(t *testing.T, scheme, host string, port int32, user, pass string) *proxyclient.Pool {
+	t.Helper()
+	cfg, err := proxyclient.NewConfig(scheme, host, port, user, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proxyclient.NewPoolSet().Get("test", cfg)
+}
+
+// TestSendViaOutboundSOCKS5Proxy socks5 代理桩实证：Outbound 非 nil 时代理观测
+// 到 CONNECT 目标为 SMTP 服务器地址，且 fake server 捕获完整会话，证明流量经
+// socks5 代理（仅 socks5 生效，§15.4）。
+func TestSendViaOutboundSOCKS5Proxy(t *testing.T) {
 	addr, captured := fakeSMTPServer(t)
 	_, portStr, _ := net.SplitHostPort(addr)
 	port, _ := strconv.Atoi(portStr)
 	proxyAddr, dstCh := socks5SMTPStub(t, func() (net.Conn, error) { return net.Dial("tcp", addr) })
 
-	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+	host, proxyPort, _ := net.SplitHostPort(proxyAddr)
+	proxyPortNum, _ := strconv.Atoi(proxyPort)
+	p := testProvider(t, func(e *providerpb.Ext) {
 		e.Host = "127.0.0.1"
 		e.Port = int32(port)
-		e.ProxyUrl = "socks5://" + proxyAddr
-	}))
+	})
+	p.Outbound = proxyPool(t, "socks5", host, int32(proxyPortNum), "", "")
+
+	s, err := newSender(p)
 	if err != nil {
 		t.Fatalf("newSender: %v", err)
 	}
@@ -771,19 +786,21 @@ func TestSendViaSOCKS5Proxy(t *testing.T) {
 	}
 }
 
-// TestSendHTTPProxyConfigSilentlyDirect http/https 代理配置对 SMTP 静默失效：
-// 代理指向不可达端口仍可直连成功（不报错、不提示、按直连拨号，§15.4）。
-func TestSendHTTPProxyConfigSilentlyDirect(t *testing.T) {
-	for _, proxyURL := range []string{"http://127.0.0.1:1", "https://127.0.0.1:1"} {
-		t.Run(proxyURL, func(t *testing.T) {
+// TestSendOutboundHTTPProxySilentlyDirect Outbound 池为 http/https 代理时对
+// SMTP 静默失效：代理指向不可达端口仍可直连成功（不报错、不提示、按直连拨号，
+// §15.4）。
+func TestSendOutboundHTTPProxySilentlyDirect(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		t.Run(scheme, func(t *testing.T) {
 			addr, captured := fakeSMTPServer(t)
 			_, portStr, _ := net.SplitHostPort(addr)
 			port, _ := strconv.Atoi(portStr)
-			s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+			p := testProvider(t, func(e *providerpb.Ext) {
 				e.Host = "127.0.0.1"
 				e.Port = int32(port)
-				e.ProxyUrl = proxyURL // 不可达代理：若被误用则 Send 必失败
-			}))
+			})
+			p.Outbound = proxyPool(t, scheme, "127.0.0.1", 1, "", "") // 不可达代理：若被误用则 Send 必失败
+			s, err := newSender(p)
 			if err != nil {
 				t.Fatalf("newSender: %v", err)
 			}
@@ -799,19 +816,5 @@ func TestSendHTTPProxyConfigSilentlyDirect(t *testing.T) {
 				t.Fatal("直连 SMTP 会话未被捕获")
 			}
 		})
-	}
-}
-
-// TestBuildProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且错误串
-// 不含完整 URL 与凭据（§15.4 脱敏）。
-func TestBuildProxyErrorNotSwallowed(t *testing.T) {
-	_, err := newSender(testProvider(t, func(e *providerpb.Ext) {
-		e.ProxyUrl = "ftp://user:s3cr3t@proxy.example:21"
-	}))
-	if err == nil {
-		t.Fatal("非法 scheme 须构造期报错、不降级直连")
-	}
-	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
-		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
 	}
 }

@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -314,9 +316,20 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 	}
 }
 
-// TestSendViaHTTPProxy http 代理桩实证：短信请求经代理而非直连——目标与代理
-// 各自记录命中，代理命中且目标零命中即证流量经代理（§15.4 全 scheme）。
-func TestSendViaHTTPProxy(t *testing.T) {
+// proxyPool 按结构化字段构造单池（测试取池入口，PoolSet 键任意）。
+func proxyPool(t *testing.T, scheme, host string, port int32, user, pass string) *proxyclient.Pool {
+	t.Helper()
+	cfg, err := proxyclient.NewConfig(scheme, host, port, user, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proxyclient.NewPoolSet().Get("test", cfg)
+}
+
+// TestSendViaOutboundHTTPProxy http 代理桩实证：Outbound 非 nil 时短信请求经
+// 池化 client 走代理而非直连——目标与代理各自记录命中，代理命中且目标零命中
+// 即证流量经代理（§15.4 全 scheme）。
+func TestSendViaOutboundHTTPProxy(t *testing.T) {
 	var directHits, proxyHits int
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		directHits++
@@ -329,10 +342,14 @@ func TestSendViaHTTPProxy(t *testing.T) {
 	}))
 	defer proxy.Close()
 
-	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
-		e.IntranetEndpoint = target.URL
-		e.ProxyUrl = proxy.URL
-	}))
+	u, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portNum, _ := strconv.Atoi(u.Port())
+	p := testProvider(t, func(e *providerpb.Ext) { e.IntranetEndpoint = target.URL })
+	p.Outbound = proxyPool(t, "http", u.Hostname(), int32(portNum), "", "")
+	s, err := newSender(p)
 	if err != nil {
 		t.Fatalf("newSender: %v", err)
 	}
@@ -347,36 +364,21 @@ func TestSendViaHTTPProxy(t *testing.T) {
 	}
 }
 
-// TestInjectedClientOverridesProxy 测试注入的 hc 优先于代理配置：代理指向
-// 不可达端口时仍可经注入 client 成功发送。
+// TestInjectedClientOverridesProxy 测试注入的 hc 优先于 Outbound 代理配置：
+// Outbound 指向不可达端口时仍可经注入 client 成功发送。
 func TestInjectedClientOverridesProxy(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"Code":"OK"}`))
 	}))
 	defer target.Close()
 
-	s, err := build(testProvider(t, func(e *providerpb.Ext) {
-		e.IntranetEndpoint = target.URL
-		e.ProxyUrl = "http://127.0.0.1:1" // 不可达，须被注入 client 覆盖
-	}), target.Client())
+	p := testProvider(t, func(e *providerpb.Ext) { e.IntranetEndpoint = target.URL })
+	p.Outbound = proxyPool(t, "http", "127.0.0.1", 1, "", "") // 不可达，须被注入 client 覆盖
+	s, err := build(p, target.Client())
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if err := s.Send(context.Background(), "13800138000", "otp", map[string]string{"code": "246810"}); err != nil {
 		t.Fatalf("注入 client 应覆盖代理配置: %v", err)
-	}
-}
-
-// TestBuildProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且
-// 错误串不含完整 URL 与凭据（§15.4 脱敏）。
-func TestBuildProxyErrorNotSwallowed(t *testing.T) {
-	_, err := newSender(testProvider(t, func(e *providerpb.Ext) {
-		e.ProxyUrl = "ftp://user:s3cr3t@proxy.example:21"
-	}))
-	if err == nil {
-		t.Fatal("非法 scheme 须构造期报错、不降级直连")
-	}
-	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
-		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
 	}
 }

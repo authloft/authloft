@@ -833,7 +833,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// provider 行源走 repo 直查、每次现算不缓存；catalog 提为共享单例，Gate 与
 	// registerPages 的 CSP supporter 复用同一实例（CSP 贡献与下发配置必须同源）。
 	captchaStore := cache.NewCaptchaStore(rdb)
-	captchaSrc := captcha.NewProviderSource(deps.repos.Providers)
+	captchaSrc := captcha.NewProviderSource(deps.repos.Providers, pools)
 	deps.captchaCatalog = captcha.NewCatalog(store, captchaSrc)
 	deps.gate = captcha.NewGate(store,
 		deps.captchaCatalog,

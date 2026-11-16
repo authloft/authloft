@@ -458,29 +458,6 @@ func TestAdminSchemaConversionFidelity(t *testing.T) {
 	}
 }
 
-// TestMergeProviderExtProxyURL extKeys 含 proxy_url 时落库、PATCH 缺省保留原值。
-func TestMergeProviderExtProxyURL(t *testing.T) {
-	fields := map[string]*structpb.Value{
-		ProxyURLFieldKey: structpb.NewStringValue("socks5://alice:pw@127.0.0.1:1080"),
-	}
-	ext, err := MergeProviderExt(&providerpb.Ext{}, fields, []string{ProxyURLFieldKey})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := ext.GetProxyUrl(); got != "socks5://alice:pw@127.0.0.1:1080" {
-		t.Errorf("ext.proxy_url = %q", got)
-	}
-	// PATCH：原值保留、未提交的 Ext 键不动。
-	orig := &providerpb.Ext{ProxyUrl: "http://old:8080", ClientId: "id"}
-	merged, err := MergeProviderExt(orig, map[string]*structpb.Value{}, []string{ProxyURLFieldKey})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if merged.GetProxyUrl() != "http://old:8080" || merged.GetClientId() != "id" {
-		t.Errorf("PATCH 结果 = %+v", merged)
-	}
-}
-
 // TestSchemaDefaultValue FieldMeta.Default → JSON 默认值转换边界：JSON 标量按
 // 原类型（number / bool），解析失败按字符串，空串无默认值。
 func TestSchemaDefaultValue(t *testing.T) {

@@ -22,15 +22,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
-
 	"google.golang.org/protobuf/types/known/structpb"
+	"regexp"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/dto"
 	"authloft/internal/provider"
-	"authloft/internal/proxyclient"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 )
@@ -505,25 +502,10 @@ func metaFieldKeys(meta schemaMeta) []string {
 	return keys
 }
 
-// validateProxyURL 保存前按 §5.3 代理字段约定预校验 proxy_url：合法 / 空串
-// （直连）放行并把 trim 后的值写回提交体（服务端不保留首尾空白）；非法一律
-// ErrInvalidRequest。proxyclient.Parse 只返回可判别类别哨兵，错误串不含完整
-// URL 与凭据；本层不包装其文本，避免泄漏（handler 映射 invalid_argument +
-// ErrorInfo{admin, invalid_request}）。
+// validateProxyURL proxy_url 已随 proto 字段下线：提交值不再校验、合并落库时
+// 被静默丢弃；proxy_provider_key 引用键的保存期校验随管理面改造另行接线，
+// 接线前恒放行。
 func validateProxyURL(fields map[string]*structpb.Value) error {
-	if _, ok := fields[dto.ProxyURLFieldKey]; !ok {
-		return nil // 未声明 proxy_url 的 provider（union / local）无键可校验
-	}
-	raw, err := structFieldString(fields, dto.ProxyURLFieldKey)
-	if err != nil {
-		return ErrInvalidRequest // 非 string 值
-	}
-	if _, err := proxyclient.Parse(raw); err != nil {
-		return ErrInvalidRequest
-	}
-	if trimmed := strings.TrimSpace(raw); trimmed != raw {
-		fields[dto.ProxyURLFieldKey] = structpb.NewStringValue(trimmed)
-	}
 	return nil
 }
 

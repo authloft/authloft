@@ -20,7 +20,6 @@ import (
 
 	"authloft/internal/provider"
 	"authloft/internal/provider/oauth/oauthcore"
-	"authloft/internal/proxyclient"
 )
 
 // Type 渠道类型（§12.2 内置清单）。
@@ -61,15 +60,17 @@ type Adapter struct {
 }
 
 // newAdapter 注册表工厂：从 Provider 实例取凭证并构造 SDK 客户端。出站
-// client 在构造期按 proxy_url 一次性固化（§15.4）；空串走直连 client，
-// 非法配置返回可判别错误、不降级直连。测试注入走 build，不经此工厂。
+// client 按装配期固化的 Outbound 连接池构造（§15.4）：非 nil 用池化 client
+// （Transport 共享、连接复用）；nil（proxy_provider_key 空 = 直连）沿用既有
+// 10s 超时的默认直连 client。引用不可解析在 Loader 装配期已 fail（§15.4），
+// 本层无代理失败路径。测试注入走 build，不经此工厂。
 func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
 	if p == nil || p.Ext == nil {
 		return build(p, nil)
 	}
-	hc, err := proxyclient.HTTPClient(p.Ext.GetProxyUrl(), 10*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("wechat_mp: build proxy client: %w", err)
+	hc := &http.Client{Timeout: 10 * time.Second}
+	if p.Outbound != nil {
+		hc = p.Outbound.HTTPClient(10 * time.Second)
 	}
 	return build(p, hc)
 }

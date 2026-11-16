@@ -298,38 +298,35 @@ func TestSharedAccessTokenCacheBridge(t *testing.T) {
 	}
 }
 
-// TestNewAdapterProxyTransport 验证构造期按 proxy_url 固化出站 client，
-// 经 WithHttpClient 注入 SDK 的 client 持有代理 Transport（§15.4）。
-// 经包内 hc 钩子读取注入的 client，不新增生产导出。
-func TestNewAdapterProxyTransport(t *testing.T) {
+// proxyPool 按结构化字段构造单池（测试取池入口，PoolSet 键任意）。
+func proxyPool(t *testing.T, scheme, host string, port int32, user, pass string) *proxyclient.Pool {
+	t.Helper()
+	cfg, err := proxyclient.NewConfig(scheme, host, port, user, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proxyclient.NewPoolSet().Get("test", cfg)
+}
+
+// TestNewAdapterOutboundTransport 验证构造期按装配固化的 Outbound 池构造出站
+// client：非 nil 时经 WithHttpClient 注入 SDK 的 client 持有池的代理 Transport
+// （§15.4），nil（引用键空 = 直连）注入 10s 超时的直连 client。经包内 hc 钩子
+// 读取注入的 client，不新增生产导出。
+func TestNewAdapterOutboundTransport(t *testing.T) {
 	cases := []struct {
 		name      string
-		proxyURL  string
+		outbound  *proxyclient.Pool
 		wantProxy bool
-		wantErr   error
 	}{
-		{name: "http proxy", proxyURL: "http://user:pass@127.0.0.1:8080", wantProxy: true},
-		{name: "https proxy", proxyURL: "https://127.0.0.1:8443", wantProxy: true},
-		{name: "socks5 proxy", proxyURL: "socks5://127.0.0.1:1080", wantProxy: true},
-		{name: "empty direct", proxyURL: "", wantProxy: false},
-		{name: "blank direct", proxyURL: "  \t ", wantProxy: false},
-		{name: "unsupported scheme", proxyURL: "ftp://127.0.0.1:21", wantErr: proxyclient.ErrUnsupportedScheme},
-		{name: "missing port", proxyURL: "http://127.0.0.1", wantErr: proxyclient.ErrInvalidPort},
+		{name: "http proxy", outbound: proxyPool(t, "http", "127.0.0.1", 8080, "user", "pass"), wantProxy: true},
+		{name: "socks5 proxy", outbound: proxyPool(t, "socks5", "127.0.0.1", 1080, "", ""), wantProxy: true},
+		{name: "nil Outbound direct", outbound: nil, wantProxy: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := testProvider("scan", "wx-app", "wx-secret")
-			p.Ext.ProxyUrl = tc.proxyURL
+			p.Outbound = tc.outbound
 			a, err := newAdapter(p)
-			if tc.wantErr != nil {
-				if err == nil || !errors.Is(err, tc.wantErr) {
-					t.Fatalf("newAdapter err = %v, want errors.Is(%v)", err, tc.wantErr)
-				}
-				if a != nil {
-					t.Fatalf("newAdapter adapter = %+v on error, want nil (no degrade)", a)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("newAdapter: %v", err)
 			}
@@ -339,6 +336,9 @@ func TestNewAdapterProxyTransport(t *testing.T) {
 			}
 			if adapter.hc == nil {
 				t.Fatal("injected client is nil, want client constructed at build time")
+			}
+			if adapter.hc.Timeout != 10*time.Second {
+				t.Errorf("Timeout = %v, want 10s", adapter.hc.Timeout)
 			}
 			if !tc.wantProxy {
 				if adapter.hc.Transport != nil {
@@ -358,16 +358,16 @@ func TestNewAdapterProxyTransport(t *testing.T) {
 }
 
 // TestBuildInjectedClientPriority 验证测试经 build 注入的 client 优先于
-// proxy_url 配置，测试注入口径保持不变；共享 access_token 缓存注入仍生效。
+// Outbound 代理配置，测试注入口径保持不变；共享 access_token 缓存注入仍生效。
 func TestBuildInjectedClientPriority(t *testing.T) {
 	injected := &http.Client{}
 	p := testProvider("scan", "wx-app", "wx-secret")
-	p.Ext.ProxyUrl = "http://127.0.0.1:8080"
+	p.Outbound = proxyPool(t, "http", "127.0.0.1", 8080, "", "")
 	a, err := build(p, injected)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if a.hc != injected {
-		t.Fatalf("injected client = %p, want %p (test injection must win over proxy config)", a.hc, injected)
+		t.Fatalf("injected client = %p, want %p (test injection must win over outbound pool)", a.hc, injected)
 	}
 }

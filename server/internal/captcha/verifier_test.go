@@ -9,14 +9,15 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/redis/go-redis/v9"
 
 	"authloft/internal/cache"
+	"authloft/internal/proxyclient"
 )
 
 // errStore 恒返回基础设施错误的图形码存储。
@@ -282,10 +283,20 @@ func TestVerifierImageOnceSemanticsRealRedis(t *testing.T) {
 	}
 }
 
-// TestVerifierRemoteViaHTTPProxy http 代理桩实证：siteverify 流量经代理而非
-// 直连——代理命中且目标零命中即证 per-request client 按 ProxyURL 构造（§15.4
-// 全 scheme）。
-func TestVerifierRemoteViaHTTPProxy(t *testing.T) {
+// proxyPool 按结构化字段构造单池（测试取池入口，PoolSet 键任意）。
+func proxyPool(t *testing.T, scheme, host string, port int32, user, pass string) *proxyclient.Pool {
+	t.Helper()
+	cfg, err := proxyclient.NewConfig(scheme, host, port, user, pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proxyclient.NewPoolSet().Get("test", cfg)
+}
+
+// TestVerifierRemoteViaOutboundHTTPProxy http 代理桩实证：siteverify 流量经
+// 池化 client 走代理而非直连——代理命中且目标零命中即证 per-request client
+// 按记录固化的 Outbound 池构造（§15.4 全 scheme）。
+func TestVerifierRemoteViaOutboundHTTPProxy(t *testing.T) {
 	target := newSiteverifyServer(t)
 	var proxyHits int
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -296,10 +307,16 @@ func TestVerifierRemoteViaHTTPProxy(t *testing.T) {
 	}))
 	defer proxy.Close()
 
+	u, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portNum, _ := strconv.Atoi(u.Port())
 	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
 		"pk": {
 			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
-			Secret: "sec-1", VerifyURL: target.server.URL, ProxyURL: proxy.URL,
+			Secret: "sec-1", VerifyURL: target.server.URL,
+			Proxy: proxyPool(t, "http", u.Hostname(), int32(portNum), "", ""),
 		},
 	}}, newFakeCaptchaStore(), VerifierOptions{})
 	if err := v.Verify(context.Background(), "pk", Submission{Token: "tok-1"}); err != nil {
@@ -314,14 +331,15 @@ func TestVerifierRemoteViaHTTPProxy(t *testing.T) {
 }
 
 // TestVerifierInjectedHTTPClientOverridesProxy 构造注入的 HTTPClient 优先于
-// 记录里的 ProxyURL：代理指向不可达端口仍可经注入 client 直连成功（既有用例
+// 记录的 Outbound 池：代理指向不可达端口仍可经注入 client 直连成功（既有用例
 // 口径不变，§15.4 测试注入优先级）。
 func TestVerifierInjectedHTTPClientOverridesProxy(t *testing.T) {
 	target := newSiteverifyServer(t)
 	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
 		"pk": {
 			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
-			Secret: "sec-1", VerifyURL: target.server.URL, ProxyURL: "http://127.0.0.1:1",
+			Secret: "sec-1", VerifyURL: target.server.URL,
+			Proxy: proxyPool(t, "http", "127.0.0.1", 1, "", ""),
 		},
 	}}, newFakeCaptchaStore(), VerifierOptions{HTTPClient: target.server.Client()})
 	if err := v.Verify(context.Background(), "pk", Submission{Token: "tok-2"}); err != nil {
@@ -332,20 +350,13 @@ func TestVerifierInjectedHTTPClientOverridesProxy(t *testing.T) {
 	}
 }
 
-// TestVerifierProxyErrorNotSwallowed 非法代理配置构造期报错、不降级直连，且错误
-// 串不含完整 URL 与凭据（§15.4 脱敏）；错误为基础设施错误，不映射 ErrInvalid。
-func TestVerifierProxyErrorNotSwallowed(t *testing.T) {
-	v := NewVerifier(mapSource{rows: map[string]*ProviderRecord{
-		"pk": {
-			ProviderKey: "pk", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true,
-			Secret: "s", ProxyURL: "ftp://user:s3cr3t@proxy.example:21",
-		},
-	}}, newFakeCaptchaStore(), VerifierOptions{})
+// TestVerifierSourceErrorNotSwallowed 行源基础设施错误（含引用解析 fail-closed
+// 的 ErrProxyRefUnresolvable，§15.4）原样上抛为非 ErrInvalid 的基础设施错误，
+// 不吞错、不降级直连。
+func TestVerifierSourceErrorNotSwallowed(t *testing.T) {
+	v := NewVerifier(mapSource{err: errors.New("proxy reference unresolvable")}, newFakeCaptchaStore(), VerifierOptions{})
 	err := v.Verify(context.Background(), "pk", Submission{Token: "t"})
 	if err == nil || errors.Is(err, ErrInvalid) {
-		t.Fatalf("非法代理 err = %v, want 基础设施错误（非 ErrInvalid）", err)
-	}
-	if strings.Contains(err.Error(), "s3cr3t") || strings.Contains(err.Error(), "ftp://") {
-		t.Fatalf("错误串泄露代理 URL/凭据: %v", err)
+		t.Fatalf("行源错误 err = %v, want 基础设施错误（非 ErrInvalid）", err)
 	}
 }

@@ -1,9 +1,12 @@
+// 池构造出站流量的端到端实证（后端架构 §15.4）：本地 http 代理桩与最小
+// SOCKS5 握手桩证明经 Pool.HTTPClient 取得的 client 流量真实过代理（http/https
+// 与 socks5 两类 Transport 接线均覆盖）。config / pool 的结构性断言见
+// config_test.go / pool_test.go。
 package proxyclient
 
 import (
 	"bufio"
 	"encoding/binary"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,148 +18,9 @@ import (
 	"time"
 )
 
-// TestParseSchemes 三 scheme 构造 + 带 / 不带 userinfo：逐项断言解码后的
-// Scheme / Host / Port / 凭据，非恒真（改任一解析分支即红）。
-func TestParseSchemes(t *testing.T) {
-	cases := []struct {
-		name            string
-		raw             string
-		scheme, host    string
-		port            int
-		user, pass      string
-		hasAuth, direct bool
-	}{
-		{"socks5 无凭据", "socks5://127.0.0.1:1080", "socks5", "127.0.0.1", 1080, "", "", false, false},
-		{"socks5 带凭据", "socks5://alice:s3cr3t@127.0.0.1:1080", "socks5", "127.0.0.1", 1080, "alice", "s3cr3t", true, false},
-		{"http 无凭据", "http://proxy.example.com:8080", "http", "proxy.example.com", 8080, "", "", false, false},
-		{"http 仅用户名", "http://bob@proxy.example.com:8080", "http", "proxy.example.com", 8080, "bob", "", true, false},
-		{"https 带编码凭据", "https://u%40ser:p%3Ass@proxy.example.com:8443", "https", "proxy.example.com", 8443, "u@ser", "p:ss", true, false},
-		{"IPv6 host", "socks5://[::1]:1080", "socks5", "::1", 1080, "", "", false, false},
-		{"空串直连", "  ", "", "", 0, "", "", false, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := Parse(tc.raw)
-			if err != nil {
-				t.Fatalf("Parse(%q): %v", tc.raw, err)
-			}
-			if cfg.Direct() != tc.direct || cfg.Scheme != tc.scheme || cfg.Host != tc.host ||
-				cfg.Port != tc.port || cfg.User != tc.user || cfg.Password != tc.pass || cfg.HasAuth != tc.hasAuth {
-				t.Fatalf("Parse(%q) = %+v, want scheme=%q host=%q port=%d user=%q pass=%q auth=%v direct=%v",
-					tc.raw, cfg, tc.scheme, tc.host, tc.port, tc.user, tc.pass, tc.hasAuth, tc.direct)
-			}
-		})
-	}
-}
-
-// TestParseInvalid 非法格式逐条可证伪：每条断言具体可判别哨兵，任一校验被删
-// 即对应子例变红。错误串一律不含完整 URL / 凭据（脱敏）。
-func TestParseInvalid(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want error
-	}{
-		{"socks5h 非封闭 scheme", "socks5h://h:1080", ErrUnsupportedScheme},
-		{"socks4 非封闭 scheme", "socks4://h:1080", ErrUnsupportedScheme},
-		{"ftp 非封闭 scheme", "ftp://h:21", ErrUnsupportedScheme},
-		{"空 scheme", "://h:1080", ErrMalformedURL},
-		{"大写 scheme", "HTTP://h:8080", ErrUnsupportedScheme},
-		{"缺 ://", "http:h:8080", ErrMalformedURL},
-		{"空 host", "http://:8080", ErrMissingHost},
-		{"空 host 带 userinfo", "http://bob@:8080", ErrMissingHost},
-		{"缺 port", "http://h", ErrInvalidPort},
-		{"port 0", "http://h:0", ErrInvalidPort},
-		{"port 65536", "http://h:65536", ErrInvalidPort},
-		{"port 非数字", "http://h:abc", ErrMalformedURL},
-		{"path", "http://h:8080/path", ErrUnexpectedPath},
-		{"根 path", "http://h:8080/", ErrUnexpectedPath},
-		{"query", "http://h:8080?x=1", ErrUnexpectedPath},
-		{"空 query", "http://h:8080?", ErrUnexpectedPath},
-		{"fragment", "http://h:8080#f", ErrUnexpectedPath},
-		{"空 fragment", "http://h:8080#", ErrUnexpectedPath},
-		{"空 userinfo 用户名", "http://:pw@h:8080", ErrInvalidUserinfo},
-		{"非法百分号", "http://u%zz@h:8080", ErrMalformedURL},
-		{"超 512 字节", "http://h:8080/" + strings.Repeat("a", 512), ErrTooLong},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := Parse(tc.raw)
-			if !errors.Is(err, tc.want) {
-				t.Fatalf("Parse(%q) err = %v, want %v", tc.raw, err, tc.want)
-			}
-			if strings.Contains(err.Error(), "://") || strings.Contains(err.Error(), "s3cr3t") {
-				t.Errorf("错误串泄漏 URL / 凭据: %q", err.Error())
-			}
-		})
-	}
-}
-
-// TestParseTrimAndLengthBoundary trim 后为空即直连；整串 512 字节恰好合法、
-// 513 拒绝（用长 hostname 拉开长度、不引入 path，长度边界可证伪）。
-func TestParseTrimAndLengthBoundary(t *testing.T) {
-	if cfg, err := Parse("   http://h:8080   "); err != nil || cfg.Scheme != "http" || cfg.Host != "h" {
-		t.Fatalf("trim 后解析 = (%+v, %v)", cfg, err)
-	}
-	at512 := "http://" + strings.Repeat("a", 500) + ":8080" // 7+500+5 = 512
-	if len(at512) != maxRawLen {
-		t.Fatalf("512 用例长度 = %d", len(at512))
-	}
-	if _, err := Parse(at512); err != nil {
-		t.Errorf("512 字节应合法: %v", err)
-	}
-	if _, err := Parse(at512 + "a"); !errors.Is(err, ErrTooLong) {
-		t.Errorf("513 字节 err = %v, want ErrTooLong", err)
-	}
-}
-
-// TestHTTPClientConstruction 三 scheme + 空串均能构造 client（不触网）：
-// 空串走直连默认 transport（Transport==nil），http/https 设 Proxy，socks5 设
-// DialContext，且都不改写 http.DefaultTransport。
-func TestHTTPClientConstruction(t *testing.T) {
-	before := http.DefaultTransport
-	cases := []struct {
-		name, raw string
-		wantProxy bool
-		wantDial  bool
-	}{
-		{"http", "http://127.0.0.1:8080", true, false},
-		{"https", "https://127.0.0.1:8443", true, false},
-		{"socks5", "socks5://127.0.0.1:1080", false, true},
-		{"空串直连", "", false, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cl, err := HTTPClient(tc.raw, 7*time.Second)
-			if err != nil {
-				t.Fatalf("HTTPClient(%q): %v", tc.raw, err)
-			}
-			if cl.Timeout != 7*time.Second {
-				t.Errorf("Timeout = %v, want 7s", cl.Timeout)
-			}
-			tr, ok := cl.Transport.(*http.Transport)
-			if tc.raw == "" {
-				if cl.Transport != nil {
-					t.Errorf("空串应走直连默认 client，Transport = %T", cl.Transport)
-				}
-			} else {
-				if !ok {
-					t.Fatalf("Transport = %T, want *http.Transport", cl.Transport)
-				}
-				if (tr.Proxy != nil) != tc.wantProxy || (tr.DialContext != nil) != tc.wantDial {
-					t.Errorf("proxy=%v dial=%v, want proxy=%v dial=%v", tr.Proxy != nil, tr.DialContext != nil, tc.wantProxy, tc.wantDial)
-				}
-			}
-		})
-	}
-	if http.DefaultTransport != before {
-		t.Error("HTTPClient 不得改写 http.DefaultTransport")
-	}
-}
-
-// TestHTTPClientHTTPProxyCarriesTraffic 本地 http 代理桩实证流量经代理：
-// 目标 example.invalid 不可解析，唯有经代理桩才可能拿到桩的响应，证伪性强。
-func TestHTTPClientHTTPProxyCarriesTraffic(t *testing.T) {
+// TestPoolHTTPProxyCarriesTraffic 本地 http 代理桩实证流量经代理：目标
+// example.invalid 不可解析，唯有经代理桩才可能拿到桩的响应，证伪性强。
+func TestPoolHTTPProxyCarriesTraffic(t *testing.T) {
 	hits := make(chan string, 1)
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits <- r.URL.String()
@@ -169,10 +33,13 @@ func TestHTTPClientHTTPProxyCarriesTraffic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cl, err := HTTPClient(u.String(), 3*time.Second)
+	portNum, _ := strconv.Atoi(u.Port())
+	cfg, err := NewConfig("http", u.Hostname(), int32(portNum), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	cl := NewPoolSet().Get("k", cfg).HTTPClient(3 * time.Second)
+
 	resp, err := cl.Get("http://example.invalid/probe")
 	if err != nil {
 		t.Fatalf("经代理 GET 失败: %v", err)
@@ -298,10 +165,10 @@ func socks5Stub(t *testing.T) (string, <-chan socks5Obs, func()) {
 	return ln.Addr().String(), ch, func() { ln.Close(); <-done }
 }
 
-// TestHTTPClientSOCKS5Handshake socks5 最小握手桩实证：带 / 不带 userinfo
-// 两条分支分别走 no-auth 与 user/pass 子协商，CONNECT 目标与隧道内 HTTP 请求
-// 均被桩观测，证明流量经 socks5 代理而非直连。
-func TestHTTPClientSOCKS5Handshake(t *testing.T) {
+// TestPoolSOCKS5Handshake socks5 最小握手桩实证：带 / 不带 userinfo 两条分支
+// 分别走 no-auth 与 user/pass 子协商，CONNECT 目标与隧道内 HTTP 请求均被桩
+// 观测，证明池化 client 的流量经 socks5 代理而非直连。
+func TestPoolSOCKS5Handshake(t *testing.T) {
 	for _, tc := range []struct {
 		name, user, pass string
 	}{
@@ -311,14 +178,12 @@ func TestHTTPClientSOCKS5Handshake(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			addr, ch, cleanup := socks5Stub(t)
 			defer cleanup()
-			raw := "socks5://" + addr
-			if tc.user != "" {
-				raw = "socks5://" + tc.user + ":" + tc.pass + "@" + addr
-			}
-			cl, err := HTTPClient(raw, 3*time.Second)
+			host, port := splitAddr(addr)
+			cfg, err := NewConfig("socks5", host, port, tc.user, tc.pass)
 			if err != nil {
 				t.Fatal(err)
 			}
+			cl := NewPoolSet().Get(tc.name, cfg).HTTPClient(3 * time.Second)
 			resp, err := cl.Get("http://example.invalid/probe")
 			if err != nil {
 				t.Fatalf("经 socks5 GET 失败: %v", err)
@@ -341,19 +206,5 @@ func TestHTTPClientSOCKS5Handshake(t *testing.T) {
 					obs.hadAuth, obs.user, obs.pass, wantAuth, tc.user, tc.pass)
 			}
 		})
-	}
-}
-
-// TestDialerSMTPReuse Dialer 供 SMTP 复用：socks5 返回 ContextDialer；http/https
-// 与空串按 §15.4 静默失效返回直连拨号器（不报错、不降级）。
-func TestDialerSMTPReuse(t *testing.T) {
-	for _, raw := range []string{"", "http://h:8080", "https://h:8443", "socks5://alice:pw@h:1080"} {
-		d, err := Dialer(raw)
-		if err != nil || d == nil {
-			t.Fatalf("Dialer(%q) = (%v, %v)", raw, d, err)
-		}
-	}
-	if _, err := Dialer("ftp://h:21"); !errors.Is(err, ErrUnsupportedScheme) {
-		t.Errorf("非法 scheme err = %v", err)
 	}
 }

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
 	"authloft/internal/proxyclient"
 )
@@ -463,21 +462,27 @@ func TestExchangePostFormRedirectURI(t *testing.T) {
 	}
 }
 
-// TestClientForProxySchemes 三种 scheme 均返回带代理 Transport 的 client，
-// 超时沿用本包默认值，且带凭据配置下错误/日志不泄漏（构造期只读校验）。
-func TestClientForProxySchemes(t *testing.T) {
+// TestClientForOutboundPool Outbound 非 nil（引用 proxy 行）时三种 scheme 均
+// 返回带代理 Transport 的池化 client，超时沿用本包默认值。
+func TestClientForOutboundPool(t *testing.T) {
 	cases := []struct {
 		name   string
-		raw    string
+		scheme string
+		port   int32
 		wantFn string // "proxy" -> Transport.Proxy；"dial" -> Transport.DialContext
 	}{
-		{"http", "http://proxy.example:8080", "proxy"},
-		{"https", "https://user:pass@proxy.example:8443", "proxy"},
-		{"socks5", "socks5://user:pass@proxy.example:1080", "dial"},
+		{"http", "http", 8080, "proxy"},
+		{"https", "https", 8443, "proxy"},
+		{"socks5", "socks5", 1080, "dial"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			hc, err := ClientFor(&provider.Provider{Key: "k", Ext: &providerpb.Ext{ProxyUrl: tc.raw}})
+			cfg, err := proxyclient.NewConfig(tc.scheme, "proxy.example", tc.port, "user", "pass")
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := &provider.Provider{Key: "k", Outbound: proxyclient.NewPoolSet().Get("k", cfg)}
+			hc, err := ClientFor(p)
 			if err != nil {
 				t.Fatalf("ClientFor(%s): %v", tc.name, err)
 			}
@@ -505,16 +510,14 @@ func TestClientForProxySchemes(t *testing.T) {
 	}
 }
 
-// TestClientForDirect 空串 / 纯空白 / nil Provider / nil Ext 一律返回 nil
-// client（走 do 默认客户端直连），不报 error。
+// TestClientForDirect Outbound nil（引用键空 = 直连）/ nil Provider 一律返回
+// nil client（走 do 默认客户端直连），不报 error。
 func TestClientForDirect(t *testing.T) {
 	cases := []struct {
 		name string
 		p    *provider.Provider
 	}{
-		{"空串", &provider.Provider{Ext: &providerpb.Ext{ProxyUrl: ""}}},
-		{"纯空白", &provider.Provider{Ext: &providerpb.Ext{ProxyUrl: "   "}}},
-		{"nil Ext", &provider.Provider{Key: "k"}},
+		{"nil Outbound", &provider.Provider{Key: "k"}},
 		{"nil Provider", nil},
 	}
 	for _, tc := range cases {
@@ -525,34 +528,6 @@ func TestClientForDirect(t *testing.T) {
 			}
 			if hc != nil {
 				t.Fatalf("ClientFor 返回非 nil client = %+v，期望 nil（直连）", hc)
-			}
-		})
-	}
-}
-
-// TestClientForInvalid 非法代理配置返回可判别错误、nil client，错误串不含
-// 凭据段（脱敏），不吞错、不降级直连。
-func TestClientForInvalid(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want error
-	}{
-		{"非法 scheme", "ftp://user:sekret@proxy.example:21", proxyclient.ErrUnsupportedScheme},
-		{"缺失端口", "http://proxy.example", proxyclient.ErrInvalidPort},
-		{"畸形 URL", "not-a-url", proxyclient.ErrMalformedURL},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			hc, err := ClientFor(&provider.Provider{Key: "k", Ext: &providerpb.Ext{ProxyUrl: tc.raw}})
-			if !errors.Is(err, tc.want) {
-				t.Fatalf("ClientFor err = %v, want errors.Is(_, %v)", err, tc.want)
-			}
-			if hc != nil {
-				t.Fatalf("非法配置不应返回 client, got %+v", hc)
-			}
-			if strings.Contains(err.Error(), "sekret") {
-				t.Errorf("错误串泄漏凭据: %s", err.Error())
 			}
 		})
 	}
