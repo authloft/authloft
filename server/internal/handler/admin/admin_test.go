@@ -783,8 +783,8 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 }
 
 // TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
-// 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + §5.3 行 1235 oauth
-// 追加 10 字段 + 行 1239 全类 metadata = 23 项。追加字段 label / help 是前端
+// 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
+// + 全类 metadata + proxy_url 通用基线 = 24 项。追加字段 label / help 是前端
 // i18n 键，type / section / required / advanced 与 §5.3 示例（行 1187-1226）
 // 逐字一致，且与注册表 meta.Fields 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
@@ -800,9 +800,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
-	// 12 表列基线 + 10 oauth 追加（行 1235）+ 全类 metadata（行 1239）。
-	if len(got.GetFields()) != 23 {
-		t.Fatalf("字段数 = %d, want 23（12 表列基线 + 10 oauth 追加 + metadata）", len(got.GetFields()))
+	// 12 表列基线 + 10 oauth 追加 + 全类 metadata + proxy_url 通用基线。
+	if len(got.GetFields()) != 24 {
+		t.Fatalf("字段数 = %d, want 24（12 表列基线 + 10 oauth 追加 + metadata + proxy_url 通用基线）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -812,6 +812,17 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 		case "basic", "credential", "endpoint", "display", "policy":
 		default:
 			t.Errorf("%s section = %q, 非法（不在五区块封闭集合）", f.GetKey(), f.GetSection())
+		}
+	}
+	// proxy_url 通用 Ext 基线字段：由 schema 统一下发，形态与 ProxyURLSchemaField 一致。
+	if f, ok := byKey["proxy_url"]; !ok {
+		t.Error("schema 缺少通用基线字段 proxy_url")
+	} else {
+		if f.GetSection() != "endpoint" || !f.GetAdvanced() {
+			t.Errorf("proxy_url section/advanced = (%q, %v), want (endpoint, true)", f.GetSection(), f.GetAdvanced())
+		}
+		if f.GetLabel() != "admin.schemaField.proxyUrlLabel" || f.GetHelp() != "admin.schemaField.proxyUrlHelp" {
+			t.Errorf("proxy_url label/help = (%q, %q), want (admin.schemaField.proxyUrlLabel, admin.schemaField.proxyUrlHelp)", f.GetLabel(), f.GetHelp())
 		}
 	}
 	// 表列基线 12 项仍在（category 只读字段由页面级类型下拉承载）。
