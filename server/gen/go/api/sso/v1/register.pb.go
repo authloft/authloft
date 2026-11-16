@@ -126,7 +126,7 @@ func (x *RegisterRequest) GetCaptcha() *CaptchaPayload {
 // RegisterPayload 是 §2.3 注册各 step 的 payload 字段合集：
 // 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9）。
 // 字段集合当前与 LoginPayload（login.proto，§2.6）部分重合，但口径来源不同
-// （本消息以 §2.3 为准），故在本文件各建：按 §12.8 / §12.9 只增不改，
+// （本消息以 §2.3 为准），故在本文件各建：字段编号可随契约调整（§12.8 / §12.9），
 // 注册后续若需新增字段直接在本文件加号，不动已验收的 login.proto。
 type RegisterPayload struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

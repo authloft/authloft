@@ -231,7 +231,7 @@ export const ProfileResponseSchema: GenMessage<ProfileResponse> = /*@__PURE__*/
  * 覆盖（含 0 / 空串，has 位区分「未设置」与「零值」）；profile 为消息字段
  * 自带 presence（nil = 未传，不触碰 user_profile 行），子字段 optional 口径
  * 见 UserProfile。用户名 / 手机号 / 邮箱不可由此修改。成功为空
- * 响应，返回 OkResponse。字段编号不变（纯加 optional，wire 兼容）。
+ * 响应，返回 OkResponse；字段以接口文档 §3.2 为准。
  *
  * @generated from message api.account.v1.UpdateProfileRequest
  */

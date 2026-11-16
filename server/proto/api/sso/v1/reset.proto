@@ -43,8 +43,8 @@ message ResetPasswordRequest {
 // 单次请求只按 step 使用其中一部分，字段名与该表 payload 列逐字一致（§12.9）。
 // 字段集合与 LoginPayload（login.proto）不同（本消息无 username/credential，另有
 // set_password 的 password），且口径来源不同（本消息以 §2.4 为准），故在本文件各建：
-// 按 §12.8 / §12.9 只增不改，重置后续若需新增字段直接在本文件加号，不动已验收的
-// login.proto / register.proto。
+// 字段编号可随契约调整（§12.8 / §12.9），重置后续若需新增字段直接在本文件加号，
+// login.proto / register.proto 无需改动。
 message ResetPayload {
   // challenge 步：目标邮箱，须为已绑定且已验证的（§2.4）；与 phone 二选一。
   string email = 1;

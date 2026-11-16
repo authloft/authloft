@@ -408,7 +408,7 @@ G. 集成测试（真连 ENV.md test 实例）
 | 用途     | 选型                                                                                                                                                                                                                     |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 运行器   | Rstack（底层为 Rstest，配置见 `rstack.config.mts`，脚手架）                                                                                                                                                              |
-| 环境     | jsdom；WebAuthn 相关用例注入 `window.PublicKeyCredential` stub                                                                                                                                                           |
+| 环境     | Rstest 自带 DOM 无关运行器（无 jsdom；无 testing-library / act）；渲染断言走 SSR `renderToStaticMarkup`（见下行组件测试），WebAuthn 相关用例以注入 stub / 纯函数断言覆盖                                                 |
 | 组件测试 | 渲染断言经 `renderToStaticMarkup`（rstest externalize 与 Semi 子路径不兼容，testing-library 暂不可用，工具链修复后恢复）；按可访问性角色 / 文案断言，不做快照测试；`semi-probe` 探针长期保留作为配置绊线（配置回退即红） |
 | 网络     | msw（handler 内联于各测试文件，非集中 mocks/），拦截所有 `/api/**`                                                                                                                                                       |
 | 契约     | 响应类型来自生成的 TS 消息类型，msw fixture 直接以生成类型断言，防止前后端漂移                                                                                                                                           |

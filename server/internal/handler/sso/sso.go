@@ -519,7 +519,7 @@ func withQrcodeCaptchaConfig(err error, coded *connect.Error) *connect.Error {
 
 // mapQrcodeError 扫码域哨兵错误 → Connect 错误体 + ErrorInfo（§1.5 行
 // 197-210；code 取 §1.6 封闭集，人机校验两码一律引用 captcha 包常量）。
-// scene 校验实返 ErrQrcodeTicketInvalid，故不为未使用的 scene 哨兵单列分支。
+// scene 校验统一返回票据失效错误（ErrQrcodeTicketInvalid）。
 func mapQrcodeError(err error) error {
 	switch {
 	case errors.Is(err, ticketsvc.ErrQrcodeUnauthenticated):

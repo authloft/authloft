@@ -23,7 +23,7 @@ export const file_api_sso_v1_envelope: GenFile = /*@__PURE__*/
  * （§1.0 已废），非 success 即失败，error 只承载展示信息，动作见 §1.6。
  * 字段名与 §1.3 JSON 示例的 camelCase 线上表示逐字对应（proto 一律
  * snake_case，§12.9），编号从 1 起连续；
- * 既有字段与编号不变（§12.8 只增不改）。
+ * 字段口径以接口文档 §12.8 为准（系统未上线，无效字段可直接删除并重排编号）。
  *
  * @generated from message api.sso.v1.LoginFlowResponse
  */

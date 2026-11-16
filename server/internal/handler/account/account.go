@@ -1121,7 +1121,7 @@ func (h *Handler) SubmitVerification(ctx context.Context, req *connect.Request[c
 		return nil, mapVerificationError("account", &verification.Error{Code: "invalid_request"})
 	}
 	// 防御性校验：AccountService 组全接口以会话 uid 为主体（§3.8.1），
-	// 与 StartVerification 对齐；拦截器已注入，正常链路不改变行为。
+	// 与 StartVerification 对齐；session 拦截器放行匿名，本 handler 在 ctx 无 uid 时返回 401。
 	if _, ok := session.UIDFromContext(ctx); !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}

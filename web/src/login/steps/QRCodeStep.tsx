@@ -17,8 +17,7 @@
  *   completeLogin 终点跳转（终点字段 syncCookieUrl / redirectTo 在内层，
  *   §4.1 行 383 与 LoginContainer.terminalUrl 同口径，就地实现避免
  *   LoginContainer ↔ MethodTabs 循环依赖）；binding_required / 失败态经
- *   onResult 上抛交容器状态机分派（ProviderButtons → MethodTabs →
- *   LoginContainer 链，「LoginContainer 禁改」约束已解除）；
+ *   onResult 上抛交登录页注入的受控链路，由 LoginPage 转交容器状态机分派；
  * - needs_step_up（§2.8 行 884 MFA×扫码）：轮询顶层 status=needs_step_up
  *   （ticket.status 仍为 scanned，面板按 scanned 继续轮询）时，信封同时下发
  *   loginToken；本组件把它存入 loginTokenStore 后弹出 StepUpDialog，复用登录主路径
