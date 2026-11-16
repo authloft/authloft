@@ -13,6 +13,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/security"
 	"authloft/internal/settings"
@@ -211,9 +212,14 @@ type Deps struct {
 	Verifier    FactorVerifier
 	Starter     FactorStarter
 	LoginTokens LoginTokenReader
-	Login       LoginCompleter
-	Now         func() time.Time
-	NewNonce    func() (string, error)
+	// LoginSso 读 login_token.sso 应用快照（§11.6.2）：与 LoginTokens 读同
+	// 一令牌、独立透出快照，供候选按应用开关过滤（接口文档 §2.1 交集口径 MFA 行）。
+	// login_token 编解码归装配层适配器所有，本包不感知其实现；未注入或读出
+	// nil = 无应用上下文（直登 / OIDC / 未装配），候选不按应用过滤。
+	LoginSso func(ctx context.Context, loginToken string) (*token.Sso, error)
+	Login    LoginCompleter
+	Now      func() time.Time
+	NewNonce func() (string, error)
 }
 
 // Service step-up 服务层：不感知 Connect / Gin，只做令牌编排与契约校验。
@@ -293,7 +299,7 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	if !in.BizPurpose.Valid() || in.Operation == "" {
 		return nil, nil, failure("invalid_request", nil)
 	}
-	subject, err := s.resolveSubject(ctx, in)
+	subject, ssoSnap, err := s.resolveSubject(ctx, in)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -309,6 +315,9 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 		}
 		candidates = intersect(candidates, bound)
 	}
+	// 应用开关过滤在绑定交集之后执行（接口文档 §2.1 交集口径 MFA 行的合取顺序）；
+	// 过滤后为空复用既有 method_disabled 出口，该用户无法登录该应用。
+	candidates = ssoAllowlist(candidates, ssoSnap)
 	if len(candidates) == 0 {
 		return nil, nil, failure("method_disabled", nil)
 	}
@@ -422,37 +431,55 @@ func (s *Service) lastStep(method string) string {
 	return v.Steps[len(v.Steps)-1]
 }
 
-// resolveSubject 按域推导确定主体，杜绝匿名裸调（§3.8.1）。
-func (s *Service) resolveSubject(ctx context.Context, in StartInput) (Subject, error) {
+// resolveSubject 按域推导确定主体，杜绝匿名裸调（§3.8.1）；SSO 域顺带透出
+// login_token.sso 应用快照（§11.6.2），account 域读会话、无应用上下文。
+func (s *Service) resolveSubject(ctx context.Context, in StartInput) (Subject, *token.Sso, error) {
 	switch in.Domain {
 	case DomainSSO:
 		if in.BizPurpose != BizPurposeLogin {
-			return Subject{}, failure("invalid_request", nil)
+			return Subject{}, nil, failure("invalid_request", nil)
 		}
 		if in.LoginToken != "" {
 			if s.d.LoginTokens == nil {
-				return Subject{}, failure("token_invalid", nil)
+				return Subject{}, nil, failure("token_invalid", nil)
 			}
 			uid, passed, err := s.d.LoginTokens.Read(ctx, in.LoginToken)
 			if err != nil || uid == 0 || !passed {
-				return Subject{}, failure("token_invalid", err)
+				return Subject{}, nil, failure("token_invalid", err)
 			}
-			return Subject{Kind: SubjectKindUID, ID: fmt.Sprintf("%d", uid)}, nil
+			// 主体解析已验证同一令牌，快照读出口独立再解一次（令牌小、
+			// 低频入口，不值得为此拓宽跨包契约）；再失败按 token_invalid
+			// 收敛，不静默降级成无应用上下文。
+			snap, err := s.loginSso(ctx, in.LoginToken)
+			if err != nil {
+				return Subject{}, nil, failure("token_invalid", err)
+			}
+			return Subject{Kind: SubjectKindUID, ID: fmt.Sprintf("%d", uid)}, snap, nil
 		}
-		return Subject{}, failure("invalid_request", nil)
+		return Subject{}, nil, failure("invalid_request", nil)
 	case DomainAccount:
 		// login 只走 SsoService 组；webauthn_enroll 的挑战由 RegisterWebauthn
-		// 直接签发，不经 StartVerification（§3.8.1、§3.8.3）。
+		// 直接签发，不经 StartVerification（§3.8.1、§3.8.3）。会话 step-up
+		// 不读应用配置（接口文档 §2.1：只有 flow=login 读应用级开关）。
 		if in.BizPurpose == BizPurposeLogin || in.BizPurpose == BizPurposeWebAuthnEnroll {
-			return Subject{}, failure("invalid_request", nil)
+			return Subject{}, nil, failure("invalid_request", nil)
 		}
 		if in.SessionUID == "" {
-			return Subject{}, failure("invalid_request", nil)
+			return Subject{}, nil, failure("invalid_request", nil)
 		}
-		return Subject{Kind: SubjectKindUID, ID: in.SessionUID}, nil
+		return Subject{Kind: SubjectKindUID, ID: in.SessionUID}, nil, nil
 	default:
-		return Subject{}, failure("invalid_request", nil)
+		return Subject{}, nil, failure("invalid_request", nil)
 	}
+}
+
+// loginSso 经 Deps.LoginSso 读应用快照；读出口未注入 = 无应用上下文，
+// 返回 nil 快照走全局口径。
+func (s *Service) loginSso(ctx context.Context, loginToken string) (*token.Sso, error) {
+	if s.d.LoginSso == nil {
+		return nil, nil
+	}
+	return s.d.LoginSso(ctx, loginToken)
 }
 
 // methodView 因子能力视图，取值来自 §1.10.1 因子能力表与 §2.1 注入快照；
@@ -512,6 +539,29 @@ func intersect(candidates, bound []string) []string {
 		if contains(bound, c) {
 			out = append(out, c)
 		}
+	}
+	return out
+}
+
+// appSwitchedFactors 应用开关域内的 MFA 因子（接口文档 §2.1 交集口径 MFA 行）：三者
+// 可主可次，随应用 login_methods 开关；totp / recovery_code 不在应用开关域，
+// 只随全局 MFA 配置，应用快照对它们不构成约束。
+var appSwitchedFactors = map[string]bool{"otp_sms": true, "otp_email": true, "webauthn": true}
+
+// ssoAllowlist 按应用快照过滤 MFA 候选（接口文档 §2.1 交集口径 MFA 行）：nil 快照 =
+// 无应用上下文，原样返回；快照在场时应用开关域内的因子须被快照 methods
+// 放行（快照为首签时已与全局取过交集的生效集合），域外因子不受影响。
+func ssoAllowlist(candidates []string, snap *token.Sso) []string {
+	if snap == nil {
+		return candidates
+	}
+	methods := snap.GetMethods()
+	out := make([]string, 0, len(candidates))
+	for _, m := range candidates {
+		if appSwitchedFactors[m] && !contains(methods, m) {
+			continue
+		}
+		out = append(out, m)
 	}
 	return out
 }

@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/settings"
 )
@@ -528,5 +529,159 @@ func TestStartCaptchaGateMissingFailsClosed(t *testing.T) {
 		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
 	}); err == nil {
 		t.Fatal("OTP 下发场景缺 guard 应显式失败，不得静默放行")
+	}
+}
+
+// startSsoLogin SSO 域 Login 流公共装配件：主体可解析、守卫放行。
+func startSsoLogin(d *Deps) {
+	d.LoginTokens = &startLoginTokens{uid: 42, passed: true}
+	d.Gate = passGate()
+}
+
+// ssoSnapshotDep 固定回放一份 login_token.sso 快照的读出口。
+func ssoSnapshotDep(snap *token.Sso) func(context.Context, string) (*token.Sso, error) {
+	return func(context.Context, string) (*token.Sso, error) { return snap, nil }
+}
+
+// TestStartSSOFiltersCandidatesByAppSnapshot 可证伪（接口文档 §2.1 交集口径 MFA 行）：
+// 应用开关域内的因子（otp_sms / otp_email / webauthn）须被快照 methods 放行
+// 才下发；totp / recovery_code 不在应用开关域，无论快照内容如何都不受影响。
+func TestStartSSOFiltersCandidatesByAppSnapshot(t *testing.T) {
+	bound := &startBound{factors: []string{"otp_sms", "otp_email", "webauthn", "totp", "recovery_code"}}
+	cases := []struct {
+		name     string
+		snapshot []string
+		want     []string
+	}{
+		{"应用全关只余开关域外因子", []string{"password"}, []string{"totp", "recovery_code"}},
+		{"webauthn 被应用关闭不下发", []string{"password", "otp_sms", "otp_email"}, []string{"otp_sms", "otp_email", "totp", "recovery_code"}},
+		{"otp_sms 被应用关闭不下发", []string{"password", "otp_email", "webauthn"}, []string{"otp_email", "webauthn", "totp", "recovery_code"}},
+		{"otp_email 被应用关闭不下发", []string{"password", "otp_sms", "webauthn"}, []string{"otp_sms", "webauthn", "totp", "recovery_code"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := newStartService(t, func(d *Deps) {
+				startSsoLogin(d)
+				d.Bound = bound
+				d.LoginSso = ssoSnapshotDep(&token.Sso{ClientId: "app-1", Methods: tc.snapshot})
+			})
+			res, _, err := svc.Start(context.Background(), StartInput{
+				Domain: DomainSSO, BizPurpose: BizPurposeLogin, Operation: "mfa_verify", LoginToken: "lt-1",
+			})
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			if len(res.Methods) != len(tc.want) {
+				t.Fatalf("methods = %+v, want %v", res.Methods, tc.want)
+			}
+			for _, m := range tc.want {
+				findMethod(t, res.Methods, m)
+			}
+		})
+	}
+}
+
+// TestStartSSOAppFilterEmptyYieldsMethodDisabled 可证伪（接口文档 §2.1 交集口径 MFA
+// 行）：应用放行后候选为空 → method_disabled，硬生效无回落兜底。
+func TestStartSSOAppFilterEmptyYieldsMethodDisabled(t *testing.T) {
+	svc, _ := newStartService(t, func(d *Deps) {
+		startSsoLogin(d)
+		d.Bound = &startBound{factors: []string{"otp_sms"}}
+		d.LoginSso = ssoSnapshotDep(&token.Sso{ClientId: "app-1", Methods: []string{"password"}})
+	})
+	if _, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Operation: "mfa_verify", LoginToken: "lt-1",
+	}); errorCode(t, err) != "method_disabled" {
+		t.Fatalf("code = %s, want method_disabled", errorCode(t, err))
+	}
+}
+
+// TestStartSSONilSnapshotKeepsGlobal 可证伪（接口文档 §2.1 交集口径）：nil 快照（读出
+// 口未注入 / 直登与 OIDC 无应用上下文）候选不按应用过滤；account 域读会话，
+// 应用开关只作用于登录链，注入快照读出口也不得过滤。
+func TestStartSSONilSnapshotKeepsGlobal(t *testing.T) {
+	svc, _ := newStartService(t, startSsoLogin)
+	res, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Operation: "mfa_verify", LoginToken: "lt-1",
+	})
+	if err != nil || len(res.Methods) != len(stepUpFactors) {
+		t.Fatalf("读出口未注入: err=%v methods=%d, want nil / %d", err, len(res.Methods), len(stepUpFactors))
+	}
+
+	svc, _ = newStartService(t, func(d *Deps) {
+		startSsoLogin(d)
+		d.LoginSso = ssoSnapshotDep(nil)
+	})
+	res, _, err = svc.Start(context.Background(), StartInput{
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Operation: "mfa_verify", LoginToken: "lt-1",
+	})
+	if err != nil || len(res.Methods) != len(stepUpFactors) {
+		t.Fatalf("快照为 nil: err=%v methods=%d, want nil / %d", err, len(res.Methods), len(stepUpFactors))
+	}
+
+	svc, _ = newStartService(t, func(d *Deps) {
+		d.Gate = passGate()
+		d.LoginSso = ssoSnapshotDep(&token.Sso{ClientId: "app-1", Methods: []string{"password"}})
+	})
+	res, _, err = svc.Start(context.Background(), StartInput{
+		Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+	})
+	if err != nil || len(res.Methods) != len(stepUpFactors) {
+		t.Fatalf("account 域被过滤: err=%v methods=%d, want nil / %d", err, len(res.Methods), len(stepUpFactors))
+	}
+}
+
+// TestStartSSOSnapshotReadErrorFailsClosed：主体解析已通过而快照读取失败时
+// 按 token_invalid 收敛，不得降级成无应用上下文放行。
+func TestStartSSOSnapshotReadErrorFailsClosed(t *testing.T) {
+	svc, _ := newStartService(t, func(d *Deps) {
+		startSsoLogin(d)
+		d.LoginSso = func(context.Context, string) (*token.Sso, error) { return nil, errors.New("boom") }
+	})
+	if _, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Operation: "mfa_verify", LoginToken: "lt-1",
+	}); errorCode(t, err) != "token_invalid" {
+		t.Fatalf("code = %s, want token_invalid", errorCode(t, err))
+	}
+}
+
+// TestStartAppFilterPropagatesToSubmit：快照过滤后的候选随挑战令牌下发，
+// Submit 的 contains 校验自动承接同一过滤结果——被应用关闭的因子提交即
+// 拒绝，开关域外因子照常进入因子校验路径（接口文档 §2.1 交集口径、§3.8.4）。
+func TestStartAppFilterPropagatesToSubmit(t *testing.T) {
+	svc, codec := newStartService(t, func(d *Deps) {
+		startSsoLogin(d)
+		d.LoginSso = ssoSnapshotDep(&token.Sso{ClientId: "app-1", Methods: []string{"password", "totp", "recovery_code"}})
+	})
+	res, _, err := svc.Start(context.Background(), StartInput{
+		Domain: DomainSSO, BizPurpose: BizPurposeLogin, Method: "totp", Operation: "mfa_verify", LoginToken: "lt-1",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	ch, err := codec.ParseChallenge(res.ChallengeToken)
+	if err != nil {
+		t.Fatalf("ParseChallenge: %v", err)
+	}
+	for _, m := range []string{"otp_sms", "otp_email", "webauthn"} {
+		if contains(ch.Methods, m) {
+			t.Fatalf("挑战令牌 methods 含被应用关闭的 %s: %v", m, ch.Methods)
+		}
+	}
+	if !contains(ch.Methods, "totp") {
+		t.Fatalf("挑战令牌 methods 缺少开关域外 totp: %v", ch.Methods)
+	}
+	// 被关闭因子提交：contains 不通过 → verification_invalid。
+	if _, err := svc.Submit(context.Background(), SubmitInput{
+		Domain: DomainSSO, ChallengeToken: res.ChallengeToken, Method: "webauthn", LoginToken: "lt-1",
+	}); errorCode(t, err) != "verification_invalid" {
+		t.Fatalf("Submit code = %s, want verification_invalid", errorCode(t, err))
+	}
+	// 开关域外因子提交：contains 通过、进入因子校验；未注入 Verifier 走
+	// 既有 fail-closed 出 method_disabled，证明放行路径未被改动。
+	if _, err := svc.Submit(context.Background(), SubmitInput{
+		Domain: DomainSSO, ChallengeToken: res.ChallengeToken, Method: "totp", LoginToken: "lt-1",
+	}); errorCode(t, err) != "method_disabled" {
+		t.Fatalf("Submit code = %s, want method_disabled", errorCode(t, err))
 	}
 }
