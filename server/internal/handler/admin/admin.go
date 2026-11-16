@@ -89,12 +89,13 @@ type SettingsService interface {
 
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息。
 var (
-	errNotFound        = errors.New("not found")
-	errUnknownProvType = errors.New("unknown provider type")
-	errInvalidRequest  = errors.New("invalid request")
-	errDuplicateKey    = errors.New("provider key already exists")
-	errAuthRequired    = errors.New("authentication required")
-	errPasswordWeak    = errors.New("password does not meet policy")
+	errNotFound         = errors.New("not found")
+	errUnknownProvType  = errors.New("unknown provider type")
+	errInvalidRequest   = errors.New("invalid request")
+	errDuplicateKey     = errors.New("provider key already exists")
+	errAuthRequired     = errors.New("authentication required")
+	errPasswordWeak     = errors.New("password does not meet policy")
+	errPermissionDenied = errors.New("permission denied")
 )
 
 // providerListPageSize 管理列表分页上限（同时是 union_provider options 查询页大小）。
@@ -679,6 +680,7 @@ func mapWriteError(op string, err error) error {
 
 // mapUserError 用户管理族错误 → Connect 形态（口径同 mapWriteError）：参数类 →
 // ErrorInfo{invalid_request}；密码不满足策略 → ErrorInfo{password_weak}；
+// 权限门禁拒绝 → permission_denied（标准码，不挂 ErrorInfo 细分码）；
 // 资源不存在 → not_found；其余上抛消毒为 internal。
 func mapUserError(op string, err error) error {
 	switch {
@@ -692,6 +694,8 @@ func mapUserError(op string, err error) error {
 			connectrpc.NewError(connectrpc.CodeInvalidArgument, errPasswordWeak),
 			connect.NewErrorInfo("admin", "password_weak", "password does not meet policy"),
 		)
+	case errors.Is(err, adminsvc.ErrPermissionDenied):
+		return connectrpc.NewError(connectrpc.CodePermissionDenied, errPermissionDenied)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 	default:

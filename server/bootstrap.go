@@ -326,6 +326,7 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 			deps.infra.PwFail,
 			deps.infra.Events,
 			deps.settings,
+			deps.repos.Permissions,
 		),
 		Clients: adminsvc.NewClientService(deps.repos.Clients),
 		Templates: adminsvc.NewTemplateService(

@@ -38,7 +38,7 @@ type userFakeUsers struct {
 	listTotal int64
 
 	statusUpdated []userFakeStatus
-	statusErr    error
+	statusErr     error
 
 	incIDs  []int64
 	incNext int16
@@ -129,7 +129,7 @@ func (f *userFakeBinds) ListByUserID(_ context.Context, _ int64) ([]model.UserTh
 // 副本推进，任一步失败（deleteErr / cascadeErr 注入、行不存在、归属不符）
 // 则整体不落盘（回滚），成功才写回 rows / unbound。级联判定按 unionKeys
 // 模拟 tx 内查 provider.category（key 缺失读零值 false = 非 Union，与 repo
-//「provider 行缺失按非 Union 处理」同语义）；unionProviderKey 为空只删
+// 「provider 行缺失按非 Union 处理」同语义）；unionProviderKey 为空只删
 // 普通行。
 func (f *userFakeBinds) UnbindWithUnionCascade(_ context.Context, id, userID int64, unionProviderKey string) error {
 	if f.deleteErr != nil {
@@ -247,13 +247,46 @@ func (f userFakeSettings) GetBool(key string) (bool, bool) {
 	return v, ok
 }
 
+// userFakePermissions 权限点查询 fake（SuperadminChecker）：按 uid 授予、
+// 按 uid 注入故障，并记录查询调用序列（门禁优先级 / fail-closed 断言）。
+// map 零值读安全——零值 fake 表示「无任何权限点」。
+type userFakePermissions struct {
+	granted  map[int64]map[string]bool
+	errByUID map[int64]error
+	calls    []int64
+}
+
+func (f *userFakePermissions) HasPermission(_ context.Context, uid int64, point string) (bool, error) {
+	f.calls = append(f.calls, uid)
+	if err := f.errByUID[uid]; err != nil {
+		return false, err
+	}
+	return f.granted[uid][point], nil
+}
+
+// userGrantSuperadmins 构造「指定 uid 持有 superadmin」的授予表。
+func userGrantSuperadmins(uids ...int64) map[int64]map[string]bool {
+	m := make(map[int64]map[string]bool, len(uids))
+	for _, uid := range uids {
+		m[uid] = map[string]bool{adminsvc.PointSuperAdmin: true}
+	}
+	return m
+}
+
 // newUserSvc 组造 service 与全部 fake（零值 settings → security 默认策略档）。
-func newUserSvc() (*adminsvc.UserService, *userFakeUsers, *userFakeCreds, *userFakeBinds,
+// 可选注入权限 fake；不传则默认无权限点。
+func newUserSvc(perms ...*userFakePermissions) (*adminsvc.UserService, *userFakeUsers, *userFakeCreds, *userFakeBinds,
 	*userFakeProviders, *userFakeEvents, *userFakeEpoch, *userFakePwfail, *userFakeAudit) {
 	users, creds, binds := &userFakeUsers{}, &userFakeCreds{}, &userFakeBinds{}
 	providers, events := &userFakeProviders{rows: map[string]*model.Provider{}}, &userFakeEvents{}
 	epoch, pwfail, audit := &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}
-	svc := adminsvc.NewUserService(users, creds, binds, providers, events, epoch, pwfail, audit, userFakeSettings{})
+	var permission *userFakePermissions
+	if len(perms) > 0 && perms[0] != nil {
+		permission = perms[0]
+	} else {
+		permission = &userFakePermissions{}
+	}
+	svc := adminsvc.NewUserService(users, creds, binds, providers, events, epoch, pwfail, audit, userFakeSettings{}, permission)
 	return svc, users, creds, binds, providers, events, epoch, pwfail, audit
 }
 
@@ -427,7 +460,7 @@ func TestUserServiceResetUserPassword(t *testing.T) {
 	creds = &userFakeCreds{}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, creds, &userFakeBinds{},
 		&userFakeProviders{rows: map[string]*model.Provider{}}, &userFakeEvents{},
-		&userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+		&userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.ResetUserPassword(ctx, 1, 42, "Str0ngPass!"); err != nil {
 		t.Fatalf("补建重置: %v", err)
 	}
@@ -437,6 +470,153 @@ func TestUserServiceResetUserPassword(t *testing.T) {
 	}
 	if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
+	}
+}
+
+// TestUserServiceSuperadminGuards superadmin 门禁判定（两接口 table-driven）：
+// 禁用 superadmin 被拒 / 启用 superadmin 放行 / 禁用普通用户放行；非 superadmin
+// 重置 superadmin 被拒 / superadmin 重置 superadmin 放行 / superadmin 重置自己放行 /
+// 重置普通用户放行；权限查询故障原样上抛（fail-closed）；权限门禁按目标先、actor 后顺序查。
+func TestUserServiceSuperadminGuards(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("permission repo: db down")
+
+	t.Run("UpdateUserStatus", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			perms       *userFakePermissions
+			status      int64
+			wantErr     error
+			wantQueries []int64
+			wantWrite   bool
+		}{
+			{
+				name: "禁用 superadmin 被拒", perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				status: 0, wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
+			},
+			{
+				name: "启用 superadmin 放行", perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				status: 1, wantQueries: nil, wantWrite: true,
+			},
+			{
+				name: "禁用普通用户放行", perms: &userFakePermissions{},
+				status: 0, wantQueries: []int64{42}, wantWrite: true,
+			},
+			{
+				name: "权限查询故障原样上抛", perms: &userFakePermissions{errByUID: map[int64]error{42: dbErr}},
+				status: 0, wantErr: dbErr, wantQueries: []int64{42},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				svc, users, _, _, _, _, epoch, _, audit := newUserSvc(tt.perms)
+				users.user, users.incNext = userTestRow(), 4
+				err := svc.UpdateUserStatus(ctx, 1, 42, tt.status)
+				if tt.wantErr != nil {
+					if !errors.Is(err, tt.wantErr) {
+						t.Fatalf("err = %v, want %v", err, tt.wantErr)
+					}
+				} else if err != nil {
+					t.Fatalf("err = %v, want nil", err)
+				}
+				assertPermQueries(t, tt.perms.calls, tt.wantQueries)
+				if !tt.wantWrite {
+					if len(users.statusUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+						t.Fatalf("拒绝/故障不应触碰写路径: status=%v inc=%v sync=%v audit=%v",
+							users.statusUpdated, users.incIDs, epoch.synced, audit.events)
+					}
+					return
+				}
+				if len(users.statusUpdated) != 1 || users.statusUpdated[0].status != int8(tt.status) {
+					t.Fatalf("列级 UPDATE = %+v, want status=%d", users.statusUpdated, tt.status)
+				}
+				if tt.status == 0 && (len(users.incIDs) != 1 || len(audit.events) != 1) {
+					t.Fatalf("禁用仍应走失效链 + 审计: inc=%v audit=%v", users.incIDs, audit.events)
+				}
+			})
+		}
+	})
+
+	t.Run("ResetUserPassword", func(t *testing.T) {
+		tests := []struct {
+			name        string
+			actor       int64
+			perms       *userFakePermissions
+			wantErr     error
+			wantQueries []int64
+			wantWrite   bool
+		}{
+			{
+				name: "非 superadmin 重置 superadmin 被拒", actor: 1, perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42, 1},
+			},
+			{
+				name: "superadmin 重置 superadmin 放行", actor: 1, perms: &userFakePermissions{granted: userGrantSuperadmins(42, 1)},
+				wantQueries: []int64{42, 1}, wantWrite: true,
+			},
+			{
+				name: "superadmin 重置自己放行", actor: 42, perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				wantQueries: []int64{42, 42}, wantWrite: true,
+			},
+			{
+				name: "重置普通用户放行（不查 actor）", actor: 1, perms: &userFakePermissions{},
+				wantQueries: []int64{42}, wantWrite: true,
+			},
+			{
+				name: "目标权限查询故障原样上抛", actor: 1, perms: &userFakePermissions{errByUID: map[int64]error{42: dbErr}},
+				wantErr: dbErr, wantQueries: []int64{42},
+			},
+			{
+				name: "actor 权限查询故障原样上抛", actor: 1, perms: &userFakePermissions{
+					granted: userGrantSuperadmins(42), errByUID: map[int64]error{1: dbErr},
+				},
+				wantErr: dbErr, wantQueries: []int64{42, 1},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				svc, users, creds, _, _, _, epoch, _, audit := newUserSvc(tt.perms)
+				users.user = userTestRow()
+				err := svc.ResetUserPassword(ctx, tt.actor, 42, "Str0ngPass!")
+				if tt.wantErr != nil {
+					if !errors.Is(err, tt.wantErr) {
+						t.Fatalf("err = %v, want %v", err, tt.wantErr)
+					}
+				} else if err != nil {
+					t.Fatalf("err = %v, want nil", err)
+				}
+				assertPermQueries(t, tt.perms.calls, tt.wantQueries)
+				wrote := len(creds.created)+len(creds.updated) != 0 || len(users.incIDs) != 0 ||
+					len(epoch.synced) != 0 || len(audit.events) != 0
+				if wrote != tt.wantWrite {
+					t.Fatalf("写路径触达 = %v, want %v（cred %v/%v inc %v sync %v audit %v）",
+						wrote, tt.wantWrite, creds.created, creds.updated, users.incIDs, epoch.synced, audit.events)
+				}
+			})
+		}
+
+		// not_found 优先于权限判定：目标不存在时 FindByID 先返回 404，不查权限表。
+		perms := &userFakePermissions{}
+		svc, _, _, _, _, _, _, _, _ := newUserSvc(perms)
+		if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
+		}
+		if len(perms.calls) != 0 {
+			t.Fatalf("目标不存在不应查权限, calls=%v", perms.calls)
+		}
+	})
+}
+
+// assertPermQueries 断言权限查询 uid 序列（顺序敏感：目标先、actor 后）。
+func assertPermQueries(t *testing.T, got, want []int64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("权限查询 = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("权限查询 = %v, want %v", got, want)
+		}
 	}
 }
 
@@ -450,14 +630,14 @@ func userUnionProviders() *userFakeProviders {
 }
 
 // userUnionKeys fake 级联判定的 provider_key → category=union 映射
-//（与 userUnionProviders 的 wechat_union 对齐；map 读零值 false = 非
+// （与 userUnionProviders 的 wechat_union 对齐；map 读零值 false = 非
 // Union，与 repo「provider 行缺失按非 Union 处理」同语义）。
 func userUnionKeys() map[string]bool {
 	return map[string]bool{"wechat_union": true}
 }
 
 // TestUserServiceUnbindUserThirdparty 覆盖清单：Union Provider 行单独解绑拒绝
-//（invalid_request）；普通行删除 + 审计 thirdparty_unbind（target=provider_key、
+// （invalid_request）；普通行删除 + 审计 thirdparty_unbind（target=provider_key、
 // detail={provider_key, open_id}）；连带删 Union——无剩余非 Union 行时删对应
 // Union 行、仍有非 Union 行时保留（§12.7 行 1548）；单事务回滚——普通行删除
 // 失败 / Union 连带删除失败两注入点均整体不落盘、不投审计；
@@ -469,7 +649,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	binds := &userFakeBinds{}
 	svc := adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		&userFakeAudit{}, userFakeSettings{})
+		&userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_union"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("Union 单独解绑应 ErrInvalidRequest, got %v", err)
 	}
@@ -482,7 +662,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	}}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		audit, userFakeSettings{})
+		audit, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1"); err != nil {
 		t.Fatalf("解绑: %v", err)
 	}
@@ -508,7 +688,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	}}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		&userFakeAudit{}, userFakeSettings{})
+		&userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1"); err != nil {
 		t.Fatalf("解绑: %v", err)
 	}
@@ -525,7 +705,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	}}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		audit, userFakeSettings{})
+		audit, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1"); err == nil {
 		t.Fatal("删除失败应上抛错误")
 	}
@@ -542,7 +722,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	}}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		audit, userFakeSettings{})
+		audit, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1"); err == nil {
 		t.Fatal("连带删除失败应上抛错误")
 	}
@@ -556,7 +736,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	}}
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		binds, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		&userFakeAudit{}, userFakeSettings{})
+		&userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "standalone"); err != nil || len(binds.rows) != 0 {
 		t.Fatalf("standalone 解绑 = (%v), rows=%+v", err, binds.rows)
 	}
@@ -564,7 +744,7 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	// 未绑该渠道 / provider 不存在 → 404；空 providerKey → invalid_request。
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		&userFakeBinds{}, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
-		&userFakeAudit{}, userFakeSettings{})
+		&userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_2"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("未绑该渠道应 404, got %v", err)
 	}
@@ -645,39 +825,43 @@ func TestNewUserServiceNilPanics(t *testing.T) {
 	providers := &userFakeProviders{rows: map[string]*model.Provider{}}
 	mustPanicUser(t, "nil users", func() {
 		adminsvc.NewUserService(nil, &userFakeCreds{}, &userFakeBinds{}, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil creds", func() {
 		adminsvc.NewUserService(users, nil, &userFakeBinds{}, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil binds", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, nil, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil providers", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, nil,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil events", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
-			nil, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			nil, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil epoch", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
-			&userFakeEvents{}, nil, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, nil, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil pwfail", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, nil, &userFakeAudit{}, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, nil, &userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil audit", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, nil, userFakeSettings{})
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, nil, userFakeSettings{}, &userFakePermissions{})
 	})
 	mustPanicUser(t, "nil settings", func() {
 		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
-			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, nil)
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, nil, &userFakePermissions{})
+	})
+	mustPanicUser(t, "nil permissions", func() {
+		adminsvc.NewUserService(users, &userFakeCreds{}, &userFakeBinds{}, providers,
+			&userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{}, &userFakeAudit{}, userFakeSettings{}, nil)
 	})
 }
 

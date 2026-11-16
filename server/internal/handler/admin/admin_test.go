@@ -2051,3 +2051,111 @@ func TestClientWriteHandlers(t *testing.T) {
 		}
 	})
 }
+
+// —— permission_denied 真依赖组装用例的最小 stub（门禁命中前不被调用）——
+
+type guardPermissions struct{ superadmins map[int64]bool }
+
+func (p *guardPermissions) HasPermission(_ context.Context, uid int64, point string) (bool, error) {
+	return point == adminsvc.PointSuperAdmin && p.superadmins[uid], nil
+}
+
+type guardUsers struct{ user *model.User }
+
+func (s *guardUsers) FindByID(_ context.Context, _ int64) (*model.User, error) { return s.user, nil }
+func (s *guardUsers) ListUsers(context.Context, repo.UserListQuery) ([]model.User, int64, error) {
+	return nil, 0, nil
+}
+func (s *guardUsers) UpdateUserStatus(context.Context, int64, int8) error { return nil }
+func (s *guardUsers) IncEpoch(context.Context, int64) (int16, error)      { return 0, nil }
+
+type guardCreds struct{}
+
+func (guardCreds) FindByUserAndKind(context.Context, int64, string) (*model.UserCredential, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (guardCreds) ListByUser(context.Context, int64) ([]model.UserCredential, error) {
+	return nil, nil
+}
+func (guardCreds) Create(context.Context, *model.UserCredential) error { return nil }
+func (guardCreds) Update(context.Context, *model.UserCredential) error { return nil }
+
+type guardBinds struct{}
+
+func (guardBinds) ListByUserID(context.Context, int64) ([]model.UserThirdpartyBind, error) {
+	return nil, nil
+}
+func (guardBinds) UnbindWithUnionCascade(context.Context, int64, int64, string) error { return nil }
+
+type guardProviders struct{}
+
+func (guardProviders) FindByKey(context.Context, string) (*model.Provider, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+
+type guardEvents struct{}
+
+func (guardEvents) ListByUser(context.Context, repo.EventLogListQuery) ([]model.EventLog, int64, error) {
+	return nil, 0, nil
+}
+
+type guardEpoch struct{}
+
+func (guardEpoch) Sync(context.Context, int64, int16) error { return nil }
+
+type guardPwfail struct{}
+
+func (guardPwfail) Reset(context.Context, string) error            { return nil }
+func (guardPwfail) DeleteAccountRef(context.Context, string) error { return nil }
+
+type guardAudit struct{}
+
+func (guardAudit) PushEvent(model.EventLog) {}
+
+type guardSettings struct{}
+
+func (guardSettings) GetInt64(string) (int64, bool) { return 0, false }
+func (guardSettings) GetBool(string) (bool, bool)   { return false, false }
+
+// TestPermissionDeniedMapping 错误映射链验收（CODE_GUIDE §5.1）：哨兵由真实
+// service 权限门禁产出（非 fake 注入），经真 Connect handler 转译为 403
+// permission_denied 标准码、无 ErrorInfo detail；两条写路径各一例。
+func TestPermissionDeniedMapping(t *testing.T) {
+	newRealSvc := func(superadmins map[int64]bool) *adminsvc.UserService {
+		return adminsvc.NewUserService(
+			&guardUsers{user: &model.User{ID: 42, Username: "alice"}},
+			guardCreds{}, guardBinds{}, guardProviders{}, guardEvents{},
+			guardEpoch{}, guardPwfail{}, guardAudit{}, guardSettings{},
+			&guardPermissions{superadmins: superadmins},
+		)
+	}
+	tests := []struct {
+		name   string
+		target string
+		body   string
+		perms  map[int64]bool
+	}{
+		{
+			name: "禁用 superadmin", target: adminv1connect.AdminServiceUpdateUserStatusProcedure,
+			body: `{"id":42,"userStatus":0}`, perms: map[int64]bool{42: true},
+		},
+		{
+			name: "非 superadmin 重置 superadmin", target: adminv1connect.AdminServiceResetUserPasswordProcedure,
+			body: `{"id":42,"password":"Str0ngPass!"}`, perms: map[int64]bool{42: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 重置路径的门禁在 FindByID 之后，给 guardUsers 一个存在的目标行。
+			tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, newRealSvc(tt.perms))
+			cookie := adminCookie(t, tokens, epochs, 1)
+			resp, raw := doRPC(t, h, tt.target, tt.body, cookie)
+			if resp.StatusCode != http.StatusForbidden || decodeErrorCode(t, raw) != "permission_denied" {
+				t.Fatalf("status=%d raw=%s, want 403 permission_denied", resp.StatusCode, raw)
+			}
+			if strings.Contains(raw, `"details"`) {
+				t.Fatalf("permission_denied 不应挂 ErrorInfo detail: %s", raw)
+			}
+		})
+	}
+}

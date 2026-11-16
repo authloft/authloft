@@ -16,6 +16,8 @@
 //   - ErrInvalidRequest 参数 / 校验类（映射 invalid_argument + code=invalid_request）；
 //   - ErrPasswordWeak 重置密码不满足 §5.6 策略（映射 invalid_argument +
 //     code=password_weak，§1.6 封闭集合既有取值）；
+//   - ErrPermissionDenied 权限门禁拒绝（映射 Connect 标准码 permission_denied，
+//     不挂 ErrorInfo 细分码，§1.6 封闭集合不新增取值）；
 //   - gorm.ErrRecordNotFound 资源不存在（映射 not_found）；
 //   - 其余错误原样上抛，由错误包装拦截器消毒为 internal。
 package admin
@@ -41,6 +43,11 @@ import (
 // ErrPasswordWeak ResetUserPassword 密码不满足 §5.6 策略（handler 映射
 // invalid_argument + ErrorInfo domain=admin code=password_weak）。
 var ErrPasswordWeak = errors.New("admin service: password does not meet policy")
+
+// ErrPermissionDenied 权限门禁拒绝：禁用 superadmin，或非 superadmin 重置
+// superadmin 密码。handler 映射 Connect 标准码 permission_denied（HTTP 403），
+// 不挂 ErrorInfo 细分码（§1.6 封闭集合不新增取值，前端按标准码兜底）。
+var ErrPermissionDenied = errors.New("admin service: permission denied")
 
 // providerCategoryUnion provider 表 category=union（§12.7 行 1542：Union
 // Provider 是虚拟 Provider 仅用于归并；注册表无该 category 常量——admin
@@ -116,18 +123,26 @@ type SettingsReader interface {
 	GetBool(key string) (bool, bool)
 }
 
+// SuperadminChecker 查询某 uid 是否持有权限点的窄接口（§20 DI）：
+// *repo.PermissionRepo / *PermissionService 天然满足；测试可传 fake。
+// 查询故障由调用方原样上抛（fail-closed，不降级为「无权限」或放行）。
+type SuperadminChecker interface {
+	HasPermission(ctx context.Context, uid int64, point string) (bool, error)
+}
+
 // UserService admin 域用户管理族业务层。
 type UserService struct {
-	users     UserStore
-	creds     CredentialStore
-	binds     BindStore
-	providers ProviderFinder
-	events    EventReader
-	epoch     EpochSync
-	pwfail    PwFailUnlocker
-	audit     AuditSink
-	settings  SettingsReader
-	now       func() time.Time
+	users       UserStore
+	creds       CredentialStore
+	binds       BindStore
+	providers   ProviderFinder
+	events      EventReader
+	epoch       EpochSync
+	pwfail      PwFailUnlocker
+	audit       AuditSink
+	settings    SettingsReader
+	permissions SuperadminChecker
+	now         func() time.Time
 }
 
 // NewUserService 构造；任一依赖为 nil 属程序错误（fail-fast，口径同
@@ -135,7 +150,7 @@ type UserService struct {
 func NewUserService(
 	users UserStore, creds CredentialStore, binds BindStore, providers ProviderFinder,
 	events EventReader, epoch EpochSync, pwfail PwFailUnlocker, audit AuditSink,
-	settings SettingsReader,
+	settings SettingsReader, permissions SuperadminChecker,
 ) *UserService {
 	if users == nil {
 		panic("admin service: NewUserService: nil UserStore")
@@ -164,10 +179,13 @@ func NewUserService(
 	if settings == nil {
 		panic("admin service: NewUserService: nil SettingsReader")
 	}
+	if permissions == nil {
+		panic("admin service: NewUserService: nil SuperadminChecker")
+	}
 	return &UserService{
 		users: users, creds: creds, binds: binds, providers: providers,
 		events: events, epoch: epoch, pwfail: pwfail, audit: audit,
-		settings: settings, now: time.Now,
+		settings: settings, permissions: permissions, now: time.Now,
 	}
 }
 
@@ -247,10 +265,20 @@ func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error
 // + 审计 admin_disable_user（actor=admin，detail 落 NULL——§4.6 行 808 表
 // 未定义该事件 detail，默认）；启用不审计（eventlog 无既有常量，不
 // 自造事件名，默认）。幂等重放（再次禁用已禁用用户）同样走失效链
-// 与审计——每次管理员动作都留痕。
+// 与审计——每次管理员动作都留痕。superadmin 门禁：仅禁用（0）时校验目标权限点，
+// 命中则 ErrPermissionDenied；启用（1）不查权限、维持原流程；查询故障原样上抛。
 func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error {
 	if id <= 0 || (userStatus != 0 && userStatus != 1) {
 		return ErrInvalidRequest
+	}
+	if userStatus == 0 {
+		isSA, err := s.permissions.HasPermission(ctx, id, PointSuperAdmin)
+		if err != nil {
+			return err // 权限查询故障原样上抛（fail-closed）
+		}
+		if isSA {
+			return ErrPermissionDenied
+		}
 	}
 	if err := s.users.UpdateUserStatus(ctx, id, int8(userStatus)); err != nil {
 		return err // 含 gorm.ErrRecordNotFound → 404
@@ -277,7 +305,9 @@ func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, use
 // reset 口径）→ IncEpoch + al:pwdep 同步（先失效旧会话——改密后旧令牌全部
 // 失效，§11.1）→ 审计 admin_reset_password（detail={pwd_epoch}，§4.6 行 813
 // reset_password 同构）。管理员重置不建新会话（与用户自助 reset 直接登录
-// 不同，§5.4 无此语义）。
+// 不同，§5.4 无此语义）。superadmin 门禁：FindByID 确认目标存在后查目标权限点，
+// 命中再查 actor 权限点，actor 非 superadmin 则 ErrPermissionDenied；目标非
+// superadmin 维持原行为；两段查询故障均原样上抛（fail-closed）。
 func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, password string) error {
 	if id <= 0 || password == "" {
 		return ErrInvalidRequest
@@ -285,6 +315,19 @@ func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, pa
 	user, err := s.users.FindByID(ctx, id)
 	if err != nil {
 		return err
+	}
+	targetSA, err := s.permissions.HasPermission(ctx, id, PointSuperAdmin)
+	if err != nil {
+		return err // 权限查询故障原样上抛（fail-closed）
+	}
+	if targetSA {
+		actorSA, err := s.permissions.HasPermission(ctx, actor, PointSuperAdmin)
+		if err != nil {
+			return err // 权限查询故障原样上抛（fail-closed）
+		}
+		if !actorSA {
+			return ErrPermissionDenied
+		}
 	}
 	email := ""
 	if user.Email != nil {
@@ -478,12 +521,13 @@ func derefString(p *string) string {
 }
 
 // compile 时断言 *repo.UserRepo / *repo.CredentialRepo / *repo.BindRepo /
-// *repo.ProviderRepo / *repo.EventLogRepo 满足各窄接口（签名漂移在编译
-// 期暴露）。
+// *repo.ProviderRepo / *repo.EventLogRepo / *repo.PermissionRepo 满足各窄接口
+// （签名漂移在编译期暴露）。
 var (
-	_ UserStore       = (*repo.UserRepo)(nil)
-	_ CredentialStore = (*repo.CredentialRepo)(nil)
-	_ BindStore       = (*repo.BindRepo)(nil)
-	_ ProviderFinder  = (*repo.ProviderRepo)(nil)
-	_ EventReader     = (*repo.EventLogRepo)(nil)
+	_ UserStore         = (*repo.UserRepo)(nil)
+	_ CredentialStore   = (*repo.CredentialRepo)(nil)
+	_ BindStore         = (*repo.BindRepo)(nil)
+	_ ProviderFinder    = (*repo.ProviderRepo)(nil)
+	_ EventReader       = (*repo.EventLogRepo)(nil)
+	_ SuperadminChecker = (*repo.PermissionRepo)(nil)
 )
