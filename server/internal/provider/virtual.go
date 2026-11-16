@@ -34,6 +34,7 @@ type TypeMeta struct {
 	DisplayName string
 	Category    string
 	Fields      []FieldMeta
+	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
 }
 
 // virtualMetas 虚拟类型表（当前仅 Union ID 归并；Fields 为空 = 无 Ext 字段，
@@ -54,13 +55,13 @@ func LookupTypeMeta(providerType string) (TypeMeta, bool) {
 	if meta, ok := Lookup(providerType); ok {
 		return TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields,
+			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
 		}, true
 	}
 	if meta, ok := LookupSenderMeta(providerType); ok {
 		return TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields,
+			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
 		}, true
 	}
 	if meta, ok := virtualMetas[providerType]; ok {
@@ -78,14 +79,14 @@ func TypeMetas() []TypeMeta {
 		if meta, ok := Lookup(t); ok {
 			out = append(out, TypeMeta{
 				Type: meta.Type, DisplayName: meta.DisplayName,
-				Category: meta.Category, Fields: meta.Fields,
+				Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
 			})
 		}
 	}
 	for _, meta := range SenderTypes() {
 		out = append(out, TypeMeta{
 			Type: meta.Type, DisplayName: meta.DisplayName,
-			Category: meta.Category, Fields: meta.Fields,
+			Category: meta.Category, Fields: meta.Fields, Schema: meta.Schema,
 		})
 	}
 	for _, meta := range virtualMetas {

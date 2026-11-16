@@ -36,6 +36,7 @@ type Meta struct {
 	Category    string
 	Channel     ThirdPartyChannel
 	Fields      []FieldMeta
+	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
 }
 
 // Factory 由 Provider 实例构造适配器（§13.0：装配期取 Ext，运行期不

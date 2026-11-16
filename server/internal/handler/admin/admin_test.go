@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -898,7 +899,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 		t.Fatalf("注册表 meta.Fields 数 = %d, want %d", len(meta.Fields), len(wantExt))
 	}
 	for i, want := range wantExt {
-		if meta.Fields[i] != want {
+		if !reflect.DeepEqual(meta.Fields[i], want) {
 			t.Errorf("meta.Fields[%d] = %+v, want %+v（§5.3 示例）", i, meta.Fields[i], want)
 		}
 		f := got.GetFields()[3+i] // basic 基线 3 项之后即 Ext 区块（声明序）。

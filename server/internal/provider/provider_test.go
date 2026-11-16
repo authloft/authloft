@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -404,7 +405,7 @@ func TestRegistryRegisterAndFactory(t *testing.T) {
 	if !ok || got.DisplayName != "测试渠道" || got.Channel != ChannelAPI {
 		t.Fatalf("Lookup = (%+v, %v)", got, ok)
 	}
-	if len(got.Fields) != 1 || got.Fields[0] != fields[0] {
+	if len(got.Fields) != 1 || !reflect.DeepEqual(got.Fields[0], fields[0]) {
 		t.Fatalf("Lookup Fields = %+v, want %+v（字段级声明随 meta 透传）", got.Fields, fields)
 	}
 

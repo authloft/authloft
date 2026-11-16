@@ -56,14 +56,19 @@ type SenderFactory func(p *Provider) (Sender, error)
 // 标签（如 client_id 在 oauth 是 AppID、在阿里云短信是 AccessKeyId），故键
 // 按语义命名而非按字段 key 推导。空 Help 表示无帮助文案（protojson 省略）。
 type FieldMeta struct {
-	Key      string
-	Label    string
-	Type     string
-	Section  string // basic / credential / endpoint / display / policy
-	Required bool
-	Default  string
-	Help     string
-	Advanced bool
+	Key        string
+	Label      string
+	Type       string
+	Section    string // basic / credential / endpoint / display / policy
+	Required   bool
+	Default    string
+	Help       string
+	Advanced   bool
+	Options    []string     // select 候选值（wire 取值，非 i18n 键）；dynamic 字段留空，运行时注入
+	Pattern    string       // text 字段的格式校验正则；空表示不校验
+	Storage    FieldStorage // 落 provider 表列还是 Ext（column/ext）
+	Kind       FieldKind    // 读写行为；零值为普通可写字段
+	DynamicKey string       // Kind=FieldDynamicOptions 时 options 的注入键
 }
 
 // SenderMeta 消息域渠道元信息（§15.3：meta 同时是管理后台 /schema 的数据源，
@@ -73,6 +78,7 @@ type SenderMeta struct {
 	DisplayName string
 	Category    string // CategorySMS / CategoryEmail
 	Fields      []FieldMeta
+	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 未迁移
 }
 
 var senderRegistry = struct {
