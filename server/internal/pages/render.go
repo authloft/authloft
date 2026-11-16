@@ -30,7 +30,7 @@ var templatesFS embed.FS
 
 // 四占位符（§8 运行期占位符清单，全部由后端渲染期替换；模板内其他
 // {{…}} 一律按字面输出，不报错）。前三者由前端构建期注入构建产物，
-// TemplateVarsPlaceholder 仅 DB 自定义模板可包含、注入口径见 §8.1。
+// TemplateVarsPlaceholder 为四占位符之一、所有模板均可包含、注入口径见 §8.1。
 const (
 	phStaticBase            = "{{AUTHLOFT_STATIC_BASE}}"
 	phCSPNonce              = "{{AUTHLOFT_CSP_NONCE}}"
@@ -86,7 +86,7 @@ func writeShell(c *gin.Context, body []byte) {
 }
 
 // renderTemplate 读嵌入模板 templates/{entry}.html 后交 renderHTML 做四
-// 占位符替换；文件壳无模板变量占位符，varsJSON 传空对象即空操作。
+// 占位符替换；文件壳无客户端 template_vars 上下文，varsJSON 传空对象 `{}`。
 func renderTemplate(entry string, init any, staticBase, nonce string) ([]byte, error) {
 	tpl, err := templatesFS.ReadFile("templates/" + entry + ".html")
 	if err != nil {
