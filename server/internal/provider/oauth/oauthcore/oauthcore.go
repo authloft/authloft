@@ -30,6 +30,7 @@ import (
 
 	"authloft/internal/jsonata"
 	"authloft/internal/provider"
+	"authloft/internal/proxyclient"
 )
 
 // 出站请求默认超时与响应体上限（防异常端点拖垮登录链路 / 日志爆量）。
@@ -105,6 +106,21 @@ func NewMeta(typ, displayName string, ch provider.ThirdPartyChannel) provider.Me
 			{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "basic", Advanced: true},
 		},
 	}
+}
+
+// ClientFor 在工厂构造期按 p.Ext.proxy_url 一次性构造出站 client（§15.4
+// Provider 出站代理），固化进适配器实例；运行期不回读 Ext。空串（含纯空白）
+// 返回 nil，调用方沿用 do 的默认客户端直连；非法配置返回 proxyclient 的可
+// 判别错误，不吞错、不降级直连。timeout 沿用本包默认值。
+func ClientFor(p *provider.Provider) (*http.Client, error) {
+	if p == nil || p.Ext == nil {
+		return nil, nil
+	}
+	raw := p.Ext.GetProxyUrl()
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	return proxyclient.HTTPClient(raw, defaultTimeout)
 }
 
 // BuildAuthURL 组装标准 authorization code 跳转授权 URL：response_type=code
