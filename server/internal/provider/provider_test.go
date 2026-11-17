@@ -511,6 +511,47 @@ func TestRegistryUnifiedMultiSlot(t *testing.T) {
 	}
 }
 
+// TestStorageSlotDispatch storage 槽语义（§15.3）：register + WithStorage
+// 注册后 NewStorage 按类型分派；未注册 / 无 storage 槽的 type 同时命中
+// ErrNotConfigured 与 ErrUnsupportedType（storage.Resolver 判别面，不回落
+// 任何实现）；nil 入参 ErrNilProvider。
+func TestStorageSlotDispatch(t *testing.T) {
+	const storageTyp = "test_storage_slot"
+	if err := register(storageTyp, Meta{Type: storageTyp, DisplayName: "存储", Category: CategoryStorage},
+		WithStorage(func(*Provider) (Storage, error) { return fakeStorageProduct{}, nil })); err != nil {
+		t.Fatalf("register storage: %v", err)
+	}
+	st, err := NewStorage(&Provider{Type: storageTyp})
+	if err != nil {
+		t.Fatalf("NewStorage: %v", err)
+	}
+	if _, ok := st.(fakeStorageProduct); !ok {
+		t.Errorf("NewStorage 返回 %T, want fakeStorageProduct", st)
+	}
+	if _, err := NewStorage(nil); !errors.Is(err, ErrNilProvider) {
+		t.Errorf("NewStorage(nil) = %v, want ErrNilProvider", err)
+	}
+	for _, typ := range []string{"test_storage_missing", "test_multi_slot_meta"} {
+		_, err := NewStorage(&Provider{Type: typ})
+		if !errors.Is(err, ErrUnsupportedType) || !errors.Is(err, ErrNotConfigured) {
+			t.Errorf("NewStorage(%q) = %v, want ErrUnsupportedType 内含 ErrNotConfigured", typ, err)
+		}
+	}
+}
+
+// fakeStorageProduct storage 槽测试产物。
+type fakeStorageProduct struct{}
+
+func (fakeStorageProduct) Put(context.Context, string, []byte, string) (string, error) {
+	return "", nil
+}
+func (fakeStorageProduct) Get(context.Context, string) ([]byte, error) { return nil, nil }
+func (fakeStorageProduct) Delete(context.Context, string) error        { return nil }
+func (fakeStorageProduct) URL(string) string                           { return "" }
+func (fakeStorageProduct) PresignPut(context.Context, string, string, int64) (string, map[string]string, error) {
+	return "", nil, nil
+}
+
 // TestFlightGroupPanicThenRetry fn panic 时 do 必须重抛、且清理 calls 项
 // 与 WaitGroup（否则同 key 的后续请求会在残留项上永久阻塞），重试同 key
 // 应拿到新结果。

@@ -1,16 +1,18 @@
 // 服务型 Provider 类型元数据（docs/后端架构.md §15.1、§15.2、§9.1、§15.4）：
-// captcha（turnstile / recaptcha / hcaptcha）与 storage（local）有各自的运行时
-// 解析链（captcha.Catalog / Verifier、storage.Resolver），proxy（type=proxy）仅
-// 作被引配置行供出站代理解析。本文件在 provider 包内 init() 把五个 type 以
-// meta-only（无 factory）注册进统一注册表（§15.3 阶段一：只进 LookupTypeMeta /
-// TypeMetas 供管理后台的类型下拉 / schema / 写路径键集，不进 AdapterTypes
-// 登录快照、NewAdapter / NewSender 查不到它们；阶段二 / 三 / 五 factory 落地后
-// meta 迁入对应 type 子包）。区别于 Union 的是它们有真实运行时实现（proxy 的
-// 运行时角色是被 outbound.go 的解析链引用），不是虚拟归并类型。
+// captcha（turnstile / recaptcha / hcaptcha）有各自的运行时解析链
+// （captcha.Catalog / Verifier），storage（local）已随 §15.3 阶段二迁入
+// provider/storage/local 子包（meta 与 factory 同处 init 自注册），proxy
+// （type=proxy）仅作被引配置行供出站代理解析。本文件在 provider 包内 init()
+// 把四个 type 以 meta-only（无 factory）注册进统一注册表（§15.3：只进
+// LookupTypeMeta / TypeMetas 供管理后台的类型下拉 / schema / 写路径键集，
+// 不进 AdapterTypes 登录快照、NewAdapter / NewSender 查不到它们；阶段三 / 五
+// factory 落地后 meta 迁入对应 type 子包）。区别于 Union 的是它们有真实运行时
+// 实现（proxy 的运行时角色是被 outbound.go 的解析链引用），不是虚拟归并类型。
 //
-// type 字符串与 captcha.TypeTurnstile / storage 的 local 分支取值一致，但不
-// import 这两个包：storage 依赖 provider，反向引用会成环；包内静态注册也让
-// 本表不受 blank import 顺序影响。
+// type 字符串与 captcha.TypeTurnstile / StorageTypeLocal 取值一致：storage 的
+// 实现包 import 本包取常量并注册 factory（接口已上移本包 storage.go，不再有
+// 反向引用成环问题）；captcha 仍不 import 本包（成环约束不变）。包内静态注册
+// 也让本表不受 blank import 顺序影响。
 package provider
 
 // 服务型 category 常量（docs/后端架构.md §4.1 provider.category 取值）。
@@ -23,7 +25,8 @@ const (
 )
 
 // 服务型 provider type 常量（captcha 见 captcha.Verifier 的 support 分支，
-// storage 见 storage.Resolver 的 local 分支，proxy 行自身仅作被引配置）。
+// storage 见 provider/storage/local 子包注册、Resolver 经注册表分派，proxy
+// 行自身仅作被引配置）。
 const (
 	CaptchaTypeTurnstile = "turnstile"
 	CaptchaTypeRecaptcha = "recaptcha"
@@ -58,20 +61,18 @@ func ProxyRef() FieldMeta {
 	}
 }
 
-// init 服务型五类型 meta-only 注册进统一注册表（§15.3 阶段一）。Schema 是
-// /schema 的唯一数据源（表列 + Ext，接口文档 §5.3）：captcha 三家统一用
+// init 服务型四类型 meta-only 注册进统一注册表（§15.3；storage/local 已随
+// 阶段二迁入 provider/storage/local 子包，meta 与 factory 同处注册）。Schema
+// 是 /schema 的唯一数据源（表列 + Ext，接口文档 §5.3）：captcha 三家统一用
 // client_id 作 site_key、client_secret 作密钥、endpoint 作自定义校验地址
 // （captcha.ProviderSource 的投影口径），且类别呈现 proxy_provider_key 引用键；
-// local 用 bucket 作本地目录、domain 作公开域名、path_prefix 作 key 前缀
-// （storage.NewLocal 的必填口径），仅本地磁盘无网络外呼、不声明引用键；proxy
-// 承载五真实代理字段（§5.3），供引用方解析出站连接池、自身不外呼也不自引。
-// 无 factory：NewAdapter / NewSender 对它们恒失败。
+// proxy 承载五真实代理字段（§5.3），供引用方解析出站连接池、自身不外呼也不
+// 自引。无 factory：NewAdapter / NewSender 对它们恒失败。
 func init() {
 	for _, meta := range []Meta{
 		{Type: CaptchaTypeTurnstile, DisplayName: "Cloudflare Turnstile", Category: CategoryCaptcha, Schema: captchaSchema},
 		{Type: CaptchaTypeRecaptcha, DisplayName: "Google reCAPTCHA", Category: CategoryCaptcha, Schema: captchaSchema},
 		{Type: CaptchaTypeHcaptcha, DisplayName: "hCaptcha", Category: CategoryCaptcha, Schema: captchaSchema},
-		{Type: StorageTypeLocal, DisplayName: "本地存储", Category: CategoryStorage, Schema: storageLocalSchema},
 		{Type: ProxyType, DisplayName: "基础代理", Category: CategoryProxy, Schema: proxySchema},
 	} {
 		if err := register(meta.Type, meta); err != nil {
@@ -144,29 +145,6 @@ func proxySchema() []FieldMeta {
 			Help: "admin.schemaField.proxyUserHelp", Storage: StorageExt},
 		FieldMeta{Key: "password", Label: "admin.schemaField.proxyPasswordLabel", Type: "secret", Section: "endpoint", Advanced: false,
 			Help: "admin.schemaField.proxyPasswordHelp", Storage: StorageExt},
-		FieldMeta{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: "display",
-			Pattern: "^https?://", Help: "admin.schemaField.iconUrlHelp", Storage: StorageColumn},
-		FieldMeta{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
-			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: StorageColumn},
-		FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: StorageColumn},
-		FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: StorageColumn},
-		FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: StorageColumn},
-	)
-	return fields
-}
-
-// storageLocalSchema storage/local 的完整字段声明（表列 + Ext，接口文档 §5.3）。
-// local 仅本地磁盘、无网络外呼，与 union / proxy 行自身同样不声明引用键（§5.3
-// 类别裁剪）；oauth 专属的登录建号开关亦不出现。
-func storageLocalSchema() []FieldMeta {
-	fields := make([]FieldMeta, 0, 10)
-	fields = append(fields,
-		FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
-			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: StorageColumn},
-		FieldMeta{Key: "display_name", Label: "admin.schemaField.displayNameLabel", Type: "text", Section: "basic", Required: true, Storage: StorageColumn},
-		FieldMeta{Key: "bucket", Label: "admin.schemaField.storageBucketLabel", Type: "text", Section: "endpoint", Required: true, Storage: StorageExt},
-		FieldMeta{Key: "domain", Label: "admin.schemaField.storageDomainLabel", Type: "text", Section: "endpoint", Required: true, Storage: StorageExt},
-		FieldMeta{Key: "path_prefix", Label: "admin.schemaField.storagePathPrefixLabel", Type: "text", Section: "endpoint", Advanced: true, Storage: StorageExt},
 		FieldMeta{Key: "icon_url", Label: "admin.schemaField.iconUrlLabel", Type: "text", Section: "display",
 			Pattern: "^https?://", Help: "admin.schemaField.iconUrlHelp", Storage: StorageColumn},
 		FieldMeta{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",

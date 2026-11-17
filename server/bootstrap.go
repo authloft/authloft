@@ -61,8 +61,9 @@ import (
 	"authloft/internal/pages"
 	"authloft/internal/provider"
 	"authloft/internal/proxyclient"
-	// 注册表导入统一触发 init() 自注册：内置渠道适配器与 smtp / aliyun_sms
-	// 消息 Sender 在此登记工厂（§3.1 / §12.2 / §15.2）。
+	// 注册表导入统一触发 init() 自注册：内置渠道适配器、smtp / aliyun_sms
+	// 消息 Sender 与 storage local 存储实现在此登记工厂（§3.1 / §12.2 /
+	// §15.1 / §15.2）。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/alipay"
 	_ "authloft/internal/provider/oauth/baidu"
@@ -78,6 +79,7 @@ import (
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/weibo"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 	// wechat_mp_scan 具名导入：除 init() 自注册外，装配期还需
 	// SetAccessTokenCache 注入共享 access_token 缓存（§3.4），须在 Redis 就绪后调用。
 	wechatmpscan "authloft/internal/provider/oauth/wechat_mp_scan"

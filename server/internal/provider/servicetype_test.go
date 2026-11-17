@@ -13,16 +13,18 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/provider/schemafield"
 	// 渠道漏斗（引用键单一来源漂移测试）：oauth 经 SchemaFor、smtp / aliyun_sms
-	// 经各自 Schema 汇入同一份 ProxyRef 声明。
+	// 经各自 Schema 汇入同一份 ProxyRef 声明；storage/local 经本包 _ import
+	// 触发 init 自注册（meta 已随工厂化迁入实现子包，§15.3）。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 )
 
 // TestServiceTypeConstantsMatchRuntime 静态表 type 字面量与运行时实现同源：
 // captcha 三家与 captcha 包导出常量必须相等，防止单侧改动导致「下拉能建、
-// 运行时不认」的漂移。storage 的 local 在 Resolver 内是内联字面量、无导出
-// 常量可对照，靠 servicetype.go 的注释说明保持同步。
+// 运行时不认」的漂移。storage 的 local 由 provider/storage/local 以
+// provider.StorageTypeLocal 注册，字面量单一来源在本包。
 func TestServiceTypeConstantsMatchRuntime(t *testing.T) {
 	if provider.CaptchaTypeTurnstile != captcha.TypeTurnstile ||
 		provider.CaptchaTypeRecaptcha != captcha.TypeRecaptcha ||

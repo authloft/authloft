@@ -1,7 +1,8 @@
 // local_test.go local 实现磁盘行为：Put 写盘 + URL 拼接（含 path_prefix）、
 // Get 回读、Delete 幂等、路径穿越防护、PresignPut 恒错误。目录用
-// t.TempDir，不碰真实部署路径。
-package storage
+// t.TempDir，不碰真实部署路径。经 factory / NewLocal 构造等价性由
+// internal/storage 的 TestResolveLocal 覆盖（Resolver → 注册表 → 本包工厂）。
+package local
 
 import (
 	"context"
@@ -11,8 +12,13 @@ import (
 	"strings"
 	"testing"
 
+	"authloft/internal/provider"
+
 	providerpb "authloft/gen/go/provider"
 )
+
+// 接口满足编译期断言：*Local 实现 provider.Storage（§15.1 逐字接口）。
+var _ provider.Storage = (*Local)(nil)
 
 func newLocal(t *testing.T, dir, prefix, domain string) *Local {
 	t.Helper()
@@ -101,8 +107,32 @@ func TestNewLocalNotConfigured(t *testing.T) {
 		{Bucket: "/data"},
 		{Domain: "https://cdn.example.com"},
 	} {
-		if _, err := NewLocal(ext); !errors.Is(err, ErrNotConfigured) {
+		if _, err := NewLocal(ext); !errors.Is(err, provider.ErrNotConfigured) {
 			t.Errorf("NewLocal(%+v) err = %v, want ErrNotConfigured", ext, err)
+		}
+	}
+}
+
+// TestRegistryRegistration init 自注册形态：type 已挂 storage 槽、category
+// 正确、不进登录快照（§15.3：storage 类型不得污染登录方式列表）。
+func TestRegistryRegistration(t *testing.T) {
+	meta, ok := provider.LookupTypeMeta(Type)
+	if !ok {
+		t.Fatal("local 未注册（本包 init 未生效）")
+	}
+	if meta.Category != provider.CategoryStorage {
+		t.Errorf("category = %q, want %q", meta.Category, provider.CategoryStorage)
+	}
+	st, err := provider.NewStorage(&provider.Provider{Type: Type, Ext: &providerpb.Ext{Bucket: "/data/x", Domain: "https://cdn.example.com"}})
+	if err != nil {
+		t.Fatalf("NewStorage: %v", err)
+	}
+	if _, ok := st.(*Local); !ok {
+		t.Errorf("NewStorage 返回 %T, want *Local（factory 等价）", st)
+	}
+	for _, typ := range provider.AdapterTypes() {
+		if typ == Type {
+			t.Error("AdapterTypes 混入 storage 类型（登录快照被污染）")
 		}
 	}
 }

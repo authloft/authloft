@@ -16,9 +16,10 @@ import (
 	"testing"
 
 	"authloft/internal/provider"
-	// 全量注册表自注册：TypeMetas() 要覆盖 oauth / 消息 / 虚拟三源所有
-	// 渠道的 FieldMeta 覆盖（alipay / microsoft / oauth2 / oidc 的语义化标签
-	// 与 help 都在 init() 里改写，漏 import 即漏校验）。
+	// 全量注册表自注册：TypeMetas() 要覆盖 oauth / 消息 / 服务型 / 虚拟
+	// 各源渠道与存储实现的 FieldMeta 覆盖（alipay / microsoft / oauth2 /
+	// oidc 的语义化标签与 help 都在 init() 里改写，local 实现包自注册，
+	// 漏 import 即漏校验）。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/alipay"
 	_ "authloft/internal/provider/oauth/baidu"
@@ -35,6 +36,7 @@ import (
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/oauth/weibo"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 )
 
 const schemaI18nPrefix = "admin.schemaField."

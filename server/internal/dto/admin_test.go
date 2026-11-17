@@ -19,6 +19,7 @@ import (
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 )
 
 // wantProviderRow §5.2 列表 / 详情用例的 provider 行样例。

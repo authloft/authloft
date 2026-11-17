@@ -1,6 +1,6 @@
 // 统一注册表（docs/后端架构.md §15.3）：provider 包一张注册表，entry 多槽
-// （meta + auth / sender factory 槽；verifier / storage / proxy 槽随工厂化阶段
-// 二 / 三 / 五扩入），唯一注册入口 register(type, meta, opts...) + Option 模式，
+// （meta + auth / sender / storage factory 槽；verifier / proxy 槽随工厂化
+// 阶段三 / 五扩入），唯一注册入口 register(type, meta, opts...) + Option 模式，
 // 按槽取产 NewAdapter / NewSender。oauth 渠道包经 Register、消息厂商包经
 // RegisterSender 薄封装接入（既有调用面一行不改）；服务型 / 虚拟类型在包内
 // init() 只注册 meta（servicetype.go / virtual.go）。
@@ -59,9 +59,10 @@ type Meta struct {
 // entry 注册表条目：meta 恒有，factory 槽按注册来源挂零或一个（同一 type
 // 至多一种 factory，§15.3）。
 type entry struct {
-	meta   Meta
-	auth   AuthFactory
-	sender SenderFactory
+	meta    Meta
+	auth    AuthFactory
+	sender  SenderFactory
+	storage StorageFactory
 }
 
 // Option 注册选项：向 entry 声明 factory 槽。nil factory / 重复槽位在应用期
@@ -92,6 +93,20 @@ func WithSender(f SenderFactory) Option {
 			return fmt.Errorf("%w: sender slot", ErrSlotConflict)
 		}
 		e.sender = f
+		return nil
+	}
+}
+
+// WithStorage 挂 storage 槽（存储实现工厂）。
+func WithStorage(f StorageFactory) Option {
+	return func(e *entry) error {
+		if f == nil {
+			return fmt.Errorf("%w: storage slot", ErrNilFactory)
+		}
+		if e.storage != nil {
+			return fmt.Errorf("%w: storage slot", ErrSlotConflict)
+		}
+		e.storage = f
 		return nil
 	}
 }
@@ -128,6 +143,9 @@ func register(providerType string, meta Meta, opts ...Option) error {
 		slots++
 	}
 	if e.sender != nil {
+		slots++
+	}
+	if e.storage != nil {
 		slots++
 	}
 	if slots > 1 {

@@ -35,11 +35,12 @@ import (
 	"authloft/internal/session"
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
-	// schema 用例断言「与注册表 meta 逐项一致」需两域真实注册项。
+	// schema 用例断言「与注册表 meta 逐项一致」需各域真实注册项。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 )
 
 // fakeEpochReader 隔离型 epoch 读取（口径同 handler/account/account_test.go）。

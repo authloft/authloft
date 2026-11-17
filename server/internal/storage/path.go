@@ -7,6 +7,7 @@ package storage
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"authloft/internal/jsonata"
 )
@@ -28,4 +29,20 @@ func RenderKey(template, ticketID string, timestamp int64) (string, error) {
 		return "", fmt.Errorf("storage: render key: %w", err)
 	}
 	return key, nil
+}
+
+// validateKey 渲染结果合法性（空 key / 绝对 key / ".." 段 / 盘符 / 反斜杠
+// 一律拒绝，§15.1「渲染结果非法返回错误」），错误由 RenderKey 统一包装。
+// 与写盘实现（provider/storage/local）的自守校验同一规则，两处须保持同步。
+func validateKey(key string) error {
+	if key == "" || strings.HasPrefix(key, "/") || strings.Contains(key, "\\") ||
+		strings.Contains(key, ":") {
+		return fmt.Errorf("invalid key %q", key)
+	}
+	for _, seg := range strings.Split(key, "/") {
+		if seg == ".." {
+			return fmt.Errorf("invalid key %q", key)
+		}
+	}
+	return nil
 }

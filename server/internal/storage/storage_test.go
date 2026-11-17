@@ -1,6 +1,8 @@
 // storage_test.go 覆盖 Resolver 解析口径（§13.0「未配置按失败处理」）
 // 与 RenderKey 渲染（§15.1 示例逐字 + 非法模板 fail-fast）。local 实现的
-// 磁盘行为见 local_test.go。全部走 fake ProviderGetter，不连 DB。
+// 磁盘行为见 provider/storage/local 包内用例。全部走 fake ProviderGetter，
+// 不连 DB。local 经具名导入触发 init 自注册（§15.3：测试二进制须补齐注册
+// 导入，否则类型「凭空消失」），并供 factory 构造等价断言取具体类型。
 package storage
 
 import (
@@ -12,6 +14,7 @@ import (
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
+	storagelocal "authloft/internal/provider/storage/local"
 	"authloft/internal/repo/model"
 )
 
@@ -72,7 +75,8 @@ func TestResolveNotConfigured(t *testing.T) {
 	}
 }
 
-// TestResolveLocal 成功路径：local 行 + bucket/domain 齐备 → *Local。
+// TestResolveLocal 成功路径：local 行 + bucket/domain 齐备 → 经注册表工厂
+// 构造出 *local.Local（§15.3 阶段二：Resolver 去 switch 后分派等价）。
 func TestResolveLocal(t *testing.T) {
 	row := storageRow("files", "storage", "local", true)
 	row.Ext = &providerpb.Ext{Bucket: "/data/files", Domain: "https://cdn.example.com", PathPrefix: "qr"}
@@ -81,9 +85,9 @@ func TestResolveLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	lc, ok := st.(*Local)
+	lc, ok := st.(*storagelocal.Local)
 	if !ok {
-		t.Fatalf("Resolve 返回 %T, want *Local", st)
+		t.Fatalf("Resolve 返回 %T, want *storagelocal.Local", st)
 	}
 	if got := lc.URL("k1.jpg"); got != "https://cdn.example.com/qr/k1.jpg" {
 		t.Errorf("URL = %q", got)

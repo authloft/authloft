@@ -1,13 +1,16 @@
-// Package storage 是存储 Provider（category=storage，§15.1）的最小抽象：
-// Storage 接口按《后端架构》§15.1 逐字落，按 provider_key 解析
-// 实现。当前只落 local 实现（写入本地目录、Nginx 静态分发，§15.1 表）；
-// s3 系需引入第三方 SDK（未授权新依赖），归头像上传 / storage 扩展
-// 实现——遇未支持 type 一律显式报错，不伪装成功。
+// Package storage 是存储 Provider（category=storage，§15.1）的薄壳：
+// Storage 接口与 ErrNotConfigured / ErrUnsupportedType 哨兵已上移 provider
+// 包定义（§15.3 接口归属），本包以类型别名 / 同值变量保持调用方（qrcode /
+// wxacode / account-avatar）import 路径与签名零改动；storage_path 模板渲染
+// （RenderKey，§15.1）留在本包。当前只落 local 实现（provider/storage/local
+// 子包 init 自注册，bootstrap blank import 触发）；s3 系需引入第三方 SDK
+// （未授权新依赖），归头像上传 / storage 扩展实现。
 //
 // 解析口径（§13.0「未配置按失败处理」）：storage provider 行不存在 /
-// is_enabled=0 / category≠storage / 本地目录（Ext.bucket）或公开域名
-// （Ext.domain）为空 → ErrNotConfigured；type 未注册支持 → 包装
-// ErrUnsupportedType。调用方（扫码拉码链）统一按 provider_disabled 收敛。
+// is_enabled=0 / category≠storage → ErrNotConfigured；type 未注册支持 /
+// 实现构造失败（如 local 关键字段缺失）由注册表分派（provider.NewStorage）
+// 返回，未注册 type 同时命中 ErrUnsupportedType——一律显式报错，不伪装
+// 成功、不回落 local。调用方（扫码拉码链）统一按 provider_disabled 收敛。
 package storage
 
 import (
@@ -20,24 +23,15 @@ import (
 	"authloft/internal/provider"
 )
 
-// ErrNotConfigured storage provider 未配置 / 未启用 / 关键字段缺失。
-var ErrNotConfigured = errors.New("storage: provider not configured")
+// 接口与哨兵定义在 provider 包（§15.3 上移），别名保持既有调用面。
+type Storage = provider.Storage
 
-// ErrUnsupportedType type 未实现（s3 等，归后续实现）。
-var ErrUnsupportedType = errors.New("storage: unsupported provider type")
-
-// Storage 存储 Provider 接口（《后端架构》§15.1 逐字）。key 为业务侧
-// object key（码图：storage_path 渲染结果；§15.1「渲染后的 key 再拼
-// path_prefix」——prefix 拼接由各实现内部完成，调用方只传渲染结果）。
-type Storage interface {
-	Put(ctx context.Context, key string, body []byte, contentType string) (url string, err error)
-	Get(ctx context.Context, key string) ([]byte, error)
-	Delete(ctx context.Context, key string) error
-	URL(key string) string // 拼接 domain / CDN
-
-	// PresignPut 直传模式：签发一个有时效的 PUT URL，前端据此直传对象存储
-	PresignPut(ctx context.Context, key string, contentType string, size int64) (uploadURL string, headers map[string]string, err error)
-}
+var (
+	// ErrNotConfigured storage provider 未配置 / 未启用 / 关键字段缺失。
+	ErrNotConfigured = provider.ErrNotConfigured
+	// ErrUnsupportedType type 未实现（s3 等，归后续实现）。
+	ErrUnsupportedType = provider.ErrUnsupportedType
+)
 
 // ProviderGetter 按 provider_key 读 Provider 实例：*provider.Loader 天然
 // 满足（§13.0 装配期口径经 Loader 取行，运行期不读 config）。
@@ -46,7 +40,8 @@ type ProviderGetter interface {
 }
 
 // Resolver 按 provider_key 解析 Storage 实现（§3.4 行 468「按 provider_key
-// 解析实现」）。
+// 解析实现」；§15.3 阶段二起为薄壳：行校验留在本包，实现分派转调
+// provider.NewStorage，不再 switch type）。
 type Resolver struct {
 	get ProviderGetter
 }
@@ -74,12 +69,8 @@ func (r *Resolver) Resolve(ctx context.Context, storageProviderKey string) (Stor
 	if p == nil || p.Row == nil || !p.Enabled() || p.Row.Category != "storage" {
 		return nil, fmt.Errorf("%w: %q not a storage provider or disabled", ErrNotConfigured, storageProviderKey)
 	}
-	switch p.Type {
-	case "local":
-		return NewLocal(p.Ext)
-	default:
-		// s3 / oss 等兼容实现需第三方 SDK（§15.1 表），归后续实现；此处显式
-		// 失败，不回落 local（跨 provider 回落违反 §13.0 优先级口径）。
-		return nil, fmt.Errorf("%w: %w: %q", ErrNotConfigured, ErrUnsupportedType, p.Type)
-	}
+	// 分派经统一注册表（§15.3）：未注册 type → ErrNotConfigured 内含
+	// ErrUnsupportedType，不回落 local（§13.0 优先级口径）；local 构造失败
+	// （bucket / domain 缺失）的 ErrNotConfigured 原样上抛。
+	return provider.NewStorage(p)
 }

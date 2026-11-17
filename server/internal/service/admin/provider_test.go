@@ -25,11 +25,12 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	adminsvc "authloft/internal/service/admin"
-	// 注册表数据源（§15.3）：两域真实注册项驱动 schema 键集与 types 断言。
+	// 注册表数据源（§15.3）：各域真实注册项驱动 schema 键集与 types 断言。
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/sms/aliyun_sms"
+	_ "authloft/internal/provider/storage/local"
 )
 
 // schemaFieldsOf nil 安全地取 meta.Schema()（Schema 为 func 字段，nil = 无声明）。
