@@ -19,6 +19,7 @@ import (
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	providerpb "authloft/gen/go/provider"
+	storagelocal "authloft/internal/provider/storage/local"
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 	"authloft/internal/storage"
@@ -94,14 +95,14 @@ type avatarPresignCall struct {
 // avatarFakeStorage storage.Storage fake：presign 回放 + Get 计数（commit
 // 不回读断言）+ URL 拼接回放。
 type avatarFakeStorage struct {
-	presignCalls  []avatarPresignCall
-	presignErr    error
-	presignURL    string
+	presignCalls   []avatarPresignCall
+	presignErr     error
+	presignURL     string
 	presignHeaders map[string]string
-	urlCalls      []string
-	getCalls      int
-	putCalls      int
-	deleteCalls   int
+	urlCalls       []string
+	getCalls       int
+	putCalls       int
+	deleteCalls    int
 }
 
 func (f *avatarFakeStorage) Put(context.Context, string, []byte, string) (string, error) {
@@ -259,11 +260,11 @@ func TestAvatarPresignKeyServerGenerated(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	prefix := avatarKeyPrefix(avatarTestUID)
 	for name, filename := range map[string]string{
-		"路径穿越":   "../../../../etc/passwd.png",
-		"反斜杠":    `C:\Users\me\avatar.png`,
-		"无扩展名":   "photo",
-		"非法扩展名":  "avatar.php?x=1",
-		"纯点":     "..",
+		"路径穿越":  "../../../../etc/passwd.png",
+		"反斜杠":   `C:\Users\me\avatar.png`,
+		"无扩展名":  "photo",
+		"非法扩展名": "avatar.php?x=1",
+		"纯点":    "..",
 	} {
 		resp, err := e.presign(&accountv1.PresignAvatarRequest{Filename: filename, ContentType: "image/png", Size: 100})
 		if err != nil {
@@ -292,7 +293,7 @@ func TestAvatarPresignKeyServerGenerated(t *testing.T) {
 }
 
 // TestAvatarPresignMIMERejected MIME 不在白名单 → ErrAvatarFileTypeNotAllowed
-//（行 868）；空 contentType 同拒、空白名单 fail-closed（自决）；拒绝时零
+// （行 868）；空 contentType 同拒、空白名单 fail-closed（自决）；拒绝时零
 // PresignPut。
 func TestAvatarPresignMIMERejected(t *testing.T) {
 	e := avatarTestEnvNew(t)
@@ -336,7 +337,7 @@ func TestAvatarPresignTooLarge(t *testing.T) {
 }
 
 // TestAvatarPresignInvalidSize size≤0 自决拒绝 → ErrAvatarInvalidRequest
-//（文档未覆盖：零 / 负 size 头像无意义），零 PresignPut。
+// （文档未覆盖：零 / 负 size 头像无意义），零 PresignPut。
 func TestAvatarPresignInvalidSize(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	for name, size := range map[string]int64{"零": 0, "负": -1024} {
@@ -362,7 +363,7 @@ func TestAvatarPresignNotConfigured(t *testing.T) {
 	for name, mutate := range map[string]func(e *avatarTestEnv){
 		"settings 键空串":     func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },
 		"settings 键缺失":     func(e *avatarTestEnv) { delete(e.settings.values, settings.KeyAvatarStorageProvider) },
-		"provider 行查无":    func(e *avatarTestEnv) { delete(e.providers.rows, avatarTestProviderKey) },
+		"provider 行查无":     func(e *avatarTestEnv) { delete(e.providers.rows, avatarTestProviderKey) },
 		"is_enabled=0":     func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = disabledRow },
 		"category≠storage": func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = oauthRow },
 	} {
@@ -386,11 +387,11 @@ func TestAvatarPresignNotConfigured(t *testing.T) {
 }
 
 // TestAvatarPresignModeNotDirect mode≠direct → ErrAvatarPresignUnavailable
-//（行 842 internal 口径）：显式 proxy 与 local+direct 回退（dto 折 proxy，
+// （行 842 internal 口径）：显式 proxy 与 local+direct 回退（dto 折 proxy，
 // 行 842 / §15.1 表）两态同判；零 Resolve / 零 PresignPut。
 func TestAvatarPresignModeNotDirect(t *testing.T) {
 	for name, row := range map[string]*model.Provider{
-		"显式 proxy":   avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png")),
+		"显式 proxy": avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png")),
 		"local 回退": avatarTestProviderRow(t, "local", avatarTestExt("direct", 600, 2<<20, "image/png")),
 	} {
 		e := avatarTestEnvNew(t)
@@ -406,7 +407,7 @@ func TestAvatarPresignModeNotDirect(t *testing.T) {
 }
 
 // TestAvatarPresignTTLFallback expiresIn = presign_ttl；0（未配置）→ 300
-//（§12.1 行 1704 注释默认），负值自决同兜底。
+// （§12.1 行 1704 注释默认），负值自决同兜底。
 func TestAvatarPresignTTLFallback(t *testing.T) {
 	for name, ttl := range map[string]int32{"未配置 0": 0, "乱配负值": -5, "显式 120": 120} {
 		e := avatarTestEnvNew(t)
@@ -452,14 +453,14 @@ func TestAvatarPresignInfraErrors(t *testing.T) {
 	}
 
 	e = avatarTestEnvNew(t)
-	e.storage.presignErr = storage.ErrPresignNotSupported
-	if _, err := e.presign(avatarTestPresignReq()); !errors.Is(err, storage.ErrPresignNotSupported) {
-		t.Errorf("PresignPut 失败 err = %v, want 包装 storage.ErrPresignNotSupported 透传", err)
+	e.storage.presignErr = storagelocal.ErrPresignNotSupported
+	if _, err := e.presign(avatarTestPresignReq()); !errors.Is(err, storagelocal.ErrPresignNotSupported) {
+		t.Errorf("PresignPut 失败 err = %v, want 包装 storagelocal.ErrPresignNotSupported 透传", err)
 	}
 }
 
 // TestAvatarUserNotFound user 行不存在 → gorm.ErrRecordNotFound 透传
-//（handler 转 not_found，profile.go 先例 404 优先），两桩同口径，零 Resolve。
+// （handler 转 not_found，profile.go 先例 404 优先），两桩同口径，零 Resolve。
 func TestAvatarUserNotFound(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	e.users.missing = true
@@ -506,12 +507,12 @@ func TestAvatarCommitURL(t *testing.T) {
 func TestAvatarCommitKeyRejected(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	for name, key := range map[string]string{
-		"空串":       "",
-		"跨用户":      "avatars/999/x.png",
-		"无头像前缀":    "files/x.png",
+		"空串":        "",
+		"跨用户":       "avatars/999/x.png",
+		"无头像前缀":     "files/x.png",
 		"uid 前缀不完整": "avatars/100869/x.png",
-		"相对段":      "avatars/10086/../10087/a.png",
-		"反斜杠":      `avatars\10086\a.png`,
+		"相对段":       "avatars/10086/../10087/a.png",
+		"反斜杠":       `avatars\10086\a.png`,
 	} {
 		_, err := e.svc.CommitAvatar(context.Background(), avatarTestUID, &accountv1.CommitAvatarRequest{Key: key})
 		if !errors.Is(err, ErrAvatarInvalidRequest) {
