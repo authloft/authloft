@@ -20,7 +20,7 @@ export const file_api_common_v1_error_info: GenFile = /*@__PURE__*/
  * ErrorInfo 是 Connect 错误体 details 中承载业务细分码的消息
  * （docs/接口文档.md §1.5、§12.9）。
  * 字段约定（docs/接口文档.md §12.9）：
- *   - snake_case、编号从 1 起连续、只增字段不改字段号（§12.8）
+ *   - snake_case、编号从 1 起连续、字段编号可随契约调整
  *   - 整型一律 int64（§1.12；retry_after / attempts_left 可选，零值省略）
  *   - request_id 不在错误体内（§1.5：统一走 X-Request-Id 响应头），
  *     故不定义该字段

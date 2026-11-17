@@ -48,8 +48,8 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true},
 		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true},
 		{provider.CaptchaTypeHcaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "hCaptcha", true},
-		{provider.StorageTypeLocal, provider.CategoryStorage, []string{"bucket", "domain", "path_prefix"}, "本地存储（local）", false},
-		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "出站代理（proxy）", false},
+		{provider.StorageTypeLocal, provider.CategoryStorage, []string{"bucket", "domain", "path_prefix"}, "本地存储", false},
+		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "基础代理", false},
 	} {
 		meta, ok := provider.LookupTypeMeta(tc.typ)
 		if !ok {
@@ -113,7 +113,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 			}
 		}
 		// proxy 行五字段逐项对齐 §5.3 声明口径（scheme 封闭集、host 禁字符集、
-		// port number、user/password advanced 可选、五行 section=endpoint）。
+		// port number、user/password 撤 advanced、五行 section=endpoint）。
 		if tc.typ == provider.ProxyType {
 			assertProxyRowFields(t, schema)
 		}
@@ -155,11 +155,11 @@ func assertProxyRowFields(t *testing.T, schema []provider.FieldMeta) {
 		t.Errorf("port 声明漂移（必填 number，§5.3 五字段表）: %+v (ok=%v)", f, ok)
 	}
 	f, ok = byKey["user"]
-	if !ok || f.Type != "text" || f.Required || !f.Advanced {
+	if !ok || f.Type != "text" || f.Required || f.Advanced {
 		t.Errorf("user 声明漂移: %+v (ok=%v)", f, ok)
 	}
 	f, ok = byKey["password"]
-	if !ok || f.Type != "secret" || f.Required || !f.Advanced {
+	if !ok || f.Type != "secret" || f.Required || f.Advanced {
 		t.Errorf("password 声明漂移: %+v (ok=%v)", f, ok)
 	}
 	for _, key := range []string{"scheme", "host", "port", "user", "password"} {

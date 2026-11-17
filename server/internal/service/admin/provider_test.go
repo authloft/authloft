@@ -613,7 +613,7 @@ func TestProviderTypes(t *testing.T) {
 		{Type: provider.CaptchaTypeTurnstile, Category: provider.CategoryCaptcha, DisplayName: "Cloudflare Turnstile"},
 		{Type: provider.CaptchaTypeRecaptcha, Category: provider.CategoryCaptcha, DisplayName: "Google reCAPTCHA"},
 		{Type: provider.CaptchaTypeHcaptcha, Category: provider.CategoryCaptcha, DisplayName: "hCaptcha"},
-		{Type: provider.StorageTypeLocal, Category: provider.CategoryStorage, DisplayName: "本地存储（local）"},
+		{Type: provider.StorageTypeLocal, Category: provider.CategoryStorage, DisplayName: "本地存储"},
 	} {
 		g, ok := byType[want.Type]
 		if !ok {
@@ -1195,4 +1195,168 @@ func TestTestProviderProxyResolution(t *testing.T) {
 			}
 		})
 	}
+}
+
+// —— 拉码模式保存期组合校验（§5.3 type=wechat_mp_scan 行）——
+
+// wechatMpScanCreateBody wechat_mp_scan 新建提交体（凭证两键 required）：
+// 存储与拉码模式字段由用例按需给值——url 模式（含缺省空值）存储二字段必填、
+// ticket 模式模板必填含占位符，由保存期组合校验拦截。
+func wechatMpScanCreateBody(t *testing.T, overrides map[string]any) *structpb.Struct {
+	t.Helper()
+	body := map[string]any{
+		"type":          "wechat_mp_scan",
+		"provider_key":  "scan_new",
+		"category":      "oauth",
+		"display_name":  "微信小程序扫码",
+		"app_id":        "wx-appid",
+		"client_secret": "wx-secret",
+	}
+	for k, v := range overrides {
+		if v == nil {
+			delete(body, k)
+		} else {
+			body[k] = v
+		}
+	}
+	return structBody(t, body)
+}
+
+// TestCreateProviderQrcodeModeValidation 拉码模式组合校验矩阵（§5.3）：
+// ticket 模式模板缺失 / 缺占位符、非法模式值、url 模式（含缺省空值）存储
+// 二字段缺失，一律 ErrInvalidRequest 且不落库；合法组合（ticket 模板含
+// 占位符、base64、url 存储齐）放行。
+func TestCreateProviderQrcodeModeValidation(t *testing.T) {
+	cases := []struct {
+		name      string
+		overrides map[string]any
+		wantOK    bool
+	}{
+		{"ticket 模板缺失", map[string]any{"qrcode_mode": "ticket"}, false},
+		{"ticket 模板缺占位符", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan"}, false},
+		{"非法模式值", map[string]any{"qrcode_mode": "pigeon_post"}, false},
+		{"url 显式缺存储", map[string]any{"qrcode_mode": "url"}, false},
+		{"url 缺省（空）缺存储", map[string]any{"qrcode_mode": ""}, false},
+		{"base64 不要求存储", map[string]any{"qrcode_mode": "base64"}, true},
+		{"ticket 合法（模板含占位符）", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?t={{TICKET}}"}, true},
+		{"url 合法（存储齐）", map[string]any{"qrcode_mode": "url", "storage_provider": "files", "storage_path": `'qrcodes_' & $.ticket_id & '.jpg'`}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			inv := &fakeInvalidator{}
+			svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
+			err := svc.CreateProvider(context.Background(), wechatMpScanCreateBody(t, tc.overrides))
+			if tc.wantOK {
+				if err != nil {
+					t.Fatalf("err = %v, want 放行", err)
+				}
+				if len(store.created) != 1 {
+					t.Fatalf("created = %d, want 1", len(store.created))
+				}
+				return
+			}
+			if !errors.Is(err, adminsvc.ErrInvalidRequest) {
+				t.Fatalf("err = %v, want ErrInvalidRequest", err)
+			}
+			if len(store.created) != 0 {
+				t.Fatal("非法请求不得落库")
+			}
+		})
+	}
+}
+
+// scanRowOf 预置一行 url 模式（缺省空值）的 wechat_mp_scan 存量行，存储配置
+// 齐备（url 模式存量口径下运行期必需）。
+func scanRowOf(t *testing.T) *model.Provider {
+	t.Helper()
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{
+		AppId: "wx-id", ClientSecret: "wx-sec",
+		StorageProvider: "files", StoragePath: `'qrcodes_' & $.ticket_id & '.jpg'`,
+	})
+	if err != nil {
+		t.Fatalf("MarshalProviderExt: %v", err)
+	}
+	return &model.Provider{
+		ProviderKey: "scan_exist", Category: "oauth", Type: "wechat_mp_scan",
+		IsEnabled: 1, EnableSignin: 1, EnableSignup: 1, DisplayName: "微信小程序扫码",
+		Ext: ext,
+	}
+}
+
+// TestUpdateProviderQrcodeModePatch 拉码模式 PATCH 组合校验（对合并后的 Ext
+// 执行，PATCH 未提交键保留原值）：url 行切 ticket 未同步提交模板 → 拒绝；
+// 模板随模式一并提交 → 放行且落库；ticket 行切回 url 存储原值保留 → 放行；
+// url 行清存储 → 拒绝；未触模式的普通 PATCH → 放行。
+func TestUpdateProviderQrcodeModePatch(t *testing.T) {
+	t.Run("切 ticket 缺模板拒绝", func(t *testing.T) {
+		store := newFakeStore(scanRowOf(t))
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		body := map[string]any{"provider_key": "scan_exist", "qrcode_mode": "ticket"}
+		if err := svc.UpdateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest（部分提交在合并后 Ext 上拦截）", err)
+		}
+		if len(store.updated) != 0 {
+			t.Fatal("非法请求不得落库")
+		}
+	})
+	t.Run("模板随模式一并提交放行", func(t *testing.T) {
+		store := newFakeStore(scanRowOf(t))
+		inv := &fakeInvalidator{}
+		svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
+		body := map[string]any{"provider_key": "scan_exist", "qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?t={{TICKET}}"}
+		if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
+			t.Fatalf("UpdateProvider: %v", err)
+		}
+		ext, err := repo.ParseProviderExt(store.updated[len(store.updated)-1].Ext)
+		if err != nil {
+			t.Fatalf("ParseProviderExt: %v", err)
+		}
+		if ext.GetQrcodeMode() != "ticket" || ext.GetQrcodeFormat() != "https://example.com/scan?t={{TICKET}}" {
+			t.Fatalf("ext = (mode=%q format=%q)", ext.GetQrcodeMode(), ext.GetQrcodeFormat())
+		}
+		if keys := inv.snapshot(); len(keys) != 1 || keys[0] != "scan_exist" {
+			t.Errorf("invalidate = %v, want [scan_exist]", keys)
+		}
+	})
+	t.Run("ticket 行切回 url 存储原值保留", func(t *testing.T) {
+		row := scanRowOf(t)
+		ext, err := repo.ParseProviderExt(row.Ext)
+		if err != nil {
+			t.Fatalf("ParseProviderExt: %v", err)
+		}
+		ext.QrcodeMode, ext.QrcodeFormat = "ticket", "https://example.com/scan?t={{TICKET}}"
+		if row.Ext, err = repo.MarshalProviderExt(ext); err != nil {
+			t.Fatalf("MarshalProviderExt: %v", err)
+		}
+		store := newFakeStore(row)
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		body := map[string]any{"provider_key": "scan_exist", "qrcode_mode": "url"}
+		if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
+			t.Fatalf("UpdateProvider: %v", err)
+		}
+		merged, err := repo.ParseProviderExt(store.updated[len(store.updated)-1].Ext)
+		if err != nil {
+			t.Fatalf("ParseProviderExt: %v", err)
+		}
+		if merged.GetQrcodeMode() != "url" || merged.GetStorageProvider() != "files" {
+			t.Fatalf("ext = (mode=%q storage=%q), want url + 原值保留", merged.GetQrcodeMode(), merged.GetStorageProvider())
+		}
+	})
+	t.Run("url 行清存储拒绝", func(t *testing.T) {
+		store := newFakeStore(scanRowOf(t))
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		body := map[string]any{"provider_key": "scan_exist", "storage_provider": ""}
+		if err := svc.UpdateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+	})
+	t.Run("未触模式普通 PATCH 放行", func(t *testing.T) {
+		store := newFakeStore(scanRowOf(t))
+		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
+		body := map[string]any{"provider_key": "scan_exist", "display_name": "微信扫码新名"}
+		if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
+			t.Fatalf("UpdateProvider: %v", err)
+		}
+	})
 }

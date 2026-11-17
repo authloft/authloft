@@ -90,10 +90,15 @@ func init() {
 	// §5.3 keep 集表 oauth 行与 type=wechat_mp_scan 行（声明即运行期实际
 	// 消费）：凭证收敛至 app_id / client_secret（必填主凭证，并置 required、
 	// 撤 advanced，声明序按 §5.3 示例置 app_id 在前），keep 外死字段（metadata
-	// 等）不再下发；扫码三字段随 metadata 撤除移至 Ext 段尾、相对顺序不变。
-	// storage_provider 为动态 select（Kind=FieldDynamicOptions + DynamicKey），
-	// 候选 storage 类 provider_key 由 handler 查库注入，声明形态同
-	// union_provider / proxy_provider_key 先例，构造器不下发候选值。
+	// 等）不再下发。storage_provider 为动态 select（Kind=FieldDynamicOptions +
+	// DynamicKey），候选 storage 类 provider_key 由 handler 查库注入，声明形态
+	// 同 union_provider / proxy_provider_key 先例，构造器不下发候选值。
+	// 拉码模式三字段（§5.3 type=wechat_mp_scan 行 / §12.1 Ext 33/34/39）归
+	// endpoint 区块：qrcode_mode 为 select、options 恒为 wire 取值（空 = url
+	// 存量行为不变，default 仅作表单初值）；qrcode_format help 说明
+	// {{TICKET}} 占位符；qrcode_tip 用 textarea 承载多行 HTML 原文。
+	// 三字段的条件必填组合校验（ticket 模式模板必填含占位符、url 模式存储
+	// 二字段必填）不在 Schema 声明层——由保存期组合校验按合并后 Ext 统一执行。
 	m := oauthcore.KeepFields(oauthcore.NewMeta(Type, "微信小程序扫码", provider.ChannelQRCode), "app_id", "client_secret")
 	byKey := make(map[string]provider.FieldMeta, 2)
 	for _, f := range m.Fields {
@@ -108,6 +113,12 @@ func init() {
 			Storage: provider.StorageExt, Kind: provider.FieldDynamicOptions, DynamicKey: dynamicKeyStorageProviderKeys},
 		provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",
 			Help: "admin.schemaField.storagePathHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "qrcode_mode", Label: "admin.schemaField.qrcodeModeLabel", Type: "select", Section: "endpoint",
+			Options: []string{"ticket", "base64", "url"}, Default: "url", Help: "admin.schemaField.qrcodeModeHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "qrcode_format", Label: "admin.schemaField.qrcodeFormatLabel", Type: "text", Section: "endpoint",
+			Help: "admin.schemaField.qrcodeFormatHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "qrcode_tip", Label: "admin.schemaField.qrcodeTipLabel", Type: "textarea", Section: "endpoint",
+			Help: "admin.schemaField.qrcodeTipHelp", Storage: provider.StorageExt},
 	)
 	// Fields 整体重赋，重设 Schema 使 Ext 段与最终 Fields 一致。
 	m.Schema = oauthcore.SchemaFor(m.Fields)

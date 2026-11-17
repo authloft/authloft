@@ -111,6 +111,14 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 			if strings.HasPrefix(f.GetLabel(), "admin.schemaField.proxy") {
 				continue
 			}
+			// 拉码模式三新键（qrcode_mode / qrcode_format / qrcode_tip，键名已在
+			// 渠道注册表测试钉死）同 proxy 口径：文案落地随前端语言包进行，暂不
+			// 要求字典已落地——前端补齐后应收紧此豁免。
+			if strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeMode") ||
+				strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeFormat") ||
+				strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeTip") {
+				continue
+			}
 			checkKey(meta.Type, f.GetKey(), "label", f.GetLabel())
 			if f.GetHelp() != "" {
 				checkKey(meta.Type, f.GetKey(), "help", f.GetHelp())

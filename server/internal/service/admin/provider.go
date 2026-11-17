@@ -7,6 +7,7 @@
 // 职责边界：schema 键集校验（完整 Schema 声明，含表列与 Ext，§5.3
 // 「提交体即 {"<key>": <value>}」）、provider_key 与出站代理引用键字符集、
 // proxy 行五字段组合校验（单一来源 proxyclient.NewConfig，§5.3）、
+// wechat_mp_scan 拉码模式保存期组合校验（§5.3 type 行）、
 // provider_key「创建后不可改」（§12.1）、category 由 meta 按 type 决定只读、
 // meta required 字段齐（仅 Create；Update 按缺省键保留原值的 PATCH 口径
 // 不强制）、写后缓存失效（§15.3 固定三步，经 cache.ProviderCache.Invalidate
@@ -153,6 +154,9 @@ func (s *Service) CreateProvider(ctx context.Context, body *structpb.Struct) err
 	if err := validateProxyConfig(row, ext); err != nil {
 		return err
 	}
+	if err := validateQrcodeModes(meta, ext); err != nil {
+		return err
+	}
 	if row.Ext, err = repo.MarshalProviderExt(ext); err != nil {
 		return ErrInvalidRequest // 超 1 MiB 业务上限（§4.1）
 	}
@@ -247,6 +251,9 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 		return ErrInvalidRequest // 类型不符
 	}
 	if err := validateProxyConfig(row, ext); err != nil {
+		return err
+	}
+	if err := validateQrcodeModes(meta, ext); err != nil {
 		return err
 	}
 	if row.Ext, err = repo.MarshalProviderExt(ext); err != nil {
@@ -570,6 +577,59 @@ func validateProxyConfig(row *model.Provider, ext *providerpb.Ext) error {
 	ext.Host = cfg.Host
 	ext.User = cfg.User
 	ext.Password = cfg.Password
+	return nil
+}
+
+// 拉码模式封闭集与 ticket 模板占位符（接口文档 §2.8 / §12.1 Ext 33/34：
+// wire 取值逐字沿用；与扫码 service 侧实现各自持有同一契约字面量）。
+const (
+	qrcodeModeTicket     = "ticket"
+	qrcodeModeBase64     = "base64"
+	qrcodeModeURL        = "url"
+	ticketTplPlaceholder = "{{TICKET}}"
+)
+
+// qrcodeModeDeclared Schema 是否声明 qrcode_mode（Ext 落点）：拉码模式组合
+// 校验仅对声明该键的渠道生效（当前即 wechat_mp_scan，§5.3 type 行），其余
+// 渠道的 Ext 无此字段、不参与校验——声明即校验范围，不按 type 字面量分流。
+func qrcodeModeDeclared(meta schemaMeta) bool {
+	for _, f := range meta.Schema {
+		if f.Key == "qrcode_mode" && f.Storage == provider.StorageExt {
+			return true
+		}
+	}
+	return false
+}
+
+// validateQrcodeModes 拉码模式保存期组合校验（§5.3 type=wechat_mp_scan 行）：
+// 对合并后的 Ext 统一执行（PATCH 未提交键保留原值，与 proxy 行组合校验同
+// 形态——「url 模式切 ticket 未同步提交模板」这类部分提交在此拦下）。空
+// 模式归一为 url：url 模式 storage_provider / storage_path 必填（保持存量
+// 口径）；ticket 模式 qrcode_format 必填且须含 {{TICKET}} 占位符；base64
+// 不强制存储配置；封闭集外取值拒绝。非法一律 ErrInvalidRequest，错误与
+// 日志不含字段值（§12.1 读写约定）。
+func validateQrcodeModes(meta schemaMeta, ext *providerpb.Ext) error {
+	if !qrcodeModeDeclared(meta) {
+		return nil
+	}
+	mode := ext.GetQrcodeMode()
+	if mode == "" {
+		mode = qrcodeModeURL
+	}
+	switch mode {
+	case qrcodeModeTicket:
+		if !strings.Contains(ext.GetQrcodeFormat(), ticketTplPlaceholder) {
+			return ErrInvalidRequest
+		}
+	case qrcodeModeURL:
+		if ext.GetStorageProvider() == "" || ext.GetStoragePath() == "" {
+			return ErrInvalidRequest
+		}
+	case qrcodeModeBase64:
+		// 不强制存储配置（§5.3：ticket / base64 模式不要求）
+	default:
+		return ErrInvalidRequest
+	}
 	return nil
 }
 

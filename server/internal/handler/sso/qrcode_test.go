@@ -79,10 +79,13 @@ func (f *fakeLoginTicket) WriteTicket(_ context.Context, in ticketsvc.WriteTicke
 }
 
 // TestCreateQrcodeConnect 200 透传 + captcha payload 映射 + bind 的 uid
-// 从 ctx 注入。
+// 从 ctx 注入；响应新四字段（qrcodeMode / qrcodeContent / qrcodeBase64 /
+// tipHtml）随 service 产物透传（§2.8 字段填充矩阵）。
 func TestCreateQrcodeConnect(t *testing.T) {
 	qr := &fakeQrcode{createOut: &qrcodesvc.CreateQrcodeOutput{
-		Ticket: "sealed-ticket", TicketID: "c7Kx9", QrcodeURL: "https://cdn.example.com/qr/c7Kx9.jpg", ExpiresIn: 600,
+		Ticket: "sealed-ticket", TicketID: "c7Kx9", QrcodeMode: "url",
+		QrcodeURL: "https://cdn.example.com/qr/c7Kx9.jpg", QrcodeContent: "", QrcodeBase64: "",
+		TipHTML: "<p>请使用微信扫一扫</p>", ExpiresIn: 600,
 	}}
 	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr))
 	srv := httptest.NewServer(handler)
@@ -100,10 +103,14 @@ func TestCreateQrcodeConnect(t *testing.T) {
 		t.Fatalf("HTTP = %d, want 200", resp.StatusCode)
 	}
 	var got struct {
-		Ticket    string `json:"ticket"`
-		TicketID  string `json:"ticketId"`
-		QrcodeURL string `json:"qrcodeUrl"`
-		ExpiresIn string `json:"expiresIn"`
+		Ticket        string `json:"ticket"`
+		TicketID      string `json:"ticketId"`
+		QrcodeMode    string `json:"qrcodeMode"`
+		QrcodeURL     string `json:"qrcodeUrl"`
+		QrcodeContent string `json:"qrcodeContent"`
+		QrcodeBase64  string `json:"qrcodeBase64"`
+		TipHTML       string `json:"tipHtml"`
+		ExpiresIn     string `json:"expiresIn"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -111,6 +118,10 @@ func TestCreateQrcodeConnect(t *testing.T) {
 	if got.Ticket != "sealed-ticket" || got.TicketID != "c7Kx9" ||
 		got.QrcodeURL != "https://cdn.example.com/qr/c7Kx9.jpg" || got.ExpiresIn != "600" {
 		t.Fatalf("body = %+v", got)
+	}
+	if got.QrcodeMode != "url" || got.QrcodeContent != "" || got.QrcodeBase64 != "" ||
+		got.TipHTML != "<p>请使用微信扫一扫</p>" {
+		t.Fatalf("新四字段透传 = %+v", got)
 	}
 	if qr.gotCreate.ProviderKey != "wechat_mp_scan" || qr.gotCreate.Scene != "bind" {
 		t.Errorf("service 入参 = %+v", qr.gotCreate)

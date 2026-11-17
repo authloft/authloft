@@ -60,20 +60,21 @@ func TestRegistryRegistered(t *testing.T) {
 		t.Fatalf("meta = %+v, want qrcode/oauth", meta)
 	}
 	full := meta.Schema()
-	// 声明序即渲染序：basic(3) → Ext(5，凭证两键 + 扫码三字段在段尾、相对顺序
+	// 声明序即渲染序：basic(3) → Ext(8，凭证两键 + 扫码六字段在段尾、相对顺序
 	// 不变) → display(4) → policy(5) → 引用键(1)。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"app_id", "client_secret", "qrcode_auto_delete", "storage_provider", "storage_path",
+		"qrcode_mode", "qrcode_format", "qrcode_tip",
 		"icon_url", "ui_group", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey}
 	if len(full) != len(wantOrder) {
-		t.Fatalf("schema fields = %d, want %d（3+5+4+5+1）", len(full), len(wantOrder))
+		t.Fatalf("schema fields = %d, want %d（3+8+4+5+1）", len(full), len(wantOrder))
 	}
 	byKey := make(map[string]provider.FieldMeta, len(wantOrder))
 	for i, f := range full {
 		if f.Key != wantOrder[i] {
-			t.Fatalf("schema[%d].Key = %q, want %q（声明序、扫码三字段在段尾且相对顺序不变）", i, f.Key, wantOrder[i])
+			t.Fatalf("schema[%d].Key = %q, want %q（声明序、扫码字段在段尾且相对顺序不变）", i, f.Key, wantOrder[i])
 		}
 		byKey[f.Key] = f
 	}
@@ -103,6 +104,30 @@ func TestRegistryRegistered(t *testing.T) {
 		if f := byKey[k]; f.Storage != provider.StorageExt {
 			t.Errorf("扫码字段 %q Storage = %q, want ext（Ext 写入键集按 Storage 派生）", k, f.Storage)
 		}
+	}
+	// 拉码模式三字段（§5.3 type 行）：endpoint 区块、Ext 落点、label / help
+	// 恒为前端 i18n 键（键名钉死，文案落地随前端语言包）；qrcode_mode 的
+	// options 恒为 wire 取值，default 仅作表单初值；qrcode_tip 用 textarea
+	// 承载多行 HTML 原文。
+	wantKeys := map[string]struct{ typ, label, help string }{
+		"qrcode_mode":   {"select", "admin.schemaField.qrcodeModeLabel", "admin.schemaField.qrcodeModeHelp"},
+		"qrcode_format": {"text", "admin.schemaField.qrcodeFormatLabel", "admin.schemaField.qrcodeFormatHelp"},
+		"qrcode_tip":    {"textarea", "admin.schemaField.qrcodeTipLabel", "admin.schemaField.qrcodeTipHelp"},
+	}
+	for k, w := range wantKeys {
+		f, ok := byKey[k]
+		if !ok {
+			t.Fatalf("拉码模式字段 %q 未声明", k)
+		}
+		if f.Type != w.typ || f.Section != "endpoint" || f.Storage != provider.StorageExt {
+			t.Errorf("%s = (type=%q section=%q storage=%q), want (%q endpoint ext)", k, f.Type, f.Section, f.Storage, w.typ)
+		}
+		if f.Label != w.label || f.Help != w.help {
+			t.Errorf("%s = (label=%q help=%q), want (%q %q)", k, f.Label, f.Help, w.label, w.help)
+		}
+	}
+	if qm := byKey["qrcode_mode"]; strings.Join(qm.Options, ",") != "ticket,base64,url" || qm.Default != "url" {
+		t.Errorf("qrcode_mode = (options=%v default=%q), want [ticket base64 url]/url", qm.Options, qm.Default)
 	}
 	// 死字段不再下发（metadata 等 keep 外键）。
 	for _, dead := range []string{"client_id", "cert", "scopes", "provider_url",

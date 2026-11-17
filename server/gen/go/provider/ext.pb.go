@@ -55,9 +55,12 @@ type Ext struct {
 	PathStyle  bool   `protobuf:"varint,25,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"` // S3 path-style addressing
 	PublicRead bool   `protobuf:"varint,26,opt,name=public_read,json=publicRead,proto3" json:"public_read,omitempty"`
 	// ---- 小程序码（category=oauth, type=wechat_mp_scan 生效）----
-	QrcodeAutoDelete bool   `protobuf:"varint,30,opt,name=qrcode_auto_delete,json=qrcodeAutoDelete,proto3" json:"qrcode_auto_delete,omitempty"` // 登录成功后是否删除码图，删除走延迟队列
+	QrcodeAutoDelete bool   `protobuf:"varint,30,opt,name=qrcode_auto_delete,json=qrcodeAutoDelete,proto3" json:"qrcode_auto_delete,omitempty"` // 登录成功后是否删除码图，删除走延迟队列（仅 url 模式适用）
 	StorageProvider  string `protobuf:"bytes,31,opt,name=storage_provider,json=storageProvider,proto3" json:"storage_provider,omitempty"`       // 存储 Provider Key
 	StoragePath      string `protobuf:"bytes,32,opt,name=storage_path,json=storagePath,proto3" json:"storage_path,omitempty"`                   // 存储路径模板，JSONata 表达式
+	QrcodeMode       string `protobuf:"bytes,33,opt,name=qrcode_mode,json=qrcodeMode,proto3" json:"qrcode_mode,omitempty"`                      // 码生成模式三选一：ticket | base64 | url；空 = url（存量行为不变）
+	QrcodeFormat     string `protobuf:"bytes,34,opt,name=qrcode_format,json=qrcodeFormat,proto3" json:"qrcode_format,omitempty"`                // ticket 模式的二维码内容模板，{{TICKET}} 占位填完整加密 ticket（§2.8）
+	QrcodeTip        string `protobuf:"bytes,39,opt,name=qrcode_tip,json=qrcodeTip,proto3" json:"qrcode_tip,omitempty"`                         // 提示文案 HTML 原文，随 CreateQrcode 下发（tip_html），由站点 CSP 在执行层兜底
 	// ---- 上传模式（category=storage 生效）----
 	UploadMode   string `protobuf:"bytes,35,opt,name=upload_mode,json=uploadMode,proto3" json:"upload_mode,omitempty"`       // proxy=经 Authloft 中转（默认）| direct=前端预签名直传
 	PresignTtl   int32  `protobuf:"varint,36,opt,name=presign_ttl,json=presignTtl,proto3" json:"presign_ttl,omitempty"`      // 直传预签名 URL 有效期（秒），默认 300
@@ -277,6 +280,27 @@ func (x *Ext) GetStoragePath() string {
 	return ""
 }
 
+func (x *Ext) GetQrcodeMode() string {
+	if x != nil {
+		return x.QrcodeMode
+	}
+	return ""
+}
+
+func (x *Ext) GetQrcodeFormat() string {
+	if x != nil {
+		return x.QrcodeFormat
+	}
+	return ""
+}
+
+func (x *Ext) GetQrcodeTip() string {
+	if x != nil {
+		return x.QrcodeTip
+	}
+	return ""
+}
+
 func (x *Ext) GetUploadMode() string {
 	if x != nil {
 		return x.UploadMode
@@ -365,8 +389,7 @@ var File_provider_ext_proto protoreflect.FileDescriptor
 
 const file_provider_ext_proto_rawDesc = "" +
 	"\n" +
-	"\x12provider/ext.proto\x12\bprovider\"\xb3\n" +
-	"\n" +
+	"\x12provider/ext.proto\x12\bprovider\"\x98\v\n" +
 	"\x03Ext\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x15\n" +
@@ -397,6 +420,11 @@ const file_provider_ext_proto_rawDesc = "" +
 	"\x12qrcode_auto_delete\x18\x1e \x01(\bR\x10qrcodeAutoDelete\x12)\n" +
 	"\x10storage_provider\x18\x1f \x01(\tR\x0fstorageProvider\x12!\n" +
 	"\fstorage_path\x18  \x01(\tR\vstoragePath\x12\x1f\n" +
+	"\vqrcode_mode\x18! \x01(\tR\n" +
+	"qrcodeMode\x12#\n" +
+	"\rqrcode_format\x18\" \x01(\tR\fqrcodeFormat\x12\x1d\n" +
+	"\n" +
+	"qrcode_tip\x18' \x01(\tR\tqrcodeTip\x12\x1f\n" +
 	"\vupload_mode\x18# \x01(\tR\n" +
 	"uploadMode\x12\x1f\n" +
 	"\vpresign_ttl\x18$ \x01(\x05R\n" +

@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/ticket.proto.
  */
 export const file_api_sso_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJ+ChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAQgASgJImEKFENyZWF0ZVFyY29kZVJlc3BvbnNlEg4KBnRpY2tldBgBIAEoCRIRCgl0aWNrZXRfaWQYAiABKAkSEgoKcXJjb2RlX3VybBgDIAEoCRISCgpleHBpcmVzX2luGAQgASgDIlwKFUdldExvZ2luVGlja2V0UmVxdWVzdBIOCgZ0aWNrZXQYASABKAkSDAoEcG9sbBgCIAEoAxIlCgRvaWRjGAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCI/ChlDb25maXJtTG9naW5UaWNrZXRSZXF1ZXN0EhEKCXRpY2tldF9pZBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_login, file_google_protobuf_struct]);
+  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJ+ChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAQgASgJIrcBChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAxITCgtxcmNvZGVfbW9kZRgFIAEoCRIWCg5xcmNvZGVfY29udGVudBgGIAEoCRIVCg1xcmNvZGVfYmFzZTY0GAcgASgJEhAKCHRpcF9odG1sGAggASgJIlwKFUdldExvZ2luVGlja2V0UmVxdWVzdBIOCgZ0aWNrZXQYASABKAkSDAoEcG9sbBgCIAEoAxIlCgRvaWRjGAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCI/ChlDb25maXJtTG9naW5UaWNrZXRSZXF1ZXN0EhEKCXRpY2tldF9pZBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_login, file_google_protobuf_struct]);
 
 /**
  * CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
@@ -68,6 +68,8 @@ export const CreateQrcodeRequestSchema: GenMessage<CreateQrcodeRequest> = /*@__P
 
 /**
  * CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8）。
+ * 拉码产出按 provider Ext qrcode_mode 分派：qrcode_url / qrcode_content /
+ * qrcode_base64 三产出字段按 qrcode_mode 只填其一（§2.8 字段填充矩阵）。
  *
  * @generated from message api.sso.v1.CreateQrcodeResponse
  */
@@ -87,7 +89,7 @@ export type CreateQrcodeResponse = Message<"api.sso.v1.CreateQrcodeResponse"> & 
   ticketId: string;
 
   /**
-   * 小程序码图片地址（§2.8）。
+   * 仅 url 模式（缺省）：经 Storage 中转的码图 URL（§2.8）。
    *
    * @generated from field: string qrcode_url = 3;
    */
@@ -99,6 +101,40 @@ export type CreateQrcodeResponse = Message<"api.sso.v1.CreateQrcodeResponse"> & 
    * @generated from field: int64 expires_in = 4;
    */
   expiresIn: bigint;
+
+  /**
+   * 本次生效模式：ticket | base64 | url（缺省），由 provider Ext
+   * qrcode_mode 配置决定（§12.1 / §5.3）；显式下发，前端按模式分支渲染，
+   * 不靠「猜哪个字段非空」（§2.8）。
+   *
+   * @generated from field: string qrcode_mode = 5;
+   */
+  qrcodeMode: string;
+
+  /**
+   * 仅 ticket 模式：qrcode_format 模板将 {{TICKET}} 占位符（区分大小写、
+   * 可出现多次）替换为完整加密 ticket 后的二维码内容，前端自绘（§2.8）。
+   *
+   * @generated from field: string qrcode_content = 6;
+   */
+  qrcodeContent: string;
+
+  /**
+   * 仅 base64 模式：JPEG 压缩后的纯 base64 串（不含 data:image/jpeg;base64,
+   * 前缀，前缀由前端拼接）（§2.8）。
+   *
+   * @generated from field: string qrcode_base64 = 7;
+   */
+  qrcodeBase64: string;
+
+  /**
+   * 三模式通用：provider Ext qrcode_tip 配置的提示文案 HTML 原文，配置则
+   * 随响应下发、未配置为空；服务端不做净化，由站点 CSP 在执行层兜底
+   * （§2.8 tip_html 安全边界）。
+   *
+   * @generated from field: string tip_html = 8;
+   */
+  tipHtml: string;
 };
 
 /**

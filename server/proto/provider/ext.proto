@@ -46,9 +46,12 @@ message Ext {
   bool   public_read   = 26;
 
   // ---- 小程序码（category=oauth, type=wechat_mp_scan 生效）----
-  bool   qrcode_auto_delete = 30;  // 登录成功后是否删除码图，删除走延迟队列
+  bool   qrcode_auto_delete = 30;  // 登录成功后是否删除码图，删除走延迟队列（仅 url 模式适用）
   string storage_provider   = 31;  // 存储 Provider Key
   string storage_path       = 32;  // 存储路径模板，JSONata 表达式
+  string qrcode_mode        = 33;  // 码生成模式三选一：ticket | base64 | url；空 = url（存量行为不变）
+  string qrcode_format      = 34;  // ticket 模式的二维码内容模板，{{TICKET}} 占位填完整加密 ticket（§2.8）
+  string qrcode_tip         = 39;  // 提示文案 HTML 原文，随 CreateQrcode 下发（tip_html），由站点 CSP 在执行层兜底
 
   // ---- 上传模式（category=storage 生效）----
   string upload_mode   = 35;  // proxy=经 Authloft 中转（默认）| direct=前端预签名直传

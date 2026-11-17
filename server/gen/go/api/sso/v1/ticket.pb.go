@@ -105,16 +105,32 @@ func (x *CreateQrcodeRequest) GetSsoClientId() string {
 }
 
 // CreateQrcodeResponse 是 SsoService/CreateQrcode 的响应（§2.8）。
+// 拉码产出按 provider Ext qrcode_mode 分派：qrcode_url / qrcode_content /
+// qrcode_base64 三产出字段按 qrcode_mode 只填其一（§2.8 字段填充矩阵）。
 type CreateQrcodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 服务端加密的 TicketPayload，客户端不可篡改（§2.8、704、706）。
 	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	// 拉码时下发的票据标识，全链路统一用这一个名字（§2.8、707）。
 	TicketId string `protobuf:"bytes,2,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
-	// 小程序码图片地址（§2.8）。
+	// 仅 url 模式（缺省）：经 Storage 中转的码图 URL（§2.8）。
 	QrcodeUrl string `protobuf:"bytes,3,opt,name=qrcode_url,json=qrcodeUrl,proto3" json:"qrcode_url,omitempty"`
 	// 票据有效期（秒）；整型一律 int64，JSON 输出十进制字符串（§2.8、§12.9）。
-	ExpiresIn     int64 `protobuf:"varint,4,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	ExpiresIn int64 `protobuf:"varint,4,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	// 本次生效模式：ticket | base64 | url（缺省），由 provider Ext
+	// qrcode_mode 配置决定（§12.1 / §5.3）；显式下发，前端按模式分支渲染，
+	// 不靠「猜哪个字段非空」（§2.8）。
+	QrcodeMode string `protobuf:"bytes,5,opt,name=qrcode_mode,json=qrcodeMode,proto3" json:"qrcode_mode,omitempty"`
+	// 仅 ticket 模式：qrcode_format 模板将 {{TICKET}} 占位符（区分大小写、
+	// 可出现多次）替换为完整加密 ticket 后的二维码内容，前端自绘（§2.8）。
+	QrcodeContent string `protobuf:"bytes,6,opt,name=qrcode_content,json=qrcodeContent,proto3" json:"qrcode_content,omitempty"`
+	// 仅 base64 模式：JPEG 压缩后的纯 base64 串（不含 data:image/jpeg;base64,
+	// 前缀，前缀由前端拼接）（§2.8）。
+	QrcodeBase64 string `protobuf:"bytes,7,opt,name=qrcode_base64,json=qrcodeBase64,proto3" json:"qrcode_base64,omitempty"`
+	// 三模式通用：provider Ext qrcode_tip 配置的提示文案 HTML 原文，配置则
+	// 随响应下发、未配置为空；服务端不做净化，由站点 CSP 在执行层兜底
+	// （§2.8 tip_html 安全边界）。
+	TipHtml       string `protobuf:"bytes,8,opt,name=tip_html,json=tipHtml,proto3" json:"tip_html,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -175,6 +191,34 @@ func (x *CreateQrcodeResponse) GetExpiresIn() int64 {
 		return x.ExpiresIn
 	}
 	return 0
+}
+
+func (x *CreateQrcodeResponse) GetQrcodeMode() string {
+	if x != nil {
+		return x.QrcodeMode
+	}
+	return ""
+}
+
+func (x *CreateQrcodeResponse) GetQrcodeContent() string {
+	if x != nil {
+		return x.QrcodeContent
+	}
+	return ""
+}
+
+func (x *CreateQrcodeResponse) GetQrcodeBase64() string {
+	if x != nil {
+		return x.QrcodeBase64
+	}
+	return ""
+}
+
+func (x *CreateQrcodeResponse) GetTipHtml() string {
+	if x != nil {
+		return x.TipHtml
+	}
+	return ""
 }
 
 // GetLoginTicketRequest 是 SsoService/GetLoginTicket 的请求消息
@@ -316,14 +360,19 @@ const file_api_sso_v1_ticket_proto_rawDesc = "" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x14\n" +
 	"\x05scene\x18\x02 \x01(\tR\x05scene\x124\n" +
 	"\acaptcha\x18\x03 \x01(\v2\x1a.api.sso.v1.CaptchaPayloadR\acaptcha\x12\"\n" +
-	"\rsso_client_id\x18\x04 \x01(\tR\vssoClientId\"\x89\x01\n" +
+	"\rsso_client_id\x18\x04 \x01(\tR\vssoClientId\"\x91\x02\n" +
 	"\x14CreateQrcodeResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1b\n" +
 	"\tticket_id\x18\x02 \x01(\tR\bticketId\x12\x1d\n" +
 	"\n" +
 	"qrcode_url\x18\x03 \x01(\tR\tqrcodeUrl\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x04 \x01(\x03R\texpiresIn\"p\n" +
+	"expires_in\x18\x04 \x01(\x03R\texpiresIn\x12\x1f\n" +
+	"\vqrcode_mode\x18\x05 \x01(\tR\n" +
+	"qrcodeMode\x12%\n" +
+	"\x0eqrcode_content\x18\x06 \x01(\tR\rqrcodeContent\x12#\n" +
+	"\rqrcode_base64\x18\a \x01(\tR\fqrcodeBase64\x12\x19\n" +
+	"\btip_html\x18\b \x01(\tR\atipHtml\"p\n" +
 	"\x15GetLoginTicketRequest\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x12\n" +
 	"\x04poll\x18\x02 \x01(\x03R\x04poll\x12+\n" +

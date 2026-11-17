@@ -6,10 +6,14 @@
 //     （bind 需 al_session，否则 401）→ sso_client_id 携带时按首签口径解析
 //     应用快照并校验 Provider 放行（§2.8，快照装 TicketPayload.sso）→
 //     ticket_id ≤24（§11.6.4）→
-//     TicketPayload 经 sign_key.ticket 加密（purpose=ticket）→
+//     TicketPayload 经 sign_key.ticket 加密（purpose=ticket）→ 快照键写入 →
+//     拉码产出按 provider.Ext.qrcode_mode 分派（§2.8 / §13.2）：url（缺省）
 //     GetwxacodeUnlimit（adapter 的 QRCodeSupporter）→ JPEG 75% 压缩
 //     （internal/qrcode）→ Storage.Put（中转模式，storage_path JSONata
-//     渲染，码图与 upload_mode 无关）。
+//     渲染，码图与 upload_mode 无关）；base64 拉码压缩后 base64 直发，
+//     不写 Storage；ticket 不调微信拉码，仅以完整加密 ticket 替换
+//     qrcode_format 模板的 {{TICKET}} 占位符。存储依赖与码图自动删除
+//     仅 url 模式生效（§13.3）；未知模式收敛渠道不可用，不静默回落。
 //   - GetLoginTicket：解 ticket → expired 终态判定（无需存储）→ 长轮询
 //     poll ≤15（cache.TicketStore.Wait）→ 命中 GETDEL（Take 原子取走）
 //     → scene=login：建会话（Terminal.Complete，不另开 complete 端点）
@@ -32,8 +36,10 @@ package qrcode
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -68,6 +74,15 @@ const (
 	// thirdpartyMethod login_methods 内的三方整体开关取值（§2.1 交集口径，
 	// ssoapp 同名常量同口径；快照放行判定用）。
 	thirdpartyMethod = "thirdparty"
+	// 扫码三模式封闭集（§2.8 / §12.1：provider.Ext.qrcode_mode；空 = url
+	// 存量行为不变）。
+	qrcodeModeTicket = "ticket"
+	qrcodeModeBase64 = "base64"
+	qrcodeModeURL    = "url"
+	// ticketPlaceholder ticket 模式模板的占位符（§2.8：区分大小写、可出现
+	// 多次，替换值为完整加密 ticket——扫码端拿到的须是可用于 GetLoginTicket
+	// 的凭证，登录闭环才成立；保存期校验见 §5.3）。
+	ticketPlaceholder = "{{TICKET}}"
 )
 
 // 可判别哨兵错误（handler 转 Connect 错误体 + ErrorInfo，§1.6 封闭集成员）。
@@ -187,12 +202,20 @@ type CreateQrcodeInput struct {
 	SsoClientID string
 }
 
-// CreateQrcodeOutput CreateQrcode 产物（§2.8 行 710）。
+// CreateQrcodeOutput CreateQrcode 产物（§2.8）：ticket / ticket_id /
+// expires_in 三模式公共；QrcodeMode 显式回显本次生效模式（空配置归一为
+// url），三产出字段 QrcodeURL / QrcodeContent / QrcodeBase64 按模式只填
+// 其一（§2.8 字段填充矩阵），TipHTML 为 Ext qrcode_tip 配置的提示文案
+// HTML 原文（三模式通用，配置则填）。
 type CreateQrcodeOutput struct {
-	Ticket    string // 加密的 TicketPayload
-	TicketID  string
-	QrcodeURL string
-	ExpiresIn int64
+	Ticket        string // 加密的 TicketPayload
+	TicketID      string
+	QrcodeMode    string // 本次生效模式：ticket | base64 | url（空配置归一为 url）
+	QrcodeURL     string // 仅 url 模式：Storage 中转后的码图 URL
+	QrcodeContent string // 仅 ticket 模式：qrcode_format 模板替换占位符后的内容
+	QrcodeBase64  string // 仅 base64 模式：JPEG 纯 base64（不含 data URL 前缀）
+	TipHTML       string // Ext qrcode_tip 原文（三模式通用，配置则填）
+	ExpiresIn     int64
 }
 
 // CreateQrcode 拉取小程序码（§2.8 行 702-719）。业务失败走可判别哨兵
@@ -302,34 +325,87 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		return nil, fmt.Errorf("qrcode: write ticket payload snapshot: %w", err)
 	}
 
-	// 拉码 → JPEG 75% 压缩（§13.2 行 1593）。
+	// 拉码产出按 provider Ext qrcode_mode 分派（§2.8 / §13.2：空值归一为
+	// url；未知取值收敛为渠道不可用，不静默回落）。公共前置（captcha /
+	// scene / provider 校验 / 快照写入 / ticket 签发）三模式一致，上文已完成。
+	prod := &CreateQrcodeOutput{
+		Ticket:    ticket,
+		TicketID:  ticketID,
+		ExpiresIn: int64(qrcodeTicketTTL / time.Second),
+	}
+	switch normalizeQrcodeMode(p.Ext.GetQrcodeMode()) {
+	case qrcodeModeTicket:
+		// 不调微信拉码、不写 Storage：仅以完整加密 ticket 替换 qrcode_format
+		// 模板的 {{TICKET}} 占位符。模板缺占位符保存期已拒绝（§5.3），运行期
+		// 兜底收敛渠道不可用。
+		content, rerr := renderTicketContent(p.Ext.GetQrcodeFormat(), ticket)
+		if rerr != nil {
+			return nil, fmt.Errorf("%w: %v", ErrQrcodeProviderDisabled, rerr)
+		}
+		prod.QrcodeContent = content
+	case qrcodeModeBase64:
+		// 拉微信码 + JPEG 压缩后 base64 直发，不写 Storage（不要求存储配置）。
+		jpeg, ferr := s.fetchAndCompress(ctx, fetcher, ticketID)
+		if ferr != nil {
+			return nil, ferr
+		}
+		prod.QrcodeBase64 = base64.StdEncoding.EncodeToString(jpeg)
+	case qrcodeModeURL:
+		// Storage.Put 中转模式（§13.2：码图始终走中转，与 upload_mode 无关；
+		// storage_provider / storage_path 未配置按失败，§13.0）。存储门控在
+		// 分支内部——ticket / base64 模式不要求存储配置。
+		jpeg, ferr := s.fetchAndCompress(ctx, fetcher, ticketID)
+		if ferr != nil {
+			return nil, ferr
+		}
+		st, key, serr := s.storageFor(ctx, p, payload)
+		if serr != nil {
+			return nil, serr
+		}
+		url, perr := st.Put(ctx, key, jpeg, "image/jpeg")
+		if perr != nil {
+			return nil, fmt.Errorf("qrcode: storage put: %w", perr)
+		}
+		prod.QrcodeURL = url
+	default:
+		return nil, fmt.Errorf("%w: %q unknown qrcode mode", ErrQrcodeProviderDisabled, p.Ext.GetQrcodeMode())
+	}
+	prod.QrcodeMode = normalizeQrcodeMode(p.Ext.GetQrcodeMode())
+	prod.TipHTML = p.Ext.GetQrcodeTip()
+	return prod, nil
+}
+
+// fetchAndCompress 拉微信码 → JPEG 75% 压缩（§13.2），base64 / url 两分支
+// 共用。微信侧故障（配额 / 未发布等）按提供商失败收敛（§13.0）。
+func (s *QRCode) fetchAndCompress(ctx context.Context, fetcher provider.QRCodeSupporter, ticketID string) ([]byte, error) {
 	raw, err := fetcher.FetchQrcode(ctx, ticketID)
 	if err != nil {
-		// 微信侧故障（配额 / 未发布等）按提供商失败收敛（§13.0 行 1576）。
 		return nil, fmt.Errorf("%w: fetch wxacode: %v", ErrQrcodeProviderDisabled, err)
 	}
 	jpegBody, err := qrcodepkg.CompressJPEG(raw)
 	if err != nil {
 		return nil, fmt.Errorf("qrcode: compress: %w", err)
 	}
+	return jpegBody, nil
+}
 
-	// Storage.Put 中转模式（§13.2 行 1593：码图始终走中转，与 upload_mode
-	// 无关；storage_provider / storage_path 未配置按失败，§13.0）。
-	st, key, err := s.storageFor(ctx, p, payload)
-	if err != nil {
-		return nil, err
+// normalizeQrcodeMode 模式空值归一（§2.8 / §13.2：空 = url，存量行为不变）。
+func normalizeQrcodeMode(mode string) string {
+	if mode == "" {
+		return qrcodeModeURL
 	}
-	url, err := st.Put(ctx, key, jpegBody, "image/jpeg")
-	if err != nil {
-		return nil, fmt.Errorf("qrcode: storage put: %w", err)
-	}
+	return mode
+}
 
-	return &CreateQrcodeOutput{
-		Ticket:    ticket,
-		TicketID:  ticketID,
-		QrcodeURL: url,
-		ExpiresIn: int64(qrcodeTicketTTL / time.Second),
-	}, nil
+// renderTicketContent ticket 模式的模板替换纯函数（§2.8 / §13.2）：以完整
+// 加密 ticket 替换 {{TICKET}} 占位符（区分大小写、可出现多次）。模板为空或
+// 不含占位符视为配置错误——保存期已拒绝（§5.3），运行期兜底报错由调用方
+// 收敛渠道不可用。
+func renderTicketContent(tpl, ticket string) (string, error) {
+	if !strings.Contains(tpl, ticketPlaceholder) {
+		return "", fmt.Errorf("qrcode: ticket mode: template missing %s", ticketPlaceholder)
+	}
+	return strings.ReplaceAll(tpl, ticketPlaceholder, ticket), nil
 }
 
 // resolveSsoSnapshot 解析应用快照（§2.2 首签口径）：解析器缺位属装配缺陷，
@@ -649,10 +725,11 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	}
 }
 
-// enqueueAutoDelete 码图自动删除投递（§13.3）：qrcode_auto_delete 开启时
-// PC 端完成 SSO 后，用同一 storage_path 模板 + ticket_id + iat 重算 key
-// （无需任何额外存储——iat 内嵌于加密 ticket）投延迟队列；队列满静默丢弃
-// （删除失败不影响已完成的登录）。
+// enqueueAutoDelete 码图自动删除投递（§13.3）：仅 url 模式生效（ticket /
+// base64 不产码图、不投删除任务），qrcode_auto_delete 开启时 PC 端完成
+// SSO 后，用同一 storage_path 模板 + ticket_id + iat 重算 key（无需任何
+// 额外存储——iat 内嵌于加密 ticket）投延迟队列；队列满静默丢弃（删除失败
+// 不影响已完成的登录）。
 func (s *QRCode) enqueueAutoDelete(ctx context.Context, payload *token.TicketPayload) {
 	if s.deps.Queue == nil {
 		return
@@ -668,7 +745,15 @@ func (s *QRCode) enqueueAutoDelete(ctx context.Context, payload *token.TicketPay
 		)
 		return
 	}
-	if p == nil || p.Ext == nil || !p.Ext.GetQrcodeAutoDelete() {
+	if p == nil || p.Ext == nil {
+		return // 无 Ext，业务预期
+	}
+	// 仅 url 模式产码图（§13.3）：ticket / base64 不写对象存储、无码图可删，
+	// 不投删除任务（此处本就重读 provider，无额外 IO）。
+	if normalizeQrcodeMode(p.Ext.GetQrcodeMode()) != qrcodeModeURL {
+		return
+	}
+	if !p.Ext.GetQrcodeAutoDelete() {
 		return // 未开启自动删除，业务预期
 	}
 	key, err := storage.RenderKey(p.Ext.GetStoragePath(), payload.GetTicketId(), payload.GetIat())

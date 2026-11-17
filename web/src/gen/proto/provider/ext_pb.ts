@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file provider/ext.proto.
  */
 export const file_provider_ext: GenFile = /*@__PURE__*/
-  fileDesc("ChJwcm92aWRlci9leHQucHJvdG8SCHByb3ZpZGVyIoAHCgNFeHQSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDgoGYXBwX2lkGAMgASgJEgwKBGNlcnQYBCABKAkSDgoGc2NvcGVzGAUgASgJEjQKDHVzZXJfbWFwcGluZxgGIAMoCzIeLnByb3ZpZGVyLkV4dC5Vc2VyTWFwcGluZ0VudHJ5EhQKDHByb3ZpZGVyX3VybBgKIAEoCRIXCg9jdXN0b21fYXV0aF91cmwYCyABKAkSGAoQY3VzdG9tX3Rva2VuX3VybBgMIAEoCRIcChRjdXN0b21fdXNlcl9pbmZvX3VybBgNIAEoCRIMCgRob3N0GA4gASgJEgwKBHBvcnQYDyABKAUSEwoLZGlzYWJsZV9zc2wYECABKAgSGQoRaW50cmFuZXRfZW5kcG9pbnQYESABKAkSDgoGYnVja2V0GBQgASgJEhEKCXJlZ2lvbl9pZBgVIAEoCRITCgtwYXRoX3ByZWZpeBgWIAEoCRIOCgZkb21haW4YFyABKAkSEAoIZW5kcG9pbnQYGCABKAkSEgoKcGF0aF9zdHlsZRgZIAEoCBITCgtwdWJsaWNfcmVhZBgaIAEoCBIaChJxcmNvZGVfYXV0b19kZWxldGUYHiABKAgSGAoQc3RvcmFnZV9wcm92aWRlchgfIAEoCRIUCgxzdG9yYWdlX3BhdGgYICABKAkSEwoLdXBsb2FkX21vZGUYIyABKAkSEwoLcHJlc2lnbl90dGwYJCABKAUSEAoIbWF4X3NpemUYJSABKAMSFQoNYWxsb3dlZF90eXBlcxgmIAEoCRIMCgRmcm9tGCggASgJEhEKCXNpZ25fbmFtZRgpIAEoCRIVCg10ZW1wbGF0ZV9jb2RlGCogASgJEg4KBnNjaGVtZRgrIAEoCRIMCgR1c2VyGCwgASgJEhAKCHBhc3N3b3JkGC0gASgJEhoKEnByb3h5X3Byb3ZpZGVyX2tleRguIAEoCRItCghtZXRhZGF0YRgyIAMoCzIbLnByb3ZpZGVyLkV4dC5NZXRhZGF0YUVudHJ5GjIKEFVzZXJNYXBwaW5nRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAFCI1ohYXV0aGxvZnQvZ2VuL2dvL3Byb3ZpZGVyO3Byb3ZpZGVyYgZwcm90bzM");
+  fileDesc("ChJwcm92aWRlci9leHQucHJvdG8SCHByb3ZpZGVyIsAHCgNFeHQSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDgoGYXBwX2lkGAMgASgJEgwKBGNlcnQYBCABKAkSDgoGc2NvcGVzGAUgASgJEjQKDHVzZXJfbWFwcGluZxgGIAMoCzIeLnByb3ZpZGVyLkV4dC5Vc2VyTWFwcGluZ0VudHJ5EhQKDHByb3ZpZGVyX3VybBgKIAEoCRIXCg9jdXN0b21fYXV0aF91cmwYCyABKAkSGAoQY3VzdG9tX3Rva2VuX3VybBgMIAEoCRIcChRjdXN0b21fdXNlcl9pbmZvX3VybBgNIAEoCRIMCgRob3N0GA4gASgJEgwKBHBvcnQYDyABKAUSEwoLZGlzYWJsZV9zc2wYECABKAgSGQoRaW50cmFuZXRfZW5kcG9pbnQYESABKAkSDgoGYnVja2V0GBQgASgJEhEKCXJlZ2lvbl9pZBgVIAEoCRITCgtwYXRoX3ByZWZpeBgWIAEoCRIOCgZkb21haW4YFyABKAkSEAoIZW5kcG9pbnQYGCABKAkSEgoKcGF0aF9zdHlsZRgZIAEoCBITCgtwdWJsaWNfcmVhZBgaIAEoCBIaChJxcmNvZGVfYXV0b19kZWxldGUYHiABKAgSGAoQc3RvcmFnZV9wcm92aWRlchgfIAEoCRIUCgxzdG9yYWdlX3BhdGgYICABKAkSEwoLcXJjb2RlX21vZGUYISABKAkSFQoNcXJjb2RlX2Zvcm1hdBgiIAEoCRISCgpxcmNvZGVfdGlwGCcgASgJEhMKC3VwbG9hZF9tb2RlGCMgASgJEhMKC3ByZXNpZ25fdHRsGCQgASgFEhAKCG1heF9zaXplGCUgASgDEhUKDWFsbG93ZWRfdHlwZXMYJiABKAkSDAoEZnJvbRgoIAEoCRIRCglzaWduX25hbWUYKSABKAkSFQoNdGVtcGxhdGVfY29kZRgqIAEoCRIOCgZzY2hlbWUYKyABKAkSDAoEdXNlchgsIAEoCRIQCghwYXNzd29yZBgtIAEoCRIaChJwcm94eV9wcm92aWRlcl9rZXkYLiABKAkSLQoIbWV0YWRhdGEYMiADKAsyGy5wcm92aWRlci5FeHQuTWV0YWRhdGFFbnRyeRoyChBVc2VyTWFwcGluZ0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQiNaIWF1dGhsb2Z0L2dlbi9nby9wcm92aWRlcjtwcm92aWRlcmIGcHJvdG8z");
 
 /**
  * Ext 是外部服务扩展字段（docs/接口文档.md §12.1），对应
@@ -158,7 +158,7 @@ export type Ext = Message<"provider.Ext"> & {
   /**
    * ---- 小程序码（category=oauth, type=wechat_mp_scan 生效）----
    *
-   * 登录成功后是否删除码图，删除走延迟队列
+   * 登录成功后是否删除码图，删除走延迟队列（仅 url 模式适用）
    *
    * @generated from field: bool qrcode_auto_delete = 30;
    */
@@ -177,6 +177,27 @@ export type Ext = Message<"provider.Ext"> & {
    * @generated from field: string storage_path = 32;
    */
   storagePath: string;
+
+  /**
+   * 码生成模式三选一：ticket | base64 | url；空 = url（存量行为不变）
+   *
+   * @generated from field: string qrcode_mode = 33;
+   */
+  qrcodeMode: string;
+
+  /**
+   * ticket 模式的二维码内容模板，{{TICKET}} 占位填完整加密 ticket（§2.8）
+   *
+   * @generated from field: string qrcode_format = 34;
+   */
+  qrcodeFormat: string;
+
+  /**
+   * 提示文案 HTML 原文，随 CreateQrcode 下发（tip_html），由站点 CSP 在执行层兜底
+   *
+   * @generated from field: string qrcode_tip = 39;
+   */
+  qrcodeTip: string;
 
   /**
    * ---- 上传模式（category=storage 生效）----

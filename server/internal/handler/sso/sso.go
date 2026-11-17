@@ -453,8 +453,10 @@ var errQrcodeNotConfigured = errors.New("qrcode service not configured")
 var errLoginTicketNotConfigured = errors.New("login ticket service not configured")
 
 // CreateQrcode 拉取小程序码（接口文档 §2.8 行 702-719）：captcha 必检、
-// 登录与绑定共用靠 scene 区分；响应 {ticket, ticketId, qrcodeUrl,
-// expiresIn}。业务失败 → Connect 错误体 + ErrorInfo。
+// 登录与绑定共用靠 scene 区分；响应 {ticket, ticketId, qrcodeMode,
+// qrcodeUrl|qrcodeContent|qrcodeBase64, tipHtml, expiresIn}，三产出字段按
+// qrcodeMode 只填其一（§2.8 字段填充矩阵）。业务失败 → Connect 错误体 +
+// ErrorInfo。
 func (h *Handler) CreateQrcode(ctx context.Context, req *connect.Request[ssov1.CreateQrcodeRequest]) (*connect.Response[ssov1.CreateQrcodeResponse], error) {
 	if h.qrcode == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
@@ -464,10 +466,14 @@ func (h *Handler) CreateQrcode(ctx context.Context, req *connect.Request[ssov1.C
 		return nil, mapQrcodeError(err)
 	}
 	return connect.NewResponse(&ssov1.CreateQrcodeResponse{
-		Ticket:    out.Ticket,
-		TicketId:  out.TicketID,
-		QrcodeUrl: out.QrcodeURL,
-		ExpiresIn: out.ExpiresIn,
+		Ticket:        out.Ticket,
+		TicketId:      out.TicketID,
+		QrcodeMode:    out.QrcodeMode,
+		QrcodeUrl:     out.QrcodeURL,
+		QrcodeContent: out.QrcodeContent,
+		QrcodeBase64:  out.QrcodeBase64,
+		TipHtml:       out.TipHTML,
+		ExpiresIn:     out.ExpiresIn,
 	}), nil
 }
 
