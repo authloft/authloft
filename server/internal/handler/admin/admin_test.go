@@ -925,11 +925,13 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	if f := byKey["port"]; f == nil || f.GetType() != "number" || !f.GetRequired() {
 		t.Errorf("port = %+v（必填 number，§5.3 五字段表）", f)
 	}
-	if f := byKey["user"]; f == nil || f.GetType() != "text" || f.GetRequired() || !f.GetAdvanced() {
-		t.Errorf("user = %+v（可选 advanced）", f)
+	// user / password 可选且撤 advanced（现源 servicetype.go proxySchema，
+	// 与 provider 包 assertProxyRowFields 先例同口径）。
+	if f := byKey["user"]; f == nil || f.GetType() != "text" || f.GetRequired() || f.GetAdvanced() {
+		t.Errorf("user = %+v（可选，撤 advanced）", f)
 	}
-	if f := byKey["password"]; f == nil || f.GetType() != "secret" || f.GetRequired() || !f.GetAdvanced() {
-		t.Errorf("password = %+v（可选 advanced secret）", f)
+	if f := byKey["password"]; f == nil || f.GetType() != "secret" || f.GetRequired() || f.GetAdvanced() {
+		t.Errorf("password = %+v（可选，撤 advanced）", f)
 	}
 	for _, key := range []string{provider.ProxyRefKey, "union_provider", "enable_signin", "enable_signup", "auto_bind"} {
 		if _, ok := byKey[key]; ok {
