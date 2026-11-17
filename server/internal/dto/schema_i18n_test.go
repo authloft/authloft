@@ -106,21 +106,6 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 	for _, meta := range metas {
 		resp := AdminSchema(meta.Type, meta.Category, schemaFieldsOf(meta.Schema), nil)
 		for _, f := range resp.GetFields() {
-			// proxy 系列新键（引用键 + proxy 行五字段，键名统一 admin.schemaField.
-			// proxy* 前缀）的文案落地随前端语言包进行；此处先钉键名与形态（见
-			// TestProxyRefSchemaI18nContract），暂不要求字典已落地，避免后端契约
-			// 与前端落地顺序耦合——前端补齐后应收紧此豁免。
-			if strings.HasPrefix(f.GetLabel(), "admin.schemaField.proxy") {
-				continue
-			}
-			// 拉码模式三新键（qrcode_mode / qrcode_format / qrcode_tip，键名已在
-			// 渠道注册表测试钉死）同 proxy 口径：文案落地随前端语言包进行，暂不
-			// 要求字典已落地——前端补齐后应收紧此豁免。
-			if strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeMode") ||
-				strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeFormat") ||
-				strings.HasPrefix(f.GetLabel(), "admin.schemaField.qrcodeTip") {
-				continue
-			}
 			checkKey(meta.Type, f.GetKey(), "label", f.GetLabel())
 			if f.GetHelp() != "" {
 				checkKey(meta.Type, f.GetKey(), "help", f.GetHelp())
@@ -139,8 +124,8 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 }
 
 // TestProxyRefSchemaI18nContract proxy_provider_key 引用键后端只下发 i18n 键名
-// （不持有文案）：精确断言键名与形态；前端 zh/en 字典的实际落地由前端语言包
-// 负责，故此处不断言字典存在（否则后端契约会与前端实现的落地顺序耦合）。
+// （不持有文案）：精确断言键名与形态；zh/en 字典落地已由 TestSchemaTextI18nKeys
+// 统一强校验，此处不重复断言。
 func TestProxyRefSchemaI18nContract(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta("wechat_mp")
 	if !ok {
