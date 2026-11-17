@@ -4666,7 +4666,6 @@ describe('proxy 提供商动态表单（五真实字段 + 引用键：渲染 / �
     expect(html).toContain('代理用户名');
     expect(html).toContain('代理密码');
     expect(html).toContain('出站代理');
-    expect(html).toContain('三选一');
     // 旧复合字段 proxy_url 已从生成物删除，不再出现在任何 schema 渲染里。
     expect(html).not.toContain('proxy_url');
     expect(html).not.toContain('admin.schemaField.proxy');

@@ -2598,7 +2598,7 @@ describe("routes：HashRouter 路由表与 path:'*' 兜底", () => {
 
 describe('accountReturnTo（401 跳登录 returnTo 白名单形态，纯函数）', () => {
   test('hash 内路径 + query 拼为 /account# 前缀形态', () => {
-    expect(apiMod.accountReturnTo('/profile', '')).toBe('/account#/');
+    expect(apiMod.accountReturnTo('/', '')).toBe('/account#/');
     expect(apiMod.accountReturnTo('/security', '')).toBe('/account#/security');
     expect(apiMod.accountReturnTo('/security', '?bind=success')).toBe(
       '/account#/security?bind=success',
