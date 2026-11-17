@@ -353,7 +353,9 @@ export function ProviderEditContent(props: {
             treeData={treeData}
             onChange={handleTypeChange}
             disabled={editing}
+            filterTreeNode
             placeholder={t('admin.selectTypePlaceholder')}
+            dropdownClassName={styles.dropdown}
           />
           {showsCallbackHint(schema?.category) ? (
             <ProviderCallbackHint
