@@ -423,7 +423,7 @@ describe('dispatchCallback 分派编排', () => {
       deps,
     );
     expect(calls.envelopes[0].status).toBe('success');
-    expect(calls.navigations).toEqual(['/account#/profile']);
+    expect(calls.navigations).toEqual(['/account#/']);
   });
 
   test('success 双空终点消费 returnTo——合法值放行、站外值拒绝回落（不二次 decode）', async () => {
@@ -448,7 +448,7 @@ describe('dispatchCallback 分派编排', () => {
       },
       deny.deps,
     );
-    expect(deny.calls.navigations).toEqual(['/account#/profile']);
+    expect(deny.calls.navigations).toEqual(['/account#/']);
   });
 
   test('mfa_required → 落帧不跳转（mfa 编排帧渲染交页面，§1.6 行 233；现为 LoginContainer 完整编排）', async () => {

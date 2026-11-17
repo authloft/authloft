@@ -469,7 +469,7 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
         envelope({ redirectTo: 'https://app.test/home' }),
       ),
     ).toBe('https://app.test/home');
-    expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account#/profile');
+    expect(pagesMod.flowTerminalUrl(envelope({}))).toBe('/account#/');
   });
 
   test('returnTo 消费（非 OIDC 流）：双空时合法值放行、站外值拒绝回落；合法值优先于 redirectTo（§1.3）', () => {
@@ -481,7 +481,7 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
     // 站外值 → 回落默认落点（防开放重定向）。
     expect(
       pagesMod.flowTerminalUrl(envelope({}), 'https://evil.example.com/x'),
-    ).toBe('/account#/profile');
+    ).toBe('/account#/');
     // 非 OIDC 流：合法 returnTo 优先于 redirectTo——显式落点不做应用默认回跳。
     expect(
       pagesMod.flowTerminalUrl(

@@ -16,7 +16,7 @@ export const LOGOUT_PATH = '/sso/logout';
 export const OAUTH_CALLBACK_PREFIX = '/sso/oauth/callback/';
 
 /** account 域默认落点（混合路由形态：path 在 hash 内）。 */
-export const DEFAULT_ACCOUNT_HOME = '/account#/profile';
+export const DEFAULT_ACCOUNT_HOME = '/account#/';
 
 /** admin 域默认落点（混合路由形态：path 在 hash 内）。 */
 export const DEFAULT_ADMIN_HOME = '/admin#/status';

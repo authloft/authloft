@@ -28,7 +28,7 @@ describe('路径常量（定稿形态）', () => {
     expect(LOGIN_PATH).toBe('/sso/login');
     expect(LOGOUT_PATH).toBe('/sso/logout');
     expect(OAUTH_CALLBACK_PREFIX).toBe('/sso/oauth/callback/');
-    expect(DEFAULT_ACCOUNT_HOME).toBe('/account#/profile');
+    expect(DEFAULT_ACCOUNT_HOME).toBe('/account#/');
   });
 });
 
@@ -84,7 +84,7 @@ describe('loginUrl / logoutUrl（§8 行 1418/1420）', () => {
 
 describe('sanitizeReturnTo（前缀白名单，防开放重定向）', () => {
   test('放行 /account# 与 /admin# 前缀的站内值（原样返回）', () => {
-    expect(sanitizeReturnTo('/account#/profile')).toBe('/account#/profile');
+    expect(sanitizeReturnTo('/account#/')).toBe('/account#/');
     expect(sanitizeReturnTo('/admin#/users/123')).toBe('/admin#/users/123');
   });
 
@@ -99,7 +99,7 @@ describe('sanitizeReturnTo（前缀白名单，防开放重定向）', () => {
   });
 
   test('白名单前缀大小写敏感（大写变体不放行）', () => {
-    expect(sanitizeReturnTo('/Account#/profile')).toBe(DEFAULT_ACCOUNT_HOME);
+    expect(sanitizeReturnTo('/Account#/')).toBe(DEFAULT_ACCOUNT_HOME);
   });
 });
 
@@ -107,7 +107,7 @@ describe('contextSwitchUrl（跨端切换落点，封闭枚举防开放重定向
   test('DEFAULT_ADMIN_HOME 逐字 + 两 target 落点正确', () => {
     expect(DEFAULT_ADMIN_HOME).toBe('/admin#/status');
     expect(contextSwitchUrl('https://uc.test', 'account')).toBe(
-      'https://uc.test/account#/profile',
+      'https://uc.test/account#/',
     );
     expect(contextSwitchUrl('https://uc.test', 'admin')).toBe(
       'https://uc.test/admin#/status',
@@ -118,7 +118,7 @@ describe('contextSwitchUrl（跨端切换落点，封闭枚举防开放重定向
     expect(contextSwitchUrl('  https://uc.test//  ', 'admin')).toBe(
       'https://uc.test/admin#/status',
     );
-    expect(contextSwitchUrl('', 'account')).toBe('/account#/profile');
+    expect(contextSwitchUrl('', 'account')).toBe('/account#/');
     expect(contextSwitchUrl(undefined, 'admin')).toBe('/admin#/status');
   });
 
@@ -130,7 +130,7 @@ describe('contextSwitchUrl（跨端切换落点，封闭枚举防开放重定向
     ] as unknown as ContextSwitchTarget[];
     for (const target of invalid) {
       expect(contextSwitchUrl('https://uc.test', target)).toBe(
-        'https://uc.test/account#/profile',
+        'https://uc.test/account#/',
       );
     }
   });

@@ -623,7 +623,7 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     expect(
       container.terminalUrl(envelope({ redirectTo: 'https://app.test/home' })),
     ).toBe('https://app.test/home');
-    expect(container.terminalUrl(envelope({}))).toBe('/account#/profile');
+    expect(container.terminalUrl(envelope({}))).toBe('/account#/');
   });
 
   test('returnTo 消费（非 OIDC 流）：双空时合法值放行、站外值拒绝回落', () => {
@@ -638,9 +638,9 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     // 站外 / 非白名单值 → 回落默认落点（防开放重定向）。
     expect(
       container.terminalUrl(envelope({}), 'https://evil.example.com/x'),
-    ).toBe('/account#/profile');
+    ).toBe('/account#/');
     expect(container.terminalUrl(envelope({}), '/sso/login')).toBe(
-      '/account#/profile',
+      '/account#/',
     );
   });
 
@@ -690,7 +690,7 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
     expect(container.terminalUrl(envelope({}), '/account#/security')).toBe(
       '/account#/security',
     );
-    expect(container.terminalUrl(envelope({}))).toBe('/account#/profile');
+    expect(container.terminalUrl(envelope({}))).toBe('/account#/');
   });
 
   test('OIDC 流判据含落盘 al_oidc_ctx（三方回调链路，§2.7.2）', () => {
@@ -735,7 +735,7 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
       [{ type: 'restart', status: 'token_expired' }],
       handlers,
     );
-    expect(redirects).toEqual(['https://sync.test/first', '/account#/profile']);
+    expect(redirects).toEqual(['https://sync.test/first', '/account#/']);
     expect(restarts).toEqual(['token_expired']);
   });
 
@@ -755,7 +755,7 @@ describe('terminalUrl / executeEffects（终点，§4.1 行 383）', () => {
       handlers,
       { returnTo: 'https://evil.example.com/x' },
     );
-    expect(redirects).toEqual(['/account#/security', '/account#/profile']);
+    expect(redirects).toEqual(['/account#/security', '/account#/']);
   });
 });
 

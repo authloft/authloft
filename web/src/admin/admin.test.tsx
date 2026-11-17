@@ -4206,13 +4206,13 @@ describe('adminReturnTo（401 跳登录 returnTo 白名单形态，纯函数）'
 // ---------------------------------------------------------------------------
 
 describe('跨端切换落点（admin → account）', () => {
-  test('contextSwitchUrl 封闭枚举产出 /account#/profile，alRoot 归一', () => {
+  test('contextSwitchUrl 封闭枚举产出 /account#/，alRoot 归一', () => {
     expect(contextSwitchUrl('', 'account')).toBe(DEFAULT_ACCOUNT_HOME);
     expect(contextSwitchUrl('https://uc.test/', 'account')).toBe(
-      'https://uc.test/account#/profile',
+      'https://uc.test/account#/',
     );
     expect(contextSwitchUrl('  https://uc.test//  ', 'account')).toBe(
-      'https://uc.test/account#/profile',
+      'https://uc.test/account#/',
     );
   });
 

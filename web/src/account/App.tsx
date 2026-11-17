@@ -71,7 +71,7 @@ class AccountErrorBoundary extends Component<
 }
 
 /** 根组件（框架接管挂载，默认导出即挂载单元）：HashRouter
- *（hash 内路径 `/account#/profile` 等）包裹错误边界与路由表。 */
+ *（hash 内路径 `/account#/` 等）包裹错误边界与路由表。 */
 export default function App(): ReactNode {
   return (
     <HashRouter>

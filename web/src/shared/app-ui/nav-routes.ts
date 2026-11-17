@@ -16,7 +16,7 @@ export interface AppRoute {
   textKey: I18nKey;
 }
 
-/** account 域导航路由表（`/account#/profile` 等三页）。 */
+/** account 域导航路由表（`/account#/` 等三页）。 */
 export const ACCOUNT_NAV_ROUTES: AppRoute[] = [
   { path: '/', textKey: 'account.profileTitle' },
   { path: '/security', textKey: 'account.securityTitle' },

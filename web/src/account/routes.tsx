@@ -3,7 +3,7 @@
  * 布局作为无 path 父路由只声明一次，子路由只放页面内容：
  * `/`（index）→ ProfilePage、`/security` → SecurityPage、
  * `/audit` → AuditPage、`path:'*'` → 兜底不存在页
- *（形态直迁：Semi Empty + 返回链接，链接改为 hash 内 `#/profile`）。
+ *（形态直迁：Semi Empty + 返回链接，链接改为 hash 内 `#/`）。
  * 面包屑由子路由 handle.breadcrumb 声明，布局经 matchRoutes 读取。
  *
  * HashRouter 挂在 entry 顶层（框架挂载点；测试以 MemoryRouter 注入
@@ -70,7 +70,7 @@ export function AccountApp() {
         handle={{ breadcrumb: [t('account.personalCenter')] }}
         element={
           <Empty description={t('account.routeNotFound')}>
-            <a href="#/profile">{t('account.backToHome')}</a>
+            <a href="#/">{t('account.backToHome')}</a>
           </Empty>
         }
       />
