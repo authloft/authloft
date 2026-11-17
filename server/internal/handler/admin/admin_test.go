@@ -148,14 +148,16 @@ func (f *fakeWriter) TestProvider(_ context.Context, providerKey, target string)
 // fakeUserService 用户管理族（UserService）的 fake：入参全留档断言，
 // 错误可注入；返回数据可预置。
 type fakeUserService struct {
-	meErr     error
-	listErr   error
-	getErr    error
-	statusErr error
-	resetErr  error
-	unbindErr error
-	unlockErr error
-	eventsErr error
+	meErr      error
+	listErr    error
+	getErr     error
+	profileErr error
+	contactErr error
+	statusErr  error
+	resetErr   error
+	unbindErr  error
+	unlockErr  error
+	eventsErr  error
 
 	meRow     *model.User
 	listRows  []model.User
@@ -172,6 +174,8 @@ type fakeUserService struct {
 	gotUnbind   adminsvcUnbindCall
 	gotUnlockID int64
 	gotEvents   adminsvcEventsCall
+	gotProfile  adminsvcProfileCall
+	gotContact  adminsvcContactCall
 }
 
 type (
@@ -190,6 +194,14 @@ type (
 	adminsvcEventsCall struct {
 		id             int64
 		page, pageSize int
+	}
+	adminsvcProfileCall struct {
+		actor, id int64
+		req       *adminv1.UpdateUserProfileRequest
+	}
+	adminsvcContactCall struct {
+		actor, id int64
+		req       *adminv1.UpdateUserContactRequest
 	}
 )
 
@@ -226,6 +238,16 @@ func (f *fakeUserService) UnbindUserThirdparty(_ context.Context, actor, id int6
 func (f *fakeUserService) UnlockUser(_ context.Context, id int64) error {
 	f.gotUnlockID = id
 	return f.unlockErr
+}
+
+func (f *fakeUserService) UpdateUserProfile(_ context.Context, actor, id int64, req *adminv1.UpdateUserProfileRequest) error {
+	f.gotProfile = adminsvcProfileCall{actor: actor, id: id, req: req}
+	return f.profileErr
+}
+
+func (f *fakeUserService) UpdateUserContact(_ context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error {
+	f.gotContact = adminsvcContactCall{actor: actor, id: id, req: req}
+	return f.contactErr
 }
 
 func (f *fakeUserService) GetUserEvents(_ context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error) {
@@ -1769,7 +1791,8 @@ func TestListUsersHandler(t *testing.T) {
 }
 
 // TestGetUserHandler：详情 = user 投影 + 凭证概览（kind/is_enabled）+
-// 绑定列表 + mfa 五因子明细（totp / otp_sms bound + 掩码 target）。
+// 绑定列表 + mfa 五因子明细（totp / otp_sms bound + 掩码 target）+
+// profile 投影（§5.4 编辑表单回填）与 permissions 投影（与 GetMe 同源）。
 func TestGetUserHandler(t *testing.T) {
 	now := time.Unix(1761700000, 0).UTC()
 	users := &fakeUserService{detail: &adminsvc.UserDetail{
@@ -1781,6 +1804,7 @@ func TestGetUserHandler(t *testing.T) {
 		Bindings: []model.UserThirdpartyBind{
 			{ID: 9, UserID: 42, ProviderKey: "wechat_mp_1", OpenID: "oX-1", CreatedAt: now},
 		},
+		Profile: &model.UserProfile{UserID: 42, Gender: 1, Locale: "zh-CN"},
 	}}
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
 	cookie := adminCookie(t, tokens, epochs, 1)
@@ -1830,6 +1854,98 @@ func TestGetUserHandler(t *testing.T) {
 	if users.gotDetailID != 42 {
 		t.Errorf("id 透传 = %d", users.gotDetailID)
 	}
+	if got.GetProfile().GetGender() != 1 || got.GetProfile().GetLocale() != "zh-CN" {
+		t.Errorf("profile 投影 = %+v", got.GetProfile())
+	}
+	if len(got.GetPermissions()) != 1 || got.GetPermissions()[0] != "superadmin" {
+		t.Errorf("permissions 投影 = %v, want [superadmin]（与 GetMe 同源）", got.GetPermissions())
+	}
+}
+
+// TestUserEditHandlers：UpdateUserProfile / UpdateUserContact 两写方法——
+// 入参（含 actor=ctx uid 与请求消息透传）+ OkResponse；错误映射：
+// invalid_request → 400 + ErrorInfo(admin)、target_taken → 409 +
+// ErrorInfo(admin, target_taken)（§5.4 字段级提示）、permission_denied → 403
+// 标准码、行缺失 → 404 not_found。
+func TestUserEditHandlers(t *testing.T) {
+	const reqProfile = `{"id":42,"nickname":"Alice","profile":{"gender":1,"birthday":"2000-01-02"}}`
+	const reqContact = `{"id":42,"phone":"13900001111"}`
+
+	t.Run("透传与空应答", func(t *testing.T) {
+		users := &fakeUserService{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		for target, body := range map[string]string{
+			adminv1connect.AdminServiceUpdateUserProfileProcedure: reqProfile,
+			adminv1connect.AdminServiceUpdateUserContactProcedure: reqContact,
+		} {
+			resp, raw := doRPC(t, h, target, body, cookie)
+			if resp.StatusCode != http.StatusOK || raw != "{}" {
+				t.Fatalf("%s: (%d, %s), want (200, {})", target, resp.StatusCode, raw)
+			}
+		}
+		if users.gotProfile != (adminsvcProfileCall{actor: 1, id: 42, req: users.gotProfile.req}) ||
+			users.gotProfile.req == nil || users.gotProfile.req.GetNickname() != "Alice" ||
+			users.gotProfile.req.GetProfile().GetGender() != 1 {
+			t.Errorf("profile 透传 = %+v", users.gotProfile)
+		}
+		if users.gotContact != (adminsvcContactCall{actor: 1, id: 42, req: users.gotContact.req}) ||
+			users.gotContact.req == nil || users.gotContact.req.GetPhone() != "13900001111" {
+			t.Errorf("contact 透传 = %+v", users.gotContact)
+		}
+	})
+
+	t.Run("target_taken 映射（§1.6 封闭集合）", func(t *testing.T) {
+		users := &fakeUserService{contactErr: adminsvc.ErrTargetTaken}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserContactProcedure, reqContact, cookie)
+		if resp.StatusCode != http.StatusConflict || decodeErrorCode(t, raw) != "already_exists" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "target_taken" {
+			t.Errorf("ErrorInfo = (%q, %q), want (admin, target_taken)", info.GetDomain(), info.GetCode())
+		}
+	})
+
+	t.Run("invalid_request 映射", func(t *testing.T) {
+		users := &fakeUserService{profileErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserProfileProcedure, reqProfile, cookie)
+		if resp.StatusCode != http.StatusBadRequest || decodeErrorCode(t, raw) != "invalid_argument" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (%q, %q)", info.GetDomain(), info.GetCode())
+		}
+	})
+
+	t.Run("permission_denied 映射", func(t *testing.T) {
+		users := &fakeUserService{contactErr: adminsvc.ErrPermissionDenied}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserContactProcedure, reqContact, cookie)
+		if resp.StatusCode != http.StatusForbidden || decodeErrorCode(t, raw) != "permission_denied" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		if strings.Contains(raw, `"details"`) {
+			t.Errorf("permission_denied 不挂 ErrorInfo 细分码, body %s", raw)
+		}
+	})
+
+	t.Run("404 映射", func(t *testing.T) {
+		users := &fakeUserService{profileErr: gorm.ErrRecordNotFound}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserProfileProcedure, reqProfile, cookie)
+		if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
 }
 
 // TestUserWriteHandlers：UpdateUserStatus / ResetUserPassword /
@@ -2243,6 +2359,10 @@ func (p *guardPermissions) HasPermission(_ context.Context, uid int64, point str
 	return point == adminsvc.PointSuperAdmin && p.superadmins[uid], nil
 }
 
+func (p *guardPermissions) HasAnyPermission(_ context.Context, uid int64) (bool, error) {
+	return len(p.superadmins) > 0 && p.superadmins[uid], nil
+}
+
 type guardUsers struct{ user *model.User }
 
 func (s *guardUsers) FindByID(_ context.Context, _ int64) (*model.User, error) { return s.user, nil }
@@ -2251,6 +2371,26 @@ func (s *guardUsers) ListUsers(context.Context, repo.UserListQuery) ([]model.Use
 }
 func (s *guardUsers) UpdateUserStatus(context.Context, int64, int8) error { return nil }
 func (s *guardUsers) IncEpoch(context.Context, int64) (int16, error)      { return 0, nil }
+
+// 余下方法为窄接口增项后的空实现：TestPermissionDeniedMapping 只经
+// UpdateUserStatus / ResetUserPassword 两写路径探针门禁，不触资料 /
+// 联系方式编辑族。
+func (s *guardUsers) FindByPhone(context.Context, string) (*model.User, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (s *guardUsers) FindByEmail(context.Context, string) (*model.User, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (s *guardUsers) UpdateProfileColumns(context.Context, int64, *string, *string) error {
+	return nil
+}
+func (s *guardUsers) UpdateContactColumns(context.Context, int64, *string, *string, *int8, *int8) error {
+	return nil
+}
+func (s *guardUsers) GetProfile(context.Context, int64) (*model.UserProfile, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (s *guardUsers) SaveProfile(context.Context, *model.UserProfile) error { return nil }
 
 type guardCreds struct{}
 

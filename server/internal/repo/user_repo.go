@@ -232,7 +232,10 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 // UpdateContactColumns 列级更新 user 表联系方式列 phone / email 与对应
 // verified 位（接口文档 §3.4 BindPhone / BindEmail verify 步落库——目标列 +
 // phone_verified / email_verified 置 1；BindContactStore 窄接口契约）。
-// 指针语义 nil = 该列不写入（UpdateProfileColumns 惯例）；
+// 指针语义 nil = 该列不写入（UpdateProfileColumns 惯例）；指针非 nil 且
+// 值为空串 = 显式清空，写 NULL 而非空串（uk_phone / uk_email 对空串仍
+// 唯一，多个清空行互撞；NULL 不参与唯一约束，匿名化同口径，§4.2 删除
+// 匿名化列改写）——绑定链路既有调用恒传非空值，不受该归一影响。
 // updated_at 一并刷新。目标被他人抢占命中 uk_phone / uk_email 唯一键
 // （MySQL 1062）返回 errors.Is 可判别的 ErrUserDuplicate（UserRepo.Create
 // 判别同源——challenge 拦截后 verify 落库前的 TOCTOU 占用由 service 层
@@ -242,10 +245,18 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error {
 	cols := map[string]any{"updated_at": time.Now()}
 	if phone != nil {
-		cols["phone"] = *phone
+		if *phone == "" {
+			cols["phone"] = nil
+		} else {
+			cols["phone"] = *phone
+		}
 	}
 	if email != nil {
-		cols["email"] = *email
+		if *email == "" {
+			cols["email"] = nil
+		} else {
+			cols["email"] = *email
+		}
 	}
 	if phoneVerified != nil {
 		cols["phone_verified"] = *phoneVerified

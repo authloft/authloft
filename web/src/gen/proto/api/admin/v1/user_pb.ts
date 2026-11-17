@@ -6,6 +6,8 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { MfaResponse } from "../../account/v1/mfa_pb";
 import { file_api_account_v1_mfa } from "../../account/v1/mfa_pb";
+import type { UserProfile } from "../../account/v1/profile_pb";
+import { file_api_account_v1_profile } from "../../account/v1/profile_pb";
 import type { EventItem } from "./events_pb";
 import { file_api_admin_v1_events } from "./events_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -14,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/user.proto.
  */
 export const file_api_admin_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDItYBChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZSI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_admin_v1_events]);
+  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDIpkCChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZRIsCgdwcm9maWxlGAUgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUSEwoLcGVybWlzc2lvbnMYBiADKAkioAEKGFVwZGF0ZVVzZXJQcm9maWxlUmVxdWVzdBIKCgJpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsImIKGFVwZGF0ZVVzZXJDb250YWN0UmVxdWVzdBIKCgJpZBgBIAEoAxISCgVwaG9uZRgCIAEoCUgAiAEBEhIKBWVtYWlsGAMgASgJSAGIAQFCCAoGX3Bob25lQggKBl9lbWFpbCI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_account_v1_profile, file_api_admin_v1_events]);
 
 /**
  * AdminUser 是管理端的用户视图（§5.4）：字段集为 user 表列投影
@@ -417,6 +419,23 @@ export type UserDetailResponse = Message<"api.admin.v1.UserDetailResponse"> & {
    * @generated from field: api.account.v1.MfaResponse mfa = 4;
    */
   mfa?: MfaResponse | undefined;
+
+  /**
+   * user_profile 行投影（性别 / 生日 / 地区 / 时区 / extra，§5.4），结构与
+   * §3.2 UpdateProfile 入参同口径，供编辑表单回填；跨包引用既有消息（§12.9）。
+   * 行缺失时输出零值消息（同 §3.1 读口径，行缺失不视为错误）。
+   *
+   * @generated from field: api.account.v1.UserProfile profile = 5;
+   */
+  profile?: UserProfile | undefined;
+
+  /**
+   * 该用户持有的全部权限点（§5.4），与 §5.1 GetMe.permissions 同源，供
+   * 前端展示态判定（写按钮隐藏 / 置灰仅为体验优化，服务端门禁是唯一真相）。
+   *
+   * @generated from field: repeated string permissions = 6;
+   */
+  permissions: string[];
 };
 
 /**
@@ -425,6 +444,94 @@ export type UserDetailResponse = Message<"api.admin.v1.UserDetailResponse"> & {
  */
 export const UserDetailResponseSchema: GenMessage<UserDetailResponse> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_user, 6);
+
+/**
+ * UpdateUserProfileRequest 是 AdminService/UpdateUserProfile 的请求（§5.4：
+ * {id, nickname?, avatarUrl?, profile{gender?,birthday?,locale?,timezone?,extra?}}
+ * PATCH）。标量字段 proto3 optional：未设置 = 不修改、显式设值 = 覆盖
+ * （显式空串 = 清空该字段），与 §3.2 UpdateProfile 的 has 位口径同源；
+ * profile 为消息字段自带 presence（nil = 未传，不触碰 user_profile 行），
+ * 子字段口径见 account 域源消息。不改 username、不触发会话失效（§5.4）；
+ * 成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.UpdateUserProfileRequest
+ */
+export type UpdateUserProfileRequest = Message<"api.admin.v1.UpdateUserProfileRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * 昵称，可选（§5.4）；显式空串 = 清空。
+   *
+   * @generated from field: optional string nickname = 2;
+   */
+  nickname?: string | undefined;
+
+  /**
+   * 头像地址，可选（§5.4）；显式空串 = 清空。
+   *
+   * @generated from field: optional string avatar_url = 3;
+   */
+  avatarUrl?: string | undefined;
+
+  /**
+   * 用户资料，可选（§5.4，字段同 §3.1 / §3.2）。
+   *
+   * @generated from field: api.account.v1.UserProfile profile = 4;
+   */
+  profile?: UserProfile | undefined;
+};
+
+/**
+ * Describes the message api.admin.v1.UpdateUserProfileRequest.
+ * Use `create(UpdateUserProfileRequestSchema)` to create a new message.
+ */
+export const UpdateUserProfileRequestSchema: GenMessage<UpdateUserProfileRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 7);
+
+/**
+ * UpdateUserContactRequest 是 AdminService/UpdateUserContact 的请求（§5.4：
+ * {id, phone?, email?} PATCH）。标量字段 proto3 optional：未设置 = 不修改、
+ * 显式设值 = 覆盖（显式空串 = 清空该字段），has 位口径与 §3.2 同源；
+ * 不暴露 phone_verified / email_verified 入参：写入非空值时服务端直接把
+ * 对应 *_verified 置 1、清空置 0（§5.4）。改联系方式触发会话失效，且仅
+ * superadmin 操作者可执行（§5.4 门禁矩阵）；成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.UpdateUserContactRequest
+ */
+export type UpdateUserContactRequest = Message<"api.admin.v1.UpdateUserContactRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * 手机号，可选（§5.4）；显式空串 = 清空。
+   *
+   * @generated from field: optional string phone = 2;
+   */
+  phone?: string | undefined;
+
+  /**
+   * 邮箱，可选（§5.4）；显式空串 = 清空。
+   *
+   * @generated from field: optional string email = 3;
+   */
+  email?: string | undefined;
+};
+
+/**
+ * Describes the message api.admin.v1.UpdateUserContactRequest.
+ * Use `create(UpdateUserContactRequestSchema)` to create a new message.
+ */
+export const UpdateUserContactRequestSchema: GenMessage<UpdateUserContactRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 8);
 
 /**
  * UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
@@ -456,7 +563,7 @@ export type UpdateUserStatusRequest = Message<"api.admin.v1.UpdateUserStatusRequ
  * Use `create(UpdateUserStatusRequestSchema)` to create a new message.
  */
 export const UpdateUserStatusRequestSchema: GenMessage<UpdateUserStatusRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 7);
+  messageDesc(file_api_admin_v1_user, 9);
 
 /**
  * ResetUserPasswordRequest 是 AdminService/ResetUserPassword 的请求
@@ -487,7 +594,7 @@ export type ResetUserPasswordRequest = Message<"api.admin.v1.ResetUserPasswordRe
  * Use `create(ResetUserPasswordRequestSchema)` to create a new message.
  */
 export const ResetUserPasswordRequestSchema: GenMessage<ResetUserPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 8);
+  messageDesc(file_api_admin_v1_user, 10);
 
 /**
  * UnbindUserThirdpartyRequest 是 AdminService/UnbindUserThirdparty 的请求
@@ -518,7 +625,7 @@ export type UnbindUserThirdpartyRequest = Message<"api.admin.v1.UnbindUserThirdp
  * Use `create(UnbindUserThirdpartyRequestSchema)` to create a new message.
  */
 export const UnbindUserThirdpartyRequestSchema: GenMessage<UnbindUserThirdpartyRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 9);
+  messageDesc(file_api_admin_v1_user, 11);
 
 /**
  * UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4：{id} 解除登录限制）：
@@ -541,7 +648,7 @@ export type UnlockUserRequest = Message<"api.admin.v1.UnlockUserRequest"> & {
  * Use `create(UnlockUserRequestSchema)` to create a new message.
  */
 export const UnlockUserRequestSchema: GenMessage<UnlockUserRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 10);
+  messageDesc(file_api_admin_v1_user, 12);
 
 /**
  * GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4：
@@ -593,7 +700,7 @@ export type GetUserEventsRequest = Message<"api.admin.v1.GetUserEventsRequest"> 
  * Use `create(GetUserEventsRequestSchema)` to create a new message.
  */
 export const GetUserEventsRequestSchema: GenMessage<GetUserEventsRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 11);
+  messageDesc(file_api_admin_v1_user, 13);
 
 /**
  * UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4、§1.7）；
@@ -637,5 +744,5 @@ export type UserEventsResponse = Message<"api.admin.v1.UserEventsResponse"> & {
  * Use `create(UserEventsResponseSchema)` to create a new message.
  */
 export const UserEventsResponseSchema: GenMessage<UserEventsResponse> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 12);
+  messageDesc(file_api_admin_v1_user, 14);
 

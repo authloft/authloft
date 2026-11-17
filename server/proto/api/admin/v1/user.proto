@@ -6,6 +6,10 @@ package api.admin.v1;
 // 先例：api/sso/v1/envelope.proto 引用 api/common/v1/captcha.proto）；
 // account 域已升包名 api.account.v1，import 与符号随迁。
 import "api/account/v1/mfa.proto";
+// 详情的 profile 投影与资料编辑请求的 profile 载荷跨包引用 §3.1/§3.2 的
+// 既有消息（§5.4「结构与 §3.2 UpdateProfile 入参同口径」；§12.9 同一结构
+// 只定义一次，has 位口径随源消息），不复制同构消息。
+import "api/account/v1/profile.proto";
 // 用户登录记录条目引用本域 events.proto 的 EventItem（§5.4、§5.6）。
 import "api/admin/v1/events.proto";
 
@@ -141,6 +145,46 @@ message UserDetailResponse {
   repeated UserThirdpartyBinding bindings = 3;
   // MFA 绑定明细，跨包引用 §3.5 的既有视图，不复制同构消息（§12.9）。
   api.account.v1.MfaResponse mfa = 4;
+  // user_profile 行投影（性别 / 生日 / 地区 / 时区 / extra，§5.4），结构与
+  // §3.2 UpdateProfile 入参同口径，供编辑表单回填；跨包引用既有消息（§12.9）。
+  // 行缺失时输出零值消息（同 §3.1 读口径，行缺失不视为错误）。
+  api.account.v1.UserProfile profile = 5;
+  // 该用户持有的全部权限点（§5.4），与 §5.1 GetMe.permissions 同源，供
+  // 前端展示态判定（写按钮隐藏 / 置灰仅为体验优化，服务端门禁是唯一真相）。
+  repeated string permissions = 6;
+}
+
+// UpdateUserProfileRequest 是 AdminService/UpdateUserProfile 的请求（§5.4：
+// {id, nickname?, avatarUrl?, profile{gender?,birthday?,locale?,timezone?,extra?}}
+// PATCH）。标量字段 proto3 optional：未设置 = 不修改、显式设值 = 覆盖
+//（显式空串 = 清空该字段），与 §3.2 UpdateProfile 的 has 位口径同源；
+// profile 为消息字段自带 presence（nil = 未传，不触碰 user_profile 行），
+// 子字段口径见 account 域源消息。不改 username、不触发会话失效（§5.4）；
+// 成功返回 OkResponse。
+message UpdateUserProfileRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+  // 昵称，可选（§5.4）；显式空串 = 清空。
+  optional string nickname = 2;
+  // 头像地址，可选（§5.4）；显式空串 = 清空。
+  optional string avatar_url = 3;
+  // 用户资料，可选（§5.4，字段同 §3.1 / §3.2）。
+  api.account.v1.UserProfile profile = 4;
+}
+
+// UpdateUserContactRequest 是 AdminService/UpdateUserContact 的请求（§5.4：
+// {id, phone?, email?} PATCH）。标量字段 proto3 optional：未设置 = 不修改、
+// 显式设值 = 覆盖（显式空串 = 清空该字段），has 位口径与 §3.2 同源；
+// 不暴露 phone_verified / email_verified 入参：写入非空值时服务端直接把
+// 对应 *_verified 置 1、清空置 0（§5.4）。改联系方式触发会话失效，且仅
+// superadmin 操作者可执行（§5.4 门禁矩阵）；成功返回 OkResponse。
+message UpdateUserContactRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+  // 手机号，可选（§5.4）；显式空串 = 清空。
+  optional string phone = 2;
+  // 邮箱，可选（§5.4）；显式空串 = 清空。
+  optional string email = 3;
 }
 
 // UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：

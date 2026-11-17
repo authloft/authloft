@@ -70,6 +70,12 @@ const (
 	AdminServiceListUsersProcedure = "/api.admin.v1.AdminService/ListUsers"
 	// AdminServiceGetUserProcedure is the fully-qualified name of the AdminService's GetUser RPC.
 	AdminServiceGetUserProcedure = "/api.admin.v1.AdminService/GetUser"
+	// AdminServiceUpdateUserProfileProcedure is the fully-qualified name of the AdminService's
+	// UpdateUserProfile RPC.
+	AdminServiceUpdateUserProfileProcedure = "/api.admin.v1.AdminService/UpdateUserProfile"
+	// AdminServiceUpdateUserContactProcedure is the fully-qualified name of the AdminService's
+	// UpdateUserContact RPC.
+	AdminServiceUpdateUserContactProcedure = "/api.admin.v1.AdminService/UpdateUserContact"
 	// AdminServiceUpdateUserStatusProcedure is the fully-qualified name of the AdminService's
 	// UpdateUserStatus RPC.
 	AdminServiceUpdateUserStatusProcedure = "/api.admin.v1.AdminService/UpdateUserStatus"
@@ -171,8 +177,13 @@ type AdminServiceClient interface {
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
 	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
-	// 用户详情：凭证概览、绑定、MFA 状态（§5.4）。
+	// 用户详情：凭证概览、绑定、MFA 状态、profile 与权限点投影（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
+	// 编辑用户资料 PATCH：不触发会话失效（§5.4）。
+	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
+	// 编辑用户联系方式 PATCH：写即置已验证、触发会话失效，仅 superadmin
+	// 操作者可执行（§5.4 门禁矩阵）。
+	UpdateUserContact(context.Context, *connect.Request[v1.UpdateUserContactRequest]) (*connect.Response[v1.OkResponse], error)
 	// 禁用 / 启用（§5.4，字段名与 §3.1 视图一致）。
 	UpdateUserStatus(context.Context, *connect.Request[v1.UpdateUserStatusRequest]) (*connect.Response[v1.OkResponse], error)
 	// 管理员重置密码（§5.4）。
@@ -312,6 +323,18 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AdminServiceGetUserProcedure,
 			connect.WithSchema(adminServiceMethods.ByName("GetUser")),
+			connect.WithClientOptions(opts...),
+		),
+		updateUserProfile: connect.NewClient[v1.UpdateUserProfileRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceUpdateUserProfileProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("UpdateUserProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		updateUserContact: connect.NewClient[v1.UpdateUserContactRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceUpdateUserContactProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("UpdateUserContact")),
 			connect.WithClientOptions(opts...),
 		),
 		updateUserStatus: connect.NewClient[v1.UpdateUserStatusRequest, v1.OkResponse](
@@ -482,6 +505,8 @@ type adminServiceClient struct {
 	testProvider         *connect.Client[v1.TestProviderRequest, v1.OkResponse]
 	listUsers            *connect.Client[v1.ListUsersRequest, v1.UserListResponse]
 	getUser              *connect.Client[v1.GetUserRequest, v1.UserDetailResponse]
+	updateUserProfile    *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
+	updateUserContact    *connect.Client[v1.UpdateUserContactRequest, v1.OkResponse]
 	updateUserStatus     *connect.Client[v1.UpdateUserStatusRequest, v1.OkResponse]
 	resetUserPassword    *connect.Client[v1.ResetUserPasswordRequest, v1.OkResponse]
 	unbindUserThirdparty *connect.Client[v1.UnbindUserThirdpartyRequest, v1.OkResponse]
@@ -572,6 +597,16 @@ func (c *adminServiceClient) ListUsers(ctx context.Context, req *connect.Request
 // GetUser calls api.admin.v1.AdminService.GetUser.
 func (c *adminServiceClient) GetUser(ctx context.Context, req *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error) {
 	return c.getUser.CallUnary(ctx, req)
+}
+
+// UpdateUserProfile calls api.admin.v1.AdminService.UpdateUserProfile.
+func (c *adminServiceClient) UpdateUserProfile(ctx context.Context, req *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.updateUserProfile.CallUnary(ctx, req)
+}
+
+// UpdateUserContact calls api.admin.v1.AdminService.UpdateUserContact.
+func (c *adminServiceClient) UpdateUserContact(ctx context.Context, req *connect.Request[v1.UpdateUserContactRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.updateUserContact.CallUnary(ctx, req)
 }
 
 // UpdateUserStatus calls api.admin.v1.AdminService.UpdateUserStatus.
@@ -726,8 +761,13 @@ type AdminServiceHandler interface {
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
 	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
-	// 用户详情：凭证概览、绑定、MFA 状态（§5.4）。
+	// 用户详情：凭证概览、绑定、MFA 状态、profile 与权限点投影（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
+	// 编辑用户资料 PATCH：不触发会话失效（§5.4）。
+	UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error)
+	// 编辑用户联系方式 PATCH：写即置已验证、触发会话失效，仅 superadmin
+	// 操作者可执行（§5.4 门禁矩阵）。
+	UpdateUserContact(context.Context, *connect.Request[v1.UpdateUserContactRequest]) (*connect.Response[v1.OkResponse], error)
 	// 禁用 / 启用（§5.4，字段名与 §3.1 视图一致）。
 	UpdateUserStatus(context.Context, *connect.Request[v1.UpdateUserStatusRequest]) (*connect.Response[v1.OkResponse], error)
 	// 管理员重置密码（§5.4）。
@@ -863,6 +903,18 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 		AdminServiceGetUserProcedure,
 		svc.GetUser,
 		connect.WithSchema(adminServiceMethods.ByName("GetUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceUpdateUserProfileHandler := connect.NewUnaryHandler(
+		AdminServiceUpdateUserProfileProcedure,
+		svc.UpdateUserProfile,
+		connect.WithSchema(adminServiceMethods.ByName("UpdateUserProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceUpdateUserContactHandler := connect.NewUnaryHandler(
+		AdminServiceUpdateUserContactProcedure,
+		svc.UpdateUserContact,
+		connect.WithSchema(adminServiceMethods.ByName("UpdateUserContact")),
 		connect.WithHandlerOptions(opts...),
 	)
 	adminServiceUpdateUserStatusHandler := connect.NewUnaryHandler(
@@ -1043,6 +1095,10 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 			adminServiceListUsersHandler.ServeHTTP(w, r)
 		case AdminServiceGetUserProcedure:
 			adminServiceGetUserHandler.ServeHTTP(w, r)
+		case AdminServiceUpdateUserProfileProcedure:
+			adminServiceUpdateUserProfileHandler.ServeHTTP(w, r)
+		case AdminServiceUpdateUserContactProcedure:
+			adminServiceUpdateUserContactHandler.ServeHTTP(w, r)
 		case AdminServiceUpdateUserStatusProcedure:
 			adminServiceUpdateUserStatusHandler.ServeHTTP(w, r)
 		case AdminServiceResetUserPasswordProcedure:
@@ -1152,6 +1208,14 @@ func (UnimplementedAdminServiceHandler) ListUsers(context.Context, *connect.Requ
 
 func (UnimplementedAdminServiceHandler) GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.GetUser is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) UpdateUserProfile(context.Context, *connect.Request[v1.UpdateUserProfileRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.UpdateUserProfile is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) UpdateUserContact(context.Context, *connect.Request[v1.UpdateUserContactRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.UpdateUserContact is not implemented"))
 }
 
 func (UnimplementedAdminServiceHandler) UpdateUserStatus(context.Context, *connect.Request[v1.UpdateUserStatusRequest]) (*connect.Response[v1.OkResponse], error) {

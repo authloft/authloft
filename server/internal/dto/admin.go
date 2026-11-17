@@ -372,8 +372,18 @@ func AdminThirdpartyBinding(row *model.UserThirdpartyBind) *adminv1.UserThirdpar
 	}
 }
 
-// AdminUserDetail GetUser 详情组装：user 投影 + 凭证概览 + 绑定列表 + MFA 五因子明细。
-func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []model.UserThirdpartyBind) *adminv1.UserDetailResponse {
+// AdminUserProfile user_profile 行 → §3.1 profile 结构投影（§5.4 详情的
+// profile 字段，供编辑表单回填）：转换唯一出口复用 account 域的既有实现
+// （birthday → YYYY-MM-DD、extra msgpack → JSON 对象、零值不投影），不另造
+// 第二份。行缺失（p == nil）输出零值消息（同 §3.1 读口径）。
+func AdminUserProfile(p *model.UserProfile) *accountv1.UserProfile {
+	return accountUserProfile(p)
+}
+
+// AdminUserDetail GetUser 详情组装：user 投影 + 凭证概览 + 绑定列表 +
+// MFA 五因子明细 + profile 投影（§5.4）+ 权限点列表（与 §5.1 GetMe 同源，
+// 供前端展示态判定）。
+func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []model.UserThirdpartyBind, profile *model.UserProfile, permissions []string) *adminv1.UserDetailResponse {
 	items := make([]*adminv1.UserCredentialSummary, len(creds))
 	for i := range creds {
 		items[i] = AdminCredentialSummary(&creds[i])
@@ -387,6 +397,8 @@ func AdminUserDetail(user *model.User, creds []model.UserCredential, binds []mod
 		Credentials: items,
 		Bindings:    bindings,
 		Mfa:         AdminUserMfa(user, creds),
+		Profile:     AdminUserProfile(profile),
+		Permissions: permissions,
 	}
 }
 

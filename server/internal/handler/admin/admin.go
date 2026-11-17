@@ -48,6 +48,8 @@ type UserService interface {
 	GetMe(ctx context.Context, uid int64) (*model.User, error)
 	ListUsers(ctx context.Context, f adminsvc.ListUsersFilter) ([]model.User, int64, error)
 	GetUser(ctx context.Context, id int64) (*adminsvc.UserDetail, error)
+	UpdateUserProfile(ctx context.Context, actor, id int64, req *adminv1.UpdateUserProfileRequest) error
+	UpdateUserContact(ctx context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error
 	UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error
 	ResetUserPassword(ctx context.Context, actor, id int64, password string) error
 	UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error
@@ -96,6 +98,7 @@ var (
 	errAuthRequired     = errors.New("authentication required")
 	errPasswordWeak     = errors.New("password does not meet policy")
 	errPermissionDenied = errors.New("permission denied")
+	errTargetTaken      = errors.New("contact already bound to another user")
 )
 
 // providerListPageSize 管理列表分页上限（同时是 dynamic 字段 options 查询页大小）。
@@ -412,13 +415,46 @@ func (h *Handler) ListUsers(ctx context.Context, req *connectrpc.Request[adminv1
 	}), nil
 }
 
-// GetUser {id} 详情（含凭证概览、绑定、MFA 状态），secret 不透出。
+// GetUser {id} 详情（含凭证概览、绑定、MFA 状态、profile 与权限点投影），
+// secret 不透出。permissions 与 §5.1 GetMe 同源（listPermissions 注入），
+// 供前端展示态判定（服务端写门禁仍是唯一真相）。
 func (h *Handler) GetUser(ctx context.Context, req *connectrpc.Request[adminv1.GetUserRequest]) (*connectrpc.Response[adminv1.UserDetailResponse], error) {
 	d, err := h.users.GetUser(ctx, req.Msg.GetId())
 	if err != nil {
 		return nil, mapUserError("get user", err)
 	}
-	return connectrpc.NewResponse(dto.AdminUserDetail(d.User, d.Credentials, d.Bindings)), nil
+	perms, err := h.listPermissions(ctx, req.Msg.GetId())
+	if err != nil {
+		return nil, fmt.Errorf("admin handler: get user: list permissions: %w", err)
+	}
+	return connectrpc.NewResponse(dto.AdminUserDetail(d.User, d.Credentials, d.Bindings, d.Profile, perms)), nil
+}
+
+// UpdateUserProfile {id, nickname?, avatarUrl?, profile{...}} PATCH 编辑资料；
+// has 位口径在 service（未设置 = 不修改、显式空串 = 清空）；不触发会话失效。
+func (h *Handler) UpdateUserProfile(ctx context.Context, req *connectrpc.Request[adminv1.UpdateUserProfileRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UpdateUserProfile(ctx, actor, req.Msg.GetId(), req.Msg); err != nil {
+		return nil, mapUserError("update user profile", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// UpdateUserContact {id, phone?, email?} PATCH 编辑联系方式；写即置已验证、
+// 触发会话失效，仅 superadmin 操作者可执行（门禁在 service）；唯一冲突 →
+// already_exists + ErrorInfo{target_taken}。
+func (h *Handler) UpdateUserContact(ctx context.Context, req *connectrpc.Request[adminv1.UpdateUserContactRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UpdateUserContact(ctx, actor, req.Msg.GetId(), req.Msg); err != nil {
+		return nil, mapUserError("update user contact", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
 }
 
 // UpdateUserStatus {id, userStatus 0|1} 禁用 / 启用；禁用走 IncEpoch 会话失效链 + 审计。
@@ -734,7 +770,8 @@ func mapWriteError(op string, err error) error {
 // mapUserError 用户管理族错误 → Connect 形态（口径同 mapWriteError）：参数类 →
 // ErrorInfo{invalid_request}；密码不满足策略 → ErrorInfo{password_weak}；
 // 权限门禁拒绝 → permission_denied（标准码，不挂 ErrorInfo 细分码）；
-// 资源不存在 → not_found；其余上抛消毒为 internal。
+// 联系方式被他人占用 → already_exists + ErrorInfo{target_taken}（字段级提示，
+// §5.4）；资源不存在 → not_found；其余上抛消毒为 internal。
 func mapUserError(op string, err error) error {
 	switch {
 	case errors.Is(err, adminsvc.ErrInvalidRequest):
@@ -746,6 +783,11 @@ func mapUserError(op string, err error) error {
 		return connect.WithErrorInfo(
 			connectrpc.NewError(connectrpc.CodeInvalidArgument, errPasswordWeak),
 			connect.NewErrorInfo("admin", "password_weak", "password does not meet policy"),
+		)
+	case errors.Is(err, adminsvc.ErrTargetTaken):
+		return connect.WithErrorInfo(
+			connectrpc.NewError(connectrpc.CodeAlreadyExists, errTargetTaken),
+			connect.NewErrorInfo("admin", "target_taken", "contact already bound to another user"),
 		)
 	case errors.Is(err, adminsvc.ErrPermissionDenied):
 		return connectrpc.NewError(connectrpc.CodePermissionDenied, errPermissionDenied)

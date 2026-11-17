@@ -614,7 +614,14 @@ type UserDetailResponse struct {
 	// 已绑定的第三方身份（§5.4、）。
 	Bindings []*UserThirdpartyBinding `protobuf:"bytes,3,rep,name=bindings,proto3" json:"bindings,omitempty"`
 	// MFA 绑定明细，跨包引用 §3.5 的既有视图，不复制同构消息（§12.9）。
-	Mfa           *v1.MfaResponse `protobuf:"bytes,4,opt,name=mfa,proto3" json:"mfa,omitempty"`
+	Mfa *v1.MfaResponse `protobuf:"bytes,4,opt,name=mfa,proto3" json:"mfa,omitempty"`
+	// user_profile 行投影（性别 / 生日 / 地区 / 时区 / extra，§5.4），结构与
+	// §3.2 UpdateProfile 入参同口径，供编辑表单回填；跨包引用既有消息（§12.9）。
+	// 行缺失时输出零值消息（同 §3.1 读口径，行缺失不视为错误）。
+	Profile *v1.UserProfile `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	// 该用户持有的全部权限点（§5.4），与 §5.1 GetMe.permissions 同源，供
+	// 前端展示态判定（写按钮隐藏 / 置灰仅为体验优化，服务端门禁是唯一真相）。
+	Permissions   []string `protobuf:"bytes,6,rep,name=permissions,proto3" json:"permissions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -677,6 +684,168 @@ func (x *UserDetailResponse) GetMfa() *v1.MfaResponse {
 	return nil
 }
 
+func (x *UserDetailResponse) GetProfile() *v1.UserProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *UserDetailResponse) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
+// UpdateUserProfileRequest 是 AdminService/UpdateUserProfile 的请求（§5.4：
+// {id, nickname?, avatarUrl?, profile{gender?,birthday?,locale?,timezone?,extra?}}
+// PATCH）。标量字段 proto3 optional：未设置 = 不修改、显式设值 = 覆盖
+// （显式空串 = 清空该字段），与 §3.2 UpdateProfile 的 has 位口径同源；
+// profile 为消息字段自带 presence（nil = 未传，不触碰 user_profile 行），
+// 子字段口径见 account 域源消息。不改 username、不触发会话失效（§5.4）；
+// 成功返回 OkResponse。
+type UpdateUserProfileRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 昵称，可选（§5.4）；显式空串 = 清空。
+	Nickname *string `protobuf:"bytes,2,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	// 头像地址，可选（§5.4）；显式空串 = 清空。
+	AvatarUrl *string `protobuf:"bytes,3,opt,name=avatar_url,json=avatarUrl,proto3,oneof" json:"avatar_url,omitempty"`
+	// 用户资料，可选（§5.4，字段同 §3.1 / §3.2）。
+	Profile       *v1.UserProfile `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateUserProfileRequest) Reset() {
+	*x = UpdateUserProfileRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserProfileRequest) ProtoMessage() {}
+
+func (x *UpdateUserProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserProfileRequest.ProtoReflect.Descriptor instead.
+func (*UpdateUserProfileRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *UpdateUserProfileRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *UpdateUserProfileRequest) GetNickname() string {
+	if x != nil && x.Nickname != nil {
+		return *x.Nickname
+	}
+	return ""
+}
+
+func (x *UpdateUserProfileRequest) GetAvatarUrl() string {
+	if x != nil && x.AvatarUrl != nil {
+		return *x.AvatarUrl
+	}
+	return ""
+}
+
+func (x *UpdateUserProfileRequest) GetProfile() *v1.UserProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+// UpdateUserContactRequest 是 AdminService/UpdateUserContact 的请求（§5.4：
+// {id, phone?, email?} PATCH）。标量字段 proto3 optional：未设置 = 不修改、
+// 显式设值 = 覆盖（显式空串 = 清空该字段），has 位口径与 §3.2 同源；
+// 不暴露 phone_verified / email_verified 入参：写入非空值时服务端直接把
+// 对应 *_verified 置 1、清空置 0（§5.4）。改联系方式触发会话失效，且仅
+// superadmin 操作者可执行（§5.4 门禁矩阵）；成功返回 OkResponse。
+type UpdateUserContactRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 手机号，可选（§5.4）；显式空串 = 清空。
+	Phone *string `protobuf:"bytes,2,opt,name=phone,proto3,oneof" json:"phone,omitempty"`
+	// 邮箱，可选（§5.4）；显式空串 = 清空。
+	Email         *string `protobuf:"bytes,3,opt,name=email,proto3,oneof" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateUserContactRequest) Reset() {
+	*x = UpdateUserContactRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateUserContactRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateUserContactRequest) ProtoMessage() {}
+
+func (x *UpdateUserContactRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateUserContactRequest.ProtoReflect.Descriptor instead.
+func (*UpdateUserContactRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UpdateUserContactRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *UpdateUserContactRequest) GetPhone() string {
+	if x != nil && x.Phone != nil {
+		return *x.Phone
+	}
+	return ""
+}
+
+func (x *UpdateUserContactRequest) GetEmail() string {
+	if x != nil && x.Email != nil {
+		return *x.Email
+	}
+	return ""
+}
+
 // UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
 // {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
 // pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
@@ -694,7 +863,7 @@ type UpdateUserStatusRequest struct {
 
 func (x *UpdateUserStatusRequest) Reset() {
 	*x = UpdateUserStatusRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[7]
+	mi := &file_api_admin_v1_user_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +875,7 @@ func (x *UpdateUserStatusRequest) String() string {
 func (*UpdateUserStatusRequest) ProtoMessage() {}
 
 func (x *UpdateUserStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[7]
+	mi := &file_api_admin_v1_user_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +888,7 @@ func (x *UpdateUserStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateUserStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{7}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdateUserStatusRequest) GetId() int64 {
@@ -752,7 +921,7 @@ type ResetUserPasswordRequest struct {
 
 func (x *ResetUserPasswordRequest) Reset() {
 	*x = ResetUserPasswordRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[8]
+	mi := &file_api_admin_v1_user_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -764,7 +933,7 @@ func (x *ResetUserPasswordRequest) String() string {
 func (*ResetUserPasswordRequest) ProtoMessage() {}
 
 func (x *ResetUserPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[8]
+	mi := &file_api_admin_v1_user_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -777,7 +946,7 @@ func (x *ResetUserPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetUserPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetUserPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{8}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ResetUserPasswordRequest) GetId() int64 {
@@ -810,7 +979,7 @@ type UnbindUserThirdpartyRequest struct {
 
 func (x *UnbindUserThirdpartyRequest) Reset() {
 	*x = UnbindUserThirdpartyRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	mi := &file_api_admin_v1_user_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +991,7 @@ func (x *UnbindUserThirdpartyRequest) String() string {
 func (*UnbindUserThirdpartyRequest) ProtoMessage() {}
 
 func (x *UnbindUserThirdpartyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	mi := &file_api_admin_v1_user_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +1004,7 @@ func (x *UnbindUserThirdpartyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbindUserThirdpartyRequest.ProtoReflect.Descriptor instead.
 func (*UnbindUserThirdpartyRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{9}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UnbindUserThirdpartyRequest) GetId() int64 {
@@ -865,7 +1034,7 @@ type UnlockUserRequest struct {
 
 func (x *UnlockUserRequest) Reset() {
 	*x = UnlockUserRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	mi := &file_api_admin_v1_user_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -877,7 +1046,7 @@ func (x *UnlockUserRequest) String() string {
 func (*UnlockUserRequest) ProtoMessage() {}
 
 func (x *UnlockUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	mi := &file_api_admin_v1_user_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -890,7 +1059,7 @@ func (x *UnlockUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockUserRequest.ProtoReflect.Descriptor instead.
 func (*UnlockUserRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{10}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UnlockUserRequest) GetId() int64 {
@@ -922,7 +1091,7 @@ type GetUserEventsRequest struct {
 
 func (x *GetUserEventsRequest) Reset() {
 	*x = GetUserEventsRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	mi := &file_api_admin_v1_user_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1103,7 @@ func (x *GetUserEventsRequest) String() string {
 func (*GetUserEventsRequest) ProtoMessage() {}
 
 func (x *GetUserEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	mi := &file_api_admin_v1_user_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +1116,7 @@ func (x *GetUserEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserEventsRequest.ProtoReflect.Descriptor instead.
 func (*GetUserEventsRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{11}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetUserEventsRequest) GetId() int64 {
@@ -1004,7 +1173,7 @@ type UserEventsResponse struct {
 
 func (x *UserEventsResponse) Reset() {
 	*x = UserEventsResponse{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	mi := &file_api_admin_v1_user_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1016,7 +1185,7 @@ func (x *UserEventsResponse) String() string {
 func (*UserEventsResponse) ProtoMessage() {}
 
 func (x *UserEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	mi := &file_api_admin_v1_user_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1029,7 +1198,7 @@ func (x *UserEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserEventsResponse.ProtoReflect.Descriptor instead.
 func (*UserEventsResponse) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{12}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UserEventsResponse) GetItems() []*EventItem {
@@ -1064,7 +1233,7 @@ var File_api_admin_v1_user_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x17api/admin/v1/user.proto\x12\fapi.admin.v1\x1a\x18api/account/v1/mfa.proto\x1a\x19api/admin/v1/events.proto\"\xa8\x03\n" +
+	"\x17api/admin/v1/user.proto\x12\fapi.admin.v1\x1a\x18api/account/v1/mfa.proto\x1a\x1capi/account/v1/profile.proto\x1a\x19api/admin/v1/events.proto\"\xa8\x03\n" +
 	"\tAdminUser\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
@@ -1126,12 +1295,28 @@ const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"avatar_url\x18\x06 \x01(\tR\tavatarUrl\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\x03R\tcreatedAt\"\xf8\x01\n" +
+	"created_at\x18\a \x01(\x03R\tcreatedAt\"\xd1\x02\n" +
 	"\x12UserDetailResponse\x12+\n" +
 	"\x04user\x18\x01 \x01(\v2\x17.api.admin.v1.AdminUserR\x04user\x12E\n" +
 	"\vcredentials\x18\x02 \x03(\v2#.api.admin.v1.UserCredentialSummaryR\vcredentials\x12?\n" +
 	"\bbindings\x18\x03 \x03(\v2#.api.admin.v1.UserThirdpartyBindingR\bbindings\x12-\n" +
-	"\x03mfa\x18\x04 \x01(\v2\x1b.api.account.v1.MfaResponseR\x03mfa\"J\n" +
+	"\x03mfa\x18\x04 \x01(\v2\x1b.api.account.v1.MfaResponseR\x03mfa\x125\n" +
+	"\aprofile\x18\x05 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofile\x12 \n" +
+	"\vpermissions\x18\x06 \x03(\tR\vpermissions\"\xc2\x01\n" +
+	"\x18UpdateUserProfileRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
+	"\bnickname\x18\x02 \x01(\tH\x00R\bnickname\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"avatar_url\x18\x03 \x01(\tH\x01R\tavatarUrl\x88\x01\x01\x125\n" +
+	"\aprofile\x18\x04 \x01(\v2\x1b.api.account.v1.UserProfileR\aprofileB\v\n" +
+	"\t_nicknameB\r\n" +
+	"\v_avatar_url\"t\n" +
+	"\x18UpdateUserContactRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
+	"\x05phone\x18\x02 \x01(\tH\x00R\x05phone\x88\x01\x01\x12\x19\n" +
+	"\x05email\x18\x03 \x01(\tH\x01R\x05email\x88\x01\x01B\b\n" +
+	"\x06_phoneB\b\n" +
+	"\x06_email\"J\n" +
 	"\x17UpdateUserStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vuser_status\x18\x02 \x01(\x03R\n" +
@@ -1174,7 +1359,7 @@ func file_api_admin_v1_user_proto_rawDescGZIP() []byte {
 	return file_api_admin_v1_user_proto_rawDescData
 }
 
-var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_api_admin_v1_user_proto_goTypes = []any{
 	(*AdminUser)(nil),                   // 0: api.admin.v1.AdminUser
 	(*ListUsersRequest)(nil),            // 1: api.admin.v1.ListUsersRequest
@@ -1183,27 +1368,32 @@ var file_api_admin_v1_user_proto_goTypes = []any{
 	(*UserCredentialSummary)(nil),       // 4: api.admin.v1.UserCredentialSummary
 	(*UserThirdpartyBinding)(nil),       // 5: api.admin.v1.UserThirdpartyBinding
 	(*UserDetailResponse)(nil),          // 6: api.admin.v1.UserDetailResponse
-	(*UpdateUserStatusRequest)(nil),     // 7: api.admin.v1.UpdateUserStatusRequest
-	(*ResetUserPasswordRequest)(nil),    // 8: api.admin.v1.ResetUserPasswordRequest
-	(*UnbindUserThirdpartyRequest)(nil), // 9: api.admin.v1.UnbindUserThirdpartyRequest
-	(*UnlockUserRequest)(nil),           // 10: api.admin.v1.UnlockUserRequest
-	(*GetUserEventsRequest)(nil),        // 11: api.admin.v1.GetUserEventsRequest
-	(*UserEventsResponse)(nil),          // 12: api.admin.v1.UserEventsResponse
-	(*v1.MfaResponse)(nil),              // 13: api.account.v1.MfaResponse
-	(*EventItem)(nil),                   // 14: api.admin.v1.EventItem
+	(*UpdateUserProfileRequest)(nil),    // 7: api.admin.v1.UpdateUserProfileRequest
+	(*UpdateUserContactRequest)(nil),    // 8: api.admin.v1.UpdateUserContactRequest
+	(*UpdateUserStatusRequest)(nil),     // 9: api.admin.v1.UpdateUserStatusRequest
+	(*ResetUserPasswordRequest)(nil),    // 10: api.admin.v1.ResetUserPasswordRequest
+	(*UnbindUserThirdpartyRequest)(nil), // 11: api.admin.v1.UnbindUserThirdpartyRequest
+	(*UnlockUserRequest)(nil),           // 12: api.admin.v1.UnlockUserRequest
+	(*GetUserEventsRequest)(nil),        // 13: api.admin.v1.GetUserEventsRequest
+	(*UserEventsResponse)(nil),          // 14: api.admin.v1.UserEventsResponse
+	(*v1.MfaResponse)(nil),              // 15: api.account.v1.MfaResponse
+	(*v1.UserProfile)(nil),              // 16: api.account.v1.UserProfile
+	(*EventItem)(nil),                   // 17: api.admin.v1.EventItem
 }
 var file_api_admin_v1_user_proto_depIdxs = []int32{
 	0,  // 0: api.admin.v1.UserListResponse.items:type_name -> api.admin.v1.AdminUser
 	0,  // 1: api.admin.v1.UserDetailResponse.user:type_name -> api.admin.v1.AdminUser
 	4,  // 2: api.admin.v1.UserDetailResponse.credentials:type_name -> api.admin.v1.UserCredentialSummary
 	5,  // 3: api.admin.v1.UserDetailResponse.bindings:type_name -> api.admin.v1.UserThirdpartyBinding
-	13, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
-	14, // 5: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	15, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
+	16, // 5: api.admin.v1.UserDetailResponse.profile:type_name -> api.account.v1.UserProfile
+	16, // 6: api.admin.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
+	17, // 7: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_api_admin_v1_user_proto_init() }
@@ -1213,14 +1403,16 @@ func file_api_admin_v1_user_proto_init() {
 	}
 	file_api_admin_v1_events_proto_init()
 	file_api_admin_v1_user_proto_msgTypes[1].OneofWrappers = []any{}
-	file_api_admin_v1_user_proto_msgTypes[11].OneofWrappers = []any{}
+	file_api_admin_v1_user_proto_msgTypes[7].OneofWrappers = []any{}
+	file_api_admin_v1_user_proto_msgTypes[8].OneofWrappers = []any{}
+	file_api_admin_v1_user_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_admin_v1_user_proto_rawDesc), len(file_api_admin_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

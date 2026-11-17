@@ -427,6 +427,21 @@ func TestUserRepoUpdateContactColumns(t *testing.T) {
 		t.Fatalf("同值二次更新应幂等成功: %v", err)
 	}
 
+	// 显式清空：空串指针 → 列写 NULL 而非空串（uk_phone / uk_email 对空串
+	// 仍唯一，多行清空互撞；NULL 不参与唯一约束，§4.2 删除匿名化同口径），
+	// verified 位随调用方置 0。
+	clear, zero := "", int8(0)
+	if err := rp.UpdateContactColumns(ctx, u.ID, &clear, nil, &zero, nil); err != nil {
+		t.Fatalf("显式清空 phone 失败: %v", err)
+	}
+	if got, err = rp.FindByID(ctx, u.ID); err != nil || got.Phone != nil || got.PhoneVerified != 0 {
+		t.Errorf("清空后 phone 列 = (%v, %d), want (NULL, 0)", got.Phone, got.PhoneVerified)
+	}
+	// 多行同时清空不撞唯一键（NULL 不参与唯一约束）。
+	if err := rp.UpdateContactColumns(ctx, other.ID, &clear, nil, &zero, nil); err != nil {
+		t.Fatalf("他人清空 phone 应成功（NULL 不唯一冲突）: %v", err)
+	}
+
 	// 行不存在 → ErrRecordNotFound。
 	if err := rp.UpdateContactColumns(ctx, 404, &phone, nil, &one, nil); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)

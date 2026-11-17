@@ -1,8 +1,8 @@
-// user.go 实现 AdminService 用户管理族 8 方法（GetMe / ListUsers / GetUser /
-// UpdateUserStatus / ResetUserPassword / UnbindUserThirdparty / UnlockUser /
-// GetUserEvents，接口文档 §5.1 行 1162、§5.4 行 1249-1255）的业务层
-// （docs/后端架构.md §3.9 行 390、§18 行 1792 分层 handler →
-// service/admin/user.go → repo / cache）。
+// user.go 实现 AdminService 用户管理族 10 方法（GetMe / ListUsers / GetUser /
+// UpdateUserProfile / UpdateUserContact / UpdateUserStatus / ResetUserPassword /
+// UnbindUserThirdparty / UnlockUser / GetUserEvents，接口文档 §5.1 行 1162、
+// §5.4 行 1249-1255）的业务层（docs/后端架构.md §3.9 行 390、§18 行 1792
+// 分层 handler → service/admin/user.go → repo / cache）。
 //
 // 职责边界：会话身份来自 handler（session.UIDFromContext，管理员判定在
 // admin 拦截器已收口，本层不做二次鉴权）；参数与状态枚举校验（userStatus
@@ -11,6 +11,9 @@
 // 864「改密 / 重置 / 管理员禁用」三触发项）+ 审计投递；解绑走 Union 行连带
 // （§12.7 行 1548）；解锁清 uid 维度键 + 按当前 phone / email 重算「ip +
 // 账号哈希」维度键（§8.1 行 1041，ip 未知 → SCAN 模式匹配删除）。
+// 针对目标用户的写接口统一走 authorizeUserWrite 目标账户分级门禁
+// （§5.4 门禁矩阵、《后端架构》§4.8：superadmin 目标一律拒绝；普通管理员
+// 目标仅 superadmin 操作者可写；权限查询故障原样上抛不放行）。
 // Connect 错误形态映射归 handler；本层返回可判别哨兵错误（映射口径同
 // provider.go 包注释）：
 //   - ErrInvalidRequest 参数 / 校验类（映射 invalid_argument + code=invalid_request）；
@@ -18,6 +21,8 @@
 //     code=password_weak，§1.6 封闭集合既有取值）；
 //   - ErrPermissionDenied 权限门禁拒绝（映射 Connect 标准码 permission_denied，
 //     不挂 ErrorInfo 细分码，§1.6 封闭集合不新增取值）；
+//   - ErrTargetTaken 联系方式被他人占用（映射 already_exists +
+//     code=target_taken，§1.6 封闭集合既有取值）；
 //   - gorm.ErrRecordNotFound 资源不存在（映射 not_found）；
 //   - 其余错误原样上抛，由错误包装拦截器消毒为 internal。
 package admin
@@ -28,11 +33,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
+	adminv1 "authloft/gen/go/api/admin/v1"
+	"authloft/internal/dto"
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -44,10 +53,16 @@ import (
 // invalid_argument + ErrorInfo domain=admin code=password_weak）。
 var ErrPasswordWeak = errors.New("admin service: password does not meet policy")
 
-// ErrPermissionDenied 权限门禁拒绝：禁用 superadmin，或非 superadmin 重置
-// superadmin 密码。handler 映射 Connect 标准码 permission_denied（HTTP 403），
-// 不挂 ErrorInfo 细分码（§1.6 封闭集合不新增取值，前端按标准码兜底）。
+// ErrPermissionDenied 权限门禁拒绝：superadmin 目标的一切写操作、普通管理员
+// 目标遇非 superadmin 操作者、联系方式遇非 superadmin 操作者。handler 映射
+// Connect 标准码 permission_denied（HTTP 403），不挂 ErrorInfo 细分码
+// （§1.6 封闭集合不新增取值，前端按标准码兜底）。
 var ErrPermissionDenied = errors.New("admin service: permission denied")
+
+// ErrTargetTaken UpdateUserContact 的非空 phone / email 已被他人占用
+// （§5.4：唯一性冲突 → already_exists + ErrorInfo code=target_taken，字段级
+// 提示；唯一冲突不投审计）。
+var ErrTargetTaken = errors.New("admin service: contact target taken")
 
 // providerCategoryUnion provider 表 category=union（§12.7 行 1542：Union
 // Provider 是虚拟 Provider 仅用于归并；注册表无该 category 常量——admin
@@ -57,13 +72,18 @@ const providerCategoryUnion = "union"
 // credentialKindPassword user_credential.kind=password（§4.2 行 680-684）。
 const credentialKindPassword = "password"
 
-// UserStore user 表读写窄接口（§20 依赖注入）：*repo.UserRepo 天然满足
-// （FindByID / ListUsers / IncEpoch 既有 + UpdateUserStatus 列级最小增量），
-// 测试可传 fake。
+// UserStore user / user_profile 表读写窄接口（§20 依赖注入）：*repo.UserRepo
+// 天然满足（全部为既有列级最小增量方法），测试可传 fake。
 type UserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
+	FindByPhone(ctx context.Context, phone string) (*model.User, error)
+	FindByEmail(ctx context.Context, email string) (*model.User, error)
 	ListUsers(ctx context.Context, q repo.UserListQuery) ([]model.User, int64, error)
 	UpdateUserStatus(ctx context.Context, id int64, userStatus int8) error
+	UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error
+	UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error
+	GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error)
+	SaveProfile(ctx context.Context, p *model.UserProfile) error
 	IncEpoch(ctx context.Context, id int64) (int16, error)
 }
 
@@ -123,11 +143,14 @@ type SettingsReader interface {
 	GetBool(key string) (bool, bool)
 }
 
-// SuperadminChecker 查询某 uid 是否持有权限点的窄接口（§20 DI）：
-// *repo.PermissionRepo / *PermissionService 天然满足；测试可传 fake。
-// 查询故障由调用方原样上抛（fail-closed，不降级为「无权限」或放行）。
+// SuperadminChecker 查询某 uid 权限点的窄接口（§20 DI）：*repo.PermissionRepo /
+// *PermissionService 天然满足；测试可传 fake。HasPermission 判「是否
+// superadmin」、HasAnyPermission 判「是否管理员」（目标分级门禁需区分
+// superadmin / 普通管理员 / 普通账户三档，§4.8）。查询故障由调用方原样
+// 上抛（fail-closed，不降级为「无权限」或放行）。
 type SuperadminChecker interface {
 	HasPermission(ctx context.Context, uid int64, point string) (bool, error)
+	HasAnyPermission(ctx context.Context, uid int64) (bool, error)
 }
 
 // UserService admin 域用户管理族业务层。
@@ -229,17 +252,21 @@ func (s *UserService) ListUsers(ctx context.Context, f ListUsersFilter) ([]model
 }
 
 // UserDetail GetUser 的聚合结果（§5.4 详情：user 行 + 凭证概览 +
-// 三方绑定列表）；两步验证状态由 user.mfa_required 与凭证行 / 联系方式
-// 绑定态投影承载。
+// 三方绑定列表 + user_profile 行投影）；两步验证状态由 user.mfa_required
+// 与凭证行 / 联系方式绑定态投影承载。Profile 为 nil 表示 user_profile 行
+// 缺失（读口径同 §3.1 GetProfile：不视为错误，dto 出零值 profile 消息）；
+// permissions 投影归 handler（与 §5.1 GetMe 同源）。
 type UserDetail struct {
 	User        *model.User
 	Credentials []model.UserCredential
 	Bindings    []model.UserThirdpartyBind
+	Profile     *model.UserProfile
 }
 
 // GetUser（§5.4）：{id} 详情——user 行（含 mfa_required 开关列）+
 // 凭证概览（全部 kind 行，kind/is_enabled 投影在 dto，secret 不透出）+
-// 三方绑定列表（bind_repo.ListByUserID）。
+// 三方绑定列表（bind_repo.ListByUserID）+ user_profile 行投影（行缺失
+// 容忍为 nil，供编辑表单回填）。
 func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error) {
 	if id <= 0 {
 		return nil, ErrInvalidRequest
@@ -256,7 +283,11 @@ func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error
 	if err != nil {
 		return nil, err
 	}
-	return &UserDetail{User: user, Credentials: creds, Bindings: binds}, nil
+	profile, err := s.users.GetProfile(ctx, id)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &UserDetail{User: user, Credentials: creds, Bindings: binds, Profile: profile}, nil
 }
 
 // UpdateUserStatus（§5.4 行 1251）：{id, userStatus 0|1} 禁用 /
@@ -443,6 +474,268 @@ func (s *UserService) GetUserEvents(ctx context.Context, id int64, page, pageSiz
 		Page:     page,
 		PageSize: pageSize,
 	})
+}
+
+// authorizeUserWrite 目标账户分级写门禁（§5.4 门禁矩阵、《后端架构》§4.8）：
+// 目标为 superadmin 账户一律拒绝（任何操作者，含其自身）；目标为普通管理员
+// 账户（持任意权限点、不含 superadmin）仅 superadmin 操作者可写；目标为
+// 普通账户放行（操作者已过 admin 拦截器「至少一个权限点」）。权限查询故障
+// 原样上抛不放行（fail-closed）；拒绝统一 ErrPermissionDenied（handler 映射
+// Connect 标准码 permission_denied，不挂 ErrorInfo 细分码）。
+func (s *UserService) authorizeUserWrite(ctx context.Context, actor, targetID int64) error {
+	targetSA, err := s.permissions.HasPermission(ctx, targetID, PointSuperAdmin)
+	if err != nil {
+		return err // 权限查询故障原样上抛（fail-closed）
+	}
+	if targetSA {
+		return ErrPermissionDenied
+	}
+	targetAdmin, err := s.permissions.HasAnyPermission(ctx, targetID)
+	if err != nil {
+		return err // 权限查询故障原样上抛（fail-closed）
+	}
+	if !targetAdmin {
+		return nil // 普通账户：操作者已过 admin 拦截器，放行
+	}
+	return s.authorizeSuperadminActor(ctx, actor)
+}
+
+// authorizeSuperadminActor 操作者必须持 superadmin 权限点（普通管理员目标
+// 的写前置、UpdateUserContact 的无条件前置——该能力等价于无凭据接管账号，
+// §5.4 门禁矩阵例外行）。查询故障原样上抛不放行（fail-closed）。
+func (s *UserService) authorizeSuperadminActor(ctx context.Context, actor int64) error {
+	actorSA, err := s.permissions.HasPermission(ctx, actor, PointSuperAdmin)
+	if err != nil {
+		return err // 权限查询故障原样上抛（fail-closed）
+	}
+	if !actorSA {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
+// contactPhonePattern / contactEmailPattern 非空联系方式的格式权威校验
+// （§1.11 phone / email「后端为唯一权威」；§5.4 PATCH 校验——违规
+// invalid_request）。与前端体验性预校验同式：手机号为中国大陆号段，
+// 邮箱为「无空白、恰一个 @、@ 两侧非空且域名含点」的宽松式。
+var (
+	contactPhonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
+	contactEmailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+)
+
+// validContactFormat 非空值的格式校验（空串 = 显式清空，不在此校验）。
+func validContactFormat(kind, v string) bool {
+	if kind == "phone" {
+		return contactPhonePattern.MatchString(v)
+	}
+	return contactEmailPattern.MatchString(v)
+}
+
+// UpdateUserProfile（§5.4）：{id, nickname?, avatarUrl?, profile{...}} PATCH
+// 编辑用户资料。has 位口径与 §3.2 UpdateProfile 同源（未设置 = 不修改、
+// 显式设值 = 覆盖，含显式空串 = 清空）；校验复用自助域口径（gender ∈ 0/1/2、
+// birthday YYYY-MM-DD、extra 为 JSON 对象——birthday / extra 由
+// dto.MergeUserProfile 校验），违规一律 invalid_request。不改 username、
+// 不触发会话失效（§5.4 强制下线集合不含资料编辑）。全字段未设置 = 空操作
+// 直接成功。审计 admin_update_user（detail={changed_fields}，仅字段名）。
+func (s *UserService) UpdateUserProfile(ctx context.Context, actor, id int64, req *adminv1.UpdateUserProfileRequest) error {
+	if id <= 0 || req == nil {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	if _, err := s.users.FindByID(ctx, id); err != nil {
+		return err // 行缺失 → 404（先于任何写操作，§3.2 存在性先判口径）
+	}
+	// profile 载荷先合并校验（birthday / extra / gender 值域），非法拒绝时
+	// user 表列尚未写入，不产生部分落库。
+	var merged *model.UserProfile
+	if p := req.GetProfile(); p != nil {
+		if g := p.GetGender(); p.Gender != nil && (g < 0 || g > 2) {
+			return ErrInvalidRequest // gender ∈ 0/1/2（§5.4 PATCH 校验）
+		}
+		existing, err := s.users.GetProfile(ctx, id)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		m, changed, err := dto.MergeUserProfile(id, existing, p)
+		if err != nil {
+			return ErrInvalidRequest
+		}
+		if changed {
+			m.UpdatedAt = s.now()
+			merged = m
+		}
+	}
+	// user 表资料列：has 位判定，仅 has 时列级更新（显式空串 = 清空）。
+	if req.Nickname != nil || req.AvatarUrl != nil {
+		if err := s.users.UpdateProfileColumns(ctx, id, req.Nickname, req.AvatarUrl); err != nil {
+			return err
+		}
+	}
+	if merged != nil {
+		if err := s.users.SaveProfile(ctx, merged); err != nil {
+			return err
+		}
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminUpdateUser,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailChangedFields(userProfileChangedFields(req)),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// userProfileChangedFields UpdateUserProfile 的变更字段名清单（wire 字段名，
+// §4.6 admin_update_user detail={changed_fields}，仅字段名不含值）。
+func userProfileChangedFields(req *adminv1.UpdateUserProfileRequest) []string {
+	var fields []string
+	if req.Nickname != nil {
+		fields = append(fields, "nickname")
+	}
+	if req.AvatarUrl != nil {
+		fields = append(fields, "avatar_url")
+	}
+	if p := req.GetProfile(); p != nil {
+		if p.Gender != nil {
+			fields = append(fields, "gender")
+		}
+		if p.Birthday != nil {
+			fields = append(fields, "birthday")
+		}
+		if p.Locale != nil {
+			fields = append(fields, "locale")
+		}
+		if p.Timezone != nil {
+			fields = append(fields, "timezone")
+		}
+		if p.Extra != nil {
+			fields = append(fields, "extra")
+		}
+	}
+	return fields
+}
+
+// UpdateUserContact（§5.4）：{id, phone?, email?} PATCH 编辑用户联系方式。
+// has 位口径与 §3.2 同源；写入非空值时服务端直接把对应 *_verified 置 1
+// （管理员代写即视为已验证）、清空置 0（写 NULL，repo 归一口径），接口不
+// 暴露 *_verified 入参。该能力等价于无凭据接管账号：目标分级门禁之外，
+// 操作者还必须持 superadmin（§5.4 门禁矩阵例外行）。非空值先过格式权威
+// 校验（§1.11），唯一性冲突返回字段级错误（ErrTargetTaken）且不投审计；
+// 改联系方式属强制下线动作（§5.4 触发集合）——写库成功后 IncEpoch +
+// al:pwdep 同步，再投审计 admin_update_contact（detail={changed_fields}
+// 仅字段名，不记手机号 / 邮箱明文）。
+func (s *UserService) UpdateUserContact(ctx context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error {
+	if id <= 0 || req == nil {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	if err := s.authorizeSuperadminActor(ctx, actor); err != nil {
+		return err
+	}
+	// trim 归一（bind 链路同口径）后格式校验：非空值违规 → invalid_request；
+	// 空串 = 显式清空。trim 后的本地副本承载后续写库值，不改写入参。
+	var phone, email *string
+	if req.Phone != nil {
+		v := strings.TrimSpace(req.GetPhone())
+		phone = &v
+	}
+	if req.Email != nil {
+		v := strings.TrimSpace(req.GetEmail())
+		email = &v
+	}
+	if phone != nil && *phone != "" && !validContactFormat("phone", *phone) {
+		return ErrInvalidRequest
+	}
+	if email != nil && *email != "" && !validContactFormat("email", *email) {
+		return ErrInvalidRequest
+	}
+	if _, err := s.users.FindByID(ctx, id); err != nil {
+		return err // 行缺失 → 404（先于占用查询与写操作）
+	}
+	// 唯一性预检（uk_phone / uk_email，§5.4）：命中他人 → ErrTargetTaken
+	//（不写库、不失效会话、不投审计）；命中自己 = 原值重放，照常写。
+	if err := s.checkContactFree(ctx, id, "phone", derefString(phone)); err != nil {
+		return err
+	}
+	if err := s.checkContactFree(ctx, id, "email", derefString(email)); err != nil {
+		return err
+	}
+	// 写即置已验证：非空 → 1，显式清空 → 0（repo 空串归一写 NULL）。
+	var phoneV, emailV *int8
+	if phone != nil {
+		v := int8(0)
+		if *phone != "" {
+			v = 1
+		}
+		phoneV = &v
+	}
+	if email != nil {
+		v := int8(0)
+		if *email != "" {
+			v = 1
+		}
+		emailV = &v
+	}
+	if err := s.users.UpdateContactColumns(ctx, id, phone, email, phoneV, emailV); err != nil {
+		// TOCTOU（预检后落库前被他人抢占）→ 唯一键冲突归一字段级错误
+		//（§10.2 占用口径，bind 链路同款回补）。
+		if errors.Is(err, repo.ErrUserDuplicate) {
+			return ErrTargetTaken
+		}
+		return err
+	}
+	if _, err := s.invalidateSessions(ctx, id); err != nil {
+		return err
+	}
+	var changed []string
+	if phone != nil {
+		changed = append(changed, "phone")
+	}
+	if email != nil {
+		changed = append(changed, "email")
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminUpdateContact,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailChangedFields(changed),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// checkContactFree 非空联系方式占用预检：命中他人行 → ErrTargetTaken；
+// 未占用 / 命中自己 → nil。kind = phone｜email（按列取 FindByPhone /
+// FindByEmail）。空值（显式清空）不占用唯一键，直接放行。
+func (s *UserService) checkContactFree(ctx context.Context, self int64, kind, value string) error {
+	if value == "" {
+		return nil
+	}
+	var holder *model.User
+	var err error
+	if kind == "phone" {
+		holder, err = s.users.FindByPhone(ctx, value)
+	} else {
+		holder, err = s.users.FindByEmail(ctx, value)
+	}
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	if holder.ID != self {
+		return ErrTargetTaken
+	}
+	return nil
 }
 
 // invalidateSessions 禁用 / 重置密码的会话失效链（§11.1 行 1236、§5.1 行

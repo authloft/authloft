@@ -4,7 +4,10 @@
 // + 审计（无行同构补建）、Unbind Union 连带两分支 + 单事务回滚两注入、
 // Union 单独解绑拒绝 / 审计、
 // Unlock uid 维度 + ip 账号哈希维度重算、GetUserEvents login_success 过滤与
-// 分页透传、ListUsers 过滤透传与 userStatus 枚举校验、GetUser 聚合。
+// 分页透传、ListUsers 过滤透传与 userStatus 枚举校验、GetUser 聚合
+// （profile 行投影）、目标分级写门禁矩阵（authorizeUserWrite 三向 +
+// 权限查询故障不放行）、UpdateUserProfile PATCH has 位 / 值域校验 / 审计、
+// UpdateUserContact 写即置已验证 / 显式清空 / 唯一冲突不审计 / 强制下线。
 // q 模糊 / 排序 / 分页边界的真库行为归 repo 用例（user_repo_test.go）。
 package admin_test
 
@@ -15,12 +18,15 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
 	"gorm.io/gorm"
 
+	accountv1 "authloft/gen/go/api/account/v1"
+	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -42,6 +48,27 @@ type userFakeUsers struct {
 
 	incIDs  []int64
 	incNext int16
+
+	// —— 资料 / 联系方式编辑族（UpdateUserProfile / UpdateUserContact / GetUser 投影）——
+	profileRow     *model.UserProfile      // 现行 user_profile 行（nil = 行缺失）
+	getProfileErr  error                   // GetProfile 注入故障（非 notfound）
+	profileSaved   []*model.UserProfile    // SaveProfile 落盘留档
+	profileCols    []userFakeProfileCols   // UpdateProfileColumns 调用留档
+	contactUpdated []userFakeContactUpdate // UpdateContactColumns 调用留档
+	contactErr     error                   // UpdateContactColumns 注入（含 ErrUserDuplicate 冲突）
+	phoneHolders   map[string]*model.User  // phone → 占用行（FindByPhone）
+	emailHolders   map[string]*model.User  // email → 占用行（FindByEmail）
+}
+
+type userFakeProfileCols struct {
+	id               int64
+	nickname, avatar *string
+}
+
+type userFakeContactUpdate struct {
+	id             int64
+	phone, email   *string
+	phoneV, emailV *int8
 }
 
 type userFakeStatus struct {
@@ -79,6 +106,56 @@ func (f *userFakeUsers) UpdateUserStatus(_ context.Context, id int64, status int
 func (f *userFakeUsers) IncEpoch(_ context.Context, id int64) (int16, error) {
 	f.incIDs = append(f.incIDs, id)
 	return f.incNext, nil
+}
+
+func (f *userFakeUsers) FindByPhone(_ context.Context, phone string) (*model.User, error) {
+	if row, ok := f.phoneHolders[phone]; ok {
+		return row, nil
+	}
+	return nil, fmt.Errorf("user repo: find by phone: %w", gorm.ErrRecordNotFound)
+}
+
+func (f *userFakeUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
+	if row, ok := f.emailHolders[email]; ok {
+		return row, nil
+	}
+	return nil, fmt.Errorf("user repo: find by email: %w", gorm.ErrRecordNotFound)
+}
+
+func (f *userFakeUsers) UpdateProfileColumns(_ context.Context, id int64, nickname, avatarURL *string) error {
+	// 模拟 repo 的 rows=0 存在性判定（UpdateProfileColumns 契约）。
+	if f.user == nil || f.user.ID != id {
+		return fmt.Errorf("user repo: update profile columns: %w", gorm.ErrRecordNotFound)
+	}
+	f.profileCols = append(f.profileCols, userFakeProfileCols{id: id, nickname: nickname, avatar: avatarURL})
+	return nil
+}
+
+func (f *userFakeUsers) UpdateContactColumns(_ context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error {
+	if f.contactErr != nil {
+		return f.contactErr
+	}
+	// 模拟 repo 的 rows=0 存在性判定（UpdateContactColumns 契约）。
+	if f.user == nil || f.user.ID != id {
+		return fmt.Errorf("user repo: update contact columns: %w", gorm.ErrRecordNotFound)
+	}
+	f.contactUpdated = append(f.contactUpdated, userFakeContactUpdate{id: id, phone: phone, email: email, phoneV: phoneVerified, emailV: emailVerified})
+	return nil
+}
+
+func (f *userFakeUsers) GetProfile(_ context.Context, userID int64) (*model.UserProfile, error) {
+	if f.getProfileErr != nil {
+		return nil, f.getProfileErr
+	}
+	if f.profileRow == nil || f.profileRow.UserID != userID {
+		return nil, fmt.Errorf("user repo: get profile: %w", gorm.ErrRecordNotFound)
+	}
+	return f.profileRow, nil
+}
+
+func (f *userFakeUsers) SaveProfile(_ context.Context, p *model.UserProfile) error {
+	f.profileSaved = append(f.profileSaved, p)
+	return nil
 }
 
 type userFakeCreds struct {
@@ -249,11 +326,14 @@ func (f userFakeSettings) GetBool(key string) (bool, bool) {
 
 // userFakePermissions 权限点查询 fake（SuperadminChecker）：按 uid 授予、
 // 按 uid 注入故障，并记录查询调用序列（门禁优先级 / fail-closed 断言）。
-// map 零值读安全——零值 fake 表示「无任何权限点」。
+// HasAnyPermission 按「授予表非空」判定——持有任意权限点（含 superadmin）
+// 即 true，普通管理员目标用非 superadmin 权限点条目构造。map 零值读安全
+// ——零值 fake 表示「无任何权限点」。
 type userFakePermissions struct {
-	granted  map[int64]map[string]bool
-	errByUID map[int64]error
-	calls    []int64
+	granted     map[int64]map[string]bool
+	errByUID    map[int64]error
+	anyErrByUID map[int64]error // HasAnyPermission 专属故障注入（区分两查询的 fail-closed 断言）
+	calls       []int64
 }
 
 func (f *userFakePermissions) HasPermission(_ context.Context, uid int64, point string) (bool, error) {
@@ -262,6 +342,14 @@ func (f *userFakePermissions) HasPermission(_ context.Context, uid int64, point 
 		return false, err
 	}
 	return f.granted[uid][point], nil
+}
+
+func (f *userFakePermissions) HasAnyPermission(_ context.Context, uid int64) (bool, error) {
+	f.calls = append(f.calls, uid)
+	if err := f.anyErrByUID[uid]; err != nil {
+		return false, err
+	}
+	return len(f.granted[uid]) > 0, nil
 }
 
 // userGrantSuperadmins 构造「指定 uid 持有 superadmin」的授予表。
@@ -874,3 +962,375 @@ func mustPanicUser(t *testing.T, name string, fn func()) {
 	}()
 	fn()
 }
+
+// —— UpdateUserProfile / UpdateUserContact / 目标分级写门禁 ——
+
+// userGrantNormalAdmin 构造「指定 uid 持有任意权限点但不含 superadmin」的
+// 授予表（普通管理员目标，门禁矩阵中档）。
+func userGrantNormalAdmin(uids ...int64) map[int64]map[string]bool {
+	m := make(map[int64]map[string]bool, len(uids))
+	for _, uid := range uids {
+		m[uid] = map[string]bool{"editor": true}
+	}
+	return m
+}
+
+// TestUserServiceUserWriteGate 目标账户分级门禁矩阵（§5.4 /《后端架构》§4.8，
+// 经 UpdateUserProfile / UpdateUserContact 两写入口 table-driven）：
+// superadmin 目标一律拒绝（任何操作者，含其自身）；普通管理员目标仅
+// superadmin 操作者可写；普通目标放行（UpdateUserContact 另要求 superadmin
+// 操作者——无凭据接管例外）；目标 HasPermission / HasAnyPermission 查询
+// 故障与操作者查询故障原样上抛不放行（fail-closed，非 permission_denied）；
+// 被拒时不触任何写路径。
+func TestUserServiceUserWriteGate(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("permission repo: db down")
+	actorSA := int64(1)
+	actorPlain := int64(2)
+
+	tests := []struct {
+		name string
+		// targetPerms 目标 42 的授予表；actorSuperadmin 操作者是否持
+		// superadmin；actorErr / targetPermErr / targetAnyErr 故障注入。
+		targetPerms     map[string]bool
+		actorSuperadmin bool
+		actorErr        error
+		targetPermErr   error
+		targetAnyErr    error
+		// wantContactDenied UpdateUserContact 对该组合的期望（普通目标 +
+		// 普通操作者时仅 contact 拒、profile 放行）。
+		wantContactDenied bool
+		wantErr           error
+	}{
+		{name: "superadmin 目标 superadmin 操作者拒", targetPerms: map[string]bool{adminsvc.PointSuperAdmin: true}, actorSuperadmin: true, wantErr: adminsvc.ErrPermissionDenied},
+		{name: "superadmin 目标普通操作者拒", targetPerms: map[string]bool{adminsvc.PointSuperAdmin: true}, actorSuperadmin: false, wantErr: adminsvc.ErrPermissionDenied},
+		{name: "普通管理员目标 superadmin 操作者放行", targetPerms: map[string]bool{"editor": true}, actorSuperadmin: true},
+		{name: "普通管理员目标普通操作者拒", targetPerms: map[string]bool{"editor": true}, actorSuperadmin: false, wantErr: adminsvc.ErrPermissionDenied},
+		{name: "普通目标 superadmin 操作者放行", targetPerms: map[string]bool{}, actorSuperadmin: true},
+		{name: "普通目标普通操作者 profile 放行 contact 拒", targetPerms: map[string]bool{}, actorSuperadmin: false, wantContactDenied: true},
+		{name: "目标 HasPermission 故障不放行", targetPerms: map[string]bool{}, actorSuperadmin: true, targetPermErr: dbErr, wantErr: dbErr},
+		{name: "目标 HasAnyPermission 故障不放行", targetPerms: map[string]bool{}, actorSuperadmin: true, targetAnyErr: dbErr, wantErr: dbErr},
+		{name: "操作者查询故障不放行", targetPerms: map[string]bool{"editor": true}, actorSuperadmin: true, actorErr: dbErr, wantErr: dbErr},
+	}
+
+	for _, tt := range tests {
+		perms := &userFakePermissions{
+			granted: map[int64]map[string]bool{
+				42: tt.targetPerms,
+			},
+			errByUID:    map[int64]error{},
+			anyErrByUID: map[int64]error{},
+		}
+		if tt.actorSuperadmin {
+			perms.granted[actorSA] = map[string]bool{adminsvc.PointSuperAdmin: true}
+		}
+		if tt.actorErr != nil {
+			perms.errByUID[actorSA] = tt.actorErr
+		}
+		if tt.targetPermErr != nil {
+			perms.errByUID[42] = tt.targetPermErr
+		}
+		if tt.targetAnyErr != nil {
+			perms.anyErrByUID[42] = tt.targetAnyErr
+		}
+
+		t.Run(tt.name+"/UpdateUserProfile", func(t *testing.T) {
+			svc, users, _, _, _, _, _, _, audit := newUserSvc(perms)
+			users.user = userTestRow()
+			err := svc.UpdateUserProfile(ctx, actorSA, 42, &adminv1.UpdateUserProfileRequest{Id: 42})
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+				if len(users.profileCols) != 0 || len(users.profileSaved) != 0 || len(audit.events) != 0 {
+					t.Fatalf("拒绝不应写库或审计: cols=%v saved=%v audit=%d", users.profileCols, users.profileSaved, len(audit.events))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if len(users.incIDs) != 0 {
+				t.Fatalf("资料编辑不触发会话失效: inc=%v", users.incIDs)
+			}
+		})
+
+		t.Run(tt.name+"/UpdateUserContact", func(t *testing.T) {
+			svc, users, _, _, _, _, epoch, _, audit := newUserSvc(perms)
+			users.user = userTestRow()
+			users.incNext = 5
+			err := svc.UpdateUserContact(ctx, actorSA, 42, &adminv1.UpdateUserContactRequest{Id: 42})
+			if tt.wantErr != nil || tt.wantContactDenied {
+				want := tt.wantErr
+				if want == nil {
+					want = adminsvc.ErrPermissionDenied
+				}
+				if !errors.Is(err, want) {
+					t.Fatalf("err = %v, want %v", err, want)
+				}
+				if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+					t.Fatalf("拒绝不应写库/下线/审计: %+v inc=%v sync=%v audit=%d",
+						users.contactUpdated, users.incIDs, epoch.synced, len(audit.events))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			// 放行分支（含空 PATCH）：写库后走强制下线链（contact 专属用例
+			// 断言明细，这里只断言链路被触发）。
+			if len(users.incIDs) != 1 || len(epoch.synced) != 1 {
+				t.Fatalf("放行应触发强制下线链: inc=%v sync=%v", users.incIDs, epoch.synced)
+			}
+		})
+
+		// actorPlain 组合只补跑「普通目标 + 普通操作者」的差异档（其余档与
+		// actorSA 结果同构，不重复展开）。
+		if tt.name == "普通目标普通操作者 profile 放行 contact 拒" {
+			perms := &userFakePermissions{granted: map[int64]map[string]bool{42: tt.targetPerms}}
+			t.Run(tt.name+"/actorPlain profile 放行", func(t *testing.T) {
+				svc, users, _, _, _, _, _, _, audit := newUserSvc(perms)
+				users.user = userTestRow()
+				if err := svc.UpdateUserProfile(ctx, actorPlain, 42, &adminv1.UpdateUserProfileRequest{Id: 42}); err != nil {
+					t.Fatalf("普通操作者改普通账户资料应放行, got %v", err)
+				}
+				if len(audit.events) != 1 {
+					t.Fatalf("放行应审计: %d", len(audit.events))
+				}
+			})
+			t.Run(tt.name+"/actorPlain contact 拒", func(t *testing.T) {
+				svc, users, _, _, _, _, epoch, _, audit := newUserSvc(perms)
+				users.user = userTestRow()
+				if err := svc.UpdateUserContact(ctx, actorPlain, 42, &adminv1.UpdateUserContactRequest{Id: 42}); !errors.Is(err, adminsvc.ErrPermissionDenied) {
+					t.Fatalf("普通操作者改联系方式应拒, got %v", err)
+				}
+				if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+					t.Fatalf("拒绝不应有副作用")
+				}
+			})
+		}
+	}
+}
+
+// TestUserServiceUpdateUserProfile PATCH has 位与校验（§5.4）：未设置不改
+// （零写库）、显式空串 = 清空、profile 子字段 has 位合并（现行行保留未传
+// 子字段）、gender / birthday 值域校验违规 invalid_request 且零写库、
+// 审计 admin_update_user detail={changed_fields} 仅字段名、不触发会话失效。
+func TestUserServiceUpdateUserProfile(t *testing.T) {
+	ctx := context.Background()
+	perms := &userFakePermissions{granted: userGrantSuperadmins(1)}
+
+	// 全未设置 = 合法空操作：零写库，审计 changed_fields 空表。
+	svc, users, _, _, _, _, epoch, _, audit := newUserSvc(perms)
+	users.user = userTestRow()
+	if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{Id: 42}); err != nil {
+		t.Fatalf("空 PATCH: %v", err)
+	}
+	if len(users.profileCols) != 0 || len(users.profileSaved) != 0 {
+		t.Fatalf("空 PATCH 零写库: cols=%+v saved=%+v", users.profileCols, users.profileSaved)
+	}
+	if len(users.incIDs) != 0 || len(epoch.synced) != 0 {
+		t.Fatalf("资料编辑不触发会话失效: inc=%v sync=%v", users.incIDs, epoch.synced)
+	}
+	if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminUpdateUser ||
+		audit.events[0].ActorType != eventlog.ActorTypeAdmin || audit.events[0].ActorID != 1 ||
+		audit.events[0].UserID != 42 {
+		t.Fatalf("空 PATCH 审计 = %+v", audit.events)
+	}
+	if !strings.Contains(string(audit.events[0].Detail), "changed_fields") {
+		t.Fatalf("审计 detail 应含 changed_fields 键, got %q", audit.events[0].Detail)
+	}
+
+	// 显式空串 = 清空（nickname 指针非 nil 且为空串 → 列级 UPDATE 透传）；
+	// profile 行缺失 → 从零值行起合并建行。
+	svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	empty := ""
+	if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{
+		Id: 42, Nickname: &empty,
+		Profile: &accountv1.UserProfile{Locale: ptrStr("zh-CN")},
+	}); err != nil {
+		t.Fatalf("清空 + profile: %v", err)
+	}
+	if len(users.profileCols) != 1 || users.profileCols[0].nickname == nil || *users.profileCols[0].nickname != "" {
+		t.Fatalf("显式清空应透传空串指针: %+v", users.profileCols)
+	}
+	if len(users.profileSaved) != 1 || users.profileSaved[0].UserID != 42 || users.profileSaved[0].Locale != "zh-CN" {
+		t.Fatalf("profile 建行 = %+v", users.profileSaved)
+	}
+	if len(audit.events) != 1 {
+		t.Fatalf("审计条数 = %d", len(audit.events))
+	}
+	var detail map[string]any
+	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
+		t.Fatalf("detail 解码: %v", err)
+	}
+	fields, _ := detail["changed_fields"].([]any)
+	if len(fields) != 2 || fields[0] != "nickname" || fields[1] != "locale" {
+		t.Fatalf("changed_fields = %v, want [nickname locale]", fields)
+	}
+
+	// 未设置子字段保留现行值（合并语义）：现行 locale=fr-FR，只传 gender。
+	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
+	users.user = userTestRow()
+	users.profileRow = &model.UserProfile{UserID: 42, Locale: "fr-FR"}
+	gender := int64(1)
+	if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{
+		Id:      42,
+		Profile: &accountv1.UserProfile{Gender: &gender},
+	}); err != nil {
+		t.Fatalf("合并: %v", err)
+	}
+	if len(users.profileSaved) != 1 || users.profileSaved[0].Gender != 1 || users.profileSaved[0].Locale != "fr-FR" {
+		t.Fatalf("合并结果 = %+v（gender 覆盖、locale 保留）", users.profileSaved)
+	}
+
+	// 值域校验违规 → invalid_request 且零写库零审计（先于任何写操作）。
+	for name, req := range map[string]*adminv1.UpdateUserProfileRequest{
+		"gender 越界":   {Id: 42, Profile: &accountv1.UserProfile{Gender: ptrI64(3)}},
+		"birthday 非法": {Id: 42, Profile: &accountv1.UserProfile{Birthday: ptrStr("2000-13-40")}},
+	} {
+		svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
+		users.user = userTestRow()
+		if err := svc.UpdateUserProfile(ctx, 1, 42, req); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("%s 应 ErrInvalidRequest, got %v", name, err)
+		}
+		if len(users.profileCols) != 0 || len(users.profileSaved) != 0 || len(audit.events) != 0 {
+			t.Fatalf("%s 零写库零审计: cols=%v saved=%v audit=%v", name, users.profileCols, users.profileSaved, audit.events)
+		}
+	}
+
+	// 行缺失 → 404。
+	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
+	if err := svc.UpdateUserProfile(ctx, 1, 404, &adminv1.UpdateUserProfileRequest{Id: 404}); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
+	}
+}
+
+// TestUserServiceUpdateUserContact 联系方式编辑（§5.4）：写即置已验证 /
+// 显式清空置 0、格式校验、唯一冲突（预检与落库 TOCTOU）返回字段级错误且
+// 不投审计、命中自己 = 原值重放、成功后强制下线（IncEpoch + Sync）+ 审计
+// detail 仅字段名不含联系方式明文。
+func TestUserServiceUpdateUserContact(t *testing.T) {
+	ctx := context.Background()
+	perms := &userFakePermissions{granted: userGrantSuperadmins(1)}
+
+	// 写非空 phone → verified=1 + IncEpoch + Sync + 审计（detail 无明文）。
+	svc, users, _, _, _, _, epoch, _, audit := newUserSvc(perms)
+	users.user = userTestRow()
+	users.incNext = 9
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); err != nil {
+		t.Fatalf("改手机号: %v", err)
+	}
+	if len(users.contactUpdated) != 1 {
+		t.Fatalf("列更新次数 = %d", len(users.contactUpdated))
+	}
+	up := users.contactUpdated[0]
+	if up.phone == nil || *up.phone != "13900001111" || up.email != nil || up.phoneV == nil || *up.phoneV != 1 || up.emailV != nil {
+		t.Fatalf("列更新入参 = %+v（phone 写值 + phone_verified=1）", up)
+	}
+	if len(users.incIDs) != 1 || users.incIDs[0] != 42 || len(epoch.synced) != 1 || epoch.synced[0] != (userFakeSync{uid: 42, epoch: 9}) {
+		t.Fatalf("强制下线链 = inc %v sync %+v", users.incIDs, epoch.synced)
+	}
+	if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminUpdateContact ||
+		audit.events[0].UserID != 42 || audit.events[0].ActorID != 1 {
+		t.Fatalf("审计 = %+v", audit.events)
+	}
+	if strings.Contains(string(audit.events[0].Detail), "13900001111") {
+		t.Fatalf("审计 detail 不得含联系方式明文: %q", audit.events[0].Detail)
+	}
+	var detail map[string]any
+	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil {
+		t.Fatalf("detail 解码: %v", err)
+	}
+	fields, _ := detail["changed_fields"].([]any)
+	if len(fields) != 1 || fields[0] != "phone" {
+		t.Fatalf("changed_fields = %v, want [phone]", fields)
+	}
+
+	// 显式清空 email → email_verified=0（清空值透传空串，repo 归一写 NULL）。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Email: ptrStr("  ")}); err != nil {
+		t.Fatalf("清空邮箱: %v", err)
+	}
+	up = users.contactUpdated[0]
+	if up.email == nil || *up.email != "" || up.emailV == nil || *up.emailV != 0 || up.phone != nil {
+		t.Fatalf("清空入参 = %+v（email 空串 + email_verified=0）", up)
+	}
+	if len(users.incIDs) != 1 || len(audit.events) != 1 {
+		t.Fatalf("清空同样触发下线与审计: inc=%v audit=%d", users.incIDs, len(audit.events))
+	}
+
+	// 格式违规 → invalid_request 零写库零审计。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("12345")}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("非法手机号应 ErrInvalidRequest, got %v", err)
+	}
+	if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(audit.events) != 0 {
+		t.Fatalf("格式违规零副作用: %+v inc=%v audit=%d", users.contactUpdated, users.incIDs, len(audit.events))
+	}
+
+	// 唯一冲突（预检命中他人）→ ErrTargetTaken，不写库、不下线、不审计。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	users.phoneHolders = map[string]*model.User{"13900001111": {ID: 7, Username: "bob"}}
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
+		t.Fatalf("冲突应 ErrTargetTaken, got %v", err)
+	}
+	if len(users.contactUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+		t.Fatalf("冲突零副作用: %+v inc=%v sync=%v audit=%d", users.contactUpdated, users.incIDs, epoch.synced, len(audit.events))
+	}
+
+	// 唯一冲突（TOCTOU：预检后落库前被抢）→ repo ErrUserDuplicate 归一同字段级错误。
+	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
+	users.user = userTestRow()
+	users.contactErr = fmt.Errorf("user repo: update contact columns: %w: %w", repo.ErrUserDuplicate, errors.New("1062"))
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13900001111")}); !errors.Is(err, adminsvc.ErrTargetTaken) {
+		t.Fatalf("TOCTOU 冲突应 ErrTargetTaken, got %v", err)
+	}
+
+	// 命中自己 = 原值重放，放行（幂等重写 + verified 置 1）。
+	svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	users.phoneHolders = map[string]*model.User{"13800138000": userTestRow()}
+	if err := svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42, Phone: ptrStr("13800138000")}); err != nil {
+		t.Fatalf("原值重放: %v", err)
+	}
+	if len(users.contactUpdated) != 1 || len(audit.events) != 1 {
+		t.Fatalf("原值重放照常写库与审计: %+v audit=%d", users.contactUpdated, len(audit.events))
+	}
+
+	// 行缺失 → 404。
+	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
+	if err := svc.UpdateUserContact(ctx, 1, 404, &adminv1.UpdateUserContactRequest{Id: 404}); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
+	}
+}
+
+// TestUserServiceGetUserProfileProjection GetUser 详情的 profile 投影：
+// 行存在如实返回，行缺失容忍为 nil（读口径同 §3.1 GetProfile，不视为错误）。
+func TestUserServiceGetUserProfileProjection(t *testing.T) {
+	ctx := context.Background()
+	svc, users, _, _, _, _, _, _, _ := newUserSvc()
+	users.user = userTestRow()
+	birthday := time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)
+	users.profileRow = &model.UserProfile{UserID: 42, Gender: 2, Birthday: &birthday, Locale: "zh-CN"}
+
+	d, err := svc.GetUser(ctx, 42)
+	if err != nil || d.Profile == nil || d.Profile.Gender != 2 || d.Profile.Locale != "zh-CN" ||
+		d.Profile.Birthday == nil || !d.Profile.Birthday.Equal(birthday) {
+		t.Fatalf("GetUser 投影 = (%+v, %v)", d.Profile, err)
+	}
+
+	svc, users, _, _, _, _, _, _, _ = newUserSvc()
+	users.user = userTestRow()
+	if d, err := svc.GetUser(ctx, 42); err != nil || d.Profile != nil {
+		t.Fatalf("profile 行缺失应容忍为 nil, got (%+v, %v)", d.Profile, err)
+	}
+}
+
+// ptrStr / ptrI64 测试用指针构造助手。
+func ptrStr(v string) *string { return &v }
+func ptrI64(v int64) *int64   { return &v }

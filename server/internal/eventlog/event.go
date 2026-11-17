@@ -29,6 +29,8 @@ const (
 	EventThirdpartyUnbind     = "thirdparty_unbind"
 	EventAdminDisableUser     = "admin_disable_user"
 	EventAdminResetPassword   = "admin_reset_password"
+	EventAdminUpdateUser      = "admin_update_user"
+	EventAdminUpdateContact   = "admin_update_contact"
 	EventProviderCreate       = "provider_create"
 	EventProviderUpdate       = "provider_update"
 	EventSettingsUpdate       = "settings_update"
@@ -106,6 +108,16 @@ func DetailSettingsUpdate(keys []string, before, after map[string]any) []byte {
 		"before": before,
 		"after":  after,
 	})
+}
+
+// DetailChangedFields 编码 admin_update_user / admin_update_contact 的
+// detail（《后端架构》§4.6）：{changed_fields:[...]}，只记变更字段名——
+// admin_update_contact 不记手机号 / 邮箱明文。nil 归一为空数组。
+func DetailChangedFields(changedFields []string) []byte {
+	if changedFields == nil {
+		changedFields = []string{}
+	}
+	return encodeDetail(map[string]any{"changed_fields": changedFields})
 }
 
 // encodeDetail 是所有 detail 构造器的唯一编码出口（接口文档 §12.0 行
