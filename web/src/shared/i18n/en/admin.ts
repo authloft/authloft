@@ -261,13 +261,26 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.oidcProviderUrlHelp':
     'IdP issuer URL; endpoints are auto-discovered via .well-known/openid-configuration',
 
-  // wechat_mp_scan extra fields.
+  // wechat_mp_scan extra fields. QR mode trio (接口文档 §5.3 type=wechat_mp_scan
+  // row): mode is a three-way choice (empty = url, legacy behavior), format is
+  // the ticket-mode content template ({{TICKET}} placeholder filled with the
+  // full encrypted ticket), tip is HTML copy delivered with CreateQrcode
+  // (site CSP as the safety net, §2.8).
   'admin.schemaField.qrcodeAutoDeleteLabel':
     'Delete QR code image after sign-in',
   'admin.schemaField.storageProviderLabel': 'Storage Provider',
   'admin.schemaField.storagePathLabel': 'Storage Path Template',
   'admin.schemaField.storagePathHelp':
     "JSONata expression with built-in variables ticket_id / timestamp, e.g. 'qrcodes_' & $.ticket_id & '.jpg'",
+  'admin.schemaField.qrcodeModeLabel': 'QR Code Mode',
+  'admin.schemaField.qrcodeModeHelp':
+    'ticket = deliver QR content for client-side drawing; base64 = inline JPEG image; url = serve via storage (empty means url)',
+  'admin.schemaField.qrcodeFormatLabel': 'QR Code Content Template',
+  'admin.schemaField.qrcodeFormatHelp':
+    'Applies in ticket mode: the {{TICKET}} placeholder is replaced with the full encrypted ticket, e.g. https://example.com/scan?ticket={{TICKET}}',
+  'admin.schemaField.qrcodeTipLabel': 'Scan Tip',
+  'admin.schemaField.qrcodeTipHelp':
+    'Raw HTML shown next to the QR code; inline scripts and similar injection vectors are blocked by the site CSP',
 
   // captcha / storage service-type Provider fields (captcha uses client_id as
   // the site key, client_secret as the secret, endpoint as a custom verify URL;

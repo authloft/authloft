@@ -1,8 +1,8 @@
 /**
- * 六种字段类型的渲染实现（docs/前端架构.md §6 行 510；docs/接口文档.md
- * §5.3 行 1229 唯一定义：text / secret / checkbox / number / select / json；
- * 修饰三个：advanced / pattern / default 的语义在 schemaLogic，本文件只管
- * 字段装配）。
+ * 七种字段类型的渲染实现（docs/前端架构.md §6；docs/接口文档.md §5.3 /
+ * §1.11 唯一定义：text / secret / textarea / checkbox / number / select /
+ * json；修饰三个：advanced / pattern / default 的语义在 schemaLogic，本
+ * 文件只管字段装配）。
  *
  * 【Semi Form 化】全部改用 `Form.*` 字段组件：值、onChange、label 关联、
  * 必填星号、help / extra 与校验文案由外层 `<Form>` 托管（CODE_GUIDE §2.4
@@ -87,6 +87,27 @@ export function SecretField(props: FieldRendererProps): ReactNode {
       suffix={props.extra}
       mode="password"
       autoComplete="new-password"
+      allowEmptyString={KEEP_EMPTY_STRING}
+      disabled={props.disabled}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
+    />
+  );
+}
+
+/**
+ * textarea：多行文本（如 qrcode_tip 的 HTML 原文）。行为与 TextField 对齐
+ * （受控空串保留 / 必填星号 / 错误态由 Form 托管）；扩展位挂 extraText，
+ * 不进多行控件内部（JsonField 同口径）。
+ */
+export function TextareaField(props: FieldRendererProps): ReactNode {
+  return (
+    <Form.TextArea
+      field={props.field.key}
+      label={fieldLabel(props.field)}
+      helpText={fieldHelp(props.field)}
+      extraText={props.extra}
+      rows={5}
       allowEmptyString={KEEP_EMPTY_STRING}
       disabled={props.disabled}
       showClear={!props.field.required}

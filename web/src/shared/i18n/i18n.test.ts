@@ -316,3 +316,42 @@ describe('代理提供商文案契约（五真实字段 + 引用键 + 展示名�
     setLocale('zh-CN');
   });
 });
+
+describe('拉码模式三字段文案契约（wechat_mp_scan qrcode 三键，zh / en 齐备）', () => {
+  // 键清单与后端渠道注册表声明逐字对齐（wechat_mp_scan 的 Label / Help
+  // 字面量即契约来源，缺任一键后端跨端契约测试即红）。
+  const qrcodeKeys = [
+    'admin.schemaField.qrcodeModeLabel',
+    'admin.schemaField.qrcodeModeHelp',
+    'admin.schemaField.qrcodeFormatLabel',
+    'admin.schemaField.qrcodeFormatHelp',
+    'admin.schemaField.qrcodeTipLabel',
+    'admin.schemaField.qrcodeTipHelp',
+  ];
+
+  test('label / help 六键在 zh / en 两套字典齐备且可译（不回显键）', () => {
+    for (const key of qrcodeKeys) {
+      expect(hasKey(key)).toBe(true);
+      expect(t(key)).not.toBe(key);
+      setLocale('en-US');
+      expect(hasKey(key)).toBe(true);
+      expect(t(key)).not.toBe(key);
+      setLocale('zh-CN');
+    }
+  });
+
+  test('label 逐字锚定 + format help 保留 {{TICKET}} 占位符原样（无参数不插值）', () => {
+    expect(t('admin.schemaField.qrcodeModeLabel')).toBe('拉码模式');
+    expect(t('admin.schemaField.qrcodeFormatLabel')).toBe('二维码内容模板');
+    expect(t('admin.schemaField.qrcodeTipLabel')).toBe('扫码提示文案');
+    expect(t('admin.schemaField.qrcodeFormatHelp')).toContain('{{TICKET}}');
+    setLocale('en-US');
+    expect(t('admin.schemaField.qrcodeModeLabel')).toBe('QR Code Mode');
+    expect(t('admin.schemaField.qrcodeFormatLabel')).toBe(
+      'QR Code Content Template',
+    );
+    expect(t('admin.schemaField.qrcodeTipLabel')).toBe('Scan Tip');
+    expect(t('admin.schemaField.qrcodeFormatHelp')).toContain('{{TICKET}}');
+    setLocale('zh-CN');
+  });
+});

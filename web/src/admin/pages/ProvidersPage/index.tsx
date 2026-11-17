@@ -53,7 +53,7 @@ import { PageLayout } from '../../../shared/components/PageLayout';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../../shared/hooks/requestOptions';
-import { t } from '../../../shared/i18n';
+import { hasKey, t } from '../../../shared/i18n';
 import { toCount } from '../../../shared/utils/int';
 import { SetProviderEnabledRequestSchema } from '../../../gen/proto/api/admin/v1/provider_pb';
 import type { Provider } from '../../../gen/proto/api/admin/v1/provider_pb';
@@ -83,6 +83,27 @@ function providerRowKey(row: Provider): string {
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
+
+/**
+ * 类型 / 类别展示名（接口文档 §5.3 文案口径：admin.providerType.* /
+ * admin.providerCategory.* 前缀键；字典缺键原样显示 wire 值不猜译名，
+ * 空串落零值占位）。
+ */
+export function providerTypeDisplayName(type: string): string {
+  if (type === '') {
+    return EMPTY_TEXT;
+  }
+  const key = `admin.providerType.${type}`;
+  return hasKey(key) ? t(key) : type;
+}
+
+export function providerCategoryDisplayName(category: string): string {
+  if (category === '') {
+    return EMPTY_TEXT;
+  }
+  const key = `admin.providerCategory.${category}`;
+  return hasKey(key) ? t(key) : category;
+}
 
 /** 提供商列表页：回调提示 + 全量表格（行内启停 + 侧栏拖拽排序 + 编辑删除）。 */
 export function ProvidersPage(props: {
@@ -194,7 +215,8 @@ export function ProvidersPage(props: {
     {
       title: t('admin.providerColumnCategory'),
       dataIndex: 'category',
-      render: (_text: unknown, row: Provider) => row.category || EMPTY_TEXT,
+      render: (_text: unknown, row: Provider) =>
+        providerCategoryDisplayName(row.category),
     },
     {
       title: t('admin.providerColumnType'),
@@ -202,7 +224,7 @@ export function ProvidersPage(props: {
       render: (_text: unknown, row: Provider) => (
         <span className={styles.typeCell}>
           <ProviderIcon alt={row.type} />
-          <span>{row.type || EMPTY_TEXT}</span>
+          <span>{providerTypeDisplayName(row.type)}</span>
         </span>
       ),
     },

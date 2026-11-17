@@ -80,6 +80,8 @@ import {
   SecretField,
   SelectField,
   TextField,
+  TextareaField,
+  UnsupportedField,
 } from './pages/ProvidersPage/edit/schema/fields/FieldRenderers';
 import { SchemaForm } from './pages/ProvidersPage/edit/schema/SchemaForm';
 import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
@@ -4737,5 +4739,147 @@ describe('proxy 提供商动态表单（五真实字段 + 引用键：渲染 / �
     expect('user' in (updateBody as object)).toBe(false);
     expect('password' in (updateBody as object)).toBe(false);
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 拉码模式三字段 + textarea 类型（接口文档 §5.3 type=wechat_mp_scan 行 /
+// §1.11 七类型：渲染 / 零值 / 必填 / 字符串直存）
+// ---------------------------------------------------------------------------
+
+/** 后端 wechat_mp_scan 三新字段的 wire 形态（label / help 为前端 i18n 键）。 */
+const QRCODE_FIELDS = [
+  schemaField({
+    key: 'qrcode_mode',
+    label: 'admin.schemaField.qrcodeModeLabel',
+    type: 'select',
+    section: 'endpoint',
+    options: ['ticket', 'base64', 'url'],
+    default: 'url',
+    help: 'admin.schemaField.qrcodeModeHelp',
+  }),
+  schemaField({
+    key: 'qrcode_format',
+    label: 'admin.schemaField.qrcodeFormatLabel',
+    type: 'text',
+    section: 'endpoint',
+    help: 'admin.schemaField.qrcodeFormatHelp',
+  }),
+  schemaField({
+    key: 'qrcode_tip',
+    label: 'admin.schemaField.qrcodeTipLabel',
+    type: 'textarea',
+    section: 'endpoint',
+    help: 'admin.schemaField.qrcodeTipHelp',
+  }),
+];
+
+describe('textarea 类型与拉码模式三字段（渲染 / 零值 / 必填 / 字符串直存）', () => {
+  test('类型分派：textarea → TextareaField；未知 type 仍落占位渲染（兜底不受新注册影响）', () => {
+    expect(resolveFieldRenderer('textarea')).toBe(TextareaField);
+    expect(resolveFieldRenderer('no_such_type')).toBe(UnsupportedField);
+  });
+
+  test('textarea 零值与编辑回填：无 default 落空串（字符串零值口径）、Ext 现值原样', () => {
+    const tip = QRCODE_FIELDS[2];
+    expect(applySchemaDefaults([tip])).toEqual({ qrcode_tip: '' });
+    const provider = create(AdminProviderSchema, {
+      providerKey: 'mp_scan',
+      ext: { qrcode_tip: '<p>请使用微信扫码</p>' },
+    });
+    expect(adminProviderToValues([tip], provider)).toEqual({
+      qrcode_tip: '<p>请使用微信扫码</p>',
+    });
+  });
+
+  test('textarea 必填校验与字符串直存：空串拦截、有值原样进提交体', () => {
+    const tip = schemaField({
+      key: 'qrcode_tip',
+      label: 'admin.schemaField.qrcodeTipLabel',
+      type: 'textarea',
+      section: 'endpoint',
+      required: true,
+    });
+    expect(validateSchemaValues([tip], { qrcode_tip: '' })).toEqual({
+      qrcode_tip: t('admin.validateRequired'),
+    });
+    expect(validateSchemaValues([tip], { qrcode_tip: '<p>ok</p>' })).toEqual(
+      {},
+    );
+    expect(
+      buildProviderStruct('wechat_mp_scan', [tip], { qrcode_tip: '<p>ok</p>' }),
+    ).toEqual({ type: 'wechat_mp_scan', qrcode_tip: '<p>ok</p>' });
+  });
+
+  test('wechat_mp_scan 三字段编辑态渲染：endpoint 区块 select / text / textarea 就位 + label 文案解析', () => {
+    setLocale('zh-CN');
+    const schema = create(SchemaResponseSchema, {
+      type: 'wechat_mp_scan',
+      category: 'oauth',
+      fields: QRCODE_FIELDS,
+    });
+    const groups = groupFieldsBySection(schema.fields);
+    expect(groups[2].map((field) => field.key)).toEqual([
+      'qrcode_mode',
+      'qrcode_format',
+      'qrcode_tip',
+    ]);
+    const html = renderToStaticMarkup(
+      createElement(
+        Form,
+        null,
+        createElement(SchemaForm, { schema, lockedKeys: [] }),
+      ),
+    );
+    expect(html).toContain('端点');
+    for (const key of ['qrcode_mode', 'qrcode_format', 'qrcode_tip']) {
+      expect(html).toContain(`x-field-id="${key}"`);
+    }
+    // qrcode_tip 用多行控件承载 HTML 原文（本 schema 无 json 字段，
+    // <textarea> 元素即 TextareaField 渲染产物）。
+    expect(html).toContain('<textarea');
+    expect(html).toContain('拉码模式');
+    expect(html).toContain('二维码内容模板');
+    expect(html).toContain('扫码提示文案');
+    // help 文案渲染期 t() 解析（无参数不做插值），{{TICKET}} 占位符原样透出。
+    expect(html).toContain('{{TICKET}}');
+    setLocale('zh-CN');
+  });
+
+  test('三字段提交体：字符串直存 Ext（mode / format / tip 原样平铺）', () => {
+    const struct = buildProviderStruct('wechat_mp_scan', QRCODE_FIELDS, {
+      qrcode_mode: 'ticket',
+      qrcode_format: 'https://mp.example.com/scan?ticket={{TICKET}}',
+      qrcode_tip: '<p>请使用微信扫码</p>',
+    });
+    expect(struct).toEqual({
+      type: 'wechat_mp_scan',
+      qrcode_mode: 'ticket',
+      qrcode_format: 'https://mp.example.com/scan?ticket={{TICKET}}',
+      qrcode_tip: '<p>请使用微信扫码</p>',
+    });
+  });
+});
+
+describe('provider 类型 / 类别展示名（admin.providerType.* / admin.providerCategory.*）', () => {
+  test('proxy 展示名走 i18n 键；缺键类型原样显示；空串落占位（zh / en 同语义）', async () => {
+    // ProvidersPage 渲染壳拉 Semi / router / api 全模块图，动态 import 与
+    // apiMod 同口径（transport 求值时机约束）。
+    const indexMod = await import('./pages/ProvidersPage/index');
+    setLocale('zh-CN');
+    expect(indexMod.providerTypeDisplayName('proxy')).toBe('出站代理');
+    expect(indexMod.providerCategoryDisplayName('proxy')).toBe('出站代理');
+    // 字典未定义展示名的类型 / 类别不猜译名，原样显示 wire 值。
+    expect(indexMod.providerTypeDisplayName('wechat_mp_scan')).toBe(
+      'wechat_mp_scan',
+    );
+    expect(indexMod.providerCategoryDisplayName('oauth')).toBe('oauth');
+    expect(indexMod.providerTypeDisplayName('')).toBe('—');
+    setLocale('en-US');
+    expect(indexMod.providerTypeDisplayName('proxy')).toBe('Outbound proxy');
+    expect(indexMod.providerCategoryDisplayName('proxy')).toBe(
+      'Outbound proxy',
+    );
+    setLocale('zh-CN');
   });
 });

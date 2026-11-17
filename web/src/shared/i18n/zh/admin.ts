@@ -241,12 +241,24 @@ export const admin = {
   'admin.schemaField.oidcProviderUrlHelp':
     'IdP issuer 地址，自动 discovery（.well-known/openid-configuration）',
 
-  // wechat_mp_scan 追加三字段。
+  // wechat_mp_scan 追加字段。拉码模式三字段（接口文档 §5.3 type=wechat_mp_scan
+  // 行）：mode 三选一（空 = url 存量行为）、format 为 ticket 模式内容模板
+  // （{{TICKET}} 占位填完整加密 ticket）、tip 为随 CreateQrcode 下发的 HTML
+  // 提示文案（站点 CSP 兜底，§2.8）。
   'admin.schemaField.qrcodeAutoDeleteLabel': '登录后自动删除码图',
   'admin.schemaField.storageProviderLabel': '存储 Provider',
   'admin.schemaField.storagePathLabel': '存储路径模板',
   'admin.schemaField.storagePathHelp':
     "JSONata 表达式，内置变量 ticket_id / timestamp，如 'qrcodes_' & $.ticket_id & '.jpg'",
+  'admin.schemaField.qrcodeModeLabel': '拉码模式',
+  'admin.schemaField.qrcodeModeHelp':
+    'ticket=下发二维码内容由前端自绘；base64=下发内联 JPEG 图片；url=经存储中转下发链接；留空同 url',
+  'admin.schemaField.qrcodeFormatLabel': '二维码内容模板',
+  'admin.schemaField.qrcodeFormatHelp':
+    'ticket 模式生效：{{TICKET}} 占位符替换为完整加密 ticket，如 https://example.com/scan?ticket={{TICKET}}',
+  'admin.schemaField.qrcodeTipLabel': '扫码提示文案',
+  'admin.schemaField.qrcodeTipHelp':
+    'HTML 原文，随二维码展示在扫码页；内联脚本等注入向量由站点 CSP 拦截',
 
   // captcha / storage 服务型 Provider 字段（captcha 用 client_id 作站点密钥、
   // client_secret 作密钥、endpoint 作自定义校验地址；storage/local 用 bucket 作

@@ -8,7 +8,7 @@
  * 提交前校验 / 提交体构造 / provider_key 唯一性预检。
  *
  * 值模型（§5.3 行 1183「提交体即 {"<key>": <value>}」）：
- * - text / secret / select → string；checkbox → boolean；number → number；
+ * - text / secret / select / textarea → string；checkbox → boolean；number → number；
  * - json → string（编辑文本态：回填 stringify、提交前 parse 回对象，
  *   合法性由 validateSchemaValues 前置保证）。
  */
@@ -49,7 +49,7 @@ export const SECTION_TITLES: Readonly<Record<string, I18nKey>> = {
   policy: 'admin.schemaSectionPolicy',
 };
 
-/** 六种字段类型（§5.3 行 1229 唯一定义：管理后台只用到这六个）。 */
+/** 七种字段类型（接口文档 §5.3 唯一定义：管理后台只用到这七个）。 */
 export const FIELD_TYPES: string[] = [
   'text',
   'secret',
@@ -57,6 +57,7 @@ export const FIELD_TYPES: string[] = [
   'number',
   'select',
   'json',
+  'textarea',
 ];
 
 /**
@@ -122,8 +123,8 @@ function zeroValueFor(field: SchemaField): unknown {
     case 'number':
       return 0;
     default:
-      // text / secret / select / json 及未知类型（§12.9 行 1754：type 跨版本
-      // 可能新增，string 承载）统一按文本零值兜底。
+      // text / secret / select / textarea / json 及未知类型（接口文档 §12.9：
+      // type 跨版本可能新增，string 承载）统一按文本零值兜底。
       return '';
   }
 }
