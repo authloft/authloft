@@ -10,6 +10,8 @@ import "api/account/v1/security.proto";
 import "api/account/v1/mfa.proto";
 import "api/account/v1/webauthn.proto";
 import "api/account/v1/thirdparty.proto";
+// 授权同意两方法的消息单一结构源（§3.10）。
+import "api/account/v1/consent.proto";
 // 敏感操作二次验证的四组消息单一结构源在 api.common.v1，方法挂本域
 // 与 SsoService，不新建业务域（§3.8、§12.9）。
 import "api/common/v1/verification.proto";
@@ -48,6 +50,7 @@ message GetMyPermissionsResponse {
 //   GetThirdpartyTicket        §3.7    GetEvents                §3.7
 //   StartVerification          §3.8   SubmitVerification       §3.8
 //   GetMyPermissions           §3.9
+//   ConsentApprove             §3.10  ConsentDeny              §3.10
 // 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
 // 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
 // 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
@@ -105,4 +108,9 @@ service AccountService {
   rpc SubmitVerification(api.common.v1.SubmitVerificationRequest) returns (api.common.v1.SubmitVerificationResponse);
   // 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
   rpc GetMyPermissions(GetMyPermissionsRequest) returns (GetMyPermissionsResponse);
+  // OIDC 授权页形态 B 同意提交：写授权记录并签码，返回落点消息、不做 302
+  //（§3.10，跳转归前端 §1.3 终点处理）。
+  rpc ConsentApprove(ConsentApproveRequest) returns (ConsentResponse);
+  // OIDC 授权页形态 B 同意拒绝：不写授权记录，拼 access_denied 落点返回（§3.10）。
+  rpc ConsentDeny(ConsentDenyRequest) returns (ConsentResponse);
 }

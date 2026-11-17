@@ -107,6 +107,12 @@ const (
 	// AccountServiceGetMyPermissionsProcedure is the fully-qualified name of the AccountService's
 	// GetMyPermissions RPC.
 	AccountServiceGetMyPermissionsProcedure = "/api.account.v1.AccountService/GetMyPermissions"
+	// AccountServiceConsentApproveProcedure is the fully-qualified name of the AccountService's
+	// ConsentApprove RPC.
+	AccountServiceConsentApproveProcedure = "/api.account.v1.AccountService/ConsentApprove"
+	// AccountServiceConsentDenyProcedure is the fully-qualified name of the AccountService's
+	// ConsentDeny RPC.
+	AccountServiceConsentDenyProcedure = "/api.account.v1.AccountService/ConsentDeny"
 )
 
 // AccountServiceClient is a client for the api.account.v1.AccountService service.
@@ -163,6 +169,11 @@ type AccountServiceClient interface {
 	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
 	// 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
 	GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error)
+	// OIDC 授权页形态 B 同意提交：写授权记录并签码，返回落点消息、不做 302
+	// （§3.10，跳转归前端 §1.3 终点处理）。
+	ConsentApprove(context.Context, *connect.Request[v1.ConsentApproveRequest]) (*connect.Response[v1.ConsentResponse], error)
+	// OIDC 授权页形态 B 同意拒绝：不写授权记录，拼 access_denied 落点返回（§3.10）。
+	ConsentDeny(context.Context, *connect.Request[v1.ConsentDenyRequest]) (*connect.Response[v1.ConsentResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the api.account.v1.AccountService service. By
@@ -326,6 +337,18 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("GetMyPermissions")),
 			connect.WithClientOptions(opts...),
 		),
+		consentApprove: connect.NewClient[v1.ConsentApproveRequest, v1.ConsentResponse](
+			httpClient,
+			baseURL+AccountServiceConsentApproveProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("ConsentApprove")),
+			connect.WithClientOptions(opts...),
+		),
+		consentDeny: connect.NewClient[v1.ConsentDenyRequest, v1.ConsentResponse](
+			httpClient,
+			baseURL+AccountServiceConsentDenyProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("ConsentDeny")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -356,6 +379,8 @@ type accountServiceClient struct {
 	startVerification        *connect.Client[v12.StartVerificationRequest, v12.StartVerificationResponse]
 	submitVerification       *connect.Client[v12.SubmitVerificationRequest, v12.SubmitVerificationResponse]
 	getMyPermissions         *connect.Client[v1.GetMyPermissionsRequest, v1.GetMyPermissionsResponse]
+	consentApprove           *connect.Client[v1.ConsentApproveRequest, v1.ConsentResponse]
+	consentDeny              *connect.Client[v1.ConsentDenyRequest, v1.ConsentResponse]
 }
 
 // GetConfig calls api.account.v1.AccountService.GetConfig.
@@ -483,6 +508,16 @@ func (c *accountServiceClient) GetMyPermissions(ctx context.Context, req *connec
 	return c.getMyPermissions.CallUnary(ctx, req)
 }
 
+// ConsentApprove calls api.account.v1.AccountService.ConsentApprove.
+func (c *accountServiceClient) ConsentApprove(ctx context.Context, req *connect.Request[v1.ConsentApproveRequest]) (*connect.Response[v1.ConsentResponse], error) {
+	return c.consentApprove.CallUnary(ctx, req)
+}
+
+// ConsentDeny calls api.account.v1.AccountService.ConsentDeny.
+func (c *accountServiceClient) ConsentDeny(ctx context.Context, req *connect.Request[v1.ConsentDenyRequest]) (*connect.Response[v1.ConsentResponse], error) {
+	return c.consentDeny.CallUnary(ctx, req)
+}
+
 // AccountServiceHandler is an implementation of the api.account.v1.AccountService service.
 type AccountServiceHandler interface {
 	// 头像上传配置 / MFA 摘要 / captcha 配置 / hasPassword（§3.2）。
@@ -537,6 +572,11 @@ type AccountServiceHandler interface {
 	SubmitVerification(context.Context, *connect.Request[v12.SubmitVerificationRequest]) (*connect.Response[v12.SubmitVerificationResponse], error)
 	// 当前登录用户的全部权限点；普通用户亦可达、不要求任何权限点（§3.9）。
 	GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error)
+	// OIDC 授权页形态 B 同意提交：写授权记录并签码，返回落点消息、不做 302
+	// （§3.10，跳转归前端 §1.3 终点处理）。
+	ConsentApprove(context.Context, *connect.Request[v1.ConsentApproveRequest]) (*connect.Response[v1.ConsentResponse], error)
+	// OIDC 授权页形态 B 同意拒绝：不写授权记录，拼 access_denied 落点返回（§3.10）。
+	ConsentDeny(context.Context, *connect.Request[v1.ConsentDenyRequest]) (*connect.Response[v1.ConsentResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -696,6 +736,18 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("GetMyPermissions")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accountServiceConsentApproveHandler := connect.NewUnaryHandler(
+		AccountServiceConsentApproveProcedure,
+		svc.ConsentApprove,
+		connect.WithSchema(accountServiceMethods.ByName("ConsentApprove")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accountServiceConsentDenyHandler := connect.NewUnaryHandler(
+		AccountServiceConsentDenyProcedure,
+		svc.ConsentDeny,
+		connect.WithSchema(accountServiceMethods.ByName("ConsentDeny")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.account.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccountServiceGetConfigProcedure:
@@ -748,6 +800,10 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceSubmitVerificationHandler.ServeHTTP(w, r)
 		case AccountServiceGetMyPermissionsProcedure:
 			accountServiceGetMyPermissionsHandler.ServeHTTP(w, r)
+		case AccountServiceConsentApproveProcedure:
+			accountServiceConsentApproveHandler.ServeHTTP(w, r)
+		case AccountServiceConsentDenyProcedure:
+			accountServiceConsentDenyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -855,4 +911,12 @@ func (UnimplementedAccountServiceHandler) SubmitVerification(context.Context, *c
 
 func (UnimplementedAccountServiceHandler) GetMyPermissions(context.Context, *connect.Request[v1.GetMyPermissionsRequest]) (*connect.Response[v1.GetMyPermissionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.GetMyPermissions is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) ConsentApprove(context.Context, *connect.Request[v1.ConsentApproveRequest]) (*connect.Response[v1.ConsentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.ConsentApprove is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) ConsentDeny(context.Context, *connect.Request[v1.ConsentDenyRequest]) (*connect.Response[v1.ConsentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.ConsentDeny is not implemented"))
 }
