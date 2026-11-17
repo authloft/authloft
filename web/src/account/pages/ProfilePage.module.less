@@ -1,42 +1,95 @@
 // 个人资料页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// 头像行 / 明细 / 编辑表单间距；Semi Typography / Descriptions / Input /
-// Select / DatePicker / Button 自带组件样式不在此重复。
+// 卡片容器 / 头像区 / 信息网格 / 编辑表单间距；Semi Card / Avatar / Tag /
+// Divider / Input / Select / DatePicker / Button 自带组件样式不在此重复。
+// 颜色一律取 Semi 语义变量（深浅色随组件库联动），间距字号沿用共享令牌。
 @import (reference) '../../shared/styles/tokens.less';
 
+// 内容卡：水平居中、放宽宽度（约 560px），窄屏两侧留白由 padding 兜底。
 .pageContent {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 @spacing-md;
+}
+
+// 头像段：大头像 + 昵称 + @用户名 + 更换头像单行入口，整体居中。
+.avatarSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: @spacing-sm;
+  text-align: center;
+}
+
+.nickname {
+  color: var(--semi-color-text-0);
+  font-size: @font-size-lg;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.handle {
+  color: var(--semi-color-text-2);
+  font-size: @font-size-sm;
+}
+
+// 基本信息段：段标题 + 两列 label-value 网格，行距拉开。
+.infoSection {
   display: flex;
   flex-direction: column;
   gap: @spacing-lg;
-  max-width: 480px;
 }
 
-.avatarRow {
+.sectionTitle {
+  margin: 0;
+  color: var(--semi-color-text-1);
+  font-size: @font-size-md;
+  font-weight: 600;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: @spacing-lg @spacing-xl;
+}
+
+.infoItem {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+  min-width: 0;
+}
+
+.label {
   display: flex;
   align-items: center;
-  gap: @spacing-md;
+  gap: @spacing-xs;
+  color: var(--semi-color-text-2);
+  font-size: @font-size-sm;
 }
 
-// 资料编辑帧（沿 PasswordChangeForm.module.less 形态）。
+.value {
+  color: var(--semi-color-text-0);
+  word-break: break-all;
+}
+
+// 资料编辑帧（沿 PasswordChangeForm.module.less 形态）：字段随两列网格重排。
 .editForm {
   display: flex;
   flex-direction: column;
-  gap: @spacing-md;
+  gap: @spacing-lg;
+}
+
+.editGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: @spacing-md @spacing-xl;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: @spacing-xs;
-}
-
-.label {
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-}
-
-.extraInput {
-  font-family: monospace;
-  border-radius: @radius-sm;
+  min-width: 0;
 }
 
 .actions {
@@ -46,6 +99,14 @@
 
 .error {
   margin: 0;
-  color: @color-danger;
+  color: var(--semi-color-danger);
   font-size: @font-size-sm;
+}
+
+// 窄屏（≤480px）：两列网格收单列，保可读性。
+@media (max-width: @breakpoint-sm) {
+  .infoGrid,
+  .editGrid {
+    grid-template-columns: 1fr;
+  }
 }

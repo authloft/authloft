@@ -104,7 +104,8 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  *   birthday 格式 + 真日历本地校验）+ buildAvatarPersistRequest（头像持久化
  *   接线：AvatarUploader onUploaded 后 {avatarUrl} 单字段提交）+
  *   avatarPersistFailureMessage（持久化失败行内文案分派：401 归集中跳登录）
- *   + profileGenderText 展示映射 + 编辑下拉选项集现值兜底（locale 出域 /
+ *   + profileGenderText 展示映射 + locale / timezone 展示可读文案（与下拉
+ *   选项 label 同源）+ 编辑下拉选项集现值兜底（locale 出域 /
  *   timezone 历史别名与出域 / gender 出域 → 补项防下拉空白与保存误清空）；
  *   ProfilePageView 静态渲染（展示帧 override 优先 + 持久化失败文案 +
  *   编辑帧字段绑定 / 下拉触发器渲染 / 错误呈现）。
@@ -2555,6 +2556,44 @@ describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函�
   });
 });
 
+describe('profileLocaleText / profileTimezoneText（展示态可读文案，与下拉选项 label 同源）', () => {
+  test('locale：预设 → 自称 + 原值「简体中文 (zh-CN)」；出域值原样返回', () => {
+    expect(apiMod.profileLocaleText('zh-CN')).toBe('简体中文 (zh-CN)');
+    expect(apiMod.profileLocaleText('en-US')).toBe('English (en-US)');
+    expect(apiMod.profileLocaleText('ja-JP')).toBe('日本語 (ja-JP)');
+    // 出域值不在展示名表 → 原样（与 withCurrentOption 补项 label 同式）。
+    expect(apiMod.profileLocaleText('en-GB')).toBe('en-GB');
+    expect(apiMod.profileLocaleText('')).toBe('');
+  });
+
+  test('timezone：IANA 分隔符转可读空格；无分隔符（UTC）与历史别名同式', () => {
+    expect(apiMod.profileTimezoneText('Asia/Shanghai')).toBe('Asia / Shanghai');
+    expect(apiMod.profileTimezoneText('America/Argentina/Buenos_Aires')).toBe(
+      'America / Argentina / Buenos Aires',
+    );
+    expect(apiMod.profileTimezoneText('UTC')).toBe('UTC');
+    expect(apiMod.profileTimezoneText('US/Pacific')).toBe('US / Pacific');
+    expect(apiMod.profileTimezoneText('')).toBe('');
+  });
+
+  test('下拉选项 label 与展示文案同源：预设项 label = 可读文案，兜底补项 label = 原值', () => {
+    const localePresets = apiMod.profileLocaleOptions('');
+    expect(localePresets[0]).toEqual({
+      value: 'zh-CN',
+      label: '简体中文 (zh-CN)',
+    });
+    // timezone 预设项 label 同式（首项随运行时 tzdata 排序，按值查找）。
+    const timezonePresets = apiMod.profileTimezoneOptions('');
+    const shanghai = timezonePresets.find(
+      (option) => option.value === 'Asia/Shanghai',
+    );
+    expect(shanghai).toEqual({
+      value: 'Asia/Shanghai',
+      label: 'Asia / Shanghai',
+    });
+  });
+});
+
 describe('编辑下拉选项集现值兜底（profileLocaleOptions / profileTimezoneOptions / profileGenderOptions，纯函数）', () => {
   test('时区预设：全量 IANA 经 Intl.supportedValuesOf 动态生成（零硬编码，量级 400+，含常用项）', () => {
     const presets = apiMod.profileTimezoneOptions('');
@@ -2562,7 +2601,7 @@ describe('编辑下拉选项集现值兜底（profileLocaleOptions / profileTime
     expect(presets.map((option) => option.value)).toEqual(
       expect.arrayContaining(['Asia/Shanghai', 'America/New_York']),
     );
-    // 预设项 label 即原值，可搜索下拉按原值匹配。
+    // 预设项 label 为可读文案（与展示态同源），搜索按原值 + label 双向匹配。
     expect(presets[0]).toMatchObject({
       value: expect.any(String),
       label: expect.any(String),
@@ -2695,10 +2734,27 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
     expect(html).not.toContain('扩展信息');
     // 头像入口：配置加载中（useRequest 未起 effect → status=idle）渲染禁用
     // 按钮而非隐藏（隐藏仅在配置就绪且零值投影时发生）。
-    expect(html).toContain('上传头像');
+    expect(html).toContain('更换头像');
     expect(html).toMatch(
-      /<button[^>]*disabled[^>]*><span[^>]*>上传头像<\/span>/,
+      /<button[^>]*disabled[^>]*><span[^>]*>更换头像<\/span>/,
     );
+  });
+
+  test('展示帧布局：卡片两段（头像合并单一大头像 + 基本信息两列），只读项带标签，locale / timezone 可读文案', () => {
+    const html = renderProfilePageView();
+    // 卡片两段结构：基本信息段标题 + 头像段 @用户名句柄。
+    expect(html).toContain('基本信息');
+    expect(html).toContain('@zhang_san');
+    // 只读小标签：用户名 / 手机号 / 邮箱三处（按 Tag 元素数断言；Tag 的
+    // aria-label 与内容对同文本各渲染一次，按文本计数会翻倍）。
+    expect(html.match(/class="semi-tag[ "]/g)?.length).toBe(3);
+    expect(html).toContain('只读');
+    // locale / timezone 由原值显示为可读文案（与下拉选项同一映射）。
+    expect(html).toContain('简体中文 (zh-CN)');
+    expect(html).toContain('Asia / Shanghai');
+    // 组件内不重复渲染第二个大头像（按 Avatar 元素数断言，其修饰类
+    // semi-avatar-extra-large 等共享前缀，按子串计数会翻倍）。
+    expect(html.match(/class="semi-avatar[ "]/g)?.length).toBe(1);
   });
 
   test('头像竞态消除口径：保存成功重取先于持久化落地（服务端旧头像）时 override 保留优先展示，不回退', () => {

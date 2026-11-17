@@ -17,10 +17,11 @@
  * / §3.2）。
  * UpdateProfile：薄封装 + PATCH 语义请求构造纯函数
  * buildUpdateProfileRequest（编辑表单）/ buildAvatarPersistRequest（头像
- * 持久化接线）+ gender 展示映射 profileGenderText + 头像持久化失败文案
- * 分派 avatarPersistFailureMessage + 编辑下拉选项集 profileLocaleOptions /
- * profileTimezoneOptions / profileGenderOptions（预设 + 现值不在集补项，
- * §3.2 / §3.1）。
+ * 持久化接线）+ gender / locale / timezone 展示映射 profileGenderText /
+ * profileLocaleText / profileTimezoneText（展示态与下拉选项 label 同源）+
+ * 头像持久化失败文案分派 avatarPersistFailureMessage + 编辑下拉选项集
+ * profileLocaleOptions / profileTimezoneOptions / profileGenderOptions
+ * （预设 + 现值不在集补项，§3.2 / §3.1）。
  * 本 entry 另需的 SsoService 方法（Authorize scene=bind / CreateQrcode）
  * 从 shared/api/sso 取，不在此重复定义（§5）。
  *
@@ -1174,6 +1175,18 @@ const LOCALE_PRESETS: readonly string[] = [
 ];
 
 /**
+ * 语言展示名（endonym，语言自称不随界面语言翻译）：展示态可读文案与
+ * 下拉选项 label 共用（profileLocaleText），出域值不在表内 → 原样返回。
+ */
+const LOCALE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  'en-US': 'English',
+  'ja-JP': '日本語',
+  'ko-KR': '한국어',
+};
+
+/**
  * 时区预设：全量 IANA，运行时经 Intl.supportedValuesOf('timeZone') 动态生成
  * （随运行时 tzdata 更新、零硬编码，量级 400+）；个别环境缺该 API 时回落
  * 空集，服务端现值仍可经兜底补项回显。
@@ -1198,22 +1211,42 @@ export function withCurrentOption<V extends string | number>(
   return [...presets, { value: current, label: String(current) }];
 }
 
-/** locale 编辑选项（常用预设 + 现值兜底），label 即原值不翻译。 */
+/**
+ * locale 可读文案：预设 → 「简体中文 (zh-CN)」自称 + 原值；出域值原样
+ * 返回（与 withCurrentOption 补项 label 同式）。展示态与下拉选项共用。
+ */
+export function profileLocaleText(locale: string): string {
+  const name = LOCALE_DISPLAY_NAMES[locale];
+  return name === undefined ? locale : `${name} (${locale})`;
+}
+
+/**
+ * timezone 可读文案：IANA 分隔符转可读空格（Asia/Shanghai →
+ * 「Asia / Shanghai」）。展示态与下拉选项共用；出域 / 历史别名同式。
+ */
+export function profileTimezoneText(timezone: string): string {
+  return timezone.split('/').join(' / ').split('_').join(' ');
+}
+
+/** locale 编辑选项（常用预设 + 现值兜底），label 与展示态文案同源。 */
 export function profileLocaleOptions(
   current: string,
 ): ProfileSelectOption<string>[] {
   return withCurrentOption(
-    LOCALE_PRESETS.map((value) => ({ value, label: value })),
+    LOCALE_PRESETS.map((value) => ({ value, label: profileLocaleText(value) })),
     current,
   );
 }
 
-/** timezone 编辑选项（全量 IANA 预设 + 现值兜底），label 即原值。 */
+/** timezone 编辑选项（全量 IANA 预设 + 现值兜底），label 与展示态文案同源。 */
 export function profileTimezoneOptions(
   current: string,
 ): ProfileSelectOption<string>[] {
   return withCurrentOption(
-    TIMEZONE_PRESETS.map((value) => ({ value, label: value })),
+    TIMEZONE_PRESETS.map((value) => ({
+      value,
+      label: profileTimezoneText(value),
+    })),
     current,
   );
 }

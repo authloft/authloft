@@ -86,7 +86,7 @@ export const account: typeof zhAccount = {
   'account.recoveryRegenerateConfirm':
     'Regenerating will invalidate all existing recovery codes. Continue?',
   'account.recoveryRegenerate': 'Regenerate',
-  // download as text (P2-3, pure frontend Blob download).
+  // download as text (pure frontend Blob download).
   'account.recoveryDownload': 'Download as text',
 
   // ---- MfaSetting (two-step verification toggle row + TOTP factor row;
@@ -186,7 +186,8 @@ export const account: typeof zhAccount = {
   // ---- AvatarUploader (the avatar alt reuses account.avatarAlt) -------------
   'account.uploadProgress': 'Uploading {percent}%',
   'account.avatarChooseFileAria': 'Choose an avatar file',
-  'account.avatarUploadAction': 'Upload avatar',
+  'account.avatarUploadAction': 'Change avatar',
+  'account.avatarUploadHint': 'Supports {types}, up to {size}',
 
   // ---- TotpBindDialog (the retry button reuses common.retry, the
   //      code aria-label reuses account.factorTotp) -----------------------------
@@ -219,6 +220,8 @@ export const account: typeof zhAccount = {
 
   // ---- ProfilePage editing (save / cancel reuse saveAction / cancelAction,
   //      phone label reuses phoneLabel) ----------------------------------------
+  'account.basicInfoTitle': 'Basic Information',
+  'account.readonlyBadge': 'Read-only',
   'account.profileEditAction': 'Edit Profile',
   // save success feedback (unified Semi Toast success channel).
   'account.profileSaved': 'Profile saved',

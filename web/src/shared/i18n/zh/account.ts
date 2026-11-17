@@ -77,7 +77,7 @@ export const account = {
   'account.recoveryRegenerateConfirm':
     '重新生成将作废全部现有恢复码，确定继续？',
   'account.recoveryRegenerate': '重新生成',
-  // 下载为文本（P2-3，纯前端 Blob 下载）。
+  // 下载为文本（纯前端 Blob 下载）。
   'account.recoveryDownload': '下载为文本',
 
   // ---- MfaSetting（两步验证开关行 + TOTP 因子行；因子名复用 factors.*，
@@ -165,7 +165,8 @@ export const account = {
   // ---- AvatarUploader（「用户头像」alt 复用 account.avatarAlt）-------------
   'account.uploadProgress': '上传中 {percent}%',
   'account.avatarChooseFileAria': '选择头像文件',
-  'account.avatarUploadAction': '上传头像',
+  'account.avatarUploadAction': '更换头像',
+  'account.avatarUploadHint': '支持 {types} 格式，不超过 {size}',
 
   // ---- TotpBindDialog（「重试」复用 common.retry，「TOTP 动态码」
   //      aria-label 复用 account.factorTotp）----------------------------------
@@ -197,6 +198,8 @@ export const account = {
 
   // ---- ProfilePage 资料编辑（保存 / 取消复用 saveAction / cancelAction，
   //      手机号复用 phoneLabel）--------------------------------------------
+  'account.basicInfoTitle': '基本信息',
+  'account.readonlyBadge': '只读',
   'account.profileEditAction': '编辑资料',
   // 保存成功反馈（统一 Semi Toast 成功通道）。
   'account.profileSaved': '资料已保存',

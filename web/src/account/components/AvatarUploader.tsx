@@ -1,29 +1,43 @@
 /**
- * 头像上传组件（docs/前端架构.md §5 / §3.2；docs/接口文档.md
+ * 头像上传入口（docs/前端架构.md §5 / §3.2；docs/接口文档.md
  * §3.2 / §10.8 流程唯一定义）：内部仅调 useUpload()，不感知
  * proxy / direct——模式差异收敛在 hook（文档位 shared/hooks/useUpload.ts，
  * 迁移落位；编排纯逻辑 uploadAvatarFile 亦在彼处）。入口可见性按 hook
  * status 区分：配置加载中 / 加载失败（尚不能确定存储配置）渲染禁用的
  * 上传按钮，仅配置就绪且零值投影（§3.2：avatar_storage_provider 未配置时
  * {mode:"proxy",maxSize:0,allowedTypes:[]}）才隐藏上传入口（渲染 null）。
- * 挂载点 ProfilePage（前端架构 §5）：上传成功经 onUploaded 上抛
- * url（§10.8 流程终点 {url}），由页面刷新头像展示；持久化到用户资料归
+ * 大头像展示归挂载点 ProfilePage（组件内不再重复渲染 Avatar），本组件
+ * 只出「更换头像」单行入口（按钮 + 尺寸 / 类型提示）；上传成功经
+ * onUploaded 上抛 url（§10.8 流程终点 {url}），持久化到用户资料归
  * UpdateProfile {avatarUrl}（页面壳接线）。
  */
 import { useRef, useState, type ReactNode } from 'react';
-import { Avatar, Button } from '@douyinfe/semi-ui';
+import { Button } from '@douyinfe/semi-ui';
 import { apiErrorText } from '../api';
 import { useUpload } from '../../shared/hooks/useUpload';
 import { t } from '../../shared/i18n';
 import styles from './AvatarUploader.module.less';
 
+/** MIME 子类型短名（image/jpeg → JPEG），提示文案用。 */
+function avatarTypeShortName(mime: string): string {
+  return (mime.split('/')[1] ?? mime).toUpperCase();
+}
+
+/** 字节数上限的可读文案（≥1MB 取 MB，一位小数兜非整；不足取 KB）。 */
+function avatarMaxSizeText(maxSize: bigint): string {
+  const mb = Number(maxSize) / (1024 * 1024);
+  if (mb >= 1) {
+    return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+  }
+  const kb = Number(maxSize) / 1024;
+  return `${Number.isInteger(kb) ? kb : kb.toFixed(1)} KB`;
+}
+
 /**
- * 头像上传组件：预览 + 选文件 + 进度 + 错误；上传成功经 onUploaded 上抛
+ * 头像上传入口：选文件 + 进度 + 错误；上传成功经 onUploaded 上抛
  * url（§10.8 流程终点 {url}），调用方（ProfilePage）刷新头像展示。
  */
 export function AvatarUploader(props: {
-  /** 当前头像地址（预览底图；上传成功后预览切换为新 url）。 */
-  currentUrl?: string;
   /** 上传成功回调（§10.8 流程终点 {url}）。 */
   onUploaded?: (url: string) => void;
 }): ReactNode {
@@ -33,8 +47,7 @@ export function AvatarUploader(props: {
     undefined,
   );
   const [error, setError] = useState<unknown>(undefined);
-  const [uploadedUrl, setUploadedUrl] = useState<string | undefined>(undefined);
-  // 上传失败保留原文件供「重试」——不必重新选择文件；成功或选择新文件时清除。
+  // 上传失败保留原文件供「重试」——不必重新选择文件；选择新文件时清除。
   const [retryFile, setRetryFile] = useState<File | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -65,7 +78,6 @@ export function AvatarUploader(props: {
       }
     })
       .then((url) => {
-        setUploadedUrl(url);
         props.onUploaded?.(url);
       })
       .catch((uploadError: unknown) => {
@@ -78,15 +90,21 @@ export function AvatarUploader(props: {
       });
   };
 
-  const previewUrl = uploadedUrl ?? props.currentUrl;
+  // 尺寸 / 类型提示随配置下发（entryActive 时 config 必已就绪且非零值）。
+  const typesText = (config?.allowedTypes ?? [])
+    .map(avatarTypeShortName)
+    .join(' / ');
+  const hintText =
+    entryActive && config !== undefined && typesText !== ''
+      ? t('account.avatarUploadHint', {
+          types: typesText,
+          size: avatarMaxSizeText(config.maxSize),
+        })
+      : undefined;
+
   return (
-    <div className={styles.uploader}>
-      <Avatar
-        size="large"
-        src={previewUrl || undefined}
-        alt={t('account.avatarAlt')}
-      />
-      <div className={styles.controls}>
+    <div className={styles.controls}>
+      <div className={styles.uploader}>
         <input
           ref={inputRef}
           type="file"
@@ -101,33 +119,39 @@ export function AvatarUploader(props: {
           aria-label={t('account.avatarChooseFileAria')}
         />
         <Button
+          theme="borderless"
+          type="primary"
           onClick={() => inputRef.current?.click()}
           loading={uploading}
           disabled={!entryActive || uploading}
         >
           {t('account.avatarUploadAction')}
         </Button>
-        {progressText !== undefined ? (
-          <p role="status" className={styles.progress}>
-            {progressText}
-          </p>
-        ) : null}
-        {error !== undefined ? (
-          <p role="alert" className={styles.error}>
-            {apiErrorText(error)}
-          </p>
-        ) : null}
-        {error !== undefined && retryFile !== undefined ? (
-          // 失败重试——以上次选择的文件重走上传链。
-          <Button
-            size="small"
-            onClick={() => handleFile(retryFile)}
-            disabled={uploading}
-          >
-            {t('common.retry')}
-          </Button>
+        {hintText !== undefined ? (
+          // 提示小字复用 .progress 弱化样式（muted / sm），不新增类。
+          <span className={styles.progress}>{hintText}</span>
         ) : null}
       </div>
+      {progressText !== undefined ? (
+        <p role="status" className={styles.progress}>
+          {progressText}
+        </p>
+      ) : null}
+      {error !== undefined ? (
+        <p role="alert" className={styles.error}>
+          {apiErrorText(error)}
+        </p>
+      ) : null}
+      {error !== undefined && retryFile !== undefined ? (
+        // 失败重试——以上次选择的文件重走上传链。
+        <Button
+          size="small"
+          onClick={() => handleFile(retryFile)}
+          disabled={uploading}
+        >
+          {t('common.retry')}
+        </Button>
+      ) : null}
     </div>
   );
 }
