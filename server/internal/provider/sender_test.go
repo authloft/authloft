@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -257,6 +258,42 @@ func TestCodeBridgeSendCodeDroppedWhenQueueClosed(t *testing.T) {
 	}
 	if calls, _, _, _ := closedVendor.snapshot(); calls != 0 {
 		t.Fatalf("vendor calls = %d, want 0", calls)
+	}
+}
+
+// TestCodeBridgeProxyRefUnresolvableProviderDisabled 出站代理引用不可解析：
+// 行级 fail-closed（§15.4），发送期解析归一为 ErrChannelNotConfigured（登录链
+// 既有 provider_disabled 出口，不新增取值），不按未知异常置 failed。
+func TestCodeBridgeProxyRefUnresolvableProviderDisabled(t *testing.T) {
+	ensureTestVendors()
+	ext, err := repo.MarshalProviderExt(&providerpb.Ext{ProxyProviderKey: "ghost_proxy"})
+	if err != nil {
+		t.Fatalf("marshal ext: %v", err)
+	}
+	// 行自身存在且启用，但其引用键指向不存在的 proxy 行 → Loader 装配期
+	// 返回包装 ErrProxyRefUnresolvable（fakeRowSource 仅命中自身 key）。
+	loader := provider.NewLoader(fakeRowSource{row: &model.Provider{
+		ProviderKey: "eml_px", DisplayName: "Test Email", Category: provider.CategoryEmail,
+		Type: testBridgeVendorType, IsEnabled: 1, Ext: ext,
+	}}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
+	q := asyncqueue.New(provider.SendExecutor{}, asyncqueue.Options{
+		Capacity: 4, Workers: 1, BatchSize: 4, FlushInterval: time.Hour,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = q.Close(ctx)
+	})
+	bridge, err := provider.NewCodeBridge(newEngineSettings("eml_px"), loader, q, settings.KeyEmailProviderKey, provider.CategoryEmail)
+	if err != nil {
+		t.Fatalf("NewCodeBridge: %v", err)
+	}
+	err = bridge.SendCode(context.Background(), "alice@example.com", "123456")
+	if !errors.Is(err, provider.ErrChannelNotConfigured) {
+		t.Fatalf("SendCode err = %v, want ErrChannelNotConfigured（provider_disabled 口径）", err)
+	}
+	if !strings.Contains(err.Error(), "proxy ref unresolvable") {
+		t.Fatalf("err = %v, 应为代理引用解析失败路径（非实例缺失路径）", err)
 	}
 }
 

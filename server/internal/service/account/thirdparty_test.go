@@ -30,13 +30,18 @@ import (
 
 // —— fake 全家 ——
 
-// fakeLoader ProviderLoader 的 fake：按 key / type 返回预置实例。
+// fakeLoader ProviderLoader 的 fake：按 key / type 返回预置实例；
+// getErrs 按 key 注入装载错误（如出站代理引用不可解析）。
 type fakeLoader struct {
-	byKey  map[string]*provider.Provider
-	byType map[string][]*provider.Provider
+	byKey   map[string]*provider.Provider
+	byType  map[string][]*provider.Provider
+	getErrs map[string]error
 }
 
 func (l *fakeLoader) Get(_ context.Context, key string) (*provider.Provider, error) {
+	if err, ok := l.getErrs[key]; ok {
+		return nil, err
+	}
 	if p, ok := l.byKey[key]; ok {
 		return p, nil
 	}
@@ -731,6 +736,15 @@ func TestThirdpartyOauth(t *testing.T) {
 			t.Errorf("err = %v, want ErrProviderDisabled（enable_signin=0，不检查 enable_signup）", err)
 		}
 	})
+	t.Run("出站代理引用不可解析 → provider_disabled（行级 fail-closed，§15.4）", func(t *testing.T) {
+		e := newEnv(t)
+		e.loader.getErrs = map[string]error{
+			"qq": fmt.Errorf("provider: %w (ref %q)", provider.ErrProxyRefUnresolvable, "ghost"),
+		}
+		if _, err := e.svc.ThirdpartyOauth(context.Background(), newInput(e)); !errors.Is(err, ErrProviderDisabled) {
+			t.Errorf("err = %v, want ErrProviderDisabled（按既有出口收敛，不新增取值）", err)
+		}
+	})
 	t.Run("非 redirect 通道 → invalid_request", func(t *testing.T) {
 		e := newEnv(t)
 		e.adapter.channel = provider.ChannelQRCode
@@ -921,6 +935,15 @@ func TestBindToCurrentUser(t *testing.T) {
 	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "nope", identity); out != nil || fail != statusProviderDisabled {
 		t.Errorf("provider 缺失 → (%+v, %q), want provider_disabled", out, fail)
 	}
+	// 出站代理引用不可解析（getErrs 注入，行级 fail-closed §15.4）：
+	// 归一 provider_disabled 出口，不落 failed。
+	e.loader.getErrs = map[string]error{
+		"qq": fmt.Errorf("provider: %w (ref %q)", provider.ErrProxyRefUnresolvable, "ghost"),
+	}
+	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity); out != nil || fail != statusProviderDisabled {
+		t.Errorf("代理引用不可解析 → (%+v, %q), want provider_disabled", out, fail)
+	}
+	e.loader.getErrs = nil
 	e.binds.findErr = errors.New("db down")
 	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity); out != nil || fail != orchestrator.StatusFailed {
 		t.Errorf("查询故障 → (%+v, %q), want failed", out, fail)

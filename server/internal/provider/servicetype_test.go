@@ -1,7 +1,7 @@
-// 服务型 Provider 静态 meta 单测：captcha / storage / proxy 类型并入
-// LookupTypeMeta 与 TypeMetas（admin 下拉 / schema / 写路径数据源），category
-// 与 Schema 字段声明正确；它们不进两张带 factory 的注册表，NewAdapter /
-// NewSender 仍查不到。
+// 服务型 Provider 静态 meta 单测：captcha / storage / proxy 类型以 meta-only
+// 并入统一注册表的 LookupTypeMeta 与 TypeMetas（admin 下拉 / schema / 写路径
+// 数据源），category 与 Schema 字段声明正确；它们不进登录快照 AdapterTypes，
+// NewAdapter / NewSender 仍查不到。
 package provider_test
 
 import (
@@ -33,10 +33,10 @@ func TestServiceTypeConstantsMatchRuntime(t *testing.T) {
 	}
 }
 
-// TestLookupTypeMetaServiceTypes 第四源：三家 captcha、storage/local 与 proxy
-// 命中，category 正确、Ext 字段经 Schema() 完整声明；两张 factory 注册表均查
-// 不到。引用键呈现范围：captcha 声明（出站外呼）、local（本地磁盘）与 proxy
-// 行自身（不自引）不声明。
+// TestLookupTypeMetaServiceTypes 服务型源：三家 captcha、storage/local 与 proxy
+// 命中，category 正确、Ext 字段经 Schema() 完整声明；不进登录快照
+// AdapterTypes，消息域视图亦查不到。引用键呈现范围：captcha 声明（出站外呼）、
+// local（本地磁盘）与 proxy 行自身（不自引）不声明。
 func TestLookupTypeMetaServiceTypes(t *testing.T) {
 	for _, tc := range []struct {
 		typ         string
@@ -123,11 +123,14 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		if meta.Schema()[0].Key == "mutated" {
 			t.Errorf("%q Schema() 返回共享切片", tc.typ)
 		}
-		if _, ok := provider.Lookup(tc.typ); ok {
-			t.Errorf("%q 不应进 oauth 适配器注册表", tc.typ)
+		// meta-only：不进登录快照（无 auth 槽），消息域视图亦不含。
+		for _, atyp := range provider.AdapterTypes() {
+			if atyp == tc.typ {
+				t.Errorf("%q 不应出现在 AdapterTypes()（登录快照数据源）", tc.typ)
+			}
 		}
 		if _, ok := provider.LookupSenderMeta(tc.typ); ok {
-			t.Errorf("%q 不应进消息域注册表", tc.typ)
+			t.Errorf("%q 不应进消息域视图", tc.typ)
 		}
 	}
 }

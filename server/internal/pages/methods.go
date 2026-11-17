@@ -319,6 +319,12 @@ func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error)
 		}
 		ps, err := h.loader.ListByType(context.Background(), meta.Type)
 		if err != nil {
+			// 出站代理引用不可解析：行级 fail-closed（§15.4），该渠道按既有
+			// provider_disabled 口径从快照隐去（与未启用同观感），不阻断
+			// 整个登录页、不新增取值。
+			if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+				continue
+			}
 			return nil, fmt.Errorf("pages: list providers %q: %w", meta.Type, err)
 		}
 		for _, p := range ps {
@@ -387,13 +393,14 @@ func channelHasStep(channels map[string]bool, step string) bool {
 }
 
 // registeredMetas 渠道注册表枚举（type → category / channel）；Deps.Metas
-// 注入优先，默认读 provider 全局注册表（各渠道包 init 自注册，§15.3）。
+// 注入优先，默认读 provider 统一注册表的登录快照接口 AdapterTypes（仅 oauth
+// 渠道，各渠道包 init 自注册，§15.3）。
 func (h *Handler) registeredMetas() []provider.Meta {
 	if h.metas != nil {
 		return h.metas()
 	}
 	out := []provider.Meta{}
-	for _, t := range provider.Types() {
+	for _, t := range provider.AdapterTypes() {
 		if m, ok := provider.Lookup(t); ok {
 			out = append(out, m)
 		}

@@ -6,6 +6,7 @@ package pages
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -220,6 +221,47 @@ func TestThirdpartyProviders(t *testing.T) {
 		if call == "smtp" {
 			t.Errorf("Loader 查询了非 oauth 渠道 %q", call)
 		}
+	}
+}
+
+// TestThirdpartyProxyRefUnresolvableSkipped 出站代理引用不可解析（§15.4 行级
+// fail-closed）：该渠道按既有 provider_disabled 口径从快照隐去（与未启用同
+// 观感），其余渠道正常注入，整页不因单渠道配置劣化而失败。
+func TestThirdpartyProxyRefUnresolvableSkipped(t *testing.T) {
+	f := newFixture(t)
+	f.deps.Metas = func() []provider.Meta {
+		return []provider.Meta{
+			{Type: "qq", Category: "oauth", Channel: provider.ChannelRedirect},
+			{Type: "wechat_mp", Category: "oauth", Channel: provider.ChannelAPI},
+		}
+	}
+	f.loader.errs = map[string]error{
+		"qq": fmt.Errorf("provider: %w (ref %q)", provider.ErrProxyRefUnresolvable, "ghost"),
+	}
+	f.loader.rows = map[string][]*provider.Provider{
+		"wechat_mp": {provRow("wxmp", "wechat_mp", true, 1, 30)},
+	}
+
+	var tp map[string]any
+	for _, m := range loginMethodsFrom(t, "/sso/login", f) {
+		if m["method"] == "thirdparty" {
+			tp = m
+		}
+	}
+	if tp == nil {
+		t.Fatalf("thirdparty 条目缺失（单渠道代理引用劣化不得拖垮登录页）")
+	}
+	provs, _ := tp["providers"].([]any)
+	if len(provs) != 1 {
+		t.Fatalf("providers = %v, want 1（仅 wechat_mp，qq 已隐去）", provs)
+	}
+	p, _ := provs[0].(map[string]any)
+	if p["providerKey"] != "wxmp" {
+		t.Errorf("providers[0].providerKey = %v, want wxmp", p["providerKey"])
+	}
+	// 渠道并集只剩 api（external）：redirect 渠道（qq）整体隐去。
+	if !reflect.DeepEqual(strSlice(tp["steps"]), []string{"external"}) {
+		t.Errorf("steps = %v, want [external]", tp["steps"])
 	}
 }
 

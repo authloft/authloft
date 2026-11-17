@@ -1,14 +1,7 @@
-// 消息 Sender 基建（docs/后端架构.md §15.2 行 1715-1727、§15.3 行 1729-1736、
-// §3.9 行 417）：Sender 接口、消息域注册表、发送期生效实例解析、验证码异步
-// 投递桥与队列执行器。厂商实现按 internal/provider/{sms,email}/<type>/ 分层，
-// init() 自注册。
-//
-// 注册表取舍（§15.3 语义不变）：oauth 域 AuthAdapter 注册表（registry.go，
-// 既有契约）的键空间与 Factory 签名保持冻结，消息域以**并列注册表**落地
-// （RegisterSender / NewSender）。理由：Register(type, meta, factory) + init()
-// 自注册、meta 驱动管理后台 /schema（接口文档 §5.3）的语义两域完全一致；
-// 两域 type 名天然不相交（oauth 渠道名 vs 短信 / 邮件厂商名），不会撞键；
-// 若后续要求单一键空间，只需迁移 entries，注册方零改动。
+// 消息 Sender 基建（docs/后端架构.md §15.2、§15.3、§3.9）：Sender 接口、
+// RegisterSender 薄封装（转调统一注册表唯一入口 + WithSender，厂商包既有
+// 调用面一行不改）、发送期生效实例解析、验证码异步投递桥与队列执行器。
+// 厂商实现按 internal/provider/{sms,email}/<type>/ 分层，init() 自注册。
 package provider
 
 import (
@@ -17,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -72,7 +64,8 @@ type FieldMeta struct {
 }
 
 // SenderMeta 消息域渠道元信息（§15.3：meta 同时是管理后台 /schema 的数据源，
-// admin 表单按 Schema 渲染，不硬编码）。
+// admin 表单按 Schema 渲染，不硬编码）。注册时转换进统一注册表的 Meta
+// （registry.go），本类型是厂商包的既有声明面。
 type SenderMeta struct {
 	Type        string
 	DisplayName string
@@ -80,19 +73,9 @@ type SenderMeta struct {
 	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 无声明
 }
 
-var senderRegistry = struct {
-	mu      sync.RWMutex
-	entries map[string]*senderEntry
-}{entries: make(map[string]*senderEntry)}
-
-type senderEntry struct {
-	meta    SenderMeta
-	factory SenderFactory
-}
-
-// RegisterSender 注册消息厂商（在厂商包 init() 中调用，§15.3）。重复注册 /
-// 空 type / 空 factory / category 非 sms|email 属程序错误，直接 panic
-// （init 无法返回错误）。
+// RegisterSender 注册消息厂商（在厂商包 init() 中调用，§15.3：薄封装转调
+// 唯一注册入口 + WithSender，厂商包一行不改）。重复注册 / 空 type / 空
+// factory / category 非 sms|email 属程序错误，直接 panic（init 无法返回错误）。
 func RegisterSender(senderType string, meta SenderMeta, factory SenderFactory) {
 	if err := registerSender(senderType, meta, factory); err != nil {
 		panic(err)
@@ -110,39 +93,29 @@ func registerSender(senderType string, meta SenderMeta, factory SenderFactory) e
 		return fmt.Errorf("provider: register sender %q: category %q must be %q or %q",
 			senderType, meta.Category, CategorySMS, CategoryEmail)
 	}
-	if meta.Type == "" {
-		meta.Type = senderType
-	}
-	if meta.Type != senderType {
-		return fmt.Errorf("provider: register sender %q: meta.Type %q mismatch", senderType, meta.Type)
-	}
-
-	senderRegistry.mu.Lock()
-	defer senderRegistry.mu.Unlock()
-	if _, ok := senderRegistry.entries[senderType]; ok {
-		return fmt.Errorf("%w: sender type %q", ErrAlreadyRegistered, senderType)
-	}
-	senderRegistry.entries[senderType] = &senderEntry{meta: meta, factory: factory}
-	return nil
+	return register(senderType, Meta{
+		Type: meta.Type, DisplayName: meta.DisplayName,
+		Category: meta.Category, Schema: meta.Schema,
+	}, WithSender(factory))
 }
 
-// NewSender 按 Provider 实例的 type 构造指定渠道的消息 Sender（§15.3）。
-// 实例类型未注册为消息厂商 / 渠道不符 / 厂商 Ext 校验失败均属配置不可用，
-// 返回 ErrChannelNotConfigured 包装错误。
+// NewSender sender 槽取件（§15.3）：按 Provider 实例的 type 构造指定渠道的
+// 消息 Sender。实例类型未注册为消息厂商 / 渠道不符 / 厂商 Ext 校验失败均属
+// 配置不可用，返回 ErrChannelNotConfigured 包装错误。
 func NewSender(p *Provider, category string) (Sender, error) {
 	if p == nil {
 		return nil, ErrNilProvider
 	}
-	senderRegistry.mu.RLock()
-	e, ok := senderRegistry.entries[p.Type]
-	senderRegistry.mu.RUnlock()
-	if !ok {
+	registry.mu.RLock()
+	e, ok := registry.entries[p.Type]
+	registry.mu.RUnlock()
+	if !ok || e.sender == nil {
 		return nil, fmt.Errorf("%w: type %q not a %s sender", ErrChannelNotConfigured, p.Type, category)
 	}
 	if e.meta.Category != category {
 		return nil, fmt.Errorf("%w: type %q is category %q, want %q", ErrChannelNotConfigured, p.Type, e.meta.Category, category)
 	}
-	s, err := e.factory(p)
+	s, err := e.sender(p)
 	if err != nil {
 		return nil, fmt.Errorf("%w: build %q sender: %w", ErrChannelNotConfigured, p.Type, err)
 	}
@@ -152,26 +125,36 @@ func NewSender(p *Provider, category string) (Sender, error) {
 	return s, nil
 }
 
-// LookupSenderMeta 返回消息厂商元信息（管理后台 /schema 卡的数据源）。
+// LookupSenderMeta 返回消息厂商元信息（管理后台 /schema 卡的数据源）：
+// 统一注册表中 sender 槽非空的条目。
 func LookupSenderMeta(senderType string) (SenderMeta, bool) {
-	senderRegistry.mu.RLock()
-	defer senderRegistry.mu.RUnlock()
-	e, ok := senderRegistry.entries[senderType]
-	if !ok {
+	registry.mu.RLock()
+	e, ok := registry.entries[senderType]
+	registry.mu.RUnlock()
+	if !ok || e.sender == nil {
 		return SenderMeta{}, false
 	}
-	return e.meta, true
+	return SenderMeta{
+		Type: e.meta.Type, DisplayName: e.meta.DisplayName,
+		Category: e.meta.Category, Schema: e.meta.Schema,
+	}, true
 }
 
 // SenderTypes 返回消息域全部已注册厂商的元信息快照，按 Type 稳定排序
 // （admin GetProviderTypes 下拉数据源的两域之一，接口文档 §5.2 行 1175；
-// 与 oauth 域 Types() 对称：排序保证确定性输出）。
+// 排序保证确定性输出）。
 func SenderTypes() []SenderMeta {
-	senderRegistry.mu.RLock()
-	defer senderRegistry.mu.RUnlock()
-	out := make([]SenderMeta, 0, len(senderRegistry.entries))
-	for _, e := range senderRegistry.entries {
-		out = append(out, e.meta)
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	out := make([]SenderMeta, 0, len(registry.entries))
+	for _, e := range registry.entries {
+		if e.sender == nil {
+			continue
+		}
+		out = append(out, SenderMeta{
+			Type: e.meta.Type, DisplayName: e.meta.DisplayName,
+			Category: e.meta.Category, Schema: e.meta.Schema,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
 	return out
@@ -253,6 +236,11 @@ func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider %q not found", ErrChannelNotConfigured, providerKey)
+		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值。
+		if errors.Is(err, ErrProxyRefUnresolvable) {
+			return nil, fmt.Errorf("%w: %q proxy ref unresolvable", ErrChannelNotConfigured, providerKey)
 		}
 		return nil, fmt.Errorf("provider: resolve %q: %w", providerKey, err)
 	}

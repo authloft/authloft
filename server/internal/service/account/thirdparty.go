@@ -441,6 +441,11 @@ func (s *ThirdpartyService) ThirdpartyOauth(ctx context.Context, in OauthInput) 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: %q not found", ErrProviderDisabled, in.ProviderKey)
 		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值。
+		if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+			return nil, fmt.Errorf("%w: %q proxy ref unresolvable", ErrProviderDisabled, in.ProviderKey)
+		}
 		return nil, fmt.Errorf("account thirdparty: load provider: %w", err)
 	}
 	if !p.Enabled() || p.Row == nil || p.Row.EnableSignin != 1 {
@@ -610,6 +615,11 @@ func (s *ThirdpartyService) BindToCurrentUser(ctx context.Context, uid int64, pr
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, statusProviderDisabled
 		}
+		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
+		// provider_disabled 出口收敛，不新增取值。
+		if errors.Is(err, provider.ErrProxyRefUnresolvable) {
+			return nil, statusProviderDisabled
+		}
 		return nil, orchestrator.StatusFailed
 	}
 	return s.bindWith(ctx, uid, p, identity)
@@ -684,13 +694,14 @@ func (s *ThirdpartyService) bindFailure(fail string, outcome *BindOutcome) (*Bin
 	}
 }
 
-// metas 渠道注册表枚举（available 数据源）；deps.Metas 注入优先，缺省读全局注册表。
+// metas 渠道注册表枚举（available 数据源）；deps.Metas 注入优先，缺省读全局
+// 统一注册表的登录快照接口 AdapterTypes（仅 oauth 渠道，§15.3）。
 func (s *ThirdpartyService) metas() []provider.Meta {
 	if s.deps.Metas != nil {
 		return s.deps.Metas()
 	}
 	out := make([]provider.Meta, 0)
-	for _, t := range provider.Types() {
+	for _, t := range provider.AdapterTypes() {
 		if m, ok := provider.Lookup(t); ok {
 			out = append(out, m)
 		}

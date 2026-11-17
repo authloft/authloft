@@ -42,7 +42,7 @@ func TestThirdpartyAdapterRegistryComplete(t *testing.T) {
 		"microsoft", "oauth2", "oidc", "qq", "wechat", "wechat_mp",
 		"wechat_mp_scan", "weibo",
 	}
-	got := provider.Types()
+	got := provider.AdapterTypes()
 	for _, w := range want {
 		found := false
 		for _, g := range got {

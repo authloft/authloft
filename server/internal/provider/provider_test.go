@@ -392,13 +392,13 @@ func TestRegistryRegisterAndFactory(t *testing.T) {
 	seen := ""
 	fields := []FieldMeta{{Key: "client_id", Label: "AppID", Type: "text", Section: "credential", Required: true}}
 	meta := Meta{Type: typ, DisplayName: "测试渠道", Category: "oauth", Channel: ChannelAPI, Fields: fields}
-	if err := register(typ, meta, func(p *Provider) (AuthAdapter, error) {
+	if err := register(typ, meta, WithAuth(func(p *Provider) (AuthAdapter, error) {
 		seen = p.Key + ":" + p.Ext.GetAppId()
 		return ChannelAPIAdapter{}, nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if err := register(typ, meta, func(*Provider) (AuthAdapter, error) { return nil, nil }); !errors.Is(err, ErrAlreadyRegistered) {
+	if err := register(typ, meta, WithAuth(func(*Provider) (AuthAdapter, error) { return nil, nil })); !errors.Is(err, ErrAlreadyRegistered) {
 		t.Fatalf("duplicate register err = %v, want ErrAlreadyRegistered", err)
 	}
 
@@ -432,8 +432,82 @@ func TestRegistryRegisterAndFactory(t *testing.T) {
 
 // TestRegistryNilFactory 注册空工厂返回 ErrNilFactory。
 func TestRegistryNilFactory(t *testing.T) {
-	if err := register("test_registry_nilfactory", Meta{}, nil); !errors.Is(err, ErrNilFactory) {
+	if err := register("test_registry_nilfactory", Meta{}, WithAuth(nil)); !errors.Is(err, ErrNilFactory) {
 		t.Fatalf("err = %v, want ErrNilFactory", err)
+	}
+}
+
+// TestRegistryUnifiedMultiSlot 统一注册表多槽语义（§15.3）：同一张表同时容纳
+// auth / sender 槽与 meta-only 条目；公开 Register / RegisterSender 薄封装与
+// 包内 init 注册走同一入口；同一 type 至多挂一种 factory；登录快照
+// AdapterTypes 只含 auth 槽类型、全类型枚举 TypeMetas 仍含全部。
+func TestRegistryUnifiedMultiSlot(t *testing.T) {
+	const authTyp = "test_multi_slot_auth"
+	const senderTyp = "test_multi_slot_sender"
+	const metaOnlyTyp = "test_multi_slot_meta"
+
+	register(authTyp, Meta{Type: authTyp, DisplayName: "渠道", Category: CategoryOAuth, Channel: ChannelRedirect},
+		WithAuth(func(*Provider) (AuthAdapter, error) { return ChannelAPIAdapter{}, nil }))
+	if err := registerSender(senderTyp, SenderMeta{Type: senderTyp, DisplayName: "厂商", Category: CategorySMS},
+		func(*Provider) (Sender, error) { return nil, nil }); err != nil {
+		t.Fatalf("registerSender: %v", err)
+	}
+	if err := register(metaOnlyTyp, Meta{Type: metaOnlyTyp, DisplayName: "服务", Category: CategoryStorage}); err != nil {
+		t.Fatalf("register meta-only: %v", err)
+	}
+
+	// 同一 type 至多挂一种 factory。
+	err := register("test_multi_slot_conflict", Meta{}, WithAuth(
+		func(*Provider) (AuthAdapter, error) { return nil, nil }), WithSender(
+		func(*Provider) (Sender, error) { return nil, nil }))
+	if !errors.Is(err, ErrSlotConflict) {
+		t.Fatalf("dual slot err = %v, want ErrSlotConflict", err)
+	}
+
+	// 统一表：Lookup 对三来源全部命中（不再分表隔离）。
+	for _, typ := range []string{authTyp, senderTyp, metaOnlyTyp} {
+		if _, ok := Lookup(typ); !ok {
+			t.Errorf("Lookup(%q) 未命中（统一注册表单一来源）", typ)
+		}
+	}
+	// 槽位隔离：auth 槽类型不能当消息厂商用，反之亦然；meta-only 两者皆不可。
+	if _, err := NewAdapter(&Provider{Type: senderTyp}); !errors.Is(err, ErrUnknownType) {
+		t.Errorf("NewAdapter(sender) = %v, want ErrUnknownType", err)
+	}
+	if _, err := NewAdapter(&Provider{Type: metaOnlyTyp}); !errors.Is(err, ErrUnknownType) {
+		t.Errorf("NewAdapter(meta-only) = %v, want ErrUnknownType", err)
+	}
+	if _, err := NewSender(&Provider{Type: authTyp}, CategorySMS); !errors.Is(err, ErrChannelNotConfigured) {
+		t.Errorf("NewSender(auth) = %v, want ErrChannelNotConfigured", err)
+	}
+
+	// 登录快照只含 auth 槽类型；全类型枚举仍含 sender 与 meta-only。
+	has := func(list []string, typ string) bool {
+		for _, t := range list {
+			if t == typ {
+				return true
+			}
+		}
+		return false
+	}
+	adapters := AdapterTypes()
+	if !has(adapters, authTyp) {
+		t.Errorf("AdapterTypes 缺 auth 槽类型 %q: %v", authTyp, adapters)
+	}
+	for _, typ := range []string{senderTyp, metaOnlyTyp} {
+		if has(adapters, typ) {
+			t.Errorf("AdapterTypes 混入非 auth 类型 %q（登录快照被污染）", typ)
+		}
+	}
+	metas := TypeMetas()
+	seen := map[string]bool{}
+	for _, m := range metas {
+		seen[m.Type] = true
+	}
+	for _, typ := range []string{authTyp, senderTyp, metaOnlyTyp} {
+		if !seen[typ] {
+			t.Errorf("TypeMetas 缺 %q（admin 全类型枚举）", typ)
+		}
 	}
 }
 

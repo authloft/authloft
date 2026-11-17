@@ -1,5 +1,6 @@
-// 虚拟 Provider 类型元数据单测：三源统一查询能命中 unionid，但它不进任何
-// 带 factory 的注册表，也不出现在登录链 metas() 的数据源 provider.Types()。
+// 虚拟 Provider 类型元数据单测：统一注册表查询能命中 unionid（meta-only），
+// 但它没有任何 factory 槽——不进登录链 metas() 的数据源 AdapterTypes，
+// NewAdapter / NewSender 对它一律失败。
 package provider_test
 
 import (
@@ -9,9 +10,9 @@ import (
 	"authloft/internal/provider"
 )
 
-// TestLookupTypeMetaUnion 第三源：LookupTypeMeta 命中虚拟 Union meta，
+// TestLookupTypeMetaUnion 虚拟类型：LookupTypeMeta 命中 union meta，
 // 类别为 union、Schema 为完整表列声明（虚拟类型无 Ext 字段）；
-// 两张带 factory 的注册表都查不到它。
+// 消息域视图查不到它（无 sender 槽）。
 func TestLookupTypeMetaUnion(t *testing.T) {
 	meta, ok := provider.LookupTypeMeta(provider.UnionProviderType)
 	if !ok {
@@ -47,15 +48,12 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 			t.Errorf("union %q Storage = %q, want column", f.Key, f.Storage)
 		}
 	}
-	if _, ok := provider.Lookup(provider.UnionProviderType); ok {
-		t.Error("unionid 不应进 oauth 适配器注册表")
-	}
 	if _, ok := provider.LookupSenderMeta(provider.UnionProviderType); ok {
-		t.Error("unionid 不应进消息域注册表")
+		t.Error("unionid 不应进消息域视图（无 sender 槽）")
 	}
-	for _, typ := range provider.Types() {
+	for _, typ := range provider.AdapterTypes() {
 		if typ == provider.UnionProviderType {
-			t.Error("unionid 不应出现在 provider.Types()（登录快照数据源）")
+			t.Error("unionid 不应出现在 AdapterTypes()（登录快照数据源）")
 		}
 	}
 }

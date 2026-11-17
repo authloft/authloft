@@ -1,15 +1,16 @@
 // 服务型 Provider 类型元数据（docs/后端架构.md §15.1、§15.2、§9.1、§15.4）：
 // captcha（turnstile / recaptcha / hcaptcha）与 storage（local）有各自的运行时
 // 解析链（captcha.Catalog / Verifier、storage.Resolver），proxy（type=proxy）仅
-// 作被引配置行供出站代理解析，都不属于 provider 包的 oauth 适配器注册表或消息
-// Sender 注册表——前者工厂签名是 AuthAdapter、后者把 category 限死在 sms|email，
-// 均容不下。与 Union 一样，这里以静态 meta 单独登记，只喂给管理后台的类型下拉 /
-// schema / 写路径键集，不产生 adapter / sender。区别于 Union 的是它们有真实
-// 运行时实现（proxy 的运行时角色是被 outbound.go 的解析链引用），不是虚拟归并类型。
+// 作被引配置行供出站代理解析。本文件在 provider 包内 init() 把五个 type 以
+// meta-only（无 factory）注册进统一注册表（§15.3 阶段一：只进 LookupTypeMeta /
+// TypeMetas 供管理后台的类型下拉 / schema / 写路径键集，不进 AdapterTypes
+// 登录快照、NewAdapter / NewSender 查不到它们；阶段二 / 三 / 五 factory 落地后
+// meta 迁入对应 type 子包）。区别于 Union 的是它们有真实运行时实现（proxy 的
+// 运行时角色是被 outbound.go 的解析链引用），不是虚拟归并类型。
 //
 // type 字符串与 captcha.TypeTurnstile / storage 的 local 分支取值一致，但不
-// import 这两个包：storage 依赖 provider，反向引用会成环；静态字面量也让本表
-// 不受 blank import 顺序影响。
+// import 这两个包：storage 依赖 provider，反向引用会成环；包内静态注册也让
+// 本表不受 blank import 顺序影响。
 package provider
 
 // 服务型 category 常量（docs/后端架构.md §4.1 provider.category 取值）。
@@ -57,44 +58,26 @@ func ProxyRef() FieldMeta {
 	}
 }
 
-// serviceMetas 服务型类型静态表。Schema 是 /schema 的唯一数据源（表列 + Ext，
-// 接口文档 §5.3）：captcha 三家统一用 client_id 作 site_key、client_secret 作
-// 密钥、endpoint 作自定义校验地址（captcha.ProviderSource 的投影口径），且类别
-// 呈现 proxy_provider_key 引用键；local 用 bucket 作本地目录、domain 作公开域名、
-// path_prefix 作 key 前缀（storage.NewLocal 的必填口径），仅本地磁盘无网络外呼、
-// 不声明引用键；proxy 承载五真实代理字段（§5.3），供引用方解析出站连接池、自身
-// 不外呼也不自引。
-var serviceMetas = map[string]TypeMeta{
-	CaptchaTypeTurnstile: {
-		Type:        CaptchaTypeTurnstile,
-		DisplayName: "Cloudflare Turnstile",
-		Category:    CategoryCaptcha,
-		Schema:      captchaSchema,
-	},
-	CaptchaTypeRecaptcha: {
-		Type:        CaptchaTypeRecaptcha,
-		DisplayName: "Google reCAPTCHA",
-		Category:    CategoryCaptcha,
-		Schema:      captchaSchema,
-	},
-	CaptchaTypeHcaptcha: {
-		Type:        CaptchaTypeHcaptcha,
-		DisplayName: "hCaptcha",
-		Category:    CategoryCaptcha,
-		Schema:      captchaSchema,
-	},
-	StorageTypeLocal: {
-		Type:        StorageTypeLocal,
-		DisplayName: "本地存储",
-		Category:    CategoryStorage,
-		Schema:      storageLocalSchema,
-	},
-	ProxyType: {
-		Type:        ProxyType,
-		DisplayName: "基础代理",
-		Category:    CategoryProxy,
-		Schema:      proxySchema,
-	},
+// init 服务型五类型 meta-only 注册进统一注册表（§15.3 阶段一）。Schema 是
+// /schema 的唯一数据源（表列 + Ext，接口文档 §5.3）：captcha 三家统一用
+// client_id 作 site_key、client_secret 作密钥、endpoint 作自定义校验地址
+// （captcha.ProviderSource 的投影口径），且类别呈现 proxy_provider_key 引用键；
+// local 用 bucket 作本地目录、domain 作公开域名、path_prefix 作 key 前缀
+// （storage.NewLocal 的必填口径），仅本地磁盘无网络外呼、不声明引用键；proxy
+// 承载五真实代理字段（§5.3），供引用方解析出站连接池、自身不外呼也不自引。
+// 无 factory：NewAdapter / NewSender 对它们恒失败。
+func init() {
+	for _, meta := range []Meta{
+		{Type: CaptchaTypeTurnstile, DisplayName: "Cloudflare Turnstile", Category: CategoryCaptcha, Schema: captchaSchema},
+		{Type: CaptchaTypeRecaptcha, DisplayName: "Google reCAPTCHA", Category: CategoryCaptcha, Schema: captchaSchema},
+		{Type: CaptchaTypeHcaptcha, DisplayName: "hCaptcha", Category: CategoryCaptcha, Schema: captchaSchema},
+		{Type: StorageTypeLocal, DisplayName: "本地存储", Category: CategoryStorage, Schema: storageLocalSchema},
+		{Type: ProxyType, DisplayName: "基础代理", Category: CategoryProxy, Schema: proxySchema},
+	} {
+		if err := register(meta.Type, meta); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // captchaFields 三家 captcha Ext 字段的单一来源（site_key / secret / 自定义

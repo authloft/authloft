@@ -1958,7 +1958,7 @@ func TestProviderRegistryComplete(t *testing.T) {
 		// 通用兜底（§12.2 行 1478-1479）。
 		"oidc", "oauth2",
 	}
-	got := provider.Types()
+	got := provider.AdapterTypes()
 	for _, w := range want {
 		found := false
 		for _, g := range got {

@@ -86,14 +86,19 @@ func defaultFactors() fakeFactors {
 	}}
 }
 
-// fakeLoader ProviderLister 的 fake：按 type 回放行，调用留档。
+// fakeLoader ProviderLister 的 fake：按 type 回放行，调用留档；errs 按 type
+// 注入装载错误（如出站代理引用不可解析）。
 type fakeLoader struct {
 	rows  map[string][]*provider.Provider
+	errs  map[string]error
 	calls []string
 }
 
 func (f *fakeLoader) ListByType(_ context.Context, t string) ([]*provider.Provider, error) {
 	f.calls = append(f.calls, t)
+	if err, ok := f.errs[t]; ok {
+		return nil, err
+	}
 	return f.rows[t], nil
 }
 
