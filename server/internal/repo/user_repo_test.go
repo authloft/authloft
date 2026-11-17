@@ -837,3 +837,136 @@ func TestUserRepoUpdateMfaRequired(t *testing.T) {
 		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
 	}
 }
+
+// TestUserRepoAnonymizeUser（env-skip）：删除用户的单事务匿名化改写
+// （§4.2）——user 行改写清单（username="deleted_<id>" / user_status=0 /
+// 联系方式置 NULL 与 verified 清零 / 资料列清空 / mfa_required=0 / epoch
+// 递增，last_login_at 与 created_at 保留）、user_profile 五列清空、凭证
+// 与 WebAuthn 附加表全清、第三方绑定全清（Union 连带行随之清零）、返回
+// 新 epoch、回绕 30000→1、不存在用户 ErrRecordNotFound。
+func TestUserRepoAnonymizeUser(t *testing.T) {
+	rp, db := userTestSetup(t)
+	ctx := context.Background()
+
+	phone, email := "13800138000", "alice@example.com"
+	lastLogin := time.Unix(1761700000, 0).UTC().Truncate(time.Second)
+	u := &model.User{
+		Username: "alice", Phone: &phone, Email: &email, Nickname: "Alice",
+		AvatarURL: "https://cdn.example.com/a.png", LastLoginAt: &lastLogin,
+	}
+	if err := rp.Create(ctx, u); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	if err := db.Model(&model.User{}).Where("id = ?", u.ID).
+		Updates(map[string]any{"mfa_required": 1, "epoch": 3}).Error; err != nil {
+		t.Fatalf("构造 mfa_required/epoch 前提失败: %v", err)
+	}
+
+	birthday := time.Unix(631152000, 0).UTC()
+	if err := rp.SaveProfile(ctx, &model.UserProfile{
+		UserID: u.ID, Gender: 2, Birthday: &birthday,
+		Locale: "zh-CN", Timezone: "Asia/Shanghai", Extra: []byte(`{"k":"v"}`),
+		UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("SaveProfile 失败: %v", err)
+	}
+
+	// 凭证四行（password / totp / webauthn / recovery_code）+ WebAuthn 附加行。
+	now := time.Now()
+	credRows := []model.UserCredential{
+		{UserID: u.ID, Kind: "password", Secret: []byte("hash"), CreatedAt: now, UpdatedAt: now},
+		{UserID: u.ID, Kind: "totp", Secret: []byte("key"), CreatedAt: now, UpdatedAt: now},
+		{UserID: u.ID, Kind: "webauthn", Secret: []byte("pk"), CreatedAt: now, UpdatedAt: now},
+		{UserID: u.ID, Kind: "recovery_code", Secret: []byte("meta"), CreatedAt: now, UpdatedAt: now},
+	}
+	for i := range credRows {
+		if err := db.Create(&credRows[i]).Error; err != nil {
+			t.Fatalf("凭证 Create 失败: %v", err)
+		}
+	}
+	if err := db.Create(&model.UserCredentialWebauthn{
+		ID: credRows[2].ID, UserID: u.ID, Kind: "webauthn",
+		PublicKey: []byte("cose"), CredentialID: "cred-1", SignCount: 5,
+	}).Error; err != nil {
+		t.Fatalf("WebAuthn 附加行 Create 失败: %v", err)
+	}
+
+	// 绑定两行：普通渠道 + Union 归并行（§12.7）。
+	bindRows := []model.UserThirdpartyBind{
+		{UserID: u.ID, ProviderKey: "wechat_mp_1", OpenID: "oX-1", CreatedAt: now},
+		{UserID: u.ID, ProviderKey: "wechat_union", OpenID: "union-1", CreatedAt: now},
+	}
+	for i := range bindRows {
+		if err := db.Create(&bindRows[i]).Error; err != nil {
+			t.Fatalf("绑定 Create 失败: %v", err)
+		}
+	}
+
+	at := time.Unix(1761800000, 0).UTC()
+	epoch, err := rp.AnonymizeUser(ctx, u.ID, at)
+	if err != nil || epoch != 4 {
+		t.Fatalf("AnonymizeUser = (epoch %d, err %v); want (4, nil)", epoch, err)
+	}
+
+	row, err := rp.FindByID(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("匿名化后行不应物理删除: %v", err)
+	}
+	if row.Username != fmt.Sprintf("deleted_%d", u.ID) {
+		t.Errorf("username = %q, want deleted_<id>", row.Username)
+	}
+	if row.UserStatus != 0 || row.MfaRequired != 0 || row.Epoch != 4 {
+		t.Errorf("status/mfa/epoch = (%d, %d, %d), want (0, 0, 4)", row.UserStatus, row.MfaRequired, row.Epoch)
+	}
+	if row.Phone != nil || row.Email != nil || row.PhoneVerified != 0 || row.EmailVerified != 0 {
+		t.Errorf("联系方式应置 NULL 清零: phone=%v email=%v pv=%d ev=%d", row.Phone, row.Email, row.PhoneVerified, row.EmailVerified)
+	}
+	if row.Nickname != "" || row.AvatarURL != "" {
+		t.Errorf("资料列应清空: nickname=%q avatar=%q", row.Nickname, row.AvatarURL)
+	}
+	if row.LastLoginAt == nil || !row.LastLoginAt.Equal(lastLogin) {
+		t.Errorf("last_login_at 应保留: %v, want %v", row.LastLoginAt, lastLogin)
+	}
+	if !row.CreatedAt.Truncate(time.Second).Equal(u.CreatedAt.Truncate(time.Second)) {
+		t.Errorf("created_at 应保留: %v, want %v", row.CreatedAt, u.CreatedAt)
+	}
+	if !row.UpdatedAt.Truncate(time.Second).Equal(at.Truncate(time.Second)) {
+		t.Errorf("updated_at 应为改写时刻: %v, want %v", row.UpdatedAt, at)
+	}
+
+	// user_profile 五列清空（行仍在）。
+	p, err := rp.GetProfile(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("profile 行应仍在（清空非删行）: %v", err)
+	}
+	if p.Gender != 0 || p.Birthday != nil || p.Locale != "" || p.Timezone != "" || p.Extra != nil {
+		t.Errorf("profile 应清空: %+v", p)
+	}
+
+	// 凭证 / WebAuthn 附加表 / 绑定全清（含 Union 连带行）。
+	var n int64
+	if err := db.Model(&model.UserCredential{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+		t.Errorf("凭证应全清: n=%d err=%v", n, err)
+	}
+	if err := db.Model(&model.UserCredentialWebauthn{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+		t.Errorf("WebAuthn 附加表应全清: n=%d err=%v", n, err)
+	}
+	if err := db.Model(&model.UserThirdpartyBind{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+		t.Errorf("绑定（含 Union 连带行）应全清: n=%d err=%v", n, err)
+	}
+
+	// 回绕边界：epoch=30000 时匿名化 → 1（跳过 0，语义同 IncEpoch）。
+	w := &model.User{Username: "wrap_user"}
+	if err := rp.Create(ctx, w); err != nil {
+		t.Fatalf("回绕用户 Create 失败: %v", err)
+	}
+	userTestSetEpoch(t, db, w.ID, 30000)
+	if epoch, err := rp.AnonymizeUser(ctx, w.ID, at); err != nil || epoch != 1 {
+		t.Fatalf("回绕匿名化 = (epoch %d, err %v); want (1, nil)", epoch, err)
+	}
+
+	// 不存在用户 → ErrRecordNotFound。
+	if _, err := rp.AnonymizeUser(ctx, 404, at); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
+	}
+}

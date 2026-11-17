@@ -54,6 +54,11 @@ type userFakeUsers struct {
 	incIDs  []int64
 	incNext int16
 
+	// —— 删除（DeleteUser 走 AnonymizeUser 单事务匿名化）——
+	anonymized    []userFakeAnonymize
+	anonymizeErr  error
+	anonymizeNext int16
+
 	// —— MFA 开关（SetUserMfa 走 UpdateMfaRequired 列级更新）——
 	mfaUpdated []userFakeMfaUpdate
 	mfaErr     error
@@ -88,6 +93,23 @@ type userFakeStatus struct {
 type userFakeMfaUpdate struct {
 	id  int64
 	mfa int8
+}
+
+type userFakeAnonymize struct {
+	id int64
+	at time.Time
+}
+
+func (f *userFakeUsers) AnonymizeUser(_ context.Context, id int64, at time.Time) (int16, error) {
+	if f.anonymizeErr != nil {
+		return 0, f.anonymizeErr
+	}
+	// 模拟 repo 的 rows=0 存在性判定（AnonymizeUser 契约）。
+	if f.user == nil || f.user.ID != id {
+		return 0, fmt.Errorf("user repo: anonymize user: %w", gorm.ErrRecordNotFound)
+	}
+	f.anonymized = append(f.anonymized, userFakeAnonymize{id: id, at: at})
+	return f.anonymizeNext, nil
 }
 
 func (f *userFakeUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
@@ -368,7 +390,10 @@ func (f *userFakeEvents) ListByUser(_ context.Context, q repo.EventLogListQuery)
 	return f.rows, f.total, nil
 }
 
-type userFakeEpoch struct{ synced []userFakeSync }
+type userFakeEpoch struct {
+	synced  []userFakeSync
+	syncErr error
+}
 
 type userFakeSync struct {
 	uid   int64
@@ -376,6 +401,9 @@ type userFakeSync struct {
 }
 
 func (f *userFakeEpoch) Sync(_ context.Context, uid int64, epoch int16) error {
+	if f.syncErr != nil {
+		return f.syncErr
+	}
 	f.synced = append(f.synced, userFakeSync{uid: uid, epoch: epoch})
 	return nil
 }
@@ -651,10 +679,11 @@ func TestUserServiceResetUserPassword(t *testing.T) {
 	}
 }
 
-// TestUserServiceSuperadminGuards superadmin 门禁判定（两接口 table-driven）：
-// 禁用 superadmin 被拒 / 启用 superadmin 放行 / 禁用普通用户放行；非 superadmin
-// 重置 superadmin 被拒 / superadmin 重置 superadmin 放行 / superadmin 重置自己放行 /
-// 重置普通用户放行；权限查询故障原样上抛（fail-closed）；权限门禁按目标先、actor 后顺序查。
+// TestUserServiceSuperadminGuards 旧写接口目标分级门禁判定（authorizeUserWrite
+// 收口后两接口 table-driven）：superadmin 目标禁用 / 启用一律被拒；重置密码
+// 对 superadmin 目标一律被拒（含 superadmin 操作者与其自身）；普通管理员目标
+// 仅 superadmin 操作者可写；普通账户放行且不查 actor；权限查询故障原样上抛
+// （fail-closed）；ResetUserPassword 行缺失先于门禁（not_found 不查权限表）。
 func TestUserServiceSuperadminGuards(t *testing.T) {
 	ctx := context.Background()
 	dbErr := errors.New("permission repo: db down")
@@ -673,12 +702,12 @@ func TestUserServiceSuperadminGuards(t *testing.T) {
 				status: 0, wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
 			},
 			{
-				name: "启用 superadmin 放行", perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
-				status: 1, wantQueries: nil, wantWrite: true,
+				name: "启用 superadmin 被拒（门禁不分分支）", perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				status: 1, wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
 			},
 			{
-				name: "禁用普通用户放行", perms: &userFakePermissions{},
-				status: 0, wantQueries: []int64{42}, wantWrite: true,
+				name: "禁用普通用户放行（目标两查询）", perms: &userFakePermissions{},
+				status: 0, wantQueries: []int64{42, 42}, wantWrite: true,
 			},
 			{
 				name: "权限查询故障原样上抛", perms: &userFakePermissions{errByUID: map[int64]error{42: dbErr}},
@@ -726,19 +755,24 @@ func TestUserServiceSuperadminGuards(t *testing.T) {
 		}{
 			{
 				name: "非 superadmin 重置 superadmin 被拒", actor: 1, perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
-				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42, 1},
+				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
 			},
 			{
-				name: "superadmin 重置 superadmin 放行", actor: 1, perms: &userFakePermissions{granted: userGrantSuperadmins(42, 1)},
-				wantQueries: []int64{42, 1}, wantWrite: true,
+				name: "superadmin 重置 superadmin 被拒（收编旧口径）", actor: 1, perms: &userFakePermissions{granted: userGrantSuperadmins(42, 1)},
+				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
 			},
 			{
-				name: "superadmin 重置自己放行", actor: 42, perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
-				wantQueries: []int64{42, 42}, wantWrite: true,
+				name: "superadmin 重置自己被拒（目标为 superadmin）", actor: 42, perms: &userFakePermissions{granted: userGrantSuperadmins(42)},
+				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42},
+			},
+			{
+				name: "重置普通管理员目标遇非 superadmin 操作者被拒", actor: 1,
+				perms:   &userFakePermissions{granted: map[int64]map[string]bool{42: {"editor": true}}},
+				wantErr: adminsvc.ErrPermissionDenied, wantQueries: []int64{42, 42, 1},
 			},
 			{
 				name: "重置普通用户放行（不查 actor）", actor: 1, perms: &userFakePermissions{},
-				wantQueries: []int64{42}, wantWrite: true,
+				wantQueries: []int64{42, 42}, wantWrite: true,
 			},
 			{
 				name: "目标权限查询故障原样上抛", actor: 1, perms: &userFakePermissions{errByUID: map[int64]error{42: dbErr}},
@@ -746,9 +780,9 @@ func TestUserServiceSuperadminGuards(t *testing.T) {
 			},
 			{
 				name: "actor 权限查询故障原样上抛", actor: 1, perms: &userFakePermissions{
-					granted: userGrantSuperadmins(42), errByUID: map[int64]error{1: dbErr},
+					granted: map[int64]map[string]bool{42: {"editor": true}}, errByUID: map[int64]error{1: dbErr},
 				},
-				wantErr: dbErr, wantQueries: []int64{42, 1},
+				wantErr: dbErr, wantQueries: []int64{42, 42, 1},
 			},
 		}
 		for _, tt := range tests {
@@ -942,7 +976,7 @@ func TestUserServiceUnlockUser(t *testing.T) {
 	svc, users, _, _, _, _, _, pwfail, _ := newUserSvc()
 	users.user = userTestRow()
 
-	if err := svc.UnlockUser(ctx, 42); err != nil {
+	if err := svc.UnlockUser(ctx, 1, 42); err != nil {
 		t.Fatalf("解锁: %v", err)
 	}
 	if len(pwfail.resetRefs) != 1 || pwfail.resetRefs[0] != "42" {
@@ -965,7 +999,7 @@ func TestUserServiceUnlockUser(t *testing.T) {
 	// 无联系方式：只清 uid 维度。
 	svc, users, _, _, _, _, _, pwfail, _ = newUserSvc()
 	users.user = &model.User{ID: 43, Username: "bob"}
-	if err := svc.UnlockUser(ctx, 43); err != nil {
+	if err := svc.UnlockUser(ctx, 1, 43); err != nil {
 		t.Fatalf("解锁: %v", err)
 	}
 	if len(pwfail.resetRefs) != 1 || pwfail.resetRefs[0] != strconv.FormatInt(43, 10) || len(pwfail.deletedRefs) != 0 {
@@ -974,7 +1008,7 @@ func TestUserServiceUnlockUser(t *testing.T) {
 
 	// 行缺失 404。
 	svc, _, _, _, _, _, _, _, _ = newUserSvc()
-	if err := svc.UnlockUser(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UnlockUser(ctx, 1, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -1825,6 +1859,188 @@ func TestUserServiceRescueWriteGate(t *testing.T) {
 				}
 				if len(users.mfaUpdated) != 0 || len(creds.updated) != 0 || len(creds.setEnabled) != 0 ||
 					len(creds.deletedByKind) != 0 || len(creds.deletedByID) != 0 ||
+					len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+					t.Fatalf("拒绝 / 故障不应有副作用")
+				}
+			})
+		}
+	}
+}
+
+// TestDeleteUser 覆盖清单（§5.4 / 《后端架构》§4.2 / §4.8）：成功
+// 链（AnonymizeUser 单事务 + al:pwdep Sync + 审计 admin_delete_user
+// detail={}）；自删拒绝；已删行（deleted_ 前缀）not_found 且优先于门禁
+// （权限行不随删除清理）；有任意权限点账户禁删（不因 superadmin 操作者放宽）；
+// superadmin 目标经 authorizeUserWrite 拒绝；行缺失 404；事务失败 /
+// Sync 故障上抛且零审计（fail-closed 链不降级）。
+func TestDeleteUser(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("permission repo: db down")
+
+	// 成功：AnonymizeUser(42, 服务时钟) 透传 + Sync(42, 新epoch) + 审计。
+	baseline := time.Now().Add(-time.Minute)
+	svc, users, _, _, _, _, epoch, _, audit := newUserSvc()
+	users.user = userTestRow()
+	users.anonymizeNext = 9
+	if err := svc.DeleteUser(ctx, 1, 42); err != nil {
+		t.Fatalf("删除: %v", err)
+	}
+	if len(users.anonymized) != 1 || users.anonymized[0].id != 42 ||
+		users.anonymized[0].at.Before(baseline) {
+		t.Fatalf("匿名化调用 = %+v, want id=42 且 at 为服务当前时钟", users.anonymized)
+	}
+	if len(users.incIDs) != 0 {
+		t.Fatalf("删除不复用 IncEpoch（epoch 随匿名化同事务递增）, got %v", users.incIDs)
+	}
+	if len(epoch.synced) != 1 || epoch.synced[0] != (userFakeSync{uid: 42, epoch: 9}) {
+		t.Fatalf("al:pwdep 同步 = %+v, want (42, 9)", epoch.synced)
+	}
+	if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminDeleteUser ||
+		audit.events[0].ActorType != eventlog.ActorTypeAdmin || audit.events[0].ActorID != 1 ||
+		audit.events[0].UserID != 42 {
+		t.Fatalf("删除审计 = %+v", audit.events)
+	}
+	var detail map[string]any
+	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil || len(detail) != 0 {
+		t.Fatalf("审计 detail 应为空映射 {}, got %q → %+v (%v)", audit.events[0].Detail, detail, err)
+	}
+
+	// id 非法 / 自删拒绝：零副作用。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc()
+	users.user = userTestRow()
+	if err := svc.DeleteUser(ctx, 1, 0); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("id<=0 应 ErrInvalidRequest, got %v", err)
+	}
+	if err := svc.DeleteUser(ctx, 42, 42); !errors.Is(err, adminsvc.ErrPermissionDenied) {
+		t.Fatalf("自删应 ErrPermissionDenied, got %v", err)
+	}
+	if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+		t.Fatalf("自删 / 非法入参不应有副作用")
+	}
+
+	// 行缺失 404（先于门禁，不查权限表）。
+	perms := &userFakePermissions{}
+	svc, _, _, _, _, _, _, _, _ = newUserSvc(perms)
+	if err := svc.DeleteUser(ctx, 1, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
+	}
+	if len(perms.calls) != 0 {
+		t.Fatalf("行缺失不应查权限, calls=%v", perms.calls)
+	}
+
+	// 已删行（deleted_ 前缀）→ not_found，且优先于门禁与权限点禁删判定
+	//（user_permission 行不随删除清理，先查门禁会把已删 superadmin 误判为
+	// permission_denied）。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(&userFakePermissions{granted: userGrantSuperadmins(42)})
+	deleted := userTestRow()
+	deleted.Username = "deleted_42"
+	users.user = deleted
+	if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("已删行应 ErrRecordNotFound, got %v", err)
+	}
+	if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 || len(perms.calls) != 0 {
+		t.Fatalf("已删行不应触碰写路径 / 权限表")
+	}
+
+	// superadmin 目标 → permission_denied（authorizeUserWrite，含 superadmin
+	// 操作者）；有任意权限点的普通管理员目标 → 禁删（不因操作者放宽）。
+	for _, tc := range []struct {
+		name  string
+		perms *userFakePermissions
+		calls []int64
+	}{
+		{"superadmin 目标", &userFakePermissions{granted: userGrantSuperadmins(42)}, []int64{42}},
+		{"普通管理员目标 + superadmin 操作者", &userFakePermissions{granted: map[int64]map[string]bool{42: {"editor": true}, 1: {adminsvc.PointSuperAdmin: true}}}, []int64{42, 42, 1, 42}},
+	} {
+		t.Run("禁删/"+tc.name, func(t *testing.T) {
+			svc, users, _, _, _, _, epoch, _, audit := newUserSvc(tc.perms)
+			users.user = userTestRow()
+			if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, adminsvc.ErrPermissionDenied) {
+				t.Fatalf("%s: err = %v, want ErrPermissionDenied", tc.name, err)
+			}
+			assertPermQueries(t, tc.perms.calls, tc.calls)
+			if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+				t.Fatalf("禁删不应有副作用")
+			}
+		})
+	}
+
+	// 权限点查询故障原样上抛（禁删判定 fail-closed），零副作用。
+	perms = &userFakePermissions{anyErrByUID: map[int64]error{42: dbErr}}
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, dbErr) {
+		t.Fatalf("权限查询故障应上抛, got %v", err)
+	}
+	if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+		t.Fatalf("故障不应有副作用")
+	}
+
+	// AnonymizeUser 失败 → 上抛，无 Sync 无审计；Sync 失败 → 上抛无审计。
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc()
+	users.user = userTestRow()
+	users.anonymizeErr = errors.New("tx boom")
+	if err := svc.DeleteUser(ctx, 1, 42); err == nil || len(epoch.synced) != 0 || len(audit.events) != 0 {
+		t.Fatalf("事务失败应上抛且零失效链零审计: err=%v sync=%v audit=%v", err, epoch.synced, audit.events)
+	}
+	svc, users, _, _, _, _, epoch, _, audit = newUserSvc()
+	users.user = userTestRow()
+	users.anonymizeNext = 9
+	epoch.syncErr = errors.New("redis down")
+	if err := svc.DeleteUser(ctx, 1, 42); err == nil || len(audit.events) != 0 || len(users.anonymized) != 1 {
+		t.Fatalf("Sync 失败应上抛且不投审计（匿名化已落库）: err=%v audit=%v anonymized=%v",
+			err, audit.events, users.anonymized)
+	}
+}
+
+// TestGateLegacyWriteInterfaces 旧四写接口（禁用启用 / 重置密码 / 解锁 /
+// 解绑）门禁接线收口（矩阵细节由 SuperadminGuards / 既有门禁用例承担）：
+// superadmin 目标一律拒（含 superadmin 操作者）；目标权限查询故障原样上抛
+// ——拒绝与故障均零副作用。
+func TestGateLegacyWriteInterfaces(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("permission repo: db down")
+
+	ops := []struct {
+		name string
+		call func(svc *adminsvc.UserService) error
+	}{
+		{"UpdateUserStatus", func(svc *adminsvc.UserService) error { return svc.UpdateUserStatus(ctx, 1, 42, 1) }},
+		{"ResetUserPassword", func(svc *adminsvc.UserService) error { return svc.ResetUserPassword(ctx, 1, 42, "Str0ngPass!") }},
+		{"UnbindUserThirdparty", func(svc *adminsvc.UserService) error { return svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1") }},
+		{"UnlockUser", func(svc *adminsvc.UserService) error { return svc.UnlockUser(ctx, 1, 42) }},
+	}
+	scenarios := []struct {
+		name     string
+		granted  map[int64]map[string]bool
+		errByUID map[int64]error
+		want     error
+	}{
+		{
+			name:    "superadmin 目标一律拒",
+			granted: map[int64]map[string]bool{42: {adminsvc.PointSuperAdmin: true}, 1: {adminsvc.PointSuperAdmin: true}},
+			want:    adminsvc.ErrPermissionDenied,
+		},
+		{
+			name:     "目标权限查询故障不放行",
+			granted:  map[int64]map[string]bool{},
+			errByUID: map[int64]error{42: dbErr},
+			want:     dbErr,
+		},
+	}
+	for _, op := range ops {
+		for _, sc := range scenarios {
+			t.Run(op.name+"/"+sc.name, func(t *testing.T) {
+				perms := &userFakePermissions{granted: sc.granted, errByUID: sc.errByUID}
+				svc, users, creds, binds, _, _, epoch, pwfail, audit := newUserSvc(perms)
+				users.user = userTestRow()
+				binds.rows = []model.UserThirdpartyBind{{ID: 11, UserID: 42, ProviderKey: "wechat_mp_1", OpenID: "oX-1"}}
+				err := op.call(svc)
+				if !errors.Is(err, sc.want) {
+					t.Fatalf("err = %v, want %v", err, sc.want)
+				}
+				if len(users.statusUpdated) != 0 || len(creds.created)+len(creds.updated) != 0 ||
+					len(binds.unbound) != 0 || len(pwfail.resetRefs) != 0 ||
 					len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
 					t.Fatalf("拒绝 / 故障不应有副作用")
 				}

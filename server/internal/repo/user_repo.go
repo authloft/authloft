@@ -496,6 +496,78 @@ func (r *UserRepo) SaveProfile(ctx context.Context, p *model.UserProfile) error 
 	return nil
 }
 
+// AnonymizeUser 删除用户的单事务匿名化改写（§4.2：等价软删除，不物理删行、
+// 不新增字段，deleted_ 前缀为唯一标记）。单事务内依次：① user 行改写——
+// user_status=0、username="deleted_<id>"（十进制 id 占用 uk_username，id 唯一
+// 故不冲突）、nickname/avatar_url 清空、phone/email 置 NULL、phone_verified /
+// email_verified / mfa_required 置 0，last_login_at / created_at 保留供审计；
+// epoch 递增与回绕同语句原子完成（语义同 IncEpoch，§4.2 回绕 >30000 置 1）；
+// ② user_profile 行存在则清空 gender / birthday / locale / timezone / extra
+// （行缺失容忍——profile 行本就可选）；③ 凭证全清（password / totp /
+// webauthn / recovery_code 一并删除，含 WebAuthn 附加表）；④ 第三方绑定全清
+// （全行 DELETE，Union 连带行随之清零，§12.7）。跨表事务收编 repo（先例
+// CreateWithCredential / WebauthnRepo.Create）：拆多次调用非同事务会在中途
+// 失败时留下半删除态。已匿名化行的拒绝（再删返回 not_found）与权限门禁归
+// 上层（§4.2 / §4.8），本方法只保证行存在性与事务原子性。用户不存在返回
+// 包装的 gorm.ErrRecordNotFound；返回递增后的新 epoch 供上层同步
+// al:pwdep:{uid}（§5.1）。
+func (r *UserRepo) AnonymizeUser(ctx context.Context, id int64, at time.Time) (int16, error) {
+	var epoch int16
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.User{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"username":       fmt.Sprintf("deleted_%d", id),
+				"phone":          nil,
+				"email":          nil,
+				"phone_verified": 0,
+				"email_verified": 0,
+				"nickname":       "",
+				"avatar_url":     "",
+				"user_status":    0,
+				"mfa_required":   0,
+				"epoch":          gorm.Expr("IF(epoch + 1 > 30000, 1, epoch + 1)"),
+				"updated_at":     at,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// epoch 递增必产生变更，rows=0 即行不存在（changed-rows 语义）。
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Model(&model.User{}).
+			Select("epoch").
+			Where("id = ?", id).
+			Scan(&epoch).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.UserProfile{}).
+			Where("user_id = ?", id).
+			Updates(map[string]any{
+				"gender":     0,
+				"birthday":   nil,
+				"locale":     "",
+				"timezone":   "",
+				"extra":      nil,
+				"updated_at": at,
+			}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", id).Delete(&model.UserCredential{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", id).Delete(&model.UserCredentialWebauthn{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", id).Delete(&model.UserThirdpartyBind{}).Error
+	})
+	if err != nil {
+		return 0, fmt.Errorf("user repo: anonymize user: %w", err)
+	}
+	return epoch, nil
+}
+
 // isUserDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
 func isUserDuplicateKey(err error) bool {
 	var me *mysqldriver.MySQLError

@@ -1,9 +1,9 @@
-// user.go 实现 AdminService 用户管理族 15 方法（GetMe / ListUsers / GetUser /
+// user.go 实现 AdminService 用户管理族 16 方法（GetMe / ListUsers / GetUser /
 // UpdateUserProfile / UpdateUserContact / SetUserMfa / UnbindUserTOTP /
 // ResetUserRecoveryCodes / SetCredentialEnabled / DeleteCredential /
 // UpdateUserStatus / ResetUserPassword / UnbindUserThirdparty / UnlockUser /
-// GetUserEvents，接口文档 §5.1 / §5.4）的业务层（docs/后端架构.md §3.9、§18
-// 分层 handler → service/admin/user.go → repo / cache）。
+// DeleteUser / GetUserEvents，接口文档 §5.1 / §5.4）的业务层（docs/后端架构.md
+// §3.9、§18 分层 handler → service/admin/user.go → repo / cache）。
 //
 // 职责边界：会话身份来自 handler（session.UIDFromContext，管理员判定在
 // admin 拦截器已收口，本层不做二次鉴权）；参数与状态枚举校验（userStatus
@@ -13,10 +13,13 @@
 // 验证 / 解绑 TOTP / 删除凭证触发失效链，开启两步验证 / 凭证启停 / 恢复码
 // 重置不触发；解绑走 Union 行连带（§12.7）；解锁清 uid 维度键 + 按当前
 // phone / email 重算「ip + 账号哈希」维度键（§8.1，ip 未知 → SCAN 模式
-// 匹配删除）。
-// 针对目标用户的写接口统一走 authorizeUserWrite 目标账户分级门禁
-// （§5.4 门禁矩阵、《后端架构》§4.8：superadmin 目标一律拒绝；普通管理员
-// 目标仅 superadmin 操作者可写；权限查询故障原样上抛不放行）。
+// 匹配删除）；删除用户为单事务匿名化改写（§4.2：禁用 + 全端下线 + 匿名化，
+// deleted_ 前缀为唯一标记，不新增字段）。
+// 针对目标用户的写接口（含旧四写接口禁用启用 / 重置密码 / 解锁 / 解绑）
+// 统一走 authorizeUserWrite 目标账户分级门禁（§5.4 门禁矩阵、《后端架构》
+// §4.8：superadmin 目标一律拒绝；普通管理员目标仅 superadmin 操作者可写；
+// 权限查询故障原样上抛不放行）；删除用户另加 §4.8 两条硬边界（有任意权限点
+// 禁删、自删拒绝）。
 // Connect 错误形态映射归 handler；本层返回可判别哨兵错误（映射口径同
 // provider.go 包注释）：
 //   - ErrInvalidRequest 参数 / 校验类（映射 invalid_argument + code=invalid_request）；
@@ -85,6 +88,12 @@ const (
 	credentialKindRecoveryCode = "recovery_code"
 )
 
+// deletedUsernamePrefix 删除匿名化保留前缀（§2.3 用户名规则唯一定义处、
+// §4.2：删除把 username 改写为 "deleted_<id>"，该前缀是「已删除」的唯一
+// 可辨识标记）：字面前缀匹配、大小写敏感，设置用户名的一切入口一律拒绝，
+// 对已前缀行再执行删除返回 not_found。
+const deletedUsernamePrefix = "deleted_"
+
 // UserStore user / user_profile 表读写窄接口（§20 依赖注入）：*repo.UserRepo
 // 天然满足（全部为既有列级最小增量方法），测试可传 fake。
 type UserStore interface {
@@ -99,6 +108,11 @@ type UserStore interface {
 	GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error)
 	SaveProfile(ctx context.Context, p *model.UserProfile) error
 	IncEpoch(ctx context.Context, id int64) (int16, error)
+	// AnonymizeUser 删除用户的单事务匿名化改写（§4.2：user 行改写 + profile
+	// 清空 + 凭证 / WebAuthn 附加表 / 第三方绑定全清 + epoch 递增，跨表单
+	// 事务）；返回递增后的新 epoch 供上层同步 al:pwdep:{uid}。跨表事务边界
+	// 收编 repo（拆多次调用非同事务会留半删除态），先例 CreateWithCredential。
+	AnonymizeUser(ctx context.Context, id int64, at time.Time) (int16, error)
 }
 
 // CredentialStore user_credential 表读写窄接口（*repo.CredentialRepo 天然
@@ -315,20 +329,15 @@ func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error
 // + 审计 admin_disable_user（actor=admin，detail 落 NULL——§4.6 行 808 表
 // 未定义该事件 detail，默认）；启用不审计（eventlog 无既有常量，不
 // 自造事件名，默认）。幂等重放（再次禁用已禁用用户）同样走失效链
-// 与审计——每次管理员动作都留痕。superadmin 门禁：仅禁用（0）时校验目标权限点，
-// 命中则 ErrPermissionDenied；启用（1）不查权限、维持原流程；查询故障原样上抛。
+// 与审计——每次管理员动作都留痕。目标分级门禁统一走 authorizeUserWrite
+// （禁用与启用同适用：superadmin 目标一律拒绝，含启用分支，§5.4 矩阵；
+// 普通管理员目标仅 superadmin 操作者；查询故障原样上抛）。
 func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error {
 	if id <= 0 || (userStatus != 0 && userStatus != 1) {
 		return ErrInvalidRequest
 	}
-	if userStatus == 0 {
-		isSA, err := s.permissions.HasPermission(ctx, id, PointSuperAdmin)
-		if err != nil {
-			return err // 权限查询故障原样上抛（fail-closed）
-		}
-		if isSA {
-			return ErrPermissionDenied
-		}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
 	}
 	if err := s.users.UpdateUserStatus(ctx, id, int8(userStatus)); err != nil {
 		return err // 含 gorm.ErrRecordNotFound → 404
@@ -355,9 +364,11 @@ func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, use
 // reset 口径）→ IncEpoch + al:pwdep 同步（先失效旧会话——改密后旧令牌全部
 // 失效，§11.1）→ 审计 admin_reset_password（detail={pwd_epoch}，§4.6 行 813
 // reset_password 同构）。管理员重置不建新会话（与用户自助 reset 直接登录
-// 不同，§5.4 无此语义）。superadmin 门禁：FindByID 确认目标存在后查目标权限点，
-// 命中再查 actor 权限点，actor 非 superadmin 则 ErrPermissionDenied；目标非
-// superadmin 维持原行为；两段查询故障均原样上抛（fail-closed）。
+// 不同，§5.4 无此语义）。目标分级门禁统一走 authorizeUserWrite（收编原
+// 「superadmin 目标可被 superadmin 操作者重置」旧口径——重置属强制踢下线
+// 动作，superadmin 目标一律拒绝，§5.4 矩阵；普通管理员目标仅 superadmin
+// 操作者；查询故障原样上抛，fail-closed）。FindByID 先于门禁：行缺失
+// not_found 不查权限表（既有口径）。
 func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, password string) error {
 	if id <= 0 || password == "" {
 		return ErrInvalidRequest
@@ -366,18 +377,8 @@ func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, pa
 	if err != nil {
 		return err
 	}
-	targetSA, err := s.permissions.HasPermission(ctx, id, PointSuperAdmin)
-	if err != nil {
-		return err // 权限查询故障原样上抛（fail-closed）
-	}
-	if targetSA {
-		actorSA, err := s.permissions.HasPermission(ctx, actor, PointSuperAdmin)
-		if err != nil {
-			return err // 权限查询故障原样上抛（fail-closed）
-		}
-		if !actorSA {
-			return ErrPermissionDenied
-		}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
 	}
 	email := ""
 	if user.Email != nil {
@@ -411,10 +412,14 @@ func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, pa
 // repo 单事务 UnbindWithUnionCascade（既定口径 §3.10 行 428：
 // 原两跳非同事务，第二跳失败普通行已删、重试 404 无法自愈，孤行 Union
 // 行永久占用 uk_provider_openid）→ 审计 thirdparty_unbind（detail=
-// {provider_key, open_id}，§4.6 行 816）。
+// {provider_key, open_id}，§4.6 行 816）。目标分级门禁统一走
+// authorizeUserWrite（本期补齐，§5.4 矩阵；查询故障原样上抛）。
 func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error {
 	if id <= 0 || providerKey == "" {
 		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
 	}
 	p, err := s.providers.FindByKey(ctx, providerKey)
 	if err != nil {
@@ -457,10 +462,15 @@ func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64,
 // + 按该用户当前 phone / email 重算「ip + 账号哈希」维度键一并清除（该维度
 // user_ref = ip + "|" + hex(sha256(identifier))，factor/password userRef 同款
 // 格式；ip 未知 → SCAN 模式匹配删除，PwFailStore.DeleteAccountRef）。无
-// 解锁审计常量，不投事件（默认，同启用不审计口径）。
-func (s *UserService) UnlockUser(ctx context.Context, id int64) error {
+// 解锁审计常量，不投事件（默认，同启用不审计口径）。目标分级门禁统一走
+// authorizeUserWrite（本期补齐，§5.4 矩阵；查询故障原样上抛）——解锁是
+// epoch 触发动作族的前置救援，目标分级同适用。
+func (s *UserService) UnlockUser(ctx context.Context, actor, id int64) error {
 	if id <= 0 {
 		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
 	}
 	user, err := s.users.FindByID(ctx, id)
 	if err != nil {
@@ -493,6 +503,59 @@ func (s *UserService) GetUserEvents(ctx context.Context, id int64, page, pageSiz
 		Page:     page,
 		PageSize: pageSize,
 	})
+}
+
+// DeleteUser（§5.4 / 《后端架构》§4.2）：{id} 删除用户 = 禁用 + 全部会话
+// 与令牌失效 + 匿名化——单事务匿名化改写收编 repo（AnonymizeUser：user 行
+// 改写 user_status=0 / username="deleted_<id>" / 联系方式与资料清空 + epoch
+// 递增，user_profile 清空，凭证含 WebAuthn 附加表与第三方绑定含 Union 连带
+// 全清，不物理删行、不新增字段），事务成功后同步 al:pwdep:{uid}（已签发
+// 令牌全部失效）→ 审计 admin_delete_user（detail={}，user_id 由行列承载、
+// 不含明文联系方式，§4.6）。硬边界（§4.8）：自删（actor == id）拒绝、有任意
+// 权限点的账户一律禁删（不因操作者是 superadmin 而放宽）——均
+// ErrPermissionDenied；已匿名化行（username 带 deleted_ 前缀）按资源不存在
+// 返回 not_found（§4.2，先于门禁判定：user_permission 行不随删除清理，
+// 门禁先查会把已删 superadmin 误判为 permission_denied）。
+func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
+	if id <= 0 {
+		return ErrInvalidRequest
+	}
+	if actor == id {
+		return ErrPermissionDenied
+	}
+	user, err := s.users.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(user.Username, deletedUsernamePrefix) {
+		return gorm.ErrRecordNotFound
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	hasPerm, err := s.permissions.HasAnyPermission(ctx, id)
+	if err != nil {
+		return err // 权限查询故障原样上抛（fail-closed）
+	}
+	if hasPerm {
+		return ErrPermissionDenied
+	}
+	epoch, err := s.users.AnonymizeUser(ctx, id, s.now())
+	if err != nil {
+		return err
+	}
+	if err := s.epoch.Sync(ctx, id, epoch); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminDeleteUser,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailEmpty(),
+		CreatedAt: s.now(),
+	})
+	return nil
 }
 
 // authorizeUserWrite 目标账户分级写门禁（§5.4 门禁矩阵、《后端架构》§4.8）：

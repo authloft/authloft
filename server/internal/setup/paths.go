@@ -303,13 +303,19 @@ func installAdmin(ctx context.Context, dsn, username, password string) error {
 	return nil
 }
 
+// deletedUsernamePrefix 删除匿名化保留前缀（§2.3 / §5.4：删除用户把
+// username 改写为 "deleted_<id>"，系统保留标记，设置用户名的一切入口一律
+// 拒绝——安装入口为完整性覆盖，实际安装用户名自定）。
+const deletedUsernamePrefix = "deleted_"
+
 // validateUsername 管理员用户名规则（接口文档 §2.3 行 444——用户名规则的
-// 唯一定义处）：^[A-Za-z0-9_]{5,20}$；违规 → username_invalid。
+// 唯一定义处）：^[A-Za-z0-9_]{5,20}$；违规或命中删除匿名化保留前缀
+// → username_invalid。
 func validateUsername(username string) error {
-	if usernameRE.MatchString(username) {
-		return nil
+	if !usernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
+		return bizErr(CodeUsernameInvalid, "admin username must match ^[A-Za-z0-9_]{5,20}$ and must not start with deleted_", nil)
 	}
-	return bizErr(CodeUsernameInvalid, "admin username must match ^[A-Za-z0-9_]{5,20}$", nil)
+	return nil
 }
 
 var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)

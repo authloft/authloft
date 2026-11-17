@@ -58,7 +58,7 @@ type UserService interface {
 	UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error
 	ResetUserPassword(ctx context.Context, actor, id int64, password string) error
 	UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error
-	UnlockUser(ctx context.Context, id int64) error
+	UnlockUser(ctx context.Context, actor, id int64) error
 	GetUserEvents(ctx context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error)
 }
 
@@ -564,7 +564,11 @@ func (h *Handler) UnbindUserThirdparty(ctx context.Context, req *connectrpc.Requ
 
 // UnlockUser {id} 解除登录限制——清 uid 维度键 + 按当前 phone / email 重算 ip 维度键。
 func (h *Handler) UnlockUser(ctx context.Context, req *connectrpc.Request[adminv1.UnlockUserRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
-	if err := h.users.UnlockUser(ctx, req.Msg.GetId()); err != nil {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UnlockUser(ctx, actor, req.Msg.GetId()); err != nil {
 		return nil, mapUserError("unlock user", err)
 	}
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil

@@ -37,6 +37,7 @@ const (
 	EventAdminUnbindTotp         = "admin_unbind_totp"
 	EventAdminCredentialDelete   = "admin_credential_delete"
 	EventAdminRecoveryCodesReset = "admin_recovery_codes_reset"
+	EventAdminDeleteUser         = "admin_delete_user"
 	EventProviderCreate          = "provider_create"
 	EventProviderUpdate          = "provider_update"
 	EventSettingsUpdate          = "settings_update"
@@ -143,8 +144,9 @@ func DetailCredentialDelete(credentialID int64, kind string) []byte {
 }
 
 // DetailEmpty 编码契约明示 detail 为 {} 的事件（§4.6 admin_unbind_totp /
-// admin_recovery_codes_reset 等：不记 TOTP 密钥 / 任何码值）：msgpack 空映射，
-// 与「无 detail」（NULL 列）区分——字段存在但为空对象。
+// admin_recovery_codes_reset / admin_delete_user 等：不记 TOTP 密钥 / 任何
+// 码值 / 明文联系方式，admin_delete_user 的 user_id 由行列承载）：msgpack
+// 空映射，与「无 detail」（NULL 列）区分——字段存在但为空对象。
 func DetailEmpty() []byte {
 	return encodeDetail(map[string]any{})
 }

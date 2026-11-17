@@ -454,27 +454,27 @@ func TestRegisterSignupDisabledSwitches(t *testing.T) {
 		setup func(*fakeRegistry)
 	}{
 		{
-			name: "allow_registration=false 直通",
-			key:  settings.KeyAllowRegistration,
-			req:  Request{Method: "password", Step: "set_password", Captcha: captchaSubmission(), Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword}},
+			name:  "allow_registration=false 直通",
+			key:   settings.KeyAllowRegistration,
+			req:   Request{Method: "password", Step: "set_password", Captcha: captchaSubmission(), Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword}},
 			setup: func(r *fakeRegistry) { r.factors[factor.FactorPassword] = passwordOnlyFactor() },
 		},
 		{
-			name: "allow_signup_password=false 直通",
-			key:  settings.KeyAllowSignupPassword,
-			req:  Request{Method: "password", Step: "set_password", Captcha: captchaSubmission(), Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword}},
+			name:  "allow_signup_password=false 直通",
+			key:   settings.KeyAllowSignupPassword,
+			req:   Request{Method: "password", Step: "set_password", Captcha: captchaSubmission(), Payload: &factor.Payload{Username: "alice01", Password: testStrongPassword}},
 			setup: func(r *fakeRegistry) { r.factors[factor.FactorPassword] = passwordOnlyFactor() },
 		},
 		{
-			name: "allow_signup_phone=false otp_sms challenge",
-			key:  settings.KeyAllowSignupPhone,
-			req:  Request{Method: "otp_sms", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Phone: "13800138000"}},
+			name:  "allow_signup_phone=false otp_sms challenge",
+			key:   settings.KeyAllowSignupPhone,
+			req:   Request{Method: "otp_sms", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Phone: "13800138000"}},
 			setup: func(r *fakeRegistry) { r.factors[factor.FactorOTPSMS] = otpSMSFactor() },
 		},
 		{
-			name: "allow_signup_email=false otp_email challenge",
-			key:  settings.KeyAllowSignupEmail,
-			req:  Request{Method: "otp_email", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Email: "a@b.com"}},
+			name:  "allow_signup_email=false otp_email challenge",
+			key:   settings.KeyAllowSignupEmail,
+			req:   Request{Method: "otp_email", Step: "challenge", Captcha: captchaSubmission(), Payload: &factor.Payload{Email: "a@b.com"}},
 			setup: func(r *fakeRegistry) { r.factors[factor.FactorOTPEmail] = otpEmailRegisterFactor() },
 		},
 	}
@@ -521,10 +521,12 @@ func TestRegisterUsernameTaken(t *testing.T) {
 	}
 }
 
-// TestRegisterUsernameRule 用户名规则 ^[A-Za-z0-9_]{5,20}$ 违规 →
-// invalid_request（§2.3 行 449 唯一定义处）。
+// TestRegisterUsernameRule 用户名规则 ^[A-Za-z0-9_]{5,20}$ 违规或命中删除
+// 匿名化保留前缀（§2.3 / §5.4：deleted_ 前缀禁用，覆盖两条建号路径）→
+// invalid_request。
 func TestRegisterUsernameRule(t *testing.T) {
-	for _, username := range []string{"ab", "a!b", "汉字用户名", "overlong_username_xyz"} {
+	for _, username := range []string{"ab", "a!b", "汉字用户名", "overlong_username_xyz",
+		"deleted_12345", "deleted_alice"} {
 		at := time.Unix(1_700_000_000, 0)
 		deps := newTestDeps(t, at)
 		deps.registry.factors[factor.FactorPassword] = passwordOnlyFactor()
@@ -806,9 +808,9 @@ func newTPSubmitDeps(t *testing.T, at time.Time) (*Engine, *setPassFakes, *State
 }
 
 // TestThirdpartySignupIgnoresPassword tp 分支仅收 username、忽略 password
-//（§2.7.5 行 685）：带 password 请求成功建号且无 password credential 行；
+// （§2.7.5 行 685）：带 password 请求成功建号且无 password credential 行；
 // flow=login 由 Register 端点接受（§12.5 行 1505）；不提交 captcha 亦成功
-//（tp 分支不经 captcha，此处默认口径）。
+// （tp 分支不经 captcha，此处默认口径）。
 func TestThirdpartySignupIgnoresPassword(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	e, fk, st, _ := newTPSubmitDeps(t, at)
@@ -870,6 +872,7 @@ func TestThirdpartySignupValidations(t *testing.T) {
 	}{
 		{"缺失", "", StatusInvalidRequest},
 		{"规则违规", "ab", StatusInvalidRequest},
+		{"保留前缀", "deleted_9876", StatusInvalidRequest},
 		{"占用", "carol_tp", StatusUsernameTaken},
 	} {
 		got := e.Submit(context.Background(), "register", Request{
@@ -886,7 +889,7 @@ func TestThirdpartySignupValidations(t *testing.T) {
 }
 
 // TestThirdpartySignupDisabled provider enable_signup=0 → signup_disabled
-//（§12.5 行 1504；provider 失效 stateErr 同走 failed）。
+// （§12.5 行 1504；provider 失效 stateErr 同走 failed）。
 func TestThirdpartySignupDisabled(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	e, fk, st, _ := newTPSubmitDeps(t, at)

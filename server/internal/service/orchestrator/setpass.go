@@ -27,6 +27,12 @@ import (
 // 设置后不可改）。
 var usernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
 
+// deletedUsernamePrefix 删除匿名化保留前缀（§2.3 / §5.4：删除用户把
+// username 改写为 "deleted_<id>"，该前缀是系统保留标记，一切设置用户名
+// 的入口一律拒绝——字面前缀匹配、大小写敏感），覆盖注册账号密码与三方
+// 免密建号两条建号路径。
+const deletedUsernamePrefix = "deleted_"
+
 // credentialKindPassword user_credential.kind=password（§4.2 行 680-684）。
 const credentialKindPassword = "password"
 
@@ -123,8 +129,9 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	if username == "" || password == "" {
 		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
 	}
-	// 用户名规则违规 → invalid_request（§2.3 行 449 唯一定义处）。
-	if !usernameRE.MatchString(username) {
+	// 用户名规则违规或命中删除匿名化保留前缀 → invalid_request（§2.3 行 449
+	// 唯一定义处，§5.4 前缀禁用）。
+	if !usernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
 		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
 	}
 	// 用户名占用 → username_taken（§1.6 行 256）。
@@ -219,7 +226,9 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 	if username == "" {
 		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
 	}
-	if !usernameRE.MatchString(username) {
+	// 三方免密建号与注册同口径：规则违规或命中保留前缀 → invalid_request
+	//（§2.3，前缀禁用覆盖两条建号路径）。
+	if !usernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
 		return &ssov1.LoginFlowResponse{Status: StatusInvalidRequest}
 	}
 	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
