@@ -30,6 +30,7 @@ import {
   QRCodePanelView,
   createQRPanelController,
   pollTimeoutMsOf,
+  qrcodeModeOf,
   ticketPhaseOf,
   qrFailureText,
   fetchFailureText,
@@ -635,13 +636,33 @@ function envelope(
   return create(LoginFlowResponseSchema, init);
 }
 
-function qrcodeResponse(seq: number): CreateQrcodeResponse {
+function qrcodeResponse(
+  seq: number,
+  init: MessageInitShape<typeof CreateQrcodeResponseSchema> = {},
+): CreateQrcodeResponse {
   return create(CreateQrcodeResponseSchema, {
     ticket: `tk-${seq}`,
     ticketId: `id-${seq}`,
     qrcodeUrl: `https://cdn.example/q${seq}.jpg`,
     expiresIn: BigInt(600),
+    ...init,
   });
+}
+
+/** url 模式 active 态（其余码源字段零值），缩短既有用例的期望对象。 */
+function activeUrl(
+  qrcodeUrl: string,
+  ticketStatus: 'pending' | 'scanned',
+): QRPanelPhase {
+  return {
+    kind: 'active',
+    mode: 'url',
+    qrcodeUrl,
+    qrcodeContent: '',
+    qrcodeBase64: '',
+    tipHtml: '',
+    ticketStatus,
+  };
 }
 
 describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文案）', () => {
@@ -750,6 +771,14 @@ describe('QRCodePanel 纯逻辑（信封 → 五态 / 超时换算 / 失败文�
       '操作失败，请稍后重试',
     );
   });
+
+  test('qrcodeModeOf：ticket / base64 原样；空值（= url，存量行为）与未知取值兜底 url', () => {
+    expect(qrcodeModeOf('ticket')).toBe('ticket');
+    expect(qrcodeModeOf('base64')).toBe('base64');
+    expect(qrcodeModeOf('url')).toBe('url');
+    expect(qrcodeModeOf('')).toBe('url');
+    expect(qrcodeModeOf('future_mode')).toBe('url');
+  });
 });
 
 describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态流转一致）', () => {
@@ -812,16 +841,8 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      {
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'pending',
-      },
-      {
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'scanned',
-      },
+      activeUrl('https://cdn.example/q1.jpg', 'pending'),
+      activeUrl('https://cdn.example/q1.jpg', 'scanned'),
       { kind: 'success' },
     ]);
     expect(poll.calls).toBe(3); // success 终态后轮询停止，不再发起
@@ -867,20 +888,92 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      {
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'pending',
-      },
-      {
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'scanned',
-      },
+      activeUrl('https://cdn.example/q1.jpg', 'pending'),
+      activeUrl('https://cdn.example/q1.jpg', 'scanned'),
       { kind: 'success' },
     ]);
     expect(results).toHaveLength(1);
     expect(results[0]!.bind?.providerKey).toBe('wechat_mp_scan');
+    controller.dispose();
+  });
+
+  test('ticket 模式：active 携带 qrcodeContent / tipHtml；轮询 scanned 只更新 ticketStatus 不丢码源', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const poll = sequencedPoll([
+      envelope({
+        status: 'pending',
+        ticket: { status: 'pending', ticketId: 'id-1' },
+      }),
+      envelope({
+        status: 'scanned',
+        ticket: { status: 'scanned', ticketId: 'id-1' },
+      }),
+    ]);
+    const controller = createQRPanelController({
+      requestQR: async () =>
+        qrcodeResponse(1, {
+          qrcodeMode: 'ticket',
+          qrcodeUrl: '',
+          qrcodeContent: 'https://example.com/scan?ticket=tk-1',
+          tipHtml: '<p>请使用微信扫一扫</p>',
+        }),
+      pollUrl: poll.pollUrl,
+      onResult: () => {},
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases).toEqual([
+      { kind: 'fetching' },
+      {
+        kind: 'active',
+        mode: 'ticket',
+        qrcodeUrl: '',
+        qrcodeContent: 'https://example.com/scan?ticket=tk-1',
+        qrcodeBase64: '',
+        tipHtml: '<p>请使用微信扫一扫</p>',
+        ticketStatus: 'pending',
+      },
+      // 轮询 scanned：码源字段原样保留，仅 ticketStatus 变化。
+      {
+        kind: 'active',
+        mode: 'ticket',
+        qrcodeUrl: '',
+        qrcodeContent: 'https://example.com/scan?ticket=tk-1',
+        qrcodeBase64: '',
+        tipHtml: '<p>请使用微信扫一扫</p>',
+        ticketStatus: 'scanned',
+      },
+    ]);
+    controller.dispose();
+  });
+
+  test('base64 模式：active 携带 qrcodeBase64（JPEG 纯 base64，data URL 前缀由视图拼接）', async () => {
+    rs.useFakeTimers();
+    const phases: QRPanelPhase[] = [];
+    const controller = createQRPanelController({
+      requestQR: async () =>
+        qrcodeResponse(1, {
+          qrcodeMode: 'base64',
+          qrcodeUrl: '',
+          qrcodeBase64: '/9j/4AAQSkZJRg',
+        }),
+      pollUrl: () => new Promise(() => {}), // 在途挂起
+      onResult: () => {},
+      onPhase: (p) => phases.push(p),
+    });
+    controller.refresh();
+    await rs.advanceTimersByTimeAsync(0);
+    expect(phases[1]).toEqual({
+      kind: 'active',
+      mode: 'base64',
+      qrcodeUrl: '',
+      qrcodeContent: '',
+      qrcodeBase64: '/9j/4AAQSkZJRg',
+      tipHtml: '',
+      ticketStatus: 'pending',
+    });
     controller.dispose();
   });
 
@@ -914,11 +1007,7 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(phases).toEqual([
       { kind: 'fetching' },
-      {
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'pending',
-      },
+      activeUrl('https://cdn.example/q1.jpg', 'pending'),
       { kind: 'expired' },
     ]);
     expect(qrCalls).toBe(1);
@@ -926,11 +1015,9 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     await rs.advanceTimersByTimeAsync(0);
     expect(qrCalls).toBe(2); // 新码 = 新 requestQR（captcha 由调用方包装）
     expect(phases[3]).toEqual({ kind: 'fetching' });
-    expect(phases[4]).toEqual({
-      kind: 'active',
-      qrcodeUrl: 'https://cdn.example/q2.jpg',
-      ticketStatus: 'pending',
-    });
+    expect(phases[4]).toEqual(
+      activeUrl('https://cdn.example/q2.jpg', 'pending'),
+    );
     expect(pollCalls).toBe(2); // 新 ticket 的轮询已发起
     controller.dispose();
   });
@@ -1044,22 +1131,69 @@ describe('QRCodePanelView 渲染（四态 + failed）', () => {
 
   test('fetching / active(pending / scanned) / success', () => {
     expect(renderView({ kind: 'fetching' })).toContain('正在获取二维码');
-    const pending = renderView({
-      kind: 'active',
-      qrcodeUrl: 'https://cdn.example/q1.jpg',
-      ticketStatus: 'pending',
-    });
+    const pending = renderView(
+      activeUrl('https://cdn.example/q1.jpg', 'pending'),
+    );
     expect(pending).toContain('src="https://cdn.example/q1.jpg"');
     expect(pending).toContain('alt="扫码二维码"');
     expect(pending).toContain('请使用手机扫码');
     expect(
-      renderView({
-        kind: 'active',
-        qrcodeUrl: 'https://cdn.example/q1.jpg',
-        ticketStatus: 'scanned',
-      }),
+      renderView(activeUrl('https://cdn.example/q1.jpg', 'scanned')),
     ).toContain('已扫码，请在手机上确认');
     expect(renderView({ kind: 'success' })).toContain('操作成功');
+  });
+
+  test('active 三分支：ticket → QrImage 自绘 SVG（无 <img>）；base64 → data URL 内联图（无 SVG）', () => {
+    const ticket = renderView({
+      kind: 'active',
+      mode: 'ticket',
+      qrcodeUrl: '',
+      qrcodeContent: 'https://example.com/scan?ticket=tk-1',
+      qrcodeBase64: '',
+      tipHtml: '',
+      ticketStatus: 'pending',
+    });
+    expect(ticket).toContain('<svg');
+    expect(ticket).toContain('role="img"');
+    expect(ticket).toContain('aria-label="扫码二维码"');
+    expect(ticket).not.toContain('<img');
+
+    const base64 = renderView({
+      kind: 'active',
+      mode: 'base64',
+      qrcodeUrl: '',
+      qrcodeContent: '',
+      qrcodeBase64: '/9j/4AAQSkZJRg',
+      tipHtml: '',
+      ticketStatus: 'pending',
+    });
+    expect(base64).toContain('src="data:image/jpeg;base64,/9j/4AAQSkZJRg"');
+    expect(base64).toContain('alt="扫码二维码"');
+    expect(base64).not.toContain('<svg');
+  });
+
+  test('active 三分支：url 模式直显；未知 mode（服务端已拒绝的异常值）兜底 url 不白屏', () => {
+    const url = renderView(activeUrl('https://cdn.example/q1.jpg', 'pending'));
+    expect(url).toContain('src="https://cdn.example/q1.jpg"');
+    expect(url).not.toContain('<svg');
+    const fallback = renderView({
+      ...activeUrl('https://cdn.example/q1.jpg', 'pending'),
+      // 未知取值不会从正常响应出现，类型层以 url 兜底断言。
+      mode: 'future_mode' as 'url',
+    });
+    expect(fallback).toContain('src="https://cdn.example/q1.jpg"');
+  });
+
+  test('tipHtml 非空渲染提示节点（HTML 原文透出）；空不渲染', () => {
+    const withTip = renderView({
+      ...activeUrl('https://cdn.example/q1.jpg', 'pending'),
+      tipHtml: '<p>请使用微信扫一扫</p>',
+    });
+    expect(withTip).toContain('<p>请使用微信扫一扫</p>');
+    const noTip = renderView(
+      activeUrl('https://cdn.example/q1.jpg', 'pending'),
+    );
+    expect(noTip).not.toContain('请使用微信扫一扫');
   });
 
   test('expired：过期提示 + 刷新按钮（重拉经 onRefresh → requestQR，captcha 由调用方）', () => {

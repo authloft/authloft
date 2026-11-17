@@ -10,6 +10,12 @@
  * 新的（§2.8 行 703），由调用方的 requestQR 携带，本组件只负责再次调用；
  * 卸载中断轮询（useLongPoll 的 unmount abort，§8.2 行 606）。
  *
+ * active 态码图按 CreateQrcode 下发的 qrcodeMode 三分支渲染（接口文档
+ * §2.8）：ticket → QrImage 自绘、base64 → JPEG data URL 内联图、url →
+ * <img> 直显（空值与未知取值兜底 url）；tipHtml 为管理员配置的 HTML 原文
+ * （前端不净化，站点 CSP 执行层兜底），非空才渲染提示节点；轮询只更新
+ * 扫码状态、不清码源。
+ *
  * 面板控制器（createQRPanelController）组合 createLongPollController，
  * 不依赖 React 可独立测试；QRCodePanelView 为纯展示（四态 + failed，
  * SSR 可测）；组件自身不发任何业务请求（拉码 / 轮询都由 props 决定）。
@@ -25,6 +31,7 @@ import {
 import { ApiError, resolveCode, resolveFlowStatus } from '../api/errors';
 import { t } from '../i18n';
 import { errorText } from './ErrorBanner';
+import { QrImage } from './QrImage';
 import styles from './QRCodePanel.module.less';
 
 // ---------------------------------------------------------------------------
@@ -102,6 +109,14 @@ export function fetchFailureText(error: unknown): string {
   return errorText('errors.status.unknown');
 }
 
+/**
+ * CreateQrcode 下发的 qrcodeMode 归一（接口文档 §2.8：空值 = url，存量行为）；
+ * 未知取值服务端已按 provider_disabled 拒绝，前端兜底回落 url 不白屏。
+ */
+export function qrcodeModeOf(mode: string): 'ticket' | 'base64' | 'url' {
+  return mode === 'ticket' || mode === 'base64' ? mode : 'url';
+}
+
 // ---------------------------------------------------------------------------
 // 面板状态与控制器
 // ---------------------------------------------------------------------------
@@ -110,7 +125,16 @@ export type QRPanelPhase =
   | { kind: 'fetching' }
   | {
       kind: 'active';
+      /** 码图渲染模式（qrcodeModeOf 归一后），三分支渲染的唯一依据。 */
+      mode: 'ticket' | 'base64' | 'url';
+      /** url 模式码图。 */
       qrcodeUrl: string;
+      /** ticket 模式码图内容（模板替换后的二维码内容，QrImage 自绘）。 */
+      qrcodeContent: string;
+      /** base64 模式码图（JPEG 纯 base64，data URL 前缀由视图拼接）。 */
+      qrcodeBase64: string;
+      /** 管理员配置提示文案（HTML 原文），非空才渲染。 */
+      tipHtml: string;
       ticketStatus: 'pending' | 'scanned';
     }
   | { kind: 'success' }
@@ -147,14 +171,24 @@ export function createQRPanelController(
 ): QRPanelController {
   let disposed = false;
   let ticket = '';
+  // 码源快照：refresh 拉码成功时写入，轮询通知只随 ticketStatus 变化、
+  // 不清码源（expired 重拉才整体重置）。
+  let currentMode: 'ticket' | 'base64' | 'url' = 'url';
   let currentQRUrl = '';
+  let currentQRContent = '';
+  let currentQRBase64 = '';
+  let currentTipHtml = '';
   let fetchAbort: AbortController | undefined;
   // 活动态去重：ticketStatus 未变（拉码即 pending，首轮轮询又 pending）不重复通知。
   let lastTicketStatus: 'pending' | 'scanned' | undefined;
 
   const activePhase = (ticketStatus: QRTicketPhase): QRPanelPhase => ({
     kind: 'active',
+    mode: currentMode,
     qrcodeUrl: currentQRUrl,
+    qrcodeContent: currentQRContent,
+    qrcodeBase64: currentQRBase64,
+    tipHtml: currentTipHtml,
     ticketStatus: ticketStatus === 'scanned' ? 'scanned' : 'pending',
   });
 
@@ -204,7 +238,11 @@ export function createQRPanelController(
       const attempt = new AbortController();
       fetchAbort = attempt;
       ticket = '';
+      currentMode = 'url';
       currentQRUrl = '';
+      currentQRContent = '';
+      currentQRBase64 = '';
+      currentTipHtml = '';
       // 拉码成功即 active(pending)。
       lastTicketStatus = 'pending';
       options.onPhase({ kind: 'fetching' });
@@ -215,12 +253,12 @@ export function createQRPanelController(
           }
           fetchAbort = undefined;
           ticket = qr.ticket;
+          currentMode = qrcodeModeOf(qr.qrcodeMode);
           currentQRUrl = qr.qrcodeUrl;
-          options.onPhase({
-            kind: 'active',
-            qrcodeUrl: qr.qrcodeUrl,
-            ticketStatus: 'pending',
-          });
+          currentQRContent = qr.qrcodeContent;
+          currentQRBase64 = qr.qrcodeBase64;
+          currentTipHtml = qr.tipHtml;
+          options.onPhase(activePhase('pending'));
           longPoll.start();
         },
         (error) => {
@@ -262,16 +300,35 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
       )}
       {phase.kind === 'active' && (
         <>
-          <img
-            className={styles.qrcode}
-            src={phase.qrcodeUrl}
-            alt={t('common.qrCodeAlt')}
-          />
+          {phase.mode === 'ticket' ? (
+            <QrImage
+              content={phase.qrcodeContent}
+              alt={t('common.qrCodeAlt')}
+            />
+          ) : (
+            <img
+              className={styles.qrcode}
+              src={
+                phase.mode === 'base64'
+                  ? `data:image/jpeg;base64,${phase.qrcodeBase64}`
+                  : phase.qrcodeUrl
+              }
+              alt={t('common.qrCodeAlt')}
+            />
+          )}
           <p className={styles.hint} role="status">
             {phase.ticketStatus === 'scanned'
               ? t('errors.status.scanned')
               : t('common.qrScanPrompt')}
           </p>
+          {phase.tipHtml !== '' && (
+            <div
+              className={styles.tip}
+              // 管理员配置的 HTML 原文（接口文档 §2.8）：前端不净化，站点 CSP
+              // 在执行层兜底（script-src nonce + strict-dynamic、无 unsafe-inline）。
+              dangerouslySetInnerHTML={{ __html: phase.tipHtml }}
+            />
+          )}
         </>
       )}
       {phase.kind === 'success' && (

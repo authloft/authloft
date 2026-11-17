@@ -24,6 +24,15 @@
   font-size: @font-size-md;
 }
 
+// 管理员配置提示文案（接口文档 §2.8，HTML 原文随拉码下发、CSP 执行层兜底）：
+// 字号与间距沿用 .hint 基调，置于码图下方；HTML 内容可能含块级元素，居中对齐。
+.tip {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-md;
+  text-align: center;
+}
+
 .success {
   margin: 0;
   color: @color-primary;

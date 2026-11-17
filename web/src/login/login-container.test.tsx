@@ -2635,7 +2635,11 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       // 面板保持轮询中（needs_step_up 未终止）；跳转后组件卸载即 dispose。
       expect(phases[phases.length - 1]).toEqual({
         kind: 'active',
+        mode: 'url',
         qrcodeUrl: 'https://cdn.test/q1.jpg',
+        qrcodeContent: '',
+        qrcodeBase64: '',
+        tipHtml: '',
         ticketStatus: 'scanned',
       });
 
@@ -2766,7 +2770,11 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       await waitFor(() => polls >= 3);
       expect(phases[phases.length - 1]).toEqual({
         kind: 'active',
+        mode: 'url',
         qrcodeUrl: 'https://cdn.test/q2.jpg',
+        qrcodeContent: '',
+        qrcodeBase64: '',
+        tipHtml: '',
         ticketStatus: 'pending',
       });
     } finally {

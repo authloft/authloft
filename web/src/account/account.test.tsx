@@ -1985,7 +1985,11 @@ describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
       { kind: 'fetching' },
       {
         kind: 'active',
+        mode: 'url',
         qrcodeUrl: 'https://cdn.test/qr.jpg',
+        qrcodeContent: '',
+        qrcodeBase64: '',
+        tipHtml: '',
         ticketStatus: 'scanned',
       },
       { kind: 'success' },
