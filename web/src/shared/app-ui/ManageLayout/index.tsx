@@ -61,19 +61,16 @@ export function ManageLayout(props: {
             }
           }}
           header={{ text: props.navHeader }}
+          footer={
+            <Dropdown menu={props.headerMenu} position="rightTop">
+              {props.headerLabel}
+            </Dropdown>
+          }
         />
       </Sider>
-      <Layout>
-        <Header className={styles.header}>
-          <Breadcrumb compact={false} routes={[...props.breadcrumb]} />
-          <Dropdown menu={props.headerMenu} position="bottomRight">
-            {props.headerLabel}
-          </Dropdown>
-        </Header>
-        <Content className={styles.content}>
-          <div className={styles.contentInner}>{props.children}</div>
-        </Content>
-      </Layout>
+      <Content className={styles.content}>
+        <div className={styles.contentInner}>{props.children}</div>
+      </Content>
     </Layout>
   );
 }

@@ -3,32 +3,6 @@
 //（主题变量归 entry.tsx 的 _base/base.css），此处只补壳层布局。
 @import (reference) '../../shared/styles/tokens.less';
 
-.shell {
-  min-height: 100vh;
-}
-
-.nav {
-  height: 100%;
-}
-
-.layout {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.header {
-  flex-grow: 0;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: @spacing-lg;
-  padding: @spacing-xs @spacing-lg;
-  border-bottom: @border-width solid var(--semi-color-border);
-  background-color: @color-background;
-}
-
 .me {
   display: inline-flex;
   align-items: center;
@@ -39,45 +13,10 @@
   font-size: @font-size-md;
 }
 
-.logoutLink {
-  color: @color-text-muted;
-  font-size: @font-size-md;
-  text-decoration: none;
-
-  &:hover {
-    color: @color-danger;
-  }
-}
-
-.content {
-  flex-grow: 1;
-  flex-shrink: 1;
-  padding: @spacing-xl;
-  overflow: auto;
-
-  :global(.page-title) {
-    margin-bottom: @spacing-md;
-  }
-
-  :global(.page-content),
-  :global(.semi-table-body .semi-table-placeholder) {
-    background-color: var(--semi-color-bg-0);
-
-  }
-}
-
 // GetMe 未落地（加载）整页态——不渲染管理壳（Semi Spin 居中容器；
 // 错误态直接用 Semi Banner 默认样式，无自定义类）。
 .entryState {
   display: flex;
   justify-content: center;
   padding-top: 30vh;
-}
-
-// 窄屏收敛（评审 P0-4）：内容区内边距收窄；侧栏折叠走 Semi
-// Sider breakpoint + Nav isCollapsed（见 AdminLayout.tsx），此处只管内容区。
-@media (max-width: @breakpoint-md) {
-  .content {
-    padding: @spacing-lg;
-  }
 }

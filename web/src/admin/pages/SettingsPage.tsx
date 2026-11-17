@@ -432,6 +432,7 @@ export function SettingsPage(props: {
                   ) : null}
                 </span>
               }
+              className={styles.tabPane}
             >
               <div className={styles.sections}>
                 {tab.sections.map((section) => (
@@ -480,14 +481,16 @@ export function SettingsPage(props: {
           );
         })}
       </Tabs>
-      <Button
-        theme="solid"
-        loading={submitting}
-        disabled={submitting || tabDirtyKeys.length === 0}
-        onClick={requestSave}
-      >
-        {t('admin.settingsTabSaveAction')}
-      </Button>
+      <div className={styles.footer}>
+        <Button
+          theme="solid"
+          loading={submitting}
+          disabled={submitting || tabDirtyKeys.length === 0}
+          onClick={requestSave}
+        >
+          {t('admin.settingsTabSaveAction')}
+        </Button>
+      </div>
       {/* 保存前变更预览：逐键列出 旧值 → 新值（敏感键脱敏），确认才提交；
           失败 Modal 保持打开（Toast 报错后可修正重试），成功在 submit 内关闭。 */}
       <Modal

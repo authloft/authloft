@@ -12,6 +12,14 @@
 // 4 个 Tab 的页签容器；内容区沿用 .sections 纵向卡片流。
 .tabs {
   display: block;
+
+  :global(.semi-tabs-content) {
+    height: calc(
+      100vh - var(--page-padding) - 32px - @spacing-md - 53px - @spacing-md -
+        32px - var(--page-padding)
+    );
+    overflow: auto;
+  }
 }
 
 // 页签标题 + 未保存脏点（同一行，不挤占文字）。
@@ -108,4 +116,8 @@
 .stringListInput,
 .multiSelectInput {
   width: 320px;
+}
+
+.footer {
+  padding-top: @spacing-md;
 }

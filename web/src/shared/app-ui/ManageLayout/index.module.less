@@ -1,7 +1,9 @@
 @import (reference) '../../styles/tokens.less';
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
+  width: 100vw;
+  --page-padding: @spacing-xl;
 }
 
 .header {
@@ -18,25 +20,15 @@
 }
 
 .content {
-  height: calc(100vh - 60px);
-  flex-grow: 0;
-  flex-shrink: 0;
-  padding: @spacing-xl;
+  height: 100vh;
+  padding-left: var(--page-padding);
+  padding-right: var(--page-padding);
   overflow: auto;
 }
 
 .contentInner {
   max-width: 1600px;
   margin: 0 auto;
-
-  :global(.page-title) {
-    margin-bottom: @spacing-md;
-  }
-
-  :global(.page-content),
-  :global(.semi-table-body .semi-table-placeholder) {
-    background-color: var(--semi-color-bg-0);
-  }
 }
 
 .nav {
@@ -46,7 +38,7 @@
 // 窄屏收敛（评审 P0-4）：内容区内边距收窄；侧栏折叠走 Semi
 // Sider breakpoint + Nav isCollapsed（见同目录组件），此处只管内容区。
 @media (max-width: @breakpoint-md) {
-  .content {
-    padding: @spacing-lg;
+  .shell {
+    --page-padding: @spacing-lg;
   }
 }

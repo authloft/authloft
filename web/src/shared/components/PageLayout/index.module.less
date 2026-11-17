@@ -4,7 +4,13 @@
 @import (reference) '../../styles/tokens.less';
 
 .page {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+  padding-top: var(--page-padding);
+  height: 100vh;
+  box-sizing: border-box;
+  background-color: var(--semi-color-bg-0);
 }
 
 // 标题下方工具条：筛选区靠左、动作区靠右；窄屏换行上下堆叠。
@@ -12,7 +18,8 @@
   display: flex;
   align-items: center;
   gap: @spacing-sm;
-  margin-bottom: @spacing-md;
+  flex-grow: 0;
+  flex-shrink: 0;
 }
 
 // 搜索 / 筛选：flex 子项可伸缩，内部控件横排 + 间距 + 可换行。
@@ -32,6 +39,19 @@
   align-items: center;
   gap: @spacing-xs;
   margin-left: auto;
+}
+
+.title {
+  flex-grow: 0;
+  flex-shrink: 0;
+
+  margin-bottom: @spacing-md;
+}
+
+.content {
+  flex-grow: 1;
+  flex-shrink: 1;
+  overflow: auto;
 }
 
 @media (max-width: @breakpoint-md) {

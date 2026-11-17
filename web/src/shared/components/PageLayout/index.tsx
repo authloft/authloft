@@ -13,7 +13,7 @@ export function PageLayout(props: {
   const hasToolbar = props.filter !== undefined || props.actions !== undefined;
   return (
     <section className={styles.page}>
-      <Typography.Title heading={3} className="page-title">
+      <Typography.Title heading={3} className={styles.title}>
         {props.title}
       </Typography.Title>
       {hasToolbar ? (
@@ -26,7 +26,7 @@ export function PageLayout(props: {
           ) : null}
         </div>
       ) : null}
-      {props.children}
+      <div className={styles.content}>{props.children}</div>
     </section>
   );
 }
