@@ -7,7 +7,11 @@
 // 分页透传、ListUsers 过滤透传与 userStatus 枚举校验、GetUser 聚合
 // （profile 行投影）、目标分级写门禁矩阵（authorizeUserWrite 三向 +
 // 权限查询故障不放行）、UpdateUserProfile PATCH has 位 / 值域校验 / 审计、
-// UpdateUserContact 写即置已验证 / 显式清空 / 唯一冲突不审计 / 强制下线。
+// UpdateUserContact 写即置已验证 / 显式清空 / 唯一冲突不审计 / 强制下线、
+// 救援族五方法（SetUserMfa 开关两态与强制下线集合、UnbindUserTOTP、
+// ResetUserRecoveryCodes 重生成无明文回显、SetCredentialEnabled 密码凭证
+// 停用拒绝与零失效链零审计、DeleteCredential 强制下线与审计 detail、
+// 五方法门禁复用）。
 // q 模糊 / 排序 / 分页边界的真库行为归 repo 用例（user_repo_test.go）。
 package admin_test
 
@@ -27,6 +31,7 @@ import (
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	adminv1 "authloft/gen/go/api/admin/v1"
+	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -48,6 +53,10 @@ type userFakeUsers struct {
 
 	incIDs  []int64
 	incNext int16
+
+	// —— MFA 开关（SetUserMfa 走 UpdateMfaRequired 列级更新）——
+	mfaUpdated []userFakeMfaUpdate
+	mfaErr     error
 
 	// —— 资料 / 联系方式编辑族（UpdateUserProfile / UpdateUserContact / GetUser 投影）——
 	profileRow     *model.UserProfile      // 现行 user_profile 行（nil = 行缺失）
@@ -74,6 +83,11 @@ type userFakeContactUpdate struct {
 type userFakeStatus struct {
 	id     int64
 	status int8
+}
+
+type userFakeMfaUpdate struct {
+	id  int64
+	mfa int8
 }
 
 func (f *userFakeUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
@@ -106,6 +120,18 @@ func (f *userFakeUsers) UpdateUserStatus(_ context.Context, id int64, status int
 func (f *userFakeUsers) IncEpoch(_ context.Context, id int64) (int16, error) {
 	f.incIDs = append(f.incIDs, id)
 	return f.incNext, nil
+}
+
+func (f *userFakeUsers) UpdateMfaRequired(_ context.Context, id int64, mfaRequired int8) error {
+	if f.mfaErr != nil {
+		return f.mfaErr
+	}
+	// 模拟 repo 的 rows=0 存在性判定（UpdateMfaRequired 契约）。
+	if f.user == nil || f.user.ID != id {
+		return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
+	}
+	f.mfaUpdated = append(f.mfaUpdated, userFakeMfaUpdate{id: id, mfa: mfaRequired})
+	return nil
 }
 
 func (f *userFakeUsers) FindByPhone(_ context.Context, phone string) (*model.User, error) {
@@ -163,6 +189,31 @@ type userFakeCreds struct {
 	list    []model.UserCredential
 	created []*model.UserCredential
 	updated []*model.UserCredential
+
+	// —— 救援族（按 credentialId 定位，§5.4）——
+	byID            map[int64]*model.UserCredential // credentialId → 行（含他人行用于归属拒绝）
+	findIDErr       error
+	setEnabled      []userFakeCredEnable
+	setEnabledErr   error
+	deletedByKind   []userFakeCredDeleteKind // DeleteByUserAndKind 调用留档
+	deleteByKindErr error
+	deletedByID     []userFakeCredDeleteID // DeleteByID 调用留档（user 维度透传断言）
+	deleteIDErr     error
+}
+
+type userFakeCredEnable struct {
+	id      int64
+	enabled bool
+}
+
+type userFakeCredDeleteKind struct {
+	userID int64
+	kind   string
+}
+
+type userFakeCredDeleteID struct {
+	userID int64
+	id     int64
 }
 
 func (f *userFakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*model.UserCredential, error) {
@@ -170,6 +221,16 @@ func (f *userFakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind strin
 		return c, nil
 	}
 	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+}
+
+func (f *userFakeCreds) FindByID(_ context.Context, id int64) (*model.UserCredential, error) {
+	if f.findIDErr != nil {
+		return nil, f.findIDErr
+	}
+	if c, ok := f.byID[id]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("credential repo: find by id: %w", gorm.ErrRecordNotFound)
 }
 
 func (f *userFakeCreds) ListByUser(_ context.Context, _ int64) ([]model.UserCredential, error) {
@@ -183,6 +244,35 @@ func (f *userFakeCreds) Create(_ context.Context, c *model.UserCredential) error
 
 func (f *userFakeCreds) Update(_ context.Context, c *model.UserCredential) error {
 	f.updated = append(f.updated, c)
+	return nil
+}
+
+func (f *userFakeCreds) SetEnabled(_ context.Context, id int64, enabled bool) error {
+	if f.setEnabledErr != nil {
+		return f.setEnabledErr
+	}
+	f.setEnabled = append(f.setEnabled, userFakeCredEnable{id: id, enabled: enabled})
+	return nil
+}
+
+func (f *userFakeCreds) DeleteByUserAndKind(_ context.Context, userID int64, kind string) error {
+	if f.deleteByKindErr != nil {
+		return f.deleteByKindErr
+	}
+	// 模拟 repo 的行存在性语义（DeleteByUserAndKind 契约：未命中返回
+	// 包装的 gorm.ErrRecordNotFound）。
+	if _, ok := f.byKind[kind]; !ok {
+		return fmt.Errorf("credential repo: delete by user kind: %w", gorm.ErrRecordNotFound)
+	}
+	f.deletedByKind = append(f.deletedByKind, userFakeCredDeleteKind{userID: userID, kind: kind})
+	return nil
+}
+
+func (f *userFakeCreds) DeleteByID(_ context.Context, userID, id int64) error {
+	if f.deleteIDErr != nil {
+		return f.deleteIDErr
+	}
+	f.deletedByID = append(f.deletedByID, userFakeCredDeleteID{userID: userID, id: id})
 	return nil
 }
 
@@ -1334,3 +1424,411 @@ func TestUserServiceGetUserProfileProjection(t *testing.T) {
 // ptrStr / ptrI64 测试用指针构造助手。
 func ptrStr(v string) *string { return &v }
 func ptrI64(v int64) *int64   { return &v }
+
+// —— 救援族 5 方法（§5.4）：值域 / 门禁复用 / 强制下线集合 / 审计 ——
+
+// TestUserServiceSetUserMfa 管理端开关两步验证：开启只写开关列（不触发
+// 失效链、不审计）；关闭写列后走 IncEpoch + Sync + 审计 admin_disable_mfa
+// （detail={enabled:false}）；值域 0|1 之外 invalid_request 且零副作用；
+// 目标行缺失 404。
+func TestUserServiceSetUserMfa(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("开启不触发失效链与审计", func(t *testing.T) {
+		svc, users, _, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.SetUserMfa(ctx, 1, 42, 1); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(users.mfaUpdated) != 1 || users.mfaUpdated[0] != (userFakeMfaUpdate{id: 42, mfa: 1}) {
+			t.Fatalf("mfaUpdated = %+v, want [{42 1}]", users.mfaUpdated)
+		}
+		if len(users.incIDs) != 0 || len(epoch.synced) != 0 {
+			t.Fatalf("开启不应触发会话失效: inc=%v sync=%v", users.incIDs, epoch.synced)
+		}
+		if len(audit.events) != 0 {
+			t.Fatalf("开启不应投审计: %+v", audit.events)
+		}
+	})
+
+	t.Run("关闭触发强制下线与审计", func(t *testing.T) {
+		svc, users, _, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		users.incNext = 7
+		if err := svc.SetUserMfa(ctx, 1, 42, 0); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(users.mfaUpdated) != 1 || users.mfaUpdated[0].mfa != 0 {
+			t.Fatalf("mfaUpdated = %+v, want mfa=0", users.mfaUpdated)
+		}
+		if len(users.incIDs) != 1 || users.incIDs[0] != 42 ||
+			len(epoch.synced) != 1 || epoch.synced[0] != (userFakeSync{uid: 42, epoch: 7}) {
+			t.Fatalf("关闭应走失效链: inc=%v sync=%v", users.incIDs, epoch.synced)
+		}
+		if len(audit.events) != 1 {
+			t.Fatalf("关闭应投审计: %d", len(audit.events))
+		}
+		ev := audit.events[0]
+		if ev.Event != eventlog.EventAdminDisableMFA || ev.ActorType != eventlog.ActorTypeAdmin ||
+			ev.ActorID != 1 || ev.UserID != 42 {
+			t.Fatalf("审计事件 = %+v", ev)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(ev.Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if v, ok := d["enabled"].(bool); !ok || v != false {
+			t.Fatalf("detail = %+v, want enabled:false", d)
+		}
+	})
+
+	t.Run("值域 0|1 之外拒绝且零副作用", func(t *testing.T) {
+		svc, users, _, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.SetUserMfa(ctx, 1, 42, 2); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+		if len(users.mfaUpdated) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("值域拒绝不应有副作用")
+		}
+	})
+
+	t.Run("目标行缺失 404", func(t *testing.T) {
+		svc, users, _, _, _, _, _, _, _ := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.SetUserMfa(ctx, 1, 99, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+	})
+}
+
+// TestUserServiceUnbindUserTOTP 管理员救援解绑 TOTP：删 kind=totp 凭证行
+// （recovery_code 行不在契约范围）→ 强制下线 → 审计 admin_unbind_totp
+// （detail={}）；totp 行缺失 404 且零副作用。
+func TestUserServiceUnbindUserTOTP(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("成功删 totp 行并强制下线", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		creds.byKind = map[string]*model.UserCredential{
+			"totp": {ID: 3, UserID: 42, Kind: "totp"},
+		}
+		users.incNext = 4
+		if err := svc.UnbindUserTOTP(ctx, 1, 42); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(creds.deletedByKind) != 1 || creds.deletedByKind[0] != (userFakeCredDeleteKind{userID: 42, kind: "totp"}) {
+			t.Fatalf("deletedByKind = %+v", creds.deletedByKind)
+		}
+		if len(users.incIDs) != 1 || len(epoch.synced) != 1 || epoch.synced[0].uid != 42 {
+			t.Fatalf("解绑应走失效链: inc=%v sync=%v", users.incIDs, epoch.synced)
+		}
+		if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminUnbindTotp ||
+			audit.events[0].UserID != 42 || audit.events[0].ActorID != 1 {
+			t.Fatalf("审计事件 = %+v", audit.events)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if len(d) != 0 {
+			t.Fatalf("detail = %+v, want 空对象（不记 TOTP 密钥）", d)
+		}
+	})
+
+	t.Run("totp 行缺失 404 且零副作用", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.UnbindUserTOTP(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(creds.deletedByKind) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("删除失败不应有失效与审计")
+		}
+	})
+}
+
+// TestUserServiceResetUserRecoveryCodes 重生成恢复码：meta 整行覆盖为 10 条
+// 互异 8 位存储形新码（与旧码全异）、is_enabled 不动；方法只返回 error、
+// 审计 detail 为空对象（响应与审计均无明文回显）；不触发失效链；行缺失 404。
+func TestUserServiceResetUserRecoveryCodes(t *testing.T) {
+	ctx := context.Background()
+	oldCodes := []string{"aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee",
+		"ffffffff", "gggggggg", "hhhhhhhh", "jjjjjjjj", "kkkkkkkk"}
+
+	t.Run("重生成写回 meta 且无明文出口", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		oldMeta, err := repo.MarshalCredentialMeta(&credentialpb.CredentialMeta{RecoveryCodes: oldCodes})
+		if err != nil {
+			t.Fatalf("marshal 旧 meta: %v", err)
+		}
+		creds.byKind = map[string]*model.UserCredential{
+			"recovery_code": {ID: 9, UserID: 42, Kind: "recovery_code", Meta: oldMeta, IsEnabled: 1},
+		}
+		if err := svc.ResetUserRecoveryCodes(ctx, 1, 42); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(creds.updated) != 1 {
+			t.Fatalf("updated = %d 次, want 1", len(creds.updated))
+		}
+		row := creds.updated[0]
+		if row.ID != 9 || row.Kind != "recovery_code" || row.IsEnabled != 1 {
+			t.Fatalf("更新行 = %+v, is_enabled 应不动", row)
+		}
+		meta, err := repo.UnmarshalCredentialMeta(row.Meta)
+		if err != nil {
+			t.Fatalf("unmarshal 新 meta: %v", err)
+		}
+		if len(meta.GetRecoveryCodes()) != 10 {
+			t.Fatalf("新码 = %d 条, want 10", len(meta.GetRecoveryCodes()))
+		}
+		seen := map[string]bool{}
+		old := map[string]bool{}
+		for _, c := range oldCodes {
+			old[c] = true
+		}
+		for _, c := range meta.GetRecoveryCodes() {
+			if len(c) != 8 {
+				t.Fatalf("码长 = %d, want 8", len(c))
+			}
+			for _, r := range c {
+				if !strings.ContainsRune("0123456789abcdefghjkmnpqrstvwxyz", r) {
+					t.Fatalf("码 %q 含非法字符 %q", c, r)
+				}
+			}
+			if seen[c] {
+				t.Fatalf("批内重复码 %q", c)
+			}
+			if old[c] {
+				t.Fatalf("新码与旧码重合 %q", c)
+			}
+			seen[c] = true
+		}
+		// 无明文出口：方法只返回 error（签名即契约），审计 detail 为空对象、
+		// 不含任何码值。
+		if len(users.incIDs) != 0 || len(epoch.synced) != 0 {
+			t.Fatalf("恢复码重置不应触发会话失效")
+		}
+		if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminRecoveryCodesReset {
+			t.Fatalf("审计事件 = %+v", audit.events)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if len(d) != 0 {
+			t.Fatalf("detail = %+v, want 空对象（不记任何码值）", d)
+		}
+	})
+
+	t.Run("recovery_code 行缺失 404", func(t *testing.T) {
+		svc, users, _, _, _, _, _, _, audit := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.ResetUserRecoveryCodes(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(audit.events) != 0 {
+			t.Fatalf("失败不应审计")
+		}
+	})
+}
+
+// TestUserServiceSetCredentialEnabled 停用 / 启用单条凭证：密码凭证停用拒绝
+// （invalid_request，避免无密码可用态）且不触碰启用态；凭证缺失 / 属他人统一
+// 404；全程不触发失效链、不投审计（契约口径）。
+func TestUserServiceSetCredentialEnabled(t *testing.T) {
+	ctx := context.Background()
+
+	newCredSvc := func(kind string) (*adminsvc.UserService, *userFakeUsers, *userFakeCreds, *userFakeEpoch, *userFakeAudit) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		creds.byID = map[int64]*model.UserCredential{
+			7: {ID: 7, UserID: 42, Kind: kind},
+		}
+		return svc, users, creds, epoch, audit
+	}
+
+	t.Run("非密码凭证停用成功且零失效链零审计", func(t *testing.T) {
+		svc, users, creds, epoch, audit := newCredSvc("totp")
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(creds.setEnabled) != 1 || creds.setEnabled[0] != (userFakeCredEnable{id: 7, enabled: false}) {
+			t.Fatalf("setEnabled = %+v", creds.setEnabled)
+		}
+		if len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("凭证启停不应触发失效链或审计")
+		}
+	})
+
+	t.Run("密码凭证停用拒绝", func(t *testing.T) {
+		svc, _, creds, epoch, audit := newCredSvc("password")
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+		if len(creds.setEnabled) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("拒绝不应有副作用")
+		}
+	})
+
+	t.Run("密码凭证启用成功", func(t *testing.T) {
+		svc, _, creds, epoch, audit := newCredSvc("password")
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, true); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(creds.setEnabled) != 1 || creds.setEnabled[0] != (userFakeCredEnable{id: 7, enabled: true}) {
+			t.Fatalf("setEnabled = %+v", creds.setEnabled)
+		}
+		if len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("启用不应触发失效链或审计")
+		}
+	})
+
+	t.Run("凭证缺失与属他人统一 404", func(t *testing.T) {
+		svc, _, creds, _, _ := newCredSvc("totp")
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("缺失 err = %v, want ErrRecordNotFound", err)
+		}
+		// 他人凭证（UserID≠42）与缺失同形态返回，不泄露归属。
+		creds.byID[8] = &model.UserCredential{ID: 8, UserID: 43, Kind: "totp"}
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("属他人 err = %v, want ErrRecordNotFound", err)
+		}
+		if len(creds.setEnabled) != 0 {
+			t.Fatalf("拒绝不应触碰启用态")
+		}
+	})
+
+	t.Run("参数缺失 invalid_request", func(t *testing.T) {
+		svc, _, _, _, _ := newCredSvc("totp")
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 0, false); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+	})
+}
+
+// TestUserServiceDeleteCredential 删除单条凭证：按 credentialId 删（user 维度
+// 透传 repo 双重定位）→ 强制下线 → 审计 admin_credential_delete
+// （detail={credential_id, kind}，不记 secret）；缺失 / 属他人 404。
+func TestUserServiceDeleteCredential(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("成功删除并强制下线与审计", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		creds.byID = map[int64]*model.UserCredential{
+			7: {ID: 7, UserID: 42, Kind: "webauthn"},
+		}
+		users.incNext = 6
+		if err := svc.DeleteCredential(ctx, 1, 42, 7); err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+		if len(creds.deletedByID) != 1 || creds.deletedByID[0] != (userFakeCredDeleteID{userID: 42, id: 7}) {
+			t.Fatalf("deletedByID = %+v", creds.deletedByID)
+		}
+		if len(users.incIDs) != 1 || len(epoch.synced) != 1 || epoch.synced[0].uid != 42 {
+			t.Fatalf("删凭证应走失效链: inc=%v sync=%v", users.incIDs, epoch.synced)
+		}
+		if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminCredentialDelete {
+			t.Fatalf("审计事件 = %+v", audit.events)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if id, ok := d["credential_id"].(int64); !ok || id != 7 {
+			t.Fatalf("detail credential_id = %+v, want 7", d["credential_id"])
+		}
+		if d["kind"] != "webauthn" {
+			t.Fatalf("detail kind = %+v, want webauthn", d["kind"])
+		}
+		if _, ok := d["secret"]; ok {
+			t.Fatalf("detail 不应含 secret")
+		}
+	})
+
+	t.Run("凭证缺失与属他人统一 404", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("缺失 err = %v, want ErrRecordNotFound", err)
+		}
+		creds.byID = map[int64]*model.UserCredential{
+			8: {ID: 8, UserID: 43, Kind: "totp"},
+		}
+		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("属他人 err = %v, want ErrRecordNotFound", err)
+		}
+		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("拒绝不应有副作用")
+		}
+	})
+}
+
+// TestUserServiceRescueWriteGate 救援族五方法门禁复用（authorizeUserWrite
+// 矩阵细节由既有目标分级门禁用例承担，此处验证接线）：superadmin 目标一律
+// 拒（含 superadmin 操作者）；普通管理员目标遇非 superadmin 操作者拒；
+// 权限查询故障原样上抛（fail-closed，不映射 permission_denied）——拒绝与
+// 故障均零副作用。
+func TestUserServiceRescueWriteGate(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("permission repo: db down")
+
+	ops := []struct {
+		name string
+		call func(svc *adminsvc.UserService) error
+	}{
+		{"SetUserMfa", func(svc *adminsvc.UserService) error { return svc.SetUserMfa(ctx, 1, 42, 0) }},
+		{"UnbindUserTOTP", func(svc *adminsvc.UserService) error { return svc.UnbindUserTOTP(ctx, 1, 42) }},
+		{"ResetUserRecoveryCodes", func(svc *adminsvc.UserService) error { return svc.ResetUserRecoveryCodes(ctx, 1, 42) }},
+		{"SetCredentialEnabled", func(svc *adminsvc.UserService) error { return svc.SetCredentialEnabled(ctx, 1, 42, 7, false) }},
+		{"DeleteCredential", func(svc *adminsvc.UserService) error { return svc.DeleteCredential(ctx, 1, 42, 7) }},
+	}
+	scenarios := []struct {
+		name     string
+		granted  map[int64]map[string]bool
+		errByUID map[int64]error
+		want     error
+	}{
+		{
+			name:    "superadmin 目标一律拒",
+			granted: map[int64]map[string]bool{42: {adminsvc.PointSuperAdmin: true}, 1: {adminsvc.PointSuperAdmin: true}},
+			want:    adminsvc.ErrPermissionDenied,
+		},
+		{
+			name:    "普通管理员目标非 superadmin 操作者拒",
+			granted: map[int64]map[string]bool{42: {"editor": true}},
+			want:    adminsvc.ErrPermissionDenied,
+		},
+		{
+			name:     "目标权限查询故障不放行",
+			granted:  map[int64]map[string]bool{},
+			errByUID: map[int64]error{42: dbErr},
+			want:     dbErr,
+		},
+	}
+	for _, op := range ops {
+		for _, sc := range scenarios {
+			t.Run(op.name+"/"+sc.name, func(t *testing.T) {
+				perms := &userFakePermissions{
+					granted:     sc.granted,
+					errByUID:    sc.errByUID,
+					anyErrByUID: map[int64]error{},
+				}
+				svc, users, creds, _, _, _, epoch, _, audit := newUserSvc(perms)
+				users.user = userTestRow()
+				err := op.call(svc)
+				if !errors.Is(err, sc.want) {
+					t.Fatalf("err = %v, want %v", err, sc.want)
+				}
+				if len(users.mfaUpdated) != 0 || len(creds.updated) != 0 || len(creds.setEnabled) != 0 ||
+					len(creds.deletedByKind) != 0 || len(creds.deletedByID) != 0 ||
+					len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+					t.Fatalf("拒绝 / 故障不应有副作用")
+				}
+			})
+		}
+	}
+}

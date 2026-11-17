@@ -50,6 +50,11 @@ type UserService interface {
 	GetUser(ctx context.Context, id int64) (*adminsvc.UserDetail, error)
 	UpdateUserProfile(ctx context.Context, actor, id int64, req *adminv1.UpdateUserProfileRequest) error
 	UpdateUserContact(ctx context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error
+	SetUserMfa(ctx context.Context, actor, id int64, mfaRequired int64) error
+	UnbindUserTOTP(ctx context.Context, actor, id int64) error
+	ResetUserRecoveryCodes(ctx context.Context, actor, id int64) error
+	SetCredentialEnabled(ctx context.Context, actor, id, credentialID int64, enabled bool) error
+	DeleteCredential(ctx context.Context, actor, id, credentialID int64) error
 	UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error
 	ResetUserPassword(ctx context.Context, actor, id int64, password string) error
 	UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error
@@ -453,6 +458,70 @@ func (h *Handler) UpdateUserContact(ctx context.Context, req *connectrpc.Request
 	}
 	if err := h.users.UpdateUserContact(ctx, actor, req.Msg.GetId(), req.Msg); err != nil {
 		return nil, mapUserError("update user contact", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// SetUserMfa {id, mfaRequired 0|1} 管理端开关两步验证；关闭走 IncEpoch 会话
+// 失效链 + 审计，开启不触发（副作用编排与门禁在 service）。
+func (h *Handler) SetUserMfa(ctx context.Context, req *connectrpc.Request[adminv1.SetUserMfaRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.SetUserMfa(ctx, actor, req.Msg.GetId(), req.Msg.GetMfaRequired()); err != nil {
+		return nil, mapUserError("set user mfa", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// UnbindUserTOTP {id} 管理员救援解绑 TOTP（删 kind=totp 凭证行）；
+// 强制下线与审计在 service。
+func (h *Handler) UnbindUserTOTP(ctx context.Context, req *connectrpc.Request[adminv1.UnbindUserTOTPRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.UnbindUserTOTP(ctx, actor, req.Msg.GetId()); err != nil {
+		return nil, mapUserError("unbind user totp", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// ResetUserRecoveryCodes {id} 重生成恢复码；响应不下发明文（OkResponse 无
+// 字段），门禁与审计在 service。
+func (h *Handler) ResetUserRecoveryCodes(ctx context.Context, req *connectrpc.Request[adminv1.ResetUserRecoveryCodesRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.ResetUserRecoveryCodes(ctx, actor, req.Msg.GetId()); err != nil {
+		return nil, mapUserError("reset user recovery codes", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// SetCredentialEnabled {id, credentialId, enabled} 停用 / 启用单条凭证；
+// 密码凭证停用拒绝（invalid_request 映射同 mapUserError）。
+func (h *Handler) SetCredentialEnabled(ctx context.Context, req *connectrpc.Request[adminv1.SetCredentialEnabledRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.SetCredentialEnabled(ctx, actor, req.Msg.GetId(), req.Msg.GetCredentialId(), req.Msg.GetEnabled()); err != nil {
+		return nil, mapUserError("set credential enabled", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// DeleteCredential {id, credentialId} 删除单条凭证；强制下线与审计在 service。
+func (h *Handler) DeleteCredential(ctx context.Context, req *connectrpc.Request[adminv1.DeleteCredentialRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.DeleteCredential(ctx, actor, req.Msg.GetId(), req.Msg.GetCredentialId()); err != nil {
+		return nil, mapUserError("delete credential", err)
 	}
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
 }

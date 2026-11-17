@@ -16,25 +16,31 @@ import (
 // oidc_authorize_no_state 是 §4.6 行 792 定义的 system 事件（接口文档
 // §4.2）。事件名是落库值，改动需先更新文档（docs/ 为唯一真相）。
 const (
-	EventLoginSuccess         = "login_success"
-	EventChangePassword       = "change_password"
-	EventResetPassword        = "reset_password"
-	EventBindPhone            = "bind_phone"
-	EventBindEmail            = "bind_email"
-	EventEnableMFA            = "enable_mfa"
-	EventDisableMFA           = "disable_mfa"
-	EventWebAuthnRegister     = "webauthn_register"
-	EventWebAuthnDelete       = "webauthn_delete"
-	EventThirdpartyBind       = "thirdparty_bind"
-	EventThirdpartyUnbind     = "thirdparty_unbind"
-	EventAdminDisableUser     = "admin_disable_user"
-	EventAdminResetPassword   = "admin_reset_password"
-	EventAdminUpdateUser      = "admin_update_user"
-	EventAdminUpdateContact   = "admin_update_contact"
-	EventProviderCreate       = "provider_create"
-	EventProviderUpdate       = "provider_update"
-	EventSettingsUpdate       = "settings_update"
-	EventOIDCAuthorizeNoState = "oidc_authorize_no_state"
+	EventLoginSuccess       = "login_success"
+	EventChangePassword     = "change_password"
+	EventResetPassword      = "reset_password"
+	EventBindPhone          = "bind_phone"
+	EventBindEmail          = "bind_email"
+	EventEnableMFA          = "enable_mfa"
+	EventDisableMFA         = "disable_mfa"
+	EventWebAuthnRegister   = "webauthn_register"
+	EventWebAuthnDelete     = "webauthn_delete"
+	EventThirdpartyBind     = "thirdparty_bind"
+	EventThirdpartyUnbind   = "thirdparty_unbind"
+	EventAdminDisableUser   = "admin_disable_user"
+	EventAdminResetPassword = "admin_reset_password"
+	EventAdminUpdateUser    = "admin_update_user"
+	EventAdminUpdateContact = "admin_update_contact"
+	// admin 用户管理族救援事件（§4.6 枚举、接口文档 §5.6）：detail 一律不记
+	// 密码、TOTP 密钥、恢复码、联系方式明文。
+	EventAdminDisableMFA         = "admin_disable_mfa"
+	EventAdminUnbindTotp         = "admin_unbind_totp"
+	EventAdminCredentialDelete   = "admin_credential_delete"
+	EventAdminRecoveryCodesReset = "admin_recovery_codes_reset"
+	EventProviderCreate          = "provider_create"
+	EventProviderUpdate          = "provider_update"
+	EventSettingsUpdate          = "settings_update"
+	EventOIDCAuthorizeNoState    = "oidc_authorize_no_state"
 )
 
 // actor_type 取值（§4.6 行 771-772）：user=该用户 uid；admin=操作管理员
@@ -118,6 +124,29 @@ func DetailChangedFields(changedFields []string) []byte {
 		changedFields = []string{}
 	}
 	return encodeDetail(map[string]any{"changed_fields": changedFields})
+}
+
+// DetailEnabled 编码 admin_disable_mfa 的 detail（《后端架构》§4.6：
+// {enabled:false}，管理端关闭用户两步验证；与自助 enable_mfa / disable_mfa
+// 的 {enabled:...} 同形）。
+func DetailEnabled(enabled bool) []byte {
+	return encodeDetail(map[string]any{"enabled": enabled})
+}
+
+// DetailCredentialDelete 编码 admin_credential_delete 的 detail
+// （《后端架构》§4.6）：{credential_id, kind}，不记凭证 secret。
+func DetailCredentialDelete(credentialID int64, kind string) []byte {
+	return encodeDetail(map[string]any{
+		"credential_id": credentialID,
+		"kind":          kind,
+	})
+}
+
+// DetailEmpty 编码契约明示 detail 为 {} 的事件（§4.6 admin_unbind_totp /
+// admin_recovery_codes_reset 等：不记 TOTP 密钥 / 任何码值）：msgpack 空映射，
+// 与「无 detail」（NULL 列）区分——字段存在但为空对象。
+func DetailEmpty() []byte {
+	return encodeDetail(map[string]any{})
 }
 
 // encodeDetail 是所有 detail 构造器的唯一编码出口（接口文档 §12.0 行

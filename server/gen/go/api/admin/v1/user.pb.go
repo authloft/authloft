@@ -846,6 +846,284 @@ func (x *UpdateUserContactRequest) GetEmail() string {
 	return ""
 }
 
+// SetUserMfaRequest 是 AdminService/SetUserMfa 的请求（§5.4：
+// {id, mfaRequired: 0|1} 管理端开关用户两步验证）。值域 0|1、违规
+// invalid_request；关闭触发会话失效并投审计 admin_disable_mfa，开启不触发
+// 会话失效（§5.4 强制下线集合口径）。成功返回 OkResponse。
+type SetUserMfaRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 两步验证开关目标值：1 开启 0 关闭（§5.4 值域 0|1）。
+	MfaRequired   int64 `protobuf:"varint,2,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetUserMfaRequest) Reset() {
+	*x = SetUserMfaRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetUserMfaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetUserMfaRequest) ProtoMessage() {}
+
+func (x *SetUserMfaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetUserMfaRequest.ProtoReflect.Descriptor instead.
+func (*SetUserMfaRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SetUserMfaRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *SetUserMfaRequest) GetMfaRequired() int64 {
+	if x != nil {
+		return x.MfaRequired
+	}
+	return 0
+}
+
+// UnbindUserTOTPRequest 是 AdminService/UnbindUserTOTP 的请求（§5.4：{id}
+// 管理员救援删除该用户 kind=totp 凭证行）。管理域救援不要求用户侧二次验证
+// 令牌（管理员权限即授权，§5.4）；触发会话失效。成功返回 OkResponse。
+type UnbindUserTOTPRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbindUserTOTPRequest) Reset() {
+	*x = UnbindUserTOTPRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbindUserTOTPRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbindUserTOTPRequest) ProtoMessage() {}
+
+func (x *UnbindUserTOTPRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbindUserTOTPRequest.ProtoReflect.Descriptor instead.
+func (*UnbindUserTOTPRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *UnbindUserTOTPRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+// ResetUserRecoveryCodesRequest 是 AdminService/ResetUserRecoveryCodes 的
+// 请求（§5.4：{id} 重生成恢复码写回凭证 meta）。响应不下发明文（与 §3.5
+// 明细口径一致）；不触发会话失效。成功返回 OkResponse。
+type ResetUserRecoveryCodesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetUserRecoveryCodesRequest) Reset() {
+	*x = ResetUserRecoveryCodesRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetUserRecoveryCodesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetUserRecoveryCodesRequest) ProtoMessage() {}
+
+func (x *ResetUserRecoveryCodesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetUserRecoveryCodesRequest.ProtoReflect.Descriptor instead.
+func (*ResetUserRecoveryCodesRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ResetUserRecoveryCodesRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+// SetCredentialEnabledRequest 是 AdminService/SetCredentialEnabled 的请求
+// （§5.4：{id, credentialId, enabled} 停用 / 启用单条凭证）。密码凭证不允许
+// 停用（invalid_request）；不触发会话失效（§5.4 强制下线集合不含凭证启停）。
+// 成功返回 OkResponse。
+type SetCredentialEnabledRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+	CredentialId int64 `protobuf:"varint,2,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`
+	// 目标启用态：true 启用 false 停用（§5.4）。
+	Enabled       bool `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetCredentialEnabledRequest) Reset() {
+	*x = SetCredentialEnabledRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetCredentialEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetCredentialEnabledRequest) ProtoMessage() {}
+
+func (x *SetCredentialEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetCredentialEnabledRequest.ProtoReflect.Descriptor instead.
+func (*SetCredentialEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SetCredentialEnabledRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *SetCredentialEnabledRequest) GetCredentialId() int64 {
+	if x != nil {
+		return x.CredentialId
+	}
+	return 0
+}
+
+func (x *SetCredentialEnabledRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+// DeleteCredentialRequest 是 AdminService/DeleteCredential 的请求（§5.4：
+// {id, credentialId} 删除单条凭证，含 WebAuthn 附加行）。触发会话失效
+// （§5.4 强制下线集合）。成功返回 OkResponse。
+type DeleteCredentialRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+	CredentialId  int64 `protobuf:"varint,2,opt,name=credential_id,json=credentialId,proto3" json:"credential_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteCredentialRequest) Reset() {
+	*x = DeleteCredentialRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteCredentialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteCredentialRequest) ProtoMessage() {}
+
+func (x *DeleteCredentialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteCredentialRequest.ProtoReflect.Descriptor instead.
+func (*DeleteCredentialRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DeleteCredentialRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *DeleteCredentialRequest) GetCredentialId() int64 {
+	if x != nil {
+		return x.CredentialId
+	}
+	return 0
+}
+
 // UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
 // {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
 // pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
@@ -863,7 +1141,7 @@ type UpdateUserStatusRequest struct {
 
 func (x *UpdateUserStatusRequest) Reset() {
 	*x = UpdateUserStatusRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	mi := &file_api_admin_v1_user_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -875,7 +1153,7 @@ func (x *UpdateUserStatusRequest) String() string {
 func (*UpdateUserStatusRequest) ProtoMessage() {}
 
 func (x *UpdateUserStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[9]
+	mi := &file_api_admin_v1_user_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -888,7 +1166,7 @@ func (x *UpdateUserStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateUserStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateUserStatusRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{9}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateUserStatusRequest) GetId() int64 {
@@ -921,7 +1199,7 @@ type ResetUserPasswordRequest struct {
 
 func (x *ResetUserPasswordRequest) Reset() {
 	*x = ResetUserPasswordRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	mi := &file_api_admin_v1_user_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1211,7 @@ func (x *ResetUserPasswordRequest) String() string {
 func (*ResetUserPasswordRequest) ProtoMessage() {}
 
 func (x *ResetUserPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[10]
+	mi := &file_api_admin_v1_user_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1224,7 @@ func (x *ResetUserPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetUserPasswordRequest.ProtoReflect.Descriptor instead.
 func (*ResetUserPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{10}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResetUserPasswordRequest) GetId() int64 {
@@ -979,7 +1257,7 @@ type UnbindUserThirdpartyRequest struct {
 
 func (x *UnbindUserThirdpartyRequest) Reset() {
 	*x = UnbindUserThirdpartyRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	mi := &file_api_admin_v1_user_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -991,7 +1269,7 @@ func (x *UnbindUserThirdpartyRequest) String() string {
 func (*UnbindUserThirdpartyRequest) ProtoMessage() {}
 
 func (x *UnbindUserThirdpartyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[11]
+	mi := &file_api_admin_v1_user_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1004,7 +1282,7 @@ func (x *UnbindUserThirdpartyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnbindUserThirdpartyRequest.ProtoReflect.Descriptor instead.
 func (*UnbindUserThirdpartyRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{11}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UnbindUserThirdpartyRequest) GetId() int64 {
@@ -1034,7 +1312,7 @@ type UnlockUserRequest struct {
 
 func (x *UnlockUserRequest) Reset() {
 	*x = UnlockUserRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	mi := &file_api_admin_v1_user_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +1324,7 @@ func (x *UnlockUserRequest) String() string {
 func (*UnlockUserRequest) ProtoMessage() {}
 
 func (x *UnlockUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[12]
+	mi := &file_api_admin_v1_user_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +1337,7 @@ func (x *UnlockUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockUserRequest.ProtoReflect.Descriptor instead.
 func (*UnlockUserRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{12}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UnlockUserRequest) GetId() int64 {
@@ -1091,7 +1369,7 @@ type GetUserEventsRequest struct {
 
 func (x *GetUserEventsRequest) Reset() {
 	*x = GetUserEventsRequest{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[13]
+	mi := &file_api_admin_v1_user_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1381,7 @@ func (x *GetUserEventsRequest) String() string {
 func (*GetUserEventsRequest) ProtoMessage() {}
 
 func (x *GetUserEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[13]
+	mi := &file_api_admin_v1_user_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1116,7 +1394,7 @@ func (x *GetUserEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserEventsRequest.ProtoReflect.Descriptor instead.
 func (*GetUserEventsRequest) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{13}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetUserEventsRequest) GetId() int64 {
@@ -1173,7 +1451,7 @@ type UserEventsResponse struct {
 
 func (x *UserEventsResponse) Reset() {
 	*x = UserEventsResponse{}
-	mi := &file_api_admin_v1_user_proto_msgTypes[14]
+	mi := &file_api_admin_v1_user_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1185,7 +1463,7 @@ func (x *UserEventsResponse) String() string {
 func (*UserEventsResponse) ProtoMessage() {}
 
 func (x *UserEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_admin_v1_user_proto_msgTypes[14]
+	mi := &file_api_admin_v1_user_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1198,7 +1476,7 @@ func (x *UserEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserEventsResponse.ProtoReflect.Descriptor instead.
 func (*UserEventsResponse) Descriptor() ([]byte, []int) {
-	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{14}
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UserEventsResponse) GetItems() []*EventItem {
@@ -1316,7 +1594,21 @@ const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\x05phone\x18\x02 \x01(\tH\x00R\x05phone\x88\x01\x01\x12\x19\n" +
 	"\x05email\x18\x03 \x01(\tH\x01R\x05email\x88\x01\x01B\b\n" +
 	"\x06_phoneB\b\n" +
-	"\x06_email\"J\n" +
+	"\x06_email\"F\n" +
+	"\x11SetUserMfaRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12!\n" +
+	"\fmfa_required\x18\x02 \x01(\x03R\vmfaRequired\"'\n" +
+	"\x15UnbindUserTOTPRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"/\n" +
+	"\x1dResetUserRecoveryCodesRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"l\n" +
+	"\x1bSetCredentialEnabledRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12#\n" +
+	"\rcredential_id\x18\x02 \x01(\x03R\fcredentialId\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\"N\n" +
+	"\x17DeleteCredentialRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12#\n" +
+	"\rcredential_id\x18\x02 \x01(\x03R\fcredentialId\"J\n" +
 	"\x17UpdateUserStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1f\n" +
 	"\vuser_status\x18\x02 \x01(\x03R\n" +
@@ -1359,36 +1651,41 @@ func file_api_admin_v1_user_proto_rawDescGZIP() []byte {
 	return file_api_admin_v1_user_proto_rawDescData
 }
 
-var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_api_admin_v1_user_proto_goTypes = []any{
-	(*AdminUser)(nil),                   // 0: api.admin.v1.AdminUser
-	(*ListUsersRequest)(nil),            // 1: api.admin.v1.ListUsersRequest
-	(*UserListResponse)(nil),            // 2: api.admin.v1.UserListResponse
-	(*GetUserRequest)(nil),              // 3: api.admin.v1.GetUserRequest
-	(*UserCredentialSummary)(nil),       // 4: api.admin.v1.UserCredentialSummary
-	(*UserThirdpartyBinding)(nil),       // 5: api.admin.v1.UserThirdpartyBinding
-	(*UserDetailResponse)(nil),          // 6: api.admin.v1.UserDetailResponse
-	(*UpdateUserProfileRequest)(nil),    // 7: api.admin.v1.UpdateUserProfileRequest
-	(*UpdateUserContactRequest)(nil),    // 8: api.admin.v1.UpdateUserContactRequest
-	(*UpdateUserStatusRequest)(nil),     // 9: api.admin.v1.UpdateUserStatusRequest
-	(*ResetUserPasswordRequest)(nil),    // 10: api.admin.v1.ResetUserPasswordRequest
-	(*UnbindUserThirdpartyRequest)(nil), // 11: api.admin.v1.UnbindUserThirdpartyRequest
-	(*UnlockUserRequest)(nil),           // 12: api.admin.v1.UnlockUserRequest
-	(*GetUserEventsRequest)(nil),        // 13: api.admin.v1.GetUserEventsRequest
-	(*UserEventsResponse)(nil),          // 14: api.admin.v1.UserEventsResponse
-	(*v1.MfaResponse)(nil),              // 15: api.account.v1.MfaResponse
-	(*v1.UserProfile)(nil),              // 16: api.account.v1.UserProfile
-	(*EventItem)(nil),                   // 17: api.admin.v1.EventItem
+	(*AdminUser)(nil),                     // 0: api.admin.v1.AdminUser
+	(*ListUsersRequest)(nil),              // 1: api.admin.v1.ListUsersRequest
+	(*UserListResponse)(nil),              // 2: api.admin.v1.UserListResponse
+	(*GetUserRequest)(nil),                // 3: api.admin.v1.GetUserRequest
+	(*UserCredentialSummary)(nil),         // 4: api.admin.v1.UserCredentialSummary
+	(*UserThirdpartyBinding)(nil),         // 5: api.admin.v1.UserThirdpartyBinding
+	(*UserDetailResponse)(nil),            // 6: api.admin.v1.UserDetailResponse
+	(*UpdateUserProfileRequest)(nil),      // 7: api.admin.v1.UpdateUserProfileRequest
+	(*UpdateUserContactRequest)(nil),      // 8: api.admin.v1.UpdateUserContactRequest
+	(*SetUserMfaRequest)(nil),             // 9: api.admin.v1.SetUserMfaRequest
+	(*UnbindUserTOTPRequest)(nil),         // 10: api.admin.v1.UnbindUserTOTPRequest
+	(*ResetUserRecoveryCodesRequest)(nil), // 11: api.admin.v1.ResetUserRecoveryCodesRequest
+	(*SetCredentialEnabledRequest)(nil),   // 12: api.admin.v1.SetCredentialEnabledRequest
+	(*DeleteCredentialRequest)(nil),       // 13: api.admin.v1.DeleteCredentialRequest
+	(*UpdateUserStatusRequest)(nil),       // 14: api.admin.v1.UpdateUserStatusRequest
+	(*ResetUserPasswordRequest)(nil),      // 15: api.admin.v1.ResetUserPasswordRequest
+	(*UnbindUserThirdpartyRequest)(nil),   // 16: api.admin.v1.UnbindUserThirdpartyRequest
+	(*UnlockUserRequest)(nil),             // 17: api.admin.v1.UnlockUserRequest
+	(*GetUserEventsRequest)(nil),          // 18: api.admin.v1.GetUserEventsRequest
+	(*UserEventsResponse)(nil),            // 19: api.admin.v1.UserEventsResponse
+	(*v1.MfaResponse)(nil),                // 20: api.account.v1.MfaResponse
+	(*v1.UserProfile)(nil),                // 21: api.account.v1.UserProfile
+	(*EventItem)(nil),                     // 22: api.admin.v1.EventItem
 }
 var file_api_admin_v1_user_proto_depIdxs = []int32{
 	0,  // 0: api.admin.v1.UserListResponse.items:type_name -> api.admin.v1.AdminUser
 	0,  // 1: api.admin.v1.UserDetailResponse.user:type_name -> api.admin.v1.AdminUser
 	4,  // 2: api.admin.v1.UserDetailResponse.credentials:type_name -> api.admin.v1.UserCredentialSummary
 	5,  // 3: api.admin.v1.UserDetailResponse.bindings:type_name -> api.admin.v1.UserThirdpartyBinding
-	15, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
-	16, // 5: api.admin.v1.UserDetailResponse.profile:type_name -> api.account.v1.UserProfile
-	16, // 6: api.admin.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
-	17, // 7: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
+	20, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
+	21, // 5: api.admin.v1.UserDetailResponse.profile:type_name -> api.account.v1.UserProfile
+	21, // 6: api.admin.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
+	22, // 7: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
 	8,  // [8:8] is the sub-list for method output_type
 	8,  // [8:8] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
@@ -1405,14 +1702,14 @@ func file_api_admin_v1_user_proto_init() {
 	file_api_admin_v1_user_proto_msgTypes[1].OneofWrappers = []any{}
 	file_api_admin_v1_user_proto_msgTypes[7].OneofWrappers = []any{}
 	file_api_admin_v1_user_proto_msgTypes[8].OneofWrappers = []any{}
-	file_api_admin_v1_user_proto_msgTypes[13].OneofWrappers = []any{}
+	file_api_admin_v1_user_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_admin_v1_user_proto_rawDesc), len(file_api_admin_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

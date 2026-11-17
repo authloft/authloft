@@ -87,6 +87,20 @@ const (
 	AdminServiceUnbindUserThirdpartyProcedure = "/api.admin.v1.AdminService/UnbindUserThirdparty"
 	// AdminServiceUnlockUserProcedure is the fully-qualified name of the AdminService's UnlockUser RPC.
 	AdminServiceUnlockUserProcedure = "/api.admin.v1.AdminService/UnlockUser"
+	// AdminServiceSetUserMfaProcedure is the fully-qualified name of the AdminService's SetUserMfa RPC.
+	AdminServiceSetUserMfaProcedure = "/api.admin.v1.AdminService/SetUserMfa"
+	// AdminServiceUnbindUserTOTPProcedure is the fully-qualified name of the AdminService's
+	// UnbindUserTOTP RPC.
+	AdminServiceUnbindUserTOTPProcedure = "/api.admin.v1.AdminService/UnbindUserTOTP"
+	// AdminServiceResetUserRecoveryCodesProcedure is the fully-qualified name of the AdminService's
+	// ResetUserRecoveryCodes RPC.
+	AdminServiceResetUserRecoveryCodesProcedure = "/api.admin.v1.AdminService/ResetUserRecoveryCodes"
+	// AdminServiceSetCredentialEnabledProcedure is the fully-qualified name of the AdminService's
+	// SetCredentialEnabled RPC.
+	AdminServiceSetCredentialEnabledProcedure = "/api.admin.v1.AdminService/SetCredentialEnabled"
+	// AdminServiceDeleteCredentialProcedure is the fully-qualified name of the AdminService's
+	// DeleteCredential RPC.
+	AdminServiceDeleteCredentialProcedure = "/api.admin.v1.AdminService/DeleteCredential"
 	// AdminServiceGetUserEventsProcedure is the fully-qualified name of the AdminService's
 	// GetUserEvents RPC.
 	AdminServiceGetUserEventsProcedure = "/api.admin.v1.AdminService/GetUserEvents"
@@ -192,6 +206,16 @@ type AdminServiceClient interface {
 	UnbindUserThirdparty(context.Context, *connect.Request[v1.UnbindUserThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
 	// 解除登录限制（§5.4）。
 	UnlockUser(context.Context, *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error)
+	// 管理端开关两步验证：关闭触发会话失效并投审计（§5.4）。
+	SetUserMfa(context.Context, *connect.Request[v1.SetUserMfaRequest]) (*connect.Response[v1.OkResponse], error)
+	// 管理员救援解绑 TOTP：删 kind=totp 凭证行，触发会话失效（§5.4）。
+	UnbindUserTOTP(context.Context, *connect.Request[v1.UnbindUserTOTPRequest]) (*connect.Response[v1.OkResponse], error)
+	// 重生成恢复码，响应不下发明文（§5.4）。
+	ResetUserRecoveryCodes(context.Context, *connect.Request[v1.ResetUserRecoveryCodesRequest]) (*connect.Response[v1.OkResponse], error)
+	// 停用 / 启用单条凭证；密码凭证不允许停用，不触发会话失效（§5.4）。
+	SetCredentialEnabled(context.Context, *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error)
+	// 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
+	DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error)
 	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
 	// SSO 客户端列表（§5.5）。
@@ -361,6 +385,36 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(adminServiceMethods.ByName("UnlockUser")),
 			connect.WithClientOptions(opts...),
 		),
+		setUserMfa: connect.NewClient[v1.SetUserMfaRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceSetUserMfaProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("SetUserMfa")),
+			connect.WithClientOptions(opts...),
+		),
+		unbindUserTOTP: connect.NewClient[v1.UnbindUserTOTPRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceUnbindUserTOTPProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("UnbindUserTOTP")),
+			connect.WithClientOptions(opts...),
+		),
+		resetUserRecoveryCodes: connect.NewClient[v1.ResetUserRecoveryCodesRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceResetUserRecoveryCodesProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("ResetUserRecoveryCodes")),
+			connect.WithClientOptions(opts...),
+		),
+		setCredentialEnabled: connect.NewClient[v1.SetCredentialEnabledRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceSetCredentialEnabledProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("SetCredentialEnabled")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteCredential: connect.NewClient[v1.DeleteCredentialRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceDeleteCredentialProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("DeleteCredential")),
+			connect.WithClientOptions(opts...),
+		),
 		getUserEvents: connect.NewClient[v1.GetUserEventsRequest, v1.UserEventsResponse](
 			httpClient,
 			baseURL+AdminServiceGetUserEventsProcedure,
@@ -492,46 +546,51 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // adminServiceClient implements AdminServiceClient.
 type adminServiceClient struct {
-	getMe                *connect.Client[v1.GetMeRequest, v1.MeResponse]
-	listProviders        *connect.Client[v1.ListProvidersRequest, v1.ProviderListResponse]
-	createProvider       *connect.Client[structpb.Struct, v1.OkResponse]
-	getProvider          *connect.Client[v1.GetProviderRequest, v1.AdminProvider]
-	updateProvider       *connect.Client[structpb.Struct, v1.OkResponse]
-	deleteProvider       *connect.Client[v1.DeleteProviderRequest, v1.OkResponse]
-	setProviderEnabled   *connect.Client[v1.SetProviderEnabledRequest, v1.OkResponse]
-	sortProviders        *connect.Client[v1.SortProvidersRequest, v1.OkResponse]
-	getProviderTypes     *connect.Client[v1.GetProviderTypesRequest, v1.ProviderTypesResponse]
-	getProviderSchema    *connect.Client[v1.GetProviderSchemaRequest, v1.SchemaResponse]
-	testProvider         *connect.Client[v1.TestProviderRequest, v1.OkResponse]
-	listUsers            *connect.Client[v1.ListUsersRequest, v1.UserListResponse]
-	getUser              *connect.Client[v1.GetUserRequest, v1.UserDetailResponse]
-	updateUserProfile    *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
-	updateUserContact    *connect.Client[v1.UpdateUserContactRequest, v1.OkResponse]
-	updateUserStatus     *connect.Client[v1.UpdateUserStatusRequest, v1.OkResponse]
-	resetUserPassword    *connect.Client[v1.ResetUserPasswordRequest, v1.OkResponse]
-	unbindUserThirdparty *connect.Client[v1.UnbindUserThirdpartyRequest, v1.OkResponse]
-	unlockUser           *connect.Client[v1.UnlockUserRequest, v1.OkResponse]
-	getUserEvents        *connect.Client[v1.GetUserEventsRequest, v1.UserEventsResponse]
-	listSsoClients       *connect.Client[v1.ListSsoClientsRequest, v1.SsoClientListResponse]
-	createSsoClient      *connect.Client[v1.CreateSsoClientRequest, v1.OkResponse]
-	getSsoClient         *connect.Client[v1.GetSsoClientRequest, v1.SsoClient]
-	updateSsoClient      *connect.Client[v1.UpdateSsoClientRequest, v1.OkResponse]
-	deleteSsoClient      *connect.Client[v1.DeleteSsoClientRequest, v1.OkResponse]
-	listOidcClients      *connect.Client[v1.ListOidcClientsRequest, v1.OidcClientListResponse]
-	createOidcClient     *connect.Client[v1.CreateOidcClientRequest, v1.OkResponse]
-	getOidcClient        *connect.Client[v1.GetOidcClientRequest, v1.OidcClient]
-	updateOidcClient     *connect.Client[v1.UpdateOidcClientRequest, v1.OkResponse]
-	deleteOidcClient     *connect.Client[v1.DeleteOidcClientRequest, v1.OkResponse]
-	getSettings          *connect.Client[v1.GetSettingsRequest, v1.SettingsResponse]
-	setSettings          *connect.Client[v1.SetSettingsRequest, v1.OkResponse]
-	listEvents           *connect.Client[v1.ListEventsRequest, v1.EventListResponse]
-	decodeToken          *connect.Client[v1.DecodeTokenRequest, v1.DecodeResponse]
-	getStatus            *connect.Client[v1.GetStatusRequest, v1.StatusResponse]
-	listTemplates        *connect.Client[v1.ListTemplatesRequest, v1.ListTemplatesResponse]
-	createTemplate       *connect.Client[v1.CreateTemplateRequest, v1.OkResponse]
-	getTemplate          *connect.Client[v1.GetTemplateRequest, v1.Template]
-	updateTemplate       *connect.Client[v1.UpdateTemplateRequest, v1.OkResponse]
-	deleteTemplate       *connect.Client[v1.DeleteTemplateRequest, v1.OkResponse]
+	getMe                  *connect.Client[v1.GetMeRequest, v1.MeResponse]
+	listProviders          *connect.Client[v1.ListProvidersRequest, v1.ProviderListResponse]
+	createProvider         *connect.Client[structpb.Struct, v1.OkResponse]
+	getProvider            *connect.Client[v1.GetProviderRequest, v1.AdminProvider]
+	updateProvider         *connect.Client[structpb.Struct, v1.OkResponse]
+	deleteProvider         *connect.Client[v1.DeleteProviderRequest, v1.OkResponse]
+	setProviderEnabled     *connect.Client[v1.SetProviderEnabledRequest, v1.OkResponse]
+	sortProviders          *connect.Client[v1.SortProvidersRequest, v1.OkResponse]
+	getProviderTypes       *connect.Client[v1.GetProviderTypesRequest, v1.ProviderTypesResponse]
+	getProviderSchema      *connect.Client[v1.GetProviderSchemaRequest, v1.SchemaResponse]
+	testProvider           *connect.Client[v1.TestProviderRequest, v1.OkResponse]
+	listUsers              *connect.Client[v1.ListUsersRequest, v1.UserListResponse]
+	getUser                *connect.Client[v1.GetUserRequest, v1.UserDetailResponse]
+	updateUserProfile      *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
+	updateUserContact      *connect.Client[v1.UpdateUserContactRequest, v1.OkResponse]
+	updateUserStatus       *connect.Client[v1.UpdateUserStatusRequest, v1.OkResponse]
+	resetUserPassword      *connect.Client[v1.ResetUserPasswordRequest, v1.OkResponse]
+	unbindUserThirdparty   *connect.Client[v1.UnbindUserThirdpartyRequest, v1.OkResponse]
+	unlockUser             *connect.Client[v1.UnlockUserRequest, v1.OkResponse]
+	setUserMfa             *connect.Client[v1.SetUserMfaRequest, v1.OkResponse]
+	unbindUserTOTP         *connect.Client[v1.UnbindUserTOTPRequest, v1.OkResponse]
+	resetUserRecoveryCodes *connect.Client[v1.ResetUserRecoveryCodesRequest, v1.OkResponse]
+	setCredentialEnabled   *connect.Client[v1.SetCredentialEnabledRequest, v1.OkResponse]
+	deleteCredential       *connect.Client[v1.DeleteCredentialRequest, v1.OkResponse]
+	getUserEvents          *connect.Client[v1.GetUserEventsRequest, v1.UserEventsResponse]
+	listSsoClients         *connect.Client[v1.ListSsoClientsRequest, v1.SsoClientListResponse]
+	createSsoClient        *connect.Client[v1.CreateSsoClientRequest, v1.OkResponse]
+	getSsoClient           *connect.Client[v1.GetSsoClientRequest, v1.SsoClient]
+	updateSsoClient        *connect.Client[v1.UpdateSsoClientRequest, v1.OkResponse]
+	deleteSsoClient        *connect.Client[v1.DeleteSsoClientRequest, v1.OkResponse]
+	listOidcClients        *connect.Client[v1.ListOidcClientsRequest, v1.OidcClientListResponse]
+	createOidcClient       *connect.Client[v1.CreateOidcClientRequest, v1.OkResponse]
+	getOidcClient          *connect.Client[v1.GetOidcClientRequest, v1.OidcClient]
+	updateOidcClient       *connect.Client[v1.UpdateOidcClientRequest, v1.OkResponse]
+	deleteOidcClient       *connect.Client[v1.DeleteOidcClientRequest, v1.OkResponse]
+	getSettings            *connect.Client[v1.GetSettingsRequest, v1.SettingsResponse]
+	setSettings            *connect.Client[v1.SetSettingsRequest, v1.OkResponse]
+	listEvents             *connect.Client[v1.ListEventsRequest, v1.EventListResponse]
+	decodeToken            *connect.Client[v1.DecodeTokenRequest, v1.DecodeResponse]
+	getStatus              *connect.Client[v1.GetStatusRequest, v1.StatusResponse]
+	listTemplates          *connect.Client[v1.ListTemplatesRequest, v1.ListTemplatesResponse]
+	createTemplate         *connect.Client[v1.CreateTemplateRequest, v1.OkResponse]
+	getTemplate            *connect.Client[v1.GetTemplateRequest, v1.Template]
+	updateTemplate         *connect.Client[v1.UpdateTemplateRequest, v1.OkResponse]
+	deleteTemplate         *connect.Client[v1.DeleteTemplateRequest, v1.OkResponse]
 }
 
 // GetMe calls api.admin.v1.AdminService.GetMe.
@@ -627,6 +686,31 @@ func (c *adminServiceClient) UnbindUserThirdparty(ctx context.Context, req *conn
 // UnlockUser calls api.admin.v1.AdminService.UnlockUser.
 func (c *adminServiceClient) UnlockUser(ctx context.Context, req *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error) {
 	return c.unlockUser.CallUnary(ctx, req)
+}
+
+// SetUserMfa calls api.admin.v1.AdminService.SetUserMfa.
+func (c *adminServiceClient) SetUserMfa(ctx context.Context, req *connect.Request[v1.SetUserMfaRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.setUserMfa.CallUnary(ctx, req)
+}
+
+// UnbindUserTOTP calls api.admin.v1.AdminService.UnbindUserTOTP.
+func (c *adminServiceClient) UnbindUserTOTP(ctx context.Context, req *connect.Request[v1.UnbindUserTOTPRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.unbindUserTOTP.CallUnary(ctx, req)
+}
+
+// ResetUserRecoveryCodes calls api.admin.v1.AdminService.ResetUserRecoveryCodes.
+func (c *adminServiceClient) ResetUserRecoveryCodes(ctx context.Context, req *connect.Request[v1.ResetUserRecoveryCodesRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.resetUserRecoveryCodes.CallUnary(ctx, req)
+}
+
+// SetCredentialEnabled calls api.admin.v1.AdminService.SetCredentialEnabled.
+func (c *adminServiceClient) SetCredentialEnabled(ctx context.Context, req *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.setCredentialEnabled.CallUnary(ctx, req)
+}
+
+// DeleteCredential calls api.admin.v1.AdminService.DeleteCredential.
+func (c *adminServiceClient) DeleteCredential(ctx context.Context, req *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.deleteCredential.CallUnary(ctx, req)
 }
 
 // GetUserEvents calls api.admin.v1.AdminService.GetUserEvents.
@@ -776,6 +860,16 @@ type AdminServiceHandler interface {
 	UnbindUserThirdparty(context.Context, *connect.Request[v1.UnbindUserThirdpartyRequest]) (*connect.Response[v1.OkResponse], error)
 	// 解除登录限制（§5.4）。
 	UnlockUser(context.Context, *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error)
+	// 管理端开关两步验证：关闭触发会话失效并投审计（§5.4）。
+	SetUserMfa(context.Context, *connect.Request[v1.SetUserMfaRequest]) (*connect.Response[v1.OkResponse], error)
+	// 管理员救援解绑 TOTP：删 kind=totp 凭证行，触发会话失效（§5.4）。
+	UnbindUserTOTP(context.Context, *connect.Request[v1.UnbindUserTOTPRequest]) (*connect.Response[v1.OkResponse], error)
+	// 重生成恢复码，响应不下发明文（§5.4）。
+	ResetUserRecoveryCodes(context.Context, *connect.Request[v1.ResetUserRecoveryCodesRequest]) (*connect.Response[v1.OkResponse], error)
+	// 停用 / 启用单条凭证；密码凭证不允许停用，不触发会话失效（§5.4）。
+	SetCredentialEnabled(context.Context, *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error)
+	// 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
+	DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error)
 	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
 	// SSO 客户端列表（§5.5）。
@@ -939,6 +1033,36 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 		AdminServiceUnlockUserProcedure,
 		svc.UnlockUser,
 		connect.WithSchema(adminServiceMethods.ByName("UnlockUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceSetUserMfaHandler := connect.NewUnaryHandler(
+		AdminServiceSetUserMfaProcedure,
+		svc.SetUserMfa,
+		connect.WithSchema(adminServiceMethods.ByName("SetUserMfa")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceUnbindUserTOTPHandler := connect.NewUnaryHandler(
+		AdminServiceUnbindUserTOTPProcedure,
+		svc.UnbindUserTOTP,
+		connect.WithSchema(adminServiceMethods.ByName("UnbindUserTOTP")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceResetUserRecoveryCodesHandler := connect.NewUnaryHandler(
+		AdminServiceResetUserRecoveryCodesProcedure,
+		svc.ResetUserRecoveryCodes,
+		connect.WithSchema(adminServiceMethods.ByName("ResetUserRecoveryCodes")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceSetCredentialEnabledHandler := connect.NewUnaryHandler(
+		AdminServiceSetCredentialEnabledProcedure,
+		svc.SetCredentialEnabled,
+		connect.WithSchema(adminServiceMethods.ByName("SetCredentialEnabled")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceDeleteCredentialHandler := connect.NewUnaryHandler(
+		AdminServiceDeleteCredentialProcedure,
+		svc.DeleteCredential,
+		connect.WithSchema(adminServiceMethods.ByName("DeleteCredential")),
 		connect.WithHandlerOptions(opts...),
 	)
 	adminServiceGetUserEventsHandler := connect.NewUnaryHandler(
@@ -1107,6 +1231,16 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 			adminServiceUnbindUserThirdpartyHandler.ServeHTTP(w, r)
 		case AdminServiceUnlockUserProcedure:
 			adminServiceUnlockUserHandler.ServeHTTP(w, r)
+		case AdminServiceSetUserMfaProcedure:
+			adminServiceSetUserMfaHandler.ServeHTTP(w, r)
+		case AdminServiceUnbindUserTOTPProcedure:
+			adminServiceUnbindUserTOTPHandler.ServeHTTP(w, r)
+		case AdminServiceResetUserRecoveryCodesProcedure:
+			adminServiceResetUserRecoveryCodesHandler.ServeHTTP(w, r)
+		case AdminServiceSetCredentialEnabledProcedure:
+			adminServiceSetCredentialEnabledHandler.ServeHTTP(w, r)
+		case AdminServiceDeleteCredentialProcedure:
+			adminServiceDeleteCredentialHandler.ServeHTTP(w, r)
 		case AdminServiceGetUserEventsProcedure:
 			adminServiceGetUserEventsHandler.ServeHTTP(w, r)
 		case AdminServiceListSsoClientsProcedure:
@@ -1232,6 +1366,26 @@ func (UnimplementedAdminServiceHandler) UnbindUserThirdparty(context.Context, *c
 
 func (UnimplementedAdminServiceHandler) UnlockUser(context.Context, *connect.Request[v1.UnlockUserRequest]) (*connect.Response[v1.OkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.UnlockUser is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) SetUserMfa(context.Context, *connect.Request[v1.SetUserMfaRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.SetUserMfa is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) UnbindUserTOTP(context.Context, *connect.Request[v1.UnbindUserTOTPRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.UnbindUserTOTP is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) ResetUserRecoveryCodes(context.Context, *connect.Request[v1.ResetUserRecoveryCodesRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.ResetUserRecoveryCodes is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) SetCredentialEnabled(context.Context, *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.SetCredentialEnabled is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.DeleteCredential is not implemented"))
 }
 
 func (UnimplementedAdminServiceHandler) GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error) {

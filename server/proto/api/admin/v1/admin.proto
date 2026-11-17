@@ -68,7 +68,9 @@ message OkResponse {}
 //   UpdateUserProfile      §5.4    UpdateUserContact    §5.4
 //   UpdateUserStatus       §5.4    ResetUserPassword    §5.4
 //   UnbindUserThirdparty   §5.4    UnlockUser           §5.4
-//   GetUserEvents          §5.4
+//   SetUserMfa             §5.4    UnbindUserTOTP       §5.4
+//   ResetUserRecoveryCodes §5.4    SetCredentialEnabled §5.4
+//   DeleteCredential       §5.4    GetUserEvents        §5.4
 //   —— §5.5 客户端管理——
 //   ListSsoClients         §5.5    CreateSsoClient      §5.5
 //   GetSsoClient           §5.5    UpdateSsoClient      §5.5
@@ -126,6 +128,16 @@ service AdminService {
   rpc UnbindUserThirdparty(UnbindUserThirdpartyRequest) returns (OkResponse);
   // 解除登录限制（§5.4）。
   rpc UnlockUser(UnlockUserRequest) returns (OkResponse);
+  // 管理端开关两步验证：关闭触发会话失效并投审计（§5.4）。
+  rpc SetUserMfa(SetUserMfaRequest) returns (OkResponse);
+  // 管理员救援解绑 TOTP：删 kind=totp 凭证行，触发会话失效（§5.4）。
+  rpc UnbindUserTOTP(UnbindUserTOTPRequest) returns (OkResponse);
+  // 重生成恢复码，响应不下发明文（§5.4）。
+  rpc ResetUserRecoveryCodes(ResetUserRecoveryCodesRequest) returns (OkResponse);
+  // 停用 / 启用单条凭证；密码凭证不允许停用，不触发会话失效（§5.4）。
+  rpc SetCredentialEnabled(SetCredentialEnabledRequest) returns (OkResponse);
+  // 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
+  rpc DeleteCredential(DeleteCredentialRequest) returns (OkResponse);
   // 该用户登录记录（§5.4）。
   rpc GetUserEvents(GetUserEventsRequest) returns (UserEventsResponse);
   // SSO 客户端列表（§5.5）。

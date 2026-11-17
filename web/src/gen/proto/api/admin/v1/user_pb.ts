@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/user.proto.
  */
 export const file_api_admin_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDIpkCChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZRIsCgdwcm9maWxlGAUgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUSEwoLcGVybWlzc2lvbnMYBiADKAkioAEKGFVwZGF0ZVVzZXJQcm9maWxlUmVxdWVzdBIKCgJpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsImIKGFVwZGF0ZVVzZXJDb250YWN0UmVxdWVzdBIKCgJpZBgBIAEoAxISCgVwaG9uZRgCIAEoCUgAiAEBEhIKBWVtYWlsGAMgASgJSAGIAQFCCAoGX3Bob25lQggKBl9lbWFpbCI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_account_v1_profile, file_api_admin_v1_events]);
+  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDIpkCChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZRIsCgdwcm9maWxlGAUgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUSEwoLcGVybWlzc2lvbnMYBiADKAkioAEKGFVwZGF0ZVVzZXJQcm9maWxlUmVxdWVzdBIKCgJpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsImIKGFVwZGF0ZVVzZXJDb250YWN0UmVxdWVzdBIKCgJpZBgBIAEoAxISCgVwaG9uZRgCIAEoCUgAiAEBEhIKBWVtYWlsGAMgASgJSAGIAQFCCAoGX3Bob25lQggKBl9lbWFpbCI1ChFTZXRVc2VyTWZhUmVxdWVzdBIKCgJpZBgBIAEoAxIUCgxtZmFfcmVxdWlyZWQYAiABKAMiIwoVVW5iaW5kVXNlclRPVFBSZXF1ZXN0EgoKAmlkGAEgASgDIisKHVJlc2V0VXNlclJlY292ZXJ5Q29kZXNSZXF1ZXN0EgoKAmlkGAEgASgDIlEKG1NldENyZWRlbnRpYWxFbmFibGVkUmVxdWVzdBIKCgJpZBgBIAEoAxIVCg1jcmVkZW50aWFsX2lkGAIgASgDEg8KB2VuYWJsZWQYAyABKAgiPAoXRGVsZXRlQ3JlZGVudGlhbFJlcXVlc3QSCgoCaWQYASABKAMSFQoNY3JlZGVudGlhbF9pZBgCIAEoAyI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_account_v1_profile, file_api_admin_v1_events]);
 
 /**
  * AdminUser 是管理端的用户视图（§5.4）：字段集为 user 表列投影
@@ -534,6 +534,151 @@ export const UpdateUserContactRequestSchema: GenMessage<UpdateUserContactRequest
   messageDesc(file_api_admin_v1_user, 8);
 
 /**
+ * SetUserMfaRequest 是 AdminService/SetUserMfa 的请求（§5.4：
+ * {id, mfaRequired: 0|1} 管理端开关用户两步验证）。值域 0|1、违规
+ * invalid_request；关闭触发会话失效并投审计 admin_disable_mfa，开启不触发
+ * 会话失效（§5.4 强制下线集合口径）。成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.SetUserMfaRequest
+ */
+export type SetUserMfaRequest = Message<"api.admin.v1.SetUserMfaRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * 两步验证开关目标值：1 开启 0 关闭（§5.4 值域 0|1）。
+   *
+   * @generated from field: int64 mfa_required = 2;
+   */
+  mfaRequired: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.SetUserMfaRequest.
+ * Use `create(SetUserMfaRequestSchema)` to create a new message.
+ */
+export const SetUserMfaRequestSchema: GenMessage<SetUserMfaRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 9);
+
+/**
+ * UnbindUserTOTPRequest 是 AdminService/UnbindUserTOTP 的请求（§5.4：{id}
+ * 管理员救援删除该用户 kind=totp 凭证行）。管理域救援不要求用户侧二次验证
+ * 令牌（管理员权限即授权，§5.4）；触发会话失效。成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.UnbindUserTOTPRequest
+ */
+export type UnbindUserTOTPRequest = Message<"api.admin.v1.UnbindUserTOTPRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.UnbindUserTOTPRequest.
+ * Use `create(UnbindUserTOTPRequestSchema)` to create a new message.
+ */
+export const UnbindUserTOTPRequestSchema: GenMessage<UnbindUserTOTPRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 10);
+
+/**
+ * ResetUserRecoveryCodesRequest 是 AdminService/ResetUserRecoveryCodes 的
+ * 请求（§5.4：{id} 重生成恢复码写回凭证 meta）。响应不下发明文（与 §3.5
+ * 明细口径一致）；不触发会话失效。成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.ResetUserRecoveryCodesRequest
+ */
+export type ResetUserRecoveryCodesRequest = Message<"api.admin.v1.ResetUserRecoveryCodesRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.ResetUserRecoveryCodesRequest.
+ * Use `create(ResetUserRecoveryCodesRequestSchema)` to create a new message.
+ */
+export const ResetUserRecoveryCodesRequestSchema: GenMessage<ResetUserRecoveryCodesRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 11);
+
+/**
+ * SetCredentialEnabledRequest 是 AdminService/SetCredentialEnabled 的请求
+ * （§5.4：{id, credentialId, enabled} 停用 / 启用单条凭证）。密码凭证不允许
+ * 停用（invalid_request）；不触发会话失效（§5.4 强制下线集合不含凭证启停）。
+ * 成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.SetCredentialEnabledRequest
+ */
+export type SetCredentialEnabledRequest = Message<"api.admin.v1.SetCredentialEnabledRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+   *
+   * @generated from field: int64 credential_id = 2;
+   */
+  credentialId: bigint;
+
+  /**
+   * 目标启用态：true 启用 false 停用（§5.4）。
+   *
+   * @generated from field: bool enabled = 3;
+   */
+  enabled: boolean;
+};
+
+/**
+ * Describes the message api.admin.v1.SetCredentialEnabledRequest.
+ * Use `create(SetCredentialEnabledRequestSchema)` to create a new message.
+ */
+export const SetCredentialEnabledRequestSchema: GenMessage<SetCredentialEnabledRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 12);
+
+/**
+ * DeleteCredentialRequest 是 AdminService/DeleteCredential 的请求（§5.4：
+ * {id, credentialId} 删除单条凭证，含 WebAuthn 附加行）。触发会话失效
+ * （§5.4 强制下线集合）。成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.DeleteCredentialRequest
+ */
+export type DeleteCredentialRequest = Message<"api.admin.v1.DeleteCredentialRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+
+  /**
+   * 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+   *
+   * @generated from field: int64 credential_id = 2;
+   */
+  credentialId: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.DeleteCredentialRequest.
+ * Use `create(DeleteCredentialRequestSchema)` to create a new message.
+ */
+export const DeleteCredentialRequestSchema: GenMessage<DeleteCredentialRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 13);
+
+/**
  * UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
  * {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
  * pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
@@ -563,7 +708,7 @@ export type UpdateUserStatusRequest = Message<"api.admin.v1.UpdateUserStatusRequ
  * Use `create(UpdateUserStatusRequestSchema)` to create a new message.
  */
 export const UpdateUserStatusRequestSchema: GenMessage<UpdateUserStatusRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 9);
+  messageDesc(file_api_admin_v1_user, 14);
 
 /**
  * ResetUserPasswordRequest 是 AdminService/ResetUserPassword 的请求
@@ -594,7 +739,7 @@ export type ResetUserPasswordRequest = Message<"api.admin.v1.ResetUserPasswordRe
  * Use `create(ResetUserPasswordRequestSchema)` to create a new message.
  */
 export const ResetUserPasswordRequestSchema: GenMessage<ResetUserPasswordRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 10);
+  messageDesc(file_api_admin_v1_user, 15);
 
 /**
  * UnbindUserThirdpartyRequest 是 AdminService/UnbindUserThirdparty 的请求
@@ -625,7 +770,7 @@ export type UnbindUserThirdpartyRequest = Message<"api.admin.v1.UnbindUserThirdp
  * Use `create(UnbindUserThirdpartyRequestSchema)` to create a new message.
  */
 export const UnbindUserThirdpartyRequestSchema: GenMessage<UnbindUserThirdpartyRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 11);
+  messageDesc(file_api_admin_v1_user, 16);
 
 /**
  * UnlockUserRequest 是 AdminService/UnlockUser 的请求（§5.4：{id} 解除登录限制）：
@@ -648,7 +793,7 @@ export type UnlockUserRequest = Message<"api.admin.v1.UnlockUserRequest"> & {
  * Use `create(UnlockUserRequestSchema)` to create a new message.
  */
 export const UnlockUserRequestSchema: GenMessage<UnlockUserRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 12);
+  messageDesc(file_api_admin_v1_user, 17);
 
 /**
  * GetUserEventsRequest 是 AdminService/GetUserEvents 的请求（§5.4：
@@ -700,7 +845,7 @@ export type GetUserEventsRequest = Message<"api.admin.v1.GetUserEventsRequest"> 
  * Use `create(GetUserEventsRequestSchema)` to create a new message.
  */
 export const GetUserEventsRequestSchema: GenMessage<GetUserEventsRequest> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 13);
+  messageDesc(file_api_admin_v1_user, 18);
 
 /**
  * UserEventsResponse 是 AdminService/GetUserEvents 的响应（§5.4、§1.7）；
@@ -744,5 +889,5 @@ export type UserEventsResponse = Message<"api.admin.v1.UserEventsResponse"> & {
  * Use `create(UserEventsResponseSchema)` to create a new message.
  */
 export const UserEventsResponseSchema: GenMessage<UserEventsResponse> = /*@__PURE__*/
-  messageDesc(file_api_admin_v1_user, 14);
+  messageDesc(file_api_admin_v1_user, 19);
 

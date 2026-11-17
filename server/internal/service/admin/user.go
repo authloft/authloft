@@ -1,16 +1,19 @@
-// user.go 实现 AdminService 用户管理族 10 方法（GetMe / ListUsers / GetUser /
-// UpdateUserProfile / UpdateUserContact / UpdateUserStatus / ResetUserPassword /
-// UnbindUserThirdparty / UnlockUser / GetUserEvents，接口文档 §5.1 行 1162、
-// §5.4 行 1249-1255）的业务层（docs/后端架构.md §3.9 行 390、§18 行 1792
+// user.go 实现 AdminService 用户管理族 15 方法（GetMe / ListUsers / GetUser /
+// UpdateUserProfile / UpdateUserContact / SetUserMfa / UnbindUserTOTP /
+// ResetUserRecoveryCodes / SetCredentialEnabled / DeleteCredential /
+// UpdateUserStatus / ResetUserPassword / UnbindUserThirdparty / UnlockUser /
+// GetUserEvents，接口文档 §5.1 / §5.4）的业务层（docs/后端架构.md §3.9、§18
 // 分层 handler → service/admin/user.go → repo / cache）。
 //
 // 职责边界：会话身份来自 handler（session.UIDFromContext，管理员判定在
 // admin 拦截器已收口，本层不做二次鉴权）；参数与状态枚举校验（userStatus
-// 仅 0|1、id>0、providerKey 非空）；写路径副作用编排——禁用 / 重置密码
-// 走 IncEpoch + al:pwdep 同步（既有会话全部失效，§11.1 行 1236、§5.1 行
-// 864「改密 / 重置 / 管理员禁用」三触发项）+ 审计投递；解绑走 Union 行连带
-// （§12.7 行 1548）；解锁清 uid 维度键 + 按当前 phone / email 重算「ip +
-// 账号哈希」维度键（§8.1 行 1041，ip 未知 → SCAN 模式匹配删除）。
+// 仅 0|1、mfaRequired 仅 0|1、id / credentialId > 0、providerKey 非空）；
+// 写路径副作用编排——禁用 / 重置密码走 IncEpoch + al:pwdep 同步（既有会话
+// 全部失效，§11.1）+ 审计投递；救援族按 §5.4 强制下线集合接线——关闭两步
+// 验证 / 解绑 TOTP / 删除凭证触发失效链，开启两步验证 / 凭证启停 / 恢复码
+// 重置不触发；解绑走 Union 行连带（§12.7）；解锁清 uid 维度键 + 按当前
+// phone / email 重算「ip + 账号哈希」维度键（§8.1，ip 未知 → SCAN 模式
+// 匹配删除）。
 // 针对目标用户的写接口统一走 authorizeUserWrite 目标账户分级门禁
 // （§5.4 门禁矩阵、《后端架构》§4.8：superadmin 目标一律拒绝；普通管理员
 // 目标仅 superadmin 操作者可写；权限查询故障原样上抛不放行）。
@@ -29,10 +32,12 @@ package admin
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,6 +46,7 @@ import (
 	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
+	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/dto"
 	"authloft/internal/eventlog"
 	"authloft/internal/repo"
@@ -72,6 +78,13 @@ const providerCategoryUnion = "union"
 // credentialKindPassword user_credential.kind=password（§4.2 行 680-684）。
 const credentialKindPassword = "password"
 
+// credentialKindTotp / credentialKindRecoveryCode user_credential.kind 取值
+// （§4.2 凭证类型封闭集：password|totp|webauthn|recovery_code）。
+const (
+	credentialKindTotp         = "totp"
+	credentialKindRecoveryCode = "recovery_code"
+)
+
 // UserStore user / user_profile 表读写窄接口（§20 依赖注入）：*repo.UserRepo
 // 天然满足（全部为既有列级最小增量方法），测试可传 fake。
 type UserStore interface {
@@ -82,18 +95,24 @@ type UserStore interface {
 	UpdateUserStatus(ctx context.Context, id int64, userStatus int8) error
 	UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error
 	UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error
+	UpdateMfaRequired(ctx context.Context, id int64, mfaRequired int8) error
 	GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error)
 	SaveProfile(ctx context.Context, p *model.UserProfile) error
 	IncEpoch(ctx context.Context, id int64) (int16, error)
 }
 
 // CredentialStore user_credential 表读写窄接口（*repo.CredentialRepo 天然
-// 满足，含 ListByUser 最小增量）。
+// 满足，含 ListByUser 最小增量）；FindByID / SetEnabled / DeleteByID 为
+// 管理端救援族按 credentialId 定位的最小增量（§5.4）。
 type CredentialStore interface {
 	FindByUserAndKind(ctx context.Context, userID int64, kind string) (*model.UserCredential, error)
+	FindByID(ctx context.Context, id int64) (*model.UserCredential, error)
 	ListByUser(ctx context.Context, userID int64) ([]model.UserCredential, error)
 	Create(ctx context.Context, c *model.UserCredential) error
 	Update(ctx context.Context, c *model.UserCredential) error
+	SetEnabled(ctx context.Context, id int64, enabled bool) error
+	DeleteByUserAndKind(ctx context.Context, userID int64, kind string) error
+	DeleteByID(ctx context.Context, userID, id int64) error
 }
 
 // BindStore user_thirdparty_bind 表窄接口（*repo.BindRepo 天然满足，
@@ -736,6 +755,223 @@ func (s *UserService) checkContactFree(ctx context.Context, self int64, kind, va
 		return ErrTargetTaken
 	}
 	return nil
+}
+
+// —— 救援族 5 方法：目标分级门禁统一走 authorizeUserWrite；强制下线接线
+// 按 §5.4 集合口径（关 MFA / 解绑 TOTP / 删凭证触发，开启 MFA / 凭证启停 /
+// 恢复码重置不触发）；管理域救援不做用户侧二次验证（管理员权限即授权）——
+
+// SetUserMfa（§5.4）：{id, mfaRequired 0|1} 管理端开关用户两步验证。
+// 值域违规 invalid_request；行缺失（先于写操作）→ 404。开关列走
+// UpdateMfaRequired（§3.5 SetMfa 同款唯一写入端，不递增 epoch 由失效链
+// 显式承担）。关闭（0）→ IncEpoch + al:pwdep 同步 + 审计 admin_disable_mfa
+// （detail={enabled:false}，§4.6）；开启（1）不触发会话失效、不投审计
+// （§4.6 无 admin_enable_mfa，不自造事件名）。幂等重放同走失效链与审计
+// ——管理员动作都留痕（UpdateUserStatus 同口径）。
+func (s *UserService) SetUserMfa(ctx context.Context, actor, id int64, mfaRequired int64) error {
+	if id <= 0 || (mfaRequired != 0 && mfaRequired != 1) {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	if _, err := s.users.FindByID(ctx, id); err != nil {
+		return err
+	}
+	if err := s.users.UpdateMfaRequired(ctx, id, int8(mfaRequired)); err != nil {
+		return err
+	}
+	if mfaRequired != 0 {
+		return nil
+	}
+	if _, err := s.invalidateSessions(ctx, id); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminDisableMFA,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailEnabled(false),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// UnbindUserTOTP（§5.4）：{id} 管理员救援删除该用户 kind=totp 凭证行
+// （不要求用户侧二次验证令牌，管理员权限即授权）。recovery_code 行不在
+// 本接口契约范围（仅删 totp 行；自助域解绑连带删恢复码系 §3.5 自助口径）。
+// user 行或 totp 行缺失 → 404；删除成功 → IncEpoch + al:pwdep 同步 +
+// 审计 admin_unbind_totp（detail={}，不记 TOTP 密钥，§4.6）。
+func (s *UserService) UnbindUserTOTP(ctx context.Context, actor, id int64) error {
+	if id <= 0 {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	if _, err := s.users.FindByID(ctx, id); err != nil {
+		return err
+	}
+	if err := s.creds.DeleteByUserAndKind(ctx, id, credentialKindTotp); err != nil {
+		return err
+	}
+	if _, err := s.invalidateSessions(ctx, id); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminUnbindTotp,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailEmpty(),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// ResetUserRecoveryCodes（§5.4）：{id} 重生成恢复码写回凭证 meta，响应
+// 不下发明文（OkResponse 无字段；明细口径与 §3.5 一致——剩余数量与签发
+// 时间可见，码值永不回显）。行缺失（未绑定 totp 即无 recovery_code 行）
+// → 404；重生成整行覆盖 meta（生成口径 §4.2：10 条互异 8 位存储形，
+// generateRecoveryCodes 与自助域各落一份——跨包私有不可复用）。
+// is_enabled 不在本接口改动范围（停用走 SetCredentialEnabled）；不触发
+// 会话失效（§5.4 强制下线集合不含恢复码重置）；审计
+// admin_recovery_codes_reset（detail={}，不记任何码值，§4.6）。
+func (s *UserService) ResetUserRecoveryCodes(ctx context.Context, actor, id int64) error {
+	if id <= 0 {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	if _, err := s.users.FindByID(ctx, id); err != nil {
+		return err
+	}
+	row, err := s.creds.FindByUserAndKind(ctx, id, credentialKindRecoveryCode)
+	if err != nil {
+		return err
+	}
+	codes, err := generateRecoveryCodes()
+	if err != nil {
+		return fmt.Errorf("admin service: generate recovery codes: %w", err)
+	}
+	meta, err := repo.MarshalCredentialMeta(&credentialpb.CredentialMeta{RecoveryCodes: codes})
+	if err != nil {
+		return fmt.Errorf("admin service: marshal recovery codes meta: %w", err)
+	}
+	row.Meta = meta
+	row.UpdatedAt = s.now()
+	if err := s.creds.Update(ctx, row); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminRecoveryCodesReset,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailEmpty(),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// SetCredentialEnabled（§5.4）：{id, credentialId, enabled} 停用 / 启用
+// 单条凭证。凭证行缺失或不属目标用户统一 404（不区分，避免泄露归属）；
+// 密码凭证不允许停用（避免无密码可用态，invalid_request）。按 §5.4 契约
+// 口径不触发会话失效、不投独立审计（止损可升级为禁用用户或删除凭证）。
+func (s *UserService) SetCredentialEnabled(ctx context.Context, actor, id, credentialID int64, enabled bool) error {
+	if id <= 0 || credentialID <= 0 {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	row, err := s.creds.FindByID(ctx, credentialID)
+	if err != nil {
+		return err
+	}
+	if row.UserID != id {
+		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, gorm.ErrRecordNotFound)
+	}
+	if !enabled && row.Kind == credentialKindPassword {
+		return ErrInvalidRequest
+	}
+	return s.creds.SetEnabled(ctx, credentialID, enabled)
+}
+
+// DeleteCredential（§5.4）：{id, credentialId} 删除单条凭证（含 WebAuthn
+// 附加行——DeleteByID 单事务同删）。凭证行缺失或不属目标用户统一 404。
+// 属强制下线动作（§5.4 触发集合含「删除凭证」）→ IncEpoch + al:pwdep 同步
+// → 审计 admin_credential_delete（detail={credential_id, kind}，不记凭证
+// secret，§4.6）。
+func (s *UserService) DeleteCredential(ctx context.Context, actor, id, credentialID int64) error {
+	if id <= 0 || credentialID <= 0 {
+		return ErrInvalidRequest
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
+		return err
+	}
+	row, err := s.creds.FindByID(ctx, credentialID)
+	if err != nil {
+		return err
+	}
+	if row.UserID != id {
+		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, gorm.ErrRecordNotFound)
+	}
+	if err := s.creds.DeleteByID(ctx, id, credentialID); err != nil {
+		return err
+	}
+	if _, err := s.invalidateSessions(ctx, id); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminCredentialDelete,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailCredentialDelete(credentialID, row.Kind),
+		CreatedAt: s.now(),
+	})
+	return nil
+}
+
+// 恢复码生成口径（§4.2：8 位 Crockford Base32 小写存储形、每批 10 条、
+// 展示形 xxxx-xxxx 仅在自助签发渠道下发）。与自助域 / factor/recovery 各落
+// 一份（跨包私有不可复用）；本域只写回 meta、任何出口不回显码值。
+const (
+	recoveryCodeLength       = 8
+	recoveryCodeCount        = 10
+	recoveryCodeCharset      = "0123456789abcdefghjkmnpqrstvwxyz"
+	recoveryCodeDedupRetries = 64
+)
+
+// generateRecoveryCodes 生成 10 条互异 8 位存储形恢复码（crypto/rand；
+// 恢复码命中即删、一码一值，批内重复会让剩余数量与实际可用值不符）。
+// 碰撞重生成，重试上限防退化随机源死循环。
+func generateRecoveryCodes() ([]string, error) {
+	codes := make([]string, 0, recoveryCodeCount)
+	seen := make(map[string]bool, recoveryCodeCount)
+	buf := make([]byte, recoveryCodeLength)
+	for retries := 0; len(codes) < recoveryCodeCount; retries++ {
+		if retries > recoveryCodeDedupRetries {
+			return nil, errors.New("recovery code entropy exhausted")
+		}
+		if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+			return nil, err
+		}
+		b := make([]byte, recoveryCodeLength)
+		for j := range buf {
+			b[j] = recoveryCodeCharset[buf[j]%byte(len(recoveryCodeCharset))]
+		}
+		c := string(b)
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		codes = append(codes, c)
+	}
+	return codes, nil
 }
 
 // invalidateSessions 禁用 / 重置密码的会话失效链（§11.1 行 1236、§5.1 行

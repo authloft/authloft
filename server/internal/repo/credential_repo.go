@@ -109,6 +109,18 @@ func (r *CredentialRepo) Update(ctx context.Context, c *model.UserCredential) er
 	return nil
 }
 
+// FindByID 按主键取凭证行（管理端救援操作按 credentialId 定位，接口文档
+// §5.4 SetCredentialEnabled / DeleteCredential）。未命中返回包装的
+// gorm.ErrRecordNotFound；归属校验（row.UserID 与目标用户比对）由 service
+// 承担，本方法不做 user 维度过滤。
+func (r *CredentialRepo) FindByID(ctx context.Context, id int64) (*model.UserCredential, error) {
+	var c model.UserCredential
+	if err := r.db.WithContext(ctx).Take(&c, "id = ?", id).Error; err != nil {
+		return nil, fmt.Errorf("credential repo: find by id: %w", err)
+	}
+	return &c, nil
+}
+
 // SetEnabled 切换启用态（is_enabled 1/0；管理接口共用）。行不存在返回包装的
 // gorm.ErrRecordNotFound；同值切换幂等成功（changed-rows 语义下 rows=0
 // 补存在性判定，口径同 Update / UpdateLastLogin）。
@@ -155,6 +167,32 @@ func (r *CredentialRepo) DeleteByUserAndKind(ctx context.Context, userID int64, 
 	}
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("credential repo: delete by user kind: %w", gorm.ErrRecordNotFound)
+	}
+	return nil
+}
+
+// DeleteByID 按 id + user_id 定位删除单条凭证行（管理端救援删除，接口文档
+// §5.4 DeleteCredential「删除单条凭证（含 WebAuthn 附加行）」）。单事务内
+// 先删 user_credential 行（定位失败 = 不存在或归属不符，两者同包装
+// gorm.ErrRecordNotFound 不区分，避免泄露归属），再删 user_credential_webauthn
+// 同 id 附加行——webauthn 行与凭证行主键同值（§4.2），非 webauthn kind 无
+// 同值附加行、删除零命中属正常，故附加行不作存在性断言（WebauthnRepo.Delete
+// 反向口径：该路径附加行为准、两行齐备才删）。任一步失败整体回滚。
+func (r *CredentialRepo) DeleteByID(ctx context.Context, userID, id int64) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ?", id, userID).
+			Delete(&model.UserCredential{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("id = ? AND user_id = ?", id, userID).
+			Delete(&model.UserCredentialWebauthn{}).Error
+	})
+	if err != nil {
+		return fmt.Errorf("credential repo: delete by id: %w", err)
 	}
 	return nil
 }

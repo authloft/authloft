@@ -187,6 +187,56 @@ message UpdateUserContactRequest {
   optional string email = 3;
 }
 
+// SetUserMfaRequest 是 AdminService/SetUserMfa 的请求（§5.4：
+// {id, mfaRequired: 0|1} 管理端开关用户两步验证）。值域 0|1、违规
+// invalid_request；关闭触发会话失效并投审计 admin_disable_mfa，开启不触发
+// 会话失效（§5.4 强制下线集合口径）。成功返回 OkResponse。
+message SetUserMfaRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+  // 两步验证开关目标值：1 开启 0 关闭（§5.4 值域 0|1）。
+  int64 mfa_required = 2;
+}
+
+// UnbindUserTOTPRequest 是 AdminService/UnbindUserTOTP 的请求（§5.4：{id}
+// 管理员救援删除该用户 kind=totp 凭证行）。管理域救援不要求用户侧二次验证
+// 令牌（管理员权限即授权，§5.4）；触发会话失效。成功返回 OkResponse。
+message UnbindUserTOTPRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+}
+
+// ResetUserRecoveryCodesRequest 是 AdminService/ResetUserRecoveryCodes 的
+// 请求（§5.4：{id} 重生成恢复码写回凭证 meta）。响应不下发明文（与 §3.5
+// 明细口径一致）；不触发会话失效。成功返回 OkResponse。
+message ResetUserRecoveryCodesRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+}
+
+// SetCredentialEnabledRequest 是 AdminService/SetCredentialEnabled 的请求
+//（§5.4：{id, credentialId, enabled} 停用 / 启用单条凭证）。密码凭证不允许
+// 停用（invalid_request）；不触发会话失效（§5.4 强制下线集合不含凭证启停）。
+// 成功返回 OkResponse。
+message SetCredentialEnabledRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+  // 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+  int64 credential_id = 2;
+  // 目标启用态：true 启用 false 停用（§5.4）。
+  bool enabled = 3;
+}
+
+// DeleteCredentialRequest 是 AdminService/DeleteCredential 的请求（§5.4：
+// {id, credentialId} 删除单条凭证，含 WebAuthn 附加行）。触发会话失效
+//（§5.4 强制下线集合）。成功返回 OkResponse。
+message DeleteCredentialRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
+  // 凭证 ID（user_credential 行主键，§5.4 credentialId）。
+  int64 credential_id = 2;
+}
+
 // UpdateUserStatusRequest 是 AdminService/UpdateUserStatus 的请求（§5.4：
 // {id, userStatus: 0 或 1} 禁用 / 启用，字段名与 §3.1 视图一致）。
 // pre-connect 时代 id 在 REST 路径 /users/{id}/status 中（该 URL 路径段保留）
