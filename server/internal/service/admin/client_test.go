@@ -331,6 +331,17 @@ func TestClientServiceCreateOidc(t *testing.T) {
 			}
 		}
 	})
+	t.Run("scopes 必含 openid", func(t *testing.T) {
+		store := newFakeClientStore()
+		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
+		err := svc.CreateOidcClient(ctx, OidcClientInput{Scopes: []string{"profile", "email"}})
+		if !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("缺 openid err = %v, want ErrInvalidRequest", err)
+		}
+		if len(store.oidc) != 0 {
+			t.Errorf("被拒请求不应落库, got %d 行", len(store.oidc))
+		}
+	})
 	t.Run("uk 冲突转译", func(t *testing.T) {
 		store := newFakeClientStore()
 		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
@@ -485,6 +496,14 @@ func TestClientServiceOidcLifecycle(t *testing.T) {
 		}
 		if err := svc.UpdateOidcClient(ctx, 1, OidcClientPatch{AccessTokenTTL: 86401}); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("TTL 越界 err = %v, want ErrInvalidRequest", err)
+		}
+	})
+	t.Run("scopes 覆盖必含 openid", func(t *testing.T) {
+		if err := svc.UpdateOidcClient(ctx, 1, OidcClientPatch{Scopes: []string{"profile"}}); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("缺 openid 覆盖 err = %v, want ErrInvalidRequest", err)
+		}
+		if store.oidc[1].Scopes != "openid" {
+			t.Errorf("被拒 PATCH 不应改动 scopes, got %q", store.oidc[1].Scopes)
 		}
 	})
 	t.Run("client_id 不可改与 Delete 后 404", func(t *testing.T) {

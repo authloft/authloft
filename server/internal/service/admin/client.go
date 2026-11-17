@@ -15,8 +15,8 @@
 // 封闭集、oauth_providers key 经 ProviderKeyFinder 存在性、
 // default_redirect_uri 命中 §12.3 回调白名单——与 has 位 PATCH 语义；OIDC
 // scopes[] ↔ 逗号串转换（model 注释归
-// service）与 TTL 值域 [1, 86400] / [1, 2592000]（docs 未定义上限，默认
-// 即默认值量级，待定）；Update 按缺省键保留原值（PATCH，沿
+// service）、注册 scopes 必含 openid（§5.5）与 TTL 值域 [1, 86400] /
+// [1, 2592000]（docs 未定义上限，默认即默认值量级，待定）；Update 按缺省键保留原值（PATCH，沿
 // provider.go UpdateProvider 先例）；client_id 创建后不可改（改 →
 // invalid_request，同值放行）。OIDC 客户端不设授权类型字段（§5.5 行 1268
 // 固定 authorization_code + refresh_token，不建模）。审计：eventlog 无
@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -575,9 +576,14 @@ func marshalRedirectURIs(uris []string) ([]byte, error) {
 }
 
 // joinScopes scopes[] → 逗号串（§4.5 VARCHAR(512)，model 注释归 service）：
-// 条目空串或含逗号（会破坏逗号串表示）→ invalid_request；空组返回空串，
-// INSERT 落 DDL default 'openid,profile,email'（gorm default tag）。
+// 非空组必含 openid（§5.5：注册 scopes 必含 openid，Create / Update 同
+// 口径，openid 是 ID Token 签发与 sub 派生的前提）；条目空串或含逗号
+// （会破坏逗号串表示）→ invalid_request；空组返回空串，INSERT 落 DDL
+// default 'openid,profile,email'（gorm default tag，本就含 openid）。
 func joinScopes(scopes []string) (string, error) {
+	if len(scopes) > 0 && !slices.Contains(scopes, "openid") {
+		return "", ErrInvalidRequest
+	}
 	for _, sc := range scopes {
 		if sc == "" || strings.Contains(sc, ",") {
 			return "", ErrInvalidRequest

@@ -79,16 +79,28 @@ func TestOidcConsentGetMissing(t *testing.T) {
 	}
 }
 
-// TestOidcConsentUpsert（env-skip）：首次写入整行插入（created_at / updated_at
-// 由 GORM 回填）→ 同键再写走 uk_user_client 冲突更新，scopes 刷新 → 不同键
-// 互不串行；scopes 原样写回、不做解析（解析归上层 §4.5）。
-func TestOidcConsentUpsert(t *testing.T) {
+// TestOidcConsentMerge（env-skip）：MergeConsent 行锁合并原语——首次写入
+// 整行插入（created_at / updated_at 由 GORM 回填，回调现值为空集）→ 同键
+// 再写走 uk_user_client 冲突更新，回调现值为已存值、scopes 刷新且
+// created_at 保持首次授权时刻 → 不同键互不串行。回调返回值即写回值
+// （并集计算归上层 §4.5，本文件以固定值回调模拟）。
+func TestOidcConsentMerge(t *testing.T) {
 	rp := oidcConsentTestSetup(t)
 	ctx := context.Background()
 
-	// 首次授权：整行插入。
-	if err := rp.UpsertConsent(ctx, 2001, "oidc_app", "openid profile"); err != nil {
-		t.Fatalf("首次 UpsertConsent 失败: %v", err)
+	// 首次授权：整行插入，回调收到空集现值（从未同意）。
+	var currents []string
+	merge := func(scopes string) func(string) (string, error) {
+		return func(current string) (string, error) {
+			currents = append(currents, current)
+			return scopes, nil
+		}
+	}
+	if err := rp.MergeConsent(ctx, 2001, "oidc_app", merge("openid profile")); err != nil {
+		t.Fatalf("首次 MergeConsent 失败: %v", err)
+	}
+	if len(currents) != 1 || currents[0] != "" {
+		t.Errorf("首插回调现值 = %q, want [空串]", currents)
 	}
 	got, err := rp.GetConsentScopes(ctx, 2001, "oidc_app")
 	if err != nil {
@@ -107,9 +119,13 @@ func TestOidcConsentUpsert(t *testing.T) {
 	}
 	firstCreatedAt := row.CreatedAt
 
-	// 同键扩集再写：冲突更新 scopes，created_at 保持首次授权时刻。
-	if err := rp.UpsertConsent(ctx, 2001, "oidc_app", "openid profile email offline_access"); err != nil {
-		t.Fatalf("扩集 UpsertConsent 失败: %v", err)
+	// 同键扩集再写：冲突更新 scopes，回调现值为已存值，created_at 保持
+	// 首次授权时刻。
+	if err := rp.MergeConsent(ctx, 2001, "oidc_app", merge("openid profile email offline_access")); err != nil {
+		t.Fatalf("扩集 MergeConsent 失败: %v", err)
+	}
+	if len(currents) != 2 || currents[1] != "openid profile" {
+		t.Errorf("扩集回调现值 = %q, want 第二次收到已存值", currents)
 	}
 	got, err = rp.GetConsentScopes(ctx, 2001, "oidc_app")
 	if err != nil {
@@ -126,11 +142,11 @@ func TestOidcConsentUpsert(t *testing.T) {
 	}
 
 	// 其他用户 / 其他客户端互不串行。
-	if err := rp.UpsertConsent(ctx, 2001, "oidc_other", "openid"); err != nil {
-		t.Fatalf("UpsertConsent（其他客户端）失败: %v", err)
+	if err := rp.MergeConsent(ctx, 2001, "oidc_other", merge("openid")); err != nil {
+		t.Fatalf("MergeConsent（其他客户端）失败: %v", err)
 	}
-	if err := rp.UpsertConsent(ctx, 2002, "oidc_app", "openid profile"); err != nil {
-		t.Fatalf("UpsertConsent（其他用户）失败: %v", err)
+	if err := rp.MergeConsent(ctx, 2002, "oidc_app", merge("openid profile")); err != nil {
+		t.Fatalf("MergeConsent（其他用户）失败: %v", err)
 	}
 	if got, err := rp.GetConsentScopes(ctx, 2001, "oidc_other"); err != nil || got != "openid" {
 		t.Errorf("client 隔离: got %q, err %v; want openid/nil", got, err)
@@ -142,8 +158,8 @@ func TestOidcConsentUpsert(t *testing.T) {
 		t.Errorf("原行未被串写: got %q, err %v", got, err)
 	}
 
-	// 同键同值重写：upsert 幂等，不报错。
-	if err := rp.UpsertConsent(ctx, 2001, "oidc_app", "openid profile email offline_access"); err != nil {
+	// 同键同值重写：冲突更新幂等，不报错。
+	if err := rp.MergeConsent(ctx, 2001, "oidc_app", merge("openid profile email offline_access")); err != nil {
 		t.Errorf("同值重写应幂等成功, got %v", err)
 	}
 }
