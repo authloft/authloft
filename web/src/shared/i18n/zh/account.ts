@@ -62,7 +62,7 @@ export const account = {
   // 置灰原因（canUnbindThirdpartyRow 口径：未设密码且无其他非 Union 绑定）。
   'account.unbindDisabledReason':
     '未设置密码，且没有其他已绑定的第三方账号；解绑后将没有可用的登录方式，请先设置密码或绑定其他账号',
-  // 解绑成功反馈（P1-6，统一 Semi Toast 成功通道）。
+  // 解绑成功反馈（统一 Semi Toast 成功通道）。
   'account.unbindSuccess': '已解绑「{name}」',
   'account.bindAction': '去绑定',
   'account.thirdpartyLoadFailed': '第三方账号加载失败，请刷新重试',
@@ -196,9 +196,9 @@ export const account = {
   'account.logEmpty': '暂无登录记录',
 
   // ---- ProfilePage 资料编辑（保存 / 取消复用 saveAction / cancelAction，
-  //      手机号复用 phoneLabel；头像持久化失败复用 errors.status.failed）----
+  //      手机号复用 phoneLabel）--------------------------------------------
   'account.profileEditAction': '编辑资料',
-  // 保存成功反馈（P1-6，统一 Semi Toast 成功通道）。
+  // 保存成功反馈（统一 Semi Toast 成功通道）。
   'account.profileSaved': '资料已保存',
   'account.emailLabel': '邮箱',
   'account.genderLabel': '性别',
@@ -208,8 +208,7 @@ export const account = {
   'account.birthdayLabel': '生日',
   'account.localeLabel': '语言区域',
   'account.timezoneLabel': '时区',
-  'account.extraLabel': '扩展信息',
-  'account.extraPlaceholder': '{"key": "value"}',
-  'account.extraInvalidJson': '扩展信息须为合法的 JSON 对象',
   'account.birthdayInvalid': '请输入正确的日期（YYYY-MM-DD）',
+  // 头像持久化失败行内文案（非 401 失败；401 归集中分派跳登录不出行内文案）。
+  'account.avatarPersistFailed': '头像保存失败，请重试',
 };

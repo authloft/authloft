@@ -1,34 +1,31 @@
 /**
- * 个人资料页（docs/前端架构.md §5 行 513；docs/接口文档.md §3.2 行 831-837）：
- * 用户名（只读）、昵称（展示 + 编辑）、头像（展示 + 上传入口 + 持久化）；GetProfile
- * 真实消费（后端已实装）。头像上传入口 = AvatarUploader（前端架构
- * §5 行 503：组件内部仅调 useUpload，不感知 proxy / direct；零值投影
- * 隐藏入口），上传成功回填 url 刷新本页头像展示（avatarOverride 优先于
- * profile.avatarUrl）。
+ * 个人资料页（docs/前端架构.md §5；docs/接口文档.md §3.2）：
+ * 用户名（只读）、昵称（展示 + 编辑）、头像（展示 + 上传入口 + 持久化）。
+ * 头像上传入口 = AvatarUploader（前端架构 §5：组件内部仅调 useUpload，
+ * 不感知 proxy / direct；配置加载中渲染禁用按钮，确定未配存储才隐藏），
+ * 上传成功回填 url 刷新本页头像展示（avatarOverride 优先于
+ * profile.avatarUrl，且保存资料时保留不清——见 submit onSuccess 注释）。
  *
- * 资料编辑 + UpdateProfile 持久化（后端 account 域桩未实装，按接口契约
- * 消费、msw mock 覆盖，不因 mock 放宽契约）：
+ * 资料编辑 + UpdateProfile 持久化（docs/接口文档.md §3.2）：
  * - 编辑 / 展示两态：编辑帧 nickname（Input）+ gender（Select 枚举 0/1/2）+
- *   birthday（DatePicker → "YYYY-MM-DD"）+ locale / timezone（Input）+
- *   extra（就地 JSON textarea + 提交前解析校验，沿 admin JsonEditor
- *   零依赖先例）；username / phone / email 只读展示不进表单（§3.2 行
- *   837 不可修改，掩码服务端完成前端零处理）；avatarUrl 不进表单（走上传
- *   链路 §10.8）；
+ *   birthday（DatePicker → "YYYY-MM-DD"）+ locale / timezone（Input）；
+ *   username / phone / email 只读展示不进表单（§3.2 不可修改，掩码服务端
+ *   完成前端零处理）；avatarUrl 不进表单（走上传链路 §10.8）；extra 不
+ *   暴露编辑入口（契约保留字段，前端不读写）；
  * - 头像持久化接线：AvatarUploader onUploaded 后经 updateProfile {avatarUrl}
- *   提交；失败提示 §1.6 failed
- *   兜底文案、不回滚展示（裁量：本地已刷新，服务端值以下次 GetProfile 重取
- *   为准）；
- * - 保存成功重取 GetProfile 刷新展示（裁量：重取优于乐观更新，服务端权威）。
+ *   提交，纳入 useRequest 管理（与资料保存同层受控，不裸调）；错误先走
+ *   requestOptions 集中分派（401 跳登录），其余失败行内专属文案、展示不
+ *   回滚（本地已刷新，服务端值以下次 GetProfile 为准）；
+ * - 保存成功重取 GetProfile 刷新展示（重取优于乐观更新，服务端权威）；
+ *   无改动（diff 为空）不发请求不提示。
  *
  * 结构沿 login 页族模式（ResetPage 等）：View 为纯状态帧视图
  * （renderToStaticMarkup 可测任意 status 帧），Page 为状态壳
  * （ahooks useRequest 发请求 + 集中 onError 分派）。
  *
- * 401 处理（§5 行 480）：统一走 shared/hooks/requestOptions 的集中
- * onError（跳 `{al_root}/sso/login` 带 returnTo）；其余错误
- * 静默（toast:false）就地错误帧呈现。例外：头像持久化（手写保留点，
- * §5.4-#7）与改密成功后的延时跳登录（PasswordChangeForm）仍内联。
- * 文案经 shared/i18n（account.* 域键）。
+ * 401 处理（§5）：统一走 shared/hooks/requestOptions 的集中 onError
+ * （跳 `{al_root}/sso/login` 带 returnTo）；其余错误静默（toast:false）
+ * 就地错误帧呈现。文案经 shared/i18n（account.* 域键）。
  */
 import { useState, type ReactNode } from 'react';
 import {
@@ -57,6 +54,7 @@ import { AvatarUploader } from '../components/AvatarUploader';
 import {
   accountReturnTo,
   apiErrorText,
+  avatarPersistFailureMessage,
   buildAvatarPersistRequest,
   buildUpdateProfileRequest,
   getProfile,
@@ -73,14 +71,10 @@ const EMPTY_PLACEHOLDER = '-';
 
 /**
  * 资料编辑帧视图（纯渲染）：字段全部受控——草稿归 ProfilePage 壳持有，
- * 保存 / 校验语义在 ./api 的 buildUpdateProfileRequest（node 可测；Semi 渲染
- * 测试 blocker 见 account.test.tsx 头注）。extra 编辑裁量：就地 JSON
- * textarea + 解析校验，不提升 shared、不引第三方（沿 admin JsonEditor 先例
- * 零依赖形态）——校验失败文案按 fieldError 键定位展示。
+ * 保存 / 校验语义在 ./api 的 buildUpdateProfileRequest（node 可测）；
+ * 校验失败文案按 fieldError 键定位展示。
  */
 function ProfileEditView(props: {
-  /** GetProfile 原值：extra 未编辑时展示基线对象文本。 */
-  profile: ProfileResponse;
   draft: ProfileEditDraft;
   status: RequestStatus;
   fieldError: ProfileEditFieldError | undefined;
@@ -99,10 +93,6 @@ function ProfileEditView(props: {
     props.draft.birthday === ''
       ? undefined
       : new Date(`${props.draft.birthday}T00:00:00`);
-  // extraText undefined = 未编辑 → 展示基线对象文本；onChange 后即用户文本。
-  const extraText =
-    props.draft.extraText ??
-    JSON.stringify(props.profile.profile?.extra ?? {}, null, 2);
   return (
     <form
       className={styles.editForm}
@@ -177,27 +167,9 @@ function ProfileEditView(props: {
           disabled={submitting}
         />
       </div>
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="account-edit-extra">
-          {t('account.extraLabel')}
-        </label>
-        <textarea
-          id="account-edit-extra"
-          className={styles.extraInput}
-          value={extraText}
-          onChange={(event) => setDraft({ extraText: event.target.value })}
-          disabled={submitting}
-          aria-label={t('account.extraLabel')}
-          rows={6}
-          spellCheck={false}
-          placeholder={t('account.extraPlaceholder')}
-        />
-      </div>
       {props.fieldError !== undefined ? (
         <p role="alert" className={styles.error}>
-          {props.fieldError === 'invalid_birthday'
-            ? t('account.birthdayInvalid')
-            : t('account.extraInvalidJson')}
+          {t('account.birthdayInvalid')}
         </p>
       ) : null}
       {props.status === 'error' ? (
@@ -227,11 +199,10 @@ function ProfileEditView(props: {
  * - 401 未登录：渲染加载态（页面壳的 effect 随即跳登录，不就地出错误文案）；
  * - 其余请求失败：错误提示（§1.6 词汇外的页面级兜底文案）；
  * - 加载中 / 无数据：Spin；
- * - 成功：标题 + 头像 + AvatarUploader 上传入口（零值投影时组件自隐藏，
- *   §3.2 行 842）+ 头像持久化失败提示（§1.6 failed 兜底文案，不回滚展示）
- *   + 编辑 / 展示两态：展示态明细（username / nickname / phone /
- *   email 掩码零处理 / gender / birthday / locale / timezone）+ 编辑入口；
- *   编辑态渲染 ProfileEditView。
+ * - 成功：标题 + 头像 + AvatarUploader 上传入口（确定未配存储时组件自隐藏）
+ *   + 头像持久化失败提示（专属文案，展示不回滚）+ 编辑 / 展示两态：
+ *   展示态明细（username / nickname / phone / email 掩码零处理 / gender /
+ *   birthday / locale / timezone）+ 编辑入口；编辑态渲染 ProfileEditView。
  */
 export function ProfilePageView(props: {
   status: RequestStatus;
@@ -241,7 +212,7 @@ export function ProfilePageView(props: {
   avatarOverride?: string;
   /** AvatarUploader 上传成功回调：刷新展示 + 持久化接线（壳内消化）。 */
   onAvatarUploaded?: (url: string) => void;
-  /** 头像持久化失败（UpdateProfile {avatarUrl} 提交失败；展示不回滚）。 */
+  /** 头像持久化失败（UpdateProfile {avatarUrl} 非 401 失败；展示不回滚）。 */
   avatarPersistFailed: boolean;
   /** 编辑 / 展示两态开关。 */
   editing: boolean;
@@ -249,7 +220,7 @@ export function ProfilePageView(props: {
   draft: ProfileEditDraft | undefined;
   /** UpdateProfile 提交状态（编辑帧按钮态）。 */
   editStatus: RequestStatus;
-  /** 本地校验失败（birthday / extra，键定位展示）。 */
+  /** 本地校验失败（birthday，键定位展示）。 */
   fieldError: ProfileEditFieldError | undefined;
   /** 服务端提交错误（apiErrorText 归一展示）。 */
   editError: unknown;
@@ -293,12 +264,11 @@ export function ProfilePageView(props: {
         />
         {props.avatarPersistFailed ? (
           <p role="alert" className={styles.error}>
-            {t('errors.status.failed')}
+            {t('account.avatarPersistFailed')}
           </p>
         ) : null}
         {props.editing && props.draft !== undefined ? (
           <ProfileEditView
-            profile={profile}
             draft={props.draft}
             status={props.editStatus}
             fieldError={props.fieldError}
@@ -316,7 +286,7 @@ export function ProfilePageView(props: {
                   key: t('account.nicknameLabel'),
                   value: profile.nickname || EMPTY_PLACEHOLDER,
                 },
-                // 掩码服务端完成（§3.1 行 818-829），前端零处理直接展示。
+                // 掩码服务端完成（§3.1），前端零处理直接展示。
                 {
                   key: t('account.phoneLabel'),
                   value: profile.phone || EMPTY_PLACEHOLDER,
@@ -355,7 +325,7 @@ export function ProfilePageView(props: {
   );
 }
 
-/** 资料页状态壳：首次进入请求 GetProfile；401 集中 onError 跳登录（§5 行 480）。 */
+/** 资料页状态壳：首次进入请求 GetProfile；401 集中 onError 跳登录（§5）。 */
 export function ProfilePage(): ReactNode {
   // 自动请求 + 集中 onError（401 跳登录带 returnTo；其余静默，
   // 错误帧呈现防双报）；useLocation 在 HashRouter 下即 hash 内 location。
@@ -377,12 +347,12 @@ export function ProfilePage(): ReactNode {
       returnTo: () => accountReturnTo(location.pathname, location.search),
     }),
     onSuccess: () => {
-      // 保存成功：退出编辑态 + 重取 GetProfile（裁量：重取优于乐观更新，
-      // 服务端权威回读为准）；avatarOverride 一并清除——重取后以服务端
-      // avatarUrl 为准（若此前头像持久化失败，此处回到服务端旧值属预期，
-      // 持久化失败提示已单独呈现）。成功反馈接 Semi Toast（P1-6）。
+      // 保存成功：退出编辑态 + 重取 GetProfile（重取优于乐观更新，服务端
+      // 权威回读为准）；avatarOverride 保留不清——头像持久化与资料保存并发
+      // 时，重取可能先于持久化落地拿到旧 avatarUrl，此刻清除 override 会让
+      // 展示回退旧头像且不再刷新（手动刷新才恢复）；override 优先展示直到
+      // 服务端值追平，是竞态消除口径。
       setEditing(false);
-      setAvatarOverride(undefined);
       refresh();
       Toast.success(t('account.profileSaved'));
     },
@@ -392,6 +362,22 @@ export function ProfilePage(): ReactNode {
     submit.error,
     submit.data,
   );
+  // 头像持久化（手动）：错误先走集中分派（401 跳登录；其余静默），非 401
+  // 失败再置行内专属文案（判定归 avatarPersistFailureMessage，node 可测）。
+  const persistOptions = requestOptions({
+    toast: false,
+    returnTo: () => accountReturnTo(location.pathname, location.search),
+  });
+  const avatarPersist = useRequest(updateProfile, {
+    manual: true,
+    ...persistOptions,
+    onError: (error) => {
+      persistOptions.onError(error);
+      if (avatarPersistFailureMessage(error) !== undefined) {
+        setAvatarPersistFailed(true);
+      }
+    },
+  });
   const [avatarOverride, setAvatarOverride] = useState<string | undefined>(
     undefined,
   );
@@ -405,13 +391,11 @@ export function ProfilePage(): ReactNode {
   /** 头像上传成功（§10.8 终点 {url}）：本地刷新展示 + 持久化接线。 */
   const handleAvatarUploaded = (url: string) => {
     setAvatarOverride(url);
-    // UpdateProfile {avatarUrl} 持久化（§3.2 行 837）：失败
-    // 提示 §1.6 failed 兜底文案、展示不回滚（裁量：本地已刷新，服务端值以
-    // 下次 GetProfile 重取为准）；成功静默（头像已展示新值）。
+    // UpdateProfile {avatarUrl} 持久化（§3.2）：纳入 useRequest 管理；
+    // 失败提示专属文案、展示不回滚（本地已刷新，服务端值以下次 GetProfile
+    // 重取为准）；成功静默（头像已展示新值）。
     setAvatarPersistFailed(false);
-    updateProfile(buildAvatarPersistRequest(url)).catch(() => {
-      setAvatarPersistFailed(true);
-    });
+    avatarPersist.run(buildAvatarPersistRequest(url));
   };
 
   const startEdit = () => {
@@ -425,7 +409,6 @@ export function ProfilePage(): ReactNode {
       birthday: data.profile?.birthday ?? '',
       locale: data.profile?.locale ?? '',
       timezone: data.profile?.timezone ?? '',
-      extraText: undefined,
     });
     setFieldError(undefined);
     setEditing(true);
@@ -441,6 +424,10 @@ export function ProfilePage(): ReactNode {
       return;
     }
     setFieldError(undefined);
+    // 无改动：不发请求、不提示、不退出编辑态（服务端空操作无需重放）。
+    if (!built.changed) {
+      return;
+    }
     // 成功链在 onSuccess；错误由集中 onError 静默（行内 apiErrorText 呈现）。
     submit.run(built.request);
   };

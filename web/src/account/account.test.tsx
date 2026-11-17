@@ -97,15 +97,15 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  *   shared/app-ui/dataTableLogic（前端架构 §8 行 621：分页 / 排序 / 筛选
  *   回调参数归一、行内开关的乐观更新与回滚；零 Semi 依赖，组件壳渲染测试
  *   仍受工具链 blocker——见文件头【Blocker】段）。
- * - UpdateProfile 资料编辑 + 头像持久化（§3.2 行 837；后端 account 域
- *   桩未实装，契约先行口径：按接口契约消费 + msw mock，不因 mock 放宽契约）：
+ * - UpdateProfile 资料编辑 + 头像持久化（§3.2）：
  *   updateProfile 封装 msw（成功 OkResponse 空响应 / 校验失败 400 Connect
  *   错误体归一 ApiError）+ buildUpdateProfileRequest PATCH 语义纯函数（diff
- *   基线 → 只带编辑过字段 / wire 零值省略契约限制 / birthday + extra 本地
- *   校验）+ buildAvatarPersistRequest（头像持久化接线：AvatarUploader
- *   onUploaded 后 {avatarUrl} 单字段提交）+ profileGenderText 展示映射；
- *   ProfilePageView 编辑帧渲染测试受工具链 blocker（本文件头【Blocker】
- *   段），表单交互的可测逻辑即构造函数（本段）。
+ *   基线 → 只带编辑过字段 / wire 零值省略契约限制 / changed 空改动判定 /
+ *   birthday 格式 + 真日历本地校验）+ buildAvatarPersistRequest（头像持久化
+ *   接线：AvatarUploader onUploaded 后 {avatarUrl} 单字段提交）+
+ *   avatarPersistFailureMessage（持久化失败行内文案分派：401 归集中跳登录）
+ *   + profileGenderText 展示映射；ProfilePageView 静态渲染（展示帧 override
+ *   优先 + 持久化失败文案 + 编辑帧字段绑定 / 错误呈现）。
  *
  * 【Blocker·已解除】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试曾在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
@@ -114,7 +114,7 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  * 模块图含 semi import 的测试文件都在加载期崩（实测：rs.mock 全组件 /
  * __mocks__ 目录 / 子路径 import 三路都试过）。**测试链已修复**
  * （rstack.config.mts define.test bundleDependencies + ProvidePlugin，Semi 经
- * rspack 管线加载），路由兜底真渲染断言见文末 routes describe；表单组件的
+ * rspack 管线加载），路由兜底真渲染断言见文末 routes describe；表单交互的
  * 可测逻辑仍沿原收口落 api.ts（零 Semi 依赖）。
  *
  * msw 请求链沿 login/api.test.ts 模式；al_root 在 transport（http.ts）模块
@@ -222,6 +222,7 @@ let ssoMod: typeof import('../shared/api/sso');
 let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
 let mfaSettingMod: typeof import('./pages/SecurityPage/MfaSetting');
+let profilePageMod: typeof import('./pages/ProfilePage');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -231,6 +232,7 @@ beforeAll(async () => {
   uploadMod = await import('../shared/hooks/useUpload');
   routesMod = await import('./routes');
   mfaSettingMod = await import('./pages/SecurityPage/MfaSetting');
+  profilePageMod = await import('./pages/ProfilePage');
 });
 
 // rstest 对 .tsx 采用 classic JSX runtime，路由渲染断言经 createElement 显式
@@ -2280,8 +2282,7 @@ describe('dataTableLogic 行内开关（§8 行 621：乐观更新与回滚）',
 });
 
 // ---------------------------------------------------------------------------
-// UpdateProfile 资料编辑 + 头像持久化（§3.2 行 837；后端 account 域桩
-// 未实装——契约先行口径：按接口契约消费 + msw mock，不因 mock 放宽契约）
+// UpdateProfile 资料编辑 + 头像持久化（§3.2 PATCH 语义 + 头像链路接线）
 // ---------------------------------------------------------------------------
 
 /** GetProfile 基线样例（§3.1 行 795-815 全字段；diff 基线，头像持久化同用）。 */
@@ -2340,13 +2341,13 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
         birthday: '1991-02-03',
         locale: 'en-US',
         timezone: 'UTC',
-        extraText: '{"company": "acme", "level": 3}',
       }),
     );
     expect(built.ok).toBe(true);
     if (!built.ok) {
       throw new Error('unreachable');
     }
+    expect(built.changed).toBe(true);
 
     await apiMod.updateProfile(built.request);
 
@@ -2357,7 +2358,6 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
         birthday: '1991-02-03',
         locale: 'en-US',
         timezone: 'UTC',
-        extra: { company: 'acme', level: 3 },
       },
     });
   });
@@ -2400,8 +2400,8 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
   });
 });
 
-describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保留，纯函数）', () => {
-  test('草稿与基线全同（extra 未编辑）→ 零值 request：wire {}（服务端空操作幂等）', () => {
+describe('buildUpdateProfileRequest（§3.2 PATCH 语义——缺省保留，纯函数）', () => {
+  test('草稿与基线全同 → 零值 request：wire {}（服务端空操作幂等）且 changed=false（无改动跳过提交）', () => {
     const built = apiMod.buildUpdateProfileRequest(
       PROFILE_BASE,
       profileDraft({}),
@@ -2410,6 +2410,7 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     if (!built.ok) {
       throw new Error('unreachable');
     }
+    expect(built.changed).toBe(false);
     expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({});
   });
 
@@ -2473,38 +2474,16 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
     });
   });
 
-  test('extra 未编辑（undefined）→ 不带 extra；编辑为合法 JSON 对象 → 全量透传（§3.1 行 813）', () => {
-    const edited = apiMod.buildUpdateProfileRequest(
-      PROFILE_BASE,
-      profileDraft({ extraText: '{"city": "北京"}' }),
-    );
-    expect(edited.ok).toBe(true);
-    if (!edited.ok) {
-      throw new Error('unreachable');
-    }
-    expect(toJson(UpdateProfileRequestSchema, edited.request)).toEqual({
-      profile: { extra: { city: '北京' } },
-    });
-  });
-
-  test('extra 编辑为非法 JSON / 数组 / 原始值 / null → invalid_extra_json 不发包（JSON 对象语义）', () => {
-    for (const extraText of ['{oops', '[1, 2]', '"text"', '123', 'null', '']) {
-      expect(
-        apiMod.buildUpdateProfileRequest(
-          PROFILE_BASE,
-          profileDraft({ extraText }),
-        ),
-      ).toEqual({ ok: false, error: 'invalid_extra_json' });
-    }
-  });
-
-  test('birthday 编辑为非法格式 / 非法日历 → invalid_birthday 不发包（YYYY-MM-DD §3.1 行 811）', () => {
+  test('birthday 编辑为非法格式 / 真非法日历 → invalid_birthday 不发包（YYYY-MM-DD §3.1；Date 静默归一化的日期必须拒绝）', () => {
     for (const birthday of [
       '1990/01/01',
       '1990-1-1',
       '19901301',
       '1990-13-01',
-      '1990-02-40',
+      // 真非法日历日：JS Date 会归一化为 3 月 1 日 / 2 月 28 日，判 NaN 拦不住。
+      '1990-02-30',
+      '2021-02-29',
+      '1990-04-31',
     ]) {
       expect(
         apiMod.buildUpdateProfileRequest(
@@ -2513,6 +2492,21 @@ describe('buildUpdateProfileRequest（§3.2 行 837 PATCH 语义——缺省保�
         ),
       ).toEqual({ ok: false, error: 'invalid_birthday' });
     }
+  });
+
+  test('birthday 闰日合法（2020-02-29）→ 正常进 wire 且 changed=true（防过拒）', () => {
+    const built = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ birthday: '2020-02-29' }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      throw new Error('unreachable');
+    }
+    expect(built.changed).toBe(true);
+    expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
+      profile: { birthday: '2020-02-29' },
+    });
   });
 
   test('birthday 编辑为空串：wire 显式带空串（proto3 optional has 位，「清空生日」= 显式设值覆盖，§3.2 行 843）', () => {
@@ -2556,6 +2550,142 @@ describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函�
     expect(apiMod.profileGenderText(BigInt(1))).toBe('男');
     expect(apiMod.profileGenderText(BigInt(2))).toBe('女');
     expect(apiMod.profileGenderText(BigInt(9))).toBe('9');
+  });
+});
+
+describe('avatarPersistFailureMessage（头像持久化失败文案分派，纯函数）', () => {
+  test('401 / unauthenticated → undefined（归 requestOptions 集中分派跳登录，不出行内文案）', () => {
+    expect(
+      apiMod.avatarPersistFailureMessage(
+        new ApiError({
+          httpStatus: 401,
+          code: 'internal',
+          message: '',
+          requestId: '',
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      apiMod.avatarPersistFailureMessage(
+        new ApiError({
+          httpStatus: 0,
+          code: 'unauthenticated',
+          message: '',
+          requestId: '',
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  test('其余失败 → 专属文案（区别于通用「操作失败」，可感知是头像未存上）', () => {
+    expect(
+      apiMod.avatarPersistFailureMessage(
+        new ApiError({
+          httpStatus: 400,
+          code: 'invalid_argument',
+          message: '',
+          requestId: '',
+        }),
+      ),
+    ).toBe(t('account.avatarPersistFailed'));
+    expect(apiMod.avatarPersistFailureMessage(new Error('network down'))).toBe(
+      t('account.avatarPersistFailed'),
+    );
+  });
+});
+
+describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化失败文案 + 编辑帧）', () => {
+  const noop = () => {};
+
+  function renderProfilePageView(
+    overrides: Partial<
+      Parameters<typeof profilePageMod.ProfilePageView>[0]
+    > = {},
+  ): string {
+    return renderToStaticMarkup(
+      createElement(profilePageMod.ProfilePageView, {
+        status: 'success',
+        profile: PROFILE_BASE,
+        error: undefined,
+        avatarPersistFailed: false,
+        editing: false,
+        draft: undefined,
+        editStatus: 'idle',
+        fieldError: undefined,
+        editError: undefined,
+        onEdit: noop,
+        onCancelEdit: noop,
+        onSaveEdit: noop,
+        onDraftChange: noop,
+        ...overrides,
+      }),
+    );
+  }
+
+  test('展示帧：只读项 + 编辑入口；extra 不暴露编辑入口（展示态本就没有）', () => {
+    const html = renderProfilePageView();
+    expect(html).toContain('zhang_san');
+    expect(html).toContain('张三');
+    expect(html).toContain('138****8000');
+    expect(html).toContain('a***@example.com');
+    expect(html).toContain('编辑资料');
+    expect(html).not.toContain('扩展信息');
+    // 头像入口：配置加载中（useRequest 未起 effect → status=idle）渲染禁用
+    // 按钮而非隐藏（隐藏仅在配置就绪且零值投影时发生）。
+    expect(html).toContain('上传头像');
+    expect(html).toMatch(
+      /<button[^>]*disabled[^>]*><span[^>]*>上传头像<\/span>/,
+    );
+  });
+
+  test('头像竞态消除口径：保存成功重取先于持久化落地（服务端旧头像）时 override 保留优先展示，不回退', () => {
+    const html = renderProfilePageView({
+      avatarOverride: 'https://cdn.test/b.jpg',
+    });
+    expect(html).toContain('https://cdn.test/b.jpg');
+    expect(html).not.toContain('https://cdn.test/a.jpg');
+  });
+
+  test('头像持久化失败：行内专属文案（不再复用通用「操作失败」）', () => {
+    const html = renderProfilePageView({ avatarPersistFailed: true });
+    expect(html).toContain(t('account.avatarPersistFailed'));
+  });
+
+  test('编辑帧：Input 字段受控绑定回显 + 保存 / 取消；无 extra 编辑框', () => {
+    const html = renderProfilePageView({
+      editing: true,
+      draft: profileDraft({ nickname: '张三丰' }),
+    });
+    // Input 类字段 SSR 即回显受控值（value 属性）；Select / DatePicker 的
+    // 触发器选中值在 effect 后回显，静态标记仅含 placeholder，其绑定语义由
+    // buildUpdateProfileRequest 纯函数用例覆盖。
+    expect(html).toContain('value="张三丰"');
+    expect(html).toContain('value="zh-CN"');
+    expect(html).toContain('value="Asia/Shanghai"');
+    expect(html).toContain('保存');
+    expect(html).toContain('取消');
+    expect(html).not.toContain('扩展信息');
+  });
+
+  test('编辑帧错误呈现：本地校验 birthday 专属文案；服务端错误 apiErrorText 归一', () => {
+    const field = renderProfilePageView({
+      editing: true,
+      draft: profileDraft({}),
+      fieldError: 'invalid_birthday',
+    });
+    expect(field).toContain('请输入正确的日期（YYYY-MM-DD）');
+    const server = renderProfilePageView({
+      editing: true,
+      draft: profileDraft({}),
+      editStatus: 'error',
+      editError: new ApiError({
+        httpStatus: 400,
+        code: 'invalid_argument',
+        message: 'profile invalid',
+        requestId: '',
+      }),
+    });
+    expect(server).toContain(t('errors.code.invalid_argument'));
   });
 });
 

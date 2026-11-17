@@ -68,7 +68,7 @@ export const account: typeof zhAccount = {
   // non-union binding left).
   'account.unbindDisabledReason':
     'No password is set and no other third-party account is linked. Unlinking this would leave you with no way to sign in. Set a password or link another account first',
-  // unbind success feedback (P1-6, unified Semi Toast success channel).
+  // unbind success feedback (unified Semi Toast success channel).
   'account.unbindSuccess': 'Unlinked "{name}"',
   'account.bindAction': 'Go to Link',
   'account.thirdpartyLoadFailed':
@@ -218,10 +218,9 @@ export const account: typeof zhAccount = {
   'account.logEmpty': 'No sign-in records yet',
 
   // ---- ProfilePage editing (save / cancel reuse saveAction / cancelAction,
-  //      phone label reuses phoneLabel; avatar persist failure reuses
-  //      errors.status.failed) --------------------------------------------------
+  //      phone label reuses phoneLabel) ----------------------------------------
   'account.profileEditAction': 'Edit Profile',
-  // save success feedback (P1-6, unified Semi Toast success channel).
+  // save success feedback (unified Semi Toast success channel).
   'account.profileSaved': 'Profile saved',
   'account.emailLabel': 'Email',
   'account.genderLabel': 'Gender',
@@ -231,8 +230,8 @@ export const account: typeof zhAccount = {
   'account.birthdayLabel': 'Birthday',
   'account.localeLabel': 'Locale',
   'account.timezoneLabel': 'Time Zone',
-  'account.extraLabel': 'Extra',
-  'account.extraPlaceholder': '{"key": "value"}',
-  'account.extraInvalidJson': 'Extra must be a valid JSON object',
   'account.birthdayInvalid': 'Enter a valid date (YYYY-MM-DD)',
+  // Inline copy for avatar persist failure (non-401; 401 goes through the
+  // centralized dispatch redirect and shows no inline message).
+  'account.avatarPersistFailed': 'Failed to save the avatar. Please try again',
 };
