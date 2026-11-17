@@ -9,12 +9,17 @@ import (
 	"errors"
 	"testing"
 
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/captcha"
+	"authloft/internal/provider"
 )
 
 func TestCreateQrcodeCaptchaFailureCarriesGateConfig(t *testing.T) {
-	catalog := &qrCatalog{p: &captcha.Provider{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}}
-	gate := captcha.NewGate(&tpSettings{}, catalog, &qrVerifier{})
+	catalog := &qrCatalog{p: &provider.Provider{
+		Key: "cf_turnstile", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "0xSITE"},
+	}}
+	gate := captcha.NewGate(&tpSettings{}, catalog, &qrImageStore{},
+		func(*provider.Provider) (captcha.Verifier, error) { return nil, errors.New("not reached") })
 	want := gate.Config(context.Background()) // gate 单一出口当前生效配置
 	svc := NewQRCode(QRCodeDeps{Gate: gate})
 

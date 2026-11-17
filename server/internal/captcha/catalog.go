@@ -1,67 +1,59 @@
-// catalog.go 是 gate.go ProviderCatalog 接口的实装（docs/后端架构.md
-// §9.1 行 1092-1094、docs/接口文档.md §2.5 行 513-517 降级规则）：
-// settings 键 captcha_provider_key（空串 = 内置，§5.6 行 1334）→ provider
-// 表 category=captcha 且 is_enabled=1 的生效行，每次现算不缓存。无可用项
-// （未配置 / 禁用 / 查不到）返回 nil,nil，降级语义归 Gate（builtin_image）。
-// 本包除 `provider_source.go` 外不持有 DB 句柄（gate.go 包口径）：provider
-// 行经 ProviderSource 窄接口取数，包内 `provider_source.go` 用 repo + ext
-// 解析实现（§12.1：site_key=client_id、secret=client_secret、endpoint=自定义
-// 校验地址），同 image.go Store 的依赖倒置模式。
+// catalog.go 是 gate.go ProviderCatalog 接口的实装（docs/后端架构.md §9.1
+// 「下发与拦截永远同源」、docs/接口文档.md §2.5 降级规则）：settings 键
+// captcha_provider_key（空串 = 内置，§5.6）→ provider 表 category=captcha
+// 且 is_enabled=1 的生效行，每次现算不缓存。无可用项（未配置 / 禁用 /
+// 查不到）返回 nil,nil，降级语义归 Gate（builtin_image）。
+//
+// 直读通道（§9.1 阶段三定稿）：provider 行经 provider.Loader 的不读 LRU 的
+// GetDirect 取完整 *provider.Provider（行读取 + Ext 组装 + 代理解析同语义，
+// §15.3），不经 60s 缓存窗口——「下发、拦截与错误体永远同源、配置改动立即
+// 生效」由直读保证；普通读路径（白名单等）仍走 LRU + singleflight。工厂化
+// 后本包不再自持 repo 窄投影（原 provider_source 窄投影随直读通道退役，
+// factory 所需的 secret / 代理直接取自完整实例）。
 package captcha
 
 import (
 	"context"
 	"fmt"
 
-	"authloft/internal/proxyclient"
+	"authloft/internal/provider"
 	"authloft/internal/settings"
 )
 
 // CategoryCaptcha provider 表 category 取值（§4.1：oauth|captcha|sms|
-// email|storage|notify|union）。
-const CategoryCaptcha = "captcha"
+// email|storage|notify|union；单一来源在 provider 包）。
+const CategoryCaptcha = provider.CategoryCaptcha
 
-// KeyReader 读 settings 字符串键（热更新快照，§5.6 行 1342 只对后续
-// 请求生效）。生产注入 *settings.Store。
+// KeyReader 读 settings 字符串键（热更新快照，§5.6 只对后续请求生效）。
+// 生产注入 *settings.Store。
 type KeyReader interface {
 	GetString(key string) (string, bool)
 }
 
-// ProviderRecord 是 provider 表行对本包的窄投影：装配层查表并解析 ext
-// 后构造。Enabled 即 is_enabled=1；Secret 仅供 Verifier 调第三方
-// siteverify，不进 Config（前台永不返回凭证，§12.1 行 1720）。
-type ProviderRecord struct {
-	ProviderKey string
-	Category    string
-	Type        string
-	Enabled     bool
-	SiteKey     string            // ext.client_id（§9.1 行 1083）
-	Secret      string            // ext.client_secret
-	VerifyURL   string            // ext.endpoint，自定义校验地址（空 = 厂商默认）
-	Proxy       *proxyclient.Pool // 出站连接池（§15.4 装配期经引用解析固化；nil = 直连）
-}
-
-// ProviderSource 按 provider_key 取 provider 行投影；nil,nil = 无此行，
-// error = 基础设施错误（由 Gate 按健康检查失败降级，§9.1 行 1095）。
-type ProviderSource interface {
-	Find(ctx context.Context, providerKey string) (*ProviderRecord, error)
+// CurrentSource 当前生效 provider 直读源（§9.1 不缓存通道）：
+// *provider.Loader 天然满足（GetDirect 绕过本地 LRU 与 singleflight）。
+// key 无此行返回 nil,nil；error = 基础设施错误（由 Gate 按健康检查失败
+// 降级，§9.1）。
+type CurrentSource interface {
+	GetDirect(ctx context.Context, providerKey string) (*provider.Provider, error)
 }
 
 // Catalog ProviderCatalog 实装。
 type Catalog struct {
 	keys   KeyReader
-	source ProviderSource
+	source CurrentSource
 }
 
-// NewCatalog 注入 settings 键读取与 provider 行源。
-func NewCatalog(keys KeyReader, source ProviderSource) *Catalog {
+// NewCatalog 注入 settings 键读取与 provider 直读源（装配层构造）。
+func NewCatalog(keys KeyReader, source CurrentSource) *Catalog {
 	return &Catalog{keys: keys, source: source}
 }
 
-// Current 每次现算当前生效 captcha Provider（不缓存，§9.1 行 1094
-// 「下发与拦截永远同源」）：键空串 / 键缺失 / 行不存在 / category≠captcha /
-// 未启用 → nil,nil；基础设施错误原样上抛。
-func (c *Catalog) Current(ctx context.Context) (*Provider, error) {
+// Current 每次现算当前生效 captcha Provider（直读、不缓存，§9.1）：
+// 键空串 / 键缺失 / 行不存在 / category≠captcha / 未启用 → nil,nil；
+// 基础设施错误原样上抛。返回完整 *provider.Provider——下发配置（Gate 取
+// ext.client_id 作 siteKey）与 factory 构造（secret / 代理）同源取值。
+func (c *Catalog) Current(ctx context.Context) (*provider.Provider, error) {
 	if c == nil || c.keys == nil || c.source == nil {
 		return nil, nil
 	}
@@ -69,16 +61,12 @@ func (c *Catalog) Current(ctx context.Context) (*Provider, error) {
 	if key == "" {
 		return nil, nil
 	}
-	rec, err := c.source.Find(ctx, key)
+	p, err := c.source.GetDirect(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("captcha: load provider %q: %w", key, err)
 	}
-	if rec == nil || rec.Category != CategoryCaptcha || !rec.Enabled {
+	if p == nil || p.Row == nil || p.Row.Category != CategoryCaptcha || !p.Enabled() {
 		return nil, nil
 	}
-	return &Provider{
-		ProviderKey: rec.ProviderKey,
-		Type:        rec.Type,
-		SiteKey:     rec.SiteKey,
-	}, nil
+	return p, nil
 }

@@ -127,15 +127,20 @@ func (f *qrResolver) Resolve(context.Context, string) (storage.Storage, error) {
 	return f.st, nil
 }
 
-// qrVerifier captcha.Verifier fake。
-type qrVerifier struct{ err error }
+// qrImageStore 图形码存储 fake（gate 内置路径的 Store 槽，captcha.Store）：
+// invalid 控制无效态（一次性语义恒通过由 invalid=false 表达）。
+type qrImageStore struct{ invalid bool }
 
-func (v *qrVerifier) Verify(context.Context, string, captcha.Submission) error { return v.err }
+func (s *qrImageStore) Set(context.Context, string, string) error { return nil }
+
+func (s *qrImageStore) Verify(context.Context, string, string) (bool, error) {
+	return !s.invalid, nil
+}
 
 // qrCatalog captcha.ProviderCatalog fake：nil = 降级内置图形码。
-type qrCatalog struct{ p *captcha.Provider }
+type qrCatalog struct{ p *provider.Provider }
 
-func (c *qrCatalog) Current(context.Context) (*captcha.Provider, error) { return c.p, nil }
+func (c *qrCatalog) Current(context.Context) (*provider.Provider, error) { return c.p, nil }
 
 // qrSessions SessionVerifier fake。
 type qrSessions struct {
@@ -163,7 +168,7 @@ type qrEnv struct {
 	loader   *tpLoader
 	adapter  *qrAdapter
 	gate     *captcha.Gate
-	verifier *qrVerifier
+	verifier *qrImageStore
 	tickets  *qrTickets
 	payloads *tpTicketPayloads
 	store    *qrStorage
@@ -186,7 +191,7 @@ func newQrEnv(t *testing.T) *qrEnv {
 			identity:  &provider.ExternalIdentity{ProviderKey: "scan", ProviderType: "wechat_mp_scan", OpenID: "o-1"},
 			fetchBody: []byte("fake-wxacode-bytes"),
 		},
-		verifier: &qrVerifier{},
+		verifier: &qrImageStore{},
 		tickets:  &qrTickets{res: map[string]*token.TicketResult{}},
 		payloads: &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}},
 		store:    &qrStorage{putURL: "https://cdn.example.com/qr/x.jpg"},
@@ -198,7 +203,7 @@ func newQrEnv(t *testing.T) *qrEnv {
 		loginC:   tpCodec(t, 0x40),
 	}
 	env.resolver = &qrResolver{st: env.store}
-	env.gate = captcha.NewGate(&tpSettings{}, &qrCatalog{}, env.verifier)
+	env.gate = captcha.NewGate(&tpSettings{}, &qrCatalog{}, env.verifier, nil)
 	env.state = orchestrator.NewState(env.loginC)
 	env.svc = NewQRCode(QRCodeDeps{
 		Loader:         env.loader,
@@ -272,7 +277,7 @@ func TestCreateQrcodeCaptcha(t *testing.T) {
 	t.Run("captcha 无效", func(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
-		e.verifier.err = captcha.ErrInvalid
+		e.verifier.invalid = true
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
 		if !errors.Is(err, ErrQrcodeCaptchaInvalid) {
 			t.Fatalf("err = %v, want ErrQrcodeCaptchaInvalid", err)

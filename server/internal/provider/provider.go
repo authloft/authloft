@@ -178,6 +178,30 @@ func (l *Loader) Get(ctx context.Context, providerKey string) (*Provider, error)
 	return p, nil
 }
 
+// GetDirect 不经本地 LRU 与 singleflight 的直读通道（§9.1 captcha catalog
+// 「下发、拦截与错误体永远同源、配置改动立即生效」的落点）：行回源复用
+// loadRow（Redis 整行缓存随写路径 DEL 失效、无 TTL 窗口，§15.3）+ toProvider
+// + resolveOutbound，装配语义与 Get 完全同构，仅绕过 60s 缓存窗口；并发直读
+// 不合并（correctness 不受影响，captcha 判定频率低）。普通读路径仍走
+// Get（LRU + singleflight）。
+func (l *Loader) GetDirect(ctx context.Context, providerKey string) (*Provider, error) {
+	if providerKey == "" {
+		return nil, fmt.Errorf("provider: empty provider_key")
+	}
+	row, err := l.loadRow(ctx, providerKey)
+	if err != nil {
+		return nil, err
+	}
+	p, err := toProvider(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := l.resolveOutbound(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // ListByType 按 type 取全部 Provider（§3.9「按 type 列表」）：分页读完
 // repo（pageSize 上限 100，§1.7），结果同样进本地 LRU（key = "l:"+type）。
 // 是否启用由调用方按 Provider.Enabled() 过滤。

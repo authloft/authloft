@@ -25,7 +25,12 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	adminsvc "authloft/internal/service/admin"
-	// 注册表数据源（§15.3）：各域真实注册项驱动 schema 键集与 types 断言。
+	// 注册表数据源（§15.3）：各域真实注册项驱动 schema 键集与 types 断言；
+	// captcha 三家 meta 随工厂化迁入实现子包，blank import 触发 init 自注册
+	//（测试二进制无触发即 meta 缺失，CODE_GUIDE §3.3）。
+	_ "authloft/internal/provider/captcha/hcaptcha"
+	_ "authloft/internal/provider/captcha/recaptcha"
+	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"

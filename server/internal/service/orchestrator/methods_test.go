@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/captcha"
+	"authloft/internal/provider"
 	"authloft/internal/settings"
 )
 
@@ -23,7 +25,9 @@ func TestMethodsLoginFiltersAndOrders(t *testing.T) {
 		},
 		slices: map[string][]string{settings.KeyLoginMethods: {"thirdparty", "otp_email", "password"}},
 	}
-	gate := captcha.NewGate(s, fakeCatalog{p: &captcha.Provider{ProviderKey: "turnstile-1", Type: "turnstile", SiteKey: "site-1"}}, &fakeCaptchaGate{})
+	gate := captcha.NewGate(s, fakeCatalog{p: &provider.Provider{
+		Key: "turnstile-1", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "site-1"},
+	}}, &fakeCaptchaGate{}, nil)
 	providers := fakeProviders{list: []ThirdPartyProvider{
 		{ProviderKey: "wechat", DisplayName: "微信", Channel: "qrcode", SortOrder: 20},
 		{ProviderKey: "qq", DisplayName: "QQ", Channel: "redirect", SortOrder: 10},

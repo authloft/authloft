@@ -1,176 +1,37 @@
-// verifier.go 是 gate.go Verifier 接口的实装（docs/后端架构.md §9.1
-// 行 1085-1090、§9.2）：按 providerKey 分派——builtin_image 不查表直接走
-// 内置图形码（接口文档 §2.5 行 515「内置项不是 Provider 表记录」）；
-// 其余经 ProviderSource 取行按 type 分派，type=image 同样核 al:cap:{id}
-// （§9.2 行 1103，不另写第二条校验路径）。三家第三方均为「secret +
-// response 表单 POST + JSON success 判定」（§9.1 行 1088-1090），
-// stdlib net/http 零新依赖；可注入 http.Client 与 siteverify 地址覆盖
-// （对齐 aliyun_sms 的可测试性模式）。校验不通过 / 已使用返回
-// ErrInvalid（可包裹）；其它错误为基础设施错误（Gate 侧映射 failed）。
+// verifier.go 类型别名层（docs/后端架构.md §15.3 接口归属）：Verifier 接口
+// 与随行数据类（Submission）、可判别哨兵（ErrInvalid）已上移 provider 包
+// 定义——factory 签名 `func(p *Provider) (Verifier, error)` 的产物类型必须
+// 让 provider 可见，而本包已 import provider，反向 import 会成环，故接口
+// 先上移；本包以类型别名 / 同值变量保持调用方（dto / handler / service 各
+// 域）import 路径与签名零改动。
+//
+// 工厂化（§9.1 阶段三）后第三方校验实现位于 provider/captcha/<type>/ 子包
+// （init 自注册，bootstrap blank import 触发），gate 运行期经注册表
+// provider.NewVerifier 构造，本包不再持有按 type 分派的大对象；image /
+// builtin_image 不入 factory——校验依赖图形码 Store（Redis GETDEL，§9.2）
+// 这一运行时依赖，保留为 gate 内置路径。
 package captcha
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
-	"time"
+	"authloft/internal/provider"
 )
 
-// 第三方渠道 type 与 siteverify 默认端点（§9.1 行 1088-1090；type 封闭
-// 集合与 gate.go normalize 一致）。
+// 第三方渠道 type 常量（§9.1 封闭集合与 gate.go normalize 一致；字面量
+// 单一来源在 provider 包 servicetype.go，实现子包经同源常量注册）。
 const (
-	TypeTurnstile = "turnstile"
-	TypeRecaptcha = "recaptcha"
-	TypeHcaptcha  = "hcaptcha"
-
-	turnstileVerifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-	recaptchaVerifyURL = "https://www.google.com/recaptcha/api/siteverify"
-	hcaptchaVerifyURL  = "https://api.hcaptcha.com/siteverify"
+	TypeTurnstile = provider.CaptchaTypeTurnstile
+	TypeRecaptcha = provider.CaptchaTypeRecaptcha
+	TypeHcaptcha  = provider.CaptchaTypeHcaptcha
 )
 
-// remoteBodyLimit siteverify 响应体读取上限（64 KiB，防异常端点拖挂）。
-const remoteBodyLimit = 1 << 16
+// Verifier 按 providerKey 分派到对应渠道的校验实现（定义在 provider 包，
+// §15.3 上移）。校验不通过 / 已使用必须返回 ErrInvalid（可包裹）；其它
+// 错误视为基础设施错误。
+type Verifier = provider.Verifier
 
-// VerifierOptions 可注入项：HTTPClient 缺省为 10s 超时客户端；VerifyURLs
-// 按 type 覆盖 siteverify 地址（测试注入假端点，优先级最高，其次
-// ProviderRecord.VerifyURL / Ext.endpoint）。
-type VerifierOptions struct {
-	HTTPClient *http.Client
-	VerifyURLs map[string]string
-}
+// Submission 是前端回传的人机校验凭据（§2.5）。
+type Submission = provider.Submission
 
-// ServiceVerifier Verifier 实装：不自持 DB / Redis 句柄，行源与图形码
-// 存储均经构造注入。
-type ServiceVerifier struct {
-	source     ProviderSource
-	images     Store
-	hc         *http.Client
-	urls       map[string]string
-	hcInjected bool // 构造期是否注入 HTTPClient：注入则优先于代理配置
-}
-
-// NewVerifier 注入 provider 行源（取 type / secret / endpoint）与图形码
-// 存储（cache.CaptchaStore，Lua GETDEL 一次性）。
-func NewVerifier(source ProviderSource, images Store, opts VerifierOptions) *ServiceVerifier {
-	hc := opts.HTTPClient
-	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Second}
-	}
-	urls := opts.VerifyURLs
-	if urls == nil {
-		urls = map[string]string{}
-	}
-	return &ServiceVerifier{source: source, images: images, hc: hc, urls: urls, hcInjected: opts.HTTPClient != nil}
-}
-
-// Verify 按 providerKey 分派（gate.go 已保证 providerKey 为当前生效
-// 配置项，前端不能任意指定渠道）。
-func (v *ServiceVerifier) Verify(ctx context.Context, providerKey string, sub Submission) error {
-	if providerKey == BuiltinProviderKey {
-		return v.verifyImage(ctx, sub)
-	}
-	rec, err := v.load(ctx, providerKey)
-	if err != nil {
-		return err
-	}
-	switch rec.Type {
-	case TypeImage:
-		return v.verifyImage(ctx, sub)
-	case TypeTurnstile, TypeRecaptcha, TypeHcaptcha:
-		return v.verifyRemote(ctx, rec, sub)
-	default:
-		return fmt.Errorf("captcha: unsupported provider type %q", rec.Type)
-	}
-}
-
-// load 取 provider 行；无此行按校验不通过处理（ErrInvalid），查询故障为
-// 基础设施错误。
-func (v *ServiceVerifier) load(ctx context.Context, providerKey string) (*ProviderRecord, error) {
-	rec, err := v.source.Find(ctx, providerKey)
-	if err != nil {
-		return nil, fmt.Errorf("captcha: load provider %q: %w", providerKey, err)
-	}
-	if rec == nil {
-		return nil, fmt.Errorf("%w: provider %q not found", ErrInvalid, providerKey)
-	}
-	return rec, nil
-}
-
-// verifyImage 内置自绘路径：id + answer 核 al:cap:{id}，GETDEL 原子消费
-// 由注入的 Store 保证（cache.CaptchaStore，正确 / 错误都消费）。
-func (v *ServiceVerifier) verifyImage(ctx context.Context, sub Submission) error {
-	if sub.ID == "" {
-		return fmt.Errorf("%w: empty captcha id", ErrInvalid)
-	}
-	ok, err := v.images.Verify(ctx, sub.ID, sub.Answer)
-	if err != nil {
-		return fmt.Errorf("captcha: verify image store: %w", err)
-	}
-	if !ok {
-		return ErrInvalid
-	}
-	return nil
-}
-
-// verifyRemote 第三方路径：secret + response 表单 POST 到 siteverify，
-// JSON success 判定（三家厂商同一形态，§9.1 行 1088-1090）。记录持有装配期
-// 固化的出站连接池（§15.4）：Proxy 非 nil 用池化 client（Transport 共享、
-// 连接复用），nil 沿用既有 10s 默认客户端；注入的 HTTPClient 优先于代理配置。
-func (v *ServiceVerifier) verifyRemote(ctx context.Context, rec *ProviderRecord, sub Submission) error {
-	if sub.Token == "" {
-		return fmt.Errorf("%w: empty captcha token", ErrInvalid)
-	}
-	form := url.Values{}
-	form.Set("secret", rec.Secret)
-	form.Set("response", sub.Token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, v.endpoint(rec), strings.NewReader(form.Encode()))
-	if err != nil {
-		return fmt.Errorf("captcha: build siteverify request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	hc := v.hc
-	if !v.hcInjected && rec.Proxy != nil {
-		hc = rec.Proxy.HTTPClient(10 * time.Second)
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return fmt.Errorf("captcha: post siteverify: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("captcha: siteverify status %d", resp.StatusCode)
-	}
-	var out struct {
-		Success bool `json:"success"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, remoteBodyLimit)).Decode(&out); err != nil {
-		return fmt.Errorf("captcha: decode siteverify response: %w", err)
-	}
-	if !out.Success {
-		return ErrInvalid
-	}
-	return nil
-}
-
-// endpoint siteverify 地址优先级：构造注入覆盖（测试）> Ext.endpoint
-// （§9.1 行 1083 自定义校验地址）> 厂商默认。
-func (v *ServiceVerifier) endpoint(rec *ProviderRecord) string {
-	if u, ok := v.urls[rec.Type]; ok && u != "" {
-		return u
-	}
-	if rec.VerifyURL != "" {
-		return rec.VerifyURL
-	}
-	switch rec.Type {
-	case TypeTurnstile:
-		return turnstileVerifyURL
-	case TypeRecaptcha:
-		return recaptchaVerifyURL
-	default:
-		return hcaptchaVerifyURL
-	}
-}
+// ErrInvalid 由 Verifier 返回，表示校验不通过或凭据已使用（→ StatusInvalid）。
+// 其它错误一律视为基础设施错误，由调用方映射为 failed。
+var ErrInvalid = provider.ErrInvalid

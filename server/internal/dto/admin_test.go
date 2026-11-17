@@ -16,6 +16,9 @@ import (
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，测试
 	// 断言「schema 与注册表 meta 逐项一致」需两域真实 meta。
+	_ "authloft/internal/provider/captcha/hcaptcha"
+	_ "authloft/internal/provider/captcha/recaptcha"
+	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/sms/aliyun_sms"

@@ -27,7 +27,7 @@ import (
 // turnstile 当前生效项，使 CaptchaConfig 三字段均非空，便于逐项可证伪断言。
 func newQrcodeCaptchaChainHandler(t *testing.T) http.Handler {
 	t.Helper()
-	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainVerifier{})
+	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainImageStore{}, chainVerifierFactory)
 	svc := qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{Gate: gate})
 	_, handler := ssov1connect.NewSsoServiceHandler(New(nil, nil, nil, nil, svc))
 	return handler
@@ -35,7 +35,7 @@ func newQrcodeCaptchaChainHandler(t *testing.T) http.Handler {
 
 func TestCreateQrcodeCaptchaFailureCarriesConfig(t *testing.T) {
 	// want 即 gate 单一出口当前生效配置（chainCatalog 固定回显）。
-	want := captcha.NewGate(chainSettings{}, chainCatalog{}, chainVerifier{}).Config(context.Background())
+	want := captcha.NewGate(chainSettings{}, chainCatalog{}, chainImageStore{}, chainVerifierFactory).Config(context.Background())
 
 	cases := []struct {
 		name     string

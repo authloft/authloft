@@ -21,8 +21,10 @@ import (
 	commonv1 "authloft/gen/go/api/common/v1"
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
+	"authloft/internal/provider"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/settings"
@@ -67,17 +69,33 @@ func (chainRegistry) Get(kind factor.FactorKind) (factor.Factor, error) {
 	return nil, factor.ErrKindNotRegistered
 }
 
-// chainCatalog 当前生效第三方 captcha Provider（非降级态），使 details
-// 三个字段都非空，便于逐项可证伪断言。
+// chainCatalog 当前生效第三方 captcha Provider（非降级态，完整实例），使
+// details 三个字段都非空，便于逐项可证伪断言。
 type chainCatalog struct{}
 
-func (chainCatalog) Current(context.Context) (*captcha.Provider, error) {
-	return &captcha.Provider{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}, nil
+func (chainCatalog) Current(context.Context) (*provider.Provider, error) {
+	return &provider.Provider{
+		Key: "cf_turnstile", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "0xSITE"},
+	}, nil
 }
+
+// chainImageStore 图形码存储桩（gate 内置路径 Store 槽，本链路恒走第三方
+// factory，不触达）。
+type chainImageStore struct{}
+
+func (chainImageStore) Set(context.Context, string, string) error { return nil }
+
+func (chainImageStore) Verify(context.Context, string, string) (bool, error) { return true, nil }
 
 type chainVerifier struct{}
 
 func (chainVerifier) Verify(context.Context, string, captcha.Submission) error { return nil }
+
+// chainVerifierFactory 第三方校验运行期构造桩（gate factory 注入口）：恒产
+// 放行 verifier。
+func chainVerifierFactory(*provider.Provider) (captcha.Verifier, error) {
+	return chainVerifier{}, nil
+}
 
 // newCaptchaChainEngine 组装真引擎（真 State / Dispatcher / Gate），
 // 不注入假引擎；仅因子注册表、settings 与 Provider 目录是进程内 fake，
@@ -94,7 +112,7 @@ func newCaptchaChainEngine(t *testing.T) *orchestrator.Engine {
 	if err != nil {
 		t.Fatalf("NewKeyStore: %v", err)
 	}
-	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainVerifier{})
+	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainImageStore{}, chainVerifierFactory)
 	return orchestrator.NewEngine(orchestrator.EngineDeps{
 		State:      orchestrator.NewState(security.NewCodec(ks)),
 		Dispatcher: &orchestrator.Dispatcher{Registry: chainRegistry{}, Settings: chainSettings{}},

@@ -1,44 +1,45 @@
-// csp_test.go 覆盖 Catalog.CSP()（docs/后端架构.md §9.4 行
-// 1129-1137 / docs/接口文档.md §8 行 1534-1548）：降级各态一律贡献空串
-//（未启用 / 未配置不写入任何域名）、三家第三方各 type 的登记片段逐字、
-// 每请求现算（与 Current 同源，热更新语义一致）。
+// csp_test.go 覆盖 Catalog.CSP()（docs/后端架构.md §9.4 / docs/接口文档.md
+// §8「provider 贡献源」）：降级各态一律贡献空串（未启用 / 未配置不写入任何
+// 域名）、三家第三方各 type 的登记片段逐字、每请求现算（与 Current 同源，
+// 热更新语义一致）。
 package captcha
 
 import (
 	"errors"
 	"testing"
 
+	"authloft/internal/provider"
 	"authloft/internal/settings"
 )
 
-// TestCatalogCSPNoContribution 无贡献各态（§8 行 1534「未启用 / 未配置
-// 的 Provider 不写入任何域名」；§9.4 行 1134 Current 同源判定）：键空串 /
-// 键未设置 / 行不存在 / 未启用 / 查询 error / 未登记 type（image / 未知
-// 值）→ 空串；查询 error 不 panic、不阻塞。
+// TestCatalogCSPNoContribution 无贡献各态（§8「未启用 / 未配置的 Provider
+// 不写入任何域名」；§9.4 Current 同源判定）：键空串 / 键未设置 / 行不存在 /
+// 未启用 / 查询 error / 未登记 type（image / 未知值）→ 空串；查询 error 不
+// panic、不阻塞。
 func TestCatalogCSPNoContribution(t *testing.T) {
 	cases := []struct {
 		name string
 		keys KeyReader
-		rows map[string]*ProviderRecord
+		rows map[string]*provider.Provider
 		err  error
 	}{
 		{"键空串", mapKeys{settings.KeyCaptchaProviderKey: ""}, nil, nil},
 		{"键未设置", mapKeys{}, nil, nil},
 		{"行不存在", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil, nil},
-		{"未启用 is_enabled=0", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*ProviderRecord{
-			"cf_turnstile": {ProviderKey: "cf_turnstile", Category: CategoryCaptcha, Type: TypeTurnstile},
+		{"未启用 is_enabled=0", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*provider.Provider{
+			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: captchaRow("cf_turnstile", TypeTurnstile, 0, "")},
 		}, nil},
 		{"查询 error 基础设施故障", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil, errors.New("db down")},
-		{"image 自绘不贡献源", mapKeys{settings.KeyCaptchaProviderKey: "img"}, map[string]*ProviderRecord{
-			"img": {ProviderKey: "img", Category: CategoryCaptcha, Type: TypeImage, Enabled: true},
+		{"image 自绘不贡献源", mapKeys{settings.KeyCaptchaProviderKey: "img"}, map[string]*provider.Provider{
+			"img": {Key: "img", Type: TypeImage, Row: captchaRow("img", TypeImage, 1, "")},
 		}, nil},
-		{"未知 type 未登记", mapKeys{settings.KeyCaptchaProviderKey: "weird"}, map[string]*ProviderRecord{
-			"weird": {ProviderKey: "weird", Category: CategoryCaptcha, Type: "geetest", Enabled: true},
+		{"未知 type 未登记", mapKeys{settings.KeyCaptchaProviderKey: "weird"}, map[string]*provider.Provider{
+			"weird": {Key: "weird", Type: "geetest", Row: captchaRow("weird", "geetest", 1, "")},
 		}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewCatalog(tc.keys, mapSource{rows: tc.rows, err: tc.err})
+			c := NewCatalog(tc.keys, &fakeSource{rows: tc.rows, err: tc.err})
 			if got := c.CSP(); got != "" {
 				t.Fatalf("CSP() = %q, want 空串（无贡献不写入任何域名）", got)
 			}
@@ -46,8 +47,8 @@ func TestCatalogCSPNoContribution(t *testing.T) {
 	}
 }
 
-// TestCatalogCSPProviders 三家第三方各 type 的登记片段逐字（接口文档
-// §8 行 1542-1546 参考源清单表；指令序 = 白名单文档序 frame/connect/style）。
+// TestCatalogCSPProviders 三家第三方各 type 的登记片段逐字（接口文档 §8
+// 参考源清单表；指令序 = 白名单文档序 frame/connect/style）。
 func TestCatalogCSPProviders(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -66,8 +67,8 @@ func TestCatalogCSPProviders(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := NewCatalog(
 				mapKeys{settings.KeyCaptchaProviderKey: tc.pkey},
-				mapSource{rows: map[string]*ProviderRecord{
-					tc.pkey: {ProviderKey: tc.pkey, Category: CategoryCaptcha, Type: tc.ptype, Enabled: true, SiteKey: "site"},
+				&fakeSource{rows: map[string]*provider.Provider{
+					tc.pkey: {Key: tc.pkey, Type: tc.ptype, Row: captchaRow(tc.pkey, tc.ptype, 1, "site")},
 				}},
 			)
 			if got := c.CSP(); got != tc.want {
@@ -77,15 +78,15 @@ func TestCatalogCSPProviders(t *testing.T) {
 	}
 }
 
-// TestCatalogCSPNotCached 每请求现算（§9.4 行 1134 与 Gate 下发配置同源、
-// 热更新语义一致）：settings 键热更后 CSP 片段立即跟随，不缓存。
+// TestCatalogCSPNotCached 每请求现算（§9.4 与 Gate 下发配置同源、热更新
+// 语义一致）：settings 键热更后 CSP 片段立即跟随，不缓存。
 func TestCatalogCSPNotCached(t *testing.T) {
 	keys := mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}
-	rows := map[string]*ProviderRecord{
-		"cf_turnstile": {ProviderKey: "cf_turnstile", Category: CategoryCaptcha, Type: TypeTurnstile, Enabled: true, SiteKey: "k"},
-		"hc":           {ProviderKey: "hc", Category: CategoryCaptcha, Type: TypeHcaptcha, Enabled: true, SiteKey: "h"},
+	rows := map[string]*provider.Provider{
+		"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: captchaRow("cf_turnstile", TypeTurnstile, 1, "k")},
+		"hc":           {Key: "hc", Type: TypeHcaptcha, Row: captchaRow("hc", TypeHcaptcha, 1, "h")},
 	}
-	c := NewCatalog(keys, mapSource{rows: rows})
+	c := NewCatalog(keys, &fakeSource{rows: rows})
 
 	if got, want := c.CSP(), "frame-src https://challenges.cloudflare.com"; got != want {
 		t.Fatalf("首次 CSP() = %q, want %q", got, want)
@@ -102,7 +103,7 @@ func TestCatalogCSPNotCached(t *testing.T) {
 }
 
 // TestCatalogCSPNilReceiver nil Catalog 不 panic（装配缺依赖时贡献空串，
-// §9.4 行 1134 不阻塞响应头）。
+// §9.4 不阻塞响应头）。
 func TestCatalogCSPNilReceiver(t *testing.T) {
 	var c *Catalog
 	if got := c.CSP(); got != "" {

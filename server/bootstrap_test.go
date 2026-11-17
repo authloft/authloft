@@ -1946,7 +1946,9 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 // 位于 package main，天然继承 bootstrap.go 的 blank import 集——任一渠道
 // 装配行被删，其 init() 不触发、注册表缺 type，本用例变红（生产形态为
 // 12 渠道静默降级 provider_disabled 的原始缺陷形态）。
-// 清单依据 docs/后端架构.md §12.2 行 1469-1481 内置清单全量 14 type。
+// 清单依据 docs/后端架构.md §12.2 行 1469-1481 内置清单全量 14 type；captcha
+// 三家为服务型实现（无 auth 槽，不进 AdapterTypes），经 LookupTypeMeta 断言
+// meta 注册不缺位（CODE_GUIDE §3.3 blank import 覆盖门禁）。
 func TestProviderRegistryComplete(t *testing.T) {
 	want := []string{
 		// 国内派（§12.2 行 1473）。
@@ -1969,6 +1971,20 @@ func TestProviderRegistryComplete(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("provider 注册表缺 type %q——bootstrap.go 装配 import 可能被删（在册 %v）", w, got)
+		}
+	}
+	// captcha 三家（服务型，§9.1）：blank import 被删即 meta 缺失，
+	// 第三方校验运行期 provider_disabled（gate 经 NewVerifier 分派）。
+	for _, typ := range []string{
+		provider.CaptchaTypeTurnstile, provider.CaptchaTypeRecaptcha, provider.CaptchaTypeHcaptcha,
+	} {
+		meta, ok := provider.LookupTypeMeta(typ)
+		if !ok {
+			t.Errorf("provider 注册表缺 captcha type %q——bootstrap.go 装配 import 可能被删", typ)
+			continue
+		}
+		if meta.Category != provider.CategoryCaptcha {
+			t.Errorf("captcha type %q category = %q, want %q", typ, meta.Category, provider.CategoryCaptcha)
 		}
 	}
 }

@@ -62,8 +62,13 @@ import (
 	"authloft/internal/provider"
 	"authloft/internal/proxyclient"
 	// 注册表导入统一触发 init() 自注册：内置渠道适配器、smtp / aliyun_sms
-	// 消息 Sender 与 storage local 存储实现在此登记工厂（§3.1 / §12.2 /
-	// §15.1 / §15.2）。
+	// 消息 Sender、storage local 存储实现与 captcha 三家校验实现在此登记工厂
+	// （§3.1 / §12.2 / §15.1 / §15.2 / §15.3）。blank import 覆盖是统一注册表
+	// 的已知脆弱点（CODE_GUIDE §3.3）：漏 import 即类型「凭空消失」，生产侧
+	// 静默 provider_disabled，TestProviderRegistryComplete 门禁兜底。
+	_ "authloft/internal/provider/captcha/hcaptcha"
+	_ "authloft/internal/provider/captcha/recaptcha"
+	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/alipay"
 	_ "authloft/internal/provider/oauth/baidu"
@@ -859,15 +864,19 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.settings = store
 	deps.watcher = watcher
 
-	// 步骤 7.5（captcha 链，§9）：同一 CaptchaStore 供 verifier 与 CreateCaptchaImage；
-	// provider 行源走 repo 直查、每次现算不缓存；catalog 提为共享单例，Gate 与
-	// registerPages 的 CSP supporter 复用同一实例（CSP 贡献与下发配置必须同源）。
+	// 步骤 7.5（captcha 链，§9）：同一 CaptchaStore 供内置图形码校验与
+	// CreateCaptchaImage；catalog 经 provider.Loader 的不读 LRU 直读通道取
+	// 当前生效行（§9.1「下发与拦截永远同源、配置改动立即生效」），提为共享
+	// 单例，Gate 与 registerPages 的 CSP supporter 复用同一实例（CSP 贡献与
+	// 下发配置必须同源）。Gate 改持 factory 运行期构造：第三方校验按当前生效
+	// provider 经注册表 provider.NewVerifier 现场构造（§9.1 阶段三），图形码
+	// 不入 factory（Store 是运行时依赖，内置路径）。
 	captchaStore := cache.NewCaptchaStore(rdb)
-	captchaSrc := captcha.NewProviderSource(deps.repos.Providers, pools)
-	deps.captchaCatalog = captcha.NewCatalog(store, captchaSrc)
+	deps.captchaCatalog = captcha.NewCatalog(store, deps.providerLoader)
 	deps.gate = captcha.NewGate(store,
 		deps.captchaCatalog,
-		captcha.NewVerifier(captchaSrc, captchaStore, captcha.VerifierOptions{}))
+		captchaStore,
+		provider.NewVerifier)
 	deps.imageCaptcha = captcha.NewImageCaptcha(captchaStore)
 
 	// 步骤 8：延迟写入队列（§5.2）与登录事件 sink（§4.6）。执行器同时消费

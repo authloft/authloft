@@ -1,5 +1,5 @@
 // bindcontact_test.go account 域手机 / 邮箱换绑族 service 层单测
-//（不连 DB / Redis，全 fake 注入：真 *otp.Service + fake Store 精确回放
+// （不连 DB / Redis，全 fake 注入：真 *otp.Service + fake Store 精确回放
 // SendResult / VerifyResult；真 *captcha.Gate + fake settings / catalog /
 // verifier 照 captcha/gate_test.go 与 service/qrcode_test.go 惯例；审计
 // 复用同包 fakeAudit）。覆盖：challenge 全链（成功、captcha 缺失 / 无效、
@@ -20,6 +20,7 @@ import (
 
 	"gorm.io/gorm"
 
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
 	"authloft/internal/eventlog"
@@ -50,8 +51,8 @@ type fakeBindUsers struct {
 
 // bindContactUpdate UpdateContactColumns 入参记录。
 type bindContactUpdate struct {
-	id                        int64
-	phone, email              *string
+	id                           int64
+	phone, email                 *string
 	phoneVerified, emailVerified *int8
 }
 
@@ -87,13 +88,13 @@ func (f *fakeBindUsers) UpdateContactColumns(_ context.Context, id int64, phone,
 // fakeBindOTPStore core.Store 的 fake：真 *otp.Service 的存储底座，精确
 // 回放 SendResult / VerifyResult，并记录 Issue / Check 全部入参。
 type fakeBindOTPStore struct {
-	sends       []bindIssueCall
-	sendResult  cache.SendResult
-	sendErr     error
-	verifies    []bindCheckCall
-	verifyRes   cache.VerifyResult
+	sends        []bindIssueCall
+	sendResult   cache.SendResult
+	sendErr      error
+	verifies     []bindCheckCall
+	verifyRes    cache.VerifyResult
 	attemptsLeft int64
-	verifyErr   error
+	verifyErr    error
 }
 
 // bindIssueCall Issue 的入参记录（store.Send 的参数）。
@@ -139,31 +140,33 @@ type fakeBindSettings struct{}
 func (fakeBindSettings) GetInt64(string) (int64, bool) { return 0, false }
 
 // fakeBindCatalog captcha.ProviderCatalog 的 fake：p 为 nil 时返回 nil 降级
-// 内置图形码（gate.go 降级路径，gate_test.go 同款）；非 nil 时回放指定
-// Provider，用于核对 captcha 失败错误载荷携带的配置与 gate 判定同源。
-type fakeBindCatalog struct{ p *captcha.Provider }
+// 内置图形码（gate.go 降级路径，gate_test.go 同款）；非 nil 时回放指定完整
+// Provider 实例，用于核对 captcha 失败错误载荷携带的配置与 gate 判定同源。
+type fakeBindCatalog struct{ p *provider.Provider }
 
-func (f fakeBindCatalog) Current(context.Context) (*captcha.Provider, error) { return f.p, nil }
+func (f fakeBindCatalog) Current(context.Context) (*provider.Provider, error) { return f.p, nil }
 
-// fakeBindCaptchaVerifier captcha.Verifier 的 fake：err 控制放行 / 无效 /
-// 基础设施错误。
-type fakeBindCaptchaVerifier struct{ err error }
+// fakeBindImageStore 图形码存储 fake（gate 内置路径的 Store 槽，captcha.Store）：
+// invalid 控制放行 / 无效。
+type fakeBindImageStore struct{ invalid bool }
 
-func (f *fakeBindCaptchaVerifier) Verify(context.Context, string, captcha.Submission) error {
-	return f.err
+func (f *fakeBindImageStore) Set(context.Context, string, string) error { return nil }
+
+func (f *fakeBindImageStore) Verify(context.Context, string, string) (bool, error) {
+	return !f.invalid, nil
 }
 
 // —— 测试环境 ——
 
 // bindTestEnv 单测装配（service/qrcode_test.go 环境惯例）。
 type bindTestEnv struct {
-	users    *fakeBindUsers
-	store    *fakeBindOTPStore
-	sender   *fakeBindSender
-	verifier *fakeBindCaptchaVerifier
-	audit    *fakeAudit
-	svc      *BindContactService
-	now      time.Time
+	users      *fakeBindUsers
+	store      *fakeBindOTPStore
+	sender     *fakeBindSender
+	imageStore *fakeBindImageStore
+	audit      *fakeAudit
+	svc        *BindContactService
+	now        time.Time
 }
 
 // newBindTestEnv 全绿装配：uid 用户行存在、目标未被占用、验证码全默认
@@ -171,18 +174,18 @@ type bindTestEnv struct {
 func newBindTestEnv() *bindTestEnv {
 	now := time.Unix(1730000000, 0).UTC()
 	env := &bindTestEnv{
-		users:    &fakeBindUsers{self: bindTestUser(), occupied: map[string]*model.User{}},
-		store:    &fakeBindOTPStore{},
-		sender:   &fakeBindSender{},
-		verifier: &fakeBindCaptchaVerifier{},
-		audit:    &fakeAudit{},
-		now:      now,
+		users:      &fakeBindUsers{self: bindTestUser(), occupied: map[string]*model.User{}},
+		store:      &fakeBindOTPStore{},
+		sender:     &fakeBindSender{},
+		imageStore: &fakeBindImageStore{},
+		audit:      &fakeAudit{},
+		now:        now,
 	}
 	env.svc = NewBindContactService(BindContactDeps{
 		Users:  env.users,
 		OTP:    core.NewService(env.store, core.DefaultConfig()),
 		Sender: env.sender,
-		Gate:   captcha.NewGate(fakeBindSettings{}, fakeBindCatalog{}, env.verifier),
+		Gate:   captcha.NewGate(fakeBindSettings{}, fakeBindCatalog{}, env.imageStore, nil),
 		Config: core.DefaultConfig(),
 		Audit:  env.audit,
 		Now:    func() time.Time { return now },
@@ -296,7 +299,7 @@ func TestBindChallengeCaptcha(t *testing.T) {
 	})
 	t.Run("invalid", func(t *testing.T) {
 		env := newBindTestEnv()
-		env.verifier.err = captcha.ErrInvalid
+		env.imageStore.invalid = true
 		err := env.svc.BindEmail(context.Background(), bindTestUID,
 			BindEmailInput{Step: bindStepChallenge, Target: "user@example.com", Captcha: bindCaptchaOK()})
 		if !errors.Is(err, ErrBindCaptchaInvalid) {
@@ -311,8 +314,11 @@ func TestBindChallengeCaptcha(t *testing.T) {
 // 原哨兵。断言取反（Config 不等于 gate 输出 / 错误不携带配置 / 三字段
 // 为空）即失败。
 func TestBindChallengeCaptchaFailureCarriesGateConfig(t *testing.T) {
-	catalog := fakeBindCatalog{p: &captcha.Provider{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}}
-	gate := captcha.NewGate(fakeBindSettings{}, catalog, &fakeBindCaptchaVerifier{})
+	catalog := fakeBindCatalog{p: &provider.Provider{
+		Key: "cf_turnstile", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "0xSITE"},
+	}}
+	gate := captcha.NewGate(fakeBindSettings{}, catalog, &fakeBindImageStore{},
+		func(*provider.Provider) (captcha.Verifier, error) { return nil, nil })
 	want := gate.Config(context.Background())
 	svc := NewBindContactService(BindContactDeps{
 		Users:  &fakeBindUsers{self: bindTestUser(), occupied: map[string]*model.User{}},
@@ -435,11 +441,11 @@ func TestBindChallengeProviderDisabled(t *testing.T) {
 // CreatedAt=注入时钟）。
 func TestBindVerifySuccess(t *testing.T) {
 	cases := []struct {
-		name     string
-		phone    bool
-		target   string
-		masked   string
-		event    string
+		name   string
+		phone  bool
+		target string
+		masked string
+		event  string
 	}{
 		{"phone", true, "13800138000", "138****8000", eventlog.EventBindPhone},
 		{"email", false, "user@example.com", "u***@example.com", eventlog.EventBindEmail},
@@ -520,7 +526,7 @@ func TestBindVerifySuccess(t *testing.T) {
 }
 
 // TestBindVerifyInvalidCode 错码 → invalid_code 且携带剩余次数
-//（§1.6 行 248）；码内 uid 与会话 uid 不一致同样落该形态——owner 比对在
+// （§1.6 行 248）；码内 uid 与会话 uid 不一致同样落该形态——owner 比对在
 // 存储层（cache/lua/verify_code.lua 行 23-33：code 与 owner 任一不符即走
 // 错码分支），本用例断言 service 把当前 uid 作为 owner 传入 Check，即可
 // 保证「码内 uid ≠ 当前 uid」时按错码处理；不写库不投审计。

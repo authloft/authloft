@@ -21,10 +21,12 @@ import (
 
 	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
 	commonv1 "authloft/gen/go/api/common/v1"
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
 	internalconnect "authloft/internal/connect"
 	core "authloft/internal/otp"
+	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	accountsvc "authloft/internal/service/account"
 )
@@ -35,18 +37,30 @@ type bindChainSettings struct{}
 
 func (bindChainSettings) GetInt64(string) (int64, bool) { return 0, false }
 
-// bindChainCatalog 回显带 siteKey 的第三方当前生效项，使 CaptchaConfig
-// 三字段均非空，便于逐项可证伪断言。
+// bindChainCatalog 回显带 siteKey 的第三方当前生效项（完整 provider 实例），
+// 使 CaptchaConfig 三字段均非空，便于逐项可证伪断言。
 type bindChainCatalog struct{}
 
-func (bindChainCatalog) Current(context.Context) (*captcha.Provider, error) {
-	return &captcha.Provider{ProviderKey: "cf_turnstile", Type: "turnstile", SiteKey: "0xSITE"}, nil
+func (bindChainCatalog) Current(context.Context) (*provider.Provider, error) {
+	return &provider.Provider{
+		Key: "cf_turnstile", Type: "turnstile", Ext: &providerpb.Ext{ClientId: "0xSITE"},
+	}, nil
 }
 
-// bindChainVerifier 默认放行；注入 ErrInvalid 时判为校验不通过。
-type bindChainVerifier struct{ err error }
+// bindChainImageStore 图形码存储桩（gate 内置路径 Store 槽，本链路恒走
+// 第三方 factory，不触达）。
+type bindChainImageStore struct{}
 
-func (v bindChainVerifier) Verify(context.Context, string, captcha.Submission) error { return v.err }
+func (bindChainImageStore) Set(context.Context, string, string) error { return nil }
+
+func (bindChainImageStore) Verify(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+// bindChainVerifier 第三方校验桩：恒放行（经 factory 运行期构造注入）。
+type bindChainVerifier struct{}
+
+func (bindChainVerifier) Verify(context.Context, string, captcha.Submission) error { return nil }
 
 // bindChainUsers 用户行存在、目标未被占用、列更新成功，供 challenge 放行
 // 路径使用（captcha 失败在 Gate.Evaluate 后立即返回，不触达这些依赖）。
@@ -84,7 +98,8 @@ type bindChainSender struct{}
 func (bindChainSender) SendCode(context.Context, string, string) error { return nil }
 
 func newBindChainGate() *captcha.Gate {
-	return captcha.NewGate(bindChainSettings{}, bindChainCatalog{}, bindChainVerifier{})
+	return captcha.NewGate(bindChainSettings{}, bindChainCatalog{}, bindChainImageStore{},
+		func(*provider.Provider) (captcha.Verifier, error) { return bindChainVerifier{}, nil })
 }
 
 func newBindChainService() *accountsvc.BindContactService {

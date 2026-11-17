@@ -1,7 +1,8 @@
 // Package captcha 是人机校验的唯一拦截点（docs/后端架构.md §9.3，
 // docs/接口文档.md §2.5）。是否需要人机校验一律由 Gate 按场景查表判定，
 // 调用方只提供本次请求所属场景；触发阈值每次从注入的 settings 读取（不缓存
-// 配置），校验一律委托注入的 Verifier，本包不自造图形码算法、不读 DB/Redis。
+// 配置），第三方校验运行期经注入的 factory 按当前生效 provider 构造（§9.1
+// 阶段三），图形码走内置路径不入 factory，本包不自造图形码算法、不读 DB/Redis。
 package captcha
 
 import (
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"authloft/internal/provider"
 	"authloft/internal/settings"
 )
 
@@ -79,10 +81,6 @@ var sceneRules = map[string]rule{
 
 const defaultPwdFailCapture = 3
 
-// ErrInvalid 由 Verifier 返回，表示校验不通过或凭据已使用（→ StatusInvalid）。
-// 其它错误一律视为基础设施错误，由调用方映射为 failed。
-var ErrInvalid = errors.New("captcha: invalid or used")
-
 // Config 是给前端的当前生效配置（每次现算，不走缓存）。
 // 字段名对应接口文档 §1.3 的 captcha.providerKey/type/siteKey。
 type Config struct {
@@ -91,32 +89,11 @@ type Config struct {
 	SiteKey     string `json:"siteKey,omitempty"`
 }
 
-// Submission 是前端回传的人机校验凭据（§2.5）。
-type Submission struct {
-	ProviderKey string
-	Token       string
-	ID          string
-	Answer      string
-}
-
-// Provider 由装配方按当前生效 captcha Provider 解析：Type 取
-// image/turnstile/recaptcha/hcaptcha，SiteKey 为该渠道站点键。
-type Provider struct {
-	ProviderKey string
-	Type        string
-	SiteKey     string
-}
-
-// ProviderCatalog 返回当前生效、可用的 captcha Provider；返回 nil,nil
-// 表示无可用项（enable=0 / 未配置 / 健康检查失败），Gate 会降级到内置图形码。
+// ProviderCatalog 返回当前生效、可用的 captcha Provider（完整实例，经
+// catalog 不读 LRU 的直读通道取得，§9.1）；返回 nil,nil 表示无可用项
+// （enable=0 / 未配置 / 健康检查失败），Gate 会降级到内置图形码。
 type ProviderCatalog interface {
-	Current(ctx context.Context) (*Provider, error)
-}
-
-// Verifier 按 providerKey 分派到对应渠道的校验实现。
-// 校验不通过 / 已使用必须返回 ErrInvalid（可包裹）；其它错误视为基础设施错误。
-type Verifier interface {
-	Verify(ctx context.Context, providerKey string, sub Submission) error
+	Current(ctx context.Context) (*provider.Provider, error)
 }
 
 // Settings 只需要读取触发阈值（§9：pwd_fail_capture，运行时热更新）。
@@ -157,29 +134,43 @@ func FailureFrom(out Outcome) *Failure {
 	return &Failure{Code: out.Status, Config: out.Config}
 }
 
-// Gate 唯一拦截点。
+// Gate 唯一拦截点（§9.1 阶段三形态）：持有 factory + 当前 provider 源，
+// 运行期按当前生效 provider 经 factory 构造第三方校验实现——配置变化即构造
+// 出新对象，不存在「旧配置的 verifier 实例」；图形码不入 factory（校验依赖
+// Store 运行时依赖），保留内置路径。
 type Gate struct {
 	settings Settings
 	catalog  ProviderCatalog
-	verifier Verifier
+	images   Store
+	factory  provider.VerifierFactory
 }
 
-// NewGate 注入依赖，本包不持有任何存储句柄。
-func NewGate(s Settings, catalog ProviderCatalog, verifier Verifier) *Gate {
-	return &Gate{settings: s, catalog: catalog, verifier: verifier}
+// NewGate 注入依赖：catalog 为当前生效 provider 源（直读、不缓存，§9.1）；
+// images 为内置图形码存储（cache.CaptchaStore，Lua GETDEL 一次性）；factory
+// 为第三方校验工厂（生产装配注入 provider.NewVerifier，测试注入 fake）。
+// 本包不持有任何 DB 句柄。
+func NewGate(s Settings, catalog ProviderCatalog, images Store, factory provider.VerifierFactory) *Gate {
+	return &Gate{settings: s, catalog: catalog, images: images, factory: factory}
+}
+
+// currentProvider 直读当前生效 provider（§9.1 不缓存通道，每次现算）：
+// error / 无可用项一律返回 nil——按健康检查失败降级为内置图形码（§2.5），
+// 不阻断判定、不缓存。
+func (g *Gate) currentProvider(ctx context.Context) *provider.Provider {
+	if g == nil || g.catalog == nil {
+		return nil
+	}
+	p, err := g.catalog.Current(ctx)
+	if err != nil || p == nil {
+		return nil
+	}
+	return p
 }
 
 // Config 每次现算当前生效配置：当前 Provider 无可用项或配置非法时降级为
 // 内置图形码（§2.5 降级语义）。
 func (g *Gate) Config(ctx context.Context) Config {
-	if g == nil || g.catalog == nil {
-		return builtin()
-	}
-	p, err := g.catalog.Current(ctx)
-	if err != nil || p == nil {
-		return builtin()
-	}
-	return normalize(p)
+	return normalize(g.currentProvider(ctx))
 }
 
 // Evaluate 据场景查表判定本次请求是否需要人机校验，并（在提供 Submission 时）
@@ -190,7 +181,10 @@ func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
 		return Outcome{}, nil
 	}
 
-	out := Outcome{Required: true, Config: g.Config(ctx)}
+	// 单次直读取值（§9.1）：下发配置与 factory 构造共用同一实例，永远同源；
+	// 提前取值归 nil 时按健康检查失败降级内置图形码（§2.5）。
+	p := g.currentProvider(ctx)
+	out := Outcome{Required: true, Config: normalize(p)}
 	if req.Submission == nil {
 		out.Status = StatusRequired
 		return out, nil
@@ -200,10 +194,20 @@ func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
 		out.Status = StatusInvalid
 		return out, nil
 	}
-	if g.verifier == nil {
-		return out, fmt.Errorf("captcha: verifier not configured")
+	// 图形码（内置项与 type=image 的表内行，§9.2 同一校验路径）不入 factory；
+	// 第三方经 factory 按当前生效 provider 运行期构造（§9.1）——配置变化即
+	// 构造出新对象，不存在「旧配置的 verifier 实例」。
+	if out.Config.Type == TypeImage {
+		return g.evaluateImage(ctx, out, *req.Submission)
 	}
-	err := g.verifier.Verify(ctx, out.Config.ProviderKey, *req.Submission)
+	if g.factory == nil {
+		return out, fmt.Errorf("captcha: verifier factory not configured")
+	}
+	verifier, err := g.factory(p)
+	if err != nil {
+		return out, err
+	}
+	err = verifier.Verify(ctx, out.Config.ProviderKey, *req.Submission)
 	if err == nil {
 		return out, nil
 	}
@@ -212,6 +216,27 @@ func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
 		return out, nil
 	}
 	return out, err
+}
+
+// evaluateImage 内置图形码判定路径（§9.2）：id + answer 核 al:cap:{id}，
+// GETDEL 原子消费由注入的 Store 保证（正确 / 错误都消费）。
+func (g *Gate) evaluateImage(ctx context.Context, out Outcome, sub Submission) (Outcome, error) {
+	if g.images == nil {
+		return out, fmt.Errorf("captcha: image store not configured")
+	}
+	if sub.ID == "" {
+		out.Status = StatusInvalid
+		return out, nil
+	}
+	ok, err := g.images.Verify(ctx, sub.ID, sub.Answer)
+	if err != nil {
+		return out, fmt.Errorf("captcha: verify image store: %w", err)
+	}
+	if !ok {
+		out.Status = StatusInvalid
+		return out, nil
+	}
+	return out, nil
 }
 
 // requires 查触发表得出本次是否必须人机校验。未登记场景（含空串）一律按
@@ -237,19 +262,24 @@ func (g *Gate) threshold() int64 {
 	return defaultPwdFailCapture
 }
 
-// normalize 校验 Provider 配置；type 必须属封闭集合，非法即降级。
-func normalize(p *Provider) Config {
-	if p == nil || p.ProviderKey == "" {
+// normalize 校验当前生效 Provider 实例并折算下发配置（siteKey 取
+// ext.client_id，§9.1）；type 必须属封闭集合，非法即降级。
+func normalize(p *provider.Provider) Config {
+	if p == nil || p.Key == "" {
 		return builtin()
 	}
 	switch p.Type {
-	case "image":
-		return Config{ProviderKey: p.ProviderKey, Type: "image"}
-	case "turnstile", "recaptcha", "hcaptcha":
-		if p.SiteKey == "" {
+	case TypeImage:
+		return Config{ProviderKey: p.Key, Type: TypeImage}
+	case TypeTurnstile, TypeRecaptcha, TypeHcaptcha:
+		siteKey := ""
+		if p.Ext != nil {
+			siteKey = p.Ext.GetClientId()
+		}
+		if siteKey == "" {
 			return builtin()
 		}
-		return Config{ProviderKey: p.ProviderKey, Type: p.Type, SiteKey: p.SiteKey}
+		return Config{ProviderKey: p.Key, Type: p.Type, SiteKey: siteKey}
 	default:
 		return builtin()
 	}

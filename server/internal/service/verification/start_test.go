@@ -501,7 +501,7 @@ func TestStartCaptchaRealGateOnlyOtpRequired(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
-			svc, _ := newStartService(t, func(d *Deps) { d.Gate = captcha.NewGate(nil, nil, nil) })
+			svc, _ := newStartService(t, func(d *Deps) { d.Gate = captcha.NewGate(nil, nil, nil, nil) })
 			_, failure, err := svc.Start(context.Background(), StartInput{
 				Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: tc.method, Operation: "step_up", SessionUID: "42",
 			})

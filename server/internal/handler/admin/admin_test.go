@@ -36,6 +36,9 @@ import (
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
 	// schema 用例断言「与注册表 meta 逐项一致」需各域真实注册项。
+	_ "authloft/internal/provider/captcha/hcaptcha"
+	_ "authloft/internal/provider/captcha/recaptcha"
+	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"
@@ -148,16 +151,20 @@ func (f *fakeWriter) TestProvider(_ context.Context, providerKey, target string)
 // fakeUserService 用户管理族（UserService）的 fake：入参全留档断言，
 // 错误可注入；返回数据可预置。
 type fakeUserService struct {
-	meErr      error
-	listErr    error
-	getErr     error
-	profileErr error
-	contactErr error
-	statusErr  error
-	resetErr   error
-	unbindErr  error
-	unlockErr  error
-	eventsErr  error
+	meErr       error
+	listErr     error
+	getErr      error
+	profileErr  error
+	contactErr  error
+	mfaErr      error
+	totpErr     error
+	recoveryErr error
+	credErr     error
+	statusErr   error
+	resetErr    error
+	unbindErr   error
+	unlockErr   error
+	eventsErr   error
 
 	meRow     *model.User
 	listRows  []model.User
@@ -172,10 +179,14 @@ type fakeUserService struct {
 	gotStatus   adminsvcStatusCall
 	gotReset    adminsvcResetCall
 	gotUnbind   adminsvcUnbindCall
-	gotUnlockID int64
+	gotUnlock   adminsvcUnlockCall
 	gotEvents   adminsvcEventsCall
 	gotProfile  adminsvcProfileCall
 	gotContact  adminsvcContactCall
+	gotMfa      adminsvcMfaCall
+	gotTotpID   adminsvcTotpCall
+	gotRecovery adminsvcTotpCall
+	gotCred     adminsvcCredCall
 }
 
 type (
@@ -191,6 +202,9 @@ type (
 		actor, id int64
 		provider  string
 	}
+	adminsvcUnlockCall struct {
+		actor, id int64
+	}
 	adminsvcEventsCall struct {
 		id             int64
 		page, pageSize int
@@ -202,6 +216,17 @@ type (
 	adminsvcContactCall struct {
 		actor, id int64
 		req       *adminv1.UpdateUserContactRequest
+	}
+	adminsvcMfaCall struct {
+		actor, id   int64
+		mfaRequired int64
+	}
+	adminsvcTotpCall struct {
+		actor, id int64
+	}
+	adminsvcCredCall struct {
+		actor, id, credentialID int64
+		enabled                 bool
 	}
 )
 
@@ -235,8 +260,8 @@ func (f *fakeUserService) UnbindUserThirdparty(_ context.Context, actor, id int6
 	return f.unbindErr
 }
 
-func (f *fakeUserService) UnlockUser(_ context.Context, id int64) error {
-	f.gotUnlockID = id
+func (f *fakeUserService) UnlockUser(_ context.Context, actor, id int64) error {
+	f.gotUnlock = adminsvcUnlockCall{actor: actor, id: id}
 	return f.unlockErr
 }
 
@@ -248,6 +273,31 @@ func (f *fakeUserService) UpdateUserProfile(_ context.Context, actor, id int64, 
 func (f *fakeUserService) UpdateUserContact(_ context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error {
 	f.gotContact = adminsvcContactCall{actor: actor, id: id, req: req}
 	return f.contactErr
+}
+
+func (f *fakeUserService) SetUserMfa(_ context.Context, actor, id int64, mfaRequired int64) error {
+	f.gotMfa = adminsvcMfaCall{actor: actor, id: id, mfaRequired: mfaRequired}
+	return f.mfaErr
+}
+
+func (f *fakeUserService) UnbindUserTOTP(_ context.Context, actor, id int64) error {
+	f.gotTotpID = adminsvcTotpCall{actor: actor, id: id}
+	return f.totpErr
+}
+
+func (f *fakeUserService) ResetUserRecoveryCodes(_ context.Context, actor, id int64) error {
+	f.gotRecovery = adminsvcTotpCall{actor: actor, id: id}
+	return f.recoveryErr
+}
+
+func (f *fakeUserService) SetCredentialEnabled(_ context.Context, actor, id, credentialID int64, enabled bool) error {
+	f.gotCred = adminsvcCredCall{actor: actor, id: id, credentialID: credentialID, enabled: enabled}
+	return f.credErr
+}
+
+func (f *fakeUserService) DeleteCredential(_ context.Context, actor, id, credentialID int64) error {
+	f.gotCred = adminsvcCredCall{actor: actor, id: id, credentialID: credentialID}
+	return f.credErr
 }
 
 func (f *fakeUserService) GetUserEvents(_ context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error) {
@@ -1986,8 +2036,8 @@ func TestUserWriteHandlers(t *testing.T) {
 		if users.gotUnbind != (adminsvcUnbindCall{actor: 1, id: 42, provider: "wechat_mp_1"}) {
 			t.Errorf("unbind 透传 = %+v", users.gotUnbind)
 		}
-		if users.gotUnlockID != 42 {
-			t.Errorf("unlock 透传 = %d", users.gotUnlockID)
+		if users.gotUnlock != (adminsvcUnlockCall{actor: 1, id: 42}) {
+			t.Errorf("unlock 透传 = %+v", users.gotUnlock)
 		}
 	})
 
@@ -2026,6 +2076,108 @@ func TestUserWriteHandlers(t *testing.T) {
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUnlockUserProcedure, reqUnlock, cookie)
 		if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
 			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
+}
+
+// TestUserRescueHandlers：救援族五写方法（SetUserMfa / UnbindUserTOTP /
+// ResetUserRecoveryCodes / SetCredentialEnabled / DeleteCredential）——
+// 入参（含 actor=ctx uid）透传 + OkResponse 空应答（恢复码重置响应结构上
+// 无字段、无明文出口）；invalid_request / 404 / permission_denied 映射
+// 沿用 mapUserError 口径各一例。
+func TestUserRescueHandlers(t *testing.T) {
+	const (
+		reqMfa     = `{"id":42,"mfaRequired":0}`
+		reqTotp    = `{"id":42}`
+		reqRecover = `{"id":42}`
+		reqCred    = `{"id":42,"credentialId":7,"enabled":true}`
+		reqDelete  = `{"id":42,"credentialId":7}`
+	)
+
+	t.Run("透传与空应答", func(t *testing.T) {
+		users := &fakeUserService{}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+
+		for target, body := range map[string]string{
+			adminv1connect.AdminServiceSetUserMfaProcedure:             reqMfa,
+			adminv1connect.AdminServiceUnbindUserTOTPProcedure:         reqTotp,
+			adminv1connect.AdminServiceResetUserRecoveryCodesProcedure: reqRecover,
+		} {
+			resp, raw := doRPC(t, h, target, body, cookie)
+			if resp.StatusCode != http.StatusOK || raw != "{}" {
+				t.Fatalf("%s: (%d, %s), want (200, {})", target, resp.StatusCode, raw)
+			}
+		}
+		if users.gotMfa != (adminsvcMfaCall{actor: 1, id: 42, mfaRequired: 0}) {
+			t.Errorf("mfa 透传 = %+v", users.gotMfa)
+		}
+		if users.gotTotpID != (adminsvcTotpCall{actor: 1, id: 42}) {
+			t.Errorf("totp 透传 = %+v", users.gotTotpID)
+		}
+		if users.gotRecovery != (adminsvcTotpCall{actor: 1, id: 42}) {
+			t.Errorf("recovery 透传 = %+v", users.gotRecovery)
+		}
+
+		// 凭证两方法共用留档字段，分实例跑避免互相覆盖；会话 cookie 随
+		// 各实例的 token fake 单独签发（跨实例不互认）。
+		credUsers := &fakeUserService{}
+		tokens2, epochs2, h2 := newAdminHandler(t, &fakeProviders{}, nil, credUsers)
+		cookie2 := adminCookie(t, tokens2, epochs2, 1)
+		resp, raw := doRPC(t, h2, adminv1connect.AdminServiceSetCredentialEnabledProcedure, reqCred, cookie2)
+		if resp.StatusCode != http.StatusOK || raw != "{}" {
+			t.Fatalf("setCred: (%d, %s), want (200, {})", resp.StatusCode, raw)
+		}
+		if credUsers.gotCred != (adminsvcCredCall{actor: 1, id: 42, credentialID: 7, enabled: true}) {
+			t.Errorf("cred 透传 = %+v", credUsers.gotCred)
+		}
+		delUsers := &fakeUserService{}
+		tokens3, epochs3, h3 := newAdminHandler(t, &fakeProviders{}, nil, delUsers)
+		cookie3 := adminCookie(t, tokens3, epochs3, 1)
+		resp, raw = doRPC(t, h3, adminv1connect.AdminServiceDeleteCredentialProcedure, reqDelete, cookie3)
+		if resp.StatusCode != http.StatusOK || raw != "{}" {
+			t.Fatalf("deleteCred: (%d, %s), want (200, {})", resp.StatusCode, raw)
+		}
+		if delUsers.gotCred != (adminsvcCredCall{actor: 1, id: 42, credentialID: 7}) {
+			t.Errorf("delete 透传 = %+v", delUsers.gotCred)
+		}
+	})
+
+	t.Run("invalid_request 映射（密码凭证停用拒绝）", func(t *testing.T) {
+		users := &fakeUserService{credErr: adminsvc.ErrInvalidRequest}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetCredentialEnabledProcedure,
+			`{"id":42,"credentialId":7,"enabled":false}`, cookie)
+		if resp.StatusCode != http.StatusBadRequest || decodeErrorCode(t, raw) != "invalid_argument" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		info := decodeErrorInfo(t, raw)
+		if info.GetDomain() != "admin" || info.GetCode() != "invalid_request" {
+			t.Errorf("ErrorInfo = (%q, %q)", info.GetDomain(), info.GetCode())
+		}
+	})
+
+	t.Run("404 映射", func(t *testing.T) {
+		users := &fakeUserService{totpErr: gorm.ErrRecordNotFound}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUnbindUserTOTPProcedure, reqTotp, cookie)
+		if resp.StatusCode != http.StatusNotFound || decodeErrorCode(t, raw) != "not_found" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+	})
+
+	t.Run("permission_denied 映射", func(t *testing.T) {
+		users := &fakeUserService{mfaErr: adminsvc.ErrPermissionDenied}
+		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+		cookie := adminCookie(t, tokens, epochs, 1)
+		resp, raw := doRPC(t, h, adminv1connect.AdminServiceSetUserMfaProcedure, reqMfa, cookie)
+		if resp.StatusCode != http.StatusForbidden || decodeErrorCode(t, raw) != "permission_denied" {
+			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
+		}
+		if strings.Contains(raw, `"details"`) {
+			t.Fatalf("permission_denied 不应挂 ErrorInfo detail: %s", raw)
 		}
 	})
 }
@@ -2373,6 +2525,9 @@ func (s *guardUsers) ListUsers(context.Context, repo.UserListQuery) ([]model.Use
 }
 func (s *guardUsers) UpdateUserStatus(context.Context, int64, int8) error { return nil }
 func (s *guardUsers) IncEpoch(context.Context, int64) (int16, error)      { return 0, nil }
+func (s *guardUsers) AnonymizeUser(context.Context, int64, time.Time) (int16, error) {
+	return 0, nil
+}
 
 // 余下方法为窄接口增项后的空实现：TestPermissionDeniedMapping 只经
 // UpdateUserStatus / ResetUserPassword 两写路径探针门禁，不触资料 /
@@ -2393,6 +2548,7 @@ func (s *guardUsers) GetProfile(context.Context, int64) (*model.UserProfile, err
 	return nil, gorm.ErrRecordNotFound
 }
 func (s *guardUsers) SaveProfile(context.Context, *model.UserProfile) error { return nil }
+func (s *guardUsers) UpdateMfaRequired(context.Context, int64, int8) error  { return nil }
 
 type guardCreds struct{}
 
@@ -2404,6 +2560,15 @@ func (guardCreds) ListByUser(context.Context, int64) ([]model.UserCredential, er
 }
 func (guardCreds) Create(context.Context, *model.UserCredential) error { return nil }
 func (guardCreds) Update(context.Context, *model.UserCredential) error { return nil }
+
+// 余下方法为窄接口增项后的空实现：TestPermissionDeniedMapping 只经
+// UpdateUserStatus / ResetUserPassword 两写路径探针门禁，不触救援族。
+func (guardCreds) FindByID(context.Context, int64) (*model.UserCredential, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+func (guardCreds) SetEnabled(context.Context, int64, bool) error            { return nil }
+func (guardCreds) DeleteByUserAndKind(context.Context, int64, string) error { return nil }
+func (guardCreds) DeleteByID(context.Context, int64, int64) error           { return nil }
 
 type guardBinds struct{}
 

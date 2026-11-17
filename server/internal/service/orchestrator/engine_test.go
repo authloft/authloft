@@ -18,6 +18,7 @@ import (
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/logx"
+	"authloft/internal/provider"
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
@@ -93,20 +94,23 @@ func (r *fakeRegistry) Get(kind factor.FactorKind) (factor.Factor, error) {
 }
 
 type fakeCatalog struct {
-	p   *captcha.Provider
+	p   *provider.Provider
 	err error
 }
 
-func (f fakeCatalog) Current(context.Context) (*captcha.Provider, error) { return f.p, f.err }
+func (f fakeCatalog) Current(context.Context) (*provider.Provider, error) { return f.p, f.err }
 
+// fakeCaptchaGate 图形码存储 fake（gate 内置路径的 Store 槽，captcha.Store）：
+// calls 计数供「需要的场景才校验凭据」断言，恒通过。
 type fakeCaptchaGate struct {
-	err   error
 	calls int
 }
 
-func (f *fakeCaptchaGate) Verify(context.Context, string, captcha.Submission) error {
+func (f *fakeCaptchaGate) Set(context.Context, string, string) error { return nil }
+
+func (f *fakeCaptchaGate) Verify(context.Context, string, string) (bool, error) {
 	f.calls++
-	return f.err
+	return true, nil
 }
 
 type fakeFailures struct {
@@ -226,8 +230,8 @@ func newTestDeps(t *testing.T, at time.Time) *testEngineDeps {
 	}
 	reg := &fakeRegistry{factors: map[factor.FactorKind]factor.Factor{}}
 	verifier := &fakeCaptchaGate{}
-	catalog := fakeCatalog{p: &captcha.Provider{ProviderKey: "builtin_image", Type: "image"}}
-	gate := captcha.NewGate(s, catalog, verifier)
+	catalog := fakeCatalog{p: &provider.Provider{Key: "builtin_image", Type: "image"}}
+	gate := captcha.NewGate(s, catalog, verifier, nil)
 	users := &fakeUsers{}
 	creds := &fakeCredentials{creds: map[string]*model.UserCredential{}}
 	sessions := &fakeSessionWriter{sid: "sid-1", stok: "stok-1"}
