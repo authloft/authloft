@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,7 @@ import (
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
 	"authloft/internal/provider"
+	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
@@ -218,7 +220,9 @@ func Register(r gin.IRouter, d Deps) *Handler {
 	if h.now == nil {
 		h.now = time.Now
 	}
-	r.GET("/sso/login", h.loginPage(flowLogin))
+	// /sso/login 渲染空壳前先做已登录直达检测（§8 专段）；register / reset /
+	// callback 维持现状恒渲染空壳（§2.1，仅本路由检测）。
+	r.GET("/sso/login", h.loginEntry)
 	r.GET("/sso/register", h.loginPage(flowRegister))
 	r.GET("/sso/reset", h.loginPage(flowReset))
 	// callback 零业务逻辑（§2.7.3 行 604）：只渲染 login entry 空壳，
@@ -247,8 +251,84 @@ func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 	}
 }
 
-// loginPage login entry 空壳（/sso/login、/sso/register、/sso/reset、
-// /sso/oauth/callback/*）：注入 al_root / static_base / methods（必填）。
+// loginPage login entry 空壳（/sso/register、/sso/reset、
+// /sso/oauth/callback/*；/sso/login 走 loginEntry 先做已登录直达检测）：
+// 渲染细节见 serveLoginShell。
+func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		h.serveLoginShell(c, defaultFlow)
+	}
+}
+
+// loginDefaultLanding 已登录直达终点③ 的默认落点（§8 专段，同 §1.3 终点 3）：
+// hash 路由形态、本域相对路径，与前端 DEFAULT_ACCOUNT_HOME 同一值。
+const loginDefaultLanding = "/account#/"
+
+// loginEntry /sso/login 入口（§8「/sso/login 已登录直达」专段）：渲染空壳前
+// 先校验 al_session——判定口径与 /auth/authorize 直达一致，复用同一
+// SessionVerifier 注入与四步语义（含 epoch）。有效会话不渲染页面、不经过
+// 前端、不注入快照，按终点顺序直接 302（三种情形互斥完备，与 §1.3 终点
+// 2 / 3 同序）；校验故障（校验异常、epoch 失效等一切「非有效」情形）一律按
+// 无会话处理：照常渲染空壳并按 §2.1 注入（安全向 fail-closed，不 302、不
+// 渲染错误页）。直达 302 不插入 /sso/sync_cookie 中转——§2.9 同步链只覆盖
+// 登录成功与登出的会话传播，直达本域会话已有效、无传播需求。
+func (h *Handler) loginEntry(c *gin.Context) {
+	if h.authorizeSession(c) != nil {
+		c.Redirect(http.StatusFound, h.loginDirectTarget(c))
+		return
+	}
+	h.serveLoginShell(c, flowLogin)
+}
+
+// loginDirectTarget 已登录直达终点解析（§8 专段三步，互斥完备）：① URL 携带
+// returnTo 且白名单校验通过 → 原值回跳；② 页面 client_id 命中已启用的
+// sso_client 行（禁用应用不命中，同 §2.2 首签对禁用应用的保守口径，禁用应用
+// 永不获得默认回跳）且该应用 default_redirect_uri 非空并命中本应用
+// redirectUris 白名单 → 该默认回跳地址；③ 否则默认落点。未携带 / 白名单外 /
+// 未命中 / 禁用不是错误，向后回落；SsoClients 未装配 / 行查询异常同按未命中
+// 处理。
+func (h *Handler) loginDirectTarget(c *gin.Context) string {
+	if rt := c.Query("returnTo"); isReturnToAllowed(rt) {
+		return rt
+	}
+	if h.deps.SsoClients != nil {
+		if id := c.Query("client_id"); id != "" {
+			if row, err := h.deps.SsoClients.FindSsoClientByClientID(c.Request.Context(), id); err == nil && row != nil &&
+				row.IsEnabled == 1 && row.DefaultRedirectURI != "" &&
+				ssoRedirectAllowed(row, row.DefaultRedirectURI) {
+				return row.DefaultRedirectURI
+			}
+		}
+	}
+	return loginDefaultLanding
+}
+
+// isReturnToAllowed returnTo 白名单（§8 专段①）：仅放行 /account# / /admin#
+// 站内 hash 前缀值，与前端 shared/urls.ts 的前缀白名单同一集合（防开放
+// 重定向；前缀含 #，/accounts#… 等近似路径不误放）。
+func isReturnToAllowed(v string) bool {
+	return strings.HasPrefix(v, "/account#") || strings.HasPrefix(v, "/admin#")
+}
+
+// ssoRedirectAllowed default_redirect_uri 对本应用 redirectUris 白名单的
+// 既有匹配（§12.3 整段匹配 / * 通配，与 authorize redirect_uri 白名单同一套
+// uriMatches 匹配语义）：解码失败 / 未命中一律不放行——配置期强制命中（
+// §5.5）之外的运行期防线，配置漂移时向后回落默认落点，不开放重定向。
+func ssoRedirectAllowed(row *model.SsoClient, target string) bool {
+	uris, err := repo.ParseClientRedirectUris(row.RedirectURIs)
+	if err != nil {
+		return false
+	}
+	for _, pattern := range uris.GetUris() {
+		if uriMatches(pattern, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// serveLoginShell 渲染登录 entry 空壳（loginPage 三入口与 loginEntry 无会话
+// 路径共用）：注入 al_root / static_base / methods（必填）。
 // flow 按 §2.1 行 363-368 取页面 URL query（login 默认）；三页各自带路径
 // 缺省（前端入口链接不带 query，routes.tsx 行 67 依赖按页过滤的快照）。
 // client_id 按 §8.1 选客户端自定义模板（SSO 登录入口查 sso_client），行
@@ -258,36 +338,34 @@ func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 // 既有口径）；行命中与模板解析正交——模板回落（含无自定义模板的常态）仍
 // 注入 sso，查无行回落壳才不注入。应用配置列解码失败 → 空体 500（§8 行
 // 1436「缺失即服务端故障」，§1.5 行 225 豁免端点按 HTTP 语义）。
-func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		flow := defaultFlow
-		if q := c.Query("flow"); q == flowLogin || q == flowRegister || q == flowReset {
-			flow = q
-		}
-		tpl, ssoRow := h.resolveLoginClientTpl(c.Request.Context(), c.Query("client_id"))
-		scope, err := ssoScopeFromRow(ssoRow)
-		if err != nil {
-			slog.Error("pages: parse sso client config", "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		var ssoCtx *ssoContext
-		if ssoRow != nil {
-			ssoCtx = &ssoContext{ClientID: ssoRow.ClientID, Name: ssoRow.Name}
-		}
-		snapshot, err := h.buildMethods(c.Request.Context(), flow, scope)
-		if err != nil {
-			slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		h.renderShell(c, "login", &initPayload{
-			ALRoot:     h.root,
-			StaticBase: h.staticBase(),
-			Methods:    snapshot,
-			SSO:        ssoCtx,
-		}, tpl)
+func (h *Handler) serveLoginShell(c *gin.Context, defaultFlow string) {
+	flow := defaultFlow
+	if q := c.Query("flow"); q == flowLogin || q == flowRegister || q == flowReset {
+		flow = q
 	}
+	tpl, ssoRow := h.resolveLoginClientTpl(c.Request.Context(), c.Query("client_id"))
+	scope, err := ssoScopeFromRow(ssoRow)
+	if err != nil {
+		slog.Error("pages: parse sso client config", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	var ssoCtx *ssoContext
+	if ssoRow != nil {
+		ssoCtx = &ssoContext{ClientID: ssoRow.ClientID, Name: ssoRow.Name}
+	}
+	snapshot, err := h.buildMethods(c.Request.Context(), flow, scope)
+	if err != nil {
+		slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	h.renderShell(c, "login", &initPayload{
+		ALRoot:     h.root,
+		StaticBase: h.staticBase(),
+		Methods:    snapshot,
+		SSO:        ssoCtx,
+	}, tpl)
 }
 
 // renderShell 渲染 SPA 空壳：tpl 非 nil（客户端模板解析成功）走
