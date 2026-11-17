@@ -71,6 +71,8 @@ export function TextField(props: FieldRendererProps): ReactNode {
       suffix={props.extra}
       allowEmptyString={KEEP_EMPTY_STRING}
       disabled={props.disabled}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
     />
   );
 }
@@ -87,6 +89,8 @@ export function SecretField(props: FieldRendererProps): ReactNode {
       autoComplete="new-password"
       allowEmptyString={KEEP_EMPTY_STRING}
       disabled={props.disabled}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
     />
   );
 }
@@ -116,6 +120,8 @@ export function NumberField(props: FieldRendererProps): ReactNode {
         typeof value === 'number' ? value : Number(value) || 0
       }
       disabled={props.disabled}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
     />
   );
 }
@@ -137,6 +143,8 @@ export function SelectField(props: FieldRendererProps): ReactNode {
         value === undefined || value === null ? '' : String(value)
       }
       disabled={props.disabled}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
     />
   );
 }
@@ -155,6 +163,8 @@ export function JsonField(props: FieldRendererProps): ReactNode {
       allowEmptyString={KEEP_EMPTY_STRING}
       disabled={props.disabled}
       aria-label={t(props.field.label)}
+      showClear={!props.field.required}
+      rules={[{ required: Boolean(props.field.required) }]}
     />
   );
 }

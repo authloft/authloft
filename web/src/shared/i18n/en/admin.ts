@@ -224,8 +224,7 @@ export const admin: typeof zhAdmin = {
   // port share field names with the smtp row but carry independent label keys
   // (proxy-row semantics: proxy address).
   'admin.schemaField.proxySchemeLabel': 'Proxy scheme',
-  'admin.schemaField.proxySchemeHelp':
-    'One of socks5 / http / https (lowercase)',
+  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https',
   'admin.schemaField.proxyHostLabel': 'Proxy host',
   'admin.schemaField.proxyHostHelp':
     'Hostname / IPv4 / IPv6 literal; whitespace and /?#@[] forbidden; write IPv6 bare (e.g. ::1, without brackets)',

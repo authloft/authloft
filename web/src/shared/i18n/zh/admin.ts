@@ -205,7 +205,7 @@ export const admin = {
   // select、host 禁空白与 /?#@[]、port number、user / password 可选折叠；
   // host / port 与 smtp 行共用字段名、标签键独立（proxy 行内语义为代理地址）。
   'admin.schemaField.proxySchemeLabel': '代理协议',
-  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https 三选一（全小写）',
+  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https',
   'admin.schemaField.proxyHostLabel': '代理地址',
   'admin.schemaField.proxyHostHelp':
     '主机名 / IPv4 / IPv6 字面量；禁空白与 /?#@[]；IPv6 直接写 ::1 形态（不带括号）',
