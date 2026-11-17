@@ -104,8 +104,10 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  *   birthday 格式 + 真日历本地校验）+ buildAvatarPersistRequest（头像持久化
  *   接线：AvatarUploader onUploaded 后 {avatarUrl} 单字段提交）+
  *   avatarPersistFailureMessage（持久化失败行内文案分派：401 归集中跳登录）
- *   + profileGenderText 展示映射；ProfilePageView 静态渲染（展示帧 override
- *   优先 + 持久化失败文案 + 编辑帧字段绑定 / 错误呈现）。
+ *   + profileGenderText 展示映射 + 编辑下拉选项集现值兜底（locale 出域 /
+ *   timezone 历史别名与出域 / gender 出域 → 补项防下拉空白与保存误清空）；
+ *   ProfilePageView 静态渲染（展示帧 override 优先 + 持久化失败文案 +
+ *   编辑帧字段绑定 / 下拉触发器渲染 / 错误呈现）。
  *
  * 【Blocker·已解除】routes / AppLayout / ProfilePage / SecurityPage / 表单组件的渲染
  * 测试曾在本工具链下无法落地：@douyinfe/semi-ui 的 lib/es 内部为无扩展名
@@ -2553,6 +2555,67 @@ describe('profileGenderText（§3.1 行 811 枚举 0/1/2 展示映射，纯函�
   });
 });
 
+describe('编辑下拉选项集现值兜底（profileLocaleOptions / profileTimezoneOptions / profileGenderOptions，纯函数）', () => {
+  test('时区预设：全量 IANA 经 Intl.supportedValuesOf 动态生成（零硬编码，量级 400+，含常用项）', () => {
+    const presets = apiMod.profileTimezoneOptions('');
+    expect(presets.length).toBeGreaterThanOrEqual(400);
+    expect(presets.map((option) => option.value)).toEqual(
+      expect.arrayContaining(['Asia/Shanghai', 'America/New_York']),
+    );
+    // 预设项 label 即原值，可搜索下拉按原值匹配。
+    expect(presets[0]).toMatchObject({
+      value: expect.any(String),
+      label: expect.any(String),
+    });
+  });
+
+  test('timezone 服务端现值兜底：历史别名（US/Pacific 不在全量 IANA 规范集）/ 出域值 → 补一项原值选项防误清空', () => {
+    const presets = apiMod.profileTimezoneOptions('');
+    // 在集内 / 未设置 → 不补项（列表即预设全集）。
+    expect(apiMod.profileTimezoneOptions('Asia/Shanghai')).toHaveLength(
+      presets.length,
+    );
+    expect(apiMod.profileTimezoneOptions('')).toHaveLength(presets.length);
+    // 历史时区别名与出域自造值：补项保留现值，保存不丢原值。
+    expect(apiMod.profileTimezoneOptions('US/Pacific').at(-1)).toEqual({
+      value: 'US/Pacific',
+      label: 'US/Pacific',
+    });
+    expect(apiMod.profileTimezoneOptions('Mars/Olympus').at(-1)).toEqual({
+      value: 'Mars/Olympus',
+      label: 'Mars/Olympus',
+    });
+  });
+
+  test('locale 常用预设 + 出域现值补项（en-GB 不在常用集 → 补项保留；在集内 / 未设置 → 不补）', () => {
+    const presets = apiMod.profileLocaleOptions('');
+    expect(presets.map((option) => option.value)).toEqual([
+      'zh-CN',
+      'zh-TW',
+      'en-US',
+      'ja-JP',
+      'ko-KR',
+    ]);
+    const withOutDomain = apiMod.profileLocaleOptions('en-GB');
+    expect(withOutDomain).toHaveLength(presets.length + 1);
+    expect(withOutDomain.at(-1)).toEqual({ value: 'en-GB', label: 'en-GB' });
+    expect(apiMod.profileLocaleOptions('zh-CN')).toHaveLength(presets.length);
+    expect(apiMod.profileLocaleOptions('')).toHaveLength(presets.length);
+  });
+
+  test('gender 出域现值补项（9 → 补原值选项，文案沿展示映射「原样显示数字」口径；枚举内不补）', () => {
+    expect(apiMod.profileGenderOptions(0)).toEqual([
+      { value: 0, label: t('account.genderSecret') },
+      { value: 1, label: t('account.genderMale') },
+      { value: 2, label: t('account.genderFemale') },
+    ]);
+    const outDomain = apiMod.profileGenderOptions(9);
+    expect(outDomain).toHaveLength(4);
+    expect(outDomain.at(-1)).toEqual({ value: 9, label: '9' });
+    expect(apiMod.profileGenderOptions(2)).toHaveLength(3);
+  });
+});
+
 describe('avatarPersistFailureMessage（头像持久化失败文案分派，纯函数）', () => {
   test('401 / unauthenticated → undefined（归 requestOptions 集中分派跳登录，不出行内文案）', () => {
     expect(
@@ -2651,17 +2714,20 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
     expect(html).toContain(t('account.avatarPersistFailed'));
   });
 
-  test('编辑帧：Input 字段受控绑定回显 + 保存 / 取消；无 extra 编辑框', () => {
+  test('编辑帧：Input 受控回显 + 三个下拉触发器渲染（locale / timezone 改可搜索 Select）+ 保存 / 取消；无 extra 编辑框', () => {
     const html = renderProfilePageView({
       editing: true,
       draft: profileDraft({ nickname: '张三丰' }),
     });
-    // Input 类字段 SSR 即回显受控值（value 属性）；Select / DatePicker 的
-    // 触发器选中值在 effect 后回显，静态标记仅含 placeholder，其绑定语义由
-    // buildUpdateProfileRequest 纯函数用例覆盖。
+    // Input 类字段 SSR 即回显受控值（value 属性）；三个下拉（gender / locale /
+    // timezone）触发器选中值在 effect 后回显，静态标记仅含 placeholder——
+    // 选项集内容与现值兜底由选项纯函数用例覆盖（profileLocaleOptions 等）。
     expect(html).toContain('value="张三丰"');
-    expect(html).toContain('value="zh-CN"');
-    expect(html).toContain('value="Asia/Shanghai"');
+    expect(html).not.toContain('value="zh-CN"');
+    expect(html).not.toContain('value="Asia/Shanghai"');
+    // placeholder 出现 3 处：birthday DatePicker + locale / timezone Select
+    //（gender 触发器无 placeholder 文案）。
+    expect(html.split('请选择').length - 1).toBe(3);
     expect(html).toContain('保存');
     expect(html).toContain('取消');
     expect(html).not.toContain('扩展信息');

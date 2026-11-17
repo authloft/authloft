@@ -18,7 +18,9 @@
  * UpdateProfile：薄封装 + PATCH 语义请求构造纯函数
  * buildUpdateProfileRequest（编辑表单）/ buildAvatarPersistRequest（头像
  * 持久化接线）+ gender 展示映射 profileGenderText + 头像持久化失败文案
- * 分派 avatarPersistFailureMessage（§3.2 / §3.1）。
+ * 分派 avatarPersistFailureMessage + 编辑下拉选项集 profileLocaleOptions /
+ * profileTimezoneOptions / profileGenderOptions（预设 + 现值不在集补项，
+ * §3.2 / §3.1）。
  * 本 entry 另需的 SsoService 方法（Authorize scene=bind / CreateQrcode）
  * 从 shared/api/sso 取，不在此重复定义（§5）。
  *
@@ -1150,6 +1152,88 @@ export function profileGenderText(gender: bigint): string {
     default:
       return gender.toString();
   }
+}
+
+// ---------------------------------------------------------------------------
+// 资料编辑下拉选项集（locale / timezone / gender：预设 + 现值兜底）
+// ---------------------------------------------------------------------------
+
+/** 下拉单选项视图（零 Semi 依赖）：value 即提交值，label 即触发器 / 选项展示。 */
+export interface ProfileSelectOption<V extends string | number> {
+  value: V;
+  label: string;
+}
+
+/** 语言预设：常用项硬编码（全量语言表无必要，出域现值由兜底补项）。 */
+const LOCALE_PRESETS: readonly string[] = [
+  'zh-CN',
+  'zh-TW',
+  'en-US',
+  'ja-JP',
+  'ko-KR',
+];
+
+/**
+ * 时区预设：全量 IANA，运行时经 Intl.supportedValuesOf('timeZone') 动态生成
+ * （随运行时 tzdata 更新、零硬编码，量级 400+）；个别环境缺该 API 时回落
+ * 空集，服务端现值仍可经兜底补项回显。
+ */
+const TIMEZONE_PRESETS: readonly string[] =
+  typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone')
+    : [];
+
+/**
+ * 「服务端现值不在选项集时补项」兜底：现值（出域 locale、历史时区别名、
+ * 出域 gender）匹配不到任何预设时追加一项原值选项——否则下拉空白且选中态
+ * 丢失，直接保存会把原值 diff 成清空；未设置（''）或已在预设内 → 原样返回。
+ */
+export function withCurrentOption<V extends string | number>(
+  presets: readonly ProfileSelectOption<V>[],
+  current: V | '',
+): ProfileSelectOption<V>[] {
+  if (current === '' || presets.some((preset) => preset.value === current)) {
+    return [...presets];
+  }
+  return [...presets, { value: current, label: String(current) }];
+}
+
+/** locale 编辑选项（常用预设 + 现值兜底），label 即原值不翻译。 */
+export function profileLocaleOptions(
+  current: string,
+): ProfileSelectOption<string>[] {
+  return withCurrentOption(
+    LOCALE_PRESETS.map((value) => ({ value, label: value })),
+    current,
+  );
+}
+
+/** timezone 编辑选项（全量 IANA 预设 + 现值兜底），label 即原值。 */
+export function profileTimezoneOptions(
+  current: string,
+): ProfileSelectOption<string>[] {
+  return withCurrentOption(
+    TIMEZONE_PRESETS.map((value) => ({ value, label: value })),
+    current,
+  );
+}
+
+/**
+ * gender 编辑选项（§3.1 枚举 0/1/2 + 出域现值兜底）：文案与展示映射
+ * profileGenderText 同源，出域值补项原样显示数字不粉饰（同其 default
+ * 分支口径）。
+ */
+export function profileGenderOptions(
+  current: number,
+): ProfileSelectOption<number>[] {
+  return withCurrentOption(
+    [
+      { value: 0, label: t('account.genderSecret') },
+      { value: 1, label: t('account.genderMale') },
+      { value: 2, label: t('account.genderFemale') },
+    ],
+    current,
+  );
 }
 
 // ---------------------------------------------------------------------------

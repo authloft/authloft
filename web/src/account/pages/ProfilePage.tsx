@@ -7,8 +7,10 @@
  * profile.avatarUrl，且保存资料时保留不清——见 submit onSuccess 注释）。
  *
  * 资料编辑 + UpdateProfile 持久化（docs/接口文档.md §3.2）：
- * - 编辑 / 展示两态：编辑帧 nickname（Input）+ gender（Select 枚举 0/1/2）+
- *   birthday（DatePicker → "YYYY-MM-DD"）+ locale / timezone（Input）；
+ * - 编辑 / 展示两态：编辑帧 nickname（Input）+ gender（Select 枚举 0/1/2 +
+ *   出域现值补项）+ birthday（DatePicker → "YYYY-MM-DD"）+ locale /
+ *   timezone（可搜索 Select 预设值，服务端现值不在预设集时补项，防下拉
+ *   空白与保存误清空）；
  *   username / phone / email 只读展示不进表单（§3.2 不可修改，掩码服务端
  *   完成前端零处理）；avatarUrl 不进表单（走上传链路 §10.8）；extra 不
  *   暴露编辑入口（契约保留字段，前端不读写）；
@@ -59,7 +61,10 @@ import {
   buildUpdateProfileRequest,
   getProfile,
   isUnauthenticatedError,
+  profileGenderOptions,
   profileGenderText,
+  profileLocaleOptions,
+  profileTimezoneOptions,
   updateProfile,
   type ProfileEditDraft,
   type ProfileEditFieldError,
@@ -119,12 +124,9 @@ function ProfileEditView(props: {
         <Select
           value={props.draft.gender}
           onChange={(value) => setDraft({ gender: Number(value) })}
+          optionList={profileGenderOptions(props.draft.gender)}
           disabled={submitting}
-        >
-          <Select.Option value={0}>{t('account.genderSecret')}</Select.Option>
-          <Select.Option value={1}>{t('account.genderMale')}</Select.Option>
-          <Select.Option value={2}>{t('account.genderFemale')}</Select.Option>
-        </Select>
+        />
       </div>
       <div className={styles.field}>
         <label className={styles.label} htmlFor="account-edit-birthday">
@@ -149,22 +151,28 @@ function ProfileEditView(props: {
         <label className={styles.label} htmlFor="account-edit-locale">
           {t('account.localeLabel')}
         </label>
-        <Input
+        <Select
           id="account-edit-locale"
-          value={props.draft.locale}
-          onChange={(value) => setDraft({ locale: value })}
+          filter
+          value={props.draft.locale || undefined}
+          onChange={(value) => setDraft({ locale: String(value) })}
+          optionList={profileLocaleOptions(props.draft.locale)}
           disabled={submitting}
+          placeholder={t('common.selectPlaceholder')}
         />
       </div>
       <div className={styles.field}>
         <label className={styles.label} htmlFor="account-edit-timezone">
           {t('account.timezoneLabel')}
         </label>
-        <Input
+        <Select
           id="account-edit-timezone"
-          value={props.draft.timezone}
-          onChange={(value) => setDraft({ timezone: value })}
+          filter
+          value={props.draft.timezone || undefined}
+          onChange={(value) => setDraft({ timezone: String(value) })}
+          optionList={profileTimezoneOptions(props.draft.timezone)}
           disabled={submitting}
+          placeholder={t('common.selectPlaceholder')}
         />
       </div>
       {props.fieldError !== undefined ? (
