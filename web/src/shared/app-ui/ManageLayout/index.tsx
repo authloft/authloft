@@ -65,12 +65,14 @@ export function ManageLayout(props: {
       </Sider>
       <Layout>
         <Header className={styles.header}>
-          <Breadcrumb routes={[...props.breadcrumb]} />
+          <Breadcrumb compact={false} routes={[...props.breadcrumb]} />
           <Dropdown menu={props.headerMenu} position="bottomRight">
             {props.headerLabel}
           </Dropdown>
         </Header>
-        <Content className={styles.content}>{props.children}</Content>
+        <Content className={styles.content}>
+          <div className={styles.contentInner}>{props.children}</div>
+        </Content>
       </Layout>
     </Layout>
   );
