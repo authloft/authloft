@@ -35,6 +35,7 @@ import (
 	rpcv1connect "authloft/gen/go/api/rpc/v1/rpcv1connect"
 	ssov1connect "authloft/gen/go/api/sso/v1/ssov1connect"
 	"authloft/gen/go/token"
+	"authloft/internal/app"
 	"authloft/internal/asyncqueue"
 	"authloft/internal/cache"
 	"authloft/internal/captcha"
@@ -144,14 +145,18 @@ const shutdownTimeout = 10 * time.Second
 // assembled 正常模式装配产物（§3.1 启动链）：基础设施、共享单例与各域 service。
 // cron 仍为 TODO（§3.12）。
 type assembled struct {
-	db       *gorm.DB
-	rdb      *redis.Client
-	codecs   *codecs
-	settings *settings.Store
-	watcher  *settings.Watcher
-	queue    *asyncqueue.Queue
-	sink     *eventlogsvc.LoginEventWriter
-	engine   *orchestrator.Engine
+	db  *gorm.DB
+	rdb *redis.Client
+	// healthProbes /health 探活集：生产装配为空、由注册点回退
+	// app.StandardProbes(db, rdb)——探活句柄与优雅关闭链路同一组；
+	// 测试注入 fake 探活器（CODE_GUIDE §3.4 显式字段注入）。
+	healthProbes []app.Probe
+	codecs       *codecs
+	settings     *settings.Store
+	watcher      *settings.Watcher
+	queue        *asyncqueue.Queue
+	sink         *eventlogsvc.LoginEventWriter
+	engine       *orchestrator.Engine
 	// verification step-up 服务（§3.8）：挑战 / 断言两把独立密钥，SSO / account 两域共用。
 	verification *verification.Service
 
@@ -1228,6 +1233,15 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 	ginEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
 
 	if deps != nil {
+		// 健康探针（§3.1 / §23.1）：/metrics 同款挂全局 engine、不进 /api 组——
+		// 不受 origin 约束；探活集回退 StandardProbes(db, rdb)，句柄与优雅关闭
+		// 链路同一组：closeInfra 后探活自然失败。setup 模式（deps == nil）不
+		// 注册——依赖未装配即未就绪，探针 404 如实反映。
+		probes := deps.healthProbes
+		if probes == nil {
+			probes = app.StandardProbes(deps.db, deps.rdb)
+		}
+		ginEngine.GET("/health", app.NewHandler(probes))
 		registerSSO(cfg, csrv, deps)
 		registerAccount(cfg, csrv, deps)
 		registerAdmin(cfg, csrv, deps)

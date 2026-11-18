@@ -26,7 +26,8 @@ COPY --from=web /build/web/dist web/dist
 COPY web/scripts/sync-templates.mjs web/scripts/sync-templates.mjs
 # 壳层模板与静态资产落位（§3.13），供 server/assets embed 进二进制
 RUN node web/scripts/sync-templates.mjs
-RUN cd server && CGO_ENABLED=0 GOAMD64=v1 go build -tags nomsgpack -ldflags "-s -w" -o /out/authloft .
+RUN cd server && CGO_ENABLED=0 GOAMD64=v1 go build -tags nomsgpack -ldflags "-s -w" -o /out/authloft . \
+    && CGO_ENABLED=0 GOAMD64=v1 go build -ldflags "-s -w" -o /out/healthprobe ./cmd/healthprobe
 
 # ---- 运行时阶段：仅二进制 + ca-certificates/tzdata + 非 root 用户 ----
 FROM debian:stable-slim
@@ -36,6 +37,13 @@ RUN apt-get update \
     && groupadd -r authloft && useradd -r -g authloft authloft \
     && mkdir -p /conf && chown authloft:authloft /conf
 COPY --from=server /out/authloft /usr/local/bin/authloft
+COPY --from=server /out/healthprobe /usr/local/bin/healthprobe
 USER authloft
 EXPOSE 8080
+# HEALTHCHECK（§23.1）：运行时镜像无 curl/wget（不引入新包），用同源静态
+# 探针二进制打 /health——2xx 即健康；--timeout 须大于探针二进制内部 HTTP
+# 超时（5s）；start-period 覆盖首启装配 / 迁移窗口；setup 模式依赖未装配、
+# /health 404 如实报未就绪（重启策略照 §23.2，healthy 与否不改变进程行为）。
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["/usr/local/bin/healthprobe"]
 ENTRYPOINT ["/usr/local/bin/authloft", "--config", "/conf/authloft.yml"]
