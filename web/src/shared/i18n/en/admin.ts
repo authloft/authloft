@@ -601,6 +601,8 @@ export const admin: typeof zhAdmin = {
   'admin.genderUnspecified': 'Unspecified',
   'admin.genderMale': 'Male',
   'admin.genderFemale': 'Female',
+  'admin.editNicknameIssue': 'Nickname must be 12 characters or fewer',
+  'admin.editAvatarIssue': 'Avatar URL must be 120 characters or fewer',
   'admin.editGenderIssue': 'Gender must be unspecified / male / female',
   'admin.editBirthdayIssue': 'Birthday must be in YYYY-MM-DD format',
   'admin.editExtraIssue': 'Extra profile must be a valid JSON object',

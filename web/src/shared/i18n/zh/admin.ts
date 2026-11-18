@@ -549,6 +549,8 @@ export const admin = {
   'admin.genderUnspecified': '保密',
   'admin.genderMale': '男',
   'admin.genderFemale': '女',
+  'admin.editNicknameIssue': '昵称最多 12 个字',
+  'admin.editAvatarIssue': '头像链接最多 120 个字符',
   'admin.editGenderIssue': '性别只能取保密 / 男 / 女',
   'admin.editBirthdayIssue': '生日须为 YYYY-MM-DD 格式',
   'admin.editExtraIssue': '扩展资料须为合法 JSON 对象',

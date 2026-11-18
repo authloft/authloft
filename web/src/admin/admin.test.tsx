@@ -2430,6 +2430,33 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
     );
   });
 
+  test('userEditDraftIssue 长度上限（§5.4 与 §3.2 同上限，码点口径）：nickname 13 字 / avatarUrl 121 字符拒绝，12 字 / 120 字符放行', () => {
+    expect(
+      apiMod.userEditDraftIssue({
+        ...unchangedDraft,
+        nickname: '一二三四五六七八九十甲乙丙',
+      }),
+    ).toBe('admin.editNicknameIssue');
+    expect(
+      apiMod.userEditDraftIssue({
+        ...unchangedDraft,
+        nickname: '一二三四五六七八九十甲乙',
+      }),
+    ).toBeNull();
+    expect(
+      apiMod.userEditDraftIssue({
+        ...unchangedDraft,
+        avatarUrl: 'a'.repeat(121),
+      }),
+    ).toBe('admin.editAvatarIssue');
+    expect(
+      apiMod.userEditDraftIssue({
+        ...unchangedDraft,
+        avatarUrl: 'a'.repeat(120),
+      }),
+    ).toBeNull();
+  });
+
   test('PATCH diff：与原值相同 → 两个请求都为 null（无改动不提交）', () => {
     expect(
       apiMod.buildUpdateUserProfileRequest(BigInt(2), unchangedDraft, detail),

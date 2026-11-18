@@ -3,17 +3,22 @@
 // @ts-ignore
 import { describe, expect, test } from 'rstack/test';
 import {
+  AVATAR_URL_MAX_LENGTH,
   DEFAULT_PASSWORD_POLICY,
   DELETED_USERNAME_PREFIX,
   FIELD_ISSUE_I18N_KEY,
+  codePointLength,
   firstInvalidField,
   hasDeletedUsernamePrefix,
+  isAvatarUrlWithinLimit,
   isCodeComplete,
   isFilled,
+  isNicknameWithinLimit,
   isValidEmail,
   isValidPhone,
   isValidProviderKey,
   isValidUsername,
+  NICKNAME_MAX_LENGTH,
   PROVIDER_KEY_PATTERN,
   USERNAME_PATTERN,
   usernameIssue,
@@ -92,6 +97,35 @@ describe('utils/validate 手机号 / 邮箱（§1.11：体验性预校验，后�
     expect(isValidEmail('user@example')).toBe(false);
     expect(isValidEmail('a b@example.com')).toBe(false);
     expect(isValidEmail('')).toBe(false);
+  });
+});
+
+describe('utils/validate 资料字段长度上限（§3.2 / §5.4：nickname ≤ 12 字、avatarUrl ≤ 120 字符）', () => {
+  test('码点口径：codePointLength 与后端 utf8.RuneCountInString 对齐（astral 码点计 1）', () => {
+    expect(codePointLength('ab')).toBe(2);
+    expect(codePointLength('中文😀')).toBe(3);
+    // 对照：string.length 按 UTF-16 code unit 计数会把 astral 码点算成 2。
+    expect('😀'.length).toBe(2);
+    expect(codePointLength('😀')).toBe(1);
+  });
+
+  test('昵称：12 字（汉字）通过、13 字拒绝；空串 = 显式清空放行', () => {
+    expect(NICKNAME_MAX_LENGTH).toBe(12);
+    expect(isNicknameWithinLimit('一二三四五六七八九十甲乙')).toBe(true);
+    expect(isNicknameWithinLimit('一二三四五六七八九十甲乙丙')).toBe(false);
+    expect(isNicknameWithinLimit('')).toBe(true);
+  });
+
+  test('昵称 astral 码点：12 个 emoji（UTF-16 计 24）按码点口径放行、13 个拒绝', () => {
+    expect(isNicknameWithinLimit('😀'.repeat(12))).toBe(true);
+    expect(isNicknameWithinLimit('😀'.repeat(13))).toBe(false);
+  });
+
+  test('头像 URL：120 字符通过、121 字符拒绝；空串放行', () => {
+    expect(AVATAR_URL_MAX_LENGTH).toBe(120);
+    expect(isAvatarUrlWithinLimit('a'.repeat(120))).toBe(true);
+    expect(isAvatarUrlWithinLimit('a'.repeat(121))).toBe(false);
+    expect(isAvatarUrlWithinLimit('')).toBe(true);
   });
 });
 

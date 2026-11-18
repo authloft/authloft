@@ -2374,9 +2374,13 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
       }),
     );
 
-    await apiMod.updateProfile(
-      apiMod.buildAvatarPersistRequest('https://cdn.test/b.jpg'),
+    const persisted = apiMod.buildAvatarPersistRequest(
+      'https://cdn.test/b.jpg',
     );
+    if (!persisted.ok) {
+      throw new Error('unreachable');
+    }
+    await apiMod.updateProfile(persisted.request);
 
     expect(await captured.json()).toEqual({
       avatarUrl: 'https://cdn.test/b.jpg',
@@ -2393,8 +2397,12 @@ describe('api.updateProfile（§3.2 行 837，msw 真实 transport 归一链）'
       ),
     );
 
+    const persisted = apiMod.buildAvatarPersistRequest('u');
+    if (!persisted.ok) {
+      throw new Error('unreachable');
+    }
     const caught = await captureRejection(
-      apiMod.updateProfile(apiMod.buildAvatarPersistRequest('u')),
+      apiMod.updateProfile(persisted.request),
     );
 
     expect(caught).toBeInstanceOf(ApiError);
@@ -2477,6 +2485,33 @@ describe('buildUpdateProfileRequest（§3.2 PATCH 语义——缺省保留，纯
     });
   });
 
+  test('nickname 超限：13 字（汉字）→ nickname_too_long 不发包；12 字正常进 wire（§3.2 上限 12 字，码点口径）', () => {
+    expect(
+      apiMod.buildUpdateProfileRequest(
+        PROFILE_BASE,
+        profileDraft({ nickname: '一二三四五六七八九十甲乙丙' }),
+      ),
+    ).toEqual({ ok: false, error: 'nickname_too_long' });
+    const accepted = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ nickname: '一二三四五六七八九十甲乙' }),
+    );
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) {
+      throw new Error('unreachable');
+    }
+    expect(accepted.changed).toBe(true);
+    expect(toJson(UpdateProfileRequestSchema, accepted.request)).toEqual({
+      nickname: '一二三四五六七八九十甲乙',
+    });
+    // astral 码点计 1：12 个 emoji（UTF-16 计 24）与后端 rune 口径一致放行。
+    const astral = apiMod.buildUpdateProfileRequest(
+      PROFILE_BASE,
+      profileDraft({ nickname: '😀'.repeat(12) }),
+    );
+    expect(astral.ok).toBe(true);
+  });
+
   test('birthday 编辑为非法格式 / 真非法日历 → invalid_birthday 不发包（YYYY-MM-DD §3.1；Date 静默归一化的日期必须拒绝）', () => {
     for (const birthday of [
       '1990/01/01',
@@ -2544,6 +2579,33 @@ describe('buildUpdateProfileRequest（§3.2 PATCH 语义——缺省保留，纯
     expect(toJson(UpdateProfileRequestSchema, built.request)).toEqual({
       profile: { gender: '1' },
     });
+  });
+});
+
+describe('buildAvatarPersistRequest 长度契约（§3.2 avatarUrl 上限 120 字符，纯函数）', () => {
+  test('121 字符 → avatar_url_too_long 拒绝构造不发包；120 字符正常构造', () => {
+    // 仅测长度口径，不校验 URL 形态（构造函数只计长度，同后端 rune 口径）。
+    const rejected = apiMod.buildAvatarPersistRequest('a'.repeat(121));
+    expect(rejected).toEqual({ ok: false, error: 'avatar_url_too_long' });
+    const accepted = apiMod.buildAvatarPersistRequest('a'.repeat(120));
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) {
+      throw new Error('unreachable');
+    }
+    expect(toJson(UpdateProfileRequestSchema, accepted.request)).toEqual({
+      avatarUrl: 'a'.repeat(120),
+    });
+  });
+});
+
+describe('PROFILE_EDIT_FIELD_ERROR_KEY（校验失败形态 → i18n 键表，文案由字典层落）', () => {
+  test('两形态各自落键', () => {
+    expect(apiMod.PROFILE_EDIT_FIELD_ERROR_KEY.invalid_birthday).toBe(
+      'account.birthdayInvalid',
+    );
+    expect(apiMod.PROFILE_EDIT_FIELD_ERROR_KEY.nickname_too_long).toBe(
+      'account.nicknameTooLong',
+    );
   });
 });
 
@@ -2709,7 +2771,7 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
         status: 'success',
         profile: PROFILE_BASE,
         error: undefined,
-        avatarPersistFailed: false,
+        avatarPersistError: undefined,
         editing: false,
         draft: undefined,
         editStatus: 'idle',
@@ -2766,7 +2828,9 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
   });
 
   test('头像持久化失败：行内专属文案（不再复用通用「操作失败」）', () => {
-    const html = renderProfilePageView({ avatarPersistFailed: true });
+    const html = renderProfilePageView({
+      avatarPersistError: t('account.avatarPersistFailed'),
+    });
     expect(html).toContain(t('account.avatarPersistFailed'));
   });
 
@@ -2796,6 +2860,12 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
       fieldError: 'invalid_birthday',
     });
     expect(field).toContain('请输入正确的日期（YYYY-MM-DD）');
+    const nickname = renderProfilePageView({
+      editing: true,
+      draft: profileDraft({}),
+      fieldError: 'nickname_too_long',
+    });
+    expect(nickname).toContain(t('account.nicknameTooLong'));
     const server = renderProfilePageView({
       editing: true,
       draft: profileDraft({}),

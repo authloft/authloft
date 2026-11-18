@@ -1,7 +1,8 @@
 /**
  * 纯函数校验器（docs/前端架构.md §3.4 validate.ts 行 338）：用户名（接口文档
  * §2.3 行 449 唯一定义）、邮箱 / 手机号（体验性格式预校验，§1.11：后端为唯一
- * 权威）、密码强度（§5.6 策略与默认值同源）、provider_key（^[a-z0-9_]+$）。
+ * 权威）、密码强度（§5.6 策略与默认值同源）、provider_key（^[a-z0-9_]+$）、
+ * 资料字段长度上限（§3.2 / §5.4：nickname ≤ 12 字、avatarUrl ≤ 120 字符）。
  */
 
 /** 用户名规则唯一来源：接口文档 §2.3 唯一定义 —— ^[A-Za-z0-9_]{5,20}$（设置后不可改）。 */
@@ -64,6 +65,35 @@ export function isValidPhone(value: string): boolean {
 /** 邮箱（体验性预校验，后端为唯一权威）。 */
 export function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value);
+}
+
+// ---------------------------------------------------------------------------
+// 资料字段长度上限（§3.2 / §5.4：与 DB 列宽、后端 utf8.RuneCountInString 同源）
+// ---------------------------------------------------------------------------
+
+/** 昵称上限：12 字（§3.2 / §5.4 同上限；字符数口径，VARCHAR(12) 宽度即字符数）。 */
+export const NICKNAME_MAX_LENGTH = 12;
+
+/** 头像 URL 上限：120 字符（同上；VARCHAR(120)）。 */
+export const AVATAR_URL_MAX_LENGTH = 120;
+
+/**
+ * 字符数：按 Unicode 码点计数，与后端 utf8.RuneCountInString / DB VARCHAR
+ * 列宽对齐；string.length 按 UTF-16 code unit 计数，会把 astral 码点
+ * （emoji 等）算成 2，不能用于此处口径。
+ */
+export function codePointLength(value: string): number {
+  return [...value].length;
+}
+
+/** 昵称长度预校验：≤ 12 字（空串 = 显式清空，放行；服务端为唯一权威）。 */
+export function isNicknameWithinLimit(value: string): boolean {
+  return codePointLength(value) <= NICKNAME_MAX_LENGTH;
+}
+
+/** 头像 URL 长度预校验：≤ 120 字符（空串 = 显式清空，放行）。 */
+export function isAvatarUrlWithinLimit(value: string): boolean {
+  return codePointLength(value) <= AVATAR_URL_MAX_LENGTH;
 }
 
 // ---------------------------------------------------------------------------

@@ -138,7 +138,12 @@ import {
 import type { MfaResponse } from '../gen/proto/api/account/v1/mfa_pb';
 import type { UserProfile } from '../gen/proto/api/account/v1/profile_pb';
 import { UserProfileSchema } from '../gen/proto/api/account/v1/profile_pb';
-import { isValidEmail, isValidPhone } from '../shared/utils/validate';
+import {
+  isAvatarUrlWithinLimit,
+  isNicknameWithinLimit,
+  isValidEmail,
+  isValidPhone,
+} from '../shared/utils/validate';
 import type {
   AdminProvider,
   DeleteProviderRequest,
@@ -952,9 +957,24 @@ function stableJsonText(value: unknown): string {
 
 /**
  * 草稿字段校验：返回首个不通过的 i18n 键，全过 → null。
+ * 顺序随编辑表单字段序（昵称 / 头像 URL → 性别 → 生日 → extra → 联系方式）。
  * 文案键在字典层落，本函数只给键；服务端仍为字段校验唯一权威。
  */
 export function userEditDraftIssue(draft: UserEditDraft): I18nKey | null {
+  // §5.4 与 §3.2 同上限：nickname ≤ 12 字、avatarUrl ≤ 120 字符（码点口径）；
+  // 空串 = 显式清空，放行。按提交口径校验 draftText（trim 后值，与 diff 同源）。
+  if (
+    draftText(draft.nickname) !== '' &&
+    !isNicknameWithinLimit(draftText(draft.nickname))
+  ) {
+    return 'admin.editNicknameIssue';
+  }
+  if (
+    draftText(draft.avatarUrl) !== '' &&
+    !isAvatarUrlWithinLimit(draftText(draft.avatarUrl))
+  ) {
+    return 'admin.editAvatarIssue';
+  }
   if (draft.gender !== '' && !GENDER_VALUES.includes(draft.gender)) {
     return 'admin.editGenderIssue';
   }

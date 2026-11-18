@@ -65,6 +65,7 @@ import {
   buildAvatarPersistRequest,
   buildUpdateProfileRequest,
   getProfile,
+  PROFILE_EDIT_FIELD_ERROR_KEY,
   isUnauthenticatedError,
   profileGenderOptions,
   profileGenderText,
@@ -213,7 +214,7 @@ function ProfileEditView(props: {
       </div>
       {props.fieldError !== undefined ? (
         <p role="alert" className={styles.error}>
-          {t('account.birthdayInvalid')}
+          {t(PROFILE_EDIT_FIELD_ERROR_KEY[props.fieldError])}
         </p>
       ) : null}
       {props.status === 'error' ? (
@@ -258,15 +259,15 @@ export function ProfilePageView(props: {
   avatarOverride?: string;
   /** AvatarUploader 上传成功回调：刷新展示 + 持久化接线（壳内消化）。 */
   onAvatarUploaded?: (url: string) => void;
-  /** 头像持久化失败（UpdateProfile {avatarUrl} 非 401 失败；展示不回滚）。 */
-  avatarPersistFailed: boolean;
+  /** 头像持久化失败行内文案（非 401 服务端失败或本地构造拒绝；展示不回滚）。 */
+  avatarPersistError: string | undefined;
   /** 编辑 / 展示两态开关。 */
   editing: boolean;
   /** 编辑草稿（editing=true 时非 undefined）。 */
   draft: ProfileEditDraft | undefined;
   /** UpdateProfile 提交状态（编辑帧按钮态）。 */
   editStatus: RequestStatus;
-  /** 本地校验失败（birthday，键定位展示）。 */
+  /** 本地校验失败（birthday / nickname 超限，键定位展示）。 */
   fieldError: ProfileEditFieldError | undefined;
   /** 服务端提交错误（apiErrorText 归一展示）。 */
   editError: unknown;
@@ -353,9 +354,9 @@ export function ProfilePageView(props: {
             ) : null}
             <div className={styles.handle}>@{username}</div>
             <AvatarUploader onUploaded={props.onAvatarUploaded} />
-            {props.avatarPersistFailed ? (
+            {props.avatarPersistError !== undefined ? (
               <p role="alert" className={styles.error}>
-                {t('account.avatarPersistFailed')}
+                {props.avatarPersistError}
               </p>
             ) : null}
           </div>
@@ -453,15 +454,16 @@ export function ProfilePage(): ReactNode {
     ...persistOptions,
     onError: (error) => {
       persistOptions.onError(error);
-      if (avatarPersistFailureMessage(error) !== undefined) {
-        setAvatarPersistFailed(true);
-      }
+      // 401 → undefined（集中分派跳登录，行内不重复报错）；其余置专属文案。
+      setAvatarPersistError(avatarPersistFailureMessage(error));
     },
   });
   const [avatarOverride, setAvatarOverride] = useState<string | undefined>(
     undefined,
   );
-  const [avatarPersistFailed, setAvatarPersistFailed] = useState(false);
+  const [avatarPersistError, setAvatarPersistError] = useState<
+    string | undefined
+  >(undefined);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ProfileEditDraft | undefined>(undefined);
   const [fieldError, setFieldError] = useState<
@@ -473,9 +475,16 @@ export function ProfilePage(): ReactNode {
     setAvatarOverride(url);
     // UpdateProfile {avatarUrl} 持久化（§3.2）：纳入 useRequest 管理；
     // 失败提示专属文案、展示不回滚（本地已刷新，服务端值以下次 GetProfile
-    // 重取为准）；成功静默（头像已展示新值）。
-    setAvatarPersistFailed(false);
-    avatarPersist.run(buildAvatarPersistRequest(url));
+    // 重取为准）；成功静默（头像已展示新值）。URL 超 §3.2 上限在构造处
+    // 已拒 → 行内专属文案、不发包（服务端生成的 URL 不应超限，命中即
+    // 契约违例）。
+    const persisted = buildAvatarPersistRequest(url);
+    if (!persisted.ok) {
+      setAvatarPersistError(t('account.avatarUrlTooLong'));
+      return;
+    }
+    setAvatarPersistError(undefined);
+    avatarPersist.run(persisted.request);
   };
 
   const startEdit = () => {
@@ -519,7 +528,7 @@ export function ProfilePage(): ReactNode {
       error={error}
       avatarOverride={avatarOverride}
       onAvatarUploaded={handleAvatarUploaded}
-      avatarPersistFailed={avatarPersistFailed}
+      avatarPersistError={avatarPersistError}
       editing={editing}
       draft={draft}
       editStatus={editStatus}

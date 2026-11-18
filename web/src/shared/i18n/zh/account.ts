@@ -212,6 +212,9 @@ export const account = {
   'account.localeLabel': '语言区域',
   'account.timezoneLabel': '时区',
   'account.birthdayInvalid': '请输入正确的日期（YYYY-MM-DD）',
+  // 资料字段长度上限行内文案（§3.2：nickname ≤ 12 字、avatarUrl ≤ 120 字符）。
+  'account.nicknameTooLong': '昵称最多 12 个字',
+  'account.avatarUrlTooLong': '头像链接最多 120 个字符',
   // 头像持久化失败行内文案（非 401 失败；401 归集中分派跳登录不出行内文案）。
   'account.avatarPersistFailed': '头像保存失败，请重试',
 };

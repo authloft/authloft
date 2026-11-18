@@ -234,6 +234,10 @@ export const account: typeof zhAccount = {
   'account.localeLabel': 'Locale',
   'account.timezoneLabel': 'Time Zone',
   'account.birthdayInvalid': 'Enter a valid date (YYYY-MM-DD)',
+  // Inline copy for profile field length limits (nickname ≤ 12 characters,
+  // avatar URL ≤ 120 characters per the profile contract).
+  'account.nicknameTooLong': 'Nickname must be 12 characters or fewer',
+  'account.avatarUrlTooLong': 'Avatar URL must be 120 characters or fewer',
   // Inline copy for avatar persist failure (non-401; 401 goes through the
   // centralized dispatch redirect and shows no inline message).
   'account.avatarPersistFailed': 'Failed to save the avatar. Please try again',

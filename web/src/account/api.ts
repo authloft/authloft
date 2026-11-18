@@ -139,6 +139,8 @@ import { t, type I18nKey } from '../shared/i18n';
 import { contextSwitchUrl, logoutUrl } from '../shared/urls';
 import { toCount } from '../shared/utils/int';
 import {
+  isAvatarUrlWithinLimit,
+  isNicknameWithinLimit,
   isValidEmail,
   isValidPhone,
   validatePassword,
@@ -1021,12 +1023,27 @@ export function updateProfile(
   return accountClient.updateProfile(request);
 }
 
+/** 头像持久化请求构造失败形态（§3.2 avatarUrl 上限 120 字符）。 */
+export type AvatarPersistBuildError = 'avatar_url_too_long';
+
 /**
  * 头像持久化请求（§3.2 avatarUrl）：头像上传链路（§10.8）终点
  * {url} 单字段提交，avatarUrl 不进资料编辑表单（走上传链路）。
+ * url 来自上传响应（服务端生成），长度校验是与 §3.2 列宽同界的契约
+ * 防线：超 120 字符拒绝构造、不发包（与后端字段级拒绝同口径）。
  */
-export function buildAvatarPersistRequest(url: string): UpdateProfileRequest {
-  return create(UpdateProfileRequestSchema, { avatarUrl: url });
+export function buildAvatarPersistRequest(
+  url: string,
+):
+  | { ok: true; request: UpdateProfileRequest }
+  | { ok: false; error: AvatarPersistBuildError } {
+  if (!isAvatarUrlWithinLimit(url)) {
+    return { ok: false, error: 'avatar_url_too_long' };
+  }
+  return {
+    ok: true,
+    request: create(UpdateProfileRequestSchema, { avatarUrl: url }),
+  };
 }
 
 /**
@@ -1054,8 +1071,16 @@ export interface ProfileEditDraft {
   timezone: string;
 }
 
-/** UpdateProfile 本地校验失败形态（birthday 格式 / 日历非法，§3.1）。 */
-export type ProfileEditFieldError = 'invalid_birthday';
+/** UpdateProfile 本地校验失败形态（birthday 格式 / 日历非法 §3.1、nickname 超限 §3.2）。 */
+export type ProfileEditFieldError = 'invalid_birthday' | 'nickname_too_long';
+
+/** ProfileEditFieldError → i18n 键（文案由字典层落，本层只给键位映射）。 */
+export const PROFILE_EDIT_FIELD_ERROR_KEY: Readonly<
+  Record<ProfileEditFieldError, I18nKey>
+> = {
+  invalid_birthday: 'account.birthdayInvalid',
+  nickname_too_long: 'account.nicknameTooLong',
+};
 
 /** birthday 严格格式（§3.1 "1990-01-01"）。 */
 const BIRTHDAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -1086,6 +1111,9 @@ function isCalendarValidBirthday(birthday: string): boolean {
  * （「清空昵称 / 改回保密」可表达）：
  * - birthday 编辑过且非空 → 校验 YYYY-MM-DD 格式 + 日历合法（DatePicker
  *   正常产出恒合法，防异常态）→ invalid_birthday 不发包；
+ * - nickname 编辑过 → 校验 §3.2 上限 12 字（码点口径，validate.ts 同源），
+ *   超限 nickname_too_long 不发包（PATCH has 位语义：未编辑不发包不校验，
+ *   与后端 has 位判定同口径）；
  * - 全部字段无变化 → 零值 request（wire {}，服务端空操作幂等），changed
  *   = false 供调用方跳过提交（无改动不发请求不提示）。
  */
@@ -1105,6 +1133,9 @@ export function buildUpdateProfileRequest(
   const birthdayChanged = draft.birthday !== currentBirthday;
   const localeChanged = draft.locale !== currentLocale;
   const timezoneChanged = draft.timezone !== currentTimezone;
+  if (nicknameChanged && !isNicknameWithinLimit(draft.nickname)) {
+    return { ok: false, error: 'nickname_too_long' };
+  }
   if (
     birthdayChanged &&
     draft.birthday !== '' &&
