@@ -9,9 +9,10 @@
 // 权限查询故障不放行）、UpdateUserProfile PATCH has 位 / 值域校验 / 审计、
 // UpdateUserContact 写即置已验证 / 显式清空 / 唯一冲突不审计 / 强制下线、
 // 救援族五方法（SetUserMfa 开关两态与强制下线集合、UnbindUserTOTP、
-// ResetUserRecoveryCodes 重生成无明文回显、SetCredentialEnabled 密码凭证
-// 停用拒绝与零失效链零审计、DeleteCredential 强制下线与审计 detail、
-// 五方法门禁复用）。
+// ResetUserRecoveryCodes 重生成无明文回显、SetCredentialEnabled 双向审计与
+// 零失效链、DeleteCredential 密码凭证拒删与强制下线与审计 detail、
+// 五方法门禁复用）、已匿名化行写拒绝（writableTarget：资料 / 凭证启停 /
+// 凭证删除 → not_found 且先于门禁）。
 // q 模糊 / 排序 / 分页边界的真库行为归 repo 用例（user_repo_test.go）。
 package admin_test
 
@@ -633,13 +634,15 @@ func TestUserServiceCreateUser(t *testing.T) {
 		t.Fatalf("审计 detail 应仅 {username}, got %+v (%v)", detail, err)
 	}
 
-	// 拒绝路径零副作用：deleted_ 前缀 / 用户名格式 / 弱口令 / 唯一冲突。
+	// 拒绝路径零副作用：deleted_ 前缀（不分大小写）/ 用户名格式 / 弱口令 / 唯一冲突。
 	cases := []struct {
 		name string
 		req  *adminv1.CreateUserRequest
 		want error
 	}{
 		{"deleted_ 前缀", &adminv1.CreateUserRequest{Username: "deleted_12345", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
+		{"DELETED_ 前缀", &adminv1.CreateUserRequest{Username: "DELETED_12345", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
+		{"Deleted_ 前缀", &adminv1.CreateUserRequest{Username: "Deleted_12345", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
 		{"用户名格式", &adminv1.CreateUserRequest{Username: "abc", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
 		{"弱口令", &adminv1.CreateUserRequest{Username: "new_user2", Password: "short"}, adminsvc.ErrPasswordWeak},
 	}
@@ -655,11 +658,12 @@ func TestUserServiceCreateUser(t *testing.T) {
 		})
 	}
 
-	// 唯一性冲突 → ErrTargetTaken（already_exists + target_taken）。
+	// 唯一性冲突 → ErrUsernameTaken（already_exists + username_taken，
+	// §1.6 admin 写接口族：username 归 username_taken，非 target_taken）。
 	svc, users, _, _, _, _, _, _, audit = newUserSvc()
 	users.createErr = fmt.Errorf("user repo: create with credential: %w", repo.ErrUserDuplicate)
-	if _, err := svc.CreateUser(ctx, 1, &adminv1.CreateUserRequest{Username: "new_user", Password: "Str0ngPass!"}); !errors.Is(err, adminsvc.ErrTargetTaken) {
-		t.Fatalf("唯一冲突应 ErrTargetTaken, got %v", err)
+	if _, err := svc.CreateUser(ctx, 1, &adminv1.CreateUserRequest{Username: "new_user", Password: "Str0ngPass!"}); !errors.Is(err, adminsvc.ErrUsernameTaken) {
+		t.Fatalf("唯一冲突应 ErrUsernameTaken, got %v", err)
 	}
 	if len(audit.events) != 0 {
 		t.Fatalf("唯一冲突不投审计, got %d", len(audit.events))
@@ -1789,7 +1793,9 @@ func TestUserServiceResetUserRecoveryCodes(t *testing.T) {
 
 // TestUserServiceSetCredentialEnabled 停用 / 启用单条凭证：密码凭证停用拒绝
 // （invalid_request，避免无密码可用态）且不触碰启用态；凭证缺失 / 属他人统一
-// 404；全程不触发失效链、不投审计（契约口径）。
+// 404；成功路径双向各写恰一条 admin_credential_set_enabled 审计
+// （detail={credential_id, kind, enabled 写入值}，不含 secret）；全程零失效链
+// （不 IncEpoch、不失效既有会话——§5.4 强制下线集合不含凭证启停）。
 func TestUserServiceSetCredentialEnabled(t *testing.T) {
 	ctx := context.Background()
 
@@ -1802,7 +1808,7 @@ func TestUserServiceSetCredentialEnabled(t *testing.T) {
 		return svc, users, creds, epoch, audit
 	}
 
-	t.Run("非密码凭证停用成功且零失效链零审计", func(t *testing.T) {
+	t.Run("非密码凭证停用成功且恰一条审计", func(t *testing.T) {
 		svc, users, creds, epoch, audit := newCredSvc("totp")
 		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); err != nil {
 			t.Fatalf("err = %v, want nil", err)
@@ -1810,8 +1816,26 @@ func TestUserServiceSetCredentialEnabled(t *testing.T) {
 		if len(creds.setEnabled) != 1 || creds.setEnabled[0] != (userFakeCredEnable{id: 7, enabled: false}) {
 			t.Fatalf("setEnabled = %+v", creds.setEnabled)
 		}
-		if len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
-			t.Fatalf("凭证启停不应触发失效链或审计")
+		if len(users.incIDs) != 0 || len(epoch.synced) != 0 {
+			t.Fatalf("凭证停用不应触发失效链: inc=%v sync=%v", users.incIDs, epoch.synced)
+		}
+		if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminCredentialSetEnabled ||
+			audit.events[0].ActorType != eventlog.ActorTypeAdmin || audit.events[0].ActorID != 1 ||
+			audit.events[0].UserID != 42 {
+			t.Fatalf("停用审计 = %+v", audit.events)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if id, ok := d["credential_id"].(int64); !ok || id != 7 {
+			t.Fatalf("detail credential_id = %+v, want 7", d["credential_id"])
+		}
+		if d["kind"] != "totp" || d["enabled"] != false {
+			t.Fatalf("detail = %+v, want kind=totp enabled=false", d)
+		}
+		if _, ok := d["secret"]; ok {
+			t.Fatalf("detail 不应含 secret")
 		}
 	})
 
@@ -1825,7 +1849,7 @@ func TestUserServiceSetCredentialEnabled(t *testing.T) {
 		}
 	})
 
-	t.Run("密码凭证启用成功", func(t *testing.T) {
+	t.Run("密码凭证启用成功且恰一条审计", func(t *testing.T) {
 		svc, _, creds, epoch, audit := newCredSvc("password")
 		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, true); err != nil {
 			t.Fatalf("err = %v, want nil", err)
@@ -1833,8 +1857,19 @@ func TestUserServiceSetCredentialEnabled(t *testing.T) {
 		if len(creds.setEnabled) != 1 || creds.setEnabled[0] != (userFakeCredEnable{id: 7, enabled: true}) {
 			t.Fatalf("setEnabled = %+v", creds.setEnabled)
 		}
-		if len(epoch.synced) != 0 || len(audit.events) != 0 {
-			t.Fatalf("启用不应触发失效链或审计")
+		if len(epoch.synced) != 0 {
+			t.Fatalf("凭证启用不应触发失效链: sync=%v", epoch.synced)
+		}
+		if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminCredentialSetEnabled ||
+			audit.events[0].ActorID != 1 || audit.events[0].UserID != 42 {
+			t.Fatalf("启用审计 = %+v", audit.events)
+		}
+		var d map[string]any
+		if err := msgpack.Unmarshal(audit.events[0].Detail, &d); err != nil {
+			t.Fatalf("detail 解码: %v", err)
+		}
+		if d["kind"] != "password" || d["enabled"] != true {
+			t.Fatalf("detail = %+v, want kind=password enabled=true", d)
 		}
 	})
 
@@ -1915,6 +1950,96 @@ func TestUserServiceDeleteCredential(t *testing.T) {
 		}
 		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
 			t.Fatalf("拒绝不应有副作用")
+		}
+	})
+
+	// 密码凭证拒删（比照停用：更彻底的写操作更不允许制造无密码可用态，
+	// invalid_request）——零删除、零下线、零审计。
+	t.Run("密码凭证拒删", func(t *testing.T) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
+		users.user = userTestRow()
+		creds.byID = map[int64]*model.UserCredential{
+			7: {ID: 7, UserID: 42, Kind: "password"},
+		}
+		if err := svc.DeleteCredential(ctx, 1, 42, 7); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("err = %v, want ErrInvalidRequest", err)
+		}
+		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("拒删不应有副作用")
+		}
+	})
+}
+
+// TestUserServiceDeletedRowWriteGuard 已匿名化行（deleted_ 前缀，不分大小写）
+// 不可经管理员写接口复活（§4.2 前缀为「已删除」唯一标记、§1.6「目标不存在
+// （含已匿名化行）」→ not_found）：资料编辑 / 凭证停用 / 凭证删除一律 404，
+// 且先于目标分级门禁（已删 superadmin 也是 not_found 而非 permission_denied，
+// DeleteUser 同款顺序）；DeleteUser 对大写变体行同样 not_found。
+func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
+	ctx := context.Background()
+
+	newDeletedSvc := func(username string, perms *userFakePermissions) (*adminsvc.UserService, *userFakeUsers, *userFakeCreds, *userFakeEpoch, *userFakeAudit) {
+		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc(perms)
+		row := userTestRow()
+		row.Username = username
+		users.user = row
+		// 故意放入归属正确的凭证行：证明行级守卫先于凭证查找触发。
+		creds.byID = map[int64]*model.UserCredential{
+			7: {ID: 7, UserID: 42, Kind: "totp"},
+		}
+		return svc, users, creds, epoch, audit
+	}
+
+	t.Run("资料编辑拒绝", func(t *testing.T) {
+		svc, users, _, _, audit := newDeletedSvc("deleted_42", nil)
+		if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{Id: 42, Nickname: ptrStr("新昵称")}); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(users.profileCols) != 0 || len(users.profileSaved) != 0 || len(audit.events) != 0 {
+			t.Fatalf("已删行资料编辑不应有副作用")
+		}
+	})
+
+	t.Run("凭证停用拒绝", func(t *testing.T) {
+		svc, _, creds, epoch, audit := newDeletedSvc("deleted_42", nil)
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(creds.setEnabled) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("已删行凭证停用不应有副作用")
+		}
+	})
+
+	t.Run("凭证删除拒绝", func(t *testing.T) {
+		svc, users, creds, epoch, audit := newDeletedSvc("deleted_42", nil)
+		if err := svc.DeleteCredential(ctx, 1, 42, 7); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("已删行凭证删除不应有副作用")
+		}
+	})
+
+	// 先于门禁：目标已删（且曾持 superadmin）→ not_found，不是 permission_denied。
+	t.Run("已删 superadmin 目标 not_found 先于门禁", func(t *testing.T) {
+		perms := &userFakePermissions{granted: userGrantSuperadmins(42, 1)}
+		svc, _, creds, _, _ := newDeletedSvc("deleted_42", perms)
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound（先于门禁）", err)
+		}
+		if len(creds.setEnabled) != 0 {
+			t.Fatalf("不应触碰启用态")
+		}
+	})
+
+	// 大写变体行（理论行：建号入口已拒，守卫同口径）→ DeleteUser not_found。
+	t.Run("DeleteUser 大写变体行 not_found", func(t *testing.T) {
+		svc, users, _, epoch, audit := newDeletedSvc("DELETED_42", nil)
+		if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("err = %v, want ErrRecordNotFound", err)
+		}
+		if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+			t.Fatalf("已删行再删不应有副作用")
 		}
 	})
 }

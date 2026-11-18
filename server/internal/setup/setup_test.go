@@ -589,11 +589,12 @@ func asPathError(err error, target **PathError) bool {
 }
 
 // TestValidateUsernameMatrix 用户名规则（接口文档 §2.3 行 444），含删除
-// 匿名化保留前缀禁用（§5.4：字面前缀匹配、大小写敏感——全大写不命中）。
+// 匿名化保留前缀禁用（§5.4：不分大小写的字面前缀匹配，与列表侧
+// LOWER(username) 过滤同口径——大小写变体同拒）。
 func TestValidateUsernameMatrix(t *testing.T) {
-	valid := []string{"admin", "user01", "A_b_9", "12345", "abcdefghij", "DELETED_1"}
+	valid := []string{"admin", "user01", "A_b_9", "12345", "abcdefghij"}
 	invalid := []string{"", "ab", "abcd", "abcde!", "has space", "中文用户名", "abcdefghijklmnopqrstuvwxyz12345",
-		"deleted_1", "deleted_admin"}
+		"deleted_1", "deleted_admin", "DELETED_1", "Deleted_1"}
 	for _, u := range valid {
 		if err := validateUsername(u); err != nil {
 			t.Errorf("username %q should be valid, got %v", u, err)

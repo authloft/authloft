@@ -53,7 +53,7 @@ func TestUserRepoListUsersFilterSQL(t *testing.T) {
 		return rp.listUsersFilter(context.Background(), tx, q).Find(&[]model.User{})
 	})
 	for _, want := range []string{
-		"username NOT LIKE", "created_at >=", "created_at <=",
+		"LOWER(username) NOT LIKE", "created_at >=", "created_at <=",
 		"last_login_at >=", "last_login_at <=", "mfa_required =",
 		"user_credential", "kind =",
 	} {
@@ -68,6 +68,36 @@ func TestUserRepoListUsersFilterSQL(t *testing.T) {
 	if strings.Contains(plain, "NOT LIKE") || strings.Contains(plain, "created_at") ||
 		strings.Contains(plain, "mfa_required") || strings.Contains(plain, "user_credential") {
 		t.Errorf("无筛选时不应追加条件: %s", plain)
+	}
+}
+
+// TestUserRepoExcludeDeletedCaseInsensitive ExcludeDeleted 过滤不分大小写
+// （§5.4 默认过滤与 §2.3 前缀禁用同口径）：真库实证 LOWER(username) 使
+// deleted_ / DELETED_ / Deleted_ 变体行均不出现在列表——口径固定为大小写
+// 无关，不依赖列 collation（生产实例 collation 无法从仓库判定）。
+func TestUserRepoExcludeDeletedCaseInsensitive(t *testing.T) {
+	rp, _ := userTestSetup(t)
+	ctx := context.Background()
+
+	now := time.Unix(1761700000, 0).UTC()
+	rows := []model.User{
+		{Username: "alice", CreatedAt: now, UpdatedAt: now},
+		{Username: "deleted_1", CreatedAt: now, UpdatedAt: now},
+		{Username: "DELETED_2", CreatedAt: now, UpdatedAt: now},
+		{Username: "Deleted_3", CreatedAt: now, UpdatedAt: now},
+	}
+	for i := range rows {
+		if err := rp.Create(ctx, &rows[i]); err != nil {
+			t.Fatalf("Create %q 失败: %v", rows[i].Username, err)
+		}
+	}
+
+	got, total, err := rp.ListUsers(ctx, UserListQuery{ExcludeDeleted: true, Page: 1, PageSize: 50})
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+	if total != 1 || len(got) != 1 || got[0].Username != "alice" {
+		t.Fatalf("过滤结果 = (%d 行, total=%d), want 仅 alice", len(got), total)
 	}
 }
 

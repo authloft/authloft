@@ -2215,7 +2215,8 @@ func TestUserRescueHandlers(t *testing.T) {
 
 // TestCreateDeleteUserHandler：建号 → {id} 回显、建号请求原样透传 service；
 // 删除 → OkResponse、{id} + 操作者透传；错误映射沿用 mapUserError
-// （弱口令 password_weak、权限拒绝 permission_denied、已删行 not_found）。
+// （弱口令 password_weak、username 占用 username_taken、权限拒绝
+// permission_denied、已删行 not_found）。
 func TestCreateDeleteUserHandler(t *testing.T) {
 	users := &fakeUserService{createdID: 77}
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
@@ -2243,13 +2244,16 @@ func TestCreateDeleteUserHandler(t *testing.T) {
 		t.Fatalf("删除透传 = %+v, want (1, 42)", users.gotDelete)
 	}
 
-	// 弱口令 / 权限拒绝 / 已删行错误映射。
+	// 弱口令 / 权限拒绝 / 已删行 / username 占用错误映射（username_taken →
+	// already_exists + ErrorInfo{username_taken}，§1.6：username 冲突归
+	// username_taken，非 contact 误配的 target_taken）。
 	for _, tc := range []struct {
 		name, body, code string
 		err              error
 		status           int
 	}{
 		{"弱口令", `{"username":"new_user","password":"short"}`, "password_weak", adminsvc.ErrPasswordWeak, http.StatusBadRequest},
+		{"username 占用", `{"username":"new_user","password":"Str0ngPass!"}`, "username_taken", adminsvc.ErrUsernameTaken, http.StatusConflict},
 		{"权限拒绝", `{"id":42}`, "", adminsvc.ErrPermissionDenied, http.StatusForbidden},
 		{"已删行", `{"id":42}`, "", gorm.ErrRecordNotFound, http.StatusNotFound},
 	} {
@@ -2257,7 +2261,7 @@ func TestCreateDeleteUserHandler(t *testing.T) {
 			svc := &fakeUserService{createErr: tc.err, deleteErr: tc.err}
 			tok, ep, hh := newAdminHandler(t, &fakeProviders{}, nil, svc)
 			proc, body := adminv1connect.AdminServiceDeleteUserProcedure, tc.body
-			if tc.name == "弱口令" {
+			if tc.name == "弱口令" || tc.name == "username 占用" {
 				proc, body = adminv1connect.AdminServiceCreateUserProcedure, tc.body
 			}
 			resp, raw := doRPC(t, hh, proc, body, adminCookie(t, tok, ep, 1))

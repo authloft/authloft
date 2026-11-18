@@ -291,7 +291,8 @@ func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, em
 }
 
 // deletedUserPrefix 删除匿名化的用户名保留前缀（《后端架构》§4.2）：
-// username 改写为 "deleted_<id>"，列表默认排除该前缀行（§5.4）。
+// username 改写为 "deleted_<id>"，列表默认排除该前缀行（§5.4，过滤不分
+// 大小写——LOWER(username) 固定口径，见 listUsersFilter）。
 const deletedUserPrefix = "deleted_"
 
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
@@ -370,7 +371,12 @@ func (r *UserRepo) listUsersFilter(ctx context.Context, db *gorm.DB, q UserListQ
 		)
 	}
 	if q.ExcludeDeleted {
-		tx = tx.Where("username NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
+		// LOWER() 把大小写口径固定为不敏感（§5.4 默认过滤与 §2.3 前缀禁用
+		// 同口径；生产实例列 collation 不可从仓库判定——不依赖列 collation
+		// 的 ci 行为，cs / binary 列上亦不漏筛）。系统只写小写
+		// "deleted_<id>"，任何大小写变体行都已被建号入口拒绝，此处过滤的
+		// 是「已匿名化行」与「理论上的变体行」。
+		tx = tx.Where("LOWER(username) NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
 	}
 	if q.CreatedFrom != nil {
 		tx = tx.Where("created_at >= ?", time.Unix(*q.CreatedFrom, 0).UTC())

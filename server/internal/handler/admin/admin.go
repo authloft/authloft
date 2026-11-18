@@ -106,6 +106,7 @@ var (
 	errPasswordWeak     = errors.New("password does not meet policy")
 	errPermissionDenied = errors.New("permission denied")
 	errTargetTaken      = errors.New("contact already bound to another user")
+	errUsernameTaken    = errors.New("username already taken")
 )
 
 // providerListPageSize 管理列表分页上限（同时是 dynamic 字段 options 查询页大小）。
@@ -879,8 +880,9 @@ func mapWriteError(op string, err error) error {
 // mapUserError 用户管理族错误 → Connect 形态（口径同 mapWriteError）：参数类 →
 // ErrorInfo{invalid_request}；密码不满足策略 → ErrorInfo{password_weak}；
 // 权限门禁拒绝 → permission_denied（标准码，不挂 ErrorInfo 细分码）；
-// 联系方式被他人占用 → already_exists + ErrorInfo{target_taken}（字段级提示，
-// §5.4）；资源不存在 → not_found；其余上抛消毒为 internal。
+// username / 联系方式被他人占用 → already_exists + ErrorInfo{username_taken /
+// target_taken}（字段级提示，§1.6 / §5.4：username 归 username_taken，
+// 联系方式归 target_taken）；资源不存在 → not_found；其余上抛消毒为 internal。
 func mapUserError(op string, err error) error {
 	switch {
 	case errors.Is(err, adminsvc.ErrInvalidRequest):
@@ -892,6 +894,11 @@ func mapUserError(op string, err error) error {
 		return connect.WithErrorInfo(
 			connectrpc.NewError(connectrpc.CodeInvalidArgument, errPasswordWeak),
 			connect.NewErrorInfo("admin", "password_weak", "password does not meet policy"),
+		)
+	case errors.Is(err, adminsvc.ErrUsernameTaken):
+		return connect.WithErrorInfo(
+			connectrpc.NewError(connectrpc.CodeAlreadyExists, errUsernameTaken),
+			connect.NewErrorInfo("admin", "username_taken", "username already taken"),
 		)
 	case errors.Is(err, adminsvc.ErrTargetTaken):
 		return connect.WithErrorInfo(

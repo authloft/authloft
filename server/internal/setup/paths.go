@@ -305,14 +305,23 @@ func installAdmin(ctx context.Context, dsn, username, password string) error {
 
 // deletedUsernamePrefix 删除匿名化保留前缀（§2.3 / §5.4：删除用户把
 // username 改写为 "deleted_<id>"，系统保留标记，设置用户名的一切入口一律
-// 拒绝——安装入口为完整性覆盖，实际安装用户名自定）。
+// 拒绝（不分大小写，与列表侧 LOWER(username) 过滤同口径）——安装入口为
+// 完整性覆盖，实际安装用户名自定）。
 const deletedUsernamePrefix = "deleted_"
+
+// hasDeletedPrefix deleted_ 保留前缀判定：不分大小写的字面前缀匹配（uk_username
+// 唯一键在 ci collation 下大小写变体同键）。入口校验先行 usernameRE（纯
+// ASCII），字节切片不会撕裂多字节字符。
+func hasDeletedPrefix(username string) bool {
+	return len(username) >= len(deletedUsernamePrefix) &&
+		strings.EqualFold(username[:len(deletedUsernamePrefix)], deletedUsernamePrefix)
+}
 
 // validateUsername 管理员用户名规则（接口文档 §2.3 行 444——用户名规则的
 // 唯一定义处）：^[A-Za-z0-9_]{5,20}$；违规或命中删除匿名化保留前缀
 // → username_invalid。
 func validateUsername(username string) error {
-	if !usernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
+	if !usernameRE.MatchString(username) || hasDeletedPrefix(username) {
 		return bizErr(CodeUsernameInvalid, "admin username must match ^[A-Za-z0-9_]{5,20}$ and must not start with deleted_", nil)
 	}
 	return nil

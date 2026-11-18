@@ -34,15 +34,16 @@ const (
 	EventAdminUpdateContact = "admin_update_contact"
 	// admin 用户管理族救援事件（§4.6 枚举、接口文档 §5.6）：detail 一律不记
 	// 密码、TOTP 密钥、恢复码、联系方式明文。
-	EventAdminDisableMFA         = "admin_disable_mfa"
-	EventAdminUnbindTotp         = "admin_unbind_totp"
-	EventAdminCredentialDelete   = "admin_credential_delete"
-	EventAdminRecoveryCodesReset = "admin_recovery_codes_reset"
-	EventAdminDeleteUser         = "admin_delete_user"
-	EventProviderCreate          = "provider_create"
-	EventProviderUpdate          = "provider_update"
-	EventSettingsUpdate          = "settings_update"
-	EventOIDCAuthorizeNoState    = "oidc_authorize_no_state"
+	EventAdminDisableMFA           = "admin_disable_mfa"
+	EventAdminUnbindTotp           = "admin_unbind_totp"
+	EventAdminCredentialDelete     = "admin_credential_delete"
+	EventAdminCredentialSetEnabled = "admin_credential_set_enabled"
+	EventAdminRecoveryCodesReset   = "admin_recovery_codes_reset"
+	EventAdminDeleteUser           = "admin_delete_user"
+	EventProviderCreate            = "provider_create"
+	EventProviderUpdate            = "provider_update"
+	EventSettingsUpdate            = "settings_update"
+	EventOIDCAuthorizeNoState      = "oidc_authorize_no_state"
 )
 
 // actor_type 取值（§4.6 行 771-772）：user=该用户 uid；admin=操作管理员
@@ -147,6 +148,19 @@ func DetailCredentialDelete(credentialID int64, kind string) []byte {
 	return encodeDetail(map[string]any{
 		"credential_id": credentialID,
 		"kind":          kind,
+	})
+}
+
+// DetailCredentialSetEnabled 编码 admin_credential_set_enabled 的 detail
+// （《后端架构》§4.6：{credential_id, kind, enabled:true|false}）——凭证
+// 停用 / 启用双向共用同一事件，enabled 记写入值，不记凭证 secret。该事件
+// 语义上不触发 epoch、不失效既有会话（接口文档 §5.4 强制下线集合不含
+// 凭证启停）。
+func DetailCredentialSetEnabled(credentialID int64, kind string, enabled bool) []byte {
+	return encodeDetail(map[string]any{
+		"credential_id": credentialID,
+		"kind":          kind,
+		"enabled":       enabled,
 	})
 }
 

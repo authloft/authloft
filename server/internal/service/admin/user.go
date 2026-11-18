@@ -73,6 +73,13 @@ var ErrPermissionDenied = errors.New("admin service: permission denied")
 // 提示；唯一冲突不投审计）。
 var ErrTargetTaken = errors.New("admin service: contact target taken")
 
+// ErrUsernameTaken CreateUser 的 username 唯一性冲突（§5.4：username 规则与
+// 唯一性同 §2.3 建号口径；§1.6 admin 写接口族：唯一性冲突 → already_exists +
+// username_taken / target_taken，username 归 username_taken，与联系方式的
+// target_taken 区分以便字段级提示）。handler 映射 already_exists +
+// ErrorInfo code=username_taken。
+var ErrUsernameTaken = errors.New("admin service: username already taken")
+
 // providerCategoryUnion provider 表 category=union（§12.7 行 1542：Union
 // Provider 是虚拟 Provider 仅用于归并；注册表无该 category 常量——admin
 // handler unionProviderKeys 同款字面量）。
@@ -90,9 +97,20 @@ const (
 
 // deletedUsernamePrefix 删除匿名化保留前缀（§2.3 用户名规则唯一定义处、
 // §4.2：删除把 username 改写为 "deleted_<id>"，该前缀是「已删除」的唯一
-// 可辨识标记）：字面前缀匹配、大小写敏感，设置用户名的一切入口一律拒绝，
-// 对已前缀行再执行删除返回 not_found。
+// 可辨识标记）：设置用户名的一切入口一律拒绝（不分大小写，与列表侧
+// LOWER(username) 过滤同口径——uk_username 唯一键在 ci collation 下
+// 大小写变体同键，放行任一变体都会制造列表不可见 / 建号撞键的歧义行），
+// 对已前缀行的一切写操作按资源不存在拒绝。
 const deletedUsernamePrefix = "deleted_"
+
+// hasDeletedPrefix deleted_ 保留前缀判定：不分大小写的字面前缀匹配（§2.3
+// 前缀禁用；注册 / 三方建号 / 安装 / 管理员创建四个入口与 repo 列表过滤
+// 共用同一大小写口径）。入口校验先行 usernameRE（纯 ASCII），此处字节切片
+// 不会撕裂多字节字符。
+func hasDeletedPrefix(username string) bool {
+	return len(username) >= len(deletedUsernamePrefix) &&
+		strings.EqualFold(username[:len(deletedUsernamePrefix)], deletedUsernamePrefix)
+}
 
 // adminUsernameRE 后台新建用户的用户名规则（§2.3 唯一定义处）：
 // ^[A-Za-z0-9_]{5,20}$，设置后不可改；deleted_ 前缀判定复用同名常量。
@@ -329,10 +347,10 @@ func (s *UserService) ListUsers(ctx context.Context, f ListUsersFilter) ([]model
 }
 
 // CreateUser（§5.4）：{username, password, nickname?} 后台新建账号。
-// username 规则与 deleted_ 前缀禁用同 §2.3 建号口径，唯一性冲突 →
-// ErrTargetTaken；password 按 §5.6 策略现读校验，违规 ErrPasswordWeak。
-// 建号与初始 password 凭证同事务写入（无行则无凭证可用态），新 id 由
-// user INSERT 回填；不建会话、不接受联系方式入参（代绑走
+// username 规则与 deleted_ 前缀禁用同 §2.3 建号口径（前缀不分大小写），
+// 唯一性冲突 → ErrUsernameTaken；password 按 §5.6 策略现读校验，违规
+// ErrPasswordWeak。建号与初始 password 凭证同事务写入（无行则无凭证可用态），
+// 新 id 由 user INSERT 回填；不建会话、不接受联系方式入参（代绑走
 // UpdateUserContact）。审计 admin_create_user（detail={username}，不含
 // 密码）。沿用 admin 域统一「至少一个权限点」门禁（interceptor，§5）。
 func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.CreateUserRequest) (int64, error) {
@@ -340,7 +358,7 @@ func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.
 		return 0, ErrInvalidRequest
 	}
 	username := strings.TrimSpace(req.GetUsername())
-	if !adminUsernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
+	if !adminUsernameRE.MatchString(username) || hasDeletedPrefix(username) {
 		return 0, ErrInvalidRequest
 	}
 	password := req.GetPassword()
@@ -369,7 +387,7 @@ func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.
 	}
 	if err := s.users.CreateWithCredential(ctx, u, c); err != nil {
 		if errors.Is(err, repo.ErrUserDuplicate) {
-			return 0, ErrTargetTaken
+			return 0, ErrUsernameTaken
 		}
 		return 0, err
 	}
@@ -627,7 +645,7 @@ func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
 	if err != nil {
 		return err
 	}
-	if strings.HasPrefix(user.Username, deletedUsernamePrefix) {
+	if hasDeletedPrefix(user.Username) {
 		return gorm.ErrRecordNotFound
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
@@ -656,6 +674,22 @@ func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
 		CreatedAt: s.now(),
 	})
 	return nil
+}
+
+// writableTarget 写目标行级前置校验（§1.6 admin 写接口族「目标不存在（含
+// 已匿名化行）」→ not_found；§4.2 deleted_ 前缀为「已删除」唯一标记）：
+// 行缺失与已匿名化行统一 not_found，且先于 authorizeUserWrite——
+// user_permission 行不随删除清理，门禁先查会把已删 superadmin 误判为
+// permission_denied（DeleteUser 同款顺序）。
+func (s *UserService) writableTarget(ctx context.Context, id int64) (*model.User, error) {
+	user, err := s.users.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if hasDeletedPrefix(user.Username) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return user, nil
 }
 
 // authorizeUserWrite 目标账户分级写门禁（§5.4 门禁矩阵、《后端架构》§4.8）：
@@ -724,11 +758,11 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, actor, id int64, re
 	if id <= 0 || req == nil {
 		return ErrInvalidRequest
 	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，DeleteUser 同款顺序）
+	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
-	}
-	if _, err := s.users.FindByID(ctx, id); err != nil {
-		return err // 行缺失 → 404（先于任何写操作，§3.2 存在性先判口径）
 	}
 	// profile 载荷先合并校验（birthday / extra / gender 值域），非法拒绝时
 	// user 表列尚未写入，不产生部分落库。
@@ -1042,10 +1076,15 @@ func (s *UserService) ResetUserRecoveryCodes(ctx context.Context, actor, id int6
 // SetCredentialEnabled（§5.4）：{id, credentialId, enabled} 停用 / 启用
 // 单条凭证。凭证行缺失或不属目标用户统一 404（不区分，避免泄露归属）；
 // 密码凭证不允许停用（避免无密码可用态，invalid_request）。按 §5.4 契约
-// 口径不触发会话失效、不投独立审计（止损可升级为禁用用户或删除凭证）。
+// 口径不触发会话失效（强制下线集合不含凭证启停：不 IncEpoch、不失效既有
+// 会话）；写一条管理员审计事件 admin_credential_set_enabled（双向单事件，
+// detail={credential_id, kind, enabled 写入值}，§4.6 / §5.6）。
 func (s *UserService) SetCredentialEnabled(ctx context.Context, actor, id, credentialID int64, enabled bool) error {
 	if id <= 0 || credentialID <= 0 {
 		return ErrInvalidRequest
+	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，DeleteUser 同款顺序）
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -1060,17 +1099,33 @@ func (s *UserService) SetCredentialEnabled(ctx context.Context, actor, id, crede
 	if !enabled && row.Kind == credentialKindPassword {
 		return ErrInvalidRequest
 	}
-	return s.creds.SetEnabled(ctx, credentialID, enabled)
+	if err := s.creds.SetEnabled(ctx, credentialID, enabled); err != nil {
+		return err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminCredentialSetEnabled,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    id,
+		Detail:    eventlog.DetailCredentialSetEnabled(credentialID, row.Kind, enabled),
+		CreatedAt: s.now(),
+	})
+	return nil
 }
 
 // DeleteCredential（§5.4）：{id, credentialId} 删除单条凭证（含 WebAuthn
 // 附加行——DeleteByID 单事务同删）。凭证行缺失或不属目标用户统一 404。
+// 密码凭证不允许删除——比照停用更彻底的写操作更不允许制造无密码可用态
+// （invalid_request，口径同 SetCredentialEnabled 的密码停用拒绝）。
 // 属强制下线动作（§5.4 触发集合含「删除凭证」）→ IncEpoch + al:pwdep 同步
 // → 审计 admin_credential_delete（detail={credential_id, kind}，不记凭证
 // secret，§4.6）。
 func (s *UserService) DeleteCredential(ctx context.Context, actor, id, credentialID int64) error {
 	if id <= 0 || credentialID <= 0 {
 		return ErrInvalidRequest
+	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，DeleteUser 同款顺序）
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -1081,6 +1136,9 @@ func (s *UserService) DeleteCredential(ctx context.Context, actor, id, credentia
 	}
 	if row.UserID != id {
 		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, gorm.ErrRecordNotFound)
+	}
+	if row.Kind == credentialKindPassword {
+		return ErrInvalidRequest
 	}
 	if err := s.creds.DeleteByID(ctx, id, credentialID); err != nil {
 		return err

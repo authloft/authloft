@@ -522,11 +522,11 @@ func TestRegisterUsernameTaken(t *testing.T) {
 }
 
 // TestRegisterUsernameRule 用户名规则 ^[A-Za-z0-9_]{5,20}$ 违规或命中删除
-// 匿名化保留前缀（§2.3 / §5.4：deleted_ 前缀禁用，覆盖两条建号路径）→
-// invalid_request。
+// 匿名化保留前缀（§2.3 / §5.4：deleted_ 前缀禁用，覆盖两条建号路径，
+// 不分大小写）→ invalid_request。
 func TestRegisterUsernameRule(t *testing.T) {
 	for _, username := range []string{"ab", "a!b", "汉字用户名", "overlong_username_xyz",
-		"deleted_12345", "deleted_alice"} {
+		"deleted_12345", "deleted_alice", "DELETED_12345", "Deleted_Alice"} {
 		at := time.Unix(1_700_000_000, 0)
 		deps := newTestDeps(t, at)
 		deps.registry.factors[factor.FactorPassword] = passwordOnlyFactor()
@@ -873,6 +873,7 @@ func TestThirdpartySignupValidations(t *testing.T) {
 		{"缺失", "", StatusInvalidRequest},
 		{"规则违规", "ab", StatusInvalidRequest},
 		{"保留前缀", "deleted_9876", StatusInvalidRequest},
+		{"保留前缀大写变体", "DELETED_9876", StatusInvalidRequest},
 		{"占用", "carol_tp", StatusUsernameTaken},
 	} {
 		got := e.Submit(context.Background(), "register", Request{
