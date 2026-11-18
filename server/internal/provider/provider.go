@@ -1,4 +1,4 @@
-// Provider 实体加载与缓存（docs/后端架构.md §3.9 行 403、§15.3 行 1715）：
+// Provider 实体加载与缓存（docs/后端架构.md §3.9、§15.3）：
 // 本地 LRU + singleflight（TTL 60s），版本号 al:prov:ver 变化时整体失效；
 // Redis al:prov:v:{key}（600s）作为可选的整行缓存，只在本地未命中时读取。
 //
@@ -26,7 +26,7 @@ import (
 	"authloft/internal/repo/model"
 )
 
-// 默认参数（§3.9 行 403 / §15.3 行 1715 / §5.1 行 847）。
+// 默认参数（§3.9 / §15.3 / §5.1）。
 const (
 	defaultLocalTTL       = 60 * time.Second
 	defaultLocalCapacity  = 1024
@@ -343,7 +343,7 @@ func (l *Loader) loadList(ctx context.Context, providerType string) ([]*Provider
 }
 
 // toProvider 行 → 实例：Ext 的编解码唯一出口是 repo.ParseProviderExt
-// （§3.9 行 418 / provider_repo.go），不另造第二套解析。
+// （§3.9 / provider_repo.go），不另造第二套解析。
 func toProvider(row *model.Provider) (*Provider, error) {
 	if row == nil {
 		return nil, fmt.Errorf("provider: nil row")

@@ -8,40 +8,40 @@ import (
 	"authloft/internal/security"
 )
 
-// CSPSupporter Provider 可选接口（docs/后端架构.md §12.1 行 1461）：
+// CSPSupporter Provider 可选接口（docs/后端架构.md §12.1）：
 // CSP() 返回追加到基线的指令片段（如 script-src https://cdn.example.com
-// ——§3.13 行 488：script/style/font 追加 static_base 源；captcha 侧注册
+// ——§3.13：script/style/font 追加 static_base 源；captcha 侧注册
 // 契约见 §9.4）。CSP 规范同一 policy 内同名指令仅首条生效、其余被忽略
-//（非取并集，接口文档 §8 行 1538），故片段由 CSP 按指令名聚合后单条输出，
+// （非取并集，接口文档 §8），故片段由 CSP 按指令名聚合后单条输出，
 // 不得以多条同名指令拼接生效。
 type CSPSupporter interface {
 	CSP() string
 }
 
 // CSPNonceKey 每请求 CSP nonce 在 *gin.Context 中的键；handler（§3.4
-// 行 323 page.go）读它注入空壳 HTML 的 <script nonce="…">。
+// page.go）读它注入空壳 HTML 的 <script nonce="…">。
 const CSPNonceKey = "csp_nonce"
 
 // cspNonceLen nonce 字符数：22 个 URL-safe 字符 × 6 bit ≈ 132-bit 熵
-// （crypto/rand 经 security.RandomString，§3.3 行 310「nonce 必须
+// （crypto/rand 经 security.RandomString，§3.3「nonce 必须
 // per-request 随机」）。
 const cspNonceLen = 22
 
-// CSP 内容安全策略中间件（docs/后端架构.md §3.3 行 316、§9.4 行 1135、
-// docs/接口文档.md §8 行 1521-1548）：每请求随机 nonce 写 ctx
-//（CSPNonceKey）+ 输出 Content-Security-Policy 响应头；supporter（可变
+// CSP 内容安全策略中间件（docs/后端架构.md §3.3、§9.4、
+// docs/接口文档.md §8）：每请求随机 nonce 写 ctx
+// （CSPNonceKey）+ 输出 Content-Security-Policy 响应头；supporter（可变
 // 参数，可为空）的指令片段**每请求**聚合——内容可能随配置热变（static_base
 // CDN 源 / captcha 当前生效 Provider，§9.4），不在构造期固化。
 //
-// 聚合语义（接口文档 §8 行 1538「同名指令合并」）：CSP 规范同一
+// 聚合语义（接口文档 §8「同名指令合并」）：CSP 规范同一
 // policy 内同名指令仅首条生效、其余被忽略，故支持者片段按指令名与基线
 // 聚合后**单条指令输出**——源并集 + 源级去重（首次出现保留）+ 顺序稳定
-//（基线六指令顺序不变：default/script/style/font/img/connect；基线源在
+// （基线六指令顺序不变：default/script/style/font/img/connect；基线源在
 // 前、支持者源按装配序追加；基线外新指令按片段中首次出现顺序追加在基线
 // 之后）。空白片段跳过。中间件只做聚合与去重，**不出现任何厂商名 /
-// provider type 分支特判**（§9.4 行 1133）。
+// provider type 分支特判**（§9.4）。
 //
-// 基线 = CSP 终稿（接口文档 §8 行 1521-1532 逐项表，正常模式与
+// 基线 = CSP 终稿（接口文档 §8 逐项表，正常模式与
 // setup 模式统一基线）：default-src 'self'；script-src 'nonce-{n}'
 // 'strict-dynamic'；style-src 'nonce-{n}' 'self'（内联 <style> 与带 nonce
 // 的样式标签经 nonce 放行，外链 css 经 'self'，禁 'unsafe-inline'）；
@@ -49,7 +49,7 @@ const cspNonceLen = 22
 // 图、https: 覆盖渠道图标——域名不可预知）；connect-src 'self'。配 CDN
 // 时 script / style / font 三条资源类指令由 supporter 追加 static_base
 // 源（script-src CDN 源仅为不支持 strict-dynamic 的旧浏览器回退）；captcha
-// provider 贡献源按「当前启用且已配置」聚合进各指令（§8 行 1534）。
+// provider 贡献源按「当前启用且已配置」聚合进各指令（§8）。
 //
 // nonce 生成失败（crypto/rand 实际不可达）时不出伪劣 CSP 头（空 nonce
 // 的 script-src 无防护意义）、不放行伪造值——降级为无 CSP 继续请求
@@ -75,7 +75,7 @@ func CSP(supporters ...CSPSupporter) gin.HandlerFunc {
 	}
 }
 
-// cspPolicyBuilder 有序 CSP 指令聚合器（§3.3 行 316 / §9.4 行 1135）：
+// cspPolicyBuilder 有序 CSP 指令聚合器（§3.3 / §9.4）：
 // order 记指令名出现顺序（基线六指令在前），tokens 记各指令去重后的源
 // token 列表（CSP 源不含空白，token 即源；'nonce-…' / 'self' / host 同级）。
 type cspPolicyBuilder struct {
@@ -85,7 +85,7 @@ type cspPolicyBuilder struct {
 }
 
 // initBase 写入基线六指令（逐项口径见 CSP 注释；setup 壳经 setup
-// 引擎同挂本中间件取得同一基线，§8 行 1521）。
+// 引擎同挂本中间件取得同一基线，§8）。
 func (b *cspPolicyBuilder) initBase() {
 	b.tokens = map[string][]string{}
 	b.add("default-src", "'self'")

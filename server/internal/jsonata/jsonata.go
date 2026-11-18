@@ -1,17 +1,17 @@
 // Package jsonata 是 JSONata 表达式求值的唯一内部封装层
-// （docs/后端架构.md §1.5 第三方库 / §3.12 行 471；docs/接口文档.md
-// §5.3 行 1259-1263 表达式字段约定，已定稿）：
+// （docs/后端架构.md §1.5 第三方库 / §3.12；docs/接口文档.md
+// §5.3 表达式字段约定，已定稿）：
 //
 //   - 求值引擎统一使用 gnata（github.com/recolabs/gnata v0.6.2，
 //     2026-11-05 定稿），**不自研表达式解析 / 求值**；本包是全库唯一
 //     import gnata 之处，service / handler 只 import 本包，替换实现只改
 //     本文件（gnata 类型不外泄到包外）。
-//   - 错误归一（接口文档 §5.3 行 1261-1263）：编译失败 →
-//     ErrInvalidExpression（保存预校验映射 admin 域 invalid_request）；
+//   - 错误归一（接口文档 §5.3）：编译失败 →
+//     ErrInvalidExpression（storage_path / user_mapping 调用方包装透传）；
 //     运行期求值失败 → ErrEvaluate（登录链路映射 §1.6 既有兜底）；结果
 //     非字符串（含 undefined 空值 / 数字 / 对象等）→ ErrNotString。三类
 //     均为内部哨兵，**不透出 gnata 原始错误**——库原始错误仅进日志供
-//     排查。默认 log.level=info 下 Debug 不输出，故用 Warn（见 L-08）。
+//     排查。默认 log.level=info 下 Debug 不输出，故用 Warn。
 //   - gnata 不支持的 JSONata 语法在本包维护不支持清单（Unsupported
 //     变量 + 摸底测试），如实记录、不以自研补齐，随库升级同步更新
 //     （升级须重跑本包测试基线，§1.5 版本策略）。
@@ -35,8 +35,8 @@ import (
 // 归一哨兵错误（接口文档 §5.3：调用方按所在域既有错误码映射，本包不
 // 生成 Connect 错误体）。
 var (
-	// ErrInvalidExpression 表达式编译失败（语法非法）——保存预校验口径
-	//（admin 域 invalid_request）。
+	// ErrInvalidExpression 表达式编译失败（语法非法；空表达式同判）——
+	// storage_path / user_mapping 调用方包装透传。
 	ErrInvalidExpression = errors.New("jsonata: invalid expression")
 	// ErrEvaluate 运行期求值失败——登录链路 §1.6 既有兜底口径。
 	ErrEvaluate = errors.New("jsonata: evaluate failed")

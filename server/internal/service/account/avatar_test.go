@@ -135,7 +135,7 @@ func (f *avatarFakeStorage) PresignPut(_ context.Context, key, contentType strin
 
 var _ storage.Storage = (*avatarFakeStorage)(nil)
 
-// avatarTestExt 构造 storage 扩展字段（§12.1 行 1704）。
+// avatarTestExt 构造 storage 扩展字段（§12.1）。
 func avatarTestExt(uploadMode string, ttl int32, maxSize int64, allowed string) *providerpb.Ext {
 	return &providerpb.Ext{
 		UploadMode:   uploadMode,
@@ -292,9 +292,8 @@ func TestAvatarPresignKeyServerGenerated(t *testing.T) {
 	}
 }
 
-// TestAvatarPresignMIMERejected MIME 不在白名单 → ErrAvatarFileTypeNotAllowed
-// （行 868）；空 contentType 同拒、空白名单 fail-closed（自决）；拒绝时零
-// PresignPut。
+// TestAvatarPresignMIMERejected MIME 不在白名单 → ErrAvatarFileTypeNotAllowed；
+// 空 contentType 同拒、空白名单 fail-closed（自决）；拒绝时零 PresignPut。
 func TestAvatarPresignMIMERejected(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	for name, ct := range map[string]string{"不在白名单": "image/webp", "空串": ""} {
@@ -314,7 +313,7 @@ func TestAvatarPresignMIMERejected(t *testing.T) {
 	}
 }
 
-// TestAvatarPresignTooLarge size > maxSize → ErrAvatarFileTooLarge（行 868）；
+// TestAvatarPresignTooLarge size > maxSize → ErrAvatarFileTooLarge；
 // dto maxSize 零值兜底 2MB 与 service 判定口径一致（≤2MB 过、>2MB 拒）。
 func TestAvatarPresignTooLarge(t *testing.T) {
 	e := avatarTestEnvNew(t)
@@ -326,7 +325,7 @@ func TestAvatarPresignTooLarge(t *testing.T) {
 		t.Errorf("PresignPut 调用 = %d, want 0（校验在签发前）", len(e.storage.presignCalls))
 	}
 
-	// MaxSize 0 → dto 兜底 2MB（dto/account.go 行 199-201）。
+	// MaxSize 0 → dto 兜底 2MB（dto/account.go AccountAvatarUpload）。
 	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 0, "image/png"))
 	if _, err := e.presign(&accountv1.PresignAvatarRequest{Filename: "a.png", ContentType: "image/png", Size: 2 << 20}); err != nil {
 		t.Errorf("size = 2MB err = %v, want nil（兜底上限内）", err)
@@ -351,7 +350,7 @@ func TestAvatarPresignInvalidSize(t *testing.T) {
 	}
 }
 
-// TestAvatarPresignNotConfigured 行 842 四态 + settings 未装配 →
+// TestAvatarPresignNotConfigured provider 未配置各态 + settings 未装配 →
 // ErrAvatarNotConfigured（直调上传接口按 internal 映射，不新增错误码），
 // 零 Resolve / 零 PresignPut。
 func TestAvatarPresignNotConfigured(t *testing.T) {
@@ -387,8 +386,8 @@ func TestAvatarPresignNotConfigured(t *testing.T) {
 }
 
 // TestAvatarPresignModeNotDirect mode≠direct → ErrAvatarPresignUnavailable
-// （行 842 internal 口径）：显式 proxy 与 local+direct 回退（dto 折 proxy，
-// 行 842 / §15.1 表）两态同判；零 Resolve / 零 PresignPut。
+// （internal 口径）：显式 proxy 与 local+direct 回退（dto 折 proxy，
+// §15.1 表）两态同判；零 Resolve / 零 PresignPut。
 func TestAvatarPresignModeNotDirect(t *testing.T) {
 	for name, row := range map[string]*model.Provider{
 		"显式 proxy": avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png")),
@@ -407,7 +406,7 @@ func TestAvatarPresignModeNotDirect(t *testing.T) {
 }
 
 // TestAvatarPresignTTLFallback expiresIn = presign_ttl；0（未配置）→ 300
-// （§12.1 行 1704 注释默认），负值自决同兜底。
+// （§12.1 注释默认），负值自决同兜底。
 func TestAvatarPresignTTLFallback(t *testing.T) {
 	for name, ttl := range map[string]int32{"未配置 0": 0, "乱配负值": -5, "显式 120": 120} {
 		e := avatarTestEnvNew(t)
@@ -426,7 +425,7 @@ func TestAvatarPresignTTLFallback(t *testing.T) {
 	}
 }
 
-// TestAvatarPresignInfraErrors 基础设施错误包装透传（非哨兵，行 842 按
+// TestAvatarPresignInfraErrors 基础设施错误包装透传（非哨兵，按
 // internal 映射）：FindByKey 查询故障 / ext 解析失败 / Resolve 失败 /
 // PresignPut 失败。
 func TestAvatarPresignInfraErrors(t *testing.T) {
@@ -477,7 +476,7 @@ func TestAvatarUserNotFound(t *testing.T) {
 	}
 }
 
-// TestAvatarCommitURL commit 正常链：URL(key) 拼接回显；不回读校验（行 868：
+// TestAvatarCommitURL commit 正常链：URL(key) 拼接回显；不回读校验（
 // Get / Put / Delete / PresignPut 全零调用），Resolve 传 avatar_storage_provider。
 func TestAvatarCommitURL(t *testing.T) {
 	e := avatarTestEnvNew(t)
@@ -490,7 +489,7 @@ func TestAvatarCommitURL(t *testing.T) {
 		t.Errorf("url = %q, want %q（URL(key) 拼接）", resp.Url, avatarTestCDNBase+key)
 	}
 	if e.storage.getCalls != 0 {
-		t.Errorf("Get 调用 = %d, want 0（行 868 不回读）", e.storage.getCalls)
+		t.Errorf("Get 调用 = %d, want 0（不回读）", e.storage.getCalls)
 	}
 	if e.storage.putCalls != 0 || e.storage.deleteCalls != 0 || len(e.storage.presignCalls) != 0 {
 		t.Errorf("Put/Delete/PresignPut = %d/%d/%d, want 全 0",
@@ -524,7 +523,7 @@ func TestAvatarCommitKeyRejected(t *testing.T) {
 	}
 }
 
-// TestAvatarCommitResolveError Resolve 失败包装透传（行 842 internal 口径），
+// TestAvatarCommitResolveError Resolve 失败包装透传（internal 口径），
 // 零 URL 拼接。
 func TestAvatarCommitResolveError(t *testing.T) {
 	e := avatarTestEnvNew(t)

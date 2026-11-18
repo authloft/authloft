@@ -82,7 +82,7 @@ type SchemaField struct {
 	// 语言包在前端 web/src/shared/i18n/{zh,en}/admin.ts，由 FieldRenderers 渲染期 t() 解析。
 	// 后端不持有任何语言文案；缺键时前端回显键本身（可见、可排查）。
 	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
-	// 渲染类型，取值是 §5.3 的六个：text|secret|checkbox|number|select|json；
+	// 渲染类型，取值是 §5.3 的七个：text|secret|checkbox|number|select|json|textarea；
 	// §12.9 明确 fields[].type 跨版本可能新增，用 string 承载。
 	Type string `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
 	// 表单区块，取值封闭：basic|credential|endpoint|display|policy（§5.3）；

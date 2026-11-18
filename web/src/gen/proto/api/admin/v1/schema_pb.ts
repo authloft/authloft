@@ -63,7 +63,7 @@ export type SchemaField = Message<"api.admin.v1.SchemaField"> & {
   label: string;
 
   /**
-   * 渲染类型，取值是 §5.3 的六个：text|secret|checkbox|number|select|json；
+   * 渲染类型，取值是 §5.3 的七个：text|secret|checkbox|number|select|json|textarea；
    * §12.9 明确 fields[].type 跨版本可能新增，用 string 承载。
    *
    * @generated from field: string type = 3;

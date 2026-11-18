@@ -1,5 +1,5 @@
 // Package provider 是第三方登录 / 外部服务 Provider 的基础设施
-// （docs/后端架构.md §3.9 行 399-410、§12.1 行 1391-1434、§15.3 行 1712-1718）：
+// （docs/后端架构.md §3.9、§12.1、§15.3）：
 // 注册表（registry.go）、Provider 加载与缓存（provider.go）、Referer 白名单
 // 来源（whitelist.go）以及适配器公共类型（本文件）。各渠道实现按
 // internal/provider/oauth/<type>/ 分层，init() 自注册。
@@ -7,7 +7,7 @@ package provider
 
 import "context"
 
-// ThirdPartyChannel 第三方因子的通道形态（§12.1 行 1411-1417）。
+// ThirdPartyChannel 第三方因子的通道形态（§12.1）。
 type ThirdPartyChannel string
 
 const (
@@ -19,7 +19,7 @@ const (
 	ChannelQRCode ThirdPartyChannel = "qrcode"
 )
 
-// ExternalIdentity 第三方返回的统一身份（§12.1 行 1394-1402）。
+// ExternalIdentity 第三方返回的统一身份（§12.1）。
 // Raw 落 user_thirdparty_bind.extra（msgpack 序列化），不得携带任何厂商
 // 会话密钥 / 凭证类字段。
 type ExternalIdentity struct {
@@ -37,7 +37,7 @@ type ExternalIdentity struct {
 	Raw           map[string]any
 }
 
-// Token 第三方令牌（§12.1 行 1404-1409）。
+// Token 第三方令牌（§12.1）。
 type Token struct {
 	AccessToken  string
 	RefreshToken string
@@ -46,10 +46,10 @@ type Token struct {
 	Raw          map[string]any
 }
 
-// AuthContext 跳转授权上下文（§12.4 行 1476-1478）。本实现补齐 redirect
-// 渠道组装授权 URL 所需字段：state 由 service 层生成（带 l/b 前缀，行
-// 1477）后传入，adapter 只透传不生成；scope 缺省时渠道按自身默认拼装。
-// PKCESupporter / CSPSupporter 等可选接口仍按 §12.1 行 1429-1434 随对应
+// AuthContext 跳转授权上下文（§12.4）。本实现补齐 redirect
+// 渠道组装授权 URL 所需字段：state 由 service 层生成（带 l/b 前缀）
+// 后传入，adapter 只透传不生成；scope 缺省时渠道按自身默认拼装。
+// PKCESupporter / CSPSupporter 等可选接口仍按 §12.1 随对应
 // 渠道按需补齐，不提前实现。
 type AuthContext struct {
 	ProviderKey string
@@ -64,7 +64,7 @@ type ExchangeInput struct {
 	RedirectURI string
 }
 
-// AuthAdapter 渠道适配器（§12.1 行 1429-1434）。本次落最小必需集合
+// AuthAdapter 渠道适配器（§12.1）。本次落最小必需集合
 // Channel / BuildAuthURL / Exchange / FetchUser；可选接口
 // （CSPSupporter / TokenRefresher / PKCESupporter / QRCodeSupporter）
 // 随对应渠道卡按需补齐，不提前实现。
@@ -75,11 +75,11 @@ type AuthAdapter interface {
 	FetchUser(ctx context.Context, t *Token) (*ExternalIdentity, error)
 }
 
-// QRCodeSupporter 拉码渠道（channel=qrcode）的可选接口（§12.1 行 1431
-// 可选接口口径，随扫码实现补齐）：封装 GetwxacodeUnlimit（§13.2 行
-// 1593）。scene 为微信码图 scene 字段，承载 ticket_id（长度上限 32，本侧
+// QRCodeSupporter 拉码渠道（channel=qrcode）的可选接口（§12.1
+// 可选接口口径，随扫码实现补齐）：封装 GetwxacodeUnlimit（§13.2）。
+// scene 为微信码图 scene 字段，承载 ticket_id（长度上限 32，本侧
 // 签发恒 ≤24，§11.6.4）；返回微信下发的图片二进制（PNG / JPEG 均可能，
-// 有损压缩归 internal/qrcode）。SDK 类型不透出本接口（§13.0 行 1578：
+// 有损压缩归 internal/qrcode）。SDK 类型不透出本接口（§13.0：
 // 唯一可引用 SDK 的包是 wechat_mp* 适配器内部）。
 type QRCodeSupporter interface {
 	FetchQrcode(ctx context.Context, scene string) ([]byte, error)
