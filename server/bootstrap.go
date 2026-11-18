@@ -86,6 +86,7 @@ import (
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
+	_ "authloft/internal/provider/storage/s3"
 	// wechat_mp_scan 具名导入：除 init() 自注册外，装配期还需
 	// SetAccessTokenCache 注入共享 access_token 缓存（§3.4），须在 Redis 就绪后调用。
 	wechatmpscan "authloft/internal/provider/oauth/wechat_mp_scan"
