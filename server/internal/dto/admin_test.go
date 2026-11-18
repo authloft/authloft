@@ -21,6 +21,7 @@ import (
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
 )

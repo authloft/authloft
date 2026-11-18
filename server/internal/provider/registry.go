@@ -1,10 +1,10 @@
 // 统一注册表（docs/后端架构.md §15.3）：provider 包一张注册表，entry 多槽
-// （meta + auth / sender / storage / verifier factory 槽；proxy 槽随工厂化
-// 阶段五扩入），唯一注册入口 register(type, meta, opts...) + Option 模式，
-// 按槽取产 NewAdapter / NewSender / NewVerifier。oauth 渠道包经 Register、
-// 消息厂商包经 RegisterSender、captcha 实现包经 RegisterVerifier 薄封装接入
-// （既有调用面一行不改）；服务型 / 虚拟类型在包内 init() 只注册 meta
-// （servicetype.go / virtual.go）。
+// （meta + auth / sender / storage / verifier / proxy 五类 factory 槽），
+// 唯一注册入口 register(type, meta, opts...) + Option 模式，按槽取产
+// NewAdapter / NewSender / NewVerifier / NewProxy。oauth 渠道包经 Register、
+// 消息厂商包经 RegisterSender、captcha / proxy 实现包经 RegisterVerifier /
+// RegisterProxy 薄封装接入（既有调用面一行不改）；虚拟类型在包内 init() 只
+// 注册 meta（virtual.go），服务型 meta 与 factory 同处实现子包。
 // meta 同时驱动管理后台 /schema（接口文档 §5.3）：动态 schema 由渠道包在
 // 构造期组装进 meta.Schema，不另建注册表。
 package provider
@@ -70,6 +70,7 @@ type entry struct {
 	sender   SenderFactory
 	storage  StorageFactory
 	verifier VerifierFactory
+	proxy    ProxyFactory
 }
 
 // Option 注册选项：向 entry 声明 factory 槽。nil factory / 重复槽位在应用期
@@ -156,6 +157,9 @@ func register(providerType string, meta Meta, opts ...Option) error {
 		slots++
 	}
 	if e.verifier != nil {
+		slots++
+	}
+	if e.proxy != nil {
 		slots++
 	}
 	if slots > 1 {

@@ -92,9 +92,11 @@ func ResolveOutbound(ctx context.Context, pools *proxyclient.PoolSet, src KeySou
 	return outboundPool(pools, key, refRow, refExt)
 }
 
-// outboundPool 被引 proxy 行（含解析后 ext）→ 连接池：启用、类别、NewConfig
+// outboundPool 被引 proxy 行（含解析后 ext）→ 连接池：启用、类别、NewProxy
 // 三道闸任一不过即包装 ErrProxyRefUnresolvable（fail-closed，§15.4）；成功
 // 返回按 proxy 行 provider_key 键控的池（cfg 变更由 PoolSet 换池排空旧池）。
+// 配置值对象经注册表 proxy 槽工厂 NewProxy 产出（§15.4），字段组合合法性
+// 单一来源仍在 proxyclient.NewConfig，本处不重复校验。
 func outboundPool(pools *proxyclient.PoolSet, refKey string, refRow *model.Provider, refExt *providerpb.Ext) (*proxyclient.Pool, error) {
 	if refRow == nil || refRow.IsEnabled != 1 {
 		return nil, refUnresolvable(refKey)
@@ -102,7 +104,8 @@ func outboundPool(pools *proxyclient.PoolSet, refKey string, refRow *model.Provi
 	if refRow.Category != CategoryProxy {
 		return nil, refUnresolvable(refKey)
 	}
-	cfg, err := proxyclient.NewConfig(refExt.GetScheme(), refExt.GetHost(), refExt.GetPort(), refExt.GetUser(), refExt.GetPassword())
+	refProvider := &Provider{Key: refKey, Type: ProxyType, Row: refRow, Ext: refExt}
+	cfg, err := NewProxy(refProvider)
 	if err != nil {
 		return nil, refUnresolvable(refKey)
 	}

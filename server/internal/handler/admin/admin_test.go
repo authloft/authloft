@@ -42,6 +42,7 @@ import (
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/oauth/wechat_mp_scan"
+	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
 )
@@ -975,7 +976,7 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	if f := byKey["port"]; f == nil || f.GetType() != "number" || !f.GetRequired() {
 		t.Errorf("port = %+v（必填 number，§5.3 五字段表）", f)
 	}
-	// user / password 可选且撤 advanced（现源 servicetype.go proxySchema，
+	// user / password 可选且撤 advanced（现源 provider/proxy/basic 的 Schema，
 	// 与 provider 包 assertProxyRowFields 先例同口径）。
 	if f := byKey["user"]; f == nil || f.GetType() != "text" || f.GetRequired() || f.GetAdvanced() {
 		t.Errorf("user = %+v（可选，撤 advanced）", f)

@@ -1,8 +1,7 @@
-// 服务型 Provider 单测（docs/后端架构.md §15.3）：storage（local，阶段二）与
-// captcha 三家（阶段三）meta 已随工厂化迁入实现子包、经 _ import 触发 init
-// 自注册，proxy 仍 meta-only 于本包；统一断言 LookupTypeMeta / TypeMetas
-// （admin 下拉 / schema / 写路径数据源）的 category 与 Schema 字段声明正确，
-// 服务型类型不进登录快照 AdapterTypes。
+// 服务型 Provider 单测（docs/后端架构.md §15.3）：storage（local）、captcha
+// 三家与 proxy meta 均随工厂化迁入实现子包、经 _ import 触发 init 自注册；
+// 统一断言 LookupTypeMeta / TypeMetas（admin 下拉 / schema / 写路径数据源）
+// 的 category 与 Schema 字段声明正确，服务型类型不进登录快照 AdapterTypes。
 package provider_test
 
 import (
@@ -15,13 +14,14 @@ import (
 	"authloft/internal/provider/schemafield"
 	// 渠道漏斗（引用键单一来源漂移测试）：oauth 经 SchemaFor、smtp / aliyun_sms
 	// 经各自 Schema、captcha 三家经 captchacore.Schema 汇入同一份 ProxyRef 声明；
-	// storage/local 与 captcha 三家经本包 _ import 触发 init 自注册（meta 与
-	// factory 同处实现子包，§15.3）。
+	// storage/local、captcha 三家与 proxy/basic 经本包 _ import 触发 init 自注册
+	// （meta 与 factory 同处实现子包，§15.3）。
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
 	_ "authloft/internal/provider/oauth/wechat_mp"
+	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
 )
