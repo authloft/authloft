@@ -561,6 +561,84 @@ func TestAuthorizeConsentFormB(t *testing.T) {
 	}
 }
 
+// TestAuthorizeConsentGrantedScopesPassthrough 形态 B 注入 granted_scopes =
+// Decision.GrantedScopes 已授权并集原样透传（§4.2 形态 B：该用户对该客户端
+// 的已授权 scope 集、空格分隔、编码与 scope 一致），前端据此锁定已授权项。
+func TestAuthorizeConsentGrantedScopesPassthrough(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	f.consents.decision = oidc.Decision{
+		NeedsConsent:  true,
+		GrantedScopes: "email openid profile",
+		PendingScopes: "phone",
+	}
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope="+url.QueryEscape("openid profile phone")+"&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（渲染同意页空壳）", rec.Code)
+	}
+	init := authzInit(t, rec.Body.String())
+	if init.Mode != "consent" {
+		t.Fatalf("mode = %q, want consent（形态 B）", init.Mode)
+	}
+	if init.GrantedScopes == nil {
+		t.Fatal("形态 B 缺 granted_scopes 注入")
+	}
+	if got := *init.GrantedScopes; got != "email openid profile" {
+		t.Errorf("granted_scopes = %q, want Decision.GrantedScopes 原样透传", got)
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("形态 B 不得签码: %d calls", len(f.codes.calls))
+	}
+}
+
+// TestAuthorizeConsentGrantedScopesEmptySet 无授权记录（prompt=consent 强制
+// 形态 B）→ granted_scopes 键恒在且为空集空串（§4.2：空集合法），页面照常
+// 渲染、不签码。
+func TestAuthorizeConsentGrantedScopesEmptySet(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	// decision 零值 = 无授权记录（fakeConsents 同 oidc 内核口径：prompt=consent
+	// 强制需同意 → 形态 B，GrantedScopes 保持空）。
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope=openid&prompt=consent&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（渲染同意页空壳）", rec.Code)
+	}
+	init := authzInit(t, rec.Body.String())
+	if init.Mode != "consent" {
+		t.Fatalf("mode = %q, want consent（prompt=consent 强制形态 B）", init.Mode)
+	}
+	if init.GrantedScopes == nil {
+		t.Fatal("形态 B granted_scopes 键应恒在（空集注入空串，非缺键）")
+	}
+	if got := *init.GrantedScopes; got != "" {
+		t.Errorf("granted_scopes = %q, want 空串（无授权记录 = 空集）", got)
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("形态 B 不得签码: %d calls", len(f.codes.calls))
+	}
+}
+
+// TestAuthorizeFormAOmitsGrantedScopes 形态 A（mode=login）注入体不含
+// granted_scopes（§8 注入键按形态收敛：granted_scopes 属形态 B 专有）。
+func TestAuthorizeFormAOmitsGrantedScopes(t *testing.T) {
+	f := newAuthzFixture(t) // 无会话 → 形态 A
+	rec := doGet(t, f.engine(t), authzQ+"&scope=openid&state=st1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（渲染登录空壳）", rec.Code)
+	}
+	init := oidcFromInit(t, rec.Body.String())
+	if init["mode"] != "login" {
+		t.Fatalf("mode = %q, want login（形态 A）", init["mode"])
+	}
+	if _, ok := init["granted_scopes"]; ok {
+		t.Error("形态 A 不得注入 granted_scopes（键集按形态稳定）")
+	}
+}
+
 // TestAuthorizePromptNoneNonSubsetConsentRequired prompt=none + 有会话 +
 // scope 非子集 → 302 consent_required、零交互不渲染（§4.2 行 1076 / 1453）。
 func TestAuthorizePromptNoneNonSubsetConsentRequired(t *testing.T) {

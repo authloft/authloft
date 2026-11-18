@@ -66,9 +66,12 @@ var (
 // 注入」/ §8 白名单 / §5.1 注入契约扩展）：七授权参数恒定存在（snake_case
 // 原样，值为解码后的原始 query 值，缺失以空串注入，键集稳定）；形态 A/B 另
 // 注入 mode（login / consent，前端据此分派左栏）+ client_name（oidc_client.name，
-// 右栏应用名）；形态 B 再注入 account（当前账号摘要，§3.1 掩码口径，形态 A
-// 省略——omitempty，键集按形态稳定）。scope 为缺省补值后的有效 scope（§4.2
-// 补充口径 / 评审裁决④：堵住「用户没见过就授权」的静默扩权窗口）。
+// 右栏应用名）；形态 B 再注入 granted_scopes（该用户对该客户端的已授权 scope
+// 集，Decision.GrantedScopes 已授权并集透传，规范化空格分隔、空集为空串恒
+// 注入——前端据此锁定已授权项不可取消）+ account（当前账号摘要，§3.1 掩码
+// 口径；两键形态 A 均省略——omitempty，键集按形态稳定）。scope 为缺省补值
+// 后的有效 scope（§4.2 补充口径 / 评审裁决④：堵住「用户没见过就授权」的
+// 静默扩权窗口）。
 type oidcAuthorizeInit struct {
 	ClientID            string           `json:"client_id"`
 	RedirectURI         string           `json:"redirect_uri"`
@@ -79,6 +82,7 @@ type oidcAuthorizeInit struct {
 	CodeChallengeMethod string           `json:"code_challenge_method"`
 	Mode                string           `json:"mode"`
 	ClientName          string           `json:"client_name"`
+	GrantedScopes       *string          `json:"granted_scopes,omitempty"`
 	Account             *oidcAccountInit `json:"account,omitempty"`
 }
 
@@ -141,8 +145,9 @@ func (h *Handler) authorize(c *gin.Context) {
 	//    - 免同意（子集且 prompt≠consent）→ 形态 C：同一 CodeIssuer 直签
 	//      一次性授权码 → 302 code（不渲染页面、不经过前端）；
 	//    - 需同意且 prompt=none → 302 consent_required（零交互，不渲染）；
-	//    - 需同意其余 → 形态 B：注入 mode=consent + client_name + 账号摘要
-	//      渲染同意页，无登录表单、不 buildMethods（§8 methods 收窄）。
+	//    - 需同意其余 → 形态 B：注入 mode=consent + client_name + granted_scopes
+	//      （已授权并集，空集合法）+ 账号摘要渲染同意页，无登录表单、
+	//      不 buildMethods（§8 methods 收窄）。
 	if sess != nil {
 		prompt := c.Query("prompt")
 		decision, err := h.decide(c.Request.Context(), sess.GetId(), clientID, scope, prompt)
@@ -200,7 +205,7 @@ func (h *Handler) authorize(c *gin.Context) {
 			}))
 			return
 		}
-		h.renderConsent(c, clientID, scope, state, h.accountSummary(c.Request.Context(), sess.GetId()))
+		h.renderConsent(c, clientID, scope, decision.GrantedScopes, state, h.accountSummary(c.Request.Context(), sess.GetId()))
 		return
 	}
 
@@ -253,10 +258,11 @@ func (h *Handler) decide(ctx context.Context, uid int64, clientID, scope, prompt
 }
 
 // renderConsent 形态 B 同意双栏（§4.2 / §5.1）：注入 mode=consent +
-// client_name + account 渲染 login entry（同一页壳按 mode 分派左栏），无登录
-// 表单故不 buildMethods（§8 methods 收窄为 mode=login 必填）。七个授权参数
-// 中的 scope 为缺省补值后的有效值（§4.2 补充口径）。
-func (h *Handler) renderConsent(c *gin.Context, clientID, scope, state string, account *oidcAccountInit) {
+// client_name + granted_scopes + account 渲染 login entry（同一页壳按 mode
+// 分派左栏），无登录表单故不 buildMethods（§8 methods 收窄为 mode=login
+// 必填）。七个授权参数中的 scope 为缺省补值后的有效值（§4.2 补充口径）；
+// granted 取 Decision.GrantedScopes 已授权并集原样透传（空集合法，键恒在）。
+func (h *Handler) renderConsent(c *gin.Context, clientID, scope, granted, state string, account *oidcAccountInit) {
 	oidcInit, err := json.Marshal(oidcAuthorizeInit{
 		ClientID:            clientID,
 		RedirectURI:         c.Query("redirect_uri"),
@@ -267,6 +273,7 @@ func (h *Handler) renderConsent(c *gin.Context, clientID, scope, state string, a
 		CodeChallengeMethod: c.Query("code_challenge_method"),
 		Mode:                "consent",
 		ClientName:          h.clientName(c.Request.Context(), clientID),
+		GrantedScopes:       &granted,
 		Account:             account,
 	})
 	if err != nil {
