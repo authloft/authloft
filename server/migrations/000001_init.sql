@@ -1,4 +1,5 @@
--- 首版迁移：后端架构 §4 全部 13 张表（§3.16）。
+-- 首版迁移：后端架构 §4 全部 13 张表（§3.16，含 oidc_consent 授权记录表
+-- 与存量 oidc_client.scopes 补齐 openid）。
 -- 单文件注解格式（Up / Down 两段）：goose v3 Provider 将每个 .sql 文件
 -- 视为一条迁移，不支持 .up.sql/.down.sql 成对命名（成对文件同版本会报
 -- duplicate migration version）。
@@ -205,10 +206,31 @@ CREATE TABLE IF NOT EXISTS user_permission (
   PRIMARY KEY (user_id, point)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 授权记录（§4.5）：用户对客户端的长期授权口径，与
+-- oidc_refresh_token.scopes 的单次令牌快照互不替代。
+CREATE TABLE IF NOT EXISTS oidc_consent (
+  id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id    BIGINT      NOT NULL COMMENT '引用 user.id',
+  client_id  VARCHAR(64) NOT NULL COMMENT 'oidc_client.client_id',
+  scopes     VARCHAR(512) NOT NULL DEFAULT '' COMMENT '已授权 scope 并集，空格分隔',
+  created_at DATETIME    NOT NULL,
+  updated_at DATETIME    NOT NULL,
+  UNIQUE KEY uk_user_client (user_id, client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 存量客户端补齐 openid（openid 全链路强制的前置，接口文档 §5.5）：
+-- FIND_IN_SET 判重、WHERE 限定未含者，重复执行不重复补；逗号分隔口径不变。
+UPDATE oidc_client
+SET scopes = CONCAT(scopes, ',openid')
+WHERE FIND_IN_SET('openid', scopes) = 0;
+
 -- +goose Down
 
 -- 回退脚本（§3.16：down 按工具标准提供，日常升级不使用；数据备份责任
 -- 归部署方，执行迁移前自行备份）。倒序删除 §4 全部 13 张表。
+-- openid 补齐不做回退——无从区分哪些客户端原本缺 openid，删补齐值会伤
+-- 存量数据；down 只负责删表。
+DROP TABLE IF EXISTS oidc_consent;
 DROP TABLE IF EXISTS user_permission;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS event_log;

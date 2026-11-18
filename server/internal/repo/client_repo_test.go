@@ -68,6 +68,22 @@ func clientTestSetup(t *testing.T) *ClientRepo {
 	return NewClientRepo(db)
 }
 
+// emptyClientAppConfig 生成应用级登录配置两列的空消息序列化字节（空 = 未
+// 配置 = 跟随全局）。两列 NOT NULL 无默认值，Create 前须经编解码出口取
+// 非 nil 字节；仅在用例不关心这两列内容时复用（§4.4 / 接口文档 §5.5）。
+func emptyClientAppConfig(t *testing.T) ([]byte, []byte) {
+	t.Helper()
+	methods, err := MarshalClientLoginMethods(nil)
+	if err != nil {
+		t.Fatalf("MarshalClientLoginMethods(nil) 失败: %v", err)
+	}
+	providers, err := MarshalClientOauthProviders(nil)
+	if err != nil {
+		t.Fatalf("MarshalClientOauthProviders(nil) 失败: %v", err)
+	}
+	return methods, providers
+}
+
 // clientTestUris 构造覆盖 §12.3 的样例回调白名单（含 `*` 通配）。
 func clientTestUris() *client.ClientRedirectUris {
 	return &client.ClientRedirectUris{
@@ -617,9 +633,11 @@ func TestClientRepoList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
 	}
+	emptyMethods, emptyProviders := emptyClientAppConfig(t)
 	for _, id := range []string{"sso_1", "sso_2", "sso_3"} {
 		if err := rp.CreateSsoClient(ctx, &model.SsoClient{
 			ClientID: id, ClientSecret: strings.Repeat("s", 64), RedirectURIs: urisData,
+			LoginMethods: emptyMethods, OauthProviders: emptyProviders,
 		}); err != nil {
 			t.Fatalf("CreateSsoClient %s 失败: %v", id, err)
 		}
@@ -680,6 +698,7 @@ func TestClientRepoListSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
 	}
+	emptyMethods, emptyProviders := emptyClientAppConfig(t)
 	// 4 行 SSO：name 与 id 序错开（id 1=beta / 2=alpha / 3=gamma），使 name
 	// 排序与 id 排序可判别；行 4 与行 1 同 name（beta），验证非 id 主序下
 	// 同值行按 id DESC 次序（4 在 1 前）分页不漂移。
@@ -689,6 +708,7 @@ func TestClientRepoListSort(t *testing.T) {
 		if err := rp.CreateSsoClient(ctx, &model.SsoClient{
 			ClientID: tc.id, ClientSecret: strings.Repeat("s", 64),
 			Name: tc.name, RedirectURIs: urisData,
+			LoginMethods: emptyMethods, OauthProviders: emptyProviders,
 		}); err != nil {
 			t.Fatalf("CreateSsoClient %s 失败: %v", tc.id, err)
 		}
@@ -770,7 +790,9 @@ func TestClientRepoFindByID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalClientRedirectUris 失败: %v", err)
 	}
-	sso := &model.SsoClient{ClientID: "by_id_sso", ClientSecret: strings.Repeat("s", 64), Name: "SSO", RedirectURIs: urisData}
+	emptyMethods, emptyProviders := emptyClientAppConfig(t)
+	sso := &model.SsoClient{ClientID: "by_id_sso", ClientSecret: strings.Repeat("s", 64), Name: "SSO", RedirectURIs: urisData,
+		LoginMethods: emptyMethods, OauthProviders: emptyProviders}
 	if err := rp.CreateSsoClient(ctx, sso); err != nil {
 		t.Fatalf("CreateSsoClient 失败: %v", err)
 	}

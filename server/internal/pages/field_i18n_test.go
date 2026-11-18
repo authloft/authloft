@@ -27,11 +27,12 @@ const (
 )
 
 // fieldDictKeys 抽取前端两个分域字典里本契约相关的键集（只认行首带引号的
-// 键定义，注释里的示例键名不会误命中）。
+// 键定义，注释里的示例键名不会误命中）。login 域字典用双引号、admin 域用
+// 单引号，两种引号都认，避免把合法键误判为缺译。
 func fieldDictKeys(t *testing.T, locale string) map[string]bool {
 	t.Helper()
 	keys := make(map[string]bool)
-	re := regexp.MustCompile(`(?m)^\s*'((?:login\.field|admin\.schemaField|admin\.schemaOption)\.[^']+)'\s*:`)
+	re := regexp.MustCompile(`(?m)^\s*['"]((?:login\.field|admin\.schemaField|admin\.schemaOption)\.[^'"]+)['"]\s*:`)
 	for _, domain := range []string{"login", "admin"} {
 		path := filepath.Join("..", "..", "..", "web", "src", "shared", "i18n", locale, domain+".ts")
 		raw, err := os.ReadFile(path)
