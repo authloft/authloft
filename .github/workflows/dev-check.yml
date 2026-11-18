@@ -233,7 +233,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          env $EXTRA_ENV go build -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
+          env $EXTRA_ENV go build -tags nomsgpack -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
         working-directory: server
 
       - name: Upload go artifact

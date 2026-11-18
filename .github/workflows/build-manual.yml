@@ -125,7 +125,7 @@ jobs:
           # prod：去符号表与调试信息；debug：保留符号便于排查
           LDFLAGS: ${{ inputs.profile == 'prod' && '-s -w' || '' }}
         run: |
-          env $EXTRA_ENV go build -ldflags "$LDFLAGS" -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
+          env $EXTRA_ENV go build -tags nomsgpack -ldflags "$LDFLAGS" -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
         working-directory: server
 
       - name: Upload go artifact
