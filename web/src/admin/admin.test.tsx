@@ -36,6 +36,7 @@ import {
   type SchemaField,
 } from '../gen/proto/api/admin/v1/schema_pb';
 import { MfaResponseSchema } from '../gen/proto/api/account/v1/mfa_pb';
+import { UserDetailResponseSchema } from '../gen/proto/api/admin/v1/user_pb';
 import {
   initialTableQuery,
   type TableQueryState,
@@ -267,6 +268,13 @@ const RESET_USER_PASSWORD_URL = `${BASE}/api.admin.v1.AdminService/ResetUserPass
 const UNBIND_USER_THIRDPARTY_URL = `${BASE}/api.admin.v1.AdminService/UnbindUserThirdparty`;
 const UNLOCK_USER_URL = `${BASE}/api.admin.v1.AdminService/UnlockUser`;
 const GET_USER_EVENTS_URL = `${BASE}/api.admin.v1.AdminService/GetUserEvents`;
+const UPDATE_USER_PROFILE_URL = `${BASE}/api.admin.v1.AdminService/UpdateUserProfile`;
+const UPDATE_USER_CONTACT_URL = `${BASE}/api.admin.v1.AdminService/UpdateUserContact`;
+const SET_USER_MFA_URL = `${BASE}/api.admin.v1.AdminService/SetUserMfa`;
+const UNBIND_USER_TOTP_URL = `${BASE}/api.admin.v1.AdminService/UnbindUserTOTP`;
+const RESET_USER_RECOVERY_CODES_URL = `${BASE}/api.admin.v1.AdminService/ResetUserRecoveryCodes`;
+const SET_CREDENTIAL_ENABLED_URL = `${BASE}/api.admin.v1.AdminService/SetCredentialEnabled`;
+const DELETE_CREDENTIAL_URL = `${BASE}/api.admin.v1.AdminService/DeleteCredential`;
 const LIST_SSO_CLIENTS_URL = `${BASE}/api.admin.v1.AdminService/ListSsoClients`;
 const CREATE_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/CreateSsoClient`;
 const GET_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/GetSsoClient`;
@@ -2248,6 +2256,329 @@ describe('boundMfaFactors（§5.4 行 1250「MFA 状态」：已绑定因子文�
     ]);
     expect(apiMod.boundMfaFactors(undefined)).toEqual([]);
     expect(apiMod.boundMfaFactors(create(MfaResponseSchema, {}))).toEqual([]);
+  });
+});
+
+describe('userWriteVisibility（§5.4 门禁矩阵：写按钮体验层分级显隐）', () => {
+  const allHidden = {
+    editProfile: false,
+    editContact: false,
+    setMfa: false,
+    unbindTotp: false,
+    resetRecoveryCodes: false,
+    credentialWrite: false,
+    unbindThirdparty: false,
+  };
+
+  test('superadmin 目标：任何操作者一律全部隐藏', () => {
+    expect(apiMod.classifyUserWriteTier(['superadmin'])).toBe('superadmin');
+    expect(
+      apiMod.userWriteVisibility(['superadmin'], ['superadmin']),
+    ).toEqual(allHidden);
+    expect(apiMod.userWriteVisibility(['superadmin'], ['admin'])).toEqual(
+      allHidden,
+    );
+    expect(apiMod.userWriteVisibility(['superadmin'], [])).toEqual(allHidden);
+  });
+
+  test('普通管理员目标：仅 superadmin 操作者显示', () => {
+    expect(apiMod.classifyUserWriteTier(['admin'])).toBe('admin');
+    const asSuperadmin = apiMod.userWriteVisibility(['admin'], ['superadmin']);
+    expect(asSuperadmin.editProfile).toBe(true);
+    expect(asSuperadmin.credentialWrite).toBe(true);
+    const asAdmin = apiMod.userWriteVisibility(['admin'], ['admin']);
+    expect(asAdmin).toEqual(allHidden);
+  });
+
+  test('普通账户：显示；改联系方式因等价无凭据接管账号仅 superadmin 操作者', () => {
+    expect(apiMod.classifyUserWriteTier([])).toBe('ordinary');
+    const asAdmin = apiMod.userWriteVisibility([], ['admin']);
+    expect(asAdmin.editProfile).toBe(true);
+    expect(asAdmin.setMfa).toBe(true);
+    expect(asAdmin.unbindThirdparty).toBe(true);
+    expect(asAdmin.editContact).toBe(false);
+    const asSuperadmin = apiMod.userWriteVisibility([], ['superadmin']);
+    expect(asSuperadmin.editContact).toBe(true);
+  });
+});
+
+describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () => {
+  const detail = create(UserDetailResponseSchema, {
+    user: {
+      id: '2',
+      username: 'alice',
+      nickname: 'Alice',
+      avatarUrl: 'https://x.test/a.png',
+      phone: '13800138000',
+      email: 'a@b.com',
+      phoneVerified: '1',
+      emailVerified: '1',
+    },
+    profile: {
+      gender: '1',
+      birthday: '1990-01-02',
+      locale: 'zh-CN',
+      timezone: 'Asia/Shanghai',
+      extra: { theme: 'dark', lang: 'zh' },
+    },
+    permissions: [],
+  });
+  const unchangedDraft = {
+    nickname: 'Alice',
+    avatarUrl: 'https://x.test/a.png',
+    phone: '13800138000',
+    email: 'a@b.com',
+    gender: '1',
+    birthday: '1990-01-02',
+    locale: 'zh-CN',
+    timezone: 'Asia/Shanghai',
+    extra: '{"theme":"dark","lang":"zh"}',
+  };
+
+  test('userEditDraftFromDetail：回填 user + profile 投影，extra 序列化为 JSON 文本', () => {
+    expect(apiMod.userEditDraftFromDetail(detail)).toEqual(unchangedDraft);
+    expect(
+      apiMod.userEditDraftFromDetail(create(UserDetailResponseSchema, {}))
+        .extra,
+    ).toBe('');
+  });
+
+  test('userEditDraftIssue：各字段格式校验 + 全过返回 null', () => {
+    expect(apiMod.userEditDraftIssue(unchangedDraft)).toBeNull();
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, birthday: '1990/01/02' }),
+    ).toBe('admin.editBirthdayIssue');
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, extra: '{bad' }),
+    ).toBe('admin.editExtraIssue');
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, extra: '[1,2]' }),
+    ).toBe('admin.editExtraIssue');
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, phone: '123' }),
+    ).toBe('admin.editPhoneIssue');
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, email: 'bad' }),
+    ).toBe('admin.editEmailIssue');
+    expect(
+      apiMod.userEditDraftIssue({ ...unchangedDraft, gender: '9' }),
+    ).toBe('admin.editGenderIssue');
+  });
+
+  test('PATCH diff：与原值相同 → 两个请求都为 null（无改动不提交）', () => {
+    expect(
+      apiMod.buildUpdateUserProfileRequest(BigInt(2), unchangedDraft, detail),
+    ).toBeNull();
+    expect(
+      apiMod.buildUpdateUserContactRequest(BigInt(2), unchangedDraft, detail),
+    ).toBeNull();
+    // extra 键序不同不误判为改动
+    expect(
+      apiMod.buildUpdateUserProfileRequest(
+        BigInt(2),
+        { ...unchangedDraft, extra: '{"lang":"zh","theme":"dark"}' },
+        detail,
+      ),
+    ).toBeNull();
+  });
+
+  test('PATCH diff：只提交变更键；联系方式显式空串 = 清空', () => {
+    const changed = { ...unchangedDraft, nickname: 'Alicia', phone: '' };
+    const profileReq = apiMod.buildUpdateUserProfileRequest(
+      BigInt(2),
+      changed,
+      detail,
+    );
+    expect(profileReq?.id).toBe(BigInt(2));
+    expect(profileReq?.nickname).toBe('Alicia');
+    expect(profileReq?.profile).toBeUndefined();
+    const contactReq = apiMod.buildUpdateUserContactRequest(
+      BigInt(2),
+      changed,
+      detail,
+    );
+    expect(contactReq?.phone).toBe('');
+    expect(contactReq?.email).toBeUndefined();
+  });
+
+  test('PATCH diff：profile 子字段单独 diff；extra 变更进 profile', () => {
+    const req = apiMod.buildUpdateUserProfileRequest(
+      BigInt(2),
+      { ...unchangedDraft, gender: '2', extra: '{"theme":"light"}' },
+      detail,
+    );
+    expect(req?.nickname).toBeUndefined();
+    expect(req?.profile?.gender).toBe(BigInt(2));
+    expect(req?.profile?.extra).toEqual({ theme: 'light' });
+    expect(req?.profile?.birthday).toBeUndefined();
+  });
+
+  test('救援写请求构造：MFA 值域 0|1 / 仅 id / id+credentialId', () => {
+    expect(apiMod.buildSetUserMfaRequest(BigInt(2), true).mfaRequired).toBe(
+      BigInt(1),
+    );
+    expect(apiMod.buildSetUserMfaRequest(BigInt(2), false).mfaRequired).toBe(
+      BigInt(0),
+    );
+    expect(apiMod.buildUnbindUserTOTPRequest(BigInt(2)).id).toBe(BigInt(2));
+    expect(apiMod.buildResetUserRecoveryCodesRequest(BigInt(2)).id).toBe(
+      BigInt(2),
+    );
+    const setCred = apiMod.buildSetCredentialEnabledRequest(
+      BigInt(2),
+      BigInt(5),
+      true,
+    );
+    expect(setCred.credentialId).toBe(BigInt(5));
+    expect(setCred.enabled).toBe(true);
+    expect(
+      apiMod.buildDeleteCredentialRequest(BigInt(2), BigInt(5)).credentialId,
+    ).toBe(BigInt(5));
+  });
+});
+
+describe('api 编辑 / 救援写方法（§5.4 新增七 RPC：msw wire 形态）', () => {
+  test('五个救援 RPC + 编辑两 RPC 真调统一 transport → OkResponse', async () => {
+    const captured: Record<string, unknown> = {};
+    const capture = (key: string) => async ({ request }: { request: Request }) => {
+      captured[key] = await request.json();
+      return HttpResponse.json({});
+    };
+    server.use(
+      http.post(SET_USER_MFA_URL, capture('mfa')),
+      http.post(UNBIND_USER_TOTP_URL, capture('totp')),
+      http.post(RESET_USER_RECOVERY_CODES_URL, capture('recovery')),
+      http.post(SET_CREDENTIAL_ENABLED_URL, capture('setCred')),
+      http.post(DELETE_CREDENTIAL_URL, capture('delCred')),
+      http.post(UPDATE_USER_PROFILE_URL, capture('profile')),
+      http.post(UPDATE_USER_CONTACT_URL, capture('contact')),
+    );
+
+    expect(
+      (await apiMod.setUserMfa(apiMod.buildSetUserMfaRequest(BigInt(2), true)))
+        .$typeName,
+    ).toBe('api.admin.v1.OkResponse');
+    await apiMod.unbindUserTOTP(apiMod.buildUnbindUserTOTPRequest(BigInt(2)));
+    await apiMod.resetUserRecoveryCodes(
+      apiMod.buildResetUserRecoveryCodesRequest(BigInt(2)),
+    );
+    await apiMod.setCredentialEnabled(
+      apiMod.buildSetCredentialEnabledRequest(BigInt(2), BigInt(5), false),
+    );
+    await apiMod.deleteCredential(
+      apiMod.buildDeleteCredentialRequest(BigInt(2), BigInt(6)),
+    );
+
+    const detail = create(UserDetailResponseSchema, {
+      user: { id: '2', username: 'alice', nickname: 'Alice', phone: '13800138000' },
+    });
+    const draft = { ...apiMod.userEditDraftFromDetail(detail), nickname: 'Alicia' };
+    const profileReq = apiMod.buildUpdateUserProfileRequest(
+      BigInt(2),
+      draft,
+      detail,
+    );
+    const contactReq = apiMod.buildUpdateUserContactRequest(
+      BigInt(2),
+      { ...draft, phone: '' },
+      detail,
+    );
+    if (profileReq !== null) {
+      await apiMod.updateUserProfile(profileReq);
+    }
+    if (contactReq !== null) {
+      await apiMod.updateUserContact(contactReq);
+    }
+
+    expect(captured.mfa).toEqual({ id: '2', mfaRequired: '1' });
+    expect(captured.totp).toEqual({ id: '2' });
+    expect(captured.recovery).toEqual({ id: '2' });
+    // bool false / 非 optional 零值在 protojson 中省略（§1.0）
+    expect(captured.setCred).toEqual({ id: '2', credentialId: '5' });
+    expect(captured.delCred).toEqual({ id: '2', credentialId: '6' });
+    expect(captured.profile).toEqual({ id: '2', nickname: 'Alicia' });
+    expect(captured.contact).toEqual({ id: '2', phone: '' });
+  });
+});
+
+describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下线口径）', () => {
+  test('联系方式有 diff → confirm_contact，文案键被门槛引用；取消不放行、确认才提交', async () => {
+    const { userEditSubmitGate, canSubmitUserEdit } = await import(
+      './pages/UserDetailPage'
+    );
+    const gate = userEditSubmitGate(false, true);
+    expect(gate.kind).toBe('confirm_contact');
+    expect(gate.confirmKey).toBe('admin.contactEditConfirm');
+    const confirmText = t(gate.confirmKey ?? 'admin.contactEditConfirm');
+    expect(confirmText).toContain('标记为已验证');
+    expect(confirmText).toContain('须重新登录');
+    expect(canSubmitUserEdit(gate, false)).toBe(false);
+    expect(canSubmitUserEdit(gate, true)).toBe(true);
+  });
+
+  test('仅资料 diff → direct；无改动 → noop 永不提交', async () => {
+    const { userEditSubmitGate, canSubmitUserEdit } = await import(
+      './pages/UserDetailPage'
+    );
+    expect(userEditSubmitGate(true, false)).toEqual({
+      kind: 'direct',
+      confirmKey: null,
+    });
+    expect(userEditSubmitGate(false, false)).toEqual({
+      kind: 'noop',
+      confirmKey: null,
+    });
+    expect(canSubmitUserEdit(userEditSubmitGate(true, false), false)).toBe(
+      true,
+    );
+    expect(canSubmitUserEdit(userEditSubmitGate(false, false), true)).toBe(
+      false,
+    );
+  });
+
+  test('门槛由真实 PATCH diff 驱动：只改联系方式 → confirm_contact', async () => {
+    const { userEditSubmitGate } = await import('./pages/UserDetailPage');
+    const detail = create(UserDetailResponseSchema, {
+      user: { id: '2', username: 'alice', phone: '13800138000' },
+    });
+    const draft = {
+      ...apiMod.userEditDraftFromDetail(detail),
+      phone: '13900139000',
+    };
+    const profileReq = apiMod.buildUpdateUserProfileRequest(
+      BigInt(2),
+      draft,
+      detail,
+    );
+    const contactReq = apiMod.buildUpdateUserContactRequest(
+      BigInt(2),
+      draft,
+      detail,
+    );
+    expect(profileReq).toBeNull();
+    expect(contactReq).not.toBeNull();
+    expect(
+      userEditSubmitGate(profileReq !== null, contactReq !== null).kind,
+    ).toBe('confirm_contact');
+  });
+
+  test('凭证停用文案不含强制下线；删除文案保留强制下线（§5.4 下线集合）', () => {
+    const disableText = t('admin.credentialDisableConfirm', {
+      kind: '通行密钥',
+    });
+    expect(disableText).not.toContain('会话');
+    expect(disableText).not.toContain('重新登录');
+    expect(
+      t('admin.credentialDeleteConfirm', { kind: '通行密钥' }),
+    ).toContain('重新登录');
+    setLocale('en-US');
+    expect(
+      t('admin.credentialDisableConfirm', { kind: 'Passkey' }),
+    ).not.toContain('sessions');
+    expect(t('admin.credentialDeleteConfirm', { kind: 'Passkey' })).toContain(
+      'sign-in',
+    );
+    setLocale('zh-CN');
   });
 });
 

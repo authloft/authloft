@@ -4,8 +4,10 @@
 import { describe, expect, test } from 'rstack/test';
 import {
   DEFAULT_PASSWORD_POLICY,
+  DELETED_USERNAME_PREFIX,
   FIELD_ISSUE_I18N_KEY,
   firstInvalidField,
+  hasDeletedUsernamePrefix,
   isCodeComplete,
   isFilled,
   isValidEmail,
@@ -14,6 +16,7 @@ import {
   isValidUsername,
   PROVIDER_KEY_PATTERN,
   USERNAME_PATTERN,
+  usernameIssue,
   validateFields,
   validatePassword,
   type PasswordWeakReason,
@@ -39,6 +42,19 @@ describe('utils/validate 用户名（接口文档 §2.3 行 449 唯一定义）'
     expect(isValidUsername('ab-cd')).toBe(false);
     expect(isValidUsername('用户名abc')).toBe(false);
     expect(isValidUsername('')).toBe(false);
+  });
+
+  test('deleted_ 前缀拒绝（删除匿名化保留标记；大小写敏感、按字面前缀）', () => {
+    expect(DELETED_USERNAME_PREFIX).toBe('deleted_');
+    expect(hasDeletedUsernamePrefix('deleted_12345')).toBe(true);
+    expect(hasDeletedUsernamePrefix('Deleted_12345')).toBe(false);
+    expect(hasDeletedUsernamePrefix('mydeleted_12345')).toBe(false);
+    // 格式合法但命中保留前缀 → 拒绝；给出针对性原因
+    expect(USERNAME_PATTERN.test('deleted_12345')).toBe(true);
+    expect(isValidUsername('deleted_12345')).toBe(false);
+    expect(usernameIssue('deleted_12345')).toBe('reserved_prefix');
+    expect(usernameIssue('ab-cd')).toBe('invalid_format');
+    expect(usernameIssue('abc_1')).toBeNull();
   });
 });
 

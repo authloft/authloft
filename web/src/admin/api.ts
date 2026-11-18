@@ -99,27 +99,44 @@ import {
   UpdateTemplateRequestSchema,
 } from '../gen/proto/api/admin/v1/template_pb';
 import type {
+  DeleteCredentialRequest,
   GetUserEventsRequest,
   GetUserRequest,
   ListUsersRequest,
   ResetUserPasswordRequest,
+  ResetUserRecoveryCodesRequest,
+  SetCredentialEnabledRequest,
+  SetUserMfaRequest,
   UnbindUserThirdpartyRequest,
+  UnbindUserTOTPRequest,
   UnlockUserRequest,
+  UpdateUserContactRequest,
+  UpdateUserProfileRequest,
   UpdateUserStatusRequest,
   UserDetailResponse,
   UserEventsResponse,
   UserListResponse,
 } from '../gen/proto/api/admin/v1/user_pb';
 import {
+  DeleteCredentialRequestSchema,
   GetUserEventsRequestSchema,
   GetUserRequestSchema,
   ListUsersRequestSchema,
   ResetUserPasswordRequestSchema,
+  ResetUserRecoveryCodesRequestSchema,
+  SetCredentialEnabledRequestSchema,
+  SetUserMfaRequestSchema,
   UnbindUserThirdpartyRequestSchema,
+  UnbindUserTOTPRequestSchema,
   UnlockUserRequestSchema,
+  UpdateUserContactRequestSchema,
+  UpdateUserProfileRequestSchema,
   UpdateUserStatusRequestSchema,
 } from '../gen/proto/api/admin/v1/user_pb';
 import type { MfaResponse } from '../gen/proto/api/account/v1/mfa_pb';
+import type { UserProfile } from '../gen/proto/api/account/v1/profile_pb';
+import { UserProfileSchema } from '../gen/proto/api/account/v1/profile_pb';
+import { isValidEmail, isValidPhone } from '../shared/utils/validate';
 import type {
   AdminProvider,
   DeleteProviderRequest,
@@ -443,6 +460,55 @@ export function getUserEvents(
   return adminClient.getUserEvents(request);
 }
 
+/** 编辑资料 PATCH（§5.4）：不触发会话失效。 */
+export function updateUserProfile(
+  request: UpdateUserProfileRequest,
+): Promise<OkResponse> {
+  return adminClient.updateUserProfile(request);
+}
+
+/** 编辑联系方式 PATCH（§5.4）：写即置已验证、触发会话失效。 */
+export function updateUserContact(
+  request: UpdateUserContactRequest,
+): Promise<OkResponse> {
+  return adminClient.updateUserContact(request);
+}
+
+/** 管理端开关两步验证（§5.4）。 */
+export function setUserMfa(
+  request: SetUserMfaRequest,
+): Promise<OkResponse> {
+  return adminClient.setUserMfa(request);
+}
+
+/** 管理员救援解绑 TOTP（§5.4）。 */
+export function unbindUserTOTP(
+  request: UnbindUserTOTPRequest,
+): Promise<OkResponse> {
+  return adminClient.unbindUserTOTP(request);
+}
+
+/** 重生成恢复码（§5.4：响应不下发明文）。 */
+export function resetUserRecoveryCodes(
+  request: ResetUserRecoveryCodesRequest,
+): Promise<OkResponse> {
+  return adminClient.resetUserRecoveryCodes(request);
+}
+
+/** 停用 / 启用单条凭证（§5.4：密码凭证不可停用）。 */
+export function setCredentialEnabled(
+  request: SetCredentialEnabledRequest,
+): Promise<OkResponse> {
+  return adminClient.setCredentialEnabled(request);
+}
+
+/** 删除单条凭证（§5.4：触发会话失效）。 */
+export function deleteCredential(
+  request: DeleteCredentialRequest,
+): Promise<OkResponse> {
+  return adminClient.deleteCredential(request);
+}
+
 /** user_status 值域（§5.4 行 1251）：1 启用 0 禁用。 */
 export const USER_STATUS_ENABLED = BigInt(1);
 export const USER_STATUS_DISABLED = BigInt(0);
@@ -622,6 +688,323 @@ export function boundMfaFactors(mfa: MfaResponse | undefined): string[] {
   return (mfa?.factors ?? [])
     .filter((factor) => factor.bound)
     .map((factor) => mfaFactorLabel(factor.factor));
+}
+
+// ---------------------------------------------------------------------------
+// 用户详情编辑态纯逻辑（§5.4 / 方案「前端落地」）：草稿回填 / 字段校验 / PATCH
+// diff 构造 / 分级展示判定，全部零 Semi 依赖、node 可测。服务端门禁是唯一
+// 真相——展示判定只隐藏按钮作体验优化，不作安全边界。
+// ---------------------------------------------------------------------------
+
+/** superadmin 权限点（§5.4 门禁矩阵；与 GetMe.permissions 同源）。 */
+export const PERMISSION_SUPERADMIN = 'superadmin';
+
+/** 目标账户类别（§5.4 门禁矩阵）。 */
+export type UserWriteTier = 'superadmin' | 'admin' | 'ordinary';
+
+/** 目标持 superadmin → superadmin；持任意权限点 → 普通管理员；否则普通账户。 */
+export function classifyUserWriteTier(permissions: string[]): UserWriteTier {
+  if (permissions.includes(PERMISSION_SUPERADMIN)) {
+    return 'superadmin';
+  }
+  return permissions.length > 0 ? 'admin' : 'ordinary';
+}
+
+/** 详情页各写按钮的展示态（体验层，服务端门禁唯一真相）。 */
+export interface UserWriteVisibility {
+  editProfile: boolean;
+  editContact: boolean;
+  setMfa: boolean;
+  unbindTotp: boolean;
+  resetRecoveryCodes: boolean;
+  credentialWrite: boolean;
+  unbindThirdparty: boolean;
+}
+
+/**
+ * 写按钮分级显隐（§5.4 门禁矩阵 / 方案「目标账户保护」）：
+ * - superadmin 目标：一律隐藏；
+ * - 普通管理员目标：仅操作者持 superadmin 时显示；
+ * - 普通账户：显示，但改联系方式等价无凭据接管账号，限定 superadmin 操作者。
+ */
+export function userWriteVisibility(
+  targetPermissions: string[],
+  operatorPermissions: string[],
+): UserWriteVisibility {
+  const tier = classifyUserWriteTier(targetPermissions);
+  if (tier === 'superadmin') {
+    return {
+      editProfile: false,
+      editContact: false,
+      setMfa: false,
+      unbindTotp: false,
+      resetRecoveryCodes: false,
+      credentialWrite: false,
+      unbindThirdparty: false,
+    };
+  }
+  const operatorIsSuperadmin = operatorPermissions.includes(
+    PERMISSION_SUPERADMIN,
+  );
+  if (tier === 'admin') {
+    return {
+      editProfile: operatorIsSuperadmin,
+      editContact: operatorIsSuperadmin,
+      setMfa: operatorIsSuperadmin,
+      unbindTotp: operatorIsSuperadmin,
+      resetRecoveryCodes: operatorIsSuperadmin,
+      credentialWrite: operatorIsSuperadmin,
+      unbindThirdparty: operatorIsSuperadmin,
+    };
+  }
+  return {
+    editProfile: true,
+    editContact: operatorIsSuperadmin,
+    setMfa: true,
+    unbindTotp: true,
+    resetRecoveryCodes: true,
+    credentialWrite: true,
+    unbindThirdparty: true,
+  };
+}
+
+/** 编辑草稿（全字符串形态，直连表单；与原值 diff 后才进 wire）。 */
+export interface UserEditDraft {
+  nickname: string;
+  avatarUrl: string;
+  phone: string;
+  email: string;
+  /** '0' 保密 / '1' 男 / '2' 女；'' 表示不设置。 */
+  gender: string;
+  birthday: string;
+  locale: string;
+  timezone: string;
+  /** JSON 对象文本；'' 表示空对象。 */
+  extra: string;
+}
+
+const GENDER_VALUES = ['0', '1', '2'];
+
+/** GetUser 响应 → 编辑草稿（回填 profile 投影；extra 序列化为 JSON 文本）。 */
+export function userEditDraftFromDetail(
+  detail: UserDetailResponse,
+): UserEditDraft {
+  const user = detail.user;
+  const profile = detail.profile;
+  return {
+    nickname: user?.nickname ?? '',
+    avatarUrl: user?.avatarUrl ?? '',
+    phone: user?.phone ?? '',
+    email: user?.email ?? '',
+    gender:
+      profile?.gender === undefined ? '' : profile.gender.toString(),
+    birthday: profile?.birthday ?? '',
+    locale: profile?.locale ?? '',
+    timezone: profile?.timezone ?? '',
+    extra: profile?.extra === undefined ? '' : JSON.stringify(profile.extra),
+  };
+}
+
+/** 生日格式（YYYY-MM-DD + 月日范围；服务端权威，此处仅体验校验）。 */
+function isValidBirthday(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match === null) {
+    return false;
+  }
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+}
+
+/** 文本值归一：提交前去首尾空白（与原值比较同口径）。 */
+function draftText(value: string): string {
+  return value.trim();
+}
+
+/** JSON 文本 → 合法对象（失败返回 undefined，供校验与 diff 共用）。 */
+function parseJsonObject(text: string): JsonObject | undefined {
+  const raw = text.trim() === '' ? '{}' : text.trim();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as JsonObject;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 对象 → 键序无关的 JSON 文本（diff 不因键顺序误判为改动）。 */
+function stableJsonText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJsonText).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJsonText(item)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * 草稿字段校验：返回首个不通过的 i18n 键，全过 → null。
+ * 文案键在字典层落，本函数只给键；服务端仍为字段校验唯一权威。
+ */
+export function userEditDraftIssue(draft: UserEditDraft): I18nKey | null {
+  if (draft.gender !== '' && !GENDER_VALUES.includes(draft.gender)) {
+    return 'admin.editGenderIssue';
+  }
+  if (draft.birthday !== '' && !isValidBirthday(draft.birthday)) {
+    return 'admin.editBirthdayIssue';
+  }
+  if (parseJsonObject(draft.extra) === undefined) {
+    return 'admin.editExtraIssue';
+  }
+  if (draftText(draft.phone) !== '' && !isValidPhone(draftText(draft.phone))) {
+    return 'admin.editPhoneIssue';
+  }
+  if (draftText(draft.email) !== '' && !isValidEmail(draftText(draft.email))) {
+    return 'admin.editEmailIssue';
+  }
+  return null;
+}
+
+/**
+ * UpdateUserProfile 请求构造（PATCH）：仅回填值与详情原值不同的键。
+ * 无改动 → null（调用方据此跳过提交，不发空 PATCH）。
+ */
+export function buildUpdateUserProfileRequest(
+  id: bigint,
+  draft: UserEditDraft,
+  original: UserDetailResponse,
+): UpdateUserProfileRequest | null {
+  const user = original.user;
+  const profile = original.profile;
+  const values: MessageInitShape<typeof UpdateUserProfileRequestSchema> = {
+    id,
+  };
+  let changed = false;
+
+  const nickname = draftText(draft.nickname);
+  if (nickname !== (user?.nickname ?? '')) {
+    values.nickname = nickname;
+    changed = true;
+  }
+  const avatarUrl = draftText(draft.avatarUrl);
+  if (avatarUrl !== (user?.avatarUrl ?? '')) {
+    values.avatarUrl = avatarUrl;
+    changed = true;
+  }
+
+  const profileValues: MessageInitShape<typeof UserProfileSchema> = {};
+  const originalGender =
+    profile?.gender === undefined ? '' : profile.gender.toString();
+  if (draft.gender !== originalGender) {
+    profileValues.gender = draft.gender === '' ? BigInt(0) : BigInt(draft.gender);
+    changed = true;
+  }
+  const birthday = draftText(draft.birthday);
+  if (birthday !== (profile?.birthday ?? '')) {
+    profileValues.birthday = birthday;
+    changed = true;
+  }
+  const locale = draftText(draft.locale);
+  if (locale !== (profile?.locale ?? '')) {
+    profileValues.locale = locale;
+    changed = true;
+  }
+  const timezone = draftText(draft.timezone);
+  if (timezone !== (profile?.timezone ?? '')) {
+    profileValues.timezone = timezone;
+    changed = true;
+  }
+  const draftExtra = parseJsonObject(draft.extra);
+  if (
+    draftExtra !== undefined &&
+    stableJsonText(draftExtra) !== stableJsonText(profile?.extra ?? {})
+  ) {
+    profileValues.extra = draftExtra;
+    changed = true;
+  }
+
+  if (Object.keys(profileValues).length > 0) {
+    values.profile = create(UserProfileSchema, profileValues);
+  }
+  return changed ? create(UpdateUserProfileRequestSchema, values) : null;
+}
+
+/**
+ * UpdateUserContact 请求构造（PATCH）：仅提交变更的联系方式。
+ * 无改动 → null；显式空串表示清空（服务端置 verified=0）。
+ */
+export function buildUpdateUserContactRequest(
+  id: bigint,
+  draft: UserEditDraft,
+  original: UserDetailResponse,
+): UpdateUserContactRequest | null {
+  const user = original.user;
+  const values: MessageInitShape<typeof UpdateUserContactRequestSchema> = {
+    id,
+  };
+  let changed = false;
+  const phone = draftText(draft.phone);
+  if (phone !== (user?.phone ?? '')) {
+    values.phone = phone;
+    changed = true;
+  }
+  const email = draftText(draft.email);
+  if (email !== (user?.email ?? '')) {
+    values.email = email;
+    changed = true;
+  }
+  return changed ? create(UpdateUserContactRequestSchema, values) : null;
+}
+
+/** SetUserMfa 请求构造：enabled=true 下发 1，false 下发 0（值域 0|1）。 */
+export function buildSetUserMfaRequest(
+  id: bigint,
+  enabled: boolean,
+): SetUserMfaRequest {
+  return create(SetUserMfaRequestSchema, {
+    id,
+    mfaRequired: enabled ? BigInt(1) : BigInt(0),
+  });
+}
+
+/** UnbindUserTOTP / ResetUserRecoveryCodes 请求构造（仅 id）。 */
+export function buildUnbindUserTOTPRequest(
+  id: bigint,
+): UnbindUserTOTPRequest {
+  return create(UnbindUserTOTPRequestSchema, { id });
+}
+
+export function buildResetUserRecoveryCodesRequest(
+  id: bigint,
+): ResetUserRecoveryCodesRequest {
+  return create(ResetUserRecoveryCodesRequestSchema, { id });
+}
+
+/** SetCredentialEnabled / DeleteCredential 请求构造（id + credentialId）。 */
+export function buildSetCredentialEnabledRequest(
+  id: bigint,
+  credentialId: bigint,
+  enabled: boolean,
+): SetCredentialEnabledRequest {
+  return create(SetCredentialEnabledRequestSchema, {
+    id,
+    credentialId,
+    enabled,
+  });
+}
+
+export function buildDeleteCredentialRequest(
+  id: bigint,
+  credentialId: bigint,
+): DeleteCredentialRequest {
+  return create(DeleteCredentialRequestSchema, { id, credentialId });
 }
 
 // ---------------------------------------------------------------------------

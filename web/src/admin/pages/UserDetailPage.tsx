@@ -2,34 +2,41 @@
  * 用户详情抽屉内容（UsersPage 点击用户名打开；组件常驻挂载，仅切 visible，
  * 不随 URL 变化）：
  *
- * GetUser（{id} 详情，含凭证概览 / 三方绑定 / MFA 状态）真调
- * （后端已实装）；解绑第三方（UnbindUserThirdparty {id, providerKey}）
- * Popconfirm 确认 → 成功后重取详情；Union 行不可单独解绑
- * 由服务端兜底（invalid_request）——admin 绑定视图 UserThirdpartyBinding 无
- * type 标记，前端不预判置灰，失败经 Semi Toast 展示
- * （原就地 actionError 文字已移除）；成功反馈接 Toast.success
- * （admin.unbindSuccess，P1-6 统一成功通道）。
+ * GetUser（{id} 详情，含凭证概览 / 三方绑定 / MFA 状态 / profile / permissions）
+ * 真调（后端已实装）。基本信息为查看 / 编辑双态：编辑态 Semi Form 回填 profile
+ * 投影，提交经 api 纯函数校验 + PATCH diff，无改动不提交；改联系方式写入即
+ * 置已验证、触发该用户全部会话失效，确认文案明示后果。
+ *
+ * MFA 区提供开关两步验证 / 救援解绑 TOTP / 重置恢复码；凭证区提供停用 / 启用
+ * 与删除（密码凭证不允许停用，服务端权威）；三方绑定保留解绑入口（Union 行
+ * 不可单独解绑由服务端兜底 invalid_request）。危险写操作 Popconfirm 二次确认
+ * 并明示强制下线后果，成功后统一 refreshAsync() 重取详情 + Toast 反馈。
+ *
+ * 写按钮展示态按 GetUser.permissions 与当前操作者 GetMe.permissions 分级判定
+ * （服务端门禁是唯一真相，前端隐藏仅体验优化）。删除用户入口属相邻切片，
+ * 本组件保持可继续在头部追加，不预设结构。
  *
  * 登录日志（GetUserEvents {id} + 分页）：DataTable 消费
  * （分页 / 排序受控 TableQueryState，初始 created_at desc——EventLogTable
  * 同构；列口径沿需求：时间 / 事件 / 方式 / IP / 设备 UA）。
  *
  * 401 统一跳登录（UsersPage 同模式）；404 掩护等其余错误走错误态。
- * 组件壳 import Semi 后不可在 node 测试（工具链 blocker），
- * 可测逻辑全部收口在 ./api（boundMfaFactors / credentialKindLabel /
- * userStatusLabel / formatUnixTime / 请求构造）。
+ * 组件壳 import Semi 后不可在 node 测试（工具链口径），
+ * 可测逻辑全部收口在 ./api（草稿 / diff / 校验 / 分级显隐 / 请求构造）。
  * 样式（§1.7）：同目录同名 module less。
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
+  Form,
   Popconfirm,
   SideSheet,
   Spin,
   Tag,
   Toast,
   Typography,
+  Modal,
 } from '@douyinfe/semi-ui';
 import { DataTable, type DataTableColumn } from '../../shared/app-ui/DataTable';
 import {
@@ -40,23 +47,42 @@ import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
 import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
-import { t } from '../../shared/i18n';
+import { t, type I18nKey } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import type { EventItem } from '../../gen/proto/api/admin/v1/events_pb';
 import {
   adminReturnTo,
   apiErrorText,
   boundMfaFactors,
+  buildDeleteCredentialRequest,
   buildGetUserEventsRequest,
   buildGetUserRequest,
+  buildResetUserRecoveryCodesRequest,
+  buildSetCredentialEnabledRequest,
+  buildSetUserMfaRequest,
   buildUnbindUserThirdpartyRequest,
+  buildUnbindUserTOTPRequest,
+  buildUpdateUserContactRequest,
+  buildUpdateUserProfileRequest,
   credentialKindLabel,
+  deleteCredential,
   formatUnixTime,
+  getMe,
   getUser,
   getUserEvents,
   isUnauthenticatedError,
+  resetUserRecoveryCodes,
+  setCredentialEnabled,
+  setUserMfa,
   unbindUserThirdparty,
+  unbindUserTOTP,
+  updateUserContact,
+  updateUserProfile,
+  userEditDraftFromDetail,
+  userEditDraftIssue,
   userStatusLabel,
+  userWriteVisibility,
+  type UserEditDraft,
 } from '../api';
 import styles from './UserDetailPage.module.less';
 
@@ -72,6 +98,46 @@ const INITIAL_EVENTS_QUERY: TableQueryState = {
   sort: EVENTS_SORT_FIELD,
   order: 'desc',
 };
+
+/** 编辑提交分流（§5.4：联系方式写入即置已验证 + 全部会话失效，须二次确认）。 */
+export type UserEditSubmitKind = 'noop' | 'direct' | 'confirm_contact';
+
+/** 提交门槛：confirmKey 仅在 confirm_contact 时非空，供 Modal 标题取用。 */
+export interface UserEditSubmitGate {
+  kind: UserEditSubmitKind;
+  confirmKey: I18nKey | null;
+}
+
+/**
+ * 编辑提交门槛：联系方式有 diff 必须先二次确认；仅资料 diff 可直接提交；
+ * 全无改动不提交。纯函数，node 可测（组件壳不可测口径）。
+ */
+export function userEditSubmitGate(
+  profileChanged: boolean,
+  contactChanged: boolean,
+): UserEditSubmitGate {
+  if (!profileChanged && !contactChanged) {
+    return { kind: 'noop', confirmKey: null };
+  }
+  if (contactChanged) {
+    return { kind: 'confirm_contact', confirmKey: 'admin.contactEditConfirm' };
+  }
+  return { kind: 'direct', confirmKey: null };
+}
+
+/**
+ * 提交放行判定：confirm_contact 必须确认（confirmed=true）才提交，取消
+ * （confirmed=false）一律不放行；direct 不受 confirmed 影响；noop 永不提交。
+ */
+export function canSubmitUserEdit(
+  gate: UserEditSubmitGate,
+  confirmed: boolean,
+): boolean {
+  if (gate.kind === 'noop') {
+    return false;
+  }
+  return gate.kind === 'direct' || confirmed;
+}
 
 /**
  * 登录日志列（需求 §4.2 行 152：时间 / 事件 / 方式 / IP / 设备 UA）。
@@ -148,6 +214,17 @@ export function UserDetail(props: {
       }),
     },
   );
+  /**
+   * 当前操作者权限（§5.4 门禁矩阵）：与详情下发的目标 permissions 比对，
+   * 决定写按钮体验层显隐；服务端门禁是唯一真相。
+   */
+  const { data: meData } = useRequest(() => getMe(), {
+    ...requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  });
+
   const [eventsQuery, setEventsQuery] =
     useState<TableQueryState>(INITIAL_EVENTS_QUERY);
   const {
@@ -168,6 +245,92 @@ export function UserDetail(props: {
       }),
     },
   );
+
+  // 查看 / 编辑双态：切 id 或关闭抽屉时归位；formKey 重建 Semi Form 以回填新值。
+  const [editing, setEditing] = useState(false);
+  const [formKey, setFormKey] = useState(0);
+  const [writeBusy, setWriteBusy] = useState(false);
+
+  // 切换目标 / 关闭抽屉时退出编辑态，避免把上个用户的草稿带到下个用户。
+  useEffect(() => {
+    setEditing(false);
+    setFormKey((key) => key + 1);
+  }, [props.userId, props.visible]);
+
+  /** 统一写操作编排：在途禁用靠调用方 Popconfirm 机制 + 本层 busy 文案。 */
+  async function runWrite(
+    action: () => Promise<unknown>,
+    successText: string,
+  ): Promise<void> {
+    setWriteBusy(true);
+    try {
+      await action();
+      await refreshAsync();
+      Toast.success(successText);
+      setEditing(false);
+      setFormKey((key) => key + 1);
+    } catch (writeError) {
+      Toast.error(apiErrorText(writeError));
+    } finally {
+      setWriteBusy(false);
+    }
+  }
+
+  /** 编辑态提交：先纯函数校验 + diff，无改动不发请求；资料 / 联系方式分两路。 */
+  async function handleEditSubmit(values: UserEditDraft): Promise<void> {
+    if (props.userId === null || data === undefined) {
+      return;
+    }
+    const issue = userEditDraftIssue(values);
+    if (issue !== null) {
+      Toast.error(t(issue));
+      return;
+    }
+    const id = props.userId;
+    const profileRequest = buildUpdateUserProfileRequest(
+      id,
+      values,
+      data,
+    );
+    const contactRequest = buildUpdateUserContactRequest(id, values, data);
+    const gate = userEditSubmitGate(
+      profileRequest !== null,
+      contactRequest !== null,
+    );
+    if (gate.kind === 'noop') {
+      Toast.info(t('admin.noEditChanges'));
+      setEditing(false);
+      return;
+    }
+
+    // confirmed=false 为取消路径（不提交）；仅 onOk 传 true 放行。
+    const submit = (confirmed: boolean): void => {
+      if (!canSubmitUserEdit(gate, confirmed)) {
+        return;
+      }
+      void runWrite(async () => {
+        if (profileRequest !== null) {
+          await updateUserProfile(profileRequest);
+        }
+        if (contactRequest !== null) {
+          await updateUserContact(contactRequest);
+        }
+      }, contactRequest !== null && profileRequest === null
+        ? t('admin.editContactSuccess')
+        : t('admin.editProfileSuccess'));
+    };
+
+    if (gate.kind === 'confirm_contact' && gate.confirmKey !== null) {
+      // 联系方式写即置已验证 + 全部会话失效（§5.4）：先二次确认再提交。
+      Modal.confirm({
+        title: t(gate.confirmKey),
+        onOk: () => submit(true),
+        onCancel: () => submit(false),
+      });
+      return;
+    }
+    submit(false);
+  }
 
   /**
    * 解绑第三方：Union 行不可单独解绑由服务端兜底
@@ -211,13 +374,129 @@ export function UserDetail(props: {
   } else {
     const user = data.user;
     const mfaBound = boundMfaFactors(data.mfa);
+    // 体验层显隐；服务端门禁唯一真相（§5.4）。操作者权限未到达时按无
+    // superadmin 处理——写按钮收敛，绝不放宽。
+    const visibility = userWriteVisibility(
+      data.permissions,
+      meData?.permissions ?? [],
+    );
+    const targetUsername = user?.username ?? '';
+    const targetId = props.userId ?? BigInt(0);
     content = (
       <>
         <section className={styles.block}>
-          <h4 className={styles.blockTitle}>{t('admin.basicInfoSection')}</h4>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <h4 className={styles.blockTitle}>{t('admin.basicInfoSection')}</h4>
+            {user !== undefined && visibility.editProfile && !editing ? (
+              <Button
+                size="small"
+                onClick={() => {
+                  setEditing(true);
+                }}
+              >
+                {t('admin.editAction')}
+              </Button>
+            ) : null}
+          </div>
           {user === undefined ? (
             // user 缺省（protojson 零值省略）：后端不该下发的防御分支。
             <p className={styles.muted}>{t('admin.noUserData')}</p>
+          ) : editing ? (
+            <Form
+              key={formKey}
+              initValues={{ ...userEditDraftFromDetail(data) }}
+              onSubmit={(values: Record<string, unknown>) => {
+                void handleEditSubmit(values as unknown as UserEditDraft);
+              }}
+              trigger="custom"
+              labelPosition="top"
+            >
+              <Form.Input
+                field="nickname"
+                label={t('admin.nicknameLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Input
+                field="avatarUrl"
+                label={t('admin.avatarUrlLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Input
+                field="phone"
+                label={t('admin.phoneLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Input
+                field="email"
+                label={t('admin.emailLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Select
+                field="gender"
+                label={t('admin.genderLabel')}
+                optionList={[
+                  { value: '0', label: t('admin.genderUnspecified') },
+                  { value: '1', label: t('admin.genderMale') },
+                  { value: '2', label: t('admin.genderFemale') },
+                ]}
+                disabled={writeBusy}
+                showClear
+              />
+              <Form.Input
+                field="birthday"
+                label={t('admin.birthdayLabel')}
+                placeholder="YYYY-MM-DD"
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Input
+                field="locale"
+                label={t('admin.localeLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.Input
+                field="timezone"
+                label={t('admin.timezoneLabel')}
+                disabled={writeBusy}
+                allowEmptyString
+              />
+              <Form.TextArea
+                field="extra"
+                label={t('admin.extraLabel')}
+                placeholder={t('admin.extraPlaceholder')}
+                disabled={writeBusy}
+                autosize
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <Button
+                  htmlType="submit"
+                  theme="solid"
+                  type="primary"
+                  loading={writeBusy}
+                >
+                  {t('admin.saveAction')}
+                </Button>
+                <Button
+                  disabled={writeBusy}
+                  onClick={() => {
+                    setEditing(false);
+                  }}
+                >
+                  {t('admin.cancelAction')}
+                </Button>
+              </div>
+            </Form>
           ) : (
             <dl className={styles.infoGrid}>
               <dt>{t('admin.usernameLabel')}</dt>
@@ -264,6 +543,87 @@ export function UserDetail(props: {
               ? t('admin.mfaBoundSummary', { factors: mfaBound.join('、') })
               : t('admin.mfaNoneBound')}
           </p>
+          {visibility.setMfa ||
+          visibility.unbindTotp ||
+          visibility.resetRecoveryCodes ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {visibility.setMfa ? (
+                user?.mfaRequired === BigInt(1) ? (
+                  <Popconfirm
+                    title={t('admin.mfaDisableConfirm', {
+                      username: targetUsername,
+                    })}
+                    onConfirm={() =>
+                      runWrite(
+                        () =>
+                          setUserMfa(buildSetUserMfaRequest(targetId, false)),
+                        t('admin.mfaDisableSuccess'),
+                      )
+                    }
+                  >
+                    <Button size="small" type="danger" disabled={writeBusy}>
+                      {t('admin.mfaDisableAction')}
+                    </Button>
+                  </Popconfirm>
+                ) : (
+                  <Popconfirm
+                    title={t('admin.mfaEnableConfirm', {
+                      username: targetUsername,
+                    })}
+                    onConfirm={() =>
+                      runWrite(
+                        () =>
+                          setUserMfa(buildSetUserMfaRequest(targetId, true)),
+                        t('admin.mfaEnableSuccess'),
+                      )
+                    }
+                  >
+                    <Button size="small" disabled={writeBusy}>
+                      {t('admin.mfaEnableAction')}
+                    </Button>
+                  </Popconfirm>
+                )
+              ) : null}
+              {visibility.unbindTotp &&
+              data.credentials.some((item) => item.kind === 'totp') ? (
+                <Popconfirm
+                  title={t('admin.unbindTotpConfirm', {
+                    username: targetUsername,
+                  })}
+                  onConfirm={() =>
+                    runWrite(
+                      () => unbindUserTOTP(buildUnbindUserTOTPRequest(targetId)),
+                      t('admin.unbindTotpSuccess'),
+                    )
+                  }
+                >
+                  <Button size="small" type="danger" disabled={writeBusy}>
+                    {t('admin.unbindTotpAction')}
+                  </Button>
+                </Popconfirm>
+              ) : null}
+              {visibility.resetRecoveryCodes ? (
+                <Popconfirm
+                  title={t('admin.resetRecoveryCodesConfirm', {
+                    username: targetUsername,
+                  })}
+                  onConfirm={() =>
+                    runWrite(
+                      () =>
+                        resetUserRecoveryCodes(
+                          buildResetUserRecoveryCodesRequest(targetId),
+                        ),
+                      t('admin.resetRecoveryCodesSuccess'),
+                    )
+                  }
+                >
+                  <Button size="small" disabled={writeBusy}>
+                    {t('admin.resetRecoveryCodesAction')}
+                  </Button>
+                </Popconfirm>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <section className={styles.block}>
@@ -294,6 +654,76 @@ export function UserDetail(props: {
                         })
                       : ''}
                   </span>
+                  {visibility.credentialWrite ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {credential.kind === 'password' ? null : credential.isEnabled ? (
+                        // 密码凭证不允许停用（§5.4），仅其余类型显示停用入口。
+                        <Popconfirm
+                          title={t('admin.credentialDisableConfirm', {
+                            kind: credentialKindLabel(credential.kind),
+                          })}
+                          onConfirm={() =>
+                            runWrite(
+                              () =>
+                                setCredentialEnabled(
+                                  buildSetCredentialEnabledRequest(
+                                    targetId,
+                                    credential.id,
+                                    false,
+                                  ),
+                                ),
+                              t('admin.credentialDisabledSuccess'),
+                            )
+                          }
+                        >
+                          <Button size="small" disabled={writeBusy}>
+                            {t('admin.credentialDisableAction')}
+                          </Button>
+                        </Popconfirm>
+                      ) : (
+                        <Button
+                          size="small"
+                          disabled={writeBusy}
+                          onClick={() =>
+                            runWrite(
+                              () =>
+                                setCredentialEnabled(
+                                  buildSetCredentialEnabledRequest(
+                                    targetId,
+                                    credential.id,
+                                    true,
+                                  ),
+                                ),
+                              t('admin.credentialEnabledSuccess'),
+                            )
+                          }
+                        >
+                          {t('admin.credentialEnableAction')}
+                        </Button>
+                      )}
+                      <Popconfirm
+                        title={t('admin.credentialDeleteConfirm', {
+                          kind: credentialKindLabel(credential.kind),
+                        })}
+                        onConfirm={() =>
+                          runWrite(
+                            () =>
+                              deleteCredential(
+                                buildDeleteCredentialRequest(
+                                  targetId,
+                                  credential.id,
+                                ),
+                              ),
+                            t('admin.credentialDeletedSuccess'),
+                          )
+                        }
+                      >
+                        <Button size="small" type="danger" disabled={writeBusy}>
+                          {t('admin.credentialDeleteAction')}
+                        </Button>
+                      </Popconfirm>
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -318,16 +748,18 @@ export function UserDetail(props: {
                       time: formatUnixTime(binding.createdAt),
                     })}
                   </span>
-                  <Popconfirm
-                    title={t('admin.unbindConfirm', {
-                      providerKey: binding.providerKey,
-                    })}
-                    onConfirm={() => handleUnbind(binding.providerKey)}
-                  >
-                    <Button size="small" type="danger">
-                      {t('admin.unbindAction')}
-                    </Button>
-                  </Popconfirm>
+                  {visibility.unbindThirdparty ? (
+                    <Popconfirm
+                      title={t('admin.unbindConfirm', {
+                        providerKey: binding.providerKey,
+                      })}
+                      onConfirm={() => handleUnbind(binding.providerKey)}
+                    >
+                      <Button size="small" type="danger" disabled={writeBusy}>
+                        {t('admin.unbindAction')}
+                      </Button>
+                    </Popconfirm>
+                  ) : null}
                 </li>
               ))}
             </ul>

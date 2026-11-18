@@ -501,7 +501,6 @@ export const admin = {
   'admin.noBindings': '暂无第三方绑定',
   'admin.unbindConfirm': '确定解绑「{providerKey}」？解绑后无法再用它登录。',
   'admin.unbindAction': '解绑',
-  // 解绑成功反馈（P1-6）。
   'admin.unbindSuccess': '已解绑「{providerKey}」',
   'admin.loginLogSection': '登录日志',
   'admin.loginLogLoadFailed': '登录日志加载失败，请刷新重试',
@@ -510,6 +509,54 @@ export const admin = {
   'admin.eventColumn': '事件',
   'admin.methodColumn': '方式',
   'admin.deviceUaColumn': '设备（UA）',
+
+  // ---- UserDetailPage 用户详情编辑态 / 救援写操作----------------------
+  'admin.usernameReservedPrefixHint':
+    '用户名不能以 deleted_ 开头，该前缀为系统保留',
+  'admin.avatarUrlLabel': '头像地址',
+  'admin.genderLabel': '性别',
+  'admin.birthdayLabel': '生日',
+  'admin.localeLabel': '语言区域',
+  'admin.timezoneLabel': '时区',
+  'admin.extraLabel': '扩展资料（JSON 对象）',
+  'admin.extraPlaceholder': '{"key": "value"}',
+  'admin.genderUnspecified': '保密',
+  'admin.genderMale': '男',
+  'admin.genderFemale': '女',
+  'admin.editGenderIssue': '性别只能取保密 / 男 / 女',
+  'admin.editBirthdayIssue': '生日须为 YYYY-MM-DD 格式',
+  'admin.editExtraIssue': '扩展资料须为合法 JSON 对象',
+  'admin.editPhoneIssue': '手机号格式不正确',
+  'admin.editEmailIssue': '邮箱格式不正确',
+  'admin.editProfileSuccess': '资料已保存',
+  'admin.editContactSuccess': '联系方式已保存',
+  'admin.noEditChanges': '资料无改动，无需提交',
+  'admin.contactEditConfirm':
+    '确定修改联系方式？写入的手机号 / 邮箱将标记为已验证，且该用户所有会话将失效，须重新登录。',
+  'admin.mfaEnableAction': '开启两步验证',
+  'admin.mfaDisableAction': '关闭两步验证',
+  'admin.mfaEnableConfirm': '确定为「{username}」开启两步验证？',
+  'admin.mfaDisableConfirm':
+    '确定关闭「{username}」的两步验证？该用户所有会话将失效，须重新登录。',
+  'admin.mfaEnableSuccess': '已开启两步验证',
+  'admin.mfaDisableSuccess': '已关闭两步验证',
+  'admin.unbindTotpAction': '解绑动态口令',
+  'admin.unbindTotpConfirm':
+    '确定解绑「{username}」的动态口令？该用户所有会话将失效，须重新登录。',
+  'admin.unbindTotpSuccess': '已解绑动态口令',
+  'admin.resetRecoveryCodesAction': '重置恢复码',
+  'admin.resetRecoveryCodesConfirm':
+    '确定重置「{username}」的恢复码？旧恢复码将立即作废。',
+  'admin.resetRecoveryCodesSuccess': '恢复码已重置',
+  'admin.credentialEnableAction': '启用',
+  'admin.credentialDisableAction': '停用',
+  'admin.credentialDeleteAction': '删除',
+  'admin.credentialDisableConfirm': '确定停用「{kind}」凭证？',
+  'admin.credentialDeleteConfirm':
+    '确定删除「{kind}」凭证？该用户所有会话将失效，须重新登录。',
+  'admin.credentialEnabledSuccess': '凭证已启用',
+  'admin.credentialDisabledSuccess': '凭证已停用',
+  'admin.credentialDeletedSuccess': '凭证已删除',
 
   // ---- pages/AuditPage.tsx----------------------------------------
   'admin.auditPresetAll': '全部事件',
@@ -558,7 +605,6 @@ export const admin = {
     '提供商数量超过单页上限（100），拖拽排序已停用',
   'admin.providerDragSortLabel': '拖拽调整提供商排序',
   'admin.noProviders': '暂无提供商',
-  // 启停 / 拖拽排序成功反馈（P1-6，此前「不新增键」，本次统一补齐）。
   'admin.providerEnableSuccess': '已启用「{name}」',
   'admin.providerDisableSuccess': '已停用「{name}」',
   'admin.providerSortSuccess': '提供商排序已保存',

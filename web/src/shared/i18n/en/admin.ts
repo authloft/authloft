@@ -549,7 +549,6 @@ export const admin: typeof zhAdmin = {
   'admin.unbindConfirm':
     'Unbind "{providerKey}"? It can no longer be used to sign in afterwards.',
   'admin.unbindAction': 'Unbind',
-  // unbind success feedback (P1-6).
   'admin.unbindSuccess': 'Unbound "{providerKey}"',
   'admin.loginLogSection': 'Sign-in Log',
   'admin.loginLogLoadFailed':
@@ -559,6 +558,55 @@ export const admin: typeof zhAdmin = {
   'admin.eventColumn': 'Event',
   'admin.methodColumn': 'Method',
   'admin.deviceUaColumn': 'Device (UA)',
+
+  // ---- UserDetailPage edit mode / rescue write actions ----
+  'admin.usernameReservedPrefixHint':
+    'Username cannot start with the reserved prefix "deleted_"',
+  'admin.avatarUrlLabel': 'Avatar URL',
+  'admin.genderLabel': 'Gender',
+  'admin.birthdayLabel': 'Birthday',
+  'admin.localeLabel': 'Locale',
+  'admin.timezoneLabel': 'Time zone',
+  'admin.extraLabel': 'Extra profile (JSON object)',
+  'admin.extraPlaceholder': '{"key": "value"}',
+  'admin.genderUnspecified': 'Unspecified',
+  'admin.genderMale': 'Male',
+  'admin.genderFemale': 'Female',
+  'admin.editGenderIssue': 'Gender must be unspecified / male / female',
+  'admin.editBirthdayIssue': 'Birthday must be in YYYY-MM-DD format',
+  'admin.editExtraIssue': 'Extra profile must be a valid JSON object',
+  'admin.editPhoneIssue': 'Invalid phone number',
+  'admin.editEmailIssue': 'Invalid email address',
+  'admin.editProfileSuccess': 'Profile saved',
+  'admin.editContactSuccess': 'Contact details saved',
+  'admin.noEditChanges': 'No changes to save',
+  'admin.contactEditConfirm':
+    'Change contact details? The phone number / email you enter will be marked as verified, and all sessions of this user will be invalidated, requiring a new sign-in.',
+  'admin.mfaEnableAction': 'Enable Two-Step Verification',
+  'admin.mfaDisableAction': 'Disable Two-Step Verification',
+  'admin.mfaEnableConfirm':
+    'Enable two-step verification for "{username}"?',
+  'admin.mfaDisableConfirm':
+    'Disable two-step verification for "{username}"? All sessions of this user will be invalidated, requiring a new sign-in.',
+  'admin.mfaEnableSuccess': 'Two-step verification enabled',
+  'admin.mfaDisableSuccess': 'Two-step verification disabled',
+  'admin.unbindTotpAction': 'Unbind Authenticator',
+  'admin.unbindTotpConfirm':
+    'Unbind the authenticator of "{username}"? All sessions of this user will be invalidated, requiring a new sign-in.',
+  'admin.unbindTotpSuccess': 'Authenticator unbound',
+  'admin.resetRecoveryCodesAction': 'Reset Recovery Codes',
+  'admin.resetRecoveryCodesConfirm':
+    'Reset the recovery codes of "{username}"? The old codes will be invalidated immediately.',
+  'admin.resetRecoveryCodesSuccess': 'Recovery codes reset',
+  'admin.credentialEnableAction': 'Enable',
+  'admin.credentialDisableAction': 'Disable',
+  'admin.credentialDeleteAction': 'Delete',
+  'admin.credentialDisableConfirm': 'Disable the "{kind}" credential?',
+  'admin.credentialDeleteConfirm':
+    'Delete the "{kind}" credential? All sessions of this user will be invalidated, requiring a new sign-in.',
+  'admin.credentialEnabledSuccess': 'Credential enabled',
+  'admin.credentialDisabledSuccess': 'Credential disabled',
+  'admin.credentialDeletedSuccess': 'Credential deleted',
 
   // ---- pages/AuditPage.tsx----------------------------------------
   'admin.auditPresetAll': 'All Events',
@@ -610,8 +658,6 @@ export const admin: typeof zhAdmin = {
     'More than one page of providers (100); drag sorting is disabled',
   'admin.providerDragSortLabel': 'Drag to reorder providers',
   'admin.noProviders': 'No providers yet',
-  // success feedback for enable/disable and drag sorting (P1-6; the
-  // earlier "no new keys" ruling is resolved here).
   'admin.providerEnableSuccess': 'Enabled "{name}"',
   'admin.providerDisableSuccess': 'Disabled "{name}"',
   'admin.providerSortSuccess': 'Provider order saved',

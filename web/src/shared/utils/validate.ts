@@ -4,8 +4,34 @@
  * 权威）、密码强度（§5.6 策略与默认值同源）、provider_key（^[a-z0-9_]+$）。
  */
 
-/** 用户名规则唯一来源：接口文档 §2.3 行 449 —— ^[A-Za-z0-9_]{5,20}$（设置后不可改）。 */
+/** 用户名规则唯一来源：接口文档 §2.3 唯一定义 —— ^[A-Za-z0-9_]{5,20}$（设置后不可改）。 */
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{5,20}$/;
+
+/**
+ * 删除匿名化保留前缀（方案「设计决策」deleted_ 前缀禁用段）：该前缀是已删
+ * 账号的唯一可辨识标记，不能由任何新建 / 改写路径产生。按字面前缀、大小写
+ * 敏感匹配；服务端为权威，此处仅体验层预校验。
+ */
+export const DELETED_USERNAME_PREFIX = 'deleted_';
+
+/** 是否命中删除匿名化保留前缀。 */
+export function hasDeletedUsernamePrefix(value: string): boolean {
+  return value.startsWith(DELETED_USERNAME_PREFIX);
+}
+
+/** 用户名预校验的结构化原因（文案由字典层落；格式与保留前缀分列便于提示）。 */
+export type UsernameIssue = 'invalid_format' | 'reserved_prefix' | null;
+
+/**
+ * 用户名预校验：先格式（唯一定义），再保留前缀拒绝（顺序固定，前缀命中时
+ * 仍叫 reserved_prefix，便于给出针对性提示）。
+ */
+export function usernameIssue(value: string): UsernameIssue {
+  if (!USERNAME_PATTERN.test(value)) {
+    return 'invalid_format';
+  }
+  return hasDeletedUsernamePrefix(value) ? 'reserved_prefix' : null;
+}
 
 /** provider_key 规则（docs/前端架构.md §3.4）：^[a-z0-9_]+$。 */
 export const PROVIDER_KEY_PATTERN = /^[a-z0-9_]+$/;
@@ -16,9 +42,9 @@ const PHONE_PATTERN = /^1[3-9]\d{9}$/;
 /** 邮箱（体验性预校验；§1.11 email：同上）。 */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 用户名（§2.3 行 449）。 */
+/** 用户名（格式 + 保留前缀，方案「deleted_ 前缀禁用」口径）。 */
 export function isValidUsername(value: string): boolean {
-  return USERNAME_PATTERN.test(value);
+  return usernameIssue(value) === null;
 }
 
 /** provider_key（^[a-z0-9_]+$）。 */
