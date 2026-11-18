@@ -170,6 +170,11 @@ type assembled struct {
 	epochStore    *cache.EpochStore
 	codeIssuer    *oidc.CodeIssuer
 
+	// 授权同意共享单例（§14.2 / §4.5）：consents 判定三态 + 写授权记录，
+	// authz 重跑 scopes 校验；Terminal 与 pages 复用同一实例，避免各写一份。
+	consents *oidc.ConsentService
+	authz    *oidc.AuthzValidator
+
 	// permissionProbe 登录签发侧「是否持有任意管理权限」探针：启动预热重建
 	// 权限集合后构造，注入会话签发器；只读缓存、miss / 故障回源 DB。
 	permissionProbe func(context.Context, int64) (bool, error)
@@ -239,6 +244,7 @@ type repoSet struct {
 	Providers   *repo.ProviderRepo
 	EventLogs   *repo.EventLogRepo
 	Clients     *repo.ClientRepo
+	Consents    *repo.OidcConsentRepo
 	OidcTokens  *repo.OidcTokenRepo
 	Permissions *repo.PermissionRepo
 	Templates   *repo.TemplateRepo
@@ -281,6 +287,7 @@ func newRepoSet(db *gorm.DB) *repoSet {
 		Providers:   repo.NewProviderRepo(db),
 		EventLogs:   repo.NewEventLogRepo(db),
 		Clients:     repo.NewClientRepo(db),
+		Consents:    repo.NewOidcConsentRepo(db),
 		OidcTokens:  repo.NewOidcTokenRepo(db),
 		Permissions: repo.NewPermissionRepo(db),
 		Templates:   repo.NewTemplateRepo(db),
@@ -452,6 +459,10 @@ func buildLoginCore(deps *assembled) *loginCore {
 		sessionsvc.NewSyncCookieURLBuilder(deps.codecs.SyncPayload),
 		deps.settings,
 	)
+	// 登录即同意（§14.2 步骤 5）：签码前重跑授权参数校验 + 写授权记录，
+	// 与 authorize 直签路径共用同一 ConsentService / AuthzValidator 实例。
+	terminal.Authz = deps.authz
+	terminal.Consents = deps.consents
 	return &loginCore{
 		terminal: terminal,
 		state:    orchestrator.NewState(deps.codecs.Login),
@@ -910,6 +921,10 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		return int64(u.Epoch), nil
 	})
 	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
+	// 授权同意共享单例：ConsentService 包 OidcConsentRepo，AuthzValidator 包
+	// ClientRepo（§14.2「两条签发路径共用同一校验工具 / 授权服务」）。
+	deps.consents = &oidc.ConsentService{Consents: deps.repos.Consents}
+	deps.authz = &oidc.AuthzValidator{Clients: deps.repos.Clients}
 
 	// 权限集合启动预热（§5.1）：全量重建 al:perm:admins，登录签发侧只读；
 	// 失败即 fail-fast，避免集合长期落后于 user_permission（回源兜底只覆盖单次判定）。
@@ -1394,6 +1409,8 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Sessions:   deps.sessionSvc.Verifier,
 		Codes:      deps.codeIssuer,
 		Audit:      deps.infra.Events,
+		Consents:   deps.consents,
+		Profiles:   deps.repos.Users,
 		Templates:  deps.admin.Templates,
 		SsoClients: deps.repos.Clients,
 	})

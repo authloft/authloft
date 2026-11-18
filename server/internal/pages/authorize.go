@@ -29,6 +29,7 @@
 package pages
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/eventlog"
 	"authloft/internal/oidc"
+	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
@@ -51,19 +53,37 @@ var (
 	_ SessionVerifier = (*session.Verifier)(nil)
 	_ CodeIssuer      = (*oidc.CodeIssuer)(nil)
 	_ AuditSink       = (*eventlog.Writer)(nil)
+	_ Consents        = (*oidc.ConsentService)(nil)
+	_ ProfileReader   = (*repo.UserRepo)(nil)
 )
 
-// oidcAuthorizeInit __AUTHLOFT_INIT__.oidc 注入体（§4.2 行 1081「OIDC 原始
-// 参数由 Go 原样注入」/ §8 行 1479 白名单）：七键恒定存在（snake_case 原样，
-// 值为解码后的原始 query 值），缺失参数以空串注入——键集稳定，前端读取不漂移。
+// oidcAuthorizeInit __AUTHLOFT_INIT__.oidc 注入体（§4.2「OIDC 参数由 Go
+// 注入」/ §8 白名单 / §5.1 注入契约扩展）：七授权参数恒定存在（snake_case
+// 原样，值为解码后的原始 query 值，缺失以空串注入，键集稳定）；形态 A/B 另
+// 注入 mode（login / consent，前端据此分派左栏）+ client_name（oidc_client.name，
+// 右栏应用名）；形态 B 再注入 account（当前账号摘要，§3.1 掩码口径，形态 A
+// 省略——omitempty，键集按形态稳定）。scope 为缺省补值后的有效 scope（§4.2
+// 补充口径 / 评审裁决④：堵住「用户没见过就授权」的静默扩权窗口）。
 type oidcAuthorizeInit struct {
-	ClientID            string `json:"client_id"`
-	RedirectURI         string `json:"redirect_uri"`
-	Scope               string `json:"scope"`
-	State               string `json:"state"`
-	Nonce               string `json:"nonce"`
-	CodeChallenge       string `json:"code_challenge"`
-	CodeChallengeMethod string `json:"code_challenge_method"`
+	ClientID            string           `json:"client_id"`
+	RedirectURI         string           `json:"redirect_uri"`
+	Scope               string           `json:"scope"`
+	State               string           `json:"state"`
+	Nonce               string           `json:"nonce"`
+	CodeChallenge       string           `json:"code_challenge"`
+	CodeChallengeMethod string           `json:"code_challenge_method"`
+	Mode                string           `json:"mode"`
+	ClientName          string           `json:"client_name"`
+	Account             *oidcAccountInit `json:"account,omitempty"`
+}
+
+// oidcAccountInit 形态 B 左栏账号摘要（§5.1 account / §3.1 掩码矩阵）：昵称 /
+// 头像 + 掩码账号标识（手机号 / 邮箱二选一，均掩码；无则用户名），不注入任何
+// 凭证或完整手机号邮箱明文。随 INIT_JSON 走 json.Marshal 既有转义，无新增面。
+type oidcAccountInit struct {
+	Nickname   string `json:"nickname"`
+	AvatarURL  string `json:"avatar_url"`
+	Identifier string `json:"identifier"`
 }
 
 // authorize GET /auth/authorize：分支与顺序见文件注释（校验矩阵 §4.2 行
@@ -108,41 +128,60 @@ func (h *Handler) authorize(c *gin.Context) {
 		h.auditAuthorizeNoState(c, clientID)
 	}
 
-	// 6. 有有效会话 → 同一 CodeIssuer 签发一次性授权码 → 302 code（§14.2
-	//    行 1636：不渲染页面、不经过前端）。
+	// 6. 有有效会话 → 三态判定（§4.2 / §14.2 步骤 3）：Consents.Decide 以
+	//    有效 scope 比对已授权并集，并合并 prompt=consent 强制。
+	//    - 免同意（子集且 prompt≠consent）→ 形态 C：同一 CodeIssuer 直签
+	//      一次性授权码 → 302 code（不渲染页面、不经过前端）；
+	//    - 需同意且 prompt=none → 302 consent_required（零交互，不渲染）；
+	//    - 需同意其余 → 形态 B：注入 mode=consent + client_name + 账号摘要
+	//      渲染同意页，无登录表单、不 buildMethods（§8 methods 收窄）。
 	if sess != nil {
-		if h.codes == nil {
-			slog.Error("pages: authorize code issuer not configured")
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		code, err := h.codes.Issue(c.Request.Context(), orchestrator.OIDCIssue{
-			ClientID:            clientID,
-			RedirectURI:         redirectURI,
-			Scope:               scope,
-			Nonce:               c.Query("nonce"),
-			CodeChallenge:       c.Query("code_challenge"),
-			CodeChallengeMethod: c.Query("code_challenge_method"),
-			UID:                 sess.GetId(),
-			AMR:                 sess.GetAmr(),
-			AuthTime:            sess.GetIat(),
-		})
+		prompt := c.Query("prompt")
+		decision, err := h.decide(c.Request.Context(), sess.GetId(), clientID, scope, prompt)
 		if err != nil {
-			slog.Error("pages: authorize issue code", "err", err)
+			slog.Error("pages: authorize consent decide", "err", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
-			"code":  {code},
-			"state": {state}, // 空串由 appendQuery 剔除（缺失省略）
-		}))
+		if decision.NeedsConsent && promptHasNone(prompt) {
+			redirectAuthorizeError(c, redirectURI, "consent_required", state)
+			return
+		}
+		if !decision.NeedsConsent {
+			if h.codes == nil {
+				slog.Error("pages: authorize code issuer not configured")
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			code, err := h.codes.Issue(c.Request.Context(), orchestrator.OIDCIssue{
+				ClientID:            clientID,
+				RedirectURI:         redirectURI,
+				Scope:               scope,
+				Nonce:               c.Query("nonce"),
+				CodeChallenge:       c.Query("code_challenge"),
+				CodeChallengeMethod: c.Query("code_challenge_method"),
+				UID:                 sess.GetId(),
+				AMR:                 sess.GetAmr(),
+				AuthTime:            sess.GetIat(),
+			})
+			if err != nil {
+				slog.Error("pages: authorize issue code", "err", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
+				"code":  {code},
+				"state": {state}, // 空串由 appendQuery 剔除（缺失省略）
+			}))
+			return
+		}
+		h.renderConsent(c, clientID, scope, state, h.accountSummary(c.Request.Context(), sess.GetId()))
 		return
 	}
 
-	// 7. 无会话 → 渲染登录空壳（login entry，URL 保持 /auth/authorize）：
-	//    methods 必填（缺失即服务端故障 500，§8 行 1478）+ OIDC 七原始参数
-	//    原样注入（scope 注入原始 query 值而非缺省补值——「原样」，§4.2
-	//    行 1081；缺省逻辑由登录流程收编后统一应用）。
+	// 7. 无会话 → 形态 A 登录双栏：渲染登录空壳（login entry，URL 保持
+	//    /auth/authorize），methods 必填（缺失即服务端故障 500，§8）+ 注入
+	//    mode=login / client_name / 有效 scope（缺省补值，§4.2 补充口径）。
 	snapshot, err := h.buildMethods(c.Request.Context(), flowLogin)
 	if err != nil {
 		slog.Error("pages: authorize build methods", "err", err)
@@ -152,11 +191,13 @@ func (h *Handler) authorize(c *gin.Context) {
 	oidcInit, err := json.Marshal(oidcAuthorizeInit{
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
-		Scope:               c.Query("scope"),
+		Scope:               scope,
 		State:               state,
 		Nonce:               c.Query("nonce"),
 		CodeChallenge:       c.Query("code_challenge"),
 		CodeChallengeMethod: c.Query("code_challenge_method"),
+		Mode:                "login",
+		ClientName:          h.clientName(c.Request.Context(), clientID),
 	})
 	if err != nil {
 		slog.Error("pages: authorize marshal oidc init", "err", err)
@@ -173,6 +214,107 @@ func (h *Handler) authorize(c *gin.Context) {
 		Methods:    snapshot,
 		OIDC:       oidcInit,
 	}, tpl)
+}
+
+// decide 三态判定入口（§14.2 步骤 3）：Consents 已装配时委托 Decide；未装配
+// （misassembly）按「全部需同意」fail-closed——绝不静默直签，最坏落到形态 B
+// 由用户显式同意，不绕过授权记录。
+func (h *Handler) decide(ctx context.Context, uid int64, clientID, scope, prompt string) (oidc.Decision, error) {
+	if h.consents == nil {
+		return oidc.Decision{NeedsConsent: true}, nil
+	}
+	return h.consents.Decide(ctx, uid, clientID, scope, prompt)
+}
+
+// renderConsent 形态 B 同意双栏（§4.2 / §5.1）：注入 mode=consent +
+// client_name + account 渲染 login entry（同一页壳按 mode 分派左栏），无登录
+// 表单故不 buildMethods（§8 methods 收窄为 mode=login 必填）。七个授权参数
+// 中的 scope 为缺省补值后的有效值（§4.2 补充口径）。
+func (h *Handler) renderConsent(c *gin.Context, clientID, scope, state string, account *oidcAccountInit) {
+	oidcInit, err := json.Marshal(oidcAuthorizeInit{
+		ClientID:            clientID,
+		RedirectURI:         c.Query("redirect_uri"),
+		Scope:               scope,
+		State:               state,
+		Nonce:               c.Query("nonce"),
+		CodeChallenge:       c.Query("code_challenge"),
+		CodeChallengeMethod: c.Query("code_challenge_method"),
+		Mode:                "consent",
+		ClientName:          h.clientName(c.Request.Context(), clientID),
+		Account:             account,
+	})
+	if err != nil {
+		slog.Error("pages: render consent marshal oidc init", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	tpl := h.resolveClientTpl(c.Request.Context(), clientID, true)
+	h.renderShell(c, "login", &initPayload{
+		ALRoot:     h.root,
+		StaticBase: h.staticBase(),
+		OIDC:       oidcInit,
+	}, tpl)
+}
+
+// clientName 取 oidc_client.name 注入右栏应用名（§5.1 client_name）：client_id
+// 已由参数校验确认存在启用，查询故障 / 未注入源按空串回落（展示字段，不阻断
+// 授权主链路）。
+func (h *Handler) clientName(ctx context.Context, clientID string) string {
+	if h.clients == nil {
+		return ""
+	}
+	row, err := h.clients.FindOidcClientByClientID(ctx, clientID)
+	if err != nil || row == nil {
+		return ""
+	}
+	return row.Name
+}
+
+// accountSummary 形态 B 左栏账号摘要（§3.1 掩码矩阵 / §5.1 account）：昵称 /
+// 头像取 user 行，账号标识按手机号 → 邮箱 → 用户名取值，前两者按 §3.1 掩码，
+// 不注入完整手机号邮箱明文与任何凭证。ProfileReader 未注入 / 查询故障按空
+// 摘要回落（展示字段，不阻断同意主链路）。
+func (h *Handler) accountSummary(ctx context.Context, uid int64) *oidcAccountInit {
+	sum := &oidcAccountInit{}
+	if h.profiles == nil {
+		return sum
+	}
+	u, err := h.profiles.FindByID(ctx, uid)
+	if err != nil || u == nil {
+		return sum
+	}
+	sum.Nickname = u.Nickname
+	sum.AvatarURL = u.AvatarURL
+	if u.Phone != nil && *u.Phone != "" {
+		sum.Identifier = maskAccountPhone(*u.Phone)
+	} else if u.Email != nil && *u.Email != "" {
+		sum.Identifier = maskAccountEmail(*u.Email)
+	} else {
+		sum.Identifier = u.Username
+	}
+	return sum
+}
+
+// maskAccountPhone / maskAccountEmail 账号标识掩码（§3.1 矩阵）：与 dto 同
+// 口径——手机号前 3 + **** + 后 4（不足 8 位整体 ****），邮箱本地首字符 +
+// *** + 域名（无 @ 仅 ***）。本页注入不复用 dto 私有函数，避免跨层依赖。
+func maskAccountPhone(phone string) string {
+	if len(phone) <= 7 {
+		return "****"
+	}
+	return phone[:3] + "****" + phone[len(phone)-4:]
+}
+
+func maskAccountEmail(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at <= 0 {
+		return "***"
+	}
+	local := []rune(email[:at])
+	if len(local) == 0 {
+		return "***" + email[at:]
+	}
+	return string(local[0]) + "***" + email[at:]
 }
 
 // authorizeSession al_session 校验（§11.1 四步）：无 Cookie / 未登录 / 会话

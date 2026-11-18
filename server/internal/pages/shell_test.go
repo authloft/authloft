@@ -170,6 +170,9 @@ type fixture struct {
 	sessions *fakeSessions
 	codes    *fakeCodes
 	audit    *fakeAudit
+	// 授权同意夹具（authorize 测试写入；默认子集免同意维持既有直签用例）。
+	consents *fakeConsents
+	profiles *fakeProfiles
 }
 
 // newFixture 基线夹具：默认 settings（login_methods 全量 + 开关全开）、

@@ -6,10 +6,27 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"authloft/gen/go/token"
 )
+
+// fakeConsentGranter 登录即同意授权记录写回 fake（形态 A 落点）；Grant 失败
+// 由 Complete 按整体登录失败处理，不签码、不做旁路容错。
+type fakeConsentGranter struct {
+	err      error
+	calls    int
+	uid      int64
+	clientID string
+	scopes   string
+}
+
+func (f *fakeConsentGranter) Grant(_ context.Context, uid int64, clientID, scopes string) error {
+	f.calls++
+	f.uid, f.clientID, f.scopes = uid, clientID, scopes
+	return f.err
+}
 
 // TestCompleteOIDCRedirectWinsOverSnapshot：OIDC 上下文在场时授权码跳转不被
 // 快照默认回跳覆盖（fail-closed），同步链 finalURL 同样取 OIDC 跳转。
@@ -86,4 +103,62 @@ func TestCompleteWithoutDefaultRedirect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCompleteConsentGrantFailureFailsLogin 登录即同意（形态 A）Grant 写
+// 授权记录失败即整体登录失败（评审裁决③：与会话写入同档硬失败）：Complete
+// 返回错误、不签发授权码、不产出 redirectTo；Grant 以 uid/client_id/scope 入参
+// 调用一次；成功对照 path 中 Grant 调用后照常签码。
+func TestCompleteConsentGrantFailureFailsLogin(t *testing.T) {
+	grantErr := errors.New("consent upsert failed")
+
+	t.Run("Grant 失败整体登录失败", func(t *testing.T) {
+		oidc := &lcOIDCIssuer{}
+		granter := &fakeConsentGranter{err: grantErr}
+		term := NewTerminal(&lcSessionWriter{}, oidc, &fakeLoginEvents{}, &lcSyncBuilder{}, fakeTerminalSettings{})
+		term.Consents = granter
+		success, err := term.Complete(context.Background(), &token.LoginTokenPayload{
+			Tid: "tid-1", Uid: 42,
+			Oidc: &token.Oidc{
+				ClientId: "client-1", RedirectUri: "https://rp.example/cb",
+				Scope: "openid profile", State: "st-1",
+			},
+		})
+		if err == nil {
+			t.Fatalf("Grant 失败应整体登录失败，got err = nil, success = %+v", success)
+		}
+		if success != nil {
+			t.Errorf("Grant 失败不得返回 success: %+v", success)
+		}
+		if oidc.calls != 0 {
+			t.Errorf("Grant 失败不得签码: oidc calls = %d, want 0", oidc.calls)
+		}
+		if granter.calls != 1 || granter.uid != 42 || granter.clientID != "client-1" || granter.scopes != "openid profile" {
+			t.Errorf("Grant 入参 = calls:%d uid:%d clientID:%q scopes:%q, want 1/42/client-1/openid profile",
+				granter.calls, granter.uid, granter.clientID, granter.scopes)
+		}
+	})
+
+	t.Run("Grant 成功照常签码", func(t *testing.T) {
+		oidc := &lcOIDCIssuer{}
+		granter := &fakeConsentGranter{}
+		term := NewTerminal(&lcSessionWriter{}, oidc, &fakeLoginEvents{}, &lcSyncBuilder{}, fakeTerminalSettings{})
+		term.Consents = granter
+		success, err := term.Complete(context.Background(), &token.LoginTokenPayload{
+			Tid: "tid-1", Uid: 42,
+			Oidc: &token.Oidc{
+				ClientId: "client-1", RedirectUri: "https://rp.example/cb",
+				Scope: "openid profile", State: "st-1",
+			},
+		})
+		if err != nil {
+			t.Fatalf("Grant 成功: %v", err)
+		}
+		if success == nil || success.RedirectTo != "https://rp.example/cb?code=code-1&state=st-1" {
+			t.Errorf("success = %+v, want 签码跳转", success)
+		}
+		if granter.calls != 1 || oidc.calls != 1 {
+			t.Errorf("Grant/签码 calls = %d/%d, want 1/1", granter.calls, oidc.calls)
+		}
+	})
 }

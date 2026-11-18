@@ -31,6 +31,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
+	"authloft/internal/oidc"
 	"authloft/internal/provider"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -102,6 +103,20 @@ type AuditSink interface {
 	PushEvent(ev model.EventLog)
 }
 
+// Consents 授权同意判定窄接口（§4.2 三态 / §14.2 步骤 3）：
+// *oidc.ConsentService 天然满足；有会话分支据 Decide 结果分派形态 B / C，
+// Decide 内部按「有效 scope ⊆ 已授权」判定并合并 prompt=consent。
+type Consents interface {
+	Decide(ctx context.Context, userID int64, clientID, reqScope, prompt string) (oidc.Decision, error)
+}
+
+// ProfileReader 形态 B 账号摘要读取窄接口（§4.2 账号卡片 / §5.1 account）：
+// *repo.UserRepo 天然满足（FindByID）；取 nickname / avatar_url / 账号标识，
+// 掩码在页面层按 §3.1 口径生成，不注入凭证或完整手机号邮箱。
+type ProfileReader interface {
+	FindByID(ctx context.Context, id int64) (*model.User, error)
+}
+
 // Deps 页面壳装配依赖（bootstrap 构造注入，§20）。
 type Deps struct {
 	// Root al_root（cfg.Authloft.Root 完整 URL，§1.1 行 76）。
@@ -135,6 +150,11 @@ type Deps struct {
 	// Audit 审计事件投递（oidc_authorize_no_state，§4.2 行 1074）；nil
 	// 静默跳过（不阻断授权主链路）。
 	Audit AuditSink
+	// Consents 授权同意判定（三态形态 B/C）；nil 时有会话分支按全部需同意
+	// 处理（fail-closed，形态 B），不静默直签。
+	Consents Consents
+	// ProfileReader 形态 B 账号摘要数据源；nil 时 account 注入空摘要。
+	Profiles ProfileReader
 	// Templates 自定义模板解析源（§8.1）：admin 侧 TemplateService 天然满足。
 	// nil（setup 模式 / 未装配）时一律回落默认文件壳，本包零 DB / Redis 依赖。
 	Templates TemplateResolver
@@ -189,6 +209,8 @@ type Handler struct {
 	sessions   SessionVerifier
 	codes      CodeIssuer
 	audit      AuditSink
+	consents   Consents
+	profiles   ProfileReader
 	metas      func() []provider.Meta
 	now        func() time.Time
 	// deps 保存装配期窄接口集合，供 resolveClientTpl 复用（§8.1）。
@@ -213,6 +235,8 @@ func Register(r gin.IRouter, d Deps) *Handler {
 		sessions:   d.Sessions,
 		codes:      d.Codes,
 		audit:      d.Audit,
+		consents:   d.Consents,
+		profiles:   d.Profiles,
 		metas:      d.Metas,
 		now:        d.Now,
 		deps:       d,

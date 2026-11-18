@@ -52,6 +52,48 @@ type fakeAudit struct{ events []model.EventLog }
 
 func (f *fakeAudit) PushEvent(ev model.EventLog) { f.events = append(f.events, ev) }
 
+// consentDecideCall 记录一次 Decide 入参。
+type consentDecideCall struct {
+	uid                        int64
+	clientID, reqScope, prompt string
+}
+
+// fakeConsents Consents fake：默认返回免同意（子集），即既有直签用例的行为；
+// 新用例改 decision / err 即得形态 B / consent_required / 故障档。
+type fakeConsents struct {
+	decision oidc.Decision
+	err      error
+	calls    []consentDecideCall
+}
+
+func (f *fakeConsents) Decide(_ context.Context, uid int64, clientID, reqScope, prompt string) (oidc.Decision, error) {
+	f.calls = append(f.calls, consentDecideCall{uid, clientID, reqScope, prompt})
+	if f.err != nil {
+		return oidc.Decision{}, f.err
+	}
+	base := f.decision
+	if base == (oidc.Decision{}) {
+		// 零值默认视作子集免同意（既有直签用例）。
+		base = oidc.Decision{NeedsConsent: false}
+	}
+	// 与 oidc.ConsentService.Decide 同口径：prompt 精确为 consent 时强制
+	// 需同意（即使 scope 为子集），pages 据返回的 NeedsConsent 渲染形态 B。
+	if prompt == "consent" {
+		base.NeedsConsent = true
+	}
+	return base, nil
+}
+
+// fakeProfiles ProfileReader fake：形态 B 账号摘要数据源。
+type fakeProfiles struct {
+	user *model.User
+	err  error
+}
+
+func (f *fakeProfiles) FindByID(_ context.Context, _ int64) (*model.User, error) {
+	return f.user, f.err
+}
+
 // multiClients 按 client_id 查行的 fake（fakeClients 忽略 clientID 参数，
 // 不能表达「client 不存在」）。
 type multiClients struct{ rows map[string]*model.OidcClient }
@@ -82,6 +124,10 @@ func newAuthzFixture(t *testing.T) *fixture {
 	f := newFixture(t)
 	row := oidcRow(t, "demo-app", 1, authzRedirect, "https://app.example.com/*")
 	f.deps.Clients = multiClients{rows: map[string]*model.OidcClient{"demo-app": row}}
+	f.consents = &fakeConsents{} // 默认子集免同意（既有直签用例维持）
+	f.profiles = &fakeProfiles{}
+	f.deps.Consents = f.consents
+	f.deps.Profiles = f.profiles
 	return f
 }
 
@@ -394,6 +440,8 @@ func TestAuthorizeShellWithoutSession(t *testing.T) {
 		"nonce":                 "n1",
 		"code_challenge":        "cc123",
 		"code_challenge_method": "S256",
+		"mode":                  "login",
+		"client_name":           "",
 	}
 	if len(oidcInit) != len(want) {
 		t.Errorf("oidc 键数 = %d, want %d（%v）", len(oidcInit), len(want), oidcInit)
@@ -438,5 +486,189 @@ func TestAuthorizeRedirectURIWithQuery(t *testing.T) {
 	}
 	if len(f.codes.calls) != 1 {
 		t.Errorf("codes called %d times, want 1", len(f.codes.calls))
+	}
+}
+
+// authzInit 从空壳 HTML 提取并反序列化 __AUTHLOFT_INIT__.oidc 为强类型
+// （account 等嵌套对象用 oidcFromInit 的 map[string]string 无法解析）。
+func authzInit(t *testing.T, body string) oidcAuthorizeInit {
+	t.Helper()
+	var init struct {
+		OIDC oidcAuthorizeInit `json:"oidc"`
+	}
+	if err := json.Unmarshal([]byte(initJSON(t, body)), &init); err != nil {
+		t.Fatalf("unmarshal init oidc: %v", err)
+	}
+	return init.OIDC
+}
+
+// TestAuthorizeConsentFormB 有会话 + 需同意 → 形态 B（§4.2 行 1452）：注入
+// mode=consent + client_name + 账号摘要、不注入 methods（不 buildMethods）、
+// 不签码；Decide 以有效 scope / uid / prompt 入参调用。
+func TestAuthorizeConsentFormB(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	f.consents.decision = oidc.Decision{NeedsConsent: true, PendingScopes: "profile"}
+	email := "alice@example.com"
+	f.profiles.user = &model.User{
+		Username: "alice", Nickname: "爱丽丝", Email: &email,
+		AvatarURL: "https://cdn.example/avatar.png",
+	}
+	row := oidcRow(t, "demo-app", 1, authzRedirect)
+	row.Name = "Demo App"
+	f.deps.Clients = multiClients{rows: map[string]*model.OidcClient{"demo-app": row}}
+
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope="+url.QueryEscape("openid profile")+"&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（渲染同意页空壳）", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "window.__AUTHLOFT_INIT__") {
+		t.Fatal("同意页应渲染 SPA 空壳并注入 INIT")
+	}
+	if strings.Contains(initJSON(t, body), `"methods"`) {
+		t.Error("形态 B 不得注入 methods（不 buildMethods）")
+	}
+	init := authzInit(t, body)
+	if init.Mode != "consent" || init.ClientName != "Demo App" {
+		t.Errorf("mode/client_name = %q/%q, want consent/Demo App", init.Mode, init.ClientName)
+	}
+	if init.Scope != "openid profile" {
+		t.Errorf("scope = %q, want 有效 scope openid profile", init.Scope)
+	}
+	if init.Account == nil {
+		t.Fatal("形态 B 缺 account 账号摘要注入")
+	}
+	if init.Account.Nickname != "爱丽丝" || init.Account.AvatarURL != "https://cdn.example/avatar.png" ||
+		init.Account.Identifier != "a***@example.com" {
+		t.Errorf("account = %+v, want 昵称/头像/掩码邮箱", init.Account)
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("形态 B 不得签码: %d calls", len(f.codes.calls))
+	}
+	if len(f.consents.calls) != 1 {
+		t.Fatalf("Decide calls = %d, want 1", len(f.consents.calls))
+	}
+	if got := f.consents.calls[0]; got.uid != 42 || got.clientID != "demo-app" ||
+		got.reqScope != "openid profile" || got.prompt != "" {
+		t.Errorf("Decide 入参 = %+v, want uid=42 clientID=demo-app scope=openid profile prompt=空", got)
+	}
+}
+
+// TestAuthorizePromptNoneNonSubsetConsentRequired prompt=none + 有会话 +
+// scope 非子集 → 302 consent_required、零交互不渲染（§4.2 行 1076 / 1453）。
+func TestAuthorizePromptNoneNonSubsetConsentRequired(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	f.consents.decision = oidc.Decision{NeedsConsent: true, PendingScopes: "profile"}
+	r := f.engine(t)
+
+	rec := doGetWithCookie(t, r,
+		authzQ+"&scope="+url.QueryEscape("openid profile")+"&prompt=none&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?error=consent_required&state=st1"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	if strings.Contains(rec.Body.String(), "window.__AUTHLOFT_INIT__") {
+		t.Error("prompt=none 零交互：不得渲染任何页面")
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("consent_required 不得签码: %d calls", len(f.codes.calls))
+	}
+	if len(f.consents.calls) != 1 || f.consents.calls[0].prompt != "none" {
+		t.Errorf("Decide 应以 prompt=none 调用: %+v", f.consents.calls)
+	}
+
+	// state 缺失省略。
+	f.consents.calls = nil
+	rec = doGetWithCookie(t, r,
+		authzQ+"&scope="+url.QueryEscape("openid profile")+"&prompt=none",
+		"al_session", "session-token")
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?error=consent_required"; got != want {
+		t.Errorf("Location = %q, want %q（state 缺失省略）", got, want)
+	}
+}
+
+// TestAuthorizePromptConsentForcesFormB 子集（本应形态 C 直签）+ prompt=consent
+// → 强制形态 B（§4.2 行 1438）：与无 prompt 的直签对照，证明强制来自 prompt。
+func TestAuthorizePromptConsentForcesFormB(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	// decision 零值 = 子集免同意；fake 按 oidc 内核口径在 prompt=consent 时强制需同意。
+	r := f.engine(t)
+
+	rec := doGetWithCookie(t, r, authzQ+"&scope=openid&prompt=consent&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("prompt=consent: status = %d, want 200（强制形态 B）", rec.Code)
+	}
+	init := authzInit(t, rec.Body.String())
+	if init.Mode != "consent" {
+		t.Errorf("mode = %q, want consent（子集 + prompt=consent 强制形态 B）", init.Mode)
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("强制形态 B 不得签码: %d calls", len(f.codes.calls))
+	}
+	if len(f.consents.calls) != 1 || f.consents.calls[0].prompt != "consent" {
+		t.Errorf("Decide 应以 prompt=consent 调用: %+v", f.consents.calls)
+	}
+
+	// 对照：同子集 scope 无 prompt → 形态 C 直签（证明强制来自 prompt=consent）。
+	f.codes.calls = nil
+	f.consents.calls = nil
+	rec = doGetWithCookie(t, r, authzQ+"&scope=openid&state=st2", "al_session", "session-token")
+	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "code=AUTHZ-CODE") {
+		t.Errorf("子集无 prompt: status = %d Location = %q, want 302 code（形态 C）",
+			rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+// TestAuthorizeConsentSubsetDirectIssue 三态互斥正向：有会话 + 子集 scope +
+// prompt≠consent → 形态 C 免同意直签（§4.2 行 1453），经 Decide 判定、
+// 不渲染页面、不注入 mode=consent。
+func TestAuthorizeConsentSubsetDirectIssue(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	// 默认 fakeConsents{} 零值 = 子集免同意。
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope=openid&state=st1", "al_session", "session-token")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302（形态 C 直签）", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?code=AUTHZ-CODE&state=st1"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	if strings.Contains(rec.Body.String(), "window.__AUTHLOFT_INIT__") {
+		t.Error("形态 C 不渲染页面")
+	}
+	if len(f.codes.calls) != 1 {
+		t.Fatalf("codes calls = %d, want 1", len(f.codes.calls))
+	}
+	if len(f.consents.calls) != 1 || f.consents.calls[0].reqScope != "openid" ||
+		f.consents.calls[0].prompt != "" || f.consents.calls[0].uid != 42 {
+		t.Errorf("Decide 入参 = %+v, want uid=42 scope=openid prompt=空（互斥判定经 Decide）", f.consents.calls)
+	}
+}
+
+// TestAuthorizeEmptyScopeInjectsEffectiveScope 空 scope 请求 → 形态 A 空壳
+// 注入缺省补值后的有效 scope（§4.2 补充口径 / 行 1457）：堵住静默扩权。
+func TestAuthorizeEmptyScopeInjectsEffectiveScope(t *testing.T) {
+	f := newAuthzFixture(t)
+	rec := doGet(t, f.engine(t), authzQ) // 不带 scope
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（形态 A 空壳）", rec.Code)
+	}
+	init := authzInit(t, rec.Body.String())
+	if init.Mode != "login" {
+		t.Errorf("mode = %q, want login", init.Mode)
+	}
+	if init.Scope != oidc.DefaultScope {
+		t.Errorf("注入 scope = %q, want 有效 scope = DefaultScope %q（空请求补值）",
+			init.Scope, oidc.DefaultScope)
 	}
 }

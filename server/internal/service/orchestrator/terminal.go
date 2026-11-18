@@ -13,6 +13,7 @@ import (
 
 	"authloft/gen/go/token"
 	"authloft/internal/logx"
+	"authloft/internal/repo/model"
 	"authloft/internal/settings"
 )
 
@@ -39,6 +40,20 @@ type OIDCIssue struct {
 // OIDCCodeIssuer 生成并写入一次性授权码，返回可拼进 redirect_to 的 code。
 type OIDCCodeIssuer interface {
 	Issue(ctx context.Context, in OIDCIssue) (code string, err error)
+}
+
+// OIDCAuthzValidator 授权参数重校验窄接口（§14.2 步骤 5）：*oidc.AuthzValidator
+// 天然满足。签名对齐 AuthzValidator.Validate——校验前端注入快照 scope 的封闭集 /
+// ⊆ 注册 scopes / 必含 openid，不信任注入值。签名单机定义于此避免反向 import
+// （internal/oidc 依赖本包签发载荷，不能循环）。
+type OIDCAuthzValidator interface {
+	Validate(ctx context.Context, clientID, redirectURI, scope string) (*model.OidcClient, error)
+}
+
+// ConsentGranter 授权记录写回窄接口（§14.2 步骤 5 登录即同意）：
+// *oidc.ConsentService 天然满足；Grant 失败由 Complete 按整体登录失败处理。
+type ConsentGranter interface {
+	Grant(ctx context.Context, userID int64, clientID, scopes string) error
 }
 
 // LoginEvent 是同步日志 + 异步 last_login 投递的统一载荷。
@@ -113,6 +128,12 @@ type Terminal struct {
 	Sync     SyncCookieURLBuilder
 	Settings SettingsReader
 	Now      func() time.Time
+	// Authz 授权参数重校验（§14.2 步骤 5）；仅 OIDC 分支消费。未装配（nil）
+	// 时不重校验——保留既有装配点无需改动（非 OIDC 登录不受影响）。
+	Authz OIDCAuthzValidator
+	// Consents 登录即同意授权记录写回（§14.2 步骤 5 / 评审裁决③）；仅 OIDC
+	// 分支消费，Grant 失败即整体登录失败（不签码）。未装配时跳过写记录。
+	Consents ConsentGranter
 }
 
 // NewTerminal 注入依赖；Now 为空时使用 time.Now。
@@ -146,6 +167,22 @@ func (t *Terminal) Complete(ctx context.Context, p *token.LoginTokenPayload) (*S
 	if p.GetOidc() != nil {
 		if t.OIDC == nil {
 			return nil, fmt.Errorf("orchestrator: terminal: oidc code issuer not configured")
+		}
+		// 签码前以 authz_validate 重跑 scope 校验（§14.2 步骤 5）：
+		// p.Oidc 来自前端注入的 Struct，不信任——重跑封闭集 / ⊆ 注册 scopes /
+		// 必含 openid。失败即整体登录失败（与会话写入同档硬失败，不签码）。
+		if t.Authz != nil {
+			if _, err := t.Authz.Validate(ctx, clientID, p.Oidc.RedirectUri, p.Oidc.Scope); err != nil {
+				return nil, err
+			}
+		}
+		// 登录即同意形态 A 落点（§14.2 步骤 5 / 评审裁决③）：校验通过后写
+		// 授权记录（scope 取 p.Oidc.Scope，即勾选集 / 有效 scope），Grant 失败
+		// 即整体登录失败——授权记录是免同意判定数据源，不做旁路日志容错。
+		if t.Consents != nil {
+			if err := t.Consents.Grant(ctx, p.Uid, clientID, p.Oidc.Scope); err != nil {
+				return nil, err
+			}
 		}
 		code, err := t.OIDC.Issue(ctx, OIDCIssue{
 			ClientID:            p.Oidc.ClientId,
