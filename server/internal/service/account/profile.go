@@ -2,13 +2,13 @@
 // 837、《后端架构》§17 行 1789）。
 //
 // 职责：AccountService/UpdateProfile 的更新编排——proto3 optional 口径
-//（2026-11-06 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」
-//（含 0 / 空串，gender 可显式改回 0=保密、字符串字段可显式清空），禁止
+// （2026-11-06 定稿）：has 位区分「未设置 = 不修改」与「显式设值 = 覆盖」
+// （含 0 / 空串，gender 可显式改回 0=保密、字符串字段可显式清空），禁止
 // 按零值猜「未传」。仅本人（会话 uid 由 handler 注入，service 不解析会话）；
 // nickname / avatar_url 走 user 表列级更新（UpdateProfileColumns），profile
 // 子字段先读现行 → dto.MergeUserProfile 按 has 合并 → SaveProfile 整行
 // UPSERT（行 224 注释口径）；用户名 / 手机号 / 邮箱不可由此修改
-//（proto 不含该三项，契约结构上即不可改）。全字段未设置 = 合法空操作，
+// （proto 不含该三项，契约结构上即不可改）。全字段未设置 = 合法空操作，
 // 零写库直接成功。无审计（§4.6 事件枚举无 profile_update，不自造）。
 package account
 
@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -27,7 +28,7 @@ import (
 )
 
 // ProfileStore 用户资料读写窄接口（§20 依赖注入）：*repo.UserRepo 天然满足
-//（FindByID / GetProfile / SaveProfile / UpdateProfileColumns 均为既有方法，
+// （FindByID / GetProfile / SaveProfile / UpdateProfileColumns 均为既有方法，
 // 不扩公共接口），测试可传 fake。
 type ProfileStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
@@ -36,9 +37,19 @@ type ProfileStore interface {
 	UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error
 }
 
-// ErrProfileInvalidRequest birthday 格式非法（handler 转 invalid_argument +
+// ErrProfileInvalidRequest 资料字段非法（birthday 格式 / nickname /
+// avatarUrl 列宽超限；handler 转 invalid_argument +
 // ErrorInfo(account, invalid_request)，§1.6 封闭集成员）。
 var ErrProfileInvalidRequest = errors.New("account profile: invalid request")
+
+// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（§3.2：nickname
+// 上限 12 字、avatarUrl 上限 120 字符，与后端架构 §4.2 列宽同源）：
+// VARCHAR 宽度即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，
+// 非字节数。
+const (
+	nicknameMaxRunes  = 12
+	avatarURLMaxRunes = 120
+)
 
 // ProfileService account 域资料更新业务层。
 type ProfileService struct {
@@ -70,6 +81,12 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, uid int64, in *accou
 	}
 
 	// user 表资料列（§3.2 行 837）：has 位判定，仅 has 时列级 UPDATE。
+	// 列宽先校验：超宽若放行会被 DB 列宽拒绝并折叠成 internal，故服务层
+	// 先于任何写库给出字段级拒绝（显式空串 = 清空，不受限）。
+	if (in.Nickname != nil && utf8.RuneCountInString(*in.Nickname) > nicknameMaxRunes) ||
+		(in.AvatarUrl != nil && utf8.RuneCountInString(*in.AvatarUrl) > avatarURLMaxRunes) {
+		return ErrProfileInvalidRequest
+	}
 	var nickname, avatarURL *string
 	if in.Nickname != nil {
 		nickname = in.Nickname

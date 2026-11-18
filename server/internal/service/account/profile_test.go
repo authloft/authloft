@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,7 +189,7 @@ func TestProfileUpdateProfileOnly(t *testing.T) {
 
 // TestProfileUpdateNoop 全字段未设置（空 body）= 合法空操作：存在性先判
 // 依旧执行（404 优先于 no-op，口径同 rpc 域），此后零写库、零错误
-//（§3.2 无明确空 body 口径时由实现裁量：无字段 has → 零写库直接成功）。
+// （§3.2 无明确空 body 口径时由实现裁量：无字段 has → 零写库直接成功）。
 func TestProfileUpdateNoop(t *testing.T) {
 	store := &fakeProfileStore{user: profileTestUser(), profile: profileTestRow()}
 	svc := NewProfileService(store)
@@ -229,7 +230,7 @@ func TestProfileUpdateUserNotFound(t *testing.T) {
 }
 
 // TestProfileUpdateBadBirthday birthday 格式非法 → ErrProfileInvalidRequest
-//（handler 转 invalid_argument + ErrorInfo(account, invalid_request)）、
+// （handler 转 invalid_argument + ErrorInfo(account, invalid_request)）、
 // 零写库。
 func TestProfileUpdateBadBirthday(t *testing.T) {
 	store := &fakeProfileStore{user: profileTestUser(), profile: profileTestRow()}
@@ -243,6 +244,52 @@ func TestProfileUpdateBadBirthday(t *testing.T) {
 	}
 	if n := len(store.saveCalls); n != 0 {
 		t.Errorf("SaveProfile calls = %d, want 0（非法入参不落库）", n)
+	}
+}
+
+// TestProfileUpdateColumnLimits 资料列宽校验（§3.2：nickname 上限 12 字、
+// avatarUrl 上限 120 字符，与 user 表 VARCHAR 宽度同源）：边界值放行且恰
+// 一次列级更新；超宽 → ErrProfileInvalidRequest 且零写库。昵称用例取
+// 12 / 13 个汉字（36 / 39 字节）——若按字节计数则 12 字本就该拒，以此
+// 证明字符数口径。
+func TestProfileUpdateColumnLimits(t *testing.T) {
+	ctx := context.Background()
+
+	// 边界放行：12 字昵称 + 120 字符 URL，列级更新恰一次（profile 未传，
+	// 零整行 UPSERT）。
+	store := &fakeProfileStore{user: profileTestUser(), profile: profileTestRow()}
+	svc := NewProfileService(store)
+	if err := svc.UpdateProfile(ctx, 10086, &accountv1.UpdateProfileRequest{
+		Nickname:  strPtr(strings.Repeat("汉", 12)),
+		AvatarUrl: strPtr(strings.Repeat("a", 120)),
+	}); err != nil {
+		t.Fatalf("列宽边界应放行: %v", err)
+	}
+	if n := len(store.columnCalls); n != 1 {
+		t.Fatalf("UpdateProfileColumns calls = %d, want 1", n)
+	}
+	cu := store.columnCalls[0]
+	if cu.nickname == nil || *cu.nickname != strings.Repeat("汉", 12) ||
+		cu.avatarURL == nil || *cu.avatarURL != strings.Repeat("a", 120) {
+		t.Errorf("column update = (nickname=%v avatarURL=%v), want 边界值透传", cu.nickname, cu.avatarURL)
+	}
+	if n := len(store.saveCalls); n != 0 {
+		t.Errorf("SaveProfile calls = %d, want 0（profile 未传）", n)
+	}
+
+	// 超宽拒绝（13 字 / 121 字符）：字段级 invalid_request 且零写库。
+	for name, req := range map[string]*accountv1.UpdateProfileRequest{
+		"nickname 13 字":    {Nickname: strPtr(strings.Repeat("汉", 13))},
+		"avatarUrl 121 字符": {AvatarUrl: strPtr(strings.Repeat("a", 121))},
+	} {
+		store := &fakeProfileStore{user: profileTestUser(), profile: profileTestRow()}
+		svc := NewProfileService(store)
+		if err := svc.UpdateProfile(ctx, 10086, req); !errors.Is(err, ErrProfileInvalidRequest) {
+			t.Fatalf("%s 应 ErrProfileInvalidRequest, got %v", name, err)
+		}
+		if len(store.columnCalls) != 0 || len(store.saveCalls) != 0 {
+			t.Fatalf("%s 应零写库: cols=%d saved=%d", name, len(store.columnCalls), len(store.saveCalls))
+		}
 	}
 }
 

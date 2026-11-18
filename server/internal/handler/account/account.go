@@ -257,15 +257,16 @@ func (h *Handler) UpdateProfile(ctx context.Context, req *connect.Request[accoun
 	return connect.NewResponse(&accountv1.OkResponse{}), nil
 }
 
-// mapProfileError 资料更新错误 → Connect 形态：birthday 格式非法 →
-// invalid_argument + ErrorInfo(account, invalid_request)；用户不存在 → not_found；
+// mapProfileError 资料更新错误 → Connect 形态：资料字段非法（birthday
+// 格式、nickname / avatarUrl 列宽，§3.2）→ invalid_argument +
+// ErrorInfo(account, invalid_request)；用户不存在 → not_found；
 // 其余原样上抛由错误包装拦截器消毒。
 func mapProfileError(op string, err error) error {
 	switch {
 	case errors.Is(err, accountsvc.ErrProfileInvalidRequest):
 		return internalconnect.WithErrorInfo(
 			connect.NewError(connect.CodeInvalidArgument, err),
-			internalconnect.NewErrorInfo("account", "invalid_request", "birthday must be YYYY-MM-DD"),
+			internalconnect.NewErrorInfo("account", "invalid_request", "invalid profile field"),
 		)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return connect.NewError(connect.CodeNotFound, errNotFound)

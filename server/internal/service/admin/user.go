@@ -45,6 +45,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -367,6 +368,9 @@ func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.
 	}
 	if vs := security.ValidatePassword(s.policy(), username, "", password); len(vs) > 0 {
 		return 0, ErrPasswordWeak
+	}
+	if err := validateProfileColumns(req.Nickname, nil); err != nil {
+		return 0, err
 	}
 	hash, err := security.HashPassword(password)
 	if err != nil {
@@ -747,6 +751,28 @@ func validContactFormat(kind, v string) bool {
 	return contactEmailPattern.MatchString(v)
 }
 
+// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（§3.2 / §5.4
+// 同上限、后端架构 §4.2 列宽 VARCHAR(12) / VARCHAR(120)）：VARCHAR 宽度
+// 即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，非字节数。
+const (
+	nicknameMaxRunes  = 12
+	avatarURLMaxRunes = 120
+)
+
+// validateProfileColumns 昵称 / 头像 URL 列宽校验（违规 invalid_request，
+// 字段级提示）：nil = 未传跳过。超宽若放行会被 DB 列宽拒绝并折叠成
+// internal，故服务层先于任何写库给出字段级拒绝；CreateUser（仅昵称）与
+// UpdateUserProfile 两入口共用。
+func validateProfileColumns(nickname, avatarURL *string) error {
+	if nickname != nil && utf8.RuneCountInString(*nickname) > nicknameMaxRunes {
+		return ErrInvalidRequest
+	}
+	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > avatarURLMaxRunes {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
 // UpdateUserProfile（§5.4）：{id, nickname?, avatarUrl?, profile{...}} PATCH
 // 编辑用户资料。has 位口径与 §3.2 UpdateProfile 同源（未设置 = 不修改、
 // 显式设值 = 覆盖，含显式空串 = 清空）；校验复用自助域口径（gender ∈ 0/1/2、
@@ -784,7 +810,11 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, actor, id int64, re
 			merged = m
 		}
 	}
-	// user 表资料列：has 位判定，仅 has 时列级更新（显式空串 = 清空）。
+	// user 表资料列：has 位判定，仅 has 时列级更新（显式空串 = 清空）；
+	// 列宽先校验（§3.2 / §5.4），非法拒绝时 user 表列尚未写入。
+	if err := validateProfileColumns(req.Nickname, req.AvatarUrl); err != nil {
+		return err
+	}
 	if req.Nickname != nil || req.AvatarUrl != nil {
 		if err := s.users.UpdateProfileColumns(ctx, id, req.Nickname, req.AvatarUrl); err != nil {
 			return err

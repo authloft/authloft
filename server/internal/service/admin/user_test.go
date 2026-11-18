@@ -645,6 +645,7 @@ func TestUserServiceCreateUser(t *testing.T) {
 		{"Deleted_ 前缀", &adminv1.CreateUserRequest{Username: "Deleted_12345", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
 		{"用户名格式", &adminv1.CreateUserRequest{Username: "abc", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
 		{"弱口令", &adminv1.CreateUserRequest{Username: "new_user2", Password: "short"}, adminsvc.ErrPasswordWeak},
+		{"昵称 13 字", &adminv1.CreateUserRequest{Username: "new_user3", Password: "Str0ngPass!", Nickname: ptrStr(strings.Repeat("汉", 13))}, adminsvc.ErrInvalidRequest},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -656,6 +657,19 @@ func TestUserServiceCreateUser(t *testing.T) {
 				t.Fatalf("拒绝路径应零副作用, created=%d audit=%d", len(users.created), len(audit.events))
 			}
 		})
+	}
+
+	// 列宽边界放行：12 字昵称可建号（§5.4 资料字段上限，字符数口径）。
+	svc, users, _, _, _, _, _, _, _ = newUserSvc()
+	users.nextCreateID = 78
+	nick12 := strings.Repeat("汉", 12)
+	if id, err := svc.CreateUser(ctx, 1, &adminv1.CreateUserRequest{
+		Username: "new_user3", Password: "Str0ngPass!", Nickname: &nick12,
+	}); err != nil || id != 78 {
+		t.Fatalf("12 字昵称应放行: (%d, %v)", id, err)
+	}
+	if len(users.created) != 1 || users.created[0].user.Nickname != nick12 {
+		t.Fatalf("建号昵称透传 = %+v", users.created)
 	}
 
 	// 唯一性冲突 → ErrUsernameTaken（already_exists + username_taken，
@@ -1432,9 +1446,13 @@ func TestUserServiceUpdateUserProfile(t *testing.T) {
 	}
 
 	// 值域校验违规 → invalid_request 且零写库零审计（先于任何写操作）。
+	// 列宽用例取 13 个汉字（39 字节）——若按字节计数则 12 字本就该拒，
+	// 以此证明字符数口径（§3.2 / §5.4 同上限）。
 	for name, req := range map[string]*adminv1.UpdateUserProfileRequest{
-		"gender 越界":   {Id: 42, Profile: &accountv1.UserProfile{Gender: ptrI64(3)}},
-		"birthday 非法": {Id: 42, Profile: &accountv1.UserProfile{Birthday: ptrStr("2000-13-40")}},
+		"gender 越界":         {Id: 42, Profile: &accountv1.UserProfile{Gender: ptrI64(3)}},
+		"birthday 非法":       {Id: 42, Profile: &accountv1.UserProfile{Birthday: ptrStr("2000-13-40")}},
+		"nickname 13 字":     {Id: 42, Nickname: ptrStr(strings.Repeat("汉", 13))},
+		"avatar_url 121 字符": {Id: 42, AvatarUrl: ptrStr(strings.Repeat("a", 121))},
 	} {
 		svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
 		users.user = userTestRow()
@@ -1444,6 +1462,26 @@ func TestUserServiceUpdateUserProfile(t *testing.T) {
 		if len(users.profileCols) != 0 || len(users.profileSaved) != 0 || len(audit.events) != 0 {
 			t.Fatalf("%s 零写库零审计: cols=%v saved=%v audit=%v", name, users.profileCols, users.profileSaved, audit.events)
 		}
+	}
+
+	// 列宽边界放行（nickname ≤ 12 字、avatarUrl ≤ 120 字符）：恰一次列级
+	// 更新、profile 零 UPSERT、审计照投。
+	svc, users, _, _, _, _, _, _, audit = newUserSvc(perms)
+	users.user = userTestRow()
+	boundaryNick, boundaryURL := strings.Repeat("汉", 12), strings.Repeat("a", 120)
+	if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{
+		Id:        42,
+		Nickname:  &boundaryNick,
+		AvatarUrl: &boundaryURL,
+	}); err != nil {
+		t.Fatalf("列宽边界应放行: %v", err)
+	}
+	if len(users.profileCols) != 1 || users.profileCols[0].nickname == nil || *users.profileCols[0].nickname != boundaryNick ||
+		users.profileCols[0].avatar == nil || *users.profileCols[0].avatar != boundaryURL {
+		t.Fatalf("边界值列级更新 = %+v, want 12 字昵称 + 120 字符 URL", users.profileCols)
+	}
+	if len(users.profileSaved) != 0 {
+		t.Fatalf("profile 未传应零 UPSERT, got %d", len(users.profileSaved))
 	}
 
 	// 行缺失 → 404。

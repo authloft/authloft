@@ -254,8 +254,8 @@ func TestG1EmptyUpToLatest(t *testing.T) {
 		t.Fatalf("空库 migrate up 失败: %v", err)
 	}
 	requireAllTables(t, db)
-	if v := appliedVersion(t, db); v != 1 {
-		t.Errorf("迁移后版本表最新版本 = %d, want 1", v)
+	if v := appliedVersion(t, db); v != 2 {
+		t.Errorf("迁移后版本表最新版本 = %d, want 2", v)
 	}
 }
 
@@ -274,24 +274,25 @@ func TestG2UpIdempotent(t *testing.T) {
 	if got := appliedRows(t, db); got != rows {
 		t.Errorf("重复 up 后版本表新增写入: %d -> %d", rows, got)
 	}
-	if v := appliedVersion(t, db); v != 1 {
-		t.Errorf("重复 up 后版本 = %d, want 1", v)
+	if v := appliedVersion(t, db); v != 2 {
+		t.Errorf("重复 up 后版本 = %d, want 2", v)
 	}
 }
 
 // TestG3HalfBuiltRecovery §21.2 G 组③：半建库恢复——模拟迁移失败的
 // 残留状态（§3.16：失败版本不记行，goose 零版本行仍在；半成品表残缺），
-// 重跑 migrate up 即重试同版本，一步续装到位。
-// 只删 version_id=1 的行：goose 语义要求零版本行存在，删光全部行会让
-// up 直接报 missing zero version，而真实失败残留恰恰是零行仍在。
+// 重跑 migrate up 即重试未记版本，一步续装到位。
+// 只删正版本行（version_id > 0，保留零版本行）：goose 语义要求零版本行
+// 存在，删光全部行会让 up 直接报 missing zero version，而真实失败残留
+// 恰恰是零行仍在。
 func TestG3HalfBuiltRecovery(t *testing.T) {
 	db, dsn := newTestDB(t)
 	ctx := context.Background()
 	if err := Up(ctx, dsn); err != nil {
 		t.Fatalf("准备阶段首次 migrate up 失败: %v", err)
 	}
-	// 模拟失败残留：版本 1 未记入版本表 + 半成品表残缺。
-	if _, err := db.Exec("DELETE FROM goose_db_version WHERE version_id = 1"); err != nil {
+	// 模拟失败残留：已应用版本（1、2）未记入版本表 + 半成品表残缺。
+	if _, err := db.Exec("DELETE FROM goose_db_version WHERE version_id > 0"); err != nil {
 		t.Fatalf("删除版本行失败: %v", err)
 	}
 	for _, tbl := range []string{"settings", "event_log"} {
@@ -303,13 +304,13 @@ func TestG3HalfBuiltRecovery(t *testing.T) {
 	if ok, err := Installed(ctx, dsn); err != nil || ok {
 		t.Fatalf("半建库 Installed = (%v, %v), want (false, nil)", ok, err)
 	}
-	// 重跑 migrate up 重试同版本，续装到位（IF NOT EXISTS 补齐残缺表）。
+	// 重跑 migrate up 重试未记版本，续装到位（IF NOT EXISTS 补齐残缺表）。
 	if err := Up(ctx, dsn); err != nil {
 		t.Fatalf("半建库重跑 migrate up 失败: %v", err)
 	}
 	requireAllTables(t, db)
-	if v := appliedVersion(t, db); v != 1 {
-		t.Errorf("恢复后版本表最新版本 = %d, want 1", v)
+	if v := appliedVersion(t, db); v != 2 {
+		t.Errorf("恢复后版本表最新版本 = %d, want 2", v)
 	}
 }
 
