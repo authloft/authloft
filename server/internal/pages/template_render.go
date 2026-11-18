@@ -37,14 +37,15 @@ type clientTemplate struct {
 
 // resolveClientTemplate 按 §8.1 链路解析客户端模板：取 client_id → 按族查
 // 行 → 取 template_key / template_vars → Resolve 内容。无 client_id、Templ
-// -ates 未装配、查无行、template_key 空、Resolve 未命中任一命中即回落
-// （ok=false），不抛 500、不改变 setup / account / admin 壳。oidc 为 true
-// 取 oidc_client（授权入口，client_id 已由 OIDC 校验层确认），false 取
-// sso_client（登录端入口）。err 恒为 nil——所有解析失败均按回落处理。
-// ssoRow 为登录端入口查得的 sso_client 行：行命中即非 nil 且不受模板回落
-// 影响（§2.1 sso 注入与 methods 应用级过滤以行命中为条件、与模板解析正交
-// ——无自定义模板是常态，绑定模板解析会令无模板应用的 sso 上下文失效）；
-// 授权入口与行未命中恒 nil。
+// -ates 未装配、查无行、SSO 行命中但应用被禁用、template_key 空、Resolve
+// 未命中任一命中即回落（ok=false），不抛 500、不改变 setup / account /
+// admin 壳。oidc 为 true 取 oidc_client（授权入口，client_id 已由 OIDC 校验
+// 层确认），false 取 sso_client（登录端入口）。err 恒为 nil——所有解析失败
+// 均按回落处理。ssoRow 为登录端入口查得且已启用（IsEnabled=1）的 sso_client
+// 行：禁用应用按未传入 client_id 的默认形态处理，行不返回（§2.1，同 §8.1
+// 第 2 步回落口径）——sso 注入与 methods 应用级过滤以行命中且已启用为条件，
+// 与模板解析正交（无自定义模板是常态，绑定模板解析会令无模板应用的 sso 上
+// 下文失效）；授权入口与未命中（含禁用）恒 nil。
 func resolveClientTemplate(ctx context.Context, deps Deps, clientID string, oidc bool) (html, varsJSON string, ssoRow *model.SsoClient, ok bool, err error) {
 	if clientID == "" {
 		return "", "", nil, false, nil
@@ -65,7 +66,9 @@ func resolveClientTemplate(ctx context.Context, deps Deps, clientID string, oidc
 			return "", "", nil, false, nil
 		}
 		row, e := deps.SsoClients.FindSsoClientByClientID(ctx, clientID)
-		if e != nil || row == nil {
+		// 禁用应用（IsEnabled != 1）按未命中处理（§2.1 默认形态口径）：不套
+		// 模板、不返回行，消费端 scope / sso 注入自然回落全局。
+		if e != nil || row == nil || row.IsEnabled != 1 {
 			return "", "", nil, false, nil
 		}
 		ssoRow, templateKey, templateVars = row, row.TemplateKey, row.TemplateVars
@@ -94,8 +97,9 @@ func (h *Handler) resolveClientTpl(ctx context.Context, clientID string, oidc bo
 }
 
 // resolveLoginClientTpl Handler 侧薄封装（登录端入口用）：除模板内容外同时
-// 返回查得的 sso_client 行——调用方据行命中注入 __AUTHLOFT_INIT__.sso 并把
-// 应用级维度传入 methods 组装（§2.1）。oidc 恒 false（两族分列）。
+// 返回查得且已启用的 sso_client 行（禁用应用返回 nil，§2.1）——调用方据行
+// 命中注入 __AUTHLOFT_INIT__.sso 并把应用级维度传入 methods 组装（§2.1）。
+// oidc 恒 false（两族分列）。
 func (h *Handler) resolveLoginClientTpl(ctx context.Context, clientID string) (*clientTemplate, *model.SsoClient) {
 	html, varsJSON, row, ok, err := resolveClientTemplate(ctx, h.deps, clientID, false)
 	if err != nil || !ok {

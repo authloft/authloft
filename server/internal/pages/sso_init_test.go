@@ -20,7 +20,8 @@ import (
 
 // ssoAppRow 组装 sso_client 行：login_methods / oauth_providers 列经 repo
 // 唯一编解码出口序列化（§12.0）；methods / providers 传 nil = 列空 = 未
-// 配置 = 跟随全局（§2.1）。mutate 供破坏列字节等特殊场景。
+// 配置 = 跟随全局（§2.1）。行默认启用（IsEnabled=1，§2.1 行命中需已启用；
+// 禁用场景经 mutate 显式置 0）。mutate 供破坏列字节等特殊场景。
 func ssoAppRow(t *testing.T, clientID, name string, methods, providers []string, mutate func(*model.SsoClient)) *model.SsoClient {
 	t.Helper()
 	lm, err := repo.MarshalClientLoginMethods(&clientpb.ClientLoginMethods{Methods: methods})
@@ -31,7 +32,7 @@ func ssoAppRow(t *testing.T, clientID, name string, methods, providers []string,
 	if err != nil {
 		t.Fatalf("marshal oauth_providers: %v", err)
 	}
-	row := &model.SsoClient{ClientID: clientID, Name: name, LoginMethods: lm, OauthProviders: op}
+	row := &model.SsoClient{ClientID: clientID, Name: name, LoginMethods: lm, OauthProviders: op, IsEnabled: 1}
 	if mutate != nil {
 		mutate(row)
 	}

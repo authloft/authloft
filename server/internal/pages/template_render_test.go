@@ -9,6 +9,7 @@ import (
 	"errors"
 	"html"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -222,17 +223,18 @@ func TestTemplateVarsInjectEscape(t *testing.T) {
 }
 
 // TestResolveClientTemplateFallback 回落各分支：无 client_id / Templates nil
-// （setup 模式）/ SsoClients nil / 查无行 / template_key 空 / Resolve miss
-// 一律 ok=false、varsJSON 为空、err 为 nil；命中时 html 与转义后 varsJSON
-// 正确返回。sso_client 行命中即随返回（ssoRow 非 nil）且不受模板回落影响
-// （§2.1 sso 注入与 methods 过滤以行命中为条件）；查无行 / 授权入口 ssoRow
-// 为 nil。
+// （setup 模式）/ SsoClients nil / 查无行 / SSO 行命中但应用被禁用 / template
+// _key 空 / Resolve miss 一律 ok=false、varsJSON 为空、err 为 nil；命中时
+// html 与转义后 varsJSON 正确返回。sso_client 行命中且已启用即随返回（ssoRow
+// 非 nil）且不受模板回落影响（§2.1 sso 注入与 methods 过滤以行命中且已启用
+// 为条件）；查无行 / 禁用应用 / 授权入口 ssoRow 为 nil。
 func TestResolveClientTemplateFallback(t *testing.T) {
 	const custom = `<html>{{AUTHLOFT_TEMPLATE_VARS}}</html>`
 	resolver := &fakeTplResolver{content: map[string]string{"k": custom}}
 	sso := &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app":   {ClientID: "app", TemplateKey: "k", TemplateVars: `{"a":"<x>"}`},
-		"nokey": {ClientID: "nokey", TemplateKey: "", TemplateVars: ""},
+		"app":    {ClientID: "app", TemplateKey: "k", TemplateVars: `{"a":"<x>"}`, IsEnabled: 1},
+		"nokey":  {ClientID: "nokey", TemplateKey: "", TemplateVars: "", IsEnabled: 1},
+		"disapp": {ClientID: "disapp", TemplateKey: "k", TemplateVars: `{"a":"<x>"}`, IsEnabled: 0},
 	}}
 	cases := []struct {
 		name     string
@@ -245,6 +247,7 @@ func TestResolveClientTemplateFallback(t *testing.T) {
 		{"templates nil setup", Deps{SsoClients: sso}, "app", false, true},
 		{"sso clients nil", Deps{Templates: resolver}, "app", false, false},
 		{"row not found", Deps{Templates: resolver, SsoClients: sso}, "missing", false, false},
+		{"app disabled", Deps{Templates: resolver, SsoClients: sso}, "disapp", false, false},
 		{"template key empty", Deps{Templates: resolver, SsoClients: sso}, "nokey", false, true},
 		{"resolve miss", Deps{Templates: &fakeTplResolver{content: map[string]string{}}, SsoClients: sso}, "app", false, true},
 		{"sso hit", Deps{Templates: resolver, SsoClients: sso}, "app", true, true},
@@ -311,7 +314,7 @@ func TestLoginShellCustomTemplate(t *testing.T) {
 		`<link href="` + phStaticBase + `/x.css"></head><body id="root">custom</body></html>`
 	f.deps.Templates = &fakeTplResolver{content: map[string]string{"tpl-login": custom}}
 	f.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app-1": {ClientID: "app-1", Name: "示例应用", TemplateKey: "tpl-login", TemplateVars: `{"brand":"<b>&` + "\u2028" + `"}`},
+		"app-1": {ClientID: "app-1", Name: "示例应用", TemplateKey: "tpl-login", TemplateVars: `{"brand":"<b>&` + "\u2028" + `"}`, IsEnabled: 1},
 	}}
 
 	rec := doGet(t, fixedNonceEngine(t, f.deps), "/sso/login?client_id=app-1")
@@ -339,6 +342,38 @@ func TestLoginShellCustomTemplate(t *testing.T) {
 	}
 }
 
+// TestLoginShellDisabledAppDefaultShape 禁用应用（IsEnabled=0）按未传入
+// client_id 的默认形态渲染（§2.1）：200 空壳、不套自定义模板、不注入 sso
+// 上下文、methods 不被应用交集过滤（全局口径）；与已启用形态
+// （TestLoginShellCustomTemplate）互为对照。
+func TestLoginShellDisabledAppDefaultShape(t *testing.T) {
+	f := newFixture(t)
+	const custom = `<html><body id="root">disabled-app-tpl-marker</body></html>`
+	f.deps.Templates = &fakeTplResolver{content: map[string]string{"tpl-login": custom}}
+	row := ssoAppRow(t, "disapp", "禁用应用", []string{"password"}, nil,
+		func(r *model.SsoClient) { r.TemplateKey = "tpl-login" })
+	row.IsEnabled = 0
+	f.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{"disapp": row}}
+
+	rec := doGet(t, fixedNonceEngine(t, f.deps), "/sso/login?client_id=disapp")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 空壳（body %s）", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "disabled-app-tpl-marker") || strings.Contains(body, "AUTHLOFT_TEMPLATE_VARS") {
+		t.Error("禁用应用不应套用自定义模板，应回落默认文件壳")
+	}
+	init := parseInit(t, body)
+	if sso, ok := init["sso"]; ok {
+		t.Errorf("禁用应用不应注入 sso 上下文: %v", sso)
+	}
+	got := methodNames(loginMethodsFromInit(t, init))
+	want := []string{"password", "otp_sms", "otp_email", "webauthn"} // 全局口径（应用 login_methods 仅 password，过滤未生效）
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("methods = %v, want 全局口径 %v（禁用应用不参与应用级过滤）", got, want)
+	}
+}
+
 // TestLoginShellFallbackByteIdentical 端到端逐字一致：未指定 client_id 与
 // client_id 查无行两种回落，body 与基线（无 client_id 文件壳）逐字相同——
 // 查无行回落壳不注入 sso（§2.1）、不含模板变量注入痕迹；行命中但模板回落
@@ -357,14 +392,14 @@ func TestLoginShellFallbackByteIdentical(t *testing.T) {
 	miss := newFixture(t)
 	miss.deps.Templates = &fakeTplResolver{content: map[string]string{}}
 	miss.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app": {ClientID: "app", TemplateKey: "absent"},
+		"app": {ClientID: "app", TemplateKey: "absent", IsEnabled: 1},
 	}}
 	missBody := doGet(t, fixedNonceEngine(t, miss.deps), "/sso/login?client_id=app").Body.String()
 
 	// setup 模式：Templates 为 nil（Deps 未装配模板解析源）→ sso 照注入。
 	setup := newFixture(t)
 	setup.deps.SsoClients = &fakeSsoClients{rows: map[string]*model.SsoClient{
-		"app": {ClientID: "app", TemplateKey: "k"},
+		"app": {ClientID: "app", TemplateKey: "k", IsEnabled: 1},
 	}}
 	setupBody := doGet(t, fixedNonceEngine(t, setup.deps), "/sso/login?client_id=app").Body.String()
 
