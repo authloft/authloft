@@ -55,8 +55,9 @@ message AdminUser {
   int64 updated_at = 14;
 }
 
-// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：
-// 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5）。
+// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：筛选入参
+// {q, userStatus, createdFrom, createdTo, lastLoginFrom, lastLoginTo,
+// mfaRequired, credentialKind}）；所有列表支持 §1.7 分页（§5）。
 // 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional。
 // 消息名随方法名（§12.9；pre-connect 时代按资源命名 UserListRequest，
 // Connect 化时更名）。
@@ -73,6 +74,19 @@ message ListUsersRequest {
   optional string sort = 5;
   // 排序方向 asc/desc（§1.7）。
   optional string order = 6;
+  // 创建时间起点，Unix 秒闭区间（§5.4）。
+  optional int64 created_from = 7;
+  // 创建时间终点，Unix 秒闭区间（§5.4）。
+  optional int64 created_to = 8;
+  // 最后登录时间起点，Unix 秒闭区间（§5.4）。
+  optional int64 last_login_from = 9;
+  // 最后登录时间终点，Unix 秒闭区间（§5.4）。
+  optional int64 last_login_to = 10;
+  // 两步验证开关过滤：1 开启 0 关闭（§5.4）。
+  optional int64 mfa_required = 11;
+  // 凭证类型过滤，取 password|totp|webauthn|recovery_code，
+  // 筛「持有该类型凭证」的用户（§5.4、《后端架构》§4.2）。
+  optional string credential_kind = 12;
 }
 
 // UserListResponse 是 AdminService/ListUsers 的响应（§5.4、§1.7）。
@@ -308,4 +322,30 @@ message UserEventsResponse {
   int64 page = 3;
   // 每页条数（§1.7）。
   int64 page_size = 4;
+}
+
+// CreateUserRequest 是 AdminService/CreateUser 的请求（§5.4：
+// {username, password, nickname?} 后台新建账号）。username 规则与唯一性
+// 同 §2.3（含 deleted_ 前缀禁用），password 须满足 §5.6 密码策略；不接受
+// 联系方式入参（代绑走 UpdateUserContact）。成功返回新用户 id。
+message CreateUserRequest {
+  // 登录名，规则同 §2.3（§5.4）。
+  string username = 1;
+  // 初始密码，按 §5.6 密码策略校验（§5.4）。
+  string password = 2;
+  // 昵称，可选（§5.4）。
+  optional string nickname = 3;
+}
+
+// CreateUserResponse 是 AdminService/CreateUser 的响应（§5.4 → {id}）。
+message CreateUserResponse {
+  // 新建用户 ID。
+  int64 id = 1;
+}
+
+// DeleteUserRequest 是 AdminService/DeleteUser 的请求（§5.4：{id} 删除 =
+// 禁用 + 全端下线 + 匿名化）。成功返回 OkResponse。
+message DeleteUserRequest {
+  // 目标用户 ID（§5.4）。
+  int64 id = 1;
 }

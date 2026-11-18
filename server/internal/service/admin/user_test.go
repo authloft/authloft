@@ -48,6 +48,11 @@ type userFakeUsers struct {
 	listRows  []model.User
 	listTotal int64
 
+	// —— 创建用户（CreateUser 走 CreateWithCredential 同事务建号）——
+	created      []userFakeCreated
+	createErr    error
+	nextCreateID int64
+
 	statusUpdated []userFakeStatus
 	statusErr     error
 
@@ -98,6 +103,22 @@ type userFakeMfaUpdate struct {
 type userFakeAnonymize struct {
 	id int64
 	at time.Time
+}
+
+type userFakeCreated struct {
+	user model.User
+	cred model.UserCredential
+}
+
+func (f *userFakeUsers) CreateWithCredential(_ context.Context, u *model.User, c *model.UserCredential) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	if u.ID == 0 {
+		u.ID = f.nextCreateID
+	}
+	f.created = append(f.created, userFakeCreated{user: *u, cred: *c})
+	return nil
 }
 
 func (f *userFakeUsers) AnonymizeUser(_ context.Context, id int64, at time.Time) (int16, error) {
@@ -545,6 +566,103 @@ func TestUserServiceListUsers(t *testing.T) {
 	bad := int64(2)
 	if _, _, err := svc.ListUsers(ctx, adminsvc.ListUsersFilter{UserStatus: &bad}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("userStatus=2 应 ErrInvalidRequest, got %v", err)
+	}
+
+	// 四维度筛选 + 默认过滤已删用户全部透传 repo（§5.4）。
+	from, to := int64(1000), int64(2000)
+	loginFrom, loginTo := int64(3000), int64(4000)
+	mfa := int64(1)
+	if _, _, err := svc.ListUsers(ctx, adminsvc.ListUsersFilter{
+		CreatedFrom: &from, CreatedTo: &to,
+		LastLoginFrom: &loginFrom, LastLoginTo: &loginTo,
+		MfaRequired: &mfa, CredentialKind: "webauthn",
+	}); err != nil {
+		t.Fatalf("多维筛选: %v", err)
+	}
+	got = users.gotQuery
+	if got.CreatedFrom == nil || *got.CreatedFrom != from || got.CreatedTo == nil || *got.CreatedTo != to ||
+		got.LastLoginFrom == nil || *got.LastLoginFrom != loginFrom ||
+		got.LastLoginTo == nil || *got.LastLoginTo != loginTo ||
+		got.MfaRequired == nil || *got.MfaRequired != 1 || got.CredentialKind != "webauthn" {
+		t.Fatalf("多维筛选透传 = %+v", got)
+	}
+	if !got.ExcludeDeleted {
+		t.Fatal("默认应过滤 deleted_ 前缀的已删用户")
+	}
+
+	badMfa := int64(2)
+	if _, _, err := svc.ListUsers(ctx, adminsvc.ListUsersFilter{MfaRequired: &badMfa}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("mfaRequired=2 应 ErrInvalidRequest, got %v", err)
+	}
+	if _, _, err := svc.ListUsers(ctx, adminsvc.ListUsersFilter{CredentialKind: "bogus"}); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+		t.Fatalf("credentialKind 封闭集外应 ErrInvalidRequest, got %v", err)
+	}
+}
+
+// TestUserServiceCreateUser 后台建号：成功落号 + 初始 password 凭证 +
+// admin_create_user 审计（detail 仅 {username}）；deleted_ 前缀必拒、
+// 弱口令必拒、用户名格式拒绝、唯一冲突映射，均无副作用。
+func TestUserServiceCreateUser(t *testing.T) {
+	ctx := context.Background()
+	svc, users, _, _, _, _, _, _, audit := newUserSvc()
+	users.nextCreateID = 77
+
+	nickname := "新建用户"
+	id, err := svc.CreateUser(ctx, 1, &adminv1.CreateUserRequest{
+		Username: "new_user", Password: "Str0ngPass!", Nickname: &nickname,
+	})
+	if err != nil || id != 77 {
+		t.Fatalf("CreateUser = (%d, %v), want id=77", id, err)
+	}
+	if len(users.created) != 1 {
+		t.Fatalf("建号应同事务写入 user + 凭证, got %d 次", len(users.created))
+	}
+	created := users.created[0]
+	if created.user.Username != "new_user" || created.user.Nickname != nickname ||
+		created.cred.Kind != "password" || created.cred.IsEnabled != 1 || len(created.cred.Secret) == 0 {
+		t.Fatalf("建号行 = %+v / 凭证 = %+v", created.user, created.cred)
+	}
+	if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventAdminCreateUser ||
+		audit.events[0].ActorType != eventlog.ActorTypeAdmin || audit.events[0].ActorID != 1 ||
+		audit.events[0].UserID != 77 {
+		t.Fatalf("建号审计 = %+v", audit.events)
+	}
+	var detail map[string]any
+	if err := msgpack.Unmarshal(audit.events[0].Detail, &detail); err != nil ||
+		len(detail) != 1 || detail["username"] != "new_user" {
+		t.Fatalf("审计 detail 应仅 {username}, got %+v (%v)", detail, err)
+	}
+
+	// 拒绝路径零副作用：deleted_ 前缀 / 用户名格式 / 弱口令 / 唯一冲突。
+	cases := []struct {
+		name string
+		req  *adminv1.CreateUserRequest
+		want error
+	}{
+		{"deleted_ 前缀", &adminv1.CreateUserRequest{Username: "deleted_12345", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
+		{"用户名格式", &adminv1.CreateUserRequest{Username: "abc", Password: "Str0ngPass!"}, adminsvc.ErrInvalidRequest},
+		{"弱口令", &adminv1.CreateUserRequest{Username: "new_user2", Password: "short"}, adminsvc.ErrPasswordWeak},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, users, _, _, _, _, _, _, audit := newUserSvc()
+			if _, err := svc.CreateUser(ctx, 1, tc.req); !errors.Is(err, tc.want) {
+				t.Fatalf("got %v, want %v", err, tc.want)
+			}
+			if len(users.created) != 0 || len(audit.events) != 0 {
+				t.Fatalf("拒绝路径应零副作用, created=%d audit=%d", len(users.created), len(audit.events))
+			}
+		})
+	}
+
+	// 唯一性冲突 → ErrTargetTaken（already_exists + target_taken）。
+	svc, users, _, _, _, _, _, _, audit = newUserSvc()
+	users.createErr = fmt.Errorf("user repo: create with credential: %w", repo.ErrUserDuplicate)
+	if _, err := svc.CreateUser(ctx, 1, &adminv1.CreateUserRequest{Username: "new_user", Password: "Str0ngPass!"}); !errors.Is(err, adminsvc.ErrTargetTaken) {
+		t.Fatalf("唯一冲突应 ErrTargetTaken, got %v", err)
+	}
+	if len(audit.events) != 0 {
+		t.Fatalf("唯一冲突不投审计, got %d", len(audit.events))
 	}
 }
 

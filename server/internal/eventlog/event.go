@@ -29,6 +29,7 @@ const (
 	EventThirdpartyUnbind   = "thirdparty_unbind"
 	EventAdminDisableUser   = "admin_disable_user"
 	EventAdminResetPassword = "admin_reset_password"
+	EventAdminCreateUser    = "admin_create_user"
 	EventAdminUpdateUser    = "admin_update_user"
 	EventAdminUpdateContact = "admin_update_contact"
 	// admin 用户管理族救援事件（§4.6 枚举、接口文档 §5.6）：detail 一律不记
@@ -115,6 +116,12 @@ func DetailSettingsUpdate(keys []string, before, after map[string]any) []byte {
 		"before": before,
 		"after":  after,
 	})
+}
+
+// DetailAdminCreateUser 编码 admin_create_user 的 detail（《后端架构》§4.6：
+// {username}，不含密码；后台创建用户）。
+func DetailAdminCreateUser(username string) []byte {
+	return encodeDetail(map[string]any{"username": username})
 }
 
 // DetailChangedFields 编码 admin_update_user / admin_update_contact 的

@@ -47,6 +47,7 @@ type ProviderService interface {
 type UserService interface {
 	GetMe(ctx context.Context, uid int64) (*model.User, error)
 	ListUsers(ctx context.Context, f adminsvc.ListUsersFilter) ([]model.User, int64, error)
+	CreateUser(ctx context.Context, actor int64, req *adminv1.CreateUserRequest) (int64, error)
 	GetUser(ctx context.Context, id int64) (*adminsvc.UserDetail, error)
 	UpdateUserProfile(ctx context.Context, actor, id int64, req *adminv1.UpdateUserProfileRequest) error
 	UpdateUserContact(ctx context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error
@@ -59,6 +60,7 @@ type UserService interface {
 	ResetUserPassword(ctx context.Context, actor, id int64, password string) error
 	UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error
 	UnlockUser(ctx context.Context, actor, id int64) error
+	DeleteUser(ctx context.Context, actor, id int64) error
 	GetUserEvents(ctx context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error)
 }
 
@@ -404,6 +406,13 @@ func (h *Handler) ListUsers(ctx context.Context, req *connectrpc.Request[adminv1
 		PageSize:   size,
 		Sort:       req.Msg.GetSort(),
 		Order:      req.Msg.GetOrder(),
+
+		CreatedFrom:    req.Msg.CreatedFrom,
+		CreatedTo:      req.Msg.CreatedTo,
+		LastLoginFrom:  req.Msg.LastLoginFrom,
+		LastLoginTo:    req.Msg.LastLoginTo,
+		MfaRequired:    req.Msg.MfaRequired,
+		CredentialKind: req.Msg.GetCredentialKind(),
 	})
 	if err != nil {
 		return nil, mapUserError("list users", err)
@@ -418,6 +427,20 @@ func (h *Handler) ListUsers(ctx context.Context, req *connectrpc.Request[adminv1
 		Page:     int64(page),
 		PageSize: int64(size),
 	}), nil
+}
+
+// CreateUser {username, password, nickname?} 后台新建；用户名 / 密码校验
+// 在 service（前缀与弱口令拒绝 → invalid_request / password_weak），返回新 id。
+func (h *Handler) CreateUser(ctx context.Context, req *connectrpc.Request[adminv1.CreateUserRequest]) (*connectrpc.Response[adminv1.CreateUserResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	id, err := h.users.CreateUser(ctx, actor, req.Msg)
+	if err != nil {
+		return nil, mapUserError("create user", err)
+	}
+	return connectrpc.NewResponse(&adminv1.CreateUserResponse{Id: id}), nil
 }
 
 // GetUser {id} 详情（含凭证概览、绑定、MFA 状态、profile 与权限点投影），
@@ -570,6 +593,19 @@ func (h *Handler) UnlockUser(ctx context.Context, req *connectrpc.Request[adminv
 	}
 	if err := h.users.UnlockUser(ctx, actor, req.Msg.GetId()); err != nil {
 		return nil, mapUserError("unlock user", err)
+	}
+	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
+}
+
+// DeleteUser {id} 删除用户 = 禁用 + 全端下线 + 匿名化；自删 / 有权限点目标
+// 一律 permission_denied，已删行 not_found（service 口径）。
+func (h *Handler) DeleteUser(ctx context.Context, req *connectrpc.Request[adminv1.DeleteUserRequest]) (*connectrpc.Response[adminv1.OkResponse], error) {
+	actor, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connectrpc.NewError(connectrpc.CodeUnauthenticated, errAuthRequired)
+	}
+	if err := h.users.DeleteUser(ctx, actor, req.Msg.GetId()); err != nil {
+		return nil, mapUserError("delete user", err)
 	}
 	return connectrpc.NewResponse(&adminv1.OkResponse{}), nil
 }

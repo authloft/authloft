@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/user.proto.
  */
 export const file_api_admin_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMizgEKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBQgQKAl9xQg4KDF91c2VyX3N0YXR1c0IHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJqChBVc2VyTGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLkFkbWluVXNlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIcCg5HZXRVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyJ+ChVVc2VyQ3JlZGVudGlhbFN1bW1hcnkSCgoCaWQYASABKAMSDAoEa2luZBgCIAEoCRINCgVsYWJlbBgDIAEoCRISCgppc19lbmFibGVkGAQgASgIEhQKDGxhc3RfdXNlZF9hdBgFIAEoAxISCgpjcmVhdGVkX2F0GAYgASgDIpYBChVVc2VyVGhpcmRwYXJ0eUJpbmRpbmcSCgoCaWQYASABKAMSFAoMcHJvdmlkZXJfa2V5GAIgASgJEg8KB29wZW5faWQYAyABKAkSEAoIdW5pb25faWQYBCABKAkSEAoIbmlja25hbWUYBSABKAkSEgoKYXZhdGFyX3VybBgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgDIpkCChJVc2VyRGV0YWlsUmVzcG9uc2USJQoEdXNlchgBIAEoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISOAoLY3JlZGVudGlhbHMYAiADKAsyIy5hcGkuYWRtaW4udjEuVXNlckNyZWRlbnRpYWxTdW1tYXJ5EjUKCGJpbmRpbmdzGAMgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJUaGlyZHBhcnR5QmluZGluZxIoCgNtZmEYBCABKAsyGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZRIsCgdwcm9maWxlGAUgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGUSEwoLcGVybWlzc2lvbnMYBiADKAkioAEKGFVwZGF0ZVVzZXJQcm9maWxlUmVxdWVzdBIKCgJpZBgBIAEoAxIVCghuaWNrbmFtZRgCIAEoCUgAiAEBEhcKCmF2YXRhcl91cmwYAyABKAlIAYgBARIsCgdwcm9maWxlGAQgASgLMhsuYXBpLmFjY291bnQudjEuVXNlclByb2ZpbGVCCwoJX25pY2tuYW1lQg0KC19hdmF0YXJfdXJsImIKGFVwZGF0ZVVzZXJDb250YWN0UmVxdWVzdBIKCgJpZBgBIAEoAxISCgVwaG9uZRgCIAEoCUgAiAEBEhIKBWVtYWlsGAMgASgJSAGIAQFCCAoGX3Bob25lQggKBl9lbWFpbCI1ChFTZXRVc2VyTWZhUmVxdWVzdBIKCgJpZBgBIAEoAxIUCgxtZmFfcmVxdWlyZWQYAiABKAMiIwoVVW5iaW5kVXNlclRPVFBSZXF1ZXN0EgoKAmlkGAEgASgDIisKHVJlc2V0VXNlclJlY292ZXJ5Q29kZXNSZXF1ZXN0EgoKAmlkGAEgASgDIlEKG1NldENyZWRlbnRpYWxFbmFibGVkUmVxdWVzdBIKCgJpZBgBIAEoAxIVCg1jcmVkZW50aWFsX2lkGAIgASgDEg8KB2VuYWJsZWQYAyABKAgiPAoXRGVsZXRlQ3JlZGVudGlhbFJlcXVlc3QSCgoCaWQYASABKAMSFQoNY3JlZGVudGlhbF9pZBgCIAEoAyI6ChdVcGRhdGVVc2VyU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoAxITCgt1c2VyX3N0YXR1cxgCIAEoAyI4ChhSZXNldFVzZXJQYXNzd29yZFJlcXVlc3QSCgoCaWQYASABKAMSEAoIcGFzc3dvcmQYAiABKAkiPwobVW5iaW5kVXNlclRoaXJkcGFydHlSZXF1ZXN0EgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCSIfChFVbmxvY2tVc2VyUmVxdWVzdBIKCgJpZBgBIAEoAyKqAQoUR2V0VXNlckV2ZW50c1JlcXVlc3QSDwoCaWQYASABKANIAIgBARIRCgRwYWdlGAIgASgDSAGIAQESFgoJcGFnZV9zaXplGAMgASgDSAKIAQESEQoEc29ydBgEIAEoCUgDiAEBEhIKBW9yZGVyGAUgASgJSASIAQFCBQoDX2lkQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyImwKElVzZXJFdmVudHNSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5FdmVudEl0ZW0SDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM", [file_api_account_v1_mfa, file_api_account_v1_profile, file_api_admin_v1_events]);
+  fileDesc("ChdhcGkvYWRtaW4vdjEvdXNlci5wcm90bxIMYXBpLmFkbWluLnYxIpYCCglBZG1pblVzZXISCgoCaWQYASABKAMSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRINCgVlbWFpbBgGIAEoCRIWCg5waG9uZV92ZXJpZmllZBgHIAEoAxIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMi4AMKEExpc3RVc2Vyc1JlcXVlc3QSDgoBcRgBIAEoCUgAiAEBEhgKC3VzZXJfc3RhdHVzGAIgASgDSAGIAQESEQoEcGFnZRgDIAEoA0gCiAEBEhYKCXBhZ2Vfc2l6ZRgEIAEoA0gDiAEBEhEKBHNvcnQYBSABKAlIBIgBARISCgVvcmRlchgGIAEoCUgFiAEBEhkKDGNyZWF0ZWRfZnJvbRgHIAEoA0gGiAEBEhcKCmNyZWF0ZWRfdG8YCCABKANIB4gBARIcCg9sYXN0X2xvZ2luX2Zyb20YCSABKANICIgBARIaCg1sYXN0X2xvZ2luX3RvGAogASgDSAmIAQESGQoMbWZhX3JlcXVpcmVkGAsgASgDSAqIAQESHAoPY3JlZGVudGlhbF9raW5kGAwgASgJSAuIAQFCBAoCX3FCDgoMX3VzZXJfc3RhdHVzQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyQg8KDV9jcmVhdGVkX2Zyb21CDQoLX2NyZWF0ZWRfdG9CEgoQX2xhc3RfbG9naW5fZnJvbUIQCg5fbGFzdF9sb2dpbl90b0IPCg1fbWZhX3JlcXVpcmVkQhIKEF9jcmVkZW50aWFsX2tpbmQiagoQVXNlckxpc3RSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5BZG1pblVzZXISDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKAMiHAoOR2V0VXNlclJlcXVlc3QSCgoCaWQYASABKAMifgoVVXNlckNyZWRlbnRpYWxTdW1tYXJ5EgoKAmlkGAEgASgDEgwKBGtpbmQYAiABKAkSDQoFbGFiZWwYAyABKAkSEgoKaXNfZW5hYmxlZBgEIAEoCBIUCgxsYXN0X3VzZWRfYXQYBSABKAMSEgoKY3JlYXRlZF9hdBgGIAEoAyKWAQoVVXNlclRoaXJkcGFydHlCaW5kaW5nEgoKAmlkGAEgASgDEhQKDHByb3ZpZGVyX2tleRgCIAEoCRIPCgdvcGVuX2lkGAMgASgJEhAKCHVuaW9uX2lkGAQgASgJEhAKCG5pY2tuYW1lGAUgASgJEhIKCmF2YXRhcl91cmwYBiABKAkSEgoKY3JlYXRlZF9hdBgHIAEoAyKZAgoSVXNlckRldGFpbFJlc3BvbnNlEiUKBHVzZXIYASABKAsyFy5hcGkuYWRtaW4udjEuQWRtaW5Vc2VyEjgKC2NyZWRlbnRpYWxzGAIgAygLMiMuYXBpLmFkbWluLnYxLlVzZXJDcmVkZW50aWFsU3VtbWFyeRI1CghiaW5kaW5ncxgDIAMoCzIjLmFwaS5hZG1pbi52MS5Vc2VyVGhpcmRwYXJ0eUJpbmRpbmcSKAoDbWZhGAQgASgLMhsuYXBpLmFjY291bnQudjEuTWZhUmVzcG9uc2USLAoHcHJvZmlsZRgFIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlEhMKC3Blcm1pc3Npb25zGAYgAygJIqABChhVcGRhdGVVc2VyUHJvZmlsZVJlcXVlc3QSCgoCaWQYASABKAMSFQoIbmlja25hbWUYAiABKAlIAIgBARIXCgphdmF0YXJfdXJsGAMgASgJSAGIAQESLAoHcHJvZmlsZRgEIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlQgsKCV9uaWNrbmFtZUINCgtfYXZhdGFyX3VybCJiChhVcGRhdGVVc2VyQ29udGFjdFJlcXVlc3QSCgoCaWQYASABKAMSEgoFcGhvbmUYAiABKAlIAIgBARISCgVlbWFpbBgDIAEoCUgBiAEBQggKBl9waG9uZUIICgZfZW1haWwiNQoRU2V0VXNlck1mYVJlcXVlc3QSCgoCaWQYASABKAMSFAoMbWZhX3JlcXVpcmVkGAIgASgDIiMKFVVuYmluZFVzZXJUT1RQUmVxdWVzdBIKCgJpZBgBIAEoAyIrCh1SZXNldFVzZXJSZWNvdmVyeUNvZGVzUmVxdWVzdBIKCgJpZBgBIAEoAyJRChtTZXRDcmVkZW50aWFsRW5hYmxlZFJlcXVlc3QSCgoCaWQYASABKAMSFQoNY3JlZGVudGlhbF9pZBgCIAEoAxIPCgdlbmFibGVkGAMgASgIIjwKF0RlbGV0ZUNyZWRlbnRpYWxSZXF1ZXN0EgoKAmlkGAEgASgDEhUKDWNyZWRlbnRpYWxfaWQYAiABKAMiOgoXVXBkYXRlVXNlclN0YXR1c1JlcXVlc3QSCgoCaWQYASABKAMSEwoLdXNlcl9zdGF0dXMYAiABKAMiOAoYUmVzZXRVc2VyUGFzc3dvcmRSZXF1ZXN0EgoKAmlkGAEgASgDEhAKCHBhc3N3b3JkGAIgASgJIj8KG1VuYmluZFVzZXJUaGlyZHBhcnR5UmVxdWVzdBIKCgJpZBgBIAEoAxIUCgxwcm92aWRlcl9rZXkYAiABKAkiHwoRVW5sb2NrVXNlclJlcXVlc3QSCgoCaWQYASABKAMiqgEKFEdldFVzZXJFdmVudHNSZXF1ZXN0Eg8KAmlkGAEgASgDSACIAQESEQoEcGFnZRgCIAEoA0gBiAEBEhYKCXBhZ2Vfc2l6ZRgDIAEoA0gCiAEBEhEKBHNvcnQYBCABKAlIA4gBARISCgVvcmRlchgFIAEoCUgEiAEBQgUKA19pZEIHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJsChJVc2VyRXZlbnRzUmVzcG9uc2USJgoFaXRlbXMYASADKAsyFy5hcGkuYWRtaW4udjEuRXZlbnRJdGVtEg0KBXRvdGFsGAIgASgDEgwKBHBhZ2UYAyABKAMSEQoJcGFnZV9zaXplGAQgASgDIlsKEUNyZWF0ZVVzZXJSZXF1ZXN0EhAKCHVzZXJuYW1lGAEgASgJEhAKCHBhc3N3b3JkGAIgASgJEhUKCG5pY2tuYW1lGAMgASgJSACIAQFCCwoJX25pY2tuYW1lIiAKEkNyZWF0ZVVzZXJSZXNwb25zZRIKCgJpZBgBIAEoAyIfChFEZWxldGVVc2VyUmVxdWVzdBIKCgJpZBgBIAEoA0ImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw", [file_api_account_v1_mfa, file_api_account_v1_profile, file_api_admin_v1_events]);
 
 /**
  * AdminUser 是管理端的用户视图（§5.4）：字段集为 user 表列投影
@@ -137,8 +137,9 @@ export const AdminUserSchema: GenMessage<AdminUser> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_user, 0);
 
 /**
- * ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：
- * 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5）。
+ * ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：筛选入参
+ * {q, userStatus, createdFrom, createdTo, lastLoginFrom, lastLoginTo,
+ * mfaRequired, credentialKind}）；所有列表支持 §1.7 分页（§5）。
  * 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional。
  * 消息名随方法名（§12.9；pre-connect 时代按资源命名 UserListRequest，
  * Connect 化时更名）。
@@ -187,6 +188,49 @@ export type ListUsersRequest = Message<"api.admin.v1.ListUsersRequest"> & {
    * @generated from field: optional string order = 6;
    */
   order?: string | undefined;
+
+  /**
+   * 创建时间起点，Unix 秒闭区间（§5.4）。
+   *
+   * @generated from field: optional int64 created_from = 7;
+   */
+  createdFrom?: bigint | undefined;
+
+  /**
+   * 创建时间终点，Unix 秒闭区间（§5.4）。
+   *
+   * @generated from field: optional int64 created_to = 8;
+   */
+  createdTo?: bigint | undefined;
+
+  /**
+   * 最后登录时间起点，Unix 秒闭区间（§5.4）。
+   *
+   * @generated from field: optional int64 last_login_from = 9;
+   */
+  lastLoginFrom?: bigint | undefined;
+
+  /**
+   * 最后登录时间终点，Unix 秒闭区间（§5.4）。
+   *
+   * @generated from field: optional int64 last_login_to = 10;
+   */
+  lastLoginTo?: bigint | undefined;
+
+  /**
+   * 两步验证开关过滤：1 开启 0 关闭（§5.4）。
+   *
+   * @generated from field: optional int64 mfa_required = 11;
+   */
+  mfaRequired?: bigint | undefined;
+
+  /**
+   * 凭证类型过滤，取 password|totp|webauthn|recovery_code，
+   * 筛「持有该类型凭证」的用户（§5.4、《后端架构》§4.2）。
+   *
+   * @generated from field: optional string credential_kind = 12;
+   */
+  credentialKind?: string | undefined;
 };
 
 /**
@@ -890,4 +934,85 @@ export type UserEventsResponse = Message<"api.admin.v1.UserEventsResponse"> & {
  */
 export const UserEventsResponseSchema: GenMessage<UserEventsResponse> = /*@__PURE__*/
   messageDesc(file_api_admin_v1_user, 19);
+
+/**
+ * CreateUserRequest 是 AdminService/CreateUser 的请求（§5.4：
+ * {username, password, nickname?} 后台新建账号）。username 规则与唯一性
+ * 同 §2.3（含 deleted_ 前缀禁用），password 须满足 §5.6 密码策略；不接受
+ * 联系方式入参（代绑走 UpdateUserContact）。成功返回新用户 id。
+ *
+ * @generated from message api.admin.v1.CreateUserRequest
+ */
+export type CreateUserRequest = Message<"api.admin.v1.CreateUserRequest"> & {
+  /**
+   * 登录名，规则同 §2.3（§5.4）。
+   *
+   * @generated from field: string username = 1;
+   */
+  username: string;
+
+  /**
+   * 初始密码，按 §5.6 密码策略校验（§5.4）。
+   *
+   * @generated from field: string password = 2;
+   */
+  password: string;
+
+  /**
+   * 昵称，可选（§5.4）。
+   *
+   * @generated from field: optional string nickname = 3;
+   */
+  nickname?: string | undefined;
+};
+
+/**
+ * Describes the message api.admin.v1.CreateUserRequest.
+ * Use `create(CreateUserRequestSchema)` to create a new message.
+ */
+export const CreateUserRequestSchema: GenMessage<CreateUserRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 20);
+
+/**
+ * CreateUserResponse 是 AdminService/CreateUser 的响应（§5.4 → {id}）。
+ *
+ * @generated from message api.admin.v1.CreateUserResponse
+ */
+export type CreateUserResponse = Message<"api.admin.v1.CreateUserResponse"> & {
+  /**
+   * 新建用户 ID。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.CreateUserResponse.
+ * Use `create(CreateUserResponseSchema)` to create a new message.
+ */
+export const CreateUserResponseSchema: GenMessage<CreateUserResponse> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 21);
+
+/**
+ * DeleteUserRequest 是 AdminService/DeleteUser 的请求（§5.4：{id} 删除 =
+ * 禁用 + 全端下线 + 匿名化）。成功返回 OkResponse。
+ *
+ * @generated from message api.admin.v1.DeleteUserRequest
+ */
+export type DeleteUserRequest = Message<"api.admin.v1.DeleteUserRequest"> & {
+  /**
+   * 目标用户 ID（§5.4）。
+   *
+   * @generated from field: int64 id = 1;
+   */
+  id: bigint;
+};
+
+/**
+ * Describes the message api.admin.v1.DeleteUserRequest.
+ * Use `create(DeleteUserRequestSchema)` to create a new message.
+ */
+export const DeleteUserRequestSchema: GenMessage<DeleteUserRequest> = /*@__PURE__*/
+  messageDesc(file_api_admin_v1_user, 22);
 

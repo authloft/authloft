@@ -94,6 +94,20 @@ const (
 // 对已前缀行再执行删除返回 not_found。
 const deletedUsernamePrefix = "deleted_"
 
+// adminUsernameRE 后台新建用户的用户名规则（§2.3 唯一定义处）：
+// ^[A-Za-z0-9_]{5,20}$，设置后不可改；deleted_ 前缀判定复用同名常量。
+// 与注册 / 安装入口各落一份（跨包私有不可复用，§3.5 同款口径）。
+var adminUsernameRE = regexp.MustCompile(`^[A-Za-z0-9_]{5,20}$`)
+
+// credentialKindSet 凭证类型封闭集（§5.4 ListUsers.credentialKind：
+// password|totp|webauthn|recovery_code，《后端架构》§4.2）。
+var credentialKindSet = map[string]bool{
+	credentialKindPassword:     true,
+	credentialKindTotp:         true,
+	"webauthn":                 true,
+	credentialKindRecoveryCode: true,
+}
+
 // UserStore user / user_profile 表读写窄接口（§20 依赖注入）：*repo.UserRepo
 // 天然满足（全部为既有列级最小增量方法），测试可传 fake。
 type UserStore interface {
@@ -101,6 +115,9 @@ type UserStore interface {
 	FindByPhone(ctx context.Context, phone string) (*model.User, error)
 	FindByEmail(ctx context.Context, email string) (*model.User, error)
 	ListUsers(ctx context.Context, q repo.UserListQuery) ([]model.User, int64, error)
+	// CreateWithCredential 建号与初始 password 凭证同事务写入（§7.4），
+	// 供 CreateUser 复用；行回填 ID 即新用户 id。
+	CreateWithCredential(ctx context.Context, u *model.User, c *model.UserCredential) error
 	UpdateUserStatus(ctx context.Context, id int64, userStatus int8) error
 	UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error
 	UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error
@@ -257,9 +274,12 @@ func (s *UserService) GetMe(ctx context.Context, uid int64) (*model.User, error)
 	return s.users.FindByID(ctx, uid)
 }
 
-// ListUsersFilter ListUsers 入参（§5.4 行 1249：{q, userStatus} + §1.7 分页）。
-// UserStatus 非 nil 时仅 0|1 合法（列枚举）；Sort / Order 原样透传 repo
-// （§1.7 行 277 后端不做白名单强制校验，字符集防注入归 repo）。
+// ListUsersFilter ListUsers 入参（§5.4：{q, userStatus, createdFrom,
+// createdTo, lastLoginFrom, lastLoginTo, mfaRequired, credentialKind}
+// + §1.7 分页）。UserStatus / MfaRequired 非 nil 时仅 0|1 合法（列枚举）；
+// 时间维度为 Unix 秒闭区间；CredentialKind 非空须属封闭集；Sort / Order
+// 原样透传 repo（§1.7 后端不做白名单强制校验，字符集防注入归 repo）。
+// 默认过滤 deleted_ 前缀的匿名化行（§5.4），由 ExcludeDeleted 透传 repo。
 type ListUsersFilter struct {
 	Q          string
 	UserStatus *int64
@@ -267,13 +287,27 @@ type ListUsersFilter struct {
 	PageSize   int
 	Sort       string
 	Order      string
+
+	CreatedFrom    *int64
+	CreatedTo      *int64
+	LastLoginFrom  *int64
+	LastLoginTo    *int64
+	MfaRequired    *int64
+	CredentialKind string
 }
 
-// ListUsers（§5.4 行 1249）：q 模糊匹配 username / nickname /
-// email / phone + userStatus 过滤 + §1.7 分页（q 的列集与 LIKE 规则为
-// 默认口径，待定）。返回当页行与总数。
+// ListUsers（§5.4）：q 模糊匹配 username / nickname / email / phone +
+// 各维度筛选 + §1.7 分页。默认过滤已删除用户（deleted_ 前缀不出现在列表）。
+// 返回当页行与总数。
 func (s *UserService) ListUsers(ctx context.Context, f ListUsersFilter) ([]model.User, int64, error) {
-	q := repo.UserListQuery{Q: f.Q, Sort: f.Sort, Order: f.Order, Page: f.Page, PageSize: f.PageSize}
+	q := repo.UserListQuery{
+		Q: f.Q, Sort: f.Sort, Order: f.Order,
+		Page: f.Page, PageSize: f.PageSize,
+		CreatedFrom: f.CreatedFrom, CreatedTo: f.CreatedTo,
+		LastLoginFrom: f.LastLoginFrom, LastLoginTo: f.LastLoginTo,
+		CredentialKind: f.CredentialKind,
+		ExcludeDeleted: true,
+	}
 	if f.UserStatus != nil {
 		if *f.UserStatus != 0 && *f.UserStatus != 1 {
 			return nil, 0, ErrInvalidRequest
@@ -281,7 +315,73 @@ func (s *UserService) ListUsers(ctx context.Context, f ListUsersFilter) ([]model
 		v := int8(*f.UserStatus)
 		q.UserStatus = &v
 	}
+	if f.MfaRequired != nil {
+		if *f.MfaRequired != 0 && *f.MfaRequired != 1 {
+			return nil, 0, ErrInvalidRequest
+		}
+		v := int8(*f.MfaRequired)
+		q.MfaRequired = &v
+	}
+	if f.CredentialKind != "" && !credentialKindSet[f.CredentialKind] {
+		return nil, 0, ErrInvalidRequest
+	}
 	return s.users.ListUsers(ctx, q)
+}
+
+// CreateUser（§5.4）：{username, password, nickname?} 后台新建账号。
+// username 规则与 deleted_ 前缀禁用同 §2.3 建号口径，唯一性冲突 →
+// ErrTargetTaken；password 按 §5.6 策略现读校验，违规 ErrPasswordWeak。
+// 建号与初始 password 凭证同事务写入（无行则无凭证可用态），新 id 由
+// user INSERT 回填；不建会话、不接受联系方式入参（代绑走
+// UpdateUserContact）。审计 admin_create_user（detail={username}，不含
+// 密码）。沿用 admin 域统一「至少一个权限点」门禁（interceptor，§5）。
+func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.CreateUserRequest) (int64, error) {
+	if req == nil {
+		return 0, ErrInvalidRequest
+	}
+	username := strings.TrimSpace(req.GetUsername())
+	if !adminUsernameRE.MatchString(username) || strings.HasPrefix(username, deletedUsernamePrefix) {
+		return 0, ErrInvalidRequest
+	}
+	password := req.GetPassword()
+	if password == "" {
+		return 0, ErrInvalidRequest
+	}
+	if vs := security.ValidatePassword(s.policy(), username, "", password); len(vs) > 0 {
+		return 0, ErrPasswordWeak
+	}
+	hash, err := security.HashPassword(password)
+	if err != nil {
+		return 0, fmt.Errorf("admin service: hash password: %w", err)
+	}
+	now := s.now()
+	u := &model.User{
+		Username:  username,
+		Nickname:  req.GetNickname(),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	c := &model.UserCredential{
+		Kind:      credentialKindPassword,
+		Secret:    []byte(hash),
+		IsEnabled: 1,
+		UpdatedAt: now,
+	}
+	if err := s.users.CreateWithCredential(ctx, u, c); err != nil {
+		if errors.Is(err, repo.ErrUserDuplicate) {
+			return 0, ErrTargetTaken
+		}
+		return 0, err
+	}
+	s.audit.PushEvent(model.EventLog{
+		Event:     eventlog.EventAdminCreateUser,
+		ActorType: eventlog.ActorTypeAdmin,
+		ActorID:   actor,
+		UserID:    u.ID,
+		Detail:    eventlog.DetailAdminCreateUser(username),
+		CreatedAt: now,
+	})
+	return u.ID, nil
 }
 
 // UserDetail GetUser 的聚合结果（§5.4 详情：user 行 + 凭证概览 +

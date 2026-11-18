@@ -14,14 +14,62 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
+
+// TestUserRepoListUsersFilterSQL（无需 DSN 的 DryRun）：§5.4 四维度筛选、
+// 默认过滤 deleted_ 前缀与凭证类型子查询均进入 WHERE 链；不设筛选时
+// 不追加任何条件。
+func TestUserRepoListUsersFilterSQL(t *testing.T) {
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       "u:p@tcp(127.0.0.1:3306)/x?parseTime=true",
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{
+		DryRun: true, DisableAutomaticPing: true,
+		DisableForeignKeyConstraintWhenMigrating: true,
+	})
+	if err != nil {
+		t.Fatalf("DryRun 连接失败: %v", err)
+	}
+	rp := NewUserRepo(db)
+	from, to := int64(1000), int64(2000)
+	loginFrom, loginTo := int64(3000), int64(4000)
+	mfa := int8(1)
+	q := UserListQuery{
+		ExcludeDeleted: true,
+		CreatedFrom:    &from, CreatedTo: &to,
+		LastLoginFrom: &loginFrom, LastLoginTo: &loginTo,
+		MfaRequired: &mfa, CredentialKind: "webauthn",
+	}
+	sql := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		return rp.listUsersFilter(context.Background(), tx, q).Find(&[]model.User{})
+	})
+	for _, want := range []string{
+		"username NOT LIKE", "created_at >=", "created_at <=",
+		"last_login_at >=", "last_login_at <=", "mfa_required =",
+		"user_credential", "kind =",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("SQL 缺 %q: %s", want, sql)
+		}
+	}
+
+	plain := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		return rp.listUsersFilter(context.Background(), tx, UserListQuery{}).Find(&[]model.User{})
+	})
+	if strings.Contains(plain, "NOT LIKE") || strings.Contains(plain, "created_at") ||
+		strings.Contains(plain, "mfa_required") || strings.Contains(plain, "user_credential") {
+		t.Errorf("无筛选时不应追加条件: %s", plain)
+	}
+}
 
 // userTestSetup 清库 + 建表 + 注册测后零残留清理，返回就绪的 UserRepo
 // 与底层 *gorm.DB（供用例直接构造特定列状态，如置 epoch 边界值）。

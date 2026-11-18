@@ -290,13 +290,19 @@ func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, em
 	return nil
 }
 
+// deletedUserPrefix 删除匿名化的用户名保留前缀（《后端架构》§4.2）：
+// username 改写为 "deleted_<id>"，列表默认排除该前缀行（§5.4）。
+const deletedUserPrefix = "deleted_"
+
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
-// ListUsers 筛选入参 {q, userStatus}）；Q 非空时对 username / nickname /
-// email / phone 四列做模糊匹配（默认口径：LIKE %q%，LIKE 通配
-// 符 %/_/\ 按 \ 转义保证字面匹配，待定）；分页按 §1.7（page 从
-// 1 开始、pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定
-// （§1.7 后端不做白名单强制校验）——repo 只做字符集防注入（非
-// [a-z0-9_] 列名静默回落 id，order 非 asc 一律 desc），不拒绝请求。
+// 筛选入参）；Q 非空时对 username / nickname / email / phone 四列做模糊匹配
+// （默认口径：LIKE %q%，LIKE 通配符 %/_/\ 按 \ 转义保证字面匹配，待定）；
+// 时间维度为 Unix 秒闭区间，nil 表示该维度不过滤；MfaRequired 为 nil 时不过滤；
+// CredentialKind 非空时筛持有该类型凭证的用户；ExcludeDeleted 为 true 时排除
+// deleted_ 前缀的匿名化行。分页按 §1.7（page 从 1 开始、pageSize 默认 20、
+// 上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做白名单强制校验）
+// ——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，order 非 asc
+// 一律 desc），不拒绝请求。
 type UserListQuery struct {
 	UserStatus *int8
 	Q          string
@@ -304,6 +310,14 @@ type UserListQuery struct {
 	Order      string
 	Page       int
 	PageSize   int
+
+	CreatedFrom    *int64
+	CreatedTo      *int64
+	LastLoginFrom  *int64
+	LastLoginTo    *int64
+	MfaRequired    *int8
+	CredentialKind string
+	ExcludeDeleted bool
 }
 
 // userSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——user
@@ -324,20 +338,7 @@ func escapeLike(s string) string {
 // {items, total, page, pageSize} 的数据来源）。
 func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User, int64, error) {
 	page, size := q.normalize()
-	filter := func() *gorm.DB {
-		tx := r.db.WithContext(ctx).Model(&model.User{})
-		if q.UserStatus != nil {
-			tx = tx.Where("user_status = ?", *q.UserStatus)
-		}
-		if q.Q != "" {
-			like := "%" + escapeLike(q.Q) + "%"
-			tx = tx.Where(
-				"username LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?",
-				like, like, like, like,
-			)
-		}
-		return tx
-	}
+	filter := func() *gorm.DB { return r.listUsersFilter(ctx, r.db, q) }
 	var total int64
 	if err := filter().Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("user repo: list count: %w", err)
@@ -352,6 +353,47 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 		return nil, 0, fmt.Errorf("user repo: list: %w", err)
 	}
 	return rows, total, nil
+}
+
+// listUsersFilter 构造 §5.4 列表筛选的 WHERE 链（Count 与 Find 共用同一
+// 过滤集，避免两处条件漂移）。db 参数使测试可用 DryRun 连接断言 SQL。
+func (r *UserRepo) listUsersFilter(ctx context.Context, db *gorm.DB, q UserListQuery) *gorm.DB {
+	tx := db.WithContext(ctx).Model(&model.User{})
+	if q.UserStatus != nil {
+		tx = tx.Where("user_status = ?", *q.UserStatus)
+	}
+	if q.Q != "" {
+		like := "%" + escapeLike(q.Q) + "%"
+		tx = tx.Where(
+			"username LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?",
+			like, like, like, like,
+		)
+	}
+	if q.ExcludeDeleted {
+		tx = tx.Where("username NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
+	}
+	if q.CreatedFrom != nil {
+		tx = tx.Where("created_at >= ?", time.Unix(*q.CreatedFrom, 0).UTC())
+	}
+	if q.CreatedTo != nil {
+		tx = tx.Where("created_at <= ?", time.Unix(*q.CreatedTo, 0).UTC())
+	}
+	if q.LastLoginFrom != nil {
+		tx = tx.Where("last_login_at >= ?", time.Unix(*q.LastLoginFrom, 0).UTC())
+	}
+	if q.LastLoginTo != nil {
+		tx = tx.Where("last_login_at <= ?", time.Unix(*q.LastLoginTo, 0).UTC())
+	}
+	if q.MfaRequired != nil {
+		tx = tx.Where("mfa_required = ?", *q.MfaRequired)
+	}
+	if q.CredentialKind != "" {
+		tx = tx.Where("id IN (?)", db.WithContext(ctx).
+			Model(&model.UserCredential{}).
+			Select("user_id").
+			Where("kind = ?", q.CredentialKind))
+	}
+	return tx
 }
 
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc

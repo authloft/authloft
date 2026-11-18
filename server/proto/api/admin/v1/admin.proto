@@ -64,13 +64,14 @@ message OkResponse {}
 //   SortProviders          §5.2    GetProviderTypes    §5.2
 //   GetProviderSchema      §5.2    TestProvider        §5.2
 //   —— §5.4 用户管理——
-//   ListUsers              §5.4    GetUser              §5.4
-//   UpdateUserProfile      §5.4    UpdateUserContact    §5.4
-//   UpdateUserStatus       §5.4    ResetUserPassword    §5.4
-//   UnbindUserThirdparty   §5.4    UnlockUser           §5.4
-//   SetUserMfa             §5.4    UnbindUserTOTP       §5.4
-//   ResetUserRecoveryCodes §5.4    SetCredentialEnabled §5.4
-//   DeleteCredential       §5.4    GetUserEvents        §5.4
+//   ListUsers              §5.4    CreateUser           §5.4
+//   GetUser                §5.4    UpdateUserProfile    §5.4
+//   UpdateUserContact      §5.4    UpdateUserStatus     §5.4
+//   ResetUserPassword      §5.4    UnbindUserThirdparty §5.4
+//   UnlockUser             §5.4    SetUserMfa           §5.4
+//   UnbindUserTOTP         §5.4    ResetUserRecoveryCodes §5.4
+//   SetCredentialEnabled   §5.4    DeleteCredential     §5.4
+//   DeleteUser             §5.4    GetUserEvents        §5.4
 //   —— §5.5 客户端管理——
 //   ListSsoClients         §5.5    CreateSsoClient      §5.5
 //   GetSsoClient           §5.5    UpdateSsoClient      §5.5
@@ -113,6 +114,8 @@ service AdminService {
   rpc TestProvider(TestProviderRequest) returns (OkResponse);
   // 用户列表（§5.4）。
   rpc ListUsers(ListUsersRequest) returns (UserListResponse);
+  // 后台新建用户：用户名唯一性与前缀禁用、密码策略校验在 service（§5.4）。
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
   // 用户详情：凭证概览、绑定、MFA 状态、profile 与权限点投影（§5.4）。
   rpc GetUser(GetUserRequest) returns (UserDetailResponse);
   // 编辑用户资料 PATCH：不触发会话失效（§5.4）。
@@ -138,6 +141,8 @@ service AdminService {
   rpc SetCredentialEnabled(SetCredentialEnabledRequest) returns (OkResponse);
   // 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
   rpc DeleteCredential(DeleteCredentialRequest) returns (OkResponse);
+  // 删除用户：禁用 + 全端下线 + 匿名化（§5.4）。
+  rpc DeleteUser(DeleteUserRequest) returns (OkResponse);
   // 该用户登录记录（§5.4）。
   rpc GetUserEvents(GetUserEventsRequest) returns (UserEventsResponse);
   // SSO 客户端列表（§5.5）。

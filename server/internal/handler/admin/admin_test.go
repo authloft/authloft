@@ -166,6 +166,8 @@ type fakeUserService struct {
 	unbindErr   error
 	unlockErr   error
 	eventsErr   error
+	createErr   error
+	deleteErr   error
 
 	meRow     *model.User
 	listRows  []model.User
@@ -188,6 +190,9 @@ type fakeUserService struct {
 	gotTotpID   adminsvcTotpCall
 	gotRecovery adminsvcTotpCall
 	gotCred     adminsvcCredCall
+	gotCreate   adminsvcCreateCall
+	gotDelete   adminsvcDeleteCall
+	createdID   int64
 }
 
 type (
@@ -228,6 +233,13 @@ type (
 	adminsvcCredCall struct {
 		actor, id, credentialID int64
 		enabled                 bool
+	}
+	adminsvcCreateCall struct {
+		actor int64
+		req   *adminv1.CreateUserRequest
+	}
+	adminsvcDeleteCall struct {
+		actor, id int64
 	}
 )
 
@@ -299,6 +311,16 @@ func (f *fakeUserService) SetCredentialEnabled(_ context.Context, actor, id, cre
 func (f *fakeUserService) DeleteCredential(_ context.Context, actor, id, credentialID int64) error {
 	f.gotCred = adminsvcCredCall{actor: actor, id: id, credentialID: credentialID}
 	return f.credErr
+}
+
+func (f *fakeUserService) CreateUser(_ context.Context, actor int64, req *adminv1.CreateUserRequest) (int64, error) {
+	f.gotCreate = adminsvcCreateCall{actor: actor, req: req}
+	return f.createdID, f.createErr
+}
+
+func (f *fakeUserService) DeleteUser(_ context.Context, actor, id int64) error {
+	f.gotDelete = adminsvcDeleteCall{actor: actor, id: id}
+	return f.deleteErr
 }
 
 func (f *fakeUserService) GetUserEvents(_ context.Context, id int64, page, pageSize int) ([]model.EventLog, int64, error) {
@@ -1820,7 +1842,9 @@ func TestListUsersHandler(t *testing.T) {
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListUsersProcedure,
-		`{"q":"ali","userStatus":1,"page":0,"pageSize":2,"sort":"created_at","order":"asc"}`, cookie)
+		`{"q":"ali","userStatus":1,"page":0,"pageSize":2,"sort":"created_at","order":"asc",`+
+			`"createdFrom":1000,"createdTo":2000,"lastLoginFrom":3000,"lastLoginTo":4000,`+
+			`"mfaRequired":1,"credentialKind":"webauthn"}`, cookie)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
 	}
@@ -1840,6 +1864,12 @@ func TestListUsersHandler(t *testing.T) {
 	if flt.Q != "ali" || flt.UserStatus == nil || *flt.UserStatus != 1 ||
 		flt.Page != 1 || flt.PageSize != 2 || flt.Sort != "created_at" || flt.Order != "asc" {
 		t.Errorf("透传 = %+v, want q=ali status=1 page=1(归一) size=2", flt)
+	}
+	if flt.CreatedFrom == nil || *flt.CreatedFrom != 1000 || flt.CreatedTo == nil || *flt.CreatedTo != 2000 ||
+		flt.LastLoginFrom == nil || *flt.LastLoginFrom != 3000 ||
+		flt.LastLoginTo == nil || *flt.LastLoginTo != 4000 ||
+		flt.MfaRequired == nil || *flt.MfaRequired != 1 || flt.CredentialKind != "webauthn" {
+		t.Errorf("多维筛选透传 = %+v", flt)
 	}
 }
 
@@ -2183,6 +2213,66 @@ func TestUserRescueHandlers(t *testing.T) {
 	})
 }
 
+// TestCreateDeleteUserHandler：建号 → {id} 回显、建号请求原样透传 service；
+// 删除 → OkResponse、{id} + 操作者透传；错误映射沿用 mapUserError
+// （弱口令 password_weak、权限拒绝 permission_denied、已删行 not_found）。
+func TestCreateDeleteUserHandler(t *testing.T) {
+	users := &fakeUserService{createdID: 77}
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	resp, raw := doRPC(t, h, adminv1connect.AdminServiceCreateUserProcedure,
+		`{"username":"new_user","password":"Str0ngPass!","nickname":"新建用户"}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("建号 status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	var created adminv1.CreateUserResponse
+	if err := protojson.Unmarshal([]byte(raw), &created); err != nil || created.GetId() != 77 {
+		t.Fatalf("建号响应 = %q / %v, want id=77", raw, err)
+	}
+	if users.gotCreate.actor != 1 || users.gotCreate.req.GetUsername() != "new_user" ||
+		users.gotCreate.req.GetPassword() != "Str0ngPass!" || users.gotCreate.req.GetNickname() != "新建用户" {
+		t.Fatalf("建号透传 = %+v", users.gotCreate)
+	}
+
+	resp, raw = doRPC(t, h, adminv1connect.AdminServiceDeleteUserProcedure, `{"id":42}`, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("删除 status = %d, want 200 (body %s)", resp.StatusCode, raw)
+	}
+	if users.gotDelete.actor != 1 || users.gotDelete.id != 42 {
+		t.Fatalf("删除透传 = %+v, want (1, 42)", users.gotDelete)
+	}
+
+	// 弱口令 / 权限拒绝 / 已删行错误映射。
+	for _, tc := range []struct {
+		name, body, code string
+		err              error
+		status           int
+	}{
+		{"弱口令", `{"username":"new_user","password":"short"}`, "password_weak", adminsvc.ErrPasswordWeak, http.StatusBadRequest},
+		{"权限拒绝", `{"id":42}`, "", adminsvc.ErrPermissionDenied, http.StatusForbidden},
+		{"已删行", `{"id":42}`, "", gorm.ErrRecordNotFound, http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &fakeUserService{createErr: tc.err, deleteErr: tc.err}
+			tok, ep, hh := newAdminHandler(t, &fakeProviders{}, nil, svc)
+			proc, body := adminv1connect.AdminServiceDeleteUserProcedure, tc.body
+			if tc.name == "弱口令" {
+				proc, body = adminv1connect.AdminServiceCreateUserProcedure, tc.body
+			}
+			resp, raw := doRPC(t, hh, proc, body, adminCookie(t, tok, ep, 1))
+			if resp.StatusCode != tc.status {
+				t.Fatalf("status = %d, want %d (body %s)", resp.StatusCode, tc.status, raw)
+			}
+			if tc.code != "" {
+				if info := decodeErrorInfo(t, raw); info.GetDomain() != "admin" || info.GetCode() != tc.code {
+					t.Errorf("ErrorInfo = (domain=%q code=%q), want (admin, %q)", info.GetDomain(), info.GetCode(), tc.code)
+				}
+			}
+		})
+	}
+}
+
 // TestGetUserEventsHandler：{id} + 分页透传 + EventItem 投影（detail msgpack
 // → JSON 对象；事件类型固定 login_success 由 service 过滤）。
 func TestGetUserEventsHandler(t *testing.T) {
@@ -2523,6 +2613,10 @@ type guardUsers struct{ user *model.User }
 func (s *guardUsers) FindByID(_ context.Context, _ int64) (*model.User, error) { return s.user, nil }
 func (s *guardUsers) ListUsers(context.Context, repo.UserListQuery) ([]model.User, int64, error) {
 	return nil, 0, nil
+}
+func (s *guardUsers) CreateWithCredential(_ context.Context, u *model.User, _ *model.UserCredential) error {
+	u.ID = 1
+	return nil
 }
 func (s *guardUsers) UpdateUserStatus(context.Context, int64, int8) error { return nil }
 func (s *guardUsers) IncEpoch(context.Context, int64) (int16, error)      { return 0, nil }

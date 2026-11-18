@@ -68,6 +68,8 @@ const (
 	AdminServiceTestProviderProcedure = "/api.admin.v1.AdminService/TestProvider"
 	// AdminServiceListUsersProcedure is the fully-qualified name of the AdminService's ListUsers RPC.
 	AdminServiceListUsersProcedure = "/api.admin.v1.AdminService/ListUsers"
+	// AdminServiceCreateUserProcedure is the fully-qualified name of the AdminService's CreateUser RPC.
+	AdminServiceCreateUserProcedure = "/api.admin.v1.AdminService/CreateUser"
 	// AdminServiceGetUserProcedure is the fully-qualified name of the AdminService's GetUser RPC.
 	AdminServiceGetUserProcedure = "/api.admin.v1.AdminService/GetUser"
 	// AdminServiceUpdateUserProfileProcedure is the fully-qualified name of the AdminService's
@@ -101,6 +103,8 @@ const (
 	// AdminServiceDeleteCredentialProcedure is the fully-qualified name of the AdminService's
 	// DeleteCredential RPC.
 	AdminServiceDeleteCredentialProcedure = "/api.admin.v1.AdminService/DeleteCredential"
+	// AdminServiceDeleteUserProcedure is the fully-qualified name of the AdminService's DeleteUser RPC.
+	AdminServiceDeleteUserProcedure = "/api.admin.v1.AdminService/DeleteUser"
 	// AdminServiceGetUserEventsProcedure is the fully-qualified name of the AdminService's
 	// GetUserEvents RPC.
 	AdminServiceGetUserEventsProcedure = "/api.admin.v1.AdminService/GetUserEvents"
@@ -191,6 +195,8 @@ type AdminServiceClient interface {
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
 	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
+	// 后台新建用户：用户名唯一性与前缀禁用、密码策略校验在 service（§5.4）。
+	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	// 用户详情：凭证概览、绑定、MFA 状态、profile 与权限点投影（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
 	// 编辑用户资料 PATCH：不触发会话失效（§5.4）。
@@ -216,6 +222,8 @@ type AdminServiceClient interface {
 	SetCredentialEnabled(context.Context, *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error)
 	// 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
 	DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error)
+	// 删除用户：禁用 + 全端下线 + 匿名化（§5.4）。
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.OkResponse], error)
 	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
 	// SSO 客户端列表（§5.5）。
@@ -343,6 +351,12 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(adminServiceMethods.ByName("ListUsers")),
 			connect.WithClientOptions(opts...),
 		),
+		createUser: connect.NewClient[v1.CreateUserRequest, v1.CreateUserResponse](
+			httpClient,
+			baseURL+AdminServiceCreateUserProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("CreateUser")),
+			connect.WithClientOptions(opts...),
+		),
 		getUser: connect.NewClient[v1.GetUserRequest, v1.UserDetailResponse](
 			httpClient,
 			baseURL+AdminServiceGetUserProcedure,
@@ -413,6 +427,12 @@ func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AdminServiceDeleteCredentialProcedure,
 			connect.WithSchema(adminServiceMethods.ByName("DeleteCredential")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteUser: connect.NewClient[v1.DeleteUserRequest, v1.OkResponse](
+			httpClient,
+			baseURL+AdminServiceDeleteUserProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("DeleteUser")),
 			connect.WithClientOptions(opts...),
 		),
 		getUserEvents: connect.NewClient[v1.GetUserEventsRequest, v1.UserEventsResponse](
@@ -558,6 +578,7 @@ type adminServiceClient struct {
 	getProviderSchema      *connect.Client[v1.GetProviderSchemaRequest, v1.SchemaResponse]
 	testProvider           *connect.Client[v1.TestProviderRequest, v1.OkResponse]
 	listUsers              *connect.Client[v1.ListUsersRequest, v1.UserListResponse]
+	createUser             *connect.Client[v1.CreateUserRequest, v1.CreateUserResponse]
 	getUser                *connect.Client[v1.GetUserRequest, v1.UserDetailResponse]
 	updateUserProfile      *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
 	updateUserContact      *connect.Client[v1.UpdateUserContactRequest, v1.OkResponse]
@@ -570,6 +591,7 @@ type adminServiceClient struct {
 	resetUserRecoveryCodes *connect.Client[v1.ResetUserRecoveryCodesRequest, v1.OkResponse]
 	setCredentialEnabled   *connect.Client[v1.SetCredentialEnabledRequest, v1.OkResponse]
 	deleteCredential       *connect.Client[v1.DeleteCredentialRequest, v1.OkResponse]
+	deleteUser             *connect.Client[v1.DeleteUserRequest, v1.OkResponse]
 	getUserEvents          *connect.Client[v1.GetUserEventsRequest, v1.UserEventsResponse]
 	listSsoClients         *connect.Client[v1.ListSsoClientsRequest, v1.SsoClientListResponse]
 	createSsoClient        *connect.Client[v1.CreateSsoClientRequest, v1.OkResponse]
@@ -653,6 +675,11 @@ func (c *adminServiceClient) ListUsers(ctx context.Context, req *connect.Request
 	return c.listUsers.CallUnary(ctx, req)
 }
 
+// CreateUser calls api.admin.v1.AdminService.CreateUser.
+func (c *adminServiceClient) CreateUser(ctx context.Context, req *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error) {
+	return c.createUser.CallUnary(ctx, req)
+}
+
 // GetUser calls api.admin.v1.AdminService.GetUser.
 func (c *adminServiceClient) GetUser(ctx context.Context, req *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error) {
 	return c.getUser.CallUnary(ctx, req)
@@ -711,6 +738,11 @@ func (c *adminServiceClient) SetCredentialEnabled(ctx context.Context, req *conn
 // DeleteCredential calls api.admin.v1.AdminService.DeleteCredential.
 func (c *adminServiceClient) DeleteCredential(ctx context.Context, req *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error) {
 	return c.deleteCredential.CallUnary(ctx, req)
+}
+
+// DeleteUser calls api.admin.v1.AdminService.DeleteUser.
+func (c *adminServiceClient) DeleteUser(ctx context.Context, req *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.OkResponse], error) {
+	return c.deleteUser.CallUnary(ctx, req)
 }
 
 // GetUserEvents calls api.admin.v1.AdminService.GetUserEvents.
@@ -845,6 +877,8 @@ type AdminServiceHandler interface {
 	TestProvider(context.Context, *connect.Request[v1.TestProviderRequest]) (*connect.Response[v1.OkResponse], error)
 	// 用户列表（§5.4）。
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.UserListResponse], error)
+	// 后台新建用户：用户名唯一性与前缀禁用、密码策略校验在 service（§5.4）。
+	CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error)
 	// 用户详情：凭证概览、绑定、MFA 状态、profile 与权限点投影（§5.4）。
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error)
 	// 编辑用户资料 PATCH：不触发会话失效（§5.4）。
@@ -870,6 +904,8 @@ type AdminServiceHandler interface {
 	SetCredentialEnabled(context.Context, *connect.Request[v1.SetCredentialEnabledRequest]) (*connect.Response[v1.OkResponse], error)
 	// 删除单条凭证（含 WebAuthn 附加行），触发会话失效（§5.4）。
 	DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error)
+	// 删除用户：禁用 + 全端下线 + 匿名化（§5.4）。
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.OkResponse], error)
 	// 该用户登录记录（§5.4）。
 	GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error)
 	// SSO 客户端列表（§5.5）。
@@ -993,6 +1029,12 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(adminServiceMethods.ByName("ListUsers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	adminServiceCreateUserHandler := connect.NewUnaryHandler(
+		AdminServiceCreateUserProcedure,
+		svc.CreateUser,
+		connect.WithSchema(adminServiceMethods.ByName("CreateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
 	adminServiceGetUserHandler := connect.NewUnaryHandler(
 		AdminServiceGetUserProcedure,
 		svc.GetUser,
@@ -1063,6 +1105,12 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 		AdminServiceDeleteCredentialProcedure,
 		svc.DeleteCredential,
 		connect.WithSchema(adminServiceMethods.ByName("DeleteCredential")),
+		connect.WithHandlerOptions(opts...),
+	)
+	adminServiceDeleteUserHandler := connect.NewUnaryHandler(
+		AdminServiceDeleteUserProcedure,
+		svc.DeleteUser,
+		connect.WithSchema(adminServiceMethods.ByName("DeleteUser")),
 		connect.WithHandlerOptions(opts...),
 	)
 	adminServiceGetUserEventsHandler := connect.NewUnaryHandler(
@@ -1217,6 +1265,8 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 			adminServiceTestProviderHandler.ServeHTTP(w, r)
 		case AdminServiceListUsersProcedure:
 			adminServiceListUsersHandler.ServeHTTP(w, r)
+		case AdminServiceCreateUserProcedure:
+			adminServiceCreateUserHandler.ServeHTTP(w, r)
 		case AdminServiceGetUserProcedure:
 			adminServiceGetUserHandler.ServeHTTP(w, r)
 		case AdminServiceUpdateUserProfileProcedure:
@@ -1241,6 +1291,8 @@ func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOpti
 			adminServiceSetCredentialEnabledHandler.ServeHTTP(w, r)
 		case AdminServiceDeleteCredentialProcedure:
 			adminServiceDeleteCredentialHandler.ServeHTTP(w, r)
+		case AdminServiceDeleteUserProcedure:
+			adminServiceDeleteUserHandler.ServeHTTP(w, r)
 		case AdminServiceGetUserEventsProcedure:
 			adminServiceGetUserEventsHandler.ServeHTTP(w, r)
 		case AdminServiceListSsoClientsProcedure:
@@ -1340,6 +1392,10 @@ func (UnimplementedAdminServiceHandler) ListUsers(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.ListUsers is not implemented"))
 }
 
+func (UnimplementedAdminServiceHandler) CreateUser(context.Context, *connect.Request[v1.CreateUserRequest]) (*connect.Response[v1.CreateUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.CreateUser is not implemented"))
+}
+
 func (UnimplementedAdminServiceHandler) GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.UserDetailResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.GetUser is not implemented"))
 }
@@ -1386,6 +1442,10 @@ func (UnimplementedAdminServiceHandler) SetCredentialEnabled(context.Context, *c
 
 func (UnimplementedAdminServiceHandler) DeleteCredential(context.Context, *connect.Request[v1.DeleteCredentialRequest]) (*connect.Response[v1.OkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.DeleteCredential is not implemented"))
+}
+
+func (UnimplementedAdminServiceHandler) DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[v1.OkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.admin.v1.AdminService.DeleteUser is not implemented"))
 }
 
 func (UnimplementedAdminServiceHandler) GetUserEvents(context.Context, *connect.Request[v1.GetUserEventsRequest]) (*connect.Response[v1.UserEventsResponse], error) {

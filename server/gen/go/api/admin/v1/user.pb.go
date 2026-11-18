@@ -191,8 +191,9 @@ func (x *AdminUser) GetUpdatedAt() int64 {
 	return 0
 }
 
-// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：
-// 筛选入参 {q, userStatus}）；所有列表支持 §1.7 分页（§5）。
+// ListUsersRequest 是 AdminService/ListUsers 的请求（§5.4：筛选入参
+// {q, userStatus, createdFrom, createdTo, lastLoginFrom, lastLoginTo,
+// mfaRequired, credentialKind}）；所有列表支持 §1.7 分页（§5）。
 // 分页与排序字段进请求消息（§1.7）；查询参数缺省即不过滤，一律 optional。
 // 消息名随方法名（§12.9；pre-connect 时代按资源命名 UserListRequest，
 // Connect 化时更名）。
@@ -209,9 +210,22 @@ type ListUsersRequest struct {
 	// 排序字段，取值由前端限定（§1.7）。
 	Sort *string `protobuf:"bytes,5,opt,name=sort,proto3,oneof" json:"sort,omitempty"`
 	// 排序方向 asc/desc（§1.7）。
-	Order         *string `protobuf:"bytes,6,opt,name=order,proto3,oneof" json:"order,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Order *string `protobuf:"bytes,6,opt,name=order,proto3,oneof" json:"order,omitempty"`
+	// 创建时间起点，Unix 秒闭区间（§5.4）。
+	CreatedFrom *int64 `protobuf:"varint,7,opt,name=created_from,json=createdFrom,proto3,oneof" json:"created_from,omitempty"`
+	// 创建时间终点，Unix 秒闭区间（§5.4）。
+	CreatedTo *int64 `protobuf:"varint,8,opt,name=created_to,json=createdTo,proto3,oneof" json:"created_to,omitempty"`
+	// 最后登录时间起点，Unix 秒闭区间（§5.4）。
+	LastLoginFrom *int64 `protobuf:"varint,9,opt,name=last_login_from,json=lastLoginFrom,proto3,oneof" json:"last_login_from,omitempty"`
+	// 最后登录时间终点，Unix 秒闭区间（§5.4）。
+	LastLoginTo *int64 `protobuf:"varint,10,opt,name=last_login_to,json=lastLoginTo,proto3,oneof" json:"last_login_to,omitempty"`
+	// 两步验证开关过滤：1 开启 0 关闭（§5.4）。
+	MfaRequired *int64 `protobuf:"varint,11,opt,name=mfa_required,json=mfaRequired,proto3,oneof" json:"mfa_required,omitempty"`
+	// 凭证类型过滤，取 password|totp|webauthn|recovery_code，
+	// 筛「持有该类型凭证」的用户（§5.4、《后端架构》§4.2）。
+	CredentialKind *string `protobuf:"bytes,12,opt,name=credential_kind,json=credentialKind,proto3,oneof" json:"credential_kind,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListUsersRequest) Reset() {
@@ -282,6 +296,48 @@ func (x *ListUsersRequest) GetSort() string {
 func (x *ListUsersRequest) GetOrder() string {
 	if x != nil && x.Order != nil {
 		return *x.Order
+	}
+	return ""
+}
+
+func (x *ListUsersRequest) GetCreatedFrom() int64 {
+	if x != nil && x.CreatedFrom != nil {
+		return *x.CreatedFrom
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetCreatedTo() int64 {
+	if x != nil && x.CreatedTo != nil {
+		return *x.CreatedTo
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetLastLoginFrom() int64 {
+	if x != nil && x.LastLoginFrom != nil {
+		return *x.LastLoginFrom
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetLastLoginTo() int64 {
+	if x != nil && x.LastLoginTo != nil {
+		return *x.LastLoginTo
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetMfaRequired() int64 {
+	if x != nil && x.MfaRequired != nil {
+		return *x.MfaRequired
+	}
+	return 0
+}
+
+func (x *ListUsersRequest) GetCredentialKind() string {
+	if x != nil && x.CredentialKind != nil {
+		return *x.CredentialKind
 	}
 	return ""
 }
@@ -1507,6 +1563,166 @@ func (x *UserEventsResponse) GetPageSize() int64 {
 	return 0
 }
 
+// CreateUserRequest 是 AdminService/CreateUser 的请求（§5.4：
+// {username, password, nickname?} 后台新建账号）。username 规则与唯一性
+// 同 §2.3（含 deleted_ 前缀禁用），password 须满足 §5.6 密码策略；不接受
+// 联系方式入参（代绑走 UpdateUserContact）。成功返回新用户 id。
+type CreateUserRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 登录名，规则同 §2.3（§5.4）。
+	Username string `protobuf:"bytes,1,opt,name=username,proto3" json:"username,omitempty"`
+	// 初始密码，按 §5.6 密码策略校验（§5.4）。
+	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	// 昵称，可选（§5.4）。
+	Nickname      *string `protobuf:"bytes,3,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateUserRequest) Reset() {
+	*x = CreateUserRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateUserRequest) ProtoMessage() {}
+
+func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateUserRequest.ProtoReflect.Descriptor instead.
+func (*CreateUserRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CreateUserRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *CreateUserRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *CreateUserRequest) GetNickname() string {
+	if x != nil && x.Nickname != nil {
+		return *x.Nickname
+	}
+	return ""
+}
+
+// CreateUserResponse 是 AdminService/CreateUser 的响应（§5.4 → {id}）。
+type CreateUserResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 新建用户 ID。
+	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateUserResponse) Reset() {
+	*x = CreateUserResponse{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateUserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateUserResponse) ProtoMessage() {}
+
+func (x *CreateUserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateUserResponse.ProtoReflect.Descriptor instead.
+func (*CreateUserResponse) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *CreateUserResponse) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+// DeleteUserRequest 是 AdminService/DeleteUser 的请求（§5.4：{id} 删除 =
+// 禁用 + 全端下线 + 匿名化）。成功返回 OkResponse。
+type DeleteUserRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 目标用户 ID（§5.4）。
+	Id            int64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserRequest) Reset() {
+	*x = DeleteUserRequest{}
+	mi := &file_api_admin_v1_user_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserRequest) ProtoMessage() {}
+
+func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_admin_v1_user_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserRequest.ProtoReflect.Descriptor instead.
+func (*DeleteUserRequest) Descriptor() ([]byte, []int) {
+	return file_api_admin_v1_user_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeleteUserRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
 var File_api_admin_v1_user_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_user_proto_rawDesc = "" +
@@ -1531,7 +1747,7 @@ const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\r \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\"\xfa\x01\n" +
+	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\"\xdd\x04\n" +
 	"\x10ListUsersRequest\x12\x11\n" +
 	"\x01q\x18\x01 \x01(\tH\x00R\x01q\x88\x01\x01\x12$\n" +
 	"\vuser_status\x18\x02 \x01(\x03H\x01R\n" +
@@ -1539,14 +1755,29 @@ const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\x04page\x18\x03 \x01(\x03H\x02R\x04page\x88\x01\x01\x12 \n" +
 	"\tpage_size\x18\x04 \x01(\x03H\x03R\bpageSize\x88\x01\x01\x12\x17\n" +
 	"\x04sort\x18\x05 \x01(\tH\x04R\x04sort\x88\x01\x01\x12\x19\n" +
-	"\x05order\x18\x06 \x01(\tH\x05R\x05order\x88\x01\x01B\x04\n" +
+	"\x05order\x18\x06 \x01(\tH\x05R\x05order\x88\x01\x01\x12&\n" +
+	"\fcreated_from\x18\a \x01(\x03H\x06R\vcreatedFrom\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"created_to\x18\b \x01(\x03H\aR\tcreatedTo\x88\x01\x01\x12+\n" +
+	"\x0flast_login_from\x18\t \x01(\x03H\bR\rlastLoginFrom\x88\x01\x01\x12'\n" +
+	"\rlast_login_to\x18\n" +
+	" \x01(\x03H\tR\vlastLoginTo\x88\x01\x01\x12&\n" +
+	"\fmfa_required\x18\v \x01(\x03H\n" +
+	"R\vmfaRequired\x88\x01\x01\x12,\n" +
+	"\x0fcredential_kind\x18\f \x01(\tH\vR\x0ecredentialKind\x88\x01\x01B\x04\n" +
 	"\x02_qB\x0e\n" +
 	"\f_user_statusB\a\n" +
 	"\x05_pageB\f\n" +
 	"\n" +
 	"_page_sizeB\a\n" +
 	"\x05_sortB\b\n" +
-	"\x06_order\"\x88\x01\n" +
+	"\x06_orderB\x0f\n" +
+	"\r_created_fromB\r\n" +
+	"\v_created_toB\x12\n" +
+	"\x10_last_login_fromB\x10\n" +
+	"\x0e_last_login_toB\x0f\n" +
+	"\r_mfa_requiredB\x12\n" +
+	"\x10_credential_kind\"\x88\x01\n" +
 	"\x10UserListResponse\x12-\n" +
 	"\x05items\x18\x01 \x03(\v2\x17.api.admin.v1.AdminUserR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
@@ -1637,7 +1868,16 @@ const file_api_admin_v1_user_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x17.api.admin.v1.EventItemR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x03R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x04 \x01(\x03R\bpageSizeB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"y\n" +
+	"\x11CreateUserRequest\x12\x1a\n" +
+	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1f\n" +
+	"\bnickname\x18\x03 \x01(\tH\x00R\bnickname\x88\x01\x01B\v\n" +
+	"\t_nickname\"$\n" +
+	"\x12CreateUserResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"#\n" +
+	"\x11DeleteUserRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02idB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_user_proto_rawDescOnce sync.Once
@@ -1651,7 +1891,7 @@ func file_api_admin_v1_user_proto_rawDescGZIP() []byte {
 	return file_api_admin_v1_user_proto_rawDescData
 }
 
-var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_api_admin_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_api_admin_v1_user_proto_goTypes = []any{
 	(*AdminUser)(nil),                     // 0: api.admin.v1.AdminUser
 	(*ListUsersRequest)(nil),              // 1: api.admin.v1.ListUsersRequest
@@ -1673,19 +1913,22 @@ var file_api_admin_v1_user_proto_goTypes = []any{
 	(*UnlockUserRequest)(nil),             // 17: api.admin.v1.UnlockUserRequest
 	(*GetUserEventsRequest)(nil),          // 18: api.admin.v1.GetUserEventsRequest
 	(*UserEventsResponse)(nil),            // 19: api.admin.v1.UserEventsResponse
-	(*v1.MfaResponse)(nil),                // 20: api.account.v1.MfaResponse
-	(*v1.UserProfile)(nil),                // 21: api.account.v1.UserProfile
-	(*EventItem)(nil),                     // 22: api.admin.v1.EventItem
+	(*CreateUserRequest)(nil),             // 20: api.admin.v1.CreateUserRequest
+	(*CreateUserResponse)(nil),            // 21: api.admin.v1.CreateUserResponse
+	(*DeleteUserRequest)(nil),             // 22: api.admin.v1.DeleteUserRequest
+	(*v1.MfaResponse)(nil),                // 23: api.account.v1.MfaResponse
+	(*v1.UserProfile)(nil),                // 24: api.account.v1.UserProfile
+	(*EventItem)(nil),                     // 25: api.admin.v1.EventItem
 }
 var file_api_admin_v1_user_proto_depIdxs = []int32{
 	0,  // 0: api.admin.v1.UserListResponse.items:type_name -> api.admin.v1.AdminUser
 	0,  // 1: api.admin.v1.UserDetailResponse.user:type_name -> api.admin.v1.AdminUser
 	4,  // 2: api.admin.v1.UserDetailResponse.credentials:type_name -> api.admin.v1.UserCredentialSummary
 	5,  // 3: api.admin.v1.UserDetailResponse.bindings:type_name -> api.admin.v1.UserThirdpartyBinding
-	20, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
-	21, // 5: api.admin.v1.UserDetailResponse.profile:type_name -> api.account.v1.UserProfile
-	21, // 6: api.admin.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
-	22, // 7: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
+	23, // 4: api.admin.v1.UserDetailResponse.mfa:type_name -> api.account.v1.MfaResponse
+	24, // 5: api.admin.v1.UserDetailResponse.profile:type_name -> api.account.v1.UserProfile
+	24, // 6: api.admin.v1.UpdateUserProfileRequest.profile:type_name -> api.account.v1.UserProfile
+	25, // 7: api.admin.v1.UserEventsResponse.items:type_name -> api.admin.v1.EventItem
 	8,  // [8:8] is the sub-list for method output_type
 	8,  // [8:8] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
@@ -1703,13 +1946,14 @@ func file_api_admin_v1_user_proto_init() {
 	file_api_admin_v1_user_proto_msgTypes[7].OneofWrappers = []any{}
 	file_api_admin_v1_user_proto_msgTypes[8].OneofWrappers = []any{}
 	file_api_admin_v1_user_proto_msgTypes[18].OneofWrappers = []any{}
+	file_api_admin_v1_user_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_admin_v1_user_proto_rawDesc), len(file_api_admin_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
