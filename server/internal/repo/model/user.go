@@ -26,8 +26,8 @@ type User struct {
 	Email         *string    `gorm:"column:email;size:128"`
 	PhoneVerified int8       `gorm:"column:phone_verified;not null;default:0"`
 	EmailVerified int8       `gorm:"column:email_verified;not null;default:0"`
-	Nickname      string     `gorm:"column:nickname;size:128;not null;default:''"`
-	AvatarURL     string     `gorm:"column:avatar_url;size:512;not null;default:''"`
+	Nickname      string     `gorm:"column:nickname;size:12;not null;default:''"`
+	AvatarURL     string     `gorm:"column:avatar_url;size:120;not null;default:''"`
 	UserStatus    int8       `gorm:"column:user_status;not null;default:1"`
 	MfaRequired   int8       `gorm:"column:mfa_required;not null;default:0"` // 用户自助两步验证开关（0 关闭 / 1 开启，§4.2）
 	Epoch         int16      `gorm:"column:epoch;not null;default:0"`

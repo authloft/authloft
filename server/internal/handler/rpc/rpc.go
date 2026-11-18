@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"gorm.io/gorm"
@@ -55,14 +56,26 @@ type SubDecoder interface {
 // 按入参列表长度计、去重前；超出整单失败、无部分返回、不许截断。
 const maxBatchProfileIDs = 100
 
+// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（接口文档 §3.2 /
+// §5.4 同上限、后端架构 §4.2 列宽 VARCHAR(12) / VARCHAR(120)）：VARCHAR 宽度
+// 即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，非字节数。admin 域
+// 同口径校验（service/admin/user.go validateProfileColumns）未导出，rpc 域按
+// 本包既有错误模式最小实现。
+const (
+	nicknameMaxRunes  = 12
+	avatarURLMaxRunes = 120
+)
+
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go、handler/account）。
 var (
-	errAuthRequired   = errors.New("authentication required")
-	errNotFound       = errors.New("not found")
-	errBadBirthday    = errors.New("invalid birthday")
-	errTooManyIDs     = errors.New("too many ids")
-	errInvalidOidcSub = errors.New("invalid oidc sub")
+	errAuthRequired     = errors.New("authentication required")
+	errNotFound         = errors.New("not found")
+	errBadBirthday      = errors.New("invalid birthday")
+	errTooManyIDs       = errors.New("too many ids")
+	errInvalidOidcSub   = errors.New("invalid oidc sub")
+	errNicknameTooWide  = errors.New("nickname must be at most 12 characters")
+	errAvatarURLTooWide = errors.New("avatar_url must be at most 120 characters")
 )
 
 // UserHandler 实现 api.rpc.v1.UserService。内嵌生成的 unimplemented 基类：
@@ -189,6 +202,10 @@ func (h *UserHandler) DecodeOidcSub(ctx context.Context, req *connect.Request[rp
 // 空串 = 清空），禁止按零值猜「未传」（后端架构 §17 行 1789）；嵌套
 // profile 消息自带 presence（nil = 未传，不触碰 user_profile 行）。
 //
+// nickname / avatar_url 显式设值先过列宽校验（§3.2 上限 12 字 / 120 字符，
+// validateProfileColumns）：超宽字段级 400 拒绝、不落库，不放行到 DB 列宽
+// 折成 internal。
+//
 // 用户名 / 手机号 / 邮箱不可由此修改（§3.2 行 837）：proto
 // UpdateUserProfileRequest 不含这三项字段，契约结构上即不可改，本实现亦
 // 不提供任何绕过入口；user 表仅更新 nickname / avatar_url 两列（经
@@ -216,6 +233,11 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 		avatarURL = req.Msg.AvatarUrl
 	}
 	if nickname != nil || avatarURL != nil {
+		if err := validateProfileColumns(nickname, avatarURL); err != nil {
+			return nil, internalconnect.WithErrorInfo(
+				connect.NewError(connect.CodeInvalidArgument, err),
+				internalconnect.NewErrorInfo("rpc", "invalid_request", err.Error()))
+		}
 		if err := h.users.UpdateProfileColumns(ctx, uid, nickname, avatarURL); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, userNotFound()
@@ -237,6 +259,21 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 		}
 	}
 	return connect.NewResponse(&rpcv1.OkResponse{}), nil
+}
+
+// validateProfileColumns 昵称 / 头像 URL 列宽校验：nil = 未传跳过（has 位
+// 口径，显式空串 = 清空不受限）。超宽若放行会被 DB 列宽拒绝并折成 internal，
+// 故先于写库给出字段级拒绝（§1.6：invalid_argument + ErrorInfo(rpc,
+// invalid_request)，出口形态同 errBadBirthday）；字数按 Unicode code point
+// 计，与前端 codePointLength 同口径。
+func validateProfileColumns(nickname, avatarURL *string) error {
+	if nickname != nil && utf8.RuneCountInString(*nickname) > nicknameMaxRunes {
+		return errNicknameTooWide
+	}
+	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > avatarURLMaxRunes {
+		return errAvatarURLTooWide
+	}
+	return nil
 }
 
 // mergeProfile 读现行并按 has 位合并 UpdateUserProfile 入参的 profile

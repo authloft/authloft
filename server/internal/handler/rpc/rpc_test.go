@@ -7,7 +7,7 @@
 //
 // 覆盖：GetUserProfile 明文断言（§3.1 行 809 例外）与 user_not_found；
 // UpdateUserProfile 部分更新合并（未传字段不覆盖）+ 不可改字段行为 + no-op +
-// birthday 格式拒绝；DecodeSession 成功（renewedToken 非空、sid/epoch 不变、
+// birthday 格式拒绝 + 资料列宽拒绝；DecodeSession 成功（renewedToken 非空、sid/epoch 不变、
 // iat/exp 刷新、无 Set-Cookie / X-Authloft-Token 响应头）/ 无效 / 过期 /
 // epoch 不符（401 无 renewedToken）/ epoch 读取链故障（500）；拦截链拒绝
 // （缺头 / 错签 403）。
@@ -589,6 +589,63 @@ func TestUpdateUserProfileBadBirthday(t *testing.T) {
 	}
 	if n := users.saveCallCount(); n != 0 {
 		t.Errorf("SaveProfile calls = %d, want 0（非法入参不落库）", n)
+	}
+}
+
+// TestUpdateUserProfileProfileColumnsTooWide user 表资料列宽校验（§3.2 /
+// §5.4：nickname ≤ 12 字、avatarUrl ≤ 120 字符）：超宽字段级拒绝（400
+// invalid_argument + ErrorInfo(rpc, invalid_request)）且不落库；边界值
+// （恰 12 个汉字 / 恰 120 字符 URL）通过——字数按 code point 计而非字节
+// （12 个汉字 36 字节，utf8mb4 VARCHAR(12) 语义仍合法）。
+func TestUpdateUserProfileProfileColumnsTooWide(t *testing.T) {
+	users := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+
+	for name, tc := range map[string]struct {
+		req   *rpcv1.UpdateUserProfileRequest
+		field string
+	}{
+		"nickname 13 runes": {req: &rpcv1.UpdateUserProfileRequest{Uid: 10086, Nickname: strPtr(strings.Repeat("汉", 13))}, field: "nickname"},
+		"avatar_url 121":    {req: &rpcv1.UpdateUserProfileRequest{Uid: 10086, AvatarUrl: strPtr("https://cdn.example.com/" + strings.Repeat("a", 97))}, field: "avatar_url"},
+	} {
+		rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, tc.req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body %s)", name, rec.Code, rec.Body.String())
+		}
+		if got := connectCodeOf(t, rec.Body.String()); got != "invalid_argument" {
+			t.Errorf("%s: code = %q, want invalid_argument", name, got)
+		}
+		info := decodeErrorInfoDetail(t, rec.Body.String())
+		if info.GetDomain() != "rpc" || info.GetCode() != "invalid_request" {
+			t.Errorf("%s: ErrorInfo = (domain=%q code=%q), want (rpc, invalid_request)", name, info.GetDomain(), info.GetCode())
+		}
+		if !strings.Contains(info.GetMessage(), tc.field) {
+			t.Errorf("%s: ErrorInfo.message = %q, want 字段级提示含 %q", name, info.GetMessage(), tc.field)
+		}
+	}
+	if n := users.columnCallCount(); n != 0 {
+		t.Errorf("UpdateProfileColumns calls = %d, want 0（超宽入参不落库）", n)
+	}
+
+	// 边界值通过：恰 12 个汉字 + 恰 120 字符 URL，两列正常写入。
+	boundary := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
+	hb := newRPCTestMux(t, boundary, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+	rec := doRPC(t, hb, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{
+		Uid:       10086,
+		Nickname:  strPtr(strings.Repeat("汉", 12)),
+		AvatarUrl: strPtr("https://cdn.example.com/" + strings.Repeat("a", 96)),
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("boundary: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if n := boundary.columnCallCount(); n != 1 {
+		t.Fatalf("boundary: UpdateProfileColumns calls = %d, want 1", n)
+	}
+	if got := boundary.columnCalls[0].nickname; got == nil || *got != strings.Repeat("汉", 12) {
+		t.Errorf("boundary: nickname = %v, want 12 个汉字（code point 边界值写入）", got)
+	}
+	if got := boundary.columnCalls[0].avatarURL; got == nil || *got != "https://cdn.example.com/"+strings.Repeat("a", 96) {
+		t.Errorf("boundary: avatarURL = %v, want 120 字符 URL", got)
 	}
 }
 
