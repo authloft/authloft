@@ -24,6 +24,7 @@
 
 ### 2.3 后端依赖白名单与选型理由
 
+- **HTTP 框架** `github.com/labstack/echo/v5`（框架级依赖，经批准引入；pin 最新 v5 稳定版——2026-11-19 核实为 **v5.4.6**，实现时以 `go get` 实际 pin 为准）。选型理由：v5.0.0 于 2026-01-18 发布、2026-03-31 起 API 冻结，零分配路由、内置常用中间件、日志对接标准库 `log/slog`。可替换性：框架只隔离在装配层与 `internal/middleware` / `internal/handler` / `internal/pages`，service 及以下不感知框架类型，替换实现只动装配层与上述边界包（《后端架构》§1.5 同口径）；v5 相对 v4 的破坏性 API 约束见《后端架构》§1.5，实现侧逐条遵守。升级按 §2.2 跑全量回归。
 - `connectrpc.com/connect` 锁 **v1.21.1**（v2 才发布且 API 重构，不用）；生成链同构锁版本。
 - **WebAuthn 服务端校验** `github.com/go-webauthn/webauthn`（白名单外依赖，经批准引入）。选型理由：Go 生态主流 WebAuthn 实现，覆盖 W3C WebAuthn L2 注册与断言校验（attestation、challenge、origin/rpId、credential 公钥），维护活跃。可替换性：仅 `internal/factor/webauthn` 适配层引用，service / factor 接口不暴露该库类型，替换实现只改适配层。版本策略：由实现时联网核实最新稳定版后 pin 进 `server/go.mod`。
 - **微信小程序服务端 SDK** `github.com/medivhzhan/weapp/v3`（pin **v3.8.4**；module path 沿用旧名，仓库现名 `royalrick/weapp`；Apache-2.0）。选型理由：小程序专用、仅 2 个直接依赖（`fatih/color`、`mitchellh/mapstructure`）、覆盖 `Code2Session` 与 `GetwxacodeUnlimit`、与项目既有 `go-redis/v9` 零冲突。可替换性：唯一引用包为 `internal/provider/oauth/wechat_mp*`，service / orchestrator 不暴露其类型。风险：仓库维护停滞（最后 push 2025-07-04）；所依赖两个接口均为微信多年稳定老接口且已做包级隔离可替换。备选：`github.com/silenceper/wechat/v2`（维护活跃但全生态偏重）。
@@ -50,7 +51,7 @@
 
 ### 3.1 分层与依赖方向
 
-- 依赖方向单向向下：`factor` 与 `provider` 不知道 HTTP 的存在；`service` 不依赖 Gin（handler 层把 `*gin.Context` 转成 `context.Context` + 输入结构后传入）。service 及其下层既不知道 JSON 也不知道 Protobuf。
+- 依赖方向单向向下：`factor` 与 `provider` 不知道 HTTP 的存在；`service` 不依赖 Echo（handler 层把 `*echo.Context` 转成 `context.Context` + 输入结构后传入）。service 及其下层既不知道 JSON 也不知道 Protobuf。
 - rpc 域空 / 异常 procedure 一律按读路径处理（安全默认：读接口仍有三个签名头 + SecretLookup + 五项签名，非无鉴权）；写接口判定见 §3.2 第 23 条。
 - 业务接口的实现类住在「定义接口的包」或「消费该接口的包」，不写在 `main` 包；装配层只 `new` 出实现并注入。
 - 装配层（`server/bootstrap.go`）不承载业务判定：只做按序构造、注册 handler 与生命周期收口；业务规则 / 数据投影 / 错误映射 / 适配器实现一律下沉 service 子包。
@@ -61,7 +62,7 @@
 2. 时间只用注入的 Clock，禁止直接 `time.Now()`（便于测跨天 / 过期）
 3. 随机只用 `security/rand.go`，禁止 `math/rand`
 4. 登录主链路零同步写库：除建会话与必要的 `GETDEL` 外，所有写入必须经 `asyncqueue`。Review 时用「该写入是否影响当次响应正确性」判定（《后端架构》§5.2 白名单）
-5. 不得在 `factor` / `provider` 层引入 Gin 或 HTTP 概念
+5. 不得在 `factor` / `provider` 层引入 Echo 或 HTTP 概念
 6. 前台响应必须经 `dto/view.go` 裁剪成公开视图消息后返回；Connect 域禁止绕过生成 handler 手写 HTTP 响应、REST 豁免端点（OIDC / gateway / 页面 / multipart）除外（《后端架构》§3.14）
 7. 日志不得打印 login_token、session_token、验证码、密钥、完整手机号 / 邮箱（必要时掩码）；业务日志与链路 ID 的写法见 §3.8
 8. 新增渠道的 diff 不得出现在 `handler/`、`orchestrator/`、`dto/`（§3.3 验收标准）
@@ -148,7 +149,7 @@
 ### 3.8 日志与链路 ID
 
 - **唯一落点**：日志库为标准库 `log/slog`（结构化、零第三方依赖）。全局 logger 只由 `bootstrap.run()` 经 `internal/logx.Setup(cfg.Log.Level, cfg.Log.Format)` 装配一次；`log.level`（debug|info|warn|error）与 `log.format`（json|text）属 YAML 启动项，启动期只读、不热更新（《后端架构》§3.2）。业务代码不得自行 `slog.SetDefault`、不得自建 logger、不得引入第三方日志库；setup 模式与配置加载失败路径经 `logx.Setup("", "")` 走默认 info/text（`format` 空串由 `logx.NewHandler` 回落 TextHandler）。
-- **链路 ID 从哪来**：gin 域 `middleware.RequestID` 与 Connect 域 `middleware.HTTPRequestID` 生成 16B hex 后统一经 `logx.WithRequestID` 写进标准 `context.Context`；`logx` 的 Handler 包装在 `Handle` 时自动补 `request_id` 字段。`internal/logx` 不依赖 gin / net/http，service 不得 import `middleware` 取链路 ID，也不得生成、透传入站 `X-Request-Id` 或手写 `"request_id"` 字段。
+- **链路 ID 从哪来**：Echo 域 `middleware.RequestID` 与 Connect 域 `middleware.HTTPRequestID` 生成 16B hex 后统一经 `logx.WithRequestID` 写进标准 `context.Context`；`logx` 的 Handler 包装在 `Handle` 时自动补 `request_id` 字段。`internal/logx` 不依赖 Echo / net/http，service 不得 import `middleware` 取链路 ID，也不得生成、透传入站 `X-Request-Id` 或手写 `"request_id"` 字段。
 - **业务层写法**（service / handler，请求链路内的日志）：
 
   ```go
@@ -162,7 +163,7 @@
 
   `logx.Debug/Info/Warn/Error(ctx, msg, args...)` 等价于 `slog.XxxContext(ctx, ...)`；直接写 `slog.WarnContext(ctx, ...)` 同样自动带 `request_id`，但新代码统一用 `logx.*`。消息为「模块: 事件」，字段用 snake_case 的 key/value 成对传，禁止 `fmt.Sprintf` 拼整句、禁止 `log.Printf` / `fmt.Println`。
 
-- **ctx 一路传**：handler 用 `c.Request.Context()`（gin 域）/ Connect 传入的 `ctx` 调下游，中途不得换成 `context.Background()`，否则日志丢失 `request_id`。`logx.*(ctx, …)` 在没有链路 ID 的 ctx 上仍正常输出，只是不带该字段；`logx.RequestID(ctx)` 供排障读取，未注入返回空串。
+- **ctx 一路传**：handler 用 `c.Request.Context()`（Echo 域）/ Connect 传入的 `ctx` 调下游，中途不得换成 `context.Background()`，否则日志丢失 `request_id`。`logx.*(ctx, …)` 在没有链路 ID 的 ctx 上仍正常输出，只是不带该字段；`logx.RequestID(ctx)` 供排障读取，未注入返回空串。
 - **无请求上下文的场景**：异步队列 worker、启动装配、setup 模式、页面渲染等沿用 `slog.Warn/Info/Error/Debug` 包级函数即可，不伪造 `request_id`；访问日志（`middleware/logger.go`）与 panic 日志（`middleware/recover.go`）由中间件显式带字段，它们不带 ctx，与自动注入不冲突、不会重复。
 - **级别**：`Debug` 细粒度排障（默认级别下不输出）、`Info` 启动与安装关键节点、`Warn` 可降级失败（回写失败、投递失败、降级拒绝）、`Error` 致命错误。
 - **敏感信息**：见 §3.2 第 7 条与 §3.7；错误文本可能含 DSN 密码 / 密钥时先脱敏（`internal/setup` 的 `redact`），日志不打印 body / query / header / cookie。
@@ -265,7 +266,7 @@
 | Mock     | 优先手写 Fake（`test/fakes/`），仅在接口宽时用 `gomock`                                      |
 | Redis    | **真连 Redis**（ENV.md test 实例），Lua 脚本走同一接口实测；**不引入 miniredis**             |
 | DB       | 集成测试**真连 MariaDB**（ENV.md test 实例，避免方言差异）；不 mock SQL 层                   |
-| HTTP     | `net/http/httptest` + 真实 Gin / Connect 路由（含中间件），不 mock 框架                      |
+| HTTP     | `net/http/httptest` + 真实 Echo / Connect 路由（含中间件），不 mock 框架                      |
 | 外部服务 | `httptest` 起假第三方（OIDC discovery / token / userinfo / sitesVerify）；小程序用假微信接口 |
 | 并发     | `go test -race`，配合 `-count=N`                                                             |
 
@@ -273,7 +274,7 @@
 
 **验收方法论**：涉错误映射链（哨兵 → service → handler 转译）的验收，至少一条用例须走**真依赖组装**——fake 注入哨兵会掩盖真链路转译断点。
 
-- **连接层集成测试落地**：传输层（中间件、`ErrorInfo` 转译、`Content-Type` 协商、protojson 未知字段兼容、双编码等价）断言须落实到真路由集成测试（`net/http/httptest` + 真实 Gin / Connect 路由，不 mock 框架，见上表 HTTP 行），与 A 组 `connect`（框架编解码集成）用例同口径——覆盖 JSON / `application/proto` 双 `Content-Type` 解出等价消息（`proto.Equal`）与未知字段静默忽略。
+- **连接层集成测试落地**：传输层（中间件、`ErrorInfo` 转译、`Content-Type` 协商、protojson 未知字段兼容、双编码等价）断言须落实到真路由集成测试（`net/http/httptest` + 真实 Echo / Connect 路由，不 mock 框架，见上表 HTTP 行），与 A 组 `connect`（框架编解码集成）用例同口径——覆盖 JSON / `application/proto` 双 `Content-Type` 解出等价消息（`proto.Equal`）与未知字段静默忽略。
 
 **各层测法**
 
