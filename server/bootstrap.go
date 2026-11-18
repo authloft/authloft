@@ -1483,6 +1483,7 @@ func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
 		Codes:      deps.codeIssuer,
 		Audit:      deps.infra.Events,
 		Consents:   deps.consents,
+		Authz:      deps.authz,
 		Profiles:   deps.repos.Users,
 		Templates:  deps.admin.Templates,
 		SsoClients: deps.repos.Clients,

@@ -110,6 +110,13 @@ type Consents interface {
 	Decide(ctx context.Context, userID int64, clientID, reqScope, prompt string) (oidc.Decision, error)
 }
 
+// AuthzValidator 授权参数校验窄接口（§14.2「不得各写一份」）：
+// *oidc.AuthzValidator 天然满足，与 Terminal / 同意 RPC 共用同一实例；形态 C
+// 直签前复用 Validate（必含 openid + ⊆ 注册 scopes），不在 pages 重写规则。
+type AuthzValidator interface {
+	Validate(ctx context.Context, clientID, redirectURI, scope string) (*model.OidcClient, error)
+}
+
 // ProfileReader 形态 B 账号摘要读取窄接口（§4.2 账号卡片 / §5.1 account）：
 // *repo.UserRepo 天然满足（FindByID）；取 nickname / avatar_url / 账号标识，
 // 掩码在页面层按 §3.1 口径生成，不注入凭证或完整手机号邮箱。
@@ -153,6 +160,9 @@ type Deps struct {
 	// Consents 授权同意判定（三态形态 B/C）；nil 时有会话分支按全部需同意
 	// 处理（fail-closed，形态 B），不静默直签。
 	Consents Consents
+	// Authz 授权参数校验（§14.2 两条签发路径共用同一校验工具）：形态 C 直签
+	// 前消费；nil 时同 Consents 口径 fail-closed（全部需同意），绝不静默直签。
+	Authz AuthzValidator
 	// ProfileReader 形态 B 账号摘要数据源；nil 时 account 注入空摘要。
 	Profiles ProfileReader
 	// Templates 自定义模板解析源（§8.1）：admin 侧 TemplateService 天然满足。
@@ -210,6 +220,7 @@ type Handler struct {
 	codes      CodeIssuer
 	audit      AuditSink
 	consents   Consents
+	authz      AuthzValidator
 	profiles   ProfileReader
 	metas      func() []provider.Meta
 	now        func() time.Time
@@ -236,6 +247,7 @@ func Register(r gin.IRouter, d Deps) *Handler {
 		codes:      d.Codes,
 		audit:      d.Audit,
 		consents:   d.Consents,
+		authz:      d.Authz,
 		profiles:   d.Profiles,
 		metas:      d.Metas,
 		now:        d.Now,

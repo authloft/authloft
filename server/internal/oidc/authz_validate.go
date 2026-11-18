@@ -87,6 +87,15 @@ func (v *AuthzValidator) Validate(ctx context.Context, clientID, redirectURI, sc
 	return client, nil
 }
 
+// EntryScopeValid 报告有效 scope 是否通过 authorize 入口档校验（§4.2 参数
+// 错误：封闭集 + 必含 openid，未支持值或缺 openid → invalid_scope）。调用方
+// 先做缺省补值（EffectiveScope），补值口径恒含 openid。注册 scopes 子集校验
+// 不在入口档——形态 A / B 由 Terminal 与同意 RPC 经 Validate 收口，形态 C
+// 由直签前 Validate 收口，本档只做免登录页泄漏的最小拒绝面。
+func EntryScopeValid(scope string) bool {
+	return ScopeSupported(scope) && slices.Contains(ParseScopes(scope), ScopeOpenID)
+}
+
 // validateScope scope 三重校验（§14.2 步骤 1 / §3.10 步骤 3）：封闭集
 // （复用 SupportedScopes，与 token 端点同源）、子集（注册 scopes 为上限，
 // 不可放大——需求.md §4.5 / 接口文档 §4.2）、必含 openid。

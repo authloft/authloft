@@ -6,8 +6,9 @@
 //     redirect_uris 白名单（整段匹配支持 * 通配，复用 logout.go
 //     matchClientRedirectURI / uriMatches）→ 不跳转，HTTP 400 简短错误页
 //     （防开放重定向，无注入内容）；
-//   - redirect_uri 校验通过后 scope 含未支持值（支持值 = discovery
-//     scopes_supported 同一清单，internal/oidc 导出口径）→ 302
+//   - redirect_uri 校验通过后 scope 含未支持值或不含 openid（支持值 =
+//     discovery scopes_supported 同一清单 + openid 必含，internal/oidc
+//     导出口径 EntryScopeValid）→ 302
 //     redirect_uri?error=invalid_scope&state=…（state 缺失省略）；
 //   - state 缺失不属参数错误：不拒绝、正常签发与跳转、URL 不带 state、不做
 //     CSRF 比对，改记审计事件 oidc_authorize_no_state（actor_type=system，
@@ -17,8 +18,10 @@
 //     redirect_uri?error=login_required&state=…（同上省略规则）；prompt=login
 //     忽略（不支持强制重认证）；
 //   - 有有效会话（Cookie al_session 经 SessionVerifier 四步校验含 epoch）→
-//     用注入的 CodeIssuer（与 Terminal 共用同一实例，§14.2 行 1642「两条
-//     路径共用同一注入的 OIDCCodeIssuer，不得各写一份」）生成一次性授权码
+//     免同意直签前经注入的 AuthzValidator（与 Terminal 共用同一实例，
+//     §14.2「不得各写一份」）复核 scope（必含 openid + ⊆ 注册 scopes），
+//     再用注入的 CodeIssuer（与 Terminal 共用同一实例，两条路径共用同一
+//     注入的 OIDCCodeIssuer，不得各写一份）生成一次性授权码
 //     → 302 redirect_uri?code=…&state=…（amr / auth_time 取会话载荷，同
 //     请求上下文）；PKCE 两参数透传（method 非 S256 由 token 端点消费侧
 //     ValidatePKCE 兜底校验）；
@@ -31,6 +34,7 @@ package pages
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -54,6 +58,7 @@ var (
 	_ CodeIssuer      = (*oidc.CodeIssuer)(nil)
 	_ AuditSink       = (*eventlog.Writer)(nil)
 	_ Consents        = (*oidc.ConsentService)(nil)
+	_ AuthzValidator  = (*oidc.AuthzValidator)(nil)
 	_ ProfileReader   = (*repo.UserRepo)(nil)
 )
 
@@ -100,14 +105,17 @@ func (h *Handler) authorize(c *gin.Context) {
 		return
 	}
 
-	// 2. scope 校验（§4.2 行 1075）：缺省补 DefaultScope；含未支持值 →
-	//    302 error=invalid_scope（redirect_uri 已验证可信，不签发）。
+	// 2. scope 校验（§4.2 参数错误档）：缺省补 DefaultScope；含未支持值或
+	//    不含 openid → 302 error=invalid_scope（redirect_uri 已验证可信）。
+	//    空 scope 补值后恒含 openid 不命中此分支；注册 scopes 子集校验不在
+	//    入口档——形态 A/B 由 Terminal / 同意 RPC 经 Validate 收口，形态 C
+	//    由直签前 Validate 收口。
 	scope := c.Query("scope")
 	if scope == "" {
 		scope = oidc.DefaultScope
 	}
 	state := c.Query("state")
-	if !oidc.ScopeSupported(scope) {
+	if !oidc.EntryScopeValid(scope) {
 		redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
 		return
 	}
@@ -151,6 +159,23 @@ func (h *Handler) authorize(c *gin.Context) {
 			if h.codes == nil {
 				slog.Error("pages: authorize code issuer not configured")
 				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			// 形态 C 签码前重跑授权参数校验（§14.2 与 Terminal 同一
+			// AuthzValidator 实例，复用 internal/oidc 规则不在 pages 重写）：
+			// scope 必含 openid 且 ⊆ 客户端注册 scopes（防授权记录漂移出注册
+			// 集，如管理员收窄客户端 scopes 后的存量记录）；client / redirect
+			// 已过入口档，此处再校验属同档复核。
+			if _, err := h.authz.Validate(c.Request.Context(), clientID, redirectURI, scope); err != nil {
+				switch {
+				case errors.Is(err, oidc.ErrAuthzScope):
+					redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
+				case errors.Is(err, oidc.ErrAuthzClient), errors.Is(err, oidc.ErrAuthzRedirect):
+					authorizeError(c) // §4.2：client / redirect 档不跳转（防开放重定向）
+				default:
+					slog.Error("pages: authorize pre-issue authz validate", "err", err)
+					c.AbortWithStatus(http.StatusInternalServerError)
+				}
 				return
 			}
 			code, err := h.codes.Issue(c.Request.Context(), orchestrator.OIDCIssue{
@@ -218,9 +243,10 @@ func (h *Handler) authorize(c *gin.Context) {
 
 // decide 三态判定入口（§14.2 步骤 3）：Consents 已装配时委托 Decide；未装配
 // （misassembly）按「全部需同意」fail-closed——绝不静默直签，最坏落到形态 B
-// 由用户显式同意，不绕过授权记录。
+// 由用户显式同意，不绕过授权记录。Authz 未装配同口径 fail-closed：形态 C
+// 直签前须经同一校验工具复核 scope，缺校验器就不存在免同意直签。
 func (h *Handler) decide(ctx context.Context, uid int64, clientID, scope, prompt string) (oidc.Decision, error) {
-	if h.consents == nil {
+	if h.consents == nil || h.authz == nil {
 		return oidc.Decision{NeedsConsent: true}, nil
 	}
 	return h.consents.Decide(ctx, uid, clientID, scope, prompt)

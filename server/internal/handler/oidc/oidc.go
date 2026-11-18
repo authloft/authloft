@@ -61,7 +61,7 @@ func (h *handler) discovery(c *gin.Context) {
 		"jwks_uri":                              issuer + "/.well-known/jwks.json",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
-		"subject_types_supported":               []string{"public"},
+		"subject_types_supported":               []string{"pairwise"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"scopes_supported":                      []string{"openid", "profile", "email", "phone", "phone_plain", "email_plain"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_post"},

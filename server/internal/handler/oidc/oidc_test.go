@@ -226,6 +226,11 @@ func TestDiscovery(t *testing.T) {
 	if len(algs) != 1 || algs[0] != "RS256" {
 		t.Errorf("alg values = %v, want [RS256]", algs)
 	}
+	// sub 对外声明与实际行为一致：按客户端加密派生（pairwise，§4.1）。
+	subs, _ := doc["subject_types_supported"].([]any)
+	if len(subs) != 1 || subs[0] != "pairwise" {
+		t.Errorf("subject_types_supported = %v, want [pairwise]", subs)
+	}
 }
 
 // TestJWKSEndpoint JWKS 含全部 kid（§14.1 / RFC 7517）。

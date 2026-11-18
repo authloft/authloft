@@ -118,16 +118,20 @@ func oidcRow(t *testing.T, clientID string, enabled int8, patterns ...string) *m
 }
 
 // newAuthzFixture authorize 夹具：demo-app 白名单 = 精确 cb URI + app 域
-// 通配一条（覆盖整段与通配两形态），默认无会话。
+// 通配一条（覆盖整段与通配两形态），注册 scopes 为封闭集全集（既有用例
+// scope 均为其子集），默认无会话；Authz 注入真实校验器（Clients 复用同一
+// fake 行源，与 bootstrap 装配同构）。
 func newAuthzFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := newFixture(t)
 	row := oidcRow(t, "demo-app", 1, authzRedirect, "https://app.example.com/*")
+	row.Scopes = "openid,profile,email,phone,phone_plain,email_plain"
 	f.deps.Clients = multiClients{rows: map[string]*model.OidcClient{"demo-app": row}}
 	f.consents = &fakeConsents{} // 默认子集免同意（既有直签用例维持）
 	f.profiles = &fakeProfiles{}
 	f.deps.Consents = f.consents
 	f.deps.Profiles = f.profiles
+	f.deps.Authz = &oidc.AuthzValidator{Clients: f.deps.Clients}
 	return f
 }
 
@@ -670,5 +674,77 @@ func TestAuthorizeEmptyScopeInjectsEffectiveScope(t *testing.T) {
 	if init.Scope != oidc.DefaultScope {
 		t.Errorf("注入 scope = %q, want 有效 scope = DefaultScope %q（空请求补值）",
 			init.Scope, oidc.DefaultScope)
+	}
+}
+
+// TestAuthorizeFormCScopeWithoutOpenIDRejected 有会话 + 显式 scope 不含
+// openid → 302 invalid_scope（§4.2：请求 scope 必含 openid，缺省补值口径
+// 恒含故不命中；形态 A/B/C 入口同口径，经 internal/oidc EntryScopeValid）；
+// 零签发零审计（错误路径无副作用）。
+func TestAuthorizeFormCScopeWithoutOpenIDRejected(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope="+url.QueryEscape("profile")+"&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?error=invalid_scope&state=st1"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	assertNoIssue(t, f)
+	if len(f.consents.calls) != 0 {
+		t.Errorf("入口档即拒，不得进入三态判定: %v", f.consents.calls)
+	}
+}
+
+// TestAuthorizeFormCScopeExceedsRegisteredRejected 形态 C 直签前经真实
+// AuthzValidator 复核（§14.2 与 Terminal 同一校验工具）：请求 scope 通过
+// 入口档（封闭集 + 含 openid）、fake Decide 按已授权子集放行（模拟管理员
+// 收窄客户端 scopes 后的存量授权记录漂移），但超出注册 scopes →
+// 302 invalid_scope、零签发。
+func TestAuthorizeFormCScopeExceedsRegisteredRejected(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	row := oidcRow(t, "demo-app", 1, authzRedirect)
+	row.Scopes = "openid,profile" // 注册集不含 email
+	f.deps.Clients = multiClients{rows: map[string]*model.OidcClient{"demo-app": row}}
+	f.deps.Authz = &oidc.AuthzValidator{Clients: f.deps.Clients}
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope="+url.QueryEscape("openid profile email")+"&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?error=invalid_scope&state=st1"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	if len(f.codes.calls) != 0 {
+		t.Errorf("超出注册 scopes 不得直签: %d calls", len(f.codes.calls))
+	}
+	if len(f.consents.calls) != 1 {
+		t.Errorf("Decide calls = %d, want 1（直签前复核挡在签码前）", len(f.consents.calls))
+	}
+}
+
+// TestAuthorizeFormCValidScopeDirectIssue 合法 scope（含 openid 且 ⊆ 注册
+// scopes）走形态 C 直签：真实 AuthzValidator 复核通过后签码，证明复核只拦
+// 非法、不误伤合法路径（与 TestAuthorizeConsentSubsetDirectIssue 互补，
+// 后者覆盖 scope=openid，本例覆盖多值 scope）。
+func TestAuthorizeFormCValidScopeDirectIssue(t *testing.T) {
+	f := newAuthzFixture(t)
+	f.sessions.p = validSession()
+	rec := doGetWithCookie(t, f.engine(t),
+		authzQ+"&scope="+url.QueryEscape("openid profile email")+"&state=st1",
+		"al_session", "session-token")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302（形态 C 直签）", rec.Code)
+	}
+	if got, want := rec.Header().Get("Location"), authzRedirect+"?code=AUTHZ-CODE&state=st1"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	if len(f.codes.calls) != 1 || f.codes.calls[0].Scope != "openid profile email" {
+		t.Errorf("codes = %+v, want 1 次且 scope=openid profile email", f.codes.calls)
 	}
 }
