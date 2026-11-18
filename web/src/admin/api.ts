@@ -100,6 +100,7 @@ import {
 } from '../gen/proto/api/admin/v1/template_pb';
 import type {
   DeleteCredentialRequest,
+  DeleteUserRequest,
   GetUserEventsRequest,
   GetUserRequest,
   ListUsersRequest,
@@ -119,6 +120,7 @@ import type {
 } from '../gen/proto/api/admin/v1/user_pb';
 import {
   DeleteCredentialRequestSchema,
+  DeleteUserRequestSchema,
   GetUserEventsRequestSchema,
   GetUserRequestSchema,
   ListUsersRequestSchema,
@@ -420,6 +422,11 @@ export function getUser(request: GetUserRequest): Promise<UserDetailResponse> {
   return adminClient.getUser(request);
 }
 
+/** DeleteUser（§5.4：{id} 删除 = 禁用 + 全端下线 + 匿名化）→ OkResponse。 */
+export function deleteUser(request: DeleteUserRequest): Promise<OkResponse> {
+  return adminClient.deleteUser(request);
+}
+
 /**
  * 禁用 / 启用（§5.4 行 1251：{id, userStatus: 0 或 1}）→ OkResponse；
  * UsersPage 行内开关经此持久化（DataTable switchColumn 消费方）。
@@ -520,8 +527,7 @@ export const USER_STATUS_DISABLED = BigInt(0);
  */
 export const USER_STATUS_DATA_INDEX = 'user_status';
 
-/**
- * 状态筛选下拉（DataTableColumn.filters；值 = user_status 十进制字符串）。
+/** userStatus 筛选下拉（DataTableColumn.filters；值 = user_status 十进制字符串）。
  * textKey 字段化——模块级常量只存 i18n 键（求值先于 entry
  * setLocale 会冻结在默认语言），文案由消费方渲染期 t(textKey) 取。
  */
@@ -533,18 +539,74 @@ export const USER_STATUS_FILTERS: {
   { value: '0', textKey: 'admin.userStatusDisabled' },
 ];
 
+/** 删除匿名化的用户名保留前缀（§5.4：username 改写为 deleted_<id>）。 */
+export const DELETED_USERNAME_PREFIX = 'deleted_';
+
+/** 已删用户名判定（§5.4：deleted_ 前缀是软删除唯一可辨识标记）。 */
+export function isDeletedUser(username: string): boolean {
+  return username.startsWith(DELETED_USERNAME_PREFIX);
+}
+
+/** 两步验证筛选下拉（§5.4 mfaRequired 取 0|1）。 */
+export const MFA_REQUIRED_FILTERS: {
+  value: string;
+  textKey: I18nKey;
+}[] = [
+  { value: '1', textKey: 'admin.mfaFilterEnabled' },
+  { value: '0', textKey: 'admin.mfaFilterDisabled' },
+];
+
+/** 凭证类型筛选封闭集（§5.4 credentialKind：password|totp|webauthn|recovery_code）。 */
+export const CREDENTIAL_KIND_FILTER_VALUES = [
+  'password',
+  'totp',
+  'webauthn',
+  'recovery_code',
+] as const;
+
+/** DatePicker 本地时间 → Unix 秒（§12.9 时间口径，§1.12 bigint 承载；未选 = undefined）。 */
+export function dateToUnixFilter(value: Date | undefined): bigint | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return BigInt(Math.floor(value.getTime() / 1000));
+}
+
+/** 列表四维度筛选入参（§5.4：创建时间 / 最后登录闭区间 + MFA 状态 + 凭证类型）。 */
+export interface UserListFilterValues {
+  createdFrom: bigint | undefined;
+  createdTo: bigint | undefined;
+  lastLoginFrom: bigint | undefined;
+  lastLoginTo: bigint | undefined;
+  mfaRequired: bigint | undefined;
+  credentialKind: string | undefined;
+}
+
+/** 空筛选值（未选择任何维度，请求不携带过滤字段）。 */
+export const EMPTY_USER_LIST_FILTERS: UserListFilterValues = {
+  createdFrom: undefined,
+  createdTo: undefined,
+  lastLoginFrom: undefined,
+  lastLoginTo: undefined,
+  mfaRequired: undefined,
+  credentialKind: undefined,
+};
+
 /**
  * ListUsers 请求构造（§5.4 行 1249 + §1.7 行 275-278）：
  * - q 去首尾空白，空即省略（不过滤；后端 q 匹配 username / nickname /
  *   email / phone 四列）；
  * - userStatus 取筛选列「恰好单选」的值（0 / 1 互斥语义，未选 / 多选即
  *   不过滤——多选等价全集，确定性规则）；
+ * - 四维度筛选（创建时间 / 最后登录 / MFA 状态 / 凭证类型）原样透传 wire
+ *   字段（§5.4），未设置即省略；
  * - 分页直映射；排序仅 order 非空时下发（dataTableLogic：清除排序后
  *   order=''，受控渲染与 wire 均只认非空 order）。
  */
 export function buildListUsersRequest(
   q: string,
   query: TableQueryState,
+  filters: UserListFilterValues = EMPTY_USER_LIST_FILTERS,
 ): ListUsersRequest {
   const statusFilter = query.filters[USER_STATUS_DATA_INDEX] ?? [];
   const trimmed = q.trim();
@@ -555,12 +617,23 @@ export function buildListUsersRequest(
     pageSize: BigInt(query.pageSize),
     sort: query.order === '' ? undefined : query.sort,
     order: query.order === '' ? undefined : query.order,
+    createdFrom: filters.createdFrom,
+    createdTo: filters.createdTo,
+    lastLoginFrom: filters.lastLoginFrom,
+    lastLoginTo: filters.lastLoginTo,
+    mfaRequired: filters.mfaRequired,
+    credentialKind: filters.credentialKind,
   });
 }
 
 /** GetUser 请求构造（§5.4 行 1250：{id}）。 */
 export function buildGetUserRequest(id: bigint): GetUserRequest {
   return create(GetUserRequestSchema, { id });
+}
+
+/** DeleteUser 请求构造（§5.4：{id}）。 */
+export function buildDeleteUserRequest(id: bigint): DeleteUserRequest {
+  return create(DeleteUserRequestSchema, { id });
 }
 
 /**
@@ -719,6 +792,30 @@ export interface UserWriteVisibility {
   resetRecoveryCodes: boolean;
   credentialWrite: boolean;
   unbindThirdparty: boolean;
+  deleteUser: boolean;
+}
+
+/**
+ * 危险操作确认强度（0 普通编辑 / 1 联系方式·MFA·凭证 Modal 二次确认 /
+ * 2 删除用户输入用户名确认）——删除 > 联系方式·MFA·凭证 > 普通编辑。
+ * 纯函数、node 可测，供体验层按强度分级选择确认控件。
+ */
+export type UserWriteOp =
+  | 'profile'
+  | 'contact'
+  | 'mfa'
+  | 'credential'
+  | 'delete';
+
+/** 确认强度数值：越大确认越强（0 无确认 / 1 Modal 二次确认 / 2 输入用户名）。 */
+export function userWriteConfirmStrength(op: UserWriteOp): 0 | 1 | 2 {
+  if (op === 'delete') {
+    return 2;
+  }
+  if (op === 'contact' || op === 'mfa' || op === 'credential') {
+    return 1;
+  }
+  return 0;
 }
 
 /**
@@ -741,6 +838,7 @@ export function userWriteVisibility(
       resetRecoveryCodes: false,
       credentialWrite: false,
       unbindThirdparty: false,
+      deleteUser: false,
     };
   }
   const operatorIsSuperadmin = operatorPermissions.includes(
@@ -755,6 +853,8 @@ export function userWriteVisibility(
       resetRecoveryCodes: operatorIsSuperadmin,
       credentialWrite: operatorIsSuperadmin,
       unbindThirdparty: operatorIsSuperadmin,
+      // 有任意权限点的账户一律禁止删除（§5.4），不因操作者是 superadmin 而放宽。
+      deleteUser: false,
     };
   }
   return {
@@ -765,6 +865,7 @@ export function userWriteVisibility(
     resetRecoveryCodes: true,
     credentialWrite: true,
     unbindThirdparty: true,
+    deleteUser: true,
   };
 }
 

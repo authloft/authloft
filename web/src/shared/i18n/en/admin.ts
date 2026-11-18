@@ -608,6 +608,29 @@ export const admin: typeof zhAdmin = {
   'admin.credentialDisabledSuccess': 'Credential disabled',
   'admin.credentialDeletedSuccess': 'Credential deleted',
 
+  // ---- Delete user danger action + four-dimension list filters (§5.4) ----
+  'admin.deleteUserAction': 'Delete User',
+  'admin.deleteUserTitle': 'Delete user "{username}"',
+  'admin.deleteUserWarning':
+    'This cannot be undone: the user will be disabled, the username rewritten with a deleted_ prefix marker, and the phone / email / profile / credentials / third-party bindings all cleared. All sessions and tokens are invalidated immediately.',
+  'admin.deleteUserConfirmLabel': 'Type "{username}" to confirm deletion',
+  'admin.deleteUserInputAriaLabel': 'Type the username to confirm deletion',
+  'admin.deleteUserConfirmAction': 'Confirm Delete',
+  'admin.deleteUserSuccess': 'User "{username}" deleted',
+  'admin.deletedUserNotice':
+    'This user has been deleted (username starts with deleted_): the profile is anonymized, credentials are cleared, and all write actions are unavailable.',
+  'admin.deletedUserTag': 'Deleted',
+  'admin.filterAnyOption': 'Any',
+  'admin.createdFromFilterPlaceholder': 'Created from',
+  'admin.createdToFilterPlaceholder': 'Created to',
+  'admin.lastLoginFromFilterPlaceholder': 'Last sign-in from',
+  'admin.lastLoginToFilterPlaceholder': 'Last sign-in to',
+  'admin.mfaFilterPlaceholder': 'Two-Step Verification',
+  'admin.mfaFilterEnabled': 'Enabled',
+  'admin.mfaFilterDisabled': 'Disabled',
+  'admin.credentialFilterPlaceholder': 'Credential Type',
+  'admin.resetFiltersAction': 'Reset Filters',
+
   // ---- pages/AuditPage.tsx----------------------------------------
   'admin.auditPresetAll': 'All Events',
   'admin.auditPresetLoginRecords': 'Sign-in Records',

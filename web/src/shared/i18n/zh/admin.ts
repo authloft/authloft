@@ -558,6 +558,29 @@ export const admin = {
   'admin.credentialDisabledSuccess': '凭证已停用',
   'admin.credentialDeletedSuccess': '凭证已删除',
 
+  // ---- 删除用户危险操作 + 列表四维度筛选（§5.4）---------------------------
+  'admin.deleteUserAction': '删除用户',
+  'admin.deleteUserTitle': '删除用户「{username}」',
+  'admin.deleteUserWarning':
+    '删除后不可恢复：该用户将被禁用，用户名改写为 deleted_ 前缀标记，手机号 / 邮箱 / 资料 / 凭证 / 三方绑定全部清空，全部会话与令牌立即失效。',
+  'admin.deleteUserConfirmLabel': '请输入用户名「{username}」确认删除',
+  'admin.deleteUserInputAriaLabel': '输入用户名以确认删除',
+  'admin.deleteUserConfirmAction': '确认删除',
+  'admin.deleteUserSuccess': '已删除用户「{username}」',
+  'admin.deletedUserNotice':
+    '该用户已删除（用户名以 deleted_ 开头）：资料已匿名化、凭证已清空，所有写操作不可用。',
+  'admin.deletedUserTag': '已注销',
+  'admin.filterAnyOption': '不限',
+  'admin.createdFromFilterPlaceholder': '创建时间（起）',
+  'admin.createdToFilterPlaceholder': '创建时间（止）',
+  'admin.lastLoginFromFilterPlaceholder': '最后登录（起）',
+  'admin.lastLoginToFilterPlaceholder': '最后登录（止）',
+  'admin.mfaFilterPlaceholder': '两步验证',
+  'admin.mfaFilterEnabled': '已开启',
+  'admin.mfaFilterDisabled': '已关闭',
+  'admin.credentialFilterPlaceholder': '凭证类型',
+  'admin.resetFiltersAction': '重置筛选',
+
   // ---- pages/AuditPage.tsx----------------------------------------
   'admin.auditPresetAll': '全部事件',
   'admin.auditPresetLoginRecords': '登录记录',

@@ -28,9 +28,12 @@ import { useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
+  DatePicker,
   Empty,
   Input,
   Modal,
+  Select,
+  Tag,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -64,9 +67,14 @@ import {
   buildResetUserPasswordRequest,
   buildUnlockUserRequest,
   buildUpdateUserStatusRequest,
+  credentialKindLabel,
+  CREDENTIAL_KIND_FILTER_VALUES,
+  dateToUnixFilter,
   formatUnixTime,
+  isDeletedUser,
   isUnauthenticatedError,
   listUsers,
+  MFA_REQUIRED_FILTERS,
   resetUserPassword,
   unlockUser,
   updateUserStatus,
@@ -93,6 +101,14 @@ export function UsersPage(props: {
   // 搜索词两态：draft（输入框即时值）/ applied（已生效取数词）；生效即回第 1 页。
   const [qDraft, setQDraft] = useState('');
   const [appliedQ, setAppliedQ] = useState('');
+  // 四维度筛选 UI 原始输入（§5.4）：时间维度为 DatePicker 本地时间，
+  // MFA / 凭证维度为 Select 字符串值（''=不过滤），变更即回第 1 页。
+  const [createdFrom, setCreatedFrom] = useState<Date | undefined>();
+  const [createdTo, setCreatedTo] = useState<Date | undefined>();
+  const [lastLoginFrom, setLastLoginFrom] = useState<Date | undefined>();
+  const [lastLoginTo, setLastLoginTo] = useState<Date | undefined>();
+  const [mfaRequired, setMfaRequired] = useState('');
+  const [credentialKind, setCredentialKind] = useState('');
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
   // 用户详情抽屉：保留选中 id（关闭期间不清空，避免关闭动画闪空），仅切显隐。
@@ -104,10 +120,29 @@ export function UsersPage(props: {
   // 列表取数改 ahooks 自动请求 + refreshDeps（query / appliedQ 变更
   // 重取，同原 effect 依赖）；401 由集中 onError 跳登录，其余错误走页面
   // 错误帧（toast:false 静默防双报）。
-  const { data, error, loading } = useRequest(
-    () => listUsers(buildListUsersRequest(appliedQ, query)),
+  const { data, error, loading, refresh } = useRequest(
+    () =>
+      listUsers(
+        buildListUsersRequest(appliedQ, query, {
+          createdFrom: dateToUnixFilter(createdFrom),
+          createdTo: dateToUnixFilter(createdTo),
+          lastLoginFrom: dateToUnixFilter(lastLoginFrom),
+          lastLoginTo: dateToUnixFilter(lastLoginTo),
+          mfaRequired: mfaRequired === '' ? undefined : BigInt(mfaRequired),
+          credentialKind: credentialKind === '' ? undefined : credentialKind,
+        }),
+      ),
     {
-      refreshDeps: [appliedQ, query],
+      refreshDeps: [
+        appliedQ,
+        query,
+        createdFrom,
+        createdTo,
+        lastLoginFrom,
+        lastLoginTo,
+        mfaRequired,
+        credentialKind,
+      ],
       ...requestOptions({
         toast: false,
         returnTo: () => adminReturnTo(location.pathname, location.search),
@@ -125,6 +160,27 @@ export function UsersPage(props: {
   /** 搜索生效：applied 词落地 + 回第 1 页（§1.7：筛选 / 搜索变化重置页码）。 */
   function applySearch(): void {
     setAppliedQ(qDraft.trim());
+    setQuery((prev) => ({ ...prev, page: 1 }));
+  }
+
+  /** 维度筛选变更：更新状态并回第 1 页（§1.7 筛选变化重置页码）。 */
+  function changeFilter<T>(setter: (value: T) => void): (value: T) => void {
+    return (value) => {
+      setter(value);
+      setQuery((prev) => ({ ...prev, page: 1 }));
+    };
+  }
+
+  /** 清空全部筛选与搜索，回到第 1 页。 */
+  function clearFilters(): void {
+    setQDraft('');
+    setAppliedQ('');
+    setCreatedFrom(undefined);
+    setCreatedTo(undefined);
+    setLastLoginFrom(undefined);
+    setLastLoginTo(undefined);
+    setMfaRequired('');
+    setCredentialKind('');
     setQuery((prev) => ({ ...prev, page: 1 }));
   }
 
@@ -216,19 +272,27 @@ export function UsersPage(props: {
     {
       dataIndex: 'username',
       title: t('admin.usernameLabel'),
-      render: (_text: unknown, row: AdminUser) => (
-        <Typography.Text
-          type="primary"
-          size="small"
-          link={{ href: '#' }}
-          onClick={(e) => {
-            e.preventDefault();
-            openDetail(row);
-          }}
-        >
-          {row.username}
-        </Typography.Text>
-      ),
+      render: (_text: unknown, row: AdminUser) =>
+        isDeletedUser(row.username) ? (
+          <span className={styles.actions}>
+            <Typography.Text disabled size="small">
+              {row.username}
+            </Typography.Text>
+            <Tag color="red">{t('admin.deletedUserTag')}</Tag>
+          </span>
+        ) : (
+          <Typography.Text
+            type="primary"
+            size="small"
+            link={{ href: '#' }}
+            onClick={(e) => {
+              e.preventDefault();
+              openDetail(row);
+            }}
+          >
+            {row.username}
+          </Typography.Text>
+        ),
     },
     {
       dataIndex: 'nickname',
@@ -337,6 +401,75 @@ export function UsersPage(props: {
           <Button theme="solid" onClick={applySearch}>
             {t('admin.searchAction')}
           </Button>
+          <DatePicker
+            type="dateTime"
+            value={createdFrom}
+            onChange={(d) =>
+              changeFilter(setCreatedFrom)(d instanceof Date ? d : undefined)
+            }
+            placeholder={t('admin.createdFromFilterPlaceholder')}
+            showClear
+            aria-label={t('admin.createdFromFilterPlaceholder')}
+          />
+          <DatePicker
+            type="dateTime"
+            value={createdTo}
+            onChange={(d) =>
+              changeFilter(setCreatedTo)(d instanceof Date ? d : undefined)
+            }
+            placeholder={t('admin.createdToFilterPlaceholder')}
+            showClear
+            aria-label={t('admin.createdToFilterPlaceholder')}
+          />
+          <DatePicker
+            type="dateTime"
+            value={lastLoginFrom}
+            onChange={(d) =>
+              changeFilter(setLastLoginFrom)(d instanceof Date ? d : undefined)
+            }
+            placeholder={t('admin.lastLoginFromFilterPlaceholder')}
+            showClear
+            aria-label={t('admin.lastLoginFromFilterPlaceholder')}
+          />
+          <DatePicker
+            type="dateTime"
+            value={lastLoginTo}
+            onChange={(d) =>
+              changeFilter(setLastLoginTo)(d instanceof Date ? d : undefined)
+            }
+            placeholder={t('admin.lastLoginToFilterPlaceholder')}
+            showClear
+            aria-label={t('admin.lastLoginToFilterPlaceholder')}
+          />
+          <Select
+            value={mfaRequired === '' ? undefined : mfaRequired}
+            onChange={(value) => changeFilter(setMfaRequired)(String(value ?? ''))}
+            placeholder={t('admin.mfaFilterPlaceholder')}
+            optionList={[
+              { value: '', label: t('admin.filterAnyOption') },
+              ...MFA_REQUIRED_FILTERS.map(({ value, textKey }) => ({
+                value,
+                label: t(textKey),
+              })),
+            ]}
+            aria-label={t('admin.mfaFilterPlaceholder')}
+          />
+          <Select
+            value={credentialKind === '' ? undefined : credentialKind}
+            onChange={(value) =>
+              changeFilter(setCredentialKind)(String(value ?? ''))
+            }
+            placeholder={t('admin.credentialFilterPlaceholder')}
+            optionList={[
+              { value: '', label: t('admin.filterAnyOption') },
+              ...CREDENTIAL_KIND_FILTER_VALUES.map((value) => ({
+                value,
+                label: credentialKindLabel(value),
+              })),
+            ]}
+            aria-label={t('admin.credentialFilterPlaceholder')}
+          />
+          <Button onClick={clearFilters}>{t('admin.resetFiltersAction')}</Button>
         </>
       }
     >
@@ -421,6 +554,9 @@ export function UsersPage(props: {
         userId={detailUserId}
         visible={showDetail}
         onClose={() => setShowDetail(false)}
+        onDeleted={() => {
+          void refresh();
+        }}
       />
     </PageLayout>
   );

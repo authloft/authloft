@@ -275,6 +275,7 @@ const UNBIND_USER_TOTP_URL = `${BASE}/api.admin.v1.AdminService/UnbindUserTOTP`;
 const RESET_USER_RECOVERY_CODES_URL = `${BASE}/api.admin.v1.AdminService/ResetUserRecoveryCodes`;
 const SET_CREDENTIAL_ENABLED_URL = `${BASE}/api.admin.v1.AdminService/SetCredentialEnabled`;
 const DELETE_CREDENTIAL_URL = `${BASE}/api.admin.v1.AdminService/DeleteCredential`;
+const DELETE_USER_URL = `${BASE}/api.admin.v1.AdminService/DeleteUser`;
 const LIST_SSO_CLIENTS_URL = `${BASE}/api.admin.v1.AdminService/ListSsoClients`;
 const CREATE_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/CreateSsoClient`;
 const GET_SSO_CLIENT_URL = `${BASE}/api.admin.v1.AdminService/GetSsoClient`;
@@ -2152,6 +2153,68 @@ describe('buildListUsersRequest（§5.4 行 1249 + §1.7 行 275-278）', () => 
   });
 });
 
+describe('列表四维度筛选 + 删除请求构造（§5.4：创建时间 / 最后登录 / MFA / 凭证类型）', () => {
+  test('四维度筛选原样透传 wire 字段；未设置即省略', () => {
+    const req = apiMod.buildListUsersRequest('', initialTableQuery(), {
+      createdFrom: BigInt(1700000000),
+      createdTo: BigInt(1700100000),
+      lastLoginFrom: BigInt(1699000000),
+      lastLoginTo: BigInt(1699100000),
+      mfaRequired: BigInt(1),
+      credentialKind: 'webauthn',
+    });
+    expect(req.createdFrom).toBe(BigInt(1700000000));
+    expect(req.createdTo).toBe(BigInt(1700100000));
+    expect(req.lastLoginFrom).toBe(BigInt(1699000000));
+    expect(req.lastLoginTo).toBe(BigInt(1699100000));
+    expect(req.mfaRequired).toBe(BigInt(1));
+    expect(req.credentialKind).toBe('webauthn');
+
+    const empty = apiMod.buildListUsersRequest('', initialTableQuery());
+    expect(empty.createdFrom).toBeUndefined();
+    expect(empty.lastLoginTo).toBeUndefined();
+    expect(empty.mfaRequired).toBeUndefined();
+    expect(empty.credentialKind).toBeUndefined();
+  });
+
+  test('mfaRequired=0 零值保留 presence；凭证类型取封闭集四值', () => {
+    const off = apiMod.buildListUsersRequest('', initialTableQuery(), {
+      ...apiMod.EMPTY_USER_LIST_FILTERS,
+      mfaRequired: BigInt(0),
+    });
+    expect(off.mfaRequired).toBe(BigInt(0));
+    expect(apiMod.CREDENTIAL_KIND_FILTER_VALUES).toEqual([
+      'password',
+      'totp',
+      'webauthn',
+      'recovery_code',
+    ]);
+    expect(apiMod.MFA_REQUIRED_FILTERS.map((f) => f.value)).toEqual(['1', '0']);
+  });
+
+  test('dateToUnixFilter：未选省略，本地时间秒级（<2^53 无精度问题）', () => {
+    expect(apiMod.dateToUnixFilter(undefined)).toBeUndefined();
+    const date = new Date(1700000000000);
+    expect(apiMod.dateToUnixFilter(date)).toBe(BigInt(1700000000));
+  });
+
+  test('isDeletedUser：deleted_ 前缀为已删标记，大小写敏感按字面前缀', () => {
+    expect(apiMod.isDeletedUser('deleted_42')).toBe(true);
+    expect(apiMod.isDeletedUser('alice')).toBe(false);
+    expect(apiMod.isDeletedUser('Deleted_42')).toBe(false);
+    expect(apiMod.isDeletedUser('pre_deleted_42')).toBe(false);
+  });
+
+  test('buildDeleteUserRequest：仅 {id}，int64 十进制字符串承载', async () => {
+    const req = apiMod.buildDeleteUserRequest(BigInt(42));
+    expect(req.id).toBe(BigInt(42));
+    const { DeleteUserRequestSchema } = await import(
+      '../gen/proto/api/admin/v1/user_pb'
+    );
+    expect(DeleteUserRequestSchema.fields.find((f) => f.name === 'id')?.number).toBe(1);
+  });
+});
+
 describe('buildGetUserEventsRequest / buildGetUserRequest / 其余 buildXxxRequest（请求构造纯函数）', () => {
   test('buildGetUserEventsRequest：id + 分页直映射 + 排序口径同 ListUsers', () => {
     const req = apiMod.buildGetUserEventsRequest(BigInt(7), {
@@ -2268,6 +2331,7 @@ describe('userWriteVisibility（§5.4 门禁矩阵：写按钮体验层分级显
     resetRecoveryCodes: false,
     credentialWrite: false,
     unbindThirdparty: false,
+    deleteUser: false,
   };
 
   test('superadmin 目标：任何操作者一律全部隐藏', () => {
@@ -2501,6 +2565,21 @@ describe('api 编辑 / 救援写方法（§5.4 新增七 RPC：msw wire 形态�
   });
 });
 
+describe('api.deleteUser（§5.4 删除用户 → OkResponse：msw wire 形态）', () => {
+  test('真调统一 transport；请求体仅 {id}，int64 十进制字符串', async () => {
+    let body: unknown;
+    server.use(
+      http.post(DELETE_USER_URL, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await apiMod.deleteUser(apiMod.buildDeleteUserRequest(BigInt(42)));
+    expect(res.$typeName).toBe('api.admin.v1.OkResponse');
+    expect(body).toEqual({ id: '42' });
+  });
+});
+
 describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下线口径）', () => {
   test('联系方式有 diff → confirm_contact，文案键被门槛引用；取消不放行、确认才提交', async () => {
     const { userEditSubmitGate, canSubmitUserEdit } = await import(
@@ -2579,6 +2658,32 @@ describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下�
       'sign-in',
     );
     setLocale('zh-CN');
+  });
+
+  test('危险操作确认强度分级：删除 > 联系方式 / MFA / 凭证 > 普通编辑', () => {
+    const s = apiMod.userWriteConfirmStrength;
+    expect(s('delete')).toBeGreaterThan(s('contact'));
+    expect(s('delete')).toBeGreaterThan(s('mfa'));
+    expect(s('delete')).toBeGreaterThan(s('credential'));
+    expect(s('contact')).toBe(s('mfa'));
+    expect(s('mfa')).toBe(s('credential'));
+    expect(s('contact')).toBeGreaterThan(s('profile'));
+    expect(s('delete')).toBe(2);
+    expect(s('profile')).toBe(0);
+    // 删除入口须比联系方式多一层用户名输入门槛（文案含输入提示）。
+    expect(t('admin.deleteUserConfirmLabel', { username: 'alice' })).toContain(
+      'alice',
+    );
+    expect(t('admin.deleteUserWarning')).toContain('deleted_');
+  });
+
+  test('删除确认门槛：不输入 / 不一致不可提交，逐字匹配才放行', async () => {
+    const { canSubmitUserDelete } = await import('./pages/UserDetailPage');
+    expect(canSubmitUserDelete('alice', '')).toBe(false);
+    expect(canSubmitUserDelete('alice', 'Alice')).toBe(false);
+    expect(canSubmitUserDelete('alice', ' ali')).toBe(false);
+    expect(canSubmitUserDelete('alice', 'alice')).toBe(true);
+    expect(canSubmitUserDelete('', '')).toBe(false);
   });
 });
 

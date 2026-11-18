@@ -30,6 +30,7 @@ import {
   Banner,
   Button,
   Form,
+  Input,
   Popconfirm,
   SideSheet,
   Spin,
@@ -55,6 +56,7 @@ import {
   apiErrorText,
   boundMfaFactors,
   buildDeleteCredentialRequest,
+  buildDeleteUserRequest,
   buildGetUserEventsRequest,
   buildGetUserRequest,
   buildResetUserRecoveryCodesRequest,
@@ -66,10 +68,12 @@ import {
   buildUpdateUserProfileRequest,
   credentialKindLabel,
   deleteCredential,
+  deleteUser,
   formatUnixTime,
   getMe,
   getUser,
   getUserEvents,
+  isDeletedUser,
   isUnauthenticatedError,
   resetUserRecoveryCodes,
   setCredentialEnabled,
@@ -83,6 +87,7 @@ import {
   userStatusLabel,
   userWriteVisibility,
   type UserEditDraft,
+  type UserWriteVisibility,
 } from '../api';
 import styles from './UserDetailPage.module.less';
 
@@ -137,6 +142,32 @@ export function canSubmitUserEdit(
     return false;
   }
   return gate.kind === 'direct' || confirmed;
+}
+
+/**
+ * 删除提交门槛：必须逐字输入目标用户名才放行——空输入 / 不一致一律不可
+ * 提交（最强确认档，区别于联系方式 / MFA / 凭证的 Modal 二次确认）。
+ * 纯函数，node 可测。
+ */
+export function canSubmitUserDelete(
+  targetUsername: string,
+  typed: string,
+): boolean {
+  return targetUsername !== '' && typed === targetUsername;
+}
+
+/** 已删用户的写按钮一律置灰（体验层；服务端对其任何写请求均拒绝）。 */
+function allWritesDisabled(): UserWriteVisibility {
+  return {
+    editProfile: false,
+    editContact: false,
+    setMfa: false,
+    unbindTotp: false,
+    resetRecoveryCodes: false,
+    credentialWrite: false,
+    unbindThirdparty: false,
+    deleteUser: false,
+  };
 }
 
 /**
@@ -196,6 +227,8 @@ export function UserDetail(props: {
   userId: bigint | null;
   visible: boolean;
   onClose: () => void;
+  /** 删除成功后的回调（列表页据此重取列表并关闭抽屉）；可选。 */
+  onDeleted?: () => void;
 }): ReactNode {
   // 401 跳登录带 returnTo（/admin# + hash 内路径，登录后跳回本页）。
   const location = useLocation();
@@ -250,11 +283,17 @@ export function UserDetail(props: {
   const [editing, setEditing] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [writeBusy, setWriteBusy] = useState(false);
+  // 删除用户确认（最强确认档）：Modal 内须逐字输入目标用户名才放行。
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTyped, setDeleteTyped] = useState('');
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   // 切换目标 / 关闭抽屉时退出编辑态，避免把上个用户的草稿带到下个用户。
   useEffect(() => {
     setEditing(false);
     setFormKey((key) => key + 1);
+    setDeleteModalOpen(false);
+    setDeleteTyped('');
   }, [props.userId, props.visible]);
 
   /** 统一写操作编排：在途禁用靠调用方 Popconfirm 机制 + 本层 busy 文案。 */
@@ -354,6 +393,26 @@ export function UserDetail(props: {
     }
   }
 
+  /** 删除用户：逐字输入用户名确认后提交；成功关框 + 通知列表重取。 */
+  async function submitDelete(targetUsername: string): Promise<void> {
+    if (!canSubmitUserDelete(targetUsername, deleteTyped)) {
+      return;
+    }
+    setDeleteSubmitting(true);
+    try {
+      await deleteUser(buildDeleteUserRequest(props.userId ?? BigInt(0)));
+      setDeleteModalOpen(false);
+      setDeleteTyped('');
+      Toast.success(t('admin.deleteUserSuccess', { username: targetUsername }));
+      props.onDeleted?.();
+      props.onClose();
+    } catch (deleteError) {
+      Toast.error(apiErrorText(deleteError));
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  }
+
   // 抽屉内容：错误态 / 加载态 / 五个区块均落在 SideSheet 内，标题由外层
   // title 承载（避免旧独立页的 section 壳与 page-title 重复）。
   let content: ReactNode;
@@ -374,16 +433,30 @@ export function UserDetail(props: {
   } else {
     const user = data.user;
     const mfaBound = boundMfaFactors(data.mfa);
+    const targetUsername = user?.username ?? '';
+    const targetId = props.userId ?? BigInt(0);
+    const isDeleted = isDeletedUser(targetUsername);
     // 体验层显隐；服务端门禁唯一真相（§5.4）。操作者权限未到达时按无
-    // superadmin 处理——写按钮收敛，绝不放宽。
-    const visibility = userWriteVisibility(
+    // superadmin 处理——写按钮收敛，绝不放宽。已删用户所有写操作置灰；
+    // 自删由服务端拒绝，前端同步隐藏删除入口。
+    const baseVisibility = userWriteVisibility(
       data.permissions,
       meData?.permissions ?? [],
     );
-    const targetUsername = user?.username ?? '';
-    const targetId = props.userId ?? BigInt(0);
+    const selfDelete = meData !== undefined && meData.id === targetId;
+    const visibility = isDeleted
+      ? allWritesDisabled()
+      : {
+          ...baseVisibility,
+          deleteUser: baseVisibility.deleteUser && !selfDelete,
+        };
     content = (
       <>
+        {isDeleted ? (
+          <p role="status" style={{ color: '#dc2626', fontSize: 12 }}>
+            {t('admin.deletedUserNotice')}
+          </p>
+        ) : null}
         <section className={styles.block}>
           <div
             style={{
@@ -393,16 +466,31 @@ export function UserDetail(props: {
             }}
           >
             <h4 className={styles.blockTitle}>{t('admin.basicInfoSection')}</h4>
-            {user !== undefined && visibility.editProfile && !editing ? (
-              <Button
-                size="small"
-                onClick={() => {
-                  setEditing(true);
-                }}
-              >
-                {t('admin.editAction')}
-              </Button>
-            ) : null}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {user !== undefined && visibility.editProfile && !editing ? (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setEditing(true);
+                  }}
+                >
+                  {t('admin.editAction')}
+                </Button>
+              ) : null}
+              {user !== undefined && visibility.deleteUser && !editing ? (
+                <Button
+                  size="small"
+                  type="danger"
+                  disabled={writeBusy}
+                  onClick={() => {
+                    setDeleteTyped('');
+                    setDeleteModalOpen(true);
+                  }}
+                >
+                  {t('admin.deleteUserAction')}
+                </Button>
+              ) : null}
+            </div>
           </div>
           {user === undefined ? (
             // user 缺省（protojson 零值省略）：后端不该下发的防御分支。
@@ -799,6 +887,7 @@ export function UserDetail(props: {
   }
 
   const titleUser = data?.user;
+  const deleteTargetName = titleUser?.username ?? '';
   const title =
     titleUser !== undefined
       ? `${t('admin.userDetailTitle')}：${titleUser.username}`
@@ -813,6 +902,43 @@ export function UserDetail(props: {
       size="medium"
     >
       {content}
+      <Modal
+        title={t('admin.deleteUserTitle', { username: deleteTargetName })}
+        visible={deleteModalOpen}
+        onCancel={() => {
+          if (deleteSubmitting) {
+            return;
+          }
+          setDeleteModalOpen(false);
+          setDeleteTyped('');
+        }}
+        onOk={() => {
+          void submitDelete(deleteTargetName);
+        }}
+        okText={t('admin.deleteUserConfirmAction')}
+        cancelText={t('admin.cancelAction')}
+        confirmLoading={deleteSubmitting}
+        okButtonProps={{
+          type: 'danger',
+          disabled:
+            !canSubmitUserDelete(deleteTargetName, deleteTyped) ||
+            deleteSubmitting,
+        }}
+        cancelButtonProps={{ disabled: deleteSubmitting }}
+        maskClosable={false}
+      >
+        <p style={{ color: '#dc2626', fontSize: 12 }}>
+          {t('admin.deleteUserWarning')}
+        </p>
+        <p>{t('admin.deleteUserConfirmLabel', { username: deleteTargetName })}</p>
+        <Input
+          value={deleteTyped}
+          onChange={(value) => setDeleteTyped(value)}
+          placeholder={deleteTargetName}
+          aria-label={t('admin.deleteUserInputAriaLabel')}
+          autoComplete="off"
+        />
+      </Modal>
     </SideSheet>
   );
 }
