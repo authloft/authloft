@@ -10,8 +10,6 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // EpochSource epoch 回源函数：从 DB 真源读 user.epoch。真源装配文档未
@@ -19,12 +17,12 @@ import (
 // 后续 handler / bootstrap）。
 type EpochSource func(ctx context.Context, uid int64) (int64, error)
 
-// epochRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake 计数，不暴露整个 Cmdable）。
+// epochRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake 计数，不暴露整个客户端）。
 type epochRedis interface {
-	Get(ctx context.Context, key string) *redis.StringCmd
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Get(ctx context.Context, key string) StringResult
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
+	Del(ctx context.Context, keys ...string) IntResult
 }
 
 const (
@@ -41,7 +39,7 @@ type EpochStore struct {
 	local  *epochLocalCache
 }
 
-// NewEpochStore 构造 epoch 读取链。rdb 为已连通的 go-redis 客户端；
+// NewEpochStore 构造 epoch 读取链。rdb 为已连通的 Redis 客户端适配器；
 // source 为 DB 回源函数（Redis 缺失时调用并 SET 新值 TTL 24h）。
 func NewEpochStore(rdb epochRedis, source EpochSource) *EpochStore {
 	return newEpochStore(rdb, source, epochLocalTTL)
@@ -74,7 +72,7 @@ func (s *EpochStore) Current(ctx context.Context, uid int64) (int64, error) {
 		s.local.set(uid, v)
 		return v, nil
 	}
-	// redis.Nil（键缺失，§11.1 正常回源路径）与 Redis 故障（降级，见上
+	// Nil（键缺失，§11.1 正常回源路径）与 Redis 故障（降级，见上
 	// 方注释取舍）均走回源。
 	cur, srcErr := s.source(ctx, uid)
 	if srcErr != nil {

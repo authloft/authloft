@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
 	"authloft/internal/security"
@@ -97,21 +95,18 @@ type countingRedis struct {
 	vals    map[string]string
 }
 
-func (f *countingRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+func (f *countingRedis) Get(ctx context.Context, key string) cache.StringResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gets++
 	f.getKeys = append(f.getKeys, key)
-	cmd := redis.NewStringCmd(ctx)
 	if v, ok := f.vals[key]; ok {
-		cmd.SetVal(v)
-	} else {
-		cmd.SetErr(redis.Nil)
+		return cache.NewStringResult(v, nil)
 	}
-	return cmd
+	return cache.NewStringResult("", cache.Nil)
 }
 
-func (f *countingRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+func (f *countingRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) cache.StatusResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sets++
@@ -121,20 +116,16 @@ func (f *countingRedis) Set(ctx context.Context, key string, value interface{}, 
 		f.vals = make(map[string]string)
 	}
 	f.vals[key] = fmt.Sprint(value)
-	cmd := redis.NewStatusCmd(ctx)
-	cmd.SetVal("OK")
-	return cmd
+	return cache.NewStatusResult(nil)
 }
 
-func (f *countingRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *countingRedis) Del(ctx context.Context, keys ...string) cache.IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, key := range keys {
 		delete(f.vals, key)
 	}
-	cmd := redis.NewIntCmd(ctx)
-	cmd.SetVal(1)
-	return cmd
+	return cache.NewIntResult(1, nil)
 }
 
 func (f *countingRedis) counts() (gets, sets int) {

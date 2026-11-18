@@ -13,8 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 //go:embed lua/send_code.lua
@@ -33,10 +31,10 @@ const (
 	defaultCodeMaxAttempts = 5
 )
 
-// codeRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入计数 Hook 与 fake，不暴露整个 Cmdable）。
+// codeRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入计数 fake，不暴露整个客户端）。
 type codeRedis interface {
-	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) EvalResult
 }
 
 // CodeOptions 发码 / 校验参数（由调用方按 settings 注入，零值字段取默认）。
@@ -92,7 +90,7 @@ type CodeStore struct {
 	now  func() time.Time
 }
 
-// NewCodeStore 构造验证码存储。rdb 为已连通的 go-redis 客户端，
+// NewCodeStore 构造验证码存储。rdb 为已连通的 Redis 客户端适配器，
 // opts 零值字段按 §10.3 默认值回落。
 func NewCodeStore(rdb codeRedis, opts CodeOptions) *CodeStore {
 	return &CodeStore{rdb: rdb, opts: opts.withDefaults(), now: time.Now}

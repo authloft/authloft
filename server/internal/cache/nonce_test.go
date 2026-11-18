@@ -15,8 +15,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakeNonceRedis 计数型 fake（实现 nonceRedis 窄接口）：exists 模拟 SET NX
@@ -31,28 +29,24 @@ type fakeNonceRedis struct {
 	err    error
 }
 
-func (f *fakeNonceRedis) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
+func (f *fakeNonceRedis) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) BoolResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
 	f.keys = append(f.keys, key)
 	f.values = append(f.values, fmt.Sprint(value))
 	f.ttls = append(f.ttls, expiration)
-	cmd := redis.NewBoolCmd(ctx)
 	if f.err != nil {
-		cmd.SetErr(f.err)
-		return cmd
+		return NewBoolResult(false, f.err)
 	}
 	if f.exists == nil {
 		f.exists = make(map[string]bool)
 	}
 	if f.exists[key] {
-		cmd.SetVal(false)
-		return cmd
+		return NewBoolResult(false, nil)
 	}
 	f.exists[key] = true
-	cmd.SetVal(true)
-	return cmd
+	return NewBoolResult(true, nil)
 }
 
 // snapshot 返回调用计数与键名 / 值 / TTL 快照。
@@ -141,7 +135,7 @@ func TestNonceStoreError(t *testing.T) {
 }
 
 // scanRPCNonceKeys SCAN 收集全部 al:rpc:nonce:* 键（测试专用辅助）。
-func scanRPCNonceKeys(ctx context.Context, rdb *redis.Client) ([]string, error) {
+func scanRPCNonceKeys(ctx context.Context, rdb *RedisClient) ([]string, error) {
 	var all []string
 	var cursor uint64
 	for {
@@ -159,7 +153,7 @@ func scanRPCNonceKeys(ctx context.Context, rdb *redis.Client) ([]string, error) 
 
 // clearRPCNonceKeys 删除全部 al:rpc:nonce:* 键并复核零残留（该键空间为
 // RPC 鉴权专有，测试实例内不会触碰他卡键）。
-func clearRPCNonceKeys(ctx context.Context, rdb *redis.Client) error {
+func clearRPCNonceKeys(ctx context.Context, rdb *RedisClient) error {
 	keys, err := scanRPCNonceKeys(ctx, rdb)
 	if err != nil {
 		return err

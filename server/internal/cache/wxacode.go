@@ -13,16 +13,14 @@ import (
 	"errors"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/internal/logx"
 )
 
-// wxacodeRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
+// wxacodeRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
 // 窄化便于测试注入 fake，同 ticketRedis 口径）。
 type wxacodeRedis interface {
-	Get(ctx context.Context, key string) *redis.StringCmd
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Get(ctx context.Context, key string) StringResult
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
 }
 
 // wxacodeKeyPrefix 键前缀（§5.1 键空间命名约定 al: 域前缀）。
@@ -34,7 +32,7 @@ type WxacodeStore struct {
 	rdb wxacodeRedis
 }
 
-// NewWxacodeStore 构造。rdb 为已连通的 go-redis 客户端。
+// NewWxacodeStore 构造。rdb 为已连通的 Redis 客户端适配器。
 func NewWxacodeStore(rdb wxacodeRedis) *WxacodeStore {
 	return &WxacodeStore{rdb: rdb}
 }
@@ -43,9 +41,9 @@ func NewWxacodeStore(rdb wxacodeRedis) *WxacodeStore {
 func (s *WxacodeStore) Get(ctx context.Context, key string) (string, bool) {
 	v, err := s.rdb.Get(ctx, wxacodeKeyPrefix+key).Result()
 	if err != nil {
-		// redis.Nil 是正常未命中；其余为 Redis 故障，降级回源但不能无痕。
+		// Nil 是正常未命中；其余为 Redis 故障，降级回源但不能无痕。
 		// logx.Warn(ctx, ...) 自动带 request_id；不记 access_token 值。
-		if !errors.Is(err, redis.Nil) {
+		if !errors.Is(err, Nil) {
 			logx.Warn(ctx, "cache: wxacode access_token get failed",
 				"error", logx.RedactText(err.Error()),
 			)

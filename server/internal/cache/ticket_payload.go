@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/gen/go/token"
 )
 
@@ -46,11 +44,11 @@ type TicketPayloadSealer interface {
 	Open(string) (*token.TicketPayload, error)
 }
 
-// ticketPayloadRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
+// ticketPayloadRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
 // 窄化便于测试注入 fake，同 ticketRedis 口径）。
 type ticketPayloadRedis interface {
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
+	Get(ctx context.Context, key string) StringResult
 }
 
 // TicketPayloadStore al:ticket:payload:{ticket_id} 快照读写封装。
@@ -59,7 +57,7 @@ type TicketPayloadStore struct {
 	sealer TicketPayloadSealer
 }
 
-// NewTicketPayloadStore 构造快照存储。rdb 为已连通的 go-redis 客户端，
+// NewTicketPayloadStore 构造快照存储。rdb 为已连通的 Redis 客户端适配器，
 // sealer 为 §11.6.1 封装的注入实现。
 func NewTicketPayloadStore(rdb ticketPayloadRedis, sealer TicketPayloadSealer) *TicketPayloadStore {
 	return &TicketPayloadStore{rdb: rdb, sealer: sealer}
@@ -88,7 +86,7 @@ func (s *TicketPayloadStore) Write(ctx context.Context, payload *token.TicketPay
 // 863），调用方据此拒绝；其余错误为基础设施故障。
 func (s *TicketPayloadStore) Read(ctx context.Context, ticketID string) (*token.TicketPayload, error) {
 	raw, err := s.rdb.Get(ctx, TicketPayloadKey(ticketID)).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return nil, nil
 	}
 	if err != nil {

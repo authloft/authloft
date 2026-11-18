@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"authloft/internal/cache"
@@ -114,43 +113,35 @@ func newFakeTemplateRedis() *fakeTemplateRedis {
 	return &fakeTemplateRedis{vals: map[string]string{}}
 }
 
-func (f *fakeTemplateRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+func (f *fakeTemplateRedis) Get(ctx context.Context, key string) cache.StringResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "GET "+key)
-	cmd := redis.NewStringCmd(ctx)
 	if v, ok := f.vals[key]; ok {
-		cmd.SetVal(v)
-	} else {
-		cmd.SetErr(redis.Nil)
+		return cache.NewStringResult(v, nil)
 	}
-	return cmd
+	return cache.NewStringResult("", cache.Nil)
 }
 
-func (f *fakeTemplateRedis) Set(ctx context.Context, key string, value interface{}, _ time.Duration) *redis.StatusCmd {
+func (f *fakeTemplateRedis) Set(ctx context.Context, key string, value interface{}, _ time.Duration) cache.StatusResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "SET "+key)
-	cmd := redis.NewStatusCmd(ctx)
 	if f.setErr != nil {
-		cmd.SetErr(f.setErr)
-		return cmd
+		return cache.NewStatusResult(f.setErr)
 	}
 	f.vals[key] = fmt.Sprint(value)
-	cmd.SetVal("OK")
-	return cmd
+	return cache.NewStatusResult(nil)
 }
 
-func (f *fakeTemplateRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *fakeTemplateRedis) Del(ctx context.Context, keys ...string) cache.IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cmd := redis.NewIntCmd(ctx)
 	for _, key := range keys {
 		f.ops = append(f.ops, "DEL "+key)
 		delete(f.vals, key)
 	}
-	cmd.SetVal(int64(len(keys)))
-	return cmd
+	return cache.NewIntResult(int64(len(keys)), nil)
 }
 
 func (f *fakeTemplateRedis) has(key string) bool {

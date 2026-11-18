@@ -13,12 +13,10 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // codeTestRDB 真连测试实例，返回 ctx / client / 每用例唯一 token。
-func codeTestRDB(t *testing.T) (context.Context, *redis.Client, string) {
+func codeTestRDB(t *testing.T) (context.Context, *RedisClient, string) {
 	t.Helper()
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
 	if addr == "" {
@@ -44,7 +42,7 @@ func codeTestRDB(t *testing.T) (context.Context, *redis.Client, string) {
 }
 
 // clearCodeTestKeys 删除全部含 token 的 al:* 键并复核零残留。
-func clearCodeTestKeys(ctx context.Context, rdb *redis.Client, token string) error {
+func clearCodeTestKeys(ctx context.Context, rdb *RedisClient, token string) error {
 	pattern := "al:*" + token + "*"
 	var all []string
 	var cursor uint64
@@ -83,49 +81,28 @@ func clearCodeTestKeys(ctx context.Context, rdb *redis.Client, token string) err
 	return nil
 }
 
-// commandCounter go-redis Hook：记录经过客户端的命令名（用于断言发码仅
-// 1 次 EVAL 往返，§21.2-C 行 1822 ⑥）。
-type commandCounter struct {
-	mu    sync.Mutex
-	names []string
+// evalCounter 计数型 fake（实现 codeRedis 窄接口）：记录 Eval 调用参数，
+// 用于断言发码 4 写合并为单次 EVAL 往返（§21.2-C ⑥）。
+type evalCounter struct {
+	mu      sync.Mutex
+	scripts []string
+	keys    [][]string
+	args    [][]interface{}
 }
 
-func (c *commandCounter) reset() {
-	c.mu.Lock()
-	c.names = nil
-	c.mu.Unlock()
-}
-
-func (c *commandCounter) add(name string) {
-	c.mu.Lock()
-	c.names = append(c.names, name)
-	c.mu.Unlock()
-}
-
-func (c *commandCounter) snapshot() []string {
+func (c *evalCounter) Eval(ctx context.Context, script string, keys []string, args ...interface{}) EvalResult {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return append([]string(nil), c.names...)
+	c.scripts = append(c.scripts, script)
+	c.keys = append(c.keys, keys)
+	c.args = append(c.args, args)
+	return NewEvalResultInt(0, nil)
 }
 
-func (c *commandCounter) DialHook(next redis.DialHook) redis.DialHook {
-	return next
-}
-
-func (c *commandCounter) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
-	return func(ctx context.Context, cmd redis.Cmder) error {
-		c.add(cmd.Name())
-		return next(ctx, cmd)
-	}
-}
-
-func (c *commandCounter) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
-	return func(ctx context.Context, cmds []redis.Cmder) error {
-		for _, cmd := range cmds {
-			c.add(cmd.Name())
-		}
-		return next(ctx, cmds)
-	}
+func (c *evalCounter) snapshot() (int, []string, [][]string, [][]interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.scripts), c.scripts, c.keys, c.args
 }
 
 // mustSend 断言发码成功。
@@ -138,7 +115,7 @@ func mustSend(t *testing.T, ctx context.Context, store *CodeStore, target, purpo
 }
 
 // readStoredCode 读取并解析 al:code 值。
-func readStoredCode(t *testing.T, ctx context.Context, rdb *redis.Client, key string) storedCode {
+func readStoredCode(t *testing.T, ctx context.Context, rdb *RedisClient, key string) storedCode {
 	t.Helper()
 	raw, err := rdb.Get(ctx, key).Result()
 	if err != nil {
@@ -175,10 +152,10 @@ func TestCodeSendFirst(t *testing.T) {
 		t.Fatalf("cooldown exists = (%d, %v), want (1, nil)", n, err)
 	}
 	ymd := dayStamp(time.Now())
-	if n, err := rdb.Get(ctx, SendDayKey(target, ymd)).Int(); err != nil || n != 1 {
+	if n, err := rdb.Get(ctx, SendDayKey(target, ymd)).Int64(); err != nil || n != 1 {
 		t.Fatalf("sendday = (%d, %v), want (1, nil)", n, err)
 	}
-	if n, err := rdb.Get(ctx, IPDayKey(ip, ymd)).Int(); err != nil || n != 1 {
+	if n, err := rdb.Get(ctx, IPDayKey(ip, ymd)).Int64(); err != nil || n != 1 {
 		t.Fatalf("ipday = (%d, %v), want (1, nil)", n, err)
 	}
 }
@@ -221,7 +198,7 @@ func TestCodeSendTargetDailyLimit(t *testing.T) {
 	if err != nil || res != SendTargetDailyLimit {
 		t.Fatalf("第三次 Send = (%v, %v), want (SendTargetDailyLimit, nil)", res, err)
 	}
-	if n, err := rdb.Get(ctx, SendDayKey(target, dayStamp(time.Now()))).Int(); err != nil || n != 2 {
+	if n, err := rdb.Get(ctx, SendDayKey(target, dayStamp(time.Now()))).Int64(); err != nil || n != 2 {
 		t.Fatalf("sendday = (%d, %v), want (2, nil)", n, err)
 	}
 }
@@ -240,7 +217,7 @@ func TestCodeSendIPDailyLimit(t *testing.T) {
 	if err != nil || res != SendIPDailyLimit {
 		t.Fatalf("第二目标 Send = (%v, %v), want (SendIPDailyLimit, nil)", res, err)
 	}
-	if n, err := rdb.Get(ctx, IPDayKey(ip, dayStamp(time.Now()))).Int(); err != nil || n != 1 {
+	if n, err := rdb.Get(ctx, IPDayKey(ip, dayStamp(time.Now()))).Int64(); err != nil || n != 1 {
 		t.Fatalf("ipday = (%d, %v), want (1, nil)", n, err)
 	}
 	if n, err := rdb.Exists(ctx, CodeKey(targetB, purpose)).Result(); err != nil || n != 0 {
@@ -275,19 +252,29 @@ func TestCodeSendTTL(t *testing.T) {
 	}
 }
 
-// TestCodeSendSingleEval 发码 ⑥：4 写合并后仅 1 次客户端命令往返（EVAL）。
+// TestCodeSendSingleEval 发码 ⑥：4 写合并为单次 EVAL 调用（EVAL 内部原子
+// 完成验证码写入 + 冷却 SET NX EX + 两级日计数 INCR/EXPIRE，§10.1）。
+// 客户端侧单往返断言由脚本参数传递用例（rueidis_test.go）补足。
 func TestCodeSendSingleEval(t *testing.T) {
-	ctx, rdb, token := codeTestRDB(t)
-	store := NewCodeStore(rdb, CodeOptions{})
-	counter := &commandCounter{}
-	rdb.AddHook(counter)
-	counter.reset()
+	counter := &evalCounter{}
+	store := NewCodeStore(counter, CodeOptions{})
 
-	mustSend(t, ctx, store, token+"-one", "login", "tid-1", token+"-ip", "123456")
-
-	names := counter.snapshot()
-	if len(names) != 1 || names[0] != "eval" {
-		t.Fatalf("发码命令 = %v, want [eval]（4 写合并为 1 次往返）", names)
+	res, err := store.Send(context.Background(), "t-one", "login", "tid-1", "t-ip", "123456")
+	if err != nil || res != SendOK {
+		t.Fatalf("Send = (%v, %v), want (SendOK, nil)", res, err)
+	}
+	n, scripts, keys, args := counter.snapshot()
+	if n != 1 {
+		t.Fatalf("EVAL 调用次数 = %d, want 1（4 写合并为 1 次往返）", n)
+	}
+	if len(keys[0]) != 4 {
+		t.Fatalf("EVAL KEYS = %d 个, want 4（码 / 冷却 / 两级日计数）", len(keys[0]))
+	}
+	if len(args[0]) != 6 {
+		t.Fatalf("EVAL ARGV = %d 个, want 6（payload / TTL / 冷却 / 两级限额 / 日 TTL）", len(args[0]))
+	}
+	if len(scripts[0]) == 0 {
+		t.Fatal("EVAL 脚本不应为空")
 	}
 }
 

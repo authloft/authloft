@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakePermAdminsRedis 内存 SET fake（实现 permAdminsRedis 窄接口），记录
@@ -28,24 +26,19 @@ func newFakePermAdminsRedis() *fakePermAdminsRedis {
 
 func memberKey(v interface{}) string { return fmt.Sprint(v) }
 
-func (f *fakePermAdminsRedis) SIsMember(ctx context.Context, key string, member interface{}) *redis.BoolCmd {
+func (f *fakePermAdminsRedis) SIsMember(ctx context.Context, key string, member interface{}) BoolResult {
 	f.sIsCalls++
-	cmd := redis.NewBoolCmd(ctx)
 	if f.sIsErr != nil {
-		cmd.SetErr(f.sIsErr)
-		return cmd
+		return NewBoolResult(false, f.sIsErr)
 	}
-	cmd.SetVal(f.sets[key][memberKey(member)])
-	return cmd
+	return NewBoolResult(f.sets[key][memberKey(member)], nil)
 }
 
-func (f *fakePermAdminsRedis) SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
+func (f *fakePermAdminsRedis) SAdd(ctx context.Context, key string, members ...interface{}) IntResult {
 	f.sAddCalls++
 	f.lastSAdd = members
-	cmd := redis.NewIntCmd(ctx)
 	if f.sAddErr != nil {
-		cmd.SetErr(f.sAddErr)
-		return cmd
+		return NewIntResult(0, f.sAddErr)
 	}
 	if f.sets[key] == nil {
 		f.sets[key] = map[string]bool{}
@@ -53,22 +46,18 @@ func (f *fakePermAdminsRedis) SAdd(ctx context.Context, key string, members ...i
 	for _, m := range members {
 		f.sets[key][memberKey(m)] = true
 	}
-	cmd.SetVal(int64(len(members)))
-	return cmd
+	return NewIntResult(int64(len(members)), nil)
 }
 
-func (f *fakePermAdminsRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *fakePermAdminsRedis) Del(ctx context.Context, keys ...string) IntResult {
 	f.delCalls++
-	cmd := redis.NewIntCmd(ctx)
 	if f.delErr != nil {
-		cmd.SetErr(f.delErr)
-		return cmd
+		return NewIntResult(0, f.delErr)
 	}
 	for _, k := range keys {
 		delete(f.sets, k)
 	}
-	cmd.SetVal(int64(len(keys)))
-	return cmd
+	return NewIntResult(int64(len(keys)), nil)
 }
 
 func TestPermissionAdminsKey(t *testing.T) {

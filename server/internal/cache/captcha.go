@@ -10,8 +10,6 @@ import (
 	_ "embed"
 	"fmt"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 //go:embed lua/verify_captcha.lua
@@ -21,11 +19,11 @@ var verifyCaptchaScript string
 // expiresIn=300）。
 const captchaTTL = 300 * time.Second
 
-// captchaRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake，不暴露整个 Cmdable，同 codeRedis 口径）。
+// captchaRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake，不暴露整个客户端，同 codeRedis 口径）。
 type captchaRedis interface {
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) EvalResult
 }
 
 // CaptchaStore 自绘图形码唯一存储与校验实现。
@@ -33,7 +31,7 @@ type CaptchaStore struct {
 	rdb captchaRedis
 }
 
-// NewCaptchaStore 构造图形码存储。rdb 为已连通的 go-redis 客户端。
+// NewCaptchaStore 构造图形码存储。rdb 为已连通的 Redis 客户端适配器。
 func NewCaptchaStore(rdb captchaRedis) *CaptchaStore {
 	return &CaptchaStore{rdb: rdb}
 }

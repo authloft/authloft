@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
 	"authloft/gen/go/token"
@@ -26,7 +25,7 @@ import (
 // t053RDB 真连测试实例，返回 ctx / client / 每用例唯一 token
 // （"t053-"+随机串，落在 al:ticket / al:oidc:code 键名内，ticket_test.go 与
 // oidc_test.go 共用）。
-func t053RDB(t *testing.T) (context.Context, *redis.Client, string) {
+func t053RDB(t *testing.T) (context.Context, *RedisClient, string) {
 	t.Helper()
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
 	if addr == "" {
@@ -105,7 +104,7 @@ func ticketSeed(status string, createdAt, expiresAt int64) *token.TicketResult {
 }
 
 // readTicket 直接读原始存储串并解密（断言「不覆盖」用）。
-func readTicket(t *testing.T, ctx context.Context, rdb *redis.Client, sealer TicketSealer, id string) *token.TicketResult {
+func readTicket(t *testing.T, ctx context.Context, rdb *RedisClient, sealer TicketSealer, id string) *token.TicketResult {
 	t.Helper()
 	raw, err := rdb.Get(ctx, TicketKey(id)).Result()
 	if err != nil {

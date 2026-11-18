@@ -25,8 +25,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/gen/go/token"
 )
 
@@ -88,14 +86,14 @@ const (
 	TicketWriteOK TicketWriteResult = 1
 )
 
-// ticketRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake，不暴露整个 Cmdable，同 codeRedis 口径）。
+// ticketRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake，不暴露整个客户端，同 codeRedis 口径）。
 type ticketRedis interface {
-	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
-	Get(ctx context.Context, key string) *redis.StringCmd
-	GetDel(ctx context.Context, key string) *redis.StringCmd
-	Exists(ctx context.Context, keys ...string) *redis.IntCmd
-	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) BoolResult
+	Get(ctx context.Context, key string) StringResult
+	GetDel(ctx context.Context, key string) StringResult
+	Exists(ctx context.Context, keys ...string) IntResult
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) EvalResult
 }
 
 // ticketWriteScript complete 阶段原子覆盖写（接口文档 §2.7.4）：仅当键值仍
@@ -114,7 +112,7 @@ type TicketStore struct {
 	now    func() time.Time
 }
 
-// NewTicketStore 构造票据存储。rdb 为已连通的 go-redis 客户端，sealer 为
+// NewTicketStore 构造票据存储。rdb 为已连通的 Redis 客户端适配器，sealer 为
 // §11.6.1 封装的注入实现，opts 零值字段按 600s 回落。
 func NewTicketStore(rdb ticketRedis, sealer TicketSealer, opts TicketOptions) *TicketStore {
 	return newTicketStore(rdb, sealer, opts, time.Now)
@@ -175,7 +173,7 @@ func (s *TicketStore) WriteComplete(ctx context.Context, id string, res *token.T
 // 当前原始值（键不存在时为空串），successExists 为 true 时调用方不再写入。
 func (s *TicketStore) currentValue(ctx context.Context, key string) (expected string, successExists bool, err error) {
 	raw, err := s.rdb.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return "", false, nil
 	}
 	if err != nil {
@@ -199,7 +197,7 @@ func (s *TicketStore) currentValue(ctx context.Context, key string) (expected st
 // 已被消费）。
 func (s *TicketStore) Peek(ctx context.Context, id string) (*token.TicketResult, error) {
 	raw, err := s.rdb.Get(ctx, TicketKey(id)).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return nil, nil
 	}
 	if err != nil {
@@ -217,7 +215,7 @@ func (s *TicketStore) Peek(ctx context.Context, id string) (*token.TicketResult,
 // 已被消费。
 func (s *TicketStore) Take(ctx context.Context, id string) (*token.TicketResult, error) {
 	raw, err := s.rdb.GetDel(ctx, TicketKey(id)).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return nil, nil
 	}
 	if err != nil {

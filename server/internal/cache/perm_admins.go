@@ -5,16 +5,14 @@ package cache
 
 import (
 	"context"
-
-	"github.com/redis/go-redis/v9"
 )
 
-// permAdminsRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
+// permAdminsRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
 // 窄化便于测试注入 fake）。
 type permAdminsRedis interface {
-	SIsMember(ctx context.Context, key string, member interface{}) *redis.BoolCmd
-	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
-	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	SIsMember(ctx context.Context, key string, member interface{}) BoolResult
+	SAdd(ctx context.Context, key string, members ...interface{}) IntResult
+	Del(ctx context.Context, keys ...string) IntResult
 }
 
 // PermissionAdminsStore al:perm:admins 集合的读 / 回填 / 预热封装。
@@ -22,7 +20,7 @@ type PermissionAdminsStore struct {
 	rdb permAdminsRedis
 }
 
-// NewPermissionAdminsStore 注入已连通的 go-redis 客户端（或其窄接口 fake）。
+// NewPermissionAdminsStore 注入已连通的 Redis 客户端适配器（或其窄接口 fake）。
 func NewPermissionAdminsStore(rdb permAdminsRedis) *PermissionAdminsStore {
 	return &PermissionAdminsStore{rdb: rdb}
 }

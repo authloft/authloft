@@ -14,10 +14,12 @@ require (
 	// §1.5/§3.12——唯一依赖点 internal/jsonata 封装层，不自研求值器；
 	// 文档写 RecoLabs，库 go.mod 声明小写 recolabs，按库声明引入）。
 	github.com/recolabs/gnata v0.6.2
-	github.com/redis/go-redis/v9 v9.23.0
+	// Redis 客户端：rueidis（RESP3），经 internal/cache 适配层翻译为
+	// 自有结果类型，rueidiscompat 不引入。
+	github.com/redis/rueidis v1.0.80
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.58.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.62.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0
@@ -29,7 +31,6 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
@@ -69,10 +70,9 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
-	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 )

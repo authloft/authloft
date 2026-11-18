@@ -46,7 +46,7 @@ func TestNewClientReal(t *testing.T) {
 		t.Fatalf("NewClient 真连失败: %v", err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	if err := rdb.Ping(ctx); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
 	const key = "al:t030:probe"

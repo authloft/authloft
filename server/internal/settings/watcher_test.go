@@ -11,15 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/internal/cache"
 	"authloft/internal/config"
 )
 
 // setupTestRedis env-skip：真连 Redis 测试实例（cache.NewClient 自带
 // PING fail-fast），随 t.Cleanup 关闭。
-func setupTestRedis(t *testing.T) *redis.Client {
+func setupTestRedis(t *testing.T) *cache.RedisClient {
 	t.Helper()
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
 	if addr == "" {
@@ -66,12 +64,13 @@ func TestSetPublishSubscribeRefresh(t *testing.T) {
 		}
 	}
 
-	// 独立裸订阅者：断言 PUBLISH 真实发生且 payload 为变更键数组。
-	rawSub := rdb.Subscribe(ctx, cache.SettingsChgKey())
-	defer rawSub.Close()
-	if _, err := rawSub.Receive(ctx); err != nil {
-		t.Fatalf("裸订阅确认失败: %v", err)
+	// 独立裸订阅者：断言 PUBLISH 真实发生且 payload 为变更键数组
+	// （cache.Subscribe 返回即订阅确认，无需再 Receive）。
+	rawSub, err := rdb.Subscribe(ctx, cache.SettingsChgKey())
+	if err != nil {
+		t.Fatalf("裸订阅失败: %v", err)
 	}
+	defer rawSub.Stop()
 
 	w := NewWatcher(rdb, storeB)
 	if err := w.Start(ctx); err != nil {

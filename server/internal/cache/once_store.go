@@ -5,13 +5,11 @@ package cache
 import (
 	"context"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // OnceStore 高风险断言消费的 al:once:{nonce} 去重（§5.1 行 880）。
 type OnceStore struct {
-	rdb *redis.Client
+	rdb *RedisClient
 }
 
 func (s OnceStore) SetNX(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
@@ -19,6 +17,6 @@ func (s OnceStore) SetNX(ctx context.Context, key string, value interface{}, ttl
 }
 
 // NewOnceStore 构造一次性断言消费去重存储。
-func NewOnceStore(rdb *redis.Client) *OnceStore {
+func NewOnceStore(rdb *RedisClient) *OnceStore {
 	return &OnceStore{rdb: rdb}
 }

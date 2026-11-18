@@ -38,7 +38,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	"github.com/redis/rueidis"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	providerpb "authloft/gen/go/provider"
@@ -457,7 +457,8 @@ func TestBootstrapCloseOrderNoPanic(t *testing.T) {
 	// watcher（未 Start：Close 因未建立订阅直接幂等返回，不连 Redis）+
 	// 队列 + Redis 客户端共存：close 第一段 stopBackground 释放 watcher /
 	// 队列引用，第二段 closeInfra 释放 DB / Redis 引用——完整复现 serve
-	// 的优雅关闭两段顺序（先停后台，再关基础设施）。
+	// 的优雅关闭两段顺序（先停后台，再关基础设施）。客户端指向保留端口
+	// （ForceSingleClient 下首连失败仍返回句柄，Close 仅释放无副作用）。
 	w := settings.NewWatcher(nil, nil)
 	q2 := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
 		Capacity:      8,
@@ -465,7 +466,11 @@ func TestBootstrapCloseOrderNoPanic(t *testing.T) {
 		BatchSize:     8,
 		FlushInterval: time.Hour,
 	})
-	deps2 := &assembled{watcher: w, queue: q2, rdb: redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})}
+	deadClient, _ := rueidis.NewClient(rueidis.ClientOption{
+		InitAddress:       []string{"127.0.0.1:1"},
+		ForceSingleClient: true,
+	})
+	deps2 := &assembled{watcher: w, queue: q2, rdb: cache.NewClientWithRueidis(deadClient)}
 	deps2.close(ctx)
 	if deps2.watcher != nil || deps2.queue != nil {
 		t.Error("stopBackground must release watcher and queue references before closeInfra")
@@ -711,7 +716,7 @@ func TestAssembleRealChain(t *testing.T) {
 	// 步骤 3 migrate up：§4 全部 11 张表落库。
 	requireAllTables(t, db)
 	// 步骤 4 Redis：装配产物 PING 通。
-	if err := deps.rdb.Ping(ctx).Err(); err != nil {
+	if err := deps.rdb.Ping(ctx); err != nil {
 		t.Fatalf("redis ping: %v", err)
 	}
 	// 步骤 5-8：八把密钥 / settings 快照与 watcher / 队列 / sink 均已装配。

@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/internal/cache"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -22,13 +20,13 @@ import (
 // （全量预热 + 缺失补齐，bootstrap fail-fast）→ 服务期 Get* 只读 / Set 写。
 type Store struct {
 	rp  *repo.SettingsRepo
-	rdb *redis.Client
+	rdb *cache.RedisClient
 	cur atomic.Pointer[map[string]any]
 }
 
 // NewStore 构造 Store：初始快照 = 全量默认值（Preload 失败时进程不会进入
 // 服务期，此种子值仅为未预热先读的兜底，与 §5.6 setup 无表口径一致）。
-func NewStore(rp *repo.SettingsRepo, rdb *redis.Client) *Store {
+func NewStore(rp *repo.SettingsRepo, rdb *cache.RedisClient) *Store {
 	s := &Store{rp: rp, rdb: rdb}
 	def := Defaults()
 	s.cur.Store(&def)

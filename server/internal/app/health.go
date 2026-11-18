@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"authloft/internal/logx"
@@ -32,10 +31,16 @@ type Probe struct {
 	Check func(ctx context.Context) error
 }
 
+// RedisPinger 健康探活所需的 Redis 连通性最小接口（装配层客户端适配器
+// 实现），避免探针绑定具体客户端类型。
+type RedisPinger interface {
+	Ping(ctx context.Context) error
+}
+
 // StandardProbes 标准探活集：DB 经 sql.DB Ping（连通级，等价 SELECT 1）、
 // Redis PING。句柄与优雅关闭链路同一组（assembled.db / assembled.rdb）。
 // nil 句柄恒判失败——装配未完成即被探针命中属异常路径，如实报不健康。
-func StandardProbes(db *gorm.DB, rdb *redis.Client) []Probe {
+func StandardProbes(db *gorm.DB, rdb RedisPinger) []Probe {
 	return []Probe{
 		{
 			Name: "db",
@@ -56,7 +61,7 @@ func StandardProbes(db *gorm.DB, rdb *redis.Client) []Probe {
 				if rdb == nil {
 					return errors.New("redis handle not wired")
 				}
-				return rdb.Ping(ctx).Err()
+				return rdb.Ping(ctx)
 			},
 		},
 	}

@@ -8,8 +8,6 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakeWxacodeRedis 记录 Set 调用、按 map 返回 Get。
@@ -22,18 +20,14 @@ type item struct {
 	val string
 }
 
-func (f *fakeWxacodeRedis) Get(ctx context.Context, key string) *redis.StringCmd {
-	cmd := redis.NewStringCmd(ctx)
+func (f *fakeWxacodeRedis) Get(ctx context.Context, key string) StringResult {
 	if v, ok := f.store[key]; ok {
-		cmd.SetVal(v.val)
-		return cmd
+		return NewStringResult(v.val, nil)
 	}
-	cmd.SetErr(redis.Nil)
-	return cmd
+	return NewStringResult("", Nil)
 }
 
-func (f *fakeWxacodeRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
-	cmd := redis.NewStatusCmd(ctx)
+func (f *fakeWxacodeRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult {
 	if f.store == nil {
 		f.store = map[string]item{}
 	}
@@ -42,7 +36,7 @@ func (f *fakeWxacodeRedis) Set(ctx context.Context, key string, value interface{
 	}
 	f.store[key] = item{val: value.(string)}
 	f.ttls[key] = expiration
-	return cmd
+	return NewStatusResult(nil)
 }
 
 // TestWxacodeStoreFake 命中 / 未命中 / 键前缀 / TTL 透传 / 非法不写。

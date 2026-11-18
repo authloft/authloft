@@ -11,18 +11,16 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // oidcCodeTTL 授权码有效期（接口文档 §4.7 行 1134：120 秒，全文档唯一定义处）。
 const oidcCodeTTL = 120 * time.Second
 
-// oidcCodeRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake，不暴露整个 Cmdable，同 codeRedis 口径）。
+// oidcCodeRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake，不暴露整个客户端，同 codeRedis 口径）。
 type oidcCodeRedis interface {
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	GetDel(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
+	GetDel(ctx context.Context, key string) StringResult
 }
 
 // OIDCCodeStore OIDC 授权码存储。
@@ -30,7 +28,7 @@ type OIDCCodeStore struct {
 	rdb oidcCodeRedis
 }
 
-// NewOIDCCodeStore 构造授权码存储。rdb 为已连通的 go-redis 客户端。
+// NewOIDCCodeStore 构造授权码存储。rdb 为已连通的 Redis 客户端适配器。
 func NewOIDCCodeStore(rdb oidcCodeRedis) *OIDCCodeStore {
 	return &OIDCCodeStore{rdb: rdb}
 }
@@ -48,7 +46,7 @@ func (s *OIDCCodeStore) Set(ctx context.Context, code, value string) error {
 // 键不存在（未签发 / 已消费 / 已过期），value 原样返回。
 func (s *OIDCCodeStore) Consume(ctx context.Context, code string) (value string, ok bool, err error) {
 	v, err := s.rdb.GetDel(ctx, OIDCCodeKey(code)).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return "", false, nil
 	}
 	if err != nil {

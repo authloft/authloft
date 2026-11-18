@@ -10,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakeTemplateRedis 实现 templateRedis 窄接口并记录操作。
@@ -28,48 +26,39 @@ func newFakeTemplateRedis() *fakeTemplateRedis {
 	return &fakeTemplateRedis{vals: map[string]string{}, ttls: map[string]time.Duration{}}
 }
 
-func (f *fakeTemplateRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+func (f *fakeTemplateRedis) Get(ctx context.Context, key string) StringResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "GET "+key)
-	cmd := redis.NewStringCmd(ctx)
 	if f.getErr != nil {
-		cmd.SetErr(f.getErr)
-		return cmd
+		return NewStringResult("", f.getErr)
 	}
 	if v, ok := f.vals[key]; ok {
-		cmd.SetVal(v)
-	} else {
-		cmd.SetErr(redis.Nil)
+		return NewStringResult(v, nil)
 	}
-	return cmd
+	return NewStringResult("", Nil)
 }
 
-func (f *fakeTemplateRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+func (f *fakeTemplateRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "SET "+key)
 	f.vals[key] = fmt.Sprint(value)
 	f.ttls[key] = expiration
-	cmd := redis.NewStatusCmd(ctx)
-	cmd.SetVal("OK")
-	return cmd
+	return NewStatusResult(nil)
 }
 
-func (f *fakeTemplateRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *fakeTemplateRedis) Del(ctx context.Context, keys ...string) IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cmd := redis.NewIntCmd(ctx)
 	if f.delErr != nil {
-		cmd.SetErr(f.delErr)
-		return cmd
+		return NewIntResult(0, f.delErr)
 	}
 	for _, k := range keys {
 		f.ops = append(f.ops, "DEL "+k)
 		delete(f.vals, k)
 	}
-	cmd.SetVal(int64(len(keys)))
-	return cmd
+	return NewIntResult(int64(len(keys)), nil)
 }
 
 // TestTemplateRowKey 键名唯一出处（§5.1）。

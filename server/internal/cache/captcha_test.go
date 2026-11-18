@@ -11,14 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // t052RDB 真连测试实例，返回 ctx / client / 每用例唯一 token
 // （"t052-"+随机串，落在 al:cap / al:pwf / al:pwban 键名内，captcha_test.go
 // 与 pwfail_test.go 共用）。
-func t052RDB(t *testing.T) (context.Context, *redis.Client, string) {
+func t052RDB(t *testing.T) (context.Context, *RedisClient, string) {
 	t.Helper()
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
 	if addr == "" {

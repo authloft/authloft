@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	connectrpc "connectrpc.com/connect"
@@ -146,7 +145,7 @@ const shutdownTimeout = 10 * time.Second
 // cron 仍为 TODO（§3.12）。
 type assembled struct {
 	db  *gorm.DB
-	rdb *redis.Client
+	rdb *cache.RedisClient
 	// healthProbes /health 探活集：生产装配为空、由注册点回退
 	// app.StandardProbes(db, rdb)——探活句柄与优雅关闭链路同一组；
 	// 测试注入 fake 探活器（CODE_GUIDE §3.4 显式字段注入）。

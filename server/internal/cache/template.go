@@ -8,19 +8,17 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // templateRowTTL 模板 content 缓存 TTL（§5.1：600s）。
 const templateRowTTL = 600 * time.Second
 
-// templateRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
+// templateRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
 // 窄化便于测试注入 fake，同 providerRedis 口径）。
 type templateRedis interface {
-	Get(ctx context.Context, key string) *redis.StringCmd
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Get(ctx context.Context, key string) StringResult
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult
+	Del(ctx context.Context, keys ...string) IntResult
 }
 
 // TemplateCache 模板 content 缓存读写封装。
@@ -28,7 +26,7 @@ type TemplateCache struct {
 	rdb templateRedis
 }
 
-// NewTemplateCache 构造模板缓存。rdb 为已连通的 go-redis 客户端。
+// NewTemplateCache 构造模板缓存。rdb 为已连通的 Redis 客户端适配器。
 func NewTemplateCache(rdb templateRedis) *TemplateCache {
 	return &TemplateCache{rdb: rdb}
 }
@@ -37,7 +35,7 @@ func NewTemplateCache(rdb templateRedis) *TemplateCache {
 // 返回值为 content 原文（string），非整行序列化。
 func (c *TemplateCache) Get(ctx context.Context, key string) (string, bool, error) {
 	content, err := c.rdb.Get(ctx, TemplateRowKey(key)).Result()
-	if err == redis.Nil {
+	if err == Nil {
 		return "", false, nil
 	}
 	if err != nil {

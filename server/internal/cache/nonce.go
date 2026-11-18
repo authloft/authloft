@@ -11,14 +11,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
-// nonceRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake 计数，不暴露整个 Cmdable，同 epochRedis 口径）。
+// nonceRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake 计数，不暴露整个客户端，同 epochRedis 口径）。
 type nonceRedis interface {
-	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) BoolResult
 }
 
 // rpcNonceTTL nonce 去重键 TTL（接口文档 §7 行 1370：Redis 去重 TTL 30s）。
@@ -29,7 +27,7 @@ type NonceStore struct {
 	rdb nonceRedis
 }
 
-// NewNonceStore 构造 nonce 去重存储。rdb 为已连通的 go-redis 客户端。
+// NewNonceStore 构造 nonce 去重存储。rdb 为已连通的 Redis 客户端适配器。
 func NewNonceStore(rdb nonceRedis) *NonceStore {
 	return &NonceStore{rdb: rdb}
 }

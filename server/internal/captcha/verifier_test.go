@@ -15,9 +15,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/internal/cache"
+	"authloft/internal/config"
 	"authloft/internal/provider"
 )
 
@@ -143,11 +142,13 @@ func TestGateImageOnceSemanticsRealRedis(t *testing.T) {
 		t.Skip("环境变量 UC_TEST_REDIS_ADDR 未设置，跳过 Redis 连接用例")
 	}
 	ctx := context.Background()
-	rdb := redis.NewClient(&redis.Options{Addr: addr})
-	t.Cleanup(func() { _ = rdb.Close() })
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := cache.NewClient(ctx, &config.Config{
+		Redis: config.RedisConfig{Addr: addr, DB: 0, PoolSize: 10},
+	})
+	if err != nil {
 		t.Fatalf("连接 Redis 测试实例失败: %v", err)
 	}
+	t.Cleanup(func() { _ = rdb.Close() })
 	store := cache.NewCaptchaStore(rdb)
 	g := NewGate(mapSettings{}, &fakeCatalog{p: testProvider(BuiltinProviderKey, TypeImage, "")},
 		store, func(*provider.Provider) (provider.Verifier, error) { return nil, nil })

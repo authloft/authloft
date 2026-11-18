@@ -12,8 +12,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakeProviderRedis 实现 providerRedis 窄接口并记录操作顺序。
@@ -30,24 +28,20 @@ func newFakeProviderRedis() *fakeProviderRedis {
 	return &fakeProviderRedis{vals: make(map[string]string), setTTLs: make(map[string]time.Duration)}
 }
 
-func (f *fakeProviderRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+func (f *fakeProviderRedis) Get(ctx context.Context, key string) StringResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "GET "+key)
-	cmd := redis.NewStringCmd(ctx)
 	if f.getErr != nil {
-		cmd.SetErr(f.getErr)
-		return cmd
+		return NewStringResult("", f.getErr)
 	}
 	if v, ok := f.vals[key]; ok {
-		cmd.SetVal(v)
-	} else {
-		cmd.SetErr(redis.Nil)
+		return NewStringResult(v, nil)
 	}
-	return cmd
+	return NewStringResult("", Nil)
 }
 
-func (f *fakeProviderRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+func (f *fakeProviderRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "SET "+key)
@@ -57,41 +51,33 @@ func (f *fakeProviderRedis) Set(ctx context.Context, key string, value interface
 		f.vals[key] = fmt.Sprint(value)
 	}
 	f.setTTLs[key] = expiration
-	cmd := redis.NewStatusCmd(ctx)
-	cmd.SetVal("OK")
-	return cmd
+	return NewStatusResult(nil)
 }
 
-func (f *fakeProviderRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *fakeProviderRedis) Del(ctx context.Context, keys ...string) IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cmd := redis.NewIntCmd(ctx)
 	for _, k := range keys {
 		f.ops = append(f.ops, "DEL "+k)
 		delete(f.vals, k)
 	}
-	cmd.SetVal(int64(len(keys)))
-	return cmd
+	return NewIntResult(int64(len(keys)), nil)
 }
 
-func (f *fakeProviderRedis) Incr(ctx context.Context, key string) *redis.IntCmd {
+func (f *fakeProviderRedis) Incr(ctx context.Context, key string) IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, "INCR "+key)
 	f.version++
 	f.vals[key] = fmt.Sprint(f.version)
-	cmd := redis.NewIntCmd(ctx)
-	cmd.SetVal(f.version)
-	return cmd
+	return NewIntResult(f.version, nil)
 }
 
-func (f *fakeProviderRedis) Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd {
+func (f *fakeProviderRedis) Publish(ctx context.Context, channel string, message interface{}) IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ops = append(f.ops, fmt.Sprintf("PUBLISH %s %v", channel, message))
-	cmd := redis.NewIntCmd(ctx)
-	cmd.SetVal(0)
-	return cmd
+	return NewIntResult(0, nil)
 }
 
 func (f *fakeProviderRedis) operations() []string {

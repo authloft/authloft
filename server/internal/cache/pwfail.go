@@ -15,8 +15,6 @@ import (
 	"fmt"
 	"regexp"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 //go:embed lua/capture_pwfail.lua
@@ -26,17 +24,17 @@ var capturePwFailScript string
 // 默认 21600s = 6h；后端架构 §5.1 行 840）。
 const defaultPwBanTTL = 21600 * time.Second
 
-// pwFailRedis 本文件用到的 Redis 命令窄接口（*redis.Client 天然满足；
-// 窄化便于测试注入 fake，不暴露整个 Cmdable，同 codeRedis 口径）。
+// pwFailRedis 本文件用到的 Redis 命令窄接口（*RedisClient 适配器天然满足；
+// 窄化便于测试注入 fake，不暴露整个客户端，同 codeRedis 口径）。
 // Scan 供管理员解锁的「ip + 账号哈希」维度模式匹配删除。
 type pwFailRedis interface {
-	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
-	Get(ctx context.Context, key string) *redis.StringCmd
-	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
-	Exists(ctx context.Context, keys ...string) *redis.IntCmd
-	PTTL(ctx context.Context, key string) *redis.DurationCmd
-	Del(ctx context.Context, keys ...string) *redis.IntCmd
-	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) EvalResult
+	Get(ctx context.Context, key string) StringResult
+	SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) BoolResult
+	Exists(ctx context.Context, keys ...string) IntResult
+	PTTL(ctx context.Context, key string) DurationResult
+	Del(ctx context.Context, keys ...string) IntResult
+	Scan(ctx context.Context, cursor uint64, match string, count int64) ScanResult
 }
 
 // PwFailOptions 密码失败保护参数（由调用方按 settings 注入，零值取默认）。
@@ -65,7 +63,7 @@ type PwFailStore struct {
 	now  func() time.Time
 }
 
-// NewPwFailStore 构造密码失败保护存储。rdb 为已连通的 go-redis 客户端，
+// NewPwFailStore 构造密码失败保护存储。rdb 为已连通的 Redis 客户端适配器，
 // opts 零值字段按 §5.6 默认值回落。
 func NewPwFailStore(rdb pwFailRedis, opts PwFailOptions) *PwFailStore {
 	return newPwFailStore(rdb, opts, time.Now)
@@ -94,7 +92,7 @@ func (s *PwFailStore) Capture(ctx context.Context, userRef string) (int64, error
 // Count 读取当日失败计数（键缺失 / 已跨天过期视为 0）。
 func (s *PwFailStore) Count(ctx context.Context, userRef string) (int64, error) {
 	n, err := s.rdb.Get(ctx, PwFailKey(userRef, dayStamp(s.now()))).Int64()
-	if err == redis.Nil {
+	if err == Nil {
 		return 0, nil
 	}
 	if err != nil {

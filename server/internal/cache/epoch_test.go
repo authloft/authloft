@@ -12,8 +12,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // fakeEpochRedis 计数型 fake（实现 epochRedis 窄接口）：vals 为键值表，
@@ -32,53 +30,44 @@ type fakeEpochRedis struct {
 	setErr  error
 }
 
-func (f *fakeEpochRedis) Get(ctx context.Context, key string) *redis.StringCmd {
+func (f *fakeEpochRedis) Get(ctx context.Context, key string) StringResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gets++
 	f.getKeys = append(f.getKeys, key)
-	cmd := redis.NewStringCmd(ctx)
 	if f.getErr != nil {
-		cmd.SetErr(f.getErr)
-		return cmd
+		return NewStringResult("", f.getErr)
 	}
 	if v, ok := f.vals[key]; ok {
-		cmd.SetVal(v)
-	} else {
-		cmd.SetErr(redis.Nil)
+		return NewStringResult(v, nil)
 	}
-	return cmd
+	return NewStringResult("", Nil)
 }
 
-func (f *fakeEpochRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+func (f *fakeEpochRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) StatusResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sets++
 	f.setKeys = append(f.setKeys, key)
 	f.setTTNs = append(f.setTTNs, expiration)
-	cmd := redis.NewStatusCmd(ctx)
 	if f.setErr != nil {
-		cmd.SetErr(f.setErr)
-		return cmd
+		return NewStatusResult(f.setErr)
 	}
 	if f.vals == nil {
 		f.vals = make(map[string]string)
 	}
 	f.vals[key] = fmt.Sprint(value)
-	cmd.SetVal("OK")
-	return cmd
+	return NewStatusResult(nil)
 }
 
-func (f *fakeEpochRedis) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+func (f *fakeEpochRedis) Del(ctx context.Context, keys ...string) IntResult {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.dels++
-	cmd := redis.NewIntCmd(ctx)
 	for _, key := range keys {
 		delete(f.vals, key)
 	}
-	cmd.SetVal(1)
-	return cmd
+	return NewIntResult(1, nil)
 }
 
 // snapshot 返回各计数与键名快照。
@@ -383,7 +372,7 @@ func TestEpochSyncWritesNewValueAndLocalCache(t *testing.T) {
 }
 
 // TestEpochSyncSetFailureFallsBackToDel Sync 的 SET 失败退而 DEL
-//（读取链 miss 后回源 DB 真源，避免 Redis 残留旧值最长 24h）。
+// （读取链 miss 后回源 DB 真源，避免 Redis 残留旧值最长 24h）。
 func TestEpochSyncSetFailureFallsBackToDel(t *testing.T) {
 	fake := &fakeEpochRedis{
 		vals:   map[string]string{EpochKey(42): "3"},

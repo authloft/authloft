@@ -14,10 +14,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"authloft/internal/cache"
-	"authloft/internal/logx"
 )
 
 // reloadTimeout 单次重载的兜底超时；DB 拥塞时放弃本次（数据未变坏，
@@ -27,30 +24,23 @@ const reloadTimeout = 5 * time.Second
 // Watcher 配置热更新订阅者。生命周期：NewWatcher → Start（建立订阅并
 // 拉起后台 goroutine）→ Close（优雅关闭：断订阅、等 goroutine 退出）。
 type Watcher struct {
-	rdb  *redis.Client
+	rdb  *cache.RedisClient
 	st   *Store
-	sub  *redis.PubSub
+	sub  cache.PubSub
 	done chan struct{}
 }
 
 // NewWatcher 构造；rdb 与 st 由调用方注入（与 Store 共用连接与快照）。
-func NewWatcher(rdb *redis.Client, st *Store) *Watcher {
+func NewWatcher(rdb *cache.RedisClient, st *Store) *Watcher {
 	return &Watcher{rdb: rdb, st: st, done: make(chan struct{})}
 }
 
-// Start 订阅 al:settings:chg：Receive 确认订阅建立后拉起后台 goroutine。
-// 订阅失败返回错误（fail-fast，与 cache.NewClient 的 PING 口径一致——
-// Redis 不可达时装配期就该暴露）。
+// Start 订阅 al:settings:chg：订阅确认（cache.Subscribe 内 fail-fast）后
+// 拉起后台 goroutine。订阅失败返回错误（fail-fast，与 cache.NewClient 的
+// PING 口径一致——Redis 不可达时装配期就该暴露）。
 func (w *Watcher) Start(ctx context.Context) error {
-	sub := w.rdb.Subscribe(ctx, cache.SettingsChgKey())
-	if _, err := sub.Receive(ctx); err != nil {
-		// 订阅失败原错误上抛（fail-fast）；Close 失败单独留痕，避免资源
-		// 泄漏无痕。启动期无请求 ctx，按 CODE_GUIDE §3.8 用包级 slog。
-		if cerr := sub.Close(); cerr != nil {
-			slog.Warn("settings: subscribe cleanup failed",
-				"error", logx.RedactText(cerr.Error()),
-			)
-		}
+	sub, err := w.rdb.Subscribe(ctx, cache.SettingsChgKey())
+	if err != nil {
 		return fmt.Errorf("settings: subscribe %s: %w", cache.SettingsChgKey(), err)
 	}
 	w.sub = sub
@@ -71,14 +61,14 @@ func (w *Watcher) loop() {
 	}
 }
 
-// Close 优雅关闭（须在 Start 成功后调用）：关闭订阅 → Channel 关闭 →
+// Close 优雅关闭（须在 Start 成功后调用）：停止订阅 → Channel 关闭 →
 // loop 退出 → done 关闭。重复调用返回 nil 幂等。
 func (w *Watcher) Close() error {
 	if w.sub == nil {
 		return nil
 	}
-	err := w.sub.Close()
+	w.sub.Stop()
 	<-w.done
 	w.sub = nil
-	return err
+	return nil
 }
