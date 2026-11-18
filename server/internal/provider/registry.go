@@ -55,6 +55,11 @@ type Meta struct {
 	Channel     ThirdPartyChannel
 	Fields      []FieldMeta
 	Schema      func() []FieldMeta // 完整字段声明（含表列与 Ext）；nil = 无声明
+	// CSPSources captcha 类型子包注册时按指令分组的 CSP 源声明（§9.4：
+	// 声明随实现走，Catalog.CSP() 经注册表聚合输出，禁按 type / 厂商名
+	// 特判；指令限接口文档 §8 白名单四项 frame-src / connect-src /
+	// style-src / img-src）。nil = 不贡献源。
+	CSPSources map[string][]string
 }
 
 // entry 注册表条目：meta 恒有，factory 槽按注册来源挂零或一个（同一 type

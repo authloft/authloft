@@ -23,6 +23,11 @@ func init() {
 		DisplayName: "Cloudflare Turnstile",
 		Category:    provider.CategoryCaptcha,
 		Schema:      captchacore.Schema,
+		// CSP 源声明随实现走（§9.4 工厂化收口；源值 = 接口文档 §8 参考源
+		// 清单表，不在 csp.go 写死厂商域）。
+		CSPSources: map[string][]string{
+			"frame-src": {"https://challenges.cloudflare.com"},
+		},
 	}, newVerifier)
 }
 

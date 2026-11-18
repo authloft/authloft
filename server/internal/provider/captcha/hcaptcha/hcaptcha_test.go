@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	providerpb "authloft/gen/go/provider"
@@ -26,6 +27,16 @@ func TestTypeRegisteredAndDispatched(t *testing.T) {
 	}
 	if meta.Schema == nil || len(meta.Schema()) == 0 {
 		t.Fatal("meta.Schema() 为空（admin /schema 数据源缺失）")
+	}
+	// CSP 源声明随实现走（§9.4 工厂化收口）：本包登记源 = 接口文档 §8
+	// 参考源清单表，防注册声明漂移。
+	wantCSP := map[string][]string{
+		"frame-src":   {"https://hcaptcha.com", "https://*.hcaptcha.com"},
+		"connect-src": {"https://hcaptcha.com", "https://*.hcaptcha.com"},
+		"style-src":   {"https://hcaptcha.com", "https://*.hcaptcha.com"},
+	}
+	if !reflect.DeepEqual(meta.CSPSources, wantCSP) {
+		t.Fatalf("meta.CSPSources = %v, want %v（接口文档 §8 参考源清单）", meta.CSPSources, wantCSP)
 	}
 }
 
