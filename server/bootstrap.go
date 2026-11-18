@@ -219,6 +219,13 @@ type assembled struct {
 	// Gate / 限流 Config，仅 Sender 按渠道分注；handler 侧由 bindContactPair 适配。
 	accountBindContact accounthandler.ContactBinder
 
+	// accountConsent account 域同意 RPC 编排（§3.10）：复用 authz / consents /
+	// codeIssuer / 同步首跳共享单例，与 Terminal / pages 同源。
+	accountConsent *accountsvc.ConsentService
+	// consentClaims 同意 RPC 会话载荷读取（§5.2：uid/amr/auth_time 取会话载荷），
+	// 复用共享 sessionTokens 解析请求令牌。
+	consentClaims accounthandler.ConsentClaimsReader
+
 	// repos 全进程共享仓储（repo 只持 *gorm.DB、无状态，复用等价）。
 	repos *repoSet
 
@@ -744,6 +751,33 @@ func buildAccountServices(deps *assembled, users *repo.UserRepo, creds *repo.Cre
 		phone: accountsvc.NewBindContactService(bindPhoneDeps),
 		email: accountsvc.NewBindContactService(bindEmailDeps),
 	}
+
+	// 同意 RPC 编排（§3.10）：校验 / 写记录 / 签码 / 同步首跳复用共享单例。
+	// 同步构造器缺省时留 nil（service 侧跳过同步），兼容只装配引擎的启动路径。
+	var consentSync accountsvc.ConsentSync
+	if deps.sessionSvc != nil {
+		consentSync = deps.sessionSvc.Sync
+	}
+	deps.accountConsent = accountsvc.NewConsentService(accountsvc.ConsentDeps{
+		Authz:    deps.authz,
+		Consents: deps.consents,
+		Codes:    deps.codeIssuer,
+		Sync:     consentSync,
+		Settings: deps.settings,
+	})
+	var consentVerifier *session.Verifier
+	if deps.sessionSvc != nil {
+		consentVerifier = deps.sessionSvc.Verifier
+	}
+	deps.consentClaims = &accounthandler.HeaderClaimsReader{
+		Verifier: consentVerifier,
+		CookieName: func() string {
+			if v, ok := deps.settings.GetString(settings.KeyCookieName); ok && v != "" {
+				return v
+			}
+			return "al_session"
+		},
+	}
 }
 
 // buildDomains 按域顺序装配引擎依赖并返回 engine / terminal / registry：
@@ -1241,25 +1275,26 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // 会话，无 LoginDefault 式豁免，无会话由 handler 返回 unauthenticated）；
 // 各 service 由 buildDomains / wireSharedServices 构造，本函数只注入。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	base := accounthandler.NewWithServices(
+		deps.repos.Users,
+		deps.repos.Creds,
+		deps.settings,
+		deps.repos.Providers,
+		deps.gate,
+		deps.accountThirdparty,
+		deps.accountWebauthn,
+		deps.accountProfile,
+		deps.accountAvatar,
+		deps.accountPassword,
+		deps.accountBindContact,
+		deps.accountMfa,
+		deps.accountEvents,
+		deps.sessionSvc.Cookie,
+		deps.admin.Permission.ListPermissions,
+		deps.verification,
+	)
 	path, h := accountv1connect.NewAccountServiceHandler(
-		accounthandler.NewWithServices(
-			deps.repos.Users,
-			deps.repos.Creds,
-			deps.settings,
-			deps.repos.Providers,
-			deps.gate,
-			deps.accountThirdparty,
-			deps.accountWebauthn,
-			deps.accountProfile,
-			deps.accountAvatar,
-			deps.accountPassword,
-			deps.accountBindContact,
-			deps.accountMfa,
-			deps.accountEvents,
-			deps.sessionSvc.Cookie,
-			deps.admin.Permission.ListPermissions,
-			deps.verification,
-		),
+		accounthandler.NewConsentHandler(base, deps.accountConsent, deps.consentClaims),
 		csrv.HandlerOptions(deps.sessionSvc.Interceptor)...,
 	)
 	csrv.Register(path, h)
