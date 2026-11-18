@@ -107,7 +107,7 @@ func (j *JWT) Issuer() string { return j.issuer }
 
 // IDTokenInput ID Token 签发入参（claims 集合见接口文档 §4.7）。
 type IDTokenInput struct {
-	UID      int64
+	Sub      string
 	ClientID string
 	Nonce    string
 	AMR      []string
@@ -119,7 +119,7 @@ type IDTokenInput struct {
 func (j *JWT) SignIDToken(in IDTokenInput) (string, error) {
 	claims := jwt.MapClaims{
 		"iss":   j.issuer,
-		"sub":   int64String(in.UID),
+		"sub":   in.Sub,
 		"aud":   in.ClientID,
 		"iat":   j.now().Unix(),
 		"exp":   j.now().Add(in.TTL).Unix(),
@@ -136,7 +136,7 @@ func (j *JWT) SignIDToken(in IDTokenInput) (string, error) {
 
 // AccessTokenInput Access Token 签发入参（§4.7：RS256、含 epoch）。
 type AccessTokenInput struct {
-	UID      int64
+	Sub      string
 	ClientID string
 	Scope    string // 空格分隔；供 userinfo 判定 phone_plain / email_plain
 	AMR      []string
@@ -150,7 +150,7 @@ type AccessTokenInput struct {
 func (j *JWT) SignAccessToken(in AccessTokenInput) (string, error) {
 	claims := jwt.MapClaims{
 		"iss":   j.issuer,
-		"sub":   int64String(in.UID),
+		"sub":   in.Sub,
 		"aud":   in.ClientID,
 		"iat":   j.now().Unix(),
 		"exp":   j.now().Add(in.TTL).Unix(),
@@ -173,9 +173,10 @@ func (j *JWT) sign(claims jwt.MapClaims) (string, error) {
 	return tok.SignedString(j.signKey)
 }
 
-// AccessClaims 验签后要求的 Access Token claim 子集。
+// AccessClaims 验签后要求的 Access Token claim 子集。Sub 为密文 sub，
+// 消费链须经 SubCodec.DecodeSub 还原 uid（后端架构 §14.3）。
 type AccessClaims struct {
-	Sub   int64
+	Sub   string
 	Scope string
 	AMR   []string
 	Epoch int64
@@ -213,7 +214,7 @@ func (j *JWT) VerifyAccess(raw string) (*AccessClaims, error) {
 		return nil, err
 	}
 	return &AccessClaims{
-		Sub:   int64Claim(claims, "sub"),
+		Sub:   stringClaim(claims, "sub"),
 		Scope: stringClaim(claims, "scope"),
 		AMR:   stringsClaim(claims, "amr"),
 		Epoch: int64Claim(claims, "epoch"),
@@ -226,7 +227,7 @@ func stringClaim(m jwt.MapClaims, key string) string {
 	return v
 }
 
-// int64Claim 取数值型 claim；sub 按 §4.7 为 uid 字符串，兼容两种形态。
+// int64Claim 取数值型 claim（epoch 等）。
 func int64Claim(m jwt.MapClaims, key string) int64 {
 	switch v := m[key].(type) {
 	case float64:
@@ -240,9 +241,6 @@ func int64Claim(m jwt.MapClaims, key string) int64 {
 	}
 	return 0
 }
-
-// int64String uid → 十进制字符串（§4.5 / §4.7：sub 为字符串）。
-func int64String(v int64) string { return strconv.FormatInt(v, 10) }
 
 // parseInt64 解析十进制字符串。
 func parseInt64(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) }

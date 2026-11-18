@@ -56,7 +56,7 @@ func TestSignVerifyIDToken(t *testing.T) {
 	j := newTestJWT(t, "k1")
 	j.Now = fixedNow
 	raw, err := j.SignIDToken(IDTokenInput{
-		UID: 42, ClientID: "web", Nonce: "n-1", AMR: []string{"pwd", "otp"},
+		Sub: testSub(t), ClientID: "web", Nonce: "n-1", AMR: []string{"pwd", "otp"},
 		Epoch: 3, TTL: time.Hour,
 	})
 	if err != nil {
@@ -69,8 +69,8 @@ func TestSignVerifyIDToken(t *testing.T) {
 	if got := claims["iss"]; got != "https://authloft.example.com" {
 		t.Errorf("iss = %v, want trim-suffix issuer", got)
 	}
-	if got := claims["sub"]; got != "42" {
-		t.Errorf("sub = %v, want string \"42\"", got)
+	if got := claims["sub"]; got != testSub(t) {
+		t.Errorf("sub = %v, want cipher sub %q", got, testSub(t))
 	}
 	if got := claims["aud"]; got != "web" {
 		t.Errorf("aud = %v, want web", got)
@@ -104,7 +104,7 @@ func TestSignVerifyIDToken(t *testing.T) {
 func TestVerifyRejectsUnknownKid(t *testing.T) {
 	other := newTestJWT(t, "other")
 	other.Now = fixedNow
-	raw, err := other.SignIDToken(IDTokenInput{UID: 1, ClientID: "web", Epoch: 0, TTL: time.Hour})
+	raw, err := other.SignIDToken(IDTokenInput{Sub: "sub-1", ClientID: "web", Epoch: 0, TTL: time.Hour})
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestVerifyRejectsNonRS256(t *testing.T) {
 func TestVerifyRejectsExpired(t *testing.T) {
 	j := newTestJWT(t, "k1")
 	j.Now = fixedNow
-	raw, err := j.SignIDToken(IDTokenInput{UID: 1, ClientID: "web", Epoch: 0, TTL: time.Minute})
+	raw, err := j.SignIDToken(IDTokenInput{Sub: "sub-1", ClientID: "web", Epoch: 0, TTL: time.Minute})
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}

@@ -7,6 +7,7 @@
 package api
 
 import (
+	v1 "authloft/gen/go/api/account/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -28,9 +29,9 @@ const (
 // Claim 语义在 §4.5 唯一定义，取值来源映射见《后端架构》§14.4。
 type UserinfoResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 用户 ID（user.id）；整型一律 int64，JSON 输出十进制字符串，
-	// 与示例 "10086" 一致（§12.9、§1.12）。
-	Sub int64 `protobuf:"varint,1,opt,name=sub,proto3" json:"sub,omitempty"`
+	// 按客户端确定性派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）：
+	// 同一 (client_id, uid) 恒定、跨客户端互异，不含真实 user.id。
+	Sub string `protobuf:"bytes,1,opt,name=sub,proto3" json:"sub,omitempty"`
 	// 昵称（user.nickname）。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// 邮箱（user.email）；默认掩码，仅当 Access Token 的 scope 含
@@ -83,11 +84,11 @@ func (*UserinfoResponse) Descriptor() ([]byte, []int) {
 	return file_api_oidc_userinfo_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *UserinfoResponse) GetSub() int64 {
+func (x *UserinfoResponse) GetSub() string {
 	if x != nil {
 		return x.Sub
 	}
-	return 0
+	return ""
 }
 
 func (x *UserinfoResponse) GetName() string {
@@ -139,20 +140,218 @@ func (x *UserinfoResponse) GetAmr() []string {
 	return nil
 }
 
+// GetUserInfoResponse 是 `GET /api/oidc/get_user_info` 的专用响应（§4.6）：
+// 字段集与 §3.1 一致，唯一差异是用户标识由 id（十进制 user.id）换为密文 sub
+// （§4.5），OIDC 对外不暴露真实 uid。rpc 域 ProfileResponse 的 int64 id 同时
+// 服务 §7.1 / §7.2 真实 uid 口径，不可改型，故此处另立专用消息。
+// phone / email 默认掩码，仅当 Access Token 的 scope 含 phone_plain /
+// email_plain 时对应字段明文（§3.1 掩码矩阵）。
+type GetUserInfoResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 按客户端派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）。
+	Sub string `protobuf:"bytes,1,opt,name=sub,proto3" json:"sub,omitempty"`
+	// 登录名（§3.1）。
+	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	// 昵称（§3.1）。
+	Nickname string `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	// 头像地址（§3.1）。
+	AvatarUrl string `protobuf:"bytes,4,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`
+	// 手机号；默认掩码，明码 scope 时明文（§3.1）。
+	Phone string `protobuf:"bytes,5,opt,name=phone,proto3" json:"phone,omitempty"`
+	// 手机号是否已验证，JSON 为 1/0（§3.1）。
+	PhoneVerified int64 `protobuf:"varint,6,opt,name=phone_verified,json=phoneVerified,proto3" json:"phone_verified,omitempty"`
+	// 邮箱；默认掩码，明码 scope 时明文（§3.1）。
+	Email string `protobuf:"bytes,7,opt,name=email,proto3" json:"email,omitempty"`
+	// 邮箱是否已验证，JSON 为 1/0（§3.1）。
+	EmailVerified int64 `protobuf:"varint,8,opt,name=email_verified,json=emailVerified,proto3" json:"email_verified,omitempty"`
+	// 账号状态：1 正常 0 禁用（§3.1）。
+	UserStatus int64 `protobuf:"varint,9,opt,name=user_status,json=userStatus,proto3" json:"user_status,omitempty"`
+	// 用户自助两步验证开关（§3.1）。
+	MfaRequired int64 `protobuf:"varint,10,opt,name=mfa_required,json=mfaRequired,proto3" json:"mfa_required,omitempty"`
+	// 安全版本号（§3.1）。
+	Epoch int64 `protobuf:"varint,11,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// 最后登录时间，Unix 秒（§3.1）。
+	LastLoginAt int64 `protobuf:"varint,12,opt,name=last_login_at,json=lastLoginAt,proto3" json:"last_login_at,omitempty"`
+	// 创建时间，Unix 秒（§3.1）。
+	CreatedAt int64 `protobuf:"varint,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// 更新时间，Unix 秒（§3.1）。
+	UpdatedAt int64 `protobuf:"varint,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// user_profile 表结构（§3.1），跨包复用 account 域 UserProfile。
+	Profile       *v1.UserProfile `protobuf:"bytes,15,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUserInfoResponse) Reset() {
+	*x = GetUserInfoResponse{}
+	mi := &file_api_oidc_userinfo_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserInfoResponse) ProtoMessage() {}
+
+func (x *GetUserInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_oidc_userinfo_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetUserInfoResponse) Descriptor() ([]byte, []int) {
+	return file_api_oidc_userinfo_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetUserInfoResponse) GetSub() string {
+	if x != nil {
+		return x.Sub
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetNickname() string {
+	if x != nil {
+		return x.Nickname
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetPhoneVerified() int64 {
+	if x != nil {
+		return x.PhoneVerified
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *GetUserInfoResponse) GetEmailVerified() int64 {
+	if x != nil {
+		return x.EmailVerified
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetUserStatus() int64 {
+	if x != nil {
+		return x.UserStatus
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetMfaRequired() int64 {
+	if x != nil {
+		return x.MfaRequired
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetEpoch() int64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetLastLoginAt() int64 {
+	if x != nil {
+		return x.LastLoginAt
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+func (x *GetUserInfoResponse) GetProfile() *v1.UserProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
 var File_api_oidc_userinfo_proto protoreflect.FileDescriptor
 
 const file_api_oidc_userinfo_proto_rawDesc = "" +
 	"\n" +
-	"\x17api/oidc/userinfo.proto\x12\bapi.oidc\"\xf8\x01\n" +
+	"\x17api/oidc/userinfo.proto\x12\bapi.oidc\x1a\x1capi/account/v1/profile.proto\"\xf8\x01\n" +
 	"\x10UserinfoResponse\x12\x10\n" +
-	"\x03sub\x18\x01 \x01(\x03R\x03sub\x12\x12\n" +
+	"\x03sub\x18\x01 \x01(\tR\x03sub\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05email\x18\x03 \x01(\tR\x05email\x12%\n" +
 	"\x0eemail_verified\x18\x04 \x01(\bR\remailVerified\x12!\n" +
 	"\fphone_number\x18\x05 \x01(\tR\vphoneNumber\x122\n" +
 	"\x15phone_number_verified\x18\x06 \x01(\bR\x13phoneNumberVerified\x12\x18\n" +
 	"\apicture\x18\a \x01(\tR\apicture\x12\x10\n" +
-	"\x03amr\x18\b \x03(\tR\x03amrB\x1eZ\x1cauthloft/gen/go/api/oidc;apib\x06proto3"
+	"\x03amr\x18\b \x03(\tR\x03amr\"\xeb\x03\n" +
+	"\x13GetUserInfoResponse\x12\x10\n" +
+	"\x03sub\x18\x01 \x01(\tR\x03sub\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\bnickname\x18\x03 \x01(\tR\bnickname\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12\x14\n" +
+	"\x05phone\x18\x05 \x01(\tR\x05phone\x12%\n" +
+	"\x0ephone_verified\x18\x06 \x01(\x03R\rphoneVerified\x12\x14\n" +
+	"\x05email\x18\a \x01(\tR\x05email\x12%\n" +
+	"\x0eemail_verified\x18\b \x01(\x03R\remailVerified\x12\x1f\n" +
+	"\vuser_status\x18\t \x01(\x03R\n" +
+	"userStatus\x12!\n" +
+	"\fmfa_required\x18\n" +
+	" \x01(\x03R\vmfaRequired\x12\x14\n" +
+	"\x05epoch\x18\v \x01(\x03R\x05epoch\x12\"\n" +
+	"\rlast_login_at\x18\f \x01(\x03R\vlastLoginAt\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\r \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x0e \x01(\x03R\tupdatedAt\x125\n" +
+	"\aprofile\x18\x0f \x01(\v2\x1b.api.account.v1.UserProfileR\aprofileB\x1eZ\x1cauthloft/gen/go/api/oidc;apib\x06proto3"
 
 var (
 	file_api_oidc_userinfo_proto_rawDescOnce sync.Once
@@ -166,16 +365,19 @@ func file_api_oidc_userinfo_proto_rawDescGZIP() []byte {
 	return file_api_oidc_userinfo_proto_rawDescData
 }
 
-var file_api_oidc_userinfo_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_api_oidc_userinfo_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_api_oidc_userinfo_proto_goTypes = []any{
-	(*UserinfoResponse)(nil), // 0: api.oidc.UserinfoResponse
+	(*UserinfoResponse)(nil),    // 0: api.oidc.UserinfoResponse
+	(*GetUserInfoResponse)(nil), // 1: api.oidc.GetUserInfoResponse
+	(*v1.UserProfile)(nil),      // 2: api.account.v1.UserProfile
 }
 var file_api_oidc_userinfo_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: api.oidc.GetUserInfoResponse.profile:type_name -> api.account.v1.UserProfile
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_api_oidc_userinfo_proto_init() }
@@ -189,7 +391,7 @@ func file_api_oidc_userinfo_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_oidc_userinfo_proto_rawDesc), len(file_api_oidc_userinfo_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

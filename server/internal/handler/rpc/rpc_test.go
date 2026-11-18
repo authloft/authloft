@@ -213,9 +213,24 @@ func nextNonce() string {
 	return fmt.Sprintf("n%d", nonceSeq)
 }
 
+// fakeSubDecoder 以固定映射模拟 §11.6.8 载荷还原：本客户端 sub 可解、
+// 他人客户端 sub 解出但 client_id 不同、非法 sub 直接失败。
+type fakeSubDecoder struct{}
+
+func (fakeSubDecoder) DecodeSub(sub string) (int64, string, error) {
+	switch sub {
+	case "own-sub":
+		return 42, testClientID, nil
+	case "other-sub":
+		return 10086, "other-client", nil
+	default:
+		return 0, "", errors.New("invalid sub")
+	}
+}
+
 // newRPCTestMux 构造生产形态的 rpc 域测试链：生成 handler + HMAC 拦截器 +
 // 错误包装（内层，connect.Server.HandlerOptions 同序）+ CaptureRawBody
-//（RegisterRPC 强制包装口径）。
+// （RegisterRPC 强制包装口径）。
 func newRPCTestMux(t *testing.T, users UserStore, tokens *session.Tokens, epochs *fakeEpochReader) http.Handler {
 	t.Helper()
 	lookup := func(_ context.Context, clientID string) (string, bool) {
@@ -231,7 +246,7 @@ func newRPCTestMux(t *testing.T, users UserStore, tokens *session.Tokens, epochs
 			internalconnect.NewErrorWrapperInterceptor(),
 		)}
 	}
-	userPath, userH := rpcv1connect.NewUserServiceHandler(NewUserHandler(users), opts()...)
+	userPath, userH := rpcv1connect.NewUserServiceHandler(NewUserHandler(users, fakeSubDecoder{}), opts()...)
 	tokenPath, tokenH := rpcv1connect.NewTokenServiceHandler(
 		NewTokenHandler(session.NewVerifier(tokens, epochs), session.NewRenewer(tokens, testTTL), users),
 		opts()...)
@@ -276,7 +291,7 @@ func doRPC(t *testing.T, h http.Handler, procedure string, msg proto.Message) *h
 }
 
 // strPtr UpdateProfile / UpdateUserProfile 的 proto3 optional 字符串字段
-//（has 位口径）取地址助手。
+// （has 位口径）取地址助手。
 func strPtr(s string) *string { return &s }
 
 // connectCodeOf 解 Connect 错误体的标准码（错误体恒 JSON，§1.5）。
@@ -292,7 +307,7 @@ func connectCodeOf(t *testing.T, raw string) string {
 }
 
 // decodeErrorInfoDetail 从 Connect 错误体 details 解出第一枚 ErrorInfo
-//（base64 value → proto 解码，§1.5 行 203-210；口径同 handler/admin
+// （base64 value → proto 解码，§1.5 行 203-210；口径同 handler/admin
 // admin_test.go 的 decodeErrorInfo，包内私有不可复用）。
 func decodeErrorInfoDetail(t *testing.T, raw string) *commonv1.ErrorInfo {
 	t.Helper()
@@ -578,10 +593,10 @@ func TestUpdateUserProfileBadBirthday(t *testing.T) {
 }
 
 // TestUpdateUserProfileOptionalSemantics proto3 optional 三态回归
-//（§3.2 行 837 / 后端架构 §17 行 1789）：显式零值生效——gender=0 覆盖现行 1、
+// （§3.2 行 837 / 后端架构 §17 行 1789）：显式零值生效——gender=0 覆盖现行 1、
 // birthday / locale 显式空串清空现行值；未设置（nil）不覆盖——timezone 未
 // 设置保留现行、extra 未设置保留原字节；nickname 显式空串 = user 表列清空
-//（avatar_url 未设置保留）。对照旧「零值 = 未传」实现：gender=0 / 空串
+// （avatar_url 未设置保留）。对照旧「零值 = 未传」实现：gender=0 / 空串
 // birthday / locale 均曾被静默忽略，本用例锁定三者已改为 has 位生效。
 func TestUpdateUserProfileOptionalSemantics(t *testing.T) {
 	users := &fakeUserStore{user: wantUser(), profile: wantProfile(t)}
@@ -1105,5 +1120,64 @@ func TestDecodeSessionIncludeUserInfo(t *testing.T) {
 	if users.findCalls != find0+1 || users.getCalls != get0+1 || users.listCalls != list0 {
 		t.Errorf("invalid + include=true: 用户查询增量 = (find %d, get %d, list %d), want (0, 0, 0)（401 路径零用户查询）",
 			users.findCalls-find0-1, users.getCalls-get0-1, users.listCalls-list0)
+	}
+}
+
+// TestDecodeOidcSub §7.3：本客户端 sub 还原 uid；跨客户端 / 非法 sub 一律
+// invalid_argument + ErrorInfo(rpc, invalid_request)；签名非法走 §7 既有
+// 错误；解码无状态、不触用户存储。
+func TestDecodeOidcSub(t *testing.T) {
+	users := &fakeUserStore{}
+	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
+	procedure := rpcv1connect.UserServiceDecodeOidcSubProcedure
+
+	rec := doRPC(t, h, procedure, &rpcv1.DecodeOidcSubRequest{Sub: "own-sub"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("own sub: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp rpcv1.DecodeOidcSubResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.GetUid() != 42 || resp.GetClientId() != testClientID {
+		t.Errorf("response = (%d, %q), want (42, %q)", resp.GetUid(), resp.GetClientId(), testClientID)
+	}
+
+	for _, sub := range []string{"other-sub", "garbage"} {
+		rec := doRPC(t, h, procedure, &rpcv1.DecodeOidcSubRequest{Sub: sub})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("sub %q: status = %d, want 400 (body %s)", sub, rec.Code, rec.Body.String())
+		}
+		if got := connectCodeOf(t, rec.Body.String()); got != "invalid_argument" {
+			t.Errorf("sub %q code = %q, want invalid_argument", sub, got)
+		}
+		if info := decodeErrorInfoDetail(t, rec.Body.String()); info.GetCode() != "invalid_request" {
+			t.Errorf("sub %q ErrorInfo.code = %q, want invalid_request", sub, info.GetCode())
+		}
+	}
+
+	// 不触 DB：三次解码调用均未读取用户存储。
+	if users.findCalls != 0 || users.getCalls != 0 || users.listCalls != 0 {
+		t.Errorf("user store calls = (find %d, get %d, list %d), want all zero", users.findCalls, users.getCalls, users.listCalls)
+	}
+
+	// 签名非法：HMAC 拦截器既有拒绝（403 permission_denied），不进 handler。
+	body, err := proto.Marshal(&rpcv1.DecodeOidcSubRequest{Sub: "own-sub"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/proto")
+	req.Header.Set("Connect-Protocol-Version", "1")
+	req.Header.Set("X-Client-ID", testClientID)
+	req.Header.Set("X-Nonce-ID", "n-bad-sub")
+	req.Header.Set("X-Signature", signRPC(testClientID, "n-bad-sub", procedure, string(body), "wrong-secret"))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("bad signature: status = %d, want 403", rec.Code)
+	}
+	if got := connectCodeOf(t, rec.Body.String()); got != "permission_denied" {
+		t.Errorf("bad signature code = %q, want permission_denied", got)
 	}
 }

@@ -4,13 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { UserProfile } from "../account/v1/profile_pb";
+import { file_api_account_v1_profile } from "../account/v1/profile_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/oidc/userinfo.proto.
  */
 export const file_api_oidc_userinfo: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvb2lkYy91c2VyaW5mby5wcm90bxIIYXBpLm9pZGMipwEKEFVzZXJpbmZvUmVzcG9uc2USCwoDc3ViGAEgASgDEgwKBG5hbWUYAiABKAkSDQoFZW1haWwYAyABKAkSFgoOZW1haWxfdmVyaWZpZWQYBCABKAgSFAoMcGhvbmVfbnVtYmVyGAUgASgJEh0KFXBob25lX251bWJlcl92ZXJpZmllZBgGIAEoCBIPCgdwaWN0dXJlGAcgASgJEgsKA2FtchgIIAMoCUIeWhxhdXRobG9mdC9nZW4vZ28vYXBpL29pZGM7YXBpYgZwcm90bzM");
+  fileDesc("ChdhcGkvb2lkYy91c2VyaW5mby5wcm90bxIIYXBpLm9pZGMipwEKEFVzZXJpbmZvUmVzcG9uc2USCwoDc3ViGAEgASgJEgwKBG5hbWUYAiABKAkSDQoFZW1haWwYAyABKAkSFgoOZW1haWxfdmVyaWZpZWQYBCABKAgSFAoMcGhvbmVfbnVtYmVyGAUgASgJEh0KFXBob25lX251bWJlcl92ZXJpZmllZBgGIAEoCBIPCgdwaWN0dXJlGAcgASgJEgsKA2FtchgIIAMoCSLPAgoTR2V0VXNlckluZm9SZXNwb25zZRILCgNzdWIYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIbmlja25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRINCgVwaG9uZRgFIAEoCRIWCg5waG9uZV92ZXJpZmllZBgGIAEoAxINCgVlbWFpbBgHIAEoCRIWCg5lbWFpbF92ZXJpZmllZBgIIAEoAxITCgt1c2VyX3N0YXR1cxgJIAEoAxIUCgxtZmFfcmVxdWlyZWQYCiABKAMSDQoFZXBvY2gYCyABKAMSFQoNbGFzdF9sb2dpbl9hdBgMIAEoAxISCgpjcmVhdGVkX2F0GA0gASgDEhIKCnVwZGF0ZWRfYXQYDiABKAMSLAoHcHJvZmlsZRgPIAEoCzIbLmFwaS5hY2NvdW50LnYxLlVzZXJQcm9maWxlQh5aHGF1dGhsb2Z0L2dlbi9nby9hcGkvb2lkYzthcGliBnByb3RvMw", [file_api_account_v1_profile]);
 
 /**
  * UserinfoResponse 是 `GET /api/oidc/userinfo` 的响应（§4.5）：
@@ -23,12 +25,12 @@ export const file_api_oidc_userinfo: GenFile = /*@__PURE__*/
  */
 export type UserinfoResponse = Message<"api.oidc.UserinfoResponse"> & {
   /**
-   * 用户 ID（user.id）；整型一律 int64，JSON 输出十进制字符串，
-   * 与示例 "10086" 一致（§12.9、§1.12）。
+   * 按客户端确定性派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）：
+   * 同一 (client_id, uid) 恒定、跨客户端互异，不含真实 user.id。
    *
-   * @generated from field: int64 sub = 1;
+   * @generated from field: string sub = 1;
    */
-  sub: bigint;
+  sub: string;
 
   /**
    * 昵称（user.nickname）。
@@ -90,4 +92,128 @@ export type UserinfoResponse = Message<"api.oidc.UserinfoResponse"> & {
  */
 export const UserinfoResponseSchema: GenMessage<UserinfoResponse> = /*@__PURE__*/
   messageDesc(file_api_oidc_userinfo, 0);
+
+/**
+ * GetUserInfoResponse 是 `GET /api/oidc/get_user_info` 的专用响应（§4.6）：
+ * 字段集与 §3.1 一致，唯一差异是用户标识由 id（十进制 user.id）换为密文 sub
+ * （§4.5），OIDC 对外不暴露真实 uid。rpc 域 ProfileResponse 的 int64 id 同时
+ * 服务 §7.1 / §7.2 真实 uid 口径，不可改型，故此处另立专用消息。
+ * phone / email 默认掩码，仅当 Access Token 的 scope 含 phone_plain /
+ * email_plain 时对应字段明文（§3.1 掩码矩阵）。
+ *
+ * @generated from message api.oidc.GetUserInfoResponse
+ */
+export type GetUserInfoResponse = Message<"api.oidc.GetUserInfoResponse"> & {
+  /**
+   * 按客户端派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）。
+   *
+   * @generated from field: string sub = 1;
+   */
+  sub: string;
+
+  /**
+   * 登录名（§3.1）。
+   *
+   * @generated from field: string username = 2;
+   */
+  username: string;
+
+  /**
+   * 昵称（§3.1）。
+   *
+   * @generated from field: string nickname = 3;
+   */
+  nickname: string;
+
+  /**
+   * 头像地址（§3.1）。
+   *
+   * @generated from field: string avatar_url = 4;
+   */
+  avatarUrl: string;
+
+  /**
+   * 手机号；默认掩码，明码 scope 时明文（§3.1）。
+   *
+   * @generated from field: string phone = 5;
+   */
+  phone: string;
+
+  /**
+   * 手机号是否已验证，JSON 为 1/0（§3.1）。
+   *
+   * @generated from field: int64 phone_verified = 6;
+   */
+  phoneVerified: bigint;
+
+  /**
+   * 邮箱；默认掩码，明码 scope 时明文（§3.1）。
+   *
+   * @generated from field: string email = 7;
+   */
+  email: string;
+
+  /**
+   * 邮箱是否已验证，JSON 为 1/0（§3.1）。
+   *
+   * @generated from field: int64 email_verified = 8;
+   */
+  emailVerified: bigint;
+
+  /**
+   * 账号状态：1 正常 0 禁用（§3.1）。
+   *
+   * @generated from field: int64 user_status = 9;
+   */
+  userStatus: bigint;
+
+  /**
+   * 用户自助两步验证开关（§3.1）。
+   *
+   * @generated from field: int64 mfa_required = 10;
+   */
+  mfaRequired: bigint;
+
+  /**
+   * 安全版本号（§3.1）。
+   *
+   * @generated from field: int64 epoch = 11;
+   */
+  epoch: bigint;
+
+  /**
+   * 最后登录时间，Unix 秒（§3.1）。
+   *
+   * @generated from field: int64 last_login_at = 12;
+   */
+  lastLoginAt: bigint;
+
+  /**
+   * 创建时间，Unix 秒（§3.1）。
+   *
+   * @generated from field: int64 created_at = 13;
+   */
+  createdAt: bigint;
+
+  /**
+   * 更新时间，Unix 秒（§3.1）。
+   *
+   * @generated from field: int64 updated_at = 14;
+   */
+  updatedAt: bigint;
+
+  /**
+   * user_profile 表结构（§3.1），跨包复用 account 域 UserProfile。
+   *
+   * @generated from field: api.account.v1.UserProfile profile = 15;
+   */
+  profile?: UserProfile | undefined;
+};
+
+/**
+ * Describes the message api.oidc.GetUserInfoResponse.
+ * Use `create(GetUserInfoResponseSchema)` to create a new message.
+ */
+export const GetUserInfoResponseSchema: GenMessage<GetUserInfoResponse> = /*@__PURE__*/
+  messageDesc(file_api_oidc_userinfo, 1);
 

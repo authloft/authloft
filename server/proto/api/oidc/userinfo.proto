@@ -6,15 +6,18 @@ package api.oidc;
 // 目录 api/oidc 对应包名 api.oidc（docs/接口文档.md §12.9「按域分目录、包名为 api.<域>」）。
 option go_package = "authloft/gen/go/api/oidc;api";
 
+// get_user_info 专用响应消息复用 account 域 UserProfile 结构（§3.1）。
+import "api/account/v1/profile.proto";
+
 // UserinfoResponse 是 `GET /api/oidc/userinfo` 的响应（§4.5）：
 // OIDC 标准 Claims，按 RFC 格式平铺、豁免 §1.0 统一信封（§1.0），
 // 顶层无 status 字段，本消息即完整响应体。
 // 字段名与 Claims 表及 JSON 示例逐字一致（§12.9）；
 // Claim 语义在 §4.5 唯一定义，取值来源映射见《后端架构》§14.4。
 message UserinfoResponse {
-  // 用户 ID（user.id）；整型一律 int64，JSON 输出十进制字符串，
-  // 与示例 "10086" 一致（§12.9、§1.12）。
-  int64 sub = 1;
+  // 按客户端确定性派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）：
+  // 同一 (client_id, uid) 恒定、跨客户端互异，不含真实 user.id。
+  string sub = 1;
   // 昵称（user.nickname）。
   string name = 2;
   // 邮箱（user.email）；默认掩码，仅当 Access Token 的 scope 含
@@ -35,12 +38,41 @@ message UserinfoResponse {
   repeated string amr = 8;
 }
 
-// `GET /api/oidc/get_user_info`（§4.6，Authloft 格式）按 §1.0 统一信封
-// 返回 §3.1 的 Authloft 用户信息字段：成功平铺 + status:"success" 由 codec 注入
-//（数据消息顶层禁用 status 字段）。其字段集合与
-// `GET /api/rpc/account/{uid}/profile` 逐字相同（§3.1「共用同一字段集合」、
-// 《后端架构》§14.4「共用同一结构」），按「同一结构只定义一次」口径
-//（既定口径，先例 api/sso/v1/login.proto「响应复用、不另建消息」），
-// 跨包复用 api.rpc.v1.ProfileResponse（api/rpc/v1/profile.proto），本包不重复定义；
-// 掩码口径差异（get_user_info 默认掩码、scope 含 phone_plain / email_plain 才明文，
-// §3.1；rpc 明文）由服务端取值决定，不构成结构差异。
+// GetUserInfoResponse 是 `GET /api/oidc/get_user_info` 的专用响应（§4.6）：
+// 字段集与 §3.1 一致，唯一差异是用户标识由 id（十进制 user.id）换为密文 sub
+//（§4.5），OIDC 对外不暴露真实 uid。rpc 域 ProfileResponse 的 int64 id 同时
+// 服务 §7.1 / §7.2 真实 uid 口径，不可改型，故此处另立专用消息。
+// phone / email 默认掩码，仅当 Access Token 的 scope 含 phone_plain /
+// email_plain 时对应字段明文（§3.1 掩码矩阵）。
+message GetUserInfoResponse {
+  // 按客户端派生的 pairwise 密文 sub（§4.5、后端架构 §11.6.8）。
+  string sub = 1;
+  // 登录名（§3.1）。
+  string username = 2;
+  // 昵称（§3.1）。
+  string nickname = 3;
+  // 头像地址（§3.1）。
+  string avatar_url = 4;
+  // 手机号；默认掩码，明码 scope 时明文（§3.1）。
+  string phone = 5;
+  // 手机号是否已验证，JSON 为 1/0（§3.1）。
+  int64 phone_verified = 6;
+  // 邮箱；默认掩码，明码 scope 时明文（§3.1）。
+  string email = 7;
+  // 邮箱是否已验证，JSON 为 1/0（§3.1）。
+  int64 email_verified = 8;
+  // 账号状态：1 正常 0 禁用（§3.1）。
+  int64 user_status = 9;
+  // 用户自助两步验证开关（§3.1）。
+  int64 mfa_required = 10;
+  // 安全版本号（§3.1）。
+  int64 epoch = 11;
+  // 最后登录时间，Unix 秒（§3.1）。
+  int64 last_login_at = 12;
+  // 创建时间，Unix 秒（§3.1）。
+  int64 created_at = 13;
+  // 更新时间，Unix 秒（§3.1）。
+  int64 updated_at = 14;
+  // user_profile 表结构（§3.1），跨包复用 account 域 UserProfile。
+  api.account.v1.UserProfile profile = 15;
+}

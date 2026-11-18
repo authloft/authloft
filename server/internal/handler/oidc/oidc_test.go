@@ -26,6 +26,7 @@ import (
 	"authloft/internal/config"
 	oidcimpl "authloft/internal/oidc"
 	"authloft/internal/repo/model"
+	"authloft/internal/security"
 )
 
 type fakeClients map[string]*model.OidcClient
@@ -101,6 +102,7 @@ func (f fakeProfiles) GetProfile(_ context.Context, uid int64) (*model.UserProfi
 type env struct {
 	router *gin.Engine
 	jwt    *oidcimpl.JWT
+	subs   *oidcimpl.SubCodec
 	codes  fakeCodes
 	store  *fakeRefresh
 	now    time.Time
@@ -130,6 +132,22 @@ func setup(t *testing.T) *env {
 	}
 	j.Now = func() time.Time { return now }
 
+	subKey := make([]byte, 32)
+	for i := range subKey {
+		subKey[i] = byte(0x50 + i)
+	}
+	subKS, err := security.NewKeyStore(security.KeyEntry{
+		ID: security.KeyID{Version: 1, Kid: 1}, Key: subKey,
+	})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	subCodec, err := security.NewDeterministicCodec(subKS)
+	if err != nil {
+		t.Fatalf("NewDeterministicCodec: %v", err)
+	}
+	subs := oidcimpl.NewSubCodec(subCodec)
+
 	phone := "13800008000"
 	email := "alice@example.com"
 	last := now.Add(-time.Hour)
@@ -153,12 +171,12 @@ func setup(t *testing.T) *env {
 	deps := Deps{
 		JWT: j,
 		Tokens: &oidcimpl.TokenService{
-			JWT: j, Clients: clients, Codes: codes, Tokens: store,
+			JWT: j, Subs: subs, Clients: clients, Codes: codes, Tokens: store,
 			Epoch: fakeEpoch(3), Now: func() time.Time { return now },
 		},
 		Revoker: &oidcimpl.Revoker{Clients: clients, Tokens: store, Now: func() time.Time { return now }},
 		UserInfo: &oidcimpl.UserInfoService{
-			JWT: j, Users: fakeUsers{42: user}, Epoch: fakeEpoch(3),
+			JWT: j, Subs: subs, Users: fakeUsers{42: user}, Epoch: fakeEpoch(3),
 			Profiles: fakeProfiles{42: &model.UserProfile{
 				UserID: 42, Gender: 1, Birthday: &birthday, Locale: "zh-CN", Timezone: "Asia/Shanghai",
 			}},
@@ -166,7 +184,7 @@ func setup(t *testing.T) *env {
 	}
 	r := gin.New()
 	Register(r, deps)
-	return &env{router: r, jwt: j, codes: codes, store: store, now: now}
+	return &env{router: r, jwt: j, subs: subs, codes: codes, store: store, now: now}
 }
 
 func doForm(r http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
@@ -362,7 +380,7 @@ func TestUserinfoEndpoint(t *testing.T) {
 		t.Fatalf("masked status = %d, body=%q", w.Code, w.Body.String())
 	}
 	out := decode(t, w)
-	if out["sub"] != "42" || out["name"] != "Alice" {
+	if out["sub"] != subFor(t, e) || out["name"] != "Alice" {
 		t.Errorf("sub/name = %v/%v", out["sub"], out["name"])
 	}
 	if out["email"] != "a***@example.com" || out["phone_number"] != "138****8000" {
@@ -402,7 +420,7 @@ func TestGetUserInfoEndpoint(t *testing.T) {
 		t.Fatalf("status = %d, body=%q", w.Code, w.Body.String())
 	}
 	out := decode(t, w)
-	if out["id"] != "42" || out["username"] != "alice" || out["avatarUrl"] != "https://cdn.example/a.png" {
+	if out["sub"] != subFor(t, e) || out["username"] != "alice" || out["avatarUrl"] != "https://cdn.example/a.png" {
 		t.Errorf("basic = %v", out)
 	}
 	if out["phone"] != "138****8000" || out["email"] != "a***@example.com" {
@@ -417,10 +435,20 @@ func TestGetUserInfoEndpoint(t *testing.T) {
 	}
 }
 
+// subFor 返回测试主体 (web, 42) 的密文 sub，供对外响应断言。
+func subFor(t *testing.T, e *env) string {
+	t.Helper()
+	sub, err := e.subs.DeriveSub("web", 42)
+	if err != nil {
+		t.Fatalf("DeriveSub: %v", err)
+	}
+	return sub
+}
+
 func signAccess(t *testing.T, e *env, scope string) string {
 	t.Helper()
 	raw, err := e.jwt.SignAccessToken(oidcimpl.AccessTokenInput{
-		UID: 42, ClientID: "web", Scope: scope, AMR: []string{"pwd"}, Epoch: 3, TTL: time.Hour,
+		Sub: subFor(t, e), ClientID: "web", Scope: scope, AMR: []string{"pwd"}, Epoch: 3, TTL: time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("sign access: %v", err)

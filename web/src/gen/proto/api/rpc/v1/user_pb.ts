@@ -2,16 +2,68 @@
 // @generated from file api/rpc/v1/user.proto (package api.rpc.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { GetUserProfileRequestSchema, GetUserProfilesRequestSchema, GetUserProfilesResponseSchema, OkResponseSchema, ProfileResponseSchema, UpdateUserProfileRequestSchema } from "./profile_pb";
 import { file_api_rpc_v1_profile } from "./profile_pb";
+import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file api/rpc/v1/user.proto.
  */
 export const file_api_rpc_v1_user: GenFile = /*@__PURE__*/
-  fileDesc("ChVhcGkvcnBjL3YxL3VzZXIucHJvdG8SCmFwaS5ycGMudjEyjgIKC1VzZXJTZXJ2aWNlElAKDkdldFVzZXJQcm9maWxlEiEuYXBpLnJwYy52MS5HZXRVc2VyUHJvZmlsZVJlcXVlc3QaGy5hcGkucnBjLnYxLlByb2ZpbGVSZXNwb25zZRJRChFVcGRhdGVVc2VyUHJvZmlsZRIkLmFwaS5ycGMudjEuVXBkYXRlVXNlclByb2ZpbGVSZXF1ZXN0GhYuYXBpLnJwYy52MS5Pa1Jlc3BvbnNlEloKD0dldFVzZXJQcm9maWxlcxIiLmFwaS5ycGMudjEuR2V0VXNlclByb2ZpbGVzUmVxdWVzdBojLmFwaS5ycGMudjEuR2V0VXNlclByb2ZpbGVzUmVzcG9uc2VCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw", [file_api_rpc_v1_profile]);
+  fileDesc("ChVhcGkvcnBjL3YxL3VzZXIucHJvdG8SCmFwaS5ycGMudjEiIwoURGVjb2RlT2lkY1N1YlJlcXVlc3QSCwoDc3ViGAEgASgJIjcKFURlY29kZU9pZGNTdWJSZXNwb25zZRILCgN1aWQYASABKAMSEQoJY2xpZW50X2lkGAIgASgJMuQCCgtVc2VyU2VydmljZRJQCg5HZXRVc2VyUHJvZmlsZRIhLmFwaS5ycGMudjEuR2V0VXNlclByb2ZpbGVSZXF1ZXN0GhsuYXBpLnJwYy52MS5Qcm9maWxlUmVzcG9uc2USUQoRVXBkYXRlVXNlclByb2ZpbGUSJC5hcGkucnBjLnYxLlVwZGF0ZVVzZXJQcm9maWxlUmVxdWVzdBoWLmFwaS5ycGMudjEuT2tSZXNwb25zZRJaCg9HZXRVc2VyUHJvZmlsZXMSIi5hcGkucnBjLnYxLkdldFVzZXJQcm9maWxlc1JlcXVlc3QaIy5hcGkucnBjLnYxLkdldFVzZXJQcm9maWxlc1Jlc3BvbnNlElQKDURlY29kZU9pZGNTdWISIC5hcGkucnBjLnYxLkRlY29kZU9pZGNTdWJSZXF1ZXN0GiEuYXBpLnJwYy52MS5EZWNvZGVPaWRjU3ViUmVzcG9uc2VCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9ycGMvdjE7cnBjdjFiBnByb3RvMw", [file_api_rpc_v1_profile]);
+
+/**
+ * DecodeOidcSubRequest 是 UserService/DecodeOidcSub 的请求（接口文档 §7.3）：
+ * sub 为按客户端派生的 pairwise 密文（§4.5、后端架构 §11.6.8）。
+ *
+ * @generated from message api.rpc.v1.DecodeOidcSubRequest
+ */
+export type DecodeOidcSubRequest = Message<"api.rpc.v1.DecodeOidcSubRequest"> & {
+  /**
+   * 待还原的密文 sub。
+   *
+   * @generated from field: string sub = 1;
+   */
+  sub: string;
+};
+
+/**
+ * Describes the message api.rpc.v1.DecodeOidcSubRequest.
+ * Use `create(DecodeOidcSubRequestSchema)` to create a new message.
+ */
+export const DecodeOidcSubRequestSchema: GenMessage<DecodeOidcSubRequest> = /*@__PURE__*/
+  messageDesc(file_api_rpc_v1_user, 0);
+
+/**
+ * DecodeOidcSubResponse 是 UserService/DecodeOidcSub 的响应（§7.3）：
+ * uid 按 §1.12 以十进制字符串输出，client_id 为该 sub 的签发客户端。
+ *
+ * @generated from message api.rpc.v1.DecodeOidcSubResponse
+ */
+export type DecodeOidcSubResponse = Message<"api.rpc.v1.DecodeOidcSubResponse"> & {
+  /**
+   * 还原出的真实用户 ID。
+   *
+   * @generated from field: int64 uid = 1;
+   */
+  uid: bigint;
+
+  /**
+   * sub 内携带的签发客户端 ID。
+   *
+   * @generated from field: string client_id = 2;
+   */
+  clientId: string;
+};
+
+/**
+ * Describes the message api.rpc.v1.DecodeOidcSubResponse.
+ * Use `create(DecodeOidcSubResponseSchema)` to create a new message.
+ */
+export const DecodeOidcSubResponseSchema: GenMessage<DecodeOidcSubResponse> = /*@__PURE__*/
+  messageDesc(file_api_rpc_v1_user, 1);
 
 /**
  * UserService 是 rpc 域的资料读写 service（docs/接口文档.md §7）。
@@ -20,6 +72,7 @@ export const file_api_rpc_v1_user: GenFile = /*@__PURE__*/
  *   GetUserProfile      §7（读接口：Get 前缀，不去重）
  *   UpdateUserProfile   §7（写接口：Update 前缀，nonce 去重）
  *   GetUserProfiles     §7.2（读接口：批量读资料，定稿，不校验 nonce）
+ *   DecodeOidcSub       §7.3（读接口：sub 解码，不触 DB，校验 X-Client-ID）
  * 鉴权（写接口 nonce 去重 → 五项签名；读接口仅五项签名，校验顺序 §7）
  * 为 Connect interceptor（后端 §3.14 interceptors.go 按「命名决定校验」分流，
  * §7），装配必须经 internal/connect 的 RegisterRPC（强制包
@@ -63,6 +116,17 @@ export const UserService: GenService<{
     methodKind: "unary";
     input: typeof GetUserProfilesRequestSchema;
     output: typeof GetUserProfilesResponseSchema;
+  },
+  /**
+   * OIDC sub 解码（接口文档 §7.3）：读接口（签名 → session，nonce 不去重）；
+   * Open 还原 + 校验 client_id == X-Client-ID（跨客户端拒绝），不触 DB。
+   *
+   * @generated from rpc api.rpc.v1.UserService.DecodeOidcSub
+   */
+  decodeOidcSub: {
+    methodKind: "unary";
+    input: typeof DecodeOidcSubRequestSchema;
+    output: typeof DecodeOidcSubResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_api_rpc_v1_user, 0);

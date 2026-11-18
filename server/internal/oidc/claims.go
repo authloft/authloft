@@ -19,7 +19,6 @@ import (
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	oidcapi "authloft/gen/go/api/oidc"
-	rpcv1 "authloft/gen/go/api/rpc/v1"
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 )
@@ -37,6 +36,7 @@ type ProfileFinder interface {
 // UserInfoService userinfo / get_user_info 端点实现。
 type UserInfoService struct {
 	JWT      *JWT
+	Subs     *SubCodec
 	Users    UserFinder
 	Profiles ProfileFinder
 	Epoch    EpochReader
@@ -50,7 +50,7 @@ func (s *UserInfoService) Userinfo(ctx context.Context, accessToken string) (*oi
 	}
 	scope := claims.Scope
 	resp := &oidcapi.UserinfoResponse{
-		Sub:     user.ID,
+		Sub:     claims.Sub,
 		Name:    user.Nickname,
 		Picture: user.AvatarURL,
 		Amr:     claims.AMR,
@@ -75,14 +75,14 @@ func (s *UserInfoService) Userinfo(ctx context.Context, accessToken string) (*oi
 }
 
 // GetUserInfo 返回 §3.1 Authloft 用户信息结构（无信封包裹，§4.6）。
-func (s *UserInfoService) GetUserInfo(ctx context.Context, accessToken string) (*rpcv1.ProfileResponse, *OAuthError) {
+func (s *UserInfoService) GetUserInfo(ctx context.Context, accessToken string) (*oidcapi.GetUserInfoResponse, *OAuthError) {
 	user, claims, oe := s.load(ctx, accessToken)
 	if oe != nil {
 		return nil, oe
 	}
 	scope := claims.Scope
-	resp := &rpcv1.ProfileResponse{
-		Id:          user.ID,
+	resp := &oidcapi.GetUserInfoResponse{
+		Sub:         claims.Sub,
 		Username:    user.Username,
 		Nickname:    user.Nickname,
 		AvatarUrl:   user.AvatarURL,
@@ -145,7 +145,13 @@ func (s *UserInfoService) load(ctx context.Context, accessToken string) (*model.
 	if err != nil {
 		return nil, nil, newOAuthError(401, "invalid_token", "access token is invalid or expired")
 	}
-	epoch, err := s.Epoch.Current(ctx, claims.Sub)
+	// Access Token 的 sub 为密文，先还原真实 uid 再走 epoch / 用户查询；
+	// 密钥体系与改密吊销链不变（后端架构 §14.3）。
+	uid, _, err := s.Subs.DecodeSub(claims.Sub)
+	if err != nil {
+		return nil, nil, newOAuthError(401, "invalid_token", "access token subject is invalid")
+	}
+	epoch, err := s.Epoch.Current(ctx, uid)
 	if err != nil {
 		// epoch 读取链故障被压成 401，不得无痕（REST 域无 Connect 拦截链）。
 		logx.Error(ctx, "oidc: userinfo epoch read failed",
@@ -156,7 +162,7 @@ func (s *UserInfoService) load(ctx context.Context, accessToken string) (*model.
 		// epoch 不一致 = 改密 / 重置 / 禁用后旧令牌失效（§4.7，业务预期）。
 		return nil, nil, newOAuthError(401, "invalid_token", "access token epoch is stale")
 	}
-	user, err := s.Users.FindByID(ctx, claims.Sub)
+	user, err := s.Users.FindByID(ctx, uid)
 	if err != nil {
 		// 未命中行属业务预期；DB 故障被压成 401 须单独记。
 		if !errors.Is(err, gorm.ErrRecordNotFound) {

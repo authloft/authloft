@@ -42,6 +42,9 @@ const (
 	// UserServiceGetUserProfilesProcedure is the fully-qualified name of the UserService's
 	// GetUserProfiles RPC.
 	UserServiceGetUserProfilesProcedure = "/api.rpc.v1.UserService/GetUserProfiles"
+	// UserServiceDecodeOidcSubProcedure is the fully-qualified name of the UserService's DecodeOidcSub
+	// RPC.
+	UserServiceDecodeOidcSubProcedure = "/api.rpc.v1.UserService/DecodeOidcSub"
 )
 
 // UserServiceClient is a client for the api.rpc.v1.UserService service.
@@ -57,6 +60,9 @@ type UserServiceClient interface {
 	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
 	// （§7.2 命名分流口径）。
 	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
+	// OIDC sub 解码（接口文档 §7.3）：读接口（签名 → session，nonce 不去重）；
+	// Open 还原 + 校验 client_id == X-Client-ID（跨客户端拒绝），不触 DB。
+	DecodeOidcSub(context.Context, *connect.Request[v1.DecodeOidcSubRequest]) (*connect.Response[v1.DecodeOidcSubResponse], error)
 }
 
 // NewUserServiceClient constructs a client for the api.rpc.v1.UserService service. By default, it
@@ -88,6 +94,12 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(userServiceMethods.ByName("GetUserProfiles")),
 			connect.WithClientOptions(opts...),
 		),
+		decodeOidcSub: connect.NewClient[v1.DecodeOidcSubRequest, v1.DecodeOidcSubResponse](
+			httpClient,
+			baseURL+UserServiceDecodeOidcSubProcedure,
+			connect.WithSchema(userServiceMethods.ByName("DecodeOidcSub")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -96,6 +108,7 @@ type userServiceClient struct {
 	getUserProfile    *connect.Client[v1.GetUserProfileRequest, v1.ProfileResponse]
 	updateUserProfile *connect.Client[v1.UpdateUserProfileRequest, v1.OkResponse]
 	getUserProfiles   *connect.Client[v1.GetUserProfilesRequest, v1.GetUserProfilesResponse]
+	decodeOidcSub     *connect.Client[v1.DecodeOidcSubRequest, v1.DecodeOidcSubResponse]
 }
 
 // GetUserProfile calls api.rpc.v1.UserService.GetUserProfile.
@@ -113,6 +126,11 @@ func (c *userServiceClient) GetUserProfiles(ctx context.Context, req *connect.Re
 	return c.getUserProfiles.CallUnary(ctx, req)
 }
 
+// DecodeOidcSub calls api.rpc.v1.UserService.DecodeOidcSub.
+func (c *userServiceClient) DecodeOidcSub(ctx context.Context, req *connect.Request[v1.DecodeOidcSubRequest]) (*connect.Response[v1.DecodeOidcSubResponse], error) {
+	return c.decodeOidcSub.CallUnary(ctx, req)
+}
+
 // UserServiceHandler is an implementation of the api.rpc.v1.UserService service.
 type UserServiceHandler interface {
 	// 读用户资料，响应为 §3.1 的 Authloft 结构（§7）。
@@ -126,6 +144,9 @@ type UserServiceHandler interface {
 	// 命名决定校验归读接口——nonce 参与签名但不去重，允许重复请求、可安全重试
 	// （§7.2 命名分流口径）。
 	GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error)
+	// OIDC sub 解码（接口文档 §7.3）：读接口（签名 → session，nonce 不去重）；
+	// Open 还原 + 校验 client_id == X-Client-ID（跨客户端拒绝），不触 DB。
+	DecodeOidcSub(context.Context, *connect.Request[v1.DecodeOidcSubRequest]) (*connect.Response[v1.DecodeOidcSubResponse], error)
 }
 
 // NewUserServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -153,6 +174,12 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(userServiceMethods.ByName("GetUserProfiles")),
 		connect.WithHandlerOptions(opts...),
 	)
+	userServiceDecodeOidcSubHandler := connect.NewUnaryHandler(
+		UserServiceDecodeOidcSubProcedure,
+		svc.DecodeOidcSub,
+		connect.WithSchema(userServiceMethods.ByName("DecodeOidcSub")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/api.rpc.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UserServiceGetUserProfileProcedure:
@@ -161,6 +188,8 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 			userServiceUpdateUserProfileHandler.ServeHTTP(w, r)
 		case UserServiceGetUserProfilesProcedure:
 			userServiceGetUserProfilesHandler.ServeHTTP(w, r)
+		case UserServiceDecodeOidcSubProcedure:
+			userServiceDecodeOidcSubHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -180,4 +209,8 @@ func (UnimplementedUserServiceHandler) UpdateUserProfile(context.Context, *conne
 
 func (UnimplementedUserServiceHandler) GetUserProfiles(context.Context, *connect.Request[v1.GetUserProfilesRequest]) (*connect.Response[v1.GetUserProfilesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.rpc.v1.UserService.GetUserProfiles is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) DecodeOidcSub(context.Context, *connect.Request[v1.DecodeOidcSubRequest]) (*connect.Response[v1.DecodeOidcSubResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.rpc.v1.UserService.DecodeOidcSub is not implemented"))
 }

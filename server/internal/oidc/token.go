@@ -98,6 +98,7 @@ type TokenInput struct {
 // TokenService token 端点实现。
 type TokenService struct {
 	JWT     *JWT
+	Subs    *SubCodec
 	Clients ClientFinder
 	Codes   CodeConsumer
 	Tokens  RefreshTokenStore
@@ -211,6 +212,14 @@ func (s *TokenService) refreshToken(ctx context.Context, in TokenInput) (*oidcap
 
 // issue 同构签发两种 grant 的响应体（§4.3：响应同构）。
 func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid int64, scope string, amr []string, nonce, refresh string) (*oidcapi.TokenResponse, *OAuthError) {
+	// 两 grant 的 ID / Access Token 共用同一密文 sub（§11.6.8）：先按
+	// (client_id, uid) 确定性派生，再分别写入两枚 JWT 的 sub claim。
+	sub, err := s.Subs.DeriveSub(client.ClientID, uid)
+	if err != nil {
+		logx.Error(ctx, "oidc: token issue failed",
+			"step", "derive_sub", "error", logx.RedactText(err.Error()))
+		return nil, newOAuthError(500, ErrorServerError, "cannot derive subject")
+	}
 	epoch, err := s.Epoch.Current(ctx, uid)
 	if err != nil {
 		logx.Error(ctx, "oidc: token issue failed",
@@ -221,7 +230,7 @@ func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid 
 	refreshTTL := secondsOrDefault(client.RefreshTokenTTL, defaultRefreshTokenTTL)
 
 	access, err := s.JWT.SignAccessToken(AccessTokenInput{
-		UID: uid, ClientID: client.ClientID, Scope: scope, AMR: amr, Epoch: epoch, TTL: accessTTL,
+		Sub: sub, ClientID: client.ClientID, Scope: scope, AMR: amr, Epoch: epoch, TTL: accessTTL,
 	})
 	if err != nil {
 		logx.Error(ctx, "oidc: token issue failed",
@@ -229,7 +238,7 @@ func (s *TokenService) issue(ctx context.Context, client *model.OidcClient, uid 
 		return nil, newOAuthError(500, ErrorServerError, "cannot sign access token")
 	}
 	idToken, err := s.JWT.SignIDToken(IDTokenInput{
-		UID: uid, ClientID: client.ClientID, Nonce: nonce, AMR: amr, Epoch: epoch, TTL: accessTTL,
+		Sub: sub, ClientID: client.ClientID, Nonce: nonce, AMR: amr, Epoch: epoch, TTL: accessTTL,
 	})
 	if err != nil {
 		logx.Error(ctx, "oidc: token issue failed",

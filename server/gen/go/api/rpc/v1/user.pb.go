@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
+	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -20,34 +21,160 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DecodeOidcSubRequest 是 UserService/DecodeOidcSub 的请求（接口文档 §7.3）：
+// sub 为按客户端派生的 pairwise 密文（§4.5、后端架构 §11.6.8）。
+type DecodeOidcSubRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 待还原的密文 sub。
+	Sub           string `protobuf:"bytes,1,opt,name=sub,proto3" json:"sub,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecodeOidcSubRequest) Reset() {
+	*x = DecodeOidcSubRequest{}
+	mi := &file_api_rpc_v1_user_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodeOidcSubRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodeOidcSubRequest) ProtoMessage() {}
+
+func (x *DecodeOidcSubRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_rpc_v1_user_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodeOidcSubRequest.ProtoReflect.Descriptor instead.
+func (*DecodeOidcSubRequest) Descriptor() ([]byte, []int) {
+	return file_api_rpc_v1_user_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *DecodeOidcSubRequest) GetSub() string {
+	if x != nil {
+		return x.Sub
+	}
+	return ""
+}
+
+// DecodeOidcSubResponse 是 UserService/DecodeOidcSub 的响应（§7.3）：
+// uid 按 §1.12 以十进制字符串输出，client_id 为该 sub 的签发客户端。
+type DecodeOidcSubResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 还原出的真实用户 ID。
+	Uid int64 `protobuf:"varint,1,opt,name=uid,proto3" json:"uid,omitempty"`
+	// sub 内携带的签发客户端 ID。
+	ClientId      string `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecodeOidcSubResponse) Reset() {
+	*x = DecodeOidcSubResponse{}
+	mi := &file_api_rpc_v1_user_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecodeOidcSubResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecodeOidcSubResponse) ProtoMessage() {}
+
+func (x *DecodeOidcSubResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_rpc_v1_user_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecodeOidcSubResponse.ProtoReflect.Descriptor instead.
+func (*DecodeOidcSubResponse) Descriptor() ([]byte, []int) {
+	return file_api_rpc_v1_user_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DecodeOidcSubResponse) GetUid() int64 {
+	if x != nil {
+		return x.Uid
+	}
+	return 0
+}
+
+func (x *DecodeOidcSubResponse) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
 var File_api_rpc_v1_user_proto protoreflect.FileDescriptor
 
 const file_api_rpc_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"\x15api/rpc/v1/user.proto\x12\n" +
-	"api.rpc.v1\x1a\x18api/rpc/v1/profile.proto2\x8e\x02\n" +
+	"api.rpc.v1\x1a\x18api/rpc/v1/profile.proto\"(\n" +
+	"\x14DecodeOidcSubRequest\x12\x10\n" +
+	"\x03sub\x18\x01 \x01(\tR\x03sub\"F\n" +
+	"\x15DecodeOidcSubResponse\x12\x10\n" +
+	"\x03uid\x18\x01 \x01(\x03R\x03uid\x12\x1b\n" +
+	"\tclient_id\x18\x02 \x01(\tR\bclientId2\xe4\x02\n" +
 	"\vUserService\x12P\n" +
 	"\x0eGetUserProfile\x12!.api.rpc.v1.GetUserProfileRequest\x1a\x1b.api.rpc.v1.ProfileResponse\x12Q\n" +
 	"\x11UpdateUserProfile\x12$.api.rpc.v1.UpdateUserProfileRequest\x1a\x16.api.rpc.v1.OkResponse\x12Z\n" +
-	"\x0fGetUserProfiles\x12\".api.rpc.v1.GetUserProfilesRequest\x1a#.api.rpc.v1.GetUserProfilesResponseB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
+	"\x0fGetUserProfiles\x12\".api.rpc.v1.GetUserProfilesRequest\x1a#.api.rpc.v1.GetUserProfilesResponse\x12T\n" +
+	"\rDecodeOidcSub\x12 .api.rpc.v1.DecodeOidcSubRequest\x1a!.api.rpc.v1.DecodeOidcSubResponseB\"Z authloft/gen/go/api/rpc/v1;rpcv1b\x06proto3"
 
+var (
+	file_api_rpc_v1_user_proto_rawDescOnce sync.Once
+	file_api_rpc_v1_user_proto_rawDescData []byte
+)
+
+func file_api_rpc_v1_user_proto_rawDescGZIP() []byte {
+	file_api_rpc_v1_user_proto_rawDescOnce.Do(func() {
+		file_api_rpc_v1_user_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_rpc_v1_user_proto_rawDesc), len(file_api_rpc_v1_user_proto_rawDesc)))
+	})
+	return file_api_rpc_v1_user_proto_rawDescData
+}
+
+var file_api_rpc_v1_user_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_api_rpc_v1_user_proto_goTypes = []any{
-	(*GetUserProfileRequest)(nil),    // 0: api.rpc.v1.GetUserProfileRequest
-	(*UpdateUserProfileRequest)(nil), // 1: api.rpc.v1.UpdateUserProfileRequest
-	(*GetUserProfilesRequest)(nil),   // 2: api.rpc.v1.GetUserProfilesRequest
-	(*ProfileResponse)(nil),          // 3: api.rpc.v1.ProfileResponse
-	(*OkResponse)(nil),               // 4: api.rpc.v1.OkResponse
-	(*GetUserProfilesResponse)(nil),  // 5: api.rpc.v1.GetUserProfilesResponse
+	(*DecodeOidcSubRequest)(nil),     // 0: api.rpc.v1.DecodeOidcSubRequest
+	(*DecodeOidcSubResponse)(nil),    // 1: api.rpc.v1.DecodeOidcSubResponse
+	(*GetUserProfileRequest)(nil),    // 2: api.rpc.v1.GetUserProfileRequest
+	(*UpdateUserProfileRequest)(nil), // 3: api.rpc.v1.UpdateUserProfileRequest
+	(*GetUserProfilesRequest)(nil),   // 4: api.rpc.v1.GetUserProfilesRequest
+	(*ProfileResponse)(nil),          // 5: api.rpc.v1.ProfileResponse
+	(*OkResponse)(nil),               // 6: api.rpc.v1.OkResponse
+	(*GetUserProfilesResponse)(nil),  // 7: api.rpc.v1.GetUserProfilesResponse
 }
 var file_api_rpc_v1_user_proto_depIdxs = []int32{
-	0, // 0: api.rpc.v1.UserService.GetUserProfile:input_type -> api.rpc.v1.GetUserProfileRequest
-	1, // 1: api.rpc.v1.UserService.UpdateUserProfile:input_type -> api.rpc.v1.UpdateUserProfileRequest
-	2, // 2: api.rpc.v1.UserService.GetUserProfiles:input_type -> api.rpc.v1.GetUserProfilesRequest
-	3, // 3: api.rpc.v1.UserService.GetUserProfile:output_type -> api.rpc.v1.ProfileResponse
-	4, // 4: api.rpc.v1.UserService.UpdateUserProfile:output_type -> api.rpc.v1.OkResponse
-	5, // 5: api.rpc.v1.UserService.GetUserProfiles:output_type -> api.rpc.v1.GetUserProfilesResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+	2, // 0: api.rpc.v1.UserService.GetUserProfile:input_type -> api.rpc.v1.GetUserProfileRequest
+	3, // 1: api.rpc.v1.UserService.UpdateUserProfile:input_type -> api.rpc.v1.UpdateUserProfileRequest
+	4, // 2: api.rpc.v1.UserService.GetUserProfiles:input_type -> api.rpc.v1.GetUserProfilesRequest
+	0, // 3: api.rpc.v1.UserService.DecodeOidcSub:input_type -> api.rpc.v1.DecodeOidcSubRequest
+	5, // 4: api.rpc.v1.UserService.GetUserProfile:output_type -> api.rpc.v1.ProfileResponse
+	6, // 5: api.rpc.v1.UserService.UpdateUserProfile:output_type -> api.rpc.v1.OkResponse
+	7, // 6: api.rpc.v1.UserService.GetUserProfiles:output_type -> api.rpc.v1.GetUserProfilesResponse
+	1, // 7: api.rpc.v1.UserService.DecodeOidcSub:output_type -> api.rpc.v1.DecodeOidcSubResponse
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -65,12 +192,13 @@ func file_api_rpc_v1_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_rpc_v1_user_proto_rawDesc), len(file_api_rpc_v1_user_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   0,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_api_rpc_v1_user_proto_goTypes,
 		DependencyIndexes: file_api_rpc_v1_user_proto_depIdxs,
+		MessageInfos:      file_api_rpc_v1_user_proto_msgTypes,
 	}.Build()
 	File_api_rpc_v1_user_proto = out.File
 	file_api_rpc_v1_user_proto_goTypes = nil

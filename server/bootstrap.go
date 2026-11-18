@@ -169,6 +169,9 @@ type assembled struct {
 	sessionTokens *session.Tokens
 	epochStore    *cache.EpochStore
 	codeIssuer    *oidc.CodeIssuer
+	// subCodec OIDC sub 派生 / 还原共享单例：签发链与 rpc 解码链共用同一
+	// 确定性 codec，否则同一主体跨端点 sub 不一致。
+	subCodec *oidc.SubCodec
 
 	// 授权同意共享单例（§14.2 / §4.5）：consents 判定三态 + 写授权记录，
 	// authz 重跑 scopes 校验；Terminal 与 pages 复用同一实例，避免各写一份。
@@ -972,6 +975,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		return int64(u.Epoch), nil
 	})
 	deps.codeIssuer = oidc.NewCodeIssuer(cache.NewOIDCCodeStore(deps.rdb), deps.codecs.Ticket)
+	deps.subCodec = oidc.NewSubCodec(deps.codecs.OidcSub)
 	// 授权同意共享单例：ConsentService 包 OidcConsentRepo，AuthzValidator 包
 	// ClientRepo（§14.2「两条签发路径共用同一校验工具 / 授权服务」）。
 	deps.consents = &oidc.ConsentService{Consents: deps.repos.Consents}
@@ -1359,7 +1363,7 @@ func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 	// rpc 域两 service 共享同一 UserRepo 实例（同一数据面，不重复构造）。
 	users := deps.repos.Users
 	path, h := rpcv1connect.NewUserServiceHandler(
-		rpchandler.NewUserHandler(users),
+		rpchandler.NewUserHandler(users, deps.subCodec),
 		csrv.HandlerOptions(deps.infra.HMAC)...,
 	)
 	csrv.RegisterRPC(path, h)
@@ -1385,6 +1389,7 @@ func registerOIDC(r gin.IRouter, deps *assembled) {
 		JWT: deps.oidcJWT,
 		Tokens: &oidc.TokenService{
 			JWT:     deps.oidcJWT,
+			Subs:    deps.subCodec,
 			Clients: clients,
 			Codes:   deps.codeIssuer,
 			Tokens:  refreshTokens,
@@ -1396,6 +1401,7 @@ func registerOIDC(r gin.IRouter, deps *assembled) {
 		},
 		UserInfo: &oidc.UserInfoService{
 			JWT:      deps.oidcJWT,
+			Subs:     deps.subCodec,
 			Users:    users,
 			Profiles: users,
 			Epoch:    deps.epochStore,

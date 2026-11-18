@@ -45,6 +45,12 @@ type UserStore interface {
 	ListByIDs(ctx context.Context, ids []int64) ([]model.User, []model.UserProfile, error)
 }
 
+// SubDecoder OIDC sub 还原窄接口（接口文档 §7.3）：装配层注入共享的
+// SubCodec；本包只消费还原结果，不接触加密底座与存储。
+type SubDecoder interface {
+	DecodeSub(sub string) (uid int64, clientID string, err error)
+}
+
 // maxBatchProfileIDs GetUserProfiles 单次批量上限（§7.2 批量语义①行 1462）：
 // 按入参列表长度计、去重前；超出整单失败、无部分返回、不许截断。
 const maxBatchProfileIDs = 100
@@ -52,10 +58,11 @@ const maxBatchProfileIDs = 100
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go、handler/account）。
 var (
-	errAuthRequired = errors.New("authentication required")
-	errNotFound     = errors.New("not found")
-	errBadBirthday  = errors.New("invalid birthday")
-	errTooManyIDs   = errors.New("too many ids")
+	errAuthRequired   = errors.New("authentication required")
+	errNotFound       = errors.New("not found")
+	errBadBirthday    = errors.New("invalid birthday")
+	errTooManyIDs     = errors.New("too many ids")
+	errInvalidOidcSub = errors.New("invalid oidc sub")
 )
 
 // UserHandler 实现 api.rpc.v1.UserService。内嵌生成的 unimplemented 基类：
@@ -63,11 +70,12 @@ var (
 type UserHandler struct {
 	rpcv1connect.UnimplementedUserServiceHandler
 	users UserStore
+	subs  SubDecoder
 }
 
 // NewUserHandler 构造 UserService handler。
-func NewUserHandler(users UserStore) *UserHandler {
-	return &UserHandler{users: users}
+func NewUserHandler(users UserStore, subs SubDecoder) *UserHandler {
+	return &UserHandler{users: users, subs: subs}
 }
 
 // GetUserProfile（§7 行 1391）：{uid} → FindByID + GetProfile → §3.1 Authloft
@@ -152,6 +160,25 @@ func (h *UserHandler) GetUserProfiles(ctx context.Context, req *connect.Request[
 		out = append(out, dto.RPCProfile(u, profileByUID[id]))
 	}
 	return connect.NewResponse(&rpcv1.GetUserProfilesResponse{Profiles: out}), nil
+}
+
+// DecodeOidcSub（接口文档 §7.3）：把 §4.5 / §4.7 的密文 sub 还原为真实 uid。
+// 读接口（签名 → session，nonce 参与签名但不去重，§7 前言）；解码无状态、
+// 不触 DB。sub 非法 / 解密失败 / client_id 与 X-Client-ID 不一致一律
+// invalid_argument + ErrorInfo(rpc, invalid_request)（§1.5 / §1.6），
+// 防跨客户端探测；签名非法 / 头部缺失由 HMAC 拦截器按 §7 既有错误拒绝。
+func (h *UserHandler) DecodeOidcSub(ctx context.Context, req *connect.Request[rpcv1.DecodeOidcSubRequest]) (*connect.Response[rpcv1.DecodeOidcSubResponse], error) {
+	uid, clientID, err := h.subs.DecodeSub(req.Msg.GetSub())
+	if err != nil || clientID != req.Header().Get("X-Client-ID") {
+		return nil, internalconnect.WithErrorInfo(
+			connect.NewError(connect.CodeInvalidArgument, errInvalidOidcSub),
+			internalconnect.NewErrorInfo("rpc", "invalid_request", "invalid oidc sub"),
+		)
+	}
+	return connect.NewResponse(&rpcv1.DecodeOidcSubResponse{
+		Uid:      uid,
+		ClientId: clientID,
+	}), nil
 }
 
 // UpdateUserProfile（§7 行 1423，入参同 §3.2 行 837 的

@@ -119,7 +119,7 @@ func newTokenService(t *testing.T, codes fakeCodes, store *fakeRefresh) (*TokenS
 	j := newTestJWT(t, "k1")
 	j.Now = func() time.Time { return now }
 	return &TokenService{
-		JWT: j, Clients: fakeClients{"web": webClient()}, Codes: codes,
+		JWT: j, Subs: newTestSubCodec(t), Clients: fakeClients{"web": webClient()}, Codes: codes,
 		Tokens: store, Epoch: fakeEpoch{v: 3},
 		Now: func() time.Time { return now },
 	}, j, now
@@ -154,8 +154,12 @@ func TestAuthorizationCodeSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify access token: %v", err)
 	}
-	if ac.Sub != 42 || ac.Scope != "openid profile email phone" || ac.Epoch != 3 {
+	if ac.Sub != testSub(t) || ac.Scope != "openid profile email phone" || ac.Epoch != 3 {
 		t.Errorf("access claims = %+v", ac)
+	}
+	uid, clientID, err := newTestSubCodec(t).DecodeSub(ac.Sub)
+	if err != nil || uid != 42 || clientID != "web" {
+		t.Errorf("decode access sub = (%d, %q, %v)", uid, clientID, err)
 	}
 	if len(store.rows) != 1 {
 		t.Fatalf("refresh rows = %d, want 1", len(store.rows))
@@ -261,7 +265,7 @@ func TestRefreshTokenSuccess(t *testing.T) {
 		t.Errorf("scope = %q, want space-separated", resp.Scope)
 	}
 	ac, err := j.VerifyAccess(resp.AccessToken)
-	if err != nil || ac.Sub != 42 || ac.Scope != "openid email" {
+	if err != nil || ac.Sub != testSub(t) || ac.Scope != "openid email" {
 		t.Fatalf("access claims = %+v, err=%v", ac, err)
 	}
 	if len(store.rows) != 1 {
@@ -364,14 +368,15 @@ func testUser() *model.User {
 	}
 }
 
-func newClaimsService(j *JWT, users fakeUsers, profiles fakeProfiles, epoch int64) *UserInfoService {
-	return &UserInfoService{JWT: j, Users: users, Profiles: profiles, Epoch: fakeEpoch{v: epoch}}
+func newClaimsService(t *testing.T, j *JWT, users fakeUsers, profiles fakeProfiles, epoch int64) *UserInfoService {
+	t.Helper()
+	return &UserInfoService{JWT: j, Subs: newTestSubCodec(t), Users: users, Profiles: profiles, Epoch: fakeEpoch{v: epoch}}
 }
 
 func signAccess(t *testing.T, j *JWT, scope string, epoch int64) string {
 	t.Helper()
 	raw, err := j.SignAccessToken(AccessTokenInput{
-		UID: 42, ClientID: "web", Scope: scope, AMR: []string{"pwd"}, Epoch: epoch, TTL: time.Hour,
+		Sub: testSub(t), ClientID: "web", Scope: scope, AMR: []string{"pwd"}, Epoch: epoch, TTL: time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("sign access: %v", err)
@@ -385,13 +390,13 @@ func TestUserinfoMasking(t *testing.T) {
 	j := newTestJWT(t, "k1")
 	j.Now = func() time.Time { return now }
 	users := fakeUsers{42: testUser()}
-	svc := newClaimsService(j, users, fakeProfiles{}, 3)
+	svc := newClaimsService(t, j, users, fakeProfiles{}, 3)
 
 	resp, oe := svc.Userinfo(context.Background(), signAccess(t, j, "openid profile email phone", 3))
 	if oe != nil {
 		t.Fatalf("userinfo: %v", oe)
 	}
-	if resp.Sub != 42 || resp.Name != "Alice" || resp.Picture != "https://cdn.example/a.png" {
+	if resp.Sub != testSub(t) || resp.Name != "Alice" || resp.Picture != "https://cdn.example/a.png" {
 		t.Errorf("basic claims = %+v", resp)
 	}
 	if resp.Email != "a***@example.com" || resp.PhoneNumber != "138****8000" {
@@ -431,7 +436,7 @@ func TestUserinfoRejectsInvalid(t *testing.T) {
 	j.Now = func() time.Time { return now }
 	users := fakeUsers{42: testUser()}
 
-	svc := newClaimsService(j, users, fakeProfiles{}, 4) // epoch 已递增
+	svc := newClaimsService(t, j, users, fakeProfiles{}, 4) // epoch 已递增
 	if _, oe := svc.Userinfo(context.Background(), signAccess(t, j, "openid", 3)); oe == nil || oe.Status != 401 {
 		t.Fatalf("epoch mismatch error = %v, want 401", oe)
 	}
@@ -440,7 +445,7 @@ func TestUserinfoRejectsInvalid(t *testing.T) {
 		t.Fatalf("invalid token error = %v, want 401", oe)
 	}
 
-	svc = newClaimsService(j, users, fakeProfiles{}, 3)
+	svc = newClaimsService(t, j, users, fakeProfiles{}, 3)
 	raw := signAccess(t, j, "openid", 3)
 	j.Now = func() time.Time { return now.Add(2 * time.Hour) }
 	if _, oe := svc.Userinfo(context.Background(), raw); oe == nil || oe.Status != 401 {
@@ -457,13 +462,13 @@ func TestGetUserInfo(t *testing.T) {
 	profiles := fakeProfiles{42: &model.UserProfile{
 		UserID: 42, Gender: 1, Birthday: &bd, Locale: "zh-CN", Timezone: "Asia/Shanghai",
 	}}
-	svc := newClaimsService(j, fakeUsers{42: testUser()}, profiles, 3)
+	svc := newClaimsService(t, j, fakeUsers{42: testUser()}, profiles, 3)
 
 	resp, oe := svc.GetUserInfo(context.Background(), signAccess(t, j, "openid email phone", 3))
 	if oe != nil {
 		t.Fatalf("get_user_info: %v", oe)
 	}
-	if resp.Id != 42 || resp.Username != "alice" || resp.UserStatus != 1 || resp.Epoch != 3 {
+	if resp.Sub != testSub(t) || resp.Username != "alice" || resp.UserStatus != 1 || resp.Epoch != 3 {
 		t.Errorf("profile basics = %+v", resp)
 	}
 	if resp.Email != "a***@example.com" || resp.Phone != "138****8000" {
