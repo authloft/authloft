@@ -12,10 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
+	"authloft/internal/uriutil"
 
 	"gorm.io/gorm"
 )
@@ -119,35 +119,10 @@ func validateScope(registeredScopes, scope string) error {
 }
 
 // matchRedirectURI 回调白名单条目整段匹配（接口文档 §12.3：支持 * 通配、
-// 整段匹配防子域名陷阱）：字面相等，或按 * 切段后前缀 / 中段 / 后缀依序
-// 匹配。与 service/admin（matchRedirectURI）、internal/pages（uriMatches）
-// 是同一规则的多处实现，改规则须同步。
+// 整段匹配防子域名陷阱）。规则唯一实现收敛于
+// internal/uriutil.MatchWildcardURI，此处仅保留原名薄封装。
 func matchRedirectURI(pattern, target string) bool {
-	if pattern == target {
-		return true
-	}
-	if !strings.Contains(pattern, "*") {
-		return false
-	}
-	parts := strings.Split(pattern, "*")
-	if !strings.HasPrefix(target, parts[0]) {
-		return false
-	}
-	rest := target[len(parts[0]):]
-	for i := 1; i < len(parts); i++ {
-		if i == len(parts)-1 {
-			if len(rest) < len(parts[i]) || !strings.HasSuffix(rest, parts[i]) {
-				return false
-			}
-		} else {
-			idx := strings.Index(rest, parts[i])
-			if idx < 0 {
-				return false
-			}
-			rest = rest[idx+len(parts[i]):]
-		}
-	}
-	return true
+	return uriutil.MatchWildcardURI(pattern, target)
 }
 
 // redirectURIHit target 是否命中白名单任一条目（白名单为空即全拒，

@@ -43,6 +43,7 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
+	"authloft/internal/uriutil"
 )
 
 // 默认口径常量（docs 未细化，待定）：client_secret 长度对齐
@@ -706,34 +707,10 @@ func marshalOauthProviders(providers []string) ([]byte, error) {
 }
 
 // matchRedirectURI 回调白名单条目整段匹配（§12.3：支持 * 通配、整段匹配防
-// 子域名陷阱）：字面相等，或按 * 切段后前缀 / 中段 / 后缀依序匹配。与登出
-// 页白名单（internal/pages）是同一规则的两处实现，改规则须两处同步。
+// 子域名陷阱）。规则唯一实现收敛于 internal/uriutil.MatchWildcardURI，此处
+// 仅保留原名薄封装，匹配语义以其为准。
 func matchRedirectURI(pattern, target string) bool {
-	if pattern == target {
-		return true
-	}
-	if !strings.Contains(pattern, "*") {
-		return false
-	}
-	parts := strings.Split(pattern, "*")
-	if !strings.HasPrefix(target, parts[0]) {
-		return false
-	}
-	rest := target[len(parts[0]):]
-	for i := 1; i < len(parts); i++ {
-		if i == len(parts)-1 {
-			if len(rest) < len(parts[i]) || !strings.HasSuffix(rest, parts[i]) {
-				return false
-			}
-		} else {
-			idx := strings.Index(rest, parts[i])
-			if idx < 0 {
-				return false
-			}
-			rest = rest[idx+len(parts[i]):]
-		}
-	}
-	return true
+	return uriutil.MatchWildcardURI(pattern, target)
 }
 
 // redirectURIHit target 是否命中白名单任一条目。

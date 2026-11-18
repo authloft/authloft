@@ -1,4 +1,4 @@
-// logout.go GET /sso/logout（接口文档 §2.9 行 753-765、后端架构 §11.2）：
+// logout.go GET /sso/logout（接口文档 §2.9、后端架构 §11.2）：
 // 清本域 al_session（session 包 Cookie.Clear 经 Set-Cookie）→ 按 settings
 // sso_domains 跳转式同步登出（复用 session 子包的同步跳转链载荷构造，
 // 登出载荷 Cookie 值空、TTL="0"，接收端写入即等价清除）→ post_logout_
@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +22,7 @@ import (
 	"authloft/internal/repo"
 	"authloft/internal/session"
 	"authloft/internal/settings"
+	"authloft/internal/uriutil"
 )
 
 // defaultSessionTTL / defaultCookieName settings 键缺失回落值（§5.6：
@@ -58,7 +58,7 @@ func (h *Handler) logout(c *gin.Context) {
 	c.Redirect(http.StatusFound, final)
 }
 
-// logoutFinalURL 白名单判定（§2.9 行 757）：返回最终回跳地址（绝对 URL——
+// logoutFinalURL 白名单判定（§2.9）：返回最终回跳地址（绝对 URL——
 // 同步链末跳由别的根域发出，相对地址会落错主机）。
 func (h *Handler) logoutFinalURL(c *gin.Context) string {
 	target := c.Query("post_logout_redirect_uri")
@@ -128,35 +128,11 @@ func (h *Handler) matchClientRedirectURI(ctx context.Context, clientID, target s
 	return false
 }
 
-// uriMatches redirect_uris 条目整段匹配（接口文档 §4.2 行 1064 / 后端架构
-// §14.2 行 1632-1642：支持 * 通配、整段匹配防子域名陷阱）：字面相等，或
-// 按 * 切段后前缀 / 中段 / 后缀依序匹配。
+// uriMatches redirect_uris 条目整段匹配（接口文档 §4.2 / 后端架构 §14.2：
+// 支持 * 通配、整段匹配防子域名陷阱）。规则唯一实现收敛于
+// internal/uriutil.MatchWildcardURI，此处仅保留原名薄封装。
 func uriMatches(pattern, target string) bool {
-	if pattern == target {
-		return true
-	}
-	if !strings.Contains(pattern, "*") {
-		return false
-	}
-	parts := strings.Split(pattern, "*")
-	if !strings.HasPrefix(target, parts[0]) {
-		return false
-	}
-	rest := target[len(parts[0]):]
-	for i := 1; i < len(parts); i++ {
-		if i == len(parts)-1 {
-			if len(rest) < len(parts[i]) || !strings.HasSuffix(rest, parts[i]) {
-				return false
-			}
-		} else {
-			idx := strings.Index(rest, parts[i])
-			if idx < 0 {
-				return false
-			}
-			rest = rest[idx+len(parts[i]):]
-		}
-	}
-	return true
+	return uriutil.MatchWildcardURI(pattern, target)
 }
 
 // resolveSameOrigin target 是否 al_root 同源：相对地址按 al_root 解析后
