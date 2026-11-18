@@ -127,7 +127,7 @@ type KeyMaterial struct {
 	Kid int    `yaml:"kid"`
 }
 
-// SignKeyConfig 七类令牌 / 载荷的独立密钥（§1.4）：互不复用，泄露一枚不殃及其余。
+// SignKeyConfig 八类令牌 / 载荷的独立密钥（§1.4）：互不复用，泄露一枚不殃及其余。
 type SignKeyConfig struct {
 	Session      KeyMaterial `yaml:"session"`      // session token
 	Login        KeyMaterial `yaml:"login"`        // login token
@@ -136,6 +136,7 @@ type SignKeyConfig struct {
 	SyncPayload  KeyMaterial `yaml:"sync_payload"` // 多域名同步载荷（§11.2）
 	Challenge    KeyMaterial `yaml:"challenge"`    // 挑战令牌（webauthn_enroll 与 step-up 统一，§11.6.7）
 	Verification KeyMaterial `yaml:"verification"` // 敏感操作二次验证令牌（§11.6.7）
+	OidcSub      KeyMaterial `yaml:"oidc_sub"`     // OIDC sub 确定性加密（§11.6.8；k_enc / k_mac 构造期派生）
 }
 
 // OIDCConfig OIDC RS256 签名密钥集（§3.2 约定 6 / §14.3）：与顶层 sign_key
@@ -333,6 +334,7 @@ func (s SignKeyConfig) validate() []error {
 		{"sign_key.sync_payload", s.SyncPayload},
 		{"sign_key.challenge", s.Challenge},
 		{"sign_key.verification", s.Verification},
+		{"sign_key.oidc_sub", s.OidcSub},
 	}
 	var errs []error
 	for _, sc := range scenarios {

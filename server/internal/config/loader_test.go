@@ -59,7 +59,7 @@ func TestLoadMissingFileReturnsErrNotExist(t *testing.T) {
 }
 
 // TestDefaultConfigValidAndKeysIndependent DefaultConfig（安装流程的默认值
-// 来源，§3.15 writer.go）：整体通过 Validate；sign_key 七场景独立、解码 32
+// 来源，§3.15 writer.go）：整体通过 Validate；sign_key 八场景独立、解码 32
 // 字节、kid=1；两次调用生成不同密钥（每次现场随机）。
 func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 	cfg, err := DefaultConfig()
@@ -69,7 +69,7 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config must pass Validate: %v", err)
 	}
-	seen := make(map[string]bool, 7)
+	seen := make(map[string]bool, 8)
 	for name, km := range map[string]KeyMaterial{
 		"session":      cfg.SignKey.Session,
 		"login":        cfg.SignKey.Login,
@@ -78,6 +78,7 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 		"sync_payload": cfg.SignKey.SyncPayload,
 		"challenge":    cfg.SignKey.Challenge,
 		"verification": cfg.SignKey.Verification,
+		"oidc_sub":     cfg.SignKey.OidcSub,
 	} {
 		raw, err := base64.StdEncoding.DecodeString(km.Key)
 		if err != nil {
@@ -91,7 +92,7 @@ func TestDefaultConfigValidAndKeysIndependent(t *testing.T) {
 			t.Errorf("%s kid = %d, want 1", name, km.Kid)
 		}
 		if seen[km.Key] {
-			t.Errorf("duplicated %s key; seven scenarios must be independent keys", name)
+			t.Errorf("duplicated %s key; eight scenarios must be independent keys", name)
 		}
 		seen[km.Key] = true
 	}

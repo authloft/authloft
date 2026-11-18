@@ -402,7 +402,7 @@ func oidcTestKeyB64() string {
 	return oidcTestKey
 }
 
-// uploadConfigYAML 生成一份可通过 Validate 的 config 文本（sign_key 七场景
+// uploadConfigYAML 生成一份可通过 Validate 的 config 文本（sign_key 八场景
 // 用 32 字节确定密钥；oidc.jwt_keys 用一套合法 RSA 私钥）。
 func uploadConfigYAML(dsn, redisAddr string) string {
 	var b strings.Builder
@@ -411,7 +411,7 @@ func uploadConfigYAML(dsn, redisAddr string) string {
 	b.WriteString(fmt.Sprintf("redis: { addr: %q, password: \"\", db: 0, pool_size: 50 }\n", redisAddr))
 	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\", rp_display_name: \"Authloft\" }\n")
 	b.WriteString("sign_key:\n")
-	for _, sc := range []string{"session", "login", "ticket", "cookie", "sync_payload", "challenge", "verification"} {
+	for _, sc := range []string{"session", "login", "ticket", "cookie", "sync_payload", "challenge", "verification", "oidc_sub"} {
 		fmt.Fprintf(&b, "  %s: { key: %q, kid: 1 }\n", sc, testKeyB64('A'))
 	}
 	b.WriteString("argon2: { time: 3, memory: 65536, threads: 4, key_len: 32 }\n")
@@ -464,6 +464,11 @@ log: { level: info, format: text }
 			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// 存量 config 缺新增的 verification 一把 → 配置不完整，直接拒绝（§3.15）。
 			return strings.Replace(text, "  verification: { key: \""+key+"\", kid: 1 }\n", "", 1)
+		}()},
+		{"missing oidc_sub key", func() string {
+			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			// 存量 config 缺新增的 oidc_sub 一把 → 配置不完整，直接拒绝（§3.15）。
+			return strings.Replace(text, "  oidc_sub: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing db section", func() string {
 			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
@@ -727,11 +732,12 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Errorf("generated config must pass Validate: %v", err)
 	}
-	// 全新安装随机生成全部 7 把 sign_key（§3.15 writer.go）：逐把解码 32
-	// 字节、kid=1、七把互不相同。
+	// 全新安装随机生成全部 8 把 sign_key（§3.15 writer.go）：逐把解码 32
+	// 字节、kid=1、八把互不相同。
 	signKeys := []config.KeyMaterial{
 		c.SignKey.Session, c.SignKey.Login, c.SignKey.Ticket, c.SignKey.Cookie,
 		c.SignKey.SyncPayload, c.SignKey.Challenge, c.SignKey.Verification,
+		c.SignKey.OidcSub,
 	}
 	seenKeys := make(map[string]bool, len(signKeys))
 	for i, km := range signKeys {
@@ -740,7 +746,7 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 			t.Errorf("sign_key[%d]: want 32-byte base64 key with kid=1, got kid=%d err=%v", i, km.Kid, err)
 		}
 		if seenKeys[km.Key] {
-			t.Errorf("sign_key[%d]: fresh install must generate 7 independent keys", i)
+			t.Errorf("sign_key[%d]: fresh install must generate 8 independent keys", i)
 		}
 		seenKeys[km.Key] = true
 	}

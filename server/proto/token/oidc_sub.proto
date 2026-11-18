@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package token;
+
+// 本包是服务端内部令牌载荷（docs/后端架构.md §11.6），用裸包名 token
+// （存储模型先例：docs/接口文档.md §12.1）。生成到 gen/go/token/，
+// Go 包名 token；本目录豁免 32 位整型 lint（§1.6），§11.6 整型本就 int64。
+option go_package = "authloft/gen/go/token;token";
+
+// OidcSubPayload 是 OIDC 对外 sub 的加密前载荷（docs/后端架构.md
+// §11.6.8、接口文档 §4.5 / §4.7）。明文含 client_id 使 sub 天然 pairwise：
+// 同一 (client_id, uid) 重复签发逐字节一致，不同客户端对同一用户互异。
+// 经确定性变体封装后对客户端是不透明串，只由服务端 Open 还原 uid。
+message OidcSubPayload {
+  // 签发该 sub 的客户端 ID（进明文 → 天然 pairwise）。
+  string client_id = 1;
+  // 真实用户 ID（只还原给签发客户端，接口文档 §7.3）。
+  int64 uid = 2;
+}

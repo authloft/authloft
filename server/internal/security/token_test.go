@@ -48,12 +48,13 @@ func openString(t *testing.T, c *Codec, purpose, tok string) (string, error) {
 	return msg.GetValue(), nil
 }
 
-// TestSealOpenAllPurposes 八个 purpose 各自往返（§11.6.1 封闭集合）。
+// TestSealOpenAllPurposes 九个 purpose 各自往返（§11.6.1 封闭集合）。
 func TestSealOpenAllPurposes(t *testing.T) {
 	c := newTestCodec(t, 1, 1, testKey(0xA1))
 	for _, purpose := range []string{
 		PurposeSession, PurposeLogin, PurposeTicket, PurposeVerification,
 		PurposeChallenge, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
+		PurposeOidcSub,
 	} {
 		tok := sealOK(t, c, purpose, "payload-"+purpose)
 		got, err := openString(t, c, purpose, tok)
@@ -221,6 +222,7 @@ func TestOpenCrossPurpose(t *testing.T) {
 	for _, purpose := range []string{
 		PurposeSession, PurposeTicket, PurposeVerification,
 		PurposeChallenge, PurposeCookie, PurposeSyncPayload, PurposeOidcCode,
+		PurposeOidcSub,
 	} {
 		if _, err := openString(t, c, purpose, tok); err == nil {
 			t.Fatalf("cross purpose %q must fail", purpose)

@@ -48,6 +48,7 @@ sign_key:
   sync_payload: { key: "<KEY>", kid: 1 }
   challenge:    { key: "<KEY>", kid: 1 }
   verification: { key: "<KEY>", kid: 1 }
+  oidc_sub:     { key: "<KEY>", kid: 1 }
 oidc:
   jwt_keys:
     - kid: "1"
@@ -247,6 +248,8 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 			c.SignKey.Verification.Key = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 31))
 		}, "sign_key.verification.key"},
 		{"verification kid negative", func(c *Config) { c.SignKey.Verification.Kid = -1 }, "sign_key.verification.kid"},
+		{"oidc_sub key empty", func(c *Config) { c.SignKey.OidcSub.Key = "" }, "sign_key.oidc_sub.key"},
+		{"oidc_sub kid zero", func(c *Config) { c.SignKey.OidcSub.Kid = 0 }, "sign_key.oidc_sub.kid"},
 
 		{"oidc keys missing", func(c *Config) { c.OIDC.JWTKeys = nil }, "oidc.jwt_keys"},
 		{"oidc keys empty", func(c *Config) { c.OIDC.JWTKeys = []OIDCKey{} }, "oidc.jwt_keys"},

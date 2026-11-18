@@ -60,7 +60,7 @@ func parseAndValidate(data []byte) (*Config, error) {
 }
 
 // DefaultConfig 构造全量默认值结构（与 authloft.yml.example 同源），
-// sign_key 七场景现场随机生成（crypto/rand 32 字节 → std base64，kid=1，
+// sign_key 八场景现场随机生成（crypto/rand 32 字节 → std base64，kid=1，
 // 互不复用），oidc.jwt_keys 现场生成一把 RSA 2048（PKCS#8 PEM → std base64，
 // kid="1"）。供安装流程消费（§3.15 writer.go：全新安装生成完整 config；
 // §3.2 约定 4 / 约定 6——密钥只在安装流程中生成，loader 不再自动生成写回）。
@@ -100,6 +100,7 @@ func DefaultConfig() (*Config, error) {
 		&c.SignKey.SyncPayload,
 		&c.SignKey.Challenge,
 		&c.SignKey.Verification,
+		&c.SignKey.OidcSub,
 	} {
 		k, err := generateKeyMaterial()
 		if err != nil {
@@ -187,7 +188,7 @@ var serverEnvBindings = []envBinding{
 
 // envBindings 环境变量覆盖表：AUTHLOFT_<SECTION>_<FIELD>（大写下划线），由文档
 // 明写的 AUTHLOFT_DB_DSN、AUTHLOFT_REDIS_ADDR（§3.2 职责表）按同模式推导为
-// 全字段口径（含 sign_key 十四字段与 AUTHLOFT_AUTHLOFT_* 双前缀）。显式表而非反射：
+// 全字段口径（含 sign_key 十六字段与 AUTHLOFT_AUTHLOFT_* 双前缀）。显式表而非反射：
 // 无运行时魔法、逐条可测。未知 AUTHLOFT_* 变量忽略；空值视为未设置跳过
 // （CI 常见空变量）；已设且非空的值非法（整数 / 时长解析失败）即 fail-fast。
 var envBindings = slices.Concat(serverEnvBindings, []envBinding{
@@ -219,6 +220,8 @@ var envBindings = slices.Concat(serverEnvBindings, []envBinding{
 	{"AUTHLOFT_SIGN_KEY_CHALLENGE_KID", setInt(func(c *Config, n int) { c.SignKey.Challenge.Kid = n })},
 	{"AUTHLOFT_SIGN_KEY_VERIFICATION_KEY", func(c *Config, v string) error { c.SignKey.Verification.Key = v; return nil }},
 	{"AUTHLOFT_SIGN_KEY_VERIFICATION_KID", setInt(func(c *Config, n int) { c.SignKey.Verification.Kid = n })},
+	{"AUTHLOFT_SIGN_KEY_OIDC_SUB_KEY", func(c *Config, v string) error { c.SignKey.OidcSub.Key = v; return nil }},
+	{"AUTHLOFT_SIGN_KEY_OIDC_SUB_KID", setInt(func(c *Config, n int) { c.SignKey.OidcSub.Kid = n })},
 
 	{"AUTHLOFT_ARGON2_TIME", setInt(func(c *Config, n int) { c.Argon2.Time = n })},
 	{"AUTHLOFT_ARGON2_MEMORY", setInt(func(c *Config, n int) { c.Argon2.Memory = n })},

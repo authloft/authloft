@@ -376,7 +376,8 @@ func wireSharedServices(cfg *config.Config, deps *assembled) {
 	}
 }
 
-// codecs 七场景独立编解码器（§11.6.1）：各持一把密钥，互不复用。
+// codecs 八场景独立编解码器（§11.6.1）：各持一把密钥，互不复用；
+// oidc_sub 用确定性变体（§11.6.8），其余走随机 nonce 的通用封装。
 type codecs struct {
 	Session      *security.Codec
 	Login        *security.Codec
@@ -385,12 +386,14 @@ type codecs struct {
 	SyncPayload  *security.Codec
 	Challenge    *security.Codec
 	Verification *security.Codec
+	OidcSub      *security.DeterministicCodec
 }
 
-// buildCodecs 把 cfg.SignKey 七把 KeyMaterial 逐把转成 security.Codec（§1.4）。
+// buildCodecs 把 cfg.SignKey 八把 KeyMaterial 逐把转成编解码器（§1.4）：
+// 其余七把走随机 nonce 的 Codec，oidc_sub 走确定性变体（§11.6.8）。
 // 任一步非法即返错由 serve 转 fail-fast；每把独立构造 KeyStore，绝不共用。
 func buildCodecs(cfg *config.Config) (*codecs, error) {
-	build := func(field string, km config.KeyMaterial) (*security.Codec, error) {
+	buildKS := func(field string, km config.KeyMaterial) (*security.KeyStore, error) {
 		raw, err := base64.StdEncoding.DecodeString(km.Key)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap: %s.key: decode base64: %w", field, err)
@@ -405,6 +408,13 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap: %s: %w", field, err)
 		}
+		return ks, nil
+	}
+	buildCodec := func(field string, km config.KeyMaterial) (*security.Codec, error) {
+		ks, err := buildKS(field, km)
+		if err != nil {
+			return nil, err
+		}
 		return security.NewCodec(ks), nil
 	}
 
@@ -412,26 +422,33 @@ func buildCodecs(cfg *config.Config) (*codecs, error) {
 		c   codecs
 		err error
 	)
-	if c.Session, err = build("sign_key.session", cfg.SignKey.Session); err != nil {
+	if c.Session, err = buildCodec("sign_key.session", cfg.SignKey.Session); err != nil {
 		return nil, err
 	}
-	if c.Login, err = build("sign_key.login", cfg.SignKey.Login); err != nil {
+	if c.Login, err = buildCodec("sign_key.login", cfg.SignKey.Login); err != nil {
 		return nil, err
 	}
-	if c.Ticket, err = build("sign_key.ticket", cfg.SignKey.Ticket); err != nil {
+	if c.Ticket, err = buildCodec("sign_key.ticket", cfg.SignKey.Ticket); err != nil {
 		return nil, err
 	}
-	if c.Cookie, err = build("sign_key.cookie", cfg.SignKey.Cookie); err != nil {
+	if c.Cookie, err = buildCodec("sign_key.cookie", cfg.SignKey.Cookie); err != nil {
 		return nil, err
 	}
-	if c.SyncPayload, err = build("sign_key.sync_payload", cfg.SignKey.SyncPayload); err != nil {
+	if c.SyncPayload, err = buildCodec("sign_key.sync_payload", cfg.SignKey.SyncPayload); err != nil {
 		return nil, err
 	}
-	if c.Challenge, err = build("sign_key.challenge", cfg.SignKey.Challenge); err != nil {
+	if c.Challenge, err = buildCodec("sign_key.challenge", cfg.SignKey.Challenge); err != nil {
 		return nil, err
 	}
-	if c.Verification, err = build("sign_key.verification", cfg.SignKey.Verification); err != nil {
+	if c.Verification, err = buildCodec("sign_key.verification", cfg.SignKey.Verification); err != nil {
 		return nil, err
+	}
+	oidcSubKS, err := buildKS("sign_key.oidc_sub", cfg.SignKey.OidcSub)
+	if err != nil {
+		return nil, err
+	}
+	if c.OidcSub, err = security.NewDeterministicCodec(oidcSubKS); err != nil {
+		return nil, fmt.Errorf("bootstrap: sign_key.oidc_sub: %w", err)
 	}
 	return &c, nil
 }
@@ -878,7 +895,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	// 共享仓储一次构造（repo 无状态，register* 与 buildDomains 复用同一实例）。
 	deps.repos = newRepoSet(db)
 
-	// 步骤 5：七把 sign_key 逐把构造 KeyStore + Codec。
+	// 步骤 5：八把 sign_key 逐把构造 KeyStore + Codec。
 	if deps.codecs, err = buildCodecs(cfg); err != nil {
 		deps.closeInfra()
 		return nil, assembleStep("buildCodecs", err)
