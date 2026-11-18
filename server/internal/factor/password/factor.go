@@ -64,6 +64,16 @@ type ResetQueue interface {
 	ResetPasswordFailures(ctx context.Context, userRefs ...string) error
 }
 
+// ResetFunc ResetQueue 的函数适配器：装配方把计数存储的清零动作包成闭包
+// 注入（生产 = cache.PwFailStore.Reset 删当日计数 + 封禁键；测试 = 状态化
+// fake），因子侧只认接口不认存储。
+type ResetFunc func(ctx context.Context, userRefs ...string) error
+
+// ResetPasswordFailures 满足 ResetQueue。
+func (f ResetFunc) ResetPasswordFailures(ctx context.Context, userRefs ...string) error {
+	return f(ctx, userRefs...)
+}
+
 // IPResolver 取本次请求来源 IP：用户不存在时 user_ref = ip + 输入账号哈希
 // （§8.1 行 1027）。装配方从 HTTP 中间件注入。
 type IPResolver interface {

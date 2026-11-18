@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"gorm.io/gorm"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"

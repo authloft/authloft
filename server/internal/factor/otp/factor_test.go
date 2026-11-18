@@ -8,8 +8,10 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
 	"authloft/internal/factor"
+	"authloft/internal/factor/ipres"
 	core "authloft/internal/otp"
 	"authloft/internal/repo/model"
+	"authloft/internal/service/orchestrator"
 )
 
 type fakeStore struct {
@@ -523,5 +525,86 @@ func TestVerifyExhaustedIgnoresUpstreamAttemptsLeft(t *testing.T) {
 				t.Fatalf("Verify = %+v, want %s/%d", res, tc.wantStat, tc.wantLeft)
 			}
 		})
+	}
+}
+
+// ipLimitStore 有状态 Store：按 ip 计数，复现 cache/code 单 IP 日限额的
+// SendIPDailyLimit 结论（键读写与原子判定在生产在 store，本 fake 只验证
+// 因子把 resolver 解析出的 ip 送进限额链）。
+type ipLimitStore struct {
+	ipCounts map[string]int
+	ipLimit  int
+	gotIPs   []string
+}
+
+func (s *ipLimitStore) Send(_ context.Context, _, _, _, ip, _ string) (cache.SendResult, error) {
+	s.gotIPs = append(s.gotIPs, ip)
+	s.ipCounts[ip]++
+	if s.ipLimit > 0 && s.ipCounts[ip] > s.ipLimit {
+		return cache.SendIPDailyLimit, nil
+	}
+	return cache.SendOK, nil
+}
+
+func (s *ipLimitStore) Verify(context.Context, string, string, string, string) (cache.CodeVerifyResult, error) {
+	return cache.CodeVerifyResult{Result: cache.VerifyOK}, nil
+}
+
+// TestStartIPDailyLimitCountsByIP 生产 resolver 注入后单 IP 日限额按真实
+// 来源 IP 计数（需求 §4.1.5、后端架构 §10.3）：同 ip 连发达限额即
+// too_many_requests 且不再投递，不同 ip 不受累；store 收到的必须是
+// resolver 解析值而非 unknown 恒定桶。
+func TestStartIPDailyLimitCountsByIP(t *testing.T) {
+	phone := "13800000000"
+	st := &ipLimitStore{ipCounts: map[string]int{}, ipLimit: 2}
+	sender := &fakeSender{}
+	f, err := New(factor.FactorOTPSMS, core.NewService(st, core.DefaultConfig()), sender, ipres.Resolver{}, core.DefaultConfig())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	users := fakeUsers{byPhone: &model.User{ID: 7, Phone: &phone, PhoneVerified: 1}}
+	newCtxWithIP := func(ip string) *factor.FactorContext {
+		return &factor.FactorContext{
+			Context: orchestrator.WithRequestInfo(context.Background(), orchestrator.RequestInfo{IP: ip}),
+			Login:   &token.LoginTokenPayload{Tid: "tid-1", Flow: "login"},
+			Payload: &factor.Payload{Phone: phone},
+			Users:   users,
+		}
+	}
+
+	for i := 0; i < 2; i++ {
+		res, err := f.Start(newCtxWithIP("203.0.113.10"))
+		if err != nil {
+			t.Fatalf("Start(#%d): %v", i+1, err)
+		}
+		if res.Status != "" || res.Kind != factor.StepForm {
+			t.Fatalf("Start(#%d) = %+v, want form step", i+1, res)
+		}
+	}
+	res, err := f.Start(newCtxWithIP("203.0.113.10"))
+	if err != nil {
+		t.Fatalf("Start(limit): %v", err)
+	}
+	if res.Status != core.StatusTooManyRequests || res.RetryAfter <= 0 {
+		t.Fatalf("Start(limit) = %+v, want too_many_requests with retry_after", res)
+	}
+	if sender.calls != 2 {
+		t.Fatalf("sender calls = %d, want 2（限额命中后不投递）", sender.calls)
+	}
+
+	// 不同 ip 不受同一桶累加影响。
+	res, err = f.Start(newCtxWithIP("198.51.100.5"))
+	if err != nil {
+		t.Fatalf("Start(other ip): %v", err)
+	}
+	if res.Status != "" || res.Kind != factor.StepForm {
+		t.Fatalf("Start(other ip) = %+v, want form step（异 ip 不得受累）", res)
+	}
+	if sender.calls != 3 {
+		t.Fatalf("sender calls = %d, want 3", sender.calls)
+	}
+	// Issue 先于 Judge 记账：限额命中那次也写 store，共 4 次 Send。
+	if len(st.gotIPs) != 4 || st.gotIPs[0] != "203.0.113.10" || st.gotIPs[3] != "198.51.100.5" {
+		t.Fatalf("store 收到 ip 序列 = %v", st.gotIPs)
 	}
 }

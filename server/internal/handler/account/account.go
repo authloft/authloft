@@ -20,6 +20,7 @@ import (
 	"authloft/internal/captcha"
 	internalconnect "authloft/internal/connect"
 	"authloft/internal/dto"
+	"authloft/internal/factor/ipres"
 	"authloft/internal/factor/webauthn"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -845,8 +846,9 @@ func mapPasswordError(op string, err error) error {
 // —— 手机 / 邮箱换绑族 ——
 // 请求绑定（step / payload 拆解、CaptchaPayload → captcha.Submission）与错误映射归本层，
 // 两步编排（captcha 必检、占用判定、发码、GETDEL 核销、列级落库、审计）在 BindContactService。
-// IP 维度：Connect 链仅暴露请求头、生产侧 IPResolver 未落地，本层传空串由 service 兜底，
-// 不自造 Header 解析。两接口均需 al_session。
+// IP 维度：来源 IP 由 http 挂载层注入 ctx（ipres，与 event_log 审计同款
+// clientIPFromRequest 口径），本层只取现成值传 service（发码侧单 IP 日限额
+// 键 / 审计链路），不在 handler 解析 Header。两接口均需 al_session。
 
 // BindPhone（§3.4 行 887）：手机号绑定 / 换绑两步同端点，由 step 区分
 // （challenge 需请求顶层 captcha、payload {phone}；verify payload
@@ -859,7 +861,7 @@ func (h *Handler) BindPhone(ctx context.Context, req *connect.Request[accountv1.
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	in := accountsvc.BindPhoneInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha())}
+	in := accountsvc.BindPhoneInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha()), IP: ipres.ClientIP(ctx)}
 	if p := req.Msg.GetPayload(); p != nil {
 		in.Target = p.GetPhone()
 		in.Code = p.GetCode()
@@ -879,7 +881,7 @@ func (h *Handler) BindEmail(ctx context.Context, req *connect.Request[accountv1.
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	in := accountsvc.BindEmailInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha())}
+	in := accountsvc.BindEmailInput{Step: req.Msg.GetStep(), Captcha: captchaSubmission(req.Msg.GetCaptcha()), IP: ipres.ClientIP(ctx)}
 	if p := req.Msg.GetPayload(); p != nil {
 		in.Target = p.GetEmail()
 		in.Code = p.GetCode()

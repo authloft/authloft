@@ -2,7 +2,7 @@
 // §8.1 行 1027）：因子写计数（Verify → Capture）与引擎读计数
 // （orchestrator evaluateCaptcha → Count）两侧键口径收敛到本文件的
 // lookupIdentifier / UserRefOf，任何一侧漂移都会在真实链路测试中断裂
-//（先例：引擎按 username 原文读键、因子按 ip|sha256 写键，计数恒 0，
+// （先例：引擎按 username 原文读键、因子按 ip|sha256 写键，计数恒 0，
 // 渐进式保护第 1 级全量失效）。
 package password
 

@@ -42,6 +42,7 @@ import (
 	"authloft/internal/connect"
 	"authloft/internal/eventlog"
 	"authloft/internal/factor"
+	"authloft/internal/factor/ipres"
 	factorotp "authloft/internal/factor/otp"
 	factorpassword "authloft/internal/factor/password"
 	"authloft/internal/factor/recovery"
@@ -515,13 +516,24 @@ func buildFactors(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	fails := cache.NewPwFailStore(deps.rdb, cache.PwFailOptions{BanTTL: pwOpts.BanTTL})
 
 	// 引擎读计数与因子写计数必须共用同一 user_ref 推导——键口径唯一定义在
-	// factor/password；IPResolver 尚未落地，后续接入时改此一处即两侧同步生效。
-	var pwIP factorpassword.IPResolver
+	// factor/password；IP 取挂载层注入的请求侧来源 IP（ipres），同一实例
+	// 两侧同步生效。
+	pwIP := ipres.Resolver{}
 	pwUserRef := factorpassword.UserRefResolver{Users: users, IP: pwIP}
 
+	// 成功登录即清零该 user_ref 的当日失败计数与封禁（cache.PwFailStore.Reset
+	// 单 DEL 原子删两键）：不清零会导致后续密码失败锁定误判（§8.1）。
+	pwReset := factorpassword.ResetFunc(func(ctx context.Context, refs ...string) error {
+		for _, ref := range refs {
+			if err := fails.Reset(ctx, ref); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
 	registry := factor.NewRegistry()
-	// password.New 对 ResetQueue nil 安全（跳过清零 / user_ref 回退 "unknown"）。
-	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, nil, pwIP, pwOpts)); err != nil {
+	if err := registry.Register(factor.FactorPassword, factorpassword.New(users, fails, pwReset, pwIP, pwOpts)); err != nil {
 		return nil, err
 	}
 	// 挑战令牌用独立 sign_key.challenge（§11.6.1）：载荷与 login_token 互不解。
@@ -560,11 +572,13 @@ func buildFactors(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err != nil {
 		return nil, err
 	}
-	otpSMS, err := factorotp.New(factor.FactorOTPSMS, otpSvc, smsSender, nil, otpCfg)
+	// otp 单 IP 日限额键（§10.3）取挂载层注入的请求侧来源 IP，
+	// 与密码因子 user_ref 的 IP 段同一实现。
+	otpSMS, err := factorotp.New(factor.FactorOTPSMS, otpSvc, smsSender, ipres.Resolver{}, otpCfg)
 	if err != nil {
 		return nil, err
 	}
-	otpEmail, err := factorotp.New(factor.FactorOTPEmail, otpSvc, emailSender, nil, otpCfg)
+	otpEmail, err := factorotp.New(factor.FactorOTPEmail, otpSvc, emailSender, ipres.Resolver{}, otpCfg)
 	if err != nil {
 		return nil, err
 	}

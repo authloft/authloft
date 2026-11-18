@@ -33,6 +33,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	accountsvc "authloft/internal/service/account"
+	"authloft/internal/service/orchestrator"
 	thirdpartysvc "authloft/internal/service/thirdparty"
 	"authloft/internal/service/verification"
 	"authloft/internal/session"
@@ -2439,5 +2440,65 @@ func TestInternalErrorMappingsKeepRootCause(t *testing.T) {
 				t.Errorf("错误链丢失根因文本: %v", texts)
 			}
 		})
+	}
+}
+
+// postServiceViaMount 与 postService 同构，但 handler 外再包生产 http 挂载
+// 包装器 orchestrator.WithRequestInfoHandler（bootstrap 同款），extra 附加
+// 请求头——验证挂载层注入的来源 IP 经 ctx 进入换绑族 service 入参。
+func postServiceViaMount(t *testing.T, procedure, body string, d *getConfigDeps, extra map[string]string) (int, string) {
+	t.Helper()
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, d)
+	srv := httptest.NewServer(orchestrator.WithRequestInfoHandler(h))
+	defer srv.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+procedure, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", procedure, err)
+	}
+	raw := readBody(t, resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode, raw
+}
+
+// TestBindContactCarriesRequestIP 换绑族 service 入参 IP 非空：反代链取
+// X-Forwarded-For 首段；无转发头回落 RemoteAddr host 段（挂载层
+// clientIPFromRequest 口径）——不再传空串由 service 兜底 unknown。
+func TestBindContactCarriesRequestIP(t *testing.T) {
+	bc := &fakeBindContact{}
+	code, raw := postServiceViaMount(t, accountv1connect.AccountServiceBindPhoneProcedure,
+		`{"step":"challenge","payload":{"phone":"13900008000"}}`,
+		&getConfigDeps{bindcontactIn: bc},
+		map[string]string{"X-Forwarded-For": "203.0.113.77, 10.0.0.1"})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (body %s)", code, raw)
+	}
+	if len(bc.phoneCalls) != 1 {
+		t.Fatalf("BindPhone calls = %d, want 1", len(bc.phoneCalls))
+	}
+	if got := bc.phoneCalls[0].IP; got != "203.0.113.77" {
+		t.Errorf("BindPhone IP = %q, want XFF 首段 203.0.113.77", got)
+	}
+
+	bc2 := &fakeBindContact{}
+	code, raw = postServiceViaMount(t, accountv1connect.AccountServiceBindEmailProcedure,
+		`{"step":"verify","payload":{"email":"new@example.com","code":"123456"}}`,
+		&getConfigDeps{bindcontactIn: bc2}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (body %s)", code, raw)
+	}
+	if len(bc2.emailCalls) != 1 {
+		t.Fatalf("BindEmail calls = %d, want 1", len(bc2.emailCalls))
+	}
+	if got := bc2.emailCalls[0].IP; got == "" || got == "unknown" {
+		t.Errorf("BindEmail IP = %q, want 直连 RemoteAddr host 段（非空）", got)
 	}
 }

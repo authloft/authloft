@@ -2,6 +2,8 @@ package password
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -10,8 +12,10 @@ import (
 	"gorm.io/gorm"
 
 	"authloft/internal/factor"
+	"authloft/internal/factor/ipres"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
+	"authloft/internal/service/orchestrator"
 )
 
 // fakeUsers 三个查找方法返回同一结果，模拟仓储；不连 DB。
@@ -271,5 +275,154 @@ func TestVerifyPropagatesRepositoryError(t *testing.T) {
 	f := New(fakeUsers{err: wantErr}, &fakeFails{}, &fakeReset{}, fakeIP{ip: "10.0.0.1"}, DefaultOptions())
 	if _, err := f.Verify(newCtx(nil, nil, "alice", "whatever")); !errors.Is(err, wantErr) {
 		t.Fatalf("Verify err = %v, want %v", err, wantErr)
+	}
+}
+
+// statefulFails 内存版失败计数 / 封禁（cache.PwFailStore 语义同构）：
+// Capture 累加、Factor 达阈值调 Ban、reset 删除单 ref 的计数与封禁。
+type statefulFails struct {
+	counts map[string]int64
+	bans   map[string]bool
+}
+
+func newStatefulFails() *statefulFails {
+	return &statefulFails{counts: map[string]int64{}, bans: map[string]bool{}}
+}
+
+func (f *statefulFails) Capture(_ context.Context, ref string) (int64, error) {
+	f.counts[ref]++
+	return f.counts[ref], nil
+}
+
+func (f *statefulFails) IsBanned(_ context.Context, ref string) (bool, error) {
+	return f.bans[ref], nil
+}
+
+func (f *statefulFails) Ban(_ context.Context, ref string) (bool, error) {
+	f.bans[ref] = true
+	return true, nil
+}
+
+func (f *statefulFails) BanRemaining(_ context.Context, ref string) (time.Duration, error) {
+	if f.bans[ref] {
+		return 10 * time.Minute, nil
+	}
+	return 0, nil
+}
+
+func (f *statefulFails) reset(_ context.Context, ref string) error {
+	delete(f.counts, ref)
+	delete(f.bans, ref)
+	return nil
+}
+
+// TestVerifySuccessClearsAccumulatedFailures 失败 N 次 → 成功登录 → 计数归零，
+// 证伪「成功后仍误锁」（生产装配 = ResetFunc 包存储清零，bootstrap 同款闭包）。
+func TestVerifySuccessClearsAccumulatedFailures(t *testing.T) {
+	hash, err := security.HashPassword("correct-password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	user := &model.User{ID: 42, Username: "alice", UserStatus: 1}
+	cred := &model.UserCredential{UserID: 42, Kind: "password", Secret: []byte(hash), IsEnabled: 1}
+	fails := newStatefulFails()
+	reset := ResetFunc(func(ctx context.Context, refs ...string) error {
+		for _, ref := range refs {
+			if err := fails.reset(ctx, ref); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	f := New(fakeUsers{user: user}, fails, reset, fakeIP{ip: "10.0.0.1"}, DefaultOptions())
+
+	// 成功前累计 2 次失败（低于封禁阈值）。
+	for i := 0; i < 2; i++ {
+		res, err := f.Verify(newCtx(user, cred, "alice", "wrong-password"))
+		if err != nil {
+			t.Fatalf("Verify(fail %d): %v", i+1, err)
+		}
+		if res.Status != StatusInvalidCredentials {
+			t.Fatalf("Verify(fail %d) = %+v, want invalid_credentials", i+1, res)
+		}
+	}
+	if fails.counts["42"] != 2 {
+		t.Fatalf("counts = %v, want 2", fails.counts)
+	}
+
+	res, err := f.Verify(newCtx(user, cred, "alice", "correct-password"))
+	if err != nil {
+		t.Fatalf("Verify(success): %v", err)
+	}
+	if !res.Passed || res.UID != 42 {
+		t.Fatalf("Verify(success) = %+v, want passed uid=42", res)
+	}
+	if _, ok := fails.counts["42"]; ok {
+		t.Fatalf("成功登录后计数未清零: %v", fails.counts)
+	}
+
+	// 清零后再失败 4 次：若无清零则 2+4 达阈值必 locked，实际应重新计数。
+	for i := 0; i < 4; i++ {
+		res, err := f.Verify(newCtx(user, cred, "alice", "wrong-password"))
+		if err != nil {
+			t.Fatalf("Verify(post-reset %d): %v", i+1, err)
+		}
+		if res.Status == StatusLocked {
+			t.Fatalf("成功清零后第 %d 次失败误锁（计数未归零）: %+v", i+1, res)
+		}
+		if res.Status != StatusInvalidCredentials {
+			t.Fatalf("Verify(post-reset %d) = %+v, want invalid_credentials", i+1, res)
+		}
+	}
+	if fails.counts["42"] != 4 {
+		t.Fatalf("counts = %v, want 4（从 0 重新累计）", fails.counts)
+	}
+
+	// 对照：reset 为 nil（跳过清零）时同一序列在累计第 6 次失败即 locked。
+	fails2 := newStatefulFails()
+	f2 := New(fakeUsers{user: user}, fails2, nil, fakeIP{ip: "10.0.0.1"}, DefaultOptions())
+	for i := 0; i < 2; i++ {
+		if _, err := f2.Verify(newCtx(user, cred, "alice", "wrong-password")); err != nil {
+			t.Fatalf("Verify(no-reset fail %d): %v", i+1, err)
+		}
+	}
+	if _, err := f2.Verify(newCtx(user, cred, "alice", "correct-password")); err != nil {
+		t.Fatalf("Verify(no-reset success): %v", err)
+	}
+	var res2 *factor.VerifyResult
+	for i := 0; i < 4; i++ {
+		res2, err = f2.Verify(newCtx(user, cred, "alice", "wrong-password"))
+		if err != nil {
+			t.Fatalf("Verify(no-reset post %d): %v", i+1, err)
+		}
+	}
+	if res2 == nil || res2.Status != StatusLocked {
+		t.Fatalf("no-reset 对照序列应因计数未清零而 locked: %+v", res2)
+	}
+}
+
+// TestUserRefResolverUsesRequestIP 引擎读计数侧与生产 resolver 组合：
+// ctx 注入请求来源 IP 时 user_ref 用真实 IP（不得一律 unknown），
+// 未注入维持 unknown 桶兜底（后端架构 §8.1）。
+func TestUserRefResolverUsesRequestIP(t *testing.T) {
+	sum := sha256.Sum256([]byte("ghost"))
+	wantHash := hex.EncodeToString(sum[:])
+	r := UserRefResolver{Users: fakeUsers{err: gorm.ErrRecordNotFound}, IP: ipres.Resolver{}}
+
+	ctx := orchestrator.WithRequestInfo(context.Background(), orchestrator.RequestInfo{IP: "198.51.100.7"})
+	ref, err := r.UserRef(ctx, "ghost")
+	if err != nil {
+		t.Fatalf("UserRef: %v", err)
+	}
+	if ref != "198.51.100.7|"+wantHash {
+		t.Fatalf("UserRef = %q, want 198.51.100.7|%s（不得回退 unknown）", ref, wantHash)
+	}
+
+	ref, err = r.UserRef(context.Background(), "ghost")
+	if err != nil {
+		t.Fatalf("UserRef(no request info): %v", err)
+	}
+	if ref != "unknown|"+wantHash {
+		t.Fatalf("UserRef(no request info) = %q, want unknown|%s", ref, wantHash)
 	}
 }
