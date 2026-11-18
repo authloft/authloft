@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/repo/model"
 )
@@ -140,19 +140,18 @@ func templateVarsInject(raw string) string {
 
 // RenderClientShell 以已解析的自定义模板内容渲染 SPA 壳（§8.1 第 5 步）：
 // renderHTML 一次完成五占位符替换后交 writeShell 输出，响应头 / no-store /
-// 500 语义与 RenderGinShell 完全一致。html 与 varsJSON 须来自
+// 500 语义与 RenderShell 完全一致。html 与 varsJSON 须来自
 // resolveClientTemplate 的成功结果；siteName 由 Handler.siteName() 取
 // settings.site_name（setup 直调传默认 Authloft）。
-func RenderClientShell(c *gin.Context, html string, init any, staticBase, varsJSON, siteName string) {
+func RenderClientShell(c *echo.Context, html string, init any, staticBase, varsJSON, siteName string) error {
 	nonce, ok := shellNonce(c, staticBase)
 	if !ok {
-		return
+		return nil
 	}
 	body, err := renderHTML(html, init, staticBase, nonce, varsJSON, siteName)
 	if err != nil {
 		slog.Error("pages: render client shell", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	writeShell(c, body)
+	return writeShell(c, body)
 }

@@ -4,7 +4,7 @@
 // 按 RFC 6749 / 7009 / 6750 / 7517 原生格式输出。
 //
 // 路由由 Register 暴露，供装配层接到 bootstrap / router；本实现不接线。
-// X-Request-Id 由既有 middleware.HTTPRequestID 在入口统一回写（§1.1），
+// X-Request-Id 由既有全局链 middleware.RequestID 在入口统一回写（§1.1），
 // 本包不重复写。
 package oidc
 
@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"authloft/internal/logx"
@@ -29,7 +29,7 @@ type Deps struct {
 }
 
 // Register 注册全部 OIDC 路由（discovery / JWKS 无鉴权）。
-func Register(r gin.IRouter, deps Deps) {
+func Register(r *echo.Echo, deps Deps) {
 	h := &handler{deps: deps}
 	r.GET("/.well-known/openid-configuration", h.discovery)
 	r.GET("/.well-known/jwks.json", h.jwks)
@@ -50,7 +50,7 @@ var oidcJSON = protojson.MarshalOptions{UseProtoNames: true}
 
 // discovery `GET /.well-known/openid-configuration`：issuer 与 JWT iss 逐字
 // 相同（§14.1），端点由 issuer 派生。
-func (h *handler) discovery(c *gin.Context) {
+func (h *handler) discovery(c *echo.Context) error {
 	issuer := h.deps.JWT.Issuer()
 	body := map[string]any{
 		"issuer":                                issuer,
@@ -69,50 +69,46 @@ func (h *handler) discovery(c *gin.Context) {
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
-		logx.Error(c.Request.Context(), "oidc: encode discovery failed",
+		logx.Error(c.Request().Context(), "oidc: encode discovery failed",
 			"step", "marshal_discovery", "error", logx.RedactText(err.Error()))
-		writeError(c, http.StatusInternalServerError, "server_error", "cannot encode discovery document")
-		return
+		return writeError(c, http.StatusInternalServerError, "server_error", "cannot encode discovery document")
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	return c.Blob(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 
 // jwks `GET /.well-known/jwks.json`：全列表公钥（§14.1）。
-func (h *handler) jwks(c *gin.Context) {
+func (h *handler) jwks(c *echo.Context) error {
 	raw, err := json.Marshal(h.deps.JWT.JWKS())
 	if err != nil {
-		logx.Error(c.Request.Context(), "oidc: encode jwks failed",
+		logx.Error(c.Request().Context(), "oidc: encode jwks failed",
 			"step", "marshal_jwks", "error", logx.RedactText(err.Error()))
-		writeError(c, http.StatusInternalServerError, "server_error", "cannot encode jwks")
-		return
+		return writeError(c, http.StatusInternalServerError, "server_error", "cannot encode jwks")
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	return c.Blob(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 
 // token `POST /api/oidc/token`：application/x-www-form-urlencoded（§4.3，
 // 全站唯一例外；不绑定 JSON）。响应/错误统一 no-store。
-func (h *handler) token(c *gin.Context) {
+func (h *handler) token(c *echo.Context) error {
 	setNoStore(c)
-	if err := c.Request.ParseForm(); err != nil {
-		writeOAuthError(c, &oidc.OAuthError{Status: 400, Code: oidc.ErrorInvalidRequest, Description: "invalid form body"})
-		return
+	if err := c.Request().ParseForm(); err != nil {
+		return writeOAuthError(c, &oidc.OAuthError{Status: 400, Code: oidc.ErrorInvalidRequest, Description: "invalid form body"})
 	}
-	resp, oe := h.deps.Tokens.Token(c.Request.Context(), oidc.TokenInput{
-		GrantType:    c.Request.PostForm.Get("grant_type"),
-		Code:         c.Request.PostForm.Get("code"),
-		RedirectURI:  c.Request.PostForm.Get("redirect_uri"),
-		ClientID:     c.Request.PostForm.Get("client_id"),
-		ClientSecret: c.Request.PostForm.Get("client_secret"),
-		CodeVerifier: c.Request.PostForm.Get("code_verifier"),
-		RefreshToken: c.Request.PostForm.Get("refresh_token"),
+	resp, oe := h.deps.Tokens.Token(c.Request().Context(), oidc.TokenInput{
+		GrantType:    c.Request().PostForm.Get("grant_type"),
+		Code:         c.Request().PostForm.Get("code"),
+		RedirectURI:  c.Request().PostForm.Get("redirect_uri"),
+		ClientID:     c.Request().PostForm.Get("client_id"),
+		ClientSecret: c.Request().PostForm.Get("client_secret"),
+		CodeVerifier: c.Request().PostForm.Get("code_verifier"),
+		RefreshToken: c.Request().PostForm.Get("refresh_token"),
 	})
 	if oe != nil {
-		writeOAuthError(c, oe)
-		return
+		return writeOAuthError(c, oe)
 	}
 	// RFC 6749 §5.1：expires_in 必须是 JSON number；OIDC 端点豁免 §1.0
 	// 信封，不走 §12.9 的 int64→十进制字符串映射。
-	writeJSON(c, http.StatusOK, tokenView{
+	return writeJSON(c, http.StatusOK, tokenView{
 		AccessToken:  resp.GetAccessToken(),
 		TokenType:    resp.GetTokenType(),
 		ExpiresIn:    resp.GetExpiresIn(),
@@ -134,72 +130,64 @@ type tokenView struct {
 
 // revoke `POST /api/oidc/revoke`：成功 / 未知 / 已吊销统一 200 空 body
 // （RFC 7009、§4.4），不得返回 `{}`。
-func (h *handler) revoke(c *gin.Context) {
-	if err := c.Request.ParseForm(); err != nil {
-		writeOAuthError(c, &oidc.OAuthError{Status: 400, Code: oidc.ErrorInvalidRequest, Description: "invalid form body"})
-		return
+func (h *handler) revoke(c *echo.Context) error {
+	if err := c.Request().ParseForm(); err != nil {
+		return writeOAuthError(c, &oidc.OAuthError{Status: 400, Code: oidc.ErrorInvalidRequest, Description: "invalid form body"})
 	}
 	oe := h.deps.Revoker.Revoke(
-		c.Request.Context(),
-		c.Request.PostForm.Get("client_id"),
-		c.Request.PostForm.Get("client_secret"),
-		c.Request.PostForm.Get("token"),
-		c.Request.PostForm.Get("token_type_hint"),
+		c.Request().Context(),
+		c.Request().PostForm.Get("client_id"),
+		c.Request().PostForm.Get("client_secret"),
+		c.Request().PostForm.Get("token"),
+		c.Request().PostForm.Get("token_type_hint"),
 	)
 	if oe != nil {
-		writeOAuthError(c, oe)
-		return
+		return writeOAuthError(c, oe)
 	}
-	c.Status(http.StatusOK)
+	return c.NoContent(http.StatusOK)
 }
 
 // userinfo `GET /api/oidc/userinfo`（§4.5）。
-func (h *handler) userinfo(c *gin.Context) {
+func (h *handler) userinfo(c *echo.Context) error {
 	token, ok := bearerToken(c)
 	if !ok {
-		writeInvalidToken(c, "access token is required")
-		return
+		return writeInvalidToken(c, "access token is required")
 	}
-	resp, oe := h.deps.UserInfo.Userinfo(c.Request.Context(), token)
+	resp, oe := h.deps.UserInfo.Userinfo(c.Request().Context(), token)
 	if oe != nil {
-		writeInvalidToken(c, oe.Description)
-		return
+		return writeInvalidToken(c, oe.Description)
 	}
 	raw, err := oidcJSON.Marshal(resp)
 	if err != nil {
-		logx.Error(c.Request.Context(), "oidc: encode userinfo failed",
+		logx.Error(c.Request().Context(), "oidc: encode userinfo failed",
 			"step", "marshal_userinfo", "error", logx.RedactText(err.Error()))
-		writeInvalidToken(c, "cannot encode userinfo")
-		return
+		return writeInvalidToken(c, "cannot encode userinfo")
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	return c.Blob(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 
 // getUserInfo `GET /api/oidc/get_user_info`（§4.6，Authloft 格式）。
-func (h *handler) getUserInfo(c *gin.Context) {
+func (h *handler) getUserInfo(c *echo.Context) error {
 	token, ok := bearerToken(c)
 	if !ok {
-		writeInvalidToken(c, "access token is required")
-		return
+		return writeInvalidToken(c, "access token is required")
 	}
-	resp, oe := h.deps.UserInfo.GetUserInfo(c.Request.Context(), token)
+	resp, oe := h.deps.UserInfo.GetUserInfo(c.Request().Context(), token)
 	if oe != nil {
-		writeInvalidToken(c, oe.Description)
-		return
+		return writeInvalidToken(c, oe.Description)
 	}
 	raw, err := protojson.Marshal(resp)
 	if err != nil {
-		logx.Error(c.Request.Context(), "oidc: encode get_user_info failed",
+		logx.Error(c.Request().Context(), "oidc: encode get_user_info failed",
 			"step", "marshal_get_user_info", "error", logx.RedactText(err.Error()))
-		writeInvalidToken(c, "cannot encode user info")
-		return
+		return writeInvalidToken(c, "cannot encode user info")
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
+	return c.Blob(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 
 // bearerToken 解析 `Authorization: Bearer <token>`（scheme 大小写不敏感）。
-func bearerToken(c *gin.Context) (string, bool) {
-	parts := strings.Fields(c.GetHeader("Authorization"))
+func bearerToken(c *echo.Context) (string, bool) {
+	parts := strings.Fields(c.Request().Header.Get("Authorization"))
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
 		return "", false
 	}
@@ -207,13 +195,13 @@ func bearerToken(c *gin.Context) (string, bool) {
 }
 
 // setNoStore token 端点响应头（RFC 6749 §5.1）。
-func setNoStore(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	c.Header("Pragma", "no-cache")
+func setNoStore(c *echo.Context) {
+	c.Response().Header().Set("Cache-Control", "no-store")
+	c.Response().Header().Set("Pragma", "no-cache")
 }
 
 // writeOAuthError RFC 6749 `{error, error_description?}`（no-store）。
-func writeOAuthError(c *gin.Context, oe *oidc.OAuthError) {
+func writeOAuthError(c *echo.Context, oe *oidc.OAuthError) error {
 	status := oe.Status
 	if status == 0 {
 		status = http.StatusBadRequest
@@ -223,29 +211,28 @@ func writeOAuthError(c *gin.Context, oe *oidc.OAuthError) {
 		body["error_description"] = oe.Description
 	}
 	setNoStore(c)
-	writeJSON(c, status, body)
+	return writeJSON(c, status, body)
 }
 
 // writeInvalidToken RFC 6750 401 + WWW-Authenticate。
-func writeInvalidToken(c *gin.Context, description string) {
-	c.Header("WWW-Authenticate", `Bearer error="invalid_token"`)
-	writeOAuthError(c, &oidc.OAuthError{Status: 401, Code: "invalid_token", Description: description})
+func writeInvalidToken(c *echo.Context, description string) error {
+	c.Response().Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+	return writeOAuthError(c, &oidc.OAuthError{Status: 401, Code: "invalid_token", Description: description})
 }
 
 // writeError 通用 JSON 错误（discovery / jwks 内部错误兜底）。
-func writeError(c *gin.Context, status int, code, description string) {
-	writeJSON(c, status, map[string]any{"error": code, "error_description": description})
+func writeError(c *echo.Context, status int, code, description string) error {
+	return writeJSON(c, status, map[string]any{"error": code, "error_description": description})
 }
 
 // writeJSON 以 RFC 原生 JSON 输出（不套 §1.0 信封）。
-func writeJSON(c *gin.Context, status int, body any) {
+func writeJSON(c *echo.Context, status int, body any) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		// OIDC REST 域无 Connect 错误日志拦截器，5xx 摘要只有 path/status。
-		logx.Error(c.Request.Context(), "oidc: encode error response failed",
+		logx.Error(c.Request().Context(), "oidc: encode error response failed",
 			"step", "write_json", "error", logx.RedactText(err.Error()))
-		c.Status(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	c.Data(status, "application/json; charset=utf-8", raw)
+	return c.Blob(status, "application/json; charset=utf-8", raw)
 }

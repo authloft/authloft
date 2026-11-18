@@ -34,7 +34,7 @@ const xForwardedProtoHeader = "X-Forwarded-Proto"
 // RequestSignal 请求侧 HTTPS 信号（auto 推断依据，§1.9 行 306-309）：
 // Header 携带 X-Forwarded-Proto；TLS 为请求自身是否 TLS 直连。connect
 // 链 AnyRequest 只暴露 Header（TLS 不可得，TLS 恒 false），由 session
-// 拦截器入口采集并注入 ctx（WithRequestSignal）；gin 链在调用点从
+// 拦截器入口采集并注入 ctx（WithRequestSignal）；echo 链在调用点从
 // c.Request 显式构造（双信号齐供）。零值 = 无信号，auto 分支按明文
 // 兜底（无头且无 TLS 即明文直连，SDK-init §4.4：写 Secure 会被浏览器
 // 拒收、续期断链）。
@@ -141,7 +141,7 @@ func deriveAutoHTTPS(sig RequestSignal) bool {
 // Set 构造写值 Cookie（登录建会话 / 每次请求续期下发）。可选 sig 供
 // auto 推断（§1.9 行 306：服务端在 Cookie 下发点按当前请求逐请求判定；
 // 未传按无信号 → auto 兜底明文）。判定为 HTTPS → Secure; SameSite=None
-//（§1.9 行 288）；明文 → 省略 Secure、SameSite=Lax（行 292 联动降级）。
+// （§1.9 行 288）；明文 → 省略 Secure、SameSite=Lax（行 292 联动降级）。
 func (c *Cookie) Set(value string, sig ...RequestSignal) *http.Cookie {
 	secure := ResolveHTTPS(c.mode, firstSignal(sig))
 	ck := &http.Cookie{

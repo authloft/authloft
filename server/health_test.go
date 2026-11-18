@@ -7,18 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	"authloft/internal/app"
 	"authloft/internal/config"
 	"authloft/internal/connect"
 )
 
-// TestHealthWired：/health 经 buildHandlerWithSSO 注册到全局 gin 链（/metrics
+// TestHealthWired：/health 经 buildHandlerWithSSO 注册到全局 echo 链（/metrics
 // 同款，不进 /api 组）——fake 探活器全过 → 200 {"status":"ok"}；DB 项失败
-// → 503 + failed 名单（§3.1 / §23.1）。响应经 gin 链统一回写 X-Request-Id。
+// → 503 + failed 名单（§3.1 / §23.1）。响应经 echo 链统一回写 X-Request-Id。
 func TestHealthWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	deps.healthProbes = []app.Probe{
@@ -36,7 +33,7 @@ func TestHealthWired(t *testing.T) {
 		t.Errorf("health body missing ok status: %s", rec.Body.String())
 	}
 	if rec.Header().Get("X-Request-Id") == "" {
-		t.Error("health response missing X-Request-Id (gin 链 requestid)")
+		t.Error("health response missing X-Request-Id (echo 链 requestid)")
 	}
 
 	// DB 断连模拟（fake 探活器返回 error，不真断库）：503，failed 只列 db。
@@ -59,7 +56,6 @@ func TestHealthWired(t *testing.T) {
 // TestHealthSetupModeAbsent：setup 模式（deps == nil）不注册 /health——
 // 依赖未装配即未就绪，探针 404 如实反映，不伪装存活。
 func TestHealthSetupModeAbsent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	h, _ := buildHandler(cfg, connect.NewServer(defaultReadMaxBytes))
 	rec := doRequest(h, http.MethodGet, "/health", nil)

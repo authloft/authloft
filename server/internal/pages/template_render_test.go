@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/middleware"
 	"authloft/internal/repo/model"
@@ -69,15 +69,16 @@ func legacyRender(htmlText string, init any, staticBase, nonce, siteName string)
 
 // fixedNonceEngine 构造把 CSP nonce 钉死的引擎，令两请求 body 可逐字比较
 // （生产 nonce 每请求随机，不可直接比 body）。
-func fixedNonceEngine(t *testing.T, d Deps) *gin.Engine {
+func fixedNonceEngine(t *testing.T, d Deps) *echo.Echo {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set(middleware.CSPNonceKey, "FIXED-NONCE")
-		c.Next()
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
+	r.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.Set(middleware.CSPNonceKey, "FIXED-NONCE")
+			return next(c)
+		}
 	})
-	Register(r, d)
+	Register(r.Group(""), d)
 	return r
 }
 

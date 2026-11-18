@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -16,12 +16,12 @@ const (
 )
 
 // okHandler 标记请求到达业务 handler（middleware 各链路测试共用）。
-func okHandler(c *gin.Context) {
-	c.String(http.StatusOK, "ok")
+func okHandler(c *echo.Context) error {
+	return c.String(http.StatusOK, "ok")
 }
 
 // doRequest 发起带自定义头的请求（middleware 各链路测试共用）。
-func doRequest(r *gin.Engine, method, target string, headers map[string]string) *httptest.ResponseRecorder {
+func doRequest(r *echo.Echo, method, target string, headers map[string]string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, target, nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -56,7 +56,7 @@ func TestOriginSameOriginPasses(t *testing.T) {
 }
 
 // ② 跨站 403，错误体为 Connect 形态 JSON：code=permission_denied
-//（§1.5 行 188 Origin 跨站 → permission_denied/403，无 ErrorInfo detail）。
+// （§1.5 行 188 Origin 跨站 → permission_denied/403，无 ErrorInfo detail）。
 func TestOriginCrossOriginRejected(t *testing.T) {
 	r := newTestRouter(Origin(testRootOrigin, []string{testAppID}))
 	r.POST("/api/x", okHandler)
@@ -138,7 +138,7 @@ func TestOriginExemptGroups(t *testing.T) {
 }
 
 // ⑤ 未配置（rootOrigin 空串、白名单 nil）时保守拒绝：同源判断与 Referer 白名单恒失败
-//（宁可整站拒绝也不让 CSRF 防护默认失效），仅免检组可用。
+// （宁可整站拒绝也不让 CSRF 防护默认失效），仅免检组可用。
 func TestOriginEmptyConfigConservative(t *testing.T) {
 	r := newTestRouter(Origin("", nil))
 	r.POST("/api/x", okHandler)
@@ -232,7 +232,7 @@ func TestOriginFuncNilSourceConservative(t *testing.T) {
 	}
 }
 
-// ⑩ http 版动态白名单（Connect 前缀链）：HTTPOriginFunc 与 gin 版
+// ⑩ http 版动态白名单（Connect 前缀链）：HTTPOriginFunc 与 echo 版
 // OriginFunc 判定等效——热更新 403 → 200、查询失败 403、免检组照旧放行、
 // X-Request-Id 头由调用方前缀链回写。
 func TestHTTPOriginFuncDynamicAllowlist(t *testing.T) {

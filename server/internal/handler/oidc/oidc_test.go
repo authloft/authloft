@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/gen/go/token"
 	"authloft/internal/config"
@@ -100,7 +100,7 @@ func (f fakeProfiles) GetProfile(_ context.Context, uid int64) (*model.UserProfi
 }
 
 type env struct {
-	router *gin.Engine
+	router *echo.Echo
 	jwt    *oidcimpl.JWT
 	subs   *oidcimpl.SubCodec
 	codes  fakeCodes
@@ -124,7 +124,6 @@ func testKey(t *testing.T, kid string) config.OIDCKey {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	j, err := oidcimpl.NewJWT([]config.OIDCKey{testKey(t, "k1"), testKey(t, "k2")}, "https://authloft.example.com/")
 	if err != nil {
@@ -182,7 +181,7 @@ func setup(t *testing.T) *env {
 			}},
 		},
 	}
-	r := gin.New()
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 	Register(r, deps)
 	return &env{router: r, jwt: j, subs: subs, codes: codes, store: store, now: now}
 }

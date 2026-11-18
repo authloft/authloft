@@ -1,6 +1,6 @@
 // bootstrap.go 按 docs/后端架构.md §3.1 的固定顺序装配启动链，只做顺序编排与接线。
 // 配置文件缺失 → setup 模式（§3.15）：不加载 config、不初始化 DB / Redis。
-// 顶层用标准库 http.ServeMux 分流：Connect 前缀挂 mux 链，其余交给 gin。
+// 顶层用标准库 http.ServeMux 分流：Connect 前缀挂 mux 链，其余交给 echo。
 // 监听协议由 server 段 TLS 配置决定（Go 1.26 原生 http.Server.Protocols，不引 x/net）。
 
 package main
@@ -23,7 +23,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
 	connectrpc "connectrpc.com/connect"
@@ -1185,26 +1185,26 @@ func setupMode(configPath string) bool {
 
 // buildRouter 从 *config.Config 构造生产顶层 handler（构造注入，测试可传自造实例）；
 // 无 deps 时仅组链，正常模式走 buildRouterWithSSO。setup 路由不在本链注册。
-func buildRouter(cfg *config.Config) (http.Handler, *gin.RouterGroup) {
+func buildRouter(cfg *config.Config) (http.Handler, *echo.Group) {
 	return buildHandler(cfg, connect.NewServer(defaultReadMaxBytes))
 }
 
 // buildRouterWithSSO 正常模式装配入口：额外注入登录单引擎并挂 SsoService handler；
 // 保留 buildRouter 无依赖形态供测试自造 handler。
-func buildRouterWithSSO(cfg *config.Config, deps *assembled) (http.Handler, *gin.RouterGroup) {
+func buildRouterWithSSO(cfg *config.Config, deps *assembled) (http.Handler, *echo.Group) {
 	return buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
 }
 
 // buildHandler 顶层分流组装（§3.1）：Connect 各路由按路径前缀挂 mux（requestid →
-// logger → metrics → origin），其余全部交给 gin；该分流链上禁挂 gzip / body-capture
+// logger → metrics → origin），其余全部交给 echo；该分流链上禁挂 gzip / body-capture
 // 类中间件（会破坏 h2c / 流式语义）。
 // deps 为空时仅做无域 handler 的链路组装（测试口径），非空时注册已装配的域 handler。
-func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *gin.RouterGroup) {
+func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *echo.Group) {
 	return buildHandlerWithSSO(cfg, csrv, nil)
 }
 
 // buildHandlerWithSSO 在 buildHandler 基础上挂已装配的域 handler、白名单动态源与 OIDC 路由。
-func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) (http.Handler, *gin.RouterGroup) {
+func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) (http.Handler, *echo.Group) {
 	// Referer 白名单动态源：已启用 wechat_mp / wechat_mp_scan 的 app_id 集合，
 	// 随 provider 变更热更新。查询失败归一为 nil = 空表 → 保守 403；
 	// deps == nil（测试口径）→ 来源为 nil，等效空表。
@@ -1229,7 +1229,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 			return ids
 		}
 	}
-	ginEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
+	echoEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
 
 	if deps != nil {
 		// 健康探针（§3.1 / §23.1）：/metrics 同款挂全局 engine、不进 /api 组——
@@ -1240,28 +1240,28 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 		if probes == nil {
 			probes = app.StandardProbes(deps.db, deps.rdb)
 		}
-		ginEngine.GET("/health", app.NewHandler(probes))
+		echoEngine.GET("/health", app.NewHandler(probes))
 		registerSSO(cfg, csrv, deps)
 		registerAccount(cfg, csrv, deps)
 		registerAdmin(cfg, csrv, deps)
 		registerRPC(cfg, csrv, deps)
-		// OIDC REST 端点（§4.1）：注册在 gin 链，不经 Connect、不套信封。
-		registerOIDC(ginEngine, deps)
+		// OIDC REST 端点（§4.1）：注册在 echo 链，不经 Connect、不套信封。
+		registerOIDC(echoEngine, deps)
 		// 网关 decode（§6）：/api 组下挂 /gateway 子组 + Gateway 中间件。
 		registerGateway(apiGroup, deps)
 		// 页面壳路由族（§2.9 / §8）：三端 SPA 空壳 + 登出 + sync_cookie 中转。
-		registerPages(ginEngine, cfg, deps)
+		registerPages(echoEngine, cfg, deps)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", ginEngine)
+	mux.Handle("/", echoEngine)
 	// 静态资源 /assets/**：无鉴权恒在（CDN 回源与内网直连），不经 Connect / 中间件链。
 	assets.Register(mux)
 	for _, rt := range csrv.Routes() {
 		mux.Handle(rt.Prefix, middleware.HTTPRequestID(
 			middleware.HTTPLogger(
 				middleware.HTTPMetrics(
-					// Connect 前缀链 origin 用动态白名单形态（与 gin 版同一判定核心）；
+					// Connect 前缀链 origin 用动态白名单形态（与 echo 版同一判定核心）；
 					// requestinfo 记录的 XFF 可伪造，仅供审计、不作安全判定。
 					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, orchestrator.WithRequestInfoHandler(rt.Handler)),
 				),
@@ -1409,7 +1409,7 @@ func registerRPC(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 
 // registerOIDC 注册 OIDC REST 端点（§4.1）：五件套全部由装配产物注入——JWT /
 // CodeIssuer / Epoch 均复用共享单例，不得各写一份；repo wrapper 按端点就近构造。
-func registerOIDC(r gin.IRouter, deps *assembled) {
+func registerOIDC(r *echo.Echo, deps *assembled) {
 	clients := deps.repos.Clients
 	refreshTokens := deps.repos.OidcTokens
 	users := deps.repos.Users
@@ -1439,7 +1439,7 @@ func registerOIDC(r gin.IRouter, deps *assembled) {
 
 // registerGateway 注册 `ANY /api/gateway/decode`（§6）：Gateway 中间件先于 handler，
 // tokens 动态源每请求读取 settings、Verifier / Cookie 名与 session 拦截器同源。
-func registerGateway(api gin.IRouter, deps *assembled) {
+func registerGateway(api *echo.Group, deps *assembled) {
 	gw := api.Group("/gateway")
 	gw.Use(middleware.Gateway(gatewayTokensSource(deps.settings)))
 	gatewayhandler.Register(gw, gatewayhandler.Deps{
@@ -1477,7 +1477,7 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // OIDC 授权入口。路由组挂 middleware.CSP()：每请求 nonce + 基线 CSP 头，并追加
 // static_base CDN 源与 captchaCatalog 贡献源（与 Gate 下发配置同实例同源）；
 // 依赖全部复用 assemble 共享单例。
-func registerPages(r gin.IRouter, cfg *config.Config, deps *assembled) {
+func registerPages(r *echo.Echo, cfg *config.Config, deps *assembled) {
 	pages.Register(r.Group("", middleware.CSP(
 		pages.StaticBaseCSPSupporter(deps.settings),
 		deps.captchaCatalog,

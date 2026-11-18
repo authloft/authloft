@@ -4,7 +4,7 @@
 // 纯字符串全量替换，不解析 HTML、不假设固定结构、不自行注入属性）。
 // 三端空壳（login / account / admin）、/auth/authorize 登录壳与 setup 壳
 // （internal/setup 复用同一入口——本包零 DB / Redis 运行期依赖，setup
-// 模式可安全引用）共用 RenderGinShell。
+// 模式可安全引用）共用 RenderShell。
 package pages
 
 import (
@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/middleware"
 	"authloft/internal/settings"
@@ -40,7 +40,7 @@ const (
 	TemplateVarsPlaceholder = "{{AUTHLOFT_TEMPLATE_VARS}}"
 )
 
-// RenderGinShell 渲染 {entry} 壳层响应（三端壳 / authorize login 壳 /
+// RenderShell 渲染 {entry} 壳层响应（三端壳 / authorize login 壳 /
 // setup 壳共用的统一渲染出口，硬约束 4）。流程：nonce 优先消费 CSP 中间件
 // 写入 ctx 的 CSPNonceKey（§3.3 行 314——bootstrap 页面路由组与 setup 引擎
 // 均已挂 middleware.CSP，响应头由中间件输出）；不经中间件的调用路径
@@ -48,43 +48,40 @@ const (
 // 同终稿基线响应头（含 CDN 追加，cspDirectives）。模板读 / INIT marshal
 // 失败 → 空体 500（§1.5 行 225 豁免端点按 HTTP 语义）；no-store（§8 行
 // 1498）。
-func RenderGinShell(c *gin.Context, entry string, init any, staticBase, siteName string) {
+func RenderShell(c *echo.Context, entry string, init any, staticBase, siteName string) error {
 	nonce, ok := shellNonce(c, staticBase)
 	if !ok {
-		return
+		return nil
 	}
 	body, err := renderTemplate(entry, init, staticBase, nonce, siteName)
 	if err != nil {
 		slog.Error("pages: render shell", "entry", entry, "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	writeShell(c, body)
+	return writeShell(c, body)
 }
 
 // shellNonce 取 CSP nonce：优先消费 CSP 中间件写入 ctx 的值；未经中间件
 // （测试 / 未来挂载点 / nonce 生成失败降级）时自生成并自设同终稿基线响应头
 // （含 CDN 追加）。第二个返回值为 false 表示生成失败、调用方应终止渲染。
-func shellNonce(c *gin.Context, staticBase string) (string, bool) {
-	if v, ok := c.Get(middleware.CSPNonceKey); ok {
-		if nonce, _ := v.(string); nonce != "" {
-			return nonce, true
-		}
+func shellNonce(c *echo.Context, staticBase string) (string, bool) {
+	if v, _ := c.Get(middleware.CSPNonceKey).(string); v != "" {
+		return v, true
 	}
 	nonce, err := genNonce()
 	if err != nil {
 		slog.Error("pages: gen nonce", "err", err)
 		return "", false
 	}
-	c.Header("Content-Security-Policy", cspDirectives(nonce, staticBase))
+	c.Response().Header().Set("Content-Security-Policy", cspDirectives(nonce, staticBase))
 	return nonce, true
 }
 
-// writeShell 写壳层 HTML 响应头与正文（no-store，§8）：RenderGinShell 与
+// writeShell 写壳层 HTML 响应头与正文（no-store，§8）：RenderShell 与
 // RenderClientShell 共用，保证自定义模板壳与文件壳行为一致。
-func writeShell(c *gin.Context, body []byte) {
-	c.Header("Cache-Control", "no-store")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", body)
+func writeShell(c *echo.Context, body []byte) error {
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.Blob(http.StatusOK, "text/html; charset=utf-8", body)
 }
 
 // renderTemplate 读嵌入模板 templates/{entry}.html 后交 renderHTML 做五
@@ -125,7 +122,7 @@ func renderHTML(html string, init any, staticBase, nonce, varsJSON, siteName str
 }
 
 // cspDirectives CSP 终稿指令串（接口文档 §8 行 1521-1532 逐项表，
-// 正常模式与 setup 模式统一基线）——RenderGinShell 未经中间件时的自设头
+// 正常模式与 setup 模式统一基线）——RenderShell 未经中间件时的自设头
 // 与单测共用：default-src 'self'；script-src 'nonce-…' 'strict-dynamic'；
 // style-src 'nonce-…' 'self'；font-src 'self'；img-src 'self' data:
 // https:；connect-src 'self'。static_base 为 CDN 绝对地址（http(s):// 开头）

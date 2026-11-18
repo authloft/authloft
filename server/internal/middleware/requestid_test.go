@@ -6,19 +6,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/logx"
 )
 
-func newTestRouter(mw ...gin.HandlerFunc) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+func newTestRouter(mw ...echo.MiddlewareFunc) *echo.Echo {
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 	r.Use(mw...)
 	return r
 }
 
-func serve(r *gin.Engine, path, accept string) *httptest.ResponseRecorder {
+func serve(r *echo.Echo, path, accept string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	if accept != "" {
 		req.Header.Set("Accept", accept)
@@ -37,8 +36,9 @@ func requestIDHeader(rec *httptest.ResponseRecorder) string {
 func TestRequestIDGeneratesUniqueHexIDs(t *testing.T) {
 	r := newTestRouter(RequestID())
 	ids := make([]string, 0, 2)
-	r.GET("/ping", func(c *gin.Context) {
-		ids = append(ids, c.GetString(RequestIDKey))
+	r.GET("/ping", func(c *echo.Context) error {
+		ids = append(ids, contextString(c, RequestIDKey))
+		return nil
 	})
 
 	for i := 0; i < 2; i++ {
@@ -114,15 +114,16 @@ func TestRequestIDHeaderOnAllResponses(t *testing.T) {
 	}
 }
 
-// ④ 链路 ID 同步注入标准请求 ctx：gin 域 handler 用 c.Request.Context()
+// ④ 链路 ID 同步注入标准请求 ctx：echo 域 handler 用 c.Request().Context()
 // 调下游时，logx.Warn(ctx, …) / slog.WarnContext(ctx, …) 能拿到同一个 ID
-//（Connect 域 HTTPRequestID 共用 logx.WithRequestID，口径唯一）。
+// （Connect 域 HTTPRequestID 共用 logx.WithRequestID，口径唯一）。
 func TestRequestIDInRequestContext(t *testing.T) {
 	r := newTestRouter(RequestID())
 	var ctxID, ginID string
-	r.GET("/ping", func(c *gin.Context) {
-		ctxID = logx.RequestID(c.Request.Context())
-		ginID = c.GetString(RequestIDKey)
+	r.GET("/ping", func(c *echo.Context) error {
+		ctxID = logx.RequestID(c.Request().Context())
+		ginID = contextString(c, RequestIDKey)
+		return nil
 	})
 	rec := serve(r, "/ping", "")
 
@@ -130,7 +131,7 @@ func TestRequestIDInRequestContext(t *testing.T) {
 		t.Fatal("request ctx has no request_id, want downstream service logs to be correlatable")
 	}
 	if ctxID != ginID {
-		t.Errorf("ctx id %q != gin.Context id %q", ctxID, ginID)
+		t.Errorf("ctx id %q != echo.Context id %q", ctxID, ginID)
 	}
 	if got := requestIDHeader(rec); ctxID != got {
 		t.Errorf("ctx id %q != X-Request-Id header %q", ctxID, got)

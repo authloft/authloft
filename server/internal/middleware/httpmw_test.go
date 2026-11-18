@@ -112,7 +112,7 @@ func TestRequestIDFromContextEmpty(t *testing.T) {
 
 // —— HTTPLogger / HTTPMetrics（logger/metrics 的 Connect 域等效） ——
 
-// TestHTTPLoggerAccessFields http 版访问日志字段与 gin 版同口径（共用
+// TestHTTPLoggerAccessFields http 版访问日志字段与 echo 版同口径（共用
 // logAccess）：request_id / method / path / status / latency 五字段齐全，
 // request_id 与响应头一致（HTTPRequestID 先于 logger 注入 ctx）。
 func TestHTTPLoggerAccessFields(t *testing.T) {
@@ -206,7 +206,7 @@ func TestHTTPLoggerImplicitWriteStatus(t *testing.T) {
 }
 
 // TestHTTPLoggerIgnoresQueryAndHeaders query 与头不进日志（只读
-// r.Method / r.URL.Path——与 gin 版同口径，无 body/query/头读取，
+// r.Method / r.URL.Path——与 echo 版同口径，无 body/query/头读取，
 // §3.3 行 302 敏感信息约束）。
 func TestHTTPLoggerIgnoresQueryAndHeaders(t *testing.T) {
 	logCap := captureSlog(t)
@@ -225,7 +225,7 @@ func TestHTTPLoggerIgnoresQueryAndHeaders(t *testing.T) {
 	}
 }
 
-// TestHTTPMetricsCountsRequests http 版指标计数（与 gin 版
+// TestHTTPMetricsCountsRequests http 版指标计数（与 echo 版
 // TestMetricsCountsRequests 同口径）：请求后 requests/duration 递增、
 // handler 执行期间在途为 1、结束后归零。
 func TestHTTPMetricsCountsRequests(t *testing.T) {
@@ -259,7 +259,7 @@ func TestHTTPMetricsCountsRequests(t *testing.T) {
 
 // TestHTTPMetricsCountsPanickedRequest panic 请求也计数（defer 累加语义）。
 // Connect 域的 panic 由 connect-go WithRecover 在 handler 内归一为正常返回
-//（internal/connect/server.go），defer 照常执行；本用例走另一路径——
+// （internal/connect/server.go），defer 照常执行；本用例走另一路径——
 // panic 穿过前缀链 unwind（模拟 http.Server 连接级恢复），defer 同样触发。
 func TestHTTPMetricsCountsPanickedRequest(t *testing.T) {
 	resetMetrics()
@@ -276,10 +276,10 @@ func TestHTTPMetricsCountsPanickedRequest(t *testing.T) {
 	}
 }
 
-// TestHTTPMetricsSharesCountersWithGin 零复制实证：gin 版 Metrics 与 http 版
+// TestHTTPMetricsSharesCountersWithEcho 零复制实证：echo 版 Metrics 与 http 版
 // HTTPMetrics 写同一组包级原子变量——各计一请求，requests_total 恰 +2
-//（Connect 域流量与 gin 全局链共同计入 /metrics 的口径基础）。
-func TestHTTPMetricsSharesCountersWithGin(t *testing.T) {
+// （Connect 域流量与 echo 全局链共同计入 /metrics 的口径基础）。
+func TestHTTPMetricsSharesCountersWithEcho(t *testing.T) {
 	resetMetrics()
 	r := newTestRouter(Metrics())
 	r.GET("/ping", okHandler)
@@ -291,7 +291,7 @@ func TestHTTPMetricsSharesCountersWithGin(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api.sso.v1.SsoService/X", nil))
 
 	if got := requestsTotal.Load(); got != 2 {
-		t.Errorf("requests_total = %d, want 2 (gin + http 共用同一组包级计数器)", got)
+		t.Errorf("requests_total = %d, want 2 (echo + http 共用同一组包级计数器)", got)
 	}
 }
 

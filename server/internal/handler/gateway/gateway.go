@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/logx"
 	"authloft/internal/session"
@@ -65,8 +65,8 @@ type Deps struct {
 // Register 注册网关域唯一端点到 /api/gateway 路由组（ANY，§6 行 1350）。
 // Gateway 中间件（X-Gateway-Token 校验）由装配层在组上先挂（bootstrap
 // registerGateway），本包不挂中间件（口径同 handler/oidc）。X-Request-Id
-// 由 gin 全局链 requestid 统一回写（§1.1），本包不重复写。
-func Register(r gin.IRouter, deps Deps) {
+// 由 echo 全局链 requestid 统一回写（§1.1），本包不重复写。
+func Register(r *echo.Group, deps Deps) {
 	h := &handler{deps: deps}
 	r.Any("/decode", h.decode)
 }
@@ -79,30 +79,27 @@ type handler struct {
 // 无响应体。无 / 篡改 / 过期 / epoch 不一致的令牌一律 X-Session-Status:
 // invalid，不携带其余字段头；唯一非 200 出口是 epoch 读取链基础设施故障
 // （verify.go 行 27-29 口径：不得与未登录混同）→ 500 空体。
-func (h *handler) decode(c *gin.Context) {
+func (h *handler) decode(c *echo.Context) error {
 	tok := h.pickToken(c)
 	if tok == "" {
-		writeStatus(c, statusInvalid)
-		return
+		return writeStatus(c, statusInvalid)
 	}
-	p, err := h.deps.Verify.Verify(c.Request.Context(), tok)
+	p, err := h.deps.Verify.Verify(c.Request().Context(), tok)
 	switch {
 	case err == nil:
 	case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale):
 		// 解不开（kid 未知 / 篡改 / 跨 purpose）/ 过期 / epoch 不一致：
 		// 会话无效，恒 200 + invalid（403 归 Gateway 中间件管，§6）。
-		writeStatus(c, statusInvalid)
-		return
+		return writeStatus(c, statusInvalid)
 	default:
 		// epoch 读取链故障（Redis 与回源均失败，verify.go 行 64-67）：
 		// 基础设施错误不得误判为登出态，按豁免端点原生最小形态 500 空体
-		// 拒绝（口径同 connect 会话拦截器 internal 错误分支）。本域是 gin
+		// 拒绝（口径同 connect 会话拦截器 internal 错误分支）。本域是 echo
 		// REST 端点、不在 Connect 错误日志拦截链内，且响应无错误体，必须
 		// 就地留痕；只记错误文本，不记令牌串。
-		logx.Error(c.Request.Context(), "gateway: session verify infra failure",
+		logx.Error(c.Request().Context(), "gateway: session verify infra failure",
 			"step", "verify", "error", logx.RedactText(err.Error()))
-		c.Status(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
 	// 有效：payload 全字段逐项映射（proto/token/session.proto 行 14-27；
 	// 字段输出顺序 = proto 编号顺序）。amr 逗号分隔、空数组输出空值头
@@ -114,28 +111,27 @@ func (h *handler) decode(c *gin.Context) {
 	setHeader(c, headerSID, p.GetSid())
 	setHeader(c, headerIat, strconv.FormatInt(p.GetIat(), 10))
 	setHeader(c, headerExp, strconv.FormatInt(p.GetExp(), 10))
-	c.Status(http.StatusOK)
+	return c.NoContent(http.StatusOK)
 }
 
 // writeStatus 写最小状态响应（恒 200、仅 X-Session-Status、空体）。
-func writeStatus(c *gin.Context, status string) {
+func writeStatus(c *echo.Context, status string) error {
 	setHeader(c, headerStatus, status)
-	c.Status(http.StatusOK)
+	return c.NoContent(http.StatusOK)
 }
 
-// setHeader 写响应头。不走 gin.Context.Header——其空值语义是 Del 头，
-// 而 §6 行 1361 要求空数组「输出空值」：amr 为空（nil / 空切片）时头
-// 仍在、值为空；proto string 字段 sid 空串同理（全字段恒输出）。
-// http.Header.Set 原样保留空值。
-func setHeader(c *gin.Context, key, value string) {
-	c.Writer.Header().Set(key, value)
+// setHeader 写响应头（http.Header.Set 原样保留空值）：§6 行 1361 要求空
+// 数组「输出空值」——amr 为空（nil / 空切片）时头仍在、值为空；proto
+// string 字段 sid 空串同理（全字段恒输出）。
+func setHeader(c *echo.Context, key, value string) {
+	c.Response().Header().Set(key, value)
 }
 
 // pickToken 取 session_token（§6 行 1352：X-Authloft-Token Header →
 // Cookie）。优先级是取值顺序而非失败回退——Header 有值即用、无效不回落
 // Cookie（口径同 connect 会话拦截器 pickSessionToken、§1.2 行 120）。
-func (h *handler) pickToken(c *gin.Context) string {
-	if v := strings.TrimSpace(c.GetHeader(sessionTokenHeader)); v != "" {
+func (h *handler) pickToken(c *echo.Context) string {
+	if v := strings.TrimSpace(c.Request().Header.Get(sessionTokenHeader)); v != "" {
 		return v
 	}
 	name := defaultSessionCookieName
@@ -144,8 +140,8 @@ func (h *handler) pickToken(c *gin.Context) string {
 			name = n
 		}
 	}
-	if v, err := c.Cookie(name); err == nil {
-		return v
+	if ck, err := c.Cookie(name); err == nil && ck != nil {
+		return ck.Value
 	}
 	return ""
 }

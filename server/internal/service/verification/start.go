@@ -222,7 +222,7 @@ type Deps struct {
 	NewNonce func() (string, error)
 }
 
-// Service step-up 服务层：不感知 Connect / Gin，只做令牌编排与契约校验。
+// Service step-up 服务层：不感知 Connect / Echo，只做令牌编排与契约校验。
 type Service struct {
 	d Deps
 }

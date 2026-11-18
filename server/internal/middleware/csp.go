@@ -3,7 +3,7 @@ package middleware
 import (
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/security"
 )
@@ -18,7 +18,7 @@ type CSPSupporter interface {
 	CSP() string
 }
 
-// CSPNonceKey 每请求 CSP nonce 在 *gin.Context 中的键；handler（§3.4
+// CSPNonceKey 每请求 CSP nonce 在 echo.Context 中的键；handler（§3.4
 // page.go）读它注入空壳 HTML 的 <script nonce="…">。
 const CSPNonceKey = "csp_nonce"
 
@@ -53,25 +53,26 @@ const cspNonceLen = 22
 //
 // nonce 生成失败（crypto/rand 实际不可达）时不出伪劣 CSP 头（空 nonce
 // 的 script-src 无防护意义）、不放行伪造值——降级为无 CSP 继续请求
-// （同 requestid「不伪造值」口径，壳层 RenderGinShell 侧自生成兜底），
+// （同 requestid「不伪造值」口径，壳层 RenderShell 侧自生成兜底），
 // 加固层失败不拒绝业务请求。
-func CSP(supporters ...CSPSupporter) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		nonce, err := security.RandomString(cspNonceLen)
-		if err != nil {
-			c.Next()
-			return
-		}
-		c.Set(CSPNonceKey, nonce)
-		policy := cspPolicyBuilder{nonce: nonce}
-		policy.initBase()
-		for _, s := range supporters {
-			if extra := strings.TrimSpace(s.CSP()); extra != "" {
-				policy.merge(extra)
+func CSP(supporters ...CSPSupporter) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			nonce, err := security.RandomString(cspNonceLen)
+			if err != nil {
+				return next(c)
 			}
+			c.Set(CSPNonceKey, nonce)
+			policy := cspPolicyBuilder{nonce: nonce}
+			policy.initBase()
+			for _, s := range supporters {
+				if extra := strings.TrimSpace(s.CSP()); extra != "" {
+					policy.merge(extra)
+				}
+			}
+			c.Response().Header().Set("Content-Security-Policy", policy.String())
+			return next(c)
 		}
-		c.Header("Content-Security-Policy", policy.String())
-		c.Next()
 	}
 }
 

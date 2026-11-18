@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
@@ -226,17 +226,24 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-// engine 构造挂好页面路由的 gin 引擎。
-func (f *fixture) engine(t *testing.T) *gin.Engine {
+// engine 构造挂好页面路由的 echo 引擎。
+func (f *fixture) engine(t *testing.T) *echo.Echo {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	Register(r, f.deps)
+	r := newEchoEngine()
+	Register(r.Group(""), f.deps)
 	return r
 }
 
+// newEchoEngine 测试用引擎（与生产 router.go 同口径：组中间件不作用于
+// 未注册路径，404 兜底归全局链，尾斜杠 301 归一）。
+func newEchoEngine() *echo.Echo {
+	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
+	e.Pre(middleware.TrailingSlashRedirect(e))
+	return e
+}
+
 // doGet 发 GET 请求。
-func doGet(t *testing.T, r *gin.Engine, target string) *httptest.ResponseRecorder {
+func doGet(t *testing.T, r *echo.Echo, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
 	rec := httptest.NewRecorder()
@@ -300,7 +307,7 @@ func tmplPlaceholderCount(t *testing.T, entry, ph string) int {
 }
 
 // TestShellBasics account 空壳：200、no-store、CSP 终稿头（fixture engine
-// 不挂 middleware.CSP，走 RenderGinShell 缺省自设路径）+ nonce 出现次数 =
+// 不挂 middleware.CSP，走 RenderShell 缺省自设路径）+ nonce 出现次数 =
 // 模板占位符数、无残留占位符、产物引用按 static_base 前缀、INIT 仅
 // al_root / static_base 两键（零凭证键）。
 func TestShellBasics(t *testing.T) {
@@ -333,14 +340,13 @@ func TestShellBasics(t *testing.T) {
 }
 
 // TestShellCSPConsumesMiddleware CSP 中间件路径（bootstrap 页面路由组同构
-// 挂法 r.Group("", middleware.CSP())）：RenderGinShell 消费 ctx 的
+// 挂法 r.Group("", middleware.CSP())）：RenderShell 消费 ctx 的
 // CSPNonceKey——body 全部 nonce 属性与中间件所设 CSP 头同 nonce（未自
 // 生成新值另设头）；头保持中间件终稿基线（style-src 带 nonce、
 // strict-dynamic 在、connect-src 'self'）。
 func TestShellCSPConsumesMiddleware(t *testing.T) {
 	f := newFixture(t)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	r := newEchoEngine()
 	Register(r.Group("", middleware.CSP()), f.deps)
 
 	rec := doGet(t, r, "/account")
@@ -367,8 +373,7 @@ func TestShellCSPConsumesMiddleware(t *testing.T) {
 // 在前 + CDN 源追加，同名指令合并语义）；同域 /assets 时不追加。
 func TestShellCSPSupporterCDN(t *testing.T) {
 	f := newFixture(t)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	r := newEchoEngine()
 	Register(r.Group("", middleware.CSP(StaticBaseCSPSupporter(f.settings))), f.deps)
 
 	// 同域默认：无追加段。
@@ -510,7 +515,7 @@ func TestThreeEntryRoutes(t *testing.T) {
 		t.Errorf("login 空壳缺 methods 注入: %s", init)
 	}
 
-	// 带尾斜杠形态（/account/、/admin/）：gin RedirectTrailingSlash 301 到
+	// 带尾斜杠形态（/account/、/admin/）：尾斜杠归一 301 到
 	// 无尾斜杠的根路径，不 404（仅注册根映射）。
 	for _, target := range []string{"/account/", "/admin/"} {
 		rec := doGet(t, r, target)
@@ -524,25 +529,25 @@ func TestThreeEntryRoutes(t *testing.T) {
 }
 
 // TestShellSubPaths404 account / admin 子路径 404（通配收窄）：子路径
-// 走前端 hash 路由（/account#/…）不发往服务端，服务端未注册子路径由 gin
-// 原生 404 兜底（纯文本 "404 page not found"）；X-Request-Id 由全局链
-// requestid 回写（bootstrap §1.1 同构挂法，与既有 404 口径一致，main_test.go
-// TestNewRouterConnectFallbackAndXRequestID 同款）。
+// 走前端 hash 路由（/account#/…）不发往服务端，服务端未注册子路径由 echo
+// 兜底路由以错误体 404（DefaultHTTPErrorHandler JSON {"message":"Not
+// Found"}）；X-Request-Id 由全局链 requestid 回写（bootstrap §1.1 同构挂法，
+// 与既有 404 口径一致，main_test.go TestNewRouterConnectFallbackAndXRequestID
+// 同款）。
 func TestShellSubPaths404(t *testing.T) {
 	f := newFixture(t)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+	r := newEchoEngine()
 	// requestid 挂全局链（bootstrap §1.1 同构）：404 兜底响应亦回写。
 	r.Use(middleware.RequestID())
-	Register(r, f.deps)
+	Register(r.Group(""), f.deps)
 
 	for _, target := range []string{"/account/profile", "/admin/users/123"} {
 		rec := doGet(t, r, target)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404（子路径不下发壳）", target, rec.Code)
 		}
-		if body := rec.Body.String(); body != "404 page not found" {
-			t.Errorf("%s: body = %q, want gin 原生 \"404 page not found\"", target, body)
+		if body := rec.Body.String(); !strings.Contains(body, `"message":"Not Found"`) {
+			t.Errorf("%s: body = %q, want echo 错误体 404", target, body)
 		}
 		if got := rec.Header().Get("X-Request-Id"); got == "" {
 			t.Errorf("%s: X-Request-Id is empty, want non-empty（404 亦回写）", target)
@@ -571,7 +576,7 @@ func TestCallbackZeroBusiness(t *testing.T) {
 
 // TestRenderTemplatePlaceholderExhaustive 四份模板占位符穷尽替换（阶段 C
 // 验收锚点：含 setup entry——setup 壳同契约由本测试对账，setup 包侧仅测
-// gin 链接线）：固定 nonce + INIT 直接调 renderTemplate，断言 ① 无残留
+// echo 链接线）：固定 nonce + INIT 直接调 renderTemplate，断言 ① 无残留
 // `{{AUTHLOFT_`；② nonce 出现次数 = 模板占位符出现次数（login/account/
 // admin/setup 各异，随前端构建产物伸缩）；③ static_base 占位符全量替换
 // 且尾斜杠归一；④ INIT 注入原样落位、\u2028/\u2029 转义（json.Marshal）。

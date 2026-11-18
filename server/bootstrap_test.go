@@ -37,7 +37,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/redis/rueidis"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -813,11 +812,10 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 }
 
 // TestOIDCRoutesWired：OIDC REST 端点经 buildHandlerWithSSO 注册
-// 到 gin 链、不经 Connect、不套 §1.0 信封——discovery / JWKS 200 原生 JSON、
+// 到 echo 链、不经 Connect、不套 §1.0 信封——discovery / JWKS 200 原生 JSON、
 // token 空表单 400 RFC 错误体、revoke 空 client_id 401；X-Request-Id 由 gin
 // 链 requestid 统一回写（§1.1）。
 func TestOIDCRoutesWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	h, _ := buildHandlerWithSSO(cfg, connect.NewServer(defaultReadMaxBytes), deps)
@@ -850,7 +848,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 		t.Errorf("token error = %v, want invalid_request (RFC 错误体)", got)
 	}
 	if rec.Header().Get("X-Request-Id") == "" {
-		t.Error("token 400 response missing X-Request-Id (gin 链 requestid)")
+		t.Error("token 400 response missing X-Request-Id (echo 链 requestid)")
 	}
 
 	// revoke：client_id 缺失 → 401 invalid_client（RFC 7009 回落 RFC 6749
@@ -871,7 +869,6 @@ func TestOIDCRoutesWired(t *testing.T) {
 // （§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
 // UpdateProfile 已实装（service 真装配），无会话同样 401。
 func TestAssembleAccountRoutesWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
@@ -947,7 +944,6 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 // 拦截器判定，与 account 域 handler 自判不同——桩方法匿名同样先 401）；sso /
 // account 两域零回归仍在。
 func TestAssembleAdminRoutesWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
@@ -1014,7 +1010,6 @@ func TestAssembleAdminRoutesWired(t *testing.T) {
 // 即证明路由 + HMAC 拦截器已挂载（403≠404）；rpc 域 origin 免检（§1.1 行
 // 79 例外），请求不带 Origin。sso / account / admin 前缀零回归。
 func TestAssembleRPCRoutesWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
@@ -1079,14 +1074,13 @@ func TestAssembleRPCRoutesWired(t *testing.T) {
 }
 
 // TestAssembleGatewayRoutesWired：网关域 ANY /api/gateway/decode 经
-// buildHandlerWithSSO 注册到 gin 链（registerGateway：/api 组 /gateway 子组 +
+// buildHandlerWithSSO 注册到 echo 链（registerGateway：/api 组 /gateway 子组 +
 // Gateway 中间件）——buildWiredDeps 的 settings 为 NewStore(nil, nil)（种子
 // 全量默认值，§5.6 行 1338 gateway_tokens 默认 []）→ 缺 / 任意 X-Gateway-Token
 // 均 403 空 body（middleware 保守拒绝 + 豁免端点原生形态，§1.5 行 188；403≠404
 // 即证明路由与中间件已挂载）；GET / POST 均 403（ANY 语义）；X-Request-Id 由
-// gin 全局链 requestid 回写（§1.1）。sso / account / admin 前缀零回归。
+// echo 全局链 requestid 回写（§1.1）。sso / account / admin 前缀零回归。
 func TestAssembleGatewayRoutesWired(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	csrv := connect.NewServer(defaultReadMaxBytes)
@@ -1118,7 +1112,7 @@ func TestAssembleGatewayRoutesWired(t *testing.T) {
 			t.Errorf("%s decode: body = %q, want empty (403 空体)", method, rec.Body.String())
 		}
 		if got := rec.Header().Get("X-Request-Id"); got == "" {
-			t.Errorf("%s decode: X-Request-Id is empty, want non-empty (gin 全局链回写)", method)
+			t.Errorf("%s decode: X-Request-Id is empty, want non-empty (echo 全局链回写)", method)
 		}
 	}
 	if rec := doRequest(h, http.MethodGet, "/api/gateway/decode", nil); rec.Code != http.StatusForbidden {
@@ -1716,7 +1710,6 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 // origin → handler）。
 func connectTestHandler(t *testing.T, csrv *connect.Server) http.Handler {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
 	h, _ := buildHandler(&config.Config{
 		Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName},
 	}, csrv)
@@ -1724,7 +1717,7 @@ func connectTestHandler(t *testing.T, csrv *connect.Server) http.Handler {
 }
 
 // metricsRequestsTotal 从 /metrics 文本读 requests_total。/metrics 挂 gin
-// 全局链（读取请求自身也被 gin 版 Metrics 计数），读数是 handler 执行时的
+// 全局链（读取请求自身也被 echo 版 Metrics 计数），读数是 handler 执行时的
 // 快照、不含本次读请求自身——增量断言须把上一次读请求算进去。
 func metricsRequestsTotal(t *testing.T, h http.Handler) int {
 	t.Helper()
@@ -1746,10 +1739,10 @@ func metricsRequestsTotal(t *testing.T, h http.Handler) int {
 }
 
 // TestConnectDomainMetricsAndAccessLog Connect 域流量计入 /metrics 与访问
-// 日志（ServeMux 分流后 Connect 请求不经 gin 全局链，但前缀链
-// HTTPMetrics 与 gin 版 Metrics 共用同一组包级原子变量——读 /metrics 文本
+// 日志（ServeMux 分流后 Connect 请求不经 echo 全局链，但前缀链
+// HTTPMetrics 与 echo 版 Metrics 共用同一组包级原子变量——读 /metrics 文本
 // 断言 Connect 请求（origin 403 拒绝与 200 放行均计）真实计入；访问日志由
-// HTTPLogger 输出（与 gin 版共用 logAccess），含 request_id / method /
+// HTTPLogger 输出（与 echo 版共用 logAccess），含 request_id / method /
 // path / status 且 request_id 与响应头一致。
 func TestConnectDomainMetricsAndAccessLog(t *testing.T) {
 	lc := &accessLogCap{}
@@ -2048,7 +2041,6 @@ func (allowStartGate) Evaluate(context.Context, captcha.Request) (captcha.Outcom
 // 选定因子时挑战令牌按同一 ttl 签发（§4.7、§7.3 步骤 6、§11.6.7）。
 // 复用装配产物的真实 settings 与两把令牌密钥，不连外部库，断言始终执行。
 func TestAssembleVerificationSettingsExpiresIn(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	if deps.verification == nil {
@@ -2120,7 +2112,6 @@ func (s *shiftingOtpSettings) GetInt64(key string) (int64, bool) {
 // 全部 OTP 因子视图 expiresIn 与挑战令牌有效期共用同一份快照；热更新落在
 // 请求中途也不改变本次口径（§4.7、§7.3 步骤 6）。
 func TestStartSettingsSnapshotOncePerRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
 	deps := buildWiredDeps(t, cfg)
 	codec := verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification)

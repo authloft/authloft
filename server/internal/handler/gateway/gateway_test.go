@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/gen/go/token"
 	"authloft/internal/middleware"
@@ -63,7 +63,7 @@ func newTestEnv(t *testing.T) (*session.Tokens, *fakeEpoch, *session.Verifier) {
 
 // testPayload 标准测试载荷（id=42、epoch=7、amr=[pwd,otp]、sid-0001）。
 // Verifier 的 now 为包外不可控的真实时钟，故 iat/exp 取真实时间
-//（exp = now+1h 未过期）。
+// （exp = now+1h 未过期）。
 func testPayload() *token.SessionTokenPayload {
 	now := time.Now().Unix()
 	return &token.SessionTokenPayload{
@@ -88,9 +88,8 @@ func signToken(t *testing.T, tokens *session.Tokens, p *token.SessionTokenPayloa
 
 // newGatewayRouter 按装配口径组链（同 bootstrap.registerGateway：/api/gateway
 // 组 + Gateway 中间件先于 handler），tokens 为网关令牌动态源。
-func newGatewayRouter(deps Deps, tokens func() []string) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+func newGatewayRouter(deps Deps, tokens func() []string) *echo.Echo {
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 	gw := r.Group("/api/gateway")
 	gw.Use(middleware.Gateway(tokens))
 	Register(gw, deps)

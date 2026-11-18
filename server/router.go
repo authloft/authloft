@@ -2,12 +2,12 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/middleware"
 )
 
-// newRouter 装配生产 gin 引擎（docs/后端架构.md §3.3 行 296）：
+// newRouter 装配生产 echo 引擎（docs/后端架构.md §3.3 行 296）：
 //   - 全局链（挂载顺序即执行顺序）：recover 最外层最先挂（兜住全链 panic）
 //     → requestid（先于一切错误出口，所有响应统一回写 X-Request-Id 响应头）
 //     → logger（访问日志要取到 request_id）→ metrics（defer
@@ -15,20 +15,22 @@ import (
 //     校验由 Connect 框架与 OIDC 各自承担，不再设独立中间件）；
 //   - /metrics 运维端点挂全局 engine、不进 /api 组——不受 origin 约束
 //     （既定口径，§3.3 行 296）；
-//   - Connect 域不经 gin.NoRoute 兜底（已删除该桥：gin serveError 预置
+//   - Connect 域不经 echo 兜底路由（已删除该桥：历史引擎 serveError 预置
 //     404 的缺陷结构性消除，§3.1 行 243 分流口径）——connect handler 由
 //     装配层经顶层 http.ServeMux 按路径前缀挂载（bootstrap.go buildHandler，
 //     Connect 域的 requestid / origin 等效链在 mux 前缀上，§3.1 行 243）；
-//     未注册路径（含未注册的 connect 形态路径）由 gin 原生 404 兜底；
+//     未注册路径（含未注册的 connect 形态路径）由 echo 错误体 404 兜底
+//     （DefaultHTTPErrorHandler，JSON {"message":"Not Found"}；HEAD 空体）；
 //   - /api 组保留给 REST 豁免端点（OIDC /api/oidc/**、gateway
 //     /api/gateway/**、multipart 头像直传）注册——origin 已在全局链，
 //     组上不再挂任何中间件。
 //
-// 返回 /api 组供豁免端点 handler 挂载——当前尚无这些 handler，测试在该
-// 组上注册临时路由验证链路。
+// 返回 /api 组供豁免端点 handler 挂载——测试在该组上注册临时路由验证链路。
 //
-// 用 gin.New() 而非 gin.Default()：脚手架的 Logger / Recovery 与 §3.3 行 294 的
-// logger.go / recover.go 职责重复，此处挂自建版本。
+// 用 echo.NewWithConfig 自定两处：NoGroupAutoRegister404Routes=true 保持
+// 「组中间件不作用于未注册路径」的既有口径（未注册路径走全局链 404 兜底，
+// 不经页面组 CSP 等组中间件）；IPExtractor=LegacyIPExtractor 保持挂载层
+// 既有 IP 口径（XFF 首段→X-Real-IP→RemoteAddr，§13.0 / 审计 IP 消费位）。
 //
 // rootOrigin（{al_root}，接口文档 §1.1 行 76）由 bootstrap.go 从 *config.Config
 // 注入（§3.2 约定 1，传具体值而非 *Config——router 不依赖 config 包，保持装配
@@ -36,15 +38,19 @@ import (
 // 见 §13.0 行 1570）：装配层注入 provider 查询函数并随 provider 变更热更新，
 // 不再是启动期静态快照——来源为 nil（测试口径）或查询失败（归一为 nil）时，
 // origin 中间件对非免检无 Origin 写请求保守 403（见 origin.go）。
-func newRouter(rootOrigin string, refererAllowlist middleware.AllowlistFunc) (*gin.Engine, *gin.RouterGroup) {
-	r := gin.New()
-	r.Use(
+func newRouter(rootOrigin string, refererAllowlist middleware.AllowlistFunc) (*echo.Echo, *echo.Group) {
+	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
+	e.IPExtractor = echo.LegacyIPExtractor()
+	// 尾斜杠 301 归一（原 RedirectTrailingSlash 默认语义保真）：Pre 链
+	// 先于路由匹配，剥尾斜杠命中已注册路由才 301（见 trailingslash.go）。
+	e.Pre(middleware.TrailingSlashRedirect(e))
+	e.Use(
 		middleware.Recover(),
 		middleware.RequestID(),
 		middleware.Logger(),
 		middleware.Metrics(),
 		middleware.OriginFunc(rootOrigin, refererAllowlist),
 	)
-	r.GET("/metrics", middleware.Handler())
-	return r, r.Group("/api")
+	e.GET("/metrics", middleware.Handler())
+	return e, e.Group("/api")
 }

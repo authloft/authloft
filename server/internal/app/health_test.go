@@ -9,20 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
-// newTestRouter 构造 TestMode gin 引擎并注册 /health（测试直接走 gin 层，
+// newTestRouter 构造最小 echo 引擎并注册 /health（测试直接走 handler 层，
 // 全局中间件链由装配层测试覆盖）。
-func newTestRouter(probes []Probe) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
+func newTestRouter(probes []Probe) *echo.Echo {
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 	r.GET("/health", NewHandler(probes))
 	return r
 }
 
 // doGet 发起 GET /health 并返回 recorder。
-func doGet(t *testing.T, r *gin.Engine) *httptest.ResponseRecorder {
+func doGet(t *testing.T, r *echo.Echo) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()

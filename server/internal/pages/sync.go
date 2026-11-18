@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/gen/go/token"
 	"authloft/internal/security"
@@ -24,53 +24,48 @@ import (
 const syncStepBudget = 30
 
 // syncCookie GET /sso/sync_cookie：多域名同步中转（逐跳推进）。
-func (h *Handler) syncCookie(c *gin.Context) {
+func (h *Handler) syncCookie(c *echo.Context) error {
 	if h.codec == nil {
 		slog.Error("pages: sync cookie codec not configured")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	raw := c.Request.URL.RawQuery
+	raw := c.Request().URL.RawQuery
 	if raw == "" {
-		c.Status(http.StatusOK) // 空载荷：链路中断，空体不带 Location
-		return
+		return c.NoContent(http.StatusOK) // 空载荷：链路中断，空体不带 Location
 	}
 	p, err := security.Open[token.SyncCookiePayload](h.codec, security.PurposeSyncPayload, raw)
 	if err != nil {
-		c.Status(http.StatusOK) // 解密失败：链路中断（§11.2 行 1205）
-		return
+		return c.NoContent(http.StatusOK) // 解密失败：链路中断（§11.2 行 1205）
 	}
 	now := h.now()
 	if now.Unix() > p.GetExp() {
-		c.Status(http.StatusOK) // 过期：不得再写 Cookie（§11.2 行 1210）
-		return
+		return c.NoContent(http.StatusOK) // 过期：不得再写 Cookie（§11.2 行 1210）
 	}
 
 	// 一律写入（覆盖）本域 Cookie（§11.2 行 1206）：名 / 值 / TTL 全来自
 	// 载荷；TTL "0"（登出）或非法 → Max-Age=0 清除语义。属性沿用 session
 	// 包构造（§1.9 行 304：接收端按同一构造器写入、随 https_deployment
 	// 自动生效——注入三态源（每请求读 settings，沿 cookie_name
-	// 热更口径）+ gin 双信号（请求头 + TLS）做 auto 推断；HttpOnly/Path=/
+	// 热更口径）+ echo 双信号（请求头 + TLS）做 auto 推断；HttpOnly/Path=/
 	// 恒定，Domain=本部署根域）。
 	httpsMode := session.WithHTTPSMode(func() string {
 		return h.stringSetting(settings.KeyHttpsDeployment, settings.HTTPSDeploymentAuto)
 	})
-	sig := session.RequestSignal{Header: c.Request.Header, TLS: c.Request.TLS != nil}
+	sig := session.RequestSignal{Header: c.Request().Header, TLS: c.Request().TLS != nil}
 	var ck *http.Cookie
 	if ttl := ttlSeconds(p.GetCookieTtl()); ttl > 0 {
 		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, time.Duration(ttl)*time.Second, httpsMode).Set(p.GetCookieValue(), sig)
 	} else {
 		ck = session.NewCookie(p.GetCookieName(), h.rootDomain, 0, httpsMode).Clear(sig)
 	}
-	http.SetCookie(c.Writer, ck)
+	c.SetCookie(ck)
 
 	// remaining 推进（§11.2 行 1207-1208）：非空 → 取下一个 URL、重封载荷
 	// （exp = now + 30s × 剩余地址数：下一跳 + 新 remaining + final）并 302；
 	// 空 → 302 final_url（不带载荷，不会再回本端点）。
 	remaining := p.GetRemaining()
 	if len(remaining) == 0 {
-		c.Redirect(http.StatusFound, p.GetFinalUrl())
-		return
+		return c.Redirect(http.StatusFound, p.GetFinalUrl())
 	}
 	next := remaining[0]
 	p.Remaining = remaining[1:]
@@ -78,8 +73,7 @@ func (h *Handler) syncCookie(c *gin.Context) {
 	sealed, err := h.codec.Seal(security.PurposeSyncPayload, p)
 	if err != nil {
 		slog.Error("pages: sync cookie seal", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	c.Redirect(http.StatusFound, next+"?"+sealed)
+	return c.Redirect(http.StatusFound, next+"?"+sealed)
 }

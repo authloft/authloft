@@ -49,7 +49,7 @@ type Limiter interface {
 	Take(ctx context.Context, key string) (ok bool, retryAfter time.Duration, err error)
 }
 
-// FactorContext 因子执行上下文（后端架构 §3.8 行 386）：只暴露依赖，不暴露 Gin。
+// FactorContext 因子执行上下文（后端架构 §3.8 行 386）：只暴露依赖，不暴露 Echo。
 type FactorContext struct {
 	Context context.Context
 	// LoginToken 本次请求回传的原始 login_token；首次请求为空。

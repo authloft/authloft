@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // fakeCSPSupporter 固定指令片段的 CSPSupporter 假实现（§12.1 行 1461 接口）。
@@ -51,9 +51,9 @@ func nonceFromHeader(t *testing.T, csp string) string {
 func TestCSPNonceUniquePerRequest(t *testing.T) {
 	nonces := make([]string, 0, 2)
 	r := newTestRouter(CSP())
-	r.GET("/", func(c *gin.Context) {
-		nonces = append(nonces, c.GetString(CSPNonceKey))
-		c.String(http.StatusOK, "ok")
+	r.GET("/", func(c *echo.Context) error {
+		nonces = append(nonces, contextString(c, CSPNonceKey))
+		return c.String(http.StatusOK, "ok")
 	})
 
 	for i := 0; i < 2; i++ {
@@ -82,9 +82,9 @@ func TestCSPNonceUniquePerRequest(t *testing.T) {
 func TestCSPHeaderContainsNonceAndBaseDirectives(t *testing.T) {
 	var nonce string
 	r := newTestRouter(CSP())
-	r.GET("/", func(c *gin.Context) {
-		nonce = c.GetString(CSPNonceKey)
-		c.String(http.StatusOK, "ok")
+	r.GET("/", func(c *echo.Context) error {
+		nonce = contextString(c, CSPNonceKey)
+		return c.String(http.StatusOK, "ok")
 	})
 
 	rec := doRequest(r, http.MethodGet, "/", nil)
@@ -140,8 +140,8 @@ func TestCSPNoContributionExactBaseline(t *testing.T) {
 	}
 	for name, got := range map[string]string{
 		"零 supporter": build(),
-		"空串片段":       build(fakeCSPSupporter{directive: ""}),
-		"空白片段":       build(fakeCSPSupporter{directive: " \t "}),
+		"空串片段":        build(fakeCSPSupporter{directive: ""}),
+		"空白片段":        build(fakeCSPSupporter{directive: " \t "}),
 	} {
 		nonce := nonceFromHeader(t, got)
 		if want := baseDirectives(nonce); got != want {

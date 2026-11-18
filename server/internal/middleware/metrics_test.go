@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // 计数器为包级共享，用例先归零再断言增量。
@@ -23,10 +23,10 @@ func TestMetricsCountsRequests(t *testing.T) {
 	resetMetrics()
 	var inflightSeen int64
 	r := newTestRouter(Metrics())
-	r.GET("/ping", func(c *gin.Context) {
+	r.GET("/ping", func(c *echo.Context) error {
 		inflightSeen = inFlight.Load()
 		time.Sleep(2 * time.Millisecond)
-		c.Status(http.StatusOK)
+		return c.NoContent(http.StatusOK)
 	})
 
 	for i := 0; i < 3; i++ {
@@ -54,9 +54,9 @@ func TestMetricsCountsRequests(t *testing.T) {
 func TestMetricsHandlerOutput(t *testing.T) {
 	resetMetrics()
 	r := newTestRouter(Metrics())
-	r.GET("/ping", func(c *gin.Context) {
+	r.GET("/ping", func(c *echo.Context) error {
 		time.Sleep(2 * time.Millisecond)
-		c.Status(http.StatusOK)
+		return c.NoContent(http.StatusOK)
 	})
 	r.GET("/metrics", Handler())
 
@@ -83,7 +83,7 @@ func TestMetricsHandlerOutput(t *testing.T) {
 func TestMetricsCountsPanickedRequest(t *testing.T) {
 	resetMetrics()
 	r := newTestRouter(Recover(), Metrics())
-	r.GET("/boom", func(c *gin.Context) { panic("boom") })
+	r.GET("/boom", func(c *echo.Context) error { panic("boom") })
 
 	if rec := serve(r, "/boom", ""); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)

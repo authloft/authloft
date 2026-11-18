@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/assets"
 	setupv1 "authloft/gen/go/api/setup/v1"
@@ -117,34 +117,35 @@ func setupParamError(message string) error {
 	return authloftconnect.WithErrorInfo(cerr, authloftconnect.NewErrorInfo(setupDomain, codeInvalidRequest, message))
 }
 
-// Server 安装模式 HTTP 服务：/setup 页面 gin 路由 + SetupService connect
+// Server 安装模式 HTTP 服务：/setup 页面 echo 路由 + SetupService connect
 // handler（实现 setupv1connect.SetupServiceHandler，安装流程本体接 paths.go）。
 // handler 为顶层分流入口（§3.1 行 243：http.ServeMux——SetupService 前缀
-// 挂 connect 链，其余全部交给 gin engine）。
+// 挂 connect 链，其余全部交给 echo engine）。
 type Server struct {
 	configPath string
-	router     *gin.Engine
+	router     *echo.Echo
 	handler    http.Handler
 	exitOnce   sync.Once
 	exited     chan struct{}
 }
 
 // NewServer 构造 setup server 并注册全部路由（仅 setup 模式使用）。
-// gin engine 链：recover 最外层 → requestid（页面响应回写 X-Request-Id 头）
+// echo engine 链：recover 最外层 → requestid（页面响应回写 X-Request-Id 头）
 // → CSP（阶段 C：每请求 nonce 写 ctx + 输出终稿基线 CSP 响应
 // 头——setup 壳与正常模式统一基线，接口文档 §8 行 1521；
-// handleSetupPage 经 pages.RenderGinShell 消费 ctx nonce）；不挂 origin——
+// handleSetupPage 经 pages.RenderShell 消费 ctx nonce）；不挂 origin——
 // 安装期无 rootOrigin 可配（首次部署可能经 IP 访问），§13 响应恒为 Connect
-// JSON。
+// JSON。NoGroupAutoRegister404Routes 与生产 router 同口径：组中间件不作用于
+// 未注册路径，404 兜底归全局链（gin 语义保真）。
 //
 // SetupService 经 internal/connect 装配（§3.14 行 480、行 489「setup 模式下
 // 仅注册 SetupService」）：connect.NewServer 注入请求体上限，HandlerOptions
 // 固定补 WithRecover + 错误包装 interceptor；本域无 session / admin / rpc
 // HMAC 域拦截器（安装期不初始化 DB / Redis 业务链路）。顶层分流
 // （§3.1 行 243）：Connect 前缀链挂 http 版 requestid（Connect 域等效——
-// 不经 gin 全局链，middleware/httpmw.go；origin 同 gin 侧不挂）；其余
-// 全部 mux.Handle("/", ginEngine)——未注册路径 gin 原生 404 兜底
-// （不再经 gin.NoRoute 桥，connect 成功响应直接由
+// 不经 echo 全局链，middleware/httpmw.go；origin 同 echo 侧不挂）；其余
+// 全部 mux.Handle("/", echoEngine)——未注册路径 echo 错误体 404 兜底
+// （不再经 NoRoute 桥，connect 成功响应直接由
 // 生成 handler 写出，无预置状态码）；/assets/** 静态资源同层挂载
 // （§3.13 行 484：正常 / setup 两模式恒在）。
 func NewServer(configPath string) *Server {
@@ -152,7 +153,9 @@ func NewServer(configPath string) *Server {
 		configPath: configPath,
 		exited:     make(chan struct{}),
 	}
-	r := gin.New()
+	r := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
+	// 尾斜杠 301 归一与生产 router 同口径（原 RedirectTrailingSlash 保真）。
+	r.Pre(middleware.TrailingSlashRedirect(r))
 	r.Use(middleware.Recover(), middleware.RequestID(), middleware.CSP())
 	r.GET("/setup", s.handleSetupPage)
 	s.router = r
@@ -168,7 +171,7 @@ func NewServer(configPath string) *Server {
 	}
 	// /assets/** 静态资源（§3.13 行 484：正常 / setup 两模式恒在——setup
 	// 壳模板引用的前端构建产物同样由此供给，无 config.yaml 也必须可达；
-	// 无鉴权、不进 gin 全局链，也不套 Connect 前缀中间件链）。
+	// 无鉴权、不进 echo 全局链，也不套 Connect 前缀中间件链）。
 	assets.Register(mux)
 	s.handler = mux
 	return s
@@ -316,9 +319,9 @@ type setupInit struct {
 	StaticBase string `json:"static_base"`
 }
 
-// handleSetupPage GET /setup：渲染安装页空壳——复用 pages.RenderGinShell
+// handleSetupPage GET /setup：渲染安装页空壳——复用 pages.RenderShell
 // 统一渲染入口（阶段 C：读嵌入模板 templates/setup.html + 五
-// 占位符纯字符串全量替换；CSP 头与 nonce 由 gin 链上的 middleware.CSP
+// 占位符纯字符串全量替换；CSP 头与 nonce 由 echo 链上的 middleware.CSP
 // 输出，setup 壳与正常模式同基线，§8 行 1521）。site_name 走默认 Authloft
 // ——setup 模式无 settings 表，不引入 DB / Redis 依赖（pages 纯渲染包）。
 //
@@ -329,6 +332,6 @@ type setupInit struct {
 // normalizeAlRoot，前端架构 §6b），跳 /sso/login 的目标即当前站点，语义
 // 与读 Host 等价且由浏览器自身判定（优于服务端 XFP→TLS→明文推测）。
 // 若改判（如恢复读 Host），只动本函数一处。
-func (s *Server) handleSetupPage(c *gin.Context) {
-	pages.RenderGinShell(c, "setup", setupInit{StaticBase: setupStaticBase}, setupStaticBase, settings.DefaultSiteName)
+func (s *Server) handleSetupPage(c *echo.Context) error {
+	return pages.RenderShell(c, "setup", setupInit{StaticBase: setupStaticBase}, setupStaticBase, settings.DefaultSiteName)
 }

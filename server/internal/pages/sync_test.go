@@ -120,7 +120,7 @@ func TestSyncCookieLastHop(t *testing.T) {
 // settings 键 https_deployment 驱动（§1.9 行 304：接收端按同一构造器写入、
 // 随本键自动生效）：true → Secure; SameSite=None；false → 省略 Secure、
 // SameSite=Lax；缺省（默认档 auto）+ httptest 明文请求（无 X-Forwarded-Proto
-// 头、无 TLS）→ 兜底明文。gin 链双信号（请求头 + TLS）由 sync.go 构造。
+// 头、无 TLS）→ 兜底明文。echo 链双信号（请求头 + TLS）由 sync.go 构造。
 func TestSyncCookieHTTPSDeployment(t *testing.T) {
 	mk := func(t *testing.T, mode string) *httptest.ResponseRecorder {
 		t.Helper()

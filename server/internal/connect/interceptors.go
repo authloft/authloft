@@ -4,7 +4,7 @@
 //
 // 包边界（§3.14 约定）：只依赖 connect-go、生成的消息与 session / cache 包
 // 接口，不 import service、不读 config；本包只产出拦截器、不挂载任何路由
-// ——挂载归装配层。gateway HMAC 与 Origin/CSRF 留在 Gin 全局链，
+// ——挂载归装配层。gateway HMAC 与 Origin/CSRF 留在 echo 全局链，
 // 不在本包。
 package connect
 
@@ -66,10 +66,10 @@ const defaultSessionCookieName = "al_session"
 //
 // 响应头经 connect.CallInfoForHandlerContext 写回：connect-go 的 handler
 // 在拦截链返回后**无条件**合并进真实响应头（含错误响应），因此下游返回
-// 401/404 时清 Cookie / 重签仍落地——与 Gin 时代同名链路「先写头、再由
+// 401/404 时清 Cookie / 重签仍落地——与同名 HTTP 链路「先写头、再由
 // 下游判定」语义一致。装配时本拦截器应挂链最外层（先于 admin，后者依赖
 // 其 ctx 身份注入）。复用边界：Verifier 四步校验 / WithSessionContext /
-// Renewer.Renew / Cookie.Set/Clear 全部取自 internal/session 包，与 Gin
+// Renewer.Renew / Cookie.Set/Clear 全部取自 internal/session 包，与 echo
 // 链路共用同一实现，未复制任何校验逻辑。
 //
 // 信号采集：拦截器是 connect 链拿得到请求头的最外层——把

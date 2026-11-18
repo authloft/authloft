@@ -1,7 +1,7 @@
 // Package pages 页面壳路由族（接口文档 §8 行 1486-1543）：/sso/login、
 // /sso/register、/sso/reset、/sso/oauth/callback/{provider_key}（login
 // entry）、/account、/admin（仅根映射，account / admin entry；子路径走
-// 前端 hash 路由，未注册子路径 gin 原生 404，通配收窄）的 SPA 空壳渲染，
+// 前端 hash 路由，未注册子路径 echo 错误体 404，通配收窄）的 SPA 空壳渲染，
 // 外加 /sso/logout（§2.9）与 /sso/sync_cookie 中转（§11.2 接收端）。
 //
 // 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/labstack/echo/v5"
 
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
@@ -229,9 +229,9 @@ type Handler struct {
 }
 
 // Register 挂全部页面路由（§8 路由表 + §2.9 logout / sync_cookie + §4.2
-// /auth/authorize 授权入口）。页面路由归 gin 链（Connect 域走 mux 前缀，
+// /auth/authorize 授权入口）。页面路由归 echo 链（Connect 域走 mux 前缀，
 // 互不相交）。
-func Register(r gin.IRouter, d Deps) *Handler {
+func Register(r *echo.Group, d Deps) *Handler {
 	h := &Handler{
 		root:       d.Root,
 		rootDomain: d.RootDomain,
@@ -265,7 +265,7 @@ func Register(r gin.IRouter, d Deps) *Handler {
 	// provider_key 路径参数不做任何业务校验（分派归前端）。
 	r.GET("/sso/oauth/callback/:provider_key", h.loginPage(flowLogin))
 	// 收窄：仅根映射——子路径走前端 hash 路由（/account#/…），
-	// 不发往服务端；未注册子路径由 gin 原生 404 兜底（接口文档 §8）。
+	// 不发往服务端；未注册子路径由 echo 错误体 404 兜底（接口文档 §8）。
 	r.GET("/account", h.entryPage("account"))
 	r.GET("/admin", h.entryPage("admin"))
 	r.GET("/sso/logout", h.logout)
@@ -278,9 +278,9 @@ func Register(r gin.IRouter, d Deps) *Handler {
 // entryPage account / admin entry 空壳：仅注入 al_root / static_base
 // （§8 白名单，methods 是 login 必填项、account 无）。account / admin 不参与
 // 客户端模板选壳（§8.1 仅 SSO 登录入口 / OIDC 授权入口），恒走文件壳。
-func (h *Handler) entryPage(entry string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		h.renderShell(c, entry, &initPayload{
+func (h *Handler) entryPage(entry string) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		return h.renderShell(c, entry, &initPayload{
 			ALRoot:     h.root,
 			StaticBase: h.staticBase(),
 		}, nil)
@@ -290,9 +290,9 @@ func (h *Handler) entryPage(entry string) gin.HandlerFunc {
 // loginPage login entry 空壳（/sso/register、/sso/reset、
 // /sso/oauth/callback/*；/sso/login 走 loginEntry 先做已登录直达检测）：
 // 渲染细节见 serveLoginShell。
-func (h *Handler) loginPage(defaultFlow string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		h.serveLoginShell(c, defaultFlow)
+func (h *Handler) loginPage(defaultFlow string) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		return h.serveLoginShell(c, defaultFlow)
 	}
 }
 
@@ -308,12 +308,11 @@ const loginDefaultLanding = "/account#/"
 // 无会话处理：照常渲染空壳并按 §2.1 注入（安全向 fail-closed，不 302、不
 // 渲染错误页）。直达 302 不插入 /sso/sync_cookie 中转——§2.9 同步链只覆盖
 // 登录成功与登出的会话传播，直达本域会话已有效、无传播需求。
-func (h *Handler) loginEntry(c *gin.Context) {
+func (h *Handler) loginEntry(c *echo.Context) error {
 	if h.authorizeSession(c) != nil {
-		c.Redirect(http.StatusFound, h.loginDirectTarget(c))
-		return
+		return c.Redirect(http.StatusFound, h.loginDirectTarget(c))
 	}
-	h.serveLoginShell(c, flowLogin)
+	return h.serveLoginShell(c, flowLogin)
 }
 
 // loginDirectTarget 已登录直达终点解析（§8 专段三步，互斥完备）：① URL 携带
@@ -323,13 +322,13 @@ func (h *Handler) loginEntry(c *gin.Context) {
 // redirectUris 白名单 → 该默认回跳地址；③ 否则默认落点。未携带 / 白名单外 /
 // 未命中 / 禁用不是错误，向后回落；SsoClients 未装配 / 行查询异常同按未命中
 // 处理。
-func (h *Handler) loginDirectTarget(c *gin.Context) string {
-	if rt := c.Query("returnTo"); isReturnToAllowed(rt) {
+func (h *Handler) loginDirectTarget(c *echo.Context) string {
+	if rt := c.QueryParam("returnTo"); isReturnToAllowed(rt) {
 		return rt
 	}
 	if h.deps.SsoClients != nil {
-		if id := c.Query("client_id"); id != "" {
-			if row, err := h.deps.SsoClients.FindSsoClientByClientID(c.Request.Context(), id); err == nil && row != nil &&
+		if id := c.QueryParam("client_id"); id != "" {
+			if row, err := h.deps.SsoClients.FindSsoClientByClientID(c.Request().Context(), id); err == nil && row != nil &&
 				row.IsEnabled == 1 && row.DefaultRedirectURI != "" &&
 				ssoRedirectAllowed(row, row.DefaultRedirectURI) {
 				return row.DefaultRedirectURI
@@ -374,29 +373,27 @@ func ssoRedirectAllowed(row *model.SsoClient, target string) bool {
 // 既有口径）；行命中与模板解析正交——模板回落（含无自定义模板的常态）仍
 // 注入 sso，查无行回落壳才不注入。应用配置列解码失败 → 空体 500（§8 行
 // 1436「缺失即服务端故障」，§1.5 行 225 豁免端点按 HTTP 语义）。
-func (h *Handler) serveLoginShell(c *gin.Context, defaultFlow string) {
+func (h *Handler) serveLoginShell(c *echo.Context, defaultFlow string) error {
 	flow := defaultFlow
-	if q := c.Query("flow"); q == flowLogin || q == flowRegister || q == flowReset {
+	if q := c.QueryParam("flow"); q == flowLogin || q == flowRegister || q == flowReset {
 		flow = q
 	}
-	tpl, ssoRow := h.resolveLoginClientTpl(c.Request.Context(), c.Query("client_id"))
+	tpl, ssoRow := h.resolveLoginClientTpl(c.Request().Context(), c.QueryParam("client_id"))
 	scope, err := ssoScopeFromRow(ssoRow)
 	if err != nil {
 		slog.Error("pages: parse sso client config", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
 	var ssoCtx *ssoContext
 	if ssoRow != nil {
 		ssoCtx = &ssoContext{ClientID: ssoRow.ClientID, Name: ssoRow.Name}
 	}
-	snapshot, err := h.buildMethods(c.Request.Context(), flow, scope)
+	snapshot, err := h.buildMethods(c.Request().Context(), flow, scope)
 	if err != nil {
 		slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	h.renderShell(c, "login", &initPayload{
+	return h.renderShell(c, "login", &initPayload{
 		ALRoot:     h.root,
 		StaticBase: h.staticBase(),
 		Methods:    snapshot,
@@ -405,18 +402,17 @@ func (h *Handler) serveLoginShell(c *gin.Context, defaultFlow string) {
 }
 
 // renderShell 渲染 SPA 空壳：tpl 非 nil（客户端模板解析成功）走
-// RenderClientShell 用自定义内容渲染，否则回落 RenderGinShell 读默认文件壳
+// RenderClientShell 用自定义内容渲染，否则回落 RenderShell 读默认文件壳
 // （§8.1 第 6 步）。两条路径共用 nonce 消费 / CSP 头 / no-store / 500 语义；
 // static_base 取 settings 快照（nil 回落默认 /assets），site_name 同理（nil /
 // 缺失 / 空回落默认 Authloft）。
-func (h *Handler) renderShell(c *gin.Context, entry string, init *initPayload, tpl *clientTemplate) {
+func (h *Handler) renderShell(c *echo.Context, entry string, init *initPayload, tpl *clientTemplate) error {
 	staticBase := h.staticBase()
 	siteName := h.siteName()
 	if tpl != nil {
-		RenderClientShell(c, tpl.html, init, staticBase, tpl.varsJSON, siteName)
-		return
+		return RenderClientShell(c, tpl.html, init, staticBase, tpl.varsJSON, siteName)
 	}
-	RenderGinShell(c, entry, init, staticBase, siteName)
+	return RenderShell(c, entry, init, staticBase, siteName)
 }
 
 // staticBase settings 键 static_base（§5.6 默认 /assets，可为 CDN 绝对
@@ -443,7 +439,7 @@ func (h *Handler) siteName() string {
 }
 
 // genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url，22 字符）：
-// RenderGinShell 未经中间件路径的兜底（中间件路径用 middleware.CSP 的
+// RenderShell 未经中间件路径的兜底（中间件路径用 middleware.CSP 的
 // security.RandomString）。
 func genNonce() (string, error) {
 	var b [16]byte

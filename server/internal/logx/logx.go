@@ -2,9 +2,9 @@
 // 日志入口（docs/后端架构.md §3.2 日志配置、§3.3 行 294 链路 ID 约束）。
 //
 // 分层约定：
-//   - 本包不引入 net/http / gin / middleware：链路 ID 的 ctx 键与读写下沉
+//   - 本包不引入 net/http / echo / middleware：链路 ID 的 ctx 键与读写下沉
 //     到这里，middleware 只负责生成并注入，service / handler 只依赖本包，
-//     避免业务层反向依赖 HTTP 层，gin 域与 Connect 域共用同一口径；
+//     避免业务层反向依赖 HTTP 层，echo 域与 Connect 域共用同一口径；
 //   - request_id 由 requestIDHandler 在 Handle 时从 ctx 自动补入记录，因此
 //     任何 slog 的 ...Context 调用（含既有代码）都会带链路 ID，业务侧无需
 //     每次手写 "request_id"；

@@ -6,12 +6,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"gorm.io/gorm"
 
 	"authloft/internal/logx"
@@ -68,11 +69,12 @@ func StandardProbes(db *gorm.DB, rdb RedisPinger) []Probe {
 }
 
 // NewHandler /health 处理器：并发逐项探活，全部通过 → 200；任一失败 → 503
-// 并附失败项名单。响应体最小 JSON，不回传错误细节（端点无鉴权，防基础设施
+// 并附失败项名单。响应体最小 JSON（encoding/json 序列化 + Blob 原样输出，
+// 不走 echo JSON 序列化器），不回传错误细节（端点无鉴权，防基础设施
 // 报文经探针外泄）；原因只落服务端日志。每次现探不缓存——编排层按自身间隔
 // 轮询，无高频路径。
-func NewHandler(probes []Probe) gin.HandlerFunc {
-	return func(c *gin.Context) {
+func NewHandler(probes []Probe) echo.HandlerFunc {
+	return func(c *echo.Context) error {
 		failed := make([]string, 0, len(probes))
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -80,7 +82,7 @@ func NewHandler(probes []Probe) gin.HandlerFunc {
 			wg.Add(1)
 			go func(p Probe) {
 				defer wg.Done()
-				ctx, cancel := context.WithTimeout(c.Request.Context(), probeTimeout)
+				ctx, cancel := context.WithTimeout(c.Request().Context(), probeTimeout)
 				defer cancel()
 				err := p.Check(ctx)
 				if err == nil {
@@ -100,12 +102,20 @@ func NewHandler(probes []Probe) gin.HandlerFunc {
 		wg.Wait()
 
 		if len(failed) > 0 {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
+			return writeHealthJSON(c, http.StatusServiceUnavailable, map[string]any{
 				"status": "unavailable",
 				"failed": failed,
 			})
-			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		return writeHealthJSON(c, http.StatusOK, map[string]any{"status": "ok"})
 	}
+}
+
+// writeHealthJSON 输出最小 JSON 响应（content-type 与原 gin.JSON 形态一致）。
+func writeHealthJSON(c *echo.Context, status int, body any) error {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	return c.Blob(status, "application/json; charset=utf-8", raw)
 }

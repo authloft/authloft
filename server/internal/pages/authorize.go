@@ -40,7 +40,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/gen/go/token"
 	"authloft/internal/eventlog"
@@ -97,16 +97,15 @@ type oidcAccountInit struct {
 
 // authorize GET /auth/authorize：分支与顺序见文件注释（校验矩阵 §4.2 行
 // 1071-1076 全覆盖）。
-func (h *Handler) authorize(c *gin.Context) {
-	clientID := c.Query("client_id")
-	redirectURI := c.Query("redirect_uri")
+func (h *Handler) authorize(c *echo.Context) error {
+	clientID := c.QueryParam("client_id")
+	redirectURI := c.QueryParam("redirect_uri")
 
 	// 1. client_id / redirect_uri 校验（§4.2 行 1073）：任一不通过都不跳转
 	//    （400 简短错误页，防开放重定向）。白名单整段匹配复用 logout.go。
 	if clientID == "" || redirectURI == "" ||
-		!h.matchClientRedirectURI(c.Request.Context(), clientID, redirectURI) {
-		authorizeError(c)
-		return
+		!h.matchClientRedirectURI(c.Request().Context(), clientID, redirectURI) {
+		return authorizeError(c)
 	}
 
 	// 2. scope 校验（§4.2 参数错误档）：缺省补 DefaultScope；含未支持值或
@@ -114,14 +113,13 @@ func (h *Handler) authorize(c *gin.Context) {
 	//    空 scope 补值后恒含 openid 不命中此分支；注册 scopes 子集校验不在
 	//    入口档——形态 A/B 由 Terminal / 同意 RPC 经 Validate 收口，形态 C
 	//    由直签前 Validate 收口。
-	scope := c.Query("scope")
+	scope := c.QueryParam("scope")
 	if scope == "" {
 		scope = oidc.DefaultScope
 	}
-	state := c.Query("state")
+	state := c.QueryParam("state")
 	if !oidc.EntryScopeValid(scope) {
-		redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
-		return
+		return redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
 	}
 
 	// 3. 会话校验（§11.1 四步）。
@@ -129,9 +127,8 @@ func (h *Handler) authorize(c *gin.Context) {
 
 	// 4. prompt=none 且无有效会话 → login_required（不渲染空壳，
 	//    §4.2 行 1076）；prompt=login 忽略。
-	if sess == nil && promptHasNone(c.Query("prompt")) {
-		redirectAuthorizeError(c, redirectURI, "login_required", state)
-		return
+	if sess == nil && promptHasNone(c.QueryParam("prompt")) {
+		return redirectAuthorizeError(c, redirectURI, "login_required", state)
 	}
 
 	// 5. state 缺失：改记审计（§4.2 行 1074）。审计点在全部错误分支之后，
@@ -149,96 +146,87 @@ func (h *Handler) authorize(c *gin.Context) {
 	//      （已授权并集，空集合法）+ 账号摘要渲染同意页，无登录表单、
 	//      不 buildMethods（§8 methods 收窄）。
 	if sess != nil {
-		prompt := c.Query("prompt")
-		decision, err := h.decide(c.Request.Context(), sess.GetId(), clientID, scope, prompt)
+		prompt := c.QueryParam("prompt")
+		decision, err := h.decide(c.Request().Context(), sess.GetId(), clientID, scope, prompt)
 		if err != nil {
 			slog.Error("pages: authorize consent decide", "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
+			return c.NoContent(http.StatusInternalServerError)
 		}
 		if decision.NeedsConsent && promptHasNone(prompt) {
-			redirectAuthorizeError(c, redirectURI, "consent_required", state)
-			return
+			return redirectAuthorizeError(c, redirectURI, "consent_required", state)
 		}
 		if !decision.NeedsConsent {
 			if h.codes == nil {
 				slog.Error("pages: authorize code issuer not configured")
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
+				return c.NoContent(http.StatusInternalServerError)
 			}
 			// 形态 C 签码前重跑授权参数校验（§14.2 与 Terminal 同一
 			// AuthzValidator 实例，复用 internal/oidc 规则不在 pages 重写）：
 			// scope 必含 openid 且 ⊆ 客户端注册 scopes（防授权记录漂移出注册
 			// 集，如管理员收窄客户端 scopes 后的存量记录）；client / redirect
 			// 已过入口档，此处再校验属同档复核。
-			if _, err := h.authz.Validate(c.Request.Context(), clientID, redirectURI, scope); err != nil {
+			if _, err := h.authz.Validate(c.Request().Context(), clientID, redirectURI, scope); err != nil {
 				switch {
 				case errors.Is(err, oidc.ErrAuthzScope):
-					redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
+					return redirectAuthorizeError(c, redirectURI, "invalid_scope", state)
 				case errors.Is(err, oidc.ErrAuthzClient), errors.Is(err, oidc.ErrAuthzRedirect):
-					authorizeError(c) // §4.2：client / redirect 档不跳转（防开放重定向）
+					return authorizeError(c) // §4.2：client / redirect 档不跳转（防开放重定向）
 				default:
 					slog.Error("pages: authorize pre-issue authz validate", "err", err)
-					c.AbortWithStatus(http.StatusInternalServerError)
+					return c.NoContent(http.StatusInternalServerError)
 				}
-				return
 			}
-			code, err := h.codes.Issue(c.Request.Context(), orchestrator.OIDCIssue{
+			code, err := h.codes.Issue(c.Request().Context(), orchestrator.OIDCIssue{
 				ClientID:            clientID,
 				RedirectURI:         redirectURI,
 				Scope:               scope,
-				Nonce:               c.Query("nonce"),
-				CodeChallenge:       c.Query("code_challenge"),
-				CodeChallengeMethod: c.Query("code_challenge_method"),
+				Nonce:               c.QueryParam("nonce"),
+				CodeChallenge:       c.QueryParam("code_challenge"),
+				CodeChallengeMethod: c.QueryParam("code_challenge_method"),
 				UID:                 sess.GetId(),
 				AMR:                 sess.GetAmr(),
 				AuthTime:            sess.GetIat(),
 			})
 			if err != nil {
 				slog.Error("pages: authorize issue code", "err", err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
+				return c.NoContent(http.StatusInternalServerError)
 			}
-			c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
+			return c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
 				"code":  {code},
 				"state": {state}, // 空串由 appendQuery 剔除（缺失省略）
 			}))
-			return
 		}
-		h.renderConsent(c, clientID, scope, decision.GrantedScopes, state, h.accountSummary(c.Request.Context(), sess.GetId()))
-		return
+		return h.renderConsent(c, clientID, scope, decision.GrantedScopes, state, h.accountSummary(c.Request().Context(), sess.GetId()))
 	}
 
 	// 7. 无会话 → 形态 A 登录双栏：渲染登录空壳（login entry，URL 保持
 	//    /auth/authorize），methods 必填（缺失即服务端故障 500，§8）+ 注入
 	//    mode=login / client_name / 有效 scope（缺省补值，§4.2 补充口径）。
-	snapshot, err := h.buildMethods(c.Request.Context(), flowLogin)
+	snapshot, err := h.buildMethods(c.Request().Context(), flowLogin)
 	if err != nil {
 		slog.Error("pages: authorize build methods", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
 	oidcInit, err := json.Marshal(oidcAuthorizeInit{
 		ClientID:            clientID,
 		RedirectURI:         redirectURI,
 		Scope:               scope,
 		State:               state,
-		Nonce:               c.Query("nonce"),
-		CodeChallenge:       c.Query("code_challenge"),
-		CodeChallengeMethod: c.Query("code_challenge_method"),
+		Nonce:               c.QueryParam("nonce"),
+		CodeChallenge:       c.QueryParam("code_challenge"),
+		CodeChallengeMethod: c.QueryParam("code_challenge_method"),
 		Mode:                "login",
-		ClientName:          h.clientName(c.Request.Context(), clientID),
+		ClientName:          h.clientName(c.Request().Context(), clientID),
 	})
 	if err != nil {
 		slog.Error("pages: authorize marshal oidc init", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
 	// client_id 已由上方 OIDC 校验层确认（§8.1 第 1 步）：复用同一解析入口
 	// 按 oidc_client 选模板；未指定 / 解析失败回落默认文件壳，有会话 302
 	// 路径不受影响。
-	tpl := h.resolveClientTpl(c.Request.Context(), clientID, true)
-	h.renderShell(c, "login", &initPayload{
+	tpl := h.resolveClientTpl(c.Request().Context(), clientID, true)
+	return h.renderShell(c, "login", &initPayload{
 		ALRoot:     h.root,
 		StaticBase: h.staticBase(),
 		Methods:    snapshot,
@@ -262,27 +250,26 @@ func (h *Handler) decide(ctx context.Context, uid int64, clientID, scope, prompt
 // 分派左栏），无登录表单故不 buildMethods（§8 methods 收窄为 mode=login
 // 必填）。七个授权参数中的 scope 为缺省补值后的有效值（§4.2 补充口径）；
 // granted 取 Decision.GrantedScopes 已授权并集原样透传（空集合法，键恒在）。
-func (h *Handler) renderConsent(c *gin.Context, clientID, scope, granted, state string, account *oidcAccountInit) {
+func (h *Handler) renderConsent(c *echo.Context, clientID, scope, granted, state string, account *oidcAccountInit) error {
 	oidcInit, err := json.Marshal(oidcAuthorizeInit{
 		ClientID:            clientID,
-		RedirectURI:         c.Query("redirect_uri"),
+		RedirectURI:         c.QueryParam("redirect_uri"),
 		Scope:               scope,
 		State:               state,
-		Nonce:               c.Query("nonce"),
-		CodeChallenge:       c.Query("code_challenge"),
-		CodeChallengeMethod: c.Query("code_challenge_method"),
+		Nonce:               c.QueryParam("nonce"),
+		CodeChallenge:       c.QueryParam("code_challenge"),
+		CodeChallengeMethod: c.QueryParam("code_challenge_method"),
 		Mode:                "consent",
-		ClientName:          h.clientName(c.Request.Context(), clientID),
+		ClientName:          h.clientName(c.Request().Context(), clientID),
 		GrantedScopes:       &granted,
 		Account:             account,
 	})
 	if err != nil {
 		slog.Error("pages: render consent marshal oidc init", "err", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		return c.NoContent(http.StatusInternalServerError)
 	}
-	tpl := h.resolveClientTpl(c.Request.Context(), clientID, true)
-	h.renderShell(c, "login", &initPayload{
+	tpl := h.resolveClientTpl(c.Request().Context(), clientID, true)
+	return h.renderShell(c, "login", &initPayload{
 		ALRoot:     h.root,
 		StaticBase: h.staticBase(),
 		OIDC:       oidcInit,
@@ -354,16 +341,16 @@ func maskAccountEmail(email string) string {
 // 失效 / 校验链故障一律按「无有效会话」处理（安全向：绝不把校验故障误判为
 // 已登录；prompt=none 语境发 login_required 亦符合 OIDC 保守语义）。
 // Sessions 未装配（nil）同按无会话。
-func (h *Handler) authorizeSession(c *gin.Context) *token.SessionTokenPayload {
+func (h *Handler) authorizeSession(c *echo.Context) *token.SessionTokenPayload {
 	if h.sessions == nil {
 		return nil
 	}
 	name := h.stringSetting(settings.KeyCookieName, defaultCookieName)
-	ck, err := c.Request.Cookie(name)
+	ck, err := c.Request().Cookie(name)
 	if err != nil {
 		return nil // 无 Cookie = 无会话
 	}
-	p, err := h.sessions.Verify(c.Request.Context(), ck.Value)
+	p, err := h.sessions.Verify(c.Request().Context(), ck.Value)
 	if err != nil {
 		return nil
 	}
@@ -373,12 +360,13 @@ func (h *Handler) authorizeSession(c *gin.Context) *token.SessionTokenPayload {
 // auditAuthorizeNoState 投递 oidc_authorize_no_state 审计事件（§4.2 行 1074、
 // 后端架构 §4.6：actor_type=system、actor_id=0）：detail 无文档定义不自行
 // 构造（nil 落 NULL）；ClientID / IP / UA 供排障。Audit 未装配静默跳过
-// （审计缺失不阻断授权主链路）。
-func (h *Handler) auditAuthorizeNoState(c *gin.Context, clientID string) {
+// （审计缺失不阻断授权主链路）。IP 取挂载层既有口径（LegacyIPExtractor：
+// XFF 首段→X-Real-IP→RemoteAddr，§13.0 / 挂载层 XFF 采信边界一致）。
+func (h *Handler) auditAuthorizeNoState(c *echo.Context, clientID string) {
 	if h.audit == nil {
 		return
 	}
-	ua := c.Request.UserAgent()
+	ua := c.Request().UserAgent()
 	if len(ua) > 512 { // model.EventLog.UA 列上限；截断尾部无效 UTF-8 字节
 		ua = strings.ToValidUTF8(ua[:512], "")
 	}
@@ -386,15 +374,15 @@ func (h *Handler) auditAuthorizeNoState(c *gin.Context, clientID string) {
 		Event:     eventlog.EventOIDCAuthorizeNoState,
 		ActorType: eventlog.ActorTypeSystem,
 		ClientID:  clientID,
-		IP:        c.ClientIP(),
+		IP:        c.RealIP(),
 		UA:        ua,
 	})
 }
 
 // redirectAuthorizeError 302 回 redirect_uri 携带 error（+state，缺失省略，
 // §4.2 行 1075 / 1076 两分支同构：invalid_scope / login_required）。
-func redirectAuthorizeError(c *gin.Context, redirectURI, errorCode, state string) {
-	c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
+func redirectAuthorizeError(c *echo.Context, redirectURI, errorCode, state string) error {
+	return c.Redirect(http.StatusFound, appendQuery(redirectURI, url.Values{
 		"error": {errorCode},
 		"state": {state},
 	}))
@@ -403,9 +391,9 @@ func redirectAuthorizeError(c *gin.Context, redirectURI, errorCode, state string
 // authorizeError 简短 400 错误页（§4.2 行 1073：不跳转、防开放重定向）：
 // 纯静态 HTML——不渲染 SPA 空壳、不注入 __AUTHLOFT_INIT__、不回显任何请求
 // 参数（错误参数不可信，回显即引入注入面）；no-store 防中间层缓存。
-func authorizeError(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<!DOCTYPE html>
+func authorizeError(c *echo.Context) error {
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.Blob(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Authloft</title></head>
 <body><p>invalid_request: client_id or redirect_uri is not allowed.</p></body></html>
 `))

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // slogCapture 收集经 slog 默认 logger 输出的记录（recover / logger 测试共用）。
@@ -73,7 +73,7 @@ func captureSlog(t *testing.T) *slogCapture {
 
 // serveBody 发起带请求体与自定义头的请求（doRequest 不支持 body；logger
 // 敏感信息测试需要把 login_token 同时塞进 query / body / 头三处）。
-func serveBody(r *gin.Engine, method, target, body string, headers map[string]string) *httptest.ResponseRecorder {
+func serveBody(r *echo.Echo, method, target, body string, headers map[string]string) *httptest.ResponseRecorder {
 	var rd io.Reader
 	if body != "" {
 		rd = strings.NewReader(body)
@@ -92,7 +92,7 @@ func serveBody(r *gin.Engine, method, target, body string, headers map[string]st
 // 中间件写入头表、失败响应仍携带。
 func TestRecoverWritesBare500WithRequestIDHeader(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID())
-	r.GET("/boom", func(c *gin.Context) { panic("boom") })
+	r.GET("/boom", func(c *echo.Context) error { panic("boom") })
 
 	rec := serveBody(r, http.MethodGet, "/boom", "", nil)
 	if rec.Code != http.StatusInternalServerError {
@@ -113,8 +113,8 @@ func TestRecoverWritesBare500WithRequestIDHeader(t *testing.T) {
 // （§3.14「禁止半截输出」），已写出的状态码不被覆盖。
 func TestRecoverPartialResponseNotAppended(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID())
-	r.GET("/partial", func(c *gin.Context) {
-		c.String(http.StatusOK, "partial-data")
+	r.GET("/partial", func(c *echo.Context) error {
+		_ = c.String(http.StatusOK, "partial-data")
 		panic("boom after write")
 	})
 
@@ -131,7 +131,7 @@ func TestRecoverPartialResponseNotAppended(t *testing.T) {
 func TestRecoverLogsPanicAndStack(t *testing.T) {
 	logCap := captureSlog(t)
 	r := newTestRouter(Recover(), RequestID())
-	r.GET("/boom", func(c *gin.Context) { panic("boom-value-xyz") })
+	r.GET("/boom", func(c *echo.Context) error { panic("boom-value-xyz") })
 
 	serveBody(r, http.MethodGet, "/boom", "", nil)
 
@@ -151,25 +151,29 @@ func TestRecoverLogsPanicAndStack(t *testing.T) {
 }
 
 // ④ 链中段中间件 panic → 后续中间件与 handler 不执行、恰一次 500 空体。
-// gin 的 Next 是共享 index 的 for 循环（gin v1.12.0 context.go:188-196）：
-// panic 点非链尾时 unwind 回 engine 侧循环会从 index+1 继续执行剩余链段，
-// 缺 c.Abort() 时标记中间件 B 与 handler 照跑，500 之后再写响应即半截混合输出。
+// Echo 链为函数组合：panic 点的内层闭包（后续中间件 B 与 handler）从未被
+// 调用、panic 沿调用栈直接 unwind 到 Recover——gin 引擎侧 index+1 续跑
+// 的半截输出问题结构性不存在。
 func TestRecoverMidChainPanicAbortsChain(t *testing.T) {
 	r := newTestRouter(Recover(), RequestID())
 	afterRan := false
 	handlerRan := false
 	// 中间件 A：链中段（handler 之前）panic
-	r.Use(func(c *gin.Context) { panic("mid-chain-boom") })
-	// 中间件 B：A 的后续链段，Abort 缺失时会被 engine 侧循环继续执行
-	r.Use(func(c *gin.Context) { afterRan = true; c.Next() })
-	r.GET("/mid", func(c *gin.Context) { handlerRan = true; c.Status(http.StatusOK) })
+	r.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error { panic("mid-chain-boom") }
+	})
+	// 中间件 B：A 的后续链段，panic unwind 时不被执行
+	r.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error { afterRan = true; return next(c) }
+	})
+	r.GET("/mid", func(c *echo.Context) error { handlerRan = true; return c.NoContent(http.StatusOK) })
 
 	rec := serveBody(r, http.MethodGet, "/mid", "", nil)
 	if afterRan {
-		t.Errorf("panic 之后的中间件 B 仍被执行（缺 c.Abort() 截断链）")
+		t.Errorf("panic 之后的中间件 B 仍被执行（链应被截断）")
 	}
 	if handlerRan {
-		t.Errorf("panic 之后 handler 仍被执行（缺 c.Abort() 截断链）")
+		t.Errorf("panic 之后 handler 仍被执行（链应被截断）")
 	}
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)

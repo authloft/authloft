@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
-	"github.com/gin-gonic/gin"
 	"google.golang.org/protobuf/proto"
 
 	commonv1 "authloft/gen/go/api/common/v1"
@@ -33,8 +32,6 @@ import (
 	"authloft/internal/config"
 	authloftconnect "authloft/internal/connect"
 )
-
-func init() { gin.SetMode(gin.TestMode) }
 
 // testKeyB64 生成 32 字节确定内容的 std base64 密钥（测试 config 文本用）。
 func testKeyB64(b byte) string {
@@ -232,7 +229,7 @@ func TestSetupConnectClientInterop(t *testing.T) {
 // TestSetupPageShell GET /setup 空壳页（接口文档 §8 行 1495 / 1500）：
 // 读嵌入模板 + 三占位符全量替换（阶段 C：setup 壳复用 pages
 // 统一渲染入口）；no-store；CSP 与正常模式同基线（middleware.CSP
-// 挂 gin 链）；__AUTHLOFT_INIT__ 注入 al_root=""（setup 模式无 config、
+// 挂 echo 链）；__AUTHLOFT_INIT__ 注入 al_root=""（setup 模式无 config、
 // 不读 Host——前端 bootstrap location.origin 回落，见 handleSetupPage
 // 注）+ static_base 默认 /assets；不注入凭证。
 func TestSetupPageShell(t *testing.T) {

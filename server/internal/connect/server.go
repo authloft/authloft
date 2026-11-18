@@ -2,8 +2,8 @@
 // 收集各域生成的 connect handler（protoc-gen-connect-go 产出的
 // (mountPath, http.Handler) 对），经 Routes 交装配层按路径
 // 前缀挂入顶层 http.ServeMux（§3.1 行 243 分流口径：页面 / 静态 / OIDC /
-// gateway 等 gin 路由不经本层；未注册路径由顶层 "/" → gin 原生 404 兜底，
-// 不再经 gin.NoRoute 桥——此前 serveError 404 残留缺陷随之结构性
+// gateway 等 echo 路由不经本层；未注册路径由顶层 "/" → echo 错误体 404 兜底，
+// 不再经框架兜底路由桥——此前 serveError 404 残留缺陷随之结构性
 // 消除：connect 成功响应直接由生成 handler 写出，无预置状态码）。
 //
 // 传输与编解码、请求体上限、Content-Type 校验均由 connect-go 框架承担
@@ -61,7 +61,7 @@ func (s *Server) Routes() []Route { return s.routes }
 // （WithRecover，最外层）+ 拦截链。
 //
 // WithRecover 是 §3.3 行 302「recover 最外层兜住全链 panic」对 Connect
-// 域的等效（ServeMux 分流后 Connect 请求不经 gin 全局链的 Recover）：
+// 域的等效（ServeMux 分流后 Connect 请求不经 echo 全局链的 Recover）：
 // connect-go 内建选项，handler / 拦截器 panic 归一为 internal 错误，
 // 不透出 panic 值（消毒口径同 middleware/recover.go）。
 //

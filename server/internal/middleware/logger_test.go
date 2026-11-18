@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // ⑤ 正常请求输出恰好一条访问日志，request_id / method / path / status /
@@ -13,8 +13,8 @@ import (
 func TestLoggerOutputsAccessFields(t *testing.T) {
 	logCap := captureSlog(t)
 	r := newTestRouter(RequestID(), Logger())
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "ok")
+	r.GET("/ping", func(c *echo.Context) error {
+		return c.String(http.StatusOK, "ok")
 	})
 
 	rec := serveBody(r, http.MethodGet, "/ping", "", nil)
@@ -73,7 +73,9 @@ func TestLoggerDoesNotLogSensitiveData(t *testing.T) {
 	}
 }
 
-// ⑦ 状态码取最终值：未注册路由 → gin NoRoute 404，全局 logger 仍执行且记 404。
+// ⑦ 状态码取最终值：未注册路由 → echo 兜底路由 404（错误值沿链上抛，
+// HTTPErrorHandler 链解旋后写出），全局 logger 仍执行且按
+// ResolveResponseStatus 记 404。
 func TestLoggerRecordsFinalStatus(t *testing.T) {
 	logCap := captureSlog(t)
 	r := newTestRouter(RequestID(), Logger())
@@ -88,6 +90,6 @@ func TestLoggerRecordsFinalStatus(t *testing.T) {
 		t.Fatalf("no \"access\" record for NoRoute request (全局中间件须对 404 也生效)")
 	}
 	if attrs["status"] != "404" {
-		t.Errorf("status = %q, want \"404\" (取 c.Writer.Status() 最终值)", attrs["status"])
+		t.Errorf("status = %q, want \"404\" (ResolveResponseStatus 归一最终值)", attrs["status"])
 	}
 }

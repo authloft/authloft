@@ -85,7 +85,7 @@ func NewHandler(f fs.FS, base string) http.Handler {
 }
 
 // Register 把 /assets/** 挂顶层 ServeMux（§3.13 行 484：正常 / setup 两模式
-// 恒在；无鉴权、不进 gin 全局链与 session / Origin / admin 中间件，也不套
+// 恒在；无鉴权、不进 echo 全局链与 session / Origin / admin 中间件，也不套
 // Connect 前缀中间件链；与 API 前缀不冲突）。装配点两处：bootstrap
 // buildHandlerWithSSO 与 internal/setup.NewServer 的 mux 构造处。pattern 带
 // 尾斜杠（子树匹配 "/assets/**"），base 供 handler 剥离（无尾斜杠）。

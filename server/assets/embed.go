@@ -2,7 +2,7 @@
 // web/dist 由 pnpm build 构建链尾段入驻 server/assets/dist（根级 *.js /
 // *.LICENSE.txt + static/**；html/ 壳层模板源、*.map sourcemap、根级 *.json
 // 构建元数据不入驻），go:embed 打进二进制，不依赖外部 web server。正常 /
-// setup 两模式恒挂（§3.13 行 484），无鉴权、不进 gin 全局链与 Connect 前缀
+// setup 两模式恒挂（§3.13 行 484），无鉴权、不进 echo 全局链与 Connect 前缀
 // 中间件链。
 package assets
 

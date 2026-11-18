@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // refererHost 是微信小程序 / 宿主环境 Referer 的固定 host（docs/接口文档.md §1.1 行 80）。
@@ -38,21 +38,19 @@ const originRejectedBody = `{"code":"permission_denied","message":"cross-origin 
 //
 // 未配置（rootOrigin 空串 / 白名单 nil）时保守拒绝而非放行：缺配置下「默认放行」
 // 会让 CSRF 防护整体失效，「默认拒绝」只是可用性缺口，等 config 系统接入后注入真实值恢复。
-func Origin(rootOrigin string, refererAllowlist []string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !isWriteMethod(c.Request.Method) || isOriginExemptPath(c.Request.URL.Path) {
-			c.Next()
-			return
+func Origin(rootOrigin string, refererAllowlist []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			r := c.Request()
+			if !isWriteMethod(r.Method) || isOriginExemptPath(r.URL.Path) || requestOriginAllowed(r, rootOrigin, refererAllowlist) {
+				return next(c)
+			}
+			// 403 出口取 Connect 错误 JSON（§1.5 行 188 permission_denied）：被本层
+			// 拦截的主要是 Connect 域请求；豁免端点（OIDC / gateway）在免检组，
+			// 不经此出口。X-Request-Id 头由 requestid 中间件已写入头表。
+			// 不调用 next 即截断剩余链（Echo 链为函数组合，写完响应直接返回）。
+			return c.Blob(http.StatusForbidden, "application/json", []byte(originRejectedBody))
 		}
-		if requestOriginAllowed(c.Request, rootOrigin, refererAllowlist) {
-			c.Next()
-			return
-		}
-		// 403 出口取 Connect 错误 JSON（§1.5 行 188 permission_denied）：被本层
-		// 拦截的主要是 Connect 域请求；豁免端点（OIDC / gateway）在免检组，
-		// 不经此出口。X-Request-Id 头由 requestid 中间件已写入头表。
-		c.Data(http.StatusForbidden, "application/json", []byte(originRejectedBody))
-		c.Abort()
 	}
 }
 
@@ -68,33 +66,30 @@ func requestOriginAllowed(r *http.Request, rootOrigin string, refererAllowlist [
 // fail-closed——§13.0「Referer 校验按失败处理」+ 本文件既有空表口径）。
 type AllowlistFunc func(ctx context.Context) []string
 
-// OriginFunc gin 版 Origin/CSRF 中间件的动态白名单形态（§13.0）：
+// OriginFunc echo 版 Origin/CSRF 中间件的动态白名单形态（§13.0）：
 // 校验语义与 Origin 完全一致（同源判断、servicewechat.com/{appid} 口径、
 // 免检组、写方法限制均不变），仅 Referer 白名单改为每请求现场查询——
 // 白名单随 provider 数据变更即时生效（60s 缓存与版本失效由注入的来源
 // 自治，internal/provider.Whitelist）。allowlist 为 nil 时等效空表
 // （无 Origin 写请求恒 403，保守拒绝）。既有静态 Origin / HTTPOrigin
 // 保留原签名兼容存量调用方（httpmw.go 等）。
-func OriginFunc(rootOrigin string, allowlist AllowlistFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !isWriteMethod(c.Request.Method) || isOriginExemptPath(c.Request.URL.Path) {
-			c.Next()
-			return
+func OriginFunc(rootOrigin string, allowlist AllowlistFunc) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			r := c.Request()
+			if !isWriteMethod(r.Method) || isOriginExemptPath(r.URL.Path) || requestOriginAllowedFunc(r, rootOrigin, allowlist) {
+				return next(c)
+			}
+			// 403 出口与静态版同体（originRejectedBody）：被本层拦截的主要是
+			// Connect 域请求；X-Request-Id 头由 requestid 中间件已写入头表。
+			return c.Blob(http.StatusForbidden, "application/json", []byte(originRejectedBody))
 		}
-		if requestOriginAllowedFunc(c.Request, rootOrigin, allowlist) {
-			c.Next()
-			return
-		}
-		// 403 出口与静态版同体（originRejectedBody）：被本层拦截的主要是
-		// Connect 域请求；X-Request-Id 头由 requestid 中间件已写入头表。
-		c.Data(http.StatusForbidden, "application/json", []byte(originRejectedBody))
-		c.Abort()
 	}
 }
 
 // HTTPOriginFunc http 版 Origin/CSRF 中间件的动态白名单形态：
 // Connect 前缀链专用（§3.1 行 243 mux.Handle 前缀），与 HTTPOrigin 的
-// 静态形态等效、与 gin 版 OriginFunc 共用同一判定核心；放在 origin.go
+// 静态形态等效、与 echo 版 OriginFunc 共用同一判定核心；放在 origin.go
 // 以保持 httpmw.go（静态形态、已验收）不动。
 func HTTPOriginFunc(rootOrigin string, allowlist AllowlistFunc, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +116,7 @@ func requestOriginAllowedFunc(r *http.Request, rootOrigin string, allowlist Allo
 }
 
 // isWriteMethod 判定是否写方法：GET/HEAD/OPTIONS 属安全方法，不做 Origin 校验
-//（docs/接口文档.md §1.1 行 79 的校验对象是写接口；登录相关接口亦均为写方法）。
+// （docs/接口文档.md §1.1 行 79 的校验对象是写接口；登录相关接口亦均为写方法）。
 func isWriteMethod(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:

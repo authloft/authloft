@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 )
 
 // gatewayTokenHeader 网关调用凭据 Header（docs/接口文档.md §6 行 1344：
@@ -24,14 +24,16 @@ const gatewayTokenHeader = "X-Gateway-Token"
 // middleware 不 import settings，叶子件口径同 origin.go）。tokens 为
 // nil（未装配）时保守拒绝——与 origin.go 的「缺配置默认拒绝」口径一致，
 // 空列表本就无一可通过。
-func Gateway(tokens func() []string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tok := strings.TrimSpace(c.GetHeader(gatewayTokenHeader))
-		if tok != "" && gatewayTokenAllowed(tokens, tok) {
-			c.Next()
-			return
+func Gateway(tokens func() []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			tok := strings.TrimSpace(c.Request().Header.Get(gatewayTokenHeader))
+			if tok != "" && gatewayTokenAllowed(tokens, tok) {
+				return next(c)
+			}
+			// 不调用 next 即截断剩余链；NoContent 只写状态码、无响应体。
+			return c.NoContent(http.StatusForbidden)
 		}
-		c.AbortWithStatus(http.StatusForbidden)
 	}
 }
 

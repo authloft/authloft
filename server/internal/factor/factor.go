@@ -1,6 +1,6 @@
 // Package factor 认证因子统一接口与注册表（docs/后端架构.md §6、§3.8 行 381-387）。
 // 因子只增不改：新增认证方式 = internal/factor/<name>/ 一个包 + 一行注册（§1.3）。
-// 本包不依赖 HTTP / Gin，也不实现任何具体因子。
+// 本包不依赖 HTTP / Echo，也不实现任何具体因子。
 package factor
 
 // FactorKind 认证因子（凭证类型）枚举，取值与后端架构 §6.1 行 903-914 逐条一致。

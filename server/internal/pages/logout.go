@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 
 	"authloft/internal/repo"
 	"authloft/internal/session"
@@ -33,12 +33,12 @@ const (
 )
 
 // logout GET /sso/logout：清 Cookie + 多域同步 + 白名单回跳。
-func (h *Handler) logout(c *gin.Context) {
+func (h *Handler) logout(c *echo.Context) error {
 	// 1. 清本域会话 Cookie（session.Cookie.Clear：同名同 Path/Domain、
 	// Max-Age=-1 浏览器立即删除；§2.9「清 Cookie」）。
 	name := h.stringSetting(settings.KeyCookieName, defaultCookieName)
 	ttl := h.intSetting(settings.KeySessionTtl, defaultSessionTTL)
-	http.SetCookie(c.Writer, session.NewCookie(name, h.rootDomain, time.Duration(ttl)*time.Second).Clear())
+	c.SetCookie(session.NewCookie(name, h.rootDomain, time.Duration(ttl)*time.Second).Clear())
 
 	// 2. post_logout_redirect_uri 白名单 → 最终回跳地址（两分支见包注释）。
 	final := h.logoutFinalURL(c)
@@ -47,28 +47,27 @@ func (h *Handler) logout(c *gin.Context) {
 	// 302（Cookie 值空、TTL="0"）；空时直接 302 final。构造失败降级为
 	// 直接回跳（本域 Cookie 已清，登出语义保全），记日志。
 	if domains, ok := h.sliceSetting(settings.KeySsoDomains); ok && len(domains) > 0 && h.sync != nil {
-		u, err := h.sync.Build(c.Request.Context(), name, "", "0", domains, final)
+		u, err := h.sync.Build(c.Request().Context(), name, "", "0", domains, final)
 		if err != nil {
 			slog.Error("pages: logout sync build", "err", err)
 		} else if u != "" {
-			c.Redirect(http.StatusFound, u)
-			return
+			return c.Redirect(http.StatusFound, u)
 		}
 	}
-	c.Redirect(http.StatusFound, final)
+	return c.Redirect(http.StatusFound, final)
 }
 
 // logoutFinalURL 白名单判定（§2.9）：返回最终回跳地址（绝对 URL——
 // 同步链末跳由别的根域发出，相对地址会落错主机）。
-func (h *Handler) logoutFinalURL(c *gin.Context) string {
-	target := c.Query("post_logout_redirect_uri")
+func (h *Handler) logoutFinalURL(c *echo.Context) string {
+	target := c.QueryParam("post_logout_redirect_uri")
 	if target == "" {
 		return h.root // 无 post_logout → 落 al_root（同源默认页）
 	}
-	hint := c.Query("id_token_hint")
+	hint := c.QueryParam("id_token_hint")
 	if hint != "" {
-		if clientID, ok := h.hintClientID(c.Request.Context(), hint); ok {
-			if h.matchClientRedirectURI(c.Request.Context(), clientID, target) {
+		if clientID, ok := h.hintClientID(c.Request().Context(), hint); ok {
+			if h.matchClientRedirectURI(c.Request().Context(), clientID, target) {
 				return target
 			}
 		}
