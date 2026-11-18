@@ -18,12 +18,14 @@
 import {
   getInit,
   type MethodsSnapshot,
+  type OidcAccountContext,
   type OidcContext,
+  type OidcMode,
   type SsoContext,
-} from '../shared/types/init';
+} from "../shared/types/init";
 
 /** static_base 缺省回落值（接口文档 §8 行 1428：默认 /assets）。 */
-const DEFAULT_STATIC_BASE = '/assets/';
+const DEFAULT_STATIC_BASE = "/assets/";
 
 /**
  * static_base 归一为以 `/` 结尾；空 / 缺省回落 `/assets/`（§1.5 行 99：
@@ -31,13 +33,44 @@ const DEFAULT_STATIC_BASE = '/assets/';
  * 不得写死资源域名。
  */
 export function normalizeStaticBase(base: string | undefined): string {
-  if (base === undefined || base.trim() === '') {
+  if (base === undefined || base.trim() === "") {
     return DEFAULT_STATIC_BASE;
   }
-  return base.endsWith('/') ? base : `${base}/`;
+  return base.endsWith("/") ? base : `${base}/`;
 }
 
-/** login 引导结果（§4.1 行 375）：methods 缺失（含注入块未下发）→ ok=false。 */
+/**
+ * OIDC 渲染视图（§4.2 三态在前端的分派输入）：从注入 oidc 提取 mode /
+ * client_name / account，按只读快照返回；无 oidc 或 mode 未知 → plain（直登，
+ * 形态 C 由后端 302 不渲染本页）。纯函数，node 可测。
+ */
+export interface OidcView {
+  mode: OidcMode | "plain";
+  clientName: string;
+  account?: OidcAccountContext;
+  ctx?: OidcContext;
+}
+
+/** 注入 oidc → 分派视图：mode 严格取 login/consent，其余（含 absent）归 plain。 */
+export function oidcView(ctx: OidcContext | undefined): OidcView {
+  if (ctx === undefined) {
+    return { mode: "plain", clientName: "" };
+  }
+  const mode: OidcView["mode"] =
+    ctx.mode === "login" || ctx.mode === "consent" ? ctx.mode : "plain";
+  return {
+    mode,
+    clientName: ctx.client_name ?? "",
+    ...(ctx.account !== undefined ? { account: ctx.account } : {}),
+    ctx,
+  };
+}
+
+/**
+ * login 引导结果（§4.1 行 375）：methods 缺失（含注入块未下发）→ ok=false。
+ * 例外：形态 B（oidc.mode=consent）不注入 methods（§二补充 / §8 收窄为 mode=login
+ * 必填），左栏不渲染登录表单，故允许缺省并以空快照兜底。
+ */
 export type LoginBootstrapResult =
   | {
       ok: true;
@@ -47,18 +80,21 @@ export type LoginBootstrapResult =
     }
   | { ok: false };
 
-/** 读注入快照（§8：methods 必需、oidc / sso 可选）；同步纯读取，不阻塞渲染。 */
+/** 读注入快照（§8：methods 为 mode=login 必填、oidc / sso 可选）；同步纯读取，不阻塞渲染。 */
 export function loadLoginBootstrap(): LoginBootstrapResult {
   const init = getInit();
   const snapshot = init?.methods;
-  if (snapshot === undefined || snapshot === null) {
-    return { ok: false };
-  }
   const oidc = init?.oidc;
   const sso = init?.sso;
+  const isConsent = oidc?.mode === "consent";
+  if ((snapshot === undefined || snapshot === null) && !isConsent) {
+    return { ok: false };
+  }
   return {
     ok: true,
-    snapshot,
+    ...(snapshot !== undefined && snapshot !== null
+      ? { snapshot }
+      : { snapshot: { methods: [] } }),
     ...(oidc !== undefined ? { oidc } : {}),
     ...(sso !== undefined ? { sso } : {}),
   };

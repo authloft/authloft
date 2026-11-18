@@ -1,0 +1,186 @@
+// OIDC 授权页右栏勾选面板样式（docs/前端架构.md §1.7 CSS Modules + Less）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.panel {
+  min-width: 0;
+  padding: @spacing-lg;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-md;
+  background: @color-background-muted;
+}
+
+.appName {
+  margin: 0 0 @spacing-sm;
+  font-size: @font-size-lg;
+  color: @color-text-strong;
+}
+
+.empty {
+  margin: 0;
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+.scopeList {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scopeItem {
+  display: flex;
+  align-items: center;
+  gap: @spacing-sm;
+  font-size: @font-size-md;
+  color: @color-text;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: @color-primary;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.scopeLabel {
+  flex: 1;
+}
+
+.lockedBadge {
+  padding: 2px @spacing-sm;
+  border-radius: @radius-sm;
+  background: @color-primary-soft;
+  color: @color-primary;
+  font-size: @font-size-sm;
+}
+
+// ---- 双栏容器与同意页左栏（LoginPage 自行包裹，AppLayout 不改）--------------
+.twoColumn {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: @spacing-xl;
+  align-items: start;
+}
+
+.leftColumn {
+  min-width: 0;
+}
+
+.rightColumn {
+  min-width: 0;
+}
+
+.accountCard {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-sm;
+  padding: @spacing-lg;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-md;
+  background: @color-background;
+}
+
+.accountLabel {
+  margin: 0;
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}
+
+.accountIdentity {
+  display: flex;
+  align-items: center;
+  gap: @spacing-md;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: @radius-md;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: @radius-md;
+  background: @color-primary-soft;
+  color: @color-primary;
+  font-size: @font-size-lg;
+}
+
+.nickname {
+  margin: 0;
+  color: @color-text-strong;
+  font-size: @font-size-lg;
+}
+
+.identifier {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.hint {
+  margin: 0;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.consentActions {
+  display: flex;
+  gap: @spacing-md;
+  margin-top: @spacing-sm;
+}
+
+.approveButton {
+  padding: @spacing-sm @spacing-lg;
+  border: none;
+  border-radius: @radius-sm;
+  background: @color-primary;
+  color: @color-text-inverse;
+  font-size: @font-size-md;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.denyButton {
+  padding: @spacing-sm @spacing-lg;
+  border: @border-width solid @color-border-strong;
+  border-radius: @radius-sm;
+  background: @color-background;
+  color: @color-text;
+  font-size: @font-size-md;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.consentError {
+  margin: 0;
+  color: @color-danger;
+  font-size: @font-size-sm;
+}
+
+@media (min-width: 720px) {
+  .twoColumn {
+    grid-template-columns: 1fr 1fr;
+  }
+}

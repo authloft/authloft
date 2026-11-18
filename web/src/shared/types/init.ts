@@ -9,7 +9,7 @@
  * bigint；captcha 结构无 int64 字段、三处同结构同字段名（§2.5 行 476），类型
  * 直接取 gen 的 api.common.v1.CaptchaConfig，不双份手写（前端架构 §3.1）。
  */
-import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
+import type { CaptchaConfig } from "../../gen/proto/api/common/v1/captcha_pb";
 
 /**
  * 渲染字段（§2.1 行 384-394；api.sso.v1.Field 的注入 JSON 形状，见 gen
@@ -80,7 +80,30 @@ export interface MethodsSnapshot {
   methods: LoginMethodEntry[];
 }
 
-/** OIDC 授权上下文（§4.2 行 1081：七个原样参数；前端首次请求原样回传，不解析）。 */
+/**
+ * 形态 B 左栏账号摘要（§4.2 / §5.1 `oidc.account`）：昵称 / 头像 / 掩码标识
+ * （手机号 / 邮箱二选一，均掩码；无则用户名）。后端注入 snake_case，前端不二次
+ * 信任、不落任何凭证或明文。
+ */
+export interface OidcAccountContext {
+  nickname: string;
+  avatar_url: string;
+  identifier: string;
+}
+
+/**
+ * OIDC 渲染形态（§4.2 三态）：`login` 登录双栏、`consent` 同意双栏。形态 C
+ * 免同意直跳由后端 302，不渲染本页、前端不感知。注入值可能为未知串，消费方
+ * 按严格相等分派、落到默认分支。
+ */
+export type OidcMode = "login" | "consent";
+
+/**
+ * OIDC 授权上下文（§4.2 行 1081：七个原样参数；前端首次请求原样回传，不解析）。
+ * 形态 A/B 另带 `mode`（渲染分派）、`client_name`（右栏应用名）；形态 B 再带
+ * `account`（左栏账号摘要，形态 A 省略）。三者是注入的展示/分派字段，不进
+ * `oidcToStruct` 的回传 Struct（服务端按注入重校，不接受前端扩权）。
+ */
 export interface OidcContext {
   client_id: string;
   redirect_uri: string;
@@ -89,6 +112,9 @@ export interface OidcContext {
   nonce?: string;
   code_challenge?: string;
   code_challenge_method?: string;
+  mode?: OidcMode;
+  client_name?: string;
+  account?: OidcAccountContext;
 }
 
 /**
@@ -122,7 +148,7 @@ declare global {
 }
 
 export function getSiteName(): string {
-  return window.__AUTHLOFT_SITE_NAME__ || 'Authloft';
+  return window.__AUTHLOFT_SITE_NAME__ || "Authloft";
 }
 
 /**
@@ -131,7 +157,7 @@ export function getSiteName(): string {
  * 非浏览器环境返回 undefined。
  */
 export function getInit(): AuthloftInit | undefined {
-  if (typeof window === 'undefined') {
+  if (typeof window === "undefined") {
     return undefined;
   }
   return window.__AUTHLOFT_INIT__;

@@ -33,32 +33,33 @@
  * 非 200 `ErrorInfo.code`（captcha_required / captcha_invalid），由 transport
  * 归一为 ApiError 后交 shared/captcha 的 gate 吸收，本模块不解析错误体。
  */
-import type { JsonObject } from '@bufbuild/protobuf';
-import { create } from '@bufbuild/protobuf';
-import { ssoClient } from '../shared/api/http';
-import type { MessageInput } from '../shared/api/sso';
-import { getInit, type OidcContext } from '../shared/types/init';
+import type { JsonObject } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
+import { accountClient, ssoClient } from "../shared/api/http";
+import type { MessageInput } from "../shared/api/sso";
+import { DEFAULT_ACCOUNT_HOME } from "../shared/urls";
+import { getInit, type OidcContext } from "../shared/types/init";
 import {
   LoginFlowResponseSchema,
   SsoErrorSchema,
   type LoginFlowResponse,
-} from '../gen/proto/api/sso/v1/envelope_pb';
+} from "../gen/proto/api/sso/v1/envelope_pb";
 import {
   CaptchaPayloadSchema,
   type CaptchaPayload,
   type LoginDefaultRequest,
-} from '../gen/proto/api/sso/v1/login_pb';
-import type { RegisterRequest } from '../gen/proto/api/sso/v1/register_pb';
-import type { ResetPasswordRequest } from '../gen/proto/api/sso/v1/reset_pb';
+} from "../gen/proto/api/sso/v1/login_pb";
+import type { RegisterRequest } from "../gen/proto/api/sso/v1/register_pb";
+import type { ResetPasswordRequest } from "../gen/proto/api/sso/v1/reset_pb";
 import type {
   AuthorizeRequest,
   AuthorizeResponse,
   LoginOauthRequest,
-} from '../gen/proto/api/sso/v1/oauth_pb';
+} from "../gen/proto/api/sso/v1/oauth_pb";
 import type {
   CreateQrcodeRequest,
   CreateQrcodeResponse,
-} from '../gen/proto/api/sso/v1/ticket_pb';
+} from "../gen/proto/api/sso/v1/ticket_pb";
 import {
   StartVerificationRequestSchema,
   SubmitVerificationRequestSchema,
@@ -66,13 +67,20 @@ import {
   type StartVerificationResponse,
   type SubmitVerificationRequest,
   type SubmitVerificationResponse,
-} from '../gen/proto/api/common/v1/verification_pb';
+} from "../gen/proto/api/common/v1/verification_pb";
 import {
   clearLoginToken,
   getLoginToken,
   setLoginToken,
-} from './loginTokenStore';
-import { loadOidcContext } from './oidcContext';
+} from "./loginTokenStore";
+import { clearOidcContext, loadOidcContext } from "./oidcContext";
+import {
+  ConsentApproveRequestSchema,
+  ConsentDenyRequestSchema,
+  type ConsentApproveRequest,
+  type ConsentDenyRequest,
+  type ConsentResponse,
+} from "../gen/proto/api/account/v1/consent_pb";
 
 // ---------------------------------------------------------------------------
 // 入参类型（从生成物派生，不重复描述报文结构）
@@ -89,28 +97,51 @@ import { loadOidcContext } from './oidcContext';
  */
 type FlowInput<T extends { loginToken: string }> = Omit<
   MessageInput<T>,
-  'loginToken' | 'oidc' | 'ssoClientId'
+  "loginToken" | "oidc" | "ssoClientId"
 >;
 
 // ---------------------------------------------------------------------------
 // loginToken / oidc / ssoClientId 注入与信封响应后处理（§1.8 / §1.3 行 145）
 // ---------------------------------------------------------------------------
 
-/** OidcContext → google.protobuf.Struct 的 JSON 形状（原样透传，前端不解析，§2.2 行 425）。 */
+/** 回传 Struct 的七个授权参数白名单（§4.2）：mode / client_name / account 是注入的展示与分派字段，不是授权参数，绝不回传（防前端扩权）。 */
+const OIDC_FORWARD_KEYS = [
+  "client_id",
+  "redirect_uri",
+  "scope",
+  "state",
+  "nonce",
+  "code_challenge",
+  "code_challenge_method",
+] as const;
+
+/** OidcContext → google.protobuf.Struct 的 JSON 形状（仅七授权参数原样透传，前端不解析，§2.2 行 425）。 */
 function oidcToStruct(ctx: OidcContext): JsonObject {
   const out: JsonObject = {};
-  for (const [key, value] of Object.entries(ctx)) {
-    if (typeof value === 'string') {
+  for (const key of OIDC_FORWARD_KEYS) {
+    const value = ctx[key];
+    if (typeof value === "string") {
       out[key] = value;
     }
   }
   return out;
 }
 
-/** 注入快照 oidc（__AUTHLOFT_INIT__.oidc，接口文档 §8）；缺省 undefined。 */
-function snapshotOidc(): JsonObject | undefined {
+/**
+ * 注入快照 oidc（__AUTHLOFT_INIT__.oidc，接口文档 §8）；缺省 undefined。
+ * scopeOverride 为形态 A 勾选收敛后的子集（空格分隔），仅覆盖回传 Struct 的
+ * scope，其余六参数原样；服务端以注册 scopes 为上限权威重校（§4.2）。
+ */
+function snapshotOidc(scopeOverride?: string): JsonObject | undefined {
   const ctx = getInit()?.oidc;
-  return ctx === undefined ? undefined : oidcToStruct(ctx);
+  if (ctx === undefined) {
+    return undefined;
+  }
+  const out = oidcToStruct(ctx);
+  if (scopeOverride !== undefined && scopeOverride !== "") {
+    out.scope = scopeOverride;
+  }
+  return out;
 }
 
 /**
@@ -120,7 +151,7 @@ function snapshotOidc(): JsonObject | undefined {
  */
 function snapshotSsoClientId(): string | undefined {
   const clientId = getInit()?.sso?.clientId;
-  return clientId === undefined || clientId === '' ? undefined : clientId;
+  return clientId === undefined || clientId === "" ? undefined : clientId;
 }
 
 /** 跳转前落盘的 oidc（al_oidc_ctx，§2.7.2 行 599-600）；无值 undefined（读出即清）。 */
@@ -145,7 +176,7 @@ function flowTokenFields(
   ssoClientId?: string;
 } {
   const loginToken = getLoginToken();
-  if (loginToken !== '') {
+  if (loginToken !== "") {
     return { loginToken };
   }
   const oidc = oidcSource();
@@ -159,10 +190,10 @@ function flowTokenFields(
 
 /** 信封响应后处理（§1.3 行 145）：含 loginToken 无条件覆盖；status=success 清空。 */
 function applyEnvelope(response: LoginFlowResponse): LoginFlowResponse {
-  if (response.loginToken !== '') {
+  if (response.loginToken !== "") {
     setLoginToken(response.loginToken);
   }
-  if (response.status === 'success') {
+  if (response.status === "success") {
     clearLoginToken();
   }
   return response;
@@ -178,14 +209,19 @@ function applyEnvelope(response: LoginFlowResponse): LoginFlowResponse {
  */
 export type LoginDefaultInput = FlowInput<LoginDefaultRequest>;
 
-/** SsoService/LoginDefault（§2.2 行 414）：统一提交端点，flow=login，除 thirdparty 外。 */
+/**
+ * SsoService/LoginDefault（§2.2 行 414）：统一提交端点，flow=login，除 thirdparty 外。
+ * oidcScopeOverride 为形态 A 勾选收敛后的 scope 子集（空格分隔），仅首签回传；
+ * 非 OIDC 场景不传，行为与现状一致。
+ */
 export async function loginDefault(
   req: LoginDefaultInput,
+  oidcScopeOverride?: string,
 ): Promise<LoginFlowResponse> {
   return applyEnvelope(
     await ssoClient.loginDefault({
       ...req,
-      ...flowTokenFields(snapshotOidc, true),
+      ...flowTokenFields(() => snapshotOidc(oidcScopeOverride), true),
     }),
   );
 }
@@ -243,7 +279,7 @@ export async function loginOauth(
 function withLoginSso<T extends { scene?: string }>(
   req: T,
 ): T & { ssoClientId?: string } {
-  if (req.scene === 'bind') {
+  if (req.scene === "bind") {
     return req;
   }
   const ssoClientId = snapshotSsoClientId();
@@ -295,7 +331,7 @@ export async function getLoginTicket(
   });
   if (response.login !== undefined) {
     applyEnvelope(response.login);
-  } else if (response.status === 'success') {
+  } else if (response.status === "success") {
     clearLoginToken();
   }
   return response;
@@ -321,10 +357,10 @@ export function startLoginVerification(
   input: LoginVerificationInput = {},
 ): Promise<StartVerificationResponse> {
   const request = create(StartVerificationRequestSchema, {
-    bizPurpose: 'login',
-    operation: 'mfa_verify',
+    bizPurpose: "login",
+    operation: "mfa_verify",
     loginToken: getLoginToken(),
-    ...(input.method !== undefined && input.method !== ''
+    ...(input.method !== undefined && input.method !== ""
       ? { method: input.method }
       : {}),
     ...(input.captcha !== undefined
@@ -349,16 +385,16 @@ export function startLoginVerification(
  */
 export function captchaToStruct(captcha: CaptchaPayload): JsonObject {
   const out: JsonObject = {};
-  if (captcha.providerKey !== '') {
+  if (captcha.providerKey !== "") {
     out.providerKey = captcha.providerKey;
   }
-  if (captcha.id !== '') {
+  if (captcha.id !== "") {
     out.id = captcha.id;
   }
-  if (captcha.answer !== '') {
+  if (captcha.answer !== "") {
     out.answer = captcha.answer;
   }
-  if (captcha.token !== '') {
+  if (captcha.token !== "") {
     out.token = captcha.token;
   }
   return out;
@@ -381,7 +417,7 @@ export async function submitStepUp(
     loginToken: getLoginToken(),
   });
   const response = await ssoClient.submitVerification(request);
-  if (response.status === 'success') {
+  if (response.status === "success") {
     clearLoginToken();
   }
   return response;
@@ -398,7 +434,7 @@ export async function submitStepUp(
  * 请求级字段、不进因子 payload（§2.6 行 675）。
  */
 function loginPayloadToStruct(
-  payload: LoginDefaultInput['payload'],
+  payload: LoginDefaultInput["payload"],
 ): JsonObject {
   const out: JsonObject = {};
   if (payload === undefined) {
@@ -406,9 +442,9 @@ function loginPayloadToStruct(
   }
   for (const [name, raw] of Object.entries(payload)) {
     const value: unknown = raw;
-    if (typeof value === 'string' && value !== '') {
+    if (typeof value === "string" && value !== "") {
       out[name] = value;
-    } else if (value !== null && typeof value === 'object') {
+    } else if (value !== null && typeof value === "object") {
       out[name] = value as JsonObject;
     }
   }
@@ -451,7 +487,7 @@ export async function submitLoginFactor(
 ): Promise<LoginFlowResponse> {
   // method 经 MessageInput 全字段 optional（§9 第 18 条零值兜底）；提交恒带
   // state.method，空串仅作类型兜底、不改变两段式取挑战的语义。
-  const method = input.method ?? '';
+  const method = input.method ?? "";
   const challenge = await startLoginVerification({
     method,
     ...(input.captcha !== undefined
@@ -463,7 +499,7 @@ export async function submitLoginFactor(
     method,
     loginPayloadToStruct(input.payload),
   );
-  if (response.status === 'success') {
+  if (response.status === "success") {
     clearLoginToken();
   }
   return stepUpToEnvelope(response);
@@ -475,3 +511,94 @@ export type {
   SubmitVerificationRequest,
   SubmitVerificationResponse,
 };
+
+// ---------------------------------------------------------------------------
+// OIDC 授权同意（形态 B，§3.10 / 前端架构 §4.4）：两 RPC 走用户会话鉴权的
+// accountClient（transport credentials:include，§3.1），落点消息由 §1.3 终点
+// 顺序消费；本模块只做请求映射与终点解析（纯函数、node 可测），不直接 replace。
+// ---------------------------------------------------------------------------
+
+/** ConsentApprove 请求入参（§3.10 七参数 + 勾选子集，取自注入，不新增字段）。 */
+export type ConsentApproveInput = MessageInput<ConsentApproveRequest>;
+/** ConsentDeny 请求入参（§3.10 client_id / redirect_uri / state）。 */
+export type ConsentDenyInput = MessageInput<ConsentDenyRequest>;
+
+/**
+ * 注入 OidcContext → ConsentApprove 请求字段映射（纯函数，node 可测）：
+ * 七参数原样取自注入（缺省空串），selectedScope 为右栏上抛的勾选子集。
+ */
+export function toConsentApproveInput(
+  ctx: OidcContext,
+  selectedScope: string,
+): ConsentApproveInput {
+  return {
+    clientId: ctx.client_id,
+    redirectUri: ctx.redirect_uri,
+    scope: ctx.scope ?? "",
+    selectedScope,
+    state: ctx.state ?? "",
+    nonce: ctx.nonce ?? "",
+    codeChallenge: ctx.code_challenge ?? "",
+    codeChallengeMethod: ctx.code_challenge_method ?? "",
+  };
+}
+
+/** 注入 OidcContext → ConsentDeny 请求字段映射（纯函数，node 可测）。 */
+export function toConsentDenyInput(ctx: OidcContext): ConsentDenyInput {
+  return {
+    clientId: ctx.client_id,
+    redirectUri: ctx.redirect_uri,
+    state: ctx.state ?? "",
+  };
+}
+
+/** AccountService/ConsentApprove（§3.10）：同意授权，响应为落点消息（不 302）。 */
+export function consentApprove(
+  req: ConsentApproveInput,
+): Promise<ConsentResponse> {
+  return accountClient.consentApprove(create(ConsentApproveRequestSchema, req));
+}
+
+/** AccountService/ConsentDeny（§3.10）：拒绝授权，响应为落点消息（不 302）。 */
+export function consentDeny(req: ConsentDenyInput): Promise<ConsentResponse> {
+  return accountClient.consentDeny(create(ConsentDenyRequestSchema, req));
+}
+
+/**
+ * 同意 / 拒绝响应的终点 URL（§1.3 顺序 1→2 的纯解析，node 可测）：
+ * syncCookieUrl 非空 → 它（多域名同步首跳）；否则 redirectTo；两者皆空 →
+ * 默认落点（防御，服务端约定必填其一）。同意落点复用登录终点顺序，不另造
+ * 分支（§1.3 行 171 / 前端架构 §4.4 行 558）。
+ */
+export function consentTerminalUrl(response: ConsentResponse): string {
+  if (response.syncCookieUrl !== "") {
+    return response.syncCookieUrl;
+  }
+  if (response.redirectTo !== "") {
+    return response.redirectTo;
+  }
+  return DEFAULT_ACCOUNT_HOME;
+}
+
+/**
+ * 同意 / 拒绝成功后的落点副作用（§1.3 顺序 1→2，node 可测）：
+ * 先清 al_oidc_ctx（§4.2 注：回调读完即清，不留存），再按 syncCookieUrl →
+ * redirectTo 跳转。navigate 由调用方注入（生产传 location.replace），使effect
+ * 用例可用记录函数断言目标 URL，不依赖真实浏览器。
+ */
+export function landConsent(
+  response: ConsentResponse,
+  navigate: (url: string) => void,
+  clear: () => void = clearConsentOidcContext,
+): void {
+  clear();
+  const url = consentTerminalUrl(response);
+  if (url !== "") {
+    navigate(url);
+  }
+}
+
+/** 同意成功后清理三方跳转落盘的 OIDC 上下文（§4.2 注：原参数不落 localStorage，仅 al_oidc_ctx 例外）。 */
+export function clearConsentOidcContext(): void {
+  clearOidcContext();
+}

@@ -12,7 +12,7 @@
  * 未知 `status` / `code` 一律走兜底，不暴露内部信息；`ErrorInfo.message` /
  * `ConnectError.message` 只作展示兜底（§1.5 行 202：i18n 优先，其次本字段），不参与分支。
  */
-import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
+import type { CaptchaConfig } from "../../gen/proto/api/common/v1/captcha_pb";
 
 // ---------------------------------------------------------------------------
 // ApiError：transport 错误归一的目标形态（http.ts 构造，docs/前端架构.md §3.1）
@@ -50,7 +50,7 @@ export class ApiError extends Error {
 
   constructor(init: ApiErrorInit) {
     super(init.message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.httpStatus = init.httpStatus;
     this.code = init.code;
     this.requestId = init.requestId;
@@ -74,31 +74,31 @@ export class ApiError extends Error {
 /** §1.6「前端动作」列归纳出的封闭集合；业务分支只认 status（docs/前端架构.md §9 第 9 条）。 */
 export type StatusAction =
   /** next：按 next_step 继续渲染。 */
-  | 'render_next_step'
+  | "render_next_step"
   /** mfa_required：就地渲染二次验证方式选择器，不跳页。 */
-  | 'render_mfa'
+  | "render_mfa"
   /** binding_required：渲染绑定选择页（§2.7.5）。 */
-  | 'render_binding'
+  | "render_binding"
   /** success：清空 login_token → 跳转同步 → redirect_to。 */
-  | 'complete'
+  | "complete"
   /** pending / scanned：继续轮询，无动作。 */
-  | 'continue_polling'
+  | "continue_polling"
   /** expired：停止轮询，提示刷新二维码。 */
-  | 'stop_polling'
+  | "stop_polling"
   /** step / token / state 类失败：回到第一步。 */
-  | 'restart'
+  | "restart"
   /** captcha_required：打开 captcha 弹窗（配置取错误体 details 的 CaptchaConfig），确认后重提。 */
-  | 'require_captcha'
+  | "require_captcha"
   /** captcha_invalid：弹窗不关，按错误体 details 的 CaptchaConfig 换新凭据后重提。 */
-  | 'reset_captcha'
+  | "reset_captcha"
   /** too_many_requests / locked：倒计时（retry_after）/ 展示剩余时长。 */
-  | 'countdown'
+  | "countdown"
   /** 字段级提示。 */
-  | 'field_error'
+  | "field_error"
   /** method_disabled / provider_disabled：刷新方式列表。 */
-  | 'refresh_methods'
+  | "refresh_methods"
   /** 普通提示：i18n 优先，信封 error.message 作兜底展示（§1.6 行 239 / 行 271）。 */
-  | 'message';
+  | "message";
 
 /** 层①解析结果。 */
 export interface StatusResolution {
@@ -117,39 +117,39 @@ export interface StatusResolution {
  * （§1.6 行 286），故不在下方流程态表内。
  */
 export type FlowStatusKey =
-  | 'next'
-  | 'mfa_required'
-  | 'binding_required'
-  | 'success'
-  | 'pending'
-  | 'scanned'
-  | 'expired'
-  | 'failed'
-  | 'captcha_required'
-  | 'captcha_invalid'
-  | 'too_many_requests'
-  | 'too_many_attempts'
-  | 'locked'
-  | 'invalid_request'
-  | 'invalid_credentials'
-  | 'invalid_code'
-  | 'code_expired'
-  | 'method_disabled'
-  | 'step_invalid'
-  | 'token_invalid'
-  | 'token_expired'
-  | 'state_mismatch'
-  | 'user_disabled'
-  | 'user_not_found'
-  | 'password_weak'
-  | 'username_taken'
-  | 'target_taken'
-  | 'signup_disabled'
-  | 'reset_disabled'
-  | 'provider_disabled'
-  | 'file_too_large'
-  | 'file_type_not_allowed'
-  | 'internal_error';
+  | "next"
+  | "mfa_required"
+  | "binding_required"
+  | "success"
+  | "pending"
+  | "scanned"
+  | "expired"
+  | "failed"
+  | "captcha_required"
+  | "captcha_invalid"
+  | "too_many_requests"
+  | "too_many_attempts"
+  | "locked"
+  | "invalid_request"
+  | "invalid_credentials"
+  | "invalid_code"
+  | "code_expired"
+  | "method_disabled"
+  | "step_invalid"
+  | "token_invalid"
+  | "token_expired"
+  | "state_mismatch"
+  | "user_disabled"
+  | "user_not_found"
+  | "password_weak"
+  | "username_taken"
+  | "target_taken"
+  | "signup_disabled"
+  | "reset_disabled"
+  | "provider_disabled"
+  | "file_too_large"
+  | "file_type_not_allowed"
+  | "internal_error";
 
 /**
  * 真正的流程态（位置一）：§1.6 词汇去掉仅作 `ErrorInfo.code` 的
@@ -157,7 +157,7 @@ export type FlowStatusKey =
  */
 export type FlowStatus = Exclude<
   FlowStatusKey,
-  'captcha_required' | 'captcha_invalid'
+  "captcha_required" | "captcha_invalid"
 >;
 
 /** 流程态表类型别名（保持声明行简短，避免格式化把整张表整体重排）。 */
@@ -171,166 +171,166 @@ type FlowStatusTable = Readonly<Record<FlowStatus, StatusResolution>>;
 export const FLOW_STATUS_TABLE: FlowStatusTable = {
   next: {
     retryable: false,
-    action: 'render_next_step',
-    i18nKey: 'errors.status.next',
+    action: "render_next_step",
+    i18nKey: "errors.status.next",
   },
   mfa_required: {
     retryable: false,
-    action: 'render_mfa',
-    i18nKey: 'errors.status.mfa_required',
+    action: "render_mfa",
+    i18nKey: "errors.status.mfa_required",
   },
   binding_required: {
     retryable: false,
-    action: 'render_binding',
-    i18nKey: 'errors.status.binding_required',
+    action: "render_binding",
+    i18nKey: "errors.status.binding_required",
   },
   success: {
     retryable: false,
-    action: 'complete',
-    i18nKey: 'errors.status.success',
+    action: "complete",
+    i18nKey: "errors.status.success",
   },
   pending: {
     retryable: false,
-    action: 'continue_polling',
-    i18nKey: 'errors.status.pending',
+    action: "continue_polling",
+    i18nKey: "errors.status.pending",
   },
   scanned: {
     retryable: false,
-    action: 'continue_polling',
-    i18nKey: 'errors.status.scanned',
+    action: "continue_polling",
+    i18nKey: "errors.status.scanned",
   },
   expired: {
     retryable: false,
-    action: 'stop_polling',
-    i18nKey: 'errors.status.expired',
+    action: "stop_polling",
+    i18nKey: "errors.status.expired",
   },
   failed: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.failed',
+    action: "message",
+    i18nKey: "errors.status.failed",
   },
   too_many_requests: {
     retryable: false,
-    action: 'countdown',
-    i18nKey: 'errors.status.too_many_requests',
+    action: "countdown",
+    i18nKey: "errors.status.too_many_requests",
   },
   too_many_attempts: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.too_many_attempts',
+    action: "message",
+    i18nKey: "errors.status.too_many_attempts",
   },
   locked: {
     retryable: false,
-    action: 'countdown',
-    i18nKey: 'errors.status.locked',
+    action: "countdown",
+    i18nKey: "errors.status.locked",
   },
   invalid_request: {
     retryable: false,
-    action: 'field_error',
-    i18nKey: 'errors.status.invalid_request',
+    action: "field_error",
+    i18nKey: "errors.status.invalid_request",
   },
   invalid_credentials: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.invalid_credentials',
+    action: "message",
+    i18nKey: "errors.status.invalid_credentials",
   },
   invalid_code: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.invalid_code',
+    action: "message",
+    i18nKey: "errors.status.invalid_code",
   },
   code_expired: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.code_expired',
+    action: "message",
+    i18nKey: "errors.status.code_expired",
   },
   method_disabled: {
     retryable: false,
-    action: 'refresh_methods',
-    i18nKey: 'errors.status.method_disabled',
+    action: "refresh_methods",
+    i18nKey: "errors.status.method_disabled",
   },
   step_invalid: {
     retryable: false,
-    action: 'restart',
-    i18nKey: 'errors.status.step_invalid',
+    action: "restart",
+    i18nKey: "errors.status.step_invalid",
   },
   token_invalid: {
     retryable: false,
-    action: 'restart',
-    i18nKey: 'errors.status.token_invalid',
+    action: "restart",
+    i18nKey: "errors.status.token_invalid",
   },
   token_expired: {
     retryable: false,
-    action: 'restart',
-    i18nKey: 'errors.status.token_expired',
+    action: "restart",
+    i18nKey: "errors.status.token_expired",
   },
   state_mismatch: {
     retryable: false,
-    action: 'restart',
-    i18nKey: 'errors.status.state_mismatch',
+    action: "restart",
+    i18nKey: "errors.status.state_mismatch",
   },
   user_disabled: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.user_disabled',
+    action: "message",
+    i18nKey: "errors.status.user_disabled",
   },
   user_not_found: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.user_not_found',
+    action: "message",
+    i18nKey: "errors.status.user_not_found",
   },
   password_weak: {
     retryable: true,
-    action: 'field_error',
-    i18nKey: 'errors.status.password_weak',
+    action: "field_error",
+    i18nKey: "errors.status.password_weak",
   },
   username_taken: {
     retryable: true,
-    action: 'field_error',
-    i18nKey: 'errors.status.username_taken',
+    action: "field_error",
+    i18nKey: "errors.status.username_taken",
   },
   target_taken: {
     retryable: true,
-    action: 'field_error',
-    i18nKey: 'errors.status.target_taken',
+    action: "field_error",
+    i18nKey: "errors.status.target_taken",
   },
   signup_disabled: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.signup_disabled',
+    action: "message",
+    i18nKey: "errors.status.signup_disabled",
   },
   reset_disabled: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.status.reset_disabled',
+    action: "message",
+    i18nKey: "errors.status.reset_disabled",
   },
   provider_disabled: {
     retryable: false,
-    action: 'refresh_methods',
-    i18nKey: 'errors.status.provider_disabled',
+    action: "refresh_methods",
+    i18nKey: "errors.status.provider_disabled",
   },
   file_too_large: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.file_too_large',
+    action: "message",
+    i18nKey: "errors.status.file_too_large",
   },
   file_type_not_allowed: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.file_type_not_allowed',
+    action: "message",
+    i18nKey: "errors.status.file_type_not_allowed",
   },
   internal_error: {
     retryable: true,
-    action: 'message',
-    i18nKey: 'errors.status.internal_error',
+    action: "message",
+    i18nKey: "errors.status.internal_error",
   },
 };
 
 /** 未知流程态的兜底口径：不暴露内部信息（§1.6 行 272）。 */
 const FLOW_STATUS_FALLBACK: StatusResolution = {
   retryable: false,
-  action: 'message',
-  i18nKey: 'errors.status.unknown',
+  action: "message",
+  i18nKey: "errors.status.unknown",
 };
 
 /** 解析登录流程域顶层 status（§1.3 信封，位置一）；未知值走兜底，不透出原文。 */
@@ -355,12 +355,12 @@ export function resolveFlowStatus(status: string): StatusResolution {
 export const STATUS_FIELD_MAP: Readonly<
   Partial<Record<FlowStatusKey, string>>
 > = {
-  invalid_credentials: 'password',
-  invalid_code: 'code',
-  code_expired: 'code',
-  password_weak: 'password',
-  username_taken: 'username',
-  target_taken: 'target',
+  invalid_credentials: "password",
+  invalid_code: "code",
+  code_expired: "code",
+  password_weak: "password",
+  username_taken: "username",
+  target_taken: "target",
 };
 
 /** 查 status 的字段落点；未登记 / 未知 status → undefined（调用方回落 banner）。 */
@@ -374,49 +374,50 @@ export function fieldForStatus(status: string): string | undefined {
 
 /** §1.5 Connect 标准码封闭集（行 184-193，connect-go v1.21.1 → HTTP 映射）；协议级错误无 ErrorInfo detail（行 224）。 */
 export type ConnectStandardCode =
-  | 'invalid_argument'
-  | 'unauthenticated'
-  | 'permission_denied'
-  | 'not_found'
-  | 'already_exists'
-  | 'resource_exhausted'
-  | 'internal'
-  | 'unavailable';
+  | "invalid_argument"
+  | "unauthenticated"
+  | "permission_denied"
+  | "not_found"
+  | "already_exists"
+  | "resource_exhausted"
+  | "internal"
+  | "unavailable";
 
 /**
- * §1.6 失败类词汇（docs/接口文档.md 行 230-261 中非纯流程态的全部，26 词）；
+ * §1.6 失败类词汇（docs/接口文档.md 行 230-261 中非纯流程态的全部，27 词）；
  * 纯流程态（next / mfa_required / binding_required / success / pending / scanned /
  * expired）只在位置一出现，不得混入本位置（§1.6 行 267「两个位置」）；
  * `captcha_required` / `captcha_invalid` 仅在本位置出现（§1.6 行 286）。
  * `internal_error` 是 §1.6 词汇，与 Connect 标准码 `internal` 分属两套拼法，各自入表。
  */
 export type BusinessCode =
-  | 'failed'
-  | 'captcha_required'
-  | 'captcha_invalid'
-  | 'too_many_requests'
-  | 'too_many_attempts'
-  | 'locked'
-  | 'invalid_request'
-  | 'invalid_credentials'
-  | 'invalid_code'
-  | 'code_expired'
-  | 'method_disabled'
-  | 'step_invalid'
-  | 'token_invalid'
-  | 'token_expired'
-  | 'state_mismatch'
-  | 'user_disabled'
-  | 'user_not_found'
-  | 'password_weak'
-  | 'username_taken'
-  | 'target_taken'
-  | 'signup_disabled'
-  | 'reset_disabled'
-  | 'provider_disabled'
-  | 'file_too_large'
-  | 'file_type_not_allowed'
-  | 'internal_error';
+  | "failed"
+  | "captcha_required"
+  | "captcha_invalid"
+  | "too_many_requests"
+  | "too_many_attempts"
+  | "locked"
+  | "invalid_request"
+  | "invalid_scope"
+  | "invalid_credentials"
+  | "invalid_code"
+  | "code_expired"
+  | "method_disabled"
+  | "step_invalid"
+  | "token_invalid"
+  | "token_expired"
+  | "state_mismatch"
+  | "user_disabled"
+  | "user_not_found"
+  | "password_weak"
+  | "username_taken"
+  | "target_taken"
+  | "signup_disabled"
+  | "reset_disabled"
+  | "provider_disabled"
+  | "file_too_large"
+  | "file_type_not_allowed"
+  | "internal_error";
 
 /** 位置二的取值域：§1.6 失败词（ErrorInfo.code）+ Connect 标准码（无 detail 兜底）；域内自造值（如 §13 的 config_invalid）走兜底。 */
 export type ErrorCode = BusinessCode | ConnectStandardCode;
@@ -434,106 +435,115 @@ export interface CodeResolution {
  * 位置出现（§1.6 行 286），显式登记。i18n 键前缀统一为 errors.code.<词>。
  */
 const failureResolutions: Readonly<Record<BusinessCode, CodeResolution>> = {
-  failed: { ...FLOW_STATUS_TABLE.failed, i18nKey: 'errors.code.failed' },
+  failed: { ...FLOW_STATUS_TABLE.failed, i18nKey: "errors.code.failed" },
   // captcha 两码仅作 ErrorInfo.code（§1.6 行 286），无对应流程态可派生，显式登记。
   captcha_required: {
     retryable: true,
-    action: 'require_captcha',
-    i18nKey: 'errors.code.captcha_required',
+    action: "require_captcha",
+    i18nKey: "errors.code.captcha_required",
   },
   captcha_invalid: {
     retryable: true,
-    action: 'reset_captcha',
-    i18nKey: 'errors.code.captcha_invalid',
+    action: "reset_captcha",
+    i18nKey: "errors.code.captcha_invalid",
   },
   too_many_requests: {
     ...FLOW_STATUS_TABLE.too_many_requests,
-    i18nKey: 'errors.code.too_many_requests',
+    i18nKey: "errors.code.too_many_requests",
   },
   too_many_attempts: {
     ...FLOW_STATUS_TABLE.too_many_attempts,
-    i18nKey: 'errors.code.too_many_attempts',
+    i18nKey: "errors.code.too_many_attempts",
   },
-  locked: { ...FLOW_STATUS_TABLE.locked, i18nKey: 'errors.code.locked' },
+  locked: { ...FLOW_STATUS_TABLE.locked, i18nKey: "errors.code.locked" },
   invalid_request: {
     ...FLOW_STATUS_TABLE.invalid_request,
-    i18nKey: 'errors.code.invalid_request',
+    i18nKey: "errors.code.invalid_request",
+  },
+  /**
+   * invalid_scope 仅作 ErrorInfo.code（§1.6 行 268/290）：OIDC 同意 scope 类
+   * 校验失败，不可重试（回授权页重新勾选属用户主动操作，非自动重提）。
+   */
+  invalid_scope: {
+    retryable: false,
+    action: "message",
+    i18nKey: "errors.code.invalid_scope",
   },
   invalid_credentials: {
     ...FLOW_STATUS_TABLE.invalid_credentials,
-    i18nKey: 'errors.code.invalid_credentials',
+    i18nKey: "errors.code.invalid_credentials",
   },
   invalid_code: {
     ...FLOW_STATUS_TABLE.invalid_code,
-    i18nKey: 'errors.code.invalid_code',
+    i18nKey: "errors.code.invalid_code",
   },
   code_expired: {
     ...FLOW_STATUS_TABLE.code_expired,
-    i18nKey: 'errors.code.code_expired',
+    i18nKey: "errors.code.code_expired",
   },
   method_disabled: {
     ...FLOW_STATUS_TABLE.method_disabled,
-    i18nKey: 'errors.code.method_disabled',
+    i18nKey: "errors.code.method_disabled",
   },
   step_invalid: {
     ...FLOW_STATUS_TABLE.step_invalid,
-    i18nKey: 'errors.code.step_invalid',
+    i18nKey: "errors.code.step_invalid",
   },
   token_invalid: {
     ...FLOW_STATUS_TABLE.token_invalid,
-    i18nKey: 'errors.code.token_invalid',
+    i18nKey: "errors.code.token_invalid",
   },
   token_expired: {
     ...FLOW_STATUS_TABLE.token_expired,
-    i18nKey: 'errors.code.token_expired',
+    i18nKey: "errors.code.token_expired",
   },
   state_mismatch: {
     ...FLOW_STATUS_TABLE.state_mismatch,
-    i18nKey: 'errors.code.state_mismatch',
+    i18nKey: "errors.code.state_mismatch",
   },
   user_disabled: {
     ...FLOW_STATUS_TABLE.user_disabled,
-    i18nKey: 'errors.code.user_disabled',
+    i18nKey: "errors.code.user_disabled",
   },
   user_not_found: {
     ...FLOW_STATUS_TABLE.user_not_found,
-    i18nKey: 'errors.code.user_not_found',
+    i18nKey: "errors.code.user_not_found",
   },
   password_weak: {
     ...FLOW_STATUS_TABLE.password_weak,
-    i18nKey: 'errors.code.password_weak',
+    i18nKey: "errors.code.password_weak",
   },
   username_taken: {
     ...FLOW_STATUS_TABLE.username_taken,
-    i18nKey: 'errors.code.username_taken',
+    i18nKey: "errors.code.username_taken",
   },
   target_taken: {
     ...FLOW_STATUS_TABLE.target_taken,
-    i18nKey: 'errors.code.target_taken',
+    i18nKey: "errors.code.target_taken",
   },
   signup_disabled: {
     ...FLOW_STATUS_TABLE.signup_disabled,
-    i18nKey: 'errors.code.signup_disabled',
+    i18nKey: "errors.code.signup_disabled",
   },
   reset_disabled: {
     ...FLOW_STATUS_TABLE.reset_disabled,
-    i18nKey: 'errors.code.reset_disabled',
+    i18nKey: "errors.code.reset_disabled",
   },
   provider_disabled: {
     ...FLOW_STATUS_TABLE.provider_disabled,
-    i18nKey: 'errors.code.provider_disabled',
+    i18nKey: "errors.code.provider_disabled",
   },
   file_too_large: {
     ...FLOW_STATUS_TABLE.file_too_large,
-    i18nKey: 'errors.code.file_too_large',
+    i18nKey: "errors.code.file_too_large",
   },
   file_type_not_allowed: {
     ...FLOW_STATUS_TABLE.file_type_not_allowed,
-    i18nKey: 'errors.code.file_type_not_allowed',
+    i18nKey: "errors.code.file_type_not_allowed",
   },
   internal_error: {
     ...FLOW_STATUS_TABLE.internal_error,
-    i18nKey: 'errors.code.internal_error',
+    i18nKey: "errors.code.internal_error",
   },
 };
 
@@ -546,49 +556,49 @@ const standardResolutions: Readonly<
 > = {
   invalid_argument: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.invalid_argument',
+    action: "message",
+    i18nKey: "errors.code.invalid_argument",
   },
   unauthenticated: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.unauthenticated',
+    action: "message",
+    i18nKey: "errors.code.unauthenticated",
   },
   permission_denied: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.permission_denied',
+    action: "message",
+    i18nKey: "errors.code.permission_denied",
   },
   not_found: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.not_found',
+    action: "message",
+    i18nKey: "errors.code.not_found",
   },
   already_exists: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.already_exists',
+    action: "message",
+    i18nKey: "errors.code.already_exists",
   },
   resource_exhausted: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.resource_exhausted',
+    action: "message",
+    i18nKey: "errors.code.resource_exhausted",
   },
   internal: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.internal',
+    action: "message",
+    i18nKey: "errors.code.internal",
   },
   unavailable: {
     retryable: false,
-    action: 'message',
-    i18nKey: 'errors.code.unavailable',
+    action: "message",
+    i18nKey: "errors.code.unavailable",
   },
 };
 
 /**
- * 错误码表（位置二）：§1.6 失败词（26，其中 captcha 两码仅此位置出现）+ §1.5
- * Connect 标准码（8），共 34 键；新增取值必须同步本模块映射（§1.6 行 270）。
+ * 错误码表（位置二）：§1.6 失败词（27，其中 captcha 两码仅此位置出现，含
+ * invalid_scope 仅作 ErrorInfo.code）+ §1.5 Connect 标准码（8），共 35 键；新增取值必须同步本模块映射（§1.6 行 270）。
  */
 export const CODE_TABLE: Readonly<Record<ErrorCode, CodeResolution>> = {
   ...failureResolutions,
@@ -598,8 +608,8 @@ export const CODE_TABLE: Readonly<Record<ErrorCode, CodeResolution>> = {
 /** 未知 code 的兜底口径（客户端自造 code 一并兜底，不透出 message 原文）。 */
 const CODE_FALLBACK: CodeResolution = {
   retryable: false,
-  action: 'message',
-  i18nKey: 'errors.code.unknown',
+  action: "message",
+  i18nKey: "errors.code.unknown",
 };
 
 /**
@@ -613,7 +623,7 @@ export function resolveCode(error: ApiError): CodeResolution {
   );
 }
 
-/** code 是否在位置二封闭集（34 键）内——http.ts 归一「已知码才透出 message」的判据（§1.5 行 202）。 */
+/** code 是否在位置二封闭集（35 键）内——http.ts 归一「已知码才透出 message」的判据（§1.5 行 202）。 */
 export function isKnownCode(code: string): boolean {
   return Object.prototype.hasOwnProperty.call(CODE_TABLE, code);
 }
