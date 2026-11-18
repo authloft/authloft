@@ -29,7 +29,7 @@ import {
   type OidcContext,
   type SnapshotProvider,
 } from '../../shared/types/init';
-import { saveOidcContext } from '../oidcContext';
+import { getOidcSelectedScope, saveOidcContext } from '../oidcContext';
 import styles from './ProviderButtons.module.less';
 
 // ---------------------------------------------------------------------------
@@ -111,9 +111,18 @@ async function requestAuthorizeUrl(provider: string): Promise<string> {
   return response.authorizeUrl;
 }
 
-/** 缺省 OIDC 来源：注入快照（§2.7.2 行 585：OIDC 上下文来自 /auth/authorize）。 */
+/**
+ * 缺省 OIDC 来源：注入快照（§2.7.2 行 585：OIDC 上下文来自 /auth/authorize）。
+ * scope 以勾选收敛子集覆盖（§4.2：三方路径与主因子共用同一子集，落盘前收敛，
+ * 被取消项不落盘）——收敛点为空串（plain / 未同步）回退注入原值。
+ */
 function readSnapshotOidc(): OidcContext | undefined {
-  return getInit()?.oidc;
+  const ctx = getInit()?.oidc;
+  if (ctx === undefined) {
+    return undefined;
+  }
+  const selected = getOidcSelectedScope();
+  return selected === '' ? ctx : { ...ctx, scope: selected };
 }
 
 /**

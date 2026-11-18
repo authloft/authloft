@@ -9,7 +9,7 @@
  * bigint；captcha 结构无 int64 字段、三处同结构同字段名（§2.5 行 476），类型
  * 直接取 gen 的 api.common.v1.CaptchaConfig，不双份手写（前端架构 §3.1）。
  */
-import type { CaptchaConfig } from "../../gen/proto/api/common/v1/captcha_pb";
+import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 
 /**
  * 渲染字段（§2.1 行 384-394；api.sso.v1.Field 的注入 JSON 形状，见 gen
@@ -96,7 +96,7 @@ export interface OidcAccountContext {
  * 免同意直跳由后端 302，不渲染本页、前端不感知。注入值可能为未知串，消费方
  * 按严格相等分派、落到默认分支。
  */
-export type OidcMode = "login" | "consent";
+export type OidcMode = 'login' | 'consent';
 
 /**
  * OIDC 授权上下文（§4.2 行 1081：七个原样参数；前端首次请求原样回传，不解析）。
@@ -115,6 +115,14 @@ export interface OidcContext {
   mode?: OidcMode;
   client_name?: string;
   account?: OidcAccountContext;
+  /**
+   * 形态 B 注入的已授权 scope 集（§8 / §4.2 形态 B）：该用户对该客户端的
+   * 已授权并集，空格分隔、编码与 scope 一致，空集合法（空串）。UI 据此锁定
+   * 已授权项不可取消（授权记录只扩不缩）。形态 A 无此键，消费方按
+   * undefined 回退现状（仅 openid 恒锁）。属展示/锁定字段，不进
+   * oidcToStruct 的回传白名单（防前端扩权，服务端按注入重校）。
+   */
+  granted_scopes?: string;
 }
 
 /**
@@ -148,7 +156,7 @@ declare global {
 }
 
 export function getSiteName(): string {
-  return window.__AUTHLOFT_SITE_NAME__ || "Authloft";
+  return window.__AUTHLOFT_SITE_NAME__ || 'Authloft';
 }
 
 /**
@@ -157,7 +165,7 @@ export function getSiteName(): string {
  * 非浏览器环境返回 undefined。
  */
 export function getInit(): AuthloftInit | undefined {
-  if (typeof window === "undefined") {
+  if (typeof window === 'undefined') {
     return undefined;
   }
   return window.__AUTHLOFT_INIT__;

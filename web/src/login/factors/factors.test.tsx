@@ -1,7 +1,7 @@
 // tsconfig 的 moduleResolution=node 不识别 rstack 的 exports 子路径
 //（tsconfig 现代化后移除）。
 // @ts-ignore
-import { beforeEach, describe, expect, rs, test } from 'rstack/test';
+import { afterEach, beforeEach, describe, expect, rs, test } from 'rstack/test';
 import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 login-container.test.ts / components.test.ts 惯例）；
@@ -20,6 +20,7 @@ import {
 import { RecoveryCodeForm, recoverySubmitGuard } from './RecoveryCodeForm';
 import { WebAuthnButton, authenticate, isWebAuthnForm } from './WebAuthnButton';
 import { lookupFactor } from './registry';
+import { setOidcSelectedScope } from '../oidcContext';
 
 const { createElement } = React;
 
@@ -348,6 +349,10 @@ describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 
     redirect_uri: 'https://app/cb',
   };
 
+  afterEach(() => {
+    setOidcSelectedScope(''); // 勾选收敛点跨用例复位
+  });
+
   test('Authorize 成功 → 跳转前落盘 oidc（§2.7.2 行 599-600）→ 返回 authorizeUrl', async () => {
     const saved: OidcContext[] = [];
     const url = await startRedirect('qq', {
@@ -392,6 +397,47 @@ describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 
     });
     expect(url).toBe('https://auth.example/authorize');
     expect(saved).toHaveLength(0);
+  });
+
+  test('勾选收敛（§4.2）：缺省 readOidc 落盘前以收敛子集覆盖 scope（被取消项不含）', async () => {
+    const snapshot: OidcContext = {
+      ...OIDC,
+      scope: 'openid profile email phone',
+    };
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: { al_root: 'https://uc.test/', oidc: snapshot },
+    });
+    setOidcSelectedScope('openid profile');
+    const saved: OidcContext[] = [];
+    // readOidc 缺省 = 注入快照 + 收敛覆盖（生产路径，不经 deps 替身）。
+    const url = await startRedirect('qq', {
+      request: async () => 'https://auth.example/authorize',
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(url).toBe('https://auth.example/authorize');
+    expect(saved).toHaveLength(1);
+    expect(saved[0].scope).toBe('openid profile');
+    expect(saved[0].scope).not.toContain('email');
+    // 其余参数原样（仅 scope 收敛）。
+    expect(saved[0].client_id).toBe('cid');
+    expect(saved[0].redirect_uri).toBe('https://app/cb');
+  });
+
+  test('收敛点空串（未同步 / plain 直登）→ 落盘注入原值（现状不变）', async () => {
+    const snapshot: OidcContext = {
+      ...OIDC,
+      scope: 'openid profile email phone',
+    };
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: { al_root: 'https://uc.test/', oidc: snapshot },
+    });
+    const saved: OidcContext[] = [];
+    await startRedirect('qq', {
+      request: async () => 'https://auth.example/authorize',
+      save: (ctx) => saved.push(ctx),
+    });
+    expect(saved).toHaveLength(1);
+    expect(saved[0].scope).toBe('openid profile email phone');
   });
 });
 

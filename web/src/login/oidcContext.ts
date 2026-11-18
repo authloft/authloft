@@ -84,3 +84,28 @@ export function clearOidcContext(): void {
   }
   window.localStorage.removeItem(OIDC_CTX_KEY);
 }
+
+// ---------------------------------------------------------------------------
+// 形态 A 勾选收敛子集（会话内存态；§4.2：勾选收窄适用于全部首签路径）
+// ---------------------------------------------------------------------------
+
+/**
+ * 授权页（LoginPage 形态 A）右栏勾选收敛后的 scope 子集：主因子经
+ * LoginContainer.oidcScope 显式传参，而扫码（getLoginTicket）/ 注册
+ * （register）/ 三方跳转落盘三条路径的消费方（api.snapshotOidc、
+ * ProviderButtons.readSnapshotOidc）无 React 状态可达——LoginPage 把勾选集
+ * 同步到本收敛点，三条路径与主因子共用同一子集、不放大（子集恒 ⊆ 注入的
+ * 有效 scope）。会话内存态：SPA 内跨路由存活（授权页 → 注册页）、整页跳转
+ * 即失效，不落盘、不进 localStorage。
+ */
+let oidcSelectedScope = '';
+
+/** 授权页同步勾选子集（空格分隔）；空串 = 无收敛（消费方回退注入原值）。 */
+export function setOidcSelectedScope(scope: string): void {
+  oidcSelectedScope = scope;
+}
+
+/** 读当前勾选收敛子集；空串 = 无收敛。 */
+export function getOidcSelectedScope(): string {
+  return oidcSelectedScope;
+}

@@ -10,15 +10,15 @@ import {
   expect,
   rs,
   test,
-} from "rstack/test";
-import { setupServer } from "msw/node";
-import { http, HttpResponse } from "msw";
+} from 'rstack/test';
+import { setupServer } from 'msw/node';
+import { http, HttpResponse } from 'msw';
 import {
   clearLoginToken,
   getLoginToken,
   setLoginToken,
-} from "./loginTokenStore";
-import { saveOidcContext } from "./oidcContext";
+} from './loginTokenStore';
+import { saveOidcContext, setOidcSelectedScope } from './oidcContext';
 
 /**
  * 在模块求值前注入 al_root + oidc 快照（transport 与 api.ts 的 oidc 源都在
@@ -26,10 +26,10 @@ import { saveOidcContext } from "./oidcContext";
  * shared/api http.test.ts 与 setup/api.test.ts 模式）；单测环境为 node，
  * BASE 与既有两文件取同值防跨文件竞争。
  */
-const BASE = "https://uc.test";
+const BASE = 'https://uc.test';
 (globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = {
   al_root: `${BASE}/`,
-  oidc: { client_id: "cid", redirect_uri: "https://app/cb", state: "st" },
+  oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
 };
 
 const SSO = `${BASE}/api.sso.v1.SsoService`;
@@ -48,7 +48,7 @@ const SUBMIT_VERIFICATION = `${SSO}/SubmitVerification`;
 
 const server = setupServer();
 
-let mod: typeof import("./api");
+let mod: typeof import('./api');
 
 /** 内存版 Storage 桩（oidcContext 落盘目标）。 */
 function fakeStorage(): Storage {
@@ -70,14 +70,14 @@ function fakeStorage(): Storage {
 }
 
 beforeAll(async () => {
-  server.listen({ onUnhandledRequest: "error" });
-  mod = await import("./api");
+  server.listen({ onUnhandledRequest: 'error' });
+  mod = await import('./api');
 });
 
 beforeEach(() => {
   // stub window 时保留 __AUTHLOFT_INIT__（getInit 读 window.__AUTHLOFT_INIT__，
   // shared/types/init.ts；transport baseUrl 读 globalThis——两处同源）。
-  rs.stubGlobal("window", {
+  rs.stubGlobal('window', {
     localStorage: fakeStorage(),
     __AUTHLOFT_INIT__: (globalThis as { __AUTHLOFT_INIT__?: unknown })
       .__AUTHLOFT_INIT__,
@@ -95,672 +95,787 @@ afterAll(() => {
   (globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = undefined;
 });
 
-describe("loginDefault（§2.2）loginToken / oidc 注入与信封后处理（§1.8 / §1.3 行 145）", () => {
-  test("首次请求（无 token）：请求体零值省略 loginToken，注入快照 oidc（§2.2 行 425）", async () => {
-    let raw = "";
+describe('loginDefault（§2.2）loginToken / oidc 注入与信封后处理（§1.8 / §1.3 行 145）', () => {
+  test('首次请求（无 token）：请求体零值省略 loginToken，注入快照 oidc（§2.2 行 425）', async () => {
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
 
     const response = await mod.loginDefault({
-      method: "password",
-      step: "verify",
-      payload: { username: "alice", password: "pw" },
+      method: 'password',
+      step: 'verify',
+      payload: { username: 'alice', password: 'pw' },
     });
 
-    expect(response.status).toBe("next");
+    expect(response.status).toBe('next');
     expect(JSON.parse(raw)).toEqual({
-      method: "password",
-      step: "verify",
-      payload: { username: "alice", password: "pw" },
-      oidc: { client_id: "cid", redirect_uri: "https://app/cb", state: "st" },
+      method: 'password',
+      step: 'verify',
+      payload: { username: 'alice', password: 'pw' },
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
     }); // loginToken 零值 '' → protojson 省略（§1.1）
   });
 
-  test("已有 token：loginToken 顶层注入，不再带 oidc（仅首次请求回传，§2.2 行 425）", async () => {
-    setLoginToken("tok-1");
-    let raw = "";
+  test('已有 token：loginToken 顶层注入，不再带 oidc（仅首次请求回传，§2.2 行 425）', async () => {
+    setLoginToken('tok-1');
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next", loginToken: "tok-2" });
+        return HttpResponse.json({ status: 'next', loginToken: 'tok-2' });
       }),
     );
 
     await mod.loginDefault({
-      method: "otp_email",
-      step: "challenge",
-      payload: { email: "a@b.com" },
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
     });
 
     expect(JSON.parse(raw)).toEqual({
-      loginToken: "tok-1",
-      method: "otp_email",
-      step: "challenge",
-      payload: { email: "a@b.com" },
+      loginToken: 'tok-1',
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
     });
   });
 
-  test("captcha 顶层透传：请求体 `captcha` 与 payload 平级、不进 payload（§2.2 / §2.5）", async () => {
-    setLoginToken("tok-1");
-    let raw = "";
+  test('captcha 顶层透传：请求体 `captcha` 与 payload 平级、不进 payload（§2.2 / §2.5）', async () => {
+    setLoginToken('tok-1');
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
 
     await mod.loginDefault({
-      method: "otp_email",
-      step: "challenge",
-      payload: { email: "a@b.com" },
-      captcha: { providerKey: "builtin_image", id: "b7f3", answer: "123" },
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
 
     expect(JSON.parse(raw)).toEqual({
-      loginToken: "tok-1",
-      method: "otp_email",
-      step: "challenge",
-      payload: { email: "a@b.com" },
-      captcha: { providerKey: "builtin_image", id: "b7f3", answer: "123" },
+      loginToken: 'tok-1',
+      method: 'otp_email',
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
   });
 
-  test("响应含 loginToken 无条件覆盖内存变量（五条之 2），后续请求带新值", async () => {
+  test('响应含 loginToken 无条件覆盖内存变量（五条之 2），后续请求带新值', async () => {
     server.use(
       http.post(LOGIN_DEFAULT, () =>
-        HttpResponse.json({ status: "next", loginToken: "tok-2" }),
+        HttpResponse.json({ status: 'next', loginToken: 'tok-2' }),
       ),
     );
-    await mod.loginDefault({ method: "password", step: "verify", payload: {} });
-    expect(getLoginToken()).toBe("tok-2"); // 覆盖
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(getLoginToken()).toBe('tok-2'); // 覆盖
 
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
-    await mod.loginDefault({ method: "password", step: "verify", payload: {} });
-    expect(JSON.parse(raw)).toHaveProperty("loginToken", "tok-2");
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(raw)).toHaveProperty('loginToken', 'tok-2');
   });
 
-  test("status=success → 清空内存变量（五条之 3；§1.3 行 108 success 不再返回）", async () => {
-    setLoginToken("tok-1");
+  test('status=success → 清空内存变量（五条之 3；§1.3 行 108 success 不再返回）', async () => {
+    setLoginToken('tok-1');
     server.use(
       http.post(LOGIN_DEFAULT, () =>
-        HttpResponse.json({ status: "success", redirectTo: "/home" }),
+        HttpResponse.json({ status: 'success', redirectTo: '/home' }),
       ),
     );
     const response = await mod.loginDefault({
-      method: "password",
-      step: "verify",
+      method: 'password',
+      step: 'verify',
       payload: {},
     });
-    expect(response.status).toBe("success");
-    expect(getLoginToken()).toBe("");
+    expect(response.status).toBe('success');
+    expect(getLoginToken()).toBe('');
   });
 });
 
-describe("register / resetPassword（§2.3 / §2.4，与 §2.2 同构）", () => {
-  test("register：注入 loginToken + 响应后处理", async () => {
-    setLoginToken("tok-r1");
-    let raw = "";
+describe('register / resetPassword（§2.3 / §2.4，与 §2.2 同构）', () => {
+  test('register：注入 loginToken + 响应后处理', async () => {
+    setLoginToken('tok-r1');
+    let raw = '';
     server.use(
       http.post(REGISTER, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "success" });
+        return HttpResponse.json({ status: 'success' });
       }),
     );
     const response = await mod.register({
-      step: "set_password",
-      payload: { username: "alice", password: "pw" },
+      step: 'set_password',
+      payload: { username: 'alice', password: 'pw' },
     });
     expect(JSON.parse(raw)).toEqual({
-      loginToken: "tok-r1",
-      step: "set_password",
-      payload: { username: "alice", password: "pw" },
+      loginToken: 'tok-r1',
+      step: 'set_password',
+      payload: { username: 'alice', password: 'pw' },
     });
-    expect(response.status).toBe("success");
-    expect(getLoginToken()).toBe(""); // success 清空
+    expect(response.status).toBe('success');
+    expect(getLoginToken()).toBe(''); // success 清空
   });
 
-  test("resetPassword：首次请求注入快照 oidc", async () => {
-    let raw = "";
+  test('resetPassword：首次请求注入快照 oidc', async () => {
+    let raw = '';
     server.use(
       http.post(RESET_PASSWORD, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next", loginToken: "tok-p1" });
+        return HttpResponse.json({ status: 'next', loginToken: 'tok-p1' });
       }),
     );
     await mod.resetPassword({
-      step: "challenge",
-      payload: { email: "a@b.com" },
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
     });
     expect(JSON.parse(raw)).toEqual({
-      step: "challenge",
-      payload: { email: "a@b.com" },
-      oidc: { client_id: "cid", redirect_uri: "https://app/cb", state: "st" },
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
     });
-    expect(getLoginToken()).toBe("tok-p1");
+    expect(getLoginToken()).toBe('tok-p1');
   });
 });
 
-describe("loginOauth（§2.7.4）：oidc 取自 al_oidc_ctx（§2.7.2 行 599-600，读出即清）", () => {
-  test("首次请求注入落盘 oidc 并读完即清", async () => {
+describe('loginOauth（§2.7.4）：oidc 取自 al_oidc_ctx（§2.7.2 行 599-600，读出即清）', () => {
+  test('首次请求注入落盘 oidc 并读完即清', async () => {
     saveOidcContext({
-      client_id: "cid",
-      redirect_uri: "https://app/cb",
-      nonce: "n-1",
+      client_id: 'cid',
+      redirect_uri: 'https://app/cb',
+      nonce: 'n-1',
     });
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(LOGIN_OAUTH, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "binding_required" });
+        return HttpResponse.json({ status: 'binding_required' });
       }),
     );
 
     const response = await mod.loginOauth({
-      providerKey: "qq",
-      code: "c-1",
-      state: "l-state",
+      providerKey: 'qq',
+      code: 'c-1',
+      state: 'l-state',
     });
 
-    expect(response.status).toBe("binding_required");
+    expect(response.status).toBe('binding_required');
     expect(JSON.parse(raw)).toEqual({
-      providerKey: "qq",
-      code: "c-1",
-      state: "l-state",
-      oidc: { client_id: "cid", redirect_uri: "https://app/cb", nonce: "n-1" },
+      providerKey: 'qq',
+      code: 'c-1',
+      state: 'l-state',
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', nonce: 'n-1' },
     });
-    expect(window.localStorage.getItem("al_oidc_ctx")).toBeNull(); // 读完即清
+    expect(window.localStorage.getItem('al_oidc_ctx')).toBeNull(); // 读完即清
   });
 
-  test("响应含 loginToken 同样覆盖（§1.3 行 104：LoginOauth 共用信封）", async () => {
+  test('响应含 loginToken 同样覆盖（§1.3 行 104：LoginOauth 共用信封）', async () => {
     server.use(
       http.post(LOGIN_OAUTH, () =>
-        HttpResponse.json({ status: "mfa_required", loginToken: "tok-o1" }),
+        HttpResponse.json({ status: 'mfa_required', loginToken: 'tok-o1' }),
       ),
     );
-    await mod.loginOauth({ providerKey: "qq", code: "c-1", state: "l-state" });
-    expect(getLoginToken()).toBe("tok-o1");
+    await mod.loginOauth({ providerKey: 'qq', code: 'c-1', state: 'l-state' });
+    expect(getLoginToken()).toBe('tok-o1');
   });
 });
 
-describe("非信封方法（直通薄封装，无 loginToken 注入）", () => {
-  test("authorize（§2.7.2）：请求体直传，响应 authorizeUrl", async () => {
-    let raw = "";
+describe('非信封方法（直通薄封装，无 loginToken 注入）', () => {
+  test('authorize（§2.7.2）：请求体直传，响应 authorizeUrl', async () => {
+    let raw = '';
     server.use(
       http.post(AUTHORIZE, async ({ request }) => {
         raw = await request.text();
         return HttpResponse.json({
-          authorizeUrl: "https://qq.example/auth?state=l-x",
+          authorizeUrl: 'https://qq.example/auth?state=l-x',
         });
       }),
     );
-    const response = await mod.authorize({ provider: "qq" });
-    expect(JSON.parse(raw)).toEqual({ provider: "qq" });
-    expect(response.authorizeUrl).toBe("https://qq.example/auth?state=l-x");
+    const response = await mod.authorize({ provider: 'qq' });
+    expect(JSON.parse(raw)).toEqual({ provider: 'qq' });
+    expect(response.authorizeUrl).toBe('https://qq.example/auth?state=l-x');
   });
 
-  test("createQrcode（§2.8 行 688）：captcha 必带（§2.5），响应直传", async () => {
-    let raw = "";
+  test('createQrcode（§2.8 行 688）：captcha 必带（§2.5），响应直传', async () => {
+    let raw = '';
     server.use(
       http.post(QRCODE, async ({ request }) => {
         raw = await request.text();
         return HttpResponse.json({
-          ticket: "t-1",
-          ticketId: "c7Kx9",
-          qrcodeUrl: "https://cdn/q.jpg",
-          expiresIn: "600",
+          ticket: 't-1',
+          ticketId: 'c7Kx9',
+          qrcodeUrl: 'https://cdn/q.jpg',
+          expiresIn: '600',
         });
       }),
     );
     const response = await mod.createQrcode({
-      providerKey: "wechat_mp_scan",
-      scene: "login",
-      captcha: { providerKey: "cf_turnstile", token: "0.xxx" },
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
+      captcha: { providerKey: 'cf_turnstile', token: '0.xxx' },
     });
     expect(JSON.parse(raw)).toEqual({
-      providerKey: "wechat_mp_scan",
-      scene: "login",
-      captcha: { providerKey: "cf_turnstile", token: "0.xxx" },
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
+      captcha: { providerKey: 'cf_turnstile', token: '0.xxx' },
     });
-    expect(response.ticketId).toBe("c7Kx9");
+    expect(response.ticketId).toBe('c7Kx9');
   });
 });
 
-describe("ssoClientId 首签注入（§2.1 / §2.2 / §2.7.2 / §2.8）", () => {
+describe('ssoClientId 首签注入（§2.1 / §2.2 / §2.7.2 / §2.8）', () => {
   /** sso 用例专用 window 桩（模块级 init 无 sso，避免泄漏进既有用例；afterEach 统一 unstub）。 */
   function stubWindowWithSso(): void {
-    rs.stubGlobal("window", {
+    rs.stubGlobal('window', {
       localStorage: fakeStorage(),
       __AUTHLOFT_INIT__: {
         al_root: `${BASE}/`,
-        sso: { clientId: "app-1", name: "示例应用" },
+        sso: { clientId: 'app-1', name: '示例应用' },
       },
     });
   }
 
-  test("loginDefault 首次请求带 ssoClientId，续步不带（首签口径，§2.2）", async () => {
+  test('loginDefault 首次请求带 ssoClientId，续步不带（首签口径，§2.2）', async () => {
     stubWindowWithSso();
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next", loginToken: "tok-s1" });
+        return HttpResponse.json({ status: 'next', loginToken: 'tok-s1' });
       }),
     );
-    await mod.loginDefault({ method: "password", step: "verify", payload: {} });
-    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: "app-1" });
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: 'app-1' });
 
-    let resumed = "";
+    let resumed = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         resumed = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
-    await mod.loginDefault({ method: "password", step: "verify", payload: {} });
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
     expect(JSON.parse(resumed)).toEqual({
-      loginToken: "tok-s1",
-      method: "password",
-      step: "verify",
+      loginToken: 'tok-s1',
+      method: 'password',
+      step: 'verify',
       payload: {},
     }); // 续步：上下文已随 login_token 快照保留，不再回传
   });
 
-  test("register 首签带 ssoClientId（§2.3：与 §2.2 同构携带）", async () => {
+  test('register 首签带 ssoClientId（§2.3：与 §2.2 同构携带）', async () => {
     stubWindowWithSso();
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(REGISTER, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "success" });
+        return HttpResponse.json({ status: 'success' });
       }),
     );
     await mod.register({
-      step: "set_password",
-      payload: { username: "alice", password: "pw" },
+      step: 'set_password',
+      payload: { username: 'alice', password: 'pw' },
     });
-    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: "app-1" });
+    expect(JSON.parse(raw)).toMatchObject({ ssoClientId: 'app-1' });
   });
 
-  test("resetPassword 不带 ssoClientId（注册首签回传、reset 不带，§2.1）", async () => {
+  test('resetPassword 不带 ssoClientId（注册首签回传、reset 不带，§2.1）', async () => {
     stubWindowWithSso();
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(RESET_PASSWORD, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
     await mod.resetPassword({
-      step: "challenge",
-      payload: { email: "a@b.com" },
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
     });
     expect(JSON.parse(raw)).toEqual({
-      step: "challenge",
-      payload: { email: "a@b.com" },
+      step: 'challenge',
+      payload: { email: 'a@b.com' },
     });
   });
 
-  test("authorize：scene 缺省（login）带 ssoClientId（§2.7.2 唯一入口），scene=bind 不带", async () => {
+  test('authorize：scene 缺省（login）带 ssoClientId（§2.7.2 唯一入口），scene=bind 不带', async () => {
     stubWindowWithSso();
     const bodies: unknown[] = [];
     server.use(
       http.post(AUTHORIZE, async ({ request }) => {
         bodies.push(await request.json());
-        return HttpResponse.json({ authorizeUrl: "https://qq.example/auth" });
+        return HttpResponse.json({ authorizeUrl: 'https://qq.example/auth' });
       }),
     );
-    await mod.authorize({ provider: "qq" });
-    await mod.authorize({ provider: "qq", scene: "bind" });
-    expect(bodies[0]).toEqual({ provider: "qq", ssoClientId: "app-1" });
-    expect(bodies[1]).toEqual({ provider: "qq", scene: "bind" }); // 绑定流程不读应用配置
+    await mod.authorize({ provider: 'qq' });
+    await mod.authorize({ provider: 'qq', scene: 'bind' });
+    expect(bodies[0]).toEqual({ provider: 'qq', ssoClientId: 'app-1' });
+    expect(bodies[1]).toEqual({ provider: 'qq', scene: 'bind' }); // 绑定流程不读应用配置
   });
 
-  test("createQrcode：scene=login（含缺省）携带 ssoClientId（§2.8），scene=bind 不带", async () => {
+  test('createQrcode：scene=login（含缺省）携带 ssoClientId（§2.8），scene=bind 不带', async () => {
     stubWindowWithSso();
     const bodies: unknown[] = [];
-    const captcha = { providerKey: "cf_turnstile", token: "0.xxx" };
+    const captcha = { providerKey: 'cf_turnstile', token: '0.xxx' };
     server.use(
       http.post(QRCODE, async ({ request }) => {
         bodies.push(await request.json());
         return HttpResponse.json({
-          ticket: "t-1",
-          ticketId: "c7Kx9",
-          qrcodeUrl: "https://cdn/q.jpg",
-          expiresIn: "600",
+          ticket: 't-1',
+          ticketId: 'c7Kx9',
+          qrcodeUrl: 'https://cdn/q.jpg',
+          expiresIn: '600',
         });
       }),
     );
     await mod.createQrcode({
-      providerKey: "wechat_mp_scan",
-      scene: "login",
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
       captcha,
     });
     await mod.createQrcode({
-      providerKey: "wechat_mp_scan",
-      scene: "bind",
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
       captcha,
     });
     expect(bodies[0]).toEqual({
-      providerKey: "wechat_mp_scan",
-      scene: "login",
+      providerKey: 'wechat_mp_scan',
+      scene: 'login',
       captcha,
-      ssoClientId: "app-1",
+      ssoClientId: 'app-1',
     });
     expect(bodies[1]).toEqual({
-      providerKey: "wechat_mp_scan",
-      scene: "bind",
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
       captcha,
     });
   });
 
-  test("注入缺席（直登）不带 ssoClientId，行为与现状一致（§2.2）", async () => {
+  test('注入缺席（直登）不带 ssoClientId，行为与现状一致（§2.2）', async () => {
     // beforeEach 的 window 桩用模块级 init（无 sso）。
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(LOGIN_DEFAULT, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
-    await mod.loginDefault({ method: "password", step: "verify", payload: {} });
-    expect(JSON.parse(raw)).not.toHaveProperty("ssoClientId");
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(JSON.parse(raw)).not.toHaveProperty('ssoClientId');
   });
 
-  test("loginOauth 不带 ssoClientId（三方上下文随 al_login_state Cookie，请求不加字段，§2.7.4）", async () => {
+  test('loginOauth 不带 ssoClientId（三方上下文随 al_login_state Cookie，请求不加字段，§2.7.4）', async () => {
     stubWindowWithSso();
-    let raw = "";
+    let raw = '';
     server.use(
       http.post(LOGIN_OAUTH, async ({ request }) => {
         raw = await request.text();
-        return HttpResponse.json({ status: "next" });
+        return HttpResponse.json({ status: 'next' });
       }),
     );
-    await mod.loginOauth({ providerKey: "qq", code: "c-1", state: "l-state" });
-    expect(JSON.parse(raw)).not.toHaveProperty("ssoClientId");
+    await mod.loginOauth({ providerKey: 'qq', code: 'c-1', state: 'l-state' });
+    expect(JSON.parse(raw)).not.toHaveProperty('ssoClientId');
   });
 });
 
-describe("getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理", () => {
-  test("请求体 ticket + poll + oidc（int64 十进制字符串，§1.12 / §2.8 行 867）；响应后处理同信封", async () => {
-    let raw = "";
+describe('getLoginTicket（§2.8 行 710）：poll 秒数与信封后处理', () => {
+  test('请求体 ticket + poll + oidc（int64 十进制字符串，§1.12 / §2.8 行 867）；响应后处理同信封', async () => {
+    let raw = '';
     server.use(
       http.post(LOGIN_TICKET, async ({ request }) => {
         raw = await request.text();
         return HttpResponse.json({
-          status: "pending",
-          ticket: { status: "pending", ticketId: "c7Kx9" },
+          status: 'pending',
+          ticket: { status: 'pending', ticketId: 'c7Kx9' },
         });
       }),
     );
-    const response = await mod.getLoginTicket("t-1", 10);
+    const response = await mod.getLoginTicket('t-1', 10);
     expect(JSON.parse(raw)).toEqual({
-      ticket: "t-1",
-      poll: "10",
-      oidc: { client_id: "cid", redirect_uri: "https://app/cb", state: "st" },
+      ticket: 't-1',
+      poll: '10',
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
     });
-    expect(response.status).toBe("pending");
-    expect(response.ticket?.ticketId).toBe("c7Kx9");
-    expect(getLoginToken()).toBe("");
+    expect(response.status).toBe('pending');
+    expect(response.ticket?.ticketId).toBe('c7Kx9');
+    expect(getLoginToken()).toBe('');
   });
 
-  test("轮询命中 success：login 信封内层透传；success 时 login_token 已清空（§2.8 行 725 / §1.3 行 108 success 不再返回）", async () => {
+  test('轮询命中 success：login 信封内层透传；success 时 login_token 已清空（§2.8 行 725 / §1.3 行 108 success 不再返回）', async () => {
     server.use(
       http.post(LOGIN_TICKET, () =>
         HttpResponse.json({
-          status: "success",
-          ticket: { status: "success", ticketId: "c7Kx9" },
-          login: { status: "success", redirectTo: "/home" },
+          status: 'success',
+          ticket: { status: 'success', ticketId: 'c7Kx9' },
+          login: { status: 'success', redirectTo: '/home' },
         }),
       ),
     );
-    const response = await mod.getLoginTicket("t-1");
-    expect(response.login?.status).toBe("success");
-    expect(response.login?.redirectTo).toBe("/home");
-    expect(getLoginToken()).toBe(""); // 五条之 3
+    const response = await mod.getLoginTicket('t-1');
+    expect(response.login?.status).toBe('success');
+    expect(response.login?.redirectTo).toBe('/home');
+    expect(getLoginToken()).toBe(''); // 五条之 3
   });
 
   // 双层信封 loginToken 托管归内层（外层 success 是票据终态、不是登录终点）。
-  test("轮询命中 binding：内层 loginToken 托管（§1.3 行 145 无条件覆盖）——外层 success 不误清（免密建号续接依赖）", async () => {
+  test('轮询命中 binding：内层 loginToken 托管（§1.3 行 145 无条件覆盖）——外层 success 不误清（免密建号续接依赖）', async () => {
     server.use(
       http.post(LOGIN_TICKET, () =>
         HttpResponse.json({
-          status: "success",
-          ticket: { status: "success", ticketId: "c7Kx9" },
+          status: 'success',
+          ticket: { status: 'success', ticketId: 'c7Kx9' },
           login: {
-            status: "binding_required",
-            loginToken: "lt-bind",
+            status: 'binding_required',
+            loginToken: 'lt-bind',
             binding: {
-              providerKey: "scan",
-              displayName: "微信扫码",
+              providerKey: 'scan',
+              displayName: '微信扫码',
               allowSignup: true,
             },
           },
         }),
       ),
     );
-    const response = await mod.getLoginTicket("t-1");
-    expect(response.login?.status).toBe("binding_required");
-    expect(getLoginToken()).toBe("lt-bind"); // 内层信封托管（BindingPage 建号续接）
+    const response = await mod.getLoginTicket('t-1');
+    expect(response.login?.status).toBe('binding_required');
+    expect(getLoginToken()).toBe('lt-bind'); // 内层信封托管（BindingPage 建号续接）
   });
 });
 
-describe("submitLoginFactor（登录主路径 MFA 提交，§3.8 / §4.1 行 492/498）", () => {
-  test("StartVerification 第二段取 challengeToken → SubmitVerification 带 loginToken 提交；success 响应转信封并清空 loginToken", async () => {
+describe('submitLoginFactor（登录主路径 MFA 提交，§3.8 / §4.1 行 492/498）', () => {
+  test('StartVerification 第二段取 challengeToken → SubmitVerification 带 loginToken 提交；success 响应转信封并清空 loginToken', async () => {
     const startBodies: unknown[] = [];
     const submitBodies: unknown[] = [];
     server.use(
       http.post(START_VERIFICATION, async ({ request }) => {
         startBodies.push(await request.json());
         return HttpResponse.json({
-          challengeToken: "ct-mfa",
+          challengeToken: 'ct-mfa',
           methods: [],
-          expiresIn: "300",
+          expiresIn: '300',
         });
       }),
       http.post(SUBMIT_VERIFICATION, async ({ request }) => {
         submitBodies.push(await request.json());
         return HttpResponse.json({
-          status: "success",
-          redirectTo: "https://app.test/home",
-          syncCookieUrl: "https://sync.test/first",
+          status: 'success',
+          redirectTo: 'https://app.test/home',
+          syncCookieUrl: 'https://sync.test/first',
         });
       }),
     );
-    setLoginToken("lt-mfa");
+    setLoginToken('lt-mfa');
     const response = await mod.submitLoginFactor({
-      method: "totp",
-      step: "verify",
-      payload: { code: "123456" },
+      method: 'totp',
+      step: 'verify',
+      payload: { code: '123456' },
     });
 
     // StartVerification 第二段：bizPurpose=login + operation=mfa_verify + loginToken + method。
     expect(startBodies[0]).toEqual({
-      bizPurpose: "login",
-      operation: "mfa_verify",
-      loginToken: "lt-mfa",
-      method: "totp",
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      loginToken: 'lt-mfa',
+      method: 'totp',
     });
     // SubmitVerification：challengeToken / method / payload + loginToken（§3.8.2）。
     expect(submitBodies[0]).toEqual({
-      challengeToken: "ct-mfa",
-      method: "totp",
-      payload: { code: "123456" },
-      loginToken: "lt-mfa",
+      challengeToken: 'ct-mfa',
+      method: 'totp',
+      payload: { code: '123456' },
+      loginToken: 'lt-mfa',
     });
-    expect(response.status).toBe("success");
-    expect(response.redirectTo).toBe("https://app.test/home");
-    expect(response.syncCookieUrl).toBe("https://sync.test/first");
-    expect(getLoginToken()).toBe(""); // §1.3 五条之 3：success 清空
+    expect(response.status).toBe('success');
+    expect(response.redirectTo).toBe('https://app.test/home');
+    expect(response.syncCookieUrl).toBe('https://sync.test/first');
+    expect(getLoginToken()).toBe(''); // §1.3 五条之 3：success 清空
   });
 
-  test("invalid_code 失败态：status 按 §1.6 转信封，attemptsLeft 落 error.attemptsLeft；失败态不清空 loginToken", async () => {
+  test('invalid_code 失败态：status 按 §1.6 转信封，attemptsLeft 落 error.attemptsLeft；失败态不清空 loginToken', async () => {
     server.use(
       http.post(START_VERIFICATION, () =>
         HttpResponse.json({
-          challengeToken: "ct-mfa",
+          challengeToken: 'ct-mfa',
           methods: [],
-          expiresIn: "300",
+          expiresIn: '300',
         }),
       ),
       http.post(SUBMIT_VERIFICATION, () =>
-        HttpResponse.json({ status: "invalid_code", attemptsLeft: "3" }),
+        HttpResponse.json({ status: 'invalid_code', attemptsLeft: '3' }),
       ),
     );
-    setLoginToken("lt-mfa");
+    setLoginToken('lt-mfa');
     const response = await mod.submitLoginFactor({
-      method: "otp_sms",
-      step: "verify",
-      payload: { code: "000000" },
+      method: 'otp_sms',
+      step: 'verify',
+      payload: { code: '000000' },
     });
 
-    expect(response.status).toBe("invalid_code");
+    expect(response.status).toBe('invalid_code');
     expect(response.error?.attemptsLeft).toBe(BigInt(3));
-    expect(getLoginToken()).toBe("lt-mfa"); // 失败态不清空
+    expect(getLoginToken()).toBe('lt-mfa'); // 失败态不清空
   });
 
-  test("captcha 走 StartVerification 第二段请求顶层、不进因子 payload（§2.5 / §3.8.5）", async () => {
+  test('captcha 走 StartVerification 第二段请求顶层、不进因子 payload（§2.5 / §3.8.5）', async () => {
     const startBodies: unknown[] = [];
     const submitBodies: unknown[] = [];
     server.use(
       http.post(START_VERIFICATION, async ({ request }) => {
         startBodies.push(await request.json());
         return HttpResponse.json({
-          challengeToken: "ct-mfa",
+          challengeToken: 'ct-mfa',
           methods: [],
-          expiresIn: "300",
+          expiresIn: '300',
         });
       }),
       http.post(SUBMIT_VERIFICATION, async ({ request }) => {
         submitBodies.push(await request.json());
-        return HttpResponse.json({ status: "success" });
+        return HttpResponse.json({ status: 'success' });
       }),
     );
     await mod.submitLoginFactor({
-      method: "otp_sms",
-      step: "challenge",
+      method: 'otp_sms',
+      step: 'challenge',
       payload: {},
-      captcha: { providerKey: "builtin_image", id: "b7f3", answer: "123" },
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
 
     expect(startBodies[0]).toMatchObject({
-      method: "otp_sms",
-      captcha: { providerKey: "builtin_image", id: "b7f3", answer: "123" },
+      method: 'otp_sms',
+      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
     });
     // 因子载荷不含 captcha（§2.6 行 675）；SubmitVerification 不带 captcha 字段。
     expect(submitBodies[0]).toMatchObject({
-      challengeToken: "ct-mfa",
-      method: "otp_sms",
+      challengeToken: 'ct-mfa',
+      method: 'otp_sms',
     });
-    expect(submitBodies[0]).not.toHaveProperty("captcha");
+    expect(submitBodies[0]).not.toHaveProperty('captcha');
   });
 });
 
-describe("submitStepUp（扫码 step-up，§2.8 / §3.8.1）", () => {
-  test("success 即登录结论：清空内存 loginToken（不再依赖轮询信封清空）", async () => {
+describe('submitStepUp（扫码 step-up，§2.8 / §3.8.1）', () => {
+  test('success 即登录结论：清空内存 loginToken（不再依赖轮询信封清空）', async () => {
     server.use(
       http.post(SUBMIT_VERIFICATION, () =>
         HttpResponse.json({
-          status: "success",
-          redirectTo: "https://app.test/home",
-          syncCookieUrl: "https://sync.test/first",
+          status: 'success',
+          redirectTo: 'https://app.test/home',
+          syncCookieUrl: 'https://sync.test/first',
         }),
       ),
     );
-    setLoginToken("lt-x");
-    const response = await mod.submitStepUp("ct-x", "totp", {
-      code: "123456",
+    setLoginToken('lt-x');
+    const response = await mod.submitStepUp('ct-x', 'totp', {
+      code: '123456',
     });
-    expect(response.status).toBe("success");
-    expect(getLoginToken()).toBe("");
+    expect(response.status).toBe('success');
+    expect(getLoginToken()).toBe('');
   });
 
-  test("失败态不清空 loginToken（原地重试仍带主体凭证，可反向证伪）", async () => {
+  test('失败态不清空 loginToken（原地重试仍带主体凭证，可反向证伪）', async () => {
     server.use(
       http.post(SUBMIT_VERIFICATION, () =>
-        HttpResponse.json({ status: "invalid_code", attemptsLeft: "2" }),
+        HttpResponse.json({ status: 'invalid_code', attemptsLeft: '2' }),
       ),
     );
-    setLoginToken("lt-x");
-    const response = await mod.submitStepUp("ct-x", "totp", {
-      code: "000000",
+    setLoginToken('lt-x');
+    const response = await mod.submitStepUp('ct-x', 'totp', {
+      code: '000000',
     });
-    expect(response.status).toBe("invalid_code");
-    expect(getLoginToken()).toBe("lt-x");
+    expect(response.status).toBe('invalid_code');
+    expect(getLoginToken()).toBe('lt-x');
   });
 });
 
-describe("OIDC 同意两 RPC（形态 B，§3.10 / §1.3）：请求字段 + 落点", () => {
+describe('OIDC 同意两 RPC（形态 B，§3.10 / §1.3）：请求字段 + 落点', () => {
   const ctx = {
-    client_id: "cid",
-    redirect_uri: "https://app/cb",
-    scope: "openid profile email",
-    state: "st",
-    nonce: "no",
-    code_challenge: "cc",
-    code_challenge_method: "S256",
-    mode: "consent" as const,
+    client_id: 'cid',
+    redirect_uri: 'https://app/cb',
+    scope: 'openid profile email',
+    state: 'st',
+    nonce: 'no',
+    code_challenge: 'cc',
+    code_challenge_method: 'S256',
+    mode: 'consent' as const,
   };
 
-  test("consentApprove：七参数 + selected_scope 原样上 wire，响应落点按 syncCookieUrl → redirectTo", async () => {
-    let raw = "";
+  test('consentApprove：七参数 + selected_scope 原样上 wire，响应落点按 syncCookieUrl → redirectTo', async () => {
+    let raw = '';
     server.use(
       http.post(CONSENT_APPROVE, async ({ request }) => {
         raw = await request.text();
         return HttpResponse.json({
-          redirectTo: "https://app/cb?code=x&state=st",
-          syncCookieUrl: "https://sso.test/sync?next=y",
+          redirectTo: 'https://app/cb?code=x&state=st',
+          syncCookieUrl: 'https://sso.test/sync?next=y',
         });
       }),
     );
     const response = await mod.consentApprove(
-      mod.toConsentApproveInput(ctx, "openid profile"),
+      mod.toConsentApproveInput(ctx, 'openid profile'),
     );
     // 请求体字段逐项断言（camelCase protojson，缺省空串零值省略）。
     expect(JSON.parse(raw)).toEqual({
-      clientId: "cid",
-      redirectUri: "https://app/cb",
-      scope: "openid profile email",
-      selectedScope: "openid profile",
-      state: "st",
-      nonce: "no",
-      codeChallenge: "cc",
-      codeChallengeMethod: "S256",
+      clientId: 'cid',
+      redirectUri: 'https://app/cb',
+      scope: 'openid profile email',
+      selectedScope: 'openid profile',
+      state: 'st',
+      nonce: 'no',
+      codeChallenge: 'cc',
+      codeChallengeMethod: 'S256',
     });
     // 响应落点：同步首跳优先（effect 解析，纯函数）。
     expect(mod.consentTerminalUrl(response)).toBe(
-      "https://sso.test/sync?next=y",
+      'https://sso.test/sync?next=y',
     );
   });
 
-  test("consentDeny：仅 client_id / redirect_uri / state，响应落点 error=access_denied", async () => {
-    let raw = "";
+  test('consentDeny：仅 client_id / redirect_uri / state，响应落点 error=access_denied', async () => {
+    let raw = '';
     server.use(
       http.post(CONSENT_DENY, async ({ request }) => {
         raw = await request.text();
         return HttpResponse.json({
-          redirectTo: "https://app/cb?error=access_denied&state=st",
+          redirectTo: 'https://app/cb?error=access_denied&state=st',
         });
       }),
     );
     const response = await mod.consentDeny(mod.toConsentDenyInput(ctx));
     expect(JSON.parse(raw)).toEqual({
-      clientId: "cid",
-      redirectUri: "https://app/cb",
-      state: "st",
+      clientId: 'cid',
+      redirectUri: 'https://app/cb',
+      state: 'st',
     });
     expect(mod.consentTerminalUrl(response)).toBe(
-      "https://app/cb?error=access_denied&state=st",
+      'https://app/cb?error=access_denied&state=st',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 勾选收敛点（§4.2：勾选收窄适用于全部首签路径）：register / getLoginTicket
+// 等非主因子首签经 snapshotOidc 回退读 oidcContext 收敛点——scope = 勾选子集
+//（被取消项不含），其余六参数原样；收敛点空串回退注入原值（现状不变）。
+// ---------------------------------------------------------------------------
+
+/** 收敛点用例的注入快照：scope 四值，收敛子集取其真子集以证伪「全量透传」。 */
+const NARROW_OIDC = {
+  client_id: 'cid',
+  redirect_uri: 'https://app/cb',
+  state: 'st',
+  scope: 'openid profile email phone',
+};
+
+function injectNarrowOidc(): void {
+  const value = { al_root: `${BASE}/`, oidc: NARROW_OIDC };
+  (globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = value;
+  rs.stubGlobal('window', {
+    localStorage: fakeStorage(),
+    __AUTHLOFT_INIT__: value,
+  });
+}
+
+describe('勾选收敛点（§4.2）：register / getLoginTicket 首签 scope = 勾选子集', () => {
+  afterEach(() => {
+    setOidcSelectedScope(''); // 模块级收敛点跨用例复位
+    (globalThis as { __AUTHLOFT_INIT__?: unknown }).__AUTHLOFT_INIT__ = {
+      al_root: `${BASE}/`,
+      oidc: { client_id: 'cid', redirect_uri: 'https://app/cb', state: 'st' },
+    };
+  });
+
+  test('register：收敛子集覆盖注入 scope（被取消项不含），其余参数原样', async () => {
+    injectNarrowOidc();
+    setOidcSelectedScope('openid profile');
+    let raw = '';
+    server.use(
+      http.post(REGISTER, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.register({
+      step: 'set_password',
+      payload: { username: 'alice', password: 'pw' },
+    });
+    const oidc = JSON.parse(raw).oidc;
+    expect(oidc.scope).toBe('openid profile');
+    expect(oidc.scope).not.toContain('email');
+    expect(oidc.scope).not.toContain('phone');
+    // 仅 scope 被覆盖，其余六参数原样（§2.2）。
+    expect(oidc.client_id).toBe('cid');
+    expect(oidc.redirect_uri).toBe('https://app/cb');
+    expect(oidc.state).toBe('st');
+  });
+
+  test('getLoginTicket：收敛子集覆盖注入 scope（扫码轮询路径）', async () => {
+    injectNarrowOidc();
+    setOidcSelectedScope('openid profile');
+    let raw = '';
+    server.use(
+      http.post(LOGIN_TICKET, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'pending',
+          ticket: { status: 'pending', ticketId: 'c7Kx9' },
+        });
+      }),
+    );
+    const response = await mod.getLoginTicket('t-1', 10);
+    const body = JSON.parse(raw);
+    expect(body.oidc.scope).toBe('openid profile');
+    expect(body.oidc.scope).not.toContain('email');
+    expect(body.ticket).toBe('t-1');
+    expect(response.status).toBe('pending');
+  });
+
+  test('收敛点空串（未同步 / plain 直登）→ 回退注入原值（现状不变）', async () => {
+    injectNarrowOidc();
+    let raw = '';
+    server.use(
+      http.post(LOGIN_TICKET, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({
+          status: 'pending',
+          ticket: { status: 'pending', ticketId: 'c7Kx9' },
+        });
+      }),
+    );
+    await mod.getLoginTicket('t-1');
+    expect(JSON.parse(raw).oidc.scope).toBe('openid profile email phone');
+  });
+
+  test('loginDefault 显式 override 优先于收敛点（主因子传参语义不变）', async () => {
+    injectNarrowOidc();
+    setOidcSelectedScope('openid profile');
+    let raw = '';
+    server.use(
+      http.post(LOGIN_DEFAULT, async ({ request }) => {
+        raw = await request.text();
+        return HttpResponse.json({ status: 'next' });
+      }),
+    );
+    await mod.loginDefault(
+      {
+        method: 'password',
+        step: 'verify',
+        payload: { username: 'alice', password: 'pw' },
+      },
+      'openid email',
+    );
+    expect(JSON.parse(raw).oidc.scope).toBe('openid email');
   });
 });

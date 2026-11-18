@@ -10,8 +10,10 @@ import {
 } from './loginTokenStore';
 import {
   clearOidcContext,
+  getOidcSelectedScope,
   loadOidcContext,
   saveOidcContext,
+  setOidcSelectedScope,
 } from './oidcContext';
 
 /** 内存版 Storage 桩（记录 setItem 的键，供「只存 oidc」断言）。 */
@@ -43,6 +45,7 @@ beforeEach(() => {
   // rs.stubGlobal 模式（沿 shared/hooks hooks.test.ts 先例；仅测试进程内生效）。
   rs.stubGlobal('window', { localStorage: storage });
   clearLoginToken(); // 模块级变量跨用例复位
+  setOidcSelectedScope(''); // 勾选收敛点跨用例复位
 });
 
 afterEach(() => {
@@ -174,5 +177,23 @@ describe('oidcContext（§2.7.2 行 599-600：键 al_oidc_ctx，读出后立即 
       saveOidcContext({ client_id: 'cid', redirect_uri: 'https://app/cb' }),
     ).not.toThrow();
     expect(() => clearOidcContext()).not.toThrow();
+  });
+});
+
+describe('oidc 勾选收敛点（§4.2：扫码/注册/三方首签与主因子共用勾选子集）', () => {
+  test('初始空串（无收敛 = 消费方回退注入原值）', () => {
+    expect(getOidcSelectedScope()).toBe('');
+  });
+
+  test('set → get；空串清除（plain 直登 / 授权页无 scope）', () => {
+    setOidcSelectedScope('openid profile');
+    expect(getOidcSelectedScope()).toBe('openid profile');
+    setOidcSelectedScope('');
+    expect(getOidcSelectedScope()).toBe('');
+  });
+
+  test('纯内存态：不写 localStorage（落盘白名单仅 al_oidc_ctx，§2.7.2）', () => {
+    setOidcSelectedScope('openid profile email');
+    expect(storage.writtenKeys).toEqual([]);
   });
 });

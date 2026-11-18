@@ -20,31 +20,32 @@
  * t() 渲染期取新语言）；不写 localStorage / 不做持久化（与 §9 第 1 条
  * 冲突，持久化口径待定）。
  */
-import { useState } from "react";
-import { getLocale, setLocale, t, type Locale } from "../../shared/i18n";
-import type { LoginFlowResponse } from "../../gen/proto/api/sso/v1/envelope_pb";
-import { LoginContainer } from "../LoginContainer";
-import { ProviderButtons } from "../factors/ProviderButtons";
+import { useEffect, useState } from 'react';
+import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
+import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
+import { LoginContainer } from '../LoginContainer';
+import { ProviderButtons } from '../factors/ProviderButtons';
 import type {
   MethodsSnapshot,
   OidcAccountContext,
-} from "../../shared/types/init";
-import { getInit } from "../../shared/types/init";
-import { oidcView } from "../bootstrap";
+} from '../../shared/types/init';
+import { getInit } from '../../shared/types/init';
+import { oidcView } from '../bootstrap';
 import {
   consentApprove,
   consentDeny,
   landConsent,
   toConsentApproveInput,
   toConsentDenyInput,
-} from "../api";
-import { ApiError, resolveCode } from "../../shared/api/errors";
-import { initialSelection, PermissionPanel } from "./PermissionPanel";
-import styles from "./LoginPage.module.less";
-import permissionStyles from "./PermissionPanel.module.less";
-import { Link } from "@modern-js/runtime/router";
-import { AppLayout } from "../components/AppLayout";
-import { ssoPath } from "./RegisterPage";
+} from '../api';
+import { ApiError, resolveCode } from '../../shared/api/errors';
+import { setOidcSelectedScope } from '../oidcContext';
+import { initialSelection, PermissionPanel } from './PermissionPanel';
+import styles from './LoginPage.module.less';
+import permissionStyles from './PermissionPanel.module.less';
+import { Link } from '@modern-js/runtime/router';
+import { AppLayout } from '../components/AppLayout';
+import { ssoPath } from './RegisterPage';
 
 export interface LoginPageProps {
   /** 注入快照（§2.1；bootstrap 读取后传入，§4.1 行 375）。 */
@@ -59,7 +60,7 @@ export interface LoginPageProps {
 export function consentErrorKey(error: unknown): string {
   return error instanceof ApiError
     ? resolveCode(error).i18nKey
-    : "errors.code.internal_error";
+    : 'errors.code.internal_error';
 }
 
 /**
@@ -85,11 +86,11 @@ function ConsentAccountCard({
     <section
       className={permissionStyles.accountCard}
       data-testid="consent-account-card"
-      aria-label={t("login.consent.accountLabel")}
+      aria-label={t('login.consent.accountLabel')}
     >
-      <h2 className={permissionStyles.nickname}>{t("login.consent.title")}</h2>
+      <h2 className={permissionStyles.nickname}>{t('login.consent.title')}</h2>
       <p className={permissionStyles.hint}>
-        {t("login.consent.hint", { app: clientName })}
+        {t('login.consent.hint', { app: clientName })}
       </p>
       <div className={permissionStyles.accountIdentity}>
         {account?.avatar_url ? (
@@ -100,13 +101,13 @@ function ConsentAccountCard({
           />
         ) : (
           <span className={permissionStyles.avatarFallback} aria-hidden="true">
-            {(account?.nickname ?? "?").slice(0, 1)}
+            {(account?.nickname ?? '?').slice(0, 1)}
           </span>
         )}
         <div>
-          <p className={permissionStyles.nickname}>{account?.nickname ?? ""}</p>
+          <p className={permissionStyles.nickname}>{account?.nickname ?? ''}</p>
           <p className={permissionStyles.identifier}>
-            {account?.identifier ?? ""}
+            {account?.identifier ?? ''}
           </p>
         </div>
       </div>
@@ -124,8 +125,8 @@ function ConsentAccountCard({
           onClick={onApprove}
         >
           {submitting
-            ? t("login.consent.processing")
-            : t("login.consent.approve")}
+            ? t('login.consent.processing')
+            : t('login.consent.approve')}
         </button>
         <button
           type="button"
@@ -134,7 +135,7 @@ function ConsentAccountCard({
           disabled={submitting}
           onClick={onDeny}
         >
-          {t("login.consent.deny")}
+          {t('login.consent.deny')}
         </button>
       </div>
     </section>
@@ -153,15 +154,23 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   // 内存内语言切换（持久化口径待定）；state 驱动重渲染使 t() 生效。
   const [locale, setLocaleState] = useState<Locale>(getLocale);
   // 第三方图标墙数据与扫码结论：结论经受控 prop 注入容器，避免全局事件。
-  const thirdparty = snapshot.methods.find((m) => m.method === "thirdparty");
+  const thirdparty = snapshot.methods.find((m) => m.method === 'thirdparty');
   const providers = thirdparty?.providers ?? [];
   const [qrResult, setQrResult] = useState<LoginFlowResponse | undefined>(
     undefined,
   );
   // 右栏受控勾选集（形态 A/B 共用）：初值取注入的有效 scope 全员勾选。
   const [selected, setSelected] = useState<string[]>(() =>
-    initialSelection(ctx?.scope ?? ""),
+    initialSelection(ctx?.scope ?? ''),
   );
+  // 勾选收敛子集同步（§4.2：勾选收窄适用于全部首签路径）：扫码 / 注册 / 三方
+  // 落盘三条路径经 oidcContext 收敛点读取，与主因子（oidcScope prop）共用
+  // 同一子集、不放大。同步时机先于任何用户动作（轮询 / 提交 / 跳转均由交互
+  // 触发）；SPA 内跨路由（授权页 → 注册页）收敛值仍存活。plain 直登 selected
+  // 恒空 → 同步空串即回退注入原值。
+  useEffect(() => {
+    setOidcSelectedScope(selected.join(' '));
+  }, [selected]);
   // 同意 / 拒绝提交态与错误键（error.message 不透出，§1.6）。
   const [submitting, setSubmitting] = useState(false);
   const [errorKey, setErrorKey] = useState<string | undefined>(undefined);
@@ -179,7 +188,7 @@ export function LoginPage({ snapshot }: LoginPageProps) {
     setErrorKey(undefined);
     try {
       const response = approve
-        ? await consentApprove(toConsentApproveInput(ctx, selected.join(" ")))
+        ? await consentApprove(toConsentApproveInput(ctx, selected.join(' ')))
         : await consentDeny(toConsentDenyInput(ctx));
       landConsent(response, (url) => {
         location.replace(url);
@@ -196,41 +205,41 @@ export function LoginPage({ snapshot }: LoginPageProps) {
       <button
         type="button"
         className={
-          locale === "zh-CN" ? styles.langButtonActive : styles.langButton
+          locale === 'zh-CN' ? styles.langButtonActive : styles.langButton
         }
-        aria-pressed={locale === "zh-CN"}
-        onClick={() => switchLocale("zh-CN")}
+        aria-pressed={locale === 'zh-CN'}
+        onClick={() => switchLocale('zh-CN')}
       >
-        {t("login.langZh")}
+        {t('login.langZh')}
       </button>
       <button
         type="button"
         className={
-          locale === "en-US" ? styles.langButtonActive : styles.langButton
+          locale === 'en-US' ? styles.langButtonActive : styles.langButton
         }
-        aria-pressed={locale === "en-US"}
-        onClick={() => switchLocale("en-US")}
+        aria-pressed={locale === 'en-US'}
+        onClick={() => switchLocale('en-US')}
       >
-        {t("login.langEn")}
+        {t('login.langEn')}
       </button>
     </>
   );
 
   // plain（/sso/login 直登、无 oidc）：维持现有单栏，不渲染权限面板。
-  if (view.mode === "plain") {
+  if (view.mode === 'plain') {
     return (
-      <AppLayout title={t("login.title")} footer={footer}>
+      <AppLayout title={t('login.title')} footer={footer}>
         <LoginContainer snapshot={snapshot} qrResult={qrResult} />
         {(showForgot || showRegister) && (
           <nav className={styles.entryNav}>
             {showForgot && (
-              <Link className={styles.entryLink} to={ssoPath("/sso/reset")}>
-                {t("login.forgotPassword")}
+              <Link className={styles.entryLink} to={ssoPath('/sso/reset')}>
+                {t('login.forgotPassword')}
               </Link>
             )}
             {showRegister && (
-              <Link className={styles.entryLink} to={ssoPath("/sso/register")}>
-                {t("login.register")}
+              <Link className={styles.entryLink} to={ssoPath('/sso/register')}>
+                {t('login.register')}
               </Link>
             )}
           </nav>
@@ -247,12 +256,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   // login / consent（形态 A / B）：双栏容器，AppLayout 不改、LoginPage 自行包裹。
   return (
     <AppLayout
-      title={t(view.mode === "consent" ? "login.consent.title" : "login.title")}
+      title={t(view.mode === 'consent' ? 'login.consent.title' : 'login.title')}
       footer={footer}
     >
       <div className={permissionStyles.twoColumn}>
         <div className={permissionStyles.leftColumn}>
-          {view.mode === "consent" ? (
+          {view.mode === 'consent' ? (
             <ConsentAccountCard
               account={view.account}
               clientName={view.clientName}
@@ -266,7 +275,7 @@ export function LoginPage({ snapshot }: LoginPageProps) {
               <LoginContainer
                 snapshot={snapshot}
                 qrResult={qrResult}
-                oidcScope={selected.join(" ")}
+                oidcScope={selected.join(' ')}
                 oidcSubmitLabel="login.submitAndAgree"
               />
               {(showForgot || showRegister) && (
@@ -274,17 +283,17 @@ export function LoginPage({ snapshot }: LoginPageProps) {
                   {showForgot && (
                     <Link
                       className={styles.entryLink}
-                      to={ssoPath("/sso/reset")}
+                      to={ssoPath('/sso/reset')}
                     >
-                      {t("login.forgotPassword")}
+                      {t('login.forgotPassword')}
                     </Link>
                   )}
                   {showRegister && (
                     <Link
                       className={styles.entryLink}
-                      to={ssoPath("/sso/register")}
+                      to={ssoPath('/sso/register')}
                     >
-                      {t("login.register")}
+                      {t('login.register')}
                     </Link>
                   )}
                 </nav>
@@ -301,11 +310,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
           )}
         </div>
         <div className={permissionStyles.rightColumn}>
-          {/* granted 数据源待契约补齐：注入暂未提供已授权 scope，此处按空集传入；
-              已授权项锁定逻辑已在 PermissionPanel 实现并测试，数据接线后即可生效。 */}
+          {/* granted_scopes 取注入（§8 形态 B 键）：已授权项锁定不可取消（授权
+              记录只扩不缩）；形态 A 无此键 / 空集 → 空串，回退现状仅 openid 恒锁。 */}
           <PermissionPanel
             clientName={view.clientName}
-            scope={ctx?.scope ?? ""}
+            scope={ctx?.scope ?? ''}
+            grantedScopes={ctx?.granted_scopes ?? ''}
             selected={selected}
             onSelectedChange={setSelected}
             disabled={submitting}
