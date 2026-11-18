@@ -484,7 +484,7 @@ func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
 
 // TestAssembleEngineAndTerminal 用 Fake 配置装配 factor 注册表 / Terminal /
 // Engine（不连 DB / Redis）：断言 6 个已实现 kind（含 otp_sms /
-// otp_email）可解析、pending 2 条（thirdparty / device）不参与完整性断言、
+// otp_email）可解析、pending 1 条（thirdparty）不参与完整性断言、
 // Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
 func TestAssembleEngineAndTerminal(t *testing.T) {
 	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
@@ -544,9 +544,9 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 			t.Fatalf("Get(%s): %v", kind, err)
 		}
 	}
-	// pendingKinds 剩 thirdparty / device 两条（otp 两条已解锁）。
+	// pendingKinds 剩 thirdparty 一条（otp 两条已解锁）。
 	for _, kind := range []factor.FactorKind{
-		factor.FactorThirdParty, factor.FactorDevice,
+		factor.FactorThirdParty,
 	} {
 		if _, err := registry.Get(kind); !errors.Is(err, factor.ErrKindNotRegistered) {
 			t.Fatalf("Get(%s) err = %v, want ErrKindNotRegistered (pending kind)", kind, err)

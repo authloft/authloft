@@ -66,7 +66,7 @@ func strSlice(v any) []string {
 }
 
 // TestLoginMethodsFilter login_methods 过滤（§2.1 行 406）：白名单外、
-// device、未注册方式不注入；顺序保持 settings 序。
+// 未注册方式（含历史 device 字符串）不注入；顺序保持 settings 序。
 func TestLoginMethodsFilter(t *testing.T) {
 	f := newFixture(t)
 	f.settings.m[settings.KeyLoginMethods] = []string{
@@ -75,7 +75,7 @@ func TestLoginMethodsFilter(t *testing.T) {
 	got := methodNames(loginMethodsFrom(t, "/sso/login", f))
 	want := []string{"otp_sms", "password", "totp", "recovery_code"}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("methods = %v, want %v（login_methods 过滤 + device 不出现）", got, want)
+		t.Errorf("methods = %v, want %v（login_methods 过滤 + 未注册不注入）", got, want)
 	}
 }
 

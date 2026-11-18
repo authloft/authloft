@@ -186,7 +186,7 @@ func (h *Handler) buildMethods(ctx context.Context, flow string, sso ...*ssoMeth
 // 注册表，应用开关未放行的方式先被剔除（§2.1 应用级交集：同时开启才算
 // 开启）；thirdparty 合成条目走 provider Loader（is_enabled=1 且
 // enable_signin=1，§12.3 行 1464）并按应用 oauth_providers 白名单再过滤；
-// device 不出现（§2.1 行 406）；未注册 / 拼错的方式跳过不注入。
+// 未注册 / 拼错的方式（含历史 device 字符串）跳过不注入。
 // login_methods 缺键 → 错误（500）。
 func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
 	enabled, ok := h.sliceSetting(settings.KeyLoginMethods)
@@ -200,8 +200,6 @@ func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
 		}
 		kind := factor.FactorKind(m)
 		switch kind {
-		case factor.FactorDevice:
-			continue // §2.1 行 406：device 因子不出现
 		case factor.FactorThirdParty:
 			entry, err := h.thirdpartyEntry(sso.allowedProviders())
 			if err != nil {

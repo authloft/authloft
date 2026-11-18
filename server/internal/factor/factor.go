@@ -14,7 +14,6 @@ const (
 	FactorTOTP       FactorKind = "totp"
 	FactorRecovery   FactorKind = "recovery_code"
 	FactorThirdParty FactorKind = "thirdparty"
-	FactorDevice     FactorKind = "device" // 已登录设备，内部实现，不对外暴露
 )
 
 // allKinds 全部合法 FactorKind（启动期完整性断言用）。
@@ -26,7 +25,6 @@ var allKinds = []FactorKind{
 	FactorTOTP,
 	FactorRecovery,
 	FactorThirdParty,
-	FactorDevice,
 }
 
 // validKind 是否为已知 FactorKind。

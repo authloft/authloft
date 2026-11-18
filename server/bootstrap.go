@@ -1020,7 +1020,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	wireSharedServices(cfg, deps)
 
 	// 步骤 6（factor 半步）：factor 注册表 + Terminal + 单引擎（§7）；pendingKinds
-	// 内的第三方 / device 由 AssertComplete 显式排除。
+	// 内的第三方由 AssertComplete 显式排除。
 	engine, _, registry, err := buildDomains(cfg, deps, users, creds, webauthnRepo)
 	if err != nil {
 		deps.close(context.Background())
