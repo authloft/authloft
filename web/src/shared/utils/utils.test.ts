@@ -44,15 +44,17 @@ describe('utils/validate 用户名（接口文档 §2.3 行 449 唯一定义）'
     expect(isValidUsername('')).toBe(false);
   });
 
-  test('deleted_ 前缀拒绝（删除匿名化保留标记；大小写敏感、按字面前缀）', () => {
+  test('deleted_ 前缀拒绝（删除匿名化保留标记；不分大小写，同服务端 EqualFold 口径）', () => {
     expect(DELETED_USERNAME_PREFIX).toBe('deleted_');
     expect(hasDeletedUsernamePrefix('deleted_12345')).toBe(true);
-    expect(hasDeletedUsernamePrefix('Deleted_12345')).toBe(false);
+    expect(hasDeletedUsernamePrefix('DELETED_12345')).toBe(true);
+    expect(hasDeletedUsernamePrefix('Deleted_12345')).toBe(true);
     expect(hasDeletedUsernamePrefix('mydeleted_12345')).toBe(false);
     // 格式合法但命中保留前缀 → 拒绝；给出针对性原因
-    expect(USERNAME_PATTERN.test('deleted_12345')).toBe(true);
-    expect(isValidUsername('deleted_12345')).toBe(false);
+    expect(USERNAME_PATTERN.test('DELETED_12345')).toBe(true);
+    expect(isValidUsername('DELETED_12345')).toBe(false);
     expect(usernameIssue('deleted_12345')).toBe('reserved_prefix');
+    expect(usernameIssue('DELETED_user')).toBe('reserved_prefix');
     expect(usernameIssue('ab-cd')).toBe('invalid_format');
     expect(usernameIssue('abc_1')).toBeNull();
   });

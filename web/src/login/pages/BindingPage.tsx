@@ -32,7 +32,7 @@ import { resolveFlowStatus } from '../../shared/api/errors';
 import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
-import { isValidUsername } from '../../shared/utils/validate';
+import { usernameIssue } from '../../shared/utils/validate';
 import { t } from '../../shared/i18n';
 import { Modal } from '../components/Modal';
 import { register, type RegisterInput } from '../api';
@@ -173,9 +173,11 @@ export function BindingPageView({
               autoComplete="username"
               onChange={(e) => onUsernameChange(e.target.value)}
             />
-            {username !== '' && !isValidUsername(username) && (
+            {username !== '' && usernameIssue(username) !== null && (
               <p role="status" className={styles.hint}>
-                {t('login.usernameHint')}
+                {usernameIssue(username) === 'reserved_prefix'
+                  ? t('admin.usernameReservedPrefixHint')
+                  : t('login.usernameHint')}
               </p>
             )}
           </div>

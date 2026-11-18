@@ -85,6 +85,7 @@ import {
   userEditDraftFromDetail,
   userEditDraftIssue,
   userStatusLabel,
+  userWriteConfirmStrength,
   userWriteVisibility,
   type UserEditDraft,
   type UserWriteVisibility,
@@ -107,27 +108,41 @@ const INITIAL_EVENTS_QUERY: TableQueryState = {
 /** 编辑提交分流（§5.4：联系方式写入即置已验证 + 全部会话失效，须二次确认）。 */
 export type UserEditSubmitKind = 'noop' | 'direct' | 'confirm_contact';
 
-/** 提交门槛：confirmKey 仅在 confirm_contact 时非空，供 Modal 标题取用。 */
+/**
+ * 提交门槛：confirmKey 仅在 confirm_contact 时非空，供 Modal 标题取用；
+ * strength 为确认强度（userWriteConfirmStrength 同源）——≥1 渲染 Modal
+ * 二次确认，0 直接提交（控件分级按强度取值，不按 kind 字面硬编码）。
+ */
 export interface UserEditSubmitGate {
   kind: UserEditSubmitKind;
   confirmKey: I18nKey | null;
+  strength: 0 | 1 | 2;
 }
 
 /**
  * 编辑提交门槛：联系方式有 diff 必须先二次确认；仅资料 diff 可直接提交；
- * 全无改动不提交。纯函数，node 可测（组件壳不可测口径）。
+ * 全无改动不提交。确认强度经 userWriteConfirmStrength 分级（§5.4）。
+ * 纯函数，node 可测（组件壳不可测口径）。
  */
 export function userEditSubmitGate(
   profileChanged: boolean,
   contactChanged: boolean,
 ): UserEditSubmitGate {
   if (!profileChanged && !contactChanged) {
-    return { kind: 'noop', confirmKey: null };
+    return { kind: 'noop', confirmKey: null, strength: 0 };
   }
   if (contactChanged) {
-    return { kind: 'confirm_contact', confirmKey: 'admin.contactEditConfirm' };
+    return {
+      kind: 'confirm_contact',
+      confirmKey: 'admin.contactEditConfirm',
+      strength: userWriteConfirmStrength('contact'),
+    };
   }
-  return { kind: 'direct', confirmKey: null };
+  return {
+    kind: 'direct',
+    confirmKey: null,
+    strength: userWriteConfirmStrength('profile'),
+  };
 }
 
 /**
@@ -154,6 +169,18 @@ export function canSubmitUserDelete(
   typed: string,
 ): boolean {
   return targetUsername !== '' && typed === targetUsername;
+}
+
+/**
+ * 删除确认控件分级（§5.4 危险操作确认强度，userWriteConfirmStrength 驱动）：
+ * 强度 ≥2 → Modal 内须逐字输入目标用户名才放行（输入框 / 提交门槛均按此档
+ * 渲染）；<2 退化为纯 Modal 二次确认。strength 默认取 delete 档。
+ * 纯函数，node 可测（组件壳不可测口径）。
+ */
+export function deleteConfirmNeedsTypedInput(
+  strength: 0 | 1 | 2 = userWriteConfirmStrength('delete'),
+): boolean {
+  return strength >= 2;
 }
 
 /** 已删用户的写按钮一律置灰（体验层；服务端对其任何写请求均拒绝）。 */
@@ -283,10 +310,12 @@ export function UserDetail(props: {
   const [editing, setEditing] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const [writeBusy, setWriteBusy] = useState(false);
-  // 删除用户确认（最强确认档）：Modal 内须逐字输入目标用户名才放行。
+  // 删除用户确认（§5.4 最强确认档，分级由 userWriteConfirmStrength 驱动）：
+  // 强度 2 → Modal 内须逐字输入目标用户名才放行。
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const deleteTypedRequired = deleteConfirmNeedsTypedInput();
 
   // 切换目标 / 关闭抽屉时退出编辑态，避免把上个用户的草稿带到下个用户。
   useEffect(() => {
@@ -326,11 +355,7 @@ export function UserDetail(props: {
       return;
     }
     const id = props.userId;
-    const profileRequest = buildUpdateUserProfileRequest(
-      id,
-      values,
-      data,
-    );
+    const profileRequest = buildUpdateUserProfileRequest(id, values, data);
     const contactRequest = buildUpdateUserContactRequest(id, values, data);
     const gate = userEditSubmitGate(
       profileRequest !== null,
@@ -347,20 +372,24 @@ export function UserDetail(props: {
       if (!canSubmitUserEdit(gate, confirmed)) {
         return;
       }
-      void runWrite(async () => {
-        if (profileRequest !== null) {
-          await updateUserProfile(profileRequest);
-        }
-        if (contactRequest !== null) {
-          await updateUserContact(contactRequest);
-        }
-      }, contactRequest !== null && profileRequest === null
-        ? t('admin.editContactSuccess')
-        : t('admin.editProfileSuccess'));
+      void runWrite(
+        async () => {
+          if (profileRequest !== null) {
+            await updateUserProfile(profileRequest);
+          }
+          if (contactRequest !== null) {
+            await updateUserContact(contactRequest);
+          }
+        },
+        contactRequest !== null && profileRequest === null
+          ? t('admin.editContactSuccess')
+          : t('admin.editProfileSuccess'),
+      );
     };
 
-    if (gate.kind === 'confirm_contact' && gate.confirmKey !== null) {
-      // 联系方式写即置已验证 + 全部会话失效（§5.4）：先二次确认再提交。
+    if (gate.strength >= 1 && gate.confirmKey !== null) {
+      // 确认强度 ≥1（userWriteConfirmStrength 分级）→ Modal 二次确认再提交
+      // （§5.4：联系方式写即置已验证 + 全部会话失效）。
       Modal.confirm({
         title: t(gate.confirmKey),
         onOk: () => submit(true),
@@ -395,7 +424,10 @@ export function UserDetail(props: {
 
   /** 删除用户：逐字输入用户名确认后提交；成功关框 + 通知列表重取。 */
   async function submitDelete(targetUsername: string): Promise<void> {
-    if (!canSubmitUserDelete(targetUsername, deleteTyped)) {
+    if (
+      deleteTypedRequired &&
+      !canSubmitUserDelete(targetUsername, deleteTyped)
+    ) {
       return;
     }
     setDeleteSubmitting(true);
@@ -680,7 +712,8 @@ export function UserDetail(props: {
                   })}
                   onConfirm={() =>
                     runWrite(
-                      () => unbindUserTOTP(buildUnbindUserTOTPRequest(targetId)),
+                      () =>
+                        unbindUserTOTP(buildUnbindUserTOTPRequest(targetId)),
                       t('admin.unbindTotpSuccess'),
                     )
                   }
@@ -744,7 +777,8 @@ export function UserDetail(props: {
                   </span>
                   {visibility.credentialWrite ? (
                     <div style={{ display: 'flex', gap: 4 }}>
-                      {credential.kind === 'password' ? null : credential.isEnabled ? (
+                      {credential.kind ===
+                      'password' ? null : credential.isEnabled ? (
                         // 密码凭证不允许停用（§5.4），仅其余类型显示停用入口。
                         <Popconfirm
                           title={t('admin.credentialDisableConfirm', {
@@ -921,7 +955,8 @@ export function UserDetail(props: {
         okButtonProps={{
           type: 'danger',
           disabled:
-            !canSubmitUserDelete(deleteTargetName, deleteTyped) ||
+            (deleteTypedRequired &&
+              !canSubmitUserDelete(deleteTargetName, deleteTyped)) ||
             deleteSubmitting,
         }}
         cancelButtonProps={{ disabled: deleteSubmitting }}
@@ -930,14 +965,18 @@ export function UserDetail(props: {
         <p style={{ color: '#dc2626', fontSize: 12 }}>
           {t('admin.deleteUserWarning')}
         </p>
-        <p>{t('admin.deleteUserConfirmLabel', { username: deleteTargetName })}</p>
-        <Input
-          value={deleteTyped}
-          onChange={(value) => setDeleteTyped(value)}
-          placeholder={deleteTargetName}
-          aria-label={t('admin.deleteUserInputAriaLabel')}
-          autoComplete="off"
-        />
+        <p>
+          {t('admin.deleteUserConfirmLabel', { username: deleteTargetName })}
+        </p>
+        {deleteTypedRequired && (
+          <Input
+            value={deleteTyped}
+            onChange={(value) => setDeleteTyped(value)}
+            placeholder={deleteTargetName}
+            aria-label={t('admin.deleteUserInputAriaLabel')}
+            autoComplete="off"
+          />
+        )}
       </Modal>
     </SideSheet>
   );

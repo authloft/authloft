@@ -2208,10 +2208,11 @@ describe('列表四维度筛选 + 删除请求构造（§5.4：创建时间 / �
   test('buildDeleteUserRequest：仅 {id}，int64 十进制字符串承载', async () => {
     const req = apiMod.buildDeleteUserRequest(BigInt(42));
     expect(req.id).toBe(BigInt(42));
-    const { DeleteUserRequestSchema } = await import(
-      '../gen/proto/api/admin/v1/user_pb'
-    );
-    expect(DeleteUserRequestSchema.fields.find((f) => f.name === 'id')?.number).toBe(1);
+    const { DeleteUserRequestSchema } =
+      await import('../gen/proto/api/admin/v1/user_pb');
+    expect(
+      DeleteUserRequestSchema.fields.find((f) => f.name === 'id')?.number,
+    ).toBe(1);
   });
 });
 
@@ -2336,9 +2337,9 @@ describe('userWriteVisibility（§5.4 门禁矩阵：写按钮体验层分级显
 
   test('superadmin 目标：任何操作者一律全部隐藏', () => {
     expect(apiMod.classifyUserWriteTier(['superadmin'])).toBe('superadmin');
-    expect(
-      apiMod.userWriteVisibility(['superadmin'], ['superadmin']),
-    ).toEqual(allHidden);
+    expect(apiMod.userWriteVisibility(['superadmin'], ['superadmin'])).toEqual(
+      allHidden,
+    );
     expect(apiMod.userWriteVisibility(['superadmin'], ['admin'])).toEqual(
       allHidden,
     );
@@ -2418,15 +2419,15 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
     expect(
       apiMod.userEditDraftIssue({ ...unchangedDraft, extra: '[1,2]' }),
     ).toBe('admin.editExtraIssue');
-    expect(
-      apiMod.userEditDraftIssue({ ...unchangedDraft, phone: '123' }),
-    ).toBe('admin.editPhoneIssue');
-    expect(
-      apiMod.userEditDraftIssue({ ...unchangedDraft, email: 'bad' }),
-    ).toBe('admin.editEmailIssue');
-    expect(
-      apiMod.userEditDraftIssue({ ...unchangedDraft, gender: '9' }),
-    ).toBe('admin.editGenderIssue');
+    expect(apiMod.userEditDraftIssue({ ...unchangedDraft, phone: '123' })).toBe(
+      'admin.editPhoneIssue',
+    );
+    expect(apiMod.userEditDraftIssue({ ...unchangedDraft, email: 'bad' })).toBe(
+      'admin.editEmailIssue',
+    );
+    expect(apiMod.userEditDraftIssue({ ...unchangedDraft, gender: '9' })).toBe(
+      'admin.editGenderIssue',
+    );
   });
 
   test('PATCH diff：与原值相同 → 两个请求都为 null（无改动不提交）', () => {
@@ -2504,10 +2505,12 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
 describe('api 编辑 / 救援写方法（§5.4 新增七 RPC：msw wire 形态）', () => {
   test('五个救援 RPC + 编辑两 RPC 真调统一 transport → OkResponse', async () => {
     const captured: Record<string, unknown> = {};
-    const capture = (key: string) => async ({ request }: { request: Request }) => {
-      captured[key] = await request.json();
-      return HttpResponse.json({});
-    };
+    const capture =
+      (key: string) =>
+      async ({ request }: { request: Request }) => {
+        captured[key] = await request.json();
+        return HttpResponse.json({});
+      };
     server.use(
       http.post(SET_USER_MFA_URL, capture('mfa')),
       http.post(UNBIND_USER_TOTP_URL, capture('totp')),
@@ -2534,9 +2537,17 @@ describe('api 编辑 / 救援写方法（§5.4 新增七 RPC：msw wire 形态�
     );
 
     const detail = create(UserDetailResponseSchema, {
-      user: { id: '2', username: 'alice', nickname: 'Alice', phone: '13800138000' },
+      user: {
+        id: '2',
+        username: 'alice',
+        nickname: 'Alice',
+        phone: '13800138000',
+      },
     });
-    const draft = { ...apiMod.userEditDraftFromDetail(detail), nickname: 'Alicia' };
+    const draft = {
+      ...apiMod.userEditDraftFromDetail(detail),
+      nickname: 'Alicia',
+    };
     const profileReq = apiMod.buildUpdateUserProfileRequest(
       BigInt(2),
       draft,
@@ -2574,7 +2585,9 @@ describe('api.deleteUser（§5.4 删除用户 → OkResponse：msw wire 形态�
         return HttpResponse.json({});
       }),
     );
-    const res = await apiMod.deleteUser(apiMod.buildDeleteUserRequest(BigInt(42)));
+    const res = await apiMod.deleteUser(
+      apiMod.buildDeleteUserRequest(BigInt(42)),
+    );
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
     expect(body).toEqual({ id: '42' });
   });
@@ -2582,9 +2595,8 @@ describe('api.deleteUser（§5.4 删除用户 → OkResponse：msw wire 形态�
 
 describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下线口径）', () => {
   test('联系方式有 diff → confirm_contact，文案键被门槛引用；取消不放行、确认才提交', async () => {
-    const { userEditSubmitGate, canSubmitUserEdit } = await import(
-      './pages/UserDetailPage'
-    );
+    const { userEditSubmitGate, canSubmitUserEdit } =
+      await import('./pages/UserDetailPage');
     const gate = userEditSubmitGate(false, true);
     expect(gate.kind).toBe('confirm_contact');
     expect(gate.confirmKey).toBe('admin.contactEditConfirm');
@@ -2596,16 +2608,17 @@ describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下�
   });
 
   test('仅资料 diff → direct；无改动 → noop 永不提交', async () => {
-    const { userEditSubmitGate, canSubmitUserEdit } = await import(
-      './pages/UserDetailPage'
-    );
+    const { userEditSubmitGate, canSubmitUserEdit } =
+      await import('./pages/UserDetailPage');
     expect(userEditSubmitGate(true, false)).toEqual({
       kind: 'direct',
       confirmKey: null,
+      strength: 0,
     });
     expect(userEditSubmitGate(false, false)).toEqual({
       kind: 'noop',
       confirmKey: null,
+      strength: 0,
     });
     expect(canSubmitUserEdit(userEditSubmitGate(true, false), false)).toBe(
       true,
@@ -2647,9 +2660,9 @@ describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下�
     });
     expect(disableText).not.toContain('会话');
     expect(disableText).not.toContain('重新登录');
-    expect(
-      t('admin.credentialDeleteConfirm', { kind: '通行密钥' }),
-    ).toContain('重新登录');
+    expect(t('admin.credentialDeleteConfirm', { kind: '通行密钥' })).toContain(
+      '重新登录',
+    );
     setLocale('en-US');
     expect(
       t('admin.credentialDisableConfirm', { kind: 'Passkey' }),
@@ -2684,6 +2697,28 @@ describe('用户详情编辑提交门槛（联系方式二次确认 / 凭证下�
     expect(canSubmitUserDelete('alice', ' ali')).toBe(false);
     expect(canSubmitUserDelete('alice', 'alice')).toBe(true);
     expect(canSubmitUserDelete('', '')).toBe(false);
+  });
+
+  test('确认控件分级由 userWriteConfirmStrength 驱动：门槛强度同源 + 删除输入档收口', async () => {
+    const { userEditSubmitGate, deleteConfirmNeedsTypedInput } =
+      await import('./pages/UserDetailPage');
+    // 编辑提交门槛的强度取值与分级函数同源（联系方式档 = 1、普通编辑档 = 0）。
+    expect(userEditSubmitGate(false, true).strength).toBe(
+      apiMod.userWriteConfirmStrength('contact'),
+    );
+    expect(userEditSubmitGate(true, false).strength).toBe(
+      apiMod.userWriteConfirmStrength('profile'),
+    );
+    expect(userEditSubmitGate(false, true).strength).toBe(1);
+    expect(userEditSubmitGate(true, false).strength).toBe(0);
+    // 删除档（强度 2）→ Modal 内须逐字输入用户名；强度 <2 退化为纯二次确认。
+    expect(apiMod.userWriteConfirmStrength('delete')).toBe(2);
+    expect(deleteConfirmNeedsTypedInput(2)).toBe(true);
+    expect(deleteConfirmNeedsTypedInput(1)).toBe(false);
+    expect(deleteConfirmNeedsTypedInput(0)).toBe(false);
+    expect(deleteConfirmNeedsTypedInput()).toBe(
+      deleteConfirmNeedsTypedInput(apiMod.userWriteConfirmStrength('delete')),
+    );
   });
 });
 

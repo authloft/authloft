@@ -9,14 +9,18 @@ export const USERNAME_PATTERN = /^[A-Za-z0-9_]{5,20}$/;
 
 /**
  * 删除匿名化保留前缀（方案「设计决策」deleted_ 前缀禁用段）：该前缀是已删
- * 账号的唯一可辨识标记，不能由任何新建 / 改写路径产生。按字面前缀、大小写
- * 敏感匹配；服务端为权威，此处仅体验层预校验。
+ * 账号的唯一可辨识标记，不能由任何新建 / 改写路径产生。不分大小写的字面
+ * 前缀匹配（与服务端 EqualFold 拒绝口径一致）；服务端为权威，此处仅体验层
+ * 预校验。
  */
 export const DELETED_USERNAME_PREFIX = 'deleted_';
 
-/** 是否命中删除匿名化保留前缀。 */
+/** 是否命中删除匿名化保留前缀（不分大小写，同服务端 EqualFold 口径）。 */
 export function hasDeletedUsernamePrefix(value: string): boolean {
-  return value.startsWith(DELETED_USERNAME_PREFIX);
+  return value
+    .slice(0, DELETED_USERNAME_PREFIX.length)
+    .toLowerCase()
+    .startsWith(DELETED_USERNAME_PREFIX);
 }
 
 /** 用户名预校验的结构化原因（文案由字典层落；格式与保留前缀分列便于提示）。 */

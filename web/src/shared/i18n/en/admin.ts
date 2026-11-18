@@ -293,6 +293,35 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.storageDomainLabel': 'Public Domain',
   'admin.schemaField.storagePathPrefixLabel': 'Object Key Prefix',
 
+  // S3 storage fields (s3.go): endpoint reuses providerUrlLabel as its label
+  // (help text is S3-specific); bucket / addressing / upload-chain limits and
+  // the MIME whitelist feed the avatar upload chain.
+  'admin.schemaField.s3EndpointHelp':
+    'Scheme optional (defaults to https); the default port is stripped before SigV4 signing',
+  'admin.schemaField.s3BucketLabel': 'Bucket',
+  'admin.schemaField.s3BucketHelp': 'Required; must not contain / or \\',
+  'admin.schemaField.s3RegionLabel': 'Region',
+  'admin.schemaField.s3RegionHelp':
+    'SigV4 region; falls back to us-east-1 when empty',
+  'admin.schemaField.s3PathStyleLabel': 'Path Style',
+  'admin.schemaField.s3PathStyleHelp':
+    'Check to address as host/bucket/key (common for self-hosted MinIO); uncheck for virtual-host bucket.host addressing',
+  'admin.schemaField.s3PublicReadLabel': 'Public Read',
+  'admin.schemaField.s3PublicReadHelp':
+    'Uploaded objects get the public-read ACL and are readable via direct links; do not enable for sensitive content',
+  'admin.schemaField.uploadModeLabel': 'Upload Mode',
+  'admin.schemaField.uploadModeHelp':
+    'proxy = relayed through the server; direct = presigned-URL upload (local does not support direct and falls back to proxy)',
+  'admin.schemaField.presignTtlLabel': 'Presign TTL (seconds)',
+  'admin.schemaField.presignTtlHelp':
+    'Presigned URL lifetime in direct mode; default 300, max 604800 (7 days)',
+  'admin.schemaField.maxSizeLabel': 'Max File Size (bytes)',
+  'admin.schemaField.maxSizeHelp':
+    'Per-file limit for avatar uploads; defaults to 2MB when unset',
+  'admin.schemaField.allowedTypesLabel': 'MIME Whitelist',
+  'admin.schemaField.allowedTypesHelp':
+    'Comma-separated MIME types (e.g. image/png,image/jpeg); leave empty to reject all uploads',
+
   // Provider-specific overrides (alipay / microsoft).
   'admin.schemaField.alipayPrivateKeyLabel': 'App Private Key (PEM)',
   'admin.schemaField.alipayPrivateKeyHelp':
@@ -584,8 +613,7 @@ export const admin: typeof zhAdmin = {
     'Change contact details? The phone number / email you enter will be marked as verified, and all sessions of this user will be invalidated, requiring a new sign-in.',
   'admin.mfaEnableAction': 'Enable Two-Step Verification',
   'admin.mfaDisableAction': 'Disable Two-Step Verification',
-  'admin.mfaEnableConfirm':
-    'Enable two-step verification for "{username}"?',
+  'admin.mfaEnableConfirm': 'Enable two-step verification for "{username}"?',
   'admin.mfaDisableConfirm':
     'Disable two-step verification for "{username}"? All sessions of this user will be invalidated, requiring a new sign-in.',
   'admin.mfaEnableSuccess': 'Two-step verification enabled',

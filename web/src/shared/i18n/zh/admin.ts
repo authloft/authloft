@@ -270,6 +270,32 @@ export const admin = {
   'admin.schemaField.storageDomainLabel': '公开访问域名',
   'admin.schemaField.storagePathPrefixLabel': '对象键前缀',
 
+  // s3 存储字段（s3.go）：endpoint 标签复用 providerUrlLabel（帮助文案独立）；
+  // 桶名 / 寻址 / 上传链限额与白名单为头像上传链消费。
+  'admin.schemaField.s3EndpointHelp':
+    '可带 scheme（默认 https）；默认端口自动剥离后参与 SigV4 签名',
+  'admin.schemaField.s3BucketLabel': '存储桶',
+  'admin.schemaField.s3BucketHelp': '必填；不能含 / 或 \\',
+  'admin.schemaField.s3RegionLabel': '区域（Region）',
+  'admin.schemaField.s3RegionHelp': 'SigV4 region；留空回退 us-east-1',
+  'admin.schemaField.s3PathStyleLabel': '路径寻址（Path Style）',
+  'admin.schemaField.s3PathStyleHelp':
+    '勾选按 host/bucket/key 寻址（MinIO 等自建常见）；不勾按 bucket.host 虚拟主机寻址',
+  'admin.schemaField.s3PublicReadLabel': '公开读',
+  'admin.schemaField.s3PublicReadHelp':
+    '上传对象附 public-read ACL，可直链读取；敏感内容勿开启',
+  'admin.schemaField.uploadModeLabel': '上传模式',
+  'admin.schemaField.uploadModeHelp':
+    'proxy=经服务端中转上传；direct=预签名 URL 直传（local 渠道不支持 direct，回退 proxy）',
+  'admin.schemaField.presignTtlLabel': '预签名有效期（秒）',
+  'admin.schemaField.presignTtlHelp':
+    'direct 模式预签名 URL 有效期；默认 300，上限 604800（7 天）',
+  'admin.schemaField.maxSizeLabel': '单文件大小上限（字节）',
+  'admin.schemaField.maxSizeHelp': '头像上传单文件上限；未配置默认 2MB',
+  'admin.schemaField.allowedTypesLabel': 'MIME 白名单',
+  'admin.schemaField.allowedTypesHelp':
+    '逗号分隔 MIME 类型（如 image/png,image/jpeg）；留空则拒绝一切上传',
+
   // 渠道语义化覆盖（alipay / microsoft）。
   'admin.schemaField.alipayPrivateKeyLabel': '应用私钥（PEM）',
   'admin.schemaField.alipayPrivateKeyHelp':

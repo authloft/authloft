@@ -50,7 +50,7 @@ import {
 import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
-import { isValidUsername } from '../../shared/utils/validate';
+import { usernameIssue } from '../../shared/utils/validate';
 import {
   DEFAULT_ACCOUNT_HOME,
   isValidReturnTo,
@@ -308,6 +308,7 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
  * set_password 段前置校验（评审 P0-2 + P1-3；ResetPage 复用）：
  * 用户名必填 + 格式（§2.3 行 449 唯一定义；requireUsername=false 的重置页跳过）、
  * 密码必填、确认密码只本地比对（不进 payload，§10.3 / §10.4 字段表无此字段）。
+ * 用户名命中 deleted_ 保留前缀给专属提示（区别于通用格式提示）。
  * 返回「字段锚（username / password / confirm）→ 错误文案」，空对象 = 全过；
  * 聚焦顺序即对象键序（SET_PASSWORD_FIELD_ORDER）。纯函数，node 可测。
  */
@@ -328,8 +329,14 @@ export function setPasswordIssues(input: {
   if (input.requireUsername) {
     if (input.username.trim() === '') {
       issues.username = t('common.errRequired');
-    } else if (!isValidUsername(input.username)) {
-      issues.username = t('login.usernameHint');
+    } else {
+      const issue = usernameIssue(input.username);
+      if (issue !== null) {
+        issues.username =
+          issue === 'reserved_prefix'
+            ? t('admin.usernameReservedPrefixHint')
+            : t('login.usernameHint');
+      }
     }
   }
   if (input.password === '') {
@@ -584,9 +591,11 @@ export function RegisterPageView({
               </p>
             ) : (
               username !== '' &&
-              !isValidUsername(username) && (
+              usernameIssue(username) !== null && (
                 <p role="status" className={styles.hint}>
-                  {t('login.usernameHint')}
+                  {usernameIssue(username) === 'reserved_prefix'
+                    ? t('admin.usernameReservedPrefixHint')
+                    : t('login.usernameHint')}
                 </p>
               )
             )}

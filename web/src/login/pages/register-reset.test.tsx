@@ -434,6 +434,27 @@ describe('setPasswordIssues（评审 P0-2 + P1-3：set_password 段前置校验�
     ).toEqual({});
   });
 
+  test('保留前缀（不分大小写）：DELETED_ / deleted_ 均给专属提示，区别于格式提示', () => {
+    // deleted_ 前缀为系统保留（服务端 EqualFold 同口径），提示区别于通用格式。
+    const reservedHint = '用户名不能以 deleted_ 开头，该前缀为系统保留';
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'DELETED_user',
+        password: 'Abcdef12',
+        confirm: 'Abcdef12',
+        requireUsername: true,
+      }),
+    ).toEqual({ username: reservedHint });
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'deleted_user',
+        password: 'Abcdef12',
+        confirm: 'Abcdef12',
+        requireUsername: true,
+      }),
+    ).toEqual({ username: reservedHint });
+  });
+
   test('重置（requireUsername=false）：不校验用户名，只密码 + 确认', () => {
     expect(
       pagesMod.setPasswordIssues({
@@ -617,6 +638,15 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<div></div>'); // otp 流程 set_password 不渲染 captcha
     // 用户名格式体验性预校验（§2.3 行 449 唯一定义；服务端权威）。
     expect(markup).toContain('用户名须为 5-20 位字母、数字或下划线');
+  });
+
+  test('set_password 帧：DELETED_ 前缀（不分大小写）实时提示走保留前缀专属文案', () => {
+    const markup = renderRegisterView({
+      step: 'set_password',
+      username: 'DELETED_user',
+    });
+    expect(markup).toContain('该前缀为系统保留');
+    expect(markup).not.toContain('用户名须为 5-20 位字母、数字或下划线');
   });
 
   test('verify 帧：CodeInput + 下一步 + 重发倒计时 + 容器持值回填（§10.3 行 1526）', () => {
