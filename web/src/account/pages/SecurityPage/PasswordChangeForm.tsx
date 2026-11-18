@@ -159,7 +159,7 @@ export function PasswordChangeForm(props: {
   // done 跳转与集中 onError 的 401 returnTo 共用同一拼装（accountReturnTo）。
   const location = useLocation();
   // 手动提交：错误行内呈现（toast:false 防双报），成功链走 onSuccess——
-  // 清空表单 + Toast（P1-6 统一通道；文案含「已退出登录」语义）+ done 驱动
+  // 清空表单 + Toast（统一通道；文案含「已退出登录」语义）+ done 驱动
   // 延时跳登录页（全会话失效契约不变）。run 不吞错、错误进集中 onError。
   const { data, error, loading, run } = useRequest(changePassword, {
     manual: true,

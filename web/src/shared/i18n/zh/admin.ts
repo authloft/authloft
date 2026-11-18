@@ -597,7 +597,7 @@ export const admin = {
   'admin.deleteUserSuccess': '已删除用户「{username}」',
   'admin.deletedUserNotice':
     '该用户已删除（用户名以 deleted_ 开头）：资料已匿名化、凭证已清空，所有写操作不可用。',
-  'admin.deletedUserTag': '已注销',
+  'admin.deletedUserTag': '已删除',
   'admin.filterAnyOption': '不限',
   'admin.createdFromFilterPlaceholder': '创建时间（起）',
   'admin.createdToFilterPlaceholder': '创建时间（止）',

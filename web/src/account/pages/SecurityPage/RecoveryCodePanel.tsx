@@ -7,7 +7,7 @@
  *   （§5 行 485「直接交给 RecoveryCodePanel」；无 createdAt / 重新生成入口）；
  * - MfaSetting 查看场景：GetRecoveryCodes 结果 + 重新生成回调。
  * 复制走 shared CopyButton（useCopy，剪贴板不可用静默失败）。
- * 评审 P2-3：「下载为文本」——纯前端 Blob 下载（非请求，§9 第 16 条
+ * 「下载为文本」——纯前端 Blob 下载（非请求，§9 第 16 条
  * 仅禁手拼 Blob 发请求），文件名固定 authloft-recovery-codes.txt。
  * 文案经 shared/i18n（account.* 域键）。
  */
@@ -47,7 +47,7 @@ export function RecoveryCodePanel(props: {
           </span>
         ) : null}
         <CopyButton text={props.codes.join('\n')} />
-        {/* 评审 P2-3：下载为文本（纯前端 Blob 下载，对齐 Casdoor）。 */}
+        {/* 下载为文本（纯前端 Blob 下载，对齐 Casdoor）。 */}
         <Button
           type="tertiary"
           theme="outline"
