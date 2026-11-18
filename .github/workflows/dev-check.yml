@@ -203,9 +203,15 @@ jobs:
           - name: linux-amd64
             goos: linux
             goarch: amd64
+            ldflags: ''
           - name: windows-amd64
             goos: windows
             goarch: amd64
+            ldflags: ''
+          - name: windows-amd64-prod
+            goos: windows
+            goarch: amd64
+            ldflags: '-s -w'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -233,7 +239,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          env $EXTRA_ENV go build -tags nomsgpack -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
+          env $EXTRA_ENV go build -tags nomsgpack -ldflags "${{ matrix.ldflags }}" -o "dist/authloft-${{ matrix.name }}${{ matrix.goos == 'windows' && '.exe' || '' }}" .
         working-directory: server
 
       - name: Upload go artifact
