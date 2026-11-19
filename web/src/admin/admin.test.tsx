@@ -176,6 +176,18 @@ import {
  *   （MFA 候选交集硬生效的保存提示判定）/ showsDefaultRedirectHint
  *   （非空即提示须命中回调白名单）。
  *
+ * SSO 客户端统一表单族追加（SsoClientsPage 新建 / 编辑两 SideSheet 抽公共
+ * 表单组件 SsoClientForm，字段渲染 / label / 校验 / 白名单提示一份定义，
+ * 两模式差异经 mode 表达）：
+ * - SsoClientForm 静态渲染两 mode：create 有 clientId 可填占位、无密钥项，
+ *   应用级登录配置三字段齐全（新建侧默认回跳输入框由此补齐）；edit 另有
+ *   clientId 只读注记 + newSecret 轮换位；MFA 风险 / 默认回跳白名单提示
+ *   随草稿值条件出现；
+ * - buildCreateSsoClientRequest 与 buildUpdateSsoClientRequest 同口径下发
+ *   应用级登录配置三字段与 has_* 伴生标志（新建 wire 用例）；
+ * - 草稿统一形态 SsoClientFormDraft + 零值工厂 emptySsoClientFormDraft
+ *   （api 层一份定义，新建初始 / 重开重置 / dirty 基线共用）。
+ *
  * 追加 settings 族测试（接口文档 §5.6 行 1287-1363 settings 族；后端已实装
  * 全量投影 / 部分更新，读路径真调语义 → msw 走真实 transport 归一链）：
  * - api.getSettings msw：SettingsResponse 读路径解码（int64 十进制字符串 →
@@ -306,9 +318,10 @@ const server = setupServer();
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
 let routesMod: typeof import('./routes');
-// ConfirmActionButton 引 ../api（apiErrorText）→ 同 http.ts 模块求值时机约束，
-// 必须与 apiMod 一样在 beforeAll 动态 import，不可顶层静态引。
+// ConfirmActionButton / SsoClientForm 引 ../api → 同 http.ts 模块求值时机
+// 约束，必须与 apiMod 一样在 beforeAll 动态 import，不可顶层静态引。
 let confirmActionButtonMod: typeof import('./components/ConfirmActionButton');
+let ssoClientFormMod: typeof import('./components/SsoClientForm');
 
 // routes 兜底渲染断言（文末 describe）专用：AdminLayout 的 GetMe 数据门
 // （加载态 Spin）在 renderToStaticMarkup 下恒落于 loading 分支（effects
@@ -330,6 +343,7 @@ beforeAll(async () => {
   apiMod = await import('./api');
   routesMod = await import('./routes');
   confirmActionButtonMod = await import('./components/ConfirmActionButton');
+  ssoClientFormMod = await import('./components/SsoClientForm');
 });
 
 beforeEach(() => {
@@ -2934,7 +2948,7 @@ describe('api.getSsoClient（§5.5 行 1262：{id} → SsoClient 明文密钥）
   });
 });
 
-describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端生成）', () => {
+describe('api.createSsoClient（§5.5 → OkResponse；密钥服务端生成）', () => {
   test('clientId 空串省略（服务端生成）/ name 去空白 / redirectUris 清洗后整组；clientSecret 键不下发；500 reject → ApiError', async () => {
     let requestBody: unknown;
     server.use(
@@ -2945,16 +2959,16 @@ describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端�
     );
 
     const res = await apiMod.createSsoClient(
-      apiMod.buildCreateSsoClientRequest({
-        clientId: '   ', // trim 后空 → protojson 省略 → 后端读零值生成
-        name: ' 门户站 ',
-        redirectUris: [' https://a.test/cb ', '', '*'],
-      }),
+      apiMod.buildCreateSsoClientRequest(apiMod.emptySsoClientFormDraft()),
     );
-    // clientSecret 由服务端生成：请求体无该键（后端忽略同名字段）。
+    // clientSecret 由服务端生成：请求体无该键（后端忽略同名字段）；统一
+    // 空草稿（零值工厂）下 name / clientId / uris / 登录配置数组全部零值
+    // 省略，仅 has_* 伴生标志与显式空串 defaultRedirectUri 在场（Create /
+    // Update 同口径下发，空值 = 未配置 = 跟随全局）。
     expect(requestBody).toEqual({
-      name: '门户站',
-      redirectUris: ['https://a.test/cb', '*'],
+      hasLoginMethods: true,
+      hasOauthProviders: true,
+      defaultRedirectUri: '',
     });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
 
@@ -2968,9 +2982,9 @@ describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端�
     try {
       await apiMod.createSsoClient(
         apiMod.buildCreateSsoClientRequest({
+          ...apiMod.emptySsoClientFormDraft(),
           clientId: 'portal',
           name: '门户站',
-          redirectUris: [],
         }),
       );
     } catch (error) {
@@ -2979,9 +2993,40 @@ describe('api.createSsoClient（§5.5 行 1261 → OkResponse；密钥服务端�
     expect(caught).toBeInstanceOf(ApiError);
     expect((caught as ApiError).httpStatus).toBe(500);
   });
+
+  test('新建同口径下发应用级登录配置：loginMethods / oauthProviders 数组 + has_* = true、defaultRedirectUri 非空 trim（与 Update 一致）', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(CREATE_SSO_CLIENT_URL, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({});
+      }),
+    );
+    await apiMod.createSsoClient(
+      apiMod.buildCreateSsoClientRequest({
+        ...apiMod.emptySsoClientFormDraft(),
+        clientId: 'portal',
+        name: ' 门户站 ',
+        redirectUris: [' https://a.test/cb ', '', '*'],
+        loginMethods: ['password', 'thirdparty'],
+        oauthProviders: ['qq', 'github'],
+        defaultRedirectUri: '  https://portal.test/home  ',
+      }),
+    );
+    expect(requestBody).toEqual({
+      clientId: 'portal',
+      name: '门户站',
+      redirectUris: ['https://a.test/cb', '*'],
+      loginMethods: ['password', 'thirdparty'],
+      hasLoginMethods: true,
+      oauthProviders: ['qq', 'github'],
+      hasOauthProviders: true,
+      defaultRedirectUri: 'https://portal.test/home',
+    });
+  });
 });
 
-describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级登录配置整组提交）', () => {
+describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配置整组提交）', () => {
   test('clientId 不下发（创建后不可改）；clientSecret 留空省略=保留 / 非空下发=轮换；name 空串 / 空组省略=保留', async () => {
     const bodies: unknown[] = [];
     server.use(
@@ -2993,12 +3038,11 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级�
 
     const keep = await apiMod.updateSsoClient(
       apiMod.buildUpdateSsoClientRequest(BigInt(1), {
-        newSecret: '',
+        ...apiMod.emptySsoClientFormDraft(),
+        clientId: 'portal-1',
         name: '门户站 v2',
         redirectUris: ['https://portal.test/cb'],
         loginMethods: ['password', 'thirdparty'],
-        oauthProviders: [],
-        defaultRedirectUri: '',
       }),
     );
     expect(bodies[0]).toEqual({
@@ -3019,12 +3063,8 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级�
     // 轮换：newSecret trim 后非空 → wire 下发 clientSecret；name / uris 空即省略（保留原值）。
     const rotate = await apiMod.updateSsoClient(
       apiMod.buildUpdateSsoClientRequest(BigInt(2), {
+        ...apiMod.emptySsoClientFormDraft(),
         newSecret: ' new-secret ',
-        name: '',
-        redirectUris: [],
-        loginMethods: [],
-        oauthProviders: [],
-        defaultRedirectUri: '',
       }),
     );
     expect(bodies[1]).toEqual({
@@ -3047,7 +3087,7 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级�
     );
     await apiMod.updateSsoClient(
       apiMod.buildUpdateSsoClientRequest(BigInt(7), {
-        newSecret: '',
+        ...apiMod.emptySsoClientFormDraft(),
         name: '门户站 v3',
         redirectUris: ['https://portal.test/cb'],
         loginMethods: ['otp_sms', 'webauthn'],
@@ -3077,12 +3117,9 @@ describe('api.updateSsoClient（§5.5 行 1262：PATCH 缺省保留 + 应用级�
     );
     await apiMod.updateSsoClient(
       apiMod.buildUpdateSsoClientRequest(BigInt(9), {
-        newSecret: '',
+        ...apiMod.emptySsoClientFormDraft(),
         name: 'x',
         redirectUris: ['https://portal.test/cb'],
-        loginMethods: [],
-        oauthProviders: [],
-        defaultRedirectUri: '',
       }),
     );
     expect(requestBody).toEqual({
@@ -3189,6 +3226,108 @@ describe('SSO 应用级登录配置纯函数（§5.5 / §5.9 前端）', () => {
     expect(apiMod.showsDefaultRedirectHint('https://portal.test/home')).toBe(
       true,
     );
+  });
+});
+
+describe('SsoClientForm 统一表单（新建 / 编辑两 mode 共用，§5.5）', () => {
+  /** 统一表单静态渲染（受控 props 接线，零请求零 effects）。 */
+  function renderForm(
+    mode: 'create' | 'edit',
+    draft: ReturnType<typeof apiMod.emptySsoClientFormDraft>,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(ssoClientFormMod.SsoClientForm, {
+        mode,
+        draft,
+        onChange: () => {},
+        disabled: false,
+        loginMethodOptions: [
+          { value: 'password', label: '密码登录' },
+          { value: 'thirdparty', label: '第三方登录' },
+        ],
+        oauthProviderOptions: [{ label: 'QQ 登录', value: 'qq' }],
+        templateOptions: [
+          { value: 'login', label: 'login' },
+          { value: '', label: '不指定（默认文件壳）' },
+        ],
+      }),
+    );
+  }
+
+  test('emptySsoClientFormDraft：统一草稿零值（clientId / newSecret / 登录配置三字段空值 = 跟随全局）', () => {
+    expect(apiMod.emptySsoClientFormDraft()).toEqual({
+      clientId: '',
+      newSecret: '',
+      name: '',
+      redirectUris: [],
+      templateKey: '',
+      templateVars: '',
+      loginMethods: [],
+      oauthProviders: [],
+      defaultRedirectUri: '',
+    });
+    // 每次调用出新对象（dirty 基线对比不被共享引用污染）。
+    expect(apiMod.emptySsoClientFormDraft()).not.toBe(
+      apiMod.emptySsoClientFormDraft(),
+    );
+  });
+
+  test('mode=create：clientId 可填占位、无密钥项；应用级登录配置三字段齐全（新建侧默认回跳输入框补齐）', () => {
+    setLocale('zh-CN');
+    const html = renderForm('create', apiMod.emptySsoClientFormDraft());
+    // clientId 可填：占位「留空自动生成」，无只读注记。
+    expect(html).toContain('客户端标识');
+    expect(html).toContain('留空自动生成');
+    expect(html).not.toContain('创建后不可修改');
+    // 无 newSecret 轮换位（新建密钥服务端生成）。
+    expect(html).not.toContain('新密钥');
+    expect(html).not.toContain('留空保留原密钥');
+    // 应用级登录配置三字段 + 模板两字段一份不少（§5.5）。
+    expect(html).toContain('登录方式');
+    expect(html).toContain('密码登录');
+    expect(html).toContain('OAuth Provider');
+    expect(html).toContain('默认回跳地址');
+    expect(html).toContain('回调白名单');
+    expect(html).toContain('模板变量');
+    // 缺省空值：无 MFA 风险提示、无默认回跳白名单提示。
+    expect(html).not.toContain('仅绑定这些因子的用户将无法登录该应用');
+    expect(html).not.toContain('须命中本客户端回调白名单');
+    setLocale('zh-CN');
+  });
+
+  test('mode=edit：clientId 只读回显 + newSecret 轮换位；草稿值驱动 MFA 风险 / 白名单提示', () => {
+    setLocale('zh-CN');
+    const html = renderForm('edit', {
+      ...apiMod.emptySsoClientFormDraft(),
+      clientId: 'portal-1',
+      loginMethods: ['password'],
+      defaultRedirectUri: 'https://portal.test/home',
+    });
+    // clientId 只读：值回显 + 不可改注记；newSecret 轮换位在场。
+    expect(html).toContain('portal-1');
+    expect(html).toContain('创建后不可修改');
+    expect(html).toContain('新密钥');
+    expect(html).toContain('填写后保存将轮换密钥，请同步更新接入方');
+    // 登录方式勾选渲染 + MFA 风险提示（配置非空且缺可主可次因子）。
+    expect(html).toContain('登录方式');
+    expect(html).toContain('仅绑定这些因子的用户将无法登录该应用');
+    // 默认回跳：占位 + 非空触发的白名单提示（前端提示不拦截）。
+    expect(html).toContain('默认回跳地址');
+    expect(html).toContain('须命中本客户端回调白名单');
+    setLocale('zh-CN');
+  });
+
+  test('提示条件：全不选 = 跟随全局无 MFA 风险提示；默认回跳空 = 无白名单提示', () => {
+    setLocale('zh-CN');
+    const html = renderForm('edit', {
+      ...apiMod.emptySsoClientFormDraft(),
+      clientId: 'portal-2',
+    });
+    expect(html).not.toContain('仅绑定这些因子的用户将无法登录该应用');
+    expect(html).not.toContain('须命中本客户端回调白名单');
+    // 编辑模式缺省草稿仍渲染默认回跳输入框本身（label 在、提示不在）。
+    expect(html).toContain('默认回跳地址');
+    setLocale('zh-CN');
   });
 });
 
@@ -4985,6 +5124,7 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
 
   test('客户端四 build 携带模板两字段 + 草稿回填（原文不改、空白视为未配置）', () => {
     const ssoCreate = apiMod.buildCreateSsoClientRequest({
+      ...apiMod.emptySsoClientFormDraft(),
       clientId: 'app',
       name: 'App',
       redirectUris: ['*'],
@@ -4993,16 +5133,19 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
     });
     expect(ssoCreate.templateKey).toBe('login');
     expect(ssoCreate.templateVars).toBe('{ "a": 1 }');
+    // 新建与编辑同口径下发应用级登录配置（§5.5）。
+    expect(ssoCreate.loginMethods).toEqual([]);
+    expect(ssoCreate.hasLoginMethods).toBe(true);
+    expect(ssoCreate.oauthProviders).toEqual([]);
+    expect(ssoCreate.hasOauthProviders).toBe(true);
+    expect(ssoCreate.defaultRedirectUri).toBe('');
 
     const ssoUpdate = apiMod.buildUpdateSsoClientRequest(BigInt(1), {
-      newSecret: '',
+      ...apiMod.emptySsoClientFormDraft(),
       name: 'App',
       redirectUris: ['*'],
       templateKey: 'custom_a',
       templateVars: '{"b":2}',
-      loginMethods: [],
-      oauthProviders: [],
-      defaultRedirectUri: '',
     });
     expect(ssoUpdate.templateKey).toBe('custom_a');
     expect(ssoUpdate.templateVars).toBe('{"b":2}');

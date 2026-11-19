@@ -1,45 +1,42 @@
 /**
- * SSO 客户端列表页（docs/前端架构.md §6 行 519；docs/接口文档.md §5.5 行
- * 1257-1268；docs/需求.md §4.6 行 257）——/admin/clients/sso。
+ * SSO 客户端列表页（docs/前端架构.md §6；docs/接口文档.md §5.5；docs/需求.md
+ * §4.6）——/admin/clients/sso。
  *
  * SSO 客户端 CRUD + 回调白名单管理（redirectUris[] 支持 * 通配、整段匹配
- * §12.3；仅后台手动创建 §5.5 行 1266）：
+ * §12.3；仅后台手动创建）：
  * - 列表：DataTable 服务端分页 + 排序（可排序列 dataIndex 即 wire 列名，
  *   §1.7 sort 由前端限定 + 后端 orderClause ^[a-z0-9_]+$，既定口径）；
  * - 新建：clientId 留空服务端生成；clientSecret 由服务端生成（请求不带，
  *   后端忽略同名字段），成功后回第 1 页（后端缺省序 id DESC）；
- * - 查看：GetSsoClient 返回明文 client_secret（§5.2 行 1170 凭证口径，
- *   全站唯一明文出口），详情弹窗内 CopyButton 可复制；
+ * - 查看：GetSsoClient 返回明文 client_secret（§5.2 凭证口径，全站唯一
+ *   明文出口），详情弹窗内 CopyButton 可复制；
  * - 编辑：PATCH 缺省保留——clientId 创建后不可改（只读展示）、新密钥留空
  *   保留 / 非空轮换、回调白名单空组 = 保留原值（前端阻断防误解）；
- * - 应用级登录配置（编辑 SideSheet，§5.5）：登录方式复选组（封闭集
- *   password / otp_sms / otp_email / webauthn / thirdparty，全不选 = 跟随
- *   全局）+ OAuth Provider 多选（数据源复用 ProvidersPage 同源列表，
- *   过滤 category=oauth）+ 默认回跳输入框（须命中回调白名单，匹配校验
- *   在服务端，前端提示不拦截）；保存整组提交（repeated 两字段恒带
- *   has_* 伴生标志 true，空数组 = 清空跟随全局；default_redirect_uri
- *   proto3 optional 显式空串 = 清空）；MFA 可用因子被关闭时给风险提示。
+ * - 新建 / 编辑表单共用 SsoClientForm 统一组件（字段渲染 / label / 校验 /
+ *   白名单提示一份定义，两模式差异经 mode 表达），应用级登录配置三字段
+ *   （§5.5）两模式都渲染：登录方式复选组（全不选 = 跟随全局）+ OAuth
+ *   Provider 多选（数据源复用 ProvidersPage 同源列表，过滤 category=oauth）
+ *   + 默认回跳输入框（须命中回调白名单，匹配校验在服务端，前端提示不拦截）；
+ *   保存整组提交——Create / Update 同口径恒带 has_* 伴生标志 true（空数组
+ *   = 未配置 / 清空跟随全局；default_redirect_uri proto3 optional 显式下发）；
+ *   MFA 可用因子被关闭时给风险提示。
  * - 删除：Popconfirm 确认，硬删不可恢复。
  *
- * 401 统一跳登录（§6 行 501，UsersPage 同模式；详情读取同口径）；404 掩护
- * 等其余错误走页面错误态（Semi Banner）。写操作成功 / 失败 Toast 提示
- * （Modal 内表单错误保持行内）。组件壳 import Semi 后不可在 node
- * 测试（工具链 blocker），可测逻辑
- * 全部收口在 ./api（请求构造 / 校验 / 展示纯函数）。
+ * 401 统一跳登录（§6，UsersPage 同模式；详情读取同口径）；404 掩护等其余
+ * 错误走页面错误态（Semi Banner）。写操作成功 / 失败 Toast 提示（Modal 内
+ * 表单错误保持行内）。组件壳 import Semi / ahooks 后不可在 node 测试
+ * （工具链 blocker），可测逻辑全部收口在 ./api（请求构造 / 校验 / 展示纯
+ * 函数）；表单字段渲染收口在 ../components/SsoClientForm（两模式共用）。
  * 样式（§1.7）：同目录同名 module less。
  */
 import { useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
-  CheckboxGroup,
   Empty,
-  Input,
   Modal,
-  Select,
   SideSheet,
   Spin,
-  TextArea,
   Toast,
 } from '@douyinfe/semi-ui';
 import { CopyButton } from '../../shared/components/CopyButton';
@@ -57,12 +54,10 @@ import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
 import { ConfirmActionButton } from '../components/ConfirmActionButton';
-import { StringListEditor } from '../components/StringListEditor';
+import { SsoClientForm } from '../components/SsoClientForm';
 import type { SsoClient } from '../../gen/proto/api/admin/v1/client_pb';
 import {
   adminReturnTo,
-  CLIENT_ID_MAX_LEN,
-  CLIENT_NAME_MAX_LEN,
   apiErrorText,
   buildCreateSsoClientRequest,
   buildDeleteSsoClientRequest,
@@ -75,6 +70,7 @@ import {
   clientTemplateDraft,
   createSsoClient,
   deleteSsoClient,
+  emptySsoClientFormDraft,
   formatUnixTime,
   getSsoClient,
   isUnauthenticatedError,
@@ -83,15 +79,12 @@ import {
   listTemplates,
   oauthProviderSelectOptions,
   redirectUrisIssue,
-  showsDefaultRedirectHint,
-  showsMfaRiskHint,
   SSO_LOGIN_METHODS,
   summarizeList,
   templateSelectOptions,
   templateVarsIssue,
   updateSsoClient,
-  type SsoClientDraft,
-  type SsoClientEditDraft,
+  type SsoClientFormDraft,
 } from '../api';
 import styles from './SsoClientsPage.module.less';
 
@@ -168,15 +161,12 @@ export function SsoClientsPage(_props: {
   }));
   // 写操作成功 / 失败反馈统一走 Semi Toast（校验文案经 throw 进 onError）；
   // 弹窗内不再自持错误态。
-  // 新建弹窗（§5.5 行 1261：clientSecret 服务端生成，表单无密钥项）。
+  // 新建弹窗（clientSecret 服务端生成，表单无密钥项；草稿统一形态含
+  // newSecret / 登录配置三字段，新建侧恒空值 = 跟随全局）。
   const [createOpen, setCreateOpen] = useState(false);
-  const [createDraft, setCreateDraft] = useState<SsoClientDraft>({
-    clientId: '',
-    name: '',
-    redirectUris: [],
-    templateKey: '',
-    templateVars: '',
-  });
+  const [createDraft, setCreateDraft] = useState<SsoClientFormDraft>(
+    emptySsoClientFormDraft,
+  );
   // 查看弹窗（GetSsoClient 明文密钥的唯一展示位）。
   const [viewId, setViewId] = useState<bigint | null>(null);
   // 弹窗详情手写三态收编 ahooks（manual，开弹窗即 run）；401 由集中
@@ -190,20 +180,12 @@ export function SsoClientsPage(_props: {
       returnTo: () => adminReturnTo(location.pathname, location.search),
     }),
   });
-  // 编辑弹窗（§5.5 行 1262 PATCH 缺省保留；应用级登录配置整组提交）。
+  // 编辑弹窗（PATCH 缺省保留；应用级登录配置整组提交，与新建同口径）。
   const [editTarget, setEditTarget] = useState<SsoClient | null>(null);
-  const [editDraft, setEditDraft] = useState<SsoClientEditDraft>({
-    newSecret: '',
-    name: '',
-    redirectUris: [],
-    templateKey: '',
-    templateVars: '',
-    loginMethods: [],
-    oauthProviders: [],
-    defaultRedirectUri: '',
-  });
+  const [editDraft, setEditDraft] =
+    useState<SsoClientFormDraft>(emptySsoClientFormDraft);
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
-  const [editBaseline, setEditBaseline] = useState<SsoClientEditDraft | null>(
+  const [editBaseline, setEditBaseline] = useState<SsoClientFormDraft | null>(
     null,
   );
 
@@ -212,15 +194,9 @@ export function SsoClientsPage(_props: {
     refresh();
   }
 
-  /** 打开新建弹窗：清空上次草稿。 */
+  /** 打开新建弹窗：清空上次草稿（统一形态零值，每次出新对象）。 */
   function openCreate(): void {
-    setCreateDraft({
-      clientId: '',
-      name: '',
-      redirectUris: [],
-      templateKey: '',
-      templateVars: '',
-    });
+    setCreateDraft(emptySsoClientFormDraft());
     setCreateOpen(true);
   }
 
@@ -241,17 +217,10 @@ export function SsoClientsPage(_props: {
     close();
   }
 
-  /** 关闭新建弹窗（草稿有任一改动时需确认；基线 = 打开时的空草稿）。 */
+  /** 关闭新建弹窗（草稿有任一改动时需确认；基线 = 打开时的统一空草稿）。 */
   function closeCreate(): void {
     confirmCloseIfDirty(
-      JSON.stringify(createDraft) !==
-        JSON.stringify({
-          clientId: '',
-          name: '',
-          redirectUris: [],
-          templateKey: '',
-          templateVars: '',
-        }),
+      JSON.stringify(createDraft) !== JSON.stringify(emptySsoClientFormDraft()),
       () => setCreateOpen(false),
     );
   }
@@ -265,7 +234,7 @@ export function SsoClientsPage(_props: {
     );
   }
 
-  /** 提交新建（§5.5 行 1261）：redirectUris 条目校验前置（§1.7 前端自律）。 */
+  /** 提交新建（§5.5）：redirectUris 条目校验前置（§1.7 前端自律）。 */
   const { run: submitCreate, loading: createSubmitting } = useRequest(
     async () => {
       const issue = redirectUrisIssue(createDraft.redirectUris);
@@ -291,7 +260,7 @@ export function SsoClientsPage(_props: {
   );
 
   /**
-   * 打开查看（§5.5 行 1262 GetSsoClient）：读取明文密钥；401 由集中 onError
+   * 打开查看（§5.5 GetSsoClient）：读取明文密钥；401 由集中 onError
    * 跳登录，其余错误在弹窗内行内提示（viewReq.error）。
    */
   function openView(row: SsoClient): void {
@@ -301,7 +270,8 @@ export function SsoClientsPage(_props: {
 
   /** 打开编辑弹窗：clientId 只读展示（创建后不可改），草稿按行现值回填。 */
   function openEdit(row: SsoClient): void {
-    const baseline: SsoClientEditDraft = {
+    const baseline: SsoClientFormDraft = {
+      clientId: row.clientId,
       newSecret: '',
       name: row.name,
       redirectUris: [...row.redirectUris],
@@ -316,7 +286,7 @@ export function SsoClientsPage(_props: {
   }
 
   /**
-   * 提交编辑（§5.5 行 1262 PATCH）：空白名单阻断（后端空组 = 保留原值，
+   * 提交编辑（§5.5 PATCH）：空白名单阻断（后端空组 = 保留原值，
    * 清空提交不生效，前端自律拦截防误解）；密钥留空保留 / 非空轮换。
    * 校验 issue 经 throw 进 onError 出 Toast（与新建同口径）。
    */
@@ -353,7 +323,7 @@ export function SsoClientsPage(_props: {
     },
   );
 
-  // 列口径（§6 行 519 客户端 CRUD / 回调白名单）：客户端标识（可复制 + 可
+  // 列口径（§6 客户端 CRUD / 回调白名单）：客户端标识（可复制 + 可
   // 排序）/ 展示名 / 回调白名单（摘要，全量在详情）/ 创建 / 更新时间（可
   // 排序）/ 操作；可排序列 dataIndex 即 wire 列名（§1.7 sort 前端限定）。
   const columns: DataTableColumn<SsoClient>[] = [
@@ -488,96 +458,17 @@ export function SsoClientsPage(_props: {
           </div>
         }
       >
-        <div className={styles.formBody}>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.clientIdLabel')}
-            </span>
-            <Input
-              value={createDraft.clientId}
-              onChange={(value) =>
-                setCreateDraft({ ...createDraft, clientId: value })
-              }
-              maxLength={CLIENT_ID_MAX_LEN}
-              placeholder={t('admin.clientIdAutoGenPlaceholder')}
-              aria-label={t('admin.clientIdLabel')}
-              disabled={createSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.clientNameLabel')}
-            </span>
-            <Input
-              value={createDraft.name}
-              onChange={(value) =>
-                setCreateDraft({ ...createDraft, name: value })
-              }
-              maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder={t('admin.clientNamePlaceholder')}
-              aria-label={t('admin.clientNameLabel')}
-              disabled={createSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.redirectUrisLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.redirectUriEntryHint')}
-            </span>
-            <StringListEditor
-              values={createDraft.redirectUris}
-              onChange={(next) =>
-                setCreateDraft({ ...createDraft, redirectUris: next })
-              }
-              disabled={createSubmitting}
-              ariaLabel={t('admin.redirectUriAriaLabel')}
-              addText={t('admin.addRedirectUri')}
-              placeholder={t('admin.redirectUriPlaceholder')}
-              emptyHint={t('admin.noRedirectUrisHint')}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.templateLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.templateSelectHint')}
-            </span>
-            <Select
-              value={createDraft.templateKey}
-              onChange={(value) =>
-                setCreateDraft({
-                  ...createDraft,
-                  templateKey: typeof value === 'string' ? value : '',
-                })
-              }
-              optionList={templateOptions}
-              placeholder={t('admin.templateUnspecified')}
-              aria-label={t('admin.templateLabel')}
-              disabled={createSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.templateVarsLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.templateVarsHint')}
-            </span>
-            <TextArea
-              value={createDraft.templateVars}
-              onChange={(value) =>
-                setCreateDraft({ ...createDraft, templateVars: value })
-              }
-              placeholder={t('admin.templateVarsPlaceholder')}
-              aria-label={t('admin.templateVarsLabel')}
-              autosize={{ minRows: 3, maxRows: 10 }}
-              disabled={createSubmitting}
-            />
-          </div>
-        </div>
+        {/* 新建 / 编辑共用统一表单组件（字段渲染一份定义）；本页只出
+            SideSheet 壳、草稿 state 与提交逻辑，选项经 props 注入。 */}
+        <SsoClientForm
+          mode="create"
+          draft={createDraft}
+          onChange={setCreateDraft}
+          disabled={createSubmitting}
+          loginMethodOptions={loginMethodOptions}
+          oauthProviderOptions={oauthProviderOptions}
+          templateOptions={templateOptions}
+        />
       </SideSheet>
       <SideSheet
         title={t('admin.clientDetailTitle')}
@@ -676,179 +567,15 @@ export function SsoClientsPage(_props: {
           </div>
         }
       >
-        <div className={styles.formBody}>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.clientIdLabel')}
-            </span>
-            <Input
-              value={editTarget?.clientId ?? ''}
-              disabled
-              aria-label={t('admin.clientIdLabel')}
-            />
-            <span className={styles.fieldHint}>
-              {t('admin.clientIdImmutable')}
-            </span>
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.clientNameLabel')}
-            </span>
-            <Input
-              value={editDraft.name}
-              onChange={(value) => setEditDraft({ ...editDraft, name: value })}
-              maxLength={CLIENT_NAME_MAX_LEN}
-              placeholder={t('admin.clientNamePlaceholder')}
-              aria-label={t('admin.clientNameLabel')}
-              disabled={editSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.newSecretLabel')}
-            </span>
-            <Input
-              mode="password"
-              value={editDraft.newSecret}
-              onChange={(value) =>
-                setEditDraft({ ...editDraft, newSecret: value })
-              }
-              placeholder={t('admin.newSecretPlaceholder')}
-              aria-label={t('admin.newSecretLabel')}
-              autoComplete="new-password"
-              disabled={editSubmitting}
-            />
-            <span className={styles.fieldHint}>
-              {t('admin.secretRotateHint')}
-            </span>
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.redirectUrisLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.redirectUriEntryHint')}
-            </span>
-            <StringListEditor
-              values={editDraft.redirectUris}
-              onChange={(next) =>
-                setEditDraft({ ...editDraft, redirectUris: next })
-              }
-              disabled={editSubmitting}
-              ariaLabel={t('admin.redirectUriAriaLabel')}
-              addText={t('admin.addRedirectUri')}
-              placeholder={t('admin.redirectUriPlaceholder')}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.ssoLoginMethodsLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.ssoLoginMethodsHint')}
-            </span>
-            <CheckboxGroup
-              value={editDraft.loginMethods}
-              onChange={(value) =>
-                setEditDraft({
-                  ...editDraft,
-                  loginMethods: value.map(String),
-                })
-              }
-              options={loginMethodOptions}
-              aria-label={t('admin.ssoLoginMethodsLabel')}
-              disabled={editSubmitting}
-            />
-            {showsMfaRiskHint(editDraft.loginMethods) ? (
-              <Banner
-                type="warning"
-                fullMode={false}
-                closeIcon={null}
-                description={t('admin.ssoMfaRiskHint')}
-              />
-            ) : null}
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.ssoOauthProvidersLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.ssoOauthProvidersHint')}
-            </span>
-            <Select
-              multiple
-              value={editDraft.oauthProviders}
-              onChange={(value) =>
-                setEditDraft({
-                  ...editDraft,
-                  oauthProviders: Array.isArray(value) ? value.map(String) : [],
-                })
-              }
-              optionList={oauthProviderOptions}
-              placeholder={t('admin.ssoOauthProvidersPlaceholder')}
-              aria-label={t('admin.ssoOauthProvidersLabel')}
-              disabled={editSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.ssoDefaultRedirectUriLabel')}
-            </span>
-            <Input
-              value={editDraft.defaultRedirectUri}
-              onChange={(value) =>
-                setEditDraft({ ...editDraft, defaultRedirectUri: value })
-              }
-              placeholder={t('admin.ssoDefaultRedirectUriPlaceholder')}
-              aria-label={t('admin.ssoDefaultRedirectUriLabel')}
-              disabled={editSubmitting}
-            />
-            {showsDefaultRedirectHint(editDraft.defaultRedirectUri) ? (
-              <span className={styles.fieldHint}>
-                {t('admin.ssoDefaultRedirectUriHint')}
-              </span>
-            ) : null}
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.templateLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.templateSelectHint')}
-            </span>
-            <Select
-              value={editDraft.templateKey}
-              onChange={(value) =>
-                setEditDraft({
-                  ...editDraft,
-                  templateKey: typeof value === 'string' ? value : '',
-                })
-              }
-              optionList={templateOptions}
-              placeholder={t('admin.templateUnspecified')}
-              aria-label={t('admin.templateLabel')}
-              disabled={editSubmitting}
-            />
-          </div>
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              {t('admin.templateVarsLabel')}
-            </span>
-            <span className={styles.fieldHint}>
-              {t('admin.templateVarsHint')}
-            </span>
-            <TextArea
-              value={editDraft.templateVars}
-              onChange={(value) =>
-                setEditDraft({ ...editDraft, templateVars: value })
-              }
-              placeholder={t('admin.templateVarsPlaceholder')}
-              aria-label={t('admin.templateVarsLabel')}
-              autosize={{ minRows: 3, maxRows: 10 }}
-              disabled={editSubmitting}
-            />
-          </div>
-        </div>
+        <SsoClientForm
+          mode="edit"
+          draft={editDraft}
+          onChange={setEditDraft}
+          disabled={editSubmitting}
+          loginMethodOptions={loginMethodOptions}
+          oauthProviderOptions={oauthProviderOptions}
+          templateOptions={templateOptions}
+        />
       </SideSheet>
     </PageLayout>
   );

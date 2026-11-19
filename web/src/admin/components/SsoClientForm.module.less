@@ -1,0 +1,26 @@
+// SSO 客户端统一表单样式（新建 / 编辑两模式共用，SsoClientsPage.module.less
+// 同源迁入）：同目录同名 module less；类名 camelCase（§1.7 / CODE_GUIDE §4.2）。
+@import (reference) '../../shared/styles/tokens.less';
+
+// 表单内容区：纵向排布的字段组（SideSheet 内容区，页壳只出 SideSheet 壳）。
+.formBody {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-md;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: @spacing-xs;
+}
+
+.fieldLabel {
+  font-size: @font-size-sm;
+  color: @color-text;
+}
+
+.fieldHint {
+  font-size: @font-size-sm;
+  color: @color-text-muted;
+}

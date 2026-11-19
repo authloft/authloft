@@ -1306,7 +1306,7 @@ function wireTemplateVars(raw: string): string {
   return raw.trim() === '' ? '' : raw;
 }
 
-/** SSO 客户端表单草稿（新建与编辑共用字段形态；clientId 仅新建消费——创建后不可改）。 */
+/** SSO 客户端基础草稿（统一表单草稿与 OIDC 草稿的公共基座；clientId 仅新建可填——创建后不可改）。 */
 export interface SsoClientDraft {
   clientId: string;
   name: string;
@@ -1344,10 +1344,10 @@ export const SSO_MFA_CAPABLE_METHODS = [
 
 /**
  * SSO 应用级登录配置草稿（仅 SSO 客户端，OIDC 客户端不加字段 §5.5）。
- * 编辑 SideSheet 保存整组提交：repeated 两字段恒带 has_* 伴生标志 true
- * （空数组 = 清空为跟随全局，§5.5 PATCH 语义）；defaultRedirectUri 恒
- * 显式下发（proto3 optional：空串 = 清空回落默认落点，非空 = 覆盖，
- * 白名单匹配由服务端校验 §12.3）。
+ * 保存整组提交（Create / Update 同口径）：repeated 两字段恒带 has_* 伴生
+ * 标志 true（空数组 = 未配置 / 清空为跟随全局）；defaultRedirectUri 恒
+ * 显式下发（proto3 optional：空串 = 未配置 / 清空回落默认落点，非空 =
+ * 覆盖，白名单匹配由服务端校验 §12.3）。
  */
 export interface SsoClientLoginOptionsDraft {
   loginMethods: string[];
@@ -1355,9 +1355,33 @@ export interface SsoClientLoginOptionsDraft {
   defaultRedirectUri: string;
 }
 
-/** SSO 客户端编辑草稿全集（基础字段 + 应用级登录配置）。 */
-export type SsoClientEditDraft = SsoClientPatchDraft &
-  SsoClientLoginOptionsDraft;
+/**
+ * SSO 客户端新建 / 编辑统一表单草稿（§5.5）：基础字段 + 应用级登录配置
+ * 三字段一份定义，两模式共用同一受控形态（字段渲染 / label / 校验 /
+ * 白名单提示只写一份，SsoClientForm 消费）。clientId 仅新建可填（空 =
+ * 服务端生成）、编辑只读回显不发 wire；newSecret 仅编辑消费（留空保留
+ * 原密钥、非空轮换），新建侧恒空且不进 wire；登录配置两模式都渲染，
+ * 缺省空值 = 跟随全局。
+ */
+export interface SsoClientFormDraft
+  extends SsoClientDraft,
+    SsoClientPatchDraft,
+    SsoClientLoginOptionsDraft {}
+
+/** 统一草稿零值（新建初始 / 重开重置 / dirty 基线共用；每次调用出新对象）。 */
+export function emptySsoClientFormDraft(): SsoClientFormDraft {
+  return {
+    clientId: '',
+    newSecret: '',
+    name: '',
+    redirectUris: [],
+    templateKey: '',
+    templateVars: '',
+    loginMethods: [],
+    oauthProviders: [],
+    defaultRedirectUri: '',
+  };
+}
 
 /** OIDC 客户端表单草稿：SSO 基线 + scopes / TTL（秒；0 = 缺省/保留）。 */
 export interface OidcClientDraft extends SsoClientDraft {
@@ -1410,10 +1434,14 @@ export function buildGetOidcClientRequest(id: bigint): GetOidcClientRequest {
 /**
  * CreateSsoClient 请求构造：clientId / name 去空白；redirectUris 清洗后
  * 整组提交；clientSecret 不发（服务端生成，请求同名字段被后端忽略）。
- * clientId 空串在 protojson 下省略 → 后端读零值生成。
+ * clientId 空串在 protojson 下省略 → 后端读零值生成。应用级登录配置与
+ * Update 同口径下发（§5.5 Create / Update 同口径校验）：repeated 两字段
+ * 恒带 has_* 伴生标志 true（空数组 wire 省略 = 未配置跟随全局）；
+ * defaultRedirectUri proto3 optional 显式下发（空串 = 未配置，非空 trim
+ * = 覆盖；白名单匹配由服务端校验 §12.3）。
  */
 export function buildCreateSsoClientRequest(
-  draft: SsoClientDraft,
+  draft: SsoClientFormDraft,
 ): CreateSsoClientRequest {
   return create(CreateSsoClientRequestSchema, {
     clientId: draft.clientId.trim(),
@@ -1421,6 +1449,11 @@ export function buildCreateSsoClientRequest(
     redirectUris: cleanStringList(draft.redirectUris),
     templateKey: (draft.templateKey ?? '').trim(),
     templateVars: wireTemplateVars(draft.templateVars ?? ''),
+    loginMethods: draft.loginMethods,
+    hasLoginMethods: true,
+    oauthProviders: draft.oauthProviders,
+    hasOauthProviders: true,
+    defaultRedirectUri: draft.defaultRedirectUri.trim(),
   });
 }
 
@@ -1441,17 +1474,18 @@ export function buildCreateOidcClientRequest(
 }
 
 /**
- * UpdateSsoClient 请求构造（PATCH 缺省保留）：clientId 不发（创建后不可改，
- * 零值省略 → 后端保留分支）；newSecret 留空 → clientSecret 零值省略即保留
- * 原密钥、非空覆盖轮换；name 空串保留原值。应用级登录配置整组提交（§5.5
- * PATCH 语义）：repeated 无 has 位，恒带 has_login_methods / has_oauth_providers
- * 伴生标志 true（编辑表单整组替换；wire 上空 repeated 数组自身省略，
- * 标志在场 + 空数组 = 清空为跟随全局）；defaultRedirectUri 系 proto3 optional，
- * create 显式赋值（含空串）即置 has 位 → 空串 = 清空、非空 = 覆盖。
+ * UpdateSsoClient 请求构造（PATCH 缺省保留）：clientId 不发（草稿里只读
+ * 回显，零值省略 → 后端保留分支）；newSecret 留空 → clientSecret 零值省略
+ * 即保留原密钥、非空覆盖轮换；name 空串保留原值。应用级登录配置整组提交
+ * （§5.5 PATCH 语义，与 Create 同口径）：repeated 无 has 位，恒带
+ * has_login_methods / has_oauth_providers 伴生标志 true（表单整组替换；
+ * wire 上空 repeated 数组自身省略，标志在场 + 空数组 = 清空为跟随全局）；
+ * defaultRedirectUri 系 proto3 optional，create 显式赋值（含空串）即置
+ * has 位 → 空串 = 清空、非空 = 覆盖。
  */
 export function buildUpdateSsoClientRequest(
   id: bigint,
-  draft: SsoClientEditDraft,
+  draft: SsoClientFormDraft,
 ): UpdateSsoClientRequest {
   return create(UpdateSsoClientRequestSchema, {
     id,

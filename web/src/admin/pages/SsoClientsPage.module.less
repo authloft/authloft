@@ -37,31 +37,10 @@
   padding: @spacing-xl 0;
 }
 
-// 表单弹窗内容（编辑 Modal 的提交 / 取消钮由 Modal footer 承担；
-// 新建 SideSheet 无 onOk 族 props，按钮区自管 → .formFooter）。
-.formBody {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-md;
-}
+// 表单字段样式（.formBody / .field / .fieldLabel / .fieldHint）随统一表单
+// 组件迁至 ../components/SsoClientForm.module.less；此处只剩弹窗壳级布局。
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: @spacing-xs;
-}
-
-.fieldLabel {
-  font-size: @font-size-sm;
-  color: @color-text;
-}
-
-.fieldHint {
-  font-size: @font-size-sm;
-  color: @color-text-muted;
-}
-
-// 新建 SideSheet 自管按钮区（SideSheet 只有 footer?: ReactNode）。
+// SideSheet 无 onOk 族 props，提交 / 取消钮区在页壳自管（footer）。
 .formFooter {
   display: flex;
   justify-content: flex-end;
