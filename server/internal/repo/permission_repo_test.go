@@ -1,56 +1,20 @@
-// 真库用例经 UC_TEST_MYSQL_DSN 注入、无 env 时 skip。共享测试库靠命名锁
-// 串行并自证零残留，避免兄弟二进制互相踩表；辅助见 settings_repo_test.go。
+// 真库用例经 UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 注入（兼容读
+// UC_TEST_MYSQL_DSN）、无 env 时 skip。共享测试库靠命名锁串行并自证零
+// 残留，避免兄弟二进制互相踩表；方言与清理 / 互斥细节见 testsupport_test.go。
 // 连接串经 env 注入，代码不含主机或凭证。
 package repo
 
 import (
 	"context"
-	"database/sql"
-	"os"
 	"testing"
-	"time"
 
-	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
 
 // TestPermissionRepoHasPermission（env-skip）：真库验证两类判定与错误上抛。
 func TestPermissionRepoHasPermission(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过 permission repo 集成用例")
-	}
 	ctx := context.Background()
-	raw, err := sql.Open("mysql", dsn)
-	if err != nil {
-		t.Fatalf("打开连接失败: %v", err)
-	}
-	if err := raw.Ping(); err != nil {
-		t.Fatalf("连接 MariaDB 测试实例失败: %v", err)
-	}
-	t.Cleanup(func() { _ = raw.Close() })
-	if err := dropAllTables(raw); err != nil {
-		t.Fatalf("用例开始清空测试库失败: %v", err)
-	}
-	if err := migrate.Up(ctx, dsn); err != nil {
-		t.Fatalf("migrate up 失败: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := dropAllTables(raw); err != nil {
-			t.Errorf("测后清空测试库失败: %v", err)
-		}
-		if err := assertNoTables(raw); err != nil {
-			t.Errorf("零残留自证失败: %v", err)
-		}
-	})
-
-	db, err := Open(dbTestConfig(dsn, 10, 5, time.Minute))
-	if err != nil {
-		t.Fatalf("Open 失败: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = db.Close()
-	})
+	db := repoTestDB(t)
 	rp := NewPermissionRepo(db)
 
 	// 空表不得误判为持有权限。

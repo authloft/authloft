@@ -1,10 +1,10 @@
-// bootstrap 正常模式装配链测试（§3.1 行 253）：装配顺序断言
+// bootstrap 正常模式装配链测试（§3.1）：装配顺序断言
 // （config → DB → migrate → Redis，用错误传播逐段证明）+ env-skip 真连
 // 用例（DB 连通、migrate up 幂等、Redis PING）。清理口径沿用
 // 既有 DB 测试（migrate_test / setup_db_test）：用例开始清空全部表、结束后
 // 清空并自证零残留；跨二进制串行用 GET_LOCK 命名锁；
-// 连接串只经环境变量注入（UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR），
-// 代码不含主机 / 凭证信息。
+// 连接串只经环境变量注入（UC_TEST_DB_DRIVER + UC_TEST_DB_DSN，兼容读
+// UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR），代码不含主机 / 凭证信息。
 package main
 
 import (
@@ -77,28 +77,83 @@ var wantTables = []string{
 	"settings",
 }
 
+// 测试库 env 变量名：UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 双变量显式指定
+// 方言与连接串，UC_TEST_MYSQL_DSN 为兼容读（等价 mysql + 其值）。解析
+// 逻辑与 repo 包 testsupport_test.go 同口径（测试文件不可跨包 import，
+// 机制改动须同步）。
+const (
+	envTestDBDriver   = "UC_TEST_DB_DRIVER"
+	envTestDBDSN      = "UC_TEST_DB_DSN"
+	envMySQLDSNLegacy = "UC_TEST_MYSQL_DSN"
+)
+
+// testDBTarget 一次测试运行的测试库目标：方言 + 连接串。
+type testDBTarget struct {
+	driver config.Driver
+	dsn    string
+}
+
+// resolveTestDBEnv 解析测试库 env：三变量全空 = 未请求测试库（集成用例
+// skip，不视为错误）；双变量只配一半 = 配置错误（fail-fast，防注入链
+// 断裂时用例静默 skip 假绿）；driver 取值越界同报错。
+func resolveTestDBEnv() (*testDBTarget, error) {
+	driverName := os.Getenv(envTestDBDriver)
+	dsn := os.Getenv(envTestDBDSN)
+	if driverName == "" && dsn == "" {
+		if legacy := os.Getenv(envMySQLDSNLegacy); legacy != "" {
+			return &testDBTarget{driver: config.DriverMySQL, dsn: legacy}, nil
+		}
+		return nil, nil
+	}
+	if driverName == "" || dsn == "" {
+		return nil, fmt.Errorf("%s 与 %s 必须成对设置（现 driver=%q dsn=%q）", envTestDBDriver, envTestDBDSN, driverName, dsn)
+	}
+	switch config.Driver(driverName) {
+	case config.DriverMySQL, config.DriverPostgres:
+		return &testDBTarget{driver: config.Driver(driverName), dsn: dsn}, nil
+	default:
+		return nil, fmt.Errorf("%s=%q 非法（want mysql|postgres）", envTestDBDriver, driverName)
+	}
+}
+
 // testDBLockName 测试库互斥锁名（与 settings / repo / migrate / setup 的
-// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
+// DB 测试二进制同名串行）。机制全解见 repo 包 testsupport_test.go 的
 // TestMain 注释。
 const testDBLockName = "uc_test_db_slot"
 
 // TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
-// settings 包 store_test.go 的 TestMain 注释）。取代旧的 waitQuietDB
-// 错峰轮询（五包统一接锁）：旧口径查 processlist「无其他连接」，
-// 而兄弟二进制阻塞在 GET_LOCK 的等待连接常驻 processlist，计入会互相
-// 卡到超时（settings 包实测）；持锁串行后错峰不再必要，等表空仅作
-// 防御性兜底（本包真连用例会 migrate up + dropAllTables）。
+// repo 包 testsupport_test.go 的 TestMain 注释）。本包 DB 用例仅覆盖
+// mysql 方言（装配链 driver 贯通属后续工作），postgres 方言下不取锁、
+// 真连用例在 mysqlTestDSN 处 skip。
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "authloft 测试环境变量错误: "+err.Error())
+		os.Exit(1)
+	}
+	if target == nil || target.driver != config.DriverMySQL {
 		os.Exit(m.Run())
 	}
-	db := acquireTestDB(dsn)
+	db := acquireTestDB(target.dsn)
 	code := m.Run()
 	if db != nil {
 		_ = db.Close() // 关连接即释放 GET_LOCK
 	}
 	os.Exit(code)
+}
+
+// mysqlTestDSN 返回 MySQL 方言测试库 DSN：测试库 env 未设置或激活方言为
+// postgres 时跳过（PG 覆盖面为 repo / migrate 的 PG 用例）。
+func mysqlTestDSN(t *testing.T) string {
+	t.Helper()
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
+	}
+	if target == nil || target.driver != config.DriverMySQL {
+		t.Skipf("测试库 env 未设置或激活方言非 mysql（%s+%s，或兼容 %s），跳过装配真连用例", envTestDBDriver, envTestDBDSN, envMySQLDSNLegacy)
+	}
+	return target.dsn
 }
 
 // acquireTestDB / waitQuietOnConn / connQuiet / dropAllTables /
@@ -664,10 +719,10 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 // §4 全部 11 张表存在（migrate 步骤真实执行）、Redis PING 通；复跑 assemble
 // 幂等（版本已最新时 migrate up 秒过不报错，§3.16）。测后清空全表并自证零残留。
 func TestAssembleRealChain(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	dsn := mysqlTestDSN(t)
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
-	if dsn == "" || addr == "" {
-		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过装配真连用例")
+	if addr == "" {
+		t.Skip("UC_TEST_REDIS_ADDR 未设置，跳过装配真连用例")
 	}
 	ctx := context.Background()
 
@@ -1142,10 +1197,10 @@ func eventually(t *testing.T, what string, timeout time.Duration, cond func() er
 // tok-a 失效 / tok-b 放行（每请求经 settings 快照读取，热更只对后续请求
 // 生效，§5.6 行 1342）。清理口径同 TestAssembleRealChain。
 func TestAssembleGatewaySettingsHotReload(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	dsn := mysqlTestDSN(t)
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
-	if dsn == "" || addr == "" {
-		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过网关令牌热更真连用例")
+	if addr == "" {
+		t.Skip("UC_TEST_REDIS_ADDR 未设置，跳过网关令牌热更真连用例")
 	}
 	ctx := context.Background()
 	db, err := sql.Open("mysql", dsn)
@@ -1243,10 +1298,10 @@ func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 // 任意 Connect 路由无令牌请求——session 拦截器对未登录一律防御性清
 // Cookie，Set-Cookie 属性即三态落点，无需构造有效会话。
 func TestAssembleHTTPSDeploymentHotReload(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	dsn := mysqlTestDSN(t)
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
-	if dsn == "" || addr == "" {
-		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过 https_deployment 热更真连用例")
+	if addr == "" {
+		t.Skip("UC_TEST_REDIS_ADDR 未设置，跳过 https_deployment 热更真连用例")
 	}
 	ctx := context.Background()
 	db, err := sql.Open("mysql", dsn)
@@ -1344,10 +1399,10 @@ func TestAssembleHTTPSDeploymentHotReload(t *testing.T) {
 // 清空并自证零残留（沿用 TestAssembleRealChain 口径），Redis provider 键
 // 随用例清理。
 func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	dsn := mysqlTestDSN(t)
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
-	if dsn == "" || addr == "" {
-		t.Skip("UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 未设置，跳过装配真连用例")
+	if addr == "" {
+		t.Skip("UC_TEST_REDIS_ADDR 未设置，跳过装配真连用例")
 	}
 	ctx := context.Background()
 	db, err := sql.Open("mysql", dsn)

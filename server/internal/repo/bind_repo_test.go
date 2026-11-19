@@ -1,9 +1,9 @@
-// user_thirdparty_bind 表 repo 层测试：真实 MariaDB 测试实例
-// 经 UC_TEST_MYSQL_DSN env 注入，无 env 时 skip。表结构由 migrate.Up 建
-// （§3.16 DDL 唯一来源）；用例开始 drop 全表、结束 drop 全表 +
-// assertNoTables 自证零残留（同既有 repo 测试口径）。
-// setup（providerTestSetup）与共享辅助在 provider_repo_test.go、
-// settings_repo_test.go、db_test.go。user_id 是逻辑引用（§4.3 无外键），
+// user_thirdparty_bind 表 repo 层测试：真实测试实例经 UC_TEST_DB_DRIVER +
+// UC_TEST_DB_DSN env 注入（兼容读 UC_TEST_MYSQL_DSN），无 env 时 skip。
+// 表结构由迁移建（§3.16 DDL 唯一来源）；用例开始清空全表、结束清空并
+// 自证零残留（同既有 repo 测试口径）。
+// setup（providerTestSetup）在 provider_repo_test.go，方言与清理 / 互斥
+// 细节见 testsupport_test.go。user_id 是逻辑引用（§4.3 无外键），
 // 用例直接用字面值构造归属关系，不依赖 user 表行。连接串只经环境变量
 // 注入，代码不含主机 / 凭证信息。
 package repo

@@ -1,8 +1,8 @@
-// watcher 集成测试：真实 MariaDB + Redis 测试实例经
-// UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR env 注入，缺任一整组 skip。
-// 覆盖：写入 → PUBLISH al:settings:chg → 订阅方快照刷新（§15.3 行 1684
-// 秒级生效链路端到端）→ Close 优雅关闭后不再刷新。Pub/Sub 频道不落键，
-// Redis 侧零残留；DB 侧清理由 setupTestDB 统一处理。
+// watcher 集成测试：真实测试库（方言与注入口径见 setupTestDB /
+// testsupport_test.go）+ Redis 测试实例经 UC_TEST_REDIS_ADDR env 注入，
+// 缺任一整组 skip。覆盖：写入 → PUBLISH al:settings:chg → 订阅方快照
+// 刷新（§15.3 秒级生效链路端到端）→ Close 优雅关闭后不再刷新。Pub/Sub
+// 频道不落键，Redis 侧零残留；DB 侧清理由 setupTestDB 统一处理。
 package settings
 
 import (

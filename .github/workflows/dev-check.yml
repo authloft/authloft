@@ -132,9 +132,22 @@ jobs:
     # 经 sync-templates.mjs 同步到 server/（模板 + assets/dist），server 测试
     # 直接消费同步结果，不重复做 web 构建。
     needs: [web-build]
-    # 测试真连用例经 UC_TEST_MYSQL_DSN / UC_TEST_REDIS_ADDR 读连接串（server/bootstrap_test.go），
-    # 这里用 services 起 MariaDB + Redis，凭据为 CI 内一次性本地值。
-    # 宿主机端口刻意用 13306 / 16379，避开 runner 上可能已占用的默认端口。
+    # 测试矩阵：同一套用例对 mysql / postgres 各跑一遍（dialect 决定激活
+    # 方言），每 dialect 独立测试库凭据，见 matrix.test_dsn 与对应 service。
+    # 测试真连用例经 UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 读方言与连接串
+    # （兼容读 UC_TEST_MYSQL_DSN），Redis 经 UC_TEST_REDIS_ADDR，凭据为
+    # CI 内一次性本地值。宿主机端口刻意用 13306 / 15432 / 16379，避开
+    # runner 上可能已占用的默认端口。
+    # 注：service 容器无法按 matrix 条件裁剪，两库在每个 entry 里都会启动，
+    # 未用一侧仅为闲置容器，不影响结果。
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dialect: mysql
+            test_dsn: ci_test:ci_pass_ci_only@tcp(127.0.0.1:13306)/authloft_test?charset=utf8mb4&parseTime=true&loc=Local
+          - dialect: postgres
+            test_dsn: postgres://ci_test:ci_pass_ci_only@127.0.0.1:15432/authloft_test?sslmode=disable
     services:
       mariadb:
         image: mariadb:11
@@ -147,6 +160,20 @@ jobs:
           - 13306:3306
         options: >-
           --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: ci_test
+          POSTGRES_PASSWORD: ci_pass_ci_only
+          POSTGRES_DB: authloft_test
+        ports:
+          - 15432:5432
+        # postgres 镜像未内置 HEALTHCHECK，按镜像自带工具 pg_isready 做就绪探测
+        options: >-
+          --health-cmd "pg_isready -U ci_test -d authloft_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -187,9 +214,16 @@ jobs:
 
       - name: Server test
         env:
-          UC_TEST_MYSQL_DSN: ci_test:ci_pass_ci_only@tcp(127.0.0.1:13306)/authloft_test?charset=utf8mb4&parseTime=true&loc=Local
+          UC_TEST_DB_DRIVER: ${{ matrix.dialect }}
+          UC_TEST_DB_DSN: ${{ matrix.test_dsn }}
           UC_TEST_REDIS_ADDR: 127.0.0.1:16379
-        run: go test -count=1 ./...
+        # 缺 DSN 即红：注入链断裂时用例会走 skip 分支，显式拦下防静默假绿
+        run: |
+          if [ -z "$UC_TEST_DB_DSN" ]; then
+            echo "::error::UC_TEST_DB_DSN is empty (dialect=${{ matrix.dialect }})"
+            exit 1
+          fi
+          go test -count=1 ./...
         working-directory: server
 
   server-build:

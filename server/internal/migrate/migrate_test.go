@@ -36,50 +36,151 @@ var wantTables = []string{
 	"oidc_consent",
 }
 
-// testDBLockName 测试库互斥锁名（与 settings / repo / setup / main 的
-// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
-// TestMain 注释。
-const testDBLockName = "uc_test_db_slot"
+// 测试库 env 与互斥锁常量：口径为 UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 双
+// 变量显式指定方言与连接串，仅设 UC_TEST_MYSQL_DSN 时兼容读为 mysql +
+// 其值。本段与 repo 包 testsupport_test.go 同口径副本（测试文件不可跨包
+// import，机制改动须两处同步）；pg 键为锁名 FNV-1a 64 位散列按 int64
+// 补码截断，与 GET_LOCK 名锁保持同一互斥身份。
+const (
+	envTestDBDriver    = "UC_TEST_DB_DRIVER"
+	envTestDBDSN       = "UC_TEST_DB_DSN"
+	envMySQLDSNLegacy  = "UC_TEST_MYSQL_DSN"
+	testDBLockName     = "uc_test_db_slot"
+	pgTestLockWaitTime = 300 * time.Second
+	testDBLockKeyPG    = -2607616838611919394
+)
 
-// TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
-// settings 包 store_test.go 的 TestMain 注释；五包统一接锁）。
-func TestMain(m *testing.M) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		os.Exit(m.Run())
+// testDBTarget 一次测试运行的测试库目标：方言 + 连接串。
+type testDBTarget struct {
+	driver config.Driver
+	dsn    string
+}
+
+// resolveTestDBEnv 解析测试库 env：三变量全空 = 未请求测试库（集成用例
+// skip，不视为错误）；双变量只配一半 = 配置错误（fail-fast，防注入链
+// 断裂时用例静默 skip 假绿）；driver 取值越界同报错。
+func resolveTestDBEnv() (*testDBTarget, error) {
+	driverName := os.Getenv(envTestDBDriver)
+	dsn := os.Getenv(envTestDBDSN)
+	if driverName == "" && dsn == "" {
+		if legacy := os.Getenv(envMySQLDSNLegacy); legacy != "" {
+			return &testDBTarget{driver: config.DriverMySQL, dsn: legacy}, nil
+		}
+		return nil, nil
 	}
-	db := acquireTestDB(dsn)
+	if driverName == "" || dsn == "" {
+		return nil, fmt.Errorf("%s 与 %s 必须成对设置（现 driver=%q dsn=%q）", envTestDBDriver, envTestDBDSN, driverName, dsn)
+	}
+	switch config.Driver(driverName) {
+	case config.DriverMySQL, config.DriverPostgres:
+		return &testDBTarget{driver: config.Driver(driverName), dsn: dsn}, nil
+	default:
+		return nil, fmt.Errorf("%s=%q 非法（want mysql|postgres）", envTestDBDriver, driverName)
+	}
+}
+
+// TestMain 共享测试库串行化（锁名 uc_test_db_slot 持锁贯穿 m.Run()；五包
+// 统一接锁，机制背景见 repo 包 testsupport_test.go 的 TestMain 注释）。
+// 本包 mysql 与 postgres 两侧用例齐备，激活哪个方言就锁哪个方言的库：
+// mysql → GET_LOCK（与 settings / repo / setup / main 的 DB 测试二进制
+// 串行）；postgres → pg_advisory_lock（与 repo 二进制串行）。拿不到锁 /
+// 出错时放行兜底，与既有 GET_LOCK 口径一致（宁可试跑不挂死）。
+func TestMain(m *testing.M) {
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "authloft 测试环境变量错误: "+err.Error())
+		os.Exit(1)
+	}
+	var db *sql.DB
+	if target != nil {
+		db = acquireTestSlot(target)
+	}
 	code := m.Run()
 	if db != nil {
-		_ = db.Close() // 关连接即释放 GET_LOCK
+		releaseTestSlot(target, db)
 	}
 	os.Exit(code)
 }
 
-// acquireTestDB 获取测试库互斥槽：单连接 *sql.DB——GET_LOCK 与安静探测
-// 共用同一物理连接（连接一多探测口径就乱）。
-func acquireTestDB(dsn string) *sql.DB {
-	db, err := sql.Open("mysql", dsn)
+// acquireTestSlot 获取测试库互斥槽（testlock）：单连接 *sql.DB——锁与安静
+// 探测共用同一物理连接（连接一多探测口径就乱）。
+func acquireTestSlot(target *testDBTarget) *sql.DB {
+	db, err := NewDB(target.driver, target.dsn)
 	if err != nil {
 		return nil
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	var got int
-	if err := db.QueryRow("SELECT GET_LOCK(?, ?)", testDBLockName, 300).Scan(&got); err != nil || got != 1 {
+	var ok bool
+	switch target.driver {
+	case config.DriverPostgres:
+		ok = pgAcquireAdvisoryLock(db)
+	default:
+		// GET_LOCK 等待上限 300s：拿不到返回 0，按放行兜底处理。
+		if err := db.QueryRow("SELECT GET_LOCK(?, ?)", testDBLockName, int(pgTestLockWaitTime.Seconds())).Scan(&ok); err != nil {
+			ok = false
+		}
+	}
+	if !ok {
 		_ = db.Close()
 		return nil
 	}
-	waitQuietOnConn(db)
+	waitQuietOnConn(db, target.driver)
+	logTestSlot(target, db)
 	return db
+}
+
+// pgAcquireAdvisoryLock 持 PG advisory 锁：pg_advisory_lock 本身无超时
+// 参数、阻塞等待可能无限挂死，等待侧以 statement_timeout 兜底（阻塞中的
+// 锁语句到点被取消，对齐 MySQL GET_LOCK 的 300s 等待上限）；SET LOCAL 在
+// 事务内生效、提交后随事务回退。锁本身 session 级，COMMIT 不释放。
+func pgAcquireAdvisoryLock(db *sql.DB) bool {
+	if _, err := db.Exec("BEGIN"); err != nil {
+		return false
+	}
+	if _, err := db.Exec(fmt.Sprintf("SET LOCAL statement_timeout = '%ds'", int(pgTestLockWaitTime.Seconds()))); err != nil {
+		_, _ = db.Exec("ROLLBACK")
+		return false
+	}
+	if _, err := db.Exec("SELECT pg_advisory_lock($1)", testDBLockKeyPG); err != nil {
+		_, _ = db.Exec("ROLLBACK")
+		return false
+	}
+	_, err := db.Exec("COMMIT")
+	return err == nil
+}
+
+// releaseTestSlot 释放互斥槽：PG 侧先显式 pg_advisory_unlock 再关连接
+// （连接关闭本身也会释放 session 级锁，进程异常退出同理由连接断开兜底，
+// unlock 只是让显式路径可观测）；mysql 侧关连接即释放 GET_LOCK。
+func releaseTestSlot(target *testDBTarget, db *sql.DB) {
+	if target.driver == config.DriverPostgres {
+		_, _ = db.Exec("SELECT pg_advisory_unlock($1)", testDBLockKeyPG)
+	}
+	_ = db.Close()
+	fmt.Fprintf(os.Stderr, "authloft test: test db slot released (lock=%s driver=%s)\n", testDBLockName, target.driver)
+}
+
+// logTestSlot 落库自证：持锁连接上查当前库名打到 stderr（方言对应位：
+// mysql DATABASE() / pg current_database()）。
+func logTestSlot(target *testDBTarget, db *sql.DB) {
+	query := "SELECT DATABASE()"
+	if target.driver == config.DriverPostgres {
+		query = "SELECT current_database()"
+	}
+	var dbname string
+	if err := db.QueryRow(query).Scan(&dbname); err != nil {
+		dbname = "<unknown>"
+	}
+	fmt.Fprintf(os.Stderr, "authloft test: test db slot acquired (lock=%s driver=%s database=%s)\n", testDBLockName, target.driver, dbname)
 }
 
 // waitQuietOnConn 在持锁连接上等库安静：库内无表（有表 = 有未按预期
 // 清理的残留），连续 quietConfirmations 次、间隔 quietInterval 才放行；
 // 总上限 quietTimeout 防御性兜底（超时放行，宁可试跑不挂死）。不看
-// 连接数：兄弟二进制阻塞在 GET_LOCK 的等待连接无表、无害，若计入会
+// 连接数：兄弟二进制阻塞在互斥锁上的等待连接无表、无害，若计入会
 // 互相卡到超时（实测）。
-func waitQuietOnConn(db *sql.DB) {
+func waitQuietOnConn(db *sql.DB, driver config.Driver) {
 	const (
 		quietConfirmations = 3
 		quietInterval      = 500 * time.Millisecond
@@ -88,7 +189,7 @@ func waitQuietOnConn(db *sql.DB) {
 	deadline := time.Now().Add(quietTimeout)
 	streak := 0
 	for time.Now().Before(deadline) {
-		if connQuiet(db) {
+		if connQuiet(db, driver) {
 			streak++
 			if streak >= quietConfirmations {
 				return
@@ -100,26 +201,38 @@ func waitQuietOnConn(db *sql.DB) {
 	}
 }
 
-// connQuiet 单次探测：库内无表。
-func connQuiet(db *sql.DB) bool {
+// connQuiet 单次探测：库内无表。残留探测按方言分派——mysql 用
+// information_schema.tables + DATABASE() 限定当前库；pg 用 pg_tables +
+// current_schema() 限定当前库当前 schema（pg_tables 为每库视图，跨库表
+// 天然不可见）。
+func connQuiet(db *sql.DB, driver config.Driver) bool {
 	var tables int
-	if err := db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables); err != nil {
+	var err error
+	if driver == config.DriverPostgres {
+		err = db.QueryRow("SELECT COUNT(*) FROM pg_tables WHERE schemaname = current_schema()").Scan(&tables)
+	} else {
+		err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()").Scan(&tables)
+	}
+	if err != nil {
 		return false
 	}
 	return tables == 0
 }
 
-// envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例
-// （skip-on-no-env：本地无 DB / CI 未配 service 时自动跳过）。
-// 修订口径（2026-11-03）：DSN 直接指向专用测试库，不再
-// 另建 schema；连接串只经环境变量注入，代码不含任何主机 / 凭证信息。
+// envDSN 返回测试用 DSN；测试库 env 未设置或激活方言非 mysql 时跳过本组
+// 集成用例（skip-on-no-env：本地无 DB / CI 未配 service 时自动跳过）。
+// DSN 直接指向专用测试库，不再另建 schema；连接串只经环境变量注入，
+// 代码不含任何主机 / 凭证信息。
 func envDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过迁移集成用例")
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
 	}
-	return dsn
+	if target == nil || target.driver != config.DriverMySQL {
+		t.Skipf("测试库 env 未设置或激活方言非 mysql（%s+%s，或兼容 %s），跳过迁移 mysql 集成用例", envTestDBDriver, envTestDBDSN, envMySQLDSNLegacy)
+	}
+	return target.dsn
 }
 
 // newTestDB 为单个用例准备独立环境：连接 DSN 所指测试库，开始前清空
@@ -341,13 +454,17 @@ func TestNewDBFactory(t *testing.T) {
 	}
 }
 
-// TestNewDBMySQLReal（env-skip）：工厂 mysql 分支真连测试库并 ping。
+// TestNewDBMySQLReal（env-skip，激活方言为 mysql 时实跑）：工厂 mysql
+// 分支真连测试库并 ping。
 func TestNewDBMySQLReal(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过工厂 mysql 真连用例")
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
 	}
-	db, err := NewDB(config.DriverMySQL, dsn)
+	if target == nil || target.driver != config.DriverMySQL {
+		t.Skipf("测试库 env 未设置或激活方言非 mysql（%s+%s，或兼容 %s），跳过工厂 mysql 真连用例", envTestDBDriver, envTestDBDSN, envMySQLDSNLegacy)
+	}
+	db, err := NewDB(config.DriverMySQL, target.dsn)
 	if err != nil {
 		t.Fatalf("NewDB mysql 真连失败: %v", err)
 	}
@@ -357,14 +474,26 @@ func TestNewDBMySQLReal(t *testing.T) {
 	}
 }
 
+// pgTestTarget 返回激活方言为 postgres 时的测试库目标（envDSN 的 PG 侧
+// 对应位）：未设置或方言不符即 skip——本地无 PG 实例属常态，实跑在 CI
+// postgres 矩阵；连接串只经环境变量注入。
+func pgTestTarget(t *testing.T) *testDBTarget {
+	t.Helper()
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
+	}
+	if target == nil || target.driver != config.DriverPostgres {
+		t.Skipf("测试库 env 未设置或激活方言非 postgres（%s+%s），跳过迁移 postgres 用例（实跑在 CI postgres 矩阵）", envTestDBDriver, envTestDBDSN)
+	}
+	return target
+}
+
 // TestNewDBPostgresReal（env-skip）：工厂 postgres 分支真连。本地无
 // PostgreSQL，实跑在 CI postgres 矩阵；连接串只经环境变量注入。
 func TestNewDBPostgresReal(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_PG_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_PG_DSN 未设置，跳过工厂 postgres 真连用例（实跑在 CI postgres 矩阵）")
-	}
-	db, err := NewDB(config.DriverPostgres, dsn)
+	target := pgTestTarget(t)
+	db, err := NewDB(config.DriverPostgres, target.dsn)
 	if err != nil {
 		t.Fatalf("NewDB postgres 真连失败: %v", err)
 	}
@@ -472,10 +601,10 @@ func TestInstalledCriteria(t *testing.T) {
 	}
 }
 
-// ---- PostgreSQL 侧（env-skip：UC_TEST_PG_DSN 未设置即跳过，实跑在 CI
+// ---- PostgreSQL 侧（env-skip：激活方言非 postgres 即跳过，实跑在 CI
 // postgres 矩阵；本地无 PG 实例）。清理与探测用 PG 方言：pg_tables +
-// current_schema() 残留口径、DROP TABLE ... CASCADE。跨二进制互斥
-// （pg_advisory_lock）待测试矩阵统一收口，当前仅本包有 PG 用例，无竞争。
+// current_schema() 残留口径、DROP TABLE ... CASCADE；跨二进制互斥走
+// TestMain 的 pg_advisory_lock（与 repo 二进制的 PG 用例串行）。
 
 // pgDropAllTables 删除当前 schema 全部表（含 goose_db_version），实现
 // 用例间隔离与零残留；CASCADE 兜底任意删除顺序。
@@ -571,11 +700,8 @@ func pgAppliedVersion(t *testing.T, db *sql.DB) int64 {
 // 版本。本地无 PG 实例，实跑在 CI postgres 矩阵；连接串只经环境变量注入，
 // 代码不含任何主机 / 凭证信息。
 func TestG1PostgresEmptyUpToLatest(t *testing.T) {
-	dsn := os.Getenv("UC_TEST_PG_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_PG_DSN 未设置，跳过迁移 postgres 用例（实跑在 CI postgres 矩阵）")
-	}
-	db, err := NewDB(config.DriverPostgres, dsn)
+	target := pgTestTarget(t)
+	db, err := NewDB(config.DriverPostgres, target.dsn)
 	if err != nil {
 		t.Fatalf("打开连接失败: %v", err)
 	}

@@ -1,8 +1,11 @@
-// setup 包 DB 集成测试（env-skip）：UC_TEST_MYSQL_DSN 指向专用测试库时
-// 真实跑两条安装路径的端到端用例（迁移触发、管理员 ID=1 幂等创建、判据
-// 组合、失败重试），Redis 侧用本地假 RESP 服务（§13 语义只要求连通性）。
-// 与 migrate_test 相同模式：用例开始前清空全部表、结束后清理并自证
-// 零残留；连接串只经环境变量注入，代码不含主机 / 凭证信息。
+// setup 包 DB 集成测试（env-skip）：UC_TEST_DB_DRIVER + UC_TEST_DB_DSN
+// 指向专用测试库时（兼容读 UC_TEST_MYSQL_DSN）真实跑两条安装路径的端到端
+// 用例（迁移触发、管理员 ID=1 幂等创建、判据组合、失败重试），Redis 侧用
+// 本地假 RESP 服务（§13 语义只要求连通性）。本包 DB 用例仅覆盖 mysql
+// 方言（安装链 driver 贯通属后续工作），postgres 下真连用例 skip，覆盖面
+// 为 repo / migrate 的 PG 用例。与 migrate_test 相同模式：用例开始前清空
+// 全部表、结束后清理并自证零残留；连接串只经环境变量注入，代码不含
+// 主机 / 凭证信息。
 package setup
 
 import (
@@ -20,23 +23,62 @@ import (
 	"authloft/internal/config"
 )
 
+// 测试库 env 变量名：UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 双变量显式指定
+// 方言与连接串，UC_TEST_MYSQL_DSN 为兼容读。解析逻辑与 repo 包
+// testsupport_test.go 同口径（测试文件不可跨包 import，机制改动须同步）。
+const (
+	envTestDBDriver   = "UC_TEST_DB_DRIVER"
+	envTestDBDSN      = "UC_TEST_DB_DSN"
+	envMySQLDSNLegacy = "UC_TEST_MYSQL_DSN"
+)
+
+// resolveTestDBEnv 解析测试库 env：三变量全空 = 未请求测试库（集成用例
+// skip，不视为错误）；双变量只配一半 = 配置错误（fail-fast，防注入链
+// 断裂时用例静默 skip 假绿）；driver 取值越界同报错。
+func resolveTestDBEnv() (*testDBTarget, error) {
+	driverName := os.Getenv(envTestDBDriver)
+	dsn := os.Getenv(envTestDBDSN)
+	if driverName == "" && dsn == "" {
+		if legacy := os.Getenv(envMySQLDSNLegacy); legacy != "" {
+			return &testDBTarget{driver: config.DriverMySQL, dsn: legacy}, nil
+		}
+		return nil, nil
+	}
+	if driverName == "" || dsn == "" {
+		return nil, fmt.Errorf("%s 与 %s 必须成对设置（现 driver=%q dsn=%q）", envTestDBDriver, envTestDBDSN, driverName, dsn)
+	}
+	switch config.Driver(driverName) {
+	case config.DriverMySQL, config.DriverPostgres:
+		return &testDBTarget{driver: config.Driver(driverName), dsn: dsn}, nil
+	default:
+		return nil, fmt.Errorf("%s=%q 非法（want mysql|postgres）", envTestDBDriver, driverName)
+	}
+}
+
+// testDBTarget 一次测试运行的测试库目标：方言 + 连接串。
+type testDBTarget struct {
+	driver config.Driver
+	dsn    string
+}
+
 // testDBLockName 测试库互斥锁名（与 settings / repo / migrate / main 的
-// DB 测试二进制同名串行）。机制全解见 settings 包 store_test.go 的
+// DB 测试二进制同名串行）。机制全解见 repo 包 testsupport_test.go 的
 // TestMain 注释。
 const testDBLockName = "uc_test_db_slot"
 
 // TestMain 共享测试库串行化（GET_LOCK 持锁贯穿 m.Run()，机制说明见
-// settings 包 store_test.go 的 TestMain 注释）。取代旧的 waitQuietDB
-// 错峰轮询（五包统一接锁）：旧口径查 processlist「无其他连接」，
-// 而兄弟二进制阻塞在 GET_LOCK 的等待连接常驻 processlist，计入会互相
-// 卡到超时（settings 包实测）；持锁串行后错峰不再必要，等表空仅作
-// 防御性兜底。
+// repo 包 testsupport_test.go 的 TestMain 注释）。本包 DB 用例仅覆盖
+// mysql 方言，postgres 方言下不取锁。
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "authloft 测试环境变量错误: "+err.Error())
+		os.Exit(1)
+	}
+	if target == nil || target.driver != config.DriverMySQL {
 		os.Exit(m.Run())
 	}
-	db := acquireTestDB(dsn)
+	db := acquireTestDB(target.dsn)
 	code := m.Run()
 	if db != nil {
 		_ = db.Close() // 关连接即释放 GET_LOCK
@@ -97,15 +139,18 @@ func connQuiet(db *sql.DB) bool {
 	return tables == 0
 }
 
-// envDSN 返回测试用 DSN；UC_TEST_MYSQL_DSN 未设置时跳过本组集成用例
-// （skip-on-no-env，与 migrate_test 同口径）。
+// envDSN 返回测试用 DSN；测试库 env 未设置或激活方言非 mysql 时跳过本组
+// 集成用例（skip-on-no-env，与 migrate_test 同口径）。
 func envDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过 setup 集成用例")
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
 	}
-	return dsn
+	if target == nil || target.driver != config.DriverMySQL {
+		t.Skipf("测试库 env 未设置或激活方言非 mysql（%s+%s，或兼容 %s），跳过 setup 集成用例", envTestDBDriver, envTestDBDSN, envMySQLDSNLegacy)
+	}
+	return target.dsn
 }
 
 // newSetupTestDB 为单个用例准备独立环境（连接 DSN 所指测试库，开始前清空

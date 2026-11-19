@@ -1,12 +1,13 @@
-// settings 包 DB 集成测试：真实 MariaDB 测试实例经
-// UC_TEST_MYSQL_DSN env 注入，无 env 时整组 skip（本地只跑 settings_test.go
-// 纯逻辑用例）。清理口径沿用既有 DB 测试（migrate_test / setup_db_test /
-// bootstrap_test）：用例开始 dropAllTables、migrate.Up 建正式表结构
-// （§3.16：DDL 唯一来源，绝不用 AutoMigrate）、结束 drop 全表 +
-// assertNoTables 自证零残留（写入的 settings 行随表清除）；但跨二进制
-// 错峰不沿用其 waitQuietDB 轮询（双二进制同点起跑会互卡见 TestMain 注释），
-// 改用 MySQL GET_LOCK 命名锁串行。连接串只经环境变量注入，代码不含
-// 主机 / 凭证信息。
+// settings 包 DB 集成测试：真实测试实例经 UC_TEST_DB_DRIVER +
+// UC_TEST_DB_DSN env 注入（兼容读 UC_TEST_MYSQL_DSN），无 env 时整组
+// skip（本地只跑 settings_test.go 纯逻辑用例）；本包 DB 用例仅覆盖 mysql
+// 方言（postgres 下真连用例在 setupTestDB 处 skip，覆盖面为 repo /
+// migrate 的 PG 用例）。清理口径沿用既有 DB 测试（migrate_test /
+// setup_db_test / bootstrap_test）：用例开始 dropAllTables、migrate.Up 建
+// 正式表结构（§3.16：DDL 唯一来源，绝不用 AutoMigrate）、结束 drop 全表
+// + assertNoTables 自证零残留（写入的 settings 行随表清除）；跨二进制
+// 用 MySQL GET_LOCK 命名锁串行（机制背景见 repo 包 testsupport_test.go
+// 的 TestMain 注释）。连接串只经环境变量注入，代码不含主机 / 凭证信息。
 package settings
 
 import (
@@ -24,6 +25,44 @@ import (
 	"authloft/internal/repo/model"
 )
 
+// 测试库 env 变量名：UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 双变量显式指定
+// 方言与连接串，UC_TEST_MYSQL_DSN 为兼容读。解析逻辑与 repo 包
+// testsupport_test.go 同口径（测试文件不可跨包 import，机制改动须同步）。
+const (
+	envTestDBDriver   = "UC_TEST_DB_DRIVER"
+	envTestDBDSN      = "UC_TEST_DB_DSN"
+	envMySQLDSNLegacy = "UC_TEST_MYSQL_DSN"
+)
+
+// resolveTestDBEnv 解析测试库 env：三变量全空 = 未请求测试库（集成用例
+// skip，不视为错误）；双变量只配一半 = 配置错误（fail-fast，防注入链
+// 断裂时用例静默 skip 假绿）；driver 取值越界同报错。
+func resolveTestDBEnv() (*testDBTarget, error) {
+	driverName := os.Getenv(envTestDBDriver)
+	dsn := os.Getenv(envTestDBDSN)
+	if driverName == "" && dsn == "" {
+		if legacy := os.Getenv(envMySQLDSNLegacy); legacy != "" {
+			return &testDBTarget{driver: config.DriverMySQL, dsn: legacy}, nil
+		}
+		return nil, nil
+	}
+	if driverName == "" || dsn == "" {
+		return nil, fmt.Errorf("%s 与 %s 必须成对设置（现 driver=%q dsn=%q）", envTestDBDriver, envTestDBDSN, driverName, dsn)
+	}
+	switch config.Driver(driverName) {
+	case config.DriverMySQL, config.DriverPostgres:
+		return &testDBTarget{driver: config.Driver(driverName), dsn: dsn}, nil
+	default:
+		return nil, fmt.Errorf("%s=%q 非法（want mysql|postgres）", envTestDBDriver, driverName)
+	}
+}
+
+// testDBTarget 一次测试运行的测试库目标：方言 + 连接串。
+type testDBTarget struct {
+	driver config.Driver
+	dsn    string
+}
+
 // testDBLockName 测试库互斥锁名（settings 与 repo 两个 DB 测试二进制用
 // 同名串行；后续统一 migrate / setup / main 的 DB 测试时应沿用此名）。
 const testDBLockName = "uc_test_db_slot"
@@ -34,16 +73,18 @@ const testDBLockName = "uc_test_db_slot"
 // 自己（既有 waitQuietDB 模式在单二进制/错峰启动下成立，双
 // 二进制同点起跑实测双双 90s 超时兜底、同时涌入互删表）。改为 MySQL
 // 命名锁：GET_LOCK 持锁贯穿 m.Run()（连接关闭自动释放），同锁名二进制
-// 严格串行；持锁连接常驻 processlist，未接入锁的存量二进制
-// （migrate / setup / main 的 waitQuietDB 查「无其他连接」）看到即等待。
-// 拿不到锁 / 出错时放行兜底，与旧模式语义一致。存量三包彼此间的锁步
-// 竞争系既有问题（修复需统一接入本锁，超出本次改动范围）。
+// 严格串行。拿不到锁 / 出错时放行兜底，与旧模式语义一致。本包 DB 用例
+// 仅覆盖 mysql 方言，postgres 方言下不取锁。
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "authloft 测试环境变量错误: "+err.Error())
+		os.Exit(1)
+	}
+	if target == nil || target.driver != config.DriverMySQL {
 		os.Exit(m.Run())
 	}
-	db := acquireTestDB(dsn)
+	db := acquireTestDB(target.dsn)
 	code := m.Run()
 	if db != nil {
 		_ = db.Close() // 关连接即释放 GET_LOCK
@@ -168,13 +209,18 @@ func assertNoTables(db *sql.DB) error {
 
 // setupTestDB env-skip + 库准备 + 清理：返回 bun 连接（经 repo.Open，
 // 连接随 t.Cleanup 关闭）。用例开始 drop 全表 → migrate.Up 建正式
-// 表结构；结束后 drop 全表 + assertNoTables（零残留自证）。
+// 表结构；结束后 drop 全表 + assertNoTables（零残留自证）。本包 DB 用例
+// 仅覆盖 mysql 方言，激活方言为 postgres 时 skip。
 func setupTestDB(t *testing.T) (*repo.SettingsRepo, *sql.DB) {
 	t.Helper()
-	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过 settings DB 集成用例")
+	target, err := resolveTestDBEnv()
+	if err != nil {
+		t.Fatalf("测试环境变量错误: %v", err)
 	}
+	if target == nil || target.driver != config.DriverMySQL {
+		t.Skipf("测试库 env 未设置或激活方言非 mysql（%s+%s，或兼容 %s），跳过 settings DB 集成用例", envTestDBDriver, envTestDBDSN, envMySQLDSNLegacy)
+	}
+	dsn := target.dsn
 	raw, err := sql.Open("mysql", dsn)
 	if err != nil {
 		t.Fatalf("打开连接失败: %v", err)
