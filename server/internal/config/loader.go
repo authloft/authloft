@@ -73,6 +73,7 @@ func DefaultConfig() (*Config, error) {
 			KeyFile:       "",
 		},
 		DB: DBConfig{
+			Driver:          DriverMySQL,
 			DSN:             "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local",
 			MaxOpenConns:    50,
 			MaxIdleConns:    10,
@@ -192,6 +193,7 @@ var serverEnvBindings = []envBinding{
 // 无运行时魔法、逐条可测。未知 AUTHLOFT_* 变量忽略；空值视为未设置跳过
 // （CI 常见空变量）；已设且非空的值非法（整数 / 时长解析失败）即 fail-fast。
 var envBindings = slices.Concat(serverEnvBindings, []envBinding{
+	{"AUTHLOFT_DB_DRIVER", func(c *Config, v string) error { c.DB.Driver = Driver(v); return nil }},
 	{"AUTHLOFT_DB_DSN", func(c *Config, v string) error { c.DB.DSN = v; return nil }},
 	{"AUTHLOFT_DB_MAX_OPEN_CONNS", setInt(func(c *Config, n int) { c.DB.MaxOpenConns = n })},
 	{"AUTHLOFT_DB_MAX_IDLE_CONNS", setInt(func(c *Config, n int) { c.DB.MaxIdleConns = n })},

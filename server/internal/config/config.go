@@ -89,12 +89,33 @@ func (s ServerConfig) TLSMinVersion() (uint16, error) {
 	}
 }
 
-// DBConfig MariaDB 连接参数（bun）。
+// Driver 数据库方言（db.driver）。driver 决定 DSN 格式与驱动装配口径，
+// 两者由统一连接工厂（migrate.NewDB）按本枚举收口；校验分支见 validate。
+type Driver string
+
+const (
+	// DriverMySQL MySQL / MariaDB（存量配置缺 driver 字段时的生效方言）。
+	DriverMySQL Driver = "mysql"
+	// DriverPostgres PostgreSQL 14+（IDENTITY 主键 + RETURNING）。
+	DriverPostgres Driver = "postgres"
+)
+
+// DBConfig 数据库连接参数（bun）。DSN 按 driver 解释，两种方言格式不同。
 type DBConfig struct {
+	Driver          Driver   `yaml:"driver"`
 	DSN             string   `yaml:"dsn"`
 	MaxOpenConns    int      `yaml:"max_open_conns"`
 	MaxIdleConns    int      `yaml:"max_idle_conns"`
 	ConnMaxLifetime Duration `yaml:"conn_max_lifetime"`
+}
+
+// EffectiveDriver 返回生效方言：driver 未配置（空串——存量 authloft.yml 无
+// 该字段，装载后为零值）回落 mysql，保证既有配置加载行为不变。
+func (d DBConfig) EffectiveDriver() Driver {
+	if d.Driver == "" {
+		return DriverMySQL
+	}
+	return d.Driver
 }
 
 // RedisConfig Redis 连接参数；password 允许为空（内网 / 测试部署）。
@@ -244,7 +265,14 @@ func checkReadable(path, field string) []error {
 
 func (d DBConfig) validate() []error {
 	var errs []error
-	errs = append(errs, validateDSN(d.DSN))
+	switch d.EffectiveDriver() {
+	case DriverMySQL:
+		errs = append(errs, validateDSN(d.DSN))
+	case DriverPostgres:
+		errs = append(errs, validatePGDSN(d.DSN))
+	default:
+		errs = append(errs, fmt.Errorf(`db.driver: want "mysql"|"postgres"`))
+	}
 	if d.MaxOpenConns <= 0 {
 		errs = append(errs, errors.New("db.max_open_conns: must be > 0"))
 	}
@@ -257,7 +285,7 @@ func (d DBConfig) validate() []error {
 	return errs
 }
 
-// validateDSN 对 DSN 做轻量结构校验（不 import 驱动，连接留给装配层）：
+// validateDSN 对 MySQL DSN 做轻量结构校验（不 import 驱动，连接留给装配层）：
 // 要求 "user[:pass]@tcp(host:port)/name[?params]" 或 "@unix(/path)/name"
 // 的承载结构；只验形不验账密——账密错误由 DB 连接期暴露。
 func validateDSN(dsn string) error {
@@ -277,6 +305,29 @@ func validateDSN(dsn string) error {
 	default:
 		return errors.New(`db.dsn: want "user:pass@tcp(host:port)/name" form`)
 	}
+}
+
+// validatePGDSN 对 PostgreSQL DSN（URL 形态）做轻量结构校验：scheme 限
+// postgres | postgresql，host 与 path（库名）非空；keyword=value 形态不支持。
+// 同样只验形不验账密——账密错误由 DB 连接期暴露。
+func validatePGDSN(dsn string) error {
+	if dsn == "" {
+		return errors.New("db.dsn: required")
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return fmt.Errorf("db.dsn: %w", err)
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return errors.New(`db.dsn: want scheme "postgres"|"postgresql"`)
+	}
+	if u.Host == "" {
+		return errors.New("db.dsn: host required")
+	}
+	if strings.Trim(u.Path, "/") == "" {
+		return errors.New("db.dsn: database name required")
+	}
+	return nil
 }
 
 func (r RedisConfig) validate() []error {

@@ -1,9 +1,10 @@
 // Package repo 提供数据库访问层基础设施（docs/后端架构.md §3.10）。
 //
-// 本文件只做 bun 初始化（bun.NewDB 包在 database/sql 的 *sql.DB 上，dialect
-// 用 mysqldialect，复用 go-sql-driver/mysql）与连接池；表结构映射归
-// repo/model/*，各实体读写归 *_repo.go。schema 完全由 migrations/（goose，
-// §3.16）管理：本包从不调用 AutoMigrate，也不建外键——DDL 只有一个来源。
+// 本文件只做 bun 初始化（bun.NewDB 包在统一连接工厂产出的 *sql.DB 上，
+// 方言按 driver 选择）与连接池；裸连接经 migrate.NewDB 工厂建立（repo /
+// migrate / setup 三处建连共享）。表结构映射归 repo/model/*，各实体读写归
+// *_repo.go。schema 完全由 migrations/（goose，§3.16）管理：本包从不调用
+// AutoMigrate，也不建外键——DDL 只有一个来源。
 package repo
 
 import (
@@ -16,33 +17,34 @@ import (
 	"os"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/feature"
 	"github.com/uptrace/bun/dialect/mysqldialect"
+	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/schema"
 
 	"authloft/internal/config"
+	"authloft/internal/migrate"
 )
 
 // slowQueryThreshold 慢查询告警阈值（沿用原数据层 logger Warn 口径）。
 const slowQueryThreshold = 200 * time.Millisecond
 
-// Open 按 cfg 初始化 bun（MariaDB）：DSN 来自 cfg.DB，连接池参数
+// Open 按 cfg 初始化 bun：driver / DSN 来自 cfg.DB，连接池参数
 // MaxOpenConns / MaxIdleConns / ConnMaxLifetime 逐项来自 cfg.DB（§3.2）。
+// 裸连接经统一连接工厂（migrate.NewDB）建立，bun 方言按 driver 叠加。
 // bun 只做查询构造不碰 schema，无外键 / 自动迁移问题面；迁移归
 // migrations/（goose，§3.16）。建连后立即 ping——连接不可达即报错，
 // 装配层 fail-fast。
 func Open(cfg *config.Config) (*bun.DB, error) {
-	dsn, err := normalizeDSN(cfg.DB.DSN)
+	driver := cfg.DB.EffectiveDriver()
+	sqldb, err := migrate.NewDB(driver, cfg.DB.DSN)
 	if err != nil {
+		// 工厂只可能因 DSN 解析 / driver 非法而报错：驱动名经 import
+		// 注册、pgdriver 走 OpenDB 无错误路径，sql.Open 对已注册驱动不失败。
 		return nil, fmt.Errorf("db: dsn: %w", err)
 	}
-	sqldb, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("db: open: %w", err)
-	}
-	db := bun.NewDB(sqldb, newMySQLDialect())
+	db := bun.NewDB(sqldb, newDialect(driver))
 	db.AddQueryHook(newSQLLogger(os.Stderr))
 	if err := db.PingContext(context.Background()); err != nil {
 		_ = db.Close()
@@ -52,6 +54,17 @@ func Open(cfg *config.Config) (*bun.DB, error) {
 	db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
 	db.SetConnMaxLifetime(cfg.DB.ConnMaxLifetime.Duration)
 	return db, nil
+}
+
+// newDialect 按 driver 选 bun 方言：mysql 经 noReturningDialect 屏蔽
+// RETURNING 能力位（CODE_GUIDE §3.5——插入后回读只走 LastInsertId）；
+// postgres 原生 pgdialect，RETURNING 保留。driver 已由 EffectiveDriver
+// 归一（空值回落 mysql），无空值分支。
+func newDialect(driver config.Driver) schema.Dialect {
+	if driver == config.DriverPostgres {
+		return pgdialect.New()
+	}
+	return newMySQLDialect()
 }
 
 // noReturningDialect 屏蔽 MariaDB 10.5+ 自带的 INSERT/DELETE RETURNING
@@ -108,17 +121,6 @@ func (h *sqlLogger) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
 	if elapsed := time.Since(event.StartTime); elapsed > h.slow {
 		h.logger.Printf("SLOW SQL >= %v [%s]", h.slow, event.Query)
 	}
-}
-
-// normalizeDSN 规范化 DSN：强制 parseTime=true，与 migrate 包 openDB 同口径
-// （驱动未开 parseTime 时时间列扫描进 time.Time 失败）。只补参数不改语义。
-func normalizeDSN(dsn string) (string, error) {
-	c, err := mysqldriver.ParseDSN(dsn)
-	if err != nil {
-		return "", err
-	}
-	c.ParseTime = true
-	return c.FormatDSN(), nil
 }
 
 // requireChangedRow changed-rows 语义下的存在性判定：MySQL/MariaDB 的

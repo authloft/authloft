@@ -219,6 +219,19 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		{"dsn no at", func(c *Config) { c.DB.DSN = "tcp(1.2.3.4:3306)/db" }, "db.dsn"},
 		{"dsn wrong net", func(c *Config) { c.DB.DSN = "u:p@http(1.2.3.4:3306)/db" }, "db.dsn"},
 		{"dsn no db name", func(c *Config) { c.DB.DSN = "u:p@tcp(1.2.3.4:3306)" }, "db.dsn"},
+		{"driver unknown", func(c *Config) { c.DB.Driver = "sqlite" }, "db.driver"},
+		{"pg dsn wrong scheme", func(c *Config) {
+			c.DB.Driver = DriverPostgres
+			c.DB.DSN = "mysql://u:p@127.0.0.1:5432/db"
+		}, "db.dsn"},
+		{"pg dsn no host", func(c *Config) {
+			c.DB.Driver = DriverPostgres
+			c.DB.DSN = "postgres:///db"
+		}, "db.dsn"},
+		{"pg dsn no db name", func(c *Config) {
+			c.DB.Driver = DriverPostgres
+			c.DB.DSN = "postgres://u:p@127.0.0.1:5432/"
+		}, "db.dsn"},
 		{"max_open_conns zero", func(c *Config) { c.DB.MaxOpenConns = 0 }, "db.max_open_conns"},
 		{"max_idle_conns negative", func(c *Config) { c.DB.MaxIdleConns = -1 }, "db.max_idle_conns"},
 		{"conn_max_lifetime zero", func(c *Config) { c.DB.ConnMaxLifetime = Duration{} }, "db.conn_max_lifetime"},
@@ -281,6 +294,41 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 				t.Errorf("want error containing %q, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestValidateAcceptsPostgresDriver db.driver=postgres 的正面路径：合法
+// postgres:// / postgresql:// DSN 通过 Validate（scheme 别名同口径）。
+func TestValidateAcceptsPostgresDriver(t *testing.T) {
+	for _, dsn := range []string{
+		"postgres://authloft:pass@127.0.0.1:5432/authloft?sslmode=disable",
+		"postgresql://authloft@db.internal:5432/authloft",
+	} {
+		c := validTestConfig(t)
+		c.DB.Driver = DriverPostgres
+		c.DB.DSN = dsn
+		if err := c.Validate(); err != nil {
+			t.Errorf("driver=postgres + dsn %q 应通过 Validate, got %v", dsn, err)
+		}
+	}
+}
+
+// TestEffectiveDriver 空值回落 mysql：存量 authloft.yml 无 driver 字段
+// （装载后零值空串）按 mysql 口径运行；显式值原样透传；DefaultConfig
+// 写回的默认方言为 mysql。
+func TestEffectiveDriver(t *testing.T) {
+	if got := (DBConfig{}).EffectiveDriver(); got != DriverMySQL {
+		t.Errorf("empty driver = %q, want %q", got, DriverMySQL)
+	}
+	if got := (DBConfig{Driver: DriverPostgres}).EffectiveDriver(); got != DriverPostgres {
+		t.Errorf("explicit driver = %q, want %q", got, DriverPostgres)
+	}
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	if cfg.DB.Driver != DriverMySQL {
+		t.Errorf("default driver = %q, want %q", cfg.DB.Driver, DriverMySQL)
 	}
 }
 

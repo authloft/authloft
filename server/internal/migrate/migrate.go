@@ -1,8 +1,11 @@
-// Package migrate 提供 goose v3 迁移执行与安装判据（后端架构 §3.16）。
+// Package migrate 提供 goose v3 迁移执行、安装判据与统一连接工厂
+// （后端架构 §3.16）。
 //
 // 迁移 SQL 内嵌在 authloft/migrations 包随二进制分发，版本表沿用 goose
 // 默认的 goose_db_version（无 dirty 标志：失败的迁移不记版本、重跑即重试
-// 同版本）。本包只提供 runner 能力；bootstrap / setup 的装配接线归后续实现。
+// 同版本）。统一连接工厂（NewDB）按 driver 产出裸 *sql.DB，repo / setup
+// 与本包三处建连共享；goose 方言按 driver 选择，bootstrap / setup 的
+// driver 贯通归后续实现。
 package migrate
 
 import (
@@ -13,7 +16,9 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/pressly/goose/v3"
+	"github.com/uptrace/bun/driver/pgdriver"
 
+	"authloft/internal/config"
 	"authloft/migrations"
 )
 
@@ -25,23 +30,54 @@ const ErrCodeMigrationFailed = "migration_failed"
 // errNoSuchTable MariaDB 服务端错误码 ER_NO_SUCH_TABLE（1146）。
 const errNoSuchTable = 1146
 
-// openDB 解析并规范化 DSN 后建立连接。强制开启 parseTime：goose MySQL
-// 方言的版本表存在性检查走 GetMigration 回退查询（扫描 tstamp 列进
-// time.Time），驱动未开 parseTime 时该查询失败、误判版本表不存在，
-// 后续 CREATE 会撞 1050 表已存在。
-func openDB(dsn string) (*sql.DB, error) {
+// NewDB 统一连接工厂：按 driver 建立裸 *sql.DB（方言无关，bun / goose 等
+// 方言层由调用方叠加）。repo.Open、本包、setup 三处建连共享，禁止再各自
+// 内联驱动装配。DSN 结构校验归 config.validateDSN（启动期 fail-fast），
+// 连接期错误由调用方 ping 兜底。mysql 路径强制 parseTime=true（见
+// normalizeDSN）；pgdriver 原生返回 time.Time，无此问题。
+//
+// 工厂落位本包而非 repo：repo 的包内测试（*_repo_test.go）import 本包构造
+// 测试 schema，repo→migrate 已存在，工厂若在 repo 会令 migrate→repo 成
+// 测试期 import cycle；三处建连消费者（repo / setup / migrate）对本包 /
+// config 的依赖方向均向下，无环。
+func NewDB(driver config.Driver, dsn string) (*sql.DB, error) {
+	switch driver {
+	case config.DriverMySQL:
+		normalized, err := normalizeDSN(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return sql.Open("mysql", normalized)
+	case config.DriverPostgres:
+		return sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn))), nil
+	default:
+		return nil, fmt.Errorf("unsupported driver %q", driver)
+	}
+}
+
+// normalizeDSN 规范化 MySQL DSN：强制 parseTime=true（驱动未开 parseTime 时
+// 时间列扫描进 time.Time 失败；goose MySQL 方言的版本表存在性检查走
+// GetMigration 回退查询，扫描 tstamp 列同样依赖——未开时误判版本表不存在，
+// 后续 CREATE 撞 1050 表已存在）。只补参数不改语义。
+func normalizeDSN(dsn string) (string, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	cfg.ParseTime = true
-	return sql.Open("mysql", cfg.FormatDSN())
+	return cfg.FormatDSN(), nil
 }
 
 // Up 在 dsn 上执行 migrate up（§3.16：幂等——版本已最新时 goose 只读
 // 版本表、零变更秒过；单条迁移失败不记版本，重跑即重试同版本）。
+// driver 现固定 mysql：bootstrap / setup 的 driver 贯通属后续工作。
 func Up(ctx context.Context, dsn string) error {
-	db, err := openDB(dsn)
+	return up(ctx, config.DriverMySQL, dsn)
+}
+
+// up 按 driver 建连并选 goose 方言执行迁移。
+func up(ctx context.Context, driver config.Driver, dsn string) error {
+	db, err := NewDB(driver, dsn)
 	if err != nil {
 		return fmt.Errorf("%s: open: %w", ErrCodeMigrationFailed, err)
 	}
@@ -49,7 +85,7 @@ func Up(ctx context.Context, dsn string) error {
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("%s: ping: %w", ErrCodeMigrationFailed, err)
 	}
-	if err := gooseUp(ctx, db); err != nil {
+	if err := gooseUp(ctx, db, driver); err != nil {
 		return fmt.Errorf("%s: %w", ErrCodeMigrationFailed, err)
 	}
 	return nil
@@ -58,8 +94,9 @@ func Up(ctx context.Context, dsn string) error {
 // Installed 报告系统是否已完成初始化（§3.16 已初始化判据）：
 // 迁移版本表已到最新 且 管理员（user.id=1）存在，缺任一即视为未完成。
 // 版本表 / 业务表尚不存在视为未初始化，不视为错误。
+// driver 现固定 mysql（与 Up 同口径，driver 贯通属后续工作）。
 func Installed(ctx context.Context, dsn string) (bool, error) {
-	db, err := openDB(dsn)
+	db, err := NewDB(config.DriverMySQL, dsn)
 	if err != nil {
 		return false, fmt.Errorf("open: %w", err)
 	}
@@ -67,12 +104,14 @@ func Installed(ctx context.Context, dsn string) (bool, error) {
 	if err := db.PingContext(ctx); err != nil {
 		return false, fmt.Errorf("ping: %w", err)
 	}
-	return installed(ctx, db)
+	return installed(ctx, db, config.DriverMySQL)
 }
 
-// gooseUp 用嵌入的迁移文件把 db 迁移到最新版本。
-func gooseUp(ctx context.Context, db *sql.DB) error {
-	p, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS)
+// gooseUp 用嵌入的迁移文件把 db 迁移到最新版本，goose 方言按 driver 选择。
+// 注意：嵌入 FS 当前仅 MySQL 方言 SQL，两套方言目录拆分属后续工作——
+// postgres 路径在本卡只接通 Provider 构造，实跑会在迁移执行期报缺文件。
+func gooseUp(ctx context.Context, db *sql.DB, driver config.Driver) error {
+	p, err := goose.NewProvider(gooseDialect(driver), db, migrations.FS)
 	if err != nil {
 		return fmt.Errorf("new provider: %w", err)
 	}
@@ -82,12 +121,22 @@ func gooseUp(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// gooseDialect goose Provider 方言按 driver 选择（§3.16）；空值与未知值
+// 回落 mysql——driver 的合法性已在 config.validate 拦截，工厂对未知 driver
+// 也会在建连期报错，此处不会先于上述两点被未校验值命中。
+func gooseDialect(driver config.Driver) goose.Dialect {
+	if driver == config.DriverPostgres {
+		return goose.DialectPostgres
+	}
+	return goose.DialectMySQL
+}
+
 // installed 判据内部实现：①迁移版本表最新（goose GetVersions 的 current
 // 达到 target，空库 current=0）；②user.id = 1 存在（§4.2：该行为安装时
 // 创建的账号，其存在代表已完成安装；管理员身份由 user_permission 的
 // superadmin 权限点表达，本判据仅按安装账号存在性判定，不在此处查权限点）。
-func installed(ctx context.Context, db *sql.DB) (bool, error) {
-	p, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS)
+func installed(ctx context.Context, db *sql.DB, driver config.Driver) (bool, error) {
+	p, err := goose.NewProvider(gooseDialect(driver), db, migrations.FS)
 	if err != nil {
 		return false, fmt.Errorf("new provider: %w", err)
 	}

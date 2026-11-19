@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/argon2"
 	"gopkg.in/yaml.v3"
 
@@ -362,15 +361,12 @@ func hashPasswordArgon2id(password string) (string, error) {
 	), nil
 }
 
-// openDB 解析并规范化 DSN 后建立连接（强制 parseTime，与 migrate 包同
-// 口径）；只建连不 Ping，连通检查由调用方做。
+// openDB 经统一连接工厂（migrate.NewDB）建连：驱动装配与 parseTime 强制
+// 等口径收口在工厂；只建连不 Ping，连通检查由调用方做。driver 现固定
+// mysql——安装表单的 dbDriver 字段属后续工作（上传 config 的非 mysql
+// driver 与原行为一致：DSN 结构校验 / 建连期报 db_unreachable）。
 func openDB(dsn string) (*sql.DB, error) {
-	cfg, err := mysql.ParseDSN(dsn)
-	if err != nil {
-		return nil, err
-	}
-	cfg.ParseTime = true
-	return sql.Open("mysql", cfg.FormatDSN())
+	return migrate.NewDB(config.DriverMySQL, dsn)
 }
 
 // dsnPasswordRe 匹配 go-sql-driver DSN 的密码段（user:pass@）。

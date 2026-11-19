@@ -71,6 +71,48 @@ func TestOpenReal(t *testing.T) {
 	// 由 Open 的 Set 调用与代码审阅保证，不在运行期断言。
 }
 
+// TestOpenUnknownDriver：未知 driver 在工厂即报错（fail-fast 前置到建连），
+// 错误带 Open 的 "db: dsn" 前缀（工厂只可能因 DSN 解析 / driver 非法报错）。
+func TestOpenUnknownDriver(t *testing.T) {
+	cfg := dbTestConfig("test:123456@tcp(127.0.0.1:1)/test", 5, 2, time.Minute)
+	cfg.DB.Driver = config.Driver("sqlite")
+	_, err := Open(cfg)
+	if err == nil || !strings.Contains(err.Error(), "db: dsn") {
+		t.Fatalf("err = %v, want \"db: dsn\" prefixed error", err)
+	}
+}
+
+// TestOpenPostgresUnreachable：PG 不可达（保留端口 1，连接拒绝即时返回）
+// → Open 建连后 ping 失败，返回 "db: open" 前缀错误——与 mysql 路径同一
+// fail-fast 口径。
+func TestOpenPostgresUnreachable(t *testing.T) {
+	cfg := dbTestConfig("postgres://authloft:pass@127.0.0.1:1/authloft?sslmode=disable", 5, 2, time.Minute)
+	cfg.DB.Driver = config.DriverPostgres
+	_, err := Open(cfg)
+	if err == nil || !strings.Contains(err.Error(), "db: open") {
+		t.Fatalf("err = %v, want \"db: open\" prefixed error", err)
+	}
+}
+
+// TestOpenPostgresReal（env-skip）：Open 的 postgres 路径全链路（工厂 +
+// pgdialect 叠层 + 慢查钩子 + 连接池参数）。
+func TestOpenPostgresReal(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("环境变量 UC_TEST_PG_DSN 未设置，跳过 Open postgres 用例（实跑在 CI postgres 矩阵）")
+	}
+	cfg := dbTestConfig(dsn, 5, 2, time.Minute)
+	cfg.DB.Driver = config.DriverPostgres
+	db, err := Open(cfg)
+	if err != nil {
+		t.Fatalf("Open postgres 真连失败: %v", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(context.Background()); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
 // TestSQLLoggerIgnoresErrNoRows：可选单行查询查无行属业务预期，不得产生
 // 日志；真实 SQL 错误仍须记录；慢查询按阈值告警。
 func TestSQLLoggerIgnoresErrNoRows(t *testing.T) {

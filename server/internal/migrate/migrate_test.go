@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pressly/goose/v3"
+
+	"authloft/internal/config"
 )
 
 // wantTables §4 全部 12 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
@@ -244,6 +248,73 @@ func appliedRows(t *testing.T, db *sql.DB) int {
 		t.Fatalf("统计 goose_db_version 行数失败: %v", err)
 	}
 	return n
+}
+
+// TestGooseDialect goose Provider 方言按 driver 选择：postgres →
+// DialectPostgres；mysql 与空值（存量配置缺 driver 字段的回落口径）→
+// DialectMySQL。
+func TestGooseDialect(t *testing.T) {
+	if got := gooseDialect(config.DriverMySQL); got != goose.DialectMySQL {
+		t.Errorf("mysql dialect = %v, want %v", got, goose.DialectMySQL)
+	}
+	if got := gooseDialect(config.DriverPostgres); got != goose.DialectPostgres {
+		t.Errorf("postgres dialect = %v, want %v", got, goose.DialectPostgres)
+	}
+	if got := gooseDialect(""); got != goose.DialectMySQL {
+		t.Errorf("empty driver dialect = %v, want %v", got, goose.DialectMySQL)
+	}
+}
+
+// TestNewDBFactory 统一连接工厂（repo.Open / 本包 / setup 三处建连共享）
+// 的反向与构造用例：mysql 非法 DSN 建连期报错；postgres URL 形态返回可用
+// 连接对象（pgdriver 惰性连接，构造不拨号）；未知 driver 报错。
+func TestNewDBFactory(t *testing.T) {
+	if db, err := NewDB(config.DriverMySQL, "not a dsn"); err == nil {
+		_ = db.Close()
+		t.Fatal("mysql 非法 DSN 应报错")
+	}
+	pgDB, err := NewDB(config.DriverPostgres, "postgres://authloft:pass@127.0.0.1:5432/authloft?sslmode=disable")
+	if err != nil {
+		t.Fatalf("postgres 连接对象构造失败: %v", err)
+	}
+	_ = pgDB.Close()
+	if db, err := NewDB(config.Driver("sqlite"), "whatever"); err == nil {
+		_ = db.Close()
+		t.Fatal("未知 driver 应报错")
+	}
+}
+
+// TestNewDBMySQLReal（env-skip）：工厂 mysql 分支真连测试库并 ping。
+func TestNewDBMySQLReal(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("环境变量 UC_TEST_MYSQL_DSN 未设置，跳过工厂 mysql 真连用例")
+	}
+	db, err := NewDB(config.DriverMySQL, dsn)
+	if err != nil {
+		t.Fatalf("NewDB mysql 真连失败: %v", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(context.Background()); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
+// TestNewDBPostgresReal（env-skip）：工厂 postgres 分支真连。本地无
+// PostgreSQL，实跑在 CI postgres 矩阵；连接串只经环境变量注入。
+func TestNewDBPostgresReal(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("环境变量 UC_TEST_PG_DSN 未设置，跳过工厂 postgres 真连用例（实跑在 CI postgres 矩阵）")
+	}
+	db, err := NewDB(config.DriverPostgres, dsn)
+	if err != nil {
+		t.Fatalf("NewDB postgres 真连失败: %v", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(context.Background()); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
 }
 
 // TestG1EmptyUpToLatest §21.2 G 组①：空库一步 migrate up 到最新，

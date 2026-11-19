@@ -18,6 +18,7 @@ server:
   cert_file: ""                   # TLS 证书 PEM 路径，与 key_file 成对配置
   key_file: ""                    # TLS 私钥 PEM 路径，与 cert_file 成对配置
 db:
+  driver: "mysql"                 # 数据库方言：mysql | postgres（DSN 按 driver 解释，两种格式不同）
   dsn: "authloft:pass@tcp(127.0.0.1:3306)/authloft?charset=utf8mb4&parseTime=true&loc=Local"
   max_open_conns: 50
   max_idle_conns: 10
