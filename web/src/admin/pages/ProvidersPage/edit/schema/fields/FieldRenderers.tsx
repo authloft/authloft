@@ -134,6 +134,7 @@ export function NumberField(props: FieldRendererProps): ReactNode {
   return (
     <Form.InputNumber
       field={props.field.key}
+      className={styles.fieldFullWidth}
       label={fieldLabel(props.field)}
       helpText={fieldHelp(props.field)}
       extraText={props.extra}
@@ -152,6 +153,7 @@ export function SelectField(props: FieldRendererProps): ReactNode {
   return (
     <Form.Select
       field={props.field.key}
+      className={styles.fieldFullWidth}
       label={fieldLabel(props.field)}
       helpText={fieldHelp(props.field)}
       extraText={props.extra}

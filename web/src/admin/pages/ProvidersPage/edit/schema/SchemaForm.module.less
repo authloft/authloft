@@ -10,6 +10,14 @@
   display: block;
 }
 
+// Form.* 字段组件把 className 透传到控件根元素（Semi withField 不截流
+// className）；select / cascader / input-number 根元素默认 inline-flex
+// 收缩排版，统一撑满字段列宽，对齐 Form.Input / Form.TextArea 控件的
+// 默认 width:100%。content.tsx 的类型级联与本文件渲染器共用此类。
+.fieldFullWidth {
+  width: 100%;
+}
+
 .section {
   margin: 0 0 @spacing-lg;
 }

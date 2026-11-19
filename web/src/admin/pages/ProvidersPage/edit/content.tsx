@@ -70,6 +70,8 @@ import {
   showsCallbackHint,
 } from '../../../components/ProviderCallbackHint';
 import styles from './index.module.less';
+// 类型级联与 SchemaForm 渲染器共用同一字段宽度类（类定义归 schema/ 侧样式）。
+import schemaStyles from './schema/SchemaForm.module.less';
 import { SchemaForm } from './schema/SchemaForm';
 import {
   adminProviderToValues,
@@ -349,6 +351,7 @@ export function ProviderEditContent(props: {
         <>
           <Form.Cascader
             field="providerTypePath"
+            className={schemaStyles.fieldFullWidth}
             label={{ text: t('admin.providerTypeLabel'), required: true }}
             treeData={treeData}
             onChange={handleTypeChange}

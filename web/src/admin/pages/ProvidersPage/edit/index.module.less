@@ -31,6 +31,12 @@
   padding: @spacing-xl 0;
 }
 
+// 弹层面板宽度随内容自适应；上限约束防多级长标签把面板顶出视口，
+// 超出部分由选项列表内部滚动消化（与下方高度约束同一思路）。
+.dropdown {
+  max-width: calc(100vw - 2 * @spacing-xl);
+}
+
 .dropdown :global(.semi-cascader-option-lists) {
   height: 400px;
   max-height: calc(100vh - 200px);
