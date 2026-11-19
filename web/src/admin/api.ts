@@ -487,9 +487,7 @@ export function updateUserContact(
 }
 
 /** 管理端开关两步验证（§5.4）。 */
-export function setUserMfa(
-  request: SetUserMfaRequest,
-): Promise<OkResponse> {
+export function setUserMfa(request: SetUserMfaRequest): Promise<OkResponse> {
   return adminClient.setUserMfa(request);
 }
 
@@ -806,11 +804,7 @@ export interface UserWriteVisibility {
  * 纯函数、node 可测，供体验层按强度分级选择确认控件。
  */
 export type UserWriteOp =
-  | 'profile'
-  | 'contact'
-  | 'mfa'
-  | 'credential'
-  | 'delete';
+  'profile' | 'contact' | 'mfa' | 'credential' | 'delete';
 
 /** 确认强度数值：越大确认越强（0 无确认 / 1 Modal 二次确认 / 2 输入用户名）。 */
 export function userWriteConfirmStrength(op: UserWriteOp): 0 | 1 | 2 {
@@ -902,8 +896,7 @@ export function userEditDraftFromDetail(
     avatarUrl: user?.avatarUrl ?? '',
     phone: user?.phone ?? '',
     email: user?.email ?? '',
-    gender:
-      profile?.gender === undefined ? '' : profile.gender.toString(),
+    gender: profile?.gender === undefined ? '' : profile.gender.toString(),
     birthday: profile?.birthday ?? '',
     locale: profile?.locale ?? '',
     timezone: profile?.timezone ?? '',
@@ -932,7 +925,11 @@ function parseJsonObject(text: string): JsonObject | undefined {
   const raw = text.trim() === '' ? '{}' : text.trim();
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    if (
+      parsed === null ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed)
+    ) {
       return undefined;
     }
     return parsed as JsonObject;
@@ -1024,7 +1021,8 @@ export function buildUpdateUserProfileRequest(
   const originalGender =
     profile?.gender === undefined ? '' : profile.gender.toString();
   if (draft.gender !== originalGender) {
-    profileValues.gender = draft.gender === '' ? BigInt(0) : BigInt(draft.gender);
+    profileValues.gender =
+      draft.gender === '' ? BigInt(0) : BigInt(draft.gender);
     changed = true;
   }
   const birthday = draftText(draft.birthday);
@@ -1042,7 +1040,7 @@ export function buildUpdateUserProfileRequest(
     profileValues.timezone = timezone;
     changed = true;
   }
-  const draftExtra = parseJsonObject(draft.extra);
+  const draftExtra = parseJsonObject(draft.extra || '');
   if (
     draftExtra !== undefined &&
     stableJsonText(draftExtra) !== stableJsonText(profile?.extra ?? {})
@@ -1096,9 +1094,7 @@ export function buildSetUserMfaRequest(
 }
 
 /** UnbindUserTOTP / ResetUserRecoveryCodes 请求构造（仅 id）。 */
-export function buildUnbindUserTOTPRequest(
-  id: bigint,
-): UnbindUserTOTPRequest {
+export function buildUnbindUserTOTPRequest(id: bigint): UnbindUserTOTPRequest {
   return create(UnbindUserTOTPRequestSchema, { id });
 }
 
