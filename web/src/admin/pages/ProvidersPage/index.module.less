@@ -1,7 +1,13 @@
 // 提供商列表页自定义样式（§1.7）：同目录同名 module less；类名 camelCase。
-// 主列表改 Semi Table 自带列布局，页壳（title / 右侧动作区）由 PageLayout
-// 统一承载；此处仅保留单元格内容排布与排序 SideSheet 内拖拽行的少量样式。
+// 主列表改 Semi Table 自带列布局，页壳（title / 筛选条 / 右侧动作区）由
+// PageLayout 统一承载；此处仅保留筛选控件宽度、单元格内容排布与排序
+// SideSheet 内拖拽行的少量样式。
 @import (reference) '../../../shared/styles/tokens.less';
+
+// 类别筛选下拉宽度（PageLayout .filter 负责横排 + 间距 + 换行）。
+.categoryFilter {
+  min-width: 200px;
+}
 
 // 表格单元格内容：标识（code + 复制）/ 类型（图标 + 文字）/ 操作（编辑 + 删除）。
 .keyCell,

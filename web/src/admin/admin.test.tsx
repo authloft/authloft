@@ -5385,3 +5385,83 @@ describe('provider 类型 / 类别展示名（admin.providerType.* / admin.provi
     setLocale('zh-CN');
   });
 });
+
+describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互斥）', () => {
+  // ProvidersPage 渲染壳拉 Semi / router / api 全模块图，动态 import 与
+  // apiMod 同口径（transport 求值时机约束）。
+  async function pageIndex() {
+    return import('./pages/ProvidersPage/index');
+  }
+
+  function categoryRow(providerKey: string, category: string) {
+    return create(ProviderSchema, { providerKey, category });
+  }
+
+  test('filterProvidersByCategory：按类别只留目标类行；清空（""）恢复全量且返回原行集引用', async () => {
+    const { filterProvidersByCategory } = await pageIndex();
+    const rows = [
+      categoryRow('qq', 'oauth'),
+      categoryRow('eml_main', 'email'),
+      categoryRow('wx', 'oauth'),
+    ];
+    expect(
+      filterProvidersByCategory(rows, 'oauth').map((row) => row.providerKey),
+    ).toEqual(['qq', 'wx']);
+    // 无命中类别 → 空行集。
+    expect(filterProvidersByCategory(rows, 'sms')).toEqual([]);
+    // ''（不限）= 清空筛选恢复全量：返回原数组引用（避免无谓重渲染）。
+    expect(filterProvidersByCategory(rows, '')).toBe(rows);
+  });
+
+  test('providerCategoryFilterOptions：不限置顶 + 行集 distinct category 首现序；类别名走展示名（缺键回 wire 值）、空类别不成维度', async () => {
+    setLocale('zh-CN');
+    const { providerCategoryFilterOptions } = await pageIndex();
+    const rows = [
+      categoryRow('qq', 'oauth'),
+      categoryRow('proxy1', 'proxy'),
+      categoryRow('eml_main', 'email'),
+      categoryRow('wx', 'oauth'),
+    ];
+    expect(providerCategoryFilterOptions(rows)).toEqual([
+      { value: '', label: t('admin.filterAnyOption') },
+      // 字典无 admin.providerCategory.oauth / .email → 原样回 wire 值。
+      { value: 'oauth', label: 'oauth' },
+      { value: 'proxy', label: '出站代理' },
+      { value: 'email', label: 'email' },
+    ]);
+    // 空类别（protojson 零值占位）不构成可筛维度：只剩「不限」。
+    expect(providerCategoryFilterOptions([categoryRow('anon', '')])).toEqual([
+      { value: '', label: t('admin.filterAnyOption') },
+    ]);
+    setLocale('zh-CN');
+  });
+
+  test('sortDragEnabled：行集截断与筛选态任一命中即停用拖拽（筛选态即使行数===total 仍是子集）', async () => {
+    const { sortDragEnabled } = await pageIndex();
+    // 全量行集 + 未筛选 → 可拖。
+    expect(sortDragEnabled(100, 100, '')).toBe(true);
+    // 行集截断（超单页上限）→ 停用。
+    expect(sortDragEnabled(99, 100, '')).toBe(false);
+    // 筛选态 → 停用（即使行数与 total 相等）。
+    expect(sortDragEnabled(100, 100, 'oauth')).toBe(false);
+    expect(sortDragEnabled(2, 100, 'email')).toBe(false);
+  });
+
+  test('页面壳静态渲染：工具栏出现类别筛选 Select，未选中时 placeholder 显示维度名', async () => {
+    const { ProvidersPage } = await pageIndex();
+    setLocale('zh-CN');
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/providers'] },
+        createElement(ProvidersPage, { alRoot: `${BASE}/` }),
+      ),
+    );
+    // 控件落在 PageLayout filter 插槽；未选中（不限，value=''→undefined）
+    // 时 placeholder 显示维度名。Semi Select 的 aria-label 与 optionList
+    // 仅运行时 / 展开下拉后才出现，静态渲染断言 placeholder 落点。
+    expect(html).toContain('semi-select-selection-placeholder');
+    expect(html).toContain('>类别</span>');
+    setLocale('zh-CN');
+  });
+});

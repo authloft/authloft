@@ -10,6 +10,10 @@
  * 删除经 ConfirmActionButton 二次确认后调 DeleteProvider，成功后 Toast +
  * 重新取数。工具栏「新建提供商」入口指向 PROVIDER_NEW_PATH（需求 §4.6）。
  *
+ * 工具栏类别筛选：对已载入行集本地过滤（单页全量取数，不接后端 category
+ * 入参）；筛选态与拖拽排序互斥——过滤行集是全量子集、重排会把子集当
+ * 全量提交，故筛选中停用拖拽，清空筛选恢复全量。
+ *
  * 拖拽排序从行内移出：右上角「排序」按钮展开 SideSheet，内嵌 SortableList
  * 承载原拖拽逻辑；行集截断（超 100）时停用拖拽并给出提示（见
  * buildListProvidersRequest）。启停 / 排序均乐观更新 + 失败回滚，错误文案
@@ -35,6 +39,7 @@ import {
   Banner,
   Button,
   Empty,
+  Select,
   SideSheet,
   Space,
   Table,
@@ -105,7 +110,57 @@ export function providerCategoryDisplayName(category: string): string {
   return hasKey(key) ? t(key) : category;
 }
 
-/** 提供商列表页：回调提示 + 全量表格（行内启停 + 侧栏拖拽排序 + 编辑删除）。 */
+/**
+ * 按类别本地过滤已载入行集（''=不限，返回原行集引用）。不接线后端
+ * category 入参：本页单页全量取数，数据量小、本地过滤即可。
+ */
+export function filterProvidersByCategory(
+  rows: Provider[],
+  category: string,
+): Provider[] {
+  if (category === '') {
+    return rows;
+  }
+  return rows.filter((row) => row.category === category);
+}
+
+/**
+ * 类别筛选下拉选项：「不限」置顶 + 已载入行集 distinct category（首现序）。
+ * 空串类别是 protojson 零值占位、不构成可筛维度，跳过；选项名走
+ * providerCategoryDisplayName（字典缺键回显 wire 值）。
+ */
+export function providerCategoryFilterOptions(
+  rows: Provider[],
+): { value: string; label: string }[] {
+  const categories: string[] = [];
+  for (const row of rows) {
+    if (row.category !== '' && !categories.includes(row.category)) {
+      categories.push(row.category);
+    }
+  }
+  return [
+    { value: '', label: t('admin.filterAnyOption') },
+    ...categories.map((category) => ({
+      value: category,
+      label: providerCategoryDisplayName(category),
+    })),
+  ];
+}
+
+/**
+ * 拖拽排序可用性：排序提交依赖全量行集（部分行集重排会与未载入行冲突），
+ * 筛选态行集是全量子集、重排会把子集当全量提交——筛选与拖拽互斥，
+ * 行集截断与筛选态任一命中即停用。
+ */
+export function sortDragEnabled(
+  rowCount: number,
+  total: number,
+  categoryFilter: string,
+): boolean {
+  return rowCount === total && categoryFilter === '';
+}
+
+/** 提供商列表页：回调提示 + 类别筛选表格（行内启停 + 侧栏拖拽排序 + 编辑删除）。 */
 export function ProvidersPage(props: {
   /** 归一后 al_root（401 跳登录前缀 / 回调地址前缀）。 */
   alRoot: string;
@@ -128,6 +183,8 @@ export function ProvidersPage(props: {
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   // 排序 SideSheet 显隐（拖拽排序从行内移入）。
   const [showSort, setShowSort] = useState(false);
+  // 类别筛选（工具栏 Select 本地过滤已载入行集；''=不限）。
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   // 列表数据落地 → 同步行集（引用更换即覆盖本地补丁，DataTable 同模式）。
   useEffect(() => {
@@ -137,8 +194,12 @@ export function ProvidersPage(props: {
   }, [data]);
 
   const total = data !== undefined ? toCount(data.total) : 0;
-  // 拖拽排序需全量行集（部分行集重排会与未载入行冲突，见 buildListProvidersRequest）。
-  const canDrag = rows.length === total;
+  // 表格行集：类别筛选本地过滤（''=不限即原行集）。
+  const visibleRows = filterProvidersByCategory(rows, categoryFilter);
+  // 拖拽排序需全量行集且非筛选态（互斥，见 sortDragEnabled）；「超单页
+  // 上限」提示只认行集截断，筛选态停用不冒充该文案。
+  const fullRowset = rows.length === total;
+  const canDrag = sortDragEnabled(rows.length, total, categoryFilter);
 
   function openCreate(): void {
     setEditProvider(null);
@@ -306,6 +367,20 @@ export function ProvidersPage(props: {
   return (
     <PageLayout
       title={t('admin.navProviders')}
+      filter={
+        <Select
+          className={styles.categoryFilter}
+          // ''（不限）映射 undefined 让 placeholder 显示（UsersPage 同款）。
+          value={categoryFilter === '' ? undefined : categoryFilter}
+          onChange={(value) =>
+            setCategoryFilter(typeof value === 'string' ? value : '')
+          }
+          placeholder={t('admin.providerColumnCategory')}
+          showClear
+          optionList={providerCategoryFilterOptions(rows)}
+          aria-label={t('admin.providerColumnCategory')}
+        />
+      }
       actions={
         <Space>
           <Button onClick={() => setShowSort(true)}>
@@ -319,7 +394,7 @@ export function ProvidersPage(props: {
     >
       <Table<Provider>
         columns={columns}
-        dataSource={rows}
+        dataSource={visibleRows}
         rowKey={(record) =>
           record === undefined ? '' : providerRowKey(record)
         }
@@ -339,7 +414,7 @@ export function ProvidersPage(props: {
         onCancel={() => setShowSort(false)}
         size="small"
       >
-        {!canDrag && total > 0 ? (
+        {!fullRowset && total > 0 ? (
           <p className={styles.dragNote}>
             {t('admin.providersDragDisabledNote')}
           </p>
