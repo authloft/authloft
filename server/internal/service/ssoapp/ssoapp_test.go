@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/client"
 	"authloft/internal/repo"
@@ -73,7 +73,7 @@ func TestSnapshotEmptyClientID(t *testing.T) {
 
 // TestSnapshotClientNotFound 查无行 → 显式哨兵错误（§2.2：不降级直登）。
 func TestSnapshotClientNotFound(t *testing.T) {
-	rows := &fakeClientRows{err: gorm.ErrRecordNotFound}
+	rows := &fakeClientRows{err: sql.ErrNoRows}
 	_, err := testResolver(rows).Snapshot(context.Background(), "app")
 	if !errors.Is(err, ErrClientNotFound) {
 		t.Fatalf("err = %v, want ErrClientNotFound", err)

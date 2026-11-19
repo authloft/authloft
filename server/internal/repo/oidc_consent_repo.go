@@ -7,12 +7,13 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
 )
@@ -20,21 +21,23 @@ import (
 // OidcConsentRepo oidc_consent 表数据访问，只暴露授权口径的两个窄操作
 // （§4.5）：读已授权并集、按行锁单事务合并写回。
 type OidcConsentRepo struct {
-	db *gorm.DB
+	db *bun.DB
 }
 
-// NewOidcConsentRepo 按 GORM 连接构造。
-func NewOidcConsentRepo(db *gorm.DB) *OidcConsentRepo {
+// NewOidcConsentRepo 按 bun 连接构造。
+func NewOidcConsentRepo(db *bun.DB) *OidcConsentRepo {
 	return &OidcConsentRepo{db: db}
 }
 
 // GetConsentScopes 取该用户对该客户端的已授权 scope 并集原文（空格分隔，
-// §4.5）。无授权记录（从未同意，属正常稳态）返回包装的 gorm.ErrRecordNotFound，
+// §4.5）。无授权记录（从未同意，属正常稳态）返回包装的 sql.ErrNoRows，
 // 由上层按空集口径参与免同意判定（§4.5：请求 scope ⊆ 已授权 scopes）。
 func (r *OidcConsentRepo) GetConsentScopes(ctx context.Context, userID int64, clientID string) (string, error) {
 	var row model.OidcConsent
-	if err := r.db.WithContext(ctx).
-		Take(&row, "user_id = ? AND client_id = ?", userID, clientID).Error; err != nil {
+	if err := r.db.NewSelect().Model(&row).
+		Where("user_id = ? AND client_id = ?", userID, clientID).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return "", fmt.Errorf("oidc consent repo: get consent scopes: %w", err)
 	}
 	return row.Scopes, nil
@@ -66,27 +69,39 @@ func (r *OidcConsentRepo) MergeConsent(ctx context.Context, userID int64, client
 }
 
 // mergeConsentOnce 单次行锁事务：FOR UPDATE 读现值 → 回调 → 冲突更新写回。
+// upsert 行的 created_at / updated_at 零值时由本方法补齐（bun 无
+// 时间列自动填充）：首次插入经 VALUES(created_at) 落当前时刻，冲突更新
+// 不覆盖 created_at、updated_at 随行刷新。
 func (r *OidcConsentRepo) mergeConsentOnce(ctx context.Context, userID int64, clientID string, merge func(current string) (string, error)) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var row model.OidcConsent
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Take(&row, "user_id = ? AND client_id = ?", userID, clientID).Error
+		err := tx.NewSelect().Model(&row).
+			Where("user_id = ? AND client_id = ?", userID, clientID).
+			Limit(1).
+			For("UPDATE").
+			Scan(ctx)
 		current := ""
 		switch {
 		case err == nil:
 			current = row.Scopes
-		case !errors.Is(err, gorm.ErrRecordNotFound):
+		case !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("oidc consent repo: lock consent row: %w", err)
 		}
 		next, err := merge(current)
 		if err != nil {
 			return err
 		}
-		upsert := model.OidcConsent{UserID: userID, ClientID: clientID, Scopes: next}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}, {Name: "client_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"scopes", "updated_at"}),
-		}).Create(&upsert).Error; err != nil {
+		now := time.Now()
+		upsert := model.OidcConsent{
+			UserID:    userID,
+			ClientID:  clientID,
+			Scopes:    next,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if _, err := tx.NewInsert().Model(&upsert).
+			On("DUPLICATE KEY UPDATE scopes = VALUES(scopes), updated_at = VALUES(updated_at)").
+			Exec(ctx); err != nil {
 			return fmt.Errorf("oidc consent repo: upsert consent: %w", err)
 		}
 		return nil

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"strconv"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
@@ -56,7 +56,7 @@ func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidate
 	}
 	u, err := r.users.FindByID(ctx, uid)
 	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		u = nil
@@ -71,7 +71,7 @@ func (r boundFactorReader) Bound(ctx context.Context, subject Subject, candidate
 		case "totp", "recovery_code":
 			row, err := r.creds.FindByUserAndKind(ctx, uid, m)
 			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
+				if errors.Is(err, sql.ErrNoRows) {
 					continue
 				}
 				return nil, err

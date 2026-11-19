@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	"authloft/gen/go/credential"
 	"authloft/internal/migrate"
@@ -26,9 +26,9 @@ import (
 )
 
 // credentialTestSetup 清库 + 建表 + 注册测后零残留清理，返回就绪的
-// CredentialRepo 与 WebauthnRepo（同一连接 *gorm.DB 供跨表事务断言
+// CredentialRepo 与 WebauthnRepo（同一连接 *bun.DB 供跨表事务断言
 // 直接查行）。
-func credentialTestSetup(t *testing.T) (*CredentialRepo, *WebauthnRepo, *gorm.DB) {
+func credentialTestSetup(t *testing.T) (*CredentialRepo, *WebauthnRepo, *bun.DB) {
 	t.Helper()
 	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
 	if dsn == "" {
@@ -62,9 +62,7 @@ func credentialTestSetup(t *testing.T) (*CredentialRepo, *WebauthnRepo, *gorm.DB
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewCredentialRepo(db), NewWebauthnRepo(db), db
 }
@@ -168,7 +166,7 @@ func TestCredentialRepoKindRows(t *testing.T) {
 	}
 
 	// 未命中：该 user 无 webauthn kind 行。
-	if _, err := rp.FindByUserAndKind(ctx, uid, "webauthn"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByUserAndKind(ctx, uid, "webauthn"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -195,7 +193,7 @@ func TestCredentialRepoKindRows(t *testing.T) {
 		t.Errorf("同值 Update 应幂等成功: %v", err)
 	}
 	// 不存在行可判别。
-	if err := rp.Update(ctx, &model.UserCredential{ID: 404, Secret: newPw, UpdatedAt: time.Now()}); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.Update(ctx, &model.UserCredential{ID: 404, Secret: newPw, UpdatedAt: time.Now()}); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Update 不存在行应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -219,7 +217,7 @@ func TestCredentialRepoKindRows(t *testing.T) {
 	if gotPw3, err = rp.FindByUserAndKind(ctx, uid, "password"); err != nil || gotPw3.IsEnabled != 1 {
 		t.Errorf("is_enabled = %d, err %v; want 1", gotPw3.IsEnabled, err)
 	}
-	if err := rp.SetEnabled(ctx, 404, true); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.SetEnabled(ctx, 404, true); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("SetEnabled 不存在行应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -310,7 +308,7 @@ func TestCredentialRepoDeleteByUserAndKind(t *testing.T) {
 	if err := rp.DeleteByUserAndKind(ctx, uid, "recovery_code"); err != nil {
 		t.Fatalf("DeleteByUserAndKind 失败: %v", err)
 	}
-	if _, err := rp.FindByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("删除后 Find 应 ErrRecordNotFound, got %v", err)
 	}
 	// 他行不受影响：同 user 其他 kind、同 kind 其他 user。
@@ -321,7 +319,7 @@ func TestCredentialRepoDeleteByUserAndKind(t *testing.T) {
 		t.Errorf("同 kind 其他 user 行不应受影响: (%v, %v)", got, err)
 	}
 	// 再次删除（行已不存在）→ ErrRecordNotFound 可判别。
-	if err := rp.DeleteByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.DeleteByUserAndKind(ctx, uid, "recovery_code"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 }

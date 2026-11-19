@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"database/sql"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/gen/go/api/account/v1/accountv1connect"
@@ -64,7 +64,7 @@ func (f *fakeUsers) GetProfile(_ context.Context, _ int64) (*model.UserProfile, 
 }
 
 // fakeCreds CredentialReader 的 fake：kind → 行；未配置的 kind 返回
-// 包装 gorm.ErrRecordNotFound（repo.FindByUserAndKind 同款包装）。
+// 包装 sql.ErrNoRows（repo.FindByUserAndKind 同款包装）。
 type fakeCreds struct {
 	rows map[string]*model.UserCredential
 	err  error // 非 nil 时对全部 kind 返回该错误
@@ -77,7 +77,7 @@ func (f *fakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (
 	if row, ok := f.rows[kind]; ok {
 		return row, nil
 	}
-	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("credential repo: find by user kind: %w", sql.ErrNoRows)
 }
 
 // fakeSettings SettingsReader 的 fake。
@@ -103,7 +103,7 @@ func (f *fakeSettings) GetStringSlice(key string) ([]string, bool) {
 }
 
 // fakeProviders ProviderReader 的 fake：key → 行；未配置的 key 返回
-// 包装 gorm.ErrRecordNotFound。
+// 包装 sql.ErrNoRows。
 type fakeProviders struct {
 	rows map[string]*model.Provider
 	err  error
@@ -116,7 +116,7 @@ func (f *fakeProviders) FindByKey(_ context.Context, key string) (*model.Provide
 	if row, ok := f.rows[key]; ok {
 		return row, nil
 	}
-	return nil, fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("provider repo: find by key: %w", sql.ErrNoRows)
 }
 
 // fakeCaptcha CaptchaConfiger 的 fake：原样回放固定 Config。
@@ -436,7 +436,7 @@ func TestGetProfileWithoutSession(t *testing.T) {
 // TestGetProfileUserNotFound 用户不存在（会话有效但行已删）→ 404
 // not_found；user_profile 行缺失 → 200 + 零值 profile，不报错。
 func TestGetProfileUserNotFound(t *testing.T) {
-	users := &fakeUsers{userErr: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	users := &fakeUsers{userErr: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}
 	tokens, epochs, h := newSessionHandler(t, users)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -472,7 +472,7 @@ func TestGetProfileUserNotFound(t *testing.T) {
 func TestGetProfileProfileRowMissing(t *testing.T) {
 	users := &fakeUsers{
 		user:       wantUser(),
-		profileErr: fmt.Errorf("user repo: get profile: %w", gorm.ErrRecordNotFound),
+		profileErr: fmt.Errorf("user repo: get profile: %w", sql.ErrNoRows),
 	}
 	tokens, epochs, h := newSessionHandler(t, users)
 	srv := httptest.NewServer(h)
@@ -992,10 +992,10 @@ func TestUpdateProfileUnauthenticated(t *testing.T) {
 	}
 }
 
-// TestUpdateProfileUserNotFound service 回 user 不存在（gorm.ErrRecordNotFound
+// TestUpdateProfileUserNotFound service 回 user 不存在（sql.ErrNoRows
 // 包装）→ 404 not_found（口径同 GetProfile）。
 func TestUpdateProfileUserNotFound(t *testing.T) {
-	fp := &fakeProfileUpdater{err: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	fp := &fakeProfileUpdater{err: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}
 	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{profileIn: fp})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -1668,7 +1668,7 @@ func TestRenameWebauthnCredentialConnect(t *testing.T) {
 		}
 	})
 	t.Run("目标不存在 → 404", func(t *testing.T) {
-		wa := &fakeWebauthn{renameErr: fmt.Errorf("account webauthn: rename: %w", gorm.ErrRecordNotFound)}
+		wa := &fakeWebauthn{renameErr: fmt.Errorf("account webauthn: rename: %w", sql.ErrNoRows)}
 		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceRenameWebauthnCredentialProcedure,
 			`{"id":"999","label":"x"}`)
 		if status != http.StatusNotFound {
@@ -1707,7 +1707,7 @@ func TestDeleteWebauthnCredentialConnect(t *testing.T) {
 		}
 	})
 	t.Run("目标不存在 → 404", func(t *testing.T) {
-		wa := &fakeWebauthn{deleteErr: fmt.Errorf("account webauthn: delete: %w", gorm.ErrRecordNotFound)}
+		wa := &fakeWebauthn{deleteErr: fmt.Errorf("account webauthn: delete: %w", sql.ErrNoRows)}
 		status, raw := postWebauthn(t, wa, accountv1connect.AccountServiceDeleteWebauthnCredentialProcedure,
 			`{"id":"999"}`)
 		if status != http.StatusNotFound {
@@ -2150,7 +2150,7 @@ func TestGetMfaConnect(t *testing.T) {
 		t.Errorf("recoveryIssuedAt = %d", got.GetRecoveryIssuedAt())
 	}
 
-	m2 := &fakeMfa{detailErr: fmt.Errorf("load: %w", gorm.ErrRecordNotFound)}
+	m2 := &fakeMfa{detailErr: fmt.Errorf("load: %w", sql.ErrNoRows)}
 	code, raw, _ = postService(t, accountv1connect.AccountServiceGetMfaProcedure, `{}`, &getConfigDeps{mfaIn: m2})
 	if code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 (body %s)", code, raw)

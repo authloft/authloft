@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
-	"gorm.io/gorm"
 
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/repo"
@@ -41,7 +41,7 @@ func (f *fakeMfaUsers) FindByID(_ context.Context, id int64) (*model.User, error
 		return nil, f.err
 	}
 	if f.u == nil || f.u.ID != id {
-		return nil, fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)
 	}
 	return f.u, nil
 }
@@ -51,7 +51,7 @@ func (f *fakeMfaUsers) UpdateMfaRequired(_ context.Context, id int64, v int8) er
 		return f.err
 	}
 	if f.u == nil || f.u.ID != id {
-		return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("user repo: update mfa required: %w", sql.ErrNoRows)
 	}
 	f.updates = append(f.updates, v)
 	f.u.MfaRequired = v
@@ -79,7 +79,7 @@ func (f *fakeMfaCreds) FindByUserAndKind(_ context.Context, userID int64, kind s
 			return r, nil
 		}
 	}
-	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("credential repo: find by user kind: %w", sql.ErrNoRows)
 }
 
 func (f *fakeMfaCreds) ListByUser(_ context.Context, userID int64) ([]model.UserCredential, error) {
@@ -111,7 +111,7 @@ func (f *fakeMfaCreds) DeleteByUserAndKind(_ context.Context, userID int64, kind
 			return nil
 		}
 	}
-	return fmt.Errorf("credential repo: delete by user kind: %w", gorm.ErrRecordNotFound)
+	return fmt.Errorf("credential repo: delete by user kind: %w", sql.ErrNoRows)
 }
 
 // fakeMfaWebauthn MfaWebauthnStore 的 fake：凭据行回放。
@@ -646,16 +646,16 @@ func TestMfaUnauthenticatedAndUserMissing(t *testing.T) {
 	if _, err := svc.RegenerateRecoveryCodes(ctx, 0, "regenerate"); !errors.Is(err, ErrMfaUnauthenticated) {
 		t.Errorf("RegenerateRecoveryCodes(0) err = %v, want ErrMfaUnauthenticated", err)
 	}
-	// user 不存在 → gorm.ErrRecordNotFound 原样上抛（handler 映射 not_found）。
+	// user 不存在 → sql.ErrNoRows 原样上抛（handler 映射 not_found）。
 	svc2 := newMfaService(nil, &fakeMfaCreds{}, &fakeMfaWebauthn{}, &fakeMfaSettings{}, &fakeAudit{})
-	if _, err := svc2.GetMfa(ctx, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("GetMfa(missing user) err = %v, want gorm.ErrRecordNotFound", err)
+	if _, err := svc2.GetMfa(ctx, 42); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetMfa(missing user) err = %v, want sql.ErrNoRows", err)
 	}
-	if err := svc2.SetMfa(ctx, 42, true); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("SetMfa(missing user) err = %v, want gorm.ErrRecordNotFound", err)
+	if err := svc2.SetMfa(ctx, 42, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("SetMfa(missing user) err = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := svc2.BindTotpChallenge(ctx, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("BindTotpChallenge(missing user) err = %v, want gorm.ErrRecordNotFound", err)
+	if _, err := svc2.BindTotpChallenge(ctx, 42); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("BindTotpChallenge(missing user) err = %v, want sql.ErrNoRows", err)
 	}
 }
 

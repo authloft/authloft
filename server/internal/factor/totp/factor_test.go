@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
@@ -166,7 +166,7 @@ func TestVerifyCredentialFailures(t *testing.T) {
 		name string
 		cred fakeCredentials
 	}{
-		{"not found", fakeCredentials{err: gorm.ErrRecordNotFound}},
+		{"not found", fakeCredentials{err: sql.ErrNoRows}},
 		{"nil credential", fakeCredentials{cred: nil, err: nil}},
 		{"disabled", fakeCredentials{cred: &model.UserCredential{IsEnabled: 0}}},
 		{"bad secret", fakeCredentials{cred: &model.UserCredential{IsEnabled: 1, Secret: []byte("not-base32!!")}}},

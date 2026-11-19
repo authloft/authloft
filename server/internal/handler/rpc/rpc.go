@@ -24,7 +24,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
-	"gorm.io/gorm"
+	"database/sql"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	rpcv1 "authloft/gen/go/api/rpc/v1"
@@ -99,13 +99,13 @@ func (h *UserHandler) GetUserProfile(ctx context.Context, req *connect.Request[r
 	uid := req.Msg.GetUid()
 	user, err := h.users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, userNotFound()
 		}
 		return nil, fmt.Errorf("rpc handler: load user: %w", err)
 	}
 	profile, err := h.users.GetProfile(ctx, uid)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("rpc handler: load profile: %w", err)
 	}
 	return connect.NewResponse(dto.RPCProfile(user, profile)), nil
@@ -217,7 +217,7 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 	uid := req.Msg.GetUid()
 	// 先判存在（行不存在 → 404，不落入 UPSERT 的隐式建行）。
 	if _, err := h.users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, userNotFound()
 		}
 		return nil, fmt.Errorf("rpc handler: load user: %w", err)
@@ -239,7 +239,7 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 				internalconnect.NewErrorInfo("rpc", "invalid_request", err.Error()))
 		}
 		if err := h.users.UpdateProfileColumns(ctx, uid, nickname, avatarURL); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, userNotFound()
 			}
 			return nil, fmt.Errorf("rpc handler: update user columns: %w", err)
@@ -287,7 +287,7 @@ func validateProfileColumns(nickname, avatarURL *string) error {
 // admin GetProviderSchema）。
 func (h *UserHandler) mergeProfile(ctx context.Context, uid int64, in *accountv1.UserProfile) (*model.UserProfile, bool, error) {
 	existing, err := h.users.GetProfile(ctx, uid)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, fmt.Errorf("rpc handler: load profile: %w", err)
 	}
 	merged, changed, err := dto.MergeUserProfile(uid, existing, in)
@@ -361,14 +361,14 @@ func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[r
 	if req.Msg.GetIncludeUserInfo() {
 		user, err := h.users.FindByID(ctx, fresh.GetId())
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, connect.NewError(connect.CodeInternal,
 					internalconnect.InternalError(fmt.Errorf("rpc handler: session uid missing user row: %w", err)))
 			}
 			return nil, fmt.Errorf("rpc handler: load user: %w", err)
 		}
 		profile, err := h.users.GetProfile(ctx, fresh.GetId())
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("rpc handler: load profile: %w", err)
 		}
 		resp.UserInfo = dto.RPCProfile(user, profile)

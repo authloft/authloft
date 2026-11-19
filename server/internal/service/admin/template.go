@@ -10,7 +10,7 @@
 //
 // 错误沿用包内哨兵（同 provider.go 包注释）：ErrInvalidRequest 参数 / 校验
 // 类（含 Resolve 全 miss、内置 key 冲突）；repo.ErrTemplateDuplicate →
-// ErrDuplicateKey；gorm.ErrRecordNotFound 资源不存在；其余原样上抛。
+// ErrDuplicateKey；sql.ErrNoRows 资源不存在；其余原样上抛。
 package admin
 
 import (
@@ -21,7 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/cache"
 	"authloft/internal/pages"
@@ -118,14 +118,14 @@ func (s *TemplateService) Create(ctx context.Context, key, name, content string)
 }
 
 // Get 按自增 id 取详情（§5.7）；id 非正属参数错误，查无此行由 List 命中
-// 不到按 gorm.ErrRecordNotFound 上抛（handler 映射 not_found）。
+// 不到按 sql.ErrNoRows 上抛（handler 映射 not_found）。
 func (s *TemplateService) Get(ctx context.Context, id int64) (*model.Template, error) {
 	if id <= 0 {
 		return nil, ErrInvalidRequest
 	}
 	row := s.findByID(ctx, id)
 	if row == nil {
-		return nil, gorm.ErrRecordNotFound
+		return nil, sql.ErrNoRows
 	}
 	return row, nil
 }
@@ -139,7 +139,7 @@ func (s *TemplateService) Update(ctx context.Context, id int64, key, name, conte
 	}
 	row := s.findByID(ctx, id)
 	if row == nil {
-		return gorm.ErrRecordNotFound
+		return sql.ErrNoRows
 	}
 	oldKey := row.TemplateKey
 	if key != nil {
@@ -167,14 +167,14 @@ func (s *TemplateService) Update(ctx context.Context, id int64, key, name, conte
 }
 
 // Delete 硬删（§5.7）：先取回行以拿到 template_key，删成功后失效该 key
-// 缓存；查无此行按 gorm.ErrRecordNotFound 上抛。
+// 缓存；查无此行按 sql.ErrNoRows 上抛。
 func (s *TemplateService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidRequest
 	}
 	row := s.findByID(ctx, id)
 	if row == nil {
-		return gorm.ErrRecordNotFound
+		return sql.ErrNoRows
 	}
 	if err := s.store.Delete(ctx, id); err != nil {
 		return err
@@ -207,7 +207,7 @@ func (s *TemplateService) Resolve(ctx context.Context, key string) (string, erro
 		}
 		return row.Content, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("admin service: resolve template %q: %w", key, err)
 	}
 	return "", ErrInvalidRequest

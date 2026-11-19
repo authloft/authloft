@@ -705,11 +705,7 @@ func TestAssembleRealChain(t *testing.T) {
 	t.Cleanup(func() { closeDeps(deps) })
 
 	// 步骤 2 DB：装配产物连通。
-	sqlDB, err := deps.db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlDB.PingContext(ctx); err != nil {
+	if err := deps.db.PingContext(ctx); err != nil {
 		t.Fatalf("db ping: %v", err)
 	}
 	// 步骤 3 migrate up：§4 全部 11 张表落库。
@@ -1408,10 +1404,10 @@ func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
 		t.Fatalf("marshal ext: %v", err)
 	}
 	now := time.Now()
-	if err := deps.db.Create(&model.Provider{
+	if _, err := deps.db.NewInsert().Model(&model.Provider{
 		ProviderKey: "wx_test_mp", DisplayName: "Test MP", Category: "oauth",
 		Type: "wechat_mp", IsEnabled: 1, Ext: ext, CreatedAt: now, UpdatedAt: now,
-	}).Error; err != nil {
+	}).Exec(ctx); err != nil {
 		t.Fatalf("insert provider: %v", err)
 	}
 	if _, err := cache.NewProviderCache(deps.rdb).BumpVersion(ctx); err != nil {
@@ -1461,11 +1457,11 @@ func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
 		oidcClientID     = "cid_wired_test"
 		oidcClientSecret = "secret-wired-test"
 	)
-	if err := deps.db.Create(&model.OidcClient{
+	if _, err := deps.db.NewInsert().Model(&model.OidcClient{
 		ClientID: oidcClientID, ClientSecret: oidcClientSecret, IsEnabled: 1,
 		RedirectURIs: []byte("[]"), Scopes: "openid profile email",
 		AccessTokenTTL: 3600, RefreshTokenTTL: 2592000, CreatedAt: now, UpdatedAt: now,
-	}).Error; err != nil {
+	}).Exec(ctx); err != nil {
 		t.Fatalf("insert oidc_client: %v", err)
 	}
 	rec = doPostForm(h, "/api/oidc/revoke", url.Values{

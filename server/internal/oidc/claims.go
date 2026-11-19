@@ -13,9 +13,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	oidcapi "authloft/gen/go/api/oidc"
@@ -165,7 +165,7 @@ func (s *UserInfoService) load(ctx context.Context, accessToken string) (*model.
 	user, err := s.Users.FindByID(ctx, uid)
 	if err != nil {
 		// 未命中行属业务预期；DB 故障被压成 401 须单独记。
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logx.Error(ctx, "oidc: userinfo user lookup failed",
 				"step", "find_user", "error", logx.RedactText(err.Error()))
 		}

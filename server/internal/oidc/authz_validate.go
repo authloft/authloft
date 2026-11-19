@@ -17,7 +17,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/uriutil"
 
-	"gorm.io/gorm"
+	"database/sql"
 )
 
 // 授权参数校验错误三分类（档位与调用方映射）：
@@ -66,7 +66,7 @@ func (v *AuthzValidator) Validate(ctx context.Context, clientID, redirectURI, sc
 	}
 	client, err := v.Clients.FindOidcClientByClientID(ctx, clientID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrAuthzClient
 		}
 		return nil, fmt.Errorf("oidc: authz client lookup: %w", err)

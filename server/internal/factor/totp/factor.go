@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/factor"
 	"authloft/internal/logx"
@@ -96,7 +96,7 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 	}
 	cred, err := ctx.Credentials.FindByUserAndKind(ctx.Context, uid, credentialKind)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return &factor.VerifyResult{Status: StatusInvalidCode}, nil
 		}
 		return nil, err

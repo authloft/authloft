@@ -16,8 +16,8 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"database/sql"
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	accountv1connect "authloft/gen/go/api/account/v1/accountv1connect"
 	commonv1 "authloft/gen/go/api/common/v1"
@@ -71,11 +71,11 @@ func (bindChainUsers) FindByID(context.Context, int64) (*model.User, error) {
 }
 
 func (bindChainUsers) FindByPhone(context.Context, string) (*model.User, error) {
-	return nil, fmt.Errorf("user repo: find by phone: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by phone: %w", sql.ErrNoRows)
 }
 
 func (bindChainUsers) FindByEmail(context.Context, string) (*model.User, error) {
-	return nil, fmt.Errorf("user repo: find by email: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by email: %w", sql.ErrNoRows)
 }
 
 func (bindChainUsers) UpdateContactColumns(context.Context, int64, *string, *string, *int8, *int8) error {

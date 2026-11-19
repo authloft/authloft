@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
-	"gorm.io/gorm"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
@@ -314,7 +314,7 @@ func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, pro
 	}
 	p, err := s.deps.Providers.FindByKey(ctx, providerKey)
 	if err != nil {
-		return err // 含包装的 gorm.ErrRecordNotFound → 404（admin 先例：绑定行引用 provider_key，无从解绑）
+		return err // 含包装的 sql.ErrNoRows → 404（admin 先例：绑定行引用 provider_key，无从解绑）
 	}
 	if p.Category == providerCategoryUnion {
 		return fmt.Errorf("%w: union provider row", ErrInvalidRequest) // §12.7 行 1547
@@ -331,7 +331,7 @@ func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, pro
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("account thirdparty: unbind: user %d has no binding for %q: %w", uid, providerKey, gorm.ErrRecordNotFound)
+		return fmt.Errorf("account thirdparty: unbind: user %d has no binding for %q: %w", uid, providerKey, sql.ErrNoRows)
 	}
 
 	// 解绑判定：password OR 其余非 Union 绑定（排除自身行；脏数据按非 Union 保守计数）。
@@ -344,7 +344,7 @@ func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, pro
 	}
 
 	if err := s.deps.Binds.UnbindWithUnionCascade(ctx, target.ID, uid, p.UnionProvider); err != nil {
-		return err // 行不存在 / 归属不符 → 包装的 gorm.ErrRecordNotFound（→ 404）
+		return err // 行不存在 / 归属不符 → 包装的 sql.ErrNoRows（→ 404）
 	}
 	if s.deps.Audit != nil {
 		s.deps.Audit.PushEvent(model.EventLog{
@@ -364,7 +364,7 @@ func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, pro
 func (s *ThirdpartyService) canUnbind(ctx context.Context, uid int64, rows []model.UserThirdpartyBind, providerKey string) (bool, error) {
 	row, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindPassword)
 	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return false, fmt.Errorf("account thirdparty: load password credential: %w", err)
 		}
 	} else if row.IsEnabled == 1 {
@@ -390,7 +390,7 @@ func (s *ThirdpartyService) canUnbind(ctx context.Context, uid int64, rows []mod
 func (s *ThirdpartyService) isUnionRow(ctx context.Context, providerKey string) (bool, error) {
 	p, err := s.deps.Providers.FindByKey(ctx, providerKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, fmt.Errorf("account thirdparty: load provider %q for unbind check: %w", providerKey, err)
@@ -438,7 +438,7 @@ func (s *ThirdpartyService) ThirdpartyOauth(ctx context.Context, in OauthInput) 
 	// ②Provider 校验 + 通道限 redirect。
 	p, err := s.deps.Loader.Get(ctx, in.ProviderKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %q not found", ErrProviderDisabled, in.ProviderKey)
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
@@ -612,7 +612,7 @@ func (s *ThirdpartyService) BindToCurrentUser(ctx context.Context, uid int64, pr
 	// ②Provider 校验：is_enabled=1 且 enable_signin=1，否则 provider_disabled（不检查 enable_signup）。
 	p, err := s.deps.Loader.Get(ctx, providerKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, statusProviderDisabled
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
@@ -642,7 +642,7 @@ func (s *ThirdpartyService) bindWith(ctx context.Context, uid int64, p *provider
 			return &BindOutcome{ProviderKey: p.Key, DisplayName: p.Row.DisplayName}, ""
 		}
 		return nil, orchestrator.StatusTargetTaken // 已绑他人（行 1540）
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		// 未绑定 → 写入（extra 落 Raw；Union 联动同事务追加行；并发抢唯一键 → target_taken）。
 		b := &model.UserThirdpartyBind{
 			UserID:      uid,

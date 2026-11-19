@@ -39,7 +39,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/captcha"
 	"authloft/internal/eventlog"
@@ -276,7 +276,7 @@ func (s *BindContactService) bindChallenge(ctx context.Context, uid int64, kind 
 	// ③ 存在性先判（uid 用户行不存在 → user_not_found 口径；同 profile.go
 	// 先于任何写操作）。
 	if _, err := s.deps.Users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrBindUserNotFound
 		}
 		return fmt.Errorf("account bind: load user: %w", err)
@@ -286,7 +286,7 @@ func (s *BindContactService) bindChallenge(ctx context.Context, uid int64, kind 
 	// target_taken；命中自己 → 幂等成功零动作（不写码 / 不发信 / 不投
 	// 审计，幂等分支口径——无状态变化不投递）。
 	if user, err := s.findTarget(ctx, kind, target); err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("account bind: load target holder: %w", err)
 		}
 	} else if user != nil {
@@ -338,7 +338,7 @@ func (s *BindContactService) bindVerify(ctx context.Context, uid int64, kind bin
 
 	// ② 存在性先判（同 challenge ③；先于码消费）。
 	if _, err := s.deps.Users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrBindUserNotFound
 		}
 		return fmt.Errorf("account bind: load user: %w", err)
@@ -389,7 +389,7 @@ func (s *BindContactService) bindCommit(ctx context.Context, uid int64, kind bin
 			return ErrBindTargetTaken
 		}
 		// 会话存活期间行被删的防御分支（正常流已在 ②拦截）。
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrBindUserNotFound
 		}
 		return fmt.Errorf("account bind: update contact: %w", err)

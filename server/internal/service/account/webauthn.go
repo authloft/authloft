@@ -48,9 +48,9 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/eventlog"
@@ -276,7 +276,7 @@ func (s *WebauthnService) resolveUsername(ctx context.Context, uid int64) (strin
 	}
 	u, err := s.deps.Users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", ErrWebauthnUnauthenticated
 		}
 		logx.Error(ctx, "resolve webauthn username failed", err)
@@ -328,7 +328,7 @@ func (s *WebauthnService) FinishRegister(ctx context.Context, uid int64, tok str
 	// 查重：credential_id 全局唯一（uk_kind_credid，§4.2 行 690）。
 	if _, err := s.deps.Webauthn.FindByCredentialID(ctx, res.CredentialID); err == nil {
 		return fmt.Errorf("%w: credential id %q", ErrWebauthnDuplicate, res.CredentialID)
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: lookup credential id: %v", ErrWebauthnInternal, err)
 	}
 
@@ -407,7 +407,7 @@ func (s *WebauthnService) RenameCredential(ctx context.Context, uid int64, id in
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("account webauthn: rename: user %d has no webauthn credential %d: %w", uid, id, gorm.ErrRecordNotFound)
+		return fmt.Errorf("account webauthn: rename: user %d has no webauthn credential %d: %w", uid, id, sql.ErrNoRows)
 	}
 	target.Label = label
 	target.UpdatedAt = s.now()
@@ -448,10 +448,10 @@ func (s *WebauthnService) DeleteCredential(ctx context.Context, uid int64, id in
 		}
 	}
 	if credentialID == "" {
-		return fmt.Errorf("account webauthn: delete: user %d has no webauthn credential %d: %w", uid, id, gorm.ErrRecordNotFound)
+		return fmt.Errorf("account webauthn: delete: user %d has no webauthn credential %d: %w", uid, id, sql.ErrNoRows)
 	}
 	if err := s.deps.Webauthn.Delete(ctx, id, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			// TOCTOU：预查与删除之间行被并发删除——同一结论 not_found。
 			return fmt.Errorf("account webauthn: delete: user %d credential %d: %w", uid, id, err)
 		}

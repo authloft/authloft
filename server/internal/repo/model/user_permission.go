@@ -1,12 +1,15 @@
 // 表结构由迁移 DDL 维护（§3.16），model 只做列映射、不建表；索引由 DDL
-// 建立、不声明 index tag，禁用 AutoMigrate（CODE_GUIDE §3.5）。
+// 建立，禁用 AutoMigrate（CODE_GUIDE §3.5）。
 package model
+
+import (
+	"github.com/uptrace/bun"
+)
 
 // UserPermission 只留两列：行存在即持有权限点，额外列与索引均无消费者（§4.8）。
 type UserPermission struct {
-	UserID int64  `gorm:"column:user_id;primaryKey;not null"`
-	Point  string `gorm:"column:point;primaryKey;size:32;not null"`
-}
+	bun.BaseModel `bun:"table:user_permission"`
 
-// TableName 显式固定表名，避免 GORM 复数名推导。
-func (UserPermission) TableName() string { return "user_permission" }
+	UserID int64  `bun:"column:user_id,pk,notnull"`
+	Point  string `bun:"column:point,pk,notnull"`
+}

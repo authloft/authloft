@@ -41,7 +41,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	"authloft/internal/session"
-	"gorm.io/gorm"
+	"database/sql"
 )
 
 const (
@@ -434,7 +434,7 @@ func TestGetUserProfilePlaintext(t *testing.T) {
 // TestGetUserProfileUserNotFound 用户不存在 → 404 not_found + ErrorInfo(rpc,
 // user_not_found)（§1.6 封闭集合；HTTP 语义对齐 account GetProfile 先例）。
 func TestGetUserProfileUserNotFound(t *testing.T) {
-	users := &fakeUserStore{userErr: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	users := &fakeUserStore{userErr: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}
 	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
 
 	rec := doRPC(t, h, rpcv1connect.UserServiceGetUserProfileProcedure, &rpcv1.GetUserProfileRequest{Uid: 404})
@@ -553,7 +553,7 @@ func TestUpdateUserProfileNoop(t *testing.T) {
 // TestUpdateUserProfileUserNotFound 用户不存在 → 404 user_not_found（写路径
 // 同口径，不落入 UPSERT 隐式建行）。
 func TestUpdateUserProfileUserNotFound(t *testing.T) {
-	users := &fakeUserStore{userErr: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	users := &fakeUserStore{userErr: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}
 	h := newRPCTestMux(t, users, newTestTokens(t), &fakeEpochReader{values: map[int64]int64{}})
 
 	rec := doRPC(t, h, rpcv1connect.UserServiceUpdateUserProfileProcedure, &rpcv1.UpdateUserProfileRequest{Uid: 404, Nickname: strPtr("x")})

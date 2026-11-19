@@ -3,7 +3,7 @@
 // Decide 供 authorize 有会话分支做免同意 / 需同意判定，Grant 供 Terminal
 // 登录即同意与同意 RPC 落授权记录。依赖只注入 repo 窄接口，不连 DB；
 // 「从未同意 = 空集」的空集判定在本层做（§4.5：repo 未命中返回包装的
-// gorm.ErrRecordNotFound）；scope 解析 / 比对复用本包 consent.go 纯工具。
+// sql.ErrNoRows）；scope 解析 / 比对复用本包 consent.go 纯工具。
 package oidc
 
 import (
@@ -15,12 +15,12 @@ import (
 
 	"authloft/internal/repo"
 
-	"gorm.io/gorm"
+	"database/sql"
 )
 
 // ConsentRepo 授权记录读写窄接口（后端架构 §4.5）；*repo.OidcConsentRepo
 // 天然满足，测试用 fake。GetConsentScopes 未命中返回包装的
-// gorm.ErrRecordNotFound，本层按「从未同意 = 空集」口径消费；MergeConsent
+// sql.ErrNoRows，本层按「从未同意 = 空集」口径消费；MergeConsent
 // 为行锁合并原语（单事务 FOR UPDATE 读现值 → 回调算新值 → 写回，首插撞
 // uk 重试），并集口径由本层回调注入。scopes 原文入库出库（空格分隔口径），
 // 解析归本层。
@@ -97,7 +97,7 @@ func (s *ConsentService) Grant(ctx context.Context, userID int64, clientID, scop
 	return nil
 }
 
-// grantedScopes 读已授权并集：无记录（包装的 gorm.ErrRecordNotFound）按
+// grantedScopes 读已授权并集：无记录（包装的 sql.ErrNoRows）按
 // 「从未同意 = 空集」口径返回空串（§4.5）；其余错误原样上抛由调用方包装。
 func (s *ConsentService) grantedScopes(ctx context.Context, userID int64, clientID string) (string, error) {
 	if s == nil || s.Consents == nil {
@@ -105,7 +105,7 @@ func (s *ConsentService) grantedScopes(ctx context.Context, userID int64, client
 	}
 	record, err := s.Consents.GetConsentScopes(ctx, userID, clientID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", err

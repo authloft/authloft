@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/client"
@@ -61,9 +60,7 @@ func clientTestSetup(t *testing.T) *ClientRepo {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewClientRepo(db)
 }
@@ -341,10 +338,6 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	if c.CreatedAt.IsZero() || c.UpdatedAt.IsZero() {
 		t.Error("Create 应自动填充 created_at / updated_at")
 	}
-	// default tag 值回填（§4.4 DDL 默认：name '' / is_enabled 1）。
-	if c.IsEnabled != 1 {
-		t.Errorf("Create 后 is_enabled 默认值回填 = %d, want 1", c.IsEnabled)
-	}
 
 	got, err := rp.FindSsoClientByClientID(ctx, "sso_app")
 	if err != nil {
@@ -354,6 +347,8 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 		got.ClientSecret != strings.Repeat("s", 64) || got.IsEnabled != 1 {
 		t.Errorf("FindSsoClientByClientID 字段不一致: %+v", got)
 	}
+	// is_enabled 零值经 DEFAULT 占位落 DB 默认 1（§4.4 DDL 默认；bun 口径
+	// 下非 PK 列不做插入后 struct 回填，DB 终态经回读断言）。
 	// redirect_uris 落库读回：字节一致 → Parse 后 proto 相等。
 	if string(got.RedirectURIs) != string(urisData) {
 		t.Errorf("redirect_uris 落库读回字节不一致: %d vs %d bytes", len(got.RedirectURIs), len(urisData))
@@ -383,7 +378,7 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := rp.FindSsoClientByClientID(ctx, "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindSsoClientByClientID(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -457,7 +452,7 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 		RedirectURIs: urisData, LoginMethods: methodsData, OauthProviders: providersData,
 		CreatedAt: ghostAt, UpdatedAt: ghostAt,
 	}
-	if err := rp.UpdateSsoClient(ctx, ghost); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateSsoClient(ctx, ghost); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Update 不存在的行应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -465,10 +460,10 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	if err := rp.DeleteSsoClient(ctx, c.ID); err != nil {
 		t.Fatalf("DeleteSsoClient 失败: %v", err)
 	}
-	if _, err := rp.FindSsoClientByClientID(ctx, "sso_app"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindSsoClientByClientID(ctx, "sso_app"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Delete 后 Find 应 ErrRecordNotFound, got %v", err)
 	}
-	if err := rp.DeleteSsoClient(ctx, c.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.DeleteSsoClient(ctx, c.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("重复 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -511,9 +506,10 @@ func TestClientRepoSsoClientCRUD(t *testing.T) {
 	}
 }
 
-// TestClientRepoOidcClientCRUD（env-skip）：Create 默认值回填（scopes /
-// 两个 TTL / is_enabled）→ 按 client_id 命中 → uk_client_id 冲突判别 →
-// Update（含 TTL / scopes / is_enabled=0）→ Delete 与重复 Delete。
+// TestClientRepoOidcClientCRUD（env-skip）：Create（scopes / 两个 TTL /
+// is_enabled 零值经 DEFAULT 占位落 DB 默认）→ 按 client_id 命中 →
+// uk_client_id 冲突判别 → Update（含 TTL / scopes / is_enabled=0）→ Delete
+// 与重复 Delete。
 func TestClientRepoOidcClientCRUD(t *testing.T) {
 	rp := clientTestSetup(t)
 	ctx := context.Background()
@@ -534,12 +530,6 @@ func TestClientRepoOidcClientCRUD(t *testing.T) {
 	if c.ID == 0 {
 		t.Fatal("Create 后 ID 应非零（自增回填）")
 	}
-	// default tag 值回填（§4.5 DDL 默认：scopes 'openid,profile,email' /
-	// access_token_ttl 3600 / refresh_token_ttl 2592000 / is_enabled 1）。
-	if c.Scopes != "openid,profile,email" || c.AccessTokenTTL != 3600 ||
-		c.RefreshTokenTTL != 2592000 || c.IsEnabled != 1 {
-		t.Errorf("Create 后默认值回填不一致: %+v", c)
-	}
 
 	got, err := rp.FindOidcClientByClientID(ctx, "oidc_app")
 	if err != nil {
@@ -554,7 +544,7 @@ func TestClientRepoOidcClientCRUD(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := rp.FindOidcClientByClientID(ctx, "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindOidcClientByClientID(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -606,7 +596,7 @@ func TestClientRepoOidcClientCRUD(t *testing.T) {
 		Scopes: "openid", AccessTokenTTL: 3600, RefreshTokenTTL: 2592000,
 		RedirectURIs: urisData, CreatedAt: ghostAt, UpdatedAt: ghostAt,
 	}
-	if err := rp.UpdateOidcClient(ctx, ghost); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateOidcClient(ctx, ghost); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Update 不存在的行应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -614,10 +604,10 @@ func TestClientRepoOidcClientCRUD(t *testing.T) {
 	if err := rp.DeleteOidcClient(ctx, c.ID); err != nil {
 		t.Fatalf("DeleteOidcClient 失败: %v", err)
 	}
-	if _, err := rp.FindOidcClientByClientID(ctx, "oidc_app"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindOidcClientByClientID(ctx, "oidc_app"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Delete 后 Find 应 ErrRecordNotFound, got %v", err)
 	}
-	if err := rp.DeleteOidcClient(ctx, c.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.DeleteOidcClient(ctx, c.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("重复 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -781,7 +771,7 @@ func TestClientRepoListSort(t *testing.T) {
 
 // TestClientRepoFindByID（补齐 Find 操作主键形态的真库用例）：
 // Create 回填 id → FindSsoClientByID / FindOidcClientByID 命中行与列值
-// 一致；表间互不串扰；Delete 后再查 → gorm.ErrRecordNotFound。
+// 一致；表间互不串扰；Delete 后再查 → sql.ErrNoRows。
 func TestClientRepoFindByID(t *testing.T) {
 	rp := clientTestSetup(t)
 	ctx := context.Background()
@@ -809,7 +799,8 @@ func TestClientRepoFindByID(t *testing.T) {
 	if err != nil || gotOidc == nil || gotOidc.ClientID != "by_id_oidc" {
 		t.Fatalf("FindOidcClientByID = %+v err=%v; want by_id_oidc 行", gotOidc, err)
 	}
-	// 顺带核对 OIDC default tag 回填（gorm 由 DB DEFAULT 回填，§4.5 行 736-737）。
+	// 顺带核对 OIDC default tag 列的 DB 默认值终态（§4.5；零值经 DEFAULT
+	// 占位由 DB 填充，CODE_GUIDE §3.5）。
 	if gotOidc.AccessTokenTTL != 3600 || gotOidc.RefreshTokenTTL != 2592000 || gotOidc.Scopes != "openid,profile,email" {
 		t.Errorf("OIDC default 回填 = (ttl=%d/%d scopes=%q), want 3600/2592000/openid,profile,email",
 			gotOidc.AccessTokenTTL, gotOidc.RefreshTokenTTL, gotOidc.Scopes)
@@ -819,10 +810,10 @@ func TestClientRepoFindByID(t *testing.T) {
 	if err := rp.DeleteSsoClient(ctx, sso.ID); err != nil {
 		t.Fatalf("DeleteSsoClient 失败: %v", err)
 	}
-	if _, err := rp.FindSsoClientByID(ctx, sso.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("Delete 后 FindSsoClientByID err = %v, want gorm.ErrRecordNotFound", err)
+	if _, err := rp.FindSsoClientByID(ctx, sso.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("Delete 后 FindSsoClientByID err = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := rp.FindSsoClientByID(ctx, 1<<40); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("不存在主键 err = %v, want gorm.ErrRecordNotFound", err)
+	if _, err := rp.FindSsoClientByID(ctx, 1<<40); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("不存在主键 err = %v, want sql.ErrNoRows", err)
 	}
 }

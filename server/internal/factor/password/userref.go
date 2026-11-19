@@ -13,7 +13,7 @@ import (
 	"errors"
 	"strconv"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/repo/model"
 )
@@ -61,17 +61,17 @@ func UserRefOf(identifier string, user *model.User, ip string) string {
 func lookupIdentifier(ctx context.Context, users Users, identifier string) (*model.User, error) {
 	if u, err := users.FindByUsername(ctx, identifier); err == nil {
 		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if u, err := users.FindByPhone(ctx, identifier); err == nil {
 		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if u, err := users.FindByEmail(ctx, identifier); err == nil {
 		return u, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	return nil, nil

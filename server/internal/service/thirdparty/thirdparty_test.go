@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
@@ -48,7 +48,7 @@ func (l *tpLoader) Get(_ context.Context, key string) (*provider.Provider, error
 	if p, ok := l.byKey[key]; ok {
 		return p, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // tpBinds ThirdpartyBindStore 的 fake。
@@ -67,7 +67,7 @@ func (b *tpBinds) FindByProviderOpenID(_ context.Context, pk, openid string) (*m
 		r := r
 		return &r, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (b *tpBinds) CreateWithUnion(_ context.Context, m *model.UserThirdpartyBind, unionProviderKey, unionID string) error {
@@ -76,7 +76,7 @@ func (b *tpBinds) CreateWithUnion(_ context.Context, m *model.UserThirdpartyBind
 	}
 	if _, exists := b.rows[key(m.ProviderKey, m.OpenID)]; exists ||
 		(unionProviderKey != "" && unionID != "" && b.dupOnUnionKey == key(unionProviderKey, unionID)) {
-		return errors.Join(repoErrBindDuplicate, gorm.ErrDuplicatedKey)
+		return errors.Join(repoErrBindDuplicate, errors.New("duplicate entry"))
 	}
 	b.created = append(b.created, *m)
 	b.unionCreated = append(b.unionCreated, unionProviderKey+"|"+unionID)
@@ -114,25 +114,25 @@ func (u *tpUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
 	if m, ok := u.byID[id]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *tpUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
 	if m, ok := u.byEmail[email]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *tpUsers) FindByPhone(_ context.Context, phone string) (*model.User, error) {
 	if m, ok := u.byPhone[phone]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // tpCreds 用户凭据读取 fake：按 kind 返回预置行，未命中按 repo 口径返回
-// gorm.ErrRecordNotFound。
+// sql.ErrNoRows。
 type tpCreds struct {
 	byKind map[string]*model.UserCredential
 }
@@ -141,7 +141,7 @@ func (c *tpCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*m
 	if m, ok := c.byKind[kind]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // tpSessions orchestrator.SessionWriter 的 fake。
@@ -1281,7 +1281,7 @@ func TestLoginOauthMFARequiredLookupFailure(t *testing.T) {
 }
 
 // TestLoginOauthMFAUserLookupNotFound 用户查询返回包装过的 not-found
-// （仓储以 %w 包装 gorm.ErrRecordNotFound）时同样 fail-closed：用户行读不到
+// （仓储以 %w 包装 sql.ErrNoRows）时同样 fail-closed：用户行读不到
 // 不得被当成「无需二次验证」继续签发，返回失败信封且不建会话。
 func TestLoginOauthMFAUserLookupNotFound(t *testing.T) {
 	ctx := context.Background()
@@ -1291,7 +1291,7 @@ func TestLoginOauthMFAUserLookupNotFound(t *testing.T) {
 	e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
 	// 第一次 FindByID（账号状态校验）成功，第二次（MFA 判定）返回包装后的
 	// not-found。
-	e.users.err = fmt.Errorf("repo: find user: %w", gorm.ErrRecordNotFound)
+	e.users.err = fmt.Errorf("repo: find user: %w", sql.ErrNoRows)
 	e.users.failsAt = 2
 
 	out := e.svc.LoginOauth(ctx, e.oauthRequest(t, "l"+"x", 0))
@@ -1384,7 +1384,7 @@ func TestSignupStateAndCreateBind(t *testing.T) {
 	if st, _ := e.svc.SignupState(ctx, "qq_nosignup"); st.Enabled {
 		t.Error("enable_signup=0 → Enabled 应为 false")
 	}
-	if _, err := e.svc.SignupState(ctx, "missing"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := e.svc.SignupState(ctx, "missing"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("缺失 provider err = %v, want ErrRecordNotFound", err)
 	}
 

@@ -4,15 +4,15 @@
 package repo
 
 import (
-	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/config"
 )
@@ -39,8 +39,8 @@ func TestOpenBadDSN(t *testing.T) {
 	}
 }
 
-// TestOpenUnreachable：DB 不可达（保留端口 + 短超时）→ gorm.Open 自动
-// ping 失败，返回 "db: open" 前缀错误。
+// TestOpenUnreachable：DB 不可达（保留端口 + 短超时）→ Open 建连后 ping
+// 失败，返回 "db: open" 前缀错误。
 func TestOpenUnreachable(t *testing.T) {
 	_, err := Open(dbTestConfig("test:123456@tcp(127.0.0.1:1)/test?timeout=500ms", 5, 2, time.Minute))
 	if err == nil || !strings.Contains(err.Error(), "db: open") {
@@ -59,15 +59,11 @@ func TestOpenReal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open 真连失败: %v", err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := sqlDB.Ping(); err != nil {
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.PingContext(context.Background()); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
-	st := sqlDB.Stats()
+	st := db.Stats()
 	if st.MaxOpenConnections != 7 {
 		t.Errorf("MaxOpenConnections = %d, want 7", st.MaxOpenConnections)
 	}
@@ -75,20 +71,33 @@ func TestOpenReal(t *testing.T) {
 	// 由 Open 的 Set 调用与代码审阅保证，不在运行期断言。
 }
 
-// TestGORMLoggerIgnoresRecordNotFound：可选单行查询查无行属业务预期，
-// 不得产生日志；真实 SQL 错误仍须记录。
-func TestGORMLoggerIgnoresRecordNotFound(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := gormLogger(buf)
-	fc := func() (string, int64) { return "SELECT * FROM user_credential LIMIT 1", 0 }
+// TestSQLLoggerIgnoresErrNoRows：可选单行查询查无行属业务预期，不得产生
+// 日志；真实 SQL 错误仍须记录；慢查询按阈值告警。
+func TestSQLLoggerIgnoresErrNoRows(t *testing.T) {
+	buf := &strings.Builder{}
+	h := newSQLLogger(buf)
+	fc := "SELECT * FROM user_credential LIMIT 1"
 
-	l.Trace(context.Background(), time.Now(), fc, gorm.ErrRecordNotFound)
+	h.AfterQuery(context.Background(), &bun.QueryEvent{
+		StartTime: time.Now(), Query: fc, Err: sql.ErrNoRows,
+	})
 	if buf.Len() != 0 {
 		t.Errorf("查无行不应输出日志, got %q", buf.String())
 	}
 
-	l.Trace(context.Background(), time.Now(), fc, errors.New("dial tcp: connection refused"))
+	h.AfterQuery(context.Background(), &bun.QueryEvent{
+		StartTime: time.Now(), Query: "SELECT 1",
+		Err: errors.New("dial tcp: connection refused"),
+	})
 	if !strings.Contains(buf.String(), "connection refused") {
 		t.Errorf("真实 SQL 错误应记录, got %q", buf.String())
+	}
+
+	buf.Reset()
+	h.AfterQuery(context.Background(), &bun.QueryEvent{
+		StartTime: time.Now().Add(-2 * slowQueryThreshold), Query: "SELECT 1",
+	})
+	if !strings.Contains(buf.String(), "SLOW SQL") {
+		t.Errorf("慢查询应告警, got %q", buf.String())
 	}
 }

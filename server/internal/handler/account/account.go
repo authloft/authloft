@@ -10,8 +10,8 @@ import (
 	"strconv"
 
 	"connectrpc.com/connect"
+	"database/sql"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/gen/go/api/account/v1/accountv1connect"
@@ -211,13 +211,13 @@ func (h *Handler) GetProfile(ctx context.Context, req *connect.Request[accountv1
 	}
 	user, err := h.users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, errNotFound)
 		}
 		return nil, fmt.Errorf("account handler: load user: %w", err)
 	}
 	profile, err := h.users.GetProfile(ctx, uid)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("account handler: load profile: %w", err)
 	}
 	return connect.NewResponse(dto.AccountProfile(user, profile)), nil
@@ -268,7 +268,7 @@ func mapProfileError(op string, err error) error {
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("account", "invalid_request", "invalid profile field"),
 		)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
@@ -285,7 +285,7 @@ func (h *Handler) GetConfig(ctx context.Context, req *connect.Request[accountv1.
 	}
 	user, err := h.users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, connect.NewError(connect.CodeNotFound, errNotFound)
 		}
 		return nil, fmt.Errorf("account handler: load user: %w", err)
@@ -324,7 +324,7 @@ func (h *Handler) avatarUpload(ctx context.Context) (*accountv1.AvatarUploadConf
 	}
 	row, err := h.providers.FindByKey(ctx, key)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return dto.AccountAvatarUpload("", nil), nil
 		}
 		return nil, fmt.Errorf("account handler: load avatar storage provider: %w", err)
@@ -372,19 +372,19 @@ func (h *Handler) mfaBound(ctx context.Context, uid int64, user *model.User) (dt
 	var bound dto.MfaBound
 
 	totp, err := h.creds.FindByUserAndKind(ctx, uid, kindTotp)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return bound, fmt.Errorf("account handler: load totp credential: %w", err)
 	}
 	bound.Totp = err == nil && totp.IsEnabled == 1
 
 	webauthn, err := h.creds.FindByUserAndKind(ctx, uid, kindWebauthn)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return bound, fmt.Errorf("account handler: load webauthn credential: %w", err)
 	}
 	bound.Webauthn = err == nil && webauthn.IsEnabled == 1
 
 	recovery, err := h.creds.FindByUserAndKind(ctx, uid, kindRecoveryCode)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return bound, fmt.Errorf("account handler: load recovery_code credential: %w", err)
 	}
 	if err == nil && recovery.IsEnabled == 1 {
@@ -405,7 +405,7 @@ func (h *Handler) mfaBound(ctx context.Context, uid int64, user *model.User) (dt
 func (h *Handler) hasPassword(ctx context.Context, uid int64) (bool, error) {
 	row, err := h.creds.FindByUserAndKind(ctx, uid, kindPassword)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, fmt.Errorf("account handler: load password credential: %w", err)
@@ -584,7 +584,7 @@ func mapThirdpartyError(op string, err error) error {
 		)
 	case errors.Is(err, accountsvc.ErrFailed):
 		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
@@ -720,7 +720,7 @@ func mapWebauthnError(op string, err error) error {
 		return connect.NewError(connect.CodeAlreadyExists, errWebauthnDuplicate)
 	case errors.Is(err, accountsvc.ErrWebauthnInternal):
 		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
@@ -788,7 +788,7 @@ func mapAvatarError(op string, err error) error {
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
 		)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
@@ -837,7 +837,7 @@ func mapPasswordError(op string, err error) error {
 			connect.NewError(connect.CodeInvalidArgument, err),
 			internalconnect.NewErrorInfo("account", "invalid_request", "invalid request"),
 		)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)
@@ -1265,7 +1265,7 @@ func mapMfaError(op string, err error) error {
 		)
 	case errors.Is(err, accountsvc.ErrMfaInternal):
 		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connect.NewError(connect.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("account handler: %s: %w", op, err)

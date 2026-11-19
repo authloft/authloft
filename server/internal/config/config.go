@@ -89,7 +89,7 @@ func (s ServerConfig) TLSMinVersion() (uint16, error) {
 	}
 }
 
-// DBConfig MariaDB 连接参数（GORM）。
+// DBConfig MariaDB 连接参数（bun）。
 type DBConfig struct {
 	DSN             string   `yaml:"dsn"`
 	MaxOpenConns    int      `yaml:"max_open_conns"`

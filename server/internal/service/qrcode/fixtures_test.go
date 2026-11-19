@@ -6,7 +6,7 @@ package qrcode
 import (
 	"context"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"testing"
 
@@ -24,7 +24,7 @@ func (l *tpLoader) Get(_ context.Context, key string) (*provider.Provider, error
 	if p, ok := l.byKey[key]; ok {
 		return p, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 type tpSessions struct {

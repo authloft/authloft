@@ -42,7 +42,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
@@ -249,7 +249,7 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	// provider（§13.0：未配置 / 未启用按失败处理；channel 必 qrcode）。
 	p, err := s.deps.Loader.Get(ctx, in.ProviderKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %q not found", ErrQrcodeProviderDisabled, in.ProviderKey)
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
@@ -687,7 +687,7 @@ func (s *QRCode) pollBinding(ctx context.Context, payload *token.TicketPayload, 
 	if err != nil {
 		// 未注册 provider 属业务预期；DB / Redis 故障被压成
 		// provider_disabled 会无痕，须单独记。
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logTicketFailure(ctx, payload.GetTicketId(), "poll_binding:load_provider", err)
 		}
 		return &ssov1.LoginFlowResponse{Status: thirdpartysvc.StatusProviderDisabled}

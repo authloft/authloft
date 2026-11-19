@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
@@ -23,8 +23,8 @@ import (
 
 // fakeClientStore ClientStore 的内存 fake：模拟 *repo.ClientRepo 的关键
 // 行为——uk_client_id 冲突返回包装的 repo.ErrClientDuplicate（errors.Is 可
-// 判别）、未命中返回包装的 gorm.ErrRecordNotFound、Create 回填 id/时间戳
-// （模拟 gorm default tag 回填语义）。
+// 判别）、未命中返回包装的 sql.ErrNoRows、Create 回填 id/时间戳
+// （模拟真库自增主键与时间列回填语义）。
 type fakeClientStore struct {
 	sso    map[int64]*model.SsoClient
 	oidc   map[int64]*model.OidcClient
@@ -40,7 +40,7 @@ func newFakeClientStore() *fakeClientStore {
 func (f *fakeClientStore) FindSsoClientByID(_ context.Context, id int64) (*model.SsoClient, error) {
 	row, ok := f.sso[id]
 	if !ok {
-		return nil, fmt.Errorf("fake: find sso client by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("fake: find sso client by id: %w", sql.ErrNoRows)
 	}
 	cp := *row
 	return &cp, nil
@@ -49,7 +49,7 @@ func (f *fakeClientStore) FindSsoClientByID(_ context.Context, id int64) (*model
 func (f *fakeClientStore) FindOidcClientByID(_ context.Context, id int64) (*model.OidcClient, error) {
 	row, ok := f.oidc[id]
 	if !ok {
-		return nil, fmt.Errorf("fake: find oidc client by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("fake: find oidc client by id: %w", sql.ErrNoRows)
 	}
 	cp := *row
 	return &cp, nil
@@ -107,7 +107,7 @@ func (f *fakeClientStore) CreateOidcClient(_ context.Context, c *model.OidcClien
 
 func (f *fakeClientStore) UpdateSsoClient(_ context.Context, c *model.SsoClient) error {
 	if _, ok := f.sso[c.ID]; !ok {
-		return fmt.Errorf("fake: update sso client: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: update sso client: %w", sql.ErrNoRows)
 	}
 	f.sso[c.ID] = c
 	return nil
@@ -115,7 +115,7 @@ func (f *fakeClientStore) UpdateSsoClient(_ context.Context, c *model.SsoClient)
 
 func (f *fakeClientStore) UpdateOidcClient(_ context.Context, c *model.OidcClient) error {
 	if _, ok := f.oidc[c.ID]; !ok {
-		return fmt.Errorf("fake: update oidc client: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: update oidc client: %w", sql.ErrNoRows)
 	}
 	f.oidc[c.ID] = c
 	return nil
@@ -123,7 +123,7 @@ func (f *fakeClientStore) UpdateOidcClient(_ context.Context, c *model.OidcClien
 
 func (f *fakeClientStore) DeleteSsoClient(_ context.Context, id int64) error {
 	if _, ok := f.sso[id]; !ok {
-		return fmt.Errorf("fake: delete sso client: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: delete sso client: %w", sql.ErrNoRows)
 	}
 	delete(f.sso, id)
 	return nil
@@ -131,14 +131,14 @@ func (f *fakeClientStore) DeleteSsoClient(_ context.Context, id int64) error {
 
 func (f *fakeClientStore) DeleteOidcClient(_ context.Context, id int64) error {
 	if _, ok := f.oidc[id]; !ok {
-		return fmt.Errorf("fake: delete oidc client: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: delete oidc client: %w", sql.ErrNoRows)
 	}
 	delete(f.oidc, id)
 	return nil
 }
 
 // fakeProviderKeys ProviderKeyFinder 的内存 fake：existing 为存在的 provider
-// key 集合（nil map = 无 provider），未命中返回包装的 gorm.ErrRecordNotFound，
+// key 集合（nil map = 无 provider），未命中返回包装的 sql.ErrNoRows，
 // 语义镜像 *repo.ProviderRepo.FindByKey；lookupKeys 记录查询轨迹供断言。
 type fakeProviderKeys struct {
 	existing   map[string]bool
@@ -150,7 +150,7 @@ func (f *fakeProviderKeys) FindByKey(_ context.Context, providerKey string) (*mo
 	if f.existing[providerKey] {
 		return &model.Provider{ProviderKey: providerKey}, nil
 	}
-	return nil, fmt.Errorf("fake: find provider by key: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("fake: find provider by key: %w", sql.ErrNoRows)
 }
 
 // existingProviderKeys 多数用例共用的存在 key 集（不提交 oauth_providers 的
@@ -423,11 +423,11 @@ func TestClientServiceSsoLifecycle(t *testing.T) {
 			t.Fatalf("Delete: %v", err)
 		}
 		_, err := svc.GetSsoClient(ctx, 1)
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("Delete 后 Get err = %v, want gorm.ErrRecordNotFound", err)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("Delete 后 Get err = %v, want sql.ErrNoRows", err)
 		}
-		if err := svc.DeleteSsoClient(ctx, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("重复 Delete err = %v, want gorm.ErrRecordNotFound", err)
+		if err := svc.DeleteSsoClient(ctx, 1); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("重复 Delete err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("id<=0 防御", func(t *testing.T) {
@@ -513,8 +513,8 @@ func TestClientServiceOidcLifecycle(t *testing.T) {
 		if err := svc.DeleteOidcClient(ctx, 1); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
-		if _, err := svc.GetOidcClient(ctx, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Errorf("Delete 后 Get err = %v, want gorm.ErrRecordNotFound", err)
+		if _, err := svc.GetOidcClient(ctx, 1); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("Delete 后 Get err = %v, want sql.ErrNoRows", err)
 		}
 	})
 }

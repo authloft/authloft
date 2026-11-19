@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
@@ -54,9 +52,7 @@ func templateTestSetup(t *testing.T) *TemplateRepo {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewTemplateRepo(db)
 }
@@ -68,7 +64,7 @@ func TestTemplateRepoCRUD(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second)
 
-	if _, err := r.FindByKey(ctx, "missing"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := r.FindByKey(ctx, "missing"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("FindByKey(missing) err = %v, want ErrRecordNotFound", err)
 	}
 
@@ -124,10 +120,10 @@ func TestTemplateRepoCRUD(t *testing.T) {
 	if err := r.Delete(ctx, got.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := r.FindByKey(ctx, "login_renamed"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := r.FindByKey(ctx, "login_renamed"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Delete 后仍能查到: %v", err)
 	}
-	if err := r.Delete(ctx, got.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := r.Delete(ctx, got.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Delete 不存在行 err = %v, want ErrRecordNotFound", err)
 	}
 }

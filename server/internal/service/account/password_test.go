@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/eventlog"
 	"authloft/internal/repo/model"
@@ -90,7 +90,7 @@ type passwordCredFind struct {
 func (f *fakePasswordCreds) FindByUserAndKind(_ context.Context, userID int64, kind string) (*model.UserCredential, error) {
 	f.findCalls = append(f.findCalls, passwordCredFind{uid: userID, kind: kind})
 	if f.row == nil {
-		return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("credential repo: find by user kind: %w", sql.ErrNoRows)
 	}
 	return f.row, nil
 }
@@ -366,17 +366,17 @@ func TestPasswordChangeInvalidInput(t *testing.T) {
 	}
 }
 
-// TestPasswordChangeUserNotFound user 行不存在 → gorm.ErrRecordNotFound
+// TestPasswordChangeUserNotFound user 行不存在 → sql.ErrNoRows
 // 包装透传（handler 转 not_found），零写库。
 func TestPasswordChangeUserNotFound(t *testing.T) {
 	users, creds, epoch, audit := newPasswordEnv()
 	users.user = nil
-	users.findErr = fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
+	users.findErr = fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)
 	svc := newPasswordService(users, creds, epoch, nil, audit)
 
 	err := svc.ChangePassword(context.Background(), testPasswordUID, testOldPassword, testNewPassword)
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("err = %v, want gorm.ErrRecordNotFound 透传", err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("err = %v, want sql.ErrNoRows 透传", err)
 	}
 	if len(creds.updateCalls) != 0 || len(creds.createCalls) != 0 || len(users.incCalls) != 0 {
 		t.Error("写库发生, want 零")

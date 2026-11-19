@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/provider"
 	"authloft/internal/migrate"
@@ -61,9 +60,7 @@ func providerTestSetup(t *testing.T) (*ProviderRepo, *BindRepo) {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewProviderRepo(db), NewBindRepo(db)
 }
@@ -195,13 +192,6 @@ func TestProviderRepoCRUD(t *testing.T) {
 	if p.CreatedAt.IsZero() || p.UpdatedAt.IsZero() {
 		t.Error("Create 应自动填充 created_at / updated_at")
 	}
-	// default tag 值回填（§4.1 DDL 默认：1 / 1 / 0 / email,phone / 1 /
-	// social / 0 / ''）。
-	if p.EnableSignin != 1 || p.EnableSignup != 1 || p.AutoBind != 0 ||
-		p.AutoBindFields != "email,phone" || p.IsEnabled != 1 ||
-		p.UiGroup != "social" || p.SortOrder != 0 {
-		t.Errorf("Create 后默认值回填不一致: %+v", p)
-	}
 
 	got, err := rp.FindByKey(ctx, "qq_test")
 	if err != nil {
@@ -223,9 +213,17 @@ func TestProviderRepoCRUD(t *testing.T) {
 	if !proto.Equal(providerTestExt(), extParsed) {
 		t.Error("ext 落库读回 round-trip 不一致")
 	}
+	// default tag 列的 DB 默认值终态（§4.1 DDL 默认：1 / 1 / 0 / email,phone /
+	// 1 / social / 0 / ''；零值经 DEFAULT 占位由 DB 填充，CODE_GUIDE §3.5，
+	// bun 口径下非 PK 列不做插入后 struct 回填，经回读断言）。
+	if got.EnableSignin != 1 || got.EnableSignup != 1 || got.AutoBind != 0 ||
+		got.AutoBindFields != "email,phone" || got.IsEnabled != 1 ||
+		got.UiGroup != "social" || got.SortOrder != 0 || got.Remark != "测试渠道" {
+		t.Errorf("Create 后 DB 默认值终态不一致: %+v", got)
+	}
 
 	// 未命中。
-	if _, err := rp.FindByKey(ctx, "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByKey(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("FindByKey 未命中应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -272,7 +270,7 @@ func TestProviderRepoCRUD(t *testing.T) {
 	// 在 strict mode 下先行报错掩盖 not found 语义）。
 	ghostAt := time.Now().Truncate(time.Second)
 	ghost := &model.Provider{ID: 404, ProviderKey: "ghost", UnionProvider: "", DisplayName: "ghost", Category: "oauth", Type: "qq", CreatedAt: ghostAt, UpdatedAt: ghostAt}
-	if err := rp.Update(ctx, ghost); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.Update(ctx, ghost); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Update 不存在的行应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -280,10 +278,10 @@ func TestProviderRepoCRUD(t *testing.T) {
 	if err := rp.Delete(ctx, p.ID); err != nil {
 		t.Fatalf("Delete 失败: %v", err)
 	}
-	if _, err := rp.FindByKey(ctx, "qq_test"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByKey(ctx, "qq_test"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Delete 后 FindByKey 应 ErrRecordNotFound, got %v", err)
 	}
-	if err := rp.Delete(ctx, p.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.Delete(ctx, p.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("重复 Delete 应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -330,7 +328,7 @@ func TestProviderRepoColumnUpdates(t *testing.T) {
 		t.Fatalf("SetEnabled(1) 失败: %v", err)
 	}
 	// 行不存在：rows=0 补查 → ErrRecordNotFound。
-	if err := rp.SetEnabled(ctx, 404, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.SetEnabled(ctx, 404, 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("SetEnabled 不存在的行应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -356,7 +354,7 @@ func TestProviderRepoColumnUpdates(t *testing.T) {
 		{ProviderKey: "wx", SortOrder: 99},
 		{ProviderKey: "nope", SortOrder: 1},
 	})
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("含不存在 key 应 ErrRecordNotFound, got %v", err)
 	}
 	row, err := rp.FindByKey(ctx, "wx")
@@ -439,12 +437,13 @@ func TestProviderRepoList(t *testing.T) {
 		t.Errorf("type=wechat_mp: total=%d err=%v; want 1", total, err)
 	}
 
-	// is_enabled 过滤（构造 0 态：列级 UPDATE，default tag 只在 Create
-	// 显式写入 1，与 userTestSetStatus 同构）。
+	// is_enabled 过滤（构造 0 态：列级 UPDATE，Create 零值经 DEFAULT 落 DB
+	// 默认 1，与 userTestSetStatus 同构）。
 	zero := int8(0)
-	if err := rp.db.Model(&model.Provider{}).
+	if _, err := rp.db.NewUpdate().Model((*model.Provider)(nil)).
 		Where("provider_key = ?", "qq").
-		Update("is_enabled", 0).Error; err != nil {
+		Set("is_enabled = ?", 0).
+		Exec(ctx); err != nil {
 		t.Fatalf("置 is_enabled=0 失败: %v", err)
 	}
 	if _, total, err = rp.ListProviders(ctx, ProviderListQuery{IsEnabled: &zero}); err != nil || total != 1 {

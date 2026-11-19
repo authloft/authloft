@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
@@ -27,7 +27,7 @@ func (f *fakeUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
 	if u, ok := f.byID[id]; ok {
 		return u, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // fakeCreds CredentialReader 的 fake（按 kind 命中，未命中按 repo 口径）。
@@ -43,7 +43,7 @@ func (f *fakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (
 	if c, ok := f.byKind[kind]; ok {
 		return c, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // fakeSettings SettingsReader 的 fake。

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/asyncqueue"
@@ -573,7 +573,7 @@ func newEngineSettings(emailProviderKey string) *fakeSettings {
 }
 
 // fakeRowSource provider.RowSource：仅 row.ProviderKey 命中时返回该行，
-// 未命中返回包装的 gorm.ErrRecordNotFound（与 repo 同口径）。
+// 未命中返回包装的 sql.ErrNoRows（与 repo 同口径）。
 type fakeRowSource struct{ row *model.Provider }
 
 func (s fakeRowSource) FindByKey(_ context.Context, key string) (*model.Provider, error) {
@@ -581,7 +581,7 @@ func (s fakeRowSource) FindByKey(_ context.Context, key string) (*model.Provider
 		cp := *s.row
 		return &cp, nil
 	}
-	return nil, fmt.Errorf("provider repo: find %q: %w", key, gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("provider repo: find %q: %w", key, sql.ErrNoRows)
 }
 
 func (fakeRowSource) ListProviders(context.Context, repo.ProviderListQuery) ([]model.Provider, int64, error) {
@@ -634,7 +634,7 @@ func (f *fakeUsers) FindByEmail(context.Context, string) (*model.User, error) {
 type fakeCreds struct{}
 
 func (fakeCreds) FindByUserAndKind(context.Context, int64, string) (*model.UserCredential, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (fakeCreds) ListWebauthn(context.Context, int64) ([]model.UserCredentialWebauthn, error) {
 	return nil, nil

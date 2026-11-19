@@ -191,9 +191,7 @@ func TestSettingsRepoRoundTrip(t *testing.T) {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	rp := NewSettingsRepo(db)
 

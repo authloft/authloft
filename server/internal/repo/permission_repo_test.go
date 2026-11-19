@@ -49,9 +49,7 @@ func TestPermissionRepoHasPermission(t *testing.T) {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	rp := NewPermissionRepo(db)
 
@@ -64,7 +62,7 @@ func TestPermissionRepoHasPermission(t *testing.T) {
 	}
 
 	// 仅安装账号持有权限点。
-	if err := db.WithContext(ctx).Create(&model.UserPermission{UserID: 1, Point: "superadmin"}).Error; err != nil {
+	if _, err := db.NewInsert().Model(&model.UserPermission{UserID: 1, Point: "superadmin"}).Exec(ctx); err != nil {
 		t.Fatalf("插入权限行失败: %v", err)
 	}
 
@@ -96,10 +94,10 @@ func TestPermissionRepoHasPermission(t *testing.T) {
 	}
 
 	// 同一 uid 多个权限点、多个 uid 持有权限：列表全量、uid 集合去重。
-	if err := db.WithContext(ctx).Create(&model.UserPermission{UserID: 1, Point: "other"}).Error; err != nil {
+	if _, err := db.NewInsert().Model(&model.UserPermission{UserID: 1, Point: "other"}).Exec(ctx); err != nil {
 		t.Fatalf("插入第二权限点失败: %v", err)
 	}
-	if err := db.WithContext(ctx).Create(&model.UserPermission{UserID: 2, Point: "superadmin"}).Error; err != nil {
+	if _, err := db.NewInsert().Model(&model.UserPermission{UserID: 2, Point: "superadmin"}).Exec(ctx); err != nil {
 		t.Fatalf("插入第二持有者失败: %v", err)
 	}
 	if points, err := rp.ListPermissions(ctx, 1); err != nil || len(points) != 2 {

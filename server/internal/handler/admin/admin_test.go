@@ -15,10 +15,10 @@ import (
 	"time"
 
 	connectrpc "connectrpc.com/connect"
+	"database/sql"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/api/admin/v1/adminv1connect"
@@ -801,7 +801,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 // TestGetProviderNotFound 详情目标不存在 → 404 not_found（§1.5
 // 管理后台单资源）。
 func TestGetProviderNotFound(t *testing.T) {
-	fakes := &fakeProviders{keyErr: fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)}
+	fakes := &fakeProviders{keyErr: fmt.Errorf("provider repo: find by key: %w", sql.ErrNoRows)}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
 	cookie := adminCookie(t, tokens, epochs, 1)
 
@@ -1658,7 +1658,7 @@ func TestDeleteAndEnableHandler(t *testing.T) {
 		}
 	})
 	t.Run("delete 不存在 404", func(t *testing.T) {
-		writer := &fakeWriter{deleteErr: fmt.Errorf("admin service: %w", gorm.ErrRecordNotFound)}
+		writer := &fakeWriter{deleteErr: fmt.Errorf("admin service: %w", sql.ErrNoRows)}
 		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
 		cookie := adminCookie(t, tokens, epochs, 1)
 
@@ -1686,7 +1686,7 @@ func TestDeleteAndEnableHandler(t *testing.T) {
 		}
 	})
 	t.Run("enabled 不存在 404", func(t *testing.T) {
-		writer := &fakeWriter{enableErr: fmt.Errorf("admin service: %w", gorm.ErrRecordNotFound)}
+		writer := &fakeWriter{enableErr: fmt.Errorf("admin service: %w", sql.ErrNoRows)}
 		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
 		cookie := adminCookie(t, tokens, epochs, 1)
 
@@ -1826,7 +1826,7 @@ func TestGetMeHandler(t *testing.T) {
 	}
 
 	// 行缺失（安装账号被删的脏数据）→ 404。
-	notFound := &fakeUserService{meErr: gorm.ErrRecordNotFound}
+	notFound := &fakeUserService{meErr: sql.ErrNoRows}
 	tokens2, epochs2, h2 := newAdminHandler(t, &fakeProviders{}, nil, notFound)
 	resp, raw = doRPC(t, h2, adminv1connect.AdminServiceGetMeProcedure, `{}`, adminCookie(t, tokens2, epochs2, 1))
 	if resp.StatusCode != http.StatusNotFound {
@@ -2021,7 +2021,7 @@ func TestUserEditHandlers(t *testing.T) {
 	})
 
 	t.Run("404 映射", func(t *testing.T) {
-		users := &fakeUserService{profileErr: gorm.ErrRecordNotFound}
+		users := &fakeUserService{profileErr: sql.ErrNoRows}
 		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
 		cookie := adminCookie(t, tokens, epochs, 1)
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUpdateUserProfileProcedure, reqProfile, cookie)
@@ -2101,7 +2101,7 @@ func TestUserWriteHandlers(t *testing.T) {
 	})
 
 	t.Run("404 映射", func(t *testing.T) {
-		users := &fakeUserService{unlockErr: gorm.ErrRecordNotFound}
+		users := &fakeUserService{unlockErr: sql.ErrNoRows}
 		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
 		cookie := adminCookie(t, tokens, epochs, 1)
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUnlockUserProcedure, reqUnlock, cookie)
@@ -2190,7 +2190,7 @@ func TestUserRescueHandlers(t *testing.T) {
 	})
 
 	t.Run("404 映射", func(t *testing.T) {
-		users := &fakeUserService{totpErr: gorm.ErrRecordNotFound}
+		users := &fakeUserService{totpErr: sql.ErrNoRows}
 		tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, users)
 		cookie := adminCookie(t, tokens, epochs, 1)
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceUnbindUserTOTPProcedure, reqTotp, cookie)
@@ -2255,7 +2255,7 @@ func TestCreateDeleteUserHandler(t *testing.T) {
 		{"弱口令", `{"username":"new_user","password":"short"}`, "password_weak", adminsvc.ErrPasswordWeak, http.StatusBadRequest},
 		{"username 占用", `{"username":"new_user","password":"Str0ngPass!"}`, "username_taken", adminsvc.ErrUsernameTaken, http.StatusConflict},
 		{"权限拒绝", `{"id":42}`, "", adminsvc.ErrPermissionDenied, http.StatusForbidden},
-		{"已删行", `{"id":42}`, "", gorm.ErrRecordNotFound, http.StatusNotFound},
+		{"已删行", `{"id":42}`, "", sql.ErrNoRows, http.StatusNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &fakeUserService{createErr: tc.err, deleteErr: tc.err}
@@ -2490,7 +2490,7 @@ func TestClientGetHandlers(t *testing.T) {
 		}
 	})
 	t.Run("404 映射", func(t *testing.T) {
-		clients := &fakeClientService{getErr: gorm.ErrRecordNotFound}
+		clients := &fakeClientService{getErr: sql.ErrNoRows}
 		tokens, epochs, h := newAdminHandlerClients(t, clients)
 		cookie := adminCookie(t, tokens, epochs, 1)
 		for _, target := range []string{
@@ -2590,7 +2590,7 @@ func TestClientWriteHandlers(t *testing.T) {
 		}
 	})
 	t.Run("404 映射", func(t *testing.T) {
-		clients := &fakeClientService{crudErr: gorm.ErrRecordNotFound}
+		clients := &fakeClientService{crudErr: sql.ErrNoRows}
 		tokens, epochs, h := newAdminHandlerClients(t, clients)
 		cookie := adminCookie(t, tokens, epochs, 1)
 		resp, raw := doRPC(t, h, adminv1connect.AdminServiceDeleteOidcClientProcedure, reqDeleteOidc, cookie)
@@ -2632,10 +2632,10 @@ func (s *guardUsers) AnonymizeUser(context.Context, int64, time.Time) (int16, er
 // UpdateUserStatus / ResetUserPassword 两写路径探针门禁，不触资料 /
 // 联系方式编辑族。
 func (s *guardUsers) FindByPhone(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (s *guardUsers) FindByEmail(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (s *guardUsers) UpdateProfileColumns(context.Context, int64, *string, *string) error {
 	return nil
@@ -2644,7 +2644,7 @@ func (s *guardUsers) UpdateContactColumns(context.Context, int64, *string, *stri
 	return nil
 }
 func (s *guardUsers) GetProfile(context.Context, int64) (*model.UserProfile, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (s *guardUsers) SaveProfile(context.Context, *model.UserProfile) error { return nil }
 func (s *guardUsers) UpdateMfaRequired(context.Context, int64, int8) error  { return nil }
@@ -2652,7 +2652,7 @@ func (s *guardUsers) UpdateMfaRequired(context.Context, int64, int8) error  { re
 type guardCreds struct{}
 
 func (guardCreds) FindByUserAndKind(context.Context, int64, string) (*model.UserCredential, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (guardCreds) ListByUser(context.Context, int64) ([]model.UserCredential, error) {
 	return nil, nil
@@ -2663,7 +2663,7 @@ func (guardCreds) Update(context.Context, *model.UserCredential) error { return 
 // 余下方法为窄接口增项后的空实现：TestPermissionDeniedMapping 只经
 // UpdateUserStatus / ResetUserPassword 两写路径探针门禁，不触救援族。
 func (guardCreds) FindByID(context.Context, int64) (*model.UserCredential, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (guardCreds) SetEnabled(context.Context, int64, bool) error            { return nil }
 func (guardCreds) DeleteByUserAndKind(context.Context, int64, string) error { return nil }
@@ -2679,7 +2679,7 @@ func (guardBinds) UnbindWithUnionCascade(context.Context, int64, int64, string) 
 type guardProviders struct{}
 
 func (guardProviders) FindByKey(context.Context, string) (*model.Provider, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 type guardEvents struct{}

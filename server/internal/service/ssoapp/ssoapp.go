@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/repo"
@@ -70,7 +70,7 @@ func (r *Resolver) Snapshot(ctx context.Context, ssoClientID string) (*token.Sso
 	}
 	row, err := r.clients.FindSsoClientByClientID(ctx, ssoClientID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrClientNotFound
 		}
 		return nil, fmt.Errorf("ssoapp: find sso client: %w", err)

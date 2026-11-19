@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 )
 
 // fakeConsentRepo ConsentRepo fake：records 以 uid → clientID → scopes 原文
@@ -49,11 +49,11 @@ func (f *fakeConsentRepo) GetConsentScopes(_ context.Context, userID int64, clie
 		return "", f.getErr
 	}
 	if _, ok := f.records[userID]; !ok {
-		return "", fmt.Errorf("fake repo: %w", gorm.ErrRecordNotFound)
+		return "", fmt.Errorf("fake repo: %w", sql.ErrNoRows)
 	}
 	scopes := f.records[userID][clientID]
 	if _, ok := f.records[userID][clientID]; !ok {
-		return "", fmt.Errorf("fake repo: %w", gorm.ErrRecordNotFound)
+		return "", fmt.Errorf("fake repo: %w", sql.ErrNoRows)
 	}
 	return scopes, nil
 }

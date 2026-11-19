@@ -16,7 +16,7 @@
 //     ErrorInfo domain=admin code=invalid_request，§1.6 封闭集合）；
 //   - ErrDuplicateKey 唯一键 uk_provider_key 冲突（handler 映射 §1.5
 //     already_exists，409）；
-//   - gorm.ErrRecordNotFound 资源不存在（handler 映射 §1.5 not_found）；
+//   - sql.ErrNoRows 资源不存在（handler 映射 §1.5 not_found）；
 //   - 其余错误原样上抛，由错误包装拦截器消毒（§1.5 internal）。
 package admin
 
@@ -210,7 +210,7 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 	}
 	row, err := s.store.FindByKey(ctx, providerKey)
 	if err != nil {
-		return err // gorm.ErrRecordNotFound 由 handler 映射 404
+		return err // sql.ErrNoRows 由 handler 映射 404
 	}
 	// 「创建后不可改」防御式校验（§5.2）：定位键与行现键必须一致。
 	if row.ProviderKey != providerKey {
@@ -267,7 +267,7 @@ func (s *Service) UpdateProvider(ctx context.Context, body *structpb.Struct) err
 }
 
 // DeleteProvider（§5.2，OUTCOME ③）：FindByKey → repo.Delete(id) →
-// 失效；不存在 → gorm.ErrRecordNotFound（handler 404）。
+// 失效；不存在 → sql.ErrNoRows（handler 404）。
 func (s *Service) DeleteProvider(ctx context.Context, providerKey string) error {
 	if providerKey == "" {
 		return ErrInvalidRequest

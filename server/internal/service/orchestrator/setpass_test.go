@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/captcha"
@@ -41,33 +41,33 @@ func (u *signupUsers) FindByID(_ context.Context, id int64) (*model.User, error)
 	if m, ok := u.byID[id]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *signupUsers) FindByUsername(_ context.Context, username string) (*model.User, error) {
 	if m, ok := u.byUsername[username]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *signupUsers) FindByPhone(_ context.Context, phone string) (*model.User, error) {
 	if m, ok := u.byPhone[phone]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *signupUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
 	if m, ok := u.byEmail[email]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // CreateWithCredential 模拟同事务建号（§7.4 行 1025）：事务内 user INSERT
 // 回填 ID 与 default tag，再 credential INSERT；后者失败整体回滚——user
-// 行不落库（自增 ID 与真库一致已消耗不回退；m.ID 回填不撤销，gorm 真库
+// 行不落库（自增 ID 与真库一致已消耗不回退；m.ID 回填不撤销，真库
 // 同口径，service 失败路径不读它）。c 为 nil 时只建 user 行（三方
 // 免密建号，repo 同款 nil 分支）。
 func (u *signupUsers) CreateWithCredential(ctx context.Context, m *model.User, c *model.UserCredential) error {
@@ -76,8 +76,8 @@ func (u *signupUsers) CreateWithCredential(ctx context.Context, m *model.User, c
 	}
 	u.nextID++
 	m.ID = u.nextID
-	// 模拟 GORM default tag 回填（model.User 注释：零值字段被 tag 值显式
-	// 写入并回填 struct，user_status=1 / mfa_required=0）。
+	// 模拟 DB DEFAULT 填充后的行终态（model.User 注释：零值列经 DEFAULT
+	// 占位由 DB 默认值填充，user_status=1 / mfa_required=0）。
 	if m.UserStatus == 0 {
 		m.UserStatus = 1
 	}
@@ -110,7 +110,7 @@ func (c *signupCreds) FindByUserAndKind(_ context.Context, userID int64, _ strin
 	if m, ok := c.rows[userID]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (c *signupCreds) Create(_ context.Context, m *model.UserCredential) error {

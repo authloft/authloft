@@ -1,7 +1,7 @@
-// user / user_profile 表读写（后端架构 §3.9 行 415 / §4.2）。DDL 归
-// migrations/（§3.16），本文件只做行级读写与文档明确的查询最小集；
-// 事务边界在 service（§3.9）。掩码（接口文档 §3.1）、extra 的 msgpack
-// 编解码、al:pwdep 缓存同步（§5.1）均归上层——repo 层拿到什么存什么。
+// user / user_profile 表读写（后端架构 §3.9 / §4.2）。DDL 归 migrations/
+// （§3.16），本文件只做行级读写与文档明确的查询最小集；事务边界在 service
+// （§3.9）。掩码（接口文档 §3.1）、extra 的 msgpack 编解码、al:pwdep 缓存
+// 同步（§5.1）均归上层——repo 层拿到什么存什么。
 package repo
 
 import (
@@ -13,72 +13,89 @@ import (
 	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
 )
 
 // ErrUserDuplicate Create 命中唯一键（uk_username / uk_phone / uk_email
-// 之一，§4.2 行 635-637）时的可判别错误；具体冲突键与值在底层
-// *mysql.MySQLError 中。
+// 之一，§4.2）时的可判别错误；具体冲突键与值在底层 *mysql.MySQLError 中。
 var ErrUserDuplicate = errors.New("user repo: duplicate unique key")
 
 // UserRepo user / user_profile 表数据访问（§3.9：表与文件对应
 // user(+user_profile) → user_repo.go）。
 type UserRepo struct {
-	db *gorm.DB
+	db *bun.DB
 }
 
-// NewUserRepo 按 GORM 连接构造。
-func NewUserRepo(db *gorm.DB) *UserRepo {
+// NewUserRepo 按 bun 连接构造。
+func NewUserRepo(db *bun.DB) *UserRepo {
 	return &UserRepo{db: db}
 }
 
-// FindByID 按主键取用户；未命中返回包装的 gorm.ErrRecordNotFound。
+// FindByID 按主键取用户；未命中返回包装的 sql.ErrNoRows。
 func (r *UserRepo) FindByID(ctx context.Context, id int64) (*model.User, error) {
 	var u model.User
-	if err := r.db.WithContext(ctx).Take(&u, "id = ?", id).Error; err != nil {
+	if err := r.db.NewSelect().Model(&u).
+		Where("id = ?", id).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("user repo: find by id: %w", err)
 	}
 	return &u, nil
 }
 
 // FindByUsername 按唯一键 uk_username 取用户；未命中返回包装的
-// gorm.ErrRecordNotFound。
+// sql.ErrNoRows。
 func (r *UserRepo) FindByUsername(ctx context.Context, username string) (*model.User, error) {
 	var u model.User
-	if err := r.db.WithContext(ctx).Take(&u, "username = ?", username).Error; err != nil {
+	if err := r.db.NewSelect().Model(&u).
+		Where("username = ?", username).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("user repo: find by username: %w", err)
 	}
 	return &u, nil
 }
 
-// FindByPhone 按唯一键 uk_phone 取用户；未命中返回包装的
-// gorm.ErrRecordNotFound。
+// FindByPhone 按唯一键 uk_phone 取用户；未命中返回包装的 sql.ErrNoRows。
 func (r *UserRepo) FindByPhone(ctx context.Context, phone string) (*model.User, error) {
 	var u model.User
-	if err := r.db.WithContext(ctx).Take(&u, "phone = ?", phone).Error; err != nil {
+	if err := r.db.NewSelect().Model(&u).
+		Where("phone = ?", phone).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("user repo: find by phone: %w", err)
 	}
 	return &u, nil
 }
 
-// FindByEmail 按唯一键 uk_email 取用户；未命中返回包装的
-// gorm.ErrRecordNotFound。
+// FindByEmail 按唯一键 uk_email 取用户；未命中返回包装的 sql.ErrNoRows。
 func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	var u model.User
-	if err := r.db.WithContext(ctx).Take(&u, "email = ?", email).Error; err != nil {
+	if err := r.db.NewSelect().Model(&u).
+		Where("email = ?", email).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("user repo: find by email: %w", err)
 	}
 	return &u, nil
 }
 
 // Create 插入用户；命中唯一键（username / phone / email）返回
-// ErrUserDuplicate（errors.Is 可判别），其余错误原样包装。
+// ErrUserDuplicate（errors.Is 可判别），其余错误原样包装。created_at /
+// updated_at 零值时由本方法补齐（bun 无时间列自动填充）；default
+// tag 列（user_status=1 / mfa_required=0 等）零值经 DEFAULT 占位由 DB 默认
+// 值填充（CODE_GUIDE §3.5 bun 零值口径）。
 func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
-	err := r.db.WithContext(ctx).Create(u).Error
-	if err != nil {
+	now := time.Now()
+	if u.CreatedAt.IsZero() {
+		u.CreatedAt = now
+	}
+	if u.UpdatedAt.IsZero() {
+		u.UpdatedAt = now
+	}
+	if _, err := r.db.NewInsert().Model(u).Exec(ctx); err != nil {
 		if isUserDuplicateKey(err) {
 			return fmt.Errorf("user repo: create: %w: %w", ErrUserDuplicate, err)
 		}
@@ -87,27 +104,39 @@ func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 	return nil
 }
 
-// CreateWithCredential 建号写入在同一事务内完成（后端架构 §7.4 行 1025）：
-// 单 gorm Transaction 内先 INSERT user、再 INSERT user_credential（c.UserID
-// 由 user INSERT 回填的自增 ID 关联后写入），任一失败整体回滚——两跳非同
-// 事务会在 credential 失败时留下无凭证 user 行，username / email / phone
-// 占位无自愈。c 为 nil 时只 INSERT user（三方免密建号，§12.5 行
-// 1504：免密建号不设密码，user_credential 无 password 行，setPassReset 的
-// 「无行补建」分支即为其后置密码出口）。user 表唯一键冲突（username /
-// phone / email）仍返回 ErrUserDuplicate（errors.Is 可判别，判别口径与
-// 错误包装同 Create）；user 表 gorm default tag 的回填语义同 Create
-// （user_status=1 / mfa_required=0 零值被 tag 值显式写入 INSERT 并回填
-// struct，见 model.User 注释）。
+// CreateWithCredential 建号写入在同一事务内完成（后端架构 §7.4）：单事务内
+// 先 INSERT user、再 INSERT user_credential（c.UserID 由 user INSERT 回填的
+// 自增 ID 关联后写入），任一失败整体回滚——两跳非同事务会在 credential 失败
+// 时留下无凭证 user 行，username / email / phone 占位无自愈。c 为 nil 时只
+// INSERT user（三方免密建号，§12.5：免密建号不设密码，user_credential 无
+// password 行，setPassReset 的「无行补建」分支即为其后置密码出口）。user 表
+// 唯一键冲突（username / phone / email）仍返回 ErrUserDuplicate（errors.Is
+// 可判别，判别口径与错误包装同 Create）；user_credential 的 created_at /
+// updated_at 零值时由本方法补齐。
 func (r *UserRepo) CreateWithCredential(ctx context.Context, u *model.User, c *model.UserCredential) error {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(u).Error; err != nil {
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		now := time.Now()
+		if u.CreatedAt.IsZero() {
+			u.CreatedAt = now
+		}
+		if u.UpdatedAt.IsZero() {
+			u.UpdatedAt = now
+		}
+		if _, err := tx.NewInsert().Model(u).Exec(ctx); err != nil {
 			return err
 		}
 		if c == nil {
 			return nil
 		}
 		c.UserID = u.ID
-		return tx.Create(c).Error
+		if c.CreatedAt.IsZero() {
+			c.CreatedAt = now
+		}
+		if c.UpdatedAt.IsZero() {
+			c.UpdatedAt = now
+		}
+		_, err := tx.NewInsert().Model(c).Exec(ctx)
+		return err
 	})
 	if err != nil {
 		if isUserDuplicateKey(err) {
@@ -119,40 +148,44 @@ func (r *UserRepo) CreateWithCredential(ctx context.Context, u *model.User, c *m
 }
 
 // GetEpoch 读 user.epoch：§11.1 第 3 步缓存 miss 时的回源路径。
-// 用户不存在返回包装的 gorm.ErrRecordNotFound。
+// 用户不存在返回包装的 sql.ErrNoRows。
 func (r *UserRepo) GetEpoch(ctx context.Context, id int64) (int16, error) {
 	var u model.User
-	err := r.db.WithContext(ctx).
-		Select("id", "epoch").
+	err := r.db.NewSelect().Model(&u).
+		Column("id", "epoch").
 		Where("id = ?", id).
-		Take(&u).Error
+		Limit(1).
+		Scan(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("user repo: get epoch: %w", err)
 	}
 	return u.Epoch, nil
 }
 
-// IncEpoch 递增 epoch 并返回递增后的新值（供上层同步 al:pwdep:{uid}
-// 缓存，§5.1 行 850）：递增结果 > 30000 时回绕为 1、跳过 0（0 是初始
-// 值，回绕到 0 会让回绕前签发、仍在有效期内的旧令牌重新匹配通过，
-// 等于复活全部旧令牌；§4.2 行 685）。递增与回绕在同一条 UPDATE 语句
-// 内原子完成。用户不存在返回包装的 gorm.ErrRecordNotFound。
+// IncEpoch 递增 epoch 并返回递增后的新值（供上层同步 al:pwdep:{uid} 缓存，
+// §5.1）：递增结果 > 30000 时回绕为 1、跳过 0（0 是初始值，回绕到 0 会让
+// 回绕前签发、仍在有效期内的旧令牌重新匹配通过，等于复活全部旧令牌；§4.2）。
+// 递增、回绕与 updated_at 刷新在同一条 UPDATE 语句内原子完成。用户不存在
+// 返回包装的 sql.ErrNoRows（epoch 递增必产生变更，rows=0 即行不存在）。
 func (r *UserRepo) IncEpoch(ctx context.Context, id int64) (int16, error) {
 	var epoch int16
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.User{}).
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		res, err := tx.NewUpdate().Model((*model.User)(nil)).
 			Where("id = ?", id).
-			Update("epoch", gorm.Expr("IF(epoch + 1 > 30000, 1, epoch + 1)"))
-		if res.Error != nil {
-			return res.Error
+			Set("epoch = IF(epoch + 1 > 30000, 1, epoch + 1)").
+			Set("updated_at = ?", time.Now()).
+			Exec(ctx)
+		if err != nil {
+			return err
 		}
-		if res.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+		if err := requireChangedRow(ctx, tx, res, (*model.User)(nil),
+			"", "id = ?", id); err != nil {
+			return err
 		}
-		return tx.Model(&model.User{}).
-			Select("epoch").
+		return tx.NewSelect().Model((*model.User)(nil)).
+			ColumnExpr("epoch").
 			Where("id = ?", id).
-			Scan(&epoch).Error
+			Scan(ctx, &epoch)
 	})
 	if err != nil {
 		return 0, fmt.Errorf("user repo: inc epoch: %w", err)
@@ -160,71 +193,52 @@ func (r *UserRepo) IncEpoch(ctx context.Context, id int64) (int16, error) {
 	return epoch, nil
 }
 
-// UpdateLastLogin 更新 last_login_at（§5.2 延迟写入队列 worker 消费；
-// 「同 user_id 合并、只保留最新时间」归队列合并策略，repo 只写一行）。
-// 用户不存在返回包装的 gorm.ErrRecordNotFound。MySQL 驱动默认
-// changed-rows 语义：同值 UPDATE（§5.2 队列幂等重放）RowsAffected=0
-// 与行不存在不可区分，故 rows=0 时补 SELECT 存在性判定——行仍在则视
-// 为幂等成功，查无此行才报 ErrRecordNotFound。
+// UpdateLastLogin 更新 last_login_at（§5.2 延迟写入队列 worker 消费；「同
+// user_id 合并、只保留最新时间」归队列合并策略，repo 只写一行），updated_at
+// 一并刷新。用户不存在返回包装的 sql.ErrNoRows。MySQL 驱动默认 changed-rows
+// 语义：同值 UPDATE（§5.2 队列幂等重放）RowsAffected=0 与行不存在不可区分，
+// 故 rows=0 时补 SELECT 存在性判定——行仍在则视为幂等成功，查无此行才报
+// sql.ErrNoRows。
 func (r *UserRepo) UpdateLastLogin(ctx context.Context, id int64, at time.Time) error {
-	res := r.db.WithContext(ctx).
-		Model(&model.User{}).
+	res, err := r.db.NewUpdate().Model((*model.User)(nil)).
 		Where("id = ?", id).
-		Update("last_login_at", at)
-	if res.Error != nil {
-		return fmt.Errorf("user repo: update last login: %w", res.Error)
+		Set("last_login_at = ?", at).
+		Set("updated_at = ?", time.Now()).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("user repo: update last login: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.User{}).
-			Select("COUNT(*)").
-			Where("id = ?", id).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("user repo: update last login: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("user repo: update last login: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.User)(nil),
+		"user repo: update last login", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
 
 // UpdateProfileColumns 列级更新 user 表资料列 nickname / avatar_url
-// （接口文档 §3.2 UpdateProfile：可选字段部分更新——用户名 / 手机号 /
-// 邮箱不可改、未传字段不覆盖，§3.10 行 428 表-文件对应归 user_repo）。
-// nil = 该列未传、不写入；updated_at 一并刷新。用户不存在返回包装的
-// gorm.ErrRecordNotFound。MySQL 驱动默认 changed-rows 语义：同值 UPDATE
-// RowsAffected=0 与行不存在不可区分，故 rows=0 时补 SELECT 存在性判定
-// ——行仍在则视为幂等成功，查无此行才报 ErrRecordNotFound（口径同
+// （接口文档 §3.2 UpdateProfile：可选字段部分更新——用户名 / 手机号 / 邮箱
+// 不可改、未传字段不覆盖）。nil = 该列未传、不写入；updated_at 一并刷新。
+// 用户不存在返回包装的 sql.ErrNoRows。MySQL 驱动默认 changed-rows 语义：
+// 同值 UPDATE RowsAffected=0 与行不存在不可区分，故 rows=0 时补 SELECT
+// 存在性判定——行仍在则视为幂等成功，查无此行才报 sql.ErrNoRows（口径同
 // UpdateLastLogin）。
 func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname, avatarURL *string) error {
-	cols := map[string]any{"updated_at": time.Now()}
+	upd := r.db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", id).
+		Set("updated_at = ?", time.Now())
 	if nickname != nil {
-		cols["nickname"] = *nickname
+		upd = upd.Set("nickname = ?", *nickname)
 	}
 	if avatarURL != nil {
-		cols["avatar_url"] = *avatarURL
+		upd = upd.Set("avatar_url = ?", *avatarURL)
 	}
-	res := r.db.WithContext(ctx).
-		Model(&model.User{}).
-		Where("id = ?", id).
-		Updates(cols)
-	if res.Error != nil {
-		return fmt.Errorf("user repo: update profile columns: %w", res.Error)
+	res, err := upd.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("user repo: update profile columns: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.User{}).
-			Select("COUNT(*)").
-			Where("id = ?", id).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("user repo: update profile columns: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("user repo: update profile columns: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.User)(nil),
+		"user repo: update profile columns", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
@@ -232,60 +246,49 @@ func (r *UserRepo) UpdateProfileColumns(ctx context.Context, id int64, nickname,
 // UpdateContactColumns 列级更新 user 表联系方式列 phone / email 与对应
 // verified 位（接口文档 §3.4 BindPhone / BindEmail verify 步落库——目标列 +
 // phone_verified / email_verified 置 1；BindContactStore 窄接口契约）。
-// 指针语义 nil = 该列不写入（UpdateProfileColumns 惯例）；指针非 nil 且
-// 值为空串 = 显式清空，写 NULL 而非空串（uk_phone / uk_email 对空串仍
-// 唯一，多个清空行互撞；NULL 不参与唯一约束，匿名化同口径，§4.2 删除
-// 匿名化列改写）——绑定链路既有调用恒传非空值，不受该归一影响。
-// updated_at 一并刷新。目标被他人抢占命中 uk_phone / uk_email 唯一键
-// （MySQL 1062）返回 errors.Is 可判别的 ErrUserDuplicate（UserRepo.Create
-// 判别同源——challenge 拦截后 verify 落库前的 TOCTOU 占用由 service 层
-// 回补 target_taken，《后端架构》§10.2 行 1168）。用户不存在返回包装的
-// gorm.ErrRecordNotFound：MySQL 驱动默认 changed-rows 语义，rows=0 时补
-// SELECT 存在性判定（口径同 UpdateProfileColumns）。
+// 指针语义 nil = 该列不写入；指针非 nil 且值为空串 = 显式清空，写 NULL 而
+// 非空串（uk_phone / uk_email 对空串仍唯一，多个清空行互撞；NULL 不参与
+// 唯一约束，匿名化同口径，§4.2 删除匿名化列改写）——绑定链路既有调用恒传
+// 非空值，不受该归一影响。updated_at 一并刷新。目标被他人抢占命中
+// uk_phone / uk_email 唯一键（MySQL 1062）返回 errors.Is 可判别的
+// ErrUserDuplicate（UserRepo.Create 判别同源——challenge 拦截后 verify 落库
+// 前的 TOCTOU 占用由 service 层回补 target_taken，《后端架构》§10.2）。
+// 用户不存在返回包装的 sql.ErrNoRows：MySQL 驱动默认 changed-rows 语义，
+// rows=0 时补 SELECT 存在性判定（口径同 UpdateProfileColumns）。
 func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error {
-	cols := map[string]any{"updated_at": time.Now()}
+	upd := r.db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", id).
+		Set("updated_at = ?", time.Now())
 	if phone != nil {
 		if *phone == "" {
-			cols["phone"] = nil
+			upd = upd.Set("phone = ?", nil)
 		} else {
-			cols["phone"] = *phone
+			upd = upd.Set("phone = ?", *phone)
 		}
 	}
 	if email != nil {
 		if *email == "" {
-			cols["email"] = nil
+			upd = upd.Set("email = ?", nil)
 		} else {
-			cols["email"] = *email
+			upd = upd.Set("email = ?", *email)
 		}
 	}
 	if phoneVerified != nil {
-		cols["phone_verified"] = *phoneVerified
+		upd = upd.Set("phone_verified = ?", *phoneVerified)
 	}
 	if emailVerified != nil {
-		cols["email_verified"] = *emailVerified
+		upd = upd.Set("email_verified = ?", *emailVerified)
 	}
-	res := r.db.WithContext(ctx).
-		Model(&model.User{}).
-		Where("id = ?", id).
-		Updates(cols)
-	if res.Error != nil {
-		if isUserDuplicateKey(res.Error) {
-			return fmt.Errorf("user repo: update contact columns: %w: %w", ErrUserDuplicate, res.Error)
+	res, err := upd.Exec(ctx)
+	if err != nil {
+		if isUserDuplicateKey(err) {
+			return fmt.Errorf("user repo: update contact columns: %w: %w", ErrUserDuplicate, err)
 		}
-		return fmt.Errorf("user repo: update contact columns: %w", res.Error)
+		return fmt.Errorf("user repo: update contact columns: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.User{}).
-			Select("COUNT(*)").
-			Where("id = ?", id).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("user repo: update contact columns: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("user repo: update contact columns: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.User)(nil),
+		"user repo: update contact columns", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
@@ -295,15 +298,15 @@ func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, em
 // 大小写——LOWER(username) 固定口径，见 listUsersFilter）。
 const deletedUserPrefix = "deleted_"
 
-// UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4
-// 筛选入参）；Q 非空时对 username / nickname / email / phone 四列做模糊匹配
-// （默认口径：LIKE %q%，LIKE 通配符 %/_/\ 按 \ 转义保证字面匹配，待定）；
-// 时间维度为 Unix 秒闭区间，nil 表示该维度不过滤；MfaRequired 为 nil 时不过滤；
-// CredentialKind 非空时筛持有该类型凭证的用户；ExcludeDeleted 为 true 时排除
-// deleted_ 前缀的匿名化行。分页按 §1.7（page 从 1 开始、pageSize 默认 20、
-// 上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做白名单强制校验）
-// ——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，order 非 asc
-// 一律 desc），不拒绝请求。
+// UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4 筛选入参）；
+// Q 非空时对 username / nickname / email / phone 四列做模糊匹配（默认口径：
+// LIKE %q%，LIKE 通配符 %/_/\ 按 \ 转义保证字面匹配，待定）；时间维度为
+// Unix 秒闭区间，nil 表示该维度不过滤；MfaRequired 为 nil 时不过滤；
+// CredentialKind 非空时筛持有该类型凭证的用户；ExcludeDeleted 为 true 时
+// 排除 deleted_ 前缀的匿名化行。分页按 §1.7（page 从 1 开始、pageSize 默认
+// 20、上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做白名单强制
+// 校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，order 非
+// asc 一律 desc），不拒绝请求。
 type UserListQuery struct {
 	UserStatus *int8
 	Q          string
@@ -321,9 +324,9 @@ type UserListQuery struct {
 	ExcludeDeleted bool
 }
 
-// userSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——user
-// 表列名均在该集合内；字符集校验是防 ORDER BY 注入的格式约束，不是取值
-// 白名单：§1.7 行 277 后端不做白名单强制校验）。
+// userSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——user 表
+// 列名均在该集合内；字符集校验是防 ORDER BY 注入的格式约束，不是取值
+// 白名单：§1.7 后端不做白名单强制校验）。
 var userSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 
 // userDefaultSortColumn 默认排序列（缺省 / 非法 sort 的回落值）。
@@ -339,72 +342,73 @@ func escapeLike(s string) string {
 // {items, total, page, pageSize} 的数据来源）。
 func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User, int64, error) {
 	page, size := q.normalize()
-	filter := func() *gorm.DB { return r.listUsersFilter(ctx, r.db, q) }
-	var total int64
-	if err := filter().Count(&total).Error; err != nil {
+	filter := func() *bun.SelectQuery { return r.listUsersFilter(ctx, q) }
+	total, err := filter().Count(ctx)
+	if err != nil {
 		return nil, 0, fmt.Errorf("user repo: list count: %w", err)
 	}
 	var rows []model.User
-	err := filter().
-		Order(q.orderClause()).
-		Limit(size).
-		Offset((page - 1) * size).
-		Find(&rows).Error
+	err = filter().
+		OrderExpr(q.orderClause()).
+		Limit(int64(size)).
+		Offset(int64((page-1)*size)).
+		Scan(ctx, &rows)
 	if err != nil {
 		return nil, 0, fmt.Errorf("user repo: list: %w", err)
 	}
 	return rows, total, nil
 }
 
-// listUsersFilter 构造 §5.4 列表筛选的 WHERE 链（Count 与 Find 共用同一
-// 过滤集，避免两处条件漂移）。db 参数使测试可用 DryRun 连接断言 SQL。
-func (r *UserRepo) listUsersFilter(ctx context.Context, db *gorm.DB, q UserListQuery) *gorm.DB {
-	tx := db.WithContext(ctx).Model(&model.User{})
+// listUsersFilter 构造 §5.4 列表筛选的 WHERE 集（Count 与 Scan 共用同一
+// 过滤集，避免两处条件漂移）。测试以 String() 断言 SQL 形态。
+func (r *UserRepo) listUsersFilter(ctx context.Context, q UserListQuery) *bun.SelectQuery {
+	sq := r.db.NewSelect().Model((*model.User)(nil))
 	if q.UserStatus != nil {
-		tx = tx.Where("user_status = ?", *q.UserStatus)
+		sq = sq.Where("user_status = ?", *q.UserStatus)
 	}
 	if q.Q != "" {
 		like := "%" + escapeLike(q.Q) + "%"
-		tx = tx.Where(
+		sq = sq.Where(
 			"username LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?",
 			like, like, like, like,
 		)
 	}
 	if q.ExcludeDeleted {
-		// LOWER() 把大小写口径固定为不敏感（§5.4 默认过滤与 §2.3 前缀禁用
-		// 同口径；生产实例列 collation 不可从仓库判定——不依赖列 collation
-		// 的 ci 行为，cs / binary 列上亦不漏筛）。系统只写小写
-		// "deleted_<id>"，任何大小写变体行都已被建号入口拒绝，此处过滤的
-		// 是「已匿名化行」与「理论上的变体行」。
-		tx = tx.Where("LOWER(username) NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
+		// LOWER() 把大小写口径固定为不敏感（§5.4 默认过滤与 §2.3 前缀禁用同
+		// 口径；生产实例列 collation 不可从仓库判定——不依赖列 collation 的
+		// ci 行为，cs / binary 列上亦不漏筛）。系统只写小写 "deleted_<id>"，
+		// 任何大小写变体行都已被建号入口拒绝，此处过滤的是「已匿名化行」与
+		// 「理论上的变体行」。
+		sq = sq.Where("LOWER(username) NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
 	}
 	if q.CreatedFrom != nil {
-		tx = tx.Where("created_at >= ?", time.Unix(*q.CreatedFrom, 0).UTC())
+		sq = sq.Where("created_at >= ?", time.Unix(*q.CreatedFrom, 0).UTC())
 	}
 	if q.CreatedTo != nil {
-		tx = tx.Where("created_at <= ?", time.Unix(*q.CreatedTo, 0).UTC())
+		sq = sq.Where("created_at <= ?", time.Unix(*q.CreatedTo, 0).UTC())
 	}
 	if q.LastLoginFrom != nil {
-		tx = tx.Where("last_login_at >= ?", time.Unix(*q.LastLoginFrom, 0).UTC())
+		sq = sq.Where("last_login_at >= ?", time.Unix(*q.LastLoginFrom, 0).UTC())
 	}
 	if q.LastLoginTo != nil {
-		tx = tx.Where("last_login_at <= ?", time.Unix(*q.LastLoginTo, 0).UTC())
+		sq = sq.Where("last_login_at <= ?", time.Unix(*q.LastLoginTo, 0).UTC())
 	}
 	if q.MfaRequired != nil {
-		tx = tx.Where("mfa_required = ?", *q.MfaRequired)
+		sq = sq.Where("mfa_required = ?", *q.MfaRequired)
 	}
 	if q.CredentialKind != "" {
-		tx = tx.Where("id IN (?)", db.WithContext(ctx).
-			Model(&model.UserCredential{}).
-			Select("user_id").
-			Where("kind = ?", q.CredentialKind))
+		sub := r.db.NewSelect().
+			Model((*model.UserCredential)(nil)).
+			ColumnExpr("user_id").
+			Where("kind = ?", q.CredentialKind)
+		sq = sq.Where("id IN (?)", sub)
 	}
-	return tx
+	return sq
 }
 
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
-// （大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；
-// 非 id 主序恒追加 id 次序保证分页全序稳定（同值行跨页不漂移，口径同
+// （大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；非 id
+// 主序恒追加 id 次序保证分页全序稳定（同值行跨页不漂移，口径同
 // webauthn_repo.ListByUser）。
 func (q UserListQuery) orderClause() string {
 	col := q.Sort
@@ -421,60 +425,44 @@ func (q UserListQuery) orderClause() string {
 	return "`" + col + "` " + dir + ", id DESC"
 }
 
-// UpdateUserStatus 列级更新 user_status（§5.4 行 1248 禁用 / 启用——禁用
-// 入口是列级 UPDATE，不受 Create 的 default:1 tag 影响，见 model.User 注释；
-// 启用态同构）。updated_at 一并刷新。用户不存在返回包装的
-// gorm.ErrRecordNotFound；同值重放幂等成功（changed-rows 语义下 rows=0
-// 补 SELECT 存在性判定，口径同 UpdateProfileColumns）。
+// UpdateUserStatus 列级更新 user_status（§5.4 禁用 / 启用——禁用入口是列级
+// UPDATE，不受 Create 的 default:1 tag 影响，见 model.User 注释；启用态同
+// 构造）。updated_at 一并刷新。用户不存在返回包装的 sql.ErrNoRows；同值
+// 重放幂等成功（changed-rows 语义下 rows=0 补 SELECT 存在性判定，口径同
+// UpdateProfileColumns）。
 func (r *UserRepo) UpdateUserStatus(ctx context.Context, id int64, userStatus int8) error {
-	res := r.db.WithContext(ctx).
-		Model(&model.User{}).
+	res, err := r.db.NewUpdate().Model((*model.User)(nil)).
 		Where("id = ?", id).
-		Updates(map[string]any{"user_status": userStatus, "updated_at": time.Now()})
-	if res.Error != nil {
-		return fmt.Errorf("user repo: update user status: %w", res.Error)
+		Set("user_status = ?", userStatus).
+		Set("updated_at = ?", time.Now()).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("user repo: update user status: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.User{}).
-			Select("COUNT(*)").
-			Where("id = ?", id).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("user repo: update user status: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("user repo: update user status: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.User)(nil),
+		"user repo: update user status", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
 
 // UpdateMfaRequired 列级更新 user 表两步验证开关（§3.5 SetMfa 唯一写入端）。
 // 只写 mfa_required 列：开关切换不改变登录凭据，不递增 epoch、不失效会话。
-// updated_at 一并刷新。用户不存在返回包装的 gorm.ErrRecordNotFound；同值
-// 重放幂等成功（changed-rows 语义下 rows=0 补 SELECT 存在性判定，口径同
+// updated_at 一并刷新。用户不存在返回包装的 sql.ErrNoRows；同值重放幂等
+// 成功（changed-rows 语义下 rows=0 补 SELECT 存在性判定，口径同
 // UpdateUserStatus）。
 func (r *UserRepo) UpdateMfaRequired(ctx context.Context, id int64, mfaRequired int8) error {
-	res := r.db.WithContext(ctx).
-		Model(&model.User{}).
+	res, err := r.db.NewUpdate().Model((*model.User)(nil)).
 		Where("id = ?", id).
-		Updates(map[string]any{"mfa_required": mfaRequired, "updated_at": time.Now()})
-	if res.Error != nil {
-		return fmt.Errorf("user repo: update mfa required: %w", res.Error)
+		Set("mfa_required = ?", mfaRequired).
+		Set("updated_at = ?", time.Now()).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("user repo: update mfa required: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.User{}).
-			Select("COUNT(*)").
-			Where("id = ?", id).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("user repo: update mfa required: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.User)(nil),
+		"user repo: update mfa required", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
@@ -494,51 +482,60 @@ func (q UserListQuery) normalize() (page, size int) {
 	return page, size
 }
 
-// ListByIDs 批量按主键读 user 行与对应 user_profile 行（接口文档
-// §7.2 行 1436 GetUserProfiles 批量读，上限 / 缺失 / 顺序 / 去重口径归
-// handler）：user 表与 user_profile 表各一条 IN 语句、零循环单查——
-// handler 一次调用完成整批读取（N+1 禁止，§7.2 行 1462 理由）。
-// 结果顺序不保证（IN 无序），调用方按入参 ids 定位回填顺序自管
-// （§7.2 行 1464：响应顺序 = 入参去重后顺序）；缺失 id 的行自然缺席
-// （§7.2 行 1463 跳过不占位），缺失 profile 行由调用方以 nil 组装零值
-// profile 消息（同 GetProfile 口径：行缺失不视为错误）。ids 为空时返回
-// 双 nil、不触库（空批量空集语义，§7.2 行 1467）。
+// ListByIDs 批量按主键读 user 行与对应 user_profile 行（接口文档 §7.2
+// GetUserProfiles 批量读，上限 / 缺失 / 顺序 / 去重口径归 handler）：user 表
+// 与 user_profile 表各一条 IN 语句、零循环单查——handler 一次调用完成整批
+// 读取（N+1 禁止，§7.2 理由）。结果顺序不保证（IN 无序），调用方按入参 ids
+// 定位回填顺序自管（§7.2：响应顺序 = 入参去重后顺序）；缺失 id 的行自然
+// 缺席（§7.2 跳过不占位），缺失 profile 行由调用方以 nil 组装零值 profile
+// 消息（同 GetProfile 口径：行缺失不视为错误）。ids 为空时返回双 nil、不触
+// 库（空批量空集语义，§7.2）。
 func (r *UserRepo) ListByIDs(ctx context.Context, ids []int64) ([]model.User, []model.UserProfile, error) {
 	if len(ids) == 0 {
 		return nil, nil, nil
 	}
 	var users []model.User
-	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error; err != nil {
+	if err := r.db.NewSelect().Model(&users).
+		Where("id IN (?)", bun.In(ids)).
+		Scan(ctx); err != nil {
 		return nil, nil, fmt.Errorf("user repo: list by ids: %w", err)
 	}
 	var profiles []model.UserProfile
-	if err := r.db.WithContext(ctx).Where("user_id IN ?", ids).Find(&profiles).Error; err != nil {
+	if err := r.db.NewSelect().Model(&profiles).
+		Where("user_id IN (?)", bun.In(ids)).
+		Scan(ctx); err != nil {
 		return nil, nil, fmt.Errorf("user repo: list profiles by ids: %w", err)
 	}
 	return users, profiles, nil
 }
 
-// GetProfile 取 user_profile 行（§3.1 profile 字段的数据来源）；
-// 未命中返回包装的 gorm.ErrRecordNotFound。
+// GetProfile 取 user_profile 行（§3.1 profile 字段的数据来源）；未命中返回
+// 包装的 sql.ErrNoRows。
 func (r *UserRepo) GetProfile(ctx context.Context, userID int64) (*model.UserProfile, error) {
 	var p model.UserProfile
-	if err := r.db.WithContext(ctx).Take(&p, "user_id = ?", userID).Error; err != nil {
+	if err := r.db.NewSelect().Model(&p).
+		Where("user_id = ?", userID).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("user repo: get profile: %w", err)
 	}
 	return &p, nil
 }
 
 // SaveProfile 整行 UPSERT user_profile（主键 user_id，ON DUPLICATE KEY
-// UPDATE 全列覆盖）。接口文档 §3.2 UpdateProfile 的可选字段部分更新
-// 语义归 service（先读后拼整行）；extra 为 msgpack 字节，编解码归上层。
+// UPDATE 指定列覆盖：gender / birthday / locale / timezone / extra /
+// updated_at）。接口文档 §3.2 UpdateProfile 的可选字段部分更新语义归
+// service（先读后拼整行）；extra 为 msgpack 字节，编解码归上层。updated_at
+// 零值时由本方法补齐（bun 无时间列自动填充）。
 func (r *UserRepo) SaveProfile(ctx context.Context, p *model.UserProfile) error {
-	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"gender", "birthday", "locale", "timezone", "extra", "updated_at",
-		}),
-	}).Create(p).Error
-	if err != nil {
+	if p.UpdatedAt.IsZero() {
+		p.UpdatedAt = time.Now()
+	}
+	if _, err := r.db.NewInsert().Model(p).
+		On("DUPLICATE KEY UPDATE gender = VALUES(gender), birthday = VALUES(birthday), " +
+			"locale = VALUES(locale), timezone = VALUES(timezone), extra = VALUES(extra), " +
+			"updated_at = VALUES(updated_at)").
+		Exec(ctx); err != nil {
 		return fmt.Errorf("user repo: save profile: %w", err)
 	}
 	return nil
@@ -557,58 +554,63 @@ func (r *UserRepo) SaveProfile(ctx context.Context, p *model.UserProfile) error 
 // CreateWithCredential / WebauthnRepo.Create）：拆多次调用非同事务会在中途
 // 失败时留下半删除态。已匿名化行的拒绝（再删返回 not_found）与权限门禁归
 // 上层（§4.2 / §4.8），本方法只保证行存在性与事务原子性。用户不存在返回
-// 包装的 gorm.ErrRecordNotFound；返回递增后的新 epoch 供上层同步
-// al:pwdep:{uid}（§5.1）。
+// 包装的 sql.ErrNoRows；返回递增后的新 epoch 供上层同步 al:pwdep:{uid}
+// （§5.1）。
 func (r *UserRepo) AnonymizeUser(ctx context.Context, id int64, at time.Time) (int16, error) {
 	var epoch int16
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.User{}).
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		res, err := tx.NewUpdate().Model((*model.User)(nil)).
 			Where("id = ?", id).
-			Updates(map[string]any{
-				"username":       fmt.Sprintf("deleted_%d", id),
-				"phone":          nil,
-				"email":          nil,
-				"phone_verified": 0,
-				"email_verified": 0,
-				"nickname":       "",
-				"avatar_url":     "",
-				"user_status":    0,
-				"mfa_required":   0,
-				"epoch":          gorm.Expr("IF(epoch + 1 > 30000, 1, epoch + 1)"),
-				"updated_at":     at,
-			})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			// epoch 递增必产生变更，rows=0 即行不存在（changed-rows 语义）。
-			return gorm.ErrRecordNotFound
-		}
-		if err := tx.Model(&model.User{}).
-			Select("epoch").
-			Where("id = ?", id).
-			Scan(&epoch).Error; err != nil {
+			Set("username = ?", fmt.Sprintf("deleted_%d", id)).
+			Set("phone = ?", nil).
+			Set("email = ?", nil).
+			Set("phone_verified = ?", 0).
+			Set("email_verified = ?", 0).
+			Set("nickname = ?", "").
+			Set("avatar_url = ?", "").
+			Set("user_status = ?", 0).
+			Set("mfa_required = ?", 0).
+			Set("epoch = IF(epoch + 1 > 30000, 1, epoch + 1)").
+			Set("updated_at = ?", at).
+			Exec(ctx)
+		if err != nil {
 			return err
 		}
-		if err := tx.Model(&model.UserProfile{}).
+		// epoch 递增必产生变更，rows=0 即行不存在（changed-rows 语义）。
+		if err := requireChangedRow(ctx, tx, res, (*model.User)(nil), "", "id = ?", id); err != nil {
+			return err
+		}
+		if err := tx.NewSelect().Model((*model.User)(nil)).
+			ColumnExpr("epoch").
+			Where("id = ?", id).
+			Scan(ctx, &epoch); err != nil {
+			return err
+		}
+		if _, err := tx.NewUpdate().Model((*model.UserProfile)(nil)).
 			Where("user_id = ?", id).
-			Updates(map[string]any{
-				"gender":     0,
-				"birthday":   nil,
-				"locale":     "",
-				"timezone":   "",
-				"extra":      nil,
-				"updated_at": at,
-			}).Error; err != nil {
+			Set("gender = ?", 0).
+			Set("birthday = ?", nil).
+			Set("locale = ?", "").
+			Set("timezone = ?", "").
+			Set("extra = ?", nil).
+			Set("updated_at = ?", at).
+			Exec(ctx); err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ?", id).Delete(&model.UserCredential{}).Error; err != nil {
+		if _, err := tx.NewDelete().Model((*model.UserCredential)(nil)).
+			Where("user_id = ?", id).
+			Exec(ctx); err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ?", id).Delete(&model.UserCredentialWebauthn{}).Error; err != nil {
+		if _, err := tx.NewDelete().Model((*model.UserCredentialWebauthn)(nil)).
+			Where("user_id = ?", id).
+			Exec(ctx); err != nil {
 			return err
 		}
-		return tx.Where("user_id = ?", id).Delete(&model.UserThirdpartyBind{}).Error
+		_, err = tx.NewDelete().Model((*model.UserThirdpartyBind)(nil)).
+			Where("user_id = ?", id).
+			Exec(ctx)
+		return err
 	})
 	if err != nil {
 		return 0, fmt.Errorf("user repo: anonymize user: %w", err)

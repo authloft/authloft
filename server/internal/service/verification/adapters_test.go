@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/factor"
 	factorotp "authloft/internal/factor/otp"
@@ -65,7 +65,7 @@ func (c boundStubCreds) FindByUserAndKind(_ context.Context, _ int64, kind strin
 	if row, ok := c.byKind[kind]; ok {
 		return row, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (c boundStubCreds) ListByUser(context.Context, int64) ([]model.UserCredential, error) {

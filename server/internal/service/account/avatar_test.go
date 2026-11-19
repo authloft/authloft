@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"database/sql"
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	providerpb "authloft/gen/go/provider"
@@ -41,7 +41,7 @@ func (f *avatarFakeSettings) GetString(key string) (string, bool) {
 }
 
 // avatarFakeProviders AvatarProviderStore fake：行集回放 + 错误注入；
-// 未命中回放包装 gorm.ErrRecordNotFound（repo 同口径）。
+// 未命中回放包装 sql.ErrNoRows（repo 同口径）。
 type avatarFakeProviders struct {
 	rows  map[string]*model.Provider
 	err   error
@@ -55,7 +55,7 @@ func (f *avatarFakeProviders) FindByKey(_ context.Context, providerKey string) (
 	}
 	row, ok := f.rows[providerKey]
 	if !ok {
-		return nil, fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("provider repo: find by key: %w", sql.ErrNoRows)
 	}
 	return row, nil
 }
@@ -65,7 +65,7 @@ type avatarFakeUsers struct{ missing bool }
 
 func (f *avatarFakeUsers) FindByID(_ context.Context, _ int64) (*model.User, error) {
 	if f.missing {
-		return nil, fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)
 	}
 	return &model.User{ID: avatarTestUID}, nil
 }
@@ -458,18 +458,18 @@ func TestAvatarPresignInfraErrors(t *testing.T) {
 	}
 }
 
-// TestAvatarUserNotFound user 行不存在 → gorm.ErrRecordNotFound 透传
+// TestAvatarUserNotFound user 行不存在 → sql.ErrNoRows 透传
 // （handler 转 not_found，profile.go 先例 404 优先），两桩同口径，零 Resolve。
 func TestAvatarUserNotFound(t *testing.T) {
 	e := avatarTestEnvNew(t)
 	e.users.missing = true
 
-	if _, err := e.presign(avatarTestPresignReq()); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("presign err = %v, want gorm.ErrRecordNotFound 透传", err)
+	if _, err := e.presign(avatarTestPresignReq()); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("presign err = %v, want sql.ErrNoRows 透传", err)
 	}
 	key := avatarKeyPrefix(avatarTestUID) + "x.png"
-	if _, err := e.svc.CommitAvatar(context.Background(), avatarTestUID, &accountv1.CommitAvatarRequest{Key: key}); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("commit err = %v, want gorm.ErrRecordNotFound 透传", err)
+	if _, err := e.svc.CommitAvatar(context.Background(), avatarTestUID, &accountv1.CommitAvatarRequest{Key: key}); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("commit err = %v, want sql.ErrNoRows 透传", err)
 	}
 	if len(e.resolver.calls) != 0 {
 		t.Errorf("Resolve 调用 = %d, want 0（存在性先判在前）", len(e.resolver.calls))

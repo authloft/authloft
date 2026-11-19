@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/credential"
 	"authloft/gen/go/token"
@@ -180,7 +180,7 @@ func TestVerifyEmptyCodes(t *testing.T) {
 // TestVerifyMissingCredentialRow 无该 kind 行 → code_expired（因子不可用）。
 func TestVerifyMissingCredentialRow(t *testing.T) {
 	f := New()
-	creds := &fakeCredentials{findErr: gorm.ErrRecordNotFound}
+	creds := &fakeCredentials{findErr: sql.ErrNoRows}
 	res, err := f.Verify(newCtx(7, "abcd0000", creds))
 	if err != nil {
 		t.Fatalf("Verify: %v", err)

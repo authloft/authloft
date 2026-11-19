@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/captcha"
 	"authloft/internal/factor"
@@ -30,15 +30,15 @@ func (u pwChainUsers) FindByUsername(context.Context, string) (*model.User, erro
 	if u.user != nil {
 		return u.user, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u pwChainUsers) FindByPhone(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u pwChainUsers) FindByEmail(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // pwChainIP 固定来源 IP 的 password.IPResolver Fake。
@@ -199,7 +199,7 @@ func TestEnginePasswordCaptchaNilResolverSkipsCount(t *testing.T) {
 }
 
 // TestEngineUserRefResolverErrorPropagates 解析器仓储错误上抛 → failed
-//（与因子 Verify 的 lookup 错误口径一致，不吞错制造假放行）。
+// （与因子 Verify 的 lookup 错误口径一致，不吞错制造假放行）。
 func TestEngineUserRefResolverErrorPropagates(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	deps := newTestDeps(t, at)

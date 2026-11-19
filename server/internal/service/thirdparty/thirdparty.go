@@ -48,9 +48,9 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
@@ -235,7 +235,7 @@ func (s *Thirdparty) Authorize(ctx context.Context, in AuthorizeInput) (*Authori
 
 	p, err := s.deps.Loader.Get(ctx, in.Provider)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %q not found", ErrThirdpartyProviderDisabled, in.Provider)
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
@@ -337,7 +337,7 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 
 	p, err := s.deps.Loader.Get(ctx, in.ProviderKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return s.envelope(StatusProviderDisabled)
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
@@ -811,7 +811,7 @@ func (s *Thirdparty) resolveBind(ctx context.Context, p *provider.Provider, iden
 	if err == nil {
 		return row.UserID, false, nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, s.envelope(orchestrator.StatusFailed)
 	}
 
@@ -822,7 +822,7 @@ func (s *Thirdparty) resolveBind(ctx context.Context, p *provider.Provider, iden
 		if uerr == nil {
 			return urow.UserID, false, nil
 		}
-		if !errors.Is(uerr, gorm.ErrRecordNotFound) {
+		if !errors.Is(uerr, sql.ErrNoRows) {
 			return 0, false, s.envelope(orchestrator.StatusFailed)
 		}
 	}
@@ -841,7 +841,7 @@ func (s *Thirdparty) resolveBind(ctx context.Context, p *provider.Provider, iden
 				u, uerr := s.deps.Users.FindByEmail(ctx, identity.Email)
 				if uerr == nil {
 					uid = u.ID
-				} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
+				} else if !errors.Is(uerr, sql.ErrNoRows) {
 					return 0, false, s.envelope(orchestrator.StatusFailed)
 				}
 			case "phone":
@@ -851,7 +851,7 @@ func (s *Thirdparty) resolveBind(ctx context.Context, p *provider.Provider, iden
 				u, uerr := s.deps.Users.FindByPhone(ctx, identity.Phone)
 				if uerr == nil {
 					uid = u.ID
-				} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
+				} else if !errors.Is(uerr, sql.ErrNoRows) {
 					return 0, false, s.envelope(orchestrator.StatusFailed)
 				}
 			default:
@@ -1077,17 +1077,17 @@ func (s *Thirdparty) oauthFail(ctx context.Context, channel provider.ThirdPartyC
 
 // SignupState 实现 orchestrator.ThirdpartySignup 窄接口的查询半边：
 // enable_signup 校验以 DB 列为准（§2.7.5 字段映射）；provider 不
-// 存在 / 已禁用返回包装的 gorm.ErrRecordNotFound（调用方按 failed 收敛）。
+// 存在 / 已禁用返回包装的 sql.ErrNoRows（调用方按 failed 收敛）。
 func (s *Thirdparty) SignupState(ctx context.Context, providerKey string) (orchestrator.ThirdpartySignupState, error) {
 	p, err := s.deps.Loader.Get(ctx, providerKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return orchestrator.ThirdpartySignupState{}, fmt.Errorf("thirdparty: signup state: %q not found: %w", providerKey, gorm.ErrRecordNotFound)
+		if errors.Is(err, sql.ErrNoRows) {
+			return orchestrator.ThirdpartySignupState{}, fmt.Errorf("thirdparty: signup state: %q not found: %w", providerKey, sql.ErrNoRows)
 		}
 		return orchestrator.ThirdpartySignupState{}, fmt.Errorf("thirdparty: signup state: %w", err)
 	}
 	if p.Row == nil || !p.Enabled() {
-		return orchestrator.ThirdpartySignupState{}, fmt.Errorf("thirdparty: signup state: %q disabled: %w", providerKey, gorm.ErrRecordNotFound)
+		return orchestrator.ThirdpartySignupState{}, fmt.Errorf("thirdparty: signup state: %q disabled: %w", providerKey, sql.ErrNoRows)
 	}
 	return orchestrator.ThirdpartySignupState{
 		Enabled:  p.Row.EnableSignup == 1,

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
@@ -50,7 +50,7 @@ func (f *ltTickets) Wait(_ context.Context, _ string, _ time.Duration) error {
 }
 
 // ltCreds 自选二次验证凭据行读取 fake：按 kind 命中预置行；未命中按
-// repo 口径返回 gorm.ErrRecordNotFound（正常未启用）；err 注入读取故障，
+// repo 口径返回 sql.ErrNoRows（正常未启用）；err 注入读取故障，
 // 供 fail-closed 用例使用。
 type ltCreds struct {
 	byKind map[string]*model.UserCredential
@@ -64,7 +64,7 @@ func (c *ltCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*m
 	if m, ok := c.byKind[kind]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // ltEnv 汇总一套全 fake 的统一写票 service 依赖。
@@ -305,7 +305,7 @@ func TestWriteTicketConfirmChainMFALookupFailClosed(t *testing.T) {
 	})
 	t.Run("凭据行不存在属正常未启用", func(t *testing.T) {
 		e := newLTEnv(t)
-		// tpCreds 未命中返回 gorm.ErrRecordNotFound：应视为未启用而非故障。
+		// tpCreds 未命中返回 sql.ErrNoRows：应视为未启用而非故障。
 		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
 			TicketID: "tid123", Session: "body-session", SessionUID: 9,
 		})

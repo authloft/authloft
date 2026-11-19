@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
@@ -146,7 +146,7 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	// 用户名占用 → username_taken（§1.6 行 256）。
 	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
 		return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return failWith(ctx, p.GetFlow(), "set_password:find_username", err)
 	}
 
@@ -166,14 +166,14 @@ func (e *Engine) setPassRegister(ctx context.Context, sp *SetPassDeps, req Reque
 	if email != "" {
 		if _, err := sp.Users.FindByEmail(ctx, email); err == nil {
 			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return failWith(ctx, p.GetFlow(), "set_password:find_email", err)
 		}
 	}
 	if phone != "" {
 		if _, err := sp.Users.FindByPhone(ctx, phone); err == nil {
 			return &ssov1.LoginFlowResponse{Status: StatusTargetTaken}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return failWith(ctx, p.GetFlow(), "set_password:find_phone", err)
 		}
 	}
@@ -242,7 +242,7 @@ func (e *Engine) setPassThirdparty(ctx context.Context, sp *SetPassDeps, req Req
 	}
 	if _, err := sp.Users.FindByUsername(ctx, username); err == nil {
 		return &ssov1.LoginFlowResponse{Status: StatusUsernameTaken}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return failWith(ctx, p.GetFlow(), "set_password:find_username", err)
 	}
 
@@ -327,7 +327,7 @@ func (e *Engine) setPassReset(ctx context.Context, sp *SetPassDeps, req Request,
 		if err := sp.writeCredential(ctx, uid, password, cred); err != nil {
 			return failWith(ctx, p.GetFlow(), "set_password:reset:write_credential", err)
 		}
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		if err := sp.writeCredential(ctx, uid, password, nil); err != nil {
 			return failWith(ctx, p.GetFlow(), "set_password:reset:create_credential", err)
 		}

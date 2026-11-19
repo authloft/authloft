@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
@@ -45,7 +45,7 @@ func (l *fakeLoader) Get(_ context.Context, key string) (*provider.Provider, err
 	if p, ok := l.byKey[key]; ok {
 		return p, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (l *fakeLoader) ListByType(_ context.Context, typ string) ([]*provider.Provider, error) {
@@ -61,7 +61,7 @@ func (f *fakeProviders) FindByKey(_ context.Context, key string) (*model.Provide
 	if p, ok := f.byKey[key]; ok {
 		return p, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // unbindCall UnbindWithUnionCascade 入参记录。
@@ -94,7 +94,7 @@ func (b *fakeBinds) FindByProviderOpenID(_ context.Context, pk, openid string) (
 		r := r
 		return &r, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (b *fakeBinds) ListByUserID(_ context.Context, uid int64) ([]model.UserThirdpartyBind, error) {
@@ -117,7 +117,7 @@ func (b *fakeBinds) CreateWithUnion(_ context.Context, m *model.UserThirdpartyBi
 	if _, exists := b.rows[bindKey(m.ProviderKey, m.OpenID)]; exists ||
 		(unionProviderKey != "" && unionID != "" && b.dupOnUnion == bindKey(unionProviderKey, unionID)) {
 		// 同 repo.CreateWithUnion 的判别链（fmt.Errorf("%w: %w", repo.ErrBindDuplicate, …)）。
-		return fmt.Errorf("bind repo: create with union: %w: %w", repo.ErrBindDuplicate, gorm.ErrDuplicatedKey)
+		return fmt.Errorf("bind repo: create with union: %w: %w", repo.ErrBindDuplicate, errors.New("duplicate entry"))
 	}
 	b.created = append(b.created, *m)
 	b.unions = append(b.unions, [2]string{unionProviderKey, unionID})
@@ -161,7 +161,7 @@ func (c *fakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (
 	if kind == "password" && c.password != nil {
 		return c.password, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // fakeTickets TicketStore 的 fake：预置结果 + Take 取走即删 + Wait 记录
@@ -498,8 +498,8 @@ func TestUnbindThirdparty(t *testing.T) {
 	t.Run("provider 不存在 → not_found", func(t *testing.T) {
 		e := newCase(t)
 		err := e.svc.UnbindThirdparty(context.Background(), uid, "nope")
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Errorf("err = %v, want gorm.ErrRecordNotFound", err)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("Union Provider 不可单独解绑", func(t *testing.T) {
@@ -516,8 +516,8 @@ func TestUnbindThirdparty(t *testing.T) {
 	t.Run("无该绑定 → not_found", func(t *testing.T) {
 		e := newCase(t)
 		err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_mp_scan")
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Errorf("err = %v, want gorm.ErrRecordNotFound", err)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("最后登录方式 → invalid_request（无 password 无其余绑定）", func(t *testing.T) {
@@ -663,7 +663,7 @@ func TestThirdpartyOauth(t *testing.T) {
 	})
 	t.Run("并发被抢唯一键 → target_taken", func(t *testing.T) {
 		e := newEnv(t)
-		e.binds.createErr = fmt.Errorf("bind repo: create with union: %w: %w", repo.ErrBindDuplicate, gorm.ErrDuplicatedKey)
+		e.binds.createErr = fmt.Errorf("bind repo: create with union: %w: %w", repo.ErrBindDuplicate, errors.New("duplicate entry"))
 		if _, err := e.svc.ThirdpartyOauth(context.Background(), newInput(e)); !errors.Is(err, ErrTargetTaken) {
 			t.Errorf("err = %v, want ErrTargetTaken（uk 冲突收敛，§12.5 行 256）", err)
 		}

@@ -18,28 +18,31 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
 
-// TestUserRepoListUsersFilterSQL（无需 DSN 的 DryRun）：§5.4 四维度筛选、
-// 默认过滤 deleted_ 前缀与凭证类型子查询均进入 WHERE 链；不设筛选时
-// 不追加任何条件。
-func TestUserRepoListUsersFilterSQL(t *testing.T) {
-	db, err := gorm.Open(mysql.New(mysql.Config{
-		DSN:                       "u:p@tcp(127.0.0.1:3306)/x?parseTime=true",
-		SkipInitializeWithVersion: true,
-	}), &gorm.Config{
-		DryRun: true, DisableAutomaticPing: true,
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+// bunFilterSQLDB 构造不触库的 bun 连接（sql.Open 惰性建连 + String() 纯
+// SQL 构造），供无需 DSN 的 SQL 断言用例。DSN 形态与生产同构，连接串不含
+// 真实凭证。
+func bunFilterSQLDB(t *testing.T) *bun.DB {
+	t.Helper()
+	sqldb, err := sql.Open("mysql", "u:p@tcp(127.0.0.1:3306)/x?parseTime=true")
 	if err != nil {
-		t.Fatalf("DryRun 连接失败: %v", err)
+		t.Fatalf("sql.Open 失败: %v", err)
 	}
-	rp := NewUserRepo(db)
+	db := bun.NewDB(sqldb, newMySQLDialect())
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// TestUserRepoListUsersFilterSQL（无需 DSN 的 SQL 构造断言）：§5.4 四维度
+// 筛选、默认过滤 deleted_ 前缀与凭证类型子查询均进入 WHERE 集；不设筛选时
+// 不追加任何条件（无 WHERE 子句）。
+func TestUserRepoListUsersFilterSQL(t *testing.T) {
+	rp := NewUserRepo(bunFilterSQLDB(t))
 	from, to := int64(1000), int64(2000)
 	loginFrom, loginTo := int64(3000), int64(4000)
 	mfa := int8(1)
@@ -49,24 +52,20 @@ func TestUserRepoListUsersFilterSQL(t *testing.T) {
 		LastLoginFrom: &loginFrom, LastLoginTo: &loginTo,
 		MfaRequired: &mfa, CredentialKind: "webauthn",
 	}
-	sql := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		return rp.listUsersFilter(context.Background(), tx, q).Find(&[]model.User{})
-	})
+	filtered := rp.listUsersFilter(context.Background(), q).String()
 	for _, want := range []string{
 		"LOWER(username) NOT LIKE", "created_at >=", "created_at <=",
 		"last_login_at >=", "last_login_at <=", "mfa_required =",
 		"user_credential", "kind =",
 	} {
-		if !strings.Contains(sql, want) {
-			t.Errorf("SQL 缺 %q: %s", want, sql)
+		if !strings.Contains(filtered, want) {
+			t.Errorf("SQL 缺 %q: %s", want, filtered)
 		}
 	}
 
-	plain := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		return rp.listUsersFilter(context.Background(), tx, UserListQuery{}).Find(&[]model.User{})
-	})
-	if strings.Contains(plain, "NOT LIKE") || strings.Contains(plain, "created_at") ||
-		strings.Contains(plain, "mfa_required") || strings.Contains(plain, "user_credential") {
+	plain := rp.listUsersFilter(context.Background(), UserListQuery{}).String()
+	if strings.Contains(plain, " WHERE ") || strings.Contains(plain, "NOT LIKE") ||
+		strings.Contains(plain, "mfa_required =") || strings.Contains(plain, "user_credential") {
 		t.Errorf("无筛选时不应追加条件: %s", plain)
 	}
 }
@@ -102,8 +101,8 @@ func TestUserRepoExcludeDeletedCaseInsensitive(t *testing.T) {
 }
 
 // userTestSetup 清库 + 建表 + 注册测后零残留清理，返回就绪的 UserRepo
-// 与底层 *gorm.DB（供用例直接构造特定列状态，如置 epoch 边界值）。
-func userTestSetup(t *testing.T) (*UserRepo, *gorm.DB) {
+// 与底层 *bun.DB（供用例直接构造特定列状态，如置 epoch 边界值）。
+func userTestSetup(t *testing.T) (*UserRepo, *bun.DB) {
 	t.Helper()
 	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
 	if dsn == "" {
@@ -137,9 +136,7 @@ func userTestSetup(t *testing.T) (*UserRepo, *gorm.DB) {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewUserRepo(db), db
 }
@@ -209,7 +206,7 @@ func TestUserRepoFindByKeys(t *testing.T) {
 		"phone":    func() (*model.User, error) { return rp.FindByPhone(ctx, "13999999999") },
 		"email":    func() (*model.User, error) { return rp.FindByEmail(ctx, "nobody@example.com") },
 	} {
-		if _, err := fn(); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if _, err := fn(); !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("FindBy%s 未命中应 ErrRecordNotFound, got %v", name, err)
 		}
 	}
@@ -305,29 +302,35 @@ func TestUserRepoEpochWraparound(t *testing.T) {
 	}
 
 	// 不存在的用户。
-	if _, err := rp.IncEpoch(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.IncEpoch(ctx, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("IncEpoch 不存在用户应 ErrRecordNotFound, got %v", err)
 	}
-	if _, err := rp.GetEpoch(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.GetEpoch(ctx, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("GetEpoch 不存在用户应 ErrRecordNotFound, got %v", err)
 	}
 }
 
-// userTestSetStatus 直接置 user_status 列构造禁用态：GORM Create 的
-// default:1 语义下零值 0 被 tag 值 1 显式写入 INSERT 并回填 struct
-// （gorm@v1.31.2 callbacks/create.go:340-343），struct 插入落不了 0，
-// 故用列级 UPDATE（与 admin 禁用路径 §5.4 UpdateUserStatus 同构）。
-func userTestSetStatus(t *testing.T, db *gorm.DB, id int64, v int8) {
+// userTestSetStatus 直接置 user_status 列构造禁用态：Create 路径下零值 0
+// 经 DEFAULT 占位由 DB 默认值 1 填充（CODE_GUIDE §3.5 零值口径），struct
+// 插入落不了 0，故用列级 UPDATE（与 admin 禁用路径 §5.4 UpdateUserStatus
+// 同构）。
+func userTestSetStatus(t *testing.T, db *bun.DB, id int64, v int8) {
 	t.Helper()
-	if err := db.Model(&model.User{}).Where("id = ?", id).Update("user_status", v).Error; err != nil {
+	if _, err := db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", id).
+		Set("user_status = ?", v).
+		Exec(context.Background()); err != nil {
 		t.Fatalf("置 user_status=%d 失败: %v", v, err)
 	}
 }
 
-// userTestSetEpoch 直接置 epoch 列构造边界前提（GORM 更新，不走被测方法）。
-func userTestSetEpoch(t *testing.T, db *gorm.DB, id int64, v int16) {
+// userTestSetEpoch 直接置 epoch 列构造边界前提（列级 UPDATE，不走被测方法）。
+func userTestSetEpoch(t *testing.T, db *bun.DB, id int64, v int16) {
 	t.Helper()
-	if err := db.Model(&model.User{}).Where("id = ?", id).Update("epoch", v).Error; err != nil {
+	if _, err := db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", id).
+		Set("epoch = ?", v).
+		Exec(context.Background()); err != nil {
 		t.Fatalf("置 epoch=%d 失败: %v", v, err)
 	}
 }
@@ -376,7 +379,7 @@ func TestUserRepoUpdateLastLogin(t *testing.T) {
 		t.Fatalf("同值二次更新应幂等成功，不误报 ErrRecordNotFound: %v", err)
 	}
 
-	if err := rp.UpdateLastLogin(ctx, 404, t2); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateLastLogin(ctx, 404, t2); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -421,7 +424,7 @@ func TestUserRepoUpdateProfileColumns(t *testing.T) {
 		t.Fatalf("同值二次更新应幂等成功: %v", err)
 	}
 
-	if err := rp.UpdateProfileColumns(ctx, 404, &nick2, nil); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateProfileColumns(ctx, 404, &nick2, nil); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -521,7 +524,7 @@ func TestUserRepoUpdateContactColumns(t *testing.T) {
 	}
 
 	// 行不存在 → ErrRecordNotFound。
-	if err := rp.UpdateContactColumns(ctx, 404, &phone, nil, &one, nil); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateContactColumns(ctx, 404, &phone, nil, &one, nil); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("不存在用户应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -658,7 +661,7 @@ func TestUserProfileReadWrite(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := rp.GetProfile(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.GetProfile(ctx, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("GetProfile 未命中应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -830,7 +833,10 @@ func TestUserRepoUpdateUserStatus(t *testing.T) {
 	// updated_at 回拨 1 分钟（DATETIME 秒级精度下，避免与 Create 同秒导致
 	// 刷新断言误判——口径同 userTestSetEpoch 的直接置列前提构造）。
 	before := time.Now().Add(-time.Minute).Truncate(time.Second)
-	if err := db.Model(&model.User{}).Where("id = ?", u.ID).Update("updated_at", before).Error; err != nil {
+	if _, err := db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", u.ID).
+		Set("updated_at = ?", before).
+		Exec(ctx); err != nil {
 		t.Fatalf("回拨 updated_at 失败: %v", err)
 	}
 
@@ -860,7 +866,7 @@ func TestUserRepoUpdateUserStatus(t *testing.T) {
 	}
 
 	// 不存在 → ErrRecordNotFound。
-	if err := rp.UpdateUserStatus(ctx, 404, 0); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateUserStatus(ctx, 404, 0); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -877,7 +883,10 @@ func TestUserRepoUpdateMfaRequired(t *testing.T) {
 		t.Fatalf("Create 失败: %v", err)
 	}
 	before := time.Now().Add(-time.Minute).Truncate(time.Second)
-	if err := db.Model(&model.User{}).Where("id = ?", u.ID).Update("updated_at", before).Error; err != nil {
+	if _, err := db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", u.ID).
+		Set("updated_at = ?", before).
+		Exec(ctx); err != nil {
 		t.Fatalf("回拨 updated_at 失败: %v", err)
 	}
 	epochBefore := u.Epoch
@@ -911,7 +920,7 @@ func TestUserRepoUpdateMfaRequired(t *testing.T) {
 	}
 
 	// 不存在 → ErrRecordNotFound。
-	if err := rp.UpdateMfaRequired(ctx, 404, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := rp.UpdateMfaRequired(ctx, 404, 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -935,8 +944,11 @@ func TestUserRepoAnonymizeUser(t *testing.T) {
 	if err := rp.Create(ctx, u); err != nil {
 		t.Fatalf("Create 失败: %v", err)
 	}
-	if err := db.Model(&model.User{}).Where("id = ?", u.ID).
-		Updates(map[string]any{"mfa_required": 1, "epoch": 3}).Error; err != nil {
+	if _, err := db.NewUpdate().Model((*model.User)(nil)).
+		Where("id = ?", u.ID).
+		Set("mfa_required = ?", 1).
+		Set("epoch = ?", 3).
+		Exec(ctx); err != nil {
 		t.Fatalf("构造 mfa_required/epoch 前提失败: %v", err)
 	}
 
@@ -958,14 +970,14 @@ func TestUserRepoAnonymizeUser(t *testing.T) {
 		{UserID: u.ID, Kind: "recovery_code", Secret: []byte("meta"), CreatedAt: now, UpdatedAt: now},
 	}
 	for i := range credRows {
-		if err := db.Create(&credRows[i]).Error; err != nil {
+		if _, err := db.NewInsert().Model(&credRows[i]).Exec(ctx); err != nil {
 			t.Fatalf("凭证 Create 失败: %v", err)
 		}
 	}
-	if err := db.Create(&model.UserCredentialWebauthn{
+	if _, err := db.NewInsert().Model(&model.UserCredentialWebauthn{
 		ID: credRows[2].ID, UserID: u.ID, Kind: "webauthn",
 		PublicKey: []byte("cose"), CredentialID: "cred-1", SignCount: 5,
-	}).Error; err != nil {
+	}).Exec(ctx); err != nil {
 		t.Fatalf("WebAuthn 附加行 Create 失败: %v", err)
 	}
 
@@ -975,7 +987,7 @@ func TestUserRepoAnonymizeUser(t *testing.T) {
 		{UserID: u.ID, ProviderKey: "wechat_union", OpenID: "union-1", CreatedAt: now},
 	}
 	for i := range bindRows {
-		if err := db.Create(&bindRows[i]).Error; err != nil {
+		if _, err := db.NewInsert().Model(&bindRows[i]).Exec(ctx); err != nil {
 			t.Fatalf("绑定 Create 失败: %v", err)
 		}
 	}
@@ -1022,14 +1034,13 @@ func TestUserRepoAnonymizeUser(t *testing.T) {
 	}
 
 	// 凭证 / WebAuthn 附加表 / 绑定全清（含 Union 连带行）。
-	var n int64
-	if err := db.Model(&model.UserCredential{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+	if n, err := db.NewSelect().Model((*model.UserCredential)(nil)).Where("user_id = ?", u.ID).Count(ctx); err != nil || n != 0 {
 		t.Errorf("凭证应全清: n=%d err=%v", n, err)
 	}
-	if err := db.Model(&model.UserCredentialWebauthn{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+	if n, err := db.NewSelect().Model((*model.UserCredentialWebauthn)(nil)).Where("user_id = ?", u.ID).Count(ctx); err != nil || n != 0 {
 		t.Errorf("WebAuthn 附加表应全清: n=%d err=%v", n, err)
 	}
-	if err := db.Model(&model.UserThirdpartyBind{}).Where("user_id = ?", u.ID).Count(&n).Error; err != nil || n != 0 {
+	if n, err := db.NewSelect().Model((*model.UserThirdpartyBind)(nil)).Where("user_id = ?", u.ID).Count(ctx); err != nil || n != 0 {
 		t.Errorf("绑定（含 Union 连带行）应全清: n=%d err=%v", n, err)
 	}
 
@@ -1044,7 +1055,7 @@ func TestUserRepoAnonymizeUser(t *testing.T) {
 	}
 
 	// 不存在用户 → ErrRecordNotFound。
-	if _, err := rp.AnonymizeUser(ctx, 404, at); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.AnonymizeUser(ctx, 404, at); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("不存在应 ErrRecordNotFound, got %v", err)
 	}
 }

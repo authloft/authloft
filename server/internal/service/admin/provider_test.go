@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
+	"database/sql"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
@@ -114,7 +114,7 @@ func (f *fakeStore) FindByKey(_ context.Context, key string) (*model.Provider, e
 	}
 	row, ok := f.rows[key]
 	if !ok {
-		return nil, fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("provider repo: find by key: %w", sql.ErrNoRows)
 	}
 	return row, nil
 }
@@ -399,8 +399,8 @@ func TestUpdateProviderValidation(t *testing.T) {
 			svc := adminsvc.NewService(store, inv, proxyclient.NewPoolSet())
 			if err := svc.UpdateProvider(context.Background(), structBody(t, tc.body)); tc.wantID == "invalid" && !errors.Is(err, adminsvc.ErrInvalidRequest) {
 				t.Fatalf("err = %v, want ErrInvalidRequest", err)
-			} else if tc.wantID == "notfound" && !errors.Is(err, gorm.ErrRecordNotFound) {
-				t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+			} else if tc.wantID == "notfound" && !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("err = %v, want sql.ErrNoRows", err)
 			}
 			if len(store.updated) != 0 || len(inv.snapshot()) != 0 {
 				t.Fatalf("非法请求不得落库 / 失效: updated=%d invalidated=%v", len(store.updated), inv.snapshot())
@@ -504,8 +504,8 @@ func TestDeleteProvider(t *testing.T) {
 	})
 	t.Run("不存在 404", func(t *testing.T) {
 		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
-		if err := svc.DeleteProvider(ctx, "missing"); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+		if err := svc.DeleteProvider(ctx, "missing"); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("空 key", func(t *testing.T) {
@@ -546,8 +546,8 @@ func TestSetProviderEnabled(t *testing.T) {
 	})
 	t.Run("不存在 404", func(t *testing.T) {
 		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
-		if err := svc.SetProviderEnabled(ctx, "missing", true); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+		if err := svc.SetProviderEnabled(ctx, "missing", true); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 }
@@ -590,11 +590,11 @@ func TestSortProviders(t *testing.T) {
 	})
 	t.Run("不存在 key 透传 not found", func(t *testing.T) {
 		store := newFakeStore()
-		store.sortErr = fmt.Errorf("provider repo: update sort orders: key %q: %w", "missing", gorm.ErrRecordNotFound)
+		store.sortErr = fmt.Errorf("provider repo: update sort orders: key %q: %w", "missing", sql.ErrNoRows)
 		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		err := svc.SortProviders(ctx, []adminsvc.SortItem{{ProviderKey: "missing", SortOrder: 1}})
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 }
@@ -885,8 +885,8 @@ func TestTestProvider(t *testing.T) {
 	})
 	t.Run("不存在 404", func(t *testing.T) {
 		svc := adminsvc.NewService(newFakeStore(), &fakeInvalidator{}, proxyclient.NewPoolSet())
-		if err := svc.TestProvider(ctx, "missing", "a@b.c"); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+		if err := svc.TestProvider(ctx, "missing", "a@b.c"); !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("Ext 配置缺失拒绝", func(t *testing.T) {

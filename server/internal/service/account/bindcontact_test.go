@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/cache"
@@ -58,7 +58,7 @@ type bindContactUpdate struct {
 
 func (f *fakeBindUsers) FindByID(context.Context, int64) (*model.User, error) {
 	if f.self == nil {
-		return nil, fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)
 	}
 	return f.self, nil
 }
@@ -67,14 +67,14 @@ func (f *fakeBindUsers) FindByPhone(_ context.Context, phone string) (*model.Use
 	if u, ok := f.occupied[phone]; ok {
 		return u, nil
 	}
-	return nil, fmt.Errorf("user repo: find by phone: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by phone: %w", sql.ErrNoRows)
 }
 
 func (f *fakeBindUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
 	if u, ok := f.occupied[email]; ok {
 		return u, nil
 	}
-	return nil, fmt.Errorf("user repo: find by email: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by email: %w", sql.ErrNoRows)
 }
 
 func (f *fakeBindUsers) UpdateContactColumns(_ context.Context, id int64, phone, email *string, phoneVerified, emailVerified *int8) error {
@@ -620,7 +620,7 @@ func TestBindVerifyTOCTOU(t *testing.T) {
 		env := newBindTestEnv()
 		env.store.verifyRes = cache.VerifyOK
 		// 同 repo 列级更新的冲突判别链（UserRepo.Create 的 1062 包装同源）。
-		env.users.updateErr = fmt.Errorf("user repo: update contact columns: %w: %w", repo.ErrUserDuplicate, gorm.ErrDuplicatedKey)
+		env.users.updateErr = fmt.Errorf("user repo: update contact columns: %w: %w", repo.ErrUserDuplicate, errors.New("duplicate entry"))
 		err := env.svc.BindPhone(context.Background(), bindTestUID,
 			BindPhoneInput{Step: bindStepVerify, Target: "13800138000", Code: "123456"})
 		if !errors.Is(err, ErrBindTargetTaken) {
@@ -633,7 +633,7 @@ func TestBindVerifyTOCTOU(t *testing.T) {
 	t.Run("user gone", func(t *testing.T) {
 		env := newBindTestEnv()
 		env.store.verifyRes = cache.VerifyOK
-		env.users.updateErr = fmt.Errorf("user repo: update contact columns: %w", gorm.ErrRecordNotFound)
+		env.users.updateErr = fmt.Errorf("user repo: update contact columns: %w", sql.ErrNoRows)
 		err := env.svc.BindEmail(context.Background(), bindTestUID,
 			BindEmailInput{Step: bindStepVerify, Target: "user@example.com", Code: "123456"})
 		if !errors.Is(err, ErrBindUserNotFound) {

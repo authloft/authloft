@@ -18,7 +18,7 @@ import (
 // NewClient 按 cfg.Redis 初始化 rueidis 客户端（§3.2 行 273-277：addr /
 // password / db）。部署形态为单机 Redis（§3.2），ForceSingleClient 跳过
 // 集群探测；rueidis 连接按需自动伸缩，无 go-redis PoolSize 对应项。
-// 返回前 PING 一次确认连通——fail-fast 口径与 DB 侧 gorm.Open 自动 ping
+// 返回前 PING 一次确认连通——fail-fast 口径与 DB 侧 repo.Open 建连后 ping
 // 一致。
 func NewClient(ctx context.Context, cfg *config.Config) (*RedisClient, error) {
 	client, err := rueidis.NewClient(rueidis.ClientOption{

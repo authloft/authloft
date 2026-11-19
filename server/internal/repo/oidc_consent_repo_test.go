@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
@@ -57,15 +55,13 @@ func oidcConsentTestSetup(t *testing.T) *OidcConsentRepo {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewOidcConsentRepo(db)
 }
 
 // TestOidcConsentGetMissing（env-skip）：空表取已授权并集 → 未命中返回包装
-// 的 gorm.ErrRecordNotFound（从未同意属正常稳态，空集口径归上层 §4.5）。
+// 的 sql.ErrNoRows（从未同意属正常稳态，空集口径归上层 §4.5）。
 func TestOidcConsentGetMissing(t *testing.T) {
 	rp := oidcConsentTestSetup(t)
 	ctx := context.Background()
@@ -74,13 +70,13 @@ func TestOidcConsentGetMissing(t *testing.T) {
 	if got != "" {
 		t.Errorf("未命中应返回空串, got %q", got)
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 }
 
 // TestOidcConsentMerge（env-skip）：MergeConsent 行锁合并原语——首次写入
-// 整行插入（created_at / updated_at 由 GORM 回填，回调现值为空集）→ 同键
+// 整行插入（created_at / updated_at 由 repo 写入路径补齐，回调现值为空集）→ 同键
 // 再写走 uk_user_client 冲突更新，回调现值为已存值、scopes 刷新且
 // created_at 保持首次授权时刻 → 不同键互不串行。回调返回值即写回值
 // （并集计算归上层 §4.5，本文件以固定值回调模拟）。
@@ -166,5 +162,8 @@ func TestOidcConsentMerge(t *testing.T) {
 
 // dbTakeConsent 按唯一键直读授权行（测试断言列值用）。
 func dbTakeConsent(ctx context.Context, rp *OidcConsentRepo, userID int64, clientID string, row *model.OidcConsent) error {
-	return rp.db.WithContext(ctx).Take(row, "user_id = ? AND client_id = ?", userID, clientID).Error
+	return rp.db.NewSelect().Model(row).
+		Where("user_id = ? AND client_id = ?", userID, clientID).
+		Limit(1).
+		Scan(ctx)
 }

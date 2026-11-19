@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
-
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
@@ -59,9 +57,7 @@ func oidcTokenTestSetup(t *testing.T) *OidcTokenRepo {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewOidcTokenRepo(db)
 }
@@ -123,7 +119,7 @@ func TestOidcTokenRepoCreateAndFind(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := rp.FindByTokenHash(ctx, oidcTestHash('z')); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := rp.FindByTokenHash(ctx, oidcTestHash('z')); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 

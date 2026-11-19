@@ -24,7 +24,7 @@
 // （复用 mapWriteError 口径）；本层返回可判别哨兵错误（同 provider.go 包注释）：
 //   - ErrInvalidRequest 参数 / 校验类（映射 invalid_argument + code=invalid_request）；
 //   - ErrDuplicateKey Create 命中 uk_client_id（映射 already_exists）；
-//   - gorm.ErrRecordNotFound 资源不存在（映射 not_found）；
+//   - sql.ErrNoRows 资源不存在（映射 not_found）；
 //   - 其余错误原样上抛，由错误包装拦截器消毒为 internal。
 package admin
 
@@ -37,7 +37,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	clientpb "authloft/gen/go/client"
 	"authloft/internal/repo"
@@ -114,8 +114,9 @@ type SsoClientInput struct {
 }
 
 // OidcClientInput CreateOidcClient 入参（proto CreateOidcClientRequest 拆解）：
-// SSO 字段基线 + OIDC 专属（§5.5 行 1264「额外」）。TTL 为 0 表示未提交，
-// INSERT 落 DDL 默认（3600 / 2592000，gorm default tag 由 DB 填充）。
+// SSO 字段基线 + OIDC 专属（§5.5「额外」）。TTL 为 0 表示未提交，
+// INSERT 落 DDL 默认（3600 / 2592000，model default tag 零值列经 DEFAULT
+// 占位由 DB 填充，CODE_GUIDE §3.5）。
 type OidcClientInput struct {
 	ClientID        string
 	Name            string
@@ -174,7 +175,7 @@ type SsoClientDetail struct {
 
 // ProviderKeyFinder oauth_providers key 存在性校验（§5.5）依赖的窄接口
 // （消费方定义，*repo.ProviderRepo 天然满足）：FindByKey 未命中返回包装的
-// gorm.ErrRecordNotFound。
+// sql.ErrNoRows。
 type ProviderKeyFinder interface {
 	FindByKey(ctx context.Context, providerKey string) (*model.Provider, error)
 }
@@ -303,10 +304,10 @@ func (s *ClientService) CreateSsoClient(ctx context.Context, in SsoClientInput) 
 	return nil
 }
 
-// CreateOidcClient（§5.5 行 1260）：SSO 基线 + OIDC 专属——
-// scopes 逗号串落库（空组落 DDL default 'openid,profile,email'，gorm
-// default tag 零值列由 DB 填充）；TTL 0 落 DDL 默认（3600 / 2592000）、
-// 非 0 须在值域内。授权类型不建模（§5.5 行 1268）。
+// CreateOidcClient（§5.5）：SSO 基线 + OIDC 专属——
+// scopes 逗号串落库（空组落 DDL default 'openid,profile,email'，model
+// default tag 零值列经 DEFAULT 占位由 DB 填充，CODE_GUIDE §3.5）；TTL 0 落
+// DDL 默认（3600 / 2592000）、非 0 须在值域内。授权类型不建模（§5.5）。
 func (s *ClientService) CreateOidcClient(ctx context.Context, in OidcClientInput) error {
 	clientID, err := resolveClientID(in.ClientID)
 	if err != nil {
@@ -359,7 +360,7 @@ func (s *ClientService) GetSsoClient(ctx context.Context, id int64) (*SsoClientD
 	}
 	row, err := s.store.FindSsoClientByID(ctx, id)
 	if err != nil {
-		return nil, err // 含 gorm.ErrRecordNotFound → 404
+		return nil, err // 含 sql.ErrNoRows → 404
 	}
 	uris, methods, providers, err := parseSsoClientLoginConfig(row)
 	if err != nil {
@@ -526,7 +527,7 @@ func (s *ClientService) UpdateOidcClient(ctx context.Context, id int64, p OidcCl
 }
 
 // DeleteSsoClient（§5.5 行 1259）：硬删（repo.Delete 按主键，
-// 行不存在 → gorm.ErrRecordNotFound → 404）。不触发会话失效——docs 未
+// 行不存在 → sql.ErrNoRows → 404）。不触发会话失效——docs 未
 // 定义客户端删除的联动行为，默认（待定）。
 func (s *ClientService) DeleteSsoClient(ctx context.Context, id int64) error {
 	if id <= 0 {
@@ -580,7 +581,8 @@ func marshalRedirectURIs(uris []string) ([]byte, error) {
 // 非空组必含 openid（§5.5：注册 scopes 必含 openid，Create / Update 同
 // 口径，openid 是 ID Token 签发与 sub 派生的前提）；条目空串或含逗号
 // （会破坏逗号串表示）→ invalid_request；空组返回空串，INSERT 落 DDL
-// default 'openid,profile,email'（gorm default tag，本就含 openid）。
+// default 'openid,profile,email'（model default tag 经 DEFAULT 占位落 DB
+// 默认值，本就含 openid）。
 func joinScopes(scopes []string) (string, error) {
 	if len(scopes) > 0 && !slices.Contains(scopes, "openid") {
 		return "", ErrInvalidRequest
@@ -656,7 +658,7 @@ func (s *ClientService) validateOauthProviderKeys(ctx context.Context, keys []st
 	for _, k := range keys {
 		_, err := s.providers.FindByKey(ctx, k)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return ErrInvalidRequest
 			}
 			return fmt.Errorf("admin service: check oauth provider key %q: %w", k, err)

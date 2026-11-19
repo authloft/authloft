@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/factor"
 	"authloft/internal/repo"
@@ -111,7 +111,7 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 
 	cred, err := store.FindByUserAndKind(ctx.Context, uid, credentialKind)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			// 未签发 / 已全部消费：该因子不可用，等同作废（§1.6 行 248）。
 			return &factor.VerifyResult{Status: StatusCodeExpired}, nil
 		}

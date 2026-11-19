@@ -16,15 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/migrate"
 	"authloft/internal/repo/model"
 )
 
 // eventLogTestSetup 清库 + 建表 + 注册测后零残留清理，返回就绪的
-// EventLogRepo 与 GORM 连接（后者供用例回读断言）。
-func eventLogTestSetup(t *testing.T) (*EventLogRepo, *gorm.DB) {
+// EventLogRepo 与 bun 连接（后者供用例回读断言）。
+func eventLogTestSetup(t *testing.T) (*EventLogRepo, *bun.DB) {
 	t.Helper()
 	dsn := os.Getenv("UC_TEST_MYSQL_DSN")
 	if dsn == "" {
@@ -58,9 +58,7 @@ func eventLogTestSetup(t *testing.T) (*EventLogRepo, *gorm.DB) {
 		t.Fatalf("Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return NewEventLogRepo(db), db
 }
@@ -92,7 +90,7 @@ func TestEventLogRepoBatchInsert(t *testing.T) {
 	}
 
 	var got []model.EventLog
-	if err := db.WithContext(ctx).Order("id ASC").Find(&got).Error; err != nil {
+	if err := db.NewSelect().Model(&got).OrderExpr("id ASC").Scan(ctx); err != nil {
 		t.Fatalf("回读失败: %v", err)
 	}
 	if len(got) != 3 {
@@ -146,17 +144,15 @@ func TestEventLogRepoBatchInsert(t *testing.T) {
 
 	// detail NULL 语义按 SQL 直查确认：仅行 1 为 NULL。
 	var nullCount, emptyCount int64
-	if err := db.WithContext(ctx).
-		Raw("SELECT COUNT(*) FROM event_log WHERE detail IS NULL").
-		Scan(&nullCount).Error; err != nil {
+	if err := db.NewRaw("SELECT COUNT(*) FROM event_log WHERE detail IS NULL").
+		Scan(ctx, &nullCount); err != nil {
 		t.Fatalf("查 detail NULL 计数失败: %v", err)
 	}
 	if nullCount != 1 {
 		t.Errorf("detail IS NULL = %d 行, want 1", nullCount)
 	}
-	if err := db.WithContext(ctx).
-		Raw("SELECT COUNT(*) FROM event_log WHERE detail IS NOT NULL AND OCTET_LENGTH(detail) = 0").
-		Scan(&emptyCount).Error; err != nil {
+	if err := db.NewRaw("SELECT COUNT(*) FROM event_log WHERE detail IS NOT NULL AND OCTET_LENGTH(detail) = 0").
+		Scan(ctx, &emptyCount); err != nil {
 		t.Fatalf("查 detail 空 BLOB 计数失败: %v", err)
 	}
 	if emptyCount != 1 {
@@ -183,8 +179,8 @@ func TestEventLogRepoBatchInsertChunks(t *testing.T) {
 		t.Fatalf("BatchInsert %d 行失败: %v", n, err)
 	}
 
-	var count int64
-	if err := db.WithContext(ctx).Model(&model.EventLog{}).Count(&count).Error; err != nil {
+	count, err := db.NewSelect().Model((*model.EventLog)(nil)).Count(ctx)
+	if err != nil {
 		t.Fatalf("计数失败: %v", err)
 	}
 	if count != int64(n) {
@@ -192,7 +188,7 @@ func TestEventLogRepoBatchInsertChunks(t *testing.T) {
 	}
 
 	var got []model.EventLog
-	if err := db.WithContext(ctx).Order("id ASC").Find(&got).Error; err != nil {
+	if err := db.NewSelect().Model(&got).OrderExpr("id ASC").Scan(ctx); err != nil {
 		t.Fatalf("回读失败: %v", err)
 	}
 	if len(got) != n {
@@ -225,8 +221,8 @@ func TestEventLogRepoBatchInsertEmpty(t *testing.T) {
 	if err := rp.BatchInsert(ctx, []model.EventLog{}); err != nil {
 		t.Errorf("BatchInsert(空切片) 应 nil, got %v", err)
 	}
-	var count int64
-	if err := db.WithContext(ctx).Model(&model.EventLog{}).Count(&count).Error; err != nil {
+	count, err := db.NewSelect().Model((*model.EventLog)(nil)).Count(ctx)
+	if err != nil {
 		t.Fatalf("计数失败: %v", err)
 	}
 	if count != 0 {
@@ -235,7 +231,7 @@ func TestEventLogRepoBatchInsertEmpty(t *testing.T) {
 }
 
 // TestEventLogRepoListByUser（env-skip）：user 维度 + event 过滤分页
-//（GetUserEvents「该用户登录记录」的数据源）——只出目标用户的行、event
+// （GetUserEvents「该用户登录记录」的数据源）——只出目标用户的行、event
 // 非空时再过滤、id DESC 全序稳定、分页归一（page 1 起、pageSize 默认 20 /
 // clamp 100）、total 为过滤后总数。
 func TestEventLogRepoListByUser(t *testing.T) {
@@ -390,8 +386,8 @@ func TestEventLogRepoList(t *testing.T) {
 		}
 	}
 	// 注入未执行自证：表仍在。
-	var count int64
-	if err := db.WithContext(ctx).Model(&model.EventLog{}).Count(&count).Error; err != nil || count != 5 {
+	count, err := db.NewSelect().Model((*model.EventLog)(nil)).Count(ctx)
+	if err != nil || count != 5 {
 		t.Fatalf("表应完好 5 行: rows=%d err=%v", count, err)
 	}
 

@@ -166,8 +166,8 @@ func assertNoTables(db *sql.DB) error {
 	return nil
 }
 
-// setupTestDB env-skip + 库准备 + 清理：返回 gorm 连接（经 repo.Open，
-// 连接池随 t.Cleanup 关闭）。用例开始 drop 全表 → migrate.Up 建正式
+// setupTestDB env-skip + 库准备 + 清理：返回 bun 连接（经 repo.Open，
+// 连接随 t.Cleanup 关闭）。用例开始 drop 全表 → migrate.Up 建正式
 // 表结构；结束后 drop 全表 + assertNoTables（零残留自证）。
 func setupTestDB(t *testing.T) (*repo.SettingsRepo, *sql.DB) {
 	t.Helper()
@@ -211,9 +211,7 @@ func setupTestDB(t *testing.T) (*repo.SettingsRepo, *sql.DB) {
 		t.Fatalf("repo.Open 失败: %v", err)
 	}
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = db.Close()
 	})
 	return repo.NewSettingsRepo(db), raw
 }

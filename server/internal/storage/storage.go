@@ -15,10 +15,9 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-
-	"gorm.io/gorm"
 
 	"authloft/internal/provider"
 )
@@ -61,7 +60,7 @@ func (r *Resolver) Resolve(ctx context.Context, storageProviderKey string) (Stor
 	}
 	p, err := r.get.Get(ctx, storageProviderKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %q not found", ErrNotConfigured, storageProviderKey)
 		}
 		return nil, fmt.Errorf("storage: load provider: %w", err)

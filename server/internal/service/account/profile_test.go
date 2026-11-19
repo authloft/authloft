@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/internal/repo/model"
@@ -54,7 +54,7 @@ func (f *fakeProfileStore) GetProfile(_ context.Context, _ int64) (*model.UserPr
 		return nil, f.getErr
 	}
 	if f.getMissing || f.profile == nil {
-		return nil, fmt.Errorf("user repo: get profile: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: get profile: %w", sql.ErrNoRows)
 	}
 	return f.profile, nil
 }
@@ -211,15 +211,15 @@ func TestProfileUpdateNoop(t *testing.T) {
 	}
 }
 
-// TestProfileUpdateUserNotFound user 行不存在 → gorm.ErrRecordNotFound
+// TestProfileUpdateUserNotFound user 行不存在 → sql.ErrNoRows
 // 包装透传（handler 转 not_found），零写库。
 func TestProfileUpdateUserNotFound(t *testing.T) {
-	store := &fakeProfileStore{findErr: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}
+	store := &fakeProfileStore{findErr: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}
 	svc := NewProfileService(store)
 
 	err := svc.UpdateProfile(context.Background(), 404, &accountv1.UpdateProfileRequest{Nickname: strPtr("x")})
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("err = %v, want gorm.ErrRecordNotFound 透传", err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("err = %v, want sql.ErrNoRows 透传", err)
 	}
 	if n := len(store.columnCalls); n != 0 {
 		t.Errorf("UpdateProfileColumns calls = %d, want 0", n)

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/logx"
 )
@@ -41,7 +41,7 @@ type RedisPinger interface {
 // StandardProbes 标准探活集：DB 经 sql.DB Ping（连通级，等价 SELECT 1）、
 // Redis PING。句柄与优雅关闭链路同一组（assembled.db / assembled.rdb）。
 // nil 句柄恒判失败——装配未完成即被探针命中属异常路径，如实报不健康。
-func StandardProbes(db *gorm.DB, rdb RedisPinger) []Probe {
+func StandardProbes(db *bun.DB, rdb RedisPinger) []Probe {
 	return []Probe{
 		{
 			Name: "db",
@@ -49,11 +49,7 @@ func StandardProbes(db *gorm.DB, rdb RedisPinger) []Probe {
 				if db == nil {
 					return errors.New("db handle not wired")
 				}
-				sqlDB, err := db.DB()
-				if err != nil {
-					return err
-				}
-				return sqlDB.PingContext(ctx)
+				return db.PingContext(ctx)
 			},
 		},
 		{

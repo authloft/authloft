@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/factor"
 	core "authloft/internal/otp"
@@ -100,7 +100,7 @@ func (f *Factor) Start(ctx *factor.FactorContext) (*factor.StepResult, error) {
 			return &factor.StepResult{Status: StatusInvalidRequest}, nil
 		}
 		user, err := f.findTarget(ctx, target)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		// 存在性口径按 flow 分支（§7.4 注册 / 重置复用同一引擎）：
@@ -205,7 +205,7 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 			return &factor.VerifyResult{Passed: true}, nil
 		}
 		user, err := f.findTarget(ctx, target)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		if user == nil {
@@ -296,7 +296,7 @@ func (f *Factor) mfaTarget(ctx *factor.FactorContext) (string, error) {
 	}
 	user, err := ctx.Users.FindByID(ctx.Context, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", err

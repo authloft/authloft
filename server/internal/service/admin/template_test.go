@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/cache"
 	"authloft/internal/pages"
@@ -23,7 +23,7 @@ import (
 )
 
 // fakeTemplateStore templateStore 的内存实现：模拟 UK 冲突、未命中
-// gorm.ErrRecordNotFound、Create 回填 id（模拟 gorm default tag 回填语义）。
+// sql.ErrNoRows、Create 回填 id（模拟真库自增主键回填语义）。
 type fakeTemplateStore struct {
 	mu             sync.Mutex
 	rows           map[int64]*model.Template
@@ -45,7 +45,7 @@ func (f *fakeTemplateStore) FindByKey(_ context.Context, key string) (*model.Tem
 			return &cp, nil
 		}
 	}
-	return nil, fmt.Errorf("fake: find template by key: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("fake: find template by key: %w", sql.ErrNoRows)
 }
 
 func (f *fakeTemplateStore) List(_ context.Context) ([]model.Template, error) {
@@ -84,7 +84,7 @@ func (f *fakeTemplateStore) Update(_ context.Context, t *model.Template) error {
 		}
 	}
 	if _, ok := f.rows[t.ID]; !ok {
-		return fmt.Errorf("fake: update template: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: update template: %w", sql.ErrNoRows)
 	}
 	cp := *t
 	f.rows[t.ID] = &cp
@@ -95,7 +95,7 @@ func (f *fakeTemplateStore) Delete(_ context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.rows[id]; !ok {
-		return fmt.Errorf("fake: delete template: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("fake: delete template: %w", sql.ErrNoRows)
 	}
 	delete(f.rows, id)
 	return nil

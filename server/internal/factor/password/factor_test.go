@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/factor"
 	"authloft/internal/factor/ipres"
@@ -198,7 +198,7 @@ func TestVerifyAlreadyBannedSkipsCredential(t *testing.T) {
 
 func TestVerifyUnknownUserUsesIPHashRef(t *testing.T) {
 	fails := &fakeFails{count: 1}
-	f := New(fakeUsers{err: gorm.ErrRecordNotFound}, fails, &fakeReset{}, fakeIP{ip: "10.0.0.1"}, DefaultOptions())
+	f := New(fakeUsers{err: sql.ErrNoRows}, fails, &fakeReset{}, fakeIP{ip: "10.0.0.1"}, DefaultOptions())
 
 	res, err := f.Verify(newCtx(nil, nil, "ghost", "whatever"))
 	if err != nil {
@@ -237,7 +237,7 @@ func TestVerifyMissingCredentialCountsAsFailure(t *testing.T) {
 		Context:     context.Background(),
 		Payload:     &factor.Payload{Username: "alice", Password: "whatever"},
 		Users:       fakeUsers{user: user},
-		Credentials: fakeCredentials{err: gorm.ErrRecordNotFound},
+		Credentials: fakeCredentials{err: sql.ErrNoRows},
 	}
 	res, err := f.Verify(ctx)
 	if err != nil {
@@ -407,7 +407,7 @@ func TestVerifySuccessClearsAccumulatedFailures(t *testing.T) {
 func TestUserRefResolverUsesRequestIP(t *testing.T) {
 	sum := sha256.Sum256([]byte("ghost"))
 	wantHash := hex.EncodeToString(sum[:])
-	r := UserRefResolver{Users: fakeUsers{err: gorm.ErrRecordNotFound}, IP: ipres.Resolver{}}
+	r := UserRefResolver{Users: fakeUsers{err: sql.ErrNoRows}, IP: ipres.Resolver{}}
 
 	ctx := orchestrator.WithRequestInfo(context.Background(), orchestrator.RequestInfo{IP: "198.51.100.7"})
 	ref, err := r.UserRef(ctx, "ghost")

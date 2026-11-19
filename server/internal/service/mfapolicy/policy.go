@@ -23,7 +23,7 @@ import (
 	"context"
 	"errors"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/repo/model"
 	"authloft/internal/settings"
@@ -214,7 +214,7 @@ func bound(ctx context.Context, d Deps, uid int64, user *model.User, factor stri
 		}
 		row, err := d.Creds.FindByUserAndKind(ctx, uid, factor)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return false, nil
 			}
 			return false, err

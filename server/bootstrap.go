@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"gorm.io/gorm"
+	"github.com/uptrace/bun"
 
 	connectrpc "connectrpc.com/connect"
 
@@ -144,7 +144,7 @@ const shutdownTimeout = 10 * time.Second
 // assembled 正常模式装配产物（§3.1 启动链）：基础设施、共享单例与各域 service。
 // cron 仍为 TODO（§3.12）。
 type assembled struct {
-	db  *gorm.DB
+	db  *bun.DB
 	rdb *cache.RedisClient
 	// healthProbes /health 探活集：生产装配为空、由注册点回退
 	// app.StandardProbes(db, rdb)——探活句柄与优雅关闭链路同一组；
@@ -235,7 +235,7 @@ type assembled struct {
 	// 复用共享 sessionTokens 解析请求令牌。
 	consentClaims accounthandler.ConsentClaimsReader
 
-	// repos 全进程共享仓储（repo 只持 *gorm.DB、无状态，复用等价）。
+	// repos 全进程共享仓储（repo 只持 *bun.DB、无状态，复用等价）。
 	repos *repoSet
 
 	// admin admin 域四族 service。
@@ -251,7 +251,7 @@ type assembled struct {
 	accountProfile *accountsvc.ProfileService
 }
 
-// repoSet 装配层共享仓储（repo 只持 *gorm.DB、无状态，全进程同一实例与多处 new 等价）。
+// repoSet 装配层共享仓储（repo 只持 *bun.DB、无状态，全进程同一实例与多处 new 等价）。
 type repoSet struct {
 	Users       *repo.UserRepo
 	Creds       *repo.CredentialRepo
@@ -294,7 +294,7 @@ type infraSet struct {
 }
 
 // newRepoSet 构造共享仓储集合（装配层一次）。
-func newRepoSet(db *gorm.DB) *repoSet {
+func newRepoSet(db *bun.DB) *repoSet {
 	return &repoSet{
 		Users:       repo.NewUserRepo(db),
 		Creds:       repo.NewCredentialRepo(db),
@@ -1086,17 +1086,12 @@ func (a *assembled) close(ctx context.Context) {
 	a.closeInfra()
 }
 
-// closeSQLDB 关闭 GORM 底层 *sql.DB；取不到或关闭失败均告警，不再静默跳过。
-func closeSQLDB(db *gorm.DB) {
+// closeSQLDB 关闭 bun 底层 *sql.DB（bun.DB 内嵌同句柄）；关闭失败告警，不静默跳过。
+func closeSQLDB(db *bun.DB) {
 	if db == nil {
 		return
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		closeWarn("sql.DB()", err)
-		return
-	}
-	closeWarn("sql.DB.Close", sqlDB.Close())
+	closeWarn("sql.DB.Close", db.Close())
 }
 
 // serveErr 运行期致命错误带阶段标识后原样上抛：main.go 只有一条汇总日志，

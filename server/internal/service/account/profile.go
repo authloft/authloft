@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/internal/dto"
@@ -63,7 +63,7 @@ func NewProfileService(users ProfileStore) *ProfileService {
 }
 
 // UpdateProfile（§3.2 行 837）：当前用户资料部分更新，编排链——
-//  1. 存在性先判（user 行不存在 → gorm.ErrRecordNotFound 透传，handler 转
+//  1. 存在性先判（user 行不存在 → sql.ErrNoRows 透传，handler 转
 //     not_found，口径同 GetProfile；先于任何写操作，空 body 同样适用）；
 //  2. user 表资料列：nickname / avatar_url has 位判定（指针非 nil = 显式
 //     设置，含空串 = 显式清空），仅 has 时列级 UPDATE（未传列不覆盖）；
@@ -74,7 +74,7 @@ func NewProfileService(users ProfileStore) *ProfileService {
 func (s *ProfileService) UpdateProfile(ctx context.Context, uid int64, in *accountv1.UpdateProfileRequest) error {
 	// 存在性先判（account GetProfile 口径：不存在 → not_found）。
 	if _, err := s.users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		return fmt.Errorf("account profile: load user: %w", err)
@@ -96,7 +96,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, uid int64, in *accou
 	}
 	if nickname != nil || avatarURL != nil {
 		if err := s.users.UpdateProfileColumns(ctx, uid, nickname, avatarURL); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 			return fmt.Errorf("account profile: update columns: %w", err)
@@ -106,7 +106,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, uid int64, in *accou
 	// user_profile 行：has 位合并（profile 消息 nil = 未传，不触碰该行）。
 	if p := in.GetProfile(); p != nil {
 		existing, err := s.users.GetProfile(ctx, uid)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("account profile: load profile: %w", err)
 		}
 		merged, changed, err := dto.MergeUserProfile(uid, existing, p)

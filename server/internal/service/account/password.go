@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/cache"
 	"authloft/internal/eventlog"
@@ -121,7 +121,7 @@ var (
 
 // ChangePassword（§3.3 行 872）：当前用户改密 / 无密码账号设密，编排链——
 //  1. 入参边界：uid<=0 / newPassword 空 → invalid_request；读 user 行
-//     （不存在 → gorm.ErrRecordNotFound 透传，handler 转 not_found）；
+//     （不存在 → sql.ErrNoRows 透传，handler 转 not_found）；
 //  2. 策略校验：settings pwd_* 五键现读构造 security.PasswordPolicy，
 //     newPassword 违规 → password_weak（固定三规则〔>64 / 与用户名或邮箱
 //     完全相同 / 含空白〕由 security.ValidatePassword 内建，§5.6 行
@@ -143,7 +143,7 @@ func (s *PasswordService) ChangePassword(ctx context.Context, uid int64, current
 	}
 	user, err := s.deps.Users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		return fmt.Errorf("account password: load user: %w", err)
@@ -160,7 +160,7 @@ func (s *PasswordService) ChangePassword(ctx context.Context, uid int64, current
 	// = 改密须验旧密码，§3.3 行 876「已设置密码时必填」）。
 	cred, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindPassword)
 	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		// currentPassword 传入值忽略：文档仅约定「已设置密码时必填」，
 		// 未约定无行时禁止传入（setPassReset 补建同不校验）。
 		if err := s.writeCredential(ctx, uid, newPassword, nil); err != nil {

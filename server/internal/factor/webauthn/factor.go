@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"database/sql"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/token"
 	"authloft/internal/factor"
@@ -166,7 +166,7 @@ func (f *Factor) Verify(ctx *factor.FactorContext) (*factor.VerifyResult, error)
 	}
 	stored, err := f.store.FindByCredentialID(ctx.Context, credID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return failure(), nil
 		}
 		return nil, err

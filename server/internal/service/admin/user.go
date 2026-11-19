@@ -29,7 +29,7 @@
 //     不挂 ErrorInfo 细分码，§1.6 封闭集合不新增取值）；
 //   - ErrTargetTaken 联系方式被他人占用（映射 already_exists +
 //     code=target_taken，§1.6 封闭集合既有取值）；
-//   - gorm.ErrRecordNotFound 资源不存在（映射 not_found）；
+//   - sql.ErrNoRows 资源不存在（映射 not_found）；
 //   - 其余错误原样上抛，由错误包装拦截器消毒为 internal。
 package admin
 
@@ -47,7 +47,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	credentialpb "authloft/gen/go/credential"
@@ -439,7 +439,7 @@ func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error
 		return nil, err
 	}
 	profile, err := s.users.GetProfile(ctx, id)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	return &UserDetail{User: user, Credentials: creds, Bindings: binds, Profile: profile}, nil
@@ -462,7 +462,7 @@ func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, use
 		return err
 	}
 	if err := s.users.UpdateUserStatus(ctx, id, int8(userStatus)); err != nil {
-		return err // 含 gorm.ErrRecordNotFound → 404
+		return err // 含 sql.ErrNoRows → 404
 	}
 	if userStatus != 0 {
 		return nil
@@ -562,7 +562,7 @@ func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64,
 		}
 	}
 	if target == nil {
-		return fmt.Errorf("admin service: unbind: user %d has no binding for %q: %w", id, providerKey, gorm.ErrRecordNotFound)
+		return fmt.Errorf("admin service: unbind: user %d has no binding for %q: %w", id, providerKey, sql.ErrNoRows)
 	}
 	if err := s.binds.UnbindWithUnionCascade(ctx, target.ID, id, p.UnionProvider); err != nil {
 		return err
@@ -650,7 +650,7 @@ func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
 		return err
 	}
 	if hasDeletedPrefix(user.Username) {
-		return gorm.ErrRecordNotFound
+		return sql.ErrNoRows
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -691,7 +691,7 @@ func (s *UserService) writableTarget(ctx context.Context, id int64) (*model.User
 		return nil, err
 	}
 	if hasDeletedPrefix(user.Username) {
-		return nil, gorm.ErrRecordNotFound
+		return nil, sql.ErrNoRows
 	}
 	return user, nil
 }
@@ -798,7 +798,7 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, actor, id int64, re
 			return ErrInvalidRequest // gender ∈ 0/1/2（§5.4 PATCH 校验）
 		}
 		existing, err := s.users.GetProfile(ctx, id)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		m, changed, err := dto.MergeUserProfile(id, existing, p)
@@ -973,7 +973,7 @@ func (s *UserService) checkContactFree(ctx context.Context, self int64, kind, va
 		holder, err = s.users.FindByEmail(ctx, value)
 	}
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		return err
@@ -1124,7 +1124,7 @@ func (s *UserService) SetCredentialEnabled(ctx context.Context, actor, id, crede
 		return err
 	}
 	if row.UserID != id {
-		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, gorm.ErrRecordNotFound)
+		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, sql.ErrNoRows)
 	}
 	if !enabled && row.Kind == credentialKindPassword {
 		return ErrInvalidRequest
@@ -1165,7 +1165,7 @@ func (s *UserService) DeleteCredential(ctx context.Context, actor, id, credentia
 		return err
 	}
 	if row.UserID != id {
-		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, gorm.ErrRecordNotFound)
+		return fmt.Errorf("admin service: credential %d not owned by user %d: %w", credentialID, id, sql.ErrNoRows)
 	}
 	if row.Kind == credentialKindPassword {
 		return ErrInvalidRequest
@@ -1256,7 +1256,7 @@ func (s *UserService) writePasswordCredential(ctx context.Context, id int64, pas
 		cred.IsEnabled = 1
 		cred.UpdatedAt = s.now()
 		return s.creds.Update(ctx, cred)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return s.creds.Create(ctx, &model.UserCredential{
 			UserID:    id,
 			Kind:      credentialKindPassword,

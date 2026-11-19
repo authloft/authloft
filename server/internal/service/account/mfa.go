@@ -64,8 +64,8 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
-	"gorm.io/gorm"
 
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/eventlog"
@@ -270,7 +270,7 @@ func (s *MfaService) GetMfa(ctx context.Context, uid int64) (*MfaDetail, error) 
 	}
 	user, err := s.deps.Users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: load user: %v", ErrMfaInternal, err)
@@ -280,7 +280,7 @@ func (s *MfaService) GetMfa(ctx context.Context, uid int64) (*MfaDetail, error) 
 	// lastUsedAt 取凭据行既有列。
 	totp := MfaFactorDetail{Factor: kindTotp}
 	row, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindTotp)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: load totp credential: %v", ErrMfaInternal, err)
 	}
 	if err == nil && row.IsEnabled == 1 {
@@ -337,7 +337,7 @@ func (s *MfaService) GetMfa(ctx context.Context, uid int64) (*MfaDetail, error) 
 	rc := MfaFactorDetail{Factor: kindRecoveryCode}
 	var recoveryIssuedAt int64
 	row, err = s.deps.Creds.FindByUserAndKind(ctx, uid, kindRecoveryCode)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: load recovery_code credential: %v", ErrMfaInternal, err)
 	}
 	if err == nil && row.IsEnabled == 1 {
@@ -372,7 +372,7 @@ func (s *MfaService) SetMfa(ctx context.Context, uid int64, enabled bool) error 
 		}
 		factors, err := mfapolicy.UsableFactors(ctx, s.policyDeps(), uid)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 			return fmt.Errorf("%w: resolve usable mfa factors: %v", ErrMfaInternal, err)
@@ -386,7 +386,7 @@ func (s *MfaService) SetMfa(ctx context.Context, uid int64, enabled bool) error 
 		v = 1
 	}
 	if err := s.deps.Users.UpdateMfaRequired(ctx, uid, v); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		return fmt.Errorf("%w: update mfa_required: %v", ErrMfaInternal, err)
@@ -424,7 +424,7 @@ func (s *MfaService) BindTotpChallenge(ctx context.Context, uid int64) (*TotpCha
 	}
 	user, err := s.deps.Users.FindByID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: load user: %v", ErrMfaInternal, err)
@@ -490,7 +490,7 @@ func (s *MfaService) BindTotpVerify(ctx context.Context, uid int64, secret, code
 		if err := s.deps.Creds.Update(ctx, row); err != nil {
 			return nil, fmt.Errorf("%w: update totp credential: %v", ErrMfaInternal, err)
 		}
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		c := &model.UserCredential{
 			UserID:    uid,
 			Kind:      kindTotp,
@@ -526,7 +526,7 @@ func (s *MfaService) BindTotpVerify(ctx context.Context, uid int64, secret, code
 		if err := s.deps.Creds.Update(ctx, row); err != nil {
 			return nil, fmt.Errorf("%w: update recovery_code credential: %v", ErrMfaInternal, err)
 		}
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		c := &model.UserCredential{
 			UserID:    uid,
 			Kind:      kindRecoveryCode,
@@ -566,7 +566,7 @@ func (s *MfaService) RegenerateRecoveryCodes(ctx context.Context, uid int64, act
 	}
 	row, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindRecoveryCode)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrMfaCodeExpired
 		}
 		return nil, fmt.Errorf("%w: load recovery_code credential: %v", ErrMfaInternal, err)
@@ -765,7 +765,7 @@ func (s *MfaService) UnbindTotp(ctx context.Context, uid int64, token string) er
 	// 同一断言再次提交会命中此分支，按重放返回 verification_invalid
 	//（§3.8.5），不新造 Redis 状态键。
 	if _, err := s.deps.Creds.FindByUserAndKind(ctx, uid, kindTotp); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return &verification.Error{Code: "verification_invalid"}
 		}
 		return fmt.Errorf("%w: load totp credential: %v", ErrMfaInternal, err)

@@ -1,10 +1,10 @@
-// sso_client / oidc_client 表读写（后端架构 §3.10 行 415：client →
-// client_repo.go；§4.4 行 713-724 / §4.5 行 729-742 DDL）。DDL 归
-// migrations/（§3.16），本文件只做行级读写、分页与唯一键冲突判别；事务
-// 边界在 service（§3.10）。redirect_uris / login_methods / oauth_providers
-// 列的结构化 proto 编解码唯一出口在本文件（接口文档 §12.3），service 不
-// 直接拼 proto.Marshal。client_secret 生成策略、scopes[] ↔ 逗号串转换、
-// redirect_uris 通配匹配规则均归上层，repo 拿到什么存什么。
+// sso_client / oidc_client 表读写（后端架构 §3.10：client →
+// client_repo.go；§4.4 / §4.5 DDL）。DDL 归 migrations/（§3.16），本文件只
+// 做行级读写、分页与唯一键冲突判别；事务边界在 service（§3.10）。
+// redirect_uris / login_methods / oauth_providers 列的结构化 proto 编解码
+// 唯一出口在本文件（接口文档 §12.3），service 不直接拼 proto.Marshal。
+// client_secret 生成策略、scopes[] ↔ 逗号串转换、redirect_uris 通配匹配
+// 规则均归上层，repo 拿到什么存什么。
 package repo
 
 import (
@@ -13,76 +13,88 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
+	"github.com/uptrace/bun"
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/client"
 	"authloft/internal/repo/model"
 )
 
-// ErrClientDuplicate Create / Update 命中唯一键 uk_client_id（§4.4 行 722、
-// §4.5 行 741）时的可判别错误；具体冲突键与值在底层 *mysql.MySQLError 中。
+// ErrClientDuplicate Create / Update 命中唯一键 uk_client_id（§4.4、§4.5）
+// 时的可判别错误；具体冲突键与值在底层 *mysql.MySQLError 中。
 var ErrClientDuplicate = errors.New("client repo: duplicate unique key")
 
 // ClientRepo sso_client / oidc_client 表数据访问（§3.10：表与文件对应
 // client(sso_client + oidc_client) → client_repo.go）。
 type ClientRepo struct {
-	db *gorm.DB
+	db *bun.DB
 }
 
-// NewClientRepo 按 GORM 连接构造。
-func NewClientRepo(db *gorm.DB) *ClientRepo {
+// NewClientRepo 按 bun 连接构造。
+func NewClientRepo(db *bun.DB) *ClientRepo {
 	return &ClientRepo{db: db}
 }
 
 // FindSsoClientByClientID 按唯一键 uk_client_id 取 SSO 客户端；未命中
-// 返回包装的 gorm.ErrRecordNotFound。
+// 返回包装的 sql.ErrNoRows。
 func (r *ClientRepo) FindSsoClientByClientID(ctx context.Context, clientID string) (*model.SsoClient, error) {
 	var c model.SsoClient
-	if err := r.db.WithContext(ctx).Take(&c, "client_id = ?", clientID).Error; err != nil {
+	if err := r.db.NewSelect().Model(&c).
+		Where("client_id = ?", clientID).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("client repo: find sso client by client id: %w", err)
 	}
 	return &c, nil
 }
 
 // FindOidcClientByClientID 按唯一键 uk_client_id 取 OIDC 客户端；未命中
-// 返回包装的 gorm.ErrRecordNotFound。
+// 返回包装的 sql.ErrNoRows。
 func (r *ClientRepo) FindOidcClientByClientID(ctx context.Context, clientID string) (*model.OidcClient, error) {
 	var c model.OidcClient
-	if err := r.db.WithContext(ctx).Take(&c, "client_id = ?", clientID).Error; err != nil {
+	if err := r.db.NewSelect().Model(&c).
+		Where("client_id = ?", clientID).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("client repo: find oidc client by client id: %w", err)
 	}
 	return &c, nil
 }
 
 // FindSsoClientByID 按主键 id 取 SSO 客户端；未命中返回包装的
-// gorm.ErrRecordNotFound（GetSsoClient / UpdateSsoClient 按 §5.5 行 1259 的
-// int64 id 定位，Find 操作的主键形态，口径同 UserRepo.FindByID）。
+// sql.ErrNoRows（GetSsoClient / UpdateSsoClient 按 §5.5 的 int64 id 定位，
+// Find 操作的主键形态，口径同 UserRepo.FindByID）。
 func (r *ClientRepo) FindSsoClientByID(ctx context.Context, id int64) (*model.SsoClient, error) {
 	var c model.SsoClient
-	if err := r.db.WithContext(ctx).Take(&c, "id = ?", id).Error; err != nil {
+	if err := r.db.NewSelect().Model(&c).
+		Where("id = ?", id).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("client repo: find sso client by id: %w", err)
 	}
 	return &c, nil
 }
 
 // FindOidcClientByID 按主键 id 取 OIDC 客户端；未命中返回包装的
-// gorm.ErrRecordNotFound（口径同 FindSsoClientByID）。
+// sql.ErrNoRows（口径同 FindSsoClientByID）。
 func (r *ClientRepo) FindOidcClientByID(ctx context.Context, id int64) (*model.OidcClient, error) {
 	var c model.OidcClient
-	if err := r.db.WithContext(ctx).Take(&c, "id = ?", id).Error; err != nil {
+	if err := r.db.NewSelect().Model(&c).
+		Where("id = ?", id).
+		Limit(1).
+		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("client repo: find oidc client by id: %w", err)
 	}
 	return &c, nil
 }
 
 // ClientListQuery 客户端列表分页入参；分页按 §1.7（page 从 1 开始、
-// pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定（§1.7 行 277
-// 后端不做白名单强制校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名
-// 静默回落 id，order 非 asc 一律 desc），不拒绝请求；口径同
-// user_repo.UserListQuery。
+// pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做
+// 白名单强制校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，
+// order 非 asc 一律 desc），不拒绝请求；口径同 user_repo.UserListQuery。
 type ClientListQuery struct {
 	Sort     string
 	Order    string
@@ -92,7 +104,7 @@ type ClientListQuery struct {
 
 // clientSortColumnPattern 排序列名字符集（小写字母 / 数字 / 下划线——
 // sso_client / oidc_client 表列名均在该集合内；字符集校验是防 ORDER BY
-// 注入的格式约束，不是取值白名单：§1.7 行 277 后端不做白名单强制校验）。
+// 注入的格式约束，不是取值白名单：§1.7 后端不做白名单强制校验）。
 var clientSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 
 // clientDefaultSortColumn 默认排序列（缺省 / 非法 sort 的回落值）。
@@ -136,16 +148,16 @@ func (q ClientListQuery) normalize() (page, size int) {
 // {items, total, page, pageSize} 的数据来源）。
 func (r *ClientRepo) ListSsoClients(ctx context.Context, q ClientListQuery) ([]model.SsoClient, int64, error) {
 	page, size := q.normalize()
-	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.SsoClient{}).Count(&total).Error; err != nil {
+	total, err := r.db.NewSelect().Model((*model.SsoClient)(nil)).Count(ctx)
+	if err != nil {
 		return nil, 0, fmt.Errorf("client repo: list sso clients count: %w", err)
 	}
 	var rows []model.SsoClient
-	err := r.db.WithContext(ctx).
-		Order(q.orderClause()).
-		Limit(size).
-		Offset((page - 1) * size).
-		Find(&rows).Error
+	err = r.db.NewSelect().Model(&rows).
+		OrderExpr(q.orderClause()).
+		Limit(int64(size)).
+		Offset(int64((page - 1) * size)).
+		Scan(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("client repo: list sso clients: %w", err)
 	}
@@ -156,28 +168,36 @@ func (r *ClientRepo) ListSsoClients(ctx context.Context, q ClientListQuery) ([]m
 // {items, total, page, pageSize} 的数据来源）。
 func (r *ClientRepo) ListOidcClients(ctx context.Context, q ClientListQuery) ([]model.OidcClient, int64, error) {
 	page, size := q.normalize()
-	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.OidcClient{}).Count(&total).Error; err != nil {
+	total, err := r.db.NewSelect().Model((*model.OidcClient)(nil)).Count(ctx)
+	if err != nil {
 		return nil, 0, fmt.Errorf("client repo: list oidc clients count: %w", err)
 	}
 	var rows []model.OidcClient
-	err := r.db.WithContext(ctx).
-		Order(q.orderClause()).
-		Limit(size).
-		Offset((page - 1) * size).
-		Find(&rows).Error
+	err = r.db.NewSelect().Model(&rows).
+		OrderExpr(q.orderClause()).
+		Limit(int64(size)).
+		Offset(int64((page - 1) * size)).
+		Scan(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("client repo: list oidc clients: %w", err)
 	}
 	return rows, total, nil
 }
 
-// CreateSsoClient 插入 SSO 客户端；命中 uk_client_id 返回
-// ErrClientDuplicate（errors.Is 可判别），其余错误原样包装。default tag
-// 列（is_enabled）的零值被 tag 值显式写入 INSERT 并回填 struct（口径同
-// provider_repo.Create）——显式写 0 走列级 UPDATE。
+// CreateSsoClient 插入 SSO 客户端；命中 uk_client_id 返回 ErrClientDuplicate
+// （errors.Is 可判别），其余错误原样包装。default tag 列（is_enabled）零值
+// 经 DEFAULT 占位由 DB 默认值填充（口径同 provider_repo.Create）——显式写
+// 0 走列级 UPDATE。created_at / updated_at 零值时由本方法补齐（bun 无
+// 时间列自动填充）。
 func (r *ClientRepo) CreateSsoClient(ctx context.Context, c *model.SsoClient) error {
-	if err := r.db.WithContext(ctx).Create(c).Error; err != nil {
+	now := time.Now()
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = now
+	}
+	if _, err := r.db.NewInsert().Model(c).Exec(ctx); err != nil {
 		if isClientDuplicateKey(err) {
 			return fmt.Errorf("client repo: create sso client: %w: %w", ErrClientDuplicate, err)
 		}
@@ -187,11 +207,19 @@ func (r *ClientRepo) CreateSsoClient(ctx context.Context, c *model.SsoClient) er
 }
 
 // CreateOidcClient 插入 OIDC 客户端；命中 uk_client_id 返回
-// ErrClientDuplicate（errors.Is 可判别），其余错误原样包装。default tag
-// 列（scopes / access_token_ttl / refresh_token_ttl / is_enabled）的零值
-// 被 tag 值显式写入 INSERT 并回填 struct（口径同 provider_repo.Create）。
+// ErrClientDuplicate（errors.Is 可判别），其余错误原样包装。default tag 列
+// （scopes / access_token_ttl / refresh_token_ttl / is_enabled）零值经
+// DEFAULT 占位由 DB 默认值填充（口径同 provider_repo.Create）。
+// created_at / updated_at 零值时由本方法补齐。
 func (r *ClientRepo) CreateOidcClient(ctx context.Context, c *model.OidcClient) error {
-	if err := r.db.WithContext(ctx).Create(c).Error; err != nil {
+	now := time.Now()
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = now
+	}
+	if _, err := r.db.NewInsert().Model(c).Exec(ctx); err != nil {
 		if isClientDuplicateKey(err) {
 			return fmt.Errorf("client repo: create oidc client: %w: %w", ErrClientDuplicate, err)
 		}
@@ -200,39 +228,40 @@ func (r *ClientRepo) CreateOidcClient(ctx context.Context, c *model.OidcClient) 
 	return nil
 }
 
-// UpdateSsoClient 按主键整行 UPDATE（Select("*") 强制含零值列——
-// is_enabled=0 等禁用零值必须可落库；调用方应传入 FindSsoClientByClientID
-// 取回的完整行，全列忠实覆盖含 created_at；client_id 创建后不可改由
-// service 保证）。若改了 client_id 命中 uk_client_id，返回
-// ErrClientDuplicate。不用 Save：其 RowsAffected==0 时自动回落 Create 的
-// upsert 语义（gorm@v1.31.2 FinisherMethod Save 分支）。MySQL 驱动默认
+// UpdateSsoClient 按主键整行 UPDATE（全列覆盖，含零值列——is_enabled=0 等
+// 禁用零值必须可落库；调用方应传入 FindSsoClientByClientID 取回的完整行，
+// 全列忠实覆盖含 created_at；client_id 创建后不可改由 service 保证）。若改
+// 了 client_id 命中 uk_client_id，返回 ErrClientDuplicate。不用 upsert 语义：
+// 行不存在静默变插入会把「行不存在」错误口径吞掉。MySQL 驱动默认
 // changed-rows 语义：同值 UPDATE RowsAffected=0 与行不存在不可区分，故
 // rows=0 时补 SELECT 存在性判定——行仍在则视为幂等成功，查无此行才报
-// ErrRecordNotFound（口径同 provider_repo.Update）。
+// sql.ErrNoRows（口径同 provider_repo.Update）。updated_at 随更新刷新
+// （与旧 ORM struct 更新自动刷新 updated_at 同语义）。
 func (r *ClientRepo) UpdateSsoClient(ctx context.Context, c *model.SsoClient) error {
-	res := r.db.WithContext(ctx).
-		Model(&model.SsoClient{}).
-		Select("*").
+	res, err := r.db.NewUpdate().Model((*model.SsoClient)(nil)).
 		Where("id = ?", c.ID).
-		Updates(c)
-	if res.Error != nil {
-		if isClientDuplicateKey(res.Error) {
-			return fmt.Errorf("client repo: update sso client: %w: %w", ErrClientDuplicate, res.Error)
+		Set("client_id = ?", c.ClientID).
+		Set("client_secret = ?", c.ClientSecret).
+		Set("name = ?", c.Name).
+		Set("redirect_uris = ?", c.RedirectURIs).
+		Set("login_methods = ?", c.LoginMethods).
+		Set("oauth_providers = ?", c.OauthProviders).
+		Set("default_redirect_uri = ?", c.DefaultRedirectURI).
+		Set("is_enabled = ?", c.IsEnabled).
+		Set("template_key = ?", c.TemplateKey).
+		Set("template_vars = ?", c.TemplateVars).
+		Set("created_at = ?", c.CreatedAt).
+		Set("updated_at = ?", time.Now()).
+		Exec(ctx)
+	if err != nil {
+		if isClientDuplicateKey(err) {
+			return fmt.Errorf("client repo: update sso client: %w: %w", ErrClientDuplicate, err)
 		}
-		return fmt.Errorf("client repo: update sso client: %w", res.Error)
+		return fmt.Errorf("client repo: update sso client: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.SsoClient{}).
-			Select("COUNT(*)").
-			Where("id = ?", c.ID).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("client repo: update sso client: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("client repo: update sso client: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.SsoClient)(nil),
+		"client repo: update sso client", "id = ?", c.ID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -240,68 +269,70 @@ func (r *ClientRepo) UpdateSsoClient(ctx context.Context, c *model.SsoClient) er
 // UpdateOidcClient 按主键整行 UPDATE，口径同 UpdateSsoClient（整行覆盖、
 // 零值可落库、同值幂等、client_id 冲突返回 ErrClientDuplicate）。
 func (r *ClientRepo) UpdateOidcClient(ctx context.Context, c *model.OidcClient) error {
-	res := r.db.WithContext(ctx).
-		Model(&model.OidcClient{}).
-		Select("*").
+	res, err := r.db.NewUpdate().Model((*model.OidcClient)(nil)).
 		Where("id = ?", c.ID).
-		Updates(c)
-	if res.Error != nil {
-		if isClientDuplicateKey(res.Error) {
-			return fmt.Errorf("client repo: update oidc client: %w: %w", ErrClientDuplicate, res.Error)
+		Set("client_id = ?", c.ClientID).
+		Set("client_secret = ?", c.ClientSecret).
+		Set("name = ?", c.Name).
+		Set("redirect_uris = ?", c.RedirectURIs).
+		Set("scopes = ?", c.Scopes).
+		Set("access_token_ttl = ?", c.AccessTokenTTL).
+		Set("refresh_token_ttl = ?", c.RefreshTokenTTL).
+		Set("is_enabled = ?", c.IsEnabled).
+		Set("template_key = ?", c.TemplateKey).
+		Set("template_vars = ?", c.TemplateVars).
+		Set("created_at = ?", c.CreatedAt).
+		Set("updated_at = ?", time.Now()).
+		Exec(ctx)
+	if err != nil {
+		if isClientDuplicateKey(err) {
+			return fmt.Errorf("client repo: update oidc client: %w: %w", ErrClientDuplicate, err)
 		}
-		return fmt.Errorf("client repo: update oidc client: %w", res.Error)
+		return fmt.Errorf("client repo: update oidc client: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		var exists int64
-		if err := r.db.WithContext(ctx).
-			Model(&model.OidcClient{}).
-			Select("COUNT(*)").
-			Where("id = ?", c.ID).
-			Scan(&exists).Error; err != nil {
-			return fmt.Errorf("client repo: update oidc client: %w", err)
-		}
-		if exists == 0 {
-			return fmt.Errorf("client repo: update oidc client: %w", gorm.ErrRecordNotFound)
-		}
+	if err := requireChangedRow(ctx, r.db, res, (*model.OidcClient)(nil),
+		"client repo: update oidc client", "id = ?", c.ID); err != nil {
+		return err
 	}
 	return nil
 }
 
-// DeleteSsoClient 按主键删除；行不存在返回包装的 gorm.ErrRecordNotFound
-// （DELETE 的 rows=0 无同值歧义，直接判 not found）。
+// DeleteSsoClient 按主键删除；行不存在返回包装的 sql.ErrNoRows（DELETE 的
+// rows=0 无同值歧义，直接判 not found）。
 func (r *ClientRepo) DeleteSsoClient(ctx context.Context, id int64) error {
-	res := r.db.WithContext(ctx).
+	res, err := r.db.NewDelete().Model((*model.SsoClient)(nil)).
 		Where("id = ?", id).
-		Delete(&model.SsoClient{})
-	if res.Error != nil {
-		return fmt.Errorf("client repo: delete sso client: %w", res.Error)
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("client repo: delete sso client: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		return fmt.Errorf("client repo: delete sso client: %w", gorm.ErrRecordNotFound)
+	if err := requireChangedRow(ctx, r.db, res, (*model.SsoClient)(nil),
+		"client repo: delete sso client", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
 
-// DeleteOidcClient 按主键删除；行不存在返回包装的 gorm.ErrRecordNotFound。
+// DeleteOidcClient 按主键删除；行不存在返回包装的 sql.ErrNoRows。
 func (r *ClientRepo) DeleteOidcClient(ctx context.Context, id int64) error {
-	res := r.db.WithContext(ctx).
+	res, err := r.db.NewDelete().Model((*model.OidcClient)(nil)).
 		Where("id = ?", id).
-		Delete(&model.OidcClient{})
-	if res.Error != nil {
-		return fmt.Errorf("client repo: delete oidc client: %w", res.Error)
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("client repo: delete oidc client: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		return fmt.Errorf("client repo: delete oidc client: %w", gorm.ErrRecordNotFound)
+	if err := requireChangedRow(ctx, r.db, res, (*model.OidcClient)(nil),
+		"client repo: delete oidc client", "id = ?", id); err != nil {
+		return err
 	}
 	return nil
 }
 
-// MarshalClientRedirectUris 将 client.RedirectUris（接口文档 §12.3 行
-// 1723-1730）序列化为 redirect_uris 列字节（§12.0 行 1627：结构固定走
-// Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
-// VARBINARY NOT NULL（§4.4 行 718 / §4.5 行 734），返回 nil 会被 GORM 写成
-// NULL 触发 MySQL 1048。protocol 编码错误原样包装。校验（通配符合法性、
-// 条目上限）归 service，repo 只做唯一编解码出口。
+// MarshalClientRedirectUris 将 client.RedirectUris（接口文档 §12.3）序列化
+// 为 redirect_uris 列字节（§12.0：结构固定走 Protobuf）。nil 输入按空消息
+// 编码，返回非 nil 的零长字节——列定义为 VARBINARY NOT NULL（§4.4 / §4.5），
+// 返回 nil 会被写成 NULL 触发 MySQL 1048。protocol 编码错误原样包装。校验
+// （通配符合法性、条目上限）归 service，repo 只做唯一编解码出口。
 func MarshalClientRedirectUris(uris *client.ClientRedirectUris) ([]byte, error) {
 	if uris == nil {
 		uris = &client.ClientRedirectUris{}
@@ -333,9 +364,9 @@ func ParseClientRedirectUris(data []byte) (*client.ClientRedirectUris, error) {
 // MarshalClientLoginMethods 将 client.ClientLoginMethods（接口文档 §12.3、
 // §5.5）序列化为 sso_client.login_methods 列字节（§12.0：结构固定走
 // Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
-// VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被 GORM 写成 NULL
-// 触发 MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。登录方式封闭集校验
-// 归 service，repo 只做编解码。
+// VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被写成 NULL 触发
+// MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。登录方式封闭集校验归
+// service，repo 只做编解码。
 func MarshalClientLoginMethods(methods *client.ClientLoginMethods) ([]byte, error) {
 	if methods == nil {
 		methods = &client.ClientLoginMethods{}
@@ -365,11 +396,11 @@ func ParseClientLoginMethods(data []byte) (*client.ClientLoginMethods, error) {
 }
 
 // MarshalClientOauthProviders 将 client.ClientOauthProviders（接口文档
-// §12.3、§5.5）序列化为 sso_client.oauth_providers 列字节（§12.0：结构
-// 固定走 Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列
-// 定义为 VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被 GORM 写成
-// NULL 触发 MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。provider key
-// 存在性校验归 service，repo 只做编解码。
+// §12.3、§5.5）序列化为 sso_client.oauth_providers 列字节（§12.0：结构固定
+// 走 Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
+// VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被写成 NULL 触发
+// MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。provider key 存在性校验
+// 归 service，repo 只做编解码。
 func MarshalClientOauthProviders(providers *client.ClientOauthProviders) ([]byte, error) {
 	if providers == nil {
 		providers = &client.ClientOauthProviders{}

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	"authloft/gen/go/credential"
 	"authloft/internal/factor/webauthn"
@@ -92,7 +92,7 @@ func (f *fakeWebauthnRows) Create(_ context.Context, c *model.UserCredential, w 
 
 func (f *fakeWebauthnRows) Delete(_ context.Context, id, userID int64) error {
 	if f.deleteErrAsNotFound {
-		return fmt.Errorf("webauthn repo: delete: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("webauthn repo: delete: %w", sql.ErrNoRows)
 	}
 	if f.deleteErr != nil {
 		return f.deleteErr
@@ -114,7 +114,7 @@ func (f *fakeWebauthnCredRows) FindByUserAndKind(_ context.Context, _ int64, kin
 	if c, ok := f.byKind[kind]; ok {
 		return c, nil
 	}
-	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("credential repo: find by user kind: %w", sql.ErrNoRows)
 }
 
 func (f *fakeWebauthnCredRows) ListByUser(_ context.Context, _ int64) ([]model.UserCredential, error) {
@@ -131,7 +131,7 @@ func (f *fakeWebauthnCredRows) Update(_ context.Context, c *model.UserCredential
 
 // fmtNotFound 与 repo 包装形态一致的 ErrRecordNotFound（%w 包装可 errors.Is）。
 func fmtNotFound() error {
-	return fmt.Errorf("webauthn repo: find by credential id: %w", gorm.ErrRecordNotFound)
+	return fmt.Errorf("webauthn repo: find by credential id: %w", sql.ErrNoRows)
 }
 
 // fakeUserStore WebauthnUserStore 的 fake：缺省回放 username=alice，可指定
@@ -303,7 +303,7 @@ func TestWebauthnBeginRegisterUsername(t *testing.T) {
 		{"username verbatim", &fakeUserStore{user: &model.User{ID: 42, Username: "zhang_san"}}, "zhang_san", nil},
 		{"username trimmed", &fakeUserStore{user: &model.User{ID: 42, Username: "  alice  "}}, "alice", nil},
 		{"blank falls back to uid", &fakeUserStore{user: &model.User{ID: 42, Username: "   "}}, "42", nil},
-		{"user missing", &fakeUserStore{err: fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)}, "", ErrWebauthnUnauthenticated},
+		{"user missing", &fakeUserStore{err: fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)}, "", ErrWebauthnUnauthenticated},
 		{"db failure", &fakeUserStore{err: errors.New("db down")}, "", ErrWebauthnInternal},
 		{"store not wired", nil, "", ErrWebauthnInternal},
 	}
@@ -469,12 +469,12 @@ func TestWebauthnRenameCredential(t *testing.T) {
 		t.Errorf("long label err = %v, want ErrWebauthnInvalidRequest", err)
 	}
 	// 目标不存在（含「属于他人」——ListByUser 只返回本人行，他人 id 永不命中）。
-	if err := s.RenameCredential(ctx, 42, 999, "x"); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("missing id err = %v, want gorm.ErrRecordNotFound", err)
+	if err := s.RenameCredential(ctx, 42, 999, "x"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("missing id err = %v, want sql.ErrNoRows", err)
 	}
 	// 非 webauthn kind 行不可作为目标。
-	if err := s.RenameCredential(ctx, 42, 12, "x"); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("password row err = %v, want gorm.ErrRecordNotFound", err)
+	if err := s.RenameCredential(ctx, 42, 12, "x"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("password row err = %v, want sql.ErrNoRows", err)
 	}
 }
 
@@ -511,8 +511,8 @@ func TestWebauthnDeleteCredential(t *testing.T) {
 		{ID: 11, UserID: 42, Kind: "webauthn", CredentialID: "cred-a"},
 	}}
 	s2 := newWebauthnService(&fakeWebauthnFactor{}, rows2, &fakeWebauthnCredRows{}, audit)
-	if err := s2.DeleteCredential(ctx, 42, 999); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("missing id err = %v, want gorm.ErrRecordNotFound", err)
+	if err := s2.DeleteCredential(ctx, 42, 999); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("missing id err = %v, want sql.ErrNoRows", err)
 	}
 	if rows2.deletedID != 0 {
 		t.Errorf("not_found 路径不应触达 Delete: deleted=%d", rows2.deletedID)
@@ -526,8 +526,8 @@ func TestWebauthnDeleteCredential(t *testing.T) {
 	}
 	before := len(audit.events)
 	s3 := newWebauthnService(&fakeWebauthnFactor{}, rows3, &fakeWebauthnCredRows{}, audit)
-	if err := s3.DeleteCredential(ctx, 42, 11); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Errorf("TOCTOU err = %v, want gorm.ErrRecordNotFound", err)
+	if err := s3.DeleteCredential(ctx, 42, 11); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("TOCTOU err = %v, want sql.ErrNoRows", err)
 	}
 	if len(audit.events) != before {
 		t.Errorf("TOCTOU 不应投审计: before=%d after=%d", before, len(audit.events))

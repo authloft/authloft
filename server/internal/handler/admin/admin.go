@@ -11,9 +11,9 @@ import (
 	"fmt"
 
 	connectrpc "connectrpc.com/connect"
+	"database/sql"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"gorm.io/gorm"
 
 	adminv1 "authloft/gen/go/api/admin/v1"
 	"authloft/gen/go/api/admin/v1/adminv1connect"
@@ -172,7 +172,7 @@ func (h *Handler) ListProviders(ctx context.Context, req *connectrpc.Request[adm
 func (h *Handler) GetProvider(ctx context.Context, req *connectrpc.Request[adminv1.GetProviderRequest]) (*connectrpc.Response[adminv1.AdminProvider], error) {
 	row, err := h.providers.FindByKey(ctx, req.Msg.GetProviderKey())
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			// 资源不存在（管理后台单资源）→ 404 not_found。
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 		}
@@ -378,7 +378,7 @@ func (h *Handler) GetMe(ctx context.Context, _ *connectrpc.Request[adminv1.GetMe
 	}
 	row, err := h.users.GetMe(ctx, uid)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 		}
 		if errors.Is(err, adminsvc.ErrInvalidRequest) {
@@ -870,7 +870,7 @@ func mapWriteError(op string, err error) error {
 		)
 	case errors.Is(err, adminsvc.ErrDuplicateKey):
 		return connectrpc.NewError(connectrpc.CodeAlreadyExists, errDuplicateKey)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("admin handler: %s: %w", op, err)
@@ -907,7 +907,7 @@ func mapUserError(op string, err error) error {
 		)
 	case errors.Is(err, adminsvc.ErrPermissionDenied):
 		return connectrpc.NewError(connectrpc.CodePermissionDenied, errPermissionDenied)
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, sql.ErrNoRows):
 		return connectrpc.NewError(connectrpc.CodeNotFound, errNotFound)
 	default:
 		return fmt.Errorf("admin handler: %s: %w", op, err)

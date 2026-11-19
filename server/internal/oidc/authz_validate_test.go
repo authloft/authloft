@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	clientpb "authloft/gen/go/client"
 	"authloft/internal/repo"
@@ -27,7 +27,7 @@ func (f *fakeAuthzClients) FindOidcClientByClientID(_ context.Context, clientID 
 	}
 	c, ok := f.clients[clientID]
 	if !ok {
-		return nil, gorm.ErrRecordNotFound
+		return nil, sql.ErrNoRows
 	}
 	return c, nil
 }

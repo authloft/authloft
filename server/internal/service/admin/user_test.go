@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
 	"github.com/vmihailenco/msgpack/v5"
-	"gorm.io/gorm"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	adminv1 "authloft/gen/go/api/admin/v1"
@@ -128,7 +128,7 @@ func (f *userFakeUsers) AnonymizeUser(_ context.Context, id int64, at time.Time)
 	}
 	// 模拟 repo 的 rows=0 存在性判定（AnonymizeUser 契约）。
 	if f.user == nil || f.user.ID != id {
-		return 0, fmt.Errorf("user repo: anonymize user: %w", gorm.ErrRecordNotFound)
+		return 0, fmt.Errorf("user repo: anonymize user: %w", sql.ErrNoRows)
 	}
 	f.anonymized = append(f.anonymized, userFakeAnonymize{id: id, at: at})
 	return f.anonymizeNext, nil
@@ -139,7 +139,7 @@ func (f *userFakeUsers) FindByID(_ context.Context, id int64) (*model.User, erro
 		return nil, f.findErr
 	}
 	if f.user == nil || f.user.ID != id {
-		return nil, fmt.Errorf("user repo: find by id: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: find by id: %w", sql.ErrNoRows)
 	}
 	return f.user, nil
 }
@@ -155,7 +155,7 @@ func (f *userFakeUsers) UpdateUserStatus(_ context.Context, id int64, status int
 	}
 	// 模拟 repo 的 rows=0 存在性判定（UpdateUserStatus 契约）。
 	if f.user == nil || f.user.ID != id {
-		return fmt.Errorf("user repo: update user status: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("user repo: update user status: %w", sql.ErrNoRows)
 	}
 	f.statusUpdated = append(f.statusUpdated, userFakeStatus{id: id, status: status})
 	return nil
@@ -172,7 +172,7 @@ func (f *userFakeUsers) UpdateMfaRequired(_ context.Context, id int64, mfaRequir
 	}
 	// 模拟 repo 的 rows=0 存在性判定（UpdateMfaRequired 契约）。
 	if f.user == nil || f.user.ID != id {
-		return fmt.Errorf("user repo: update mfa required: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("user repo: update mfa required: %w", sql.ErrNoRows)
 	}
 	f.mfaUpdated = append(f.mfaUpdated, userFakeMfaUpdate{id: id, mfa: mfaRequired})
 	return nil
@@ -182,20 +182,20 @@ func (f *userFakeUsers) FindByPhone(_ context.Context, phone string) (*model.Use
 	if row, ok := f.phoneHolders[phone]; ok {
 		return row, nil
 	}
-	return nil, fmt.Errorf("user repo: find by phone: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by phone: %w", sql.ErrNoRows)
 }
 
 func (f *userFakeUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
 	if row, ok := f.emailHolders[email]; ok {
 		return row, nil
 	}
-	return nil, fmt.Errorf("user repo: find by email: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("user repo: find by email: %w", sql.ErrNoRows)
 }
 
 func (f *userFakeUsers) UpdateProfileColumns(_ context.Context, id int64, nickname, avatarURL *string) error {
 	// 模拟 repo 的 rows=0 存在性判定（UpdateProfileColumns 契约）。
 	if f.user == nil || f.user.ID != id {
-		return fmt.Errorf("user repo: update profile columns: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("user repo: update profile columns: %w", sql.ErrNoRows)
 	}
 	f.profileCols = append(f.profileCols, userFakeProfileCols{id: id, nickname: nickname, avatar: avatarURL})
 	return nil
@@ -207,7 +207,7 @@ func (f *userFakeUsers) UpdateContactColumns(_ context.Context, id int64, phone,
 	}
 	// 模拟 repo 的 rows=0 存在性判定（UpdateContactColumns 契约）。
 	if f.user == nil || f.user.ID != id {
-		return fmt.Errorf("user repo: update contact columns: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("user repo: update contact columns: %w", sql.ErrNoRows)
 	}
 	f.contactUpdated = append(f.contactUpdated, userFakeContactUpdate{id: id, phone: phone, email: email, phoneV: phoneVerified, emailV: emailVerified})
 	return nil
@@ -218,7 +218,7 @@ func (f *userFakeUsers) GetProfile(_ context.Context, userID int64) (*model.User
 		return nil, f.getProfileErr
 	}
 	if f.profileRow == nil || f.profileRow.UserID != userID {
-		return nil, fmt.Errorf("user repo: get profile: %w", gorm.ErrRecordNotFound)
+		return nil, fmt.Errorf("user repo: get profile: %w", sql.ErrNoRows)
 	}
 	return f.profileRow, nil
 }
@@ -264,7 +264,7 @@ func (f *userFakeCreds) FindByUserAndKind(_ context.Context, _ int64, kind strin
 	if c, ok := f.byKind[kind]; ok {
 		return c, nil
 	}
-	return nil, fmt.Errorf("credential repo: find by user kind: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("credential repo: find by user kind: %w", sql.ErrNoRows)
 }
 
 func (f *userFakeCreds) FindByID(_ context.Context, id int64) (*model.UserCredential, error) {
@@ -274,7 +274,7 @@ func (f *userFakeCreds) FindByID(_ context.Context, id int64) (*model.UserCreden
 	if c, ok := f.byID[id]; ok {
 		return c, nil
 	}
-	return nil, fmt.Errorf("credential repo: find by id: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("credential repo: find by id: %w", sql.ErrNoRows)
 }
 
 func (f *userFakeCreds) ListByUser(_ context.Context, _ int64) ([]model.UserCredential, error) {
@@ -304,9 +304,9 @@ func (f *userFakeCreds) DeleteByUserAndKind(_ context.Context, userID int64, kin
 		return f.deleteByKindErr
 	}
 	// 模拟 repo 的行存在性语义（DeleteByUserAndKind 契约：未命中返回
-	// 包装的 gorm.ErrRecordNotFound）。
+	// 包装的 sql.ErrNoRows）。
 	if _, ok := f.byKind[kind]; !ok {
-		return fmt.Errorf("credential repo: delete by user kind: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("credential repo: delete by user kind: %w", sql.ErrNoRows)
 	}
 	f.deletedByKind = append(f.deletedByKind, userFakeCredDeleteKind{userID: userID, kind: kind})
 	return nil
@@ -359,7 +359,7 @@ func (f *userFakeBinds) UnbindWithUnionCascade(_ context.Context, id, userID int
 		after = append(after, f.rows[i])
 	}
 	if !deleted {
-		return fmt.Errorf("bind repo: unbind with union cascade: %w", gorm.ErrRecordNotFound)
+		return fmt.Errorf("bind repo: unbind with union cascade: %w", sql.ErrNoRows)
 	}
 	var cascaded []int64
 	if unionProviderKey != "" {
@@ -398,7 +398,7 @@ func (f *userFakeProviders) FindByKey(_ context.Context, key string) (*model.Pro
 	if p, ok := f.rows[key]; ok {
 		return p, nil
 	}
-	return nil, fmt.Errorf("provider repo: find by key: %w", gorm.ErrRecordNotFound)
+	return nil, fmt.Errorf("provider repo: find by key: %w", sql.ErrNoRows)
 }
 
 type userFakeEvents struct {
@@ -541,7 +541,7 @@ func TestUserServiceGetMe(t *testing.T) {
 	if _, err := svc.GetMe(ctx, 0); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("uid=0 应 ErrInvalidRequest, got %v", err)
 	}
-	if _, err := svc.GetMe(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := svc.GetMe(ctx, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -700,7 +700,7 @@ func TestUserServiceGetUser(t *testing.T) {
 	if _, err := svc.GetUser(ctx, 0); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("id=0 应 ErrInvalidRequest, got %v", err)
 	}
-	if _, err := svc.GetUser(ctx, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := svc.GetUser(ctx, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -748,7 +748,7 @@ func TestUserServiceUpdateUserStatus(t *testing.T) {
 	if err := svc.UpdateUserStatus(ctx, 1, 42, 7); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 		t.Fatalf("userStatus=7 应 ErrInvalidRequest, got %v", err)
 	}
-	if err := svc.UpdateUserStatus(ctx, 1, 404, 0); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UpdateUserStatus(ctx, 1, 404, 0); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -810,7 +810,7 @@ func TestUserServiceResetUserPassword(t *testing.T) {
 		creds.created[0].IsEnabled != 1 {
 		t.Fatalf("补建行 = %+v", creds.created)
 	}
-	if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -946,7 +946,7 @@ func TestUserServiceSuperadminGuards(t *testing.T) {
 		// not_found 优先于权限判定：目标不存在时 FindByID 先返回 404，不查权限表。
 		perms := &userFakePermissions{}
 		svc, _, _, _, _, _, _, _, _ := newUserSvc(perms)
-		if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.ResetUserPassword(ctx, 1, 404, "Str0ngPass!"); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 		}
 		if len(perms.calls) != 0 {
@@ -1093,10 +1093,10 @@ func TestUserServiceUnbindUserThirdparty(t *testing.T) {
 	svc = adminsvc.NewUserService(&userFakeUsers{user: userTestRow()}, &userFakeCreds{},
 		&userFakeBinds{}, userUnionProviders(), &userFakeEvents{}, &userFakeEpoch{}, &userFakePwfail{},
 		&userFakeAudit{}, userFakeSettings{}, &userFakePermissions{})
-	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_2"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_2"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("未绑该渠道应 404, got %v", err)
 	}
-	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "no_such_provider"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UnbindUserThirdparty(ctx, 1, 42, "no_such_provider"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("provider 不存在应 404, got %v", err)
 	}
 	if err := svc.UnbindUserThirdparty(ctx, 1, 42, ""); !errors.Is(err, adminsvc.ErrInvalidRequest) {
@@ -1144,7 +1144,7 @@ func TestUserServiceUnlockUser(t *testing.T) {
 
 	// 行缺失 404。
 	svc, _, _, _, _, _, _, _, _ = newUserSvc()
-	if err := svc.UnlockUser(ctx, 1, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UnlockUser(ctx, 1, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -1486,7 +1486,7 @@ func TestUserServiceUpdateUserProfile(t *testing.T) {
 
 	// 行缺失 → 404。
 	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
-	if err := svc.UpdateUserProfile(ctx, 1, 404, &adminv1.UpdateUserProfileRequest{Id: 404}); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UpdateUserProfile(ctx, 1, 404, &adminv1.UpdateUserProfileRequest{Id: 404}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -1588,7 +1588,7 @@ func TestUserServiceUpdateUserContact(t *testing.T) {
 
 	// 行缺失 → 404。
 	svc, users, _, _, _, _, _, _, _ = newUserSvc(perms)
-	if err := svc.UpdateUserContact(ctx, 1, 404, &adminv1.UpdateUserContactRequest{Id: 404}); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.UpdateUserContact(ctx, 1, 404, &adminv1.UpdateUserContactRequest{Id: 404}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -1690,7 +1690,7 @@ func TestUserServiceSetUserMfa(t *testing.T) {
 	t.Run("目标行缺失 404", func(t *testing.T) {
 		svc, users, _, _, _, _, _, _, _ := newUserSvc()
 		users.user = userTestRow()
-		if err := svc.SetUserMfa(ctx, 1, 99, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.SetUserMfa(ctx, 1, 99, 1); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 	})
@@ -1734,7 +1734,7 @@ func TestUserServiceUnbindUserTOTP(t *testing.T) {
 	t.Run("totp 行缺失 404 且零副作用", func(t *testing.T) {
 		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
 		users.user = userTestRow()
-		if err := svc.UnbindUserTOTP(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.UnbindUserTOTP(ctx, 1, 42); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(creds.deletedByKind) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -1820,7 +1820,7 @@ func TestUserServiceResetUserRecoveryCodes(t *testing.T) {
 	t.Run("recovery_code 行缺失 404", func(t *testing.T) {
 		svc, users, _, _, _, _, _, _, audit := newUserSvc()
 		users.user = userTestRow()
-		if err := svc.ResetUserRecoveryCodes(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.ResetUserRecoveryCodes(ctx, 1, 42); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(audit.events) != 0 {
@@ -1913,12 +1913,12 @@ func TestUserServiceSetCredentialEnabled(t *testing.T) {
 
 	t.Run("凭证缺失与属他人统一 404", func(t *testing.T) {
 		svc, _, creds, _, _ := newCredSvc("totp")
-		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("缺失 err = %v, want ErrRecordNotFound", err)
 		}
 		// 他人凭证（UserID≠42）与缺失同形态返回，不泄露归属。
 		creds.byID[8] = &model.UserCredential{ID: 8, UserID: 43, Kind: "totp"}
-		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 8, false); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("属他人 err = %v, want ErrRecordNotFound", err)
 		}
 		if len(creds.setEnabled) != 0 {
@@ -1977,13 +1977,13 @@ func TestUserServiceDeleteCredential(t *testing.T) {
 	t.Run("凭证缺失与属他人统一 404", func(t *testing.T) {
 		svc, users, creds, _, _, _, epoch, _, audit := newUserSvc()
 		users.user = userTestRow()
-		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("缺失 err = %v, want ErrRecordNotFound", err)
 		}
 		creds.byID = map[int64]*model.UserCredential{
 			8: {ID: 8, UserID: 43, Kind: "totp"},
 		}
-		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.DeleteCredential(ctx, 1, 42, 8); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("属他人 err = %v, want ErrRecordNotFound", err)
 		}
 		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -2030,7 +2030,7 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 
 	t.Run("资料编辑拒绝", func(t *testing.T) {
 		svc, users, _, _, audit := newDeletedSvc("deleted_42", nil)
-		if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{Id: 42, Nickname: ptrStr("新昵称")}); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.UpdateUserProfile(ctx, 1, 42, &adminv1.UpdateUserProfileRequest{Id: 42, Nickname: ptrStr("新昵称")}); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(users.profileCols) != 0 || len(users.profileSaved) != 0 || len(audit.events) != 0 {
@@ -2040,7 +2040,7 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 
 	t.Run("凭证停用拒绝", func(t *testing.T) {
 		svc, _, creds, epoch, audit := newDeletedSvc("deleted_42", nil)
-		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(creds.setEnabled) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -2050,7 +2050,7 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 
 	t.Run("凭证删除拒绝", func(t *testing.T) {
 		svc, users, creds, epoch, audit := newDeletedSvc("deleted_42", nil)
-		if err := svc.DeleteCredential(ctx, 1, 42, 7); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.DeleteCredential(ctx, 1, 42, 7); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(creds.deletedByID) != 0 || len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -2062,7 +2062,7 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 	t.Run("已删 superadmin 目标 not_found 先于门禁", func(t *testing.T) {
 		perms := &userFakePermissions{granted: userGrantSuperadmins(42, 1)}
 		svc, _, creds, _, _ := newDeletedSvc("deleted_42", perms)
-		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.SetCredentialEnabled(ctx, 1, 42, 7, false); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound（先于门禁）", err)
 		}
 		if len(creds.setEnabled) != 0 {
@@ -2073,7 +2073,7 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 	// 大写变体行（理论行：建号入口已拒，守卫同口径）→ DeleteUser not_found。
 	t.Run("DeleteUser 大写变体行 not_found", func(t *testing.T) {
 		svc, users, _, epoch, audit := newDeletedSvc("DELETED_42", nil)
-		if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("err = %v, want ErrRecordNotFound", err)
 		}
 		if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
@@ -2202,7 +2202,7 @@ func TestDeleteUser(t *testing.T) {
 	// 行缺失 404（先于门禁，不查权限表）。
 	perms := &userFakePermissions{}
 	svc, _, _, _, _, _, _, _, _ = newUserSvc(perms)
-	if err := svc.DeleteUser(ctx, 1, 404); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.DeleteUser(ctx, 1, 404); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("行缺失应 ErrRecordNotFound, got %v", err)
 	}
 	if len(perms.calls) != 0 {
@@ -2216,7 +2216,7 @@ func TestDeleteUser(t *testing.T) {
 	deleted := userTestRow()
 	deleted.Username = "deleted_42"
 	users.user = deleted
-	if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := svc.DeleteUser(ctx, 1, 42); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("已删行应 ErrRecordNotFound, got %v", err)
 	}
 	if len(users.anonymized) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 || len(perms.calls) != 0 {

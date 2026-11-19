@@ -10,7 +10,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/provider"
@@ -27,7 +27,7 @@ func (g fakeGetter) Get(_ context.Context, key string) (*provider.Provider, erro
 	if p, ok := g.byKey[key]; ok {
 		return p, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func storageRow(key, category, typ string, enabled bool) *provider.Provider {

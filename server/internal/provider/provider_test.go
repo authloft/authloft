@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	providerpb "authloft/gen/go/provider"
 	"authloft/internal/proxyclient"
@@ -64,7 +64,7 @@ func (s *fakeSource) FindByKey(_ context.Context, providerKey string) (*model.Pr
 	s.findCalls++
 	row, ok := s.rows[providerKey]
 	if !ok {
-		return nil, gorm.ErrRecordNotFound
+		return nil, sql.ErrNoRows
 	}
 	return row, nil
 }

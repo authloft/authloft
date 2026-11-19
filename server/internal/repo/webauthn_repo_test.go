@@ -12,7 +12,7 @@ import (
 	"slices"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/credential"
 	"authloft/internal/repo/model"
@@ -103,7 +103,7 @@ func TestWebauthnRepoCreateAndQuery(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := wr.FindByCredentialID(ctx, "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := wr.FindByCredentialID(ctx, "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -134,10 +134,10 @@ func TestWebauthnRepoDuplicateRollback(t *testing.T) {
 	}
 
 	// 回滚零残留：user_credential 仍只首凭据一行、webauthn 仍只一行。
-	var credRows int64
-	if err := db.Model(&model.UserCredential{}).
+	credRows, err := db.NewSelect().Model((*model.UserCredential)(nil)).
 		Where("user_id = ?", uid).
-		Count(&credRows).Error; err != nil || credRows != 1 {
+		Count(ctx)
+	if err != nil || credRows != 1 {
 		t.Errorf("回滚后 user_credential = %d 行 err %v; want 1（无残留）", credRows, err)
 	}
 	rows, err := wr.ListByUser(ctx, uid)
@@ -176,21 +176,26 @@ func TestWebauthnRepoDelete(t *testing.T) {
 	}
 
 	// uid 串号防御：用 other 的 uid 删 uid 的凭据 → not found，两行均保留。
-	if err := wr.Delete(ctx, w1.ID, other); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := wr.Delete(ctx, w1.ID, other); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("他人 uid 删除应 ErrRecordNotFound, got %v", err)
 	}
-	var n int64
-	db.Model(&model.UserCredentialWebauthn{}).Where("id = ?", w1.ID).Count(&n)
-	if n != 1 {
-		t.Fatalf("串号删除后 webauthn 行 = %d, want 1（无残留删除）", n)
+	nW, err := db.NewSelect().Model((*model.UserCredentialWebauthn)(nil)).Where("id = ?", w1.ID).Count(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	db.Model(&model.UserCredential{}).Where("id = ?", c1.ID).Count(&n)
-	if n != 1 {
-		t.Fatalf("串号删除后 credential 行 = %d, want 1（无残留删除）", n)
+	if nW != 1 {
+		t.Fatalf("串号删除后 webauthn 行 = %d, want 1（无残留删除）", nW)
+	}
+	nC, err := db.NewSelect().Model((*model.UserCredential)(nil)).Where("id = ?", c1.ID).Count(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nC != 1 {
+		t.Fatalf("串号删除后 credential 行 = %d, want 1（无残留删除）", nC)
 	}
 
 	// 不存在的 id → not found。
-	if err := wr.Delete(ctx, 999999, uid); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := wr.Delete(ctx, 999999, uid); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("不存在 id 应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -198,17 +203,15 @@ func TestWebauthnRepoDelete(t *testing.T) {
 	if err := wr.Delete(ctx, w1.ID, uid); err != nil {
 		t.Fatalf("Delete 失败: %v", err)
 	}
-	db.Model(&model.UserCredentialWebauthn{}).Where("id = ?", w1.ID).Count(&n)
-	if n != 0 {
-		t.Fatalf("删除后 webauthn 行 = %d, want 0", n)
+	if nW, err := db.NewSelect().Model((*model.UserCredentialWebauthn)(nil)).Where("id = ?", w1.ID).Count(ctx); err != nil || nW != 0 {
+		t.Fatalf("删除后 webauthn 行 = %d err %v, want 0", nW, err)
 	}
-	db.Model(&model.UserCredential{}).Where("id = ?", c1.ID).Count(&n)
-	if n != 0 {
-		t.Fatalf("删除后 credential 行 = %d, want 0（同事务两行）", n)
+	if nC, err := db.NewSelect().Model((*model.UserCredential)(nil)).Where("id = ?", c1.ID).Count(ctx); err != nil || nC != 0 {
+		t.Fatalf("删除后 credential 行 = %d err %v, want 0（同事务两行）", nC, err)
 	}
 
 	// 同 id 重复删除 → not found。
-	if err := wr.Delete(ctx, w1.ID, uid); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := wr.Delete(ctx, w1.ID, uid); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("重复删除应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -267,7 +270,7 @@ func TestWebauthnRepoUpdateSignCount(t *testing.T) {
 		t.Errorf("同值 UpdateSignCount 应幂等成功: %v", err)
 	}
 	// 行不存在可判别。
-	if err := wr.UpdateSignCount(ctx, 404, 1); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := wr.UpdateSignCount(ctx, 404, 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("不存在行应 ErrRecordNotFound, got %v", err)
 	}
 }

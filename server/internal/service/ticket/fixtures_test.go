@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/repo/model"
@@ -34,21 +34,21 @@ func (u *tpUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
 	if m, ok := u.byID[id]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *tpUsers) FindByEmail(_ context.Context, email string) (*model.User, error) {
 	if m, ok := u.byEmail[email]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (u *tpUsers) FindByPhone(_ context.Context, phone string) (*model.User, error) {
 	if m, ok := u.byPhone[phone]; ok {
 		return m, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 // tpTicketPayloads TicketPayloadStore 的 fake：内存快照 + 读取

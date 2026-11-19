@@ -12,7 +12,7 @@ import (
 	"errors"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/logx"
 )
@@ -49,7 +49,7 @@ func (r *Revoker) Revoke(ctx context.Context, clientID, clientSecret, tokenValue
 	c, err := r.Clients.FindOidcClientByClientID(ctx, clientID)
 	if err != nil {
 		// 未注册 client 属业务预期；DB 故障被压成 401 不得无痕。
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logx.Error(ctx, "oidc: revoke client lookup failed",
 				"step", "find_client", "error", logx.RedactText(err.Error()))
 		}

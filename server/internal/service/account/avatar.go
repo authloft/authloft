@@ -9,7 +9,7 @@
 // 回退 proxy 在 dto 内折）；direct 模式校验 MIME 白名单 / size 上限后生成
 // 服务端 key（avatars/{uid}/ 隔离 + crypto/rand 随机成分，行 839「key 由
 // 服务端生成，前端无法覆盖」），Resolver → PresignPut 签发有时效 PUT URL
-//（ExpiresIn = Ext.presign_ttl，0 → 300，§12.1 行 1704 注释默认）。
+// （ExpiresIn = Ext.presign_ttl，0 → 300，§12.1 行 1704 注释默认）。
 // CommitAvatar 仅以 Storage.URL(key) 回显地址，不回读校验（行 868 禁止
 // Get/HEAD；§15.1 commit 要点——异步 HEAD 校验留待存储扩展，本层不做）。
 // uid 由 handler 注入（service 不解析会话，profile.go 先例），存在性先判
@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	accountv1 "authloft/gen/go/api/account/v1"
 	"authloft/internal/dto"
@@ -78,7 +78,7 @@ type AvatarProviderStore interface {
 }
 
 // AvatarUserStore 用户存在性窄接口（§20）：*repo.UserRepo 天然满足
-//（profile.go ProfileStore 同源方法）。
+// （profile.go ProfileStore 同源方法）。
 type AvatarUserStore interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
 }
@@ -114,7 +114,7 @@ func NewAvatarService(d AvatarDeps) *AvatarService {
 
 // compile 时断言生产实现满足各窄接口（webauthn.go 同款）。
 var (
-	_ AvatarSettings       = (*settings.Store)(nil)
+	_ AvatarSettings        = (*settings.Store)(nil)
 	_ AvatarProviderStore   = (*repo.ProviderRepo)(nil)
 	_ AvatarUserStore       = (*repo.UserRepo)(nil)
 	_ AvatarStorageResolver = (*storage.Resolver)(nil)
@@ -126,10 +126,10 @@ var (
 // 行 842）→ MIME 白名单 / size 上限（行 868）→ key 服务端生成 →
 // Resolve → PresignPut 透传。ExpiresIn = Ext.presign_ttl（0 → 300）。
 func (s *AvatarService) PresignAvatar(ctx context.Context, uid int64, in *accountv1.PresignAvatarRequest) (*accountv1.AvatarPresignResponse, error) {
-	// 存在性先判：user 行不存在 → gorm.ErrRecordNotFound 透传（handler 转
+	// 存在性先判：user 行不存在 → sql.ErrNoRows 透传（handler 转
 	// not_found，口径同 profile.go）。
 	if _, err := s.deps.Users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("account avatar: load user: %w", err)
@@ -183,7 +183,7 @@ func (s *AvatarService) PresignAvatar(ctx context.Context, uid int64, in *accoun
 func (s *AvatarService) CommitAvatar(ctx context.Context, uid int64, in *accountv1.CommitAvatarRequest) (*accountv1.AvatarResponse, error) {
 	// 存在性先判（同 PresignAvatar，404 优先）。
 	if _, err := s.deps.Users.FindByID(ctx, uid); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("account avatar: load user: %w", err)
@@ -223,7 +223,7 @@ func (s *AvatarService) avatarUploadConfig(ctx context.Context, providerKey stri
 	}
 	row, err := s.deps.Providers.FindByKey(ctx, providerKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, 0, ErrAvatarNotConfigured
 		}
 		return nil, 0, fmt.Errorf("account avatar: load storage provider: %w", err)
@@ -302,7 +302,7 @@ func avatarNormalizeTTL(ttl int32) int64 {
 
 // avatarCommitKeyOK CommitAvatar key 边界（行 839 key 服务端生成 + PMO
 // brief 前缀归属建议）：空串必拒；必须以本 uid 前缀 avatars/{uid}/ 开头
-//（归属校验，防跨用户 key 回显拼 URL）；拒含 ".." / "\"（防相对段把回显
+// （归属校验，防跨用户 key 回显拼 URL）；拒含 ".." / "\"（防相对段把回显
 // URL 拼到域根外）。
 func avatarCommitKeyOK(uid int64, key string) bool {
 	if key == "" {

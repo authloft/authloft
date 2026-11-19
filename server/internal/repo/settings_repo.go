@@ -6,45 +6,52 @@ package repo
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
+	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
 )
 
 // SettingsRepo settings 表数据访问。
 type SettingsRepo struct {
-	db *gorm.DB
+	db *bun.DB
 }
 
-// NewSettingsRepo 按 GORM 连接构造。
-func NewSettingsRepo(db *gorm.DB) *SettingsRepo {
+// NewSettingsRepo 按 bun 连接构造。
+func NewSettingsRepo(db *bun.DB) *SettingsRepo {
 	return &SettingsRepo{db: db}
 }
 
-// LoadAll 全量读 settings 表（启动预热与热更新重载共用，§4.7 行 836）。
+// LoadAll 全量读 settings 表（启动预热与热更新重载共用，§4.7）。
 func (r *SettingsRepo) LoadAll(ctx context.Context) ([]model.Setting, error) {
 	var rows []model.Setting
-	if err := r.db.WithContext(ctx).Find(&rows).Error; err != nil {
+	if err := r.db.NewSelect().Model(&rows).Scan(ctx); err != nil {
 		return nil, fmt.Errorf("settings repo: load all: %w", err)
 	}
 	return rows, nil
 }
 
 // UpsertAll 单事务批量 UPSERT：MySQL 方言生成
-// INSERT ... ON DUPLICATE KEY UPDATE v=VALUES(v), updated_at=...,
-// updated_by=...（§4.7 行 837 写入口径「单事务 UPSERT」）。
+// INSERT ... ON DUPLICATE KEY UPDATE v=VALUES(v), updated_at=VALUES(updated_at),
+// updated_by=VALUES(updated_by)（§4.7 写入口径「单事务 UPSERT」）。
+// updated_at 零值行由本方法补齐（bun 无时间列自动填充）。
 // 空集短路返回，不产生空 VALUES 语句。
 func (r *SettingsRepo) UpsertAll(ctx context.Context, rows []model.Setting) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "k"}},
-			DoUpdates: clause.AssignmentColumns([]string{"v", "updated_at", "updated_by"}),
-		}).Create(&rows).Error
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		now := time.Now()
+		for i := range rows {
+			if rows[i].UpdatedAt.IsZero() {
+				rows[i].UpdatedAt = now
+			}
+		}
+		_, err := tx.NewInsert().Model(&rows).
+			On("DUPLICATE KEY UPDATE v = VALUES(v), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)").
+			Exec(ctx)
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("settings repo: upsert: %w", err)
@@ -52,16 +59,25 @@ func (r *SettingsRepo) UpsertAll(ctx context.Context, rows []model.Setting) erro
 	return nil
 }
 
-// InsertIgnoreAll 单事务批量「缺则插入」：MySQL 方言对 DoNothing 生成
-// ON DUPLICATE KEY UPDATE k=k（主键自赋值 no-op），已存在的行不被覆写。
-// 供启动预热补齐缺失键（§4.7 行 836「幂等」）：多实例并发预热时，
-// 他实例刚写入的自定义值不会被本实例的默认值冲掉。
+// InsertIgnoreAll 单事务批量「缺则插入」（INSERT IGNORE）：已存在的行不被
+// 覆写。供启动预热补齐缺失键（§4.7「幂等」）：多实例并发预热时，他实例
+// 刚写入的自定义值不会被本实例的默认值冲掉。updated_at 零值行由本方法
+// 补齐（bun 无时间列自动填充）。
 func (r *SettingsRepo) InsertIgnoreAll(ctx context.Context, rows []model.Setting) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		now := time.Now()
+		for i := range rows {
+			if rows[i].UpdatedAt.IsZero() {
+				rows[i].UpdatedAt = now
+			}
+		}
+		_, err := tx.NewInsert().Model(&rows).
+			Ignore().
+			Exec(ctx)
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("settings repo: insert ignore: %w", err)

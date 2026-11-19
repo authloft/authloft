@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/gen/go/token"
 	"authloft/internal/asyncqueue"
@@ -38,7 +38,7 @@ func (s *fakeStore) FindByCredentialID(_ context.Context, id string) (*model.Use
 	}
 	row, ok := s.rows[id]
 	if !ok {
-		return nil, gorm.ErrRecordNotFound
+		return nil, sql.ErrNoRows
 	}
 	return row, nil
 }

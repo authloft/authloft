@@ -29,7 +29,7 @@ import (
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
 
-	"gorm.io/gorm"
+	"database/sql"
 )
 
 // RFC 6749 §5.2 错误码。
@@ -191,7 +191,7 @@ func (s *TokenService) refreshToken(ctx context.Context, in TokenInput) (*oidcap
 	if err != nil {
 		// 未命中行属业务预期（invalid_grant）；DB / Redis 故障被压成
 		// 400 会无痕，须单独记。
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logx.Error(ctx, "oidc: refresh token lookup failed",
 				"grant", "refresh_token", "step", "find_token",
 				"error", logx.RedactText(err.Error()))
@@ -289,7 +289,7 @@ func (s *TokenService) findClient(ctx context.Context, clientID string) (*model.
 	c, err := s.Clients.FindOidcClientByClientID(ctx, clientID)
 	if err != nil {
 		// 未注册 client 属业务预期；DB 故障被压成 400 不得无痕。
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			logx.Error(ctx, "oidc: client lookup failed",
 				"step", "find_client", "error", logx.RedactText(err.Error()))
 		}

@@ -1,6 +1,6 @@
 // user_thirdparty_bind 表 repo 层测试：真实 MariaDB 测试实例
 // 经 UC_TEST_MYSQL_DSN env 注入，无 env 时 skip。表结构由 migrate.Up 建
-//（§3.16 DDL 唯一来源）；用例开始 drop 全表、结束 drop 全表 +
+// （§3.16 DDL 唯一来源）；用例开始 drop 全表、结束 drop 全表 +
 // assertNoTables 自证零残留（同既有 repo 测试口径）。
 // setup（providerTestSetup）与共享辅助在 provider_repo_test.go、
 // settings_repo_test.go、db_test.go。user_id 是逻辑引用（§4.3 无外键），
@@ -14,7 +14,7 @@ import (
 	"errors"
 	"testing"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/repo/model"
 )
@@ -74,7 +74,7 @@ func TestBindRepoCreateAndFind(t *testing.T) {
 	}
 
 	// 未命中。
-	if _, err := br.FindByProviderOpenID(ctx, "qq", "nope"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := br.FindByProviderOpenID(ctx, "qq", "nope"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("未命中应 ErrRecordNotFound, got %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestBindRepoUnbind(t *testing.T) {
 	if err := br.Unbind(ctx, b.ID, 5); err != nil {
 		t.Fatalf("本人 Unbind 失败: %v", err)
 	}
-	if _, err := br.FindByProviderOpenID(ctx, "qq", "openid_u5"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := br.FindByProviderOpenID(ctx, "qq", "openid_u5"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("解绑后应查无此行, got %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestBindRepoUnbind(t *testing.T) {
 	}
 
 	// 不存在的 id。
-	if err := br.Unbind(ctx, 404, 5); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := br.Unbind(ctx, 404, 5); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("不存在 id 应 ErrRecordNotFound, got %v", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestBindRepoUnionRowByProviderOpenID(t *testing.T) {
 		t.Errorf("普通行字段不符: %+v", gotMp1)
 	}
 	// 用 unionid 当 open_id 查普通 provider 应查无此行（普通行不存 unionid）。
-	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_1", unionID); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_1", unionID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("普通行不应按 unionid 命中（不存 unionid）, got %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestBindRepoCreateWithUnion(t *testing.T) {
 	if err := br.CreateWithUnion(ctx, b2, unionProviderKey, unionID); !errors.Is(err, ErrBindDuplicate) {
 		t.Fatalf("Union 键冲突应 ErrBindDuplicate, got %v", err)
 	}
-	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_b", "openid_b"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := br.FindByProviderOpenID(ctx, "wechat_mp_b", "openid_b"); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Union 冲突时普通行应整体回滚, got %v", err)
 	}
 

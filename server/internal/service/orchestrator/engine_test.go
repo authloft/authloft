@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/token"
@@ -137,10 +137,10 @@ type fakeUsers struct {
 
 func (f *fakeUsers) FindByID(context.Context, int64) (*model.User, error) { return f.user, f.err }
 func (f *fakeUsers) FindByPhone(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 func (f *fakeUsers) FindByEmail(context.Context, string) (*model.User, error) {
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 type fakeCredentials struct {
@@ -152,7 +152,7 @@ func (f *fakeCredentials) FindByUserAndKind(_ context.Context, _ int64, kind str
 	if c, ok := f.creds[kind]; ok {
 		return c, nil
 	}
-	return nil, gorm.ErrRecordNotFound
+	return nil, sql.ErrNoRows
 }
 
 func (f *fakeCredentials) ListWebauthn(context.Context, int64) ([]model.UserCredentialWebauthn, error) {
@@ -841,14 +841,14 @@ func TestEngineMFARequiredLookupFailure(t *testing.T) {
 }
 
 // TestEngineMFARequiredUserLookupNotFound 用户查询返回包装过的
-// not-found（仓储以 %w 包装 gorm.ErrRecordNotFound）时同样必须 fail-closed：
+// not-found（仓储以 %w 包装 sql.ErrNoRows）时同样必须 fail-closed：
 // 用户行读不到不得被解释为「无需二次验证」而建会话，响应为失败且不进终点。
 func TestEngineMFARequiredUserLookupNotFound(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	deps := newTestDeps(t, at)
 	deps.registry.factors[factor.FactorPassword] = passwordFactor(42)
 	deps.users.user = nil
-	deps.users.err = fmt.Errorf("repo: find user: %w", gorm.ErrRecordNotFound)
+	deps.users.err = fmt.Errorf("repo: find user: %w", sql.ErrNoRows)
 	e := deps.engine(testState(t, at))
 
 	resp := e.Submit(context.Background(), "login", Request{

@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gorm.io/gorm"
+	"database/sql"
 
 	"authloft/internal/asyncqueue"
 )
@@ -234,7 +234,7 @@ func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {
 	}
 	p, err := b.loader.Get(ctx, providerKey)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: provider %q not found", ErrChannelNotConfigured, providerKey)
 		}
 		// 出站代理引用不可解析：行级 fail-closed（§15.4），按既有
