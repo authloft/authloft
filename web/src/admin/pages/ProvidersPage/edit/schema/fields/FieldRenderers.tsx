@@ -116,10 +116,13 @@ export function TextareaField(props: FieldRendererProps): ReactNode {
   );
 }
 
-/** checkbox：开关（Form 托管 checked 布尔值）。 */
+/**
+ * checkbox：开关（Form 托管 checked 布尔值，schemaLogic 的布尔默认值 /
+ * 回填 / 提交体模型不变）。Switch 视觉为短控件，不挂全宽类。
+ */
 export function CheckboxField(props: FieldRendererProps): ReactNode {
   return (
-    <Form.Checkbox
+    <Form.Switch
       field={props.field.key}
       label={fieldLabel(props.field)}
       helpText={fieldHelp(props.field)}

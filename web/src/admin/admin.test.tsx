@@ -5418,6 +5418,50 @@ describe('proxy 提供商动态表单（五真实字段 + 引用键：渲染 / �
 });
 
 // ---------------------------------------------------------------------------
+// checkbox 类型开关字段（接口文档 §5.3 policy 区块 is_enabled 等布尔键）：
+// 渲染层 Switch 承载、Form 托管布尔回填；布尔默认值 / 提交体模型由
+// schemaLogic 用例覆盖（applySchemaDefaults / buildProviderStruct 断言）
+// ---------------------------------------------------------------------------
+
+describe('checkbox 字段 Switch 渲染（布尔回填逐项一致，值模型不变）', () => {
+  function renderPolicySwitch(initValues: Record<string, unknown>) {
+    const schema = create(SchemaResponseSchema, {
+      type: 'wechat_mp',
+      category: 'oauth',
+      fields: SCHEMA_FIELDS.filter((field) => field.key === 'is_enabled'),
+    });
+    return renderToStaticMarkup(
+      createElement(
+        Form,
+        { initValues },
+        createElement(SchemaForm, { schema, lockedKeys: [] }),
+      ),
+    );
+  }
+
+  test('分派 Switch 控件渲染（不再落 Checkbox 外观），label 经 t() 解析', () => {
+    setLocale('zh-CN');
+    const html = renderPolicySwitch({ is_enabled: true });
+    expect(html).toContain('x-field-id="is_enabled"');
+    expect(html).toContain('semi-switch');
+    expect(html).not.toContain('semi-checkbox');
+    expect(html).toContain('启用');
+    setLocale('zh-CN');
+  });
+
+  test('initValue true / false → checked 类与 aria-checked 布尔回填逐项一致', () => {
+    setLocale('zh-CN');
+    const on = renderPolicySwitch({ is_enabled: true });
+    expect(on).toContain('semi-switch-checked');
+    expect(on).toContain('aria-checked="true"');
+    const off = renderPolicySwitch({ is_enabled: false });
+    expect(off).not.toContain('semi-switch-checked');
+    expect(off).toContain('aria-checked="false"');
+    setLocale('zh-CN');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 拉码模式三字段 + textarea 类型（接口文档 §5.3 type=wechat_mp_scan 行 /
 // §1.11 七类型：渲染 / 零值 / 必填 / 字符串直存）
 // ---------------------------------------------------------------------------
