@@ -7,15 +7,19 @@
  */
 export const admin = {
   // ---- settingsLogic.ts 设置表单（分区 / 字段 label / hint / 单位）----------
+  'admin.settingsSectionSiteInfo': '站点信息',
+  'admin.settingsSectionRegistration': '注册与找回',
   'admin.settingsSectionPasswordPolicy': '密码策略',
-  'admin.settingsSectionAccountRegistration': '账号与注册',
+  'admin.settingsSectionLoginFailureLock': '登录失败锁定',
+  'admin.settingsSectionLoginMethods': '登录方式',
+  'admin.settingsSectionMfa': '两步验证 MFA',
   'admin.settingsSectionOtpRateLimit': '验证码限流',
-  'admin.settingsSectionLoginAndMfa': '登录方式与 MFA',
-  'admin.settingsSectionPwdFailProtection': '密码失败保护',
-  'admin.settingsSectionSessionCookie': '会话、Cookie 与多域名',
+  'admin.settingsSectionSessionCookie': '会话与 Cookie',
+  'admin.settingsSectionDomainHttps': '域名与 HTTPS',
   'admin.settingsSectionQueue': '队列参数',
-  'admin.settingsSectionProviderAndGateway': 'Provider 与网关',
-  'admin.settingsSectionLogAndStatic': '日志与静态资源',
+  'admin.settingsSectionExternalServices': '外部服务',
+  'admin.settingsSectionGatewayToken': '网关令牌',
+  'admin.settingsSectionLogRetention': '日志留存',
 
   'admin.pwdMinLengthLabel': '最小长度',
   'admin.pwdMinLengthHint': '默认 8',
@@ -683,10 +687,10 @@ export const admin = {
   // ---- pages/{SettingsPage,StatusPage,DecodePage}.tsx-------------
   'admin.settingsTitle': '系统设置',
   // ---- SettingsPage 分 Tab（4 组 / 每 Tab 独立保存）----
-  'admin.settingsTabAccount': '账号与密码',
-  'admin.settingsTabAuth': '登录与验证',
-  'admin.settingsTabSession': '会话与域名',
-  'admin.settingsTabSystem': '系统与集成',
+  'admin.settingsTabSite': '站点与账号',
+  'admin.settingsTabPassword': '密码与防护',
+  'admin.settingsTabLogin': '登录与会话',
+  'admin.settingsTabDeploy': '部署与集成',
   'admin.settingsTabUnsaved': '该页签有未保存的修改',
   'admin.settingsTabSaveAction': '保存本页',
   'admin.settingsSaved': '设置已保存',

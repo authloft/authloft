@@ -3719,7 +3719,7 @@ describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', (
 });
 
 describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / getHttpsDeploymentOptions（表单分区与选项值域；函数化调用期求值）', () => {
-  test('9 区 37 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
+  test('13 区 37 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
     const sectionKeys = getSettingsSections().flatMap((section) =>
       section.fields.map((field) => field.key),
     );
@@ -3755,20 +3755,20 @@ describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / ge
 });
 
 describe('getSettingsTabs（4 Tab 分组：37 键全覆盖、无重复，按稳定 slug 引用分区）', () => {
-  test('4 个 Tab；键集 = DEFAULT_SETTINGS 键集且无重复；9 个分区各归一组', () => {
+  test('4 个 Tab；键集 = DEFAULT_SETTINGS 键集且无重复；13 个分区各归一组', () => {
     const tabs = getSettingsTabs();
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'account',
-      'auth',
-      'session',
-      'system',
+      'site',
+      'password',
+      'login',
+      'deploy',
     ]);
     const tabKeys = tabs.flatMap((tab) => tab.keys);
     expect(tabKeys).toHaveLength(37);
     expect(new Set(tabKeys).size).toBe(37);
     expect([...tabKeys].sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
     const sections = tabs.flatMap((tab) => tab.sections);
-    expect(sections).toHaveLength(9);
+    expect(sections).toHaveLength(13);
     expect([...sections.map((section) => section.key)].sort()).toEqual(
       [...getSettingsSections().map((section) => section.key)].sort(),
     );
@@ -3785,11 +3785,11 @@ describe('getSettingsTabs（4 Tab 分组：37 键全覆盖、无重复，按稳�
   });
 
   test('Tab 标题随 locale 切换（与 getSettingsSections 同式调用期求值）', () => {
-    expect(getSettingsTabs()[0].title).toBe('账号与密码');
+    expect(getSettingsTabs()[0].title).toBe('站点与账号');
     setLocale('en-US');
-    expect(getSettingsTabs()[0].title).toBe('Account & password');
+    expect(getSettingsTabs()[0].title).toBe('Site & account');
     setLocale('zh-CN');
-    expect(getSettingsTabs()[0].title).toBe('账号与密码');
+    expect(getSettingsTabs()[0].title).toBe('站点与账号');
   });
 });
 
@@ -3835,9 +3835,13 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
     setLocale('en-US');
     // SETTINGS_SECTIONS（settingsLogic 函数化，调用期求值）。
     const sections = getSettingsSections();
-    expect(sections[0].title).toBe('Password policy');
-    expect(sections[0].fields[0].label).toBe('Minimum length');
-    expect(sections[0].fields[0].hint).toBe('Default 8');
+    expect(sections[0].title).toBe('Site information');
+    expect(sections[0].fields[0].label).toBe('Site name');
+    const pwdPolicy = sections.find(
+      (section) => section.key === 'passwordPolicy',
+    );
+    expect(pwdPolicy?.fields[0].label).toBe('Minimum length');
+    expect(pwdPolicy?.fields[0].hint).toBe('Default 8');
     // LOGIN / MFA / HTTPS_DEPLOYMENT 选项表。
     expect(getLoginMethodOptions()[0].label).toBe('Password');
     expect(getMfaMethodOptions()[0].label).toBe('Authenticator code');
@@ -3860,7 +3864,7 @@ describe('静态表渲染期求值回归（setLocale 后取表得对应语言文
     ]);
     // 反向复核：切回 zh-CN 后同表回中文（求值确实晚于 setLocale）。
     setLocale('zh-CN');
-    expect(getSettingsSections()[0].title).toBe('密码策略');
+    expect(getSettingsSections()[0].title).toBe('站点信息');
     expect(apiMod.credentialKindLabel('password')).toBe('密码登录');
   });
 });

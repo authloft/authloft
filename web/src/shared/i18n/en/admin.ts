@@ -7,15 +7,19 @@ import type { admin as zhAdmin } from '../zh/admin';
 
 export const admin: typeof zhAdmin = {
   // ---- settingsLogic.ts 设置表单（分区 / 字段 label / hint / 单位）----------
+  'admin.settingsSectionSiteInfo': 'Site information',
+  'admin.settingsSectionRegistration': 'Registration & recovery',
   'admin.settingsSectionPasswordPolicy': 'Password policy',
-  'admin.settingsSectionAccountRegistration': 'Account & registration',
+  'admin.settingsSectionLoginFailureLock': 'Failed sign-in lockout',
+  'admin.settingsSectionLoginMethods': 'Sign-in methods',
+  'admin.settingsSectionMfa': 'Two-step verification (MFA)',
   'admin.settingsSectionOtpRateLimit': 'Verification code rate limits',
-  'admin.settingsSectionLoginAndMfa': 'Sign-in methods & MFA',
-  'admin.settingsSectionPwdFailProtection': 'Password failure protection',
-  'admin.settingsSectionSessionCookie': 'Session, cookies & domains',
+  'admin.settingsSectionSessionCookie': 'Session & cookies',
+  'admin.settingsSectionDomainHttps': 'Domains & HTTPS',
   'admin.settingsSectionQueue': 'Queue parameters',
-  'admin.settingsSectionProviderAndGateway': 'Providers & gateway',
-  'admin.settingsSectionLogAndStatic': 'Logs & static assets',
+  'admin.settingsSectionExternalServices': 'External services',
+  'admin.settingsSectionGatewayToken': 'Gateway tokens',
+  'admin.settingsSectionLogRetention': 'Log retention',
 
   'admin.pwdMinLengthLabel': 'Minimum length',
   'admin.pwdMinLengthHint': 'Default 8',
@@ -743,10 +747,10 @@ export const admin: typeof zhAdmin = {
   // ---- pages/{SettingsPage,StatusPage,DecodePage}.tsx-------------
   'admin.settingsTitle': 'System Settings',
   // ---- SettingsPage tabs (4 groups / per-tab save) ----
-  'admin.settingsTabAccount': 'Account & password',
-  'admin.settingsTabAuth': 'Sign-in & verification',
-  'admin.settingsTabSession': 'Session & domains',
-  'admin.settingsTabSystem': 'System & integrations',
+  'admin.settingsTabSite': 'Site & account',
+  'admin.settingsTabPassword': 'Password & protection',
+  'admin.settingsTabLogin': 'Sign-in & session',
+  'admin.settingsTabDeploy': 'Deployment & integrations',
   'admin.settingsTabUnsaved': 'This tab has unsaved changes',
   'admin.settingsTabSaveAction': 'Save This Tab',
   'admin.settingsSaved': 'Settings saved',

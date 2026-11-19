@@ -305,15 +305,19 @@ export type SettingsFieldMeta =
  * 下标归组（locale 切换会改 title、调整分区顺序会让下标静默错位）。
  */
 export type SettingsSectionKey =
+  | 'siteInfo'
+  | 'registration'
   | 'passwordPolicy'
-  | 'accountRegistration'
+  | 'loginFailureLock'
+  | 'loginMethods'
+  | 'mfa'
   | 'otpRateLimit'
-  | 'loginAndMfa'
-  | 'pwdFailProtection'
   | 'sessionCookie'
+  | 'domainHttps'
   | 'queue'
-  | 'providerAndGateway'
-  | 'logAndStatic';
+  | 'externalServices'
+  | 'gatewayToken'
+  | 'logRetention';
 
 /** 表单分区（§5.6 四张表的展示归组；37 键全覆盖、无重复）。 */
 export interface SettingsSectionMeta {
@@ -336,15 +340,67 @@ export interface SettingsTabMeta {
 }
 
 /**
- * 设置表单分区清单（渲染数据源）：按 §5.6 四张表归组为 9 区——密码策略 /
- * 账号与注册 / 验证码限流 / 登录方式与 MFA / 密码失败保护 / 会话 Cookie 多
- * 域名与 HTTPS 部署 / 队列参数 / Provider 与网关 / 日志与静态资源；37 键
- * 全覆盖、无重复。函数调用期求值（消费方组件渲染期调用），label /
- * hint / unit / addText / placeholder 经 t() 取当前语言文案——模块级常量
- * 求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
+ * 设置表单分区清单（渲染数据源）：§5.6 四张表的 37 键按管理员操作场景归组
+ * 为 13 区——站点信息 / 注册与找回 / 密码策略 / 登录失败锁定 / 登录方式 /
+ * 两步验证 MFA / 验证码限流 / 会话与 Cookie / 域名与 HTTPS / 队列参数 /
+ * 外部服务 / 网关令牌 / 日志留存；37 键全覆盖、无重复。分区只改展示归组，
+ * 字段的 label / hint / unit / addText / placeholder 定义沿用原值。
+ * 函数调用期求值（消费方组件渲染期调用），文案经 t() 取当前语言——模块级
+ * 常量求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
  */
 export function getSettingsSections(): SettingsSectionMeta[] {
   return [
+    {
+      key: 'siteInfo',
+      title: t('admin.settingsSectionSiteInfo'),
+      fields: [
+        {
+          kind: 'text',
+          key: 'siteName',
+          label: t('admin.siteNameLabel'),
+          hint: t('admin.siteNameHint'),
+        },
+        {
+          kind: 'text',
+          key: 'staticBase',
+          label: t('admin.staticBaseLabel'),
+          hint: t('admin.staticBaseHint'),
+        },
+      ],
+    },
+    {
+      key: 'registration',
+      title: t('admin.settingsSectionRegistration'),
+      fields: [
+        {
+          kind: 'switch',
+          key: 'allowPasswordReset',
+          label: t('admin.allowPasswordResetLabel'),
+          hint: t('admin.allowPasswordResetHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowRegistration',
+          label: t('admin.allowRegistrationLabel'),
+          hint: t('admin.allowRegistrationHint'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupPassword',
+          label: t('admin.allowSignupPasswordLabel'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupPhone',
+          label: t('admin.allowSignupPhoneLabel'),
+        },
+        {
+          kind: 'switch',
+          key: 'allowSignupEmail',
+          label: t('admin.allowSignupEmailLabel'),
+        },
+      ],
+    },
     {
       key: 'passwordPolicy',
       title: t('admin.settingsSectionPasswordPolicy'),
@@ -376,39 +432,6 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           kind: 'switch',
           key: 'pwdDisallowCommon',
           label: t('admin.pwdDisallowCommonLabel'),
-        },
-      ],
-    },
-    {
-      key: 'accountRegistration',
-      title: t('admin.settingsSectionAccountRegistration'),
-      fields: [
-        {
-          kind: 'switch',
-          key: 'allowPasswordReset',
-          label: t('admin.allowPasswordResetLabel'),
-          hint: t('admin.allowPasswordResetHint'),
-        },
-        {
-          kind: 'switch',
-          key: 'allowRegistration',
-          label: t('admin.allowRegistrationLabel'),
-          hint: t('admin.allowRegistrationHint'),
-        },
-        {
-          kind: 'switch',
-          key: 'allowSignupPassword',
-          label: t('admin.allowSignupPasswordLabel'),
-        },
-        {
-          kind: 'switch',
-          key: 'allowSignupPhone',
-          label: t('admin.allowSignupPhoneLabel'),
-        },
-        {
-          kind: 'switch',
-          key: 'allowSignupEmail',
-          label: t('admin.allowSignupEmailLabel'),
         },
       ],
     },
@@ -453,8 +476,8 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       ],
     },
     {
-      key: 'loginAndMfa',
-      title: t('admin.settingsSectionLoginAndMfa'),
+      key: 'loginMethods',
+      title: t('admin.settingsSectionLoginMethods'),
       fields: [
         {
           kind: 'multiSelect',
@@ -463,6 +486,12 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           options: getLoginMethodOptions(),
           hint: t('admin.loginMethodsHint'),
         },
+      ],
+    },
+    {
+      key: 'mfa',
+      title: t('admin.settingsSectionMfa'),
+      fields: [
         {
           kind: 'switch',
           key: 'mfaEnabled',
@@ -479,8 +508,8 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       ],
     },
     {
-      key: 'pwdFailProtection',
-      title: t('admin.settingsSectionPwdFailProtection'),
+      key: 'loginFailureLock',
+      title: t('admin.settingsSectionLoginFailureLock'),
       fields: [
         {
           kind: 'number',
@@ -520,6 +549,12 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           label: t('admin.cookieNameLabel'),
           hint: t('admin.cookieNameHint'),
         },
+      ],
+    },
+    {
+      key: 'domainHttps',
+      title: t('admin.settingsSectionDomainHttps'),
+      fields: [
         {
           kind: 'select',
           key: 'httpsDeployment',
@@ -570,8 +605,8 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       ],
     },
     {
-      key: 'providerAndGateway',
-      title: t('admin.settingsSectionProviderAndGateway'),
+      key: 'externalServices',
+      title: t('admin.settingsSectionExternalServices'),
       fields: [
         {
           kind: 'text',
@@ -597,6 +632,12 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           label: t('admin.avatarStorageProviderLabel'),
           hint: t('admin.avatarStorageProviderHint'),
         },
+      ],
+    },
+    {
+      key: 'gatewayToken',
+      title: t('admin.settingsSectionGatewayToken'),
+      fields: [
         {
           kind: 'stringList',
           key: 'gatewayTokens',
@@ -608,8 +649,8 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       ],
     },
     {
-      key: 'logAndStatic',
-      title: t('admin.settingsSectionLogAndStatic'),
+      key: 'logRetention',
+      title: t('admin.settingsSectionLogRetention'),
       fields: [
         {
           kind: 'number',
@@ -618,29 +659,17 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           unit: t('admin.unitDays'),
           hint: t('admin.eventlogRetentionDaysHint'),
         },
-        {
-          kind: 'text',
-          key: 'siteName',
-          label: t('admin.siteNameLabel'),
-          hint: t('admin.siteNameHint'),
-        },
-        {
-          kind: 'text',
-          key: 'staticBase',
-          label: t('admin.staticBaseLabel'),
-          hint: t('admin.staticBaseHint'),
-        },
       ],
     },
   ];
 }
 
 /**
- * 设置页 Tab 清单（渲染 / 保存作用域的唯一数据源）：9 个分区按主题归
- * 4 组——账号与密码 / 登录与验证 / 会话与域名 / 系统与集成，37 键在
- * 四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平（不另
- * 手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug 引用，
- * 标题走 t() 调用期求值（locale 切换不冻结）。
+ * 设置页 Tab 清单（渲染 / 保存作用域的唯一数据源）：13 个分区按管理员
+ * 操作场景归 4 组——站点与账号 / 密码与防护 / 登录与会话 / 部署与集成，
+ * 37 键在四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平
+ * （不另手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug
+ * 引用，标题走 t() 调用期求值（locale 切换不冻结）。
  */
 export function getSettingsTabs(): SettingsTabMeta[] {
   const sections = getSettingsSections();
@@ -670,17 +699,23 @@ export function getSettingsTabs(): SettingsTabMeta[] {
     };
   }
   return [
-    tab('account', 'admin.settingsTabAccount', [
+    tab('site', 'admin.settingsTabSite', ['siteInfo', 'registration']),
+    tab('password', 'admin.settingsTabPassword', [
       'passwordPolicy',
-      'accountRegistration',
-      'pwdFailProtection',
+      'loginFailureLock',
     ]),
-    tab('auth', 'admin.settingsTabAuth', ['otpRateLimit', 'loginAndMfa']),
-    tab('session', 'admin.settingsTabSession', ['sessionCookie']),
-    tab('system', 'admin.settingsTabSystem', [
+    tab('login', 'admin.settingsTabLogin', [
+      'loginMethods',
+      'mfa',
+      'otpRateLimit',
+      'sessionCookie',
+    ]),
+    tab('deploy', 'admin.settingsTabDeploy', [
+      'domainHttps',
       'queue',
-      'providerAndGateway',
-      'logAndStatic',
+      'externalServices',
+      'gatewayToken',
+      'logRetention',
     ]),
   ];
 }

@@ -5,8 +5,8 @@
  *
  * ⚠️ SetSettings 按 has 位部分更新（PATCH）：未设置不修改、显式零值
  * 覆盖；四个 repeated 键带 has_* 伴生标志，置 true 时列表在场、空数组
- * 即清空。36 键按 getSettingsTabs() 分 4 个 Tab 展示（账号与密码 /
- * 登录与验证 / 会话与域名 / 系统与集成），草稿仍是单一完整键集
+ * 即清空。37 键按 getSettingsTabs() 分 4 个 Tab 展示（站点与账号 /
+ * 密码与防护 / 登录与会话 / 部署与集成），草稿仍是单一完整键集
  * （draftFromSettings），切 Tab 不丢未保存改动、Tab 标签上落脏点。
  * 保存作用域二选一：「保存本页签」只提交该 Tab 的改动键、「保存全部改动」
  * 提交所有改动键——均经 api.buildSettingsPatchRequest 构造，**未改动的键
