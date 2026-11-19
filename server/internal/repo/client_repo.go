@@ -112,8 +112,9 @@ const clientDefaultSortColumn = "id"
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
 // （大小写不敏感，其余含缺省一律 desc）；非 id 主序恒追加 id 次序保证分页
 // 全序稳定（同值行跨页不漂移，口径同 user_repo.orderClause /
-// webauthn_repo.ListByUser）。
-func (q ClientListQuery) orderClause() string {
+// webauthn_repo.ListByUser）。列名经 bun.Ident 随方言引用（MySQL 反引号 /
+// PG 双引号），白名单仍是防注入前置，Ident 只负责引用形态。
+func (q ClientListQuery) orderClause() (string, []any) {
 	col := q.Sort
 	if col == "" || !clientSortColumnPattern.MatchString(col) {
 		col = clientDefaultSortColumn
@@ -123,9 +124,9 @@ func (q ClientListQuery) orderClause() string {
 		dir = "ASC"
 	}
 	if col == clientDefaultSortColumn {
-		return col + " " + dir
+		return col + " " + dir, nil
 	}
-	return "`" + col + "` " + dir + ", id DESC"
+	return "? " + dir + ", id DESC", []any{bun.Ident(col)}
 }
 
 // normalize 分页参数归一（§1.7：page 1 起、pageSize 默认 20 上限 100）。
@@ -152,8 +153,9 @@ func (r *ClientRepo) ListSsoClients(ctx context.Context, q ClientListQuery) ([]m
 		return nil, 0, fmt.Errorf("client repo: list sso clients count: %w", err)
 	}
 	var rows []model.SsoClient
+	clause, orderArgs := q.orderClause()
 	err = r.db.NewSelect().Model(&rows).
-		OrderExpr(q.orderClause()).
+		OrderExpr(clause, orderArgs...).
 		Limit(int64(size)).
 		Offset(int64((page - 1) * size)).
 		Scan(ctx)
@@ -172,8 +174,9 @@ func (r *ClientRepo) ListOidcClients(ctx context.Context, q ClientListQuery) ([]
 		return nil, 0, fmt.Errorf("client repo: list oidc clients count: %w", err)
 	}
 	var rows []model.OidcClient
+	clause, orderArgs := q.orderClause()
 	err = r.db.NewSelect().Model(&rows).
-		OrderExpr(q.orderClause()).
+		OrderExpr(clause, orderArgs...).
 		Limit(int64(size)).
 		Offset(int64((page - 1) * size)).
 		Scan(ctx)

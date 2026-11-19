@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -150,4 +151,32 @@ func requireChangedRow(ctx context.Context, db bun.IDB, res sql.Result, model an
 		return wrap(sql.ErrNoRows)
 	}
 	return nil
+}
+
+// applyUpsert 为 INSERT 追加按方言分派的 upsert 子句。bun 的 On(...) 子句
+// 原样拼接、不跨方言自动翻译，冲突分支须按方言各自生成：
+//   - MySQL/MariaDB：ON DUPLICATE KEY UPDATE col = VALUES(col)——表上任意
+//     唯一键（含主键）冲突即走更新分支，冲突列由唯一键承担，conflictKeys
+//     不参与 SQL；
+//   - PostgreSQL：ON CONFLICT (k, ...) DO UPDATE SET col = EXCLUDED.col
+//     ——冲突列必须显式指定且与表上唯一键一致，conflictKeys 为其列表。
+//
+// 方言按 query 已装配 dialect 的能力位判定（与连接工厂同源，MySQL 侧经
+// noReturningDialect 不改动本判定），调用方无需再传 driver。setCols 为冲突
+// 时覆盖的列（代码常量，全为 [a-z0-9_] 命名，两方言裸标识符安全，不引用）。
+func applyUpsert(q *bun.InsertQuery, conflictKeys []string, setCols []string) *bun.InsertQuery {
+	isPG := q.Dialect().Features().Has(feature.InsertOnConflict)
+	sets := make([]string, len(setCols))
+	for i, col := range setCols {
+		if isPG {
+			sets[i] = col + " = EXCLUDED." + col
+		} else {
+			sets[i] = col + " = VALUES(" + col + ")"
+		}
+	}
+	if isPG {
+		return q.On("CONFLICT (" + strings.Join(conflictKeys, ", ") + ") DO UPDATE").
+			Set(strings.Join(sets, ", "))
+	}
+	return q.On("DUPLICATE KEY UPDATE").Set(strings.Join(sets, ", "))
 }

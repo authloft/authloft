@@ -54,7 +54,7 @@ func TestUserRepoListUsersFilterSQL(t *testing.T) {
 	}
 	filtered := rp.listUsersFilter(context.Background(), q).String()
 	for _, want := range []string{
-		"LOWER(username) NOT LIKE", "created_at >=", "created_at <=",
+		"POSITION('deleted_' IN LOWER(username)) <> 1", "created_at >=", "created_at <=",
 		"last_login_at >=", "last_login_at <=", "mfa_required =",
 		"user_credential", "kind =",
 	} {
@@ -64,7 +64,7 @@ func TestUserRepoListUsersFilterSQL(t *testing.T) {
 	}
 
 	plain := rp.listUsersFilter(context.Background(), UserListQuery{}).String()
-	if strings.Contains(plain, " WHERE ") || strings.Contains(plain, "NOT LIKE") ||
+	if strings.Contains(plain, " WHERE ") || strings.Contains(plain, "POSITION(") ||
 		strings.Contains(plain, "mfa_required =") || strings.Contains(plain, "user_credential") {
 		t.Errorf("无筛选时不应追加条件: %s", plain)
 	}
@@ -742,8 +742,9 @@ func TestUserRepoListByIDs(t *testing.T) {
 }
 
 // TestUserRepoListUsersSearchSort（env-skip）：q 对 username / nickname /
-// email / phone 四列模糊匹配（%q%，通配符转义为字面量）；sort / order 消费
-// （合法列名排序、缺省与字符集外回落 id、order 仅 asc 改向）。
+// email / phone 四列做字面子串匹配（POSITION 口径，%/_/\ 一律按字面量参与
+// 匹配）；sort / order 消费（合法列名排序、缺省与字符集外回落 id、order 仅
+// asc 改向）。
 func TestUserRepoListUsersSearchSort(t *testing.T) {
 	rp, _ := userTestSetup(t)
 	ctx := context.Background()
@@ -785,9 +786,15 @@ func TestUserRepoListUsersSearchSort(t *testing.T) {
 		t.Fatalf("Q=138 = total %d err=%v, want 1（phone 列命中）", total, err)
 	}
 
-	// LIKE 通配符按字面量匹配：q="100%" 只含字面百分号，无行命中（不报错）。
+	// 通配符按字面量匹配（POSITION 口径，无转义语义）：q="100%" 只含字面
+	// 百分号，无行命中。
 	if _, total, err = rp.ListUsers(ctx, UserListQuery{Q: "100%"}); err != nil || total != 0 {
-		t.Fatalf("Q=100%% = total %d err=%v, want 0（通配符转义为字面量）", total, err)
+		t.Fatalf("Q=100%% = total %d err=%v, want 0（%% 按字面量匹配）", total, err)
+	}
+	// _ 按字面量：q="i_e" 若 _ 是通配符会命中 alice_01（i_通配_e 命中 ice）
+	// 与 alice@example.com；字面匹配下无行包含 i_e。
+	if _, total, err = rp.ListUsers(ctx, UserListQuery{Q: "i_e"}); err != nil || total != 0 {
+		t.Fatalf("Q=i_e = total %d err=%v, want 0（_ 按字面量匹配）", total, err)
 	}
 
 	// sort=username + order=asc：主序生效。
@@ -808,6 +815,15 @@ func TestUserRepoListUsersSearchSort(t *testing.T) {
 	if got, _, err = rp.ListUsers(ctx, UserListQuery{Sort: "username", Order: "asc", Page: 2, PageSize: 2}); err != nil ||
 		len(got) != 2 || got[0].Username != "carol_03" || got[1].Username != "dave_04" {
 		t.Fatalf("sort+page2 = %v err=%v", usernames(got), err)
+	}
+
+	// \ 按字面量参与匹配：反斜杠用户名可被 q 原文命中（不经转义、不破坏
+	// 匹配），置于计数类断言之后不影响前序行数口径。
+	if err := rp.Create(ctx, &model.User{Username: `win\dows`}); err != nil {
+		t.Fatalf("Create 反斜杠用户名失败: %v", err)
+	}
+	if _, total, err = rp.ListUsers(ctx, UserListQuery{Q: `win\dows`}); err != nil || total != 1 {
+		t.Fatalf(`Q=win\dows = total %d err=%v, want 1（\ 按字面量匹配）`, total, err)
 	}
 }
 

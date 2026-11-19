@@ -21,6 +21,11 @@ import (
 // 之一，§4.2）时的可判别错误；具体冲突键与值在底层 *mysql.MySQLError 中。
 var ErrUserDuplicate = errors.New("user repo: duplicate unique key")
 
+// epochBumpSet epoch 递增 + 回绕的 SET 表达式（§4.2：递增结果 > 30000 置 1、
+// 跳过 0）。CASE WHEN 为 ANSI 写法两库通用；MySQL 方言函数 IF() 不能跨库，
+// IncEpoch 与 AnonymizeUser 共用同一表达式防两处口径漂移。
+const epochBumpSet = "epoch = CASE WHEN epoch + 1 > 30000 THEN 1 ELSE epoch + 1 END"
+
 // UserRepo user / user_profile 表数据访问（§3.9：表与文件对应
 // user(+user_profile) → user_repo.go）。
 type UserRepo struct {
@@ -171,7 +176,7 @@ func (r *UserRepo) IncEpoch(ctx context.Context, id int64) (int16, error) {
 	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		res, err := tx.NewUpdate().Model((*model.User)(nil)).
 			Where("id = ?", id).
-			Set("epoch = IF(epoch + 1 > 30000, 1, epoch + 1)").
+			Set(epochBumpSet).
 			Set("updated_at = ?", time.Now()).
 			Exec(ctx)
 		if err != nil {
@@ -298,14 +303,14 @@ func (r *UserRepo) UpdateContactColumns(ctx context.Context, id int64, phone, em
 const deletedUserPrefix = "deleted_"
 
 // UserListQuery ListUsers 入参：UserStatus 为 nil 时不过滤（§5.4 筛选入参）；
-// Q 非空时对 username / nickname / email / phone 四列做模糊匹配（默认口径：
-// LIKE %q%，LIKE 通配符 %/_/\ 按 \ 转义保证字面匹配，待定）；时间维度为
-// Unix 秒闭区间，nil 表示该维度不过滤；MfaRequired 为 nil 时不过滤；
-// CredentialKind 非空时筛持有该类型凭证的用户；ExcludeDeleted 为 true 时
-// 排除 deleted_ 前缀的匿名化行。分页按 §1.7（page 从 1 开始、pageSize 默认
-// 20、上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做白名单强制
-// 校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，order 非
-// asc 一律 desc），不拒绝请求。
+// Q 非空时对 username / nickname / email / phone 四列做模糊匹配（跨方言
+// 口径：POSITION 字面子串匹配，%/_/\ 等字符一律按字面量参与匹配，无转义
+// 语义）；时间维度为 Unix 秒闭区间，nil 表示该维度不过滤；MfaRequired 为
+// nil 时不过滤；CredentialKind 非空时筛持有该类型凭证的用户；ExcludeDeleted
+// 为 true 时排除 deleted_ 前缀的匿名化行。分页按 §1.7（page 从 1 开始、
+// pageSize 默认 20、上限 100）。Sort / Order 取值由前端限定（§1.7 后端不做
+// 白名单强制校验）——repo 只做字符集防注入（非 [a-z0-9_] 列名静默回落 id，
+// order 非 asc 一律 desc），不拒绝请求。
 type UserListQuery struct {
 	UserStatus *int8
 	Q          string
@@ -331,12 +336,6 @@ var userSortColumnPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 // userDefaultSortColumn 默认排序列（缺省 / 非法 sort 的回落值）。
 const userDefaultSortColumn = "id"
 
-// escapeLike 转义 LIKE 通配符（%/_）与转义符本身（\），保证 Q 按字面子串
-// 匹配；MySQL/MariaDB LIKE 默认转义符即 \。
-func escapeLike(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
-}
-
 // ListUsers 分页列表：返回当页行与过滤后总数（§1.7 响应
 // {items, total, page, pageSize} 的数据来源）。
 func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User, int64, error) {
@@ -347,8 +346,9 @@ func (r *UserRepo) ListUsers(ctx context.Context, q UserListQuery) ([]model.User
 		return nil, 0, fmt.Errorf("user repo: list count: %w", err)
 	}
 	var rows []model.User
+	clause, orderArgs := q.orderClause()
 	err = filter().
-		OrderExpr(q.orderClause()).
+		OrderExpr(clause, orderArgs...).
 		Limit(int64(size)).
 		Offset(int64((page-1)*size)).
 		Scan(ctx, &rows)
@@ -366,19 +366,26 @@ func (r *UserRepo) listUsersFilter(ctx context.Context, q UserListQuery) *bun.Se
 		sq = sq.Where("user_status = ?", *q.UserStatus)
 	}
 	if q.Q != "" {
-		like := "%" + escapeLike(q.Q) + "%"
+		// 字面子串匹配走 POSITION(? IN col)（ANSI，两库通用）：LIKE %q% 需按
+		// 方言转义 %/_/通配符且 PG 默认无 \ 转义，字面语义无法跨库保证；
+		// POSITION 不解释通配符，%/_/\ 天然按字面量参与匹配。大小写敏感性
+		// 跟随列 collation，与原 LIKE %q% 口径一致（不额外 LOWER）。
 		sq = sq.Where(
-			"username LIKE ? OR nickname LIKE ? OR email LIKE ? OR phone LIKE ?",
-			like, like, like, like,
+			"POSITION(? IN username) > 0 OR POSITION(? IN nickname) > 0 OR "+
+				"POSITION(? IN email) > 0 OR POSITION(? IN phone) > 0",
+			q.Q, q.Q, q.Q, q.Q,
 		)
 	}
 	if q.ExcludeDeleted {
-		// LOWER() 把大小写口径固定为不敏感（§5.4 默认过滤与 §2.3 前缀禁用同
-		// 口径；生产实例列 collation 不可从仓库判定——不依赖列 collation 的
-		// ci 行为，cs / binary 列上亦不漏筛）。系统只写小写 "deleted_<id>"，
+		// POSITION(...) <> 1 是「NOT LIKE '前缀_%'」的字面等价：= 1 即从前缀
+		// 字符起命中（= 原 LIKE 命中态），0 = 不含、>1 = 前缀出现在串中部
+		// （= 原 LIKE 未命中态，行保留）。兼作大小写口径固定：LOWER() 使
+		// deleted_ / DELETED_ 变体行均被过滤（§5.4 默认过滤与 §2.3 前缀禁用
+		// 同口径；生产实例列 collation 不可从仓库判定——不依赖列 collation
+		// 的 ci 行为，cs / binary 列上亦不漏筛）。系统只写小写 "deleted_<id>"，
 		// 任何大小写变体行都已被建号入口拒绝，此处过滤的是「已匿名化行」与
 		// 「理论上的变体行」。
-		sq = sq.Where("LOWER(username) NOT LIKE ?", escapeLike(deletedUserPrefix)+"%")
+		sq = sq.Where("POSITION(? IN LOWER(username)) <> 1", deletedUserPrefix)
 	}
 	if q.CreatedFrom != nil {
 		sq = sq.Where("created_at >= ?", time.Unix(*q.CreatedFrom, 0).UTC())
@@ -408,8 +415,10 @@ func (r *UserRepo) listUsersFilter(ctx context.Context, q UserListQuery) *bun.Se
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
 // （大小写不敏感，其余含缺省一律 desc——与既有固定排序的方向一致）；非 id
 // 主序恒追加 id 次序保证分页全序稳定（同值行跨页不漂移，口径同
-// webauthn_repo.ListByUser）。
-func (q UserListQuery) orderClause() string {
+// webauthn_repo.ListByUser）。列名经 bun.Ident 随方言引用（MySQL 反引号 /
+// PG 双引号），反引号写死只对 MySQL 成立；白名单仍是防注入前置，Ident 只
+// 负责引用形态，不替代字符集校验。
+func (q UserListQuery) orderClause() (string, []any) {
 	col := q.Sort
 	if col == "" || !userSortColumnPattern.MatchString(col) {
 		col = userDefaultSortColumn
@@ -419,9 +428,9 @@ func (q UserListQuery) orderClause() string {
 		dir = "ASC"
 	}
 	if col == userDefaultSortColumn {
-		return col + " " + dir
+		return col + " " + dir, nil
 	}
-	return "`" + col + "` " + dir + ", id DESC"
+	return "? " + dir + ", id DESC", []any{bun.Ident(col)}
 }
 
 // UpdateUserStatus 列级更新 user_status（§5.4 禁用 / 启用——禁用入口是列级
@@ -521,19 +530,18 @@ func (r *UserRepo) GetProfile(ctx context.Context, userID int64) (*model.UserPro
 	return &p, nil
 }
 
-// SaveProfile 整行 UPSERT user_profile（主键 user_id，ON DUPLICATE KEY
-// UPDATE 指定列覆盖：gender / birthday / locale / timezone / extra /
-// updated_at）。接口文档 §3.2 UpdateProfile 的可选字段部分更新语义归
-// service（先读后拼整行）；extra 为 msgpack 字节，编解码归上层。updated_at
-// 零值时由本方法补齐（bun 无时间列自动填充）。
+// SaveProfile 整行 UPSERT user_profile（主键 user_id 冲突更新指定列覆盖：
+// gender / birthday / locale / timezone / extra / updated_at；upsert 子句按
+// 方言分派，applyUpsert）。接口文档 §3.2 UpdateProfile 的可选字段部分更新
+// 语义归 service（先读后拼整行）；extra 为 msgpack 字节，编解码归上层。
+// updated_at 零值时由本方法补齐（bun 无时间列自动填充）。
 func (r *UserRepo) SaveProfile(ctx context.Context, p *model.UserProfile) error {
 	if p.UpdatedAt.IsZero() {
 		p.UpdatedAt = time.Now()
 	}
-	if _, err := r.db.NewInsert().Model(p).
-		On("DUPLICATE KEY UPDATE gender = VALUES(gender), birthday = VALUES(birthday), " +
-			"locale = VALUES(locale), timezone = VALUES(timezone), extra = VALUES(extra), " +
-			"updated_at = VALUES(updated_at)").
+	if _, err := applyUpsert(r.db.NewInsert().Model(p),
+		[]string{"user_id"},
+		[]string{"gender", "birthday", "locale", "timezone", "extra", "updated_at"}).
 		Exec(ctx); err != nil {
 		return fmt.Errorf("user repo: save profile: %w", err)
 	}
@@ -569,7 +577,7 @@ func (r *UserRepo) AnonymizeUser(ctx context.Context, id int64, at time.Time) (i
 			Set("avatar_url = ?", "").
 			Set("user_status = ?", 0).
 			Set("mfa_required = ?", 0).
-			Set("epoch = IF(epoch + 1 > 30000, 1, epoch + 1)").
+			Set(epochBumpSet).
 			Set("updated_at = ?", at).
 			Exec(ctx)
 		if err != nil {

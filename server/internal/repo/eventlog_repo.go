@@ -173,8 +173,9 @@ func (r *EventLogRepo) List(ctx context.Context, q EventAdminQuery) ([]model.Eve
 		return nil, 0, fmt.Errorf("eventlog repo: list count: %w", err)
 	}
 	var rows []model.EventLog
+	clause, orderArgs := q.orderClause()
 	err = filter().
-		OrderExpr(q.orderClause()).
+		OrderExpr(clause, orderArgs...).
 		Limit(int64(size)).
 		Offset(int64((page-1)*size)).
 		Scan(ctx, &rows)
@@ -201,8 +202,10 @@ func (q EventAdminQuery) normalize() (page, size int) {
 
 // orderClause 排序子句：sort 缺省 / 字符集外回落 id，order 仅 asc / desc
 // （大小写不敏感，其余含缺省一律 desc），非 id 主序恒追加 id DESC 保证分页
-// 全序稳定——逐字对齐 user_repo.go UserListQuery.orderClause 形态。
-func (q EventAdminQuery) orderClause() string {
+// 全序稳定——逐字对齐 user_repo.go UserListQuery.orderClause 形态。列名经
+// bun.Ident 随方言引用（MySQL 反引号 / PG 双引号），白名单仍是防注入前置，
+// Ident 只负责引用形态。
+func (q EventAdminQuery) orderClause() (string, []any) {
 	col := q.Sort
 	if col == "" || !eventSortColumnPattern.MatchString(col) {
 		col = eventDefaultSortColumn
@@ -212,7 +215,7 @@ func (q EventAdminQuery) orderClause() string {
 		dir = "ASC"
 	}
 	if col == eventDefaultSortColumn {
-		return col + " " + dir
+		return col + " " + dir, nil
 	}
-	return "`" + col + "` " + dir + ", id DESC"
+	return "? " + dir + ", id DESC", []any{bun.Ident(col)}
 }

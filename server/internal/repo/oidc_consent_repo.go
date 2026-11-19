@@ -98,8 +98,11 @@ func (r *OidcConsentRepo) mergeConsentOnce(ctx context.Context, userID int64, cl
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
-		if _, err := tx.NewInsert().Model(&upsert).
-			On("DUPLICATE KEY UPDATE scopes = VALUES(scopes), updated_at = VALUES(updated_at)").
+		// uk_user_client 冲突更新写回：applyUpsert 按方言分派（PG 侧冲突列
+		// 显式为 (user_id, client_id)）；冲突分支只刷 scopes / updated_at，
+		// created_at 保持首次授权时刻。
+		if _, err := applyUpsert(tx.NewInsert().Model(&upsert),
+			[]string{"user_id", "client_id"}, []string{"scopes", "updated_at"}).
 			Exec(ctx); err != nil {
 			return fmt.Errorf("oidc consent repo: upsert consent: %w", err)
 		}

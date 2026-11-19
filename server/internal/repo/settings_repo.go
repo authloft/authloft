@@ -32,9 +32,10 @@ func (r *SettingsRepo) LoadAll(ctx context.Context) ([]model.Setting, error) {
 	return rows, nil
 }
 
-// UpsertAll 单事务批量 UPSERT：MySQL 方言生成
-// INSERT ... ON DUPLICATE KEY UPDATE v=VALUES(v), updated_at=VALUES(updated_at),
-// updated_by=VALUES(updated_by)（§4.7 写入口径「单事务 UPSERT」）。
+// UpsertAll 单事务批量 UPSERT（§4.7 写入口径「单事务 UPSERT」）：按主键 k
+// 冲突更新 v / updated_at / updated_by。upsert 子句按方言分派（applyUpsert）：
+// MySQL 生成 ON DUPLICATE KEY UPDATE v=VALUES(v)...，PostgreSQL 生成
+// ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v...。
 // updated_at 零值行由本方法补齐（bun 无时间列自动填充）。
 // 空集短路返回，不产生空 VALUES 语句。
 func (r *SettingsRepo) UpsertAll(ctx context.Context, rows []model.Setting) error {
@@ -48,8 +49,8 @@ func (r *SettingsRepo) UpsertAll(ctx context.Context, rows []model.Setting) erro
 				rows[i].UpdatedAt = now
 			}
 		}
-		_, err := tx.NewInsert().Model(&rows).
-			On("DUPLICATE KEY UPDATE v = VALUES(v), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)").
+		_, err := applyUpsert(tx.NewInsert().Model(&rows),
+			[]string{"k"}, []string{"v", "updated_at", "updated_by"}).
 			Exec(ctx)
 		return err
 	})
