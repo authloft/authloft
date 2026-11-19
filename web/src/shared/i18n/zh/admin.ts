@@ -650,8 +650,16 @@ export const admin = {
   'admin.providerColumnKey': '标识',
   'admin.providerColumnCategory': '类别',
   'admin.providerColumnType': '类型',
-  // type=proxy / category=proxy 展示名（§5.3 代理提供商与出站代理引用约定）。
+  // type=proxy 展示名（§5.3 代理提供商与出站代理引用约定）。
   'admin.providerType.proxy': '出站代理',
+  // category 展示名，键集 = 后端 Category* 常量全集（oauth|union|sms|email|
+  // captcha|storage|proxy）；缺键由页面回显 wire 值，不在此兜底。
+  'admin.providerCategory.oauth': 'OAuth 授权',
+  'admin.providerCategory.union': 'Union ID 归并',
+  'admin.providerCategory.sms': '短信服务',
+  'admin.providerCategory.email': '邮件服务',
+  'admin.providerCategory.captcha': '人机校验',
+  'admin.providerCategory.storage': '存储服务',
   'admin.providerCategory.proxy': '出站代理',
   'admin.providerColumnPolicyTags': '策略标签',
   'admin.providerColumnSortOrder': '排序',

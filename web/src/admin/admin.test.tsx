@@ -5371,11 +5371,14 @@ describe('provider 类型 / 类别展示名（admin.providerType.* / admin.provi
     setLocale('zh-CN');
     expect(indexMod.providerTypeDisplayName('proxy')).toBe('出站代理');
     expect(indexMod.providerCategoryDisplayName('proxy')).toBe('出站代理');
+    expect(indexMod.providerCategoryDisplayName('oauth')).toBe('OAuth 授权');
     // 字典未定义展示名的类型 / 类别不猜译名，原样显示 wire 值。
     expect(indexMod.providerTypeDisplayName('wechat_mp_scan')).toBe(
       'wechat_mp_scan',
     );
-    expect(indexMod.providerCategoryDisplayName('oauth')).toBe('oauth');
+    expect(indexMod.providerCategoryDisplayName('nonexistent_cat')).toBe(
+      'nonexistent_cat',
+    );
     expect(indexMod.providerTypeDisplayName('')).toBe('—');
     setLocale('en-US');
     expect(indexMod.providerTypeDisplayName('proxy')).toBe('Outbound proxy');
@@ -5420,14 +5423,16 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
       categoryRow('qq', 'oauth'),
       categoryRow('proxy1', 'proxy'),
       categoryRow('eml_main', 'email'),
+      categoryRow('odd', 'nonexistent_cat'),
       categoryRow('wx', 'oauth'),
     ];
     expect(providerCategoryFilterOptions(rows)).toEqual([
       { value: '', label: t('admin.filterAnyOption') },
-      // 字典无 admin.providerCategory.oauth / .email → 原样回 wire 值。
-      { value: 'oauth', label: 'oauth' },
+      { value: 'oauth', label: 'OAuth 授权' },
       { value: 'proxy', label: '出站代理' },
-      { value: 'email', label: 'email' },
+      { value: 'email', label: '邮件服务' },
+      // 字典无 admin.providerCategory.nonexistent_cat → 原样回 wire 值。
+      { value: 'nonexistent_cat', label: 'nonexistent_cat' },
     ]);
     // 空类别（protojson 零值占位）不构成可筛维度：只剩「不限」。
     expect(providerCategoryFilterOptions([categoryRow('anon', '')])).toEqual([

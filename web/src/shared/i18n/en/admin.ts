@@ -703,9 +703,18 @@ export const admin: typeof zhAdmin = {
   'admin.providerColumnKey': 'Key',
   'admin.providerColumnCategory': 'Category',
   'admin.providerColumnType': 'Type',
-  // type=proxy / category=proxy display names (§5.3 proxy provider and
-  // outbound proxy reference convention).
+  // type=proxy display name (§5.3 proxy provider and outbound proxy reference
+  // convention).
   'admin.providerType.proxy': 'Outbound proxy',
+  // category display names; key set = backend Category* constants (oauth |
+  // union | sms | email | captcha | storage | proxy); missing keys fall back
+  // to the wire value on the page.
+  'admin.providerCategory.oauth': 'OAuth authorization',
+  'admin.providerCategory.union': 'Union ID merging',
+  'admin.providerCategory.sms': 'SMS service',
+  'admin.providerCategory.email': 'Email service',
+  'admin.providerCategory.captcha': 'Human verification',
+  'admin.providerCategory.storage': 'Storage service',
   'admin.providerCategory.proxy': 'Outbound proxy',
   'admin.providerColumnPolicyTags': 'Policy Tags',
   'admin.providerColumnSortOrder': 'Sort',
