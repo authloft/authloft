@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
@@ -108,15 +107,15 @@ func (r *OidcConsentRepo) mergeConsentOnce(ctx context.Context, userID int64, cl
 	})
 }
 
-// isConsentDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
+// isConsentDuplicateKey 判唯一键冲突（MariaDB 1062 / PG 23505），判定归
+// 同包语义化 helper IsDuplicateKey。
 func isConsentDuplicateKey(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	return IsDuplicateKey(err)
 }
 
-// isConsentDeadlock 判 MySQL/MariaDB 1213：并发首插在行锁下的另一竞态表现
-// 形态（gap 锁互斥引发死锁回滚），与 uk 冲突同属可重试。
+// isConsentDeadlock 判死锁回滚（MariaDB 1213 / PG 40P01，判定归同包
+// IsDeadlock）：并发首插在行锁下的另一竞态表现形态（gap 锁互斥引发死锁
+// 回滚），与 uk 冲突同属可重试；PG 下重试依赖 40P01 覆盖。
 func isConsentDeadlock(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1213
+	return IsDeadlock(err)
 }

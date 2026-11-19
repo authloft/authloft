@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
@@ -241,8 +240,8 @@ func (r *BindRepo) UnbindWithUnionCascade(ctx context.Context, id, userID int64,
 	return nil
 }
 
-// isBindDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
+// isBindDuplicateKey 判唯一键冲突（MariaDB 1062 / PG 23505），判定归同包
+// 语义化 helper IsDuplicateKey，命中后归一为 ErrBindDuplicate。
 func isBindDuplicateKey(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	return IsDuplicateKey(err)
 }

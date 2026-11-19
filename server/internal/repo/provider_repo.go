@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 	"google.golang.org/protobuf/proto"
 
@@ -280,8 +279,8 @@ func ParseProviderExt(data []byte) (*provider.Ext, error) {
 	return ext, nil
 }
 
-// isProviderDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
+// isProviderDuplicateKey 判唯一键冲突（MariaDB 1062 / PG 23505），判定归
+// 同包语义化 helper IsDuplicateKey，命中后归一为 ErrProviderDuplicate。
 func isProviderDuplicateKey(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	return IsDuplicateKey(err)
 }

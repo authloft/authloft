@@ -27,8 +27,12 @@ import (
 // 由安装流程消费。
 const ErrCodeMigrationFailed = "migration_failed"
 
-// errNoSuchTable MariaDB 服务端错误码 ER_NO_SUCH_TABLE（1146）。
-const errNoSuchTable = 1146
+// errNoSuchTable / pgNoSuchTable 「表不存在」码表：MariaDB 服务端错误码
+// ER_NO_SUCH_TABLE（1146）与 PG SQLSTATE undefined_table（42P01）。
+const (
+	errNoSuchTable = 1146
+	pgNoSuchTable  = "42P01"
+)
 
 // NewDB 统一连接工厂：按 driver 建立裸 *sql.DB（方言无关，bun / goose 等
 // 方言层由调用方叠加）。repo.Open、本包、setup 三处建连共享，禁止再各自
@@ -158,8 +162,15 @@ func installed(ctx context.Context, db *sql.DB, driver config.Driver) (bool, err
 	return admins > 0, nil
 }
 
-// isNoSuchTable 判断 MariaDB「表不存在」错误。
+// isNoSuchTable 判断「表不存在」错误：MariaDB 1146 / PG 42P01。码表与
+// repo.IsNoSuchTable 相同，但 repo 包内测试 import 本包，本包不能反向
+// import repo 复用判定（测试期 import cycle），只能本地复制判据——两处
+// 码表改动须同步。
 func isNoSuchTable(err error) bool {
 	var myErr *mysql.MySQLError
-	return errors.As(err, &myErr) && myErr.Number == errNoSuchTable
+	if errors.As(err, &myErr) {
+		return myErr.Number == errNoSuchTable
+	}
+	var pgErr pgdriver.Error
+	return errors.As(err, &pgErr) && pgErr.Field('C') == pgNoSuchTable
 }

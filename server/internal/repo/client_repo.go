@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 	"google.golang.org/protobuf/proto"
 
@@ -429,8 +428,8 @@ func ParseClientOauthProviders(data []byte) (*client.ClientOauthProviders, error
 	return providers, nil
 }
 
-// isClientDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
+// isClientDuplicateKey 判唯一键冲突（MariaDB 1062 / PG 23505），判定归同包
+// 语义化 helper IsDuplicateKey；template 侧判别复用本函数。
 func isClientDuplicateKey(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	return IsDuplicateKey(err)
 }

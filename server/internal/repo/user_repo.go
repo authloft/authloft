@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/uptrace/bun"
 
 	"authloft/internal/repo/model"
@@ -618,8 +617,9 @@ func (r *UserRepo) AnonymizeUser(ctx context.Context, id int64, at time.Time) (i
 	return epoch, nil
 }
 
-// isUserDuplicateKey 判 MySQL/MariaDB 1062（duplicate entry）唯一键冲突。
+// isUserDuplicateKey 判唯一键冲突（MariaDB 1062 / PG 23505），判定归同包
+// 语义化 helper IsDuplicateKey，命中后归一为 ErrUserDuplicate；webauthn
+// 侧判别复用本函数。
 func isUserDuplicateKey(err error) bool {
-	var me *mysqldriver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	return IsDuplicateKey(err)
 }
