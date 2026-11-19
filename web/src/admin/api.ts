@@ -982,7 +982,10 @@ export function userEditDraftIssue(draft: UserEditDraft): I18nKey | null {
   if (draft.birthday !== '' && !isValidBirthday(draft.birthday)) {
     return 'admin.editBirthdayIssue';
   }
-  if (parseJsonObject(draft.extra) === undefined) {
+  // Semi 清空字段后值为 undefined（类型层仍标 string）：兜 '' 走空对象语义，
+  // 与 buildUpdateUserProfileRequest 的取值同口径，否则 undefined 强转
+  // string 入参即抛 TypeError。
+  if (parseJsonObject(draft.extra || '') === undefined) {
     return 'admin.editExtraIssue';
   }
   if (draftText(draft.phone) !== '' && !isValidPhone(draftText(draft.phone))) {

@@ -15,7 +15,7 @@
 import { useEffect, useRef } from 'react';
 import { useRequest } from 'ahooks';
 import { Button, Form, Typography } from '@douyinfe/semi-ui';
-import { requestInstall } from '../api';
+import { requestInstall, type InstallPayload } from '../api';
 import {
   buildMysqlDsn,
   validateDbDsnFields,
@@ -177,6 +177,31 @@ function initialFormState(): InstallFormState {
   };
 }
 
+/**
+ * Semi onSubmit values → InstallPayload 纯函数（node 可测）。Semi 清空字段
+ * 后值为 undefined（未设 allowEmptyString，'' → undefined，类型层仍标
+ * string），无 validator 直达提交的 rpId / rpDisplayName 一旦清空，在
+ * undefined 上调 .trim() 即抛未捕获 TypeError——四个 trim 字段统一经
+ * pickString 兜底（与 validator 取值口径一致）再 trim。
+ */
+export function buildInstallPayload(values: InstallFormState): InstallPayload {
+  // interface 无隐式索引签名：spread 出匿名对象类型才能过 pickString 的
+  // Record 参数（Semi 运行期 values 正宽于此类型标注）。
+  const semiValues: Record<string, unknown> = { ...values };
+  return {
+    // wire 契约不变（§13.3）：DB 六字段拼 dbDsn、Redis host:port 拼 redisAddr。
+    dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
+    redisAddr: joinRedisAddr(values.redisHost, values.redisPort),
+    redisPassword: values.redisPassword,
+    redisDb: Number.parseInt(values.redisDb, 10) || 0,
+    root: pickString(semiValues, 'root').trim(),
+    rpId: pickString(semiValues, 'rpId').trim(),
+    rpDisplayName: pickString(semiValues, 'rpDisplayName').trim(),
+    adminUsername: pickString(semiValues, 'adminUsername').trim(),
+    adminPassword: values.adminPassword,
+  };
+}
+
 export default function InstallPage({
   onRestarting,
   onSubmittingChange,
@@ -207,18 +232,7 @@ export default function InstallPage({
   // Semi Form 仅在全量校验通过后触发 onSubmit（submit 全量校验；
   // Redis host/port 非法在本层被拦下，不会发请求）。
   function handleSubmit(values: InstallFormState): void {
-    installRun({
-      // wire 契约不变（§13.3）：DB 六字段拼 dbDsn、Redis host:port 拼 redisAddr。
-      dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
-      redisAddr: joinRedisAddr(values.redisHost, values.redisPort),
-      redisPassword: values.redisPassword,
-      redisDb: Number.parseInt(values.redisDb, 10) || 0,
-      root: values.root.trim(),
-      rpId: values.rpId.trim(),
-      rpDisplayName: values.rpDisplayName.trim(),
-      adminUsername: values.adminUsername.trim(),
-      adminPassword: values.adminPassword,
-    });
+    installRun(buildInstallPayload(values));
   }
 
   return (

@@ -2501,6 +2501,24 @@ describe('用户详情编辑态纯逻辑（草稿 / 校验 / PATCH diff）', () 
     ).toBeNull();
   });
 
+  test('userEditDraftIssue：Semi 清空后 extra 为 undefined 不抛 TypeError，按空对象语义放行', () => {
+    // Semi Form 清空字段 → '' 转 undefined（运行期可缺，类型层仍标 string，
+    // 与 userEditDraftFromDetail 回填的 '' 同语义）。
+    const cleared = {
+      ...unchangedDraft,
+      extra: undefined,
+    } as unknown as typeof unchangedDraft;
+    expect(() => apiMod.userEditDraftIssue(cleared)).not.toThrow();
+    expect(apiMod.userEditDraftIssue(cleared)).toBeNull();
+    // 修复链路整体成立：校验放行 + 请求构造同口径兜底，extra 清空即提交空对象。
+    const request = apiMod.buildUpdateUserProfileRequest(
+      BigInt(2),
+      cleared,
+      detail,
+    );
+    expect(request?.profile?.extra).toEqual({});
+  });
+
   test('PATCH diff：与原值相同 → 两个请求都为 null（无改动不提交）', () => {
     expect(
       apiMod.buildUpdateUserProfileRequest(BigInt(2), unchangedDraft, detail),
