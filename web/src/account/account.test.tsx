@@ -27,6 +27,7 @@ import {
   PresignAvatarRequestSchema,
   ProfileResponseSchema,
   UpdateProfileRequestSchema,
+  UploadAvatarRequestSchema,
   UserProfileSchema,
   type MfaPolicyMethod,
 } from '../gen/proto/api/account/v1/profile_pb';
@@ -72,11 +73,11 @@ import { loginUrl, sanitizeReturnTo } from '../shared/urls';
  * - api.getProfile：msw 走真实 transport 归一链（§3.2 行 819）；
  * - isUnauthenticatedError：401 判定纯函数（§5 行 480）；
  * - 安全中心族：GetConfig / ChangePassword / BindPhone / BindEmail /
- *   PresignAvatar / CommitAvatar 封装（msw 真实 transport 归一链）、
- *   proxy 直传 uploadAvatarProxy（FakeXhr，复用 shared/api/http.test.ts 桩
- *   模式）、头像两模式编排 uploadAvatarFile（§10.8：direct 三步走 + proxy
- *   得 url + 超限 / 类型预校验文案与后端一致，前端架构 §8.2 行 648）、表单
- *   请求构造纯函数（buildChangePasswordRequest / buildBind 系）、apiErrorText。
+ *   PresignAvatar / CommitAvatar / UploadAvatar 封装（msw 真实 transport
+ *   归一链）、头像两模式编排 uploadAvatarFile（§10.8：direct 三步走 + proxy
+ *   UploadAvatar bytes 直传得 url + 超限 / 类型预校验文案与后端一致，
+ *   前端架构 §8.2 行 648）、表单请求构造纯函数（buildChangePasswordRequest /
+ *   buildBind 系）、apiErrorText。
  *   薄封装经 account/api 转发自 shared/api/account（getConfig
  *   等仍走 apiMod）；上传编排 / 预校验直引新落位 shared/hooks/useUpload
  *   （uploadMod，被测对象移位、断言零改动）。
@@ -140,6 +141,7 @@ const BIND_PHONE_URL = `${BASE}/api.account.v1.AccountService/BindPhone`;
 const BIND_EMAIL_URL = `${BASE}/api.account.v1.AccountService/BindEmail`;
 const PRESIGN_AVATAR_URL = `${BASE}/api.account.v1.AccountService/PresignAvatar`;
 const COMMIT_AVATAR_URL = `${BASE}/api.account.v1.AccountService/CommitAvatar`;
+const UPLOAD_AVATAR_URL = `${BASE}/api.account.v1.AccountService/UploadAvatar`;
 const GET_MFA_URL = `${BASE}/api.account.v1.AccountService/GetMfa`;
 const SET_MFA_URL = `${BASE}/api.account.v1.AccountService/SetMfa`;
 const BIND_TOTP_URL = `${BASE}/api.account.v1.AccountService/BindTotp`;
@@ -163,54 +165,6 @@ const TEN_RECOVERY_CODES = Array.from(
 
 const server = setupServer();
 
-/**
- * 极简 XHR 桩（复用 shared/api/http.test.ts 模式）：proxy 直传分支
- * （postForm 走 XMLHttpRequest，node 无原生实现）；send 同步回放
- * nextResponse 并补 upload progress 回放。
- */
-class FakeXhr {
-  static nextResponse: { status: number; body: string } | null = null;
-
-  static respondWith(status: number, body: string): void {
-    FakeXhr.nextResponse = { status, body };
-  }
-
-  onabort: (() => void) | null = null;
-  ontimeout: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onload: (() => void) | null = null;
-  upload: { onprogress: ((event: unknown) => void) | null } = {
-    onprogress: null,
-  };
-  withCredentials = false;
-  timeout = 0;
-  status = 0;
-  statusText = '';
-  responseText = '';
-
-  getResponseHeader(_name: string): string | null {
-    return null;
-  }
-
-  abort(): void {
-    this.onabort?.();
-  }
-
-  open(_method: string, _url: string): void {}
-
-  send(_formData: FormData): void {
-    this.upload.onprogress?.({ loaded: 1, total: 2, lengthComputable: true });
-    const response = FakeXhr.nextResponse;
-    if (!response) {
-      this.onerror?.();
-      return;
-    }
-    this.status = response.status;
-    this.responseText = response.body;
-    this.onload?.();
-  }
-}
-
 /** 捕获 rejection 的返回值（沿 http.test.ts getRejection 模式）。 */
 async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -224,6 +178,7 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 let bootstrapMod: typeof import('./bootstrap');
 let apiMod: typeof import('./api');
 let ssoMod: typeof import('../shared/api/sso');
+let sharedAccountMod: typeof import('../shared/api/account');
 let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
 let mfaSettingMod: typeof import('./pages/SecurityPage/MfaSetting');
@@ -235,6 +190,9 @@ beforeAll(async () => {
   bootstrapMod = await import('./bootstrap');
   apiMod = await import('./api');
   ssoMod = await import('../shared/api/sso');
+  // uploadAvatar 落位 shared/api/account（account/api.ts 收编层仅按旧名
+  // uploadAvatarProxy 转发，新薄封装直引新落位，同 uploadMod 先例）。
+  sharedAccountMod = await import('../shared/api/account');
   uploadMod = await import('../shared/hooks/useUpload');
   routesMod = await import('./routes');
   mfaSettingMod = await import('./pages/SecurityPage/MfaSetting');
@@ -260,7 +218,6 @@ beforeEach(() => {
 
 afterEach(() => {
   server.resetHandlers();
-  FakeXhr.nextResponse = null;
   rs.unstubAllGlobals();
 });
 
@@ -707,24 +664,39 @@ describe('api.presignAvatar / commitAvatar（§3.2 行 822-823）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// api.uploadAvatarProxy（§3.2 行 821 proxy 直传，REST 豁免）
+// api.uploadAvatar（§3.2 / §10.8 proxy 模式，UploadAvatar bytes 直传）
 // ---------------------------------------------------------------------------
 
-describe('api.uploadAvatarProxy（§3.2 行 821 proxy 直传，REST 豁免）', () => {
-  test('postForm multipart → AvatarResponse 解码 + onUploadProgress 透传', async () => {
-    rs.stubGlobal('XMLHttpRequest', FakeXhr);
-    FakeXhr.respondWith(
-      200,
-      JSON.stringify({ url: 'https://cdn.test/proxy.png' }),
+describe('api.uploadAvatar（§3.2 / §10.8 proxy 模式，UploadAvatar bytes 直传）', () => {
+  test('bytes 一次直传 → {url}（protojson 下 content 为 base64，§1.1）', async () => {
+    let captured!: Request;
+    server.use(
+      http.post(UPLOAD_AVATAR_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({ url: 'https://cdn.test/proxy.png' });
+      }),
     );
 
-    const progress: Array<{ loaded: number; total: number }> = [];
-    const result = await apiMod.uploadAvatarProxy(new FormData(), (p) =>
-      progress.push(p),
+    const content = new Uint8Array([1, 2, 3, 4]);
+    const result = await sharedAccountMod.uploadAvatar(
+      create(UploadAvatarRequestSchema, {
+        filename: 'a.png',
+        contentType: 'image/png',
+        content,
+      }),
     );
 
+    const body = (await captured.json()) as {
+      filename: string;
+      contentType: string;
+      content: string;
+    };
+    expect(body.filename).toBe('a.png');
+    expect(body.contentType).toBe('image/png');
+    expect(Buffer.from(body.content, 'base64')).toEqual(
+      Buffer.from([1, 2, 3, 4]),
+    );
     expect(result.url).toBe('https://cdn.test/proxy.png');
-    expect(progress).toEqual([{ loaded: 1, total: 2 }]);
   });
 });
 
@@ -990,7 +962,7 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
     expect(commitBody).toEqual({ key: 'avatars/k1' });
   });
 
-  test('proxy 模式（mock GetConfig）：postForm 得 url + 进度透传（§10.8 / §8.2 行 648）', async () => {
+  test('proxy 模式（mock GetConfig）：UploadAvatar bytes 直传得 url（§10.8 / §8.2 行 648）', async () => {
     server.use(
       http.post(CONFIG_URL, () =>
         HttpResponse.json({
@@ -1002,10 +974,12 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
         }),
       ),
     );
-    rs.stubGlobal('XMLHttpRequest', FakeXhr);
-    FakeXhr.respondWith(
-      200,
-      JSON.stringify({ url: 'https://cdn.test/proxy.png' }),
+    let captured!: Request;
+    server.use(
+      http.post(UPLOAD_AVATAR_URL, ({ request }) => {
+        captured = request;
+        return HttpResponse.json({ url: 'https://cdn.test/proxy.png' });
+      }),
     );
 
     const config = await apiMod.getConfig();
@@ -1015,16 +989,22 @@ describe('头像上传（§3.2 / §10.8 / 前端架构 §8.2 行 648）', () => 
     }
     expect(uploadMod.isUploadEntryHidden(avatarUpload)).toBe(false);
 
-    const progress: Array<{ loaded: number; total: number }> = [];
     const url = await uploadMod.uploadAvatarFile(
       avatarUpload,
       new File([new Uint8Array(8)], 'a.png', { type: 'image/png' }),
-      undefined,
-      (p) => progress.push(p),
     );
 
     expect(url).toBe('https://cdn.test/proxy.png');
-    expect(progress).toEqual([{ loaded: 1, total: 2 }]);
+    const body = (await captured.json()) as {
+      filename: string;
+      contentType: string;
+      content: string;
+    };
+    expect(body.filename).toBe('a.png');
+    expect(body.contentType).toBe('image/png');
+    expect(Buffer.from(body.content, 'base64')).toEqual(
+      Buffer.from([0, 0, 0, 0, 0, 0, 0, 0]),
+    );
   });
 });
 

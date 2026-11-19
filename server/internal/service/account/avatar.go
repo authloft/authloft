@@ -2,14 +2,15 @@
 // 839-840、行 842、行 868、§1.6 行 261、§10.8 行 1711-1720；《后端架构》
 // §15.1 行 1702-1737）。
 //
-// 职责：AccountService/PresignAvatar / CommitAvatar 编排——数据源链对齐
-// handler avatarUpload 同口径：settings avatar_storage_provider →
+// 职责：AccountService/PresignAvatar / CommitAvatar / UploadAvatar 编排——
+// 数据源链对齐 handler avatarUpload 同口径：settings avatar_storage_provider →
 // provider 表 storage 生效行 → ParseProviderExt → dto.AccountAvatarUpload
 // 投影（mode / maxSize / allowedTypes 与 GetConfig 下发恒一致，local+direct
 // 回退 proxy 在 dto 内折）；direct 模式校验 MIME 白名单 / size 上限后生成
 // 服务端 key（avatars/{uid}/ 隔离 + crypto/rand 随机成分，行 839「key 由
 // 服务端生成，前端无法覆盖」），Resolver → PresignPut 签发有时效 PUT URL
 // （ExpiresIn = Ext.presign_ttl，0 → 300，§12.1 行 1704 注释默认）。
+// proxy 模式 UploadAvatar 同口径校验后经 Storage.Put 一次落盘回显 URL。
 // CommitAvatar 仅以 Storage.URL(key) 回显地址，不回读校验（行 868 禁止
 // Get/HEAD；§15.1 commit 要点——异步 HEAD 校验留待存储扩展，本层不做）。
 // uid 由 handler 注入（service 不解析会话，profile.go 先例），存在性先判
@@ -45,6 +46,9 @@ var (
 	// ErrAvatarPresignUnavailable 当前配置不支持直传（mode≠direct，含
 	// local 回退，行 842 / §15.1 表）——同按 internal 口径映射。
 	ErrAvatarPresignUnavailable = errors.New("account avatar: presign unavailable")
+	// ErrAvatarUploadUnavailable 当前配置不支持服务端中转上传（mode≠proxy，
+	// 即显式 direct）——UploadAvatar 被直调同按 internal 口径映射。
+	ErrAvatarUploadUnavailable = errors.New("account avatar: upload unavailable")
 	// ErrAvatarFileTypeNotAllowed MIME 不在 allowedTypes 内（行 868）→
 	// file_type_not_allowed。
 	ErrAvatarFileTypeNotAllowed = errors.New("account avatar: file type not allowed")
@@ -198,6 +202,59 @@ func (s *AvatarService) CommitAvatar(ctx context.Context, uid int64, in *account
 		return nil, fmt.Errorf("account avatar: resolve storage: %w", err)
 	}
 	return &accountv1.AvatarResponse{Url: st.URL(key)}, nil
+}
+
+// UploadAvatar（§3.2、§10.8 proxy 模式）：文件内容一次 bytes 直传，服务端
+// 校验 MIME 白名单 / 大小后经 Storage.Put 落盘并回显 URL。链路与
+// PresignAvatar 同构：存在性先判（404 优先）→ 数据源链（mode / maxSize /
+// allowedTypes 与 GetConfig 下发恒一致）→ mode 必为 proxy（显式 direct 被
+// 直调同按 internal 口径，§3.2）→ MIME 白名单 → 空内容自决拒绝（零字节
+// 头像无意义，镜像 presign size≤0 口径）→ size = len(content) 对 maxSize
+// （bytes 已由 protojson base64 解码为原始字节，protojson 编解码见 §1.1）→
+// key 服务端生成 → Resolve → Put 透传。
+func (s *AvatarService) UploadAvatar(ctx context.Context, uid int64, in *accountv1.UploadAvatarRequest) (*accountv1.AvatarResponse, error) {
+	// 存在性先判：user 行不存在 → sql.ErrNoRows 透传（handler 转
+	// not_found，口径同 profile.go）。
+	if _, err := s.deps.Users.FindByID(ctx, uid); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("account avatar: load user: %w", err)
+	}
+
+	providerKey := s.avatarStorageProviderKey()
+	cfg, _, err := s.avatarUploadConfig(ctx, providerKey)
+	if err != nil {
+		return nil, err
+	}
+	// mode≠proxy（显式 direct）：服务端中转上传不可用（§3.2 internal 口径）。
+	if cfg.GetMode() != "proxy" {
+		return nil, ErrAvatarUploadUnavailable
+	}
+	if !avatarAllowedType(cfg.GetAllowedTypes(), in.GetContentType()) {
+		return nil, ErrAvatarFileTypeNotAllowed
+	}
+	content := in.GetContent()
+	if len(content) == 0 {
+		return nil, ErrAvatarInvalidRequest
+	}
+	if int64(len(content)) > cfg.GetMaxSize() {
+		return nil, ErrAvatarFileTooLarge
+	}
+
+	key, err := avatarObjectKey(uid, in.GetFilename())
+	if err != nil {
+		return nil, err
+	}
+	st, err := s.deps.Resolver.Resolve(ctx, providerKey)
+	if err != nil {
+		return nil, fmt.Errorf("account avatar: resolve storage: %w", err)
+	}
+	url, err := st.Put(ctx, key, content, in.GetContentType())
+	if err != nil {
+		return nil, fmt.Errorf("account avatar: put: %w", err)
+	}
+	return &accountv1.AvatarResponse{Url: url}, nil
 }
 
 // avatarStorageProviderKey 读 settings 键 avatar_storage_provider（行 842）。

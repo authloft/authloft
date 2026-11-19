@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { AccountConfigResponseSchema, AvatarPresignResponseSchema, AvatarResponseSchema, CommitAvatarRequestSchema, GetConfigRequestSchema, GetProfileRequestSchema, OkResponseSchema, PresignAvatarRequestSchema, ProfileResponseSchema, UpdateProfileRequestSchema } from "./profile_pb";
+import type { AccountConfigResponseSchema, AvatarPresignResponseSchema, AvatarResponseSchema, CommitAvatarRequestSchema, GetConfigRequestSchema, GetProfileRequestSchema, OkResponseSchema, PresignAvatarRequestSchema, ProfileResponseSchema, UpdateProfileRequestSchema, UploadAvatarRequestSchema } from "./profile_pb";
 import { file_api_account_v1_profile } from "./profile_pb";
 import type { BindEmailRequestSchema, BindPhoneRequestSchema, ChangePasswordRequestSchema } from "./security_pb";
 import { file_api_account_v1_security } from "./security_pb";
@@ -26,7 +26,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/account/v1/account.proto.
  */
 export const file_api_account_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MSIZChdHZXRNeVBlcm1pc3Npb25zUmVxdWVzdCIvChhHZXRNeVBlcm1pc3Npb25zUmVzcG9uc2USEwoLcGVybWlzc2lvbnMYASADKAkythMKDkFjY291bnRTZXJ2aWNlElQKCUdldENvbmZpZxIgLmFwaS5hY2NvdW50LnYxLkdldENvbmZpZ1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BY2NvdW50Q29uZmlnUmVzcG9uc2USUAoKR2V0UHJvZmlsZRIhLmFwaS5hY2NvdW50LnYxLkdldFByb2ZpbGVSZXF1ZXN0Gh8uYXBpLmFjY291bnQudjEuUHJvZmlsZVJlc3BvbnNlElEKDVVwZGF0ZVByb2ZpbGUSJC5hcGkuYWNjb3VudC52MS5VcGRhdGVQcm9maWxlUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USXAoNUHJlc2lnbkF2YXRhchIkLmFwaS5hY2NvdW50LnYxLlByZXNpZ25BdmF0YXJSZXF1ZXN0GiUuYXBpLmFjY291bnQudjEuQXZhdGFyUHJlc2lnblJlc3BvbnNlElMKDENvbW1pdEF2YXRhchIjLmFwaS5hY2NvdW50LnYxLkNvbW1pdEF2YXRhclJlcXVlc3QaHi5hcGkuYWNjb3VudC52MS5BdmF0YXJSZXNwb25zZRJTCg5DaGFuZ2VQYXNzd29yZBIlLmFwaS5hY2NvdW50LnYxLkNoYW5nZVBhc3N3b3JkUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USSQoJQmluZFBob25lEiAuYXBpLmFjY291bnQudjEuQmluZFBob25lUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USSQoJQmluZEVtYWlsEiAuYXBpLmFjY291bnQudjEuQmluZEVtYWlsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USRAoGR2V0TWZhEh0uYXBpLmFjY291bnQudjEuR2V0TWZhUmVxdWVzdBobLmFwaS5hY2NvdW50LnYxLk1mYVJlc3BvbnNlEkMKBlNldE1mYRIdLmFwaS5hY2NvdW50LnYxLlNldE1mYVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEk0KCEJpbmRUb3RwEh8uYXBpLmFjY291bnQudjEuQmluZFRvdHBSZXF1ZXN0GiAuYXBpLmFjY291bnQudjEuQmluZFRvdHBSZXNwb25zZRJLCgpVbmJpbmRUb3RwEiEuYXBpLmFjY291bnQudjEuVW5iaW5kVG90cFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEnAKF1JlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzEi4uYXBpLmFjY291bnQudjEuUmVnZW5lcmF0ZVJlY292ZXJ5Q29kZXNSZXF1ZXN0GiUuYXBpLmFjY291bnQudjEuUmVjb3ZlcnlDb2Rlc1Jlc3BvbnNlEm0KFkdldFdlYmF1dGhuQ3JlZGVudGlhbHMSLS5hcGkuYWNjb3VudC52MS5HZXRXZWJhdXRobkNyZWRlbnRpYWxzUmVxdWVzdBokLmFwaS5hY2NvdW50LnYxLldlYmF1dGhuTGlzdFJlc3BvbnNlEmUKEFJlZ2lzdGVyV2ViYXV0aG4SJy5hcGkuYWNjb3VudC52MS5SZWdpc3RlcldlYmF1dGhuUmVxdWVzdBooLmFwaS5hY2NvdW50LnYxLlJlZ2lzdGVyV2ViYXV0aG5SZXNwb25zZRJnChhSZW5hbWVXZWJhdXRobkNyZWRlbnRpYWwSLy5hcGkuYWNjb3VudC52MS5SZW5hbWVXZWJhdXRobkNyZWRlbnRpYWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJnChhEZWxldGVXZWJhdXRobkNyZWRlbnRpYWwSLy5hcGkuYWNjb3VudC52MS5EZWxldGVXZWJhdXRobkNyZWRlbnRpYWxSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJxChVHZXRUaGlyZHBhcnR5QmluZGluZ3MSLC5hcGkuYWNjb3VudC52MS5HZXRUaGlyZHBhcnR5QmluZGluZ3NSZXF1ZXN0GiouYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eUJpbmRpbmdzUmVzcG9uc2USVwoQVW5iaW5kVGhpcmRwYXJ0eRInLmFwaS5hY2NvdW50LnYxLlVuYmluZFRoaXJkcGFydHlSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJiCg9UaGlyZHBhcnR5T2F1dGgSJi5hcGkuYWNjb3VudC52MS5UaGlyZHBhcnR5T2F1dGhSZXF1ZXN0GicuYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eU9hdXRoUmVzcG9uc2USYAoTR2V0VGhpcmRwYXJ0eVRpY2tldBIqLmFwaS5hY2NvdW50LnYxLkdldFRoaXJkcGFydHlUaWNrZXRSZXF1ZXN0Gh0uYXBpLnNzby52MS5Mb2dpbkZsb3dSZXNwb25zZRJQCglHZXRFdmVudHMSIC5hcGkuYWNjb3VudC52MS5HZXRFdmVudHNSZXF1ZXN0GiEuYXBpLmFjY291bnQudjEuR2V0RXZlbnRzUmVzcG9uc2USZgoRU3RhcnRWZXJpZmljYXRpb24SJy5hcGkuY29tbW9uLnYxLlN0YXJ0VmVyaWZpY2F0aW9uUmVxdWVzdBooLmFwaS5jb21tb24udjEuU3RhcnRWZXJpZmljYXRpb25SZXNwb25zZRJpChJTdWJtaXRWZXJpZmljYXRpb24SKC5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlcXVlc3QaKS5hcGkuY29tbW9uLnYxLlN1Ym1pdFZlcmlmaWNhdGlvblJlc3BvbnNlEmUKEEdldE15UGVybWlzc2lvbnMSJy5hcGkuYWNjb3VudC52MS5HZXRNeVBlcm1pc3Npb25zUmVxdWVzdBooLmFwaS5hY2NvdW50LnYxLkdldE15UGVybWlzc2lvbnNSZXNwb25zZRJYCg5Db25zZW50QXBwcm92ZRIlLmFwaS5hY2NvdW50LnYxLkNvbnNlbnRBcHByb3ZlUmVxdWVzdBofLmFwaS5hY2NvdW50LnYxLkNvbnNlbnRSZXNwb25zZRJSCgtDb25zZW50RGVueRIiLmFwaS5hY2NvdW50LnYxLkNvbnNlbnREZW55UmVxdWVzdBofLmFwaS5hY2NvdW50LnYxLkNvbnNlbnRSZXNwb25zZUIqWihhdXRobG9mdC9nZW4vZ28vYXBpL2FjY291bnQvdjE7YWNjb3VudHYxYgZwcm90bzM", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_account_v1_consent, file_api_common_v1_verification, file_api_sso_v1_envelope]);
+  fileDesc("ChxhcGkvYWNjb3VudC92MS9hY2NvdW50LnByb3RvEg5hcGkuYWNjb3VudC52MSIZChdHZXRNeVBlcm1pc3Npb25zUmVxdWVzdCIvChhHZXRNeVBlcm1pc3Npb25zUmVzcG9uc2USEwoLcGVybWlzc2lvbnMYASADKAkyixQKDkFjY291bnRTZXJ2aWNlElQKCUdldENvbmZpZxIgLmFwaS5hY2NvdW50LnYxLkdldENvbmZpZ1JlcXVlc3QaJS5hcGkuYWNjb3VudC52MS5BY2NvdW50Q29uZmlnUmVzcG9uc2USUAoKR2V0UHJvZmlsZRIhLmFwaS5hY2NvdW50LnYxLkdldFByb2ZpbGVSZXF1ZXN0Gh8uYXBpLmFjY291bnQudjEuUHJvZmlsZVJlc3BvbnNlElEKDVVwZGF0ZVByb2ZpbGUSJC5hcGkuYWNjb3VudC52MS5VcGRhdGVQcm9maWxlUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USXAoNUHJlc2lnbkF2YXRhchIkLmFwaS5hY2NvdW50LnYxLlByZXNpZ25BdmF0YXJSZXF1ZXN0GiUuYXBpLmFjY291bnQudjEuQXZhdGFyUHJlc2lnblJlc3BvbnNlElMKDENvbW1pdEF2YXRhchIjLmFwaS5hY2NvdW50LnYxLkNvbW1pdEF2YXRhclJlcXVlc3QaHi5hcGkuYWNjb3VudC52MS5BdmF0YXJSZXNwb25zZRJTCgxVcGxvYWRBdmF0YXISIy5hcGkuYWNjb3VudC52MS5VcGxvYWRBdmF0YXJSZXF1ZXN0Gh4uYXBpLmFjY291bnQudjEuQXZhdGFyUmVzcG9uc2USUwoOQ2hhbmdlUGFzc3dvcmQSJS5hcGkuYWNjb3VudC52MS5DaGFuZ2VQYXNzd29yZFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEkkKCUJpbmRQaG9uZRIgLmFwaS5hY2NvdW50LnYxLkJpbmRQaG9uZVJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEkkKCUJpbmRFbWFpbBIgLmFwaS5hY2NvdW50LnYxLkJpbmRFbWFpbFJlcXVlc3QaGi5hcGkuYWNjb3VudC52MS5Pa1Jlc3BvbnNlEkQKBkdldE1mYRIdLmFwaS5hY2NvdW50LnYxLkdldE1mYVJlcXVlc3QaGy5hcGkuYWNjb3VudC52MS5NZmFSZXNwb25zZRJDCgZTZXRNZmESHS5hcGkuYWNjb3VudC52MS5TZXRNZmFSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJNCghCaW5kVG90cBIfLmFwaS5hY2NvdW50LnYxLkJpbmRUb3RwUmVxdWVzdBogLmFwaS5hY2NvdW50LnYxLkJpbmRUb3RwUmVzcG9uc2USSwoKVW5iaW5kVG90cBIhLmFwaS5hY2NvdW50LnYxLlVuYmluZFRvdHBSZXF1ZXN0GhouYXBpLmFjY291bnQudjEuT2tSZXNwb25zZRJwChdSZWdlbmVyYXRlUmVjb3ZlcnlDb2RlcxIuLmFwaS5hY2NvdW50LnYxLlJlZ2VuZXJhdGVSZWNvdmVyeUNvZGVzUmVxdWVzdBolLmFwaS5hY2NvdW50LnYxLlJlY292ZXJ5Q29kZXNSZXNwb25zZRJtChZHZXRXZWJhdXRobkNyZWRlbnRpYWxzEi0uYXBpLmFjY291bnQudjEuR2V0V2ViYXV0aG5DcmVkZW50aWFsc1JlcXVlc3QaJC5hcGkuYWNjb3VudC52MS5XZWJhdXRobkxpc3RSZXNwb25zZRJlChBSZWdpc3RlcldlYmF1dGhuEicuYXBpLmFjY291bnQudjEuUmVnaXN0ZXJXZWJhdXRoblJlcXVlc3QaKC5hcGkuYWNjb3VudC52MS5SZWdpc3RlcldlYmF1dGhuUmVzcG9uc2USZwoYUmVuYW1lV2ViYXV0aG5DcmVkZW50aWFsEi8uYXBpLmFjY291bnQudjEuUmVuYW1lV2ViYXV0aG5DcmVkZW50aWFsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USZwoYRGVsZXRlV2ViYXV0aG5DcmVkZW50aWFsEi8uYXBpLmFjY291bnQudjEuRGVsZXRlV2ViYXV0aG5DcmVkZW50aWFsUmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2UScQoVR2V0VGhpcmRwYXJ0eUJpbmRpbmdzEiwuYXBpLmFjY291bnQudjEuR2V0VGhpcmRwYXJ0eUJpbmRpbmdzUmVxdWVzdBoqLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlCaW5kaW5nc1Jlc3BvbnNlElcKEFVuYmluZFRoaXJkcGFydHkSJy5hcGkuYWNjb3VudC52MS5VbmJpbmRUaGlyZHBhcnR5UmVxdWVzdBoaLmFwaS5hY2NvdW50LnYxLk9rUmVzcG9uc2USYgoPVGhpcmRwYXJ0eU9hdXRoEiYuYXBpLmFjY291bnQudjEuVGhpcmRwYXJ0eU9hdXRoUmVxdWVzdBonLmFwaS5hY2NvdW50LnYxLlRoaXJkcGFydHlPYXV0aFJlc3BvbnNlEmAKE0dldFRoaXJkcGFydHlUaWNrZXQSKi5hcGkuYWNjb3VudC52MS5HZXRUaGlyZHBhcnR5VGlja2V0UmVxdWVzdBodLmFwaS5zc28udjEuTG9naW5GbG93UmVzcG9uc2USUAoJR2V0RXZlbnRzEiAuYXBpLmFjY291bnQudjEuR2V0RXZlbnRzUmVxdWVzdBohLmFwaS5hY2NvdW50LnYxLkdldEV2ZW50c1Jlc3BvbnNlEmYKEVN0YXJ0VmVyaWZpY2F0aW9uEicuYXBpLmNvbW1vbi52MS5TdGFydFZlcmlmaWNhdGlvblJlcXVlc3QaKC5hcGkuY29tbW9uLnYxLlN0YXJ0VmVyaWZpY2F0aW9uUmVzcG9uc2USaQoSU3VibWl0VmVyaWZpY2F0aW9uEiguYXBpLmNvbW1vbi52MS5TdWJtaXRWZXJpZmljYXRpb25SZXF1ZXN0GikuYXBpLmNvbW1vbi52MS5TdWJtaXRWZXJpZmljYXRpb25SZXNwb25zZRJlChBHZXRNeVBlcm1pc3Npb25zEicuYXBpLmFjY291bnQudjEuR2V0TXlQZXJtaXNzaW9uc1JlcXVlc3QaKC5hcGkuYWNjb3VudC52MS5HZXRNeVBlcm1pc3Npb25zUmVzcG9uc2USWAoOQ29uc2VudEFwcHJvdmUSJS5hcGkuYWNjb3VudC52MS5Db25zZW50QXBwcm92ZVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Db25zZW50UmVzcG9uc2USUgoLQ29uc2VudERlbnkSIi5hcGkuYWNjb3VudC52MS5Db25zZW50RGVueVJlcXVlc3QaHy5hcGkuYWNjb3VudC52MS5Db25zZW50UmVzcG9uc2VCKlooYXV0aGxvZnQvZ2VuL2dvL2FwaS9hY2NvdW50L3YxO2FjY291bnR2MWIGcHJvdG8z", [file_api_account_v1_profile, file_api_account_v1_security, file_api_account_v1_mfa, file_api_account_v1_webauthn, file_api_account_v1_thirdparty, file_api_account_v1_consent, file_api_common_v1_verification, file_api_sso_v1_envelope]);
 
 /**
  * GetMyPermissionsRequest 无字段：主体固定取会话 uid，不接受入参 uid 以免
@@ -69,19 +69,20 @@ export const GetMyPermissionsResponseSchema: GenMessage<GetMyPermissionsResponse
  * Connect 路径 = /api.account.v1.AccountService/<Method>；方法清单与 §3 各节逐一对应：
  *   GetConfig                  §3.2    GetProfile               §3.2
  *   UpdateProfile              §3.2    PresignAvatar            §3.2
- *   CommitAvatar               §3.2    ChangePassword           §3.3
- *   BindPhone                  §3.4    BindEmail                §3.4
- *   GetMfa                     §3.5    SetMfa                   §3.5
- *   BindTotp                   §3.5    UnbindTotp               §3.5
- *   RegenerateRecoveryCodes    §3.5    GetWebauthnCredentials   §3.6
- *   RegisterWebauthn           §3.6    RenameWebauthnCredential  §3.6
- *   DeleteWebauthnCredential   §3.6    GetThirdpartyBindings    §3.7
- *   UnbindThirdparty           §3.7    ThirdpartyOauth          §3.7.1 A
- *   GetThirdpartyTicket        §3.7    GetEvents                §3.7
- *   StartVerification          §3.8   SubmitVerification       §3.8
- *   GetMyPermissions           §3.9
- *   ConsentApprove             §3.10  ConsentDeny              §3.10
- * 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
+ *   CommitAvatar               §3.2    UploadAvatar             §3.2
+ *   ChangePassword             §3.3    BindPhone                §3.4
+ *   BindEmail                  §3.4    GetMfa                   §3.5
+ *   SetMfa                     §3.5    BindTotp                 §3.5
+ *   UnbindTotp                 §3.5    RegenerateRecoveryCodes  §3.5
+ *   GetWebauthnCredentials     §3.6    RegisterWebauthn         §3.6
+ *   RenameWebauthnCredential   §3.6    DeleteWebauthnCredential §3.6
+ *   GetThirdpartyBindings      §3.7    UnbindThirdparty         §3.7
+ *   ThirdpartyOauth            §3.7.1 A  GetThirdpartyTicket    §3.7
+ *   GetEvents                  §3.7    StartVerification        §3.8
+ *   SubmitVerification         §3.8    GetMyPermissions         §3.9
+ *   ConsentApprove             §3.10   ConsentDeny              §3.10
+ * 头像 proxy 上传经 UploadAvatar 一次 bytes 直传（§3.2 / §10.8），
+ * 不再走 REST 豁免端点。
  * 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
  * 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
  * 与共用响应口径冲突，按「文档优先」在 buf.yaml except 豁免）。
@@ -137,6 +138,17 @@ export const AccountService: GenService<{
   commitAvatar: {
     methodKind: "unary";
     input: typeof CommitAvatarRequestSchema;
+    output: typeof AvatarResponseSchema;
+  },
+  /**
+   * proxy 模式上传：文件内容一次 bytes 直传，服务端校验 MIME / 大小后
+   * 落盘（§3.2、§10.8）。
+   *
+   * @generated from rpc api.account.v1.AccountService.UploadAvatar
+   */
+  uploadAvatar: {
+    methodKind: "unary";
+    input: typeof UploadAvatarRequestSchema;
     output: typeof AvatarResponseSchema;
   },
   /**

@@ -83,10 +83,12 @@ type ProfileUpdater interface {
 	UpdateProfile(ctx context.Context, uid int64, in *accountv1.UpdateProfileRequest) error
 }
 
-// AvatarDirector 头像直传两桩窄接口；service 直接消费 / 产出 proto 消息，本层不做二次转换。
+// AvatarDirector 头像上传三桩窄接口（direct 两桩 + proxy bytes 直传）；service
+// 直接消费 / 产出 proto 消息，本层不做二次转换。
 type AvatarDirector interface {
 	PresignAvatar(ctx context.Context, uid int64, in *accountv1.PresignAvatarRequest) (*accountv1.AvatarPresignResponse, error)
 	CommitAvatar(ctx context.Context, uid int64, in *accountv1.CommitAvatarRequest) (*accountv1.AvatarResponse, error)
+	UploadAvatar(ctx context.Context, uid int64, in *accountv1.UploadAvatarRequest) (*accountv1.AvatarResponse, error)
 }
 
 // PasswordChanger 改密 service 窄接口；nil 时 ChangePassword 返回 unimplemented。
@@ -727,9 +729,10 @@ func mapWebauthnError(op string, err error) error {
 	}
 }
 
-// —— 头像直传两桩 ——
-// 请求绑定与错误映射归本层，direct 三步编排在 service/account.AvatarService。
-// 未配置 / 非 direct 模式被直调按未知异常映射 internal；两接口均需 al_session。
+// —— 头像上传三桩 ——
+// 请求绑定与错误映射归本层，direct 三步与 proxy 落盘编排在
+// service/account.AvatarService。未配置 / 模式不符（direct 调 presign、
+// proxy 调上传）被直调按未知异常映射 internal；三接口均需 al_session。
 
 // PresignAvatar（§3.2 行 839、§10.8 direct 第一步）：direct 模式签发有时效
 // PUT URL，{filename, contentType, size} → {key, uploadUrl, headers,
@@ -765,13 +768,34 @@ func (h *Handler) CommitAvatar(ctx context.Context, req *connect.Request[account
 	return connect.NewResponse(res), nil
 }
 
-// mapAvatarError 头像直传错误 → Connect 形态：未配置 / 非 direct → internal 固定文案；
+// UploadAvatar（§3.2、§10.8 proxy 模式）：文件内容一次 bytes 直传
+// （protojson 下 content 为 base64，§1.1），{filename, contentType, content}
+// → {url}；service 直接消费 proto 请求，本层透传。请求体上限由装配层
+// WithReadMaxBytes（8 MiB）承担，业务侧 size 校验归 service。
+func (h *Handler) UploadAvatar(ctx context.Context, req *connect.Request[accountv1.UploadAvatarRequest]) (*connect.Response[accountv1.AvatarResponse], error) {
+	if h.avatar == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errAvatarNotConfigured)
+	}
+	uid, ok := session.UIDFromContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
+	}
+	res, err := h.avatar.UploadAvatar(ctx, uid, req.Msg)
+	if err != nil {
+		return nil, mapAvatarError("upload avatar", err)
+	}
+	return connect.NewResponse(res), nil
+}
+
+// mapAvatarError 头像上传错误 → Connect 形态：未配置 / 模式不符 → internal 固定文案；
 // MIME / size 校验类 → invalid_argument + ErrorInfo{file_type_not_allowed /
 // file_too_large}（文案与前端预校验一致）；边界非法入参 → invalid_request；
 // 用户不存在 → not_found（profile.go 口径同源）；其余上抛消毒。
 func mapAvatarError(op string, err error) error {
 	switch {
-	case errors.Is(err, accountsvc.ErrAvatarNotConfigured), errors.Is(err, accountsvc.ErrAvatarPresignUnavailable):
+	case errors.Is(err, accountsvc.ErrAvatarNotConfigured),
+		errors.Is(err, accountsvc.ErrAvatarPresignUnavailable),
+		errors.Is(err, accountsvc.ErrAvatarUploadUnavailable):
 		return connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))
 	case errors.Is(err, accountsvc.ErrAvatarFileTypeNotAllowed):
 		return internalconnect.WithErrorInfo(

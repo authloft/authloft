@@ -9,7 +9,9 @@
  * 大头像展示归挂载点 ProfilePage（组件内不再重复渲染 Avatar），本组件
  * 只出「更换头像」单行入口（按钮 + 尺寸 / 类型提示）；上传成功经
  * onUploaded 上抛 url（§10.8 流程终点 {url}），持久化到用户资料归
- * UpdateProfile {avatarUrl}（页面壳接线）。
+ * UpdateProfile {avatarUrl}（页面壳接线）。两模式均无上传进度事件
+ * （proxy 为 UploadAvatar bytes 直传、direct 为对象存储 PUT），不显示
+ * 进度条。
  */
 import { useRef, useState, type ReactNode } from 'react';
 import { Button } from '@douyinfe/semi-ui';
@@ -43,9 +45,6 @@ export function AvatarUploader(props: {
 }): ReactNode {
   const { status, hidden, config, upload } = useUpload();
   const [uploading, setUploading] = useState(false);
-  const [progressText, setProgressText] = useState<string | undefined>(
-    undefined,
-  );
   const [error, setError] = useState<unknown>(undefined);
   // 上传失败保留原文件供「重试」——不必重新选择文件；选择新文件时清除。
   const [retryFile, setRetryFile] = useState<File | undefined>(undefined);
@@ -65,18 +64,7 @@ export function AvatarUploader(props: {
     setUploading(true);
     setError(undefined);
     setRetryFile(undefined);
-    setProgressText(undefined);
-    upload(file, (progress) => {
-      // proxy 分支经 XHR upload 事件（前端架构 §3.2）；direct 的 PUT
-      // 无进度事件、不回调（§3.2），进度文案仅在 proxy 分支出现。
-      if (progress.total > 0) {
-        setProgressText(
-          t('account.uploadProgress', {
-            percent: Math.round((progress.loaded / progress.total) * 100),
-          }),
-        );
-      }
-    })
+    upload(file)
       .then((url) => {
         props.onUploaded?.(url);
       })
@@ -86,7 +74,6 @@ export function AvatarUploader(props: {
       })
       .finally(() => {
         setUploading(false);
-        setProgressText(undefined);
       });
   };
 
@@ -132,11 +119,6 @@ export function AvatarUploader(props: {
           <span className={styles.progress}>{hintText}</span>
         ) : null}
       </div>
-      {progressText !== undefined ? (
-        <p role="status" className={styles.progress}>
-          {progressText}
-        </p>
-      ) : null}
       {error !== undefined ? (
         <p role="alert" className={styles.error}>
           {apiErrorText(error)}

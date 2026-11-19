@@ -131,6 +131,12 @@ func (f *fakeCaptcha) Config(context.Context) captcha.Config { return f.cfg }
 // cookies 为会话 Cookie 构造器（ChangePassword 清除断言用，与拦截器同源
 // 构造）。
 func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (*session.Tokens, *fakeEpochReader, http.Handler) {
+	return newSessionHandlerOptions(t, users, nil, deps...)
+}
+
+// newSessionHandlerOptions 同 newSessionHandler，追加装配层注入项的
+// connect.HandlerOption（请求体上限等传输层行为断言用）。
+func newSessionHandlerOptions(t *testing.T, users UserReader, extraOpts []connect.HandlerOption, deps ...*getConfigDeps) (*session.Tokens, *fakeEpochReader, http.Handler) {
 	t.Helper()
 	var d *getConfigDeps
 	if len(deps) > 0 {
@@ -153,15 +159,17 @@ func newSessionHandler(t *testing.T, users UserReader, deps ...*getConfigDeps) (
 	if d.cookies != nil {
 		cookies = d.cookies
 	}
+	opts := append([]connect.HandlerOption(nil), extraOpts...)
+	opts = append(opts, connect.WithInterceptors(internalconnect.NewSessionInterceptor(
+		session.NewVerifier(tokens, epochs),
+		session.NewRenewer(tokens, time.Hour),
+		session.NewCookie("al_session", "", time.Hour),
+		nil,
+	)))
 	_, h := accountv1connect.NewAccountServiceHandler(
 		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
 			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies, d.permissionLister(), d.verification()),
-		connect.WithInterceptors(internalconnect.NewSessionInterceptor(
-			session.NewVerifier(tokens, epochs),
-			session.NewRenewer(tokens, time.Hour),
-			session.NewCookie("al_session", "", time.Hour),
-			nil,
-		)),
+		opts...,
 	)
 	return tokens, epochs, h
 }
@@ -826,10 +834,10 @@ func TestGetConfigWithoutSession(t *testing.T) {
 }
 
 // TestServiceMethodsNotConfigured 未装配五族 service（avatar / password /
-// bindcontact / mfa / events，降级装配口径）时十桩一律
+// bindcontact / mfa / events，降级装配口径）时十一桩一律
 // unimplemented（TestThirdpartyMethodsNotConfigured /
 // TestWebauthnMethodsNotConfigured / TestUpdateProfileNotConfigured 同款）。
-// account 域 21 方法实装；UnbindTotp 为契约先行占位（恒 unimplemented，
+// account 域 22 方法实装；UnbindTotp 为契约先行占位（恒 unimplemented，
 // 独立用例 TestUnbindTotpContractPending 覆盖），桩清单测试（原
 // TestOtherMethodsUnimplemented）随十桩移出而清空删除。
 func TestServiceMethodsNotConfigured(t *testing.T) {
@@ -837,6 +845,7 @@ func TestServiceMethodsNotConfigured(t *testing.T) {
 	cases := []string{
 		accountv1connect.AccountServicePresignAvatarProcedure,
 		accountv1connect.AccountServiceCommitAvatarProcedure,
+		accountv1connect.AccountServiceUploadAvatarProcedure,
 		accountv1connect.AccountServiceChangePasswordProcedure,
 		accountv1connect.AccountServiceBindPhoneProcedure,
 		accountv1connect.AccountServiceBindEmailProcedure,
@@ -1762,10 +1771,14 @@ type fakeAvatar struct {
 	presignErr  error
 	commitOut   *accountv1.AvatarResponse
 	commitErr   error
+	uploadOut   *accountv1.AvatarResponse
+	uploadErr   error
 	presignUIDs []int64
 	presignReqs []*accountv1.PresignAvatarRequest
 	commitUIDs  []int64
 	commitKeys  []string
+	uploadUIDs  []int64
+	uploadReqs  []*accountv1.UploadAvatarRequest
 }
 
 func (f *fakeAvatar) PresignAvatar(_ context.Context, uid int64, in *accountv1.PresignAvatarRequest) (*accountv1.AvatarPresignResponse, error) {
@@ -1778,6 +1791,12 @@ func (f *fakeAvatar) CommitAvatar(_ context.Context, uid int64, in *accountv1.Co
 	f.commitUIDs = append(f.commitUIDs, uid)
 	f.commitKeys = append(f.commitKeys, in.GetKey())
 	return f.commitOut, f.commitErr
+}
+
+func (f *fakeAvatar) UploadAvatar(_ context.Context, uid int64, in *accountv1.UploadAvatarRequest) (*accountv1.AvatarResponse, error) {
+	f.uploadUIDs = append(f.uploadUIDs, uid)
+	f.uploadReqs = append(f.uploadReqs, in)
+	return f.uploadOut, f.uploadErr
 }
 
 // postService 挂会话打一桩（五族接线用例共用请求模式）。
@@ -1870,6 +1889,119 @@ func TestCommitAvatarConnect(t *testing.T) {
 	}
 	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "invalid_request" {
 		t.Errorf("ErrorInfo code = %q, want invalid_request", info.GetCode())
+	}
+}
+
+// TestUploadAvatarConnect：proxy 模式一次 bytes 直传（protojson 下 content
+// 为 base64）——成功回显 {url} + uid 注入 + content 解码透传；MIME 不合规 →
+// 400 + ErrorInfo(account, file_type_not_allowed)；mode≠proxy 被直调 →
+// internal 固定文案。
+func TestUploadAvatarConnect(t *testing.T) {
+	av := &fakeAvatar{uploadOut: &accountv1.AvatarResponse{Url: "https://cdn.test/up.png"}}
+	body, err := protojson.Marshal(&accountv1.UploadAvatarRequest{
+		Filename: "a.png", ContentType: "image/png", Content: []byte("hello-avatar"),
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	code, raw, _ := postService(t, accountv1connect.AccountServiceUploadAvatarProcedure,
+		string(body), &getConfigDeps{avatarIn: av})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", code, raw)
+	}
+	if len(av.uploadUIDs) != 1 || av.uploadUIDs[0] != 10086 {
+		t.Errorf("service 收到 uid = %v, want [10086]（会话注入）", av.uploadUIDs)
+	}
+	if len(av.uploadReqs) != 1 || av.uploadReqs[0].GetContentType() != "image/png" ||
+		string(av.uploadReqs[0].GetContent()) != "hello-avatar" {
+		t.Errorf("service 收到请求 = %v（base64 已解码透传）", av.uploadReqs)
+	}
+	var got accountv1.AvatarResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetUrl() != "https://cdn.test/up.png" {
+		t.Errorf("url = %q", got.GetUrl())
+	}
+
+	av2 := &fakeAvatar{uploadErr: fmt.Errorf("wrap: %w", accountsvc.ErrAvatarFileTypeNotAllowed)}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceUploadAvatarProcedure,
+		`{"filename":"a.exe","contentType":"application/octet-stream","content":"aGk="}`, &getConfigDeps{avatarIn: av2})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", code, raw)
+	}
+	if info := decodeAccountErrorInfo(t, raw); info.GetCode() != "file_type_not_allowed" || info.GetDomain() != "account" {
+		t.Errorf("ErrorInfo = %s/%s, want account/file_type_not_allowed", info.GetDomain(), info.GetCode())
+	}
+
+	av3 := &fakeAvatar{uploadErr: accountsvc.ErrAvatarUploadUnavailable}
+	code, raw, _ = postService(t, accountv1connect.AccountServiceUploadAvatarProcedure,
+		`{"filename":"a.png","contentType":"image/png","content":"aGk="}`, &getConfigDeps{avatarIn: av3})
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body %s)", code, raw)
+	}
+	if !strings.Contains(raw, "internal") {
+		t.Errorf("body = %s, want internal 固定文案（不透出细节）", raw)
+	}
+}
+
+// TestUploadAvatarBodyLimit Connect 请求体上限（装配层注入同口径 8 MiB，
+// internal/connect 与 bootstrap 同值）：≤2MB 头像 base64 上传成功（body
+// ~2.7MB，高于旧 1 MiB 默认）；>8 MiB 由框架拒 resource_exhausted（429，
+// §1.5「请求体超限」），handler 不可达。
+func TestUploadAvatarBodyLimit(t *testing.T) {
+	av := &fakeAvatar{uploadOut: &accountv1.AvatarResponse{Url: "https://cdn.test/up.png"}}
+	tokens, epochs, h := newSessionHandlerOptions(t, &fakeUsers{user: wantUser()},
+		[]connect.HandlerOption{connect.WithReadMaxBytes(8 << 20)},
+		&getConfigDeps{avatarIn: av})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	post := func(msg *accountv1.UploadAvatarRequest) (int, string) {
+		t.Helper()
+		body, err := protojson.Marshal(msg)
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		req, err := http.NewRequest(http.MethodPost,
+			srv.URL+accountv1connect.AccountServiceUploadAvatarProcedure, strings.NewReader(string(body)))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", sessionCookie(t, tokens, epochs))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		raw := readBody(t, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode, raw
+	}
+
+	// ≤2MB（dto maxSize 兜底口径）base64 直传成功。
+	code, raw := post(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png", Content: make([]byte, 2<<20)})
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %.120s)", code, raw)
+	}
+	var got accountv1.AvatarResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetUrl() != "https://cdn.test/up.png" {
+		t.Errorf("url = %q", got.GetUrl())
+	}
+	if len(av.uploadReqs) != 1 || len(av.uploadReqs[0].GetContent()) != 2<<20 {
+		t.Fatalf("service 收到 content = %d bytes, want %d", len(av.uploadReqs[0].GetContent()), 2<<20)
+	}
+
+	// >8 MiB 请求体 → 框架 resource_exhausted（429），业务 handler 零调用。
+	code, raw = post(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png", Content: make([]byte, 9<<20)})
+	if code != http.StatusTooManyRequests || !strings.Contains(raw, "resource_exhausted") {
+		t.Errorf("status = %d body = %.160s, want 429 + resource_exhausted", code, raw)
+	}
+	if len(av.uploadUIDs) != 1 {
+		t.Errorf("service 调用 = %d, want 1（超限请求未达 handler）", len(av.uploadUIDs))
 	}
 }
 

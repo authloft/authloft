@@ -971,6 +971,74 @@ func (x *CommitAvatarRequest) GetKey() string {
 	return ""
 }
 
+// UploadAvatarRequest 是 AccountService/UploadAvatar 的请求（§3.2 proxy
+// 模式）：文件内容一次 bytes 直传，size 由 len(content) 权威推导、不重复
+// 传（presign 的 size 语义由本字段接管）。protojson 编解码下 content 为
+// base64（§1.1），请求体上限见 Connect 装配注入值（后端架构 §3.14）。
+// 字段编排镜像 PresignAvatarRequest。
+type UploadAvatarRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 原始文件名，服务端仅取其扩展名参与对象 key 生成（§3.2）。
+	Filename string `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
+	// 文件 MIME 类型，须在 allowed_types 内（§3.2）。
+	ContentType string `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	// 文件内容本体；空内容拒绝，超过 avatarUpload.maxSize 拒绝（§3.2）。
+	Content       []byte `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadAvatarRequest) Reset() {
+	*x = UploadAvatarRequest{}
+	mi := &file_api_account_v1_profile_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadAvatarRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadAvatarRequest) ProtoMessage() {}
+
+func (x *UploadAvatarRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_account_v1_profile_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadAvatarRequest.ProtoReflect.Descriptor instead.
+func (*UploadAvatarRequest) Descriptor() ([]byte, []int) {
+	return file_api_account_v1_profile_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UploadAvatarRequest) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *UploadAvatarRequest) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *UploadAvatarRequest) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
 var File_api_account_v1_profile_proto protoreflect.FileDescriptor
 
 const file_api_account_v1_profile_proto_rawDesc = "" +
@@ -1053,7 +1121,11 @@ const file_api_account_v1_profile_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"'\n" +
 	"\x13CommitAvatarRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03keyB*Z(authloft/gen/go/api/account/v1;accountv1b\x06proto3"
+	"\x03key\x18\x01 \x01(\tR\x03key\"n\n" +
+	"\x13UploadAvatarRequest\x12\x1a\n" +
+	"\bfilename\x18\x01 \x01(\tR\bfilename\x12!\n" +
+	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontentB*Z(authloft/gen/go/api/account/v1;accountv1b\x06proto3"
 
 var (
 	file_api_account_v1_profile_proto_rawDescOnce sync.Once
@@ -1067,7 +1139,7 @@ func file_api_account_v1_profile_proto_rawDescGZIP() []byte {
 	return file_api_account_v1_profile_proto_rawDescData
 }
 
-var file_api_account_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_api_account_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_api_account_v1_profile_proto_goTypes = []any{
 	(*GetConfigRequest)(nil),      // 0: api.account.v1.GetConfigRequest
 	(*GetProfileRequest)(nil),     // 1: api.account.v1.GetProfileRequest
@@ -1083,19 +1155,20 @@ var file_api_account_v1_profile_proto_goTypes = []any{
 	(*PresignAvatarRequest)(nil),  // 11: api.account.v1.PresignAvatarRequest
 	(*AvatarPresignResponse)(nil), // 12: api.account.v1.AvatarPresignResponse
 	(*CommitAvatarRequest)(nil),   // 13: api.account.v1.CommitAvatarRequest
-	nil,                           // 14: api.account.v1.AvatarPresignResponse.HeadersEntry
-	(*structpb.Struct)(nil),       // 15: google.protobuf.Struct
-	(*v1.CaptchaConfig)(nil),      // 16: api.common.v1.CaptchaConfig
+	(*UploadAvatarRequest)(nil),   // 14: api.account.v1.UploadAvatarRequest
+	nil,                           // 15: api.account.v1.AvatarPresignResponse.HeadersEntry
+	(*structpb.Struct)(nil),       // 16: google.protobuf.Struct
+	(*v1.CaptchaConfig)(nil),      // 17: api.common.v1.CaptchaConfig
 }
 var file_api_account_v1_profile_proto_depIdxs = []int32{
-	15, // 0: api.account.v1.UserProfile.extra:type_name -> google.protobuf.Struct
+	16, // 0: api.account.v1.UserProfile.extra:type_name -> google.protobuf.Struct
 	2,  // 1: api.account.v1.ProfileResponse.profile:type_name -> api.account.v1.UserProfile
 	2,  // 2: api.account.v1.UpdateProfileRequest.profile:type_name -> api.account.v1.UserProfile
 	7,  // 3: api.account.v1.MfaPolicy.methods:type_name -> api.account.v1.MfaPolicyMethod
 	6,  // 4: api.account.v1.AccountConfigResponse.avatar_upload:type_name -> api.account.v1.AvatarUploadConfig
 	8,  // 5: api.account.v1.AccountConfigResponse.mfa_policy:type_name -> api.account.v1.MfaPolicy
-	16, // 6: api.account.v1.AccountConfigResponse.captcha:type_name -> api.common.v1.CaptchaConfig
-	14, // 7: api.account.v1.AvatarPresignResponse.headers:type_name -> api.account.v1.AvatarPresignResponse.HeadersEntry
+	17, // 6: api.account.v1.AccountConfigResponse.captcha:type_name -> api.common.v1.CaptchaConfig
+	15, // 7: api.account.v1.AvatarPresignResponse.headers:type_name -> api.account.v1.AvatarPresignResponse.HeadersEntry
 	8,  // [8:8] is the sub-list for method output_type
 	8,  // [8:8] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
@@ -1116,7 +1189,7 @@ func file_api_account_v1_profile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_account_v1_profile_proto_rawDesc), len(file_api_account_v1_profile_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

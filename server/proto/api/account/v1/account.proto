@@ -39,19 +39,20 @@ message GetMyPermissionsResponse {
 // Connect 路径 = /api.account.v1.AccountService/<Method>；方法清单与 §3 各节逐一对应：
 //   GetConfig                  §3.2    GetProfile               §3.2
 //   UpdateProfile              §3.2    PresignAvatar            §3.2
-//   CommitAvatar               §3.2    ChangePassword           §3.3
-//   BindPhone                  §3.4    BindEmail                §3.4
-//   GetMfa                     §3.5    SetMfa                   §3.5
-//   BindTotp                   §3.5    UnbindTotp               §3.5
-//   RegenerateRecoveryCodes    §3.5    GetWebauthnCredentials   §3.6
-//   RegisterWebauthn           §3.6    RenameWebauthnCredential  §3.6
-//   DeleteWebauthnCredential   §3.6    GetThirdpartyBindings    §3.7
-//   UnbindThirdparty           §3.7    ThirdpartyOauth          §3.7.1 A
-//   GetThirdpartyTicket        §3.7    GetEvents                §3.7
-//   StartVerification          §3.8   SubmitVerification       §3.8
-//   GetMyPermissions           §3.9
-//   ConsentApprove             §3.10  ConsentDeny              §3.10
-// 头像 proxy 上传 POST /api/account/avatar 为 REST 豁免端点（§1.0），不入本 service。
+//   CommitAvatar               §3.2    UploadAvatar             §3.2
+//   ChangePassword             §3.3    BindPhone                §3.4
+//   BindEmail                  §3.4    GetMfa                   §3.5
+//   SetMfa                     §3.5    BindTotp                 §3.5
+//   UnbindTotp                 §3.5    RegenerateRecoveryCodes  §3.5
+//   GetWebauthnCredentials     §3.6    RegisterWebauthn         §3.6
+//   RenameWebauthnCredential   §3.6    DeleteWebauthnCredential §3.6
+//   GetThirdpartyBindings      §3.7    UnbindThirdparty         §3.7
+//   ThirdpartyOauth            §3.7.1 A  GetThirdpartyTicket    §3.7
+//   GetEvents                  §3.7    StartVerification        §3.8
+//   SubmitVerification         §3.8    GetMyPermissions         §3.9
+//   ConsentApprove             §3.10   ConsentDeny              §3.10
+// 头像 proxy 上传经 UploadAvatar 一次 bytes 直传（§3.2 / §10.8），
+// 不再走 REST 豁免端点。
 // 空响应方法共用同包 OkResponse（空消息，§1.0 成功响应即消息本身）
 // 故无 XxxResponse 命名（buf 的 RPC_RESPONSE_STANDARD_NAME / RPC_REQUEST_RESPONSE_UNIQUE
 // 与共用响应口径冲突，按「文档优先」在 buf.yaml except 豁免）。
@@ -66,6 +67,9 @@ service AccountService {
   rpc PresignAvatar(PresignAvatarRequest) returns (AvatarPresignResponse);
   // direct 模式确认上传，仅记录不回读（§3.2）。
   rpc CommitAvatar(CommitAvatarRequest) returns (AvatarResponse);
+  // proxy 模式上传：文件内容一次 bytes 直传，服务端校验 MIME / 大小后
+  // 落盘（§3.2、§10.8）。
+  rpc UploadAvatar(UploadAvatarRequest) returns (AvatarResponse);
   // 改密，成功为空响应并递增 epoch（§3.3）。
   rpc ChangePassword(ChangePasswordRequest) returns (OkResponse);
   // 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。

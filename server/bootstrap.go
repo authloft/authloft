@@ -111,8 +111,9 @@ import (
 )
 
 // defaultReadMaxBytes Connect 域请求体上限默认值（§1.6）：装配层经 connect.NewServer 注入，
-// 包自身不读 config。
-const defaultReadMaxBytes = 1 << 20
+// 包自身不读 config。8 MiB 为头像 bytes 直传留余量：avatarUpload.maxSize 兜底
+// 2MB，protojson 下 bytes 经 base64 编解码膨胀约 4/3 倍并含信封开销。
+const defaultReadMaxBytes = 8 << 20
 
 // run 装配并阻塞运行 HTTP 服务。错误原样上抛由 main 转 exit 非 0（fail-fast）；
 // setup 模式安装完成的退出走 Run 的 nil 返回（exit 0，由部署环境拉起）。

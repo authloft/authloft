@@ -1,19 +1,19 @@
 /**
  * 统一头像上传 hook（docs/前端架构.md §3.2 行 344；docs/接口文档.md §3.2
- * 行 831-868 / §10.8 流程唯一定义）：读 AccountService/GetConfig 的
+ * / §10.8 流程唯一定义）：读 AccountService/GetConfig 的
  * avatarUpload.{mode,maxSize,allowedTypes}（经 shared/api/account；mfaPolicy
  * 不由本 hook 消费——安全中心按接口文档 §3.2 读取），在 proxy / direct 间
- * 切换，模式差异只收敛在本模块（前端架构 §3.2 行 347-350：前端分支只有两处
- * ——proxy 走 postForm 的 onUploadProgress；direct 经 presign 取 uploadUrl 与
- * headers 后 fetch PUT 直传、不带 Cookie，CommitAvatar 回填 url）。
- * 上传前做体积 / 类型预校验，返回码与后端一致（file_too_large /
- * file_type_not_allowed，§1.6 封闭集；服务端仍按同口径权威校验，行 868）。
+ * 切换，模式差异只收敛在本模块（前端架构 §3.2 行 347-350：前端分支只有
+ * 两处——proxy 走 AccountService/UploadAvatar 一次 bytes 直传（protojson
+ * 下 content 为 base64，§1.1），无上传进度事件；direct 经 presign 取
+ * uploadUrl 与 headers 后 fetch PUT 直传、不带 Cookie，CommitAvatar 回填
+ * url）。上传前做体积 / 类型预校验，返回码与后端一致（file_too_large /
+ * file_type_not_allowed，§1.6 封闭集；服务端仍按同口径权威校验，§3.2）。
  * 仅用于头像（渠道图标不允许在 Authloft 内上传）；upload(file) 签名 +
  * scene 参数为多场景预留——当前仅头像单场景（接口文档 §3.2），引入第二
- * 上传场景时再扩展（既定定稿口径；前端架构 §3.2
- * 行 344）。
+ * 上传场景时再扩展（既定定稿口径；前端架构 §3.2 行 344）。
  *
- * 零值投影（§3.2 行 842）：avatar_storage_provider 未配置时 GetConfig 下发
+ * 零值投影（§3.2）：avatar_storage_provider 未配置时 GetConfig 下发
  * {mode:"proxy", maxSize:0, allowedTypes:[]}，前端据零值隐藏上传入口；配置
  * 未加载（undefined）同样隐藏。
  *
@@ -34,24 +34,25 @@ import type {
   AvatarUploadConfig,
   CommitAvatarRequest,
   PresignAvatarRequest,
+  UploadAvatarRequest,
 } from '../../gen/proto/api/account/v1/profile_pb';
 import {
   CommitAvatarRequestSchema,
   PresignAvatarRequestSchema,
+  UploadAvatarRequestSchema,
 } from '../../gen/proto/api/account/v1/profile_pb';
 import { ApiError } from '../api/errors';
-import type { UploadProgress } from '../api/http';
 import {
   commitAvatar,
   getConfig,
   presignAvatar,
-  uploadAvatarProxy,
+  uploadAvatar,
 } from '../api/account';
 import { deriveRequestStatus, type RequestStatus } from './deriveRequestStatus';
 import { requestOptions } from './requestOptions';
 
 /**
- * §3.2 行 842：零值投影 {mode:"proxy", maxSize:0, allowedTypes:[]} 时
+ * §3.2：零值投影 {mode:"proxy", maxSize:0, allowedTypes:[]} 时
  * GetConfig 不发 avatarUpload 语义（protojson 省略零值 → 解码为 0n / []），
  * 前端据此隐藏上传入口；配置未加载（undefined）同样隐藏。
  * 两信号任一为零即视为不可上传（零值投影两者同时为零，此处保守取或）。
@@ -66,10 +67,10 @@ export function isUploadEntryHidden(
 }
 
 /**
- * 上传前体积 / 类型预校验（§3.2 行 868 / 前端架构 §3.2 行 344 关键约束）：
+ * 上传前体积 / 类型预校验（§3.2 / 前端架构 §3.2 行 344 关键约束）：
  * 返回码与后端一致（file_too_large / file_type_not_allowed，§1.6 封闭集），
  * 文案经 shared/i18n 的 errors.code.<code> 同一份字典（§8.2 行 648「文案与
- * 后端一致」）；服务端仍是权威（PresignAvatar 同口径校验）。
+ * 后端一致」）；服务端仍是权威（UploadAvatar / PresignAvatar 同口径校验）。
  */
 export function validateAvatarFile(
   config: AvatarUploadConfig,
@@ -89,10 +90,7 @@ export function validateAvatarFile(
 
 /** 头像上传依赖（proxy 一支 / direct 三支）；测试可注入假实现。 */
 export interface AvatarUploadDeps {
-  uploadProxy(
-    formData: FormData,
-    onUploadProgress?: (progress: UploadProgress) => void,
-  ): Promise<AvatarResponse>;
+  uploadAvatar(request: UploadAvatarRequest): Promise<AvatarResponse>;
   presignAvatar(request: PresignAvatarRequest): Promise<AvatarPresignResponse>;
   commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse>;
   putToStorage(
@@ -105,7 +103,7 @@ export interface AvatarUploadDeps {
 /**
  * direct 模式对象存储直传（前端架构 §3.2 行 350 / §10.8）：PUT uploadUrl 携带
  * presign 下发的 headers（如 Content-Type）、不带 Cookie（不用 credentials）；
- * 非 2xx 按 §3.2 行 842 映射 internal（未知异常，不新增错误码）。
+ * 非 2xx 按 §3.2 映射 internal（未知异常，不新增错误码）。
  */
 async function putAvatarToStorage(
   url: string,
@@ -125,7 +123,7 @@ async function putAvatarToStorage(
 
 /** 真实依赖（生产与 msw 集成测试共用），薄封装取自 shared/api/account。 */
 export const avatarUploadDeps: AvatarUploadDeps = {
-  uploadProxy: uploadAvatarProxy,
+  uploadAvatar,
   presignAvatar,
   commitAvatar,
   putToStorage: putAvatarToStorage,
@@ -133,16 +131,16 @@ export const avatarUploadDeps: AvatarUploadDeps = {
 
 /**
  * 头像上传编排（§10.8 唯一流程，前端架构 §8.2 行 648 用例的被测对象）：
- * 预校验 → 按 mode 分支——proxy 一支（postForm multipart）；direct 三步
- * （PresignAvatar → PUT uploadUrl → CommitAvatar）。预校验失败抛 code 与
- * 后端一致的 ApiError（文案归 apiErrorText / i18n 字典）；mode 取值域
- * proxy｜direct（§3.2 行 842 闭合），非 direct 一律走 proxy 分支（保守）。
+ * 预校验 → 按 mode 分支——proxy 一支（UploadAvatar bytes 直传，服务端
+ * 中转）；direct 三步（PresignAvatar → PUT uploadUrl → CommitAvatar）。
+ * 预校验失败抛 code 与后端一致的 ApiError（文案归 apiErrorText / i18n
+ * 字典）；mode 取值域 proxy｜direct（§3.2 闭合），非 direct 一律走 proxy
+ * 分支（保守）。
  */
 export async function uploadAvatarFile(
   config: AvatarUploadConfig,
   file: File,
   deps: AvatarUploadDeps = avatarUploadDeps,
-  onUploadProgress?: (progress: UploadProgress) => void,
 ): Promise<string> {
   const invalid = validateAvatarFile(config, file);
   if (invalid !== undefined) {
@@ -167,24 +165,26 @@ export async function uploadAvatarFile(
     );
     return committed.url;
   }
-  const formData = new FormData();
-  formData.append('file', file);
-  return (await deps.uploadProxy(formData, onUploadProgress)).url;
+  const uploaded = await deps.uploadAvatar(
+    create(UploadAvatarRequestSchema, {
+      filename: file.name,
+      contentType: file.type,
+      content: new Uint8Array(await file.arrayBuffer()),
+    }),
+  );
+  return uploaded.url;
 }
 
 /** useUpload 对外形态（前端架构 §3.2 行 344 契约：config + upload(file) → url）。 */
 export interface UseUploadResult {
   /** GetConfig 加载态（配置未就绪时入口隐藏、不可上传）。 */
   status: RequestStatus;
-  /** §3.2 行 842：零值投影 / 配置未加载 → true（隐藏上传入口）。 */
+  /** §3.2：零值投影 / 配置未加载 → true（隐藏上传入口）。 */
   hidden: boolean;
   /** 当前 avatarUpload 投影（未加载 / 缺省为 undefined，§3.1 零值兜底）。 */
   config: AvatarUploadConfig | undefined;
   /** 上传（§10.8）：预校验失败与服务端错误统一抛 ApiError（文案走 i18n 字典）。 */
-  upload(
-    file: File,
-    onUploadProgress?: (progress: UploadProgress) => void,
-  ): Promise<string>;
+  upload(file: File): Promise<string>;
 }
 
 /**
@@ -202,7 +202,7 @@ export function useUpload(): UseUploadResult {
   const status = deriveRequestStatus(loading, error, data);
   const config = data?.avatarUpload;
   const upload = useCallback(
-    (file: File, onUploadProgress?: (progress: UploadProgress) => void) => {
+    (file: File) => {
       if (config === undefined) {
         // 入口已按 hidden 隐藏，此处防御性兜底（§3.1 零值兜底，不透出细节）。
         return Promise.reject(
@@ -214,7 +214,7 @@ export function useUpload(): UseUploadResult {
           }),
         );
       }
-      return uploadAvatarFile(config, file, avatarUploadDeps, onUploadProgress);
+      return uploadAvatarFile(config, file, avatarUploadDeps);
     },
     [config],
   );

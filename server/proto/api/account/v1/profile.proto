@@ -187,3 +187,17 @@ message CommitAvatarRequest {
   // presign 阶段下发的对象 key（§3.2）。
   string key = 1;
 }
+
+// UploadAvatarRequest 是 AccountService/UploadAvatar 的请求（§3.2 proxy
+// 模式）：文件内容一次 bytes 直传，size 由 len(content) 权威推导、不重复
+// 传（presign 的 size 语义由本字段接管）。protojson 编解码下 content 为
+// base64（§1.1），请求体上限见 Connect 装配注入值（后端架构 §3.14）。
+// 字段编排镜像 PresignAvatarRequest。
+message UploadAvatarRequest {
+  // 原始文件名，服务端仅取其扩展名参与对象 key 生成（§3.2）。
+  string filename = 1;
+  // 文件 MIME 类型，须在 allowed_types 内（§3.2）。
+  string content_type = 2;
+  // 文件内容本体；空内容拒绝，超过 avatarUpload.maxSize 拒绝（§3.2）。
+  bytes content = 3;
+}

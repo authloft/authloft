@@ -50,6 +50,9 @@ const (
 	// AccountServiceCommitAvatarProcedure is the fully-qualified name of the AccountService's
 	// CommitAvatar RPC.
 	AccountServiceCommitAvatarProcedure = "/api.account.v1.AccountService/CommitAvatar"
+	// AccountServiceUploadAvatarProcedure is the fully-qualified name of the AccountService's
+	// UploadAvatar RPC.
+	AccountServiceUploadAvatarProcedure = "/api.account.v1.AccountService/UploadAvatar"
 	// AccountServiceChangePasswordProcedure is the fully-qualified name of the AccountService's
 	// ChangePassword RPC.
 	AccountServiceChangePasswordProcedure = "/api.account.v1.AccountService/ChangePassword"
@@ -127,6 +130,9 @@ type AccountServiceClient interface {
 	PresignAvatar(context.Context, *connect.Request[v1.PresignAvatarRequest]) (*connect.Response[v1.AvatarPresignResponse], error)
 	// direct 模式确认上传，仅记录不回读（§3.2）。
 	CommitAvatar(context.Context, *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
+	// proxy 模式上传：文件内容一次 bytes 直传，服务端校验 MIME / 大小后
+	// 落盘（§3.2、§10.8）。
+	UploadAvatar(context.Context, *connect.Request[v1.UploadAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
 	// 改密，成功为空响应并递增 epoch（§3.3）。
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.OkResponse], error)
 	// 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
@@ -215,6 +221,12 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+AccountServiceCommitAvatarProcedure,
 			connect.WithSchema(accountServiceMethods.ByName("CommitAvatar")),
+			connect.WithClientOptions(opts...),
+		),
+		uploadAvatar: connect.NewClient[v1.UploadAvatarRequest, v1.AvatarResponse](
+			httpClient,
+			baseURL+AccountServiceUploadAvatarProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("UploadAvatar")),
 			connect.WithClientOptions(opts...),
 		),
 		changePassword: connect.NewClient[v1.ChangePasswordRequest, v1.OkResponse](
@@ -359,6 +371,7 @@ type accountServiceClient struct {
 	updateProfile            *connect.Client[v1.UpdateProfileRequest, v1.OkResponse]
 	presignAvatar            *connect.Client[v1.PresignAvatarRequest, v1.AvatarPresignResponse]
 	commitAvatar             *connect.Client[v1.CommitAvatarRequest, v1.AvatarResponse]
+	uploadAvatar             *connect.Client[v1.UploadAvatarRequest, v1.AvatarResponse]
 	changePassword           *connect.Client[v1.ChangePasswordRequest, v1.OkResponse]
 	bindPhone                *connect.Client[v1.BindPhoneRequest, v1.OkResponse]
 	bindEmail                *connect.Client[v1.BindEmailRequest, v1.OkResponse]
@@ -406,6 +419,11 @@ func (c *accountServiceClient) PresignAvatar(ctx context.Context, req *connect.R
 // CommitAvatar calls api.account.v1.AccountService.CommitAvatar.
 func (c *accountServiceClient) CommitAvatar(ctx context.Context, req *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error) {
 	return c.commitAvatar.CallUnary(ctx, req)
+}
+
+// UploadAvatar calls api.account.v1.AccountService.UploadAvatar.
+func (c *accountServiceClient) UploadAvatar(ctx context.Context, req *connect.Request[v1.UploadAvatarRequest]) (*connect.Response[v1.AvatarResponse], error) {
+	return c.uploadAvatar.CallUnary(ctx, req)
 }
 
 // ChangePassword calls api.account.v1.AccountService.ChangePassword.
@@ -530,6 +548,9 @@ type AccountServiceHandler interface {
 	PresignAvatar(context.Context, *connect.Request[v1.PresignAvatarRequest]) (*connect.Response[v1.AvatarPresignResponse], error)
 	// direct 模式确认上传，仅记录不回读（§3.2）。
 	CommitAvatar(context.Context, *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
+	// proxy 模式上传：文件内容一次 bytes 直传，服务端校验 MIME / 大小后
+	// 落盘（§3.2、§10.8）。
+	UploadAvatar(context.Context, *connect.Request[v1.UploadAvatarRequest]) (*connect.Response[v1.AvatarResponse], error)
 	// 改密，成功为空响应并递增 epoch（§3.3）。
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.OkResponse], error)
 	// 手机号绑定 / 换绑两步，由 step 区分（§3.4），成功为空响应。
@@ -614,6 +635,12 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		AccountServiceCommitAvatarProcedure,
 		svc.CommitAvatar,
 		connect.WithSchema(accountServiceMethods.ByName("CommitAvatar")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accountServiceUploadAvatarHandler := connect.NewUnaryHandler(
+		AccountServiceUploadAvatarProcedure,
+		svc.UploadAvatar,
+		connect.WithSchema(accountServiceMethods.ByName("UploadAvatar")),
 		connect.WithHandlerOptions(opts...),
 	)
 	accountServiceChangePasswordHandler := connect.NewUnaryHandler(
@@ -760,6 +787,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServicePresignAvatarHandler.ServeHTTP(w, r)
 		case AccountServiceCommitAvatarProcedure:
 			accountServiceCommitAvatarHandler.ServeHTTP(w, r)
+		case AccountServiceUploadAvatarProcedure:
+			accountServiceUploadAvatarHandler.ServeHTTP(w, r)
 		case AccountServiceChangePasswordProcedure:
 			accountServiceChangePasswordHandler.ServeHTTP(w, r)
 		case AccountServiceBindPhoneProcedure:
@@ -831,6 +860,10 @@ func (UnimplementedAccountServiceHandler) PresignAvatar(context.Context, *connec
 
 func (UnimplementedAccountServiceHandler) CommitAvatar(context.Context, *connect.Request[v1.CommitAvatarRequest]) (*connect.Response[v1.AvatarResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.CommitAvatar is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) UploadAvatar(context.Context, *connect.Request[v1.UploadAvatarRequest]) (*connect.Response[v1.AvatarResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.account.v1.AccountService.UploadAvatar is not implemented"))
 }
 
 func (UnimplementedAccountServiceHandler) ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[v1.OkResponse], error) {

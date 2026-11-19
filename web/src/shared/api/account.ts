@@ -4,52 +4,29 @@
  * proxy / direct 模式差异归 shared/hooks/useUpload，不外泄到本层）。
  *
  * 头像族四件（自 account/api.ts 迁移落位，原实现不再保留）：
- * GetConfig / PresignAvatar / CommitAvatar + proxy 直传 postForm（接口文档
- * §3.2 行 835-840；avatarUpload 供 useUpload 在 proxy / direct 间切换）。
+ * GetConfig / PresignAvatar / CommitAvatar / UploadAvatar（接口文档 §3.2；
+ * avatarUpload 供 useUpload 在 proxy / direct 间切换）。proxy 模式上传为
+ * AccountService/UploadAvatar 一次 bytes 直传，走 transport 归一链。
  * ThirdpartyOauth（§3.7.1 A 行 969-1003）：OAuthCallbackPage b
  * 前缀分支的绑定回调实调（login entry 消费，§2.7.3）。
  *
  * transport 与 client 只在 shared/api/http.ts 构造（§9 第 16 条），本模块
  * 从那里拿 accountClient、不自建 transport；报文类型只从 src/gen/proto
  * 生成物引用（§9 第 15 条），不描述字段。
- * proxy 直传是 REST 豁免端点（§1.0），不走 transport，经 http.ts 的 postForm
- * （XHR 进度 + 同口径错误归一）；URL 前缀 al_root 与 transport baseUrl 同口径
- * ——http.ts 的 resolveBaseUrl 不导出且契约层禁改，
- * shared 层禁止 import entry（§9 第 13 条），故内联同款归一（account/
- * bootstrap.ts normalizeAlRoot 同源口径）。
  */
-import { accountClient, postForm, type UploadProgress } from './http';
+import { accountClient } from './http';
 import type {
   AccountConfigResponse,
   AvatarPresignResponse,
   AvatarResponse,
   CommitAvatarRequest,
   PresignAvatarRequest,
+  UploadAvatarRequest,
 } from '../../gen/proto/api/account/v1/profile_pb';
-import { AvatarResponseSchema } from '../../gen/proto/api/account/v1/profile_pb';
 import type {
   ThirdpartyOauthRequest,
   ThirdpartyOauthResponse,
 } from '../../gen/proto/api/account/v1/thirdparty_pb';
-
-/** __AUTHLOFT_INIT__ 的最小形状（接口文档 §8 白名单中的 al_root）。 */
-interface RawInit {
-  al_root?: unknown;
-}
-
-/**
- * al_root 取法（与 shared/api/http.ts resolveBaseUrl 同口径）：string 校验 →
- * trim → 去尾斜杠；缺省回落当前站点源；非浏览器环境（单测 node）为空串。
- */
-function resolveAlRoot(): string {
-  const raw = (globalThis as { __AUTHLOFT_INIT__?: RawInit }).__AUTHLOFT_INIT__;
-  const alRoot =
-    typeof raw?.al_root === 'string' ? raw.al_root.trim().replace(/\/+$/, '') : '';
-  if (alRoot !== '') {
-    return alRoot;
-  }
-  return typeof location !== 'undefined' ? location.origin : '';
-}
 
 /**
  * 安全中心配置（§3.2 行 835）：avatarUpload / mfaPolicy / captcha / hasPassword；
@@ -60,12 +37,16 @@ export function getConfig(): Promise<AccountConfigResponse> {
 }
 
 /** direct 模式取预签名（§3.2 行 839 / §10.8）：key 由服务端生成，前端无法覆盖。 */
-export function presignAvatar(request: PresignAvatarRequest): Promise<AvatarPresignResponse> {
+export function presignAvatar(
+  request: PresignAvatarRequest,
+): Promise<AvatarPresignResponse> {
   return accountClient.presignAvatar(request);
 }
 
 /** direct 模式确认上传（§3.2 行 840）：仅记录已上传，不回读校验。 */
-export function commitAvatar(request: CommitAvatarRequest): Promise<AvatarResponse> {
+export function commitAvatar(
+  request: CommitAvatarRequest,
+): Promise<AvatarResponse> {
   return accountClient.commitAvatar(request);
 }
 
@@ -82,16 +63,20 @@ export function thirdpartyOauth(
 }
 
 /**
- * proxy 模式头像直传（§3.2 行 838：POST /api/account/avatar，multipart，
- * REST 豁免 §1.0）：不走 transport，经 shared/api/http 的 postForm（XHR 进度 +
- * 同口径错误归一）。
+ * proxy 模式头像上传（§3.2 / §10.8）：AccountService/UploadAvatar 一次
+ * bytes 直传，服务端校验 MIME / 大小后落盘并回显 url；protojson 编解码下
+ * content 为 base64（§1.1），走 transport 统一错误归一链（请求体超上限由
+ * 框架返回 resource_exhausted，§1.5）。
  */
-export function uploadAvatarProxy(
-  formData: FormData,
-  onUploadProgress?: (progress: UploadProgress) => void,
+export function uploadAvatar(
+  request: UploadAvatarRequest,
 ): Promise<AvatarResponse> {
-  return postForm(`${resolveAlRoot()}/api/account/avatar`, formData, {
-    res: AvatarResponseSchema,
-    onUploadProgress,
-  });
+  return accountClient.uploadAvatar(request);
 }
+
+/**
+ * 兼容转发名：account/api.ts 收编层按旧名 re-export（保既有调用方零改动），
+ * 仅作编译兼容保留；proxy 模式上传已改走 AccountService/UploadAvatar，
+ * REST multipart 端点不再存在。新代码一律用 uploadAvatar。
+ */
+export const uploadAvatarProxy = uploadAvatar;

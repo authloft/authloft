@@ -22,9 +22,9 @@ import (
 	"authloft/internal/logx"
 )
 
-// defaultReadMaxBytes 请求体上限默认值（§1.6 行 86：1 MiB；超限由框架返回
-// resource_exhausted）。
-const defaultReadMaxBytes = 1 << 20
+// defaultReadMaxBytes 请求体上限默认值（§1.6：超限由框架返回
+// resource_exhausted）；与 bootstrap 注入值同步（8 MiB，头像 bytes 直传余量）。
+const defaultReadMaxBytes = 8 << 20
 
 // Route 一条顶层挂载项（装配层 buildHandler 消费，§3.1 行 243）：Prefix
 // 为生成物返回的挂载前缀（形如 "/api.sso.v1.SsoService/"，尾斜杠——顶层
@@ -43,8 +43,8 @@ type Server struct {
 	readMaxBytes int
 }
 
-// NewServer 构造 Connect 装配层。readMaxBytes 为请求体上限（§1.6 行 86），
-// n <= 0 时回落默认 1 MiB。
+// NewServer 构造 Connect 装配层。readMaxBytes 为请求体上限（§1.6），
+// n <= 0 时回落默认值（8 MiB）。
 func NewServer(readMaxBytes int) *Server {
 	if readMaxBytes <= 0 {
 		readMaxBytes = defaultReadMaxBytes
@@ -57,7 +57,7 @@ func NewServer(readMaxBytes int) *Server {
 func (s *Server) Routes() []Route { return s.routes }
 
 // HandlerOptions 返回注册某域 connect handler（gen.NewXxxServiceHandler）
-// 时的公共选项：请求体上限（WithReadMaxBytes，§1.6 行 86）+ panic 归一
+// 时的公共选项：请求体上限（WithReadMaxBytes，§1.6）+ panic 归一
 // （WithRecover，最外层）+ 拦截链。
 //
 // WithRecover 是 §3.3 行 302「recover 最外层兜住全链 panic」对 Connect

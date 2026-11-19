@@ -1,13 +1,15 @@
-// avatar_test.go account 域头像直传两桩 service 层单测（不连 DB，
+// avatar_test.go account 域头像上传三桩 service 层单测（不连 DB，
 // Settings / Providers / Users / Resolver / Storage 全 fake 注入，
-// profile_test.go 先例）：数据源链未配置四态、mode 非 direct（local 回退）、
-// MIME / 超限 / size≤0 拒绝、key 服务端生成（uid 前缀 / 无客户端路径成分 /
-// 同参两次不同 key）、Resolve 与 PresignPut 入参透传、TTL 兜底 0→300、
+// profile_test.go 先例）：数据源链未配置四态、mode 与方法不符（presign
+// 非 direct / upload 非 proxy）、MIME / 超限 / 空内容 / size≤0 拒绝、
+// key 服务端生成（uid 前缀 / 无客户端路径成分 / 同参两次不同 key）、
+// Resolve 与 PresignPut / Put 入参透传、TTL 兜底 0→300、
 // commit 不回读（Get 零调用）与 URL 拼接、commit key 边界、基础设施错误
 // 透传、404 存在性先判。
 package account
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ const (
 	avatarTestUID         = int64(10086)
 	avatarTestCDNBase     = "https://cdn.example.com/"
 	avatarTestPresignURL  = "https://s3.example.com/put?sig=x"
+	avatarTestPutURL      = "https://cdn.example.com/avatars/put.png"
 )
 
 // avatarFakeSettings AvatarSettings fake：键值回放。
@@ -92,22 +95,34 @@ type avatarPresignCall struct {
 	size        int64
 }
 
-// avatarFakeStorage storage.Storage fake：presign 回放 + Get 计数（commit
+// avatarPutCall Put 入参记录（UploadAvatar 落盘透传断言用）。
+type avatarPutCall struct {
+	key         string
+	content     []byte
+	contentType string
+}
+
+// avatarFakeStorage storage.Storage fake：presign / put 回放 + Get 计数（commit
 // 不回读断言）+ URL 拼接回放。
 type avatarFakeStorage struct {
 	presignCalls   []avatarPresignCall
 	presignErr     error
 	presignURL     string
 	presignHeaders map[string]string
+	putCalls       []avatarPutCall
+	putErr         error
+	putURL         string
 	urlCalls       []string
 	getCalls       int
-	putCalls       int
 	deleteCalls    int
 }
 
-func (f *avatarFakeStorage) Put(context.Context, string, []byte, string) (string, error) {
-	f.putCalls++
-	return "", nil
+func (f *avatarFakeStorage) Put(_ context.Context, key string, content []byte, contentType string) (string, error) {
+	f.putCalls = append(f.putCalls, avatarPutCall{key: key, content: content, contentType: contentType})
+	if f.putErr != nil {
+		return "", f.putErr
+	}
+	return f.putURL, nil
 }
 
 func (f *avatarFakeStorage) Get(context.Context, string) ([]byte, error) {
@@ -182,8 +197,12 @@ func avatarTestEnvNew(t *testing.T) *avatarTestEnv {
 		providers: &avatarFakeProviders{rows: map[string]*model.Provider{
 			avatarTestProviderKey: avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 2<<20, "image/png,image/jpeg")),
 		}},
-		users:   &avatarFakeUsers{},
-		storage: &avatarFakeStorage{presignURL: avatarTestPresignURL, presignHeaders: map[string]string{"Content-Type": "image/png"}},
+		users: &avatarFakeUsers{},
+		storage: &avatarFakeStorage{
+			presignURL:     avatarTestPresignURL,
+			presignHeaders: map[string]string{"Content-Type": "image/png"},
+			putURL:         avatarTestPutURL,
+		},
 	}
 	e.resolver = &avatarFakeResolver{st: e.storage}
 	e.svc = NewAvatarService(AvatarDeps{Settings: e.settings, Providers: e.providers, Users: e.users, Resolver: e.resolver})
@@ -491,9 +510,9 @@ func TestAvatarCommitURL(t *testing.T) {
 	if e.storage.getCalls != 0 {
 		t.Errorf("Get 调用 = %d, want 0（不回读）", e.storage.getCalls)
 	}
-	if e.storage.putCalls != 0 || e.storage.deleteCalls != 0 || len(e.storage.presignCalls) != 0 {
+	if len(e.storage.putCalls) != 0 || e.storage.deleteCalls != 0 || len(e.storage.presignCalls) != 0 {
 		t.Errorf("Put/Delete/PresignPut = %d/%d/%d, want 全 0",
-			e.storage.putCalls, e.storage.deleteCalls, len(e.storage.presignCalls))
+			len(e.storage.putCalls), e.storage.deleteCalls, len(e.storage.presignCalls))
 	}
 	if len(e.resolver.calls) != 1 || e.resolver.calls[0] != avatarTestProviderKey {
 		t.Errorf("Resolve 调用 = %v, want [%s]", e.resolver.calls, avatarTestProviderKey)
@@ -535,5 +554,202 @@ func TestAvatarCommitResolveError(t *testing.T) {
 	}
 	if len(e.storage.urlCalls) != 0 {
 		t.Errorf("URL 拼接 = %d, want 0", len(e.storage.urlCalls))
+	}
+}
+
+// avatarTestUploadReq proxy 模式上传请求样例（1KB png 字节）。
+func avatarTestUploadReq() *accountv1.UploadAvatarRequest {
+	return &accountv1.UploadAvatarRequest{Filename: "avatar.png", ContentType: "image/png", Content: make([]byte, 1024)}
+}
+
+// (e *avatarTestEnv) upload proxy 模式上传桩。
+func (e *avatarTestEnv) upload(in *accountv1.UploadAvatarRequest) (*accountv1.AvatarResponse, error) {
+	return e.svc.UploadAvatar(context.Background(), avatarTestUID, in)
+}
+
+// TestAvatarUploadHappyPath proxy 模式全链路：key 服务端生成（uid 前缀 /
+// 白名单扩展名保留 / 无客户端路径成分）、Resolve 与 Put 入参透传
+// （key / content 逐字节 / contentType）、Put 返回 URL 回显、同参两次不同 key。
+func TestAvatarUploadHappyPath(t *testing.T) {
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png,image/jpeg"))
+	in := avatarTestUploadReq()
+	resp, err := e.upload(in)
+	if err != nil {
+		t.Fatalf("UploadAvatar: %v", err)
+	}
+	if resp.Url != avatarTestPutURL {
+		t.Errorf("url = %q, want %q（Put 返回回显）", resp.Url, avatarTestPutURL)
+	}
+	if len(e.resolver.calls) != 1 || e.resolver.calls[0] != avatarTestProviderKey {
+		t.Errorf("Resolve 调用 = %v, want [%s]（provider key 透传）", e.resolver.calls, avatarTestProviderKey)
+	}
+	if len(e.storage.putCalls) != 1 {
+		t.Fatalf("Put 调用 = %d, want 1", len(e.storage.putCalls))
+	}
+	c := e.storage.putCalls[0]
+	if !strings.HasPrefix(c.key, avatarKeyPrefix(avatarTestUID)) {
+		t.Errorf("key = %q, want 前缀 %q（uid 隔离）", c.key, avatarKeyPrefix(avatarTestUID))
+	}
+	base := strings.TrimPrefix(c.key, avatarKeyPrefix(avatarTestUID))
+	if base == "" || strings.ContainsAny(base, `/\:`) || strings.Contains(base, "..") {
+		t.Errorf("key 基段 = %q, want 无客户端路径成分", base)
+	}
+	if !strings.HasSuffix(base, ".png") {
+		t.Errorf("key 基段 = %q, want 白名单扩展名 .png 保留", base)
+	}
+	if !bytes.Equal(c.content, in.GetContent()) {
+		t.Errorf("Put content = %d bytes, want 原样透传 %d bytes", len(c.content), len(in.GetContent()))
+	}
+	if c.contentType != "image/png" {
+		t.Errorf("Put contentType = %q, want image/png", c.contentType)
+	}
+
+	// 同参两次生成不同 key（随机成分防猜测，覆盖即失效）。
+	if _, err := e.upload(avatarTestUploadReq()); err != nil {
+		t.Fatalf("UploadAvatar 2nd: %v", err)
+	}
+	if len(e.storage.putCalls) != 2 || e.storage.putCalls[0].key == e.storage.putCalls[1].key {
+		t.Errorf("两次 key 相同 %q, want 不同", e.storage.putCalls[0].key)
+	}
+}
+
+// TestAvatarUploadModeNotProxy mode≠proxy（显式 direct）→
+// ErrAvatarUploadUnavailable（internal 口径）：直调按未知异常映射，
+// 零 Resolve / 零 Put。
+func TestAvatarUploadModeNotProxy(t *testing.T) {
+	e := avatarTestEnvNew(t) // 默认装配 direct 行
+	if _, err := e.upload(avatarTestUploadReq()); !errors.Is(err, ErrAvatarUploadUnavailable) {
+		t.Errorf("err = %v, want ErrAvatarUploadUnavailable", err)
+	}
+	if len(e.resolver.calls) != 0 || len(e.storage.putCalls) != 0 {
+		t.Errorf("Resolve/Put = %d/%d, want 0/0", len(e.resolver.calls), len(e.storage.putCalls))
+	}
+}
+
+// TestAvatarUploadMIMERejected MIME 不在白名单 → ErrAvatarFileTypeNotAllowed；
+// 空 contentType 同拒、空白名单 fail-closed；拒绝时零 Put。
+func TestAvatarUploadMIMERejected(t *testing.T) {
+	for name, row := range map[string]*model.Provider{
+		"显式 proxy": avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png,image/jpeg")),
+		"local 回退": avatarTestProviderRow(t, "local", avatarTestExt("proxy", 600, 2<<20, "image/png")),
+	} {
+		e := avatarTestEnvNew(t)
+		e.providers.rows[avatarTestProviderKey] = row
+		for _, ct := range []string{"image/webp", ""} {
+			if _, err := e.upload(&accountv1.UploadAvatarRequest{Filename: "a.webp", ContentType: ct, Content: []byte("x")}); !errors.Is(err, ErrAvatarFileTypeNotAllowed) {
+				t.Errorf("%s contentType=%q: err = %v, want ErrAvatarFileTypeNotAllowed", name, ct, err)
+			}
+		}
+		if len(e.storage.putCalls) != 0 {
+			t.Errorf("%s: Put 调用 = %d, want 0（校验在落盘前）", name, len(e.storage.putCalls))
+		}
+	}
+
+	// 空白名单 fail-closed（自决）：proxy 行未配 allowed_types → 全拒。
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, ""))
+	if _, err := e.upload(avatarTestUploadReq()); !errors.Is(err, ErrAvatarFileTypeNotAllowed) {
+		t.Errorf("空白名单 err = %v, want ErrAvatarFileTypeNotAllowed（fail-closed）", err)
+	}
+}
+
+// TestAvatarUploadTooLarge len(content) > maxSize → ErrAvatarFileTooLarge；
+// dto maxSize 零值兜底 2MB 与 service 判定口径一致（≤2MB 过、>2MB 拒）。
+func TestAvatarUploadTooLarge(t *testing.T) {
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	if _, err := e.upload(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png", Content: make([]byte, 2<<20+1)}); !errors.Is(err, ErrAvatarFileTooLarge) {
+		t.Fatalf("err = %v, want ErrAvatarFileTooLarge", err)
+	}
+	if len(e.storage.putCalls) != 0 {
+		t.Errorf("Put 调用 = %d, want 0（校验在落盘前）", len(e.storage.putCalls))
+	}
+
+	// MaxSize 0 → dto 兜底 2MB（dto/account.go AccountAvatarUpload）。
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 0, "image/png"))
+	if _, err := e.upload(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png", Content: make([]byte, 2<<20)}); err != nil {
+		t.Errorf("content = 2MB err = %v, want nil（兜底上限内）", err)
+	}
+	if _, err := e.upload(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png", Content: make([]byte, 2<<20+1)}); !errors.Is(err, ErrAvatarFileTooLarge) {
+		t.Errorf("content = 2MB+1 err = %v, want ErrAvatarFileTooLarge", err)
+	}
+}
+
+// TestAvatarUploadEmptyContent 空 content 自决拒绝 → ErrAvatarInvalidRequest
+// （文档未覆盖：零字节头像无意义，镜像 presign size≤0 口径），零 Put。
+func TestAvatarUploadEmptyContent(t *testing.T) {
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	if _, err := e.upload(&accountv1.UploadAvatarRequest{Filename: "a.png", ContentType: "image/png"}); !errors.Is(err, ErrAvatarInvalidRequest) {
+		t.Errorf("err = %v, want ErrAvatarInvalidRequest", err)
+	}
+	if len(e.storage.putCalls) != 0 {
+		t.Errorf("Put 调用 = %d, want 0", len(e.storage.putCalls))
+	}
+}
+
+// TestAvatarUploadNotConfigured provider 未配置各态 + settings 未装配 →
+// ErrAvatarNotConfigured（直调上传接口按 internal 映射，不新增错误码），
+// 零 Resolve / 零 Put。
+func TestAvatarUploadNotConfigured(t *testing.T) {
+	disabledRow := avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	disabledRow.IsEnabled = 0
+	oauthRow := avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	oauthRow.Category = "oauth"
+
+	for name, mutate := range map[string]func(e *avatarTestEnv){
+		"settings 键空串": func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },
+		"settings 键缺失": func(e *avatarTestEnv) { delete(e.settings.values, settings.KeyAvatarStorageProvider) },
+		"provider 行查无": func(e *avatarTestEnv) { delete(e.providers.rows, avatarTestProviderKey) },
+		"is_enabled=0": func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = disabledRow },
+		"category≠storage": func(e *avatarTestEnv) {
+			e.providers.rows[avatarTestProviderKey] = oauthRow
+		},
+	} {
+		e := avatarTestEnvNew(t)
+		mutate(e)
+		_, err := e.upload(avatarTestUploadReq())
+		if !errors.Is(err, ErrAvatarNotConfigured) {
+			t.Errorf("%s: err = %v, want ErrAvatarNotConfigured", name, err)
+		}
+		if len(e.resolver.calls) != 0 || len(e.storage.putCalls) != 0 {
+			t.Errorf("%s: Resolve/Put = %d/%d, want 0/0", name, len(e.resolver.calls), len(e.storage.putCalls))
+		}
+	}
+
+	// Settings 未装配（nil）：防御读按未配置处理（handler 同款）。
+	e := avatarTestEnvNew(t)
+	e.svc = NewAvatarService(AvatarDeps{Providers: e.providers, Users: e.users, Resolver: e.resolver})
+	if _, err := e.upload(avatarTestUploadReq()); !errors.Is(err, ErrAvatarNotConfigured) {
+		t.Errorf("settings nil err = %v, want ErrAvatarNotConfigured", err)
+	}
+}
+
+// TestAvatarUploadInfraErrors 基础设施错误包装透传（非哨兵，按 internal
+// 映射）：Resolve 失败 / Put 失败；user 行不存在 404 优先。
+func TestAvatarUploadInfraErrors(t *testing.T) {
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	e.resolver.err = storage.ErrNotConfigured
+	if _, err := e.upload(avatarTestUploadReq()); !errors.Is(err, storage.ErrNotConfigured) {
+		t.Errorf("Resolve 失败 err = %v, want 包装 storage.ErrNotConfigured 透传", err)
+	}
+
+	e = avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	e.storage.putErr = errors.New("avatar test: put down")
+	if _, err := e.upload(avatarTestUploadReq()); err == nil || !strings.Contains(err.Error(), "put down") {
+		t.Errorf("Put 失败 err = %v, want 包装上抛", err)
+	}
+
+	e = avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	e.users.missing = true
+	if _, err := e.upload(avatarTestUploadReq()); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("user 不存在 err = %v, want sql.ErrNoRows 透传（404 优先）", err)
+	}
+	if len(e.resolver.calls) != 0 {
+		t.Errorf("Resolve 调用 = %d, want 0（存在性先判在前）", len(e.resolver.calls))
 	}
 }
