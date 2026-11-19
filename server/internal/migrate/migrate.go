@@ -1,11 +1,12 @@
 // Package migrate 提供 goose v3 迁移执行、安装判据与统一连接工厂
 // （后端架构 §3.16）。
 //
-// 迁移 SQL 内嵌在 authloft/migrations 包随二进制分发，版本表沿用 goose
-// 默认的 goose_db_version（无 dirty 标志：失败的迁移不记版本、重跑即重试
-// 同版本）。统一连接工厂（NewDB）按 driver 产出裸 *sql.DB，repo / setup
-// 与本包三处建连共享；goose 方言按 driver 选择，bootstrap / setup 的
-// driver 贯通归后续实现。
+// 迁移 SQL 内嵌在 authloft/migrations 包随二进制分发（mysql / postgres
+// 两个方言目录，版本号一一对应），版本表沿用 goose 默认的
+// goose_db_version（无 dirty 标志：失败的迁移不记版本、重跑即重试同版本）。
+// 统一连接工厂（NewDB）按 driver 产出裸 *sql.DB，repo / setup 与本包三处
+// 建连共享；goose 方言与嵌入迁移目录按 driver 配对选择，bootstrap / setup
+// 的 driver 贯通归后续实现。
 package migrate
 
 import (
@@ -111,11 +112,15 @@ func Installed(ctx context.Context, dsn string) (bool, error) {
 	return installed(ctx, db, config.DriverMySQL)
 }
 
-// gooseUp 用嵌入的迁移文件把 db 迁移到最新版本，goose 方言按 driver 选择。
-// 注意：嵌入 FS 当前仅 MySQL 方言 SQL，两套方言目录拆分属后续工作——
-// postgres 路径在本卡只接通 Provider 构造，实跑会在迁移执行期报缺文件。
+// gooseUp 用嵌入的迁移文件把 db 迁移到最新版本：goose 方言与迁移文件
+// 目录按 driver 配对选择（mysql → migrations/mysql，postgres →
+// migrations/postgres，两目录版本号一一对应）。
 func gooseUp(ctx context.Context, db *sql.DB, driver config.Driver) error {
-	p, err := goose.NewProvider(gooseDialect(driver), db, migrations.FS)
+	fsys, err := migrations.DialectFS(string(gooseDialect(driver)))
+	if err != nil {
+		return fmt.Errorf("select migrations: %w", err)
+	}
+	p, err := goose.NewProvider(gooseDialect(driver), db, fsys)
 	if err != nil {
 		return fmt.Errorf("new provider: %w", err)
 	}
@@ -140,7 +145,11 @@ func gooseDialect(driver config.Driver) goose.Dialect {
 // 创建的账号，其存在代表已完成安装；管理员身份由 user_permission 的
 // superadmin 权限点表达，本判据仅按安装账号存在性判定，不在此处查权限点）。
 func installed(ctx context.Context, db *sql.DB, driver config.Driver) (bool, error) {
-	p, err := goose.NewProvider(gooseDialect(driver), db, migrations.FS)
+	fsys, err := migrations.DialectFS(string(gooseDialect(driver)))
+	if err != nil {
+		return false, fmt.Errorf("select migrations: %w", err)
+	}
+	p, err := goose.NewProvider(gooseDialect(driver), db, fsys)
 	if err != nil {
 		return false, fmt.Errorf("new provider: %w", err)
 	}

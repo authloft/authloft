@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +15,10 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"authloft/internal/config"
+	"authloft/migrations"
 )
 
-// wantTables §4 全部 12 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
+// wantTables §4 全部 14 张表（§3.16 首版迁移范围），顺序与迁移文件一致。
 var wantTables = []string{
 	"provider",
 	"user",
@@ -24,10 +28,12 @@ var wantTables = []string{
 	"user_thirdparty_bind",
 	"sso_client",
 	"oidc_client",
+	"template",
 	"oidc_refresh_token",
 	"event_log",
 	"settings",
 	"user_permission",
+	"oidc_consent",
 }
 
 // testDBLockName 测试库互斥锁名（与 settings / repo / setup / main 的
@@ -205,7 +211,7 @@ func assertNoTables(db *sql.DB) error {
 	return nil
 }
 
-// requireAllTables 断言测试库中 §4 全部 12 张表存在。
+// requireAllTables 断言测试库中 §4 全部 14 张表存在。
 func requireAllTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, tbl := range wantTables {
@@ -262,6 +268,57 @@ func TestGooseDialect(t *testing.T) {
 	}
 	if got := gooseDialect(""); got != goose.DialectMySQL {
 		t.Errorf("empty driver dialect = %v, want %v", got, goose.DialectMySQL)
+	}
+}
+
+// dialectVersions 收集方言目录根下的迁移版本号（文件名形如
+// 000001_init.sql，取前导数字），顺带断言文件可读且非空。
+func dialectVersions(t *testing.T, fsys fs.FS) []int64 {
+	t.Helper()
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		t.Fatalf("读取方言目录失败: %v", err)
+	}
+	versions := make([]int64, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			t.Errorf("方言目录不应出现子目录: %s", e.Name())
+			continue
+		}
+		v, err := strconv.ParseInt(strings.SplitN(e.Name(), "_", 2)[0], 10, 64)
+		if err != nil {
+			t.Errorf("迁移文件名解析版本失败: %s: %v", e.Name(), err)
+			continue
+		}
+		if data, err := fs.ReadFile(fsys, e.Name()); err != nil || len(data) == 0 {
+			t.Errorf("迁移文件读取失败或为空: %s: %v", e.Name(), err)
+		}
+		versions = append(versions, v)
+	}
+	slices.Sort(versions)
+	return versions
+}
+
+// TestDialectFS 迁移目录按方言收集（fs.Sub 剥层）：两个方言目录均可读、
+// 版本号集合一一对应；未知方言报错。纯 FS 断言，不依赖数据库环境。
+func TestDialectFS(t *testing.T) {
+	mysqlFS, err := migrations.DialectFS(migrations.DialectMySQL)
+	if err != nil {
+		t.Fatalf("mysql 方言 FS 获取失败: %v", err)
+	}
+	pgFS, err := migrations.DialectFS(migrations.DialectPostgres)
+	if err != nil {
+		t.Fatalf("postgres 方言 FS 获取失败: %v", err)
+	}
+	want := []int64{1, 2}
+	if mysqlV := dialectVersions(t, mysqlFS); !slices.Equal(mysqlV, want) {
+		t.Errorf("mysql 方言版本集合 = %v, want %v", mysqlV, want)
+	}
+	if pgV := dialectVersions(t, pgFS); !slices.Equal(pgV, want) {
+		t.Errorf("postgres 方言版本集合 = %v, want %v", pgV, want)
+	}
+	if _, err := migrations.DialectFS("sqlite3"); err == nil {
+		t.Error("未知方言应报错")
 	}
 }
 
@@ -412,5 +469,137 @@ func TestInstalledCriteria(t *testing.T) {
 	}
 	if ok, err := Installed(ctx, dsn); err != nil || !ok {
 		t.Fatalf("有管理员 Installed = (%v, %v), want (true, nil)", ok, err)
+	}
+}
+
+// ---- PostgreSQL 侧（env-skip：UC_TEST_PG_DSN 未设置即跳过，实跑在 CI
+// postgres 矩阵；本地无 PG 实例）。清理与探测用 PG 方言：pg_tables +
+// current_schema() 残留口径、DROP TABLE ... CASCADE。跨二进制互斥
+// （pg_advisory_lock）待测试矩阵统一收口，当前仅本包有 PG 用例，无竞争。
+
+// pgDropAllTables 删除当前 schema 全部表（含 goose_db_version），实现
+// 用例间隔离与零残留；CASCADE 兜底任意删除顺序。
+func pgDropAllTables(db *sql.DB) error {
+	rows, err := db.Query("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+	if err != nil {
+		return err
+	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if len(tables) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(tables))
+	for i, tbl := range tables {
+		quoted[i] = `"` + strings.ReplaceAll(tbl, `"`, `""`) + `"`
+	}
+	_, err = db.Exec("DROP TABLE " + strings.Join(quoted, ", ") + " CASCADE")
+	return err
+}
+
+// pgAssertNoTables 清理自证：当前 schema 必须无表（零残留）。
+func pgAssertNoTables(db *sql.DB) error {
+	rows, err := db.Query("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var left []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		left = append(left, name)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(left) > 0 {
+		return fmt.Errorf("残留表: %v", left)
+	}
+	return nil
+}
+
+// pgRequireAllTables 断言 §4 全部 14 张表存在（pg_tables 口径，
+// current_schema() 限定）。
+func pgRequireAllTables(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, tbl := range wantTables {
+		var n int
+		err := db.QueryRow(
+			"SELECT COUNT(*) FROM pg_tables WHERE schemaname = current_schema() AND tablename = $1",
+			tbl,
+		).Scan(&n)
+		if err != nil {
+			t.Fatalf("查询表 %s 失败: %v", tbl, err)
+		}
+		if n == 0 {
+			t.Errorf("迁移后表 %s 不存在", tbl)
+		}
+	}
+}
+
+// pgAppliedVersion 返回 goose 版本表已应用的最大版本（PG 版本表
+// is_applied 为 boolean；goose 建表时同样插入零版本行）。
+func pgAppliedVersion(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	var v int64
+	err := db.QueryRow(
+		"SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied",
+	).Scan(&v)
+	if err != nil {
+		t.Fatalf("查询 goose_db_version 失败: %v", err)
+	}
+	return v
+}
+
+// TestG1PostgresEmptyUpToLatest（env-skip）与 mysql 侧 G 组①同语义：
+// PG 空库一步 migrate up 到最新，§4 全部 14 张表建立、版本表记录最新
+// 版本。本地无 PG 实例，实跑在 CI postgres 矩阵；连接串只经环境变量注入，
+// 代码不含任何主机 / 凭证信息。
+func TestG1PostgresEmptyUpToLatest(t *testing.T) {
+	dsn := os.Getenv("UC_TEST_PG_DSN")
+	if dsn == "" {
+		t.Skip("环境变量 UC_TEST_PG_DSN 未设置，跳过迁移 postgres 用例（实跑在 CI postgres 矩阵）")
+	}
+	db, err := NewDB(config.DriverPostgres, dsn)
+	if err != nil {
+		t.Fatalf("打开连接失败: %v", err)
+	}
+	if err := db.Ping(); err != nil {
+		t.Fatalf("连接 PostgreSQL 测试实例失败: %v", err)
+	}
+	if err := pgDropAllTables(db); err != nil {
+		t.Fatalf("用例开始清空测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := pgDropAllTables(db); err != nil {
+			t.Errorf("用例结束清理测试库失败: %v", err)
+		}
+		if err := pgAssertNoTables(db); err != nil {
+			t.Errorf("清理自证失败: %v", err)
+		}
+		db.Close()
+	})
+	ctx := context.Background()
+	if err := gooseUp(ctx, db, config.DriverPostgres); err != nil {
+		t.Fatalf("PG 空库 migrate up 失败: %v", err)
+	}
+	pgRequireAllTables(t, db)
+	if v := pgAppliedVersion(t, db); v != 2 {
+		t.Errorf("迁移后版本表最新版本 = %d, want 2", v)
 	}
 }
