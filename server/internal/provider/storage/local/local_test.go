@@ -136,3 +136,45 @@ func TestRegistryRegistration(t *testing.T) {
 		}
 	}
 }
+
+// TestSchemaExtKinds Schema 声明形态（§5.3：键恒等于表列名或 Ext 字段名）：
+// 表列基线落 column、Ext 字段落 ext；storage 恒可用（不消费 is_enabled），
+// 该字段不在声明内——列表页 / 编辑表单对本类别不出现启停。
+func TestSchemaExtKinds(t *testing.T) {
+	fields := storageLocalSchema()
+	extKeys := map[string]bool{"bucket": true, "domain": true, "path_prefix": true}
+	columnKeys := map[string]bool{
+		"provider_key": true, "display_name": true, "icon_url": true,
+		"ui_group": true, "sort_order": true, "remark": true,
+	}
+	seen := map[string]int{}
+	for _, f := range fields {
+		seen[f.Key]++
+		want := provider.StorageExt
+		if columnKeys[f.Key] {
+			want = provider.StorageColumn
+		}
+		if (extKeys[f.Key] || columnKeys[f.Key]) && f.Storage != want {
+			t.Errorf("field %q storage = %q, want %q", f.Key, f.Storage, want)
+		}
+		if f.Label == "" || f.Type == "" || f.Section == "" {
+			t.Errorf("field %q 声明残缺: %+v", f.Key, f)
+		}
+	}
+	for k := range extKeys {
+		if seen[k] != 1 {
+			t.Errorf("ext 字段 %q 声明 %d 次, want 1", k, seen[k])
+		}
+	}
+	for k := range columnKeys {
+		if seen[k] != 1 {
+			t.Errorf("表列 %q 声明 %d 次, want 1", k, seen[k])
+		}
+	}
+	if len(seen) != len(fields) {
+		t.Errorf("Schema 出现未声明键: %+v", fields)
+	}
+	if seen["is_enabled"] != 0 {
+		t.Errorf("is_enabled 不应声明（storage 恒可用，不消费即不下发）")
+	}
+}

@@ -373,8 +373,6 @@ func TestAvatarPresignInvalidSize(t *testing.T) {
 // ErrAvatarNotConfigured（直调上传接口按 internal 映射，不新增错误码），
 // 零 Resolve / 零 PresignPut。
 func TestAvatarPresignNotConfigured(t *testing.T) {
-	disabledRow := avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 2<<20, "image/png"))
-	disabledRow.IsEnabled = 0
 	oauthRow := avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 2<<20, "image/png"))
 	oauthRow.Category = "oauth"
 
@@ -382,7 +380,6 @@ func TestAvatarPresignNotConfigured(t *testing.T) {
 		"settings 键空串":     func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },
 		"settings 键缺失":     func(e *avatarTestEnv) { delete(e.settings.values, settings.KeyAvatarStorageProvider) },
 		"provider 行查无":     func(e *avatarTestEnv) { delete(e.providers.rows, avatarTestProviderKey) },
-		"is_enabled=0":     func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = disabledRow },
 		"category≠storage": func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = oauthRow },
 	} {
 		e := avatarTestEnvNew(t)
@@ -401,6 +398,35 @@ func TestAvatarPresignNotConfigured(t *testing.T) {
 	e.svc = NewAvatarService(AvatarDeps{Providers: e.providers, Users: e.users, Resolver: e.resolver})
 	if _, err := e.presign(avatarTestPresignReq()); !errors.Is(err, ErrAvatarNotConfigured) {
 		t.Errorf("settings nil err = %v, want ErrAvatarNotConfigured", err)
+	}
+}
+
+// TestAvatarDisabledRowStillUploads storage 恒可用（不消费 is_enabled）：
+// 行停用（is_enabled=0）presign / 上传两链照常走通——与 storage.Resolver
+// 同口径，启停语义只留给登录入口类类别。
+func TestAvatarDisabledRowStillUploads(t *testing.T) {
+	row := avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 2<<20, "image/png"))
+	row.IsEnabled = 0
+	e := avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = row
+	resp, err := e.presign(avatarTestPresignReq())
+	if err != nil {
+		t.Fatalf("PresignAvatar(is_enabled=0): %v, want nil（storage 恒可用）", err)
+	}
+	if resp.GetUploadUrl() != avatarTestPresignURL {
+		t.Errorf("uploadUrl = %q, want %q", resp.GetUploadUrl(), avatarTestPresignURL)
+	}
+
+	row = avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
+	row.IsEnabled = 0
+	e = avatarTestEnvNew(t)
+	e.providers.rows[avatarTestProviderKey] = row
+	up, err := e.upload(avatarTestUploadReq())
+	if err != nil {
+		t.Fatalf("UploadAvatar(is_enabled=0): %v, want nil（storage 恒可用）", err)
+	}
+	if up.GetUrl() != avatarTestPutURL {
+		t.Errorf("url = %q, want %q", up.GetUrl(), avatarTestPutURL)
 	}
 }
 
@@ -693,8 +719,6 @@ func TestAvatarUploadEmptyContent(t *testing.T) {
 // ErrAvatarNotConfigured（直调上传接口按 internal 映射，不新增错误码），
 // 零 Resolve / 零 Put。
 func TestAvatarUploadNotConfigured(t *testing.T) {
-	disabledRow := avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
-	disabledRow.IsEnabled = 0
 	oauthRow := avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
 	oauthRow.Category = "oauth"
 
@@ -702,7 +726,6 @@ func TestAvatarUploadNotConfigured(t *testing.T) {
 		"settings 键空串": func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },
 		"settings 键缺失": func(e *avatarTestEnv) { delete(e.settings.values, settings.KeyAvatarStorageProvider) },
 		"provider 行查无": func(e *avatarTestEnv) { delete(e.providers.rows, avatarTestProviderKey) },
-		"is_enabled=0": func(e *avatarTestEnv) { e.providers.rows[avatarTestProviderKey] = disabledRow },
 		"category≠storage": func(e *avatarTestEnv) {
 			e.providers.rows[avatarTestProviderKey] = oauthRow
 		},

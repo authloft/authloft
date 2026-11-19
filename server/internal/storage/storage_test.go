@@ -38,7 +38,7 @@ func storageRow(key, category, typ string, enabled bool) *provider.Provider {
 	return &provider.Provider{Key: key, Type: typ, Row: row, Ext: &providerpb.Ext{}}
 }
 
-// TestResolveNotConfigured 空键 / 查无行 / 禁用 / category≠storage /
+// TestResolveNotConfigured 空键 / 查无行 / category≠storage /
 // local 关键字段缺失 / 未支持 type 全部按 ErrNotConfigured 收敛。
 func TestResolveNotConfigured(t *testing.T) {
 	localEmpty := storageRow("local-empty", "storage", "local", true)
@@ -46,7 +46,6 @@ func TestResolveNotConfigured(t *testing.T) {
 	getter := fakeGetter{byKey: map[string]*provider.Provider{
 		"local-empty": localEmpty,
 		"s3":          s3,
-		"disabled":    storageRow("disabled", "storage", "local", false),
 		"oauthish":    storageRow("oauthish", "oauth", "local", true),
 	}}
 	r := NewResolver(getter)
@@ -56,7 +55,6 @@ func TestResolveNotConfigured(t *testing.T) {
 		{""},
 		{"local-empty"},
 		{"s3"},
-		{"disabled"},
 		{"oauthish"},
 		{"missing"},
 	}
@@ -91,6 +89,22 @@ func TestResolveLocal(t *testing.T) {
 	}
 	if got := lc.URL("k1.jpg"); got != "https://cdn.example.com/qr/k1.jpg" {
 		t.Errorf("URL = %q", got)
+	}
+}
+
+// TestResolveDisabledRowStillSucceeds storage 恒可用（不消费 is_enabled）：
+// 行停用（is_enabled=0）仍解析成功——存储配置存在即可用，启停语义只留
+// 给 oauth / sms 等登录入口类类别。
+func TestResolveDisabledRowStillSucceeds(t *testing.T) {
+	row := storageRow("files", "storage", "local", false)
+	row.Ext = &providerpb.Ext{Bucket: "/data/files", Domain: "https://cdn.example.com"}
+	st, err := NewResolver(fakeGetter{byKey: map[string]*provider.Provider{"files": row}}).
+		Resolve(context.Background(), "files")
+	if err != nil {
+		t.Fatalf("Resolve(is_enabled=0): %v, want nil（storage 恒可用）", err)
+	}
+	if _, ok := st.(*storagelocal.Local); !ok {
+		t.Fatalf("Resolve 返回 %T, want *storagelocal.Local", st)
 	}
 }
 

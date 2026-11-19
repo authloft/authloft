@@ -5,7 +5,8 @@
  * 列表用 Semi Table：显示名 / provider_key（可复制，shared CopyButton）/
  * 类别 / 类型（内置图标——shared ProviderIcon；§5.2 列表行集不含 icon_url
  * （该字段在 AdminProvider 详情，§5.3 行 1210），故列表恒渲染内置占位图形）/
- * 状态（StatusSwitch 行内启停）/ 策略标签（api.policyTags）/ 排序（sort_order
+ * 状态（StatusSwitch 行内启停；storage 类恒可用不渲染开关，见
+ * providerStatusSwitchable）/ 策略标签（api.policyTags）/ 排序（sort_order
  * 值）/ 操作（编辑、删除）。编辑复用 ProviderEdit 侧栏（providerKey 定位）；
  * 删除经 ConfirmActionButton 二次确认后调 DeleteProvider，成功后 Toast +
  * 重新取数。工具栏「新建提供商」入口指向 PROVIDER_NEW_PATH（需求 §4.6）。
@@ -88,6 +89,18 @@ function providerRowKey(row: Provider): string {
 
 /** 零值占位（§9 第 18 条：protojson 省略零值 → 解码为 ''）。 */
 const EMPTY_TEXT = '—';
+
+/** storage 类别（恒可用：存储配置存在即可用，行内启停不适用）。 */
+const STORAGE_CATEGORY = 'storage';
+
+/**
+ * 行内启停开关可见性：storage 类 Provider 恒可用（存储配置存在即可用，
+ * 后端解析不消费 is_enabled，schema 亦不再下发该字段），不渲染开关、
+ * 落零值占位；其余类别（含空类别零值行）行为不变。
+ */
+export function providerStatusSwitchable(category: string): boolean {
+  return category !== STORAGE_CATEGORY;
+}
 
 /**
  * 类型 / 类别展示名（接口文档 §5.3 文案口径：admin.providerType.* /
@@ -292,12 +305,15 @@ export function ProvidersPage(props: {
     {
       title: t('admin.statusLabel'),
       dataIndex: 'isEnabled',
-      render: (_text: unknown, row: Provider) => (
-        <StatusSwitch
-          isEnabled={row.isEnabled}
-          onToggle={(next) => handleToggle(row, next)}
-        />
-      ),
+      render: (_text: unknown, row: Provider) =>
+        providerStatusSwitchable(row.category) ? (
+          <StatusSwitch
+            isEnabled={row.isEnabled}
+            onToggle={(next) => handleToggle(row, next)}
+          />
+        ) : (
+          EMPTY_TEXT
+        ),
     },
     {
       title: t('admin.providerColumnPolicyTags'),

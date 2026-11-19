@@ -335,8 +335,9 @@ func schemaFieldMaybe(resp *adminv1.SchemaResponse, key string) (*adminv1.Schema
 }
 
 // TestProviderColumnKeysFromSchema 可写表列键集由完整 Schema 派生（Storage==column
-// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/local 6 列（无 oauth
-// 专属登录/建号/自动绑定列）；union 再裁 is_enabled，只剩 5 列。provider_key 在
+// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/proxy 6 列（无 oauth
+// 专属登录/建号/自动绑定列）；local 不声明 is_enabled（storage 恒可用），union
+// 同裁 is_enabled，各剩 5 列。provider_key 在
 // 任何类型都不进列键（更新时作定位键，不得被 ApplyProviderColumns 改动）。
 func TestProviderColumnKeysFromSchema(t *testing.T) {
 	for _, tc := range []struct {
@@ -348,7 +349,7 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 		{"aliyun_sms", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
-		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
 		{provider.ProxyType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
 		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, append([]string{"is_enabled"}, oauthOnlyTestKeys...)},
 	} {

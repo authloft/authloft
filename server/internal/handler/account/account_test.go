@@ -645,7 +645,7 @@ func TestGetConfigWithSession(t *testing.T) {
 }
 
 // TestGetConfigAvatarUploadUnconfigured avatarUpload 零值投影分支（行 826）：
-// 未配置键 / 空串 / 查无该行 / is_enabled=0 / category≠storage →
+// 未配置键 / 空串 / 查无该行 / category≠storage →
 // {mode:"proxy", maxSize:0, allowedTypes:[]}。
 func TestGetConfigAvatarUploadUnconfigured(t *testing.T) {
 	ext, err := repo.MarshalProviderExt(&provider.Ext{UploadMode: "direct", MaxSize: 1 << 20})
@@ -660,9 +660,6 @@ func TestGetConfigAvatarUploadUnconfigured(t *testing.T) {
 		{"键缺失（未配置）", &fakeSettings{}, &fakeProviders{}},
 		{"空串", &fakeSettings{s: map[string]string{settings.KeyAvatarStorageProvider: ""}}, &fakeProviders{}},
 		{"查无该行", &fakeSettings{s: map[string]string{settings.KeyAvatarStorageProvider: "minio"}}, &fakeProviders{}},
-		{"is_enabled=0", &fakeSettings{s: map[string]string{settings.KeyAvatarStorageProvider: "minio"}}, &fakeProviders{
-			rows: map[string]*model.Provider{"minio": {ProviderKey: "minio", Category: "storage", Type: "s3", IsEnabled: 0, Ext: ext}},
-		}},
 		{"category≠storage", &fakeSettings{s: map[string]string{settings.KeyAvatarStorageProvider: "minio"}}, &fakeProviders{
 			rows: map[string]*model.Provider{"minio": {ProviderKey: "minio", Category: "sms", Type: "aliyun_sms", IsEnabled: 1, Ext: ext}},
 		}},
@@ -688,6 +685,42 @@ func TestGetConfigAvatarUploadUnconfigured(t *testing.T) {
 				t.Errorf("avatarUpload = {%q %d %v}, want 零值投影 {proxy 0 []}", avatar.GetMode(), avatar.GetMaxSize(), avatar.GetAllowedTypes())
 			}
 		})
+	}
+}
+
+// TestGetConfigAvatarUploadDisabledRowStillProjected storage 恒可用（不消费
+// is_enabled）：行停用（is_enabled=0）照常投影——零值投影仅剩未配置 /
+// 查无 / category 不符三态，与 storage.Resolver 同口径。
+func TestGetConfigAvatarUploadDisabledRowStillProjected(t *testing.T) {
+	ext, err := repo.MarshalProviderExt(&provider.Ext{
+		UploadMode:   "direct",
+		MaxSize:      1 << 20,
+		AllowedTypes: "image/png",
+	})
+	if err != nil {
+		t.Fatalf("marshal ext: %v", err)
+	}
+	deps := wantConfigDeps(t)
+	deps.providersIn = &fakeProviders{rows: map[string]*model.Provider{
+		"minio": {ProviderKey: "minio", Category: "storage", Type: "s3", IsEnabled: 0, Ext: ext},
+	}}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, deps)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	status, raw := postGetConfig(t, srv.URL, tokens, epochs)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+	}
+	var got accountv1.AccountConfigResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	avatar := got.GetAvatarUpload()
+	if avatar.GetMode() != "direct" || avatar.GetMaxSize() != 1<<20 ||
+		len(avatar.GetAllowedTypes()) != 1 || avatar.GetAllowedTypes()[0] != "image/png" {
+		t.Errorf("avatarUpload = {%q %d %v}, want is_enabled=0 照常投影 {direct 1MB [image/png]}",
+			avatar.GetMode(), avatar.GetMaxSize(), avatar.GetAllowedTypes())
 	}
 }
 

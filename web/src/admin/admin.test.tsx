@@ -5695,6 +5695,16 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     expect(sortDragEnabled(2, 100, 'email')).toBe(false);
   });
 
+  test('providerStatusSwitchable：storage 行不渲染行内启停（恒可用，落占位），其余类别与空类别不变', async () => {
+    const { providerStatusSwitchable } = await pageIndex();
+    // storage 恒可用（后端解析不消费 is_enabled，schema 不下发该字段）。
+    expect(providerStatusSwitchable('storage')).toBe(false);
+    // 其余类别行内启停行为不变；空类别是零值占位行，同持开关。
+    for (const category of ['oauth', 'sms', 'email', 'captcha', 'proxy', 'union', '']) {
+      expect(providerStatusSwitchable(category)).toBe(true);
+    }
+  });
+
   test('页面壳静态渲染：工具栏出现类别筛选 Select，未选中时 placeholder 显示维度名', async () => {
     const { ProvidersPage } = await pageIndex();
     setLocale('zh-CN');

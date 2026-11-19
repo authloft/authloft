@@ -7,7 +7,9 @@
 // （未授权新依赖），归头像上传 / storage 扩展实现。
 //
 // 解析口径（§13.0「未配置按失败处理」）：storage provider 行不存在 /
-// is_enabled=0 / category≠storage → ErrNotConfigured；type 未注册支持 /
+// category≠storage → ErrNotConfigured。storage 恒可用——存储配置存在
+// 即可用，不消费 is_enabled（后台对该类别不下发启停字段与开关），启用
+// 语义只留给 oauth / sms 等登录入口类类别；type 未注册支持 /
 // 实现构造失败（如 local 关键字段缺失）由注册表分派（provider.NewStorage）
 // 返回，未注册 type 同时命中 ErrUnsupportedType——一律显式报错，不伪装
 // 成功、不回落 local。调用方（扫码拉码链）统一按 provider_disabled 收敛。
@@ -65,8 +67,8 @@ func (r *Resolver) Resolve(ctx context.Context, storageProviderKey string) (Stor
 		}
 		return nil, fmt.Errorf("storage: load provider: %w", err)
 	}
-	if p == nil || p.Row == nil || !p.Enabled() || p.Row.Category != "storage" {
-		return nil, fmt.Errorf("%w: %q not a storage provider or disabled", ErrNotConfigured, storageProviderKey)
+	if p == nil || p.Row == nil || p.Row.Category != "storage" {
+		return nil, fmt.Errorf("%w: %q not a storage provider", ErrNotConfigured, storageProviderKey)
 	}
 	// 分派经统一注册表（§15.3）：未注册 type → ErrNotConfigured 内含
 	// ErrUnsupportedType，不回落 local（§13.0 优先级口径）；local 构造失败

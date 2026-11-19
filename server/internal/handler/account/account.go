@@ -314,8 +314,9 @@ func (h *Handler) GetConfig(ctx context.Context, req *connect.Request[accountv1.
 }
 
 // avatarUpload 组装 avatarUpload 投影：settings 键 → storage 生效行 → Ext 投影。
-// 未配置 / 查无该行 / 未启用 / category 不符 → 零值投影；local direct 回退 proxy。
-// 基础设施错误（含 ext 解析失败）上抛，按未知异常映射 internal。
+// 未配置 / 查无该行 / category 不符 → 零值投影（storage 恒可用，不消费
+// is_enabled）；local direct 回退 proxy。基础设施错误（含 ext 解析失败）
+// 上抛，按未知异常映射 internal。
 func (h *Handler) avatarUpload(ctx context.Context) (*accountv1.AvatarUploadConfig, error) {
 	key := ""
 	if h.settings != nil {
@@ -331,7 +332,7 @@ func (h *Handler) avatarUpload(ctx context.Context) (*accountv1.AvatarUploadConf
 		}
 		return nil, fmt.Errorf("account handler: load avatar storage provider: %w", err)
 	}
-	if row.Category != providerCategoryStorage || row.IsEnabled != 1 {
+	if row.Category != providerCategoryStorage {
 		return dto.AccountAvatarUpload("", nil), nil
 	}
 	ext, err := repo.ParseProviderExt(row.Ext)

@@ -163,9 +163,10 @@ func trimPrefix(raw string) string {
 }
 
 // storageLocalSchema storage/local 的完整字段声明（表列 + Ext，接口文档 §5.3），
-// 每次调用返回新切片。
+// 每次调用返回新切片。storage 恒可用（不消费 is_enabled），is_enabled 不在
+// 声明内——列表页 / 编辑表单对该类别不出现启停。
 func storageLocalSchema() []provider.FieldMeta {
-	fields := make([]provider.FieldMeta, 0, 10)
+	fields := make([]provider.FieldMeta, 0, 9)
 	fields = append(fields,
 		provider.FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
 			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: provider.StorageColumn},
@@ -179,7 +180,6 @@ func storageLocalSchema() []provider.FieldMeta {
 			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: provider.StorageColumn},
-		provider.FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: provider.StorageColumn},
 	)
 	return fields
 }

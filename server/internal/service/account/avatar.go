@@ -40,8 +40,8 @@ import (
 // 不新增错误码）。
 var (
 	// ErrAvatarNotConfigured 头像存储未配置（行 842：settings 空串 / 查无
-	// 该行 / is_enabled=0 / category≠storage）——被直调的上传接口按未知
-	// 异常映射 internal。
+	// 该行 / category≠storage；storage 恒可用，不消费 is_enabled）——被直调
+	// 的上传接口按未知异常映射 internal。
 	ErrAvatarNotConfigured = errors.New("account avatar: storage provider not configured")
 	// ErrAvatarPresignUnavailable 当前配置不支持直传（mode≠direct，含
 	// local 回退，行 842 / §15.1 表）——同按 internal 口径映射。
@@ -268,12 +268,12 @@ func (s *AvatarService) avatarStorageProviderKey() string {
 	return key
 }
 
-// avatarUploadConfig 数据源链（handler.avatarUpload 行 249-278 同
-// 口径，service 侧复判以保证 presign / commit 与 GetConfig 下发口径恒
-// 一致）：settings 键空 / FindByKey 查无 / category≠storage /
-// is_enabled≠1 → ErrAvatarNotConfigured（行 842）；查询故障 / ext 解析
-// 失败属基础设施错误，包装上抛（行 842 按 internal 映射）。返回 dto 投影 +
-// presign_ttl（dto 不透出，本层自用）。
+// avatarUploadConfig 数据源链（handler.avatarUpload 同口径，service 侧复判
+// 以保证 presign / commit 与 GetConfig 下发口径恒一致）：settings 键空 /
+// FindByKey 查无 / category≠storage → ErrAvatarNotConfigured（行 842）；
+// storage 恒可用，不消费 is_enabled（与 storage.Resolver 同口径）。查询
+// 故障 / ext 解析失败属基础设施错误，包装上抛（行 842 按 internal 映射）。
+// 返回 dto 投影 + presign_ttl（dto 不透出，本层自用）。
 func (s *AvatarService) avatarUploadConfig(ctx context.Context, providerKey string) (*accountv1.AvatarUploadConfig, int32, error) {
 	if providerKey == "" {
 		return nil, 0, ErrAvatarNotConfigured
@@ -285,9 +285,9 @@ func (s *AvatarService) avatarUploadConfig(ctx context.Context, providerKey stri
 		}
 		return nil, 0, fmt.Errorf("account avatar: load storage provider: %w", err)
 	}
-	// category / 启用态与 handler 同判（行 842 封闭口径；字面量同
+	// category 与 handler 同判（行 842 封闭口径；字面量同
 	// storage.Resolver / handler providerCategoryStorage，§15.1）。
-	if row.Category != "storage" || row.IsEnabled != 1 {
+	if row.Category != "storage" {
 		return nil, 0, ErrAvatarNotConfigured
 	}
 	ext, err := repo.ParseProviderExt(row.Ext)

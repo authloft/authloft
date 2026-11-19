@@ -51,12 +51,13 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		fieldKeys   []string
 		displayName string
 		wantRef     bool // captcha 类别呈现 proxy_provider_key 引用键
+		wantEnabled bool // is_enabled 仅登录入口类（captcha/proxy）声明；storage 恒可用不下发
 	}{
-		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true},
-		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true},
-		{provider.CaptchaTypeHcaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "hCaptcha", true},
-		{provider.StorageTypeLocal, provider.CategoryStorage, []string{"bucket", "domain", "path_prefix"}, "本地存储", false},
-		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "基础代理", false},
+		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true, true},
+		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true, true},
+		{provider.CaptchaTypeHcaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "hCaptcha", true, true},
+		{provider.StorageTypeLocal, provider.CategoryStorage, []string{"bucket", "domain", "path_prefix"}, "本地存储", false, false},
+		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "基础代理", false, true},
 	} {
 		meta, ok := provider.LookupTypeMeta(tc.typ)
 		if !ok {
@@ -66,8 +67,9 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		if meta.Type != tc.typ || meta.Category != tc.category || meta.DisplayName != tc.displayName {
 			t.Errorf("%q meta = %+v", tc.typ, meta)
 		}
-		// Schema = 完整声明形态：基础两列 + Ext + display 四项 + is_enabled，
-		// 引用键按 type 有无；oauth 专属键在各类别均不下发。
+		// Schema = 完整声明形态：基础两列 + Ext + display 四项，is_enabled 与
+		// 引用键按类别 / type 有无（storage 恒可用，不消费即不下发）；
+		// oauth 专属键在各类别均不下发。
 		extKeys := map[string]bool{}
 		for _, k := range tc.fieldKeys {
 			extKeys[k] = true
@@ -75,7 +77,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		wantKeys := map[string]bool{
 			"provider_key": true, "display_name": true, "icon_url": true,
 			"ui_group": true, "sort_order": true, "remark": true,
-			"is_enabled": true, provider.ProxyRefKey: tc.wantRef,
+			"is_enabled": tc.wantEnabled, provider.ProxyRefKey: tc.wantRef,
 		}
 		for _, k := range tc.fieldKeys {
 			wantKeys[k] = true

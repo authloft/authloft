@@ -229,7 +229,8 @@ func TestS3HTTPErrorSurface(t *testing.T) {
 }
 
 // TestSchemaExtKinds Schema 声明形态：表列基线落 column、Ext 字段落 ext
-// （§5.3：键恒等于表列名或 Ext 字段名）。
+// （§5.3：键恒等于表列名或 Ext 字段名）；storage 恒可用（不消费
+// is_enabled），该字段不在声明内——启停开关只留给登录入口类类别。
 func TestSchemaExtKinds(t *testing.T) {
 	fields := storageS3Schema()
 	extKeys := map[string]bool{
@@ -240,7 +241,7 @@ func TestSchemaExtKinds(t *testing.T) {
 	}
 	columnKeys := map[string]bool{
 		"provider_key": true, "display_name": true, "icon_url": true,
-		"ui_group": true, "sort_order": true, "remark": true, "is_enabled": true,
+		"ui_group": true, "sort_order": true, "remark": true,
 	}
 	seen := map[string]int{}
 	for _, f := range fields {
@@ -268,5 +269,8 @@ func TestSchemaExtKinds(t *testing.T) {
 	}
 	if len(seen) != len(fields) {
 		t.Errorf("Schema 出现未声明键: %+v", fields)
+	}
+	if seen["is_enabled"] != 0 {
+		t.Errorf("is_enabled 不应声明（storage 恒可用，不消费即不下发）")
 	}
 }
