@@ -147,6 +147,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
     );
 
     await mod.requestInstall({
+      dbDriver: 'mysql',
       dbDsn: 'user:pass@tcp(127.0.0.1:3306)/authloft',
       redisAddr: '127.0.0.1:6379',
       redisPassword: 'pw',
@@ -161,6 +162,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
     expect(captured.url).toBe(SETUP_INSTALL);
     const body = (await captured.json()) as Record<string, unknown>;
     expect(body).toEqual({
+      dbDriver: 'mysql',
       dbDsn: 'user:pass@tcp(127.0.0.1:3306)/authloft',
       redisAddr: '127.0.0.1:6379',
       redisPassword: 'pw',
@@ -183,6 +185,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
     );
 
     await mod.requestInstall({
+      dbDriver: '',
       dbDsn: 'user:pass@tcp(127.0.0.1:3306)/authloft',
       redisAddr: '127.0.0.1:6379',
       redisPassword: '',
@@ -229,6 +232,7 @@ describe('setup/api 安装请求（§13.2 / §13.3）', () => {
 
     const error = (await rejectionOf(
       mod.requestInstall({
+        dbDriver: 'mysql',
         dbDsn: 'user:pass@tcp(127.0.0.1:3306)/authloft',
         redisAddr: '127.0.0.1:6379',
         redisPassword: '',

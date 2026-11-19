@@ -1,6 +1,7 @@
 /**
  * 全新安装页（路径 B，docs/前端架构.md §6b / 接口文档 §13.3）：
- * DB（六字段，../dsn 拼装为单个 dbDsn，wire 契约不变）/ Redis（UI 拆
+ * DB（驱动选择 + 六字段，../dsn 按方言拼装为单个 dbDsn——mysql =
+ * go-sql-driver 形态、postgres = URL 形态）/ Redis（UI 拆
  * host + port 两栏对齐 DB，提交拼 `host:port` 为单个 redisAddr，
  * 接口字段名不动）、主域名 / RP ID / RP 展示名（自动读取默认值）、管理员账号密码。
  * §9 第 13 条 setup 例外：Semi Form 化——label 自动关联 +
@@ -17,11 +18,12 @@ import { useRequest } from 'ahooks';
 import { Button, Form, Typography } from '@douyinfe/semi-ui';
 import { requestInstall, type InstallPayload } from '../api';
 import {
-  buildMysqlDsn,
+  buildDbDsn,
   validateDbDsnFields,
   type DbDsnFieldError,
   type DbDsnFieldKey,
   type DbDsnFormFields,
+  type DbDriver,
 } from '../dsn';
 import {
   checkRoot,
@@ -59,6 +61,13 @@ const DB_REQUIRED_KEYS: Readonly<Partial<Record<DbDsnFieldKey, string>>> = {
   password: 'setup.error.dbPasswordRequired',
   database: 'setup.error.dbNameRequired',
 };
+
+/** 驱动选项（§13.3 db_driver：mysql | postgres；选项文案入 i18n 键）。 */
+const DB_DRIVER_OPTIONS: ReadonlyArray<{ value: DbDriver; labelKey: string }> =
+  [
+    { value: 'mysql', labelKey: 'setup.optionDbDriverMysql' },
+    { value: 'postgres', labelKey: 'setup.optionDbDriverPostgres' },
+  ];
 
 /** DB 非必填类校验失败 → i18n 键（体验性校验，§9 第 4 条：后端为唯一权威）。 */
 const DB_ERROR_KEYS: Readonly<
@@ -154,10 +163,12 @@ function adminPasswordValidator(value: string): string {
 /**
  * 自动读取默认值（§6b / §13.3）：root 按 §6b 条件预填当前页源（host 为 IP 一律留空），
  * rp_id 取当前 Host 去掉端口，rpDisplayName 预填站点名（留空后端回落同值）；
- * 均可显式覆盖。Redis 端口预填 6379（与 dbPort 预填 3306 同款惯例，host/port 对齐）。
+ * 均可显式覆盖。Redis 端口预填 6379（与 dbPort 预填 MySQL 标准端口 3306
+ * 同款惯例，host/port 对齐）。
  */
 function initialFormState(): InstallFormState {
   return {
+    dbDriver: 'mysql',
     dbHost: '',
     // MySQL 标准端口预填（与 redisDb 默认 '0' 同款惯例；仍可显式覆盖）。
     dbPort: '3306',
@@ -178,6 +189,14 @@ function initialFormState(): InstallFormState {
 }
 
 /**
+ * 表单方言归一：Select 清空 / 异常值（undefined 等）一律回落 mysql——
+ * 与后端 db_driver 零值回落口径一致，不产生第三种取值。
+ */
+function normalizeDbDriver(value: unknown): DbDriver {
+  return value === 'postgres' ? 'postgres' : 'mysql';
+}
+
+/**
  * Semi onSubmit values → InstallPayload 纯函数（node 可测）。Semi 清空字段
  * 后值为 undefined（未设 allowEmptyString，'' → undefined，类型层仍标
  * string），无 validator 直达提交的 rpId / rpDisplayName 一旦清空，在
@@ -188,9 +207,12 @@ export function buildInstallPayload(values: InstallFormState): InstallPayload {
   // interface 无隐式索引签名：spread 出匿名对象类型才能过 pickString 的
   // Record 参数（Semi 运行期 values 正宽于此类型标注）。
   const semiValues: Record<string, unknown> = { ...values };
+  const dbDriver = normalizeDbDriver(values.dbDriver);
   return {
-    // wire 契约不变（§13.3）：DB 六字段拼 dbDsn、Redis host:port 拼 redisAddr。
-    dbDsn: buildMysqlDsn(formToDbDsnFields(values)),
+    // §13.3：DB 六字段按方言拼 dbDsn（mysql = go-sql-driver 形态，
+    // postgres = URL 形态）、Redis host:port 拼 redisAddr。
+    dbDriver,
+    dbDsn: buildDbDsn(dbDriver, formToDbDsnFields(values)),
     redisAddr: joinRedisAddr(values.redisHost, values.redisPort),
     redisPassword: values.redisPassword,
     redisDb: Number.parseInt(values.redisDb, 10) || 0,
@@ -249,6 +271,17 @@ export default function InstallPage({
         onSubmit={handleSubmit}
         labelPosition="top"
       >
+        <Form.Select
+          field="dbDriver"
+          label={{ text: t('setup.fieldDbDriver'), required: true }}
+          extraText={t('setup.hintDbDriver')}
+          // 选项封闭集合（§13.3 db_driver：mysql | postgres），无体验性
+          // 校验入口；值变化不改其余字段（DSN 拼装在提交时按值分支）。
+          optionList={DB_DRIVER_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.labelKey),
+          }))}
+        />
         <Form.Input
           field="dbHost"
           label={{ text: t('setup.fieldDbHost'), required: true }}

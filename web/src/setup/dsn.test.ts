@@ -3,7 +3,9 @@
 // @ts-ignore
 import { describe, expect, test } from 'rstack/test';
 import {
+  buildDbDsn,
   buildMysqlDsn,
+  buildPostgresDsn,
   isValidPort,
   validateDbDsnFields,
   type DbDsnFormFields,
@@ -177,5 +179,75 @@ describe('setup/dsn buildMysqlDsn（拼装口径）', () => {
         params: ' ',
       }),
     ).toBe('root: secret @tcp(127.0.0.1:3306)/authloft');
+  });
+});
+
+describe('setup/dsn buildPostgresDsn（URL 形态拼装，与后端 validatePGDSN / pgdriver 解析对齐）', () => {
+  test('典型合法输入 → postgres://user:password@host:port/dbname', () => {
+    expect(buildPostgresDsn(VALID)).toBe(
+      'postgres://root:secret@127.0.0.1:3306/authloft',
+    );
+  });
+
+  test('域名 host 原样', () => {
+    expect(buildPostgresDsn({ ...VALID, host: 'db.example.com' })).toBe(
+      'postgres://root:secret@db.example.com:3306/authloft',
+    );
+  });
+
+  test('IPv6 host → 按 URL 惯例包 []', () => {
+    expect(buildPostgresDsn({ ...VALID, host: '::1' })).toBe(
+      'postgres://root:secret@[::1]:3306/authloft',
+    );
+  });
+
+  test('userinfo / 库名分隔字符 percent-encode（pgdriver 解码后即原始凭证）', () => {
+    expect(
+      buildPostgresDsn({
+        ...VALID,
+        user: 'us:er',
+        password: 'p@ss:wo/rd',
+        database: 'db?x',
+      }),
+    ).toBe('postgres://us%3Aer:p%40ss%3Awo%2Frd@127.0.0.1:3306/db%3Fx');
+  });
+
+  test('额外参数原样追加并防双 ?（如 sslmode）', () => {
+    expect(buildPostgresDsn({ ...VALID, params: 'sslmode=disable' })).toBe(
+      'postgres://root:secret@127.0.0.1:3306/authloft?sslmode=disable',
+    );
+    expect(buildPostgresDsn({ ...VALID, params: '?sslmode=disable' })).toBe(
+      'postgres://root:secret@127.0.0.1:3306/authloft?sslmode=disable',
+    );
+    expect(buildPostgresDsn({ ...VALID, params: '  ' })).toBe(
+      'postgres://root:secret@127.0.0.1:3306/authloft',
+    );
+  });
+
+  test('host/user/database/port/params 首尾空白 trim、password 原样不 trim（空格转 %20）', () => {
+    expect(
+      buildPostgresDsn({
+        host: ' 127.0.0.1 ',
+        port: ' 3306 ',
+        user: ' root ',
+        password: ' secret ',
+        database: ' authloft ',
+        params: ' ',
+      }),
+    ).toBe('postgres://root:%20secret%20@127.0.0.1:3306/authloft');
+  });
+});
+
+describe('setup/dsn buildDbDsn（按方言分派）', () => {
+  test('mysql → go-sql-driver 形态', () => {
+    expect(buildDbDsn('mysql', VALID)).toBe(
+      'root:secret@tcp(127.0.0.1:3306)/authloft',
+    );
+  });
+
+  test('postgres → URL 形态', () => {
+    expect(buildDbDsn('postgres', VALID)).toBe(
+      'postgres://root:secret@127.0.0.1:3306/authloft',
+    );
   });
 });

@@ -70,22 +70,25 @@ func bizErr(code, message string, err error) error {
 // ① 完整性校验（复用 config 结构与 Validate，缺 sign_key 同属不完整 →
 // config_invalid，不自动补写）② DB 连通 ③ Redis 连通 ④ 迁移（幂等）
 // ⑤ 管理员（ID=1）存在性检查 ⑥ 原子写入上传原文。成功后由调用方触发重启。
+// 方言取上传 config 的 db.driver（空值回落 mysql），连通 / 迁移 / 管理员
+// 判定全程按同一 driver 走统一连接工厂与方言感知 SQL。
 func UploadConfig(ctx context.Context, configPath, text string) error {
 	slog.Info("setup: path A (upload config) start")
 	cfg, err := parseUploadedConfig(text)
 	if err != nil {
 		return err
 	}
-	if err := checkDB(ctx, cfg.DB.DSN); err != nil {
+	driver := cfg.DB.EffectiveDriver()
+	if err := checkDB(ctx, driver, cfg.DB.DSN); err != nil {
 		return err
 	}
 	if err := checkRedis(ctx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB); err != nil {
 		return err
 	}
-	if err := migrate.Up(ctx, cfg.DB.DSN); err != nil {
+	if err := migrate.UpDriver(ctx, driver, cfg.DB.DSN); err != nil {
 		return bizErr(CodeMigrationFailed, "database migration failed", err)
 	}
-	if err := requireAdmin(ctx, cfg.DB.DSN); err != nil {
+	if err := requireAdmin(ctx, driver, cfg.DB.DSN); err != nil {
 		return err
 	}
 	if err := WriteConfigFile(configPath, []byte(text)); err != nil {
@@ -100,22 +103,25 @@ func UploadConfig(ctx context.Context, configPath, text string) error {
 // host 后同为域名校验——缺失 / IP / 非法 →
 // config_invalid）② 连接性检查 ③ 迁移 ④ 插入管理员（固定 ID=1，已存在
 // 则跳过（幂等）；用户名 / 密码校验在此步）⑤ 生成完整 config（所填项 +
-// 随机密钥 + 默认值）原子写入。成功后由调用方触发重启。
+// 随机密钥 + 默认值）原子写入。成功后由调用方触发重启。DB 方言按
+// InstallInput.DBDriver（零值回落 mysql），⑤ 生成的 config 写入同一
+// driver，重启后正常模式按同方言建连。
 func FreshInstall(ctx context.Context, configPath string, in InstallInput) error {
 	slog.Info("setup: path B (fresh install) start")
+	driver := effectiveInstallDriver(in.DBDriver)
 	if err := validateInstallInput(in); err != nil {
 		return err
 	}
-	if err := checkDB(ctx, in.DBDSN); err != nil {
+	if err := checkDB(ctx, driver, in.DBDSN); err != nil {
 		return err
 	}
 	if err := checkRedis(ctx, in.RedisAddr, in.RedisPassword, in.RedisDB); err != nil {
 		return err
 	}
-	if err := migrate.Up(ctx, in.DBDSN); err != nil {
+	if err := migrate.UpDriver(ctx, driver, in.DBDSN); err != nil {
 		return bizErr(CodeMigrationFailed, "database migration failed", err)
 	}
-	if err := installAdmin(ctx, in.DBDSN, in.AdminUsername, in.AdminPassword); err != nil {
+	if err := installAdmin(ctx, driver, in.DBDSN, in.AdminUsername, in.AdminPassword); err != nil {
 		return err
 	}
 	cfg, err := BuildInstallConfig(in)
@@ -133,6 +139,17 @@ func FreshInstall(ctx context.Context, configPath string, in InstallInput) error
 	return nil
 }
 
+// effectiveInstallDriver 归一安装请求的 DB 方言：proto3 零值（空串）与
+// mysql 等价（与 db.driver 空值回落口径一致）。未知值不在此拦——方言
+// 合法性归 handler 的参数校验（invalid_request），直连调用方传入未知值
+// 时由工厂建连期报错兜底。
+func effectiveInstallDriver(v config.Driver) config.Driver {
+	if v == "" {
+		return config.DriverMySQL
+	}
+	return v
+}
+
 // parseUploadedConfig 路径 A 步骤 ①：上传 config 全文 → 解析 → Validate
 // （§3.15：复用 internal/config 的结构与 Validate()，不自建一套；env 是
 // 进程级注入，不参与上传内容的校验）。任一失败 → config_invalid。
@@ -147,9 +164,17 @@ func parseUploadedConfig(text string) (*config.Config, error) {
 	return &c, nil
 }
 
-// checkDB 步骤「DB 连通性」：解析 DSN 建连并 Ping；失败 → db_unreachable。
-func checkDB(ctx context.Context, dsn string) error {
-	db, err := openDB(dsn)
+// checkDB 步骤「DB 连通性」：按 driver 先做 DSN 形态校验再建连并 Ping；
+// 任一失败 → db_unreachable（§13.3②：连接性失败不走 config_invalid，
+// 也不允许建连期 panic 逸出为 500——pgdriver 的 WithDSN 对 url.Parse
+// 失败的 DSN 在构造期直接 panic，故建连前必须拦截形态错误）。
+// DSN 格式随 driver 解释（mysql / PG 两种形态）；路径 A 的上传 config
+// 已在 parseUploadedConfig 校验过，此处幂等复核。
+func checkDB(ctx context.Context, driver config.Driver, dsn string) error {
+	if err := config.ValidateDBDSN(driver, dsn); err != nil {
+		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
+	}
+	db, err := openDB(driver, dsn)
 	if err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
@@ -215,8 +240,8 @@ func redisCommand(conn net.Conn, r *bufio.Reader, args ...string) error {
 
 // requireAdmin 路径 A 步骤 ⑤：版本已最新但管理员（ID=1）缺失 →
 // admin_missing（提示改走全新安装）。
-func requireAdmin(ctx context.Context, dsn string) error {
-	db, err := openDB(dsn)
+func requireAdmin(ctx context.Context, driver config.Driver, dsn string) error {
+	db, err := openDB(driver, dsn)
 	if err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
@@ -224,7 +249,9 @@ func requireAdmin(ctx context.Context, dsn string) error {
 	ctx, cancel := context.WithTimeout(ctx, stepTimeout)
 	defer cancel()
 	var n int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user WHERE id = 1").Scan(&n); err != nil {
+	if err := db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = 1", migrate.UserTable(driver)),
+	).Scan(&n); err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
 	if n == 0 {
@@ -236,20 +263,26 @@ func requireAdmin(ctx context.Context, dsn string) error {
 // installAdmin 管理员行与权限行的「已存在则跳过」必须各自独立判定：管理员
 // 已存在但权限行缺失时仍要补写，否则重装后管理员会永久失去权限（§3.15）。
 // 三行同事务写出，任一步失败整套回滚，避免留下可登录却无权限的半初始化态。
-func installAdmin(ctx context.Context, dsn, username, password string) error {
+// 方言差异（§4.2）：user 是 PG 保留字（标识符引用归 migrate.UserTable）；
+// pgdriver 只认 $n 占位符（不翻译 ?）；PG 的 user.id 为 IDENTITY BY
+// DEFAULT，显式 id=1 不推进底层序列，插入后须 setval 复位——否则后续
+// 按默认值建号的业务写入会撞主键（nextval 从序列起点 1 重新开始）。
+func installAdmin(ctx context.Context, driver config.Driver, dsn, username, password string) error {
 	if err := validateUsername(username); err != nil {
 		return err
 	}
 	if err := validatePassword(username, password); err != nil {
 		return err
 	}
-	db, err := openDB(dsn)
+	db, err := openDB(driver, dsn)
 	if err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
 	defer db.Close()
 	var existing int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user WHERE id = 1").Scan(&existing); err != nil {
+	if err := db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = 1", migrate.UserTable(driver)),
+	).Scan(&existing); err != nil {
 		return bizErr(CodeDBUnreachable, "cannot connect to database", err)
 	}
 	var hash string
@@ -267,14 +300,39 @@ func installAdmin(ctx context.Context, dsn, username, password string) error {
 	defer tx.Rollback()
 	if existing == 0 {
 		if _, err := tx.ExecContext(ctx,
-			"INSERT INTO user (id, username, user_status, created_at, updated_at) VALUES (1, ?, 1, NOW(), NOW())",
+			fmt.Sprintf(
+				"INSERT INTO %s (id, username, user_status, created_at, updated_at) VALUES (1, %s, 1, NOW(), NOW())",
+				migrate.UserTable(driver), placeholder(driver, 1),
+			),
 			username,
 		); err != nil {
 			return bizErr(CodeDBUnreachable, "cannot create admin user", err)
 		}
+		// IDENTITY 序列复位（PG 分支，紧随显式 id 插入）：BY DEFAULT 语义下
+		// 显式 id 不推进底层序列，不复位则下一次按默认值建号的业务写入从
+		// 序列起点 1 取值、撞主键。setval 到当前最大 id（is_called=true，
+		// 下一次 nextval 返回 max+1）；此分支 freshly 插入后 max(id) ≥ 1，
+		// 幂等可重跑。pg_get_serial_sequence 对 IDENTITY 列同样适用，表名
+		// 串内自带双引号（PG 对保留字表的引用写法）。
+		if driver == config.DriverPostgres {
+			if _, err := tx.ExecContext(ctx,
+				fmt.Sprintf(
+					"SELECT setval(pg_get_serial_sequence('%s', 'id'), (SELECT COALESCE(MAX(id), 1) FROM %s), true)",
+					`"user"`, migrate.UserTable(driver),
+				),
+			); err != nil {
+				return bizErr(CodeDBUnreachable, "cannot sync user id sequence", err)
+			}
+		}
+		// secret 列按二进制承载（MySQL VARBINARY / PG BYTEA）：argon2id PHC
+		// 串以 []byte 传参，两种方言都能落库（PG 侧传 string 会按 bytea
+		// 文本格式解析而失败）。
 		if _, err := tx.ExecContext(ctx,
-			"INSERT INTO user_credential (user_id, kind, secret, is_enabled, created_at, updated_at) VALUES (1, 'password', ?, 1, NOW(), NOW())",
-			hash,
+			fmt.Sprintf(
+				"INSERT INTO user_credential (user_id, kind, secret, is_enabled, created_at, updated_at) VALUES (1, 'password', %s, 1, NOW(), NOW())",
+				placeholder(driver, 1),
+			),
+			[]byte(hash),
 		); err != nil {
 			return bizErr(CodeDBUnreachable, "cannot create admin credential", err)
 		}
@@ -362,17 +420,36 @@ func hashPasswordArgon2id(password string) (string, error) {
 }
 
 // openDB 经统一连接工厂（migrate.NewDB）建连：驱动装配与 parseTime 强制
-// 等口径收口在工厂；只建连不 Ping，连通检查由调用方做。driver 现固定
-// mysql——安装表单的 dbDriver 字段属后续工作（上传 config 的非 mysql
-// driver 与原行为一致：DSN 结构校验 / 建连期报 db_unreachable）。
-func openDB(dsn string) (*sql.DB, error) {
-	return migrate.NewDB(config.DriverMySQL, dsn)
+// 等口径收口在工厂；只建连不 Ping，连通检查由调用方做。driver 由安装
+// 请求 / 上传 config 决定（mysql | postgres；非法值在建连期报错，调用方
+// 兜底为 db_unreachable）。
+func openDB(driver config.Driver, dsn string) (*sql.DB, error) {
+	return migrate.NewDB(driver, dsn)
 }
 
-// dsnPasswordRe 匹配 go-sql-driver DSN 的密码段（user:pass@）。
-var dsnPasswordRe = regexp.MustCompile(`([A-Za-z0-9._-]+):([^@\s]*)@`)
+// placeholder 方言感知的单值占位符：mysql 用 ?；pgdriver 的 query
+// formatter 只内联 $n（不翻译 ?），PG 侧裸 SQL 须写 $n。
+func placeholder(driver config.Driver, n int) string {
+	if driver == config.DriverPostgres {
+		return "$" + strconv.Itoa(n)
+	}
+	return "?"
+}
+
+// pgURLPasswordRe 匹配 PG URL DSN 的 userinfo 密码段（postgres://user:pass@
+// / postgresql://user:pass@）：userinfo 终止于首个 / 之前的最后一个 @
+// （RFC 3986 authority 解析），密码不含未编码的 / 与空白、可含 @。
+var pgURLPasswordRe = regexp.MustCompile(`((?:postgres|postgresql)://[A-Za-z0-9._~%-]+:)([^/\s]*)@`)
+
+// mysqlPasswordRe 匹配 go-sql-driver DSN 的密码段（user:pass@tcp(host:port)
+// /name）：userinfo 终止于 net( 前最后一个 @（驱动从右往左解析），密码
+// 可含 @；锚定 tcp(/unix( 避免误伤同串中的其他 user:pass@ 形态。
+var mysqlPasswordRe = regexp.MustCompile(`([A-Za-z0-9._-]+):(.*)@((?:tcp|unix)\()`)
 
 // redact 把字符串中的 DSN 密码段打码后返回（§3.15：日志不打印 DSN 密码段）。
+// 两种 DSN 形态分别按各自解析器的 userinfo 语义取段：PG URL 与 MySQL
+// tcp/unix 形态；对多 @ 密码按「最后一个 @」边界取全，不残留尾部。
 func redact(s string) string {
-	return dsnPasswordRe.ReplaceAllString(s, "$1:***@")
+	s = pgURLPasswordRe.ReplaceAllString(s, "${1}***@")
+	return mysqlPasswordRe.ReplaceAllString(s, "$1:***@$3")
 }

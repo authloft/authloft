@@ -8,7 +8,7 @@
 import { setupMessage, type SetupStatusResult } from './api';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
-import { isValidPort } from './dsn';
+import { isValidPort, type DbDriver } from './dsn';
 
 // ---------------------------------------------------------------------------
 // root 主域名（§6b / §13.3：必填、完整 URL、host 为域名或 localhost、拒 IP）
@@ -119,6 +119,8 @@ export const DEFAULT_RP_DISPLAY_NAME = 'Authloft';
 
 /** InstallPage 表单字段集（Semi Form 字段名；放此处供错误分派返回带类型的字段名）。 */
 export interface InstallFormState {
+  /** DB 方言（决定 dbDsn 拼装形态与后端建连 / 迁移方言）。 */
+  dbDriver: DbDriver;
   dbHost: string;
   dbPort: string;
   dbUser: string;

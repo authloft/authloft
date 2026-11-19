@@ -48,14 +48,20 @@ export const setup = {
   'setup.installTitle': '全新安装',
   'setup.installIntro':
     '填写数据库与 Redis 连接信息及管理员账号；成功后自动进入重启。',
-  // DB 六字段（前端拼装为单个 dbDsn，wire 契约不变）。
+  // DB 驱动选择 + 六字段（按方言拼装为单个 dbDsn；mysql = go-sql-driver
+  // 形态，postgres = URL 形态）。
+  'setup.fieldDbDriver': '数据库类型',
+  'setup.hintDbDriver':
+    '决定连接串格式与数据库方言，切换后请按新格式填写连接信息',
+  'setup.optionDbDriverMysql': 'MySQL / MariaDB',
+  'setup.optionDbDriverPostgres': 'PostgreSQL',
   'setup.fieldDbHost': '数据库地址',
   'setup.fieldDbPort': '数据库端口',
   'setup.fieldDbUser': '数据库用户名',
   'setup.fieldDbPassword': '数据库密码',
   'setup.fieldDbName': '数据库名',
   'setup.fieldDbParams': '额外参数',
-  'setup.hintDbPort': 'MySQL 默认 3306，取值 1-65535',
+  'setup.hintDbPort': 'MySQL 默认 3306，PostgreSQL 默认 5432，取值 1-65535',
   'setup.hintDbParams':
     '可选，原样追加在 DSN 末尾，如 charset=utf8mb4&parseTime=true',
   // Redis（UI 拆 host + port 两栏对齐 DB，提交拼 host:port，wire 契约不变）。

@@ -6,7 +6,8 @@
 // goose_db_version（无 dirty 标志：失败的迁移不记版本、重跑即重试同版本）。
 // 统一连接工厂（NewDB）按 driver 产出裸 *sql.DB，repo / setup 与本包三处
 // 建连共享；goose 方言与嵌入迁移目录按 driver 配对选择，bootstrap / setup
-// 的 driver 贯通归后续实现。
+// 生产链路均经 UpDriver 按配置方言执行；Up 保留为存量 mysql 便捷入口
+// （测试侧使用）。
 package migrate
 
 import (
@@ -74,10 +75,17 @@ func normalizeDSN(dsn string) (string, error) {
 }
 
 // Up 在 dsn 上执行 migrate up（§3.16：幂等——版本已最新时 goose 只读
-// 版本表、零变更秒过；单条迁移失败不记版本，重跑即重试同版本）。
-// driver 现固定 mysql：bootstrap / setup 的 driver 贯通属后续工作。
+// 版本表、零变更秒过；单条迁移失败不记版本，重跑即重试同版本）。driver
+// 现固定 mysql：存量测试便捷入口；生产链路（bootstrap / setup）走 UpDriver
+// 按配置方言执行。
 func Up(ctx context.Context, dsn string) error {
 	return up(ctx, config.DriverMySQL, dsn)
+}
+
+// UpDriver 按 driver 执行 migrate up（bootstrap / setup 生产链路的方言
+// 贯通入口；bootstrap 侧取 cfg.DB.EffectiveDriver()，与建连装配同源）。
+func UpDriver(ctx context.Context, driver config.Driver, dsn string) error {
+	return up(ctx, driver, dsn)
 }
 
 // up 按 driver 建连并选 goose 方言执行迁移。
@@ -99,7 +107,8 @@ func up(ctx context.Context, driver config.Driver, dsn string) error {
 // Installed 报告系统是否已完成初始化（§3.16 已初始化判据）：
 // 迁移版本表已到最新 且 管理员（user.id=1）存在，缺任一即视为未完成。
 // 版本表 / 业务表尚不存在视为未初始化，不视为错误。
-// driver 现固定 mysql（与 Up 同口径，driver 贯通属后续工作）。
+// driver 现固定 mysql：与 Up 同为存量 mysql 便捷入口（无生产调用方）；
+// 生产链路按方言走 up()（内部判据已方言感知）。
 func Installed(ctx context.Context, dsn string) (bool, error) {
 	db, err := NewDB(config.DriverMySQL, dsn)
 	if err != nil {
@@ -140,6 +149,17 @@ func gooseDialect(driver config.Driver) goose.Dialect {
 	return goose.DialectMySQL
 }
 
+// UserTable 返回方言感知的 user 表标识符（§4.2）：user 是 PG 保留字，裸
+// SQL 须写 "user"；MySQL 非保留字裸名合法（bun 生成的 SQL 由方言自动加
+// 引号，裸 SQL 在此统一处理）。表名来自本函数的封闭取值，不经用户输入，
+// 拼接无注入面。
+func UserTable(driver config.Driver) string {
+	if driver == config.DriverPostgres {
+		return `"user"`
+	}
+	return "user"
+}
+
 // installed 判据内部实现：①迁移版本表最新（goose GetVersions 的 current
 // 达到 target，空库 current=0）；②user.id = 1 存在（§4.2：该行为安装时
 // 创建的账号，其存在代表已完成安装；管理员身份由 user_permission 的
@@ -161,7 +181,9 @@ func installed(ctx context.Context, db *sql.DB, driver config.Driver) (bool, err
 		return false, nil
 	}
 	var admins int
-	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM user WHERE id = 1").Scan(&admins)
+	err = db.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE id = 1", UserTable(driver)),
+	).Scan(&admins)
 	if err != nil {
 		if isNoSuchTable(err) {
 			return false, nil

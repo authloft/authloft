@@ -280,7 +280,8 @@ func (s *Server) UploadConfig(ctx context.Context, req *connect.Request[setupv1.
 // 取 root 的 host（去 scheme 与端口），不再自动读取请求 Host（安装
 // 不得靠自动推导的 IP 蒙混过关，IP rp_id 会被 WebAuthn 库校验拒绝）；
 // rp_display_name 缺省回落 config.DefaultRPDisplayName（不产出必然让
-// WebAuthn 注册失败的 config）。
+// WebAuthn 注册失败的 config）。db_driver 缺省 mysql（proto3 零值回落），
+// 取值越界属参数格式错误（invalid_request），不让未知方言流到建连期。
 func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.InstallRequest]) (*connect.Response[setupv1.RestartingResponse], error) {
 	msg := req.Msg
 	if msg.DbDsn == "" || msg.RedisAddr == "" || msg.AdminUsername == "" || msg.AdminPassword == "" {
@@ -289,7 +290,15 @@ func (s *Server) Install(ctx context.Context, req *connect.Request[setupv1.Insta
 	if msg.RedisDb < 0 {
 		return nil, setupParamError("redis_db must be >= 0")
 	}
+	driver := config.Driver(msg.DbDriver)
+	if driver == "" {
+		driver = config.DriverMySQL
+	}
+	if driver != config.DriverMySQL && driver != config.DriverPostgres {
+		return nil, setupParamError(`db_driver must be "mysql" or "postgres"`)
+	}
 	in := InstallInput{
+		DBDriver:      driver,
 		DBDSN:         msg.DbDsn,
 		RedisAddr:     msg.RedisAddr,
 		RedisPassword: msg.RedisPassword,

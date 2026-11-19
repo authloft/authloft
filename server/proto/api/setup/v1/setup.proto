@@ -58,6 +58,11 @@ message InstallRequest {
   // go-webauthn 生成注册选项时要求非空，缺省由安装表单预填 "Authloft"，
   // 可显式覆盖；为空会被 config.Validate 拒绝（§3.2）。
   string rp_display_name = 9;
+  // 数据库方言：mysql | postgres（写入 config 的 db.driver）；缺省 mysql
+  // （proto3 零值由后端回落，与 db.driver 空值回落口径一致）。DSN 格式随
+  // 方言不同：mysql 为 user:pass@tcp(host:port)/db，postgres 为
+  // postgres://user:pass@host:port/db。
+  string db_driver = 10;
 }
 
 // SetupService 是 setup 域的 Connect service（docs/接口文档.md §13）。

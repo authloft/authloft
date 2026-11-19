@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/setup/v1/setup.proto.
  */
 export const file_api_setup_v1_setup: GenFile = /*@__PURE__*/
-  fileDesc("ChhhcGkvc2V0dXAvdjEvc2V0dXAucHJvdG8SDGFwaS5zZXR1cC52MSISChBHZXRTdGF0dXNSZXF1ZXN0IiEKEUdldFN0YXR1c1Jlc3BvbnNlEgwKBG1vZGUYASABKAkiJQoTVXBsb2FkQ29uZmlnUmVxdWVzdBIOCgZjb25maWcYASABKAkiKAoSUmVzdGFydGluZ1Jlc3BvbnNlEhIKCnJlc3RhcnRpbmcYASABKAgixAEKDkluc3RhbGxSZXF1ZXN0Eg4KBmRiX2RzbhgBIAEoCRISCgpyZWRpc19hZGRyGAIgASgJEhYKDnJlZGlzX3Bhc3N3b3JkGAMgASgJEhAKCHJlZGlzX2RiGAQgASgDEgwKBHJvb3QYBSABKAkSDQoFcnBfaWQYBiABKAkSFgoOYWRtaW5fdXNlcm5hbWUYByABKAkSFgoOYWRtaW5fcGFzc3dvcmQYCCABKAkSFwoPcnBfZGlzcGxheV9uYW1lGAkgASgJMvwBCgxTZXR1cFNlcnZpY2USTAoJR2V0U3RhdHVzEh4uYXBpLnNldHVwLnYxLkdldFN0YXR1c1JlcXVlc3QaHy5hcGkuc2V0dXAudjEuR2V0U3RhdHVzUmVzcG9uc2USUwoMVXBsb2FkQ29uZmlnEiEuYXBpLnNldHVwLnYxLlVwbG9hZENvbmZpZ1JlcXVlc3QaIC5hcGkuc2V0dXAudjEuUmVzdGFydGluZ1Jlc3BvbnNlEkkKB0luc3RhbGwSHC5hcGkuc2V0dXAudjEuSW5zdGFsbFJlcXVlc3QaIC5hcGkuc2V0dXAudjEuUmVzdGFydGluZ1Jlc3BvbnNlQiZaJGF1dGhsb2Z0L2dlbi9nby9hcGkvc2V0dXAvdjE7c2V0dXB2MWIGcHJvdG8z");
+  fileDesc("ChhhcGkvc2V0dXAvdjEvc2V0dXAucHJvdG8SDGFwaS5zZXR1cC52MSISChBHZXRTdGF0dXNSZXF1ZXN0IiEKEUdldFN0YXR1c1Jlc3BvbnNlEgwKBG1vZGUYASABKAkiJQoTVXBsb2FkQ29uZmlnUmVxdWVzdBIOCgZjb25maWcYASABKAkiKAoSUmVzdGFydGluZ1Jlc3BvbnNlEhIKCnJlc3RhcnRpbmcYASABKAgi1wEKDkluc3RhbGxSZXF1ZXN0Eg4KBmRiX2RzbhgBIAEoCRISCgpyZWRpc19hZGRyGAIgASgJEhYKDnJlZGlzX3Bhc3N3b3JkGAMgASgJEhAKCHJlZGlzX2RiGAQgASgDEgwKBHJvb3QYBSABKAkSDQoFcnBfaWQYBiABKAkSFgoOYWRtaW5fdXNlcm5hbWUYByABKAkSFgoOYWRtaW5fcGFzc3dvcmQYCCABKAkSFwoPcnBfZGlzcGxheV9uYW1lGAkgASgJEhEKCWRiX2RyaXZlchgKIAEoCTL8AQoMU2V0dXBTZXJ2aWNlEkwKCUdldFN0YXR1cxIeLmFwaS5zZXR1cC52MS5HZXRTdGF0dXNSZXF1ZXN0Gh8uYXBpLnNldHVwLnYxLkdldFN0YXR1c1Jlc3BvbnNlElMKDFVwbG9hZENvbmZpZxIhLmFwaS5zZXR1cC52MS5VcGxvYWRDb25maWdSZXF1ZXN0GiAuYXBpLnNldHVwLnYxLlJlc3RhcnRpbmdSZXNwb25zZRJJCgdJbnN0YWxsEhwuYXBpLnNldHVwLnYxLkluc3RhbGxSZXF1ZXN0GiAuYXBpLnNldHVwLnYxLlJlc3RhcnRpbmdSZXNwb25zZUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL3NldHVwL3YxO3NldHVwdjFiBnByb3RvMw");
 
 /**
  * GetStatusRequest 是 SetupService/GetStatus 的请求（§13.1 无入参）。
@@ -167,6 +167,16 @@ export type InstallRequest = Message<"api.setup.v1.InstallRequest"> & {
    * @generated from field: string rp_display_name = 9;
    */
   rpDisplayName: string;
+
+  /**
+   * 数据库方言：mysql | postgres（写入 config 的 db.driver）；缺省 mysql
+   * （proto3 零值由后端回落，与 db.driver 空值回落口径一致）。DSN 格式随
+   * 方言不同：mysql 为 user:pass@tcp(host:port)/db，postgres 为
+   * postgres://user:pass@host:port/db。
+   *
+   * @generated from field: string db_driver = 10;
+   */
+  dbDriver: string;
 };
 
 /**

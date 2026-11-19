@@ -33,8 +33,12 @@ describe('setup/InstallPage root 预填与前置校验', () => {
 
   describe('prefillRoot（§6b：host 为域名或 localhost 才预填，IP 一律留空）', () => {
     test('host 为域名 / localhost → 回填 origin', () => {
-      expect(prefillRoot('https://uc.example.com')).toBe('https://uc.example.com');
-      expect(prefillRoot('http://localhost:3000')).toBe('http://localhost:3000');
+      expect(prefillRoot('https://uc.example.com')).toBe(
+        'https://uc.example.com',
+      );
+      expect(prefillRoot('http://localhost:3000')).toBe(
+        'http://localhost:3000',
+      );
     });
 
     test('host 为 IP（v4 / v6）→ 留空', () => {
@@ -79,6 +83,7 @@ describe('setup/InstallPage root 预填与前置校验', () => {
  */
 describe('setup/InstallPage buildInstallPayload（Semi 清空字段 → undefined 的取值兜底）', () => {
   const base: InstallFormState = {
+    dbDriver: 'mysql',
     dbHost: '127.0.0.1',
     dbPort: '3306',
     dbUser: 'root',
@@ -116,6 +121,8 @@ describe('setup/InstallPage buildInstallPayload（Semi 清空字段 → undefine
     // 其余直读字段不受兜底影响（有 validator 的字段清空会被拦截，不可达提交）。
     expect(payload?.adminPassword).toBe('p@ss');
     expect(payload?.redisDb).toBe(0);
+    // 方言字段清空回落 mysql（与后端 db_driver 零值回落口径一致）。
+    expect(payload?.dbDriver).toBe('mysql');
   });
 
   test('字符串值仍走原 trim 口径（pickString 兜底不改变既有语义）', () => {
@@ -126,5 +133,24 @@ describe('setup/InstallPage buildInstallPayload（Semi 清空字段 → undefine
     });
     expect(payload.root).toBe('https://uc.example.com');
     expect(payload.rpId).toBe('uc.example.com');
+  });
+
+  test('mysql 驱动 → dbDsn 为 go-sql-driver 形态且 dbDriver 透传', () => {
+    const payload = buildInstallPayload(base);
+    expect(payload.dbDriver).toBe('mysql');
+    expect(payload.dbDsn).toBe('root:secret@tcp(127.0.0.1:3306)/authloft');
+  });
+
+  test('postgres 驱动 → dbDsn 为 URL 形态（与后端 validatePGDSN 对齐）', () => {
+    const payload = buildInstallPayload({
+      ...base,
+      dbDriver: 'postgres',
+      dbPort: '5432',
+      dbParams: 'sslmode=disable',
+    });
+    expect(payload.dbDriver).toBe('postgres');
+    expect(payload.dbDsn).toBe(
+      'postgres://root:secret@127.0.0.1:5432/authloft?sslmode=disable',
+    );
   });
 });

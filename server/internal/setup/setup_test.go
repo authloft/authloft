@@ -349,6 +349,7 @@ func TestSetupParamErrors(t *testing.T) {
 		{"invalid json install", "/api.setup.v1.SetupService/Install", "application/json", "not json", http.StatusBadRequest, "invalid_argument", ""},
 		{"missing required install", "/api.setup.v1.SetupService/Install", "application/json", `{"dbDsn":"x"}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
 		{"negative redis db", "/api.setup.v1.SetupService/Install", "application/json", `{"dbDsn":"x","redisAddr":"y","adminUsername":"admin01","adminPassword":"Str0ngPassw0rd","redisDb":-1}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
+		{"invalid db driver", "/api.setup.v1.SetupService/Install", "application/json", `{"dbDsn":"x","redisAddr":"y","adminUsername":"admin01","adminPassword":"Str0ngPassw0rd","dbDriver":"oracle"}`, http.StatusBadRequest, "invalid_argument", codeInvalidRequest},
 	}
 	for _, tc := range cases {
 		rec := doConnectJSON(r, tc.procedure, tc.contentTyp, tc.body)
@@ -400,11 +401,12 @@ func oidcTestKeyB64() string {
 }
 
 // uploadConfigYAML 生成一份可通过 Validate 的 config 文本（sign_key 八场景
-// 用 32 字节确定密钥；oidc.jwt_keys 用一套合法 RSA 私钥）。
-func uploadConfigYAML(dsn, redisAddr string) string {
+// 用 32 字节确定密钥；oidc.jwt_keys 用一套合法 RSA 私钥）。db 方言写入
+// driver 行，DSN 形态随 driver 由调用方提供（mysql / PG URL 两种）。
+func uploadConfigYAML(driver config.Driver, dsn, redisAddr string) string {
 	var b strings.Builder
 	b.WriteString("server: { listen: \":8080\" }\n")
-	b.WriteString(fmt.Sprintf("db:\n  dsn: %q\n  max_open_conns: 50\n  max_idle_conns: 10\n  conn_max_lifetime: 1h\n", dsn))
+	b.WriteString(fmt.Sprintf("db:\n  driver: %q\n  dsn: %q\n  max_open_conns: 50\n  max_idle_conns: 10\n  conn_max_lifetime: 1h\n", driver, dsn))
 	b.WriteString(fmt.Sprintf("redis: { addr: %q, password: \"\", db: 0, pool_size: 50 }\n", redisAddr))
 	b.WriteString("authloft: { root: \"https://sso.example.com\", rp_id: \"sso.example.com\", rp_display_name: \"Authloft\" }\n")
 	b.WriteString("sign_key:\n")
@@ -448,36 +450,36 @@ log: { level: info, format: text }
 			return text
 		}()},
 		{"incomplete sign_key", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// 去掉 ticket 一行（模拟缺一场景）。
 			return strings.Replace(text, "  ticket: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing challenge key", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// 存量 config 缺新增的 challenge 一把 → 配置不完整，直接拒绝（§3.15）。
 			return strings.Replace(text, "  challenge: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing verification key", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// 存量 config 缺新增的 verification 一把 → 配置不完整，直接拒绝（§3.15）。
 			return strings.Replace(text, "  verification: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing oidc_sub key", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// 存量 config 缺新增的 oidc_sub 一把 → 配置不完整，直接拒绝（§3.15）。
 			return strings.Replace(text, "  oidc_sub: { key: \""+key+"\", kid: 1 }\n", "", 1)
 		}()},
 		{"missing db section", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			return regexp.MustCompile(`(?s)db:.*?conn_max_lifetime: 1h\n`).ReplaceAllString(text, "")
 		}()},
 		{"missing oidc section", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			// oidc 段在末尾：截掉即「缺 oidc.jwt_keys」。
 			return text[:strings.Index(text, "oidc:\n")]
 		}()},
 		{"invalid oidc key", func() string {
-			text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+			text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 			return strings.Replace(text, oidcTestKeyB64(), "!!!not-base64!!!", 1)
 		}()},
 	}
@@ -534,6 +536,54 @@ func TestFreshInstallDBUnreachable(t *testing.T) {
 	select {
 	case <-s.Exposed():
 		t.Error("failed install must not trigger exit")
+	default:
+	}
+}
+
+// TestFreshInstallDSNFormUnreachable 建连前 DSN 形态校验（§13.3②）：pgdriver
+// 的 WithDSN 对形态不合规的 DSN 在建连器构造期直接 panic（url.Parse 失败
+// 或 scheme 非 postgres），用户可达的 db_driver=postgres + keyword=value /
+// mysql 形态 DSN 必须在建连前拦截——连同 mysql 侧非法形态，统一映射
+// db_unreachable（标准码 unavailable，HTTP 503；不产生 500 / panic），
+// 不写 config、不触发退出。
+func TestFreshInstallDSNFormUnreachable(t *testing.T) {
+	s, configPath := newTestServer(t)
+	redisAddr := fakeRedis(t, "")
+
+	cases := []struct {
+		name   string
+		driver string
+		dsn    string
+	}{
+		{"pg keyword=value form", "postgres", "host=127.0.0.1 port=5432 user=postgres password=s3cret dbname=authloft sslmode=disable"},
+		{"pg mysql-form dsn", "postgres", "test:x@tcp(127.0.0.1:3306)/test"},
+		{"mysql invalid form", "mysql", "not-a-dsn"},
+	}
+	for _, tc := range cases {
+		payload, _ := json.Marshal(map[string]any{
+			"dbDriver":      tc.driver,
+			"dbDsn":         tc.dsn,
+			"redisAddr":     redisAddr,
+			"adminUsername": "admin",
+			"adminPassword": "Str0ngPassw0rd",
+			"root":          "https://sso.example.com",
+		})
+		rec := doConnectJSON(s.Router(), "/api.setup.v1.SetupService/Install", "application/json", string(payload))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s: HTTP status = %d, want 503 (body %s)", tc.name, rec.Code, rec.Body.String())
+			continue
+		}
+		code, info := decodeConnectError(t, rec)
+		if code != "unavailable" || info == nil || info.Domain != setupDomain || info.Code != CodeDBUnreachable {
+			t.Errorf("%s: connect=(%q, %+v), want unavailable + setup/%s", tc.name, code, info, CodeDBUnreachable)
+		}
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Errorf("failed installs must not write config, stat err = %v", err)
+	}
+	select {
+	case <-s.Exposed():
+		t.Error("db_unreachable must not trigger exit")
 	default:
 	}
 }
@@ -787,6 +837,44 @@ func TestBuildInstallConfigDefaults(t *testing.T) {
 	}
 }
 
+// TestBuildInstallConfigDriver 安装请求方言写入 config（db.driver）：
+// 缺省保留 DefaultConfig 的 mysql 回落（与 EffectiveDriver 口径一致）；
+// 显式 postgres 落盘，且 DSN 按 PG 口径校验——方言与 DSN 形态不匹配在
+// 生成 config 校验期拒绝，不产出必然启动失败的 config。
+func TestBuildInstallConfigDriver(t *testing.T) {
+	mysqlIn := InstallInput{
+		DBDSN:         "authloft:pass@tcp(127.0.0.1:3306)/authloft",
+		RedisAddr:     "127.0.0.1:6379",
+		AdminUsername: "admin",
+		Root:          "https://sso.example.com",
+	}
+	c, err := BuildInstallConfig(mysqlIn)
+	if err != nil {
+		t.Fatalf("build default driver: %v", err)
+	}
+	if c.DB.EffectiveDriver() != config.DriverMySQL {
+		t.Errorf("default driver = %q, want mysql", c.DB.EffectiveDriver())
+	}
+
+	pgIn := mysqlIn
+	pgIn.DBDriver = config.DriverPostgres
+	pgIn.DBDSN = "postgres://authloft:s3cret@127.0.0.1:5432/authloft?sslmode=disable"
+	c2, err := BuildInstallConfig(pgIn)
+	if err != nil {
+		t.Fatalf("build postgres: %v", err)
+	}
+	if c2.DB.Driver != config.DriverPostgres {
+		t.Errorf("explicit driver = %q, want postgres", c2.DB.Driver)
+	}
+
+	// 方言与 DSN 形态不匹配：生成 config 校验期拒绝（mysql DSN 过不了
+	// validatePGDSN），不会产出必然启动失败的 config。
+	pgIn.DBDSN = mysqlIn.DBDSN
+	if _, err := BuildInstallConfig(pgIn); err == nil {
+		t.Error("postgres driver with mysql-form dsn must fail validation")
+	}
+}
+
 // TestValidateInstallInputMatrix 路径 B 步骤 ①字段校验矩阵（§13.3 行 1906-
 // 1907 / 1911）：root 必填、完整 http(s) URL、host
 // 域名 / localhost（拒绝 IP）；rpId 显式填写须为域名字符串（允许
@@ -882,7 +970,9 @@ func TestInstallRootFieldValidationHandler(t *testing.T) {
 	}
 }
 
-// TestRedact 日志脱敏：DSN 密码段打码，其余保留。
+// TestRedact 日志脱敏：两种 DSN 形态（MySQL user:pass@tcp(...) 与 PG
+// postgres://user:pass@）的密码段打码，其余保留；多 @ 密码按「最后一个 @」
+// 边界取全（驱动解析口径），不残留尾部明文。
 func TestRedact(t *testing.T) {
 	in := "dial authloft:sup3rs3cret@tcp(127.0.0.1:3306)/authloft failed"
 	out := redact(in)
@@ -892,6 +982,35 @@ func TestRedact(t *testing.T) {
 	if !strings.Contains(out, "authloft:***@tcp(127.0.0.1:3306)") {
 		t.Errorf("redact shape = %q", out)
 	}
+
+	// PG URL 形态（postgres:// / postgresql://）。
+	for _, scheme := range []string{"postgres", "postgresql"} {
+		pgIn := fmt.Sprintf("ping %s://authloft:sup3rs3cret@127.0.0.1:5432/authloft?sslmode=disable failed", scheme)
+		pgOut := redact(pgIn)
+		if strings.Contains(pgOut, "sup3rs3cret") {
+			t.Errorf("pg url password leaked: %q", pgOut)
+		}
+		if !strings.Contains(pgOut, scheme+"://authloft:***@127.0.0.1:5432/authloft?sslmode=disable") {
+			t.Errorf("pg url redact shape = %q", pgOut)
+		}
+	}
+
+	// 密码含 @：按驱动解析语义（userinfo 终止于最后一个 @）取全打码。
+	multiAt := redact("test:p@ss@tcp(127.0.0.1:3306)/db")
+	if strings.Contains(multiAt, "p@ss") {
+		t.Errorf("multi-@ password leaked: %q", multiAt)
+	}
+	if !strings.Contains(multiAt, "test:***@tcp(127.0.0.1:3306)") {
+		t.Errorf("multi-@ mysql redact shape = %q", multiAt)
+	}
+	pgMultiAt := redact("postgres://u:p@ss@127.0.0.1:5432/db")
+	if strings.Contains(pgMultiAt, "p@ss") {
+		t.Errorf("multi-@ pg url password leaked: %q", pgMultiAt)
+	}
+	if !strings.Contains(pgMultiAt, "postgres://u:***@127.0.0.1:5432/db") {
+		t.Errorf("multi-@ pg url redact shape = %q", pgMultiAt)
+	}
+
 	if redact("no dsn here") != "no dsn here" {
 		t.Error("plain text must be untouched")
 	}
@@ -988,7 +1107,7 @@ func TestSetupHTTPServerFromEnv(t *testing.T) {
 // TestBogusKeyMaterialIsPlausible 测试辅助自检：testKeyB64 生成可被
 // config.Validate 接受的 32 字节 base64 密钥（供 uploadConfigYAML 使用）。
 func TestBogusKeyMaterialIsPlausible(t *testing.T) {
-	text := uploadConfigYAML("authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
+	text := uploadConfigYAML(config.DriverMySQL, "authloft:pass@tcp(127.0.0.1:3306)/authloft", "127.0.0.1:6379")
 	cfg, err := parseUploadedConfig(text)
 	if err != nil {
 		t.Fatalf("helper config must parse: %v", err)

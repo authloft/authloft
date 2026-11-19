@@ -226,6 +226,11 @@ type InstallRequest struct {
 	// go-webauthn 生成注册选项时要求非空，缺省由安装表单预填 "Authloft"，
 	// 可显式覆盖；为空会被 config.Validate 拒绝（§3.2）。
 	RpDisplayName string `protobuf:"bytes,9,opt,name=rp_display_name,json=rpDisplayName,proto3" json:"rp_display_name,omitempty"`
+	// 数据库方言：mysql | postgres（写入 config 的 db.driver）；缺省 mysql
+	// （proto3 零值由后端回落，与 db.driver 空值回落口径一致）。DSN 格式随
+	// 方言不同：mysql 为 user:pass@tcp(host:port)/db，postgres 为
+	// postgres://user:pass@host:port/db。
+	DbDriver      string `protobuf:"bytes,10,opt,name=db_driver,json=dbDriver,proto3" json:"db_driver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,6 +328,13 @@ func (x *InstallRequest) GetRpDisplayName() string {
 	return ""
 }
 
+func (x *InstallRequest) GetDbDriver() string {
+	if x != nil {
+		return x.DbDriver
+	}
+	return ""
+}
+
 var File_api_setup_v1_setup_proto protoreflect.FileDescriptor
 
 const file_api_setup_v1_setup_proto_rawDesc = "" +
@@ -336,7 +348,7 @@ const file_api_setup_v1_setup_proto_rawDesc = "" +
 	"\x12RestartingResponse\x12\x1e\n" +
 	"\n" +
 	"restarting\x18\x01 \x01(\bR\n" +
-	"restarting\"\xa7\x02\n" +
+	"restarting\"\xc4\x02\n" +
 	"\x0eInstallRequest\x12\x15\n" +
 	"\x06db_dsn\x18\x01 \x01(\tR\x05dbDsn\x12\x1d\n" +
 	"\n" +
@@ -347,7 +359,9 @@ const file_api_setup_v1_setup_proto_rawDesc = "" +
 	"\x05rp_id\x18\x06 \x01(\tR\x04rpId\x12%\n" +
 	"\x0eadmin_username\x18\a \x01(\tR\radminUsername\x12%\n" +
 	"\x0eadmin_password\x18\b \x01(\tR\radminPassword\x12&\n" +
-	"\x0frp_display_name\x18\t \x01(\tR\rrpDisplayName2\xfc\x01\n" +
+	"\x0frp_display_name\x18\t \x01(\tR\rrpDisplayName\x12\x1b\n" +
+	"\tdb_driver\x18\n" +
+	" \x01(\tR\bdbDriver2\xfc\x01\n" +
 	"\fSetupService\x12L\n" +
 	"\tGetStatus\x12\x1e.api.setup.v1.GetStatusRequest\x1a\x1f.api.setup.v1.GetStatusResponse\x12S\n" +
 	"\fUploadConfig\x12!.api.setup.v1.UploadConfigRequest\x1a .api.setup.v1.RestartingResponse\x12I\n" +

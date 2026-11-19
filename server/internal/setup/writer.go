@@ -24,8 +24,11 @@ import (
 // （去 scheme 与端口），显式填写优先（域名字符串，允许 localhost），
 // 不再自动读取请求 Host。RPDisplayName 缺省取
 // config.DefaultRPDisplayName，保证生成的 config 一定带非空 RP 展示名
-// （go-webauthn 生成注册选项的硬性要求）。
+// （go-webauthn 生成注册选项的硬性要求）。DBDriver 决定 DSN 解释与
+// 建连 / 迁移 / 管理员写入的方言，零值按 mysql 回落（与 db.driver 空值
+// 回落口径一致）。
 type InstallInput struct {
+	DBDriver      config.Driver
 	DBDSN         string
 	RedisAddr     string
 	RedisPassword string
@@ -71,6 +74,11 @@ func BuildInstallConfig(in InstallInput) (*config.Config, error) {
 	c, err := config.DefaultConfig()
 	if err != nil {
 		return nil, fmt.Errorf("setup: generate default config: %w", err)
+	}
+	// 方言写入 config：重启后正常模式按同一 driver 建连与迁移（空值保留
+	// DefaultConfig 的 mysql 回落，与 EffectiveDriver 口径一致）。
+	if in.DBDriver != "" {
+		c.DB.Driver = in.DBDriver
 	}
 	c.DB.DSN = in.DBDSN
 	c.Redis.Addr = in.RedisAddr

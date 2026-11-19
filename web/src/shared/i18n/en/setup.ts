@@ -54,14 +54,21 @@ export const setup: typeof zhSetup = {
   'setup.installTitle': 'Fresh Install',
   'setup.installIntro':
     'Enter the database and Redis connection details and the administrator account; once it succeeds, the service restarts automatically.',
-  // DB six fields (assembled into a single dbDsn on the client; wire contract unchanged).
+  // DB driver selection + six fields (assembled into a single dbDsn per driver;
+  // mysql = go-sql-driver form, postgres = URL form).
+  'setup.fieldDbDriver': 'Database type',
+  'setup.hintDbDriver':
+    'Determines the connection string format and database dialect; re-enter the connection details in the new format after switching',
+  'setup.optionDbDriverMysql': 'MySQL / MariaDB',
+  'setup.optionDbDriverPostgres': 'PostgreSQL',
   'setup.fieldDbHost': 'Database host',
   'setup.fieldDbPort': 'Database port',
   'setup.fieldDbUser': 'Database username',
   'setup.fieldDbPassword': 'Database password',
   'setup.fieldDbName': 'Database name',
   'setup.fieldDbParams': 'Extra parameters',
-  'setup.hintDbPort': 'MySQL default 3306; range 1-65535',
+  'setup.hintDbPort':
+    'MySQL default 3306, PostgreSQL default 5432; range 1-65535',
   'setup.hintDbParams':
     'Optional; appended to the DSN as-is, e.g. charset=utf8mb4&parseTime=true',
   // Redis (UI splits host + port like the database; joined as host:port on submit, wire contract unchanged).

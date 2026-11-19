@@ -903,7 +903,9 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	if err != nil {
 		return nil, assembleStep("repo.Open", err)
 	}
-	if err := migrate.Up(ctx, cfg.DB.DSN); err != nil {
+	// 迁移与建连同方言（§3.16）：UpDriver 按 cfg.DB.EffectiveDriver() 选
+	// goose 方言与迁移目录（空值回落 mysql，与 repo.Open 装配口径一致）。
+	if err := migrate.UpDriver(ctx, cfg.DB.EffectiveDriver(), cfg.DB.DSN); err != nil {
 		closeSQLDB(db)
 		return nil, assembleStep("migrate.Up", err)
 	}

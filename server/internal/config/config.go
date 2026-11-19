@@ -330,6 +330,22 @@ func validatePGDSN(dsn string) error {
 	return nil
 }
 
+// ValidateDBDSN 按 driver 分派 DSN 形态校验（validateDSN / validatePGDSN
+// 的薄封装，不复制校验逻辑），供安装路径建连前统一调用：pgdriver 的
+// WithDSN 对 url.Parse 失败的 DSN 直接 panic（发生在建连器构造期而非
+// ping 期），形态错误必须先在此拦截为可映射错误。未知 driver 报错（与
+// DBConfig.validate 的封闭取值口径一致）。
+func ValidateDBDSN(driver Driver, dsn string) error {
+	switch driver {
+	case DriverPostgres:
+		return validatePGDSN(dsn)
+	case DriverMySQL:
+		return validateDSN(dsn)
+	default:
+		return fmt.Errorf(`db.driver: want "mysql"|"postgres"`)
+	}
+}
+
 func (r RedisConfig) validate() []error {
 	var errs []error
 	if r.Addr == "" {
