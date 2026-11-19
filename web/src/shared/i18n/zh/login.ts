@@ -12,8 +12,9 @@ export const login = {
   'login.forgotPassword': '忘记密码',
   'login.noMethods': '暂无可用登录方式',
   'login.selectMethodHint': '请选择登录方式',
-  'login.mfaSelectHint': '请选择二次验证方式',
-  // next / mfa 分支「返回方式列表」入口。
+  // StepUpDialog 的二次验证方式 tabs 区标题（点 tab 即取该方式挑战）。
+  'login.mfaSelectHint': '二次验证方式',
+  // next 分支「返回方式列表」入口。
   'login.backToMethods': '返回方式列表',
   'login.pollPlaceholder': '扫码流程即将支持',
   'login.redirecting': '登录成功，正在跳转…',

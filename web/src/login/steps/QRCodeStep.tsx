@@ -23,7 +23,8 @@
  *   loginToken；本组件把它存入 loginTokenStore 后弹出 StepUpDialog，复用登录主路径
  *   的 startLoginVerification / submitStepUp（以 loginToken 为主体凭证）→
  *   SubmitVerification；按 §2.8 / §3.8.1，SubmitVerification 响应即登录流程结论，
- *   就地交登录终点跳转，票据不写终态、不依赖下次轮询。
+ *   就地交登录终点跳转，票据不写终态、不依赖下次轮询。取挑战的 captcha gate
+ *   由 StepUpDialog 自闭环（§2.5），本组件只注入基础配置。
  *   同一 ticket 首次 needs_step_up 时弹窗；无论通过还是取消都保留已处理标记，
  *   轮询不再自动重弹。取消后由面板区域的「重新验证」入口显式重开（挑战令牌已
  *   随窗体丢弃，重开即重取；loginToken 仍随每轮 needs_step_up 刷新）。
@@ -341,41 +342,21 @@ export function QRCodeStep({
     undefined,
   );
   const handledStepUpRef = useRef<string | undefined>(undefined);
-  // step-up 取因子时的人机校验 gate（StartVerification 选定因子按 §2.5 需要 captcha）。
-  const stepUpGate = useCaptchaGate(Modal);
 
-  // start / submit 保持引用稳定（useCallback）：窗体内部 ref 固定 start，
-  // 此 useCallback 仅为引用稳定——内联闭包每次渲染换新，captcha 弹窗触发的
-  // 重渲染会让 StepUpDialog 持续拿到新引用，与 ref 口径不一致。deps 取
-  // stepUpGate.run（其本身 useCallback([prompt])、引用稳定），不依赖
-  // stepUpGate 对象（每次渲染新建）。主体凭证 loginToken 由 loginTokenStore
-  // 托管（needs_step_up 时轮询写入），不在闭包内捕获。
+  // start 保持引用稳定（useCallback）：弹窗内部 ref 固定 start，在途挑战
+  // 令牌不因重渲染被打断。取挑战的 captcha gate 由 StepUpDialog 自闭环
+  // （§2.5），此处直连 startLoginVerification（凭据经 captcha 参数注入）。
+  // 主体凭证 loginToken 由 loginTokenStore 托管（needs_step_up 时轮询写入），
+  // 不在闭包内捕获。
   const startStepUp = useCallback(
-    async (method: string) => {
+    async (method: string, captcha?: CaptchaPayload) => {
       const { startLoginVerification } = await import('../api');
-      if (method === '') {
-        return startLoginVerification();
-      }
-      const outcome = await stepUpGate.run({
-        mode: 'reactive',
-        request: (token) =>
-          startLoginVerification({
-            method,
-            ...(token !== undefined ? { captcha: token } : {}),
-          }),
-        // StartVerification 响应无流程状态字段：captcha 结论只在 ApiError 一侧。
-        readOutcome: () => ({ action: 'message' }),
-        readError: errorCaptchaOutcome,
+      return startLoginVerification({
+        method,
+        ...(captcha !== undefined ? { captcha } : {}),
       });
-      if (outcome.kind === 'result') {
-        return outcome.result;
-      }
-      if (outcome.kind === 'cancelled') {
-        return undefined;
-      }
-      throw outcome.error;
     },
-    [stepUpGate.run],
+    [],
   );
 
   // Submit 成功后就地交登录终点跳转（deps 只有 navigate 与 returnTo 两个原始值，
@@ -501,16 +482,14 @@ export function QRCodeStep({
         </button>
       ) : null}
       {stepUpTicket !== undefined ? (
-        <>
-          <StepUpDialog
-            modal={Modal}
-            start={startStepUp}
-            submit={submitStepUp}
-            onVerified={() => dismissStepUp('verified')}
-            onCancel={() => dismissStepUp('cancelled')}
-          />
-          <CaptchaDialog {...stepUpGate.dialogProps} />
-        </>
+        <StepUpDialog
+          modal={Modal}
+          captcha={captcha}
+          start={startStepUp}
+          submit={submitStepUp}
+          onVerified={() => dismissStepUp('verified')}
+          onCancel={() => dismissStepUp('cancelled')}
+        />
       ) : null}
     </div>
   );

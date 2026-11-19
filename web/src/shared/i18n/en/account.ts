@@ -117,7 +117,6 @@ export const account: typeof zhAccount = {
   'account.stepUpHint':
     'To protect your account, please complete the second verification.',
   'account.stepUpMethodLabel': 'Verification method',
-  'account.stepUpNextAction': 'Next',
   'account.stepUpVerifyAction': 'Verify',
   'account.stepUpNoMethods': 'No verification method is available',
   'account.stepUpInvalidResponse':

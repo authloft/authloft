@@ -102,7 +102,6 @@ export const account = {
   'account.stepUpTitle': '安全验证',
   'account.stepUpHint': '为保护账号安全，请完成二次验证。',
   'account.stepUpMethodLabel': '验证方式',
-  'account.stepUpNextAction': '下一步',
   'account.stepUpVerifyAction': '验证',
   'account.stepUpNoMethods': '当前没有可用的验证方式',
   'account.stepUpInvalidResponse': '验证响应无效，请重试',

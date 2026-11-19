@@ -52,7 +52,7 @@ import {
 import styles from './ResetPage.module.less';
 import { AppLayout } from '../components/AppLayout';
 import { Link } from '@modern-js/runtime/router';
-import { Tabs } from '../components/Tabs';
+import { Tabs } from '../../shared/components';
 
 /** 重置可用方式白名单（§2.1 行 412：flow=reset 只保留 otp_sms / otp_email，快照已过滤，此处防御性收窄）。 */
 export function resetOptionsFor(snapshot: MethodsSnapshot): LoginMethodEntry[] {

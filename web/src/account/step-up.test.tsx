@@ -26,6 +26,7 @@ import {
   VerificationMethodSchema,
 } from '../gen/proto/api/common/v1/verification_pb';
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
+import { CaptchaConfigSchema } from '../gen/proto/api/common/v1/captcha_pb';
 import { ErrorInfoSchema } from '../gen/proto/api/common/v1/error_info_pb';
 import { ApiError } from '../shared/api/errors';
 
@@ -167,7 +168,7 @@ describe('StepUpDialog 因子字段（复用 mfa.methods[] + FieldRenderer）', 
     expect(componentsMod.stepUpPayload(fields, { phone: '' })).toEqual({});
   });
 
-  test('webauthn 空 challengeFields 不合成 code 输入（§2.6 verify 载荷是 credential）', () => {
+  test('webauthn 空 challengeFields 不合成 code 输入；静态帧不再有「暂不支持」降级（§2.6 verify 载荷是 credential）', () => {
     const webauthn = create(VerificationMethodSchema, {
       method: 'webauthn',
       steps: ['challenge', 'form'],
@@ -178,41 +179,51 @@ describe('StepUpDialog 因子字段（复用 mfa.methods[] + FieldRenderer）', 
       createElement(componentsMod.StepUpDialogView, {
         phase: 'verify',
         methods: [webauthn],
-        selectedMethod: 'webauthn',
-        fields: componentsMod.stepUpFields(webauthn),
+        activeMethod: webauthn,
         values: {},
       }),
     );
+    // webauthn 原生断言：正文无输入控件、无降级文案，提交由主按钮驱动。
     expect(html).not.toContain('<input');
-    expect(html).toContain('暂不支持在此完成该验证方式');
+    expect(html).not.toContain('暂不支持在此完成该验证方式');
   });
 
-  test('主按钮禁用口径：无可用因子 / 无字段不再静默无反应（select / verify）', () => {
+  test('主按钮禁用口径：未选方式 / 无字段 / 在途禁用；error 重试与 webauthn 断言恒可用', () => {
     const totp = create(VerificationMethodSchema, {
       method: 'totp',
       steps: ['form'],
       codeLength: BigInt(6),
     });
+    const webauthn = create(VerificationMethodSchema, {
+      method: 'webauthn',
+      steps: ['challenge', 'form'],
+    });
     const fields = componentsMod.stepUpFields(totp);
-    // 无可用因子 → 禁用（否则点「下一步」只会静默 return）。
-    expect(componentsMod.stepUpOkDisabled('select', [], [], false)).toBe(true);
-    expect(componentsMod.stepUpOkDisabled('select', [totp], [], false)).toBe(
+    // 取方式列表中 / 在途禁用。
+    expect(
+      componentsMod.stepUpOkDisabled('loading', undefined, [], false),
+    ).toBe(true);
+    expect(componentsMod.stepUpOkDisabled('verify', totp, fields, true)).toBe(
+      true,
+    );
+    // verify 引导态（未选方式）与无可渲染字段禁用——不留「点了没反应」。
+    expect(
+      componentsMod.stepUpOkDisabled('verify', undefined, [], false),
+    ).toBe(true);
+    expect(componentsMod.stepUpOkDisabled('verify', totp, [], false)).toBe(
+      true,
+    );
+    expect(
+      componentsMod.stepUpOkDisabled('verify', totp, fields, false),
+    ).toBe(false);
+    // webauthn 断言由主按钮驱动（challengeData 由 Start 下发）→ 恒可用。
+    expect(componentsMod.stepUpOkDisabled('verify', webauthn, [], false)).toBe(
       false,
     );
-    // verify 阶段无可渲染字段（如 webauthn）→ 禁用，避免提交空 payload。
-    expect(componentsMod.stepUpOkDisabled('verify', [totp], [], false)).toBe(
-      true,
-    );
+    // error 阶段主按钮即「重试」，恒可用。
     expect(
-      componentsMod.stepUpOkDisabled('verify', [totp], fields, false),
+      componentsMod.stepUpOkDisabled('error', undefined, [], false),
     ).toBe(false);
-    // 取方式中 / 在途恒禁用。
-    expect(
-      componentsMod.stepUpOkDisabled('loading', [totp], fields, false),
-    ).toBe(true);
-    expect(componentsMod.stepUpOkDisabled('select', [totp], [], true)).toBe(
-      true,
-    );
   });
 
   test('因子失败文案：错误提示 + 剩余次数（§1.6 invalid_code）', () => {
@@ -240,6 +251,127 @@ describe('StepUpDialog 因子字段（复用 mfa.methods[] + FieldRenderer）', 
     expect(componentsMod.stepUpErrorText(new Error('boom'))).toBe(
       '操作失败，请稍后重试',
     );
+  });
+});
+
+describe('StepUpDialog 分派与断言（纯函数）', () => {
+  test('stepUpStartMode：OTP 下发恒拦截走 upfront；webauthn / totp / 恢复码走 reactive', () => {
+    expect(componentsMod.stepUpStartMode('otp_sms')).toBe('upfront');
+    expect(componentsMod.stepUpStartMode('otp_email')).toBe('upfront');
+    expect(componentsMod.stepUpStartMode('webauthn')).toBe('reactive');
+    expect(componentsMod.stepUpStartMode('totp')).toBe('reactive');
+    expect(componentsMod.stepUpStartMode('recovery_code')).toBe('reactive');
+  });
+
+  test('stepUpAuthenticate：断言对象透传为 credential；NotAllowedError 区分取消与失败', async () => {
+    const options = { challenge: 'k9v0x8' };
+    const ok = await componentsMod.stepUpAuthenticate(options, {
+      start: async (optionsJSON) => ({ id: 'cred-1', echo: optionsJSON }),
+    });
+    expect(ok).toEqual({
+      ok: true,
+      credential: { id: 'cred-1', echo: options },
+    });
+    const cancelled = await componentsMod.stepUpAuthenticate(options, {
+      start: async () => {
+        throw new DOMException('user denied', 'NotAllowedError');
+      },
+    });
+    expect(cancelled).toEqual({ ok: false, cancelled: true });
+    const failed = await componentsMod.stepUpAuthenticate(options, {
+      start: async () => {
+        throw new Error('boom');
+      },
+    });
+    expect(failed).toEqual({ ok: false, cancelled: false });
+  });
+});
+
+describe('StepUpDialogView 静态帧（tabs 一次提交，无 select / 「下一步」）', () => {
+  const totp = create(VerificationMethodSchema, {
+    method: 'totp',
+    usage: ['secondary'],
+    steps: ['form'],
+    codeLength: BigInt(6),
+  });
+  const otpSms = create(VerificationMethodSchema, {
+    method: 'otp_sms',
+    usage: ['secondary'],
+    steps: ['challenge', 'form'],
+    codeLength: BigInt(6),
+    resendAfter: BigInt(60),
+  });
+  const webauthn = create(VerificationMethodSchema, {
+    method: 'webauthn',
+    usage: ['secondary'],
+    steps: ['challenge', 'form'],
+    capability: 'window.PublicKeyCredential',
+  });
+
+  function renderView(
+    props: Partial<Parameters<typeof componentsMod.StepUpDialogView>[0]> & {
+      phase: 'loading' | 'verify' | 'error';
+    },
+  ): string {
+    return renderToStaticMarkup(
+      createElement(componentsMod.StepUpDialogView, props),
+    );
+  }
+
+  test('tabs 常驻展示全部可用方式（factors.* 文案、当前项高亮），无 select / 下一步', () => {
+    const html = renderView({
+      phase: 'verify',
+      methods: [totp, otpSms],
+      activeMethod: totp,
+      values: {},
+    });
+    expect(html).toContain('动态口令');
+    expect(html).toContain('短信');
+    expect(html).toContain('aria-current="true"');
+    expect(html).not.toContain('<select');
+    expect(html).not.toContain('下一步');
+  });
+
+  test('verify 引导态（未选方式）：tabs 区标题 + 引导，不出输入控件', () => {
+    const html = renderView({
+      phase: 'verify',
+      methods: [totp],
+      values: {},
+    });
+    expect(html).toContain('二次验证方式');
+    expect(html).toContain('动态口令');
+    expect(html).not.toContain('<input');
+  });
+
+  test('选中 otp_sms：FieldRenderer 输码 + 重发冷却倒计时（§2.6 challenge→form 两段由 Start 承担）', () => {
+    const html = renderView({
+      phase: 'verify',
+      methods: [otpSms],
+      activeMethod: otpSms,
+      values: {},
+      retryAfter: BigInt(60),
+    });
+    expect(html).toContain('autoComplete="one-time-code"');
+    expect(html).toContain('60 秒后可重发');
+    // 非 webauthn 且有字段：无降级文案。
+    expect(html).not.toContain('暂不支持在此完成该验证方式');
+  });
+
+  test('loading / error / 无可用方式三态帧', () => {
+    expect(
+      renderView({ phase: 'loading', methods: [], values: {} }),
+    ).toContain('加载中');
+    const error = renderView({
+      phase: 'error',
+      methods: [],
+      values: {},
+      errorText: '动态口令错误',
+    });
+    expect(error).toContain('role="alert"');
+    expect(error).toContain('动态口令错误');
+    expect(
+      renderView({ phase: 'verify', methods: [], values: {} }),
+    ).toContain('当前没有可用的验证方式');
   });
 });
 
@@ -389,8 +521,7 @@ describe('解绑 TOTP 全链（§3.5 行 1078、§3.8）', () => {
       createElement(componentsMod.StepUpDialogView, {
         phase: 'verify',
         methods: [method],
-        selectedMethod: 'totp',
-        fields: componentsMod.stepUpFields(method),
+        activeMethod: method,
         values: { code: '111111' },
         errorText: '动态口令错误',
       }),
@@ -398,5 +529,245 @@ describe('解绑 TOTP 全链（§3.5 行 1078、§3.8）', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('动态口令错误');
     expect(html).toContain('<input');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepUpDialog captcha gate 自闭环（§2.5 / §3.8.5）：弹窗持有 gate、按因子分派
+// upfront / reactive，外部只注入基础配置。编排走导出的 runStepUpStart（组件
+// beginMethod 同款接线），弹窗询问经脚本化 gate 作答（沿 login-container.test
+// scriptedGate 边界惯例），StartVerification 用 msw 拦截。
+// ---------------------------------------------------------------------------
+
+/** 自绘图形码凭据（§2.5 三元组）。 */
+function imageToken(id: string, answer: string) {
+  return create(CaptchaPayloadSchema, {
+    providerKey: 'builtin_image',
+    id,
+    answer,
+  });
+}
+
+/**
+ * gate 替身：跑真 runCaptchaGate 循环、把「弹窗询问」换成脚本化作答
+ *（确认 → 凭据；用尽 / undefined → 取消），并记录每次询问的配置与次数。
+ */
+function scriptedGate(answers: ReturnType<typeof imageToken>[]) {
+  const prompts: {
+    config: unknown;
+    invalid: boolean;
+    attempt: number;
+  }[] = [];
+  const run: Parameters<typeof componentsMod.runStepUpStart>[3] = (options) =>
+    // runCaptchaGate 的 prompt 由本替身提供；真实 hook 版见 useCaptchaGate。
+    import('../shared/captcha/captchaGate').then(({ runCaptchaGate }) =>
+      runCaptchaGate({
+        ...options,
+        prompt: async (next) => {
+          prompts.push({
+            config: next.config,
+            invalid: next.invalid,
+            attempt: next.attempt,
+          });
+          return answers[prompts.length - 1];
+        },
+      }),
+    );
+  return { run, prompts };
+}
+
+/** captcha 失败的非 200 Connect 错误体：ErrorInfo.code + details 并列 CaptchaConfig。 */
+function captchaError(
+  code: 'captcha_required' | 'captcha_invalid',
+  config: { providerKey: string; type?: string },
+) {
+  const info = create(ErrorInfoSchema, { domain: 'account', code });
+  return HttpResponse.json(
+    {
+      code: 'invalid_argument',
+      message: code,
+      details: [
+        {
+          type: 'api.common.v1.ErrorInfo',
+          value: bytesToBase64(toBinary(ErrorInfoSchema, info)),
+        },
+        {
+          type: 'api.common.v1.CaptchaConfig',
+          value: bytesToBase64(
+            toBinary(CaptchaConfigSchema, create(CaptchaConfigSchema, config)),
+          ),
+        },
+      ],
+    },
+    { status: 400 },
+  );
+}
+
+describe('StepUpDialog gate 自闭环（runStepUpStart：mode 分派 + 凭据注入）', () => {
+  /** 组件同款 start 接线：凭据挂到 StartVerification 请求级 captcha（§3.8.2）。 */
+  const startViaApi = (method: string, captcha?: unknown) =>
+    apiMod.startVerification(
+      apiMod.buildStartVerificationRequest(
+        'unbind_totp',
+        'unbind_totp',
+        method,
+        captcha as ReturnType<typeof imageToken> | undefined,
+      ),
+    );
+
+  test('otp upfront：先问凭据再发（只发一次带凭据的请求），无配置退化为先探一次', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(
+      http.post(START_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          challengeToken: 'ct-1',
+          methods: [],
+          expiresIn: '300',
+        });
+      }),
+    );
+
+    // 有配置 → upfront 先问再发，没有裸请求。
+    const gate = scriptedGate([imageToken('up-1', '42')]);
+    const response = await componentsMod.runStepUpStart(
+      'otp_sms',
+      create(CaptchaConfigSchema, { providerKey: 'builtin_image', type: 'image' }),
+      startViaApi,
+      gate.run,
+    );
+    expect(response?.challengeToken).toBe('ct-1');
+    expect(gate.prompts).toHaveLength(1);
+    expect(gate.prompts[0].attempt).toBe(0);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({
+      bizPurpose: 'unbind_totp',
+      method: 'otp_sms',
+      captcha: { providerKey: 'builtin_image', id: 'up-1', answer: '42' },
+    });
+
+    // 无配置 → 退化为先探一次（服务端未启用 captcha 的部署不该凭空弹窗）。
+    const bareGate = scriptedGate([]);
+    await componentsMod.runStepUpStart('otp_sms', undefined, startViaApi, bareGate.run);
+    expect(bareGate.prompts).toHaveLength(0);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).not.toHaveProperty('captcha');
+  });
+
+  test('captcha_invalid：窗内换凭据循环（权威配置取错误体 details），不逃逸给调用方', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    let calls = 0;
+    server.use(
+      http.post(START_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        calls += 1;
+        if (calls === 1) {
+          return captchaError('captcha_required', {
+            providerKey: 'cf_turnstile',
+            type: 'turnstile',
+          });
+        }
+        if (calls === 2) {
+          // 厂商不可用 → 服务端降级为自绘图形码（§2.5），新配置随错误体下发。
+          return captchaError('captcha_invalid', {
+            providerKey: 'builtin_image',
+            type: 'image',
+          });
+        }
+        return HttpResponse.json({
+          challengeToken: 'ct-2',
+          methods: [],
+          expiresIn: '300',
+        });
+      }),
+    );
+
+    const gate = scriptedGate([
+      imageToken('id-1', 'aaa'),
+      imageToken('id-2', 'bbb'),
+    ]);
+    const response = await componentsMod.runStepUpStart(
+      'otp_email',
+      undefined,
+      startViaApi,
+      gate.run,
+    );
+    expect(response?.challengeToken).toBe('ct-2');
+    expect(gate.prompts).toHaveLength(2);
+    expect(gate.prompts[0].config).toMatchObject({ type: 'turnstile' });
+    expect(gate.prompts[0].invalid).toBe(false);
+    // 降级后的权威配置 + invalid 文案位 + attempt 递增（widget 换新）。
+    expect(gate.prompts[1].config).toMatchObject({
+      providerKey: 'builtin_image',
+      type: 'image',
+    });
+    expect(gate.prompts[1].invalid).toBe(true);
+    expect(gate.prompts[1].attempt).toBe(1);
+    expect(JSON.parse(JSON.stringify(bodies[2])).captcha).toEqual({
+      providerKey: 'builtin_image',
+      id: 'id-2',
+      answer: 'bbb',
+    });
+  });
+
+  test('totp reactive：裸发直通不弹窗（无下发场景，§2.5）', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    server.use(
+      http.post(START_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          challengeToken: 'ct-1',
+          methods: [],
+          expiresIn: '300',
+        });
+      }),
+    );
+
+    const gate = scriptedGate([]);
+    const response = await componentsMod.runStepUpStart(
+      'totp',
+      undefined,
+      startViaApi,
+      gate.run,
+    );
+    expect(response?.challengeToken).toBe('ct-1');
+    expect(gate.prompts).toHaveLength(0);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toHaveProperty('captcha');
+  });
+
+  test('用户取消 captcha 询问 → undefined（窗内原地保留，不抛错）', async () => {
+    let calls = 0;
+    server.use(
+      http.post(START_URL, () => {
+        calls += 1;
+        return captchaError('captcha_required', {
+          providerKey: 'builtin_image',
+          type: 'image',
+        });
+      }),
+    );
+
+    const gate = scriptedGate([undefined]);
+    const response = await componentsMod.runStepUpStart(
+      'otp_sms',
+      undefined,
+      startViaApi,
+      gate.run,
+    );
+    expect(response).toBeUndefined();
+    expect(gate.prompts).toHaveLength(1);
+    expect(calls).toBe(1); // 取消后不再重发
+  });
+
+  test('非 captcha 错误原样抛出交窗内错误位', async () => {
+    server.use(
+      http.post(START_URL, () => new HttpResponse(null, { status: 500 })),
+    );
+    const gate = scriptedGate([]);
+    await expect(
+      componentsMod.runStepUpStart('totp', undefined, startViaApi, gate.run),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(gate.prompts).toHaveLength(0);
   });
 });

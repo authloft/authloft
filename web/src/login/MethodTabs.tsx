@@ -20,7 +20,7 @@
 import { resolveCapability } from '../shared/hooks/useCapability';
 import { t } from '../shared/i18n';
 import type { LoginMethodEntry } from '../shared/types/init';
-import { Tabs } from './components/Tabs';
+import { Tabs } from '../shared/components';
 
 /** 图标墙分组纯函数自 ProviderButtons 迁入，re-export 保持既有导入面。 */
 export { groupProviders } from './factors/ProviderButtons';

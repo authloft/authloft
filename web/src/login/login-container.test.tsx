@@ -113,6 +113,9 @@ let qrStep: typeof import('./steps/QRCodeStep');
 // CaptchaDialog 经 CaptchaWidget → adapters/Image → shared/api/sso 拉起 transport
 // 单例，须与 api 同在 beforeAll（__AUTHLOFT_INIT__ 注入后）动态 import。
 let captchaDialogMod: typeof import('../shared/captcha/CaptchaDialog');
+// StepUpDialog 同口径动态 import（本文件静态 import 图经 OTPForm →
+// shared/components 桶导出可静态到达它）。
+let stepUpDialogMod: typeof import('../shared/components/StepUpDialog');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -120,6 +123,7 @@ beforeAll(async () => {
   apiMod = await import('./api');
   qrStep = await import('./steps/QRCodeStep');
   captchaDialogMod = await import('../shared/captcha/CaptchaDialog');
+  stepUpDialogMod = await import('../shared/components/StepUpDialog');
 });
 
 beforeEach(() => {
@@ -243,18 +247,8 @@ function envelope(init: Record<string, unknown>): LoginFlowResponse {
 }
 
 type LoginFlowViewProps = Parameters<typeof container.LoginFlowView>[0];
-type FactorView = NonNullable<LoginFlowViewProps['mfaMethods']>[number];
 
-/** 二次验证因子视图夹具（登录流程信封已停发 mfa 块，改由视图 props 注入）。 */
-function factor(init: FactorView): FactorView {
-  return init;
-}
-
-function renderView(
-  state: FlowState,
-  notice?: string,
-  mfaMethods?: LoginFlowViewProps['mfaMethods'],
-): string {
+function renderView(state: FlowState, notice?: string): string {
   return renderToStaticMarkup(
     createElement(container.LoginFlowView, {
       snapshot: SNAPSHOT,
@@ -262,7 +256,6 @@ function renderView(
       notice,
       onSelect: () => {},
       onSubmit: () => {},
-      mfaMethods,
     }),
   );
 }
@@ -519,91 +512,24 @@ describe('snapshotFieldToField / toPayloadInit（§2.1 快照 → 渲染 / 请�
   });
 });
 
-describe('fieldsFor（纯函数：提交白名单字段源；§1.3 行 121-127 / §2.6 行 546）', () => {
-  const MFA_METHODS = [
-    // 后端 mfa.go 对 otp 系 mfa 条目不填 fields / challengeFields。
-    factor({
-      method: 'otp_sms',
-      steps: ['challenge', 'form'],
-      maskedTarget: '138****8000',
-    }),
-    factor({
-      method: 'recovery_code',
-      steps: ['form'],
-      fields: [
-        create(FieldSchema, {
-          name: 'code',
-          label: 'login.field.recoveryCode',
-          type: 'text',
-          required: true,
-        }),
-      ],
-    }),
-  ];
-
-  test('mfa otp_sms verify：mfaEntry.fields 空 + OTP 系 → 补 code 白名单 → 提交 payload {code}', () => {
-    const fields = container.fieldsFor(
-      'otp_sms',
-      'verify',
-      SNAPSHOT,
-      MFA_METHODS,
-    );
-    expect(fields.map((f) => f.name)).toEqual(['code']);
-    expect(fields[0].length).toBe(BigInt(6)); // codeLength 取快照（§2.1 行 391）
-    // 容器 submit 链路：fieldsFor 结果 → toPayloadInit → 请求 payload（§2.6 行 546）。
-    expect(container.toPayloadInit({ code: '123456' }, fields)).toEqual({
-      code: '123456',
-    });
-  });
-
-  test('mfa otp_sms challenge：challengeFields 空（MFA 不传目标，§2.6 行 545）→ payload {}', () => {
-    const fields = container.fieldsFor(
-      'otp_sms',
-      'challenge',
-      SNAPSHOT,
-      MFA_METHODS,
-    );
-    expect(fields).toEqual([]);
-    expect(container.toPayloadInit({}, fields)).toEqual({});
-  });
-
-  test('mfa recovery_code verify：下发 fields 非空 → 优先用下发字段，不补白名单', () => {
-    const fields = container.fieldsFor(
-      'recovery_code',
-      'verify',
-      SNAPSHOT,
-      MFA_METHODS,
-    );
-    expect(fields.map((f) => f.name)).toEqual(['code']);
-    expect(fields[0].type).toBe('text'); // 恢复码下发字段，非 otp 补位
-  });
-
+describe('fieldsFor（纯函数：主因子提交白名单字段源；§1.3 / §2.6）', () => {
   test('主因子 otp_sms verify：快照无 form 步字段 → 补 code（既有语义回归）；challenge → challengeFields', () => {
     expect(
-      container
-        .fieldsFor('otp_sms', 'verify', SNAPSHOT, undefined)
-        .map((f) => f.name),
+      container.fieldsFor('otp_sms', 'verify', SNAPSHOT).map((f) => f.name),
     ).toEqual(['code']);
     expect(
-      container
-        .fieldsFor('otp_sms', 'challenge', SNAPSHOT, undefined)
-        .map((f) => f.name),
+      container.fieldsFor('otp_sms', 'challenge', SNAPSHOT).map((f) => f.name),
     ).toEqual(['phone']);
   });
 
   test('主因子 password：快照 fields 原样（含 captcha，由 toPayloadInit 按类型排除）', () => {
     expect(
-      container
-        .fieldsFor('password', 'verify', SNAPSHOT, undefined)
-        .map((f) => f.name),
+      container.fieldsFor('password', 'verify', SNAPSHOT).map((f) => f.name),
     ).toEqual(['username', 'password', 'captcha']);
   });
 
-  test('mfa 方式不在镜像中（未选方式防御）→ 回落主因子分支', () => {
-    // mfaMethods 有 otp_sms、无 totp：totp 走主因子分支——快照无 fields 且
-    // 非 OTPForm（isOtpForm false），不补位、返回空。
-    const fields = container.fieldsFor('totp', 'verify', SNAPSHOT, MFA_METHODS);
-    expect(fields).toEqual([]); // totp 非 OTPForm（isOtpForm false），不补位
+  test('非 OTP 系且快照无字段（totp 不会作为主因子下发，防御）→ 返回空', () => {
+    expect(container.fieldsFor('totp', 'verify', SNAPSHOT)).toEqual([]);
   });
 });
 
@@ -1592,98 +1518,19 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     }
   });
 
-  test('mfa_required：原地渲染选择器（不跳页，§4.1 行 407）+ 未选择引导 + 因子名字典', () => {
+  test('mfa_required：视图不再内联渲染二次验证选择器（MFA 交互归 StepUpDialog 弹窗，§4.1）', () => {
     const markup = renderView(
       stateWith({
         method: 'password',
         status: 'mfa_required',
         envelope: envelope({ status: 'mfa_required' }),
       }),
-      undefined,
-      [
-        factor({
-          method: 'totp',
-          steps: ['form'],
-          fields: [
-            create(FieldSchema, {
-              name: 'code',
-              label: 'login.field.totpCode',
-              type: 'totp',
-              required: true,
-              length: BigInt(6),
-            }),
-          ],
-        }),
-        factor({
-          method: 'otp_sms',
-          steps: ['challenge', 'form'],
-          maskedTarget: '138****8000',
-        }),
-        factor({
-          method: 'recovery_code',
-          steps: ['form'],
-          fields: [
-            create(FieldSchema, {
-              name: 'code',
-              label: 'login.field.recoveryCode',
-              type: 'text',
-              required: true,
-            }),
-          ],
-        }),
-      ],
     );
-    expect(markup).toContain('请选择二次验证方式');
-    expect(markup).toContain('动态口令'); // t('factors.totp')
-    expect(markup).toContain('短信'); // t('factors.otp_sms')
-    expect(markup).toContain('恢复码'); // t('factors.recovery_code')
-    // 未选择二次方式：只渲染选择器，不渲染因子表单。
-    expect(markup).not.toContain('<form');
-  });
-
-  test('mfa_required：注入 StartVerification 的 methods[] → 就地渲染 MfaSelector 因子按钮（§1.6 行 251 / §4.1 行 492）', () => {
-    const markup = renderView(
-      stateWith({
-        method: 'password',
-        status: 'mfa_required',
-        envelope: envelope({ status: 'mfa_required' }),
-      }),
-      undefined,
-      [
-        factor({ method: 'totp', steps: ['form'] }),
-        factor({ method: 'otp_sms', steps: ['challenge', 'form'] }),
-      ],
-    );
-    expect(markup).toContain('动态口令'); // factors.totp（MfaSelector 按钮）
-    expect(markup).toContain('短信'); // factors.otp_sms
-    expect(markup).toContain('请选择二次验证方式'); // login.mfaSelectHint（未选方式引导）
-    // 编排覆盖：注入的方式列表被消费，不落零值兜底、不回主因子表单区。
+    // 旧内联选择器（MfaSelector 按钮墙 + 方式引导）随弹窗化移除：
+    // 弹窗覆盖其上，视图落主流程表单区帧（弹窗体在 SSR 下不渲染）。
+    expect(markup).not.toContain('请选择二次验证方式');
     expect(markup).not.toContain('请刷新重试');
-    expect(markup).not.toContain('请选择登录方式');
-  });
-
-  test('mfa_required webauthn 条目 → 选择器显示 hint 提示文案（§1.3 行 125）', () => {
-    const markup = renderView(
-      stateWith({
-        method: 'password',
-        status: 'mfa_required',
-        envelope: envelope({ status: 'mfa_required' }),
-      }),
-      undefined,
-      [
-        // hint 零值（其余因子）：不渲染提示 span。
-        factor({ method: 'totp', steps: ['form'] }),
-        factor({
-          method: 'webauthn',
-          steps: ['challenge', 'form'],
-          hint: '请触摸已绑定的通行密钥设备',
-        }),
-      ],
-    );
-    expect(markup).toContain('通行密钥'); // t('factors.webauthn')
-    expect(markup).toContain('请触摸已绑定的通行密钥设备'); // §1.3 行 125 hint
-    // hint 零值条目（totp）不出现空提示。
-    expect(markup).not.toContain('动态口令</span>');
+    expect(markup).toContain('密码登录'); // 主流程 MethodTabs 帧
   });
 
   test('binding_required：原地渲染 BindingPage 两选项（§4.1 行 406 / §2.7.5）；轮询态占位保留', () => {
@@ -1890,23 +1737,15 @@ describe('LoginFlowView 状态分支静态渲染', () => {
 // 评审 P0-1 / P1-4：返回方式列表入口、onRetry 接线、剩余次数去重
 // ---------------------------------------------------------------------------
 
-describe('P0-1「返回方式列表」入口（next / mfa 分支）', () => {
+describe('P0-1「返回方式列表」入口（next 分支）', () => {
   function renderWithBack(state: FlowState, withBack: boolean): string {
     return renderToStaticMarkup(
       createElement(container.LoginFlowView, {
         snapshot: SNAPSHOT,
         state,
         onSelect: () => {},
-        onSelectMfa: () => {},
         onSubmit: () => {},
         onBackToMethods: withBack ? () => {} : undefined,
-        mfaMethods: [
-          factor({ method: 'totp', steps: ['form'] }),
-          factor({
-            method: 'otp_sms',
-            steps: ['challenge', 'form'],
-          }),
-        ],
       }),
     );
   }
@@ -1934,14 +1773,6 @@ describe('P0-1「返回方式列表」入口（next / mfa 分支）', () => {
     });
     expect(renderWithBack(state, true)).toContain('返回方式列表');
     expect(renderWithBack(state, false)).not.toContain('返回方式列表');
-  });
-
-  test('mfa 分支：注入回调 → 渲染入口', () => {
-    const markup = renderWithBack(
-      stateWith({ method: 'totp', step: 'verify' }),
-      true,
-    );
-    expect(markup).toContain('返回方式列表');
   });
 });
 
@@ -2016,111 +1847,46 @@ describe('P1-4：ErrorBanner onRetry 接线 + 剩余次数去重', () => {
 });
 
 // ---------------------------------------------------------------------------
-// mfa 场景视图（选择器切换渲染；§4.1 行 407 原地、不跳页）
-// ---------------------------------------------------------------------------
-
-describe('LoginFlowView mfa 场景渲染（信封 mfa / 本地镜像 mfaMethods）', () => {
-  const MFA_METHODS = [
-    factor({
-      method: 'totp',
-      steps: ['form'],
-      fields: [
-        create(FieldSchema, {
-          name: 'code',
-          label: 'login.field.totpCode',
-          type: 'totp',
-          required: true,
-          length: BigInt(6),
-        }),
-      ],
-    }),
-    factor({
-      method: 'otp_sms',
-      steps: ['challenge', 'form'],
-      maskedTarget: '138****8000',
-    }),
-    factor({
-      method: 'recovery_code',
-      steps: ['form'],
-      fields: [
-        create(FieldSchema, {
-          name: 'code',
-          label: 'login.field.recoveryCode',
-          type: 'text',
-          required: true,
-        }),
-      ],
-    }),
-  ];
-
-  function renderMfa(state: FlowState, otpCode?: string): string {
-    return renderToStaticMarkup(
-      createElement(container.LoginFlowView, {
-        snapshot: SNAPSHOT,
-        state,
-        onSelect: () => {},
-        onSelectMfa: () => {},
-        onSubmit: () => {},
-        onResend: () => {},
-        otpCode,
-        onOtpCodeChange: () => {},
-        mfaMethods: MFA_METHODS,
-      }),
-    );
-  }
-
-  test('选择 totp 后（select_method 清信封 → 本地镜像驱动）：选择器高亮 + FormStep 渲染下发字段', () => {
-    // 模拟 select_method('totp', firstStep='verify') 之后的 idle 态（§4.1 行 407 不跳页）。
-    const markup = renderMfa(stateWith({ method: 'totp', step: 'verify' }));
-    expect(markup).toContain('动态口令');
-    expect(markup).toContain('aria-current="true"');
-    expect(markup).toContain('<form');
-    // mfa 场景不渲染主因子方式列表（MethodTabs 归主流程第一步）。
-    expect(markup).not.toContain('请选择登录方式');
-  });
-
-  test('选择器切换：选中 otp_sms → OTPForm challenge 段展示掩码目标（§2.6 行 545 不传目标）', () => {
-    const markup = renderMfa(
-      stateWith({ method: 'otp_sms', step: 'challenge' }),
-    );
-    expect(markup).toContain('138****8000');
-    expect(markup).toContain('发送验证码');
-    expect(markup).not.toContain('type="tel"');
-  });
-
-  test('选中 recovery_code → RecoveryCodeForm 渲染下发恢复码字段', () => {
-    const markup = renderMfa(
-      stateWith({ method: 'recovery_code', step: 'verify' }),
-    );
-    expect(markup).toContain('恢复码');
-    expect(markup).toContain('登录');
-  });
-
-  test('mfa 场景失败态（invalid_code）：选择器 + OTPForm verify 段保留原地重试（§1.6 可重试）', () => {
-    const markup = renderMfa(
-      stateWith({
-        method: 'otp_sms',
-        step: 'verify',
-        status: 'invalid_code',
-        envelope: envelope({
-          status: 'invalid_code',
-          error: { message: '验证码错误', attemptsLeft: '3' },
-        }),
-      }),
-      // 容器持值注入——失败态（next 槽位↔直渲染位切换）实例重建
-      // 后已输码仍在视图（§1.6 行 247 原地重试不清输入）。
-      '123456',
-    );
-    expect(markup).toContain('aria-current="true"');
-    expect(markup).toContain('还可尝试 3 次'); // error.attemptsLeft（§1.3 行 151）
-    expect(markup).toContain('role="alert"'); // ErrorBanner（可重试失败态）
-    expect(markup).toContain('value="1"'); // CodeInput 首格回填（容器持值）
-  });
-});
-
-// ---------------------------------------------------------------------------
 // LoginContainer 容器壳（静态 smoke：编排壳组合渲染不炸）
 // ---------------------------------------------------------------------------
+
+/**
+ * SSR 接线捕获（renderCapturingQrWiring 同款）：记录容器交给 StepUpDialog 的
+ * 真实 props（start / submit / onCancel 即容器实际接线闭包）。窗体在 SSR 下
+ * 不渲染（login Modal 无 document 直接 null），静态帧只含主流程视图。
+ */
+function renderMfaWiring(props: React.ComponentProps<typeof container.LoginContainer>): {
+  dialogs: React.ComponentProps<typeof stepUpDialogMod.StepUpDialog>[];
+  markup: string;
+} {
+  const dialogs: React.ComponentProps<
+    typeof stepUpDialogMod.StepUpDialog
+  >[] = [];
+  const realCreateElement = React.createElement as (
+    type: unknown,
+    props: unknown,
+    ...children: unknown[]
+  ) => React.ReactElement;
+  rs.stubGlobal('React', {
+    ...React,
+    createElement: (type: unknown, props: unknown, ...children: unknown[]) => {
+      if (type === stepUpDialogMod.StepUpDialog) {
+        dialogs.push(
+          props as React.ComponentProps<typeof stepUpDialogMod.StepUpDialog>,
+        );
+      }
+      return realCreateElement(type, props, ...children);
+    },
+  });
+  const markup = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ['/sso/login'] },
+      createElement(container.LoginContainer, props),
+    ),
+  );
+  return { dialogs, markup };
+}
 
 describe('LoginContainer 静态 smoke', () => {
   // 容器消费 useSearchParams（returnTo 终点），直接渲染需 MemoryRouter 包裹。
@@ -2183,19 +1949,29 @@ describe('LoginContainer 静态 smoke', () => {
     expect(markup).not.toContain('请选择登录方式');
   });
 
-  // OAuth 回调 mfa_required 初始信封直接进状态机（不跳页）；二次验证方式列表
-  // 改由 StartVerification 异步填充，静态渲染下尚未就绪 → 零值兜底（§9 第 18 条）。
-  test('initialEnvelope（mfa_required）→ 挂载即进 mfa 状态帧（§1.6 行 233 不跳页）', () => {
-    const markup = renderContainer({
+  // OAuth 回调 mfa_required 初始信封直接进状态机（不跳页）并拉起 MFA 弹窗
+  //（窗体在 SSR 下不渲染，开窗证据经 createElement 捕获，见下方接线 describe）。
+  test('initialEnvelope（mfa_required）→ 挂载即拉起 MFA 弹窗（§1.6 不跳页）', () => {
+    const { dialogs, markup } = renderMfaWiring({
       snapshot: SNAPSHOT,
       initialEnvelope: envelope({
         status: 'mfa_required',
         loginToken: 'lt-mfa',
       }),
     });
-    expect(markup).toContain('请刷新重试');
-    expect(markup).not.toContain('请选择登录方式'); // 不渲染主因子表单区
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0].start).toBeTypeOf('function');
+    expect(dialogs[0].submit).toBeTypeOf('function');
+    // 视图不再内联二次验证选择器；弹窗覆盖其上，主流程帧落方式引导。
+    expect(markup).not.toContain('请选择二次验证方式');
+    expect(markup).toContain('请选择登录方式');
     expect(markup).not.toContain('正在处理'); // 非回调页处理中帧
+  });
+
+  test('非 mfa_required 状态不开窗（主流程表单区帧）', () => {
+    const { dialogs, markup } = renderMfaWiring({ snapshot: SNAPSHOT });
+    expect(dialogs).toHaveLength(0);
+    expect(markup).toContain('密码登录');
   });
 });
 
@@ -2213,20 +1989,6 @@ describe('method_disabled webauthn 降级窗口期文案（§8.3 / §1.6 行 269
         status: 'method_disabled',
         envelope: disabled,
       }),
-    );
-    expect(markup).toContain('通行密钥暂不可用，请联系管理员');
-    expect(markup).not.toContain('该登录方式未开放');
-  });
-
-  test('唯一可用二次因子为 webauthn → 专属语义文案', () => {
-    const markup = renderView(
-      stateWith({
-        method: 'password',
-        status: 'method_disabled',
-        envelope: disabled,
-      }),
-      undefined,
-      [factor({ method: 'webauthn', steps: ['challenge', 'form'] })],
     );
     expect(markup).toContain('通行密钥暂不可用，请联系管理员');
     expect(markup).not.toContain('该登录方式未开放');
@@ -2784,75 +2546,135 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
 });
 
 // ---------------------------------------------------------------------------
-// 登录主路径 MFA 提交编排（SsoService/SubmitVerification，接口文档 §3.8 /
-// 前端架构 §4.1 行 492/498）：runSubmit 换 request 后 captcha gate 与终点仍闭环
+// 登录主路径 MFA 弹窗接线（SsoService/StartVerification + SubmitVerification，
+// 接口文档 §3.8 / 前端架构 §4.1）：mfa_required 开窗、取消回初态、成功交
+// 登录终点——闭包经 SSR props 捕获驱动，msw 拦截 api 层；captcha gate 由
+// StepUpDialog 自闭环（见 account/step-up.test 的 runStepUpStart 用例）。
 // ---------------------------------------------------------------------------
 
-describe('登录主路径 MFA 提交（SubmitVerification，§3.8 / §4.1 行 498）', () => {
-  test('captcha gate 凭据重接到 StartVerification 第二段 → SubmitVerification → success 终点', async () => {
-    const startBodies: string[] = [];
-    const submitBodies: string[] = [];
-    let startCalls = 0;
+describe('LoginContainer MFA 弹窗接线（mfa_required 开窗 / 取消 / 终点交回）', () => {
+  /** 容器 MFA 闭包直接驱动的最小渲染入参（mfa_required 初始信封）。 */
+  function renderMfaProps() {
+    return {
+      snapshot: SNAPSHOT,
+      initialEnvelope: envelope({
+        status: 'mfa_required',
+        loginToken: 'lt-mfa',
+      }),
+    };
+  }
+
+  test('start 闭包：StartVerification 带 bizPurpose=login / operation=mfa_verify / loginToken；captcha 走请求顶层', async () => {
+    const bodies: unknown[] = [];
     server.use(
       http.post(START_VERIFICATION, async ({ request }) => {
-        startBodies.push(await request.text());
-        startCalls += 1;
-        return startCalls === 1
-          ? captchaError('captcha_required', {
-              providerKey: 'builtin_image',
-              type: 'image',
-            })
-          : HttpResponse.json({
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            StartVerificationResponseSchema,
+            create(StartVerificationResponseSchema, {
               challengeToken: 'ct-mfa',
-              methods: [],
-              expiresIn: '300',
-            });
+              methods: [totpMethod()],
+              expiresIn: BigInt(300),
+            }),
+          ),
+        );
       }),
+    );
+    setLoginToken('lt-mfa');
+    const { dialogs } = renderMfaWiring(renderMfaProps());
+    expect(dialogs).toHaveLength(1);
+
+    const methods = await dialogs[0].start('');
+    expect(methods?.methods[0]?.method).toBe('totp');
+    expect(bodies[0]).toEqual({
+      bizPurpose: 'login',
+      operation: 'mfa_verify',
+      loginToken: 'lt-mfa',
+    });
+
+    const challenge = await dialogs[0].start('totp', imageToken('cap-9', '999'));
+    expect(challenge?.challengeToken).toBe('ct-mfa');
+    expect(bodies[1]).toMatchObject({
+      method: 'totp',
+      captcha: { providerKey: 'builtin_image', id: 'cap-9', answer: '999' },
+    });
+  });
+
+  test('取消回登录最初状态：reset 回 idle + 清 loginToken 与一次性提示', () => {
+    setLoginToken('tok-mfa');
+    const { dialogs } = renderMfaWiring(renderMfaProps());
+    dialogs[0].onCancel();
+    // 弹窗层不触碰 loginToken 的托管约定只约束 gate；「取消回初态」由容器
+    // 显式清空（§4.1：弃用当前流程 login_token，重新登录从主因子开始）。
+    expect(getLoginToken()).toBe('');
+  });
+
+  test('submit 闭包：SubmitVerification 响应即登录结论 → 终点跳转（syncCookieUrl 优先）+ 返回占位', async () => {
+    const submitBodies: unknown[] = [];
+    server.use(
       http.post(SUBMIT_VERIFICATION, async ({ request }) => {
-        submitBodies.push(await request.text());
-        return HttpResponse.json({
-          status: 'success',
-          syncCookieUrl: 'https://sync.test/mfa',
-        });
+        submitBodies.push(await request.json());
+        return HttpResponse.json(
+          toJson(
+            SubmitVerificationResponseSchema,
+            create(SubmitVerificationResponseSchema, {
+              status: 'success',
+              syncCookieUrl: 'https://sync.test/mfa',
+              redirectTo: 'https://app.test/home',
+              amr: ['totp'],
+            }),
+          ),
+        );
       }),
     );
-
-    let state = flowReducer(INITIAL_FLOW_STATE, {
-      type: 'select_method',
-      method: 'totp',
-      firstStep: 'verify',
+    setLoginToken('lt-mfa');
+    const navigations: string[] = [];
+    const { dialogs } = renderMfaWiring({
+      ...renderMfaProps(),
+      navigate: (url) => navigations.push(url),
     });
-    state = flowReducer(state, { type: 'request_started', step: 'verify' });
-    expect(container.captchaModeFor('totp', 'verify')).toBe('reactive');
-    const gate = scriptedGate([imageToken('b7f3', '123')]);
-    const result = await container.runSubmit(
-      state,
-      { code: '123456' },
-      gate.run,
-      undefined,
-      apiMod.submitLoginFactor,
-    );
 
-    // gate 吸收 captcha_required 一次，确认后重提同一 request（凭据落到 StartVerification 第二段）。
-    expect(gate.prompts).toHaveLength(1);
-    expect(result.failed).toBe(false);
-    state = result.events.reduce(flowReducer, state);
-    expect(state.status).toBe('success');
-    expect(JSON.parse(startBodies[1])).toMatchObject({
-      method: 'totp',
-      captcha: { providerKey: 'builtin_image', id: 'b7f3', answer: '123' },
+    const placeholder = await dialogs[0].submit('ct-1', 'totp', {
+      code: '123456',
     });
-    expect(JSON.parse(submitBodies[0])).toMatchObject({
-      challengeToken: 'ct-mfa',
+    expect(placeholder).toBe('ok'); // 弹窗以非空占位判成功（SsoService 组）
+    // SubmitVerification：challengeToken / method / payload + loginToken 恢复上下文（§3.8.2）。
+    expect(submitBodies[0]).toEqual({
+      challengeToken: 'ct-1',
       method: 'totp',
       payload: { code: '123456' },
+      loginToken: 'lt-mfa',
+    });
+    // 终点交回：syncCookieUrl 是后端拼好的首跳完整 URL → 优先（§1.3）。
+    expect(navigations).toEqual(['https://sync.test/mfa']);
+    expect(getLoginToken()).toBe(''); // success 清空（§1.3 五条之 3）
+  });
+
+  test('submit 失败（invalid_code）：抛 ApiError 交弹窗窗内展示剩余次数，loginToken 保留可原地重试', async () => {
+    server.use(
+      http.post(SUBMIT_VERIFICATION, () =>
+        HttpResponse.json(
+          toJson(
+            SubmitVerificationResponseSchema,
+            create(SubmitVerificationResponseSchema, {
+              status: 'invalid_code',
+              attemptsLeft: BigInt(3),
+            }),
+          ),
+        ),
+      ),
+    );
+    setLoginToken('lt-mfa');
+    const navigations: string[] = [];
+    const { dialogs } = renderMfaWiring({
+      ...renderMfaProps(),
+      navigate: (url) => navigations.push(url),
     });
 
-    const redirects: string[] = [];
-    container.executeEffects(state.effects, {
-      complete: (url) => redirects.push(url),
-      restart: () => {},
-    });
-    expect(redirects).toEqual(['https://sync.test/mfa']);
+    await expect(dialogs[0].submit('ct-1', 'totp', { code: '000000' })).rejects
+      .toMatchObject({ code: 'invalid_code', attemptsLeft: BigInt(3) });
+    expect(navigations).toEqual([]); // 失败不跳转
+    expect(getLoginToken()).toBe('lt-mfa'); // 失败态保留（原地重试）
   });
 });

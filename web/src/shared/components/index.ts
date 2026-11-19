@@ -26,12 +26,22 @@ export {
 } from './ErrorBanner';
 export { CopyButton, type CopyButtonProps } from './CopyButton';
 export { Spinner, type SpinnerProps } from './Spinner';
+export { Tabs } from './Tabs';
 export {
   StepUpDialog,
   StepUpDialogView,
   factorLabel,
+  isStepUpOtpMethod,
+  isStepUpWebAuthn,
+  runStepUpStart,
+  stepUpAuthenticate,
+  stepUpErrorText,
   stepUpFields,
+  stepUpOkDisabled,
   stepUpPayload,
+  stepUpStartMode,
+  type StepUpAuthResult,
+  type StepUpAuthenticateDeps,
   type StepUpDialogProps,
   type StepUpDialogViewProps,
   type StepUpPhase,

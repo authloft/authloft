@@ -518,9 +518,10 @@ describe('OAuthCallbackView 状态帧渲染', () => {
         loginToken: 'lt-1',
       }),
     });
-    // 二次验证方式列表改由 StartVerification 异步填充；静态渲染下尚未就绪，
-    // 状态帧走零值兜底（§9 第 18 条），且不落回调页处理中帧。
-    expect(markup).toContain('请刷新重试');
+    // 二次验证交互已归 StepUpDialog 弹窗（窗体在 SSR 下不渲染，开窗编排在
+    // LoginContainer）：状态帧不再内联选择器 / 零值兜底，且不落回调页处理中帧。
+    expect(markup).not.toContain('请刷新重试');
+    expect(markup).not.toContain('请选择二次验证方式');
     expect(markup).not.toContain('正在处理'); // 非处理中帧
   });
 

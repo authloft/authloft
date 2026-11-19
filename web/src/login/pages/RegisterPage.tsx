@@ -71,7 +71,7 @@ import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
 import styles from './RegisterPage.module.less';
 import { AppLayout } from '../components/AppLayout';
-import { Tabs } from '../components/Tabs';
+import { Tabs } from '../../shared/components';
 
 // ---------------------------------------------------------------------------
 // 页族共用纯函数（ResetPage 复用；node 可测）

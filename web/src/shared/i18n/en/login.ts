@@ -11,7 +11,8 @@ export const login: typeof zhLogin = {
   'login.forgotPassword': 'Forgot password',
   'login.noMethods': 'No sign-in methods available',
   'login.selectMethodHint': 'Please choose a sign-in method',
-  'login.mfaSelectHint': 'Please choose a second-factor verification method',
+  // Section title above the step-up dialog method tabs.
+  'login.mfaSelectHint': 'Second-factor method',
   'login.backToMethods': 'Back to sign-in options',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
   'login.redirecting': 'Signed in, redirecting…',
