@@ -10,7 +10,7 @@ export const account: typeof zhAccount = {
   'account.personalCenter': 'Account Center',
   'account.profileTitle': 'Profile',
   'account.securityTitle': 'Security',
-  'account.auditTitle': 'Sign-in History',
+  'account.auditTitle': 'Security events',
   'account.logout': 'Sign out',
   'account.switchToAdmin': 'Switch to Admin Console',
   'account.routeNotFound': 'Page not found',
@@ -210,13 +210,15 @@ export const account: typeof zhAccount = {
     'Use an authenticator app (such as Google Authenticator) to scan the QR code or enter the key manually to add it',
   'account.totpQrImageAlt': 'TOTP binding QR code',
 
-  // ---- EventLogTable -----------------------------------------------------------
+  // ---- EventLogTable (security log; event type copy lives in the shared
+  //      event.* section) ------------------------------------------------------
   'account.logTimeColumn': 'Time',
   'account.logMethodColumn': 'Method',
   'account.logUaColumn': 'Device (UA)',
+  'account.logEventColumn': 'Event type',
   'account.logLoadFailed':
-    'Failed to load sign-in history. Please refresh and try again',
-  'account.logEmpty': 'No sign-in records yet',
+    'Failed to load security events. Please refresh and try again',
+  'account.logEmpty': 'No security events yet',
 
   // ---- ProfilePage editing (save / cancel reuse saveAction / cancelAction,
   //      phone label reuses phoneLabel) ----------------------------------------

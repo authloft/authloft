@@ -49,6 +49,10 @@ import {
   MAX_PAGE_SIZE,
   type TableQueryState,
 } from '../shared/app-ui/dataTableLogic';
+import {
+  EVENT_TYPE_LABEL_KEYS,
+  eventTypeLabel,
+} from '../shared/utils/eventLabels';
 import { toCount } from '../shared/utils/int';
 import type {
   MeResponse,
@@ -2065,44 +2069,15 @@ export function buildDecodeTokenRequest(
 }
 
 /**
- * 事件类型 event → i18n 键（《后端架构》§4.6 event 列值域 16 常量 + §4.6
- * 行 809 oidc_authorize_no_state，共 17 已知值；跨版本新增原样兜底，
- * §12.9 行 1885）。表存键不存文案（模块级求值会冻结 locale），
- * eventTypeLabel 调用期 t()。
+ * 事件类型文案映射与展示函数已上移公共模块 shared/utils/eventLabels.ts
+ * （account 安全日志与 admin 事件日志同源一份，前端架构 §3.4 抽象边界），
+ * 此处 re-export 保 admin 域既有调用零改动；映射值改指向公用 event.* i18n
+ * 键段（文案逐字不变）。
  */
-const EVENT_TYPE_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
-  login_success: 'admin.eventLoginSuccess',
-  change_password: 'admin.eventChangePassword',
-  reset_password: 'admin.eventResetPassword',
-  bind_phone: 'admin.eventBindPhone',
-  bind_email: 'admin.eventBindEmail',
-  enable_mfa: 'admin.eventEnableMfa',
-  disable_mfa: 'admin.eventDisableMfa',
-  webauthn_register: 'admin.eventWebauthnRegister',
-  webauthn_delete: 'admin.eventWebauthnDelete',
-  thirdparty_bind: 'admin.eventThirdpartyBind',
-  thirdparty_unbind: 'admin.eventThirdpartyUnbind',
-  admin_disable_user: 'admin.eventAdminDisableUser',
-  admin_reset_password: 'admin.eventAdminResetPassword',
-  provider_create: 'admin.eventProviderCreate',
-  provider_update: 'admin.eventProviderUpdate',
-  settings_update: 'admin.eventSettingsUpdate',
-  oidc_authorize_no_state: 'admin.eventOidcAuthorizeNoState',
-};
-
-/** 事件类型 → 展示文案（未知值原样兜底，§9 第 18 条）。 */
-export function eventTypeLabel(event: string): string {
-  const labelKey = Object.prototype.hasOwnProperty.call(
-    EVENT_TYPE_LABEL_KEYS,
-    event,
-  )
-    ? EVENT_TYPE_LABEL_KEYS[event]
-    : undefined;
-  return labelKey === undefined ? event : t(labelKey);
-}
+export { EVENT_TYPE_LABEL_KEYS, eventTypeLabel };
 
 /**
- * 事件类型筛选下拉（§5.6 行 1288 event 过滤；值域 = 上述 17 已知类型）。
+ * 事件类型筛选下拉（§5.6 event 过滤；值域 = event.* 公用键段 17 已知类型）。
  * textKey 字段化——模块级只存键，消费方渲染期 t(textKey)。
  */
 export const EVENT_TYPE_FILTERS: {

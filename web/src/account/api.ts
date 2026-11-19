@@ -9,8 +9,8 @@
  * 三方绑定族：GetThirdpartyBindings / UnbindThirdparty /
  * GetThirdpartyTicket + 置灰判定 / Union 识别 / 双列表合并 / 请求构造 /
  * redirect 分派 / ?bind= 参数与扫码 failed 帧文案纯逻辑（§3.7 / §3.7.1）。
- * 日志族：GetEvents + buildGetEventsRequest（§3.7 本人登录记录分页；
- * 「仅成功记录」由服务端过滤，前端不发筛选参数）。
+ * 日志族：GetEvents + buildGetEventsRequest（§3.7 本人安全日志分页；
+ * 返回本人全部安全事件——event 入参空 = 不过滤返回全部，前端不发筛选参数）。
  * 头像族迁文档位：GetConfig / PresignAvatar / CommitAvatar / proxy
  * 直传四件薄封装迁 shared/api/account.ts（本模块转发保既有调用方零改动），
  * useUpload + 上传编排 / 预校验迁 shared/hooks/useUpload.ts（前端架构 §2
@@ -971,12 +971,12 @@ export function bindPollPhase(
 }
 
 // ---------------------------------------------------------------------------
-// 日志族封装（§3.7 行 1041 + §1.7 分页）
+// 日志族封装（§3.7 + §1.7 分页）
 // ---------------------------------------------------------------------------
 
 /**
- * 本人登录记录（§3.7 行 1041）：仅成功记录（服务端过滤），分页 §1.7；
- * 后端系桩，测试走 msw、联调待实装解锁。
+ * 本人安全事件（§3.7）：返回本人全部安全事件（event 空 = 不过滤返回
+ * 全部；安全日志页展示全集、不发筛选），分页 §1.7；测试走 msw。
  */
 export function getEvents(
   request: GetEventsRequest,
@@ -985,13 +985,13 @@ export function getEvents(
 }
 
 /**
- * GetEvents 请求构造（§3.7 行 1041 入参 + §1.7 行 275-278）：
+ * GetEvents 请求构造（§3.7 入参 + §1.7 分页约定）：
  * - query 为 DataTable 受控查询状态（shared/app-ui/dataTableLogic 归一产物，
  *   page ≥1 / pageSize ∈ [1,100] 已在归一处夹取），wire 上 int64 字段经
  *   protojson 输出十进制字符串（§1.12）；
- * - 排序仅在 order 非空时下发（sort/order 值域前端限定 §1.7——本人记录页
- *   固定 created_at）；
- * - event 为行 1041 预留的类型过滤参数，本人记录页未消费（缺省省略不发）。
+ * - 排序仅在 order 非空时下发（sort/order 值域前端限定 §1.7——本人安全
+ *   日志页固定 created_at）；
+ * - event 为 §3.7 预留的类型过滤参数，本页未接线筛选（缺省省略不发）。
  * 实现注：create 显式传零值会置 proto3 optional 的 presence 位 → wire 上仍
  * 输出空串；故「未激活的段」不进 create 入参（条件展开），保持 §1.0 零值
  * 缺省语义（与 BindTotp challenge「secret/code 零值省略」同口径）。

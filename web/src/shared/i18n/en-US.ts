@@ -60,6 +60,25 @@ export const enUS: I18nMessages = {
   'channels.sms': 'SMS',
   'channels.email': 'Email',
 
+  // ---- 安全事件类型（admin 事件日志与 account 安全日志公用段，§4.6 值域）----
+  'event.login_success': 'Signed in',
+  'event.change_password': 'Changed password',
+  'event.reset_password': 'Reset password',
+  'event.bind_phone': 'Bound phone number',
+  'event.bind_email': 'Bound email',
+  'event.enable_mfa': 'Enabled two-factor verification',
+  'event.disable_mfa': 'Disabled two-factor verification',
+  'event.webauthn_register': 'Registered passkey',
+  'event.webauthn_delete': 'Deleted passkey',
+  'event.thirdparty_bind': 'Linked third-party account',
+  'event.thirdparty_unbind': 'Unlinked third-party account',
+  'event.admin_disable_user': 'User disabled by administrator',
+  'event.admin_reset_password': 'Password reset by administrator',
+  'event.provider_create': 'Provider created',
+  'event.provider_update': 'Provider updated',
+  'event.settings_update': 'System settings updated',
+  'event.oidc_authorize_no_state': 'OIDC authorize without state',
+
   // ---- 位置一：登录流程域顶层 status（§1.6 全表 33 词 + unknown 兜底）------
   'errors.status.next': 'Please continue',
   'errors.status.mfa_required': 'Second verification required',

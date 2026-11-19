@@ -39,6 +39,7 @@ import type {
   BindEmailRequest,
   BindPhoneRequest,
 } from '../gen/proto/api/account/v1/security_pb';
+import type { UserEventItem } from '../gen/proto/api/account/v1/thirdparty_pb';
 import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import { CreateQrcodeRequestSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import {
@@ -47,6 +48,7 @@ import {
   ThirdpartyBindingSchema,
   ThirdpartyOptionSchema,
   UnbindThirdpartyRequestSchema,
+  UserEventItemSchema,
 } from '../gen/proto/api/account/v1/thirdparty_pb';
 import {
   clampPageSize,
@@ -226,6 +228,7 @@ let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
 let mfaSettingMod: typeof import('./pages/SecurityPage/MfaSetting');
 let profilePageMod: typeof import('./pages/ProfilePage');
+let eventLogTableMod: typeof import('./components/EventLogTable');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -236,6 +239,7 @@ beforeAll(async () => {
   routesMod = await import('./routes');
   mfaSettingMod = await import('./pages/SecurityPage/MfaSetting');
   profilePageMod = await import('./pages/ProfilePage');
+  eventLogTableMod = await import('./components/EventLogTable');
 });
 
 // rstest 对 .tsx 采用 classic JSX runtime，路由渲染断言经 createElement 显式
@@ -2007,7 +2011,7 @@ describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 日志族：GetEvents 封装 + 请求构造（§3.7 行 1041 / §1.7 行 275-278）
+// 日志族：GetEvents 封装 + 请求构造（§3.7 安全日志 / §1.7 分页约定）
 // ---------------------------------------------------------------------------
 
 /** 受控查询状态样例（EventLogTable 初始态：created_at desc）。 */
@@ -2019,7 +2023,7 @@ const LOG_QUERY = {
   filters: {},
 } as const;
 
-describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', () => {
+describe('api.getEvents（§3.7 安全日志，msw 真实 transport 归一链）', () => {
   test('Connect 协议 POST GetEvents → 请求 wire（§1.7 分页）+ 响应解码（int64 字符串 → bigint）', async () => {
     let requestBody!: unknown;
     server.use(
@@ -2075,7 +2079,7 @@ describe('api.getEvents（§3.7 行 1041，msw 真实 transport 归一链）', (
   });
 });
 
-describe('buildGetEventsRequest（§3.7 行 1041 入参 + §1.7 行 275-278，纯函数）', () => {
+describe('buildGetEventsRequest（§3.7 入参 + §1.7 分页约定，纯函数）', () => {
   test('分页 / 排序 → wire int64 十进制字符串（§1.12）+ sort/order 全量下发', () => {
     expect(
       toJson(
@@ -2100,13 +2104,81 @@ describe('buildGetEventsRequest（§3.7 行 1041 入参 + §1.7 行 275-278，�
     ).toEqual({ page: '1', pageSize: '20' });
   });
 
-  test('event 类型过滤透传（行 1041 入参）；缺省省略不发', () => {
+  test('event 类型过滤透传（§3.7 预留入参）；缺省省略不发', () => {
     expect(
       toJson(
         GetEventsRequestSchema,
         apiMod.buildGetEventsRequest(initialTableQuery(), 'login'),
       ),
     ).toEqual({ page: '1', pageSize: '20', event: 'login' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// EventLogTable 展示帧静态渲染（安全日志：多事件类型 / 行键防同秒碰撞）
+// ---------------------------------------------------------------------------
+
+describe('EventLogTable 安全日志展示帧（多事件类型渲染，ProfilePageView 同口径静态渲染）', () => {
+  /** 展示帧纯 props 渲染（query 形态取 LOG_QUERY 初始态）。 */
+  const renderView = (rows: UserEventItem[]): string =>
+    renderToStaticMarkup(
+      createElement(eventLogTableMod.EventLogTableView, {
+        query: {
+          page: 1,
+          pageSize: DEFAULT_PAGE_SIZE,
+          sort: 'created_at',
+          order: 'desc',
+          filters: {},
+        },
+        onQueryChange: () => {},
+        rows,
+        total: rows.length,
+        loading: false,
+        empty: undefined,
+      }),
+    );
+
+  /** 同秒同源事件样例（仅 event 不同，行键碰撞判定基线）。 */
+  const row = (event: string): UserEventItem =>
+    create(UserEventItemSchema, {
+      event,
+      createdAt: BigInt(1730000000),
+      ip: '203.0.113.7',
+      amr: 'pwd',
+    });
+
+  test('多事件类型 → 事件类型列逐行经公用 event.* 键出文案；时间 / 方式 / IP / 设备列保留', () => {
+    const html = renderView([
+      row('login_success'),
+      row('change_password'),
+      row('thirdparty_bind'),
+    ]);
+    // 列标题 + 三类事件文案（event.* 公用键段，与 admin 同源一份映射）。
+    expect(html).toContain(t('account.logEventColumn'));
+    expect(html).toContain(t('event.login_success'));
+    expect(html).toContain(t('event.change_password'));
+    expect(html).toContain(t('event.thirdparty_bind'));
+    // 既有列保留（标题与数据各抽一处）。
+    expect(html).toContain(t('account.logTimeColumn'));
+    expect(html).toContain('pwd');
+    expect(html).toContain('203.0.113.7');
+  });
+
+  test('未知事件值原样兜底展示（§12.9 跨版本新增不粉饰）', () => {
+    const html = renderView([row('future_event')]);
+    expect(html).toContain('future_event');
+  });
+
+  test('行键含 event：同秒同源两类事件键不碰撞；同类重复行键稳定', () => {
+    const login = row('login_success');
+    const change = row('change_password');
+    expect(eventLogTableMod.logRowKey(login)).not.toBe(
+      eventLogTableMod.logRowKey(change),
+    );
+    expect(eventLogTableMod.logRowKey(login)).toBe(
+      eventLogTableMod.logRowKey(row('login_success')),
+    );
+    expect(eventLogTableMod.logRowKey(login)).toContain('login_success');
   });
 });
 

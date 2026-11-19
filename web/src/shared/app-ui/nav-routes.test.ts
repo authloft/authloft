@@ -20,7 +20,7 @@ describe('toNavItems（路由表 → Semi Nav items 派生）', () => {
     expect(toNavItems(ACCOUNT_NAV_ROUTES)).toEqual([
       { itemKey: '/', text: '个人资料' },
       { itemKey: '/security', text: '安全中心' },
-      { itemKey: '/audit', text: '登录日志' },
+      { itemKey: '/audit', text: '安全日志' },
     ]);
   });
 });

@@ -4813,6 +4813,14 @@ describe('eventTypeLabel / EVENT_TYPE_FILTERS（《后端架构》§4.6 值域�
       '管理员重置密码',
     );
     expect(apiMod.eventTypeLabel('future_event')).toBe('future_event');
+    // 文案映射已上移公用模块，键指向公用 event.* 段（account 安全日志与
+    // admin 同源一份，文案逐字不变）。
+    expect(apiMod.EVENT_TYPE_LABEL_KEYS.login_success).toBe(
+      'event.login_success',
+    );
+    expect(apiMod.EVENT_TYPE_LABEL_KEYS.oidc_authorize_no_state).toBe(
+      'event.oidc_authorize_no_state',
+    );
   });
 });
 

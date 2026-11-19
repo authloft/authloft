@@ -78,7 +78,7 @@ describe('ManageLayout 双端共用基础布局壳（SSR 静态渲染）', () =>
     // Nav 独有文案不与 breadcrumb / navHeader / headerLabel / children 重叠：
     // 正向断言本端 items 已渲染，交叉反向断言未串到另一端菜单。
     expect(html).toContain('安全中心');
-    expect(html).toContain('登录日志');
+    expect(html).toContain('安全日志');
     expect(html).not.toContain('提供商');
     expect(html).not.toContain('监控');
   });
@@ -103,6 +103,6 @@ describe('ManageLayout 双端共用基础布局壳（SSR 静态渲染）', () =>
     expect(html).toContain('提供商');
     expect(html).toContain('监控');
     expect(html).not.toContain('安全中心');
-    expect(html).not.toContain('登录日志');
+    expect(html).not.toContain('安全日志');
   });
 });

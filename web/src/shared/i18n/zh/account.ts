@@ -10,7 +10,7 @@ export const account = {
   'account.personalCenter': '个人中心',
   'account.profileTitle': '个人资料',
   'account.securityTitle': '安全中心',
-  'account.auditTitle': '登录日志',
+  'account.auditTitle': '安全日志',
   'account.logout': '退出登录',
   'account.switchToAdmin': '切换到管理后台',
   'account.routeNotFound': '页面不存在',
@@ -189,12 +189,13 @@ export const account = {
     '请使用验证器应用（如 Google Authenticator）扫描二维码或手动输入密钥完成添加',
   'account.totpQrImageAlt': 'TOTP 绑定二维码',
 
-  // ---- EventLogTable-----------------------------------------------------------
+  // ---- EventLogTable（安全日志；事件类型文案公用 event.* 段）-------------------
   'account.logTimeColumn': '时间',
   'account.logMethodColumn': '方式',
   'account.logUaColumn': '设备（UA）',
-  'account.logLoadFailed': '登录记录加载失败，请刷新重试',
-  'account.logEmpty': '暂无登录记录',
+  'account.logEventColumn': '事件类型',
+  'account.logLoadFailed': '安全事件加载失败，请刷新重试',
+  'account.logEmpty': '暂无安全事件',
 
   // ---- ProfilePage 资料编辑（保存 / 取消复用 saveAction / cancelAction，
   //      手机号复用 phoneLabel）--------------------------------------------

@@ -67,6 +67,25 @@ export const zhCN = {
   'channels.sms': '短信',
   'channels.email': '邮箱',
 
+  // ---- 安全事件类型（admin 事件日志与 account 安全日志公用段，§4.6 值域）----
+  'event.login_success': '登录成功',
+  'event.change_password': '修改密码',
+  'event.reset_password': '重置密码',
+  'event.bind_phone': '绑定手机号',
+  'event.bind_email': '绑定邮箱',
+  'event.enable_mfa': '启用两步验证',
+  'event.disable_mfa': '关闭两步验证',
+  'event.webauthn_register': '注册通行密钥',
+  'event.webauthn_delete': '删除通行密钥',
+  'event.thirdparty_bind': '绑定第三方',
+  'event.thirdparty_unbind': '解绑第三方',
+  'event.admin_disable_user': '管理员禁用用户',
+  'event.admin_reset_password': '管理员重置密码',
+  'event.provider_create': '新建提供商',
+  'event.provider_update': '更新提供商',
+  'event.settings_update': '更新系统设置',
+  'event.oidc_authorize_no_state': 'OIDC 授权缺少 state',
+
   // ---- 位置一：登录流程域顶层 status（§1.6 全表 33 词 + unknown 兜底）------
   'errors.status.next': '请继续',
   'errors.status.mfa_required': '需要进行二次验证',
