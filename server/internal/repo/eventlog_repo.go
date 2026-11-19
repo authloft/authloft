@@ -8,6 +8,7 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -38,7 +39,8 @@ func NewEventLogRepo(db *bun.DB) *EventLogRepo {
 // NOT NULL，调用方未给（零值）时由本方法统一填当前时刻——理由：flusher
 // 攒批投递时只关心事件本身，统一在落地入口填充可保证列恒非空且同批时间
 // 一致，避免调用方遗漏；非零值原样保留。detail 为 nil 时落 NULL，非 nil
-// 原样写字节；本方法不改写其余字段。
+// 原样写字节；本方法不改写其余字段。插入后回填各行自增 id（复合主键下
+// bun 内建回填路径失效，机制见 backfillEventLogIDs）。
 func (r *EventLogRepo) BatchInsert(ctx context.Context, rows []model.EventLog) error {
 	if len(rows) == 0 {
 		return nil
@@ -55,11 +57,35 @@ func (r *EventLogRepo) BatchInsert(ctx context.Context, rows []model.EventLog) e
 			end = len(rows)
 		}
 		batch := rows[start:end]
-		if _, err := r.db.NewInsert().Model(&batch).Exec(ctx); err != nil {
+		res, err := r.db.NewInsert().Model(&batch).Exec(ctx)
+		if err != nil {
 			return fmt.Errorf("eventlog repo: batch insert: %w", err)
 		}
+		backfillEventLogIDs(batch, res)
 	}
 	return nil
+}
+
+// backfillEventLogIDs 批量插入后的 id 回填：event_log 为主键 (id, created_at)
+// 的分区表，bun 内建的 LastInsertId 回填路径只认单列自增主键（PKs 唯一才
+// 生效），改为 repo 层捕获驱动结果补齐。MySQL 多行 INSERT 的应答包返回本
+// 语句首个自增 id，语句内按行连续递推（与 bun 内建的 id+i 递推口径一致）；
+// 仅当整批 id 全为零值时回填——批内混有显式 id 时自增区间不可推导，跳过
+// 不猜。PG 走 INSERT ... RETURNING 由 bun 逐行回填，pgdriver 的
+// LastInsertId 恒为 0，此处自然跳过。
+func backfillEventLogIDs(batch []model.EventLog, res sql.Result) {
+	for i := range batch {
+		if batch[i].ID != 0 {
+			return
+		}
+	}
+	first, err := res.LastInsertId()
+	if err != nil || first <= 0 {
+		return
+	}
+	for i := range batch {
+		batch[i].ID = first + int64(i)
+	}
 }
 
 // EventLogListQuery ListByUser 入参（§5.4 用户登录记录 / §5.6 统一事件视图

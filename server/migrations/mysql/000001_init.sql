@@ -173,8 +173,13 @@ CREATE TABLE IF NOT EXISTS oidc_refresh_token (
   KEY idx_session (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 事件日志（§4.6）：登录日志与审计日志合并表，RANGE 分区按 created_at 落区。
+-- 分区键必须含于全部唯一索引，故主键复合化为 (id, created_at)（自增列居首，
+-- 满足 AUTO_INCREMENT 的索引首列要求）；四个二级索引语义不变。实体分区由
+-- 分区维护任务切分与淘汰，建表只建 pmax 兜底分区：任务延迟期间数据落入
+-- 兜底，不失败、不丢。
 CREATE TABLE IF NOT EXISTS event_log (
-  id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+  id         BIGINT       NOT NULL AUTO_INCREMENT,
   event      VARCHAR(48)  NOT NULL COMMENT 'login_success|change_password|reset_password|bind_phone|bind_email|enable_mfa|disable_mfa|webauthn_register|webauthn_delete|thirdparty_bind|thirdparty_unbind|admin_disable_user|admin_reset_password|provider_create|provider_update|settings_update|...',
   actor_type VARCHAR(16)  NOT NULL COMMENT 'user|admin|system',
   actor_id   BIGINT       NOT NULL DEFAULT 0 COMMENT 'user=该用户 uid；admin=操作管理员 uid；system=0（见下方记录范围）',
@@ -186,11 +191,14 @@ CREATE TABLE IF NOT EXISTS event_log (
   target     VARCHAR(128) NOT NULL DEFAULT '' COMMENT '操作目标，如 provider_key',
   detail     VARBINARY(2048) COMMENT 'msgpack 序列化的附加信息',
   created_at DATETIME     NOT NULL,
+  PRIMARY KEY (id, created_at),
   KEY idx_actor_time (actor_type, actor_id, created_at),
   KEY idx_user_time  (user_id, created_at),
   KEY idx_event_time (event, created_at),
   KEY idx_time (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+PARTITION BY RANGE (TO_DAYS(created_at))
+(PARTITION pmax VALUES LESS THAN MAXVALUE);
 
 CREATE TABLE IF NOT EXISTS settings (
   k          VARCHAR(64)  PRIMARY KEY COMMENT '键名，与接口文档 §5.6 完全同名',

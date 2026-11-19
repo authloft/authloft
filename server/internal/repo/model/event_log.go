@@ -9,13 +9,17 @@ import (
 )
 
 // EventLog event_log 表映射（§4.6）：登录日志与审计日志合并表，用 event 字段
-// 区分两类视图。四个索引（idx_actor_time / idx_user_time / idx_event_time /
-// idx_time）由迁移 DDL 维护，model 不重复声明。actor_type=user|admin|system；
-// system 事件（如 oidc_authorize_no_state）的 actor_id / user_id 均为 0
-// （§4.6），故两列带 default:0 而非无默认 NOT NULL——写入方不必为系统事件
-// 编造用户 id。detail 为 msgpack 序列化附加信息（接口文档 §12.0），可空列：
-// nil 即 NULL，非 nil 原样字节透传；msgpack 编解码归 eventlog 层，repo 不碰。
-// created_at 无 DB 默认值，bun 亦不自动填充——零值由 repo 写入前填充。
+// 区分两类视图。表为 RANGE 分区表（分区键 created_at），分区键必须含于主键，
+// 故主键复合化为 (id, created_at)——id 与 created_at 均带 pk 仅映射 DDL 的
+// 复合主键，新行的 id 仍由 DB 生成（MySQL 自增 / PG 序列 DEFAULT），bun 不
+// 会把零值 id 写进 INSERT。四个索引（idx_actor_time / idx_user_time /
+// idx_event_time / idx_time）由迁移 DDL 维护，model 不重复声明。
+// actor_type=user|admin|system；system 事件（如 oidc_authorize_no_state）的
+// actor_id / user_id 均为 0（§4.6），故两列带 default:0 而非无默认 NOT
+// NULL——写入方不必为系统事件编造用户 id。detail 为 msgpack 序列化附加信息
+// （接口文档 §12.0），可空列：nil 即 NULL，非 nil 原样字节透传；msgpack 编
+// 解码归 eventlog 层，repo 不碰。created_at 无 DB 默认值，bun 亦不自动填充
+// ——零值由 repo 写入前填充。
 type EventLog struct {
 	bun.BaseModel `bun:"table:event_log"`
 
@@ -30,5 +34,5 @@ type EventLog struct {
 	UA        string    `bun:"column:ua,notnull,default:''"`        // User-Agent
 	Target    string    `bun:"column:target,notnull,default:''"`    // 操作目标，如 provider_key
 	Detail    []byte    `bun:"column:detail"`                       // msgpack；nil 即 NULL
-	CreatedAt time.Time `bun:"column:created_at,notnull"`           // 零值由 repo 写入前填充
+	CreatedAt time.Time `bun:"column:created_at,notnull,pk"`        // 复合主键第二列（分区键）；零值由 repo 写入前填充
 }

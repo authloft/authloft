@@ -9,11 +9,13 @@ package repo
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/uptrace/bun"
 
+	"authloft/internal/config"
 	"authloft/internal/repo/model"
 )
 
@@ -51,6 +53,13 @@ func TestEventLogRepoBatchInsert(t *testing.T) {
 	if err := rp.BatchInsert(ctx, rows); err != nil {
 		t.Fatalf("BatchInsert 失败: %v", err)
 	}
+	// 复合主键 (id, created_at) 下调用方切片的 id 仍应逐行回填（PG 走
+	// RETURNING、MySQL 走首 id 递推，机制见 backfillEventLogIDs）。
+	for i := range rows {
+		if rows[i].ID == 0 {
+			t.Errorf("rows[%d].ID 应回填", i)
+		}
+	}
 
 	var got []model.EventLog
 	if err := db.NewSelect().Model(&got).OrderExpr("id ASC").Scan(ctx); err != nil {
@@ -58,6 +67,12 @@ func TestEventLogRepoBatchInsert(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Fatalf("回读 = %d 行, want 3", len(got))
+	}
+	// 回读 id 应与回填值一致：DB 实发 id = 内存回填 id（非凑巧撞数）。
+	for i := range got {
+		if got[i].ID != rows[i].ID {
+			t.Errorf("回读 id 与回填不一致: [%d] got=%d rows=%d", i, got[i].ID, rows[i].ID)
+		}
 	}
 
 	// 行 0：全字段原样、detail 二进制保留、created_at 显式值保留。
@@ -124,7 +139,8 @@ func TestEventLogRepoBatchInsert(t *testing.T) {
 }
 
 // TestEventLogRepoBatchInsertChunks（env-skip）：超过批上限的行数按
-// EventLogBatchSize 分批插入且全部落库、id 自增连续；所有零值 created_at
+// EventLogBatchSize 分批插入且全部落库、id 自增连续；跨批回填（每批按首
+// id 递推 / RETURNING）后各行 id 均非零且与回读一致；所有零值 created_at
 // 均被填充。
 func TestEventLogRepoBatchInsertChunks(t *testing.T) {
 	rp, db := eventLogTestSetup(t)
@@ -141,6 +157,11 @@ func TestEventLogRepoBatchInsertChunks(t *testing.T) {
 	if err := rp.BatchInsert(ctx, rows); err != nil {
 		t.Fatalf("BatchInsert %d 行失败: %v", n, err)
 	}
+	for i := range rows {
+		if rows[i].ID == 0 {
+			t.Fatalf("rows[%d].ID 应回填", i)
+		}
+	}
 
 	count, err := db.NewSelect().Model((*model.EventLog)(nil)).Count(ctx)
 	if err != nil {
@@ -156,6 +177,11 @@ func TestEventLogRepoBatchInsertChunks(t *testing.T) {
 	}
 	if len(got) != n {
 		t.Fatalf("回读 = %d 行, want %d", len(got), n)
+	}
+	for i := range got {
+		if got[i].ID != rows[i].ID {
+			t.Fatalf("回读 id 与回填不一致: [%d] got=%d rows=%d", i, got[i].ID, rows[i].ID)
+		}
 	}
 	for i := 1; i < len(got); i++ {
 		if got[i].ID <= got[i-1].ID {
@@ -361,5 +387,250 @@ func TestEventLogRepoList(t *testing.T) {
 	}
 	if _, _, err = rp.List(ctx, EventAdminQuery{Page: 0, PageSize: 200}); err != nil {
 		t.Fatalf("pageSize=200 应 clamp 不报错: %v", err)
+	}
+}
+
+// TestEventLogRepoPartitioning（env-skip，两方言矩阵共用口径）：分区表行为
+// 断言——单批跨分区行的 id 回填、超范围数据落兜底不失败、行按 created_at
+// 落正确分区、带 created_at 条件查询走分区裁剪。迁移建表只建兜底分区，实体
+// 分区由用例内 DDL 补一个（形态对齐分区维护任务的切分 DDL），否则裁剪无从
+// 观察。裁剪断言只锁「窗口整体落在实体分区范围内时排除兜底」方向：本地
+// MariaDB 12.3 实测窗口整体落入兜底（MAXVALUE）区间时不裁剪实体分区（优化
+// 器局限），该方向不作断言；PG 14 两个方向都精确裁剪。无 created_at 条件
+// 恒全分区扫描——ListByUser 的已知退化点（分区数上限可接受，仅记录），
+// 断言该形态以固化口径。
+func TestEventLogRepoPartitioning(t *testing.T) {
+	rp, db := eventLogTestSetup(t)
+	ctx := context.Background()
+
+	target, err := resolveTestDBEnv()
+	if err != nil || target == nil {
+		t.Fatalf("eventLogTestSetup 已通过，测试库 env 应可解析")
+	}
+	isPG := target.driver == config.DriverPostgres
+
+	// 实体分区：上界 2026-01-01（pYYYYMMDD 命名口径）。MySQL REORGANIZE
+	// 切分 pmax 兜底；PG 挂载 MINVALUE..上界（此刻兜底为空，无需搬移）。
+	if isPG {
+		_, err = db.ExecContext(ctx,
+			`CREATE TABLE event_log_p20260101 PARTITION OF event_log FOR VALUES FROM (MINVALUE) TO ('2026-01-01')`)
+	} else {
+		_, err = db.ExecContext(ctx,
+			`ALTER TABLE event_log REORGANIZE PARTITION pmax INTO (
+  PARTITION p20260101 VALUES LESS THAN (TO_DAYS('2026-01-01')),
+  PARTITION pmax VALUES LESS THAN MAXVALUE)`)
+	}
+	if err != nil {
+		t.Fatalf("建实体分区失败: %v", err)
+	}
+
+	// 单批跨分区写入：2025 行落实体分区、2099 行超出已建范围落兜底——插入
+	// 不失败即兜底承接（数据不丢口径）；回填后各行 id 非零且随插入顺序递增。
+	at := func(y int, m time.Month, d int) time.Time {
+		return time.Date(y, m, d, 10, 0, 0, 0, time.UTC)
+	}
+	rows := []model.EventLog{
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: at(2025, time.June, 15)},
+		{Event: "login_success", ActorType: "user", ActorID: 42, UserID: 42, CreatedAt: at(2099, time.January, 1)},
+	}
+	if err := rp.BatchInsert(ctx, rows); err != nil {
+		t.Fatalf("跨分区 BatchInsert 失败（兜底应承接超范围数据）: %v", err)
+	}
+	for i := range rows {
+		if rows[i].ID == 0 {
+			t.Errorf("rows[%d].ID 应回填", i)
+		}
+	}
+	if rows[1].ID <= rows[0].ID {
+		t.Errorf("id 应随插入顺序递增: [0]=%d [1]=%d", rows[0].ID, rows[1].ID)
+	}
+
+	// 落分区断言：2025 行在实体分区、2099 行在兜底分区。MySQL 用 PARTITION
+	// 选择语法直查；PG 分区即普通表，直查子表名。
+	entityQ, fallbackQ := "SELECT COUNT(*) FROM event_log_p20260101", "SELECT COUNT(*) FROM event_log_default"
+	if !isPG {
+		entityQ = "SELECT COUNT(*) FROM event_log PARTITION (p20260101)"
+		fallbackQ = "SELECT COUNT(*) FROM event_log PARTITION (pmax)"
+	}
+	countPart := func(query, label string, want int64) {
+		t.Helper()
+		var n int64
+		if err := db.NewRaw(query).Scan(ctx, &n); err != nil {
+			t.Fatalf("查 %s 行数失败: %v", label, err)
+		}
+		if n != want {
+			t.Errorf("%s 行数 = %d, want %d", label, n, want)
+		}
+	}
+	countPart(entityQ, "实体分区", 1)
+	countPart(fallbackQ, "兜底分区", 1)
+
+	// 分区元数据随 -v 输出，作分区形态实证（EXPLAIN 证据见下方 t.Logf）。
+	if isPG {
+		rows, err := db.QueryContext(ctx,
+			`SELECT c.relname FROM pg_catalog.pg_inherits i
+			 JOIN pg_catalog.pg_class p ON p.oid = i.inhparent
+			 JOIN pg_catalog.pg_class c ON c.oid = i.inhrelid
+			 WHERE p.relname = 'event_log' ORDER BY c.relname`)
+		if err != nil {
+			t.Fatalf("查分区元数据失败: %v", err)
+		}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatalf("分区元数据读取失败: %v", err)
+			}
+			t.Logf("PG 分区子表: %s", name)
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatalf("分区元数据遍历失败: %v", err)
+		}
+		var pkDef string
+		if err := db.QueryRowContext(ctx,
+			`SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i
+			 WHERE i.indrelid = 'event_log'::regclass AND i.indisprimary`).
+			Scan(&pkDef); err != nil {
+			t.Fatalf("查主键定义失败: %v", err)
+		}
+		t.Logf("PG 主键定义: %s", pkDef)
+		var seqName string
+		if err := db.QueryRowContext(ctx,
+			`SELECT pg_get_serial_sequence('event_log', 'id')`).Scan(&seqName); err != nil {
+			t.Fatalf("查 id 序列绑定失败: %v", err)
+		}
+		t.Logf("PG id 序列绑定: %s", seqName)
+	} else {
+		rows, err := db.QueryContext(ctx,
+			`SELECT PARTITION_NAME, PARTITION_METHOD, PARTITION_EXPRESSION, PARTITION_DESCRIPTION
+			 FROM information_schema.partitions
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'event_log'
+			 ORDER BY PARTITION_ORDINAL_POSITION`)
+		if err != nil {
+			t.Fatalf("查分区元数据失败: %v", err)
+		}
+		for rows.Next() {
+			var name, method, expr, desc string
+			if err := rows.Scan(&name, &method, &expr, &desc); err != nil {
+				t.Fatalf("分区元数据读取失败: %v", err)
+			}
+			t.Logf("MySQL 分区: name=%s method=%s expr=%s desc=%s", name, method, expr, desc)
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatalf("分区元数据遍历失败: %v", err)
+		}
+		pkRows, err := db.QueryContext(ctx,
+			`SELECT SEQ_IN_INDEX, COLUMN_NAME FROM information_schema.statistics
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'event_log' AND INDEX_NAME = 'PRIMARY'
+			 ORDER BY SEQ_IN_INDEX`)
+		if err != nil {
+			t.Fatalf("查主键列失败: %v", err)
+		}
+		var pkCols []string
+		for pkRows.Next() {
+			var seq int64
+			var col string
+			if err := pkRows.Scan(&seq, &col); err != nil {
+				t.Fatalf("主键列读取失败: %v", err)
+			}
+			pkCols = append(pkCols, col)
+		}
+		_ = pkRows.Close()
+		if err := pkRows.Err(); err != nil {
+			t.Fatalf("主键列遍历失败: %v", err)
+		}
+		t.Logf("MySQL 复合主键列序: (%s)", strings.Join(pkCols, ", "))
+	}
+
+	if isPG {
+		plan := func(query string) string {
+			t.Helper()
+			rs, err := db.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query)
+			if err != nil {
+				t.Fatalf("EXPLAIN 失败: %v", err)
+			}
+			defer rs.Close()
+			var sb strings.Builder
+			for rs.Next() {
+				var line string
+				if err := rs.Scan(&line); err != nil {
+					t.Fatalf("EXPLAIN 行读取失败: %v", err)
+				}
+				sb.WriteString(line)
+				sb.WriteByte('\n')
+			}
+			if err := rs.Err(); err != nil {
+				t.Fatalf("EXPLAIN 遍历失败: %v", err)
+			}
+			return sb.String()
+		}
+		pruned := plan(`SELECT * FROM event_log WHERE created_at >= '2025-01-01' AND created_at <= '2025-12-31'`)
+		t.Logf("PG 实体区间窗口 plan:\n%s", pruned)
+		if !strings.Contains(pruned, "event_log_p20260101") || strings.Contains(pruned, "event_log_default") {
+			t.Errorf("实体区间窗口应裁剪兜底分区，plan:\n%s", pruned)
+		}
+		pruned = plan(`SELECT * FROM event_log WHERE created_at >= '2030-01-01' AND created_at <= '2030-02-01'`)
+		t.Logf("PG 兜底区间窗口 plan:\n%s", pruned)
+		if !strings.Contains(pruned, "event_log_default") || strings.Contains(pruned, "event_log_p20260101") {
+			t.Errorf("兜底区间窗口应裁剪实体分区，plan:\n%s", pruned)
+		}
+		full := plan(`SELECT * FROM event_log WHERE user_id = 42`)
+		t.Logf("PG 无 created_at 条件 plan:\n%s", full)
+		if !strings.Contains(full, "event_log_p20260101") || !strings.Contains(full, "event_log_default") {
+			t.Errorf("无 created_at 条件应全分区扫描（已知退化点），plan:\n%s", full)
+		}
+		return
+	}
+	partitions := func(query string) string {
+		t.Helper()
+		rs, err := db.QueryContext(ctx, "EXPLAIN PARTITIONS "+query)
+		if err != nil {
+			t.Fatalf("EXPLAIN 失败: %v", err)
+		}
+		defer rs.Close()
+		cols, err := rs.Columns()
+		if err != nil {
+			t.Fatalf("EXPLAIN 列读取失败: %v", err)
+		}
+		col := -1
+		for i, c := range cols {
+			if c == "partitions" {
+				col = i
+			}
+		}
+		if col < 0 {
+			t.Fatalf("EXPLAIN 无 partitions 列: %v", cols)
+		}
+		out := ""
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for rs.Next() {
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rs.Scan(ptrs...); err != nil {
+				t.Fatalf("EXPLAIN 行读取失败: %v", err)
+			}
+			if s, ok := vals[col].(string); ok {
+				out = s
+			} else if b, ok := vals[col].([]byte); ok {
+				out = string(b)
+			}
+		}
+		if err := rs.Err(); err != nil {
+			t.Fatalf("EXPLAIN 遍历失败: %v", err)
+		}
+		return out
+	}
+	pruned := partitions(`SELECT * FROM event_log WHERE created_at >= '2025-01-01' AND created_at <= '2025-12-31'`)
+	t.Logf("MySQL 实体区间窗口 partitions=%q", pruned)
+	if !strings.Contains(pruned, "p20260101") || strings.Contains(pruned, "pmax") {
+		t.Errorf("实体区间窗口应裁剪兜底分区, partitions=%q", pruned)
+	}
+	full := partitions(`SELECT * FROM event_log WHERE user_id = 42`)
+	t.Logf("MySQL 无 created_at 条件 partitions=%q", full)
+	if !strings.Contains(full, "p20260101") || !strings.Contains(full, "pmax") {
+		t.Errorf("无 created_at 条件应全分区扫描（已知退化点）, partitions=%q", full)
 	}
 }
