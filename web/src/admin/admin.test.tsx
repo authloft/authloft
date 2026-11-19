@@ -967,8 +967,42 @@ describe('buildListProvidersRequest / buildSortProvidersRequest（请求构造�
   });
 });
 
-describe('policyTags（§5.2 行 1165「策略标签」展示纯函数）', () => {
-  test('enableSignin / enableSignup / autoBind → 对应标签；全 false → 空数组（消费方渲染占位）', () => {
+describe('policyTags（§5.2「策略标签」展示纯函数）', () => {
+  test('oauth 行：enableSignin / enableSignup / autoBind → 对应标签；全 false → 空数组（消费方渲染占位）', () => {
+    expect(
+      apiMod.policyTags(
+        create(ProviderSchema, {
+          category: 'oauth',
+          enableSignin: true,
+          enableSignup: true,
+          autoBind: true,
+        }),
+      ),
+    ).toEqual(['允许登录', '允许注册', '自动绑定']);
+    expect(
+      apiMod.policyTags(
+        create(ProviderSchema, { category: 'oauth', autoBind: true }),
+      ),
+    ).toEqual(['自动绑定']);
+    expect(apiMod.policyTags(create(ProviderSchema, { category: 'oauth' }))).toEqual(
+      [],
+    );
+  });
+
+  test('非 oauth 行即使三开关为 true 也不出标签（存量非 oauth 行开关列默认 1）', () => {
+    for (const category of ['sms', 'email', 'storage', 'captcha', 'proxy', 'union']) {
+      expect(
+        apiMod.policyTags(
+          create(ProviderSchema, {
+            category,
+            enableSignin: true,
+            enableSignup: true,
+            autoBind: true,
+          }),
+        ),
+      ).toEqual([]);
+    }
+    // category 缺省（proto3 空串）按非 oauth 处理。
     expect(
       apiMod.policyTags(
         create(ProviderSchema, {
@@ -977,11 +1011,7 @@ describe('policyTags（§5.2 行 1165「策略标签」展示纯函数）', () =
           autoBind: true,
         }),
       ),
-    ).toEqual(['允许登录', '允许注册', '自动绑定']);
-    expect(
-      apiMod.policyTags(create(ProviderSchema, { autoBind: true })),
-    ).toEqual(['自动绑定']);
-    expect(apiMod.policyTags(create(ProviderSchema, {}))).toEqual([]);
+    ).toEqual([]);
   });
 });
 

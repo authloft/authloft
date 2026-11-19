@@ -314,12 +314,16 @@ export function testProvider(
 }
 
 /**
- * 策略标签展示纯函数（§5.2 行 1165 列表「策略标签」列）：enableSignin /
- * enableSignup / autoBind 三开关 → 文案标签；全 false（如 sms / email /
- * storage / captcha 类）→ 空数组，消费方渲染占位。零 Semi 依赖、node 可测
- * （展示纯函数落位同 adminDisplayName 口径）。
+ * 策略标签展示纯函数（§5.2 列表「策略标签」列）：仅 category=oauth
+ * 行按 enableSignin / enableSignup / autoBind 三开关出文案标签——三开关是
+ * oauth 行专属语义，非 oauth 行即便开关为 true（存量数据列默认值即 1）也
+ * 不出标签，返回空数组由消费方渲染占位。零 Semi 依赖、node 可测（展示纯
+ * 函数落位同 adminDisplayName 口径）。
  */
 export function policyTags(provider: Provider): string[] {
+  if (provider.category !== 'oauth') {
+    return [];
+  }
   const tags: string[] = [];
   if (provider.enableSignin) {
     tags.push(t('admin.policyTagAllowSignin'));
