@@ -197,6 +197,10 @@ func TestOidcTokenRepoRevoke(t *testing.T) {
 	if n, err := rp.RevokeByUserID(ctx, 2001, revokedAt); err != nil || n != 0 {
 		t.Errorf("重复批量吊销应 0, nil; got %d, %v", n, err)
 	}
+	// 未知用户（目标行不存在）：0, nil，与重复吊销同收敛。
+	if n, err := rp.RevokeByUserID(ctx, 404, revokedAt); err != nil || n != 0 {
+		t.Errorf("未知用户批量吊销应 0, nil; got %d, %v", n, err)
+	}
 
 	// 按 session_id 批量吊销：s1 中 a / b 已吊销，只剩 d 未吊销。
 	if n, err := rp.RevokeBySessionID(ctx, "sess_1", revokedAt); err != nil || n != 1 {
@@ -204,6 +208,10 @@ func TestOidcTokenRepoRevoke(t *testing.T) {
 	}
 	if n, err := rp.RevokeBySessionID(ctx, "sess_1", revokedAt); err != nil || n != 0 {
 		t.Errorf("重复按会话吊销应 0, nil; got %d, %v", n, err)
+	}
+	// 未知会话（目标行不存在）：0, nil。
+	if n, err := rp.RevokeBySessionID(ctx, "sess_nope", revokedAt); err != nil || n != 0 {
+		t.Errorf("未知会话批量吊销应 0, nil; got %d, %v", n, err)
 	}
 
 	// 按 client+user 列表：含已吊销行，id DESC（c / b / a）。

@@ -60,7 +60,10 @@ func (r *OidcTokenRepo) FindByTokenHash(ctx context.Context, tokenHash string) (
 // RevokeByTokenHash 按 token_hash 原子吊销单个令牌：仅当行存在且尚未
 // 吊销（revoked_at IS NULL）时写入 revoked_at，返回是否真正发生状态
 // 跃迁（rows affected）。未命中 / 已吊销均返回 false, nil——RFC 7009
-// 要求未知与已吊销令牌同样成功响应（接口文档 §4.4）。
+// 要求未知与已吊销令牌同样成功响应（接口文档 §4.4）。行数直查两库
+// 一致：WHERE 限定未吊销，命中行 revoked_at 必由 NULL 变非空
+// （matched-rows = changed-rows，无同值重放分歧）；返回的是跃迁判定
+// 而非行存在性，不走 requireChangedRow。
 func (r *OidcTokenRepo) RevokeByTokenHash(ctx context.Context, tokenHash string, revokedAt time.Time) (bool, error) {
 	res, err := r.db.NewUpdate().Model((*model.OidcRefreshToken)(nil)).
 		Where("token_hash = ? AND revoked_at IS NULL", tokenHash).
@@ -78,7 +81,8 @@ func (r *OidcTokenRepo) RevokeByTokenHash(ctx context.Context, tokenHash string,
 
 // RevokeByUserID 批量吊销该用户全部未吊销令牌（§14.3：改密时批量标记该
 // 用户 refresh token 为 revoked），返回本次吊销行数；无未吊销行时返回
-// 0, nil（幂等）。
+// 0, nil（幂等）。行数直查两库一致：WHERE 限定未吊销，命中必变值
+// （matched-rows = changed-rows），返回计数而非行存在性。
 func (r *OidcTokenRepo) RevokeByUserID(ctx context.Context, userID int64, revokedAt time.Time) (int64, error) {
 	res, err := r.db.NewUpdate().Model((*model.OidcRefreshToken)(nil)).
 		Where("user_id = ? AND revoked_at IS NULL", userID).
@@ -95,7 +99,8 @@ func (r *OidcTokenRepo) RevokeByUserID(ctx context.Context, userID int64, revoke
 }
 
 // RevokeBySessionID 批量吊销该会话全部未吊销令牌（需求 §4.5：刷新令牌与
-// 会话绑定），返回本次吊销行数；无未吊销行时返回 0, nil。
+// 会话绑定），返回本次吊销行数；无未吊销行时返回 0, nil。行数直查两库
+// 一致（口径同 RevokeByUserID：命中必变值，返回计数而非行存在性）。
 func (r *OidcTokenRepo) RevokeBySessionID(ctx context.Context, sessionID string, revokedAt time.Time) (int64, error) {
 	res, err := r.db.NewUpdate().Model((*model.OidcRefreshToken)(nil)).
 		Where("session_id = ? AND revoked_at IS NULL", sessionID).
@@ -127,7 +132,8 @@ func (r *OidcTokenRepo) ListByClientAndUser(ctx context.Context, clientID string
 }
 
 // DeleteExpired 删除已过期令牌行（§3.12：cron 过期 refresh token 清理），
-// 返回删除行数。过期判据 now >= expires_at（有效期区间为
+// 返回删除行数（DELETE 两库均返回实际删除行数，行数直查无 changed/matched
+// 分歧）。过期判据 now >= expires_at（有效期区间为
 // [created_at, expires_at)）；已吊销但未过期的行保留，由过期清理统一回收。
 func (r *OidcTokenRepo) DeleteExpired(ctx context.Context, now time.Time) (int64, error) {
 	res, err := r.db.NewDelete().Model((*model.OidcRefreshToken)(nil)).

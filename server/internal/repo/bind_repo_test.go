@@ -300,3 +300,86 @@ func TestBindRepoCreateWithUnion(t *testing.T) {
 		t.Fatalf("unionid 缺失时写入失败: %v", err)
 	}
 }
+
+// TestBindRepoUnbindWithUnionCascade（env-skip；§12.7 解绑方向）：级联解绑
+// 三态——本人成功（唯一普通行删除后 Union 行级联消失）/ 行不存在
+// ErrRecordNotFound / 他人 ErrBindNotOwned 行保留；Union 行保留分支（仍有
+// 非 Union 行、unionProviderKey 为空时不碰 Union 行）。DELETE 两库均返回
+// 实际删除行数（无 UPDATE changed/matched 分歧），rows=0 分支即目标行
+// 不存在断言，三态判别口径同 Unbind。
+func TestBindRepoUnbindWithUnionCascade(t *testing.T) {
+	_, br := providerTestSetup(t)
+	ctx := context.Background()
+
+	const unionKey = "wechat_union_c"
+
+	// a) 本人解绑唯一普通行 → 普通行 + Union 行同事务级联消失。
+	a := &model.UserThirdpartyBind{UserID: 31, ProviderKey: "mp_a", OpenID: "openid_ca"}
+	if err := br.CreateWithUnion(ctx, a, unionKey, "union_c_001"); err != nil {
+		t.Fatalf("CreateWithUnion 失败: %v", err)
+	}
+	if err := br.UnbindWithUnionCascade(ctx, a.ID, 31, unionKey); err != nil {
+		t.Fatalf("本人级联解绑失败: %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "mp_a", "openid_ca"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("普通行应已删除, got %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, unionKey, "union_c_001"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("无剩余非 Union 行时 Union 行应级联删除, got %v", err)
+	}
+
+	// b) 行不存在（rows=0 且查无此行）：ErrRecordNotFound。
+	if err := br.UnbindWithUnionCascade(ctx, 404, 31, unionKey); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("不存在 id 应 ErrRecordNotFound, got %v", err)
+	}
+
+	// c) 他人解绑（rows=0 但行在）：ErrBindNotOwned 且行保留。
+	c := &model.UserThirdpartyBind{UserID: 32, ProviderKey: "mp_c", OpenID: "openid_cc"}
+	if err := br.Create(ctx, c); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	if err := br.UnbindWithUnionCascade(ctx, c.ID, 33, unionKey); !errors.Is(err, ErrBindNotOwned) {
+		t.Errorf("他人级联解绑应 ErrBindNotOwned, got %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "mp_c", "openid_cc"); err != nil {
+		t.Errorf("归属校验失败时行应保留: %v", err)
+	}
+
+	// d) 仍有非 Union 行 → Union 行保留，仅目标普通行删除。
+	d1 := &model.UserThirdpartyBind{UserID: 34, ProviderKey: "mp_d1", OpenID: "openid_cd1"}
+	d2 := &model.UserThirdpartyBind{UserID: 34, ProviderKey: "mp_d2", OpenID: "openid_cd2"}
+	if err := br.CreateWithUnion(ctx, d1, unionKey, "union_c_002"); err != nil {
+		t.Fatalf("CreateWithUnion 失败: %v", err)
+	}
+	if err := br.Create(ctx, d2); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	if err := br.UnbindWithUnionCascade(ctx, d1.ID, 34, unionKey); err != nil {
+		t.Fatalf("多行级联解绑失败: %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "mp_d1", "openid_cd1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("目标普通行应已删除, got %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "mp_d2", "openid_cd2"); err != nil {
+		t.Errorf("非目标普通行不应被删: %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, unionKey, "union_c_002"); err != nil {
+		t.Errorf("仍有非 Union 行时 Union 行应保留: %v", err)
+	}
+
+	// e) unionProviderKey 为空 → 只删普通行，Union 行不动（即使该用户已无
+	//    其他非 Union 行）。
+	e := &model.UserThirdpartyBind{UserID: 35, ProviderKey: "mp_e", OpenID: "openid_ce"}
+	if err := br.CreateWithUnion(ctx, e, unionKey, "union_c_003"); err != nil {
+		t.Fatalf("CreateWithUnion 失败: %v", err)
+	}
+	if err := br.UnbindWithUnionCascade(ctx, e.ID, 35, ""); err != nil {
+		t.Fatalf("无 Union 关联解绑失败: %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, "mp_e", "openid_ce"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("普通行应已删除, got %v", err)
+	}
+	if _, err := br.FindByProviderOpenID(ctx, unionKey, "union_c_003"); err != nil {
+		t.Errorf("无关联 Union Provider 时 Union 行应保留: %v", err)
+	}
+}

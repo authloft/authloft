@@ -93,8 +93,11 @@ func (r *BindRepo) Create(ctx context.Context, b *model.UserThirdpartyBind) erro
 }
 
 // Unbind 按 id 删除且校验归属（id + user_id 双条件，防用户 A 解绑用户 B 的
-// 绑定行）：DELETE 的 rows=0 时行不存在与归属不符不可区分，补 SELECT by id
-// 判别——行存在则 ErrBindNotOwned，不存在则包装的 sql.ErrNoRows。
+// 绑定行）。行数直查两库一致：DELETE 返回实际删除行数，无 UPDATE 的
+// changed-rows / matched-rows 分歧；rows=0 时行不存在与归属不符不可区分，
+// 补 SELECT by id 三态判别——行存在则 ErrBindNotOwned，不存在则包装的
+// sql.ErrNoRows。三态超出 requireChangedRow 的两态存在性判定，不走该
+// helper。
 func (r *BindRepo) Unbind(ctx context.Context, id, userID int64) error {
 	res, err := r.db.NewDelete().Model((*model.UserThirdpartyBind)(nil)).
 		Where("id = ? AND user_id = ?", id, userID).
