@@ -1,9 +1,10 @@
 // gateway_test.go 覆盖网关域唯一端点 `ANY /api/gateway/decode` 的 HTTP
 // 契约（docs/接口文档.md §6 行 1346-1361）：有效令牌全字段响应头（含 amr
 // 逗号分隔 / 空数组空值）、Cookie 回落与 Header 优先、无 / 篡改 / 过期 /
-// epoch 不一致 → 恒 200 + invalid、epoch 基础设施故障 → 500 空体、
-// X-Gateway-Token 无 / 错 → 403 空 body（对齐 middleware/gateway_test 口径，
-// Gateway 中间件先于 handler）、tokens 动态源热更生效、ANY 多方法可达。
+// epoch 不一致 / 已逐出 → 恒 200 + invalid、失效清理头按令牌来源分流且
+// 互斥、epoch 基础设施故障 → 500 空体、X-Gateway-Token 无 / 错 → 403 空
+// body（对齐 middleware/gateway_test 口径，Gateway 中间件先于 handler）、
+// tokens 动态源热更生效、ANY 多方法可达。
 package gateway
 
 import (
@@ -39,18 +40,19 @@ func newTestCodec(t *testing.T) *security.Codec {
 	return security.NewCodec(ks)
 }
 
-// fakeEpoch 可控 epoch 读取（口径同 oidc_test.go fakeEpoch，另加错误注入，
-// 覆盖 Verify 的基础设施故障分支）。
+// fakeEpoch 可控失效检查（口径同 oidc_test.go fakeEpoch，另加逐出标记与
+// 错误注入，覆盖 Verify 的失效与基础设施故障分支）。
 type fakeEpoch struct {
-	values map[int64]int64
-	err    error
+	values  map[int64]int64
+	revoked map[string]bool
+	err     error
 }
 
-func (f *fakeEpoch) Current(_ context.Context, uid int64) (int64, error) {
+func (f *fakeEpoch) Check(_ context.Context, uid int64, sid string) (int64, bool, error) {
 	if f.err != nil {
-		return 0, f.err
+		return 0, false, f.err
 	}
-	return f.values[uid], nil
+	return f.values[uid], f.revoked[sid], nil
 }
 
 // newTestEnv 构造 codec + Tokens + fakeEpoch（uid=42 当前 epoch=7）+ Verifier。
@@ -267,6 +269,72 @@ func TestDecodeInvalidTokenVariants(t *testing.T) {
 		sessionTokenHeader: signToken(t, tokens, testPayload()),
 	}))
 	epochs.values[42] = 7 // 还原，避免影响后续用例
+}
+
+// ⑤b 失效清理头按令牌来源分流且互斥，与恒 200 + invalid 共存（§6 / §1.9）：
+// Header 来源 → X-Authloft-Token: none（无 Set-Cookie）；Cookie 来源 →
+// Set-Cookie 清除（无 none）；无令牌 → 不携带任何清理头（无令牌分支现状）。
+func TestDecodeInvalidationHeadersBySource(t *testing.T) {
+	tokens, epochs, verifier := newTestEnv(t)
+	epochs.values[42] = 8 // epoch 不一致 → 失效分支
+	cookieC := session.NewCookie("al_session", "", time.Hour)
+	deps := Deps{Verify: verifier, Cookie: cookieC}
+	r := newGatewayRouter(deps, fixedTokens("gw-tok"))
+	gwHdr := map[string]string{"X-Gateway-Token": "gw-tok"}
+
+	// a) Header 来源：invalid + none 共存，无 Set-Cookie。
+	rec := doDecode(r, http.MethodGet, map[string]string{
+		"X-Gateway-Token":  "gw-tok",
+		sessionTokenHeader: signToken(t, tokens, testPayload()),
+	})
+	wantInvalid(t, rec)
+	if got := rec.Header().Get(sessionTokenHeader); got != "none" {
+		t.Errorf("Header 来源清理头 = %q, want none", got)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Header 来源不应下发 Set-Cookie（互斥），got %v", got)
+	}
+
+	// b) Cookie 来源：invalid + Set-Cookie（MaxAge=-1 清除）共存，无 none。
+	rec = doDecode(r, http.MethodGet, gwHdr, &http.Cookie{Name: "al_session", Value: signToken(t, tokens, testPayload())})
+	wantInvalid(t, rec)
+	if got := rec.Header().Get(sessionTokenHeader); got != "" {
+		t.Errorf("Cookie 来源不应下发 X-Authloft-Token（互斥），got %q", got)
+	}
+	cks := rec.Header().Values("Set-Cookie")
+	if len(cks) != 1 {
+		t.Fatalf("Set-Cookie 出现 %d 次, want 1: %v", len(cks), cks)
+	}
+	ck, err := http.ParseSetCookie(cks[0])
+	if err != nil {
+		t.Fatalf("ParseSetCookie: %v", err)
+	}
+	if ck.Name != "al_session" || ck.MaxAge != -1 {
+		t.Errorf("清除 Cookie = %s MaxAge=%d, want al_session/-1", ck.Name, ck.MaxAge)
+	}
+
+	// c) 已逐出（ErrSessionRevoked）：读分支拒绝，清理头同口径分流
+	//（Cookie 来源清 Cookie）。
+	epochs.revoked = map[string]bool{"sid-0001": true}
+	rec = doDecode(r, http.MethodGet, map[string]string{
+		"X-Gateway-Token":  "gw-tok",
+		sessionTokenHeader: signToken(t, tokens, testPayload()),
+	})
+	wantInvalid(t, rec)
+	if got := rec.Header().Get(sessionTokenHeader); got != "none" {
+		t.Errorf("逐出 + Header 来源清理头 = %q, want none", got)
+	}
+	epochs.revoked = nil
+
+	// d) 无令牌：invalid 且无任何清理头（无令牌分支不下发 none / 不清 Cookie）。
+	rec = doDecode(r, http.MethodGet, gwHdr)
+	wantInvalid(t, rec)
+	if got := rec.Header().Get(sessionTokenHeader); got != "" {
+		t.Errorf("无令牌不应下发 X-Authloft-Token，got %q", got)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("无令牌不应下发 Set-Cookie，got %v", got)
+	}
 }
 
 // ⑥ epoch 读取链基础设施故障 → 500 空体，不误判登出态（verify.go 行

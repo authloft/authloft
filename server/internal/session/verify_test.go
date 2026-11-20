@@ -1,7 +1,6 @@
-// session 包校验四步 + 令牌签发/解析 + ctx 助手单测（§21.2 D
-// 行 1855）。epoch 三级链用真实 cache.EpochStore + 计数 fake redis 做
-// 集成断言（未命中回源 / localCache 命中 / Redis 命中）；纯逻辑分支用
-// fake EpochReader 隔离。
+// session 包校验四步 + 令牌签发/解析 + ctx 助手单测。失效检查链用真实
+// cache.EpochStore + 计数 fake redis 做集成断言（缺失回源 / MGET 命中 /
+// 命令级故障 fail-open）；纯逻辑分支用 fake EpochReader 隔离。
 package session
 
 import (
@@ -58,22 +57,23 @@ func testPayload() *token.SessionTokenPayload {
 	}
 }
 
-// fakeEpochReader 隔离型 epoch 读取（记录调用、返回预设值或错误）。
+// fakeEpochReader 隔离型失效检查（记录调用、返回预设三元组或错误）。
 type fakeEpochReader struct {
-	mu     sync.Mutex
-	calls  []int64
-	values map[int64]int64
-	err    error
+	mu      sync.Mutex
+	calls   []int64
+	values  map[int64]int64
+	revoked map[string]bool
+	err     error
 }
 
-func (f *fakeEpochReader) Current(ctx context.Context, uid int64) (int64, error) {
+func (f *fakeEpochReader) Check(ctx context.Context, uid int64, sid string) (int64, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, uid)
 	if f.err != nil {
-		return 0, f.err
+		return 0, false, f.err
 	}
-	return f.values[uid], nil
+	return f.values[uid], f.revoked[sid], nil
 }
 
 func (f *fakeEpochReader) callCount() int {
@@ -83,16 +83,20 @@ func (f *fakeEpochReader) callCount() int {
 }
 
 // countingRedis 计数型 fake redis（满足 cache 包 epochRedis 窄接口的
-// 方法签名，可传给 cache.NewEpochStore；现接口含 Del——Sync 写路径
-// 的兜底）：记录 GET/SET 次数、键名与 SET 的 TTL；vals 为键值表。
+// 方法签名，可传给 cache.NewEpochStore；现接口含 MGet——Check 双键读、
+// Del——Sync 写路径的兜底）：记录 GET/MGET/SET 次数、键名与 SET 的 TTL；
+// vals 为键值表；mgetErr 非 nil 时 MGET 返回命令级故障。
 type countingRedis struct {
-	mu      sync.Mutex
-	gets    int
-	sets    int
-	getKeys []string
-	setKeys []string
-	setTTNs []time.Duration
-	vals    map[string]string
+	mu       sync.Mutex
+	gets     int
+	mgets    int
+	sets     int
+	getKeys  []string
+	mgetKeys [][]string
+	setKeys  []string
+	setTTNs  []time.Duration
+	vals     map[string]string
+	mgetErr  error
 }
 
 func (f *countingRedis) Get(ctx context.Context, key string) cache.StringResult {
@@ -104,6 +108,24 @@ func (f *countingRedis) Get(ctx context.Context, key string) cache.StringResult 
 		return cache.NewStringResult(v, nil)
 	}
 	return cache.NewStringResult("", cache.Nil)
+}
+
+func (f *countingRedis) MGet(ctx context.Context, keys ...string) cache.MGetResult {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mgets++
+	f.mgetKeys = append(f.mgetKeys, append([]string(nil), keys...))
+	if f.mgetErr != nil {
+		return cache.NewMGetResult(nil, f.mgetErr)
+	}
+	vals := make([]*string, len(keys))
+	for i, key := range keys {
+		if v, ok := f.vals[key]; ok {
+			s := v
+			vals[i] = &s
+		}
+	}
+	return cache.NewMGetResult(vals, nil)
 }
 
 func (f *countingRedis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) cache.StatusResult {
@@ -128,10 +150,10 @@ func (f *countingRedis) Del(ctx context.Context, keys ...string) cache.IntResult
 	return cache.NewIntResult(1, nil)
 }
 
-func (f *countingRedis) counts() (gets, sets int) {
+func (f *countingRedis) counts() (gets, mgets, sets int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.gets, f.sets
+	return f.gets, f.mgets, f.sets
 }
 
 // newVerifierAt 构造可控时钟的 Verifier（now 固定 Unix 1500，exp=2000
@@ -315,7 +337,31 @@ func TestVerifyStep3EpochMismatch(t *testing.T) {
 	}
 }
 
-// TestVerifyStep3EpochReaderError epoch 读取链故障 → 包装错误传播，
+// TestVerifyStep3Revoked 步骤③：逐出标记存在即 ErrSessionRevoked，且
+// 优先于 epoch 比对（一致时同样拒绝）。
+func TestVerifyStep3Revoked(t *testing.T) {
+	ctx := context.Background()
+	tokens := NewTokens(newTestCodec(t))
+	tok, err := tokens.Sign(testPayload()) // epoch=7, sid=sid-0001
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	epochs := &fakeEpochReader{
+		values:  map[int64]int64{42: 7}, // epoch 一致
+		revoked: map[string]bool{"sid-0001": true},
+	}
+	v := newVerifierAt(tokens, epochs)
+
+	_, err = v.Verify(ctx, tok)
+	if !errors.Is(err, ErrSessionRevoked) {
+		t.Fatalf("err = %v, want ErrSessionRevoked", err)
+	}
+	if errors.Is(err, ErrSessionStale) || errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("revoked must not classify as stale/not-authenticated: %v", err)
+	}
+}
+
+// TestVerifyStep3EpochReaderError 失效检查读取链故障 → 包装错误传播，
 // 不与未登录 / 失效混同（基础设施错误语义）。
 func TestVerifyStep3EpochReaderError(t *testing.T) {
 	ctx := context.Background()
@@ -331,8 +377,8 @@ func TestVerifyStep3EpochReaderError(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want wrapped boom", err)
 	}
-	if errors.Is(err, ErrNotAuthenticated) || errors.Is(err, ErrSessionStale) {
-		t.Fatalf("infra failure must not classify as not-authenticated/stale: %v", err)
+	if errors.Is(err, ErrNotAuthenticated) || errors.Is(err, ErrSessionStale) || errors.Is(err, ErrSessionRevoked) {
+		t.Fatalf("infra failure must not classify as not-authenticated/stale/revoked: %v", err)
 	}
 }
 
@@ -356,13 +402,13 @@ func TestVerifyStep4Pass(t *testing.T) {
 	}
 }
 
-// TestVerifyEpochChainIntegration 三级链集成：Verifier 消费真实
-// cache.EpochStore + fake redis——①未命中回源（GET+SET、TTL 24h）
-// ②localCache 命中（第二次零 Redis 调用）③新 store Redis 命中不回源。
+// TestVerifyEpochChainIntegration 双键一次读集成：Verifier 消费真实
+// cache.EpochStore + fake redis——①缺失回源（MGET + SET、TTL 24h）
+// ②Redis 命中不回源不写回（每请求固定 1 次 MGET，无本地缓存）。
 func TestVerifyEpochChainIntegration(t *testing.T) {
 	ctx := context.Background()
 	tokens := NewTokens(newTestCodec(t))
-	tok, err := tokens.Sign(testPayload()) // uid=42 epoch=7
+	tok, err := tokens.Sign(testPayload()) // uid=42 epoch=7 sid=sid-0001
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -376,16 +422,20 @@ func TestVerifyEpochChainIntegration(t *testing.T) {
 	store := cache.NewEpochStore(cr, src)
 	v := newVerifierAt(tokens, store)
 
-	// ① 未命中 → 回源 + SET 新值（key=al:pwdep:42、TTL 24h）。
+	// ① 缺失 → 回源 + SET 新值（key=al:pwdep:42、TTL 24h）。
 	if _, err := v.Verify(ctx, tok); err != nil {
 		t.Fatalf("Verify #1: %v", err)
 	}
-	gets, sets := cr.counts()
-	if gets != 1 || sets != 1 {
-		t.Fatalf("redis gets=%d sets=%d, want 1/1（miss → 回源 + 写回）", gets, sets)
+	gets, mgets, sets := cr.counts()
+	if gets != 0 || mgets != 1 || sets != 1 {
+		t.Fatalf("redis gets=%d mgets=%d sets=%d, want 0/1/1（校验热路径只走 MGET）", gets, mgets, sets)
 	}
-	if cr.setKeys[0] != "al:pwdep:42" || cr.getKeys[0] != "al:pwdep:42" {
-		t.Fatalf("keys get=%q set=%q, want al:pwdep:42", cr.getKeys[0], cr.setKeys[0])
+	if len(cr.mgetKeys) != 1 || len(cr.mgetKeys[0]) != 2 ||
+		cr.mgetKeys[0][0] != "al:pwdep:42" || cr.mgetKeys[0][1] != "al:sess:ev:sid-0001" {
+		t.Fatalf("mget keys = %v, want [al:pwdep:42 al:sess:ev:sid-0001]", cr.mgetKeys)
+	}
+	if cr.setKeys[0] != "al:pwdep:42" {
+		t.Fatalf("set key = %q, want al:pwdep:42", cr.setKeys[0])
 	}
 	if cr.setTTNs[0] != 24*time.Hour {
 		t.Fatalf("set ttl = %v, want 24h", cr.setTTNs[0])
@@ -394,29 +444,57 @@ func TestVerifyEpochChainIntegration(t *testing.T) {
 		t.Fatalf("source calls = %d, want 1", srcCalls)
 	}
 
-	// ② 第二次 Verify：localCache 命中，零 Redis 调用、不回源。
+	// ② 第二次 Verify：无本地缓存，固定再走一次 MGET；Redis 命中（①已
+	// 写回）→ 不回源、不写回。
 	if _, err := v.Verify(ctx, tok); err != nil {
 		t.Fatalf("Verify #2: %v", err)
 	}
-	gets, sets = cr.counts()
-	if gets != 1 || sets != 1 {
-		t.Fatalf("after cache hit gets=%d sets=%d, want unchanged 1/1", gets, sets)
+	gets, mgets, sets = cr.counts()
+	if gets != 0 || mgets != 2 || sets != 1 {
+		t.Fatalf("redis gets=%d mgets=%d sets=%d, want 0/2/1（热路径固定 1 次 MGET）", gets, mgets, sets)
 	}
 	if srcCalls != 1 {
-		t.Fatalf("source calls after cache hit = %d, want 1", srcCalls)
+		t.Fatalf("source calls = %d, want 1（MGET 命中不回源）", srcCalls)
+	}
+}
+
+// TestVerifyFailOpenDegraded Command-level 故障 fail-open 集成：MGET
+// 命令级故障（模拟 Redis down）→ 回源 DB 比对——DB 一致放行（revoked=
+// false、不回写缓存）；DB 不一致 → ErrSessionStale。逐出状态无法判定，
+// 按「未逐出」放行，不 500。
+func TestVerifyFailOpenDegraded(t *testing.T) {
+	ctx := context.Background()
+	tokens := NewTokens(newTestCodec(t))
+	tok, err := tokens.Sign(testPayload()) // uid=42 epoch=7
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
 	}
 
-	// ③ 新 store（localCache 空）但 Redis 已有值：GET 命中、不回源、不 SET。
-	store2 := cache.NewEpochStore(cr, src)
-	v2 := newVerifierAt(tokens, store2)
-	if _, err := v2.Verify(ctx, tok); err != nil {
-		t.Fatalf("Verify #3: %v", err)
+	// a) 回源一致 → 放行；故障路径不写回缓存。
+	cr := &countingRedis{mgetErr: errors.New("redis down")}
+	var srcCalls int
+	src := func(ctx context.Context, uid int64) (int64, error) {
+		srcCalls++
+		return 7, nil
 	}
-	gets, sets = cr.counts()
-	if gets != 2 || sets != 1 {
-		t.Fatalf("redis hit gets=%d sets=%d, want 2/1（GET 命中不回源不写回）", gets, sets)
+	v := newVerifierAt(tokens, cache.NewEpochStore(cr, src))
+	if _, err := v.Verify(ctx, tok); err != nil {
+		t.Fatalf("Verify (fail-open, DB match): %v", err)
 	}
 	if srcCalls != 1 {
-		t.Fatalf("source calls = %d, want 1（Redis 命中不回源）", srcCalls)
+		t.Fatalf("source calls = %d, want 1（fail-open 回源）", srcCalls)
+	}
+	_, _, sets := cr.counts()
+	if sets != 0 {
+		t.Fatalf("sets = %d, want 0（故障路径不回写缓存）", sets)
+	}
+
+	// b) 回源不一致 → ErrSessionStale（fail-open 仍完成比对）。
+	cr2 := &countingRedis{mgetErr: errors.New("redis down")}
+	v2 := newVerifierAt(tokens, cache.NewEpochStore(cr2, func(ctx context.Context, uid int64) (int64, error) {
+		return 8, nil
+	}))
+	if _, err := v2.Verify(ctx, tok); !errors.Is(err, ErrSessionStale) {
+		t.Fatalf("err = %v, want ErrSessionStale（fail-open 回源比对生效）", err)
 	}
 }

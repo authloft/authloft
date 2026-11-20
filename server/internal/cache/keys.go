@@ -25,6 +25,18 @@ func EpochKey(uid int64) string {
 	return epochKeyPrefix + strconv.FormatInt(uid, 10)
 }
 
+// sessionEvictKeyPrefix 会话逐出标记键前缀（§5.1：al:sess:ev:{sid}）。
+const sessionEvictKeyPrefix = "al:sess:ev:"
+
+// SessionEvictKey 返回会话逐出标记键（§5.1，String、TTL session_ttl+60s、
+// 逐出时 SET 1 次——逐出写入口为扩展点、本期不实现，正常运行下该键空间
+// 为空）：值存逐出原因，存在即拒绝；sid 为 32 位 URL-safe 串（service
+// /session sidLength）作键片段。失效检查读分支经 Check 与 epoch 键合并为
+// 一条 MGET（§11.1 步骤 3），键名只在此构造。
+func SessionEvictKey(sid string) string {
+	return sessionEvictKeyPrefix + sid
+}
+
 // rpcNonceKeyPrefix RPC nonce 去重键前缀（§5.1 行 861：al:rpc:nonce:{client_id}:{sha256(nonce)}）。
 const rpcNonceKeyPrefix = "al:rpc:nonce:"
 

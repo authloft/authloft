@@ -50,8 +50,8 @@ import (
 // fakeEpochReader 隔离型 epoch 读取（口径同 handler/account/account_test.go）。
 type fakeEpochReader struct{ values map[int64]int64 }
 
-func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
-	return f.values[uid], nil
+func (f *fakeEpochReader) Check(_ context.Context, uid int64, _ string) (int64, bool, error) {
+	return f.values[uid], false, nil
 }
 
 // fakeProviders ProviderReader 的 fake：list 按 q 分类返回（union / proxy /

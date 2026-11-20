@@ -1,8 +1,10 @@
 // session 拦截器单测（全栈：真实
 // connect.NewUnaryHandler + 拦截器 + httptest，零 ENV.md 实例依赖）。session
 // 包的 §11.1 四步校验已有自身测试，此处只测拦截语义：Header 替代 Cookie、
-// 未登录清 Cookie 放行、重签按来源两分支（Set-Cookie vs X-Authloft-Token）、
-// epoch 读取链故障 internal、取值优先级不回落、注入 cookie 名生效。
+// 未登录放行、失效指令按令牌来源分流（Header → X-Authloft-Token: none、
+// Cookie → 清 Cookie，两者互斥）、重签按来源两分支（Set-Cookie vs
+// X-Authloft-Token）、失效检查故障 internal、取值优先级不回落、注入
+// cookie 名生效。
 package connect
 
 import (
@@ -26,17 +28,19 @@ import (
 // sessionEchoProcedure 测试用 Connect RPC 路径（文档口径的 <包>.<Service>/<Method>）。
 const sessionEchoProcedure = "/api.account.v1.AccountService/GetProfile"
 
-// fakeEpochReader 隔离型 epoch 读取（记录值 / 错误；单测试无并发，不加锁）。
+// fakeEpochReader 隔离型失效检查（记录值 / 逐出标记 / 错误；单测试无并发，
+// 不加锁）。
 type fakeEpochReader struct {
-	values map[int64]int64
-	err    error
+	values  map[int64]int64
+	revoked map[string]bool
+	err     error
 }
 
-func (f *fakeEpochReader) Current(ctx context.Context, uid int64) (int64, error) {
+func (f *fakeEpochReader) Check(ctx context.Context, uid int64, sid string) (int64, bool, error) {
 	if f.err != nil {
-		return 0, f.err
+		return 0, false, f.err
 	}
-	return f.values[uid], nil
+	return f.values[uid], f.revoked[sid], nil
 }
 
 // sessionEnv 每用例独立装配（签发密钥 version=1 kid=1，同 session 包测试口径）。
@@ -327,8 +331,9 @@ func TestSessionNoTokenClearsCookieAndPasses(t *testing.T) {
 	}
 }
 
-// ④ 无效令牌（解不开的垃圾值）→ 未登录放行 + 清 Cookie。
-func TestSessionInvalidTokenClearsCookieAndPasses(t *testing.T) {
+// ④ 无效令牌（解不开的垃圾值）且来源于 Header → 未登录放行 + 失效指令
+// X-Authloft-Token: none（§1.2 / §1.9：Header 来源不发 Set-Cookie——两者互斥）。
+func TestSessionInvalidTokenHeaderSendsNoneDirective(t *testing.T) {
 	env := newSessionEnv(t)
 	srv, captured := newSessionServer(t, env, nil)
 
@@ -340,12 +345,38 @@ func TestSessionInvalidTokenClearsCookieAndPasses(t *testing.T) {
 	if captured.ok {
 		t.Errorf("ctx uid 注入了 %d, want 未注入", captured.uid)
 	}
-	if ck := lastSetCookie(t, resp); ck == nil || ck.MaxAge != -1 {
-		t.Errorf("校验失败应清 Cookie，got %+v", ck)
+	if got := resp.Header.Get("X-Authloft-Token"); got != "none" {
+		t.Errorf("Header 来源失效应下发 X-Authloft-Token: none, got %q", got)
+	}
+	if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Header 来源失效不应下发 Set-Cookie（互斥），got %v", got)
 	}
 }
 
-// ⑤ epoch 不一致（ErrSessionStale）→ 未登录放行 + 清 Cookie（§1.9 行 292）。
+// ④b 无效令牌且来源于 Cookie → 未登录放行 + 清 Cookie（MaxAge=-1），
+// 不下发 X-Authloft-Token: none（互斥）。
+func TestSessionInvalidTokenCookieClearsCookie(t *testing.T) {
+	env := newSessionEnv(t)
+	srv, captured := newSessionServer(t, env, nil)
+
+	resp := doSessionRPC(t, srv, nil, []*http.Cookie{{Name: "al_session", Value: "garbage-token"}})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d（校验失败视为未登录放行）", resp.StatusCode, http.StatusOK)
+	}
+	if captured.ok {
+		t.Errorf("ctx uid 注入了 %d, want 未注入", captured.uid)
+	}
+	if ck := lastSetCookie(t, resp); ck == nil || ck.MaxAge != -1 {
+		t.Errorf("Cookie 来源失效应清 Cookie，got %+v", ck)
+	}
+	if got := resp.Header.Get("X-Authloft-Token"); got != "" {
+		t.Errorf("Cookie 来源失效不应下发 X-Authloft-Token（互斥），got %q", got)
+	}
+}
+
+// ⑤ epoch 不一致（ErrSessionStale）且来源于 Cookie → 未登录放行 + 清
+// Cookie（§1.9），不下发 none。
 func TestSessionStaleEpochClearsCookieAndPasses(t *testing.T) {
 	env := newSessionEnv(t)
 	p := env.validPayload()
@@ -363,6 +394,74 @@ func TestSessionStaleEpochClearsCookieAndPasses(t *testing.T) {
 	}
 	if ck := lastSetCookie(t, resp); ck == nil || ck.MaxAge != -1 {
 		t.Errorf("epoch 不一致应清 Cookie，got %+v", ck)
+	}
+	if got := resp.Header.Get("X-Authloft-Token"); got != "" {
+		t.Errorf("Cookie 来源失效不应下发 X-Authloft-Token（互斥），got %q", got)
+	}
+}
+
+// ⑤b epoch 不一致且来源于 Header → 失效指令 none、无 Set-Cookie（互斥；
+// ErrSessionStale 纳入失效指令口径——现有拦截器对失效分支本就清 Cookie，
+// 分流后 Header 来源对应 none）。
+func TestSessionStaleEpochHeaderSendsNoneDirective(t *testing.T) {
+	env := newSessionEnv(t)
+	p := env.validPayload()
+	env.epochs.values[p.Id] = p.Epoch + 1
+	tok := env.sign(t, p)
+	srv, captured := newSessionServer(t, env, nil)
+
+	resp := doSessionRPC(t, srv, map[string]string{"X-Authloft-Token": tok}, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if captured.ok {
+		t.Errorf("ctx uid 注入了 %d, want 未注入", captured.uid)
+	}
+	if got := resp.Header.Get("X-Authloft-Token"); got != "none" {
+		t.Errorf("Header 来源失效应下发 X-Authloft-Token: none, got %q", got)
+	}
+	if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Header 来源失效不应下发 Set-Cookie（互斥），got %v", got)
+	}
+}
+
+// ⑤c 已逐出（ErrSessionRevoked）→ 未登录放行 + 失效指令按来源分流：
+// Cookie 来源清 Cookie、Header 来源发 none（互斥）。逐出写入口本期不实现
+// （扩展点），此处注入 fake 的逐出标记验证读分支。
+func TestSessionRevokedInvalidationBySource(t *testing.T) {
+	// a) Cookie 来源 → Set-Cookie 清除、无 none。
+	env := newSessionEnv(t)
+	env.epochs.revoked = map[string]bool{"sid-0001": true}
+	tok := env.sign(t, env.validPayload())
+	srv, captured := newSessionServer(t, env, nil)
+
+	resp := doSessionRPC(t, srv, nil, []*http.Cookie{{Name: "al_session", Value: tok}})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d（逐出视为未登录放行）", resp.StatusCode, http.StatusOK)
+	}
+	if captured.ok {
+		t.Errorf("ctx uid 注入了 %d, want 未注入", captured.uid)
+	}
+	if ck := lastSetCookie(t, resp); ck == nil || ck.MaxAge != -1 {
+		t.Errorf("已逐出应清 Cookie，got %+v", ck)
+	}
+	if got := resp.Header.Get("X-Authloft-Token"); got != "" {
+		t.Errorf("Cookie 来源失效不应下发 X-Authloft-Token（互斥），got %q", got)
+	}
+
+	// b) Header 来源 → none、无 Set-Cookie。
+	resp2 := doSessionRPC(t, srv, map[string]string{"X-Authloft-Token": tok}, nil)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp2.StatusCode, http.StatusOK)
+	}
+	if got := resp2.Header.Get("X-Authloft-Token"); got != "none" {
+		t.Errorf("Header 来源失效应下发 X-Authloft-Token: none, got %q", got)
+	}
+	if got := resp2.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Header 来源失效不应下发 Set-Cookie（互斥），got %v", got)
 	}
 }
 

@@ -73,18 +73,20 @@ func (f *fakeNonceStore) Store(_ context.Context, clientID, nonce string) (bool,
 	return true, nil
 }
 
-// fakeEpochReader 隔离型 epoch 读取（口径同 handler/account account_test.go；
-// err 模拟读取链基础设施故障）。
+// fakeEpochReader 隔离型失效检查（口径同 handler/account account_test.go；
+// err 模拟读取链基础设施故障——fail-open 回源也失败的边界；revoked 模拟
+// sid 逐出标记读分支）。
 type fakeEpochReader struct {
-	values map[int64]int64
-	err    error
+	values  map[int64]int64
+	revoked map[string]bool
+	err     error
 }
 
-func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
+func (f *fakeEpochReader) Check(_ context.Context, uid int64, sid string) (int64, bool, error) {
 	if f.err != nil {
-		return 0, f.err
+		return 0, false, f.err
 	}
-	return f.values[uid], nil
+	return f.values[uid], f.revoked[sid], nil
 }
 
 // columnUpdate UpdateProfileColumns 的一次调用记录。
@@ -770,11 +772,12 @@ func TestDecodeSessionSuccess(t *testing.T) {
 }
 
 // TestDecodeSessionFailures 失败路径（§7.1 行 1410）：session 无效 / 过期 /
-// epoch 不一致 → 401 unauthenticated，错误只由 Connect 错误体表达、无
-// renewedToken（不得 200 + 空 renewedToken 混用）。
+// epoch 不一致 / 已逐出 → 401 unauthenticated，错误只由 Connect 错误体表达、
+// 无 renewedToken（不得 200 + 空 renewedToken 混用）；失效响应维持现状：
+// 令牌来自请求体，不下发任何失效指令头（无 X-Authloft-Token、无 Set-Cookie）。
 func TestDecodeSessionFailures(t *testing.T) {
 	tokens := newTestTokens(t)
-	epochs := &fakeEpochReader{values: map[int64]int64{}}
+	epochs := &fakeEpochReader{values: map[int64]int64{}, revoked: map[string]bool{}}
 	tok, _ := sessionToken(t, tokens, epochs)
 
 	// 过期令牌：exp 已过（Verifier 步骤 2）。
@@ -788,16 +791,22 @@ func TestDecodeSessionFailures(t *testing.T) {
 	}
 
 	cases := []struct {
-		name  string
-		tok   string
-		epoch int64 // 读取链返回的当前 epoch（3 = 一致，4 = 不一致）
+		name    string
+		tok     string
+		epoch   int64  // 读取链返回的当前 epoch（3 = 一致，4 = 不一致）
+		revoked string // 非 empty 时置该 sid 的逐出标记
 	}{
-		{"invalid token", "not-a-session-token", 3},
-		{"expired", expired, 3},
-		{"epoch mismatch", tok, 4},
+		{"invalid token", "not-a-session-token", 3, ""},
+		{"expired", expired, 3, ""},
+		{"epoch mismatch", tok, 4, ""},
+		{"revoked", tok, 3, "sid-0001"},
 	}
 	for _, c := range cases {
 		epochs.values[10086] = c.epoch
+		delete(epochs.revoked, "sid-0001")
+		if c.revoked != "" {
+			epochs.revoked[c.revoked] = true
+		}
 		h := newRPCTestMux(t, &fakeUserStore{}, tokens, epochs)
 		rec := doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: c.tok})
 		if rec.Code != http.StatusUnauthorized {
@@ -809,15 +818,23 @@ func TestDecodeSessionFailures(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "renewed") {
 			t.Errorf("%s: 错误体携带 renewedToken 语义 (body %s)", c.name, rec.Body.String())
 		}
+		// 失效指令维持现状不适用（令牌来自请求体，§1.9）：不写 X-Authloft-Token、
+		// 不写 Set-Cookie。
+		if got := rec.Header().Get("X-Authloft-Token"); got != "" {
+			t.Errorf("%s: X-Authloft-Token = %q, want 空（RPC 域不下发失效指令）", c.name, got)
+		}
+		if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+			t.Errorf("%s: Set-Cookie = %v, want 空（RPC 域不下发失效指令）", c.name, got)
+		}
 	}
 }
 
-// TestDecodeSessionEpochInfraError epoch 读取链基础设施故障（Redis 与回源
-// 均失败）→ 500 internal（verify.go 行 27-29：不得与未登录混同；gateway
-// 同款口径）。
+// TestDecodeSessionEpochInfraError 失效检查读取链基础设施故障（Redis 命令级
+// 故障且回源也失败）→ 500 internal（verify.go 口径：不得与未登录混同；
+// gateway 同款口径）。
 func TestDecodeSessionEpochInfraError(t *testing.T) {
 	tokens := newTestTokens(t)
-	// values 仍需初始化（sessionToken 夹具要写入）；Current 对 err 非 nil
+	// values 仍需初始化（sessionToken 夹具要写入）；Check 对 err 非 nil
 	// 恒先返回故障，values 不会被读到。
 	epochs := &fakeEpochReader{values: map[int64]int64{}, err: errors.New("redis down")}
 	tok, _ := sessionToken(t, tokens, epochs)
@@ -829,6 +846,46 @@ func TestDecodeSessionEpochInfraError(t *testing.T) {
 	}
 	if got := connectCodeOf(t, rec.Body.String()); got != "internal" {
 		t.Errorf("code = %q, want internal", got)
+	}
+	// 故障响应同样不下发失效指令（RPC 域维持现状）。
+	if got := rec.Header().Get("X-Authloft-Token"); got != "" {
+		t.Errorf("X-Authloft-Token = %q, want 空", got)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("Set-Cookie = %v, want 空", got)
+	}
+}
+
+// TestDecodeSessionFailOpenPasses Redis 命令级故障 fail-open 放行：模拟
+// Check 在命令级故障后回源 DB 一致（返回匹配 epoch、revoked=false、无错误
+// 的三元组）→ 请求照常放行（200 + renewedToken），故障不放大为拒绝，且
+// 不下发任何失效指令（fail-open 放行不是失效判定，§1.9）。
+func TestDecodeSessionFailOpenPasses(t *testing.T) {
+	tokens := newTestTokens(t)
+	epochs := &fakeEpochReader{values: map[int64]int64{}}
+	tok, old := sessionToken(t, tokens, epochs) // fake 返回 epoch=3 与令牌一致
+	h := newRPCTestMux(t, &fakeUserStore{}, tokens, epochs)
+
+	rec := doRPC(t, h, rpcv1connect.TokenServiceDecodeSessionProcedure, &rpcv1.DecodeSessionRequest{SessionToken: tok})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200（fail-open 回源一致放行, body %s）", rec.Code, rec.Body.String())
+	}
+	var got rpcv1.SessionResponse
+	if err := proto.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if got.GetRenewedToken() == "" {
+		t.Fatal("renewedToken 为空（放行必须重签）")
+	}
+	if fresh, err := tokens.Parse(got.GetRenewedToken()); err != nil ||
+		fresh.GetId() != old.GetId() || fresh.GetEpoch() != old.GetEpoch() || fresh.GetSid() != old.GetSid() {
+		t.Fatalf("renewedToken 载荷不自洽: err=%v fresh=%v old=%v", err, fresh, old)
+	}
+	if v := rec.Header().Get("X-Authloft-Token"); v != "" {
+		t.Errorf("X-Authloft-Token = %q, want 空（故障放行不下发失效指令）", v)
+	}
+	if v := rec.Header().Values("Set-Cookie"); len(v) != 0 {
+		t.Errorf("Set-Cookie = %v, want 空（故障放行不下发失效指令）", v)
 	}
 }
 

@@ -166,7 +166,9 @@ func (d *consentDeps) service() *accountsvc.ConsentService {
 // consentEpoch 与 consentCookie 签发的 epoch 一致（见 consentCookie）。
 type consentEpoch struct{}
 
-func (consentEpoch) Current(_ context.Context, _ int64) (int64, error) { return 1, nil }
+func (consentEpoch) Check(_ context.Context, _ int64, _ string) (int64, bool, error) {
+	return 1, false, nil
+}
 
 func newConsentHandler(t *testing.T, d *consentDeps) *ConsentHandler {
 	t.Helper()

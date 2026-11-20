@@ -43,8 +43,8 @@ import (
 // fakeEpochReader 隔离型 epoch 读取（口径同 internal/connect/session_test.go）。
 type fakeEpochReader struct{ values map[int64]int64 }
 
-func (f *fakeEpochReader) Current(_ context.Context, uid int64) (int64, error) {
-	return f.values[uid], nil
+func (f *fakeEpochReader) Check(_ context.Context, uid int64, _ string) (int64, bool, error) {
+	return f.values[uid], false, nil
 }
 
 // fakeUsers UserReader 的 fake：分别控制 user / profile 行与错误。

@@ -1486,12 +1486,14 @@ func registerOIDC(r *echo.Echo, deps *assembled) {
 }
 
 // registerGateway 注册 `ANY /api/gateway/decode`（§6）：Gateway 中间件先于 handler，
-// tokens 动态源每请求读取 settings、Verifier / Cookie 名与 session 拦截器同源。
+// tokens 动态源每请求读取 settings、Verifier / Cookie 构造器 / Cookie 名与 session
+// 拦截器同源（Cookie 来源令牌的失效清理头须与续期下发同一构造器实例）。
 func registerGateway(api *echo.Group, deps *assembled) {
 	gw := api.Group("/gateway")
 	gw.Use(middleware.Gateway(gatewayTokensSource(deps.settings)))
 	gatewayhandler.Register(gw, gatewayhandler.Deps{
 		Verify: deps.sessionSvc.Verifier,
+		Cookie: deps.sessionSvc.Cookie,
 		CookieName: func() string {
 			v, _ := deps.settings.GetString(settings.KeyCookieName)
 			return v

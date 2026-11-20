@@ -78,6 +78,24 @@ func (r StringResult) Bytes() ([]byte, error) {
 // Err 返回应答错误（成功为 nil）。
 func (r StringResult) Err() error { return r.err }
 
+// MGetResult MGET 应答：按键序逐项返回；单键缺失以 nil 元素表达（对齐
+// Nil 哨兵口径），命令级错误整批返回。MGET 是全有或全无的单命令——不存在
+// 「部分键失败」，但两层必须分开表达：把单键 Nil 误读为命令错误会多一次
+// 无谓回源，把命令错误误读为单键缺失会在真故障时漏掉失效判定（§11.1）。
+type MGetResult struct {
+	vals []*string
+	err  error
+}
+
+// Result 返回按键序的逐项取值与命令级错误：nil 元素 = 该键缺失（Nil）；
+// err 非 nil 时 vals 无效（返回 nil 切片）。
+func (r MGetResult) Result() ([]*string, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.vals, nil
+}
+
 // DurationResult PTTL / TTL 应答；键缺失为 -2、无 TTL 为 -1（与 go-redis
 // 时代一致，负值不换算单位）。
 type DurationResult struct {
@@ -134,6 +152,10 @@ func NewIntResult(val int64, err error) IntResult { return IntResult{val: val, e
 
 // NewStringResult 构造字符串应答（键缺失传 Nil）。
 func NewStringResult(val string, err error) StringResult { return StringResult{val: val, err: err} }
+
+// NewMGetResult 构造 MGET 应答（跨包 fake 组装用）：vals 按 keys 序逐项，
+// 缺失键以 nil 元素占位；命令级错误传 err（此时 vals 无效）。
+func NewMGetResult(vals []*string, err error) MGetResult { return MGetResult{vals: vals, err: err} }
 
 // NewEvalResultInt 构造单整数 EVAL 应答。
 func NewEvalResultInt(val int64, err error) EvalResult {
@@ -241,6 +263,35 @@ func (c *RedisClient) Get(ctx context.Context, key string) StringResult {
 func (c *RedisClient) GetDel(ctx context.Context, key string) StringResult {
 	v, err := c.c.Do(ctx, c.c.B().Getdel().Key(key).Build()).ToString()
 	return StringResult{val: v, err: nilify(err)}
+}
+
+// MGet 一次读多键（MGET）：应答按键序逐项返回，缺失键的 null 应答映射为
+// nil 元素，命令级错误整批返回（nilify 对齐 Nil 口径的只有命令级错误；
+// null 应答不是错误，直接表达为缺失）。
+func (c *RedisClient) MGet(ctx context.Context, keys ...string) MGetResult {
+	if len(keys) == 0 {
+		return MGetResult{}
+	}
+	res := c.c.Do(ctx, c.c.B().Mget().Key(keys...).Build())
+	if err := res.Error(); err != nil {
+		return MGetResult{err: nilify(err)}
+	}
+	arr, err := res.ToArray()
+	if err != nil {
+		return MGetResult{err: nilify(err)}
+	}
+	vals := make([]*string, len(arr))
+	for i := range arr {
+		if arr[i].IsNil() {
+			continue
+		}
+		s, terr := arr[i].ToString()
+		if terr != nil {
+			return MGetResult{err: nilify(terr)}
+		}
+		vals[i] = &s
+	}
+	return MGetResult{vals: vals}
 }
 
 // Set 写键；expiration <= 0 不带过期。

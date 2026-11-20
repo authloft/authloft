@@ -47,16 +47,27 @@ const sessionTokenHeader = "X-Authloft-Token"
 // 口径同值另设，不为此扩大 session 包导出面。
 const defaultSessionCookieName = "al_session"
 
+// invalidationTokenNone 失效指令字面量（§1.2）：经 X-Authloft-Token 响应头
+// 下发，不是令牌——客户端收到即清空本地令牌，不得解析或回传该值（旧客户端
+// 把 none 当令牌回传只会解析失败再次被拒，不构成安全绕过）。
+const invalidationTokenNone = "none"
+
 // NewSessionInterceptor 返回 session 会话拦截器（docs/后端架构.md §3.14
 // 行 473；语义沿用既有中间件，本处不挂载）：
 //
 //   - 取值优先级 X-Authloft-Token Header → Cookie（名经 cookieName 每请求
 //     读取，nil / 空串回落默认 al_session）；Header 有值（哪怕无效）不回落
 //     Cookie——优先级是取值顺序而非失败回退；
-//   - 无令牌 / 校验失败（ErrNotAuthenticated / ErrSessionStale）→ 未登录：
-//     清 Cookie 并放行匿名，不 401——401 归 admin 等下游拦截器；
-//   - epoch 读取链故障（Redis 与回源均失败）→ internal（§11.1：基础设施
-//     错误不得与未登录混同）；
+//   - 无令牌 → 未登录：清 Cookie 并放行匿名，不 401——401 归 admin 等下游
+//     拦截器；
+//   - 校验失败（ErrNotAuthenticated / ErrSessionStale / ErrSessionRevoked）
+//     → 未登录放行，失效指令按令牌来源分流且互斥（§1.9 / §1.2）：Header
+//     来源 → 响应头 X-Authloft-Token: none（经 handler 级 CallInfo 写回，
+//     401 响应同样带）；Cookie 来源 → Set-Cookie 清除（属性经同一构造器按
+//     当前请求判定）；失效指令只作用于失效分支，不新增 Redis 访问；
+//   - 失效检查读取链故障（Redis 命令级故障且回源也失败）→ internal（§11.1：
+//     基础设施错误不得与未登录混同；fail-open 回源降级封装在 cache.Check
+//     内，回源一致即放行、不下发任何失效指令）；
 //   - 校验通过 → uid/amr/sid 注入 ctx（session.WithSessionContext）+
 //     每请求重签（§11.5：iat/exp 刷新、epoch/sid 不变，纯计算无存储写入），
 //     按令牌来源下发：Header 来源 → X-Authloft-Token 响应头；Cookie 来源 →
@@ -92,15 +103,23 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 			p, err := verifier.Verify(ctx, tok)
 			switch {
 			case err == nil:
-			case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale):
-				// 解不开 / 过期 / epoch 不一致：未登录（§3.14 行 473 口径），
-				// 清 Cookie 放行，401 由下游拦截器判定。
-				AddSessionCookie(ctx, cookie.Clear(sig))
+			case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale),
+				errors.Is(err, session.ErrSessionRevoked):
+				// 解不开 / 过期 / epoch 不一致 / 已逐出：未登录（§3.14
+				// 口径）放行，401 由下游拦截器判定；失效指令按令牌来源分流且
+				// 互斥（§1.9）：Header → X-Authloft-Token: none，Cookie →
+				// Set-Cookie 清除。
+				if fromHeader {
+					setResponseHeader(ctx, sessionTokenHeader, invalidationTokenNone)
+				} else {
+					AddSessionCookie(ctx, cookie.Clear(sig))
+				}
 				return next(ctx, req)
 			default:
-				// epoch 读取链故障：基础设施错误，按 internal 拒绝。此前错误被
-				// 丢弃、Redis 故障与"未登录"无法区分；原始 err 进日志并经
-				// sanitizedError 留在错误链供外层错误日志拦截器回溯，响应仍消毒。
+				// 失效检查读取链故障（fail-open 回源也失败）：基础设施错误，
+				// 按 internal 拒绝。此前错误被丢弃、Redis 故障与"未登录"无法
+				// 区分；原始 err 进日志并经 sanitizedError 留在错误链供外层
+				// 错误日志拦截器回溯，响应仍消毒。
 				logx.Error(ctx, "connect: session verify failed",
 					"procedure", req.Spec().Procedure,
 					"error", logx.RedactText(err.Error()),
@@ -127,9 +146,18 @@ func NewSessionInterceptor(verifier *session.Verifier, renewer *session.Renewer,
 	}
 }
 
-// pickSessionToken 按取值优先级取 session_token（§1.2 行 120）：
-// X-Authloft-Token Header → Cookie。Connect 拦截器侧拿不到 *http.Request
-// （AnyRequest 只暴露 Header），故用临时 Request 借其 Cookie 解析。
+// PickSessionToken 按取值优先级取 session_token 并返回来源（§1.2）：
+// X-Authloft-Token Header → Cookie，Header 有值（哪怕无效）不回落 Cookie
+// ——优先级是取值顺序而非失败回退。Connect 会话拦截器与网关 decode 共用
+// 本实现，防两处判定漂移；cookieName 为 Cookie 名动态源（nil / 空串回落
+// 默认 al_session）。
+func PickSessionToken(h http.Header, cookieName func() string) (tok string, fromHeader bool) {
+	return pickSessionToken(h, cookieName)
+}
+
+// pickSessionToken 上述导出形态的实现体。Connect 拦截器侧拿不到
+// *http.Request（AnyRequest 只暴露 Header），故用临时 Request 借其 Cookie
+// 解析。
 func pickSessionToken(h http.Header, cookieName func() string) (tok string, fromHeader bool) {
 	if v := strings.TrimSpace(h.Get(sessionTokenHeader)); v != "" {
 		return v, true

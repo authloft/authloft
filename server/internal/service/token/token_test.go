@@ -41,9 +41,9 @@ type countingEpochReader struct {
 	calls int
 }
 
-func (f *countingEpochReader) Current(context.Context, int64) (int64, error) {
+func (f *countingEpochReader) Check(context.Context, int64, string) (int64, bool, error) {
 	f.calls++
-	return f.epoch, nil
+	return f.epoch, false, nil
 }
 
 // newTokenService 构造被测 service（真实 Codec 签发的令牌 + 注入 TTL）。

@@ -348,7 +348,10 @@ func NewTokenHandler(verify *session.Verifier, renew *session.Renewer, users Use
 func (h *TokenHandler) DecodeSession(ctx context.Context, req *connect.Request[rpcv1.DecodeSessionRequest]) (*connect.Response[rpcv1.SessionResponse], error) {
 	p, err := h.verify.Verify(ctx, req.Msg.GetSessionToken())
 	if err != nil {
-		if errors.Is(err, session.ErrNotAuthenticated) || errors.Is(err, session.ErrSessionStale) {
+		// 已逐出（ErrSessionRevoked）同属「session 无效」：失效语义维持
+		// 现状（401 unauthenticated，令牌来自请求体、无失效指令下发）。
+		if errors.Is(err, session.ErrNotAuthenticated) || errors.Is(err, session.ErrSessionStale) ||
+			errors.Is(err, session.ErrSessionRevoked) {
 			return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 		}
 		return nil, connect.NewError(connect.CodeInternal, internalconnect.InternalError(err))

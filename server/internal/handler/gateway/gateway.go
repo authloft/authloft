@@ -6,8 +6,10 @@
 // 绝不 401/403。
 //
 // 解码 / 校验复用 session.Tokens.Parse + Verifier.Verify（§11.1 四步，
-// 不新造第二套）；令牌取值优先级 X-Authloft-Token Header → Cookie
-// （取值顺序而非失败回退，口径同 connect 会话拦截器 §1.2 行 120）。
+// 不新造第二套）；令牌取值优先级 X-Authloft-Token Header → Cookie 与来源
+// 判定经 connect.PickSessionToken 与 Connect 会话拦截器共用同一实现（取值
+// 顺序而非失败回退，口径同 §1.2）；失效分支的清理头按令牌来源分流
+// 且互斥（§6 / §1.9）。
 package gateway
 
 import (
@@ -18,6 +20,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"authloft/internal/connect"
 	"authloft/internal/logx"
 	"authloft/internal/session"
 )
@@ -48,17 +51,19 @@ const (
 	statusInvalid = "invalid"
 )
 
-// defaultSessionCookieName 会话 Cookie 名默认值（§1.9 行 288、settings 键
-// cookie_name）。session 包同值常量为私有，按文档值重复定义（先例：
-// internal/connect/interceptors.go 行 47）。
-const defaultSessionCookieName = "al_session"
+// invalidationTokenNone 失效指令字面量（§1.2 / §6）：经 X-Authloft-Token
+// 响应头下发，不是令牌——客户端收到即清空本地令牌，不得解析或回传。
+const invalidationTokenNone = "none"
 
 // Deps 端点依赖（全部由装配层构造注入，叶子件不读 settings / config）：
-// Verify 复用 assemble 共享单例（sessionTokens / epochStore）；CookieName
-// 为 Cookie 名动态源（settings 键 cookie_name 每请求读取，空值回落
-// al_session），nil 时直接用默认名。
+// Verify 复用 assemble 共享单例（sessionTokens / epochStore）；Cookie 为
+// 会话 Cookie 属性构造器（与登录 / 续期下发同一实例），Cookie 来源令牌的
+// 失效清理头经其 Clear 构造（nil 时跳过清理头——装配缺省防御，生产恒注入）；
+// CookieName 为 Cookie 名动态源（settings 键 cookie_name 每请求读取，空值
+// 回落 al_session），nil 时直接用默认名。
 type Deps struct {
 	Verify     *session.Verifier
+	Cookie     *session.Cookie
 	CookieName func() string
 }
 
@@ -76,23 +81,28 @@ type handler struct {
 }
 
 // decode `ANY /api/gateway/decode`（§6 行 1350-1361）：恒 200、纯响应头、
-// 无响应体。无 / 篡改 / 过期 / epoch 不一致的令牌一律 X-Session-Status:
-// invalid，不携带其余字段头；唯一非 200 出口是 epoch 读取链基础设施故障
-// （verify.go 行 27-29 口径：不得与未登录混同）→ 500 空体。
+// 无响应体。无 / 篡改 / 过期 / epoch 不一致 / 已逐出的令牌一律
+// X-Session-Status: invalid，不携带其余字段头；失效分支按令牌来源追加
+// 清理头且互斥（§6 / §1.9）：Header 来源 → X-Authloft-Token: none、Cookie
+// 来源 → Set-Cookie 清除，无令牌不下发任何清理头；唯一非 200 出口是失效
+// 检查读取链基础设施故障（verify.go 口径：不得与未登录混同）→ 500 空体。
 func (h *handler) decode(c *echo.Context) error {
-	tok := h.pickToken(c)
+	tok, fromHeader := h.pickToken(c)
 	if tok == "" {
 		return writeStatus(c, statusInvalid)
 	}
 	p, err := h.deps.Verify.Verify(c.Request().Context(), tok)
 	switch {
 	case err == nil:
-	case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale):
-		// 解不开（kid 未知 / 篡改 / 跨 purpose）/ 过期 / epoch 不一致：
-		// 会话无效，恒 200 + invalid（403 归 Gateway 中间件管，§6）。
+	case errors.Is(err, session.ErrNotAuthenticated), errors.Is(err, session.ErrSessionStale),
+		errors.Is(err, session.ErrSessionRevoked):
+		// 解不开（kid 未知 / 篡改 / 跨 purpose）/ 过期 / epoch 不一致 /
+		// 已逐出：会话无效，恒 200 + invalid（403 归 Gateway 中间件管，
+		// §6）+ 按令牌来源的清理头（互斥）。
+		h.writeInvalidation(c, fromHeader)
 		return writeStatus(c, statusInvalid)
 	default:
-		// epoch 读取链故障（Redis 与回源均失败，verify.go 行 64-67）：
+		// 失效检查读取链故障（fail-open 回源也失败，verify.go）：
 		// 基础设施错误不得误判为登出态，按豁免端点原生最小形态 500 空体
 		// 拒绝（口径同 connect 会话拦截器 internal 错误分支）。本域是 echo
 		// REST 端点、不在 Connect 错误日志拦截链内，且响应无错误体，必须
@@ -127,21 +137,27 @@ func setHeader(c *echo.Context, key, value string) {
 	c.Response().Header().Set(key, value)
 }
 
-// pickToken 取 session_token（§6 行 1352：X-Authloft-Token Header →
-// Cookie）。优先级是取值顺序而非失败回退——Header 有值即用、无效不回落
-// Cookie（口径同 connect 会话拦截器 pickSessionToken、§1.2 行 120）。
-func (h *handler) pickToken(c *echo.Context) string {
-	if v := strings.TrimSpace(c.Request().Header.Get(sessionTokenHeader)); v != "" {
-		return v
+// writeInvalidation 失效分支的清理头（§6 / §1.9，按令牌来源分流且互斥）：
+// Header 来源 → X-Authloft-Token: none；Cookie 来源 → Set-Cookie 清除同名
+// 会话 Cookie（MaxAge=-1，属性经同一构造器按当前请求判定——echo 链拿得到
+// 真实 *http.Request，Header 与 TLS 双信号齐供）。Cookie 构造器未注入时
+// 跳过（装配缺省防御，生产恒注入）。
+func (h *handler) writeInvalidation(c *echo.Context, fromHeader bool) {
+	if fromHeader {
+		setHeader(c, sessionTokenHeader, invalidationTokenNone)
+		return
 	}
-	name := defaultSessionCookieName
-	if h.deps.CookieName != nil {
-		if n := strings.TrimSpace(h.deps.CookieName()); n != "" {
-			name = n
-		}
+	if h.deps.Cookie == nil {
+		return
 	}
-	if ck, err := c.Cookie(name); err == nil && ck != nil {
-		return ck.Value
-	}
-	return ""
+	sig := session.RequestSignal{Header: c.Request().Header, TLS: c.Request().TLS != nil}
+	http.SetCookie(c.Response(), h.deps.Cookie.Clear(sig))
+}
+
+// pickToken 取 session_token 及其来源（§6：X-Authloft-Token Header
+// → Cookie）。优先级是取值顺序而非失败回退——Header 有值即用、无效不回落
+// Cookie（口径同 connect 会话拦截器）；实现经 connect.PickSessionToken 共用，
+// 防两处判定漂移。
+func (h *handler) pickToken(c *echo.Context) (string, bool) {
+	return connect.PickSessionToken(c.Request().Header, h.deps.CookieName)
 }

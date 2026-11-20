@@ -71,9 +71,9 @@ func TestRenewZeroRedisCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	getsBefore, setsBefore := cr.counts()
-	if getsBefore == 0 && setsBefore == 0 {
-		t.Fatal("前置：Verify 应已触发 epoch 链（Redis 调用 > 0）")
+	_, mgetsBefore, setsBefore := cr.counts()
+	if mgetsBefore == 0 && setsBefore == 0 {
+		t.Fatal("前置：Verify 应已触发失效检查（Redis 调用 > 0）")
 	}
 
 	for i := 0; i < 3; i++ { // 多次重签均零存储写入
@@ -81,10 +81,10 @@ func TestRenewZeroRedisCalls(t *testing.T) {
 			t.Fatalf("Renew #%d: %v", i, err)
 		}
 	}
-	getsAfter, setsAfter := cr.counts()
-	if getsAfter != getsBefore || setsAfter != setsBefore {
-		t.Fatalf("renew touched storage: gets %d→%d, sets %d→%d（必须零调用）",
-			getsBefore, getsAfter, setsBefore, setsAfter)
+	_, mgetsAfter, setsAfter := cr.counts()
+	if mgetsAfter != mgetsBefore || setsAfter != setsBefore {
+		t.Fatalf("renew touched storage: mgets %d→%d, sets %d→%d（必须零调用）",
+			mgetsBefore, mgetsAfter, setsBefore, setsAfter)
 	}
 }
 
