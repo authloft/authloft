@@ -10,7 +10,7 @@ option go_package = "authloft/gen/go/api/admin/v1;adminv1";
 // 报文字段集合 = §5.6 四张表之和，键名不得另起别名
 // 编号按「密码策略 → 账号策略 → 验证码限流 → 其余」的表序与行序从 1 起连续（§12.9）。
 // Request 为部分更新：另带四个 has_* 伴生标志（非 settings 键），数据键编号与
-// Response 不同；Response 恒输出 38 数据键、不含伴生标志（§12.8 双端独立演进）。
+// Response 不同；Response 恒输出 39 数据键、不含伴生标志（§12.8 双端独立演进）。
 
 // GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6，无入参）。
 message GetSettingsRequest {}
@@ -104,25 +104,30 @@ message SetSettingsRequest {
   // has 位：true = gateway_tokens 在场（空数组 = 清空）；缺省 / false = 不修改。
   optional bool has_gateway_tokens = 36;
   repeated string gateway_tokens = 37;
-  // 事件日志保留天数，默认 180（§5.6）。
-  optional int64 eventlog_retention_days = 38;
   // 静态资源基址（CDN），改后需刷新页面生效（§5.6、§8）。
-  optional string static_base = 39;
+  optional string static_base = 38;
   // HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
   // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
   //（§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
-  optional string https_deployment = 40;
+  optional string https_deployment = 39;
   // 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-  optional string site_name = 41;
+  optional string site_name = 40;
   // 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。未配置仅取直连
   // RemoteAddr、不采信任何转发头；配置后取该头逗号首段并去空白，头缺失 /
   // 空值回落直连。仅供审计与限流键、不作鉴权依据；配置头的入站清洗由
   // 部署方在反代负责，直连可伪造、如实记录。
-  optional string client_ip_header = 42;
+  optional string client_ip_header = 41;
+  // 事件日志分区天数（天），默认 7（§5.6）。分区维护任务按此天数滚动建
+  // 分区；取值范围 1-365，范围外 → invalid_request。单键范围校验、不做与
+  // eventlog_max_partitions 的交叉约束（消费方分区任务读取后再钳制兜底）。
+  optional int64 eventlog_partition_days = 42;
+  // 事件日志最大分区数，默认 26（§5.6）。分区总数达上限后淘汰最旧分区；
+  // 取值范围 1-365，范围外 → invalid_request。
+  optional int64 eventlog_max_partitions = 43;
 }
 
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
-// 键集合 / 键名与 SetSettingsRequest 的 38 个数据键一致，编号按表序从 1 起
+// 键集合 / 键名与 SetSettingsRequest 的 39 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
 // 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -197,16 +202,18 @@ message SettingsResponse {
   string avatar_storage_provider = 32;
   // 网关 Token 列表，默认 []（§5.6）。
   repeated string gateway_tokens = 33;
-  // 事件日志保留天数，默认 180（§5.6）。
-  int64 eventlog_retention_days = 34;
   // 静态资源基址（CDN），默认 /assets（§5.6）。
-  string static_base = 35;
+  string static_base = 34;
   // HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
   // 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
   //（§1.9 驱动口径）。
-  string https_deployment = 36;
+  string https_deployment = 35;
   // 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-  string site_name = 37;
+  string site_name = 36;
   // 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。
-  string client_ip_header = 38;
+  string client_ip_header = 37;
+  // 事件日志分区天数（天），默认 7（§5.6）；取值范围 1-365。
+  int64 eventlog_partition_days = 38;
+  // 事件日志最大分区数，默认 26（§5.6）；超出后淘汰最旧分区，取值范围 1-365。
+  int64 eventlog_max_partitions = 39;
 }

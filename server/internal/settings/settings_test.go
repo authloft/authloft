@@ -1,5 +1,5 @@
 // settings 包纯逻辑测试（无 DB / Redis，本地可跑）：
-//  1. 38 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
+//  1. 39 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
 //     默认值，缺一多一都算 FAIL）；
 //  2. pwd_* 五键与 security.PasswordRule 规则标识同名（§5.6 行 1275）；
 //  3. Validate 白名单 + 类型校验（含 int→int64 归一化、交叉约束不做、
@@ -60,22 +60,23 @@ var spec56 = []struct {
 	{"email_provider_key", TypeString, ""},
 	{"avatar_storage_provider", TypeString, ""},
 	{"gateway_tokens", TypeStringSlice, []string{}},
-	{"eventlog_retention_days", TypeInt64, int64(180)},
 	{"static_base", TypeString, "/assets"},
 	{"https_deployment", TypeString, "auto"},
 	{"site_name", TypeString, "Authloft"},
 	{"client_ip_header", TypeString, ""},
+	{"eventlog_partition_days", TypeInt64, int64(7)},
+	{"eventlog_max_partitions", TypeInt64, int64(26)},
 }
 
 // TestRegistryMatchesSpec：白名单 = §5.6 四张表之和，逐键断言键名 /
-// 类型 / 默认值；总数 38（5+1+5+27）双向无多无缺、无重复。
+// 类型 / 默认值；总数 39（5+1+5+28）双向无多无缺、无重复。
 func TestRegistryMatchesSpec(t *testing.T) {
-	if len(spec56) != 38 {
-		t.Fatalf("§5.6 硬编码副本应 38 键，实际 %d", len(spec56))
+	if len(spec56) != 39 {
+		t.Fatalf("§5.6 硬编码副本应 39 键，实际 %d", len(spec56))
 	}
 	got := Defs()
-	if len(got) != 38 {
-		t.Errorf("白名单应 38 键，实际 %d", len(got))
+	if len(got) != 39 {
+		t.Errorf("白名单应 39 键，实际 %d", len(got))
 	}
 	seen := make(map[string]bool, len(got))
 	for _, d := range got {
@@ -182,6 +183,47 @@ func TestValidate(t *testing.T) {
 	// 交叉约束不做：pwd_max_length=100（> 硬上限 64）也放行，由前端/管理员自律
 	if _, err := Validate(KeyPwdMaxLength, int64(100)); err != nil {
 		t.Errorf("交叉约束不做，pwd_max_length=100 不应在 Validate 拒绝: %v", err)
+	}
+}
+
+// TestValidateEventlogPartitionRange：eventlog 分区两键单键范围校验
+// （N∈[1,365]、X∈[1,365]）：0 / 366 拒（含 int 字面量形态，均包
+// ErrInvalidValue 供 service 层转译 invalid_request），1 / 365 过；
+// 两键不做交叉约束（N=1 配 X=365 组合同样放行，钳制兜底在消费方分区任务）。
+func TestValidateEventlogPartitionRange(t *testing.T) {
+	keys := []string{KeyEventlogPartitionDays, KeyEventlogMaxPartitions}
+	for _, key := range keys {
+		for _, bad := range []any{int64(0), int64(366), int(0), int(366), int64(-1)} {
+			_, err := Validate(key, bad)
+			if err == nil || !errors.Is(err, ErrInvalidValue) {
+				t.Errorf("Validate(%q, %v) 应拒绝且包 ErrInvalidValue, got %v", key, bad, err)
+				continue
+			}
+			if !strings.Contains(err.Error(), "1-365") {
+				t.Errorf("Validate(%q, %v) 错误信息应含值域 1-365, got %v", key, bad, err)
+			}
+		}
+		for _, ok := range []any{int64(1), int64(365), int(7)} {
+			v, err := Validate(key, ok)
+			if err != nil {
+				t.Errorf("Validate(%q, %v) 应通过, got %v", key, ok, err)
+				continue
+			}
+			want := int64(7)
+			if iv, isInt64 := ok.(int64); isInt64 {
+				want = iv
+			}
+			if iv, ok2 := v.(int64); !ok2 || iv != want {
+				t.Errorf("Validate(%q, %v) 归一值 = %#v, want int64(%d)", key, ok, v, want)
+			}
+		}
+	}
+	// 交叉约束不做：N=1 / X=365 组合放行（各自单键范围内即可）。
+	if _, err := Validate(KeyEventlogPartitionDays, int64(1)); err != nil {
+		t.Errorf("交叉约束不做，partition_days=1 不应拒绝: %v", err)
+	}
+	if _, err := Validate(KeyEventlogMaxPartitions, int64(365)); err != nil {
+		t.Errorf("交叉约束不做，max_partitions=365 不应拒绝: %v", err)
 	}
 }
 

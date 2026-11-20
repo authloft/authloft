@@ -13,10 +13,12 @@
  * 不再整体覆盖。全量构造函数 api.buildSetSettingsRequest 仍保留，供
  * 兼容场景与键集测试使用。
  *
- * 键集 = 38 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
+ * 键集 = 39 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
  * https_deployment 与 site_name（站点名称，注入模板 <title> 占位符
- * {{AUTHLOFT_SITE_NAME}}）与 client_ip_header（来源 IP 采信头）。server proto
- * 与 web 生成物已同步刷入 38——文档 / proto / 生成物三处一致，照常建键；
+ * {{AUTHLOFT_SITE_NAME}}）与 client_ip_header（来源 IP 采信头），以及
+ * eventlog_partition_days / eventlog_max_partitions（事件日志分区两键，
+ * 服务端单键范围校验 1-365）。server proto 与 web 生成物已同步刷入
+ * 39——文档 / proto / 生成物三处一致，照常建键；
  * 行 1361「取值非 true / false / auto → invalid_request」由
  * settingsDraftIssue 前端自律拦截（三态外的值一旦被选并提交即被后端拒收）。
  *
@@ -53,7 +55,8 @@ const NUMBER_KEYS = [
   'queueCapacity',
   'queueBatch',
   'queueFlushMs',
-  'eventlogRetentionDays',
+  'eventlogPartitionDays',
+  'eventlogMaxPartitions',
 ] as const satisfies string[];
 
 export type SettingsNumberKey = (typeof NUMBER_KEYS)[number];
@@ -140,14 +143,15 @@ export const DEFAULT_SETTINGS: SettingsDraft = {
   emailProviderKey: '',
   avatarStorageProvider: '',
   gatewayTokens: [],
-  eventlogRetentionDays: 180,
   staticBase: '/assets',
   httpsDeployment: 'auto',
   clientIpHeader: '',
+  eventlogPartitionDays: 7,
+  eventlogMaxPartitions: 26,
 };
 
 /**
- * GetSettings 响应 → 表单草稿（38 键全量直映射；int64 bigint → number 经
+ * GetSettings 响应 → 表单草稿（39 键全量直映射；int64 bigint → number 经
  * toCount 收窄）。零值即真值（全量替换语义的对称面：后端读出的零值 = 管理
  * 员明确设置或默认值本身为零值，如 captcha_provider_key 空串 = 内置图形码）。
  */
@@ -187,10 +191,11 @@ export function draftFromSettings(response: SettingsResponse): SettingsDraft {
     emailProviderKey: response.emailProviderKey,
     avatarStorageProvider: response.avatarStorageProvider,
     gatewayTokens: [...response.gatewayTokens],
-    eventlogRetentionDays: toCount(response.eventlogRetentionDays),
     staticBase: response.staticBase,
     httpsDeployment: response.httpsDeployment,
     clientIpHeader: response.clientIpHeader,
+    eventlogPartitionDays: toCount(response.eventlogPartitionDays),
+    eventlogMaxPartitions: toCount(response.eventlogMaxPartitions),
   };
 }
 
@@ -320,9 +325,9 @@ export type SettingsSectionKey =
   | 'queue'
   | 'externalServices'
   | 'gatewayToken'
-  | 'logRetention';
+  | 'logPartition';
 
-/** 表单分区（§5.6 四张表的展示归组；38 键全覆盖、无重复）。 */
+/** 表单分区（§5.6 四张表的展示归组；39 键全覆盖、无重复）。 */
 export interface SettingsSectionMeta {
   /** 稳定标识（Tab 分组引用点，不随语言变化）。 */
   key: SettingsSectionKey;
@@ -331,7 +336,7 @@ export interface SettingsSectionMeta {
 }
 
 /**
- * 设置页 Tab（§5.6 四张表按主题归组；38 键在 4 个 Tab 间全覆盖、无重复）。
+ * 设置页 Tab（§5.6 四张表按主题归组；39 键在 4 个 Tab 间全覆盖、无重复）。
  * keys = 该 Tab 全部字段键，供「脏标记 / 仅保存本页签 / 提交键集」共用。
  */
 export interface SettingsTabMeta {
@@ -343,10 +348,10 @@ export interface SettingsTabMeta {
 }
 
 /**
- * 设置表单分区清单（渲染数据源）：§5.6 四张表的 38 键按管理员操作场景归组
+ * 设置表单分区清单（渲染数据源）：§5.6 四张表的 39 键按管理员操作场景归组
  * 为 13 区——站点信息 / 注册与找回 / 密码策略 / 登录失败锁定 / 登录方式 /
  * 两步验证 MFA / 验证码限流 / 会话与 Cookie / 域名与 HTTPS / 队列参数 /
- * 外部服务 / 网关令牌 / 日志留存；38 键全覆盖、无重复。分区只改展示归组，
+ * 外部服务 / 网关令牌 / 日志分区；39 键全覆盖、无重复。分区只改展示归组，
  * 字段的 label / hint / unit / addText / placeholder 定义沿用原值。
  * 函数调用期求值（消费方组件渲染期调用），文案经 t() 取当前语言——模块级
  * 常量求值先于 entry setLocale，会冻结在默认语言（en 浏览器恒显 zh）。
@@ -657,15 +662,21 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       ],
     },
     {
-      key: 'logRetention',
-      title: t('admin.settingsSectionLogRetention'),
+      key: 'logPartition',
+      title: t('admin.settingsSectionLogPartition'),
       fields: [
         {
           kind: 'number',
-          key: 'eventlogRetentionDays',
-          label: t('admin.eventlogRetentionDaysLabel'),
+          key: 'eventlogPartitionDays',
+          label: t('admin.eventlogPartitionDaysLabel'),
           unit: t('admin.unitDays'),
-          hint: t('admin.eventlogRetentionDaysHint'),
+          hint: t('admin.eventlogPartitionDaysHint'),
+        },
+        {
+          kind: 'number',
+          key: 'eventlogMaxPartitions',
+          label: t('admin.eventlogMaxPartitionsLabel'),
+          hint: t('admin.eventlogMaxPartitionsHint'),
         },
       ],
     },
@@ -675,7 +686,7 @@ export function getSettingsSections(): SettingsSectionMeta[] {
 /**
  * 设置页 Tab 清单（渲染 / 保存作用域的唯一数据源）：13 个分区按管理员
  * 操作场景归 4 组——站点与账号 / 密码与防护 / 登录与会话 / 部署与集成，
- * 38 键在四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平
+ * 39 键在四个 Tab 间全覆盖、无重复。Tab 的 keys 由其分区字段自动摊平
  * （不另手写键表，避免与 getSettingsSections 漂移）；分区按稳定 slug
  * 引用，标题走 t() 调用期求值（locale 切换不冻结）。
  */
@@ -723,7 +734,7 @@ export function getSettingsTabs(): SettingsTabMeta[] {
       'queue',
       'externalServices',
       'gatewayToken',
-      'logRetention',
+      'logPartition',
     ]),
   ];
 }

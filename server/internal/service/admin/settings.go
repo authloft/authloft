@@ -5,7 +5,7 @@
 // settings.Store / repo/eventlog_repo.go / asyncqueue.Queue）。
 //
 // 职责边界：
-//   - GetSettings：Store.Snapshot → 38 键全键投影（键名与默认值唯一真相 =
+//   - GetSettings：Store.Snapshot → 39 键全键投影（键名与默认值唯一真相 =
 //     §5.6 四张表，与 internal/settings 常量表逐键一致，键名零自造）；投影
 //     到 SettingsResponse 在 dto.AdminSettings（§3.5 裁剪在 dto）。
 //   - SetSettings：部分更新（PATCH）语义——标量按 proto3 optional has 位
@@ -154,7 +154,7 @@ func NewSettingsService(
 }
 
 // GetSettings（§5.6 行 1274，OUTCOME ①）：Store.Snapshot 全量只读副本，
-// 38 键投影在 dto.AdminSettings。键集封闭（settings 白名单），本层零加工。
+// 39 键投影在 dto.AdminSettings。键集封闭（settings 白名单），本层零加工。
 func (s *SettingsService) GetSettings() map[string]any {
 	return s.store.Snapshot()
 }
@@ -213,7 +213,7 @@ func (s *SettingsService) SetSettings(ctx context.Context, actor int64, req *adm
 // nil 请求按空请求处理（无任何 has 位）；https_deployment 三态值域校验在
 // settings.Validate 内，非法值 → invalid_request（§5.6 行 1361）。
 func settingsRequestValues(req *adminv1.SetSettingsRequest) map[string]any {
-	kv := make(map[string]any, 38)
+	kv := make(map[string]any, 39)
 	if req == nil {
 		return kv
 	}
@@ -250,11 +250,12 @@ func settingsRequestValues(req *adminv1.SetSettingsRequest) map[string]any {
 	putOptional(kv, settings.KeyEmailProviderKey, req.EmailProviderKey)
 	putOptional(kv, settings.KeyAvatarStorageProvider, req.AvatarStorageProvider)
 	putList(kv, settings.KeyGatewayTokens, req.GetHasGatewayTokens(), req.GetGatewayTokens())
-	putOptional(kv, settings.KeyEventlogRetentionDays, req.EventlogRetentionDays)
 	putOptional(kv, settings.KeyStaticBase, req.StaticBase)
 	putOptional(kv, settings.KeyHttpsDeployment, req.HttpsDeployment)
 	putOptional(kv, settings.KeySiteName, req.SiteName)
 	putOptional(kv, settings.KeyClientIPHeader, req.ClientIpHeader)
+	putOptional(kv, settings.KeyEventlogPartitionDays, req.EventlogPartitionDays)
+	putOptional(kv, settings.KeyEventlogMaxPartitions, req.EventlogMaxPartitions)
 	return kv
 }
 

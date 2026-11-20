@@ -1,4 +1,4 @@
-// Package settings 系统配置模块（后端架构 §3.12）：38 键白名单 /
+// Package settings 系统配置模块（后端架构 §3.12）：39 键白名单 /
 // 默认值 / 值类型、启动全量预热、本地缓存快照、写入口径、al:settings:chg
 // 热更新。键名与默认值的唯一真相 = 接口文档 §5.6 四张表，
 // 本包逐键一致、不另起别名；白名单外的写入一律拒绝（§4.7）。
@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-// ValueType 值类型（§5.6 全部 38 键归入四类：string / int64 / bool / []string）。
+// ValueType 值类型（§5.6 全部 39 键归入四类：string / int64 / bool / []string）。
 type ValueType int
 
 const (
@@ -57,7 +57,8 @@ const (
 	KeyOtpDailyLimitTarget = "otp_daily_limit_target" // int64，默认 10 次/日
 	KeyOtpDailyLimitIP     = "otp_daily_limit_ip"     // int64，默认 50 次/日
 
-	// 其余 27 键（§5.6 表四 + https_deployment + site_name + client_ip_header）
+	// 其余 28 键（§5.6 表四 + https_deployment + site_name + client_ip_header
+	// + eventlog 分区两键）
 	KeyLoginMethods          = "login_methods"           // []string
 	KeyAllowRegistration     = "allow_registration"      // bool，默认 true
 	KeyAllowSignupPassword   = "allow_signup_password"   // bool，默认 true
@@ -80,7 +81,6 @@ const (
 	KeyEmailProviderKey      = "email_provider_key"      // string，默认 ""
 	KeyAvatarStorageProvider = "avatar_storage_provider" // string，默认 ""
 	KeyGatewayTokens         = "gateway_tokens"          // []string，默认 []
-	KeyEventlogRetentionDays = "eventlog_retention_days" // int64，默认 180 天
 	KeyStaticBase            = "static_base"             // string，默认 /assets
 	KeyHttpsDeployment       = "https_deployment"        // string，三态，默认 auto
 	KeySiteName              = "site_name"               // string，默认 Authloft，页面标题
@@ -88,6 +88,12 @@ const (
 	// RemoteAddr、不采信任何转发头；配置后由反代清洗入站头，直连可伪造、
 	// 如实记录（接口文档 §1.1）。取值链见 orchestrator.ClientIPFromRequest。
 	KeyClientIPHeader = "client_ip_header" // string，默认 ""
+	// 事件日志分区两键（§5.6 表四）：分区任务按 eventlog_partition_days 天数
+	// 滚动建分区、总数达 eventlog_max_partitions 后淘汰最旧分区。写入范围
+	// [1,365] 由 Validate 单键范围校验；单键范围、不做两键交叉约束，消费方
+	// （分区维护任务）读取后再钳制兜底。
+	KeyEventlogPartitionDays = "eventlog_partition_days" // int64，默认 7 天
+	KeyEventlogMaxPartitions = "eventlog_max_partitions" // int64，默认 26 个
 )
 
 // DefaultSiteName 站点名默认值（§5.6 表四）：settings 默认值、pages 运行期
@@ -111,7 +117,7 @@ type Def struct {
 	Default any
 }
 
-// defs 38 键有序定义（§5.6 四张表之和：5 + 1 + 5 + 27）。顺序 = 表序。
+// defs 39 键有序定义（§5.6 四张表之和：5 + 1 + 5 + 28）。顺序 = 表序。
 var defs = []Def{
 	// 密码策略（§5.6 表一）
 	{KeyPwdMinLength, TypeInt64, int64(8)},
@@ -150,11 +156,12 @@ var defs = []Def{
 	{KeyEmailProviderKey, TypeString, ""},
 	{KeyAvatarStorageProvider, TypeString, ""},
 	{KeyGatewayTokens, TypeStringSlice, []string{}},
-	{KeyEventlogRetentionDays, TypeInt64, int64(180)},
 	{KeyStaticBase, TypeString, "/assets"},
 	{KeyHttpsDeployment, TypeString, HTTPSDeploymentAuto},
 	{KeySiteName, TypeString, DefaultSiteName},
 	{KeyClientIPHeader, TypeString, ""},
+	{KeyEventlogPartitionDays, TypeInt64, int64(7)},
+	{KeyEventlogMaxPartitions, TypeInt64, int64(26)},
 }
 
 // byKey 键 → 定义索引（启动时建一次，只读）。
@@ -190,18 +197,20 @@ func Defaults() map[string]any {
 }
 
 // ErrInvalidValue 写入校验失败哨兵：Validate 全部拒绝路径
-// （键名白名单外 / 值类型与注册类型不符 / https_deployment 三态值域外）
-// 均经 %w 包裹本哨兵——service 层 errors.Is 判定后转译 invalid_request
-// （接口文档 §5.6 行 1361 SetSettings 非法值口径），否则 handler 侧
-// 哨兵不命中会误走 internal（500）。DecodeValue 属预热 fail-fast 语义，
-// 不包本哨兵（不可重试、启动即拒）。
+// （键名白名单外 / 值类型与注册类型不符 / https_deployment 三态值域外 /
+// eventlog 分区两键范围外）均经 %w 包裹本哨兵——service 层 errors.Is 判定后
+// 转译 invalid_request（接口文档 §5.6 行 1361 SetSettings 非法值口径），否则
+// handler 侧哨兵不命中会误走 internal（500）。DecodeValue 属预热 fail-fast
+// 语义，不包本哨兵（不可重试、启动即拒）。
 var ErrInvalidValue = errors.New("settings: invalid value")
 
 // Validate 写入校验（§4.7 行 837-838 / §5.6 行 1338）：键名 ∈ 白名单 +
-// 值类型与注册类型一致；交叉约束（如 pwd_min_length ≤ pwd_max_length）
-// 不做——由前端设置页与管理员自律保证。https_deployment 为 string 三态
-// 键：值域封闭 true / false / auto（§5.6 行 1354 / §1.9 行 310），三态
-// 之外拒绝。全部拒绝路径错误均包裹 ErrInvalidValue（见哨兵注释）。
+// 值类型与注册类型一致；交叉约束（如 pwd_min_length ≤ pwd_max_length、
+// eventlog 两键的 N/X 组合）不做——由前端设置页与管理员自律保证。
+// https_deployment 为 string 三态键：值域封闭 true / false / auto（§5.6
+// 行 1354 / §1.9 行 310），三态之外拒绝。eventlog 分区两键为 int64 范围键：
+// 值域 [1,365]，范围外拒绝（单键范围校验，钳制兜底在消费方分区任务）。
+// 全部拒绝路径错误均包裹 ErrInvalidValue（见哨兵注释）。
 // 返回归一化后的值（int 统一收敛为 int64）；错误前缀 "settings: "。
 func Validate(key string, value any) (any, error) {
 	d, ok := byKey[key]
@@ -225,9 +234,9 @@ func Validate(key string, value any) (any, error) {
 		// int / int64 均接受（Go 字面量默认 int），统一归一为 int64。
 		switch v := value.(type) {
 		case int:
-			return int64(v), nil
+			return validateInt64Range(key, int64(v))
 		case int64:
-			return v, nil
+			return validateInt64Range(key, v)
 		}
 	case TypeBool:
 		if v, ok := value.(bool); ok {
@@ -245,6 +254,19 @@ func Validate(key string, value any) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("%w: key %q expects %s, got %T", ErrInvalidValue, key, d.Type, value)
+}
+
+// validateInt64Range int64 单键值域校验（仿 https_deployment 三态校验形态）：
+// eventlog 分区两键值域 [1,365]，范围外拒绝并包 ErrInvalidValue（service 层
+// 同经哨兵转译 invalid_request）；其余 int64 键不设值域、原值通过。
+func validateInt64Range(key string, v int64) (any, error) {
+	switch key {
+	case KeyEventlogPartitionDays, KeyEventlogMaxPartitions:
+		if v < 1 || v > 365 {
+			return nil, fmt.Errorf("%w: key %q expects 1-365, got %d", ErrInvalidValue, key, v)
+		}
+	}
+	return v, nil
 }
 
 // EncodeValue 按 §4.7 行 830「JSON 编码值（标量也按 JSON 存）」编码：

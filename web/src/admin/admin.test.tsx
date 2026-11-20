@@ -192,17 +192,17 @@ import {
  * 全量投影 / 部分更新，读路径真调语义 → msw 走真实 transport 归一链）：
  * - api.getSettings msw：SettingsResponse 读路径解码（int64 十进制字符串 →
  *   bigint + repeated + protojson 零值省略 → proto 零值）+ 500 → ApiError；
- * - api.setSettings msw：请求体 wire 校验——前端仍 38 数据键整体提交 +
+ * - api.setSettings msw：请求体 wire 校验——前端仍 39 数据键整体提交 +
  *   四个 has_* 伴生标志，服务端按 has 位部分更新（PATCH）；标量显式零值在
  *   wire 明确下发，空 repeated 数组自身省略但标志在场 = 清空该列表；
  * - settingsLogic 纯函数全集：DEFAULT_SETTINGS 默认值对 §5.6 四张表逐字 /
- *   getSettingsSections 38 键全覆盖无重复 / draftFromSettings 全键映射与
+ *   getSettingsSections 39 键全覆盖无重复 / draftFromSettings 全键映射与
  *   零值即真值（PATCH 全量提交对称面）/ settingsDraftIssue 交叉校验（行 1363
  *   前端自律：非负整数 / 字符类数 1-3 / min ≤ max ≤ 64 / https_deployment
  *   三态行 1361）；
  * - buildSetSettingsRequest 全量构造：文本 trim / 列表清洗 / number → bigint；
  * - buildSettingsPatchRequest 部分构造：只带指定键 + 对应 has 标志（wire
- *   验证，多 Tab 保存用）；getSettingsTabs 4 组 38 键全覆盖无重复；
+ *   验证，多 Tab 保存用）；getSettingsTabs 4 组 39 键全覆盖无重复；
  * SettingsPage 渲染不可测（同上 Blocker）。
  * ⚠️ https_deployment / site_name / client_ip_header 双端 proto / 生成物已先行落地，
  * 与文档定稿一致 → 随本实现建键；行 1361 非三态 → invalid_request
@@ -3633,11 +3633,11 @@ describe('ConfirmActionButton（静态渲染：触发钮文案 + 初始非在途
 
 // ---------------------------------------------------------------------------
 // api settings 族 msw（§5.6 行 1287；后端已实装——GetSettings
-// 38 键全量投影 + SetSettings 按 has 位部分更新：显式零值覆盖、
+// 39 键全量投影 + SetSettings 按 has 位部分更新：显式零值覆盖、
 // repeated 伴生标志置 true 时空数组清空列表）
 // ---------------------------------------------------------------------------
 
-describe('api.getSettings（§5.6 行 1287：38 键全量投影）', () => {
+describe('api.getSettings（§5.6 行 1287：39 键全量投影）', () => {
   test('→ SettingsResponse 解码（int64 十进制字符串 → bigint + repeated + protojson 零值省略 → proto 零值）', async () => {
     server.use(
       http.post(GET_SETTINGS_URL, () =>
@@ -3691,8 +3691,8 @@ describe('api.getSettings（§5.6 行 1287：38 键全量投影）', () => {
   });
 });
 
-describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 38 键 + 4 个 repeated 伴生标志；服务端按 has 位部分更新）', () => {
-  test('默认草稿全量提交：40 键在 wire（optional 显式零值 + 四个 has_* 标志）；两个空列表省略但标志在场 = 服务端清空', async () => {
+describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 39 键 + 4 个 repeated 伴生标志；服务端按 has 位部分更新）', () => {
+  test('默认草稿全量提交：43 键在 wire（optional 显式零值 + 四个 has_* 标志）；两个空列表省略但标志在场 = 服务端清空', async () => {
     let requestBody: unknown;
     server.use(
       http.post(SET_SETTINGS_URL, async ({ request }) => {
@@ -3705,7 +3705,7 @@ describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 38 键 + 4
       apiMod.buildSetSettingsRequest(DEFAULT_SETTINGS),
     );
 
-    // toEqual 精确匹配：既验证 38 数据键全量构造（未改动键也在），又验证
+    // toEqual 精确匹配：既验证 39 数据键全量构造（未改动键也在），又验证
     // proto3 optional 标量的显式零值（四个空 provider key）与四个 has_*
     // 伴生标志都在 wire 上；空 repeated 数组自身省略，但 has_* 标志在场
     // → 服务端按「列表在场 + 空数组」清空该列表。
@@ -3751,11 +3751,12 @@ describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 38 键 + 4
       emailProviderKey: '',
       avatarStorageProvider: '',
       hasGatewayTokens: true,
-      eventlogRetentionDays: '180',
       staticBase: '/assets',
       httpsDeployment: 'auto',
       siteName: 'Authloft',
       clientIpHeader: '',
+      eventlogPartitionDays: '7',
+      eventlogMaxPartitions: '26',
     });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
   });
@@ -3818,7 +3819,7 @@ describe('api.setSettings（§5.6 行 1287：全量构造兼容基线 38 键 + 4
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', () => {
-  test('38 键默认值与文档逐字一致（键集 = §5.6 四张表数据键，不含 4 个 has_* 伴生标志）', () => {
+  test('39 键默认值与文档逐字一致（键集 = §5.6 四张表数据键，不含 4 个 has_* 伴生标志）', () => {
     // 密码策略（行 1296-1300）。
     expect(DEFAULT_SETTINGS.pwdMinLength).toBe(8);
     expect(DEFAULT_SETTINGS.pwdMaxLength).toBe(64);
@@ -3867,26 +3868,28 @@ describe('DEFAULT_SETTINGS（§5.6 行 1296-1354 四张表默认值逐字）', (
     expect(DEFAULT_SETTINGS.emailProviderKey).toBe('');
     expect(DEFAULT_SETTINGS.avatarStorageProvider).toBe('');
     expect(DEFAULT_SETTINGS.gatewayTokens).toEqual([]);
-    expect(DEFAULT_SETTINGS.eventlogRetentionDays).toBe(180);
     expect(DEFAULT_SETTINGS.staticBase).toBe('/assets');
     // https_deployment（行 1354：string 三态，默认 auto）；site_name 站点名；
-    // client_ip_header 来源 IP 采信头（默认空串 = 未配置仅取直连）。
+    // client_ip_header 来源 IP 采信头（默认空串 = 未配置仅取直连）；
+    // eventlog 分区两键（分区天数默认 7 / 最大分区数默认 26）。
     expect(DEFAULT_SETTINGS.httpsDeployment).toBe('auto');
     expect(DEFAULT_SETTINGS.siteName).toBe('Authloft');
     expect(DEFAULT_SETTINGS.clientIpHeader).toBe('');
-    // 键集 = 38 数据键（含 https_deployment / site_name / client_ip_header）；
-    // 生成物另有 4 个 has_* 伴生标志，由 api.buildSetSettingsRequest 统一置
-    // true，不属于草稿键集。
-    expect(Object.keys(DEFAULT_SETTINGS).length).toBe(38);
+    expect(DEFAULT_SETTINGS.eventlogPartitionDays).toBe(7);
+    expect(DEFAULT_SETTINGS.eventlogMaxPartitions).toBe(26);
+    // 键集 = 39 数据键（含 https_deployment / site_name / client_ip_header /
+    // eventlog 分区两键）；生成物另有 4 个 has_* 伴生标志，由
+    // api.buildSetSettingsRequest 统一置 true，不属于草稿键集。
+    expect(Object.keys(DEFAULT_SETTINGS).length).toBe(39);
   });
 });
 
 describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / getHttpsDeploymentOptions（表单分区与选项值域；函数化调用期求值）', () => {
-  test('13 区 38 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
+  test('13 区 39 键全覆盖、无重复（分区键集 = DEFAULT_SETTINGS 键集）', () => {
     const sectionKeys = getSettingsSections().flatMap((section) =>
       section.fields.map((field) => field.key),
     );
-    expect(new Set(sectionKeys).size).toBe(38);
+    expect(new Set(sectionKeys).size).toBe(39);
     expect([...sectionKeys].sort()).toEqual(
       Object.keys(DEFAULT_SETTINGS).sort(),
     );
@@ -3917,7 +3920,7 @@ describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / ge
   });
 });
 
-describe('getSettingsTabs（4 Tab 分组：38 键全覆盖、无重复，按稳定 slug 引用分区）', () => {
+describe('getSettingsTabs（4 Tab 分组：39 键全覆盖、无重复，按稳定 slug 引用分区）', () => {
   test('4 个 Tab；键集 = DEFAULT_SETTINGS 键集且无重复；13 个分区各归一组', () => {
     const tabs = getSettingsTabs();
     expect(tabs.map((tab) => tab.key)).toEqual([
@@ -3927,8 +3930,8 @@ describe('getSettingsTabs（4 Tab 分组：38 键全覆盖、无重复，按稳�
       'deploy',
     ]);
     const tabKeys = tabs.flatMap((tab) => tab.keys);
-    expect(tabKeys).toHaveLength(38);
-    expect(new Set(tabKeys).size).toBe(38);
+    expect(tabKeys).toHaveLength(39);
+    expect(new Set(tabKeys).size).toBe(39);
     expect([...tabKeys].sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
     const sections = tabs.flatMap((tab) => tab.sections);
     expect(sections).toHaveLength(13);
@@ -4078,7 +4081,7 @@ describe('routes：HashRouter 路由表（MemoryRouter 注入）', () => {
 });
 
 describe('draftFromSettings（GetSettings 响应 → 草稿全键映射；PATCH 全量提交的对称面：零值即真值）', () => {
-  test('38 键直映射：bigint → number、数组防御性拷贝（改草稿不回写响应）', () => {
+  test('39 键直映射：bigint → number、数组防御性拷贝（改草稿不回写响应）', () => {
     const response = create(SettingsResponseSchema, {
       pwdMinLength: BigInt(12),
       pwdRequireClasses: BigInt(2),
@@ -4161,7 +4164,7 @@ describe('settingsDraftIssue（§5.6 行 1363 值域交叉约束前端自律）'
 });
 
 describe('buildSetSettingsRequest（全量构造：number → bigint / 文本 trim / 列表清洗）', () => {
-  test('草稿 38 键整体构造（含未改动键）；文本去空白、列表去空条目', () => {
+  test('草稿 39 键整体构造（含未改动键）；文本去空白、列表去空条目', () => {
     const request = apiMod.buildSetSettingsRequest({
       ...DEFAULT_SETTINGS,
       cookieName: ' x_session ',

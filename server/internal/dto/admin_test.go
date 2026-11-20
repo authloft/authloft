@@ -547,6 +547,31 @@ func TestAdminSettingsClientIPHeader(t *testing.T) {
 	}
 }
 
+// TestAdminSettingsEventlogPartitionKeys AdminSettings 全键投影含
+// eventlog 分区两键：快照有值原样投影；缺失 / 非 int64 按零值投影
+// （protojson 省略）。
+func TestAdminSettingsEventlogPartitionKeys(t *testing.T) {
+	snap := settings.Defaults()
+	snap[settings.KeyEventlogPartitionDays] = int64(14)
+	snap[settings.KeyEventlogMaxPartitions] = int64(52)
+	resp := AdminSettings(snap)
+	if got := resp.GetEventlogPartitionDays(); got != 14 {
+		t.Errorf("EventlogPartitionDays = %d, want 14", got)
+	}
+	if got := resp.GetEventlogMaxPartitions(); got != 52 {
+		t.Errorf("EventlogMaxPartitions = %d, want 52", got)
+	}
+
+	delete(snap, settings.KeyEventlogPartitionDays)
+	delete(snap, settings.KeyEventlogMaxPartitions)
+	if got := AdminSettings(snap).GetEventlogPartitionDays(); got != 0 {
+		t.Errorf("缺失键 EventlogPartitionDays = %d, want 0（零值投影）", got)
+	}
+	if got := AdminSettings(snap).GetEventlogMaxPartitions(); got != 0 {
+		t.Errorf("缺失键 EventlogMaxPartitions = %d, want 0（零值投影）", got)
+	}
+}
+
 // TestAdminSsoClientLoginOptions 应用级登录配置三字段的视图投影（§5.5）：
 // login_methods / oauth_providers 由 service 解析后传入、default_redirect_uri
 // 直取行值；nil 行 → 空消息；nil / 空切片按 proto3 空 repeated 省略。

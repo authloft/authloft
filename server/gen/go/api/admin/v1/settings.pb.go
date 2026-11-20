@@ -148,23 +148,28 @@ type SetSettingsRequest struct {
 	// has 位：true = gateway_tokens 在场（空数组 = 清空）；缺省 / false = 不修改。
 	HasGatewayTokens *bool    `protobuf:"varint,36,opt,name=has_gateway_tokens,json=hasGatewayTokens,proto3,oneof" json:"has_gateway_tokens,omitempty"`
 	GatewayTokens    []string `protobuf:"bytes,37,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
-	// 事件日志保留天数，默认 180（§5.6）。
-	EventlogRetentionDays *int64 `protobuf:"varint,38,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3,oneof" json:"eventlog_retention_days,omitempty"`
 	// 静态资源基址（CDN），改后需刷新页面生效（§5.6、§8）。
-	StaticBase *string `protobuf:"bytes,39,opt,name=static_base,json=staticBase,proto3,oneof" json:"static_base,omitempty"`
+	StaticBase *string `protobuf:"bytes,38,opt,name=static_base,json=staticBase,proto3,oneof" json:"static_base,omitempty"`
 	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
 	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
-	HttpsDeployment *string `protobuf:"bytes,40,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
+	HttpsDeployment *string `protobuf:"bytes,39,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
 	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-	SiteName *string `protobuf:"bytes,41,opt,name=site_name,json=siteName,proto3,oneof" json:"site_name,omitempty"`
+	SiteName *string `protobuf:"bytes,40,opt,name=site_name,json=siteName,proto3,oneof" json:"site_name,omitempty"`
 	// 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。未配置仅取直连
 	// RemoteAddr、不采信任何转发头；配置后取该头逗号首段并去空白，头缺失 /
 	// 空值回落直连。仅供审计与限流键、不作鉴权依据；配置头的入站清洗由
 	// 部署方在反代负责，直连可伪造、如实记录。
-	ClientIpHeader *string `protobuf:"bytes,42,opt,name=client_ip_header,json=clientIpHeader,proto3,oneof" json:"client_ip_header,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	ClientIpHeader *string `protobuf:"bytes,41,opt,name=client_ip_header,json=clientIpHeader,proto3,oneof" json:"client_ip_header,omitempty"`
+	// 事件日志分区天数（天），默认 7（§5.6）。分区维护任务按此天数滚动建
+	// 分区；取值范围 1-365，范围外 → invalid_request。单键范围校验、不做与
+	// eventlog_max_partitions 的交叉约束（消费方分区任务读取后再钳制兜底）。
+	EventlogPartitionDays *int64 `protobuf:"varint,42,opt,name=eventlog_partition_days,json=eventlogPartitionDays,proto3,oneof" json:"eventlog_partition_days,omitempty"`
+	// 事件日志最大分区数，默认 26（§5.6）。分区总数达上限后淘汰最旧分区；
+	// 取值范围 1-365，范围外 → invalid_request。
+	EventlogMaxPartitions *int64 `protobuf:"varint,43,opt,name=eventlog_max_partitions,json=eventlogMaxPartitions,proto3,oneof" json:"eventlog_max_partitions,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *SetSettingsRequest) Reset() {
@@ -456,13 +461,6 @@ func (x *SetSettingsRequest) GetGatewayTokens() []string {
 	return nil
 }
 
-func (x *SetSettingsRequest) GetEventlogRetentionDays() int64 {
-	if x != nil && x.EventlogRetentionDays != nil {
-		return *x.EventlogRetentionDays
-	}
-	return 0
-}
-
 func (x *SetSettingsRequest) GetStaticBase() string {
 	if x != nil && x.StaticBase != nil {
 		return *x.StaticBase
@@ -491,8 +489,22 @@ func (x *SetSettingsRequest) GetClientIpHeader() string {
 	return ""
 }
 
+func (x *SetSettingsRequest) GetEventlogPartitionDays() int64 {
+	if x != nil && x.EventlogPartitionDays != nil {
+		return *x.EventlogPartitionDays
+	}
+	return 0
+}
+
+func (x *SetSettingsRequest) GetEventlogMaxPartitions() int64 {
+	if x != nil && x.EventlogMaxPartitions != nil {
+		return *x.EventlogMaxPartitions
+	}
+	return 0
+}
+
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
-// 键集合 / 键名与 SetSettingsRequest 的 38 个数据键一致，编号按表序从 1 起
+// 键集合 / 键名与 SetSettingsRequest 的 39 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
 // 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -568,20 +580,22 @@ type SettingsResponse struct {
 	AvatarStorageProvider string `protobuf:"bytes,32,opt,name=avatar_storage_provider,json=avatarStorageProvider,proto3" json:"avatar_storage_provider,omitempty"`
 	// 网关 Token 列表，默认 []（§5.6）。
 	GatewayTokens []string `protobuf:"bytes,33,rep,name=gateway_tokens,json=gatewayTokens,proto3" json:"gateway_tokens,omitempty"`
-	// 事件日志保留天数，默认 180（§5.6）。
-	EventlogRetentionDays int64 `protobuf:"varint,34,opt,name=eventlog_retention_days,json=eventlogRetentionDays,proto3" json:"eventlog_retention_days,omitempty"`
 	// 静态资源基址（CDN），默认 /assets（§5.6）。
-	StaticBase string `protobuf:"bytes,35,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
+	StaticBase string `protobuf:"bytes,34,opt,name=static_base,json=staticBase,proto3" json:"static_base,omitempty"`
 	// HTTPS 部署形态声明，string 三态 true / false / auto，默认 auto（§5.6）。
 	// 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
 	// （§1.9 驱动口径）。
-	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
+	HttpsDeployment string `protobuf:"bytes,35,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
 	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-	SiteName string `protobuf:"bytes,37,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
+	SiteName string `protobuf:"bytes,36,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
 	// 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。
-	ClientIpHeader string `protobuf:"bytes,38,opt,name=client_ip_header,json=clientIpHeader,proto3" json:"client_ip_header,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	ClientIpHeader string `protobuf:"bytes,37,opt,name=client_ip_header,json=clientIpHeader,proto3" json:"client_ip_header,omitempty"`
+	// 事件日志分区天数（天），默认 7（§5.6）；取值范围 1-365。
+	EventlogPartitionDays int64 `protobuf:"varint,38,opt,name=eventlog_partition_days,json=eventlogPartitionDays,proto3" json:"eventlog_partition_days,omitempty"`
+	// 事件日志最大分区数，默认 26（§5.6）；超出后淘汰最旧分区，取值范围 1-365。
+	EventlogMaxPartitions int64 `protobuf:"varint,39,opt,name=eventlog_max_partitions,json=eventlogMaxPartitions,proto3" json:"eventlog_max_partitions,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *SettingsResponse) Reset() {
@@ -845,13 +859,6 @@ func (x *SettingsResponse) GetGatewayTokens() []string {
 	return nil
 }
 
-func (x *SettingsResponse) GetEventlogRetentionDays() int64 {
-	if x != nil {
-		return x.EventlogRetentionDays
-	}
-	return 0
-}
-
 func (x *SettingsResponse) GetStaticBase() string {
 	if x != nil {
 		return x.StaticBase
@@ -880,12 +887,26 @@ func (x *SettingsResponse) GetClientIpHeader() string {
 	return ""
 }
 
+func (x *SettingsResponse) GetEventlogPartitionDays() int64 {
+	if x != nil {
+		return x.EventlogPartitionDays
+	}
+	return 0
+}
+
+func (x *SettingsResponse) GetEventlogMaxPartitions() int64 {
+	if x != nil {
+		return x.EventlogMaxPartitions
+	}
+	return 0
+}
+
 var File_api_admin_v1_settings_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1bapi/admin/v1/settings.proto\x12\fapi.admin.v1\"\x14\n" +
-	"\x12GetSettingsRequest\"\xba\x15\n" +
+	"\x12GetSettingsRequest\"\x93\x16\n" +
 	"\x12SetSettingsRequest\x12)\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03H\x00R\fpwdMinLength\x88\x01\x01\x12)\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03H\x01R\fpwdMaxLength\x88\x01\x01\x123\n" +
@@ -932,13 +953,14 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x12email_provider_key\x18\" \x01(\tH\x1eR\x10emailProviderKey\x88\x01\x01\x12;\n" +
 	"\x17avatar_storage_provider\x18# \x01(\tH\x1fR\x15avatarStorageProvider\x88\x01\x01\x121\n" +
 	"\x12has_gateway_tokens\x18$ \x01(\bH R\x10hasGatewayTokens\x88\x01\x01\x12%\n" +
-	"\x0egateway_tokens\x18% \x03(\tR\rgatewayTokens\x12;\n" +
-	"\x17eventlog_retention_days\x18& \x01(\x03H!R\x15eventlogRetentionDays\x88\x01\x01\x12$\n" +
-	"\vstatic_base\x18' \x01(\tH\"R\n" +
+	"\x0egateway_tokens\x18% \x03(\tR\rgatewayTokens\x12$\n" +
+	"\vstatic_base\x18& \x01(\tH!R\n" +
 	"staticBase\x88\x01\x01\x12.\n" +
-	"\x10https_deployment\x18( \x01(\tH#R\x0fhttpsDeployment\x88\x01\x01\x12 \n" +
-	"\tsite_name\x18) \x01(\tH$R\bsiteName\x88\x01\x01\x12-\n" +
-	"\x10client_ip_header\x18* \x01(\tH%R\x0eclientIpHeader\x88\x01\x01B\x11\n" +
+	"\x10https_deployment\x18' \x01(\tH\"R\x0fhttpsDeployment\x88\x01\x01\x12 \n" +
+	"\tsite_name\x18( \x01(\tH#R\bsiteName\x88\x01\x01\x12-\n" +
+	"\x10client_ip_header\x18) \x01(\tH$R\x0eclientIpHeader\x88\x01\x01\x12;\n" +
+	"\x17eventlog_partition_days\x18* \x01(\x03H%R\x15eventlogPartitionDays\x88\x01\x01\x12;\n" +
+	"\x17eventlog_max_partitions\x18+ \x01(\x03H&R\x15eventlogMaxPartitions\x88\x01\x01B\x11\n" +
 	"\x0f_pwd_min_lengthB\x11\n" +
 	"\x0f_pwd_max_lengthB\x16\n" +
 	"\x14_pwd_require_classesB\x18\n" +
@@ -972,13 +994,14 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x11_sms_provider_keyB\x15\n" +
 	"\x13_email_provider_keyB\x1a\n" +
 	"\x18_avatar_storage_providerB\x15\n" +
-	"\x13_has_gateway_tokensB\x1a\n" +
-	"\x18_eventlog_retention_daysB\x0e\n" +
+	"\x13_has_gateway_tokensB\x0e\n" +
 	"\f_static_baseB\x13\n" +
 	"\x11_https_deploymentB\f\n" +
 	"\n" +
 	"_site_nameB\x13\n" +
-	"\x11_client_ip_header\"\xb5\f\n" +
+	"\x11_client_ip_headerB\x1a\n" +
+	"\x18_eventlog_partition_daysB\x1a\n" +
+	"\x18_eventlog_max_partitions\"\xed\f\n" +
 	"\x10SettingsResponse\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -1020,13 +1043,14 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\x10sms_provider_key\x18\x1e \x01(\tR\x0esmsProviderKey\x12,\n" +
 	"\x12email_provider_key\x18\x1f \x01(\tR\x10emailProviderKey\x126\n" +
 	"\x17avatar_storage_provider\x18  \x01(\tR\x15avatarStorageProvider\x12%\n" +
-	"\x0egateway_tokens\x18! \x03(\tR\rgatewayTokens\x126\n" +
-	"\x17eventlog_retention_days\x18\" \x01(\x03R\x15eventlogRetentionDays\x12\x1f\n" +
-	"\vstatic_base\x18# \x01(\tR\n" +
+	"\x0egateway_tokens\x18! \x03(\tR\rgatewayTokens\x12\x1f\n" +
+	"\vstatic_base\x18\" \x01(\tR\n" +
 	"staticBase\x12)\n" +
-	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeployment\x12\x1b\n" +
-	"\tsite_name\x18% \x01(\tR\bsiteName\x12(\n" +
-	"\x10client_ip_header\x18& \x01(\tR\x0eclientIpHeaderB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"\x10https_deployment\x18# \x01(\tR\x0fhttpsDeployment\x12\x1b\n" +
+	"\tsite_name\x18$ \x01(\tR\bsiteName\x12(\n" +
+	"\x10client_ip_header\x18% \x01(\tR\x0eclientIpHeader\x126\n" +
+	"\x17eventlog_partition_days\x18& \x01(\x03R\x15eventlogPartitionDays\x126\n" +
+	"\x17eventlog_max_partitions\x18' \x01(\x03R\x15eventlogMaxPartitionsB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_settings_proto_rawDescOnce sync.Once

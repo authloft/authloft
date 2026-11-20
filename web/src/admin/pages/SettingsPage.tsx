@@ -1,11 +1,11 @@
 /**
  * 系统设置页（docs/前端架构.md §6 行 520 SettingsPage；docs/接口文档.md §5.6
  * 行 1287 GetSettings / SetSettings；docs/需求.md §4.6 行 259）——/admin/settings
- * （§5.6 四张表全量键，生成物现状 38 字段）的大表单。
+ * （§5.6 四张表全量键，生成物现状 39 字段）的大表单。
  *
  * ⚠️ SetSettings 按 has 位部分更新（PATCH）：未设置不修改、显式零值
  * 覆盖；四个 repeated 键带 has_* 伴生标志，置 true 时列表在场、空数组
- * 即清空。38 键按 getSettingsTabs() 分 4 个 Tab 展示（站点与账号 /
+ * 即清空。39 键按 getSettingsTabs() 分 4 个 Tab 展示（站点与账号 /
  * 密码与防护 / 登录与会话 / 部署与集成），草稿仍是单一完整键集
  * （draftFromSettings），切 Tab 不丢未保存改动、Tab 标签上落脏点。
  * 保存作用域二选一：「保存本页签」只提交该 Tab 的改动键、「保存全部改动」
@@ -19,9 +19,10 @@
  * （零 Semi 可测）；
  * 本组件为渲染壳薄层（渲染不可测见 admin.test.tsx 头注 Blocker）。固定规则
  * （§5.6 行 1302-1306：>64、与用户名 / 邮箱相同、含空白）写死在服务端、不在
- * 表单暴露。https_deployment（=36，行 1354/1356 三态文案定稿）随本实现建键
+ * 表单暴露。https_deployment（三态文案定稿）随本实现建键
  * （双端 proto / 生成物已刷入）；static_base 改后提示刷新页面生效（行 1353）；
- * client_ip_header（来源 IP 采信头）空串 = 仅取直连。
+ * client_ip_header（来源 IP 采信头）空串 = 仅取直连；eventlog 分区两键
+ * （分区天数 / 最大分区数）服务端单键范围校验 1-365。
  *
  * 401 统一跳登录（§6 行 501）；保存成功 / 失败反馈统一走 Semi Toast
  * （Semi 回归，原就地 notice / actionError 文字已移除）——成功
@@ -217,7 +218,7 @@ function formatSettingsValue(
 
 /**
  * 草稿 vs 已保存快照的键级 diff（dirty / Tab 脏点 / 保存作用域 / 变更预览
- * 的唯一数据源）：36 键按分区表序遍历，数组键序敏感（与控件可见顺序
+ * 的唯一数据源）：39 键按分区表序遍历，数组键序敏感（与控件可见顺序
  * 一致，不按集合归一）。渲染期调用 getSettingsSections() 取当前语言
  * 文案，不作模块级常量以免 locale 冻结。
  */
@@ -277,7 +278,7 @@ export function SettingsPage(props: {
   const [diffOpen, setDiffOpen] = useState(false);
 
   useEffect(() => {
-    // 草稿恒为 36 键完整快照；Tab 只切展示与保存作用域，不拆草稿。
+    // 草稿恒为 39 键完整快照；Tab 只切展示与保存作用域，不拆草稿。
     if (data !== undefined) {
       const initial = draftFromSettings(data);
       setDraft(initial);

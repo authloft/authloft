@@ -19,7 +19,7 @@ export const admin: typeof zhAdmin = {
   'admin.settingsSectionQueue': 'Queue parameters',
   'admin.settingsSectionExternalServices': 'External services',
   'admin.settingsSectionGatewayToken': 'Gateway tokens',
-  'admin.settingsSectionLogRetention': 'Log retention',
+  'admin.settingsSectionLogPartition': 'Log partitions',
 
   'admin.pwdMinLengthLabel': 'Minimum length',
   'admin.pwdMinLengthHint': 'Default 8',
@@ -94,8 +94,12 @@ export const admin: typeof zhAdmin = {
     'Storage provider for avatars / provider icons',
   'admin.avatarStorageProviderHint': 'Empty = no external storage',
   'admin.gatewayTokensLabel': 'Gateway tokens',
-  'admin.eventlogRetentionDaysLabel': 'Event log retention days',
-  'admin.eventlogRetentionDaysHint': 'Default 180',
+  'admin.eventlogPartitionDaysLabel': 'Event log partition days',
+  'admin.eventlogPartitionDaysHint':
+    'Default 7; the maintenance task rolls partitions forward at this interval',
+  'admin.eventlogMaxPartitionsLabel': 'Event log max partitions',
+  'admin.eventlogMaxPartitionsHint':
+    'Default 26; oldest partitions are dropped beyond this limit',
   'admin.siteNameLabel': 'Site name',
   'admin.siteNameHint':
     'Page title, empty falls back to the default name Authloft',

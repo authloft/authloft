@@ -110,7 +110,7 @@ func newSettingsService(store adminsvc.SettingsStore, events adminsvc.EventListe
 // TestSettingsServiceGetSettingsAllKeys 全键投影（OUTCOME ①）：真
 // settings.Store 种子默认档（NewStore(nil,nil)）→ GetSettings →
 // dto.AdminSettings → protojson（UseProtoNames + EmitUnpopulated，测试侧
-// 回放）→ 38 键逐键对 settings.Defaults()——同时验证键名零自造、
+// 回放）→ 39 键逐键对 settings.Defaults()——同时验证键名零自造、
 // 键集完整（= §5.6 四张表之和）与值类型投影。
 func TestSettingsServiceGetSettingsAllKeys(t *testing.T) {
 	store := settings.NewStore(nil, nil)
@@ -128,7 +128,7 @@ func TestSettingsServiceGetSettingsAllKeys(t *testing.T) {
 	}
 	want := settings.Defaults()
 	if len(got) != len(want) {
-		t.Fatalf("投影键数 = %d, want %d（38 键全键，§5.6 四张表之和）", len(got), len(want))
+		t.Fatalf("投影键数 = %d, want %d（39 键全键，§5.6 四张表之和）", len(got), len(want))
 	}
 	for k, v := range want {
 		g, ok := got[k]
@@ -211,11 +211,12 @@ func defaultSetSettingsRequest() *adminv1.SetSettingsRequest {
 		AvatarStorageProvider: strPtr(""),
 		HasGatewayTokens:      boolPtr(true),
 		GatewayTokens:         []string{},
-		EventlogRetentionDays: i64Ptr(180),
 		StaticBase:            strPtr("/assets"),
 		HttpsDeployment:       strPtr(settings.HTTPSDeploymentAuto),
 		SiteName:              strPtr(settings.DefaultSiteName),
 		ClientIpHeader:        strPtr(""),
+		EventlogPartitionDays: i64Ptr(7),
+		EventlogMaxPartitions: i64Ptr(26),
 	}
 }
 
@@ -391,8 +392,8 @@ func TestSettingsServiceSetSettingsClientIPHeader(t *testing.T) {
 }
 
 // TestSettingsServiceSetSettingsFullRequestNoChangeStillAudits 全量提交
-// 客户端兼容 + 幂等重放：33 个标量 has 位置位、四个 repeated 伴生标志
-// 置 true，且所有值与快照同 → 38 键照常整批 SetMany（PATCH 不做
+// 客户端兼容 + 幂等重放：35 个标量 has 位置位、四个 repeated 伴生标志
+// 置 true，且所有值与快照同 → 39 键照常整批 SetMany（PATCH 不做
 // 「同值跳过」），两个默认空列表也在写入集里（显式清空但不算变更）；
 // detail 的 keys/before/after 空集，仍投审计（每次管理员动作留痕，
 // 口径同 UserService.UpdateUserStatus）。
@@ -405,8 +406,8 @@ func TestSettingsServiceSetSettingsFullRequestNoChangeStillAudits(t *testing.T) 
 	if err := svc.SetSettings(ctx, 7, defaultSetSettingsRequest()); err != nil {
 		t.Fatalf("SetSettings: %v", err)
 	}
-	if store.gotBy != 7 || len(store.gotKV) != 38 {
-		t.Fatalf("落档 = by %d keys %d, want 7/38（34 标量 + 4 列表，含 2 个空列表）", store.gotBy, len(store.gotKV))
+	if store.gotBy != 7 || len(store.gotKV) != 39 {
+		t.Fatalf("落档 = by %d keys %d, want 7/39（35 标量 + 4 列表，含 2 个空列表）", store.gotBy, len(store.gotKV))
 	}
 	// 同值键仍显式写回（has 位生效，不因与快照同值而跳过）。
 	if got, _ := store.gotKV[settings.KeyPwdMaxLength].(int64); got != 64 {
@@ -561,7 +562,7 @@ func TestSettingsServiceSetSettingsExplicitZeroValues(t *testing.T) {
 
 // TestSettingsServiceSetSettingsEmptyRequestNoop 空请求 / nil 请求：无任何
 // has 位 → 零写入（SetMany 收到空 map，真 Store 内部直接返回）、零变更，
-// 仍投一条审计（每次管理员动作留痕）；不会像旧全量替换那样把 38 键清零。
+// 仍投一条审计（每次管理员动作留痕）；不会像旧全量替换那样把 39 键清零。
 func TestSettingsServiceSetSettingsEmptyRequestNoop(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {

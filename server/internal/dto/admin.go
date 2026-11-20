@@ -567,11 +567,12 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 		EmailProviderKey:      toStr(settings.KeyEmailProviderKey),
 		AvatarStorageProvider: toStr(settings.KeyAvatarStorageProvider),
 		GatewayTokens:         toSlice(settings.KeyGatewayTokens, snap),
-		EventlogRetentionDays: toInt(settings.KeyEventlogRetentionDays),
 		StaticBase:            toStr(settings.KeyStaticBase),
 		HttpsDeployment:       toStr(settings.KeyHttpsDeployment),
 		SiteName:              toStr(settings.KeySiteName),
 		ClientIpHeader:        toStr(settings.KeyClientIPHeader),
+		EventlogPartitionDays: toInt(settings.KeyEventlogPartitionDays),
+		EventlogMaxPartitions: toInt(settings.KeyEventlogMaxPartitions),
 	}
 }
 

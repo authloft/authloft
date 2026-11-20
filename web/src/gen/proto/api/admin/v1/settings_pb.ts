@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/settings.proto.
  */
 export const file_api_admin_v1_settings: GenFile = /*@__PURE__*/
-  fileDesc("ChthcGkvYWRtaW4vdjEvc2V0dGluZ3MucHJvdG8SDGFwaS5hZG1pbi52MSIUChJHZXRTZXR0aW5nc1JlcXVlc3QinxAKElNldFNldHRpbmdzUmVxdWVzdBIbCg5wd2RfbWluX2xlbmd0aBgBIAEoA0gAiAEBEhsKDnB3ZF9tYXhfbGVuZ3RoGAIgASgDSAGIAQESIAoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoA0gCiAEBEiIKFXB3ZF9kaXNhbGxvd191c2VybmFtZRgEIAEoCEgDiAEBEiAKE3B3ZF9kaXNhbGxvd19jb21tb24YBSABKAhIBIgBARIhChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCEgFiAEBEiAKE290cF9yZXNlbmRfaW50ZXJ2YWwYByABKANIBogBARIUCgdvdHBfdHRsGAggASgDSAeIAQESHQoQb3RwX21heF9hdHRlbXB0cxgJIAEoA0gIiAEBEiMKFm90cF9kYWlseV9saW1pdF90YXJnZXQYCiABKANICYgBARIfChJvdHBfZGFpbHlfbGltaXRfaXAYCyABKANICogBARIeChFoYXNfbG9naW5fbWV0aG9kcxgMIAEoCEgLiAEBEhUKDWxvZ2luX21ldGhvZHMYDSADKAkSHwoSYWxsb3dfcmVnaXN0cmF0aW9uGA4gASgISAyIAQESIgoVYWxsb3dfc2lnbnVwX3Bhc3N3b3JkGA8gASgISA2IAQESHwoSYWxsb3dfc2lnbnVwX3Bob25lGBAgASgISA6IAQESHwoSYWxsb3dfc2lnbnVwX2VtYWlsGBEgASgISA+IAQESGAoLbWZhX2VuYWJsZWQYEiABKAhIEIgBARIcCg9oYXNfbWZhX21ldGhvZHMYEyABKAhIEYgBARITCgttZmFfbWV0aG9kcxgUIAMoCRIdChBwd2RfZmFpbF9jYXB0dXJlGBUgASgDSBKIAQESGQoMcHdkX2ZhaWxfYmFuGBYgASgDSBOIAQESGAoLcHdkX2Jhbl90dGwYFyABKANIFIgBARIYCgtzZXNzaW9uX3R0bBgYIAEoA0gViAEBEhgKC2Nvb2tpZV9uYW1lGBkgASgJSBaIAQESHAoPaGFzX3Nzb19kb21haW5zGBogASgISBeIAQESEwoLc3NvX2RvbWFpbnMYGyADKAkSGgoNcXVldWVfd29ya2VycxgcIAEoA0gYiAEBEhsKDnF1ZXVlX2NhcGFjaXR5GB0gASgDSBmIAQESGAoLcXVldWVfYmF0Y2gYHiABKANIGogBARIbCg5xdWV1ZV9mbHVzaF9tcxgfIAEoA0gbiAEBEiEKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GCAgASgJSByIAQESHQoQc21zX3Byb3ZpZGVyX2tleRghIAEoCUgdiAEBEh8KEmVtYWlsX3Byb3ZpZGVyX2tleRgiIAEoCUgeiAEBEiQKF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCMgASgJSB+IAQESHwoSaGFzX2dhdGV3YXlfdG9rZW5zGCQgASgISCCIAQESFgoOZ2F0ZXdheV90b2tlbnMYJSADKAkSJAoXZXZlbnRsb2dfcmV0ZW50aW9uX2RheXMYJiABKANIIYgBARIYCgtzdGF0aWNfYmFzZRgnIAEoCUgiiAEBEh0KEGh0dHBzX2RlcGxveW1lbnQYKCABKAlII4gBARIWCglzaXRlX25hbWUYKSABKAlIJIgBARIdChBjbGllbnRfaXBfaGVhZGVyGCogASgJSCWIAQFCEQoPX3B3ZF9taW5fbGVuZ3RoQhEKD19wd2RfbWF4X2xlbmd0aEIWChRfcHdkX3JlcXVpcmVfY2xhc3Nlc0IYChZfcHdkX2Rpc2FsbG93X3VzZXJuYW1lQhYKFF9wd2RfZGlzYWxsb3dfY29tbW9uQhcKFV9hbGxvd19wYXNzd29yZF9yZXNldEIWChRfb3RwX3Jlc2VuZF9pbnRlcnZhbEIKCghfb3RwX3R0bEITChFfb3RwX21heF9hdHRlbXB0c0IZChdfb3RwX2RhaWx5X2xpbWl0X3RhcmdldEIVChNfb3RwX2RhaWx5X2xpbWl0X2lwQhQKEl9oYXNfbG9naW5fbWV0aG9kc0IVChNfYWxsb3dfcmVnaXN0cmF0aW9uQhgKFl9hbGxvd19zaWdudXBfcGFzc3dvcmRCFQoTX2FsbG93X3NpZ251cF9waG9uZUIVChNfYWxsb3dfc2lnbnVwX2VtYWlsQg4KDF9tZmFfZW5hYmxlZEISChBfaGFzX21mYV9tZXRob2RzQhMKEV9wd2RfZmFpbF9jYXB0dXJlQg8KDV9wd2RfZmFpbF9iYW5CDgoMX3B3ZF9iYW5fdHRsQg4KDF9zZXNzaW9uX3R0bEIOCgxfY29va2llX25hbWVCEgoQX2hhc19zc29fZG9tYWluc0IQCg5fcXVldWVfd29ya2Vyc0IRCg9fcXVldWVfY2FwYWNpdHlCDgoMX3F1ZXVlX2JhdGNoQhEKD19xdWV1ZV9mbHVzaF9tc0IXChVfY2FwdGNoYV9wcm92aWRlcl9rZXlCEwoRX3Ntc19wcm92aWRlcl9rZXlCFQoTX2VtYWlsX3Byb3ZpZGVyX2tleUIaChhfYXZhdGFyX3N0b3JhZ2VfcHJvdmlkZXJCFQoTX2hhc19nYXRld2F5X3Rva2Vuc0IaChhfZXZlbnRsb2dfcmV0ZW50aW9uX2RheXNCDgoMX3N0YXRpY19iYXNlQhMKEV9odHRwc19kZXBsb3ltZW50QgwKCl9zaXRlX25hbWVCEwoRX2NsaWVudF9pcF9oZWFkZXIi2wcKEFNldHRpbmdzUmVzcG9uc2USFgoOcHdkX21pbl9sZW5ndGgYASABKAMSFgoOcHdkX21heF9sZW5ndGgYAiABKAMSGwoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoAxIdChVwd2RfZGlzYWxsb3dfdXNlcm5hbWUYBCABKAgSGwoTcHdkX2Rpc2FsbG93X2NvbW1vbhgFIAEoCBIcChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCBIbChNvdHBfcmVzZW5kX2ludGVydmFsGAcgASgDEg8KB290cF90dGwYCCABKAMSGAoQb3RwX21heF9hdHRlbXB0cxgJIAEoAxIeChZvdHBfZGFpbHlfbGltaXRfdGFyZ2V0GAogASgDEhoKEm90cF9kYWlseV9saW1pdF9pcBgLIAEoAxIVCg1sb2dpbl9tZXRob2RzGAwgAygJEhoKEmFsbG93X3JlZ2lzdHJhdGlvbhgNIAEoCBIdChVhbGxvd19zaWdudXBfcGFzc3dvcmQYDiABKAgSGgoSYWxsb3dfc2lnbnVwX3Bob25lGA8gASgIEhoKEmFsbG93X3NpZ251cF9lbWFpbBgQIAEoCBITCgttZmFfZW5hYmxlZBgRIAEoCBITCgttZmFfbWV0aG9kcxgSIAMoCRIYChBwd2RfZmFpbF9jYXB0dXJlGBMgASgDEhQKDHB3ZF9mYWlsX2JhbhgUIAEoAxITCgtwd2RfYmFuX3R0bBgVIAEoAxITCgtzZXNzaW9uX3R0bBgWIAEoAxITCgtjb29raWVfbmFtZRgXIAEoCRITCgtzc29fZG9tYWlucxgYIAMoCRIVCg1xdWV1ZV93b3JrZXJzGBkgASgDEhYKDnF1ZXVlX2NhcGFjaXR5GBogASgDEhMKC3F1ZXVlX2JhdGNoGBsgASgDEhYKDnF1ZXVlX2ZsdXNoX21zGBwgASgDEhwKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GB0gASgJEhgKEHNtc19wcm92aWRlcl9rZXkYHiABKAkSGgoSZW1haWxfcHJvdmlkZXJfa2V5GB8gASgJEh8KF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCAgASgJEhYKDmdhdGV3YXlfdG9rZW5zGCEgAygJEh8KF2V2ZW50bG9nX3JldGVudGlvbl9kYXlzGCIgASgDEhMKC3N0YXRpY19iYXNlGCMgASgJEhgKEGh0dHBzX2RlcGxveW1lbnQYJCABKAkSEQoJc2l0ZV9uYW1lGCUgASgJEhgKEGNsaWVudF9pcF9oZWFkZXIYJiABKAlCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM");
+  fileDesc("ChthcGkvYWRtaW4vdjEvc2V0dGluZ3MucHJvdG8SDGFwaS5hZG1pbi52MSIUChJHZXRTZXR0aW5nc1JlcXVlc3Qi4RAKElNldFNldHRpbmdzUmVxdWVzdBIbCg5wd2RfbWluX2xlbmd0aBgBIAEoA0gAiAEBEhsKDnB3ZF9tYXhfbGVuZ3RoGAIgASgDSAGIAQESIAoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoA0gCiAEBEiIKFXB3ZF9kaXNhbGxvd191c2VybmFtZRgEIAEoCEgDiAEBEiAKE3B3ZF9kaXNhbGxvd19jb21tb24YBSABKAhIBIgBARIhChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCEgFiAEBEiAKE290cF9yZXNlbmRfaW50ZXJ2YWwYByABKANIBogBARIUCgdvdHBfdHRsGAggASgDSAeIAQESHQoQb3RwX21heF9hdHRlbXB0cxgJIAEoA0gIiAEBEiMKFm90cF9kYWlseV9saW1pdF90YXJnZXQYCiABKANICYgBARIfChJvdHBfZGFpbHlfbGltaXRfaXAYCyABKANICogBARIeChFoYXNfbG9naW5fbWV0aG9kcxgMIAEoCEgLiAEBEhUKDWxvZ2luX21ldGhvZHMYDSADKAkSHwoSYWxsb3dfcmVnaXN0cmF0aW9uGA4gASgISAyIAQESIgoVYWxsb3dfc2lnbnVwX3Bhc3N3b3JkGA8gASgISA2IAQESHwoSYWxsb3dfc2lnbnVwX3Bob25lGBAgASgISA6IAQESHwoSYWxsb3dfc2lnbnVwX2VtYWlsGBEgASgISA+IAQESGAoLbWZhX2VuYWJsZWQYEiABKAhIEIgBARIcCg9oYXNfbWZhX21ldGhvZHMYEyABKAhIEYgBARITCgttZmFfbWV0aG9kcxgUIAMoCRIdChBwd2RfZmFpbF9jYXB0dXJlGBUgASgDSBKIAQESGQoMcHdkX2ZhaWxfYmFuGBYgASgDSBOIAQESGAoLcHdkX2Jhbl90dGwYFyABKANIFIgBARIYCgtzZXNzaW9uX3R0bBgYIAEoA0gViAEBEhgKC2Nvb2tpZV9uYW1lGBkgASgJSBaIAQESHAoPaGFzX3Nzb19kb21haW5zGBogASgISBeIAQESEwoLc3NvX2RvbWFpbnMYGyADKAkSGgoNcXVldWVfd29ya2VycxgcIAEoA0gYiAEBEhsKDnF1ZXVlX2NhcGFjaXR5GB0gASgDSBmIAQESGAoLcXVldWVfYmF0Y2gYHiABKANIGogBARIbCg5xdWV1ZV9mbHVzaF9tcxgfIAEoA0gbiAEBEiEKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GCAgASgJSByIAQESHQoQc21zX3Byb3ZpZGVyX2tleRghIAEoCUgdiAEBEh8KEmVtYWlsX3Byb3ZpZGVyX2tleRgiIAEoCUgeiAEBEiQKF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCMgASgJSB+IAQESHwoSaGFzX2dhdGV3YXlfdG9rZW5zGCQgASgISCCIAQESFgoOZ2F0ZXdheV90b2tlbnMYJSADKAkSGAoLc3RhdGljX2Jhc2UYJiABKAlIIYgBARIdChBodHRwc19kZXBsb3ltZW50GCcgASgJSCKIAQESFgoJc2l0ZV9uYW1lGCggASgJSCOIAQESHQoQY2xpZW50X2lwX2hlYWRlchgpIAEoCUgkiAEBEiQKF2V2ZW50bG9nX3BhcnRpdGlvbl9kYXlzGCogASgDSCWIAQESJAoXZXZlbnRsb2dfbWF4X3BhcnRpdGlvbnMYKyABKANIJogBAUIRCg9fcHdkX21pbl9sZW5ndGhCEQoPX3B3ZF9tYXhfbGVuZ3RoQhYKFF9wd2RfcmVxdWlyZV9jbGFzc2VzQhgKFl9wd2RfZGlzYWxsb3dfdXNlcm5hbWVCFgoUX3B3ZF9kaXNhbGxvd19jb21tb25CFwoVX2FsbG93X3Bhc3N3b3JkX3Jlc2V0QhYKFF9vdHBfcmVzZW5kX2ludGVydmFsQgoKCF9vdHBfdHRsQhMKEV9vdHBfbWF4X2F0dGVtcHRzQhkKF19vdHBfZGFpbHlfbGltaXRfdGFyZ2V0QhUKE19vdHBfZGFpbHlfbGltaXRfaXBCFAoSX2hhc19sb2dpbl9tZXRob2RzQhUKE19hbGxvd19yZWdpc3RyYXRpb25CGAoWX2FsbG93X3NpZ251cF9wYXNzd29yZEIVChNfYWxsb3dfc2lnbnVwX3Bob25lQhUKE19hbGxvd19zaWdudXBfZW1haWxCDgoMX21mYV9lbmFibGVkQhIKEF9oYXNfbWZhX21ldGhvZHNCEwoRX3B3ZF9mYWlsX2NhcHR1cmVCDwoNX3B3ZF9mYWlsX2JhbkIOCgxfcHdkX2Jhbl90dGxCDgoMX3Nlc3Npb25fdHRsQg4KDF9jb29raWVfbmFtZUISChBfaGFzX3Nzb19kb21haW5zQhAKDl9xdWV1ZV93b3JrZXJzQhEKD19xdWV1ZV9jYXBhY2l0eUIOCgxfcXVldWVfYmF0Y2hCEQoPX3F1ZXVlX2ZsdXNoX21zQhcKFV9jYXB0Y2hhX3Byb3ZpZGVyX2tleUITChFfc21zX3Byb3ZpZGVyX2tleUIVChNfZW1haWxfcHJvdmlkZXJfa2V5QhoKGF9hdmF0YXJfc3RvcmFnZV9wcm92aWRlckIVChNfaGFzX2dhdGV3YXlfdG9rZW5zQg4KDF9zdGF0aWNfYmFzZUITChFfaHR0cHNfZGVwbG95bWVudEIMCgpfc2l0ZV9uYW1lQhMKEV9jbGllbnRfaXBfaGVhZGVyQhoKGF9ldmVudGxvZ19wYXJ0aXRpb25fZGF5c0IaChhfZXZlbnRsb2dfbWF4X3BhcnRpdGlvbnMi/AcKEFNldHRpbmdzUmVzcG9uc2USFgoOcHdkX21pbl9sZW5ndGgYASABKAMSFgoOcHdkX21heF9sZW5ndGgYAiABKAMSGwoTcHdkX3JlcXVpcmVfY2xhc3NlcxgDIAEoAxIdChVwd2RfZGlzYWxsb3dfdXNlcm5hbWUYBCABKAgSGwoTcHdkX2Rpc2FsbG93X2NvbW1vbhgFIAEoCBIcChRhbGxvd19wYXNzd29yZF9yZXNldBgGIAEoCBIbChNvdHBfcmVzZW5kX2ludGVydmFsGAcgASgDEg8KB290cF90dGwYCCABKAMSGAoQb3RwX21heF9hdHRlbXB0cxgJIAEoAxIeChZvdHBfZGFpbHlfbGltaXRfdGFyZ2V0GAogASgDEhoKEm90cF9kYWlseV9saW1pdF9pcBgLIAEoAxIVCg1sb2dpbl9tZXRob2RzGAwgAygJEhoKEmFsbG93X3JlZ2lzdHJhdGlvbhgNIAEoCBIdChVhbGxvd19zaWdudXBfcGFzc3dvcmQYDiABKAgSGgoSYWxsb3dfc2lnbnVwX3Bob25lGA8gASgIEhoKEmFsbG93X3NpZ251cF9lbWFpbBgQIAEoCBITCgttZmFfZW5hYmxlZBgRIAEoCBITCgttZmFfbWV0aG9kcxgSIAMoCRIYChBwd2RfZmFpbF9jYXB0dXJlGBMgASgDEhQKDHB3ZF9mYWlsX2JhbhgUIAEoAxITCgtwd2RfYmFuX3R0bBgVIAEoAxITCgtzZXNzaW9uX3R0bBgWIAEoAxITCgtjb29raWVfbmFtZRgXIAEoCRITCgtzc29fZG9tYWlucxgYIAMoCRIVCg1xdWV1ZV93b3JrZXJzGBkgASgDEhYKDnF1ZXVlX2NhcGFjaXR5GBogASgDEhMKC3F1ZXVlX2JhdGNoGBsgASgDEhYKDnF1ZXVlX2ZsdXNoX21zGBwgASgDEhwKFGNhcHRjaGFfcHJvdmlkZXJfa2V5GB0gASgJEhgKEHNtc19wcm92aWRlcl9rZXkYHiABKAkSGgoSZW1haWxfcHJvdmlkZXJfa2V5GB8gASgJEh8KF2F2YXRhcl9zdG9yYWdlX3Byb3ZpZGVyGCAgASgJEhYKDmdhdGV3YXlfdG9rZW5zGCEgAygJEhMKC3N0YXRpY19iYXNlGCIgASgJEhgKEGh0dHBzX2RlcGxveW1lbnQYIyABKAkSEQoJc2l0ZV9uYW1lGCQgASgJEhgKEGNsaWVudF9pcF9oZWFkZXIYJSABKAkSHwoXZXZlbnRsb2dfcGFydGl0aW9uX2RheXMYJiABKAMSHwoXZXZlbnRsb2dfbWF4X3BhcnRpdGlvbnMYJyABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM");
 
 /**
  * GetSettingsRequest 是 AdminService/GetSettings 的请求（§5.6，无入参）。
@@ -302,16 +302,9 @@ export type SetSettingsRequest = Message<"api.admin.v1.SetSettingsRequest"> & {
   gatewayTokens: string[];
 
   /**
-   * 事件日志保留天数，默认 180（§5.6）。
-   *
-   * @generated from field: optional int64 eventlog_retention_days = 38;
-   */
-  eventlogRetentionDays?: bigint | undefined;
-
-  /**
    * 静态资源基址（CDN），改后需刷新页面生效（§5.6、§8）。
    *
-   * @generated from field: optional string static_base = 39;
+   * @generated from field: optional string static_base = 38;
    */
   staticBase?: string | undefined;
 
@@ -320,14 +313,14 @@ export type SetSettingsRequest = Message<"api.admin.v1.SetSettingsRequest"> & {
    * 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
    * （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
    *
-   * @generated from field: optional string https_deployment = 40;
+   * @generated from field: optional string https_deployment = 39;
    */
   httpsDeployment?: string | undefined;
 
   /**
    * 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
    *
-   * @generated from field: optional string site_name = 41;
+   * @generated from field: optional string site_name = 40;
    */
   siteName?: string | undefined;
 
@@ -337,9 +330,26 @@ export type SetSettingsRequest = Message<"api.admin.v1.SetSettingsRequest"> & {
    * 空值回落直连。仅供审计与限流键、不作鉴权依据；配置头的入站清洗由
    * 部署方在反代负责，直连可伪造、如实记录。
    *
-   * @generated from field: optional string client_ip_header = 42;
+   * @generated from field: optional string client_ip_header = 41;
    */
   clientIpHeader?: string | undefined;
+
+  /**
+   * 事件日志分区天数（天），默认 7（§5.6）。分区维护任务按此天数滚动建
+   * 分区；取值范围 1-365，范围外 → invalid_request。单键范围校验、不做与
+   * eventlog_max_partitions 的交叉约束（消费方分区任务读取后再钳制兜底）。
+   *
+   * @generated from field: optional int64 eventlog_partition_days = 42;
+   */
+  eventlogPartitionDays?: bigint | undefined;
+
+  /**
+   * 事件日志最大分区数，默认 26（§5.6）。分区总数达上限后淘汰最旧分区；
+   * 取值范围 1-365，范围外 → invalid_request。
+   *
+   * @generated from field: optional int64 eventlog_max_partitions = 43;
+   */
+  eventlogMaxPartitions?: bigint | undefined;
 };
 
 /**
@@ -351,7 +361,7 @@ export const SetSettingsRequestSchema: GenMessage<SetSettingsRequest> = /*@__PUR
 
 /**
  * SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
- * 键集合 / 键名与 SetSettingsRequest 的 38 个数据键一致，编号按表序从 1 起
+ * 键集合 / 键名与 SetSettingsRequest 的 39 个数据键一致，编号按表序从 1 起
  * 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
  * 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
  * 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -595,16 +605,9 @@ export type SettingsResponse = Message<"api.admin.v1.SettingsResponse"> & {
   gatewayTokens: string[];
 
   /**
-   * 事件日志保留天数，默认 180（§5.6）。
-   *
-   * @generated from field: int64 eventlog_retention_days = 34;
-   */
-  eventlogRetentionDays: bigint;
-
-  /**
    * 静态资源基址（CDN），默认 /assets（§5.6）。
    *
-   * @generated from field: string static_base = 35;
+   * @generated from field: string static_base = 34;
    */
   staticBase: string;
 
@@ -613,23 +616,37 @@ export type SettingsResponse = Message<"api.admin.v1.SettingsResponse"> & {
    * 非布尔单点开关——部署形态声明，驱动会话 Cookie 的 Secure / SameSite 属性
    * （§1.9 驱动口径）。
    *
-   * @generated from field: string https_deployment = 36;
+   * @generated from field: string https_deployment = 35;
    */
   httpsDeployment: string;
 
   /**
    * 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
    *
-   * @generated from field: string site_name = 37;
+   * @generated from field: string site_name = 36;
    */
   siteName: string;
 
   /**
    * 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。
    *
-   * @generated from field: string client_ip_header = 38;
+   * @generated from field: string client_ip_header = 37;
    */
   clientIpHeader: string;
+
+  /**
+   * 事件日志分区天数（天），默认 7（§5.6）；取值范围 1-365。
+   *
+   * @generated from field: int64 eventlog_partition_days = 38;
+   */
+  eventlogPartitionDays: bigint;
+
+  /**
+   * 事件日志最大分区数，默认 26（§5.6）；超出后淘汰最旧分区，取值范围 1-365。
+   *
+   * @generated from field: int64 eventlog_max_partitions = 39;
+   */
+  eventlogMaxPartitions: bigint;
 };
 
 /**
