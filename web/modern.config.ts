@@ -111,5 +111,37 @@ export default defineConfig({
       js: 'js',
       css: 'css',
     },
+    externals: [
+      ({ request }, callback) => {
+        // remove some pkgs from semi
+        if (
+          !IS_DEV &&
+          [
+            'lottie-web',
+            'prismjs',
+            'remark-gfm',
+            '@mdx-js/mdx',
+            '@douyinfe/semi-json-viewer-core',
+          ].includes(request || '')
+        ) {
+          return callback(undefined, '{}', 'var');
+        }
+        callback();
+      },
+    ],
+  },
+  performance: {
+    chunkSplit: {
+      strategy: 'split-by-experience',
+      override: {
+        cacheGroups: {
+          semi: {
+            name: 'semi',
+            test: /(@douyinfe[/+]semi-|date-fns|async-validator)/,
+            enforce: true,
+          },
+        },
+      },
+    },
   },
 });

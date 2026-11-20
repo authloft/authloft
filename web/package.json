@@ -5,6 +5,7 @@
     "dev": "modern dev",
     "build": "modern build && node scripts/sync-templates.mjs",
     "serve": "modern serve",
+    "analyze": "cross-env RSDOCTOR=true modern build",
     "sync:templates": "node scripts/sync-templates.mjs",
     "check": "rs check",
     "test": "rs test"
@@ -30,11 +31,13 @@
     "@bufbuild/protoc-gen-es": "^2.16.0",
     "@modern-js/app-tools": "3.11.0",
     "@modern-js/tsconfig": "3.11.0",
+    "@rsdoctor/core": "^2.0.3",
     "@rslint/core": "0.9.5",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^20",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "cross-env": "^10.1.0",
     "msw": "^2.15.0",
     "rstack": "0.8.2",
     "typescript": "~5.7.3"
