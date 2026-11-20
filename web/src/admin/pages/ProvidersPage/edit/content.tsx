@@ -165,7 +165,7 @@ export function ProviderEditContent(props: {
     }
     const categories = [...new Set(items.map((x) => x.category))];
     return categories.map((x) => ({
-      label: x,
+      label: t(`admin.providerCategory.${x}`),
       value: x,
       children: items
         .filter((y) => y.category === x)

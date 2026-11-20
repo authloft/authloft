@@ -26,9 +26,9 @@ export const setup = {
   'setup.error.unknown': '操作失败，请检查输入后重试',
 
   // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
-  'setup.restartingTitle': '重启中',
+  'setup.restartingTitle': '请重启 Authloft 服务',
   'setup.restartingNotice':
-    '程序已退出，请手动重新运行；如使用 Docker 或 systemd，会自动重启',
+    'Authloft 已退出，请手动重新运行；如使用 Docker 或 systemd，会自动重启',
   'setup.restartTimeoutNotice': '重启超时，请检查服务状态',
   'setup.waitingRestart': '等待服务重启…',
 
@@ -51,8 +51,6 @@ export const setup = {
   // DB 驱动选择 + 六字段（按方言拼装为单个 dbDsn；mysql = go-sql-driver
   // 形态，postgres = URL 形态）。
   'setup.fieldDbDriver': '数据库类型',
-  'setup.hintDbDriver':
-    '决定连接串格式与数据库方言，切换后请按新格式填写连接信息',
   'setup.optionDbDriverMysql': 'MySQL / MariaDB',
   'setup.optionDbDriverPostgres': 'PostgreSQL',
   'setup.fieldDbHost': '数据库地址',

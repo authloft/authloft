@@ -274,7 +274,6 @@ export default function InstallPage({
         <Form.Select
           field="dbDriver"
           label={{ text: t('setup.fieldDbDriver'), required: true }}
-          extraText={t('setup.hintDbDriver')}
           // 选项封闭集合（§13.3 db_driver：mysql | postgres），无体验性
           // 校验入口；值变化不改其余字段（DSN 拼装在提交时按值分支）。
           optionList={DB_DRIVER_OPTIONS.map((option) => ({

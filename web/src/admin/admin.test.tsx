@@ -998,13 +998,20 @@ describe('policyTags（§5.2「策略标签」展示纯函数）', () => {
         create(ProviderSchema, { category: 'oauth', autoBind: true }),
       ),
     ).toEqual(['自动绑定']);
-    expect(apiMod.policyTags(create(ProviderSchema, { category: 'oauth' }))).toEqual(
-      [],
-    );
+    expect(
+      apiMod.policyTags(create(ProviderSchema, { category: 'oauth' })),
+    ).toEqual([]);
   });
 
   test('非 oauth 行即使三开关为 true 也不出标签（存量非 oauth 行开关列默认 1）', () => {
-    for (const category of ['sms', 'email', 'storage', 'captcha', 'proxy', 'union']) {
+    for (const category of [
+      'sms',
+      'email',
+      'storage',
+      'captcha',
+      'proxy',
+      'union',
+    ]) {
       expect(
         apiMod.policyTags(
           create(ProviderSchema, {
@@ -5263,7 +5270,6 @@ const PROXY_FIELDS = [
     section: 'endpoint',
     required: true,
     options: ['socks5', 'http', 'https'],
-    help: 'admin.schemaField.proxySchemeHelp',
   }),
   schemaField({
     key: 'host',
@@ -5287,7 +5293,6 @@ const PROXY_FIELDS = [
     type: 'text',
     section: 'endpoint',
     advanced: true,
-    help: 'admin.schemaField.proxyUserHelp',
   }),
   schemaField({
     key: 'password',
@@ -5700,7 +5705,15 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     // storage 恒可用（后端解析不消费 is_enabled，schema 不下发该字段）。
     expect(providerStatusSwitchable('storage')).toBe(false);
     // 其余类别行内启停行为不变；空类别是零值占位行，同持开关。
-    for (const category of ['oauth', 'sms', 'email', 'captcha', 'proxy', 'union', '']) {
+    for (const category of [
+      'oauth',
+      'sms',
+      'email',
+      'captcha',
+      'proxy',
+      'union',
+      '',
+    ]) {
       expect(providerStatusSwitchable(category)).toBe(true);
     }
   });

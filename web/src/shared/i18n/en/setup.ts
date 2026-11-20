@@ -31,9 +31,9 @@ export const setup: typeof zhSetup = {
     'Operation failed. Please check your input and try again',
 
   // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
-  'setup.restartingTitle': 'Restarting',
+  'setup.restartingTitle': 'Please restart Authloft',
   'setup.restartingNotice':
-    'The program has exited. Please restart it manually; if you use Docker or systemd, it will restart automatically',
+    'Authloft has exited. Please restart it manually; if you use Docker or systemd, it will restart automatically',
   'setup.restartTimeoutNotice':
     'Restart timed out. Please check the service status',
   'setup.waitingRestart': 'Waiting for the service to restart…',
@@ -57,8 +57,6 @@ export const setup: typeof zhSetup = {
   // DB driver selection + six fields (assembled into a single dbDsn per driver;
   // mysql = go-sql-driver form, postgres = URL form).
   'setup.fieldDbDriver': 'Database type',
-  'setup.hintDbDriver':
-    'Determines the connection string format and database dialect; re-enter the connection details in the new format after switching',
   'setup.optionDbDriverMysql': 'MySQL / MariaDB',
   'setup.optionDbDriverPostgres': 'PostgreSQL',
   'setup.fieldDbHost': 'Database host',

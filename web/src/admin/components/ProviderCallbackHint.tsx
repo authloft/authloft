@@ -76,11 +76,6 @@ export function ProviderCallbackHint(
       <span className={styles.label}>{t('admin.callbackUrlLabel')}</span>
       <code className={styles.url}>{url}</code>
       <CopyButton text={url} />
-      {isOidcProviderType(props.type) ? (
-        <span className={styles.oidcNote}>
-          {t('admin.oidcCallbackExactMatchNote')}
-        </span>
-      ) : null}
     </div>
   );
 }

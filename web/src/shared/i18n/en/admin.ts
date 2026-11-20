@@ -24,8 +24,7 @@ export const admin: typeof zhAdmin = {
   'admin.pwdMinLengthLabel': 'Minimum length',
   'admin.pwdMinLengthHint': 'Default 8',
   'admin.pwdMaxLengthLabel': 'Maximum length',
-  'admin.pwdMaxLengthHint':
-    'Can be lowered but not raised; server hard cap is 64 (default 64)',
+  'admin.pwdMaxLengthHint': 'Server cap is 64 (default 64)',
   'admin.pwdRequireClassesLabel': 'Required character classes',
   'admin.pwdRequireClassesHint':
     '1-3; classes = uppercase / lowercase / digits; symbols do not count (default 3)',
@@ -33,8 +32,7 @@ export const admin: typeof zhAdmin = {
     'Disallow passwords containing the username',
   'admin.pwdDisallowCommonLabel': 'Reject commonly used passwords',
   'admin.allowPasswordResetLabel': 'Allow self-service password reset',
-  'admin.allowPasswordResetHint':
-    'When off, password reset is always rejected: no code is sent or verified',
+  'admin.allowPasswordResetHint': 'When off, password reset is always rejected',
   'admin.allowRegistrationLabel': 'Registration master switch',
   'admin.allowRegistrationHint': 'When off, registration is always rejected',
   'admin.allowSignupPasswordLabel': 'Username + password sign-up entry',
@@ -59,7 +57,7 @@ export const admin: typeof zhAdmin = {
     'When off, two-step verification has no effect and the user toggle is unavailable',
   'admin.mfaMethodsLabel': 'Factors for two-step verification',
   'admin.mfaMethodsHint':
-    'Users can use a factor after binding one from the allowlist; recovery codes come with TOTP and are not listed separately',
+    'Users can use a factor after binding one from the allowlist',
   'admin.pwdFailCaptureLabel':
     'Daily password failures before captcha is required',
   'admin.pwdFailCaptureHint':
@@ -96,15 +94,14 @@ export const admin: typeof zhAdmin = {
     'Storage provider for avatars / provider icons',
   'admin.avatarStorageProviderHint': 'Empty = no external storage',
   'admin.gatewayTokensLabel': 'Gateway tokens',
-  'admin.gatewayTokensHint': 'Multiple values allowed',
   'admin.eventlogRetentionDaysLabel': 'Event log retention days',
   'admin.eventlogRetentionDaysHint': 'Default 180',
   'admin.siteNameLabel': 'Site name',
   'admin.siteNameHint':
-    'Page title, injected into the template <title> placeholder; empty falls back to the default name Authloft',
+    'Page title, empty falls back to the default name Authloft',
   'admin.staticBaseLabel': 'Static asset base URL (CDN)',
   'admin.staticBaseHint':
-    'URL prefix for shell page scripts / styles; refresh the page after changes take effect',
+    'URL prefix for page scripts / styles; refresh the page after changes take effect',
 
   'admin.unitSeconds': 'seconds',
   'admin.unitTimes': 'times',
@@ -124,8 +121,7 @@ export const admin: typeof zhAdmin = {
     'Required character classes must be between 1 and 3',
   'admin.pwdMinOverMaxIssue':
     'Minimum password length cannot exceed the maximum',
-  'admin.pwdMaxOverCapIssue':
-    'Maximum password length cannot exceed 64 (server hard cap; can only be lowered)',
+  'admin.pwdMaxOverCapIssue': 'Maximum password length cannot exceed 64',
   'admin.httpsDeploymentIssue':
     'HTTPS deployment must be one of: auto-detect / force on / force off',
 
@@ -210,23 +206,18 @@ export const admin: typeof zhAdmin = {
   // port share field names with the smtp row but carry independent label keys
   // (proxy-row semantics: proxy address).
   'admin.schemaField.proxySchemeLabel': 'Proxy scheme',
-  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https',
   'admin.schemaField.proxyHostLabel': 'Proxy host',
   'admin.schemaField.proxyHostHelp':
     'Hostname / IPv4 / IPv6 literal; whitespace and /?#@[] forbidden; write IPv6 bare (e.g. ::1, without brackets)',
   'admin.schemaField.proxyPortLabel': 'Proxy port',
   'admin.schemaField.proxyPortHelp': '1 ≤ port ≤ 65535',
   'admin.schemaField.proxyUserLabel': 'Proxy username',
-  'admin.schemaField.proxyUserHelp':
-    'Stored as-is; encoded per RFC 3986 by the server on outbound construction, no manual encoding needed',
   'admin.schemaField.proxyPasswordLabel': 'Proxy password',
-  'admin.schemaField.proxyPasswordHelp':
-    'Stored in plain text (same as client_secret); a password requires a username',
+  'admin.schemaField.proxyPasswordHelp': 'A password requires a username',
   // Reference key proxy_provider_key (§5.3): candidates = category=proxy rows
   // (including disabled instances).
   'admin.schemaField.proxyProviderKeyLabel': 'Outbound proxy',
-  'admin.schemaField.proxyProviderKeyHelp':
-    'Provider key of a proxy row to route through; leave empty for direct connection (the only "no proxy" form)',
+  'admin.schemaField.proxyProviderKeyHelp': 'Leave empty for direct connection',
 
   // OAuth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
   'admin.schemaField.clientIdLabel': 'App ID',
@@ -265,8 +256,7 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.qrcodeFormatHelp':
     'Applies in ticket mode: the {{TICKET}} placeholder is replaced with the full encrypted ticket, e.g. https://example.com/scan?ticket={{TICKET}}',
   'admin.schemaField.qrcodeTipLabel': 'Scan Tip',
-  'admin.schemaField.qrcodeTipHelp':
-    'Raw HTML shown next to the QR code; inline scripts and similar injection vectors are blocked by the site CSP',
+  'admin.schemaField.qrcodeTipHelp': 'Raw HTML shown next to the QR code',
 
   // captcha / storage service-type Provider fields (captcha uses client_id as
   // the site key, client_secret as the secret, endpoint as a custom verify URL;
@@ -297,7 +287,7 @@ export const admin: typeof zhAdmin = {
     'Uploaded objects get the public-read ACL and are readable via direct links; do not enable for sensitive content',
   'admin.schemaField.uploadModeLabel': 'Upload Mode',
   'admin.schemaField.uploadModeHelp':
-    'proxy = relayed through the server; direct = presigned-URL upload (local does not support direct and falls back to proxy)',
+    'proxy = relayed through the server; direct = presigned-URL upload',
   'admin.schemaField.presignTtlLabel': 'Presign TTL (seconds)',
   'admin.schemaField.presignTtlHelp':
     'Presigned URL lifetime in direct mode; default 300, max 604800 (7 days)',
@@ -359,8 +349,6 @@ export const admin: typeof zhAdmin = {
   'admin.removeAction': 'Delete',
   'admin.dragSortHandle': 'Drag to sort',
   'admin.callbackUrlLabel': 'Callback URL: ',
-  'admin.oidcCallbackExactMatchNote':
-    'OIDC provider callbacks must match exactly',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
   'admin.rootTitle': 'Admin Console',

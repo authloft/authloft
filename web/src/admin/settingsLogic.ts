@@ -644,7 +644,6 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           label: t('admin.gatewayTokensLabel'),
           addText: t('admin.addGatewayToken'),
           placeholder: t('admin.gatewayTokenPlaceholder'),
-          hint: t('admin.gatewayTokensHint'),
         },
       ],
     },

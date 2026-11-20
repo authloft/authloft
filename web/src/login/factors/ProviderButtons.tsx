@@ -330,7 +330,6 @@ function ProviderWall({
                   icon={p.icon}
                   alt={p.displayName ?? p.providerKey}
                 />
-                <span>{p.displayName ?? p.providerKey}</span>
               </button>
             ))}
         </div>

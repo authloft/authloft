@@ -24,15 +24,14 @@ export const admin = {
   'admin.pwdMinLengthLabel': '最小长度',
   'admin.pwdMinLengthHint': '默认 8',
   'admin.pwdMaxLengthLabel': '最大长度',
-  'admin.pwdMaxLengthHint': '可调低不可调高，服务端硬上限 64（默认 64）',
+  'admin.pwdMaxLengthHint': '服务端上限 64（默认 64）',
   'admin.pwdRequireClassesLabel': '须满足的字符类数',
   'admin.pwdRequireClassesHint':
     '1-3；字符类 = 大写 / 小写 / 数字，符号不计入（默认 3）',
   'admin.pwdDisallowUsernameLabel': '禁止密码包含用户名',
   'admin.pwdDisallowCommonLabel': '禁止命中弱口令字典',
   'admin.allowPasswordResetLabel': '开放自助重置密码',
-  'admin.allowPasswordResetHint':
-    '关闭后重置密码一律被拒绝，不发码、不校验验证码',
+  'admin.allowPasswordResetHint': '关闭后重置密码一律被拒绝',
   'admin.allowRegistrationLabel': '注册总开关',
   'admin.allowRegistrationHint': '关闭后注册一律被拒绝',
   'admin.allowSignupPasswordLabel': '用户名 + 密码注册入口',
@@ -54,8 +53,7 @@ export const admin = {
   'admin.mfaEnabledLabel': '两步验证总开关',
   'admin.mfaEnabledHint': '关闭后两步验证不生效，用户开关不可用',
   'admin.mfaMethodsLabel': '可用于两步验证的因子',
-  'admin.mfaMethodsHint':
-    '用户绑定白名单内的因子后即可用于两步验证；恢复码随 TOTP 生效，不单列',
+  'admin.mfaMethodsHint': '用户绑定白名单内的因子后即可用于两步验证',
   'admin.pwdFailCaptureLabel': '当日密码错误人机校验阈值',
   'admin.pwdFailCaptureHint':
     '同一账号当日密码错误达此次数后，登录必须携带人机校验（默认 3）',
@@ -89,15 +87,12 @@ export const admin = {
   'admin.avatarStorageProviderLabel': '头像 / 渠道图标使用的 Storage Provider',
   'admin.avatarStorageProviderHint': '留空 = 未启用外部存储',
   'admin.gatewayTokensLabel': '网关 Token',
-  'admin.gatewayTokensHint': '可多个',
   'admin.eventlogRetentionDaysLabel': '事件日志保留天数',
   'admin.eventlogRetentionDaysHint': '默认 180',
   'admin.siteNameLabel': '站点名称',
-  'admin.siteNameHint':
-    '页面标题，注入模板 <title> 占位符；留空则显示默认名称 Authloft',
+  'admin.siteNameHint': '页面标题，留空则显示默认名称 Authloft',
   'admin.staticBaseLabel': '静态资源基址（CDN）',
-  'admin.staticBaseHint':
-    '决定空壳页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
+  'admin.staticBaseHint': '决定页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
 
   'admin.unitSeconds': '秒',
   'admin.unitTimes': '次',
@@ -114,8 +109,7 @@ export const admin = {
   'admin.settingsNumberIssue': '数字设置项须为不小于 0 的整数',
   'admin.pwdRequireClassesIssue': '须满足的字符类数须为 1-3',
   'admin.pwdMinOverMaxIssue': '密码最小长度不能大于最大长度',
-  'admin.pwdMaxOverCapIssue':
-    '密码最大长度不能超过 64（服务端硬上限，可调低不可调高）',
+  'admin.pwdMaxOverCapIssue': '密码最大长度不能超过 64',
   'admin.httpsDeploymentIssue':
     'HTTPS 部署取值须为 自动推断 / 强制开启 / 强制关闭',
 
@@ -191,22 +185,17 @@ export const admin = {
   // select、host 禁空白与 /?#@[]、port number、user / password 可选折叠；
   // host / port 与 smtp 行共用字段名、标签键独立（proxy 行内语义为代理地址）。
   'admin.schemaField.proxySchemeLabel': '代理协议',
-  'admin.schemaField.proxySchemeHelp': 'socks5 / http / https',
   'admin.schemaField.proxyHostLabel': '代理地址',
   'admin.schemaField.proxyHostHelp':
     '主机名 / IPv4 / IPv6 字面量；禁空白与 /?#@[]；IPv6 直接写 ::1 形态（不带括号）',
   'admin.schemaField.proxyPortLabel': '代理端口',
   'admin.schemaField.proxyPortHelp': '1 ≤ port ≤ 65535',
   'admin.schemaField.proxyUserLabel': '代理用户名',
-  'admin.schemaField.proxyUserHelp':
-    '原文存储；出站构造时由服务端按 RFC 3986 编码，无需手工编码',
   'admin.schemaField.proxyPasswordLabel': '代理密码',
-  'admin.schemaField.proxyPasswordHelp':
-    '明文存储（同 client_secret 口径）；填写密码必须同时填写用户名',
+  'admin.schemaField.proxyPasswordHelp': '填写密码必须同时填写用户名',
   // 引用键 proxy_provider_key（§5.3）：候选 = category=proxy 行（含未启用实例）。
   'admin.schemaField.proxyProviderKeyLabel': '出站代理',
-  'admin.schemaField.proxyProviderKeyHelp':
-    '指向 proxy 提供商行的标识；留空 = 直连，唯一「不代理」表示',
+  'admin.schemaField.proxyProviderKeyHelp': '留空 = 直连',
 
   // oauth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
   'admin.schemaField.clientIdLabel': 'AppID',
@@ -243,8 +232,7 @@ export const admin = {
   'admin.schemaField.qrcodeFormatHelp':
     'ticket 模式生效：{{TICKET}} 占位符替换为完整加密 ticket，如 https://example.com/scan?ticket={{TICKET}}',
   'admin.schemaField.qrcodeTipLabel': '扫码提示文案',
-  'admin.schemaField.qrcodeTipHelp':
-    'HTML 原文，随二维码展示在扫码页；内联脚本等注入向量由站点 CSP 拦截',
+  'admin.schemaField.qrcodeTipHelp': 'HTML 原文，随二维码展示在扫码页',
 
   // captcha / storage 服务型 Provider 字段（captcha 用 client_id 作站点密钥、
   // client_secret 作密钥、endpoint 作自定义校验地址；storage/local 用 bucket 作
@@ -272,7 +260,7 @@ export const admin = {
     '上传对象附 public-read ACL，可直链读取；敏感内容勿开启',
   'admin.schemaField.uploadModeLabel': '上传模式',
   'admin.schemaField.uploadModeHelp':
-    'proxy=经服务端中转上传；direct=预签名 URL 直传（local 渠道不支持 direct，回退 proxy）',
+    'proxy=经服务端中转上传；direct=预签名 URL 直传',
   'admin.schemaField.presignTtlLabel': '预签名有效期（秒）',
   'admin.schemaField.presignTtlHelp':
     'direct 模式预签名 URL 有效期；默认 300，上限 604800（7 天）',
@@ -330,7 +318,6 @@ export const admin = {
   'admin.removeAction': '删除',
   'admin.dragSortHandle': '拖拽排序',
   'admin.callbackUrlLabel': '回调地址：',
-  'admin.oidcCallbackExactMatchNote': 'OIDC 类 Provider 回调需精确匹配',
 
   // ---- layout/AdminLayout.tsx + routes.tsx + entry.tsx（壳层文案）--------
   'admin.rootTitle': '管理后台',
