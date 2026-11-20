@@ -21,7 +21,7 @@ func NewPermissionRepo(db *bun.DB) *PermissionRepo {
 
 // HasPermission 查询错误须原样上抛，避免被读成「无权限」（§3.14、§4.8）。
 func (r *PermissionRepo) HasPermission(ctx context.Context, uid int64, point string) (bool, error) {
-	var exists int64
+	var exists bool
 	err := r.db.NewRaw(
 		"SELECT EXISTS(SELECT 1 FROM user_permission WHERE user_id = ? AND point = ? LIMIT 1)",
 		uid, point,
@@ -29,12 +29,12 @@ func (r *PermissionRepo) HasPermission(ctx context.Context, uid int64, point str
 	if err != nil {
 		return false, fmt.Errorf("permission repo: has permission: %w", err)
 	}
-	return exists == 1, nil
+	return exists, nil
 }
 
 // HasAnyPermission 同 HasPermission：故障上抛供 fail-closed（§3.14）。
 func (r *PermissionRepo) HasAnyPermission(ctx context.Context, uid int64) (bool, error) {
-	var exists int64
+	var exists bool
 	err := r.db.NewRaw(
 		"SELECT EXISTS(SELECT 1 FROM user_permission WHERE user_id = ? LIMIT 1)",
 		uid,
@@ -42,7 +42,7 @@ func (r *PermissionRepo) HasAnyPermission(ctx context.Context, uid int64) (bool,
 	if err != nil {
 		return false, fmt.Errorf("permission repo: has any permission: %w", err)
 	}
-	return exists == 1, nil
+	return exists, nil
 }
 
 // ListPermissions 返回 uid 持有的全部权限点；查询故障原样上抛（§3.10、§4.8）。

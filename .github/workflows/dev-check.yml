@@ -132,14 +132,6 @@ jobs:
     # 经 sync-templates.mjs 同步到 server/（模板 + assets/dist），server 测试
     # 直接消费同步结果，不重复做 web 构建。
     needs: [web-build]
-    # 测试矩阵：同一套用例对 mysql / postgres 各跑一遍（dialect 决定激活
-    # 方言），每 dialect 独立测试库凭据，见 matrix.test_dsn 与对应 service。
-    # 测试真连用例经 UC_TEST_DB_DRIVER + UC_TEST_DB_DSN 读方言与连接串
-    # （兼容读 UC_TEST_MYSQL_DSN），Redis 经 UC_TEST_REDIS_ADDR，凭据为
-    # CI 内一次性本地值。宿主机端口刻意用 13306 / 15432 / 16379，避开
-    # runner 上可能已占用的默认端口。
-    # 注：service 容器无法按 matrix 条件裁剪，两库在每个 entry 里都会启动，
-    # 未用一侧仅为闲置容器，不影响结果。
     strategy:
       fail-fast: false
       matrix:
@@ -164,7 +156,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: postgres:14
+        image: postgres:18
         env:
           POSTGRES_USER: ci_test
           POSTGRES_PASSWORD: ci_pass_ci_only

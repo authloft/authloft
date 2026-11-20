@@ -717,7 +717,7 @@ func TestUserRepoListUsersSearchSort(t *testing.T) {
 		username, nickname, phone, email string
 	}{
 		{"alice_01", "爱丽丝", "13800000001", "alice@example.com"},
-		{"bob_02", "Alice Chen", "13900000002", "bob@example.com"},
+		{"bob_02", "alice chen", "13900000002", "bob@example.com"},
 		{"carol_03", "卡罗尔", "13700000003", "carol@example.com"},
 		{"dave_04", "戴夫", "13600000004", "alice@corp.example.com"},
 	}
@@ -734,9 +734,9 @@ func TestUserRepoListUsersSearchSort(t *testing.T) {
 		}
 	}
 
-	// q 命中 username（alice_01）/ nickname（Alice Chen，大小写不敏感列排序规则
-	// 下命中）/ email 域名（alice@、alice@corp）——含列：username + email 两个
-	// alice 条目 + nickname 的 Alice Chen。
+	// q 命中 username（alice_01）/ nickname（alice chen）/ email 域名
+	// （alice@、alice@corp）——三列各一条；字面量统一小写，不依赖列
+	// collation 的大小写行为。
 	got, total, err := rp.ListUsers(ctx, UserListQuery{Q: "alice"})
 	if err != nil {
 		t.Fatalf("Q=alice: %v", err)
