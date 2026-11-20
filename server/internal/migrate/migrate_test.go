@@ -423,7 +423,7 @@ func TestDialectFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgres 方言 FS 获取失败: %v", err)
 	}
-	want := []int64{1, 2}
+	want := []int64{1}
 	if mysqlV := dialectVersions(t, mysqlFS); !slices.Equal(mysqlV, want) {
 		t.Errorf("mysql 方言版本集合 = %v, want %v", mysqlV, want)
 	}
