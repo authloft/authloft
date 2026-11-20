@@ -121,7 +121,7 @@
   - UPDATE 默认 SET **全部非 PK 字段**，零值原样写入；局部更新用 `.Column(...)` 限定列或查询级 `OmitZero()`；`skipupdate` tag 字段永不更新；`nullzero` 字段零值写成 `SET col = DEFAULT`。
   - 自增 PK 列同样保留在列清单，零值以 DEFAULT 占位、插入后主键回填按 driver 而异（MySQL 经 `LastInsertId`，PG 走 RETURNING，见《后端架构》§1.1）；MySQL / MariaDB 无 RETURNING，除自增 PK 外 bun 不做插入后回读——依赖 DB DEFAULT 的列插入后 struct 仍是零值，需要时自行回查。
 - UPDATE affected-rows 口径按 driver 而异（见《后端架构》§1.1）：MySQL changed-rows 语义下无变化的 UPDATE 返回 `rows=0`（go-sql-driver 默认返回 affected-rows，DSN `clientFoundRows=true` 才改返回 found-rows），需要区分「行不存在」时必须做存在性补查。
-- epoch 类递增用单语句原子写法（`IF(epoch+1>30000,1,epoch+1)`），行锁串行化并发，不做应用层读-改-写（无 check-then-act 竞态）。
+- epoch 类递增用单语句原子写法（`epoch = CASE WHEN epoch + 1 > 30000 THEN 1 ELSE epoch + 1 END`，ANSI 写法两方言通用，不用 MySQL 方言函数 `IF()`），行锁串行化并发，不做应用层读-改-写（无 check-then-act 竞态）。
 - 事务边界：跨聚合业务事务在 service 编排；聚合内多表原子写（如建号 user+user_credential）由 repo 以单事务方法完成（既有先例 `UserRepo.CreateWithCredential`）。bun 下事务用 `db.RunInTx(ctx, opts, fn)` 或 `BeginTx`/`Commit`，语义同 `database/sql`。
 - 迁移命名：单文件 `NNNNNN_name.sql` + `-- +goose Up/Down` 注解分段（goose 按 NumericComponent 解析版本，成对 `.up.sql/.down.sql` 会报 duplicate version）。
 - 迁移修正口径：迁移的消费者是活库而非 git 历史；无生产部署消费迁移时，首版迁移中的笔误**直接修正首版**，不追加修正迁移（避免污染从零安装路径）。

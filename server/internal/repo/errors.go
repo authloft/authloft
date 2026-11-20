@@ -1,4 +1,4 @@
-// 驱动错误归一（review/mysql-postgres-support.md §4.1）：散在各 repo 的
+// 驱动错误归一：散在各 repo 的
 // *mysql.MySQLError 直接判定收口到本文件，向上只暴露语义化判定
 // （IsDuplicateKey / IsDeadlock / IsNoSuchTable），调用方拿语义不拿驱动
 // 类型。分派按错误对象自带的驱动身份进行——MySQLError 只可能来自

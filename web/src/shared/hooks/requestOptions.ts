@@ -1,6 +1,6 @@
 /**
- * 请求错误集中分派 options 工厂（docs/前端架构.md §3.2 useRequest 段；
- * 定稿 review/frontend-request-layer.md §5.4）：ahooks
+ * 请求错误集中分派 options 工厂（docs/前端架构.md §3.2 useRequest 段）：
+ * ahooks
  * useRequest 的错误统一进 onError，本模块只做 options / 回调集中，
  * 不重建请求机制。分派顺序：
  *   ① 401 / unauthenticated → loginUrl(alRoot, returnTo(...)) 跳登录

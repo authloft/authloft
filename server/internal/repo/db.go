@@ -184,9 +184,9 @@ func applyUpsert(q *bun.InsertQuery, conflictKeys []string, setCols []string) *b
 	return q.On("DUPLICATE KEY UPDATE").Set(strings.Join(sets, ", "))
 }
 
-// NewPartitionManager 按 driver 分派 event_log 分区维护实现（review/
-// eventlog-partition.md §5：方言只分担分区枚举与 DDL，决策算法归 partition
-// 包）。driver 取 EffectiveDriver 归一后的值，与连接装配同源；db 须为业务
+// NewPartitionManager 按 driver 分派 event_log 分区维护实现（方言只分担
+// 分区枚举与 DDL，决策算法归 partition 包；分区设计见《后端架构》§4.6）。
+// driver 取 EffectiveDriver 归一后的值，与连接装配同源；db 须为业务
 // 同一连接工厂产出的 bun 连接，保证枚举与 DDL 落在目标库。分区任务的调度
 // 与 bootstrap 挂载属后续工作，此处只提供注入点。
 func NewPartitionManager(driver config.Driver, db *bun.DB) partition.PartitionManager {

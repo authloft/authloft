@@ -1,7 +1,7 @@
 // Package mysql PartitionManager 的 MySQL / MariaDB 实现：实体分区从
 // information_schema.partitions 枚举（排除 pmax 兜底），新增分区走
-// REORGANIZE 切分 pmax（兜底积压行由数据库自动分流，review/eventlog-partition.md
-// §2），淘汰走 DROP PARTITION（§3）。决策算法归父包 policy.go，这里只做
+// REORGANIZE 切分 pmax（兜底积压行由数据库自动分流，《后端架构》§4.6），
+// 淘汰走 DROP PARTITION。决策算法归父包 policy.go，这里只做
 // 枚举与 DDL。
 package mysql
 

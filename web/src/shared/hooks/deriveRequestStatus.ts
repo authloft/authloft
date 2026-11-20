@@ -1,6 +1,5 @@
 /**
- * 请求状态派生（docs/前端架构.md §3.2 useRequest 段；定稿
- * review/frontend-request-layer.md §5.3）：ahooks useRequest 只给
+ * 请求状态派生（docs/前端架构.md §3.2 useRequest 段）：ahooks useRequest 只给
  * loading / error / data 三个原语，四态 status 由本纯函数派生——
  * success 空态需 `!loading && !error && data !== undefined` 三条件组合，
  * 调用点逐处手写易漂移（漏 `!error` 错误态闪空态、漏 `!loading` 首帧闪

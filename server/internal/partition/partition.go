@@ -1,4 +1,4 @@
-// Package partition 维护 event_log 按天 RANGE 分区（review/eventlog-partition.md）：
+// Package partition 维护 event_log 按天 RANGE 分区（分区设计见《后端架构》§4.6）：
 // 决策算法（何时切新分区、淘汰哪些旧分区）抽成本包的方言无关纯函数，MySQL 与
 // PostgreSQL 各自实现分区枚举与 DDL 执行，共同实现 PartitionManager 接口。
 //

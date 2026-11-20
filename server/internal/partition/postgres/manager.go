@@ -1,7 +1,7 @@
 // Package postgres PartitionManager 的 PostgreSQL 实现：实体分区从
 // pg_catalog.pg_inherits + pg_class 枚举（排除 <表>_default 兜底），新增
-// 分区走三步搬移 + ATTACH（事务内，review/eventlog-partition.md §2），淘汰
-// 走 DROP TABLE（§3）。决策算法归父包 policy.go，这里只做枚举与 DDL。
+// 分区走三步搬移 + ATTACH（事务内，《后端架构》§4.6），淘汰走 DROP TABLE。
+// 决策算法归父包 policy.go，这里只做枚举与 DDL。
 package postgres
 
 import (

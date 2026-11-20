@@ -301,7 +301,7 @@ func TestListPartitions(t *testing.T) {
 }
 
 func TestEnsurePartitionCutsAndDiverts(t *testing.T) {
-	// REORGANIZE 分流（review/eventlog-partition.md §2）：切分前落在 pmax
+	// REORGANIZE 分流（《后端架构》§4.6）：切分前落在 pmax
 	// 的当前范围行由数据库自动搬进新分区，超出范围的行留在兜底不丢。
 	mgr := newTestManager(t)
 	insertRows(t, mgr.db, "2026-11-20 10:00:00", "2030-01-01 00:00:00")

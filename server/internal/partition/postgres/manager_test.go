@@ -298,7 +298,7 @@ func TestListPartitions(t *testing.T) {
 }
 
 func TestEnsurePartitionMovesDefaultRowsAndAttaches(t *testing.T) {
-	// 三步搬移 + ATTACH（review/eventlog-partition.md §2）：尚无实体分区时
+	// 三步搬移 + ATTACH（《后端架构》§4.6）：尚无实体分区时
 	// 新分区自 MINVALUE 起，兜底里归属新范围的行搬进分区且数据不丢（id 保
 	// 留），范围外的行留在兜底。
 	mgr := newTestManager(t)
