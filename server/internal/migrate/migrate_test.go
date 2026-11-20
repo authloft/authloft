@@ -725,7 +725,7 @@ func TestG1PostgresEmptyUpToLatest(t *testing.T) {
 		t.Fatalf("PG 空库 migrate up 失败: %v", err)
 	}
 	pgRequireAllTables(t, db)
-	if v := pgAppliedVersion(t, db); v != 2 {
-		t.Errorf("迁移后版本表最新版本 = %d, want 2", v)
+	if v := pgAppliedVersion(t, db); v != 1 {
+		t.Errorf("迁移后版本表最新版本 = %d, want 1", v)
 	}
 }
