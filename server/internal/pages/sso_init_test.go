@@ -92,8 +92,8 @@ func TestSsoInitInjectedRowHit(t *testing.T) {
 		if strings.Contains(body, "<b>&") {
 			t.Errorf("%s: 注入值未转义（裸 <b>& 出现，防 </script> 提前闭合）", target)
 		}
-		if len(init) != 4 {
-			t.Errorf("%s: INIT 键数 = %d, want 4（al_root/static_base/methods/sso）", target, len(init))
+		if len(init) != 5 {
+			t.Errorf("%s: INIT 键数 = %d, want 5（al_root/static_base/methods/sso/passwordPolicy）", target, len(init))
 		}
 	}
 }
@@ -214,8 +214,8 @@ func TestSsoRowMissFallbackNoInit(t *testing.T) {
 	if _, ok := init["sso"]; ok {
 		t.Errorf("查无行回落壳不应注入 sso: %v", init)
 	}
-	if len(init) != 3 {
-		t.Errorf("INIT 键数 = %d, want 3（al_root/static_base/methods）", len(init))
+	if len(init) != 4 {
+		t.Errorf("INIT 键数 = %d, want 4（al_root/static_base/methods/passwordPolicy）", len(init))
 	}
 }
 

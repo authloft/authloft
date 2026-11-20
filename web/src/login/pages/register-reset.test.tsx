@@ -67,6 +67,7 @@ let pagesMod: typeof import('./RegisterPage');
 let resetMod: typeof import('./ResetPage');
 let routesMod: typeof import('../routes');
 let apiMod: typeof import('../api');
+let bootMod: typeof import('../bootstrap');
 
 beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
@@ -74,6 +75,7 @@ beforeAll(async () => {
   resetMod = await import('./ResetPage');
   routesMod = await import('../routes');
   apiMod = await import('../api');
+  bootMod = await import('../bootstrap');
 });
 
 beforeEach(() => {
@@ -473,6 +475,38 @@ describe('setPasswordIssues（评审 P0-2 + P1-3：set_password 段前置校验�
       }),
     ).toEqual({ confirm: '请填写此项' });
   });
+
+  test('注入策略预校验（§2.1 passwordPolicy 6/32/2）：判定制随注入、文案插值；缺省回落默认档', () => {
+    const policy = { minLength: 6, maxLength: 32, requireClasses: 2 };
+    // 7 位三类：6/32/2 放行；缺省档 too_short（文案插值 min=8）。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'alice',
+        password: 'Abcdef1',
+        confirm: 'Abcdef1',
+        requireUsername: true,
+        policy,
+      }),
+    ).toEqual({});
+    expect(
+      pagesMod.setPasswordIssues({
+        username: 'alice',
+        password: 'Abcdef1',
+        confirm: 'Abcdef1',
+        requireUsername: true,
+      }),
+    ).toEqual({ password: '长度至少 8 位' });
+    // 40 位三类：缺省档放行（≤64）、6/32/2 too_long（插值 max=32）。
+    expect(
+      pagesMod.setPasswordIssues({
+        username: '',
+        password: `Aa1${'a'.repeat(37)}`,
+        confirm: `Aa1${'a'.repeat(37)}`,
+        requireUsername: false,
+        policy,
+      }),
+    ).toEqual({ password: '长度至多 32 位' });
+  });
 });
 
 describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
@@ -570,6 +604,44 @@ describe('flowTerminalUrl / isFlowErrorStatus / ssoPath', () => {
 });
 
 // ---------------------------------------------------------------------------
+// loadLoginBootstrap：passwordPolicy 注入解析（§2.1 / §1.12；注册 / 重置页
+// 容器经 boot.policy 带出，强度条与提交前预校验同源消费）
+// ---------------------------------------------------------------------------
+
+describe('loadLoginBootstrap（§2.1 passwordPolicy 注入解析）', () => {
+  test('注入 6/32/2 十进制字符串 → policy 覆盖项随结果带出', () => {
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: {
+        al_root: 'https://uc.test/',
+        methods: REGISTER_SNAPSHOT.methods,
+        passwordPolicy: {
+          minLength: '6',
+          maxLength: '32',
+          requireClasses: '2',
+        },
+      },
+    });
+    const boot = bootMod.loadLoginBootstrap();
+    expect(boot.ok && boot.policy).toEqual({
+      minLength: 6,
+      maxLength: 32,
+      requireClasses: 2,
+    });
+  });
+
+  test('未注入 passwordPolicy → policy 缺省（视图层回落默认档 8/64/3）', () => {
+    rs.stubGlobal('window', {
+      __AUTHLOFT_INIT__: {
+        al_root: 'https://uc.test/',
+        methods: REGISTER_SNAPSHOT.methods,
+      },
+    });
+    const boot = bootMod.loadLoginBootstrap();
+    expect(boot.ok && boot.policy).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // RegisterPageView 状态帧渲染（§4.4 行 464）
 // ---------------------------------------------------------------------------
 
@@ -638,6 +710,24 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<div></div>'); // otp 流程 set_password 不渲染 captcha
     // 用户名格式体验性预校验（§2.3 行 449 唯一定义；服务端权威）。
     expect(markup).toContain('用户名须为 5-20 位字母、数字或下划线');
+  });
+
+  test('set_password 帧：注入 policy（§2.1 passwordPolicy 6/32/2）→ Meter 按策略插值', () => {
+    const markup = renderRegisterView({
+      step: 'set_password',
+      password: 'abc',
+      policy: { minLength: 6, maxLength: 32, requireClasses: 2 },
+    });
+    expect(markup).toContain('✗ 长度至少 6 位');
+    expect(markup).toContain('✓ 长度至多 32 位');
+    expect(markup).toContain('须包含大写、小写、数字中的至少 2 类');
+    // 缺省（未注入）帧仍为默认档 8/64/3。
+    const fallback = renderRegisterView({
+      step: 'set_password',
+      password: 'abc',
+    });
+    expect(fallback).toContain('✗ 长度至少 8 位');
+    expect(fallback).toContain('✓ 长度至多 64 位');
   });
 
   test('set_password 帧：DELETED_ 前缀（不分大小写）实时提示走保留前缀专属文案', () => {
@@ -829,6 +919,17 @@ describe('ResetPageView 状态帧渲染', () => {
     // Meter：全部满足（§5.6 默认策略）。
     expect(markup).toContain('✓ 长度至少 8 位');
     expect(markup).not.toContain('✗');
+  });
+
+  test('set_password 帧：注入 policy（§2.1 passwordPolicy 6/32/2）→ Meter 按策略插值', () => {
+    const markup = renderResetView({
+      step: 'set_password',
+      password: 'abc',
+      policy: { minLength: 6, maxLength: 32, requireClasses: 2 },
+    });
+    expect(markup).toContain('✗ 长度至少 6 位');
+    expect(markup).toContain('✓ 长度至多 32 位');
+    expect(markup).toContain('须包含大写、小写、数字中的至少 2 类');
   });
 
   test('user_not_found：ErrorBanner + challenge 表单保留可换目标重试（§1.6 行 254）', () => {

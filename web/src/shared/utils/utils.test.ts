@@ -19,6 +19,7 @@ import {
   isValidProviderKey,
   isValidUsername,
   NICKNAME_MAX_LENGTH,
+  passwordPolicyOverride,
   PROVIDER_KEY_PATTERN,
   USERNAME_PATTERN,
   usernameIssue,
@@ -27,6 +28,7 @@ import {
   type PasswordWeakReason,
   type ValidatableField,
 } from './validate';
+import type { PasswordPolicyInit } from '../types/init';
 import { maskEmail, maskPhone } from './mask';
 import { toCount, toDisplay } from './int';
 
@@ -321,6 +323,74 @@ describe('utils/validate 密码强度（接口文档 §5.6 策略与默认值）
     >([]);
     expect(
       validatePassword('aaaaaaaa', { policy: { requireClasses: 1 } }),
+    ).toEqual<PasswordWeakReason[]>([]);
+  });
+
+  test('注入策略 6/32/2 整组覆盖：判定制随注入值（四个密码入口共用判定核心）', () => {
+    const policy = { minLength: 6, maxLength: 32, requireClasses: 2 };
+    // 7 位三类：默认档 too_short，6/32/2 放行（min / classes 双双放宽）。
+    expect(validatePassword('Abcdef1', { policy })).toEqual<
+      PasswordWeakReason[]
+    >([]);
+    expect(validatePassword('Abcdef1')).toEqual<PasswordWeakReason[]>([
+      'too_short',
+    ]);
+    // 40 位三类：默认档放行（≤64），6/32/2 拒绝 too_long（max 调低生效）。
+    expect(validatePassword(`Aa1${'a'.repeat(37)}`)).toEqual<
+      PasswordWeakReason[]
+    >([]);
+    expect(validatePassword(`Aa1${'a'.repeat(37)}`, { policy })).toEqual<
+      PasswordWeakReason[]
+    >(['too_long']);
+  });
+});
+
+describe('passwordPolicyOverride（注入快照 passwordPolicy §2.1 → validatePassword 覆盖项）', () => {
+  const SIX_THREE_TWO: PasswordPolicyInit = {
+    minLength: '6',
+    maxLength: '32',
+    requireClasses: '2',
+  };
+
+  test('未注入 → undefined（调用方零覆盖 = 默认档 8/64/3 兜底保留）', () => {
+    expect(passwordPolicyOverride(undefined)).toBeUndefined();
+  });
+
+  test('合法十进制字符串逐项覆盖（§1.12 长度类以字符串下发）', () => {
+    expect(passwordPolicyOverride(SIX_THREE_TWO)).toEqual({
+      minLength: 6,
+      maxLength: 32,
+      requireClasses: 2,
+    });
+  });
+
+  test('非法 / 越界项逐项省略、合法项保留（与 service 侧 settings 读取同口径）', () => {
+    expect(
+      passwordPolicyOverride({
+        minLength: 'abc', // 非数字 → 省略
+        maxLength: '0', // 非正 → 省略
+        requireClasses: '9', // 出 1-3 值域 → 省略
+      }),
+    ).toBeUndefined();
+    expect(
+      passwordPolicyOverride({
+        minLength: '',
+        maxLength: '64',
+        requireClasses: '5',
+      }),
+    ).toEqual({ maxLength: 64 });
+  });
+
+  test('覆盖项经 validatePassword 与默认档合并生效（缺项回落默认值）', () => {
+    // 仅覆盖 minLength=6：classes 未覆盖仍按默认 3 判定。
+    expect(
+      validatePassword('Aa1aaa', {
+        policy: passwordPolicyOverride({
+          minLength: '6',
+          maxLength: '64',
+          requireClasses: '3',
+        }),
+      }),
     ).toEqual<PasswordWeakReason[]>([]);
   });
 });

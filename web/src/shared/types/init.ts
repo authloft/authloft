@@ -136,8 +136,24 @@ export interface SsoContext {
 }
 
 /**
- * 注入白名单（接口文档 §8 唯一定义）：al_root / static_base（三端）、
- * methods（login 必填，缺失即服务端故障）、oidc / sso（login 可选）。
+ * __AUTHLOFT_INIT__.passwordPolicy（§2.1）：注册 / 重置 / 改密 / admin 重置
+ * 四入口前端预校验与强度提示的三项参数，与 settings pwd_* 三键（§5.6）同源
+ * 同值。长度 / 类数为计数类数值，按 §1.12 以十进制字符串下发；缺失 / 越界
+ * 项由消费侧回落默认档（shared/utils/validate.ts 的 DEFAULT_PASSWORD_POLICY）。
+ * 服务端校验为权威，前端仅体验层同值预判（password_weak 由响应 status 判定）。
+ */
+export interface PasswordPolicyInit {
+  /** pwd_min_length（§5.6，默认 8）。 */
+  minLength: string;
+  /** pwd_max_length（§5.6，默认 64；服务端硬上限 64）。 */
+  maxLength: string;
+  /** pwd_require_classes（§5.6，默认 3；1–3）。 */
+  requireClasses: string;
+}
+
+/**
+ * 注入白名单（接口文档 §8 唯一定义）：al_root / static_base / passwordPolicy
+ * （三端）、methods（login 必填，缺失即服务端故障）、oidc / sso（login 可选）。
  * 转义、no-store、CSP nonce 由后端保证（前端架构 §1.5 行 104），前端不做二次信任。
  */
 export interface AuthloftInit {
@@ -146,6 +162,7 @@ export interface AuthloftInit {
   methods?: MethodsSnapshot;
   oidc?: OidcContext;
   sso?: SsoContext;
+  passwordPolicy?: PasswordPolicyInit;
 }
 
 declare global {

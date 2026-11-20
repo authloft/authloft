@@ -227,10 +227,11 @@ func (h *Handler) authorize(c *echo.Context) error {
 	// 路径不受影响。
 	tpl := h.resolveClientTpl(c.Request().Context(), clientID, true)
 	return h.renderShell(c, "login", &initPayload{
-		ALRoot:     h.root,
-		StaticBase: h.staticBase(),
-		Methods:    snapshot,
-		OIDC:       oidcInit,
+		ALRoot:         h.root,
+		StaticBase:     h.staticBase(),
+		Methods:        snapshot,
+		OIDC:           oidcInit,
+		PasswordPolicy: h.passwordPolicy(),
 	}, tpl)
 }
 

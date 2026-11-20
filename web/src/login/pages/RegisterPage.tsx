@@ -48,9 +48,17 @@ import {
   type CaptchaGate,
 } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
-import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
+import {
+  effectivePasswordPolicy,
+  PasswordStrengthMeter,
+  passwordWeakLabels,
+} from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
-import { usernameIssue } from '../../shared/utils/validate';
+import {
+  usernameIssue,
+  validatePassword,
+  type PasswordPolicy,
+} from '../../shared/utils/validate';
 import {
   DEFAULT_ACCOUNT_HOME,
   isValidReturnTo,
@@ -64,6 +72,7 @@ import {
 } from '../../shared/types/init';
 import { Modal } from '../components/Modal';
 import { hasOidcContext } from '../oidcContext';
+import { loadLoginBootstrap } from '../bootstrap';
 import { register, type RegisterInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
@@ -307,7 +316,9 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
 /**
  * set_password 段前置校验（评审 P0-2 + P1-3；ResetPage 复用）：
  * 用户名必填 + 格式（§2.3 行 449 唯一定义；requireUsername=false 的重置页跳过）、
- * 密码必填、确认密码只本地比对（不进 payload，§10.3 / §10.4 字段表无此字段）。
+ * 密码必填 + 注入策略预校验（§2.1 passwordPolicy：validatePassword 覆盖项
+ * 传入，缺省回落 §5.6 默认档；取首条未满足项文案，与强度条同源）、
+ * 确认密码只本地比对（不进 payload，§10.3 / §10.4 字段表无此字段）。
  * 用户名命中 deleted_ 保留前缀给专属提示（区别于通用格式提示）。
  * 返回「字段锚（username / password / confirm）→ 错误文案」，空对象 = 全过；
  * 聚焦顺序即对象键序（SET_PASSWORD_FIELD_ORDER）。纯函数，node 可测。
@@ -324,6 +335,8 @@ export function setPasswordIssues(input: {
   confirm: string;
   /** 注册 = true（校验用户名）；重置 = false（无用户名字段，§10.4 行 1532）。 */
   requireUsername: boolean;
+  /** 注入策略覆盖项（§2.1；缺省 = 默认档 8/64/3）。 */
+  policy?: Partial<PasswordPolicy>;
 }): Record<string, string> {
   const issues: Record<string, string> = {};
   if (input.requireUsername) {
@@ -341,6 +354,13 @@ export function setPasswordIssues(input: {
   }
   if (input.password === '') {
     issues.password = t('common.errRequired');
+  } else {
+    const reasons = validatePassword(input.password, { policy: input.policy });
+    if (reasons.length > 0) {
+      issues.password = passwordWeakLabels(
+        effectivePasswordPolicy(input.policy),
+      )[reasons[0]];
+    }
   }
   if (input.confirm === '') {
     issues.confirm = t('common.errRequired');
@@ -388,6 +408,11 @@ export interface RegisterPageViewProps {
   /** challenge 段已提交的目标邮箱（set_password 段 Meter 的标识比对，§5.6）。 */
   challengeEmail?: string;
   /**
+   * 注入策略覆盖项（§2.1 passwordPolicy 经 bootstrap 解析；缺省回落默认档
+   * §5.6）。强度条与提交前预校验同源消费。
+   */
+  policy?: Partial<PasswordPolicy>;
+  /**
    * challenge 段已提交的目标值（评审 P1-5：传输失败 / 重发回 challenge
    * 段时经 OTPForm initialValues 回填；容器持值，页面壳注入）。
    */
@@ -416,6 +441,7 @@ export function RegisterPageView({
   username,
   password,
   challengeEmail,
+  policy,
   challengeValues,
   onSelectMethod,
   onSubmit,
@@ -475,12 +501,14 @@ export function RegisterPageView({
     if (loading || submitDisabled) {
       return;
     }
-    // 评审 P0-2 + P1-3：必填 / 用户名格式 / 确认密码本地比对，未过聚焦首错。
+    // 评审 P0-2 + P1-3：必填 / 用户名格式 / 注入策略预校验 / 确认密码本地比对，
+    // 未过聚焦首错。
     const issues = setPasswordIssues({
       username,
       password,
       confirm,
       requireUsername: true,
+      policy,
     });
     const first = SET_PASSWORD_FIELD_ORDER.find(
       (name) => issues[name] !== undefined,
@@ -642,6 +670,7 @@ export function RegisterPageView({
             password={password}
             username={username}
             email={challengeEmail}
+            policy={policy}
           />
           <button
             type="submit"
@@ -667,6 +696,12 @@ export interface RegisterPageProps {
 
 export function RegisterPage({ snapshot }: RegisterPageProps) {
   const options = registerOptionsFor(snapshot);
+  // 注入策略随 snapshot 带出（§2.1 passwordPolicy 经 bootstrap 解析；缺省
+  // undefined → 视图层回落默认档）。routes 已消费同一注入读 snapshot，
+  // 此处补读仅取策略（纯同步读取，PasswordChangeForm 读 account bootstrap
+  // 同款）。
+  const boot = loadLoginBootstrap();
+  const policy = boot.ok ? boot.policy : undefined;
   // 注册成功 = 完成登录的终点 returnTo 消费（useSearchParams
   // 已解码，flowTerminalUrl 不二次 decode）。
   const [searchParams] = useSearchParams();
@@ -808,6 +843,7 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
         username={username}
         password={password}
         challengeEmail={challengeValues.email}
+        policy={policy}
         challengeValues={challengeValues}
         onSelectMethod={selectMethod}
         onSubmit={submit}

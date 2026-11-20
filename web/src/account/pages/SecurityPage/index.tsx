@@ -37,6 +37,11 @@ import { requestOptions } from '@/shared/hooks/requestOptions';
 import { t } from '@/shared/i18n';
 import { PageLayout } from '@/shared/components/PageLayout';
 import { SettingListSections } from '@/shared/components/SettingList';
+import { getInit } from '@/shared/types/init';
+import {
+  passwordPolicyOverride,
+  type PasswordPolicy,
+} from '@/shared/utils/validate';
 import {
   accountReturnTo,
   bindParamMessage,
@@ -64,6 +69,8 @@ export function SecurityPageView(props: {
   error: unknown;
   /** 重取 GetConfig（刷新 mfaPolicy 摘要）。 */
   onRefreshConfig: () => void;
+  /** 注入策略覆盖项（§2.1 passwordPolicy；缺省回落默认档），改密弹窗消费。 */
+  policy?: Partial<PasswordPolicy>;
 }): ReactNode {
   // 当前已绑定值回显（GetProfile 服务端脱敏字段）——挂载即取，绑定成功后刷新。
   const { data: profile, refresh: refreshProfile } = useRequest(getProfile);
@@ -167,7 +174,7 @@ export function SecurityPageView(props: {
         cancelText={t('account.cancelAction')}
         onCancel={() => setShowPasswordModal(false)}
       >
-        <PasswordChangeForm hasPassword={hasPassword} />
+        <PasswordChangeForm hasPassword={hasPassword} policy={props.policy} />
       </Modal>
       <Modal
         visible={showBindPhoneModal}
@@ -237,6 +244,9 @@ export function SecurityPage(): ReactNode {
       config={data}
       error={error}
       onRefreshConfig={refresh}
+      // 注入策略（§2.1 passwordPolicy）：改密入口与注册 / 重置同源消费，
+      // 经 passwordPolicyOverride 解析（缺失 / 越界项回落默认档）。
+      policy={passwordPolicyOverride(getInit()?.passwordPolicy)}
     />
   );
 }

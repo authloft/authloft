@@ -11,6 +11,10 @@
  *   OIDC authorize 入口不注入）：缺席不阻塞（直登行为不变）；首签请求的
  *   ssoClientId 回传由 api.ts 直接读注入实现（§2.2），此处随引导结果带出
  *   供页面层后续消费（如应用名展示）；
+ * - 取出可选 `passwordPolicy`（§2.1：settings pwd_* 三键快照，长度 / 类数
+ *   为十进制字符串 §1.12）：经 shared/utils/validate.ts 的
+ *   passwordPolicyOverride 解析为策略覆盖项（缺失 / 越界项回落默认档），
+ *   注册 / 重置页随引导结果带出，供强度条与提交前预校验同策略消费；
  * - `static_base` 归一化（entry 首行赋 `__webpack_public_path__` 用，
  *   §1.5 行 99）：与 setup/bootstrap.ts 同口径；login 不跨 entry
  *   import setup 模块（三端 entry 独立演进）。
@@ -22,10 +26,14 @@ import {
   type OidcContext,
   type OidcMode,
   type SsoContext,
-} from "../shared/types/init";
+} from '../shared/types/init';
+import {
+  passwordPolicyOverride,
+  type PasswordPolicy,
+} from '../shared/utils/validate';
 
 /** static_base 缺省回落值（接口文档 §8 行 1428：默认 /assets）。 */
-const DEFAULT_STATIC_BASE = "/assets/";
+const DEFAULT_STATIC_BASE = '/assets/';
 
 /**
  * static_base 归一为以 `/` 结尾；空 / 缺省回落 `/assets/`（§1.5 行 99：
@@ -33,10 +41,10 @@ const DEFAULT_STATIC_BASE = "/assets/";
  * 不得写死资源域名。
  */
 export function normalizeStaticBase(base: string | undefined): string {
-  if (base === undefined || base.trim() === "") {
+  if (base === undefined || base.trim() === '') {
     return DEFAULT_STATIC_BASE;
   }
-  return base.endsWith("/") ? base : `${base}/`;
+  return base.endsWith('/') ? base : `${base}/`;
 }
 
 /**
@@ -45,7 +53,7 @@ export function normalizeStaticBase(base: string | undefined): string {
  * 形态 C 由后端 302 不渲染本页）。纯函数，node 可测。
  */
 export interface OidcView {
-  mode: OidcMode | "plain";
+  mode: OidcMode | 'plain';
   clientName: string;
   account?: OidcAccountContext;
   ctx?: OidcContext;
@@ -54,13 +62,13 @@ export interface OidcView {
 /** 注入 oidc → 分派视图：mode 严格取 login/consent，其余（含 absent）归 plain。 */
 export function oidcView(ctx: OidcContext | undefined): OidcView {
   if (ctx === undefined) {
-    return { mode: "plain", clientName: "" };
+    return { mode: 'plain', clientName: '' };
   }
-  const mode: OidcView["mode"] =
-    ctx.mode === "login" || ctx.mode === "consent" ? ctx.mode : "plain";
+  const mode: OidcView['mode'] =
+    ctx.mode === 'login' || ctx.mode === 'consent' ? ctx.mode : 'plain';
   return {
     mode,
-    clientName: ctx.client_name ?? "",
+    clientName: ctx.client_name ?? '',
     ...(ctx.account !== undefined ? { account: ctx.account } : {}),
     ctx,
   };
@@ -77,16 +85,19 @@ export type LoginBootstrapResult =
       snapshot: MethodsSnapshot;
       oidc?: OidcContext;
       sso?: SsoContext;
+      /** 注入策略覆盖项（§2.1 passwordPolicy 解析；未注入 = undefined → 默认档）。 */
+      policy?: Partial<PasswordPolicy>;
     }
   | { ok: false };
 
-/** 读注入快照（§8：methods 为 mode=login 必填、oidc / sso 可选）；同步纯读取，不阻塞渲染。 */
+/** 读注入快照（§8：methods 为 mode=login 必填、oidc / sso / passwordPolicy 可选）；同步纯读取，不阻塞渲染。 */
 export function loadLoginBootstrap(): LoginBootstrapResult {
   const init = getInit();
   const snapshot = init?.methods;
   const oidc = init?.oidc;
   const sso = init?.sso;
-  const isConsent = oidc?.mode === "consent";
+  const policy = passwordPolicyOverride(init?.passwordPolicy);
+  const isConsent = oidc?.mode === 'consent';
   if ((snapshot === undefined || snapshot === null) && !isConsent) {
     return { ok: false };
   }
@@ -97,5 +108,6 @@ export function loadLoginBootstrap(): LoginBootstrapResult {
       : { snapshot: { methods: [] } }),
     ...(oidc !== undefined ? { oidc } : {}),
     ...(sso !== undefined ? { sso } : {}),
+    ...(policy !== undefined ? { policy } : {}),
   };
 }

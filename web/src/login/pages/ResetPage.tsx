@@ -28,11 +28,13 @@ import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
 import { t } from '../../shared/i18n';
+import type { PasswordPolicy } from '../../shared/utils/validate';
 import type {
   LoginMethodEntry,
   MethodsSnapshot,
 } from '../../shared/types/init';
 import { Modal } from '../components/Modal';
+import { loadLoginBootstrap } from '../bootstrap';
 import { resetPassword, type ResetPasswordInput } from '../api';
 import { OTPForm } from '../factors/OTPForm';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
@@ -124,6 +126,11 @@ export interface ResetPageViewProps {
   otpCode: string;
   /** set_password 段新密码（受控）。 */
   password: string;
+  /**
+   * 注入策略覆盖项（§2.1 passwordPolicy 经 bootstrap 解析；缺省回落默认档
+   * §5.6）。强度条与提交前预校验同源消费。
+   */
+  policy?: Partial<PasswordPolicy>;
   /** challenge 段已提交的目标值（评审 P1-5：reset / 重发回 challenge 段时经 OTPForm initialValues 回填）。 */
   challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
@@ -147,6 +154,7 @@ export function ResetPageView({
   loading,
   otpCode,
   password,
+  policy,
   challengeValues,
   onSelectMethod,
   onSubmit,
@@ -201,12 +209,14 @@ export function ResetPageView({
     if (loading || submitDisabled) {
       return;
     }
-    // 评审 P0-2 + P1-3：密码必填 + 确认密码本地比对（重置无用户名字段，§10.4）。
+    // 评审 P0-2 + P1-3：密码必填 + 注入策略预校验 + 确认密码本地比对
+    // （重置无用户名字段，§10.4）。
     const issues = setPasswordIssues({
       username: '',
       password,
       confirm,
       requireUsername: false,
+      policy,
     });
     const first = SET_PASSWORD_FIELD_ORDER.find(
       (name) => issues[name] !== undefined,
@@ -320,7 +330,7 @@ export function ResetPageView({
             error={formErrors.confirm}
             disabled={loading}
           />
-          <PasswordStrengthMeter password={password} />
+          <PasswordStrengthMeter password={password} policy={policy} />
           <button
             type="submit"
             disabled={loading || submitDisabled}
@@ -345,6 +355,12 @@ export interface ResetPageProps {
 
 export function ResetPage({ snapshot }: ResetPageProps) {
   const options = resetOptionsFor(snapshot);
+  // 注入策略随 snapshot 带出（§2.1 passwordPolicy 经 bootstrap 解析；缺省
+  // undefined → 视图层回落默认档）。routes 已消费同一注入读 snapshot，
+  // 此处补读仅取策略（纯同步读取，PasswordChangeForm 读 account bootstrap
+  // 同款）。
+  const boot = loadLoginBootstrap();
+  const policy = boot.ok ? boot.policy : undefined;
   const [method, setMethod] = useState(options[0]?.method ?? '');
   const [step, setStep] = useState<FlowStep>('challenge');
   const [loading, setLoading] = useState(false);
@@ -473,6 +489,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
         loading={loading}
         otpCode={otpCode}
         password={password}
+        policy={policy}
         challengeValues={challengeValues}
         onSelectMethod={selectMethod}
         onSubmit={submit}

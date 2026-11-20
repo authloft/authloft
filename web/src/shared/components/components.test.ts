@@ -623,6 +623,37 @@ describe('PasswordStrengthMeter（§5.6 同源规则清单）', () => {
     expect(markup).toContain('不能包含用户名');
     expect(renderMeter('Abcdef12')).not.toContain('不能包含用户名');
   });
+
+  test('渲染：policy 覆盖项（§2.1 注入 6/32/2）驱动文案插值与判定', () => {
+    const policy = { minLength: 6, maxLength: 32, requireClasses: 2 };
+    // 'abc'：6/32/2 下 too_short（3<6）+ too_few_classes（1<2），max 打勾。
+    const markup = renderMeter('abc', { policy });
+    expect(markup).toContain('✗ 长度至少 6 位');
+    expect(markup).toContain('✓ 长度至多 32 位');
+    expect(markup).toContain('须包含大写、小写、数字中的至少 2 类');
+    // 判定同源：'Abcdef1' 默认档 too_short、6/32/2 全满足。
+    expect(meterRules('Abcdef1', { policy }).every((r) => r.satisfied)).toBe(
+      true,
+    );
+    expect(
+      meterRules('Abcdef1')
+        .filter((r) => !r.satisfied)
+        .map((r) => r.key),
+    ).toEqual(['too_short']);
+    // 40 位三类：6/32/2 下 too_long（文案插值 max=32）。
+    expect(
+      meterRules(`Aa1${'a'.repeat(37)}`, { policy }).find(
+        (r) => r.key === 'too_long',
+      )?.label,
+    ).toBe('长度至多 32 位');
+  });
+
+  test('渲染：未传 policy → 默认档 8/64/3（未注入回落，§5.6）', () => {
+    const markup = renderMeter('abc');
+    expect(markup).toContain('✗ 长度至少 8 位');
+    expect(markup).toContain('✓ 长度至多 64 位');
+    expect(markup).toContain('须包含大写、小写、数字中的至少 3 类');
+  });
 });
 
 // ---------------------------------------------------------------------------

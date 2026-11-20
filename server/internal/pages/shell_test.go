@@ -309,7 +309,7 @@ func tmplPlaceholderCount(t *testing.T, entry, ph string) int {
 // TestShellBasics account 空壳：200、no-store、CSP 终稿头（fixture engine
 // 不挂 middleware.CSP，走 RenderShell 缺省自设路径）+ nonce 出现次数 =
 // 模板占位符数、无残留占位符、产物引用按 static_base 前缀、INIT 仅
-// al_root / static_base 两键（零凭证键）。
+// al_root / static_base / passwordPolicy 三键（零凭证键）。
 func TestShellBasics(t *testing.T) {
 	f := newFixture(t)
 	rec := doGet(t, f.engine(t), "/account")
@@ -334,8 +334,53 @@ func TestShellBasics(t *testing.T) {
 	if !strings.Contains(body, `src="/assets/`) {
 		t.Errorf("body 缺 /assets/ 前缀的产物引用:\n%s", body)
 	}
-	if got, want := initJSON(t, body), `{"al_root":"https://auth.example.com","static_base":"/assets"}`; got != want {
+	if got, want := initJSON(t, body), `{"al_root":"https://auth.example.com","static_base":"/assets","passwordPolicy":{"minLength":"8","maxLength":"64","requireClasses":"3"}}`; got != want {
 		t.Errorf("INIT = %s, want %s（白名单外零键）", got, want)
+	}
+}
+
+// TestPasswordPolicyInjected settings pwd_* 三键（§5.6）→ 注入快照
+// passwordPolicy（§2.1）：改 6/32/2 后三端空壳按配置值下发，长度 / 类数为
+// 十进制字符串（§1.12）；越界键（require_classes 出 1-3 值域）回落默认档；
+// settings 未含键时三值回落默认 8/64/3（与 service 侧 policy 读取同口径）。
+func TestPasswordPolicyInjected(t *testing.T) {
+	f := newFixture(t)
+	f.settings.m[settings.KeyPwdMinLength] = int64(6)
+	f.settings.m[settings.KeyPwdMaxLength] = int64(32)
+	f.settings.m[settings.KeyPwdRequireClasses] = int64(2)
+	r := f.engine(t)
+	for _, target := range []string{"/sso/login", "/sso/register", "/sso/reset", "/account", "/admin"} {
+		rec := doGet(t, r, target)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", target, rec.Code)
+		}
+		policy, ok := parseInit(t, rec.Body.String())["passwordPolicy"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: INIT 缺 passwordPolicy", target)
+		}
+		if policy["minLength"] != "6" || policy["maxLength"] != "32" || policy["requireClasses"] != "2" {
+			t.Errorf("%s: passwordPolicy = %v, want minLength=6 maxLength=32 requireClasses=2（十进制字符串）", target, policy)
+		}
+	}
+
+	// 越界 require_classes 回落默认 3；min / max 非正值同样回落。
+	f.settings.m[settings.KeyPwdRequireClasses] = int64(9)
+	f.settings.m[settings.KeyPwdMinLength] = int64(0)
+	f.settings.m[settings.KeyPwdMaxLength] = int64(-5)
+	rec := doGet(t, r, "/account")
+	policy, _ := parseInit(t, rec.Body.String())["passwordPolicy"].(map[string]any)
+	if policy["minLength"] != "8" || policy["maxLength"] != "64" || policy["requireClasses"] != "3" {
+		t.Errorf("越界键未回落默认档: %v", policy)
+	}
+
+	// settings 仅含部分键：缺失键逐项回落默认、在场键按配置值（login 页路径）。
+	delete(f.settings.m, settings.KeyPwdMinLength)
+	delete(f.settings.m, settings.KeyPwdMaxLength)
+	f.settings.m[settings.KeyPwdRequireClasses] = int64(2)
+	rec = doGet(t, r, "/sso/reset")
+	policy, _ = parseInit(t, rec.Body.String())["passwordPolicy"].(map[string]any)
+	if policy["minLength"] != "8" || policy["maxLength"] != "64" || policy["requireClasses"] != "2" {
+		t.Errorf("缺键未逐项回落默认: %v", policy)
 	}
 }
 
@@ -466,8 +511,8 @@ func TestShellStaticBaseOverrides(t *testing.T) {
 }
 
 // TestThreeEntryRoutes 三端路由 200：login（含 methods）、account / admin
-// 仅根映射（仅 al_root / static_base）；account / admin 根路径下发
-// 含 id="root" 的壳。
+// 仅根映射（仅 al_root / static_base / passwordPolicy）；account / admin
+// 根路径下发含 id="root" 的壳。
 func TestThreeEntryRoutes(t *testing.T) {
 	f := newFixture(t)
 	r := f.engine(t)

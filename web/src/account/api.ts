@@ -144,6 +144,7 @@ import {
   isValidEmail,
   isValidPhone,
   validatePassword,
+  type PasswordPolicy,
   type PasswordWeakReason,
 } from '../shared/utils/validate';
 
@@ -213,20 +214,22 @@ export type PasswordChangeFieldError =
  * - hasPassword=true：currentPassword 必填（空 → 'currentPassword'）；
  * - hasPassword=false：首设密码场景，currentPassword 置空串——标准 protojson
  *   序列化省略零值字段，wire 上即「省略」（行 860）；
- * - newPassword 过 §5.6 前端预校验（validatePassword；本表单无用户名 / 邮箱
- *   上下文，两项不传入——pwd_disallow_common 与之均归服务端权威）。
+ * - newPassword 过 §5.6 前端预校验（validatePassword，policy 为注入策略覆盖项
+ *   §2.1 passwordPolicy，缺省回落默认档；本表单无用户名 / 邮箱上下文，两项
+ *   不传入——pwd_disallow_common 与之均归服务端权威）。
  */
 export function buildChangePasswordRequest(
   hasPassword: boolean,
   currentPassword: string,
   newPassword: string,
+  policy?: Partial<PasswordPolicy>,
 ):
   | { ok: true; request: ChangePasswordRequest }
   | { ok: false; error: PasswordChangeFieldError } {
   if (hasPassword && currentPassword === '') {
     return { ok: false, error: { field: 'currentPassword' } };
   }
-  const reasons = validatePassword(newPassword);
+  const reasons = validatePassword(newPassword, { policy });
   if (reasons.length > 0) {
     return { ok: false, error: { field: 'newPassword', reasons } };
   }

@@ -55,6 +55,11 @@ import { deriveRequestStatus } from '../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../shared/hooks/requestOptions';
 import { t } from '../../shared/i18n';
 import { toCount } from '../../shared/utils/int';
+import { getInit } from '../../shared/types/init';
+import {
+  passwordPolicyOverride,
+  type PasswordPolicy,
+} from '../../shared/utils/validate';
 import type { AdminUser } from '../../gen/proto/api/admin/v1/user_pb';
 import {
   adminReturnTo,
@@ -96,6 +101,11 @@ export function UsersPage(props: {
   /** 归一后 al_root（透传给详情抽屉，保持与路由参数一致）。 */
   alRoot: string;
 }): ReactNode {
+  // 注入策略覆盖项（§2.1 passwordPolicy，重置密码弹窗强度条消费；缺失 /
+  // 越界项回落默认档 §5.6）。
+  const policy: Partial<PasswordPolicy> | undefined = passwordPolicyOverride(
+    getInit()?.passwordPolicy,
+  );
   // §1.7 受控查询状态：分页 / 排序 / 筛选全部由 DataTable 上报更新。
   const [query, setQuery] = useState<TableQueryState>(initialTableQuery);
   // 搜索词两态：draft（输入框即时值）/ applied（已生效取数词）；生效即回第 1 页。
@@ -443,7 +453,9 @@ export function UsersPage(props: {
           />
           <Select
             value={mfaRequired === '' ? undefined : mfaRequired}
-            onChange={(value) => changeFilter(setMfaRequired)(String(value ?? ''))}
+            onChange={(value) =>
+              changeFilter(setMfaRequired)(String(value ?? ''))
+            }
             placeholder={t('admin.mfaFilterPlaceholder')}
             optionList={[
               { value: '', label: t('admin.filterAnyOption') },
@@ -469,7 +481,9 @@ export function UsersPage(props: {
             ]}
             aria-label={t('admin.credentialFilterPlaceholder')}
           />
-          <Button onClick={clearFilters}>{t('admin.resetFiltersAction')}</Button>
+          <Button onClick={clearFilters}>
+            {t('admin.resetFiltersAction')}
+          </Button>
         </>
       }
     >
@@ -511,8 +525,8 @@ export function UsersPage(props: {
         <div className={styles.resetBody}>
           <p className={styles.resetHint}>{t('admin.resetPasswordHint')}</p>
           {/* Semi Input mode=password 自带显隐 eye；强度提示用 shared
-              PasswordStrengthMeter（规则与接口文档 §5.6 默认策略同源，
-              password_weak 服务端权威判定）。 */}
+              PasswordStrengthMeter（规则与接口文档 §5.6 同源，策略为注入
+              覆盖项 §2.1、缺省回落默认档，password_weak 服务端权威判定）。 */}
           <Input
             mode="password"
             value={resetPassword}
@@ -528,6 +542,7 @@ export function UsersPage(props: {
             password={resetPassword}
             username={resetTarget?.username}
             email={resetTarget?.email}
+            policy={policy}
           />
           <Input
             mode="password"

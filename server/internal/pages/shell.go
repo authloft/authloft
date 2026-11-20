@@ -6,12 +6,13 @@
 //
 // 壳层 HTML 不由后端手写：读前端构建产物模板（render.go //go:embed
 // templates）+ 五占位符纯字符串全量替换，注入 window.__AUTHLOFT_INIT__
-// （五键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
+// （注入键白名单 + JSON 编码 <>& 与 \u2028/\u2029 转义）、Cache-Control:
 // no-store、CSP nonce、不注入任何凭证（CSP 终稿：基线 =
-// middleware/csp.go + cdnOrigin 追加，setup 壳同基线）。注入键白名单
-// （§8 行 1534-1541）：al_root / static_base 三端，methods（login 必填，
-// 缺失即服务端故障）、oidc（login 可选，/auth/authorize 渲染空壳时注入）、
-// sso（login 可选，登录端入口命中 sso_client 行时注入，§2.1）。
+// middleware/csp.go + cdnOrigin 追加，setup 壳同基线）。注入键白名单（§8）：
+// al_root / static_base 三端，methods（login 必填，缺失即服务端故障）、
+// oidc（login 可选，/auth/authorize 渲染空壳时注入）、sso（login 可选，
+// 登录端入口命中 sso_client 行时注入，§2.1）、passwordPolicy（三端，§2.1：
+// settings pwd_* 三键快照，长度 / 类数按 §1.12 十进制字符串）。
 package pages
 
 import (
@@ -22,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,17 +183,30 @@ type Deps struct {
 }
 
 // initPayload window.__AUTHLOFT_INIT__ 注入体：字段即 §8 注入白名单
-// （al_root / static_base 三端，methods login 必填，oidc / sso login 可选）。
-// oidc 为 json.RawMessage 注入位——/auth/authorize 渲染登录空壳时填充
-// （authorize.go，§4.2 行 1081），其余路由不注入（nil 时 omitted）。sso 为
-// SSO 应用上下文（§2.1）——登录端入口命中 sso_client 行时填充（loginPage），
-// authorize 入口不注入（nil 时 omitted）。
+// （al_root / static_base 三端，methods login 必填，oidc / sso login 可选，
+// passwordPolicy 三端）。oidc 为 json.RawMessage 注入位——/auth/authorize
+// 渲染登录空壳时填充（authorize.go，§4.2），其余路由不注入（nil 时
+// omitted）。sso 为 SSO 应用上下文（§2.1）——登录端入口命中 sso_client 行时
+// 填充（loginPage），authorize 入口不注入（nil 时 omitted）。passwordPolicy
+// 为密码策略快照（§2.1）——三端渲染空壳时统一装配（h.passwordPolicy）。
 type initPayload struct {
-	ALRoot     string           `json:"al_root"`
-	StaticBase string           `json:"static_base"`
-	Methods    *MethodsSnapshot `json:"methods,omitempty"`
-	OIDC       json.RawMessage  `json:"oidc,omitempty"`
-	SSO        *ssoContext      `json:"sso,omitempty"`
+	ALRoot         string              `json:"al_root"`
+	StaticBase     string              `json:"static_base"`
+	Methods        *MethodsSnapshot    `json:"methods,omitempty"`
+	OIDC           json.RawMessage     `json:"oidc,omitempty"`
+	SSO            *ssoContext         `json:"sso,omitempty"`
+	PasswordPolicy *passwordPolicyInit `json:"passwordPolicy,omitempty"`
+}
+
+// passwordPolicyInit __AUTHLOFT_INIT__.passwordPolicy 注入体（§2.1）：
+// 注册 / 重置 / 改密 / admin 重置四入口前端预校验与强度提示的三项参数，
+// 与 settings pwd_* 三键（§5.6）同源同值。长度 / 类数为计数类数值，按
+// §1.12 以十进制字符串下发；服务端校验权威在 security/policy.go，本层
+// 只装配下发值（前端为体验层同值预判，password_weak 由服务端权威判定）。
+type passwordPolicyInit struct {
+	MinLength      string `json:"minLength"`
+	MaxLength      string `json:"maxLength"`
+	RequireClasses string `json:"requireClasses"`
 }
 
 // ssoContext __AUTHLOFT_INIT__.sso 注入体（§2.1 注入结构）：clientId 供前端
@@ -275,14 +290,16 @@ func Register(r *echo.Group, d Deps) *Handler {
 	return h
 }
 
-// entryPage account / admin entry 空壳：仅注入 al_root / static_base
-// （§8 白名单，methods 是 login 必填项、account 无）。account / admin 不参与
-// 客户端模板选壳（§8.1 仅 SSO 登录入口 / OIDC 授权入口），恒走文件壳。
+// entryPage account / admin entry 空壳：注入 al_root / static_base /
+// passwordPolicy（§8 白名单，methods 是 login 必填项、account 无）。account
+// / admin 不参与客户端模板选壳（§8.1 仅 SSO 登录入口 / OIDC 授权入口），
+// 恒走文件壳。
 func (h *Handler) entryPage(entry string) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		return h.renderShell(c, entry, &initPayload{
-			ALRoot:     h.root,
-			StaticBase: h.staticBase(),
+			ALRoot:         h.root,
+			StaticBase:     h.staticBase(),
+			PasswordPolicy: h.passwordPolicy(),
 		}, nil)
 	}
 }
@@ -394,10 +411,11 @@ func (h *Handler) serveLoginShell(c *echo.Context, defaultFlow string) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	return h.renderShell(c, "login", &initPayload{
-		ALRoot:     h.root,
-		StaticBase: h.staticBase(),
-		Methods:    snapshot,
-		SSO:        ssoCtx,
+		ALRoot:         h.root,
+		StaticBase:     h.staticBase(),
+		Methods:        snapshot,
+		SSO:            ssoCtx,
+		PasswordPolicy: h.passwordPolicy(),
 	}, tpl)
 }
 
@@ -436,6 +454,31 @@ func (h *Handler) siteName() string {
 		}
 	}
 	return settings.DefaultSiteName
+}
+
+// passwordPolicy settings pwd_* 三键（§5.6）→ 注入快照 passwordPolicy（§2.1）：
+// 越界 / 缺失键回落默认 8 / 64 / 3（与三处 service 的 settings 读取同口径；
+// 校验权威在 security/policy.go，本层只装配下发值、不改各 service 校验）。
+// 恒注入——未配置 settings 时下发默认档，前端未拿到注入时回落同一组默认值，
+// 两层兜底口径一致。
+func (h *Handler) passwordPolicy() *passwordPolicyInit {
+	minLength, maxLength, classes := 8, 64, 3
+	if h.settings != nil {
+		if v, ok := h.settings.GetInt64(settings.KeyPwdMinLength); ok && v > 0 {
+			minLength = int(v)
+		}
+		if v, ok := h.settings.GetInt64(settings.KeyPwdMaxLength); ok && v > 0 {
+			maxLength = int(v)
+		}
+		if v, ok := h.settings.GetInt64(settings.KeyPwdRequireClasses); ok && v >= 1 && v <= 3 {
+			classes = int(v)
+		}
+	}
+	return &passwordPolicyInit{
+		MinLength:      strconv.Itoa(minLength),
+		MaxLength:      strconv.Itoa(maxLength),
+		RequireClasses: strconv.Itoa(classes),
+	}
 }
 
 // genNonce 生成 CSP nonce（crypto/rand 16 字节 base64url，22 字符）：

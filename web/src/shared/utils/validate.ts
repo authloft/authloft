@@ -4,6 +4,7 @@
  * 权威）、密码强度（§5.6 策略与默认值同源）、provider_key（^[a-z0-9_]+$）、
  * 资料字段长度上限（§3.2 / §5.4：nickname ≤ 12 字、avatarUrl ≤ 120 字符）。
  */
+import type { PasswordPolicyInit } from '../types/init';
 
 /** 用户名规则唯一来源：接口文档 §2.3 唯一定义 —— ^[A-Za-z0-9_]{5,20}$（设置后不可改）。 */
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{5,20}$/;
@@ -215,6 +216,40 @@ export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
   requireClasses: 3,
   disallowUsername: true,
 };
+
+/**
+ * 注入快照 passwordPolicy（§2.1）→ validatePassword 的策略覆盖项：合法项
+ * 逐项覆盖、缺失 / 非整数十进制串 / 越界项省略（回落 DEFAULT_PASSWORD_POLICY
+ * 对应项，与三处 service 的 settings 读取同口径——min / max 取正、classes
+ * 取 1–3）。长度 / 类数为计数类数值，按 §1.12 可转数值使用；无覆盖项时返回
+ * undefined（调用方零覆盖 = 现状默认档）。注入缺失（未下发）由调用方以
+ * undefined 直传，此处不设第二兜底面。
+ */
+export function passwordPolicyOverride(
+  init: PasswordPolicyInit | undefined,
+): Partial<PasswordPolicy> | undefined {
+  if (init === undefined) {
+    return undefined;
+  }
+  const override: Partial<PasswordPolicy> = {};
+  const minLength = Number.parseInt(init.minLength, 10);
+  if (Number.isFinite(minLength) && minLength > 0) {
+    override.minLength = minLength;
+  }
+  const maxLength = Number.parseInt(init.maxLength, 10);
+  if (Number.isFinite(maxLength) && maxLength > 0) {
+    override.maxLength = maxLength;
+  }
+  const requireClasses = Number.parseInt(init.requireClasses, 10);
+  if (
+    Number.isFinite(requireClasses) &&
+    requireClasses >= 1 &&
+    requireClasses <= 3
+  ) {
+    override.requireClasses = requireClasses;
+  }
+  return Object.keys(override).length > 0 ? override : undefined;
+}
 
 /** 密码预校验未满足项（i18n 文案由字典层落，本层只给结构化原因）。 */
 export type PasswordWeakReason =

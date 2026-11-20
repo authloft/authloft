@@ -404,20 +404,21 @@ func TestFlowQueryOverride(t *testing.T) {
 	}
 }
 
-// TestMethodsZeroCredentialKeys 注入键封闭集合（§8 行 1430-1437）：login
-// INIT 仅 al_root / static_base / methods 三键，无任何凭证类键。
+// TestMethodsZeroCredentialKeys 注入键封闭集合（§8 注入白名单）：login
+// INIT 仅 al_root / static_base / methods / passwordPolicy 四键，无任何
+// 凭证类键。
 func TestMethodsZeroCredentialKeys(t *testing.T) {
 	f := newFixture(t)
 	rec := doGet(t, f.engine(t), "/sso/login")
 	init := parseInit(t, rec.Body.String())
-	allowed := map[string]bool{"al_root": true, "static_base": true, "methods": true}
+	allowed := map[string]bool{"al_root": true, "static_base": true, "methods": true, "passwordPolicy": true}
 	for k := range init {
 		if !allowed[k] {
 			t.Errorf("INIT 越界键 %q（白名单外）", k)
 		}
 	}
-	if len(init) != 3 {
-		t.Errorf("INIT 键数 = %d, want 3", len(init))
+	if len(init) != 4 {
+		t.Errorf("INIT 键数 = %d, want 4", len(init))
 	}
 	// 数值字段全字符串（§1.12：JSON 不出现裸数字）。
 	var walk func(v any)

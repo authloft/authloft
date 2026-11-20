@@ -21,6 +21,7 @@ import {
 } from '../../../shared/hooks/deriveRequestStatus';
 import { requestOptions } from '../../../shared/hooks/requestOptions';
 import { t } from '../../../shared/i18n';
+import type { PasswordPolicy } from '../../../shared/utils/validate';
 import {
   accountReturnTo,
   apiErrorText,
@@ -47,6 +48,8 @@ export function PasswordChangeFormView(props: {
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
+  /** 注入策略覆盖项（§2.1 passwordPolicy；缺省回落默认档），强度条插值驱动。 */
+  policy?: Partial<PasswordPolicy>;
   fieldError: PasswordChangeFieldError | undefined;
   /** 确认密码与新密码不一致（A-1：只本地比对，不进 payload，不发请求）。 */
   mismatch: boolean;
@@ -93,8 +96,12 @@ export function PasswordChangeFormView(props: {
           disabled={submitting}
           autoComplete="new-password"
         />
-        {/* §4.3：密码强度提示仅注册 / 改密 / 重置场景渲染（复用既有组件）。 */}
-        <PasswordStrengthMeter password={props.newPassword} />
+        {/* §4.3：密码强度提示仅注册 / 改密 / 重置场景渲染（复用既有组件；
+            策略为注入覆盖项 §2.1，缺省回落默认档）。 */}
+        <PasswordStrengthMeter
+          password={props.newPassword}
+          policy={props.policy}
+        />
       </div>
       {/* A-1：确认新密码（mode=password 自带显隐眼睛）；不一致行内报错不发请求。 */}
       <div className={styles.field}>
@@ -145,6 +152,8 @@ export function PasswordChangeFormView(props: {
 export function PasswordChangeForm(props: {
   /** 当前用户是否已有 kind=password 凭证（GetConfig.hasPassword，§3.2 行 819）。 */
   hasPassword: boolean;
+  /** 注入策略覆盖项（§2.1 passwordPolicy，SecurityPage 解析传入；缺省 = 默认档）。 */
+  policy?: Partial<PasswordPolicy>;
 }): ReactNode {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -197,6 +206,7 @@ export function PasswordChangeForm(props: {
       props.hasPassword,
       currentPassword,
       newPassword,
+      props.policy,
     );
     if (!built.ok) {
       setFieldError(built.error);
@@ -227,6 +237,7 @@ export function PasswordChangeForm(props: {
       currentPassword={currentPassword}
       newPassword={newPassword}
       confirmPassword={confirmPassword}
+      policy={props.policy}
       fieldError={fieldError}
       mismatch={mismatch}
       submitError={error}
