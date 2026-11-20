@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS "user" (
   email          VARCHAR(128) DEFAULT NULL,
   phone_verified SMALLINT     NOT NULL DEFAULT 0,
   email_verified SMALLINT     NOT NULL DEFAULT 0,
-  nickname       VARCHAR(128) NOT NULL DEFAULT '',
-  avatar_url     VARCHAR(512) NOT NULL DEFAULT '',
+  nickname       VARCHAR(32) NOT NULL DEFAULT '',
+  avatar_url     VARCHAR(128) NOT NULL DEFAULT '',
   user_status    SMALLINT     NOT NULL DEFAULT 1, -- 1正常 0禁用；列名避开 API 信封保留字 status（接口文档 §1.0）
   mfa_required   SMALLINT     NOT NULL DEFAULT 0, -- 用户自助两步验证开关；1开启 0关闭
   epoch          SMALLINT     NOT NULL DEFAULT 0, -- 安全版本号，改密/重置/管理员禁用时递增；递增结果 > 30000 时回绕为 1（跳过 0，由后端逻辑控制，不由DB控制）
@@ -239,13 +239,6 @@ CREATE TABLE IF NOT EXISTS oidc_consent (
   updated_at TIMESTAMP    NOT NULL,
   CONSTRAINT uk_user_client UNIQUE (user_id, client_id)
 );
-
--- 存量客户端补齐 openid（openid 全链路强制的前置，接口文档 §5.5）：
--- FIND_IN_SET 判重的 PG 等价写法，WHERE 限定未含者，重复执行不重复补；
--- 逗号分隔口径不变。
-UPDATE oidc_client
-SET scopes = scopes || ',openid'
-WHERE NOT ('openid' = ANY(string_to_array(scopes, ',')));
 
 -- +goose Down
 

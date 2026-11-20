@@ -511,8 +511,8 @@ func TestG1EmptyUpToLatest(t *testing.T) {
 		t.Fatalf("空库 migrate up 失败: %v", err)
 	}
 	requireAllTables(t, db)
-	if v := appliedVersion(t, db); v != 2 {
-		t.Errorf("迁移后版本表最新版本 = %d, want 2", v)
+	if v := appliedVersion(t, db); v != 1 {
+		t.Errorf("迁移后版本表最新版本 = %d, want 1", v)
 	}
 }
 
@@ -531,8 +531,8 @@ func TestG2UpIdempotent(t *testing.T) {
 	if got := appliedRows(t, db); got != rows {
 		t.Errorf("重复 up 后版本表新增写入: %d -> %d", rows, got)
 	}
-	if v := appliedVersion(t, db); v != 2 {
-		t.Errorf("重复 up 后版本 = %d, want 2", v)
+	if v := appliedVersion(t, db); v != 1 {
+		t.Errorf("重复 up 后版本 = %d, want 1", v)
 	}
 }
 
@@ -566,8 +566,8 @@ func TestG3HalfBuiltRecovery(t *testing.T) {
 		t.Fatalf("半建库重跑 migrate up 失败: %v", err)
 	}
 	requireAllTables(t, db)
-	if v := appliedVersion(t, db); v != 2 {
-		t.Errorf("恢复后版本表最新版本 = %d, want 2", v)
+	if v := appliedVersion(t, db); v != 1 {
+		t.Errorf("恢复后版本表最新版本 = %d, want 1", v)
 	}
 }
 
