@@ -293,6 +293,134 @@ func TestStartMethodDisabledWhenNoBoundFactor(t *testing.T) {
 	}
 }
 
+// startChannel ChannelProber 的 fake：回放固定结论，可注入故障。
+type startChannel struct {
+	avail bool
+	err   error
+}
+
+func (c *startChannel) Available(context.Context) (bool, error) { return c.avail, c.err }
+
+// methodNamesFrom Start 响应取 method 名序列。
+func methodNamesFrom(res *StartResult) []string {
+	out := make([]string, len(res.Methods))
+	for i, m := range res.Methods {
+		out[i] = m.Method
+	}
+	return out
+}
+
+func containsMethod(list []string, m string) bool {
+	for _, x := range list {
+		if x == m {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStartFiltersOtpChannelsByAvailability 渠道可用性末段过滤（接口文档
+// §2.1 交集口径 MFA 行末段）：在白名单 ∩ 已绑定 ∩ 应用放行之后追加——
+// 已绑定的 otp_sms / otp_email 在对应渠道不可用时不进候选（防止选中后发码
+// 失败），totp / recovery_code / webauthn 不受影响；显式选择已过滤因子 →
+// invalid_request；两类渠道均不可用且无其他候选 → method_disabled；
+// 判定故障上抛（fail-closed，非业务码）；探针未注入 = 渠道维度不判定。
+func TestStartFiltersOtpChannelsByAvailability(t *testing.T) {
+	allBound := &startBound{factors: []string{"otp_sms", "otp_email", "webauthn", "totp", "recovery_code"}}
+
+	t.Run("已绑定手机号但 sms 渠道未配不候选（其余因子不受影响）", func(t *testing.T) {
+		svc, _ := newStartService(t, func(d *Deps) {
+			d.Bound = allBound
+			d.Gate = passGate()
+			d.SMSChannel = &startChannel{avail: false}
+		})
+		res, _, err := svc.Start(context.Background(), StartInput{
+			Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+		})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		names := methodNamesFrom(res)
+		if containsMethod(names, "otp_sms") {
+			t.Errorf("candidates = %v, 不应含 otp_sms（渠道未配）", names)
+		}
+		for _, want := range []string{"otp_email", "totp", "recovery_code", "webauthn"} {
+			if !containsMethod(names, want) {
+				t.Errorf("candidates = %v, 缺少 %s", names, want)
+			}
+		}
+	})
+
+	t.Run("已绑定邮箱但 email 渠道未配不候选", func(t *testing.T) {
+		svc, _ := newStartService(t, func(d *Deps) {
+			d.Bound = allBound
+			d.Gate = passGate()
+			d.EmailChannel = &startChannel{avail: false}
+		})
+		res, _, err := svc.Start(context.Background(), StartInput{
+			Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+		})
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		names := methodNamesFrom(res)
+		if containsMethod(names, "otp_email") {
+			t.Errorf("candidates = %v, 不应含 otp_email（渠道未配）", names)
+		}
+		if !containsMethod(names, "otp_sms") {
+			t.Errorf("candidates = %v, 缺少 otp_sms", names)
+		}
+	})
+
+	t.Run("显式选择已过滤因子 → invalid_request", func(t *testing.T) {
+		svc, _ := newStartService(t, func(d *Deps) {
+			d.Bound = allBound
+			d.Gate = passGate()
+			d.SMSChannel = &startChannel{avail: false}
+		})
+		_, _, err := svc.Start(context.Background(), StartInput{
+			Domain: DomainAccount, BizPurpose: BizPurposeMFA, Method: "otp_sms", Operation: "step_up", SessionUID: "42",
+		})
+		if got := errorCode(t, err); got != "invalid_request" {
+			t.Fatalf("code = %s, want invalid_request", got)
+		}
+	})
+
+	t.Run("两类渠道均未配且无其他候选 → method_disabled", func(t *testing.T) {
+		bound := &startBound{factors: []string{"otp_sms", "otp_email"}}
+		svc, _ := newStartService(t, func(d *Deps) {
+			d.Bound = bound
+			d.Gate = passGate()
+			d.SMSChannel = &startChannel{avail: false}
+			d.EmailChannel = &startChannel{avail: false}
+		})
+		_, _, err := svc.Start(context.Background(), StartInput{
+			Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+		})
+		if got := errorCode(t, err); got != "method_disabled" {
+			t.Fatalf("code = %s, want method_disabled", got)
+		}
+	})
+
+	t.Run("渠道判定故障上抛（fail-closed，非业务码）", func(t *testing.T) {
+		svc, _ := newStartService(t, func(d *Deps) {
+			d.Bound = allBound
+			d.Gate = passGate()
+			d.SMSChannel = &startChannel{err: errors.New("provider repo: connection refused")}
+		})
+		_, _, err := svc.Start(context.Background(), StartInput{
+			Domain: DomainAccount, BizPurpose: BizPurposeMFA, Operation: "step_up", SessionUID: "42",
+		})
+		if err == nil {
+			t.Fatal("want error")
+		}
+		var ve *Error
+		if errors.As(err, &ve) {
+			t.Fatalf("err = %v, 不应收敛为业务码（按未知异常上抛）", err)
+		}
+	})
+}
+
 func TestStartStarterFailureCode(t *testing.T) {
 	starter := &startStarter{res: FactorStartResult{Code: "too_many_requests", RetryAfter: 42}}
 	svc, _ := newStartService(t, func(d *Deps) {

@@ -224,15 +224,22 @@ func (b *CodeBridge) SendCode(ctx context.Context, target, code string) error {
 	return nil
 }
 
-// resolve 发送期解析生效实例（§15.3 行 1735）。键空 / 实例缺失 / 未启用 /
-// 类型不符 → ErrChannelNotConfigured（配置状态，映射 provider_disabled）；
-// 其余读取错误（Redis / DB 瞬时故障）原样上抛，由编排层按未知异常置 failed。
-func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {
-	providerKey, _ := b.settings.GetString(b.key)
+// ChannelLoader provider 行读取窄接口（*Loader 天然满足）：渠道可用性公共
+// 判定与发送期解析共用同一读取链（本地 LRU → Redis → repo）。
+type ChannelLoader interface {
+	Get(ctx context.Context, providerKey string) (*Provider, error)
+}
+
+// resolveChannelProvider 渠道生效实例解析前段（发送期与入口可用性判定的
+// 公共实现，防两处口径漂移）：settings 键 → Loader 取行 → Enabled。键空 /
+// 行缺失 / 代理引用不可解析 / 未启用 = 配置态（ErrChannelNotConfigured，
+// 发送期映射 provider_disabled）；其余读取错误为基础设施故障原样上抛。
+func resolveChannelProvider(ctx context.Context, settings SettingGetter, loader ChannelLoader, settingsKey string) (*Provider, error) {
+	providerKey, _ := settings.GetString(settingsKey)
 	if providerKey == "" {
-		return nil, fmt.Errorf("%w: settings %q empty", ErrChannelNotConfigured, b.key)
+		return nil, fmt.Errorf("%w: settings %q empty", ErrChannelNotConfigured, settingsKey)
 	}
-	p, err := b.loader.Get(ctx, providerKey)
+	p, err := loader.Get(ctx, providerKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: provider %q not found", ErrChannelNotConfigured, providerKey)
@@ -246,6 +253,40 @@ func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {
 	}
 	if !p.Enabled() {
 		return nil, fmt.Errorf("%w: provider %q disabled", ErrChannelNotConfigured, providerKey)
+	}
+	return p, nil
+}
+
+// ChannelAvailable 消息渠道可用性公共判定（发送期 resolve 的单一真相，供
+// 注入快照 / GetConfig / MFA 候选与发送期四处共用）：settings 键非空 →
+// Loader 命中行 → Enabled。返回 false 且 err 为 nil = 渠道配置态不可用
+// （对应发送期 provider_disabled 的集合）；err 非 nil = 基础设施读取故障，
+// 调用方按各自出口收敛（快照 / GetConfig 转服务端故障，MFA 候选 fail-closed
+// 上抛）。
+func ChannelAvailable(ctx context.Context, settings SettingGetter, loader ChannelLoader, settingsKey string) (bool, error) {
+	_, err := resolveChannelProvider(ctx, settings, loader, settingsKey)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, ErrChannelNotConfigured) {
+		return false, nil
+	}
+	return false, err
+}
+
+// Available 渠道可用性判定出口（本桥 settings 键维度）：与发送期 resolve
+// 共用公共判定函数，入口侧按同一口径隐去不可用方式。
+func (b *CodeBridge) Available(ctx context.Context) (bool, error) {
+	return ChannelAvailable(ctx, b.settings, b.loader, b.key)
+}
+
+// resolve 发送期解析生效实例（§15.3）。键空 / 实例缺失 / 未启用 /
+// 类型不符 → ErrChannelNotConfigured（配置状态，映射 provider_disabled）；
+// 其余读取错误（Redis / DB 瞬时故障）原样上抛，由编排层按未知异常置 failed。
+func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {
+	p, err := resolveChannelProvider(ctx, b.settings, b.loader, b.key)
+	if err != nil {
+		return nil, err
 	}
 	return NewSender(p, b.category)
 }

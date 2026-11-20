@@ -57,6 +57,13 @@ type ProviderLister interface {
 	ListByType(ctx context.Context, providerType string) ([]*provider.Provider, error)
 }
 
+// ChannelProber 消息渠道可用性判定窄接口（*provider.CodeBridge 天然满足）：
+// otp_sms / otp_email 注入快照前的渠道维度过滤出口（§2.1），判定实现归
+// provider 包公共函数，与发送期 provider_disabled 同源。
+type ChannelProber interface {
+	Available(ctx context.Context) (bool, error)
+}
+
 // FactorSource 因子注册表窄接口：*factor.Registry 天然满足；methods 快照
 // 按 settings.login_methods 过滤读取（§2.1）。
 type FactorSource interface {
@@ -137,6 +144,11 @@ type Deps struct {
 	Settings SettingsReader
 	// Loader provider 加载链（thirdparty.providers 数据源）。
 	Loader ProviderLister
+	// SmsChannel / EmailChannel otp 渠道可用性判定（settings 键 → provider 行
+	// → Enabled，§2.1）：*provider.CodeBridge 天然满足；nil = 渠道维度不判定，
+	// 方式照常注入（既有口径），生产装配恒注入两桥实例。
+	SmsChannel   ChannelProber
+	EmailChannel ChannelProber
 	// Factors 因子注册表（login_methods 过滤读取）。
 	Factors FactorSource
 	// Gate captcha 首屏配置；nil 降级 builtin_image（§2.5）。
@@ -221,24 +233,26 @@ type ssoContext struct {
 
 // Handler 页面壳处理器。
 type Handler struct {
-	root       string
-	rootDomain string
-	settings   SettingsReader
-	loader     ProviderLister
-	factors    FactorSource
-	gate       CaptchaConfiger
-	sync       SyncBuilder
-	codec      *security.Codec
-	jwt        JWTVerifier
-	clients    OidcClientReader
-	sessions   SessionVerifier
-	codes      CodeIssuer
-	audit      AuditSink
-	consents   Consents
-	authz      AuthzValidator
-	profiles   ProfileReader
-	metas      func() []provider.Meta
-	now        func() time.Time
+	root         string
+	rootDomain   string
+	settings     SettingsReader
+	loader       ProviderLister
+	smsChannel   ChannelProber
+	emailChannel ChannelProber
+	factors      FactorSource
+	gate         CaptchaConfiger
+	sync         SyncBuilder
+	codec        *security.Codec
+	jwt          JWTVerifier
+	clients      OidcClientReader
+	sessions     SessionVerifier
+	codes        CodeIssuer
+	audit        AuditSink
+	consents     Consents
+	authz        AuthzValidator
+	profiles     ProfileReader
+	metas        func() []provider.Meta
+	now          func() time.Time
 	// deps 保存装配期窄接口集合，供 resolveClientTpl 复用（§8.1）。
 	deps Deps
 }
@@ -248,25 +262,27 @@ type Handler struct {
 // 互不相交）。
 func Register(r *echo.Group, d Deps) *Handler {
 	h := &Handler{
-		root:       d.Root,
-		rootDomain: d.RootDomain,
-		settings:   d.Settings,
-		loader:     d.Loader,
-		factors:    d.Factors,
-		gate:       d.Gate,
-		sync:       d.Sync,
-		codec:      d.Codec,
-		jwt:        d.JWT,
-		clients:    d.Clients,
-		sessions:   d.Sessions,
-		codes:      d.Codes,
-		audit:      d.Audit,
-		consents:   d.Consents,
-		authz:      d.Authz,
-		profiles:   d.Profiles,
-		metas:      d.Metas,
-		now:        d.Now,
-		deps:       d,
+		root:         d.Root,
+		rootDomain:   d.RootDomain,
+		settings:     d.Settings,
+		loader:       d.Loader,
+		smsChannel:   d.SmsChannel,
+		emailChannel: d.EmailChannel,
+		factors:      d.Factors,
+		gate:         d.Gate,
+		sync:         d.Sync,
+		codec:        d.Codec,
+		jwt:          d.JWT,
+		clients:      d.Clients,
+		sessions:     d.Sessions,
+		codes:        d.Codes,
+		audit:        d.Audit,
+		consents:     d.Consents,
+		authz:        d.Authz,
+		profiles:     d.Profiles,
+		metas:        d.Metas,
+		now:          d.Now,
+		deps:         d,
 	}
 	if h.now == nil {
 		h.now = time.Now

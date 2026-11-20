@@ -6,6 +6,7 @@ package pages
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -381,6 +382,94 @@ func TestResetFlow(t *testing.T) {
 	if snap["flags"].(map[string]any)["passwordReset"] != false {
 		t.Errorf("flags.passwordReset 与空数组不一致（§2.1 行 407）")
 	}
+}
+
+// flagsFrom GET target 后取 INIT.methods.flags。
+func flagsFrom(t *testing.T, target string, f *fixture) map[string]any {
+	t.Helper()
+	rec := doGet(t, f.engine(t), target)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: status = %d, want 200（body %s）", target, rec.Code, rec.Body.String())
+	}
+	init := parseInit(t, rec.Body.String())
+	snap, ok := init["methods"].(map[string]any)
+	if !ok {
+		t.Fatalf("INIT.methods 缺失: %s", initJSON(t, rec.Body.String()))
+	}
+	flags, _ := snap["flags"].(map[string]any)
+	return flags
+}
+
+// TestChannelAvailabilityFiltersSnapshot 渠道可用性过滤（§2.1）：sms 渠道
+// 未配置时三 flow 快照均不含 otp_sms（email 探针缺省不判定照常注入）；两
+// 渠道均不可用 → reset methods 空且 flags.passwordReset=false（二者一致）；
+// 恢复任一渠道 → reset methods 与 flags 同时恢复。探针未注入 = 渠道维度
+// 不判定（既有口径，本文件其余用例即此形态）。
+func TestChannelAvailabilityFiltersSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.deps.SmsChannel = fakeChannel{avail: false}
+
+	delete(f.settings.m, settings.KeyLoginMethods) // reset 不读 login_methods
+	if got := methodNames(loginMethodsFrom(t, "/sso/reset", f)); containsStr(got, "otp_sms") {
+		t.Errorf("reset methods = %v, 不应含 otp_sms（渠道未配）", got)
+	}
+	if got := flagsFrom(t, "/sso/reset", f)["passwordReset"]; got != true {
+		t.Errorf("reset flags.passwordReset = %v, want true（otp_email 仍可用，重置入口保持）", got)
+	}
+
+	// login / register 同口径。
+	f.settings.m[settings.KeyLoginMethods] = []string{"password", "otp_sms", "otp_email", "thirdparty"}
+	got := methodNames(loginMethodsFrom(t, "/sso/login", f))
+	if containsStr(got, "otp_sms") || !containsStr(got, "otp_email") {
+		t.Errorf("login methods = %v, want 剔除 otp_sms 且保留 otp_email", got)
+	}
+	f.settings.m[settings.KeyAllowSignupPhone] = true
+	got = methodNames(loginMethodsFrom(t, "/sso/register", f))
+	if containsStr(got, "otp_sms") || !containsStr(got, "otp_email") {
+		t.Errorf("register methods = %v, want 剔除 otp_sms 且保留 otp_email", got)
+	}
+
+	// 两渠道均不可用 → reset methods 空且 flags.passwordReset=false（§2.1
+	// 二者一致不变量随同一份列表推导）。
+	f.deps.EmailChannel = fakeChannel{avail: false}
+	if got := methodNames(loginMethodsFrom(t, "/sso/reset", f)); len(got) != 0 {
+		t.Errorf("reset methods = %v, want 空（两渠道均未配）", got)
+	}
+	if got := flagsFrom(t, "/sso/reset", f)["passwordReset"]; got != false {
+		t.Errorf("reset flags.passwordReset = %v, want false（methods 空二者一致）", got)
+	}
+
+	// 恢复渠道 → methods 与 flags 同时恢复。
+	f.deps.SmsChannel = fakeChannel{avail: true}
+	f.deps.EmailChannel = fakeChannel{avail: true}
+	ms := loginMethodsFrom(t, "/sso/reset", f)
+	if !reflect.DeepEqual(methodNames(ms), []string{"otp_sms", "otp_email"}) {
+		t.Fatalf("reset methods = %v, want [otp_sms otp_email]", methodNames(ms))
+	}
+	if got := flagsFrom(t, "/sso/reset", f)["passwordReset"]; got != true {
+		t.Errorf("reset flags.passwordReset = %v, want true（渠道恢复）", got)
+	}
+}
+
+// TestChannelProbeErrorSnapshot 渠道判定故障 → 快照组装转 500（与
+// login_methods 缺键、thirdparty 装载故障同语义，行级 fail-closed）。
+func TestChannelProbeErrorSnapshot(t *testing.T) {
+	f := newFixture(t)
+	f.deps.SmsChannel = fakeChannel{err: errors.New("provider repo: connection refused")}
+	rec := doGet(t, f.engine(t), "/sso/reset")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500（body %s）", rec.Code, rec.Body.String())
+	}
+}
+
+// containsStr 字符串切片成员判定（tests 内局部使用）。
+func containsStr(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // TestFlowQueryOverride flow 取页面 URL query（§2.1 行 363-368），

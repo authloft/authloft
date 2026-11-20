@@ -223,6 +223,94 @@ func TestNewCodeBridgeValidation(t *testing.T) {
 	}
 }
 
+// TestChannelAvailable 渠道可用性公共判定（快照 / GetConfig / MFA 候选与
+// 发送期共用的单一真相）：键空 / 行缺失 / 未启用 → (false, nil) 配置态；
+// 行命中且启用 → (true, nil)；基础设施读取故障 → err 原样上抛（不混入
+// 配置态集合，调用方按各自出口收敛）。
+func TestChannelAvailable(t *testing.T) {
+	ensureTestVendors()
+	ctx := context.Background()
+	row := &model.Provider{
+		ProviderKey: "sms_row", DisplayName: "Test SMS", Category: provider.CategorySMS,
+		Type: testSMSVendorType, IsEnabled: 1,
+	}
+	loader := provider.NewLoader(fakeRowSource{row: row}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
+
+	st := &fakeSettings{strs: map[string]string{settings.KeySmsProviderKey: "sms_row"}}
+	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || !ok {
+		t.Fatalf("enabled row: ok=%v err=%v, want true/nil", ok, err)
+	}
+
+	st.strs[settings.KeySmsProviderKey] = ""
+	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || ok {
+		t.Fatalf("empty key: ok=%v err=%v, want false/nil（配置态）", ok, err)
+	}
+
+	st.strs[settings.KeySmsProviderKey] = "ghost"
+	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || ok {
+		t.Fatalf("missing row: ok=%v err=%v, want false/nil（配置态）", ok, err)
+	}
+
+	row.IsEnabled = 0
+	st.strs[settings.KeySmsProviderKey] = "sms_row"
+	disabled := provider.NewLoader(fakeRowSource{row: row}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
+	if ok, err := provider.ChannelAvailable(ctx, st, disabled, settings.KeySmsProviderKey); err != nil || ok {
+		t.Fatalf("disabled row: ok=%v err=%v, want false/nil（配置态）", ok, err)
+	}
+
+	st.strs[settings.KeySmsProviderKey] = "db_down"
+	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || ok {
+		t.Fatalf("missing row via NoRows: ok=%v err=%v, want false/nil（配置态）", ok, err)
+	}
+
+	down := provider.NewLoader(errRowSource{err: errVendorBoom}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
+	st.strs[settings.KeySmsProviderKey] = "sms_row"
+	if ok, err := provider.ChannelAvailable(ctx, st, down, settings.KeySmsProviderKey); err == nil || ok {
+		t.Fatalf("infra error: ok=%v err=%v, want false + err 上抛", ok, err)
+	}
+}
+
+// errRowSource provider.RowSource：读取恒故障（基础设施错误场景用）。
+type errRowSource struct{ err error }
+
+func (s errRowSource) FindByKey(context.Context, string) (*model.Provider, error) {
+	return nil, s.err
+}
+
+func (errRowSource) ListProviders(context.Context, repo.ProviderListQuery) ([]model.Provider, int64, error) {
+	return nil, 0, nil
+}
+
+// TestCodeBridgeAvailableBridgeDelegate 桥出口与公共判定同源：同一桥实例的
+// Available 与发送期 resolve 前段结论一致（未配置 = false，配置生效 = true）。
+func TestCodeBridgeAvailableBridgeDelegate(t *testing.T) {
+	ensureTestVendors()
+	loader := provider.NewLoader(fakeRowSource{row: &model.Provider{
+		ProviderKey: "eml_row", DisplayName: "Test Email", Category: provider.CategoryEmail,
+		Type: testBridgeVendorType, IsEnabled: 1,
+	}}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
+	q := asyncqueue.New(provider.SendExecutor{}, asyncqueue.Options{
+		Capacity: 4, Workers: 1, BatchSize: 4, FlushInterval: time.Hour,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = q.Close(ctx)
+	})
+	st := &fakeSettings{strs: map[string]string{}}
+	bridge, err := provider.NewCodeBridge(st, loader, q, settings.KeyEmailProviderKey, provider.CategoryEmail)
+	if err != nil {
+		t.Fatalf("NewCodeBridge: %v", err)
+	}
+	if ok, err := bridge.Available(context.Background()); err != nil || ok {
+		t.Fatalf("unconfigured: ok=%v err=%v, want false/nil", ok, err)
+	}
+	st.strs[settings.KeyEmailProviderKey] = "eml_row"
+	if ok, err := bridge.Available(context.Background()); err != nil || !ok {
+		t.Fatalf("configured: ok=%v err=%v, want true/nil", ok, err)
+	}
+}
+
 // —— 投递桥单测 ——
 
 // TestCodeBridgeSendCodeEnqueuesToQueue 成功解析后入队：执行器经队列异步

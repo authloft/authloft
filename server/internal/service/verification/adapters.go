@@ -217,16 +217,20 @@ func (v StepUpVerifier) Verify(ctx context.Context, in FactorVerifyInput) (Facto
 	return FactorVerifyResult{Code: code, AttemptsLeft: res.AttemptsLeft}, nil
 }
 
-// NewBoundFactorReader 注入用户 / 凭据仓储与 settings 读取器（装配层构造）：
-// 可用因子判定走 mfapolicy，与登录侧同源。
-func NewBoundFactorReader(users *repo.UserRepo, creds *repo.CredentialRepo, settings mfapolicy.SettingsReader) BoundFactorReader {
+// NewBoundFactorReader 注入用户 / 凭据仓储与 settings 读取器及 otp 渠道探针
+// （装配层构造）：可用因子判定走 mfapolicy，与登录侧同源；渠道探针供
+// usableWithUser 的 otp 渠道维度过滤（接口文档 §2.1 交集口径 MFA 行末段，
+// nil = 渠道维度不判定、保持既有口径）。
+func NewBoundFactorReader(users *repo.UserRepo, creds *repo.CredentialRepo, settings mfapolicy.SettingsReader, smsChannel, emailChannel mfapolicy.ChannelProber) BoundFactorReader {
 	return boundFactorReader{
 		users: users,
 		creds: creds,
 		policy: mfapolicy.Deps{
-			Users:    users,
-			Creds:    creds,
-			Settings: settings,
+			Users:        users,
+			Creds:        creds,
+			Settings:     settings,
+			SMSChannel:   smsChannel,
+			EmailChannel: emailChannel,
 		},
 	}
 }

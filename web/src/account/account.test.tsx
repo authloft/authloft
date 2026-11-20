@@ -21,6 +21,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { create, toJson, type JsonObject } from '@bufbuild/protobuf';
 import {
+  AccountConfigResponseSchema,
   AvatarUploadConfigSchema,
   CommitAvatarRequestSchema,
   MfaPolicyMethodSchema,
@@ -29,6 +30,7 @@ import {
   UpdateProfileRequestSchema,
   UploadAvatarRequestSchema,
   UserProfileSchema,
+  type AccountConfigResponse,
   type MfaPolicyMethod,
 } from '../gen/proto/api/account/v1/profile_pb';
 import { MfaFactorSchema } from '../gen/proto/api/account/v1/mfa_pb';
@@ -182,6 +184,7 @@ let sharedAccountMod: typeof import('../shared/api/account');
 let uploadMod: typeof import('../shared/hooks/useUpload');
 let routesMod: typeof import('./routes');
 let mfaSettingMod: typeof import('./pages/SecurityPage/MfaSetting');
+let securityPageMod: typeof import('./pages/SecurityPage');
 let profilePageMod: typeof import('./pages/ProfilePage');
 let eventLogTableMod: typeof import('./components/EventLogTable');
 
@@ -196,6 +199,7 @@ beforeAll(async () => {
   uploadMod = await import('../shared/hooks/useUpload');
   routesMod = await import('./routes');
   mfaSettingMod = await import('./pages/SecurityPage/MfaSetting');
+  securityPageMod = await import('./pages/SecurityPage');
   profilePageMod = await import('./pages/ProfilePage');
   eventLogTableMod = await import('./components/EventLogTable');
 });
@@ -2937,6 +2941,91 @@ describe('ProfilePageView 静态渲染（展示帧 override 优先 + 持久化�
 // routes：HashRouter 路由表 + path:'*' 兜底（MemoryRouter
 // 注入初始路径，模式无关；pathname 兜底断言已随 hash 化重写）
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// SecurityPageView 静态渲染（渠道可用性标志驱动绑定 / 换绑入口显隐）
+// ---------------------------------------------------------------------------
+
+describe('SecurityPageView 静态渲染（GetConfig 渠道可用性标志驱动手机号 / 邮箱绑定换绑入口）', () => {
+  const noop = () => {};
+
+  function renderSecurityPageView(
+    flags: { sms: boolean; email: boolean },
+    overrides: { hasPassword?: boolean } = {},
+  ): string {
+    const config = create(AccountConfigResponseSchema, {
+      hasPassword: overrides.hasPassword ?? true,
+      smsChannelAvailable: flags.sms,
+      emailChannelAvailable: flags.email,
+    }) as AccountConfigResponse;
+    // SecurityPageView 子件（MfaSetting / ThirdPartyList）消费 useLocation，
+    // 静态渲染需注入路由上下文（routes describe 同款 MemoryRouter）。
+    return renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/security'] },
+        createElement(securityPageMod.SecurityPageView, {
+          status: 'success',
+          config,
+          error: undefined,
+          onRefreshConfig: noop,
+        }),
+      ),
+    );
+  }
+
+  // rowSegment 取指定行标题所在 <li> 片段：绑定入口断言按行隔离（MFA 因子
+  // 行 / 三方账号行复用同一 account.bindAction 文案，全页计数会串扰）。
+  function rowSegment(html: string, label: string): string {
+    const idx = html.indexOf(`>${label}<`);
+    expect(idx).toBeGreaterThan(-1);
+    return html.slice(html.lastIndexOf('<li', idx), html.indexOf('</li>', idx));
+  }
+
+  test('两渠道均可用 → 手机号 / 邮箱两行各渲染一个绑定入口（未绑定为「去绑定」）', () => {
+    const html = renderSecurityPageView({ sms: true, email: true });
+    expect(rowSegment(html, '手机号')).toContain(t('account.goBindAction'));
+    expect(rowSegment(html, '邮箱')).toContain(t('account.goBindAction'));
+  });
+
+  test('短信渠道未配置 → 手机号入口隐藏、邮箱入口保留（行本身仍展示）', () => {
+    const html = renderSecurityPageView({ sms: false, email: true });
+    expect(rowSegment(html, '手机号')).not.toContain(t('account.goBindAction'));
+    expect(rowSegment(html, '邮箱')).toContain(t('account.goBindAction'));
+  });
+
+  test('两渠道均未配置 → 绑定 / 换绑入口全隐藏（行保留展示绑定态）', () => {
+    const html = renderSecurityPageView({ sms: false, email: false });
+    expect(html).toContain('手机号');
+    expect(html).toContain('邮箱');
+    // 换绑（已绑定态）与绑定共用同一守卫：contactExtra 先于绑定态分支整体
+    // 返回 null——profile 由 GetProfile 运行期取，静态渲染链呈未绑定态，
+    // 「换绑」文案在渠道可用且已绑定时才出现，故此处按不出现断言。
+    expect(rowSegment(html, '手机号')).not.toContain(t('account.goBindAction'));
+    expect(rowSegment(html, '邮箱')).not.toContain(t('account.goBindAction'));
+    expect(html).not.toContain(t('account.rebindAction'));
+  });
+
+  test('未设密码用户在渠道未配置时同样隐藏「请先设置密码」提示（入口整体隐藏）', () => {
+    const available = renderSecurityPageView(
+      { sms: true, email: true },
+      { hasPassword: false },
+    );
+    expect(rowSegment(available, '手机号')).toContain(
+      t('account.setPasswordFirst'),
+    );
+    const unavailable = renderSecurityPageView(
+      { sms: false, email: false },
+      { hasPassword: false },
+    );
+    expect(rowSegment(unavailable, '手机号')).not.toContain(
+      t('account.setPasswordFirst'),
+    );
+    expect(rowSegment(unavailable, '手机号')).not.toContain(
+      t('account.goBindAction'),
+    );
+  });
+});
 
 describe("routes：HashRouter 路由表与 path:'*' 兜底", () => {
   function renderAccountApp(initialPath: string): string {

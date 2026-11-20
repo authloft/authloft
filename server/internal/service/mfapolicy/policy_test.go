@@ -221,6 +221,91 @@ func TestUsableFactors(t *testing.T) {
 	}
 }
 
+// fakeProbe ChannelProber 的 fake：回放固定结论，可注入故障。
+type fakeProbe struct {
+	avail bool
+	err   error
+}
+
+func (f *fakeProbe) Available(context.Context) (bool, error) { return f.avail, f.err }
+
+// TestUsableFactorsChannelAvailability otp 渠道维度（接口文档 §2.1 交集口径
+// MFA 行末段）：已绑定的 otp_sms / otp_email 在对应渠道不可用时不入可用因子
+// （totp / recovery_code 不受影响）；探针未注入 = 渠道维度不判定（既有口径）；
+// 渠道判定故障原样上抛 fail-closed。
+func TestUsableFactorsChannelAvailability(t *testing.T) {
+	phone, email := "13800000000", "a@example.com"
+	user := &model.User{ID: 42, MfaRequired: 1, Phone: &phone, Email: &email}
+	withTotp := &fakeCreds{byKind: map[string]*model.UserCredential{"totp": {Kind: "totp", IsEnabled: 1}}}
+	st := &fakeSettings{enabled: true, enabledSet: true, methods: []string{"otp_sms", "otp_email", "totp"}, methodsSet: true}
+	users := &fakeUsers{byID: map[int64]*model.User{42: user}}
+
+	t.Run("已绑定手机号但 sms 渠道未配不候选（email 探针缺省不判定）", func(t *testing.T) {
+		deps := newDeps(users, withTotp, st)
+		deps.SMSChannel = &fakeProbe{avail: false}
+		got, err := UsableFactors(context.Background(), deps, 42)
+		if err != nil {
+			t.Fatalf("UsableFactors: %v", err)
+		}
+		want := []string{"otp_email", "totp", "recovery_code"}
+		if len(got) != len(want) {
+			t.Fatalf("factors = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("factors[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("两类渠道均未配且 totp 已绑定 → 只剩 totp 系", func(t *testing.T) {
+		deps := newDeps(users, withTotp, st)
+		deps.SMSChannel = &fakeProbe{avail: false}
+		deps.EmailChannel = &fakeProbe{avail: false}
+		got, err := UsableFactors(context.Background(), deps, 42)
+		if err != nil {
+			t.Fatalf("UsableFactors: %v", err)
+		}
+		want := []string{"totp", "recovery_code"}
+		if len(got) != len(want) {
+			t.Fatalf("factors = %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("factors[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("仅绑定 otp 因子且渠道均未配 → 可用因子空（Required 随之为 false）", func(t *testing.T) {
+		deps := newDeps(users, &fakeCreds{}, st)
+		deps.SMSChannel = &fakeProbe{avail: false}
+		deps.EmailChannel = &fakeProbe{avail: false}
+		got, err := UsableFactors(context.Background(), deps, 42)
+		if err != nil {
+			t.Fatalf("UsableFactors: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("factors = %v, want 空", got)
+		}
+		required, err := Required(context.Background(), deps, 42)
+		if err != nil {
+			t.Fatalf("Required: %v", err)
+		}
+		if required {
+			t.Error("Required = true, want false（无可下发因子按未开启处理，不锁死登录）")
+		}
+	})
+
+	t.Run("渠道判定故障原样上抛 fail-closed", func(t *testing.T) {
+		deps := newDeps(users, &fakeCreds{}, st)
+		deps.SMSChannel = &fakeProbe{err: errors.New("provider repo: connection refused")}
+		if _, err := UsableFactors(context.Background(), deps, 42); err == nil {
+			t.Fatal("want error（不得降级为无可用因子或放行）")
+		}
+	})
+}
+
 func TestRequired(t *testing.T) {
 	on := &fakeSettings{enabled: true, enabledSet: true, methods: []string{"totp"}, methodsSet: true}
 	withTotp := &fakeCreds{byKind: map[string]*model.UserCredential{"totp": {Kind: "totp", IsEnabled: 1}}}

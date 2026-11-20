@@ -202,6 +202,12 @@ type assembled struct {
 	// factors 因子注册表（§3.8）：供页面壳 methods 快照按 settings.login_methods 过滤读取。
 	factors *factor.Registry
 
+	// otp 发送桥（§15.3）：settings 键 → Loader → NewSender 异步投递；入口侧
+	//（注入快照 / GetConfig / MFA 候选）经同一实例的 Available 出口判定渠道
+	// 可用性，与发送期 resolve 共用 provider 包公共判定函数。
+	smsBridge   *provider.CodeBridge
+	emailBridge *provider.CodeBridge
+
 	// thirdparty 三方登录通道 service（§3.9）：与登录终点复用同一 State / Terminal。
 	thirdparty *thirdpartysvc.Thirdparty
 
@@ -577,6 +583,10 @@ func buildFactors(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 	if err != nil {
 		return nil, err
 	}
+	// 桥实例挂共享单例：注入快照 / GetConfig / MFA 候选的渠道可用性判定与
+	// 发送期共用同一 Available 出口（单一公共判定函数，防口径漂移）。
+	deps.smsBridge = smsSender
+	deps.emailBridge = emailSender
 	// otp 单 IP 日限额键（§10.3）取挂载层注入的请求侧来源 IP，
 	// 与密码因子 user_ref 的 IP 段同一实现。
 	otpSMS, err := factorotp.New(factor.FactorOTPSMS, otpSvc, smsSender, ipres.Resolver{}, otpCfg)
@@ -687,16 +697,27 @@ func buildVerification(deps *assembled, registry *factor.Registry, users *repo.U
 	if deps.rdb != nil {
 		verifOnce = cache.NewOnceStore(deps.rdb)
 	}
+	// otp 渠道可用性探针（接口文档 §2.1 交集口径 MFA 行末段）：候选末段过滤
+	// 与绑定判定（mfapolicy）共用同一桥实例出口；typed-nil 防护同 webauthn。
+	var smsChannel, emailChannel verification.ChannelProber
+	if deps.smsBridge != nil {
+		smsChannel = deps.smsBridge
+	}
+	if deps.emailBridge != nil {
+		emailChannel = deps.emailBridge
+	}
 	return verification.NewService(verification.Deps{
-		Codec:       verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
-		Policy:      verification.DefaultPolicy(),
-		Settings:    deps.settings,
-		Gate:        verifGate,
-		Once:        verifOnce,
-		Bound:       verification.NewBoundFactorReader(users, creds, deps.settings),
-		Verifier:    verification.NewStepUpVerifier(registry, users, creds),
-		Starter:     verification.NewStepUpVerifier(registry, users, creds),
-		LoginTokens: orchestrator.NewLoginTokenReader(core.state),
+		Codec:        verification.NewAssertionCodec(deps.codecs.Challenge, deps.codecs.Verification),
+		Policy:       verification.DefaultPolicy(),
+		Settings:     deps.settings,
+		Gate:         verifGate,
+		Once:         verifOnce,
+		Bound:        verification.NewBoundFactorReader(users, creds, deps.settings, smsChannel, emailChannel),
+		SMSChannel:   smsChannel,
+		EmailChannel: emailChannel,
+		Verifier:     verification.NewStepUpVerifier(registry, users, creds),
+		Starter:      verification.NewStepUpVerifier(registry, users, creds),
+		LoginTokens:  orchestrator.NewLoginTokenReader(core.state),
 		// sso 应用快照读出口（接口文档 §2.1 交集口径 MFA 行）：与 LoginTokens 同一
 		// 令牌解析器出第二个只读口，快照供二次验证候选按应用开关过滤。
 		LoginSso: func(_ context.Context, tok string) (*token.Sso, error) {
@@ -1322,11 +1343,22 @@ func registerSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) {
 // 会话，无 LoginDefault 式豁免，无会话由 handler 返回 unauthenticated）；
 // 各 service 由 buildDomains / wireSharedServices 构造，本函数只注入。
 func registerAccount(cfg *config.Config, csrv *connect.Server, deps *assembled) {
+	// otp 渠道探针（§3.2 两渠道标志）：GetConfig 与发送期同一桥实例出口；
+	// typed-nil 防护同 verification。
+	var smsChannel, emailChannel accounthandler.ChannelProber
+	if deps.smsBridge != nil {
+		smsChannel = deps.smsBridge
+	}
+	if deps.emailBridge != nil {
+		emailChannel = deps.emailBridge
+	}
 	base := accounthandler.NewWithServices(
 		deps.repos.Users,
 		deps.repos.Creds,
 		deps.settings,
 		deps.repos.Providers,
+		smsChannel,
+		emailChannel,
 		deps.gate,
 		deps.accountThirdparty,
 		deps.accountWebauthn,
@@ -1476,28 +1508,39 @@ func ssoSessionTTLRaw(st *settings.Store) time.Duration {
 // static_base CDN 源与 captchaCatalog 贡献源（与 Gate 下发配置同实例同源）；
 // 依赖全部复用 assemble 共享单例。
 func registerPages(r *echo.Echo, cfg *config.Config, deps *assembled) {
+	// otp 渠道探针（§2.1）：快照 otp_sms / otp_email 注入前的渠道维度过滤，
+	// 与发送期同一桥实例出口；typed-nil 防护同 verification。
+	var smsChannel, emailChannel pages.ChannelProber
+	if deps.smsBridge != nil {
+		smsChannel = deps.smsBridge
+	}
+	if deps.emailBridge != nil {
+		emailChannel = deps.emailBridge
+	}
 	pages.Register(r.Group("", middleware.CSP(
 		pages.StaticBaseCSPSupporter(deps.settings),
 		deps.captchaCatalog,
 	)), pages.Deps{
-		Root:       cfg.Authloft.Root,
-		RootDomain: rootHost(cfg.Authloft.Root),
-		Settings:   deps.settings,
-		Loader:     deps.providerLoader,
-		Factors:    deps.factors,
-		Gate:       deps.gate,
-		Sync:       deps.sessionSvc.Sync,
-		Codec:      deps.codecs.SyncPayload,
-		JWT:        deps.oidcJWT,
-		Clients:    deps.repos.Clients,
-		Sessions:   deps.sessionSvc.Verifier,
-		Codes:      deps.codeIssuer,
-		Audit:      deps.infra.Events,
-		Consents:   deps.consents,
-		Authz:      deps.authz,
-		Profiles:   deps.repos.Users,
-		Templates:  deps.admin.Templates,
-		SsoClients: deps.repos.Clients,
+		Root:         cfg.Authloft.Root,
+		RootDomain:   rootHost(cfg.Authloft.Root),
+		Settings:     deps.settings,
+		Loader:       deps.providerLoader,
+		SmsChannel:   smsChannel,
+		EmailChannel: emailChannel,
+		Factors:      deps.factors,
+		Gate:         deps.gate,
+		Sync:         deps.sessionSvc.Sync,
+		Codec:        deps.codecs.SyncPayload,
+		JWT:          deps.oidcJWT,
+		Clients:      deps.repos.Clients,
+		Sessions:     deps.sessionSvc.Verifier,
+		Codes:        deps.codeIssuer,
+		Audit:        deps.infra.Events,
+		Consents:     deps.consents,
+		Authz:        deps.authz,
+		Profiles:     deps.repos.Users,
+		Templates:    deps.admin.Templates,
+		SsoClients:   deps.repos.Clients,
 	})
 }
 

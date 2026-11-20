@@ -342,6 +342,20 @@ describe('registerOptionsFor / resetOptionsFor（§2.1 行 411-412 白名单防�
       resetMod.resetOptionsFor(REGISTER_SNAPSHOT).map((m) => m.method),
     ).toEqual(['otp_sms', 'otp_email']);
   });
+
+  test('快照缺 otp_sms（短信渠道未配置，§2.1 渠道可用性过滤）→ 注册 / 重置选项随快照缺席自动收窄', () => {
+    const noSms = {
+      methods: REGISTER_SNAPSHOT.methods.filter(
+        (m) => m.method !== 'otp_sms',
+      ),
+    };
+    expect(
+      pagesMod.registerOptionsFor(noSms).map((m) => m.method),
+    ).toEqual(['password', 'otp_email']);
+    expect(
+      resetMod.resetOptionsFor(noSms).map((m) => m.method),
+    ).toEqual(['otp_email']);
+  });
 });
 
 describe('registerFirstStep / advanceAfterStep（§2.3 行 451 / §10.3-10.4 序列）', () => {

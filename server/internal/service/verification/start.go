@@ -184,6 +184,14 @@ type LoginTokenReader interface {
 	Read(ctx context.Context, tok string) (uid int64, passed bool, err error)
 }
 
+// ChannelProber 消息渠道可用性判定窄接口（*provider.CodeBridge 天然满足，
+// sms / email 两实例分别注入）：otp 候选的渠道维度过滤出口（接口文档 §2.1
+// 交集口径 MFA 行末段），判定实现归 provider 包公共函数，与发送期
+// provider_disabled 同源。
+type ChannelProber interface {
+	Available(ctx context.Context) (bool, error)
+}
+
 // FactorVerifyInput 因子校验入参：三元组取自挑战令牌（§10.1、§11.6.7）。
 type FactorVerifyInput struct {
 	Method      string
@@ -217,9 +225,15 @@ type Deps struct {
 	// login_token 编解码归装配层适配器所有，本包不感知其实现；未注入或读出
 	// nil = 无应用上下文（直登 / OIDC / 未装配），候选不按应用过滤。
 	LoginSso func(ctx context.Context, loginToken string) (*token.Sso, error)
-	Login    LoginCompleter
-	Now      func() time.Time
-	NewNonce func() (string, error)
+	// SMSChannel / EmailChannel otp 渠道可用性探针（接口文档 §2.1 交集口径
+	// MFA 行末段）：otp_sms / otp_email 候选须对应渠道可用，防止选中后发码
+	// 失败。nil = 未装配（测试 / 半装配），渠道维度不判定、候选保留（发送期
+	// provider_disabled 既有兜底不变）。
+	SMSChannel   ChannelProber
+	EmailChannel ChannelProber
+	Login        LoginCompleter
+	Now          func() time.Time
+	NewNonce     func() (string, error)
 }
 
 // Service step-up 服务层：不感知 Connect / Echo，只做令牌编排与契约校验。
@@ -318,6 +332,17 @@ func (s *Service) Start(ctx context.Context, in StartInput) (*StartResult, *capt
 	// 应用开关过滤在绑定交集之后执行（接口文档 §2.1 交集口径 MFA 行的合取顺序）；
 	// 过滤后为空复用既有 method_disabled 出口，该用户无法登录该应用。
 	candidates = ssoAllowlist(candidates, ssoSnap)
+	if len(candidates) == 0 {
+		return nil, nil, failure("method_disabled", nil)
+	}
+	// 渠道可用性过滤在「白名单 ∩ 已绑定 ∩ 应用放行」之后末段追加（接口文档
+	// §2.1 交集口径 MFA 行末段）：未配 provider 的 otp 渠道不作候选（即便已
+	// 绑定，避免选中后发码失败），totp / recovery_code / webauthn 不受影响；
+	// 判定故障原样上抛 fail-closed，过滤后为空复用既有 method_disabled 出口。
+	candidates, err = s.filterChannels(ctx, candidates)
+	if err != nil {
+		return nil, nil, fmt.Errorf("verification: channel availability: %w", err)
+	}
 	if len(candidates) == 0 {
 		return nil, nil, failure("method_disabled", nil)
 	}
@@ -564,6 +589,45 @@ func ssoAllowlist(candidates []string, snap *token.Sso) []string {
 		out = append(out, m)
 	}
 	return out
+}
+
+// filterChannels 候选的渠道维度末段过滤（接口文档 §2.1 交集口径 MFA 行末段）：
+// otp_sms / otp_email 要求对应渠道可用（未配 provider 不候选，防止选中后
+// 发码失败）；其余因子恒放行。两探针均未注入 = 未装配，渠道维度不判定、
+// 原样返回（发送期 provider_disabled 既有兜底不变）。
+func (s *Service) filterChannels(ctx context.Context, candidates []string) ([]string, error) {
+	if s.d.SMSChannel == nil && s.d.EmailChannel == nil {
+		return candidates, nil
+	}
+	out := make([]string, 0, len(candidates))
+	for _, m := range candidates {
+		keep, err := channelUsable(ctx, s.d, m)
+		if err != nil {
+			return nil, err
+		}
+		if keep {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// channelUsable 单候选的渠道维度判定：otp 候选取对应探针（探针 nil = 不判定
+// 放行），其余候选恒真。
+func channelUsable(ctx context.Context, d Deps, m string) (bool, error) {
+	var p ChannelProber
+	switch m {
+	case "otp_sms":
+		p = d.SMSChannel
+	case "otp_email":
+		p = d.EmailChannel
+	default:
+		return true, nil
+	}
+	if p == nil {
+		return true, nil
+	}
+	return p.Available(ctx)
 }
 
 func contains(list []string, v string) bool {

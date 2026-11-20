@@ -673,9 +673,16 @@ type AccountConfigResponse struct {
 	// 跨包引用 api.common.v1.CaptchaConfig（配置视图单一结构源），字段编号 3 不变（§12.8）。
 	Captcha *v1.CaptchaConfig `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2）。
-	HasPassword   bool `protobuf:"varint,4,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	HasPassword bool `protobuf:"varint,4,opt,name=has_password,json=hasPassword,proto3" json:"has_password,omitempty"`
+	// 短信渠道（settings sms_provider_key）当前是否可用（§3.2）：键空 / 行缺失 /
+	// 未启用为 false，前端据此隐藏手机号绑定与换绑入口（§3.4）；判定与发送期
+	// provider_disabled 同一公共实现（§2.1 渠道可用性口径）。
+	SmsChannelAvailable bool `protobuf:"varint,5,opt,name=sms_channel_available,json=smsChannelAvailable,proto3" json:"sms_channel_available,omitempty"`
+	// 邮件渠道（settings email_provider_key）当前是否可用，语义同上，
+	// 前端据此隐藏邮箱绑定与换绑入口（§3.4）。
+	EmailChannelAvailable bool `protobuf:"varint,6,opt,name=email_channel_available,json=emailChannelAvailable,proto3" json:"email_channel_available,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *AccountConfigResponse) Reset() {
@@ -732,6 +739,20 @@ func (x *AccountConfigResponse) GetCaptcha() *v1.CaptchaConfig {
 func (x *AccountConfigResponse) GetHasPassword() bool {
 	if x != nil {
 		return x.HasPassword
+	}
+	return false
+}
+
+func (x *AccountConfigResponse) GetSmsChannelAvailable() bool {
+	if x != nil {
+		return x.SmsChannelAvailable
+	}
+	return false
+}
+
+func (x *AccountConfigResponse) GetEmailChannelAvailable() bool {
+	if x != nil {
+		return x.EmailChannelAvailable
 	}
 	return false
 }
@@ -1097,13 +1118,15 @@ const file_api_account_v1_profile_proto_rawDesc = "" +
 	"\tMfaPolicy\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12.\n" +
 	"\x13trusted_device_days\x18\x02 \x01(\x03R\x11trustedDeviceDays\x129\n" +
-	"\amethods\x18\x03 \x03(\v2\x1f.api.account.v1.MfaPolicyMethodR\amethods\"\xf5\x01\n" +
+	"\amethods\x18\x03 \x03(\v2\x1f.api.account.v1.MfaPolicyMethodR\amethods\"\xe1\x02\n" +
 	"\x15AccountConfigResponse\x12G\n" +
 	"\ravatar_upload\x18\x01 \x01(\v2\".api.account.v1.AvatarUploadConfigR\favatarUpload\x128\n" +
 	"\n" +
 	"mfa_policy\x18\x02 \x01(\v2\x19.api.account.v1.MfaPolicyR\tmfaPolicy\x126\n" +
 	"\acaptcha\x18\x03 \x01(\v2\x1c.api.common.v1.CaptchaConfigR\acaptcha\x12!\n" +
-	"\fhas_password\x18\x04 \x01(\bR\vhasPassword\"\"\n" +
+	"\fhas_password\x18\x04 \x01(\bR\vhasPassword\x122\n" +
+	"\x15sms_channel_available\x18\x05 \x01(\bR\x13smsChannelAvailable\x126\n" +
+	"\x17email_channel_available\x18\x06 \x01(\bR\x15emailChannelAvailable\"\"\n" +
 	"\x0eAvatarResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\"i\n" +
 	"\x14PresignAvatarRequest\x12\x1a\n" +

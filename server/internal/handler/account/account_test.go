@@ -167,7 +167,7 @@ func newSessionHandlerOptions(t *testing.T, users UserReader, extraOpts []connec
 		nil,
 	)))
 	_, h := accountv1connect.NewAccountServiceHandler(
-		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
+		NewWithServices(users, d.creds(), d.settings(), d.providers(), d.smsChannel(), d.emailChannel(), d.captcha, d.thirdparty(), d.webauthn(), d.profile(),
 			d.avatar(), d.password(), d.bindcontact(), d.mfa(), d.events(), cookies, d.permissionLister(), d.verification()),
 		opts...,
 	)
@@ -180,6 +180,8 @@ type getConfigDeps struct {
 	credsIn        CredentialReader
 	settingsIn     SettingsReader
 	providersIn    ProviderReader
+	smsProbeIn     ChannelProber
+	emailProbeIn   ChannelProber
 	captcha        CaptchaConfiger
 	thirdpartyIn   Thirdparty
 	webauthnIn     Webauthn
@@ -215,6 +217,11 @@ func (d *getConfigDeps) providers() ProviderReader {
 	}
 	return d.providersIn
 }
+
+// smsChannel / emailChannel 渠道探针（GetConfig 渠道标志用例注入；缺省 nil
+// = 未装配，标志按 false 下发）。
+func (d *getConfigDeps) smsChannel() ChannelProber   { return d.smsProbeIn }
+func (d *getConfigDeps) emailChannel() ChannelProber { return d.emailProbeIn }
 
 func (d *getConfigDeps) thirdparty() Thirdparty     { return d.thirdpartyIn }
 func (d *getConfigDeps) webauthn() Webauthn         { return d.webauthnIn }
@@ -837,6 +844,94 @@ func TestGetConfigHasPasswordStates(t *testing.T) {
 				t.Errorf("hasPassword = %v, want %v", got.GetHasPassword(), tc.want)
 			}
 		})
+	}
+}
+
+// fakeChannelProbe ChannelProber 的 fake：回放固定结论，可注入故障。
+type fakeChannelProbe struct {
+	avail bool
+	err   error
+}
+
+func (f fakeChannelProbe) Available(context.Context) (bool, error) { return f.avail, f.err }
+
+// TestGetConfigChannelFlags 渠道可用性标志（§3.2）：两探针结论独立投影到
+// smsChannelAvailable / emailChannelAvailable；探针未注入按 false 下发
+// （前端隐藏绑定 / 换绑入口）；判定故障上抛按 internal 映射。
+func TestGetConfigChannelFlags(t *testing.T) {
+	cases := []struct {
+		name       string
+		sms, email *fakeChannelProbe
+		wantSms    bool
+		wantEmail  bool
+		wantStatus int
+	}{
+		{"两渠道均可用", &fakeChannelProbe{avail: true}, &fakeChannelProbe{avail: true}, true, true, http.StatusOK},
+		{"仅短信不可用", &fakeChannelProbe{avail: false}, &fakeChannelProbe{avail: true}, false, true, http.StatusOK},
+		{"仅邮件不可用", &fakeChannelProbe{avail: true}, &fakeChannelProbe{avail: false}, true, false, http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := wantConfigDeps(t)
+			deps.smsProbeIn = tc.sms
+			deps.emailProbeIn = tc.email
+			tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, deps)
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+
+			status, raw := postGetConfig(t, srv.URL, tokens, epochs)
+			if status != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body %s)", status, tc.wantStatus, raw)
+			}
+			var got accountv1.AccountConfigResponse
+			if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+				t.Fatalf("decode response %q: %v", raw, err)
+			}
+			if got.GetSmsChannelAvailable() != tc.wantSms {
+				t.Errorf("smsChannelAvailable = %v, want %v", got.GetSmsChannelAvailable(), tc.wantSms)
+			}
+			if got.GetEmailChannelAvailable() != tc.wantEmail {
+				t.Errorf("emailChannelAvailable = %v, want %v", got.GetEmailChannelAvailable(), tc.wantEmail)
+			}
+		})
+	}
+}
+
+// TestGetConfigChannelFlagsUnwired 探针未注入：两标志按 false 下发（入口隐藏
+// 的 fail-closed 语义），其余投影不受影响。
+func TestGetConfigChannelFlagsUnwired(t *testing.T) {
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, wantConfigDeps(t))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	status, raw := postGetConfig(t, srv.URL, tokens, epochs)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", status, raw)
+	}
+	var got accountv1.AccountConfigResponse
+	if err := protojson.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decode response %q: %v", raw, err)
+	}
+	if got.GetSmsChannelAvailable() || got.GetEmailChannelAvailable() {
+		t.Errorf("unwired flags = (%v, %v), want (false, false)", got.GetSmsChannelAvailable(), got.GetEmailChannelAvailable())
+	}
+	if !got.GetHasPassword() {
+		t.Error("hasPassword = false, want true（其余投影不受探针影响）")
+	}
+}
+
+// TestGetConfigChannelProbeError 渠道判定基础设施故障 → 500 internal，
+// 不静默降级为不可用或可用。
+func TestGetConfigChannelProbeError(t *testing.T) {
+	deps := wantConfigDeps(t)
+	deps.smsProbeIn = &fakeChannelProbe{err: errors.New("db down")}
+	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, deps)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	status, raw := postGetConfig(t, srv.URL, tokens, epochs)
+	if status != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body %s)", status, raw)
 	}
 }
 

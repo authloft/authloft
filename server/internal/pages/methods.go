@@ -166,11 +166,11 @@ func (h *Handler) buildMethods(ctx context.Context, flow string, sso ...*ssoMeth
 	)
 	switch flow {
 	case flowRegister:
-		methods, err = h.registerMethods()
+		methods, err = h.registerMethods(ctx)
 	case flowReset:
-		methods, err = h.resetMethods()
+		methods, err = h.resetMethods(ctx)
 	default: // login 默认（§2.1 行 368）
-		methods, err = h.loginMethods(scope)
+		methods, err = h.loginMethods(ctx, scope)
 	}
 	if err != nil {
 		return nil, err
@@ -178,17 +178,25 @@ func (h *Handler) buildMethods(ctx context.Context, flow string, sso ...*ssoMeth
 	if methods == nil {
 		methods = []MethodEntry{}
 	}
+	// §2.1 不变量：flow=reset 时 flags.passwordReset 与 methods 为空数组二者
+	// 一致——重置方式列表已含 allow_password_reset 与渠道可用性两重过滤，
+	// flags 随同一份列表推导，与 methods 共用同一可用性判定（两渠道均不可用
+	// 时 methods 空且 flags.passwordReset=false，配任一则同时恢复）。
+	if flow == flowReset {
+		snap.Flags.PasswordReset = len(methods) > 0
+	}
 	snap.Methods = methods
 	return snap, nil
 }
 
 // loginMethods flow=login（§2.1 默认）：settings.login_methods 顺序过滤因子
 // 注册表，应用开关未放行的方式先被剔除（§2.1 应用级交集：同时开启才算
-// 开启）；thirdparty 合成条目走 provider Loader（is_enabled=1 且
+// 开启）；otp_sms / otp_email 再按渠道可用性过滤（对应消息渠道未配置不
+// 注入，§2.1）；thirdparty 合成条目走 provider Loader（is_enabled=1 且
 // enable_signin=1，§12.3 行 1464）并按应用 oauth_providers 白名单再过滤；
 // 未注册 / 拼错的方式（含历史 device 字符串）跳过不注入。
 // login_methods 缺键 → 错误（500）。
-func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
+func (h *Handler) loginMethods(ctx context.Context, sso *ssoMethodScope) ([]MethodEntry, error) {
 	enabled, ok := h.sliceSetting(settings.KeyLoginMethods)
 	if !ok {
 		return nil, errors.New("pages: login_methods missing from settings")
@@ -213,6 +221,13 @@ func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
 			if err != nil {
 				continue // 未注册方式不注入（不可登录即不展示）
 			}
+			ok, err := h.channelAvailable(ctx, m)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue // 渠道不可用不注入（入口不展示即不可达，§2.1）
+			}
 			methods = append(methods, h.factorEntry(f))
 		}
 	}
@@ -221,8 +236,9 @@ func (h *Handler) loginMethods(sso *ssoMethodScope) ([]MethodEntry, error) {
 
 // registerMethods flow=register（§2.1 行 411）：按注册开关过滤
 // allow_registration + allow_signup_password / phone / email（§5.6），
-// 不读 login_methods；未开注册 → 空数组（前端隐藏入口）。
-func (h *Handler) registerMethods() ([]MethodEntry, error) {
+// 不读 login_methods；otp 渠道不可用不注入（§2.1）；未开注册 → 空数组
+// （前端隐藏入口）。
+func (h *Handler) registerMethods(ctx context.Context) ([]MethodEntry, error) {
 	methods := []MethodEntry{}
 	if !h.boolSetting(settings.KeyAllowRegistration, true) {
 		return methods, nil
@@ -242,6 +258,13 @@ func (h *Handler) registerMethods() ([]MethodEntry, error) {
 		if err != nil {
 			continue
 		}
+		ok, err := h.channelAvailable(ctx, string(m.kind))
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
 		methods = append(methods, h.factorEntry(f))
 	}
 	return methods, nil
@@ -249,9 +272,10 @@ func (h *Handler) registerMethods() ([]MethodEntry, error) {
 
 // resetMethods flow=reset（§2.1 行 412）：只保留 otp_sms / otp_email，
 // usage 固定 ["primary"]、steps 为 challenge → form（因子实现即此序列），
-// 受 allow_password_reset 控制——false 时空数组（前端隐藏重置入口）。
+// 受 allow_password_reset 控制——false 时空数组（前端隐藏重置入口）；两
+// 渠道均不可用时同为空数组（§2.1 二者一致不变量，flags 随本列表推导）。
 // 不读 login_methods。
-func (h *Handler) resetMethods() ([]MethodEntry, error) {
+func (h *Handler) resetMethods(ctx context.Context) ([]MethodEntry, error) {
 	methods := []MethodEntry{}
 	if !h.boolSetting(settings.KeyAllowPasswordReset, true) {
 		return methods, nil
@@ -259,6 +283,13 @@ func (h *Handler) resetMethods() ([]MethodEntry, error) {
 	for _, kind := range []factor.FactorKind{factor.FactorOTPSMS, factor.FactorOTPEmail} {
 		f, err := h.factor(kind)
 		if err != nil {
+			continue
+		}
+		ok, err := h.channelAvailable(ctx, string(kind))
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
 			continue
 		}
 		e := h.factorEntry(f)
@@ -413,6 +444,26 @@ func (h *Handler) captchaConfig(ctx context.Context) captcha.Config {
 		return captcha.Config{ProviderKey: captcha.BuiltinProviderKey, Type: captcha.TypeImage}
 	}
 	return h.gate.Config(ctx)
+}
+
+// channelAvailable otp 方式的渠道可用性判定（§2.1）：otp_sms / otp_email
+// 之外的方式恒放行；探针未注入（未装配）时渠道维度不判定、原样放行（既有
+// 口径，发送期 provider_disabled 兜底不变）。判定故障原样上抛，由快照组装
+// 转 500（与 login_methods 缺键、thirdparty 装载故障同语义，行级 fail-closed）。
+func (h *Handler) channelAvailable(ctx context.Context, method string) (bool, error) {
+	var p ChannelProber
+	switch method {
+	case "otp_sms":
+		p = h.smsChannel
+	case "otp_email":
+		p = h.emailChannel
+	default:
+		return true, nil
+	}
+	if p == nil {
+		return true, nil
+	}
+	return p.Available(ctx)
 }
 
 // otpParams otp 系快照参数（§2.1 行 391-394）：codeLength 固定 6 位，

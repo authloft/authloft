@@ -1,8 +1,9 @@
 /**
  * 安全中心页（SettingList 行式布局）：GetConfig 驱动三个区块——
  * - 登录方式：密码（hasPassword 区分设置 / 修改）、手机号 / 邮箱（未设密码
- *   显示「请先设置密码」）、通行密钥（useWebauthnSetting：已绑定 X 个 +
- *   查看已绑定 / 新增）；
+ *   显示「请先设置密码」；对应消息渠道未配置时不渲染绑定 / 换绑入口，
+ *   GetConfig 渠道可用性标志驱动，§3.2）、通行密钥（useWebauthnSetting：
+ *   已绑定 X 个 + 查看已绑定 / 新增）；
  * - 双因素认证：两步验证开关行（useMfaToggleField）+ TOTP 因子行
  *   （useMfaSetting，MFA + 恢复码合并）；
  * - 第三方账号：ThirdPartyList（全量账号行，已绑定 → 解绑 / 未绑定 → 绑定；
@@ -97,8 +98,26 @@ export function SecurityPageView(props: {
   }
   const captcha = config.captcha ?? ZERO_CAPTCHA_CONFIG;
   const hasPassword = config.hasPassword;
-  const contactExtra = (kind: 'phone' | 'email', bound: boolean) =>
-    hasPassword ? (
+  // 渠道可用性标志（GetConfig smsChannelAvailable / emailChannelAvailable，
+  // §3.2）：对应消息渠道未配置（键空 / 行缺失 / 未启用）时隐藏绑定 / 换绑
+  // 入口（含已绑定用户的换绑按钮；行本身保留展示绑定态）。protojson 省略
+  // false 字段 → undefined 按 false 处理。
+  const smsAvailable = config.smsChannelAvailable === true;
+  const emailAvailable = config.emailChannelAvailable === true;
+  const contactExtra = (
+    kind: 'phone' | 'email',
+    bound: boolean,
+  ): ReactNode | null => {
+    if (kind === 'phone' && !smsAvailable) return null;
+    if (kind === 'email' && !emailAvailable) return null;
+    if (!hasPassword) {
+      return (
+        <Typography.Text type="tertiary">
+          {t('account.setPasswordFirst')}
+        </Typography.Text>
+      );
+    }
+    return (
       <Button
         type="tertiary"
         onClick={() =>
@@ -109,11 +128,8 @@ export function SecurityPageView(props: {
       >
         {bound ? t('account.rebindAction') : t('account.goBindAction')}
       </Button>
-    ) : (
-      <Typography.Text type="tertiary">
-        {t('account.setPasswordFirst')}
-      </Typography.Text>
     );
+  };
   return (
     <PageLayout title={t('account.securityTitle')}>
       <SettingListSections

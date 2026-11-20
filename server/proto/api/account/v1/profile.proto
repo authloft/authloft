@@ -146,6 +146,13 @@ message AccountConfigResponse {
   api.common.v1.CaptchaConfig captcha = 3;
   // 当前用户是否存在 kind=password 且 is_enabled=1 的凭证（§3.2）。
   bool has_password = 4;
+  // 短信渠道（settings sms_provider_key）当前是否可用（§3.2）：键空 / 行缺失 /
+  // 未启用为 false，前端据此隐藏手机号绑定与换绑入口（§3.4）；判定与发送期
+  // provider_disabled 同一公共实现（§2.1 渠道可用性口径）。
+  bool sms_channel_available = 5;
+  // 邮件渠道（settings email_provider_key）当前是否可用，语义同上，
+  // 前端据此隐藏邮箱绑定与换绑入口（§3.4）。
+  bool email_channel_available = 6;
 }
 
 // AvatarResponse 是头像 proxy 上传（REST 豁免，§3.2）与

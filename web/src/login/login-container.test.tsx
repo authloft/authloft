@@ -386,6 +386,20 @@ describe('首屏默认选中（primaryTabMethods / defaultMethodEvent / initialF
     ]);
   });
 
+  test('快照缺 otp_sms（短信渠道未配置，§2.1 渠道可用性过滤）→ tab 列表与默认选中随快照自动收窄', () => {
+    const noSms: MethodsSnapshot = {
+      methods: MIXED.methods.filter((m) => m.method !== 'otp_sms'),
+    };
+    // node 无 window.PublicKeyCredential → webauthn 隐藏，余下无可见主因子。
+    expect(primaryTabMethods(noSms.methods)).toEqual([]);
+    expect(container.defaultMethodEvent(noSms)).toBeUndefined();
+    // 能力满足时 webauthn 仍按序呈现（渠道过滤只影响快照缺席项，渲染逻辑不变）。
+    rs.stubGlobal('window', { PublicKeyCredential: {} });
+    expect(primaryTabMethods(noSms.methods).map((m) => m.method)).toEqual([
+      'webauthn',
+    ]);
+  });
+
   test('defaultMethodEvent：首个可见 tab + kind→step 映射（SNAPSHOT → password/verify）', () => {
     expect(container.defaultMethodEvent(SNAPSHOT)).toEqual({
       type: 'select_method',

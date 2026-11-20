@@ -107,6 +107,14 @@ type fakeCaptcha struct{ cfg captcha.Config }
 
 func (f fakeCaptcha) Config(context.Context) captcha.Config { return f.cfg }
 
+// fakeChannel ChannelProber 的 fake：回放固定结论，可注入故障。
+type fakeChannel struct {
+	avail bool
+	err   error
+}
+
+func (f fakeChannel) Available(context.Context) (bool, error) { return f.avail, f.err }
+
 // fakeJWT JWTVerifier 的 fake。
 type fakeJWT struct {
 	claims jwt.MapClaims

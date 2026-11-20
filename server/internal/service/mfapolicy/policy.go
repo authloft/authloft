@@ -5,7 +5,9 @@
 //
 //	系统已开放   = settings.mfa_enabled == true
 //	白名单       = settings.mfa_methods（去重，保持配置顺序）
-//	可用因子     = 白名单 ∩ 用户已绑定（recovery_code 随 totp 生效）
+//	可用因子     = 白名单 ∩ 用户已绑定（recovery_code 随 totp 生效）；
+//	              otp_sms / otp_email 另要求对应消息渠道可用（§2.1 交集口径
+//	              MFA 行末段，探针注入时生效）
 //	实际要求MFA  = 系统已开放 && user.mfa_required == 1 && len(可用因子) > 0
 //
 // 依赖以窄接口注入（用户读 / 凭证读 / settings 读）。本包不 import
@@ -46,6 +48,14 @@ type SettingsReader interface {
 	GetStringSlice(key string) ([]string, bool)
 }
 
+// ChannelProber 消息渠道可用性判定窄接口（*provider.CodeBridge 天然满足）：
+// otp_sms / otp_email 的绑定态之外维度——对应消息渠道不可用（settings 键空 /
+// 行缺失 / 未启用）时该因子无法下发，不作可用因子。判定实现归 provider 包
+// 公共函数，与发送期 provider_disabled 同源。
+type ChannelProber interface {
+	Available(ctx context.Context) (bool, error)
+}
+
 // Deps 判定依赖（装配层构造）。
 type Deps struct {
 	// Users user 表读取（mfa_required 列与手机号 / 邮箱绑定态）。
@@ -54,6 +64,10 @@ type Deps struct {
 	Creds CredentialReader
 	// Settings 热更新键读取（mfa_enabled 系统开关、mfa_methods 白名单）。
 	Settings SettingsReader
+	// SMSChannel / EmailChannel otp 渠道可用性探针（接口文档 §2.1 交集口径
+	// MFA 行末段）：nil = 渠道维度不判定，可用因子计算保持既有口径。
+	SMSChannel   ChannelProber
+	EmailChannel ChannelProber
 }
 
 // ErrDepsUnavailable 判定依赖未注入（装配缺陷）。调用方须按 fail-closed
@@ -181,6 +195,9 @@ func checkDeps(d Deps) error {
 }
 
 // usableWithUser 已加载用户行后的可用因子计算，避免 Required 重复读 user。
+// otp 因子在绑定态之外还按渠道可用性过滤（接口文档 §2.1 交集口径 MFA 行
+// 末段）：未配 provider 不候选，防止判定为可用后发码失败；判定故障原样
+// 上抛（fail-closed），探针未注入时渠道维度不判定、保持既有口径。
 func usableWithUser(ctx context.Context, d Deps, uid int64, user *model.User) ([]string, error) {
 	allowed := AllowedMethods(d.Settings)
 	if len(allowed) == 0 {
@@ -192,14 +209,37 @@ func usableWithUser(ctx context.Context, d Deps, uid int64, user *model.User) ([
 		if err != nil {
 			return nil, err
 		}
-		if ok {
-			out = append(out, f)
+		if !ok {
+			continue
 		}
+		if f == factorOtpSms || f == factorOtpEmail {
+			avail, err := channelAvailable(ctx, d, f)
+			if err != nil {
+				return nil, err
+			}
+			if !avail {
+				continue
+			}
+		}
+		out = append(out, f)
 	}
 	if contains(out, kindTotp) && !contains(out, factorRecoveryCode) {
 		out = append(out, factorRecoveryCode)
 	}
 	return out, nil
+}
+
+// channelAvailable otp 因子对应的渠道可用性（接口文档 §2.1 交集口径 MFA 行
+// 末段）；探针未注入 = 不判定放行（既有口径，发送期兜底不变）。
+func channelAvailable(ctx context.Context, d Deps, f string) (bool, error) {
+	p := d.SMSChannel
+	if f == factorOtpEmail {
+		p = d.EmailChannel
+	}
+	if p == nil {
+		return true, nil
+	}
+	return p.Available(ctx)
 }
 
 // bound 单因子绑定态（§3.2「已绑定」口径，与 account handler mfaBound

@@ -61,6 +61,13 @@ type CaptchaConfiger interface {
 	Config(ctx context.Context) captcha.Config
 }
 
+// ChannelProber 消息渠道可用性判定窄接口（*provider.CodeBridge 天然满足）：
+// GetConfig 两渠道标志的判定出口（§3.2），判定实现归 provider 包公共函数，
+// 与发送期 provider_disabled 同源。
+type ChannelProber interface {
+	Available(ctx context.Context) (bool, error)
+}
+
 // Thirdparty 三方绑定族 service 窄接口；nil（未装配）时四个方法返回 unimplemented。
 type Thirdparty interface {
 	GetThirdpartyBindings(ctx context.Context, uid int64) (*accountsvc.BindingsResult, error)
@@ -162,19 +169,23 @@ var (
 // Handler AccountService 服务实现；内嵌 Unimplemented 基类，未实现方法返回 CodeUnimplemented。
 type Handler struct {
 	accountv1connect.UnimplementedAccountServiceHandler
-	users       UserReader
-	creds       CredentialReader
-	settings    SettingsReader
-	providers   ProviderReader
-	captcha     CaptchaConfiger
-	thirdparty  Thirdparty
-	webauthn    Webauthn
-	profile     ProfileUpdater
-	avatar      AvatarDirector
-	password    PasswordChanger
-	bindcontact ContactBinder
-	mfa         MfaManager
-	events      EventReader
+	users     UserReader
+	creds     CredentialReader
+	settings  SettingsReader
+	providers ProviderReader
+	// smsChannel / emailChannel 消息渠道可用性探针（GetConfig 两渠道标志，
+	// §3.2）；nil 时对应标志按 false 下发（前端隐藏绑定 / 换绑入口）。
+	smsChannel   ChannelProber
+	emailChannel ChannelProber
+	captcha      CaptchaConfiger
+	thirdparty   Thirdparty
+	webauthn     Webauthn
+	profile      ProfileUpdater
+	avatar       AvatarDirector
+	password     PasswordChanger
+	bindcontact  ContactBinder
+	mfa          MfaManager
+	events       EventReader
 	// cookies 会话 Cookie 属性构造器（ChangePassword 成功后清除
 	// al_session——service 层 IncEpoch 已令全部旧令牌失效，浏览器侧清
 	// Cookie 属 handler 收尾；sso handler 同款注入）。
@@ -190,9 +201,11 @@ type Handler struct {
 // NewWithServices 全依赖构造；末尾可变参数 v 注入 step-up 服务，省略时该族方法返回
 // unimplemented。各 service 可为 nil（对应方法返回 unimplemented，测试 / 降级装配用）；
 // cookies 为 nil 时跳过 Cookie 清除。session.Cookie 属性构造器与拦截器同源。
-func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie, listPermissions func(context.Context, int64) ([]string, error), v ...Verification) *Handler {
+// smsChannel / emailChannel 注入 otp 发送桥可用性探针（GetConfig 渠道标志）。
+func NewWithServices(users UserReader, creds CredentialReader, settings SettingsReader, providers ProviderReader, smsChannel, emailChannel ChannelProber, captcha CaptchaConfiger, thirdparty Thirdparty, webauthn Webauthn, profile ProfileUpdater, avatar AvatarDirector, password PasswordChanger, bindcontact ContactBinder, mfa MfaManager, events EventReader, cookies *session.Cookie, listPermissions func(context.Context, int64) ([]string, error), v ...Verification) *Handler {
 	h := &Handler{
 		users: users, creds: creds, settings: settings, providers: providers,
+		smsChannel: smsChannel, emailChannel: emailChannel,
 		captcha: captcha, thirdparty: thirdparty, webauthn: webauthn, profile: profile,
 		avatar: avatar, password: password, bindcontact: bindcontact, mfa: mfa,
 		events: events, cookies: cookies, listPermissions: listPermissions,
@@ -277,9 +290,9 @@ func mapProfileError(op string, err error) error {
 	}
 }
 
-// GetConfig account entry 配置读取，四件全量下发（avatarUpload / mfaPolicy /
-// captcha / hasPassword）。鉴权同 GetProfile：session 拦截器放行匿名，
-// ctx 无 uid 即 unauthenticated。
+// GetConfig account entry 配置读取，全量下发（avatarUpload / mfaPolicy /
+// captcha / hasPassword / 两渠道可用性标志）。鉴权同 GetProfile：session
+// 拦截器放行匿名，ctx 无 uid 即 unauthenticated。
 func (h *Handler) GetConfig(ctx context.Context, req *connect.Request[accountv1.GetConfigRequest]) (*connect.Response[accountv1.AccountConfigResponse], error) {
 	uid, ok := session.UIDFromContext(ctx)
 	if !ok {
@@ -305,12 +318,31 @@ func (h *Handler) GetConfig(ctx context.Context, req *connect.Request[accountv1.
 	if err != nil {
 		return nil, err
 	}
+	smsAvail, err := channelAvailable(ctx, h.smsChannel)
+	if err != nil {
+		return nil, err
+	}
+	emailAvail, err := channelAvailable(ctx, h.emailChannel)
+	if err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&accountv1.AccountConfigResponse{
-		AvatarUpload: avatar,
-		MfaPolicy:    mfa,
-		Captcha:      h.captchaConfig(ctx),
-		HasPassword:  hasPassword,
+		AvatarUpload:          avatar,
+		MfaPolicy:             mfa,
+		Captcha:               h.captchaConfig(ctx),
+		HasPassword:           hasPassword,
+		SmsChannelAvailable:   smsAvail,
+		EmailChannelAvailable: emailAvail,
 	}), nil
+}
+
+// channelAvailable GetConfig 渠道标志（§3.2）：探针未注入按 false 下发
+// （入口隐藏）；判定故障上抛按 internal 映射，不静默降级为可用。
+func channelAvailable(ctx context.Context, p ChannelProber) (bool, error) {
+	if p == nil {
+		return false, nil
+	}
+	return p.Available(ctx)
 }
 
 // avatarUpload 组装 avatarUpload 投影：settings 键 → storage 生效行 → Ext 投影。
