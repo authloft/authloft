@@ -1845,12 +1845,13 @@ export function templateSelectOptions(
 // 只提交改动键（本 Tab / 全部），未改动键不进 wire。buildSetSettingsRequest
 // 仍保留全量构造（兼容旧客户端 / 键集测试基线）。草稿初始化 / 分区 / 交叉
 // 校验见 settingsLogic.ts（行 1363 值域交叉约束由前端设置页自律保证）。
-// 键集 = 37 数据键（另有 4 个伴生标志，不进 settings）：36 既有键 +
-// 新增的 https_deployment 与 site_name（站点名称；行 1361 非三态 →
-// invalid_request，settingsDraftIssue 前端自律拦截）。
+// 键集 = 38 数据键（另有 4 个伴生标志，不进 settings）：36 既有键 +
+// https_deployment 与 site_name（站点名称；行 1361 非三态 →
+// invalid_request，settingsDraftIssue 前端自律拦截）+ client_ip_header
+// （来源 IP 采信头，空串 = 仅取直连）。
 // ---------------------------------------------------------------------------
 
-/** 全部系统配置（§5.6 行 1287：37 键全量投影，键名不得另起别名）。 */
+/** 全部系统配置（§5.6 行 1287：38 键全量投影，键名不得另起别名）。 */
 export function getSettings(): Promise<SettingsResponse> {
   return adminClient.getSettings({});
 }
@@ -1860,7 +1861,7 @@ export function setSettings(request: SetSettingsRequest): Promise<OkResponse> {
   return adminClient.setSettings(request);
 }
 
-/** SetSettingsRequest 初始化形态（37 数据键 + 4 伴生标志；字段均可选）。 */
+/** SetSettingsRequest 初始化形态（38 数据键 + 4 伴生标志；字段均可选）。 */
 type SettingsRequestInit = MessageInitShape<typeof SetSettingsRequestSchema>;
 
 /** repeated 数据键 → 伴生 has 位字段名（清空列表时标志同样是必带项）。 */
@@ -1874,13 +1875,13 @@ const SETTINGS_HAS_FLAG: Readonly<
 };
 
 /**
- * 全量 init（37 数据键 + 4 伴生标志）：文本字段去首尾空白、列表字段经
+ * 全量 init（38 数据键 + 4 伴生标志）：文本字段去首尾空白、列表字段经
  * cleanStringList 清洗（条目去空白 + 剔除空串）后整组提交——中间态空行
  * 不落库；其余键原样直映射（https_deployment 三态枚举值不做 trim，非法
  * 值由 settingsDraftIssue 前置拦截）。零值标量经 optional has 位在 wire
  * 明确下发；四个列表的 has_* 伴生标志一律置 true，空列表 [] 在 wire
  * 省略但标志在场即被服务端解释成清空。抽取为纯 init 对象供全量 / 部分
- * 构造共用，避免 37 键映射维护两份。
+ * 构造共用，避免 38 键映射维护两份。
  */
 function settingsRequestInit(draft: SettingsDraft): SettingsRequestInit {
   return {
@@ -1925,10 +1926,11 @@ function settingsRequestInit(draft: SettingsDraft): SettingsRequestInit {
     staticBase: draft.staticBase.trim(),
     httpsDeployment: draft.httpsDeployment,
     siteName: draft.siteName.trim(),
+    clientIpHeader: draft.clientIpHeader.trim(),
   };
 }
 
-/** 全量提交构造（37 数据键 + 4 伴生标志）：兼容旧客户端 / 键集测试基线。 */
+/** 全量提交构造（38 数据键 + 4 伴生标志）：兼容旧客户端 / 键集测试基线。 */
 export function buildSetSettingsRequest(
   draft: SettingsDraft,
 ): SetSettingsRequest {

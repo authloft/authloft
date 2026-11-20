@@ -1222,6 +1222,22 @@ func buildHandler(cfg *config.Config, csrv *connect.Server) (http.Handler, *echo
 	return buildHandlerWithSSO(cfg, csrv, nil)
 }
 
+// clientIPHeaderSource 来源 IP 采信头动态源（settings 键 client_ip_header）：
+// connect 前缀链（WithRequestInfoHandler）与 echo 链（IPExtractor）共用同一
+// 闭包与同一取值实现（orchestrator.ClientIPFromRequest），每请求读当前值、
+// 随 settings 热更新（不固化），同一请求两链取值一致（审计与限流键同 IP）。
+// deps 为 nil（setup / 测试口径）或 settings 未装配 → nil getter = 未配置，
+// 取值仅直连。
+func clientIPHeaderSource(deps *assembled) func() string {
+	if deps == nil || deps.settings == nil {
+		return nil
+	}
+	return func() string {
+		v, _ := deps.settings.GetString(settings.KeyClientIPHeader)
+		return v
+	}
+}
+
 // buildHandlerWithSSO 在 buildHandler 基础上挂已装配的域 handler、白名单动态源与 OIDC 路由。
 func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembled) (http.Handler, *echo.Group) {
 	// Referer 白名单动态源：已启用 wechat_mp / wechat_mp_scan 的 app_id 集合，
@@ -1248,7 +1264,7 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 			return ids
 		}
 	}
-	echoEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist)
+	echoEngine, apiGroup := newRouter(cfg.Authloft.Root, refererAllowlist, clientIPHeaderSource(deps))
 
 	if deps != nil {
 		// 健康探针（§3.1 / §23.1）：/metrics 同款挂全局 engine、不进 /api 组——
@@ -1281,8 +1297,10 @@ func buildHandlerWithSSO(cfg *config.Config, csrv *connect.Server, deps *assembl
 			middleware.HTTPLogger(
 				middleware.HTTPMetrics(
 					// Connect 前缀链 origin 用动态白名单形态（与 echo 版同一判定核心）；
-					// requestinfo 记录的 XFF 可伪造，仅供审计、不作安全判定。
-					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist, orchestrator.WithRequestInfoHandler(rt.Handler)),
+					// requestinfo 记录的来源 IP 仅供审计与限流键、不作安全判定
+					//（采信头可伪造，采信边界接口文档 §1.1）。
+					middleware.HTTPOriginFunc(cfg.Authloft.Root, refererAllowlist,
+						orchestrator.WithRequestInfoHandler(rt.Handler, clientIPHeaderSource(deps))),
 				),
 			),
 		))

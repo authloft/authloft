@@ -157,9 +157,14 @@ type SetSettingsRequest struct {
 	// （§1.9 驱动口径）；部分更新语义下显式设值才写回，取值非三态 → invalid_request。
 	HttpsDeployment *string `protobuf:"bytes,40,opt,name=https_deployment,json=httpsDeployment,proto3,oneof" json:"https_deployment,omitempty"`
 	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-	SiteName      *string `protobuf:"bytes,41,opt,name=site_name,json=siteName,proto3,oneof" json:"site_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SiteName *string `protobuf:"bytes,41,opt,name=site_name,json=siteName,proto3,oneof" json:"site_name,omitempty"`
+	// 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。未配置仅取直连
+	// RemoteAddr、不采信任何转发头；配置后取该头逗号首段并去空白，头缺失 /
+	// 空值回落直连。仅供审计与限流键、不作鉴权依据；配置头的入站清洗由
+	// 部署方在反代负责，直连可伪造、如实记录。
+	ClientIpHeader *string `protobuf:"bytes,42,opt,name=client_ip_header,json=clientIpHeader,proto3,oneof" json:"client_ip_header,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SetSettingsRequest) Reset() {
@@ -479,8 +484,15 @@ func (x *SetSettingsRequest) GetSiteName() string {
 	return ""
 }
 
+func (x *SetSettingsRequest) GetClientIpHeader() string {
+	if x != nil && x.ClientIpHeader != nil {
+		return *x.ClientIpHeader
+	}
+	return ""
+}
+
 // SettingsResponse 是 AdminService/GetSettings 的响应（§5.6）：
-// 键集合 / 键名与 SetSettingsRequest 的 37 个数据键一致，编号按表序从 1 起
+// 键集合 / 键名与 SetSettingsRequest 的 38 个数据键一致，编号按表序从 1 起
 // 连续（Request 另带四个 has_* 伴生标志并据此重排编号，故两侧编号不同）；
 // 标量与列表字段按 §12.9 恒存在口径输出（零值 / 空串 / false /
 // 空数组）。响应名沿用资源式命名（buf RPC_RESPONSE_STANDARD_NAME 豁免）。
@@ -565,9 +577,11 @@ type SettingsResponse struct {
 	// （§1.9 驱动口径）。
 	HttpsDeployment string `protobuf:"bytes,36,opt,name=https_deployment,json=httpsDeployment,proto3" json:"https_deployment,omitempty"`
 	// 站点名称，默认 Authloft，注入壳层模板 <title> 占位符 {{AUTHLOFT_SITE_NAME}}（§5.6、§8）。
-	SiteName      string `protobuf:"bytes,37,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SiteName string `protobuf:"bytes,37,opt,name=site_name,json=siteName,proto3" json:"site_name,omitempty"`
+	// 来源 IP 采信的转发头名，默认空串（§5.6、§1.1）。
+	ClientIpHeader string `protobuf:"bytes,38,opt,name=client_ip_header,json=clientIpHeader,proto3" json:"client_ip_header,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SettingsResponse) Reset() {
@@ -859,12 +873,19 @@ func (x *SettingsResponse) GetSiteName() string {
 	return ""
 }
 
+func (x *SettingsResponse) GetClientIpHeader() string {
+	if x != nil {
+		return x.ClientIpHeader
+	}
+	return ""
+}
+
 var File_api_admin_v1_settings_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\n" +
 	"\x1bapi/admin/v1/settings.proto\x12\fapi.admin.v1\"\x14\n" +
-	"\x12GetSettingsRequest\"\xf6\x14\n" +
+	"\x12GetSettingsRequest\"\xba\x15\n" +
 	"\x12SetSettingsRequest\x12)\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03H\x00R\fpwdMinLength\x88\x01\x01\x12)\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03H\x01R\fpwdMaxLength\x88\x01\x01\x123\n" +
@@ -916,7 +937,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\vstatic_base\x18' \x01(\tH\"R\n" +
 	"staticBase\x88\x01\x01\x12.\n" +
 	"\x10https_deployment\x18( \x01(\tH#R\x0fhttpsDeployment\x88\x01\x01\x12 \n" +
-	"\tsite_name\x18) \x01(\tH$R\bsiteName\x88\x01\x01B\x11\n" +
+	"\tsite_name\x18) \x01(\tH$R\bsiteName\x88\x01\x01\x12-\n" +
+	"\x10client_ip_header\x18* \x01(\tH%R\x0eclientIpHeader\x88\x01\x01B\x11\n" +
 	"\x0f_pwd_min_lengthB\x11\n" +
 	"\x0f_pwd_max_lengthB\x16\n" +
 	"\x14_pwd_require_classesB\x18\n" +
@@ -955,7 +977,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\f_static_baseB\x13\n" +
 	"\x11_https_deploymentB\f\n" +
 	"\n" +
-	"_site_name\"\x8b\f\n" +
+	"_site_nameB\x13\n" +
+	"\x11_client_ip_header\"\xb5\f\n" +
 	"\x10SettingsResponse\x12$\n" +
 	"\x0epwd_min_length\x18\x01 \x01(\x03R\fpwdMinLength\x12$\n" +
 	"\x0epwd_max_length\x18\x02 \x01(\x03R\fpwdMaxLength\x12.\n" +
@@ -1002,7 +1025,8 @@ const file_api_admin_v1_settings_proto_rawDesc = "" +
 	"\vstatic_base\x18# \x01(\tR\n" +
 	"staticBase\x12)\n" +
 	"\x10https_deployment\x18$ \x01(\tR\x0fhttpsDeployment\x12\x1b\n" +
-	"\tsite_name\x18% \x01(\tR\bsiteNameB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
+	"\tsite_name\x18% \x01(\tR\bsiteName\x12(\n" +
+	"\x10client_ip_header\x18& \x01(\tR\x0eclientIpHeaderB&Z$authloft/gen/go/api/admin/v1;adminv1b\x06proto3"
 
 var (
 	file_api_admin_v1_settings_proto_rawDescOnce sync.Once

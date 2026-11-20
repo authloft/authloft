@@ -1,7 +1,7 @@
-// Package settings 系统配置模块（后端架构 §3.12 行 463）：37 键白名单 /
+// Package settings 系统配置模块（后端架构 §3.12）：38 键白名单 /
 // 默认值 / 值类型、启动全量预热、本地缓存快照、写入口径、al:settings:chg
-// 热更新。键名与默认值的唯一真相 = 接口文档 §5.6 四张表（行 1275-1336），
-// 本包逐键一致、不另起别名；白名单外的写入一律拒绝（§4.7 行 838）。
+// 热更新。键名与默认值的唯一真相 = 接口文档 §5.6 四张表，
+// 本包逐键一致、不另起别名；白名单外的写入一律拒绝（§4.7）。
 package settings
 
 import (
@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-// ValueType 值类型（§5.6 全部 37 键归入四类：string / int64 / bool / []string）。
+// ValueType 值类型（§5.6 全部 38 键归入四类：string / int64 / bool / []string）。
 type ValueType int
 
 const (
@@ -57,7 +57,7 @@ const (
 	KeyOtpDailyLimitTarget = "otp_daily_limit_target" // int64，默认 10 次/日
 	KeyOtpDailyLimitIP     = "otp_daily_limit_ip"     // int64，默认 50 次/日
 
-	// 其余 26 键（§5.6 表四，行 1313-1336 + https_deployment 行 1354 + site_name）
+	// 其余 27 键（§5.6 表四 + https_deployment + site_name + client_ip_header）
 	KeyLoginMethods          = "login_methods"           // []string
 	KeyAllowRegistration     = "allow_registration"      // bool，默认 true
 	KeyAllowSignupPassword   = "allow_signup_password"   // bool，默认 true
@@ -84,6 +84,10 @@ const (
 	KeyStaticBase            = "static_base"             // string，默认 /assets
 	KeyHttpsDeployment       = "https_deployment"        // string，三态，默认 auto
 	KeySiteName              = "site_name"               // string，默认 Authloft，页面标题
+	// 来源 IP 采信的转发头名（§5.6 表四）。空串 = 未配置，仅取直连
+	// RemoteAddr、不采信任何转发头；配置后由反代清洗入站头，直连可伪造、
+	// 如实记录（接口文档 §1.1）。取值链见 orchestrator.ClientIPFromRequest。
+	KeyClientIPHeader = "client_ip_header" // string，默认 ""
 )
 
 // DefaultSiteName 站点名默认值（§5.6 表四）：settings 默认值、pages 运行期
@@ -107,7 +111,7 @@ type Def struct {
 	Default any
 }
 
-// defs 37 键有序定义（§5.6 四张表之和：5 + 1 + 5 + 26）。顺序 = 表序。
+// defs 38 键有序定义（§5.6 四张表之和：5 + 1 + 5 + 27）。顺序 = 表序。
 var defs = []Def{
 	// 密码策略（§5.6 表一）
 	{KeyPwdMinLength, TypeInt64, int64(8)},
@@ -150,6 +154,7 @@ var defs = []Def{
 	{KeyStaticBase, TypeString, "/assets"},
 	{KeyHttpsDeployment, TypeString, HTTPSDeploymentAuto},
 	{KeySiteName, TypeString, DefaultSiteName},
+	{KeyClientIPHeader, TypeString, ""},
 }
 
 // byKey 键 → 定义索引（启动时建一次，只读）。

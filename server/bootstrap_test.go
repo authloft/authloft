@@ -1955,14 +1955,15 @@ func TestNewHTTPServerTLSProtocols(t *testing.T) {
 
 // TestConnectRequestInfoInjectsCtx connect 前缀链入口包装器：把
 // 来源 IP 与 User-Agent 注入 ctx（登录终点经 RequestInfoFromContext 读取落
-// event_log）；来源 IP 取值优先级 X-Forwarded-For 首段 → X-Real-IP →
-// RemoteAddr host 段。
+// event_log）；来源 IP 取值 = 采信头（getter 注入，未配置 / 空串仅取直连
+// RemoteAddr host 段、不采信转发头）→ 配置后取该头逗号首段并 TrimSpace。
 func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 	var got orchestrator.RequestInfo
 	inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = orchestrator.RequestInfoFromContext(r.Context())
 	})
-	h := orchestrator.WithRequestInfoHandler(inner)
+	clientIPHeader := ""
+	h := orchestrator.WithRequestInfoHandler(inner, func() string { return clientIPHeader })
 
 	do := func(remoteAddr string, hdr map[string]string) {
 		t.Helper()
@@ -1979,15 +1980,25 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 	if got.IP != "203.0.113.7" || got.UA != "ua-direct" {
 		t.Fatalf("direct: ip/ua = %q/%q, want 203.0.113.7/ua-direct", got.IP, got.UA)
 	}
-	// 反代 XFF 多段：取首段并 TrimSpace。
+	// 未配置采信头（空串）：带 XFF / X-Real-IP 一律不采信，取直连。
 	do("10.0.0.1:443", map[string]string{"X-Forwarded-For": "198.51.100.9, 10.0.0.1"})
-	if got.IP != "198.51.100.9" {
-		t.Fatalf("xff: ip = %q, want 198.51.100.9", got.IP)
+	if got.IP != "10.0.0.1" {
+		t.Fatalf("xff unconfigured: ip = %q, want direct 10.0.0.1", got.IP)
 	}
-	// X-Real-IP 次选。
 	do("10.0.0.1:443", map[string]string{"X-Real-IP": "198.51.100.10"})
-	if got.IP != "198.51.100.10" {
-		t.Fatalf("xrip: ip = %q, want 198.51.100.10", got.IP)
+	if got.IP != "10.0.0.1" {
+		t.Fatalf("xrip unconfigured: ip = %q, want direct 10.0.0.1", got.IP)
+	}
+	// 配置采信头后：取该头逗号首段并 TrimSpace；热更新改回空串即回落直连。
+	clientIPHeader = "X-Forwarded-For"
+	do("10.0.0.1:443", map[string]string{"X-Forwarded-For": " 198.51.100.9 , 10.0.0.1"})
+	if got.IP != "198.51.100.9" {
+		t.Fatalf("xff configured: ip = %q, want first segment trimmed 198.51.100.9", got.IP)
+	}
+	clientIPHeader = ""
+	do("10.0.0.1:443", map[string]string{"X-Forwarded-For": "198.51.100.9"})
+	if got.IP != "10.0.0.1" {
+		t.Fatalf("hot-off: ip = %q, want direct 10.0.0.1", got.IP)
 	}
 	// 无 UA 头：空串（与 DDL 默认一致），不报错。
 	do("192.0.2.5:80", nil)

@@ -1,5 +1,5 @@
 // settings 包纯逻辑测试（无 DB / Redis，本地可跑）：
-//  1. 37 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
+//  1. 38 键白名单逐键对照接口文档 §5.6 四张表硬编码断言（键名 / 类型 /
 //     默认值，缺一多一都算 FAIL）；
 //  2. pwd_* 五键与 security.PasswordRule 规则标识同名（§5.6 行 1275）；
 //  3. Validate 白名单 + 类型校验（含 int→int64 归一化、交叉约束不做、
@@ -64,17 +64,18 @@ var spec56 = []struct {
 	{"static_base", TypeString, "/assets"},
 	{"https_deployment", TypeString, "auto"},
 	{"site_name", TypeString, "Authloft"},
+	{"client_ip_header", TypeString, ""},
 }
 
 // TestRegistryMatchesSpec：白名单 = §5.6 四张表之和，逐键断言键名 /
-// 类型 / 默认值；总数 37（5+1+5+26）双向无多无缺、无重复。
+// 类型 / 默认值；总数 38（5+1+5+27）双向无多无缺、无重复。
 func TestRegistryMatchesSpec(t *testing.T) {
-	if len(spec56) != 37 {
-		t.Fatalf("§5.6 硬编码副本应 37 键，实际 %d", len(spec56))
+	if len(spec56) != 38 {
+		t.Fatalf("§5.6 硬编码副本应 38 键，实际 %d", len(spec56))
 	}
 	got := Defs()
-	if len(got) != 37 {
-		t.Errorf("白名单应 37 键，实际 %d", len(got))
+	if len(got) != 38 {
+		t.Errorf("白名单应 38 键，实际 %d", len(got))
 	}
 	seen := make(map[string]bool, len(got))
 	for _, d := range got {

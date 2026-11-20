@@ -1,10 +1,13 @@
-// Package main 装配 Authloft HTTP 服务（docs/后端架构.md §18 行 1726 调用链）。
+// Package main 装配 Authloft HTTP 服务（docs/后端架构.md §18 调用链）。
 package main
 
 import (
+	"net/http"
+
 	"github.com/labstack/echo/v5"
 
 	"authloft/internal/middleware"
+	"authloft/internal/service/orchestrator"
 )
 
 // newRouter 装配生产 echo 引擎（docs/后端架构.md §3.3 行 296）：
@@ -29,18 +32,26 @@ import (
 //
 // 用 echo.NewWithConfig 自定两处：NoGroupAutoRegister404Routes=true 保持
 // 「组中间件不作用于未注册路径」的既有口径（未注册路径走全局链 404 兜底，
-// 不经页面组 CSP 等组中间件）；IPExtractor=LegacyIPExtractor 保持挂载层
-// 既有 IP 口径（XFF 首段→X-Real-IP→RemoteAddr，§13.0 / 审计 IP 消费位）。
+// 不经页面组 CSP 等组中间件）；IPExtractor 注入与 connect 前缀链同源的
+// 来源 IP 取值闭包（orchestrator.ClientIPFromRequest，采信头名由装配层
+// 注入 clientIPHeader 动态源、每请求读 settings 键 client_ip_header，
+// 热更新不固化；未配置仅取直连，§13.0 / 审计 IP 消费位）。
 //
-// rootOrigin（{al_root}，接口文档 §1.1 行 76）由 bootstrap.go 从 *config.Config
+// rootOrigin（{al_root}，接口文档 §1.1）由 bootstrap.go 从 *config.Config
 // 注入（§3.2 约定 1，传具体值而非 *Config——router 不依赖 config 包，保持装配
 // 层单一职责）；小程序 appid Referer 白名单为动态来源（middleware.AllowlistFunc，
-// 见 §13.0 行 1570）：装配层注入 provider 查询函数并随 provider 变更热更新，
+// 见 §13.0）：装配层注入 provider 查询函数并随 provider 变更热更新，
 // 不再是启动期静态快照——来源为 nil（测试口径）或查询失败（归一为 nil）时，
 // origin 中间件对非免检无 Origin 写请求保守 403（见 origin.go）。
-func newRouter(rootOrigin string, refererAllowlist middleware.AllowlistFunc) (*echo.Echo, *echo.Group) {
+func newRouter(rootOrigin string, refererAllowlist middleware.AllowlistFunc, clientIPHeader func() string) (*echo.Echo, *echo.Group) {
 	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
-	e.IPExtractor = echo.LegacyIPExtractor()
+	e.IPExtractor = func(r *http.Request) string {
+		header := ""
+		if clientIPHeader != nil {
+			header = clientIPHeader()
+		}
+		return orchestrator.ClientIPFromRequest(r, header)
+	}
 	// 尾斜杠 301 归一（原 RedirectTrailingSlash 默认语义保真）：Pre 链
 	// 先于路由匹配，剥尾斜杠命中已注册路由才 301（见 trailingslash.go）。
 	e.Pre(middleware.TrailingSlashRedirect(e))

@@ -2704,12 +2704,13 @@ func TestInternalErrorMappingsKeepRootCause(t *testing.T) {
 }
 
 // postServiceViaMount 与 postService 同构，但 handler 外再包生产 http 挂载
-// 包装器 orchestrator.WithRequestInfoHandler（bootstrap 同款），extra 附加
-// 请求头——验证挂载层注入的来源 IP 经 ctx 进入换绑族 service 入参。
-func postServiceViaMount(t *testing.T, procedure, body string, d *getConfigDeps, extra map[string]string) (int, string) {
+// 包装器 orchestrator.WithRequestInfoHandler（bootstrap 同款，clientIPHeader
+// 注入采信头名动态源），extra 附加请求头——验证挂载层注入的来源 IP 经 ctx
+// 进入换绑族 service 入参。
+func postServiceViaMount(t *testing.T, procedure, body string, d *getConfigDeps, extra map[string]string, clientIPHeader func() string) (int, string) {
 	t.Helper()
 	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, d)
-	srv := httptest.NewServer(orchestrator.WithRequestInfoHandler(h))
+	srv := httptest.NewServer(orchestrator.WithRequestInfoHandler(h, clientIPHeader))
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodPost, srv.URL+procedure, strings.NewReader(body))
 	if err != nil {
@@ -2729,36 +2730,57 @@ func postServiceViaMount(t *testing.T, procedure, body string, d *getConfigDeps,
 	return resp.StatusCode, raw
 }
 
-// TestBindContactCarriesRequestIP 换绑族 service 入参 IP 非空：反代链取
-// X-Forwarded-For 首段；无转发头回落 RemoteAddr host 段（挂载层
-// clientIPFromRequest 口径）——不再传空串由 service 兜底 unknown。
+// TestBindContactCarriesRequestIP 换绑族 service 入参 IP 非空：未配置采信头
+// 时带 XFF 也取直连 RemoteAddr host 段（挂载层 orchestrator.ClientIPFromRequest
+// 口径，转发头不采信）；配置采信头后取该头逗号首段并 TrimSpace——不再传
+// 空串由 service 兜底 unknown。
 func TestBindContactCarriesRequestIP(t *testing.T) {
+	// 未配置采信头（空串 getter）：XFF 不采信，一律直连。
 	bc := &fakeBindContact{}
 	code, raw := postServiceViaMount(t, accountv1connect.AccountServiceBindPhoneProcedure,
 		`{"step":"challenge","payload":{"phone":"13900008000"}}`,
 		&getConfigDeps{bindcontactIn: bc},
-		map[string]string{"X-Forwarded-For": "203.0.113.77, 10.0.0.1"})
+		map[string]string{"X-Forwarded-For": "203.0.113.77, 10.0.0.1"},
+		func() string { return "" })
 	if code != http.StatusOK {
 		t.Fatalf("status = %d (body %s)", code, raw)
 	}
 	if len(bc.phoneCalls) != 1 {
 		t.Fatalf("BindPhone calls = %d, want 1", len(bc.phoneCalls))
 	}
-	if got := bc.phoneCalls[0].IP; got != "203.0.113.77" {
-		t.Errorf("BindPhone IP = %q, want XFF 首段 203.0.113.77", got)
+	if got := bc.phoneCalls[0].IP; got == "" || got == "unknown" || got == "203.0.113.77" {
+		t.Errorf("BindPhone IP = %q, want 直连 RemoteAddr host 段（XFF 不采信）", got)
 	}
 
+	// 配置采信头：取该头逗号首段并 TrimSpace。
 	bc2 := &fakeBindContact{}
 	code, raw = postServiceViaMount(t, accountv1connect.AccountServiceBindEmailProcedure,
 		`{"step":"verify","payload":{"email":"new@example.com","code":"123456"}}`,
-		&getConfigDeps{bindcontactIn: bc2}, nil)
+		&getConfigDeps{bindcontactIn: bc2},
+		map[string]string{"X-Client-IP": " 203.0.113.88 , 10.0.0.1"},
+		func() string { return "X-Client-IP" })
 	if code != http.StatusOK {
 		t.Fatalf("status = %d (body %s)", code, raw)
 	}
 	if len(bc2.emailCalls) != 1 {
 		t.Fatalf("BindEmail calls = %d, want 1", len(bc2.emailCalls))
 	}
-	if got := bc2.emailCalls[0].IP; got == "" || got == "unknown" {
+	if got := bc2.emailCalls[0].IP; got != "203.0.113.88" {
+		t.Errorf("BindEmail IP = %q, want 采信头首段 203.0.113.88", got)
+	}
+
+	// 直连无转发头：非空（RemoteAddr host 段）。
+	bc3 := &fakeBindContact{}
+	code, raw = postServiceViaMount(t, accountv1connect.AccountServiceBindEmailProcedure,
+		`{"step":"verify","payload":{"email":"new@example.com","code":"123456"}}`,
+		&getConfigDeps{bindcontactIn: bc3}, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (body %s)", code, raw)
+	}
+	if len(bc3.emailCalls) != 1 {
+		t.Fatalf("BindEmail calls = %d, want 1", len(bc3.emailCalls))
+	}
+	if got := bc3.emailCalls[0].IP; got == "" || got == "unknown" {
 		t.Errorf("BindEmail IP = %q, want 直连 RemoteAddr host 段（非空）", got)
 	}
 }

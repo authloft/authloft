@@ -571,6 +571,7 @@ func AdminSettings(snap map[string]any) *adminv1.SettingsResponse {
 		StaticBase:            toStr(settings.KeyStaticBase),
 		HttpsDeployment:       toStr(settings.KeyHttpsDeployment),
 		SiteName:              toStr(settings.KeySiteName),
+		ClientIpHeader:        toStr(settings.KeyClientIPHeader),
 	}
 }
 

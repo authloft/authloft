@@ -102,6 +102,9 @@ export const admin: typeof zhAdmin = {
   'admin.staticBaseLabel': 'Static asset base URL (CDN)',
   'admin.staticBaseHint':
     'URL prefix for page scripts / styles; refresh the page after changes take effect',
+  'admin.clientIpHeaderLabel': 'Source IP trusted header',
+  'admin.clientIpHeaderHint':
+    'Request header name injected by your reverse proxy (e.g. X-Forwarded-For); the first comma-separated segment is used after trimming. Empty = direct RemoteAddr only, forwarded headers are not trusted. For auditing and rate-limit keys only, never authorization; sanitize inbound headers at the proxy, direct clients can spoof',
 
   'admin.unitSeconds': 'seconds',
   'admin.unitTimes': 'times',

@@ -1,11 +1,11 @@
 /**
  * 系统设置页（docs/前端架构.md §6 行 520 SettingsPage；docs/接口文档.md §5.6
  * 行 1287 GetSettings / SetSettings；docs/需求.md §4.6 行 259）——/admin/settings
- * （§5.6 四张表全量键，生成物现状 36 字段）的大表单。
+ * （§5.6 四张表全量键，生成物现状 38 字段）的大表单。
  *
  * ⚠️ SetSettings 按 has 位部分更新（PATCH）：未设置不修改、显式零值
  * 覆盖；四个 repeated 键带 has_* 伴生标志，置 true 时列表在场、空数组
- * 即清空。37 键按 getSettingsTabs() 分 4 个 Tab 展示（站点与账号 /
+ * 即清空。38 键按 getSettingsTabs() 分 4 个 Tab 展示（站点与账号 /
  * 密码与防护 / 登录与会话 / 部署与集成），草稿仍是单一完整键集
  * （draftFromSettings），切 Tab 不丢未保存改动、Tab 标签上落脏点。
  * 保存作用域二选一：「保存本页签」只提交该 Tab 的改动键、「保存全部改动」
@@ -20,7 +20,8 @@
  * 本组件为渲染壳薄层（渲染不可测见 admin.test.tsx 头注 Blocker）。固定规则
  * （§5.6 行 1302-1306：>64、与用户名 / 邮箱相同、含空白）写死在服务端、不在
  * 表单暴露。https_deployment（=36，行 1354/1356 三态文案定稿）随本实现建键
- * （双端 proto / 生成物已刷入）；static_base 改后提示刷新页面生效（行 1353）。
+ * （双端 proto / 生成物已刷入）；static_base 改后提示刷新页面生效（行 1353）；
+ * client_ip_header（来源 IP 采信头）空串 = 仅取直连。
  *
  * 401 统一跳登录（§6 行 501）；保存成功 / 失败反馈统一走 Semi Toast
  * （Semi 回归，原就地 notice / actionError 文字已移除）——成功

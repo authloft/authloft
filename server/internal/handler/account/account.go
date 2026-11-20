@@ -905,8 +905,8 @@ func mapPasswordError(op string, err error) error {
 // 请求绑定（step / payload 拆解、CaptchaPayload → captcha.Submission）与错误映射归本层，
 // 两步编排（captcha 必检、占用判定、发码、GETDEL 核销、列级落库、审计）在 BindContactService。
 // IP 维度：来源 IP 由 http 挂载层注入 ctx（ipres，与 event_log 审计同款
-// clientIPFromRequest 口径），本层只取现成值传 service（发码侧单 IP 日限额
-// 键 / 审计链路），不在 handler 解析 Header。两接口均需 al_session。
+// orchestrator.ClientIPFromRequest 口径），本层只取现成值传 service（发码侧
+// 单 IP 日限额键 / 审计链路），不在 handler 解析 Header。两接口均需 al_session。
 
 // BindPhone（§3.4 行 887）：手机号绑定 / 换绑两步同端点，由 step 区分
 // （challenge 需请求顶层 captcha、payload {phone}；verify payload

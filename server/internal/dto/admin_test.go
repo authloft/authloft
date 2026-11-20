@@ -512,7 +512,7 @@ func TestSchemaDefaultValue(t *testing.T) {
 	}
 }
 
-// TestAdminSettingsSiteName AdminSettings 全键投影含 site_name（第 37 键）：
+// TestAdminSettingsSiteName AdminSettings 全键投影含 site_name：
 // 快照有值原样投影；缺失 / 非 string 按零值投影（protojson 省略）。
 func TestAdminSettingsSiteName(t *testing.T) {
 	snap := settings.Defaults()
@@ -529,6 +529,21 @@ func TestAdminSettingsSiteName(t *testing.T) {
 	delete(snap, settings.KeySiteName)
 	if got := AdminSettings(snap).GetSiteName(); got != "" {
 		t.Errorf("缺失键 SiteName = %q, want 空串（零值投影）", got)
+	}
+}
+
+// TestAdminSettingsClientIPHeader AdminSettings 全键投影含 client_ip_header：
+// 快照有值原样投影；缺失 / 非 string 按零值投影（protojson 省略）。
+func TestAdminSettingsClientIPHeader(t *testing.T) {
+	snap := settings.Defaults()
+	snap[settings.KeyClientIPHeader] = "X-Forwarded-For"
+	if got := AdminSettings(snap).GetClientIpHeader(); got != "X-Forwarded-For" {
+		t.Errorf("ClientIpHeader = %q, want X-Forwarded-For", got)
+	}
+
+	delete(snap, settings.KeyClientIPHeader)
+	if got := AdminSettings(snap).GetClientIpHeader(); got != "" {
+		t.Errorf("缺失键 ClientIpHeader = %q, want 空串（零值投影）", got)
 	}
 }
 

@@ -358,11 +358,12 @@ func (h *Handler) authorizeSession(c *echo.Context) *token.SessionTokenPayload {
 	return p
 }
 
-// auditAuthorizeNoState 投递 oidc_authorize_no_state 审计事件（§4.2 行 1074、
+// auditAuthorizeNoState 投递 oidc_authorize_no_state 审计事件（接口文档 §4.2、
 // 后端架构 §4.6：actor_type=system、actor_id=0）：detail 无文档定义不自行
 // 构造（nil 落 NULL）；ClientID / IP / UA 供排障。Audit 未装配静默跳过
-// （审计缺失不阻断授权主链路）。IP 取挂载层既有口径（LegacyIPExtractor：
-// XFF 首段→X-Real-IP→RemoteAddr，§13.0 / 挂载层 XFF 采信边界一致）。
+// （审计缺失不阻断授权主链路）。IP 取挂载层注入口径（echo IPExtractor 与
+// connect 前缀链共用 orchestrator.ClientIPFromRequest：采信头由 settings 键
+// client_ip_header 配置、未配置仅取直连，§13.0 / 采信边界接口文档 §1.1）。
 func (h *Handler) auditAuthorizeNoState(c *echo.Context, clientID string) {
 	if h.audit == nil {
 		return
