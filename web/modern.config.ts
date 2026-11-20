@@ -111,6 +111,7 @@ export default defineConfig({
       js: 'js',
       css: 'css',
     },
+    polyfill: 'usage',
     externals: [
       ({ request }, callback) => {
         // remove some pkgs from semi
