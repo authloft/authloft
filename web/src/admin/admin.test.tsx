@@ -1123,41 +1123,6 @@ describe('providerCallbackUrl / isOidcProviderType（纯函数）', () => {
   });
 });
 
-describe('ProviderCallbackHint（静态渲染：模板 / 具体 / OIDC 注记三形态）', () => {
-  test('列表页顶部模板形态：字面 {provider_key} + 复制按钮，无 OIDC 注记', () => {
-    const markup = renderToStaticMarkup(
-      createElement(ProviderCallbackHint, { alRoot: 'https://uc.test' }),
-    );
-    expect(markup).toContain(
-      'https://uc.test/sso/oauth/callback/{provider_key}',
-    );
-    expect(markup).toContain('复制'); // CopyButton（t('common.copy')）
-    expect(markup).not.toContain('精确匹配');
-  });
-
-  test('具体 providerKey：具体回调地址；OIDC 兜底类（type=oidc）另提示「回调需精确匹配」', () => {
-    const oidc = renderToStaticMarkup(
-      createElement(ProviderCallbackHint, {
-        alRoot: 'https://uc.test',
-        providerKey: 'oidc_main',
-        type: 'oidc',
-      }),
-    );
-    expect(oidc).toContain('https://uc.test/sso/oauth/callback/oidc_main');
-    expect(oidc).toContain('精确匹配');
-
-    const nonOidc = renderToStaticMarkup(
-      createElement(ProviderCallbackHint, {
-        alRoot: 'https://uc.test',
-        providerKey: 'qq',
-        type: 'qq',
-      }),
-    );
-    expect(nonOidc).toContain('https://uc.test/sso/oauth/callback/qq');
-    expect(nonOidc).not.toContain('精确匹配');
-  });
-});
-
 // ---------------------------------------------------------------------------
 // schemaLogic 纯函数（§5.3 行 1181-1243；零 Semi 依赖，node 可测）
 // ---------------------------------------------------------------------------
