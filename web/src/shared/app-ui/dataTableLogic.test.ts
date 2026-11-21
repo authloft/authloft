@@ -5,7 +5,7 @@ import { describe, expect, test } from 'rstack/test';
 import { createInflightGuard, runInlineToggle } from './dataTableLogic';
 
 /**
- * dataTableLogic.ts 防重守卫测试（P0-1，定稿 §6.1/§6.4）：行内开关
+ * dataTableLogic.ts 防重守卫测试（定稿 §6.1/§6.4）：行内开关
  * per-row in-flight——「连点两次只发一次请求」由 createInflightGuard 的
  * 同步判定保证；组件壳 DataTable.tsx 含 Semi 不可测（既有 blocker，
  * 落位说明见 dataTableLogic.ts 头注），防重判定全部收口于此。

@@ -92,7 +92,7 @@ export interface FieldRendererProps {
   values: Readonly<Record<string, string>>;
   /** 字段值变化上抛（组件不持有业务状态）。 */
   onChange: (name: string, value: string) => void;
-  /** 字段级错误文案（字段名 → 已解析的最终展示文案；评审 P1-2：命中即渲染错误槽并标 aria-invalid + aria-describedby 关联）。 */
+  /** 字段级错误文案（字段名 → 已解析的最终展示文案；命中即渲染错误槽并标 aria-invalid + aria-describedby 关联）。 */
   errors?: Readonly<Record<string, string>>;
   /** 控件 id 前缀（默认 'fr'；同页多个实例并存时调用方传不同前缀避免撞 id）。 */
   idPrefix?: string;
@@ -143,7 +143,7 @@ function FieldControl({
     return null;
   }
 
-  // 评审 P0-3：稳定 id（label htmlFor 关联）+ 错误时 aria-invalid /
+  // 稳定 id（label htmlFor 关联）+ 错误时 aria-invalid /
   // aria-describedby 绑到错误槽。
   const inputId = `${idPrefix}-${field.name}`;
   const errorId = `${inputId}-error`;

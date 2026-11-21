@@ -189,7 +189,7 @@ export async function runInlineToggle<T>(
 }
 
 /**
- * 行内开关 per-row 防重守卫（P0-1，定稿 §6.1）：tryEnter 首次返回
+ * 行内开关 per-row 防重守卫（定稿 §6.1）：tryEnter 首次返回
  * true 并登记在途；同 key 在途期间再次 tryEnter 返回 false——调用方据此
  * no-op（连点两次只发一次 persist）；leave 解除登记（finally 中调用，
  * 成功 / 失败均放行下一次）。判定必须同步（React state 异步更新挡不住

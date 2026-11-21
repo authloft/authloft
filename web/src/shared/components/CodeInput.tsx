@@ -22,7 +22,7 @@ export interface CodeInputProps {
   length?: number;
   /** 无障碍组名（视觉标签由调用方自行渲染，组件不重复画）。 */
   ariaLabel?: string;
-  /** 首格输入框 id（label htmlFor 关联用；评审 P0-3）。 */
+  /** 首格输入框 id（label htmlFor 关联用）。 */
   id?: string;
   /** 错误标态（每格 aria-invalid；字段级错误）。 */
   ariaInvalid?: boolean;

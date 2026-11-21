@@ -519,7 +519,7 @@ describe('ErrorBanner（错误文案 + 倒计时 + 可重试）', () => {
     expect(markup).not.toContain('<button');
   });
 
-  test('焦点管理能力（评审 P0-3c）：横幅自带 tabIndex=-1，可编程 focus', () => {
+  test('焦点管理能力：横幅自带 tabIndex=-1，可编程 focus', () => {
     const markup = renderToStaticMarkup(
       createElement(ErrorBanner, { i18nKey: 'errors.status.failed' }),
     );
@@ -609,7 +609,7 @@ describe('PasswordStrengthMeter（§5.6 同源规则清单）', () => {
     expect(renderMeter('')).toBe('');
     const markup = renderMeter('abc');
     expect(markup).toContain('role="status"');
-    // 评审 P0-3e：显式 aria-live="polite"。
+    // 显式 aria-live="polite"。
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('长度至少 8 位');
     expect(markup).toContain('✗ 长度至少 8 位');

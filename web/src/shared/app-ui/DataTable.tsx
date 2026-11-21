@@ -15,7 +15,7 @@
  * （runInlineToggle），onToggle reject 即回滚原行集；rows prop 引用更换
  * （消费方重新取数）时清除本地乐观覆盖。错误提示不在本组件：onToggle 的
  * reject 只承担「触发回滚」语义，展示归消费方在自身 onToggle 内处理。
- * P0-1 防重：per-row 在途守卫（createInflightGuard，ref 持有保证同步
+ * 防重：per-row 在途守卫（createInflightGuard，ref 持有保证同步
  * 判定）——在途行 Switch loading（Semi loading 即禁用），在途期间重复触发
  * 直接 no-op（连点两次只发一次 persist）。
  *
@@ -107,7 +107,7 @@ export function DataTable<T extends Record<string, unknown>>(
   }, [rows]);
   const displayRows = overrideRows ?? rows;
 
-  // P0-1：per-row 防重守卫。判定走 ref（同步——state 异步更新挡不住
+  // per-row 防重守卫。判定走 ref（同步——state 异步更新挡不住
   // 同一拍内的连续点击）；版本号 state 仅驱动在途视觉（Switch loading）重渲染。
   const guardRef = useRef<InflightGuard | null>(null);
   if (guardRef.current === null) {
@@ -164,7 +164,7 @@ export function DataTable<T extends Record<string, unknown>>(
       render: (_text: unknown, row: T) => (
         <Switch
           checked={switchColumn.isOn(row)}
-          // P0-1：在途行 loading（Semi Switch loading 即禁用点击）。
+          // 在途行 loading（Semi Switch loading 即禁用点击）。
           loading={guard.has(rowKey(row))}
           onChange={(checked) => {
             void handleToggle(row, checked);
@@ -175,7 +175,7 @@ export function DataTable<T extends Record<string, unknown>>(
   }
 
   return (
-    // 滚动容器（评审 P0-4(d)）：窄屏下表格保持可读最小宽度、
+    // 滚动容器：窄屏下表格保持可读最小宽度、
     // 列不再无限压缩，由本容器横向滚动（样式见 DataTable.module.less）。
     <div className={styles.scroll}>
       <Table<T>

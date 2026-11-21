@@ -557,7 +557,7 @@ describe("shared/api/errors 层②（位置二）：ErrorInfo.code + Connect 标
   });
 });
 
-describe("shared/api/errors status→字段名映射（评审 P1-2 field_error 落点）", () => {
+describe("shared/api/errors status→字段名映射（field_error 落点）", () => {
   test("登记项：与后端 fields[].name 同源（username / password / code / target）", () => {
     expect(fieldForStatus("username_taken")).toBe("username");
     expect(fieldForStatus("password_weak")).toBe("password");

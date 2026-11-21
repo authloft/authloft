@@ -53,7 +53,7 @@ export interface ErrorBannerProps {
   /** 可重试动作；提供且 retryable 才渲染按钮，倒计时进行中禁用。 */
   onRetry?: () => void;
   /**
-   * 焦点管理能力（评审 P0-3c）：横幅自带 tabIndex={-1}，调用方持
+   * 焦点管理能力：横幅自带 tabIndex={-1}，调用方持
    * ref 在提交失败时 `bannerRef.current?.focus()` 移焦（接线归调用侧）。
    */
   ref?: Ref<HTMLDivElement>;
