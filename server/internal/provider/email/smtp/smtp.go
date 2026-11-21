@@ -1,20 +1,24 @@
-// SMTP 邮件 Sender 实现（docs/后端架构.md §15.2 行 1724、§3.9 行 417）：
-// stdlib net/smtp，零新第三方依赖。支持隐式 TLS（465）与明文 + STARTTLS
-// （587 等），AUTH PLAIN 可选。
+// SMTP 邮件 Sender 实现（docs/后端架构.md §15.2）：stdlib net/smtp，零新
+// 第三方依赖。支持隐式 TLS（465）与明文 + STARTTLS（587 等），AUTH PLAIN
+// （凭证复用出站代理行同名字段，见下；是否执行以服务器广告的机制为准）。
 //
-// Ext 字段口径（接口文档 §5.3 行 1236 email 追加字段，供 /schema 渲染）：
+// Ext 字段口径（接口文档 §5.3 email 行，供 /schema 渲染）：
 //   - host = SMTP 服务器地址（endpoint 区块，必填）
 //   - port = 端口（endpoint；0 → 默认 587；465 = 隐式 TLS，其余明文连接、
 //     服务器支持且未关 STARTTLS 时升级）
-//   - from = 发件人地址（basic，必填；RFC 5322 From / MAIL FROM）
+//   - from = 发件人地址（basic，非必填；留空回落认证账号 user——多数 SMTP
+//     服务认证账号即发件邮箱；RFC 5322 From / MAIL FROM）
+//   - sign_name = 发件人名称（credential，非必填；非空时 From 头以
+//     RFC 2047 encoded-word 展示名 + 地址，信封 MAIL FROM 恒为纯地址）
+//   - user / password = SMTP 认证凭证（credential，必填；复用 §12.1 字段
+//     44/45——与出站代理行共用 Ext 字段名，语义按渠道独立，同 host/port 先例）
 //   - disable_ssl = 内网自签场景跳过 STARTTLS（policy）
-//   - metadata["username"] / metadata["password"] = SMTP 认证凭证
 //   - metadata["subject."+tpl] = 标题模板（缺省 "验证码"）
 //   - metadata["body."+tpl] = 正文模板（缺省 "您的验证码：{code}"），正文
 //     中 {key} 占位符按 params 逐项替换（当前验证码链路 tpl="otp"，见
-//     provider/sender.go codeTpl；§15.2 行 1725 最小实现，多语言归后续 i18n 卡）
+//     provider/sender.go codeTpl；最小实现，多语言归后续 i18n 卡）
 //
-// sign_name / template_code 对本厂商无意义，不消费。
+// template_code 对本厂商无意义，不消费。
 package smtp
 
 import (
@@ -25,6 +29,7 @@ import (
 	"mime"
 	"net"
 	"net/smtp"
+	"slices"
 	"strings"
 
 	"authloft/internal/provider"
@@ -50,7 +55,7 @@ const (
 
 // 可判别错误。
 var (
-	// ErrNotConfigured Ext 缺必填项（host / from）。
+	// ErrNotConfigured Ext 缺必填项（host / user / password）。
 	ErrNotConfigured = errors.New("smtp: provider not configured")
 	// ErrEmptyTo 收件地址为空。
 	ErrEmptyTo = errors.New("smtp: empty recipient")
@@ -67,15 +72,19 @@ func init() {
 
 // smtpSchema /schema 唯一数据源：完整字段声明（表列 + Ext，接口文档 §5.3），
 // 属性与 wire 输出逐字段一致；Ext 部分就地声明而非复用 schemafield.Metadata——
-// metadata 的 Help 是 SMTP 专属语义（认证凭证 + 按模板键覆盖标题 / 正文）。
+// metadata 的 Help 是 SMTP 专属语义（按模板键覆盖标题 / 正文）。
 func smtpSchema() []provider.FieldMeta {
-	fields := make([]provider.FieldMeta, 0, 13)
+	fields := make([]provider.FieldMeta, 0, 16)
 	fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
 	fields = append(fields,
 		provider.FieldMeta{Key: "host", Label: "admin.schemaField.smtpHostLabel", Type: "text", Section: "endpoint", Required: true, Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "port", Label: "admin.schemaField.smtpPortLabel", Type: "number", Section: "endpoint", Default: "587",
 			Help: "admin.schemaField.smtpPortHelp", Storage: provider.StorageExt},
-		provider.FieldMeta{Key: "from", Label: "admin.schemaField.smtpFromLabel", Type: "text", Section: "basic", Required: true, Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "from", Label: "admin.schemaField.smtpFromLabel", Type: "text", Section: "basic",
+			Help: "admin.schemaField.smtpFromHelp", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "sign_name", Label: "admin.schemaField.smtpSignNameLabel", Type: "text", Section: "credential", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "user", Label: "admin.schemaField.smtpUserLabel", Type: "text", Section: "credential", Required: true, Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "password", Label: "admin.schemaField.smtpPasswordLabel", Type: "secret", Section: "credential", Required: true, Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "disable_ssl", Label: "admin.schemaField.smtpDisableSslLabel", Type: "checkbox", Section: "policy",
 			Help: "admin.schemaField.smtpDisableSslHelp", Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "metadata", Label: "admin.schemaField.metadataLabel", Type: "json", Section: "credential", Advanced: true,
@@ -96,9 +105,10 @@ func smtpSchema() []provider.FieldMeta {
 type Sender struct {
 	host        string
 	port        int
-	from        string
+	from        string // 发件地址（from 留空时回落 user，构造期已定）
+	signName    string // 发件人名称（可空；非空时 From 头带 encoded-word 展示名）
 	disableSSL  bool
-	username    string
+	user        string
 	password    string
 	subjects    map[string]string                                                 // metadata["subject."+tpl]
 	bodies      map[string]string                                                 // metadata["body."+tpl]
@@ -116,9 +126,10 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 		host:       strings.TrimSpace(p.Ext.GetHost()),
 		port:       int(p.Ext.GetPort()),
 		from:       strings.TrimSpace(p.Ext.GetFrom()),
+		signName:   strings.TrimSpace(p.Ext.GetSignName()),
 		disableSSL: p.Ext.GetDisableSsl(),
-		username:   meta["username"],
-		password:   meta["password"],
+		user:       strings.TrimSpace(p.Ext.GetUser()),
+		password:   p.Ext.GetPassword(),
 	}
 	// 构造期固化代理拨号器：Outbound 非 nil 时按池的 scheme 分流（仅 socks5
 	// 生效；http/https 由池静默按直连拨号，§15.4）；nil（proxy_provider_key
@@ -142,8 +153,12 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 			s.bodies[tpl] = v
 		}
 	}
-	if s.host == "" || s.from == "" {
+	if s.host == "" || s.user == "" || s.password == "" {
 		return nil, fmt.Errorf("%w: provider_key=%q", ErrNotConfigured, p.Key)
+	}
+	// from 非必填：留空回落认证账号 user（多数 SMTP 服务认证账号即发件邮箱）。
+	if s.from == "" {
+		s.from = s.user
 	}
 	if s.port <= 0 {
 		s.port = defaultPort
@@ -182,8 +197,10 @@ func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[str
 			}
 		}
 	}
-	if s.username != "" {
-		if err := cl.Auth(smtp.PlainAuth("", s.username, s.password, s.host)); err != nil {
+	// AUTH PLAIN：凭据必填（构造期已拦缺项），机制可用性以服务器广告为准——
+	// 未广告 AUTH 的免认证 relay（内网自建场景）跳过认证，不硬失败。
+	if ok, mechs := cl.Extension("AUTH"); ok && slices.Contains(strings.Fields(mechs), "PLAIN") {
+		if err := cl.Auth(smtp.PlainAuth("", s.user, s.password, s.host)); err != nil {
 			return fmt.Errorf("smtp: auth: %w", err)
 		}
 	}
@@ -197,7 +214,7 @@ func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[str
 	if err != nil {
 		return fmt.Errorf("smtp: data: %w", err)
 	}
-	if _, err := w.Write(buildMessage(s.from, to, subject, body)); err != nil {
+	if _, err := w.Write(buildMessage(s.fromHeader(), to, subject, body)); err != nil {
 		return fmt.Errorf("smtp: write body: %w", err)
 	}
 	if err := w.Close(); err != nil {
@@ -245,8 +262,17 @@ func (s *Sender) render(tpl string, params map[string]string) (subject, body str
 	return subject, body
 }
 
-// buildMessage 组装 RFC 5322 报文（纯文本 UTF-8；Subject 用 encoded-word，
-// 行结束统一 CRLF）。
+// fromHeader RFC 5322 From 头值：sign_name 非空时为 RFC 2047 encoded-word
+// 展示名 + 尖括号地址，否则纯地址。信封 MAIL FROM 恒为纯地址（见 Send）。
+func (s *Sender) fromHeader() string {
+	if s.signName == "" {
+		return s.from
+	}
+	return mime.QEncoding.Encode("utf-8", s.signName) + " <" + s.from + ">"
+}
+
+// buildMessage 组装 RFC 5322 报文（纯文本 UTF-8；from 为 From 头值——含
+// 展示名时由 fromHeader 组好；Subject 用 encoded-word，行结束统一 CRLF）。
 func buildMessage(from, to, subject, body string) []byte {
 	var b strings.Builder
 	b.WriteString("From: " + from + "\r\n")

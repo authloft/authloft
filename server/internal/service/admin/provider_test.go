@@ -763,6 +763,7 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 	smtpBody := map[string]any{
 		"type": "smtp", "provider_key": "smtp_1", "category": provider.CategoryEmail,
 		"display_name": "SMTP", "host": "smtp.example.com", "from": "noreply@example.com",
+		"user": "u1", "password": "p1",
 	}
 	for _, key := range oauthOnly {
 		t.Run("email 拒绝 "+key, func(t *testing.T) {
@@ -1111,7 +1112,8 @@ func TestProxyRefKeyScope(t *testing.T) {
 		{"type": "wechat_mp", "provider_key": "wx_ref", "category": "oauth", "display_name": "W",
 			"app_id": "a", "client_secret": "b", provider.ProxyRefKey: "pxy_new"},
 		{"type": "smtp", "provider_key": "smtp_ref", "category": provider.CategoryEmail,
-			"display_name": "S", "host": "smtp.example.com", "from": "n@example.com", provider.ProxyRefKey: "pxy_new"},
+			"display_name": "S", "host": "smtp.example.com", "from": "n@example.com",
+			"user": "u1", "password": "p1", provider.ProxyRefKey: "pxy_new"},
 		{"type": provider.CaptchaTypeTurnstile, "provider_key": "cap_ref", "category": provider.CategoryCaptcha,
 			"display_name": "C", "client_id": "site", "client_secret": "sec", provider.ProxyRefKey: "pxy_new"},
 	}

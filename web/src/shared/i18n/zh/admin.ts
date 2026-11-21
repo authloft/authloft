@@ -295,10 +295,14 @@ export const admin = {
   'admin.schemaField.smtpPortHelp':
     '465 = 隐式 TLS；其余明文连接并在服务器支持时 STARTTLS 升级',
   'admin.schemaField.smtpFromLabel': '发件人地址',
+  'admin.schemaField.smtpFromHelp': '留空使用 SMTP 用户名作为发件地址',
+  'admin.schemaField.smtpSignNameLabel': '发件人名称',
+  'admin.schemaField.smtpUserLabel': 'SMTP 用户名',
+  'admin.schemaField.smtpPasswordLabel': 'SMTP 密码',
   'admin.schemaField.smtpDisableSslLabel': '禁用 STARTTLS',
   'admin.schemaField.smtpDisableSslHelp': '内网自签场景跳过 STARTTLS 升级',
   'admin.schemaField.smtpMetadataHelp':
-    'username / password = SMTP 认证凭证；subject.<tpl> / body.<tpl> = 标题与正文模板（{code} 占位）',
+    'subject.<tpl> / body.<tpl> = 标题与正文模板（{code} 占位）',
   'admin.schemaField.aliyunAccessKeyIdLabel': 'AccessKeyId',
   'admin.schemaField.aliyunAccessKeySecretLabel': 'AccessKeySecret',
   'admin.schemaField.aliyunSignNameLabel': '短信签名',

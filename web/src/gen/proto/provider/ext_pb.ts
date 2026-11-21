@@ -239,6 +239,8 @@ export type Ext = Message<"provider.Ext"> & {
   from: string;
 
   /**
+   * 短信签名（sms，必填）/ 邮件发件人名称（email/smtp，可空）
+   *
    * @generated from field: string sign_name = 41;
    */
   signName: string;
@@ -251,7 +253,7 @@ export type Ext = Message<"provider.Ext"> & {
   templateCode: string;
 
   /**
-   * ---- 出站代理（category=proxy 生效；与 host(14)/port(15) 配对构成代理地址）----
+   * ---- 出站代理 / SMTP 认证（category=proxy 与 email/smtp 行生效；proxy 行内与 host(14)/port(15) 配对构成代理地址）----
    *
    * 代理协议，封闭集 socks5/http/https
    *
@@ -260,14 +262,14 @@ export type Ext = Message<"provider.Ext"> & {
   scheme: string;
 
   /**
-   * 代理用户名，可空；原文存储，出站构造时由服务端按 RFC 3986 编码
+   * 代理 / SMTP 认证用户名；proxy 行可空、email(smtp) 行必填；原文存储，出站构造时由服务端按 RFC 3986 编码（proxy）
    *
    * @generated from field: string user = 44;
    */
   user: string;
 
   /**
-   * 代理密码，可空，须伴随 user；明文存于 ext 内（同 client_secret 口径）
+   * 代理 / SMTP 认证密码；proxy 行可空须伴随 user、email(smtp) 行必填；明文存于 ext 内（同 client_secret 口径）
    *
    * @generated from field: string password = 45;
    */

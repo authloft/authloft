@@ -67,13 +67,13 @@ type Ext struct {
 	MaxSize      int64  `protobuf:"varint,37,opt,name=max_size,json=maxSize,proto3" json:"max_size,omitempty"`               // 单文件上限（字节），默认 2MB
 	AllowedTypes string `protobuf:"bytes,38,opt,name=allowed_types,json=allowedTypes,proto3" json:"allowed_types,omitempty"` // 允许的 MIME 白名单，逗号分隔，如 image/png,image/jpeg
 	// ---- 消息（category=sms/email 生效）----
-	From         string `protobuf:"bytes,40,opt,name=from,proto3" json:"from,omitempty"` // 邮件发件人 / 短信签名
-	SignName     string `protobuf:"bytes,41,opt,name=sign_name,json=signName,proto3" json:"sign_name,omitempty"`
+	From         string `protobuf:"bytes,40,opt,name=from,proto3" json:"from,omitempty"`                                     // 邮件发件人 / 短信签名
+	SignName     string `protobuf:"bytes,41,opt,name=sign_name,json=signName,proto3" json:"sign_name,omitempty"`             // 短信签名（sms，必填）/ 邮件发件人名称（email/smtp，可空）
 	TemplateCode string `protobuf:"bytes,42,opt,name=template_code,json=templateCode,proto3" json:"template_code,omitempty"` // 国内短信模板 ID
-	// ---- 出站代理（category=proxy 生效；与 host(14)/port(15) 配对构成代理地址）----
+	// ---- 出站代理 / SMTP 认证（category=proxy 与 email/smtp 行生效；proxy 行内与 host(14)/port(15) 配对构成代理地址）----
 	Scheme   string `protobuf:"bytes,43,opt,name=scheme,proto3" json:"scheme,omitempty"`     // 代理协议，封闭集 socks5/http/https
-	User     string `protobuf:"bytes,44,opt,name=user,proto3" json:"user,omitempty"`         // 代理用户名，可空；原文存储，出站构造时由服务端按 RFC 3986 编码
-	Password string `protobuf:"bytes,45,opt,name=password,proto3" json:"password,omitempty"` // 代理密码，可空，须伴随 user；明文存于 ext 内（同 client_secret 口径）
+	User     string `protobuf:"bytes,44,opt,name=user,proto3" json:"user,omitempty"`         // 代理 / SMTP 认证用户名；proxy 行可空、email(smtp) 行必填；原文存储，出站构造时由服务端按 RFC 3986 编码（proxy）
+	Password string `protobuf:"bytes,45,opt,name=password,proto3" json:"password,omitempty"` // 代理 / SMTP 认证密码；proxy 行可空须伴随 user、email(smtp) 行必填；明文存于 ext 内（同 client_secret 口径）
 	// ---- 出站代理引用（服务型 Provider 经引用键指向 category=proxy 行）----
 	ProxyProviderKey string `protobuf:"bytes,46,opt,name=proxy_provider_key,json=proxyProviderKey,proto3" json:"proxy_provider_key,omitempty"` // 引用 proxy 行的 provider_key，空 = 直连；见 §5.3 代理提供商与出站代理引用约定 / 后端架构 §15.4
 	// ---- 长尾 ----

@@ -325,11 +325,16 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.smtpPortHelp':
     '465 = implicit TLS; other ports connect in plaintext and upgrade via STARTTLS when supported',
   'admin.schemaField.smtpFromLabel': 'From Address',
+  'admin.schemaField.smtpFromHelp':
+    'Leave empty to use the SMTP username as the sender address',
+  'admin.schemaField.smtpSignNameLabel': 'From Name',
+  'admin.schemaField.smtpUserLabel': 'SMTP Username',
+  'admin.schemaField.smtpPasswordLabel': 'SMTP Password',
   'admin.schemaField.smtpDisableSslLabel': 'Disable STARTTLS',
   'admin.schemaField.smtpDisableSslHelp':
     'Skip the STARTTLS upgrade for intranet self-signed certificates',
   'admin.schemaField.smtpMetadataHelp':
-    'username / password = SMTP credentials; subject.<tpl> / body.<tpl> = subject and body templates ({code} placeholder)',
+    'subject.<tpl> / body.<tpl> = subject and body templates ({code} placeholder)',
   'admin.schemaField.aliyunAccessKeyIdLabel': 'AccessKey ID',
   'admin.schemaField.aliyunAccessKeySecretLabel': 'AccessKey Secret',
   'admin.schemaField.aliyunSignNameLabel': 'SMS Signature',

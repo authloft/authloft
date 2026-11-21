@@ -16,6 +16,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"mime"
 	"net"
 	"strconv"
 	"strings"
@@ -29,16 +30,23 @@ import (
 	"authloft/internal/repo/model"
 )
 
-// testProviderExt 构造 Ext（唯一编解码出口 repo）。
+// testProviderExt 构造 Ext（唯一编解码出口 repo）：user/password 必填基线
+// 由此提供（表单 required 同口径），from 非必填。
 func testProviderExt(t *testing.T, mutate func(*providerpb.Ext)) *providerpb.Ext {
 	t.Helper()
-	ext := &providerpb.Ext{Host: "127.0.0.1", From: "no-reply@authloft.example.com"}
+	ext := &providerpb.Ext{
+		Host:     "127.0.0.1",
+		User:     "otp-user",
+		Password: "otp-pass",
+		From:     "no-reply@authloft.example.com",
+	}
 	if mutate != nil {
 		mutate(ext)
 	}
 	return ext
 }
 
+// testProvider 构造测试 Provider 实例。
 func testProvider(t *testing.T, mutate func(*providerpb.Ext)) *provider.Provider {
 	t.Helper()
 	ext := testProviderExt(t, mutate)
@@ -54,26 +62,51 @@ func testProvider(t *testing.T, mutate func(*providerpb.Ext)) *provider.Provider
 	}
 }
 
-// TestBuildRequiresHostAndFrom 构造期校验：host / from 缺一即 ErrNotConfigured；
-// port 缺省回落 587。
-func TestBuildRequiresHostAndFrom(t *testing.T) {
-	if _, err := newSender(testProvider(t, func(e *providerpb.Ext) { e.Host = "" })); err == nil ||
-		!strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("missing host err = %v, want not-configured", err)
-	}
-	if _, err := newSender(testProvider(t, func(e *providerpb.Ext) { e.From = "" })); err == nil ||
-		!strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("missing from err = %v, want not-configured", err)
+// TestBuildRequiresHostUserPassword 构造期校验：host / user / password 缺一即
+// ErrNotConfigured；from 非必填、留空回落认证账号 user；port 缺省回落 587。
+func TestBuildRequiresHostUserPassword(t *testing.T) {
+	for _, mutate := range []func(*providerpb.Ext){
+		func(e *providerpb.Ext) { e.Host = "" },
+		func(e *providerpb.Ext) { e.User = "" },
+		func(e *providerpb.Ext) { e.User = "  " },
+		func(e *providerpb.Ext) { e.Password = "" },
+	} {
+		if _, err := newSender(testProvider(t, mutate)); err == nil ||
+			!strings.Contains(err.Error(), "not configured") {
+			t.Fatalf("missing required field err = %v, want not-configured", err)
+		}
 	}
 	if _, err := newSender(nil); err != provider.ErrNilProvider {
 		t.Fatalf("nil provider err = %v", err)
 	}
-	s, err := newSender(testProvider(t, nil))
+	// from 留空 → 回落 user。
+	s, err := newSender(testProvider(t, func(e *providerpb.Ext) { e.From = "" }))
+	if err != nil {
+		t.Fatalf("newSender with empty from: %v", err)
+	}
+	if got := s.(*Sender); got.from != "otp-user" {
+		t.Fatalf("empty from fallback = %q, want auth user", got.from)
+	}
+	s, err = newSender(testProvider(t, nil))
 	if err != nil {
 		t.Fatalf("newSender: %v", err)
 	}
 	if s.(*Sender).port != defaultPort {
 		t.Fatalf("default port = %d, want %d", s.(*Sender).port, defaultPort)
+	}
+}
+
+// TestFromHeader From 头展示名口径：sign_name 非空 → RFC 2047 encoded-word +
+// 尖括号地址；空 → 纯地址。
+func TestFromHeader(t *testing.T) {
+	s := &Sender{from: "no-reply@authloft.example.com"}
+	if got := s.fromHeader(); got != "no-reply@authloft.example.com" {
+		t.Fatalf("bare from header = %q", got)
+	}
+	s.signName = "Authloft 验证"
+	want := mime.QEncoding.Encode("utf-8", "Authloft 验证") + " <no-reply@authloft.example.com>"
+	if got := s.fromHeader(); got != want {
+		t.Fatalf("named from header = %q, want %q", got, want)
 	}
 }
 
@@ -244,6 +277,39 @@ func TestSendFullDialogAgainstFakeServer(t *testing.T) {
 	}
 }
 
+// TestSendSignNameDisplay 发件人名称（sign_name）口径：信封 MAIL FROM 恒为
+// 纯地址，DATA 的 From 头为 encoded-word 展示名 + 尖括号地址。
+func TestSendSignNameDisplay(t *testing.T) {
+	addr, captured := fakeSMTPServer(t)
+	_, portStr, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(portStr)
+
+	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
+		e.Host = "127.0.0.1"
+		e.Port = int32(port)
+		e.SignName = "Authloft 验证"
+	}))
+	if err != nil {
+		t.Fatalf("newSender: %v", err)
+	}
+	if err := s.Send(context.Background(), "named@example.com", "otp", map[string]string{"code": "246810"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	select {
+	case got := <-captured:
+		if got.mailFrom != "no-reply@authloft.example.com" {
+			t.Errorf("MAIL FROM must stay a bare address, got %q", got.mailFrom)
+		}
+		want := "From: " + mime.QEncoding.Encode("utf-8", "Authloft 验证") + " <no-reply@authloft.example.com>"
+		if !strings.Contains(got.data, want) {
+			t.Errorf("DATA missing named From header %q:\n%s", want, got.data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake SMTP server did not capture a session")
+	}
+}
+
 // TestSendValidation 收件人为空 → 明确错误，不起连接。
 func TestSendValidation(t *testing.T) {
 	s, err := newSender(testProvider(t, nil))
@@ -280,12 +346,25 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 		t.Fatal("meta.Schema() must declare full field schema for /schema")
 	}
 	var hasHost, hasPort, hasMetadata, hasIsEnabled, hasProxyRef bool
+	var fromField, signNameField, userField, passwordField *provider.FieldMeta
 	for _, f := range schema {
 		switch f.Key {
 		case "host":
 			hasHost = f.Section == "endpoint" && f.Required
 		case "port":
 			hasPort = f.Section == "endpoint"
+		case "from":
+			cp := f
+			fromField = &cp
+		case "sign_name":
+			cp := f
+			signNameField = &cp
+		case "user":
+			cp := f
+			userField = &cp
+		case "password":
+			cp := f
+			passwordField = &cp
 		case "metadata":
 			hasMetadata = f.Section == "credential"
 		case "is_enabled":
@@ -297,6 +376,19 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 	}
 	if !hasHost || !hasPort || !hasMetadata {
 		t.Fatalf("meta.Schema() Ext fields incomplete: host=%v port=%v metadata=%v", hasHost, hasPort, hasMetadata)
+	}
+	// 发件人地址 / 名称非必填，认证凭证 user / password 必填（接口文档 §5.3 email 行）。
+	if fromField == nil || fromField.Required || fromField.Storage != provider.StorageExt {
+		t.Errorf("from field = %+v, want optional ext field", fromField)
+	}
+	if signNameField == nil || signNameField.Required || signNameField.Section != "credential" {
+		t.Errorf("sign_name field = %+v, want optional credential field", signNameField)
+	}
+	if userField == nil || !userField.Required || userField.Section != "credential" {
+		t.Errorf("user field = %+v, want required credential field", userField)
+	}
+	if passwordField == nil || !passwordField.Required || passwordField.Type != "secret" {
+		t.Errorf("password field = %+v, want required secret field", passwordField)
 	}
 	if !hasIsEnabled || !hasProxyRef {
 		t.Fatalf("meta.Schema() missing is_enabled=%v / proxy ref=%v", hasIsEnabled, hasProxyRef)
@@ -590,7 +682,8 @@ func TestSendAuthPlainCredentials(t *testing.T) {
 	s, err := newSender(testProvider(t, func(e *providerpb.Ext) {
 		e.Host = "127.0.0.1"
 		e.Port = int32(port)
-		e.Metadata = map[string]string{"username": "otp-user", "password": "otp-pass"}
+		e.User = "otp-user"
+		e.Password = "otp-pass"
 	}))
 	if err != nil {
 		t.Fatalf("newSender: %v", err)

@@ -61,13 +61,13 @@ message Ext {
 
   // ---- 消息（category=sms/email 生效）----
   string from          = 40;  // 邮件发件人 / 短信签名
-  string sign_name     = 41;
+  string sign_name     = 41;  // 短信签名（sms，必填）/ 邮件发件人名称（email/smtp，可空）
   string template_code = 42;  // 国内短信模板 ID
 
-  // ---- 出站代理（category=proxy 生效；与 host(14)/port(15) 配对构成代理地址）----
+  // ---- 出站代理 / SMTP 认证（category=proxy 与 email/smtp 行生效；proxy 行内与 host(14)/port(15) 配对构成代理地址）----
   string scheme   = 43;  // 代理协议，封闭集 socks5/http/https
-  string user     = 44;  // 代理用户名，可空；原文存储，出站构造时由服务端按 RFC 3986 编码
-  string password = 45;  // 代理密码，可空，须伴随 user；明文存于 ext 内（同 client_secret 口径）
+  string user     = 44;  // 代理 / SMTP 认证用户名；proxy 行可空、email(smtp) 行必填；原文存储，出站构造时由服务端按 RFC 3986 编码（proxy）
+  string password = 45;  // 代理 / SMTP 认证密码；proxy 行可空须伴随 user、email(smtp) 行必填；明文存于 ext 内（同 client_secret 口径）
 
   // ---- 出站代理引用（服务型 Provider 经引用键指向 category=proxy 行）----
   string proxy_provider_key = 46;  // 引用 proxy 行的 provider_key，空 = 直连；见 §5.3 代理提供商与出站代理引用约定 / 后端架构 §15.4
