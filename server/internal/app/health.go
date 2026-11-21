@@ -27,20 +27,26 @@ var probeTimeout = 2 * time.Second
 // Probe 具名单项探活：Name 供失败清单回显（仅组件名，不外泄基础设施细节），
 // Check 返回 error 即判该项不健康。Check 须自持轻量（连通性检查，不带业务
 // 查询），并遵守传入 ctx 的截止时间。
+//
+// Soft 软失败探针（Redis 软降级口径，后端架构 §5.3 / 接口文档 §5.6）：
+// 失败不触发 503、只计入 degraded 名单；硬失败探针失败仍 503。
 type Probe struct {
 	Name  string
 	Check func(ctx context.Context) error
+	Soft  bool
 }
 
 // RedisPinger 健康探活所需的 Redis 连通性最小接口（装配层客户端适配器
-// 实现），避免探针绑定具体客户端类型。
+// 实现），避免探针绑定具体客户端类型。恢复自愈（降级状态清除）由适配器
+// 的 Ping 成功路径完成，探针层不感知状态位。
 type RedisPinger interface {
 	Ping(ctx context.Context) error
 }
 
 // StandardProbes 标准探活集：DB 经 sql.DB Ping（连通级，等价 SELECT 1）、
-// Redis PING。句柄与优雅关闭链路同一组（assembled.db / assembled.rdb）。
-// nil 句柄恒判失败——装配未完成即被探针命中属异常路径，如实报不健康。
+// Redis PING（软探针）。句柄与优雅关闭链路同一组（assembled.db /
+// assembled.rdb）。nil 句柄恒判失败——装配未完成即被探针命中属异常路径，
+// 如实报不健康。
 func StandardProbes(db *bun.DB, rdb RedisPinger) []Probe {
 	return []Probe{
 		{
@@ -54,6 +60,7 @@ func StandardProbes(db *bun.DB, rdb RedisPinger) []Probe {
 		},
 		{
 			Name: "redis",
+			Soft: true,
 			Check: func(ctx context.Context) error {
 				if rdb == nil {
 					return errors.New("redis handle not wired")
@@ -64,14 +71,17 @@ func StandardProbes(db *bun.DB, rdb RedisPinger) []Probe {
 	}
 }
 
-// NewHandler /health 处理器：并发逐项探活，全部通过 → 200；任一失败 → 503
-// 并附失败项名单。响应体最小 JSON（encoding/json 序列化 + Blob 原样输出，
-// 不走 echo JSON 序列化器），不回传错误细节（端点无鉴权，防基础设施
-// 报文经探针外泄）；原因只落服务端日志。每次现探不缓存——编排层按自身间隔
-// 轮询，无高频路径。
+// NewHandler /health 处理器：并发逐项探活，按失败语义分档（接口文档 §5.6
+// 三形态）——全部通过 → 200 {"status":"ok"}；仅软探针失败 → 200 +
+// degraded 名单（Redis 故障不触发 503）；硬探针失败 → 503 + failed 名单
+// （软失败可并列出现在 503 体中）。响应体最小 JSON（encoding/json 序列化
+// + Blob 原样输出，不走 echo JSON 序列化器），不回传错误细节（端点无鉴权，
+// 防基础设施报文经探针外泄）；原因只落服务端日志。每次现探不缓存——编排层
+// 按自身间隔轮询，无高频路径。
 func NewHandler(probes []Probe) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		failed := make([]string, 0, len(probes))
+		degraded := make([]string, 0, len(probes))
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		for _, p := range probes {
@@ -91,16 +101,27 @@ func NewHandler(probes []Probe) echo.HandlerFunc {
 					"error", logx.RedactText(err.Error()),
 				)
 				mu.Lock()
-				failed = append(failed, p.Name)
+				if p.Soft {
+					degraded = append(degraded, p.Name)
+				} else {
+					failed = append(failed, p.Name)
+				}
 				mu.Unlock()
 			}(p)
 		}
 		wg.Wait()
 
 		if len(failed) > 0 {
-			return writeHealthJSON(c, http.StatusServiceUnavailable, map[string]any{
-				"status": "unavailable",
-				"failed": failed,
+			body := map[string]any{"status": "unavailable", "failed": failed}
+			if len(degraded) > 0 {
+				body["degraded"] = degraded
+			}
+			return writeHealthJSON(c, http.StatusServiceUnavailable, body)
+		}
+		if len(degraded) > 0 {
+			return writeHealthJSON(c, http.StatusOK, map[string]any{
+				"status":   "ok",
+				"degraded": degraded,
 			})
 		}
 		return writeHealthJSON(c, http.StatusOK, map[string]any{"status": "ok"})

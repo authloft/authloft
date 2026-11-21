@@ -301,6 +301,42 @@ func TestCheckCommandErrorReturnsDBEpoch(t *testing.T) {
 	}
 }
 
+// TestCheckCommandErrorSetsDegradeState：不可达客户端（软降级句柄，覆盖
+// 适配器真实埋点路径，fake 无法替代）命令级故障 → fail-open 回源比对
+// 不放大为失败 + 降级状态置位（可观测性）。
+func TestCheckCommandErrorSetsDegradeState(t *testing.T) {
+	rdb := degradedClient(t)
+	src := &fakeSource{value: 9}
+	store := NewEpochStore(rdb, src.call)
+
+	cur, revoked, err := store.Check(context.Background(), 42, "sid-0001")
+	if err != nil || revoked || cur != 9 {
+		t.Fatalf("Check = (%d, %v, %v), want (9, false, nil)（故障 fail-open 回源）", cur, revoked, err)
+	}
+	if n := src.count(); n != 1 {
+		t.Fatalf("source calls = %d, want 1", n)
+	}
+	if !rdb.Degrade().IsDegraded() {
+		t.Fatal("命令级故障应置降级状态")
+	}
+}
+
+// TestEpochCurrentRedisDownSetsDegradeState：签发侧读故障 → 回源 DB 放行
+// + 降级状态置位（缓存故障不放大为签发不可用）。
+func TestEpochCurrentRedisDownSetsDegradeState(t *testing.T) {
+	rdb := degradedClient(t)
+	src := &fakeSource{value: 7}
+	store := NewEpochStore(rdb, src.call)
+
+	v, err := store.Current(context.Background(), 42)
+	if err != nil || v != 7 {
+		t.Fatalf("Current = (%d, %v), want (7, nil)（Redis 故障降级回源）", v, err)
+	}
+	if !rdb.Degrade().IsDegraded() {
+		t.Fatal("读故障应置降级状态")
+	}
+}
+
 // TestCheckCommandErrorAndSourceFails 命令级故障 + 回源也失败 → 返回
 // 错误（内部错误语义，由上层按基础设施错误处理；不放大为逐出 / 放行）。
 func TestCheckCommandErrorAndSourceFails(t *testing.T) {

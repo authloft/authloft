@@ -130,3 +130,18 @@ func TestPermissionAdminsRedisErrorPropagates(t *testing.T) {
 		t.Fatal("Rebuild DEL 故障应原样上抛")
 	}
 }
+
+// TestPermissionAdminsDegradeState：不可达客户端（软降级句柄，覆盖适配器
+// 真实埋点路径）IsMember 故障 → 错误原样上抛（签发侧 Probe miss 回源
+// HasAnyPermission 查 DB，不 fail-closed）+ 降级状态置位（可观测性）。
+func TestPermissionAdminsDegradeState(t *testing.T) {
+	rdb := degradedClient(t)
+	store := NewPermissionAdminsStore(rdb)
+
+	if _, err := store.IsMember(context.Background(), 1); err == nil {
+		t.Fatal("IsMember 故障应原样上抛")
+	}
+	if !rdb.Degrade().IsDegraded() {
+		t.Fatal("读故障应置降级状态")
+	}
+}

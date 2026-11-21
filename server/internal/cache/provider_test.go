@@ -173,6 +173,24 @@ func TestProviderCacheGetRowError(t *testing.T) {
 	}
 }
 
+// TestProviderCacheDegradeState：不可达客户端（软降级句柄，覆盖适配器真实
+// 埋点路径）GetRow / Version 故障 → 错误原样上抛（Loader 按 miss 回源
+// repo）+ 降级状态置位（可观测性）。
+func TestProviderCacheDegradeState(t *testing.T) {
+	rdb := degradedClient(t)
+	c := NewProviderCache(rdb)
+
+	if _, ok, err := c.GetRow(context.Background(), "wx_mp"); err == nil || ok {
+		t.Fatalf("GetRow 故障应上抛: ok=%v err=%v", ok, err)
+	}
+	if _, err := c.Version(context.Background()); err == nil {
+		t.Fatal("Version 故障应上抛")
+	}
+	if !rdb.Degrade().IsDegraded() {
+		t.Fatal("读故障应置降级状态")
+	}
+}
+
 // TestProviderCacheRealRedis（env-skip）：真连测试实例，整行缓存写入 /
 // 读取 / TTL 600s，测后 DEL 自有键自证零残留；不改动全局 al:prov:ver。
 func TestProviderCacheRealRedis(t *testing.T) {

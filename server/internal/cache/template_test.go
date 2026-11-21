@@ -117,3 +117,18 @@ func TestTemplateCacheErrors(t *testing.T) {
 		t.Error("DEL 错误应返回非 nil")
 	}
 }
+
+// TestTemplateCacheDegradeState：不可达客户端（软降级句柄，覆盖适配器真实
+// 埋点路径）GET 故障 → 错误原样上抛（上层 Resolve 按 miss 回落内置 / DB，
+// 不放大为页面渲染失败）+ 降级状态置位（可观测性）。
+func TestTemplateCacheDegradeState(t *testing.T) {
+	rdb := degradedClient(t)
+	c := NewTemplateCache(rdb)
+
+	if _, ok, err := c.Get(context.Background(), "login"); err == nil || ok {
+		t.Fatalf("GET 故障应上抛: ok=%v err=%v", ok, err)
+	}
+	if !rdb.Degrade().IsDegraded() {
+		t.Fatal("读故障应置降级状态")
+	}
+}

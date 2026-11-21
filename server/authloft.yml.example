@@ -24,6 +24,9 @@ db:
   max_idle_conns: 10
   conn_max_lifetime: 1h
 redis:
+  # Redis 不可达时服务默认软降级运行（不阻断启动、无配置开关）：核心链路
+  # 自动回源 DB，验证码 / 扫码 / 限流等 Redis-only 能力故障期不可用，
+  # /health 以 degraded 标记如实暴露；恢复后自动回到健康态。addr 仍必填。
   addr: "127.0.0.1:6379"
   password: ""                    # 无密码可留空
   db: 0

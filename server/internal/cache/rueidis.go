@@ -210,17 +210,43 @@ type PubSub interface {
 
 // RedisClient rueidis 客户端适配器：实现本包全部窄接口（codeRedis /
 // epochRedis / providerRedis 等），bootstrap 构造后注入各键空间封装。
+// state 软降级状态信号随客户端同生命周期（后端架构 §5.3）：读路径命令级
+// 故障置位、探活 PING 成功清除，只记录不拦截（见 markDegrade）。
 type RedisClient struct {
-	c rueidis.Client
+	c     rueidis.Client
+	state *DegradeState
 }
 
 // NewClientWithRueidis 包装既有 rueidis 客户端（仅测试 / 特殊装配场景：
-// 生产入口为 NewClient，自带 PING fail-fast）。
-func NewClientWithRueidis(c rueidis.Client) *RedisClient { return &RedisClient{c: c} }
+// 生产入口为 NewClient，自带软降级 PING）。降级状态同样随包装实例创建。
+func NewClientWithRueidis(c rueidis.Client) *RedisClient {
+	return &RedisClient{c: c, state: &DegradeState{}}
+}
 
-// Ping 连通性检查（NewClient fail-fast 与 health 探活共用）。
+// Degrade 返回软降级状态信号（探活 / 可观测性消费；实例由 NewClient /
+// NewClientWithRueidis 创建，恒非 nil）。
+func (c *RedisClient) Degrade() *DegradeState { return c.state }
+
+// Ping 连通性检查（health 探活与启动构造共用）。成功即清降级状态——恢复
+// 检测只挂探活路径，业务读不探测；失败置位，供可观测性感知。
 func (c *RedisClient) Ping(ctx context.Context) error {
-	return c.c.Do(ctx, c.c.B().Ping().Build()).Error()
+	err := c.c.Do(ctx, c.c.B().Ping().Build()).Error()
+	if err != nil {
+		c.state.Set("redis ping failed")
+		return err
+	}
+	c.state.Clear()
+	return nil
+}
+
+// markDegrade 读路径命令级故障埋点：置降级状态供探活与可观测性感知，错误
+// 原样透传，不拦不吞不改返回值（后端架构 §5.3 只记录口径）。键缺失 Nil
+// 属正常 miss，不计入降级。
+func (c *RedisClient) markDegrade(err error) error {
+	if err != nil && !errors.Is(err, Nil) {
+		c.state.Set("redis read failed")
+	}
+	return err
 }
 
 // Close 释放连接池。
@@ -256,13 +282,13 @@ func redisValue(v any) string {
 // Get 读键。
 func (c *RedisClient) Get(ctx context.Context, key string) StringResult {
 	v, err := c.c.Do(ctx, c.c.B().Get().Key(key).Build()).ToString()
-	return StringResult{val: v, err: nilify(err)}
+	return StringResult{val: v, err: c.markDegrade(nilify(err))}
 }
 
 // GetDel 原子读取并删除。
 func (c *RedisClient) GetDel(ctx context.Context, key string) StringResult {
 	v, err := c.c.Do(ctx, c.c.B().Getdel().Key(key).Build()).ToString()
-	return StringResult{val: v, err: nilify(err)}
+	return StringResult{val: v, err: c.markDegrade(nilify(err))}
 }
 
 // MGet 一次读多键（MGET）：应答按键序逐项返回，缺失键的 null 应答映射为
@@ -274,11 +300,11 @@ func (c *RedisClient) MGet(ctx context.Context, keys ...string) MGetResult {
 	}
 	res := c.c.Do(ctx, c.c.B().Mget().Key(keys...).Build())
 	if err := res.Error(); err != nil {
-		return MGetResult{err: nilify(err)}
+		return MGetResult{err: c.markDegrade(nilify(err))}
 	}
 	arr, err := res.ToArray()
 	if err != nil {
-		return MGetResult{err: nilify(err)}
+		return MGetResult{err: c.markDegrade(nilify(err))}
 	}
 	vals := make([]*string, len(arr))
 	for i := range arr {
@@ -287,7 +313,7 @@ func (c *RedisClient) MGet(ctx context.Context, keys ...string) MGetResult {
 		}
 		s, terr := arr[i].ToString()
 		if terr != nil {
-			return MGetResult{err: nilify(terr)}
+			return MGetResult{err: c.markDegrade(nilify(terr))}
 		}
 		vals[i] = &s
 	}
@@ -321,7 +347,7 @@ func (c *RedisClient) SetNX(ctx context.Context, key string, value any, expirati
 		if errors.Is(err, rueidis.Nil) {
 			return BoolResult{}
 		}
-		return BoolResult{err: nilify(err)}
+		return BoolResult{err: c.markDegrade(nilify(err))}
 	}
 	return BoolResult{val: ok}
 }
@@ -335,7 +361,7 @@ func (c *RedisClient) Del(ctx context.Context, keys ...string) IntResult {
 // Exists 统计键存在数。
 func (c *RedisClient) Exists(ctx context.Context, keys ...string) IntResult {
 	v, err := c.c.Do(ctx, c.c.B().Exists().Key(keys...).Build()).ToInt64()
-	return IntResult{val: v, err: nilify(err)}
+	return IntResult{val: v, err: c.markDegrade(nilify(err))}
 }
 
 // Incr 原子递增。
@@ -357,7 +383,7 @@ func (c *RedisClient) SAdd(ctx context.Context, key string, members ...any) IntR
 // SIsMember 判定集合成员。
 func (c *RedisClient) SIsMember(ctx context.Context, key string, member any) BoolResult {
 	ok, err := c.c.Do(ctx, c.c.B().Sismember().Key(key).Member(redisValue(member)).Build()).AsBool()
-	return BoolResult{val: ok, err: nilify(err)}
+	return BoolResult{val: ok, err: c.markDegrade(nilify(err))}
 }
 
 // Publish 发布消息，返回接收订阅方数量。
@@ -369,13 +395,13 @@ func (c *RedisClient) Publish(ctx context.Context, channel string, message any) 
 // PTTL 毫秒级剩余寿命；键缺失 -2、无 TTL -1（负值不换算单位）。
 func (c *RedisClient) PTTL(ctx context.Context, key string) DurationResult {
 	n, err := c.c.Do(ctx, c.c.B().Pttl().Key(key).Build()).ToInt64()
-	return DurationResult{val: ttlDuration(n, time.Millisecond), err: nilify(err)}
+	return DurationResult{val: ttlDuration(n, time.Millisecond), err: c.markDegrade(nilify(err))}
 }
 
 // TTL 秒级剩余寿命（测试探查用；生产 TTL 断言走 PTTL）。
 func (c *RedisClient) TTL(ctx context.Context, key string) DurationResult {
 	n, err := c.c.Do(ctx, c.c.B().Ttl().Key(key).Build()).ToInt64()
-	return DurationResult{val: ttlDuration(n, time.Second), err: nilify(err)}
+	return DurationResult{val: ttlDuration(n, time.Second), err: c.markDegrade(nilify(err))}
 }
 
 // ttlDuration 对齐 go-redis DurationCmd 换算口径：负值（-1 / -2 哨兵）原样
@@ -395,11 +421,11 @@ func (c *RedisClient) Eval(ctx context.Context, script string, keys []string, ar
 	}
 	res := c.c.Do(ctx, c.c.B().Eval().Script(script).Numkeys(int64(len(keys))).Key(keys...).Arg(argv...).Build())
 	if err := res.Error(); err != nil {
-		return EvalResult{err: nilify(err)}
+		return EvalResult{err: c.markDegrade(nilify(err))}
 	}
 	m, err := res.ToMessage()
 	if err != nil {
-		return EvalResult{err: nilify(err)}
+		return EvalResult{err: c.markDegrade(nilify(err))}
 	}
 	if m.IsInt64() {
 		v, _ := m.ToInt64()
@@ -428,7 +454,7 @@ func (c *RedisClient) Eval(ctx context.Context, script string, keys []string, ar
 // [游标, 键数组] 嵌套结构（RESP2/RESP3 同构），经 rueidis AsScanEntry 解出。
 func (c *RedisClient) Scan(ctx context.Context, cursor uint64, match string, count int64) ScanResult {
 	entry, err := c.c.Do(ctx, c.c.B().Scan().Cursor(cursor).Match(match).Count(count).Build()).AsScanEntry()
-	return ScanResult{keys: entry.Elements, cursor: entry.Cursor, err: nilify(err)}
+	return ScanResult{keys: entry.Elements, cursor: entry.Cursor, err: c.markDegrade(nilify(err))}
 }
 
 // Subscribe 订阅频道：订阅确认后才返回（fail-fast），失败返回错误。

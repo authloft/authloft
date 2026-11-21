@@ -513,7 +513,7 @@ func TestBootstrapCloseOrderNoPanic(t *testing.T) {
 	// 队列引用，第二段 closeInfra 释放 DB / Redis 引用——完整复现 serve
 	// 的优雅关闭两段顺序（先停后台，再关基础设施）。客户端指向保留端口
 	// （ForceSingleClient 下首连失败仍返回句柄，Close 仅释放无副作用）。
-	w := settings.NewWatcher(nil, nil)
+	w := settings.NewWatcher(nil, nil, 0)
 	q2 := asyncqueue.New(noopExecutor{}, asyncqueue.Options{
 		Capacity:      8,
 		Workers:       1,

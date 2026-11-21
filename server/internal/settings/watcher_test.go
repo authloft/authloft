@@ -35,6 +35,23 @@ func setupTestRedis(t *testing.T) *cache.RedisClient {
 	return rdb
 }
 
+// newDeadRedisClient 构造指向不可达地址的客户端句柄（cache.NewClient 软
+// 降级：保留句柄不返回错误，降级状态置位），模拟 Redis 故障期——Subscribe
+// 失败 → watcher 转轮询兜底。本地可跑、不连 Redis。
+func newDeadRedisClient(t *testing.T) *cache.RedisClient {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rdb, err := cache.NewClient(ctx, &config.Config{
+		Redis: config.RedisConfig{Addr: "127.0.0.1:1", DB: 0, PoolSize: 10},
+	})
+	if err != nil {
+		t.Fatalf("不可达地址应软降级返回句柄, got err: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+	return rdb
+}
+
 // waitFor 轮询等待条件成立（pub/sub 投递异步，无 channel 长度可断言）。
 func waitFor(t *testing.T, timeout time.Duration, desc string, cond func() bool) {
 	t.Helper()
@@ -72,7 +89,7 @@ func TestSetPublishSubscribeRefresh(t *testing.T) {
 	}
 	defer rawSub.Stop()
 
-	w := NewWatcher(rdb, storeB)
+	w := NewWatcher(rdb, storeB, 0)
 	if err := w.Start(ctx); err != nil {
 		t.Fatalf("watcher 启动失败: %v", err)
 	}
@@ -151,7 +168,7 @@ func TestWatcherCloseStopsReload(t *testing.T) {
 			t.Fatalf("Preload 失败: %v", err)
 		}
 	}
-	w := NewWatcher(rdb, storeB)
+	w := NewWatcher(rdb, storeB, 0)
 	if err := w.Start(ctx); err != nil {
 		t.Fatalf("watcher 启动失败: %v", err)
 	}
@@ -176,5 +193,80 @@ func TestWatcherCloseStopsReload(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	if v, _ := storeB.GetInt64(KeySessionTtl); v != 3600 {
 		t.Errorf("Close 后不应再刷新，得 %d（应保持 3600）", v)
+	}
+}
+
+// TestWatcherStartDeadRedisFallsBackToPolling（本地可跑）：Redis 不可达
+// → Subscribe 失败，Start 转轮询兜底而非报错（软降级口径：后端架构 §5.3）；
+// Close 幂等并等轮询 goroutine 退出。reload 需真库，重载行为由下方
+// env-skip 用例覆盖。轮询间隔取远大于测试时长的值，确保不触发 reload。
+func TestWatcherStartDeadRedisFallsBackToPolling(t *testing.T) {
+	dead := newDeadRedisClient(t)
+
+	w := NewWatcher(dead, nil, time.Hour)
+	if err := w.Start(context.Background()); err != nil {
+		t.Fatalf("订阅失败应转轮询兜底而非报错: %v", err)
+	}
+	if w.sub != nil {
+		t.Error("订阅失败路径不应留下订阅句柄")
+	}
+	if w.pollStop == nil || w.pollDone == nil {
+		t.Fatal("应已武装轮询路径（poll 通道就绪）")
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close 应无错误: %v", err)
+	}
+	select {
+	case <-w.pollDone:
+	default:
+		t.Fatal("Close 后 pollDone 应已关闭（轮询 goroutine 退出）")
+	}
+	if err := w.Close(); err != nil {
+		t.Errorf("重复 Close 应幂等 nil: %v", err)
+	}
+}
+
+// TestWatcherPollFallbackReloads（env-skip DB）：订阅失败（不可达 Redis）
+// → 轮询兜底在 N tick 后触发 reload，快照刷新；Close 幂等停轮询，关闭后
+// DB 变更不再被拉取。
+func TestWatcherPollFallbackReloads(t *testing.T) {
+	rp, _ := setupTestDB(t)
+	rdbOK := setupTestRedis(t)
+	dead := newDeadRedisClient(t)
+	ctx := context.Background()
+
+	storeA := NewStore(rp, rdbOK) // 写方实例（真 Redis，PUBLISH 正常）
+	storeB := NewStore(rp, dead)  // 订阅方实例（故障期替身，走轮询兜底）
+	for _, st := range []*Store{storeA, storeB} {
+		if err := st.Preload(ctx); err != nil {
+			t.Fatalf("Preload 失败: %v", err)
+		}
+	}
+
+	w := NewWatcher(dead, storeB, 50*time.Millisecond)
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("订阅失败应转轮询兜底而非报错: %v", err)
+	}
+
+	if err := storeA.Set(ctx, KeyPwdMinLength, int64(15), 42); err != nil {
+		t.Fatalf("Set 失败: %v", err)
+	}
+	waitFor(t, 5*time.Second, "轮询兜底应触发 reload 使 storeB 快照刷新为 15", func() bool {
+		v, _ := storeB.GetInt64(KeyPwdMinLength)
+		return v == 15
+	})
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close 应无错误: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Errorf("重复 Close 应幂等 nil: %v", err)
+	}
+	if err := storeA.Set(ctx, KeyPwdMinLength, int64(20), 42); err != nil {
+		t.Fatalf("关闭后 Set 失败: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if v, _ := storeB.GetInt64(KeyPwdMinLength); v != 15 {
+		t.Errorf("Close 后轮询应停止，得 %d（应保持 15）", v)
 	}
 }

@@ -965,7 +965,7 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		deps.closeInfra()
 		return nil, assembleStep("settings.Preload", err)
 	}
-	watcher := settings.NewWatcher(rdb, store)
+	watcher := settings.NewWatcher(rdb, store, settings.DefaultPollInterval)
 	if err := watcher.Start(ctx); err != nil {
 		deps.closeInfra()
 		return nil, assembleStep("settings.Watcher.Start", err)
@@ -1024,8 +1024,10 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	deps.consents = &oidc.ConsentService{Consents: deps.repos.Consents}
 	deps.authz = &oidc.AuthzValidator{Clients: deps.repos.Clients}
 
-	// 权限集合启动预热（§5.1）：全量重建 al:perm:admins，登录签发侧只读；
-	// 失败即 fail-fast，避免集合长期落后于 user_permission（回源兜底只覆盖单次判定）。
+	// 权限集合启动预热（§5.1）：全量重建 al:perm:admins，登录签发侧只读。
+	// 写失败走软降级：仅告警不退出（后端架构 §5.3）——签发侧 miss / 故障
+	// 回源 HasAnyPermission 查 DB，集合为空不影响正确性；DB 真源查询
+	// （ListAdminUIDs）失败仍 fail-fast，不因软降级放宽。
 	permAdmins := cache.NewPermissionAdminsStore(rdb)
 	adminUIDs, err := deps.repos.Permissions.ListAdminUIDs(ctx)
 	if err != nil {
@@ -1033,8 +1035,8 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 		return nil, assembleStep("permission.ListAdminUIDs", err)
 	}
 	if err := permAdmins.Rebuild(ctx, adminUIDs); err != nil {
-		deps.closeInfra()
-		return nil, assembleStep("permissionAdmins.Rebuild", err)
+		logx.Warn(ctx, "bootstrap: permission admins rebuild failed, serving degraded",
+			"error", logx.RedactText(err.Error()))
 	}
 	deps.permissionProbe = adminsvc.NewIssuingPermissionProbe(
 		permAdmins, deps.repos.Permissions.HasAnyPermission).Probe
