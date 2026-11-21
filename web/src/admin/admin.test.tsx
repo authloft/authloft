@@ -5709,4 +5709,61 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     expect(html).toContain('>类别</span>');
     setLocale('zh-CN');
   });
+
+  test('sortEntryDisabled：筛选激活即禁用排序入口；清空（""）恢复可用', async () => {
+    const { sortEntryDisabled } = await pageIndex();
+    // 筛选态（类别非默认 ''）→ 入口禁用。
+    expect(sortEntryDisabled('oauth')).toBe(true);
+    // 清空筛选 → 入口恢复可用。
+    expect(sortEntryDisabled('')).toBe(false);
+  });
+
+  test('SortEntryButton 静态渲染：筛选态禁用并挂 Tooltip 提示；未筛选不挂提示直接可用', async () => {
+    const { SortEntryButton } = await pageIndex();
+    setLocale('zh-CN');
+    const reason = t('admin.providerSortFilterDisabledNote');
+    // 筛选态：按钮 disabled（aria-disabled）+ Tooltip 触发 span 包裹
+    // （tabindex="0" 为 Tooltip cloneElement 注入的挂载标记；提示正文经
+    // Portal 悬停渲染，静态标记不含正文）。
+    const filtered = renderToStaticMarkup(
+      createElement(SortEntryButton, {
+        disabled: true,
+        reason,
+        onOpen: () => undefined,
+      }),
+    );
+    expect(filtered).toContain('aria-disabled="true"');
+    expect(filtered).toContain('<span class="" tabindex="0"><button disabled');
+    // 未筛选（清空恢复）：可用按钮直出，无禁用类、无 Tooltip 包裹
+    //（aria-disabled 恒渲染，false 值即未禁用）。
+    const cleared = renderToStaticMarkup(
+      createElement(SortEntryButton, {
+        disabled: false,
+        reason,
+        onOpen: () => undefined,
+      }),
+    );
+    expect(cleared).toContain('aria-disabled="false"');
+    expect(cleared).not.toContain('semi-button-disabled');
+    expect(cleared).not.toContain('tabindex="0"');
+    setLocale('zh-CN');
+  });
+
+  test('页面壳静态渲染（默认未筛选）：排序入口可用——禁用只在筛选态出现', async () => {
+    const { ProvidersPage } = await pageIndex();
+    setLocale('zh-CN');
+    const html = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/providers'] },
+        createElement(ProvidersPage, { alRoot: `${BASE}/` }),
+      ),
+    );
+    // 默认态（未筛选）排序按钮不禁用、不挂 Tooltip；筛选态渲染壳无交互
+    // 到不了，禁用态由 SortEntryButton 单测覆盖。
+    expect(html).toContain('>排序</span></button>');
+    expect(html).not.toContain('semi-button-disabled');
+    expect(html).not.toContain('aria-describedby');
+    setLocale('zh-CN');
+  });
 });

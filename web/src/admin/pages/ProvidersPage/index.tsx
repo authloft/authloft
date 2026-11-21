@@ -17,8 +17,10 @@
  *
  * 拖拽排序从行内移出：右上角「排序」按钮展开 SideSheet，内嵌 SortableList
  * 承载原拖拽逻辑；行集截断（超 100）时停用拖拽并给出提示（见
- * buildListProvidersRequest）。启停 / 排序均乐观更新 + 失败回滚，错误文案
- * Toast 展示（错误展示归消费方——DataTable 行内开关同口径）。
+ * buildListProvidersRequest），类别筛选激活则在入口层禁用「排序」按钮并
+ * 以 Tooltip 说明原因（见 sortEntryDisabled / SortEntryButton）。启停 /
+ * 排序均乐观更新 + 失败回滚，错误文案 Toast 展示（错误展示归消费方——
+ * DataTable 行内开关同口径）。
  *
  * 取数：ListProviders **真调**（后端已实装）——全量取数
  * （buildListProvidersRequest：第 1 页 × 100，拖拽排序需全量行集，见其
@@ -46,6 +48,7 @@ import {
   Table,
   Tag,
   Toast,
+  Tooltip,
 } from '@douyinfe/semi-ui';
 // ColumnProps 类型导入例外（CODE_GUIDE §4.1 第 21 条）：仅类型导入
 // （编译期擦除、零运行时痕迹）+ 子路径在包 exports 白名单 + 大包入口确未
@@ -171,6 +174,39 @@ export function sortDragEnabled(
   categoryFilter: string,
 ): boolean {
   return rowCount === total && categoryFilter === '';
+}
+
+/**
+ * 排序入口禁用态：仅类别筛选激活时在入口层禁用；行集截断仍可打开侧栏看
+ * 专用提示（两种停用原因语境不同，入口不复用「超单页上限」文案）。
+ */
+export function sortEntryDisabled(categoryFilter: string): boolean {
+  return categoryFilter !== '';
+}
+
+/**
+ * 排序入口按钮：禁用时挂 Tooltip 说明原因——disabled 按钮不触发 hover，
+ * 外包 span 让 Tooltip 生效（SecurityPage 置灰解绑按钮同口径）；可用时
+ * 直接渲染按钮，不挂空 Tooltip。
+ */
+export function SortEntryButton(props: {
+  disabled: boolean;
+  reason: string;
+  onOpen: () => void;
+}): ReactNode {
+  const button = (
+    <Button disabled={props.disabled} onClick={props.onOpen}>
+      {t('admin.providerSortAction')}
+    </Button>
+  );
+  if (!props.disabled) {
+    return button;
+  }
+  return (
+    <Tooltip content={props.reason}>
+      <span>{button}</span>
+    </Tooltip>
+  );
 }
 
 /** 提供商列表页：回调提示 + 类别筛选表格（行内启停 + 侧栏拖拽排序 + 编辑删除）。 */
@@ -399,9 +435,12 @@ export function ProvidersPage(props: {
       }
       actions={
         <Space>
-          <Button onClick={() => setShowSort(true)}>
-            {t('admin.providerSortAction')}
-          </Button>
+          {/* 筛选态入口层禁用（见 sortEntryDisabled），清空筛选恢复原行为。 */}
+          <SortEntryButton
+            disabled={sortEntryDisabled(categoryFilter)}
+            reason={t('admin.providerSortFilterDisabledNote')}
+            onOpen={() => setShowSort(true)}
+          />
           <Button theme="solid" onClick={openCreate}>
             {t('admin.createProviderAction')}
           </Button>

@@ -699,6 +699,8 @@ export const admin: typeof zhAdmin = {
     'Failed to load the provider list; please refresh and try again',
   'admin.providersDragDisabledNote':
     'More than one page of providers (100); drag sorting is disabled',
+  'admin.providerSortFilterDisabledNote':
+    'Drag sorting is unavailable while a filter is active; clear the filter to sort',
   'admin.providerDragSortLabel': 'Drag to reorder providers',
   'admin.noProviders': 'No providers yet',
   'admin.providerEnableSuccess': 'Enabled "{name}"',

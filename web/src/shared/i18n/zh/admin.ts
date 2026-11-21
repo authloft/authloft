@@ -640,6 +640,8 @@ export const admin = {
   'admin.providersLoadFailed': '提供商列表加载失败，请刷新重试',
   'admin.providersDragDisabledNote':
     '提供商数量超过单页上限（100），拖拽排序已停用',
+  'admin.providerSortFilterDisabledNote':
+    '筛选中不可拖拽排序，清空筛选后可排序',
   'admin.providerDragSortLabel': '拖拽调整提供商排序',
   'admin.noProviders': '暂无提供商',
   'admin.providerEnableSuccess': '已启用「{name}」',
