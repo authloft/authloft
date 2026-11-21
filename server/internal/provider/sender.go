@@ -24,7 +24,7 @@ const (
 	CategoryEmail = "email"
 )
 
-// ErrChannelNotConfigured 渠道不可用：settings 键空 / 实例缺失或未启用 /
+// ErrChannelNotConfigured 渠道不可用：settings 键空 / 实例缺失 /
 // 类型不符 / 厂商 Ext 缺必填项。属配置状态而非瞬时故障——登录链将其映射为
 // 接口文档 §1.6 行 259 的封闭集合取值 provider_disabled（提供商未启用），
 // 不自造 status。
@@ -175,7 +175,7 @@ const codeTpl = "otp"
 // CodeBridge 验证码异步投递桥：结构化满足 factor/otp.Sender 的
 // SendCode(ctx, target, code)（不 import factor/otp，依赖方向保持单向）。
 // 发送期解析（§15.3 行 1735）：settings 键 → Loader 按实例 key 取 Provider →
-// NewSender 按 Ext 构造厂商客户端；键空 / 实例缺失或未启用 / 类型不符同步
+// NewSender 按 Ext 构造厂商客户端；键空 / 实例缺失 / 类型不符同步
 // 返回 ErrChannelNotConfigured，厂商调用则投递 asyncqueue 异步执行（§15.2
 // 行 1726：不阻塞登录主链路；发送失败不回滚已生成的验证码，§8.2 行 1051）。
 type CodeBridge struct {
@@ -231,9 +231,10 @@ type ChannelLoader interface {
 }
 
 // resolveChannelProvider 渠道生效实例解析前段（发送期与入口可用性判定的
-// 公共实现，防两处口径漂移）：settings 键 → Loader 取行 → Enabled。键空 /
-// 行缺失 / 代理引用不可解析 / 未启用 = 配置态（ErrChannelNotConfigured，
-// 发送期映射 provider_disabled）；其余读取错误为基础设施故障原样上抛。
+// 公共实现，防两处口径漂移）：settings 键 → Loader 取行。键空 / 行缺失 /
+// 代理引用不可解析 = 配置态（ErrChannelNotConfigured，发送期映射
+// provider_disabled；sms / email 行不消费 is_enabled，行命中即生效）；
+// 其余读取错误为基础设施故障原样上抛。
 func resolveChannelProvider(ctx context.Context, settings SettingGetter, loader ChannelLoader, settingsKey string) (*Provider, error) {
 	providerKey, _ := settings.GetString(settingsKey)
 	if providerKey == "" {
@@ -251,15 +252,12 @@ func resolveChannelProvider(ctx context.Context, settings SettingGetter, loader 
 		}
 		return nil, fmt.Errorf("provider: resolve %q: %w", providerKey, err)
 	}
-	if !p.Enabled() {
-		return nil, fmt.Errorf("%w: provider %q disabled", ErrChannelNotConfigured, providerKey)
-	}
 	return p, nil
 }
 
 // ChannelAvailable 消息渠道可用性公共判定（发送期 resolve 的单一真相，供
 // 注入快照 / GetConfig / MFA 候选与发送期四处共用）：settings 键非空 →
-// Loader 命中行 → Enabled。返回 false 且 err 为 nil = 渠道配置态不可用
+// Loader 命中行。返回 false 且 err 为 nil = 渠道配置态不可用
 // （对应发送期 provider_disabled 的集合）；err 非 nil = 基础设施读取故障，
 // 调用方按各自出口收敛（快照 / GetConfig 转服务端故障，MFA 候选 fail-closed
 // 上抛）。
@@ -280,7 +278,7 @@ func (b *CodeBridge) Available(ctx context.Context) (bool, error) {
 	return ChannelAvailable(ctx, b.settings, b.loader, b.key)
 }
 
-// resolve 发送期解析生效实例（§15.3）。键空 / 实例缺失 / 未启用 /
+// resolve 发送期解析生效实例（§15.3）。键空 / 实例缺失 /
 // 类型不符 → ErrChannelNotConfigured（配置状态，映射 provider_disabled）；
 // 其余读取错误（Redis / DB 瞬时故障）原样上抛，由编排层按未知异常置 failed。
 func (b *CodeBridge) resolve(ctx context.Context) (Sender, error) {

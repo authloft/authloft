@@ -51,13 +51,13 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		fieldKeys   []string
 		displayName string
 		wantRef     bool // captcha 类别呈现 proxy_provider_key 引用键
-		wantEnabled bool // is_enabled 仅登录入口类（captcha/proxy）声明；storage 恒可用不下发
+		wantEnabled bool // is_enabled 仅 oauth 行声明；captcha/proxy/storage 均不下发不消费
 	}{
-		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true, true},
-		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true, true},
-		{provider.CaptchaTypeHcaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "hCaptcha", true, true},
+		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true, false},
+		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true, false},
+		{provider.CaptchaTypeHcaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "hCaptcha", true, false},
 		{provider.StorageTypeLocal, provider.CategoryStorage, []string{"bucket", "domain", "path_prefix"}, "本地存储", false, false},
-		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "基础代理", false, true},
+		{provider.ProxyType, provider.CategoryProxy, []string{"scheme", "host", "port", "user", "password"}, "基础代理", false, false},
 	} {
 		meta, ok := provider.LookupTypeMeta(tc.typ)
 		if !ok {
@@ -68,7 +68,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 			t.Errorf("%q meta = %+v", tc.typ, meta)
 		}
 		// Schema = 完整声明形态：基础两列 + Ext + display 四项，is_enabled 与
-		// 引用键按类别 / type 有无（storage 恒可用，不消费即不下发）；
+		// 引用键按类别 / type 有无（服务型行均不消费 is_enabled，不下发）；
 		// oauth 专属键在各类别均不下发。
 		extKeys := map[string]bool{}
 		for _, k := range tc.fieldKeys {

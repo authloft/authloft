@@ -73,16 +73,17 @@ func TestLoaderResolveOutboundNormal(t *testing.T) {
 	}
 }
 
-// TestLoaderResolveOutboundDisabled 引用未启用：fail-closed，包装哨兵。
-func TestLoaderResolveOutboundDisabled(t *testing.T) {
+// TestLoaderResolveOutboundRefDisabled 被引 proxy 行不消费 is_enabled：
+// 行命中即参与解析（IsEnabled 列值不影响）。
+func TestLoaderResolveOutboundRefDisabled(t *testing.T) {
 	src := newFakeSource(
 		refRow(t, "app", "pxy"),
 		proxyRow(t, "pxy", 0, proxyExt(1080, "", "")),
 	)
 	loader := newTestLoaderWithPools(src, nil, newFakeClock())
-	_, err := loader.Get(context.Background(), "app")
-	if !errors.Is(err, ErrProxyRefUnresolvable) {
-		t.Fatalf("err = %v, want ErrProxyRefUnresolvable", err)
+	p, err := loader.Get(context.Background(), "app")
+	if err != nil || p == nil || p.Outbound == nil {
+		t.Fatalf("禁用被引行应仍解析出池: (p=%v, err=%v)", p, err)
 	}
 }
 
@@ -187,8 +188,8 @@ func TestLoaderResolveOutboundVersionInvalidates(t *testing.T) {
 }
 
 // TestResolveOutboundHelper 共享助手（非 Loader 路径）同语义：空 key 直连、
-// 正常解析出键控池、引用未启用 fail-closed、proxy 行自引防护跳过、nil
-// PoolSet fail-fast panic。
+// 正常解析出键控池、被引行禁用不影响解析、引用缺失 fail-closed、proxy 行
+// 自引防护跳过、nil PoolSet fail-fast panic。
 func TestResolveOutboundHelper(t *testing.T) {
 	ctx := context.Background()
 	src := newFakeSource(
@@ -218,8 +219,11 @@ func TestResolveOutboundHelper(t *testing.T) {
 	if pool != pools.Get("pxy", wantCfg) {
 		t.Fatal("助手与 Loader 应共享同一键控池")
 	}
-	if _, err := ResolveOutbound(ctx, pools, src, appRow, &providerpb.Ext{ProxyProviderKey: "off"}); !errors.Is(err, ErrProxyRefUnresolvable) {
-		t.Fatalf("err = %v, want ErrProxyRefUnresolvable", err)
+	if _, err := ResolveOutbound(ctx, pools, src, appRow, &providerpb.Ext{ProxyProviderKey: "off"}); err != nil {
+		t.Fatalf("被引行禁用不影响解析: err = %v", err)
+	}
+	if _, err := ResolveOutbound(ctx, pools, src, appRow, &providerpb.Ext{ProxyProviderKey: "ghost"}); !errors.Is(err, ErrProxyRefUnresolvable) {
+		t.Fatalf("引用缺失: err = %v, want ErrProxyRefUnresolvable", err)
 	}
 	pool, err = ResolveOutbound(ctx, pools, src, pxyRow, &providerpb.Ext{ProxyProviderKey: "pxy"})
 	if err != nil || pool != nil {

@@ -71,9 +71,6 @@ func TestCatalogCurrentDegradation(t *testing.T) {
 		{"键空串 = 内置", mapKeys{settings.KeyCaptchaProviderKey: ""}, nil},
 		{"键未设置", mapKeys{}, nil},
 		{"查不到该 key 的行", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil},
-		{"禁用 is_enabled=0", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*provider.Provider{
-			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: captchaRow("cf_turnstile", TypeTurnstile, 0, "")},
-		}},
 		{"category 不是 captcha", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*provider.Provider{
 			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: &model.Provider{
 				ProviderKey: "cf_turnstile", Category: "oauth", Type: TypeTurnstile, IsEnabled: 1,
@@ -115,6 +112,23 @@ func TestCatalogCurrentEnabledRow(t *testing.T) {
 	if got.Key != "cf_turnstile" || got.Type != TypeTurnstile ||
 		got.Ext.GetClientId() != "0x4AAA" || got.Ext.GetClientSecret() != "s-1" {
 		t.Fatalf("Current = %+v", got)
+	}
+}
+
+// TestCatalogCurrentIgnoresIsEnabledRow captcha 行不消费 is_enabled：
+// 行命中即生效（IsEnabled 列值不影响 Current 判定）。
+func TestCatalogCurrentIgnoresIsEnabledRow(t *testing.T) {
+	c := NewCatalog(
+		mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"},
+		&fakeSource{rows: map[string]*provider.Provider{
+			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile,
+				Row: captchaRow("cf_turnstile", TypeTurnstile, 0, "0x4AAA"),
+				Ext: &providerpb.Ext{ClientId: "0x4AAA"}},
+		}},
+	)
+	got, err := c.Current(context.Background())
+	if err != nil || got == nil {
+		t.Fatalf("Current = (%+v, %v), want 行命中即生效", got, err)
 	}
 }
 

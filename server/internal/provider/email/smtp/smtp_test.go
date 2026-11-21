@@ -345,7 +345,7 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 	if len(schema) == 0 {
 		t.Fatal("meta.Schema() must declare full field schema for /schema")
 	}
-	var hasHost, hasPort, hasMetadata, hasIsEnabled, hasProxyRef bool
+	var hasHost, hasPort, hasMetadata, hasProxyRef bool
 	var fromField, signNameField, userField, passwordField *provider.FieldMeta
 	for _, f := range schema {
 		switch f.Key {
@@ -367,8 +367,6 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 			passwordField = &cp
 		case "metadata":
 			hasMetadata = f.Section == "credential"
-		case "is_enabled":
-			hasIsEnabled = true
 		case provider.ProxyRefKey:
 			hasProxyRef = f.Section == "endpoint" && f.Storage == provider.StorageExt &&
 				f.Kind == provider.FieldDynamicOptions && f.DynamicKey == provider.ProxyRefDynamicKey
@@ -390,11 +388,12 @@ func TestInitRegistersAsEmailVendor(t *testing.T) {
 	if passwordField == nil || !passwordField.Required || passwordField.Type != "secret" {
 		t.Errorf("password field = %+v, want required secret field", passwordField)
 	}
-	if !hasIsEnabled || !hasProxyRef {
-		t.Fatalf("meta.Schema() missing is_enabled=%v / proxy ref=%v", hasIsEnabled, hasProxyRef)
+	if !hasProxyRef {
+		t.Fatalf("meta.Schema() missing proxy ref=%v", hasProxyRef)
 	}
-	// union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，email 类别不下发。
-	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+	// is_enabled / union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，
+	// email 类别不下发也不消费。
+	for _, key := range []string{"is_enabled", "union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
 		for _, f := range schema {
 			if f.Key == key {
 				t.Errorf("meta.Schema() must not contain oauth-only key %q", key)

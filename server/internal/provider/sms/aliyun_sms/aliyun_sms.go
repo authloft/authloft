@@ -59,16 +59,12 @@ func init() {
 		// Schema 是 /schema 的唯一数据源（表列 + Ext，接口文档 §5.3），属性
 		// 与 wire 输出逐字段一致。
 		Schema: func() []provider.FieldMeta {
-			fields := make([]provider.FieldMeta, 0, 14)
+			fields := make([]provider.FieldMeta, 0, 13)
 			fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
 			fields = append(fields, schemafield.SMSFields()...)
 			fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
-			// sms 类别只下发 is_enabled：登录 / 建号 / 自动绑定开关是 oauth 专属。
-			for _, f := range schemafield.EnableFlags() {
-				if f.Key == "is_enabled" {
-					fields = append(fields, f)
-				}
-			}
+			// is_enabled / 登录建号开关是 oauth 专属：sms 行不声明也不消费
+			// （渠道生效实例判定只看 settings 键 → 行命中，provider/sender.go）。
 			fields = append(fields, schemafield.ProxyRef())
 			return fields
 		},

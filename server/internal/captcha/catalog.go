@@ -1,8 +1,8 @@
 // catalog.go 是 gate.go ProviderCatalog 接口的实装（docs/后端架构.md §9.1
 // 「下发与拦截永远同源」、docs/接口文档.md §2.5 降级规则）：settings 键
 // captcha_provider_key（空串 = 内置，§5.6）→ provider 表 category=captcha
-// 且 is_enabled=1 的生效行，每次现算不缓存。无可用项（未配置 / 禁用 /
-// 查不到）返回 nil,nil，降级语义归 Gate（builtin_image）。
+// 的生效行（行命中即生效，不消费 is_enabled），每次现算不缓存。无可用项
+// （未配置 / 查不到）返回 nil,nil，降级语义归 Gate（builtin_image）。
 //
 // 直读通道（§9.1 阶段三定稿）：provider 行经 provider.Loader 的不读 LRU 的
 // GetDirect 取完整 *provider.Provider（行读取 + Ext 组装 + 代理解析同语义，
@@ -50,9 +50,10 @@ func NewCatalog(keys KeyReader, source CurrentSource) *Catalog {
 }
 
 // Current 每次现算当前生效 captcha Provider（直读、不缓存，§9.1）：
-// 键空串 / 键缺失 / 行不存在 / category≠captcha / 未启用 → nil,nil；
-// 基础设施错误原样上抛。返回完整 *provider.Provider——下发配置（Gate 取
-// ext.client_id 作 siteKey）与 factory 构造（secret / 代理）同源取值。
+// 键空串 / 键缺失 / 行不存在 / category≠captcha → nil,nil（captcha 行不
+// 消费 is_enabled，行命中即生效）；基础设施错误原样上抛。返回完整
+// *provider.Provider——下发配置（Gate 取 ext.client_id 作 siteKey）与
+// factory 构造（secret / 代理）同源取值。
 func (c *Catalog) Current(ctx context.Context) (*provider.Provider, error) {
 	if c == nil || c.keys == nil || c.source == nil {
 		return nil, nil
@@ -65,7 +66,7 @@ func (c *Catalog) Current(ctx context.Context) (*provider.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("captcha: load provider %q: %w", key, err)
 	}
-	if p == nil || p.Row == nil || p.Row.Category != CategoryCaptcha || !p.Enabled() {
+	if p == nil || p.Row == nil || p.Row.Category != CategoryCaptcha {
 		return nil, nil
 	}
 	return p, nil

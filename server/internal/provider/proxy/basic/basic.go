@@ -32,11 +32,13 @@ func init() {
 // 代理提供商与出站代理引用约定）：scheme 封闭集 socks5/http/https、host 禁
 // 空白与 /?#@[]、port 1..65535 且必填（required 经 Create 的 number-aware
 // 缺省判定生效）、user / password 可选且 password 须伴随 user；五行
-// section=endpoint。字段组合合法性单一来源在 proxyclient.NewConfig（保存期
-// CreateProvider / UpdateProvider 与运行期 factory 两处同一函数），本声明
-// 只管表单呈现。每次调用返回新切片。
+// section=endpoint。is_enabled / 登录建号开关是 oauth 专属：proxy 行不声明
+// 也不消费（被引行解析只看行命中 / 类别 / 组合校验，provider/outbound.go）。
+// 字段组合合法性单一来源在 proxyclient.NewConfig（保存期 CreateProvider /
+// UpdateProvider 与运行期 factory 两处同一函数），本声明只管表单呈现。
+// 每次调用返回新切片。
 func Schema() []provider.FieldMeta {
-	fields := make([]provider.FieldMeta, 0, 12)
+	fields := make([]provider.FieldMeta, 0, 11)
 	fields = append(fields,
 		provider.FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
 			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: provider.StorageColumn},
@@ -56,7 +58,6 @@ func Schema() []provider.FieldMeta {
 			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: provider.StorageColumn},
-		provider.FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: provider.StorageColumn},
 	)
 	return fields
 }

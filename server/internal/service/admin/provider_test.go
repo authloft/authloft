@@ -809,8 +809,9 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 			t.Fatal("非法请求不得落库")
 		}
 	})
-	t.Run("email 仍接受 is_enabled", func(t *testing.T) {
-		// 裁剪只针对虚拟类别：sms / email 的消息发送链按行启用态判定，开关保留。
+	t.Run("email 拒绝 is_enabled", func(t *testing.T) {
+		// is_enabled 是 oauth 专属：sms / email 行不声明也不消费（渠道生效由
+		// §5.6 settings 键决定），提交该键即未知键 invalid_request。
 		store := newFakeStore()
 		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		body := map[string]any{}
@@ -818,8 +819,11 @@ func TestCreateProviderCategoryColumnKeys(t *testing.T) {
 			body[k] = v
 		}
 		body["is_enabled"] = false
-		if err := svc.CreateProvider(context.Background(), structBody(t, body)); err != nil {
-			t.Fatalf("email 提交 is_enabled 应通过: %v", err)
+		if err := svc.CreateProvider(context.Background(), structBody(t, body)); !errors.Is(err, adminsvc.ErrInvalidRequest) {
+			t.Fatalf("email 提交 is_enabled 应拒绝: %v", err)
+		}
+		if len(store.created) != 0 {
+			t.Fatal("非法请求不得落库")
 		}
 	})
 	t.Run("oauth 允许 oauth 专属列", func(t *testing.T) {
@@ -1189,12 +1193,19 @@ func TestTestProviderProxyResolution(t *testing.T) {
 			t.Errorf("池配置 = %+v, want %+v", testAdminSender.lastProv.Outbound.Config(), wantCfg)
 		}
 	})
+	// 引用行不消费 is_enabled：禁用被引行仍解析出池（proxyRowOf("pxy_off", 0)）。
+	t.Run("引用行禁用仍出池", func(t *testing.T) {
+		row := emailRowWithRef(t, "smtp_ref", "pxy_off")
+		svc := adminsvc.NewService(newFakeStore(row, proxyRow, proxyOff), &fakeInvalidator{}, proxyclient.NewPoolSet())
+		if err := svc.TestProvider(ctx, "smtp_ref", "a@b.c"); err != nil {
+			t.Fatalf("禁用被引行应仍解析: %v", err)
+		}
+	})
 	for _, tc := range []struct {
 		name string
 		ref  string
 	}{
 		{"引用缺失 fail-closed", "missing_ref"},
-		{"引用未启用 fail-closed", "pxy_off"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			row := emailRowWithRef(t, "smtp_ref", tc.ref)

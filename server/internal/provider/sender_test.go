@@ -224,9 +224,10 @@ func TestNewCodeBridgeValidation(t *testing.T) {
 }
 
 // TestChannelAvailable 渠道可用性公共判定（快照 / GetConfig / MFA 候选与
-// 发送期共用的单一真相）：键空 / 行缺失 / 未启用 → (false, nil) 配置态；
-// 行命中且启用 → (true, nil)；基础设施读取故障 → err 原样上抛（不混入
-// 配置态集合，调用方按各自出口收敛）。
+// 发送期共用的单一真相）：键空 / 行缺失 → (false, nil) 配置态；行命中 →
+// (true, nil)（sms / email 行不消费 is_enabled，禁用列值不影响判定）；
+// 基础设施读取故障 → err 原样上抛（不混入配置态集合，调用方按各自出口
+// 收敛）。
 func TestChannelAvailable(t *testing.T) {
 	ensureTestVendors()
 	ctx := context.Background()
@@ -251,13 +252,6 @@ func TestChannelAvailable(t *testing.T) {
 		t.Fatalf("missing row: ok=%v err=%v, want false/nil（配置态）", ok, err)
 	}
 
-	row.IsEnabled = 0
-	st.strs[settings.KeySmsProviderKey] = "sms_row"
-	disabled := provider.NewLoader(fakeRowSource{row: row}, nil, proxyclient.NewPoolSet(), provider.LoaderOptions{})
-	if ok, err := provider.ChannelAvailable(ctx, st, disabled, settings.KeySmsProviderKey); err != nil || ok {
-		t.Fatalf("disabled row: ok=%v err=%v, want false/nil（配置态）", ok, err)
-	}
-
 	st.strs[settings.KeySmsProviderKey] = "db_down"
 	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || ok {
 		t.Fatalf("missing row via NoRows: ok=%v err=%v, want false/nil（配置态）", ok, err)
@@ -267,6 +261,12 @@ func TestChannelAvailable(t *testing.T) {
 	st.strs[settings.KeySmsProviderKey] = "sms_row"
 	if ok, err := provider.ChannelAvailable(ctx, st, down, settings.KeySmsProviderKey); err == nil || ok {
 		t.Fatalf("infra error: ok=%v err=%v, want false + err 上抛", ok, err)
+	}
+
+	// 行禁用不影响判定（行命中即生效）。
+	row.IsEnabled = 0
+	if ok, err := provider.ChannelAvailable(ctx, st, loader, settings.KeySmsProviderKey); err != nil || !ok {
+		t.Fatalf("disabled row: ok=%v err=%v, want true/nil（不消费 is_enabled）", ok, err)
 	}
 }
 
@@ -561,7 +561,7 @@ func TestLoginChainOTPSendSuccessThenVerify(t *testing.T) {
 }
 
 // TestLoginChainChannelUnconfiguredProviderDisabled 场景二：渠道未配置
-// （settings 键空 / 实例缺失 / 未启用 / 类型不符）→ challenge 以封闭集合
+// （settings 键空 / 实例缺失 / 类型不符）→ challenge 以封闭集合
 // provider_disabled 终止（§1.6 行 259），不签发 login_token。
 func TestLoginChainChannelUnconfiguredProviderDisabled(t *testing.T) {
 	cases := []struct {
@@ -573,7 +573,6 @@ func TestLoginChainChannelUnconfiguredProviderDisabled(t *testing.T) {
 	}{
 		{"settings 键空", "", "", testEmailVendorType, 1},
 		{"实例缺失", "eml_missing", "", testEmailVendorType, 1},
-		{"实例未启用", "eml_off", "eml_off", testEmailVendorType, 0},
 		{"类型不符（sms 厂商挂在 email 键）", "eml_sms", "eml_sms", testSMSVendorType, 1},
 	}
 	for _, tc := range cases {

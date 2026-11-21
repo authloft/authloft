@@ -1,7 +1,7 @@
 // csp_test.go 覆盖 Catalog.CSP()（docs/后端架构.md §9.4 / docs/接口文档.md
-// §8「provider 贡献源」）：降级各态一律贡献空串（未启用 / 未配置不写入任何
-// 域名）、三家第三方各 type 的登记片段逐字、每请求现算（与 Current 同源，
-// 热更新语义一致）。
+// §8「provider 贡献源」）：降级各态一律贡献空串（未配置不写入任何域名）、
+// 三家第三方各 type 的登记片段逐字、每请求现算（与 Current 同源，热更新
+// 语义一致）。
 package captcha
 
 import (
@@ -12,9 +12,9 @@ import (
 	"authloft/internal/settings"
 )
 
-// TestCatalogCSPNoContribution 无贡献各态（§8「未启用 / 未配置的 Provider
-// 不写入任何域名」；§9.4 Current 同源判定）：键空串 / 键未设置 / 行不存在 /
-// 未启用 / 查询 error / 未登记 type（image / 未知值）→ 空串；查询 error 不
+// TestCatalogCSPNoContribution 无贡献各态（§8「未配置的 Provider 不写入
+// 任何域名」；§9.4 Current 同源判定）：键空串 / 键未设置 / 行不存在 /
+// 查询 error / 未登记 type（image / 未知值）→ 空串；查询 error 不
 // panic、不阻塞。
 func TestCatalogCSPNoContribution(t *testing.T) {
 	cases := []struct {
@@ -26,9 +26,6 @@ func TestCatalogCSPNoContribution(t *testing.T) {
 		{"键空串", mapKeys{settings.KeyCaptchaProviderKey: ""}, nil, nil},
 		{"键未设置", mapKeys{}, nil, nil},
 		{"行不存在", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil, nil},
-		{"未启用 is_enabled=0", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*provider.Provider{
-			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: captchaRow("cf_turnstile", TypeTurnstile, 0, "")},
-		}, nil},
 		{"查询 error 基础设施故障", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil, errors.New("db down")},
 		{"image 自绘不贡献源", mapKeys{settings.KeyCaptchaProviderKey: "img"}, map[string]*provider.Provider{
 			"img": {Key: "img", Type: TypeImage, Row: captchaRow("img", TypeImage, 1, "")},

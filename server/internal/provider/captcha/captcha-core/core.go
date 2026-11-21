@@ -98,10 +98,11 @@ func extFields() []provider.FieldMeta {
 
 // Schema 三家 captcha 共用的完整字段声明（表列 + Ext + 引用键，接口文档
 // §5.3），供各 type 子包的 meta 引用，每次调用返回新切片。Ext 复用 fields
-// 单一来源并补 Storage 落点，防两份声明漂移；is_enabled 单独声明——登录 /
-// 建号 / 自动绑定开关是 oauth 专属，captcha 类别不下发。
+// 单一来源并补 Storage 落点，防两份声明漂移；is_enabled / 登录 / 建号 /
+// 自动绑定开关是 oauth 专属，captcha 类别不下发也不消费（生效实例判定
+// 只看 settings 键 → 行命中，captcha/catalog.go）。
 func Schema() []provider.FieldMeta {
-	fields := make([]provider.FieldMeta, 0, 11)
+	fields := make([]provider.FieldMeta, 0, 10)
 	fields = append(fields,
 		provider.FieldMeta{Key: "provider_key", Label: "admin.schemaField.providerKeyLabel", Type: "text", Section: "basic", Required: true,
 			Pattern: "^[a-z0-9_]+$", Help: "admin.schemaField.providerKeyHelp", Storage: provider.StorageColumn},
@@ -119,7 +120,6 @@ func Schema() []provider.FieldMeta {
 			Options: []string{"social", "enterprise", "dev", "other"}, Default: "social", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "sort_order", Label: "admin.schemaField.sortOrderLabel", Type: "number", Section: "display", Default: "0", Storage: provider.StorageColumn},
 		provider.FieldMeta{Key: "remark", Label: "admin.schemaField.remarkLabel", Type: "text", Section: "display", Advanced: true, Storage: provider.StorageColumn},
-		provider.FieldMeta{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy", Default: "true", Storage: provider.StorageColumn},
 		provider.ProxyRef(),
 	)
 	return fields

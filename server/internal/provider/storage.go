@@ -14,7 +14,7 @@ import (
 
 // 可判别错误（自 internal/storage 平移，文案不变，errors.Is 判别面不变）。
 var (
-	// ErrNotConfigured storage provider 未配置 / 未启用 / 关键字段缺失。
+	// ErrNotConfigured storage provider 未配置 / 关键字段缺失。
 	ErrNotConfigured = errors.New("storage: provider not configured")
 	// ErrUnsupportedType type 未实现（s3 等，归后续实现）。
 	ErrUnsupportedType = errors.New("storage: unsupported provider type")

@@ -853,10 +853,11 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	if v := byKey["port"].GetDefault().GetNumberValue(); v != 587 {
 		t.Errorf("port default = %v, want 587", v)
 	}
-	// 非 oauth 类别：表列基线只剩通用 7 项（basic 2 + display 4 + policy 1）；
-	// category 只读字段已改由页面级类型下拉承载，不进 fields[]。
+	// 非 oauth 类别：表列基线只剩通用 6 项（basic 2 + display 4，is_enabled
+	// 是 oauth 专属，email 行不声明不消费）；category 只读字段已改由页面级
+	// 类型下拉承载，不进 fields[]。
 	for _, key := range []string{"provider_key", "display_name",
-		"icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
+		"icon_url", "ui_group", "sort_order", "remark"} {
 		if _, ok := byKey[key]; !ok {
 			t.Errorf("schema 缺少通用表列字段 %q", key)
 		}
@@ -864,8 +865,9 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	if _, ok := byKey["category"]; ok {
 		t.Error("schema 不应再含 category 只读字段")
 	}
-	// 5 个 oauth 专属列不得出现（sms/email 注册登录开关在 §5.6 设置项）。
-	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+	// is_enabled + 5 个 oauth 专属列不得出现（sms/email 渠道生效由 §5.6
+	// settings 键决定，行内开关不消费）。
+	for _, key := range []string{"is_enabled", "union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
 		if _, ok := byKey[key]; ok {
 			t.Errorf("email schema 不应含 oauth 专属字段 %q", key)
 		}
@@ -970,9 +972,10 @@ func TestGetProviderSchemaServiceMeta(t *testing.T) {
 }
 
 // TestGetProviderSchemaProxyMeta 服务型 proxy schema（type=proxy）：五真实代理
-// 字段（§5.3 代理提供商与出站代理引用约定）+ 通用表列 + is_enabled；proxy 行
-// 自身不自引——不声明引用键、无 dynamic 字段，不触发查库。scheme 的 options
-// 为 wire 取值封闭集（前端按 admin.schemaOption.scheme.<value> 翻译显示名）。
+// 字段（§5.3 代理提供商与出站代理引用约定）+ 通用表列（无 is_enabled——oauth
+// 专属，proxy 行不声明不消费）；proxy 行自身不自引——不声明引用键、无 dynamic
+// 字段，不触发查库。scheme 的 options 为 wire 取值封闭集（前端按
+// admin.schemaOption.scheme.<value> 翻译显示名）。
 func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	fakes := &fakeProviders{}
 	tokens, epochs, h := newAdminHandler(t, fakes, nil)
@@ -982,8 +985,8 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	if got.GetType() != provider.ProxyType || got.GetCategory() != provider.CategoryProxy {
 		t.Fatalf("type/category = (%q, %q), want (proxy, proxy)", got.GetType(), got.GetCategory())
 	}
-	if len(got.GetFields()) != 12 {
-		t.Fatalf("字段数 = %d, want 12（basic 2 + 五真实字段 + display 4 + is_enabled）", len(got.GetFields()))
+	if len(got.GetFields()) != 11 {
+		t.Fatalf("字段数 = %d, want 11（basic 2 + 五真实字段 + display 4）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {

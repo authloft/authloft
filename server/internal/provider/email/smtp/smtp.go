@@ -74,7 +74,7 @@ func init() {
 // 属性与 wire 输出逐字段一致；Ext 部分就地声明而非复用 schemafield.Metadata——
 // metadata 的 Help 是 SMTP 专属语义（按模板键覆盖标题 / 正文）。
 func smtpSchema() []provider.FieldMeta {
-	fields := make([]provider.FieldMeta, 0, 16)
+	fields := make([]provider.FieldMeta, 0, 15)
 	fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
 	fields = append(fields,
 		provider.FieldMeta{Key: "host", Label: "admin.schemaField.smtpHostLabel", Type: "text", Section: "endpoint", Required: true, Storage: provider.StorageExt},
@@ -90,12 +90,8 @@ func smtpSchema() []provider.FieldMeta {
 			Help: "admin.schemaField.smtpMetadataHelp", Storage: provider.StorageExt},
 	)
 	fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
-	// email 类别只下发 is_enabled：登录 / 建号 / 自动绑定开关是 oauth 专属。
-	for _, f := range schemafield.EnableFlags() {
-		if f.Key == "is_enabled" {
-			fields = append(fields, f)
-		}
-	}
+	// is_enabled / 登录建号开关是 oauth 专属：email 行不声明也不消费
+	// （渠道生效实例判定只看 settings 键 → 行命中，provider/sender.go）。
 	fields = append(fields, schemafield.ProxyRef())
 	return fields
 }

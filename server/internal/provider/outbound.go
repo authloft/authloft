@@ -16,7 +16,7 @@ import (
 	"authloft/internal/repo/model"
 )
 
-// ErrProxyRefUnresolvable 引用的 proxy 行不可解析（缺失 / 未启用 / 类别不符 /
+// ErrProxyRefUnresolvable 引用的 proxy 行不可解析（缺失 / 类别不符 /
 // 字段组合非法）：渠道构造失败，走 provider_disabled 口径（与
 // ErrChannelNotConfigured 同类），不降级直连（§15.4）。
 var ErrProxyRefUnresolvable = errors.New("provider: proxy reference unresolvable")
@@ -36,7 +36,7 @@ func refUnresolvable(refKey string) error {
 // resolveOutbound 装配期挂载池注册表并解析出站代理引用（§15.4）：Pools 挂到
 // 实例（工厂免改签名即可取池）；引用 key 空（trim 后）→ 直连（Outbound
 // nil）；proxy 行自身跳过解析（自引防护，防环）；被引行经 l.Get 取（嵌套走
-// 同一 LRU + singleflight），未命中 / 未启用 / 类别不符 / NewConfig 失败 →
+// 同一 LRU + singleflight），未命中 / 类别不符 / NewConfig 失败 →
 // 包装 ErrProxyRefUnresolvable；成功 → Outbound 固化为按 proxy 行 key 键控
 // 的连接池。错误原样上抛（Loader 既有 fail 语义）。
 func (l *Loader) resolveOutbound(ctx context.Context, p *Provider) error {
@@ -62,10 +62,11 @@ func (l *Loader) resolveOutbound(ctx context.Context, p *Provider) error {
 
 // ResolveOutbound 非 Loader 路径的共享解析助手（§15.4：captcha 投影、admin
 // TestProvider 直构等直持行源的场景复用同一语义）：key 空（trim 后）→ nil
-// 直连；被引行未命中 / 未启用 / 类别不符 / ext 解析或 NewConfig 失败 → 包装
-// ErrProxyRefUnresolvable，fail-closed 不降级直连；成功 → 按 proxy 行 key
-// 键控的池（全部引用方共享）。row 为引用方行（category=proxy 时跳过解析，
-// 自引防护），ext 为其已解析 Ext。pools 为 nil 属装配缺陷，与 NewLoader 同
+// 直连；被引行未命中 / 类别不符 / ext 解析或 NewConfig 失败 → 包装
+// ErrProxyRefUnresolvable，fail-closed 不降级直连（proxy 行不消费
+// is_enabled，行命中即参与解析）；成功 → 按 proxy 行 key 键控的池（全部
+// 引用方共享）。row 为引用方行（category=proxy 时跳过解析，自引防护），
+// ext 为其已解析 Ext。pools 为 nil 属装配缺陷，与 NewLoader 同
 // 风格 panic fail-fast。
 func ResolveOutbound(ctx context.Context, pools *proxyclient.PoolSet, src KeySource, row *model.Provider, ext *providerpb.Ext) (*proxyclient.Pool, error) {
 	if pools == nil {
@@ -92,13 +93,13 @@ func ResolveOutbound(ctx context.Context, pools *proxyclient.PoolSet, src KeySou
 	return outboundPool(pools, key, refRow, refExt)
 }
 
-// outboundPool 被引 proxy 行（含解析后 ext）→ 连接池：启用、类别、NewProxy
-// 三道闸任一不过即包装 ErrProxyRefUnresolvable（fail-closed，§15.4）；成功
+// outboundPool 被引 proxy 行（含解析后 ext）→ 连接池：类别、NewProxy 两道
+// 闸任一不过即包装 ErrProxyRefUnresolvable（fail-closed，§15.4）；成功
 // 返回按 proxy 行 provider_key 键控的池（cfg 变更由 PoolSet 换池排空旧池）。
 // 配置值对象经注册表 proxy 槽工厂 NewProxy 产出（§15.4），字段组合合法性
 // 单一来源仍在 proxyclient.NewConfig，本处不重复校验。
 func outboundPool(pools *proxyclient.PoolSet, refKey string, refRow *model.Provider, refExt *providerpb.Ext) (*proxyclient.Pool, error) {
-	if refRow == nil || refRow.IsEnabled != 1 {
+	if refRow == nil {
 		return nil, refUnresolvable(refKey)
 	}
 	if refRow.Category != CategoryProxy {

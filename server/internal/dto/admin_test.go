@@ -306,11 +306,12 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 			}
 		}
 	}
-	// 表列基线 + display + is_enabled 由完整 Schema 声明覆盖，顺序即声明序。
-	for _, key := range []string{"provider_key", "display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"} {
+	// 表列基线 + display 由完整 Schema 声明覆盖，顺序即声明序（is_enabled 是
+	// oauth 专属，smtp 不声明）。
+	for _, key := range []string{"provider_key", "display_name", "icon_url", "ui_group", "sort_order", "remark"} {
 		schemaFieldByKey(t, resp, key)
 	}
-	// 仅 oauth 的 5 列不在 smtp 声明里，wire 不得出现。
+	// 仅 oauth 的列不在 smtp 声明里，wire 不得出现。
 	for _, key := range oauthOnlyTestKeys {
 		if f, ok := schemaFieldMaybe(resp, key); ok {
 			t.Errorf("email schema 不应含 %q: %+v", key, f)
@@ -318,10 +319,11 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	}
 }
 
-// oauthOnlyTestKeys 仅 oauth 类别声明的 5 个表列（dto 侧断言与 provider Schema
-// 声明口径同源：sms/email/captcha/storage/union 的 Schema 均不含这些键）。
+// oauthOnlyTestKeys 仅 oauth 类别声明的表列（dto 侧断言与 provider Schema
+// 声明口径同源：sms/email/captcha/storage/union 的 Schema 均不含这些键——
+// 服务型 / 虚拟行不消费行内启用开关）。
 var oauthOnlyTestKeys = []string{
-	"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
+	"is_enabled", "union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 }
 
 // schemaFieldMaybe schemaFieldByKey 的非致命版本（用于断言字段不存在）。
@@ -335,9 +337,9 @@ func schemaFieldMaybe(resp *adminv1.SchemaResponse, key string) (*adminv1.Schema
 }
 
 // TestProviderColumnKeysFromSchema 可写表列键集由完整 Schema 派生（Storage==column
-// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/proxy 6 列（无 oauth
-// 专属登录/建号/自动绑定列）；local 不声明 is_enabled（storage 恒可用），union
-// 同裁 is_enabled，各剩 5 列。provider_key 在
+// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/proxy 5 列（行内
+// 启用开关与 oauth 专属登录/建号/自动绑定列均不声明）；local / union 同裁，
+// 各剩 5 列。provider_key 在
 // 任何类型都不进列键（更新时作定位键，不得被 ApplyProviderColumns 改动）。
 func TestProviderColumnKeysFromSchema(t *testing.T) {
 	for _, tc := range []struct {
@@ -346,12 +348,12 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 		wantOmit []string
 	}{
 		{"wechat_mp", []string{"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark", "is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}, nil},
-		{"aliyun_sms", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
-		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
-		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
+		{"aliyun_sms", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
 		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{provider.ProxyType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark", "is_enabled"}, oauthOnlyTestKeys},
-		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, append([]string{"is_enabled"}, oauthOnlyTestKeys...)},
+		{provider.ProxyType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			meta, ok := provider.LookupTypeMeta(tc.typ)

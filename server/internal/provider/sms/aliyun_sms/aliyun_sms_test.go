@@ -289,7 +289,7 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 	if !hasTemplateCode {
 		t.Fatal("meta.Schema() must include template_code (credential)")
 	}
-	for _, key := range []string{"provider_key", "display_name", "is_enabled", provider.ProxyRefKey} {
+	for _, key := range []string{"provider_key", "display_name", provider.ProxyRefKey} {
 		found := false
 		for _, f := range schema {
 			if f.Key == key {
@@ -300,8 +300,9 @@ func TestInitRegistersAsSMSVendor(t *testing.T) {
 			t.Errorf("meta.Schema() missing %q", key)
 		}
 	}
-	// union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，sms 类别不下发。
-	for _, key := range []string{"union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
+	// is_enabled / union_provider 与登录 / 建号 / 自动绑定开关是 oauth 专属，
+	// sms 类别不下发也不消费。
+	for _, key := range []string{"is_enabled", "union_provider", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
 		for _, f := range schema {
 			if f.Key == key {
 				t.Errorf("meta.Schema() must not contain oauth-only key %q", key)

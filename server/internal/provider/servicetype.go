@@ -37,11 +37,11 @@ const (
 // ProxyRef 出站代理引用键 proxy_provider_key 的单一声明（接口文档 §5.3
 // 代理提供商与出站代理引用约定）：endpoint/select、非必填，Kind=
 // FieldDynamicOptions + DynamicKey——options 运行时由 handler 查库注入
-// category=proxy 行的 provider_key（含未启用实例，允许先引用后启用），
-// 构造器不下发候选值，形态同 schemafield.UnionProvider 先例。schemafield.
-// ProxyRef 委托至此保持渠道包（oauthcore / smtp / sms）单一取用入口：
-// provider 包不可反向 import schemafield（会成环）。保存期仅校字符集、
-// 不校存在性（service/admin.validateProxyRef）。
+// category=proxy 行的 provider_key（候选为全部行，proxy 行不消费
+// is_enabled），构造器不下发候选值，形态同 schemafield.UnionProvider 先例。
+// schemafield.ProxyRef 委托至此保持渠道包（oauthcore / smtp / sms）单一
+// 取用入口：provider 包不可反向 import schemafield（会成环）。保存期仅校
+// 字符集、不校存在性（service/admin.validateProxyRef）。
 func ProxyRef() FieldMeta {
 	return FieldMeta{
 		Key: ProxyRefKey, Label: "admin.schemaField.proxyProviderKeyLabel",
