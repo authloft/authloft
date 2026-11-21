@@ -293,8 +293,8 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 				t.Errorf("host = %+v", got)
 			}
 		case "from":
-			if got.GetSection() != "basic" {
-				t.Errorf("from section = %q, want basic（meta 声明）", got.GetSection())
+			if got.GetSection() != "credential" {
+				t.Errorf("from section = %q, want credential（meta 声明）", got.GetSection())
 			}
 		case "disable_ssl":
 			if got.GetSection() != "policy" || got.GetType() != "checkbox" {

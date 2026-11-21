@@ -68,8 +68,9 @@ export const admin = {
   'admin.httpsDeploymentLabel': 'HTTPS 部署',
   'admin.httpsDeploymentHint':
     '声明本实例的 HTTPS 部署形态，决定会话 Cookie 的 Secure 属性：自动推断 = 仅 HTTPS 请求下标记为安全；强制开启 = 按部署于 HTTPS 处理，明文 HTTP 环境下浏览器将不保存该 Cookie；强制关闭 = 按明文部署处理，Cookie 不带 Secure 标记',
-  'admin.ssoDomainsLabel': '多根域名同步列表',
-  'admin.ssoDomainsHint': '登录 / 登出时逐个同步',
+  'admin.ssoDomainsLabel': '多域名同步地址列表',
+  'admin.ssoDomainsHint':
+    '填完整 URL（如 https://example.com/prefix/sync_cookie），登录 / 登出时逐个同步',
   'admin.queueWorkersLabel': '延迟写入队列 worker 数',
   'admin.queueWorkersHint': '默认 4',
   'admin.queueCapacityLabel': '队列长度（ring buffer）',
@@ -104,7 +105,7 @@ export const admin = {
   'admin.unitTimes': '次',
   'admin.unitMilliseconds': '毫秒',
   'admin.unitDays': '天',
-  'admin.addDomain': '添加域名',
+  'admin.addDomain': '添加',
   'admin.addGatewayToken': '添加 Token',
   'admin.gatewayTokenPlaceholder': '网关调用方令牌',
 

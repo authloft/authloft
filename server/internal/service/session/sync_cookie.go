@@ -1,30 +1,19 @@
-// sync_cookie.go 多域名会话同步 URL 适配器（docs/后端架构.md §11.2 行 1177-1196，
-// 接口文档 §1.9 行 290-296）：实现 orchestrator.SyncCookieURLBuilder，
-// 由登录终点 / 登出共用同一段代码生成跳转链首跳 URL。链路状态全部装在
-// security.Codec 加密的 SyncCookiePayload 里，不落存储；本文件不读写 DB / Redis。
+// sync_cookie.go 多域名会话同步 URL 适配器（docs/后端架构.md §11.2）：
+// 实现 orchestrator.SyncCookieURLBuilder，由登录终点 / 登出共用同一段代码
+// 生成跳转链首跳 URL。链路状态全部装在 security.Codec 加密的
+// SyncCookiePayload 里，不落存储；本文件不读写 DB / Redis。
 package session
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"authloft/gen/go/token"
 	"authloft/internal/security"
 )
 
-// syncStepBudget 跳转链每个地址的过期预算（§11.2 行 1196：30s × 地址总数）。
+// syncStepBudget 跳转链每个地址的过期预算（§11.2：30s × 地址总数）。
 const syncStepBudget = 30 * time.Second
-
-// syncCookiePath 各根域接收端路径（§3.2 行 251、§11.2 行 1189：GET /sso/sync_cookie）。
-const syncCookiePath = "/sso/sync_cookie"
-
-// expandSyncTarget 把 sso_domains 的完整 URL 前缀（含 scheme/host/可选 path，
-// 末尾不带 "/"）展开为接收端地址（§3.2 行 251、§11.2 行 1181-1186）；
-// 防御尾斜杠，避免产生 "//sso"。
-func expandSyncTarget(prefix string) string {
-	return strings.TrimRight(prefix, "/") + syncCookiePath
-}
 
 // SyncCookieURLBuilder 多域名同步 URL 适配器：拼首跳 URL 与加密载荷。
 // 满足 orchestrator.SyncCookieURLBuilder 签名（terminal.go 行 57-61）。
@@ -39,24 +28,22 @@ func NewSyncCookieURLBuilder(codec *security.Codec) *SyncCookieURLBuilder {
 	return &SyncCookieURLBuilder{Codec: codec}
 }
 
-// Build 生成多域名同步首跳 URL（§11.2 行 1183-1187）：
-// 地址数组 = sso_domains 顺序（每个完整 URL 前缀展开为 {prefix}/sso/sync_cookie）
-// + 末尾 finalURL；首跳取数组第一个且不写进载荷（避免自跳循环），remaining 为
-// 展开后的 domains[1:]（不含首跳、不含 finalURL），exp = 签发时刻 + 30s × 地址总数。
+// Build 生成多域名同步首跳 URL（§11.2）：地址数组 = sso_domains 顺序，
+// 每个元素即接收端**完整 URL**（含接收端路径，如
+// https://example.com/prefix/sync_cookie），后端原样使用、不再拼接；
+// 首跳取数组第一个且不写进载荷（避免自跳循环），remaining 为 domains[1:]
+// （不含首跳、不含 finalURL），exp = 签发时刻 + 30s × 地址总数。
 // domains 为空时返回空串（不发起同步）。
 func (b *SyncCookieURLBuilder) Build(_ context.Context, cookieName, cookieValue, cookieTTL string, domains []string, finalURL string) (string, error) {
 	if len(domains) == 0 {
 		return "", nil
 	}
 
-	// 地址总数 = 首跳 + remaining 个数 + finalURL（§11.2 行 1196）。
+	// 地址总数 = 首跳 + remaining 个数 + finalURL（§11.2）。
 	total := len(domains) + 1
 
-	// 完整 URL 前缀一律展开为接收端完整 URL；首跳不写进载荷（§11.2 行 1184）。
-	targets := make([]string, len(domains))
-	for i, prefix := range domains {
-		targets[i] = expandSyncTarget(prefix)
-	}
+	// sso_domains 条目即接收端完整 URL，原样进跳转链；首跳不写进载荷（§11.2）。
+	targets := append([]string(nil), domains...)
 
 	now := time.Now
 	if b.Now != nil {

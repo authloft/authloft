@@ -161,7 +161,11 @@ func TestLogoutHintInvalid(t *testing.T) {
 // 每跳 Set-Cookie 均为清除形态。
 func TestLogoutMultiDomainChain(t *testing.T) {
 	f := newFixture(t)
-	f.settings.m[settings.KeySsoDomains] = []string{"https://a.example", "https://b.example"}
+	// sso_domains 每个元素即接收端完整 URL，后端原样使用不再拼接。
+	f.settings.m[settings.KeySsoDomains] = []string{
+		"https://a.example/sso/sync_cookie",
+		"https://b.example/sso/sync_cookie",
+	}
 	r := f.engine(t)
 
 	// 发起端：清本域 Cookie + 302 首跳（带载荷）。

@@ -58,12 +58,11 @@ func TestSyncCookieBuildPayload(t *testing.T) {
 	b := NewSyncCookieURLBuilder(codec)
 	b.Now = syncFixedNow
 
-	// sso_domains 为完整 URL 前缀（§3.2 行 251），实现方追加 /sso/sync_cookie；
-	// 覆盖带 path、无 path、尾斜杠三种形态。
+	// sso_domains 每个元素即接收端完整 URL（含接收端路径），后端原样使用
+	// 不再拼接；覆盖带路径前缀与裸 host 两种形态。
 	domains := []string{
-		"https://a.example/prefix",
-		"https://b.example",
-		"https://c.example/",
+		"https://a.example/prefix/sync_cookie",
+		"https://b.example/sso/sync_cookie",
 	}
 	const finalURL = "https://final.example/done"
 
@@ -72,11 +71,7 @@ func TestSyncCookieBuildPayload(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	wantTargets := []string{
-		"https://a.example/prefix/sso/sync_cookie",
-		"https://b.example/sso/sync_cookie",
-		"https://c.example/sso/sync_cookie",
-	}
+	wantTargets := domains
 	first, payload := splitSyncURL(t, raw)
 	if first != wantTargets[0] {
 		t.Errorf("first hop = %q, want %q", first, wantTargets[0])
@@ -96,7 +91,7 @@ func TestSyncCookieBuildPayload(t *testing.T) {
 	if p.GetCookieTtl() != "604800" {
 		t.Errorf("cookie_ttl = %q, want 604800", p.GetCookieTtl())
 	}
-	// 首跳不写进载荷：remaining 为展开后的 domains[1:]，顺序不变、不含首跳与 finalURL。
+	// 首跳不写进载荷：remaining 为 domains[1:]（原样），顺序不变、不含首跳与 finalURL。
 	if want := wantTargets[1:]; !reflect.DeepEqual(p.GetRemaining(), want) {
 		t.Errorf("remaining = %v, want %v", p.GetRemaining(), want)
 	}
@@ -123,14 +118,14 @@ func TestSyncCookieBuildSingleDomain(t *testing.T) {
 	b.Now = syncFixedNow
 
 	const finalURL = "https://final.example"
-	raw, err := b.Build(context.Background(), "al_session", "v", "0", []string{"https://a.example/prefix"}, finalURL)
+	raw, err := b.Build(context.Background(), "al_session", "v", "0", []string{"https://a.example/prefix/sync_cookie"}, finalURL)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 
 	first, payload := splitSyncURL(t, raw)
-	if want := "https://a.example/prefix/sso/sync_cookie"; first != want {
-		t.Errorf("first hop = %q, want %q", first, want)
+	if want := "https://a.example/prefix/sync_cookie"; first != want {
+		t.Errorf("first hop = %q, want %q（原样不拼接）", first, want)
 	}
 	p, err := security.Open[token.SyncCookiePayload](codec, security.PurposeSyncPayload, payload)
 	if err != nil {
@@ -161,7 +156,7 @@ func TestSyncCookieCrossPurposeOpenFails(t *testing.T) {
 
 func mustBuild(t *testing.T, b *SyncCookieURLBuilder) string {
 	t.Helper()
-	raw, err := b.Build(context.Background(), "al_session", "v", "604800", []string{"https://a.example"}, "https://final.example")
+	raw, err := b.Build(context.Background(), "al_session", "v", "604800", []string{"https://a.example/sso/sync_cookie"}, "https://final.example")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}

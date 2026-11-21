@@ -623,7 +623,7 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           key: 'ssoDomains',
           label: t('admin.ssoDomainsLabel'),
           addText: t('admin.addDomain'),
-          placeholder: 'https://example.com/',
+          placeholder: 'https://example.com/sync_cookie',
           hint: t('admin.ssoDomainsHint'),
         },
       ],

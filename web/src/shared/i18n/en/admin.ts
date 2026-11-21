@@ -74,8 +74,9 @@ export const admin: typeof zhAdmin = {
   'admin.httpsDeploymentLabel': 'HTTPS deployment',
   'admin.httpsDeploymentHint':
     'Declares the HTTPS deployment of this instance and controls the Secure attribute of session cookies: Auto-detect = marked secure only on HTTPS requests; Force on = treated as deployed over HTTPS, browsers on plain HTTP will not keep the cookie; Force off = treated as plain HTTP, the cookie is set without the Secure flag',
-  'admin.ssoDomainsLabel': 'Multi-root-domain sync list',
-  'admin.ssoDomainsHint': 'Synced one by one on sign-in / sign-out',
+  'admin.ssoDomainsLabel': 'Multi-domain sync URL list',
+  'admin.ssoDomainsHint':
+    'Each entry is the full URL (e.g. https://example.com/prefix/sync_cookie); synced one by one on sign-in / sign-out',
   'admin.queueWorkersLabel': 'Delayed write queue workers',
   'admin.queueWorkersHint': 'Default 4',
   'admin.queueCapacityLabel': 'Queue capacity (ring buffer)',
@@ -115,7 +116,7 @@ export const admin: typeof zhAdmin = {
   'admin.unitTimes': 'times',
   'admin.unitMilliseconds': 'milliseconds',
   'admin.unitDays': 'days',
-  'admin.addDomain': 'Add domain',
+  'admin.addDomain': 'Add',
   'admin.addGatewayToken': 'Add token',
   'admin.gatewayTokenPlaceholder': 'Gateway caller token',
 
