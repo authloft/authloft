@@ -1,8 +1,8 @@
 /**
  * login 域弹窗纯视图（无 DOM API、无 portal，renderToStaticMarkup 可测）：
  * 遮罩 + 窗体 + 标题 + 关闭图标 + children + 确认/取消两按钮（或自定义 footer）。
- * 脱体与焦点管理归 Modal 薄壳，沿 QRCodePanel「纯视图 + 组件壳」的分工惯例
- * （docs/前端架构.md §3.3）。
+ * 脱体与焦点管理归 Modal 薄壳，沿「纯视图 + 薄壳」分工惯例（CaptchaDialog /
+ * QRCodeDialog 等通用弹窗同法，docs/前端架构.md §3.3）。
  *
  * 零 Semi 依赖：login 端不引 UI 库（《CODE_GUIDE》§4.1 第 13 条）。props 命名
  * 沿用 Semi Modal 的 ModalRenderer 契约，窗体视觉是 login 域所有弹窗的统一基线。

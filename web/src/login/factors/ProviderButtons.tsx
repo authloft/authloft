@@ -6,9 +6,9 @@
  * - 按 channel 分派（§2.7.1 行 576）：redirect → 先调 SsoService/Authorize
  *   取 authorize_url（§2.7.2：RPC 非 302，不得 <a href> 直跳——该路径返回
  *   JSON）→ 跳转前 saveOidcContext()（§2.7.2 行 599-600）→ location.replace
- *   （移动端 replace 防回退死循环，§4.2 行 442）；qrcode → 原地打开
- *   shared/QRCodePanel 登录包装 QRCodeStep（不新开页面）；api → 不渲染
- *   （宿主承载，§9 第 10 条）；
+ *   （移动端 replace 防回退死循环，§4.2 行 442）；qrcode → 弹窗打开登录包装
+ *   QRCodeStep（登录域窗体承载，displayName 随条目传入；关闭即清 qrProvider，
+ *   图标墙恢复可重点）；api → 不渲染（宿主承载，§9 第 10 条）；
  * - 图标统一经 ProviderIcon 渲染（icon 空则占位，§3.3 行 344）；不硬编码
  *   任何渠道——未知 channel 不渲染（缺映射不静默回退同款精神，§4.3 行 450）；
  * - 图标按 sortOrder 升序平铺渲染（channel=api 与未知渠道不渲染，§4.4）；
@@ -155,19 +155,23 @@ export interface ProviderButtonsProps {
   request?: (provider: string) => Promise<string>;
   /**
    * 扫码登录结论上抛（§2.8 行 739-743）：QRCodeStep onResult 透传——
-   * success 已在面板侧完成终点跳转；binding_required / 失败态交容器状态机
-   * 分派（LoginContainer qrResultEvent）。上抛后关闭扫码面板（图标墙恢复
+   * success 已在弹窗侧完成终点跳转；binding_required / 失败态交容器状态机
+   * 分派（LoginContainer qrResultEvent）。上抛后关闭扫码弹窗（图标墙恢复
    * 可重点，失败态重试 = 重新点击拉码，每次拉码新 captcha §2.8 行 703）。
    */
   onQrResult?: (envelope: LoginFlowResponse) => void;
 }
 
-/** qrcode 面板组件的加载态（动态 import 产物，见 pickQr）。 */
+/** qrcode 弹窗组件的加载态（动态 import 产物，见 pickQr）。 */
 type QRCodeStepComponent = ComponentType<{
   providerKey: string;
   /** 拉码需人机校验（provider 条目 needCaptcha，§2.5 模式分派）。 */
   needCaptcha?: boolean;
+  /** Provider 展示名（弹窗标题；空串走 QRCodeStep 兜底键）。 */
+  displayName?: string;
   onResult?: (envelope: LoginFlowResponse) => void;
+  /** 弹窗关窗（X / Esc / 「关闭」按钮上抛）：清 qrProvider，图标墙恢复可重点。 */
+  onClose?: () => void;
 }>;
 
 export function ProviderButtons({
@@ -180,8 +184,10 @@ export function ProviderButtons({
     undefined,
   );
   const [qrProvider, setQrProvider] = useState<string | undefined>(undefined);
-  /** 点中的扫码 provider 条目（needCaptcha 随面板透传，§2.5 模式分派）。 */
+  /** 点中的扫码 provider 条目（needCaptcha 随弹窗透传，§2.5 模式分派）。 */
   const [qrNeedCaptcha, setQrNeedCaptcha] = useState<boolean>(false);
+  /** 点中的扫码 provider 展示名（弹窗标题；空串走 QRCodeStep 兜底键）。 */
+  const [qrDisplayName, setQrDisplayName] = useState<string>('');
   const [qrStep, setQrStep] = useState<QRCodeStepComponent | null>(null);
 
   /** redirect 渠道点击：取 authorize_url → RedirectStep 跳转（§4.3 行 454）。 */
@@ -200,18 +206,17 @@ export function ProviderButtons({
   };
 
   /**
-   * qrcode 渠道点击：原地打开扫码面板（不新开页面，§4.3 行 454）。QRCodeStep
+   * qrcode 渠道点击：弹窗打开扫码登录（不新开页面，§4.3 行 454）。QRCodeStep
    * 运行时动态加载——登录页静态 import 本组件（图标墙链路），而 QRCodeStep
    * → shared/captcha → shared/api/http 会连带 transport 单例在测试全局
    * __AUTHLOFT_INIT__ 注入前求值（login-container.test 静态/动态 import 时序），
-   * 故图标墙静态链保持零 http 依赖，面板组件按需加载。
+   * 故图标墙静态链保持零 http 依赖，弹窗组件按需加载。
    */
   const pickQr = (providerKey: string) => {
+    const entry = providers.find((p) => p.providerKey === providerKey);
     setQrProvider(providerKey);
-    setQrNeedCaptcha(
-      providers.find((p) => p.providerKey === providerKey)?.needCaptcha ===
-        true,
-    );
+    setQrNeedCaptcha(entry?.needCaptcha === true);
+    setQrDisplayName(entry?.displayName ?? '');
     if (qrStep === null) {
       void import('../steps/QRCodeStep').then((m) => {
         setQrStep(() => m.QRCodeStep);
@@ -250,8 +255,8 @@ export function ProviderButtons({
   const QRStep = qrStep;
 
   /**
-   * 扫码结论落地：面板结论（success 已跳转 / binding / 失败）上抛
-   * 后关闭面板——分派归容器状态机（LoginContainer qrResultEvent）；图标墙
+   * 扫码结论落地：弹窗结论（success 已跳转 / binding / 失败）上抛
+   * 后关闭弹窗——分派归容器状态机（LoginContainer qrResultEvent）；图标墙
    * 恢复可重点（失败态重试 = 重新拉码，每次新 captcha，§2.8 行 703）。
    */
   const handleQrResult = (envelope: LoginFlowResponse) => {
@@ -270,7 +275,9 @@ export function ProviderButtons({
         <QRStep
           providerKey={qrProvider}
           needCaptcha={qrNeedCaptcha}
+          displayName={qrDisplayName}
           onResult={handleQrResult}
+          onClose={() => setQrProvider(undefined)}
         />
       )}
     </div>

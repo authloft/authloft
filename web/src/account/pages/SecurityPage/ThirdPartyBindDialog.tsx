@@ -1,33 +1,30 @@
 /**
- * 扫码绑定对话框（docs/前端架构.md §5 行 489；docs/接口文档.md §3.7.1 B）：
- * shared/QRCodePanel 的绑定包装——requestQR 经 shared/api/sso 调
- * SsoService/CreateQrcode{providerKey, scene:'bind', captcha}（§2.8 行 688-703，
- * captcha 配置取自 §3.2 的 GetConfig、由调用方注入；每次拉码都要新的凭据，
- * 行 703），pollUrl 轮询 AccountService/GetThirdpartyTicket{ticket, poll}（§3.7.1
- * B 行 996），onResult success → onDone（成功 → 关闭面板并刷新列表，行 1007）；
- * expired → 面板「重试」重拉码（requestQR 每轮经弹窗现取新凭据）；卸载中断
- * 轮询（§3.3 行 345）。不触碰登录状态机（§5 行 489）：onResult 不做
- * completeLogin 类终点跳转，绑定不改登录态（§3.7.1 B 行 1033）。
+ * 扫码绑定对话框（docs/前端架构.md §5；docs/接口文档.md §3.7.1 B）：
+ * shared/components/QRCodeDialog 的绑定包装——窗体与四态面板归 shared 通用壳
+ * （modal 注入 account 域窗体 shared/app-ui/Modal），本组件只做域内接线：
+ * requestQR 经 shared/api/sso 调 SsoService/CreateQrcode{providerKey,
+ * scene:'bind', captcha}（§2.8，captcha 配置取自 §3.2 的 GetConfig、由调用方
+ * 注入；每次拉码都要新的凭据），pollUrl 轮询
+ * AccountService/GetThirdpartyTicket{ticket, poll}（§3.7.1 B），onResult
+ * success → onDone（成功 → 关闭面板并刷新列表）；expired → 面板「重试」重拉码
+ * （requestQR 每轮经弹窗现取新凭据）；卸载中断轮询（§3.3）。不触碰登录状态机：
+ * onResult 不做 completeLogin 类终点跳转，绑定不改登录态（§3.7.1 B）。
  *
- * 【target_taken 文案落地】QRCodePanel 组件壳把 onPhase
- * 硬接 setPhase、failed 帧文案固定走 §1.6 通用字典（errors.status.target_taken
- * 系联系方式语境）；绑定语境（§3.7.1 B 行 1028 服务端 message 示例）为
- * 「该账号已被其他账号绑定」。本组件以 createQRPanelController +
- * QRCodePanelView 组合消费（四态面板机与纯展示仍是 shared 唯一实现，§3.3 行
- * 345；组件壳 QRCodePanel 仅 15 行胶水，此处等价重组以注入 onPhase），经
- * bindPollPhase（./api 纯函数）替换 target_taken 的 failed 帧文案——两组
- * props 下四态流转仍一致（面板四态流转测试约束不破，仅该帧文案按语境覆盖）。
+ * 【target_taken 文案落地】通用字典 target_taken 系联系方式语境；绑定语境
+ * （§3.7.1 B 服务端 message 示例）为「该账号已被其他账号绑定」。经
+ * QRCodeDialog 的 resolveFailureText(envelope) 注入 bindFailureText（./api
+ * 纯函数）按信封顶层 status 出文案；最近一次轮询信封的保存与「拉码失败 /
+ * 连续轮询超错无落定信封不改文案」由壳的守卫负责。
  *
- * 【captcha 门控】按 provider need_captcha 分派（§2.5 触发表第 7 行）：true
- * 走 upfront——面板挂载即弹窗问凭据再发请求；false 走 reactive——先裸发，
- * 命中 captcha_required 才弹窗（login 端 QRCodeStep 同款模式）；
- * captcha_invalid 在窗内换凭据重试；用户
- * 取消则卸下面板体、留「获取二维码」按钮原地重入。signal 忽略——api 薄封装
- * 不支持中断，结果丢弃由面板 disposed 检查兜底。
- * 文案经 shared/i18n（account.* 域键）。
+ * 【captcha 门控】按 provider need_captcha 分派（§2.5 触发表）：true 走
+ * upfront——面板挂载即弹窗问凭据再发请求；false 走 reactive——先裸发，命中
+ * captcha_required 才弹窗；captcha_invalid 在窗内换凭据重试；用户取消则卸下
+ * 面板、留「获取二维码」按钮原地重入（panelKey 重挂 = 新一轮拉码，凭据一次性
+ * 不可复用）。signal 忽略——api 薄封装不支持中断，结果丢弃由壳 disposed 检查
+ * 兜底。文案经 shared/i18n（account.* 域键）。
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, Modal } from '@douyinfe/semi-ui';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Button } from '@douyinfe/semi-ui';
 import type { CaptchaConfig } from '../../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../../gen/proto/api/sso/v1/envelope_pb';
@@ -36,198 +33,144 @@ import { Modal as AppModal } from '../../../shared/app-ui/Modal';
 import { CaptchaDialog } from '../../../shared/captcha/CaptchaDialog';
 import { errorCaptchaOutcome } from '../../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../../shared/captcha/useCaptchaGate';
-import {
-  createQRPanelController,
-  MAX_POLL_SECONDS,
-  QRCodePanelView,
-  type QRPanelController,
-  type QRPanelPhase,
-} from '../../../shared/components/QRCodePanel';
+import { QRCodeDialog } from '../../../shared/components/QRCodeDialog';
 import { createQrcode } from '../../../shared/api/sso';
 import { t } from '../../../shared/i18n';
 import {
-  bindPollPhase,
+  bindFailureText,
   buildCreateQrcodeBindRequest,
   buildGetThirdpartyTicketRequest,
   getThirdpartyTicket,
 } from '../../api';
 import styles from './ThirdPartyBindDialog.module.less';
 
-/** 面板体 props（挂载即拉码；controller 生命周期与卸载中断绑定）。 */
-interface PanelBodyProps {
-  /** 扫码类 Provider 标识（§3.7.1 B 行 993）。 */
-  providerKey: string;
-  /** 拉码需人机校验（§2.5 模式分派：true=upfront 先问再发，false=reactive 先裸发）。 */
-  needCaptcha: boolean;
-  /** captcha 配置（§3.2 GetConfig 注入；每轮拉码经弹窗现取凭据，§2.8 行 703）。 */
-  captcha: CaptchaConfig;
-  /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
-  onDone: () => void;
-  /** 用户取消 captcha 弹窗：父级卸下面板体并留重入按钮。 */
-  onCancelled: () => void;
-}
-
 /**
- * 面板体：createQRPanelController + QRCodePanelView 组合（见文件头 target_taken
- * 落地说明）。lastPollStatus 记录最近一次轮询信封顶层 status，供 failed 帧
- * 文案映射（bindPollPhase）；propsRef 模式与 shared 面板组件壳一致（闭包内
- * 读最新 props）。
- */
-function BindPanelBody({
-  providerKey,
-  needCaptcha,
-  captcha,
-  onDone,
-  onCancelled,
-}: PanelBodyProps): ReactNode {
-  const gate = useCaptchaGate(AppModal);
-  const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
-  const lastPollStatusRef = useRef('');
-  const propsRef = useRef({
-    providerKey,
-    needCaptcha,
-    captcha,
-    onDone,
-    onCancelled,
-  });
-  propsRef.current = { providerKey, needCaptcha, captcha, onDone, onCancelled };
-  const [controller] = useState<QRPanelController>(() =>
-    createQRPanelController({
-      requestQR: async (): Promise<CreateQrcodeResponse> => {
-        const outcome = await gate.run({
-          // 模式分派（§2.5）：provider need_captcha=true 先问再发，false 先
-          // 裸发命中 captcha_required 才问；服务端按同一配置 fail-closed 兜底。
-          mode: propsRef.current.needCaptcha ? 'upfront' : 'reactive',
-          config: propsRef.current.captcha,
-          // 凭据一律交请求组装（reactive 首探不带 captcha 字段，§2.5）。
-          request: (token: CaptchaPayload | undefined) =>
-            createQrcode(
-              buildCreateQrcodeBindRequest(propsRef.current.providerKey, token),
-            ),
-          // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
-          readOutcome: () => ({ action: 'message' }),
-          readError: errorCaptchaOutcome,
-        });
-        if (outcome.kind === 'result') {
-          return outcome.result;
-        }
-        if (outcome.kind === 'cancelled') {
-          // 面板体随即被卸载，其 disposed 检查会吞掉这次 reject 的 failed 态。
-          propsRef.current.onCancelled();
-          throw new Error(t('account.qrNeedCaptcha'));
-        }
-        throw outcome.error;
-      },
-      pollUrl: async (
-        ticket: string,
-        _signal: AbortSignal,
-      ): Promise<LoginFlowResponse> => {
-        const envelope = await getThirdpartyTicket(
-          buildGetThirdpartyTicketRequest(ticket),
-        );
-        lastPollStatusRef.current = envelope.status;
-        return envelope;
-      },
-      onResult: () => {
-        // §3.7.1 B 行 1007 / 行 1024：success 即绑定完成，关闭面板并刷新
-        // 列表；bind.ok 不作判据（protojson 省略零值，行 1024 示例 bind 无
-        // ok 字段），不读 .login（绑定不触碰登录状态机）。
-        propsRef.current.onDone();
-      },
-      onPhase: (next) => {
-        setPhase(bindPollPhase(next, lastPollStatusRef.current));
-      },
-      pollSeconds: MAX_POLL_SECONDS,
-    }),
-  );
-
-  // 挂载即拉码；卸载中断轮询与在途拉码（§3.3 行 345）。
-  useEffect(() => {
-    controller.refresh();
-    return () => controller.dispose();
-  }, [controller]);
-
-  return (
-    <>
-      <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
-      <CaptchaDialog {...gate.dialogProps} />
-    </>
-  );
-}
-
-/**
- * 扫码绑定状态壳（TotpBindDialog 挂载模式）：打开即挂面板体（拉码由 captcha
- * 弹窗门控）；关闭即卸载面板体（visible 条件渲染）中断轮询。取消弹窗只卸面板
- * 体、留重入按钮，Modal 不关。Modal 的 X / 遮罩关闭一律路由到 onCancel
- * （未完成不刷新列表）。
+ * 扫码绑定窗体：visible 即挂 QRCodeDialog（挂载即拉码，卸载即 dispose 中断
+ * 轮询）；X / Esc / 底部「关闭」统一路由 onCancel（未完成不刷新列表）。
+ * captcha 弹窗由本组件持有（gate），经 children 挂进壳内。用户取消 captcha
+ * 则卸下面板、留「获取二维码」按钮原地重入——重入窗体直接由注入的 AppModal
+ * 承载（壳挂载即拉码，表达不了「等用户点了再拉」），footer 与壳同一口径：
+ * 仅「关闭」、X / Esc / 遮罩不误触，关窗动作一律 onCancel。
  */
 export function ThirdPartyBindDialog(props: {
   /** 打开态（父级 ThirdPartyList 控制）。 */
   visible: boolean;
-  /** 扫码类 Provider 标识（§3.7.1 B 行 993：channel=qrcode 的 available 条目）。 */
+  /** 扫码类 Provider 标识（§3.7.1 B：channel=qrcode 的 available 条目）。 */
   providerKey: string;
   /** Provider 展示名（Modal 标题）。 */
   displayName: string;
   /** 拉码需人机校验（§2.5 模式分派，随 available 条目透传）。 */
   needCaptcha: boolean;
-  /** captcha 配置（§3.2 GetConfig 注入，§5 行 489）。 */
+  /** captcha 配置（§3.2 GetConfig 注入，§5）。 */
   captcha: CaptchaConfig;
   /** 未完成绑定的关闭（父级仅关框）。 */
   onCancel: () => void;
-  /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
+  /** 绑定成功（§3.7.1 B）：父级关框 + 刷新列表。 */
   onDone: () => void;
 }): ReactNode {
+  const gate = useCaptchaGate(AppModal);
   const [cancelled, setCancelled] = useState(false);
-  // 取消后重入：新 key 重挂面板体 → 再次走 upfront 弹窗（凭据一次性，不可复用）。
+  // 取消后重入：新 key 重挂壳体 → 再次走 upfront 弹窗（凭据一次性，不可复用）。
   const [panelKey, setPanelKey] = useState(0);
 
-  // 关闭后重置：选关闭沿（非打开沿）——面板体随 visible=false 已卸载、
-  // controller 已 dispose，重置发生在卸载之后，避免「打开帧先挂旧面板再重置」
-  // 的一帧闪挂（旧凭据拉错码）。
+  // 关闭后重置：选关闭沿（非打开沿）——壳随 visible=false 已卸载、controller
+  // 已 dispose，重置发生在卸载之后，避免「打开帧先挂旧面板再重置」的一帧闪挂
+  // （旧凭据拉错码）。
   useEffect(() => {
     if (!props.visible) {
       setCancelled(false);
     }
   }, [props.visible]);
 
-  return (
-    <Modal
-      title={
-        props.displayName === ''
-          ? t('account.scanBindTitle')
-          : t('account.bindNameTitle', { name: props.displayName })
-      }
-      visible={props.visible}
-      onCancel={props.onCancel}
-      okButtonProps={{ style: { display: 'none' } }}
-      cancelText={t('account.cancelAction')}
-    >
-      {props.visible && (
+  const title =
+    props.displayName === ''
+      ? t('account.scanBindTitle')
+      : t('account.bindNameTitle', { name: props.displayName });
+
+  const requestQR = async (
+    _signal: AbortSignal,
+  ): Promise<CreateQrcodeResponse> => {
+    // signal 忽略——api 薄封装不支持中断（pollUrl 同）。
+    const outcome = await gate.run({
+      // 模式分派（§2.5）：provider need_captcha=true 先问再发，false 先
+      // 裸发命中 captcha_required 才问；服务端按同一配置 fail-closed 兜底。
+      mode: props.needCaptcha ? 'upfront' : 'reactive',
+      config: props.captcha,
+      // 凭据一律交请求组装（reactive 首探不带 captcha 字段，§2.5）。
+      request: (token: CaptchaPayload | undefined) =>
+        createQrcode(buildCreateQrcodeBindRequest(props.providerKey, token)),
+      // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
+      readOutcome: () => ({ action: 'message' }),
+      readError: errorCaptchaOutcome,
+    });
+    if (outcome.kind === 'result') {
+      return outcome.result;
+    }
+    if (outcome.kind === 'cancelled') {
+      // 面板壳随即卸载，其 disposed 检查会吞掉这次 reject 的 failed 态。
+      setCancelled(true);
+      throw new Error(t('account.qrNeedCaptcha'));
+    }
+    throw outcome.error;
+  };
+
+  const pollUrl = (
+    ticket: string,
+    _signal: AbortSignal,
+  ): Promise<LoginFlowResponse> =>
+    getThirdpartyTicket(buildGetThirdpartyTicketRequest(ticket));
+
+  if (!props.visible) {
+    return null;
+  }
+
+  if (cancelled) {
+    return (
+      <AppModal
+        title={title}
+        visible
+        hasCancel={false}
+        okText={t('common.close')}
+        closable
+        closeOnEsc
+        maskClosable={false}
+        onOk={props.onCancel}
+        onCancel={props.onCancel}
+      >
         <div className={styles.body}>
-          {/* §5 行 489：面板上明示「扫码后将绑定到当前账号」。 */}
+          {/* 面板上明示「扫码后将绑定到当前账号」（§5）。 */}
           <p className={styles.hint}>{t('account.qrBindHint')}</p>
-          {cancelled ? (
-            <Button
-              theme="solid"
-              onClick={() => {
-                setCancelled(false);
-                setPanelKey((key) => key + 1);
-              }}
-            >
-              {t('account.fetchQrcodeAction')}
-            </Button>
-          ) : (
-            <BindPanelBody
-              key={panelKey}
-              providerKey={props.providerKey}
-              needCaptcha={props.needCaptcha}
-              captcha={props.captcha}
-              onDone={props.onDone}
-              onCancelled={() => setCancelled(true)}
-            />
-          )}
+          <Button
+            theme="solid"
+            onClick={() => {
+              setCancelled(false);
+              setPanelKey((key) => key + 1);
+            }}
+          >
+            {t('account.fetchQrcodeAction')}
+          </Button>
         </div>
-      )}
-    </Modal>
+      </AppModal>
+    );
+  }
+
+  return (
+    <QRCodeDialog
+      key={panelKey}
+      modal={AppModal}
+      title={title}
+      requestQR={requestQR}
+      pollUrl={pollUrl}
+      // success 即绑定完成，关闭面板并刷新列表；bind.ok 不作判据（protojson
+      // 省略零值），不读 .login（绑定不触碰登录状态机）。
+      onResult={props.onDone}
+      resolveFailureText={bindFailureText}
+      onClose={props.onCancel}
+    >
+      <div className={styles.body}>
+        <p className={styles.hint}>{t('account.qrBindHint')}</p>
+        <CaptchaDialog {...gate.dialogProps} />
+      </div>
+    </QRCodeDialog>
   );
 }

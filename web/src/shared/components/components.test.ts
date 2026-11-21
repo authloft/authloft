@@ -26,7 +26,6 @@ import { CopyButton } from './CopyButton';
 import { Spinner } from './Spinner';
 import { PasswordStrengthMeter, meterRules } from './PasswordStrengthMeter';
 import {
-  QRCodePanel,
   QRCodePanelView,
   createQRPanelController,
   pollTimeoutMsOf,
@@ -1131,26 +1130,8 @@ describe('QRCodePanel 控制器（§8.2 行 606：两组 props 注入下四态�
     expect(pollCalls).toBe(1); // 不再发起
   });
 
-  test('组件自身不发业务请求：请求只来自注入的 props（SSR 不触发，客户端由 effect 驱动）', () => {
-    let qrCalls = 0;
-    let pollCalls = 0;
-    const markup = renderToStaticMarkup(
-      createElement(QRCodePanel, {
-        requestQR: () => {
-          qrCalls += 1;
-          return Promise.resolve(qrcodeResponse(1));
-        },
-        pollUrl: () => {
-          pollCalls += 1;
-          return Promise.resolve(envelope({ status: 'pending' }));
-        },
-        onResult: () => {},
-      }),
-    );
-    expect(markup).toContain('正在获取二维码'); // 初始 fetching（effect 客户端才跑）
-    expect(qrCalls).toBe(0);
-    expect(pollCalls).toBe(0);
-  });
+  // 组件壳已退役（窗体壳由 QRCodeDialog 承接）：SSR 不发请求的口径由
+  // QRCodeDialog.test.ts 的同构约束用例覆盖。
 });
 
 describe('QRCodePanelView 渲染（四态 + failed）', () => {

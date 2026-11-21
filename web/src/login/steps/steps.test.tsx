@@ -22,7 +22,9 @@ import {
 } from '../../gen/proto/api/sso/v1/login_pb';
 import { CreateQrcodeResponseSchema } from '../../gen/proto/api/sso/v1/ticket_pb';
 import { ApiError } from '../../shared/api/errors';
+import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { stepUpErrorText } from '../../shared/components/StepUpDialog';
+import { QRCodeDialog } from '../../shared/components/QRCodeDialog';
 import { ChallengeStep } from './ChallengeStep';
 import { FormStep } from './FormStep';
 import {
@@ -269,22 +271,71 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     );
   }
 
-  test('无 captcha 配置 → QRCodePanel 直出（fetching 态；挂载即拉码归面板，§3.3 行 345）', () => {
-    const markup = renderQr({ providerKey: 'scan' });
-    expect(markup).toContain('正在获取二维码');
+  /**
+   * 弹窗形态接线捕获（login-container.test renderCapturingQrWiring 同法轻量版）：
+   * QRCodeStep → QRCodeDialog，login Modal 在 SSR（无 document）portal 不渲染
+   * 窗体，静态 markup 看不到面板——接线与开关态经 createElement 捕获断言。
+   */
+  function captureQrDialog(props: React.ComponentProps<typeof QRCodeStep>): {
+    dialog: React.ComponentProps<typeof QRCodeDialog>;
+    captcha: React.ComponentProps<typeof CaptchaDialog>;
+  } {
+    const dialogs: React.ComponentProps<typeof QRCodeDialog>[] = [];
+    const captchas: React.ComponentProps<typeof CaptchaDialog>[] = [];
+    const realCreateElement = React.createElement as (
+      type: unknown,
+      props: unknown,
+      ...children: unknown[]
+    ) => React.ReactElement;
+    rs.stubGlobal('React', {
+      ...React,
+      createElement: (
+        type: unknown,
+        props: unknown,
+        ...children: unknown[]
+      ) => {
+        if (type === QRCodeDialog) {
+          dialogs.push(props as React.ComponentProps<typeof QRCodeDialog>);
+        }
+        if (type === CaptchaDialog) {
+          captchas.push(props as React.ComponentProps<typeof CaptchaDialog>);
+        }
+        return realCreateElement(type, props, ...children);
+      },
+    });
+    renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/sso/login'] },
+        createElement(QRCodeStep, props),
+      ),
+    );
+    // 本文件无 afterEach：显式还原（沿 window 桩用例口径）。
+    rs.unstubAllGlobals();
+    // 首帧恰一个扫码弹窗 + 一个拉码 gate 弹窗。
+    expect(dialogs).toHaveLength(1);
+    expect(captchas).toHaveLength(1);
+    return { dialog: dialogs[0]!, captcha: captchas[0]! };
+  }
+
+  test('无 captcha 配置 → 弹窗壳接线就绪：标题走兜底键、拉码 / 轮询闭包在位（挂载即拉码归壳，§3.3 行 345）', () => {
+    const { dialog } = captureQrDialog({ providerKey: 'scan' });
+    // displayName 缺省 → login.qrDialogTitle 兜底（测试断言保留字面量）。
+    expect(dialog.title).toBe('扫码登录');
+    expect(typeof dialog.requestQR).toBe('function');
+    expect(typeof dialog.pollUrl).toBe('function');
   });
 
-  test('有 captcha 配置也不内联渲染 widget：面板直出，弹窗关闭（点击拉码才问，§2.8 行 690）', () => {
-    const markup = renderQr({
+  test('有 captcha 配置也不内联渲染 widget：gate 弹窗关闭（session 缺省，点击拉码才问，§2.8 行 690）', () => {
+    const { dialog, captcha } = captureQrDialog({
       providerKey: 'scan',
       captcha: create(CaptchaConfigSchema, {
         providerKey: 'builtin_image',
         type: 'image',
       }),
     });
-    expect(markup).toContain('正在获取二维码');
-    expect(markup).not.toContain('安全验证');
-    expect(markup).not.toContain('获取二维码<button');
+    expect(captcha.session).toBeUndefined(); // reactive 先裸发，弹窗未开
+    expect(typeof dialog.requestQR).toBe('function');
   });
 
   test('providerKey 空 → 零值兜底占位（§9 第 18 条；StepDispatcher 防御分派形态）', () => {

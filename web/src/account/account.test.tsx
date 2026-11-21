@@ -62,7 +62,7 @@ import {
   resolveTableQuery,
   runInlineToggle,
 } from '../shared/app-ui/dataTableLogic';
-import type { QRPanelPhase } from '../shared/components/QRCodePanel';
+import { LoginFlowResponseSchema } from '../gen/proto/api/sso/v1/envelope_pb';
 import { SettingList } from '../shared/components/SettingList';
 import { ApiError } from '../shared/api/errors';
 import { t } from '../shared/i18n';
@@ -1956,44 +1956,27 @@ describe('readBindParam / bindParamMessage（§3.7.1 A 行 969-971，纯函数�
   });
 });
 
-describe('bindPollPhase（§3.7.1 B 行 1028，纯函数）', () => {
-  test('failed + 最近轮询 status=target_taken → 语境文案替换通用文案', () => {
-    const phase: QRPanelPhase = {
-      kind: 'failed',
-      message: t('errors.status.target_taken'),
-    };
-    expect(apiMod.bindPollPhase(phase, 'target_taken')).toEqual({
-      kind: 'failed',
-      message: '该账号已被其他账号绑定',
-    });
+describe('bindFailureText（target_taken 语境文案；经 QRCodeDialog 的 resolveFailureText 注入）', () => {
+  /** 轮询落定信封（结论在信封顶层 status）。 */
+  const pollEnvelope = (status: string) =>
+    create(LoginFlowResponseSchema, { status });
+
+  test('target_taken 信封 → 绑定语境文案（非联系方式通用字典）', () => {
+    expect(apiMod.bindFailureText(pollEnvelope('target_taken'))).toBe(
+      '该账号已被其他账号绑定',
+    );
+    expect(apiMod.bindFailureText(pollEnvelope('target_taken'))).not.toBe(
+      t('errors.status.target_taken'),
+    );
   });
 
-  test('failed + 其他 status → 原样透传（qrFailureText 通用文案，§1.6 出文案口径）', () => {
-    const phase: QRPanelPhase = {
-      kind: 'failed',
-      message: t('errors.status.provider_disabled'),
-    };
-    expect(apiMod.bindPollPhase(phase, 'provider_disabled')).toBe(phase);
-  });
-
-  test('非 failed 帧原样引用返回——pending / scanned / expired / success 流转不受影响（面板四态流转约束）', () => {
-    const phases: QRPanelPhase[] = [
-      { kind: 'fetching' },
-      {
-        kind: 'active',
-        mode: 'url',
-        qrcodeUrl: 'https://cdn.test/qr.jpg',
-        qrcodeContent: '',
-        qrcodeBase64: '',
-        tipHtml: '',
-        ticketStatus: 'scanned',
-      },
-      { kind: 'success' },
-      { kind: 'expired' },
-    ];
-    for (const phase of phases) {
-      expect(apiMod.bindPollPhase(phase, 'target_taken')).toBe(phase);
-    }
+  test('其余 failed 信封 → 沿用 qrFailureText 通用字典；未知 status 走 unknown 兜底（§1.6 出文案口径）', () => {
+    expect(apiMod.bindFailureText(pollEnvelope('provider_disabled'))).toBe(
+      t('errors.status.provider_disabled'),
+    );
+    expect(apiMod.bindFailureText(pollEnvelope('brand_new'))).toBe(
+      t('errors.status.unknown'),
+    );
   });
 });
 

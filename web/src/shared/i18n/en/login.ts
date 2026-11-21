@@ -72,6 +72,9 @@ export const login: typeof zhLogin = {
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': 'Please complete the verification first',
+  // Fallback title of the QR sign-in dialog, used when the provider has no
+  // display name.
+  'login.qrDialogTitle': 'Scan to log in',
   'login.fetchQrcodeAction': 'Get QR code',
   'login.redirectInProgress': 'Redirecting…',
   'login.initMissing':

@@ -129,7 +129,7 @@ import { CaptchaPayloadSchema } from '../gen/proto/api/sso/v1/login_pb';
 import { DEFAULT_CODE_LENGTH } from '../shared/components/CodeInput';
 import {
   MAX_POLL_SECONDS,
-  type QRPanelPhase,
+  qrFailureText,
 } from '../shared/components/QRCodePanel';
 import { ApiError, resolveCode } from '../shared/api/errors';
 import { accountClient } from '../shared/api/http';
@@ -958,22 +958,18 @@ export function bindParamMessage(code: string): string {
 }
 
 /**
- * 扫码绑定 failed 帧文案映射：QRCodePanel 的
- * qrFailureText 按 §1.5 行 202 i18n 优先，target_taken 出通用文案（联系方式
- * 语境）；绑定语境（§3.7.1 B 行 1028）出「该账号已被其他账号绑定」
- * （account.bindTargetTaken 域键）。
- * lastPollStatus = 调用方在 pollUrl 里记录的最近一次轮询信封顶层 status——
- * failed 且 target_taken 时替换文案；其余帧原样返回（四态流转仍归面板控制器，
- * 面板四态流转测试约束不破）。
+ * 扫码绑定 failed 帧文案（经 QRCodeDialog 的 resolveFailureText 注入）：信封
+ * 顶层 status = target_taken 时出绑定语境「该账号已被其他账号绑定」
+ * （§3.7.1 B 行 1028 服务端 message 示例；通用字典 target_taken 系联系方式
+ * 语境，account.bindTargetTaken 域键），其余沿用 qrFailureText 通用字典
+ * （§1.6 出文案口径）。最近一次轮询信封的保存与非 failed 帧的放行由
+ * QRCodeDialog 壳的守卫负责（拉码失败 / 连续轮询超错无落定信封，不进本函数）。
  */
-export function bindPollPhase(
-  phase: QRPanelPhase,
-  lastPollStatus: string,
-): QRPanelPhase {
-  if (phase.kind === 'failed' && lastPollStatus === 'target_taken') {
-    return { kind: 'failed', message: t('account.bindTargetTaken') };
+export function bindFailureText(envelope: LoginFlowResponse): string {
+  if (envelope.status === 'target_taken') {
+    return t('account.bindTargetTaken');
   }
-  return phase;
+  return qrFailureText(envelope);
 }
 
 // ---------------------------------------------------------------------------

@@ -65,11 +65,11 @@ import {
   VerificationMethodSchema,
 } from '../gen/proto/api/common/v1/verification_pb';
 import {
-  QRCodePanel,
   createQRPanelController,
   type QRPanelController,
   type QRPanelPhase,
 } from '../shared/components/QRCodePanel';
+import { QRCodeDialog } from '../shared/components/QRCodeDialog';
 
 const { createElement } = React;
 
@@ -1992,18 +1992,18 @@ function totpMethod() {
 
 /**
  * SSR 接线捕获：以 classic JSX runtime 的全局 React.createElement 包装记录
- * QRCodeStep 交给 QRCodePanel / CaptchaDialog 的**真实 props**（pollUrl /
+ * QRCodeStep 交给 QRCodeDialog / CaptchaDialog 的**真实 props**（pollUrl /
  * requestQR / onResult 即组件实际接线闭包，含 needs_step_up 检测与终点分派），
- * 再按面板壳同构方式（createQRPanelController）驱动。渲染后全局 React 由
+ * 再按壳同构方式（createQRPanelController）驱动。渲染后全局 React 由
  * afterEach unstubAllGlobals 复位，不影响其余用例。
  */
 function renderCapturingQrWiring(
   props: React.ComponentProps<typeof qrStep.QRCodeStep>,
 ): {
-  panel: React.ComponentProps<typeof QRCodePanel>;
+  dialog: React.ComponentProps<typeof QRCodeDialog>;
   captcha: React.ComponentProps<typeof captchaDialogMod.CaptchaDialog>;
 } {
-  const panels: React.ComponentProps<typeof QRCodePanel>[] = [];
+  const dialogs: React.ComponentProps<typeof QRCodeDialog>[] = [];
   const captchas: React.ComponentProps<
     typeof captchaDialogMod.CaptchaDialog
   >[] = [];
@@ -2015,8 +2015,8 @@ function renderCapturingQrWiring(
   rs.stubGlobal('React', {
     ...React,
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => {
-      if (type === QRCodePanel) {
-        panels.push(props as React.ComponentProps<typeof QRCodePanel>);
+      if (type === QRCodeDialog) {
+        dialogs.push(props as React.ComponentProps<typeof QRCodeDialog>);
       }
       if (type === captchaDialogMod.CaptchaDialog) {
         captchas.push(
@@ -2033,23 +2033,22 @@ function renderCapturingQrWiring(
       createElement(qrStep.QRCodeStep, props),
     ),
   );
-  // 首帧恰一个面板 + 一个拉码 gate 弹窗（stepUpGate 弹窗待 needs_step_up 才挂）。
-  expect(panels).toHaveLength(1);
+  // 首帧恰一个扫码弹窗 + 一个拉码 gate 弹窗（stepUpGate 弹窗待 needs_step_up 才挂）。
+  expect(dialogs).toHaveLength(1);
   expect(captchas).toHaveLength(1);
-  return { panel: panels[0]!, captcha: captchas[0]! };
+  return { dialog: dialogs[0]!, captcha: captchas[0]! };
 }
 
-/** 面板壳同构驱动（QRCodePanel 内部 propsRef 桥接同形）：捕获的接线闭包原样注入。 */
+/** 壳同构驱动（QRCodeDialog 内部 propsRef 桥接同形）：捕获的接线闭包原样注入。 */
 function driveCapturedPanel(
-  wiring: { panel: React.ComponentProps<typeof QRCodePanel> },
+  wiring: { dialog: React.ComponentProps<typeof QRCodeDialog> },
   phases: QRPanelPhase[],
 ): QRPanelController {
   return createQRPanelController({
-    requestQR: (signal) => wiring.panel.requestQR(signal),
-    pollUrl: (ticket, signal) => wiring.panel.pollUrl(ticket, signal),
-    onResult: (envelope) => wiring.panel.onResult(envelope),
+    requestQR: (signal) => wiring.dialog.requestQR(signal),
+    pollUrl: (ticket, signal) => wiring.dialog.pollUrl(ticket, signal),
+    onResult: (envelope) => wiring.dialog.onResult(envelope),
     onPhase: (phase) => phases.push(phase),
-    pollSeconds: wiring.panel.pollSeconds,
   });
 }
 
@@ -2298,9 +2297,9 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
     const controller = driveCapturedPanel(wiring, phases);
     try {
       controller.refresh();
-      // upfront gate 先问凭据：经拉码弹窗 onConfirm 兑现（真实 useCaptchaGate 编排）。
+      // needCaptcha 缺省 → reactive：拉码先裸发（gate 不弹窗，msw 直接放行），
+      // 挂载后首个宏任务轮即完成拉码进入轮询。
       await new Promise((resolve) => setTimeout(resolve, 0));
-      wiring.captcha.onConfirm(imageToken('cap-1', '123'));
 
       // 首次 needs_step_up：ticket.status=scanned → 面板继续轮询、不终止。
       await waitFor(() =>
@@ -2371,18 +2370,15 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
         payload: { code: '123456' },
         loginToken: 'lt-qr',
       });
-      // 拉码 captcha 走请求顶层（§2.8 行 836 / §2.5）。
-      expect(qrBodies[0]).toEqual({
-        providerKey: 'scan',
-        captcha: { providerKey: 'builtin_image', id: 'cap-1', answer: '123' },
-      });
+      // reactive 首探不带 captcha 字段（§2.5 条件必填：needCaptcha 缺省裸发）。
+      expect(qrBodies[0]).toEqual({ providerKey: 'scan' });
     } finally {
       controller.dispose();
       releasePoll();
     }
   });
 
-  test('needs_step_up 后放弃验证 → 轮询至 expired 兜底：重试重拉新码（新 captcha，§2.8 行 874）', async () => {
+  test('needs_step_up 后放弃验证 → 轮询至 expired 兜底：重试重拉新码（reactive 裸发，§2.8 行 874）', async () => {
     const qrBodies: Array<{ captcha?: Record<string, unknown> }> = [];
     let qrCalls = 0;
     let polls = 0;
@@ -2451,7 +2447,6 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
     try {
       controller.refresh();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      wiring.captcha.onConfirm(imageToken('cap-1', '111'));
 
       // needs_step_up 不终止轮询 → 票据按 exp 过期 → expired 终态兜底。
       await waitFor(() => phases.some((phase) => phase.kind === 'expired'));
@@ -2459,16 +2454,11 @@ describe('QRCodeStep 接线层全链（needs_step_up → step-up → success 终
       // 第二轮已发起即证明 needs_step_up 未终止轮询。
       expect(polls).toBe(2);
 
-      // 面板「重试」动作：重拉新码，captcha 凭据必须换新（§2.5 一次性）。
+      // 面板「重试」动作：重拉新码（reactive 裸发，§2.5 条件必填）。
       controller.refresh();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      wiring.captcha.onConfirm(imageToken('cap-2', '222'));
       await waitFor(() => qrCalls >= 2);
-      expect(qrBodies[1]?.captcha).toEqual({
-        providerKey: 'builtin_image',
-        id: 'cap-2',
-        answer: '222',
-      });
+      expect(qrBodies[1]).toEqual({ providerKey: 'scan' });
       // 新 ticket 的轮询已发起（新 ticketId）。
       await waitFor(() =>
         phases.some(

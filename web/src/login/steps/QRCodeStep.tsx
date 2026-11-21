@@ -1,18 +1,19 @@
 /**
  * kind=qrcode 步骤实体（docs/前端架构.md §4.2 行 443）：
- * shared/QRCodePanel 的登录包装——只写胶水，四态流转与轮询在面板内（不再
- * 经 PollStep，避免双份轮询，行 443）。
+ * shared/components/QRCodeDialog 的登录包装——窗体经 login/components/Modal
+ * 注入（弹窗承载，ProviderButtons 点击扫码渠道后打开，关闭由 onClose 上抛），
+ * 本组件只写胶水，四态流转与轮询在壳内（不再经 PollStep，避免双份轮询，行 443）。
  *
  * - requestQR 调 SsoService/CreateQrcode（scene 缺省即 login，§2.8 行 702；
  *   captcha 条件必填——need_captcha=true 每轮现取新凭据，false 裸发，§2.5）；
- *   pollUrl 调 GetLoginTicket（poll 秒数与面板 pollSeconds 同值，
+ *   pollUrl 调 GetLoginTicket（poll 秒数与壳 pollSeconds 同值，
  *   §2.8 行 714 上限 15；signal 忽略——api 薄封装不支持中断，结果丢弃由
- *   面板 disposed 检查兜底）；
+ *   壳 disposed 检查兜底）；
  * - captcha 门控（§2.5 触发表第 7 行：按 provider need_captcha 分派）：true
  *   走 upfront——先在弹窗里问凭据再发一次请求；false 走 reactive——先裸发，
  *   命中 captcha_required 才弹窗（服务端 fail-closed 兜底）。
- *   captcha_invalid 在窗内换凭据重试；用户取消则卸下面板、留「获取二维码」
- *   按钮原地重入（新 key 重挂 → 再次弹窗），expired 重拉走面板「重试」；
+ *   captcha_invalid 在窗内换凭据重试；用户取消则卸下扫码窗、留「获取二维码」
+ *   按钮重入窗（新 key 重挂壳体 → 再次弹窗），expired 重拉走面板「重试」；
  * - onResult 完整状态机（§2.8 行 739-743）：面板 success（外层
  *   ticket 终态）后登录结论在**内层 `login`**（§1.3 同构信封）——success →
  *   completeLogin 终点跳转（终点字段 syncCookieUrl / redirectTo 在内层，
@@ -27,7 +28,7 @@
  *   就地交登录终点跳转，票据不写终态、不依赖下次轮询。取挑战的 captcha gate
  *   由 StepUpDialog 自闭环（§2.5），本组件只注入基础配置。
  *   同一 ticket 首次 needs_step_up 时弹窗；无论通过还是取消都保留已处理标记，
- *   轮询不再自动重弹。取消后由面板区域的「重新验证」入口显式重开（挑战令牌已
+ *   轮询不再自动重弹。取消后由扫码窗内的「重新验证」入口显式重开（挑战令牌已
  *   随窗体丢弃，重开即重取；loginToken 仍随每轮 needs_step_up 刷新）。
  *
  * 文案：经 i18n 字典 login.* / common.* 键取用。
@@ -49,10 +50,10 @@ import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { StepUpDialog } from '../../shared/components/StepUpDialog';
 import { ApiError } from '../../shared/api/errors';
 import {
-  QRCodePanel,
   MAX_POLL_SECONDS,
   ticketPhaseOf,
 } from '../../shared/components/QRCodePanel';
+import { QRCodeDialog } from '../../shared/components/QRCodeDialog';
 import { t } from '../../shared/i18n';
 import { getInit } from '../../shared/types/init';
 import {
@@ -317,11 +318,21 @@ export interface QRCodeStepProps {
    */
   needCaptcha?: boolean;
   /**
+   * Provider 展示名（弹窗标题；缺省 / 空串走 login.qrDialogTitle 兜底键，
+   * §4.3 由 ProviderButtons 随条目传入）。
+   */
+  displayName?: string;
+  /**
    * 扫码登录结论上抛（外层信封；内层 login 为 §1.3 登录流程信封）：
    * success 已由本组件 completeLogin 完成终点跳转；binding_required /
    * 失败态经本回调交容器状态机分派（§2.8 行 739-743）。
    */
   onResult?: (envelope: LoginFlowResponse) => void;
+  /**
+   * 弹窗关窗动作（X / Esc / 底部「关闭」统一上抛；调用方关闭即卸载本组件，
+   * 中断轮询）。缺省时关窗动作不生效（壳不自动消失）。
+   */
+  onClose?: () => void;
   /** captcha 配置（缺省取注入快照 methods.captcha；来源三处见 §2.5 行 477）。 */
   captcha?: CaptchaConfig;
   /** 拉码替身（缺省 createQrcode；测试注入）；captcha 条件必填（§2.5）。 */
@@ -343,7 +354,9 @@ export interface QRCodeStepProps {
 export function QRCodeStep({
   providerKey,
   needCaptcha,
+  displayName,
   onResult,
+  onClose,
   captcha = initCaptcha(),
   requestQrcode,
   pollTicket = defaultPollTicket,
@@ -352,7 +365,7 @@ export function QRCodeStep({
 }: QRCodeStepProps) {
   const gate = useCaptchaGate(Modal);
   const [cancelled, setCancelled] = useState(false);
-  // 取消后重入：新 key 重挂面板 → 再次走 upfront 弹窗（凭据一次性，不能复用）。
+  // 取消后重入：新 key 重挂壳体 → 再次走模式分派弹窗（凭据一次性，不能复用）。
   const [panelKey, setPanelKey] = useState(0);
   // 扫码登录成功终点的 returnTo 消费（useSearchParams 已解码）。
   const [searchParams] = useSearchParams();
@@ -425,7 +438,7 @@ export function QRCodeStep({
       return outcome.result;
     }
     if (outcome.kind === 'cancelled') {
-      // 面板随即被卸载，其 disposed 检查会吞掉这次 reject 的 failed 态。
+      // 扫码窗随即被卸载，壳的 disposed 检查会吞掉这次 reject 的 failed 态。
       setCancelled(true);
       throw new Error(t('login.qrNeedCaptcha'));
     }
@@ -462,51 +475,81 @@ export function QRCodeStep({
     setStepUpReopen(state.reopenTicketId);
   };
 
+  // 弹窗标题：Provider 展示名优先，缺省 / 空串走兜底键（§4.3 随条目传入）。
+  const title =
+    displayName !== undefined && displayName !== ''
+      ? displayName
+      : t('login.qrDialogTitle');
+
+  // captcha 取消后的重入窗：壳挂载即拉码，表达不了「等用户点了再拉」——
+  // 直接由登录域 Modal 承载，footer 与壳同一口径（仅「关闭」，X / Esc / 遮罩
+  // 不误触，关窗动作一律上抛 onClose）。
+  if (cancelled) {
+    return (
+      <>
+        <Modal
+          visible
+          title={title}
+          hasCancel={false}
+          okText={t('common.close')}
+          closable
+          closeOnEsc
+          maskClosable={false}
+          onOk={onClose}
+          onCancel={onClose}
+        >
+          <div className={styles.panel}>
+            <button
+              type="button"
+              className={styles.fetchButton}
+              onClick={() => {
+                setCancelled(false);
+                setPanelKey((key) => key + 1);
+              }}
+            >
+              {t('login.fetchQrcodeAction')}
+            </button>
+          </div>
+        </Modal>
+        <CaptchaDialog {...gate.dialogProps} />
+      </>
+    );
+  }
+
   return (
-    <div className={styles.panel}>
-      {cancelled ? (
-        <button
-          type="button"
-          className={styles.fetchButton}
-          onClick={() => {
-            setCancelled(false);
-            setPanelKey((key) => key + 1);
-          }}
-        >
-          {t('login.fetchQrcodeAction')}
-        </button>
-      ) : (
-        <QRCodePanel
-          key={panelKey}
-          requestQR={requestQR}
-          // 面板第二参是 AbortSignal（api 薄封装不支持中断，signal 忽略）；
-          // poll 秒数取本组件 pollSeconds，与面板 pollTimeoutMs 同值（§2.8 上限 15）。
-          pollUrl={(ticket) => pollAndDetectStepUp(ticket, pollSeconds)}
-          onResult={(outer) =>
-            // 完整状态机分派：success 用内层信封终点跳转；
-            // binding_required / 失败态上抛交容器。
-            dispatchQrResult(outer, {
-              completeLogin: (login) =>
-                completeLogin(login, navigate, returnTo),
-              onResult,
-            })
-          }
-          pollSeconds={pollSeconds}
-        />
-      )}
+    <>
+      <QRCodeDialog
+        key={panelKey}
+        modal={Modal}
+        title={title}
+        requestQR={requestQR}
+        // 第二参是 AbortSignal（api 薄封装不支持中断，signal 忽略）；
+        // poll 秒数取本组件 pollSeconds，与壳 pollTimeoutMs 同值（§2.8 上限 15）。
+        pollUrl={(ticket) => pollAndDetectStepUp(ticket, pollSeconds)}
+        onResult={(outer) =>
+          // 完整状态机分派：success 用内层信封终点跳转；
+          // binding_required / 失败态上抛交容器。
+          dispatchQrResult(outer, {
+            completeLogin: (login) => completeLogin(login, navigate, returnTo),
+            onResult,
+          })
+        }
+        onClose={onClose}
+      >
+        {stepUpReopen !== undefined && stepUpTicket === undefined ? (
+          <button
+            type="button"
+            className={styles.fetchButton}
+            onClick={() => {
+              setStepUpTicket(stepUpReopen);
+              setStepUpReopen(undefined);
+            }}
+          >
+            {t('login.stepUpReopen')}
+          </button>
+        ) : null}
+      </QRCodeDialog>
       <CaptchaDialog {...gate.dialogProps} />
-      {stepUpReopen !== undefined && stepUpTicket === undefined ? (
-        <button
-          type="button"
-          className={styles.fetchButton}
-          onClick={() => {
-            setStepUpTicket(stepUpReopen);
-            setStepUpReopen(undefined);
-          }}
-        >
-          {t('login.stepUpReopen')}
-        </button>
-      ) : null}
       {stepUpTicket !== undefined ? (
         <StepUpDialog
           modal={Modal}
@@ -517,6 +560,6 @@ export function QRCodeStep({
           onCancel={() => dismissStepUp('cancelled')}
         />
       ) : null}
-    </div>
+    </>
   );
 }

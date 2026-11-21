@@ -18,9 +18,9 @@
  *
  * 面板控制器（createQRPanelController）组合 createLongPollController，
  * 不依赖 React 可独立测试；QRCodePanelView 为纯展示（四态 + failed，
- * SSR 可测）；组件自身不发任何业务请求（拉码 / 轮询都由 props 决定）。
+ * SSR 可测）；拉码 / 轮询都由 props 决定——发起时机归窗体壳
+ * QRCodeDialog（挂载 effect），本文件零 hook、纯逻辑直测。
  */
-import { useEffect, useRef, useState } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
 import {
@@ -354,44 +354,5 @@ export function QRCodePanelView({ phase, onRefresh }: QRCodePanelViewProps) {
         </div>
       )}
     </div>
-  );
-}
-
-export interface QRCodePanelProps {
-  /** 拉码（调用方包装 CreateQrcode——含 captcha，每次拉码都要新的，§2.8 行 703）。 */
-  requestQR(signal: AbortSignal): Promise<CreateQrcodeResponse>;
-  /** 轮询调用（调用方包装 GetLoginTicket / GetThirdpartyTicket，poll 秒数同 pollSeconds）。 */
-  pollUrl(ticket: string, signal: AbortSignal): Promise<LoginFlowResponse>;
-  /** 结果就绪（success）：整个信封交给调用方（登录读 .login、绑定读 .bind）。 */
-  onResult(envelope: LoginFlowResponse): void;
-  /** 轮询单次最长等待秒数（上限 15，§2.8 行 714；默认 15）。 */
-  pollSeconds?: number;
-  /** 连续轮询错误上限（默认 useLongPoll 的 DEFAULT_MAX_POLL_ERRORS）。 */
-  maxPollErrors?: number;
-}
-
-export function QRCodePanel(props: QRCodePanelProps) {
-  const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
-  const propsRef = useRef(props);
-  propsRef.current = props;
-  const [controller] = useState(() =>
-    createQRPanelController({
-      requestQR: (signal) => propsRef.current.requestQR(signal),
-      pollUrl: (ticket, signal) => propsRef.current.pollUrl(ticket, signal),
-      onResult: (envelope) => propsRef.current.onResult(envelope),
-      onPhase: setPhase,
-      pollSeconds: propsRef.current.pollSeconds,
-      maxPollErrors: propsRef.current.maxPollErrors,
-    }),
-  );
-
-  // 挂载即拉码；卸载中断轮询与在途拉码（§3.3 行 345）。
-  useEffect(() => {
-    controller.refresh();
-    return () => controller.dispose();
-  }, [controller]);
-
-  return (
-    <QRCodePanelView phase={phase} onRefresh={() => controller.refresh()} />
   );
 }

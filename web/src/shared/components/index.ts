@@ -46,3 +46,10 @@ export {
   type StepUpDialogViewProps,
   type StepUpPhase,
 } from './StepUpDialog';
+export {
+  QRCodeDialog,
+  createQRDialogController,
+  qrDialogPhase,
+  qrPanelLifecycle,
+  type QRCodeDialogProps,
+} from './QRCodeDialog';

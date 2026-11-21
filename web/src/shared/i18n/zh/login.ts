@@ -73,6 +73,8 @@ export const login = {
   // ---- 步骤杂项（steps/、routes、entry）--------------------------------------
   // 「请刷新重试」复用 common.refreshAndRetry（收口，login.refreshRetry 已删）。
   'login.qrNeedCaptcha': '请先完成人机校验',
+  // 扫码登录弹窗兜底标题：Provider 展示名缺失 / 空串时取用。
+  'login.qrDialogTitle': '扫码登录',
   'login.fetchQrcodeAction': '获取二维码',
   'login.redirectInProgress': '正在跳转…',
   'login.initMissing': '初始化数据缺失，请刷新重试',
