@@ -26,8 +26,7 @@ type Partition struct {
 // PartitionManager event_log 分区维护的方言接口。实现方从各自目录表枚举
 // 实体分区——排除兜底分区与非 pYYYYMMDD 命名的分区（人工建的分区不进决策，
 // 也就不会被算法误删）——再由本包决策算法产出方案，方言只负责把方案翻译成
-// 各自的 DDL。首个实现方是 event_log 分区任务（调度与挂载由 bootstrap 装配
-// 层承接，属后续工作）。
+// 各自的 DDL。首个实现方是 event_log 分区任务。
 type PartitionManager interface {
 	// EnsurePartition 切新分区（§2）：today 已越过最后一个实体分区上界
 	// （即当前数据正落进兜底）时切一次，新分区上界 = max(既有上界, today) +

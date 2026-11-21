@@ -60,6 +60,7 @@ import (
 	"authloft/internal/oidc"
 	"authloft/internal/otp"
 	"authloft/internal/pages"
+	"authloft/internal/partition"
 	"authloft/internal/provider"
 	"authloft/internal/proxyclient"
 	// 注册表导入统一触发 init() 自注册：内置渠道适配器、smtp / aliyun_sms
@@ -143,7 +144,6 @@ func run(configPath string) error {
 const shutdownTimeout = 10 * time.Second
 
 // assembled 正常模式装配产物（§3.1 启动链）：基础设施、共享单例与各域 service。
-// cron 仍为 TODO（§3.12）。
 type assembled struct {
 	db  *bun.DB
 	rdb *cache.RedisClient
@@ -156,7 +156,10 @@ type assembled struct {
 	watcher      *settings.Watcher
 	queue        *asyncqueue.Queue
 	sink         *eventlogsvc.LoginEventWriter
-	engine       *orchestrator.Engine
+	// partitionTask event_log 分区维护任务（§4.6 清理段）：生命周期归
+	// stopBackground，多副本并发 DDL 由 Redis 抢锁互斥。
+	partitionTask *partition.Task
+	engine        *orchestrator.Engine
 	// verification step-up 服务（§3.8）：挑战 / 断言两把独立密钥，SSO / account 两域共用。
 	verification *verification.Service
 
@@ -918,8 +921,8 @@ func assembleStep(step string, err error) error {
 	return err
 }
 
-// assemble 正常模式装配步骤 2-8（§3.1 固定顺序）；任一步失败先释放已建资源
-// 再原样上抛（serve 转 fail-fast）。provider 注册表与 cron 仍为 TODO。
+// assemble 正常模式装配步骤 2-9（§3.1 固定顺序）；任一步失败先释放已建资源
+// 再原样上抛（serve 转 fail-fast）。provider 注册表仍为 TODO。
 func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	db, err := repo.Open(cfg)
 	if err != nil {
@@ -1003,6 +1006,24 @@ func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	), asyncqueue.DefaultOptions())
 	deps.sink = eventlogsvc.NewLoginEventWriter(eventlog.NewWriter(deps.queue))
 
+	// 步骤 9（cron 角色，§4.6 清理段 / §3.1 装配顺序「队列 worker → cron」）：
+	// 分区维护任务——Start 立即跑一轮 + 每日周期；每轮经 Redis 抢锁，多副本
+	// 下未抢到的实例跳过本轮；参数两键每轮从 settings 快照读取、消费侧钳制
+	// 兜底。启动失败仅 ctx 已取消（进程关闭中）一种，走正常收口。
+	deps.partitionTask = partition.NewTask(
+		repo.NewPartitionManager(cfg.DB.EffectiveDriver(), db),
+		deps.settings,
+		rdb,
+		partition.TaskOptions{
+			DaysKey: settings.KeyEventlogPartitionDays,
+			MaxKey:  settings.KeyEventlogMaxPartitions,
+		},
+	)
+	if err := deps.partitionTask.Start(ctx); err != nil {
+		deps.close(context.Background())
+		return nil, assembleStep("partition.Task.Start", err)
+	}
+
 	// 微信 access_token 跨实例共享缓存（cache/wxacode）注入 wechat_mp_scan 适配器：
 	// Redis 就绪后、接受请求前一次完成（适配器按请求构造，读当前注入值）。
 	wechatmpscan.SetAccessTokenCache(cache.NewWxacodeStore(rdb))
@@ -1076,7 +1097,8 @@ func closeWarn(resource string, err error) {
 }
 
 // stopBackground 停止后台协程：先关 watcher，再优雅关闭队列（内部先 flush 再
-// 停 worker）。须在 http.Server.Shutdown 之前调用；重复调用安全。
+// 停 worker），最后停分区维护任务（取消在途轮次）。须在 http.Server.Shutdown
+// 之前调用；重复调用安全。
 func (a *assembled) stopBackground(ctx context.Context) {
 	if a == nil {
 		return
@@ -1088,6 +1110,10 @@ func (a *assembled) stopBackground(ctx context.Context) {
 	if a.queue != nil {
 		closeWarn("asyncqueue", a.queue.Close(ctx))
 		a.queue = nil
+	}
+	if a.partitionTask != nil {
+		closeWarn("partition.task", a.partitionTask.Close())
+		a.partitionTask = nil
 	}
 }
 
@@ -1146,7 +1172,6 @@ func serve(cfg *config.Config) error {
 	}
 
 	// provider / factor 注册表已由 assemble 构造、适配器自注册经顶部 `_ import` 触发。
-	// TODO(cron)：定时清理任务包尚未落地（§3.12），随 cron 接入。
 
 	handler, _ := buildRouterWithSSO(cfg, deps)
 	srv, err := newHTTPServer(cfg, handler)

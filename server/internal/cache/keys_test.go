@@ -66,3 +66,11 @@ func TestKeysDayStamp(t *testing.T) {
 		}
 	}
 }
+
+// TestKeysPartitionLock 分区维护抢锁键（§4.6 清理段）：单例固定名。
+func TestKeysPartitionLock(t *testing.T) {
+	const want = "al:eventlog:partlock"
+	if got := PartitionLockKey(); got != want {
+		t.Fatalf("PartitionLockKey() = %q, want %q", got, want)
+	}
+}

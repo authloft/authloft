@@ -161,7 +161,16 @@ const permAdminsKey = "al:perm:admins"
 // 禁止裸拼字符串。
 func PermissionAdminsKey() string { return permAdminsKey }
 
-// dayStamp 返回服务器本地日期 yyyymmdd（§5.1 行 837-838 键名的日期段）。
+// partitionLockKey event_log 分区维护任务抢锁键（单例固定名，§4.6 清理段）。
+const partitionLockKey = "al:eventlog:partlock"
+
+// PartitionLockKey 返回分区维护抢锁键（String、TTL 10m、每轮维护开始
+// SET NX 1 次）：多副本部署下防并发分区 DDL——每轮先抢锁，未抢到的实例
+// 跳过本轮；锁不主动释放、过期自失效（TTL 远大于单轮维护超时、远小于
+// 24h 轮询周期，不会跨轮误占）。
+func PartitionLockKey() string { return partitionLockKey }
+
+// dayStamp 返回服务器本地日期 yyyymmdd（§5.1 键名的日期段）。
 func dayStamp(t time.Time) string {
 	return t.Format("20060102")
 }
