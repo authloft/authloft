@@ -28,7 +28,7 @@ export const setup = {
   // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
   'setup.restartingTitle': '请重启 Authloft 服务',
   'setup.restartingNotice':
-    'Authloft 已退出，请手动重新运行；如使用 Docker 或 systemd，会自动重启',
+    'Authloft 已退出，请重新运行；如使用 Docker 或 systemd，会自动重启',
   'setup.restartTimeoutNotice': '重启超时，请检查服务状态',
   'setup.waitingRestart': '等待服务重启…',
 
@@ -75,7 +75,6 @@ export const setup = {
   // 8-64 位 / 大写+小写+数字三类 / 不含空白 / 不等于且不包含用户名 / 不命中弱口令字典）。
   'setup.hintAdminPassword':
     '8-64 位，须含大写字母、小写字母和数字；不能含空白字符，不能与用户名相同或包含用户名，不能是常见弱密码',
-  'setup.hintRedisDb': '默认 0',
   'setup.hintRoot':
     '需填域名（拒绝 IP，localhost 允许）；host 为域名或 localhost 时预填当前站点',
   // root 前置校验文案（§6b 客户端体验性校验；后端为唯一权威）。
@@ -95,7 +94,7 @@ export const setup = {
   // db_unreachable 字段级展示（InstallPage 定位到 DSN 字段组；UploadConfig 沿用 dbUnreachable）。
   'setup.error.dbUnreachableFields':
     '数据库连接失败，请检查地址 / 端口 / 用户名 / 密码',
-  'setup.hintRpId': '默认取当前域名',
+  'setup.hintRpId': '请填写安装 Authloft 的域名，例如 example.com',
   'setup.fieldRpDisplayName': '站点名称（RP 展示名）',
   'setup.hintRpDisplayName':
     '通行密钥注册时显示的名称；留空使用默认值 Authloft',
@@ -104,8 +103,8 @@ export const setup = {
 
   // ---- 入口页（模式判定 + 两条路径入口；两个选项复用 uploadConfigTitle / installTitle）----
   'setup.checkingMode': '正在检测运行模式…',
-  'setup.initTitle': 'Authloft 初始化',
-  'setup.setupModeDetected': '检测到首次启动（setup 模式），请选择初始化方式：',
+  'setup.initTitle': '设置 Authloft',
+  'setup.setupModeDetected': '欢迎使用 Authloft，请选择初始化方式：',
 
   // ---- setup Semi 化：Steps 步序 / 路径说明 / 幂等引导 / 重试与重探 ----
   'setup.stepChoice': '选择安装方式',
@@ -113,7 +112,7 @@ export const setup = {
   'setup.stepRun': '执行安装',
   'setup.stepRestart': '重启完成',
   'setup.uploadConfigDesc':
-    '已有 config.yaml：上传后按序完成校验、连接检查与初始化。',
+    '已有 config.yaml：上传后完成校验、连接检查与初始化。',
   'setup.installDesc':
     '无既有配置：填写数据库、Redis 与管理员信息，从零初始化。',
   'setup.alreadyInstalled': '检测到已完成安装，服务已处于正常模式。',

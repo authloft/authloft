@@ -348,7 +348,6 @@ export default function InstallPage({
         <Form.Input
           field="redisDb"
           label={t('setup.fieldRedisDb')}
-          extraText={t('setup.hintRedisDb')}
           autoComplete="off"
         />
         <Form.Input

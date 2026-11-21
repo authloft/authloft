@@ -33,7 +33,7 @@ export const setup: typeof zhSetup = {
   // ---- 重启页（§13.4，上传配置 / 全新安装两条路径共用）----
   'setup.restartingTitle': 'Please restart Authloft',
   'setup.restartingNotice':
-    'Authloft has exited. Please restart it manually; if you use Docker or systemd, it will restart automatically',
+    'Authloft has exited. Please restart it; if you use Docker or systemd, it will restart automatically',
   'setup.restartTimeoutNotice':
     'Restart timed out. Please check the service status',
   'setup.waitingRestart': 'Waiting for the service to restart…',
@@ -82,7 +82,6 @@ export const setup: typeof zhSetup = {
   // 8-64 chars / uppercase+lowercase+digit / no whitespace / not equal to or containing the username / not a common password).
   'setup.hintAdminPassword':
     '8-64 characters with uppercase, lowercase, and a digit; no whitespace; must not equal or contain the username; must not be a common password',
-  'setup.hintRedisDb': 'Default: 0',
   'setup.hintRoot':
     'A domain is required (IPs rejected; localhost allowed). Prefilled with the current site when its host is a domain or localhost',
   // root pre-validation messages (client-side hints only; the backend is the sole authority).
@@ -103,7 +102,8 @@ export const setup: typeof zhSetup = {
   // Field-level display for db_unreachable (InstallPage points at the DSN field group; UploadConfig keeps dbUnreachable).
   'setup.error.dbUnreachableFields':
     'Cannot connect to the database. Please check the host / port / username / password',
-  'setup.hintRpId': 'Defaults to the current domain',
+  'setup.hintRpId':
+    'Please enter the domain name where Authloft is installed, for example: example.com',
   'setup.fieldRpDisplayName': 'Site name (RP display name)',
   'setup.hintRpDisplayName':
     'Shown when registering a passkey; leave empty to use the default "Authloft"',
@@ -113,8 +113,7 @@ export const setup: typeof zhSetup = {
   // ---- Entry page (mode detection + two path entries; options reuse uploadConfigTitle / installTitle) ----
   'setup.checkingMode': 'Detecting run mode…',
   'setup.initTitle': 'Authloft Setup',
-  'setup.setupModeDetected':
-    'First launch detected (setup mode). Choose how to initialize:',
+  'setup.setupModeDetected': 'Welcome to Authloft. Choose how to initialize:',
 
   // ---- setup Semi migration: steps / path descriptions / idempotent guide / retry & re-probe ----
   'setup.stepChoice': 'Choose Setup Method',
@@ -122,7 +121,7 @@ export const setup: typeof zhSetup = {
   'setup.stepRun': 'Run Installation',
   'setup.stepRestart': 'Restart & Finish',
   'setup.uploadConfigDesc':
-    'Have an existing config.yaml: upload it to run validation, connectivity checks, and initialization in order.',
+    'Have an existing config.yaml: upload it to run validation, connectivity checks, and initialization.',
   'setup.installDesc':
     'No existing configuration: enter the database, Redis, and administrator details for a fresh initialization.',
   'setup.alreadyInstalled':
