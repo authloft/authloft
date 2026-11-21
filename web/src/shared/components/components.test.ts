@@ -272,7 +272,7 @@ describe('FieldRenderer 字段文案 i18n 化（后端只下发键）', () => {
   });
 });
 
-describe('FieldRenderer 可访问性（评审 P0-3 + P1-2 字段级错误槽）', () => {
+describe('FieldRenderer 可访问性（字段级错误槽）', () => {
   test('label htmlFor ↔ 控件 id 稳定关联（默认前缀 fr-，可用 idPrefix 覆盖防撞）', () => {
     const markup = renderFields([
       makeField({

@@ -9,8 +9,8 @@
  * 「admin 用 Semi UI 自带表单校验」），本文件零受控 state。字段必须挂在
  * `<Form>` 内渲染（FormApiContext / FormStateContext 由 Form 提供）。
  *
- * Semi UI 经大包入口命名导入（§1.6 行 113 硬性口径）；未知 type 渲染
- * 禁用占位不崩（§12.9 行 1754：fields[].type 跨版本可能新增）。
+ * Semi UI 经大包入口命名导入（§1.6 硬性口径）；未知 type 渲染
+ * 禁用占位不崩（§12.9：fields[].type 跨版本可能新增）。
  * 样式复用 ../SchemaForm.module.less（字段装配属表单布局；跨文件共享
  * 同一 CSS Modules 映射，§1.7）。
  *
@@ -151,7 +151,7 @@ export function NumberField(props: FieldRendererProps): ReactNode {
   );
 }
 
-/** select：取值集合即 options（§5.3 行 1229 与 §1.11 同名同义）。 */
+/** select：取值集合即 options（§5.3 与 §1.11 同名同义）。 */
 export function SelectField(props: FieldRendererProps): ReactNode {
   return (
     <Form.Select
@@ -195,7 +195,7 @@ export function JsonField(props: FieldRendererProps): ReactNode {
   );
 }
 
-/** 未知 type 占位（§12.9 行 1754：跨版本新增类型渲染占位不丢值不崩）。 */
+/** 未知 type 占位（§12.9：跨版本新增类型渲染占位不丢值不崩）。 */
 export function UnsupportedField(props: FieldRendererProps): ReactNode {
   return (
     <Form.Input

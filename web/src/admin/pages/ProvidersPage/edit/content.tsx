@@ -1,9 +1,9 @@
 /**
- * 提供商新建 / 编辑页（docs/前端架构.md §6 行 516；docs/接口文档.md
- * §5.2 行 1164-1179 / §5.3）——/admin/providers/new 与
+ * 提供商新建 / 编辑页（docs/前端架构.md §6；docs/接口文档.md
+ * §5.2 / §5.3）——/admin/providers/new 与
  * /admin/providers/{provider_key}/edit。
  *
- * 页面级职责（§6 行 516）：
+ * 页面级职责（§6）：
  * - `type` 下拉从 Registry 的 metas 动态拉取；选定后拉 GetProviderSchema
  *   驱动 SchemaForm；编辑模式 type / provider_key 锁定；
  * - 保存前校验 provider_key 唯一性（新建模式全量列表预检，失败放行由后端
@@ -28,7 +28,7 @@
  * 挂载时生效）。提交体 buildProviderStruct（type 顶层恒带），
  * 成功后整页跳回列表。
  *
- * 401 统一跳登录（§6 行 501）；其余错误走页面错误帧（Semi Banner）/
+ * 401 统一跳登录（§6）；其余错误走页面错误帧（Semi Banner）/
  * 写操作失败 Toast。样式（§1.7）：同目录同名 module less。
  */
 import {
@@ -217,7 +217,7 @@ export function ProviderEditContent(props: {
     setType(last(path) ?? '');
   }
 
-  /** icon_url 实时预览（§6 行 516：手填绝对 URL，空则占位）。 */
+  /** icon_url 实时预览（§6：手填绝对 URL，空则占位）。 */
   function iconPreview(field: SchemaField, values: FormValues): ReactNode {
     if (field.key !== 'icon_url') {
       return null;
@@ -263,7 +263,7 @@ export function ProviderEditContent(props: {
     props.onSubmit?.(buildProviderStruct(type, schema.fields, values));
   }
 
-  /** 发送测试（§5.2 行 1177 TestProvider {providerKey, target}）。 */
+  /** 发送测试（§5.2 TestProvider {providerKey, target}）。 */
   function handleTest(): void {
     const api = formApi.current;
     if (api === null) {
@@ -316,7 +316,7 @@ export function ProviderEditContent(props: {
     );
   }
 
-  // category 恒只读（§5.3 行 1195）；provider_key 编辑锁定（行 1192）。
+  // category 恒只读（§5.3）；provider_key 编辑锁定（§5.3）。
   const lockedKeys = editing ? ['category', 'provider_key'] : ['category'];
   const canTest =
     editing &&

@@ -1,10 +1,10 @@
 /**
- * admin 设置页纯逻辑（docs/前端架构.md §6 行 520 SettingsPage；docs/接口文档.md
- * §5.6 行 1292-1363 四张表 = 键名 / 默认值 / 类型 / 值域的唯一定义处，逐字对齐）：
+ * admin 设置页纯逻辑（docs/前端架构.md §6 SettingsPage；docs/接口文档.md
+ * §5.6 四张表 = 键名 / 默认值 / 类型 / 值域的唯一定义处，逐字对齐）：
  * 键集映射 / 默认值 / 草稿初始化 / 交叉校验全部收口在此，零 Semi 依赖、node
  * 可测（schemaLogic 同模式；页面壳渲染不可测见 admin.test.tsx 头注 Blocker）。
  *
- * ⚠️ SetSettings 部分更新语义（§5.6 行 1287；proto3 optional has 位 +
+ * ⚠️ SetSettings 部分更新语义（§5.6；proto3 optional has 位 +
  * 四个 repeated 键的 has_* 伴生标志）：未设置 = 不修改、显式零值 = 覆盖；
  * 标志置 true = 列表在场，空数组即清空（protojson 下 [] 与缺省同为 nil）。
  * 表单以 GetSettings 响应初始化完整键集（draftFromSettings），按
@@ -13,27 +13,27 @@
  * 不再整体覆盖。全量构造函数 api.buildSetSettingsRequest 仍保留，供
  * 兼容场景与键集测试使用。
  *
- * 键集 = 39 字段（§5.6 行 1296-1354 四张表之和），含定稿新增的
+ * 键集 = 39 字段（§5.6 四张表之和），含定稿新增的
  * https_deployment 与 site_name（站点名称，注入模板 <title> 占位符
  * {{AUTHLOFT_SITE_NAME}}）与 client_ip_header（来源 IP 采信头），以及
  * eventlog_partition_days / eventlog_max_partitions（事件日志分区两键，
  * 服务端单键范围校验 1-365）。server proto 与 web 生成物已同步刷入
  * 39——文档 / proto / 生成物三处一致，照常建键；
- * 行 1361「取值非 true / false / auto → invalid_request」由
+ * §5.6「取值非 true / false / auto → invalid_request」由
  * settingsDraftIssue 前端自律拦截（三态外的值一旦被选并提交即被后端拒收）。
  *
- * 固定规则（§5.6 行 1302-1306：长度 > 64 一律拒绝、与用户名 / 邮箱完全相同
+ * 固定规则（§5.6：长度 > 64 一律拒绝、与用户名 / 邮箱完全相同
  * 拒绝、含空白拒绝）写死在服务端代码、不进 settings → 不在表单暴露。
- * 值域交叉约束（行 1363）由前端设置页自律保证：settingsDraftIssue。
+ * 值域交叉约束（§5.6）由前端设置页自律保证：settingsDraftIssue。
  */
 import type { SettingsResponse } from '../gen/proto/api/admin/v1/settings_pb';
 import { t, type I18nKey } from '../shared/i18n';
 import { toCount } from '../shared/utils/int';
 
-/** 密码最大长度服务端硬上限（§5.6 行 1297「可调低不可调高」；行 1304 防 DoS）。 */
+/** 密码最大长度服务端硬上限（§5.6「可调低不可调高」；防 DoS）。 */
 export const PWD_MAX_LENGTH_HARD_CAP = 64;
 
-/** 须满足的字符类数值域（§5.6 行 1298「1–3」；字符类 = 大写 / 小写 / 数字）。 */
+/** 须满足的字符类数值域（§5.6「1–3」；字符类 = 大写 / 小写 / 数字）。 */
 export const PWD_REQUIRE_CLASSES_MIN = 1;
 export const PWD_REQUIRE_CLASSES_MAX = 3;
 
@@ -104,7 +104,7 @@ export type SettingsDraft = Readonly<{
   }>;
 
 /**
- * §5.6 默认值逐字（行 1296-1353 四张表）：测试断言锚点 + 文档口径唯一来源；
+ * §5.6 默认值逐字（四张表）：测试断言锚点 + 文档口径唯一来源；
  * 表单草稿初始化以 GetSettings 响应为准（draftFromSettings），本常量不作运行
  * 兜底（后端 GetSettings 全键投影，落库值即真值）。
  */
@@ -200,7 +200,7 @@ export function draftFromSettings(response: SettingsResponse): SettingsDraft {
 }
 
 /**
- * 已启用的登录方式选项（§5.6 行 1330 值域 = 因子名 / thirdparty，默认全集）。
+ * 已启用的登录方式选项（§5.6 值域 = 因子名 / thirdparty，默认全集）。
  * 因子名文案复用 factors.* 既有键（与 api.ts mfaFactorLabel 同键同源，无重复；
  * api.ts 仍 import 本模块类型，反向 import 成环，各自取键不入模块依赖）。
  * 改函数调用期求值——模块级常量求值先于 entry setLocale 执行，
@@ -239,8 +239,8 @@ export function getMfaMethodOptions(): {
 }
 
 /**
- * https_deployment 三态选项（§5.6 行 1354：string 三态 true / false / auto，
- * 默认 auto；行 1356 admin 设置页中文文案定稿：选项「自动推断 / 强制开启 /
+ * https_deployment 三态选项（§5.6：string 三态 true / false / auto，
+ * 默认 auto；admin 设置页中文文案定稿：选项「自动推断 / 强制开启 /
  * 强制关闭」逐字，经 admin.* 键维护；求值时机同上，调用期取文案）。
  */
 export function getHttpsDeploymentOptions(): {
@@ -255,9 +255,9 @@ export function getHttpsDeploymentOptions(): {
 }
 
 /**
- * https_deployment 合法取值集（§5.6 行 1354/1361：非三态 → invalid_request）。
+ * https_deployment 合法取值集（§5.6：非三态 → invalid_request）。
  * 纯值集合不涉文案求值时机，保持模块级常量（与 getHttpsDeploymentOptions
- * 的 value 集恒等：§5.6 行 1354 三态封闭值域）。
+ * 的 value 集恒等：§5.6 三态封闭值域）。
  */
 export const HTTPS_DEPLOYMENT_VALUES: string[] = ['auto', 'true', 'false'];
 
@@ -568,7 +568,7 @@ export function getSettingsSections(): SettingsSectionMeta[] {
           key: 'httpsDeployment',
           label: t('admin.httpsDeploymentLabel'),
           options: getHttpsDeploymentOptions(),
-          // §5.6 行 1356 admin 设置页中文文案定稿逐字。
+          // §5.6 admin 设置页中文文案定稿逐字。
           hint: t('admin.httpsDeploymentHint'),
         },
         {
@@ -757,7 +757,7 @@ export function mergeSavedSettings(
 }
 
 /**
- * 交叉校验失败文案（§5.6 行 1363 交叉约束由前端设置页自律保证）。
+ * 交叉校验失败文案（§5.6 交叉约束由前端设置页自律保证）。
  */
 export function settingsDraftIssue(draft: SettingsDraft): string | null {
   for (const key of NUMBER_KEYS) {
@@ -778,7 +778,7 @@ export function settingsDraftIssue(draft: SettingsDraft): string | null {
   if (draft.pwdMaxLength > PWD_MAX_LENGTH_HARD_CAP) {
     return t('admin.pwdMaxOverCapIssue');
   }
-  // §5.6 行 1361：https_deployment 取值非 true / false / auto → invalid_request
+  // §5.6：https_deployment 取值非 true / false / auto → invalid_request
   //（服务端拒绝；前端自律前置拦截，防该键被提交后整批打回）。
   if (!HTTPS_DEPLOYMENT_VALUES.includes(draft.httpsDeployment)) {
     return t('admin.httpsDeploymentIssue');
