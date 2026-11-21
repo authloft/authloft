@@ -1,6 +1,6 @@
 // OAuth 回调页样式（docs/前端架构.md §1.7；V-1：对齐主链 LoginPage——
 // 页面底 + 居中白卡外壳；.backButton 改消费 shared/styles/controls.less
-// 文字按钮 mixin，次要操作层级；窄屏适配见文件尾 @media，评审 P0-4。
+// 文字按钮 mixin，次要操作层级；窄屏适配见文件尾 @media。
 // 过渡页无表单：容器 + 状态文案 + 返回登录按钮；binding_required 帧复用
 // BindingPage 自带样式（pages/BindingPage.module.less），此处只包页面容器。
 @import (reference) '../../shared/styles/tokens.less';
@@ -22,7 +22,7 @@
   .control-text-button();
 }
 
-// 窄屏收敛（评审 P0-4；LoginPage 同款）：卡片贴边留小外边距、
+// 窄屏收敛（LoginPage 同款）：卡片贴边留小外边距、
 // 内边距收紧；卡宽已由 width:100% + max-width 自适应撑满。
 @media (max-width: @breakpoint-sm) {
   .page {

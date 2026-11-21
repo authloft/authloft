@@ -406,7 +406,7 @@ describe('registerPayloadFor / resetPayloadFor（§2.3 行 444-451 / §2.4 行 4
   });
 });
 
-describe('setPasswordIssues（评审 P0-2 + P1-3：set_password 段前置校验）', () => {
+describe('setPasswordIssues（set_password 段前置校验）', () => {
   test('注册（requireUsername）：必填 / 用户名格式 / 确认密码本地比对', () => {
     // 全空：三字段齐错（用户名必填 + 密码必填 + 确认必填）。
     expect(
@@ -826,7 +826,7 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<form');
   });
 
-  test('P1-3：set_password 段确认密码 + 密码显隐（PasswordField）', () => {
+  test('set_password 段确认密码 + 密码显隐（PasswordField）', () => {
     const markup = renderRegisterView({
       method: 'password',
       step: 'set_password',
@@ -837,7 +837,7 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).toContain('autoComplete="new-password"'); // PasswordField 缺省
   });
 
-  test('P1-5：challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
+  test('challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
     const markup = renderRegisterView({
       method: 'otp_sms',
       step: 'challenge',
@@ -846,7 +846,7 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).toContain('value="13800000000"');
   });
 
-  test('P1-4：internal_error + onRetry → banner「重试」；verify 段剩余次数 banner 不重复', () => {
+  test('internal_error + onRetry → banner「重试」；verify 段剩余次数 banner 不重复', () => {
     const retryMarkup = renderRegisterView({
       status: 'internal_error',
       envelope: envelope({ status: 'internal_error' }),
@@ -969,7 +969,7 @@ describe('ResetPageView 状态帧渲染', () => {
     expect(markup).toContain('去登录');
   });
 
-  test('P1-3：set_password 段确认密码 + 显隐（重置无用户名字段，§10.4）', () => {
+  test('set_password 段确认密码 + 显隐（重置无用户名字段，§10.4）', () => {
     const markup = renderResetView({ step: 'set_password' });
     expect(markup).toContain('确认密码');
     expect(markup).toContain('新密码');
@@ -977,7 +977,7 @@ describe('ResetPageView 状态帧渲染', () => {
     expect(markup).not.toContain('name="username"');
   });
 
-  test('P1-5：challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
+  test('challengeValues 经 OTPForm initialValues 回填 challenge 段', () => {
     const markup = renderResetView({
       challengeValues: { email: 'alice@example.com' },
     });

@@ -1,5 +1,5 @@
 /**
- * login 域提交前置校验（FRONTEND-UX-REVIEW P0-2）：shared/utils/validate.ts
+ * login 域提交前置校验：shared/utils/validate.ts
  * 纯函数的域内组装——FieldIssue → i18n 文案映射（FIELD_ISSUE_I18N_KEY）、首错字段
  * 定位、焦点移动（浏览器环境；node 测试无 DOM 静默跳过）。
  *
@@ -40,7 +40,7 @@ export function validateFormValues(
   return { errors, firstField: firstInvalidField(fields, issues) };
 }
 
-/** 验证码满格校验（verify 段 CodeInput，P0-2「空验证码 6 格未输满不可提交」）：未过 → 错误文案。 */
+/** 验证码满格校验（verify 段 CodeInput，空验证码 6 格未输满不可提交）：未过 → 错误文案。 */
 export function codeErrorText(
   code: string,
   length: number,
@@ -51,7 +51,7 @@ export function codeErrorText(
 }
 
 /**
- * ErrorBanner 接 onRetry（重提当前表单值）的失败态白名单（评审 P1-4）：
+ * ErrorBanner 接 onRetry（重提当前表单值）的失败态白名单：
  * 二者均「可重试」（§1.6 列）且重提同值有意义——captcha_invalid 换新人机凭据
  * 后重提、internal_error 属瞬时故障；invalid_credentials / invalid_code 这类
  * 「同值必败」的状态不接（重提只是再失败一次，用户应改值后自行提交）。

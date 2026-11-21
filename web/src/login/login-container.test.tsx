@@ -1748,10 +1748,10 @@ describe('LoginFlowView 状态分支静态渲染', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 评审 P0-1 / P1-4：返回方式列表入口、onRetry 接线、剩余次数去重
+// 返回方式列表入口、onRetry 接线、剩余次数去重
 // ---------------------------------------------------------------------------
 
-describe('P0-1「返回方式列表」入口（next 分支）', () => {
+describe('「返回方式列表」入口（next 分支）', () => {
   function renderWithBack(state: FlowState, withBack: boolean): string {
     return renderToStaticMarkup(
       createElement(container.LoginFlowView, {
@@ -1790,7 +1790,7 @@ describe('P0-1「返回方式列表」入口（next 分支）', () => {
   });
 });
 
-describe('P1-4：ErrorBanner onRetry 接线 + 剩余次数去重', () => {
+describe('ErrorBanner onRetry 接线 + 剩余次数去重', () => {
   function renderWithRetry(state: FlowState): string {
     return renderToStaticMarkup(
       createElement(container.LoginFlowView, {

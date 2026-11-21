@@ -14,7 +14,7 @@
  * （renderToStaticMarkup 可测任意 status 帧），ResetPage 为状态壳。
  * 共用编排纯函数复用 RegisterPage 的导出（页族共用落点声明见该文件头）；
  * challenge 段复用 factors/OTPForm；verify 段与 OTPForm / RegisterPage 共享
- * login/VerifyCodeSection（评审 P2-10），重置语境提交按钮文案
+ * login/VerifyCodeSection，重置语境提交按钮文案
  * login.nextStep 经 props 注入。
  *
  * 文案：重置页专属（标题 / 步骤按钮 / 成功提示）经 i18n 字典 login.* 键取用；
@@ -131,7 +131,7 @@ export interface ResetPageViewProps {
    * §5.6）。强度条与提交前预校验同源消费。
    */
   policy?: Partial<PasswordPolicy>;
-  /** challenge 段已提交的目标值（评审 P1-5：reset / 重发回 challenge 段时经 OTPForm initialValues 回填）。 */
+  /** challenge 段已提交的目标值（reset / 重发回 challenge 段时经 OTPForm initialValues 回填）。 */
   challengeValues?: Readonly<Record<string, string>>;
   onSelectMethod: (method: string) => void;
   /** 提交（challenge 段上抛目标 values；verify 段 {code}；set_password 段 {}）。 */
@@ -140,7 +140,7 @@ export interface ResetPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
-  /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
+  /** 可重试失败态的「重试」动作（按当前 step 重提容器持值）。 */
   onRetry?: () => void;
 }
 
@@ -164,8 +164,8 @@ export function ResetPageView({
   onRetry,
 }: ResetPageViewProps) {
   const options = resetOptionsFor(snapshot);
-  // 确认密码（P1-3，只本地比对）与 set_password 段前置校验错误（P0-2；
-  // verify 段输码校验 / 重发倒计时归 VerifyCodeSection）。
+  // 确认密码（只本地比对）与 set_password 段前置校验错误；
+  // verify 段输码校验 / 重发倒计时归 VerifyCodeSection。
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const entry = options.find((m) => m.method === method);
@@ -209,7 +209,7 @@ export function ResetPageView({
     if (loading || submitDisabled) {
       return;
     }
-    // 评审 P0-2 + P1-3：密码必填 + 注入策略预校验 + 确认密码本地比对
+    // 密码必填 + 注入策略预校验 + 确认密码本地比对
     // （重置无用户名字段，§10.4）。
     const issues = setPasswordIssues({
       username: '',
@@ -227,7 +227,7 @@ export function ResetPageView({
       return;
     }
     setFormErrors({});
-    onSubmit({}); // 确认密码不进 payload（P1-3；§10.4 行 1532 只提交 password）
+    onSubmit({}); // 确认密码不进 payload（§10.4 只提交 password）
   };
 
   return (
@@ -238,7 +238,7 @@ export function ResetPageView({
           i18nKey={resolution.i18nKey}
           fallbackMessage={error?.message}
           retryAfter={error?.retryAfter}
-          // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+          // verify 段剩余次数由字段旁内联承载，banner 不重复。
           attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
           retryable={resolution.retryable}
           onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
@@ -371,7 +371,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
-  // challenge 段已提交目标（评审 P1-5：传输失败 / 重发回 challenge 段回填）。
+  // challenge 段已提交目标（传输失败 / 重发回 challenge 段回填）。
   const [challengeValues, setChallengeValues] = useState<
     Readonly<Record<string, string>>
   >({});
@@ -379,7 +379,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   const gate = useCaptchaGate(Modal);
 
   /** 回到 challenge 第一步（restart 类 / 传输失败；§1.6「回到第一步」；
-   * 目标持值保留（P1-5 回填），已输码随流程重发而作废）。 */
+   * 目标持值保留（challengeValues 回填），已输码随流程重发而作废）。 */
   const restartFlow = () => {
     setStep('challenge');
     setStatus('idle');
@@ -458,7 +458,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
   };
 
   // verify 段「重新发送」：回到 challenge 段重走（每次下发都要新的 captcha；
-  // 原目标经 challengeValues → OTPForm initialValues 回填，P1-5）。
+  // 原目标经 challengeValues → OTPForm initialValues 回填）。
   const backToChallenge = () => {
     setStep('challenge');
     setStatus('idle');
@@ -466,7 +466,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
     setOtpCode('');
   };
 
-  // 评审 P1-4：可重试失败态「重试」= 按当前 step 重提容器持值。
+  // 可重试失败态「重试」= 按当前 step 重提容器持值。
   const retrySubmit = () => {
     if (step === 'challenge') {
       void submit(challengeValues);

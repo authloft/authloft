@@ -13,7 +13,7 @@ import {
 
 const { createElement } = React;
 
-// 评审 P2-10：OTPForm / RegisterPage / ResetPage 三处 verify 段收敛的
+// OTPForm / RegisterPage / ResetPage 三处 verify 段收敛的
 // 共享实现——可配提交文案、id 关联、attemptsLeft / retryAfter 展示口径、
 // resendDisabled 禁用口径差异（OTPForm 含 disabled、页族不含）的静态帧覆盖。
 // 消费方回归（OTPForm「登录」/ 页族「下一步」按钮文案、倒计时、剩余次数）由
@@ -43,7 +43,7 @@ function renderSection(props: Partial<VerifyCodeSectionProps> = {}): string {
   );
 }
 
-describe('VerifyCodeSection 可配文案与结构（P2-10）', () => {
+describe('VerifyCodeSection 可配文案与结构', () => {
   test('提交按钮文案键可配：login.nextStep / login.submit；label 关联注入 id', () => {
     expect(renderSection()).toContain('下一步');
     expect(renderSection({ submitLabelKey: 'login.submit' })).toContain(

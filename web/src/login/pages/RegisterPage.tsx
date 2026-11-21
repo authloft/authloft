@@ -21,8 +21,8 @@
  * runFlowStep / snapshotFields 等，ResetPage 复用）；如需迁往 shared/ 归后续实现。
  *
  * challenge 段复用 factors/OTPForm（「发送验证码」语义匹配，§4.4 行 464 钦定）；
- * verify 段与 OTPForm / ResetPage 共享 login/VerifyCodeSection（评审
- * P2-10），注册语境提交按钮文案 login.nextStep 经 props 注入。
+ * verify 段与 OTPForm / ResetPage 共享 login/VerifyCodeSection，
+ * 注册语境提交按钮文案 login.nextStep 经 props 注入。
  *
  * 文案：注册页专属（标题 / 方式名 / 步骤按钮）经 i18n 字典 login.* 键取用；
  * 注册关闭提示复用 errors.status.signup_disabled。
@@ -314,8 +314,8 @@ function codeLengthOf(entry: LoginMethodEntry | undefined): number {
 }
 
 /**
- * set_password 段前置校验（评审 P0-2 + P1-3；ResetPage 复用）：
- * 用户名必填 + 格式（§2.3 行 449 唯一定义；requireUsername=false 的重置页跳过）、
+ * set_password 段前置校验（ResetPage 复用）：
+ * 用户名必填 + 格式（§2.3 唯一定义；requireUsername=false 的重置页跳过）、
  * 密码必填 + 注入策略预校验（§2.1 passwordPolicy：validatePassword 覆盖项
  * 传入，缺省回落 §5.6 默认档；取首条未满足项文案，与强度条同源）、
  * 确认密码只本地比对（不进 payload，§10.3 / §10.4 字段表无此字段）。
@@ -413,7 +413,7 @@ export interface RegisterPageViewProps {
    */
   policy?: Partial<PasswordPolicy>;
   /**
-   * challenge 段已提交的目标值（评审 P1-5：传输失败 / 重发回 challenge
+   * challenge 段已提交的目标值（传输失败 / 重发回 challenge
    * 段时经 OTPForm initialValues 回填；容器持值，页面壳注入）。
    */
   challengeValues?: Readonly<Record<string, string>>;
@@ -425,7 +425,7 @@ export interface RegisterPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
-  /** 可重试失败态的「重试」动作（评审 P1-4：按当前 step 重提容器持值）。 */
+  /** 可重试失败态的「重试」动作（按当前 step 重提容器持值）。 */
   onRetry?: () => void;
 }
 
@@ -452,8 +452,8 @@ export function RegisterPageView({
   onRetry,
 }: RegisterPageViewProps) {
   const options = registerOptionsFor(snapshot);
-  // 确认密码（P1-3，只本地比对）与 set_password 段前置校验错误（P0-2；
-  // verify 段输码校验 / 重发倒计时归 VerifyCodeSection）。
+  // 确认密码（只本地比对）与 set_password 段前置校验错误；
+  // verify 段输码校验 / 重发倒计时归 VerifyCodeSection。
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const entry = options.find((m) => m.method === method);
@@ -501,7 +501,7 @@ export function RegisterPageView({
     if (loading || submitDisabled) {
       return;
     }
-    // 评审 P0-2 + P1-3：必填 / 用户名格式 / 注入策略预校验 / 确认密码本地比对，
+    // 必填 / 用户名格式 / 注入策略预校验 / 确认密码本地比对，
     // 未过聚焦首错。
     const issues = setPasswordIssues({
       username,
@@ -519,7 +519,7 @@ export function RegisterPageView({
       return;
     }
     setFormErrors({});
-    onSubmit({}); // 确认密码不进 payload（P1-3；§2.3 行 451 字段表）
+    onSubmit({}); // 确认密码不进 payload（§2.3 字段表）
   };
 
   return (
@@ -530,7 +530,7 @@ export function RegisterPageView({
           i18nKey={resolution.i18nKey}
           fallbackMessage={error?.message}
           retryAfter={error?.retryAfter}
-          // 评审 P1-4：verify 段剩余次数由字段旁内联承载，banner 不重复。
+          // verify 段剩余次数由字段旁内联承载，banner 不重复。
           attemptsLeft={step === 'verify' ? undefined : error?.attemptsLeft}
           retryable={resolution.retryable}
           onRetry={RETRY_RESUBMIT_STATUSES.has(status) ? onRetry : undefined}
@@ -809,7 +809,7 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
   };
 
   // verify 段「重新发送」：回到 challenge 段重走（每次下发都要新的 captcha，
-  // §2.5 行 525；原目标经 challengeValues → OTPForm initialValues 回填，P1-5）。
+  // §2.5；原目标经 challengeValues → OTPForm initialValues 回填）。
   const backToChallenge = () => {
     setStep('challenge');
     setStatus('idle');
@@ -817,7 +817,7 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
     setOtpCode('');
   };
 
-  // 评审 P1-4：可重试失败态「重试」= 按当前 step 重提容器持值
+  // 可重试失败态「重试」= 按当前 step 重提容器持值
   // （challenge 目标 / verify 已输码 / set_password 受控用户名密码均在壳内）。
   const retrySubmit = () => {
     if (step === 'challenge') {

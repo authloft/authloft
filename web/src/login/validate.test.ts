@@ -9,10 +9,10 @@ import {
   validateFormValues,
 } from './validate';
 
-// 评审 P0-2 / P1-4：login 域前置校验组装的纯函数覆盖（组件交互在
+// login 域前置校验组装的纯函数覆盖（组件交互在
 // node 静态渲染边界外，提交前校验链路经本层 + FieldRenderer 错误槽落地）。
 
-describe('validateFormValues（P0-2：required → email/phone 格式 → 验证码满格）', () => {
+describe('validateFormValues（required → email/phone 格式 → 验证码满格）', () => {
   const fields = [
     { name: 'phone', type: 'phone', required: true },
     { name: 'email', type: 'email', required: false },
@@ -54,7 +54,7 @@ describe('validateFormValues（P0-2：required → email/phone 格式 → 验证
   });
 });
 
-describe('codeErrorText（P0-2：verify 段 6 格未输满不提交）', () => {
+describe('codeErrorText（verify 段 6 格未输满不提交）', () => {
   test('未满格 / 非数字 → 错误文案；满格纯数字 → undefined', () => {
     expect(codeErrorText('', 6)).toBe('请输入完整验证码');
     expect(codeErrorText('12345', 6)).toBe('请输入完整验证码');
@@ -63,7 +63,7 @@ describe('codeErrorText（P0-2：verify 段 6 格未输满不提交）', () => {
   });
 });
 
-describe('RETRY_RESUBMIT_STATUSES（P1-4：onRetry 白名单）', () => {
+describe('RETRY_RESUBMIT_STATUSES（onRetry 白名单）', () => {
   test('captcha_invalid / internal_error 在列；同值必败态不在列', () => {
     expect(RETRY_RESUBMIT_STATUSES.has('captcha_invalid')).toBe(true);
     expect(RETRY_RESUBMIT_STATUSES.has('internal_error')).toBe(true);
@@ -72,7 +72,7 @@ describe('RETRY_RESUBMIT_STATUSES（P1-4：onRetry 白名单）', () => {
   });
 });
 
-describe('focusField（P0-2 首错字段聚焦；node 无 DOM 静默跳过）', () => {
+describe('focusField（首错字段聚焦；node 无 DOM 静默跳过）', () => {
   test('document 缺失环境调用不炸', () => {
     expect(() => focusField('fr-phone')).not.toThrow();
   });

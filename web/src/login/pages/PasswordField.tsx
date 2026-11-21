@@ -1,11 +1,11 @@
 /**
- * 登录域密码输入字段（评审 P1-3）：注册 / 重置页共用的「密码 + 显隐」
+ * 登录域密码输入字段：注册 / 重置页共用的「密码 + 显隐」
  * 控件——FieldRenderer 的 secret 类型硬编码 autoComplete="off"，不适配注册 /
  * 重置的 new-password 语义，且 shared/** 已另行收口（非本实现目标），
  * 故在 login 域内落地同款能力（显隐按钮文案复用 common.reveal / common.hide）。
  *
  * 自带稳定 id（label htmlFor 关联）与错误槽（aria-invalid + aria-describedby，
- * 与 FieldRenderer 错误槽同款模式，P0-2 前置校验错误落点）。
+ * 与 FieldRenderer 错误槽同款模式，前置校验错误落点）。
  */
 import { useState } from 'react';
 import { t } from '../../shared/i18n';
