@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/provider.proto.
  */
 export const file_api_admin_v1_provider: GenFile = /*@__PURE__*/
-  fileDesc("ChthcGkvYWRtaW4vdjEvcHJvdmlkZXIucHJvdG8SDGFwaS5hZG1pbi52MSK/AQoIUHJvdmlkZXISFAoMcHJvdmlkZXJfa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghjYXRlZ29yeRgDIAEoCRIMCgR0eXBlGAQgASgJEhIKCmlzX2VuYWJsZWQYBSABKAgSFQoNZW5hYmxlX3NpZ25pbhgGIAEoCBIVCg1lbmFibGVfc2lnbnVwGAcgASgIEhEKCWF1dG9fYmluZBgIIAEoCBISCgpzb3J0X29yZGVyGAkgASgDIvoBChRMaXN0UHJvdmlkZXJzUmVxdWVzdBIVCghjYXRlZ29yeRgBIAEoCUgAiAEBEhEKBHR5cGUYAiABKAlIAYgBARIXCgppc19lbmFibGVkGAMgASgISAKIAQESEQoEcGFnZRgEIAEoA0gDiAEBEhYKCXBhZ2Vfc2l6ZRgFIAEoA0gEiAEBEhEKBHNvcnQYBiABKAlIBYgBARISCgVvcmRlchgHIAEoCUgGiAEBQgsKCV9jYXRlZ29yeUIHCgVfdHlwZUINCgtfaXNfZW5hYmxlZEIHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJtChRQcm92aWRlckxpc3RSZXNwb25zZRIlCgVpdGVtcxgBIAMoCzIWLmFwaS5hZG1pbi52MS5Qcm92aWRlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIqChJHZXRQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIvgCCg1BZG1pblByb3ZpZGVyEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIWCg51bmlvbl9wcm92aWRlchgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSDAoEdHlwZRgFIAEoCRIVCg1lbmFibGVfc2lnbmluGAYgASgIEhUKDWVuYWJsZV9zaWdudXAYByABKAgSEQoJYXV0b19iaW5kGAggASgIEhgKEGF1dG9fYmluZF9maWVsZHMYCSABKAkSEgoKaXNfZW5hYmxlZBgKIAEoCBIQCgh1aV9ncm91cBgLIAEoCRISCgpzb3J0X29yZGVyGAwgASgDEhAKCGljb25fdXJsGA0gASgJEg4KBnJlbWFyaxgOIAEoCRIkCgNleHQYDyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhIKCmNyZWF0ZWRfYXQYECABKAMSEgoKdXBkYXRlZF9hdBgRIAEoAyItChVEZWxldGVQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIkUKGVNldFByb3ZpZGVyRW5hYmxlZFJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEhIKCmlzX2VuYWJsZWQYAiABKAgiPAoQUHJvdmlkZXJTb3J0SXRlbRIUCgxwcm92aWRlcl9rZXkYASABKAkSEgoKc29ydF9vcmRlchgCIAEoAyJFChRTb3J0UHJvdmlkZXJzUmVxdWVzdBItCgVpdGVtcxgBIAMoCzIeLmFwaS5hZG1pbi52MS5Qcm92aWRlclNvcnRJdGVtIjsKE1Rlc3RQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg4KBnRhcmdldBgCIAEoCUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("ChthcGkvYWRtaW4vdjEvcHJvdmlkZXIucHJvdG8SDGFwaS5hZG1pbi52MSK/AQoIUHJvdmlkZXISFAoMcHJvdmlkZXJfa2V5GAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIQCghjYXRlZ29yeRgDIAEoCRIMCgR0eXBlGAQgASgJEhIKCmlzX2VuYWJsZWQYBSABKAgSFQoNZW5hYmxlX3NpZ25pbhgGIAEoCBIVCg1lbmFibGVfc2lnbnVwGAcgASgIEhEKCWF1dG9fYmluZBgIIAEoCBISCgpzb3J0X29yZGVyGAkgASgDIvoBChRMaXN0UHJvdmlkZXJzUmVxdWVzdBIVCghjYXRlZ29yeRgBIAEoCUgAiAEBEhEKBHR5cGUYAiABKAlIAYgBARIXCgppc19lbmFibGVkGAMgASgISAKIAQESEQoEcGFnZRgEIAEoA0gDiAEBEhYKCXBhZ2Vfc2l6ZRgFIAEoA0gEiAEBEhEKBHNvcnQYBiABKAlIBYgBARISCgVvcmRlchgHIAEoCUgGiAEBQgsKCV9jYXRlZ29yeUIHCgVfdHlwZUINCgtfaXNfZW5hYmxlZEIHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJtChRQcm92aWRlckxpc3RSZXNwb25zZRIlCgVpdGVtcxgBIAMoCzIWLmFwaS5hZG1pbi52MS5Qcm92aWRlchINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyIqChJHZXRQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIuYCCg1BZG1pblByb3ZpZGVyEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIWCg51bmlvbl9wcm92aWRlchgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEAoIY2F0ZWdvcnkYBCABKAkSDAoEdHlwZRgFIAEoCRIVCg1lbmFibGVfc2lnbmluGAYgASgIEhUKDWVuYWJsZV9zaWdudXAYByABKAgSEQoJYXV0b19iaW5kGAggASgIEhgKEGF1dG9fYmluZF9maWVsZHMYCSABKAkSEgoKaXNfZW5hYmxlZBgKIAEoCBISCgpzb3J0X29yZGVyGAsgASgDEhAKCGljb25fdXJsGAwgASgJEg4KBnJlbWFyaxgNIAEoCRIkCgNleHQYDiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhIKCmNyZWF0ZWRfYXQYDyABKAMSEgoKdXBkYXRlZF9hdBgQIAEoAyItChVEZWxldGVQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJIkUKGVNldFByb3ZpZGVyRW5hYmxlZFJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEhIKCmlzX2VuYWJsZWQYAiABKAgiPAoQUHJvdmlkZXJTb3J0SXRlbRIUCgxwcm92aWRlcl9rZXkYASABKAkSEgoKc29ydF9vcmRlchgCIAEoAyJFChRTb3J0UHJvdmlkZXJzUmVxdWVzdBItCgVpdGVtcxgBIAMoCzIeLmFwaS5hZG1pbi52MS5Qcm92aWRlclNvcnRJdGVtIjsKE1Rlc3RQcm92aWRlclJlcXVlc3QSFAoMcHJvdmlkZXJfa2V5GAEgASgJEg4KBnRhcmdldBgCIAEoCUImWiRhdXRobG9mdC9nZW4vZ28vYXBpL2FkbWluL3YxO2FkbWludjFiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
  * Provider 是 AdminService/ListProviders 的列表项（§5.2）：
@@ -309,51 +309,44 @@ export type AdminProvider = Message<"api.admin.v1.AdminProvider"> & {
   isEnabled: boolean;
 
   /**
-   * 展示分组 social|enterprise|dev|other（§5.3）。
-   *
-   * @generated from field: string ui_group = 11;
-   */
-  uiGroup: string;
-
-  /**
    * 排序（《后端架构》§4.1）。
    *
-   * @generated from field: int64 sort_order = 12;
+   * @generated from field: int64 sort_order = 11;
    */
   sortOrder: bigint;
 
   /**
    * 图标 URL，绝对地址（§5.3）。
    *
-   * @generated from field: string icon_url = 13;
+   * @generated from field: string icon_url = 12;
    */
   iconUrl: string;
 
   /**
    * 备注（§5.3）。
    *
-   * @generated from field: string remark = 14;
+   * @generated from field: string remark = 13;
    */
   remark: string;
 
   /**
    * provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3）。
    *
-   * @generated from field: google.protobuf.Struct ext = 15;
+   * @generated from field: google.protobuf.Struct ext = 14;
    */
   ext?: JsonObject | undefined;
 
   /**
    * 创建时间，Unix 秒（《后端架构》§4.1）。
    *
-   * @generated from field: int64 created_at = 16;
+   * @generated from field: int64 created_at = 15;
    */
   createdAt: bigint;
 
   /**
    * 更新时间，Unix 秒（《后端架构》§4.1）。
    *
-   * @generated from field: int64 updated_at = 17;
+   * @generated from field: int64 updated_at = 16;
    */
   updatedAt: bigint;
 };

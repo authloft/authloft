@@ -96,8 +96,8 @@ export type SchemaField = Message<"api.admin.v1.SchemaField"> & {
 
   /**
    * select 类型的取值集合，与 §1.11 同名同义（§5.3）。恒为 wire 取值
-   * （如 ui_group 的 social / enterprise / dev / other、union_provider 的
-   * provider_key），不是 i18n 键；前端仅按 admin.schemaOption.<fieldKey>.<value>
+   * （如 union_provider 的 provider_key），不是 i18n 键；前端仅按
+   * admin.schemaOption.<fieldKey>.<value>
    * 翻译显示名（按字段命名空间，避免自定义 provider_key 撞上通用枚举值）
    * 未定义键时原样显示并提交原值。
    *

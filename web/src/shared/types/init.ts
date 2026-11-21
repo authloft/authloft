@@ -39,7 +39,6 @@ export interface SnapshotProvider {
   channel: string;
   /** 空 / 省略 = 渲染通用占位图标（§2.7.1 行 578，不做本地文件回落）。 */
   icon?: string;
-  uiGroup?: string;
   /** int64 → 十进制字符串（§1.12）。 */
   sortOrder?: string;
 }

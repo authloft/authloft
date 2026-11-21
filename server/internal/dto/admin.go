@@ -61,7 +61,6 @@ func AdminProviderDetail(row *model.Provider, ext *providerpb.Ext) *adminv1.Admi
 		AutoBind:       row.AutoBind == 1,
 		AutoBindFields: row.AutoBindFields,
 		IsEnabled:      row.IsEnabled == 1,
-		UiGroup:        row.UiGroup,
 		SortOrder:      int64(row.SortOrder),
 		IconUrl:        row.IconURL,
 		Remark:         row.Remark,
@@ -175,8 +174,6 @@ func ApplyProviderColumns(row *model.Provider, fields map[string]*structpb.Value
 			row.UnionProvider, err = columnString(v)
 		case "icon_url":
 			row.IconURL, err = columnString(v)
-		case "ui_group":
-			row.UiGroup, err = columnString(v)
 		case "remark":
 			row.Remark, err = columnString(v)
 		case "auto_bind_fields":

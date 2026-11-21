@@ -195,7 +195,6 @@ const TABLE_COLUMN_GETTERS: Readonly<
   enable_signup: (p) => p.enableSignup,
   auto_bind: (p) => p.autoBind,
   auto_bind_fields: (p) => p.autoBindFields,
-  ui_group: (p) => p.uiGroup,
   // int64 → number：sort_order 值域 1..n（§5.2 行 1174 拖拽重排），安全。
   sort_order: (p) => Number(p.sortOrder),
   icon_url: (p) => p.iconUrl,

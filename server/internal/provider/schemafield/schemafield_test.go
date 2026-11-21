@@ -59,9 +59,6 @@ func TestAttributeAlignment(t *testing.T) {
 		t.Errorf("ProxyRef 不应内置 options: %v", r.Options)
 	}
 
-	if got := UiGroup(); got.Default != "social" || len(got.Options) != 4 {
-		t.Errorf("UiGroup 默认/选项错位: %+v", got)
-	}
 	if got := SortOrder(); got.Default != "0" {
 		t.Errorf("SortOrder 默认值错位: %+v", got)
 	}

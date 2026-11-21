@@ -11,9 +11,7 @@
  *   （宿主承载，§9 第 10 条）；
  * - 图标统一经 ProviderIcon 渲染（icon 空则占位，§3.3 行 344）；不硬编码
  *   任何渠道——未知 channel 不渲染（缺映射不静默回退同款精神，§4.3 行 450）；
- * - uiGroup 分组 / sortOrder 排序纯函数 groupProviders 自 MethodTabs 迁入
- *   （本组件是图标墙唯一实现），MethodTabs re-export 保持既有导入面
- *   （login-container.test 经 MethodTabs 消费）。
+ * - 图标按 sortOrder 升序平铺渲染（channel=api 与未知渠道不渲染，§4.4）；
  *
  * 文案（i18n 收口）：redirect 失败提示经 shared/i18n 的 t() 消费——
  * 由通用「请刷新重试」细化为带 provider 展示名的
@@ -33,11 +31,8 @@ import { getOidcSelectedScope, saveOidcContext } from '../oidcContext';
 import styles from './ProviderButtons.module.less';
 
 // ---------------------------------------------------------------------------
-// 图标墙分组（纯函数，自 MethodTabs 迁入，行为不变；node 可测）
+// 图标墙排序（sortOrder 比较，node 可测）
 // ---------------------------------------------------------------------------
-
-/** 图标墙不渲染的 channel（§4.3 行 456：api 由宿主承载）。 */
-const HIDDEN_CHANNELS: ReadonlySet<string> = new Set(['api']);
 
 /** 图标墙按钮渲染的 channel（§4.3 行 454：可分派的两种渠道；未知值不渲染）。 */
 const RENDER_CHANNELS: ReadonlySet<string> = new Set(['redirect', 'qrcode']);
@@ -54,35 +49,11 @@ function sortOrderKey(provider: SnapshotProvider): bigint {
   }
 }
 
-/** 组内按 sortOrder 升序（bigint 比较，无精度损失）。 */
+/** 按 sortOrder 升序（bigint 比较，无精度损失）。 */
 function compareBySortOrder(a: SnapshotProvider, b: SnapshotProvider): number {
   const x = sortOrderKey(a);
   const y = sortOrderKey(b);
   return x < y ? -1 : x > y ? 1 : 0;
-}
-
-/**
- * 图标墙分组（纯函数，可测）：过滤 channel=api → 按 sortOrder 升序 → 按
- * uiGroup 分组（Map 保插入序，组序 = 排序后首元素的出现顺序；uiGroup 缺省
- * 归空串组）。
- */
-export function groupProviders(
-  providers: SnapshotProvider[],
-): ReadonlyMap<string, SnapshotProvider[]> {
-  const sorted = providers
-    .filter((p) => !HIDDEN_CHANNELS.has(p.channel))
-    .sort(compareBySortOrder);
-  const groups = new Map<string, SnapshotProvider[]>();
-  for (const p of sorted) {
-    const key = p.uiGroup ?? '';
-    const bucket = groups.get(key);
-    if (bucket === undefined) {
-      groups.set(key, [p]);
-    } else {
-      bucket.push(p);
-    }
-  }
-  return groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +265,7 @@ export function ProviderButtons({
   );
 }
 
-/** 图标墙渲染态：uiGroup 分组 + sortOrder 排序（groupProviders）；图标经 ProviderIcon。 */
+/** 图标墙渲染态：过滤 channel=api / 未知渠道 → sortOrder 升序 → 单容器平铺；图标经 ProviderIcon。 */
 function ProviderWall({
   providers,
   onPick,
@@ -304,35 +275,28 @@ function ProviderWall({
   onPick: (providerKey: string) => void;
   onPickQr: (providerKey: string) => void;
 }) {
-  const groups = groupProviders(providers);
-  if (groups.size === 0) {
+  const visible = providers
+    .filter((p) => RENDER_CHANNELS.has(p.channel))
+    .sort(compareBySortOrder);
+  if (visible.length === 0) {
     return null;
   }
   return (
-    <div>
-      {[...groups.entries()].map(([group, items]) => (
-        <div key={group} data-group={group} className={styles.group}>
-          {items
-            .filter((p) => RENDER_CHANNELS.has(p.channel))
-            .map((p) => (
-              <button
-                key={p.providerKey}
-                type="button"
-                className={styles.provider}
-                title={p.displayName ?? p.providerKey}
-                onClick={() =>
-                  p.channel === 'qrcode'
-                    ? onPickQr(p.providerKey)
-                    : onPick(p.providerKey)
-                }
-              >
-                <ProviderIcon
-                  icon={p.icon}
-                  alt={p.displayName ?? p.providerKey}
-                />
-              </button>
-            ))}
-        </div>
+    <div className={styles.wall}>
+      {visible.map((p) => (
+        <button
+          key={p.providerKey}
+          type="button"
+          className={styles.provider}
+          title={p.displayName ?? p.providerKey}
+          onClick={() =>
+            p.channel === 'qrcode'
+              ? onPickQr(p.providerKey)
+              : onPick(p.providerKey)
+          }
+        >
+          <ProviderIcon icon={p.icon} alt={p.displayName ?? p.providerKey} />
+        </button>
       ))}
     </div>
   );

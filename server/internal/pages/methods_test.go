@@ -206,7 +206,7 @@ func TestThirdpartyProviders(t *testing.T) {
 		// 公开视图字段封闭集合（§12.3：不得返回任何凭证字段）
 		for k := range p {
 			switch k {
-			case "providerKey", "displayName", "type", "channel", "icon", "uiGroup", "sortOrder":
+			case "providerKey", "displayName", "type", "channel", "icon", "sortOrder":
 			default:
 				t.Errorf("providers[%d] 越界键 %q", i, k)
 			}

@@ -28,7 +28,7 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 	}
 	want := map[string]bool{
 		"provider_key": true, "display_name": true, "icon_url": true,
-		"ui_group": true, "sort_order": true, "remark": true,
+		"sort_order": true, "remark": true,
 	}
 	// union_provider / 登录建号开关 / is_enabled / 引用键在 union 类别整体裁剪
 	//（虚拟类型无外呼，§5.3 引用键呈现范围不含 union）。

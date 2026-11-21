@@ -35,7 +35,6 @@ type Provider struct {
 	AutoBind       int8      `bun:"column:auto_bind,notnull,default:0"`     // 按邮箱/手机号自动绑定已有账号
 	AutoBindFields string    `bun:"column:auto_bind_fields,notnull,default:\"email,phone\""`
 	IsEnabled      int8      `bun:"column:is_enabled,notnull,default:1"`
-	UiGroup        string    `bun:"column:ui_group,notnull,default:'social'"` // social|enterprise|dev|other
 	SortOrder      int32     `bun:"column:sort_order,notnull,default:0"`
 	IconURL        string    `bun:"column:icon_url,notnull,default:''"` // 列表接口直接用，避免每次反序列化（§4.1）
 	Ext            []byte    `bun:"column:ext"`                         // provider.Ext 序列化后（Protobuf，业务上限 1 MiB，写入前校验，见 §4.0）；可空列，nil 即 NULL

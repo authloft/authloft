@@ -244,15 +244,15 @@ func TestSchemaKeepSet(t *testing.T) {
 		t.Fatalf("Lookup(%q) 未注册", Type)
 	}
 	full := meta.Schema()
-	// 声明序即渲染序：basic(3) → Ext(2，app_id 在前) → display(4) → policy(5)
+	// 声明序即渲染序：basic(3) → Ext(2，app_id 在前) → display(3) → policy(5)
 	// → 引用键(1)。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"app_id", "client_secret",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey}
 	if len(full) != len(wantOrder) {
-		t.Fatalf("schema fields = %d, want %d（3+2+4+5+1）", len(full), len(wantOrder))
+		t.Fatalf("schema fields = %d, want %d（3+2+3+5+1）", len(full), len(wantOrder))
 	}
 	byKey := make(map[string]provider.FieldMeta, len(wantOrder))
 	for i, f := range full {

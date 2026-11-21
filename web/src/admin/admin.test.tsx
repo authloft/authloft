@@ -1205,13 +1205,6 @@ const SCHEMA_FIELDS = [
     pattern: '^https?://',
   }),
   schemaField({
-    key: 'ui_group',
-    label: 'admin.schemaField.uiGroupLabel',
-    type: 'select',
-    section: 'display',
-    default: 'social',
-  }),
-  schemaField({
     key: 'sort_order',
     label: 'admin.schemaField.sortOrderLabel',
     type: 'number',
@@ -1246,11 +1239,7 @@ describe('groupFieldsBySection（§5.3 行 1185：五区块分组 + 数组序 + 
     ]);
     expect(groups[1].map((f) => f.key)).toEqual(['client_id', 'client_secret']);
     expect(groups[2].map((f) => f.key)).toEqual(['port', 'user_mapping']);
-    expect(groups[3].map((f) => f.key)).toEqual([
-      'icon_url',
-      'ui_group',
-      'sort_order',
-    ]);
+    expect(groups[3].map((f) => f.key)).toEqual(['icon_url', 'sort_order']);
     expect(groups[4].map((f) => f.key)).toEqual(['is_enabled']);
   });
 
@@ -1277,7 +1266,6 @@ describe('applySchemaDefaults（§5.3 行 1183 default 修饰 + 类型零值）'
     expect(values.category).toBe('');
     expect(values.port).toBe(0);
     expect(values.user_mapping).toBe('');
-    expect(values.ui_group).toBe('social');
     expect(values.sort_order).toBe(0);
     expect(values.is_enabled).toBe(true);
   });
@@ -1294,7 +1282,6 @@ describe('initialCreateValues（新建 category 预填注册表权威值，死�
     // 核心：category 不再是零值 ''（applySchemaDefaults 死锁源）。
     expect(values.category).toBe('auth');
     expect(values.provider_key).toBe('');
-    expect(values.ui_group).toBe('social');
     expect(values.is_enabled).toBe(true);
   });
 
@@ -1347,7 +1334,6 @@ describe('adminProviderToValues（编辑回填：表列 typed 映射 + Ext 合�
     );
     // 表列零值（protojson 省略 → false）+ Ext 缺失键零值。
     expect(values.is_enabled).toBe(false);
-    expect(values.ui_group).toBe('');
   });
 
   test('ext 缺省（JsonObject undefined）→ 全部 Ext 字段零值', () => {
@@ -1371,7 +1357,6 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
       port: 0,
       user_mapping: '{oops', // 非法 JSON。
       icon_url: 'ftp://cdn.test/x.png', // pattern ^https?:// 不匹配。
-      ui_group: 'social',
       sort_order: 0,
       is_enabled: true,
     });
@@ -1399,7 +1384,6 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
       port: 443,
       user_mapping: '{"nickname": "$.name"}',
       icon_url: '', // 非必填空值放行（§5.3 行 1213 留空渲染占位）。
-      ui_group: 'social',
       sort_order: 0,
       is_enabled: false, // checkbox false 是合法值（required 不适用）。
     });
@@ -1434,7 +1418,6 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
       port: 443,
       user_mapping: '{"nickname": "$.name"}',
       icon_url: '',
-      ui_group: 'social',
       sort_order: 0,
       is_enabled: false,
     });
@@ -1449,7 +1432,6 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
       port: 443,
       user_mapping: { nickname: '$.name' },
       icon_url: '',
-      ui_group: 'social',
       sort_order: 0,
       is_enabled: false,
     });
@@ -1570,12 +1552,12 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
               pattern: '^[a-z0-9_]+$',
             },
             {
-              key: 'ui_group',
-              label: 'admin.schemaField.uiGroupLabel',
+              key: 'scheme',
+              label: 'admin.schemaField.proxySchemeLabel',
               type: 'select',
               section: 'display',
-              options: ['social', 'enterprise', 'dev', 'other'],
-              default: 'social',
+              options: ['socks5', 'http', 'https'],
+              default: 'socks5',
             },
             {
               key: 'is_enabled',
@@ -1604,15 +1586,10 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
     expect(res.fields).toHaveLength(4);
     expect(res.fields[0].required).toBe(true);
     expect(res.fields[0].pattern).toBe('^[a-z0-9_]+$');
-    expect(res.fields[1].options).toEqual([
-      'social',
-      'enterprise',
-      'dev',
-      'other',
-    ]);
+    expect(res.fields[1].options).toEqual(['socks5', 'http', 'https']);
     // default = google.protobuf.Value（protojson → kind oneof）。
     expect(res.fields[1].default?.kind.case).toBe('stringValue');
-    expect(res.fields[1].default?.kind.value).toBe('social');
+    expect(res.fields[1].default?.kind.value).toBe('socks5');
     expect(res.fields[2].default?.kind.case).toBe('boolValue');
     expect(res.fields[2].default?.kind.value).toBe(true);
     expect(res.fields[3].advanced).toBe(true);

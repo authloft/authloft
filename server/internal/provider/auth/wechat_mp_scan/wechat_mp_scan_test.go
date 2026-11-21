@@ -61,15 +61,15 @@ func TestRegistryRegistered(t *testing.T) {
 	}
 	full := meta.Schema()
 	// 声明序即渲染序：basic(3) → Ext(8，凭证两键 + 扫码六字段在段尾、相对顺序
-	// 不变) → display(4) → policy(5) → 引用键(1)。
+	// 不变) → display(3) → policy(5) → 引用键(1)。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"app_id", "client_secret", "qrcode_auto_delete", "storage_provider", "storage_path",
 		"qrcode_mode", "qrcode_format", "qrcode_tip",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey}
 	if len(full) != len(wantOrder) {
-		t.Fatalf("schema fields = %d, want %d（3+8+4+5+1）", len(full), len(wantOrder))
+		t.Fatalf("schema fields = %d, want %d（3+8+3+5+1）", len(full), len(wantOrder))
 	}
 	byKey := make(map[string]provider.FieldMeta, len(wantOrder))
 	for i, f := range full {

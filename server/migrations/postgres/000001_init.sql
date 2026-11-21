@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS provider (
   auto_bind_fields VARCHAR(128) NOT NULL DEFAULT 'email,phone',
   is_enabled     SMALLINT     NOT NULL DEFAULT 1,
 
-  ui_group       VARCHAR(32)  NOT NULL DEFAULT 'social', -- social|enterprise|dev|other
   sort_order     INTEGER      NOT NULL DEFAULT 0,
   icon_url       VARCHAR(512) NOT NULL DEFAULT '',
 

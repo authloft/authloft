@@ -1328,7 +1328,7 @@ func TestGetThirdpartyBindingsConnect(t *testing.T) {
 		}},
 		Available: []accountsvc.BindOption{{
 			ProviderKey: "wechat_mp_scan", DisplayName: "微信扫码", Type: "wechat_mp_scan",
-			Channel: "qrcode", Icon: "", UiGroup: "social", SortOrder: 20,
+			Channel: "qrcode", Icon: "", SortOrder: 20,
 		}},
 	}}
 	tokens, epochs, h := newSessionHandler(t, &fakeUsers{user: wantUser()}, &getConfigDeps{thirdpartyIn: tp})
@@ -1365,7 +1365,7 @@ func TestGetThirdpartyBindingsConnect(t *testing.T) {
 		t.Errorf("items[0] = %+v", it)
 	}
 	if op := got.GetAvailable()[0]; op.GetProviderKey() != "wechat_mp_scan" || op.GetChannel() != "qrcode" ||
-		op.GetUiGroup() != "social" || op.GetSortOrder() != 20 {
+		op.GetSortOrder() != 20 {
 		t.Errorf("available[0] = %+v", op)
 	}
 }

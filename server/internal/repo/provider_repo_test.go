@@ -178,11 +178,11 @@ func TestProviderRepoCRUD(t *testing.T) {
 		t.Error("ext 落库读回 round-trip 不一致")
 	}
 	// default tag 列的 DB 默认值终态（§4.1 DDL 默认：1 / 1 / 0 / email,phone /
-	// 1 / social / 0 / ''；零值经 DEFAULT 占位由 DB 填充，CODE_GUIDE §3.5，
+	// 1 / 0 / ''；零值经 DEFAULT 占位由 DB 填充，CODE_GUIDE §3.5，
 	// bun 口径下非 PK 列不做插入后 struct 回填，经回读断言）。
 	if got.EnableSignin != 1 || got.EnableSignup != 1 || got.AutoBind != 0 ||
 		got.AutoBindFields != "email,phone" || got.IsEnabled != 1 ||
-		got.UiGroup != "social" || got.SortOrder != 0 || got.Remark != "测试渠道" {
+		got.SortOrder != 0 || got.Remark != "测试渠道" {
 		t.Errorf("Create 后 DB 默认值终态不一致: %+v", got)
 	}
 

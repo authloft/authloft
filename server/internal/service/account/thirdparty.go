@@ -229,7 +229,6 @@ type BindOption struct {
 	Type        string
 	Channel     string
 	Icon        string
-	UiGroup     string
 	SortOrder   int64
 }
 
@@ -288,7 +287,6 @@ func (s *ThirdpartyService) GetThirdpartyBindings(ctx context.Context, uid int64
 				Type:        p.Type,
 				Channel:     string(meta.Channel),
 				Icon:        p.Row.IconURL,
-				UiGroup:     p.Row.UiGroup,
 				SortOrder:   int64(p.Row.SortOrder),
 			})
 		}

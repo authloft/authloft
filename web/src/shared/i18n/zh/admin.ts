@@ -177,7 +177,6 @@ export const admin = {
   'admin.schemaField.unionProviderHelp': '留空表示不参与 Union ID 归并',
   'admin.schemaField.iconUrlLabel': '图标 URL',
   'admin.schemaField.iconUrlHelp': '留空时前端渲染通用占位图标',
-  'admin.schemaField.uiGroupLabel': '展示分组',
   'admin.schemaField.sortOrderLabel': '排序',
   'admin.schemaField.remarkLabel': '备注',
   'admin.schemaField.isEnabledLabel': '启用',
@@ -316,10 +315,6 @@ export const admin = {
   // select options 显示名（options 仍是 wire 取值；键 =
   // admin.schemaOption.<fieldKey>.<value>，按字段命名空间取键，避免
   // union_provider 的自定义 provider_key 撞上通用枚举值；未定义键原样显示）。
-  'admin.schemaOption.ui_group.social': '社交',
-  'admin.schemaOption.ui_group.enterprise': '企业',
-  'admin.schemaOption.ui_group.dev': '开发',
-  'admin.schemaOption.ui_group.other': '其他',
   // scheme 封闭集（§5.3 代理提供商与出站代理引用约定）：协议名通用，zh / en 同文。
   'admin.schemaOption.scheme.socks5': 'SOCKS5',
   'admin.schemaOption.scheme.http': 'HTTP',

@@ -1571,7 +1571,6 @@ describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（�
               type: 'wechat_mp_scan',
               channel: 'qrcode',
               icon: '',
-              uiGroup: 'social',
               sortOrder: '20',
             },
           ],
@@ -1743,7 +1742,6 @@ describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯�
         type: 'b',
         channel: 'qrcode',
         icon: '',
-        uiGroup: 'social',
         sortOrder: BigInt(20),
       }),
       create(ThirdpartyOptionSchema, {
@@ -1752,7 +1750,6 @@ describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯�
         type: 'a',
         channel: 'redirect',
         icon: '',
-        uiGroup: 'social',
         sortOrder: BigInt(10),
       }),
       create(ThirdpartyOptionSchema, {
@@ -1761,7 +1758,6 @@ describe('hasBindEntry / sortThirdpartyOptions（§3.7 行 943 / 行 936，纯�
         type: 'c',
         channel: 'redirect',
         icon: '',
-        uiGroup: 'social',
         sortOrder: BigInt(20),
       }),
     ];
@@ -1782,7 +1778,6 @@ describe('mergeThirdpartyAccounts（全量账号行：无论是否绑定均显�
       type: over.providerKey,
       channel: over.channel ?? 'redirect',
       icon: '',
-      uiGroup: 'social',
       sortOrder: over.sortOrder,
     });
 

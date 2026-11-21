@@ -504,7 +504,6 @@ func (h *Handler) GetThirdpartyBindings(ctx context.Context, req *connect.Reques
 			Type:        op.Type,
 			Channel:     op.Channel,
 			Icon:        op.Icon,
-			UiGroup:     op.UiGroup,
 			SortOrder:   op.SortOrder,
 		}
 	}

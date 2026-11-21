@@ -28,7 +28,6 @@ type ThirdPartyProvider struct {
 	Type        string `json:"type"`
 	Channel     string `json:"channel"`
 	Icon        string `json:"icon,omitempty"`
-	UIGroup     string `json:"uiGroup,omitempty"`
 	SortOrder   int32  `json:"sortOrder"`
 }
 

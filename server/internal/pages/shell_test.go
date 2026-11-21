@@ -146,7 +146,6 @@ func provRow(key, typ string, enabled bool, signin int8, sort int32) *provider.P
 			Type:         typ,
 			EnableSignin: signin,
 			IsEnabled:    isEnabled,
-			UiGroup:      "social",
 			SortOrder:    sort,
 			IconURL:      "https://icons.example/" + key + ".png",
 			Ext:          []byte("raw-secret-ext-bytes"),

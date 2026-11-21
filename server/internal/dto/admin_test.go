@@ -32,7 +32,7 @@ func wantProviderRow() *model.Provider {
 		ID: 7, ProviderKey: "wechat_official", UnionProvider: "wechat_union",
 		DisplayName: "微信扫码", Category: "auth", Type: "wechat_mp",
 		EnableSignin: 1, EnableSignup: 0, AutoBind: 1, AutoBindFields: "email,phone",
-		IsEnabled: 1, UiGroup: "social", SortOrder: 30,
+		IsEnabled: 1, SortOrder: 30,
 		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
 		CreatedAt: time.Unix(1761700000, 0).UTC(), UpdatedAt: time.Unix(1761800000, 0).UTC(),
 	}
@@ -107,7 +107,7 @@ func TestAdminProviderDetailPlaintextExt(t *testing.T) {
 		t.Errorf("开关列 = (signin=%v signup=%v bind=%v enabled=%v), want (true,false,true,true)",
 			got.GetEnableSignin(), got.GetEnableSignup(), got.GetAutoBind(), got.GetIsEnabled())
 	}
-	if got.GetAutoBindFields() != "email,phone" || got.GetUiGroup() != "social" ||
+	if got.GetAutoBindFields() != "email,phone" ||
 		got.GetIconUrl() != "https://cdn.example.com/wechat.png" || got.GetRemark() != "生产渠道" {
 		t.Errorf("展示列 = %+v", got)
 	}
@@ -173,13 +173,13 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "auth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
-	if len(resp.GetFields()) != 15 {
-		t.Fatalf("字段数 = %d, want 15（3 basic + 2 Ext + 4 display + 5 policy + 引用键）", len(resp.GetFields()))
+	if len(resp.GetFields()) != 14 {
+		t.Fatalf("字段数 = %d, want 14（3 basic + 2 Ext + 3 display + 5 policy + 引用键）", len(resp.GetFields()))
 	}
 	// 顺序即 §5.3 示例排列（表列基线 → Ext 声明序 → display / policy → 引用键）。
 	wantOrder := []string{"provider_key", "display_name", "union_provider",
 		"app_id", "client_secret",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey}
 	for i, key := range wantOrder {
@@ -220,13 +220,6 @@ func TestAdminSchemaOauthBaseline(t *testing.T) {
 	f = schemaFieldByKey(t, resp, "icon_url")
 	if f.GetPattern() != "^https?://" || f.GetSection() != "display" {
 		t.Errorf("icon_url = %+v", f)
-	}
-	f = schemaFieldByKey(t, resp, "ui_group")
-	if f.GetType() != "select" || f.GetDefault().GetStringValue() != "social" {
-		t.Errorf("ui_group = %+v（default social）", f)
-	}
-	if got := []string{"social", "enterprise", "dev", "other"}; len(f.GetOptions()) != 4 {
-		t.Errorf("ui_group options = %v, want %v", f.GetOptions(), got)
 	}
 	f = schemaFieldByKey(t, resp, "sort_order")
 	if f.GetType() != "number" || f.GetDefault().GetNumberValue() != 0 {
@@ -308,7 +301,7 @@ func TestAdminSchemaSenderMetaFields(t *testing.T) {
 	}
 	// 表列基线 + display 由完整 Schema 声明覆盖，顺序即声明序（is_enabled 是
 	// oauth 专属，smtp 不声明）。
-	for _, key := range []string{"provider_key", "display_name", "icon_url", "ui_group", "sort_order", "remark"} {
+	for _, key := range []string{"provider_key", "display_name", "icon_url", "sort_order", "remark"} {
 		schemaFieldByKey(t, resp, key)
 	}
 	// 仅 oauth 的列不在 smtp 声明里，wire 不得出现。
@@ -337,9 +330,9 @@ func schemaFieldMaybe(resp *adminv1.SchemaResponse, key string) (*adminv1.Schema
 }
 
 // TestProviderColumnKeysFromSchema 可写表列键集由完整 Schema 派生（Storage==column
-// 且排除 provider_key）：oauth 全量 11 列；sms/email/captcha/proxy 5 列（行内
+// 且排除 provider_key）：oauth 全量 10 列；sms/email/captcha/proxy 4 列（行内
 // 启用开关与 oauth 专属登录/建号/自动绑定列均不声明）；local / union 同裁，
-// 各剩 5 列。provider_key 在
+// 各剩 4 列。provider_key 在
 // 任何类型都不进列键（更新时作定位键，不得被 ApplyProviderColumns 改动）。
 func TestProviderColumnKeysFromSchema(t *testing.T) {
 	for _, tc := range []struct {
@@ -347,13 +340,13 @@ func TestProviderColumnKeysFromSchema(t *testing.T) {
 		wantCols []string
 		wantOmit []string
 	}{
-		{"wechat_mp", []string{"display_name", "union_provider", "icon_url", "ui_group", "sort_order", "remark", "is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}, nil},
-		{"aliyun_sms", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{"smtp", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{"turnstile", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{"local", []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{provider.ProxyType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
-		{provider.UnionProviderType, []string{"display_name", "icon_url", "ui_group", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"wechat_mp", []string{"display_name", "union_provider", "icon_url", "sort_order", "remark", "is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"}, nil},
+		{"aliyun_sms", []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"smtp", []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"turnstile", []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{"local", []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{provider.ProxyType, []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
+		{provider.UnionProviderType, []string{"display_name", "icon_url", "sort_order", "remark"}, oauthOnlyTestKeys},
 	} {
 		t.Run(tc.typ, func(t *testing.T) {
 			meta, ok := provider.LookupTypeMeta(tc.typ)
@@ -435,8 +428,8 @@ func TestAdminSchemaConversionFidelity(t *testing.T) {
 		{Key: "union_provider", Label: "admin.schemaField.unionProviderLabel", Type: "select", Section: "basic",
 			Help: "admin.schemaField.unionProviderHelp", Storage: provider.StorageColumn,
 			Kind: provider.FieldDynamicOptions, DynamicKey: "union_provider_keys"},
-		{Key: "ui_group", Label: "admin.schemaField.uiGroupLabel", Type: "select", Section: "display",
-			Options: []string{"social", "enterprise"}, Default: "social", Storage: provider.StorageColumn},
+		{Key: "scheme", Label: "admin.schemaField.proxySchemeLabel", Type: "select", Section: "endpoint",
+			Options: []string{"socks5", "http", "https"}, Default: "socks5", Storage: provider.StorageExt},
 		{Key: "is_enabled", Label: "admin.schemaField.isEnabledLabel", Type: "checkbox", Section: "policy",
 			Default: "true", Storage: provider.StorageColumn},
 		{Key: "client_secret", Label: "admin.schemaField.clientSecretLabel", Type: "secret", Section: "credential",
@@ -473,8 +466,8 @@ func TestAdminSchemaConversionFidelity(t *testing.T) {
 	if opts := resp.GetFields()[5].GetOptions(); len(opts) != 0 {
 		t.Errorf("missing_dyn options = %v, want 空（dynamic key 未命中）", opts)
 	}
-	if opts := resp.GetFields()[2].GetOptions(); len(opts) != 2 || opts[0] != "social" || opts[1] != "enterprise" {
-		t.Errorf("ui_group options = %v, want [social enterprise]（自身声明）", opts)
+	if opts := resp.GetFields()[2].GetOptions(); len(opts) != 3 || opts[0] != "socks5" || opts[1] != "http" || opts[2] != "https" {
+		t.Errorf("scheme options = %v, want [socks5 http https]（自身声明）", opts)
 	}
 	// Storage / Kind / DynamicKey 无 wire 对应字段：protojson 视图不得出现这些键。
 	raw, err := protojson.Marshal(resp)

@@ -89,7 +89,6 @@ const THIRDPARTY_METHOD = {
       displayName: 'QQ',
       type: 'qq',
       channel: 'redirect',
-      uiGroup: 'social',
       sortOrder: '10',
     },
   ],
@@ -368,7 +367,7 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
       THIRDPARTY_METHOD,
     ]);
     const entry = html.indexOf('忘记密码');
-    const wall = html.indexOf('data-group="social"');
+    const wall = html.indexOf('QQ');
     expect(entry).toBeGreaterThan(-1);
     expect(wall).toBeGreaterThan(entry);
     expect(html).toContain('QQ');
@@ -381,7 +380,6 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
     ]);
     expect(html).not.toContain('忘记密码');
     expect(html).not.toContain('注册');
-    expect(html).toContain('data-group="social"');
     expect(html).toContain('QQ');
   });
 
@@ -390,13 +388,13 @@ describe('LoginPage：flags 驱动「忘记密码」「注册」入口可见性�
       { passwordReset: true, registration: true },
       [PASSWORD_METHOD],
     );
-    expect(missingEntry).not.toContain('data-group=');
+    expect(missingEntry).not.toContain('QQ');
 
     const emptyProviders = renderPage(
       { passwordReset: true, registration: true },
       [{ method: 'thirdparty', usage: ['primary'], providers: [] }],
     );
-    expect(emptyProviders).not.toContain('data-group=');
+    expect(emptyProviders).not.toContain('QQ');
   });
 
   test('空态：主因子 tab 与第三方 providers 均缺失才出现「暂无可用登录方式」', () => {

@@ -44,7 +44,7 @@ function fieldHelp(field: SchemaField): string | undefined {
 }
 
 /**
- * select 取值显示名：options 是写库取值（如 ui_group 的 social、union_provider
+ * select 取值显示名：options 是写库取值（如 scheme 的 socks5、union_provider
  * 的 provider_key），不是 i18n 键——按 admin.schemaOption.<fieldKey>.<value>
  * 查译文，未定义的取值原样显示；optionList 的 value 始终保持原值，提交不受
  * 翻译影响。按字段命名空间取键可避免 union_provider 里恰好叫 social 的

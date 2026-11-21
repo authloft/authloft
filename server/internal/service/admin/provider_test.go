@@ -353,7 +353,7 @@ func wantRowOf(t *testing.T) *model.Provider {
 	}
 	return &model.Provider{
 		ID: 7, ProviderKey: "wx_exist", DisplayName: "原名", Category: "auth", Type: "wechat_mp",
-		EnableSignin: 1, EnableSignup: 1, IsEnabled: 1, UiGroup: "social", SortOrder: 10,
+		EnableSignin: 1, EnableSignup: 1, IsEnabled: 1, SortOrder: 10,
 		AutoBindFields: "email,phone", Remark: "原备注", Ext: ext,
 	}
 }
@@ -435,7 +435,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 	if row.DisplayName != "新名" {
 		t.Errorf("display_name = %q, want 新名", row.DisplayName)
 	}
-	if row.Type != "wechat_mp" || row.Category != "auth" || row.UiGroup != "social" ||
+	if row.Type != "wechat_mp" || row.Category != "auth" ||
 		row.SortOrder != 10 || row.Remark != "原备注" || row.EnableSignin != 1 || row.EnableSignup != 1 {
 		t.Errorf("缺省键未保留原值: %+v", row)
 	}

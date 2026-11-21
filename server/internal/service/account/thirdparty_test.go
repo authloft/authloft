@@ -260,7 +260,6 @@ func providerRow(key, typ, union string, enabled, signin int8) *provider.Provide
 			Type:          typ,
 			EnableSignin:  signin,
 			IsEnabled:     enabled,
-			UiGroup:       "social",
 			SortOrder:     10,
 			IconURL:       "https://icons.example.com/" + key + ".png",
 		},
@@ -472,8 +471,8 @@ func TestGetThirdpartyBindings(t *testing.T) {
 	if res.Available[0].Channel != "api" || res.Available[1].Channel != "qrcode" {
 		t.Errorf("available channel = (%q, %q), want (api, qrcode)——§2.7.1 同款取值", res.Available[0].Channel, res.Available[1].Channel)
 	}
-	if res.Available[1].UiGroup != "social" || res.Available[1].SortOrder != 20 {
-		t.Errorf("available[1] uiGroup/sortOrder = (%q, %d)", res.Available[1].UiGroup, res.Available[1].SortOrder)
+	if res.Available[1].SortOrder != 20 {
+		t.Errorf("available[1] sortOrder = %d, want 20", res.Available[1].SortOrder)
 	}
 }
 

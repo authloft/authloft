@@ -59,8 +59,7 @@ func schemaDictKeys(t *testing.T, locale string) map[string]bool {
 	return keys
 }
 
-// TestSchemaTextI18nKeys 全部已注册类型的 schema 文案都是可译的 i18n 键；
-// ui_group 这类 select 的 options 仍是 wire 取值，但要能查到显示名译文。
+// TestSchemaTextI18nKeys 全部已注册类型的 schema 文案都是可译的 i18n 键。
 func TestSchemaTextI18nKeys(t *testing.T) {
 	zh := schemaDictKeys(t, "zh")
 	en := schemaDictKeys(t, "en")
@@ -110,15 +109,6 @@ func TestSchemaTextI18nKeys(t *testing.T) {
 			checkKey(meta.Type, f.GetKey(), "label", f.GetLabel())
 			if f.GetHelp() != "" {
 				checkKey(meta.Type, f.GetKey(), "help", f.GetHelp())
-			}
-			if f.GetKey() == "ui_group" {
-				for _, option := range f.GetOptions() {
-					key := "admin.schemaOption.ui_group." + option
-					if !zh[key] || !en[key] {
-						t.Errorf("ui_group option %q 缺显示名译文 %s（zh=%v en=%v）",
-							option, key, zh[key], en[key])
-					}
-				}
 			}
 		}
 	}

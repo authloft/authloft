@@ -374,7 +374,7 @@ func TestNewMetaBaseline(t *testing.T) {
 		"provider_key", "display_name", "union_provider",
 		"client_id", "client_secret", "app_id", "cert", "scopes", "provider_url",
 		"custom_auth_url", "custom_token_url", "custom_user_info_url", "user_mapping", "metadata",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey,
 	}
@@ -397,7 +397,7 @@ func TestNewMetaBaseline(t *testing.T) {
 	// 从 Ext 写入键集丢失（配置保存即丢凭证）。
 	for i, f := range full {
 		want := provider.StorageExt
-		if i < 3 || (i >= 14 && i <= 22) { // basic(3) + display/policy(9) 表列
+		if i < 3 || (i >= 14 && i <= 21) { // basic(3) + display/policy(8) 表列
 			want = provider.StorageColumn
 		}
 		if f.Storage != want {
@@ -416,7 +416,7 @@ func TestNewStandardMeta(t *testing.T) {
 	wantKeys := []string{
 		"provider_key", "display_name", "union_provider",
 		"client_id", "client_secret", "scopes", "user_mapping",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey,
 	}
@@ -471,8 +471,8 @@ func TestKeepFields(t *testing.T) {
 	}
 	// Schema 闭包重设且与 Fields 一致：ext 段逐项同值同序，末位引用键在列。
 	full := kept.Schema()
-	if len(full) != 3+len(kept.Fields)+4+5+1 {
-		t.Fatalf("schema fields = %d, want %d", len(full), 3+len(kept.Fields)+4+5+1)
+	if len(full) != 3+len(kept.Fields)+3+5+1 {
+		t.Fatalf("schema fields = %d, want %d", len(full), 3+len(kept.Fields)+3+5+1)
 	}
 	for i, f := range kept.Fields {
 		if !reflect.DeepEqual(full[3+i], f) {
@@ -487,8 +487,8 @@ func TestKeepFields(t *testing.T) {
 	if len(empty.Fields) != 0 {
 		t.Fatalf("fields = %d, want 0", len(empty.Fields))
 	}
-	if n := len(empty.Schema()); n != 3+4+5+1 {
-		t.Fatalf("schema fields = %d, want %d", n, 3+4+5+1)
+	if n := len(empty.Schema()); n != 3+3+5+1 {
+		t.Fatalf("schema fields = %d, want %d", n, 3+3+5+1)
 	}
 }
 

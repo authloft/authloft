@@ -38,7 +38,7 @@ message ThirdpartyBinding {
 }
 
 // ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7）：
-// {providerKey, displayName, type, channel, icon, uiGroup, sortOrder}；
+// {providerKey, displayName, type, channel, icon, sortOrder}；
 // 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现。
 message ThirdpartyOption {
   // 第三方渠道标识（§3.7）。
@@ -51,10 +51,8 @@ message ThirdpartyOption {
   string channel = 4;
   // 图标地址（§3.7）。
   string icon = 5;
-  // 展示分组（§3.7）。
-  string ui_group = 6;
   // 排序（§3.7）。
-  int64 sort_order = 7;
+  int64 sort_order = 6;
 }
 
 // ThirdpartyBindingsResponse 是 AccountService/GetThirdpartyBindings 的响应

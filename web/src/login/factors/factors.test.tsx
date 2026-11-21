@@ -270,7 +270,6 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
       type: 'qq',
       channel: 'redirect',
       icon: 'https://ex.test/qq.png',
-      uiGroup: 'social',
       sortOrder: '10',
     },
     {
@@ -278,7 +277,6 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
       displayName: '微信扫码',
       type: 'wechat_mp_scan',
       channel: 'qrcode',
-      uiGroup: 'social',
       sortOrder: '20',
     },
     {
@@ -286,7 +284,6 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
       displayName: '微信',
       type: 'wechat_mp',
       channel: 'api',
-      uiGroup: 'social',
       sortOrder: '30',
     },
     {
@@ -294,7 +291,6 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
       displayName: '企业SSO',
       type: 'cas',
       channel: 'redirect',
-      uiGroup: 'enterprise',
       sortOrder: '5',
     },
   ];
@@ -320,13 +316,13 @@ describe('ProviderButtons 图标墙（§4.3 行 454；§2.7.1 行 560-574）', (
     expect(markup).not.toContain('未知渠道');
   });
 
-  test('uiGroup 分组 + 组内 sortOrder 排序（§2.7.1 行 566-572）', () => {
+  test('平铺渲染 + sortOrder 升序（§2.7.1 行 566-572）', () => {
     const markup = renderWall();
-    expect(markup.indexOf('data-group="enterprise"')).toBeLessThan(
-      markup.indexOf('data-group="social"'),
-    );
-    // 组内 10 < 20。
+    expect(markup).not.toContain('data-group=');
+    // 单容器平铺，按 sortOrder 升序：ent(5) < qq(10) < scan(20)。
+    expect(markup.indexOf('企业SSO')).toBeLessThan(markup.indexOf('QQ'));
     expect(markup.indexOf('QQ')).toBeLessThan(markup.indexOf('微信扫码'));
+    expect(markup).not.toContain('微信</span>'); // channel=api 不渲染
   });
 
   test('图标经 ProviderIcon（§4.3 行 454）：icon 非空 <img>；空则内联 SVG 占位（§2.7.1 行 578 不做本地回落）', () => {

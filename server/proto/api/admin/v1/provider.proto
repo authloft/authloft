@@ -112,20 +112,18 @@ message AdminProvider {
   string auto_bind_fields = 9;
   // 是否启用（《后端架构》§4.1）。
   bool is_enabled = 10;
-  // 展示分组 social|enterprise|dev|other（§5.3）。
-  string ui_group = 11;
   // 排序（《后端架构》§4.1）。
-  int64 sort_order = 12;
+  int64 sort_order = 11;
   // 图标 URL，绝对地址（§5.3）。
-  string icon_url = 13;
+  string icon_url = 12;
   // 备注（§5.3）。
-  string remark = 14;
+  string remark = 13;
   // provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3）。
-  google.protobuf.Struct ext = 15;
+  google.protobuf.Struct ext = 14;
   // 创建时间，Unix 秒（《后端架构》§4.1）。
-  int64 created_at = 16;
+  int64 created_at = 15;
   // 更新时间，Unix 秒（《后端架构》§4.1）。
-  int64 updated_at = 17;
+  int64 updated_at = 16;
 }
 
 // DeleteProviderRequest 是 AdminService/DeleteProvider 的请求（§5.2：

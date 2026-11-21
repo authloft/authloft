@@ -154,7 +154,7 @@ func (x *ThirdpartyBinding) GetCreatedAt() int64 {
 }
 
 // ThirdpartyOption 是 GetThirdpartyBindings 响应的可绑定条目（§3.7）：
-// {providerKey, displayName, type, channel, icon, uiGroup, sortOrder}；
+// {providerKey, displayName, type, channel, icon, sortOrder}；
 // 过滤条件：is_enabled=1 且 enable_signin=1、排除已绑定、Union Provider 不出现。
 type ThirdpartyOption struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -168,10 +168,8 @@ type ThirdpartyOption struct {
 	Channel string `protobuf:"bytes,4,opt,name=channel,proto3" json:"channel,omitempty"`
 	// 图标地址（§3.7）。
 	Icon string `protobuf:"bytes,5,opt,name=icon,proto3" json:"icon,omitempty"`
-	// 展示分组（§3.7）。
-	UiGroup string `protobuf:"bytes,6,opt,name=ui_group,json=uiGroup,proto3" json:"ui_group,omitempty"`
 	// 排序（§3.7）。
-	SortOrder     int64 `protobuf:"varint,7,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
+	SortOrder     int64 `protobuf:"varint,6,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -237,13 +235,6 @@ func (x *ThirdpartyOption) GetChannel() string {
 func (x *ThirdpartyOption) GetIcon() string {
 	if x != nil {
 		return x.Icon
-	}
-	return ""
-}
-
-func (x *ThirdpartyOption) GetUiGroup() string {
-	if x != nil {
-		return x.UiGroup
 	}
 	return ""
 }
@@ -809,16 +800,15 @@ const file_api_account_v1_thirdparty_proto_rawDesc = "" +
 	"\achannel\x18\x04 \x01(\tR\achannel\x12\x12\n" +
 	"\x04icon\x18\x05 \x01(\tR\x04icon\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"\xd4\x01\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"\xb9\x01\n" +
 	"\x10ThirdpartyOption\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x18\n" +
 	"\achannel\x18\x04 \x01(\tR\achannel\x12\x12\n" +
-	"\x04icon\x18\x05 \x01(\tR\x04icon\x12\x19\n" +
-	"\bui_group\x18\x06 \x01(\tR\auiGroup\x12\x1d\n" +
+	"\x04icon\x18\x05 \x01(\tR\x04icon\x12\x1d\n" +
 	"\n" +
-	"sort_order\x18\a \x01(\x03R\tsortOrder\"\x95\x01\n" +
+	"sort_order\x18\x06 \x01(\x03R\tsortOrder\"\x95\x01\n" +
 	"\x1aThirdpartyBindingsResponse\x127\n" +
 	"\x05items\x18\x01 \x03(\v2!.api.account.v1.ThirdpartyBindingR\x05items\x12>\n" +
 	"\tavailable\x18\x02 \x03(\v2 .api.account.v1.ThirdpartyOptionR\tavailable\"<\n" +

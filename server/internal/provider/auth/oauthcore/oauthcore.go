@@ -87,7 +87,7 @@ func AsProviderError(err error) (*ProviderError, bool) {
 // 最终 Fields 一致。auth 全渠道经此漏斗单点声明出站代理引用键。
 func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 	return func() []provider.FieldMeta {
-		fields := make([]provider.FieldMeta, 0, 3+len(ext)+4+5+1)
+		fields := make([]provider.FieldMeta, 0, 3+len(ext)+3+5+1)
 		fields = append(fields,
 			schemafield.ProviderKey(),
 			schemafield.DisplayName(),
@@ -96,7 +96,6 @@ func SchemaFor(ext []provider.FieldMeta) func() []provider.FieldMeta {
 		fields = append(fields, ext...)
 		fields = append(fields,
 			schemafield.IconURL(),
-			schemafield.UiGroup(),
 			schemafield.SortOrder(),
 			schemafield.Remark(),
 		)

@@ -398,20 +398,18 @@ type AdminProvider struct {
 	AutoBindFields string `protobuf:"bytes,9,opt,name=auto_bind_fields,json=autoBindFields,proto3" json:"auto_bind_fields,omitempty"`
 	// 是否启用（《后端架构》§4.1）。
 	IsEnabled bool `protobuf:"varint,10,opt,name=is_enabled,json=isEnabled,proto3" json:"is_enabled,omitempty"`
-	// 展示分组 social|enterprise|dev|other（§5.3）。
-	UiGroup string `protobuf:"bytes,11,opt,name=ui_group,json=uiGroup,proto3" json:"ui_group,omitempty"`
 	// 排序（《后端架构》§4.1）。
-	SortOrder int64 `protobuf:"varint,12,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
+	SortOrder int64 `protobuf:"varint,11,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
 	// 图标 URL，绝对地址（§5.3）。
-	IconUrl string `protobuf:"bytes,13,opt,name=icon_url,json=iconUrl,proto3" json:"icon_url,omitempty"`
+	IconUrl string `protobuf:"bytes,12,opt,name=icon_url,json=iconUrl,proto3" json:"icon_url,omitempty"`
 	// 备注（§5.3）。
-	Remark string `protobuf:"bytes,14,opt,name=remark,proto3" json:"remark,omitempty"`
+	Remark string `protobuf:"bytes,13,opt,name=remark,proto3" json:"remark,omitempty"`
 	// provider.Ext 全量明文，键即 §5.3 schema 的 key（§5.3）。
-	Ext *structpb.Struct `protobuf:"bytes,15,opt,name=ext,proto3" json:"ext,omitempty"`
+	Ext *structpb.Struct `protobuf:"bytes,14,opt,name=ext,proto3" json:"ext,omitempty"`
 	// 创建时间，Unix 秒（《后端架构》§4.1）。
-	CreatedAt int64 `protobuf:"varint,16,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedAt int64 `protobuf:"varint,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// 更新时间，Unix 秒（《后端架构》§4.1）。
-	UpdatedAt     int64 `protobuf:"varint,17,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt     int64 `protobuf:"varint,16,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -514,13 +512,6 @@ func (x *AdminProvider) GetIsEnabled() bool {
 		return x.IsEnabled
 	}
 	return false
-}
-
-func (x *AdminProvider) GetUiGroup() string {
-	if x != nil {
-		return x.UiGroup
-	}
-	return ""
 }
 
 func (x *AdminProvider) GetSortOrder() int64 {
@@ -872,7 +863,7 @@ const file_api_admin_v1_provider_proto_rawDesc = "" +
 	"\x04page\x18\x03 \x01(\x03R\x04page\x12\x1b\n" +
 	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"7\n" +
 	"\x12GetProviderRequest\x12!\n" +
-	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\"\xb2\x04\n" +
+	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\"\x97\x04\n" +
 	"\rAdminProvider\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12%\n" +
 	"\x0eunion_provider\x18\x02 \x01(\tR\runionProvider\x12!\n" +
@@ -885,17 +876,16 @@ const file_api_admin_v1_provider_proto_rawDesc = "" +
 	"\x10auto_bind_fields\x18\t \x01(\tR\x0eautoBindFields\x12\x1d\n" +
 	"\n" +
 	"is_enabled\x18\n" +
-	" \x01(\bR\tisEnabled\x12\x19\n" +
-	"\bui_group\x18\v \x01(\tR\auiGroup\x12\x1d\n" +
+	" \x01(\bR\tisEnabled\x12\x1d\n" +
 	"\n" +
-	"sort_order\x18\f \x01(\x03R\tsortOrder\x12\x19\n" +
-	"\bicon_url\x18\r \x01(\tR\aiconUrl\x12\x16\n" +
-	"\x06remark\x18\x0e \x01(\tR\x06remark\x12)\n" +
-	"\x03ext\x18\x0f \x01(\v2\x17.google.protobuf.StructR\x03ext\x12\x1d\n" +
+	"sort_order\x18\v \x01(\x03R\tsortOrder\x12\x19\n" +
+	"\bicon_url\x18\f \x01(\tR\aiconUrl\x12\x16\n" +
+	"\x06remark\x18\r \x01(\tR\x06remark\x12)\n" +
+	"\x03ext\x18\x0e \x01(\v2\x17.google.protobuf.StructR\x03ext\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x10 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\x0f \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x11 \x01(\x03R\tupdatedAt\":\n" +
+	"updated_at\x18\x10 \x01(\x03R\tupdatedAt\":\n" +
 	"\x15DeleteProviderRequest\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\"]\n" +
 	"\x19SetProviderEnabledRequest\x12!\n" +

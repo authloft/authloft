@@ -241,7 +241,7 @@ func TestSchemaExtKinds(t *testing.T) {
 	}
 	columnKeys := map[string]bool{
 		"provider_key": true, "display_name": true, "icon_url": true,
-		"ui_group": true, "sort_order": true, "remark": true,
+		"sort_order": true, "remark": true,
 	}
 	seen := map[string]int{}
 	for _, f := range fields {

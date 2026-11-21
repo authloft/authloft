@@ -107,13 +107,13 @@ describe('schema 字段文案契约（后端下发 i18n 键，文案只在本字
   });
 
   test('option 显示名按字段命名空间取键，未定义取值原样回显', () => {
-    expect(t('admin.schemaOption.ui_group.social')).toBe('社交');
+    expect(t('admin.schemaOption.scheme.socks5')).toBe('SOCKS5');
     setLocale('en-US');
-    expect(t('admin.schemaOption.ui_group.social')).toBe('Social');
+    expect(t('admin.schemaOption.scheme.socks5')).toBe('SOCKS5');
     setLocale('zh-CN');
-    // union_provider 的 options 是自定义 provider_key；即便值恰好叫 social，
-    // 也不会命中 ui_group 的枚举译文。
-    expect(hasKey('admin.schemaOption.union_provider.social')).toBe(false);
+    // union_provider 的 options 是自定义 provider_key；即便值恰好叫 socks5，
+    // 也不会命中 scheme 的枚举译文。
+    expect(hasKey('admin.schemaOption.union_provider.socks5')).toBe(false);
   });
 
   test('兼容路径：旧版中文字面量 / 缺译键一律回显本身（不静默 undefined）', () => {

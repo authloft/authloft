@@ -197,7 +197,6 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.iconUrlLabel': 'Icon URL',
   'admin.schemaField.iconUrlHelp':
     'Leave empty to show a generic placeholder icon',
-  'admin.schemaField.uiGroupLabel': 'Display Group',
   'admin.schemaField.sortOrderLabel': 'Sort Order',
   'admin.schemaField.remarkLabel': 'Remark',
   'admin.schemaField.isEnabledLabel': 'Enabled',
@@ -349,10 +348,6 @@ export const admin: typeof zhAdmin = {
   // admin.schemaOption.<fieldKey>.<value>, namespaced by field so a custom
   // union_provider provider_key is never mistaken for a generic enum label;
   // values without a key are shown verbatim).
-  'admin.schemaOption.ui_group.social': 'Social',
-  'admin.schemaOption.ui_group.enterprise': 'Enterprise',
-  'admin.schemaOption.ui_group.dev': 'Developer',
-  'admin.schemaOption.ui_group.other': 'Other',
   // scheme closed set (§5.3 proxy provider and outbound proxy reference
   // convention): protocol names are universal, zh / en identical.
   'admin.schemaOption.scheme.socks5': 'SOCKS5',

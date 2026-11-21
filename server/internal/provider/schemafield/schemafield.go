@@ -52,17 +52,6 @@ func IconURL() provider.FieldMeta {
 	}
 }
 
-// UiGroup 表列 ui_group（display/select）；Options 是写库取值，非 i18n 键。
-func UiGroup() provider.FieldMeta {
-	return provider.FieldMeta{
-		Key: "ui_group", Label: "admin.schemaField.uiGroupLabel",
-		Type: "select", Section: "display",
-		Options: []string{"social", "enterprise", "dev", "other"},
-		Default: "social",
-		Storage: provider.StorageColumn,
-	}
-}
-
 // SortOrder 表列 sort_order（display/number），默认 0。
 func SortOrder() provider.FieldMeta {
 	return provider.FieldMeta{

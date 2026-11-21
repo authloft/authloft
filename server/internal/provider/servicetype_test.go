@@ -76,7 +76,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		}
 		wantKeys := map[string]bool{
 			"provider_key": true, "display_name": true, "icon_url": true,
-			"ui_group": true, "sort_order": true, "remark": true,
+			"sort_order": true, "remark": true,
 			"is_enabled": tc.wantEnabled, provider.ProxyRefKey: tc.wantRef,
 		}
 		for _, k := range tc.fieldKeys {

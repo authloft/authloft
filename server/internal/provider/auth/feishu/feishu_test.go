@@ -140,7 +140,7 @@ func TestSchemaKeepSet(t *testing.T) {
 	wantKeys := []string{
 		"provider_key", "display_name", "union_provider",
 		"client_id", "client_secret", "scopes", "user_mapping",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields",
 		provider.ProxyRefKey,
 	}

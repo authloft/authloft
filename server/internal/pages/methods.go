@@ -50,7 +50,6 @@ type SnapshotProvider struct {
 	Type        string `json:"type"`
 	Channel     string `json:"channel"`
 	Icon        string `json:"icon,omitempty"`
-	UiGroup     string `json:"uiGroup,omitempty"`
 	SortOrder   string `json:"sortOrder,omitempty"` // int64 → 十进制字符串（§1.12）
 }
 
@@ -369,7 +368,6 @@ func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error)
 				Type:        p.Type,
 				Channel:     string(meta.Channel),
 				Icon:        p.Row.IconURL,
-				UiGroup:     p.Row.UiGroup,
 				SortOrder:   strconv.FormatInt(int64(p.Row.SortOrder), 10),
 			})
 			channels[string(meta.Channel)] = true

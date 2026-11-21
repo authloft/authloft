@@ -581,7 +581,7 @@ func wantRow(t *testing.T) *model.Provider {
 		ID: 7, ProviderKey: "wechat_official", UnionProvider: "wechat_union",
 		DisplayName: "微信扫码", Category: "auth", Type: "wechat_mp",
 		EnableSignin: 1, EnableSignup: 0, AutoBind: 1, AutoBindFields: "email,phone",
-		IsEnabled: 1, UiGroup: "social", SortOrder: 30,
+		IsEnabled: 1, SortOrder: 30,
 		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
 		Ext:       ext,
 		CreatedAt: time.Unix(1761700000, 0).UTC(), UpdatedAt: time.Unix(1761800000, 0).UTC(),
@@ -776,7 +776,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "auth" || got.GetType() != "wechat_mp" {
 		t.Errorf("详情基础列 = %+v", &got)
 	}
-	if got.GetAutoBindFields() != "email,phone" || got.GetUiGroup() != "social" ||
+	if got.GetAutoBindFields() != "email,phone" ||
 		got.GetIconUrl() != "https://cdn.example.com/wechat.png" || got.GetRemark() != "生产渠道" {
 		t.Errorf("详情展示列 = %+v", &got)
 	}
@@ -853,11 +853,11 @@ func TestGetProviderSchemaSenderMeta(t *testing.T) {
 	if v := byKey["port"].GetDefault().GetNumberValue(); v != 587 {
 		t.Errorf("port default = %v, want 587", v)
 	}
-	// 非 oauth 类别：表列基线只剩通用 6 项（basic 2 + display 4，is_enabled
+	// 非 oauth 类别：表列基线只剩通用 5 项（basic 2 + display 3，is_enabled
 	// 是 oauth 专属，email 行不声明不消费）；category 只读字段已改由页面级
 	// 类型下拉承载，不进 fields[]。
 	for _, key := range []string{"provider_key", "display_name",
-		"icon_url", "ui_group", "sort_order", "remark"} {
+		"icon_url", "sort_order", "remark"} {
 		if _, ok := byKey[key]; !ok {
 			t.Errorf("schema 缺少通用表列字段 %q", key)
 		}
@@ -898,8 +898,8 @@ func TestGetProviderSchemaUnionMeta(t *testing.T) {
 		t.Fatalf("type/category = (%q, %q), want (%q, %q)",
 			got.GetType(), got.GetCategory(), provider.UnionProviderType, provider.CategoryUnion)
 	}
-	if len(got.GetFields()) != 6 {
-		t.Fatalf("字段数 = %d, want 6（虚拟类型无 Ext 字段且无启用开关）", len(got.GetFields()))
+	if len(got.GetFields()) != 5 {
+		t.Fatalf("字段数 = %d, want 5（虚拟类型无 Ext 字段且无启用开关）", len(got.GetFields()))
 	}
 	byKey := map[string]bool{}
 	for _, f := range got.GetFields() {
@@ -985,8 +985,8 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	if got.GetType() != provider.ProxyType || got.GetCategory() != provider.CategoryProxy {
 		t.Fatalf("type/category = (%q, %q), want (proxy, proxy)", got.GetType(), got.GetCategory())
 	}
-	if len(got.GetFields()) != 11 {
-		t.Fatalf("字段数 = %d, want 11（basic 2 + 五真实字段 + display 4）", len(got.GetFields()))
+	if len(got.GetFields()) != 10 {
+		t.Fatalf("字段数 = %d, want 10（basic 2 + 五真实字段 + display 3）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -1021,8 +1021,8 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 }
 
 // TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=auth
-// 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
-// + 全类 metadata + 引用键 = 24 项。追加字段 label / help 是前端
+// 由 oauth 注册表 Lookup 决定；fields = 表列基线 11 项 + keep 集收敛后的
+// 2 个凭证 Ext + 引用键 = 14 项。追加字段 label / help 是前端
 // i18n 键，type / section / required / advanced 与 §5.3 示例逐字一致，
 // 且与注册表 Schema() 逐项相同（§15.3：/schema 唯一数据源，不硬编码）。
 func TestGetProviderSchemaOauthMeta(t *testing.T) {
@@ -1042,9 +1042,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "auth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
-	// 12 表列基线 + keep 集收敛后的 2 个凭证 Ext + 引用键基线（§5.3 keep 集表）。
-	if len(got.GetFields()) != 15 {
-		t.Fatalf("字段数 = %d, want 15（12 表列基线 + app_id/client_secret + 引用键基线）", len(got.GetFields()))
+	// 11 表列基线 + keep 集收敛后的 2 个凭证 Ext + 引用键基线（§5.3 keep 集表）。
+	if len(got.GetFields()) != 14 {
+		t.Fatalf("字段数 = %d, want 14（11 表列基线 + app_id/client_secret + 引用键基线）", len(got.GetFields()))
 	}
 	byKey := map[string]*adminv1.SchemaField{}
 	for _, f := range got.GetFields() {
@@ -1071,9 +1071,9 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 			t.Errorf("proxy_provider_key options = %v, want [proxy_a]（含未启用实例）", opts)
 		}
 	}
-	// 表列基线 12 项仍在（category 只读字段由页面级类型下拉承载）。
+	// 表列基线 11 项仍在（category 只读字段由页面级类型下拉承载）。
 	for _, key := range []string{"provider_key", "display_name", "union_provider",
-		"icon_url", "ui_group", "sort_order", "remark",
+		"icon_url", "sort_order", "remark",
 		"is_enabled", "enable_signin", "enable_signup", "auto_bind", "auto_bind_fields"} {
 		if _, ok := byKey[key]; !ok {
 			t.Errorf("schema 缺少表列基线字段 %q", key)

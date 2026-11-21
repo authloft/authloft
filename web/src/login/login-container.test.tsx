@@ -15,7 +15,7 @@ import * as React from 'react';
 // 本仓 rstest 为 node 环境（无 DOM）：静态渲染走 react-dom/server 的
 // renderToStaticMarkup（沿 CaptchaWidget.test.ts / components.test.ts 边界惯例），
 // 交互 / 副作用生命周期在纯逻辑层覆盖（runSubmit / executeEffects /
-// groupProviders 等容器层纯函数 + msw 拦截 api 层）。
+// primaryTabMethods 等容器层纯函数 + msw 拦截 api 层）。
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from '@modern-js/runtime/router';
 import { setupServer } from 'msw/node';
@@ -35,7 +35,7 @@ import { PasswordForm } from './factors/PasswordForm';
 import { RecoveryCodeForm } from './factors/RecoveryCodeForm';
 import { WebAuthnButton } from './factors/WebAuthnButton';
 import { lookupFactor } from './factors/registry';
-import { groupProviders, MethodTabs, primaryTabMethods } from './MethodTabs';
+import { MethodTabs, primaryTabMethods } from './MethodTabs';
 import { CaptchaConfigSchema } from '../gen/proto/api/common/v1/captcha_pb';
 import {
   BindingSchema,
@@ -57,7 +57,7 @@ import type {
   CaptchaGate,
   CaptchaGateRunOptions,
 } from '../shared/captcha/useCaptchaGate';
-import type { MethodsSnapshot, SnapshotProvider } from '../shared/types/init';
+import type { MethodsSnapshot } from '../shared/types/init';
 import { CreateQrcodeResponseSchema } from '../gen/proto/api/sso/v1/ticket_pb';
 import {
   StartVerificationResponseSchema,
@@ -206,7 +206,6 @@ const SNAPSHOT: MethodsSnapshot = {
           type: 'qq',
           channel: 'redirect',
           icon: 'https://ex.test/qq.png',
-          uiGroup: 'social',
           sortOrder: '10',
         },
         {
@@ -214,7 +213,6 @@ const SNAPSHOT: MethodsSnapshot = {
           displayName: '微信扫码',
           type: 'wechat_mp_scan',
           channel: 'qrcode',
-          uiGroup: 'social',
           sortOrder: '20',
         },
         {
@@ -222,7 +220,6 @@ const SNAPSHOT: MethodsSnapshot = {
           displayName: '微信',
           type: 'wechat_mp',
           channel: 'api',
-          uiGroup: 'social',
           sortOrder: '30',
         },
         {
@@ -230,7 +227,6 @@ const SNAPSHOT: MethodsSnapshot = {
           displayName: '企业SSO',
           type: 'cas',
           channel: 'redirect',
-          uiGroup: 'enterprise',
           sortOrder: '5',
         },
       ],
@@ -820,68 +816,6 @@ describe('lookupFactor（§4.3 行 434：映射表三态）', () => {
 // MethodTabs（§4.1 行 384；需求 §4.1.6 capability 自动隐藏）
 // ---------------------------------------------------------------------------
 
-describe('groupProviders（§2.7.1：uiGroup 分组 + sortOrder 排序 + channel=api 过滤）', () => {
-  const providers: SnapshotProvider[] = [
-    {
-      providerKey: 'wxmp',
-      displayName: '微信',
-      type: 'wechat_mp',
-      channel: 'api',
-      uiGroup: 'social',
-      sortOrder: '30',
-    },
-    {
-      providerKey: 'qq',
-      displayName: 'QQ',
-      type: 'qq',
-      channel: 'redirect',
-      uiGroup: 'social',
-      sortOrder: '10',
-    },
-    {
-      providerKey: 'ent',
-      displayName: '企业SSO',
-      type: 'cas',
-      channel: 'redirect',
-      uiGroup: 'enterprise',
-      sortOrder: '5',
-    },
-    {
-      providerKey: 'scan',
-      displayName: '微信扫码',
-      type: 'wechat_mp_scan',
-      channel: 'qrcode',
-      uiGroup: 'social',
-      sortOrder: '20',
-    },
-  ];
-
-  test('api 渠道过滤 + 组内 sortOrder 升序 + uiGroup 分组（组序按排序后首元素）', () => {
-    const groups = groupProviders(providers);
-    expect([...groups.keys()]).toEqual(['enterprise', 'social']);
-    expect(groups.get('enterprise')?.map((p) => p.providerKey)).toEqual([
-      'ent',
-    ]);
-    expect(groups.get('social')?.map((p) => p.providerKey)).toEqual([
-      'qq',
-      'scan',
-    ]);
-  });
-
-  test('sortOrder 缺失 / 非法兜底 0（§1.12 / §9 第 18 条）', () => {
-    const groups = groupProviders([
-      { providerKey: 'b', type: 't', channel: 'redirect', sortOrder: '10' },
-      { providerKey: 'a', type: 't', channel: 'redirect' },
-      { providerKey: 'c', type: 't', channel: 'redirect', sortOrder: 'abc' },
-    ]);
-    expect(groups.get('')?.map((p) => p.providerKey)).toEqual(['a', 'c', 'b']);
-  });
-
-  test('空列表 → 空分组', () => {
-    expect(groupProviders([]).size).toBe(0);
-  });
-});
-
 describe('MethodTabs 静态渲染', () => {
   function renderTabs(methods = SNAPSHOT.methods, current = ''): string {
     return renderToStaticMarkup(
@@ -914,9 +848,8 @@ describe('MethodTabs 静态渲染', () => {
     expect(renderTabs()).toContain('通行密钥');
   });
 
-  test('不再渲染第三方图标墙：data-group / provider 名不出现', () => {
+  test('不再渲染第三方图标墙：provider 名不出现', () => {
     const markup = renderTabs();
-    expect(markup).not.toContain('data-group=');
     expect(markup).not.toContain('QQ');
     expect(markup).not.toContain('微信扫码');
   });
@@ -1869,13 +1802,14 @@ describe('ErrorBanner onRetry 接线 + 剩余次数去重', () => {
  * 真实 props（start / submit / onCancel 即容器实际接线闭包）。窗体在 SSR 下
  * 不渲染（login Modal 无 document 直接 null），静态帧只含主流程视图。
  */
-function renderMfaWiring(props: React.ComponentProps<typeof container.LoginContainer>): {
+function renderMfaWiring(
+  props: React.ComponentProps<typeof container.LoginContainer>,
+): {
   dialogs: React.ComponentProps<typeof stepUpDialogMod.StepUpDialog>[];
   markup: string;
 } {
-  const dialogs: React.ComponentProps<
-    typeof stepUpDialogMod.StepUpDialog
-  >[] = [];
+  const dialogs: React.ComponentProps<typeof stepUpDialogMod.StepUpDialog>[] =
+    [];
   const realCreateElement = React.createElement as (
     type: unknown,
     props: unknown,
@@ -2607,7 +2541,10 @@ describe('LoginContainer MFA 弹窗接线（mfa_required 开窗 / 取消 / 终�
       loginToken: 'lt-mfa',
     });
 
-    const challenge = await dialogs[0].start('totp', imageToken('cap-9', '999'));
+    const challenge = await dialogs[0].start(
+      'totp',
+      imageToken('cap-9', '999'),
+    );
     expect(challenge?.challengeToken).toBe('ct-mfa');
     expect(bodies[1]).toMatchObject({
       method: 'totp',
@@ -2686,8 +2623,9 @@ describe('LoginContainer MFA 弹窗接线（mfa_required 开窗 / 取消 / 终�
       navigate: (url) => navigations.push(url),
     });
 
-    await expect(dialogs[0].submit('ct-1', 'totp', { code: '000000' })).rejects
-      .toMatchObject({ code: 'invalid_code', attemptsLeft: BigInt(3) });
+    await expect(
+      dialogs[0].submit('ct-1', 'totp', { code: '000000' }),
+    ).rejects.toMatchObject({ code: 'invalid_code', attemptsLeft: BigInt(3) });
     expect(navigations).toEqual([]); // 失败不跳转
     expect(getLoginToken()).toBe('lt-mfa'); // 失败态保留（原地重试）
   });

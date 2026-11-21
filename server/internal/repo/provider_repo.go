@@ -159,7 +159,6 @@ func (r *ProviderRepo) Update(ctx context.Context, p *model.Provider) error {
 		Set("auto_bind = ?", p.AutoBind).
 		Set("auto_bind_fields = ?", p.AutoBindFields).
 		Set("is_enabled = ?", p.IsEnabled).
-		Set("ui_group = ?", p.UiGroup).
 		Set("sort_order = ?", p.SortOrder).
 		Set("icon_url = ?", p.IconURL).
 		Set("ext = ?", p.Ext).
