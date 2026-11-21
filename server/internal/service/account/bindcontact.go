@@ -203,7 +203,8 @@ type BindPhoneInput struct {
 	Captcha *captcha.Submission
 	// Code verify：purpose=bind 的验证码（§3.4 行 888）。
 	Code string
-	// IP 请求来源 IP（发码侧单 IP 日限额键，§10.3 行 1147）。
+	// IP 请求来源 IP（发码侧单 IP 日限额键 §10.3；verify 成功审计落值，
+	// handler 由 ctx 注入）。
 	IP string
 }
 
@@ -220,7 +221,8 @@ type BindEmailInput struct {
 	Captcha *captcha.Submission
 	// Code verify：purpose=bind 的验证码（§3.4 行 890）。
 	Code string
-	// IP 请求来源 IP（发码侧单 IP 日限额键，§10.3 行 1147）。
+	// IP 请求来源 IP（发码侧单 IP 日限额键 §10.3；verify 成功审计落值，
+	// handler 由 ctx 注入）。
 	IP string
 }
 
@@ -243,7 +245,7 @@ func (s *BindContactService) bindContact(ctx context.Context, uid int64, kind bi
 	case bindStepChallenge:
 		return s.bindChallenge(ctx, uid, kind, target, sub, ip)
 	case bindStepVerify:
-		return s.bindVerify(ctx, uid, kind, target, code)
+		return s.bindVerify(ctx, uid, kind, target, code, ip)
 	default:
 		return fmt.Errorf("%w: step %q", ErrBindInvalidRequest, step)
 	}
@@ -326,8 +328,9 @@ func (s *BindContactService) bindChallenge(ctx context.Context, uid int64, kind 
 
 // bindVerify 核销步编排（§3.4 行 897）：①格式先判（不消耗尝试次数）→
 // ②存在性先判 → ③GETDEL 原子消费 + code / owner 双比对 → ④列级更新 →
-// ⑤审计。仅成功写库后投审计。
-func (s *BindContactService) bindVerify(ctx context.Context, uid int64, kind bindContactKind, target, code string) error {
+// ⑤审计。仅成功写库后投审计；ip 随链透传供审计落值（challenge 步同一
+// 来源已用于发码限流）。
+func (s *BindContactService) bindVerify(ctx context.Context, uid int64, kind bindContactKind, target, code, ip string) error {
 	// ① 格式先判（factor/otp Verify 同口径：格式错不进入存储、不消耗
 	// 尝试次数 → invalid_request）。
 	target = strings.TrimSpace(target)
@@ -356,7 +359,7 @@ func (s *BindContactService) bindVerify(ctx context.Context, uid int64, kind bin
 	}
 	switch res.Outcome {
 	case core.CheckOK:
-		return s.bindCommit(ctx, uid, kind, target)
+		return s.bindCommit(ctx, uid, kind, target, ip)
 	case core.CheckMismatch:
 		return &BindInvalidCodeError{AttemptsLeft: res.AttemptsLeft}
 	case core.CheckExhausted:
@@ -369,8 +372,8 @@ func (s *BindContactService) bindVerify(ctx context.Context, uid int64, kind bin
 }
 
 // bindCommit 核销通过的落库 + 审计（列更新 → 审计，顺序固定：审计仅挂
-// 成功写库分支）。
-func (s *BindContactService) bindCommit(ctx context.Context, uid int64, kind bindContactKind, target string) error {
+// 成功写库分支；审计事件落来源 IP，与发码限流同一 handler 注入值）。
+func (s *BindContactService) bindCommit(ctx context.Context, uid int64, kind bindContactKind, target, ip string) error {
 	// 列级更新 user 行：phone / email + 对应 verified=1（§4.2 列结构；
 	// 未动一侧传 nil 不写入，updated_at 由 repo 刷新）。
 	one := int8(1)
@@ -412,6 +415,7 @@ func (s *BindContactService) bindCommit(ctx context.Context, uid int64, kind bin
 			UserID:    uid,
 			Target:    masked,
 			Detail:    eventlog.DetailTargetMasked(masked),
+			IP:        ip, // 来源 IP（handler 由 ctx 注入，与发码限流键同源）
 			CreatedAt: s.now(),
 		})
 	}

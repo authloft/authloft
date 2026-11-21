@@ -42,15 +42,6 @@ type ProfileStore interface {
 // ErrorInfo(account, invalid_request)，§1.6 封闭集成员）。
 var ErrProfileInvalidRequest = errors.New("account profile: invalid request")
 
-// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（§3.2：nickname
-// 上限 12 字、avatarUrl 上限 120 字符，与后端架构 §4.2 列宽同源）：
-// VARCHAR 宽度即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，
-// 非字节数。
-const (
-	nicknameMaxRunes  = 12
-	avatarURLMaxRunes = 120
-)
-
 // ProfileService account 域资料更新业务层。
 type ProfileService struct {
 	users ProfileStore
@@ -83,8 +74,8 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, uid int64, in *accou
 	// user 表资料列（§3.2 行 837）：has 位判定，仅 has 时列级 UPDATE。
 	// 列宽先校验：超宽若放行会被 DB 列宽拒绝并折叠成 internal，故服务层
 	// 先于任何写库给出字段级拒绝（显式空串 = 清空，不受限）。
-	if (in.Nickname != nil && utf8.RuneCountInString(*in.Nickname) > nicknameMaxRunes) ||
-		(in.AvatarUrl != nil && utf8.RuneCountInString(*in.AvatarUrl) > avatarURLMaxRunes) {
+	if (in.Nickname != nil && utf8.RuneCountInString(*in.Nickname) > model.NicknameMaxRunes) ||
+		(in.AvatarUrl != nil && utf8.RuneCountInString(*in.AvatarUrl) > model.AvatarURLMaxRunes) {
 		return ErrProfileInvalidRequest
 	}
 	var nickname, avatarURL *string

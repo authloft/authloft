@@ -438,7 +438,7 @@ func TestBindChallengeProviderDisabled(t *testing.T) {
 // 字符串；列更新参数逐字段（phone+phone_verified=1 或 email+
 // email_verified=1，另一侧 nil）；审计事件逐字段（Event / ActorType /
 // ActorID / UserID / Target=掩码 / Detail=DetailTargetMasked(掩码) /
-// CreatedAt=注入时钟）。
+// IP=入参来源 IP / CreatedAt=注入时钟）。
 func TestBindVerifySuccess(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -457,9 +457,9 @@ func TestBindVerifySuccess(t *testing.T) {
 			ctx := context.Background()
 			var err error
 			if tc.phone {
-				err = env.svc.BindPhone(ctx, bindTestUID, BindPhoneInput{Step: bindStepVerify, Target: tc.target, Code: "123456"})
+				err = env.svc.BindPhone(ctx, bindTestUID, BindPhoneInput{Step: bindStepVerify, Target: tc.target, Code: "123456", IP: "9.9.9.9"})
 			} else {
-				err = env.svc.BindEmail(ctx, bindTestUID, BindEmailInput{Step: bindStepVerify, Target: tc.target, Code: "123456"})
+				err = env.svc.BindEmail(ctx, bindTestUID, BindEmailInput{Step: bindStepVerify, Target: tc.target, Code: "123456", IP: "9.9.9.9"})
 			}
 			if err != nil {
 				t.Fatalf("verify = %v, want nil", err)
@@ -517,6 +517,9 @@ func TestBindVerifySuccess(t *testing.T) {
 			}
 			if want := eventlog.DetailTargetMasked(tc.masked); string(ev.Detail) != string(want) {
 				t.Errorf("Detail = %x, want %x（detail={target_masked}）", ev.Detail, want)
+			}
+			if ev.IP != "9.9.9.9" {
+				t.Errorf("审计 IP = %q, want 非空来源 IP 9.9.9.9", ev.IP)
 			}
 			if !ev.CreatedAt.Equal(env.now) {
 				t.Errorf("CreatedAt = %v, want %v", ev.CreatedAt, env.now)

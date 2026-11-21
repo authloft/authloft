@@ -751,23 +751,15 @@ func validContactFormat(kind, v string) bool {
 	return contactEmailPattern.MatchString(v)
 }
 
-// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（§3.2 / §5.4
-// 同上限、后端架构 §4.2 列宽 VARCHAR(12) / VARCHAR(120)）：VARCHAR 宽度
-// 即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，非字节数。
-const (
-	nicknameMaxRunes  = 12
-	avatarURLMaxRunes = 120
-)
-
 // validateProfileColumns 昵称 / 头像 URL 列宽校验（违规 invalid_request，
 // 字段级提示）：nil = 未传跳过。超宽若放行会被 DB 列宽拒绝并折叠成
 // internal，故服务层先于任何写库给出字段级拒绝；CreateUser（仅昵称）与
-// UpdateUserProfile 两入口共用。
+// UpdateUserProfile 两入口共用。上限取 model 包资料列宽单一来源。
 func validateProfileColumns(nickname, avatarURL *string) error {
-	if nickname != nil && utf8.RuneCountInString(*nickname) > nicknameMaxRunes {
+	if nickname != nil && utf8.RuneCountInString(*nickname) > model.NicknameMaxRunes {
 		return ErrInvalidRequest
 	}
-	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > avatarURLMaxRunes {
+	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > model.AvatarURLMaxRunes {
 		return ErrInvalidRequest
 	}
 	return nil

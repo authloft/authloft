@@ -24,3 +24,13 @@ type UserProfile struct {
 	Extra     []byte     `bun:"column:extra"`
 	UpdatedAt time.Time  `bun:"column:updated_at,notnull"`
 }
+
+// NicknameMaxRunes / AvatarURLMaxRunes user 表资料列宽上限的单一来源
+// （接口文档 §3.2 / §5.4 同上限、后端架构 §4.2 列宽 VARCHAR(12) /
+// VARCHAR(120)；列映射在 user.go，落址本文件随资料域聚合）：VARCHAR 宽度
+// 即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，非字节数。rpc /
+// account / admin 三域列宽校验同源引用本值，各域不再自定义。
+const (
+	NicknameMaxRunes  = 12
+	AvatarURLMaxRunes = 120
+)

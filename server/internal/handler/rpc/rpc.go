@@ -56,16 +56,6 @@ type SubDecoder interface {
 // 按入参列表长度计、去重前；超出整单失败、无部分返回、不许截断。
 const maxBatchProfileIDs = 100
 
-// nicknameMaxRunes / avatarURLMaxRunes user 表资料列宽上限（接口文档 §3.2 /
-// §5.4 同上限、后端架构 §4.2 列宽 VARCHAR(12) / VARCHAR(120)）：VARCHAR 宽度
-// 即字符数，与 utf8mb4 及 Go utf8.RuneCountInString 对齐，非字节数。admin 域
-// 同口径校验（service/admin/user.go validateProfileColumns）未导出，rpc 域按
-// 本包既有错误模式最小实现。
-const (
-	nicknameMaxRunes  = 12
-	avatarURLMaxRunes = 120
-)
-
 // 线上错误文案：connect.Error 文本直达客户端，一律不携带内部信息
 // （口径同 internal/connect interceptors.go、handler/account）。
 var (
@@ -74,8 +64,8 @@ var (
 	errBadBirthday      = errors.New("invalid birthday")
 	errTooManyIDs       = errors.New("too many ids")
 	errInvalidOidcSub   = errors.New("invalid oidc sub")
-	errNicknameTooWide  = errors.New("nickname must be at most 12 characters")
-	errAvatarURLTooWide = errors.New("avatar_url must be at most 120 characters")
+	errNicknameTooWide  = fmt.Errorf("nickname must be at most %d characters", model.NicknameMaxRunes)
+	errAvatarURLTooWide = fmt.Errorf("avatar_url must be at most %d characters", model.AvatarURLMaxRunes)
 )
 
 // UserHandler 实现 api.rpc.v1.UserService。内嵌生成的 unimplemented 基类：
@@ -267,10 +257,10 @@ func (h *UserHandler) UpdateUserProfile(ctx context.Context, req *connect.Reques
 // invalid_request)，出口形态同 errBadBirthday）；字数按 Unicode code point
 // 计，与前端 codePointLength 同口径。
 func validateProfileColumns(nickname, avatarURL *string) error {
-	if nickname != nil && utf8.RuneCountInString(*nickname) > nicknameMaxRunes {
+	if nickname != nil && utf8.RuneCountInString(*nickname) > model.NicknameMaxRunes {
 		return errNicknameTooWide
 	}
-	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > avatarURLMaxRunes {
+	if avatarURL != nil && utf8.RuneCountInString(*avatarURL) > model.AvatarURLMaxRunes {
 		return errAvatarURLTooWide
 	}
 	return nil
