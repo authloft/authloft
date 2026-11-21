@@ -226,7 +226,7 @@ func newQrEnv(t *testing.T) *qrEnv {
 // storage_path 模板，§15.1 示例逐字）。
 func (e *qrEnv) addScanProvider(pk string, mutate func(*model.Provider)) *provider.Provider {
 	row := &model.Provider{
-		ProviderKey: pk, Category: "oauth", Type: "wechat_mp_scan",
+		ProviderKey: pk, Category: "auth", Type: "wechat_mp_scan",
 		EnableSignin: 1, EnableSignup: 1, IsEnabled: 1,
 		DisplayName: "微信小程序扫码",
 	}

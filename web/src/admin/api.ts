@@ -8,7 +8,7 @@
  * TestProvider（§5.2 行 1169-1177 + §5.3）；并追加用户管理族七方法
  * （§5.4 行 1249-1255）+ 请求构造 / 展示纯函数；并追加客户端管理族
  * 十方法（§5.5 行 1257-1268）+ 请求构造 / 校验 / 展示纯函数（含 SSO
- * 应用级登录配置三字段 §5.5：编辑整组提交带 has_* 伴生标志、OAuth
+ * 应用级登录配置三字段 §5.5：编辑整组提交带 has_* 伴生标志、Auth
  * Provider 选项过滤、MFA 风险提示判定）；并追加
  * settings 族 GetSettings / SetSettings（§5.6 行 1287；服务端按 optional
  * has 位 + repeated 伴生标志部分更新、设置页分 Tab 只提交改动键）+ 全量 /
@@ -238,7 +238,7 @@ export function deleteProvider(
  * 列表请求构造：第 1 页 × pageSize 100（§1.7 行 277 上限）。**全量取数**是
  * 拖拽排序的前提——SortProviders 按行集整体重排 sort_order（见
  * buildSortProvidersRequest），部分行集重排会与未载入行的排序值冲突；Provider
- * 注册表规模（oauth / captcha / sms / email / storage / notify 各有限几种
+ * 注册表规模（auth / captcha / sms / email / storage / notify 各有限几种
  * 类型）远小于 100。超限兜底：ProvidersPage 停用拖拽（数据仍展示）。
  */
 export function buildListProvidersRequest(): ListProvidersRequest {
@@ -318,14 +318,14 @@ export function testProvider(
 }
 
 /**
- * 策略标签展示纯函数（§5.2 列表「策略标签」列）：仅 category=oauth
+ * 策略标签展示纯函数（§5.2 列表「策略标签」列）：仅 category=auth
  * 行按 enableSignin / enableSignup / autoBind 三开关出文案标签——三开关是
- * oauth 行专属语义，非 oauth 行即便开关为 true（存量数据列默认值即 1）也
+ * auth 行专属语义，非 auth 行即便开关为 true（存量数据列默认值即 1）也
  * 不出标签，返回空数组由消费方渲染占位。零 Semi 依赖、node 可测（展示纯
  * 函数落位同 adminDisplayName 口径）。
  */
 export function policyTags(provider: Provider): string[] {
-  if (provider.category !== 'oauth') {
+  if (provider.category !== 'auth') {
     return [];
   }
   const tags: string[] = [];
@@ -1358,7 +1358,7 @@ export const SSO_MFA_CAPABLE_METHODS = [
  */
 export interface SsoClientLoginOptionsDraft {
   loginMethods: string[];
-  oauthProviders: string[];
+  authProviders: string[];
   defaultRedirectUri: string;
 }
 
@@ -1371,9 +1371,7 @@ export interface SsoClientLoginOptionsDraft {
  * 缺省空值 = 跟随全局。
  */
 export interface SsoClientFormDraft
-  extends SsoClientDraft,
-    SsoClientPatchDraft,
-    SsoClientLoginOptionsDraft {}
+  extends SsoClientDraft, SsoClientPatchDraft, SsoClientLoginOptionsDraft {}
 
 /** 统一草稿零值（新建初始 / 重开重置 / dirty 基线共用；每次调用出新对象）。 */
 export function emptySsoClientFormDraft(): SsoClientFormDraft {
@@ -1385,7 +1383,7 @@ export function emptySsoClientFormDraft(): SsoClientFormDraft {
     templateKey: '',
     templateVars: '',
     loginMethods: [],
-    oauthProviders: [],
+    authProviders: [],
     defaultRedirectUri: '',
   };
 }
@@ -1458,8 +1456,8 @@ export function buildCreateSsoClientRequest(
     templateVars: wireTemplateVars(draft.templateVars ?? ''),
     loginMethods: draft.loginMethods,
     hasLoginMethods: true,
-    oauthProviders: draft.oauthProviders,
-    hasOauthProviders: true,
+    authProviders: draft.authProviders,
+    hasAuthProviders: true,
     defaultRedirectUri: draft.defaultRedirectUri.trim(),
   });
 }
@@ -1485,7 +1483,7 @@ export function buildCreateOidcClientRequest(
  * 回显，零值省略 → 后端保留分支）；newSecret 留空 → clientSecret 零值省略
  * 即保留原密钥、非空覆盖轮换；name 空串保留原值。应用级登录配置整组提交
  * （§5.5 PATCH 语义，与 Create 同口径）：repeated 无 has 位，恒带
- * has_login_methods / has_oauth_providers 伴生标志 true（表单整组替换；
+ * has_login_methods / has_auth_providers 伴生标志 true（表单整组替换；
  * wire 上空 repeated 数组自身省略，标志在场 + 空数组 = 清空为跟随全局）；
  * defaultRedirectUri 系 proto3 optional，create 显式赋值（含空串）即置
  * has 位 → 空串 = 清空、非空 = 覆盖。
@@ -1503,8 +1501,8 @@ export function buildUpdateSsoClientRequest(
     templateVars: wireTemplateVars(draft.templateVars ?? ''),
     loginMethods: draft.loginMethods,
     hasLoginMethods: true,
-    oauthProviders: draft.oauthProviders,
-    hasOauthProviders: true,
+    authProviders: draft.authProviders,
+    hasAuthProviders: true,
     defaultRedirectUri: draft.defaultRedirectUri.trim(),
   });
 }
@@ -1634,15 +1632,15 @@ export function clientTemplateDraft(row: {
 }
 
 /**
- * OAuth Provider 多选选项（§5.9 前端：数据源复用 ProvidersPage 同源列表
- * ListProviders，仅取 category=oauth 行；标签用展示名、缺省回退
+ * Auth Provider 多选选项（§5.9 前端：数据源复用 ProvidersPage 同源列表
+ * ListProviders，仅取 category=auth 行；标签用展示名、缺省回退
  * provider_key；value = provider_key 即白名单提交值）。
  */
-export function oauthProviderSelectOptions(
+export function authProviderSelectOptions(
   rows: Provider[],
 ): { label: string; value: string }[] {
   return rows
-    .filter((row) => row.category === 'oauth')
+    .filter((row) => row.category === 'auth')
     .map((row) => ({
       label: row.displayName || row.providerKey,
       value: row.providerKey,

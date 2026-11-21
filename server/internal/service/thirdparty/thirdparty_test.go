@@ -7,7 +7,7 @@
 // complete 按 scene 分派写 login_result / thirdparty_identity / MFA 不写
 // ticket）；追加：user_disabled（普通行 / Union / auto_bind）/ auto_bind
 // extra 落 Raw / 非成功终态删 al_login_state。全部走 fake，不连 DB / Redis；
-// wechat_mp 渠道 code2session 的 httptest 拦截已由 provider/oauth/wechat_mp
+// wechat_mp 渠道 code2session 的 httptest 拦截已由 provider/auth/wechat_mp
 // 包内测试覆盖，此处 api 通道以 fake adapter 验证 service 编排语义。
 package thirdparty
 
@@ -357,7 +357,7 @@ func newTPEnv(t *testing.T) *tpEnv {
 // addProvider 注册一个 provider 行（默认启用 + 可登录）。
 func (e *tpEnv) addProvider(pk string, mutate func(*model.Provider)) *provider.Provider {
 	row := &model.Provider{
-		ProviderKey: pk, Category: "oauth", Type: "qq",
+		ProviderKey: pk, Category: "auth", Type: "qq",
 		EnableSignin: 1, EnableSignup: 1, IsEnabled: 1,
 		DisplayName: "QQ", AutoBindFields: "email,phone",
 	}

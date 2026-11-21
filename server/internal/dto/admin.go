@@ -482,10 +482,10 @@ func AdminEventItem(row *model.EventLog) *adminv1.EventItem {
 
 // AdminSsoClient sso_client 行 → SsoClient 消息（列表 / 详情两用）；client_secret
 // 明文透出，仅 admin 会话可达，本文件不做二次脱敏也不落日志。redirect_uris /
-// login_methods / oauth_providers 由 service 经 §12.3 编解码唯一出口解析后
+// login_methods / auth_providers 由 service 经 §12.3 编解码唯一出口解析后
 // 传入；default_redirect_uri 直取行值（空串 = 未配置）；nil / 空切片按 proto3
 // 空 repeated 省略。
-func AdminSsoClient(row *model.SsoClient, uris, loginMethods, oauthProviders []string) *adminv1.SsoClient {
+func AdminSsoClient(row *model.SsoClient, uris, loginMethods, authProviders []string) *adminv1.SsoClient {
 	if row == nil {
 		return &adminv1.SsoClient{}
 	}
@@ -496,7 +496,7 @@ func AdminSsoClient(row *model.SsoClient, uris, loginMethods, oauthProviders []s
 		Name:               row.Name,
 		RedirectUris:       uris,
 		LoginMethods:       loginMethods,
-		OauthProviders:     oauthProviders,
+		AuthProviders:      authProviders,
 		DefaultRedirectUri: row.DefaultRedirectURI,
 		TemplateKey:        row.TemplateKey,
 		TemplateVars:       row.TemplateVars,

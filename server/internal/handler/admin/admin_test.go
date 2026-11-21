@@ -37,12 +37,12 @@ import (
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
 	// schema 用例断言「与注册表 meta 逐项一致」需各域真实注册项。
+	_ "authloft/internal/provider/auth/wechat_mp"
+	_ "authloft/internal/provider/auth/wechat_mp_scan"
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
-	_ "authloft/internal/provider/oauth/wechat_mp"
-	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
@@ -579,7 +579,7 @@ func wantRow(t *testing.T) *model.Provider {
 	}
 	return &model.Provider{
 		ID: 7, ProviderKey: "wechat_official", UnionProvider: "wechat_union",
-		DisplayName: "微信扫码", Category: "oauth", Type: "wechat_mp",
+		DisplayName: "微信扫码", Category: "auth", Type: "wechat_mp",
 		EnableSignin: 1, EnableSignup: 0, AutoBind: 1, AutoBindFields: "email,phone",
 		IsEnabled: 1, UiGroup: "social", SortOrder: 30,
 		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
@@ -700,7 +700,7 @@ func TestListProvidersAdminSession(t *testing.T) {
 	cookie := adminCookie(t, tokens, epochs, 1)
 
 	resp, raw := doRPC(t, h, adminv1connect.AdminServiceListProvidersProcedure,
-		`{"category":"oauth"}`, cookie)
+		`{"category":"auth"}`, cookie)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, raw)
 	}
@@ -716,7 +716,7 @@ func TestListProvidersAdminSession(t *testing.T) {
 	}
 	item := got.GetItems()[0]
 	if item.GetProviderKey() != "wechat_official" || item.GetDisplayName() != "微信扫码" ||
-		item.GetCategory() != "oauth" || item.GetType() != "wechat_mp" {
+		item.GetCategory() != "auth" || item.GetType() != "wechat_mp" {
 		t.Errorf("列表列 = %+v", item)
 	}
 	if !item.GetIsEnabled() || !item.GetEnableSignin() || item.GetEnableSignup() || !item.GetAutoBind() {
@@ -734,8 +734,8 @@ func TestListProvidersAdminSession(t *testing.T) {
 		t.Fatalf("list 查询次数 = %d, want 1", len(fakes.queries))
 	}
 	q := fakes.queries[0]
-	if q.Category == nil || *q.Category != "oauth" || q.Type != nil || q.IsEnabled != nil {
-		t.Errorf("筛选透传 = %+v（category=oauth，其余 nil）", q)
+	if q.Category == nil || *q.Category != "auth" || q.Type != nil || q.IsEnabled != nil {
+		t.Errorf("筛选透传 = %+v（category=auth，其余 nil）", q)
 	}
 	if q.Page != 1 || q.PageSize != 20 {
 		t.Errorf("分页透传 = (%d, %d), want (1, 20)", q.Page, q.PageSize)
@@ -773,7 +773,7 @@ func TestGetProviderAdminSession(t *testing.T) {
 		t.Fatalf("decode response %q: %v", raw, err)
 	}
 	if got.GetProviderKey() != "wechat_official" || got.GetUnionProvider() != "wechat_union" ||
-		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "oauth" || got.GetType() != "wechat_mp" {
+		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "auth" || got.GetType() != "wechat_mp" {
 		t.Errorf("详情基础列 = %+v", &got)
 	}
 	if got.GetAutoBindFields() != "email,phone" || got.GetUiGroup() != "social" ||
@@ -1020,7 +1020,7 @@ func TestGetProviderSchemaProxyMeta(t *testing.T) {
 	}
 }
 
-// TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=oauth
+// TestGetProviderSchemaOauthMeta oauth 域 schema（wechat_mp）：category=auth
 // 由 oauth 注册表 Lookup 决定；fields = 表列基线 12 项 + oauth 追加 10 字段
 // + 全类 metadata + 引用键 = 24 项。追加字段 label / help 是前端
 // i18n 键，type / section / required / advanced 与 §5.3 示例逐字一致，
@@ -1039,7 +1039,7 @@ func TestGetProviderSchemaOauthMeta(t *testing.T) {
 	if !ok {
 		t.Fatal("Lookup(wechat_mp) 未注册（_ import 缺失）")
 	}
-	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "oauth" {
+	if got.GetType() != "wechat_mp" || got.GetCategory() != meta.Category || got.GetCategory() != "auth" {
 		t.Errorf("type/category = (%q, %q), want (wechat_mp, oauth)", got.GetType(), got.GetCategory())
 	}
 	// 12 表列基线 + keep 集收敛后的 2 个凭证 Ext + 引用键基线（§5.3 keep 集表）。
@@ -1726,7 +1726,7 @@ func TestSortProvidersHandler(t *testing.T) {
 func TestGetProviderTypesHandler(t *testing.T) {
 	writer := &fakeWriter{types: []adminsvc.ProviderTypeInfo{
 		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
-		{Type: "wechat_mp", Category: "oauth", DisplayName: "微信小程序"},
+		{Type: "wechat_mp", Category: "auth", DisplayName: "微信小程序"},
 	}}
 	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, writer)
 	cookie := adminCookie(t, tokens, epochs, 1)
@@ -1744,7 +1744,7 @@ func TestGetProviderTypesHandler(t *testing.T) {
 	}
 	for i, want := range []struct{ typ, cat, name string }{
 		{"aliyun_sms", "sms", "阿里云短信"},
-		{"wechat_mp", "oauth", "微信小程序"},
+		{"wechat_mp", "auth", "微信小程序"},
 	} {
 		item := got.GetItems()[i]
 		if item.GetType() != want.typ || item.GetCategory() != want.cat || item.GetDisplayName() != want.name {
@@ -2258,7 +2258,7 @@ func TestUserWriteAuditCarriesRequestIP(t *testing.T) {
 		&mountIPFakeBinds{rows: []model.UserThirdpartyBind{
 			{ID: 7, UserID: 42, ProviderKey: "qq", OpenID: "oX-1"},
 		}},
-		&mountIPFakeProviderFinder{row: &model.Provider{ID: 5, ProviderKey: "qq", Category: "oauth", Type: "qq"}},
+		&mountIPFakeProviderFinder{row: &model.Provider{ID: 5, ProviderKey: "qq", Category: "auth", Type: "qq"}},
 		mountIPFakeEvents{}, mountIPFakeEpochSync{}, mountIPFakePwfail{},
 		audit, mountIPFakeSettingsReader{}, mountIPFakePerms{},
 	)
@@ -2537,7 +2537,7 @@ func TestClientListHandlers(t *testing.T) {
 		clients := &fakeClientService{
 			ssoRows: []adminsvc.SsoClientDetail{{
 				Row: ssoRow, RedirectURIs: []string{"*"},
-				LoginMethods: []string{"password", "thirdparty"}, OauthProviders: []string{"wx_mp"},
+				LoginMethods: []string{"password", "thirdparty"}, AuthProviders: []string{"wx_mp"},
 			}},
 			total: 1,
 		}
@@ -2559,7 +2559,7 @@ func TestClientListHandlers(t *testing.T) {
 		if item.GetId() != 7 || item.GetClientId() != "portal-main" || item.GetClientSecret() != "sec-plain-64" ||
 			item.GetName() != "门户" || len(item.GetRedirectUris()) != 1 || item.GetRedirectUris()[0] != "*" ||
 			strings.Join(item.GetLoginMethods(), ",") != "password,thirdparty" ||
-			strings.Join(item.GetOauthProviders(), ",") != "wx_mp" ||
+			strings.Join(item.GetAuthProviders(), ",") != "wx_mp" ||
 			item.GetDefaultRedirectUri() != "https://app.example.com/cb" {
 			t.Fatalf("列表项 = %+v", item)
 		}
@@ -2638,7 +2638,7 @@ func TestClientGetHandlers(t *testing.T) {
 			ssoDetail: &adminsvc.SsoClientDetail{
 				Row:          ssoRow,
 				RedirectURIs: []string{"https://app.example.com/cb"},
-				LoginMethods: []string{"webauthn"}, OauthProviders: []string{"github"},
+				LoginMethods: []string{"webauthn"}, AuthProviders: []string{"github"},
 			},
 		}
 		tokens, epochs, h := newAdminHandlerClients(t, clients)
@@ -2654,7 +2654,7 @@ func TestClientGetHandlers(t *testing.T) {
 		if got.GetId() != 7 || got.GetClientId() != "portal-main" || got.GetClientSecret() != "sec-plain-64" ||
 			len(got.GetRedirectUris()) != 1 || got.GetRedirectUris()[0] != "https://app.example.com/cb" ||
 			strings.Join(got.GetLoginMethods(), ",") != "webauthn" ||
-			strings.Join(got.GetOauthProviders(), ",") != "github" {
+			strings.Join(got.GetAuthProviders(), ",") != "github" {
 			t.Fatalf("详情 = %+v", &got)
 		}
 		if clients.gotGetSsoID != 7 {
@@ -2706,8 +2706,8 @@ func TestClientGetHandlers(t *testing.T) {
 // 字段，服务端生成口径由类型系统挡住）+ OkResponse 空应答 + 错误三态映射
 // （invalid_request 400+ErrorInfo / already_exists 409 / not_found 404）。
 func TestClientWriteHandlers(t *testing.T) {
-	const reqCreateSso = `{"clientId":"portal-x","clientSecret":"should-be-ignored","name":"门户","redirectUris":["*"],"loginMethods":["password","thirdparty"],"oauthProviders":["wx_mp"],"defaultRedirectUri":"https://a.example.com/cb"}`
-	const reqUpdateSso = `{"id":7,"clientId":"portal-x","clientSecret":"rotated-sec","name":"新名","redirectUris":["https://app.example.com/cb"],"loginMethods":["otp_sms"],"hasLoginMethods":true,"oauthProviders":["github"],"hasOauthProviders":true,"defaultRedirectUri":""}`
+	const reqCreateSso = `{"clientId":"portal-x","clientSecret":"should-be-ignored","name":"门户","redirectUris":["*"],"loginMethods":["password","thirdparty"],"authProviders":["wx_mp"],"defaultRedirectUri":"https://a.example.com/cb"}`
+	const reqUpdateSso = `{"id":7,"clientId":"portal-x","clientSecret":"rotated-sec","name":"新名","redirectUris":["https://app.example.com/cb"],"loginMethods":["otp_sms"],"hasLoginMethods":true,"authProviders":["github"],"hasAuthProviders":true,"defaultRedirectUri":""}`
 	const reqDeleteSso = `{"id":7}`
 	const reqCreateOidc = `{"clientId":"oidc-x","clientSecret":"should-be-ignored","name":"OIDC","redirectUris":["https://a.example.com/cb"],"scopes":["openid","profile"],"accessTokenTtl":1800,"refreshTokenTtl":864000}`
 	const reqUpdateOidc = `{"id":8,"name":"改名","scopes":["openid"],"accessTokenTtl":7200,"refreshTokenTtl":2592000}`
@@ -2734,7 +2734,7 @@ func TestClientWriteHandlers(t *testing.T) {
 		cs := clients.gotCreateSso
 		if cs.ClientID != "portal-x" || cs.Name != "门户" || len(cs.RedirectURIs) != 1 || cs.RedirectURIs[0] != "*" ||
 			strings.Join(cs.LoginMethods, ",") != "password,thirdparty" ||
-			strings.Join(cs.OauthProviders, ",") != "wx_mp" ||
+			strings.Join(cs.AuthProviders, ",") != "wx_mp" ||
 			cs.DefaultRedirectURI != "https://a.example.com/cb" {
 			t.Errorf("create sso 透传 = %+v", cs)
 		}
@@ -2742,7 +2742,7 @@ func TestClientWriteHandlers(t *testing.T) {
 		if us.id != 7 || us.p.ClientID != "portal-x" || us.p.ClientSecret != "rotated-sec" ||
 			us.p.Name != "新名" || len(us.p.RedirectURIs) != 1 || us.p.RedirectURIs[0] != "https://app.example.com/cb" ||
 			!us.p.HasLoginMethods || strings.Join(us.p.LoginMethods, ",") != "otp_sms" ||
-			!us.p.HasOauthProviders || strings.Join(us.p.OauthProviders, ",") != "github" ||
+			!us.p.HasAuthProviders || strings.Join(us.p.AuthProviders, ",") != "github" ||
 			us.p.DefaultRedirectURI == nil || *us.p.DefaultRedirectURI != "" {
 			t.Errorf("update sso 透传 = %+v", us)
 		}

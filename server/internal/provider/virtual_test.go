@@ -59,7 +59,7 @@ func TestLookupTypeMetaUnion(t *testing.T) {
 }
 
 // TestTypeMetasIncludesUnion 下拉数据源：TypeMetas 含 unionid 且按 Type
-// 稳定升序；oauth / 消息域注册项仍在（新文件不 blank import 具体渠道包，
+// 稳定升序；auth / 消息域注册项仍在（新文件不 blank import 具体渠道包，
 // 故只断言虚拟项自身与排序，不假定其他包已注册）。
 func TestTypeMetasIncludesUnion(t *testing.T) {
 	metas := provider.TypeMetas()

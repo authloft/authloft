@@ -972,9 +972,9 @@ func assertPermQueries(t *testing.T, got, want []int64) {
 func userUnionProviders() *userFakeProviders {
 	return &userFakeProviders{rows: map[string]*model.Provider{
 		"wechat_union": {ProviderKey: "wechat_union", Category: "union"},
-		"wechat_mp_1":  {ProviderKey: "wechat_mp_1", Category: "oauth", UnionProvider: "wechat_union"},
-		"wechat_mp_2":  {ProviderKey: "wechat_mp_2", Category: "oauth", UnionProvider: "wechat_union"},
-		"standalone":   {ProviderKey: "standalone", Category: "oauth"},
+		"wechat_mp_1":  {ProviderKey: "wechat_mp_1", Category: "auth", UnionProvider: "wechat_union"},
+		"wechat_mp_2":  {ProviderKey: "wechat_mp_2", Category: "auth", UnionProvider: "wechat_union"},
+		"standalone":   {ProviderKey: "standalone", Category: "auth"},
 	}}
 }
 

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/admin/v1/client.proto.
  */
 export const file_api_admin_v1_client: GenFile = /*@__PURE__*/
-  fileDesc("ChlhcGkvYWRtaW4vdjEvY2xpZW50LnByb3RvEgxhcGkuYWRtaW4udjEiiQIKCVNzb0NsaWVudBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgp1cGRhdGVkX2F0GAcgASgDEhQKDHRlbXBsYXRlX2tleRgIIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAkgASgJEhUKDWxvZ2luX21ldGhvZHMYCiADKAkSFwoPb2F1dGhfcHJvdmlkZXJzGAsgAygJEhwKFGRlZmF1bHRfcmVkaXJlY3RfdXJpGAwgASgJIpMBChVMaXN0U3NvQ2xpZW50c1JlcXVlc3QSEQoEcGFnZRgBIAEoA0gAiAEBEhYKCXBhZ2Vfc2l6ZRgCIAEoA0gBiAEBEhEKBHNvcnQYAyABKAlIAogBARISCgVvcmRlchgEIAEoCUgDiAEBQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyIm8KFVNzb0NsaWVudExpc3RSZXNwb25zZRImCgVpdGVtcxgBIAMoCzIXLmFwaS5hZG1pbi52MS5Tc29DbGllbnQSDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKAMi8AIKFkNyZWF0ZVNzb0NsaWVudFJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDAoEbmFtZRgDIAEoCRIVCg1yZWRpcmVjdF91cmlzGAQgAygJEhQKDHRlbXBsYXRlX2tleRgFIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAYgASgJEhUKDWxvZ2luX21ldGhvZHMYByADKAkSFwoPb2F1dGhfcHJvdmlkZXJzGAggAygJEiEKFGRlZmF1bHRfcmVkaXJlY3RfdXJpGAkgASgJSACIAQESHgoRaGFzX2xvZ2luX21ldGhvZHMYCiABKAhIAYgBARIgChNoYXNfb2F1dGhfcHJvdmlkZXJzGAsgASgISAKIAQFCFwoVX2RlZmF1bHRfcmVkaXJlY3RfdXJpQhQKEl9oYXNfbG9naW5fbWV0aG9kc0IWChRfaGFzX29hdXRoX3Byb3ZpZGVycyIhChNHZXRTc29DbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDIvwCChZVcGRhdGVTc29DbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDEhEKCWNsaWVudF9pZBgCIAEoCRIVCg1jbGllbnRfc2VjcmV0GAMgASgJEgwKBG5hbWUYBCABKAkSFQoNcmVkaXJlY3RfdXJpcxgFIAMoCRIUCgx0ZW1wbGF0ZV9rZXkYBiABKAkSFQoNdGVtcGxhdGVfdmFycxgHIAEoCRIVCg1sb2dpbl9tZXRob2RzGAggAygJEhcKD29hdXRoX3Byb3ZpZGVycxgJIAMoCRIhChRkZWZhdWx0X3JlZGlyZWN0X3VyaRgKIAEoCUgAiAEBEh4KEWhhc19sb2dpbl9tZXRob2RzGAsgASgISAGIAQESIAoTaGFzX29hdXRoX3Byb3ZpZGVycxgMIAEoCEgCiAEBQhcKFV9kZWZhdWx0X3JlZGlyZWN0X3VyaUIUChJfaGFzX2xvZ2luX21ldGhvZHNCFgoUX2hhc19vYXV0aF9wcm92aWRlcnMiJAoWRGVsZXRlU3NvQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoAyKBAgoKT2lkY0NsaWVudBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSDgoGc2NvcGVzGAYgAygJEhgKEGFjY2Vzc190b2tlbl90dGwYByABKAMSGQoRcmVmcmVzaF90b2tlbl90dGwYCCABKAMSEgoKY3JlYXRlZF9hdBgJIAEoAxISCgp1cGRhdGVkX2F0GAogASgDEhQKDHRlbXBsYXRlX2tleRgLIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAwgASgJIpQBChZMaXN0T2lkY0NsaWVudHNSZXF1ZXN0EhEKBHBhZ2UYASABKANIAIgBARIWCglwYWdlX3NpemUYAiABKANIAYgBARIRCgRzb3J0GAMgASgJSAKIAQESEgoFb3JkZXIYBCABKAlIA4gBAUIHCgVfcGFnZUIMCgpfcGFnZV9zaXplQgcKBV9zb3J0QggKBl9vcmRlciJxChZPaWRjQ2xpZW50TGlzdFJlc3BvbnNlEicKBWl0ZW1zGAEgAygLMhguYXBpLmFkbWluLnYxLk9pZGNDbGllbnQSDQoFdG90YWwYAiABKAMSDAoEcGFnZRgDIAEoAxIRCglwYWdlX3NpemUYBCABKAMi2gEKF0NyZWF0ZU9pZGNDbGllbnRSZXF1ZXN0EhEKCWNsaWVudF9pZBgBIAEoCRIVCg1jbGllbnRfc2VjcmV0GAIgASgJEgwKBG5hbWUYAyABKAkSFQoNcmVkaXJlY3RfdXJpcxgEIAMoCRIOCgZzY29wZXMYBSADKAkSGAoQYWNjZXNzX3Rva2VuX3R0bBgGIAEoAxIZChFyZWZyZXNoX3Rva2VuX3R0bBgHIAEoAxIUCgx0ZW1wbGF0ZV9rZXkYCCABKAkSFQoNdGVtcGxhdGVfdmFycxgJIAEoCSIiChRHZXRPaWRjQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoAyLmAQoXVXBkYXRlT2lkY0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMSEQoJY2xpZW50X2lkGAIgASgJEhUKDWNsaWVudF9zZWNyZXQYAyABKAkSDAoEbmFtZRgEIAEoCRIVCg1yZWRpcmVjdF91cmlzGAUgAygJEg4KBnNjb3BlcxgGIAMoCRIYChBhY2Nlc3NfdG9rZW5fdHRsGAcgASgDEhkKEXJlZnJlc2hfdG9rZW5fdHRsGAggASgDEhQKDHRlbXBsYXRlX2tleRgJIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAogASgJIiUKF0RlbGV0ZU9pZGNDbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDQiZaJGF1dGhsb2Z0L2dlbi9nby9hcGkvYWRtaW4vdjE7YWRtaW52MWIGcHJvdG8z");
+  fileDesc("ChlhcGkvYWRtaW4vdjEvY2xpZW50LnByb3RvEgxhcGkuYWRtaW4udjEiiAIKCVNzb0NsaWVudBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSEgoKY3JlYXRlZF9hdBgGIAEoAxISCgp1cGRhdGVkX2F0GAcgASgDEhQKDHRlbXBsYXRlX2tleRgIIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAkgASgJEhUKDWxvZ2luX21ldGhvZHMYCiADKAkSFgoOYXV0aF9wcm92aWRlcnMYCyADKAkSHAoUZGVmYXVsdF9yZWRpcmVjdF91cmkYDCABKAkikwEKFUxpc3RTc29DbGllbnRzUmVxdWVzdBIRCgRwYWdlGAEgASgDSACIAQESFgoJcGFnZV9zaXplGAIgASgDSAGIAQESEQoEc29ydBgDIAEoCUgCiAEBEhIKBW9yZGVyGAQgASgJSAOIAQFCBwoFX3BhZ2VCDAoKX3BhZ2Vfc2l6ZUIHCgVfc29ydEIICgZfb3JkZXIibwoVU3NvQ2xpZW50TGlzdFJlc3BvbnNlEiYKBWl0ZW1zGAEgAygLMhcuYXBpLmFkbWluLnYxLlNzb0NsaWVudBINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyLtAgoWQ3JlYXRlU3NvQ2xpZW50UmVxdWVzdBIRCgljbGllbnRfaWQYASABKAkSFQoNY2xpZW50X3NlY3JldBgCIAEoCRIMCgRuYW1lGAMgASgJEhUKDXJlZGlyZWN0X3VyaXMYBCADKAkSFAoMdGVtcGxhdGVfa2V5GAUgASgJEhUKDXRlbXBsYXRlX3ZhcnMYBiABKAkSFQoNbG9naW5fbWV0aG9kcxgHIAMoCRIWCg5hdXRoX3Byb3ZpZGVycxgIIAMoCRIhChRkZWZhdWx0X3JlZGlyZWN0X3VyaRgJIAEoCUgAiAEBEh4KEWhhc19sb2dpbl9tZXRob2RzGAogASgISAGIAQESHwoSaGFzX2F1dGhfcHJvdmlkZXJzGAsgASgISAKIAQFCFwoVX2RlZmF1bHRfcmVkaXJlY3RfdXJpQhQKEl9oYXNfbG9naW5fbWV0aG9kc0IVChNfaGFzX2F1dGhfcHJvdmlkZXJzIiEKE0dldFNzb0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMi+QIKFlVwZGF0ZVNzb0NsaWVudFJlcXVlc3QSCgoCaWQYASABKAMSEQoJY2xpZW50X2lkGAIgASgJEhUKDWNsaWVudF9zZWNyZXQYAyABKAkSDAoEbmFtZRgEIAEoCRIVCg1yZWRpcmVjdF91cmlzGAUgAygJEhQKDHRlbXBsYXRlX2tleRgGIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAcgASgJEhUKDWxvZ2luX21ldGhvZHMYCCADKAkSFgoOYXV0aF9wcm92aWRlcnMYCSADKAkSIQoUZGVmYXVsdF9yZWRpcmVjdF91cmkYCiABKAlIAIgBARIeChFoYXNfbG9naW5fbWV0aG9kcxgLIAEoCEgBiAEBEh8KEmhhc19hdXRoX3Byb3ZpZGVycxgMIAEoCEgCiAEBQhcKFV9kZWZhdWx0X3JlZGlyZWN0X3VyaUIUChJfaGFzX2xvZ2luX21ldGhvZHNCFQoTX2hhc19hdXRoX3Byb3ZpZGVycyIkChZEZWxldGVTc29DbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDIoECCgpPaWRjQ2xpZW50EgoKAmlkGAEgASgDEhEKCWNsaWVudF9pZBgCIAEoCRIVCg1jbGllbnRfc2VjcmV0GAMgASgJEgwKBG5hbWUYBCABKAkSFQoNcmVkaXJlY3RfdXJpcxgFIAMoCRIOCgZzY29wZXMYBiADKAkSGAoQYWNjZXNzX3Rva2VuX3R0bBgHIAEoAxIZChFyZWZyZXNoX3Rva2VuX3R0bBgIIAEoAxISCgpjcmVhdGVkX2F0GAkgASgDEhIKCnVwZGF0ZWRfYXQYCiABKAMSFAoMdGVtcGxhdGVfa2V5GAsgASgJEhUKDXRlbXBsYXRlX3ZhcnMYDCABKAkilAEKFkxpc3RPaWRjQ2xpZW50c1JlcXVlc3QSEQoEcGFnZRgBIAEoA0gAiAEBEhYKCXBhZ2Vfc2l6ZRgCIAEoA0gBiAEBEhEKBHNvcnQYAyABKAlIAogBARISCgVvcmRlchgEIAEoCUgDiAEBQgcKBV9wYWdlQgwKCl9wYWdlX3NpemVCBwoFX3NvcnRCCAoGX29yZGVyInEKFk9pZGNDbGllbnRMaXN0UmVzcG9uc2USJwoFaXRlbXMYASADKAsyGC5hcGkuYWRtaW4udjEuT2lkY0NsaWVudBINCgV0b3RhbBgCIAEoAxIMCgRwYWdlGAMgASgDEhEKCXBhZ2Vfc2l6ZRgEIAEoAyLaAQoXQ3JlYXRlT2lkY0NsaWVudFJlcXVlc3QSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDAoEbmFtZRgDIAEoCRIVCg1yZWRpcmVjdF91cmlzGAQgAygJEg4KBnNjb3BlcxgFIAMoCRIYChBhY2Nlc3NfdG9rZW5fdHRsGAYgASgDEhkKEXJlZnJlc2hfdG9rZW5fdHRsGAcgASgDEhQKDHRlbXBsYXRlX2tleRgIIAEoCRIVCg10ZW1wbGF0ZV92YXJzGAkgASgJIiIKFEdldE9pZGNDbGllbnRSZXF1ZXN0EgoKAmlkGAEgASgDIuYBChdVcGRhdGVPaWRjQ2xpZW50UmVxdWVzdBIKCgJpZBgBIAEoAxIRCgljbGllbnRfaWQYAiABKAkSFQoNY2xpZW50X3NlY3JldBgDIAEoCRIMCgRuYW1lGAQgASgJEhUKDXJlZGlyZWN0X3VyaXMYBSADKAkSDgoGc2NvcGVzGAYgAygJEhgKEGFjY2Vzc190b2tlbl90dGwYByABKAMSGQoRcmVmcmVzaF90b2tlbl90dGwYCCABKAMSFAoMdGVtcGxhdGVfa2V5GAkgASgJEhUKDXRlbXBsYXRlX3ZhcnMYCiABKAkiJQoXRGVsZXRlT2lkY0NsaWVudFJlcXVlc3QSCgoCaWQYASABKANCJlokYXV0aGxvZnQvZ2VuL2dvL2FwaS9hZG1pbi92MTthZG1pbnYxYgZwcm90bzM");
 
 /**
  * SsoClient 是 AdminService/ListSsoClients 的列表项，也是 GetSsoClient 的详情响应：
@@ -90,18 +90,18 @@ export type SsoClient = Message<"api.admin.v1.SsoClient"> & {
   /**
    * 该应用可用的登录方式（§5.5「SSO 应用级登录配置」）：封闭集
    * password | otp_sms | otp_email | webauthn | thirdparty；thirdparty 是
-   * OAuth Provider 的整体开关，明细由 oauth_providers 控制。空 = 跟随全局。
+   * Auth Provider 的整体开关，明细由 auth_providers 控制。空 = 跟随全局。
    *
    * @generated from field: repeated string login_methods = 10;
    */
   loginMethods: string[];
 
   /**
-   * 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
+   * 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
    *
-   * @generated from field: repeated string oauth_providers = 11;
+   * @generated from field: repeated string auth_providers = 11;
    */
-  oauthProviders: string[];
+  authProviders: string[];
 
   /**
    * 登录完成且未传回跳地址（无 returnTo、无 OIDC 上下文）时的默认回跳地址
@@ -267,11 +267,11 @@ export type CreateSsoClientRequest = Message<"api.admin.v1.CreateSsoClientReques
   loginMethods: string[];
 
   /**
-   * 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
+   * 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
    *
-   * @generated from field: repeated string oauth_providers = 8;
+   * @generated from field: repeated string auth_providers = 8;
    */
-  oauthProviders: string[];
+  authProviders: string[];
 
   /**
    * 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
@@ -290,11 +290,11 @@ export type CreateSsoClientRequest = Message<"api.admin.v1.CreateSsoClientReques
   hasLoginMethods?: boolean | undefined;
 
   /**
-   * oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+   * auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
    *
-   * @generated from field: optional bool has_oauth_providers = 11;
+   * @generated from field: optional bool has_auth_providers = 11;
    */
-  hasOauthProviders?: boolean | undefined;
+  hasAuthProviders?: boolean | undefined;
 };
 
 /**
@@ -392,11 +392,11 @@ export type UpdateSsoClientRequest = Message<"api.admin.v1.UpdateSsoClientReques
   loginMethods: string[];
 
   /**
-   * 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
+   * 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
    *
-   * @generated from field: repeated string oauth_providers = 9;
+   * @generated from field: repeated string auth_providers = 9;
    */
-  oauthProviders: string[];
+  authProviders: string[];
 
   /**
    * 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
@@ -415,11 +415,11 @@ export type UpdateSsoClientRequest = Message<"api.admin.v1.UpdateSsoClientReques
   hasLoginMethods?: boolean | undefined;
 
   /**
-   * oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+   * auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
    *
-   * @generated from field: optional bool has_oauth_providers = 12;
+   * @generated from field: optional bool has_auth_providers = 12;
    */
-  hasOauthProviders?: boolean | undefined;
+  hasAuthProviders?: boolean | undefined;
 };
 
 /**

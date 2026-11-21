@@ -35,7 +35,7 @@ func (f *fakeSettings) GetStringSlice(key string) ([]string, bool) {
 	return v, ok
 }
 
-func testRow(loginMethods, oauthProviders []string) (*model.SsoClient, error) {
+func testRow(loginMethods, authProviders []string) (*model.SsoClient, error) {
 	row := &model.SsoClient{ClientID: "app", IsEnabled: 1, DefaultRedirectURI: ""}
 	var err error
 	if loginMethods != nil {
@@ -44,8 +44,8 @@ func testRow(loginMethods, oauthProviders []string) (*model.SsoClient, error) {
 			return nil, err
 		}
 	}
-	if oauthProviders != nil {
-		row.OauthProviders, err = repo.MarshalClientOauthProviders(&client.ClientOauthProviders{Providers: oauthProviders})
+	if authProviders != nil {
+		row.AuthProviders, err = repo.MarshalClientAuthProviders(&client.ClientAuthProviders{Providers: authProviders})
 		if err != nil {
 			return nil, err
 		}

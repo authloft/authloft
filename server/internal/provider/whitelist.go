@@ -1,5 +1,5 @@
 // Referer 白名单来源（docs/后端架构.md §13.0 行 1560、接口文档 §1.1 行 80）：
-// 返回所有已启用 category=oauth、type ∈ {wechat_mp, wechat_mp_scan} 的
+// 返回所有已启用 category=auth、type ∈ {wechat_mp, wechat_mp_scan} 的
 // Provider 中非空 Ext.app_id 集合（去重、排序）。装配层注入 origin
 // 中间件；本文件不接线、不改 bootstrap / router / middleware。
 //

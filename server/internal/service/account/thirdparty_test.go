@@ -247,7 +247,7 @@ func testCodec(t *testing.T, seed byte) *security.Codec {
 	return security.NewCodec(ks)
 }
 
-// providerRow 构造 oauth provider 实例（IsEnabled / EnableSignin 默认 1）。
+// providerRow 构造 auth provider 实例（IsEnabled / EnableSignin 默认 1）。
 func providerRow(key, typ, union string, enabled, signin int8) *provider.Provider {
 	return &provider.Provider{
 		Key:  key,
@@ -256,7 +256,7 @@ func providerRow(key, typ, union string, enabled, signin int8) *provider.Provide
 			ProviderKey:   key,
 			UnionProvider: union,
 			DisplayName:   key + "-display",
-			Category:      providerCategoryOAuth,
+			Category:      providerCategoryAuth,
 			Type:          typ,
 			EnableSignin:  signin,
 			IsEnabled:     enabled,
@@ -319,8 +319,8 @@ func newEnv(t *testing.T) *env {
 	e.finders.byKey["wechat_mp_scan"] = scan.Row
 	e.metas = func() []provider.Meta {
 		return []provider.Meta{
-			{Type: "qq", Category: providerCategoryOAuth, Channel: provider.ChannelRedirect},
-			{Type: "wechat_mp_scan", Category: providerCategoryOAuth, Channel: provider.ChannelQRCode},
+			{Type: "qq", Category: providerCategoryAuth, Channel: provider.ChannelRedirect},
+			{Type: "wechat_mp_scan", Category: providerCategoryAuth, Channel: provider.ChannelQRCode},
 		}
 	}
 	e.cookieCK = testCodec(t, 0x20)
@@ -421,11 +421,11 @@ func TestGetThirdpartyBindings(t *testing.T) {
 	e.loader.byKey["wechat_mp"] = apiCh
 	e.metas = func() []provider.Meta {
 		return []provider.Meta{
-			{Type: "qq", Category: providerCategoryOAuth, Channel: provider.ChannelRedirect},
-			{Type: "wechat_mp_scan", Category: providerCategoryOAuth, Channel: provider.ChannelQRCode},
-			{Type: "ding", Category: providerCategoryOAuth, Channel: provider.ChannelRedirect},
-			{Type: "feishu", Category: providerCategoryOAuth, Channel: provider.ChannelRedirect},
-			{Type: "wechat_mp", Category: providerCategoryOAuth, Channel: provider.ChannelAPI},
+			{Type: "qq", Category: providerCategoryAuth, Channel: provider.ChannelRedirect},
+			{Type: "wechat_mp_scan", Category: providerCategoryAuth, Channel: provider.ChannelQRCode},
+			{Type: "ding", Category: providerCategoryAuth, Channel: provider.ChannelRedirect},
+			{Type: "feishu", Category: providerCategoryAuth, Channel: provider.ChannelRedirect},
+			{Type: "wechat_mp", Category: providerCategoryAuth, Channel: provider.ChannelAPI},
 			{Type: "smtp", Category: "email"}, // 非 oauth category 不参与
 		}
 	}

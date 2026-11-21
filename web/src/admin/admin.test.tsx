@@ -166,14 +166,14 @@ import {
  * SsoClientsPage / OidcClientsPage 渲染不可测（同上 Blocker）。
  *
  * 客户端管理族追加（SSO 应用级登录配置三字段，接口文档 §5.5）：
- * - listSsoClients 解码追加 login_methods / oauth_providers /
+ * - listSsoClients 解码追加 login_methods / auth_providers /
  *   default_redirect_uri 三字段透出断言（编辑 SideSheet 回填数据面）；
  * - buildUpdateSsoClientRequest 整组提交 wire：repeated 两字段恒带
- *   has_login_methods / has_oauth_providers 伴生标志 true（空数组 wire
+ *   has_login_methods / has_auth_providers 伴生标志 true（空数组 wire
  *   省略 = 清空跟随全局）、default_redirect_uri proto3 optional 显式
  *   空串 wire 下发 "" = 清空 / 非空 trim 下发 = 覆盖；
- * - 纯函数：SSO_LOGIN_METHODS 封闭集 / oauthProviderSelectOptions
- *   （ProvidersPage 同源列表过滤 category=oauth）/ showsMfaRiskHint
+ * - 纯函数：SSO_LOGIN_METHODS 封闭集 / authProviderSelectOptions
+ *   （ProvidersPage 同源列表过滤 category=auth）/ showsMfaRiskHint
  *   （MFA 候选交集硬生效的保存提示判定）/ showsDefaultRedirectHint
  *   （非空即提示须命中回调白名单）。
  *
@@ -768,7 +768,7 @@ describe('api.listProviders（§5.2 行 1165：读路径真调 + protojson 解�
             {
               providerKey: 'qq',
               displayName: 'QQ',
-              category: 'oauth',
+              category: 'auth',
               type: 'qq',
               isEnabled: true,
               enableSignin: true,
@@ -983,11 +983,11 @@ describe('buildListProvidersRequest / buildSortProvidersRequest（请求构造�
 });
 
 describe('policyTags（§5.2「策略标签」展示纯函数）', () => {
-  test('oauth 行：enableSignin / enableSignup / autoBind → 对应标签；全 false → 空数组（消费方渲染占位）', () => {
+  test('auth 行：enableSignin / enableSignup / autoBind → 对应标签；全 false → 空数组（消费方渲染占位）', () => {
     expect(
       apiMod.policyTags(
         create(ProviderSchema, {
-          category: 'oauth',
+          category: 'auth',
           enableSignin: true,
           enableSignup: true,
           autoBind: true,
@@ -996,15 +996,15 @@ describe('policyTags（§5.2「策略标签」展示纯函数）', () => {
     ).toEqual(['允许登录', '允许注册', '自动绑定']);
     expect(
       apiMod.policyTags(
-        create(ProviderSchema, { category: 'oauth', autoBind: true }),
+        create(ProviderSchema, { category: 'auth', autoBind: true }),
       ),
     ).toEqual(['自动绑定']);
     expect(
-      apiMod.policyTags(create(ProviderSchema, { category: 'oauth' })),
+      apiMod.policyTags(create(ProviderSchema, { category: 'auth' })),
     ).toEqual([]);
   });
 
-  test('非 oauth 行即使三开关为 true 也不出标签（存量非 oauth 行开关列默认 1）', () => {
+  test('非 auth 行即使三开关为 true 也不出标签（存量非 auth 行开关列默认 1）', () => {
     for (const category of [
       'sms',
       'email',
@@ -1024,7 +1024,7 @@ describe('policyTags（§5.2「策略标签」展示纯函数）', () => {
         ),
       ).toEqual([]);
     }
-    // category 缺省（proto3 空串）按非 oauth 处理。
+    // category 缺省（proto3 空串）按非 auth 处理。
     expect(
       apiMod.policyTags(
         create(ProviderSchema, {
@@ -1107,16 +1107,16 @@ describe('providerCallbackUrl / isOidcProviderType（纯函数）', () => {
   test('isOidcProviderType：type=oidc｜oauth2 判定（接口文档 §9 行 1461）', () => {
     expect(isOidcProviderType('oidc')).toBe(true);
     expect(isOidcProviderType('oauth2')).toBe(true);
-    // 原 oidc_ 前缀口径与后端注册表不符（oauth 域仅 wechat_mp，无前缀类型）。
+    // 原 oidc_ 前缀口径与后端注册表不符（auth 域仅 wechat_mp，无前缀类型）。
     expect(isOidcProviderType('oidc_generic')).toBe(false);
     expect(isOidcProviderType('qq')).toBe(false);
     expect(isOidcProviderType('')).toBe(false);
     expect(isOidcProviderType(undefined)).toBe(false);
   });
 
-  test('showsCallbackHint：仅 oauth / 未选型展示，sms / email / union 隐藏', () => {
+  test('showsCallbackHint：仅 auth / 未选型展示，sms / email / union 隐藏', () => {
     expect(showsCallbackHint(undefined)).toBe(true);
-    expect(showsCallbackHint('oauth')).toBe(true);
+    expect(showsCallbackHint('auth')).toBe(true);
     expect(showsCallbackHint('sms')).toBe(false);
     expect(showsCallbackHint('email')).toBe(false);
     expect(showsCallbackHint('union')).toBe(false);
@@ -1161,7 +1161,7 @@ const SCHEMA_FIELDS = [
     type: 'select',
     section: 'basic',
     required: true,
-    options: ['oauth'],
+    options: ['auth'],
   }),
   schemaField({
     key: 'union_provider',
@@ -1287,12 +1287,12 @@ describe('initialCreateValues（新建 category 预填注册表权威值，死�
   test('category 取 SchemaResponse 顶层 category（§5.3 行 1183/1195）；其余字段沿用 default / 零值', () => {
     const schema = create(SchemaResponseSchema, {
       type: 'wechat_mp',
-      category: 'oauth',
+      category: 'auth',
       fields: SCHEMA_FIELDS,
     });
     const values = initialCreateValues(schema);
     // 核心：category 不再是零值 ''（applySchemaDefaults 死锁源）。
-    expect(values.category).toBe('oauth');
+    expect(values.category).toBe('auth');
     expect(values.provider_key).toBe('');
     expect(values.ui_group).toBe('social');
     expect(values.is_enabled).toBe(true);
@@ -1301,7 +1301,7 @@ describe('initialCreateValues（新建 category 预填注册表权威值，死�
   test('死锁回归锚点：预填值经 validateSchemaValues 后 category 键无 issue（required 通过）', () => {
     const schema = create(SchemaResponseSchema, {
       type: 'wechat_mp',
-      category: 'oauth',
+      category: 'auth',
       fields: SCHEMA_FIELDS,
     });
     const issues = validateSchemaValues(
@@ -1319,7 +1319,7 @@ describe('adminProviderToValues（编辑回填：表列 typed 映射 + Ext 合�
     const provider = create(AdminProviderSchema, {
       providerKey: 'wx1',
       displayName: '微信',
-      category: 'oauth',
+      category: 'auth',
       type: 'wechat_mp',
       enableSignin: true,
       sortOrder: BigInt(3),
@@ -1334,7 +1334,7 @@ describe('adminProviderToValues（编辑回填：表列 typed 映射 + Ext 合�
     const values = adminProviderToValues(SCHEMA_FIELDS, provider);
     expect(values.provider_key).toBe('wx1');
     expect(values.display_name).toBe('微信');
-    expect(values.category).toBe('oauth');
+    expect(values.category).toBe('auth');
     expect(values.union_provider).toBe('');
     expect(values.sort_order).toBe(3);
     expect(values.icon_url).toBe('https://cdn.test/wx.png');
@@ -1365,7 +1365,7 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
     const invalid = validateSchemaValues(SCHEMA_FIELDS, {
       provider_key: 'Bad Key', // pattern ^[a-z0-9_]+$ 不匹配。
       display_name: '', // required 空。
-      category: 'oauth',
+      category: 'auth',
       client_id: '',
       client_secret: 's',
       port: 0,
@@ -1393,7 +1393,7 @@ describe('validateSchemaValues（§5.3 修饰 required / pattern + 类型合法�
     const valid = validateSchemaValues(SCHEMA_FIELDS, {
       provider_key: 'wx_new',
       display_name: '新微信',
-      category: 'oauth',
+      category: 'auth',
       client_id: 'wx-123',
       client_secret: 's',
       port: 443,
@@ -1427,7 +1427,7 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
     const struct = buildProviderStruct('wechat_mp', SCHEMA_FIELDS, {
       provider_key: 'wx_new',
       display_name: '新微信',
-      category: 'oauth',
+      category: 'auth',
       union_provider: '',
       client_id: 'wx-123',
       client_secret: 'secret',
@@ -1442,7 +1442,7 @@ describe('buildProviderStruct（§5.3 行 1183 提交体 {"<key>": <value>} + ty
       type: 'wechat_mp',
       provider_key: 'wx_new',
       display_name: '新微信',
-      category: 'oauth',
+      category: 'auth',
       union_provider: '',
       client_id: 'wx-123',
       client_secret: 'secret',
@@ -1536,7 +1536,7 @@ describe('api.getProviderTypes（§5.2 行 1175：type 下拉数据源）', () =
       http.post(GET_PROVIDER_TYPES_URL, () =>
         HttpResponse.json({
           items: [
-            { type: 'wechat_mp', category: 'oauth', displayName: '微信小程序' },
+            { type: 'wechat_mp', category: 'auth', displayName: '微信小程序' },
             { type: 'smtp', category: 'email', displayName: 'SMTP' },
           ],
         }),
@@ -1545,7 +1545,7 @@ describe('api.getProviderTypes（§5.2 行 1175：type 下拉数据源）', () =
     const res = await apiMod.getProviderTypes();
     expect(res.items).toHaveLength(2);
     expect(res.items[0].type).toBe('wechat_mp');
-    expect(res.items[0].category).toBe('oauth');
+    expect(res.items[0].category).toBe('auth');
     expect(res.items[0].displayName).toBe('微信小程序');
     expect(res.items[1].displayName).toBe('SMTP');
   });
@@ -1559,7 +1559,7 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
         requestBody = await request.json();
         return HttpResponse.json({
           type: 'wechat_mp',
-          category: 'oauth',
+          category: 'auth',
           fields: [
             {
               key: 'provider_key',
@@ -1600,7 +1600,7 @@ describe('api.getProviderSchema（§5.2 行 1176 / §5.3：动态表单 schema�
     );
     expect(requestBody).toEqual({ type: 'wechat_mp' });
     expect(res.type).toBe('wechat_mp');
-    expect(res.category).toBe('oauth');
+    expect(res.category).toBe('auth');
     expect(res.fields).toHaveLength(4);
     expect(res.fields[0].required).toBe(true);
     expect(res.fields[0].pattern).toBe('^[a-z0-9_]+$');
@@ -1630,7 +1630,7 @@ describe('api.getProvider（§5.2 行 1170：详情返回明文凭证）', () =>
         return HttpResponse.json({
           providerKey: 'wx1',
           displayName: '微信',
-          category: 'oauth',
+          category: 'auth',
           type: 'wechat_mp',
           enableSignin: true,
           sortOrder: '3',
@@ -2816,7 +2816,7 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
               name: '门户站',
               redirectUris: ['https://portal.test/cb', '*'],
               loginMethods: ['password', 'thirdparty'],
-              oauthProviders: ['qq', 'github'],
+              authProviders: ['qq', 'github'],
               defaultRedirectUri: 'https://portal.test/home',
               createdAt: '1720000000',
               updatedAt: '1720000100',
@@ -2852,7 +2852,7 @@ describe('api.listSsoClients（§5.5 行 1261：分页 / 排序 §1.7）', () =>
     expect(res.items[0].redirectUris).toEqual(['https://portal.test/cb', '*']);
     // 应用级登录配置三字段随行透出（编辑 SideSheet 回填数据面，§5.5）。
     expect(res.items[0].loginMethods).toEqual(['password', 'thirdparty']);
-    expect(res.items[0].oauthProviders).toEqual(['qq', 'github']);
+    expect(res.items[0].authProviders).toEqual(['qq', 'github']);
     expect(res.items[0].defaultRedirectUri).toBe('https://portal.test/home');
     expect(res.items[0].createdAt).toBe(BigInt(1720000000));
 
@@ -2958,7 +2958,7 @@ describe('api.createSsoClient（§5.5 → OkResponse；密钥服务端生成）'
     // Update 同口径下发，空值 = 未配置 = 跟随全局）。
     expect(requestBody).toEqual({
       hasLoginMethods: true,
-      hasOauthProviders: true,
+      hasAuthProviders: true,
       defaultRedirectUri: '',
     });
     expect(res.$typeName).toBe('api.admin.v1.OkResponse');
@@ -2985,7 +2985,7 @@ describe('api.createSsoClient（§5.5 → OkResponse；密钥服务端生成）'
     expect((caught as ApiError).httpStatus).toBe(500);
   });
 
-  test('新建同口径下发应用级登录配置：loginMethods / oauthProviders 数组 + has_* = true、defaultRedirectUri 非空 trim（与 Update 一致）', async () => {
+  test('新建同口径下发应用级登录配置：loginMethods / authProviders 数组 + has_* = true、defaultRedirectUri 非空 trim（与 Update 一致）', async () => {
     let requestBody: unknown;
     server.use(
       http.post(CREATE_SSO_CLIENT_URL, async ({ request }) => {
@@ -3000,7 +3000,7 @@ describe('api.createSsoClient（§5.5 → OkResponse；密钥服务端生成）'
         name: ' 门户站 ',
         redirectUris: [' https://a.test/cb ', '', '*'],
         loginMethods: ['password', 'thirdparty'],
-        oauthProviders: ['qq', 'github'],
+        authProviders: ['qq', 'github'],
         defaultRedirectUri: '  https://portal.test/home  ',
       }),
     );
@@ -3010,8 +3010,8 @@ describe('api.createSsoClient（§5.5 → OkResponse；密钥服务端生成）'
       redirectUris: ['https://a.test/cb', '*'],
       loginMethods: ['password', 'thirdparty'],
       hasLoginMethods: true,
-      oauthProviders: ['qq', 'github'],
-      hasOauthProviders: true,
+      authProviders: ['qq', 'github'],
+      hasAuthProviders: true,
       defaultRedirectUri: 'https://portal.test/home',
     });
   });
@@ -3046,7 +3046,7 @@ describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配�
       // "" = 清空回落默认落点。
       loginMethods: ['password', 'thirdparty'],
       hasLoginMethods: true,
-      hasOauthProviders: true,
+      hasAuthProviders: true,
       defaultRedirectUri: '',
     });
     expect(keep.$typeName).toBe('api.admin.v1.OkResponse');
@@ -3062,7 +3062,7 @@ describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配�
       id: '2',
       clientSecret: 'new-secret',
       hasLoginMethods: true,
-      hasOauthProviders: true,
+      hasAuthProviders: true,
       defaultRedirectUri: '',
     });
     expect(rotate.$typeName).toBe('api.admin.v1.OkResponse');
@@ -3082,7 +3082,7 @@ describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配�
         name: '门户站 v3',
         redirectUris: ['https://portal.test/cb'],
         loginMethods: ['otp_sms', 'webauthn'],
-        oauthProviders: ['qq', 'github'],
+        authProviders: ['qq', 'github'],
         defaultRedirectUri: '  https://portal.test/home  ',
       }),
     );
@@ -3091,9 +3091,9 @@ describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配�
       name: '门户站 v3',
       redirectUris: ['https://portal.test/cb'],
       loginMethods: ['otp_sms', 'webauthn'],
-      oauthProviders: ['qq', 'github'],
+      authProviders: ['qq', 'github'],
       hasLoginMethods: true,
-      hasOauthProviders: true,
+      hasAuthProviders: true,
       defaultRedirectUri: 'https://portal.test/home',
     });
   });
@@ -3118,11 +3118,11 @@ describe('api.updateSsoClient（§5.5：PATCH 缺省保留 + 应用级登录配�
       name: 'x',
       redirectUris: ['https://portal.test/cb'],
       hasLoginMethods: true,
-      hasOauthProviders: true,
+      hasAuthProviders: true,
       defaultRedirectUri: '',
     });
     expect('loginMethods' in (requestBody as object)).toBe(false);
-    expect('oauthProviders' in (requestBody as object)).toBe(false);
+    expect('authProviders' in (requestBody as object)).toBe(false);
   });
 });
 
@@ -3159,17 +3159,17 @@ describe('SSO 应用级登录配置纯函数（§5.5 / §5.9 前端）', () => {
     ]);
   });
 
-  test('oauthProviderSelectOptions：数据源复用 ProvidersPage 同源列表过滤 category=oauth；标签展示名缺省回退 provider_key', () => {
+  test('authProviderSelectOptions：数据源复用 ProvidersPage 同源列表过滤 category=auth；标签展示名缺省回退 provider_key', () => {
     const rows = [
       create(ProviderSchema, {
         providerKey: 'qq',
         displayName: 'QQ 登录',
-        category: 'oauth',
+        category: 'auth',
         type: 'qq',
       }),
       create(ProviderSchema, {
         providerKey: 'bare_oauth',
-        category: 'oauth',
+        category: 'auth',
         type: 'oauth2',
       }),
       create(ProviderSchema, {
@@ -3185,11 +3185,11 @@ describe('SSO 应用级登录配置纯函数（§5.5 / §5.9 前端）', () => {
         type: 'geetest',
       }),
     ];
-    expect(apiMod.oauthProviderSelectOptions(rows)).toEqual([
+    expect(apiMod.authProviderSelectOptions(rows)).toEqual([
       { label: 'QQ 登录', value: 'qq' },
       { label: 'bare_oauth', value: 'bare_oauth' },
     ]);
-    expect(apiMod.oauthProviderSelectOptions([])).toEqual([]);
+    expect(apiMod.authProviderSelectOptions([])).toEqual([]);
   });
 
   test('showsMfaRiskHint：配置非空且缺任一可主可次因子 → 提示；全不选 = 跟随全局 / 全勾选 → 不提示（§2.1 MFA 候选交集）', () => {
@@ -3236,7 +3236,7 @@ describe('SsoClientForm 统一表单（新建 / 编辑两 mode 共用，§5.5）
           { value: 'password', label: '密码登录' },
           { value: 'thirdparty', label: '第三方登录' },
         ],
-        oauthProviderOptions: [{ label: 'QQ 登录', value: 'qq' }],
+        authProviderOptions: [{ label: 'QQ 登录', value: 'qq' }],
         templateOptions: [
           { value: 'login', label: 'login' },
           { value: '', label: '不指定（默认文件壳）' },
@@ -3254,7 +3254,7 @@ describe('SsoClientForm 统一表单（新建 / 编辑两 mode 共用，§5.5）
       templateKey: '',
       templateVars: '',
       loginMethods: [],
-      oauthProviders: [],
+      authProviders: [],
       defaultRedirectUri: '',
     });
     // 每次调用出新对象（dirty 基线对比不被共享引用污染）。
@@ -3276,7 +3276,7 @@ describe('SsoClientForm 统一表单（新建 / 编辑两 mode 共用，§5.5）
     // 应用级登录配置三字段 + 模板两字段一份不少（§5.5）。
     expect(html).toContain('登录方式');
     expect(html).toContain('密码登录');
-    expect(html).toContain('OAuth Provider');
+    expect(html).toContain('Auth Provider');
     expect(html).toContain('默认回跳地址');
     expect(html).toContain('回调白名单');
     expect(html).toContain('模板变量');
@@ -5197,8 +5197,8 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
     // 新建与编辑同口径下发应用级登录配置（§5.5）。
     expect(ssoCreate.loginMethods).toEqual([]);
     expect(ssoCreate.hasLoginMethods).toBe(true);
-    expect(ssoCreate.oauthProviders).toEqual([]);
-    expect(ssoCreate.hasOauthProviders).toBe(true);
+    expect(ssoCreate.authProviders).toEqual([]);
+    expect(ssoCreate.hasAuthProviders).toBe(true);
     expect(ssoCreate.defaultRedirectUri).toBe('');
 
     const ssoUpdate = apiMod.buildUpdateSsoClientRequest(BigInt(1), {
@@ -5213,8 +5213,8 @@ describe('模板请求构造 / 校验纯函数（§5.7 / §5.5）', () => {
     // 应用级登录配置整组提交（SSO 编辑草稿必带三字段，§5.5）。
     expect(ssoUpdate.loginMethods).toEqual([]);
     expect(ssoUpdate.hasLoginMethods).toBe(true);
-    expect(ssoUpdate.oauthProviders).toEqual([]);
-    expect(ssoUpdate.hasOauthProviders).toBe(true);
+    expect(ssoUpdate.authProviders).toEqual([]);
+    expect(ssoUpdate.hasAuthProviders).toBe(true);
     expect(ssoUpdate.defaultRedirectUri).toBe('');
 
     const oidcCreate = apiMod.buildCreateOidcClientRequest({
@@ -5486,7 +5486,7 @@ describe('checkbox 字段 Switch 渲染（布尔回填逐项一致，值模型�
   function renderPolicySwitch(initValues: Record<string, unknown>) {
     const schema = create(SchemaResponseSchema, {
       type: 'wechat_mp',
-      category: 'oauth',
+      category: 'auth',
       fields: SCHEMA_FIELDS.filter((field) => field.key === 'is_enabled'),
     });
     return renderToStaticMarkup(
@@ -5593,7 +5593,7 @@ describe('textarea 类型与拉码模式三字段（渲染 / 零值 / 必填 / �
     setLocale('zh-CN');
     const schema = create(SchemaResponseSchema, {
       type: 'wechat_mp_scan',
-      category: 'oauth',
+      category: 'auth',
       fields: QRCODE_FIELDS,
     });
     const groups = groupFieldsBySection(schema.fields);
@@ -5647,7 +5647,7 @@ describe('provider 类型 / 类别展示名（admin.providerType.* / admin.provi
     setLocale('zh-CN');
     expect(indexMod.providerTypeDisplayName('proxy')).toBe('出站代理');
     expect(indexMod.providerCategoryDisplayName('proxy')).toBe('出站代理');
-    expect(indexMod.providerCategoryDisplayName('oauth')).toBe('OAuth 授权');
+    expect(indexMod.providerCategoryDisplayName('auth')).toBe('认证授权');
     // 字典未定义展示名的类型 / 类别不猜译名，原样显示 wire 值。
     expect(indexMod.providerTypeDisplayName('wechat_mp_scan')).toBe(
       'wechat_mp_scan',
@@ -5679,12 +5679,12 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
   test('filterProvidersByCategory：按类别只留目标类行；清空（""）恢复全量且返回原行集引用', async () => {
     const { filterProvidersByCategory } = await pageIndex();
     const rows = [
-      categoryRow('qq', 'oauth'),
+      categoryRow('qq', 'auth'),
       categoryRow('eml_main', 'email'),
-      categoryRow('wx', 'oauth'),
+      categoryRow('wx', 'auth'),
     ];
     expect(
-      filterProvidersByCategory(rows, 'oauth').map((row) => row.providerKey),
+      filterProvidersByCategory(rows, 'auth').map((row) => row.providerKey),
     ).toEqual(['qq', 'wx']);
     // 无命中类别 → 空行集。
     expect(filterProvidersByCategory(rows, 'sms')).toEqual([]);
@@ -5696,15 +5696,15 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     setLocale('zh-CN');
     const { providerCategoryFilterOptions } = await pageIndex();
     const rows = [
-      categoryRow('qq', 'oauth'),
+      categoryRow('qq', 'auth'),
       categoryRow('proxy1', 'proxy'),
       categoryRow('eml_main', 'email'),
       categoryRow('odd', 'nonexistent_cat'),
-      categoryRow('wx', 'oauth'),
+      categoryRow('wx', 'auth'),
     ];
     expect(providerCategoryFilterOptions(rows)).toEqual([
       { value: '', label: t('admin.filterAnyOption') },
-      { value: 'oauth', label: 'OAuth 授权' },
+      { value: 'auth', label: '认证授权' },
       { value: 'proxy', label: '出站代理' },
       { value: 'email', label: '邮件服务' },
       // 字典无 admin.providerCategory.nonexistent_cat → 原样回 wire 值。
@@ -5724,7 +5724,7 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     // 行集截断（超单页上限）→ 停用。
     expect(sortDragEnabled(99, 100, '')).toBe(false);
     // 筛选态 → 停用（即使行数与 total 相等）。
-    expect(sortDragEnabled(100, 100, 'oauth')).toBe(false);
+    expect(sortDragEnabled(100, 100, 'auth')).toBe(false);
     expect(sortDragEnabled(2, 100, 'email')).toBe(false);
   });
 
@@ -5734,7 +5734,7 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
     expect(providerStatusSwitchable('storage')).toBe(false);
     // 其余类别行内启停行为不变；空类别是零值占位行，同持开关。
     for (const category of [
-      'oauth',
+      'auth',
       'sms',
       'email',
       'captcha',
@@ -5767,7 +5767,7 @@ describe('ProvidersPage 类别筛选（已载入行集本地过滤 × 拖拽互�
   test('sortEntryDisabled：筛选激活即禁用排序入口；清空（""）恢复可用', async () => {
     const { sortEntryDisabled } = await pageIndex();
     // 筛选态（类别非默认 ''）→ 入口禁用。
-    expect(sortEntryDisabled('oauth')).toBe(true);
+    expect(sortEntryDisabled('auth')).toBe(true);
     // 清空筛选 → 入口恢复可用。
     expect(sortEntryDisabled('')).toBe(false);
   });

@@ -63,7 +63,7 @@ func init() {
 			fields = append(fields, schemafield.ProviderKey(), schemafield.DisplayName())
 			fields = append(fields, schemafield.SMSFields()...)
 			fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
-			// is_enabled / 登录建号开关是 oauth 专属：sms 行不声明也不消费
+			// is_enabled / 登录建号开关是 auth 专属：sms 行不声明也不消费
 			// （渠道生效实例判定只看 settings 键 → 行命中，provider/sender.go）。
 			fields = append(fields, schemafield.ProxyRef())
 			return fields

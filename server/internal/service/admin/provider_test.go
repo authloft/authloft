@@ -28,12 +28,12 @@ import (
 	// 注册表数据源（§15.3）：各域真实注册项驱动 schema 键集与 types 断言；
 	// captcha 三家 meta 随工厂化迁入实现子包，blank import 触发 init 自注册
 	//（测试二进制无触发即 meta 缺失，CODE_GUIDE §3.3）。
+	_ "authloft/internal/provider/auth/wechat_mp"
+	_ "authloft/internal/provider/auth/wechat_mp_scan"
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
-	_ "authloft/internal/provider/oauth/wechat_mp"
-	_ "authloft/internal/provider/oauth/wechat_mp_scan"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
@@ -203,7 +203,7 @@ func wechatMpCreateBody(t *testing.T, overrides map[string]any) *structpb.Struct
 	body := map[string]any{
 		"type":          "wechat_mp",
 		"provider_key":  "wx_new",
-		"category":      "oauth",
+		"category":      "auth",
 		"display_name":  "微信小程序",
 		"app_id":        "wx-appid",
 		"client_secret": "wx-secret",
@@ -279,7 +279,7 @@ func TestCreateProviderSuccess(t *testing.T) {
 		t.Fatalf("created = %d, want 1", len(store.created))
 	}
 	row := store.created[0]
-	if row.ProviderKey != "wx_new" || row.Type != "wechat_mp" || row.Category != "oauth" {
+	if row.ProviderKey != "wx_new" || row.Type != "wechat_mp" || row.Category != "auth" {
 		t.Errorf("键 / 类型 / 类别 = (%q, %q, %q)", row.ProviderKey, row.Type, row.Category)
 	}
 	if row.DisplayName != "微信小程序" || row.SortOrder != 30 {
@@ -352,7 +352,7 @@ func wantRowOf(t *testing.T) *model.Provider {
 		t.Fatalf("MarshalProviderExt: %v", err)
 	}
 	return &model.Provider{
-		ID: 7, ProviderKey: "wx_exist", DisplayName: "原名", Category: "oauth", Type: "wechat_mp",
+		ID: 7, ProviderKey: "wx_exist", DisplayName: "原名", Category: "auth", Type: "wechat_mp",
 		EnableSignin: 1, EnableSignup: 1, IsEnabled: 1, UiGroup: "social", SortOrder: 10,
 		AutoBindFields: "email,phone", Remark: "原备注", Ext: ext,
 	}
@@ -435,7 +435,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 	if row.DisplayName != "新名" {
 		t.Errorf("display_name = %q, want 新名", row.DisplayName)
 	}
-	if row.Type != "wechat_mp" || row.Category != "oauth" || row.UiGroup != "social" ||
+	if row.Type != "wechat_mp" || row.Category != "auth" || row.UiGroup != "social" ||
 		row.SortOrder != 10 || row.Remark != "原备注" || row.EnableSignin != 1 || row.EnableSignup != 1 {
 		t.Errorf("缺省键未保留原值: %+v", row)
 	}
@@ -459,7 +459,7 @@ func TestUpdateProviderPatchSuccess(t *testing.T) {
 func TestUpdateProviderTypeSameAsCurrent(t *testing.T) {
 	store := newFakeStore(wantRowOf(t))
 	svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
-	body := map[string]any{"provider_key": "wx_exist", "type": "wechat_mp", "category": "oauth", "display_name": "新名"}
+	body := map[string]any{"provider_key": "wx_exist", "type": "wechat_mp", "category": "auth", "display_name": "新名"}
 	if err := svc.UpdateProvider(context.Background(), structBody(t, body)); err != nil {
 		t.Fatalf("同值只读键提交应放行: %v", err)
 	}
@@ -611,7 +611,7 @@ func TestProviderTypes(t *testing.T) {
 		byType[info.Type] = info
 	}
 	for _, want := range []adminsvc.ProviderTypeInfo{
-		{Type: "wechat_mp", Category: "oauth", DisplayName: "微信小程序"},
+		{Type: "wechat_mp", Category: "auth", DisplayName: "微信小程序"},
 		{Type: "smtp", Category: "email", DisplayName: "SMTP（通用）"},
 		{Type: "aliyun_sms", Category: "sms", DisplayName: "阿里云短信"},
 		// 虚拟 Union 类型：静态 meta-only 源，管理后台新建下拉可见。
@@ -876,7 +876,7 @@ func TestTestProvider(t *testing.T) {
 	emailRow.Ext = ext
 
 	t.Run("非 sms/email 类别拒绝", func(t *testing.T) {
-		store := newFakeStore(wantRowOf(t)) // category=oauth
+		store := newFakeStore(wantRowOf(t)) // category=auth
 		svc := adminsvc.NewService(store, &fakeInvalidator{}, proxyclient.NewPoolSet())
 		if err := svc.TestProvider(ctx, "wx_exist", "alice@example.com"); !errors.Is(err, adminsvc.ErrInvalidRequest) {
 			t.Fatalf("err = %v, want ErrInvalidRequest（oauth 类别不可测试发送）", err)
@@ -1113,7 +1113,7 @@ func TestProxyRefKeyCharset(t *testing.T) {
 // 提交一律 invalid_request（声明驱动，dto 不按类别裁剪）。
 func TestProxyRefKeyScope(t *testing.T) {
 	accepted := []map[string]any{
-		{"type": "wechat_mp", "provider_key": "wx_ref", "category": "oauth", "display_name": "W",
+		{"type": "wechat_mp", "provider_key": "wx_ref", "category": "auth", "display_name": "W",
 			"app_id": "a", "client_secret": "b", provider.ProxyRefKey: "pxy_new"},
 		{"type": "smtp", "provider_key": "smtp_ref", "category": provider.CategoryEmail,
 			"display_name": "S", "host": "smtp.example.com", "from": "n@example.com",
@@ -1227,7 +1227,7 @@ func wechatMpScanCreateBody(t *testing.T, overrides map[string]any) *structpb.St
 	body := map[string]any{
 		"type":          "wechat_mp_scan",
 		"provider_key":  "scan_new",
-		"category":      "oauth",
+		"category":      "auth",
 		"display_name":  "微信小程序扫码",
 		"app_id":        "wx-appid",
 		"client_secret": "wx-secret",
@@ -1298,7 +1298,7 @@ func scanRowOf(t *testing.T) *model.Provider {
 		t.Fatalf("MarshalProviderExt: %v", err)
 	}
 	return &model.Provider{
-		ProviderKey: "scan_exist", Category: "oauth", Type: "wechat_mp_scan",
+		ProviderKey: "scan_exist", Category: "auth", Type: "wechat_mp_scan",
 		IsEnabled: 1, EnableSignin: 1, EnableSignup: 1, DisplayName: "微信小程序扫码",
 		Ext: ext,
 	}

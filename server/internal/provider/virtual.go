@@ -14,9 +14,9 @@ import "sort"
 
 // Provider 类别常量（§5.3：category 由注册表按 type 决定、只读）。
 // CategorySMS / CategoryEmail 在 sender.go、CategoryCaptcha / CategoryStorage /
-// CategoryProxy 在 servicetype.go 声明，此处补齐 oauth / union。
+// CategoryProxy 在 servicetype.go 声明，此处补齐 auth / union。
 const (
-	CategoryOAuth = "oauth"
+	CategoryAuth  = "auth"
 	CategoryUnion = "union"
 )
 
@@ -25,7 +25,7 @@ const (
 const UnionProviderType = "unionid"
 
 // TypeMeta 统一注册表的只读投影（GetProviderTypes / GetProviderSchema /
-// Create / Update 键集校验共用），不含 factory 槽与交互通道。oauth 域 Meta、
+// Create / Update 键集校验共用），不含 factory 槽与交互通道。auth 域 Meta、
 // 消息域 SenderMeta、服务型 / 虚拟 meta 经统一注册表读出时收口为同一形态，
 // 调用方无需感知注册来源。
 type TypeMeta struct {
@@ -74,7 +74,7 @@ func unionSchema() []FieldMeta {
 }
 
 // LookupTypeMeta 按 type 查统一注册表（单一来源，§15.3：不再四源合并）。全部
-// 注册来源（oauth 渠道 / 消息厂商 / 服务型 / 虚拟）只在此命中；是否有运行时
+// 注册来源（auth 渠道 / 消息厂商 / 服务型 / 虚拟）只在此命中；是否有运行时
 // 产物由各槽取件函数（NewAdapter / NewSender）另行判定。
 func LookupTypeMeta(providerType string) (TypeMeta, bool) {
 	registry.mu.RLock()
@@ -87,7 +87,7 @@ func LookupTypeMeta(providerType string) (TypeMeta, bool) {
 }
 
 // TypeMetas 全部已注册类型的元信息快照，按 Type 稳定排序（admin
-// GetProviderTypes 全类型下拉数据源；含 oauth / 消息 / 服务型 / 虚拟，§15.3）。
+// GetProviderTypes 全类型下拉数据源；含 auth / 消息 / 服务型 / 虚拟，§15.3）。
 func TypeMetas() []TypeMeta {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()

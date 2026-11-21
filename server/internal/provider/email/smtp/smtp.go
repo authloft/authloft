@@ -90,7 +90,7 @@ func smtpSchema() []provider.FieldMeta {
 			Help: "admin.schemaField.smtpMetadataHelp", Storage: provider.StorageExt},
 	)
 	fields = append(fields, schemafield.IconURL(), schemafield.UiGroup(), schemafield.SortOrder(), schemafield.Remark())
-	// is_enabled / 登录建号开关是 oauth 专属：email 行不声明也不消费
+	// is_enabled / 登录建号开关是 auth 专属：email 行不声明也不消费
 	// （渠道生效实例判定只看 settings 键 → 行命中，provider/sender.go）。
 	fields = append(fields, schemafield.ProxyRef())
 	return fields

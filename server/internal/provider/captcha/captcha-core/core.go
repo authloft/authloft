@@ -1,5 +1,5 @@
 // Package captchacore 三家远程人机校验（turnstile / recaptcha / hcaptcha）
-// 的共用实现（docs/后端架构.md §9.1 阶段三，对齐 oauth/oauthcore 先例）：
+// 的共用实现（docs/后端架构.md §9.1 阶段三，对齐 auth/oauthcore 先例）：
 // 「secret + response 表单 POST + JSON success 判定」的 siteverify 逻辑与
 // 管理后台 Schema 声明沉本包，各 type 子包只声明 type 常量与厂商默认端点
 // （方案 §4.1）。stdlib net/http 零新依赖；配置取自 Ext（口径 §9.1：
@@ -99,7 +99,7 @@ func extFields() []provider.FieldMeta {
 // Schema 三家 captcha 共用的完整字段声明（表列 + Ext + 引用键，接口文档
 // §5.3），供各 type 子包的 meta 引用，每次调用返回新切片。Ext 复用 fields
 // 单一来源并补 Storage 落点，防两份声明漂移；is_enabled / 登录 / 建号 /
-// 自动绑定开关是 oauth 专属，captcha 类别不下发也不消费（生效实例判定
+// 自动绑定开关是 auth 专属，captcha 类别不下发也不消费（生效实例判定
 // 只看 settings 键 → 行命中，captcha/catalog.go）。
 func Schema() []provider.FieldMeta {
 	fields := make([]provider.FieldMeta, 0, 10)

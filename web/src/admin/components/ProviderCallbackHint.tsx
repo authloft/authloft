@@ -15,7 +15,7 @@
  * renderToStaticMarkup 静态验证（components.test.ts 同模式）。
  * OIDC 判定口径：标准协议兜底渠道 type 为 `oidc` 或 `oauth2`
  * （接口文档 §9 行 1461「type=oidc｜oauth2」+ 需求 §4.3.1 行 162）——
- * 后端注册表现状（oauth 域 wechat_mp、消息域 aliyun_sms / smtp）无任何
+ * 后端注册表现状（auth 域 wechat_mp、消息域 aliyun_sms / smtp）无任何
  * `oidc_` 前缀类型，原前缀判定恒 false。
  * 样式（§1.7）：同目录同名 module less。
  */
@@ -49,12 +49,12 @@ export function isOidcProviderType(type: string | undefined): boolean {
 }
 
 /**
- * 回调地址提示是否展示：只有 oauth 类 Provider 有 `/sso/oauth/callback/{key}`
+ * 回调地址提示是否展示：只有 auth 类 Provider 有 `/sso/oauth/callback/{key}`
  * 入口。schema 未落地（尚未选型）沿用模板形态提示；`sms` / `email` /
  * `union` 及虚拟类别一律不展示（接口文档 §5.3 表列按 category 裁剪）。
  */
 export function showsCallbackHint(category: string | undefined): boolean {
-  return category === undefined || category === 'oauth';
+  return category === undefined || category === 'auth';
 }
 
 export interface ProviderCallbackHintProps {

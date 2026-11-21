@@ -14,8 +14,8 @@
  *   保留 / 非空轮换、回调白名单空组 = 保留原值（前端阻断防误解）；
  * - 新建 / 编辑表单共用 SsoClientForm 统一组件（字段渲染 / label / 校验 /
  *   白名单提示一份定义，两模式差异经 mode 表达），应用级登录配置三字段
- *   （§5.5）两模式都渲染：登录方式复选组（全不选 = 跟随全局）+ OAuth
- *   Provider 多选（数据源复用 ProvidersPage 同源列表，过滤 category=oauth）
+ *   （§5.5）两模式都渲染：登录方式复选组（全不选 = 跟随全局）+ Auth
+ *   Provider 多选（数据源复用 ProvidersPage 同源列表，过滤 category=auth）
  *   + 默认回跳输入框（须命中回调白名单，匹配校验在服务端，前端提示不拦截）；
  *   保存整组提交——Create / Update 同口径恒带 has_* 伴生标志 true（空数组
  *   = 未配置 / 清空跟随全局；default_redirect_uri proto3 optional 显式下发）；
@@ -77,7 +77,7 @@ import {
   listProviders,
   listSsoClients,
   listTemplates,
-  oauthProviderSelectOptions,
+  authProviderSelectOptions,
   redirectUrisIssue,
   SSO_LOGIN_METHODS,
   summarizeList,
@@ -137,8 +137,8 @@ export function SsoClientsPage(_props: {
   const templateOptions = templateSelectOptions(
     (templateReq.data?.items ?? []).map((item) => item.templateKey),
   );
-  // OAuth Provider 多选数据源（§5.9 前端）：复用 ProvidersPage 同源列表
-  // （全量取数 buildListProvidersRequest），过滤 category=oauth；401 走
+  // Auth Provider 多选数据源（§5.9 前端）：复用 ProvidersPage 同源列表
+  // （全量取数 buildListProvidersRequest），过滤 category=auth；401 走
   // 集中 onError，其余错误静默——选项为空仍可保存，key 存在性由服务端
   // 校验（§5.5）。
   const providerReq = useRequest(
@@ -150,7 +150,7 @@ export function SsoClientsPage(_props: {
       }),
     },
   );
-  const oauthProviderOptions = oauthProviderSelectOptions(
+  const authProviderOptions = authProviderSelectOptions(
     providerReq.data?.items ?? [],
   );
   // 登录方式复选组选项（§5.5 封闭集）：标签复用基础字典 factors.*，与
@@ -182,8 +182,9 @@ export function SsoClientsPage(_props: {
   });
   // 编辑弹窗（PATCH 缺省保留；应用级登录配置整组提交，与新建同口径）。
   const [editTarget, setEditTarget] = useState<SsoClient | null>(null);
-  const [editDraft, setEditDraft] =
-    useState<SsoClientFormDraft>(emptySsoClientFormDraft);
+  const [editDraft, setEditDraft] = useState<SsoClientFormDraft>(
+    emptySsoClientFormDraft,
+  );
   // 打开编辑时的基线快照（dirty = 现值偏离基线，见 closeEdit）。
   const [editBaseline, setEditBaseline] = useState<SsoClientFormDraft | null>(
     null,
@@ -277,7 +278,7 @@ export function SsoClientsPage(_props: {
       redirectUris: [...row.redirectUris],
       ...clientTemplateDraft(row),
       loginMethods: [...row.loginMethods],
-      oauthProviders: [...row.oauthProviders],
+      authProviders: [...row.authProviders],
       defaultRedirectUri: row.defaultRedirectUri,
     };
     setEditTarget(row);
@@ -466,7 +467,7 @@ export function SsoClientsPage(_props: {
           onChange={setCreateDraft}
           disabled={createSubmitting}
           loginMethodOptions={loginMethodOptions}
-          oauthProviderOptions={oauthProviderOptions}
+          authProviderOptions={authProviderOptions}
           templateOptions={templateOptions}
         />
       </SideSheet>
@@ -573,7 +574,7 @@ export function SsoClientsPage(_props: {
           onChange={setEditDraft}
           disabled={editSubmitting}
           loginMethodOptions={loginMethodOptions}
-          oauthProviderOptions={oauthProviderOptions}
+          authProviderOptions={authProviderOptions}
           templateOptions={templateOptions}
         />
       </SideSheet>

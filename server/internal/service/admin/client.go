@@ -12,7 +12,7 @@
 // 明说，默认口径，待定）；uk_client_id 冲突转译 ErrDuplicateKey；
 // redirect_uris 条目校验（字面 * 或 ^https?:// 前缀，默认）+
 // VARBINARY(2048) 列宽防御；应用级登录配置（§5.5）三校验——login_methods
-// 封闭集、oauth_providers key 经 ProviderKeyFinder 存在性、
+// 封闭集、auth_providers key 经 ProviderKeyFinder 存在性、
 // default_redirect_uri 命中 §12.3 回调白名单——与 has 位 PATCH 语义；OIDC
 // scopes[] ↔ 逗号串转换（model 注释归
 // service）、注册 scopes 必含 openid（§5.5）与 TTL 值域 [1, 86400] /
@@ -62,12 +62,12 @@ const (
 	// 应用级登录配置两列 VARBINARY(1024) 与 default_redirect_uri
 	// VARCHAR(1024) 的列宽防御（§4.4 DDL 硬约束，口径同 redirectURIsMaxByte）。
 	loginMethodsMaxByte   = 1024
-	oauthProvidersMaxByte = 1024
+	authProvidersMaxByte  = 1024
 	defaultRedirectURIMax = 1024
 )
 
 // clientLoginMethodSet 应用级登录方式封闭集（§5.5）：password / otp_sms /
-// otp_email / webauthn / thirdparty。thirdparty 是 OAuth Provider 的整体
+// otp_email / webauthn / thirdparty。thirdparty 是 Auth Provider 的整体
 // 开关；totp / recovery_code 只随全局 MFA 配置，不在集合域。
 var clientLoginMethodSet = map[string]struct{}{
 	"password":   {},
@@ -107,7 +107,7 @@ type SsoClientInput struct {
 	Name               string
 	RedirectURIs       []string
 	LoginMethods       []string // 应用级登录方式（§5.5）：Create 全量提交，空 = 未配置 = 跟随全局
-	OauthProviders     []string // OAuth Provider key 白名单（§5.5）：key 必须存在于 provider 表
+	AuthProviders      []string // Auth Provider key 白名单（§5.5）：key 必须存在于 provider 表
 	DefaultRedirectURI string   // 默认回跳地址（§5.5）：非空须命中提交的 redirect_uris 白名单
 	TemplateKey        string   // 空 / 未设置 → 回落默认文件壳（§5.5 / §8.1）
 	TemplateVars       string   // 模板变量 JSON 原文，空按 {} 注入（§5.5）
@@ -142,8 +142,8 @@ type SsoClientPatch struct {
 	RedirectURIs       []string // len>0 → 校验后整组覆盖；==0 → 保留原值（既有口径不动）
 	LoginMethods       []string // HasLoginMethods=true → 校验后整组替换（空数组 = 清空为跟随全局）；false → 不动
 	HasLoginMethods    bool
-	OauthProviders     []string // HasOauthProviders=true → key 存在性校验后整组替换（空数组 = 清空为跟随全局）；false → 不动
-	HasOauthProviders  bool
+	AuthProviders      []string // HasAuthProviders=true → key 存在性校验后整组替换（空数组 = 清空为跟随全局）；false → 不动
+	HasAuthProviders   bool
 	DefaultRedirectURI *string // nil=不动；非 nil 空串=清空为未配置；非空=覆盖（须命中合并后的回调白名单）
 	TemplateKey        string  // 非空 → 覆盖；空 → 保留原值
 	TemplateVars       string  // 非空 → 覆盖；空 → 保留原值
@@ -164,16 +164,16 @@ type OidcClientPatch struct {
 
 // SsoClientDetail GetSsoClient 的聚合结果：行 + 解析后的回调白名单与应用级
 // 登录配置（repo.ParseClientRedirectUris / ParseClientLoginMethods /
-// ParseClientOauthProviders 是 §12.3 编解码唯一出口，由本层调用，dto 只收
+// ParseClientAuthProviders 是 §12.3 编解码唯一出口，由本层调用，dto 只收
 // []string）。
 type SsoClientDetail struct {
-	Row            *model.SsoClient
-	RedirectURIs   []string
-	LoginMethods   []string
-	OauthProviders []string
+	Row           *model.SsoClient
+	RedirectURIs  []string
+	LoginMethods  []string
+	AuthProviders []string
 }
 
-// ProviderKeyFinder oauth_providers key 存在性校验（§5.5）依赖的窄接口
+// ProviderKeyFinder auth_providers key 存在性校验（§5.5）依赖的窄接口
 // （消费方定义，*repo.ProviderRepo 天然满足）：FindByKey 未命中返回包装的
 // sql.ErrNoRows。
 type ProviderKeyFinder interface {
@@ -224,7 +224,7 @@ func (s *ClientService) ListSsoClients(ctx context.Context, page, pageSize int, 
 		if err != nil {
 			return nil, 0, err
 		}
-		items[i] = SsoClientDetail{Row: &rows[i], RedirectURIs: uris, LoginMethods: methods, OauthProviders: providers}
+		items[i] = SsoClientDetail{Row: &rows[i], RedirectURIs: uris, LoginMethods: methods, AuthProviders: providers}
 	}
 	return items, total, nil
 }
@@ -269,14 +269,14 @@ func (s *ClientService) CreateSsoClient(ctx context.Context, in SsoClientInput) 
 	if err := validateLoginMethods(in.LoginMethods); err != nil {
 		return err
 	}
-	if err := s.validateOauthProviderKeys(ctx, in.OauthProviders); err != nil {
+	if err := s.validateAuthProviderKeys(ctx, in.AuthProviders); err != nil {
 		return err
 	}
 	methods, err := marshalLoginMethods(in.LoginMethods)
 	if err != nil {
 		return err
 	}
-	providerKeys, err := marshalOauthProviders(in.OauthProviders)
+	providerKeys, err := marshalAuthProviders(in.AuthProviders)
 	if err != nil {
 		return err
 	}
@@ -290,7 +290,7 @@ func (s *ClientService) CreateSsoClient(ctx context.Context, in SsoClientInput) 
 		Name:               in.Name,
 		RedirectURIs:       uris,
 		LoginMethods:       methods,
-		OauthProviders:     providerKeys,
+		AuthProviders:      providerKeys,
 		DefaultRedirectURI: defaultURI,
 		TemplateKey:        in.TemplateKey,
 		TemplateVars:       in.TemplateVars,
@@ -366,7 +366,7 @@ func (s *ClientService) GetSsoClient(ctx context.Context, id int64) (*SsoClientD
 	if err != nil {
 		return nil, err
 	}
-	return &SsoClientDetail{Row: row, RedirectURIs: uris, LoginMethods: methods, OauthProviders: providers}, nil
+	return &SsoClientDetail{Row: row, RedirectURIs: uris, LoginMethods: methods, AuthProviders: providers}, nil
 }
 
 // GetOidcClient（§5.5 行 1261）：口径同 GetSsoClient，另拆
@@ -428,15 +428,15 @@ func (s *ClientService) UpdateSsoClient(ctx context.Context, id int64, p SsoClie
 		}
 		row.LoginMethods = data
 	}
-	if p.HasOauthProviders {
-		if err := s.validateOauthProviderKeys(ctx, p.OauthProviders); err != nil {
+	if p.HasAuthProviders {
+		if err := s.validateAuthProviderKeys(ctx, p.AuthProviders); err != nil {
 			return err
 		}
-		data, err := marshalOauthProviders(p.OauthProviders)
+		data, err := marshalAuthProviders(p.AuthProviders)
 		if err != nil {
 			return err
 		}
-		row.OauthProviders = data
+		row.AuthProviders = data
 	}
 	if p.DefaultRedirectURI != nil {
 		v := *p.DefaultRedirectURI
@@ -631,9 +631,9 @@ func parseSsoClientLoginConfig(row *model.SsoClient) (uris, methods, providers [
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d login methods: %w", row.ID, err)
 	}
-	pp, err := repo.ParseClientOauthProviders(row.OauthProviders)
+	pp, err := repo.ParseClientAuthProviders(row.AuthProviders)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d oauth providers: %w", row.ID, err)
+		return nil, nil, nil, fmt.Errorf("admin service: parse sso client %d auth providers: %w", row.ID, err)
 	}
 	return pu.Uris, pm.Methods, pp.Providers, nil
 }
@@ -650,18 +650,18 @@ func validateLoginMethods(methods []string) error {
 	return nil
 }
 
-// validateOauthProviderKeys oauth_providers key 存在性校验（§5.5）：每个 key
+// validateAuthProviderKeys auth_providers key 存在性校验（§5.5）：每个 key
 // 必须存在于 provider 表——复用 ProviderKeyFinder.FindByKey 既有查询逐 key
 // 确认（管理端提交量小，逐条查询可接受），未命中 → invalid_request；其余
 // 查询错误原样包装上抛。
-func (s *ClientService) validateOauthProviderKeys(ctx context.Context, keys []string) error {
+func (s *ClientService) validateAuthProviderKeys(ctx context.Context, keys []string) error {
 	for _, k := range keys {
 		_, err := s.providers.FindByKey(ctx, k)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrInvalidRequest
 			}
-			return fmt.Errorf("admin service: check oauth provider key %q: %w", k, err)
+			return fmt.Errorf("admin service: check auth provider key %q: %w", k, err)
 		}
 	}
 	return nil
@@ -683,7 +683,7 @@ func validateDefaultRedirectURI(uri string, whitelist []string) (string, error) 
 	return uri, nil
 }
 
-// marshalLoginMethods / marshalOauthProviders 经 repo 唯一编解码出口落字节，
+// marshalLoginMethods / marshalAuthProviders 经 repo 唯一编解码出口落字节，
 // 超 VARBINARY(1024) 列宽 → invalid_request（DDL 硬约束的防御转译，口径同
 // marshalRedirectURIs）。
 func marshalLoginMethods(methods []string) ([]byte, error) {
@@ -697,12 +697,12 @@ func marshalLoginMethods(methods []string) ([]byte, error) {
 	return data, nil
 }
 
-func marshalOauthProviders(providers []string) ([]byte, error) {
-	data, err := repo.MarshalClientOauthProviders(&clientpb.ClientOauthProviders{Providers: providers})
+func marshalAuthProviders(providers []string) ([]byte, error) {
+	data, err := repo.MarshalClientAuthProviders(&clientpb.ClientAuthProviders{Providers: providers})
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > oauthProvidersMaxByte {
+	if len(data) > authProvidersMaxByte {
 		return nil, ErrInvalidRequest
 	}
 	return data, nil

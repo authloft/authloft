@@ -83,9 +83,9 @@ func (r *Resolver) Snapshot(ctx context.Context, ssoClientID string) (*token.Sso
 	if err != nil {
 		return nil, fmt.Errorf("ssoapp: parse login_methods: %w", err)
 	}
-	providers, err := repo.ParseClientOauthProviders(row.OauthProviders)
+	providers, err := repo.ParseClientAuthProviders(row.AuthProviders)
 	if err != nil {
-		return nil, fmt.Errorf("ssoapp: parse oauth_providers: %w", err)
+		return nil, fmt.Errorf("ssoapp: parse auth_providers: %w", err)
 	}
 	appMethods := methods.GetMethods()
 	appProviders := providers.GetProviders()

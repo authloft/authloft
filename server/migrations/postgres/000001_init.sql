@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS provider (
   provider_key   VARCHAR(64)  NOT NULL, -- 全局唯一标识，逻辑引用使用
   union_provider VARCHAR(64)  NOT NULL, -- Union ID 归属 Provider
   display_name   VARCHAR(128) NOT NULL, -- 展示名，如“QQ”“阿里云短信”
-  category       VARCHAR(32)  NOT NULL, -- oauth|captcha|sms|email|storage|notify|union
+  category       VARCHAR(32)  NOT NULL, -- auth|captcha|sms|email|storage|notify|union
   type           VARCHAR(64)  NOT NULL, -- qq|wechat_mp|turnstile|aliyun_sms|s3|local|...
 
   enable_signin  SMALLINT     NOT NULL DEFAULT 1, -- 允许用于登录
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sso_client (
   name          VARCHAR(128) NOT NULL DEFAULT '',
   redirect_uris BYTEA NOT NULL, -- client.RedirectUris 的 Protobuf 序列化
   login_methods BYTEA NOT NULL, -- client.ClientLoginMethods 的 Protobuf 序列化；空 = 跟随全局（接口文档 §2.1）
-  oauth_providers BYTEA NOT NULL, -- client.ClientOauthProviders 的 Protobuf 序列化；空 = 跟随全局
+  auth_providers BYTEA NOT NULL, -- client.ClientAuthProviders 的 Protobuf 序列化；空 = 跟随全局
   default_redirect_uri VARCHAR(1024) NOT NULL DEFAULT '', -- 登录完成默认回跳地址；空 = 未配置（非空须命中 redirect_uris 白名单，接口文档 §5.5）
   template_key  VARCHAR(64)  NOT NULL DEFAULT '', -- 绑定的自定义模板 key
   template_vars TEXT, -- 模板变量 JSON

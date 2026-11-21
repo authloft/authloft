@@ -7,7 +7,7 @@
 package provider
 
 // 服务型 category 常量（docs/后端架构.md §4.1 provider.category 取值）。
-// CategorySMS / CategoryEmail 在 sender.go、CategoryOAuth / CategoryUnion 在
+// CategorySMS / CategoryEmail 在 sender.go、CategoryAuth / CategoryUnion 在
 // virtual.go 声明，此处补齐 captcha / storage / proxy。
 const (
 	CategoryCaptcha = "captcha"

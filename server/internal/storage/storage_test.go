@@ -46,7 +46,7 @@ func TestResolveNotConfigured(t *testing.T) {
 	getter := fakeGetter{byKey: map[string]*provider.Provider{
 		"local-empty": localEmpty,
 		"s3":          s3,
-		"oauthish":    storageRow("oauthish", "oauth", "local", true),
+		"oauthish":    storageRow("oauthish", "auth", "local", true),
 	}}
 	r := NewResolver(getter)
 	cases := []struct {

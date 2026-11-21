@@ -1,6 +1,6 @@
 // Package qrcode 是小程序码链的纯逻辑件（docs/后端架构.md §3.4 行 469：
 // `qrcode/wxacode.go` —— GetwxacodeUnlimit + JPEG 压缩；`ticket_id` 长度
-// 上限见 §11.6.4）。SDK 调用本体隔离在 internal/provider/oauth/wechat_mp*
+// 上限见 §11.6.4）。SDK 调用本体隔离在 internal/provider/auth/wechat_mp*
 // 适配器内（§13.0 行 1578「唯一可引用该 SDK 的包」），本包只持有：
 //
 //   - CompressJPEG：码图有损压缩（§13.2：JPEG 压缩 75%）；

@@ -27,15 +27,15 @@ type SsoClient struct {
 	ClientSecret string `bun:"column:client_secret,notnull"`   // 密钥；生成策略归 service
 	Name         string `bun:"column:name,notnull,default:''"` // 展示名
 	RedirectURIs []byte `bun:"column:redirect_uris,notnull"`   // client.RedirectUris 序列化后
-	// 应用级登录配置（接口文档 §5.5）：login_methods / oauth_providers 分别
-	// 为 client.ClientLoginMethods / ClientOauthProviders 的 Protobuf 序列化
+	// 应用级登录配置（接口文档 §5.5）：login_methods / auth_providers 分别
+	// 为 client.ClientLoginMethods / ClientAuthProviders 的 Protobuf 序列化
 	//（编解码出口 repo.MarshalClientLoginMethods / ParseClientLoginMethods
-	// 与 repo.MarshalClientOauthProviders / ParseClientOauthProviders）；
+	// 与 repo.MarshalClientAuthProviders / ParseClientAuthProviders）；
 	// 空 = 未配置 = 跟随全局（§2.1）。列 NOT NULL 无默认值：Create 前须经
 	// repo 编解码出口取非 nil 字节，nil 会被写为 NULL 触发 MySQL 1048
 	//（同 RedirectURIs 口径）。
-	LoginMethods   []byte `bun:"column:login_methods,notnull"`
-	OauthProviders []byte `bun:"column:oauth_providers,notnull"`
+	LoginMethods  []byte `bun:"column:login_methods,notnull"`
+	AuthProviders []byte `bun:"column:auth_providers,notnull"`
 	// 登录完成且未传回跳地址时的默认回跳地址（§5.5）；空串 = 未配置，维持
 	// 默认落点。
 	DefaultRedirectURI string    `bun:"column:default_redirect_uri,notnull,default:''"`

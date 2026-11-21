@@ -1,7 +1,7 @@
 // 统一注册表（docs/后端架构.md §15.3）：provider 包一张注册表，entry 多槽
 // （meta + auth / sender / storage / verifier / proxy 五类 factory 槽），
 // 唯一注册入口 register(type, meta, opts...) + Option 模式，按槽取产
-// NewAdapter / NewSender / NewVerifier / NewProxy。oauth 渠道包经 Register、
+// NewAdapter / NewSender / NewVerifier / NewProxy。auth 渠道包经 Register、
 // 消息厂商包经 RegisterSender、captcha / proxy 实现包经 RegisterVerifier /
 // RegisterProxy 薄封装接入（既有调用面一行不改）；虚拟类型在包内 init() 只
 // 注册 meta（virtual.go），服务型 meta 与 factory 同处实现子包。
@@ -77,7 +77,7 @@ type entry struct {
 // 即报错（唯一入口校验的一部分，§15.3）。
 type Option func(*entry) error
 
-// WithAuth 挂 auth 槽（oauth 渠道适配器工厂）。
+// WithAuth 挂 auth 槽（auth 渠道适配器工厂）。
 func WithAuth(f AuthFactory) Option {
 	return func(e *entry) error {
 		if f == nil {
@@ -124,7 +124,7 @@ var registry = struct {
 	entries map[string]*entry
 }{entries: make(map[string]*entry)}
 
-// register 唯一注册入口（可返回错误版，§15.3）：oauth 渠道包的 Register 与
+// register 唯一注册入口（可返回错误版，§15.3）：auth 渠道包的 Register 与
 // 消息厂商包的 RegisterSender 薄封装转调至此，服务型 / 虚拟类型 init() 直调
 // （只注册 meta，不带 Option）。校验：type 非空且唯一、meta.Type 一致、同一
 // 注册至多挂一种 factory。重复注册 / 空 type / 槽位误配属程序错误，公开封装
@@ -174,7 +174,7 @@ func register(providerType string, meta Meta, opts ...Option) error {
 	return nil
 }
 
-// Register 注册 oauth 渠道（渠道包 init() 既有调用面，§15.3：薄封装转调唯一
+// Register 注册 auth 渠道（渠道包 init() 既有调用面，§15.3：薄封装转调唯一
 // 入口 + WithAuth，渠道包一行不改）。
 func Register(providerType string, meta Meta, factory AuthFactory) {
 	if err := register(providerType, meta, WithAuth(factory)); err != nil {
@@ -216,7 +216,7 @@ func Lookup(providerType string) (Meta, bool) {
 	return e.meta, true
 }
 
-// AdapterTypes 登录方式快照数据源（§15.3）：仅 auth 槽非空的类型（oauth 渠道），
+// AdapterTypes 登录方式快照数据源（§15.3）：仅 auth 槽非空的类型（auth 渠道），
 // 排序快照。消息厂商 / 服务型 / 虚拟类型不进本列表，不得污染登录方式快照。
 func AdapterTypes() []string {
 	registry.mu.RLock()

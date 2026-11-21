@@ -12,15 +12,15 @@ import (
 	"authloft/internal/captcha"
 	"authloft/internal/provider"
 	"authloft/internal/provider/schemafield"
-	// 渠道漏斗（引用键单一来源漂移测试）：oauth 经 SchemaFor、smtp / aliyun_sms
+	// 渠道漏斗（引用键单一来源漂移测试）：auth 经 SchemaFor、smtp / aliyun_sms
 	// 经各自 Schema、captcha 三家经 captchacore.Schema 汇入同一份 ProxyRef 声明；
 	// storage/local、captcha 三家与 proxy/basic 经本包 _ import 触发 init 自注册
 	// （meta 与 factory 同处实现子包，§15.3）。
+	_ "authloft/internal/provider/auth/wechat_mp"
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
-	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
@@ -51,7 +51,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		fieldKeys   []string
 		displayName string
 		wantRef     bool // captcha 类别呈现 proxy_provider_key 引用键
-		wantEnabled bool // is_enabled 仅 oauth 行声明；captcha/proxy/storage 均不下发不消费
+		wantEnabled bool // is_enabled 仅 auth 行声明；captcha/proxy/storage 均不下发不消费
 	}{
 		{provider.CaptchaTypeTurnstile, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Cloudflare Turnstile", true, false},
 		{provider.CaptchaTypeRecaptcha, provider.CategoryCaptcha, []string{"client_id", "client_secret", "endpoint"}, "Google reCAPTCHA", true, false},
@@ -69,7 +69,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		}
 		// Schema = 完整声明形态：基础两列 + Ext + display 四项，is_enabled 与
 		// 引用键按类别 / type 有无（服务型行均不消费 is_enabled，不下发）；
-		// oauth 专属键在各类别均不下发。
+		// auth 专属键在各类别均不下发。
 		extKeys := map[string]bool{}
 		for _, k := range tc.fieldKeys {
 			extKeys[k] = true
@@ -82,7 +82,7 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		for _, k := range tc.fieldKeys {
 			wantKeys[k] = true
 		}
-		oauthOnly := map[string]bool{
+		authOnly := map[string]bool{
 			"union_provider": true, "enable_signin": true, "enable_signup": true,
 			"auto_bind": true, "auto_bind_fields": true,
 		}
@@ -94,8 +94,8 @@ func TestLookupTypeMetaServiceTypes(t *testing.T) {
 		got := map[string]bool{}
 		for _, f := range schema {
 			got[f.Key] = true
-			if oauthOnly[f.Key] {
-				t.Errorf("%q Schema() 不应含 oauth 专属键 %q", tc.typ, f.Key)
+			if authOnly[f.Key] {
+				t.Errorf("%q Schema() 不应含 auth 专属键 %q", tc.typ, f.Key)
 			}
 			if !wantKeys[f.Key] {
 				t.Errorf("%q Schema() 出现意外字段 %q", tc.typ, f.Key)
@@ -182,7 +182,7 @@ func assertProxyRowFields(t *testing.T, schema []provider.FieldMeta) {
 }
 
 // TestProxyRefDeclarationSingleSource 引用键声明单一来源（§5.3：呈现范围由各
-// provider 的 Schema() 是否声明决定）：oauth 全渠道（SchemaFor 漏斗）、smtp、
+// provider 的 Schema() 是否声明决定）：auth 全渠道（SchemaFor 漏斗）、smtp、
 // aliyun_sms、captcha 三家声明的引用键逐字段等于 schemafield.ProxyRef()；
 // union / storage/local / proxy 行自身不声明。
 func TestProxyRefDeclarationSingleSource(t *testing.T) {

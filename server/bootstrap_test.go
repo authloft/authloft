@@ -1460,7 +1460,7 @@ func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
 	}
 	now := time.Now()
 	if _, err := deps.db.NewInsert().Model(&model.Provider{
-		ProviderKey: "wx_test_mp", DisplayName: "Test MP", Category: "oauth",
+		ProviderKey: "wx_test_mp", DisplayName: "Test MP", Category: "auth",
 		Type: "wechat_mp", IsEnabled: 1, Ext: ext, CreatedAt: now, UpdatedAt: now,
 	}).Exec(ctx); err != nil {
 		t.Fatalf("insert provider: %v", err)

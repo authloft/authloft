@@ -153,7 +153,7 @@ func (f *fakeProviderKeys) FindByKey(_ context.Context, providerKey string) (*mo
 	return nil, fmt.Errorf("fake: find provider by key: %w", sql.ErrNoRows)
 }
 
-// existingProviderKeys 多数用例共用的存在 key 集（不提交 oauth_providers 的
+// existingProviderKeys 多数用例共用的存在 key 集（不提交 auth_providers 的
 // 用例不触达存在性查询）。
 var existingProviderKeys = map[string]bool{"wx_mp": true, "github": true}
 
@@ -556,7 +556,7 @@ func TestClientServiceList(t *testing.T) {
 }
 
 // TestClientServiceSsoLoginOptions 应用级登录配置（§5.5）：login_methods
-// 封闭集、oauth_providers key 存在性、default_redirect_uri 白名单命中与
+// 封闭集、auth_providers key 存在性、default_redirect_uri 白名单命中与
 // 列宽防御、has 位整组替换 / 空数组跟随全局、optional 清空、无 has 位回归、
 // default 对合并后白名单校验。
 func TestClientServiceSsoLoginOptions(t *testing.T) {
@@ -588,17 +588,17 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		}
 	})
 
-	t.Run("Create oauth_providers key 存在性", func(t *testing.T) {
+	t.Run("Create auth_providers key 存在性", func(t *testing.T) {
 		store := newFakeClientStore()
 		keys := &fakeProviderKeys{existing: existingProviderKeys}
 		svc := NewClientService(store, keys)
-		if err := svc.CreateSsoClient(ctx, SsoClientInput{OauthProviders: []string{"wx_mp", "github"}}); err != nil {
+		if err := svc.CreateSsoClient(ctx, SsoClientInput{AuthProviders: []string{"wx_mp", "github"}}); err != nil {
 			t.Fatalf("存在的 key 不应拒绝: %v", err)
 		}
 		if len(keys.lookupKeys) != 2 {
 			t.Errorf("应逐 key 查询存在性, got %v", keys.lookupKeys)
 		}
-		err := svc.CreateSsoClient(ctx, SsoClientInput{OauthProviders: []string{"wx_mp", "ghost"}})
+		err := svc.CreateSsoClient(ctx, SsoClientInput{AuthProviders: []string{"wx_mp", "ghost"}})
 		if !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("不存在的 key err = %v, want ErrInvalidRequest", err)
 		}
@@ -637,7 +637,7 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		in := SsoClientInput{
 			RedirectURIs:       []string{"https://*.example.com/cb"},
 			LoginMethods:       []string{"password", "thirdparty"},
-			OauthProviders:     []string{"wx_mp"},
+			AuthProviders:      []string{"wx_mp"},
 			DefaultRedirectURI: "https://app.example.com/cb",
 		}
 		if err := svc.CreateSsoClient(ctx, in); err != nil {
@@ -650,8 +650,8 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		if strings.Join(d.LoginMethods, "|") != "password|thirdparty" {
 			t.Errorf("login_methods round-trip = %v", d.LoginMethods)
 		}
-		if strings.Join(d.OauthProviders, "|") != "wx_mp" {
-			t.Errorf("oauth_providers round-trip = %v", d.OauthProviders)
+		if strings.Join(d.AuthProviders, "|") != "wx_mp" {
+			t.Errorf("auth_providers round-trip = %v", d.AuthProviders)
 		}
 		if d.Row.DefaultRedirectURI != "https://app.example.com/cb" {
 			t.Errorf("default_redirect_uri = %q", d.Row.DefaultRedirectURI)
@@ -662,18 +662,18 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		store := newFakeClientStore()
 		svc := NewClientService(store, &fakeProviderKeys{existing: existingProviderKeys})
 		if err := svc.CreateSsoClient(ctx, SsoClientInput{
-			ClientID:       "portal",
-			RedirectURIs:   []string{"https://*.example.com/cb"},
-			LoginMethods:   []string{"password"},
-			OauthProviders: []string{"wx_mp"},
+			ClientID:      "portal",
+			RedirectURIs:  []string{"https://*.example.com/cb"},
+			LoginMethods:  []string{"password"},
+			AuthProviders: []string{"wx_mp"},
 		}); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasLoginMethods: true, LoginMethods: []string{"otp_sms", "thirdparty"}}); err != nil {
 			t.Fatalf("Update login_methods: %v", err)
 		}
-		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasOauthProviders: true, OauthProviders: []string{"github"}}); err != nil {
-			t.Fatalf("Update oauth_providers: %v", err)
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasAuthProviders: true, AuthProviders: []string{"github"}}); err != nil {
+			t.Fatalf("Update auth_providers: %v", err)
 		}
 		d, err := svc.GetSsoClient(ctx, 1)
 		if err != nil {
@@ -682,8 +682,8 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		if strings.Join(d.LoginMethods, "|") != "otp_sms|thirdparty" {
 			t.Errorf("has=true 应整组替换, got %v", d.LoginMethods)
 		}
-		if strings.Join(d.OauthProviders, "|") != "github" {
-			t.Errorf("has=true 应整组替换, got %v", d.OauthProviders)
+		if strings.Join(d.AuthProviders, "|") != "github" {
+			t.Errorf("has=true 应整组替换, got %v", d.AuthProviders)
 		}
 		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasLoginMethods: true, LoginMethods: nil}); err != nil {
 			t.Fatalf("Update 空数组: %v", err)
@@ -695,15 +695,15 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		if len(d.LoginMethods) != 0 {
 			t.Errorf("has=true 空数组应清空为跟随全局, got %v", d.LoginMethods)
 		}
-		if len(d.OauthProviders) != 1 || d.OauthProviders[0] != "github" {
-			t.Errorf("未提交的 oauth_providers 应保留, got %v", d.OauthProviders)
+		if len(d.AuthProviders) != 1 || d.AuthProviders[0] != "github" {
+			t.Errorf("未提交的 auth_providers 应保留, got %v", d.AuthProviders)
 		}
-		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasOauthProviders: true, OauthProviders: []string{"ghost"}}); !errors.Is(err, ErrInvalidRequest) {
+		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{HasAuthProviders: true, AuthProviders: []string{"ghost"}}); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("不存在的 key err = %v, want ErrInvalidRequest", err)
 		}
 		d, _ = svc.GetSsoClient(ctx, 1)
-		if len(d.OauthProviders) != 1 || d.OauthProviders[0] != "github" {
-			t.Errorf("校验失败不应改库, got %v", d.OauthProviders)
+		if len(d.AuthProviders) != 1 || d.AuthProviders[0] != "github" {
+			t.Errorf("校验失败不应改库, got %v", d.AuthProviders)
 		}
 	})
 
@@ -718,9 +718,9 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 			t.Fatalf("Create: %v", err)
 		}
 		if err := svc.UpdateSsoClient(ctx, 1, SsoClientPatch{
-			Name:           "改名",
-			LoginMethods:   []string{"webauthn"},
-			OauthProviders: []string{"wx_mp"},
+			Name:          "改名",
+			LoginMethods:  []string{"webauthn"},
+			AuthProviders: []string{"wx_mp"},
 		}); err != nil {
 			t.Fatalf("Update: %v", err)
 		}
@@ -731,8 +731,8 @@ func TestClientServiceSsoLoginOptions(t *testing.T) {
 		if strings.Join(d.LoginMethods, "|") != "password" {
 			t.Errorf("无 has 位应保留原值, got %v", d.LoginMethods)
 		}
-		if len(d.OauthProviders) != 0 {
-			t.Errorf("无 has 位应保留原值, got %v", d.OauthProviders)
+		if len(d.AuthProviders) != 0 {
+			t.Errorf("无 has 位应保留原值, got %v", d.AuthProviders)
 		}
 		if d.Row.DefaultRedirectURI != "" {
 			t.Errorf("default 未提交应保留原值, got %q", d.Row.DefaultRedirectURI)

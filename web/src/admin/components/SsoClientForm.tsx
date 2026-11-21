@@ -7,7 +7,7 @@
  * - mode=edit：clientId 只读回显（创建后不可改）+ newSecret 轮换位（留空
  *   保留原密钥）；
  * - 应用级登录配置三字段（§5.5）两模式都渲染：登录方式复选组（封闭集
- *   SSO_LOGIN_METHODS，全不选 = 跟随全局）+ OAuth Provider 多选（选项由
+ *   SSO_LOGIN_METHODS，全不选 = 跟随全局）+ Auth Provider 多选（选项由
  *   页面经 props 注入）+ 默认回跳输入框（须命中回调白名单，匹配校验在
  *   服务端，前端提示不拦截）；非空缺省值 = 跟随全局。
  *
@@ -45,8 +45,8 @@ export interface SsoClientFormProps {
   disabled: boolean;
   /** 登录方式复选组选项（页面由 SSO_LOGIN_METHODS + factors.* 文案构造）。 */
   loginMethodOptions: { value: string; label: string }[];
-  /** OAuth Provider 多选选项（页面经 oauthProviderSelectOptions 过滤 category=oauth）。 */
-  oauthProviderOptions: { label: string; value: string }[];
+  /** Auth Provider 多选选项（页面经 authProviderSelectOptions 过滤 category=auth）。 */
+  authProviderOptions: { label: string; value: string }[];
   /** 模板下拉选项（内置 login + 自定义 + 不指定，api.templateSelectOptions 构造）。 */
   templateOptions: TemplateSelectOption[];
 }
@@ -101,9 +101,7 @@ export function SsoClientForm(props: SsoClientFormProps): ReactNode {
       </div>
       {mode === 'edit' ? (
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>
-            {t('admin.newSecretLabel')}
-          </span>
+          <span className={styles.fieldLabel}>{t('admin.newSecretLabel')}</span>
           <Input
             mode="password"
             value={draft.newSecret}
@@ -160,20 +158,22 @@ export function SsoClientForm(props: SsoClientFormProps): ReactNode {
       </div>
       <div className={styles.field}>
         <span className={styles.fieldLabel}>
-          {t('admin.ssoOauthProvidersLabel')}
+          {t('admin.ssoAuthProvidersLabel')}
         </span>
         <span className={styles.fieldHint}>
-          {t('admin.ssoOauthProvidersHint')}
+          {t('admin.ssoAuthProvidersHint')}
         </span>
         <Select
           multiple
-          value={draft.oauthProviders}
+          value={draft.authProviders}
           onChange={(value) =>
-            patch({ oauthProviders: Array.isArray(value) ? value.map(String) : [] })
+            patch({
+              authProviders: Array.isArray(value) ? value.map(String) : [],
+            })
           }
-          optionList={props.oauthProviderOptions}
-          placeholder={t('admin.ssoOauthProvidersPlaceholder')}
-          aria-label={t('admin.ssoOauthProvidersLabel')}
+          optionList={props.authProviderOptions}
+          placeholder={t('admin.ssoAuthProvidersPlaceholder')}
+          aria-label={t('admin.ssoAuthProvidersLabel')}
           disabled={disabled}
         />
       </div>

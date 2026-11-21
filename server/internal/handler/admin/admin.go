@@ -642,7 +642,7 @@ func (h *Handler) ListSsoClients(ctx context.Context, req *connectrpc.Request[ad
 	}
 	items := make([]*adminv1.SsoClient, len(rows))
 	for i := range rows {
-		items[i] = dto.AdminSsoClient(rows[i].Row, rows[i].RedirectURIs, rows[i].LoginMethods, rows[i].OauthProviders)
+		items[i] = dto.AdminSsoClient(rows[i].Row, rows[i].RedirectURIs, rows[i].LoginMethods, rows[i].AuthProviders)
 	}
 	return connectrpc.NewResponse(&adminv1.SsoClientListResponse{
 		Items:    items,
@@ -660,7 +660,7 @@ func (h *Handler) CreateSsoClient(ctx context.Context, req *connectrpc.Request[a
 		Name:               req.Msg.GetName(),
 		RedirectURIs:       req.Msg.GetRedirectUris(),
 		LoginMethods:       req.Msg.GetLoginMethods(),
-		OauthProviders:     req.Msg.GetOauthProviders(),
+		AuthProviders:      req.Msg.GetAuthProviders(),
 		DefaultRedirectURI: req.Msg.GetDefaultRedirectUri(),
 		TemplateKey:        req.Msg.GetTemplateKey(),
 		TemplateVars:       req.Msg.GetTemplateVars(),
@@ -676,7 +676,7 @@ func (h *Handler) GetSsoClient(ctx context.Context, req *connectrpc.Request[admi
 	if err != nil {
 		return nil, mapWriteError("get sso client", err)
 	}
-	return connectrpc.NewResponse(dto.AdminSsoClient(d.Row, d.RedirectURIs, d.LoginMethods, d.OauthProviders)), nil
+	return connectrpc.NewResponse(dto.AdminSsoClient(d.Row, d.RedirectURIs, d.LoginMethods, d.AuthProviders)), nil
 }
 
 // UpdateSsoClient 缺省键保留原值（PATCH）；client_id 不可改（改 → invalid_request）。
@@ -690,8 +690,8 @@ func (h *Handler) UpdateSsoClient(ctx context.Context, req *connectrpc.Request[a
 		RedirectURIs:       req.Msg.GetRedirectUris(),
 		LoginMethods:       req.Msg.GetLoginMethods(),
 		HasLoginMethods:    req.Msg.GetHasLoginMethods(),
-		OauthProviders:     req.Msg.GetOauthProviders(),
-		HasOauthProviders:  req.Msg.GetHasOauthProviders(),
+		AuthProviders:      req.Msg.GetAuthProviders(),
+		HasAuthProviders:   req.Msg.GetHasAuthProviders(),
 		DefaultRedirectURI: req.Msg.DefaultRedirectUri,
 		TemplateKey:        req.Msg.GetTemplateKey(),
 		TemplateVars:       req.Msg.GetTemplateVars(),

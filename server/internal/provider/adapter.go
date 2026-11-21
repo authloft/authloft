@@ -2,7 +2,7 @@
 // （docs/后端架构.md §3.9、§12.1、§15.3）：
 // 注册表（registry.go）、Provider 加载与缓存（provider.go）、Referer 白名单
 // 来源（whitelist.go）以及适配器公共类型（本文件）。各渠道实现按
-// internal/provider/oauth/<type>/ 分层，init() 自注册。
+// internal/provider/auth/<type>/ 分层，init() 自注册。
 package provider
 
 import "context"

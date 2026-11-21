@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS provider (
   provider_key   VARCHAR(64)  NOT NULL COMMENT '全局唯一标识，逻辑引用使用',
   union_provider VARCHAR(64)  NOT NULL COMMENT 'Union ID 归属 Provider',
   display_name   VARCHAR(128) NOT NULL COMMENT '展示名，如“QQ”“阿里云短信”',
-  category       VARCHAR(32)  NOT NULL COMMENT 'oauth|captcha|sms|email|storage|notify|union',
+  category       VARCHAR(32)  NOT NULL COMMENT 'auth|captcha|sms|email|storage|notify|union',
   type           VARCHAR(64)  NOT NULL COMMENT 'qq|wechat_mp|turnstile|aliyun_sms|s3|local|...',
 
   enable_signin  TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '允许用于登录',
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS sso_client (
   name          VARCHAR(128) NOT NULL DEFAULT '',
   redirect_uris VARBINARY(2048) NOT NULL COMMENT 'client.RedirectUris 的 Protobuf 序列化',
   login_methods VARBINARY(1024) NOT NULL COMMENT 'client.ClientLoginMethods 的 Protobuf 序列化；空 = 跟随全局',
-  oauth_providers VARBINARY(1024) NOT NULL COMMENT 'client.ClientOauthProviders 的 Protobuf 序列化；空 = 跟随全局',
+  auth_providers VARBINARY(1024) NOT NULL COMMENT 'client.ClientAuthProviders 的 Protobuf 序列化；空 = 跟随全局',
   default_redirect_uri VARCHAR(1024) NOT NULL DEFAULT '' COMMENT '登录完成默认回跳地址；空 = 未配置',
   template_key  VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '绑定的自定义模板 key',
   template_vars TEXT         COMMENT '模板变量 JSON',

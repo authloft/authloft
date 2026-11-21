@@ -173,7 +173,7 @@ func makeRow(t *testing.T, key, typ, appID, secret string, enabled int8) *model.
 	return &model.Provider{
 		ProviderKey: key,
 		Type:        typ,
-		Category:    "oauth",
+		Category:    "auth",
 		IsEnabled:   enabled,
 		Ext:         mustExt(t, &providerpb.Ext{AppId: appID, ClientSecret: secret}),
 	}
@@ -391,7 +391,7 @@ func TestRegistryRegisterAndFactory(t *testing.T) {
 	const typ = "test_registry_ok"
 	seen := ""
 	fields := []FieldMeta{{Key: "client_id", Label: "AppID", Type: "text", Section: "credential", Required: true}}
-	meta := Meta{Type: typ, DisplayName: "测试渠道", Category: "oauth", Channel: ChannelAPI, Fields: fields}
+	meta := Meta{Type: typ, DisplayName: "测试渠道", Category: "auth", Channel: ChannelAPI, Fields: fields}
 	if err := register(typ, meta, WithAuth(func(p *Provider) (AuthAdapter, error) {
 		seen = p.Key + ":" + p.Ext.GetAppId()
 		return ChannelAPIAdapter{}, nil
@@ -446,7 +446,7 @@ func TestRegistryUnifiedMultiSlot(t *testing.T) {
 	const senderTyp = "test_multi_slot_sender"
 	const metaOnlyTyp = "test_multi_slot_meta"
 
-	register(authTyp, Meta{Type: authTyp, DisplayName: "渠道", Category: CategoryOAuth, Channel: ChannelRedirect},
+	register(authTyp, Meta{Type: authTyp, DisplayName: "渠道", Category: CategoryAuth, Channel: ChannelRedirect},
 		WithAuth(func(*Provider) (AuthAdapter, error) { return ChannelAPIAdapter{}, nil }))
 	if err := registerSender(senderTyp, SenderMeta{Type: senderTyp, DisplayName: "厂商", Category: CategorySMS},
 		func(*Provider) (Sender, error) { return nil, nil }); err != nil {

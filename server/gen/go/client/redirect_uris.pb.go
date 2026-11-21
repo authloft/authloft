@@ -117,31 +117,31 @@ func (x *ClientLoginMethods) GetMethods() []string {
 	return nil
 }
 
-// ClientOauthProviders 是 SSO 应用可用的 OAuth Provider key 白名单
-// （docs/接口文档.md §12.3、§5.5），对应 sso_client.oauth_providers 列
-// （VARBINARY，《后端架构》§4.4）。thirdparty 为 OAuth Provider 的整体开关，
+// ClientAuthProviders 是 SSO 应用可用的 Auth Provider key 白名单
+// （docs/接口文档.md §12.3、§5.5），对应 sso_client.auth_providers 列
+// （VARBINARY，《后端架构》§4.4）。thirdparty 为 Auth Provider 的整体开关，
 // 明细由本集合控制。空 = 未配置 = 跟随全局。
-type ClientOauthProviders struct {
+type ClientAuthProviders struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Providers     []string               `protobuf:"bytes,1,rep,name=providers,proto3" json:"providers,omitempty"` // OAuth Provider key 白名单
+	Providers     []string               `protobuf:"bytes,1,rep,name=providers,proto3" json:"providers,omitempty"` // Auth Provider key 白名单
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ClientOauthProviders) Reset() {
-	*x = ClientOauthProviders{}
+func (x *ClientAuthProviders) Reset() {
+	*x = ClientAuthProviders{}
 	mi := &file_client_redirect_uris_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ClientOauthProviders) String() string {
+func (x *ClientAuthProviders) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ClientOauthProviders) ProtoMessage() {}
+func (*ClientAuthProviders) ProtoMessage() {}
 
-func (x *ClientOauthProviders) ProtoReflect() protoreflect.Message {
+func (x *ClientAuthProviders) ProtoReflect() protoreflect.Message {
 	mi := &file_client_redirect_uris_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -153,12 +153,12 @@ func (x *ClientOauthProviders) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ClientOauthProviders.ProtoReflect.Descriptor instead.
-func (*ClientOauthProviders) Descriptor() ([]byte, []int) {
+// Deprecated: Use ClientAuthProviders.ProtoReflect.Descriptor instead.
+func (*ClientAuthProviders) Descriptor() ([]byte, []int) {
 	return file_client_redirect_uris_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ClientOauthProviders) GetProviders() []string {
+func (x *ClientAuthProviders) GetProviders() []string {
 	if x != nil {
 		return x.Providers
 	}
@@ -173,8 +173,8 @@ const file_client_redirect_uris_proto_rawDesc = "" +
 	"\x12ClientRedirectUris\x12\x12\n" +
 	"\x04uris\x18\x01 \x03(\tR\x04uris\".\n" +
 	"\x12ClientLoginMethods\x12\x18\n" +
-	"\amethods\x18\x01 \x03(\tR\amethods\"4\n" +
-	"\x14ClientOauthProviders\x12\x1c\n" +
+	"\amethods\x18\x01 \x03(\tR\amethods\"3\n" +
+	"\x13ClientAuthProviders\x12\x1c\n" +
 	"\tproviders\x18\x01 \x03(\tR\tprovidersB\x1fZ\x1dauthloft/gen/go/client;clientb\x06proto3"
 
 var (
@@ -191,9 +191,9 @@ func file_client_redirect_uris_proto_rawDescGZIP() []byte {
 
 var file_client_redirect_uris_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_client_redirect_uris_proto_goTypes = []any{
-	(*ClientRedirectUris)(nil),   // 0: client.ClientRedirectUris
-	(*ClientLoginMethods)(nil),   // 1: client.ClientLoginMethods
-	(*ClientOauthProviders)(nil), // 2: client.ClientOauthProviders
+	(*ClientRedirectUris)(nil),  // 0: client.ClientRedirectUris
+	(*ClientLoginMethods)(nil),  // 1: client.ClientLoginMethods
+	(*ClientAuthProviders)(nil), // 2: client.ClientAuthProviders
 }
 var file_client_redirect_uris_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type

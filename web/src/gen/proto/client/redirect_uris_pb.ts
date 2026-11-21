@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file client/redirect_uris.proto.
  */
 export const file_client_redirect_uris: GenFile = /*@__PURE__*/
-  fileDesc("ChpjbGllbnQvcmVkaXJlY3RfdXJpcy5wcm90bxIGY2xpZW50IiIKEkNsaWVudFJlZGlyZWN0VXJpcxIMCgR1cmlzGAEgAygJIiUKEkNsaWVudExvZ2luTWV0aG9kcxIPCgdtZXRob2RzGAEgAygJIikKFENsaWVudE9hdXRoUHJvdmlkZXJzEhEKCXByb3ZpZGVycxgBIAMoCUIfWh1hdXRobG9mdC9nZW4vZ28vY2xpZW50O2NsaWVudGIGcHJvdG8z");
+  fileDesc("ChpjbGllbnQvcmVkaXJlY3RfdXJpcy5wcm90bxIGY2xpZW50IiIKEkNsaWVudFJlZGlyZWN0VXJpcxIMCgR1cmlzGAEgAygJIiUKEkNsaWVudExvZ2luTWV0aG9kcxIPCgdtZXRob2RzGAEgAygJIigKE0NsaWVudEF1dGhQcm92aWRlcnMSEQoJcHJvdmlkZXJzGAEgAygJQh9aHWF1dGhsb2Z0L2dlbi9nby9jbGllbnQ7Y2xpZW50YgZwcm90bzM");
 
 /**
  * ClientRedirectUris 是客户端回调白名单（docs/接口文档.md §12.3），
@@ -61,16 +61,16 @@ export const ClientLoginMethodsSchema: GenMessage<ClientLoginMethods> = /*@__PUR
   messageDesc(file_client_redirect_uris, 1);
 
 /**
- * ClientOauthProviders 是 SSO 应用可用的 OAuth Provider key 白名单
- * （docs/接口文档.md §12.3、§5.5），对应 sso_client.oauth_providers 列
- * （VARBINARY，《后端架构》§4.4）。thirdparty 为 OAuth Provider 的整体开关，
+ * ClientAuthProviders 是 SSO 应用可用的 Auth Provider key 白名单
+ * （docs/接口文档.md §12.3、§5.5），对应 sso_client.auth_providers 列
+ * （VARBINARY，《后端架构》§4.4）。thirdparty 为 Auth Provider 的整体开关，
  * 明细由本集合控制。空 = 未配置 = 跟随全局。
  *
- * @generated from message client.ClientOauthProviders
+ * @generated from message client.ClientAuthProviders
  */
-export type ClientOauthProviders = Message<"client.ClientOauthProviders"> & {
+export type ClientAuthProviders = Message<"client.ClientAuthProviders"> & {
   /**
-   * OAuth Provider key 白名单
+   * Auth Provider key 白名单
    *
    * @generated from field: repeated string providers = 1;
    */
@@ -78,9 +78,9 @@ export type ClientOauthProviders = Message<"client.ClientOauthProviders"> & {
 };
 
 /**
- * Describes the message client.ClientOauthProviders.
- * Use `create(ClientOauthProvidersSchema)` to create a new message.
+ * Describes the message client.ClientAuthProviders.
+ * Use `create(ClientAuthProvidersSchema)` to create a new message.
  */
-export const ClientOauthProvidersSchema: GenMessage<ClientOauthProviders> = /*@__PURE__*/
+export const ClientAuthProvidersSchema: GenMessage<ClientAuthProviders> = /*@__PURE__*/
   messageDesc(file_client_redirect_uris, 2);
 

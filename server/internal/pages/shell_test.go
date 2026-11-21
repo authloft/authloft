@@ -142,7 +142,7 @@ func provRow(key, typ string, enabled bool, signin int8, sort int32) *provider.P
 		Row: &model.Provider{
 			ProviderKey:  key,
 			DisplayName:  key + "显示名",
-			Category:     "oauth",
+			Category:     "auth",
 			Type:         typ,
 			EnableSignin: signin,
 			IsEnabled:    isEnabled,
@@ -224,10 +224,10 @@ func newFixture(t *testing.T) *fixture {
 		Audit:      audit,
 		Metas: func() []provider.Meta {
 			return []provider.Meta{
-				{Type: "qq", Category: "oauth", Channel: provider.ChannelRedirect},
-				{Type: "wechat_mp", Category: "oauth", Channel: provider.ChannelAPI},
-				{Type: "wechat_mp_scan", Category: "oauth", Channel: provider.ChannelQRCode},
-				{Type: "smtp", Category: "email"}, // 非 oauth：枚举后必须被跳过
+				{Type: "qq", Category: "auth", Channel: provider.ChannelRedirect},
+				{Type: "wechat_mp", Category: "auth", Channel: provider.ChannelAPI},
+				{Type: "wechat_mp_scan", Category: "auth", Channel: provider.ChannelQRCode},
+				{Type: "smtp", Category: "email"}, // 非 auth：枚举后必须被跳过
 			}
 		},
 	}

@@ -73,7 +73,7 @@ func TestCatalogCurrentDegradation(t *testing.T) {
 		{"查不到该 key 的行", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, nil},
 		{"category 不是 captcha", mapKeys{settings.KeyCaptchaProviderKey: "cf_turnstile"}, map[string]*provider.Provider{
 			"cf_turnstile": {Key: "cf_turnstile", Type: TypeTurnstile, Row: &model.Provider{
-				ProviderKey: "cf_turnstile", Category: "oauth", Type: TypeTurnstile, IsEnabled: 1,
+				ProviderKey: "cf_turnstile", Category: "auth", Type: TypeTurnstile, IsEnabled: 1,
 			}},
 		}},
 	}

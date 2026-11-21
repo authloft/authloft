@@ -180,7 +180,7 @@ export const admin: typeof zhAdmin = {
 
   // ---- schema field copy (i18n keys sent by GetProviderSchema as label / help) ----
   // The server sends keys only; the same Ext field may have a different label per
-  // provider (e.g. client_id: clientIdLabel for OAuth, aliyunAccessKeyIdLabel for
+  // provider (e.g. client_id: clientIdLabel for Auth, aliyunAccessKeyIdLabel for
   // Aliyun SMS), so keys are named by meaning rather than derived from field.key.
   // Table-column baselines (dto/admin.go).
   'admin.schemaField.providerKeyLabel': 'Key',
@@ -228,7 +228,7 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.proxyProviderKeyLabel': 'Outbound proxy',
   'admin.schemaField.proxyProviderKeyHelp': 'Leave empty for direct connection',
 
-  // OAuth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
+  // Auth Ext field baselines (oauthcore.NewMeta / wechat_mp / wechat_mp_scan).
   'admin.schemaField.clientIdLabel': 'App ID',
   'admin.schemaField.clientSecretLabel': 'App Secret',
   'admin.schemaField.appIdLabel': 'Mini Program App ID',
@@ -438,11 +438,11 @@ export const admin: typeof zhAdmin = {
     'Controls which sign-in methods this app allows; leave all unchecked to follow the global configuration',
   'admin.ssoMfaRiskHint':
     'Warning: some MFA-capable factors (SMS / email code / passkey) are disabled; users bound only to those factors cannot sign in to this app',
-  'admin.ssoOauthProvidersLabel': 'OAuth providers',
-  'admin.ssoOauthProvidersHint':
+  'admin.ssoAuthProvidersLabel': 'Auth providers',
+  'admin.ssoAuthProvidersHint':
     'Fine-grained allowlist for third-party sign-in; leave all unchecked to follow the global configuration',
-  'admin.ssoOauthProvidersPlaceholder':
-    'Select OAuth providers allowed for this app',
+  'admin.ssoAuthProvidersPlaceholder':
+    'Select Auth providers allowed for this app',
   'admin.ssoDefaultRedirectUriLabel': 'Default redirect URI',
   'admin.ssoDefaultRedirectUriPlaceholder':
     'https://example.com/callback (must be in the redirect allowlist)',
@@ -690,10 +690,10 @@ export const admin: typeof zhAdmin = {
   // type=proxy display name (§5.3 proxy provider and outbound proxy reference
   // convention).
   'admin.providerType.proxy': 'Outbound proxy',
-  // category display names; key set = backend Category* constants (oauth |
+  // category display names; key set = backend Category* constants (auth |
   // union | sms | email | captcha | storage | proxy); missing keys fall back
   // to the wire value on the page.
-  'admin.providerCategory.oauth': 'OAuth authorization',
+  'admin.providerCategory.auth': 'Auth provider',
   'admin.providerCategory.union': 'Union ID merging',
   'admin.providerCategory.sms': 'SMS service',
   'admin.providerCategory.email': 'Email service',

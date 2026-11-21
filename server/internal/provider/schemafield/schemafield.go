@@ -104,7 +104,7 @@ func ProxyRef() provider.FieldMeta {
 }
 
 // Metadata 各 Ext 通用尾字段 metadata（json/advanced）；section 为空按 basic。
-// 各域 section 不同（oauth=basic、smtp/短信=credential），由调用方传参或就地改写。
+// 各域 section 不同（auth=basic、smtp/短信=credential），由调用方传参或就地改写。
 func Metadata(section string) provider.FieldMeta {
 	if section == "" {
 		section = "basic"

@@ -141,7 +141,7 @@ func TestProviderRepoCRUD(t *testing.T) {
 		ProviderKey:   "qq_test",
 		UnionProvider: "tencent_union",
 		DisplayName:   "QQ 登录",
-		Category:      "oauth",
+		Category:      "auth",
 		Type:          "qq",
 		IconURL:       "https://cdn.example.com/qq.png",
 		Remark:        "测试渠道",
@@ -162,7 +162,7 @@ func TestProviderRepoCRUD(t *testing.T) {
 		t.Fatalf("FindByKey 失败: %v", err)
 	}
 	if got.ID != p.ID || got.UnionProvider != "tencent_union" ||
-		got.DisplayName != "QQ 登录" || got.Category != "oauth" ||
+		got.DisplayName != "QQ 登录" || got.Category != "auth" ||
 		got.Type != "qq" || got.IconURL != "https://cdn.example.com/qq.png" {
 		t.Errorf("FindByKey 字段不一致: %+v", got)
 	}
@@ -194,7 +194,7 @@ func TestProviderRepoCRUD(t *testing.T) {
 	// uk_provider_key 冲突：同 key 再建 → ErrProviderDuplicate，不入库。
 	if err := rp.Create(ctx, &model.Provider{
 		ProviderKey: "qq_test", UnionProvider: "", DisplayName: "重复",
-		Category: "oauth", Type: "qq",
+		Category: "auth", Type: "qq",
 	}); !errors.Is(err, ErrProviderDuplicate) {
 		t.Errorf("同 provider_key 冲突应 ErrProviderDuplicate, got %v", err)
 	}
@@ -233,7 +233,7 @@ func TestProviderRepoCRUD(t *testing.T) {
 	// Update 不存在的行（传完整行口径：带合法时间，避免零值 DATETIME
 	// 在 strict mode 下先行报错掩盖 not found 语义）。
 	ghostAt := time.Now().Truncate(time.Second)
-	ghost := &model.Provider{ID: 404, ProviderKey: "ghost", UnionProvider: "", DisplayName: "ghost", Category: "oauth", Type: "qq", CreatedAt: ghostAt, UpdatedAt: ghostAt}
+	ghost := &model.Provider{ID: 404, ProviderKey: "ghost", UnionProvider: "", DisplayName: "ghost", Category: "auth", Type: "qq", CreatedAt: ghostAt, UpdatedAt: ghostAt}
 	if err := rp.Update(ctx, ghost); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("Update 不存在的行应 ErrRecordNotFound, got %v", err)
 	}
@@ -258,7 +258,7 @@ func TestProviderRepoColumnUpdates(t *testing.T) {
 	ctx := context.Background()
 
 	seed := []model.Provider{
-		{ProviderKey: "wx", UnionProvider: "", DisplayName: "微信", Category: "oauth", Type: "wechat_mp", SortOrder: 10, IsEnabled: 1},
+		{ProviderKey: "wx", UnionProvider: "", DisplayName: "微信", Category: "auth", Type: "wechat_mp", SortOrder: 10, IsEnabled: 1},
 		{ProviderKey: "smtp", UnionProvider: "", DisplayName: "SMTP", Category: "email", Type: "smtp", SortOrder: 20, IsEnabled: 1},
 	}
 	for i := range seed {
@@ -341,11 +341,11 @@ func TestProviderRepoList(t *testing.T) {
 	rp, _ := providerTestSetup(t)
 	ctx := context.Background()
 
-	// 5 行：2 个 oauth、1 个 captcha、1 个 sms、1 个 email；sort_order
+	// 5 行：2 个 auth、1 个 captcha、1 个 sms、1 个 email；sort_order
 	// 交错验证排序，id 递增保证同 sort_order 内次序稳定。
 	seed := []model.Provider{
-		{ProviderKey: "qq", UnionProvider: "tencent", DisplayName: "QQ", Category: "oauth", Type: "qq", SortOrder: 30},
-		{ProviderKey: "wechat_mp_1", UnionProvider: "wechat", DisplayName: "小程序 1", Category: "oauth", Type: "wechat_mp", SortOrder: 10},
+		{ProviderKey: "qq", UnionProvider: "tencent", DisplayName: "QQ", Category: "auth", Type: "qq", SortOrder: 30},
+		{ProviderKey: "wechat_mp_1", UnionProvider: "wechat", DisplayName: "小程序 1", Category: "auth", Type: "wechat_mp", SortOrder: 10},
 		{ProviderKey: "turnstile", UnionProvider: "", DisplayName: "Turnstile", Category: "captcha", Type: "turnstile", SortOrder: 20},
 		{ProviderKey: "aliyun_sms", UnionProvider: "", DisplayName: "阿里云短信", Category: "sms", Type: "aliyun_sms", SortOrder: 40},
 		{ProviderKey: "smtp", UnionProvider: "", DisplayName: "SMTP", Category: "email", Type: "smtp", SortOrder: 10},
@@ -383,14 +383,14 @@ func TestProviderRepoList(t *testing.T) {
 		t.Errorf("PageSize=150 应 clamp 100 不报错: %v", err)
 	}
 
-	// category 过滤（oauth 2 行：qq、wechat_mp_1）。
-	oauth := "oauth"
-	if rows, total, err = rp.ListProviders(ctx, ProviderListQuery{Category: &oauth}); err != nil ||
+	// category 过滤（auth 2 行：qq、wechat_mp_1）。
+	auth := "auth"
+	if rows, total, err = rp.ListProviders(ctx, ProviderListQuery{Category: &auth}); err != nil ||
 		total != 2 || len(rows) != 2 {
-		t.Fatalf("category=oauth: %d 行 total=%d err=%v; want 2/2", len(rows), total, err)
+		t.Fatalf("category=auth: %d 行 total=%d err=%v; want 2/2", len(rows), total, err)
 	}
 	for _, r := range rows {
-		if r.Category != "oauth" {
+		if r.Category != "auth" {
 			t.Errorf("category 过滤泄漏: %+v", r)
 		}
 	}
@@ -414,7 +414,7 @@ func TestProviderRepoList(t *testing.T) {
 		t.Errorf("is_enabled=0: total=%d err=%v; want 1", total, err)
 	}
 	one := int8(1)
-	if _, total, err = rp.ListProviders(ctx, ProviderListQuery{Category: &oauth, IsEnabled: &one}); err != nil || total != 1 {
-		t.Errorf("category=oauth 且 is_enabled=1: total=%d err=%v; want 1（qq 已禁用）", total, err)
+	if _, total, err = rp.ListProviders(ctx, ProviderListQuery{Category: &auth, IsEnabled: &one}); err != nil || total != 1 {
+		t.Errorf("category=auth 且 is_enabled=1: total=%d err=%v; want 1（qq 已禁用）", total, err)
 	}
 }

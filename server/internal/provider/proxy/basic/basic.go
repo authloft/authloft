@@ -19,7 +19,7 @@ const Type = provider.ProxyType
 
 // init 注册进统一注册表（§15.3）：Schema 是 /schema 的唯一数据源（表列 +
 // 五真实 Ext 字段，接口文档 §5.3）；proxy 行不声明引用键（不自引）、无
-// oauth 登录建号开关。
+// auth 登录建号开关。
 func init() {
 	provider.RegisterProxy(Type, provider.Meta{
 		DisplayName: "基础代理",
@@ -32,7 +32,7 @@ func init() {
 // 代理提供商与出站代理引用约定）：scheme 封闭集 socks5/http/https、host 禁
 // 空白与 /?#@[]、port 1..65535 且必填（required 经 Create 的 number-aware
 // 缺省判定生效）、user / password 可选且 password 须伴随 user；五行
-// section=endpoint。is_enabled / 登录建号开关是 oauth 专属：proxy 行不声明
+// section=endpoint。is_enabled / 登录建号开关是 auth 专属：proxy 行不声明
 // 也不消费（被引行解析只看行命中 / 类别 / 组合校验，provider/outbound.go）。
 // 字段组合合法性单一来源在 proxyclient.NewConfig（保存期 CreateProvider /
 // UpdateProvider 与运行期 factory 两处同一函数），本声明只管表单呈现。

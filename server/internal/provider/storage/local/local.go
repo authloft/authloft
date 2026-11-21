@@ -41,7 +41,7 @@ var ErrPresignNotSupported = errors.New("storage: local: presign not supported")
 // init 注册进统一注册表（§15.3）：meta 的 Schema 是 /schema 的唯一数据源
 // （表列 + Ext，接口文档 §5.3），自 servicetype.go 原样平移，声明形态与
 // 工厂化前逐字段一致；local 仅本地磁盘、无网络外呼，不声明引用键（§5.3
-// 类别裁剪），oauth 专属的登录建号开关亦不出现。
+// 类别裁剪），auth 专属的登录建号开关亦不出现。
 func init() {
 	provider.RegisterStorage(Type, provider.Meta{
 		DisplayName: "本地存储",

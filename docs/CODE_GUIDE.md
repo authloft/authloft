@@ -27,7 +27,7 @@
 - **HTTP 框架** `github.com/labstack/echo/v5`（框架级依赖，经批准引入；pin 最新 v5 稳定版——2026-11-19 核实为 **v5.4.6**，实现时以 `go get` 实际 pin 为准）。选型理由：v5.0.0 于 2026-01-18 发布、2026-03-31 起 API 冻结，零分配路由、内置常用中间件、日志对接标准库 `log/slog`。可替换性：框架只隔离在装配层与 `internal/middleware` / `internal/handler` / `internal/pages`，service 及以下不感知框架类型，替换实现只动装配层与上述边界包（《后端架构》§1.5 同口径）；v5 相对 v4 的破坏性 API 约束见《后端架构》§1.5，实现侧逐条遵守。升级按 §2.2 跑全量回归。
 - `connectrpc.com/connect` 锁 **v1.21.1**（v2 才发布且 API 重构，不用）；生成链同构锁版本。
 - **WebAuthn 服务端校验** `github.com/go-webauthn/webauthn`（白名单外依赖，经批准引入）。选型理由：Go 生态主流 WebAuthn 实现，覆盖 W3C WebAuthn L2 注册与断言校验（attestation、challenge、origin/rpId、credential 公钥），维护活跃。可替换性：仅 `internal/factor/webauthn` 适配层引用，service / factor 接口不暴露该库类型，替换实现只改适配层。版本策略：由实现时联网核实最新稳定版后 pin 进 `server/go.mod`。
-- **微信小程序服务端 SDK** `github.com/medivhzhan/weapp/v3`（pin **v3.8.4**；module path 沿用旧名，仓库现名 `royalrick/weapp`；Apache-2.0）。选型理由：小程序专用、仅 2 个直接依赖（`fatih/color`、`mitchellh/mapstructure`）、覆盖 `Code2Session` 与 `GetwxacodeUnlimit`、与项目既有依赖零冲突。可替换性：唯一引用包为 `internal/provider/oauth/wechat_mp*`，service / orchestrator 不暴露其类型。风险：仓库维护停滞（最后 push 2025-07-04）；所依赖两个接口均为微信多年稳定老接口且已做包级隔离可替换。备选：`github.com/silenceper/wechat/v2`（维护活跃但全生态偏重）。
+- **微信小程序服务端 SDK** `github.com/medivhzhan/weapp/v3`（pin **v3.8.4**；module path 沿用旧名，仓库现名 `royalrick/weapp`；Apache-2.0）。选型理由：小程序专用、仅 2 个直接依赖（`fatih/color`、`mitchellh/mapstructure`）、覆盖 `Code2Session` 与 `GetwxacodeUnlimit`、与项目既有依赖零冲突。可替换性：唯一引用包为 `internal/provider/auth/wechat_mp*`，service / orchestrator 不暴露其类型。风险：仓库维护停滞（最后 push 2025-07-04）；所依赖两个接口均为微信多年稳定老接口且已做包级隔离可替换。备选：`github.com/silenceper/wechat/v2`（维护活跃但全生态偏重）。
 - **JSONata 求值** `github.com/recolabs/gnata`（pin **v0.6.2**；module path 按库 go.mod 声明为小写 `recolabs`）。口径：**JSONata 求值统一使用 gnata，不自行实现**——不自行编写表达式解析 / 求值器，不再评估其他库或做自研对照。可替换性：唯一依赖点为 `internal/jsonata` 封装层（单一内部入口），service / handler 不直接 import 该库；求值失败在封装层归一为所在域既有错误码（《接口文档》§5.3 表达式字段约定），不向 API 调用方透出库原始错误；gnata 不支持的语法在封装层如实记录不支持清单，不以自研补齐。版本策略：0.x 阶段库 API 可能调整，升级版本须重跑 `internal/jsonata` 测试基线（§5.1）后另行处理。
 - **Provider 出站代理（SOCKS5 拨号）** `golang.org/x/net`（pin **v0.58.0**；子包 `golang.org/x/net/proxy`；由 `server/go.mod` 既有 `// indirect` 转直接依赖）。选型理由：`http` / `https` 代理由标准库 `net/http.ProxyURL` 承担，仅 `socks5` 需 `SOCKS5` / `FromURL` + `ContextDialer`（→ `http.Transport.DialContext`）与可复用的 `Dialer`（SMTP），二者按 scheme 分流（《后端架构》§15.4），除该子包外无新增依赖、无新运行时服务。可替换性：唯一直接依赖点为代理封装包 `internal/proxyclient`，各适配器 / Sender / service / handler 不直接 import 该库、不暴露其类型，替换实现只改封装层（同 gnata / weapp 口径）。版本策略：由 indirect 转直接后 pin v0.58.0，`go.sum` 若变动一并提交，禁 `go get -u`；升级按 §2.2 跑 `go build ./...` / `go vet ./...` / `go test ./...` 全量回归，不顺带抬升其他依赖。
 - **ORM** `github.com/uptrace/bun` + 方言 / 驱动子包 `github.com/uptrace/bun/dialect/mysqldialect`、`github.com/uptrace/bun/dialect/pgdialect`、`github.com/uptrace/bun/driver/pgdriver`（pin **v1.3.0**；各 module 版本必须一致，mysqldialect 在 init 时校验）。选型理由：bun 构建于 `database/sql` 之上、无独立 driver 抽象，MySQL 侧复用迁移链既有 `github.com/go-sql-driver/mysql`、PG 侧用 pgdriver，goose 手写 SQL 迁移口径与「禁 AutoMigrate」约束不变（迁移文件按方言分目录）；替换 GORM v1.31.2 的动因（迁移口径）：GORM 的 schema 反射初始化在模型解析时按钩子名调用 `MethodByName`，迫使 Go 1.26 关闭全局方法级死代码消除，无关机器码膨胀。可替换性：bun 仅在 `internal/repo` 装配与读写层出现（`db.go` 用 `bun.NewDB` 装配），service 只消费 repo 接口与 `repo/model` 结构体、不直接 import bun 包类型。版本策略：实现时联网核实最新稳定版后 pin 进 `server/go.mod`；升级按 §2.2 跑全量回归。模型 tag 与零值 / affected rows 语义口径见 §3.5。
@@ -89,7 +89,7 @@
 
 | 新增内容                   | 改动                                                                                                | 不改动                                                                                          |
 | -------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 一个第三方渠道             | `internal/provider/oauth/<type>/` 新包（`init()` 自注册 `WithAuth`，`Schema()` 声明完整字段清单）   | handler、service、前端均不改；schema 字段增改只动 provider 的 `Schema()` / `schemafield` 构造器 |
+| 一个第三方渠道             | `internal/provider/auth/<type>/` 新包（`init()` 自注册 `WithAuth`，`Schema()` 声明完整字段清单）    | handler、service、前端均不改；schema 字段增改只动 provider 的 `Schema()` / `schemafield` 构造器 |
 | 一个短信 / 邮件 / 存储厂商 | 对应域 `provider/<域>/<type>/` 新包（`init()` 自注册 `WithSender` / `WithStorage`，后端架构 §15.3） | 同上                                                                                            |
 | 一个 captcha 厂商          | `internal/provider/captcha/<type>/` 新包（`init()` 自注册 Verifier factory）+ 前端一个 adapter      | 后端其余不改；自绘图形码不入 factory（gate 内置，后端架构 §9.1），仍必须带 `provider_key`       |
 | 一个认证因子               | `internal/factor/<name>/` 新包 + 一行注册 + 前端一个组件                                            | 引擎不改                                                                                        |
@@ -270,7 +270,7 @@
 | Mock     | 优先手写 Fake（`test/fakes/`），仅在接口宽时用 `gomock`                                      |
 | Redis    | **真连 Redis**（ENV.md test 实例），Lua 脚本走同一接口实测；**不引入 miniredis**             |
 | DB       | 集成测试**真连 MariaDB**（ENV.md test 实例，避免方言差异）；不 mock SQL 层                   |
-| HTTP     | `net/http/httptest` + 真实 Echo / Connect 路由（含中间件），不 mock 框架                      |
+| HTTP     | `net/http/httptest` + 真实 Echo / Connect 路由（含中间件），不 mock 框架                     |
 | 外部服务 | `httptest` 起假第三方（OIDC discovery / token / userinfo / sitesVerify）；小程序用假微信接口 |
 | 并发     | `go test -race`，配合 `-count=N`                                                             |
 
@@ -313,7 +313,7 @@ B. Fake / Mock 层
 | 对象                                   | 用例                                                                                                             |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `provider/captcha/*`                   | 用假 sitesVerify 服务：成功、失败、超时、重复 token                                                              |
-| `provider/oauth/*`                     | 用假 OIDC 服务跑通 discovery→exchange→userinfo；`oauth2` 兜底适配器用假三 URL；`user_mapping` 抽取正确           |
+| `provider/auth/*`                      | 用假 OIDC 服务跑通 discovery→exchange→userinfo；`oauth2` 兜底适配器用假三 URL；`user_mapping` 抽取正确           |
 | `provider/storage/local`               | Put/Get/Delete/URL/PresignPut；`local` 配置 `direct` 时自动回退 `proxy`                                          |
 | `provider/sms/*` 与 `provider/email/*` | 参数渲染正确；发送失败不回滚验证码                                                                               |
 | `factor/*`                             | 每个因子用 Fake repo+cache 跑：`Steps()` 序列与《接口文档》§1.10 一致；`Start`/`Verify` 的成功 / 失败 / 重试三态 |

@@ -50,10 +50,10 @@ type SsoClient struct {
 	TemplateVars string `protobuf:"bytes,9,opt,name=template_vars,json=templateVars,proto3" json:"template_vars,omitempty"`
 	// 该应用可用的登录方式（§5.5「SSO 应用级登录配置」）：封闭集
 	// password | otp_sms | otp_email | webauthn | thirdparty；thirdparty 是
-	// OAuth Provider 的整体开关，明细由 oauth_providers 控制。空 = 跟随全局。
+	// Auth Provider 的整体开关，明细由 auth_providers 控制。空 = 跟随全局。
 	LoginMethods []string `protobuf:"bytes,10,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
-	// 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-	OauthProviders []string `protobuf:"bytes,11,rep,name=oauth_providers,json=oauthProviders,proto3" json:"oauth_providers,omitempty"`
+	// 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+	AuthProviders []string `protobuf:"bytes,11,rep,name=auth_providers,json=authProviders,proto3" json:"auth_providers,omitempty"`
 	// 登录完成且未传回跳地址（无 returnTo、无 OIDC 上下文）时的默认回跳地址
 	// （§5.5）；空 = 未配置，维持默认落点。
 	DefaultRedirectUri string `protobuf:"bytes,12,opt,name=default_redirect_uri,json=defaultRedirectUri,proto3" json:"default_redirect_uri,omitempty"`
@@ -161,9 +161,9 @@ func (x *SsoClient) GetLoginMethods() []string {
 	return nil
 }
 
-func (x *SsoClient) GetOauthProviders() []string {
+func (x *SsoClient) GetAuthProviders() []string {
 	if x != nil {
-		return x.OauthProviders
+		return x.AuthProviders
 	}
 	return nil
 }
@@ -346,18 +346,18 @@ type CreateSsoClientRequest struct {
 	// 该应用可用的登录方式（§5.5）：封闭集 password | otp_sms | otp_email |
 	// webauthn | thirdparty；空 = 未配置 = 跟随全局。
 	LoginMethods []string `protobuf:"bytes,7,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
-	// 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-	OauthProviders []string `protobuf:"bytes,8,rep,name=oauth_providers,json=oauthProviders,proto3" json:"oauth_providers,omitempty"`
+	// 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+	AuthProviders []string `protobuf:"bytes,8,rep,name=auth_providers,json=authProviders,proto3" json:"auth_providers,omitempty"`
 	// 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
 	// has 位 true 且空串 = 清空为跟随现状，非空 = 覆盖，缺省 = 不动（§5.5）。
 	DefaultRedirectUri *string `protobuf:"bytes,9,opt,name=default_redirect_uri,json=defaultRedirectUri,proto3,oneof" json:"default_redirect_uri,omitempty"`
 	// login_methods 的伴生标志（§5.5 PATCH 语义，先例同 §5.6 settings 写入口径）：
 	// true = 整组替换（空数组 = 清空为跟随全局），缺省 = 不动。
 	HasLoginMethods *bool `protobuf:"varint,10,opt,name=has_login_methods,json=hasLoginMethods,proto3,oneof" json:"has_login_methods,omitempty"`
-	// oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
-	HasOauthProviders *bool `protobuf:"varint,11,opt,name=has_oauth_providers,json=hasOauthProviders,proto3,oneof" json:"has_oauth_providers,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+	HasAuthProviders *bool `protobuf:"varint,11,opt,name=has_auth_providers,json=hasAuthProviders,proto3,oneof" json:"has_auth_providers,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CreateSsoClientRequest) Reset() {
@@ -439,9 +439,9 @@ func (x *CreateSsoClientRequest) GetLoginMethods() []string {
 	return nil
 }
 
-func (x *CreateSsoClientRequest) GetOauthProviders() []string {
+func (x *CreateSsoClientRequest) GetAuthProviders() []string {
 	if x != nil {
-		return x.OauthProviders
+		return x.AuthProviders
 	}
 	return nil
 }
@@ -460,9 +460,9 @@ func (x *CreateSsoClientRequest) GetHasLoginMethods() bool {
 	return false
 }
 
-func (x *CreateSsoClientRequest) GetHasOauthProviders() bool {
-	if x != nil && x.HasOauthProviders != nil {
-		return *x.HasOauthProviders
+func (x *CreateSsoClientRequest) GetHasAuthProviders() bool {
+	if x != nil && x.HasAuthProviders != nil {
+		return *x.HasAuthProviders
 	}
 	return false
 }
@@ -536,18 +536,18 @@ type UpdateSsoClientRequest struct {
 	// 该应用可用的登录方式（§5.5）：封闭集 password | otp_sms | otp_email |
 	// webauthn | thirdparty；空 = 未配置 = 跟随全局。
 	LoginMethods []string `protobuf:"bytes,8,rep,name=login_methods,json=loginMethods,proto3" json:"login_methods,omitempty"`
-	// 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-	OauthProviders []string `protobuf:"bytes,9,rep,name=oauth_providers,json=oauthProviders,proto3" json:"oauth_providers,omitempty"`
+	// 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+	AuthProviders []string `protobuf:"bytes,9,rep,name=auth_providers,json=authProviders,proto3" json:"auth_providers,omitempty"`
 	// 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
 	// has 位 true 且空串 = 清空为跟随现状，非空 = 覆盖，缺省 = 不动（§5.5）。
 	DefaultRedirectUri *string `protobuf:"bytes,10,opt,name=default_redirect_uri,json=defaultRedirectUri,proto3,oneof" json:"default_redirect_uri,omitempty"`
 	// login_methods 的伴生标志（§5.5 PATCH 语义，先例同 §5.6 settings 写入口径）：
 	// true = 整组替换（空数组 = 清空为跟随全局），缺省 = 不动。
 	HasLoginMethods *bool `protobuf:"varint,11,opt,name=has_login_methods,json=hasLoginMethods,proto3,oneof" json:"has_login_methods,omitempty"`
-	// oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
-	HasOauthProviders *bool `protobuf:"varint,12,opt,name=has_oauth_providers,json=hasOauthProviders,proto3,oneof" json:"has_oauth_providers,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+	HasAuthProviders *bool `protobuf:"varint,12,opt,name=has_auth_providers,json=hasAuthProviders,proto3,oneof" json:"has_auth_providers,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateSsoClientRequest) Reset() {
@@ -636,9 +636,9 @@ func (x *UpdateSsoClientRequest) GetLoginMethods() []string {
 	return nil
 }
 
-func (x *UpdateSsoClientRequest) GetOauthProviders() []string {
+func (x *UpdateSsoClientRequest) GetAuthProviders() []string {
 	if x != nil {
-		return x.OauthProviders
+		return x.AuthProviders
 	}
 	return nil
 }
@@ -657,9 +657,9 @@ func (x *UpdateSsoClientRequest) GetHasLoginMethods() bool {
 	return false
 }
 
-func (x *UpdateSsoClientRequest) GetHasOauthProviders() bool {
-	if x != nil && x.HasOauthProviders != nil {
-		return *x.HasOauthProviders
+func (x *UpdateSsoClientRequest) GetHasAuthProviders() bool {
+	if x != nil && x.HasAuthProviders != nil {
+		return *x.HasAuthProviders
 	}
 	return false
 }
@@ -1355,7 +1355,7 @@ var File_api_admin_v1_client_proto protoreflect.FileDescriptor
 
 const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/admin/v1/client.proto\x12\fapi.admin.v1\"\x9c\x03\n" +
+	"\x19api/admin/v1/client.proto\x12\fapi.admin.v1\"\x9a\x03\n" +
 	"\tSsoClient\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12#\n" +
@@ -1369,8 +1369,8 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\ftemplate_key\x18\b \x01(\tR\vtemplateKey\x12#\n" +
 	"\rtemplate_vars\x18\t \x01(\tR\ftemplateVars\x12#\n" +
 	"\rlogin_methods\x18\n" +
-	" \x03(\tR\floginMethods\x12'\n" +
-	"\x0foauth_providers\x18\v \x03(\tR\x0eoauthProviders\x120\n" +
+	" \x03(\tR\floginMethods\x12%\n" +
+	"\x0eauth_providers\x18\v \x03(\tR\rauthProviders\x120\n" +
 	"\x14default_redirect_uri\x18\f \x01(\tR\x12defaultRedirectUri\"\xb0\x01\n" +
 	"\x15ListSsoClientsRequest\x12\x17\n" +
 	"\x04page\x18\x01 \x01(\x03H\x00R\x04page\x88\x01\x01\x12 \n" +
@@ -1386,7 +1386,7 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\x05items\x18\x01 \x03(\v2\x17.api.admin.v1.SsoClientR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\x12\x12\n" +
 	"\x04page\x18\x03 \x01(\x03R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\x8d\x04\n" +
+	"\tpage_size\x18\x04 \x01(\x03R\bpageSize\"\x88\x04\n" +
 	"\x16CreateSsoClientRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x12\n" +
@@ -1394,17 +1394,17 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\rredirect_uris\x18\x04 \x03(\tR\fredirectUris\x12!\n" +
 	"\ftemplate_key\x18\x05 \x01(\tR\vtemplateKey\x12#\n" +
 	"\rtemplate_vars\x18\x06 \x01(\tR\ftemplateVars\x12#\n" +
-	"\rlogin_methods\x18\a \x03(\tR\floginMethods\x12'\n" +
-	"\x0foauth_providers\x18\b \x03(\tR\x0eoauthProviders\x125\n" +
+	"\rlogin_methods\x18\a \x03(\tR\floginMethods\x12%\n" +
+	"\x0eauth_providers\x18\b \x03(\tR\rauthProviders\x125\n" +
 	"\x14default_redirect_uri\x18\t \x01(\tH\x00R\x12defaultRedirectUri\x88\x01\x01\x12/\n" +
 	"\x11has_login_methods\x18\n" +
-	" \x01(\bH\x01R\x0fhasLoginMethods\x88\x01\x01\x123\n" +
-	"\x13has_oauth_providers\x18\v \x01(\bH\x02R\x11hasOauthProviders\x88\x01\x01B\x17\n" +
+	" \x01(\bH\x01R\x0fhasLoginMethods\x88\x01\x01\x121\n" +
+	"\x12has_auth_providers\x18\v \x01(\bH\x02R\x10hasAuthProviders\x88\x01\x01B\x17\n" +
 	"\x15_default_redirect_uriB\x14\n" +
-	"\x12_has_login_methodsB\x16\n" +
-	"\x14_has_oauth_providers\"%\n" +
+	"\x12_has_login_methodsB\x15\n" +
+	"\x13_has_auth_providers\"%\n" +
 	"\x13GetSsoClientRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"\x9d\x04\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"\x98\x04\n" +
 	"\x16UpdateSsoClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12#\n" +
@@ -1413,15 +1413,15 @@ const file_api_admin_v1_client_proto_rawDesc = "" +
 	"\rredirect_uris\x18\x05 \x03(\tR\fredirectUris\x12!\n" +
 	"\ftemplate_key\x18\x06 \x01(\tR\vtemplateKey\x12#\n" +
 	"\rtemplate_vars\x18\a \x01(\tR\ftemplateVars\x12#\n" +
-	"\rlogin_methods\x18\b \x03(\tR\floginMethods\x12'\n" +
-	"\x0foauth_providers\x18\t \x03(\tR\x0eoauthProviders\x125\n" +
+	"\rlogin_methods\x18\b \x03(\tR\floginMethods\x12%\n" +
+	"\x0eauth_providers\x18\t \x03(\tR\rauthProviders\x125\n" +
 	"\x14default_redirect_uri\x18\n" +
 	" \x01(\tH\x00R\x12defaultRedirectUri\x88\x01\x01\x12/\n" +
-	"\x11has_login_methods\x18\v \x01(\bH\x01R\x0fhasLoginMethods\x88\x01\x01\x123\n" +
-	"\x13has_oauth_providers\x18\f \x01(\bH\x02R\x11hasOauthProviders\x88\x01\x01B\x17\n" +
+	"\x11has_login_methods\x18\v \x01(\bH\x01R\x0fhasLoginMethods\x88\x01\x01\x121\n" +
+	"\x12has_auth_providers\x18\f \x01(\bH\x02R\x10hasAuthProviders\x88\x01\x01B\x17\n" +
 	"\x15_default_redirect_uriB\x14\n" +
-	"\x12_has_login_methodsB\x16\n" +
-	"\x14_has_oauth_providers\"(\n" +
+	"\x12_has_login_methodsB\x15\n" +
+	"\x13_has_auth_providers\"(\n" +
 	"\x16DeleteSsoClientRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"\x8b\x03\n" +
 	"\n" +

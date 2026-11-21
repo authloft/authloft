@@ -21,10 +21,10 @@ func proxyRow(t *testing.T, key string, enabled int8, ext *providerpb.Ext) *mode
 	return &model.Provider{ProviderKey: key, Type: "proxy", Category: "proxy", IsEnabled: enabled, Ext: mustExt(t, ext)}
 }
 
-// refRow 构造携带 proxy_provider_key 的引用方行（oauth 渠道形态）。
+// refRow 构造携带 proxy_provider_key 的引用方行（auth 渠道形态）。
 func refRow(t *testing.T, key, ref string) *model.Provider {
 	t.Helper()
-	return &model.Provider{ProviderKey: key, Type: "wechat_mp", Category: "oauth", IsEnabled: 1,
+	return &model.Provider{ProviderKey: key, Type: "wechat_mp", Category: "auth", IsEnabled: 1,
 		Ext: mustExt(t, &providerpb.Ext{ProxyProviderKey: ref})}
 }
 
@@ -102,7 +102,7 @@ func TestLoaderResolveOutboundMissing(t *testing.T) {
 func TestLoaderResolveOutboundCategoryMismatch(t *testing.T) {
 	src := newFakeSource(
 		refRow(t, "app", "pxy"),
-		&model.Provider{ProviderKey: "pxy", Type: "qq", Category: "oauth", IsEnabled: 1,
+		&model.Provider{ProviderKey: "pxy", Type: "qq", Category: "auth", IsEnabled: 1,
 			Ext: mustExt(t, proxyExt(1080, "", ""))},
 	)
 	loader := newTestLoaderWithPools(src, nil, newFakeClock())

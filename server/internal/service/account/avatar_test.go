@@ -374,7 +374,7 @@ func TestAvatarPresignInvalidSize(t *testing.T) {
 // 零 Resolve / 零 PresignPut。
 func TestAvatarPresignNotConfigured(t *testing.T) {
 	oauthRow := avatarTestProviderRow(t, "s3", avatarTestExt("direct", 600, 2<<20, "image/png"))
-	oauthRow.Category = "oauth"
+	oauthRow.Category = "auth"
 
 	for name, mutate := range map[string]func(e *avatarTestEnv){
 		"settings 键空串":     func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },
@@ -720,7 +720,7 @@ func TestAvatarUploadEmptyContent(t *testing.T) {
 // 零 Resolve / 零 Put。
 func TestAvatarUploadNotConfigured(t *testing.T) {
 	oauthRow := avatarTestProviderRow(t, "s3", avatarTestExt("proxy", 600, 2<<20, "image/png"))
-	oauthRow.Category = "oauth"
+	oauthRow.Category = "auth"
 
 	for name, mutate := range map[string]func(e *avatarTestEnv){
 		"settings 键空串": func(e *avatarTestEnv) { e.settings.values[settings.KeyAvatarStorageProvider] = "" },

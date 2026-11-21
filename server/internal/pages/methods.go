@@ -30,8 +30,8 @@ const (
 	flowReset    = "reset"
 )
 
-// categoryOAuth provider 表 category 取值（§4.1；thirdparty 登录渠道）。
-const categoryOAuth = "oauth"
+// categoryAuth provider 表 category 取值（§4.1；thirdparty 登录渠道）。
+const categoryAuth = "auth"
 
 // SnapshotField 渲染字段（§2.1 行 384-394、§1.11 type 封闭集合）。
 // Label 是前端 i18n 键（login.field.*，见 factor.Field 契约），不是展示文案。
@@ -89,11 +89,11 @@ type MethodsSnapshot struct {
 // 仅 flow=login 消费（register / reset 镜像全局口径，不读应用配置）。
 type ssoMethodScope struct {
 	methods   map[string]bool // 应用 login_methods（含 thirdparty 整体开关）
-	providers map[string]bool // 应用 oauth_providers（provider key 明细白名单）
+	providers map[string]bool // 应用 auth_providers（provider key 明细白名单）
 }
 
 // ssoScopeFromRow sso_client 行 → 应用级维度：两列均为 proto 序列化（§12.0，
-// 编解码出口 repo.ParseClientLoginMethods / ParseClientOauthProviders），
+// 编解码出口 repo.ParseClientLoginMethods / ParseClientAuthProviders），
 // 空列 = 未配置 = 对应集合为空。row 为 nil（client_id 未命中行 / 授权入口）
 // → nil scope、零查询。列解码失败 = 服务端故障（渲染层转 500，同
 // login_methods 缺键口径），不静默降级为跟随全局。
@@ -105,9 +105,9 @@ func ssoScopeFromRow(row *model.SsoClient) (*ssoMethodScope, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pages: parse sso login_methods: %w", err)
 	}
-	ps, err := repo.ParseClientOauthProviders(row.OauthProviders)
+	ps, err := repo.ParseClientAuthProviders(row.AuthProviders)
 	if err != nil {
-		return nil, fmt.Errorf("pages: parse sso oauth_providers: %w", err)
+		return nil, fmt.Errorf("pages: parse sso auth_providers: %w", err)
 	}
 	return &ssoMethodScope{
 		methods:   stringSet(ms.GetMethods()),
@@ -134,7 +134,7 @@ func (s *ssoMethodScope) allowsMethod(m string) bool {
 	return s.methods[m]
 }
 
-// allowedProviders 应用 oauth_providers 白名单（§2.1 交集口径第三行的过滤
+// allowedProviders 应用 auth_providers 白名单（§2.1 交集口径第三行的过滤
 // 入参）：nil / 空 = 未配置 = 跟随全局（无应用限制）。
 func (s *ssoMethodScope) allowedProviders() map[string]bool {
 	if s == nil {
@@ -193,7 +193,7 @@ func (h *Handler) buildMethods(ctx context.Context, flow string, sso ...*ssoMeth
 // 注册表，应用开关未放行的方式先被剔除（§2.1 应用级交集：同时开启才算
 // 开启）；otp_sms / otp_email 再按渠道可用性过滤（对应消息渠道未配置不
 // 注入，§2.1）；thirdparty 合成条目走 provider Loader（is_enabled=1 且
-// enable_signin=1，§12.3 行 1464）并按应用 oauth_providers 白名单再过滤；
+// enable_signin=1，§12.3 行 1464）并按应用 auth_providers 白名单再过滤；
 // 未注册 / 拼错的方式（含历史 device 字符串）跳过不注入。
 // login_methods 缺键 → 错误（500）。
 func (h *Handler) loginMethods(ctx context.Context, sso *ssoMethodScope) ([]MethodEntry, error) {
@@ -329,8 +329,8 @@ func (h *Handler) factorEntry(f factor.Factor) MethodEntry {
 }
 
 // thirdpartyEntry 合成 thirdparty 条目（§2.7.1）：枚举 provider 渠道注册表
-// 中 category=oauth 的 type，经 Loader 列行，过滤 is_enabled=1 且
-// enable_signin=1（§12.3 行 1464），再按 allowed（应用 oauth_providers
+// 中 category=auth 的 type，经 Loader 列行，过滤 is_enabled=1 且
+// enable_signin=1（§12.3 行 1464），再按 allowed（应用 auth_providers
 // 白名单，nil / 空 = 未配置 = 跟随全局，§2.1 应用级过滤第三行）过滤；
 // 过滤后零可用项返回 nil（不注入）。
 // steps 为所辖渠道首 kind 的并集（§2.7.1 行 576：redirect / external /
@@ -343,7 +343,7 @@ func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error)
 	providers := []SnapshotProvider{}
 	channels := map[string]bool{}
 	for _, meta := range h.registeredMetas() {
-		if meta.Category != categoryOAuth {
+		if meta.Category != categoryAuth {
 			continue
 		}
 		ps, err := h.loader.ListByType(context.Background(), meta.Type)
@@ -361,7 +361,7 @@ func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error)
 				continue
 			}
 			if len(allowed) > 0 && !allowed[p.Key] {
-				continue // 应用 oauth_providers 白名单未放行（§2.1）
+				continue // 应用 auth_providers 白名单未放行（§2.1）
 			}
 			providers = append(providers, SnapshotProvider{
 				ProviderKey: p.Key,
@@ -422,7 +422,7 @@ func channelHasStep(channels map[string]bool, step string) bool {
 }
 
 // registeredMetas 渠道注册表枚举（type → category / channel）；Deps.Metas
-// 注入优先，默认读 provider 统一注册表的登录快照接口 AdapterTypes（仅 oauth
+// 注入优先，默认读 provider 统一注册表的登录快照接口 AdapterTypes（仅 auth
 // 渠道，各渠道包 init 自注册，§15.3）。
 func (h *Handler) registeredMetas() []provider.Meta {
 	if h.metas != nil {

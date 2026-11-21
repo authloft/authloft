@@ -16,11 +16,11 @@ import (
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，测试
 	// 断言「schema 与注册表 meta 逐项一致」需两域真实 meta。
+	_ "authloft/internal/provider/auth/wechat_mp"
 	_ "authloft/internal/provider/captcha/hcaptcha"
 	_ "authloft/internal/provider/captcha/recaptcha"
 	_ "authloft/internal/provider/captcha/turnstile"
 	_ "authloft/internal/provider/email/smtp"
-	_ "authloft/internal/provider/oauth/wechat_mp"
 	_ "authloft/internal/provider/proxy/basic"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
@@ -30,7 +30,7 @@ import (
 func wantProviderRow() *model.Provider {
 	return &model.Provider{
 		ID: 7, ProviderKey: "wechat_official", UnionProvider: "wechat_union",
-		DisplayName: "微信扫码", Category: "oauth", Type: "wechat_mp",
+		DisplayName: "微信扫码", Category: "auth", Type: "wechat_mp",
 		EnableSignin: 1, EnableSignup: 0, AutoBind: 1, AutoBindFields: "email,phone",
 		IsEnabled: 1, UiGroup: "social", SortOrder: 30,
 		IconURL: "https://cdn.example.com/wechat.png", Remark: "生产渠道",
@@ -69,7 +69,7 @@ func schemaFieldByKey(t *testing.T, resp *adminv1.SchemaResponse, key string) *a
 func TestAdminProviderListEntry(t *testing.T) {
 	got := AdminProviderListEntry(wantProviderRow())
 	if got.GetProviderKey() != "wechat_official" || got.GetDisplayName() != "微信扫码" ||
-		got.GetCategory() != "oauth" || got.GetType() != "wechat_mp" {
+		got.GetCategory() != "auth" || got.GetType() != "wechat_mp" {
 		t.Errorf("列表基础列 = %+v", got)
 	}
 	if !got.GetIsEnabled() || !got.GetEnableSignin() || got.GetEnableSignup() || !got.GetAutoBind() {
@@ -100,7 +100,7 @@ func TestAdminProviderDetailPlaintextExt(t *testing.T) {
 	}
 	got := AdminProviderDetail(wantProviderRow(), ext)
 	if got.GetProviderKey() != "wechat_official" || got.GetUnionProvider() != "wechat_union" ||
-		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "oauth" || got.GetType() != "wechat_mp" {
+		got.GetDisplayName() != "微信扫码" || got.GetCategory() != "auth" || got.GetType() != "wechat_mp" {
 		t.Errorf("详情基础列 = %+v", got)
 	}
 	if !got.GetEnableSignin() || got.GetEnableSignup() || !got.GetAutoBind() || !got.GetIsEnabled() {
@@ -165,12 +165,12 @@ func TestAdminProviderDetailEmptyInputs(t *testing.T) {
 // DynamicKey 注入。这是对"表列基线 + Ext + 引用键"wire 的逐字段保真回归。
 func TestAdminSchemaOauthBaseline(t *testing.T) {
 	meta, ok := provider.Lookup("wechat_mp")
-	if !ok || meta.Category != "oauth" {
-		t.Fatalf("Lookup(wechat_mp) = (%+v, %v), want category=oauth", meta, ok)
+	if !ok || meta.Category != "auth" {
+		t.Fatalf("Lookup(wechat_mp) = (%+v, %v), want category=auth", meta, ok)
 	}
 	resp := AdminSchema("wechat_mp", meta.Category, schemaFieldsOf(meta.Schema),
 		map[string][]string{"union_provider_keys": {"union_a"}, provider.ProxyRefDynamicKey: {"proxy_a"}})
-	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "oauth" {
+	if resp.GetType() != "wechat_mp" || resp.GetCategory() != "auth" {
 		t.Errorf("type/category = (%q, %q)", resp.GetType(), resp.GetCategory())
 	}
 	if len(resp.GetFields()) != 15 {
@@ -414,7 +414,7 @@ func TestProxyRefSchemaField(t *testing.T) {
 	if !ok {
 		t.Fatal("wechat_mp meta 缺失")
 	}
-	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
+	resp := AdminSchema("wechat_mp", provider.CategoryAuth, schemaFieldsOf(meta.Schema), nil)
 	f := schemaFieldByKey(t, resp, provider.ProxyRefKey)
 	if f.GetLabel() != "admin.schemaField.proxyProviderKeyLabel" || f.GetHelp() != "admin.schemaField.proxyProviderKeyHelp" ||
 		f.GetType() != "select" || f.GetSection() != "endpoint" || f.GetAdvanced() || f.GetRequired() ||
@@ -444,9 +444,9 @@ func TestAdminSchemaConversionFidelity(t *testing.T) {
 		{Key: "missing_dyn", Label: "admin.schemaField.missingDynLabel", Type: "select", Section: "basic",
 			Storage: provider.StorageExt, Kind: provider.FieldDynamicOptions, DynamicKey: "not_provided"},
 	}
-	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, fields,
+	resp := AdminSchema("wechat_mp", provider.CategoryAuth, fields,
 		map[string][]string{"union_provider_keys": {"union_a", "union_b"}})
-	if resp.GetType() != "wechat_mp" || resp.GetCategory() != provider.CategoryOAuth {
+	if resp.GetType() != "wechat_mp" || resp.GetCategory() != provider.CategoryAuth {
 		t.Errorf("type/category = (%q,%q)", resp.GetType(), resp.GetCategory())
 	}
 	if len(resp.GetFields()) != len(fields) {
@@ -575,7 +575,7 @@ func TestAdminSettingsEventlogPartitionKeys(t *testing.T) {
 }
 
 // TestAdminSsoClientLoginOptions 应用级登录配置三字段的视图投影（§5.5）：
-// login_methods / oauth_providers 由 service 解析后传入、default_redirect_uri
+// login_methods / auth_providers 由 service 解析后传入、default_redirect_uri
 // 直取行值；nil 行 → 空消息；nil / 空切片按 proto3 空 repeated 省略。
 func TestAdminSsoClientLoginOptions(t *testing.T) {
 	now := time.Unix(1761700000, 0).UTC()
@@ -586,16 +586,16 @@ func TestAdminSsoClientLoginOptions(t *testing.T) {
 	}
 	got := AdminSsoClient(row, []string{"*"}, []string{"password", "thirdparty"}, []string{"wx_mp"})
 	if strings.Join(got.GetLoginMethods(), ",") != "password,thirdparty" ||
-		strings.Join(got.GetOauthProviders(), ",") != "wx_mp" ||
+		strings.Join(got.GetAuthProviders(), ",") != "wx_mp" ||
 		got.GetDefaultRedirectUri() != "https://app.example.com/cb" {
-		t.Errorf("投影 = (methods=%v providers=%v default=%q)", got.GetLoginMethods(), got.GetOauthProviders(), got.GetDefaultRedirectUri())
+		t.Errorf("投影 = (methods=%v providers=%v default=%q)", got.GetLoginMethods(), got.GetAuthProviders(), got.GetDefaultRedirectUri())
 	}
 
 	// 空切片：proto3 空 repeated 省略；default 直取行值（未配置行为空串）。
 	plainRow := &model.SsoClient{ID: 7, ClientID: "portal-main", ClientSecret: "sec-plain-64", Name: "门户", CreatedAt: now, UpdatedAt: now}
 	empty := AdminSsoClient(plainRow, nil, nil, nil)
-	if len(empty.GetLoginMethods()) != 0 || len(empty.GetOauthProviders()) != 0 || empty.GetDefaultRedirectUri() != "" {
-		t.Errorf("空输入投影 = (methods=%v providers=%v default=%q)", empty.GetLoginMethods(), empty.GetOauthProviders(), empty.GetDefaultRedirectUri())
+	if len(empty.GetLoginMethods()) != 0 || len(empty.GetAuthProviders()) != 0 || empty.GetDefaultRedirectUri() != "" {
+		t.Errorf("空输入投影 = (methods=%v providers=%v default=%q)", empty.GetLoginMethods(), empty.GetAuthProviders(), empty.GetDefaultRedirectUri())
 	}
 
 	if m := AdminSsoClient(nil, nil, nil, nil); len(m.GetLoginMethods()) != 0 {

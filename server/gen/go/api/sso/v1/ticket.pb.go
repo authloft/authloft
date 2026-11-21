@@ -38,7 +38,7 @@ type CreateQrcodeRequest struct {
 	Captcha *CaptchaPayload `protobuf:"bytes,3,opt,name=captcha,proto3" json:"captcha,omitempty"`
 	// 非必填：SSO 应用标识，取自 `__AUTHLOFT_INIT__.sso.clientId`（§2.1），仅
 	// scene=login 携带；服务端按首签口径解析快照（§2.2）并校验 provider_key
-	// ∈ 快照 oauthProviders（不在 → 既有 provider_disabled，§1.6 不新增取值），
+	// ∈ 快照 authProviders（不在 → 既有 provider_disabled，§1.6 不新增取值），
 	// 快照随 TicketPayload.sso 进票据、GetLoginTicket 完成登录时写入
 	// login_token.sso（§2.8）；缺省行为与现状一致。
 	SsoClientId   string `protobuf:"bytes,4,opt,name=sso_client_id,json=ssoClientId,proto3" json:"sso_client_id,omitempty"`

@@ -1,7 +1,7 @@
 // sso_init_test.go __AUTHLOFT_INIT__.sso 注入与 methods 应用级交集过滤单测
 // （接口文档 §2.1 应用级过滤、§8 注入白名单 sso 键）：命中行注入
 // clientId / name（INIT_JSON 既有转义，不含过滤结果）、行配置关闭的因子
-// 不出现、thirdparty 按 oauth_providers 白名单过滤、过滤后零 provider 不
+// 不出现、thirdparty 按 auth_providers 白名单过滤、过滤后零 provider 不
 // 注入条目、register / reset 不读应用配置、查无行回落壳不注入、列解码
 // 失败 500、authorize 入口不注入。
 package pages
@@ -18,7 +18,7 @@ import (
 	"authloft/internal/repo/model"
 )
 
-// ssoAppRow 组装 sso_client 行：login_methods / oauth_providers 列经 repo
+// ssoAppRow 组装 sso_client 行：login_methods / auth_providers 列经 repo
 // 唯一编解码出口序列化（§12.0）；methods / providers 传 nil = 列空 = 未
 // 配置 = 跟随全局（§2.1）。行默认启用（IsEnabled=1，§2.1 行命中需已启用；
 // 禁用场景经 mutate 显式置 0）。mutate 供破坏列字节等特殊场景。
@@ -28,11 +28,11 @@ func ssoAppRow(t *testing.T, clientID, name string, methods, providers []string,
 	if err != nil {
 		t.Fatalf("marshal login_methods: %v", err)
 	}
-	op, err := repo.MarshalClientOauthProviders(&clientpb.ClientOauthProviders{Providers: providers})
+	op, err := repo.MarshalClientAuthProviders(&clientpb.ClientAuthProviders{Providers: providers})
 	if err != nil {
-		t.Fatalf("marshal oauth_providers: %v", err)
+		t.Fatalf("marshal auth_providers: %v", err)
 	}
-	row := &model.SsoClient{ClientID: clientID, Name: name, LoginMethods: lm, OauthProviders: op, IsEnabled: 1}
+	row := &model.SsoClient{ClientID: clientID, Name: name, LoginMethods: lm, AuthProviders: op, IsEnabled: 1}
 	if mutate != nil {
 		mutate(row)
 	}
@@ -112,7 +112,7 @@ func TestSsoMethodsIntersection(t *testing.T) {
 	}
 }
 
-// TestSsoThirdpartyAllowedProviders thirdparty 条目按应用 oauth_providers
+// TestSsoThirdpartyAllowedProviders thirdparty 条目按应用 auth_providers
 // 白名单过滤（§2.1 第三行）：应用放行 thirdparty 且白名单 [qq]，全局两个
 // 可登 Provider（qq + scan）——快照只余 qq。
 func TestSsoThirdpartyAllowedProviders(t *testing.T) {

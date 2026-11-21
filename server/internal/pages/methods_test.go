@@ -149,7 +149,7 @@ func TestFactorExtras(t *testing.T) {
 // TestThirdpartyProviders thirdparty.providers 组装（§12.3 行 1462-1466）：
 // 只含 is_enabled=1 且 enable_signin=1；凭证零泄漏（ext 字节不进注入）；
 // steps 为所辖渠道首 kind 并集（§2.7.1 行 576）；sort_order 排序；
-// 非 oauth 渠道 type 不参与。
+// 非 auth 渠道 type 不参与。
 func TestThirdpartyProviders(t *testing.T) {
 	f := newFixture(t)
 	f.loader.rows = map[string][]*provider.Provider{
@@ -217,10 +217,10 @@ func TestThirdpartyProviders(t *testing.T) {
 		t.Errorf("qq 公开字段 = %v", qq)
 	}
 
-	// 非 oauth 渠道（smtp）不进 Loader 查询。
+	// 非 auth 渠道（smtp）不进 Loader 查询。
 	for _, call := range f.loader.calls {
 		if call == "smtp" {
-			t.Errorf("Loader 查询了非 oauth 渠道 %q", call)
+			t.Errorf("Loader 查询了非 auth 渠道 %q", call)
 		}
 	}
 }
@@ -232,8 +232,8 @@ func TestThirdpartyProxyRefUnresolvableSkipped(t *testing.T) {
 	f := newFixture(t)
 	f.deps.Metas = func() []provider.Meta {
 		return []provider.Meta{
-			{Type: "qq", Category: "oauth", Channel: provider.ChannelRedirect},
-			{Type: "wechat_mp", Category: "oauth", Channel: provider.ChannelAPI},
+			{Type: "qq", Category: "auth", Channel: provider.ChannelRedirect},
+			{Type: "wechat_mp", Category: "auth", Channel: provider.ChannelAPI},
 		}
 	}
 	f.loader.errs = map[string]error{

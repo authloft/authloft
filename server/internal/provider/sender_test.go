@@ -122,7 +122,7 @@ func TestRegisterSenderValidation(t *testing.T) {
 		provider.RegisterSender("e2e_nil_factory", provider.SenderMeta{Category: provider.CategorySMS}, nil)
 	})
 	mustPanic("bad category", func() {
-		provider.RegisterSender("e2e_bad_cat", provider.SenderMeta{Category: "oauth"}, factory)
+		provider.RegisterSender("e2e_bad_cat", provider.SenderMeta{Category: "auth"}, factory)
 	})
 	mustPanic("duplicate", func() {
 		provider.RegisterSender(testEmailVendorType, provider.SenderMeta{Category: provider.CategoryEmail}, factory)
@@ -156,9 +156,9 @@ func TestNewSenderMatrix(t *testing.T) {
 	if _, err := provider.NewSender(nil, provider.CategorySMS); !errors.Is(err, provider.ErrNilProvider) {
 		t.Fatalf("nil provider err = %v, want ErrNilProvider", err)
 	}
-	// oauth 渠道名不在消息域注册表（并列键空间互不串扰）。
+	// auth 渠道名不在消息域注册表（并列键空间互不串扰）。
 	if _, err := provider.NewSender(p("wechat_mp"), provider.CategorySMS); !errors.Is(err, provider.ErrChannelNotConfigured) {
-		t.Fatalf("oauth type err = %v, want ErrChannelNotConfigured", err)
+		t.Fatalf("auth type err = %v, want ErrChannelNotConfigured", err)
 	}
 	// 渠道不符：sms 厂商不能当 email 用。
 	if _, err := provider.NewSender(p(testSMSVendorType), provider.CategoryEmail); !errors.Is(err, provider.ErrChannelNotConfigured) {
@@ -218,7 +218,7 @@ func TestNewCodeBridgeValidation(t *testing.T) {
 		defer cancel()
 		_ = q.Close(ctx)
 	})
-	if _, err := provider.NewCodeBridge(newEngineSettings(""), loader, q, "k", "oauth"); err == nil {
+	if _, err := provider.NewCodeBridge(newEngineSettings(""), loader, q, "k", "auth"); err == nil {
 		t.Fatal("bad category must fail")
 	}
 }

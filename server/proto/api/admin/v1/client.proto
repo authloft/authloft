@@ -38,10 +38,10 @@ message SsoClient {
   string template_vars = 9;
   // 该应用可用的登录方式（§5.5「SSO 应用级登录配置」）：封闭集
   // password | otp_sms | otp_email | webauthn | thirdparty；thirdparty 是
-  // OAuth Provider 的整体开关，明细由 oauth_providers 控制。空 = 跟随全局。
+  // Auth Provider 的整体开关，明细由 auth_providers 控制。空 = 跟随全局。
   repeated string login_methods = 10;
-  // 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-  repeated string oauth_providers = 11;
+  // 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+  repeated string auth_providers = 11;
   // 登录完成且未传回跳地址（无 returnTo、无 OIDC 上下文）时的默认回跳地址
   //（§5.5）；空 = 未配置，维持默认落点。
   string default_redirect_uri = 12;
@@ -95,16 +95,16 @@ message CreateSsoClientRequest {
   // 该应用可用的登录方式（§5.5）：封闭集 password | otp_sms | otp_email |
   // webauthn | thirdparty；空 = 未配置 = 跟随全局。
   repeated string login_methods = 7;
-  // 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-  repeated string oauth_providers = 8;
+  // 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+  repeated string auth_providers = 8;
   // 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
   // has 位 true 且空串 = 清空为跟随现状，非空 = 覆盖，缺省 = 不动（§5.5）。
   optional string default_redirect_uri = 9;
   // login_methods 的伴生标志（§5.5 PATCH 语义，先例同 §5.6 settings 写入口径）：
   // true = 整组替换（空数组 = 清空为跟随全局），缺省 = 不动。
   optional bool has_login_methods = 10;
-  // oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
-  optional bool has_oauth_providers = 11;
+  // auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+  optional bool has_auth_providers = 11;
 }
 
 // GetSsoClientRequest 是 AdminService/GetSsoClient 的请求（§5.5）。
@@ -135,16 +135,16 @@ message UpdateSsoClientRequest {
   // 该应用可用的登录方式（§5.5）：封闭集 password | otp_sms | otp_email |
   // webauthn | thirdparty；空 = 未配置 = 跟随全局。
   repeated string login_methods = 8;
-  // 该应用可用的 OAuth Provider key 白名单（§5.5）；空 = 跟随全局。
-  repeated string oauth_providers = 9;
+  // 该应用可用的 Auth Provider key 白名单（§5.5）；空 = 跟随全局。
+  repeated string auth_providers = 9;
   // 默认回跳地址（§5.5）。proto3 optional 区分「缺省 / 显式空串」：
   // has 位 true 且空串 = 清空为跟随现状，非空 = 覆盖，缺省 = 不动（§5.5）。
   optional string default_redirect_uri = 10;
   // login_methods 的伴生标志（§5.5 PATCH 语义，先例同 §5.6 settings 写入口径）：
   // true = 整组替换（空数组 = 清空为跟随全局），缺省 = 不动。
   optional bool has_login_methods = 11;
-  // oauth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
-  optional bool has_oauth_providers = 12;
+  // auth_providers 的伴生标志，语义同 has_login_methods（§5.5）。
+  optional bool has_auth_providers = 12;
 }
 
 // DeleteSsoClientRequest 是 AdminService/DeleteSsoClient 的请求（§5.5）。

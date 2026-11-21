@@ -1,7 +1,7 @@
 // sso_client / oidc_client 表读写（后端架构 §3.10：client →
 // client_repo.go；§4.4 / §4.5 DDL）。DDL 归 migrations/（§3.16），本文件只
 // 做行级读写、分页与唯一键冲突判别；事务边界在 service（§3.10）。
-// redirect_uris / login_methods / oauth_providers 列的结构化 proto 编解码
+// redirect_uris / login_methods / auth_providers 列的结构化 proto 编解码
 // 唯一出口在本文件（接口文档 §12.3），service 不直接拼 proto.Marshal。
 // client_secret 生成策略、scopes[] ↔ 逗号串转换、redirect_uris 通配匹配
 // 规则均归上层，repo 拿到什么存什么。
@@ -247,7 +247,7 @@ func (r *ClientRepo) UpdateSsoClient(ctx context.Context, c *model.SsoClient) er
 		Set("name = ?", c.Name).
 		Set("redirect_uris = ?", c.RedirectURIs).
 		Set("login_methods = ?", c.LoginMethods).
-		Set("oauth_providers = ?", c.OauthProviders).
+		Set("auth_providers = ?", c.AuthProviders).
 		Set("default_redirect_uri = ?", c.DefaultRedirectURI).
 		Set("is_enabled = ?", c.IsEnabled).
 		Set("template_key = ?", c.TemplateKey).
@@ -397,19 +397,19 @@ func ParseClientLoginMethods(data []byte) (*client.ClientLoginMethods, error) {
 	return methods, nil
 }
 
-// MarshalClientOauthProviders 将 client.ClientOauthProviders（接口文档
-// §12.3、§5.5）序列化为 sso_client.oauth_providers 列字节（§12.0：结构固定
+// MarshalClientAuthProviders 将 client.ClientAuthProviders（接口文档
+// §12.3、§5.5）序列化为 sso_client.auth_providers 列字节（§12.0：结构固定
 // 走 Protobuf）。nil 输入按空消息编码，返回非 nil 的零长字节——列定义为
 // VARBINARY NOT NULL（《后端架构》§4.4），返回 nil 会被写成 NULL 触发
 // MySQL 1048。空消息 = 未配置 = 跟随全局（§2.1）。provider key 存在性校验
 // 归 service，repo 只做编解码。
-func MarshalClientOauthProviders(providers *client.ClientOauthProviders) ([]byte, error) {
+func MarshalClientAuthProviders(providers *client.ClientAuthProviders) ([]byte, error) {
 	if providers == nil {
-		providers = &client.ClientOauthProviders{}
+		providers = &client.ClientAuthProviders{}
 	}
 	data, err := proto.Marshal(providers)
 	if err != nil {
-		return nil, fmt.Errorf("client repo: marshal oauth providers: %w", err)
+		return nil, fmt.Errorf("client repo: marshal auth providers: %w", err)
 	}
 	if data == nil {
 		data = []byte{}
@@ -417,16 +417,16 @@ func MarshalClientOauthProviders(providers *client.ClientOauthProviders) ([]byte
 	return data, nil
 }
 
-// ParseClientOauthProviders 将 oauth_providers 列字节反序列化为
-// client.ClientOauthProviders。空 / NULL 列返回空消息（非 nil），调用方
-// 无需判空；解码错误原样包装。与 MarshalClientOauthProviders 互为逆运算。
-func ParseClientOauthProviders(data []byte) (*client.ClientOauthProviders, error) {
-	providers := &client.ClientOauthProviders{}
+// ParseClientAuthProviders 将 auth_providers 列字节反序列化为
+// client.ClientAuthProviders。空 / NULL 列返回空消息（非 nil），调用方
+// 无需判空；解码错误原样包装。与 MarshalClientAuthProviders 互为逆运算。
+func ParseClientAuthProviders(data []byte) (*client.ClientAuthProviders, error) {
+	providers := &client.ClientAuthProviders{}
 	if len(data) == 0 {
 		return providers, nil
 	}
 	if err := proto.Unmarshal(data, providers); err != nil {
-		return nil, fmt.Errorf("client repo: parse oauth providers: %w", err)
+		return nil, fmt.Errorf("client repo: parse auth providers: %w", err)
 	}
 	return providers, nil
 }

@@ -273,7 +273,7 @@ export interface ProviderOptionRow {
 
 /**
  * 四个 Provider 设置键的下拉候选（外部服务区）：该 category 的全部 Provider
- * 行（行内启用开关仅 oauth 行声明，captcha/sms/email/proxy 行无此概念，
+ * 行（行内启用开关仅 auth 行声明，captcha/sms/email/proxy 行无此概念，
  * 候选恒为全量行）、行序原样（sort_order 序）。清空选值走控件 showClear
  * （空串语义见各键 hint：captcha=内置图形码、sms/email=渠道未启用、
  * storage=上传入口隐藏）。label 经 t() 调用期求值（locale 切换不冻结，

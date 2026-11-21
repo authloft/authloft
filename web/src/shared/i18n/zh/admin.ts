@@ -164,7 +164,7 @@ export const admin = {
 
   // ---- schema 字段文案（后端 GetProviderSchema 下发 label / help 的 i18n 键）----
   // 后端只发键不发文案；同一 Ext 字段在不同渠道可有不同标签，故键按语义命名
-  // （如 client_id：oauth 用 clientIdLabel、阿里云短信用 aliyunAccessKeyIdLabel）。
+  // （如 client_id：auth 用 clientIdLabel、阿里云短信用 aliyunAccessKeyIdLabel）。
   // 表列基线（dto/admin.go）。
   'admin.schemaField.providerKeyLabel': '唯一标识',
   'admin.schemaField.providerKeyHelp': '创建后不可修改，将出现在回调地址中',
@@ -204,7 +204,7 @@ export const admin = {
   'admin.schemaField.proxyProviderKeyLabel': '出站代理',
   'admin.schemaField.proxyProviderKeyHelp': '留空 = 直连',
 
-  // oauth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
+  // auth 域 Ext 字段基线（oauthcore.NewMeta / wechat_mp / wechat_mp_scan）。
   'admin.schemaField.clientIdLabel': 'AppID',
   'admin.schemaField.clientSecretLabel': 'AppSecret',
   'admin.schemaField.appIdLabel': '小程序 AppID',
@@ -398,10 +398,10 @@ export const admin = {
     '控制该应用可用的登录方式；全部不选 = 跟随全局配置',
   'admin.ssoMfaRiskHint':
     '注意：已关闭部分两步验证可用因子（短信 / 邮箱验证码 / 通行密钥），仅绑定这些因子的用户将无法登录该应用',
-  'admin.ssoOauthProvidersLabel': 'OAuth Provider',
-  'admin.ssoOauthProvidersHint':
+  'admin.ssoAuthProvidersLabel': 'Auth Provider',
+  'admin.ssoAuthProvidersHint':
     '细化第三方登录可用渠道；全部不选 = 跟随全局配置',
-  'admin.ssoOauthProvidersPlaceholder': '选择该应用可用的 OAuth Provider',
+  'admin.ssoAuthProvidersPlaceholder': '选择该应用可用的 Auth Provider',
   'admin.ssoDefaultRedirectUriLabel': '默认回跳地址',
   'admin.ssoDefaultRedirectUriPlaceholder':
     'https://example.com/callback（须在回调白名单内）',
@@ -632,9 +632,9 @@ export const admin = {
   'admin.providerColumnType': '类型',
   // type=proxy 展示名（§5.3 代理提供商与出站代理引用约定）。
   'admin.providerType.proxy': '出站代理',
-  // category 展示名，键集 = 后端 Category* 常量全集（oauth|union|sms|email|
+  // category 展示名，键集 = 后端 Category* 常量全集（auth|union|sms|email|
   // captcha|storage|proxy）；缺键由页面回显 wire 值，不在此兜底。
-  'admin.providerCategory.oauth': 'OAuth 授权',
+  'admin.providerCategory.auth': '认证授权',
   'admin.providerCategory.union': 'Union ID 归并',
   'admin.providerCategory.sms': '短信服务',
   'admin.providerCategory.email': '邮件服务',

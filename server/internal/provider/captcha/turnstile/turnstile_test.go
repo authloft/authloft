@@ -1,7 +1,7 @@
 // turnstile_test.go 三家各走自身 factory 的 type 侧用例（docs/后端架构.md
 // §9.1 阶段三）：init 自注册后经 provider.NewVerifier 分派到本包实现并携带
 // Ext 口径（site_key=client_id、secret=client_secret、endpoint 覆盖默认端点）；
-// meta 驱动 admin /schema（引用键呈现、oauth 专属键不下发）。
+// meta 驱动 admin /schema（引用键呈现、auth 专属键不下发）。
 package turnstile
 
 import (

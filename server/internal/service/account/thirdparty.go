@@ -42,8 +42,8 @@ const (
 	thirdpartyTicketMaxPoll = 15 * time.Second
 	// statusProviderDisabled 封闭集补位；state_mismatch 仅 handler 用，不落本包信封域。
 	statusProviderDisabled = "provider_disabled"
-	// providerCategoryOAuth / Union provider 表 category 取值（注册表无导出常量）。
-	providerCategoryOAuth = "oauth"
+	// providerCategoryAuth / Union provider 表 category 取值（注册表无导出常量）。
+	providerCategoryAuth  = "auth"
 	providerCategoryUnion = "union"
 	statePrefixBind       = "b" // §12.4 行 1477（同 service.StatePrefixBind）
 	kindPassword          = "password"
@@ -268,7 +268,7 @@ func (s *ThirdpartyService) GetThirdpartyBindings(ctx context.Context, uid int64
 	// available 与登录快照同构数据源，过滤启用 / 可登录、排除已绑定与 Union。
 	avail := make([]BindOption, 0)
 	for _, meta := range s.metas() {
-		if meta.Category != providerCategoryOAuth {
+		if meta.Category != providerCategoryAuth {
 			continue
 		}
 		ps, err := s.deps.Loader.ListByType(ctx, meta.Type)

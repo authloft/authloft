@@ -20,21 +20,21 @@ import (
 	// 各源渠道与存储实现的 FieldMeta 覆盖（alipay / microsoft / oauth2 /
 	// oidc 的语义化标签与 help 都在 init() 里改写，local / s3 实现包自注册，
 	// 漏 import 即漏校验）。
+	_ "authloft/internal/provider/auth/alipay"
+	_ "authloft/internal/provider/auth/baidu"
+	_ "authloft/internal/provider/auth/feishu"
+	_ "authloft/internal/provider/auth/gitee"
+	_ "authloft/internal/provider/auth/github"
+	_ "authloft/internal/provider/auth/google"
+	_ "authloft/internal/provider/auth/microsoft"
+	_ "authloft/internal/provider/auth/oauth2"
+	_ "authloft/internal/provider/auth/oidc"
+	_ "authloft/internal/provider/auth/qq"
+	_ "authloft/internal/provider/auth/wechat"
+	_ "authloft/internal/provider/auth/wechat_mp"
+	_ "authloft/internal/provider/auth/wechat_mp_scan"
+	_ "authloft/internal/provider/auth/weibo"
 	_ "authloft/internal/provider/email/smtp"
-	_ "authloft/internal/provider/oauth/alipay"
-	_ "authloft/internal/provider/oauth/baidu"
-	_ "authloft/internal/provider/oauth/feishu"
-	_ "authloft/internal/provider/oauth/gitee"
-	_ "authloft/internal/provider/oauth/github"
-	_ "authloft/internal/provider/oauth/google"
-	_ "authloft/internal/provider/oauth/microsoft"
-	_ "authloft/internal/provider/oauth/oauth2"
-	_ "authloft/internal/provider/oauth/oidc"
-	_ "authloft/internal/provider/oauth/qq"
-	_ "authloft/internal/provider/oauth/wechat"
-	_ "authloft/internal/provider/oauth/wechat_mp"
-	_ "authloft/internal/provider/oauth/wechat_mp_scan"
-	_ "authloft/internal/provider/oauth/weibo"
 	_ "authloft/internal/provider/sms/aliyun_sms"
 	_ "authloft/internal/provider/storage/local"
 	_ "authloft/internal/provider/storage/s3"
@@ -132,7 +132,7 @@ func TestProxyRefSchemaI18nContract(t *testing.T) {
 	if !ok {
 		t.Fatal("wechat_mp meta 缺失")
 	}
-	resp := AdminSchema("wechat_mp", provider.CategoryOAuth, schemaFieldsOf(meta.Schema), nil)
+	resp := AdminSchema("wechat_mp", provider.CategoryAuth, schemaFieldsOf(meta.Schema), nil)
 	f := schemaFieldByKey(t, resp, provider.ProxyRefKey)
 	for _, tc := range []struct{ kind, key, want string }{
 		{"label", f.GetLabel(), "admin.schemaField.proxyProviderKeyLabel"},

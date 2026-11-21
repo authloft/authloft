@@ -1,6 +1,6 @@
 // wxacode.go 微信服务端 access_token 跨实例共享缓存（docs/后端架构.md
 // §3.4 行 469：`access_token` 经 `cache/wxacode` 缓存）。weapp SDK 的
-// cache.Cache 桥接消费本存储（桥接体在 internal/provider/oauth/wechat_mp*
+// cache.Cache 桥接消费本存储（桥接体在 internal/provider/auth/wechat_mp*
 // 内，§13.0 行 1578：SDK 引用只许出现在 wechat_mp* 包）。
 //
 // 键空间：`al:wxacode:{sdk key}`——SDK 侧 key 形如
