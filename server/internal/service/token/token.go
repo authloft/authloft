@@ -27,7 +27,7 @@ func NewTokenService(verifier *session.Verifier, renewer *session.Renewer) *Toke
 
 // DecodeSession 解码会话令牌并续期重签（接口文档 §7.1 行 1405-1407）：
 //  1. Verifier.Verify 校验四步，失败原样上抛 ErrNotAuthenticated /
-//     ErrSessionStale（不重签、不写任何存储）；
+//     ErrSessionStale / ErrSessionRevoked（不重签、不写任何存储）；
 //  2. Renewer.Renew 重签：iat / exp 刷新，id / epoch / amr / sid 不变；
 //  3. 组装响应：载荷字段用**新载荷**，renewed_token = 新令牌串。
 func (s *TokenService) DecodeSession(ctx context.Context, req *rpcv1.DecodeSessionRequest) (*rpcv1.SessionResponse, error) {

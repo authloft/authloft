@@ -87,7 +87,7 @@ func TestRPCProfileNilAndMissing(t *testing.T) {
 }
 
 // TestRPCSessionMapping SessionTokenPayload → SessionResponse 平铺映射
-//（§7.1 行 1399-1406：字段同名同义 + renewed_token 字段 7）；nil 载荷防御
+// （§7.1 行 1399-1406：字段同名同义 + renewed_token 字段 7）；nil 载荷防御
 // 分支只带 renewedToken。
 func TestRPCSessionMapping(t *testing.T) {
 	p := &token.SessionTokenPayload{
@@ -112,7 +112,7 @@ func TestRPCSessionMapping(t *testing.T) {
 }
 
 // TestParseRPCProfileBirthday YYYY-MM-DD 解析：合法取日期、非法报错
-//（错误文案含原值，调用方按 §1.6 invalid_request 映射）。
+// （错误文案含原值，调用方按 §1.6 invalid_request 映射）。
 func TestParseRPCProfileBirthday(t *testing.T) {
 	got, err := ParseRPCProfileBirthday("1990-01-01")
 	if err != nil {

@@ -4,7 +4,7 @@
 // 先于签名 / path 不含 query / 空 body 空串 / 未注册 client / 存储故障
 // fail-closed / 签名大小写不敏感 / 原始体捕获缺失 fail-closed。全栈经真实
 // connect.NewUnaryHandler + CaptureRawBody
-//（fake NonceStorer + 注入 SecretLookup，零 ENV.md 实例依赖，真连覆盖在
+// （fake NonceStorer + 注入 SecretLookup，零 ENV.md 实例依赖，真连覆盖在
 // cache 包 TestNonceStoreReal）。rpcSign 按接口文档 §7 行 1374/1381 独立实现
 // 签名公式，与被测代码不共享实现（固定契约）；五项串公式由
 // TestRPCSignFiveItems 锚定。
@@ -117,9 +117,9 @@ func TestRPCSignFiveItems(t *testing.T) {
 // rpcHeaders 三鉴权头（头名用字面量而非生产常量，固定契约）。
 func rpcHeaders(clientID, nonce, signature string) map[string]string {
 	return map[string]string{
-		"X-Client-ID":  clientID,
-		"X-Nonce-ID":   nonce,
-		"X-Signature":  signature,
+		"X-Client-ID": clientID,
+		"X-Nonce-ID":  nonce,
+		"X-Signature": signature,
 	}
 }
 
@@ -520,16 +520,16 @@ func TestRPCWriteProcedureClassification(t *testing.T) {
 		procedure string
 		write     bool
 	}{
-		{testRPCWriteProcedure, true},                      // Update 前缀（真实写接口）
-		{"/api.rpc.v1.TokenService/RevokeSession", true},   // Revoke 前缀
-		{"/api.rpc.v1.UserService/DeleteAvatar", true},     // Delete 前缀
-		{"/api.rpc.v1.UserService/SetProfile", true},       // Set 前缀
-		{"/api.rpc.v1.UserService/CreateExport", true},     // Create 前缀
-		{"/api.rpc.v1.UserService/Updated", true},          // 前缀开头即写，不要求整词
-		{testRPCReadProcedure, false},                      // Get 前缀（真实读接口）
-		{testRPCDecodeProcedure, false},                    // Decode 前缀（真实读接口）
-		{"/api.rpc.v1.UserService/ListProfiles", false},    // 其余方法名
-		{"/api.rpc.v1.UserService/updateProfile", false},   // 前缀大小写敏感（PascalCase 外形态不命中）
+		{testRPCWriteProcedure, true},                    // Update 前缀（真实写接口）
+		{"/api.rpc.v1.TokenService/RevokeSession", true}, // Revoke 前缀
+		{"/api.rpc.v1.UserService/DeleteAvatar", true},   // Delete 前缀
+		{"/api.rpc.v1.UserService/SetProfile", true},     // Set 前缀
+		{"/api.rpc.v1.UserService/CreateExport", true},   // Create 前缀
+		{"/api.rpc.v1.UserService/Updated", true},        // 前缀开头即写，不要求整词
+		{testRPCReadProcedure, false},                    // Get 前缀（真实读接口）
+		{testRPCDecodeProcedure, false},                  // Decode 前缀（真实读接口）
+		{"/api.rpc.v1.UserService/ListProfiles", false},  // 其余方法名
+		{"/api.rpc.v1.UserService/updateProfile", false}, // 前缀大小写敏感（PascalCase 外形态不命中）
 		{"", false}, // 直调拦截器无 Spec（procedure 空串）→ 读路径
 	}
 	for _, c := range cases {

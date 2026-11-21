@@ -27,10 +27,10 @@ import (
 )
 
 // RPCProfile 把 user + user_profile 行组装为 rpc 域的 §3.1 ProfileResponse
-//（行 775：各端点响应即下列字段、无信封包裹）。phone / email 明文输出
-//（行 809 例外，掩码矩阵其余调用方见 account.go 的掩码版）。profile 行缺失
-//（p == nil）时输出零值 profile 消息，不视为错误；u == nil 时返回空响应
-//（调用方契约下不可达的防御分支，口径同 AccountProfile）。
+// （行 775：各端点响应即下列字段、无信封包裹）。phone / email 明文输出
+// （行 809 例外，掩码矩阵其余调用方见 account.go 的掩码版）。profile 行缺失
+// （p == nil）时输出零值 profile 消息，不视为错误；u == nil 时返回空响应
+// （调用方契约下不可达的防御分支，口径同 AccountProfile）。
 func RPCProfile(u *model.User, p *model.UserProfile) *rpcv1.ProfileResponse {
 	if u == nil {
 		return &rpcv1.ProfileResponse{}

@@ -67,7 +67,8 @@ func TestResolveNotConfigured(t *testing.T) {
 			t.Errorf("Resolve(%q) err = %v, want ErrNotConfigured", tc.key, err)
 		}
 	}
-	// s3 属未支持 type：ErrNotConfigured 与 ErrUnsupportedType 双命中。
+	// s3 实现已入库，但本测试二进制只具名导入 local 触发注册（§15.3），注册表
+	// 查无 s3 工厂：未注册 type 同时命中 ErrNotConfigured 与 ErrUnsupportedType。
 	if _, err := r.Resolve(context.Background(), "s3"); !errors.Is(err, ErrUnsupportedType) {
 		t.Errorf("s3 应同时命中 ErrUnsupportedType, got %v", err)
 	}

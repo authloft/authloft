@@ -149,6 +149,12 @@ func (s *LoginTicket) resolveUID(ctx context.Context, in WriteTicketInput) (int6
 			// 解不开 / 过期 / epoch 不一致属预期未登录；epoch 读取链故障
 			// （Redis / DB）被一并压成 ErrQrcodeUnauthenticated，且该哨兵
 			// 不是 internal，统一错误日志也不触发，必须在此单独记录。
+			// 已逐出与 handler/rpc 的失效分类同口径，同归未登录组、不记
+			// 基础设施错误日志；当前逐出标记只读不写（无写入口），本分支
+			// 实际不可达，显式列出以防逐出接入后被误判为读取链故障。
+			if errors.Is(err, session.ErrSessionRevoked) {
+				return 0, ErrQrcodeUnauthenticated
+			}
 			if !errors.Is(err, session.ErrNotAuthenticated) && !errors.Is(err, session.ErrSessionStale) {
 				logx.Error(ctx, "ticket: session verify failed",
 					"error", logx.RedactText(err.Error()),

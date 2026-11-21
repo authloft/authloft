@@ -922,7 +922,8 @@ func assembleStep(step string, err error) error {
 }
 
 // assemble 正常模式装配步骤 2-9（§3.1 固定顺序）；任一步失败先释放已建资源
-// 再原样上抛（serve 转 fail-fast）。provider 注册表仍为 TODO。
+// 再原样上抛（serve 转 fail-fast）。provider / factor 注册表由本函数构造、
+// 适配器自注册经顶部 `_ import` 触发。
 func assemble(ctx context.Context, cfg *config.Config) (*assembled, error) {
 	db, err := repo.Open(cfg)
 	if err != nil {
@@ -1194,7 +1195,7 @@ func serve(cfg *config.Config) error {
 	case <-ctx.Done():
 		// 收到 SIGINT / SIGTERM：先停后台协程（watcher / 队列 worker，队列
 		// Close 内部先 flush 剩余任务），再停止接收并等待在途请求，最后
-		// 关 DB / Redis（§3.1 行 239 优雅关闭顺序）。
+		// 关 DB / Redis（§3.1 优雅关闭顺序）。
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		deps.stopBackground(shutdownCtx)
