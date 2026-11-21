@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS "user" (
   email          VARCHAR(128) DEFAULT NULL,
   phone_verified SMALLINT     NOT NULL DEFAULT 0,
   email_verified SMALLINT     NOT NULL DEFAULT 0,
-  nickname       VARCHAR(32) NOT NULL DEFAULT '',
-  avatar_url     VARCHAR(128) NOT NULL DEFAULT '',
+  nickname       VARCHAR(12) NOT NULL DEFAULT '',
+  avatar_url     VARCHAR(120) NOT NULL DEFAULT '',
   user_status    SMALLINT     NOT NULL DEFAULT 1, -- 1正常 0禁用；列名避开 API 信封保留字 status（接口文档 §1.0）
   mfa_required   SMALLINT     NOT NULL DEFAULT 0, -- 用户自助两步验证开关；1开启 0关闭
   epoch          SMALLINT     NOT NULL DEFAULT 0, -- 安全版本号，改密/重置/管理员禁用时递增；递增结果 > 30000 时回绕为 1（跳过 0，由后端逻辑控制，不由DB控制）
