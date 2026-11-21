@@ -93,6 +93,7 @@ export const admin: typeof zhAdmin = {
   'admin.avatarStorageProviderLabel':
     'Storage provider for avatars / provider icons',
   'admin.avatarStorageProviderHint': 'Empty = no external storage',
+  'admin.providerOptionLabel': '{name} ({key})',
   'admin.gatewayTokensLabel': 'Gateway tokens',
   'admin.eventlogPartitionDaysLabel': 'Event log partition days',
   'admin.eventlogPartitionDaysHint':

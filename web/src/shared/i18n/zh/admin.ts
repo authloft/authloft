@@ -86,6 +86,7 @@ export const admin = {
   'admin.emailProviderKeyHint': '留空 = 未启用外部邮件渠道',
   'admin.avatarStorageProviderLabel': '头像 / 渠道图标使用的 Storage Provider',
   'admin.avatarStorageProviderHint': '留空 = 未启用外部存储',
+  'admin.providerOptionLabel': '{name}（{key}）',
   'admin.gatewayTokensLabel': '网关 Token',
   'admin.eventlogPartitionDaysLabel': '事件日志分区天数',
   'admin.eventlogPartitionDaysHint': '默认 7，分区任务按此天数滚动建分区',

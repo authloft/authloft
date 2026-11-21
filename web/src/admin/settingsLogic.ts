@@ -85,6 +85,9 @@ export type SettingsTextKey =
 export type SettingsListKey =
   'loginMethods' | 'mfaMethods' | 'ssoDomains' | 'gatewayTokens';
 
+/** 四个 Provider 设置键的下拉候选类别（ListProviders 的 category 过滤维度）。 */
+export type ProviderSettingCategory = 'captcha' | 'sms' | 'email' | 'storage';
+
 /**
  * 设置表单草稿（int64 字段以 number 编辑，提交前经 api.buildSetSettingsRequest
  * / buildSettingsPatchRequest 收敛 BigInt；值域均远小于
@@ -261,6 +264,36 @@ export function getHttpsDeploymentOptions(): {
  */
 export const HTTPS_DEPLOYMENT_VALUES: string[] = ['auto', 'true', 'false'];
 
+/** Provider 下拉候选行投影（ListProviders 行的结构化子集，node 可测）。 */
+export interface ProviderOptionRow {
+  providerKey: string;
+  displayName: string;
+  category: string;
+}
+
+/**
+ * 四个 Provider 设置键的下拉候选（外部服务区）：该 category 的全部 Provider
+ * 行——含未启用实例（允许先引用后启用，同 proxy_provider_key 口径；运行期
+ * 停用行按 provider_disabled 收敛）、行序原样（sort_order 序）。清空选值走
+ * 控件 showClear（空串语义见各键 hint：captcha=内置图形码、sms/email=渠道
+ * 未启用、storage=上传入口隐藏）。label 经 t() 调用期求值（locale 切换
+ * 不冻结，本文件四表统一此形态）。
+ */
+export function buildProviderSelectOptions(
+  category: ProviderSettingCategory,
+  rows: readonly ProviderOptionRow[],
+): { value: string; label: string }[] {
+  return rows
+    .filter((row) => row.category === category)
+    .map((row) => ({
+      value: row.providerKey,
+      label: t('admin.providerOptionLabel', {
+        name: row.displayName,
+        key: row.providerKey,
+      }),
+    }));
+}
+
 /** 字段控件形态（判别联合：kind 收窄 → key 类型随之收窄，渲染零断言）。 */
 export type SettingsFieldMeta =
   | {
@@ -288,6 +321,14 @@ export type SettingsFieldMeta =
       key: SettingsTextKey;
       label: string;
       options: { value: string; label: string }[];
+      hint?: string;
+    }
+  | {
+      kind: 'providerSelect';
+      key: SettingsTextKey;
+      label: string;
+      /** 候选 Provider 类别（buildProviderSelectOptions 的过滤维度）。 */
+      category: ProviderSettingCategory;
       hint?: string;
     }
   | {
@@ -623,27 +664,31 @@ export function getSettingsSections(): SettingsSectionMeta[] {
       title: t('admin.settingsSectionExternalServices'),
       fields: [
         {
-          kind: 'text',
+          kind: 'providerSelect',
           key: 'captchaProviderKey',
           label: t('admin.captchaProviderKeyLabel'),
+          category: 'captcha',
           hint: t('admin.captchaProviderKeyHint'),
         },
         {
-          kind: 'text',
+          kind: 'providerSelect',
           key: 'smsProviderKey',
           label: t('admin.smsProviderKeyLabel'),
+          category: 'sms',
           hint: t('admin.smsProviderKeyHint'),
         },
         {
-          kind: 'text',
+          kind: 'providerSelect',
           key: 'emailProviderKey',
           label: t('admin.emailProviderKeyLabel'),
+          category: 'email',
           hint: t('admin.emailProviderKeyHint'),
         },
         {
-          kind: 'text',
+          kind: 'providerSelect',
           key: 'avatarStorageProvider',
           label: t('admin.avatarStorageProviderLabel'),
+          category: 'storage',
           hint: t('admin.avatarStorageProviderHint'),
         },
       ],

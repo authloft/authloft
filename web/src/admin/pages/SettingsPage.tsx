@@ -58,9 +58,11 @@ import { StringListEditor } from '../components/StringListEditor';
 import {
   adminReturnTo,
   apiErrorText,
+  buildListProvidersRequest,
   buildSettingsPatchRequest,
   getSettings,
   isUnauthenticatedError,
+  listProviders,
   setSettings,
 } from '../api';
 import {
@@ -69,6 +71,8 @@ import {
   draftFromSettings,
   mergeSavedSettings,
   settingsDraftIssue,
+  buildProviderSelectOptions,
+  type ProviderOptionRow,
   type SettingsDraft,
   type SettingsFieldMeta,
 } from '../settingsLogic';
@@ -83,12 +87,14 @@ function FieldView(props: {
   field: SettingsFieldMeta;
   draft: SettingsDraft;
   disabled: boolean;
+  /** Provider 下拉候选行（ListProviders 全量行；空数组 = 仅留空选项）。 */
+  providerRows: readonly ProviderOptionRow[];
   onChange: <K extends keyof SettingsDraft>(
     key: K,
     value: SettingsDraft[K],
   ) => void;
 }): ReactNode {
-  const { field, draft, disabled, onChange } = props;
+  const { field, draft, disabled, providerRows, onChange } = props;
   switch (field.kind) {
     case 'number':
       return (
@@ -135,6 +141,25 @@ function FieldView(props: {
           disabled={disabled}
         />
       );
+    case 'providerSelect': {
+      // 空串映射为 undefined 展示 placeholder（清空走 showClear，不设
+      // 「留空」选项）；draft 真值恒为 string，仅显示层归一。
+      const value = draft[field.key] === '' ? undefined : draft[field.key];
+      return (
+        <Select
+          className={styles.selectInput}
+          value={value}
+          optionList={buildProviderSelectOptions(field.category, providerRows)}
+          placeholder={t('common.selectPlaceholder')}
+          showClear
+          onChange={(next: string | string[] | undefined) => {
+            // showClear 清空下发 undefined → 空串（PATCH 显式零值 = 清空语义）。
+            onChange(field.key, typeof next === 'string' ? next : '');
+          }}
+          disabled={disabled}
+        />
+      );
+    }
     case 'multiSelect':
       return (
         <Select
@@ -184,6 +209,7 @@ const MASKED_VALUE = '••••••';
 function formatSettingsValue(
   field: SettingsFieldMeta,
   draft: SettingsDraft,
+  providerRows: readonly ProviderOptionRow[],
 ): string {
   switch (field.kind) {
     case 'number':
@@ -197,6 +223,16 @@ function formatSettingsValue(
     case 'select': {
       const value = draft[field.key];
       const hit = field.options.find((option) => option.value === value);
+      if (hit !== undefined) {
+        return hit.label;
+      }
+      return value === '' ? t('admin.settingsDiffEmptyValue') : value;
+    }
+    case 'providerSelect': {
+      const value = draft[field.key];
+      const hit = buildProviderSelectOptions(field.category, providerRows).find(
+        (option) => option.value === value,
+      );
       if (hit !== undefined) {
         return hit.label;
       }
@@ -225,6 +261,7 @@ function formatSettingsValue(
 function buildSettingsDiff(
   saved: SettingsDraft,
   draft: SettingsDraft,
+  providerRows: readonly ProviderOptionRow[],
 ): SettingsDiffItem[] {
   const items: SettingsDiffItem[] = [];
   for (const section of getSettingsSections()) {
@@ -240,8 +277,8 @@ function buildSettingsDiff(
         items.push({
           key: field.key,
           label: field.label,
-          before: formatSettingsValue(field, saved),
-          after: formatSettingsValue(field, draft),
+          before: formatSettingsValue(field, saved, providerRows),
+          after: formatSettingsValue(field, draft, providerRows),
         });
       }
     }
@@ -265,6 +302,17 @@ export function SettingsPage(props: {
       returnTo: () => adminReturnTo(location.pathname, location.search),
     }),
   );
+  // 外部服务区四个 Provider 键的候选（ListProviders 全量行，前端按 category
+  // 过滤）：toast:false 静默降级——取数失败时候选为空、已保存值原样显示，
+  // 不阻塞设置主链路；401 仍由集中 onError 跳登录。
+  const { data: providerList } = useRequest(
+    () => listProviders(buildListProvidersRequest()),
+    requestOptions({
+      toast: false,
+      returnTo: () => adminReturnTo(location.pathname, location.search),
+    }),
+  );
+  const providerRows: readonly ProviderOptionRow[] = providerList?.items ?? [];
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   // 当前 Tab（key 为 settingsLogic 的稳定 slug，locale 切换不影响选中态）。
   const [activeTab, setActiveTab] = useState('account');
@@ -292,7 +340,7 @@ export function SettingsPage(props: {
   const tabs = getSettingsTabs();
   const allDiff: SettingsDiffItem[] =
     draft !== null && savedDraft !== null
-      ? buildSettingsDiff(savedDraft, draft)
+      ? buildSettingsDiff(savedDraft, draft, providerRows)
       : [];
   const changedKeys = new Set<keyof SettingsDraft>(
     allDiff.map((item) => item.key),
@@ -469,6 +517,7 @@ export function SettingsPage(props: {
                                 field={field}
                                 draft={draft}
                                 disabled={submitting}
+                                providerRows={providerRows}
                                 onChange={updateField}
                               />
                             }

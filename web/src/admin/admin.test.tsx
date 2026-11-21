@@ -89,6 +89,7 @@ import { SettingsResponseSchema } from '../gen/proto/api/admin/v1/settings_pb';
 import { TemplateSchema } from '../gen/proto/api/admin/v1/template_pb';
 import {
   DEFAULT_SETTINGS,
+  buildProviderSelectOptions,
   getHttpsDeploymentOptions,
   getLoginMethodOptions,
   getMfaMethodOptions,
@@ -3917,6 +3918,59 @@ describe('getSettingsSections / getLoginMethodOptions / getMfaMethodOptions / ge
       { value: 'true', label: '强制开启' },
       { value: 'false', label: '强制关闭' },
     ]);
+  });
+
+  test('外部服务区四键 = providerSelect 且候选类别逐键映射（captcha/sms/email/storage）', () => {
+    const section = getSettingsSections().find(
+      (item) => item.key === 'externalServices',
+    );
+    expect(section?.fields).toEqual([
+      {
+        kind: 'providerSelect',
+        key: 'captchaProviderKey',
+        label: '当前生效的 Captcha Provider',
+        category: 'captcha',
+        hint: '留空 = 内置图形码',
+      },
+      {
+        kind: 'providerSelect',
+        key: 'smsProviderKey',
+        label: '当前生效的短信 Provider',
+        category: 'sms',
+        hint: '留空 = 未启用外部短信渠道',
+      },
+      {
+        kind: 'providerSelect',
+        key: 'emailProviderKey',
+        label: '当前生效的邮件 Provider',
+        category: 'email',
+        hint: '留空 = 未启用外部邮件渠道',
+      },
+      {
+        kind: 'providerSelect',
+        key: 'avatarStorageProvider',
+        label: '头像 / 渠道图标使用的 Storage Provider',
+        category: 'storage',
+        hint: '留空 = 未启用外部存储',
+      },
+    ]);
+  });
+});
+
+describe('buildProviderSelectOptions（外部服务区 Provider 候选：category 过滤；清空走 showClear，无留空选项）', () => {
+  const rows = [
+    { providerKey: 'eml_main', displayName: '邮件主通道', category: 'email' },
+    { providerKey: 'pxy_main', displayName: '基础代理', category: 'proxy' },
+    { providerKey: 'eml_spare', displayName: '备用邮件', category: 'email' },
+  ];
+  test('按 category 过滤、行序原样、label = 显示名（键）', () => {
+    expect(buildProviderSelectOptions('email', rows)).toEqual([
+      { value: 'eml_main', label: '邮件主通道（eml_main）' },
+      { value: 'eml_spare', label: '备用邮件（eml_spare）' },
+    ]);
+  });
+  test('空行集返回空数组（取数失败静默降级形态，控件占位符兜底）', () => {
+    expect(buildProviderSelectOptions('storage', [])).toEqual([]);
   });
 });
 
