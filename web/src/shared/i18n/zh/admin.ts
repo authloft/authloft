@@ -96,9 +96,9 @@ export const admin = {
   'admin.siteNameHint': '页面标题，留空则显示默认名称 Authloft',
   'admin.staticBaseLabel': '静态资源基址（CDN）',
   'admin.staticBaseHint': '决定页面脚本 / 样式 URL 前缀；改后需刷新页面生效',
-  'admin.clientIpHeaderLabel': '来源 IP 采信头',
+  'admin.clientIpHeaderLabel': '从 Header 读取客户端 IP',
   'admin.clientIpHeaderHint':
-    '反向代理注入的请求头名（如 X-Forwarded-For），取该头逗号首段并去空白；留空仅取直连 RemoteAddr、不采信转发头。仅供审计与限流键，不作鉴权依据；头清洗须在反代完成，直连可伪造',
+    '反代注入客户端 IP 的头名（如 X-Forwarded-For）；留空则仅取直连地址',
 
   'admin.unitSeconds': '秒',
   'admin.unitTimes': '次',
