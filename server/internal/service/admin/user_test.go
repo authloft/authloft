@@ -12,7 +12,8 @@
 // ResetUserRecoveryCodes 重生成无明文回显、SetCredentialEnabled 双向审计与
 // 零失效链、DeleteCredential 密码凭证拒删与强制下线与审计 detail、
 // 五方法门禁复用）、已匿名化行写拒绝（writableTarget：资料 / 凭证启停 /
-// 凭证删除 → not_found 且先于门禁）。
+// 凭证删除 → not_found 且先于门禁；§4.8 顺序对齐的八个写站点各配「已删
+// superadmin 目标不得误判 403」回归）。
 // q 模糊 / 排序 / 分页边界的真库行为归 repo 用例（user_repo_test.go）。
 package admin_test
 
@@ -2012,7 +2013,9 @@ func TestUserServiceDeleteCredential(t *testing.T) {
 // 不可经管理员写接口复活（§4.2 前缀为「已删除」唯一标记、§1.6「目标不存在
 // （含已匿名化行）」→ not_found）：资料编辑 / 凭证停用 / 凭证删除一律 404，
 // 且先于目标分级门禁（已删 superadmin 也是 not_found 而非 permission_denied，
-// DeleteUser 同款顺序）；DeleteUser 对大写变体行同样 not_found。
+// DeleteUser 同款顺序）；DeleteUser 对大写变体行同样 not_found；执行顺序
+// 按 §4.8 对齐的八个写站点（禁用 / 重置密码 / 解绑 / 解锁 / 联系方式 /
+// MFA 开关 / TOTP / 恢复码）各配「已删 superadmin 目标不得误判 403」回归。
 func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 	ctx := context.Background()
 
@@ -2080,6 +2083,52 @@ func TestUserServiceDeletedRowWriteGuard(t *testing.T) {
 			t.Fatalf("已删行再删不应有副作用")
 		}
 	})
+
+	// 顺序对齐站点全集回归（§4.8 执行顺序三分支）：目标已删且曾持
+	// superadmin、操作者持 superadmin——门禁先行会把已删 superadmin 误判为
+	// permission_denied（user_permission 行不随删除清理），对齐后统一
+	// not_found 先于门禁、不查权限表、零副作用。凭证 / 绑定行故意在位，
+	// 证明前置读取先于一切业务路径触发。
+	ops := []struct {
+		name string
+		call func(svc *adminsvc.UserService) error
+	}{
+		{"UpdateUserStatus", func(svc *adminsvc.UserService) error { return svc.UpdateUserStatus(ctx, 1, 42, 0) }},
+		{"ResetUserPassword", func(svc *adminsvc.UserService) error { return svc.ResetUserPassword(ctx, 1, 42, "Str0ngPass!") }},
+		{"UnbindUserThirdparty", func(svc *adminsvc.UserService) error { return svc.UnbindUserThirdparty(ctx, 1, 42, "wechat_mp_1") }},
+		{"UnlockUser", func(svc *adminsvc.UserService) error { return svc.UnlockUser(ctx, 1, 42) }},
+		{"UpdateUserContact", func(svc *adminsvc.UserService) error {
+			return svc.UpdateUserContact(ctx, 1, 42, &adminv1.UpdateUserContactRequest{Id: 42})
+		}},
+		{"SetUserMfa", func(svc *adminsvc.UserService) error { return svc.SetUserMfa(ctx, 1, 42, 0) }},
+		{"UnbindUserTOTP", func(svc *adminsvc.UserService) error { return svc.UnbindUserTOTP(ctx, 1, 42) }},
+		{"ResetUserRecoveryCodes", func(svc *adminsvc.UserService) error { return svc.ResetUserRecoveryCodes(ctx, 1, 42) }},
+	}
+	for _, op := range ops {
+		t.Run("已删 superadmin 目标不得误判 403/"+op.name, func(t *testing.T) {
+			perms := &userFakePermissions{granted: userGrantSuperadmins(42, 1)}
+			svc, users, creds, binds, _, _, epoch, pwfail, audit := newUserSvc(perms)
+			row := userTestRow()
+			row.Username = "deleted_42"
+			users.user = row
+			creds.byKind = map[string]*model.UserCredential{"totp": {ID: 3, UserID: 42, Kind: "totp"}}
+			binds.rows = []model.UserThirdpartyBind{{ID: 11, UserID: 42, ProviderKey: "wechat_mp_1", OpenID: "oX-1"}}
+			if err := op.call(svc); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("err = %v, want ErrRecordNotFound（先于门禁，不得误判 permission_denied）", err)
+			}
+			if len(perms.calls) != 0 {
+				t.Fatalf("已删行不应查权限表, calls=%v", perms.calls)
+			}
+			if len(users.statusUpdated) != 0 || len(users.mfaUpdated) != 0 ||
+				len(users.contactUpdated) != 0 || len(users.profileCols) != 0 ||
+				len(users.profileSaved) != 0 || len(creds.updated) != 0 ||
+				len(creds.created) != 0 || len(creds.deletedByKind) != 0 ||
+				len(binds.unbound) != 0 || len(pwfail.resetRefs) != 0 ||
+				len(users.incIDs) != 0 || len(epoch.synced) != 0 || len(audit.events) != 0 {
+				t.Fatalf("已删行不应触碰任何写路径 / 失效链 / 审计")
+			}
+		})
+	}
 }
 
 // TestUserServiceRescueWriteGate 救援族五方法门禁复用（authorizeUserWrite

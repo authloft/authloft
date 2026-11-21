@@ -18,8 +18,9 @@
 // 针对目标用户的写接口（含旧四写接口禁用启用 / 重置密码 / 解锁 / 解绑）
 // 统一走 authorizeUserWrite 目标账户分级门禁（§5.4 门禁矩阵、《后端架构》
 // §4.8：superadmin 目标一律拒绝；普通管理员目标仅 superadmin 操作者可写；
-// 权限查询故障原样上抛不放行）；删除用户另加 §4.8 两条硬边界（有任意权限点
-// 禁删、自删拒绝）。
+// 权限查询故障原样上抛不放行）；执行顺序按 §4.8——门禁依赖目标权限行，
+// 最小前置读取（行缺失与已匿名化行统一 not_found）先于门禁，再变更；
+// 删除用户另加 §4.8 两条硬边界（有任意权限点禁删、自删拒绝）。
 // Connect 错误形态映射归 handler；本层返回可判别哨兵错误（映射口径同
 // provider.go 包注释）：
 //   - ErrInvalidRequest 参数 / 校验类（映射 invalid_argument + code=invalid_request）；
@@ -453,10 +454,15 @@ func (s *UserService) GetUser(ctx context.Context, id int64) (*UserDetail, error
 // 自造事件名，默认）。幂等重放（再次禁用已禁用用户）同样走失效链
 // 与审计——每次管理员动作都留痕。目标分级门禁统一走 authorizeUserWrite
 // （禁用与启用同适用：superadmin 目标一律拒绝，含启用分支，§5.4 矩阵；
-// 普通管理员目标仅 superadmin 操作者；查询故障原样上抛）。
+// 普通管理员目标仅 superadmin 操作者；查询故障原样上抛）；门禁依赖目标
+// 权限行，按 §4.8 执行顺序先最小前置读取判定存在性（writableTarget）——
+// 行缺失与已匿名化行统一 not_found 先于门禁。
 func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, userStatus int64) error {
 	if id <= 0 || (userStatus != 0 && userStatus != 1) {
 		return ErrInvalidRequest
+	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，§4.8 顺序）
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -489,13 +495,13 @@ func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, use
 // 不同，§5.4 无此语义）。目标分级门禁统一走 authorizeUserWrite（收编原
 // 「superadmin 目标可被 superadmin 操作者重置」旧口径——重置属强制踢下线
 // 动作，superadmin 目标一律拒绝，§5.4 矩阵；普通管理员目标仅 superadmin
-// 操作者；查询故障原样上抛，fail-closed）。FindByID 先于门禁：行缺失
-// not_found 不查权限表（既有口径）。
+// 操作者；查询故障原样上抛，fail-closed）。最小前置读取（writableTarget）
+// 先于门禁：行缺失与已匿名化行统一 not_found（§4.8 顺序）。
 func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, password string) error {
 	if id <= 0 || password == "" {
 		return ErrInvalidRequest
 	}
-	user, err := s.users.FindByID(ctx, id)
+	user, err := s.writableTarget(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -535,10 +541,15 @@ func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, pa
 // 原两跳非同事务，第二跳失败普通行已删、重试 404 无法自愈，孤行 Union
 // 行永久占用 uk_provider_openid）→ 审计 thirdparty_unbind（detail=
 // {provider_key, open_id}，§4.6 行 816）。目标分级门禁统一走
-// authorizeUserWrite（本期补齐，§5.4 矩阵；查询故障原样上抛）。
+// authorizeUserWrite（本期补齐，§5.4 矩阵；查询故障原样上抛）；门禁依赖
+// 目标权限行，按 §4.8 执行顺序先最小前置读取判定存在性（writableTarget）
+// ——行缺失与已匿名化行统一 not_found 先于门禁。
 func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64, providerKey string) error {
 	if id <= 0 || providerKey == "" {
 		return ErrInvalidRequest
+	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，§4.8 顺序）
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -586,16 +597,18 @@ func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64,
 // 格式；ip 未知 → SCAN 模式匹配删除，PwFailStore.DeleteAccountRef）。无
 // 解锁审计常量，不投事件（默认，同启用不审计口径）。目标分级门禁统一走
 // authorizeUserWrite（本期补齐，§5.4 矩阵；查询故障原样上抛）——解锁是
-// epoch 触发动作族的前置救援，目标分级同适用。
+// epoch 触发动作族的前置救援，目标分级同适用；门禁依赖目标权限行，按
+// §4.8 执行顺序先最小前置读取判定存在性（writableTarget，行缺失与已
+// 匿名化行统一 not_found 先于门禁），读得的联系方式行复用于键重算。
 func (s *UserService) UnlockUser(ctx context.Context, actor, id int64) error {
 	if id <= 0 {
 		return ErrInvalidRequest
 	}
-	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
-		return err
-	}
-	user, err := s.users.FindByID(ctx, id)
+	user, err := s.writableTarget(ctx, id)
 	if err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，§4.8 顺序）
+	}
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
 	}
 	if err := s.pwfail.Reset(ctx, strconv.FormatInt(id, 10)); err != nil {
@@ -680,11 +693,13 @@ func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
 	return nil
 }
 
-// writableTarget 写目标行级前置校验（§1.6 admin 写接口族「目标不存在（含
-// 已匿名化行）」→ not_found；§4.2 deleted_ 前缀为「已删除」唯一标记）：
-// 行缺失与已匿名化行统一 not_found，且先于 authorizeUserWrite——
-// user_permission 行不随删除清理，门禁先查会把已删 superadmin 误判为
-// permission_denied（DeleteUser 同款顺序）。
+// writableTarget 写目标行级最小前置读取（§1.6 admin 写接口族「目标不存在
+// （含已匿名化行）」→ not_found；§4.2 deleted_ 前缀为「已删除」唯一标记）：
+// 目标分级门禁依赖目标权限行，按 §4.8 执行顺序先经此处判定存在性——行缺失
+// 与已匿名化行统一 not_found 后才进业务门禁。原因：user_permission 行不随
+// 删除清理，门禁先行会把已删 superadmin 账户误判为 permission_denied；且
+// 通用门禁已在拦截器收口，能到达业务门禁者均已持任意权限点，对其统一
+// 404 无信息泄露面（DeleteUser 同款顺序）。
 func (s *UserService) writableTarget(ctx context.Context, id int64) (*model.User, error) {
 	user, err := s.users.FindByID(ctx, id)
 	if err != nil {
@@ -866,10 +881,15 @@ func userProfileChangedFields(req *adminv1.UpdateUserProfileRequest) []string {
 // 校验（§1.11），唯一性冲突返回字段级错误（ErrTargetTaken）且不投审计；
 // 改联系方式属强制下线动作（§5.4 触发集合）——写库成功后 IncEpoch +
 // al:pwdep 同步，再投审计 admin_update_contact（detail={changed_fields}
-// 仅字段名，不记手机号 / 邮箱明文）。
+// 仅字段名，不记手机号 / 邮箱明文）。目标分级门禁依赖目标权限行，按
+// §4.8 执行顺序先最小前置读取判定存在性（writableTarget）——行缺失与
+// 已匿名化行统一 not_found 先于门禁。
 func (s *UserService) UpdateUserContact(ctx context.Context, actor, id int64, req *adminv1.UpdateUserContactRequest) error {
 	if id <= 0 || req == nil {
 		return ErrInvalidRequest
+	}
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404（先于门禁，§4.8 顺序）
 	}
 	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
@@ -893,9 +913,6 @@ func (s *UserService) UpdateUserContact(ctx context.Context, actor, id int64, re
 	}
 	if email != nil && *email != "" && !validContactFormat("email", *email) {
 		return ErrInvalidRequest
-	}
-	if _, err := s.users.FindByID(ctx, id); err != nil {
-		return err // 行缺失 → 404（先于占用查询与写操作）
 	}
 	// 唯一性预检（uk_phone / uk_email，§5.4）：命中他人 → ErrTargetTaken
 	//（不写库、不失效会话、不投审计）；命中自己 = 原值重放，照常写。
@@ -991,10 +1008,12 @@ func (s *UserService) SetUserMfa(ctx context.Context, actor, id int64, mfaRequir
 	if id <= 0 || (mfaRequired != 0 && mfaRequired != 1) {
 		return ErrInvalidRequest
 	}
-	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
-		return err
+	// 目标分级门禁依赖目标权限行：最小前置读取（含已删行 → not_found）
+	// 先于门禁（§4.8 顺序）；writableTarget 判据见该方法注释。
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404
 	}
-	if _, err := s.users.FindByID(ctx, id); err != nil {
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
 	}
 	if err := s.users.UpdateMfaRequired(ctx, id, int8(mfaRequired)); err != nil {
@@ -1021,15 +1040,17 @@ func (s *UserService) SetUserMfa(ctx context.Context, actor, id int64, mfaRequir
 // （不要求用户侧二次验证令牌，管理员权限即授权）。recovery_code 行不在
 // 本接口契约范围（仅删 totp 行；自助域解绑连带删恢复码系 §3.5 自助口径）。
 // user 行或 totp 行缺失 → 404；删除成功 → IncEpoch + al:pwdep 同步 +
-// 审计 admin_unbind_totp（detail={}，不记 TOTP 密钥，§4.6）。
+// 审计 admin_unbind_totp（detail={}，不记 TOTP 密钥，§4.6）。user 行的
+// 最小前置读取（writableTarget，含已删行 → not_found）先于目标分级门禁
+// （§4.8 顺序）。
 func (s *UserService) UnbindUserTOTP(ctx context.Context, actor, id int64) error {
 	if id <= 0 {
 		return ErrInvalidRequest
 	}
-	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
-		return err
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404
 	}
-	if _, err := s.users.FindByID(ctx, id); err != nil {
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
 	}
 	if err := s.creds.DeleteByUserAndKind(ctx, id, credentialKindTotp); err != nil {
@@ -1056,15 +1077,17 @@ func (s *UserService) UnbindUserTOTP(ctx context.Context, actor, id int64) error
 // generateRecoveryCodes 与自助域各落一份——跨包私有不可复用）。
 // is_enabled 不在本接口改动范围（停用走 SetCredentialEnabled）；不触发
 // 会话失效（§5.4 强制下线集合不含恢复码重置）；审计
-// admin_recovery_codes_reset（detail={}，不记任何码值，§4.6）。
+// admin_recovery_codes_reset（detail={}，不记任何码值，§4.6）。user 行的
+// 最小前置读取（writableTarget，含已删行 → not_found）先于目标分级门禁
+// （§4.8 顺序）。
 func (s *UserService) ResetUserRecoveryCodes(ctx context.Context, actor, id int64) error {
 	if id <= 0 {
 		return ErrInvalidRequest
 	}
-	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
-		return err
+	if _, err := s.writableTarget(ctx, id); err != nil {
+		return err // 行缺失 / 已匿名化行 → 404
 	}
-	if _, err := s.users.FindByID(ctx, id); err != nil {
+	if err := s.authorizeUserWrite(ctx, actor, id); err != nil {
 		return err
 	}
 	row, err := s.creds.FindByUserAndKind(ctx, id, credentialKindRecoveryCode)
