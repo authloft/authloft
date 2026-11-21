@@ -111,6 +111,7 @@ export default defineConfig({
       js: 'js',
       css: 'css',
     },
+    sourceMap: false,
     polyfill: 'usage',
     externals: [
       ({ request }, callback) => {
