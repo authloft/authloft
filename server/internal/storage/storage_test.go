@@ -109,7 +109,7 @@ func TestResolveDisabledRowStillSucceeds(t *testing.T) {
 	}
 }
 
-// TestRenderKeyDocumentedExample §15.1 行 1718 示例 + timestamp 变量。
+// TestRenderKeyDocumentedExample §15.1 示例 + timestamp 变量。
 func TestRenderKeyDocumentedExample(t *testing.T) {
 	key, err := RenderKey(`'qrcodes_' & $.ticket_id & '.jpg'`, "c7Kx9", 1761800000)
 	if err != nil {

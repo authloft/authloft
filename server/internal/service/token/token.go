@@ -1,5 +1,5 @@
-// token.go 实现 TokenService/DecodeSession（docs/接口文档.md §7.1 行 1392-1408、
-// docs/后端架构.md §17 行 1737）：会话校验通过 → 每次均重签 session_token →
+// token.go 实现 TokenService/DecodeSession（docs/接口文档.md §7.1、
+// docs/后端架构.md §17）：会话校验通过 → 每次均重签 session_token →
 // 以报文视图 SessionResponse 平铺载荷 + renewed_token。
 // 校验失败不重签、零存储写入；错误语义（未登录 / 会话失效）由 session 包
 // 原样上抛，HTTP 401 映射归 handler 批，本层不引 connect 包。
@@ -25,7 +25,7 @@ func NewTokenService(verifier *session.Verifier, renewer *session.Renewer) *Toke
 	return &TokenService{Verifier: verifier, Renewer: renewer}
 }
 
-// DecodeSession 解码会话令牌并续期重签（接口文档 §7.1 行 1405-1407）：
+// DecodeSession 解码会话令牌并续期重签（接口文档 §7.1）：
 //  1. Verifier.Verify 校验四步，失败原样上抛 ErrNotAuthenticated /
 //     ErrSessionStale / ErrSessionRevoked（不重签、不写任何存储）；
 //  2. Renewer.Renew 重签：iat / exp 刷新，id / epoch / amr / sid 不变；
