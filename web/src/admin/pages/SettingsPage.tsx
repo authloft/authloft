@@ -27,7 +27,7 @@
  * 401 统一跳登录（§6 行 501）；保存成功 / 失败反馈统一走 Semi Toast
  * （Semi 回归，原就地 notice / actionError 文字已移除）——成功
  * 文案沿用现成键 settingsSaved；交叉校验不通过的内联校验错误保持行内
- * 不动。未保存保护（P1-8）：draft 与已保存快照键级比对出
+ * 不动。未保存保护：draft 与已保存快照键级比对出
  * dirty；admin 为零路由库 MPA（Nav / 登出 / 刷新 / 关标签全部整页卸载），
  * dirty 时经 beforeunload 触发浏览器原生二次确认（非自造弹层——硬导航
  * 无法被 Modal.confirm 拦截，浏览器也不允许自定义文案，故零新增 i18n
@@ -297,12 +297,12 @@ export function SettingsPage(props: {
   const changedKeys = new Set<keyof SettingsDraft>(
     allDiff.map((item) => item.key),
   );
-  // 未保存改动（P1-8）= 草稿与已保存快照键级不等。
+  // 未保存改动 = 草稿与已保存快照键级不等。
   const dirty = changedKeys.size > 0;
   const activeTabMeta = tabs.find((tab) => tab.key === activeTab) ?? tabs[0];
   const tabDirtyKeys = activeTabMeta.keys.filter((key) => changedKeys.has(key));
 
-  // 未保存保护（P1-8）：dirty 时挂 beforeunload——admin 为零路由库
+  // 未保存保护：dirty 时挂 beforeunload——admin 为零路由库
   // MPA，Nav / 登出 / 刷新 / 关标签一律整页卸载，这是唯一可拦截点；确认弹层
   // 为浏览器原生（非自造，preventDefault 即触发，文案由浏览器托管不允许
   // 自定义）。无改动时不挂监听，正常离开。

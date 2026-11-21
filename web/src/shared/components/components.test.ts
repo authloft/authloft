@@ -528,7 +528,7 @@ describe('ErrorBanner（错误文案 + 倒计时 + 可重试）', () => {
   });
 });
 
-describe('Spinner（评审 P1-1：零依赖 CSS 圆环）', () => {
+describe('Spinner（零依赖 CSS 圆环）', () => {
   test('role="status" + 默认播报文案 common.loading；可自定义 label', () => {
     const fallback = renderToStaticMarkup(createElement(Spinner, {}));
     expect(fallback).toContain('role="status"');

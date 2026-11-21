@@ -296,7 +296,7 @@ export function ProvidersPage(props: {
     setRows(next); // 乐观：新序先行。
     sortProviders(buildSortProvidersRequest(next))
       .then(() => {
-        // 拖拽排序成功反馈（P1-6 统一成功通道）。
+        // 拖拽排序成功反馈（统一成功通道）。
         Toast.success(t('admin.providerSortSuccess'));
       })
       .catch((sortError) => {

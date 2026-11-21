@@ -131,7 +131,7 @@ describe('utils/validate 资料字段长度上限（§3.2 / §5.4：nickname ≤
   });
 });
 
-describe('utils/validate 前置校验（评审 P0-2；服务端权威）', () => {
+describe('utils/validate 前置校验（服务端权威）', () => {
   test('isFilled：去空白非空；空串 / 纯空白拒绝', () => {
     expect(isFilled('a')).toBe(true);
     expect(isFilled(' a ')).toBe(true);
