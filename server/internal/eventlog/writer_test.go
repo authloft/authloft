@@ -146,7 +146,12 @@ func TestPushLastLoginMergesByUserID(t *testing.T) {
 }
 
 // TestPushDroppedWhenFullDoesNotBlock 校验队列满时 Writer 静默丢弃：不返回
-// 错误（方法签名无 error）、不阻塞调用方，只累加 dropped（§5.2 行 893）。
+// 错误（方法签名无 error）、不阻塞调用方，只累加 dropped（docs/后端架构.md
+// §5.2）。
+//
+// 「不阻塞」以完成信号判定，不测墙钟时延：满队列上的 Push 在独立
+// goroutine 中执行并闭合 done，正常路径微秒级返回；若回归成阻塞式发送
+// 则 done 永不闭合。秒级超时只是防悬挂兜底，判定不依赖调度抖动。
 func TestPushDroppedWhenFullDoesNotBlock(t *testing.T) {
 	exec := newCaptureExecutor()
 	exec.gate = make(chan struct{})
@@ -163,17 +168,24 @@ func TestPushDroppedWhenFullDoesNotBlock(t *testing.T) {
 	w.PushEvent(model.EventLog{Event: EventLoginSuccess})
 	select {
 	case <-exec.started:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("executor not started")
 	}
 
-	start := time.Now()
-	w.PushEvent(model.EventLog{Event: EventLoginSuccess}) // 占满 ring（容量 1）
-	w.PushEvent(model.EventLog{Event: EventLoginSuccess}) // 丢弃
-	w.PushLastLogin(42, time.Unix(1700000000, 0))         // 丢弃
-	w.PushLastLogin(43, time.Unix(1700000000, 0))         // 丢弃
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Errorf("4 Push took %s, want < 100ms（队列满不得阻塞登录链路）", elapsed)
+	// done 闭合 = 全部 Push 已返回 = 未阻塞（主判据）；兜底超时只在 Push
+	// 真阻塞（如改成阻塞式发送）时触发，与正常路径耗时无关。
+	done := make(chan struct{})
+	go func() {
+		w.PushEvent(model.EventLog{Event: EventLoginSuccess}) // 占满 ring（容量 1）
+		w.PushEvent(model.EventLog{Event: EventLoginSuccess}) // 丢弃
+		w.PushLastLogin(42, time.Unix(1700000000, 0))         // 丢弃
+		w.PushLastLogin(43, time.Unix(1700000000, 0))         // 丢弃
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("push on full queue did not return（队列满不得阻塞登录链路）")
 	}
 	if got := q.Dropped(); got == 0 {
 		t.Fatal("dropped = 0, want > 0（队列满应静默丢弃并计数）")
