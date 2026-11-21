@@ -491,13 +491,13 @@ func TestUnbindThirdparty(t *testing.T) {
 
 	t.Run("空 providerKey → invalid_request", func(t *testing.T) {
 		e := newCase(t)
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, ""); !errors.Is(err, ErrInvalidRequest) {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "", "9.9.9.9"); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("err = %v, want ErrInvalidRequest", err)
 		}
 	})
 	t.Run("provider 不存在 → not_found", func(t *testing.T) {
 		e := newCase(t)
-		err := e.svc.UnbindThirdparty(context.Background(), uid, "nope")
+		err := e.svc.UnbindThirdparty(context.Background(), uid, "nope", "9.9.9.9")
 		if !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("err = %v, want sql.ErrNoRows", err)
 		}
@@ -506,7 +506,7 @@ func TestUnbindThirdparty(t *testing.T) {
 		e := newCase(t)
 		union := &model.Provider{ProviderKey: "wechat_union", Category: providerCategoryUnion, UnionProvider: ""}
 		e.finders.byKey["wechat_union"] = union
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_union"); !errors.Is(err, ErrInvalidRequest) {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_union", "9.9.9.9"); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("err = %v, want ErrInvalidRequest（§12.7 行 1547）", err)
 		}
 		if len(e.binds.cascades) != 0 {
@@ -515,14 +515,14 @@ func TestUnbindThirdparty(t *testing.T) {
 	})
 	t.Run("无该绑定 → not_found", func(t *testing.T) {
 		e := newCase(t)
-		err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_mp_scan")
+		err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_mp_scan", "9.9.9.9")
 		if !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("err = %v, want sql.ErrNoRows", err)
 		}
 	})
 	t.Run("最后登录方式 → invalid_request（无 password 无其余绑定）", func(t *testing.T) {
 		e := newCase(t)
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq"); !errors.Is(err, ErrInvalidRequest) {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq", "9.9.9.9"); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("err = %v, want ErrInvalidRequest（行 954 解绑后须仍有登录方式）", err)
 		}
 		if len(e.binds.cascades) != 0 || len(e.audit.events) != 0 {
@@ -533,14 +533,14 @@ func TestUnbindThirdparty(t *testing.T) {
 		e := newCase(t)
 		e.binds.rows[bindKey("wechat_union", "union-9")] = model.UserThirdpartyBind{ID: 12, UserID: uid, ProviderKey: "wechat_union", OpenID: "union-9"}
 		e.finders.byKey["wechat_union"] = &model.Provider{ProviderKey: "wechat_union", Category: providerCategoryUnion}
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq"); !errors.Is(err, ErrInvalidRequest) {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq", "9.9.9.9"); !errors.Is(err, ErrInvalidRequest) {
 			t.Errorf("err = %v, want ErrInvalidRequest（Union 行不计入，行 961）", err)
 		}
 	})
 	t.Run("有 password → 允许 + 级联 + 审计", func(t *testing.T) {
 		e := newCase(t)
 		e.creds.password = &model.UserCredential{Kind: "password", IsEnabled: 1}
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq"); err != nil {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq", "9.9.9.9"); err != nil {
 			t.Fatalf("UnbindThirdparty: %v", err)
 		}
 		if len(e.binds.cascades) != 1 || e.binds.cascades[0].id != 11 || e.binds.cascades[0].uid != uid {
@@ -554,12 +554,15 @@ func TestUnbindThirdparty(t *testing.T) {
 			ev.ActorID != uid || ev.UserID != uid || ev.Target != "qq" {
 			t.Errorf("audit event = %+v", ev)
 		}
+		if ev.IP != "9.9.9.9" {
+			t.Errorf("audit IP = %q, want 来源 IP 9.9.9.9", ev.IP)
+		}
 	})
 	t.Run("password 行停用 → 不算数，其余非 Union 绑定兜底", func(t *testing.T) {
 		e := newCase(t)
 		e.creds.password = &model.UserCredential{Kind: "password", IsEnabled: 0}
 		e.binds.rows[bindKey("wechat_mp_scan", "openid-2")] = model.UserThirdpartyBind{ID: 14, UserID: uid, ProviderKey: "wechat_mp_scan", OpenID: "openid-2"}
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq"); err != nil {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "qq", "9.9.9.9"); err != nil {
 			t.Fatalf("UnbindThirdparty: %v（仍绑定 wechat_mp_scan 应允许）", err)
 		}
 		// Union 连带参数 = provider 行的 union_provider（既有级联机制）。
@@ -571,7 +574,7 @@ func TestUnbindThirdparty(t *testing.T) {
 		e := newCase(t)
 		e.creds.password = &model.UserCredential{Kind: "password", IsEnabled: 1}
 		e.binds.rows[bindKey("wechat_mp_scan", "openid-2")] = model.UserThirdpartyBind{ID: 15, UserID: uid, ProviderKey: "wechat_mp_scan", OpenID: "openid-2"}
-		if err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_mp_scan"); err != nil {
+		if err := e.svc.UnbindThirdparty(context.Background(), uid, "wechat_mp_scan", "9.9.9.9"); err != nil {
 			t.Fatalf("UnbindThirdparty: %v", err)
 		}
 		if e.binds.cascades[0].unionProviderKey != "wechat_union" || e.binds.cascades[0].id != 15 {
@@ -594,6 +597,7 @@ func TestThirdpartyOauth(t *testing.T) {
 			State:       state,
 			StateCookie: e.sealLoginState(t, state, uid),
 			UID:         uid,
+			IP:          "9.9.9.9",
 		}
 	}
 
@@ -626,6 +630,9 @@ func TestThirdpartyOauth(t *testing.T) {
 		if len(e.audit.events) != 1 || e.audit.events[0].Event != eventlog.EventThirdpartyBind ||
 			e.audit.events[0].ActorType != eventlog.ActorTypeUser || e.audit.events[0].Target != "qq" {
 			t.Errorf("audit = %+v", e.audit.events)
+		}
+		if ip := e.audit.events[0].IP; ip != "9.9.9.9" {
+			t.Errorf("audit IP = %q, want 来源 IP 9.9.9.9", ip)
 		}
 	})
 	t.Run("Union 联动参数透传（provider 关联 Union）", func(t *testing.T) {
@@ -841,7 +848,7 @@ func TestGetThirdpartyTicket(t *testing.T) {
 	t.Run("命中成功 → 当前会话 uid 完成绑定 + bind 字段", func(t *testing.T) {
 		e := newEnv(t)
 		e.tickets.results[ticketID] = bindResult("wechat_mp_scan", "openid-9", "union-9", sceneBind)
-		resp := e.svc.GetThirdpartyTicket(context.Background(), TicketInput{Ticket: newTicket(e), UID: uid})
+		resp := e.svc.GetThirdpartyTicket(context.Background(), TicketInput{Ticket: newTicket(e), UID: uid, IP: "9.9.9.9"})
 		if resp.GetStatus() != ticketStatusSuccess || resp.GetTicket().GetStatus() != ticketStatusSuccess {
 			t.Fatalf("resp = %+v, want 双 success", resp)
 		}
@@ -862,6 +869,9 @@ func TestGetThirdpartyTicket(t *testing.T) {
 		}
 		if len(e.audit.events) != 1 || e.audit.events[0].Event != eventlog.EventThirdpartyBind {
 			t.Errorf("audit = %+v", e.audit.events)
+		}
+		if ip := e.audit.events[0].IP; ip != "9.9.9.9" {
+			t.Errorf("audit IP = %q, want 来源 IP 9.9.9.9", ip)
 		}
 	})
 	t.Run("provider_key 回显缺失回落 ticket 载荷", func(t *testing.T) {
@@ -926,13 +936,13 @@ func TestBindToCurrentUser(t *testing.T) {
 	ctx := context.Background()
 	identity := BindIdentity{OpenID: "openid-1", UnionID: "union-1", Raw: map[string]any{"k": "v"}}
 
-	if out, fail := e.svc.BindToCurrentUser(ctx, 0, "qq", identity); out != nil || fail != orchestrator.StatusInvalidRequest {
+	if out, fail := e.svc.BindToCurrentUser(ctx, 0, "qq", identity, ""); out != nil || fail != orchestrator.StatusInvalidRequest {
 		t.Errorf("uid=0 → (%+v, %q), want invalid_request", out, fail)
 	}
-	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "", identity); out != nil || fail != orchestrator.StatusInvalidRequest {
+	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "", identity, ""); out != nil || fail != orchestrator.StatusInvalidRequest {
 		t.Errorf("空 providerKey → (%+v, %q), want invalid_request", out, fail)
 	}
-	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "nope", identity); out != nil || fail != statusProviderDisabled {
+	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "nope", identity, ""); out != nil || fail != statusProviderDisabled {
 		t.Errorf("provider 缺失 → (%+v, %q), want provider_disabled", out, fail)
 	}
 	// 出站代理引用不可解析（getErrs 注入，行级 fail-closed §15.4）：
@@ -940,12 +950,12 @@ func TestBindToCurrentUser(t *testing.T) {
 	e.loader.getErrs = map[string]error{
 		"qq": fmt.Errorf("provider: %w (ref %q)", provider.ErrProxyRefUnresolvable, "ghost"),
 	}
-	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity); out != nil || fail != statusProviderDisabled {
+	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity, ""); out != nil || fail != statusProviderDisabled {
 		t.Errorf("代理引用不可解析 → (%+v, %q), want provider_disabled", out, fail)
 	}
 	e.loader.getErrs = nil
 	e.binds.findErr = errors.New("db down")
-	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity); out != nil || fail != orchestrator.StatusFailed {
+	if out, fail := e.svc.BindToCurrentUser(ctx, 10086, "qq", identity, ""); out != nil || fail != orchestrator.StatusFailed {
 		t.Errorf("查询故障 → (%+v, %q), want failed", out, fail)
 	}
 }

@@ -71,7 +71,7 @@ type ChannelProber interface {
 // Thirdparty 三方绑定族 service 窄接口；nil（未装配）时四个方法返回 unimplemented。
 type Thirdparty interface {
 	GetThirdpartyBindings(ctx context.Context, uid int64) (*accountsvc.BindingsResult, error)
-	UnbindThirdparty(ctx context.Context, uid int64, providerKey string) error
+	UnbindThirdparty(ctx context.Context, uid int64, providerKey, ip string) error
 	ThirdpartyOauth(ctx context.Context, in accountsvc.OauthInput) (*accountsvc.BindOutcome, error)
 	GetThirdpartyTicket(ctx context.Context, in accountsvc.TicketInput) *ssov1.LoginFlowResponse
 }
@@ -523,7 +523,9 @@ func (h *Handler) UnbindThirdparty(ctx context.Context, req *connect.Request[acc
 	if !ok {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errAuthRequired)
 	}
-	if err := h.thirdparty.UnbindThirdparty(ctx, uid, req.Msg.GetProviderKey()); err != nil {
+	// 来源 IP 由 http 挂载层注入 ctx（ipres，与 bindcontact / event_log 审计同款口径），
+	// 本层只取现成值传 service（审计落值），不在 handler 解析 Header。
+	if err := h.thirdparty.UnbindThirdparty(ctx, uid, req.Msg.GetProviderKey(), ipres.ClientIP(ctx)); err != nil {
 		return nil, mapThirdpartyError("unbind thirdparty", err)
 	}
 	return connect.NewResponse(&accountv1.OkResponse{}), nil
@@ -546,6 +548,7 @@ func (h *Handler) ThirdpartyOauth(ctx context.Context, req *connect.Request[acco
 		State:       req.Msg.GetState(),
 		StateCookie: loginStateCookie(req),
 		UID:         uid,
+		IP:          ipres.ClientIP(ctx),
 	})
 	if err != nil {
 		return nil, mapThirdpartyError("thirdparty oauth", err)
@@ -571,6 +574,7 @@ func (h *Handler) GetThirdpartyTicket(ctx context.Context, req *connect.Request[
 		Ticket: req.Msg.GetTicket(),
 		Poll:   req.Msg.GetPoll(),
 		UID:    uid,
+		IP:     ipres.ClientIP(ctx),
 	})
 	return connect.NewResponse(resp), nil
 }

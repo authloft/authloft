@@ -304,8 +304,9 @@ func (s *ThirdpartyService) GetThirdpartyBindings(ctx context.Context, uid int64
 }
 
 // UnbindThirdparty 解绑：解绑后仍须持有启用 password 凭证，或仍有 ≥1 个非 Union 绑定；
-// Union Provider 行不可单独解绑。删除走单事务级联（Union 连带），成功后投递自服审计。
-func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, providerKey string) error {
+// Union Provider 行不可单独解绑。删除走单事务级联（Union 连带），成功后投递自服审计；
+// ip 为请求来源 IP（handler 由 ctx 注入，审计落原值，与 bindcontact 审计口径一致）。
+func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, providerKey, ip string) error {
 	if uid <= 0 {
 		return ErrUnauthenticated
 	}
@@ -354,6 +355,7 @@ func (s *ThirdpartyService) UnbindThirdparty(ctx context.Context, uid int64, pro
 			UserID:    uid,
 			Target:    providerKey,
 			Detail:    eventlog.DetailThirdpartyBind(providerKey, target.OpenID),
+			IP:        ip, // 来源 IP（handler 由 ctx 注入，落原值空则空）
 			CreatedAt: s.now(),
 		})
 	}
@@ -405,6 +407,8 @@ type OauthInput struct {
 	State       string
 	StateCookie string
 	UID         int64
+	// IP 请求来源 IP（handler 由 ctx 注入，仅绑定成功审计落值，空则空）。
+	IP string
 }
 
 // ThirdpartyOauth redirect 绑定通道 A：载体校验 → Provider 校验 → 现算身份 → 绑定内核。
@@ -476,7 +480,7 @@ func (s *ThirdpartyService) ThirdpartyOauth(ctx context.Context, in OauthInput) 
 	}
 
 	// ④-⑥ 绑定内核（provider 已装载并通过步骤 ②校验，复用同一实例不二次读）。
-	outcome, fail := s.bindWith(ctx, in.UID, p, bindIdentityFromExternal(identity))
+	outcome, fail := s.bindWith(ctx, in.UID, p, bindIdentityFromExternal(identity), in.IP)
 	return s.bindFailure(fail, outcome)
 }
 
@@ -485,6 +489,8 @@ type TicketInput struct {
 	Ticket string
 	Poll   int64
 	UID    int64
+	// IP 请求来源 IP（handler 由 ctx 注入，轮询命中绑定成功时审计落值，空则空）。
+	IP string
 }
 
 // GetThirdpartyTicket 扫码绑定长轮询：同构 service/qrcode.go GetLoginTicket。
@@ -581,7 +587,7 @@ func (s *ThirdpartyService) GetThirdpartyTicket(ctx context.Context, in TicketIn
 		if pk == "" {
 			pk = payload.GetProviderKey()
 		}
-		outcome, fail := s.BindToCurrentUser(ctx, in.UID, pk, identity)
+		outcome, fail := s.BindToCurrentUser(ctx, in.UID, pk, identity, in.IP)
 		if fail != "" {
 			// 命中但失败：结论在信封 status、ticket 只报 failed；target_taken 附固定文案。
 			var msg *string
@@ -603,9 +609,10 @@ func (s *ThirdpartyService) GetThirdpartyTicket(ctx context.Context, in TicketIn
 }
 
 // BindToCurrentUser 绑定内核：两通道共用（redirect 载体校验后、qrcode 轮询命中后调用）。
+// ip 为请求来源 IP（handler 由 ctx 注入，仅绑定成功审计落值，空则空）。
 // 返回 (outcome, failStatus)：failStatus 非空表示以该信封状态失败，redirect 通道经
 // bindFailure 转哨兵错误，qrcode 通道原样进信封。
-func (s *ThirdpartyService) BindToCurrentUser(ctx context.Context, uid int64, providerKey string, identity BindIdentity) (*BindOutcome, string) {
+func (s *ThirdpartyService) BindToCurrentUser(ctx context.Context, uid int64, providerKey string, identity BindIdentity, ip string) (*BindOutcome, string) {
 	if uid <= 0 || providerKey == "" {
 		return nil, orchestrator.StatusInvalidRequest
 	}
@@ -622,11 +629,12 @@ func (s *ThirdpartyService) BindToCurrentUser(ctx context.Context, uid int64, pr
 		}
 		return nil, orchestrator.StatusFailed
 	}
-	return s.bindWith(ctx, uid, p, identity)
+	return s.bindWith(ctx, uid, p, identity, ip)
 }
 
-// bindWith 装载完成的内核主体（p 已过 ②校验；p 非法回退 provider_disabled——防御性）。
-func (s *ThirdpartyService) bindWith(ctx context.Context, uid int64, p *provider.Provider, identity BindIdentity) (*BindOutcome, string) {
+// bindWith 装载完成的内核主体（p 已过 ②校验；p 非法回退 provider_disabled——防御性）；
+// ip 为请求来源 IP，透传至绑定成功审计。
+func (s *ThirdpartyService) bindWith(ctx context.Context, uid int64, p *provider.Provider, identity BindIdentity, ip string) (*BindOutcome, string) {
 	if uid <= 0 || identity.OpenID == "" {
 		return nil, orchestrator.StatusInvalidRequest
 	}
@@ -667,6 +675,7 @@ func (s *ThirdpartyService) bindWith(ctx context.Context, uid int64, p *provider
 				UserID:    uid,
 				Target:    p.Key,
 				Detail:    eventlog.DetailThirdpartyBind(p.Key, identity.OpenID),
+				IP:        ip, // 来源 IP（handler 由 ctx 注入，落原值空则空）
 				CreatedAt: s.now(),
 			})
 		}

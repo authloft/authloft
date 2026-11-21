@@ -1234,6 +1234,7 @@ type fakeThirdparty struct {
 	unbindErr   error
 	unbindUID   int64
 	unbindKey   string
+	unbindIP    string
 	oauthOut    *accountsvc.BindOutcome
 	oauthErr    error
 	oauthIn     accountsvc.OauthInput
@@ -1246,8 +1247,8 @@ func (f *fakeThirdparty) GetThirdpartyBindings(_ context.Context, uid int64) (*a
 	return f.bindings, f.bindingsErr
 }
 
-func (f *fakeThirdparty) UnbindThirdparty(_ context.Context, uid int64, providerKey string) error {
-	f.unbindUID, f.unbindKey = uid, providerKey
+func (f *fakeThirdparty) UnbindThirdparty(_ context.Context, uid int64, providerKey, ip string) error {
+	f.unbindUID, f.unbindKey, f.unbindIP = uid, providerKey, ip
 	return f.unbindErr
 }
 
@@ -2782,5 +2783,23 @@ func TestBindContactCarriesRequestIP(t *testing.T) {
 	}
 	if got := bc3.emailCalls[0].IP; got == "" || got == "unknown" {
 		t.Errorf("BindEmail IP = %q, want 直连 RemoteAddr host 段（非空）", got)
+	}
+}
+
+// TestThirdpartyCarriesRequestIP 三方绑定族 service 入参 IP 非空：挂载层注入的
+// 来源 IP 经 ctx 进入解绑 service 入参（与换绑族 TestBindContactCarriesRequestIP
+// 同款 mount 口径，采信头取逗号首段）。
+func TestThirdpartyCarriesRequestIP(t *testing.T) {
+	tp := &fakeThirdparty{}
+	code, raw := postServiceViaMount(t, accountv1connect.AccountServiceUnbindThirdpartyProcedure,
+		`{"providerKey":"qq"}`,
+		&getConfigDeps{thirdpartyIn: tp},
+		map[string]string{"X-Client-IP": " 203.0.113.99 , 10.0.0.1"},
+		func() string { return "X-Client-IP" })
+	if code != http.StatusOK {
+		t.Fatalf("status = %d (body %s)", code, raw)
+	}
+	if got := tp.unbindIP; got != "203.0.113.99" {
+		t.Errorf("UnbindThirdparty IP = %q, want 采信头首段 203.0.113.99", got)
 	}
 }
