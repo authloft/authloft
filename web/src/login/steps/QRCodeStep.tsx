@@ -4,12 +4,13 @@
  * 经 PollStep，避免双份轮询，行 443）。
  *
  * - requestQR 调 SsoService/CreateQrcode（scene 缺省即 login，§2.8 行 702；
- *   captcha 必带、每次拉码都要新的，行 703——凭据由 captcha 弹窗每轮现取）；
+ *   captcha 条件必填——need_captcha=true 每轮现取新凭据，false 裸发，§2.5）；
  *   pollUrl 调 GetLoginTicket（poll 秒数与面板 pollSeconds 同值，
  *   §2.8 行 714 上限 15；signal 忽略——api 薄封装不支持中断，结果丢弃由
  *   面板 disposed 检查兜底）；
- * - captcha 门控（§2.8 行 690「必须携带 captcha」）：面板挂载即拉码，拉码经
- *   shared/captcha 的 gate 走 upfront——先在弹窗里问凭据再发一次请求；
+ * - captcha 门控（§2.5 触发表第 7 行：按 provider need_captcha 分派）：true
+ *   走 upfront——先在弹窗里问凭据再发一次请求；false 走 reactive——先裸发，
+ *   命中 captcha_required 才弹窗（服务端 fail-closed 兜底）。
  *   captcha_invalid 在窗内换凭据重试；用户取消则卸下面板、留「获取二维码」
  *   按钮原地重入（新 key 重挂 → 再次弹窗），expired 重拉走面板「重试」；
  * - onResult 完整状态机（§2.8 行 739-743）：面板 success（外层
@@ -40,7 +41,10 @@ import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import type { CreateQrcodeResponse } from '../../gen/proto/api/sso/v1/ticket_pb';
 import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
-import { errorCaptchaOutcome } from '../../shared/captcha/captchaGate';
+import {
+  errorCaptchaOutcome,
+  type CaptchaGateMode,
+} from '../../shared/captcha/captchaGate';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { StepUpDialog } from '../../shared/components/StepUpDialog';
 import { ApiError } from '../../shared/api/errors';
@@ -112,10 +116,10 @@ export function completeLogin(
 
 /** requestQR 包装依赖（拉码替身注入）。 */
 export interface QrcodeRequesterDeps {
-  /** 拉码（缺省 login/api.ts createQrcode，scene 缺省 login）。 */
+  /** 拉码（缺省 login/api.ts createQrcode，scene 缺省 login）；captcha 条件必填（§2.5），reactive 首探不带。 */
   request?: (req: {
     providerKey: string;
-    captcha: CaptchaPayload;
+    captcha?: CaptchaPayload;
   }) => Promise<CreateQrcodeResponse>;
 }
 
@@ -126,7 +130,7 @@ export interface QrcodeRequesterDeps {
  */
 async function defaultCreateQrcode(req: {
   providerKey: string;
-  captcha: CaptchaPayload;
+  captcha?: CaptchaPayload;
 }): Promise<CreateQrcodeResponse> {
   const { createQrcode } = await import('../api');
   return createQrcode(req);
@@ -142,15 +146,29 @@ async function defaultPollTicket(
 }
 
 /**
- * 拉码请求体组装（CreateQrcode 必带 captcha，§2.8 行 703）：凭据由 gate 每轮
- * 注入（一次性，不可复用）。纯工厂，node 可测。
+ * 拉码请求体组装（captcha 条件必填，§2.5）：凭据由 gate 每轮注入（一次性，
+ * 不可复用）；缺凭据（reactive 首探 / upfront 无配置退化）不带 captcha 字段
+ * 裸发，是否必检由服务端按 provider need_captcha 判定。纯工厂，node 可测。
  */
 export function qrcodeRequester(
   providerKey: string,
   deps: QrcodeRequesterDeps = {},
-): (captcha: CaptchaPayload) => Promise<CreateQrcodeResponse> {
+): (captcha?: CaptchaPayload) => Promise<CreateQrcodeResponse> {
   const request = deps.request ?? defaultCreateQrcode;
-  return (captcha) => request({ providerKey, captcha });
+  return (captcha) =>
+    request({
+      providerKey,
+      ...(captcha !== undefined ? { captcha } : {}),
+    });
+}
+
+/**
+ * 拉码 gate 模式分派（§2.5 触发表第 7 行，纯函数 node 可测）：provider
+ * need_captcha=true → upfront 先问凭据再拉码；false / 缺省 → reactive 先裸发，
+ * 命中 captcha_required 才弹窗（服务端按同一配置 fail-closed 兜底）。
+ */
+export function qrcodeGateMode(needCaptcha?: boolean): CaptchaGateMode {
+  return needCaptcha === true ? 'upfront' : 'reactive';
 }
 
 /**
@@ -293,6 +311,12 @@ export interface QRCodeStepProps {
   /** 扫码类 Provider 的 providerKey（§2.8 行 701）。 */
   providerKey: string;
   /**
+   * 拉码需人机校验（provider 条目 needCaptcha，§2.5）：true = upfront 挂载即
+   * 弹窗取凭据再拉码；false / 缺省 = reactive 先裸发，命中 captcha_required
+   * 才弹窗（服务端 fail-closed 兜底误判）。
+   */
+  needCaptcha?: boolean;
+  /**
    * 扫码登录结论上抛（外层信封；内层 login 为 §1.3 登录流程信封）：
    * success 已由本组件 completeLogin 完成终点跳转；binding_required /
    * 失败态经本回调交容器状态机分派（§2.8 行 739-743）。
@@ -300,10 +324,10 @@ export interface QRCodeStepProps {
   onResult?: (envelope: LoginFlowResponse) => void;
   /** captcha 配置（缺省取注入快照 methods.captcha；来源三处见 §2.5 行 477）。 */
   captcha?: CaptchaConfig;
-  /** 拉码替身（缺省 createQrcode；测试注入）。 */
+  /** 拉码替身（缺省 createQrcode；测试注入）；captcha 条件必填（§2.5）。 */
   requestQrcode?: (req: {
     providerKey: string;
-    captcha: CaptchaPayload;
+    captcha?: CaptchaPayload;
   }) => Promise<CreateQrcodeResponse>;
   /** 轮询替身（缺省 getLoginTicket；测试注入）。 */
   pollTicket?: (
@@ -318,6 +342,7 @@ export interface QRCodeStepProps {
 
 export function QRCodeStep({
   providerKey,
+  needCaptcha,
   onResult,
   captcha = initCaptcha(),
   requestQrcode,
@@ -385,12 +410,13 @@ export function QRCodeStep({
 
   const requestQR = async () => {
     const outcome = await gate.run({
-      mode: 'upfront',
+      // 模式分派（§2.5）：qrcodeGateMode，provider need_captcha=true 先问再发，
+      // false 先裸发命中 captcha_required 才问；服务端 fail-closed 兜底。
+      mode: qrcodeGateMode(needCaptcha),
       config: captcha,
+      // 凭据一律交请求器组装（reactive 首探不带 captcha 字段，§2.5）。
       request: (token) =>
-        token === undefined
-          ? Promise.reject(new Error(t('login.qrNeedCaptcha')))
-          : qrcodeRequester(providerKey, { request: requestQrcode })(token),
+        qrcodeRequester(providerKey, { request: requestQrcode })(token),
       // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
       readOutcome: () => ({ action: 'message' }),
       readError: errorCaptchaOutcome,

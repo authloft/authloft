@@ -18,9 +18,10 @@
  * bindPollPhase（./api 纯函数）替换 target_taken 的 failed 帧文案——两组
  * props 下四态流转仍一致（面板四态流转测试约束不破，仅该帧文案按语境覆盖）。
  *
- * 【captcha 门控】CreateQrcode 必须携带 captcha（§2.8 行 690/703）：面板挂载
- * 即拉码，拉码经 shared/captcha 的 gate 走 upfront——先在弹窗里问凭据再发请求
- * （login 端 QRCodeStep 同款模式）；captcha_invalid 在窗内换凭据重试；用户
+ * 【captcha 门控】按 provider need_captcha 分派（§2.5 触发表第 7 行）：true
+ * 走 upfront——面板挂载即弹窗问凭据再发请求；false 走 reactive——先裸发，
+ * 命中 captcha_required 才弹窗（login 端 QRCodeStep 同款模式）；
+ * captcha_invalid 在窗内换凭据重试；用户
  * 取消则卸下面板体、留「获取二维码」按钮原地重入。signal 忽略——api 薄封装
  * 不支持中断，结果丢弃由面板 disposed 检查兜底。
  * 文案经 shared/i18n（account.* 域键）。
@@ -56,6 +57,8 @@ import styles from './ThirdPartyBindDialog.module.less';
 interface PanelBodyProps {
   /** 扫码类 Provider 标识（§3.7.1 B 行 993）。 */
   providerKey: string;
+  /** 拉码需人机校验（§2.5 模式分派：true=upfront 先问再发，false=reactive 先裸发）。 */
+  needCaptcha: boolean;
   /** captcha 配置（§3.2 GetConfig 注入；每轮拉码经弹窗现取凭据，§2.8 行 703）。 */
   captcha: CaptchaConfig;
   /** 绑定成功（§3.7.1 B 行 1007）：父级关框 + 刷新列表。 */
@@ -72,6 +75,7 @@ interface PanelBodyProps {
  */
 function BindPanelBody({
   providerKey,
+  needCaptcha,
   captcha,
   onDone,
   onCancelled,
@@ -79,23 +83,27 @@ function BindPanelBody({
   const gate = useCaptchaGate(AppModal);
   const [phase, setPhase] = useState<QRPanelPhase>({ kind: 'fetching' });
   const lastPollStatusRef = useRef('');
-  const propsRef = useRef({ providerKey, captcha, onDone, onCancelled });
-  propsRef.current = { providerKey, captcha, onDone, onCancelled };
+  const propsRef = useRef({
+    providerKey,
+    needCaptcha,
+    captcha,
+    onDone,
+    onCancelled,
+  });
+  propsRef.current = { providerKey, needCaptcha, captcha, onDone, onCancelled };
   const [controller] = useState<QRPanelController>(() =>
     createQRPanelController({
       requestQR: async (): Promise<CreateQrcodeResponse> => {
         const outcome = await gate.run({
-          mode: 'upfront',
+          // 模式分派（§2.5）：provider need_captcha=true 先问再发，false 先
+          // 裸发命中 captcha_required 才问；服务端按同一配置 fail-closed 兜底。
+          mode: propsRef.current.needCaptcha ? 'upfront' : 'reactive',
           config: propsRef.current.captcha,
+          // 凭据一律交请求组装（reactive 首探不带 captcha 字段，§2.5）。
           request: (token: CaptchaPayload | undefined) =>
-            token === undefined
-              ? Promise.reject(new Error(t('account.qrNeedCaptcha')))
-              : createQrcode(
-                  buildCreateQrcodeBindRequest(
-                    propsRef.current.providerKey,
-                    token,
-                  ),
-                ),
+            createQrcode(
+              buildCreateQrcodeBindRequest(propsRef.current.providerKey, token),
+            ),
           // CreateQrcode 响应无 status 字段（§12.9 生成物）：结论只在错误侧。
           readOutcome: () => ({ action: 'message' }),
           readError: errorCaptchaOutcome,
@@ -160,6 +168,8 @@ export function ThirdPartyBindDialog(props: {
   providerKey: string;
   /** Provider 展示名（Modal 标题）。 */
   displayName: string;
+  /** 拉码需人机校验（§2.5 模式分派，随 available 条目透传）。 */
+  needCaptcha: boolean;
   /** captcha 配置（§3.2 GetConfig 注入，§5 行 489）。 */
   captcha: CaptchaConfig;
   /** 未完成绑定的关闭（父级仅关框）。 */
@@ -210,6 +220,7 @@ export function ThirdPartyBindDialog(props: {
             <BindPanelBody
               key={panelKey}
               providerKey={props.providerKey}
+              needCaptcha={props.needCaptcha}
               captcha={props.captcha}
               onDone={props.onDone}
               onCancelled={() => setCancelled(true)}

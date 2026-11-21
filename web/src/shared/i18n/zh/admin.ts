@@ -227,6 +227,9 @@ export const admin = {
   // （{{TICKET}} 占位填完整加密 ticket）、tip 为随 CreateQrcode 下发的 HTML
   // 提示文案（站点 CSP 兜底，§2.8）。
   'admin.schemaField.qrcodeAutoDeleteLabel': '登录后自动删除码图',
+  'admin.schemaField.needCaptchaLabel': '需人机验证',
+  'admin.schemaField.needCaptchaHelp':
+    '拉取二维码前要求用户先通过人机校验；关闭后直接拉码（登录与绑定共同生效）',
   'admin.schemaField.storageProviderLabel': '存储 Provider',
   'admin.schemaField.storagePathLabel': '存储路径模板',
   'admin.schemaField.storagePathHelp':

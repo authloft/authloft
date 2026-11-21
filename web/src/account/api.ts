@@ -802,6 +802,8 @@ export interface ThirdpartyAccountRow {
   bound: boolean;
   /** 绑定时间（Unix 秒；仅 bound=true）。 */
   createdAt?: bigint;
+  /** 拉码需人机校验（Ext need_captcha，仅 qrcode 渠道；§2.5）。 */
+  needCaptcha?: boolean;
 }
 
 /**
@@ -837,6 +839,7 @@ export function mergeThirdpartyAccounts(
       channel: option.channel,
       icon: option.icon,
       bound: false,
+      needCaptcha: option.needCaptcha === true,
     });
   }
   return rows;
@@ -864,17 +867,17 @@ export function buildGetThirdpartyTicketRequest(
 
 /**
  * CreateQrcode 绑定场景请求（§3.7.1 B 行 993 / §2.8 行 688-703）：scene 固定
- * bind（需 al_session）；captcha 每次拉码都要新的（行 703），由调用方的
- * captcha 弹窗每轮现取后传入。
+ * bind（需 al_session）；captcha 条件必填（§2.5）——need_captcha=true 时由
+ * 调用方的 captcha 弹窗每轮现取后传入，false / 首探缺省不带（裸发）。
  */
 export function buildCreateQrcodeBindRequest(
   providerKey: string,
-  captcha: CaptchaPayload,
+  captcha?: CaptchaPayload,
 ): CreateQrcodeRequest {
   return create(CreateQrcodeRequestSchema, {
     providerKey,
     scene: 'bind',
-    captcha,
+    ...(captcha !== undefined ? { captcha } : {}),
   });
 }
 

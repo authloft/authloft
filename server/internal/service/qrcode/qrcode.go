@@ -221,19 +221,6 @@ type CreateQrcodeOutput struct {
 // CreateQrcode 拉取小程序码（§2.8 行 702-719）。业务失败走可判别哨兵
 // 错误（handler 转 Connect 错误体 + ErrorInfo）。
 func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*CreateQrcodeOutput, error) {
-	// captcha 必检（§2.5 触发表第 7 行：拉取小程序码；§2.8 行 703 必须携带，
-	// 无阈值参与）。
-	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{Scene: captcha.SceneQrcodeFetch, Submission: in.Captcha})
-	if err != nil {
-		return nil, fmt.Errorf("qrcode: gate: %w", err)
-	}
-	switch out.Status {
-	case captcha.StatusRequired:
-		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaRequired, Config: out.Config}
-	case captcha.StatusInvalid:
-		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaInvalid, Config: out.Config}
-	}
-
 	// scene（§2.8 行 716）：login 默认｜bind 需 al_session，否则 401。
 	scene := in.Scene
 	if scene == "" {
@@ -272,6 +259,24 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	fetcher, ok := adapter.(provider.QRCodeSupporter)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q has no qrcode support", ErrQrcodeProviderDisabled, in.ProviderKey)
+	}
+
+	// captcha 判定（§2.5 触发表第 7 行）：是否必检由该 provider 的
+	// need_captcha 配置决定（判定输入从 Ext 读取，判定仍在 Gate），
+	// 故置于 provider 加载之后；登录与绑定共用同一配置。
+	out, err := s.deps.Gate.Evaluate(ctx, captcha.Request{
+		Scene:       captcha.SceneQrcodeFetch,
+		NeedCaptcha: p.Ext != nil && p.Ext.GetNeedCaptcha(),
+		Submission:  in.Captcha,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("qrcode: gate: %w", err)
+	}
+	switch out.Status {
+	case captcha.StatusRequired:
+		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaRequired, Config: out.Config}
+	case captcha.StatusInvalid:
+		return nil, &QrcodeCaptchaFailure{cause: ErrQrcodeCaptchaInvalid, Config: out.Config}
 	}
 
 	// 应用上下文（§2.8）：仅 scene=login 携带 sso_client_id（bind 不携带——

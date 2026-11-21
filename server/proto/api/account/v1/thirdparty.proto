@@ -53,6 +53,8 @@ message ThirdpartyOption {
   string icon = 5;
   // 排序（§3.7）。
   int64 sort_order = 6;
+  // 拉码需人机校验（Ext need_captcha，仅 qrcode 渠道有意义；§2.5 / §2.8）。
+  bool need_captcha = 7;
 }
 
 // ThirdpartyBindingsResponse 是 AccountService/GetThirdpartyBindings 的响应

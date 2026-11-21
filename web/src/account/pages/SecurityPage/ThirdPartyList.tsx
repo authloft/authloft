@@ -57,6 +57,8 @@ import styles from './ThirdPartyList.module.less';
 interface OpenDialog {
   providerKey: string;
   displayName: string;
+  /** 拉码需人机校验（§2.5 模式分派，随 provider 条目透传）。 */
+  needCaptcha: boolean;
 }
 
 /** 行题：渠道图标 + 展示名（Union 行带「联合身份」标记）。 */
@@ -181,6 +183,7 @@ function BindAction(props: {
         props.onQrcode({
           providerKey: row.providerKey,
           displayName: row.displayName,
+          needCaptcha: row.needCaptcha === true,
         })
       }
     >
@@ -334,6 +337,7 @@ export function ThirdPartyList(props: {
         visible={dialog !== undefined}
         providerKey={dialog?.providerKey ?? ''}
         displayName={dialog?.displayName ?? ''}
+        needCaptcha={dialog?.needCaptcha ?? false}
         captcha={captcha}
         onCancel={() => setDialog(undefined)}
         onDone={() => {

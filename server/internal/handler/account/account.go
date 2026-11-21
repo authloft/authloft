@@ -505,6 +505,7 @@ func (h *Handler) GetThirdpartyBindings(ctx context.Context, req *connect.Reques
 			Channel:     op.Channel,
 			Icon:        op.Icon,
 			SortOrder:   op.SortOrder,
+			NeedCaptcha: op.NeedCaptcha,
 		}
 	}
 	return connect.NewResponse(&accountv1.ThirdpartyBindingsResponse{

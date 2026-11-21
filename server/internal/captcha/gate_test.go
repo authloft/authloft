@@ -136,28 +136,31 @@ func TestGateRequiredSceneNeedsCaptcha(t *testing.T) {
 }
 
 // TestSceneTable 按 §2.5 触发表核对场景结论：表内 7 个场景 + 无下发场景，
-// 未知场景 fail-closed（按「必须」处理）。
+// 未知场景 fail-closed（按「必须」处理）。need 仅 qrcode_fetch 消费
+// （provider need_captcha 判定输入），其余场景忽略。
 func TestSceneTable(t *testing.T) {
 	cases := []struct {
 		scene string
+		need  bool
 		want  bool
 	}{
-		{SceneOtpDispatch, true},         // 第 1 行 任何一次性验证码下发
-		{SceneWebAuthnOptions, false},    // 第 2 行 WebAuthn 取 options
-		{ScenePasswordLogin, false},      // 第 3 行 密码登录：0 次失败不触发
-		{SceneSignupResetDispatch, true}, // 第 4 行 注册 / 重置的下发
-		{SceneMfaDispatch, true},         // 第 5 行 两步验证阶段下发
-		{SceneContactBind, true},         // 第 6 行 绑定 / 换绑联系方式
-		{SceneQrcodeFetch, true},         // 第 7 行 拉取小程序码
-		{SceneNoDispatch, false},         // 无下发环节
-		{"", true},                       // 未登记 → fail-closed
-		{"no_such_scene", true},          // 未登记 → fail-closed
+		{SceneOtpDispatch, false, true},         // 第 1 行 任何一次性验证码下发
+		{SceneWebAuthnOptions, false, false},    // 第 2 行 WebAuthn 取 options
+		{ScenePasswordLogin, false, false},      // 第 3 行 密码登录：0 次失败不触发
+		{SceneSignupResetDispatch, false, true}, // 第 4 行 注册 / 重置的下发
+		{SceneMfaDispatch, false, true},         // 第 5 行 两步验证阶段下发
+		{SceneContactBind, false, true},         // 第 6 行 绑定 / 换绑联系方式
+		{SceneQrcodeFetch, true, true},          // 第 7 行 拉取小程序码（need_captcha=true）
+		{SceneQrcodeFetch, false, false},        // 第 7 行 need_captcha=false 免检
+		{SceneNoDispatch, false, false},         // 无下发环节
+		{"", false, true},                       // 未登记 → fail-closed
+		{"no_such_scene", false, true},          // 未登记 → fail-closed
 	}
 	g := NewGate(mapSettings{}, &fakeCatalog{p: testProvider(BuiltinProviderKey, TypeImage, "")},
 		newFakeImageStore(), func(*provider.Provider) (provider.Verifier, error) { return nil, nil })
 	for _, tc := range cases {
 		t.Run(tc.scene, func(t *testing.T) {
-			out, err := g.Evaluate(context.Background(), Request{Scene: tc.scene})
+			out, err := g.Evaluate(context.Background(), Request{Scene: tc.scene, NeedCaptcha: tc.need})
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}

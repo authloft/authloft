@@ -44,7 +44,9 @@ const (
 	SceneMfaDispatch = "mfa_dispatch"
 	// SceneContactBind 绑定 / 换绑手机号、邮箱（第 6 行）。
 	SceneContactBind = "contact_bind"
-	// SceneQrcodeFetch 拉取小程序码（第 7 行）。
+	// SceneQrcodeFetch 拉取小程序码（第 7 行）：按扫码 provider 的
+	// need_captcha 配置判定，判定输入由唯一调用方（qrcode service）从
+	// provider 实例 Ext 读取，新调用点不得缺省该输入。
 	SceneQrcodeFetch = "qrcode_fetch"
 	// SceneNoDispatch 不含下发的环节——已下发后的校验 / 提交、三方免密建号
 	// （只提交用户名）——统一用本场景，对应触发表「不需要、本环节无下发」一行。
@@ -61,6 +63,9 @@ const (
 	ruleNotRequired
 	// rulePasswordThreshold 按密码登录失败计数与阈值比较得出。
 	rulePasswordThreshold
+	// ruleQrcodeNeedCaptcha 按拉码判定输入 NeedCaptcha 得出（扫码 provider
+	// 的 need_captcha 配置）。
+	ruleQrcodeNeedCaptcha
 )
 
 // sceneRules 与 docs/接口文档.md §2.5 触发表的行对齐：表内 7 个场景
@@ -75,7 +80,7 @@ var sceneRules = map[string]rule{
 	SceneSignupResetDispatch: ruleRequired,          // 第 4 行 注册 / 重置的下发
 	SceneMfaDispatch:         ruleRequired,          // 第 5 行 两步验证阶段下发
 	SceneContactBind:         ruleRequired,          // 第 6 行 绑定 / 换绑联系方式
-	SceneQrcodeFetch:         ruleRequired,          // 第 7 行 拉取小程序码
+	SceneQrcodeFetch:         ruleQrcodeNeedCaptcha, // 第 7 行 拉取小程序码（按 provider 配置）
 	SceneNoDispatch:          ruleNotRequired,       // 无下发环节（表「不需要」一行）
 }
 
@@ -103,10 +108,12 @@ type Settings interface {
 
 // Request 描述一次拦截判定。Scene 由调用入口按当前业务环节给出（取值见本包
 // 场景常量），调用方不自行判定是否触发；FailedAttempts 只由密码登录场景消费，
-// 为同账号当日失败次数。
+// 为同账号当日失败次数；NeedCaptcha 只由拉码场景消费，为该扫码 provider 的
+// need_captcha 配置（判定输入而非判定结果，与 FailedAttempts 同构）。
 type Request struct {
 	Scene          string
 	FailedAttempts int64
+	NeedCaptcha    bool
 	Submission     *Submission
 }
 
@@ -177,7 +184,7 @@ func (g *Gate) Config(ctx context.Context) Config {
 // 执行校验。返回基础设施错误时由调用方映射为 failed；业务失败通过
 // Outcome.Status 表达。
 func (g *Gate) Evaluate(ctx context.Context, req Request) (Outcome, error) {
-	if !g.requires(req.Scene, req.FailedAttempts) {
+	if !g.requires(req) {
 		return Outcome{}, nil
 	}
 
@@ -241,12 +248,14 @@ func (g *Gate) evaluateImage(ctx context.Context, out Outcome, sub Submission) (
 
 // requires 查触发表得出本次是否必须人机校验。未登记场景（含空串）一律按
 // 「必须」处理：宁可多校验一次，也不因调用方漏写场景而静默放行。
-func (g *Gate) requires(scene string, failedAttempts int64) bool {
-	switch sceneRules[scene] {
+func (g *Gate) requires(req Request) bool {
+	switch sceneRules[req.Scene] {
 	case ruleNotRequired:
 		return false
 	case rulePasswordThreshold:
-		return failedAttempts >= g.threshold()
+		return req.FailedAttempts >= g.threshold()
+	case ruleQrcodeNeedCaptcha:
+		return req.NeedCaptcha
 	default:
 		return true
 	}

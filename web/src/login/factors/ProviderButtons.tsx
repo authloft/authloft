@@ -165,6 +165,8 @@ export interface ProviderButtonsProps {
 /** qrcode 面板组件的加载态（动态 import 产物，见 pickQr）。 */
 type QRCodeStepComponent = ComponentType<{
   providerKey: string;
+  /** 拉码需人机校验（provider 条目 needCaptcha，§2.5 模式分派）。 */
+  needCaptcha?: boolean;
   onResult?: (envelope: LoginFlowResponse) => void;
 }>;
 
@@ -178,6 +180,8 @@ export function ProviderButtons({
     undefined,
   );
   const [qrProvider, setQrProvider] = useState<string | undefined>(undefined);
+  /** 点中的扫码 provider 条目（needCaptcha 随面板透传，§2.5 模式分派）。 */
+  const [qrNeedCaptcha, setQrNeedCaptcha] = useState<boolean>(false);
   const [qrStep, setQrStep] = useState<QRCodeStepComponent | null>(null);
 
   /** redirect 渠道点击：取 authorize_url → RedirectStep 跳转（§4.3 行 454）。 */
@@ -204,6 +208,10 @@ export function ProviderButtons({
    */
   const pickQr = (providerKey: string) => {
     setQrProvider(providerKey);
+    setQrNeedCaptcha(
+      providers.find((p) => p.providerKey === providerKey)?.needCaptcha ===
+        true,
+    );
     if (qrStep === null) {
       void import('../steps/QRCodeStep').then((m) => {
         setQrStep(() => m.QRCodeStep);
@@ -259,7 +267,11 @@ export function ProviderButtons({
         onPickQr={pickQr}
       />
       {qrProvider !== undefined && QRStep !== null && (
-        <QRStep providerKey={qrProvider} onResult={handleQrResult} />
+        <QRStep
+          providerKey={qrProvider}
+          needCaptcha={qrNeedCaptcha}
+          onResult={handleQrResult}
+        />
       )}
     </div>
   );

@@ -30,6 +30,7 @@ import {
   completeLogin,
   completeStepUpSubmit,
   dispatchQrResult,
+  qrcodeGateMode,
   qrcodeRequester,
   stepUpDismissState,
   stepUpPollAction,
@@ -291,6 +292,12 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(markup).toContain('role="alert"');
   });
 
+  test('qrcodeGateMode：needCaptcha=true → upfront 先弹窗；false / 缺省 → reactive 先裸发（§2.5 第 7 行按 provider 配置分派）', () => {
+    expect(qrcodeGateMode(true)).toBe('upfront');
+    expect(qrcodeGateMode(false)).toBe('reactive');
+    expect(qrcodeGateMode(undefined)).toBe('reactive');
+  });
+
   test('qrcodeRequester：gate 注入的凭据 → {providerKey, captcha} 调拉码（scene 缺省 login 省略，§2.8 行 702-703）', async () => {
     const payload: CaptchaPayload = create(CaptchaPayloadSchema, {
       providerKey: 'builtin_image',
@@ -312,6 +319,23 @@ describe('QRCodeStep（§4.2 行 443；§2.8 行 688-708）', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.providerKey).toBe('scan');
     expect(requests[0]?.captcha).toBe(payload);
+  });
+
+  test('qrcodeRequester：缺凭据（reactive 首探 / upfront 无配置退化）不带 captcha 字段裸发（§2.5 条件必填）', async () => {
+    const requests: Array<{ providerKey: string; captcha?: CaptchaPayload }> =
+      [];
+    const qr = await qrcodeRequester('scan', {
+      request: async (req) => {
+        requests.push(req);
+        return create(CreateQrcodeResponseSchema, {
+          ticket: 't',
+          qrcodeUrl: 'https://cdn.test/q.jpg',
+        });
+      },
+    })(undefined);
+    expect(qr.qrcodeUrl).toBe('https://cdn.test/q.jpg');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.captcha).toBeUndefined();
   });
 
   test('completeLogin：syncCookieUrl 优先 / redirectTo 回退 / 皆空 → 默认落点（§1.3 行 158-162）', () => {

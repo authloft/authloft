@@ -43,14 +43,15 @@ type SnapshotField struct {
 }
 
 // SnapshotProvider thirdparty.providers 条目（§2.7.1 行 560-574）：公开视图
-// 零凭证字段（§12.3 行 1466）——仅展示属性，绝无 ext 内容。
+// 零凭证字段（§12.3 行 1466）——仅展示属性与能力标志，绝无 ext 凭证内容。
 type SnapshotProvider struct {
 	ProviderKey string `json:"providerKey"`
 	DisplayName string `json:"displayName,omitempty"`
 	Type        string `json:"type"`
 	Channel     string `json:"channel"`
 	Icon        string `json:"icon,omitempty"`
-	SortOrder   string `json:"sortOrder,omitempty"` // int64 → 十进制字符串（§1.12）
+	SortOrder   string `json:"sortOrder,omitempty"`   // int64 → 十进制字符串（§1.12）
+	NeedCaptcha bool   `json:"needCaptcha,omitempty"` // qrcode 渠道：拉码需人机校验（Ext need_captcha）
 }
 
 // MethodEntry methods[] 单个方式条目（§2.1 行 382-400）。数值字段为十进制
@@ -369,6 +370,7 @@ func (h *Handler) thirdpartyEntry(allowed map[string]bool) (*MethodEntry, error)
 				Channel:     string(meta.Channel),
 				Icon:        p.Row.IconURL,
 				SortOrder:   strconv.FormatInt(int64(p.Row.SortOrder), 10),
+				NeedCaptcha: meta.Channel == provider.ChannelQRCode && p.Ext.GetNeedCaptcha(),
 			})
 			channels[string(meta.Channel)] = true
 		}

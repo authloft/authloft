@@ -169,7 +169,9 @@ type ThirdpartyOption struct {
 	// 图标地址（§3.7）。
 	Icon string `protobuf:"bytes,5,opt,name=icon,proto3" json:"icon,omitempty"`
 	// 排序（§3.7）。
-	SortOrder     int64 `protobuf:"varint,6,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
+	SortOrder int64 `protobuf:"varint,6,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
+	// 拉码需人机校验（Ext need_captcha，仅 qrcode 渠道有意义；§2.5 / §2.8）。
+	NeedCaptcha   bool `protobuf:"varint,7,opt,name=need_captcha,json=needCaptcha,proto3" json:"need_captcha,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -244,6 +246,13 @@ func (x *ThirdpartyOption) GetSortOrder() int64 {
 		return x.SortOrder
 	}
 	return 0
+}
+
+func (x *ThirdpartyOption) GetNeedCaptcha() bool {
+	if x != nil {
+		return x.NeedCaptcha
+	}
+	return false
 }
 
 // ThirdpartyBindingsResponse 是 AccountService/GetThirdpartyBindings 的响应
@@ -800,7 +809,7 @@ const file_api_account_v1_thirdparty_proto_rawDesc = "" +
 	"\achannel\x18\x04 \x01(\tR\achannel\x12\x12\n" +
 	"\x04icon\x18\x05 \x01(\tR\x04icon\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"\xb9\x01\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"\xdc\x01\n" +
 	"\x10ThirdpartyOption\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x12\n" +
@@ -808,7 +817,8 @@ const file_api_account_v1_thirdparty_proto_rawDesc = "" +
 	"\achannel\x18\x04 \x01(\tR\achannel\x12\x12\n" +
 	"\x04icon\x18\x05 \x01(\tR\x04icon\x12\x1d\n" +
 	"\n" +
-	"sort_order\x18\x06 \x01(\x03R\tsortOrder\"\x95\x01\n" +
+	"sort_order\x18\x06 \x01(\x03R\tsortOrder\x12!\n" +
+	"\fneed_captcha\x18\a \x01(\bR\vneedCaptcha\"\x95\x01\n" +
 	"\x1aThirdpartyBindingsResponse\x127\n" +
 	"\x05items\x18\x01 \x03(\v2!.api.account.v1.ThirdpartyBindingR\x05items\x12>\n" +
 	"\tavailable\x18\x02 \x03(\v2 .api.account.v1.ThirdpartyOptionR\tavailable\"<\n" +

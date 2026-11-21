@@ -1851,6 +1851,14 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
     });
   });
 
+  test('CreateQrcode 请求：缺凭据（reactive 首探）不带 captcha 字段裸发（§2.5 条件必填）', () => {
+    const request = apiMod.buildCreateQrcodeBindRequest('wechat_mp_scan');
+    expect(toJson(CreateQrcodeRequestSchema, request)).toEqual({
+      providerKey: 'wechat_mp_scan',
+      scene: 'bind',
+    });
+  });
+
   test('GetThirdpartyTicket 请求：poll 固定 15（§2.8 行 714 上限，与面板 pollSeconds 同值）', () => {
     expect(
       toJson(

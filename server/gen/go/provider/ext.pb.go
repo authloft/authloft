@@ -61,6 +61,7 @@ type Ext struct {
 	QrcodeMode       string `protobuf:"bytes,33,opt,name=qrcode_mode,json=qrcodeMode,proto3" json:"qrcode_mode,omitempty"`                      // 码生成模式三选一：ticket | base64 | url；空 = url（存量行为不变）
 	QrcodeFormat     string `protobuf:"bytes,34,opt,name=qrcode_format,json=qrcodeFormat,proto3" json:"qrcode_format,omitempty"`                // ticket 模式的二维码内容模板，{{TICKET}} 占位填完整加密 ticket（§2.8）
 	QrcodeTip        string `protobuf:"bytes,39,opt,name=qrcode_tip,json=qrcodeTip,proto3" json:"qrcode_tip,omitempty"`                         // 提示文案 HTML 原文，随 CreateQrcode 下发（tip_html），由站点 CSP 在执行层兜底
+	NeedCaptcha      bool   `protobuf:"varint,47,opt,name=need_captcha,json=needCaptcha,proto3" json:"need_captcha,omitempty"`                  // 拉码是否需人机校验；false = 免（后台表单新建默认开启）
 	// ---- 上传模式（category=storage 生效）----
 	UploadMode   string `protobuf:"bytes,35,opt,name=upload_mode,json=uploadMode,proto3" json:"upload_mode,omitempty"`       // proxy=经 Authloft 中转（默认）| direct=前端预签名直传
 	PresignTtl   int32  `protobuf:"varint,36,opt,name=presign_ttl,json=presignTtl,proto3" json:"presign_ttl,omitempty"`      // 直传预签名 URL 有效期（秒），默认 300
@@ -301,6 +302,13 @@ func (x *Ext) GetQrcodeTip() string {
 	return ""
 }
 
+func (x *Ext) GetNeedCaptcha() bool {
+	if x != nil {
+		return x.NeedCaptcha
+	}
+	return false
+}
+
 func (x *Ext) GetUploadMode() string {
 	if x != nil {
 		return x.UploadMode
@@ -389,7 +397,7 @@ var File_provider_ext_proto protoreflect.FileDescriptor
 
 const file_provider_ext_proto_rawDesc = "" +
 	"\n" +
-	"\x12provider/ext.proto\x12\bprovider\"\x98\v\n" +
+	"\x12provider/ext.proto\x12\bprovider\"\xbb\v\n" +
 	"\x03Ext\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x15\n" +
@@ -424,7 +432,8 @@ const file_provider_ext_proto_rawDesc = "" +
 	"qrcodeMode\x12#\n" +
 	"\rqrcode_format\x18\" \x01(\tR\fqrcodeFormat\x12\x1d\n" +
 	"\n" +
-	"qrcode_tip\x18' \x01(\tR\tqrcodeTip\x12\x1f\n" +
+	"qrcode_tip\x18' \x01(\tR\tqrcodeTip\x12!\n" +
+	"\fneed_captcha\x18/ \x01(\bR\vneedCaptcha\x12\x1f\n" +
 	"\vupload_mode\x18# \x01(\tR\n" +
 	"uploadMode\x12\x1f\n" +
 	"\vpresign_ttl\x18$ \x01(\x05R\n" +

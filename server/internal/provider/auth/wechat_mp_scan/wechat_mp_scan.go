@@ -109,6 +109,8 @@ func init() {
 	appID.Advanced = false
 	m.Fields = append([]provider.FieldMeta{appID, byKey["client_secret"]},
 		provider.FieldMeta{Key: "qrcode_auto_delete", Label: "admin.schemaField.qrcodeAutoDeleteLabel", Type: "checkbox", Section: "policy", Storage: provider.StorageExt},
+		provider.FieldMeta{Key: "need_captcha", Label: "admin.schemaField.needCaptchaLabel", Type: "checkbox", Section: "policy", Default: "true",
+			Help: "admin.schemaField.needCaptchaHelp", Storage: provider.StorageExt},
 		provider.FieldMeta{Key: "storage_provider", Label: "admin.schemaField.storageProviderLabel", Type: "select", Section: "endpoint",
 			Storage: provider.StorageExt, Kind: provider.FieldDynamicOptions, DynamicKey: dynamicKeyStorageProviderKeys},
 		provider.FieldMeta{Key: "storage_path", Label: "admin.schemaField.storagePathLabel", Type: "text", Section: "endpoint",

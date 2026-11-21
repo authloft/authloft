@@ -41,6 +41,8 @@ export interface SnapshotProvider {
   icon?: string;
   /** int64 → 十进制字符串（§1.12）。 */
   sortOrder?: string;
+  /** 拉码需人机校验（Ext need_captcha，仅 qrcode 渠道；§2.5）。 */
+  needCaptcha?: boolean;
 }
 
 /** __AUTHLOFT_INIT__.methods 的 methods[] 单个方式条目（§2.1 行 382-400）。 */

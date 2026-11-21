@@ -253,6 +253,9 @@ export const admin: typeof zhAdmin = {
   // (site CSP as the safety net, §2.8).
   'admin.schemaField.qrcodeAutoDeleteLabel':
     'Delete QR code image after sign-in',
+  'admin.schemaField.needCaptchaLabel': 'Require Human Verification',
+  'admin.schemaField.needCaptchaHelp':
+    'Ask for a captcha before fetching the QR code; when off the code is fetched directly (applies to both login and binding)',
   'admin.schemaField.storageProviderLabel': 'Storage Provider',
   'admin.schemaField.storagePathLabel': 'Storage Path Template',
   'admin.schemaField.storagePathHelp':

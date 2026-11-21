@@ -17,18 +17,59 @@ import (
 
 	commonv1 "authloft/gen/go/api/common/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
+	providerpb "authloft/gen/go/provider"
 	"authloft/internal/captcha"
+	"authloft/internal/provider"
+	"authloft/internal/repo/model"
 	qrcodesvc "authloft/internal/service/qrcode"
 )
 
+// chainLoader 返回启用且 need_captcha=true 的扫码 provider：captcha 判定
+// 以 provider 配置为输入（§2.5 触发表第 7 行），链路必须先过 provider 校验
+// 才进入 Gate.Evaluate；Storage / TicketCodec 等其余依赖不会被触达。
+type chainLoader struct{}
+
+func (chainLoader) Get(context.Context, string) (*provider.Provider, error) {
+	return &provider.Provider{
+		Key:  "wechat_mp_scan",
+		Type: "wechat_mp_scan",
+		Row: &model.Provider{ProviderKey: "wechat_mp_scan", Category: "auth",
+			Type: "wechat_mp_scan", IsEnabled: 1, EnableSignin: 1},
+		Ext: &providerpb.Ext{NeedCaptcha: true},
+	}, nil
+}
+
+// chainAdapter qrcode 渠道适配器 fake：仅过 Channel 与 QRCodeSupporter
+// 校验，拉码 / 兑换不被触达（captcha 失败先行返回）。
+type chainAdapter struct{}
+
+func (chainAdapter) Channel() provider.ThirdPartyChannel { return provider.ChannelQRCode }
+func (chainAdapter) BuildAuthURL(*provider.AuthContext) (string, error) {
+	return "", nil
+}
+func (chainAdapter) Exchange(context.Context, provider.ExchangeInput) (*provider.Token, error) {
+	return nil, nil
+}
+func (chainAdapter) FetchUser(context.Context, *provider.Token) (*provider.ExternalIdentity, error) {
+	return nil, nil
+}
+func (chainAdapter) FetchQrcode(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+
 // newQrcodeCaptchaChainHandler 组装真 Gate + 真 QRCode + 真 handler：captcha
-// 失败路径在 Gate.Evaluate 后立即返回，不触达 Loader / Storage / TicketCodec
-// 等其余依赖，故 QRCodeDeps 只需 Gate 一项。chainCatalog 回显带 siteKey 的
-// turnstile 当前生效项，使 CaptchaConfig 三字段均非空，便于逐项可证伪断言。
+// 失败路径在 Gate.Evaluate 后立即返回，不触达 Storage / TicketCodec 等其余
+// 依赖，故 QRCodeDeps 只需 Gate + Loader + NewAdapter 三项。chainCatalog
+// 回显带 siteKey 的 turnstile 当前生效项，使 CaptchaConfig 三字段均非空，
+// 便于逐项可证伪断言。
 func newQrcodeCaptchaChainHandler(t *testing.T) http.Handler {
 	t.Helper()
 	gate := captcha.NewGate(chainSettings{}, chainCatalog{}, chainImageStore{}, chainVerifierFactory)
-	svc := qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{Gate: gate})
+	svc := qrcodesvc.NewQRCode(qrcodesvc.QRCodeDeps{
+		Gate:       gate,
+		Loader:     chainLoader{},
+		NewAdapter: func(*provider.Provider) (provider.AuthAdapter, error) { return chainAdapter{}, nil },
+	})
 	_, handler := ssov1connect.NewSsoServiceHandler(New(nil, nil, nil, nil, svc))
 	return handler
 }

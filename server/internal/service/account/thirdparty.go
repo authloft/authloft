@@ -230,6 +230,8 @@ type BindOption struct {
 	Channel     string
 	Icon        string
 	SortOrder   int64
+	// 拉码需人机校验（Ext need_captcha，仅 qrcode 渠道置位）。
+	NeedCaptcha bool
 }
 
 // BindingsResult 双列表产物：items 已绑定（含 Union 归并行）、available 可绑定。
@@ -288,6 +290,7 @@ func (s *ThirdpartyService) GetThirdpartyBindings(ctx context.Context, uid int64
 				Channel:     string(meta.Channel),
 				Icon:        p.Row.IconURL,
 				SortOrder:   int64(p.Row.SortOrder),
+				NeedCaptcha: meta.Channel == provider.ChannelQRCode && p.Ext.GetNeedCaptcha(),
 			})
 		}
 	}

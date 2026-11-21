@@ -261,14 +261,17 @@ func (e *qrEnv) sealTicket(t *testing.T, p *token.TicketPayload) string {
 
 // —— CreateQrcode ——
 
-// TestCreateQrcodeCaptcha 必检：缺 captcha → captcha_required；校验失败 →
-// captcha_invalid；合法 → 放行（§2.8 行 703、§2.5 触发表第 7 行）。
+// TestCreateQrcodeCaptcha 必检（need_captcha=true）：缺 captcha →
+// captcha_required；校验失败 → captcha_invalid；合法 → 放行；免检
+// （need_captcha=false）裸发放行、凭据被忽略（§2.8 行 703、§2.5 触发表
+// 第 7 行按 provider 配置判定）。
 func TestCreateQrcodeCaptcha(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("缺 captcha", func(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
+		e.loader.byKey["scan"].Ext.NeedCaptcha = true
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan"})
 		if !errors.Is(err, ErrQrcodeCaptchaRequired) {
 			t.Fatalf("err = %v, want ErrQrcodeCaptchaRequired", err)
@@ -277,6 +280,7 @@ func TestCreateQrcodeCaptcha(t *testing.T) {
 	t.Run("captcha 无效", func(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
+		e.loader.byKey["scan"].Ext.NeedCaptcha = true
 		e.verifier.invalid = true
 		_, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
 		if !errors.Is(err, ErrQrcodeCaptchaInvalid) {
@@ -286,7 +290,19 @@ func TestCreateQrcodeCaptcha(t *testing.T) {
 	t.Run("合法 captcha 放行", func(t *testing.T) {
 		e := newQrEnv(t)
 		e.addScanProvider("scan", nil)
+		e.loader.byKey["scan"].Ext.NeedCaptcha = true
 		out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
+		if err != nil {
+			t.Fatalf("CreateQrcode: %v", err)
+		}
+		if out.QrcodeURL == "" || out.Ticket == "" {
+			t.Fatalf("out = %+v", out)
+		}
+	})
+	t.Run("need_captcha=false 裸发放行", func(t *testing.T) {
+		e := newQrEnv(t)
+		e.addScanProvider("scan", nil) // Ext 缺省 need_captcha=false
+		out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan"})
 		if err != nil {
 			t.Fatalf("CreateQrcode: %v", err)
 		}
