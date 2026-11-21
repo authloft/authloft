@@ -22,7 +22,7 @@ export interface RecoverySubmitBlock {
 }
 
 /**
- * 提交前校验决策（评审 P0-2；纯函数，node 可测）：空恢复码不直提——
+ * 提交前校验决策（纯函数，node 可测）：空恢复码不直提——
  * 返回 undefined = 放行；否则交组件落错误槽 + 聚焦首错字段（`fr-` 前缀与
  * FieldRenderer 缺省 idPrefix 对齐，PasswordForm / FormStep 同款模式）。
  */
@@ -43,7 +43,7 @@ export function RecoveryCodeForm({
   onSubmit,
 }: FactorProps) {
   const [values, setValues] = useState<Record<string, string>>({});
-  // 评审 P0-2：前置校验未过的字段级错误（落 FieldRenderer 错误槽）。
+  // 前置校验未过的字段级错误（落 FieldRenderer 错误槽）。
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const onChange = (name: string, value: string) => {
@@ -63,7 +63,7 @@ export function RecoveryCodeForm({
     if (loading || disabled) {
       return;
     }
-    // 评审 P0-2：空恢复码不直提——前置校验，未过聚焦首错字段。
+    // 空恢复码不直提——前置校验，未过聚焦首错字段。
     const block = recoverySubmitGuard(fields, values);
     if (block !== undefined) {
       setErrors(block.errors);

@@ -5,8 +5,8 @@
  *   390-394；challenge payload {phone}/{email}，§2.6 行 544）；MFA 场景不传
  *   目标（§2.6 行 545，目标取 uid 绑定资料），渲染掩码目标（§1.3 行 123-125
  *   maskedTarget）；
- * - verify 段：CodeInput 输码（§2.6 行 546 payload {code}）——评审
- *   P2-10 起收敛为 login/VerifyCodeSection 共享实现（提交按钮文案
+ * - verify 段：CodeInput 输码（§2.6 行 546 payload {code}）——收敛为
+ *   login/VerifyCodeSection 共享实现（提交按钮文案
  *   login.submit、重发随 disabled 禁用为本组件口径，经 props 注入）；
  *   autocomplete="one-time-code" 与整串粘贴拆分由 shared CodeInput 承担
  *   （§1.11 行 330）；错误计数提示 error.attemptsLeft（§1.3 行 151）。
@@ -55,7 +55,7 @@ export interface OTPFormProps extends FactorProps {
   /** verify 段输码变化上抛（与 code 成对注入即受控模式）。 */
   onCodeChange?: (value: string) => void;
   /**
-   * challenge 段初始表单值（评审 P1-5：传输失败 reset 后回填已输入
+   * challenge 段初始表单值（传输失败 reset 后回填已输入
    * 目标——容器持值 challengeValues 注入；仅作本地 state 初值，后续编辑不回写）。
    */
   initialValues?: Readonly<Record<string, string>>;
@@ -84,13 +84,13 @@ export function OTPForm({
   onCodeChange,
   initialValues,
 }: OTPFormProps) {
-  // challenge 段表单值：容器持值注入作初值（评审 P1-5 reset 后回填），
+  // challenge 段表单值：容器持值注入作初值（reset 后回填），
   // 仅挂载时消费一次，后续编辑走本地 state。
   const [values, setValues] = useState<Record<string, string>>(() => ({
     ...initialValues,
   }));
   const [localCode, setLocalCode] = useState('');
-  // 评审 P0-2：challenge 段字段级错误（verify 段输码校验归 VerifyCodeSection）。
+  // challenge 段字段级错误（verify 段输码校验归 VerifyCodeSection）。
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   // 受控 / 非受控双模式：容器注入（code + onCodeChange）→ 容器持值，
   // 实例随状态分支重建不丢已输码；缺省 → 本地 state（独立渲染）。
@@ -114,7 +114,7 @@ export function OTPForm({
     if (loading || disabled) {
       return;
     }
-    // challenge 段目标字段（§2.6 行 544-545，MFA 场景空对象）：前置校验（P0-2）。
+    // challenge 段目标字段（§2.6 行 544-545，MFA 场景空对象）：前置校验。
     const { errors: issues, firstField } = validateFormValues(fields, values);
     if (firstField !== undefined) {
       setErrors(issues);
@@ -125,7 +125,7 @@ export function OTPForm({
     onSubmit(values);
   };
 
-  // verify 段收敛为共享 VerifyCodeSection（评审 P2-10）：提交按钮文案
+  // verify 段收敛为共享 VerifyCodeSection：提交按钮文案
   // login.submit、重发随 disabled 禁用为本组件口径，经 props 注入保持原语义。
   if (step === 'verify') {
     return (

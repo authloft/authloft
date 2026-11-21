@@ -16,7 +16,7 @@
  *   （login-container.test 经 MethodTabs 消费）。
  *
  * 文案（i18n 收口）：redirect 失败提示经 shared/i18n 的 t() 消费——
- * 评审 P2-9 起由通用「请刷新重试」细化为带 provider 展示名的
+ * 由通用「请刷新重试」细化为带 provider 展示名的
  * login.oauthRedirectFailed，图标墙保留可重点（失败帧即重试入口）。
  */
 import { useState, type ComponentType } from 'react';
@@ -162,7 +162,7 @@ type RedirectState =
   | { phase: 'failed'; providerKey: string };
 
 /**
- * 失败帧展示名（评审 P2-9）：快照 displayName 优先，缺省 / 未知 key
+ * 失败帧展示名：快照 displayName 优先，缺省 / 未知 key
  * 回显 providerKey（§9 第 18 条零值兜底，与图标墙按钮文案同款取舍）。纯函数。
  */
 export function providerDisplayName(
@@ -247,7 +247,7 @@ export function ProviderButtons({
       return <RedirectStep authorizeUrl={redirect.url} navigate={navigate} />;
     }
     if (redirect.phase === 'failed') {
-      // 评审 P2-9：失败文案带 provider 展示名；图标墙保留可重点。
+      // 失败文案带 provider 展示名；图标墙保留可重点。
       return (
         <div>
           <p role="alert" className={styles.error}>

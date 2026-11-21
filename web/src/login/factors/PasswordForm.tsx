@@ -26,7 +26,7 @@ export function PasswordForm({
 }: FactorProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [capsLock, setCapsLock] = useState(false);
-  // 评审 P0-2：前置校验未过的字段级错误（落 FieldRenderer 错误槽）。
+  // 前置校验未过的字段级错误（落 FieldRenderer 错误槽）。
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const onChange = (name: string, value: string) => {
@@ -52,7 +52,7 @@ export function PasswordForm({
     if (loading || disabled) {
       return;
     }
-    // 评审 P0-2：提交前统一前置校验，未过聚焦首错字段、不发请求。
+    // 提交前统一前置校验，未过聚焦首错字段、不发请求。
     const { errors: issues, firstField } = validateFormValues(fields, values);
     if (firstField !== undefined) {
       setErrors(issues);

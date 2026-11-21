@@ -484,13 +484,13 @@ export interface LoginFlowViewProps {
   /** webauthn 最近一次下发的 options 容器镜像（失败态信封无 nextStep，容器持值注入）。 */
   challengeData?: JsonObject;
   /**
-   * 「返回方式列表」入口（评审 P0-1）：next / mfa 分支渲染次级链接，
+   * 「返回方式列表」入口：next / mfa 分支渲染次级链接，
    * 容器 dispatch reset 回第一步（reducer「换方式 = 全新流程」语义）。
    */
   onBackToMethods?: () => void;
-  /** 可重试失败态的「重试」动作（评审 P1-4：重提最近一次提交的容器持值）。 */
+  /** 可重试失败态的「重试」动作：重提最近一次提交的容器持值。 */
   onRetry?: () => void;
-  /** challenge 段已提交目标值（评审 P1-5：OTPForm initialValues 回填）。 */
+  /** challenge 段已提交目标值（OTPForm initialValues 回填）。 */
   challengeValues?: Readonly<Record<string, string>>;
   /**
    * 形态 A 提交即同意的文案键（§4.4）：OIDC 登录在场取 login.submitAndAgree，
@@ -546,7 +546,7 @@ export function LoginFlowView({
     state.status === "method_disabled" && isWebauthnWindow(state);
 
   /**
-   * 评审 P1-4：banner 公共接线——OTP 系因子的剩余次数由字段旁内联
+   * banner 公共接线——OTP 系因子的剩余次数由字段旁内联
    * 承载（OTPForm attemptsLeft），banner 不再重复；onRetry 仅「重提同值有意义」
    * 的白名单失败态接线（RETRY_RESUBMIT_STATUSES；retryable 由 ErrorBanner 自身判定）。
    */
@@ -557,7 +557,7 @@ export function LoginFlowView({
     onRetry: RETRY_RESUBMIT_STATUSES.has(state.status) ? onRetry : undefined,
   });
 
-  /** 评审 P0-1：next 分支的「返回方式列表」次级入口。 */
+  /** next 分支的「返回方式列表」次级入口。 */
   const backToMethodsNode = onBackToMethods !== undefined && (
     <button type="button" className={styles.backLink} onClick={onBackToMethods}>
       {t("login.backToMethods")}
@@ -769,7 +769,7 @@ export function LoginContainer({
   const [challengeData, setChallengeData] = useState<JsonObject | undefined>(
     undefined,
   );
-  // 最近一次提交的表单值（评审 P1-4：可重试失败态 onRetry 重提）。
+  // 最近一次提交的表单值（可重试失败态 onRetry 重提）。
   const [lastValues, setLastValues] = useState<
     Readonly<Record<string, string>> | undefined
   >(undefined);
@@ -916,17 +916,17 @@ export function LoginContainer({
     }
   }, [qrResult]);
 
-  // 评审 P0-1：「返回方式列表」= 回第一步（reducer「换方式 = 全新
+  // 「返回方式列表」= 回第一步（reducer「换方式 = 全新
   // 流程」语义的 reset 落地；flowReducerWithDefault 令 reset 后重选默认 tab）；
   // 一次性提示与 options 镜像清空，challengeValues / otpCode 持值保留
-  // （重选 OTP 方式时回填，P1-5 同款语义）。
+  // （重选 OTP 方式时回填）。
   const backToMethods = () => {
     dispatch({ type: "reset" });
     setChallengeData(undefined);
     setNotice(undefined);
   };
 
-  // 评审 P1-4：可重试失败态「重试」= 重提最近一次提交值（captcha 凭据由
+  // 可重试失败态「重试」= 重提最近一次提交值（captcha 凭据由
   // submit 内的 gate 弹窗现取，每轮换新，不复用已消费的凭据）。
   const retrySubmit = () => {
     if (lastValues !== undefined) {

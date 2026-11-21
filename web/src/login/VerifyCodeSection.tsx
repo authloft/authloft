@@ -1,5 +1,5 @@
 /**
- * verify 段共享实现（FRONTEND-UX-REVIEW P2-10）：OTPForm（登录 /
+ * verify 段共享实现：OTPForm（登录 /
  * MFA）与 RegisterPage / ResetPage（注册 / 重置）三处同构的「CodeInput 输码
  * + 未输满前置校验 + 剩余次数提示 + 重发倒计时 + 提交」段收敛为单份（原
  * 三份仅按钮文案 / id / 分段数 / 类名不同而各自自建）。
@@ -15,7 +15,7 @@
  *   一并禁用、页族原实现不含，缺省 false（页族口径）。
  *
  * 行为不变量（与原三实现逐条对齐）：提交前 codeErrorText 前置校验
- * （评审 P0-2，未过聚焦 CodeInput 不发请求）；attemptsLeft / retryAfter 为
+ * （未过聚焦 CodeInput 不发请求）；attemptsLeft / retryAfter 为
  * bigint（§1.12）；重发倒计时基于时间戳（useCountdown，§9 第 7 条）；输码
  * 变化即清内联错误。
  */
@@ -46,7 +46,7 @@ export interface VerifyCodeSectionProps {
   onCodeChange: (value: string) => void;
   /** 前置校验通过后上抛已输码（payload 组装归消费方，§9 第 6 条）。 */
   onSubmit: (code: string) => void;
-  /** 提交按钮文案 i18n 键（P2-10 可配文案：login.submit / login.nextStep）。 */
+  /** 提交按钮文案 i18n 键（可配文案：login.submit / login.nextStep）。 */
   submitLabelKey: string;
   /** 类名注入（见 VerifyCodeSectionClasses）。 */
   classes: VerifyCodeSectionClasses;
@@ -86,7 +86,7 @@ export function VerifyCodeSection({
     if (controlsDisabled) {
       return;
     }
-    // 评审 P0-2：未输满不提交，字段旁内联错误 + 聚焦首错。
+    // 未输满不提交，字段旁内联错误 + 聚焦首错。
     const issue = codeErrorText(code, length);
     if (issue !== undefined) {
       setCodeError(issue);

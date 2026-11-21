@@ -131,7 +131,7 @@ describe('OTPForm challenge 段（§2.6 行 544-545）', () => {
     expect(markup).toContain('登录</button>');
   });
 
-  test('initialValues 回填（评审 P1-5：传输失败 reset 后已输入目标不丢）', () => {
+  test('initialValues 回填（传输失败 reset 后已输入目标不丢）', () => {
     const markup = renderOtp({
       step: 'challenge',
       initialValues: { phone: '13800000000' },
@@ -242,7 +242,7 @@ describe('RecoveryCodeForm（仅二次因子，§1.10 行 310）', () => {
     expect(markup).toContain('登录中…');
   });
 
-  test('recoverySubmitGuard（评审 P0-2）：空值拦截（错误槽文案 + 焦点锚 fr-code）；满值放行', () => {
+  test('recoverySubmitGuard：空值拦截（错误槽文案 + 焦点锚 fr-code）；满值放行', () => {
     // 空恢复码不直提：拦截 + 聚焦首错字段（FieldRenderer 缺省 idPrefix 'fr'）。
     const block = recoverySubmitGuard([codeField], {});
     expect(block?.errors).toEqual({ code: '请填写此项' });
@@ -441,7 +441,7 @@ describe('startRedirect（redirect 渠道分派，§4.3 行 454 → §2.7.2 行 
   });
 });
 
-describe('providerDisplayName（评审 P2-9 失败帧展示名）', () => {
+describe('providerDisplayName（失败帧展示名）', () => {
   const providers: SnapshotProvider[] = [
     { providerKey: 'qq', displayName: 'QQ', type: 'qq', channel: 'redirect' },
     { providerKey: 'noname', type: 'x', channel: 'redirect' },
