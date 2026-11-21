@@ -32,6 +32,7 @@ import (
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
 	adminsvc "authloft/internal/service/admin"
+	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 	// 注册表数据源（§15.3）：与 bootstrap 同款 _ import 触发自注册，
@@ -2109,6 +2110,198 @@ func TestUserWriteHandlers(t *testing.T) {
 			t.Fatalf("status=%d raw=%s", resp.StatusCode, raw)
 		}
 	})
+}
+
+// —— 挂载层来源 IP → 管理域审计落值：真 service/admin 用户族依赖 fake ——
+// 仅覆盖 UnbindUserThirdparty / UpdateUserStatus 触达的最小依赖面，其余
+// 方法零值 stub（普通账户目标：门禁查询全 false 即放行）。
+
+type mountIPFakeAudit struct{ events []model.EventLog }
+
+func (f *mountIPFakeAudit) PushEvent(ev model.EventLog) { f.events = append(f.events, ev) }
+
+type mountIPFakeUsers struct{ user *model.User }
+
+func (f *mountIPFakeUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
+	if f.user != nil && f.user.ID == id {
+		return f.user, nil
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (f *mountIPFakeUsers) FindByPhone(context.Context, string) (*model.User, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (f *mountIPFakeUsers) FindByEmail(context.Context, string) (*model.User, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (f *mountIPFakeUsers) ListUsers(context.Context, repo.UserListQuery) ([]model.User, int64, error) {
+	return nil, 0, nil
+}
+
+func (f *mountIPFakeUsers) CreateWithCredential(context.Context, *model.User, *model.UserCredential) error {
+	return nil
+}
+
+func (f *mountIPFakeUsers) UpdateUserStatus(context.Context, int64, int8) error { return nil }
+
+func (f *mountIPFakeUsers) UpdateProfileColumns(context.Context, int64, *string, *string) error {
+	return nil
+}
+
+func (f *mountIPFakeUsers) UpdateContactColumns(context.Context, int64, *string, *string, *int8, *int8) error {
+	return nil
+}
+
+func (f *mountIPFakeUsers) UpdateMfaRequired(context.Context, int64, int8) error { return nil }
+
+func (f *mountIPFakeUsers) GetProfile(context.Context, int64) (*model.UserProfile, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (f *mountIPFakeUsers) SaveProfile(context.Context, *model.UserProfile) error { return nil }
+
+func (f *mountIPFakeUsers) IncEpoch(context.Context, int64) (int16, error) { return 4, nil }
+
+func (f *mountIPFakeUsers) AnonymizeUser(context.Context, int64, time.Time) (int16, error) {
+	return 4, nil
+}
+
+type mountIPFakeCreds struct{}
+
+func (mountIPFakeCreds) FindByUserAndKind(context.Context, int64, string) (*model.UserCredential, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (mountIPFakeCreds) FindByID(context.Context, int64) (*model.UserCredential, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (mountIPFakeCreds) ListByUser(context.Context, int64) ([]model.UserCredential, error) {
+	return nil, nil
+}
+
+func (mountIPFakeCreds) Create(context.Context, *model.UserCredential) error { return nil }
+
+func (mountIPFakeCreds) Update(context.Context, *model.UserCredential) error { return nil }
+
+func (mountIPFakeCreds) SetEnabled(context.Context, int64, bool) error { return nil }
+
+func (mountIPFakeCreds) DeleteByUserAndKind(context.Context, int64, string) error { return nil }
+
+func (mountIPFakeCreds) DeleteByID(context.Context, int64, int64) error { return nil }
+
+type mountIPFakeBinds struct{ rows []model.UserThirdpartyBind }
+
+func (f *mountIPFakeBinds) ListByUserID(context.Context, int64) ([]model.UserThirdpartyBind, error) {
+	return append([]model.UserThirdpartyBind(nil), f.rows...), nil
+}
+
+func (mountIPFakeBinds) UnbindWithUnionCascade(context.Context, int64, int64, string) error {
+	return nil
+}
+
+type mountIPFakeProviderFinder struct{ row *model.Provider }
+
+func (f *mountIPFakeProviderFinder) FindByKey(context.Context, string) (*model.Provider, error) {
+	return f.row, nil
+}
+
+type mountIPFakeEvents struct{}
+
+func (mountIPFakeEvents) ListByUser(context.Context, repo.EventLogListQuery) ([]model.EventLog, int64, error) {
+	return nil, 0, nil
+}
+
+type mountIPFakeEpochSync struct{}
+
+func (mountIPFakeEpochSync) Sync(context.Context, int64, int16) error { return nil }
+
+type mountIPFakePwfail struct{}
+
+func (mountIPFakePwfail) Reset(context.Context, string) error { return nil }
+
+func (mountIPFakePwfail) DeleteAccountRef(context.Context, string) error { return nil }
+
+type mountIPFakeSettingsReader struct{}
+
+func (mountIPFakeSettingsReader) GetInt64(string) (int64, bool) { return 0, false }
+
+func (mountIPFakeSettingsReader) GetBool(string) (bool, bool) { return false, false }
+
+type mountIPFakePerms struct{}
+
+func (mountIPFakePerms) HasPermission(context.Context, int64, string) (bool, error) {
+	return false, nil
+}
+
+func (mountIPFakePerms) HasAnyPermission(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+// TestUserWriteAuditCarriesRequestIP 管理域审计事件落来源 IP：真
+// service/admin 用户族经生产 http 挂载包装器 orchestrator.WithRequestInfoHandler
+// （bootstrap 同款：connect 前缀链统一注入，采信头名走动态源）——配置采信头
+// 后带 X-Client-IP 请求，断言写操作审计事件 IP == 采信头值。覆盖
+// UnbindUserThirdparty 与 UpdateUserStatus 两个代表写操作；ctx 未注入
+// （单测裸 ctx 直调）落空串由 service 原值透出，不在取值处兜底。
+func TestUserWriteAuditCarriesRequestIP(t *testing.T) {
+	audit := &mountIPFakeAudit{}
+	svc := adminsvc.NewUserService(
+		&mountIPFakeUsers{user: &model.User{ID: 42, Username: "alice", UserStatus: 1, Epoch: 3}},
+		mountIPFakeCreds{},
+		&mountIPFakeBinds{rows: []model.UserThirdpartyBind{
+			{ID: 7, UserID: 42, ProviderKey: "qq", OpenID: "oX-1"},
+		}},
+		&mountIPFakeProviderFinder{row: &model.Provider{ID: 5, ProviderKey: "qq", Category: "oauth", Type: "qq"}},
+		mountIPFakeEvents{}, mountIPFakeEpochSync{}, mountIPFakePwfail{},
+		audit, mountIPFakeSettingsReader{}, mountIPFakePerms{},
+	)
+	tokens, epochs, h := newAdminHandler(t, &fakeProviders{}, nil, svc)
+	srv := httptest.NewServer(orchestrator.WithRequestInfoHandler(h, func() string { return "X-Client-IP" }))
+	t.Cleanup(srv.Close)
+	cookie := adminCookie(t, tokens, epochs, 1)
+
+	post := func(procedure, body string) (int, string) {
+		req, err := http.NewRequest(http.MethodPost, srv.URL+procedure, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", cookie)
+		req.Header.Set("X-Client-IP", "9.9.9.9")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", procedure, err)
+		}
+		raw := readBody(t, resp.Body)
+		_ = resp.Body.Close()
+		return resp.StatusCode, raw
+	}
+
+	code, raw := post(adminv1connect.AdminServiceUnbindUserThirdpartyProcedure, `{"id":42,"providerKey":"qq"}`)
+	if code != http.StatusOK || raw != "{}" {
+		t.Fatalf("unbind: (%d, %s), want (200, {})", code, raw)
+	}
+	if len(audit.events) != 1 || audit.events[0].Event != eventlog.EventThirdpartyUnbind {
+		t.Fatalf("unbind 审计事件 = %+v, want thirdparty_unbind", audit.events)
+	}
+	if audit.events[0].IP != "9.9.9.9" {
+		t.Errorf("unbind 审计 IP = %q, want 9.9.9.9", audit.events[0].IP)
+	}
+
+	code, raw = post(adminv1connect.AdminServiceUpdateUserStatusProcedure, `{"id":42,"userStatus":0}`)
+	if code != http.StatusOK || raw != "{}" {
+		t.Fatalf("status: (%d, %s), want (200, {})", code, raw)
+	}
+	if len(audit.events) != 2 || audit.events[1].Event != eventlog.EventAdminDisableUser {
+		t.Fatalf("status 审计事件 = %+v, want admin_disable_user", audit.events)
+	}
+	if audit.events[1].IP != "9.9.9.9" {
+		t.Errorf("status 审计 IP = %q, want 9.9.9.9", audit.events[1].IP)
+	}
 }
 
 // TestUserRescueHandlers：救援族五写方法（SetUserMfa / UnbindUserTOTP /

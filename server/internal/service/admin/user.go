@@ -54,6 +54,7 @@ import (
 	credentialpb "authloft/gen/go/credential"
 	"authloft/internal/dto"
 	"authloft/internal/eventlog"
+	"authloft/internal/factor/ipres"
 	"authloft/internal/repo"
 	"authloft/internal/repo/model"
 	"authloft/internal/security"
@@ -403,6 +404,8 @@ func (s *UserService) CreateUser(ctx context.Context, actor int64, req *adminv1.
 		UserID:    u.ID,
 		Detail:    eventlog.DetailAdminCreateUser(username),
 		CreatedAt: now,
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return u.ID, nil
 }
@@ -482,6 +485,8 @@ func (s *UserService) UpdateUserStatus(ctx context.Context, actor, id int64, use
 		ActorID:   actor,
 		UserID:    id,
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -529,6 +534,8 @@ func (s *UserService) ResetUserPassword(ctx context.Context, actor, id int64, pa
 		UserID:    id,
 		Detail:    eventlog.DetailPwdEpoch(int64(epoch)),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -586,6 +593,8 @@ func (s *UserService) UnbindUserThirdparty(ctx context.Context, actor, id int64,
 		Target:    providerKey,
 		Detail:    eventlog.DetailThirdpartyBind(providerKey, target.OpenID),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -689,6 +698,8 @@ func (s *UserService) DeleteUser(ctx context.Context, actor, id int64) error {
 		UserID:    id,
 		Detail:    eventlog.DetailEmpty(),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -839,6 +850,8 @@ func (s *UserService) UpdateUserProfile(ctx context.Context, actor, id int64, re
 		UserID:    id,
 		Detail:    eventlog.DetailChangedFields(userProfileChangedFields(req)),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -963,6 +976,8 @@ func (s *UserService) UpdateUserContact(ctx context.Context, actor, id int64, re
 		UserID:    id,
 		Detail:    eventlog.DetailChangedFields(changed),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -1032,6 +1047,8 @@ func (s *UserService) SetUserMfa(ctx context.Context, actor, id int64, mfaRequir
 		UserID:    id,
 		Detail:    eventlog.DetailEnabled(false),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -1066,6 +1083,8 @@ func (s *UserService) UnbindUserTOTP(ctx context.Context, actor, id int64) error
 		UserID:    id,
 		Detail:    eventlog.DetailEmpty(),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -1114,6 +1133,8 @@ func (s *UserService) ResetUserRecoveryCodes(ctx context.Context, actor, id int6
 		UserID:    id,
 		Detail:    eventlog.DetailEmpty(),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -1154,6 +1175,8 @@ func (s *UserService) SetCredentialEnabled(ctx context.Context, actor, id, crede
 		UserID:    id,
 		Detail:    eventlog.DetailCredentialSetEnabled(credentialID, row.Kind, enabled),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
@@ -1198,6 +1221,8 @@ func (s *UserService) DeleteCredential(ctx context.Context, actor, id, credentia
 		UserID:    id,
 		Detail:    eventlog.DetailCredentialDelete(credentialID, row.Kind),
 		CreatedAt: s.now(),
+		// 来源 IP：connect 挂载层经 ctx 注入，未注入链路落空串、不兜底。
+		IP: ipres.ClientIP(ctx),
 	})
 	return nil
 }
