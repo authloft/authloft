@@ -33,7 +33,7 @@
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { Link, useSearchParams } from '@modern-js/runtime/router';
+import { useSearchParams } from '@modern-js/runtime/router';
 import {
   FieldSchema,
   type Field,
@@ -463,7 +463,7 @@ export function RegisterPageView({
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const entry = options.find((m) => m.method === method);
-  // 内存内语言切换（与 LoginPage 同款，持久化口径待定）；state 驱动重渲染
+  // 语言切换（与 LoginPage 同款：setLocale 会话内持久化）；state 驱动重渲染
   // 使 t() 生效。footer 语言切换全状态帧一致，入口导航只挂主表单帧。
   const [locale, setLocaleState] = useState<Locale>(getLocale);
   const switchLocale = (next: Locale) => {
@@ -472,13 +472,15 @@ export function RegisterPageView({
   };
   const footer = <LocaleSwitcher locale={locale} onSwitch={switchLocale} />;
   // 入口导航（已有账号？立即登录）：主表单帧与关闭类帧共用——关闭帧是死路，
-  // 回登录页是唯一出路；成功帧不渲染（自动跳转终点）。
+  // 回登录页是唯一出路；成功帧不渲染（自动跳转终点）。整页跳转（`<a href>`）
+  // ——注入快照按服务端路径 flow 口味生成，SPA 换页会串用首开页快照（LoginPage
+  // 文件头注释同款理由）。
   const loginNav = (
     <nav className={styles.entryNav}>
       {t('login.hasAccount')}
-      <Link className={styles.entryLink} to={ssoPath('/sso/login')}>
+      <a className={styles.entryLink} href={ssoPath('/sso/login')}>
         {t('login.goLogin')}
-      </Link>
+      </a>
     </nav>
   );
 

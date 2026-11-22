@@ -19,23 +19,27 @@ export default defineConfig({
     entries: {
       setup: './src/setup/App.tsx',
       login: './src/login/App.tsx',
+      register: './src/register/App.tsx',
+      reset: './src/reset/App.tsx',
       account: './src/account/App.tsx',
       admin: './src/admin/App.tsx',
     },
   },
   // server.routes：entry → 访问路径映射，dev 与 serve 双
-  // 生效——login 映射五条真实路径（回调段 :provider_key 动态参数），
-  // account / admin / setup 各映射根路径（子路径走前端路由）。
+  // 生效——登录族按页拆入口（整页跳转，注入快照按服务端路径的 flow
+  // 口味生成，避免 SPA 换页串用首开页快照）：login 承载登录页 / 回调 /
+  // authorize 三条路径（回调段 :provider_key 动态参数），register / reset
+  // 各映射单一路径；account / admin / setup 各映射根路径（子路径走前端路由）。
   server: {
     port: 3000,
     routes: {
       login: [
         '/sso/login',
-        '/sso/register',
-        '/sso/reset',
         '/sso/oauth/callback/:provider_key',
         '/auth/authorize',
       ],
+      register: '/sso/register',
+      reset: '/sso/reset',
       account: '/account',
       admin: '/admin',
       setup: '/setup',

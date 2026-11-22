@@ -4,8 +4,8 @@
  * 本文件只默认导出根组件；原挂载前副作用留在本模块作用域（框架生成的
  * entry 静态 import 本模块，为首个自有执行点）：读
  * `__AUTHLOFT_INIT__.static_base` 赋 `__webpack_public_path__`（任何动态
- * import() 之前；缺省 `/assets/`）→ 注入 i18n（按浏览器语言 setLocale，
- * zh-CN 默认）→ 根组件 = 错误边界包裹路由（语义与自行挂载时期一致）。
+ * import() 之前；缺省 `/assets/`）→ 注入 i18n（initLocale：会话内持久化值
+ * 优先，缺省按浏览器语言）→ 根组件 = 错误边界包裹路由（语义与自行挂载时期一致）。
  */
 // §1.7 行 120：全局样式由 entry 顶部 import 一次——tokens 只存变量（经组件
 // reference 消费，本身无 CSS 产出），reset 为基础重置。
@@ -13,7 +13,7 @@ import '../shared/styles/tokens.less';
 import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import { BrowserRouter } from '@modern-js/runtime/router';
-import { setLocale, t } from '../shared/i18n';
+import { initLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
 import { LoginApp } from './routes';
@@ -28,8 +28,8 @@ declare global {
 // import，该值为异步扩展预留）。
 __webpack_public_path__ = normalizeStaticBase(getInit()?.static_base);
 
-// §4.1：注入 i18n（i18n/index.ts：模块级当前语言，zh-CN 默认）。
-setLocale(navigator.language);
+// §4.1：注入 i18n（i18n/index.ts：会话内持久化值优先，缺省按浏览器语言）。
+initLocale(navigator.language);
 
 /** 渲染期异常兜底（错误边界，语义沿自行挂载时期不变）。 */
 class LoginErrorBoundary extends Component<

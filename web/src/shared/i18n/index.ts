@@ -1,12 +1,16 @@
 /**
  * i18n 取文案入口（docs/前端架构.md §3.4 行 343）：按 key 取文案 + 最简语言
- * 选择（模块级当前语言，zh-CN 默认；entry 挂载时按需 setLocale）。
+ * 选择（模块级当前语言，zh-CN 默认；entry 挂载时 initLocale——会话内持久化
+ * 值优先，缺省回落 navigator.language）。
  *
  * - 缺译不许静默回退 undefined：当前语言缺键 → zh-CN（默认语言）→ 键本身
  *   回显（可见、可排查），绝不返回 undefined；
  * - zh / en 两套 key 全量对齐由类型系统强制（en-US 以 I18nMessages 约束），
  *   另有运行时键集对齐测试兜底；
- * - 插值：`{name}` 占位，params 提供则替换，未提供的占位保留原样。
+ * - 插值：`{name}` 占位，params 提供则替换，未提供的占位保留原样；
+ * - 语言持久化 = sessionStorage（键 `al_locale`，会话内跨整页跳转存续、关
+ *   标签即失效）：登录族页面间是整页跳转（各自独立 entry），内存变量撑不住
+ *   跨页——只存语言这一个非敏感值，login_token 的禁止落盘口径不涉及。
  */
 import { zhCN, type I18nMessages } from './zh-CN';
 import { enUS } from './en-US';
@@ -22,7 +26,34 @@ const DICTIONARIES: Readonly<Record<Locale, I18nMessages>> = {
 
 const DEFAULT_LOCALE: Locale = 'zh-CN';
 
-let currentLocale: Locale = DEFAULT_LOCALE;
+/** 会话内语言持久化键（sessionStorage；node 环境无 window 时不读写）。 */
+const LOCALE_STORAGE_KEY = 'al_locale';
+
+/** 读会话内持久化语言（缺 window / 无值 / 非法值 → undefined）。 */
+function storedLocale(): Locale | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(LOCALE_STORAGE_KEY);
+    return raw === 'zh-CN' || raw === 'en-US' ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function persistLocale(locale: Locale): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // 存储不可用（隐私模式 / 测试桩缺失）→ 语言选择退化为纯内存，不影响功能。
+  }
+}
+
+let currentLocale: Locale = storedLocale() ?? DEFAULT_LOCALE;
 
 /**
  * 任意输入（如 navigator.language）归一到受支持语言：en 前缀 → en-US，
@@ -37,9 +68,15 @@ export function getLocale(): Locale {
   return currentLocale;
 }
 
-/** 切换语言（最简实现：模块级变量；未知取值归一到 zh-CN）。 */
+/** 切换语言（模块级变量 + 会话内持久化；未知取值归一到 zh-CN）。 */
 export function setLocale(locale: string): void {
   currentLocale = normalizeLocale(locale);
+  persistLocale(currentLocale);
+}
+
+/** 入口初始化：会话内持久化值优先，缺省回落 fallback（如 navigator.language）。 */
+export function initLocale(fallback: string): void {
+  setLocale(storedLocale() ?? fallback);
 }
 
 /** key 在当前语言或默认语言中可译。 */

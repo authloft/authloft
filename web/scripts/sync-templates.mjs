@@ -28,7 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** entry 列表（与 web/modern.config.ts source.entries 一一对应，本文件内唯一定义处）。 */
-const ENTRIES = ['login', 'account', 'admin', 'setup'];
+const ENTRIES = ['login', 'register', 'reset', 'account', 'admin', 'setup'];
 /** 运行期占位符（接口文档 §8 唯一定义；由构建期 config 注入，后端运行期替换值）。 */
 const CSP_NONCE = '{{AUTHLOFT_CSP_NONCE}}';
 const STATIC_BASE = '{{AUTHLOFT_STATIC_BASE}}';
@@ -37,7 +37,7 @@ const SITE_NAME = '{{AUTHLOFT_SITE_NAME}}';
 
 const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distHtmlDir = path.join(webDir, 'dist', 'html');
-/** 写入边界（§1.5）：对 server/ 的写权限仅限这四个落位产物文件，覆盖式写入。 */
+/** 写入边界（§1.5）：对 server/ 的写权限仅限这些落位产物文件，覆盖式写入。 */
 const outputDir = path.join(
   webDir,
   '..',

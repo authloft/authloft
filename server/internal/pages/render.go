@@ -23,8 +23,8 @@ import (
 	"authloft/internal/settings"
 )
 
-// templatesFS 四份壳层模板（templates/{login,account,admin,setup}.html，
-// 前端构建产物；禁手改——pnpm build 经同步脚本覆盖写入）。
+// templatesFS 六份壳层模板（templates/{login,register,reset,account,admin,
+// setup}.html，前端构建产物；禁手改——pnpm build 经同步脚本覆盖写入）。
 //
 //go:embed templates
 var templatesFS embed.FS

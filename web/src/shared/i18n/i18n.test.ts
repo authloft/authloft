@@ -7,6 +7,7 @@ import { enUS } from './en-US';
 import {
   getLocale,
   hasKey,
+  initLocale,
   interpolate,
   normalizeLocale,
   setLocale,
@@ -36,7 +37,7 @@ describe('i18n 键集全量对齐（缺译不许静默回退）', () => {
   });
 });
 
-describe('语言选择（最简实现，zh-CN 默认）', () => {
+describe('语言选择（zh-CN 默认；setLocale 会话内持久化）', () => {
   test('默认 zh-CN', () => {
     expect(getLocale()).toBe('zh-CN');
   });
@@ -58,6 +59,49 @@ describe('语言选择（最简实现，zh-CN 默认）', () => {
     setLocale('zh-CN');
     expect(getLocale()).toBe('zh-CN');
     expect(t('factors.totp')).toBe('动态口令');
+  });
+
+  /** sessionStorage 假件（al_locale 读写）；缺 window 时代码路径静默降级。 */
+  function stubWindowStorage(initial?: [string, string]): Map<string, string> {
+    const store = new Map<string, string>(initial ? [initial] : []);
+    (globalThis as Record<string, unknown>).window = {
+      sessionStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => store.set(k, v),
+      },
+    };
+    return store;
+  }
+
+  function unstubWindow() {
+    delete (globalThis as { window?: unknown }).window;
+    setLocale('zh-CN');
+  }
+
+  test('setLocale 持久化到 sessionStorage（键 al_locale）', () => {
+    const store = stubWindowStorage();
+    try {
+      setLocale('en-US');
+      expect(store.get('al_locale')).toBe('en-US');
+    } finally {
+      unstubWindow();
+    }
+  });
+
+  test('initLocale：会话内持久化值优先，缺省回落 fallback（浏览器语言归一）', () => {
+    const store = stubWindowStorage(['al_locale', 'en-US']);
+    try {
+      initLocale('zh-CN');
+      expect(getLocale()).toBe('en-US'); // 持久化值优先于浏览器语言
+      store.delete('al_locale');
+      initLocale('en');
+      expect(getLocale()).toBe('en-US'); // 无持久化值 → fallback 归一
+      store.set('al_locale', 'zh-CN');
+      initLocale('en-US');
+      expect(getLocale()).toBe('zh-CN');
+    } finally {
+      unstubWindow();
+    }
   });
 });
 

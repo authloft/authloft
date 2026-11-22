@@ -65,7 +65,6 @@ const server = setupServer();
 
 let pagesMod: typeof import('./RegisterPage');
 let resetMod: typeof import('./ResetPage');
-let routesMod: typeof import('../routes');
 let apiMod: typeof import('../api');
 let bootMod: typeof import('../bootstrap');
 
@@ -73,7 +72,6 @@ beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
   pagesMod = await import('./RegisterPage');
   resetMod = await import('./ResetPage');
-  routesMod = await import('../routes');
   apiMod = await import('../api');
   bootMod = await import('../bootstrap');
 });
@@ -196,29 +194,20 @@ function viewProps(init: Record<string, unknown>): Record<string, unknown> {
 }
 
 function renderRegisterView(init: Record<string, unknown> = {}): string {
-  // 主表单帧的「立即登录」入口导航经 Link 渲染，消费 router 上下文。
+  // 入口导航为整页跳转 <a>（不消费 router 上下文），视图直接渲染。
   return renderToStaticMarkup(
     createElement(
-      MemoryRouter,
-      { initialEntries: ['/sso/register'] },
-      createElement(
-        pagesMod.RegisterPageView,
-        viewProps({ snapshot: REGISTER_SNAPSHOT, ...init }) as never,
-      ),
+      pagesMod.RegisterPageView,
+      viewProps({ snapshot: REGISTER_SNAPSHOT, ...init }) as never,
     ),
   );
 }
 
 function renderResetView(init: Record<string, unknown> = {}): string {
-  // success 帧的登录页链接 + 主表单帧入口导航经 Link 渲染，消费 router 上下文。
   return renderToStaticMarkup(
     createElement(
-      MemoryRouter,
-      { initialEntries: ['/sso/reset'] },
-      createElement(
-        resetMod.ResetPageView,
-        viewProps({ snapshot: RESET_SNAPSHOT, ...init }) as never,
-      ),
+      resetMod.ResetPageView,
+      viewProps({ snapshot: RESET_SNAPSHOT, ...init }) as never,
     ),
   );
 }
@@ -666,27 +655,17 @@ describe('loadLoginBootstrap（§2.1 passwordPolicy 注入解析）', () => {
 
 describe('RegisterPageView 状态帧渲染', () => {
   test('flags.registration=false → 整页提示注册已关闭（§4.4 行 464），不渲染表单', () => {
-    // 关闭帧含「立即登录」入口导航（Link 消费 router 上下文）。
-    const markup = renderToStaticMarkup(
-      createElement(
-        MemoryRouter,
-        { initialEntries: ['/sso/register'] },
-        createElement(
-          pagesMod.RegisterPageView,
-          viewProps({
-            snapshot: {
-              flags: { registration: false },
-              methods: REGISTER_SNAPSHOT.methods,
-            },
-          }) as never,
-        ),
-      ),
-    );
+    const markup = renderRegisterView({
+      snapshot: {
+        flags: { registration: false },
+        methods: REGISTER_SNAPSHOT.methods,
+      },
+    });
     expect(markup).toContain('<h1>注册</h1>');
     expect(markup).toContain('注册未开放');
     expect(markup).not.toContain('<form');
     expect(markup).not.toContain('<input');
-    // 关闭帧是死路：入口导航给出回登录页的出口。
+    // 关闭帧是死路：入口导航给出回登录页的出口（整页跳转 <a href>）。
     expect(markup).toContain('已有账号？');
     expect(markup).toContain('href="/sso/login"');
   });
@@ -710,7 +689,7 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).not.toContain('<div></div>'); // 不再内联 CaptchaWidget 容器
     expect(markup).not.toContain('安全验证'); // 弹窗文案不在状态帧视图里
     expect(markup).toContain('aria-current="true"'); // 当前方式高亮
-    // 主表单帧入口导航：已有账号？立即登录（右对齐，Link 消费 router 上下文）。
+    // 主表单帧入口导航：已有账号？立即登录（右对齐，整页跳转 <a href>）。
     expect(markup).toContain('已有账号？');
     expect(markup).toContain('href="/sso/login"');
     expect(markup).toContain('立即登录');
@@ -895,43 +874,24 @@ describe('RegisterPageView 状态帧渲染', () => {
 
 describe('ResetPageView 状态帧渲染', () => {
   test('flags.passwordReset=false → 整页提示「找回密码未开放」（§4.4 行 465）', () => {
-    // 关闭帧含「立即登录」入口导航（Link 消费 router 上下文）。
-    const markup = renderToStaticMarkup(
-      createElement(
-        MemoryRouter,
-        { initialEntries: ['/sso/reset'] },
-        createElement(
-          resetMod.ResetPageView,
-          viewProps({
-            snapshot: {
-              flags: { passwordReset: false },
-              methods: RESET_SNAPSHOT.methods,
-            },
-          }) as never,
-        ),
-      ),
-    );
+    const markup = renderResetView({
+      snapshot: {
+        flags: { passwordReset: false },
+        methods: RESET_SNAPSHOT.methods,
+      },
+    });
     expect(markup).toContain('<h1>重置密码</h1>');
     expect(markup).toContain('找回密码未开放');
     expect(markup).not.toContain('<form');
-    // 关闭帧是死路：入口导航给出回登录页的出口。
+    // 关闭帧是死路：入口导航给出回登录页的出口（整页跳转 <a href>）。
     expect(markup).toContain('已有账号？');
     expect(markup).toContain('href="/sso/login"');
   });
 
   test('methods 空数组（§2.1 行 412）→ 同关闭态提示', () => {
-    const markup = renderToStaticMarkup(
-      createElement(
-        MemoryRouter,
-        { initialEntries: ['/sso/reset'] },
-        createElement(
-          resetMod.ResetPageView,
-          viewProps({
-            snapshot: { flags: { passwordReset: true }, methods: [] },
-          }) as never,
-        ),
-      ),
-    );
+    const markup = renderResetView({
+      snapshot: { flags: { passwordReset: true }, methods: [] },
+    });
     expect(markup).toContain('找回密码未开放');
     expect(markup).toContain('已有账号？');
   });
@@ -951,7 +911,7 @@ describe('ResetPageView 状态帧渲染', () => {
     expect(markup).toContain('发送验证码');
     expect(markup).not.toContain('<div></div>');
     expect(markup).not.toContain('安全验证');
-    // 主表单帧入口导航：已有账号？立即登录（右对齐，Link 消费 router 上下文）。
+    // 主表单帧入口导航：已有账号？立即登录（右对齐，整页跳转 <a href>）。
     expect(markup).toContain('已有账号？');
     expect(markup).toContain('href="/sso/login"');
     expect(markup).toContain('立即登录');
@@ -1488,12 +1448,26 @@ describe('注册 / 重置 captcha 弹窗编排（upfront 先问再发 / 窗内�
 });
 
 // ---------------------------------------------------------------------------
-// 路由分派（routes.tsx 新增；沿 routes.test.tsx 的 window stub 模式）
+// 独立入口装配 smoke（register / reset 已拆独立 entry，§1.3；入口模块顶层
+// 跑 __webpack_public_path__ 与 initLocale —— node 测试环境 stub navigator
+// 后动态 import）
 // ---------------------------------------------------------------------------
 
-describe('LoginApp 路由分派：/sso/register、/sso/reset', () => {
-  // 路由表经 MemoryRouter 注入初始路径（BrowserRouter 挂 entry 顶层）。
-  function renderLoginApp(pathname: string, methods: MethodsSnapshot): string {
+describe('register / reset 独立入口 App 装配', () => {
+  let registerAppMod: typeof import('../../register/App');
+  let resetAppMod: typeof import('../../reset/App');
+  beforeAll(async () => {
+    rs.stubGlobal('navigator', { language: 'zh-CN' });
+    registerAppMod = await import('../../register/App');
+    resetAppMod = await import('../../reset/App');
+  });
+
+  // 路由上下文经 MemoryRouter 注入（BrowserRouter 挂入口默认导出层，
+  // node 无 DOM 不渲染；与 routes.test.tsx 渲染 LoginApp 同缝）。
+  function renderEntryApp(
+    EntryApp: React.ComponentType,
+    methods: MethodsSnapshot,
+  ): string {
     rs.stubGlobal('window', {
       __AUTHLOFT_INIT__: {
         al_root: `${BASE}/`,
@@ -1504,28 +1478,26 @@ describe('LoginApp 路由分派：/sso/register、/sso/reset', () => {
     return renderToStaticMarkup(
       createElement(
         MemoryRouter,
-        { initialEntries: [pathname] },
-        createElement(routesMod.LoginApp),
+        { initialEntries: ['/sso/register'] },
+        createElement(EntryApp),
       ),
     );
   }
 
-  test('/sso/register → RegisterPage（首方式 password → set_password 直入帧）', () => {
-    const html = renderLoginApp('/sso/register', REGISTER_SNAPSHOT);
+  test('register 入口 → RegisterPage（password 直入 set_password 帧）', () => {
+    const html = renderEntryApp(
+      registerAppMod.RegisterEntryApp,
+      REGISTER_SNAPSHOT,
+    );
     expect(html).toContain('<h1>注册</h1>');
     expect(html).toContain('name="username"'); // §2.3 行 451 直入帧
     expect(html).toContain('用户名密码');
   });
 
-  test('/sso/reset → ResetPage（challenge 帧）', () => {
-    const html = renderLoginApp('/sso/reset', RESET_SNAPSHOT);
+  test('reset 入口 → ResetPage（challenge 帧）', () => {
+    const html = renderEntryApp(resetAppMod.ResetEntryApp, RESET_SNAPSHOT);
     expect(html).toContain('<h1>重置密码</h1>');
     expect(html).toContain('发送验证码');
-  });
-
-  test('尾斜杠归一：/sso/register/ 同页', () => {
-    const html = renderLoginApp('/sso/register/', REGISTER_SNAPSHOT);
-    expect(html).toContain('<h1>注册</h1>');
   });
 });
 
@@ -1548,13 +1520,8 @@ describe('RegisterPage / ResetPage 静态 smoke', () => {
   });
 
   test('重置壳：challenge 首帧渲染', () => {
-    // 主表单帧的「立即登录」入口导航经 Link 渲染，消费 router 上下文。
     const markup = renderToStaticMarkup(
-      createElement(
-        MemoryRouter,
-        { initialEntries: ['/sso/reset'] },
-        createElement(resetMod.ResetPage, { snapshot: RESET_SNAPSHOT }),
-      ),
+      createElement(resetMod.ResetPage, { snapshot: RESET_SNAPSHOT }),
     );
     expect(markup).toContain('<h1>重置密码</h1>');
     expect(markup).toContain('发送验证码');

@@ -29,7 +29,7 @@ import '../shared/styles/reset.less';
 import { Component, type ReactNode } from 'react';
 import '@douyinfe/semi-ui/react19-adapter';
 import { HashRouter } from '@modern-js/runtime/router';
-import { setLocale, t } from '../shared/i18n';
+import { initLocale, t } from '../shared/i18n';
 import { getInit } from '../shared/types/init';
 import { normalizeStaticBase } from './bootstrap';
 import { AdminApp } from './routes';
@@ -43,8 +43,8 @@ declare global {
 // static_base 可为 CDN 绝对地址，不写死资源域名（§9 第 14 条）。
 __webpack_public_path__ = normalizeStaticBase(getInit()?.static_base);
 
-// 注入 i18n（模块级当前语言，zh-CN 默认）。
-setLocale(navigator.language);
+// 注入 i18n（会话内持久化值优先，缺省按浏览器语言）。
+initLocale(navigator.language);
 
 /** 渲染期异常兜底（错误边界，语义沿自行挂载时期不变）。 */
 class AdminErrorBoundary extends Component<

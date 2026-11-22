@@ -13,13 +13,17 @@
  *   的空壳页路由），flags 为 false / 缺省时保持隐藏（§2.1 行 407）；
  * - 扫码结论经受控 state 注入容器，回到同一状态机分派（不引入全局事件）。
  *
+ * 入口导航（忘记密码 / 立即注册）用整页跳转（`<a href>`，非 SPA `<Link>`）：
+ * 注入快照 `__AUTHLOFT_INIT__` 由服务端按请求路径的 flow 口味生成（接口文档
+ * §8），客户端换页不经过服务端会串用首开页的快照（登录页因此缺方式、注册页
+ * 绕过注册策略过滤）；整页加载让每个页面都拿到自己的快照。
+ *
  * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用。
  *
  * 卡片底部结构：入口导航（右对齐）→「或」分割线 → 第三方图标墙（居中），
  * footer 为极简语言切换——小图标触发（当前语言原生名）+ 下拉菜单选择，
- * 只做会话内存内切换（setLocale 模块级变量 + 本地 state 触发整树重渲染，
- * t() 渲染期取新语言）；不写 localStorage / 不做持久化（与 §9 第 1 条
- * 冲突，持久化口径待定）。
+ * 切换经 setLocale 持久化到 sessionStorage（会话内跨整页跳转存续，与登录
+ * 族页面间整页跳转配套；本地 state 触发整树重渲染使 t() 渲染期取新语言）。
  */
 import { useEffect, useState } from 'react';
 import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
@@ -46,7 +50,6 @@ import { setOidcSelectedScope } from '../oidcContext';
 import { initialSelection, PermissionPanel } from './PermissionPanel';
 import styles from './LoginPage.module.less';
 import permissionStyles from './PermissionPanel.module.less';
-import { Link } from '@modern-js/runtime/router';
 import { AppLayout } from '../components/AppLayout';
 import { ssoPath } from './RegisterPage';
 
@@ -162,7 +165,7 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const flags = snapshot.flags;
   const showForgot = flags?.passwordReset === true;
   const showRegister = flags?.registration === true;
-  // 内存内语言切换（持久化口径待定）；state 驱动重渲染使 t() 生效。
+  // 语言切换（setLocale 会话内持久化到 sessionStorage）；state 驱动重渲染使 t() 生效。
   const [locale, setLocaleState] = useState<Locale>(getLocale);
   // 第三方图标墙数据与扫码结论：结论经受控 prop 注入容器，避免全局事件。
   const thirdparty = snapshot.methods.find((m) => m.method === 'thirdparty');
@@ -230,14 +233,14 @@ export function LoginPage({ snapshot }: LoginPageProps) {
         {(showForgot || showRegister) && (
           <nav className={styles.entryNav}>
             {showForgot && (
-              <Link className={styles.entryLink} to={ssoPath('/sso/reset')}>
+              <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
                 {t('login.forgotPassword')}
-              </Link>
+              </a>
             )}
             {showRegister && (
-              <Link className={styles.entryLink} to={ssoPath('/sso/register')}>
+              <a className={styles.entryLink} href={ssoPath('/sso/register')}>
                 {t('login.registerNow')}
-              </Link>
+              </a>
             )}
           </nav>
         )}
@@ -277,20 +280,20 @@ export function LoginPage({ snapshot }: LoginPageProps) {
               {(showForgot || showRegister) && (
                 <nav className={styles.entryNav}>
                   {showForgot && (
-                    <Link
+                    <a
                       className={styles.entryLink}
-                      to={ssoPath('/sso/reset')}
+                      href={ssoPath('/sso/reset')}
                     >
                       {t('login.forgotPassword')}
-                    </Link>
+                    </a>
                   )}
                   {showRegister && (
-                    <Link
+                    <a
                       className={styles.entryLink}
-                      to={ssoPath('/sso/register')}
+                      href={ssoPath('/sso/register')}
                     >
                       {t('login.registerNow')}
-                    </Link>
+                    </a>
                   )}
                 </nav>
               )}

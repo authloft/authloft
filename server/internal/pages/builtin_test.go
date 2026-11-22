@@ -1,5 +1,5 @@
 // 内置模板扫描全集单测（§3.13）：InitBuiltinTemplates 扫描 templatesFS
-// 下全部 .html 注册，四 entry key 均为内置、非内置 key 不命中，
+// 下全部 .html 注册，六 entry key 均为内置、非内置 key 不命中，
 // GetBuiltinTemplate 与 templatesFS.ReadFile 全文逐字一致。
 package pages
 
@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// TestInitBuiltinTemplates 四 entry 均注册且内容与嵌入文件逐字一致。
+// TestInitBuiltinTemplates 六 entry 均注册且内容与嵌入文件逐字一致。
 func TestInitBuiltinTemplates(t *testing.T) {
 	if err := InitBuiltinTemplates(); err != nil {
 		t.Fatalf("InitBuiltinTemplates: %v", err)
 	}
-	for _, key := range []string{"login", "account", "admin", "setup"} {
+	for _, key := range []string{"login", "register", "reset", "account", "admin", "setup"} {
 		if !IsBuiltinTemplate(key) {
 			t.Errorf("IsBuiltinTemplate(%q) = false, want true", key)
 		}

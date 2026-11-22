@@ -3,9 +3,9 @@
  * （当前语言原生名）+ 下拉菜单（列出全部受支持语言，当前项高亮），点击
  * 卡片其他区域收起。
  *
- * 语言切换只做会话内存内切换——locale / onSwitch 由页面受控注入
- *（setLocale 模块级变量 + 页面本地 state 触发整树重渲染，t() 渲染期取
- * 新语言）；不写 localStorage / 不做持久化（持久化口径待定）。
+ * 语言切换——locale / onSwitch 由页面受控注入（setLocale 模块级变量 +
+ * sessionStorage 会话内持久化 + 页面本地 state 触发整树重渲染，t() 渲染期
+ * 取新语言）；登录族页面间是整页跳转，持久化让语言选择跨页存续。
  */
 import { useEffect, useRef, useState } from 'react';
 import { t, type Locale } from '../../shared/i18n';

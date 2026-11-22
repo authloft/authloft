@@ -287,11 +287,12 @@ func Register(r *echo.Group, d Deps) *Handler {
 	if h.now == nil {
 		h.now = time.Now
 	}
-	// /sso/login 渲染空壳前先做已登录直达检测（§8 专段）；register / reset /
-	// callback 维持现状恒渲染空壳（§2.1，仅本路由检测）。
+	// /sso/login 渲染空壳前先做已登录直达检测（§8 专段）；callback 维持现状
+	// 恒渲染空壳（§2.1，仅本路由检测）。register / reset 拆独立 entry 壳
+	// （整页跳转，注入快照按页注入，§1.3），不参与客户端模板选壳。
 	r.GET("/sso/login", h.loginEntry)
-	r.GET("/sso/register", h.loginPage(flowRegister))
-	r.GET("/sso/reset", h.loginPage(flowReset))
+	r.GET("/sso/register", h.flowEntryShell(flowRegister, "register"))
+	r.GET("/sso/reset", h.flowEntryShell(flowReset, "reset"))
 	// callback 零业务逻辑（§2.7.3 行 604）：只渲染 login entry 空壳，
 	// provider_key 路径参数不做任何业务校验（分派归前端）。
 	r.GET("/sso/oauth/callback/:provider_key", h.loginPage(flowLogin))
@@ -320,12 +321,52 @@ func (h *Handler) entryPage(entry string) echo.HandlerFunc {
 	}
 }
 
-// loginPage login entry 空壳（/sso/register、/sso/reset、
-// /sso/oauth/callback/*；/sso/login 走 loginEntry 先做已登录直达检测）：
-// 渲染细节见 serveLoginShell。
+// loginPage login entry 空壳（/sso/oauth/callback/*；/sso/login 走
+// loginEntry 先做已登录直达检测；register / reset 已拆独立 entry 壳
+// flowEntryShell）：渲染细节见 serveLoginShell。
 func (h *Handler) loginPage(defaultFlow string) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		return h.serveLoginShell(c, defaultFlow)
+	}
+}
+
+// flowEntryShell /sso/register、/sso/reset 独立 entry 空壳（整页跳转拆分，
+// §1.3）：methods 按 flow 过滤（应用级交集不消费，register / reset 镜像
+// 全局口径，§2.1）；client_id 命中行时仍注入 __AUTHLOFT_INIT__.sso（注册
+// 首签回传 ssoClientId 依赖此键，§1.5），但不参与客户端模板选壳（§8.1 仅
+// SSO 登录入口 / OIDC 授权入口）。模板取各自 entry（register.html /
+// reset.html）——每页整页加载即拿到自己的快照，不串用首开页注入；flow 取
+// 页面 URL query（login 默认，§2.1 行 363-368），路径缺省已按页带对。
+func (h *Handler) flowEntryShell(defaultFlow, entry string) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		flow := defaultFlow
+		if q := c.QueryParam("flow"); q == flowLogin || q == flowRegister || q == flowReset {
+			flow = q
+		}
+		// 行查询只取 sso 注入与 scope（buildMethods 对非 login 流不消费交集）；
+		// tpl 丢弃——本壳不走客户端模板。
+		_, ssoRow := h.resolveLoginClientTpl(c.Request().Context(), c.QueryParam("client_id"))
+		scope, err := ssoScopeFromRow(ssoRow)
+		if err != nil {
+			slog.Error("pages: parse sso client config", "err", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		var ssoCtx *ssoContext
+		if ssoRow != nil {
+			ssoCtx = &ssoContext{ClientID: ssoRow.ClientID, Name: ssoRow.Name}
+		}
+		snapshot, err := h.buildMethods(c.Request().Context(), flow, scope)
+		if err != nil {
+			slog.Error("pages: build methods snapshot", "flow", flow, "err", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		return h.renderShell(c, entry, &initPayload{
+			ALRoot:         h.root,
+			StaticBase:     h.staticBase(),
+			Methods:        snapshot,
+			SSO:            ssoCtx,
+			PasswordPolicy: h.passwordPolicy(),
+		}, nil)
 	}
 }
 
@@ -395,13 +436,14 @@ func ssoRedirectAllowed(row *model.SsoClient, target string) bool {
 	return false
 }
 
-// serveLoginShell 渲染登录 entry 空壳（loginPage 三入口与 loginEntry 无会话
-// 路径共用）：注入 al_root / static_base / methods（必填）。
-// flow 按 §2.1 行 363-368 取页面 URL query（login 默认）；三页各自带路径
-// 缺省（前端入口链接不带 query，routes.tsx 行 67 依赖按页过滤的快照）。
+// serveLoginShell 渲染登录 entry 空壳（loginPage 的 callback 路径与
+// loginEntry 无会话路径共用；register / reset 走 flowEntryShell 独立壳）：
+// 注入 al_root / static_base / methods（必填）。
+// flow 按 §2.1 行 363-368 取页面 URL query（login 默认）；路径缺省即 login
+// （前端入口链接不带 query，依赖按页过滤的快照）。
 // client_id 按 §8.1 选客户端自定义模板（SSO 登录入口查 sso_client），行
-// 命中状态传入 methods 组装——命中 sso_client 行时应用级交集仅 flow=login
-// 消费（register / reset 镜像全局口径，§2.1），并同时注入
+// 命中状态传入 methods 组装——命中 sso_client 行时应用级交集即 flow=login
+// 的方式过滤，并同时注入
 // __AUTHLOFT_INIT__.sso（§2.1 注入结构：clientId / name，转义走 INIT_JSON
 // 既有口径）；行命中与模板解析正交——模板回落（含无自定义模板的常态）仍
 // 注入 sso，查无行回落壳才不注入。应用配置列解码失败 → 空体 500（§8 行

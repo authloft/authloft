@@ -1,11 +1,12 @@
 /**
  * 登录端路由表（混合路由定稿：login 用 BrowserRouter，account /
  * admin 用 hash——§9 第 26 条选型归 entry 顶层，BrowserRouter 在 entry.tsx）：
- * `/sso/login`、`/sso/register`、`/sso/reset`、`/sso/oauth/callback/:provider_key`
- * （§4.1 行 392 / §2.7.3）、`/auth/authorize`（仅服务前端内部跳转，直达由后端
- * 业务端点接管、不下发壳；「OIDC 授权页即登录页」→ LoginPage）+ `path:'*'`
- * 兜底。BindingPage 无独立 URL（binding_required 原地渲染，§1.6 行 234），
- * 不在路由层。
+ * `/sso/login`、`/sso/oauth/callback/:provider_key`（§4.1 行 392 / §2.7.3）、
+ * `/auth/authorize`（仅服务前端内部跳转，直达由后端业务端点接管、不下发壳；
+ * 「OIDC 授权页即登录页」→ LoginPage）+ `path:'*'` 兜底。注册 / 重置页已拆
+ * 独立 entry（整页跳转，注入快照按页注入，§1.3），不在本路由表。
+ * BindingPage 无独立 URL（binding_required 原地渲染，§1.6 行 234），不在
+ * 路由层。
  *
  * 流程状态机（登录因子切换 / mfa 选择 / challenge）保持原样——本层只承载
  * 「哪个页面」的分派；禁手写 pathname 比较 / 正则匹配（§9 第 24 条），
@@ -21,8 +22,6 @@ import type { MethodsSnapshot } from '../shared/types/init';
 import { loadLoginBootstrap } from './bootstrap';
 import { LoginPage } from './pages/LoginPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ResetPage } from './pages/ResetPage';
 
 /** 回调路由壳：路径参数 provider_key 经 useParams 提取（禁手写 pathname 解析）。 */
 function OAuthCallbackRoute({ snapshot }: { snapshot: MethodsSnapshot }) {
@@ -45,15 +44,6 @@ export function LoginApp() {
       <Route
         path="/sso/login"
         element={<LoginPage snapshot={boot.snapshot} />}
-      />
-      {/* 注册 / 重置页共用注入快照（flow=register / flow=reset 已按 §2.1 过滤）。 */}
-      <Route
-        path="/sso/register"
-        element={<RegisterPage snapshot={boot.snapshot} />}
-      />
-      <Route
-        path="/sso/reset"
-        element={<ResetPage snapshot={boot.snapshot} />}
       />
       <Route
         path="/sso/oauth/callback/:provider_key"
