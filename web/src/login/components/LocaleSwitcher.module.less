@@ -1,0 +1,67 @@
+// 语言切换下拉样式（login 域页面卡片 footer 共用）。
+@import (reference) '../../shared/styles/tokens.less';
+
+.localeSwitch {
+  position: relative;
+}
+
+.localeTrigger {
+  padding: @spacing-xs @spacing-sm;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  background: none;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-sm;
+  cursor: pointer;
+  transition:
+    color @transition-fast,
+    border-color @transition-fast;
+}
+
+.localeTrigger:hover {
+  color: @color-text-strong;
+  border-color: @color-border-strong;
+}
+
+.localeTrigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 @ring-width @ring-color;
+}
+
+.localeMenu {
+  position: absolute;
+  top: calc(100% + @spacing-xs);
+  right: 0;
+  min-width: 6rem;
+  margin: 0;
+  padding: @spacing-xs;
+  list-style: none;
+  background-color: @color-surface;
+  border: @border-width solid @color-border-subtle;
+  border-radius: @radius-md;
+  box-shadow: @shadow-card;
+}
+
+.localeOption,
+.localeOptionActive {
+  display: block;
+  width: 100%;
+  padding: @spacing-xs @spacing-sm;
+  color: @color-text;
+  font-size: @font-size-sm;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: @radius-sm;
+  cursor: pointer;
+  transition: background-color @transition-fast;
+}
+
+.localeOption:hover {
+  background-color: @color-background-muted;
+}
+
+.localeOptionActive {
+  color: @color-primary;
+  font-weight: @font-weight-semibold;
+}

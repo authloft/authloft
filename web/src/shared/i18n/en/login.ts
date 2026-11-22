@@ -8,7 +8,12 @@ export const login: typeof zhLogin = {
   // ---- 容器 / 方式列表（LoginContainer、MethodTabs）------------------------
   'login.title': 'Sign in',
   'login.register': 'Register',
+  // Register link in the login page entry nav (kept separate from the
+  // register page title login.register).
+  'login.registerNow': 'Register now',
   'login.forgotPassword': 'Forgot password',
+  // Divider between account sign-in and third-party providers.
+  'login.orDivider': 'or',
   'login.noMethods': 'No sign-in methods available',
   'login.selectMethodHint': 'Please choose a sign-in method',
   // Section title above the step-up dialog method tabs.
@@ -16,9 +21,11 @@ export const login: typeof zhLogin = {
   'login.backToMethods': 'Back to sign-in options',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
   'login.redirecting': 'Signed in, redirecting…',
-  // Footer language switch (native names, same in both locales).
+  // Footer language dropdown (native names, same in both locales).
   'login.langZh': '中文',
   'login.langEn': 'EN',
+  // Accessible label of the language-switch trigger button.
+  'login.langSwitchLabel': 'Switch language',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': 'No registration methods available',
   'login.nextStep': 'Next',
@@ -43,7 +50,11 @@ export const login: typeof zhLogin = {
   'login.resetMethodOtpEmail': 'Recover via email',
   'login.resetSuccess':
     'Password reset complete. Please sign in with your new password',
-  'login.goLogin': 'Go to sign in',
+  // Entry nav of the register / reset main form frames ("Already have an
+  // account? Sign in now", right-aligned); goLogin doubles as the reset
+  // success frame link.
+  'login.hasAccount': 'Already have an account?',
+  'login.goLogin': 'Sign in now',
   // ---- 绑定（BindingPage、BindingChoice）-----------------------------------
   'login.createAccount': 'Create account',
   'login.accountCreated': 'Account created, redirecting…',

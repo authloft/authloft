@@ -91,3 +91,25 @@
 .submit {
   .control-submit();
 }
+
+// 入口导航：右对齐（提交按钮正下方，「已有账号？立即登录」）。
+.entryNav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: @spacing-sm;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.entryLink {
+  color: @color-primary;
+  font-size: @font-size-sm;
+  text-decoration: none;
+  transition: color @transition-fast;
+}
+
+.entryLink:hover {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}

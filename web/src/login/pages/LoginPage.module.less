@@ -1,13 +1,10 @@
 @import (reference) '../../shared/styles/tokens.less';
-@import (reference) '../../shared/styles/controls.less';
 
+// 入口导航：右对齐（登录按钮正下方收拢到右侧，无上分隔线）。
 .entryNav {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: @spacing-lg;
-  margin-top: @spacing-xl;
-  padding-top: @spacing-lg;
-  border-top: @border-width solid @color-border-subtle;
 }
 
 .entryLink {
@@ -22,17 +19,19 @@
   text-decoration: underline;
 }
 
-/* 第三方图标墙：位于入口导航下方，与上方内容保持同一档间距。 */
-.providerWall {
-  margin-top: @spacing-lg;
-}
+// 「或」分割线：两侧细线夹文案（分隔账号登录与第三方登录）。
+.orDivider {
+  display: flex;
+  align-items: center;
+  gap: @spacing-md;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
 
-.langButton {
-  .control-text-button();
-}
-
-.langButtonActive {
-  .control-text-button();
-  font-weight: @font-weight-semibold;
-  text-decoration: underline;
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: @border-width;
+    background-color: @color-border-subtle;
+  }
 }

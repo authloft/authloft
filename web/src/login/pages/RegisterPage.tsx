@@ -26,10 +26,14 @@
  *
  * 文案：注册页专属（标题 / 方式名 / 步骤按钮）经 i18n 字典 login.* 键取用；
  * 注册关闭提示复用 errors.status.signup_disabled。
+ *
+ * 卡片底部：入口导航（「已有账号？立即登录」右对齐；主表单帧与关闭类帧
+ * 渲染，成功帧不渲染）+ 全帧一致的 footer 语言切换（与 LoginPage 共用
+ * login/components/LocaleSwitcher）。
  */
 import { useState, type FormEvent } from 'react';
 import { create } from '@bufbuild/protobuf';
-import { useSearchParams } from '@modern-js/runtime/router';
+import { Link, useSearchParams } from '@modern-js/runtime/router';
 import {
   FieldSchema,
   type Field,
@@ -53,7 +57,7 @@ import {
   PasswordStrengthMeter,
   passwordWeakLabels,
 } from '../../shared/components/PasswordStrengthMeter';
-import { t } from '../../shared/i18n';
+import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
 import {
   usernameIssue,
   validatePassword,
@@ -80,6 +84,7 @@ import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
 import styles from './RegisterPage.module.less';
 import { AppLayout } from '../components/AppLayout';
+import { LocaleSwitcher } from '../components/LocaleSwitcher';
 import { Tabs } from '../../shared/components';
 
 // ---------------------------------------------------------------------------
@@ -457,34 +462,55 @@ export function RegisterPageView({
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const entry = options.find((m) => m.method === method);
+  // 内存内语言切换（与 LoginPage 同款，持久化口径待定）；state 驱动重渲染
+  // 使 t() 生效。footer 语言切换全状态帧一致，入口导航只挂主表单帧。
+  const [locale, setLocaleState] = useState<Locale>(getLocale);
+  const switchLocale = (next: Locale) => {
+    setLocale(next);
+    setLocaleState(next);
+  };
+  const footer = <LocaleSwitcher locale={locale} onSwitch={switchLocale} />;
+  // 入口导航（已有账号？立即登录）：主表单帧与关闭类帧共用——关闭帧是死路，
+  // 回登录页是唯一出路；成功帧不渲染（自动跳转终点）。
+  const loginNav = (
+    <nav className={styles.entryNav}>
+      {t('login.hasAccount')}
+      <Link className={styles.entryLink} to={ssoPath('/sso/login')}>
+        {t('login.goLogin')}
+      </Link>
+    </nav>
+  );
 
   // §4.4 行 464：flags.registration=false → 整页提示注册已关闭（不渲染表单）。
   if (snapshot.flags?.registration !== true) {
     return (
-      <AppLayout title={t('login.register')}>
+      <AppLayout title={t('login.register')} footer={footer}>
         <p role="status">{t('errors.status.signup_disabled')}</p>
+        {loginNav}
       </AppLayout>
     );
   }
   // 任一 step 收到 signup_disabled → 提示并停止流程（§4.4 行 464 / §2.3 行 455）。
   if (status === 'signup_disabled') {
     return (
-      <AppLayout title={t('login.register')}>
+      <AppLayout title={t('login.register')} footer={footer}>
         <p role="status">{t('errors.status.signup_disabled')}</p>
+        {loginNav}
       </AppLayout>
     );
   }
   if (status === 'success') {
     return (
-      <AppLayout title={t('login.register')}>
+      <AppLayout title={t('login.register')} footer={footer}>
         <p role="status">{t('login.registerSuccess')}</p>
       </AppLayout>
     );
   }
   if (options.length === 0) {
     return (
-      <AppLayout title={t('login.register')}>
+      <AppLayout title={t('login.register')} footer={footer}>
         <p role="status">{t('login.noRegisterMethods')}</p>
+        {loginNav}
       </AppLayout>
     );
   }
@@ -523,7 +549,7 @@ export function RegisterPageView({
   };
 
   return (
-    <AppLayout title={t('login.register')}>
+    <AppLayout title={t('login.register')} footer={footer}>
       {notice !== undefined && <ErrorBanner i18nKey={notice} />}
       {resolution !== undefined && (
         <ErrorBanner
@@ -681,6 +707,8 @@ export function RegisterPageView({
           </button>
         </form>
       )}
+      {/* 入口导航：主表单帧底部（成功帧不渲染，自动跳转终点）。 */}
+      {loginNav}
     </AppLayout>
   );
 }

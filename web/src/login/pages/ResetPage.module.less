@@ -86,6 +86,28 @@
   .control-submit();
 }
 
+// 入口导航：右对齐（提交按钮正下方，「已有账号？立即登录」）。
+.entryNav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: @spacing-sm;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.entryLink {
+  color: @color-primary;
+  font-size: @font-size-sm;
+  text-decoration: none;
+  transition: color @transition-fast;
+}
+
+.entryLink:hover {
+  color: @color-primary-hover;
+  text-decoration: underline;
+}
+
 // 成功帧的登录页链接：与主链 entryLink 同款文字链接。
 .loginLink {
   align-self: center;

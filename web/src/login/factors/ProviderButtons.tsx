@@ -234,7 +234,7 @@ export function ProviderButtons({
     if (redirect.phase === 'failed') {
       // 失败文案带 provider 展示名；图标墙保留可重点。
       return (
-        <div>
+        <>
           <p role="alert" className={styles.error}>
             {t('login.oauthRedirectFailed', {
               provider: providerDisplayName(providers, redirect.providerKey),
@@ -245,7 +245,7 @@ export function ProviderButtons({
             onPick={pickRedirect}
             onPickQr={pickQr}
           />
-        </div>
+        </>
       );
     }
     // pending：空 authorizeUrl 的 RedirectStep（仅展示文案，effect 不跳转）。
@@ -266,7 +266,7 @@ export function ProviderButtons({
   };
 
   return (
-    <div>
+    <>
       <ProviderWall
         providers={providers}
         onPick={pickRedirect}
@@ -281,7 +281,7 @@ export function ProviderButtons({
           onClose={() => setQrProvider(undefined)}
         />
       )}
-    </div>
+    </>
   );
 }
 

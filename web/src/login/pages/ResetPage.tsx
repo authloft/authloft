@@ -19,6 +19,10 @@
  *
  * 文案：重置页专属（标题 / 步骤按钮 / 成功提示）经 i18n 字典 login.* 键取用；
  * 关闭态提示复用 errors.status.reset_disabled。
+ *
+ * 卡片底部：入口导航（「已有账号？立即登录」右对齐；主表单帧与关闭类帧
+ * 渲染，成功帧已有居中链接不重复渲染）+ 全帧一致的 footer 语言切换
+ * （与 LoginPage 共用 login/components/LocaleSwitcher）。
  */
 import { useState, type FormEvent } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
@@ -27,7 +31,7 @@ import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
 import { useCaptchaGate } from '../../shared/captcha/useCaptchaGate';
 import { ErrorBanner } from '../../shared/components';
 import { PasswordStrengthMeter } from '../../shared/components/PasswordStrengthMeter';
-import { t } from '../../shared/i18n';
+import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
 import type { PasswordPolicy } from '../../shared/utils/validate';
 import type {
   LoginMethodEntry,
@@ -53,6 +57,7 @@ import {
 } from './RegisterPage';
 import styles from './ResetPage.module.less';
 import { AppLayout } from '../components/AppLayout';
+import { LocaleSwitcher } from '../components/LocaleSwitcher';
 import { Link } from '@modern-js/runtime/router';
 import { Tabs } from '../../shared/components';
 
@@ -169,26 +174,46 @@ export function ResetPageView({
   const [confirm, setConfirm] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const entry = options.find((m) => m.method === method);
+  // 内存内语言切换（与 LoginPage 同款，持久化口径待定）；state 驱动重渲染
+  // 使 t() 生效。footer 语言切换全状态帧一致，入口导航只挂主表单帧。
+  const [locale, setLocaleState] = useState<Locale>(getLocale);
+  const switchLocale = (next: Locale) => {
+    setLocale(next);
+    setLocaleState(next);
+  };
+  const footer = <LocaleSwitcher locale={locale} onSwitch={switchLocale} />;
+  // 入口导航（已有账号？立即登录）：主表单帧与关闭类帧共用——关闭帧是死路，
+  // 回登录页是唯一出路；成功帧不渲染（已有居中的「立即登录」链接）。
+  const loginNav = (
+    <nav className={styles.entryNav}>
+      {t('login.hasAccount')}
+      <Link className={styles.entryLink} to={ssoPath('/sso/login')}>
+        {t('login.goLogin')}
+      </Link>
+    </nav>
+  );
 
   // §4.4 行 465：methods 为空数组或 flags.passwordReset=false → 整页提示关闭。
   if (snapshot.flags?.passwordReset !== true || options.length === 0) {
     return (
-      <AppLayout title={t('login.reset')}>
+      <AppLayout title={t('login.reset')} footer={footer}>
         <p role="status">{t('errors.status.reset_disabled')}</p>
+        {loginNav}
       </AppLayout>
     );
   }
   // 任一 step 收到 reset_disabled → 提示并停止流程（§4.4 行 465 / §2.4 行 471）。
   if (status === 'reset_disabled') {
     return (
-      <AppLayout title={t('login.reset')}>
+      <AppLayout title={t('login.reset')} footer={footer}>
         <p role="status">{t('errors.status.reset_disabled')}</p>
+        {loginNav}
       </AppLayout>
     );
   }
   if (status === 'success') {
     return (
-      <AppLayout title={t('login.reset')}>
+      <AppLayout title={t('login.reset')} footer={footer}>
         <p role="status">{t('login.resetSuccess')}</p>
         <Link className={styles.loginLink} to={ssoPath('/sso/login')}>
           {t('login.goLogin')}
@@ -231,7 +256,7 @@ export function ResetPageView({
   };
 
   return (
-    <AppLayout title={t('login.reset')}>
+    <AppLayout title={t('login.reset')} footer={footer}>
       {notice !== undefined && <ErrorBanner i18nKey={notice} />}
       {resolution !== undefined && (
         <ErrorBanner
@@ -340,6 +365,8 @@ export function ResetPageView({
           </button>
         </form>
       )}
+      {/* 入口导航：主表单帧底部（成功帧不渲染，已有居中链接）。 */}
+      {loginNav}
     </AppLayout>
   );
 }

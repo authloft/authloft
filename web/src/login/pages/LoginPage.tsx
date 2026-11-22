@@ -15,8 +15,9 @@
  *
  * 文案：标题 / 入口文案经 i18n 字典 login.* 键取用。
  *
- * 卡片 footer 极简语言切换（中文 / EN）——只做
- * 会话内存内切换（setLocale 模块级变量 + 本地 state 触发整树重渲染，
+ * 卡片底部结构：入口导航（右对齐）→「或」分割线 → 第三方图标墙（居中），
+ * footer 为极简语言切换——小图标触发（当前语言原生名）+ 下拉菜单选择，
+ * 只做会话内存内切换（setLocale 模块级变量 + 本地 state 触发整树重渲染，
  * t() 渲染期取新语言）；不写 localStorage / 不做持久化（与 §9 第 1 条
  * 冲突，持久化口径待定）。
  */
@@ -24,6 +25,7 @@ import { useEffect, useState } from 'react';
 import { getLocale, setLocale, t, type Locale } from '../../shared/i18n';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { LoginContainer } from '../LoginContainer';
+import { LocaleSwitcher } from '../components/LocaleSwitcher';
 import { ProviderButtons } from '../factors/ProviderButtons';
 import type {
   MethodsSnapshot,
@@ -201,30 +203,15 @@ export function LoginPage({ snapshot }: LoginPageProps) {
     }
   };
 
-  const footer = (
-    <>
-      <button
-        type="button"
-        className={
-          locale === 'zh-CN' ? styles.langButtonActive : styles.langButton
-        }
-        aria-pressed={locale === 'zh-CN'}
-        onClick={() => switchLocale('zh-CN')}
-      >
-        {t('login.langZh')}
-      </button>
-      <button
-        type="button"
-        className={
-          locale === 'en-US' ? styles.langButtonActive : styles.langButton
-        }
-        aria-pressed={locale === 'en-US'}
-        onClick={() => switchLocale('en-US')}
-      >
-        {t('login.langEn')}
-      </button>
-    </>
-  );
+  // 「或」分割线只在图标墙在场时渲染（语义 = 分隔账号登录与第三方登录）。
+  const orDivider =
+    providers.length > 0 ? (
+      <div className={styles.orDivider} aria-hidden="true">
+        {t('login.orDivider')}
+      </div>
+    ) : null;
+
+  const footer = <LocaleSwitcher locale={locale} onSwitch={switchLocale} />;
 
   // plain（/sso/login 直登、无 oidc）：维持现有单栏，不渲染权限面板。
   if (view.mode === 'plain') {
@@ -240,15 +227,14 @@ export function LoginPage({ snapshot }: LoginPageProps) {
             )}
             {showRegister && (
               <Link className={styles.entryLink} to={ssoPath('/sso/register')}>
-                {t('login.register')}
+                {t('login.registerNow')}
               </Link>
             )}
           </nav>
         )}
+        {orDivider}
         {providers.length > 0 && (
-          <div className={styles.providerWall}>
-            <ProviderButtons providers={providers} onQrResult={setQrResult} />
-          </div>
+          <ProviderButtons providers={providers} onQrResult={setQrResult} />
         )}
       </AppLayout>
     );
@@ -294,11 +280,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
                       className={styles.entryLink}
                       to={ssoPath('/sso/register')}
                     >
-                      {t('login.register')}
+                      {t('login.registerNow')}
                     </Link>
                   )}
                 </nav>
               )}
+              {orDivider}
               {providers.length > 0 && (
                 <div className={styles.providerWall}>
                   <ProviderButtons

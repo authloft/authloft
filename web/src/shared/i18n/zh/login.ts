@@ -9,7 +9,11 @@ export const login = {
   // ---- 容器 / 方式列表（LoginContainer、MethodTabs）------------------------
   'login.title': '登录',
   'login.register': '注册',
+  // 登录页入口导航的注册链接（与注册页标题 login.register 分用）。
+  'login.registerNow': '立即注册',
   'login.forgotPassword': '忘记密码',
+  // 第三方登录分割线（两侧细线夹文案）。
+  'login.orDivider': '或',
   'login.noMethods': '暂无可用登录方式',
   'login.selectMethodHint': '请选择登录方式',
   // StepUpDialog 的二次验证方式 tabs 区标题（点 tab 即取该方式挑战）。
@@ -18,9 +22,11 @@ export const login = {
   'login.backToMethods': '返回方式列表',
   'login.pollPlaceholder': '扫码流程即将支持',
   'login.redirecting': '登录成功，正在跳转…',
-  // footer 语言切换（语言名保持原生写法，双语同值）。
+  // footer 语言切换下拉（语言名保持原生写法，双语同值）。
   'login.langZh': '中文',
   'login.langEn': 'EN',
+  // 语言切换触发按钮的无障碍标签。
+  'login.langSwitchLabel': '切换语言',
   // ---- 注册页（RegisterPage）----------------------------------------------
   'login.noRegisterMethods': '暂无可用注册方式',
   'login.nextStep': '下一步',
@@ -44,7 +50,10 @@ export const login = {
   'login.resetMethodOtpSms': '手机号找回',
   'login.resetMethodOtpEmail': '邮箱找回',
   'login.resetSuccess': '密码重置成功，请使用新密码登录',
-  'login.goLogin': '去登录',
+  // 注册 / 重置页主表单帧入口导航（「已有账号？立即登录」，右对齐）；
+  // goLogin 兼作重置成功帧的登录页链接。
+  'login.hasAccount': '已有账号？',
+  'login.goLogin': '立即登录',
   // ---- 绑定（BindingPage、BindingChoice）-----------------------------------
   'login.createAccount': '创建账号',
   'login.accountCreated': '账号创建成功，正在跳转…',
