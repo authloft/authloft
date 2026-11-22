@@ -1604,7 +1604,7 @@ describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（�
     expect(res.$typeName).toBe('api.account.v1.OkResponse');
   });
 
-  test('getThirdpartyTicket → {ticket, poll:"15"} wire（§2.8 行 714 上限）+ 信封 .bind 解码（行 1024）', async () => {
+  test('getThirdpartyTicket → {ticket, poll:"10"} wire（§2.8 行 714 上限）+ 信封 .bind 解码（行 1024）', async () => {
     let captured!: Request;
     server.use(
       http.post(GET_THIRDPARTY_TICKET_URL, ({ request }) => {
@@ -1621,7 +1621,7 @@ describe('api.getThirdpartyBindings / unbindThirdparty / getThirdpartyTicket（�
       apiMod.buildGetThirdpartyTicketRequest('tk-1'),
     );
 
-    expect(await captured.json()).toEqual({ ticket: 'tk-1', poll: '15' }); // int64 → 十进制字符串（§1.12）
+    expect(await captured.json()).toEqual({ ticket: 'tk-1', poll: '10' }); // int64 → 十进制字符串（§1.12）
     expect(res.status).toBe('success');
     expect(res.bind?.providerKey).toBe('wechat_mp_scan');
     expect(res.bind?.displayName).toBe('微信扫码');
@@ -1859,7 +1859,7 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
     });
   });
 
-  test('GetThirdpartyTicket 请求：poll 固定 15（§2.8 行 714 上限，与面板 pollSeconds 同值）', () => {
+  test('GetThirdpartyTicket 请求：poll 固定 10（§2.8 行 714 上限，与面板 pollSeconds 同值）', () => {
     expect(
       toJson(
         GetThirdpartyTicketRequestSchema,
@@ -1867,7 +1867,7 @@ describe('buildCreateQrcodeBindRequest / buildGetThirdpartyTicketRequest / build
       ),
     ).toEqual({
       ticket: 'tk-3',
-      poll: '15',
+      poll: '10',
     });
   });
 

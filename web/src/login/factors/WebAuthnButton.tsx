@@ -6,6 +6,10 @@
  * @simplewebauthn/browser 的 startAuthentication()，断言对象经 onCredential
  * 上抛（容器组装 payload {credential}，§2.6 行 548）。
  *
+ * 自动续跑（autoStart，webauthnAutoStart 判据）：options 到达即挂载拉起原生
+ * 断言——一次点击直达浏览器 UI，不再要求「取 options 后再点一次」；断言需
+ * 手势，无手势时的拒绝降级为手动路径（cancelled 提示 + 按钮重试）。
+ *
  * - 固定 usernameless（§1.10 行 308：不传 allowCredentials、不收集用户名；需求
  *   §4.1.6 行 103）：options 完全取自后端下发的 challengeData（§1.3 行 117；
  *   §12.9 方案 A Struct），不解析字段、整体透传给 navigator.credentials.get()
@@ -22,7 +26,7 @@
  * （login.passkeySignIn / login.passkeyVerify / login.passkeyCancelled /
  * login.passkeyFailed）。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { JsonObject } from '@bufbuild/protobuf';
 import {
   startAuthentication,
@@ -87,6 +91,12 @@ export interface WebAuthnButtonProps extends FactorProps {
   challengeData?: JsonObject;
   /** 断言对象上抛（容器组装 payload {credential}，§2.6 行 548；Struct 透传）。 */
   onCredential?: (credential: JsonObject) => void;
+  /**
+   * 自动续跑开关（容器按 webauthnAutoStart 判据注入）：challenge 响应刚返回
+   * options 时 verify 段挂载即拉起原生断言，省掉「取 options 后再点一次」的
+   * 死点击；失败态 / 手动重试不注入（不自动弹）。
+   */
+  autoStart?: boolean;
 }
 
 /**
@@ -103,14 +113,13 @@ export function WebAuthnButton({
   onSubmit,
   onCredential,
   challengeData,
+  autoStart,
 }: WebAuthnButtonProps) {
   // 错误提示独立 state（§4.3 行 453 错误语义独立处理，不进通用渲染器管线）。
   const [error, setError] = useState<'cancelled' | 'failed' | null>(null);
-
-  if (!webauthnAvailable()) {
-    // 需求 §4.1.6 行 105：不支持时自动不展示（无「不支持」提示）。
-    return null;
-  }
+  // 自动续跑一次性守卫：本实例只拉起一次断言（重渲染 / 依赖换引用不重放）；
+  // 用户取消（NotAllowedError）后经「验证」按钮手动重试。
+  const startedRef = useRef(false);
 
   const start = async () => {
     if (loading || disabled) {
@@ -129,6 +138,26 @@ export function WebAuthnButton({
       setError(result.cancelled ? 'cancelled' : 'failed');
     }
   };
+
+  // 自动续跑：options 到达即拉原生断言。无新手势时浏览器会拒绝调用
+  //（NotAllowedError → cancelled 提示），降级为手动「验证」路径，不重试循环。
+  useEffect(() => {
+    if (
+      autoStart !== true ||
+      challengeData === undefined ||
+      startedRef.current
+    ) {
+      return;
+    }
+    startedRef.current = true;
+    void start();
+    // start 每轮渲染重建引用，靠 startedRef 收敛为一次执行。
+  }, [autoStart, challengeData, start]);
+
+  if (!webauthnAvailable()) {
+    // 需求 §4.1.6 行 105：不支持时自动不展示（无「不支持」提示）。
+    return null;
+  }
 
   return (
     <div className={styles.wrap}>

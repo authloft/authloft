@@ -79,6 +79,7 @@ import {
 } from '../shared/urls';
 import type { MethodsSnapshot, SnapshotField } from '../shared/types/init';
 import { Modal } from './components/Modal';
+import { StepBackLink } from './components/StepBackLink';
 import { hasOidcContext } from './oidcContext';
 import { clearLoginToken } from './loginTokenStore';
 import {
@@ -457,6 +458,16 @@ export function isWebauthnWindow(state: FlowState): boolean {
 /** §8.3 窗口期专属文案键（method_disabled 的窗口期分支，区别于通用「方式未开放」）。 */
 const WEBAUTHN_WINDOW_KEY = 'errors.status.method_disabled_webauthn';
 
+/**
+ * 通行密钥自动续跑判据（纯函数，node 可测）：challenge 提交刚返回 options
+ *（status=next 且 advance 到 verify）→ verify 段挂载即自动拉起原生断言，
+ * 省掉「取 options 后再点一次」的死点击。失败态（表单区原地重试）与其他
+ * 状态不注入——断言需手势，且失败后自动重弹会造成弹窗循环。
+ */
+export function webauthnAutoStart(state: FlowState): boolean {
+  return state.status === 'next' && state.step === 'verify';
+}
+
 // ---------------------------------------------------------------------------
 // 视图（状态分支渲染；静态可测——renderToStaticMarkup 下不执行副作用）
 // ---------------------------------------------------------------------------
@@ -594,6 +605,7 @@ export function LoginFlowView({
             state.envelope?.nextStep?.challengeData ?? challengeData
           }
           onCredential={onCredential}
+          autoStart={webauthnAutoStart(state)}
         />
       );
     }
@@ -630,13 +642,28 @@ export function LoginFlowView({
     }
     // nextStep.method 零值兜底：空串保持当前方式（与 reducer response 语义一致）。
     const nextMethod = next.method !== '' ? next.method : state.method;
+    // kind=form（challenge 响应的 verify 段）与注册 / 重置页同构：Tab 帧
+    // 原地渲染、不切第二屏——通行密钥即点即弹原生 UI（autoStart），OTP 原地
+    // 输码 + 重发倒计时（retryAfter 等取自 nextStep，挪帧不丢）。「返回上一步」
+    // = 重选当前方式（select_method 回第一步，loginToken 保留，重走同 tid）。
+    if (next.kind === 'form') {
+      return (
+        <>
+          {notice !== undefined && <ErrorBanner i18nKey={notice} />}
+          <MethodTabs
+            methods={snapshot.methods}
+            current={nextMethod}
+            onSelect={onSelect}
+          />
+          {renderFactorNode(nextMethod, next.fields)}
+          <StepBackLink onBack={() => onSelect(nextMethod)} />
+        </>
+      );
+    }
     return (
-      <div className={styles.flow}>
+      <>
         {notice !== undefined && <ErrorBanner i18nKey={notice} />}
-        <StepDispatcher
-          nextStep={next}
-          form={renderFactorNode(nextMethod, next.fields)}
-        />
+        <StepDispatcher nextStep={next} />
         {resolution !== undefined && (
           <ErrorBanner
             i18nKey={webauthnWindow ? WEBAUTHN_WINDOW_KEY : resolution.i18nKey}
@@ -647,7 +674,7 @@ export function LoginFlowView({
           />
         )}
         {backToMethodsNode}
-      </div>
+      </>
     );
   }
 
@@ -686,6 +713,14 @@ export function LoginFlowView({
           {...bannerExtras(state.method)}
         />
       )}
+      {/* 非首步失败态（如 OTP verify 原地重试）给显式返回入口：回该方式第一
+          步（select_method 语义 = 全新流程，token 保留）；首步（password
+          verify）无上一步不渲染。 */}
+      {state.method !== '' &&
+        state.step !== '' &&
+        state.step !== firstStepFor(entry?.steps ?? []) && (
+          <StepBackLink onBack={() => onSelect(state.method)} />
+        )}
     </>
   );
 }

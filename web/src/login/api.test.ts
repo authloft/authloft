@@ -205,6 +205,36 @@ describe('loginDefault（§2.2）loginToken / oidc 注入与信封后处理（§
     expect(response.status).toBe('success');
     expect(getLoginToken()).toBe('');
   });
+
+  test('restart 类失败（token_invalid 等）清空内存变量：旧 token 已作废，重试不再携带（§1.6 回到第一步）', async () => {
+    for (const status of [
+      'token_invalid',
+      'token_expired',
+      'step_invalid',
+      'state_mismatch',
+    ]) {
+      setLoginToken('tok-stale');
+      server.use(http.post(LOGIN_DEFAULT, () => HttpResponse.json({ status })));
+      const response = await mod.loginDefault({
+        method: 'password',
+        step: 'verify',
+        payload: {},
+      });
+      expect(response.status).toBe(status);
+      expect(getLoginToken()).toBe('');
+    }
+  });
+
+  test('普通失败态（invalid_credentials）不清空：流程仍存活，原地重试带同一 token', async () => {
+    setLoginToken('tok-1');
+    server.use(
+      http.post(LOGIN_DEFAULT, () =>
+        HttpResponse.json({ status: 'invalid_credentials' }),
+      ),
+    );
+    await mod.loginDefault({ method: 'password', step: 'verify', payload: {} });
+    expect(getLoginToken()).toBe('tok-1');
+  });
 });
 
 describe('register / resetPassword（§2.3 / §2.4，与 §2.2 同构）', () => {
@@ -697,6 +727,18 @@ describe('submitStepUp（扫码 step-up，§2.8 / §3.8.1）', () => {
     });
     expect(response.status).toBe('invalid_code');
     expect(getLoginToken()).toBe('lt-x');
+  });
+
+  test('restart 类失败（token_invalid）清空内存 loginToken：主体凭证已作废（§1.6 回到第一步）', async () => {
+    server.use(
+      http.post(SUBMIT_VERIFICATION, () =>
+        HttpResponse.json({ status: 'token_invalid' }),
+      ),
+    );
+    setLoginToken('lt-stale');
+    const response = await mod.submitStepUp('ct-x', 'totp', { code: '1' });
+    expect(response.status).toBe('token_invalid');
+    expect(getLoginToken()).toBe('');
   });
 });
 

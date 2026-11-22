@@ -24,7 +24,7 @@
  * 渲染，成功帧已有居中链接不重复渲染）+ 全帧一致的 footer 语言切换
  * （与 LoginPage 共用 login/components/LocaleSwitcher）。
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { resolveFlowStatus } from '../../shared/api/errors';
 import { CaptchaDialog } from '../../shared/captcha/CaptchaDialog';
@@ -40,7 +40,9 @@ import type {
 import { Modal } from '../components/Modal';
 import { loadLoginBootstrap } from '../bootstrap';
 import { resetPassword, type ResetPasswordInput } from '../api';
+import { clearLoginToken } from '../loginTokenStore';
 import { OTPForm } from '../factors/OTPForm';
+import { StepBackLink } from '../components/StepBackLink';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
 import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
@@ -145,6 +147,8 @@ export interface ResetPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
+  /** verify 段「返回上一步」（原地回 challenge 段改目标，不发请求）。 */
+  onBackToChallenge: () => void;
   /** 可重试失败态的「重试」动作（按当前 step 重提容器持值）。 */
   onRetry?: () => void;
 }
@@ -166,6 +170,7 @@ export function ResetPageView({
   onOtpCodeChange,
   onPasswordChange,
   onResend,
+  onBackToChallenge,
   onRetry,
 }: ResetPageViewProps) {
   const options = resetOptionsFor(snapshot);
@@ -315,6 +320,10 @@ export function ResetPageView({
           onResend={onResend}
         />
       )}
+      {/* verify 段「返回上一步」：原地回 challenge 段改目标（不发请求；已提交
+          目标经 challengeValues 回填）。set_password 段不挂——后端 token 状态机
+          前向单行，verify 已消费、重放必 step_invalid。 */}
+      {step === 'verify' && <StepBackLink onBack={onBackToChallenge} />}
       {step === 'set_password' && (
         <form onSubmit={submitSetPassword} className={styles.section}>
           <PasswordField
@@ -381,6 +390,11 @@ export interface ResetPageProps {
 }
 
 export function ResetPage({ snapshot }: ResetPageProps) {
+  // SPA 内路由跳转不清内存 loginToken（重置挂载时上一流程的残留 token 会
+  // 带进首签请求），挂载即清——本页流程的 token 由 challenge 响应重签。
+  useEffect(() => {
+    clearLoginToken();
+  }, []);
   const options = resetOptionsFor(snapshot);
   // 注入策略随 snapshot 带出（§2.1 passwordPolicy 经 bootstrap 解析；缺省
   // undefined → 视图层回落默认档）。routes 已消费同一注入读 snapshot，
@@ -523,6 +537,7 @@ export function ResetPage({ snapshot }: ResetPageProps) {
         onOtpCodeChange={setOtpCode}
         onPasswordChange={setPassword}
         onResend={backToChallenge}
+        onBackToChallenge={backToChallenge}
         onRetry={retrySubmit}
       />
       <CaptchaDialog {...gate.dialogProps} />

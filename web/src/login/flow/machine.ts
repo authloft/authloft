@@ -17,6 +17,18 @@ export type LoginStatus = FlowStatusKey;
 export type MachineStatus = 'idle' | LoginStatus;
 
 /**
+ * §1.6「前端动作 = 回到第一步」类：step / token / state 校验失败。唯一定义
+ * （reducer 产出 restart 副作用、api 层信封后处理作废内存 loginToken——旧值
+ * 已作废不清会导致重试反复 token_invalid——注册 / 重置页族同口径消费）。
+ */
+export const RESTART_STATUSES: ReadonlySet<string> = new Set([
+  'step_invalid',
+  'token_invalid',
+  'token_expired',
+  'state_mismatch',
+]);
+
+/**
  * 副作用标记（reducer 产出、容器 LoginContainer 执行；reducer 自身无副作用、
  * 无网络调用，docs/前端架构.md §4.1 行 381）：
  * - complete：status=success → 容器处理终点（跳转链 syncCookieUrl →

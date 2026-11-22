@@ -8,6 +8,7 @@ import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { FLOW_STATUS_TABLE, type FlowStatusKey } from '../../shared/api/errors';
 import {
   INITIAL_FLOW_STATE,
+  RESTART_STATUSES,
   type FlowEffect,
   type FlowState,
   type MachineStatus,
@@ -48,14 +49,6 @@ function normalizeStatus(status: string): MachineStatus {
     ? (status as FlowStatusKey)
     : 'failed';
 }
-
-/** §1.6「前端动作 = 回到第一步」类：step / token / state 校验失败。 */
-const RESTART_STATUSES: ReadonlySet<string> = new Set([
-  'step_invalid',
-  'token_invalid',
-  'token_expired',
-  'state_mismatch',
-]);
 
 /** response 迁移的副作用标记（§4.1 行 383 终点 / 行 403 回到第一步）。 */
 function effectsFor(

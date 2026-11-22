@@ -47,16 +47,6 @@ const { createElement } = React;
 /** kind 兜底文案（StepDispatcher 经 common.refreshAndRetry 取用；测试断言保留字面量）。 */
 const STEP_FALLBACK_TEXT = '请刷新重试';
 
-/** kind=form 段的内容（FormStep 空字段 + 提交按钮，可辨识）。 */
-function formNode(): React.ReactNode {
-  return createElement(FormStep, {
-    fields: [],
-    loading: false,
-    disabled: false,
-    onSubmit: () => {},
-  });
-}
-
 function renderDispatch(kind: string): string {
   // kind=qrcode 分派的 QRCodeStep 消费 useSearchParams，统一 MemoryRouter 包裹。
   return renderToStaticMarkup(
@@ -65,7 +55,6 @@ function renderDispatch(kind: string): string {
       { initialEntries: ['/sso/login'] },
       createElement(StepDispatcher, {
         nextStep: create(NextStepSchema, { kind, method: 'totp' }),
-        form: formNode(),
       }),
     ),
   );
@@ -77,11 +66,9 @@ beforeEach(() => {
 });
 
 describe('StepDispatcher kind 分派（§4.2 行 423；§1.4 行 169-176 六种）', () => {
-  test('kind=form → 渲染注入的 form 段（容器构造：FormStep / 因子 verify 段）', () => {
+  test('kind=form → 兜底（verify 段由 LoginFlowView Tab 帧原地渲染，不经本组件）', () => {
     const markup = renderDispatch('form');
-    expect(markup).toContain('<form');
-    expect(markup).toContain('登录');
-    expect(markup).not.toContain(STEP_FALLBACK_TEXT);
+    expect(markup).toContain(STEP_FALLBACK_TEXT);
   });
 
   test('kind=challenge → ChallengeStep（触发下发按钮），不再兜底（§4.2 行 441）', () => {

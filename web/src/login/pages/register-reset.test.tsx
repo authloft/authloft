@@ -190,6 +190,7 @@ function viewProps(init: Record<string, unknown>): Record<string, unknown> {
     onUsernameChange: () => {},
     onPasswordChange: () => {},
     onResend: () => {},
+    onBackToChallenge: () => {},
     ...init,
   };
 }
@@ -786,6 +787,8 @@ describe('RegisterPageView 状态帧渲染', () => {
     expect(markup).toContain('下一步');
     expect(markup).toContain('60 秒后可重发');
     expect(markup).toContain('value="1"'); // CodeInput 首格回填（受控）
+    // verify 段「返回上一步」：原地回 challenge 段改目标（不发请求）。
+    expect(markup).toContain('返回上一步');
   });
 
   test('username_taken / password_weak：ErrorBanner + 表单保留原地重试（§1.6 行 256/255）', () => {
@@ -966,6 +969,25 @@ describe('ResetPageView 状态帧渲染', () => {
     // Meter：全部满足（§5.6 默认策略）。
     expect(markup).toContain('✓ 长度至少 8 位');
     expect(markup).not.toContain('✗');
+    // set_password 段无返回上一步：后端 token 状态机前向单行，verify 不可重放。
+    expect(markup).not.toContain('返回上一步');
+  });
+
+  test('verify 帧：输码 + 重发倒计时 + 返回上一步（原地回 challenge 改目标）', () => {
+    const markup = renderResetView({
+      step: 'verify',
+      otpCode: '123456',
+      envelope: envelope({
+        status: 'next',
+        nextStep: create(NextStepSchema, {
+          kind: 'form',
+          method: 'otp_email',
+          retryAfter: BigInt(60),
+        }),
+      }),
+    });
+    expect(markup).toContain('60 秒后可重发');
+    expect(markup).toContain('返回上一步');
   });
 
   test('set_password 帧：注入 policy（§2.1 passwordPolicy 6/32/2）→ Meter 按策略插值', () => {

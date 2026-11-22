@@ -466,6 +466,44 @@ describe('首屏默认选中（primaryTabMethods / defaultMethodEvent / initialF
       ),
     ).toEqual(flowReducer(busy, { type: 'request_started', step: 'verify' }));
   });
+
+  test('webauthnAutoStart：challenge 响应刚返回 options → true；失败态 / 初始态不自动拉起', () => {
+    // challenge 提交 → response（next + form + challengeData）→ advance 到 verify。
+    const challengeReturned = flowReducer(
+      flowReducer(
+        stateWith({ method: 'webauthn', step: 'challenge', status: 'idle' }),
+        {
+          type: 'response',
+          envelope: envelope({
+            status: 'next',
+            nextStep: {
+              kind: 'form',
+              challengeData: { challenge: 'c1' },
+            },
+          }),
+        },
+      ),
+      { type: 'advance', step: 'verify' },
+    );
+    expect(challengeReturned.status).toBe('next');
+    expect(challengeReturned.step).toBe('verify');
+    expect(container.webauthnAutoStart(challengeReturned)).toBe(true);
+
+    // 失败态：表单区原地重试（verify 段重新渲染）不自动弹原生 UI（防循环）。
+    const failed = flowReducer(challengeReturned, {
+      type: 'response',
+      envelope: envelope({ status: 'invalid_credentials' }),
+    });
+    expect(container.webauthnAutoStart(failed)).toBe(false);
+
+    // challenge 步（尚未点「使用通行密钥登录」）与初始态不自动拉起。
+    expect(
+      container.webauthnAutoStart(
+        stateWith({ method: 'webauthn', step: 'challenge', status: 'idle' }),
+      ),
+    ).toBe(false);
+    expect(container.webauthnAutoStart(INITIAL_FLOW_STATE)).toBe(false);
+  });
 });
 
 describe('snapshotFieldToField / toPayloadInit（§2.1 快照 → 渲染 / 请求模型）', () => {
@@ -1583,7 +1621,7 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     expect(markup).toContain('登录成功，正在跳转');
   });
 
-  test('status=next + kind=form → StepDispatcher 分派 FormStep（§4.2 行 423-424）', () => {
+  test('status=next + kind=form → Tab 帧原地渲染 FormStep（不再经 StepDispatcher；§4.2 行 423-424）', () => {
     const markup = renderView(
       stateWith({
         method: 'totp',
@@ -1609,6 +1647,7 @@ describe('LoginFlowView 状态分支静态渲染', () => {
     );
     expect(markup).toContain('<form');
     expect(markup).toContain('动态口令');
+    expect(markup).toContain('返回上一步');
   });
 
   test('status=next + 未实现 kind（poll 扩展位）/ external 宿主承载 → 兜底「请刷新重试」（redirect / challenge / qrcode 已实体化，断言归 steps.test.tsx）', () => {
@@ -1675,7 +1714,7 @@ describe('LoginFlowView 状态分支静态渲染', () => {
         }),
       }),
     );
-    expect(markup).toContain('验证'); // challengeData 注入 → 断言按钮
+    expect(markup).toContain('重新验证'); // challengeData 注入 → 断言按钮
     expect(markup).not.toContain('使用通行密钥登录'); // 非 challenge 步发起按钮
   });
 });
@@ -1684,7 +1723,7 @@ describe('LoginFlowView 状态分支静态渲染', () => {
 // 返回方式列表入口、onRetry 接线、剩余次数去重
 // ---------------------------------------------------------------------------
 
-describe('「返回方式列表」入口（next 分支）', () => {
+describe('next 分支 kind=form：Tab 帧原地渲染（与注册页同构，无第二屏）', () => {
   function renderWithBack(state: FlowState, withBack: boolean): string {
     return renderToStaticMarkup(
       createElement(container.LoginFlowView, {
@@ -1697,7 +1736,7 @@ describe('「返回方式列表」入口（next 分支）', () => {
     );
   }
 
-  test('next 分支（OTP verify）：注入回调 → 渲染入口；未注入 → 不渲染', () => {
+  test('OTP verify 帧：MethodTabs 在场 + 「返回上一步」；不再走 StepDispatcher / 「返回方式列表」', () => {
     const state = stateWith({
       method: 'otp_sms',
       step: 'verify',
@@ -1718,8 +1757,11 @@ describe('「返回方式列表」入口（next 分支）', () => {
         }),
       }),
     });
-    expect(renderWithBack(state, true)).toContain('返回方式列表');
-    expect(renderWithBack(state, false)).not.toContain('返回方式列表');
+    const html = renderWithBack(state, true);
+    expect(html).toContain('返回上一步');
+    expect(html).toContain('aria-current="true"'); // 当前方式 tab 高亮
+    expect(html).toContain('验证码'); // OTPForm 原地输码
+    expect(html).not.toContain('返回方式列表'); // tab 即方式切换入口，冗余链接移除
   });
 });
 

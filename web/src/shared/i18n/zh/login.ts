@@ -18,8 +18,11 @@ export const login = {
   'login.selectMethodHint': '请选择登录方式',
   // StepUpDialog 的二次验证方式 tabs 区标题（点 tab 即取该方式挑战）。
   'login.mfaSelectHint': '二次验证方式',
-  // next 分支「返回方式列表」入口。
+  // next 分支「返回方式列表」入口（防御性 kind 帧）。
   'login.backToMethods': '返回方式列表',
+  // 登录族「返回上一步」（原地回退一步不发请求；登录页 next form 帧 /
+  // 注册 / 重置页 verify 段共用）。
+  'login.backToPrevious': '返回上一步',
   'login.pollPlaceholder': '扫码流程即将支持',
   'login.redirecting': '登录成功，正在跳转…',
   // footer 语言切换下拉（语言名保持原生写法，双语同值）。
@@ -74,7 +77,7 @@ export const login = {
   'login.codeWillBeSentTo': '验证码将发送至 {target}',
   'login.capsLockOn': '已开启大写锁定（Caps Lock）',
   'login.passkeySignIn': '使用通行密钥登录',
-  'login.passkeyVerify': '验证',
+  'login.passkeyVerify': '重新验证',
   'login.passkeyCancelled': '已取消通行密钥验证',
   'login.passkeyFailed': '通行密钥验证失败，请重试',
   // 第三方跳转失败文案带 provider 展示名。

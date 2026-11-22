@@ -289,6 +289,13 @@ export function OAuthCallbackPage({
   providerKey,
   snapshot,
 }: OAuthCallbackPageProps) {
+  // 挂载即清残留 loginToken（同登录族页面口径）：LoginOauth 端点只认 login
+  // token，上一流程的残留值会导致 token_invalid。清理先于下方分派 effect
+  //（声明序即执行序）；OAuth 流自身的 token 由回调响应重签。生产回调经
+  // provider 硬跳回、内存本已空，此清理覆盖 SPA 直入回调路由的防御路径。
+  useEffect(() => {
+    clearLoginToken();
+  }, []);
   const [status, setStatus] = useState('idle');
   const [envelope, setEnvelope] = useState<LoginFlowResponse | undefined>(
     undefined,

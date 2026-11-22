@@ -1148,7 +1148,6 @@ describe('QRCodePanelView 渲染（四态 + failed）', () => {
     );
     expect(pending).toContain('src="https://cdn.example/q1.jpg"');
     expect(pending).toContain('alt="扫码二维码"');
-    expect(pending).toContain('请使用手机扫码');
     expect(
       renderView(activeUrl('https://cdn.example/q1.jpg', 'scanned')),
     ).toContain('已扫码，请在手机上确认');

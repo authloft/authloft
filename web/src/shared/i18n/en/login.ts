@@ -19,6 +19,9 @@ export const login: typeof zhLogin = {
   // Section title above the step-up dialog method tabs.
   'login.mfaSelectHint': 'Second-factor method',
   'login.backToMethods': 'Back to sign-in options',
+  // "Back to previous step" (in-place, no request) shared by the login
+  // next-form frame and the register / reset verify steps.
+  'login.backToPrevious': 'Back',
   'login.pollPlaceholder': 'QR code sign-in is coming soon',
   'login.redirecting': 'Signed in, redirecting…',
   // Footer language dropdown (native names, same in both locales).

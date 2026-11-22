@@ -27,6 +27,7 @@ import type { LoginFlowResponse } from '../../gen/proto/api/sso/v1/envelope_pb';
 import { LoginContainer } from '../LoginContainer';
 import { LocaleSwitcher } from '../components/LocaleSwitcher';
 import { ProviderButtons } from '../factors/ProviderButtons';
+import { clearLoginToken } from '../loginTokenStore';
 import type {
   MethodsSnapshot,
   OidcAccountContext,
@@ -145,6 +146,14 @@ function ConsentAccountCard({
 }
 
 export function LoginPage({ snapshot }: LoginPageProps) {
+  // SPA 内路由跳转不清内存 loginToken（登录 ↔ 注册 / 重置互跳会把上一个流程
+  // 的残留 token 带进本页请求：login 端点只认 login token → token_invalid
+  // 首步即失败），挂载即清——本页流程的 token 由响应重签；硬跳页 / 刷新本就
+  // 随页面销毁（内存变量无持久化，五条之 4 / 5）。绑定 / 二次验证等原地视图
+  // 在本页挂载树内，不受影响。
+  useEffect(() => {
+    clearLoginToken();
+  }, []);
   // oidc.mode 三态分派（§4.2）：login 双栏 / consent 双栏 / plain 直登单栏。
   const view = oidcView(getInit()?.oidc);
   const ctx = view.ctx;

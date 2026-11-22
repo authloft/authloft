@@ -31,7 +31,7 @@
  * 渲染，成功帧不渲染）+ 全帧一致的 footer 语言切换（与 LoginPage 共用
  * login/components/LocaleSwitcher）。
  */
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { create } from '@bufbuild/protobuf';
 import { Link, useSearchParams } from '@modern-js/runtime/router';
 import {
@@ -76,9 +76,12 @@ import {
 } from '../../shared/types/init';
 import { Modal } from '../components/Modal';
 import { hasOidcContext } from '../oidcContext';
+import { RESTART_STATUSES } from '../flow/machine';
 import { loadLoginBootstrap } from '../bootstrap';
 import { register, type RegisterInput } from '../api';
+import { clearLoginToken } from '../loginTokenStore';
 import { OTPForm } from '../factors/OTPForm';
+import { StepBackLink } from '../components/StepBackLink';
 import { focusField, RETRY_RESUBMIT_STATUSES } from '../validate';
 import { VerifyCodeSection } from '../VerifyCodeSection';
 import { PasswordField } from './PasswordField';
@@ -94,13 +97,8 @@ import { Tabs } from '../../shared/components';
 /** 注册 / 重置请求侧 step（§2.2 行 422：set_password 属注册 / 重置端点）。 */
 export type FlowStep = 'challenge' | 'verify' | 'set_password';
 
-/** restart 类失败态（§1.6：step / token / state 类回到第一步）。 */
-export const RESTART_STATUSES: ReadonlySet<string> = new Set([
-  'step_invalid',
-  'token_invalid',
-  'token_expired',
-  'state_mismatch',
-]);
+/** restart 类失败态收口在 flow/machine（§1.6 唯一定义），此处转出复用。 */
+export { RESTART_STATUSES };
 
 /** 注册 / 重置页非失败态（本页族不出现 mfa / binding / 轮询态，防御性收窄）。 */
 const NON_ERROR_STATUSES: ReadonlySet<string> = new Set([
@@ -430,6 +428,8 @@ export interface RegisterPageViewProps {
   onPasswordChange: (value: string) => void;
   /** verify 段重发（回到 challenge 段重走）。 */
   onResend: () => void;
+  /** verify 段「返回上一步」（原地回 challenge 段改目标，不发请求）。 */
+  onBackToChallenge: () => void;
   /** 可重试失败态的「重试」动作（按当前 step 重提容器持值）。 */
   onRetry?: () => void;
 }
@@ -454,6 +454,7 @@ export function RegisterPageView({
   onUsernameChange,
   onPasswordChange,
   onResend,
+  onBackToChallenge,
   onRetry,
 }: RegisterPageViewProps) {
   const options = registerOptionsFor(snapshot);
@@ -608,6 +609,10 @@ export function RegisterPageView({
           onResend={onResend}
         />
       )}
+      {/* verify 段「返回上一步」：原地回 challenge 段改目标（不发请求；已提交
+          目标经 challengeValues 回填）。set_password 段不挂——后端 token 状态机
+          前向单行，verify 已消费、重放必 step_invalid。 */}
+      {step === 'verify' && <StepBackLink onBack={onBackToChallenge} />}
       {step === 'set_password' && (
         <form onSubmit={submitSetPassword} className={styles.section}>
           <div className={styles.field}>
@@ -723,6 +728,11 @@ export interface RegisterPageProps {
 }
 
 export function RegisterPage({ snapshot }: RegisterPageProps) {
+  // SPA 内路由跳转不清内存 loginToken（注册挂载时上一流程的残留 token 会
+  // 带进首签请求），挂载即清——本页流程的 token 由 challenge 响应重签。
+  useEffect(() => {
+    clearLoginToken();
+  }, []);
   const options = registerOptionsFor(snapshot);
   // 注入策略随 snapshot 带出（§2.1 passwordPolicy 经 bootstrap 解析；缺省
   // undefined → 视图层回落默认档）。routes 已消费同一注入读 snapshot，
@@ -876,6 +886,7 @@ export function RegisterPage({ snapshot }: RegisterPageProps) {
         onSelectMethod={selectMethod}
         onSubmit={submit}
         onOtpCodeChange={setOtpCode}
+        onBackToChallenge={backToChallenge}
         onUsernameChange={setUsername}
         onPasswordChange={setPassword}
         onResend={backToChallenge}

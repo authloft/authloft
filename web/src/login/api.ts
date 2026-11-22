@@ -78,6 +78,7 @@ import {
   getOidcSelectedScope,
   loadOidcContext,
 } from './oidcContext';
+import { RESTART_STATUSES } from './flow/machine';
 import {
   ConsentApproveRequestSchema,
   ConsentDenyRequestSchema,
@@ -195,12 +196,17 @@ function flowTokenFields(
   };
 }
 
-/** 信封响应后处理（§1.3 行 145）：含 loginToken 无条件覆盖；status=success 清空。 */
+/**
+ * 信封响应后处理（§1.3 行 145）：含 loginToken 无条件覆盖；status=success 或
+ * restart 类（§1.6 回到第一步，step / token / state 校验失败）清空——旧 token
+ * 已作废，不清会让重试反复携带它命中 token_invalid（登录端点又只认本流程
+ * token，跨页残留同理），回第一步重签是唯一出路。
+ */
 function applyEnvelope(response: LoginFlowResponse): LoginFlowResponse {
   if (response.loginToken !== '') {
     setLoginToken(response.loginToken);
   }
-  if (response.status === 'success') {
+  if (response.status === 'success' || RESTART_STATUSES.has(response.status)) {
     clearLoginToken();
   }
   return response;
@@ -424,7 +430,9 @@ export async function submitStepUp(
     loginToken: getLoginToken(),
   });
   const response = await ssoClient.submitVerification(request);
-  if (response.status === 'success') {
+  // success 清空（§1.3 五条之 3）；restart 类同 applyEnvelope 口径——token 类
+  // 校验失败后旧值已作废，弹窗内取消回第一步的路径（cancelMfa）另行清理。
+  if (response.status === 'success' || RESTART_STATUSES.has(response.status)) {
     clearLoginToken();
   }
   return response;
@@ -486,8 +494,7 @@ function stepUpToEnvelope(
  * 前端架构 §4.1 行 492/498）：保持 StartVerification 两段式——先带 `method`
  * （及请求级 `captcha`，§2.5 / §3.8.5）取 `challengeToken`，再以
  * `submitStepUp` 携带 `loginToken` 提交因子载荷；响应转信封交回状态机。
- * `status=success` 清空内存 `loginToken`（§1.3 五条之 3）——扫码 step-up 由
- * `submitStepUp` 自身在 success 时清空。
+ * 内存 `loginToken` 的清空（success / restart 类）由 `submitStepUp` 自身处理。
  */
 export async function submitLoginFactor(
   input: LoginDefaultInput,
@@ -506,9 +513,6 @@ export async function submitLoginFactor(
     method,
     loginPayloadToStruct(input.payload),
   );
-  if (response.status === 'success') {
-    clearLoginToken();
-  }
   return stepUpToEnvelope(response);
 }
 

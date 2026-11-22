@@ -434,7 +434,7 @@ describe('QRCodeDialog 壳 → 注入窗体（Semi 风格 props 透传）', () =
       visible: true,
       title: '扫码登录',
       hasCancel: false,
-      okText: '关闭',
+      okText: '取消',
       closable: true,
       closeOnEsc: true,
       maskClosable: false,
