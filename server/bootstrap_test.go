@@ -2144,6 +2144,22 @@ func TestProviderRegistryComplete(t *testing.T) {
 	}, provider.CategoryEmail); err != nil {
 		t.Errorf("NewSender(sendgrid): %v——sender factory 槽缺失或实现构造破损", err)
 	}
+	// sms Sender twilio（§15.5，Basic Auth + ContentSid 内容模板轨）：blank
+	// import 被删即 sender 槽缺失，发送期 provider_disabled。断言形态同
+	// aliyun_dm / tencent_sms 先例：LookupSenderMeta 断言 meta 与 category，
+	// NewSender 以最小可用 Ext（from 轨道）走真实 factory 证构造槽挂载。
+	meta, ok = provider.LookupSenderMeta("twilio")
+	if !ok {
+		t.Error(`provider 注册表缺 sms sender type "twilio"——bootstrap.go 装配 import 可能被删`)
+	} else if meta.Category != provider.CategorySMS {
+		t.Errorf("twilio category = %q, want %q", meta.Category, provider.CategorySMS)
+	}
+	if _, err := provider.NewSender(&provider.Provider{
+		Type: "twilio",
+		Ext:  &providerpb.Ext{ClientId: "AC11111111111111111111111111111111", ClientSecret: "tok", From: "+15550001111", TemplateCode: "HX33333333333333333333333333333333"},
+	}, provider.CategorySMS); err != nil {
+		t.Errorf("NewSender(twilio): %v——sender factory 槽缺失或实现构造破损", err)
+	}
 }
 
 // allowStartGate 放行的 captcha 判定桩：OTP 下发守卫只认 Status 为空即放行，
