@@ -2128,6 +2128,22 @@ func TestProviderRegistryComplete(t *testing.T) {
 	}, provider.CategorySMS); err != nil {
 		t.Errorf("NewSender(tencent_sms): %v——sender factory 槽缺失或实现构造破损", err)
 	}
+	// email Sender sendgrid（§15.2 / §15.5，REST v3 + Bearer API Key）：
+	// blank import 被删即 sender 槽缺失，发送期 provider_disabled。断言形态
+	// 同 aliyun_dm / tencent_sms 先例：LookupSenderMeta 断言 meta 与 category，
+	// NewSender 以最小可用 Ext 走真实 factory 证构造槽挂载。
+	meta, ok = provider.LookupSenderMeta("sendgrid")
+	if !ok {
+		t.Error(`provider 注册表缺 email sender type "sendgrid"——bootstrap.go 装配 import 可能被删`)
+	} else if meta.Category != provider.CategoryEmail {
+		t.Errorf("sendgrid category = %q, want %q", meta.Category, provider.CategoryEmail)
+	}
+	if _, err := provider.NewSender(&provider.Provider{
+		Type: "sendgrid",
+		Ext:  &providerpb.Ext{ClientSecret: "SG.key", From: "no-reply@example.com"},
+	}, provider.CategoryEmail); err != nil {
+		t.Errorf("NewSender(sendgrid): %v——sender factory 槽缺失或实现构造破损", err)
+	}
 }
 
 // allowStartGate 放行的 captcha 判定桩：OTP 下发守卫只认 Status 为空即放行，
