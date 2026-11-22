@@ -3157,20 +3157,22 @@ describe('MfaSetting 静态渲染（开关行 + TOTP 因子行）', () => {
   const totp = (bound: boolean): MfaPolicyMethod =>
     create(MfaPolicyMethodSchema, { factor: 'totp', bound });
 
-  test('totp 已绑定 → 开关行标题 + 「已绑定」+ 解绑 / 恢复码查看', () => {
+  test('totp 已绑定 → 开关行标题 + 「已绑定」+ 解绑 / 重新生成（行内，无「查看存量码」入口）', () => {
     const html = renderRow([totp(true)]);
     expect(html).toContain('两步验证');
     expect(html).toContain('已绑定');
     expect(html).toContain('解绑');
-    expect(html).toContain('恢复码仅一次性展示，不可回显');
+    expect(html).toContain('重新生成');
+    // Popconfirm 确认文案为懒挂载浮层，静态渲染不产出。
+    expect(html).not.toContain('恢复码仅一次性展示，不可回显');
   });
 
-  test('totp 未绑定 → 「未绑定」+ 去绑定；不展示恢复码入口与绑定弹窗，开关行禁用提示渲染', () => {
+  test('totp 未绑定 → 「未绑定」+ 去绑定；不展示重新生成入口与绑定弹窗，开关行禁用提示渲染', () => {
     const html = renderRow([totp(false)]);
     expect(html).toContain('未绑定');
     expect(html).toContain('去绑定');
     expect(html).toContain('请先绑定至少一个可用的验证方式');
-    expect(html).not.toContain('恢复码仅一次性展示，不可回显');
+    expect(html).not.toContain('重新生成');
     // 结构性断言：TotpBindDialog / 恢复码 Modal 父级条件渲染——未打开不挂载。
     expect(html).not.toContain('绑定 TOTP 动态码');
   });
@@ -3179,7 +3181,7 @@ describe('MfaSetting 静态渲染（开关行 + TOTP 因子行）', () => {
     const html = renderRow([]);
     expect(html).toContain('未绑定');
     expect(html).toContain('管理员未启用两步验证');
-    expect(html).not.toContain('恢复码仅一次性展示，不可回显');
+    expect(html).not.toContain('重新生成');
   });
 });
 

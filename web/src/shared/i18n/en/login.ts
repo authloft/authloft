@@ -16,8 +16,6 @@ export const login: typeof zhLogin = {
   'login.orDivider': 'or',
   'login.noMethods': 'No sign-in methods available',
   'login.selectMethodHint': 'Please choose a sign-in method',
-  // Section title above the step-up dialog method tabs.
-  'login.mfaSelectHint': 'Second-factor method',
   'login.backToMethods': 'Back to sign-in options',
   // "Back to previous step" (in-place, no request) shared by the login
   // next-form frame and the register / reset verify steps.

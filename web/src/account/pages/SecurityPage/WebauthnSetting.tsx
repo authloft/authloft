@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Input, Modal, Toast } from '@douyinfe/semi-ui';
+import { Button, Input, Modal, Space, Toast } from '@douyinfe/semi-ui';
 import type { ListItemProps } from '@/shared/components/SettingList';
 import { requestOptions } from '@/shared/hooks/requestOptions';
 import { t } from '@/shared/i18n';
@@ -97,7 +97,7 @@ export function useWebauthnSetting(): ListItemProps {
           ? t('account.webauthnBoundCount', { count })
           : t('account.factorUnboundTag'),
     extra: (
-      <>
+      <Space>
         <Button
           type="tertiary"
           disabled={count === 0}
@@ -131,7 +131,7 @@ export function useWebauthnSetting(): ListItemProps {
             }}
           />
         ) : null}
-      </>
+      </Space>
     ),
   };
 }

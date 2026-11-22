@@ -64,6 +64,7 @@ import { toDisplay } from '../utils/int';
 import { FieldRenderer } from './FieldRenderer';
 import { Tabs } from './Tabs';
 import type { ModalRenderer } from './modal';
+import styles from './StepUpDialog.module.less';
 
 // CaptchaDialog 懒加载（本弹窗首实例挂载时拉起）：阻断「本组件 →
 // CaptchaDialog → CaptchaWidget → adapters/Image → shared/api/sso →
@@ -341,7 +342,7 @@ export function StepUpDialogView(props: StepUpDialogViewProps): ReactNode {
   const countdown = useCountdown(props.retryAfter);
 
   return (
-    <>
+    <div className={styles.dialogView}>
       <p>{t('account.stepUpHint')}</p>
       {props.errorText !== undefined ? (
         <p role="alert">{props.errorText}</p>
@@ -350,17 +351,14 @@ export function StepUpDialogView(props: StepUpDialogViewProps): ReactNode {
         <p>{t('common.loading')}</p>
       ) : null}
       {props.methods.length > 0 ? (
-        <>
-          <p>{t('login.mfaSelectHint')}</p>
-          <Tabs
-            tabList={props.methods.map((method) => ({
-              itemKey: method.method,
-              title: factorLabel(method.method),
-            }))}
-            activeKey={props.activeMethod?.method ?? ''}
-            onChange={(key) => props.onTabSelect?.(key)}
-          />
-        </>
+        <Tabs
+          tabList={props.methods.map((method) => ({
+            itemKey: method.method,
+            title: factorLabel(method.method),
+          }))}
+          activeKey={props.activeMethod?.method ?? ''}
+          onChange={(key) => props.onTabSelect?.(key)}
+        />
       ) : props.phase === 'verify' ? (
         <p role="status">{t('account.stepUpNoMethods')}</p>
       ) : null}
@@ -389,7 +387,7 @@ export function StepUpDialogView(props: StepUpDialogViewProps): ReactNode {
           </>
         )
       ) : null}
-    </>
+    </div>
   );
 }
 

@@ -23,7 +23,7 @@ export const account: typeof zhAccount = {
   'account.configLoadFailed':
     'Failed to load settings. Please refresh and try again',
   'account.close': 'Close',
-  'account.loginMethodTitle': 'Sign-in Method',
+  'account.securityToolsTitle': 'Security tools',
   'account.thirdpartyCardTitle': 'Third-Party Accounts',
   'account.passwordLabel': 'Password',
   'account.passwordChangeHint': 'Recommended to change regularly',
@@ -33,7 +33,6 @@ export const account: typeof zhAccount = {
   'account.setPasswordFirst': 'Set a password first',
   'account.bindPhoneTitle': 'Link Phone Number',
   'account.bindEmailTitle': 'Link Email',
-  'account.mfaSectionTitle': 'Two-Factor Authentication',
   'account.mfaUnbindSuccess': '{factor} unlinked',
   'account.webauthnBoundCount': '{count} linked',
   'account.webauthnViewBound': 'View linked',
@@ -85,7 +84,7 @@ export const account: typeof zhAccount = {
   'account.recoveryIssuedAt': 'Issued at: {time}',
   'account.recoveryRegenerateConfirm':
     'Regenerating will invalidate all existing recovery codes. Continue?',
-  'account.recoveryRegenerate': 'Regenerate',
+  'account.recoveryRegenerate': 'Regenerate recovery codes',
   // download as text (pure frontend Blob download).
   'account.recoveryDownload': 'Download as text',
 
@@ -107,10 +106,6 @@ export const account: typeof zhAccount = {
   'account.factorTotp': 'TOTP authenticator code',
   'account.factorBoundTag': 'Linked',
   'account.factorUnboundTag': 'Not linked',
-  'account.viewRecoveryCodes':
-    'Recovery codes are shown once and cannot be displayed again',
-  'account.recoveryNotViewable':
-    'Existing recovery codes cannot be shown again. Regenerating invalidates all old codes and issues new ones.',
 
   // ---- StepUpDialog (sensitive-operation step-up, API doc §3.8) ------------
   'account.stepUpTitle': 'Security Verification',

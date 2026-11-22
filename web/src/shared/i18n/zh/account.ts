@@ -21,7 +21,7 @@ export const account = {
   // ---- SecurityPage（「通行密钥」行题复用 factors.webauthn）-------------
   'account.configLoadFailed': '配置加载失败，请刷新重试',
   'account.close': '关闭',
-  'account.loginMethodTitle': '登录方式',
+  'account.securityToolsTitle': '安全工具',
   'account.thirdpartyCardTitle': '第三方账号',
   'account.passwordLabel': '密码',
   'account.passwordChangeHint': '建议定期更换',
@@ -31,7 +31,6 @@ export const account = {
   'account.setPasswordFirst': '请先设置密码',
   'account.bindPhoneTitle': '绑定手机号',
   'account.bindEmailTitle': '绑定邮箱',
-  'account.mfaSectionTitle': '双因素认证',
   'account.mfaUnbindSuccess': '已解绑{factor}',
   'account.webauthnBoundCount': '已绑定 {count} 个',
   'account.webauthnViewBound': '查看已绑定',
@@ -76,7 +75,7 @@ export const account = {
   'account.recoveryIssuedAt': '签发时间：{time}',
   'account.recoveryRegenerateConfirm':
     '重新生成将作废全部现有恢复码，确定继续？',
-  'account.recoveryRegenerate': '重新生成',
+  'account.recoveryRegenerate': '重新生成恢复码',
   // 下载为文本（纯前端 Blob 下载）。
   'account.recoveryDownload': '下载为文本',
 
@@ -94,9 +93,6 @@ export const account = {
   'account.factorTotp': 'TOTP 动态码',
   'account.factorBoundTag': '已绑定',
   'account.factorUnboundTag': '未绑定',
-  'account.viewRecoveryCodes': '恢复码仅一次性展示，不可回显',
-  'account.recoveryNotViewable':
-    '存量恢复码不可回显，重新生成将作废全部旧码并下发新码。',
 
   // ---- StepUpDialog（敏感操作二次验证，接口文档 §3.8）-----------------------
   'account.stepUpTitle': '安全验证',

@@ -207,23 +207,23 @@ describe('StepUpDialog 因子字段（复用 mfa.methods[] + FieldRenderer）', 
       true,
     );
     // verify 引导态（未选方式）与无可渲染字段禁用——不留「点了没反应」。
-    expect(
-      componentsMod.stepUpOkDisabled('verify', undefined, [], false),
-    ).toBe(true);
+    expect(componentsMod.stepUpOkDisabled('verify', undefined, [], false)).toBe(
+      true,
+    );
     expect(componentsMod.stepUpOkDisabled('verify', totp, [], false)).toBe(
       true,
     );
-    expect(
-      componentsMod.stepUpOkDisabled('verify', totp, fields, false),
-    ).toBe(false);
+    expect(componentsMod.stepUpOkDisabled('verify', totp, fields, false)).toBe(
+      false,
+    );
     // webauthn 断言由主按钮驱动（challengeData 由 Start 下发）→ 恒可用。
     expect(componentsMod.stepUpOkDisabled('verify', webauthn, [], false)).toBe(
       false,
     );
     // error 阶段主按钮即「重试」，恒可用。
-    expect(
-      componentsMod.stepUpOkDisabled('error', undefined, [], false),
-    ).toBe(false);
+    expect(componentsMod.stepUpOkDisabled('error', undefined, [], false)).toBe(
+      false,
+    );
   });
 
   test('因子失败文案：错误提示 + 剩余次数（§1.6 invalid_code）', () => {
@@ -338,7 +338,6 @@ describe('StepUpDialogView 静态帧（tabs 一次提交，无 select / 「下�
       methods: [totp],
       values: {},
     });
-    expect(html).toContain('二次验证方式');
     expect(html).toContain('动态口令');
     expect(html).not.toContain('<input');
   });
@@ -358,9 +357,9 @@ describe('StepUpDialogView 静态帧（tabs 一次提交，无 select / 「下�
   });
 
   test('loading / error / 无可用方式三态帧', () => {
-    expect(
-      renderView({ phase: 'loading', methods: [], values: {} }),
-    ).toContain('加载中');
+    expect(renderView({ phase: 'loading', methods: [], values: {} })).toContain(
+      '加载中',
+    );
     const error = renderView({
       phase: 'error',
       methods: [],
@@ -369,9 +368,9 @@ describe('StepUpDialogView 静态帧（tabs 一次提交，无 select / 「下�
     });
     expect(error).toContain('role="alert"');
     expect(error).toContain('动态口令错误');
-    expect(
-      renderView({ phase: 'verify', methods: [], values: {} }),
-    ).toContain('当前没有可用的验证方式');
+    expect(renderView({ phase: 'verify', methods: [], values: {} })).toContain(
+      '当前没有可用的验证方式',
+    );
   });
 });
 
@@ -632,7 +631,10 @@ describe('StepUpDialog gate 自闭环（runStepUpStart：mode 分派 + 凭据注
     const gate = scriptedGate([imageToken('up-1', '42')]);
     const response = await componentsMod.runStepUpStart(
       'otp_sms',
-      create(CaptchaConfigSchema, { providerKey: 'builtin_image', type: 'image' }),
+      create(CaptchaConfigSchema, {
+        providerKey: 'builtin_image',
+        type: 'image',
+      }),
       startViaApi,
       gate.run,
     );
@@ -648,7 +650,12 @@ describe('StepUpDialog gate 自闭环（runStepUpStart：mode 分派 + 凭据注
 
     // 无配置 → 退化为先探一次（服务端未启用 captcha 的部署不该凭空弹窗）。
     const bareGate = scriptedGate([]);
-    await componentsMod.runStepUpStart('otp_sms', undefined, startViaApi, bareGate.run);
+    await componentsMod.runStepUpStart(
+      'otp_sms',
+      undefined,
+      startViaApi,
+      bareGate.run,
+    );
     expect(bareGate.prompts).toHaveLength(0);
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).not.toHaveProperty('captcha');

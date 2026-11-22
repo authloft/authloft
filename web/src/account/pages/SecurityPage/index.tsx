@@ -1,14 +1,14 @@
 /**
- * 安全中心页（SettingList 行式布局）：GetConfig 驱动三个区块——
- * - 登录方式：密码（hasPassword 区分设置 / 修改）、手机号 / 邮箱（未设密码
+ * 安全中心页（SettingList 行式布局）：GetConfig 驱动两个区块——
+ * - 安全工具：密码（hasPassword 区分设置 / 修改）、手机号 / 邮箱（未设密码
  *   显示「请先设置密码」；对应消息渠道未配置时不渲染绑定 / 换绑入口，
  *   GetConfig 渠道可用性标志驱动，§3.2）、通行密钥（useWebauthnSetting：
- *   已绑定 X 个 + 查看已绑定 / 新增）；
- * - 双因素认证：两步验证开关行（useMfaToggleField）+ TOTP 因子行
- *   （useMfaSetting，MFA + 恢复码合并）；
+ *   已绑定 X 个 + 查看已绑定 / 新增）、两步验证开关（useMfaToggleField）+
+ *   TOTP 因子行（useMfaSetting，MFA + 恢复码合并）——原「登录方式」「双因素
+ *   认证」两区合并为一区；
  * - 第三方账号：ThirdPartyList（全量账号行，已绑定 → 解绑 / 未绑定 → 绑定；
  *   redirect / qrcode 通道绑定 + 解绑置灰）。本区块自带 SettingListSections
- *   外壳（与上面两块同级），避免分区嵌套。
+ *   外壳（与上面区块同级），避免分区嵌套。
  *
  * 【redirect 绑定回调落地（§3.7.1 A 行 969-971）】OAuthCallbackPage b 分支
  * 完成后 location.replace('/account#/security?bind={success|ErrorInfo.code}')
@@ -135,8 +135,8 @@ export function SecurityPageView(props: {
       <SettingListSections
         sections={[
           {
-            key: 'login',
-            title: t('account.loginMethodTitle'),
+            key: 'tools',
+            title: t('account.securityToolsTitle'),
             fields: [
               {
                 key: 'password',
@@ -168,12 +168,9 @@ export function SecurityPageView(props: {
                 extra: contactExtra('email', Boolean(profile?.email)),
               },
               webauthnField,
+              mfaToggleField,
+              mfaField,
             ],
-          },
-          {
-            key: 'mfa',
-            title: t('account.mfaSectionTitle'),
-            fields: [mfaToggleField, mfaField],
           },
         ]}
       />

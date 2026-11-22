@@ -1,17 +1,26 @@
 /**
- * 双因素认证区（两步验证开关行 + TOTP 因子行）：
+ * 安全工具区内的两步验证行 + TOTP 因子行：
  * - 开关行（useMfaToggleField）：Semi Switch 由 mfaPolicy.{enabled, methods[].bound}
  *   推导可用性，onChange 调 SetMfa({enabled})，成功后重取 GetConfig + Toast；
- * - 因子行（useMfaSetting）：totp 已绑定 → 行内「已绑定」+ 解绑 / 恢复码；
+ * - 因子行（useMfaSetting）：totp 已绑定 → 行内「已绑定」+ 解绑 / 重新生成；
  *   未绑定 → 绑定（TotpBindDialog）。解绑走二次验证
  *   （docs/接口文档.md §3.5）：StepUpDialog 取得 verificationToken 后调
  *   UnbindTotp；因子集合的启用集语义随 SetMfa 改为开关后一并下线。
- * 存量恢复码不可回显（§3.5）：弹窗只提供重新生成，成功后以新码为准。
+ * 存量恢复码不可回显（§3.5）：行内直接提供「重新生成」（Popconfirm 确认，
+ * 全量作废后一次性下发新码），成功后弹窗展示新码（RecoveryCodePanel，
+ * 复制 / 下载 / 可再次生成），不再提供「查看存量码」入口。
  */
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState } from 'react';
 import { useLocation } from '@modern-js/runtime/router';
 import { useRequest } from 'ahooks';
-import { Button, Modal, Popconfirm, Switch, Toast } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Modal,
+  Popconfirm,
+  Space,
+  Switch,
+  Toast,
+} from '@douyinfe/semi-ui';
 import { CaptchaDialog } from '@/shared/captcha/CaptchaDialog';
 import { useCaptchaGate } from '@/shared/captcha/useCaptchaGate';
 import type { MfaPolicyMethod } from '@/gen/proto/api/account/v1/profile_pb';
@@ -22,7 +31,6 @@ import { requestOptions } from '@/shared/hooks/requestOptions';
 import { t } from '@/shared/i18n';
 import {
   accountReturnTo,
-  apiErrorText,
   buildRegenerateRecoveryCodesRequest,
   buildSetMfaRequest,
   buildStartVerificationRequest,
@@ -38,57 +46,6 @@ import {
 import { RecoveryCodePanel } from './RecoveryCodePanel';
 import { TotpBindDialog } from './TotpBindDialog';
 import styles from './MfaSetting.module.less';
-
-/** 恢复码弹窗内容（父级条件渲染，打开才挂载）：存量码不可回显，仅重新生成。 */
-function RecoveryCodesModalBody(): ReactNode {
-  const location = useLocation();
-  const returnTo = () => accountReturnTo(location.pathname, location.search);
-  const {
-    data: regenData,
-    error: regenError,
-    loading: regenBusy,
-    run: runRegen,
-  } = useRequest(regenerateRecoveryCodes, {
-    manual: true,
-    ...requestOptions({ toast: false, returnTo }),
-    onSuccess: () => {
-      Toast.success(t('account.recoveryRegenerateSuccess'));
-    },
-  });
-  const regenerate = () => {
-    runRegen(buildRegenerateRecoveryCodesRequest());
-  };
-
-  return (
-    <>
-      {regenData === undefined ? (
-        <>
-          <p className={styles.notice}>{t('account.recoveryNotViewable')}</p>
-          <Popconfirm
-            title={t('account.recoveryRegenerateConfirm')}
-            onConfirm={regenerate}
-          >
-            <Button type="tertiary" loading={regenBusy}>
-              {t('account.recoveryRegenerate')}
-            </Button>
-          </Popconfirm>
-        </>
-      ) : (
-        <RecoveryCodePanel
-          codes={regenData.codes}
-          createdAt={regenData.createdAt}
-          onRegenerate={regenerate}
-          regenerateBusy={regenBusy}
-        />
-      )}
-      {regenError !== undefined ? (
-        <p role="alert" className={styles.notice}>
-          {apiErrorText(regenError)}
-        </p>
-      ) : null}
-    </>
-  );
-}
 
 /**
  * 两步验证开关行（SettingList field）：checked = mfaPolicy.enabled，
@@ -120,6 +77,7 @@ export function useMfaToggleField(props: {
     help: <span className={styles.toggleHelp}>{t(view.helpKey)}</span>,
     extra: (
       <Switch
+        style={{ overflow: 'hidden' }}
         checked={props.enabled}
         onChange={(checked: boolean) => run(buildSetMfaRequest(checked))}
         disabled={view.disabled}
@@ -136,7 +94,14 @@ export function useMfaSetting(props: {
   onPolicyRefresh: () => void;
 }): ListItemProps {
   const [totpOpen, setTotpOpen] = useState(false);
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  /** 重新生成成功的一次性新码（非空 = 展示弹窗开着；关闭即清，防复读）。 */
+  const [regenCodes, setRegenCodes] = useState<
+    | {
+        codes: string[];
+        createdAt: bigint;
+      }
+    | undefined
+  >(undefined);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const location = useLocation();
   const returnTo = () => accountReturnTo(location.pathname, location.search);
@@ -181,6 +146,23 @@ export function useMfaSetting(props: {
     ...requestOptions({ toast: false, returnTo }),
   });
 
+  // 重新生成（§3.5 全量作废 + 一次性下发新码）：行内 Popconfirm 确认触发，
+  // 成功 Toast + 弹新码展示弹窗；错误走集中 onError Toast（行内无错误槽）。
+  const { loading: regenBusy, run: runRegen } = useRequest(
+    regenerateRecoveryCodes,
+    {
+      manual: true,
+      ...requestOptions({ returnTo }),
+      onSuccess: (data) => {
+        Toast.success(t('account.recoveryRegenerateSuccess'));
+        setRegenCodes(data);
+      },
+    },
+  );
+  const regenerate = () => {
+    runRegen(buildRegenerateRecoveryCodesRequest());
+  };
+
   /** 二次验证通过：携带 verificationToken 调 UnbindTotp，失败由弹窗呈现。 */
   const handleVerified = async (verificationToken: string) => {
     await runUnbind(buildUnbindTotpRequest(verificationToken));
@@ -201,14 +183,19 @@ export function useMfaSetting(props: {
     extra: (
       <>
         {bound ? (
-          <>
-            <Button type="danger" onClick={() => setStepUpOpen(true)}>
+          <Space>
+            <Button type="tertiary" onClick={() => setStepUpOpen(true)}>
               {t('account.unbindAction')}
             </Button>
-            <Button type="tertiary" onClick={() => setRecoveryOpen(true)}>
-              {t('account.viewRecoveryCodes')}
-            </Button>
-          </>
+            <Popconfirm
+              title={t('account.recoveryRegenerateConfirm')}
+              onConfirm={regenerate}
+            >
+              <Button type="tertiary" loading={regenBusy}>
+                {t('account.recoveryRegenerate')}
+              </Button>
+            </Popconfirm>
+          </Space>
         ) : (
           <Button type="tertiary" onClick={() => setTotpOpen(true)}>
             {t('account.bindAction')}
@@ -239,15 +226,22 @@ export function useMfaSetting(props: {
           />
         ) : null}
         <CaptchaDialog {...captchaDialogProps} />
-        {recoveryOpen ? (
+        {/* 重新生成成功的新码一次性展示（复制 / 下载 / 可再次生成）；关闭即清，
+            防刷新复读——存量码不可回显（§3.5），无「查看存量码」入口。 */}
+        {regenCodes ? (
           <Modal
             title={t('factors.recovery_code')}
             visible
-            onCancel={() => setRecoveryOpen(false)}
+            onCancel={() => setRegenCodes(undefined)}
             okButtonProps={{ style: { display: 'none' } }}
             cancelText={t('account.cancelAction')}
           >
-            <RecoveryCodesModalBody />
+            <RecoveryCodePanel
+              codes={regenCodes.codes}
+              createdAt={regenCodes.createdAt}
+              onRegenerate={regenerate}
+              regenerateBusy={regenBusy}
+            />
           </Modal>
         ) : null}
       </>

@@ -16,8 +16,6 @@ export const login = {
   'login.orDivider': '或',
   'login.noMethods': '暂无可用登录方式',
   'login.selectMethodHint': '请选择登录方式',
-  // StepUpDialog 的二次验证方式 tabs 区标题（点 tab 即取该方式挑战）。
-  'login.mfaSelectHint': '二次验证方式',
   // next 分支「返回方式列表」入口（防御性 kind 帧）。
   'login.backToMethods': '返回方式列表',
   // 登录族「返回上一步」（原地回退一步不发请求；登录页 next form 帧 /
