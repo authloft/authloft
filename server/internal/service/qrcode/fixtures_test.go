@@ -44,12 +44,14 @@ type tpTicketPayloads struct {
 	reads     []string
 	err       error
 	writeErr  error
+	writes    int
 }
 
 func (f *tpTicketPayloads) Write(_ context.Context, p *token.TicketPayload) error {
 	if f.writeErr != nil {
 		return f.writeErr
 	}
+	f.writes++
 	f.snapshots[p.GetTicketId()] = p
 	return nil
 }

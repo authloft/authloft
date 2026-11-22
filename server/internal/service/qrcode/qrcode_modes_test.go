@@ -13,6 +13,7 @@ import (
 	"errors"
 	"image"
 	"image/jpeg"
+	"strings"
 	"testing"
 
 	providerpb "authloft/gen/go/provider"
@@ -34,8 +35,8 @@ func testJPEG(t *testing.T) []byte {
 
 // TestCreateQrcodeTicketMode ticket 模式（§2.8）：不调微信拉码、不写 Storage
 // （存储解析器注入故障仍成功——存储依赖整段不在路径上），产物为 qrcode_format
-// 模板将 {{TICKET}}（可多次出现）替换为完整加密 ticket 的内容；tip_html 直填
-// Ext qrcode_tip 原文。
+// 模板将 {{TICKET}}（可多次出现）替换为完整加密 ticket 的内容；模板未放
+// {{TICKET_ID}} 时不写 payload 快照；tip_html 直填 Ext qrcode_tip 原文。
 func TestCreateQrcodeTicketMode(t *testing.T) {
 	ctx := context.Background()
 	e := newQrEnv(t)
@@ -70,6 +71,62 @@ func TestCreateQrcodeTicketMode(t *testing.T) {
 	}
 	if e.store.putCalls != 0 {
 		t.Fatalf("ticket 模式不应写 Storage, putCalls = %d", e.store.putCalls)
+	}
+	if e.payloads.writes != 0 {
+		t.Fatalf("模板未含 {{TICKET_ID}}, 不应写 payload 快照, writes = %d", e.payloads.writes)
+	}
+}
+
+// TestCreateQrcodeTicketModeTicketID ticket 模式模板只放 {{TICKET_ID}}（保存期
+// 二选一已放行）：内容替换为 ticket_id（不含完整加密 ticket），且必须写快照
+// 供 LoginOauth 按 id 反查（§2.7.4）。
+func TestCreateQrcodeTicketModeTicketID(t *testing.T) {
+	ctx := context.Background()
+	e := newQrEnv(t)
+	e.addScanProvider("scan", nil)
+	e.loader.byKey["scan"].Ext = &providerpb.Ext{
+		QrcodeMode:   "ticket",
+		QrcodeFormat: "https://example.com/scan?id={{TICKET_ID}}&id2={{TICKET_ID}}",
+	}
+	out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
+	if err != nil {
+		t.Fatalf("CreateQrcode: %v", err)
+	}
+	want := "https://example.com/scan?id=" + out.TicketID + "&id2=" + out.TicketID
+	if out.QrcodeContent != want {
+		t.Fatalf("qrcodeContent = %q, want %q", out.QrcodeContent, want)
+	}
+	if strings.Contains(out.QrcodeContent, out.Ticket) {
+		t.Fatalf("模板只含 {{TICKET_ID}} 时内容不应出现完整 ticket")
+	}
+	if e.payloads.writes != 1 {
+		t.Fatalf("含 {{TICKET_ID}} 的 ticket 模式应写 1 次快照, writes = %d", e.payloads.writes)
+	}
+	if got := e.payloads.snapshots[out.TicketID]; got == nil || got.GetTicketId() != out.TicketID {
+		t.Fatalf("快照未按 ticket_id 写入: %+v", e.payloads.snapshots)
+	}
+}
+
+// TestCreateQrcodeTicketModeBothPlaceholders 双占位符同时出现（§2.8）：各自
+// 替换为 ticket / ticket_id，且因含 {{TICKET_ID}} 仍写快照。
+func TestCreateQrcodeTicketModeBothPlaceholders(t *testing.T) {
+	ctx := context.Background()
+	e := newQrEnv(t)
+	e.addScanProvider("scan", nil)
+	e.loader.byKey["scan"].Ext = &providerpb.Ext{
+		QrcodeMode:   "ticket",
+		QrcodeFormat: "{{TICKET}}|{{TICKET_ID}}|{{TICKET}}|{{TICKET_ID}}",
+	}
+	out, err := e.svc.CreateQrcode(ctx, CreateQrcodeInput{ProviderKey: "scan", Captcha: validCaptcha()})
+	if err != nil {
+		t.Fatalf("CreateQrcode: %v", err)
+	}
+	want := out.Ticket + "|" + out.TicketID + "|" + out.Ticket + "|" + out.TicketID
+	if out.QrcodeContent != want {
+		t.Fatalf("qrcodeContent = %q, want %q", out.QrcodeContent, want)
+	}
+	if e.payloads.writes != 1 {
+		t.Fatalf("含 {{TICKET_ID}} 应写 1 次快照, writes = %d", e.payloads.writes)
 	}
 }
 
@@ -131,6 +188,9 @@ func TestCreateQrcodeBase64Mode(t *testing.T) {
 	if e.store.putCalls != 0 {
 		t.Fatalf("base64 模式不应写 Storage, putCalls = %d", e.store.putCalls)
 	}
+	if e.payloads.writes != 1 {
+		t.Fatalf("base64 模式应写 1 次快照, writes = %d", e.payloads.writes)
+	}
 }
 
 // TestCreateQrcodeURLModeExplicit 显式 url 与缺省（空）行为一致：拉码 +
@@ -153,6 +213,9 @@ func TestCreateQrcodeURLModeExplicit(t *testing.T) {
 	if len(e.adapter.fetchCalls) != 1 || e.store.putCalls != 1 {
 		t.Fatalf("url 模式应拉码并写存储: fetch=%v put=%d", e.adapter.fetchCalls, e.store.putCalls)
 	}
+	if e.payloads.writes != 1 {
+		t.Fatalf("url 模式应写 1 次快照, writes = %d", e.payloads.writes)
+	}
 }
 
 // TestCreateQrcodeUnknownMode 未知模式（§2.8 / §13.2）：收敛渠道不可用，
@@ -169,32 +232,48 @@ func TestCreateQrcodeUnknownMode(t *testing.T) {
 	if len(e.adapter.fetchCalls) != 0 || e.store.putCalls != 0 {
 		t.Fatalf("未知模式不应拉码 / 写存储: fetch=%v put=%d", e.adapter.fetchCalls, e.store.putCalls)
 	}
+	if e.payloads.writes != 1 {
+		t.Fatalf("未知模式归一后非 ticket, 不应被误判为跳过快照, writes = %d", e.payloads.writes)
+	}
 }
 
 // TestRenderTicketContent 模板替换纯函数：可多次出现、区分大小写、特殊字符
-// 原样保留；缺占位符（含空模板）报错。
+// 原样保留；两个占位符可同时出现、只含其一也照常渲染；二者皆缺（含空模板）
+// 报错。
 func TestRenderTicketContent(t *testing.T) {
 	t.Run("多次替换", func(t *testing.T) {
-		got, err := renderTicketContent("a{{TICKET}}b{{TICKET}}c", "T1")
+		got, err := renderTicketContent("a{{TICKET}}b{{TICKET}}c", "T1", "ID1")
 		if err != nil || got != "aT1bT1c" {
 			t.Fatalf("got = (%q, %v), want (aT1bT1c, nil)", got, err)
 		}
 	})
 	t.Run("区分大小写", func(t *testing.T) {
-		if _, err := renderTicketContent("a{{ticket}}b", "T1"); err == nil {
+		if _, err := renderTicketContent("a{{ticket}}b", "T1", "ID1"); err == nil {
 			t.Fatal("小写占位符不算命中，应报配置错误")
 		}
 	})
 	t.Run("特殊字符原样保留", func(t *testing.T) {
-		got, err := renderTicketContent("{{TICKET}}&x=<y>%z", "T&T")
+		got, err := renderTicketContent("{{TICKET}}&x=<y>%z", "T&T", "ID1")
 		if err != nil || got != "T&T&x=<y>%z" {
 			t.Fatalf("got = (%q, %v)", got, err)
 		}
 	})
+	t.Run("双占位符同时出现", func(t *testing.T) {
+		got, err := renderTicketContent("a{{TICKET}}b{{TICKET_ID}}c{{TICKET}}d{{TICKET_ID}}", "T1", "ID1")
+		if err != nil || got != "aT1bID1cT1dID1" {
+			t.Fatalf("got = (%q, %v), want (aT1bID1cT1dID1, nil)", got, err)
+		}
+	})
+	t.Run("只含 ticket_id", func(t *testing.T) {
+		got, err := renderTicketContent("a{{TICKET_ID}}b", "T1", "ID1")
+		if err != nil || got != "aID1b" {
+			t.Fatalf("got = (%q, %v), want (aID1b, nil)", got, err)
+		}
+	})
 	t.Run("缺占位符报错", func(t *testing.T) {
 		for _, tpl := range []string{"", "https://example.com/scan"} {
-			if _, err := renderTicketContent(tpl, "T1"); err == nil {
-				t.Fatalf("模板 %q 缺占位符应报错", tpl)
+			if _, err := renderTicketContent(tpl, "T1", "ID1"); err == nil {
+				t.Fatalf("模板 %q 两个占位符皆缺应报错", tpl)
 			}
 		}
 	})

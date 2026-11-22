@@ -17,6 +17,7 @@ import (
 	"authloft/gen/go/token"
 	"authloft/internal/cache"
 	"authloft/internal/repo/model"
+	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/settings"
 )
@@ -73,6 +74,7 @@ type ltEnv struct {
 	payloads    *tpTicketPayloads
 	sessions    *qrSessions
 	state       *orchestrator.State
+	ticketC     *security.Codec
 	users       *tpUsers
 	creds       *ltCreds
 	mfaSettings *tpSettings
@@ -89,6 +91,7 @@ func (e *ltEnv) enableMFA(uid int64) {
 func newLTEnv(t *testing.T) *ltEnv {
 	t.Helper()
 	st := orchestrator.NewState(tpCodec(t, 0x70))
+	ticketC := tpCodec(t, 0x80)
 	tickets := &ltTickets{res: map[string]*token.TicketResult{}}
 	payloads := &tpTicketPayloads{snapshots: map[string]*token.TicketPayload{}}
 	// 一份合法 login-scene 快照（CreateQrcode 写入的形态，§11.6.4）。
@@ -109,13 +112,14 @@ func newLTEnv(t *testing.T) *ltEnv {
 		slices: map[string][]string{settings.KeyMfaMethods: {"totp", "otp_sms", "otp_email", "webauthn"}},
 	}
 	return &ltEnv{
-		tickets: tickets, payloads: payloads, sessions: sessions, state: st,
+		tickets: tickets, payloads: payloads, sessions: sessions, state: st, ticketC: ticketC,
 		users: users, creds: creds, mfaSettings: mfaSettings,
 		svc: NewLoginTicket(LoginTicketDeps{
 			Tickets:        tickets,
 			TicketPayloads: payloads,
 			Sessions:       sessions,
 			State:          st,
+			TicketCodec:    ticketC,
 			Users:          users,
 			Settings:       mfaSettings,
 			Credentials:    creds,
@@ -477,6 +481,173 @@ func TestWriteTicketPayloadAndWriteGuards(t *testing.T) {
 		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{TicketID: "tid123", SessionUID: 9})
 		if !errors.Is(err, infra) {
 			t.Fatalf("err = %v, want 透出写入故障", err)
+		}
+	})
+}
+
+// TestWriteTicketFromFullTicket 带完整加密票据的写票链（§2.8）：模板未放
+// {{TICKET_ID}} 时 al:ticket:payload 快照缺失，WriteTicket 须解票取载荷，
+// 让已启用 MFA 的用户最终落 mfa_pending。可证伪：移除解票分支即转红。
+func TestWriteTicketFromFullTicket(t *testing.T) {
+	issueLogin := func(e *ltEnv, t *testing.T) string {
+		return e.issueLoginToken(t, &token.LoginTokenPayload{
+			Tid: "tid-scan", Flow: "login", Uid: 42,
+			Passed: []string{amrThirdParty}, Amr: []string{amrThirdParty},
+		})
+	}
+
+	t.Run("解票写 mfa_pending（快照缺失）", func(t *testing.T) {
+		e := newLTEnv(t)
+		e.enableMFA(42)
+		delete(e.payloads.snapshots, "tid123")
+		sealed, err := e.ticketC.Seal(security.PurposeTicket, &token.TicketPayload{
+			TicketId: "tid123", ProviderKey: "scan", Scene: SceneLogin,
+			Iat: 1_700_000_000, Exp: 1_700_000_600,
+		})
+		if err != nil {
+			t.Fatalf("Seal ticket: %v", err)
+		}
+		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			TicketID: "tid123", Ticket: sealed, LoginToken: issueLogin(e, t),
+		})
+		if err != nil {
+			t.Fatalf("WriteTicket: %v", err)
+		}
+		if st.GetStatus() != TicketStatusMFAPending {
+			t.Fatalf("status = %q, want mfa_pending", st.GetStatus())
+		}
+		if len(e.payloads.reads) != 0 {
+			t.Errorf("带 ticket 不应读快照, reads = %v", e.payloads.reads)
+		}
+		res := e.tickets.res["tid123"]
+		if res == nil || res.GetStatus() != TicketStatusMFAPending ||
+			res.GetLoginResult().GetUid() != 42 || res.GetProviderKey() != "scan" ||
+			res.GetExpiresAt() != 1_700_000_600 {
+			t.Fatalf("TicketResult = %+v, want mfa_pending/uid42/scan/exp", res)
+		}
+	})
+
+	t.Run("解票失败按票据非法拒绝", func(t *testing.T) {
+		e := newLTEnv(t)
+		e.enableMFA(42)
+		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			TicketID: "tid123", Ticket: "garbage", LoginToken: issueLogin(e, t),
+		})
+		if !errors.Is(err, ErrQrcodeTicketInvalid) {
+			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
+		}
+		if len(e.tickets.writes) != 0 {
+			t.Fatalf("解票失败不得写票, writes = %v", e.tickets.writes)
+		}
+	})
+}
+
+// TestWriteTicketOnlyTicket 覆盖确认链只带加密 ticket 的写票：写票 id 取
+// 解票载荷、与 ticket_id 冲突时忽略入参、解票失败拒绝且不写票，以及无
+// 会话主体不得凭 ticket 绕过鉴权（§2.8）。
+func TestWriteTicketOnlyTicket(t *testing.T) {
+	const now = 1_700_000_100
+	seal := func(t *testing.T, e *ltEnv, id string, exp int64) string {
+		t.Helper()
+		sealed, err := e.ticketC.Seal(security.PurposeTicket, &token.TicketPayload{
+			TicketId: id, ProviderKey: "scan", Scene: SceneLogin,
+			Iat: 1_700_000_000, Exp: exp,
+		})
+		if err != nil {
+			t.Fatalf("Seal ticket: %v", err)
+		}
+		return sealed
+	}
+
+	t.Run("只带 ticket 用解票 id 写票", func(t *testing.T) {
+		e := newLTEnv(t)
+		sealed := seal(t, e, "tid-from-ticket", now+500)
+		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			Ticket: sealed, Session: "body-session", SessionUID: 9,
+		})
+		if err != nil {
+			t.Fatalf("WriteTicket: %v", err)
+		}
+		if st.GetStatus() != TicketStatusSuccess || st.GetTicketId() != "tid-from-ticket" {
+			t.Fatalf("回显 = %+v, want {success tid-from-ticket}", st)
+		}
+		res := e.tickets.res["tid-from-ticket"]
+		if res == nil || res.GetLoginResult().GetUid() != 9 ||
+			res.GetProviderKey() != "scan" || res.GetExpiresAt() != 1_700_000_600 {
+			t.Fatalf("TicketResult = %+v, want uid9/scan/exp", res)
+		}
+		if len(e.payloads.reads) != 0 {
+			t.Errorf("带 ticket 不应读快照, reads = %v", e.payloads.reads)
+		}
+	})
+
+	t.Run("ticket 与 ticket_id 冲突以 ticket 为准", func(t *testing.T) {
+		e := newLTEnv(t)
+		sealed := seal(t, e, "tid-authoritative", now+500)
+		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			TicketID: "tid-stale", Ticket: sealed, Session: "body-session", SessionUID: 9,
+		})
+		if err != nil {
+			t.Fatalf("WriteTicket: %v", err)
+		}
+		if st.GetTicketId() != "tid-authoritative" {
+			t.Fatalf("回显 ticket_id = %q, want 解票 id", st.GetTicketId())
+		}
+		if e.tickets.res["tid-authoritative"] == nil || e.tickets.res["tid-stale"] != nil {
+			t.Fatalf("写票位置 = %v, want 仅权威 id", e.tickets.writes)
+		}
+	})
+
+	t.Run("解票失败拒绝且不写票", func(t *testing.T) {
+		e := newLTEnv(t)
+		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			Ticket: "garbage", Session: "body-session", SessionUID: 9,
+		})
+		if !errors.Is(err, ErrQrcodeTicketInvalid) {
+			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
+		}
+		if len(e.tickets.writes) != 0 {
+			t.Fatalf("解票失败不得写票, writes = %v", e.tickets.writes)
+		}
+	})
+
+	t.Run("过期 ticket 拒绝且不写票", func(t *testing.T) {
+		e := newLTEnv(t)
+		sealed := seal(t, e, "tid-expired", now-50)
+		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			Ticket: sealed, Session: "body-session", SessionUID: 9,
+		})
+		if !errors.Is(err, ErrQrcodeTicketInvalid) {
+			t.Fatalf("err = %v, want ErrQrcodeTicketInvalid", err)
+		}
+		if len(e.tickets.writes) != 0 {
+			t.Fatalf("过期票不得写票, writes = %v", e.tickets.writes)
+		}
+	})
+
+	t.Run("未过期同款仍成功", func(t *testing.T) {
+		e := newLTEnv(t)
+		sealed := seal(t, e, "tid-valid", now+1)
+		st, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{
+			Ticket: sealed, Session: "body-session", SessionUID: 9,
+		})
+		if err != nil || st.GetStatus() != TicketStatusSuccess {
+			t.Fatalf("(status, err) = (%q, %v), want (success, nil)", st.GetStatus(), err)
+		}
+		if res := e.tickets.res["tid-valid"]; res == nil || res.GetExpiresAt() != now+1 {
+			t.Fatalf("TicketResult = %+v, want exp = now+1", res)
+		}
+	})
+
+	t.Run("无会话不得凭 ticket 绕过鉴权", func(t *testing.T) {
+		e := newLTEnv(t)
+		sealed := seal(t, e, "tid-from-ticket", now+500)
+		_, err := e.svc.WriteTicket(context.Background(), WriteTicketInput{Ticket: sealed})
+		if !errors.Is(err, ErrQrcodeUnauthenticated) {
+			t.Fatalf("err = %v, want ErrQrcodeUnauthenticated", err)
+		}
+		if len(e.tickets.writes) != 0 {
+			t.Fatalf("未登录不得写票, writes = %v", e.tickets.writes)
 		}
 	})
 }

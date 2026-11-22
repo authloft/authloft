@@ -378,12 +378,15 @@ func (h *Handler) LoginOauth(ctx context.Context, req *connect.Request[ssov1.Log
 	// §2.8 行 884、§13.2 行 1680），PC 端轮询得 needs_step_up。目标 uid
 	// 由小程序端信封携带的 loginToken 经写票 service 校验恢复；写入失败
 	// 不改变本次响应，PC 端按票据过期兜底。
-	if in.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.loginTicket != nil {
+	// 写票 id 取 service 解票结果（OauthOutput.TicketID），只传完整 ticket
+	// 时入参 in.TicketID 为空，不能再用它写空 id。
+	if out.TicketID != "" && out.Envelope.GetStatus() == orchestrator.StatusMFARequired && h.loginTicket != nil {
 		if _, err := h.loginTicket.WriteTicket(ctx, ticketsvc.WriteTicketInput{
-			TicketID:   in.TicketID,
+			TicketID:   out.TicketID,
+			Ticket:     req.Msg.GetTicket(),
 			LoginToken: out.Envelope.GetLoginToken(),
 		}); err != nil {
-			logx.Warn(ctx, "sso: write qrcode mfa pending failed", "ticket_id", in.TicketID, "error", err)
+			logx.Warn(ctx, "sso: write qrcode mfa pending failed", "ticket_id", out.TicketID, "error", err)
 		}
 	}
 	if out.Cookie != nil {

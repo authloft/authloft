@@ -643,6 +643,7 @@ func buildThirdparty(cfg *config.Config, deps *assembled, users *repo.UserRepo,
 		TicketPayloads: ticketPayloads,
 		SsoApps:        ssoApps,
 		CookieCodec:    deps.codecs.Cookie,
+		TicketCodec:    deps.codecs.Ticket,
 		// RootOrigin：redirect_uri 拼装基准 {root}/sso/oauth/callback/{key}。
 		RootOrigin: cfg.Authloft.Root,
 		HTTPSMode:  ssoHTTPSMode(deps),
@@ -684,6 +685,7 @@ func buildLoginTicket(deps *assembled, users *repo.UserRepo, creds *repo.Credent
 		Users:          users,
 		Settings:       deps.settings,
 		Credentials:    creds,
+		TicketCodec:    deps.codecs.Ticket,
 	})
 }
 

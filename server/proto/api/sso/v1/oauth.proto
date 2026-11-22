@@ -60,4 +60,9 @@ message LoginOauthRequest {
   // 前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
   // google.protobuf.Struct，不逐字段建模。
   google.protobuf.Struct oidc = 7;
+  // 扫码场景的完整加密票据（§2.8）：与 ticket_id 二选一，同时存在时以
+  // ticket 为准。服务端解票得到 ticket_id / scene / provider_key / exp / sso，
+  // 据此完成原有快照校验等价逻辑，不再读 al:ticket:payload 快照；模板未放
+  // {{TICKET_ID}} 时小程序端只拿到完整串，故 stage=scanned / complete 均可带。
+  string ticket = 8;
 }

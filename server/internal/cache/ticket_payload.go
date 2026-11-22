@@ -1,11 +1,13 @@
-// ticket_payload.go al:ticket:payload:{ticket_id} 快照键读写：
-// docs/后端架构.md §5.1 行 863、§11.6.4 行 1350；docs/接口文档.md §2.8 行
-// 719、§2.7.4 行 658）：CreateQrcode 时 1 次写入（TTL = exp − iat，与
-// ticket 同寿命，默认 600s），值为 TicketPayload 整值加密快照（复用
-// §11.6.1 封装、purpose=ticket）——小程序端 LoginOauth 提交通道 wire 仅
-// 携带 ticket_id（微信码图 scene 上限 32 字符仅容 ticket_id，小程序端物理
-// 拿不到完整加密串），服务端据此校验 scene / expiry / provider_key，
-// 快照缺失即不存在 / 已过期。
+// ticket_payload.go al:ticket:payload:{ticket_id} 快照键读写（docs/后端
+// 架构.md §5.1、§11.6.4；docs/接口文档.md §2.8、§2.7.4）：值为
+// TicketPayload 整值加密快照（复用 §11.6.1 封装、purpose=ticket），TTL
+// = exp − iat 与 ticket 同寿命，默认 600s。
+//
+// 本键为条件写：qrcode_mode=ticket 且模板未放 {{TICKET_ID}} 时，二维码
+// 内容携带完整加密 ticket，小程序端提交 ticket、服务端解票校验，不写本
+// 快照；其余模式照常写 1 次。读方为按 ticket_id 提交的 LoginOauth 与未
+// 带完整 ticket 的写票链，据此校验 scene / expiry / provider_key，快照
+// 缺失即不存在 / 已过期。
 //
 // 键构造（TicketPayloadKey）落位本文件：可改范围为 cache/ticket.go
 // 或同包新文件（未含 keys.go），故就近定义；§5.1「键的唯一出处」语义由本
@@ -25,12 +27,12 @@ import (
 	"authloft/gen/go/token"
 )
 
-// ticketPayloadKeyPrefix 快照键前缀（§5.1 行 863：al:ticket:payload:{ticket_id}）。
+// ticketPayloadKeyPrefix 快照键前缀（§5.1：al:ticket:payload:{ticket_id}）。
 const ticketPayloadKeyPrefix = "al:ticket:payload:"
 
-// TicketPayloadKey 返回快照键（§5.1 行 863，String、TTL 与 ticket 同寿命
-// （= exp，默认 600s）、CreateQrcode 1 次写入）。ticket_id 与 TicketPayload.
-// ticket_id 全链路同一值（§11.6.4）。
+// TicketPayloadKey 返回快照键（§5.1，String、TTL 与 ticket 同寿命
+// （= exp，默认 600s）、条件写入）。ticket_id 与 TicketPayload.ticket_id
+// 全链路同一值（§11.6.4）。
 func TicketPayloadKey(ticketID string) string {
 	return ticketPayloadKeyPrefix + ticketID
 }

@@ -121,6 +121,7 @@ func LoginOauth(req *ssov1.LoginOauthRequest) thirdpartysvc.OauthInput {
 		State:       req.GetState(),
 		Stage:       req.GetStage(),
 		TicketID:    req.GetTicketId(),
+		Ticket:      req.GetTicket(),
 		LoginToken:  req.GetLoginToken(),
 		OIDC:        oidc(req.GetOidc()),
 	}
@@ -158,10 +159,11 @@ func GetLoginTicket(req *ssov1.GetLoginTicketRequest) qrcodesvc.GetLoginTicketIn
 }
 
 // ConfirmLoginTicket 把 SsoService/ConfirmLoginTicket 请求消息转换为统一
-// 写票 service 入参（docs/接口文档.md §2.8）：ticket_id / session 直映；
-// sessionUID 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。写入状态
-// success / mfa_pending 不在此层决定，由写票 service 按目标用户的二次验证
-// 启用状态自行判定（§2.8、§11.6.5），本层只负责主体凭证投影。
+// 写票 service 入参（docs/接口文档.md §2.8）：ticket_id / session / ticket
+// 直映；ticket 与 ticket_id 二选一由 service 裁决，本层不丢字段。sessionUID
+// 为会话拦截器解出的 Cookie 侧 uid（handler 注入）。写入状态 success /
+// mfa_pending 不在此层决定，由写票 service 按目标用户的二次验证启用状态
+// 自行判定（§2.8、§11.6.5），本层只负责主体凭证与票据载荷入参投影。
 func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) ticketsvc.WriteTicketInput {
 	if req == nil {
 		return ticketsvc.WriteTicketInput{}
@@ -170,6 +172,7 @@ func ConfirmLoginTicket(req *ssov1.ConfirmLoginTicketRequest, sessionUID int64) 
 		TicketID:   req.GetTicketId(),
 		Session:    req.GetSession(),
 		SessionUID: sessionUID,
+		Ticket:     req.GetTicket(),
 	}
 }
 

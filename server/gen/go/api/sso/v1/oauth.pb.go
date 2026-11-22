@@ -169,7 +169,12 @@ type LoginOauthRequest struct {
 	// OIDC 上下文，取自跳转前落 localStorage 的 __AUTHLOFT_INIT__.oidc（§2.7.2、§2.7.4）；
 	// 前端不解析其内部字段，与 LoginFlowResponse.next_step.challenge_data 同口径用
 	// google.protobuf.Struct，不逐字段建模。
-	Oidc          *structpb.Struct `protobuf:"bytes,7,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	Oidc *structpb.Struct `protobuf:"bytes,7,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// 扫码场景的完整加密票据（§2.8）：与 ticket_id 二选一，同时存在时以
+	// ticket 为准。服务端解票得到 ticket_id / scene / provider_key / exp / sso，
+	// 据此完成原有快照校验等价逻辑，不再读 al:ticket:payload 快照；模板未放
+	// {{TICKET_ID}} 时小程序端只拿到完整串，故 stage=scanned / complete 均可带。
+	Ticket        string `protobuf:"bytes,8,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -253,6 +258,13 @@ func (x *LoginOauthRequest) GetOidc() *structpb.Struct {
 	return nil
 }
 
+func (x *LoginOauthRequest) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
 var File_api_sso_v1_oauth_proto protoreflect.FileDescriptor
 
 const file_api_sso_v1_oauth_proto_rawDesc = "" +
@@ -264,7 +276,7 @@ const file_api_sso_v1_oauth_proto_rawDesc = "" +
 	"\x05scene\x18\x02 \x01(\tR\x05scene\x12\"\n" +
 	"\rsso_client_id\x18\x03 \x01(\tR\vssoClientId\"8\n" +
 	"\x11AuthorizeResponse\x12#\n" +
-	"\rauthorize_url\x18\x01 \x01(\tR\fauthorizeUrl\"\xe1\x01\n" +
+	"\rauthorize_url\x18\x01 \x01(\tR\fauthorizeUrl\"\xf9\x01\n" +
 	"\x11LoginOauthRequest\x12!\n" +
 	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x14\n" +
@@ -273,7 +285,8 @@ const file_api_sso_v1_oauth_proto_rawDesc = "" +
 	"\tticket_id\x18\x05 \x01(\tR\bticketId\x12\x1f\n" +
 	"\vlogin_token\x18\x06 \x01(\tR\n" +
 	"loginToken\x12+\n" +
-	"\x04oidc\x18\a \x01(\v2\x17.google.protobuf.StructR\x04oidcB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\x04oidc\x18\a \x01(\v2\x17.google.protobuf.StructR\x04oidc\x12\x16\n" +
+	"\x06ticket\x18\b \x01(\tR\x06ticketB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_oauth_proto_rawDescOnce sync.Once

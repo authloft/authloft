@@ -7,6 +7,7 @@ package sso
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -21,8 +22,13 @@ import (
 
 	ssov1 "authloft/gen/go/api/sso/v1"
 	"authloft/gen/go/api/sso/v1/ssov1connect"
+	"authloft/gen/go/token"
+	"authloft/internal/cache"
+	"authloft/internal/repo/model"
+	"authloft/internal/security"
 	"authloft/internal/service/orchestrator"
 	thirdpartysvc "authloft/internal/service/thirdparty"
+	ticketsvc "authloft/internal/service/ticket"
 	"authloft/internal/session"
 	"authloft/internal/settings"
 )
@@ -387,26 +393,192 @@ func TestLoginOauthErrorInternal(t *testing.T) {
 // mfa_required，同时经统一写票 service 把票据结果写为 mfa_pending
 // （§2.8 行 884、§13.2）；目标 uid 由 loginToken 校验恢复。
 func TestLoginOauthScanMFAPending(t *testing.T) {
-	tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
-		Status:     orchestrator.StatusMFARequired,
-		LoginToken: "lt-1",
-	}}}
-	lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "mfa_pending", TicketId: "c7Kx9"}}
+	t.Run("ticket_id 场景 service 带出 id", func(t *testing.T) {
+		tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+			Status:     orchestrator.StatusMFARequired,
+			LoginToken: "lt-1",
+		}, TicketID: "c7Kx9"}}
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "mfa_pending", TicketId: "c7Kx9"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(
+			New(&fakeEngine{}, nil, nil, tp, nil).WithLoginTicket(lt))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceLoginOauthProcedure,
+			strings.NewReader(`{"providerKey":"wechat_mp_scan","code":"c","ticketId":"c7Kx9"}`))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("HTTP = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		if lt.calls != 1 || lt.gotIn.TicketID != "c7Kx9" || lt.gotIn.LoginToken != "lt-1" {
+			t.Fatalf("写票入参 = %+v calls = %d, want {c7Kx9 lt-1}（状态由写票 service 自行判定）", lt.gotIn, lt.calls)
+		}
+		if got := decodeEnvelope(t, rec.Body.String()); got.GetStatus() != orchestrator.StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", got.GetStatus())
+		}
+	})
+
+	// 只传完整 ticket 时入参 ticket_id 为空，写票 id 必须取 service 解票
+	// 带出的 OauthOutput.TicketID，否则会写空 id。
+	t.Run("只传完整 ticket 按解票 id 写票", func(t *testing.T) {
+		tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{Envelope: &ssov1.LoginFlowResponse{
+			Status:     orchestrator.StatusMFARequired,
+			LoginToken: "lt-2",
+		}, TicketID: "tid-from-ticket"}}
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "mfa_pending", TicketId: "tid-from-ticket"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(
+			New(&fakeEngine{}, nil, nil, tp, nil).WithLoginTicket(lt))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceLoginOauthProcedure,
+			strings.NewReader(`{"providerKey":"wechat_mp_scan","code":"c","ticket":"sealed-ticket"}`))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("HTTP = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+		}
+		if tp.gotOauth.Ticket != "sealed-ticket" || tp.gotOauth.TicketID != "" {
+			t.Fatalf("service 入参 = %+v, want 仅 Ticket=sealed-ticket", tp.gotOauth)
+		}
+		if lt.calls != 1 || lt.gotIn.TicketID != "tid-from-ticket" || lt.gotIn.LoginToken != "lt-2" {
+			t.Fatalf("写票入参 = %+v calls = %d, want {tid-from-ticket lt-2}", lt.gotIn, lt.calls)
+		}
+		if got := decodeEnvelope(t, rec.Body.String()); got.GetStatus() != orchestrator.StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", got.GetStatus())
+		}
+	})
+}
+
+// —— 无 {{TICKET_ID}} 票 + MFA 用户端到端（阻断回归）——
+
+// e2eTicketStore 记录最终写入的票据结果，供断言 mfa_pending 覆盖 scanned。
+type e2eTicketStore struct {
+	res map[string]*token.TicketResult
+}
+
+func (f *e2eTicketStore) WriteScanned(context.Context, string, *token.TicketResult) (cache.TicketWriteResult, error) {
+	return cache.TicketWriteOK, nil
+}
+func (f *e2eTicketStore) WriteComplete(_ context.Context, id string, res *token.TicketResult) (cache.TicketWriteResult, error) {
+	f.res[id] = res
+	return cache.TicketWriteOK, nil
+}
+func (f *e2eTicketStore) Peek(_ context.Context, id string) (*token.TicketResult, error) {
+	return f.res[id], nil
+}
+func (f *e2eTicketStore) Take(_ context.Context, id string) (*token.TicketResult, error) {
+	return f.res[id], nil
+}
+func (f *e2eTicketStore) Wait(context.Context, string, time.Duration) error {
+	return cache.ErrTicketWaitTimeout
+}
+
+// e2ePayloads 模拟模板未放 {{TICKET_ID}} 时未写 al:ticket:payload 快照。
+type e2ePayloads struct{}
+
+func (*e2ePayloads) Write(context.Context, *token.TicketPayload) error { return nil }
+func (*e2ePayloads) Read(context.Context, string) (*token.TicketPayload, error) {
+	return nil, nil
+}
+
+type e2eUsers struct{}
+
+func (*e2eUsers) FindByID(_ context.Context, id int64) (*model.User, error) {
+	return &model.User{ID: id, UserStatus: 1, MfaRequired: 1}, nil
+}
+
+type e2eCreds struct{}
+
+func (*e2eCreds) FindByUserAndKind(_ context.Context, _ int64, kind string) (*model.UserCredential, error) {
+	if kind == "totp" {
+		return &model.UserCredential{Kind: "totp", IsEnabled: 1}, nil
+	}
+	return nil, sql.ErrNoRows
+}
+
+type e2eSettings struct{}
+
+func (*e2eSettings) GetString(string) (string, bool) { return "", false }
+func (*e2eSettings) GetInt64(string) (int64, bool)   { return 0, false }
+func (*e2eSettings) GetBool(k string) (bool, bool) {
+	if k == settings.KeyMfaEnabled {
+		return true, true
+	}
+	return false, false
+}
+func (*e2eSettings) GetStringSlice(k string) ([]string, bool) {
+	if k == settings.KeyMfaMethods {
+		return []string{"totp", "otp_sms", "otp_email", "webauthn"}, true
+	}
+	return nil, false
+}
+
+func e2eCodec(t *testing.T, seed byte) *security.Codec {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = seed + byte(i)
+	}
+	ks, err := security.NewKeyStore(security.KeyEntry{ID: security.KeyID{Version: 1, Kid: 1}, Key: key})
+	if err != nil {
+		t.Fatalf("NewKeyStore: %v", err)
+	}
+	return security.NewCodec(ks)
+}
+
+// TestLoginOauthNoTicketIDMFAPending 端到端可证伪：模板未放 {{TICKET_ID}}
+// 时小程序端只带完整 ticket，MFA 用户扫码后 mfa_pending 必须覆盖 scanned；
+// 若写票链仍读缺失的快照，结果停在 scanned，本用例转红。
+func TestLoginOauthNoTicketIDMFAPending(t *testing.T) {
+	ticketC := e2eCodec(t, 0x40)
+	state := orchestrator.NewState(e2eCodec(t, 0x50))
+	sealed, err := ticketC.Seal(security.PurposeTicket, &token.TicketPayload{
+		TicketId: "tid-e2e", ProviderKey: "wxscan", Scene: ticketsvc.SceneLogin,
+		Iat: 1_700_000_000, Exp: 1_700_000_600,
+	})
+	if err != nil {
+		t.Fatalf("Seal ticket: %v", err)
+	}
+	lt, err := state.Issue(&token.LoginTokenPayload{
+		Tid: "tid-e2e", Flow: "login", Uid: 42,
+		Passed: []string{"thirdparty"}, Amr: []string{"thirdparty"},
+	})
+	if err != nil {
+		t.Fatalf("Issue loginToken: %v", err)
+	}
+
+	store := &e2eTicketStore{res: map[string]*token.TicketResult{
+		"tid-e2e": &token.TicketResult{V: ticketsvc.TicketResultV, Status: ticketsvc.TicketStatusScanned},
+	}}
+	svc := ticketsvc.NewLoginTicket(ticketsvc.LoginTicketDeps{
+		Tickets: store, TicketPayloads: &e2ePayloads{},
+		State: state, Users: &e2eUsers{}, Settings: &e2eSettings{}, Credentials: &e2eCreds{},
+		TicketCodec: ticketC,
+		Now:         func() time.Time { return time.Unix(1_700_000_100, 0) },
+	})
+	tp := &fakeThirdparty{oauthOut: &thirdpartysvc.OauthOutput{
+		Envelope: &ssov1.LoginFlowResponse{Status: orchestrator.StatusMFARequired, LoginToken: lt},
+		TicketID: "tid-e2e",
+	}}
 	_, handler := ssov1connect.NewSsoServiceHandler(
-		New(&fakeEngine{}, nil, nil, tp, nil).WithLoginTicket(lt))
+		New(&fakeEngine{}, nil, nil, tp, nil).WithLoginTicket(svc))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceLoginOauthProcedure,
-		strings.NewReader(`{"providerKey":"wechat_mp_scan","code":"c","ticketId":"c7Kx9"}`))
+		strings.NewReader(`{"providerKey":"wxscan","code":"c","ticket":"`+sealed+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("HTTP = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	if lt.calls != 1 || lt.gotIn.TicketID != "c7Kx9" || lt.gotIn.LoginToken != "lt-1" {
-		t.Fatalf("写票入参 = %+v calls = %d, want {c7Kx9 lt-1}（状态由写票 service 自行判定）", lt.gotIn, lt.calls)
+	if tp.gotOauth.TicketID != "" || tp.gotOauth.Ticket != sealed {
+		t.Fatalf("service 入参 = %+v, want 仅 Ticket", tp.gotOauth)
 	}
-	if got := decodeEnvelope(t, rec.Body.String()); got.GetStatus() != orchestrator.StatusMFARequired {
-		t.Fatalf("status = %q, want mfa_required", got.GetStatus())
+	res := store.res["tid-e2e"]
+	if res == nil || res.GetStatus() != ticketsvc.TicketStatusMFAPending {
+		t.Fatalf("al:ticket 最终 = %+v, want mfa_pending（不能停在 scanned）", res)
+	}
+	if res.GetLoginResult().GetUid() != 42 {
+		t.Fatalf("uid = %+v, want 42", res.GetLoginResult())
 	}
 }

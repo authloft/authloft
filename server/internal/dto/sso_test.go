@@ -333,3 +333,32 @@ func unmarshalLegacy(t *testing.T, body string, m proto.Message) {
 		t.Fatalf("decode legacy body: %v", err)
 	}
 }
+
+// TestLoginOauthMapsTicket 校验完整加密 ticket 与 ticket_id 同时投影进
+// service 入参（二选一由 service 裁决，dto 不丢字段）。
+func TestLoginOauthMapsTicket(t *testing.T) {
+	got := LoginOauth(&ssov1.LoginOauthRequest{
+		ProviderKey: "wxscan",
+		Code:        "c",
+		Stage:       "complete",
+		TicketId:    "tid-1",
+		Ticket:      "sealed-ticket",
+	})
+	if got.TicketID != "tid-1" || got.Ticket != "sealed-ticket" {
+		t.Fatalf("OauthInput = %+v, want 同时带 TicketID 与 Ticket", got)
+	}
+}
+
+// TestConfirmLoginTicketMapsTicket 校验确认链把 ticket / ticket_id / session
+// 与 Cookie 侧 uid 一并投影进 service 入参，二选一裁决留给 service。
+func TestConfirmLoginTicketMapsTicket(t *testing.T) {
+	got := ConfirmLoginTicket(&ssov1.ConfirmLoginTicketRequest{
+		TicketId: "tid-1",
+		Session:  "body-session-token",
+		Ticket:   "sealed-ticket",
+	}, 9)
+	if got.TicketID != "tid-1" || got.Ticket != "sealed-ticket" ||
+		got.Session != "body-session-token" || got.SessionUID != 9 {
+		t.Fatalf("WriteTicketInput = %+v, want 全字段投影", got)
+	}
+}

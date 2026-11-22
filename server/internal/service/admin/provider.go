@@ -587,6 +587,10 @@ const (
 	qrcodeModeBase64     = "base64"
 	qrcodeModeURL        = "url"
 	ticketTplPlaceholder = "{{TICKET}}"
+	// ticketIDTplPlaceholder 与 ticketTplPlaceholder 二选一即可：模板放它时
+	// 扫码端只回传 ticket_id，服务端保留 payload 快照供按 id 反查；二者皆缺
+	// 不许保存，避免运行期产出无法完成登录的二维码。
+	ticketIDTplPlaceholder = "{{TICKET_ID}}"
 )
 
 // qrcodeModeDeclared Schema 是否声明 qrcode_mode（Ext 落点）：拉码模式组合
@@ -605,9 +609,10 @@ func qrcodeModeDeclared(meta schemaMeta) bool {
 // 对合并后的 Ext 统一执行（PATCH 未提交键保留原值，与 proxy 行组合校验同
 // 形态——「url 模式切 ticket 未同步提交模板」这类部分提交在此拦下）。空
 // 模式归一为 url：url 模式 storage_provider / storage_path 必填（保持存量
-// 口径）；ticket 模式 qrcode_format 必填且须含 {{TICKET}} 占位符；base64
-// 不强制存储配置；封闭集外取值拒绝。非法一律 ErrInvalidRequest，错误与
-// 日志不含字段值（§12.1 读写约定）。
+// 口径）；ticket 模式 qrcode_format 须含 {{TICKET}} 或 {{TICKET_ID}} 至少一个
+// （两个占位符分别决定扫码端拿完整 ticket 还是 ticket_id，皆缺则两条登录路径
+// 都走不通）；base64 不强制存储配置；封闭集外取值拒绝。非法一律
+// ErrInvalidRequest，错误与日志不含字段值（§12.1 读写约定）。
 func validateQrcodeModes(meta schemaMeta, ext *providerpb.Ext) error {
 	if !qrcodeModeDeclared(meta) {
 		return nil
@@ -618,7 +623,8 @@ func validateQrcodeModes(meta schemaMeta, ext *providerpb.Ext) error {
 	}
 	switch mode {
 	case qrcodeModeTicket:
-		if !strings.Contains(ext.GetQrcodeFormat(), ticketTplPlaceholder) {
+		format := ext.GetQrcodeFormat()
+		if !strings.Contains(format, ticketTplPlaceholder) && !strings.Contains(format, ticketIDTplPlaceholder) {
 			return ErrInvalidRequest
 		}
 	case qrcodeModeURL:

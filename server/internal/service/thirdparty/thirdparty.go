@@ -165,6 +165,9 @@ type ThirdpartyDeps struct {
 	SsoApps ThirdpartySsoResolver
 	// CookieCodec sign_key.cookie（§12.4），al_login_state 加解密。
 	CookieCodec *security.Codec
+	// TicketCodec sign_key.ticket（§12.4）：带完整加密 ticket 的扫码提交
+	// 直接解票取 TicketPayload，替代读 al:ticket:payload 快照（§2.8）。
+	TicketCodec *security.Codec
 	// RootOrigin {al_root}（authloft.root，接口文档 §1.1）：redirect_uri
 	// 拼装基准 {root}/sso/oauth/callback/{key}（§2.7.3 回调路径，
 	// 装配接线经 bootstrap 注入，不自造第二套配置源）；空 = 未注入（旧测试
@@ -306,9 +309,16 @@ type OauthInput struct {
 	State       string
 	Stage       string
 	TicketID    string
+	Ticket      string // 扫码完整加密票据；与 TicketID 二选一，同时存在以 Ticket 为准
 	LoginToken  string // 此处不消费（MFA 走 LoginDefault、建号走 Register）
 	OIDC        *token.Oidc
 	StateCookie string
+}
+
+// hasTicket 是否走扫码票据分支（§2.8）：ticket 与 ticket_id 二选一，
+// 同时存在以 ticket 为准；下游一律用解票得到的 id 写票。
+func hasTicket(in OauthInput) bool {
+	return in.Ticket != "" || in.TicketID != ""
 }
 
 // OauthOutput LoginOauth 产物。信封（Envelope）为响应主体；Cookie 为需下发
@@ -320,6 +330,9 @@ type OauthOutput struct {
 	Cookie        *http.Cookie
 	SessionToken  string
 	SessionInBody bool
+	// TicketID 扫码场景解票得到的 id（§2.8）；仅扫码 mfa_required 时非空，
+	// handler 据此经统一写票 service 落 mfa_pending，避免只传 ticket 时写空 id。
+	TicketID string
 }
 
 // LoginOauth 三方登录统一入口（§2.7.4）：redirect（浏览器回调）与 api
@@ -366,10 +379,10 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		return s.envelope(StatusProviderDisabled)
 	}
 	channel := adapter.Channel()
-	// 通道判定（§13.2）：扫码提交（带 ticketId）必为 qrcode 通道（快照由
-	// CreateQrcode 落、provider 必为扫码类）；qrcode 通道的提交必带
-	// ticketId，无 ticketId 的 qrcode 请求不合规范。
-	if in.TicketID != "" {
+	// 通道判定（§13.2）：扫码提交（带 ticket / ticket_id）必为 qrcode 通道
+	// （provider 必为扫码类）；qrcode 通道的提交必带票据，无票据的 qrcode
+	// 请求不合规范。
+	if hasTicket(in) {
 		if channel != provider.ChannelQRCode {
 			return s.envelope(orchestrator.StatusInvalidRequest)
 		}
@@ -396,10 +409,10 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 	// 应用上下文（§2.7.4）：三方链路快照随 al_login_state Cookie 传递（本
 	// 接口不加字段）——非空时按首签口径解析快照并按 §2.1 应用级过滤表校验
 	// Provider 放行；Cookie 无该字段（直登 / 既有客户端链路）行为与现状
-	// 一致。扫码提交（带 ticketId）的上下文已在票据载荷内（CreateQrcode 时
-	// 校验并装载，§2.8），不读 Cookie。
+	// 一致。扫码提交（带 ticket / ticket_id）的上下文已在票据载荷内
+	// （CreateQrcode 时校验并装载，§2.8），不读 Cookie。
 	var ssoSnap *token.Sso
-	if in.TicketID == "" {
+	if !hasTicket(in) {
 		snap, ssoStatus := s.loginSsoSnapshot(ctx, statePayload, in.ProviderKey)
 		if ssoStatus != "" {
 			return s.oauthFail(ctx, channel, ssoStatus)
@@ -407,9 +420,9 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 		ssoSnap = snap
 	}
 
-	// 扫码 stage=complete（带 ticketId，§2.7.4）：快照校验 →
+	// 扫码 stage=complete（带 ticket / ticket_id，§2.7.4）：票据校验 →
 	// 既有 Exchange / FetchUser 链 → 按 scene 分派写 TicketResult（§13.2b）。
-	if in.TicketID != "" {
+	if hasTicket(in) {
 		return s.loginOauthTicket(ctx, in, p, adapter)
 	}
 
@@ -515,13 +528,13 @@ func (s *Thirdparty) LoginOauth(ctx context.Context, in OauthInput) *OauthOutput
 }
 
 // loginOauthScanned stage=scanned 分支（§2.7.4）：小程序端进入
-// 页面先上报「已扫码」，只带 providerKey + ticketId、不需要任何凭证。服务端
-// 取快照校验后写 al:ticket:{ticket_id} = TicketResult{status:"scanned"}
+// 页面先上报「已扫码」，只带 providerKey + 票据（ticket / ticket_id）、不需要
+// 任何凭证。服务端校验票据后写 al:ticket:{ticket_id} = TicketResult{status:"scanned"}
 // （channel=qrcode，不含 login_result / thirdparty_identity）→ 返回票据状态
 // 应答 {status:"scanned"}（取值沿用 ticket.status，非 §1.3 登录流程信封）。
 // 重复上报幂等（WriteScanned SET NX）；已存在 success 时不覆盖。
 func (s *Thirdparty) loginOauthScanned(ctx context.Context, in OauthInput) *OauthOutput {
-	if strings.TrimSpace(in.ProviderKey) == "" || in.TicketID == "" {
+	if strings.TrimSpace(in.ProviderKey) == "" || !hasTicket(in) {
 		return s.envelope(orchestrator.StatusInvalidRequest)
 	}
 	payload, bad := s.ticketSnapshot(ctx, in)
@@ -537,7 +550,8 @@ func (s *Thirdparty) loginOauthScanned(ctx context.Context, in OauthInput) *Oaut
 		CreatedAt:   s.now().Unix(),
 		ExpiresAt:   payload.GetExp(),
 	}
-	if _, err := s.deps.Tickets.WriteScanned(ctx, in.TicketID, res); err != nil {
+	// 写票 id 取解票 / 快照结果，而非入参 ticket_id（只传 ticket 时为空）。
+	if _, err := s.deps.Tickets.WriteScanned(ctx, payload.GetTicketId(), res); err != nil {
 		return s.envelope(orchestrator.StatusFailed)
 	}
 	return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{Status: ticketsvc.TicketStatusScanned}}
@@ -563,7 +577,8 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 	if bad != "" {
 		return s.envelope(bad)
 	}
-	id := in.TicketID
+	// 写票 id 取解票 / 快照结果（只传 ticket 时 in.TicketID 为空）。
+	id := snap.GetTicketId()
 
 	tok, err := adapter.Exchange(ctx, provider.ExchangeInput{
 		Code:        in.Code,
@@ -621,7 +636,7 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 		return &OauthOutput{Envelope: &ssov1.LoginFlowResponse{
 			Status:     orchestrator.StatusMFARequired,
 			LoginToken: signed,
-		}}
+		}, TicketID: id}
 	}
 
 	// 建会话推迟到 PC 端轮询（§2.8：GetLoginTicket 命中后
@@ -629,20 +644,31 @@ func (s *Thirdparty) loginOauthTicket(ctx context.Context, in OauthInput, p *pro
 	return s.ticketDone(ctx, id, s.newTicketResult(snap, "", &token.LoginResult{Uid: uid}, identity))
 }
 
-// ticketSnapshot 读快照并校验（§2.7.4、§11.6.4）：快照存在
-// （缺失即不存在 / 已过期）、ticket_id 自洽、scene 合法（login / bind——
-// scene 与本次扫码用途一致，用途由快照加密保护、不由客户端指定）、
-// providerKey 匹配、未过期（键 TTL 与 ticket 同寿命，此处防御性复判）。
-// 返回 status 非空表示以该信封状态拒绝（infra 故障 failed，其余
-// invalid_request）。
+// ticketSnapshot 取票据载荷并校验（§2.7.4、§11.6.4）：带完整加密 ticket 时
+// 直接解票（与 ticket_id 同时存在以 ticket 为准，解票成功即替代快照存在性
+// 校验），否则读 al:ticket:payload 快照；其后 ticket_id 自洽、scene 合法
+// （login / bind，用途由票据加密保护、不由客户端指定）、providerKey 匹配、
+// 未过期照做。返回 status 非空表示以该信封状态拒绝（infra 故障 failed，
+// 解票失败 / 其余非法 invalid_request）。
 func (s *Thirdparty) ticketSnapshot(ctx context.Context, in OauthInput) (*token.TicketPayload, string) {
-	payload, err := s.deps.TicketPayloads.Read(ctx, in.TicketID)
-	if err != nil {
-		return nil, orchestrator.StatusFailed
+	var payload *token.TicketPayload
+	if in.Ticket != "" {
+		p, err := security.Open[token.TicketPayload](s.deps.TicketCodec, security.PurposeTicket, in.Ticket)
+		if err != nil || p.GetTicketId() == "" {
+			return nil, orchestrator.StatusInvalidRequest
+		}
+		payload = p
+	} else {
+		p, err := s.deps.TicketPayloads.Read(ctx, in.TicketID)
+		if err != nil {
+			return nil, orchestrator.StatusFailed
+		}
+		if p == nil || p.GetTicketId() != in.TicketID {
+			return nil, orchestrator.StatusInvalidRequest
+		}
+		payload = p
 	}
-	if payload == nil ||
-		payload.GetTicketId() != in.TicketID ||
-		(payload.GetScene() != ticketsvc.SceneLogin && payload.GetScene() != ticketsvc.SceneBind) ||
+	if (payload.GetScene() != ticketsvc.SceneLogin && payload.GetScene() != ticketsvc.SceneBind) ||
 		payload.GetProviderKey() != in.ProviderKey ||
 		s.now().Unix() >= payload.GetExp() {
 		return nil, orchestrator.StatusInvalidRequest

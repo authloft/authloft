@@ -13,7 +13,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/ticket.proto.
  */
 export const file_api_sso_v1_ticket: GenFile = /*@__PURE__*/
-  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJ+ChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAQgASgJIrcBChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAxITCgtxcmNvZGVfbW9kZRgFIAEoCRIWCg5xcmNvZGVfY29udGVudBgGIAEoCRIVCg1xcmNvZGVfYmFzZTY0GAcgASgJEhAKCHRpcF9odG1sGAggASgJIlwKFUdldExvZ2luVGlja2V0UmVxdWVzdBIOCgZ0aWNrZXQYASABKAkSDAoEcG9sbBgCIAEoAxIlCgRvaWRjGAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCI/ChlDb25maXJtTG9naW5UaWNrZXRSZXF1ZXN0EhEKCXRpY2tldF9pZBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_api_sso_v1_login, file_google_protobuf_struct]);
+  fileDesc("ChdhcGkvc3NvL3YxL3RpY2tldC5wcm90bxIKYXBpLnNzby52MSJ+ChNDcmVhdGVRcmNvZGVSZXF1ZXN0EhQKDHByb3ZpZGVyX2tleRgBIAEoCRINCgVzY2VuZRgCIAEoCRIrCgdjYXB0Y2hhGAMgASgLMhouYXBpLnNzby52MS5DYXB0Y2hhUGF5bG9hZBIVCg1zc29fY2xpZW50X2lkGAQgASgJIrcBChRDcmVhdGVRcmNvZGVSZXNwb25zZRIOCgZ0aWNrZXQYASABKAkSEQoJdGlja2V0X2lkGAIgASgJEhIKCnFyY29kZV91cmwYAyABKAkSEgoKZXhwaXJlc19pbhgEIAEoAxITCgtxcmNvZGVfbW9kZRgFIAEoCRIWCg5xcmNvZGVfY29udGVudBgGIAEoCRIVCg1xcmNvZGVfYmFzZTY0GAcgASgJEhAKCHRpcF9odG1sGAggASgJIlwKFUdldExvZ2luVGlja2V0UmVxdWVzdBIOCgZ0aWNrZXQYASABKAkSDAoEcG9sbBgCIAEoAxIlCgRvaWRjGAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJPChlDb25maXJtTG9naW5UaWNrZXRSZXF1ZXN0EhEKCXRpY2tldF9pZBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJEg4KBnRpY2tldBgDIAEoCUIiWiBhdXRobG9mdC9nZW4vZ28vYXBpL3Nzby92MTtzc292MWIGcHJvdG8z", [file_api_sso_v1_login, file_google_protobuf_struct]);
 
 /**
  * CreateQrcodeRequest 是 SsoService/CreateQrcode 的请求消息
@@ -195,7 +195,8 @@ export const GetLoginTicketRequestSchema: GenMessage<GetLoginTicketRequest> = /*
  */
 export type ConfirmLoginTicketRequest = Message<"api.sso.v1.ConfirmLoginTicketRequest"> & {
   /**
-   * 拉码时下发的 ticket_id（§2.8）。
+   * 拉码时下发的 ticket_id（§2.8）；与 ticket 二选一，同时带时以 ticket
+   * 为准、忽略本字段。
    *
    * @generated from field: string ticket_id = 1;
    */
@@ -208,6 +209,15 @@ export type ConfirmLoginTicketRequest = Message<"api.sso.v1.ConfirmLoginTicketRe
    * @generated from field: string session = 2;
    */
   session: string;
+
+  /**
+   * 完整加密票据（§2.8）；与 ticket_id 二选一，带 ticket 时服务端解票取
+   * ticket_id / scene / exp / provider_key，忽略请求中的 ticket_id；仅用于
+   * 取票据载荷，主体身份仍由会话判定。
+   *
+   * @generated from field: string ticket = 3;
+   */
+  ticket: string;
 };
 
 /**

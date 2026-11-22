@@ -250,7 +250,7 @@ func TestGetLoginTicketNoSessionTokenNoCookie(t *testing.T) {
 }
 
 // TestConfirmLoginTicketConnect uid 从 ctx 注入（session.WithSessionContext，
-// 会话拦截器等效）+ TicketStatus 回显 + body session 透传 + 错误映射
+// 会话拦截器等效）+ TicketStatus 回显 + body session / ticket 透传 + 错误映射
 // （同 uid 校验失败 400 / 无会话 401）。
 func TestConfirmLoginTicketConnect(t *testing.T) {
 	// 主体用例：ctx 带 uid=9（模拟会话拦截器注入），body session 缺省 →
@@ -305,6 +305,60 @@ func TestConfirmLoginTicketConnect(t *testing.T) {
 		}
 		if lt.gotIn.Session != "body-session-token" {
 			t.Errorf("body session = %q, want 透传", lt.gotIn.Session)
+		}
+	})
+
+	t.Run("body ticket 透传", func(t *testing.T) {
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "success", TicketId: "c7Kx9"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil).WithLoginTicket(lt))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, ssov1connect.SsoServiceConfirmLoginTicketProcedure,
+			strings.NewReader(`{"ticketId":"c7Kx9","session":"body-session-token","ticket":"sealed-ticket"}`))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("HTTP = %d (body %s)", rec.Code, rec.Body.String())
+		}
+		if lt.gotIn.Ticket != "sealed-ticket" || lt.gotIn.TicketID != "c7Kx9" {
+			t.Errorf("写票入参 = %+v, want 同时透传 Ticket 与 TicketID", lt.gotIn)
+		}
+	})
+
+	t.Run("只带 ticket + session 端到端", func(t *testing.T) {
+		lt := &fakeLoginTicket{out: &ssov1.TicketStatus{Status: "success", TicketId: "tid-from-ticket"}}
+		_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, nil).WithLoginTicket(lt),
+			connect.WithInterceptors(connect.UnaryInterceptorFunc(
+				func(next connect.UnaryFunc) connect.UnaryFunc {
+					return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+						return next(session.WithSessionContext(ctx,
+							&token.SessionTokenPayload{Id: 9, Epoch: 1, Exp: time.Now().Add(time.Hour).Unix()}), req)
+					}
+				})))
+		srv := httptest.NewServer(handler)
+		defer srv.Close()
+
+		resp, err := http.Post(srv.URL+ssov1connect.SsoServiceConfirmLoginTicketProcedure,
+			"application/json", strings.NewReader(`{"ticket":"sealed-ticket","session":"body-session-token"}`))
+		if err != nil {
+			t.Fatalf("POST ConfirmLoginTicket: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("HTTP = %d, want 200", resp.StatusCode)
+		}
+		var got struct {
+			Status   string `json:"status"`
+			TicketID string `json:"ticketId"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got.Status != "success" || got.TicketID != "tid-from-ticket" {
+			t.Fatalf("body = %+v, want {success tid-from-ticket}", got)
+		}
+		if lt.gotIn.Ticket != "sealed-ticket" || lt.gotIn.TicketID != "" ||
+			lt.gotIn.Session != "body-session-token" || lt.gotIn.SessionUID != 9 || lt.calls != 1 {
+			t.Errorf("写票入参 = %+v calls = %d, want Ticket 透传且 TicketID 空", lt.gotIn, lt.calls)
 		}
 	})
 

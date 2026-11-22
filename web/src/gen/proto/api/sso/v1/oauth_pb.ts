@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file api/sso/v1/oauth.proto.
  */
 export const file_api_sso_v1_oauth: GenFile = /*@__PURE__*/
-  fileDesc("ChZhcGkvc3NvL3YxL29hdXRoLnByb3RvEgphcGkuc3NvLnYxIkoKEEF1dGhvcml6ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSDQoFc2NlbmUYAiABKAkSFQoNc3NvX2NsaWVudF9pZBgDIAEoCSIqChFBdXRob3JpemVSZXNwb25zZRIVCg1hdXRob3JpemVfdXJsGAEgASgJIqQBChFMb2dpbk9hdXRoUmVxdWVzdBIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEY29kZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRINCgVzdGFnZRgEIAEoCRIRCgl0aWNrZXRfaWQYBSABKAkSEwoLbG9naW5fdG9rZW4YBiABKAkSJQoEb2lkYxgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RCIlogYXV0aGxvZnQvZ2VuL2dvL2FwaS9zc28vdjE7c3NvdjFiBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("ChZhcGkvc3NvL3YxL29hdXRoLnByb3RvEgphcGkuc3NvLnYxIkoKEEF1dGhvcml6ZVJlcXVlc3QSEAoIcHJvdmlkZXIYASABKAkSDQoFc2NlbmUYAiABKAkSFQoNc3NvX2NsaWVudF9pZBgDIAEoCSIqChFBdXRob3JpemVSZXNwb25zZRIVCg1hdXRob3JpemVfdXJsGAEgASgJIrQBChFMb2dpbk9hdXRoUmVxdWVzdBIUCgxwcm92aWRlcl9rZXkYASABKAkSDAoEY29kZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRINCgVzdGFnZRgEIAEoCRIRCgl0aWNrZXRfaWQYBSABKAkSEwoLbG9naW5fdG9rZW4YBiABKAkSJQoEb2lkYxgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSDgoGdGlja2V0GAggASgJQiJaIGF1dGhsb2Z0L2dlbi9nby9hcGkvc3NvL3YxO3Nzb3YxYgZwcm90bzM", [file_google_protobuf_struct]);
 
 /**
  * AuthorizeRequest 是 SsoService/Authorize 的请求消息
@@ -144,6 +144,16 @@ export type LoginOauthRequest = Message<"api.sso.v1.LoginOauthRequest"> & {
    * @generated from field: google.protobuf.Struct oidc = 7;
    */
   oidc?: JsonObject | undefined;
+
+  /**
+   * 扫码场景的完整加密票据（§2.8）：与 ticket_id 二选一，同时存在时以
+   * ticket 为准。服务端解票得到 ticket_id / scene / provider_key / exp / sso，
+   * 据此完成原有快照校验等价逻辑，不再读 al:ticket:payload 快照；模板未放
+   * {{TICKET_ID}} 时小程序端只拿到完整串，故 stage=scanned / complete 均可带。
+   *
+   * @generated from field: string ticket = 8;
+   */
+  ticket: string;
 };
 
 /**

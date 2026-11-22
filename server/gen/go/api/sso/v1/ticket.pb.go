@@ -297,11 +297,16 @@ func (x *GetLoginTicketRequest) GetOidc() *structpb.Struct {
 // 字段名与字段表逐字一致，编号从 1 起连续（§12.9）。
 type ConfirmLoginTicketRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 拉码时下发的 ticket_id（§2.8）。
+	// 拉码时下发的 ticket_id（§2.8）；与 ticket 二选一，同时带时以 ticket
+	// 为准、忽略本字段。
 	TicketId string `protobuf:"bytes,1,opt,name=ticket_id,json=ticketId,proto3" json:"ticket_id,omitempty"`
 	// 当前已登录设备的 session_token（§1.2）；缺省时取 Cookie al_session，
 	// 两者同时存在时以请求体为准且必须与 Cookie 属同一 uid，否则 invalid_request（§2.8）。
-	Session       string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	Session string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	// 完整加密票据（§2.8）；与 ticket_id 二选一，带 ticket 时服务端解票取
+	// ticket_id / scene / exp / provider_key，忽略请求中的 ticket_id；仅用于
+	// 取票据载荷，主体身份仍由会话判定。
+	Ticket        string `protobuf:"bytes,3,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -350,6 +355,13 @@ func (x *ConfirmLoginTicketRequest) GetSession() string {
 	return ""
 }
 
+func (x *ConfirmLoginTicketRequest) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
 var File_api_sso_v1_ticket_proto protoreflect.FileDescriptor
 
 const file_api_sso_v1_ticket_proto_rawDesc = "" +
@@ -376,10 +388,11 @@ const file_api_sso_v1_ticket_proto_rawDesc = "" +
 	"\x15GetLoginTicketRequest\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x12\n" +
 	"\x04poll\x18\x02 \x01(\x03R\x04poll\x12+\n" +
-	"\x04oidc\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"R\n" +
+	"\x04oidc\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04oidc\"j\n" +
 	"\x19ConfirmLoginTicketRequest\x12\x1b\n" +
 	"\tticket_id\x18\x01 \x01(\tR\bticketId\x12\x18\n" +
-	"\asession\x18\x02 \x01(\tR\asessionB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
+	"\asession\x18\x02 \x01(\tR\asession\x12\x16\n" +
+	"\x06ticket\x18\x03 \x01(\tR\x06ticketB\"Z authloft/gen/go/api/sso/v1;ssov1b\x06proto3"
 
 var (
 	file_api_sso_v1_ticket_proto_rawDescOnce sync.Once

@@ -18,6 +18,7 @@ import (
 	"authloft/internal/factor"
 	"authloft/internal/logx"
 	"authloft/internal/repo/model"
+	"authloft/internal/security"
 	"authloft/internal/service/mfapolicy"
 	"authloft/internal/service/orchestrator"
 	"authloft/internal/session"
@@ -33,9 +34,12 @@ type MFAUserLookup interface {
 type LoginTicketDeps struct {
 	// Tickets al:ticket 结果读写（§11.6.5）。
 	Tickets TicketStore
-	// TicketPayloads al:ticket:payload 快照读写（§11.6.4）：写票前校验
-	// 快照存在、scene 合法，并取 provider_key / expires_at。
+	// TicketPayloads al:ticket:payload 快照读写（§11.6.4）：未带完整 ticket
+	// 时写票前校验快照存在、scene 合法，并取 provider_key / expires_at。
 	TicketPayloads TicketPayloadStore
+	// TicketCodec sign_key.ticket（§12.4）：带完整加密 ticket 的写票链
+	// 直接解票取载荷，替代读 al:ticket:payload 快照（§2.8）。
+	TicketCodec *security.Codec
 	// Sessions ConfirmLoginTicket 会话校验（§11.1 四步）。
 	Sessions SessionVerifier
 	// State 扫码分支校验 login_token（§7.3：uid != 0 且 passed 非空）。
@@ -77,6 +81,8 @@ type WriteTicketInput struct {
 	Session    string
 	SessionUID int64
 	LoginToken string
+	// Ticket 完整加密票据（§2.8）；与 TicketID 二选一，带 Ticket 时解票取载荷。
+	Ticket string
 }
 
 // WriteTicket 自行按目标用户的二次验证启用状态写票（§2.8：ConfirmLoginTicket
@@ -85,18 +91,43 @@ type WriteTicketInput struct {
 // 不把查询故障解释为「无需二次验证」；写入失败返回可判别哨兵错误，由
 // handler 转 Connect 错误体。
 func (s *LoginTicket) WriteTicket(ctx context.Context, in WriteTicketInput) (*ssov1.TicketStatus, error) {
-	if strings.TrimSpace(in.TicketID) == "" {
-		return nil, fmt.Errorf("%w: empty ticket_id", ErrQrcodeInvalidRequest)
+	// ticket 与 ticket_id 二选一，皆空才拒绝；同时带时以 ticket 为准。
+	if strings.TrimSpace(in.TicketID) == "" && strings.TrimSpace(in.Ticket) == "" {
+		return nil, fmt.Errorf("%w: empty ticket_id and ticket", ErrQrcodeInvalidRequest)
 	}
 	uid, err := s.resolveUID(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	snap, err := s.deps.TicketPayloads.Read(ctx, in.TicketID)
-	if err != nil {
-		return nil, fmt.Errorf("login ticket: read ticket payload: %w", err)
+	// 带完整 ticket 时解票取载荷（模板未放 {{TICKET_ID}} 时不写快照），
+	// 否则读快照；解票失败按票据非法同口径拒绝。写票 id 以载荷为准：仅
+	// 读快照路径校验入参 ticket_id 与快照自洽，带 ticket 时忽略入参。
+	var snap *token.TicketPayload
+	var snapID string
+	if in.Ticket != "" {
+		var openErr error
+		snap, openErr = security.Open[token.TicketPayload](s.deps.TicketCodec, security.PurposeTicket, in.Ticket)
+		if openErr != nil {
+			return nil, fmt.Errorf("%w: ticket", ErrQrcodeTicketInvalid)
+		}
+		// 解票只做解密反序列化，业务过期在此按 §2.8 判定；读快照路径靠
+		// Redis TTL 与 exp 同寿命，维持现状。
+		if s.now().Unix() >= snap.GetExp() {
+			return nil, fmt.Errorf("%w: ticket expired", ErrQrcodeTicketInvalid)
+		}
+		snapID = snap.GetTicketId()
+	} else {
+		var readErr error
+		snap, readErr = s.deps.TicketPayloads.Read(ctx, in.TicketID)
+		if readErr != nil {
+			return nil, fmt.Errorf("login ticket: read ticket payload: %w", readErr)
+		}
+		snapID = in.TicketID
 	}
-	if snap == nil || snap.GetTicketId() != in.TicketID || snap.GetScene() != SceneLogin {
+	if snap == nil || snapID == "" || snap.GetScene() != SceneLogin {
+		return nil, fmt.Errorf("%w: %q payload", ErrQrcodeTicketInvalid, snapID)
+	}
+	if in.Ticket == "" && snap.GetTicketId() != in.TicketID {
 		return nil, fmt.Errorf("%w: %q payload", ErrQrcodeTicketInvalid, in.TicketID)
 	}
 
@@ -118,10 +149,10 @@ func (s *LoginTicket) WriteTicket(ctx context.Context, in WriteTicketInput) (*ss
 		ExpiresAt:   snap.GetExp(),
 		LoginResult: &token.LoginResult{Uid: uid},
 	}
-	if _, err := s.deps.Tickets.WriteComplete(ctx, in.TicketID, res); err != nil {
+	if _, err := s.deps.Tickets.WriteComplete(ctx, snapID, res); err != nil {
 		return nil, fmt.Errorf("login ticket: write ticket result: %w", err)
 	}
-	return &ssov1.TicketStatus{Status: status, TicketId: in.TicketID}, nil
+	return &ssov1.TicketStatus{Status: status, TicketId: snapID}, nil
 }
 
 // resolveUID 按主体凭证推导目标 uid：扫码分支校验 login_token 的

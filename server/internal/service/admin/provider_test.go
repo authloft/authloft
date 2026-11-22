@@ -1243,9 +1243,9 @@ func wechatMpScanCreateBody(t *testing.T, overrides map[string]any) *structpb.St
 }
 
 // TestCreateProviderQrcodeModeValidation 拉码模式组合校验矩阵（§5.3）：
-// ticket 模式模板缺失 / 缺占位符、非法模式值、url 模式（含缺省空值）存储
-// 二字段缺失，一律 ErrInvalidRequest 且不落库；合法组合（ticket 模板含
-// 占位符、base64、url 存储齐）放行。
+// ticket 模式模板缺失 / 两个占位符皆缺、非法模式值、url 模式（含缺省空值）
+// 存储二字段缺失，一律 ErrInvalidRequest 且不落库；合法组合（ticket 模板含
+// {{TICKET}} 或 {{TICKET_ID}}、base64、url 存储齐）放行。
 func TestCreateProviderQrcodeModeValidation(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -1253,12 +1253,14 @@ func TestCreateProviderQrcodeModeValidation(t *testing.T) {
 		wantOK    bool
 	}{
 		{"ticket 模板缺失", map[string]any{"qrcode_mode": "ticket"}, false},
-		{"ticket 模板缺占位符", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan"}, false},
+		{"ticket 模板两个占位符皆缺", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan"}, false},
 		{"非法模式值", map[string]any{"qrcode_mode": "pigeon_post"}, false},
 		{"url 显式缺存储", map[string]any{"qrcode_mode": "url"}, false},
 		{"url 缺省（空）缺存储", map[string]any{"qrcode_mode": ""}, false},
 		{"base64 不要求存储", map[string]any{"qrcode_mode": "base64"}, true},
-		{"ticket 合法（模板含占位符）", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?t={{TICKET}}"}, true},
+		{"ticket 合法（模板含 {{TICKET}}）", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?t={{TICKET}}"}, true},
+		{"ticket 合法（模板只含 {{TICKET_ID}}）", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?id={{TICKET_ID}}"}, true},
+		{"ticket 合法（双占位符）", map[string]any{"qrcode_mode": "ticket", "qrcode_format": "https://example.com/scan?t={{TICKET}}&id={{TICKET_ID}}"}, true},
 		{"url 合法（存储齐）", map[string]any{"qrcode_mode": "url", "storage_provider": "files", "storage_path": `'qrcodes_' & $.ticket_id & '.jpg'`}, true},
 	}
 	for _, tc := range cases {

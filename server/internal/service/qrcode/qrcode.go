@@ -11,8 +11,9 @@
 //     GetwxacodeUnlimit（adapter 的 QRCodeSupporter）→ JPEG 75% 压缩
 //     （internal/qrcode）→ Storage.Put（中转模式，storage_path JSONata
 //     渲染，码图与 upload_mode 无关）；base64 拉码压缩后 base64 直发，
-//     不写 Storage；ticket 不调微信拉码，仅以完整加密 ticket 替换
-//     qrcode_format 模板的 {{TICKET}} 占位符。存储依赖与码图自动删除
+//     不写 Storage；ticket 不调微信拉码，以完整加密 ticket / ticket_id 替换
+//     qrcode_format 模板的 {{TICKET}} / {{TICKET_ID}} 占位符（二选一），仅当
+//     模板放 {{TICKET_ID}} 时才写 payload 快照。存储依赖与码图自动删除
 //     仅 url 模式生效（§13.3）；未知模式收敛渠道不可用，不静默回落。
 //   - GetLoginTicket：解 ticket → expired 终态判定（无需存储）→ 长轮询
 //     poll ≤15（cache.TicketStore.Wait）→ 命中 GETDEL（Take 原子取走）
@@ -83,6 +84,10 @@ const (
 	// 多次，替换值为完整加密 ticket——扫码端拿到的须是可用于 GetLoginTicket
 	// 的凭证，登录闭环才成立；保存期校验见 §5.3）。
 	ticketPlaceholder = "{{TICKET}}"
+	// ticketIDPlaceholder ticket 模式模板的另一占位符：替换值为 ticket_id。
+	// 模板改放它时扫码端只拿到 id，服务端须保留快照供按 id 反查；与
+	// ticketPlaceholder 二选一即可，二者皆缺才算配置错误。
+	ticketIDPlaceholder = "{{TICKET_ID}}"
 )
 
 // 可判别哨兵错误（handler 转 Connect 错误体 + ErrorInfo，§1.6 封闭集成员）。
@@ -150,7 +155,8 @@ type QRCodeDeps struct {
 	// Tickets al:ticket 结果读写（§11.6.5）。
 	Tickets ticketsvc.TicketStore
 	// TicketPayloads al:ticket:payload 快照读写（§5.1 行 863、§11.6.4 行
-	// 1350）：CreateQrcode 1 次写入，TTL = exp − iat。
+	// 1350）：CreateQrcode 至多 1 次写入（ticket 模式模板未放 {{TICKET_ID}}
+	// 时跳过），TTL = exp − iat。
 	TicketPayloads ticketsvc.TicketPayloadStore
 	// SsoApps SSO 应用快照解析器（§2.2 首签口径；扫码链路应用上下文随
 	// TicketPayload.sso 进票据，§2.8 / §11.6.4）。与引擎 / 三方域注入同一
@@ -326,8 +332,14 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	// 小程序端提交仅带 ticket_id（无加密串可解），LoginOauth 据此校验
 	// scene / expiry / provider_key（§2.7.4）。写入失败即拉码失败——快照
 	// 缺失的 ticket 无法完成扫码提交。
-	if err := s.deps.TicketPayloads.Write(ctx, payload); err != nil {
-		return nil, fmt.Errorf("qrcode: write ticket payload snapshot: %w", err)
+	// ticket 模式若模板未放 {{TICKET_ID}}，扫码端拿到完整加密 ticket、
+	// 不走按 id 查快照的路径，故跳过写入；其余模式及含该占位符的 ticket
+	// 模式必须写。mode 取归一值，未知模式不落入「跳过」分支，由分派处报错。
+	mode := normalizeQrcodeMode(p.Ext.GetQrcodeMode())
+	if mode != qrcodeModeTicket || strings.Contains(p.Ext.GetQrcodeFormat(), ticketIDPlaceholder) {
+		if err := s.deps.TicketPayloads.Write(ctx, payload); err != nil {
+			return nil, fmt.Errorf("qrcode: write ticket payload snapshot: %w", err)
+		}
 	}
 
 	// 拉码产出按 provider Ext qrcode_mode 分派（§2.8 / §13.2：空值归一为
@@ -338,12 +350,12 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 		TicketID:  ticketID,
 		ExpiresIn: int64(qrcodeTicketTTL / time.Second),
 	}
-	switch normalizeQrcodeMode(p.Ext.GetQrcodeMode()) {
+	switch mode {
 	case qrcodeModeTicket:
-		// 不调微信拉码、不写 Storage：仅以完整加密 ticket 替换 qrcode_format
-		// 模板的 {{TICKET}} 占位符。模板缺占位符保存期已拒绝（§5.3），运行期
-		// 兜底收敛渠道不可用。
-		content, rerr := renderTicketContent(p.Ext.GetQrcodeFormat(), ticket)
+		// 不调微信拉码、不写 Storage：以 ticket / ticket_id 替换 qrcode_format
+		// 模板占位符，二者可同时出现。模板二者皆缺保存期已拒绝（§5.3），
+		// 运行期兜底收敛渠道不可用。
+		content, rerr := renderTicketContent(p.Ext.GetQrcodeFormat(), ticket, ticketID)
 		if rerr != nil {
 			return nil, fmt.Errorf("%w: %v", ErrQrcodeProviderDisabled, rerr)
 		}
@@ -375,7 +387,7 @@ func (s *QRCode) CreateQrcode(ctx context.Context, in CreateQrcodeInput) (*Creat
 	default:
 		return nil, fmt.Errorf("%w: %q unknown qrcode mode", ErrQrcodeProviderDisabled, p.Ext.GetQrcodeMode())
 	}
-	prod.QrcodeMode = normalizeQrcodeMode(p.Ext.GetQrcodeMode())
+	prod.QrcodeMode = mode
 	prod.TipHTML = p.Ext.GetQrcodeTip()
 	return prod, nil
 }
@@ -402,15 +414,16 @@ func normalizeQrcodeMode(mode string) string {
 	return mode
 }
 
-// renderTicketContent ticket 模式的模板替换纯函数（§2.8 / §13.2）：以完整
-// 加密 ticket 替换 {{TICKET}} 占位符（区分大小写、可出现多次）。模板为空或
-// 不含占位符视为配置错误——保存期已拒绝（§5.3），运行期兜底报错由调用方
-// 收敛渠道不可用。
-func renderTicketContent(tpl, ticket string) (string, error) {
-	if !strings.Contains(tpl, ticketPlaceholder) {
-		return "", fmt.Errorf("qrcode: ticket mode: template missing %s", ticketPlaceholder)
+// renderTicketContent ticket 模式的模板替换纯函数（§2.8 / §13.2）：
+// {{TICKET}} 替换为完整加密 ticket，{{TICKET_ID}} 替换为 ticket_id
+// （区分大小写、可出现多次、可同时出现）。二者皆缺视为配置错误——保存期已
+// 拒绝（§5.3），运行期兜底报错由调用方收敛渠道不可用；只含其一须照常渲染。
+func renderTicketContent(tpl, ticket, ticketID string) (string, error) {
+	if !strings.Contains(tpl, ticketPlaceholder) && !strings.Contains(tpl, ticketIDPlaceholder) {
+		return "", fmt.Errorf("qrcode: ticket mode: template missing %s / %s", ticketPlaceholder, ticketIDPlaceholder)
 	}
-	return strings.ReplaceAll(tpl, ticketPlaceholder, ticket), nil
+	out := strings.ReplaceAll(tpl, ticketPlaceholder, ticket)
+	return strings.ReplaceAll(out, ticketIDPlaceholder, ticketID), nil
 }
 
 // resolveSsoSnapshot 解析应用快照（§2.2 首签口径）：解析器缺位属装配缺陷，

@@ -286,6 +286,7 @@ type tpEnv struct {
 	// loginC 与 env.state 同源的 login_token codec（测试侧解签发 token 验
 	// 载荷；生产侧 codec 收敛在 orchestrator.State 内）。
 	loginC   *security.Codec
+	ticketC  *security.Codec
 	sessions *tpSessions
 	settings *tpSettings
 	creds    *tpCreds
@@ -326,8 +327,10 @@ func newTPEnv(t *testing.T) *tpEnv {
 	}
 	loginCodec := tpCodec(t, 0x10)
 	cookieCodec := tpCodec(t, 0x20)
+	ticketCodec := tpCodec(t, 0x30)
 	env.state = orchestrator.NewState(loginCodec)
 	env.loginC = loginCodec
+	env.ticketC = ticketCodec
 
 	st := &tpSettings{
 		bools:  map[string]bool{settings.KeyMfaEnabled: true},
@@ -347,6 +350,7 @@ func newTPEnv(t *testing.T) *tpEnv {
 		Tickets:        env.tickets,
 		TicketPayloads: env.payloads,
 		CookieCodec:    cookieCodec,
+		TicketCodec:    ticketCodec,
 		HTTPSMode:      env.httpsMode,
 	})
 	// cookie codec 的时钟跟随 env.now（过期用例推进）。
@@ -537,6 +541,7 @@ func TestAuthorizeLoginStateCookieHTTPSDeployment(t *testing.T) {
 				Settings:    e.settings,
 				Credentials: e.creds,
 				CookieCodec: e.svc.deps.CookieCodec,
+				TicketCodec: e.ticketC,
 				HTTPSMode:   e.httpsMode,
 			})
 			e.svc.now = func() time.Time { return e.now }
@@ -732,6 +737,24 @@ func (e *tpEnv) seedSnapshot(id, pk, scene string) *token.TicketPayload {
 	return p
 }
 
+// seedTicket 签发与 seedSnapshot 同形载荷的完整加密串，但不写快照
+// （模拟模板未放 {{TICKET_ID}} 时 CreateQrcode 不写快照的场景）。
+func (e *tpEnv) seedTicket(t *testing.T, id, pk, scene string) string {
+	t.Helper()
+	p := &token.TicketPayload{
+		TicketId:    id,
+		ProviderKey: pk,
+		Scene:       scene,
+		Iat:         e.now.Unix(),
+		Exp:         e.now.Add(qrcodeTicketTTL).Unix(),
+	}
+	v, err := e.ticketC.Seal(security.PurposeTicket, p)
+	if err != nil {
+		t.Fatalf("seal ticket: %v", err)
+	}
+	return v
+}
+
 // newScanEnv 构造扫码提交环境：qrcode 通道 provider + 快照。
 func newScanEnv(t *testing.T, scene string) *tpEnv {
 	t.Helper()
@@ -860,6 +883,113 @@ func TestLoginOauthScanned(t *testing.T) {
 		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, TicketID: "tid-1"})
 		if out.Envelope.GetStatus() != orchestrator.StatusFailed {
 			t.Fatalf("status = %q, want failed", out.Envelope.GetStatus())
+		}
+	})
+}
+
+// TestLoginOauthFullTicket 带完整加密 ticket 的扫码提交（§2.8）：模板未放
+// {{TICKET_ID}} 时小程序端只拿到完整串，stage=scanned / complete 均需支持；
+// ticket 与 ticket_id 同时出现以 ticket 为准，写票 id 取解票结果。
+func TestLoginOauthFullTicket(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("scanned 带 ticket 成功且写票用解票 id", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		// 只建快照用于环境初始化，随后删除：带 ticket 解票成功即等价通过。
+		ticket := e.seedTicket(t, "tid-1", "wxscan", ticketsvc.SceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Stage: stageScanned, Ticket: ticket})
+		if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
+			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
+		}
+		if len(e.payloads.reads) != 0 {
+			t.Errorf("带 ticket 不应读快照, reads = %v", e.payloads.reads)
+		}
+		if len(e.tickets.scanWrites) != 1 || e.tickets.scanWrites[0] != "tid-1" {
+			t.Fatalf("WriteScanned = %v, want [tid-1]", e.tickets.scanWrites)
+		}
+		if res := e.tickets.results["tid-1"]; res.GetStatus() != ticketsvc.TicketStatusScanned {
+			t.Fatalf("result = %+v, want scanned", res)
+		}
+	})
+
+	t.Run("complete 带 ticket 成功且写票用解票 id", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 7, ProviderKey: "wxscan", OpenID: "openid_1"}
+		e.users.byID[7] = &model.User{ID: 7, UserStatus: 1, MfaRequired: 0}
+		ticket := e.seedTicket(t, "tid-1", "wxscan", ticketsvc.SceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", Ticket: ticket})
+		if out.Envelope.GetStatus() != orchestrator.StatusSuccess {
+			t.Fatalf("status = %q, want success", out.Envelope.GetStatus())
+		}
+		if tk := out.Envelope.GetTicket(); tk == nil || tk.GetTicketId() != "tid-1" {
+			t.Fatalf("ticket = %+v, want {success, tid-1}", tk)
+		}
+		if len(e.tickets.compWrites) != 1 || e.tickets.compWrites[0] != "tid-1" {
+			t.Fatalf("WriteComplete = %v, want [tid-1]", e.tickets.compWrites)
+		}
+	})
+
+	t.Run("ticket 与 ticket_id 冲突时以 ticket 为准", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		ticket := e.seedTicket(t, "tid-1", "wxscan", ticketsvc.SceneLogin)
+		// ticket_id 指向不存在的快照；若被采用会读快照失败或写错 id。
+		out := e.svc.LoginOauth(ctx, OauthInput{
+			ProviderKey: "wxscan", Code: "c", Stage: stageScanned,
+			Ticket: ticket, TicketID: "tid-bogus",
+		})
+		if out.Envelope.GetStatus() != ticketsvc.TicketStatusScanned {
+			t.Fatalf("status = %q, want scanned", out.Envelope.GetStatus())
+		}
+		if len(e.payloads.reads) != 0 {
+			t.Errorf("同时带 ticket 不应读快照, reads = %v", e.payloads.reads)
+		}
+		if len(e.tickets.scanWrites) != 1 || e.tickets.scanWrites[0] != "tid-1" {
+			t.Fatalf("写票 id 应取解票结果 tid-1, got %v", e.tickets.scanWrites)
+		}
+	})
+
+	t.Run("解票失败 → invalid_request 且不写票", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", Ticket: "not-a-ticket"})
+		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("status = %q, want invalid_request", out.Envelope.GetStatus())
+		}
+		if len(e.tickets.scanWrites) != 0 || len(e.tickets.compWrites) != 0 {
+			t.Fatalf("解票失败不应写票, scan=%v comp=%v", e.tickets.scanWrites, e.tickets.compWrites)
+		}
+	})
+
+	t.Run("provider_key 不匹配 → invalid_request", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		ticket := e.seedTicket(t, "tid-1", "wxother", ticketsvc.SceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", Ticket: ticket})
+		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("status = %q, want invalid_request", out.Envelope.GetStatus())
+		}
+	})
+
+	t.Run("过期票据 → invalid_request", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		ticket := e.seedTicket(t, "tid-1", "wxscan", ticketsvc.SceneLogin)
+		e.now = e.now.Add(qrcodeTicketTTL + time.Second)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", Ticket: ticket})
+		if out.Envelope.GetStatus() != orchestrator.StatusInvalidRequest {
+			t.Fatalf("status = %q, want invalid_request", out.Envelope.GetStatus())
+		}
+	})
+
+	t.Run("MFA 写票 id 由 OauthOutput 带出", func(t *testing.T) {
+		e := newScanEnv(t, ticketsvc.SceneLogin)
+		e.binds.rows[key("wxscan", "openid_1")] = model.UserThirdpartyBind{UserID: 3, ProviderKey: "wxscan", OpenID: "openid_1"}
+		e.users.byID[3] = &model.User{ID: 3, UserStatus: 1, MfaRequired: 1}
+		e.creds.byKind["totp"] = &model.UserCredential{UserID: 3, Kind: "totp", IsEnabled: 1}
+		ticket := e.seedTicket(t, "tid-1", "wxscan", ticketsvc.SceneLogin)
+		out := e.svc.LoginOauth(ctx, OauthInput{ProviderKey: "wxscan", Code: "c", Ticket: ticket})
+		if out.Envelope.GetStatus() != orchestrator.StatusMFARequired {
+			t.Fatalf("status = %q, want mfa_required", out.Envelope.GetStatus())
+		}
+		if out.TicketID != "tid-1" {
+			t.Fatalf("OauthOutput.TicketID = %q, want tid-1（handler 据此写票）", out.TicketID)
 		}
 	})
 }
