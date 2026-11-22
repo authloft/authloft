@@ -71,6 +71,7 @@ import (
 	_ "authloft/internal/provider/auth/alipay"
 	_ "authloft/internal/provider/auth/apple"
 	_ "authloft/internal/provider/auth/baidu"
+	_ "authloft/internal/provider/auth/dingtalk"
 	_ "authloft/internal/provider/auth/discord"
 	_ "authloft/internal/provider/auth/feishu"
 	_ "authloft/internal/provider/auth/gitee"

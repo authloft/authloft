@@ -2011,7 +2011,7 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 // 位于 package main，天然继承 bootstrap.go 的 blank import 集——任一渠道
 // 装配行被删，其 init() 不触发、注册表缺 type，本用例变红（生产形态为
 // 12 渠道静默降级 provider_disabled 的原始缺陷形态）。
-// 清单依据 docs/后端架构.md §12.2 内置清单全量 17 type；captcha
+// 清单依据 docs/后端架构.md §12.2 内置清单全量 18 type；captcha
 // 三家 / storage 两家 / proxy 为服务型实现（无 auth 槽，不进 AdapterTypes），
 // 经 LookupTypeMeta 断言 meta 注册不缺位，storage / proxy 另经 NewStorage /
 // NewProxy 断言 factory 槽挂载（CODE_GUIDE §3.3 blank import 覆盖门禁）。
@@ -2025,6 +2025,9 @@ func TestProviderRegistryComplete(t *testing.T) {
 		"github", "gitee", "microsoft", "google",
 		// Apple（§12.2 专用适配器：动态 ES256 client_secret）。
 		"apple",
+		// 钉钉（§12.2 专用适配器：authCode 回调 / JSON 令牌端点 / 自定义
+		// Header userinfo）。
+		"dingtalk",
 		// 通用兜底与薄封装（§12.2）。
 		"oidc", "oauth2", "discord", "telegram",
 	}
