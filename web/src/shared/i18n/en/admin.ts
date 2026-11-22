@@ -347,6 +347,63 @@ export const admin: typeof zhAdmin = {
   'admin.schemaField.aliyunMetadataHelp':
     'template_code.<tpl> overrides the SMS template ID per template key',
 
+  // New-channel Ext fields (interface doc §12.1, numbers 51-68): credential
+  // extensions / messaging extensions / captcha frontend config. Each
+  // provider declares them in Schema() on demand; undeclared fields are
+  // never sent down (§5.3).
+  'admin.schemaField.teamIdLabel': 'Apple Team ID',
+  'admin.schemaField.teamIdHelp':
+    'Apple Developer Team ID; used to sign the client_secret JWT (iss)',
+  'admin.schemaField.keyIdLabel': 'Apple Key ID',
+  'admin.schemaField.keyIdHelp':
+    'Apple key identifier; used to sign the client_secret JWT (kid)',
+  'admin.schemaField.agentIdLabel': 'AgentId',
+  'admin.schemaField.agentIdHelp':
+    'Wecom app AgentId; required for the snsapi_privateinfo auth scope',
+  'admin.schemaField.sdkAppIdLabel': 'SmsSdkAppId',
+  'admin.schemaField.sdkAppIdHelp':
+    'Tencent Cloud SMS SDK App ID; required on every send',
+  'admin.schemaField.accessKeyIdLabel': 'AccessKeyId',
+  'admin.schemaField.accessKeyIdHelp':
+    'For Aliyun CAPTCHA RPC signing; put the AccessKeySecret in the secret field',
+  'admin.schemaField.encryptKeyLabel': 'Encrypt Key (ekey)',
+  'admin.schemaField.encryptKeyHelp':
+    'Encrypted mode only; the server derives EncryptedSceneId from it (advanced)',
+  'admin.schemaField.regionLabel': 'Region',
+  'admin.schemaField.regionHelp':
+    'Tencent Cloud SMS takes the X-TC-Region region; Aliyun CAPTCHA picks cn / sgp',
+  'admin.schemaField.messagingServiceSidLabel': 'Messaging Service SID',
+  'admin.schemaField.messagingServiceSidHelp':
+    'MG-prefixed; choose either this or the sender number (from)',
+  'admin.schemaField.sandboxModeLabel': 'Sandbox Mode',
+  'admin.schemaField.sandboxModeHelp':
+    'When enabled, sends report success without real delivery (integration testing only)',
+  'admin.schemaField.replyToLabel': 'Reply-To Address',
+  'admin.schemaField.replyToHelp': 'Email reply address (reply_to.email)',
+  'admin.schemaField.addressTypeLabel': 'Address Type',
+  'admin.schemaField.addressTypeHelp':
+    'Aliyun DM address type; 0 = random account, 1 = sender address',
+  'admin.schemaField.replyToAddressLabel': 'Use Reply Address',
+  'admin.schemaField.replyToAddressHelp':
+    'Reply to the custom reply address; the API string value is converted at build time',
+  'admin.schemaField.replyAddressLabel': 'Reply Address',
+  'admin.schemaField.replyAddressHelp':
+    'Custom reply address; fill in when the console reply address is not enabled',
+  'admin.schemaField.widgetApiBaseLabel': 'Capjs Base URL',
+  'admin.schemaField.widgetApiBaseHelp':
+    'Self-hosted service root URL; the frontend loads the widget and challenge/redeem from it',
+  'admin.schemaField.widgetScriptUrlLabel': 'Widget Script URL',
+  'admin.schemaField.widgetScriptUrlHelp':
+    'Empty = official CDN; for self-hosting point to the assets script under the base URL',
+  'admin.schemaField.widgetProductLabel': 'Frontend Mode',
+  'admin.schemaField.widgetProductHelp': 'GeeTest v4 interaction mode; defaults to bind',
+  'admin.schemaField.widgetOptionsLabel': 'Frontend Init Options',
+  'admin.schemaField.widgetOptionsHelp':
+    'JSON text passed through to frontend init (e.g. language / mode), advanced',
+  'admin.schemaField.prefixLabel': 'Instance Prefix (prefix)',
+  'admin.schemaField.prefixHelp':
+    'From the console instance info card; used by the V3 frontend init',
+
   // select option labels (options remain wire values; key =
   // admin.schemaOption.<fieldKey>.<value>, namespaced by field so a custom
   // union_provider provider_key is never mistaken for a generic enum label;
@@ -356,6 +413,16 @@ export const admin: typeof zhAdmin = {
   'admin.schemaOption.scheme.socks5': 'SOCKS5',
   'admin.schemaOption.scheme.http': 'HTTP',
   'admin.schemaOption.scheme.https': 'HTTPS',
+
+  // select values carried by the new fields (region is a pattern text input
+  // for Tencent Cloud SMS, no option keys).
+  'admin.schemaOption.region.cn': 'China (cn)',
+  'admin.schemaOption.region.sgp': 'Singapore (sgp)',
+  'admin.schemaOption.address_type.0': 'Random account',
+  'admin.schemaOption.address_type.1': 'Sender address',
+  'admin.schemaOption.widget_product.bind': 'Hidden (bind)',
+  'admin.schemaOption.widget_product.popup': 'Popup (popup)',
+  'admin.schemaOption.widget_product.float': 'Float (float)',
 
   // ---- components/*-----------------------------------------------------------
   'admin.removeAction': 'Delete',

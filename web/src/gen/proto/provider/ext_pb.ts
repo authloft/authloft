@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file provider/ext.proto.
  */
 export const file_provider_ext: GenFile = /*@__PURE__*/
-  fileDesc("ChJwcm92aWRlci9leHQucHJvdG8SCHByb3ZpZGVyItYHCgNFeHQSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDgoGYXBwX2lkGAMgASgJEgwKBGNlcnQYBCABKAkSDgoGc2NvcGVzGAUgASgJEjQKDHVzZXJfbWFwcGluZxgGIAMoCzIeLnByb3ZpZGVyLkV4dC5Vc2VyTWFwcGluZ0VudHJ5EhQKDHByb3ZpZGVyX3VybBgKIAEoCRIXCg9jdXN0b21fYXV0aF91cmwYCyABKAkSGAoQY3VzdG9tX3Rva2VuX3VybBgMIAEoCRIcChRjdXN0b21fdXNlcl9pbmZvX3VybBgNIAEoCRIMCgRob3N0GA4gASgJEgwKBHBvcnQYDyABKAUSEwoLZGlzYWJsZV9zc2wYECABKAgSGQoRaW50cmFuZXRfZW5kcG9pbnQYESABKAkSDgoGYnVja2V0GBQgASgJEhEKCXJlZ2lvbl9pZBgVIAEoCRITCgtwYXRoX3ByZWZpeBgWIAEoCRIOCgZkb21haW4YFyABKAkSEAoIZW5kcG9pbnQYGCABKAkSEgoKcGF0aF9zdHlsZRgZIAEoCBITCgtwdWJsaWNfcmVhZBgaIAEoCBIaChJxcmNvZGVfYXV0b19kZWxldGUYHiABKAgSGAoQc3RvcmFnZV9wcm92aWRlchgfIAEoCRIUCgxzdG9yYWdlX3BhdGgYICABKAkSEwoLcXJjb2RlX21vZGUYISABKAkSFQoNcXJjb2RlX2Zvcm1hdBgiIAEoCRISCgpxcmNvZGVfdGlwGCcgASgJEhQKDG5lZWRfY2FwdGNoYRgvIAEoCBITCgt1cGxvYWRfbW9kZRgjIAEoCRITCgtwcmVzaWduX3R0bBgkIAEoBRIQCghtYXhfc2l6ZRglIAEoAxIVCg1hbGxvd2VkX3R5cGVzGCYgASgJEgwKBGZyb20YKCABKAkSEQoJc2lnbl9uYW1lGCkgASgJEhUKDXRlbXBsYXRlX2NvZGUYKiABKAkSDgoGc2NoZW1lGCsgASgJEgwKBHVzZXIYLCABKAkSEAoIcGFzc3dvcmQYLSABKAkSGgoScHJveHlfcHJvdmlkZXJfa2V5GC4gASgJEi0KCG1ldGFkYXRhGDIgAygLMhsucHJvdmlkZXIuRXh0Lk1ldGFkYXRhRW50cnkaMgoQVXNlck1hcHBpbmdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUIjWiFhdXRobG9mdC9nZW4vZ28vcHJvdmlkZXI7cHJvdmlkZXJiBnByb3RvMw");
+  fileDesc("ChJwcm92aWRlci9leHQucHJvdG8SCHByb3ZpZGVyItsKCgNFeHQSEQoJY2xpZW50X2lkGAEgASgJEhUKDWNsaWVudF9zZWNyZXQYAiABKAkSDgoGYXBwX2lkGAMgASgJEgwKBGNlcnQYBCABKAkSDgoGc2NvcGVzGAUgASgJEjQKDHVzZXJfbWFwcGluZxgGIAMoCzIeLnByb3ZpZGVyLkV4dC5Vc2VyTWFwcGluZ0VudHJ5EhQKDHByb3ZpZGVyX3VybBgKIAEoCRIXCg9jdXN0b21fYXV0aF91cmwYCyABKAkSGAoQY3VzdG9tX3Rva2VuX3VybBgMIAEoCRIcChRjdXN0b21fdXNlcl9pbmZvX3VybBgNIAEoCRIMCgRob3N0GA4gASgJEgwKBHBvcnQYDyABKAUSEwoLZGlzYWJsZV9zc2wYECABKAgSGQoRaW50cmFuZXRfZW5kcG9pbnQYESABKAkSDgoGYnVja2V0GBQgASgJEhEKCXJlZ2lvbl9pZBgVIAEoCRITCgtwYXRoX3ByZWZpeBgWIAEoCRIOCgZkb21haW4YFyABKAkSEAoIZW5kcG9pbnQYGCABKAkSEgoKcGF0aF9zdHlsZRgZIAEoCBITCgtwdWJsaWNfcmVhZBgaIAEoCBIaChJxcmNvZGVfYXV0b19kZWxldGUYHiABKAgSGAoQc3RvcmFnZV9wcm92aWRlchgfIAEoCRIUCgxzdG9yYWdlX3BhdGgYICABKAkSEwoLcXJjb2RlX21vZGUYISABKAkSFQoNcXJjb2RlX2Zvcm1hdBgiIAEoCRISCgpxcmNvZGVfdGlwGCcgASgJEhQKDG5lZWRfY2FwdGNoYRgvIAEoCBITCgt1cGxvYWRfbW9kZRgjIAEoCRITCgtwcmVzaWduX3R0bBgkIAEoBRIQCghtYXhfc2l6ZRglIAEoAxIVCg1hbGxvd2VkX3R5cGVzGCYgASgJEgwKBGZyb20YKCABKAkSEQoJc2lnbl9uYW1lGCkgASgJEhUKDXRlbXBsYXRlX2NvZGUYKiABKAkSDgoGc2NoZW1lGCsgASgJEgwKBHVzZXIYLCABKAkSEAoIcGFzc3dvcmQYLSABKAkSGgoScHJveHlfcHJvdmlkZXJfa2V5GC4gASgJEg8KB3RlYW1faWQYMyABKAkSDgoGa2V5X2lkGDQgASgJEhAKCGFnZW50X2lkGDUgASgJEhIKCnNka19hcHBfaWQYNiABKAkSFQoNYWNjZXNzX2tleV9pZBg3IAEoCRITCgtlbmNyeXB0X2tleRg4IAEoCRIOCgZyZWdpb24YOSABKAkSHQoVbWVzc2FnaW5nX3NlcnZpY2Vfc2lkGDogASgJEhQKDHNhbmRib3hfbW9kZRg7IAEoCBIQCghyZXBseV90bxg8IAEoCRIUCgxhZGRyZXNzX3R5cGUYPSABKAkSGAoQcmVwbHlfdG9fYWRkcmVzcxg+IAEoCBIVCg1yZXBseV9hZGRyZXNzGD8gASgJEhcKD3dpZGdldF9hcGlfYmFzZRhAIAEoCRIZChF3aWRnZXRfc2NyaXB0X3VybBhBIAEoCRIWCg53aWRnZXRfcHJvZHVjdBhCIAEoCRIWCg53aWRnZXRfb3B0aW9ucxhDIAEoCRIOCgZwcmVmaXgYRCABKAkSLQoIbWV0YWRhdGEYMiADKAsyGy5wcm92aWRlci5FeHQuTWV0YWRhdGFFbnRyeRoyChBVc2VyTWFwcGluZ0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBQiNaIWF1dGhsb2Z0L2dlbi9nby9wcm92aWRlcjtwcm92aWRlcmIGcHJvdG8z");
 
 /**
  * Ext 是外部服务扩展字段（docs/接口文档.md §12.1），对应
@@ -290,6 +290,138 @@ export type Ext = Message<"provider.Ext"> & {
    * @generated from field: string proxy_provider_key = 46;
    */
   proxyProviderKey: string;
+
+  /**
+   * ---- 凭证扩展（新增渠道专用，51-56；编号自 51 起连续分配，既有字段名 / 编号不动）----
+   *
+   * Apple 开发者团队 ID（client_secret JWT 的 iss，§5.3 apple 行）
+   *
+   * @generated from field: string team_id = 51;
+   */
+  teamId: string;
+
+  /**
+   * Apple 密钥 ID（client_secret JWT 的 kid）
+   *
+   * @generated from field: string key_id = 52;
+   */
+  keyId: string;
+
+  /**
+   * 企业微信应用 AgentId（授权 URL agentid 参数，snsapi_privateinfo 必填）
+   *
+   * @generated from field: string agent_id = 53;
+   */
+  agentId: string;
+
+  /**
+   * 腾讯云短信 SmsSdkAppId（每次发送必填身份参数）
+   *
+   * @generated from field: string sdk_app_id = 54;
+   */
+  sdkAppId: string;
+
+  /**
+   * 阿里云验证码 RPC 签名 AccessKeyId（client_secret 只承载 AccessKeySecret）
+   *
+   * @generated from field: string access_key_id = 55;
+   */
+  accessKeyId: string;
+
+  /**
+   * 阿里云验证码加密模式 ekey（服务端生成 EncryptedSceneId，advanced 可选）
+   *
+   * @generated from field: string encrypt_key = 56;
+   */
+  encryptKey: string;
+
+  /**
+   * ---- 消息扩展（57-63）----
+   *
+   * 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp（select）
+   *
+   * @generated from field: string region = 57;
+   */
+  region: string;
+
+  /**
+   * Twilio Messaging Service SID（MG 前缀，与 from 二选一）
+   *
+   * @generated from field: string messaging_service_sid = 58;
+   */
+  messagingServiceSid: string;
+
+  /**
+   * SendGrid 沙箱模式（true = 返回成功但不真发，联调用）
+   *
+   * @generated from field: bool sandbox_mode = 59;
+   */
+  sandboxMode: boolean;
+
+  /**
+   * SendGrid 回复地址（reply_to.email）
+   *
+   * @generated from field: string reply_to = 60;
+   */
+  replyTo: string;
+
+  /**
+   * 阿里云邮件推送 AddressType（select，wire 取值 "0"=随机账号 / "1"=发信地址）
+   *
+   * @generated from field: string address_type = 61;
+   */
+  addressType: string;
+
+  /**
+   * 阿里云邮件推送 ReplyToAddress（API 要求字符串 "true"/"false"，Sender 构造期转换）
+   *
+   * @generated from field: bool reply_to_address = 62;
+   */
+  replyToAddress: boolean;
+
+  /**
+   * 阿里云邮件推送自定义回信地址（不启用控制台回信地址时用）
+   *
+   * @generated from field: string reply_address = 63;
+   */
+  replyAddress: string;
+
+  /**
+   * ---- captcha 前端形态（64-68）----
+   *
+   * Capjs 自托管服务根 URL（前端拼 <base>/<site_key>/ 加载 widget 与 challenge/redeem）
+   *
+   * @generated from field: string widget_api_base = 64;
+   */
+  widgetApiBase: string;
+
+  /**
+   * Capjs widget 脚本地址（空 = 官方 CDN，自托管时填 <base>/assets/...）
+   *
+   * @generated from field: string widget_script_url = 65;
+   */
+  widgetScriptUrl: string;
+
+  /**
+   * GeeTest v4 前端交互模式：bind | popup | float（默认 bind）
+   *
+   * @generated from field: string widget_product = 66;
+   */
+  widgetProduct: string;
+
+  /**
+   * 前端初始化透传参数 JSON 文本（GeeTest v4 language/timeout 等、阿里云验证码 mode/element 等，advanced）
+   *
+   * @generated from field: string widget_options = 67;
+   */
+  widgetOptions: string;
+
+  /**
+   * 阿里云验证码 AliyunCaptchaConfig.prefix（控制台实例信息卡获取，V3 前端初始化）
+   *
+   * @generated from field: string prefix = 68;
+   */
+  prefix: string;
 
   /**
    * ---- 长尾 ----

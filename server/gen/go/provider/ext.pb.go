@@ -77,6 +77,27 @@ type Ext struct {
 	Password string `protobuf:"bytes,45,opt,name=password,proto3" json:"password,omitempty"` // 代理 / SMTP 认证密码；proxy 行可空须伴随 user、email(smtp) 行必填；明文存于 ext 内（同 client_secret 口径）
 	// ---- 出站代理引用（服务型 Provider 经引用键指向 category=proxy 行）----
 	ProxyProviderKey string `protobuf:"bytes,46,opt,name=proxy_provider_key,json=proxyProviderKey,proto3" json:"proxy_provider_key,omitempty"` // 引用 proxy 行的 provider_key，空 = 直连；见 §5.3 代理提供商与出站代理引用约定 / 后端架构 §15.4
+	// ---- 凭证扩展（新增渠道专用，51-56；编号自 51 起连续分配，既有字段名 / 编号不动）----
+	TeamId      string `protobuf:"bytes,51,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`                  // Apple 开发者团队 ID（client_secret JWT 的 iss，§5.3 apple 行）
+	KeyId       string `protobuf:"bytes,52,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`                     // Apple 密钥 ID（client_secret JWT 的 kid）
+	AgentId     string `protobuf:"bytes,53,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`               // 企业微信应用 AgentId（授权 URL agentid 参数，snsapi_privateinfo 必填）
+	SdkAppId    string `protobuf:"bytes,54,opt,name=sdk_app_id,json=sdkAppId,proto3" json:"sdk_app_id,omitempty"`          // 腾讯云短信 SmsSdkAppId（每次发送必填身份参数）
+	AccessKeyId string `protobuf:"bytes,55,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"` // 阿里云验证码 RPC 签名 AccessKeyId（client_secret 只承载 AccessKeySecret）
+	EncryptKey  string `protobuf:"bytes,56,opt,name=encrypt_key,json=encryptKey,proto3" json:"encrypt_key,omitempty"`      // 阿里云验证码加密模式 ekey（服务端生成 EncryptedSceneId，advanced 可选）
+	// ---- 消息扩展（57-63）----
+	Region              string `protobuf:"bytes,57,opt,name=region,proto3" json:"region,omitempty"`                                                        // 厂商地域：腾讯云短信 X-TC-Region（pattern 地域格式）/ 阿里云验证码 cn|sgp（select）
+	MessagingServiceSid string `protobuf:"bytes,58,opt,name=messaging_service_sid,json=messagingServiceSid,proto3" json:"messaging_service_sid,omitempty"` // Twilio Messaging Service SID（MG 前缀，与 from 二选一）
+	SandboxMode         bool   `protobuf:"varint,59,opt,name=sandbox_mode,json=sandboxMode,proto3" json:"sandbox_mode,omitempty"`                          // SendGrid 沙箱模式（true = 返回成功但不真发，联调用）
+	ReplyTo             string `protobuf:"bytes,60,opt,name=reply_to,json=replyTo,proto3" json:"reply_to,omitempty"`                                       // SendGrid 回复地址（reply_to.email）
+	AddressType         string `protobuf:"bytes,61,opt,name=address_type,json=addressType,proto3" json:"address_type,omitempty"`                           // 阿里云邮件推送 AddressType（select，wire 取值 "0"=随机账号 / "1"=发信地址）
+	ReplyToAddress      bool   `protobuf:"varint,62,opt,name=reply_to_address,json=replyToAddress,proto3" json:"reply_to_address,omitempty"`               // 阿里云邮件推送 ReplyToAddress（API 要求字符串 "true"/"false"，Sender 构造期转换）
+	ReplyAddress        string `protobuf:"bytes,63,opt,name=reply_address,json=replyAddress,proto3" json:"reply_address,omitempty"`                        // 阿里云邮件推送自定义回信地址（不启用控制台回信地址时用）
+	// ---- captcha 前端形态（64-68）----
+	WidgetApiBase   string `protobuf:"bytes,64,opt,name=widget_api_base,json=widgetApiBase,proto3" json:"widget_api_base,omitempty"`       // Capjs 自托管服务根 URL（前端拼 <base>/<site_key>/ 加载 widget 与 challenge/redeem）
+	WidgetScriptUrl string `protobuf:"bytes,65,opt,name=widget_script_url,json=widgetScriptUrl,proto3" json:"widget_script_url,omitempty"` // Capjs widget 脚本地址（空 = 官方 CDN，自托管时填 <base>/assets/...）
+	WidgetProduct   string `protobuf:"bytes,66,opt,name=widget_product,json=widgetProduct,proto3" json:"widget_product,omitempty"`         // GeeTest v4 前端交互模式：bind | popup | float（默认 bind）
+	WidgetOptions   string `protobuf:"bytes,67,opt,name=widget_options,json=widgetOptions,proto3" json:"widget_options,omitempty"`         // 前端初始化透传参数 JSON 文本（GeeTest v4 language/timeout 等、阿里云验证码 mode/element 等，advanced）
+	Prefix          string `protobuf:"bytes,68,opt,name=prefix,proto3" json:"prefix,omitempty"`                                            // 阿里云验证码 AliyunCaptchaConfig.prefix（控制台实例信息卡获取，V3 前端初始化）
 	// ---- 长尾 ----
 	Metadata      map[string]string `protobuf:"bytes,50,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // 支付宝 sign_type、飞书 app_ticket、S3 acl/storage_class ...
 	unknownFields protoimpl.UnknownFields
@@ -386,6 +407,132 @@ func (x *Ext) GetProxyProviderKey() string {
 	return ""
 }
 
+func (x *Ext) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *Ext) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *Ext) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *Ext) GetSdkAppId() string {
+	if x != nil {
+		return x.SdkAppId
+	}
+	return ""
+}
+
+func (x *Ext) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *Ext) GetEncryptKey() string {
+	if x != nil {
+		return x.EncryptKey
+	}
+	return ""
+}
+
+func (x *Ext) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *Ext) GetMessagingServiceSid() string {
+	if x != nil {
+		return x.MessagingServiceSid
+	}
+	return ""
+}
+
+func (x *Ext) GetSandboxMode() bool {
+	if x != nil {
+		return x.SandboxMode
+	}
+	return false
+}
+
+func (x *Ext) GetReplyTo() string {
+	if x != nil {
+		return x.ReplyTo
+	}
+	return ""
+}
+
+func (x *Ext) GetAddressType() string {
+	if x != nil {
+		return x.AddressType
+	}
+	return ""
+}
+
+func (x *Ext) GetReplyToAddress() bool {
+	if x != nil {
+		return x.ReplyToAddress
+	}
+	return false
+}
+
+func (x *Ext) GetReplyAddress() string {
+	if x != nil {
+		return x.ReplyAddress
+	}
+	return ""
+}
+
+func (x *Ext) GetWidgetApiBase() string {
+	if x != nil {
+		return x.WidgetApiBase
+	}
+	return ""
+}
+
+func (x *Ext) GetWidgetScriptUrl() string {
+	if x != nil {
+		return x.WidgetScriptUrl
+	}
+	return ""
+}
+
+func (x *Ext) GetWidgetProduct() string {
+	if x != nil {
+		return x.WidgetProduct
+	}
+	return ""
+}
+
+func (x *Ext) GetWidgetOptions() string {
+	if x != nil {
+		return x.WidgetOptions
+	}
+	return ""
+}
+
+func (x *Ext) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
 func (x *Ext) GetMetadata() map[string]string {
 	if x != nil {
 		return x.Metadata
@@ -397,7 +544,7 @@ var File_provider_ext_proto protoreflect.FileDescriptor
 
 const file_provider_ext_proto_rawDesc = "" +
 	"\n" +
-	"\x12provider/ext.proto\x12\bprovider\"\xbb\v\n" +
+	"\x12provider/ext.proto\x12\bprovider\"\x9f\x10\n" +
 	"\x03Ext\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\x12\x15\n" +
@@ -446,7 +593,27 @@ const file_provider_ext_proto_rawDesc = "" +
 	"\x06scheme\x18+ \x01(\tR\x06scheme\x12\x12\n" +
 	"\x04user\x18, \x01(\tR\x04user\x12\x1a\n" +
 	"\bpassword\x18- \x01(\tR\bpassword\x12,\n" +
-	"\x12proxy_provider_key\x18. \x01(\tR\x10proxyProviderKey\x127\n" +
+	"\x12proxy_provider_key\x18. \x01(\tR\x10proxyProviderKey\x12\x17\n" +
+	"\ateam_id\x183 \x01(\tR\x06teamId\x12\x15\n" +
+	"\x06key_id\x184 \x01(\tR\x05keyId\x12\x19\n" +
+	"\bagent_id\x185 \x01(\tR\aagentId\x12\x1c\n" +
+	"\n" +
+	"sdk_app_id\x186 \x01(\tR\bsdkAppId\x12\"\n" +
+	"\raccess_key_id\x187 \x01(\tR\vaccessKeyId\x12\x1f\n" +
+	"\vencrypt_key\x188 \x01(\tR\n" +
+	"encryptKey\x12\x16\n" +
+	"\x06region\x189 \x01(\tR\x06region\x122\n" +
+	"\x15messaging_service_sid\x18: \x01(\tR\x13messagingServiceSid\x12!\n" +
+	"\fsandbox_mode\x18; \x01(\bR\vsandboxMode\x12\x19\n" +
+	"\breply_to\x18< \x01(\tR\areplyTo\x12!\n" +
+	"\faddress_type\x18= \x01(\tR\vaddressType\x12(\n" +
+	"\x10reply_to_address\x18> \x01(\bR\x0ereplyToAddress\x12#\n" +
+	"\rreply_address\x18? \x01(\tR\freplyAddress\x12&\n" +
+	"\x0fwidget_api_base\x18@ \x01(\tR\rwidgetApiBase\x12*\n" +
+	"\x11widget_script_url\x18A \x01(\tR\x0fwidgetScriptUrl\x12%\n" +
+	"\x0ewidget_product\x18B \x01(\tR\rwidgetProduct\x12%\n" +
+	"\x0ewidget_options\x18C \x01(\tR\rwidgetOptions\x12\x16\n" +
+	"\x06prefix\x18D \x01(\tR\x06prefix\x127\n" +
 	"\bmetadata\x182 \x03(\v2\x1b.provider.Ext.MetadataEntryR\bmetadata\x1a>\n" +
 	"\x10UserMappingEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
