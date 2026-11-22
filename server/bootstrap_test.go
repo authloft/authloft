@@ -276,7 +276,7 @@ func assertNoTables(db *sql.DB) error {
 }
 
 // requireAllTables 断言测试库中 §4 全部 11 张表存在（migrate up 真实执行
-// 的证据，§3.16 行 572）。
+// 的证据，§3.16）。
 func requireAllTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, tbl := range wantTables {
@@ -544,7 +544,7 @@ func (noopExecutor) Execute(context.Context, []asyncqueue.Task) {}
 // TestAssembleEngineAndTerminal 用 Fake 配置装配 factor 注册表 / Terminal /
 // Engine（不连 DB / Redis）：断言 6 个已实现 kind（含 otp_sms /
 // otp_email）可解析、pending 1 条（thirdparty）不参与完整性断言、
-// Terminal 五注入均非 nil（§3.8 行 390、§7.3 行 983-1004）。
+// Terminal 五注入均非 nil（§3.8、§7.3）。
 func TestAssembleEngineAndTerminal(t *testing.T) {
 	codecs, err := buildCodecs(&config.Config{SignKey: testSignKeyConfig(t)})
 	if err != nil {
@@ -618,7 +618,7 @@ func TestAssembleEngineAndTerminal(t *testing.T) {
 	}
 }
 
-// TestBuildEngineWebauthnDegraded D6 / §8.3 行 1069 启动期初始化失败降级：
+// TestBuildEngineWebauthnDegraded D6 / §8.3 启动期初始化失败降级：
 // rp_id 为 IP（合法 config 形态——config.Validate 只查非空，管理员手工改
 // config 的场景）导致 webauthn.New 库 RPID 校验失败时，buildEngine **不报
 // 错**（程序不退出、其余功能可用）：webauthn 不注册进注册表（Get 返回
@@ -688,7 +688,7 @@ func TestBuildEngineWebauthnDegraded(t *testing.T) {
 		t.Fatalf("AssertComplete(webauthn) err = %v, want nil (degraded kind excluded)", err)
 	}
 
-	// account 域 fail-closed 装配断言（§8.3 行 1073「实装后必须带
+	// account 域 fail-closed 装配断言（§8.3「实装后必须带
 	// 窗口期拒绝」）：降级时 accountWebauthn service 仍构造（非 nil），
 	// 但 Factor 注入 nil 接口——四方法一律 ErrWebauthnDegraded（typed-nil
 	// 会绕过 Factor==nil 判定，此处即防回归）。DB 未注入，降级判定必须
@@ -854,7 +854,7 @@ func buildWiredDeps(t *testing.T, cfg *config.Config) *assembled {
 	}
 	deps.engine = engine
 	wireSharedServices(cfg, deps)
-	// iss = authloft.root（§14.1 行 1626 与 discovery 逐字相同）。
+	// iss = authloft.root（§14.1 与 discovery 逐字相同）。
 	deps.oidcJWT, err = oidc.NewJWT([]config.OIDCKey{{Kid: "1", PrivateKeyPEM: testOIDCKeyPEM()}}, cfg.Authloft.Root)
 	if err != nil {
 		t.Fatalf("oidc.NewJWT: %v", err)
@@ -880,7 +880,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 		t.Errorf("discovery issuer = %v, want %q", got, assembledRootOrigin)
 	}
 
-	// JWKS：200，发布列表内密钥公钥（kid "1"、RS256，§14.1 行 1627）。
+	// JWKS：200，发布列表内密钥公钥（kid "1"、RS256，§14.1）。
 	rec = doRequest(h, http.MethodGet, "/.well-known/jwks.json", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("jwks: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
@@ -903,7 +903,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 	}
 
 	// revoke：client_id 缺失 → 401 invalid_client（RFC 7009 回落 RFC 6749
-	// §5.2，revoker.go 行 42 在查库前返回）。
+	// §5.2，revoker 在查库前返回）。
 	rec = doPostForm(h, "/api/oidc/revoke", url.Values{"token": {"x"}})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("revoke empty client: status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
@@ -917,7 +917,7 @@ func TestOIDCRoutesWired(t *testing.T) {
 // buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerAccount）——路由
 // 前缀已注册（handler 非 nil 的装配等效断言）；无会话 GetProfile 穿透
 // origin 前缀链 + session 拦截器抵达 handler，返回 401 unauthenticated
-// （§1.2 行 96 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
+// （§1.2 全接口需 al_session；拦截器对匿名放行、401 由 handler 判定）；
 // UpdateProfile 已实装（service 真装配），无会话同样 401。
 func TestAssembleAccountRoutesWired(t *testing.T) {
 	cfg := &config.Config{Authloft: config.AuthloftConfig{Root: assembledRootOrigin, RpID: "authloft.example.com", RPDisplayName: config.DefaultRPDisplayName}}
@@ -977,7 +977,7 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 	}
 
 	// UpdateProfile（已实装，service 随 buildWiredDeps 真装配）→
-	// 路由可达且非桩：无会话同样 401（§1.2 行 96 全接口需 al_session，
+	// 路由可达且非桩：无会话同样 401（§1.2 全接口需 al_session，
 	// 401 由 handler 判定）。
 	rec = doPostJSON("/api.account.v1.AccountService/UpdateProfile")
 	if rec.Code != http.StatusUnauthorized {
@@ -991,7 +991,7 @@ func TestAssembleAccountRoutesWired(t *testing.T) {
 // TestAssembleAdminRoutesWired：AdminService Connect handler 经
 // buildHandlerWithSSO 挂入顶层 ServeMux 前缀链（registerAdmin）——admin 前缀
 // 已注册且 handler 非 nil 的装配断言；无会话请求穿透 origin 前缀链 + session
-// 拦截器后被 admin 拦截器拦下 → 401 unauthenticated（§5 行 1145：401 由 admin
+// 拦截器后被 admin 拦截器拦下 → 401 unauthenticated（§5：401 由 admin
 // 拦截器判定，与 account 域 handler 自判不同——桩方法匿名同样先 401）；sso /
 // account 两域零回归仍在。
 func TestAssembleAdminRoutesWired(t *testing.T) {
@@ -1127,8 +1127,8 @@ func TestAssembleRPCRoutesWired(t *testing.T) {
 // TestAssembleGatewayRoutesWired：网关域 ANY /api/gateway/decode 经
 // buildHandlerWithSSO 注册到 echo 链（registerGateway：/api 组 /gateway 子组 +
 // Gateway 中间件）——buildWiredDeps 的 settings 为 NewStore(nil, nil)（种子
-// 全量默认值，§5.6 行 1338 gateway_tokens 默认 []）→ 缺 / 任意 X-Gateway-Token
-// 均 403 空 body（middleware 保守拒绝 + 豁免端点原生形态，§1.5 行 188；403≠404
+// 全量默认值，§5.6 gateway_tokens 默认 []）→ 缺 / 任意 X-Gateway-Token
+// 均 403 空 body（middleware 保守拒绝 + 豁免端点原生形态，§1.5；403≠404
 // 即证明路由与中间件已挂载）；GET / POST 均 403（ANY 语义）；X-Request-Id 由
 // echo 全局链 requestid 回写（§1.1）。sso / account / admin 前缀零回归。
 func TestAssembleGatewayRoutesWired(t *testing.T) {
@@ -1195,7 +1195,7 @@ func eventually(t *testing.T, what string, timeout time.Duration, cond func() er
 // gateway_tokens 动态源——默认 [] 拒绝；Store.Set 增配 tok-a 即对后续请求
 // 放行（200 + X-Session-Status: invalid，会话令牌缺省恒 200）；换配 tok-b 后
 // tok-a 失效 / tok-b 放行（每请求经 settings 快照读取，热更只对后续请求
-// 生效，§5.6 行 1342）。清理口径同 TestAssembleRealChain。
+// 生效，§5.6）。清理口径同 TestAssembleRealChain。
 func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 	dsn := mysqlTestDSN(t)
 	addr := os.Getenv("UC_TEST_REDIS_ADDR")
@@ -1292,9 +1292,9 @@ func TestAssembleGatewaySettingsHotReload(t *testing.T) {
 // 装配的 https_deployment 三态源（ssoHTTPSMode 喂 newSessionCookie →
 // session 拦截器 / sso 登录终点）每请求读 settings 快照——默认档（迁移后
 // 无该键 → 种子 auto）+ httptest 明文请求（无 X-Forwarded-Proto、无 TLS）
-// → 拦截器防御性清 Cookie 无 Secure、SameSite=Lax（§1.9 行 292 明文
+// → 拦截器防御性清 Cookie 无 Secure、SameSite=Lax（§1.9 明文
 // 联动）；Store.Set 改 true → 下一请求即 Secure+None（后台改值立即生效，
-// §1.9 行 306 逐请求判定，沿 cookie_name 热更口径）。观察点取 account 域
+// §1.9 逐请求判定，沿 cookie_name 热更口径）。观察点取 account 域
 // 任意 Connect 路由无令牌请求——session 拦截器对未登录一律防御性清
 // Cookie，Set-Cookie 属性即三态落点，无需构造有效会话。
 func TestAssembleHTTPSDeploymentHotReload(t *testing.T) {
@@ -1546,7 +1546,7 @@ func TestAssembleWiresOIDCAndWhitelist(t *testing.T) {
 	}
 }
 
-// —— 以下为监听口径测试（§3.1 行 244-245：Go 1.26 标准库原生
+// —— 以下为监听口径测试（§3.1：Go 1.26 标准库原生
 // http.Server.Protocols，三模式）与 http.Server 装配断言 ——
 
 // h2cPreface HTTP/2 客户端连接前言（RFC 7540 连接前言的 magic 部分；
@@ -1639,7 +1639,7 @@ func serveAndReadH2Settings(t *testing.T, srv *http.Server, ln net.Listener, tls
 	}
 }
 
-// TestListenModeH2CPriorKnowledge 三模式之一（§3.1 行 244）：未配 cert+key
+// TestListenModeH2CPriorKnowledge 三模式之一（§3.1）：未配 cert+key
 // → 明文 HTTP/1.1 + H2C——客户端直接发 `PRI * HTTP/2.0` 前置知识请求能通
 // （服务端回 SETTINGS 帧）。
 func TestListenModeH2CPriorKnowledge(t *testing.T) {
@@ -1661,7 +1661,7 @@ func TestListenModeH2CPriorKnowledge(t *testing.T) {
 	serveAndReadH2Settings(t, srv, ln, nil, "", "")
 }
 
-// TestListenModeTLSALPNH2 三模式之二（§3.1 行 244）：已配 cert+key →
+// TestListenModeTLSALPNH2 三模式之二（§3.1）：已配 cert+key →
 // HTTP/1.1(TLS) + H2(TLS)——TLS ALPN 协商到 h2 且 H2 通路能通（前置知识
 // 前言到达后服务端回 SETTINGS 帧；协商协议为 h2 直接实证）。
 func TestListenModeTLSALPNH2(t *testing.T) {
@@ -1701,7 +1701,7 @@ func TestListenModeTLSALPNH2(t *testing.T) {
 	}
 }
 
-// TestListenModeTLSMinVersionRejectsOld 三模式之三（§3.1 行 244、§3.2
+// TestListenModeTLSMinVersionRejectsOld 三模式之三（§3.1、§3.2
 // 约定 5）：min_tls_version="1.2" 时 TLS1.0 / TLS1.1 握手失败；TLS1.2
 // 在下限之上握手成功。
 func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
@@ -1754,7 +1754,7 @@ func TestListenModeTLSMinVersionRejectsOld(t *testing.T) {
 }
 
 // —— Connect 前缀链全等效（requestid → logger → metrics → origin，
-// §3.3 行 304）——Connect 域流量计入 /metrics 与访问日志的装配层实证 ——
+// §3.3）——Connect 域流量计入 /metrics 与访问日志的装配层实证 ——
 
 // connectTestHandler 构造带已注册 Connect service 的顶层分流 handler
 // （与生产 buildHandler 同链：mux 前缀 requestid → logger → metrics →
@@ -1870,7 +1870,7 @@ func TestConnectDomainMetricsAndAccessLog(t *testing.T) {
 }
 
 // TestConnectDomainPanicRequestCounted panic 的 Connect 请求也计数
-// （HTTPMetrics defer 累加，§3.3 行 302）：生产路径 panic 由 connect-go
+// （HTTPMetrics defer 累加，§3.3）：生产路径 panic 由 connect-go
 // WithRecover 在 handler 内归一为正常返回（defer 照常执行）；本用例注册
 // 裸 handler 模拟 panic 穿过前缀链 unwind（http.Server 连接级恢复），
 // defer 同样计数。
@@ -1894,7 +1894,7 @@ func TestConnectDomainPanicRequestCounted(t *testing.T) {
 	}
 }
 
-// TestNewHTTPServerTLSProtocols http.Server 装配的 TLS 形态（§3.1 行 245）：
+// TestNewHTTPServerTLSProtocols http.Server 装配的 TLS 形态（§3.1）：
 // 已配 cert+key → Protocols 为 HTTP/1.1 + H2(TLS)（SetHTTP1 + SetHTTP2，
 // 不含 UnencryptedHTTP2）；min_tls_version "1.3" → TLSConfig.MinVersion =
 // VersionTLS13、"1.2" → VersionTLS12、空 → TLSConfig nil（标准库默认）；
@@ -2184,6 +2184,40 @@ func TestProviderRegistryComplete(t *testing.T) {
 		Ext:  &providerpb.Ext{Host: "email-smtp.us-east-1.amazonaws.com", User: "ses-smtp-user", Password: "ses-smtp-pass", From: "no-reply@example.com"},
 	}, provider.CategoryEmail); err != nil {
 		t.Errorf("NewSender(aws_ses): %v——sender factory 槽缺失或实现构造破损", err)
+	}
+	// email Sender smtp（通用基座，aws_ses 薄封装复用其构造器）：blank import
+	// 被删即 sender 槽缺失，发送期 provider_disabled。断言形态同 sendgrid
+	// 先例：LookupSenderMeta 断言 meta 与 category，NewSender 以最小可用 Ext
+	// （host/user/password 必填，port 缺省回落 587）走真实 factory 证构造槽
+	// 挂载。
+	meta, ok = provider.LookupSenderMeta("smtp")
+	if !ok {
+		t.Error(`provider 注册表缺 email sender type "smtp"——bootstrap.go 装配 import 可能被删`)
+	} else if meta.Category != provider.CategoryEmail {
+		t.Errorf("smtp category = %q, want %q", meta.Category, provider.CategoryEmail)
+	}
+	if _, err := provider.NewSender(&provider.Provider{
+		Type: "smtp",
+		Ext:  &providerpb.Ext{Host: "smtp.example.com", User: "smtp-user", Password: "smtp-pass"},
+	}, provider.CategoryEmail); err != nil {
+		t.Errorf("NewSender(smtp): %v——sender factory 槽缺失或实现构造破损", err)
+	}
+	// sms Sender aliyun_sms（§15.2 / §15.5，RPC V1.0 签名公共函数的抽取源）：
+	// blank import 被删即 sender 槽缺失，发送期 provider_disabled。断言形态
+	// 同 tencent_sms 先例：LookupSenderMeta 断言 meta 与 category，NewSender
+	// 以最小可用 Ext（AccessKeyId / AccessKeySecret / SignName 必填，模板 ID
+	// Send 期才消费）走真实 factory 证构造槽挂载。
+	meta, ok = provider.LookupSenderMeta("aliyun_sms")
+	if !ok {
+		t.Error(`provider 注册表缺 sms sender type "aliyun_sms"——bootstrap.go 装配 import 可能被删`)
+	} else if meta.Category != provider.CategorySMS {
+		t.Errorf("aliyun_sms category = %q, want %q", meta.Category, provider.CategorySMS)
+	}
+	if _, err := provider.NewSender(&provider.Provider{
+		Type: "aliyun_sms",
+		Ext:  &providerpb.Ext{ClientId: "ak", ClientSecret: "sk", SignName: "签名"},
+	}, provider.CategorySMS); err != nil {
+		t.Errorf("NewSender(aliyun_sms): %v——sender factory 槽缺失或实现构造破损", err)
 	}
 }
 

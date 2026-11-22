@@ -120,6 +120,55 @@ func TestGateConfigUsesCurrentProvider(t *testing.T) {
 	}
 }
 
+// TestGateConfigClosedSetExpandedProviders 三家新 type 行（§9.1 / §15.5）：
+// 配置完整时下发自身配置、不再降级 image（siteKey 统一取 ext.client_id，
+// 分别承载 captcha_id / SceneId / site key）；siteKey 缺失同按配置残缺
+// 降级内置图形码（fail-closed）。
+func TestGateConfigClosedSetExpandedProviders(t *testing.T) {
+	cases := []struct{ name, typ string }{
+		{"geetest_v4 captcha_id 行", TypeGeetestV4},
+		{"aliyun_captcha SceneId 行", TypeAliyunCaptcha},
+		{"capjs site key 行", TypeCapjs},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGate(mapSettings{}, &fakeCatalog{p: testProvider("p1", tc.typ, "site-1")},
+				newFakeImageStore(), func(*provider.Provider) (provider.Verifier, error) { return nil, nil })
+			got := g.Config(context.Background())
+			if got.ProviderKey != "p1" || got.Type != tc.typ || got.SiteKey != "site-1" {
+				t.Fatalf("config = %+v, want 自身配置（不降级 image）", got)
+			}
+			g = NewGate(mapSettings{}, &fakeCatalog{p: testProvider("p1", tc.typ, "")},
+				newFakeImageStore(), func(*provider.Provider) (provider.Verifier, error) { return nil, nil })
+			if got := g.Config(context.Background()); got.ProviderKey != BuiltinProviderKey || got.Type != TypeImage || got.SiteKey != "" {
+				t.Fatalf("缺 siteKey config = %+v, want 降级内置图形码", got)
+			}
+		})
+	}
+}
+
+// TestGateExpandedTypeRoutesThroughFactory 三家新 type 不走图形码内置路径，
+// 经 factory 运行期构造（§9.1 同一分派面）——以 capjs 为样本，其余两家
+// 与之共用 normalize 通过后的同一 Evaluate 路径。
+func TestGateExpandedTypeRoutesThroughFactory(t *testing.T) {
+	ff := &fakeFactory{verifier: &fakeVerifier{}}
+	g := NewGate(mapSettings{}, &fakeCatalog{p: testProvider("cap-1", TypeCapjs, "site")},
+		newFakeImageStore(), ff.factory)
+	out, err := g.Evaluate(context.Background(), Request{
+		Scene:      SceneOtpDispatch,
+		Submission: &Submission{ProviderKey: "cap-1", Token: "tok"},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if out.Status != "" {
+		t.Fatalf("status = %q, want pass", out.Status)
+	}
+	if len(ff.got) != 1 || ff.got[0].Key != "cap-1" || ff.got[0].Type != TypeCapjs {
+		t.Fatalf("factory got %+v, want capjs 行入 factory（不入图形码路径）", ff.got)
+	}
+}
+
 func TestGateRequiredSceneNeedsCaptcha(t *testing.T) {
 	g := NewGate(mapSettings{}, &fakeCatalog{p: testProvider("turnstile-1", TypeTurnstile, "site-1")},
 		newFakeImageStore(), func(*provider.Provider) (provider.Verifier, error) { return nil, nil })

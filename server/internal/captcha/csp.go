@@ -5,9 +5,10 @@
 // middleware.CSPSupporter——每请求按「当前生效且已配置」判定（与 Current
 // 同源：CSP 贡献与下发配置、拦截校验同源），键空 / 行不存在 / 查询失败 /
 // 未登记 type 一律贡献空串（不 panic、不阻塞响应头）。image（自绘）不贡献
-// 任何源（§8）；script-src 不放通（三家脚本经 nonce 标签信任链，§8）；登记
-// 仅限可扩展指令白名单四项 frame-src / connect-src / style-src / img-src
-// （§8），白名单外指令不登记。
+// 任何源（§8）；script-src 不放通（三家脚本经 nonce 标签信任链，§8）；输出
+// 仅限可扩展指令白名单五项 frame-src / connect-src / style-src / img-src /
+// worker-src（worker-src 为 Capjs PoW Web Worker 补入，§8），白名单外指令
+// 的声明一律不生效——聚合只遍历白名单指令序，声明中其余指令名静默丢弃。
 package captcha
 
 import (
@@ -18,9 +19,10 @@ import (
 	"authloft/internal/provider"
 )
 
-// cspDirectiveOrder 登记片段的固定指令输出序（§8 白名单四项的文档序）：
-// map 遍历序随机，固定切片序保证片段内指令顺序稳定。
-var cspDirectiveOrder = [...]string{"frame-src", "connect-src", "style-src", "img-src"}
+// cspDirectiveOrder 登记片段的固定指令输出序，同时是白名单的判定口径：
+// 只有序内指令（§8 五项）进片段，声明中白名单外指令一律不生效。map 遍历
+// 序随机，固定切片序保证片段内指令顺序稳定。
+var cspDirectiveOrder = [...]string{"frame-src", "connect-src", "style-src", "img-src", "worker-src"}
 
 // 编译期断言 Catalog 实现 middleware.CSPSupporter（§12.1 可选接口：
 // Provider 侧按需实现，装配层追加为 CSP 中间件的 supporter）。

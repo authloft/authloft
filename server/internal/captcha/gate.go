@@ -28,6 +28,17 @@ const (
 	TypeImage          = "image"
 )
 
+// 第三方 type 封闭集合（§9.1）其余成员：turnstile / recaptcha / hcaptcha
+// 别名见 verifier.go；geetest_v4 / aliyun_captcha / capjs 的字面量单一来源
+// 暂落实现子包（常量上移统一另行处理），此处取同值字面量——不得 import
+// 实现子包，否则 captcha 包被引用即提前触发 init 注册，bootstrap 装配
+// import 门禁（TestProviderRegistryComplete）恒绿失效。
+const (
+	TypeGeetestV4     = "geetest_v4"
+	TypeAliyunCaptcha = "aliyun_captcha"
+	TypeCapjs         = "capjs"
+)
+
 // 场景（scene）是「是否需要 captcha」的唯一判定维度（docs/后端架构.md §9.3）：
 // 场景取值与 docs/接口文档.md §2.5 触发表的行对齐，由调用入口按当前业务环节
 // 确定、不经请求传入；与验证内核的 biz_purpose 正交，不得互相引用取值。
@@ -271,8 +282,10 @@ func (g *Gate) threshold() int64 {
 	return defaultPwdFailCapture
 }
 
-// normalize 校验当前生效 Provider 实例并折算下发配置（siteKey 取
-// ext.client_id，§9.1）；type 必须属封闭集合，非法即降级。
+// normalize 校验当前生效 Provider 实例并折算下发配置（siteKey 统一取
+// ext.client_id，§9.1：三家第三方各自承载 captcha_id / SceneId / site key）；
+// type 必须属封闭集合，非法即降级；第三方 siteKey 缺失同按配置残缺降级
+// （fail-closed，§2.5）。
 func normalize(p *provider.Provider) Config {
 	if p == nil || p.Key == "" {
 		return builtin()
@@ -280,7 +293,8 @@ func normalize(p *provider.Provider) Config {
 	switch p.Type {
 	case TypeImage:
 		return Config{ProviderKey: p.Key, Type: TypeImage}
-	case TypeTurnstile, TypeRecaptcha, TypeHcaptcha:
+	case TypeTurnstile, TypeRecaptcha, TypeHcaptcha,
+		TypeGeetestV4, TypeAliyunCaptcha, TypeCapjs:
 		siteKey := ""
 		if p.Ext != nil {
 			siteKey = p.Ext.GetClientId()
