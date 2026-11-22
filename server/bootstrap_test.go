@@ -2012,7 +2012,7 @@ func TestConnectRequestInfoInjectsCtx(t *testing.T) {
 // 装配行被删，其 init() 不触发、注册表缺 type，本用例变红（生产形态为
 // 12 渠道静默降级 provider_disabled 的原始缺陷形态）。
 // 清单依据 docs/后端架构.md §12.2 内置清单全量 19 type；captcha
-// 三家 / storage 两家 / proxy 为服务型实现（无 auth 槽，不进 AdapterTypes），
+// 三家 / storage 四家 / proxy 为服务型实现（无 auth 槽，不进 AdapterTypes），
 // 经 LookupTypeMeta 断言 meta 注册不缺位，storage / proxy 另经 NewStorage /
 // NewProxy 断言 factory 槽挂载（CODE_GUIDE §3.3 blank import 覆盖门禁）。
 func TestProviderRegistryComplete(t *testing.T) {
@@ -2060,11 +2060,11 @@ func TestProviderRegistryComplete(t *testing.T) {
 			t.Errorf("captcha type %q category = %q, want %q", typ, meta.Category, provider.CategoryCaptcha)
 		}
 	}
-	// storage 两家（§15.1）：local 常量取 provider 包（单一来源），s3 字面量
-	// 暂落实现子包、根包测试不得 import 实现包（自身 import 会触发 init 注册、
-	// 使门禁恒绿），字面量上移统一另行处理。构造断言以最小可用 Ext 走真实
-	// factory：storage 槽未挂 / 实现构造破损同证伪。
-	for _, typ := range []string{provider.StorageTypeLocal, "s3"} {
+	// storage 四家（§15.1）：local 常量取 provider 包（单一来源），s3 / oss /
+	// cos 字面量暂落实现子包、根包测试不得 import 实现包（自身 import 会触发
+	// init 注册、使门禁恒绿），字面量上移统一另行处理。构造断言以最小可用
+	// Ext 走真实 factory：storage 槽未挂 / 实现构造破损同证伪。
+	for _, typ := range []string{provider.StorageTypeLocal, "s3", "oss", "cos"} {
 		meta, ok := provider.LookupTypeMeta(typ)
 		if !ok {
 			t.Errorf("provider 注册表缺 storage type %q——bootstrap.go 装配 import 可能被删", typ)
@@ -2076,6 +2076,11 @@ func TestProviderRegistryComplete(t *testing.T) {
 		ext := &providerpb.Ext{Bucket: "b", Domain: "https://cdn.example.com"}
 		if typ == "s3" {
 			ext = &providerpb.Ext{Endpoint: "http://minio.internal:9000", Bucket: "b", ClientId: "ak", ClientSecret: "sk"}
+		}
+		if typ == "oss" || typ == "cos" {
+			// oss / cos endpoint 构造期由 region_id 派生（不填不透出），
+			// 最小可用 Ext = region + bucket + 凭证；region 缺失装配期即拒绝。
+			ext = &providerpb.Ext{RegionId: "cn-hangzhou", Bucket: "b", ClientId: "ak", ClientSecret: "sk"}
 		}
 		if _, err := provider.NewStorage(&provider.Provider{Type: typ, Ext: ext}); err != nil {
 			t.Errorf("NewStorage(%q): %v——storage factory 槽缺失或实现构造破损", typ, err)
