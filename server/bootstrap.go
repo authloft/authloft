@@ -69,6 +69,7 @@ import (
 	// 覆盖是统一注册表的已知脆弱点（CODE_GUIDE §3.3）：漏 import 即类型
 	// 「凭空消失」，生产侧静默 provider_disabled，注册表完整性门禁兜底。
 	_ "authloft/internal/provider/auth/alipay"
+	_ "authloft/internal/provider/auth/apple"
 	_ "authloft/internal/provider/auth/baidu"
 	_ "authloft/internal/provider/auth/discord"
 	_ "authloft/internal/provider/auth/feishu"
