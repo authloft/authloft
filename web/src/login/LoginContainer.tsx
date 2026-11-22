@@ -758,6 +758,12 @@ export interface LoginContainerProps {
   oidcSubmitLabel?: string;
   /** 终点跳转动作（缺省 location.replace；测试记录函数）。 */
   navigate?: (url: string) => void;
+  /**
+   * 状态机上抛（页面层感知流程态）：每次 `state.status` 变化后回调（挂载即
+   * 首次）。用途 = 页面级的流程周边区域显隐（如 binding_required 绑定选择
+   * 态隐藏入口导航 / 图标墙），不影响容器内部编排。
+   */
+  onStatusChange?: (status: MachineStatus) => void;
 }
 
 export function LoginContainer({
@@ -767,6 +773,7 @@ export function LoginContainer({
   oidcScope,
   oidcSubmitLabel,
   navigate = defaultNavigate,
+  onStatusChange,
 }: LoginContainerProps) {
   // 首屏默认选中项（与 MethodTabs 可见 tab 口径一致；快照页面存活期内不刷新，§2.1）。
   const defaultEvent = useMemo(() => defaultMethodEvent(snapshot), [snapshot]);
@@ -781,6 +788,11 @@ export function LoginContainer({
     ({ snapshot: s, initialEnvelope: env }) => initialFlowState(s, env),
   );
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  // 状态机上抛：页面层据 status 显隐流程周边区域（binding_required 隐藏
+  // 入口导航 / 图标墙）。setState 引用稳定，effect 不引发循环。
+  useEffect(() => {
+    onStatusChange?.(state.status);
+  }, [state.status, onStatusChange]);
   // captcha 弹窗编排（shared/captcha）：gate 吸收 captcha_required /
   // captcha_invalid 并驱动「确认即重提」，弹窗声明式挂在容器根级（窗体由
   // 注入的 login 域 Modal 脱体到 body）。主因子路径专用——MFA 弹窗的

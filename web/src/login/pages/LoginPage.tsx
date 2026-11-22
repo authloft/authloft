@@ -32,6 +32,7 @@ import { LoginContainer } from '../LoginContainer';
 import { LocaleSwitcher } from '../components/LocaleSwitcher';
 import { ProviderButtons } from '../factors/ProviderButtons';
 import { clearLoginToken } from '../loginTokenStore';
+import type { MachineStatus } from '../flow/machine';
 import type {
   MethodsSnapshot,
   OidcAccountContext,
@@ -173,6 +174,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   const [qrResult, setQrResult] = useState<LoginFlowResponse | undefined>(
     undefined,
   );
+  // 容器流程态上抛：binding_required（绑定选择页原地渲染）时隐藏入口导航 /
+  // 「或」分割线 / 图标墙——周边区域与绑定流程冲突（重复注册入口 / 另开流程）。
+  const [flowStatus, setFlowStatus] = useState<MachineStatus | undefined>(
+    undefined,
+  );
+  const bindingChoice = flowStatus === 'binding_required';
   // 右栏受控勾选集（形态 A/B 共用）：初值取注入的有效 scope 全员勾选。
   const [selected, setSelected] = useState<string[]>(() =>
     initialSelection(ctx?.scope ?? ''),
@@ -229,8 +236,12 @@ export function LoginPage({ snapshot }: LoginPageProps) {
   if (view.mode === 'plain') {
     return (
       <AppLayout title={t('login.title')} footer={footer}>
-        <LoginContainer snapshot={snapshot} qrResult={qrResult} />
-        {(showForgot || showRegister) && (
+        <LoginContainer
+          snapshot={snapshot}
+          qrResult={qrResult}
+          onStatusChange={setFlowStatus}
+        />
+        {(showForgot || showRegister) && !bindingChoice && (
           <nav className={styles.entryNav}>
             {showForgot && (
               <a className={styles.entryLink} href={ssoPath('/sso/reset')}>
@@ -244,8 +255,8 @@ export function LoginPage({ snapshot }: LoginPageProps) {
             )}
           </nav>
         )}
-        {orDivider}
-        {providers.length > 0 && (
+        {!bindingChoice && orDivider}
+        {providers.length > 0 && !bindingChoice && (
           <ProviderButtons providers={providers} onQrResult={setQrResult} />
         )}
       </AppLayout>
@@ -276,8 +287,9 @@ export function LoginPage({ snapshot }: LoginPageProps) {
                 qrResult={qrResult}
                 oidcScope={selected.join(' ')}
                 oidcSubmitLabel="login.submitAndAgree"
+                onStatusChange={setFlowStatus}
               />
-              {(showForgot || showRegister) && (
+              {(showForgot || showRegister) && !bindingChoice && (
                 <nav className={styles.entryNav}>
                   {showForgot && (
                     <a
@@ -297,8 +309,8 @@ export function LoginPage({ snapshot }: LoginPageProps) {
                   )}
                 </nav>
               )}
-              {orDivider}
-              {providers.length > 0 && (
+              {!bindingChoice && orDivider}
+              {providers.length > 0 && !bindingChoice && (
                 <div className={styles.providerWall}>
                   <ProviderButtons
                     providers={providers}
