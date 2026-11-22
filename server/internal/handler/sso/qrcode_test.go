@@ -87,7 +87,16 @@ func TestCreateQrcodeConnect(t *testing.T) {
 		QrcodeURL: "https://cdn.example.com/qr/c7Kx9.jpg", QrcodeContent: "", QrcodeBase64: "",
 		TipHTML: "<p>请使用微信扫一扫</p>", ExpiresIn: 600,
 	}}
-	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr))
+	// 注入 uid=9 的会话上下文（会话拦截器等效）：bind 场景 service 须拿到
+	// 该 uid，否则误判无会话报 401。可证伪：handler 漏传 ctx uid 时转红。
+	_, handler := ssov1connect.NewSsoServiceHandler(New(&fakeEngine{}, nil, nil, nil, qr),
+		connect.WithInterceptors(connect.UnaryInterceptorFunc(
+			func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					return next(session.WithSessionContext(ctx,
+						&token.SessionTokenPayload{Id: 9, Epoch: 1, Exp: time.Now().Add(time.Hour).Unix()}), req)
+				}
+			})))
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 
@@ -125,6 +134,9 @@ func TestCreateQrcodeConnect(t *testing.T) {
 	}
 	if qr.gotCreate.ProviderKey != "wechat_mp_scan" || qr.gotCreate.Scene != "bind" {
 		t.Errorf("service 入参 = %+v", qr.gotCreate)
+	}
+	if qr.gotCreate.UID != 9 {
+		t.Errorf("service 入参 UID = %d, want 9（bind 场景须从 ctx 注入会话 uid）", qr.gotCreate.UID)
 	}
 	if !qr.captchaSet || qr.captchaSeen.ProviderKey != "builtin_image" || qr.captchaSeen.ID != "cap-1" || qr.captchaSeen.Answer != "123456" {
 		t.Errorf("captcha 映射 = %+v", qr.captchaSeen)

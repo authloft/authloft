@@ -464,7 +464,10 @@ func (h *Handler) CreateQrcode(ctx context.Context, req *connect.Request[ssov1.C
 	if h.qrcode == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errQrcodeNotConfigured)
 	}
-	out, err := h.qrcode.CreateQrcode(ctx, dto.CreateQrcode(req.Msg))
+	// bind 场景需会话 uid（§2.8）：由 session 拦截器注入 ctx，本层投影给
+	// service 校验；无会话时 uid=0，service 按 401 拒绝。
+	uid, _ := session.UIDFromContext(ctx)
+	out, err := h.qrcode.CreateQrcode(ctx, dto.CreateQrcode(req.Msg, uid))
 	if err != nil {
 		return nil, mapQrcodeError(err)
 	}

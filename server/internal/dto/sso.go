@@ -131,8 +131,8 @@ func LoginOauth(req *ssov1.LoginOauthRequest) thirdpartysvc.OauthInput {
 // （docs/接口文档.md §2.8 行 707-717）：provider_key / scene / sso_client_id
 // 直映（sso_client_id 仅 scene=login 携带，bind 由 service 剥离，§2.8）；
 // captcha 转 captcha.Submission（§2.5 统一提交格式，与引擎侧 CaptchaPayload
-// 字段同名）。UID 由 handler 从会话 ctx 取（bind 场景），dto 不读 HTTP 层。
-func CreateQrcode(req *ssov1.CreateQrcodeRequest) qrcodesvc.CreateQrcodeInput {
+// 字段同名）。sessionUID 由 handler 从会话 ctx 取（bind 场景），dto 不读 HTTP 层。
+func CreateQrcode(req *ssov1.CreateQrcodeRequest, sessionUID int64) qrcodesvc.CreateQrcodeInput {
 	if req == nil {
 		return qrcodesvc.CreateQrcodeInput{}
 	}
@@ -141,6 +141,7 @@ func CreateQrcode(req *ssov1.CreateQrcodeRequest) qrcodesvc.CreateQrcodeInput {
 		Scene:       req.GetScene(),
 		Captcha:     captchaSubmission(req.GetCaptcha()),
 		SsoClientID: req.GetSsoClientId(),
+		UID:         sessionUID,
 	}
 }
 
