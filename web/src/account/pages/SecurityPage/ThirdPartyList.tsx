@@ -91,7 +91,6 @@ function DisabledAction(props: {
     <Tooltip content={props.reason}>
       <span>
         <Button
-          size="small"
           type={props.danger ? 'danger' : 'primary'}
           theme={props.danger ? undefined : 'solid'}
           disabled
@@ -177,8 +176,7 @@ function BindAction(props: {
   }
   return (
     <Button
-      size="small"
-      theme="solid"
+      type="tertiary"
       onClick={() =>
         props.onQrcode({
           providerKey: row.providerKey,

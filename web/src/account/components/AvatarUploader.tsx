@@ -126,11 +126,7 @@ export function AvatarUploader(props: {
       ) : null}
       {error !== undefined && retryFile !== undefined ? (
         // 失败重试——以上次选择的文件重走上传链。
-        <Button
-          size="small"
-          onClick={() => handleFile(retryFile)}
-          disabled={uploading}
-        >
+        <Button onClick={() => handleFile(retryFile)} disabled={uploading}>
           {t('common.retry')}
         </Button>
       ) : null}

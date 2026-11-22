@@ -113,7 +113,6 @@ export function WebauthnList(props: {
                   </div>
                   <div className={styles.rowActions}>
                     <Button
-                      size="small"
                       loading={rename.loading}
                       disabled={rename.loading || renameLabel.trim() === ''}
                       onClick={submitRename}
@@ -121,7 +120,6 @@ export function WebauthnList(props: {
                       {t('account.saveAction')}
                     </Button>
                     <Button
-                      size="small"
                       type="tertiary"
                       onClick={() => setRenamingId(undefined)}
                     >
@@ -157,7 +155,7 @@ export function WebauthnList(props: {
                     ) : null}
                   </div>
                   <div className={styles.rowActions}>
-                    <Button size="small" onClick={() => startRename(item)}>
+                    <Button onClick={() => startRename(item)}>
                       {t('account.webauthnRenameAction')}
                     </Button>
                     <Popconfirm
@@ -169,7 +167,7 @@ export function WebauthnList(props: {
                       })}
                       onConfirm={() => handleDelete(item.id)}
                     >
-                      <Button size="small" type="danger" loading={del.loading}>
+                      <Button type="danger" loading={del.loading}>
                         {t('account.deleteAction')}
                       </Button>
                     </Popconfirm>
