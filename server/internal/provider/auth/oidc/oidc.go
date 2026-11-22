@@ -1,4 +1,4 @@
-// oidc 通用 OIDC 兜底适配器（docs/后端架构.md §12.2 行 1478：填
+// oidc 通用 OIDC 兜底适配器（docs/后端架构.md §12.2：填
 // provider_url 自动 discovery，任何未在清单里的标准协议渠道零开发接入）：
 // channel=redirect。构造期按 {provider_url}/.well-known/openid-configuration
 // 拉取授权 / 令牌 / 用户信息三端点（§13.0 装配期取配置口径）；scope 可经
@@ -7,6 +7,10 @@
 //
 // discovery 不做进程内缓存：NewAdapter 按请求构造，真源 URL 不变时各次
 // discovery 幂等；登录 QPS 下一次额外 GET 的开销可接受，避免提前设计缓存。
+//
+// New 是兄弟薄封装的构造入口（§15.5）：预设端点渠道（discord / telegram）
+// 在构造期固化 providerURL 注入并复用本包 discovery 与令牌 / 用户信息链路，
+// 固化值不进薄封装的 Schema，身份 ProviderType 仍以 p.Type 单一真源透传。
 package oidc
 
 import (
@@ -48,6 +52,7 @@ func init() {
 // Adapter 通用 OIDC 适配器（channel=redirect）。
 type Adapter struct {
 	key          string
+	providerType string // 身份类型标识：build 期固化 p.Type，经 ExtractIdentity 透传防薄封装错标
 	clientID     string
 	clientSecret string
 	scopes       string
@@ -64,22 +69,38 @@ func newAdapter(p *provider.Provider) (provider.AuthAdapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return build(p, hc)
+	var providerURL string
+	if p != nil {
+		providerURL = p.Ext.GetProviderUrl()
+	}
+	return build(p, hc, providerURL)
 }
 
-func build(p *provider.Provider, hc *http.Client) (*Adapter, error) {
+// New 兄弟薄封装构造入口（§15.5）：providerURL 由调用方构造期固化（预设
+// 端点不进薄封装表单），其余取值口径与注册路径一致；providerURL 为空仍
+// ErrNotConfigured fail-closed，discovery 失败即构造失败（fail-closed）。
+func New(p *provider.Provider, providerURL string) (*Adapter, error) {
+	hc, err := oauthcore.ClientFor(p)
+	if err != nil {
+		return nil, err
+	}
+	return build(p, hc, providerURL)
+}
+
+func build(p *provider.Provider, hc *http.Client, providerURL string) (*Adapter, error) {
 	if p == nil || p.Ext == nil {
 		return nil, provider.ErrNilProvider
 	}
-	if p.Ext.GetClientId() == "" || p.Ext.GetClientSecret() == "" || p.Ext.GetProviderUrl() == "" {
+	if p.Ext.GetClientId() == "" || p.Ext.GetClientSecret() == "" || providerURL == "" {
 		return nil, fmt.Errorf("%w: provider_key=%q", ErrNotConfigured, p.Key)
 	}
-	auth, token, userInfo, err := oauthcore.DiscoverOIDC(context.Background(), hc, p.Ext.GetProviderUrl())
+	auth, token, userInfo, err := oauthcore.DiscoverOIDC(context.Background(), hc, providerURL)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: discovery %q: %w", p.Ext.GetProviderUrl(), err)
+		return nil, fmt.Errorf("oidc: discovery %q: %w", providerURL, err)
 	}
 	a := &Adapter{
 		key:          p.Key,
+		providerType: p.Type,
 		clientID:     p.Ext.GetClientId(),
 		clientSecret: p.Ext.GetClientSecret(),
 		scopes:       p.Ext.GetScopes(),
@@ -109,7 +130,7 @@ func (a *Adapter) Exchange(ctx context.Context, in provider.ExchangeInput) (*pro
 }
 
 // FetchUser 拉取 OIDC userinfo 并抽取统一身份（sub 为 openid；union_id
-// 键供厂商响应携带，无则空）。
+// 键供厂商响应携带，无则空；ProviderType 取构造期固化的 p.Type）。
 func (a *Adapter) FetchUser(ctx context.Context, t *provider.Token) (*provider.ExternalIdentity, error) {
 	if t == nil {
 		return nil, oauthcore.ErrNilToken
@@ -126,5 +147,5 @@ func (a *Adapter) FetchUser(ctx context.Context, t *provider.Token) (*provider.E
 		Email:    []string{"email"},
 		Avatar:   []string{"picture"},
 	}
-	return oauthcore.ExtractIdentity(a.key, Type, spec, t, user, a.userMapping)
+	return oauthcore.ExtractIdentity(a.key, a.providerType, spec, t, user, a.userMapping)
 }

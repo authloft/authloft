@@ -70,6 +70,7 @@ import (
 	// 「凭空消失」，生产侧静默 provider_disabled，注册表完整性门禁兜底。
 	_ "authloft/internal/provider/auth/alipay"
 	_ "authloft/internal/provider/auth/baidu"
+	_ "authloft/internal/provider/auth/discord"
 	_ "authloft/internal/provider/auth/feishu"
 	_ "authloft/internal/provider/auth/gitee"
 	_ "authloft/internal/provider/auth/github"
@@ -78,6 +79,7 @@ import (
 	_ "authloft/internal/provider/auth/oauth2"
 	_ "authloft/internal/provider/auth/oidc"
 	_ "authloft/internal/provider/auth/qq"
+	_ "authloft/internal/provider/auth/telegram"
 	_ "authloft/internal/provider/auth/wechat"
 	_ "authloft/internal/provider/auth/wechat_mp"
 	_ "authloft/internal/provider/auth/weibo"

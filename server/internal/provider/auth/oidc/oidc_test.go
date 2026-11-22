@@ -59,7 +59,7 @@ func TestBuildAndExchangeAndFetchUser(t *testing.T) {
 	srv := newIdP(t, tokenOK, userOK)
 	defer srv.Close()
 
-	a, err := build(testProvider("op", "o-id", "o-secret", srv.URL+"/"), nil)
+	a, err := build(testProvider("op", "o-id", "o-secret", srv.URL+"/"), nil, srv.URL+"/")
 	if err != nil {
 		t.Fatalf("build (discovery): %v", err)
 	}
@@ -100,11 +100,11 @@ func TestDiscoveryError(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
-	if _, err := build(testProvider("op", "o-id", "o-secret", srv.URL), nil); err == nil {
+	if _, err := build(testProvider("op", "o-id", "o-secret", srv.URL), nil, srv.URL); err == nil {
 		t.Fatalf("discovery 404 want error")
 	}
 	// provider_url 缺失 → 未配置。
-	if _, err := build(testProvider("op", "o-id", "o-secret", ""), nil); !errors.Is(err, ErrNotConfigured) {
+	if _, err := build(testProvider("op", "o-id", "o-secret", ""), nil, ""); !errors.Is(err, ErrNotConfigured) {
 		t.Fatalf("err = %v, want ErrNotConfigured", err)
 	}
 }
@@ -116,7 +116,7 @@ func TestExchangeProviderError(t *testing.T) {
 	srv := newIdP(t, bad, func(w http.ResponseWriter, r *http.Request) {})
 	defer srv.Close()
 
-	a, err := build(testProvider("op", "o-id", "o-secret", srv.URL), nil)
+	a, err := build(testProvider("op", "o-id", "o-secret", srv.URL), nil, srv.URL)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -190,5 +190,107 @@ func TestSchemaKeepSet(t *testing.T) {
 		if b, ok := baseline[f.Key]; ok && !reflect.DeepEqual(f, b) {
 			t.Errorf("字段 %q = %+v, want 基线 %+v（裁剪只删键不改属性）", f.Key, f, b)
 		}
+	}
+}
+
+// TestNewInjectionURL 薄封装构造入口（§15.5）：providerURL 由调用方构造期
+// 固化注入，与 Ext.provider_url 相互独立——薄封装 Schema 不声明该键，实例
+// 配置恒空，注入值是 discovery 唯一真源；注入空值仍 fail-closed 不回退 Ext。
+func TestNewInjectionURL(t *testing.T) {
+	tokenOK := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse form: %v", err)
+		}
+		if r.Form.Get("code") != "d-code" || r.Form.Get("client_id") != "d-id" || r.Form.Get("client_secret") != "d-secret" {
+			t.Errorf("form = %v", r.Form)
+		}
+		fmt.Fprint(w, `{"access_token":"d-at","expires_in":3600}`)
+	})
+	userOK := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer d-at" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		fmt.Fprint(w, `{"sub":"sub-d","name":"Injected User","email":"d@example.com"}`)
+	})
+	srv := newIdP(t, tokenOK, userOK)
+	defer srv.Close()
+
+	// Ext.provider_url 留空（薄封装形态）：注入值独立生效，发现 / 授权 /
+	// 换令牌 / 用户信息全流程可用。
+	p := &provider.Provider{Key: "dp", Type: "discord", Ext: &providerpb.Ext{ClientId: "d-id", ClientSecret: "d-secret"}}
+	a, err := New(p, srv.URL)
+	if err != nil {
+		t.Fatalf("New (injected URL): %v", err)
+	}
+	got, err := a.BuildAuthURL(&provider.AuthContext{State: "l-dsc"})
+	if err != nil {
+		t.Fatalf("BuildAuthURL: %v", err)
+	}
+	if !strings.Contains(got, srv.URL+"/authorize") || !strings.Contains(got, "state=l-dsc") {
+		t.Fatalf("url = %q", got)
+	}
+	tok, err := a.Exchange(context.Background(), provider.ExchangeInput{Code: "d-code"})
+	if err != nil {
+		t.Fatalf("Exchange: %v", err)
+	}
+	id, err := a.FetchUser(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("FetchUser: %v", err)
+	}
+	if id.OpenID != "sub-d" || id.Email != "d@example.com" || id.ProviderType != "discord" {
+		t.Fatalf("id = %+v", id)
+	}
+	// 注入空 URL：ErrNotConfigured fail-closed，不回退 Ext。
+	if _, err := New(p, ""); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("err = %v, want ErrNotConfigured", err)
+	}
+}
+
+// TestNewInjectionOverridesExt 注入值优先：Ext 残值（历史脏数据）不得改变
+// discovery 目标——若 Ext 值被采用，构造必因端点不可达而失败。
+func TestNewInjectionOverridesExt(t *testing.T) {
+	srv := newIdP(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"access_token":"x-at"}`)
+	}, func(w http.ResponseWriter, r *http.Request) {})
+	defer srv.Close()
+	a, err := New(testProvider("op", "o-id", "o-secret", "https://stale.invalid"), srv.URL)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if a.authURL != srv.URL+"/authorize" {
+		t.Fatalf("authURL = %q, want 注入值端点 %q", a.authURL, srv.URL+"/authorize")
+	}
+}
+
+// TestProviderTypeFromProvider 身份类型固化 p.Type（单一真源）：薄封装以
+// discord / telegram 注册本 type，身份 ProviderType 不得错标 oidc；基线路径
+// （p.Type=oidc）行为不变。
+func TestProviderTypeFromProvider(t *testing.T) {
+	srv := newIdP(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"access_token":"t-at"}`)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"sub":"sub-1"}`)
+	})
+	defer srv.Close()
+	fetchType := func(p *provider.Provider) string {
+		t.Helper()
+		a, err := build(p, nil, srv.URL)
+		if err != nil {
+			t.Fatalf("build %s: %v", p.Type, err)
+		}
+		id, err := a.FetchUser(context.Background(), &provider.Token{AccessToken: "t-at"})
+		if err != nil {
+			t.Fatalf("FetchUser %s: %v", p.Type, err)
+		}
+		return id.ProviderType
+	}
+	for _, typ := range []string{"discord", "telegram"} {
+		p := &provider.Provider{Key: "p1", Type: typ, Ext: &providerpb.Ext{ClientId: "id", ClientSecret: "secret"}}
+		if got := fetchType(p); got != typ {
+			t.Fatalf("ProviderType = %q, want %q（身份错标）", got, typ)
+		}
+	}
+	if got := fetchType(testProvider("p2", "id", "secret", srv.URL)); got != Type {
+		t.Fatalf("ProviderType = %q, want %q（基线路径行为变化）", got, Type)
 	}
 }

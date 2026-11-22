@@ -37,7 +37,7 @@ import (
 	"authloft/internal/proxyclient"
 )
 
-// Type 渠道类型（§15.2 行 1724 内置清单）。
+// Type 渠道类型（§15.2 内置清单）。
 const Type = "smtp"
 
 // 默认参数。
@@ -48,7 +48,7 @@ const (
 	tlsPort = 465
 	// ehloDomain 客户端 EHLO 标识（固定值，不暴露部署信息）。
 	ehloDomain = "authloft"
-	// 默认模板（§15.2 行 1725：模板内容存 metadata 的最小兜底）。
+	// 默认模板（§15.2：模板内容存 metadata 的最小兜底）。
 	defaultSubject = "验证码"
 	defaultBody    = "您的验证码：{code}"
 )
@@ -161,6 +161,21 @@ func newSender(p *provider.Provider) (provider.Sender, error) {
 	return s, nil
 }
 
+// New 导出构造入口（§15.5 薄封装总则：兄弟子包 import 基座构造器）：供预设
+// 端点形态的消息渠道（如 SES SMTP 接口）复用本包取值口径，凭证装配期取自
+// Provider 实例、运行期不回读，与注册表工厂行为完全一致。
+func New(p *provider.Provider) (*Sender, error) {
+	s, err := newSender(p)
+	if err != nil {
+		return nil, err
+	}
+	concrete, ok := s.(*Sender)
+	if !ok {
+		return nil, fmt.Errorf("smtp: unexpected sender type %T", s)
+	}
+	return concrete, nil
+}
+
 // Send 投递一封纯文本邮件（to=收件地址，tpl=模板键，params=模板变量）。
 func (s *Sender) Send(ctx context.Context, to string, tpl string, params map[string]string) error {
 	if to == "" {
@@ -241,7 +256,7 @@ func (s *Sender) dial(ctx context.Context, network, addr string) (net.Conn, erro
 	return raw, nil
 }
 
-// render 取模板并替换变量（§15.2 行 1725 最小实现）。
+// render 取模板并替换变量（§15.2 最小实现）。
 func (s *Sender) render(tpl string, params map[string]string) (subject, body string) {
 	subject = defaultSubject
 	body = defaultBody

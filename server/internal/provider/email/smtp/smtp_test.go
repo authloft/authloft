@@ -96,6 +96,25 @@ func TestBuildRequiresHostUserPassword(t *testing.T) {
 	}
 }
 
+// TestNewExportedForward 导出构造入口（§15.5 薄封装总则）：转发注册表工厂，
+// 取值口径与 fail-closed 行为完全一致，供预设端点形态的兄弟薄封装复用。
+func TestNewExportedForward(t *testing.T) {
+	if _, err := New(nil); !errors.Is(err, provider.ErrNilProvider) {
+		t.Fatalf("nil provider err = %v, want ErrNilProvider", err)
+	}
+	s, err := New(testProvider(t, nil))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if s.host != "127.0.0.1" || s.from != "no-reply@authloft.example.com" || s.port != defaultPort {
+		t.Fatalf("sender = host/%s from/%s port/%d, want 与工厂口径一致", s.host, s.from, s.port)
+	}
+	if _, err := New(testProvider(t, func(e *providerpb.Ext) { e.Host = "" })); err == nil ||
+		!strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("missing host err = %v, want not-configured", err)
+	}
+}
+
 // TestFromHeader From 头展示名口径：sign_name 非空 → RFC 2047 encoded-word +
 // 尖括号地址；空 → 纯地址。
 func TestFromHeader(t *testing.T) {
