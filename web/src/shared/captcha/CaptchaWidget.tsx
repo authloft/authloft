@@ -1,7 +1,8 @@
 /**
  * CaptchaWidget 分派器（docs/前端架构.md §3.5 行 350）：按当前
  * captcha.type 加载对应 wrapper（image →
- * adapters/Image；turnstile / recaptcha / hcaptcha → 对应厂商 wrapper，第三方
+ * adapters/Image；turnstile / recaptcha / hcaptcha / geetest_v4 /
+ * aliyun_captcha / capjs → 对应厂商 wrapper，第三方
  * JS 由 wrapper 经 loadVendorScript 运行期动态加载，不打包不写死标签），
  * 统一生命周期（render / getToken / reset 经 ref 暴露给调用方）。
  *
@@ -18,6 +19,9 @@ import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import type { CaptchaConfig } from '../../gen/proto/api/common/v1/captcha_pb';
 import type { CaptchaPayload } from '../../gen/proto/api/sso/v1/login_pb';
 import { t } from '../i18n';
+import { createAliyunCaptchaAdapter } from './adapters/AliyunCaptcha';
+import { createCapAdapter } from './adapters/Cap';
+import { createGeetestAdapter } from './adapters/Geetest';
 import { createHCaptchaAdapter } from './adapters/HCaptcha';
 import { createImageAdapter } from './adapters/Image';
 import { createRecaptchaAdapter } from './adapters/Recaptcha';
@@ -38,9 +42,9 @@ export function adapterKey(captcha: CaptchaConfig): string {
 }
 
 /**
- * type → wrapper 工厂分派（§3.5 行 350；§2.5 行 500 四种 type）。image 含
+ * type → wrapper 工厂分派（§3.5 行 350；§2.5 行 500 七种 type）。image 含
  * 服务端降级态（§2.5 行 486、515：第三方不可用时服务端下发 type=image）；
- * turnstile / recaptcha / hcaptcha →
+ * turnstile / recaptcha / hcaptcha / geetest_v4 / aliyun_captcha / capjs →
  * 厂商 wrapper；未知 type →
  * undefined → 兜底错误态。
  */
@@ -56,6 +60,12 @@ export function adapterFactoryFor(
       return createRecaptchaAdapter;
     case 'hcaptcha':
       return createHCaptchaAdapter;
+    case 'geetest_v4':
+      return createGeetestAdapter;
+    case 'aliyun_captcha':
+      return createAliyunCaptchaAdapter;
+    case 'capjs':
+      return createCapAdapter;
     default:
       return undefined;
   }

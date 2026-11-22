@@ -19,6 +19,9 @@ import {
   adapterFactoryFor,
   adapterKey,
 } from './CaptchaWidget';
+import { createAliyunCaptchaAdapter } from './adapters/AliyunCaptcha';
+import { createCapAdapter } from './adapters/Cap';
+import { createGeetestAdapter } from './adapters/Geetest';
 import { createHCaptchaAdapter } from './adapters/HCaptcha';
 import { createImageAdapter } from './adapters/Image';
 import { createRecaptchaAdapter } from './adapters/Recaptcha';
@@ -47,10 +50,15 @@ describe('adapterFactoryFor 分派（§3.5 行 350；§2.5 行 500 四种 type +
     expect(adapterFactoryFor('image')).toBe(createImageAdapter);
   });
 
-  test('turnstile / recaptcha / hcaptcha → 各自厂商 wrapper 工厂', () => {
+  test('turnstile / recaptcha / hcaptcha / geetest_v4 / aliyun_captcha / capjs → 各自厂商 wrapper 工厂', () => {
     expect(adapterFactoryFor('turnstile')).toBe(createTurnstileAdapter);
     expect(adapterFactoryFor('recaptcha')).toBe(createRecaptchaAdapter);
     expect(adapterFactoryFor('hcaptcha')).toBe(createHCaptchaAdapter);
+    expect(adapterFactoryFor('geetest_v4')).toBe(createGeetestAdapter);
+    expect(adapterFactoryFor('aliyun_captcha')).toBe(
+      createAliyunCaptchaAdapter,
+    );
+    expect(adapterFactoryFor('capjs')).toBe(createCapAdapter);
   });
 
   test('未知 type（协议外取值）→ undefined（兜底错误态）', () => {
@@ -97,8 +105,15 @@ describe('CaptchaWidget 静态渲染（四态容器 / 未知 type 兜底）', ()
     expect(markup).toContain('<div');
   });
 
-  test('type=turnstile / recaptcha / hcaptcha → 渲染 wrapper 容器（不兜底；挂载细节由各 adapter 测试覆盖）', () => {
-    for (const type of ['turnstile', 'recaptcha', 'hcaptcha']) {
+  test('type=turnstile / recaptcha / hcaptcha / geetest_v4 / aliyun_captcha / capjs → 渲染 wrapper 容器（不兜底；挂载细节由各 adapter 测试覆盖）', () => {
+    for (const type of [
+      'turnstile',
+      'recaptcha',
+      'hcaptcha',
+      'geetest_v4',
+      'aliyun_captcha',
+      'capjs',
+    ]) {
       const markup = renderToStaticMarkup(
         createElement(CaptchaWidget, {
           captcha: makeCaptcha({
