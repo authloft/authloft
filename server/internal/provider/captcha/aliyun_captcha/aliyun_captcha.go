@@ -42,15 +42,15 @@ const (
 	apiVersion = "2023-03-05"
 )
 
-// 地域 endpoint（按 region 匹配，否则厂商侧失败——review 口径的坑点）。
+// 地域 endpoint（region 与 endpoint 必须匹配，否则厂商侧校验失败）。
 const (
 	defaultRegion = "cn"
 	endpointCN    = "https://captcha.cn-shanghai.aliyuncs.com"
 	endpointSGP   = "https://captcha.ap-southeast-1.aliyuncs.com"
 )
 
-// regionEndpoint region → RPC endpoint 映射（review：region 与 endpoint 必须
-// 匹配；未知地域返回 false，由构造期 fail-fast，不猜默认值静默错配）。
+// regionEndpoint region → RPC endpoint 映射（region 与 endpoint 必须匹配，
+// 未知地域返回 false，由构造期 fail-fast，不猜默认值静默错配）。
 func regionEndpoint(region string) (string, bool) {
 	switch region {
 	case "cn":
@@ -84,7 +84,7 @@ func init() {
 // client_secret / region / prefix / encrypt_key / endpoint / widget_options。
 // region 是服务端 Verifier 的消费字段（决定地域 RPC endpoint）；prefix /
 // encrypt_key / widget_options 服务端校验不消费，声明仅为随配置下发（声明
-// 即消费红线不破：消费方是前端 adapter，T-089）。is_enabled / 登录建号开关
+// 即消费红线不破：消费方是前端 adapter，浏览器侧注入）。is_enabled / 登录建号开关
 // 是 auth 专属，captcha 类别不下发也不消费（生效实例判定只看 settings 键 →
 // 行命中，captcha/catalog.go）。
 func schema() []provider.FieldMeta {
