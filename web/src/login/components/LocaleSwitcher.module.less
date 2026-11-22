@@ -6,26 +6,24 @@
 }
 
 .localeTrigger {
-  padding: @spacing-xs @spacing-sm;
+  padding: 0;
   color: @color-text-muted;
   font-size: @font-size-xs;
   background: none;
-  border: @border-width solid @color-border-subtle;
-  border-radius: @radius-sm;
+  border: none;
   cursor: pointer;
   transition:
     color @transition-fast,
     border-color @transition-fast;
 }
 
+.localeIcon {
+  width: 1.3rem;
+}
+
 .localeTrigger:hover {
   color: @color-text-strong;
   border-color: @color-border-strong;
-}
-
-.localeTrigger:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 @ring-width @ring-color;
 }
 
 .localeMenu {
